@@ -1,7 +1,89 @@
 {
   "engine": "@wcstack/state 3.3.0 (dist/index.esm.js)",
-  "recordedAt": "2026-09-24T22:14:44.330Z",
+  "recordedAt": "2026-09-25T19:58:53.351Z",
   "scenarios": {
+    "配列を読む getter と、行の値への書き込み（上向きには無効化しない）": [
+      {
+        "label": "initial",
+        "dom": "<p>6|</p><ul><li>1|</li><li>2|</li><li>3|</li></ul><ul class=\"big\"><li>2|</li><li>3|</li></ul>"
+      },
+      {
+        "label": "行の値を書き換える",
+        "dom": "<p>6|</p><ul><li>5|</li><li>2|</li><li>3|</li></ul><ul class=\"big\"><li>2|</li><li>3|</li></ul>"
+      },
+      {
+        "label": "配列を置き換える",
+        "dom": "<p>14|</p><ul><li>5|</li><li>2|</li><li>3|</li><li>4|</li></ul><ul class=\"big\"><li>5|</li><li>2|</li><li>3|</li><li>4|</li></ul>"
+      }
+    ],
+    "行の getter のリスト（入れ子の for）が依存の変化に追従する": [
+      {
+        "label": "initial",
+        "dom": "<section><h2>a|</h2><ul><li>2|</li><li>3|</li></ul></section><section><h2>b|</h2><ul><li>6|</li></ul></section>"
+      },
+      {
+        "label": "a の下限を上げる",
+        "dom": "<section><h2>a|</h2><ul><li>3|</li></ul></section><section><h2>b|</h2><ul><li>6|</li></ul></section>"
+      },
+      {
+        "label": "b に行を足す",
+        "dom": "<section><h2>a|</h2><ul><li>3|</li></ul></section><section><h2>b|</h2><ul><li>6|</li><li>9|</li></ul></section>"
+      },
+      {
+        "label": "a の行の値を書き換える",
+        "error": "[@wcstack/state] ListIndex not found: groups.*.items"
+      }
+    ],
+    "getter のリストが投げても他は描かれ、依存を直すと戻る": [
+      {
+        "label": "initial",
+        "dom": "<p>ok|</p><ul><li>x!|</li><li>y!|</li></ul>"
+      },
+      {
+        "label": "投げる",
+        "error": "boom"
+      },
+      {
+        "label": "戻す",
+        "dom": "<p>ok|</p><ul><li>z!|</li></ul>"
+      }
+    ],
+    "getter のリストを if の中で描き、元のオブジェクトの値を差し替える": [
+      {
+        "label": "initial",
+        "dom": "<p>0|</p>"
+      },
+      {
+        "label": "5 件",
+        "dom": "<p>5|</p><ul><li>item 1|</li><li>item 2|</li><li>item 3|</li><li>item 4|</li><li>item 5|</li></ul>"
+      },
+      {
+        "label": "1 件",
+        "dom": "<p>1|</p><ul><li>item 1|</li></ul>"
+      },
+      {
+        "label": "0 件",
+        "dom": "<p>0|</p>"
+      },
+      {
+        "label": "3 件",
+        "dom": "<p>3|</p><ul><li>item 1|</li><li>item 2|</li><li>item 3|</li></ul>"
+      }
+    ],
+    "<wcs-state> の中に書いたマークアップも束ねる": [
+      {
+        "label": "initial",
+        "dom": "<p id=\"in\">hi|</p><ul><li>item 1|</li><li>item 2|</li></ul><button>add|</button><p id=\"out\">hi|</p>"
+      },
+      {
+        "label": "msg を書き換える",
+        "dom": "<p id=\"in\">bye|</p><ul><li>item 1|</li><li>item 2|</li></ul><button>add|</button><p id=\"out\">bye|</p>"
+      },
+      {
+        "label": "中のボタンで行を足す",
+        "dom": "<p id=\"in\">bye|</p><ul><li>item 1|</li><li>item 2|</li><li>added|</li></ul><button>add|</button><p id=\"out\">bye|</p>"
+      }
+    ],
     "text: textContent と mustache": [
       {
         "label": "initial",
@@ -996,6 +1078,34 @@
       {
         "label": "逆順で取り直す",
         "dom": "<ul><li>c|||1|</li><li>b|||5|</li><li>||1|</li></ul><p>1:2->5;2:undefined->1;|</p>"
+      }
+    ],
+    "volume: データの接ぎ木と、根の getter からの読み": [
+      {
+        "label": "initial",
+        "dom": "<h1>Hello|</h1><p>en|||1 en|</p>"
+      },
+      {
+        "label": "i18n.lang を書く",
+        "dom": "<h1>Hello|</h1><p>ja|||1 ja|</p>"
+      },
+      {
+        "label": "i18n.t を置き換える",
+        "dom": "<h1>こんにちは|</h1><p>ja|||1 ja|</p>"
+      },
+      {
+        "label": "count を書く",
+        "dom": "<h1>こんにちは|</h1><p>ja|||2 ja|</p>"
+      }
+    ],
+    "volume: 深いマウントパス": [
+      {
+        "label": "initial",
+        "dom": "<p>10|||dark|</p>"
+      },
+      {
+        "label": "settings.cart.tax を書く",
+        "dom": "<p>8|||dark|</p>"
       }
     ]
   }

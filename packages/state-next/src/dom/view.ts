@@ -410,8 +410,15 @@ export function adopt(engine: Engine, b: Binding, register: boolean): void {
   if (owner !== null) (owner.bindings ?? (owner.bindings = [])).push(b);
 }
 
-/** The block built by the last buildBlock call (read right after it; saves an allocation per row). */
-export let lastBlock: Block | null = null;
+/** The block built by the last buildBlock call (taken right after it; saves an allocation per row). */
+let lastBlock: Block | null = null;
+
+/** The block the last buildBlock call built; released here so a removed tree is not kept alive. */
+function takeBlock(): Block {
+  const b = lastBlock!;
+  lastBlock = null;
+  return b;
+}
 
 /** The auto-naming cap for the blocks being built (-1: none), read once per view update. */
 let naming = -1;
@@ -662,7 +669,7 @@ export class IfView {
     if (index >= 0) {
       const br = this.branches[index];
       const top = buildBlock(engine, br.plan, this.row, null);
-      this.current = lastBlock;
+      this.current = takeBlock();
       br.anchor.parentNode!.insertBefore(top, br.anchor);
     }
   }
@@ -736,7 +743,7 @@ export class ForView {
       const views: RowView[] = new Array(n);
       for (let i = 0; i < n; i++) {
         frag.appendChild(buildBlock(engine, this.plan, rows[i], this));
-        views[i] = lastBlock as RowView;
+        views[i] = takeBlock() as RowView;
       }
       parent.insertBefore(frag, anchor);
       this.rowViews = views;
@@ -784,7 +791,7 @@ export class ForView {
         const frag = document.createDocumentFragment();
         for (let i = s; i <= ne; i++) {
           frag.appendChild(buildBlock(engine, this.plan, rows[i], this));
-          views[i] = lastBlock as RowView;
+          views[i] = takeBlock() as RowView;
         }
         parent.insertBefore(frag, next0);
       } else {
@@ -795,7 +802,7 @@ export class ForView {
           let rv = this.viewOf(row);
           if (rv === null || !rv.alive) {
             parent.insertBefore(buildBlock(engine, this.plan, row, this), next);
-            rv = lastBlock as RowView;
+            rv = takeBlock() as RowView;
           } else if (keep[i] === 0) {
             rv.insertBefore(parent, next);
           }

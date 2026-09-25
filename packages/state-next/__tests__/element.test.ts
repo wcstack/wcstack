@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { bootstrapState, getBindingsReady } from "../src/index";
+import { bootstrapState, diagnostics, getBindingsReady, installFeatures } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
@@ -47,6 +47,53 @@ describe("<wcs-state> の状態の読み込みと公開 API", () => {
     expect(() => el.createState("readonly", (s: any) => { s.n = 2; })).toThrow("This state is readonly.");
     el.createState("writable", (s: any) => { s.n = 2; });
     el.createState("readonly", (s: any) => expect(s.n).toBe(2));
+  });
+
+  it("createStateAsync は await をまたげ、readonly は await の後も（メソッド経由の書き込みも）投げる", async () => {
+    const { el, root } = await host(`<wcs-state></wcs-state><p>{{ n }}</p>`, (e) => e.setInitialState({ n: 1, bump(this: any) { this.n++; } }));
+    await el.createStateAsync("writable", async (s: any) => {
+      await flush();
+      s.n = 5;
+    });
+    await flush();
+    expect(root.querySelector("p")!.textContent).toBe("5");
+    await expect(el.createStateAsync("readonly", async (s: any) => {
+      await flush();
+      expect(s.n).toBe(5);
+      s.bump();
+    })).rejects.toThrow("This state is readonly.");
+    // the readonly view is not global: an ordinary write during it still lands
+    let release!: () => void;
+    const reading = el.createStateAsync("readonly", () => new Promise<void>((r) => { release = r; }));
+    el.createState("writable", (s: any) => { s.n = 6; });
+    release();
+    await reading;
+    await flush();
+    expect(root.querySelector("p")!.textContent).toBe("6");
+  });
+
+  it("initializePromise は $connectedCallback の完了を待たずに解決し、初期化の失敗でも解決する（失敗は connectedCallbackPromise）", async () => {
+    const order: string[] = [];
+    const h = document.createElement(`element-test-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p>{{ n }}</p>`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState({ n: 1, async $connectedCallback() { order.push("connected:start"); await flush(); order.push("connected:end"); } });
+    void el.initializePromise.then(() => order.push(`initialized:${root.querySelector("p")!.textContent}`));
+    document.body.appendChild(h);
+    await el.connectedCallbackPromise;
+    expect(order).toEqual(["connected:start", "initialized:1", "connected:end"]);
+
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bad = document.createElement(`element-test-${seq++}`);
+    const badRoot = bad.attachShadow({ mode: "open" });
+    badRoot.innerHTML = `<wcs-state></wcs-state>`;
+    const badEl = badRoot.querySelector("wcs-state") as any;
+    badEl.setInitialState({ $scan: {} });
+    document.body.appendChild(bad);
+    await expect(badEl.initializePromise).resolves.toBeUndefined();
+    await expect(badEl.connectedCallbackPromise).rejects.toThrow("$scan");
+    error.mockRestore();
   });
 
   it("$disconnectedCallback は外したときに同期で呼ばれ、再接続で $connectedCallback が再び呼ばれる", async () => {
@@ -102,6 +149,53 @@ describe("後付けの要素（wcs/feature-not-installed）", () => {
       error.mockRestore();
     },
   );
+
+  it("getter のリストは依存の変化で同期し直し、getter の失敗はその for の失敗として報告する", async () => {
+    const errors: string[] = [];
+    const { root, el } = await host(`<wcs-state></wcs-state><ul><template data-wcs="for: view"><li>{{ . }}</li></template></ul>`, (e) => e.setInitialState({
+      mode: "ok", src: ["a"],
+      get view() { if (this.mode === "bad") throw new Error("boom"); return this.src; },
+      $errorCallback(error: Error, info: any) { errors.push(`${info.bindingType}: ${info.path} ${error.message}`); },
+    }));
+    const lis = () => Array.from(root.querySelectorAll("li")).map((li) => li.textContent);
+    el.createState("writable", (s: any) => { s.src = ["a", "b"]; });
+    await flush();
+    expect(lis()).toEqual(["a", "b"]);
+    el.createState("writable", (s: any) => { s.mode = "bad"; });
+    await flush();
+    expect(errors).toEqual(["for: view boom"]);
+    expect(lis()).toEqual(["a", "b"]);
+    el.createState("writable", (s: any) => { s.mode = "ok"; s.src = ["c"]; });
+    await flush();
+    expect(lis()).toEqual(["c"]);
+  });
+
+  it("Trusted Types に止められた HTML の書き込みは、診断が直し方を 1 回だけ出す", async () => {
+    installFeatures([diagnostics]);
+    const desc = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML")!;
+    Object.defineProperty(Element.prototype, "innerHTML", {
+      configurable: true,
+      get: desc.get,
+      set(this: Element, v: unknown) {
+        if (typeof v === "string" && this.id.startsWith("tt")) throw new TypeError("This document requires 'TrustedHTML' assignment.");
+        desc.set!.call(this, v);
+      },
+    });
+    (globalThis as any).trustedTypes = {};
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { root } = await host(`<wcs-state></wcs-state><div id="tt1" data-wcs="innerHTML: a"></div><div id="tt2" data-wcs="innerHTML: a"></div><p>{{ b }}</p>`, (e) => e.setInitialState({ a: "<b>x</b>", b: "ok" }));
+      const reports = err.mock.calls.filter((c) => String(c[0]).includes('Writing to "innerHTML" was blocked by Trusted Types'));
+      expect(reports).toHaveLength(1);
+      expect(String(reports[0][0])).toContain('Symbol.for("wcstack.trustedTypes.policy")');
+      expect(String(reports[0][0])).toContain("No sanitizing policy is installed");
+      expect(root.querySelector("p")!.textContent).toBe("ok");
+    } finally {
+      Object.defineProperty(Element.prototype, "innerHTML", desc);
+      delete (globalThis as any).trustedTypes;
+      err.mockRestore();
+    }
+  });
 
   it("for のリストが状態に無ければその失敗として報告し、後から書けば描画する", async () => {
     const errors: string[] = [];

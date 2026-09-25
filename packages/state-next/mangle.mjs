@@ -31,7 +31,7 @@ const NAMES = `
   bindingType node path row ctx plan list view rows item extra cache slot custom prevent stop init anchor
   first last nodes current token events top parent byPath queue errors filterName setter listener draining
   watchRendered resolveConnected rejectConnected receiveInitial report rendered sync update dispose write
-  children filters forget resetList applyPass deliverFn delegate
+  children filters forget resetList applyPass deliverFn delegate stale staleLists
 `.trim().split(/\s+/);
 
 export const MANGLE_PROPS = new RegExp(`^(?:${NAMES.join("|")})$`);

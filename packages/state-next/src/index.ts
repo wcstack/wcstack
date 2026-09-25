@@ -11,3 +11,4 @@ export { installFeatures, type Feature } from "./hooks";
 export { temporal } from "./features/temporal";
 export { diagnostics } from "./features/diagnostics";
 export { listKeys } from "./features/list-keys";
+export { scopes } from "./features/scopes";

@@ -91,6 +91,8 @@ export class Engine implements ReconcileHooks {
   readonly rootBindings = new Map<Pattern, Set<Binding>>();
   private queue: Binding[] = [];
   private dirtyLists: StateList[] = [];
+  /** Lists over a changed getter, re-synced at the start of the next drain pass. */
+  private staleLists: StateList[] = [];
   private scheduled = false;
   private draining = false;
   // out-parameters of resolve()
@@ -674,7 +676,8 @@ export class Engine implements ReconcileHooks {
   // ---------------------------------------------------------------- methods
 
   invoke(name: string, event: Event, row: StateRow | null): unknown {
-    const fn = this.target[name];
+    // a dotted name is a path (a volume method lives under its mount path)
+    const fn = name.includes(".") ? this.readUntracked(this.pattern(name), null) : this.target[name];
     if (typeof fn !== "function") raiseError(`"${name}" is not a method`);
     const args: unknown[] = [event];
     const indexes: number[] = [];
@@ -693,6 +696,19 @@ export class Engine implements ReconcileHooks {
 
   /** Queues the bindings on `p` (and patterns under it) in the scope of `row`. */
   enqueueBound(p: Pattern, row: StateRow | null): void {
+    // a list over a getter (or under one) is re-synced in the drain: a data write syncs its
+    // lists right away, but a getter's value is only known when it is read again
+    if (p.getter !== null) {
+      const ls = row === null ? this.rootLists : row.children;
+      if (ls !== null) {
+        for (const l of ls.values()) {
+          if (!l.stale && l.pattern.isUnder(p)) {
+            l.stale = true;
+            this.staleLists.push(l);
+          }
+        }
+      }
+    }
     if (row === null) {
       this.forSubtree(p, (q) => {
         const bs = this.rootBindings.get(q);
@@ -832,14 +848,29 @@ export class Engine implements ReconcileHooks {
     this.scheduled = false;
     this.draining = true;
     try {
-      for (let pass = 0; this.queue.length > 0 || this.dirtyLists.length > 0; pass++) {
+      for (let pass = 0; this.queue.length > 0 || this.dirtyLists.length > 0 || this.staleLists.length > 0; pass++) {
         if (pass >= MAX_DRAIN_PASSES) {
           console.error(`[@wcstack/state] updates did not settle after ${MAX_DRAIN_PASSES} passes; the rest is dropped`);
           for (const b of this.queue) b.queued = false;
           for (const l of this.dirtyLists) l.queued = false;
+          for (const l of this.staleLists) l.stale = false;
           this.queue = [];
           this.dirtyLists = [];
+          this.staleLists = [];
           break;
+        }
+        const stale = this.staleLists;
+        if (stale.length > 0) {
+          this.staleLists = [];
+          for (const l of stale) {
+            l.stale = false;
+            try {
+              this.sync(l);
+            } catch (error) {
+              // reported as a failure of the list's for binding; the list keeps its rows
+              this.errors.push({ error, binding: { pattern: l.pattern, node: l.view?.anchor ?? null, typeName: () => "for" } as unknown as Binding });
+            }
+          }
         }
         const lists = this.dirtyLists;
         const q = this.queue;
@@ -924,6 +955,7 @@ export class Engine implements ReconcileHooks {
     this.errors = [];
     const hook = this.target.$errorCallback;
     for (const { error, binding } of errors) {
+      if (hooks.failed !== null) hooks.failed(this, error, binding);
       const path = binding.pattern.path;
       const type = binding.typeName();
       if (typeof hook === "function") {

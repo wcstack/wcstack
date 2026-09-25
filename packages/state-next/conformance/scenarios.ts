@@ -38,6 +38,82 @@ const items = (n: number) => Array.from({ length: n }, (_, i) => ({ id: i + 1, n
 
 export const scenarios: Scenario[] = [
   {
+    name: "配列を読む getter と、行の値への書き込み（上向きには無効化しない）",
+    html: `<wcs-state></wcs-state><p>{{ total }}</p><ul><template data-wcs="for: items"><li>{{ .v }}</li></template></ul><ul class="big"><template data-wcs="for: big"><li>{{ .v }}</li></template></ul>`,
+    state: () => ({
+      items: [{ v: 1 }, { v: 2 }, { v: 3 }],
+      get total() { return (this as any).items.reduce((a: number, x: any) => a + x.v, 0); },
+      get big() { return (this as any).items.filter((x: any) => x.v >= 2); },
+    }),
+    steps: [
+      { label: "行の値を書き換える", run: (a) => a.write((s) => { s["items.0.v"] = 5; }) },
+      { label: "配列を置き換える", run: (a) => a.write((s) => { s.items = s.items.concat({ v: 4 }); }) },
+    ],
+  },
+  {
+    name: "行の getter のリスト（入れ子の for）が依存の変化に追従する",
+    html: `<wcs-state></wcs-state><template data-wcs="for: groups"><section><h2>{{ .name }}</h2><ul><template data-wcs="for: .big"><li>{{ .v }}</li></template></ul></section></template>`,
+    state: () => ({
+      groups: [{ name: "a", min: 2, items: [{ v: 1 }, { v: 2 }, { v: 3 }] }, { name: "b", min: 5, items: [{ v: 4 }, { v: 6 }] }],
+      get "groups.*.big"() { const self = this as any; return self["groups.*.items"].filter((x: any) => x.v >= self["groups.*.min"]); },
+    }),
+    steps: [
+      { label: "a の下限を上げる", run: (a) => a.write((s) => { s["groups.0.min"] = 3; }) },
+      { label: "b に行を足す", run: (a) => a.write((s) => { s["groups.1.items"] = s["groups.1.items"].concat({ v: 9 }); }) },
+      { label: "a の行の値を書き換える", run: (a) => a.write((s) => { s["groups.0.items.0.v"] = 7; }) },
+    ],
+    differs: {
+      reason: "3.3.0 の不具合（#319・$watch の行の監視と同系統）: for で描いていないリスト（groups.*.items）の行のパスへの書き込みが \"ListIndex not found\" で投げる。新エンジンは書き込み、配列を読む getter は上向きには無効化しない（最上位のリストでの 3.3.0 と同じ意味。上のシナリオで確認）",
+      dom: {
+        "a の行の値を書き換える": "<section><h2>a|</h2><ul><li>3|</li></ul></section><section><h2>b|</h2><ul><li>6|</li><li>9|</li></ul></section>",
+      },
+    },
+  },
+  {
+    name: "getter のリストが投げても他は描かれ、依存を直すと戻る",
+    html: `<wcs-state></wcs-state><p>{{ mode }}</p><ul><template data-wcs="for: view"><li>{{ . }}</li></template></ul>`,
+    state: () => ({
+      mode: "ok", src: ["x", "y"],
+      get view() { const self = this as any; if (self.mode === "bad") throw new Error("boom"); return self.src.map((v: string) => v + "!"); },
+      $errorCallback() {},
+    }),
+    steps: [
+      { label: "投げる", run: (a) => a.write((s) => { s.src = ["z"]; s.mode = "bad"; }) },
+      { label: "戻す", run: (a) => a.write((s) => { s.mode = "ok"; }) },
+    ],
+    differs: {
+      reason: "3.3.0 は for のリストの getter の失敗を書き込み元へ投げる（その後の書き込みは落ちる）。新エンジンは他のバインディングと同じく、その for の失敗として $errorCallback に報告し、書き込みは入り、一覧は前の行を保つ",
+      dom: {
+        "投げる": "<p>bad|</p><ul><li>x!|</li><li>y!|</li></ul>",
+      },
+    },
+  },
+  {
+    name: "getter のリストを if の中で描き、元のオブジェクトの値を差し替える",
+    html: `<wcs-state></wcs-state><p>{{ hits }}</p><template data-wcs="if: hasResults"><ul><template data-wcs="for: results"><li>{{ .name }}</li></template></ul></template>`,
+    state: () => ({
+      fetch: { value: null as any },
+      get results() { return (this as any)["fetch.value"] ?? []; },
+      get hits() { return (this as any).results.length; },
+      get hasResults() { return (this as any).hits > 0; },
+    }),
+    steps: [
+      { label: "5 件", run: (a) => a.write((s) => { s["fetch.value"] = items(5); }) },
+      { label: "1 件", run: (a) => a.write((s) => { s["fetch.value"] = items(1); }) },
+      { label: "0 件", run: (a) => a.write((s) => { s["fetch.value"] = []; }) },
+      { label: "3 件", run: (a) => a.write((s) => { s["fetch.value"] = items(3); }) },
+    ],
+  },
+  {
+    name: "<wcs-state> の中に書いたマークアップも束ねる",
+    html: `<wcs-state><p id="in">{{ msg }}</p><ul><template data-wcs="for: items"><li>{{ .name }}</li></template></ul><button data-wcs="onclick: add">add</button></wcs-state><p id="out">{{ msg }}</p>`,
+    state: () => ({ msg: "hi", items: items(2), add(this: any) { this.items = this.items.concat({ id: 9, name: "added" }); } }),
+    steps: [
+      { label: "msg を書き換える", run: (a) => a.write((s) => { s.msg = "bye"; }) },
+      { label: "中のボタンで行を足す", run: (a) => a.click("button") },
+    ],
+  },
+  {
     name: "text: textContent と mustache",
     html: `<wcs-state></wcs-state><p data-wcs="textContent: msg"></p><div>{{ msg }} / {{ count }}</div>`,
     state: () => ({ msg: "hello", count: 1 }),
@@ -816,6 +892,24 @@ export const scenarios: Scenario[] = [
       { label: "id 2 の qty が変わり、id 3 が増える", run: (a) => a.write((s) => { s.items = [{ id: 1, name: "a", qty: 1 }, { id: 2, name: "b", qty: 5 }, { id: 3, name: "c", qty: 1 }]; }) },
       { label: "id 1 の name が落ちる", run: (a) => a.write((s) => { s.items = [{ id: 1, qty: 1 }, { id: 2, name: "b", qty: 5 }, { id: 3, name: "c", qty: 1 }]; }) },
       { label: "逆順で取り直す", run: (a) => a.write((s) => { s.items = [{ id: 3, name: "c", qty: 1 }, { id: 2, name: "b", qty: 5 }, { id: 1, qty: 1 }]; }) },
+    ],
+  },
+  {
+    name: "volume: データの接ぎ木と、根の getter からの読み",
+    html: `<wcs-state></wcs-state><wcs-state mount="i18n" json='{"lang":"en","t":{"title":"Hello"}}'></wcs-state><h1>{{ i18n.t.title }}</h1><p>{{ i18n.lang }}|{{ label }}</p>`,
+    state: () => ({ count: 1, get label() { return `${(this as any).count} ${(this as any)["i18n.lang"]}`; } }),
+    steps: [
+      { label: "i18n.lang を書く", run: (a) => a.write((s) => { s["i18n.lang"] = "ja"; }) },
+      { label: "i18n.t を置き換える", run: (a) => a.write((s) => { s["i18n.t"] = { title: "こんにちは" }; }) },
+      { label: "count を書く", run: (a) => a.write((s) => { s.count = 2; }) },
+    ],
+  },
+  {
+    name: "volume: 深いマウントパス",
+    html: `<wcs-state></wcs-state><wcs-state mount="settings.cart" json='{"tax":10}'></wcs-state><p>{{ settings.cart.tax }}|{{ settings.theme }}</p>`,
+    state: () => ({ settings: { theme: "dark" } }),
+    steps: [
+      { label: "settings.cart.tax を書く", run: (a) => a.write((s) => { s["settings.cart.tax"] = 8; }) },
     ],
   },
 ];

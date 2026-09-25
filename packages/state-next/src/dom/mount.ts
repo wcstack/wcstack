@@ -15,7 +15,7 @@ export const engines = new WeakMap<Node, Engine>();
  */
 const bound = new WeakSet<Element>();
 
-/** Binds everything under `root` (outside <wcs-state>) to `engine` and renders it. */
+/** Binds everything under `root` to `engine` and renders it. */
 export function mount(engine: Engine, root: Document | ShadowRoot | Element): void {
   const container: Node = root.nodeType === 9 ? (root as Document).body : root;
   engine.root = root;
@@ -36,7 +36,12 @@ function walk(engine: Engine, children: ChildNode[]): void {
     if (child.nodeType === 1) {
       const el = child as Element;
       const tag = el.localName;
-      if (tag === config.tagNames.state || tag === "script" || tag === "style") continue;
+      if (tag === "script" || tag === "style") continue;
+      // markup written inside a <wcs-state> is part of the page (its own attributes are not bindings)
+      if (tag === config.tagNames.state) {
+        walk(engine, Array.from(el.childNodes));
+        continue;
+      }
       if (tag === "template") {
         const d = directive(el);
         if (d === null) continue;

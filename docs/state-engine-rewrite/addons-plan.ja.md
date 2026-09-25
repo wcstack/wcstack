@@ -203,7 +203,7 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 
 ## 6. 記録
 
-### 後付け 1: temporal（`$watch`・`$stream`）と `$listKeys`（2026-09-25・未コミット）
+### 後付け 1: temporal（`$watch`・`$stream`）と `$listKeys`（2026-09-25・コミット `3f1c7bdc`）
 
 **コアに足した受け口**（`src/hooks.ts`。どれも後付けが無ければ null 判定 1 回）
 
@@ -278,3 +278,74 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
   - コールド 10,000 行: 109.1ms 対 107.7ms（+1.3%、揺れの範囲）。
   - 受け口を埋めても費用はほぼ 0 で、目標の比の変化は環境によるもの。
 - 全操作の計測（`addons/temporal-full/`）は、機械の負荷で同じ現行を 2 回測った差（A/A）が 20〜112% に達したので採用しない。
+
+### 後付け 2: scopes（volume・DCC）（2026-09-26）
+
+`features/scopes` の 1 つの後付けに volume と DCC を入れた。コンポーネントの mount（`bind-component`）は次の段で同じ後付けに足す。
+
+**コアに足したもの**
+- 受け口 `claim(el, root)`: 根にならない `<wcs-state>`（volume・DCC の定義要素）を後付けが引き取る。コアは状態を読み込むだけで、`connectedCallbackPromise` は後付けの `start` が終わると解決する。
+- 受け口 `element` の段階に `"mounting"`（エンジンを作った直後で、ページを束ねる前）を足した。
+- メソッド名にパスを書けるようにした（`onclick: i18n.toJa`）。volume のメソッドはマウントパスの下にあるため。
+- 公開 API の抜けを 2 つ足した。どちらも e2e を state-next で流して見つかった。
+  - `createStateAsync(mutability, callback)`: `@wcstack/testing` と README のテスト手順が使う。`"readonly"` は読み取り専用の見え方を渡す。await をまたいでも読み取り専用のままで、その間の他の書き込みは止めない。
+  - `initializePromise`: README の IStateElement の表にある。状態を読み込んで束ねた後（`$connectedCallback` の完了を待たない）に解決し、初期化に失敗しても解決する。失敗は `connectedCallbackPromise` が伝える。
+- core は 19.49 → 19.69KB gzip（上限まで 0.31KB）。
+
+**volume**（`src/scopes/volume.ts`）
+- volume の状態を、根の木のマウントパスへ普通の書き込みで接ぎ木する。
+  - getter／setter はそのパスの accessor になり、メソッドはパスの下の関数になる。
+  - どれも `this` はマウントパスに閉じる。`$getAll` などに渡すパスも、マウントパスからの相対になる。
+  - `$connectedCallback`／`$disconnectedCallback` も、閉じた `this` で走る。
+- 読み込み順は問わない。根より先に読み込んだ volume は、根のエンジンができた時点（ページを束ねる前）に接ぎ木する。
+- 次は接ぎ木せずに報告し、`connectedCallbackPromise` は解決する（現行と同じ）: 不正なマウントパス、同じパスの 2 つ目、根に既にあるキー。
+- 次は投げる（現行と同じ）: volume の再セット、volume を持つ根の再セット、volume を含む祖先の書き換え。
+- 承認済みの簡素化: 注入（`data-wcs="state.k: …"`）と、volume に書いた `$watch`／`$listKeys`／`$renderedCallback`／`$stream` は、黙って無視せずにエラーにする。`$commandTokens` など根の持ち物は警告する。
+
+**DCC**（`src/scopes/dcc.ts`）
+- `[data-wc-definition]` のホストの shadow の中にある `<wcs-state>` から、ホストのタグの要素クラスを定義する。各インスタンスは定義の中身の複製を shadow に持ち、その中の `<wcs-state>` は普通の根になる。
+- shadow は初めて使われた時（アクセサか接続の早い方）に作る。現行と同じで、`for` の行は挿入の前に束ねるため。
+- プロトタイプのアクセサは中の状態を読み書きする。
+  - 初期化前の書き込みは、初期化の後（`$connectedCallback` の前）に入る。
+  - メソッドは Promise を返す。
+- `$bindables`／`$commands` から `static wcBindable` を作る（どちらも無ければ null）。宣言の検査は現行と同じ 6 種。
+- 変更イベント `<tag>:<prop>-changed`（`bubbles: true`）は、メンバー自身・その下のパス・`$postUpdate` への書き込みで出る。`detail` が付くのはメンバー自身への書き込みだけで、宣言の getter は要素から値を読む（現行と同じ）。
+- `stateElement` getter（現行にある）も生やした。
+
+**確かめたこと**
+- ゴールデン: volume 2 シナリオを足し、現行と一致した。
+- 単体テスト: `scopes.test.ts` 12 件、`dcc.test.ts` 12 件、`element.test.ts` に 2 件（`createStateAsync`・`initializePromise`）。
+- 実ブラウザ: リポジトリの e2e を、state のバンドルだけ state-next に差し替えて流した（`/packages/state/dist/auto.min.js` の要求をプロキシで振り替える）。volume 3 件・DCC 3 件がすべて通過した。
+
+**サイズ（gzip）**: scopes 3.4KB。現行は volume が約 7.1KB（注入込み）、DCC が約 1.6KB。
+
+### e2e の全体を state-next で流して見つけたコアの穴（2026-09-26）
+
+リポジトリの e2e 全体（32 ファイル・131 件）を、現行と state-next の両方で流して比べた。最初は、現行で通って state-next で落ちるものが 62 件あった。うち 20 件は後付け以外の原因で、次の 5 つのコアの穴だった。すべて直した。
+
+| # | 穴 | 見つけたページ | 直し方 |
+|---|---|---|---|
+| 1 | `<wcs-state>` の中に書いたマークアップを束ねていなかった | synth・midi・move-before・view-transition（5 ページ） | 走査で `<wcs-state>` の子孫も束ねる（要素自身の属性は束ねない）。ゴールデンの書き出しも `<wcs-state>` を中身ごと落としていて見えていなかったので、中身を書き出すように直した |
+| 2 | getter の上の `for:` が、依存が変わっても同期し直さない（if の外では 1 行も描かれない） | search・calendar・cross-tab-todo・fetch-users-crud | getter が無効化されたら、その下のリストに印を付け、drain の各パスの頭で同期し直す。getter の失敗はその `for` の失敗として報告する |
+| 3 | 外したツリーが回収されない | address-gc | 最後に作ったブロックを覚える変数（`lastBlock`）が、外したツリーを掴んでいた。読んだら手放す |
+| 4 | `createStateAsync`・`initializePromise` が無い | mount-volume（V7） | 足した（上の後付け 2 の記録） |
+| 5 | Trusted Types に止められた書き込みの報告が一般の失敗文になる | trusted-types | 受け口 F13（`failed`）をコアに足し、診断が現行と同じ直し方の文面を 1 ページに 1 回出す |
+
+- **結果**: 両方で通るものが 63 → 77 件。現行だけで通るのは 48 件で、すべて後付け側の理由。
+  - コンポーネントの mount（`bind-component`・`state: path`）: 42 件。次の後付け。
+  - intersect-scroll: 6 件。デモが廃止した `$scan` を使っている。デモの書き換えは計画どおり要る（§3.1）。
+  - どちらでも落ちるものが 6 件ある（プロキシ越しでは SSR サーバが立たない 5 件と、SSE のタイミング 1 件）。
+  - state-next だけで通るものは無い。
+- **ゴールデンに足したシナリオ**: `<wcs-state>` の中のマークアップ、getter のリストを if の中で描く、行の getter のリスト（入れ子の `for`）、getter のリストの失敗、配列を読む getter と行への書き込み。
+  - 最後のシナリオで、現行も「行の値への書き込みでは、配列を読む getter を上向きに無効化しない」ことを確かめた。新エンジンも同じ意味になる。
+- **意図した差分を 2 つ宣言した**:
+  - 行の getter のリストで、`for` で描いていないリストの行のパスへ書くと、現行は `ListIndex not found` で投げる（#319 と同系統）。
+  - `for` のリストの getter が投げると、現行はその失敗を書き込み元へ投げ、続きの書き込みが落ちる。新エンジンは他のバインディングと同じく封じ込める。
+- **決定（2026-09-26・著者「すべて承認」）**: README の IStateElement の表にある `listPaths`／`getterPaths`／`setterPaths`／`nextVersion` は core に入れない（リポジトリの中ではコメント以外に使う箇所が無い）。要るなら DevTools の後付けで出す。
+- テスト 730 件（通過 729・スキップ 1）。core 19.85KB gzip（上限まで 0.15KB）。全部入りの `auto` 28.1KB。
+- e2e を流す道具は `packages/state-next/bench/e2e/`（プロキシ・Playwright の設定・比較）。比較の結果は `docs/research/state-engine/addons/e2e-sweep/`。
+
+**性能**（`addons/scopes-targets/`、全部入りの `auto`、3 周・各 18 サンプル）
+- 直前のコミット（`3f1c7bdc`、scratchpad でビルド）と同じ回で交互に測った。drain のループと行の生成（`takeBlock`）に手を入れたため。
+- 今回: ウォーム 1,000 行 6.45ms（**1.54 倍**）、コールド 10,000 行 76.75ms（**1.52 倍**）。
+- 直前: 6.55ms（1.56 倍）、75.4ms（1.49 倍）。差は揺れの範囲。

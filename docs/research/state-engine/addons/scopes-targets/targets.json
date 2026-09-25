@@ -1,0 +1,28 @@
+{
+  "floor": {
+    "w1k": 4.200000047683716,
+    "c10k": 50.5
+  },
+  "floorExcl": {
+    "w1k": 4.050000011920929,
+    "c10k": 44.75
+  },
+  "next": {
+    "w1k": 6.45,
+    "c10k": 76.75,
+    "ratioW1k": 1.54,
+    "ratioC10k": 1.52,
+    "ratioW1kExcl": 1.59,
+    "ratioC10kExcl": 1.72,
+    "n": 18
+  },
+  "prev": {
+    "w1k": 6.55,
+    "c10k": 75.4,
+    "ratioW1k": 1.56,
+    "ratioC10k": 1.49,
+    "ratioW1kExcl": 1.62,
+    "ratioC10kExcl": 1.68,
+    "n": 18
+  }
+}

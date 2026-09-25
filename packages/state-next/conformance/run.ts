@@ -39,7 +39,12 @@ export function serialize(root: Node): string {
       if (c.nodeType !== 1) continue;
       const el = c as Element;
       const tag = el.localName;
-      if (tag === "wcs-state" || tag === "template" || tag === "script" || tag === "style") continue;
+      if (tag === "template" || tag === "script" || tag === "style") continue;
+      // the element itself is not output; markup written inside it is part of the page
+      if (tag === "wcs-state") {
+        visit(el);
+        continue;
+      }
       const attrs: [string, string][] = [];
       for (const a of Array.from(el.attributes)) {
         if (a.name === "data-wcs") continue;

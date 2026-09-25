@@ -10,6 +10,7 @@
 import type { Engine } from "./engine";
 import type { Pattern } from "./pattern";
 import type { StateList, StateRow } from "./list";
+import type { Binding } from "./dom/view";
 
 export interface Hooks {
   /** Diagnostics: extra text for an error message (did-you-mean, lint pointer, how to fix). */
@@ -26,14 +27,35 @@ export interface Hooks {
   drained: ((engine: Engine) => void) | null;
   /** A state object was received (construction, or a re-set before it replaces the old one). */
   declare: ((engine: Engine, target: Record<string, any>) => void) | null;
-  /** The element's lifecycle: after `$connectedCallback`, on disconnect, after a re-set. */
-  element: ((engine: Engine, phase: "connected" | "disconnected" | "reset") => void) | null;
+  /**
+   * A root engine's lifecycle: "mounting" (created, its page not bound yet), "connected"
+   * (after `$connectedCallback`, and on reconnect), "disconnected", "reset" (after a re-set).
+   */
+  element: ((engine: Engine, phase: "mounting" | "connected" | "disconnected" | "reset") => void) | null;
+  /**
+   * A `<wcs-state>` an add-on takes over instead of it becoming a root (a volume, a DCC
+   * definition): asked when it connects; the core then only loads its state.
+   */
+  claim: ((el: HTMLElement, root: Node) => Claimed | null) | null;
   /** A `$` name the core does not know. */
   dollar: ((engine: Engine, key: string) => unknown) | null;
+  /** A binding failed to apply (reported after the drain, before `$errorCallback` / the console). */
+  failed: ((engine: Engine, error: unknown, binding: Binding) => void) | null;
+}
+
+/** What an add-on does with a `<wcs-state>` it claimed. */
+export interface Claimed {
+  /** The loaded state; `connectedCallbackPromise` resolves when this settles (a failure is the add-on's to report). */
+  start(state: Record<string, any>): Promise<void> | void;
+  connected(): void;
+  disconnected(): void;
+  /** `setInitialState` after the start. */
+  reset(state: Record<string, any>): void;
 }
 
 export const hooks: Hooks = {
   explain: null,
+  claim: null,
   beforeWrite: null,
   written: null,
   getterReached: null,
@@ -42,20 +64,25 @@ export const hooks: Hooks = {
   declare: null,
   element: null,
   dollar: null,
+  failed: null,
 };
 
 type HookFn = (...args: any[]) => any;
 
 /**
  * Adds `fn` to a slot, after whatever is there. For `beforeWrite` the first that handles the
- * write wins; for `dollar` the first defined answer wins.
+ * write wins; for `dollar` / `claim` the first answer (not undefined / not null) wins.
  */
 export function addHook<K extends keyof Hooks>(name: K, fn: NonNullable<Hooks[K]>): void {
   const prev = hooks[name] as HookFn | null;
+  const answered = name === "beforeWrite" ? (r: unknown) => r === true
+    : name === "dollar" ? (r: unknown) => r !== undefined
+    : name === "claim" ? (r: unknown) => r !== null
+    : null;
   hooks[name] = (prev === null
     ? fn
-    : name === "beforeWrite" || name === "dollar"
-      ? (...a: unknown[]) => { const r = prev(...a); return (name === "dollar" ? r !== undefined : r) ? r : (fn as HookFn)(...a); }
+    : answered !== null
+      ? (...a: unknown[]) => { const r = prev(...a); return answered(r) ? r : (fn as HookFn)(...a); }
       : (...a: unknown[]) => { prev(...a); (fn as HookFn)(...a); }) as Hooks[K];
 }
 

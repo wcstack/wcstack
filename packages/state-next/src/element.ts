@@ -5,7 +5,7 @@ import { DirtyStrategy } from "./strategy/dirty";
 import { config, setConfig, type PartialConfig } from "./config";
 import type { Strategy } from "./strategy/types";
 import { raiseError } from "./parser/raiseError";
-import { hooks, requireFeature } from "./hooks";
+import { hooks, requireFeature, type Claimed } from "./hooks";
 
 let makeStrategy: () => Strategy = () => new DirtyStrategy();
 
@@ -54,11 +54,19 @@ export class WcsState extends HTMLElement {
 
   engine: Engine | null = null;
   readonly connectedCallbackPromise: Promise<void>;
+  /**
+   * Resolves once the state is loaded and bound (before `$connectedCallback`) — and also when
+   * initialization fails: the failure is delivered on connectedCallbackPromise.
+   */
+  readonly initializePromise: Promise<void>;
+  private resolveInitialize!: () => void;
   private resolveConnected!: () => void;
   private rejectConnected!: (e: unknown) => void;
   private started = false;
   private failed = false;
   private initial: Record<string, any> | null = null;
+  /** Taken over by an add-on (a volume, a DCC definition): it never becomes a root. */
+  private claimed: Claimed | null = null;
   private receiveInitial: ((state: Record<string, any>) => void) | null = null;
 
   constructor() {
@@ -68,10 +76,17 @@ export class WcsState extends HTMLElement {
       this.rejectConnected = reject;
     });
     this.connectedCallbackPromise.catch(() => {});
+    this.initializePromise = new Promise<void>((resolve) => {
+      this.resolveInitialize = resolve;
+    });
   }
 
   connectedCallback(): void {
     if (this.started) {
+      if (this.claimed !== null) {
+        this.claimed.connected();
+        return;
+      }
       // reconnected: $connectedCallback runs again (after the first initialization)
       const engine = this.engine;
       if (engine !== null) {
@@ -83,11 +98,24 @@ export class WcsState extends HTMLElement {
     }
     this.started = true;
     const root = this.getRootNode();
+    const claimed = hooks.claim === null ? null : hooks.claim(this, root);
+    if (claimed !== null) {
+      this.claimed = claimed;
+      void this.loadState().then((state) => claimed.start(state)).catch((e) => console.error(e)).finally(() => {
+        this.resolveInitialize();
+        this.resolveConnected();
+      });
+      return;
+    }
     const ready = this.start(root);
     readyByRoot.set(root, ready.catch(() => {}));
   }
 
   disconnectedCallback(): void {
+    if (this.claimed !== null) {
+      this.claimed.disconnected();
+      return;
+    }
     const engine = this.engine;
     if (engine === null) return;
     engine.callHook("$disconnectedCallback");
@@ -100,6 +128,10 @@ export class WcsState extends HTMLElement {
    */
   setInitialState(state: Record<string, any>): void {
     if (this.failed) raiseError("this <wcs-state> failed to initialize; create a new one");
+    if (this.claimed !== null && this.receiveInitial === null) {
+      this.claimed.reset(state);
+      return;
+    }
     if (this.engine !== null) {
       this.engine.reset(state);
       return;
@@ -123,6 +155,17 @@ export class WcsState extends HTMLElement {
     } finally {
       if (mutability === "readonly") engine.readonlyDepth--;
     }
+  }
+
+  /** `createState` whose callback may await; a readonly proxy stays readonly across its awaits. */
+  async createStateAsync(mutability: "readonly" | "writable", callback: (state: Record<string, any>) => Promise<void>): Promise<void> {
+    const engine = this.engine;
+    if (engine === null) raiseError("state is not initialized");
+    await callback(mutability === "writable" ? engine.proxy : new Proxy(engine.proxy, {
+      set() {
+        throw new Error("This state is readonly.");
+      },
+    }));
   }
 
   private loadState(): Promise<Record<string, any>> {
@@ -156,14 +199,17 @@ export class WcsState extends HTMLElement {
       const engine = new Engine(state, makeStrategy());
       engine.element = this;
       this.engine = engine;
+      if (hooks.element !== null) hooks.element(engine, "mounting");
       mount(engine, root as Document | ShadowRoot);
       drainBinds();
       engine.watchRendered();
+      this.resolveInitialize();
       await engine.callHook("$connectedCallback");
       if (hooks.element !== null && this.isConnected) hooks.element(engine, "connected");
       this.resolveConnected();
     } catch (e) {
       this.failed = true;
+      this.resolveInitialize();
       console.error(e);
       this.rejectConnected(e);
       throw e;

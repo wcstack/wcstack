@@ -55,6 +55,8 @@ export class StateList {
   extra: ForView[] | null = null;
   /** Queued for a view update in the current drain. */
   queued = false;
+  /** Its pattern reads through a getter that changed: re-synced at the next drain pass. */
+  stale = false;
 
   constructor(pattern: Pattern, parentRow: StateRow | null) {
     this.pattern = pattern;

@@ -11,7 +11,7 @@ import { readFileSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { MANGLE_PROPS } from './mangle.mjs';
 
-export const FEATURES = ['formats', 'diagnostics', 'temporal', 'list-keys'];
+export const FEATURES = ['formats', 'diagnostics', 'temporal', 'list-keys', 'scopes'];
 const common = { bundle: true, minify: true, format: 'esm', target: 'es2022', legalComments: 'none', mangleProps: MANGLE_PROPS };
 const gz = (file) => gzipSync(readFileSync(file), { level: 9 }).length;
 

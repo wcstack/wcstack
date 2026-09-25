@@ -5,7 +5,10 @@
  * (did-you-mean, the same rule as lint), how to fix it, and a pointer to lint where lint
  * really detects the case. The full `auto` bundle installs it.
  */
-import { hooks, type Feature } from "../hooks";
+import { addHook, hooks, type Feature } from "../hooks";
+import type { Engine } from "../engine";
+import type { Binding } from "../dom/view";
+import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
 import { didYouMean, LINT_HINT } from "../diagnostics/guidance";
 import { FORMATS_FILTER_NAMES, hasFilter } from "../filters/registry";
 
@@ -44,10 +47,34 @@ function explain(message: string, subject?: string, candidates?: Iterable<string
   return out;
 }
 
+let trustedTypesReported = false;
+
+/**
+ * An HTML sink write Trusted Types blocked: the browser's message names no fix, so say once
+ * per page what to install (the same report as @wcstack/state 3.3).
+ */
+function failed(_engine: Engine, error: unknown, binding: Binding): void {
+  const prop = binding.name === "html" ? "innerHTML" : binding.name;
+  if (trustedTypesReported || !(error instanceof TypeError) || !isHtmlSink(prop) || !("trustedTypes" in globalThis)) return;
+  trustedTypesReported = true;
+  const cause = typeof getTrustedTypesPolicy()?.createHTML === "function"
+    ? "The injected policy's createHTML() did not return a TrustedHTML."
+    : "No sanitizing policy is installed, and @wcstack/state deliberately does not pass state values through an identity policy — that would defeat the CSP.";
+  console.error(
+    `[@wcstack/state] Writing to "${prop}" was blocked by Trusted Types (require-trusted-types-for 'script'). ${cause}\n`
+    + `Install a sanitizing policy before the first binding is applied:\n`
+    + `  globalThis[Symbol.for("wcstack.trustedTypes.policy")] =\n`
+    + `    trustedTypes.createPolicy("my-app", { createHTML: (s) => DOMPurify.sanitize(s) });\n`
+    + `Or bind the value as text instead of HTML. See docs/csp.md section 7.`,
+    { element: binding.node, property: prop },
+  );
+}
+
 export const diagnostics: Feature = {
   name: "diagnostics",
   install(): void {
     hooks.explain = explain;
+    addHook("failed", failed);
   },
 };
 export default diagnostics;

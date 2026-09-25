@@ -28,8 +28,9 @@ function declare(engine: Engine, target: Record<string, any>): void {
   runtimes.set(engine, { watch, stream, connected: old?.connected ?? false });
 }
 
-function element(engine: Engine, phase: "connected" | "disconnected" | "reset"): void {
+function element(engine: Engine, phase: "mounting" | "connected" | "disconnected" | "reset"): void {
   const rt = runtimes.get(engine)!;
+  if (phase === "mounting") return;
   if (phase === "disconnected") {
     rt.connected = false;
     rt.watch.deactivate();

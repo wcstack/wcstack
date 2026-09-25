@@ -1,0 +1,123 @@
+tests: 131  both pass: 77  current only: 48  next only: 0  neither: 6
+
+## state-bind-component-depth2.spec.ts (9)
+- 初期描画が 2 枚の境界を越えて届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 最上位の行フィールド書き込みが 2 枚越しの最下層に届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 最上位のリスト置換が 2 枚越しの最下層に届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 行オブジェクトを保った並べ替えで行の同一性が保たれること
+    Error: expect(locator).toHaveText(expected) failed
+- 初期描画が Δ>0 でも 2 枚の境界を越えて届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 行フィールド書き込みが該当グループの該当行にだけ届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 行配列の差し替えが該当グループにだけ届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- グループを並べ替えても行と子の対応が保たれること
+    Error: expect(locator).toHaveText(expected) failed
+- 並べ替えのあとも行フィールド書き込みが正しい子に届くこと
+    Error: expect(locator).toHaveText(expected) failed
+
+## state-bind-component-light-dom.spec.ts (6)
+- mapped な Light DOM が初期配送を受けること（デッドロックしない）
+    Error: expect(locator).toHaveText(expected) failed
+- 親 state 起点の書き込みが Light DOM の子に届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- Light DOM の子スコープが親のリストを for で回せること
+    Error: expect(locator).toHaveText(expected) failed
+- 親の行フィールド書き込みが Light DOM の子の行に届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 親のリスト置換が Light DOM の子に届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- plain な Light DOM は廃止 — loud に落ち、ページの他の部分を巻き添えにしないこと
+    Error: expect(locator).toHaveText(expected) failed
+
+## state-bind-component-list.spec.ts (4)
+- 子スコープの for が親のリストを描画すること
+    Error: expect(locator).toHaveText(expected) failed
+- 親の行フィールド書き込みが子の行に届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 親のリスト置換に子の描画が追随すること
+    Error: expect(locator).toHaveText(expected) failed
+- 行オブジェクトを保った並べ替えで行の同一性が保たれること
+    Error: expect(locator).toHaveText(expected) failed
+
+## state-bind-component-nested-for.spec.ts (7)
+- 各コンポーネントが自分の行の配列を描画すること
+    Error: expect(locator).toHaveText(expected) failed
+- 親の入れ子行フィールド書き込みが該当コンポーネントの該当行にだけ届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 行の配列そのものを差し替えても子が追随すること
+    Error: expect(locator).toHaveText(expected) failed
+- 行を減らしても例外を出さず、他のコンポーネントを巻き添えにしないこと
+    Error: expect(locator).toHaveText(expected) failed
+- 親のリストを並べ替えても行と子の対応が保たれること
+    Error: expect(locator).toHaveText(expected) failed
+- 並べ替えのあとも入れ子の行書き込みが正しい子に届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- 親のリスト差し替えで各コンポーネントが自分の行を描き直すこと
+    Error: expect(locator).toHaveText(expected) failed
+
+## state-bind-component-parent-write.spec.ts (2)
+- 親 state 起点の書き込みが子コンポーネントのビューに届くこと
+    Error: expect(locator).toHaveText(expected) failed
+- マップ先オブジェクトの丸ごと差し替えも子コンポーネントに届くこと
+    Error: expect(locator).toHaveText(expected) failed
+
+## state-bind-component-row-replace.spec.ts (3)
+- 差し替えても行が再描画され、両方のコンポーネントに値が入ること
+    Error: expect(locator).toHaveText(expected) failed
+- 差し替えのあとも後続の更新が通ること
+    Error: expect(locator).toHaveText(expected) failed
+- 空にしてから戻せること
+    Error: expect(locator).toHaveText(expected) failed
+
+## state-bind-component-write.spec.ts (1)
+- mapped なコンポーネントでも state の read/write が素通しすること
+    Error: expect(locator).toHaveText(expected) failed
+
+## state-intersect-scroll.spec.ts (6)
+- 依存更新が in-flight page を abort し、最新の stream run だけを commit する
+    Error: expect(received).toBe(expected) // Object.is equality
+- page1 が失敗しても stream の有界リトライがスクロール無しでフィードを復帰させる
+    Error: expect(locator).toBeVisible() failed
+- リトライ予算を使い切ると Retry ボタンに引き継がれ、押せば復帰する
+    Error: expect(locator).toBeVisible() failed
+- 正常系: 初期ページが描画され、末尾までスクロールすると全87件で終端する
+    Error: expect(locator).toHaveCount(expected) failed
+- 既存 item 後の失敗は自動再試行せず、sentinel を離れて戻ると同じ page を再試行する
+    Error: expect(locator).toHaveCount(expected) failed
+- error 描画が sentinel を band 外へ押し出しても、一往復のスクロールで同じ page を再試行する
+    Error: expect(locator).toHaveCount(expected) failed
+
+## state-mount.spec.ts (10)
+- M1/M16: 中の name と getter がツリーの user.* を読む
+    Error: expect(locator).toHaveText(expected) failed
+- M2/M13: 中の入力がツリーに届き、親スコープのバインドが更新される
+    Error: expect(locator).toHaveText(expected) failed
+- M3: 親の user 丸ごと差し替えと部分書き込みが中に届く
+    Error: expect(locator).toHaveText(expected) failed
+- M5: 部分マウント state.theme: theme が併用できる
+    Error: expect(locator).toHaveText(expected) failed
+- M4/M7/M10: 各行が自分の行を読み、中の for が users.*.tags.* を回す
+    Error: expect(locator).toHaveText(expected) failed
+- M4: 行フィールドの書き込みがその行だけを更新する（id 不変）
+    Error: expect(locator).toHaveText(expected) failed
+- M7: 親が行の配列を差し替えると中の for が追随する
+    Error: expect(locator).toHaveText(expected) failed
+- M17: swap と丸ごと差し替えで行コンポーネントが付け替わる
+    Error: expect(locator).toHaveText(expected) failed
+- L1/L3: name 無しの Light DOM コンポーネントがマウント先を読む
+    Error: expect(locator).toHaveText(expected) failed
+- L2: 同じ Light DOM コンポーネントを for の行に置ける
+    Error: expect(locator).toHaveText(expected) failed
+
+## neither
+ssr-router.spec.ts › 初期ルートの内容・展開済み for・スナップショットが生 HTML に載る: Error: expect(received).toBeTruthy()
+ssr-router.spec.ts › 深い URL（typed param）もサーバーで描ける: Error: expect(received).toContain(expected) // indexOf
+ssr-router.spec.ts › 採用が成立し、二重描画なし・マーカー撤去・エラーゼロ: Error: expect(locator).toHaveText(expected) failed
+ssr-router.spec.ts › 採用ノード上のバインドが生きている（same-match クエリ遷移）: Error: expect(locator).toHaveText(expected) failed
+ssr-router.spec.ts › 採用後の SPA ナビゲーションと深い URL の直リロード: Test timeout of 30000ms exceeded.
+state-sse-dashboard.spec.ts › 両パネルにサンプルが流れ、ホスト切替で $stream 側が自動リセット・旧接続が閉じる: Error: expect(received).toBe(expected) // Object.is equality
