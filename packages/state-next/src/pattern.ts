@@ -142,9 +142,9 @@ export class PatternTable {
     const segs = path.split(".");
     const parent = segs.length > 1 ? this.get(segs.slice(0, -1).join(".")) : null;
     p = new Pattern(this.nextId++, path, segs, parent);
+    this.onCreate?.(p);
     this.byPath.set(path, p);
     if (parent) parent.children.push(p); else this.root.push(p);
-    this.onCreate?.(p);
     return p;
   }
 

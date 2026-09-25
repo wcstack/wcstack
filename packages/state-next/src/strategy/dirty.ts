@@ -2,6 +2,7 @@ import type { Engine } from "../engine";
 import { DIRTY, FAILED, UNSET, type Pattern } from "../pattern";
 import type { StateRow } from "../list";
 import type { Strategy } from "./types";
+import { hooks } from "../hooks";
 
 /**
  * Push invalidation: a write walks its dependents immediately, marks their caches
@@ -49,6 +50,7 @@ export class DirtyStrategy implements Strategy {
 
   invalidate(engine: Engine, g: Pattern, row: StateRow | null): void {
     this.force(g, row);
+    if (hooks.getterReached !== null) hooks.getterReached(engine, g, row);
     engine.enqueueBound(g, row);
     engine.walkDependents(g, row, this.mark);
   }

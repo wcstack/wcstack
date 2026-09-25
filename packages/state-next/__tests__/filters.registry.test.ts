@@ -16,7 +16,12 @@ import {
   registerFilters,
   resolveFilter,
 } from "../src/filters/registry";
-import { LINT_HINT } from "../src/filters/errorGuidance";
+import { LINT_HINT } from "../src/diagnostics/guidance";
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+installFeatures([diagnostics]);
 
 const out = (name: string, args: string[] = [], literals: readonly unknown[] = args) => resolveFilter(name, args, literals);
 

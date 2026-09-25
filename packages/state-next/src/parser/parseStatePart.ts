@@ -1,4 +1,4 @@
-import { DELIMITER, FILTER_SEPARATOR, LINT_HINT, MAX_PATH_SEGMENTS, RECURSION_WILDCARD } from "./define";
+import { DELIMITER, FILTER_SEPARATOR, MAX_PATH_SEGMENTS, RECURSION_WILDCARD } from "./define";
 import { parseFilters } from "./parseFilters";
 import { raiseError } from "./raiseError";
 import { ParsedBinding, ParsedFilter } from "./types";
@@ -23,11 +23,7 @@ const cacheFilterInfos = new Map<string, ParsedFilter[]>();
  */
 function checkPathLikeGetPathInfo(path: string): void {
   if (path.indexOf(RECURSION_WILDCARD) !== -1) {
-    raiseError(
-      `[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here. ` +
-      `It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path ` +
-      `argument of $getAll / $setAll — and only when the state declares a $recursion anchor.`
-    );
+    raiseError(`[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here.`);
   }
   let segmentCount = 1;
   for (let i = 0; i < path.length; i++) {
@@ -36,10 +32,7 @@ function checkPathLikeGetPathInfo(path: string): void {
     }
   }
   if (segmentCount > MAX_PATH_SEGMENTS) {
-    raiseError(
-      `[wcs/binding-syntax] "${path}" has ${segmentCount} path segments — the limit is ${MAX_PATH_SEGMENTS}. ` +
-      `Every prefix of a path is interned, so the cost grows with the square of the depth.`,
-    );
+    raiseError(`[wcs/binding-syntax] "${path}" has ${segmentCount} path segments — the limit is ${MAX_PATH_SEGMENTS}.`);
   }
 }
 
@@ -71,10 +64,7 @@ export function parseStatePart(statePart: string): StatePartParseResult {
   }
   if (stateAndPath.indexOf("@") !== -1) {
     // 名前次元は v2 で撤去（docs/state-mount-design.md D16 / §9）。パスは 1 本のツリー。
-    raiseError(
-      `"${stateAndPath}": the "@name" selector was removed in v2 — there is a single state tree. ` +
-      `Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`,
-    );
+    raiseError(`[wcs/binding-syntax] "${stateAndPath}": the "@name" selector was removed in v2 (use <wcs-state mount>).`);
   }
   const statePathName = stateAndPath;
   // 右辺も左辺（`parsePropPart`）と同じ規準で空セグメントを弾く（要件 B1）。
@@ -87,11 +77,7 @@ export function parseStatePart(statePart: string): StatePartParseResult {
   const body = isLoopRelative ? statePathName.slice(DELIMITER.length) : statePathName;
   const hasEmptySegment = body.length > 0 && body.split(DELIMITER).some((segment) => segment.length === 0);
   if (hasEmptySegment || (!isLoopRelative && body.length === 0)) {
-    raiseError(
-      `[wcs/binding-syntax] "${statePart}": the right side of a binding must name a state path — ` +
-      `write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are ` +
-      `the loop-relative shorthand).${LINT_HINT}`,
-    );
+    raiseError(`[wcs/binding-syntax] "${statePart}": the right side of a binding must name a state path (a path segment cannot be empty).`);
   }
   checkPathLikeGetPathInfo(statePathName);
   return {

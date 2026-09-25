@@ -11,10 +11,15 @@ import {
   valueMustBeDate,
   valueMustBeArray,
 } from "../src/filters/errorMessages";
-import { didYouMean, LINT_HINT } from "../src/filters/errorGuidance";
+import { didYouMean, LINT_HINT } from "../src/diagnostics/guidance";
 import { installCoreFilters } from "../src/filters/core";
 import { installFormats } from "../src/filters/formats";
 import { resolveFilter } from "../src/filters/registry";
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+installFeatures([diagnostics]);
 
 beforeAll(() => {
   installCoreFilters();

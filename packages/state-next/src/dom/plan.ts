@@ -4,6 +4,7 @@ import { UNSET, type Pattern } from "../pattern";
 import { config } from "../config";
 import { parseBindTextForEmbeddedNode, parseBindTextsForElement, type ParsedBinding } from "../parser/index";
 import { buildFilters, type FilterFn } from "./filters";
+import { raiseError } from "../parser/raiseError";
 import {
   K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, BUBBLING,
   type BranchSpec, type RowPlan, type Spec,
@@ -15,7 +16,7 @@ export const bindAttr = (): string => config.bindAttributeName;
 /** `.label` / `.` inside a `for: data` template → `data.*.label` / `data.*`. */
 export function expandPath(path: string, list: Pattern | null): string {
   if (path.charCodeAt(0) !== 46 /* . */) return path;
-  if (list === null) throw new Error(`[state-next] "${path}" is relative but not inside a for template`);
+  if (list === null) raiseError(`[wcs/wildcard-rank] "${path}" is relative: it needs an enclosing "for" template`);
   return path === "." ? `${list.path}.*` : `${list.path}.*${path}`;
 }
 
@@ -99,7 +100,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     return { ...blank(), node, kind: K_SPREAD, pattern: engine.pattern(expandPath(path, list)), custom };
   }
   if (segs[0] === "command" && segs.length > 1) {
-    if (!path.startsWith(COMMAND_PREFIX)) throw new Error(`[wcs/binding-syntax] "${b.propName}: ${path}": the right-hand side must be $command.<name>`);
+    if (!path.startsWith(COMMAND_PREFIX)) raiseError(`[wcs/token-misconfigured] "${b.propName}: ${path}": the right-hand side must be $command.<name>`);
     return { ...blank(), node, kind: K_COMMAND, name: segs.slice(1).join("."), token: path.slice(COMMAND_PREFIX.length), custom };
   }
 
@@ -258,7 +259,7 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
             specs.push({ ...blank(), node: branches[0].node, kind: K_IF, branches });
             i = end;
           } else {
-            throw new Error(`[state-next] "${d.bindingType}:" must follow an "if:" template`);
+            raiseError(`[wcs/template-syntax] "${d.bindingType}:" must follow an "if:" template`);
           }
           continue;
         }

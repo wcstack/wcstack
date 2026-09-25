@@ -1,6 +1,6 @@
 {
   "engine": "@wcstack/state 3.3.0 (dist/index.esm.js)",
-  "recordedAt": "2026-09-24T19:12:42.398Z",
+  "recordedAt": "2026-09-24T22:14:44.330Z",
   "scenarios": {
     "text: textContent と mustache": [
       {
@@ -870,6 +870,132 @@
       {
         "label": "user を書き足す",
         "dom": "<p>bob|||2|</p>"
+      }
+    ],
+    "binding-path-missing: トップレベルの打ち間違いと、後からの書き足し": [
+      {
+        "label": "initial",
+        "dom": "<p>||1|</p><ul></ul>"
+      },
+      {
+        "label": "cout を書き足す",
+        "error": "[@wcstack/state] [wcs/binding-path-missing] Path \"cout\" does not exist on the state tree. Did you mean \"count\"? Validate statically: npx @wcstack/lint <file>."
+      },
+      {
+        "label": "itemz を書き足す",
+        "dom": "<p>||1|</p><ul><li>a|</li><li>b|</li></ul>"
+      }
+    ],
+    "$watch: スカラー・入れ子・同じ回の書き込み・同じ値": [
+      {
+        "label": "initial",
+        "dom": "<p></p>"
+      },
+      {
+        "label": "flag を立てる",
+        "dom": "<p>flag:false->true;|</p>"
+      },
+      {
+        "label": "user.name",
+        "dom": "<p>flag:false->true;name:a->b;|</p>"
+      },
+      {
+        "label": "同じ値（発火しない）",
+        "dom": "<p>flag:false->true;name:a->b;|</p>"
+      },
+      {
+        "label": "同じ回に false → true（1 回だけ・prev は回の最初）",
+        "dom": "<p>flag:false->true;name:a->b;flag:true->true;|</p>"
+      }
+    ],
+    "$watch: 行（for あり）の書き込みと要素の書き込み": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>1|</li><li>2|</li></ul><p></p>"
+      },
+      {
+        "label": "items.1.price",
+        "dom": "<ul><li>1|</li><li>20|</li></ul><p>1:2->20;|</p>"
+      },
+      {
+        "label": "要素の書き込み items.0",
+        "dom": "<ul><li>9|</li><li>20|</li></ul><p>1:2->20;0:undefined->9;|</p>"
+      }
+    ],
+    "$watch: getter（先行評価）と連鎖": [
+      {
+        "label": "initial",
+        "dom": "<p>||0|</p>"
+      },
+      {
+        "label": "count を 2 に",
+        "dom": "<p>double:2->4;second:undefined->4;|||4|</p>"
+      },
+      {
+        "label": "count を 5 に",
+        "dom": "<p>double:2->4;second:undefined->4;double:4->10;second:undefined->10;|||10|</p>"
+      }
+    ],
+    "$stream: fold・状態・依存での再開": [
+      {
+        "label": "initial",
+        "dom": "<p>a1a2|||done|</p>"
+      },
+      {
+        "label": "prompt を変えて再開",
+        "dom": "<p>b1b2|||done|</p>"
+      }
+    ],
+    "$stream: ReadableStream と最新値・失敗": [
+      {
+        "label": "initial",
+        "dom": "<p>3|||done|</p><p>x|||error|</p>"
+      }
+    ],
+    "$watch: 配列の置き換え（for あり）": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>1|</li><li>2|</li></ul><p></p>"
+      },
+      {
+        "label": "1 行足した配列に置き換え",
+        "dom": "<ul><li>1|</li><li>2|</li><li>3|</li></ul><p>2:undefined->3;|</p>"
+      }
+    ],
+    "$watch: for の無い行の監視": [
+      {
+        "label": "initial",
+        "dom": "<p></p>"
+      },
+      {
+        "label": "items.1.price",
+        "error": "[@wcstack/state] ListIndex not found: items"
+      },
+      {
+        "label": "1 行足した配列に置き換え",
+        "dom": "<p></p>"
+      }
+    ],
+    "$listKeys: 取り直した配列で行を保ち、変わったフィールドだけ書く": [
+      {
+        "label": "initial",
+        "dom": "<ul><li>a|||1|</li><li>b|||2|</li></ul><p></p>"
+      },
+      {
+        "label": "同じ値の取り直し（何も起きない）",
+        "dom": "<ul><li>a|||1|</li><li>b|||2|</li></ul><p></p>"
+      },
+      {
+        "label": "id 2 の qty が変わり、id 3 が増える",
+        "dom": "<ul><li>a|||1|</li><li>b|||5|</li><li>c|||1|</li></ul><p>1:2->5;2:undefined->1;|</p>"
+      },
+      {
+        "label": "id 1 の name が落ちる",
+        "dom": "<ul><li>||1|</li><li>b|||5|</li><li>c|||1|</li></ul><p>1:2->5;2:undefined->1;|</p>"
+      },
+      {
+        "label": "逆順で取り直す",
+        "dom": "<ul><li>c|||1|</li><li>b|||5|</li><li>||1|</li></ul><p>1:2->5;2:undefined->1;|</p>"
       }
     ]
   }

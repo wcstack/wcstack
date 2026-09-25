@@ -12,7 +12,6 @@
  * - every registered filter has arity bounds (the source allowed them to be absent);
  * - the core set is registered like any other (the source hard-wired `not` into the registry).
  */
-import { didYouMean, LINT_HINT } from "./errorGuidance";
 import { raiseError } from "./errorMessages";
 
 export type FilterFn = (value: unknown) => unknown;
@@ -92,16 +91,13 @@ export function clearFilterResolutionCache(): void {
   resolvedByKey.clear();
 }
 
-/** The `[wcs/filter-unknown]` message — same vocabulary and did-you-mean as lint's diagnostic. */
+/**
+ * The `[wcs/filter-unknown]` message. A formatting filter on a page without the formats add-on
+ * is not a typo: the barrier names the add-on (the diagnostics add-on adds the nearest name).
+ */
 function unknownFilterMessage(name: string): string {
-  let addOn = "";
-  if (FORMATS_FILTER_NAMES.includes(name)) {
-    // Not a typo: the page did not install the add-on the filter belongs to
-    addOn = ` "${name}" is in the formats add-on — install it with installFormats().`;
-  } else if (!FORMATS_FILTER_NAMES.some((formatName) => factories.has(formatName))) {
-    addOn = " No formatting filters are installed — add them with installFormats() (the formats add-on).";
-  }
-  return `[wcs/filter-unknown] filter not found: ${name}.${didYouMean(name, factories.keys())}${addOn}${LINT_HINT}`;
+  const addOn = FORMATS_FILTER_NAMES.includes(name) ? ` "${name}" is in the formats add-on — install it with installFormats().` : "";
+  return `[wcs/filter-unknown] filter not found: ${name}.${addOn}`;
 }
 
 /**
@@ -116,14 +112,14 @@ export function resolveFilter(name: string, options: string[], literals: readonl
   }
   const factory = factories.get(name);
   if (typeof factory === "undefined") {
-    raiseError(unknownFilterMessage(name));
+    raiseError(unknownFilterMessage(name), name, factories.keys());
   }
   const bounds = arities.get(name) as readonly [number, number];
   if (options.length < bounds[0] || options.length > bounds[1]) {
     // Same vocabulary as lint's wcs/filter-arity
     raiseError(options.length < bounds[0]
-      ? `[wcs/filter-arity] filter "${name}" requires at least ${bounds[0]} argument(s) (${options.length} given).${LINT_HINT}`
-      : `[wcs/filter-arity] filter "${name}" accepts at most ${bounds[1]} argument(s) (${options.length} given).${LINT_HINT}`);
+      ? `[wcs/filter-arity] filter "${name}" requires at least ${bounds[0]} argument(s) (${options.length} given).`
+      : `[wcs/filter-arity] filter "${name}" accepts at most ${bounds[1]} argument(s) (${options.length} given).`);
   }
   const filterFn = factory(options, literals);
   resolvedByKey.set(key, filterFn);

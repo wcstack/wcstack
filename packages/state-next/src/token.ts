@@ -34,7 +34,7 @@ export class Token {
         results.push(fn(...args));
       } catch (error) {
         results.push(undefined);
-        console.error(`[wcstack/state] a subscriber of token "${this.name}" threw; the remaining subscribers still received it.`, error);
+        console.error(`[@wcstack/state] a subscriber of token "${this.name}" threw; the remaining subscribers still received it.`, error);
       }
     }
     return results;

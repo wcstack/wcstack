@@ -4,6 +4,7 @@ import type { StateList, StateRow } from "../list";
 import type { FilterFn } from "./filters";
 import { isHtmlSink, trustHtml } from "../trustedTypes";
 import { autoNaming, nameBlock } from "./naming";
+import { raiseError } from "../parser/raiseError";
 
 /**
  * `on*:` bindings of bubbling events are delegated: one listener per event type on the
@@ -249,7 +250,7 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
       return;
     case K_CLASS:
       if (v != null && typeof v !== "boolean") {
-        throw new Error(`[wcs/binding-type] class.${name} needs a boolean (got ${typeof v}); write "class.${name}: path|truthy" to toggle on truthiness`);
+        raiseError(`[wcs/binding-type-expectation] class.${name} needs a boolean, got ${typeof v}.`);
       }
       n.classList.toggle(name, v === true);
       return;
@@ -384,9 +385,19 @@ export class RowView extends Block {
   }
 }
 
-/** The list whose rows `p` ranges over, in the context of `row`. */
-function listFor(engine: Engine, p: Pattern, row: StateRow | null): StateList {
-  return p.depth === 0 ? engine.rootList(p) : engine.childList(rowAt(row, p.depth)!, p);
+/**
+ * The list whose rows `p` ranges over, in the context of `row`. A path that fails to read
+ * (a missing top-level key) is reported as the `for` binding's failure and the list starts
+ * empty: it was created before the read, so a later write of the path fills it.
+ */
+export function listFor(engine: Engine, p: Pattern, row: StateRow | null, anchor: Node): StateList {
+  const parent = p.depth === 0 ? null : rowAt(row, p.depth)!;
+  try {
+    return parent === null ? engine.rootList(p) : engine.childList(parent, p);
+  } catch (error) {
+    engine.fail(error, new Binding(engine, K_FOR, anchor, "for", p, null, null, null, undefined));
+    return parent === null ? engine.rootLists.get(p)! : parent.children!.get(p)!;
+  }
 }
 
 /**
@@ -518,7 +529,7 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
         if (!s.delegated) attachEvent(engine, node, s, row);
         break;
       case K_FOR: {
-        const view = new ForView(engine, s.plan!, listFor(engine, s.pattern!, row), node as Comment);
+        const view = new ForView(engine, s.plan!, listFor(engine, s.pattern!, row, node), node as Comment);
         (block.children ?? (block.children = [])).push(view);
         view.update();
         break;

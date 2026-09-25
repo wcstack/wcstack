@@ -37,4 +37,3 @@ export const MAX_PATH_SEGMENTS = 512;
 export const RECURSION_WILDCARD = '**';
 
 /** Appended to the syntax diagnostics that `@wcstack/lint` also detects. */
-export const LINT_HINT = ' Validate statically: npx @wcstack/lint <file>.';

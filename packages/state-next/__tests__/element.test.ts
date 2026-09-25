@@ -87,3 +87,31 @@ describe("<wcs-state> の状態の読み込みと公開 API", () => {
     err.mockRestore();
   });
 });
+
+describe("後付けの要素（wcs/feature-not-installed）", () => {
+  it.each([["mount", `<wcs-state mount="i18n" json='{"a":1}'></wcs-state>`], ["enable-ssr", `<wcs-state enable-ssr json='{"a":1}'></wcs-state>`]])(
+    "%s 属性の <wcs-state> は、入れる入口を案内して初期化に失敗する",
+    async (_name, html) => {
+      const error = vi.spyOn(console, "error").mockImplementation(() => {});
+      const h = document.createElement(`element-test-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = html;
+      document.body.appendChild(h);
+      const el = root.querySelector("wcs-state") as any;
+      await expect(el.connectedCallbackPromise).rejects.toThrow("[wcs/feature-not-installed]");
+      error.mockRestore();
+    },
+  );
+
+  it("for のリストが状態に無ければその失敗として報告し、後から書けば描画する", async () => {
+    const errors: string[] = [];
+    const { root, el } = await host(`<wcs-state></wcs-state><ul><template data-wcs="for: itemz"><li>{{ . }}</li></template></ul>`, (e) => e.setInitialState({
+      $errorCallback(error: Error, info: any) { errors.push(`${info.bindingType}: ${info.path} ${error.message}`); },
+    }));
+    await flush();
+    expect(errors).toEqual([expect.stringMatching(/^for: itemz .*\[wcs\/binding-path-missing\]/)]);
+    el.createState("writable", (s: any) => { s.itemz = ["a", "b"]; });
+    await flush();
+    expect(Array.from(root.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["a", "b"]);
+  });
+});

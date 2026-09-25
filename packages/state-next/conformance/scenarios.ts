@@ -670,4 +670,152 @@ export const scenarios: Scenario[] = [
       },
     },
   },
+  {
+    name: "binding-path-missing: トップレベルの打ち間違いと、後からの書き足し",
+    html: `<wcs-state></wcs-state><p>{{ cout }}|{{ count }}</p><ul><template data-wcs="for: itemz"><li>{{ . }}</li></template></ul>`,
+    state: () => ({ count: 1 }),
+    steps: [
+      { label: "cout を書き足す", run: (a) => a.write((s) => { s.cout = 5; }) },
+      { label: "itemz を書き足す", run: (a) => a.write((s) => { s.itemz = ["a", "b"]; }) },
+    ],
+    differs: {
+      reason: "3.3.0 は状態に無いトップレベルのキーへの書き込みも失敗にする（書く前に旧値を読むため。README が約束するのは読みの失敗だけ）。新エンジンは読みを現行どおり失敗にし、書き込みではキーを作れる",
+      dom: {
+        "cout を書き足す": "<p>5|||1|</p><ul></ul>",
+        "itemz を書き足す": "<p>5|||1|</p><ul><li>a|</li><li>b|</li></ul>",
+      },
+    },
+  },
+  {
+    name: "$watch: スカラー・入れ子・同じ回の書き込み・同じ値",
+    html: `<wcs-state></wcs-state><p>{{ log }}</p>`,
+    state: () => ({
+      flag: false, user: { name: "a" }, log: "",
+      $watch: {
+        flag(this: any, cur: unknown, prev: unknown) { this.log = `${this.log}flag:${prev}->${cur};`; },
+        "user.name"(this: any, cur: unknown, prev: unknown) { this.log = `${this.log}name:${prev}->${cur};`; },
+      },
+    }),
+    steps: [
+      { label: "flag を立てる", run: (a) => a.write((s) => { s.flag = true; }) },
+      { label: "user.name", run: (a) => a.write((s) => { s["user.name"] = "b"; }) },
+      { label: "同じ値（発火しない）", run: (a) => a.write((s) => { s.flag = true; }) },
+      { label: "同じ回に false → true（1 回だけ・prev は回の最初）", run: (a) => a.write((s) => { s.flag = false; s.flag = true; }) },
+    ],
+  },
+  {
+    name: "$watch: 行（for あり）の書き込みと要素の書き込み",
+    html: `<wcs-state></wcs-state><ul><template data-wcs="for: items"><li>{{ .price }}</li></template></ul><p>{{ log }}</p>`,
+    state: () => ({
+      items: [{ price: 1 }, { price: 2 }], log: "",
+      $watch: {
+        "items.*.price"(this: any, cur: unknown, prev: unknown, i: number) { this.log = `${this.log}${i}:${prev}->${cur};`; },
+      },
+    }),
+    steps: [
+      { label: "items.1.price", run: (a) => a.write((s) => { s["items.1.price"] = 20; }) },
+      { label: "要素の書き込み items.0", run: (a) => a.write((s) => { s["items.0"] = { price: 9 }; }) },
+    ],
+  },
+  {
+    name: "$watch: getter（先行評価）と連鎖",
+    html: `<wcs-state></wcs-state><p>{{ log }}|{{ second }}</p>`,
+    state: () => ({
+      count: 1, second: 0, log: "",
+      get double() { return (this as any).count * 2; },
+      $watch: {
+        double(this: any, cur: unknown, prev: unknown) { this.log = `${this.log}double:${prev}->${cur};`; this.second = cur; },
+        second(this: any, cur: unknown, prev: unknown) { this.log = `${this.log}second:${prev}->${cur};`; },
+      },
+    }),
+    steps: [
+      { label: "count を 2 に", run: (a) => a.write((s) => { s.count = 2; }) },
+      { label: "count を 5 に", run: (a) => a.write((s) => { s.count = 5; }) },
+    ],
+    differs: {
+      reason: "3.3.0 は $watch のハンドラの中で書いたプリミティブの prev を落とす（second:undefined->4）。README の約束（その回の最初の書き込みの前の値、プリミティブを書いたとき）どおり、新エンジンは 0 を渡す",
+      dom: {
+        "count を 2 に": "<p>double:2->4;second:0->4;|||4|</p>",
+        "count を 5 に": "<p>double:2->4;second:0->4;double:4->10;second:4->10;|||10|</p>",
+      },
+    },
+  },
+  {
+    name: "$stream: fold・状態・依存での再開",
+    html: `<wcs-state></wcs-state><p>{{ tokens }}|{{ $streamStatus.tokens }}</p>`,
+    state: () => ({
+      prompt: "a",
+      $stream: {
+        tokens: {
+          args: (s: any) => s.prompt,
+          source: async function* (p: string) { yield `${p}1`; yield `${p}2`; },
+          fold: (acc: string, c: string) => acc + c,
+          initial: "",
+        },
+      },
+    }),
+    steps: [
+      { label: "prompt を変えて再開", run: (a) => a.write((s) => { s.prompt = "b"; }) },
+    ],
+  },
+  {
+    name: "$stream: ReadableStream と最新値・失敗",
+    html: `<wcs-state></wcs-state><p>{{ ticker }}|{{ $streamStatus.ticker }}</p><p>{{ bad }}|{{ $streamStatus.bad }}</p>`,
+    state: () => ({
+      $stream: {
+        ticker: {
+          source: () => new ReadableStream({ start(c) { c.enqueue(1); c.enqueue(2); c.enqueue(3); c.close(); } }),
+        },
+        bad: {
+          source: async function* () { yield "x"; throw new Error("boom"); },
+          initial: "-",
+        },
+      },
+    }),
+  },
+  {
+    name: "$watch: 配列の置き換え（for あり）",
+    html: `<wcs-state></wcs-state><ul><template data-wcs="for: items"><li>{{ .price }}</li></template></ul><p>{{ log }}</p>`,
+    state: () => ({
+      items: [{ price: 1 }, { price: 2 }], log: "",
+      $watch: { "items.*.price"(this: any, cur: unknown, prev: unknown, i: number) { this.log = `${this.log}${i}:${prev}->${cur};`; } },
+    }),
+    steps: [
+      { label: "1 行足した配列に置き換え", run: (a) => a.write((s) => { s.items = s.items.concat({ price: 3 }); }) },
+    ],
+  },
+  {
+    name: "$watch: for の無い行の監視",
+    html: `<wcs-state></wcs-state><p>{{ log }}</p>`,
+    state: () => ({
+      items: [{ price: 1 }, { price: 2 }], log: "",
+      $watch: { "items.*.price"(this: any, cur: unknown, prev: unknown, i: number) { this.log = `${this.log}${i}:${prev}->${cur};`; } },
+    }),
+    steps: [
+      { label: "items.1.price", run: (a) => a.write((s) => { s["items.1.price"] = 20; }) },
+      { label: "1 行足した配列に置き換え", run: (a) => a.write((s) => { s.items = s.items.concat({ price: 3 }); }) },
+    ],
+    differs: {
+      reason: "3.3.0 は for も $listKeys も無いリストの添字付きパスへ書けず（ListIndex not found）、行の $watch も発火しない（README の「行の監視には $listKeys が要る」）。新エンジンの行の監視は自分でリストを同期するので、書き込みも発火も働く（承認済みの簡素化）",
+      dom: {
+        "items.1.price": "<p>1:2->20;|</p>",
+        "1 行足した配列に置き換え": "<p>1:2->20;2:undefined->3;|</p>",
+      },
+    },
+  },
+  {
+    name: "$listKeys: 取り直した配列で行を保ち、変わったフィールドだけ書く",
+    html: `<wcs-state></wcs-state><ul><template data-wcs="for: items"><li>{{ .name }}|{{ .qty }}</li></template></ul><p>{{ log }}</p>`,
+    state: () => ({
+      items: [{ id: 1, name: "a", qty: 1 }, { id: 2, name: "b", qty: 2 }], log: "",
+      $listKeys: { items: "id" },
+      $watch: { "items.*.qty"(this: any, cur: unknown, prev: unknown, i: number) { this.log = `${this.log}${i}:${prev}->${cur};`; } },
+    }),
+    steps: [
+      { label: "同じ値の取り直し（何も起きない）", run: (a) => a.write((s) => { s.items = [{ id: 1, name: "a", qty: 1 }, { id: 2, name: "b", qty: 2 }]; }) },
+      { label: "id 2 の qty が変わり、id 3 が増える", run: (a) => a.write((s) => { s.items = [{ id: 1, name: "a", qty: 1 }, { id: 2, name: "b", qty: 5 }, { id: 3, name: "c", qty: 1 }]; }) },
+      { label: "id 1 の name が落ちる", run: (a) => a.write((s) => { s.items = [{ id: 1, qty: 1 }, { id: 2, name: "b", qty: 5 }, { id: 3, name: "c", qty: 1 }]; }) },
+      { label: "逆順で取り直す", run: (a) => a.write((s) => { s.items = [{ id: 3, name: "c", qty: 1 }, { id: 2, name: "b", qty: 5 }, { id: 1, qty: 1 }]; }) },
+    ],
+  },
 ];

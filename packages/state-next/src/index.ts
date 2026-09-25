@@ -7,3 +7,7 @@ export { getTrustedTypesPolicy, setTrustedTypesPolicy } from "./trustedTypes";
 export { config, setConfig } from "./config";
 export { installFormats } from "./filters/formats";
 export { registerFilters } from "./filters/registry";
+export { installFeatures, type Feature } from "./hooks";
+export { temporal } from "./features/temporal";
+export { diagnostics } from "./features/diagnostics";
+export { listKeys } from "./features/list-keys";

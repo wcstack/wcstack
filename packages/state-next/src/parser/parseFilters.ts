@@ -1,4 +1,4 @@
-import { LINT_HINT, MODIFIER_SEPARATOR } from "./define";
+import { MODIFIER_SEPARATOR } from "./define";
 import { parseFilterArgsWithLiterals } from "./parseFilterArgs";
 import { raiseError } from "./raiseError";
 import { FilterIOType, ParsedFilter } from "./types";
@@ -36,30 +36,27 @@ export function parseFilters(filterTextList: string[], filterIOType: FilterIOTyp
     }
     // check parentheses
     if (openParenIndex !== -1 && closeParenIndex === -1) {
-      raiseError(`[wcs/binding-syntax] Invalid filter format: missing closing parenthesis in "${filterText}".${LINT_HINT}`);
+      raiseError(`[wcs/binding-syntax] Invalid filter format: missing closing parenthesis in "${filterText}".`);
     }
     if (closeParenIndex !== -1 && openParenIndex === -1) {
-      raiseError(`[wcs/binding-syntax] Invalid filter format: missing opening parenthesis in "${filterText}".${LINT_HINT}`);
+      raiseError(`[wcs/binding-syntax] Invalid filter format: missing opening parenthesis in "${filterText}".`);
     }
     if (closeParenIndex !== -1 && closeParenIndex < openParenIndex) {
       // `foo)1(` — 以前は `substring` が start > end で引数を入れ替えるため、フィルタ名
       // `foo)1` として受理されていた
-      raiseError(`[wcs/binding-syntax] Invalid filter format: ")" comes before "(" in "${filterText}".${LINT_HINT}`);
+      raiseError(`[wcs/binding-syntax] Invalid filter format: ")" comes before "(" in "${filterText}".`);
     }
     if (closeParenIndex !== -1 && filterText.slice(closeParenIndex + 1).trim().length > 0) {
       // 閉じ括弧の後ろの残余を**黙って捨てていた**。`n|fix(2)uc` は `uc` が消えて診断ゼロで
       // 通っていた。実害は「`|` の打ち忘れでフィルタが 1 本消えても無診断」
       const trailing = filterText.slice(closeParenIndex + 1).trim();
-      raiseError(
-        `[wcs/binding-syntax] "${filterText}": unexpected "${trailing}" after the filter's closing ")" — ` +
-        `separate filters with "|" (write "${filterText.slice(0, closeParenIndex + 1)}|${trailing}").${LINT_HINT}`,
-      );
+      raiseError(`[wcs/binding-syntax] "${filterText}": unexpected "${trailing}" after the filter's closing ")".`);
     }
     const filterName = (openParenIndex === -1 ? filterText : filterText.substring(0, openParenIndex)).trim();
     if (filterName.length === 0) {
       // 空のフィルタ（`x|`・`x||y`・`x|(1)`）は文法の誤り。解析の段で名指しで落とす — 未知の
       // フィルタとは別物で、実関数の解決まで持ち越すと tooling の解析が素通りする
-      raiseError(`[wcs/binding-syntax] an empty filter in "${source}" — remove the extra "|" or name the filter.${LINT_HINT}`);
+      raiseError(`[wcs/binding-syntax] an empty filter in "${source}".`);
     }
     if (filterName.includes(MODIFIER_SEPARATOR)) {
       // フィルタ名に `#` が飲まれた形。`[wcs/filter-unknown] filter not found: trim#ro` だと
@@ -68,12 +65,8 @@ export function parseFilters(filterTextList: string[], filterIOType: FilterIOTyp
       // 前に書け」と言うと成立しない直し方（`textContent#ro|trim: x`）を勧めることになる
       const [name, modifiers] = filterName.split(MODIFIER_SEPARATOR);
       raiseError(filterIOType === "input"
-        ? `[wcs/binding-syntax] "${filterName}" is not a filter name: a modifier list ` +
-          `"${MODIFIER_SEPARATOR}${modifiers}" comes before the input filters, not inside one — write ` +
-          `"<property>${MODIFIER_SEPARATOR}${modifiers}|${name}".${LINT_HINT}`
-        : `[wcs/binding-syntax] "${filterName}" is not a filter name: "${MODIFIER_SEPARATOR}" cannot appear ` +
-          `in one. Modifiers belong on the left side of the binding, before the ":" — write "${name}" ` +
-          `here.${LINT_HINT}`);
+        ? `[wcs/binding-syntax] "${filterName}" is not a filter name: a modifier list "${MODIFIER_SEPARATOR}${modifiers}" comes before the input filters — write "<property>${MODIFIER_SEPARATOR}${modifiers}|${name}".`
+        : `[wcs/binding-syntax] "${filterName}" is not a filter name: "${MODIFIER_SEPARATOR}" cannot appear in one.`);
     }
     if (openParenIndex === -1) {
       // no arguments

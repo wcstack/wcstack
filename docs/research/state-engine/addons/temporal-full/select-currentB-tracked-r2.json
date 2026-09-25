@@ -1,0 +1,50 @@
+{
+  "label": "currentB-r2",
+  "variant": "tracked",
+  "bundle": "C:/Users/kikuzawa/Documents/git/wcstack/wcstack-state-engine/packages/state/dist/auto.min.js",
+  "timestamp": "2026-09-24T22:27:25.906Z",
+  "select10k": {
+    "median": 48.2,
+    "min": 31.1,
+    "max": 54.8,
+    "samples": [
+      50.7,
+      50.2,
+      54.8,
+      43.9,
+      48.8,
+      36.4,
+      48.9,
+      46.2,
+      51.8,
+      48.2,
+      51,
+      37,
+      31.1,
+      34.1,
+      35.2
+    ]
+  },
+  "remove1of10k": {
+    "median": 54.3,
+    "min": 30.7,
+    "max": 117.8,
+    "samples": [
+      38.6,
+      54.5,
+      50.5,
+      55.8,
+      51.1,
+      117.8,
+      58.2,
+      55.9,
+      50.3,
+      52.5,
+      54.3,
+      30.7,
+      63.4,
+      47.1,
+      55.2
+    ]
+  }
+}

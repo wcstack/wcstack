@@ -9,13 +9,14 @@ import { resolve } from "node:path";
 import { scenarios } from "../conformance/scenarios";
 import { runScenario } from "../conformance/run";
 import { expectGolden } from "../conformance/compare";
-import { bootstrapState, getBindingsReady, installFormats } from "../src/index";
+import { bootstrapState, getBindingsReady, installFeatures, installFormats, listKeys, temporal } from "../src/index";
 
 const golden = JSON.parse(readFileSync(resolve(__dirname, "golden/current-3.3.0.json"), "utf8"));
 
 beforeAll(() => {
   // the golden comes from the current engine's full bundle: compare with core + formats
   installFormats();
+  installFeatures([temporal, listKeys]);
   bootstrapState();
 });
 

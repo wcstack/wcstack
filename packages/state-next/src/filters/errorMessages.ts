@@ -6,9 +6,8 @@
  * console text (and the tests pinning it) should not change with the engine underneath.
  */
 
-export function raiseError(message: string): never {
-  throw new Error(`[@wcstack/state] ${message}`);
-}
+import { raiseError } from "../parser/raiseError";
+export { raiseError };
 
 /** The filter requires an option but none was given (the factory-side guard; arity usually fires first). */
 export function optionsRequired(fnName: string): never {

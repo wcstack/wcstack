@@ -4,6 +4,20 @@ import type { Strategy } from "./strategy/types";
 import type { Binding } from "./dom/view";
 import { commandNamespace, eventTokens, type Token } from "./token";
 import { runTransition } from "./protocol/transitionRunner";
+import { raiseError } from "./parser/raiseError";
+import { hooks, requireFeature } from "./hooks";
+
+/** Declarations an add-on serves: without it installed they fail instead of doing nothing. */
+const DECLARATIONS: [string, string][] = [["$watch", "temporal"], ["$stream", "temporal"], ["$listKeys", "list-keys"], ["$recursion", "recursion"]];
+
+function checkDeclarations(target: Record<string, any>): void {
+  for (const [key, feature] of DECLARATIONS) if (target[key] !== undefined) requireFeature(feature, key);
+  if (target.$scan !== undefined) raiseError("$scan was removed (use $watch or $on)");
+}
+
+/** `$1` … `$128`, no leading zero. */
+const INDEX_PARAM = /^\$[1-9]\d{0,2}$/;
+const MAX_INDEX_PARAM = 128;
 
 interface Frame {
   getter: Pattern;
@@ -104,6 +118,7 @@ export class Engine implements ReconcileHooks {
   private readonly resolveFn = (...args: unknown[]) => this.resolveApi(args);
   private readonly postUpdateFn = (path: string) => {
     this.resolve(path, this.ctx);
+    if (hooks.written !== null) hooks.written(this, this.rp!, this.rr, undefined, undefined, false);
     this.changed(this.rp!, this.rr);
   };
 
@@ -111,6 +126,8 @@ export class Engine implements ReconcileHooks {
     this.target = target;
     this.strategy = strategy;
     this.patterns = new PatternTable((p) => this.onPatternCreated(p));
+    checkDeclarations(target);
+    if (hooks.declare !== null) hooks.declare(this, target);
     this.registerAccessors(target);
     this.commands = commandNamespace(target);
     this.events = eventTokens(target, this.deliverFn);
@@ -167,6 +184,7 @@ export class Engine implements ReconcileHooks {
   }
 
   private onPatternCreated(p: Pattern): void {
+    if (p.last === "**") raiseError(`[wcs/recursion-unsupported] "${p.path}" uses "**", which is not accepted here.`);
     const parent = p.parent;
     p.underGetter = parent !== null && p.last !== WILDCARD && parent.depth === p.depth &&
       (parent.getter !== null || parent.underGetter);
@@ -201,6 +219,7 @@ export class Engine implements ReconcileHooks {
     if (value === l.arr) return;
     const old = reconcile(l, value, this);
     if (old === null) return;
+    if (hooks.listSynced !== null) hooks.listSynced(this, l, old);
     if ((l.view !== null || l.extra !== null) && !l.queued) {
       l.queued = true;
       this.dirtyLists.push(l);
@@ -291,6 +310,9 @@ export class Engine implements ReconcileHooks {
       const parent = this.read(p.parent!, row) as any;
       return parent == null ? undefined : parent[p.last];
     }
+    if (p.parent === null && !(p.last in this.target)) {
+      raiseError(`[wcs/binding-path-missing] Path "${p.path}" does not exist on the state tree.`, p.last, Object.keys(this.target));
+    }
     return this.readData(p, row);
   }
 
@@ -318,9 +340,9 @@ export class Engine implements ReconcileHooks {
     // frames are reused by depth: an evaluation allocates nothing of its own
     for (let i = 0; i < this.depthNow; i++) {
       const f = this.frames[i];
-      if (f.getter === g && f.row === row) throw new Error(`[wcs/getter-cycle] "${g.path}" depends on itself`);
+      if (f.getter === g && f.row === row) raiseError(`[wcs/getter-cycle] "${g.path}" depends on itself`);
     }
-    if (this.depthNow >= MAX_GETTER_DEPTH) throw new Error(`[wcs/getter-depth-exceeded] "${g.path}"`);
+    if (this.depthNow >= MAX_GETTER_DEPTH) raiseError(`[wcs/getter-depth-exceeded] "${g.path}"`);
     const depth = this.depthNow++;
     this.readonlyDepth++;
     let frame = this.frames[depth];
@@ -357,9 +379,13 @@ export class Engine implements ReconcileHooks {
   }
 
   private dollar(key: string): unknown {
-    if (key.length === 2) {
-      const n = key.charCodeAt(1) - 48;
-      if (n >= 1 && n <= 9) {
+    const c = key.charCodeAt(1);
+    if (c >= 48 && c <= 57) {
+      const n = key.length === 2 ? c - 48 : INDEX_PARAM.test(key) ? Number(key.slice(1)) : 0;
+      if (n < 1 || n > MAX_INDEX_PARAM) {
+        raiseError(`[wcs/index-param-range] "${key}": list index parameters run from $1 to $${MAX_INDEX_PARAM}.`);
+      }
+      {
         const f = this.top;
         if (f !== null && f.untracked === 0) {
           const g = f.getter;
@@ -399,7 +425,7 @@ export class Engine implements ReconcileHooks {
       case "$command":
         return this.commands;
     }
-    return undefined;
+    return hooks.dollar === null ? undefined : hooks.dollar(this, key);
   }
 
 /**
@@ -488,6 +514,7 @@ export class Engine implements ReconcileHooks {
   /** `occurrence`: an event-semantics write, applied even when equal to the current value. */
   write(p: Pattern, row: StateRow | null, value: unknown, occurrence = false): void {
     if (this.readonlyDepth > 0) throw new Error("This state is readonly.");
+    if (hooks.beforeWrite !== null && hooks.beforeWrite(this, p, row, value)) return;
     if (p.setter !== null) {
       const prev = this.ctx;
       this.ctx = row;
@@ -496,11 +523,12 @@ export class Engine implements ReconcileHooks {
       } finally {
         this.ctx = prev;
       }
+      if (hooks.written !== null) hooks.written(this, p, row, undefined, undefined, false);
       this.changed(p, row);
       return;
     }
-    if (p.getter !== null) throw new Error(`[state-next] "${p.path}" is a getter without a setter`);
-    if (p.depth > 0 && row === null) throw new Error(`[state-next] no row for "${p.path}"`);
+    if (p.getter !== null) raiseError(`"${p.path}" is a getter without a setter`);
+    if (p.depth > 0 && row === null) raiseError(`no row for "${p.path}"`);
     const old = this.readData(p, row);
     if (!occurrence && Object.is(old, value) && (value === null || (typeof value !== "object" && typeof value !== "function"))) return;
     if (p.last === WILDCARD) {
@@ -514,12 +542,13 @@ export class Engine implements ReconcileHooks {
       const parent = (p.tail.length === 1
         ? (p.depth === 0 ? this.target : row!.item)
         : this.readUntracked(p.parent!, row)) as any;
-      if (parent == null) throw new Error(`[state-next] cannot write "${p.path}": its parent is ${parent}`);
+      if (parent == null) raiseError(`cannot write "${p.path}": its parent is ${parent}`);
       parent[p.last] = value;
       this.syncListsUnder(p, row);
     }
     if (p.eqIndexWatchers !== null) this.rekeyEqIndex(p, old, value);
     if (p.depth === 0) this.rekeyEqUnder(p, old, value);
+    if (hooks.written !== null) hooks.written(this, p, row, old, value, true);
     this.changed(p, row);
   }
 
@@ -586,6 +615,8 @@ export class Engine implements ReconcileHooks {
    * keys); rows are kept where their list's array is the same instance.
    */
   reset(target: Record<string, any>): void {
+    checkDeclarations(target);
+    if (hooks.declare !== null) hooks.declare(this, target);
     this.target = target;
     this.slotCount = 0;
     for (const p of this.patterns.all()) p.forget();
@@ -603,6 +634,7 @@ export class Engine implements ReconcileHooks {
       this.rendered = rendered;
       this.watchRendered();
     }
+    if (hooks.element !== null) hooks.element(this, "reset");
   }
 
   private resetList(l: StateList): void {
@@ -628,14 +660,14 @@ export class Engine implements ReconcileHooks {
   /** An element event wired with `eventToken.<prop>: <name>` — the token is resolved at fire time. */
   fireEventToken(name: string, event: Event, row: StateRow | null): void {
     const token = this.events.get(name);
-    if (token === undefined) throw new Error(`[wcs/event-token] "${name}" is not declared in $eventTokens.`);
+    if (token === undefined) raiseError(`[wcs/token-undeclared] eventToken "${name}" is not declared in $eventTokens.`, name, this.events.keys());
     token.emit(event, ...this.indexesOf(row));
   }
 
   /** `onclick: $command.<name>` — emits the token with (event, ...listIndexes). */
   emitCommand(name: string, event: Event, row: StateRow | null): void {
     const token = this.commands[name];
-    if (token === undefined) throw new Error(`[wcs/command-token] "$command.${name}" is not declared in $commandTokens.`);
+    if (token === undefined) raiseError(`[wcs/token-undeclared] "$command.${name}" is not declared in $commandTokens.`, name, Object.keys(this.commands));
     token.emit(event, ...this.indexesOf(row));
   }
 
@@ -643,7 +675,7 @@ export class Engine implements ReconcileHooks {
 
   invoke(name: string, event: Event, row: StateRow | null): unknown {
     const fn = this.target[name];
-    if (typeof fn !== "function") throw new Error(`[state-next] "${name}" is not a method`);
+    if (typeof fn !== "function") raiseError(`"${name}" is not a method`);
     const args: unknown[] = [event];
     const indexes: number[] = [];
     for (let r = row; r !== null; r = r.list.parentRow) indexes.push(r.index);
@@ -697,6 +729,7 @@ export class Engine implements ReconcileHooks {
 
   visitGetter(g: Pattern, row: StateRow | null, visit: Visit): void {
     if (!visit(g, row)) return;
+    if (hooks.getterReached !== null) hooks.getterReached(this, g, row);
     this.enqueueBound(g, row);
     this.walkDependents(g, row, visit);
   }
@@ -801,7 +834,7 @@ export class Engine implements ReconcileHooks {
     try {
       for (let pass = 0; this.queue.length > 0 || this.dirtyLists.length > 0; pass++) {
         if (pass >= MAX_DRAIN_PASSES) {
-          console.error(`[state-next] updates did not settle after ${MAX_DRAIN_PASSES} passes; the rest is dropped`);
+          console.error(`[@wcstack/state] updates did not settle after ${MAX_DRAIN_PASSES} passes; the rest is dropped`);
           for (const b of this.queue) b.queued = false;
           for (const l of this.dirtyLists) l.queued = false;
           this.queue = [];
@@ -822,6 +855,7 @@ export class Engine implements ReconcileHooks {
       this.draining = false;
     }
     this.report();
+    if (hooks.drained !== null) hooks.drained(this);
   }
 
   /** The DOM work of one drain pass: list views first (they build rows), then bindings. */
@@ -963,13 +997,14 @@ export class Engine implements ReconcileHooks {
       out.push(r.index);
     }
     if (out.length === 0) {
-      throw new Error(`$getAll("${path}") shares no wildcard level with the current loop context; pass indexes explicitly ([] for every match)`);
+      raiseError(`$getAll("${path}"): no loop level in common with the context; pass indexes ([] for all)`);
     }
     return out;
   }
 
   private getAll(path: string, indexes?: number[]): unknown[] {
     const p = this.pattern(path);
+    if (indexes !== undefined) this.checkArity("$getAll", path, p, indexes, false);
     const idx = indexes ?? this.contextIndexes(p, path);
     const out: unknown[] = [];
     this.forMatches(p, idx, (row) => out.push(this.read(p, row)));
@@ -980,6 +1015,7 @@ export class Engine implements ReconcileHooks {
     if (!Array.isArray(indexes)) throw new Error(`$setAll("${path}") needs indexes ([] for every match)`);
     if (this.readonlyDepth > 0) throw new Error("This state is readonly.");
     const p = this.pattern(path);
+    this.checkArity("$setAll", path, p, indexes, false);
     const targets: { row: StateRow | null; idx: number[] }[] = [];
     this.forMatches(p, indexes, (row, idx) => targets.push({ row, idx: idx.slice() }));
     const spread = options?.spread === true;
@@ -999,11 +1035,20 @@ export class Engine implements ReconcileHooks {
     return written;
   }
 
+  /** `$resolve` takes exactly one index per `*`; `$getAll` / `$setAll` at most one (fewer expands the rest). */
+  private checkArity(api: string, path: string, p: Pattern, indexes: readonly number[], exact: boolean): void {
+    const n = indexes.length;
+    if (n > p.depth || (exact && n < p.depth)) {
+      raiseError(`[wcs/index-arity] ${api}("${path}") takes ${exact ? "" : "at most "}${p.depth} index(es), got ${n}.`);
+    }
+  }
+
   /** $resolve(path, indexes) reads; $resolve(path, indexes, value) writes (the argument count decides). */
   private resolveApi(args: unknown[]): unknown {
     const path = args[0] as string;
     const indexes = (args[1] ?? []) as number[];
     const p = this.pattern(path);
+    this.checkArity("$resolve", path, p, indexes, true);
     let row: StateRow | null = null;
     for (let k = 1; k <= p.depth; k++) {
       const list: StateList = k === 1 ? this.rootList(p.lists[1]!) : this.childList(row!, p.lists[k]!);

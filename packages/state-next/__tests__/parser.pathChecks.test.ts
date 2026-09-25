@@ -10,6 +10,11 @@ import { MAX_PATH_SEGMENTS } from "../src/parser/define";
 import { parseBindTextsForElement } from "../src/parser/parseBindTextsForElement";
 import { parseBindTextForEmbeddedNode } from "../src/parser/parseBindTextForEmbeddedNode";
 import { parseStatePart } from "../src/parser/parseStatePart";
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+installFeatures([diagnostics]);
 
 describe("parseStatePart — `**` の拒否（旧 getPathInfo の不変条件）", () => {
   it("data-wcs の右辺に `**` を書くと [wcs/recursion-unsupported] で落ちること", () => {

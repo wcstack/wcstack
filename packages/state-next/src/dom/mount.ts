@@ -1,7 +1,8 @@
 import type { Engine } from "../engine";
 import { config } from "../config";
+import { raiseError } from "../parser/raiseError";
 import { bindAttr, compilePlan, directive, elementSpecs, readChain, splitMustache, textSpec } from "./plan";
-import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, type Spec } from "./view";
+import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
 import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
 
 /** The engine mounted on each root (document, shadow root): the binder's lookup. */
@@ -44,7 +45,7 @@ function walk(engine: Engine, children: ChildNode[]): void {
           const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);
           const anchor = document.createComment("wcs-for");
           el.replaceWith(anchor);
-          new ForView(engine, plan, engine.rootList(p), anchor).update();
+          new ForView(engine, plan, listFor(engine, p, null, anchor), anchor).update();
         } else if (d.bindingType === "if") {
           const { parts, end } = readChain(engine, children, i, null);
           const branches = parts.map((part) => {
@@ -56,7 +57,7 @@ function walk(engine: Engine, children: ChildNode[]): void {
           attachChain(engine, branches, null, null);
           i = end;
         } else {
-          throw new Error(`[state-next] "${d.bindingType}:" must follow an "if:" template`);
+          raiseError(`[wcs/template-syntax] "${d.bindingType}:" must follow an "if:" template`);
         }
         continue;
       }
@@ -90,7 +91,7 @@ function attach(engine: Engine, spec: Spec, node: Node): void {
       return;
   }
   const p = spec.pattern!;
-  if (p.depth !== 0) throw new Error(`[state-next] "${p.path}" needs a row, outside any for template`);
+  if (p.depth !== 0) raiseError(`[wcs/wildcard-rank] "${p.path}" needs ${p.depth} enclosing loop level(s); the scope provides 0.`);
   if (spec.custom && spec.kind === K_PROP) {
     whenDefined(el, null, (bd) => attachCustomOrPlain(engine, spec, el, null, null, bd));
     return;

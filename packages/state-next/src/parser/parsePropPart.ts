@@ -1,4 +1,4 @@
-import { DELIMITER, FILTER_SEPARATOR, LINT_HINT, MODIFIER_SEPARATOR } from "./define";
+import { DELIMITER, FILTER_SEPARATOR, MODIFIER_SEPARATOR } from "./define";
 import { parseFilters } from "./parseFilters";
 import { raiseError } from "./raiseError";
 import { ParsedBinding, ParsedFilter } from "./types";
@@ -53,7 +53,7 @@ export function parsePropPart(propPart: string): PropPartParseResult {
   const modifierParts = propText.split(MODIFIER_SEPARATOR).map(trimFn);
   if (modifierParts.length > 2) {
     // 修飾子の並びは 1 つだけ（要件 B2）。`value#ro#wo` は以前 `ro` だけを残して黙って捨てていた
-    raiseError(`[wcs/binding-syntax] "${propText}": a binding takes one modifier list after a single "${MODIFIER_SEPARATOR}" — write "${modifierParts[0]}${MODIFIER_SEPARATOR}${modifierParts.slice(1).join(",")}".${LINT_HINT}`);
+    raiseError(`[wcs/binding-syntax] "${propText}": one modifier list — write "${modifierParts[0]}${MODIFIER_SEPARATOR}${modifierParts.slice(1).join(",")}".`);
   }
   const [propName, propModifiersText] = modifierParts;
   const propSegments = propName.split(DELIMITER).map(trimFn);
@@ -63,10 +63,7 @@ export function parsePropPart(propPart: string): PropPartParseResult {
   // 素の TypeError になる。どちらも解析の段で名指しで落とす（`.: x` 等は D34 の検査が受け持つ）
   const isExplicitProperty = propSegments.length > 1 && propSegments[0] === '';
   if (!isExplicitProperty && (propName.length === 0 || propSegments.some((segment) => segment.length === 0))) {
-    raiseError(
-      `[wcs/binding-syntax] "${propPart}": the left side of a binding must name a property — ` +
-      `write "<property>: <path>" (modifiers and input filters come after the name).${LINT_HINT}`,
-    );
+    raiseError(`[wcs/binding-syntax] "${propPart}": the left side of a binding must name a property.`);
   }
   const propModifiers = propModifiersText
     ? propModifiersText.split(',').map(trimFn)

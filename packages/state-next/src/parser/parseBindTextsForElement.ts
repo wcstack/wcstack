@@ -8,7 +8,6 @@ import {
   EVENT_PROP_PREFIX,
   EVENT_TOKEN_NAMESPACE,
   FILTER_SEPARATOR,
-  LINT_HINT,
   MODIFIER_SEPARATOR,
   PROP_VALUE_SEPARATOR,
   SPREAD_PROP,
@@ -67,7 +66,7 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
     // 引数の中の `:` を区切りとして拾っていた
     const separatorIndex = indexOfOutsideQuotes(bindText, PROP_VALUE_SEPARATOR);
     if (separatorIndex === -1) {
-      raiseError(`[wcs/binding-syntax] Invalid bindText: "${bindText}". Missing ':' separator between propPart and statePart.${LINT_HINT}`);
+      raiseError(`[wcs/binding-syntax] Invalid bindText: "${bindText}". Missing ':' separator.`);
     }
     const propPart = bindText.slice(0, separatorIndex).trim();
     const statePart = bindText.slice(separatorIndex + 1).trim();
@@ -79,12 +78,12 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
     // `indexOfOutsideQuotes` に替えること**（`parsePropPart.ts` の同じ注記と対）。
     const keyword = propPart.split(MODIFIER_SEPARATOR)[0].split(FILTER_SEPARATOR)[0].trim();
     if (keyword !== propPart && KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
-      raiseError(`[wcs/binding-syntax] "${bindText}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".${LINT_HINT}`);
+      raiseError(`[wcs/binding-syntax] "${bindText}": "${keyword}" takes no modifiers or filters on its left side.`);
     }
     if (propPart === ELSE_KEYWORD) {
       if (statePart.length > 0) {
         // else は値を取らない（要件 B2）。以前は右辺を黙って捨てていた
-        raiseError(`[wcs/binding-syntax] "${bindText}": "else" takes no value — write "else:".${LINT_HINT}`);
+        raiseError(`[wcs/binding-syntax] "${bindText}": "else" takes no value.`);
       }
       return {
         propName: ELSE_KEYWORD,
@@ -100,11 +99,11 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
       // （「the right side of a binding must name a state path」）より、ここでは
       // 「spread target path is required」のほうが直し方を指している
       if (statePart.length === 0) {
-        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": spread target path is required.${LINT_HINT}`);
+        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": spread target path is required.`);
       }
       const stateResult = parseStatePart(statePart);
       if (stateResult.outFilters.length > 0) {
-        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": filters are not allowed on spread targets.${LINT_HINT}`);
+        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
       }
       return {
         propName: SPREAD_PROP,
@@ -145,10 +144,7 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
       if (propResult.propSegments[0] === '' && propResult.propSegments.length > 1) {
         const propSegments = propResult.propSegments.slice(1);
         if (propSegments.includes('') || EXPLICIT_PROPERTY_REJECTED_HEADS.has(propSegments[0])) {
-          raiseError(
-            `[wcs/binding-syntax] "${propPart}": a leading "." binds an element property by name — ` +
-            `write a non-empty property that is not a namespace (${[...EXPLICIT_PROPERTY_REJECTED_HEADS].join(", ")}).${LINT_HINT}`,
-          );
+          raiseError(`[wcs/binding-syntax] "${propPart}": a leading "." needs a property that is not a namespace.`);
         }
         return {
           ...propResult,
@@ -188,7 +184,7 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
     if (isIncludeSingleBinding) {
       // lint 側の単独バインディング検査（bindingValidator の structuralMustBeSingle）が
       // 同じケースを検出するため誘導を付ける（三面同語彙）。
-      raiseError(`[wcs/template-syntax] Invalid bindText: "${bindText}". 'if', 'elseif', 'else', and 'for' bindings must be single binding. Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).${LINT_HINT}`);
+      raiseError(`[wcs/template-syntax] "${bindText}": if / elseif / else / for must be single binding.`);
     }
   }
   return results;

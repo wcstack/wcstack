@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { parseBindTextsForElement } from '../src/parser/parseBindTextsForElement';
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+installFeatures([diagnostics]);
 
 describe('parseBindTextsForElement', () => {
   it('propバインディングをパースできること', () => {

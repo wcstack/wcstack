@@ -10,6 +10,7 @@
  * over every declared property and input.
  */
 import type { Engine } from "../engine";
+import { raiseError } from "../parser/raiseError";
 import type { StateRow } from "../list";
 import { adopt, Binding, K_CUSTOM, type Block, type Spec } from "./view";
 // (view.ts imports this module too: the cycle is fine, everything here is used at call time)
@@ -133,9 +134,9 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
 export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Block | null, bd: Bindable | null): void {
   const method = spec.name;
   const token = engine.commands[spec.token!];
-  if (token === undefined) throw new Error(`[wcs/command-token] command.${method} requires a CommandToken value ("$command.${spec.token}" is not declared in $commandTokens)`);
-  if (bd === null) throw new Error(`[wcs/command-token] <${el.localName}> is not a wc-bindable element; command.${method} needs static wcBindable`);
-  if (!bd.commands.has(method)) throw new Error(`Command "${method}" is not declared in wcBindable.commands`);
+  if (token === undefined) raiseError(`[wcs/token-undeclared] "$command.${spec.token}" is not declared in $commandTokens.`, spec.token!, Object.keys(engine.commands));
+  if (bd === null) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no static wcBindable (command.${method}).`);
+  if (!bd.commands.has(method)) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no command "${method}".`);
   const ref = new WeakRef(el);
   const fn = (...args: unknown[]): unknown => {
     const target = ref.deref() as any;
@@ -152,9 +153,9 @@ export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Bl
 /** `eventToken.<property>: <token>` — the property's event fires the event token. */
 export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: StateRow | null, bd: Bindable | null): void {
   const prop = spec.name;
-  if (bd === null) throw new Error(`[wcs/event-token] <${el.localName}> is not a wc-bindable element; eventToken.${prop} needs static wcBindable`);
+  if (bd === null) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no static wcBindable (eventToken.${prop}).`);
   const decl = bd.properties.get(prop);
-  if (decl === undefined) throw new Error(`[wcs/event-token] eventToken.${prop}: "${prop}" is not declared in wcBindable.properties of <${el.localName}>`);
+  if (decl === undefined) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no property "${prop}".`);
   const name = spec.token!;
   el.addEventListener(decl.event, (e) => {
     if (spec.prevent) e.preventDefault();
@@ -169,7 +170,7 @@ export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: S
 
 /** `...: path` — one property binding per declared property and input (explicit bindings win). */
 export function attachSpread(engine: Engine, spec: Spec, el: Element, row: StateRow | null, owner: Block | null, bd: Bindable | null): void {
-  if (bd === null) throw new Error(`[wcs/spread-no-bindable] "...: ${spec.pattern!.path}" needs a wc-bindable element; <${el.localName}> declares no static wcBindable`);
+  if (bd === null) raiseError(`[wcs/spread-no-bindable] <${el.localName}> declares no static wcBindable ("...: ${spec.pattern!.path}").`);
   const names = new Set([...bd.properties.keys(), ...bd.inputs.keys()]);
   for (const name of names) {
     if (spec.exclude?.includes(name)) continue;

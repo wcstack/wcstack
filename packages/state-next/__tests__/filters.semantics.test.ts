@@ -11,6 +11,11 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { installCoreFilters, coreFilters } from "../src/filters/core";
 import { installFormats, formatFilters } from "../src/filters/formats";
 import { resolveFilter } from "../src/filters/registry";
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+installFeatures([diagnostics]);
 
 beforeAll(() => {
   installCoreFilters();

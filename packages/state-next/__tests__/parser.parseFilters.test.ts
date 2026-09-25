@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { parseFilters } from '../src/parser/parseFilters';
 import { parseBindTextsForElement } from '../src/parser/parseBindTextsForElement';
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+installFeatures([diagnostics]);
 
 // Ported from packages/state/__tests__/bindTextParser.parseFilters.test.ts.
 // Dropped (filter-function resolution is not the parser's job in the new engine):

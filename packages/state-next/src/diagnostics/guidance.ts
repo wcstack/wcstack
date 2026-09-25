@@ -1,10 +1,7 @@
 /**
- * filters/errorGuidance.ts — self-fix guidance embedded in error messages, ported verbatim from
- * `@wcstack/state` (`errorGuidance.ts`).
- *
- * Only the filter registry uses it today, which is why it lives here; nothing in it is specific to
- * filters, so it can move to a shared place once another diagnostic needs it. Everything here runs
- * on the error path only — the normal path pays nothing.
+ * diagnostics/guidance.ts — self-fix guidance for error messages, ported verbatim from
+ * `@wcstack/state` (`errorGuidance.ts`). Only the diagnostics add-on uses it: the core's
+ * messages state the fact, and the add-on appends this.
  *
  * The did-you-mean criteria (edit distance 2, ties go to the first candidate, case folded) are the
  * same as lint's suggestion, so the console, lint and the IDE never propose different names.

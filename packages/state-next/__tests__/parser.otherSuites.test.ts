@@ -5,9 +5,14 @@
  * that function passed on; the parts that need that function or filter resolution are dropped.
  */
 import { describe, it, expect } from "vitest";
-import { LINT_HINT } from "../src/parser/define";
+import { LINT_HINT } from "../src/diagnostics/guidance";
 import { parseBindTextsForElement } from "../src/parser/parseBindTextsForElement";
 import { parseFilters } from "../src/parser/parseFilters";
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+installFeatures([diagnostics]);
 
 describe("errorGuidance.test.ts — 構造型の単独バインディング違反", () => {
   it("構造型の単独バインディング違反: [wcs/template-syntax] + 正しい形 + lint 誘導", () => {
