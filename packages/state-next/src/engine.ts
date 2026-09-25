@@ -5,6 +5,7 @@ import type { Binding } from "./dom/view";
 import { commandNamespace, eventTokens, type Token } from "./token";
 import { runTransition } from "./protocol/transitionRunner";
 import { raiseError } from "./parser/raiseError";
+import { recursionUnsupported } from "./parser/parseStatePart";
 import { hooks, requireFeature } from "./hooks";
 
 /** Declarations an add-on serves: without it installed they fail instead of doing nothing. */
@@ -186,7 +187,7 @@ export class Engine implements ReconcileHooks {
   }
 
   private onPatternCreated(p: Pattern): void {
-    if (p.last === "**") raiseError(`[wcs/recursion-unsupported] "${p.path}" uses "**", which is not accepted here.`);
+    if (p.last === "**") recursionUnsupported(p.path);
     const parent = p.parent;
     p.underGetter = parent !== null && p.last !== WILDCARD && parent.depth === p.depth &&
       (parent.getter !== null || parent.underGetter);
@@ -666,11 +667,16 @@ export class Engine implements ReconcileHooks {
     token.emit(event, ...this.indexesOf(row));
   }
 
-  /** `onclick: $command.<name>` — emits the token with (event, ...listIndexes). */
-  emitCommand(name: string, event: Event, row: StateRow | null): void {
+  /** The `$command.<name>` token (declared in `$commandTokens`). */
+  command(name: string): Token {
     const token = this.commands[name];
     if (token === undefined) raiseError(`[wcs/token-undeclared] "$command.${name}" is not declared in $commandTokens.`, name, Object.keys(this.commands));
-    token.emit(event, ...this.indexesOf(row));
+    return token;
+  }
+
+  /** `onclick: $command.<name>` — emits the token with (event, ...listIndexes). */
+  emitCommand(name: string, event: Event, row: StateRow | null): void {
+    this.command(name).emit(event, ...this.indexesOf(row));
   }
 
   // ---------------------------------------------------------------- methods
@@ -1000,7 +1006,10 @@ export class Engine implements ReconcileHooks {
     }
     const idx: number[] = [];
     const walk = (k: number, parent: StateRow | null): void => {
-      const list = k === 1 ? this.rootList(p.lists[1]!) : this.childList(parent!, p.lists[k]!);
+      const lp = p.lists[k]!;
+      // the list itself is read too: a getter over $getAll sees the first row of an empty list
+      this.read(lp, parent);
+      const list = k === 1 ? this.rootList(lp) : this.childList(parent!, lp);
       const visit = (r: StateRow): void => {
         idx.push(r.index);
         if (k === p.depth) fn(r, idx);

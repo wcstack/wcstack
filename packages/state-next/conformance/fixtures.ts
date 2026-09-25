@@ -155,11 +155,21 @@ class ConfSolo extends HTMLElement {
   }
 }
 
+/** A self-referential component: each node mounts itself on its children (a tree of any depth). */
+class ConfTree extends HTMLElement {
+  state: Record<string, any> = {};
+  connectedCallback(): void {
+    if (this.shadowRoot !== null) return;
+    this.attachShadow({ mode: "open" }).innerHTML = `<wcs-state bind-component="state"></wcs-state>`
+      + `<span>{{ value }}/{{ total }}</span><ul><template data-wcs="for: children"><li><conf-tree data-wcs="state: ."></conf-tree></li></template></ul>`;
+  }
+}
+
 export function defineFixtures(): void {
   const defs: [string, CustomElementConstructor][] = [
     ["conf-counter", ConfCounter], ["conf-output", ConfOutput], ["conf-label", ConfLabel],
     ["conf-notifier", ConfNotifier], ["conf-fetch", ConfFetch],
-    ["conf-card", ConfCard], ["conf-list", ConfList], ["conf-light", ConfLight], ["conf-solo", ConfSolo],
+    ["conf-card", ConfCard], ["conf-list", ConfList], ["conf-light", ConfLight], ["conf-solo", ConfSolo], ["conf-tree", ConfTree],
   ];
   for (const [tag, cls] of defs) if (customElements.get(tag) === undefined) customElements.define(tag, cls);
 }

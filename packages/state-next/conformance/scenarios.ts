@@ -38,6 +38,100 @@ const items = (n: number) => Array.from({ length: n }, (_, i) => ({ id: i + 1, n
 
 export const scenarios: Scenario[] = [
   {
+    name: "空のリストだけをたどる $getAll の getter も、最初の行に追従する",
+    html: `<wcs-state></wcs-state><p>{{ sum }}</p><p>{{ count }}</p>`,
+    state: () => ({
+      groups: [{ items: [] }, { items: [] }],
+      get sum() { return (this as any).$getAll("groups.*.items.*.v", []).reduce((a: number, b: number) => a + b, 0); },
+      get count() { return (this as any).$getAll("groups.*.items.*.v", [1]).length; },
+    }),
+    steps: [
+      { label: "2 つ目の組に行を足す", run: (a) => a.write((s) => { s["groups.1.items"] = [{ v: 3 }, { v: 4 }]; }) },
+      { label: "1 つ目の組に行を足す", run: (a) => a.write((s) => { s["groups.0.items"] = [{ v: 10 }]; }) },
+    ],
+  },
+  {
+    name: "再帰パス: ** の getter の族・全深さの $getAll・深い書き込み・枝の追加・一斉書き込み",
+    html: `<wcs-state></wcs-state><p class="t">{{ treeTotal }}</p><p class="v">{{ values }}</p><p class="r">{{ roots }}</p><p class="s">{{ selectedCount }}</p><ul><template data-wcs="for: nodes"><li>{{ .value }}:{{ .total }}</li></template></ul>`,
+    state: () => ({
+      nodes: [
+        { value: 1, children: [{ value: 10, children: [{ value: 100, children: [] }] }, { value: 20, children: [] }] },
+        { value: 2, children: [] },
+      ],
+      $recursion: { "nodes.*": "children.*" },
+      get "nodes.**.total"() {
+        const self = this as any;
+        return self["nodes.**.value"] + self.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
+      },
+      get "nodes.**.root"() { return (this as any).$1; },
+      get treeTotal() { return (this as any).$getAll("nodes.*.total", []).reduce((a: number, b: number) => a + b, 0); },
+      get values() { return (this as any).$getAll("nodes.**.value", []).join(","); },
+      get roots() { return (this as any).$getAll("nodes.**.root", []).join(","); },
+      get selectedCount() { return (this as any).$getAll("nodes.**.selected", []).filter(Boolean).length; },
+    }),
+    steps: [
+      { label: "深い葉を書く", run: (a) => a.write((s) => { s["nodes.0.children.0.children.0.value"] = 1000; }) },
+      { label: "空の枝に子を足す", run: (a) => a.write((s) => { s["nodes.1.children"] = [{ value: 5, children: [] }]; }) },
+      { label: "全ノードに一斉に書く", run: (a) => a.write((s) => { s.$setAll("nodes.**.selected", [], true); }) },
+      { label: "根を並べ替える", run: (a) => a.write((s) => { s.nodes = s.nodes.toReversed(); }) },
+    ],
+  },
+  {
+    name: "再帰パス: 誤り（読み取り専用の展開・文脈の無い **・一斉書き込みの形・構造への書き込み）",
+    html: `<wcs-state></wcs-state><p>{{ log }}</p>`,
+    state: () => ({
+      log: "",
+      nodes: [{ value: 1, children: [{ value: 2, children: [] }] }],
+      $recursion: { "nodes.*": "children.*" },
+      get "nodes.**.total"() { return (this as any)["nodes.**.value"]; },
+    }),
+    steps: [
+      {
+        label: "それぞれ試す",
+        run: (a) => a.write((s) => {
+          const codes: string[] = [];
+          const attempt = (fn: () => void) => {
+            try { fn(); codes.push("ok"); } catch (e) { codes.push(/\[wcs\/[\w-]+\]/.exec(String((e as Error).message))?.[0] ?? "error"); }
+          };
+          attempt(() => { s["nodes.0.total"] = 9; });
+          attempt(() => s["nodes.**.value"]);
+          attempt(() => s.$setAll("nodes.**.value", [0], 1));
+          attempt(() => s.$setAll("nodes.**.children", [], []));
+          attempt(() => s.$setAll("nodes.**.total", [], 1));
+          attempt(() => s.$getAll("nodes.**.value", [0]));
+          attempt(() => s.$getAll("nodes.**.value", []));
+          s.log = codes.join(" ");
+        }),
+      },
+    ],
+    differs: {
+      reason: "3.3.0 は for で描いていないリスト（nodes）の行のパスへの書き込みを \"ListIndex not found: nodes\" で投げ、展開の読み取り専用の検査に届かない（#319 と同系統）。新エンジンは契約どおり [wcs/recursion-readonly] で拒む",
+      dom: {
+        "それぞれ試す": "<p>[wcs/recursion-readonly] [wcs/recursion-context] [wcs/recursion-setall-form] [wcs/recursion-structural-write] [wcs/recursion-readonly] [wcs/recursion-getall-form] ok|</p>",
+      },
+    },
+  },
+  {
+    name: "再帰パス: 自己参照するコンポーネントで木を描く",
+    html: `<wcs-state></wcs-state><p>{{ treeTotal }}</p><template data-wcs="for: nodes"><conf-tree data-wcs="state: ."></conf-tree></template>`,
+    state: () => ({
+      nodes: [
+        { value: 1, children: [{ value: 10, children: [{ value: 100, children: [] }] }, { value: 20, children: [] }] },
+        { value: 2, children: [] },
+      ],
+      $recursion: { "nodes.*": "children.*" },
+      get "nodes.**.total"() {
+        const self = this as any;
+        return self["nodes.**.value"] + self.$getAll("nodes.**.children.*.total").reduce((a: number, b: number) => a + b, 0);
+      },
+      get treeTotal() { return (this as any).$getAll("nodes.*.total", []).reduce((a: number, b: number) => a + b, 0); },
+    }),
+    steps: [
+      { label: "深い葉を書く", run: (a) => a.write((s) => { s["nodes.0.children.0.children.0.value"] = 1000; }) },
+      { label: "葉に子を足す", run: (a) => a.write((s) => { s["nodes.0.children.1.children"] = [{ value: 7, children: [] }]; }) },
+    ],
+  },
+  {
     name: "コンポーネントの mount: 丸ごと、getter、私有キー、双方向、element.state",
     html: `<wcs-state></wcs-state><p>{{ user.name }}</p><conf-card data-wcs="state: user"></conf-card>`,
     state: () => ({ user: { name: "Alice", mode: "tree" } }),
@@ -49,7 +143,7 @@ export const scenarios: Scenario[] = [
       { label: "element.state に書く", run: (a) => { a.call("conf-card", "setName", "Zed"); } },
     ],
     differs: {
-      reason: "3.3.0 の不具合: コンポーネントのメソッドが私有キーを書いても、その回には描き直さない（次の変更のときに反映される）。新エンジンは書いた回に描く",
+      reason: "3.3.0 の不具合（#321）: コンポーネントのメソッドが私有キーを書いても、その回には描き直さない（次の変更のときに反映される）。新エンジンは書いた回に描く",
       dom: {
         "中のメソッドが私有キーを書く": "<p>Eve|</p><conf-card><#shadow><span class=\"name\">Eve|</span><span class=\"display\">Eve!|</span><span class=\"mode\">edit|</span><input :value=\"Eve\"></input><button>t|</button></#shadow></conf-card>",
       },
@@ -70,7 +164,7 @@ export const scenarios: Scenario[] = [
       { label: "行を足す", run: (a) => a.write((s) => { s["groups.0.items"] = s["groups.0.items"].concat({ v: 9 }); }) },
     ],
     differs: {
-      reason: "3.3.0 の不具合 3 つ: コンポーネントの getter の中の $getAll(\"items.*.v\", []) が空になる（README はコンポーネントの語彙でホストの行の添字を前に付けると約束する）／押した行の添字で書いた私有キーがその回に描かれない／コンポーネントから this[\"items.0.v\"] に書くと \"Partial wildcard type is not supported yet\" で投げる。新エンジンは README どおりに動く（$1 がコンポーネントの範囲で数えるのは同じ）",
+      reason: "3.3.0 の不具合 3 つ（行の中のコンポーネント）: getter の中の $getAll(\"items.*.v\", []) が失敗して空になる（#322。README はコンポーネントの語彙でホストの行の添字を前に付けると約束する）／押した行の添字で書いた私有キーがその回に描かれない（#321）／this[\"items.0.v\"] に書くと \"Partial wildcard type is not supported yet\" で投げる（#323）。新エンジンは README どおりに動く（$1 がコンポーネントの範囲で数えるのは同じ）",
       dom: {
         "initial": "<p class=\"sum\">15|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\">3|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|5|</li></ul><p class=\"total\">12|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section>",
         "2 つ目の組の 2 行目を押す": "<p class=\"sum\">15|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\">3|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|5|</li></ul><p class=\"total\">12|</p><p class=\"picked\">1|</p></#shadow></conf-list></section>",

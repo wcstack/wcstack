@@ -36,7 +36,7 @@ export function nameBlock(first: ChildNode, nodes: ChildNode[] | null, kind: "ro
   if (ledger.assigned >= limit) {
     if (!ledger.warned) {
       ledger.warned = true;
-      console.warn(`[@wcstack/state] auto view-transition-name limit (${limit}) reached; the rest are unnamed (naming-limit on <wcs-view-transition>).`);
+      console.warn(`[@wcstack/state] view-transition naming-limit (${limit}) reached.`);
     }
     return;
   }

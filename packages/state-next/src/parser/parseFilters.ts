@@ -65,7 +65,7 @@ export function parseFilters(filterTextList: string[], filterIOType: FilterIOTyp
       // 前に書け」と言うと成立しない直し方（`textContent#ro|trim: x`）を勧めることになる
       const [name, modifiers] = filterName.split(MODIFIER_SEPARATOR);
       raiseError(filterIOType === "input"
-        ? `[wcs/binding-syntax] "${filterName}" is not a filter name: a modifier list "${MODIFIER_SEPARATOR}${modifiers}" comes before the input filters — write "<property>${MODIFIER_SEPARATOR}${modifiers}|${name}".`
+        ? `[wcs/binding-syntax] "${filterName}" is not a filter name: a modifier list "${MODIFIER_SEPARATOR}${modifiers}" comes before the input filters`
         : `[wcs/binding-syntax] "${filterName}" is not a filter name: "${MODIFIER_SEPARATOR}" cannot appear in one.`);
     }
     if (openParenIndex === -1) {

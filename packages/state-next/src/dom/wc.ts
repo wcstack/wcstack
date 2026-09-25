@@ -130,12 +130,15 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
   return b;
 }
 
+function noBindable(code: string, el: Element, what: string): never {
+  raiseError(`[wcs/${code}] <${el.localName}> declares no static wcBindable (${what}).`);
+}
+
 /** `command.<method>: $command.<token>` — the element's method subscribes to the token. */
 export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Block | null, bd: Bindable | null): void {
   const method = spec.name;
-  const token = engine.commands[spec.token!];
-  if (token === undefined) raiseError(`[wcs/token-undeclared] "$command.${spec.token}" is not declared in $commandTokens.`, spec.token!, Object.keys(engine.commands));
-  if (bd === null) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no static wcBindable (command.${method}).`);
+  const token = engine.command(spec.token!);
+  if (bd === null) noBindable("token-misconfigured", el, `command.${method}`);
   if (!bd.commands.has(method)) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no command "${method}".`);
   const ref = new WeakRef(el);
   const fn = (...args: unknown[]): unknown => {
@@ -153,7 +156,7 @@ export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Bl
 /** `eventToken.<property>: <token>` — the property's event fires the event token. */
 export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: StateRow | null, bd: Bindable | null): void {
   const prop = spec.name;
-  if (bd === null) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no static wcBindable (eventToken.${prop}).`);
+  if (bd === null) noBindable("token-misconfigured", el, `eventToken.${prop}`);
   const decl = bd.properties.get(prop);
   if (decl === undefined) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no property "${prop}".`);
   const name = spec.token!;
@@ -170,7 +173,7 @@ export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: S
 
 /** `...: path` — one property binding per declared property and input (explicit bindings win). */
 export function attachSpread(engine: Engine, spec: Spec, el: Element, row: StateRow | null, owner: Block | null, bd: Bindable | null): void {
-  if (bd === null) raiseError(`[wcs/spread-no-bindable] <${el.localName}> declares no static wcBindable ("...: ${spec.pattern!.path}").`);
+  if (bd === null) noBindable("spread-no-bindable", el, `"...: ${spec.pattern!.path}"`);
   const names = new Set([...bd.properties.keys(), ...bd.inputs.keys()]);
   for (const name of names) {
     if (spec.exclude?.includes(name)) continue;

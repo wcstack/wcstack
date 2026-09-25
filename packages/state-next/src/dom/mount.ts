@@ -2,7 +2,7 @@ import type { Engine } from "../engine";
 import { config } from "../config";
 import { raiseError } from "../parser/raiseError";
 import { hooks } from "../hooks";
-import { bindAttr, compilePlan, directive, elementSpecs, readChain, splitMustache, textSpec } from "./plan";
+import { bindAttr, compilePlan, directive, elementSpecs, notAfterIf, readChain, splitMustache, textSpec } from "./plan";
 import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
 import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
 
@@ -63,7 +63,7 @@ function walk(engine: Engine, children: ChildNode[]): void {
           attachChain(engine, branches, null, null);
           i = end;
         } else {
-          raiseError(`[wcs/template-syntax] "${d.bindingType}:" must follow an "if:" template`);
+          notAfterIf(d.bindingType);
         }
         continue;
       }

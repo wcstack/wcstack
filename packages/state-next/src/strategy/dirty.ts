@@ -80,7 +80,8 @@ export class DirtyStrategy implements Strategy {
     let c = row.cache;
     if (c === null) c = row.cache = new Array(engine.slotCount).fill(UNSET);
     let v = c[g.slot];
-    if (v !== UNSET && v !== DIRTY && v !== FAILED) return v;
+    // a getter made after the row's cache (a recursive family, a mounted key) has no entry yet
+    if (v !== UNSET && v !== DIRTY && v !== FAILED && g.slot < c.length) return v;
     try {
       v = engine.evalGetter(g, row);
     } catch (e) {

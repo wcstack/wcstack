@@ -34,7 +34,7 @@ export class Token {
         results.push(fn(...args));
       } catch (error) {
         results.push(undefined);
-        console.error(`[@wcstack/state] a subscriber of token "${this.name}" threw; the remaining subscribers still received it.`, error);
+        console.error(`[@wcstack/state] a subscriber of token "${this.name}" threw.`, error);
       }
     }
     return results;
@@ -76,7 +76,7 @@ export function eventTokens(
   for (const name of readNames(target.$eventTokens, "$eventTokens")) tokens.set(name, new Token(name));
   const on = target.$on;
   if (on === undefined) return tokens;
-  if (on === null || typeof on !== "object") throw new Error("$on must be an object mapping event-token names to handler functions.");
+  if (on === null || typeof on !== "object") throw new Error("$on must be an object of handlers.");
   for (const [name, handler] of Object.entries(on)) {
     const token = tokens.get(name);
     if (token === undefined) throw new Error(`$on entry "${name}" is not declared in $eventTokens.`);

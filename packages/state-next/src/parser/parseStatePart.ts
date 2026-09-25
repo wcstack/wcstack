@@ -23,7 +23,7 @@ const cacheFilterInfos = new Map<string, ParsedFilter[]>();
  */
 function checkPathLikeGetPathInfo(path: string): void {
   if (path.indexOf(RECURSION_WILDCARD) !== -1) {
-    raiseError(`[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here.`);
+    recursionUnsupported(path);
   }
   let segmentCount = 1;
   for (let i = 0; i < path.length; i++) {
@@ -41,6 +41,11 @@ function checkPathLikeGetPathInfo(path: string): void {
 // filters-format: filterName or filterName(arg1,arg2)
 
 /** Port of `@wcstack/state` `src/bindTextParser/parseStatePart.ts` (no `statePathInfo`). */
+/** `**` outside the places a `$recursion` declaration gives it meaning. */
+export function recursionUnsupported(path: string): never {
+  raiseError(`[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here.`);
+}
+
 export function parseStatePart(statePart: string): StatePartParseResult {
   // 引用符の中の `|` はフィルタの区切りではない（要件 B1 — `join('|')`）
   const pos = indexOfOutsideQuotes(statePart, FILTER_SEPARATOR);

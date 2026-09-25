@@ -1,7 +1,67 @@
 {
   "engine": "@wcstack/state 3.3.0 (dist/index.esm.js)",
-  "recordedAt": "2026-09-25T20:52:39.062Z",
+  "recordedAt": "2026-09-25T21:28:07.117Z",
   "scenarios": {
+    "空のリストだけをたどる $getAll の getter も、最初の行に追従する": [
+      {
+        "label": "initial",
+        "dom": "<p>0|</p><p>0|</p>"
+      },
+      {
+        "label": "2 つ目の組に行を足す",
+        "dom": "<p>7|</p><p>2|</p>"
+      },
+      {
+        "label": "1 つ目の組に行を足す",
+        "dom": "<p>17|</p><p>2|</p>"
+      }
+    ],
+    "再帰パス: ** の getter の族・全深さの $getAll・深い書き込み・枝の追加・一斉書き込み": [
+      {
+        "label": "initial",
+        "dom": "<p class=\"t\">133|</p><p class=\"v\">1,10,100,20,2|</p><p class=\"r\">0,0,0,0,1|</p><p class=\"s\">0|</p><ul><li>1|:|131|</li><li>2|:|2|</li></ul>"
+      },
+      {
+        "label": "深い葉を書く",
+        "dom": "<p class=\"t\">1033|</p><p class=\"v\">1,10,1000,20,2|</p><p class=\"r\">0,0,0,0,1|</p><p class=\"s\">0|</p><ul><li>1|:|1031|</li><li>2|:|2|</li></ul>"
+      },
+      {
+        "label": "空の枝に子を足す",
+        "dom": "<p class=\"t\">1038|</p><p class=\"v\">1,10,1000,20,2,5|</p><p class=\"r\">0,0,0,0,1,1|</p><p class=\"s\">0|</p><ul><li>1|:|1031|</li><li>2|:|7|</li></ul>"
+      },
+      {
+        "label": "全ノードに一斉に書く",
+        "dom": "<p class=\"t\">1038|</p><p class=\"v\">1,10,1000,20,2,5|</p><p class=\"r\">0,0,0,0,1,1|</p><p class=\"s\">6|</p><ul><li>1|:|1031|</li><li>2|:|7|</li></ul>"
+      },
+      {
+        "label": "根を並べ替える",
+        "dom": "<p class=\"t\">1038|</p><p class=\"v\">2,5,1,10,1000,20|</p><p class=\"r\">0,0,1,1,1,1|</p><p class=\"s\">6|</p><ul><li>2|:|7|</li><li>1|:|1031|</li></ul>"
+      }
+    ],
+    "再帰パス: 誤り（読み取り専用の展開・文脈の無い **・一斉書き込みの形・構造への書き込み）": [
+      {
+        "label": "initial",
+        "dom": "<p></p>"
+      },
+      {
+        "label": "それぞれ試す",
+        "dom": "<p>error [wcs/recursion-context] [wcs/recursion-setall-form] [wcs/recursion-structural-write] [wcs/recursion-readonly] [wcs/recursion-getall-form] ok|</p>"
+      }
+    ],
+    "再帰パス: 自己参照するコンポーネントで木を描く": [
+      {
+        "label": "initial",
+        "dom": "<p>133|</p><conf-tree><#shadow><span>1|/|131|</span><ul><li><conf-tree><#shadow><span>10|/|110|</span><ul><li><conf-tree><#shadow><span>100|/|100|</span><ul></ul></#shadow></conf-tree></li></ul></#shadow></conf-tree></li><li><conf-tree><#shadow><span>20|/|20|</span><ul></ul></#shadow></conf-tree></li></ul></#shadow></conf-tree><conf-tree><#shadow><span>2|/|2|</span><ul></ul></#shadow></conf-tree>"
+      },
+      {
+        "label": "深い葉を書く",
+        "dom": "<p>1033|</p><conf-tree><#shadow><span>1|/|1031|</span><ul><li><conf-tree><#shadow><span>10|/|1010|</span><ul><li><conf-tree><#shadow><span>1000|/|1000|</span><ul></ul></#shadow></conf-tree></li></ul></#shadow></conf-tree></li><li><conf-tree><#shadow><span>20|/|20|</span><ul></ul></#shadow></conf-tree></li></ul></#shadow></conf-tree><conf-tree><#shadow><span>2|/|2|</span><ul></ul></#shadow></conf-tree>"
+      },
+      {
+        "label": "葉に子を足す",
+        "dom": "<p>1040|</p><conf-tree><#shadow><span>1|/|1038|</span><ul><li><conf-tree><#shadow><span>10|/|1010|</span><ul><li><conf-tree><#shadow><span>1000|/|1000|</span><ul></ul></#shadow></conf-tree></li></ul></#shadow></conf-tree></li><li><conf-tree><#shadow><span>20|/|27|</span><ul><li><conf-tree><#shadow><span>7|/|7|</span><ul></ul></#shadow></conf-tree></li></ul></#shadow></conf-tree></li></ul></#shadow></conf-tree><conf-tree><#shadow><span>2|/|2|</span><ul></ul></#shadow></conf-tree>"
+      }
+    ],
     "コンポーネントの mount: 丸ごと、getter、私有キー、双方向、element.state": [
       {
         "label": "initial",

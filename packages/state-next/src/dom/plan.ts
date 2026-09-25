@@ -66,6 +66,11 @@ function flags(mods: string[]): Flags {
 
 const COMMAND_PREFIX = "$command.";
 
+/** An `elseif:` / `else:` template with no `if:` before it. */
+export function notAfterIf(type: string): never {
+  raiseError(`[wcs/template-syntax] "${type}:" must follow an "if:" template`);
+}
+
 export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, el: Element | null, node: number): Spec {
   const f = flags(b.propModifiers);
   const custom = el !== null && el.localName.includes("-");
@@ -259,7 +264,7 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
             specs.push({ ...blank(), node: branches[0].node, kind: K_IF, branches });
             i = end;
           } else {
-            raiseError(`[wcs/template-syntax] "${d.bindingType}:" must follow an "if:" template`);
+            notAfterIf(d.bindingType);
           }
           continue;
         }

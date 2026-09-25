@@ -237,11 +237,13 @@ function findDescriptor(o: object, key: string): PropertyDescriptor | undefined 
 }
 
 function mountKey(m: Mount, whole: Entry | null, p: Pattern): void {
-  if (p.getter !== null || p.depth !== 0) return;
+  if (p.getter !== null) return;
   const h = m.host;
   const H = h.engine!;
   const head = headOf(p.path);
   let e = h.entries.find((x) => x.inner === p.path);
+  if (e === undefined && p.parent !== null) return mountUnder(m, p);
+  if (p.depth !== 0) return;
   let target: Pattern;
   if (e !== undefined) {
     if (e.inner !== head ? own(h, head) : surface(h, head)) return;
@@ -264,6 +266,45 @@ function mountKey(m: Mount, whole: Entry | null, p: Pattern): void {
     m.skip = p;
   };
   m.synth.set(p, { e, p: target, row });
+}
+
+/**
+ * A path under a mounted key whose host counterpart is a getter (a host getter, a recursive
+ * family): read — and written, if it has a setter — through the host, row by row.
+ */
+function mountUnder(m: Mount, p: Pattern): void {
+  let s: Pattern | null = p.parent;
+  let info: Synth | undefined;
+  while (s !== null && (info = m.synth.get(s)) === undefined) s = s.parent;
+  if (s === null || info === undefined) return;
+  const C = m.component;
+  const H = m.host.engine!;
+  const hp = H.pattern(info.p.path + p.path.slice(s.path.length));
+  if (hp.getter === null) return;
+  const from = info;
+  const at = (): StateRow | null => {
+    const crow = p.depth === 0 ? null : rowAt(C.ctx, p.depth);
+    H.resolve(fill(hp.path, [...H.indexesOf(from.row), ...C.indexesOf(crow)]), null);
+    return (H as any).rr as StateRow | null;
+  };
+  p.getter = () => {
+    const r = at();
+    return hp.depth > 0 && r === null ? undefined : H.readUntracked((H as any).rp, r);
+  };
+  if (hp.setter !== null) {
+    p.setter = (value: unknown) => {
+      const r = at();
+      active.add(C);
+      try {
+        H.write((H as any).rp, r, value);
+      } finally {
+        active.delete(C);
+      }
+      m.skip = p;
+    };
+  }
+  if (p.depth > 0) p.slot = (C as any).slotCount++;
+  m.synth.set(p, { e: from.e, p: hp, row: from.row });
 }
 
 function register(m: Mount, on: boolean): void {
@@ -319,7 +360,11 @@ function touch(E: Engine, p: Pattern, row: StateRow | null, old: unknown, value:
 /** The value an entry is mounted on may have been replaced: every key read through it is stale. */
 function refresh(slot: Slot): void {
   const C = slot.m.component;
-  for (const [p, s] of slot.m.synth) if (s.e === slot.e) C.strategy.invalidate(C, p, null);
+  for (const [p, s] of slot.m.synth) {
+    if (s.e !== slot.e) continue;
+    if (p.depth === 0) C.strategy.invalidate(C, p, null);
+    else C.forAllRows(p.lists[p.depth]!, (r) => C.strategy.invalidate(C, p, r));
+  }
   C.schedule();
 }
 
@@ -368,7 +413,9 @@ function up(m: Mount, p: Pattern, row: StateRow | null, old: unknown, value: unk
 
 /**
  * The `written` / `getterReached` hook: a change in engine E crosses to the host it is mounted
- * on (a write, not a getter reached) and to the components mounted on it.
+ * on (a write, not a getter reached) and to the components mounted on it. A write does not come
+ * back to the engines it is crossing from; a getter reached does — it only invalidates, and the
+ * components a write started in read the host's getters too.
  */
 export function crossed(E: Engine, p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean, reached: boolean): void {
   if (registered === 0) return;
@@ -382,11 +429,11 @@ export function crossed(E: Engine, p: Pattern, row: StateRow | null, old: unknow
     for (const [q, byRow] of byP) {
       if (p.isUnder(q)) {
         const set = byRow.get(q.depth === 0 ? null : rowAt(row, q.depth));
-        if (set !== undefined) for (const slot of [...set]) if (!active.has(slot.m.component)) into(slot, q, p, row, old, value, direct);
+        if (set !== undefined) for (const slot of [...set]) if (reached || !active.has(slot.m.component)) into(slot, q, p, row, old, value, direct);
       } else if (q.isUnder(p)) {
         for (const [r, set] of [...byRow]) {
           if (p.depth !== 0 && rowAt(r, p.depth) !== row) continue;
-          for (const slot of [...set]) if (!active.has(slot.m.component)) refresh(slot);
+          for (const slot of [...set]) if (reached || !active.has(slot.m.component)) refresh(slot);
         }
       }
     }
