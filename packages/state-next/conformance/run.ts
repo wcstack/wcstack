@@ -66,6 +66,12 @@ export function serialize(root: Node): string {
       }
       attrs.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
       out += `<${tag}${attrs.map(([k, v]) => ` ${k}="${escapeAttr(v)}"`).join("")}>`;
+      // an open shadow root (a component's own view)
+      if (el.shadowRoot !== null) {
+        out += "<#shadow>";
+        visit(el.shadowRoot);
+        out += "</#shadow>";
+      }
       visit(el);
       out += `</${tag}>`;
     }

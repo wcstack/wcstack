@@ -38,6 +38,68 @@ const items = (n: number) => Array.from({ length: n }, (_, i) => ({ id: i + 1, n
 
 export const scenarios: Scenario[] = [
   {
+    name: "コンポーネントの mount: 丸ごと、getter、私有キー、双方向、element.state",
+    html: `<wcs-state></wcs-state><p>{{ user.name }}</p><conf-card data-wcs="state: user"></conf-card>`,
+    state: () => ({ user: { name: "Alice", mode: "tree" } }),
+    steps: [
+      { label: "ホストが書く", run: (a) => a.write((s) => { s["user.name"] = "Bob"; }) },
+      { label: "中の入力", run: (a) => { a.call("conf-card", "type", "Eve"); } },
+      { label: "中のメソッドが私有キーを書く", run: (a) => { a.call("conf-card", "press"); } },
+      { label: "ホストが丸ごと置き換える", run: (a) => a.write((s) => { s.user = { name: "Dana", mode: "x" }; }) },
+      { label: "element.state に書く", run: (a) => { a.call("conf-card", "setName", "Zed"); } },
+    ],
+    differs: {
+      reason: "3.3.0 の不具合: コンポーネントのメソッドが私有キーを書いても、その回には描き直さない（次の変更のときに反映される）。新エンジンは書いた回に描く",
+      dom: {
+        "中のメソッドが私有キーを書く": "<p>Eve|</p><conf-card><#shadow><span class=\"name\">Eve|</span><span class=\"display\">Eve!|</span><span class=\"mode\">edit|</span><input :value=\"Eve\"></input><button>t|</button></#shadow></conf-card>",
+      },
+    },
+  },
+  {
+    name: "行の中のコンポーネント: $1・$getAll・イベントの添字はコンポーネントの範囲",
+    html: `<wcs-state></wcs-state><p class="sum">{{ sum }}</p><template data-wcs="for: groups"><section><h3>{{ .title }}</h3><conf-list data-wcs="state.items: .items"></conf-list></section></template>`,
+    state: () => ({
+      groups: [{ title: "A", items: [{ v: 1 }, { v: 2 }] }, { title: "B", items: [{ v: 3 }, { v: 4 }, { v: 5 }] }],
+      get sum() { return (this as any).$getAll("groups.*.items.*.v", []).reduce((a: number, b: number) => a + b, 0); },
+    }),
+    steps: [
+      { label: "2 つ目の組の 2 行目を押す", run: (a) => { a.call("section:nth-of-type(2) conf-list", "clickRow", 1); } },
+      { label: "ホストが行の値を書く", run: (a) => a.write((s) => { s["groups.1.items.2.v"] = 50; }) },
+      { label: "コンポーネントが行の値を書く", run: (a) => { a.call("section:nth-of-type(1) conf-list", "bump"); } },
+      { label: "組を入れ替える", run: (a) => a.write((s) => { s.groups = s.groups.toReversed(); }) },
+      { label: "行を足す", run: (a) => a.write((s) => { s["groups.0.items"] = s["groups.0.items"].concat({ v: 9 }); }) },
+    ],
+    differs: {
+      reason: "3.3.0 の不具合 3 つ: コンポーネントの getter の中の $getAll(\"items.*.v\", []) が空になる（README はコンポーネントの語彙でホストの行の添字を前に付けると約束する）／押した行の添字で書いた私有キーがその回に描かれない／コンポーネントから this[\"items.0.v\"] に書くと \"Partial wildcard type is not supported yet\" で投げる。新エンジンは README どおりに動く（$1 がコンポーネントの範囲で数えるのは同じ）",
+      dom: {
+        "initial": "<p class=\"sum\">15|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\">3|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|5|</li></ul><p class=\"total\">12|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section>",
+        "2 つ目の組の 2 行目を押す": "<p class=\"sum\">15|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\">3|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|5|</li></ul><p class=\"total\">12|</p><p class=\"picked\">1|</p></#shadow></conf-list></section>",
+        "ホストが行の値を書く": "<p class=\"sum\">60|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\">3|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|50|</li></ul><p class=\"total\">57|</p><p class=\"picked\">1|</p></#shadow></conf-list></section>",
+        "コンポーネントが行の値を書く": "<p class=\"sum\">70|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|11|</li><li>1|:|2|</li></ul><p class=\"total\">13|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|50|</li></ul><p class=\"total\">57|</p><p class=\"picked\">1|</p></#shadow></conf-list></section>",
+        "組を入れ替える": "<p class=\"sum\">70|</p><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|50|</li></ul><p class=\"total\">57|</p><p class=\"picked\">1|</p></#shadow></conf-list></section><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|11|</li><li>1|:|2|</li></ul><p class=\"total\">13|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section>",
+        "行を足す": "<p class=\"sum\">79|</p><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|50|</li><li>3|:|9|</li></ul><p class=\"total\">66|</p><p class=\"picked\">1|</p></#shadow></conf-list></section><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|11|</li><li>1|:|2|</li></ul><p class=\"total\">13|</p><p class=\"picked\">-1|</p></#shadow></conf-list></section>",
+      },
+    },
+  },
+  {
+    name: "Light DOM のコンポーネント（単独と行）",
+    html: `<wcs-state></wcs-state><conf-light data-wcs="state: user"></conf-light><div><template data-wcs="for: rows"><conf-light data-wcs="state: ."></conf-light></template></div>`,
+    state: () => ({ user: { name: "Al" }, rows: [{ name: "r1" }, { name: "r2" }] }),
+    steps: [
+      { label: "単独のマウント先を書く", run: (a) => a.write((s) => { s["user.name"] = "Bo"; }) },
+      { label: "行の値を書く", run: (a) => a.write((s) => { s["rows.1.name"] = "R2"; }) },
+      { label: "行を入れ替える", run: (a) => a.write((s) => { s.rows = s.rows.toReversed(); }) },
+    ],
+  },
+  {
+    name: "結線の無い Shadow のコンポーネントは独立した木（凍結した状態は書けるようにする）",
+    html: `<wcs-state></wcs-state><conf-solo></conf-solo>`,
+    state: () => ({}),
+    steps: [
+      { label: "element.state に書く", run: (a) => { a.call("conf-solo", "say", "yo"); } },
+    ],
+  },
+  {
     name: "配列を読む getter と、行の値への書き込み（上向きには無効化しない）",
     html: `<wcs-state></wcs-state><p>{{ total }}</p><ul><template data-wcs="for: items"><li>{{ .v }}</li></template></ul><ul class="big"><template data-wcs="for: big"><li>{{ .v }}</li></template></ul>`,
     state: () => ({

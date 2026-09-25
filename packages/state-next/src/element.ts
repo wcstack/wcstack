@@ -101,7 +101,7 @@ export class WcsState extends HTMLElement {
     const claimed = hooks.claim === null ? null : hooks.claim(this, root);
     if (claimed !== null) {
       this.claimed = claimed;
-      void this.loadState().then((state) => claimed.start(state)).catch((e) => console.error(e)).finally(() => {
+      void (claimed.load === undefined ? this.loadState() : claimed.load()).then((state) => claimed.start(state)).catch((e) => console.error(e)).finally(() => {
         this.resolveInitialize();
         this.resolveConnected();
       });

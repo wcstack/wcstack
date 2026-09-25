@@ -4,12 +4,15 @@
 //   STATE=current npx playwright test --config ../packages/state-next/bench/e2e/pw.config.mjs --reporter=json > current.json
 //   STATE=next    npx playwright test --config ../packages/state-next/bench/e2e/pw.config.mjs --reporter=json > next.json
 //   node ../packages/state-next/bench/e2e/compare.mjs current.json next.json
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 
 const E2E = resolve(import.meta.dirname, "../../../../e2e");
 const PORT = Number(process.env.PORT || 4400);
 export default {
   testDir: `${E2E}/tests`,
+  // failure artifacts go outside the repository
+  outputDir: join(tmpdir(), "state-next-e2e-results"),
   fullyParallel: true,
   workers: 4,
   reporter: "list",

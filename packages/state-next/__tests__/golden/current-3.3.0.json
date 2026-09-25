@@ -1,7 +1,87 @@
 {
   "engine": "@wcstack/state 3.3.0 (dist/index.esm.js)",
-  "recordedAt": "2026-09-25T19:58:53.351Z",
+  "recordedAt": "2026-09-25T20:52:39.062Z",
   "scenarios": {
+    "コンポーネントの mount: 丸ごと、getter、私有キー、双方向、element.state": [
+      {
+        "label": "initial",
+        "dom": "<p>Alice|</p><conf-card><#shadow><span class=\"name\">Alice|</span><span class=\"display\">Alice!|</span><span class=\"mode\">view|</span><input :value=\"Alice\"></input><button>t|</button></#shadow></conf-card>"
+      },
+      {
+        "label": "ホストが書く",
+        "dom": "<p>Bob|</p><conf-card><#shadow><span class=\"name\">Bob|</span><span class=\"display\">Bob!|</span><span class=\"mode\">view|</span><input :value=\"Bob\"></input><button>t|</button></#shadow></conf-card>"
+      },
+      {
+        "label": "中の入力",
+        "dom": "<p>Eve|</p><conf-card><#shadow><span class=\"name\">Eve|</span><span class=\"display\">Eve!|</span><span class=\"mode\">view|</span><input :value=\"Eve\"></input><button>t|</button></#shadow></conf-card>"
+      },
+      {
+        "label": "中のメソッドが私有キーを書く",
+        "dom": "<p>Eve|</p><conf-card><#shadow><span class=\"name\">Eve|</span><span class=\"display\">Eve!|</span><span class=\"mode\">view|</span><input :value=\"Eve\"></input><button>t|</button></#shadow></conf-card>"
+      },
+      {
+        "label": "ホストが丸ごと置き換える",
+        "dom": "<p>Dana|</p><conf-card><#shadow><span class=\"name\">Dana|</span><span class=\"display\">Dana!|</span><span class=\"mode\">edit|</span><input :value=\"Dana\"></input><button>t|</button></#shadow></conf-card>"
+      },
+      {
+        "label": "element.state に書く",
+        "dom": "<p>Zed|</p><conf-card><#shadow><span class=\"name\">Zed|</span><span class=\"display\">Zed!|</span><span class=\"mode\">edit|</span><input :value=\"Zed\"></input><button>t|</button></#shadow></conf-card>"
+      }
+    ],
+    "行の中のコンポーネント: $1・$getAll・イベントの添字はコンポーネントの範囲": [
+      {
+        "label": "initial",
+        "dom": "<p class=\"sum\">15|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\"></p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|5|</li></ul><p class=\"total\"></p><p class=\"picked\">-1|</p></#shadow></conf-list></section>"
+      },
+      {
+        "label": "2 つ目の組の 2 行目を押す",
+        "dom": "<p class=\"sum\">15|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\"></p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|5|</li></ul><p class=\"total\"></p><p class=\"picked\">-1|</p></#shadow></conf-list></section>"
+      },
+      {
+        "label": "ホストが行の値を書く",
+        "dom": "<p class=\"sum\">60|</p><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\"></p><p class=\"picked\">-1|</p></#shadow></conf-list></section><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|50|</li></ul><p class=\"total\"></p><p class=\"picked\">-1|</p></#shadow></conf-list></section>"
+      },
+      {
+        "label": "コンポーネントが行の値を書く",
+        "error": "[@wcstack/state] Partial wildcard type is not supported yet: groups.*.items.*.v"
+      },
+      {
+        "label": "組を入れ替える",
+        "dom": "<p class=\"sum\">60|</p><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|50|</li></ul><p class=\"total\"></p><p class=\"picked\">1|</p></#shadow></conf-list></section><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\"></p><p class=\"picked\">-1|</p></#shadow></conf-list></section>"
+      },
+      {
+        "label": "行を足す",
+        "dom": "<p class=\"sum\">69|</p><section><h3>B|</h3><conf-list><#shadow><ul><li>0|:|3|</li><li>1|:|4|</li><li>2|:|50|</li><li>3|:|9|</li></ul><p class=\"total\"></p><p class=\"picked\">1|</p></#shadow></conf-list></section><section><h3>A|</h3><conf-list><#shadow><ul><li>0|:|1|</li><li>1|:|2|</li></ul><p class=\"total\"></p><p class=\"picked\">-1|</p></#shadow></conf-list></section>"
+      }
+    ],
+    "Light DOM のコンポーネント（単独と行）": [
+      {
+        "label": "initial",
+        "dom": "<conf-light><span class=\"inner\">Al|</span></conf-light><div><conf-light><span class=\"inner\">r1|</span></conf-light><conf-light><span class=\"inner\">r2|</span></conf-light></div>"
+      },
+      {
+        "label": "単独のマウント先を書く",
+        "dom": "<conf-light><span class=\"inner\">Bo|</span></conf-light><div><conf-light><span class=\"inner\">r1|</span></conf-light><conf-light><span class=\"inner\">r2|</span></conf-light></div>"
+      },
+      {
+        "label": "行の値を書く",
+        "dom": "<conf-light><span class=\"inner\">Bo|</span></conf-light><div><conf-light><span class=\"inner\">r1|</span></conf-light><conf-light><span class=\"inner\">R2|</span></conf-light></div>"
+      },
+      {
+        "label": "行を入れ替える",
+        "dom": "<conf-light><span class=\"inner\">Bo|</span></conf-light><div><conf-light><span class=\"inner\">R2|</span></conf-light><conf-light><span class=\"inner\">r1|</span></conf-light></div>"
+      }
+    ],
+    "結線の無い Shadow のコンポーネントは独立した木（凍結した状態は書けるようにする）": [
+      {
+        "label": "initial",
+        "dom": "<conf-solo data-ready=\"state\"><#shadow><p>hi|:|0|</p></#shadow></conf-solo>"
+      },
+      {
+        "label": "element.state に書く",
+        "dom": "<conf-solo data-ready=\"state\"><#shadow><p>yo|:|1|</p></#shadow></conf-solo>"
+      }
+    ],
     "配列を読む getter と、行の値への書き込み（上向きには無効化しない）": [
       {
         "label": "initial",

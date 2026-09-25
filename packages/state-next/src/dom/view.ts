@@ -5,6 +5,7 @@ import type { FilterFn } from "./filters";
 import { isHtmlSink, trustHtml } from "../trustedTypes";
 import { autoNaming, nameBlock } from "./naming";
 import { raiseError } from "../parser/raiseError";
+import { hooks } from "../hooks";
 
 /**
  * `on*:` bindings of bubbling events are delegated: one listener per event type on the
@@ -592,6 +593,7 @@ export function attachCustomOrPlain(engine: Engine, s: Spec, el: Element, row: S
   }
   const b = new Binding(engine, K_PROP, el, s.name, s.pattern!, row, owner, s.filters, s.initial);
   b.inFilters = s.inFilters;
+  if (hooks.hostBinding !== null && hooks.hostBinding(b)) return;
   adopt(engine, b, true);
   engine.applyBinding(b);
 }

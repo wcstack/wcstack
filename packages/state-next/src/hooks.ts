@@ -41,10 +41,19 @@ export interface Hooks {
   dollar: ((engine: Engine, key: string) => unknown) | null;
   /** A binding failed to apply (reported after the drain, before `$errorCallback` / the console). */
   failed: ((engine: Engine, error: unknown, binding: Binding) => void) | null;
+  /**
+   * A plain property binding on a custom element, made and not yet registered or applied (a
+   * component mount's wiring, `state.x: path`); true = an add-on took it over.
+   */
+  hostBinding: ((binding: Binding) => boolean) | null;
+  /** An element whose content an add-on binds (a Light DOM component): the walker leaves it. */
+  componentScope: ((el: Element) => boolean) | null;
 }
 
 /** What an add-on does with a `<wcs-state>` it claimed. */
 export interface Claimed {
+  /** Where the state comes from, when not from the element's own sources. */
+  load?(): Promise<Record<string, any>>;
   /** The loaded state; `connectedCallbackPromise` resolves when this settles (a failure is the add-on's to report). */
   start(state: Record<string, any>): Promise<void> | void;
   connected(): void;
@@ -65,6 +74,8 @@ export const hooks: Hooks = {
   element: null,
   dollar: null,
   failed: null,
+  hostBinding: null,
+  componentScope: null,
 };
 
 type HookFn = (...args: any[]) => any;

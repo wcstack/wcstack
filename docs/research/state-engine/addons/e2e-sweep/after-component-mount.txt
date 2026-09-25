@@ -1,0 +1,23 @@
+tests: 131  both pass: 119  current only: 6  next only: 0  neither: 6
+
+## state-intersect-scroll.spec.ts (6)
+- 依存更新が in-flight page を abort し、最新の stream run だけを commit する
+    Error: expect(received).toBe(expected) // Object.is equality
+- page1 が失敗しても stream の有界リトライがスクロール無しでフィードを復帰させる
+    Error: expect(locator).toBeVisible() failed
+- リトライ予算を使い切ると Retry ボタンに引き継がれ、押せば復帰する
+    Error: expect(locator).toBeVisible() failed
+- 正常系: 初期ページが描画され、末尾までスクロールすると全87件で終端する
+    Error: expect(locator).toHaveCount(expected) failed
+- 既存 item 後の失敗は自動再試行せず、sentinel を離れて戻ると同じ page を再試行する
+    Error: expect(locator).toHaveCount(expected) failed
+- error 描画が sentinel を band 外へ押し出しても、一往復のスクロールで同じ page を再試行する
+    Error: expect(locator).toHaveCount(expected) failed
+
+## neither
+ssr-router.spec.ts › 初期ルートの内容・展開済み for・スナップショットが生 HTML に載る: Error: expect(received).toBeTruthy()
+ssr-router.spec.ts › 深い URL（typed param）もサーバーで描ける: Error: expect(received).toContain(expected) // indexOf
+ssr-router.spec.ts › 採用が成立し、二重描画なし・マーカー撤去・エラーゼロ: Error: expect(locator).toHaveText(expected) failed
+ssr-router.spec.ts › 採用ノード上のバインドが生きている（same-match クエリ遷移）: Error: expect(locator).toHaveText(expected) failed
+ssr-router.spec.ts › 採用後の SPA ナビゲーションと深い URL の直リロード: Test timeout of 30000ms exceeded.
+state-sse-dashboard.spec.ts › 両パネルにサンプルが流れ、ホスト切替で $stream 側が自動リセット・旧接続が閉じる: Error: expect(received).toBe(expected) // Object.is equality

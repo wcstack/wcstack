@@ -1,6 +1,7 @@
 import type { Engine } from "../engine";
 import { config } from "../config";
 import { raiseError } from "../parser/raiseError";
+import { hooks } from "../hooks";
 import { bindAttr, compilePlan, directive, elementSpecs, readChain, splitMustache, textSpec } from "./plan";
 import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
 import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
@@ -71,7 +72,7 @@ function walk(engine: Engine, children: ChildNode[]): void {
         bound.add(el);
         for (const spec of elementSpecs(engine, text, null, el, 0)) attach(engine, spec, el);
       }
-      walk(engine, Array.from(el.childNodes));
+      if (hooks.componentScope === null || !hooks.componentScope(el)) walk(engine, Array.from(el.childNodes));
     } else if (child.nodeType === 3 && config.enableMustache && (child as Text).data.includes("{{")) {
       for (const { node, expr } of splitMustache(child as Text)) attach(engine, textSpec(engine, expr, null, 0), node);
     }
