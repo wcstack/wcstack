@@ -335,6 +335,7 @@ const body = await renderToString(template, {
 - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
 - イベントハンドラの登録（クライアント側のハイドレーションで復元）
 - `<wcs-autoloader>` による動的コンポーネント読み込み
+- 別の `for:` の中の `for:`、`if:` / `elseif:` / `else:` の中の `for:` のハイドレーション（既知の制限）。サーバーは描画するが、そのリストの行がサーバー出力に 1 行でもあると、クライアントはハイドレーションせずにサーバーが描いた DOM を捨てて描き直す（`@wcstack/state` がテンプレートを名指しして `console.warn` を 1 回出す）。`for:` の行の中の `if:` は通常どおりハイドレーションされる
 
 ## HTML の分割パターン
 

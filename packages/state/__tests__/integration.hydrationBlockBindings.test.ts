@@ -11,15 +11,14 @@
  * 契約（1 本ずつ固定する）:
  *  - `for` の行・`if` の中身の getter バインドが、ハイドレーション後の書き込みに追従する。
  *  - 適用してもサーバーが書いたテキストは変わらない。
- *  - 入れ子の `for`（内側の行は外側のループ文脈しか持たない — ハイドレーションの既知の制限・
- *    integration.listLedgerParentKey.test.ts）では、段数の足りないバインディングを適用しない。
- *    適用しても失敗の報告が増えるだけなので、報告は 0 件のまま。
+ *  - 入れ子の `for` はハイドレーションせず、クライアントの全描画に倒す（#258。実際のサーバー出力での
+ *    固定は integration.ssrNestedHydration.test.ts）。ここでは手書きの断片でも倒れることを固定する。
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
-import { buildSsrDocument } from "../src/ssr/buildSsrDocument";
 import { flush, read, write } from "./helpers/recursionTestUtils";
+import { clientLoad as clientHydrate, serverRender } from "./helpers/ssrRoundTrip";
 
 beforeAll(() => {
   bootstrapState();
@@ -30,37 +29,18 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  document.documentElement.removeAttribute("data-wcs-server");
   vi.restoreAllMocks();
 });
 
-/** サーバー側で描画し、`<wcs-ssr>` 付きの HTML を返す（integration.recursionIntegration.test.ts と同じ手順）。 */
-async function serverRender(markup: string, make: () => any): Promise<string> {
-  document.documentElement.setAttribute("data-wcs-server", "");
-  document.body.innerHTML = markup;
-  const el = document.querySelector("wcs-state") as State;
-  el.setInitialState(make());
-  await el.connectedCallbackPromise;
-  await State.getBindingsReady(document);
-  await flush();
-  buildSsrDocument(document);
-  const html = document.body.innerHTML;
-  document.documentElement.removeAttribute("data-wcs-server");
-  return html;
-}
+const texts = (selector: string, root: ParentNode = document): (string | null)[] =>
+  Array.from(root.querySelectorAll(selector)).map((element) => element.textContent);
 
-async function clientHydrate(html: string, make: () => any): Promise<State> {
-  document.body.innerHTML = html;
-  const el = document.querySelector("wcs-state") as State;
-  el.setInitialState(make());
-  await el.connectedCallbackPromise;
-  await State.getBindingsReady(document);
-  await flush();
-  return el;
+/** サーバーが返した HTML の中のテキスト（serverRender は後始末で DOM を空にする） */
+function serverTexts(html: string, selector: string): (string | null)[] {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  return texts(selector, template.content);
 }
-
-const texts = (selector: string): (string | null)[] =>
-  Array.from(document.querySelectorAll(selector)).map((element) => element.textContent);
 
 describe("for の行", () => {
   const rows = (): any => {
@@ -77,7 +57,7 @@ describe("for の行", () => {
 
   it("行の getter が葉の書き込みに追従し、適用してもサーバーのテキストは変わらない", async () => {
     const html = await serverRender(MARKUP, rows);
-    expect(texts(".d")).toEqual(["2", "4"]);
+    expect(serverTexts(html, ".d")).toEqual(["2", "4"]);
 
     const el = await clientHydrate(html, rows);
     expect(texts(".d"), "サーバーが書いたテキストのまま").toEqual(["2", "4"]);
@@ -104,7 +84,7 @@ describe("if の中身", () => {
 
   it("if の中の getter バインドが依存パスの書き込みに追従する", async () => {
     const html = await serverRender(MARKUP, page);
-    expect(texts(".t")).toEqual(["3"]);
+    expect(serverTexts(html, ".t")).toEqual(["3"]);
 
     const el = await clientHydrate(html, page);
     expect(texts(".t")).toEqual(["3"]);
@@ -115,9 +95,13 @@ describe("if の中身", () => {
   });
 });
 
-describe("入れ子の for（ハイドレーションの既知の制限）", () => {
-  // 手書きの SSR 断片（integration.listLedgerParentKey.test.ts と同じ形）。内側の行の DOM は外側の
-  // ブロックの Content に吸収され、外側のループ文脈しか持たない
+describe("入れ子の for（手書きの断片 — ハイドレーションの既知の制限）", () => {
+  // **手書きの** SSR 断片。実際のサーバー出力とは 2 点違う: スナップショットのテンプレートが入れ子の
+  // `<template>` のまま（実出力は平らで、入れ子は親の中身のプレースホルダ）、内側の行の終端コメントが
+  // 正順（実出力は逆順）。この形は旧来、ハイドレーションが止まらずに「内側の行が黙って未適用」に
+  // 見えていたが、実出力ではハイドレーション全体が止まっていた（#258 — 実出力での固定は
+  // integration.ssrNestedHydration.test.ts）。ここで固定するのは、旧形の断片でも入れ子を検出して
+  // 全描画に倒すこと（`Ssr.cleanupDom` の入れ子の `<template>` をそのまま使う経路）
   const FIXTURE = `
     <wcs-ssr name="default">
       <script type="application/json">{"groups":[{"title":"G1","items":[{"name":"x"},{"name":"y"}]}]}</script>
@@ -140,21 +124,65 @@ describe("入れ子の for（ハイドレーションの既知の制限）", () 
     </div>
   `;
 
-  it("段数の足りない内側の行のバインディングと添字（$1 / $2）は適用せず、失敗を報告しない（外側の行は追従する）", async () => {
+  it("入れ子を検出して全描画に倒し（warn 1 回）、内側の行も添字も書き込みに追従する（旧: 内側の行は固まっていた）", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    document.body.innerHTML = FIXTURE;
+    const el = document.querySelector("wcs-state") as State;
+    await el.connectedCallbackPromise;
+    await State.getBindingsReady(document);
+    await flush();
+
+    expect(warnSpy.mock.calls.map((args) => String(args[0]))).toEqual([
+      `[@wcstack/state] SSR: "for: groups.*.items" in "for: groups" (known limitation). Falling back to full render.`,
+    ]);
+    expect(document.querySelector("wcs-ssr"), "SSR の DOM は捨てて描き直す").toBeNull();
+    expect(texts("h3")).toEqual(["G1"]);
+    expect(texts(".outer-index")).toEqual(["0"]);
+    expect(texts("i")).toEqual(["x", "y"]);
+    expect(texts(".inner-index")).toEqual(["0", "1"]);
+    expect(errorSpy.mock.calls.map((args) => String(args[0])), "失敗の報告を出さない").toEqual([]);
+
+    write(el, (s: any) => { s["groups.0.title"] = "G2"; });
+    write(el, (s: any) => { s["groups.0.items.1.name"] = "y2"; });
+    write(el, (s: any) => { s["groups.0.items"] = [{ name: "z" }, ...s["groups.0.items"]]; });
+    await flush();
+    expect(texts("h3")).toEqual(["G2"]);
+    expect(texts("i")).toEqual(["z", "x", "y2"]);
+    expect(texts(".inner-index")).toEqual(["0", "1", "2"]);
+  });
+});
+
+describe("スナップショットに無い入れ子の置き場（手書きの旧形の断片）", () => {
+  // **手書きの**断片。`<wcs-ssr>` のテンプレートの中に入れ子の `<template>` を残した旧形で、行の中の
+  // `<!--@@wcs-if:hbb5-->` が指す uuid はスナップショットに載っていない。実際のサーバー出力は入れ子も
+  // 平らに載せる（Ssr の collectReachableFragments）ので、この形は旧形・壊れた出力でしか起きない。
+  // 置き場は構造として引けず `text: hbb5` と解釈される — 初回適用すると binding-path-missing を
+  // 報告するだけなので、ハイドレーションはこれを適用しない（collectBlockBindings）
+  const FIXTURE = `
+    <wcs-ssr name="default">
+      <script type="application/json">{"items":[{"n":1,"on":true}]}</script>
+      <template id="hbb4" data-wcs="for: items"><li><span class="n" data-wcs="textContent: items.*.n"></span><template data-wcs="if: items.*.on"><b>on</b></template></li></template>
+    </wcs-ssr>
+    <wcs-state enable-ssr json='{"items":[]}'></wcs-state>
+    <ul>
+      <!--@@wcs-for:hbb4-->
+      <!--@@wcs-for-start:hbb4:items:0--><li><span class="n" data-wcs="textContent: items.*.n">1</span><!--@@wcs-if:hbb5--><!--@@wcs-if-start:hbb5:items.*.on--><b>on</b><!--@@wcs-if-end:hbb5:items.*.on--></li><!--@@wcs-for-end:hbb4:items:0-->
+    </ul>
+  `;
+
+  it("置き場を初回適用せず失敗を報告しない（行のほかのバインディングは追従する）", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     document.body.innerHTML = FIXTURE;
     const el = document.querySelector("wcs-state") as State;
     await el.connectedCallbackPromise;
-    await new Promise((resolve) => setTimeout(resolve, 200));
-
-    expect(texts("h3")).toEqual(["G1"]);
-    expect(texts(".outer-index"), "添字は state に依存しないので、サーバーが書いたテキストのまま").toEqual(["0"]);
-    expect(texts("i"), "サーバーが書いたテキストのまま").toEqual(["x", "y"]);
-    expect(texts(".inner-index"), "サーバーが書いたテキストのまま").toEqual(["0", "1"]);
-    expect(errorSpy.mock.calls.map((args) => String(args[0])), "失敗の報告を増やさない").toEqual([]);
-
-    write(el, (s: any) => { s["groups.0.title"] = "G2"; });
+    await State.getBindingsReady(document);
     await flush();
-    expect(texts("h3")).toEqual(["G2"]);
+    expect(errorSpy.mock.calls.map((args) => String(args[0]))).toEqual([]);
+    expect(texts(".n")).toEqual(["1"]);
+
+    write(el, (s: any) => { s["items.0.n"] = 10; });
+    await flush();
+    expect(texts(".n")).toEqual(["10"]);
   });
 });

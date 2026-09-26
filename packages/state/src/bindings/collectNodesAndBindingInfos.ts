@@ -67,7 +67,18 @@ export function collectNodesAndBindingInfos(
   root: Document | Element | DocumentFragment,
   transform?: ParseResultTransform,
 ): [ Node[], IBindingInfo[], IDeferredSpreadEntry[] ] {
-  const subscriberNodes = getSubscriberNodes(root);
+  return collectNodesAndBindingInfosOf(getSubscriberNodes(root), transform);
+}
+
+/**
+ * 購読ノードの列を受け取る版。SSR のハイドレーション（ssr/hydrateBindings.ts）が、生きている
+ * ブロックのノード列を**動かさずに**集めるのに使う（根を要求する上の版に掛けるには一時的な
+ * 要素へ移すしかなく、移すとブロックの中のカスタム要素が切断・再接続される — #258）。
+ */
+export function collectNodesAndBindingInfosOf(
+  subscriberNodes: Node[],
+  transform?: ParseResultTransform,
+): [ Node[], IBindingInfo[], IDeferredSpreadEntry[] ] {
   const allBindings: IBindingInfo[] = [];
   const deferredSpreads: IDeferredSpreadEntry[] = [];
   for(const node of subscriberNodes) {

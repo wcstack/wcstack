@@ -98,6 +98,7 @@ export function collectComments(root: Node, match: (data: string) => boolean): C
 
 const isPlaceholder = (data: string): boolean => SSR_PLACEHOLDER_COMMENT.test(data);
 export const isBlockStart = (data: string): boolean => SSR_BLOCK_START.test(data);
+export const isBlockBoundary = (data: string): boolean => SSR_BLOCK_START.test(data) || SSR_BLOCK_END.test(data);
 
 /**
  * 直列化用のクローン。`getFragmentNodeInfos` がテンプレート登録時に空 Text へ潰した
@@ -320,7 +321,7 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
    * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
    */
   static removeBlockBoundaryComments(root: Node): void {
-    for (const comment of collectComments(root, (d) => SSR_BLOCK_START.test(d) || SSR_BLOCK_END.test(d))) {
+    for (const comment of collectComments(root, isBlockBoundary)) {
       comment.remove();
     }
   }
@@ -409,24 +410,33 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
     // SSR テキストバインディングを @@: 形式に復元
     Ssr.restoreTextBindings(body);
 
-    // プレースホルダーコメント (@@wcs-for:uuid 等) をテンプレートに差し替え
-    for (const comment of collectComments(body, isPlaceholder)) {
-      const tpl = templateByUuid.get(comment.data.split(':')[1]);
-      if (tpl) {
-        const restored = document.createElement('template') as HTMLTemplateElement;
-        const bindAttr = tpl.getAttribute(config.bindAttributeName);
-        if (bindAttr) restored.setAttribute(config.bindAttributeName, bindAttr);
-        const imported = document.importNode(tpl.content, true);
-        if (imported.childNodes.length > 0) {
-          restored.content.appendChild(imported);
-        } else {
-          for (const child of Array.from(tpl.childNodes)) {
-            restored.content.appendChild(document.importNode(child, true));
+    // プレースホルダーコメント (@@wcs-for:uuid 等) をテンプレートに差し替える。
+    // **差し替えたテンプレートの中身にも掛ける**（#258）: スナップショットのテンプレートは平らで
+    // （入れ子のテンプレートは親の中身にプレースホルダとして居る — collectReachableFragments）、
+    // 中身のプレースホルダが指すのはサーバーの uuid。クライアントの台帳には無いので、残すと
+    // `text: <uuid>` と解釈され（binding-path-missing）、入れ子の内側が一度も描かれなかった
+    // （実 Chromium で実測。同じモジュールでサーバー描画する vitest では台帳が残っていて見えない）
+    const restorePlaceholders = (scope: Node): void => {
+      for (const comment of collectComments(scope, isPlaceholder)) {
+        const tpl = templateByUuid.get(comment.data.split(':')[1]);
+        if (tpl) {
+          const restored = document.createElement('template') as HTMLTemplateElement;
+          const bindAttr = tpl.getAttribute(config.bindAttributeName);
+          if (bindAttr) restored.setAttribute(config.bindAttributeName, bindAttr);
+          const imported = document.importNode(tpl.content, true);
+          if (imported.childNodes.length > 0) {
+            restored.content.appendChild(imported);
+          } else {
+            for (const child of Array.from(tpl.childNodes)) {
+              restored.content.appendChild(document.importNode(child, true));
+            }
           }
+          restorePlaceholders(restored.content);
+          comment.parentNode!.replaceChild(restored, comment);
         }
-        comment.parentNode!.replaceChild(restored, comment);
       }
-    }
+    };
+    restorePlaceholders(body);
 
     // data-wcs-ssr-id 属性を除去
     const ssrIdElements = root.querySelectorAll('[data-wcs-ssr-id]');
