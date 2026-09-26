@@ -31,7 +31,7 @@
  *     （2 相構成が保証するのは第 1 相の失敗であって、第 2 相の中断ではない）。
  *  6. 境界 — 空の木 / 深さ 1 / 存在しないプロパティ / 木より深い接尾辞 / アンカーが配列でない。
  *  7. cold — 走査を一度も経ていない state で、最初の操作が合併形の `$setAll` でも成立すること
- *     （Phase A の A1 の対）。対照として cold な `$resolve` は落ちることも置く。
+ *     （Phase A の A1 の対）。cold な `$resolve` も #324 以降は落ちないことを並べて置く。
  *  8. 描画あり — 3 段の `for` で描いた木にブロードキャストすると DOM が追従すること
  *     （葉の値・合併集計の表示・**行ごとの再帰 getter** の 3 系統）。描画が浅くても
  *     （`for` が 1 段でも）全深さに書けることも対で置く。
@@ -1065,11 +1065,16 @@ describe("cold な state でも合併形の $setAll が成立すること", () =
     host.remove();
   });
 
-  it("対照: cold な $resolve は台帳が無くて落ちること（第 1 相を持たない唯一の API）", async () => {
+  it("cold な $resolve も、台帳の無い段でその場で台帳を生やして書けること", async () => {
+    // 第 1 相（走査）を持たない唯一の API だったが、行集合を引く段で台帳が無ければ生やす。
     const { host, stateEl } = await mount(recursionState(asymmetric()), NO_RENDER_HTML);
 
-    expect(() => write(stateEl, (s: any) => { s.$resolve(valueAt(2), [0, 0, 0], 500); }))
-      .toThrow(/ListIndexes not found/);
+    // Fixed by #324 (a list with no ledger grows one on the spot, diffed against the state-side baseline)
+    //   — was: throw "[@wcstack/state] ListIndexes not found: nodes"
+    expect(writeError(stateEl, (s: any) => { s.$resolve(valueAt(2), [0, 0, 0], 500); })).toBe("");
+    await flush();
+
+    expect(union(stateEl)).toEqual([10, 11, 500, 13, 20, 30, 31, 32, 33]);
     host.remove();
   });
 

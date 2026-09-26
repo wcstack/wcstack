@@ -24,23 +24,28 @@
  *  1''. **#274 — ネストしたリストへの構造書き込み直後の cold な `$resolve`**。書き込みの依存
  *     ウォークが書いたパス自身のキャッシュ（書き込み前の配列）を読み、新しい配列の台帳を
  *     作っていなかった。ウォークの前にそのキャッシュを無効化する（setByAddress.ts の notifyWrite）。
+ *  1'''. **#324 — 台帳の無いリストを添字で引く経路（cold な `$resolve` / `$postUpdate`、
+ *     直接添字）**。行集合を台帳から引くだけで作らなかった（Phase A の A1「$resolve だけが
+ *     走査の第 1 相を持たない」）。台帳が無ければ、`$getAll` と同じ state 側の基準で差分を
+ *     取ってその場で生やす（src/proxy/methods/getListIndexesByAddress.ts）。欠陥1 の (iii)・
+ *     欠陥5 の `$postUpdate` と「毎回新配列を返す」リスト getter の 3 つがこれで反転した。
  *
  * 現状固定のまま残っている欠陥:
- *  1'. 欠陥1 の describe に 2 箇所残る（いずれも `DEFECT:` コメント付き）。
- *      (i) in-place push 後の `[...arr]` 再代入（in-place 変異規範の側）、
- *      (iii) describe 末尾の it に **埋め込まれた** `(1')`＝走査を一度も経ていない
- *      cold な `$resolve`（it 全体は緑なので、独立した it を数えると見落とす）。
- *      (iii) は「$resolve だけが走査の第 1 相を持たない」（Phase A の A1）で、E1 とは別の契約。
- *      （(ii) の構造書き込み直後の cold な `$resolve` は #274 で直った — 上の 1''）
+ *  1'. 欠陥1 の describe に 1 箇所残る（`DEFECT:` コメント付き）。
+ *      (i) in-place push 後の `[...arr]` 再代入（in-place 変異規範の側）。
+ *      （(ii) の構造書き込み直後の cold な `$resolve` は #274 で、describe 末尾の it に
+ *      埋め込まれた (iii) の走査を一度も経ていない cold な `$resolve` は #324 で直った
+ *      — 上の 1'' / 1'''）
  *  2. 同じ配列インスタンスが 2 つ以上の親から到達可能（DAG・循環・同一リスト内の
  *     重複）だと、台帳（src/list/listIndexesByList.ts）が配列インスタンスだけを
  *     キーにしているため ListIndex が先着の親に別名化し、無言で誤る（E6 で修理予定）。
  *  4. createState("readonly") の中で $setAll / $resolve(set) が readonly ガードを
  *     素通りして実データを書き換える（ガードは StateHandler の set トラップにしかない。X1）。
  *  5. 遅延実体化（defineTreeAccessor）で、そのパスを読んだ後に getter を生やしても
- *     undefined が dirty:false でキャッシュに固定されたまま直らない。加えて、
- *     リストを実体化するアクセサを生の defineProperty で入れると（getterPaths 外＝
- *     非キャッシュになり）cold 走査そのものが落ちる（E4/E5 で修理予定）。
+ *     undefined が dirty:false でキャッシュに固定されたまま直らない（E4/E5 で修理予定）。
+ *     （リストを実体化するアクセサを生の defineProperty で入れると cold 走査そのものが
+ *     落ちていた件と、救済手段の `$postUpdate` が台帳の無い深さで throw していた件は
+ *     #324 で直った — 上の 1'''）
  *  6. 描画ありでも 1 クラスだけ取りこぼす。in-place の深い変異を構造変化と同じ代入に
  *     混ぜると、集計 getter は再評価されるのに葉の値パスのキャッシュだけが dirty 化
  *     されず、縮約エッジでルート集計まで古い値が伝播する。in-place の arr.reverse()
@@ -113,8 +118,9 @@ const FOR_ROOT =
 
 // ---------------------------------------------------------------------------
 
-// E1 で修理済みの describe。ただし末尾 2 本（in-place push の再代入 / cold な $resolve）
-// だけは別原因なので現状固定のまま残してある（`DEFECT:` コメントが付いている方）。
+// E1 で修理済みの describe。ただし in-place push の再代入の 1 本だけは別原因なので
+// 現状固定のまま残してある（`DEFECT:` コメントが付いている方）。末尾の it に埋め込まれていた
+// cold な $resolve の (1') は #324 で直った。
 describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも構造書き込みが集計に追従する", () => {
   /** 2 行 × 子 1 個。行 total は [11, 22] */
   const twoRoots = () =>
@@ -444,10 +450,10 @@ describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも�
   // 全段追従する」（integration.recursionPrerequisites.test.ts）の裏。修理前は、その
   // `for` を外すと同じ 3 ケースのうち 2 つが throw していた（＝あの 1 本の for は
   // 飾りではなかった）。いまは 3 ケースとも「for 1 本」と同じ値になる。
-  // 唯一残る差は (1') の cold な `$resolve` で、これは E1 ではなく「$resolve だけが
-  // 走査の第 1 相を持たない」（Phase A の A1）という別の契約 ── for があるときは初回描画が
-  // その走査を代行していただけなので、走査を 1 回挟めば for 無しでも通る。
-  it("同じ 3 ケースは for を外しても「for 1 本」と同じ結果になる（cold な $resolve だけが走査を 1 回要る）", async () => {
+  // 最後まで残っていた差は (1') の cold な `$resolve` で、これは E1 ではなく「$resolve だけが
+  // 走査の第 1 相を持たない」（Phase A の A1）という別の契約だった ── for があるときは初回描画が
+  // その走査を代行していただけ。#324 で、台帳の無い段は $resolve がその場で台帳を生やす。
+  it("同じ 3 ケースは for を外しても「for 1 本」と同じ結果になる（cold な $resolve も走査を要らない）", async () => {
     const forest = () => unrollTotals({
       nodes: [NODE(1, [NODE(10, [NODE(100)]), NODE(20)]), NODE(2)],
     }, 2);
@@ -461,14 +467,18 @@ describe("欠陥1（E1 修理済み）: 描画なしのルートリストでも�
     expect(read(a.stateEl, (s: any) => s.grandTotal), "深い葉の更新").toBe(533);
     expect(totalsAt(a.stateEl, 0), "深い葉の更新").toEqual([531, 2]);
 
-    // (1') DEFECT（E1 とは別原因・現状固定）: 走査を一度も経ていない cold な $resolve
-    //      だけは、いまも for 無しで落ちる。should be: 走査を挟まなくても書ける。
+    // (1') 走査を一度も経ていない cold な $resolve でも、走査を挟まずに書けて同じ 533 になる
     const cold = await mount(forest());
     let coldErr: string | null = null;
     write(cold.stateEl, (s: any) => {
       try { s.$resolve(DEEP, [0, 0, 0], 500); } catch (e: any) { coldErr = String(e && e.message); }
     });
-    expect(coldErr).toBe("[@wcstack/state] ListIndexes not found: nodes");
+    await flush();
+    // Fixed by #324 (a list with no ledger grows one on the spot, diffed against the state-side baseline)
+    //   — was: "[@wcstack/state] ListIndexes not found: nodes"
+    expect(coldErr).toBeNull();
+    expect(read(cold.stateEl, (s: any) => s.grandTotal), "cold な深い葉の更新").toBe(533);
+    expect(totalsAt(cold.stateEl, 0), "cold な深い葉の更新").toEqual([531, 2]);
 
     // (2) 行の移動
     const b = await mount(forest());
@@ -1045,7 +1055,7 @@ describe("欠陥4（修正済み、要件 B6）: readonly ガードは $setAll /
 
     let resolveError: string | null = null;
     stateEl.createState("readonly", (s: any) => {
-      s.$getAll("nodes.*.children.*.value", []); // 台帳を作る（cold の $resolve は throw する）
+      s.$getAll("nodes.*.children.*.value", []); // 台帳を作る（#324 以前は cold の $resolve が throw した）
       try { s.$resolve("nodes.*.children.*.value", [1, 0], 55); } catch (e: any) { resolveError = String(e && e.message); }
       // 読み（引数 2 つ）は readonly でも通る
       expect(s.$resolve("nodes.*.children.*.value", [1, 0])).toBe(20);
@@ -1148,19 +1158,22 @@ describe("欠陥5: 遅延実体化（defineTreeAccessor）のキャッシュ固�
     expect(totalsAt(stateEl, 0)).toEqual([999]);
   });
 
-  // DEFECT: $postUpdate は「まだ走査していない深さのキャッシュを剥がす」ための
-  //         救済手段のはずだが、まさにその状況（台帳が未生成）では throw する。
-  //         救済手段が救済したい状況で使えない。
-  //         should be: throw せず、その深さのキャッシュが剥がれる。
-  it("$postUpdate が台帳の無い深さで throw する（救済手段が救済したい状況で使えない）", async () => {
+  // 修理済み（#324）。$postUpdate は「まだ走査していない深さのキャッシュを剥がす」ための
+  // 救済手段なのに、まさにその状況（台帳が未生成）で throw していた ── 救済手段が救済したい
+  // 状況で使えなかった。いまは台帳の無い段でその場で台帳を生やす。
+  it("$postUpdate が台帳の無い深さでも throw しない（救済手段が救済したい状況で使える）", async () => {
     const { stateEl } = await mount(lazyTree(), HTML);
     defineTotals(stateEl, 0, 0);
     expect(totalsAt(stateEl, 0)[0]).toBeNaN();
     defineTotals(stateEl, 1, 2);
 
-    expect(() => write(stateEl, (s: any) => {
-      s.$postUpdate("nodes.0.children.0.children.0.total");
-    })).toThrow("[@wcstack/state] ListIndex not found: nodes.*.children.*.children");
+    let error: string | null = null;
+    write(stateEl, (s: any) => {
+      try { s.$postUpdate("nodes.0.children.0.children.0.total"); } catch (e: any) { error = String(e && e.message); }
+    });
+    // Fixed by #324 (a list with no ledger grows one on the spot, diffed against the state-side baseline)
+    //   — was: "[@wcstack/state] ListIndex not found: nodes.*.children.*.children"
+    expect(error).toBeNull();
 
     // 対照: 葉→根の順に、台帳のある深さだけを撃てば回復する
     write(stateEl, (s: any) => {
@@ -1217,16 +1230,14 @@ describe("欠陥5: 遅延実体化（defineTreeAccessor）のキャッシュ固�
     expect(totalsAt(stateEl, 1)).toEqual([8]);
   });
 
-  // DEFECT: 上の対照の裏。「素の defineProperty で足りる」のは **総和 getter** の話で、
-  //         リストそのものを実体化するアクセサ（毎回新しい配列を返す）に同じことを
-  //         すると、cold な $getAll も $setAll も `ListIndexes not found: nodes` で
-  //         落ちる。原因は isCacheable が `wildcardCount > 0 || getterPaths.has(path)`
-  //         なので、ワイルドカードを含まない "nodes" が getterPaths 外だと非キャッシュに
-  //         なり、走査の第 1 相と第 2 相が別々の配列インスタンスを読むこと。
-  //         メッセージは「台帳が無い」としか言わないので原因に辿り着けない。
-  //         should be: 実体化アクセサでも cold 走査が成立する（あるいは非キャッシュな
-  //         リスト getter を名指しする診断が出る）。
-  it("生の defineProperty で入れた「毎回新配列を返す」リスト getter は、cold 走査が両方 throw する", async () => {
+  // 修理済み（#324）。上の対照の裏。「素の defineProperty で足りる」のは **総和 getter** の話で、
+  // リストそのものを実体化するアクセサ（毎回新しい配列を返す）に同じことをすると、cold な
+  // $getAll も $setAll も `ListIndexes not found: nodes` で落ちていた。isCacheable が
+  // `wildcardCount > 0 || getterPaths.has(path)` なので、ワイルドカードを含まない "nodes" が
+  // getterPaths 外だと非キャッシュになり、走査の第 1 相と第 2 相が別々の配列インスタンスを読む
+  // ため（第 2 相が読んだ配列には台帳が無かった）。いまは台帳の無い配列にもその場で台帳を
+  // 生やすので、両方とも通る。
+  it("生の defineProperty で入れた「毎回新配列を返す」リスト getter でも、cold 走査が両方通る", async () => {
     const backing = [{ value: 1 }, { value: 2 }];
     const initial: any = { title: "t", nodes: backing };
     const { stateEl } = await mount(initial, HTML);
@@ -1237,11 +1248,12 @@ describe("欠陥5: 遅延実体化（defineTreeAccessor）のキャッシュ固�
     });
     expect(stateEl.getterPaths.has("nodes")).toBe(false);
 
-    expect(() => read(stateEl, (s: any) => s.$getAll("nodes.*.value", [])))
-      .toThrow("[@wcstack/state] ListIndexes not found: nodes");
-    expect(() => write(stateEl, (s: any) => { s.$setAll("nodes.*.value", [], 5); }))
-      .toThrow("[@wcstack/state] ListIndexes not found: nodes");
-    expect(backing.map((b) => b.value)).toEqual([1, 2]);   // 書き込み 0 件
+    // Fixed by #324 — was: throw "[@wcstack/state] ListIndexes not found: nodes"（$getAll / $setAll とも。書き込み 0 件）
+    expect(read(stateEl, (s: any) => s.$getAll("nodes.*.value", []))).toEqual([1, 2]);
+    let written = 0;
+    write(stateEl, (s: any) => { written = s.$setAll("nodes.*.value", [], 5); });
+    expect(written).toBe(2);
+    expect(backing.map((b) => b.value)).toEqual([5, 5]);
   });
 
   // 対照。まったく同じアクセサを defineTreeAccessor 経由で入れると、getterPaths に載って
