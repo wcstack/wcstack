@@ -643,6 +643,32 @@ export function composeMountIndexes(
   return [...contextIndexes.slice(0, prefixWildcards), ...indexes];
 }
 
+/**
+ * 文字列パスの読み書き（#322 / #323）: 翻訳で前に付いたワイルドカード（マウントの接頭辞・
+ * 行マウントのマーカー基底）を、ホスト行の添字で具体化する（`items.0.v` →
+ * `groups.*.items.0.v` → `groups.1.items.0.v`）。作者のパスに `*` が無いときだけ —
+ * そのとき翻訳後の `*` は全部接頭辞のもので、作者の `*` は評価中の文脈が解決する。
+ * 添字が足りなければ残りの `*` はそのまま（コアが解決できずに投げる）。
+ * 具体パスは getPathInfo に通さない（行ごとに intern されるのを避ける）。
+ */
+export function concretizeMountPrefix(
+  innerPath: string,
+  translatedPath: string,
+  hostIndexes: readonly number[],
+): string {
+  if (innerPath.indexOf(WILDCARD) !== -1) {
+    return translatedPath;
+  }
+  const segments = translatedPath.split(DELIMITER);
+  let n = 0;
+  for (let i = 0; i < segments.length && n < hostIndexes.length; i++) {
+    if (segments[i] === WILDCARD) {
+      segments[i] = String(hostIndexes[n++]);
+    }
+  }
+  return segments.join(DELIMITER);
+}
+
 // ---------------------------------------------------------------------------
 // 登録簿
 // ---------------------------------------------------------------------------
