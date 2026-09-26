@@ -28,8 +28,7 @@ import { ForView, type Block, type IfView, type RowPlan } from "../dom/view";
 import { config } from "../config";
 import { hooks } from "../hooks";
 
-/** The version written by the server and checked (major.minor) by the client: the same build on both sides. */
-export const VERSION = "0.0.0";
+import { VERSION } from "../version";
 const TAG = "wcs-ssr";
 const BUILDER = Symbol.for("wcstack.ssr.snapshotBuilder");
 

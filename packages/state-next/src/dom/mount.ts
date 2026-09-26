@@ -2,7 +2,7 @@ import type { Engine } from "../engine";
 import { config } from "../config";
 import { raiseError } from "../parser/raiseError";
 import { hooks } from "../hooks";
-import { bindAttr, compilePlan, directive, elementSpecs, notAfterIf, readChain, splitMustache, textSpec } from "./plan";
+import { bindAttr, boundPattern, compilePlan, directive, elementSpecs, notAfterIf, readChain, splitMustache, textSpec } from "./plan";
 import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
 import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
 
@@ -47,7 +47,7 @@ function walk(engine: Engine, children: ChildNode[]): void {
         const d = directive(el);
         if (d === null) continue;
         if (d.bindingType === "for") {
-          const p = engine.pattern(d.statePathName);
+          const p = boundPattern(engine, d.statePathName, null);
           const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);
           const anchor = anchorFor(engine, el, "wcs-for");
           new ForView(engine, plan, listFor(engine, p, null, anchor), anchor).update();

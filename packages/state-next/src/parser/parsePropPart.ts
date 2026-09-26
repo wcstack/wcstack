@@ -53,7 +53,7 @@ export function parsePropPart(propPart: string): PropPartParseResult {
   const modifierParts = propText.split(MODIFIER_SEPARATOR).map(trimFn);
   if (modifierParts.length > 2) {
     // 修飾子の並びは 1 つだけ（要件 B2）。`value#ro#wo` は以前 `ro` だけを残して黙って捨てていた
-    raiseError(`[wcs/binding-syntax] "${propText}": one modifier list — write "${modifierParts[0]}${MODIFIER_SEPARATOR}${modifierParts.slice(1).join(",")}".`);
+    raiseError(`[wcs/binding-syntax] "${propText}": one modifier list`);
   }
   const [propName, propModifiersText] = modifierParts;
   const propSegments = propName.split(DELIMITER).map(trimFn);

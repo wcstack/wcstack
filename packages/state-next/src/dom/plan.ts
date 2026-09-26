@@ -5,6 +5,7 @@ import { config } from "../config";
 import { parseBindTextForEmbeddedNode, parseBindTextsForElement, type ParsedBinding } from "../parser/index";
 import { buildFilters, type FilterFn } from "./filters";
 import { raiseError } from "../parser/raiseError";
+import { hooks } from "../hooks";
 import {
   K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, BUBBLING,
   type BranchSpec, type RowPlan, type Spec,
@@ -66,6 +67,13 @@ function flags(mods: string[]): Flags {
 
 const COMMAND_PREFIX = "$command.";
 
+/** The pattern of a path a binding names (shown to the diagnostics add-on). */
+export function boundPattern(engine: Engine, path: string, list: Pattern | null): Pattern {
+  const p = engine.pattern(expandPath(path, list));
+  if (hooks.declared !== null) hooks.declared(engine, p);
+  return p;
+}
+
 /** An `elseif:` / `else:` template with no `if:` before it. */
 export function notAfterIf(type: string): never {
   raiseError(`[wcs/template-syntax] "${type}:" must follow an "if:" template`);
@@ -102,14 +110,14 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     };
   }
   if (b.bindingType === "spread") {
-    return { ...blank(), node, kind: K_SPREAD, pattern: engine.pattern(expandPath(path, list)), custom };
+    return { ...blank(), node, kind: K_SPREAD, pattern: boundPattern(engine, path, list), custom };
   }
   if (segs[0] === "command" && segs.length > 1) {
     if (!path.startsWith(COMMAND_PREFIX)) raiseError(`[wcs/token-misconfigured] "${b.propName}: ${path}": the right-hand side must be $command.<name>`);
     return { ...blank(), node, kind: K_COMMAND, name: segs.slice(1).join("."), token: path.slice(COMMAND_PREFIX.length), custom };
   }
 
-  const pattern = engine.pattern(expandPath(path, list));
+  const pattern = boundPattern(engine, path, list);
   const spec: Spec = {
     ...blank(), node, kind: K_PROP, name: b.propName, pattern,
     filters: buildFilters(b.outFilters), inFilters: buildFilters(b.inFilters), ro: f.ro, init: f.init, sync: f.sync,
@@ -182,7 +190,7 @@ export function splitMustache(t: Text): { node: Text; expr: string }[] {
 
 export function textSpec(engine: Engine, expr: string, list: Pattern | null, node: number): Spec {
   const b = parseBindTextForEmbeddedNode(expr);
-  return { ...blank(), node, kind: K_TEXT, pattern: engine.pattern(expandPath(b.statePathName, list)), filters: buildFilters(b.outFilters), initial: "" };
+  return { ...blank(), node, kind: K_TEXT, pattern: boundPattern(engine, b.statePathName, list), filters: buildFilters(b.outFilters), initial: "" };
 }
 
 /** The structural directive on a template (`for` / `if` / `elseif` / `else`), or null. */
@@ -207,7 +215,7 @@ export interface ChainPart {
 export function readChain(engine: Engine, children: ChildNode[], start: number, list: Pattern | null): { parts: ChainPart[]; end: number } {
   const part = (el: Element, b: ParsedBinding): ChainPart => ({
     el: el as HTMLTemplateElement,
-    pattern: b.bindingType === "else" ? null : engine.pattern(expandPath(b.statePathName, list)),
+    pattern: b.bindingType === "else" ? null : boundPattern(engine, b.statePathName, list),
     filters: b.bindingType === "else" ? null : buildFilters(b.outFilters),
   });
   const first = children[start] as Element;
@@ -248,7 +256,7 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
           const d = directive(el);
           if (d === null) continue;
           if (d.bindingType === "for") {
-            const p = engine.pattern(expandPath(d.statePathName, list));
+            const p = boundPattern(engine, d.statePathName, list);
             const sub = compilePlan(engine, el as HTMLTemplateElement, p, true);
             const anchor = document.createComment("wcs-for");
             el.replaceWith(anchor);

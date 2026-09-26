@@ -7,6 +7,11 @@ import { describe, it, expect } from "vitest";
 import { parseBindTextsForElement } from "../src/parser/parseBindTextsForElement";
 import { parseBindTextForEmbeddedNode } from "../src/parser/parseBindTextForEmbeddedNode";
 
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+installFeatures([diagnostics]);
+
 const parseOne = (text: string) => parseBindTextsForElement(text)[0];
 
 describe("B1 引用符と区切り（3.0 で採用: 引用符の中は区切らない）", () => {

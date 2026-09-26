@@ -144,6 +144,7 @@
 
 - **診断**: 束ねたパスが状態で解決しないときの `console.warn`（`wcs/binding-path-missing` と did-you-mean、`$watch` 用の `watch-path-missing`）。現行は後付け（1.1KB）。F6・F11 と再セット時の再検査で足りる。
 - **DevTools**: 大域の `__WCSTACK_DEVTOOLS_HOOK__`（プロトコル v2）。`@wcstack/devtools` は内部の住所構造（`absoluteAddress.absolutePathInfo…`）とバインディングを読む。新エンジンは行のバインディングを遅延して作る（スロット）ので、「バインディングの追加・削除」のイベントを安く再現できない。**v3 で引き出し型（pull）の見取り図に変える**か、v2 を擬似的に保つかを決める必要がある。
+  - 結果: v2 のまま保てた（§6 後付け 6）。`@wcstack/devtools` の改修は要らない。
 
 ## 4. 目標と検査
 
@@ -279,7 +280,7 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
   - 受け口を埋めても費用はほぼ 0 で、目標の比の変化は環境によるもの。
 - 全操作の計測（`addons/temporal-full/`）は、機械の負荷で同じ現行を 2 回測った差（A/A）が 20〜112% に達したので採用しない。
 
-### 後付け 2: scopes（volume・DCC）（2026-09-26）
+### 後付け 2: scopes（volume・DCC）（2026-09-26・コミット `0cad22f6`）
 
 `features/scopes` の 1 つの後付けに volume と DCC を入れた。コンポーネントの mount（`bind-component`）は次の段で同じ後付けに足す。
 
@@ -350,7 +351,7 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 - 今回: ウォーム 1,000 行 6.45ms（**1.54 倍**）、コールド 10,000 行 76.75ms（**1.52 倍**）。
 - 直前: 6.55ms（1.56 倍）、75.4ms（1.49 倍）。差は揺れの範囲。
 
-### 後付け 3: コンポーネントの mount（`bind-component`）（2026-09-26・未コミット）
+### 後付け 3: コンポーネントの mount（`bind-component`）（2026-09-26・コミット `410c6c55`）
 
 `features/scopes` に足した（`src/scopes/component.ts`）。
 
@@ -412,7 +413,7 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 - #323: `for:` の行の中にマウントしたコンポーネントから `this["items.0.v"]` に書くと投げる。
 - 当初は 4 つと数えていたが、「押した行の添字で書いた私有キー」は #321 と同じ原因だったので 3 件にした。
 
-### 後付け 4: recursion（`$recursion`・`**`）（2026-09-26・未コミット）
+### 後付け 4: recursion（`$recursion`・`**`）（2026-09-26・コミット `db63d80b`）
 
 `features/recursion`（`src/recursion/recursion.ts`）。
 
@@ -451,7 +452,7 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 
 **性能**（`addons/recursion-targets/`、全部入りの `auto`、3 周・各 18 サンプル）: ウォーム 1,000 行 5.9ms（**1.44 倍**）、コールド 10,000 行 72.8ms（**1.48 倍**）。前回（1.54／1.52 倍）と揺れの範囲で、core の 2 つの修正（行の getter のキャッシュ判定、`$getAll` のリストの読み）による後退は見えない。
 
-### 後付け 5: SSR（`enable-ssr`・`@wcstack/server`）（2026-09-26・未コミット）
+### 後付け 5: SSR（`enable-ssr`・`@wcstack/server`）（2026-09-26・コミット `aa735d2d`）
 
 `features/ssr`（`src/ssr/ssr.ts`）。
 
@@ -518,3 +519,52 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 **性能**（全部入りの `auto`、同じ回で直前のコミット `db63d80b` と交互に 4 周・各 24 サンプル、`addons/ssr-targets-ab2/`）: ウォーム 1,000 行 5.75ms（直前 5.9ms）、コールド 10,000 行 76.2ms（直前 75.5ms）。差は揺れの範囲。目標の比は **1.39／1.58 倍**。
 - 最初は `adopt` を常に差し込んでいて、同じ回の比較でウォーム 1,000 行が +14% に見えた。引き取りの間だけにして、差が消えた。
 - e2e 全体: 両方で通るものが **124/131**（ssr-router の 5 件が加わった）。現行だけで通るのは `$scan` を使うデモの 6 件、両方で落ちるのは SSE のタイミングの 1 件。
+
+### 後付け 6: 診断と DevTools（2026-09-26・未コミット）
+
+`features/diagnostics`（`src/features/diagnostics.ts`）と `features/devtools`（`src/devtools/devtools.ts`）。
+
+**診断**
+- 束ねたパスの存在検査（現行と同じ code と文面）:
+  - バインディングと `$watch` のキーが名指すパスを、1 マクロタスク後に 1 回だけ確かめる。無ければ `console.warn`（`wcs/binding-path-missing`／`wcs/watch-path-missing`、did-you-mean、lint への誘導）。
+  - 確かに無いと言えるときだけ警告する。途中に getter・null・空の配列・再帰の展開があれば黙る。行の getter（`items.*.subtotal`）も did-you-mean の候補に入れる。
+  - 1 段のバインディングは警告しない（読みが core のエラーで失敗するため）。
+  - 再セットのあと、新しい状態に対して確かめ直す。
+- 再帰の静的な検査（§5.2 の承認済みの簡素化で、core ではなく診断に置いたもの）:
+  - 構造そのものを名指しする族、深さだけ違う 2 つの族、展開と同じ名前の具体的なキーを `[wcs/recursion-declaration-invalid]` で拒む。
+  - `declare` の受け口で確かめる。
+- core の文字列をさらに 2 つ縮めた（修飾子の並び、`@name` の廃止）。直し方の文は診断が付け足す。
+- core に足したもの: 受け口 `declared` 1 つ（バインディングのパスを作る所と `$watch` のキー）。普段は null の判定 1 回だけ。
+
+**DevTools**
+- プロトコル v2（`__WCSTACK_DEVTOOLS_HOOK__`）のまま保った。`@wcstack/devtools` の改修は要らない。
+  - §5.2 の承認済みの簡素化は「v3 の引き出し型に変える」だったが、要らなかった。
+- 引き出し（要素の一覧、キー、読み、書き、`$eq` の購読）は、エンジンを読む。
+- イベント（書き込み、更新のまとまり、トークンの発火、要素の接続・切断、適用の失敗）は、既存の受け口とトークンの包みから出す。
+- 「バインディングの追加・削除」:
+  - 新エンジンは行のバインディングを遅延して作る（スロット）ので、v2 の台帳が無い。
+  - DevTools が付いている間だけ、drain のたびにバインディングの一覧（作ったもの・スロット・`for` 自体）を取り、前回との差を送る。付いていないときは何もしない。
+  - 後から付いた DevTools には、次のマイクロタスクで今の一覧を送る。
+- 外へ渡すオブジェクトのキーは、すべて引用符付きにした。
+  - 短縮名の一覧（`mangle.mjs`）に、`kind`・`path`・`node` などプロトコルと同じ名前がある。
+  - 最初は `kind` が縮められ、スモークがレジストリの検査で落ちた。
+- 版の定数を `src/version.ts` に分けた。SSR から import していたため、DevTools の分割出力に SSR が丸ごと入り 5KB になっていた。
+- core に足したもの: なし（`element`・`written`・`drained`・`failed` の受け口は既存）。
+
+**確かめたこと**
+- 実ブラウザ: DevTools のスモークが、現行と state-next の両方で通った。
+  - `e2e/devtools-smoke.mjs` を、プロキシ経由で state のバンドルだけ差し替えて流した。
+  - 通った内容: フックとソース、バッジ、状態の木、キー付きの選択、配線の生表示、書き込み・まとまり・command・event の時系列、ghost の警告、DevTools からの編集の往復、ハイライト。
+- 単体テスト: `diagnostics.test.ts` 8 件、`devtools.test.ts` 11 件。
+- e2e 全体: 両方で通るものは 124/131 のまま（後退なし、`addons/e2e-sweep/after-devtools.txt`）。
+- 縮めたバンドルのテスト（`bundle.test.ts`）に、DevTools に渡すキーが縮められていないことの検査を足した。`"kind"` の引用符を外すと落ちることを確かめた。
+- テスト 813 件（通過 812・スキップ 1）。
+
+**サイズ（gzip）**
+- diagnostics 3.2KB（現行 1.1KB）。現行では core と recursion が持っている助言文と再帰の静的検査を含む。
+- devtools 2.6KB（現行 2.2KB）。目安（現行の 50% 以下）を超えた。現行では core が持つバインディングの台帳を、後付けの中で組み立てる分。
+- core 19.98KB（直前と同じ）。全部入りの `auto` は 38.1KB（現行 80.9KB の 47%）。
+
+**性能**（全部入りの `auto`、同じ回で直前のコミット `aa735d2d` と交互に 4 周・各 24 サンプル、`addons/devtools-targets-ab/`）: ウォーム 1,000 行 6.2ms（直前 6.25ms）、コールド 10,000 行 77.2ms（直前 77.7ms）。差は揺れの範囲。目標の比は **1.53／1.55 倍**（直前 1.54／1.56）。
+- DOM の床は 4 回測った（`targets-floor4.json`）。2 回だけの集計（`targets.json`）では、床の 1 回（ウォーム 1,000 行・データ込み 2.35ms。同じ回のデータ無し 4.05ms より速い）が外れ値で、ウォームの比が 2.00 倍に見えた。
+- DevTools が付いていないときの費用は、書き込みと drain のたびに受け口を 1 回呼んで、送り先が null かを見るだけ（全部入りの `auto` で直前と同等）。

@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { parseStatePart } from '../src/parser/parseStatePart';
 import { parseBindTextsForElement } from '../src/parser/parseBindTextsForElement';
+// messages as the full bundle shows them: the diagnostics add-on appends the guidance
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+installFeatures([diagnostics]);
+
 
 describe('parseStatePart', () => {
   it('statePathのみをパースできること', () => {

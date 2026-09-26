@@ -69,7 +69,7 @@ export function parseStatePart(statePart: string): StatePartParseResult {
   }
   if (stateAndPath.indexOf("@") !== -1) {
     // 名前次元は v2 で撤去（docs/state-mount-design.md D16 / §9）。パスは 1 本のツリー。
-    raiseError(`[wcs/binding-syntax] "${stateAndPath}": the "@name" selector was removed in v2 (use <wcs-state mount>).`);
+    raiseError(`[wcs/binding-syntax] "${stateAndPath}": the "@name" selector was removed in v2`);
   }
   const statePathName = stateAndPath;
   // 右辺も左辺（`parsePropPart`）と同じ規準で空セグメントを弾く（要件 B1）。

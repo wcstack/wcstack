@@ -17,6 +17,7 @@ import type { Engine } from "../engine";
 import type { Pattern } from "../pattern";
 import type { StateList, StateRow } from "../list";
 import { raiseError } from "../parser/raiseError";
+import { hooks } from "../hooks";
 
 type Handler = (this: unknown, cur: unknown, prev: unknown, ...indexes: number[]) => unknown;
 
@@ -41,7 +42,9 @@ export function parseWatches(engine: Engine, decl: unknown): Watch[] {
     const handler = (decl as Record<string, unknown>)[path];
     if (path === "" || path[0] === "$" || path.includes("@") || PROTOTYPE_NAMES.has(path)) raiseError(`$watch path "${path}" is not a path of the state tree.`);
     if (typeof handler !== "function") raiseError(`$watch entry "${path}" must be a function.`);
-    out.push({ path, p: engine.pattern(path), handler: handler as Handler, getter: false, last: new Map() });
+    const p = engine.pattern(path);
+    if (hooks.declared !== null) hooks.declared(engine, p, true);
+    out.push({ path, p, handler: handler as Handler, getter: false, last: new Map() });
   }
   return out;
 }
