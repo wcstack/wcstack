@@ -57,6 +57,46 @@ describe("コアだけのメッセージ（診断の後付けなし）", () => {
   });
 });
 
+describe("4.0 で外した旧名", () => {
+  async function load(state: Record<string, any>) {
+    bootstrapState();
+    const h = document.createElement("div");
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><button data-wcs="onclick: go">go</button>`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState(state);
+    document.body.appendChild(h);
+    return { root, el };
+  }
+
+  it("旧名の宣言キー（$updatedCallback・$streams）は、正式名を示して投げる", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const [old, name] of [["$updatedCallback", "$renderedCallback"], ["$streams", "$stream"]]) {
+      const { el } = await load({ [old]: old === "$streams" ? {} : () => {} });
+      await expect(el.connectedCallbackPromise).rejects.toThrow(`[@wcstack/state] [wcs/declaration-alias] #1601 "${old}" "${name}"`);
+    }
+    error.mockRestore();
+  });
+
+  it("旧名の API（$trackDependency・$untrackDependency）は、読むと正式名を示して投げる", async () => {
+    const seen: string[] = [];
+    const { root, el } = await load({
+      go(this: any) {
+        for (const key of ["$trackDependency", "$untrackDependency"]) {
+          try { void this[key]; seen.push("no error"); } catch (e) { seen.push((e as Error).message); }
+        }
+      },
+    });
+    await el.connectedCallbackPromise;
+    await getBindingsReady(root);
+    (root.querySelector("button") as HTMLElement).click();
+    expect(seen).toEqual([
+      '[@wcstack/state] [wcs/name-alias] #1701 "$trackDependency" "$dependOn"',
+      '[@wcstack/state] [wcs/name-alias] #1701 "$untrackDependency" "$untracked"',
+    ]);
+  });
+});
+
 describe("番号の表", () => {
   const numbers = declaredNumbers();
 

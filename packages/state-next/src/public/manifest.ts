@@ -3,8 +3,8 @@
  * filters and the reserved names as one machine-readable source, derived from the
  * implementation — `@wcstack/lint` and the VS Code extension read it. DOM-free, no side effects.
  *
- * 4.0: the 3.x old names are gone from the runtime, so `filterAliases` and `declarationAliases`
- * are empty; `apiAliases` lists what the engine still resolves. `$scan` is no longer reserved.
+ * 4.0: the 3.x old names are gone from the runtime, so the three old-name tables are empty
+ * (declaring or reading an old name fails with its canonical name). `$scan` is no longer reserved.
  */
 import { config } from "../config";
 import { WILDCARD } from "../pattern";
@@ -31,11 +31,8 @@ export const builtinFilterAliases: Readonly<Record<string, string>> = Object.fre
 /** Declaration-key old names → canonical (3.2): removed in 4.0 (`$streams` fails as `[wcs/declaration-alias]`). */
 export const DECLARATION_ALIASES: Readonly<Record<string, string>> = Object.freeze({});
 
-/** State API old names → canonical (3.2) that the engine still resolves. */
-export const STATE_API_ALIASES: Readonly<Record<string, string>> = Object.freeze({
-  $trackDependency: "$dependOn",
-  $untrackDependency: "$untracked",
-});
+/** State API old names → canonical (3.2): removed in 4.0 (`$trackDependency` fails as `[wcs/name-alias]`). */
+export const STATE_API_ALIASES: Readonly<Record<string, string>> = Object.freeze({});
 
 /** Modifier vocabulary (`#` on the left side): flags, and `key=value` keys. */
 const MODIFIER_FLAGS: readonly string[] = Object.freeze(["prevent", "stop", "ro"]);

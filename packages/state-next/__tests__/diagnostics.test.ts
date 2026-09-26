@@ -139,6 +139,12 @@ describe("番号付きのコアのメッセージの文面（src/messages.ts）"
     );
   });
 
+  it("4.0 で外した旧名は、正式名を示す文面になる", async () => {
+    const { text, M } = await import("../src/messages");
+    expect(text(M.DeclarationRemoved, ["$updatedCallback", "$renderedCallback"])).toBe("[wcs/declaration-alias] $updatedCallback was removed: write $renderedCallback.");
+    expect(text(M.ApiRemoved, ["$trackDependency", "$dependOn"])).toBe("[wcs/name-alias] $trackDependency was removed: write $dependOn.");
+  });
+
   it("バインディングの失敗の console も文面になる", async () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     await page(`<p>{{ bad }}</p>`, { get bad() { throw new Error("boom"); } });

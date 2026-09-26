@@ -59,7 +59,7 @@ const benchState = (variant: "tracked" | "manual" | "eqIndex") => {
     base.onSelect = function (this: any, _e: Event, i: number) { this.selectedIndex = i; };
   } else if (variant === "manual") {
     Object.defineProperty(base, "data.*.selected", {
-      get(this: any) { return this.$1 === this.$untrackDependency(() => this.selectedIndex); },
+      get(this: any) { return this.$1 === this.$untracked(() => this.selectedIndex); },
       set(this: any, v: boolean) { this.selectedIndex = v ? this.$1 : null; },
       enumerable: true, configurable: true,
     });

@@ -240,7 +240,7 @@ describe("$stream", () => {
     [{ $stream: { s: { source: () => null, fold: (a: unknown) => a } } }, "fold needs an initial value"],
     [{ $stream: { "a.b": { source: () => null } } }, "must be a flat property name"],
     [{ s() {}, $stream: { s: { source: () => null } } }, "collides with a getter, setter or method"],
-    [{ $streams: {} }, "$streams was removed"],
+    [{ $streams: {} }, `[wcs/declaration-alias] #1601 "$streams" "$stream"`],
   ])("宣言の違反は状態を受け取る時点で投げる（%#）", async (state, message) => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const h = document.createElement(`temporal-test-${seq++}`);

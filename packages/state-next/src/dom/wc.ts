@@ -29,10 +29,10 @@ export interface Bindable {
   commands: Set<string>;
 }
 
-const bindableByClass = new WeakMap<Function, Bindable | null>();
+const bindableByClass = new WeakMap<CustomElementConstructor, Bindable | null>();
 
 /** The element's wc-bindable declaration (null when it has none), cached per class. */
-export function readBindable(cls: Function): Bindable | null {
+export function readBindable(cls: CustomElementConstructor): Bindable | null {
   if (bindableByClass.has(cls)) return bindableByClass.get(cls)!;
   const decl = (cls as any).wcBindable;
   let out: Bindable | null = null;

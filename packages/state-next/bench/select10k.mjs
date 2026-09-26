@@ -1,7 +1,7 @@
 // Selection and removal over 10,000 rows, per selection style, with the benchmark's own
 // clock (click → MutationObserver condition, as e2e/bench/jsfb-verify.mjs timedClick).
 // The checked-in benchmark page is served with its getter rewritten per variant:
-//   manual   the page as checked in ($untrackDependency + two explicit row writes)
+//   manual   the page as checked in ($untracked + two explicit row writes)
 //   tracked  an ordinary tracked getter: this.$1 === this.selectedIndex
 //   eqIndex  the keyed subscription: this.$eqIndex("selectedIndex")
 // Run from the repository root after `npm ci` in e2e/, with no other benchmark running:
@@ -24,7 +24,7 @@ const WARMUP = 5;
 const port = 4312;
 const url = `http://127.0.0.1:${port}/packages/state/__e2e__/benchmark/index.html`;
 
-const MARKER = "this.$untrackDependency(() => this.selectedIndex)";
+const MARKER = "this.$untracked(() => this.selectedIndex)";
 const original = await readFile(join(root, "packages/state/__e2e__/benchmark/index.html"), "utf8");
 let html = original;
 if (variant !== "manual") {

@@ -63,7 +63,7 @@ export function parseFilters(filterTextList: string[], filterIOType: FilterIOTyp
       // 診断が指す先が実際の誤りと違う（要件 B4 の並び）。
       // 助言は辺で分ける — **修飾子は左辺にしか存在しない**ので、右辺で「修飾子をフィルタより
       // 前に書け」と言うと成立しない直し方（`textContent#ro|trim: x`）を勧めることになる
-      const [name, modifiers] = filterName.split(MODIFIER_SEPARATOR);
+      const [, modifiers] = filterName.split(MODIFIER_SEPARATOR);
       raise(filterIOType === "input" ? M.FilterNameHasModifiersInput : M.FilterNameHasModifiersOutput, [filterName, modifiers]);
     }
     if (openParenIndex === -1) {

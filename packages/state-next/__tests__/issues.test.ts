@@ -53,6 +53,60 @@ function component(markup: string, state: () => Record<string, any>): string {
 
 const texts = (c: ParentNode, sel: string) => Array.from(c.querySelectorAll(sel)).map((n) => n.textContent);
 
+describe("#2 リスト要素 getter の隣接項目（前の行の getter を読む累計）", () => {
+  const html = `<ul><template data-wcs="for: items"><li>{{ .sum }}</li></template></ul>`;
+  const sums = (root: ParentNode) => texts(root, "li").map(Number);
+
+  it("数値のパス: 葉の書き込みで後ろの行がすべて再計算される", async () => {
+    const { root, write } = await page(html, {
+      items: [{ value: 1 }, { value: 2 }, { value: 3 }, { value: 4 }],
+      get "items.*.sum"() {
+        const self = this as any;
+        const i = self.$1;
+        return self["items.*.value"] + (i > 0 ? self[`items.${i - 1}.sum`] : 0);
+      },
+    });
+    expect(sums(root)).toEqual([1, 3, 6, 10]);
+    await write((s) => { s["items.0.value"] = 10; });
+    expect(sums(root)).toEqual([10, 12, 15, 19]);
+    await write((s) => { s["items.2.value"] = 0; });
+    expect(sums(root)).toEqual([10, 12, 12, 16]);
+  });
+
+  it("$resolve: 同じく再計算され、行の追加・並べ替え・削除にも追従する", async () => {
+    const { root, write } = await page(html, {
+      items: [{ value: 1 }, { value: 2 }, { value: 3 }],
+      get "items.*.sum"() {
+        const self = this as any;
+        const i = self.$1;
+        return self["items.*.value"] + (i > 0 ? self.$resolve("items.*.sum", [i - 1]) : 0);
+      },
+    });
+    expect(sums(root)).toEqual([1, 3, 6]);
+    await write((s) => { s["items.1.value"] = 20; });
+    expect(sums(root)).toEqual([1, 21, 24]);
+    await write((s) => { s.items = [{ value: 100 }, ...s.items]; });
+    expect(sums(root)).toEqual([100, 101, 121, 124]);
+    await write((s) => { s.items = s.items.toReversed(); });
+    expect(sums(root)).toEqual([3, 23, 24, 124]);
+    await write((s) => { s.items = s.items.toSpliced(1, 1); });
+    expect(sums(root)).toEqual([3, 4, 104]);
+  });
+
+  it("Issue の本文のまま（行 0 に守りが無い）: 無限ループにならず、行 0 だけが NaN、一覧は描かれる", async () => {
+    const { root, write } = await page(html, {
+      items: [{ value: 1 }, { value: 2 }],
+      get "items.*.sum"() {
+        const self = this as any;
+        return self["items.*.value"] + self[`items.${self.$1 - 1}.sum`];
+      },
+    });
+    expect(texts(root, "li")).toEqual(["NaN", "NaN"]);
+    await write((s) => { s["items.1.value"] = 5; });
+    expect(texts(root, "li")).toEqual(["NaN", "NaN"]);
+  });
+});
+
 describe("#319 初期値を要素から受け取る wc-bindable メンバーを for の行に置くと、一覧ごと描画に失敗する", () => {
   it("出力専用のメンバー: 行が描かれ、行の値は要素の値で初期化される", async () => {
     const tag = `issue-output-${seq++}`;

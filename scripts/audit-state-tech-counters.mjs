@@ -158,7 +158,7 @@ await writeFile(join(temp, 'index.instrumented.js'), runtime);
 
 // --- fixture variants ---------------------------------------------------------------------
 const html = await readFile(join(root, 'packages/state/__e2e__/benchmark/index.html'), 'utf8');
-const GETTER = 'return this.$1 === this.$untrackDependency(() => this.selectedIndex);';
+const GETTER = 'return this.$1 === this.$untracked(() => this.selectedIndex);';
 const ON_SELECT = /onSelect\(e, \$1\) \{[\s\S]*?\n  \},/;
 function fixture(variant) {
   let out = html;
@@ -176,7 +176,7 @@ function fixture(variant) {
   // `$eq(path, keyPath)` would do internally), so no pattern edge data.*.id → data.*.selected.
   if (variant === 'keyedIdUntracked') {
     must('  selectedIndex: null,', '  selectedIndex: null,\n  selectedId: null,');
-    must(GETTER, 'return this.$eq("selectedId", this.$untrackDependency(() => this["data.*.id"]));');
+    must(GETTER, 'return this.$eq("selectedId", this.$untracked(() => this["data.*.id"]));');
     must(ON_SELECT, 'onSelect(e, $1) { this.selectedId = this["data." + $1 + ".id"]; },');
     return out;
   }

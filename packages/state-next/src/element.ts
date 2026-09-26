@@ -3,7 +3,7 @@ import { Engine } from "./engine";
 import { mount } from "./dom/mount";
 import { drainBinds, installBinder } from "./dom/binder";
 import { DirtyStrategy } from "./strategy/dirty";
-import { config, setConfig, type PartialConfig } from "./config";
+import { config, setConfig } from "./config";
 import type { Strategy } from "./strategy/types";
 import { raise, M, text } from "./messages";
 import { hooks, requireFeature, type Claimed } from "./hooks";

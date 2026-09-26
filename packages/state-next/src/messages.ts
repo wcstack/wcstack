@@ -104,6 +104,10 @@ export const enum M {
   WildcardRelative = 1402,
   // [wcs/spread-no-bindable]
   SpreadNoBindable = 1501,
+  // [wcs/declaration-alias]
+  DeclarationRemoved = 1601,
+  // [wcs/name-alias]
+  ApiRemoved = 1701,
 }
 
 /** The code of each hundred of message numbers ("" = none). */
@@ -111,7 +115,7 @@ export const CODES = [
   "", "binding-syntax", "template-syntax", "binding-path-missing", "binding-type-expectation",
   "filter-unknown", "filter-arity", "getter-cycle", "getter-depth-exceeded", "index-arity",
   "index-param-range", "recursion-unsupported", "token-misconfigured", "token-undeclared",
-  "wildcard-rank", "spread-no-bindable",
+  "wildcard-rank", "spread-no-bindable", "declaration-alias", "name-alias",
 ];
 
 /** `[wcs/<code>] ` for a message number, or "" when it has none. */

@@ -98,4 +98,8 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.WildcardRelative]: (p) => `"${p}" is relative: it needs an enclosing "for" template`,
 
   [M.SpreadNoBindable]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).`,
+
+  [M.DeclarationRemoved]: (old, name) => `${old} was removed: write ${name}.`,
+
+  [M.ApiRemoved]: (old, name) => `${old} was removed: write ${name}.`,
 };

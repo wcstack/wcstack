@@ -10,11 +10,14 @@ import { hooks, requireFeature } from "./hooks";
 import { config } from "./config";
 
 /** Declarations an add-on serves: without it installed they fail instead of doing nothing. */
+const REMOVED_DECLARATIONS: [string, string][] = [["$streams", "$stream"], ["$updatedCallback", "$renderedCallback"]];
 const DECLARATIONS: [string, string][] = [["$watch", "temporal"], ["$stream", "temporal"], ["$listKeys", "list-keys"], ["$recursion", "recursion"]];
 
 function checkDeclarations(target: Record<string, any>): void {
   for (const [key, feature] of DECLARATIONS) if (target[key] !== undefined) requireFeature(feature, key);
   if (target.$scan !== undefined) raise(M.ScanRemoved);
+  // 3.2 renamed these; 4.0 removed the old names (a declaration under one would do nothing)
+  for (const [old, name] of REMOVED_DECLARATIONS) if (target[old] !== undefined) raise(M.DeclarationRemoved, [old, name]);
 }
 
 /** `$1` … `$128`, no leading zero. */
@@ -405,7 +408,6 @@ export class Engine implements ReconcileHooks {
     }
     switch (key) {
       case "$untracked":
-      case "$untrackDependency":
         return this.untrackedFn;
       case "$eqIndex":
         return this.eqIndexFn;
@@ -414,8 +416,12 @@ export class Engine implements ReconcileHooks {
       case "$eqPath":
         return this.eqPathFn;
       case "$dependOn":
-      case "$trackDependency":
         return this.dependOnFn;
+      // 3.2 renamed these; 4.0 removed the old names
+      case "$trackDependency":
+        return raise(M.ApiRemoved, [key, "$dependOn"]);
+      case "$untrackDependency":
+        return raise(M.ApiRemoved, [key, "$untracked"]);
       case "$postUpdate":
         return this.postUpdateFn;
       case "$getAll":

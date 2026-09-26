@@ -24,21 +24,19 @@
 | R2 | 4.0 の公開 API の範囲 | 現行の公開物を、残す・落とす・後付けへ、のどれにするか | **済み（2026-09-26）**: 3.3 の公開面にそろえた（§2.3、§8）。内部の部品は公開しない |
 | R3 | 3.x の最後の minor | (a) 3.4 を出して、旧名にランタイムの警告を出す (b) 約束を取り下げる | CHANGELOG 3.2.0 で「ランタイムの警告は 3.x の最後の minor でだけ出す」と約束した。3.3.0 では入っていない。lint と VS Code 拡張の通知（`wcs/name-alias`）は 3.2 からある |
 | R4 | `substr` | 残す・外す・改名する | [state-3x-naming.ja.md](../state-3x-naming.ja.md) V10 で「4.0 で考える」とした。state-next では formats の後付けにある |
-| R5 | 現行の未解決 Issue | 3.x で直す、または 4.0 で解決として閉じる | #258・#319〜#324 は state-next で起きない（#258 の行の中のコンポーネントは `faddc735` で直した）。**#2 は state-next で未確認** |
+| R5 | 現行の未解決 Issue | 3.x で直す、または 4.0 で解決として閉じる | #2・#258・#319〜#324 は、どれも state-next で起きない（#258 の行の中のコンポーネントは `faddc735` で直した。#2 は 2026-09-27 に確かめた、§8） |
 | R6 | 後回しにした機能 | 4.0 に入れる、または 4.0 の後 | コンポーネントの mount の「エクスポートした getter」と `#ro`（[addons-plan.ja.md](./addons-plan.ja.md) 後付け 3） |
 
 ## 2. エンジン（state-next）の残り
 
 ### 2.1 旧名の受け口を外す
 
-- `src/engine.ts` の `$untrackDependency`（407 行）と `$trackDependency`（416 行）を、まだ受け付けている。4.0 で外す約束とも、「エイリアスを持ち込まない」決定（scope-classification §4.1）とも食い違う。
-- 外すと、ベンチページ `packages/state/__e2e__/benchmark/index.html` の getter（`$untrackDependency`）が動かなくなる。`$untracked` に直す。
-- このページの getter を文字列置換して変種を作るスクリプトも、同じコミットで直す（ページのコメントの注意書き）。
-  - `scripts/audit-state-browser.mjs`、`scripts/audit-state-tech-{allocsample,counters,heap,heapsnapshot,keyed,profile,warmth}.mjs`、`scripts/research/keyedPrototypePatch.mjs`、`packages/state-next/bench/select10k.mjs`。
-- 外した旧名の扱いがそろっていない（2026-09-26 に確かめた）。
-  - `$streams`: 宣言すると `[wcs/declaration-alias] $streams was removed: write $stream.` で失敗する。
-  - `$updatedCallback`: 宣言しても呼ばれず、警告も出ない（診断の後付けを入れていても）。3.x から移る利用者が黙って失う。`$streams` と同じく、宣言したら失敗させる。
-  - 旧フィルタ名（`uc`・`fix` など）: `[wcs/filter-unknown]` で失敗する（did-you-mean は診断の後付けが付ける）。旧名から正式名を案内するかを決める。
+**済み（2026-09-27）**。詳細は §8。
+- engine は `$trackDependency`・`$untrackDependency` を受け付けない。読むと `[wcs/name-alias]`（#1701）で、正式名を示して投げる。
+- 宣言キーの `$streams`・`$updatedCallback` は、core が `[wcs/declaration-alias]`（#1601）で、正式名を示して投げる（これまで `$updatedCallback` は黙って無視され、`$streams` は temporal の後付けが入っているときだけ失敗した）。
+- manifest の旧名の表は 3 つとも空。
+- ベンチページのフィクスチャ（`packages/state/__e2e__/benchmark/index.html`）の getter を `$untracked` にし、それを文字列置換する計測スクリプト 9 本の目印を同じコミットでそろえた。
+- 残り: 旧フィルタ名（`uc`・`fix` など）は `[wcs/filter-unknown]` で失敗する（did-you-mean は診断の後付け）。旧名から正式名を案内するかは決めていない。
 
 ### 2.2 配布物の形
 
@@ -48,8 +46,8 @@
 | `package.json` の `exports` | `.`・`./auto`・`./core`・`./features/*`・`./define`・`./manifest`・`./parser`・`./wcs-manifest.json` | **済み**（同じ表と同じファイルの配置。名前と版は置き換えのときに変える） |
 | `.` の入口 | `dist/index.esm.js`（最小化、要件 N1） | **済み**（`bootstrapState()` がすべての後付けを入れる） |
 | `/parser`・`/manifest` | ある | **済み**（結果の形と誤りの文面が 3.3 と同じ） |
-| ESLint | `npm run lint` | スクリプトも設定も無い |
-| カバレッジ | `npm run test:coverage`（基準は CLAUDE.md の 100/97/100/100） | 未設定・未計測 |
+| ESLint | `npm run lint` | **済み**（共通のひな形から生成。`sync-package-configs.mjs` に state-next の Rollup の例外を登録） |
+| カバレッジ | `npm run test:coverage`（3.3 の基準 statements 99.5・branches 98.5・functions 100・lines 99.5） | **済み**（同じ基準。99.71・99.16・100・99.95） |
 
 - `/parser` と `/manifest` は、vscode-wcs が import している（`@wcstack/state/parser` 4 か所、`/manifest` 2 か所）。lint（vscode-wcs のビルド経由）と `@wcstack/typescript` も、ビルド時に `dist/parser.esm.js` と `dist/manifest.esm.js` を取り込む（`.github/workflows/release.yml` の注記）。
 - manifest の旧名の表: `filterAliases`・`declarationAliases` は空にした（ランタイムが受け付けないため）。`apiAliases` は、engine がまだ受け付けているので残した（§2.1 で外すときに空にする）。
@@ -70,8 +68,32 @@
 
 ### 2.4 その他
 
-- #2（リスト要素 getter の隣接項目問題）を state-next で確かめる（R5）。
+- ~~#2（リスト要素 getter の隣接項目問題）を state-next で確かめる（R5）~~ 済み（§8）。
 - エラー番号の一覧を、利用者が引ける場所に置く（README か docs）。番号と文面の正本は `src/diagnostics/messages.ts`。
+
+### 2.5 カバレッジの作業で見つかった不具合（2026-09-27）
+
+テストを足す途中で見つかったもの。どれもまだ直していない。「固定」と書いたものは、今の動きをテストが固定しているので、直すときにそのテストも直す。
+
+| # | 場所 | 内容 | 重さ |
+|---|---|---|---|
+| F1 | `engine.ts` `resolve` | 行の中で、別のリストのワイルドカードのパス（`a.*` の行で `this["b.*.y"]`）が、今いる行（`a` の行）に解決される。読みは違う値を返し、書きは `a` のデータを壊す。3.3 は `ListIndex not found` で投げる | 高 |
+| F2 | `scopes/component.ts` `wire()` | `made`（`patterns.all()` のイテレータ）を 2 回回すので 2 回目が空。マウントした入れ子のパスの下の getter（`info.sub.upper`）が `UNDEFINED` になる。直し方: `[...C.patterns.all()]` | 高 |
+| F3 | `engine.ts` `rekeyEqIndex` | `$eqIndex(path, level)` の level が 1 でないとき、また入れ子の行の getter の中の `$eqIndex` が、書き込みで評価し直されない（`spike: root lists only` のまま） | 中 |
+| F4 | `engine.ts` drain の打ち切り（32 回） | 打ち切りのあと、getter のキャッシュが DIRTY のまま残り、以後の書き込みがその getter の束縛と上の `for` に届かない（読めば直る） | 中 |
+| F5 | `scopes/component.ts` `crossed()` | 1 つのコンポーネントで重なる 2 つの対応（`state.addr` と `state.city`）の一方に書くと、もう一方が古い値のまま | 中 |
+| F6 | `element.ts` | 中身が空の JSON の `<script>` で初期化に失敗する（3.3 は `{}`。`??` を `||` にすれば直る） | 中 |
+| F7 | `dom/wc.ts` | `#init=`・`#sync=` の検査が無い。出力専用メンバーへの `init=auto`／`init=state`、イベントへの `init=`、未知の修飾子（`#foo=1`）、`wcBindable` に無いメンバーを、3.3 と README は投げるが、4.0 は黙って受け入れる（出力専用 × `init=auto`／`state` は固定） | 中 |
+| F8 | `recursion/recursion.ts` | README は `$resolve`・`$postUpdate`・`$dependOn`・直接の代入での `**` を `wcs/recursion-unsupported` で拒むと定めるが、4.0 はノードの行の中で通す（行の深さに束ねる）。`$resolve` は族の getter があると黙って undefined | 中 |
+| F9 | `scopes/component.ts` | 丸ごとのマウントに深い部分対応を足すと、その頭のキーが丸ごとのマウントから外れる（`state: user; state.a.b: outer.b` で `a.c` が undefined）。3.x の README は「最も長い接頭辞が勝つ」 | 要判断 |
+| F10 | `scopes/component.ts` | コンポーネント側にワイルドカードのある対応（`state.list.*: items`）は、何もマウントせず、エラーも出さない（固定） | 要判断 |
+| F11 | `features/diagnostics` | README の `wcs/default-getter-mismatch` の警告が無い | 低 |
+| F12 | `features/temporal.ts` | エンジンを作った後に temporal を install すると、切断・再接続で TypeError（約束は「定義の前に install」） | 低 |
+| F13 | `dom/view.ts` | 行の構築中に wc-bindable の初期化が届いたスロットの反映が失敗すると、同じ失敗が `$errorCallback` に 2 回届く | 低 |
+| F14 | `dom/binder.ts` | 状態を受け取った後の bind-component のホストに、後から結線（`state.a: x`）を足して binder に渡すと、黙って捨てられる（固定） | 低 |
+| F15 | `dom/mount.ts`・`plan.ts` | 構造でない `data-wcs` を持つ `<template>`（`attr.id: x`）は丸ごと無視される（README に記述なし） | 低 |
+
+**使われていないコード**（削れば core が少し軽くなる。今はテストが直接呼んでいる）: `dom/wc.ts` の `isCustomTag`、`list.ts` の `StateRow.parent`／`depth`、`pattern.ts` の `PatternTable.has`、`scopes/volume.ts` の `fail()` の第 3 引数。届かない防御の分岐（`engine.ts:478`・`:810`・`:1103`、`dom/view.ts:166`・`:629`・`:652`・`:687`・`:830-832`、`dom/plan.ts:37`、`dom/wc.ts:63`、`element.ts:185`（F6）、`strategy/dirty.ts:23`、`scopes/component.ts:366`・`:373`・`:481`、`devtools.ts:107`・`:120`、`temporal/stream.ts:204`・`:221`、`temporal/watch.ts:194`、`recursion.ts:186`、`features/diagnostics.ts:80`）。
 
 ## 3. 周辺パッケージと道具
 
@@ -166,3 +188,22 @@ R1（state-next で `@wcstack/state` を置き換える）の決定を受けて�
 | core だけ（サイズ目標の計測、`core.min.js`） | — | 19,305B（上限 20,000B まで 695B） |
 
 - core は 19,000 → 19,305B（+305B）。設定のキー、`sameValueGuard` と初期同期の opt-out、アンカーの接頭辞、登録簿の扱いの分。
+
+### 旧名の扱い・ESLint とカバレッジ・#2（2026-09-27）
+
+**#2（リスト要素 getter の隣接項目）**: state-next では起きない。前の行の getter を読む累計（数値のパスでも `$resolve` でも）は、葉の書き込みで後ろの行がすべて計算し直され、行の追加・並べ替え・削除にも追従する。行 0 に守りの無い原文でも、無限ループにならず一覧は描かれる（3.3 は `ListIndex not found` で一覧ごと止まる）。`__tests__/issues.test.ts` に 3 件。
+
+**旧名**（§2.1）
+- engine から `$trackDependency`・`$untrackDependency` を外した。読むと `[wcs/name-alias]` #1701（例: `$trackDependency was removed: write $dependOn.`）。
+- `$streams`・`$updatedCallback` の宣言は、core が `[wcs/declaration-alias]` #1601 で投げる（temporal の後付けの `$streams` の検査は core へ移した）。
+- manifest の旧名の表は 3 つとも空。`scopes/volume.ts` のパス API の一覧からも旧名を外した。
+- ベンチページのフィクスチャの getter を `$untracked` にし、計測スクリプト 9 本の目印をそろえた。9 本とも目印がフィクスチャにちょうど 1 回あることと、`select10k.mjs` が 3.3 と state-next の両方で変種を作れることを確かめた。
+
+**ESLint とカバレッジ**
+- `eslint.config.js` は共通のひな形から生成した。`scripts/sync-package-configs.mjs` に、state-next の Rollup の例外（esbuild の `build.mjs`）を理由付きで登録した。ブランチの初めから CI の `--check` が state-next で落ちていたのも、これで直った。
+- ESLint の指摘 4 件（`Function` 型 2・使っていない import と変数 2）を直した。
+- カバレッジの基準は 3.3 と同じ（statements 99.5・branches 98.5・functions 100・lines 99.5）。除外は、再エクスポートと install だけの入口、型だけのファイル、生成したプロトコルの写し。
+- 最初は 92.46・87.16・91.04・95.92。未カバーの項目を 5 つのグループ（engine・DOM・要素と公開 API・scopes・後付け）に分け、並行してテストを足した（`__tests__/coverage-*.test.ts` 21 ファイル）。
+- 結果: **99.71・99.16・100・99.95**。テスト 876 → 1,242 件（通過 1,241・スキップ 1）。残る 40 項目は、届かない防御の分岐と、F1・F3 の誤った経路だけ（§2.5）。
+- `public-surface.test.ts` の TypeScript の型検査を使うテストは、カバレッジの計測下では 5 秒を超えるので、60 秒にした。
+- core 19,358B（旧名の検査を足した分 +53B）。e2e 131/131。

@@ -44,7 +44,6 @@ function hasAccessorOrMethod(target: object, name: string): boolean {
 /** Validates `$stream` and materializes the value property and the companions on `target`. */
 export function parseStreams(engine: Engine, target: Record<string, any>): Entry[] {
   const decl = target.$stream;
-  if (target.$streams !== undefined) raiseError("[wcs/declaration-alias] $streams was removed: write $stream.");
   if (decl === undefined) return [];
   if (decl === null || typeof decl !== "object") raiseError("$stream must be an object mapping stream names to definitions.");
   const entries: Entry[] = [];

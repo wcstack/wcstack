@@ -29,6 +29,9 @@ function exportsOf(file: string): Map<string, "value" | "type"> {
   return out;
 }
 
+/** A TypeScript program per entry is slow (the more so under coverage). */
+const TS_TIMEOUT = 60_000;
+
 const FEATURES_V3 = ["temporal", "scopes", "recursion", "ssr", "devtools", "formats", "diagnostics"];
 
 /** [entry, 3.3 .d.ts, 4.0 source] */
@@ -56,13 +59,13 @@ describe("入口ごとの export が 3.3 と同じ", () => {
       const extra = [...v4.keys()].filter((n) => !v3.has(n) && !(n in added));
       const kind = [...v3].filter(([n, k]) => v4.has(n) && v4.get(n) !== k).map(([n, k]) => `${n}: ${k} → ${v4.get(n)}`);
       expect({ missing, extra, kind }).toEqual({ missing: [], extra: [], kind: [] });
-    });
+    }, TS_TIMEOUT);
   }
 
   it("4.0 は後付けの入口 features/list-keys を足す（3.3 は $listKeys を core に持っていた）", () => {
     const v4 = exportsOf(join(ROOT, "src/features/list-keys.ts"));
     expect([...v4.keys()].sort()).toEqual(["default", "listKeys"]);
-  });
+  }, TS_TIMEOUT);
 
   it("package.json の exports の入口と、指す先のファイルの配置が 3.3 と同じ", () => {
     const v3 = JSON.parse(readFileSync(join(V3, "package.json"), "utf8"));
@@ -86,7 +89,7 @@ describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () =
     expect(v4.reservedStateApi).toEqual(v3.reservedStateApi.filter((n: string) => n !== "$scan"));
     expect(v4.filterAliases).toEqual({});
     expect(v4.declarationAliases).toEqual({});
-    expect(v4.apiAliases).toEqual(v3.apiAliases);
+    expect(v4.apiAliases).toEqual({});
   });
 
   it("各フィルタのメタデータの引数の数が、実装の引数の数と一致する", async () => {
