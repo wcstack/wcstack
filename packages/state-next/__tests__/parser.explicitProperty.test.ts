@@ -5,6 +5,11 @@
  */
 import { describe, it, expect } from "vitest";
 import { parseBindTextsForElement } from "../src/parser/parseBindTextsForElement";
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// the sentences are the diagnostics add-on's (the core alone gives the code and the message number)
+installFeatures([diagnostics]);
 
 describe("明示のプロパティ形の解析", () => {
   it("`.online:` はプロパティ束縛、`online:` は従来どおりイベント束縛であること", () => {

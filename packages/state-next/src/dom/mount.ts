@@ -1,6 +1,6 @@
 import type { Engine } from "../engine";
 import { config } from "../config";
-import { raiseError } from "../parser/raiseError";
+import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 import { bindAttr, boundPattern, compilePlan, directive, elementSpecs, notAfterIf, readChain, splitMustache, textSpec } from "./plan";
 import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
@@ -105,7 +105,7 @@ function attach(engine: Engine, spec: Spec, node: Node): void {
       return;
   }
   const p = spec.pattern!;
-  if (p.depth !== 0) raiseError(`[wcs/wildcard-rank] "${p.path}" needs ${p.depth} enclosing loop level(s); the scope provides 0.`);
+  if (p.depth !== 0) raise(M.WildcardNoLoop, [p.path, p.depth]);
   if (spec.custom && spec.kind === K_PROP) {
     whenDefined(el, null, (bd) => attachCustomOrPlain(engine, spec, el, null, null, bd));
     return;

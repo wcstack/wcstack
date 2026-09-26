@@ -2,6 +2,8 @@
  * The command-token / event-token pub/sub primitive (the same shape as @wcstack/state's
  * `Token`). A subscriber that throws is reported and the others still receive the call.
  */
+import { raise, M, text } from "./messages";
+
 export type TokenSubscriber = (...args: unknown[]) => unknown;
 
 export class Token {
@@ -34,7 +36,7 @@ export class Token {
         results.push(fn(...args));
       } catch (error) {
         results.push(undefined);
-        console.error(`[@wcstack/state] a subscriber of token "${this.name}" threw.`, error);
+        console.error(`[@wcstack/state] ${text(M.TokenSubscriberThrew, [this.name])}`, error);
       }
     }
     return results;
@@ -43,12 +45,12 @@ export class Token {
 
 function readNames(value: unknown, key: string, reserved?: string): string[] {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) throw new Error(`${key} must be an array of strings.`);
+  if (!Array.isArray(value)) raise(M.TokenListNotArray, [key]);
   const seen = new Set<string>();
   for (const name of value) {
-    if (typeof name !== "string" || name === "") throw new Error(`${key} entries must be non-empty strings.`);
-    if (name === reserved) throw new Error(`${key} entry "${name}" conflicts with the reserved namespace name "${reserved}".`);
-    if (seen.has(name)) throw new Error(`${key} entry "${name}" is duplicated.`);
+    if (typeof name !== "string" || name === "") raise(M.TokenEntryEmpty, [key]);
+    if (name === reserved) raise(M.TokenEntryReserved, [key, name, reserved]);
+    if (seen.has(name)) raise(M.TokenEntryDuplicated, [key, name]);
     seen.add(name);
   }
   return value as string[];
@@ -76,11 +78,11 @@ export function eventTokens(
   for (const name of readNames(target.$eventTokens, "$eventTokens")) tokens.set(name, new Token(name));
   const on = target.$on;
   if (on === undefined) return tokens;
-  if (on === null || typeof on !== "object") throw new Error("$on must be an object of handlers.");
+  if (on === null || typeof on !== "object") raise(M.OnNotObject);
   for (const [name, handler] of Object.entries(on)) {
     const token = tokens.get(name);
-    if (token === undefined) throw new Error(`$on entry "${name}" is not declared in $eventTokens.`);
-    if (typeof handler !== "function") throw new Error(`$on entry "${name}" must be a function.`);
+    if (token === undefined) raise(M.OnEntryUndeclared, [name]);
+    if (typeof handler !== "function") raise(M.OnEntryNotFunction, [name]);
     token.subscribe((...args) => deliver(handler as (...a: unknown[]) => unknown, args));
   }
   return tokens;

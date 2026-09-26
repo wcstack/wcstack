@@ -122,3 +122,27 @@ describe("再帰の静的な検査（wcs/recursion-declaration-invalid）", () =
     expect(() => make({ "nodes.**.x": getter, "nodes.**.y": getter })).not.toThrow();
   });
 });
+
+describe("番号付きのコアのメッセージの文面（src/messages.ts）", () => {
+  it("コアが番号で投げたものを、以前と同じ文面で出す", async () => {
+    const { raise, M, text } = await import("../src/messages");
+    expect(() => raise(M.Readonly)).toThrow(/^\[@wcstack\/state\] This state is readonly\.$/);
+    expect(text(M.IndexArityAtMost, ["$getAll", "m.*", 1, 2])).toBe('[wcs/index-arity] $getAll("m.*") takes at most 1 index(es), got 2.');
+    expect(text(M.IndexParamRange, ["$129"])).toBe('[wcs/index-param-range] "$129": list index parameters run from $1 to $128.');
+    expect(text(M.DrainNotSettled)).toBe("updates did not settle after 32 passes");
+  });
+
+  it("文面の後に助言が続く（did-you-mean と lint への誘導）", async () => {
+    const { parseBindTextsForElement } = await import("../src/parser/parseBindTextsForElement");
+    expect(() => parseBindTextsForElement("textContent: a|b(")).toThrow(
+      /^\[@wcstack\/state\] \[wcs\/binding-syntax\] Invalid filter format: missing closing parenthesis in "b\("\..*lint/s,
+    );
+  });
+
+  it("バインディングの失敗の console も文面になる", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await page(`<p>{{ bad }}</p>`, { get bad() { throw new Error("boom"); } });
+    expect(err).toHaveBeenCalledWith('[@wcstack/state] binding "text: bad" failed to apply.', expect.any(Error));
+    err.mockRestore();
+  });
+});

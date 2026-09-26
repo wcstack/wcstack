@@ -1,4 +1,5 @@
 import { getTransitionRunner } from "../protocol/transitionRunner";
+import { M, text } from "../messages";
 
 /**
  * Automatic `view-transition-name` (docs/view-transition-design.md §6), as @wcstack/state
@@ -36,7 +37,7 @@ export function nameBlock(first: ChildNode, nodes: ChildNode[] | null, kind: "ro
   if (ledger.assigned >= limit) {
     if (!ledger.warned) {
       ledger.warned = true;
-      console.warn(`[@wcstack/state] view-transition naming-limit (${limit}) reached.`);
+      console.warn(`[@wcstack/state] ${text(M.NamingLimit, [limit])}`);
     }
     return;
   }

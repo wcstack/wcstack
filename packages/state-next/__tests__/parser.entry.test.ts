@@ -15,6 +15,11 @@ import { describe, it, expect } from "vitest";
 import { parseBindTextsForElement, parseBindTextForEmbeddedNode } from "../src/parser";
 import { splitBindTexts } from "../src/parser/parseBindTextsForElement";
 import { indexOfOutsideQuotes, splitOutsideQuotes } from "../src/parser/utils";
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// the sentences are the diagnostics add-on's (the core alone gives the code and the message number)
+installFeatures([diagnostics]);
 
 describe("parseBindTextsForElement（正本パーサの公開契約）", () => {
   it("node 環境で実行されていること（@vitest-environment 指示の自己検証）", () => {

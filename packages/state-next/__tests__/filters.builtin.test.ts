@@ -14,6 +14,11 @@ import { installCoreFilters, coreFilters } from '../src/filters/core';
 import { installFormats, formatFilters } from '../src/filters/formats';
 import { resolveFilter } from '../src/filters/registry';
 import { config, setConfig } from '../src/config';
+import { installFeatures } from "../src/hooks";
+import { diagnostics } from "../src/features/diagnostics";
+
+// the sentences are the diagnostics add-on's (the core alone gives the code and the message number)
+installFeatures([diagnostics]);
 
 beforeAll(() => {
   installCoreFilters();

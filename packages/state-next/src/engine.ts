@@ -4,7 +4,7 @@ import type { Strategy } from "./strategy/types";
 import type { Binding } from "./dom/view";
 import { commandNamespace, eventTokens, type Token } from "./token";
 import { runTransition } from "./protocol/transitionRunner";
-import { raiseError } from "./parser/raiseError";
+import { raise, M, text } from "./messages";
 import { recursionUnsupported } from "./parser/parseStatePart";
 import { hooks, requireFeature } from "./hooks";
 
@@ -13,12 +13,12 @@ const DECLARATIONS: [string, string][] = [["$watch", "temporal"], ["$stream", "t
 
 function checkDeclarations(target: Record<string, any>): void {
   for (const [key, feature] of DECLARATIONS) if (target[key] !== undefined) requireFeature(feature, key);
-  if (target.$scan !== undefined) raiseError("$scan was removed (use $watch or $on)");
+  if (target.$scan !== undefined) raise(M.ScanRemoved);
 }
 
 /** `$1` … `$128`, no leading zero. */
 const INDEX_PARAM = /^\$[1-9]\d{0,2}$/;
-const MAX_INDEX_PARAM = 128;
+export const MAX_INDEX_PARAM = 128;
 
 interface Frame {
   getter: Pattern;
@@ -27,7 +27,7 @@ interface Frame {
 }
 
 /** A drain that keeps producing work this many times in a row is an update loop. */
-const MAX_DRAIN_PASSES = 32;
+export const MAX_DRAIN_PASSES = 32;
 /** Nested getter evaluations deeper than this are a runaway chain. */
 const MAX_GETTER_DEPTH = 128;
 
@@ -314,7 +314,7 @@ export class Engine implements ReconcileHooks {
       return parent == null ? undefined : parent[p.last];
     }
     if (p.parent === null && !(p.last in this.target)) {
-      raiseError(`[wcs/binding-path-missing] Path "${p.path}" does not exist on the state tree.`, p.last, Object.keys(this.target));
+      raise(M.PathMissing, [p.path], p.last, Object.keys(this.target));
     }
     return this.readData(p, row);
   }
@@ -343,9 +343,9 @@ export class Engine implements ReconcileHooks {
     // frames are reused by depth: an evaluation allocates nothing of its own
     for (let i = 0; i < this.depthNow; i++) {
       const f = this.frames[i];
-      if (f.getter === g && f.row === row) raiseError(`[wcs/getter-cycle] "${g.path}" depends on itself`);
+      if (f.getter === g && f.row === row) raise(M.GetterCycle, [g.path]);
     }
-    if (this.depthNow >= MAX_GETTER_DEPTH) raiseError(`[wcs/getter-depth-exceeded] "${g.path}"`);
+    if (this.depthNow >= MAX_GETTER_DEPTH) raise(M.GetterDepth, [g.path]);
     const depth = this.depthNow++;
     this.readonlyDepth++;
     let frame = this.frames[depth];
@@ -386,7 +386,7 @@ export class Engine implements ReconcileHooks {
     if (c >= 48 && c <= 57) {
       const n = key.length === 2 ? c - 48 : INDEX_PARAM.test(key) ? Number(key.slice(1)) : 0;
       if (n < 1 || n > MAX_INDEX_PARAM) {
-        raiseError(`[wcs/index-param-range] "${key}": list index parameters run from $1 to $${MAX_INDEX_PARAM}.`);
+        raise(M.IndexParamRange, [key]);
       }
       {
         const f = this.top;
@@ -497,7 +497,7 @@ export class Engine implements ReconcileHooks {
 
   private eqIndex(path: string, level: number): boolean {
     const row = rowAt(this.ctx, level);
-    if (row === null) throw new Error(`$eqIndex("${path}") needs a list row scope.`);
+    if (row === null) raise(M.EqIndexNoRow, [path]);
     const source = this.pattern(path);
     const f = this.top;
     if (f !== null) {
@@ -516,7 +516,7 @@ export class Engine implements ReconcileHooks {
 
   /** `occurrence`: an event-semantics write, applied even when equal to the current value. */
   write(p: Pattern, row: StateRow | null, value: unknown, occurrence = false): void {
-    if (this.readonlyDepth > 0) throw new Error("This state is readonly.");
+    if (this.readonlyDepth > 0) raise(M.Readonly);
     if (hooks.beforeWrite !== null && hooks.beforeWrite(this, p, row, value)) return;
     if (p.setter !== null) {
       const prev = this.ctx;
@@ -530,8 +530,8 @@ export class Engine implements ReconcileHooks {
       this.changed(p, row);
       return;
     }
-    if (p.getter !== null) raiseError(`"${p.path}" is a getter without a setter`);
-    if (p.depth > 0 && row === null) raiseError(`no row for "${p.path}"`);
+    if (p.getter !== null) raise(M.GetterWithoutSetter, [p.path]);
+    if (p.depth > 0 && row === null) raise(M.NoRow, [p.path]);
     const old = this.readData(p, row);
     if (!occurrence && Object.is(old, value) && (value === null || (typeof value !== "object" && typeof value !== "function"))) return;
     if (p.last === WILDCARD) {
@@ -545,7 +545,7 @@ export class Engine implements ReconcileHooks {
       const parent = (p.tail.length === 1
         ? (p.depth === 0 ? this.target : row!.item)
         : this.readUntracked(p.parent!, row)) as any;
-      if (parent == null) raiseError(`cannot write "${p.path}": its parent is ${parent}`);
+      if (parent == null) raise(M.ParentNotObject, [p.path, parent]);
       parent[p.last] = value;
       this.syncListsUnder(p, row);
     }
@@ -663,14 +663,14 @@ export class Engine implements ReconcileHooks {
   /** An element event wired with `eventToken.<prop>: <name>` — the token is resolved at fire time. */
   fireEventToken(name: string, event: Event, row: StateRow | null): void {
     const token = this.events.get(name);
-    if (token === undefined) raiseError(`[wcs/token-undeclared] eventToken "${name}" is not declared in $eventTokens.`, name, this.events.keys());
+    if (token === undefined) raise(M.EventTokenUndeclared, [name], name, this.events.keys());
     token.emit(event, ...this.indexesOf(row));
   }
 
   /** The `$command.<name>` token (declared in `$commandTokens`). */
   command(name: string): Token {
     const token = this.commands[name];
-    if (token === undefined) raiseError(`[wcs/token-undeclared] "$command.${name}" is not declared in $commandTokens.`, name, Object.keys(this.commands));
+    if (token === undefined) raise(M.CommandTokenUndeclared, [name], name, Object.keys(this.commands));
     return token;
   }
 
@@ -684,7 +684,7 @@ export class Engine implements ReconcileHooks {
   invoke(name: string, event: Event, row: StateRow | null): unknown {
     // a dotted name is a path (a volume method lives under its mount path)
     const fn = name.includes(".") ? this.readUntracked(this.pattern(name), null) : this.target[name];
-    if (typeof fn !== "function") raiseError(`"${name}" is not a method`);
+    if (typeof fn !== "function") raise(M.NotAMethod, [name]);
     const args: unknown[] = [event];
     const indexes: number[] = [];
     for (let r = row; r !== null; r = r.list.parentRow) indexes.push(r.index);
@@ -856,7 +856,7 @@ export class Engine implements ReconcileHooks {
     try {
       for (let pass = 0; this.queue.length > 0 || this.dirtyLists.length > 0 || this.staleLists.length > 0; pass++) {
         if (pass >= MAX_DRAIN_PASSES) {
-          console.error(`[@wcstack/state] updates did not settle after ${MAX_DRAIN_PASSES} passes`);
+          console.error(`[@wcstack/state] ${text(M.DrainNotSettled)}`);
           for (const b of this.queue) b.queued = false;
           for (const l of this.dirtyLists) l.queued = false;
           for (const l of this.staleLists) l.stale = false;
@@ -968,7 +968,7 @@ export class Engine implements ReconcileHooks {
         // quoted keys: the author reads them (mangle.mjs shortens the unquoted ones)
         this.callHookDetached("$errorCallback", [error, { "path": path, "bindingType": type, "node": binding.node }]);
       } else {
-        console.error(`[@wcstack/state] binding "${type}: ${path}" failed to apply.`, error);
+        console.error(`[@wcstack/state] ${text(M.BindingFailed, [type, path])}`, error);
       }
     }
   }
@@ -1038,7 +1038,7 @@ export class Engine implements ReconcileHooks {
       out.push(r.index);
     }
     if (out.length === 0) {
-      raiseError(`$getAll("${path}"): no loop level in common with the context`);
+      raise(M.GetAllNoCommonLevel, [path]);
     }
     return out;
   }
@@ -1053,15 +1053,15 @@ export class Engine implements ReconcileHooks {
   }
 
   private setAll(path: string, indexes: number[], value: unknown, options?: { spread?: boolean }): number {
-    if (!Array.isArray(indexes)) throw new Error(`$setAll("${path}") needs indexes ([] for every match)`);
-    if (this.readonlyDepth > 0) throw new Error("This state is readonly.");
+    if (!Array.isArray(indexes)) raise(M.SetAllNeedsIndexes, [path]);
+    if (this.readonlyDepth > 0) raise(M.Readonly);
     const p = this.pattern(path);
     this.checkArity("$setAll", path, p, indexes, false);
     const targets: { row: StateRow | null; idx: number[] }[] = [];
     this.forMatches(p, indexes, (row, idx) => targets.push({ row, idx: idx.slice() }));
     const spread = options?.spread === true;
     if (spread && (!Array.isArray(value) || value.length !== targets.length)) {
-      throw new Error(`$setAll("${path}", …, { spread: true }) needs an array of ${targets.length} values`);
+      raise(M.SetAllSpreadLength, [path, targets.length]);
     }
     let written = 0;
     for (let i = 0; i < targets.length; i++) {
@@ -1080,7 +1080,7 @@ export class Engine implements ReconcileHooks {
   private checkArity(api: string, path: string, p: Pattern, indexes: readonly number[], exact: boolean): void {
     const n = indexes.length;
     if (n > p.depth || (exact && n < p.depth)) {
-      raiseError(`[wcs/index-arity] ${api}("${path}") takes ${exact ? "" : "at most "}${p.depth} index(es), got ${n}.`);
+      raise(exact ? M.IndexArityExact : M.IndexArityAtMost, [api, path, p.depth, n]);
     }
   }
 

@@ -4,7 +4,7 @@ import { drainBinds, installBinder } from "./dom/binder";
 import { DirtyStrategy } from "./strategy/dirty";
 import { config, setConfig, type PartialConfig } from "./config";
 import type { Strategy } from "./strategy/types";
-import { raiseError } from "./parser/raiseError";
+import { raise, M, text } from "./messages";
 import { hooks, requireFeature, type Claimed } from "./hooks";
 
 let makeStrategy: () => Strategy = () => new DirtyStrategy();
@@ -34,7 +34,7 @@ async function loadSrc(src: string): Promise<Record<string, any>> {
   const url = new URL(src, document.baseURI).href;
   if (/\.json(?:[?#]|$)/.test(url)) {
     const res = await fetch(url);
-    if (!res.ok) raiseError(`failed to load "${src}": ${res.status}`);
+    if (!res.ok) raise(M.LoadFailed, [src, res.status]);
     return (await res.json()) as Record<string, any>;
   }
   const mod = await import(/* @vite-ignore */ url);
@@ -133,7 +133,7 @@ export class WcsState extends HTMLElement {
    * re-applies every binding to it before returning (not a write: no `$renderedCallback`).
    */
   setInitialState(state: Record<string, any>): void {
-    if (this.failed) raiseError("this <wcs-state> failed to initialize; create a new one");
+    if (this.failed) raise(M.ElementFailed);
     if (this.claimed !== null && this.receiveInitial === null) {
       this.claimed.reset(state);
       return;
@@ -154,7 +154,7 @@ export class WcsState extends HTMLElement {
   /** Runs `callback` with a state proxy; its writes are applied in the next drain. */
   createState(mutability: "readonly" | "writable", callback: (state: Record<string, any>) => void): void {
     const engine = this.engine;
-    if (engine === null) raiseError("state is not initialized");
+    if (engine === null) raise(M.NotInitialized);
     if (mutability === "readonly") engine.readonlyDepth++;
     try {
       callback(engine.proxy);
@@ -166,10 +166,10 @@ export class WcsState extends HTMLElement {
   /** `createState` whose callback may await; a readonly proxy stays readonly across its awaits. */
   async createStateAsync(mutability: "readonly" | "writable", callback: (state: Record<string, any>) => Promise<void>): Promise<void> {
     const engine = this.engine;
-    if (engine === null) raiseError("state is not initialized");
+    if (engine === null) raise(M.NotInitialized);
     await callback(mutability === "writable" ? engine.proxy : new Proxy(engine.proxy, {
       set() {
-        throw new Error("This state is readonly.");
+        raise(M.Readonly);
       },
     }));
   }
@@ -180,7 +180,7 @@ export class WcsState extends HTMLElement {
     const id = this.getAttribute("state");
     if (id !== null) {
       const script = (this.getRootNode() as Document | ShadowRoot).getElementById?.(id) ?? document.getElementById(id);
-      if (script === null) return Promise.reject(new Error(`[@wcstack/state] no <script> with id "${id}"`));
+      if (script === null) return Promise.reject(new Error(`[@wcstack/state] ${text(M.NoScript, [id])}`));
       return Promise.resolve(JSON.parse(script.textContent ?? "{}"));
     }
     const src = this.getAttribute("src");

@@ -8,7 +8,7 @@
  *
  * Port of `@wcstack/state` `src/bindTextParser/parseFilterArgs.ts` (behaviour unchanged).
  */
-import { raiseError } from "./raiseError";
+import { raise, M } from "../messages";
 
 /** 引数 1 つを確定する。クォート由来の文字が入った範囲より外側だけをトリムする。 */
 function finalizeArg(text: string, firstQuoteStart: number, lastQuoteEnd: number): string {
@@ -87,7 +87,7 @@ export function parseFilterArgsWithLiterals(argsText: string): { args: string[];
 
   if (inQuote !== null) {
     // 閉じていない引用符は受理しない（要件 B2）。以前は黙って閉じたことにしていた
-    raiseError(`[wcs/binding-syntax] unterminated ${inQuote} quote in "(${argsText})".`);
+    raise(M.UnterminatedQuote, [inQuote, argsText]);
   }
   const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
   if (last || hasQuote) {

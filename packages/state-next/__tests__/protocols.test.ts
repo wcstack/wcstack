@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { bootstrapState, getBindingsReady, Engine, DirtyStrategy, mount } from "../src/index";
 import { drainBinds } from "../src/dom/binder";
+import { M } from "../src/messages";
+
+// the core's own message (no diagnostics add-on here): [@wcstack/state] [wcs/<code>] #<number> <values>
+const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] (\[wcs/[\w-]+\] )?#${id}( |$)`);
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const RUNNER_KEY = Symbol.for("wcstack.transition-runner");
@@ -205,7 +209,7 @@ describe("初期化済みの要素への setInitialState（再セット）", () 
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const { el } = await host(`<wcs-state state="no-such-script"></wcs-state>`);
     await el.connectedCallbackPromise.catch(() => {});
-    expect(() => el.setInitialState({ n: 1 })).toThrow("failed to initialize");
+    expect(() => el.setInitialState({ n: 1 })).toThrow(core(M.ElementFailed));
     error.mockRestore();
   });
 });

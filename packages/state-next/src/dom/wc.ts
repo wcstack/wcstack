@@ -10,7 +10,7 @@
  * over every declared property and input.
  */
 import type { Engine } from "../engine";
-import { raiseError } from "../parser/raiseError";
+import { raise, M } from "../messages";
 import type { StateRow } from "../list";
 import { adopt, Binding, K_CUSTOM, type Block, type Spec } from "./view";
 // (view.ts imports this module too: the cycle is fine, everything here is used at call time)
@@ -130,16 +130,16 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
   return b;
 }
 
-function noBindable(code: string, el: Element, what: string): never {
-  raiseError(`[wcs/${code}] <${el.localName}> declares no static wcBindable (${what}).`);
+function noBindable(id: M, el: Element, what: string): never {
+  raise(id, [el.localName, what]);
 }
 
 /** `command.<method>: $command.<token>` — the element's method subscribes to the token. */
 export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Block | null, bd: Bindable | null): void {
   const method = spec.name;
   const token = engine.command(spec.token!);
-  if (bd === null) noBindable("token-misconfigured", el, `command.${method}`);
-  if (!bd.commands.has(method)) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no command "${method}".`);
+  if (bd === null) noBindable(M.NoBindable, el, `command.${method}`);
+  if (!bd.commands.has(method)) raise(M.NoCommand, [el.localName, method]);
   const ref = new WeakRef(el);
   const fn = (...args: unknown[]): unknown => {
     const target = ref.deref() as any;
@@ -156,9 +156,9 @@ export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Bl
 /** `eventToken.<property>: <token>` — the property's event fires the event token. */
 export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: StateRow | null, bd: Bindable | null): void {
   const prop = spec.name;
-  if (bd === null) noBindable("token-misconfigured", el, `eventToken.${prop}`);
+  if (bd === null) noBindable(M.NoBindable, el, `eventToken.${prop}`);
   const decl = bd.properties.get(prop);
-  if (decl === undefined) raiseError(`[wcs/token-misconfigured] <${el.localName}> declares no property "${prop}".`);
+  if (decl === undefined) raise(M.NoProperty, [el.localName, prop]);
   const name = spec.token!;
   el.addEventListener(decl.event, (e) => {
     if (spec.prevent) e.preventDefault();
@@ -173,7 +173,7 @@ export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: S
 
 /** `...: path` — one property binding per declared property and input (explicit bindings win). */
 export function attachSpread(engine: Engine, spec: Spec, el: Element, row: StateRow | null, owner: Block | null, bd: Bindable | null): void {
-  if (bd === null) noBindable("spread-no-bindable", el, `"...: ${spec.pattern!.path}"`);
+  if (bd === null) noBindable(M.SpreadNoBindable, el, `"...: ${spec.pattern!.path}"`);
   const names = new Set([...bd.properties.keys(), ...bd.inputs.keys()]);
   for (const name of names) {
     if (spec.exclude?.includes(name)) continue;

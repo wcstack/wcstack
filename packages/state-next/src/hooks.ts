@@ -15,6 +15,8 @@ import type { Binding, RowPlan } from "./dom/view";
 export interface Hooks {
   /** Diagnostics: extra text for an error message (did-you-mean, lint pointer, how to fix). */
   explain: ((message: string, subject?: string, candidates?: Iterable<string>) => string) | null;
+  /** Diagnostics: the full sentence of a numbered core message (`src/messages.ts`). */
+  render: ((id: number, args: readonly unknown[]) => string) | null;
   /** A write before it is applied; true = the add-on handled it ($listKeys, read-only paths). */
   beforeWrite: ((engine: Engine, p: Pattern, row: StateRow | null, value: unknown) => boolean) | null;
   /** A write landed: `direct` for a data write (then `old` is the value before, `value` the new one). */
@@ -76,6 +78,7 @@ export interface Claimed {
 
 export const hooks: Hooks = {
   explain: null,
+  render: null,
   claim: null,
   beforeWrite: null,
   written: null,

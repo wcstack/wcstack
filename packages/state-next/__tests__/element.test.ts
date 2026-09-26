@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState, diagnostics, getBindingsReady, installFeatures } from "../src/index";
+import { M } from "../src/messages";
+
+// the core's own message (no diagnostics add-on here): [@wcstack/state] [wcs/<code>] #<number> <values>
+const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] (\[wcs/[\w-]+\] )?#${id}( |$)`);
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
@@ -44,7 +48,7 @@ describe("<wcs-state> の状態の読み込みと公開 API", () => {
 
   it("createState('readonly') の中の書き込みは投げる", async () => {
     const { el } = await host(`<wcs-state json='{"n":1}'></wcs-state>`);
-    expect(() => el.createState("readonly", (s: any) => { s.n = 2; })).toThrow("This state is readonly.");
+    expect(() => el.createState("readonly", (s: any) => { s.n = 2; })).toThrow(core(M.Readonly));
     el.createState("writable", (s: any) => { s.n = 2; });
     el.createState("readonly", (s: any) => expect(s.n).toBe(2));
   });
@@ -61,7 +65,7 @@ describe("<wcs-state> の状態の読み込みと公開 API", () => {
       await flush();
       expect(s.n).toBe(5);
       s.bump();
-    })).rejects.toThrow("This state is readonly.");
+    })).rejects.toThrow(core(M.Readonly));
     // the readonly view is not global: an ordinary write during it still lands
     let release!: () => void;
     const reading = el.createStateAsync("readonly", () => new Promise<void>((r) => { release = r; }));
@@ -92,7 +96,7 @@ describe("<wcs-state> の状態の読み込みと公開 API", () => {
     badEl.setInitialState({ $scan: {} });
     document.body.appendChild(bad);
     await expect(badEl.initializePromise).resolves.toBeUndefined();
-    await expect(badEl.connectedCallbackPromise).rejects.toThrow("$scan");
+    await expect(badEl.connectedCallbackPromise).rejects.toThrow(core(M.ScanRemoved));
     error.mockRestore();
   });
 
@@ -130,7 +134,7 @@ describe("<wcs-state> の状態の読み込みと公開 API", () => {
     const { root } = await host(`<wcs-state></wcs-state><p class="a">{{ bad }}</p><p class="b">{{ ok }}</p>`, (el) =>
       el.setInitialState({ ok: "ok", get bad() { throw new Error("boom"); } }));
     expect(root.querySelector(".b")!.textContent).toBe("ok");
-    expect(err).toHaveBeenCalledWith(expect.stringContaining('binding "text: bad" failed to apply'), expect.any(Error));
+    expect(err).toHaveBeenCalledWith(expect.stringContaining(`#${M.BindingFailed} "text" "bad"`), expect.any(Error));
     err.mockRestore();
   });
 });

@@ -6,11 +6,11 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   optionsRequired,
   optionMustBeNumber,
-  raiseError,
   valueMustBeNumber,
   valueMustBeDate,
   valueMustBeArray,
 } from "../src/filters/errorMessages";
+import { raiseError } from "../src/parser/raiseError";
 import { didYouMean, LINT_HINT } from "../src/diagnostics/guidance";
 import { installCoreFilters } from "../src/filters/core";
 import { installFormats } from "../src/filters/formats";

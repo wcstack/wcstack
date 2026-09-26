@@ -4,7 +4,7 @@ import type { StateList, StateRow } from "../list";
 import type { FilterFn } from "./filters";
 import { isHtmlSink, trustHtml } from "../trustedTypes";
 import { autoNaming, nameBlock } from "./naming";
-import { raiseError } from "../parser/raiseError";
+import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 
 /**
@@ -251,7 +251,7 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
       return;
     case K_CLASS:
       if (v != null && typeof v !== "boolean") {
-        raiseError(`[wcs/binding-type-expectation] class.${name} needs a boolean, got ${typeof v}.`);
+        raise(M.ClassNeedsBoolean, [name, typeof v]);
       }
       n.classList.toggle(name, v === true);
       return;

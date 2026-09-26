@@ -4,7 +4,7 @@ import { UNSET, type Pattern } from "../pattern";
 import { config } from "../config";
 import { parseBindTextForEmbeddedNode, parseBindTextsForElement, type ParsedBinding } from "../parser/index";
 import { buildFilters, type FilterFn } from "./filters";
-import { raiseError } from "../parser/raiseError";
+import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 import {
   K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, BUBBLING,
@@ -17,7 +17,7 @@ export const bindAttr = (): string => config.bindAttributeName;
 /** `.label` / `.` inside a `for: data` template → `data.*.label` / `data.*`. */
 export function expandPath(path: string, list: Pattern | null): string {
   if (path.charCodeAt(0) !== 46 /* . */) return path;
-  if (list === null) raiseError(`[wcs/wildcard-rank] "${path}" is relative: it needs an enclosing "for" template`);
+  if (list === null) raise(M.WildcardRelative, [path]);
   return path === "." ? `${list.path}.*` : `${list.path}.*${path}`;
 }
 
@@ -76,7 +76,7 @@ export function boundPattern(engine: Engine, path: string, list: Pattern | null)
 
 /** An `elseif:` / `else:` template with no `if:` before it. */
 export function notAfterIf(type: string): never {
-  raiseError(`[wcs/template-syntax] "${type}:" must follow an "if:" template`);
+  raise(M.ElseWithoutIf, [type]);
 }
 
 export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, el: Element | null, node: number): Spec {
@@ -113,7 +113,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     return { ...blank(), node, kind: K_SPREAD, pattern: boundPattern(engine, path, list), custom };
   }
   if (segs[0] === "command" && segs.length > 1) {
-    if (!path.startsWith(COMMAND_PREFIX)) raiseError(`[wcs/token-misconfigured] "${b.propName}: ${path}": the right-hand side must be $command.<name>`);
+    if (!path.startsWith(COMMAND_PREFIX)) raise(M.CommandRightSide, [b.propName, path]);
     return { ...blank(), node, kind: K_COMMAND, name: segs.slice(1).join("."), token: path.slice(COMMAND_PREFIX.length), custom };
   }
 

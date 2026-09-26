@@ -1,6 +1,6 @@
 import { DELIMITER, FILTER_SEPARATOR, MAX_PATH_SEGMENTS, RECURSION_WILDCARD } from "./define";
 import { parseFilters } from "./parseFilters";
-import { raiseError } from "./raiseError";
+import { raise, M } from "../messages";
 import { ParsedBinding, ParsedFilter } from "./types";
 import { indexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils";
 
@@ -32,7 +32,7 @@ function checkPathLikeGetPathInfo(path: string): void {
     }
   }
   if (segmentCount > MAX_PATH_SEGMENTS) {
-    raiseError(`[wcs/binding-syntax] "${path}" has ${segmentCount} path segments — the limit is ${MAX_PATH_SEGMENTS}.`);
+    raise(M.TooManySegments, [path, segmentCount]);
   }
 }
 
@@ -43,7 +43,7 @@ function checkPathLikeGetPathInfo(path: string): void {
 /** Port of `@wcstack/state` `src/bindTextParser/parseStatePart.ts` (no `statePathInfo`). */
 /** `**` outside the places a `$recursion` declaration gives it meaning. */
 export function recursionUnsupported(path: string): never {
-  raiseError(`[wcs/recursion-unsupported] "${path}" uses "${RECURSION_WILDCARD}", which is not accepted here.`);
+  raise(M.RecursionUnsupported, [path]);
 }
 
 export function parseStatePart(statePart: string): StatePartParseResult {
@@ -69,7 +69,7 @@ export function parseStatePart(statePart: string): StatePartParseResult {
   }
   if (stateAndPath.indexOf("@") !== -1) {
     // 名前次元は v2 で撤去（docs/state-mount-design.md D16 / §9）。パスは 1 本のツリー。
-    raiseError(`[wcs/binding-syntax] "${stateAndPath}": the "@name" selector was removed in v2`);
+    raise(M.SelectorRemoved, [stateAndPath]);
   }
   const statePathName = stateAndPath;
   // 右辺も左辺（`parsePropPart`）と同じ規準で空セグメントを弾く（要件 B1）。
@@ -82,7 +82,7 @@ export function parseStatePart(statePart: string): StatePartParseResult {
   const body = isLoopRelative ? statePathName.slice(DELIMITER.length) : statePathName;
   const hasEmptySegment = body.length > 0 && body.split(DELIMITER).some((segment) => segment.length === 0);
   if (hasEmptySegment || (!isLoopRelative && body.length === 0)) {
-    raiseError(`[wcs/binding-syntax] "${statePart}": the right side of a binding must name a state path (a path segment cannot be empty).`);
+    raise(M.EmptySegment, [statePart]);
   }
   checkPathLikeGetPathInfo(statePathName);
   return {

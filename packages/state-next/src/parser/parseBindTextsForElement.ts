@@ -16,7 +16,7 @@ import {
 } from "./define";
 import { parsePropPart } from "./parsePropPart";
 import { parseStatePart } from "./parseStatePart";
-import { raiseError } from "./raiseError";
+import { raise, M } from "../messages";
 import { ParsedBinding, STRUCTURAL_BINDING_TYPE_SET } from "./types";
 import { indexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils";
 
@@ -66,7 +66,7 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
     // 引数の中の `:` を区切りとして拾っていた
     const separatorIndex = indexOfOutsideQuotes(bindText, PROP_VALUE_SEPARATOR);
     if (separatorIndex === -1) {
-      raiseError(`[wcs/binding-syntax] Invalid bindText: "${bindText}". Missing ':' separator.`);
+      raise(M.BindTextNoColon, [bindText]);
     }
     const propPart = bindText.slice(0, separatorIndex).trim();
     const statePart = bindText.slice(separatorIndex + 1).trim();
@@ -78,12 +78,12 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
     // `indexOfOutsideQuotes` に替えること**（`parsePropPart.ts` の同じ注記と対）。
     const keyword = propPart.split(MODIFIER_SEPARATOR)[0].split(FILTER_SEPARATOR)[0].trim();
     if (keyword !== propPart && KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
-      raiseError(`[wcs/binding-syntax] "${bindText}": "${keyword}" takes no modifiers or filters on its left side.`);
+      raise(M.StructuralTakesNoModifiers, [bindText, keyword]);
     }
     if (propPart === ELSE_KEYWORD) {
       if (statePart.length > 0) {
         // else は値を取らない（要件 B2）。以前は右辺を黙って捨てていた
-        raiseError(`[wcs/binding-syntax] "${bindText}": "else" takes no value.`);
+        raise(M.ElseTakesNoValue, [bindText]);
       }
       return {
         propName: ELSE_KEYWORD,
@@ -99,11 +99,11 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
       // （「the right side of a binding must name a state path」）より、ここでは
       // 「spread target path is required」のほうが直し方を指している
       if (statePart.length === 0) {
-        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": spread target path is required.`);
+        raise(M.SpreadNoPath, [bindText]);
       }
       const stateResult = parseStatePart(statePart);
       if (stateResult.outFilters.length > 0) {
-        raiseError(`[wcs/binding-syntax] Invalid spread binding "${bindText}": filters are not allowed on spread targets.`);
+        raise(M.SpreadNoFilters, [bindText]);
       }
       return {
         propName: SPREAD_PROP,
@@ -144,7 +144,7 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
       if (propResult.propSegments[0] === '' && propResult.propSegments.length > 1) {
         const propSegments = propResult.propSegments.slice(1);
         if (propSegments.includes('') || EXPLICIT_PROPERTY_REJECTED_HEADS.has(propSegments[0])) {
-          raiseError(`[wcs/binding-syntax] "${propPart}": a leading "." needs a property that is not a namespace.`);
+          raise(M.LeadingDotNamespace, [propPart]);
         }
         return {
           ...propResult,
@@ -184,7 +184,7 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
     if (isIncludeSingleBinding) {
       // lint 側の単独バインディング検査（bindingValidator の structuralMustBeSingle）が
       // 同じケースを検出するため誘導を付ける（三面同語彙）。
-      raiseError(`[wcs/template-syntax] "${bindText}": if / elseif / else / for must be single binding.`);
+      raise(M.StructuralNotSingle, [bindText]);
     }
   }
   return results;

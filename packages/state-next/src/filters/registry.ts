@@ -12,7 +12,8 @@
  * - every registered filter has arity bounds (the source allowed them to be absent);
  * - the core set is registered like any other (the source hard-wired `not` into the registry).
  */
-import { raiseError } from "./errorMessages";
+import { raiseError } from "../parser/raiseError";
+import { raise, M } from "../messages";
 
 export type FilterFn = (value: unknown) => unknown;
 
@@ -92,12 +93,15 @@ export function clearFilterResolutionCache(): void {
 }
 
 /**
- * The `[wcs/filter-unknown]` message. A formatting filter on a page without the formats add-on
- * is not a typo: the barrier names the add-on (the diagnostics add-on adds the nearest name).
+ * `[wcs/filter-unknown]`. A formatting filter on a page without the formats add-on is not a typo:
+ * that barrier is kept as full text, since it is met on pages without add-ons (the diagnostics
+ * add-on adds the nearest name to either).
  */
-function unknownFilterMessage(name: string): string {
-  const addOn = FORMATS_FILTER_NAMES.includes(name) ? ` "${name}" is in the formats add-on — install it with installFormats().` : "";
-  return `[wcs/filter-unknown] filter not found: ${name}.${addOn}`;
+function unknownFilter(name: string, known: Iterable<string>): never {
+  if (FORMATS_FILTER_NAMES.includes(name)) {
+    raiseError(`[wcs/filter-unknown] filter not found: ${name}. "${name}" is in the formats add-on — install it with installFormats().`, name, known);
+  }
+  raise(M.FilterUnknown, [name], name, known);
 }
 
 /**
@@ -112,14 +116,13 @@ export function resolveFilter(name: string, options: string[], literals: readonl
   }
   const factory = factories.get(name);
   if (typeof factory === "undefined") {
-    raiseError(unknownFilterMessage(name), name, factories.keys());
+    unknownFilter(name, factories.keys());
   }
   const bounds = arities.get(name) as readonly [number, number];
   if (options.length < bounds[0] || options.length > bounds[1]) {
     // Same vocabulary as lint's wcs/filter-arity
-    raiseError(options.length < bounds[0]
-      ? `[wcs/filter-arity] filter "${name}" requires at least ${bounds[0]} argument(s) (${options.length} given).`
-      : `[wcs/filter-arity] filter "${name}" accepts at most ${bounds[1]} argument(s) (${options.length} given).`);
+    if (options.length < bounds[0]) raise(M.FilterTooFewArgs, [name, bounds[0], options.length]);
+    raise(M.FilterTooManyArgs, [name, bounds[1], options.length]);
   }
   const filterFn = factory(options, literals);
   resolvedByKey.set(key, filterFn);
