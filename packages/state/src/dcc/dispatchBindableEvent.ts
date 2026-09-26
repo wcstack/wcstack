@@ -39,7 +39,8 @@ export function dispatchBindableEvent(
   const isExact = typeof exactEventName === "string";
   const eventName = isExact
     ? exactEventName
-    : (pathInfo.segments.length > 1 ? map[pathInfo.segments[0]] : undefined);
+    // マウントの私有キー（`user.#m1.mode` — `#` はパス文法で書けない）は公開面のメンバーの下位パスではない（#321）
+    : (pathInfo.segments.length > 1 && pathInfo.path.indexOf("#") === -1 ? map[pathInfo.segments[0]] : undefined);
   if (typeof eventName !== "string") {
     return;
   }
