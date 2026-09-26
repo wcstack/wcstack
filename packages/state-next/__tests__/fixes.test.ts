@@ -452,3 +452,103 @@ describe("F15 構造でない data-wcs を持つ <template> は、普通の要�
   });
 });
 
+
+describe("F17 マークアップの数値添字のパス（items.0.v）は、this[\"items.0.v\"] と同じく添字として読み書きする（#332）", () => {
+  it("行の getter・添字のパスへの書き込み・要素の差し替え・並べ替えに追従する", async () => {
+    const { root, write } = await page(
+      `<span class="a" data-wcs="textContent: items.0.v"></span><span class="b">{{ items.1.v }}</span><span class="d" data-wcs="textContent: items.0.double"></span>`,
+      { items: [{ v: 1 }, { v: 2 }], get "items.*.double"() { return (this as any)["items.*.v"] * 2; } },
+    );
+    const shown = () => [".a", ".b", ".d"].map((s) => root.querySelector(s)!.textContent);
+    expect(shown()).toEqual(["1", "2", "2"]);
+    await write((s) => { s["items.0.v"] = 7; });
+    expect(shown()).toEqual(["7", "2", "14"]);
+    await write((s) => { s["items.0"] = { v: 50 }; });
+    expect(shown()).toEqual(["50", "2", "100"]);
+    await write((s) => { s.items = [...s.items].reverse(); });
+    expect(shown()).toEqual(["2", "50", "4"]);
+    await write((s) => { s.items = [{ v: 9 }]; });
+    expect(shown()).toEqual(["9", "", "18"]);
+  });
+
+  it("行の中の相対パス（.items.0.v）と、双方向の束縛の書き戻し", async () => {
+    const { root, write, read } = await page(
+      `<template data-wcs="for: groups"><p>{{ .items.0.v }}</p></template><input data-wcs="value: groups.1.items.0.v">`,
+      { groups: [{ items: [{ v: "a" }] }, { items: [{ v: "b" }] }] },
+    );
+    expect(texts(root, "p")).toEqual(["a", "b"]);
+    const input = root.querySelector("input")!;
+    expect(input.value).toBe("b");
+    input.value = "typed";
+    input.dispatchEvent(new Event("input"));
+    await flush();
+    await flush();
+    expect(read("groups.1.items.0.v")).toBe("typed");
+    expect(texts(root, "p")).toEqual(["a", "typed"]);
+    await write((s) => { s["groups.0.items.0.v"] = "A"; });
+    expect(texts(root, "p")).toEqual(["A", "typed"]);
+  });
+
+  it("一覧でない入れ物の数値のキー（辞書）は、これまでどおり字面どおりに読む", async () => {
+    const { root, write } = await page(`<span data-wcs="textContent: usersById.42.name"></span>`, { usersById: { 42: { name: "Ann" } } });
+    expect(root.querySelector("span")!.textContent).toBe("Ann");
+    await write((s) => { s.usersById = { 42: { name: "Bea" } }; });
+    expect(root.querySelector("span")!.textContent).toBe("Bea");
+  });
+});
+
+describe("F18 マークアップの $1（ループの添字）を束縛できる（3.3 の README のとおり）", () => {
+  it("{{ $1|add(1) }} と textContent: $2 が、行の追加・並べ替え・削除に追従する", async () => {
+    const { root, write } = await page(
+      `<template data-wcs="for: groups"><section><b>{{ $1|add(1) }}</b><template data-wcs="for: .items"><i data-wcs="textContent: $2"></i><u>{{ $1 }}</u></template></section></template>`,
+      { groups: [{ items: ["x", "y"] }, { items: ["z"] }] },
+    );
+    expect(texts(root, "b")).toEqual(["1", "2"]);
+    expect(texts(root, "i")).toEqual(["0", "1", "0"]);
+    expect(texts(root, "u")).toEqual(["0", "0", "1"]);
+    await write((s) => { s.groups = [{ items: ["n"] }, ...s.groups]; });
+    expect(texts(root, "b")).toEqual(["1", "2", "3"]);
+    expect(texts(root, "u")).toEqual(["0", "1", "1", "2"]);
+    await write((s) => { s.groups = [...s.groups].reverse(); });
+    expect(texts(root, "b")).toEqual(["1", "2", "3"]);
+    expect(texts(root, "u")).toEqual(["0", "1", "1", "2"]);
+    await write((s) => { s["groups.0.items"] = []; });
+    expect(texts(root, "i")).toEqual(["0", "1", "0"]);
+  });
+
+  it("ループの外の $1 は、ループが無いとして投げる", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(page(`<p>{{ $1 }}</p>`, {})).rejects.toThrow('[@wcstack/state] [wcs/wildcard-rank] #1401 "$1" 1');
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("F19 表示のプロパティ（textContent / innerText）には文字列を書く（サーバの DOM の happy-dom でも 0 が出る）", () => {
+  it("0 と数値が表示され、innerText も投げない", async () => {
+    const { root, write } = await page(`<p class="t" data-wcs="textContent: n"></p><p class="i" data-wcs="innerText: n"></p>`, { n: 0 });
+    expect([root.querySelector(".t")!.textContent, root.querySelector(".i")!.textContent]).toEqual(["0", "0"]);
+    await write((s) => { s.n = 12; });
+    expect([root.querySelector(".t")!.textContent, root.querySelector(".i")!.textContent]).toEqual(["12", "12"]);
+  });
+});
+
+describe("F17・F18 再セットの後も", () => {
+  it("数値添字のパスと $1 は、新しい状態で書き込みと並べ替えに追従する", async () => {
+    const { root, el, write } = await page(
+      `<span class="a" data-wcs="textContent: items.0.v"></span><template data-wcs="for: items"><i>{{ $1 }}:{{ .v }}</i></template>`,
+      { items: [{ v: 1 }, { v: 2 }] },
+    );
+    el.setInitialState({ items: [{ v: 5 }, { v: 6 }] });
+    await flush();
+    expect(root.querySelector(".a")!.textContent).toBe("5");
+    expect(texts(root, "i")).toEqual(["0:5", "1:6"]);
+    await write((s) => { s["items.0.v"] = 8; });
+    expect(root.querySelector(".a")!.textContent).toBe("8");
+    await write((s) => { s.items = [...s.items].reverse(); });
+    expect(root.querySelector(".a")!.textContent).toBe("6");
+    expect(texts(root, "i")).toEqual(["0:6", "1:8"]);
+  });
+});

@@ -1,4 +1,4 @@
-import type { Engine } from "../engine";
+import { INDEX_PARAM, type Engine } from "../engine";
 import type { StateRow } from "../list";
 import { UNSET, type Pattern } from "../pattern";
 import { config } from "../config";
@@ -87,6 +87,11 @@ const COMMAND_PREFIX = "$command.";
 
 /** The pattern of a path a binding names (shown to the diagnostics add-on). */
 export function boundPattern(engine: Engine, path: string, list: Pattern | null): Pattern {
+  // `$1` is the loop index: a row pattern of the innermost loop answers it (Engine.markupAccessor)
+  if (INDEX_PARAM.test(path)) {
+    if (list === null) raise(M.WildcardNoLoop, [path, Number(path.slice(1))]);
+    path = `${list.path}.*.${path}`;
+  }
   const p = engine.pattern(expandPath(path, list));
   if (hooks.declared !== null) hooks.declared(engine, p);
   return p;

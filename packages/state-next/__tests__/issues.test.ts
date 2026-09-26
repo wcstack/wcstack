@@ -469,11 +469,9 @@ describe("#331 bind-component のコンポーネントのメソッドを element
   });
 });
 
-// state-next でも起きる（未修正）: マークアップの items.0.v は字面どおりのパターンになり、添字のパスへの書き込み
-// （items.*.v の行 0）が届かない。数値添字の getter（items.0.double）は items.*.double の getter に当たらない。
-// it.fails: 直ったらこの印を外す。
+// state-next でも起きていた（F17、2026-09-27 に修正）: マークアップの items.0.v は this["items.0.v"] と同じく添字として読み書きする。
 describe("#332 マークアップに書いた数値添字のパス（items.0.v）が、添字のパスでの書き込みに追従する", () => {
-  it.fails.each([["for あり", true], ["for なし", false]])("%s", async (_name, withFor) => {
+  it.each([["for あり", true], ["for なし", false]])("%s", async (_name, withFor) => {
     const { root, write } = await page(
       `<span class="a" data-wcs="textContent: items.0.v"></span><span class="b">{{ items.1.v }}</span><span class="d" data-wcs="textContent: items.0.double"></span>`
       + (withFor ? `<ul><template data-wcs="for: items"><li>{{ .v }}</li></template></ul>` : ""),

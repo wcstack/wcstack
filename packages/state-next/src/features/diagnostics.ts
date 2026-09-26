@@ -8,7 +8,7 @@
  */
 import { addHook, hooks, type Feature } from "../hooks";
 import type { Engine } from "../engine";
-import type { Pattern } from "../pattern";
+import { parsePath, type Pattern } from "../pattern";
 import { raiseError } from "../parser/raiseError";
 import type { Binding } from "../dom/view";
 import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
@@ -47,8 +47,14 @@ function missing(engine: Engine, p: Pattern): { seg: string; names: string[] } |
   const chain: Pattern[] = [];
   for (let q: Pattern | null = p; q !== null; q = q.parent) chain.unshift(q);
   let v: any = engine.target;
+  // an explicit index (`items.0.x`) has an accessor of its own (Engine.markupAccessor): whether it
+  // reads a getter is the question of the pattern it names (`items.*.x`)
+  const named = (q: Pattern | null): Pattern | null | undefined => {
+    const parsed = q === null ? null : parsePath(q.path);
+    return parsed === null || parsed.indexes === null ? q : engine.patterns.peek(parsed.pattern);
+  };
   for (const q of chain) {
-    if (q.getter !== null) return null;
+    if (named(q)?.getter != null) return null;
     if (v === null || typeof v !== "object") return null;
     if (q.last === "*") {
       if (!Array.isArray(v) || v.length === 0) return null;
@@ -65,7 +71,8 @@ function missing(engine: Engine, p: Pattern): { seg: string; names: string[] } |
     if (d === undefined) {
       const names = keysOf(v);
       // getters declared one level under the same parent (`items.*.subtotal`)
-      for (const g of engine.patterns.all()) if (g.parent === q.parent && g.getter !== null) names.push(g.last);
+      const parent = named(q.parent);
+      for (const g of engine.patterns.all()) if (g.parent === parent && g.getter !== null) names.push(g.last);
       return { seg: q.last, names };
     }
     if (d.get !== undefined || d.set !== undefined) return null;

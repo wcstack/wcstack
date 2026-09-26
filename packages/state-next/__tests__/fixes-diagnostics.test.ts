@@ -60,3 +60,25 @@ it("F11 detail が無い・detail が { <prop>: … } の包み を、要素 × 
     warn.mockRestore();
   }
 });
+
+it("F17 数値添字の行の getter（items.0.double）は「宣言されていない」と警告しない。打ち間違いは行の getter も候補に挙げる", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const h = document.createElement("fix-f17-page");
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p>{{ items.0.double }}</p><p>{{ items.0.doubel }}</p>`;
+    const state = root.querySelector("wcs-state") as any;
+    state.setInitialState({ items: [{ v: 1 }], get "items.*.double"() { return (this as any)["items.*.v"] * 2; } });
+    document.body.appendChild(h);
+    await state.connectedCallbackPromise;
+    await getBindingsReady(root);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(root.querySelector("p")!.textContent).toBe("2");
+    const said = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("binding-path-missing"));
+    expect(said).toEqual([
+      '[@wcstack/state] [wcs/binding-path-missing] Bound path "items.0.doubel" does not resolve on the state tree: "doubel" is not declared. Did you mean "double"? Updates to this path will be silently dropped. Validate statically: npx @wcstack/lint <file>.',
+    ]);
+  } finally {
+    warn.mockRestore();
+  }
+});

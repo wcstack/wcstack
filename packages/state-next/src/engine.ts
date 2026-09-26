@@ -27,7 +27,7 @@ function unbound(path: string): string {
 }
 
 /** `$1` … `$128`, no leading zero. */
-const INDEX_PARAM = /^\$[1-9]\d{0,2}$/;
+export const INDEX_PARAM = /^\$[1-9]\d{0,2}$/;
 export const MAX_INDEX_PARAM = 128;
 
 interface Frame {
@@ -208,6 +208,42 @@ export class Engine implements ReconcileHooks {
     const parent = p.parent;
     p.underGetter = parent !== null && p.last !== WILDCARD && parent.depth === p.depth &&
       (parent.getter !== null || parent.underGetter);
+    if (p.getter === null) this.markupAccessor(p);
+  }
+
+  /**
+   * Markup names two things the tree does not hold, as `this[...]` reads them: an explicit index
+   * (`items.0.v`, the row at that index now) and a loop index (`items.*.$1`, `$1` in a row).
+   * Their patterns (only markup makes them: the proxy parses an index into a row) read — and an
+   * index path writes — through the proxy, so the reads are tracked like a getter's.
+   */
+  private markupAccessor(p: Pattern): void {
+    const path = p.path;
+    const last = p.last;
+    if (INDEX_PARAM.test(last)) {
+      p.getter = function (this: any) {
+        return this[last];
+      };
+    } else {
+      const segs = path.split(".");
+      let i = 0;
+      while (i < segs.length && !(segs[i].charCodeAt(0) >= 48 && segs[i].charCodeAt(0) <= 57)) i++;
+      if (i === segs.length) return;
+      const container = segs.slice(0, i).join(".");
+      const rest = segs.slice(i);
+      p.getter = function (this: any) {
+        const v = this[path];
+        if (v !== undefined) return v;
+        // not a list there (an object with numeric keys): the path read literally, as 3.3's markup did
+        let o = this[container];
+        for (let k = 0; k < rest.length && o != null; k++) o = o[rest[k]];
+        return o;
+      };
+      p.setter = function (this: any, v: unknown) {
+        this[path] = v;
+      };
+    }
+    if (p.depth > 0) p.slot = this.slotCount++;
   }
 
   // ---------------------------------------------------------------- lists

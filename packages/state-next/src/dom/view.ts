@@ -259,7 +259,10 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
       return;
     case K_PROP:
       if (DISPLAY_PROPS.has(name)) {
-        n[name] = name === "innerHTML" ? trustHtml(v == null ? "" : String(v)) : v == null ? "" : v;
+        // a string, as a browser's setter makes it (happy-dom — the server's DOM — writes 0 as "", and
+        // throws on a number for innerText)
+        const s = v == null ? "" : String(v);
+        n[name] = name === "innerHTML" ? trustHtml(s) : s;
       } else if (isHtmlSink(name)) {
         n[name] = trustHtml(v == null ? "" : String(v));
       } else if (v !== undefined && n[name] !== v && !(name === "value" && n.value === String(v))) {
