@@ -10,6 +10,9 @@
 // 3. The gzip of each feature's OWN code (its entry plus the chunks the core does not already carry)
 //    may not grow more than 3 % over scripts/state-split-baseline.json. Feature weight is invisible
 //    to check-state-size.mjs, which only measures the shipped bundles and the core closure.
+//    An entry's optional `slack` (bytes) is added on top of the 3 % — a standing allowance for a
+//    feature expected to grow between releases (`features/ssr.js`: 1 KB). `--update` re-records the
+//    sizes and keeps each entry's `slack`.
 //
 // The check reads the built `dist/split/**.js.map`. Run after `npm run build` in packages/state:
 //   node scripts/check-state-split.mjs [--check] [--update] [--allowance 0.03]
@@ -22,6 +25,7 @@ import { gzipSync } from 'node:zlib';
 const root = resolve(import.meta.dirname, '..');
 const splitDir = join(root, 'packages/state/dist/split');
 const baselineFile = join(root, 'scripts/state-split-baseline.json');
+const BASELINE_COMMENT = 'gzip level 9 of each @wcstack/state feature entry\'s OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13), plus an entry\'s optional "slack" in bytes (kept across --update). Update with --update after a release build.';
 const update = process.argv.includes('--update');
 // A bare `--allowance` (or a non-number) used to make the limit NaN, which compares false against
 // every size — the growth gate would switch itself off without a word.
@@ -144,8 +148,18 @@ if (failures.length > 0) {
 }
 
 if (update) {
+  // 取り直しても、エントリごとの上乗せ（slack）は人が決めた値なので引き継ぐ
+  let previous = {};
+  try {
+    previous = JSON.parse(await readFile(baselineFile, 'utf8'));
+  } catch {
+    // 基線がまだ無い: 引き継ぐものも無い
+  }
+  for (const name of Object.keys(current)) {
+    if (typeof previous[name]?.slack === 'number') current[name].slack = previous[name].slack;
+  }
   await writeFile(baselineFile, JSON.stringify({
-    $comment: 'gzip level 9 of each @wcstack/state feature entry\'s OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13). Update with --update after a release build.',
+    $comment: BASELINE_COMMENT,
     ...current,
   }, null, 2) + '\n');
   console.log('[state split] baseline updated', JSON.stringify(current));
@@ -160,9 +174,11 @@ for (const name of Object.keys(current)) {
     grew = true;
     continue;
   }
-  const limit = Math.round(baseline[name].gzip * (1 + allowance));
+  const slack = baseline[name].slack ?? 0;
+  const limit = Math.round(baseline[name].gzip * (1 + allowance)) + slack;
   if (current[name].gzip > limit) {
-    console.error(`[state split] ${name}: ${current[name].gzip} B gzip of its own (baseline ${baseline[name].gzip}, limit ${limit}) EXCEEDED`);
+    const slackNote = slack > 0 ? ` incl. ${slack} B slack` : '';
+    console.error(`[state split] ${name}: ${current[name].gzip} B gzip of its own (baseline ${baseline[name].gzip}, limit ${limit}${slackNote}) EXCEEDED`);
     grew = true;
   }
 }
