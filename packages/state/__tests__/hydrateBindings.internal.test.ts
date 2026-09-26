@@ -66,10 +66,13 @@ describe("hydrateBlocks (ガードパス)", () => {
   });
 
   it("if ブロックで placeholderComment が見つからない場合はスキップ", () => {
+    // 開始コメントの直前（空白を除く）に自分のプレースホルダが無い（#258: 文書の先頭からは探さない）
+    const other = document.createComment("@@wcs-if:another-uuid");
+    const start = document.createComment("@@wcs-if-start:no-placeholder-if:show");
     const p = document.createElement("p");
-    document.body.appendChild(p);
+    document.body.append(other, document.createTextNode("\n  "), start, p);
     const blocks = [
-      { type: "if", uuid: "no-placeholder-if", path: "show", index: null, nodes: [p] },
+      { type: "if", uuid: "no-placeholder-if", path: "show", index: null, nodes: [p], start },
     ];
     expect(() => hydrateBlocks(document.body, blocks)).not.toThrow();
   });

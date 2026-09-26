@@ -12,10 +12,11 @@
  * **行 DOM が据え置かれることは `toBe`（identity）で書く。** `toEqual` は構造比較なので、
  * 行ノードが全部作り直されていても同じ文字列なら通ってしまう。
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import { getListIndexesByList } from "../src/list/listIndexesByList";
+import { clientLoad, serverRender } from "./helpers/ssrRoundTrip";
 
 beforeAll(() => {
   bootstrapState();
@@ -179,61 +180,47 @@ describe("$listKeys が先に確定させる台帳", () => {
 });
 
 /**
- * 方針書が名指しで求めた特殊例その 1: **ホストの `for` の中の子スコープをハイドレートする形**。
- * `hydrateBindings` は for ブロックの行を `createListIndex(null, block.index)` で **常に親 null**
- * で鋳造する。実測すると、内側の for ブロックはそもそも台帳に載らない —— 内側スコープへの
- * `$resolve` は `ListIndexes not found` で落ち、SSR が出した DOM がそのまま残る。
+ * 方針書が名指しで求めた特殊例その 1: **ホストの `for` の中の子スコープ（入れ子の for）をハイドレートする形**。
  *
- * **これは #256 より前からの制限で、main でも同じ**（同じ fixture を main の src に対して
- * 走らせて確認: 初期 DOM ['x','y'] / `.group` 1 個 / 同じ throw / 書き込み後も ['x','y']）。
- * ここで固定するのは「#256 の修理がこの形を変えていない」ことで、`ListIndexes not found` を
- * 望ましい着地として認めるものではない（入れ子ハイドレーションを直すなら別の Issue）。
+ * 旧: `hydrateBindings` は for ブロックの行を `createListIndex(null, block.index)` で常に親 null で
+ * 鋳造し、内側の for ブロックは台帳に載らなかった（手書きの断片での実測: 内側への `$resolve` が
+ * `ListIndexes not found` で落ち、DOM は SSR のまま）。実際のサーバー出力ではさらに悪く、
+ * `ListIndex not found` でハイドレーション全体が止まっていた（#258）。
+ *
+ * 今は入れ子の for をハイドレーションせず、クライアントの全描画に倒す（#258）。行は通常の描画が
+ * 鋳造するので、内側の行の親は外側の行になり、内側への書き込みが届く。fixture はサーバーに描かせる
+ * （helpers/ssrRoundTrip.ts）。
  */
-describe("ハイドレーション: ホストの for の中の子スコープ（#256 前からの制限・main と同じ）", () => {
-  it("内側の for は台帳に載らず、子スコープへの $resolve が ListIndexes not found で落ちること", async () => {
-    document.body.innerHTML = `
-      <wcs-ssr name="default">
-        <script type="application/json">{"groups":[{"title":"G1","items":[{"name":"x"},{"name":"y"}]}]}</script>
-        <template id="lk2" data-wcs="for: groups">
-          <div class="group"><h3 data-wcs="textContent: groups.*.title"></h3>
-            <template id="lk3" data-wcs="for: groups.*.items">
-              <i data-wcs="textContent: groups.*.items.*.name"></i>
-            </template>
-          </div>
-        </template>
-      </wcs-ssr>
-      <wcs-state enable-ssr json='{"groups":[]}'></wcs-state>
-      <div id="outer">
-        <!--@@wcs-for:lk2-->
-        <!--@@wcs-for-start:lk2:groups:0--><div class="group"><h3 data-wcs="textContent: groups.*.title">G1</h3>
-          <!--@@wcs-for:lk3-->
-          <!--@@wcs-for-start:lk3:groups.*.items:0--><i data-wcs="textContent: groups.*.items.*.name">x</i><!--@@wcs-for-end:lk3:groups.*.items:0-->
-          <!--@@wcs-for-start:lk3:groups.*.items:1--><i data-wcs="textContent: groups.*.items.*.name">y</i><!--@@wcs-for-end:lk3:groups.*.items:1-->
-        </div><!--@@wcs-for-end:lk2:groups:0-->
-      </div>
-    `;
-    const stateEl = document.querySelector("wcs-state") as any;
-    await stateEl.connectedCallbackPromise;
-    await new Promise((resolve) => setTimeout(resolve, 200));
+describe("ハイドレーション: ホストの for の中の子スコープ（入れ子の for — 全描画に倒す）", () => {
+  it("内側の行が外側の行を親として台帳に載り、子スコープへの $resolve が DOM に届くこと", async () => {
+    const make = (): any => ({ groups: [{ title: "G1", items: [{ name: "x" }, { name: "y" }] }] });
+    const html = await serverRender(
+      `<wcs-state enable-ssr></wcs-state><div id="outer"><template data-wcs="for: groups">` +
+      `<div class="group"><h3 data-wcs="textContent: .title"></h3>` +
+      `<template data-wcs="for: .items"><i data-wcs="textContent: .name"></i></template></div></template></div>`,
+      make);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const stateEl = await clientLoad(html, make) as any;
+    expect(warnSpy.mock.calls.map((args) => String(args[0]))).toEqual([
+      `[@wcstack/state] SSR: "for: groups.*.items" in "for: groups" (known limitation). Falling back to full render.`,
+    ]);
+    warnSpy.mockRestore();
 
     const txt = () => Array.from(document.querySelectorAll("i")).map((i) => i.textContent);
-    expect(txt(), "SSR が出した子スコープの DOM").toEqual(["x", "y"]);
+    expect(txt()).toEqual(["x", "y"]);
     expect(document.querySelectorAll(".group")).toHaveLength(1);
-    // 外側の行は親 null で台帳に載る
-    expect(getListIndexesByList(stateEl.__state.groups)).toHaveLength(1);
-    // 内側の配列はどの親のもとにも載っていない
-    expect(getListIndexesByList(stateEl.__state.groups[0].items)).toBeNull();
+    const outerRows = getListIndexesByList(stateEl.__state.groups)!;
+    expect(outerRows.map((r) => r.parentListIndex)).toEqual([null]);
+    // 内側の配列は外側の行を親として載る（旧: null — どの親のもとにも載っていなかった）
+    const innerRows = getListIndexesByList(stateEl.__state.groups[0].items)!;
+    expect(innerRows).toHaveLength(2);
+    expect(innerRows.map((r) => r.parentListIndex)).toEqual([outerRows[0], outerRows[0]]);
 
-    let message = "NO THROW";
-    try {
-      stateEl.createState("writable", (s: any) => {
-        s.$resolve("groups.*.items.*.name", [0, 0], "x2");
-      });
-    } catch (e: any) { message = String(e && e.message); }
+    stateEl.createState("writable", (s: any) => {
+      s.$resolve("groups.*.items.*.name", [0, 0], "x2");
+    });
     await flush();
-
-    expect(message, "main でも同じ throw").toContain("ListIndexes not found: groups.*.items");
-    expect(txt(), "DOM は SSR のまま").toEqual(["x", "y"]);
+    expect(txt(), "旧: ListIndexes not found で throw し、DOM は SSR のまま").toEqual(["x2", "y"]);
   });
 });
 

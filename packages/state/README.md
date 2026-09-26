@@ -3236,7 +3236,7 @@ That's it. The client-side `@wcstack/state` automatically detects the `<wcs-ssr>
 |-------|-------------|
 | **Server** | `renderToString()` runs your template in happy-dom, executes `$connectedCallback` (including `fetch()`), applies all bindings, and outputs rendered HTML with a `<wcs-ssr>` element containing hydration data |
 | **Client** | `<wcs-state enable-ssr>` loads state from `<wcs-ssr>` JSON, skips `$connectedCallback`, and `hydrateBindings()` wires up reactivity on the existing DOM |
-| **Fallback** | If server/client versions mismatch, the SSR DOM is cleaned up and `buildBindings()` runs a full client-side render |
+| **Fallback** | If server/client versions mismatch, or a server-rendered `for:` row sits inside another `for:` / `if:` / `elseif:` / `else:` block (hydrating those is a known limitation), the SSR DOM is cleaned up and `buildBindings()` runs a full client-side render. Either case logs one `console.warn` saying why |
 
 ### What `enable-ssr` Does
 
