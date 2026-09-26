@@ -6,9 +6,10 @@ import { markObserverSkipRemovedChildren } from "../bindings/observerSkip";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { inSsr } from "../config";
 import { WILDCARD } from "../define";
-import { createListDiff } from "../list/createListDiff";
+import { calcDiffIndexes, createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
-import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { getLastListValueByAbsoluteStateAddress, getRenderedList, IRenderedList } from "../list/lastListValueByAbsoluteStateAddress";
+import { getListIndexesByList, isRetiredListIndex } from "../list/listIndexesByList";
 import { computeStableIndexSet } from "../list/stableListOrder";
 import { isSwapBaselineList } from "../list/swapBaselineList";
 import { IListDiff, IListIndex } from "../list/types";
@@ -27,6 +28,8 @@ const lastNodeByNode: WeakMap<Node, Node> = new WeakMap();
 const contentByListIndexByNode: WeakMap<Node, WeakMap<IListIndex, IContent>> = new WeakMap();
 const pooledContentsByNode: WeakMap<Node, IContent[]> = new WeakMap();
 const isOnlyNodeInParentContentByNode: WeakMap<Node, boolean> = new WeakMap();
+// この for（アンカー）が最後に描いた並び（#320。lastListValueByAbsoluteStateAddress.ts の IRenderedList）
+const renderedListByNode: WeakMap<Node, IRenderedList> = new WeakMap();
 
 // テスト用ヘルパー（内部状態の操作）
 export function __test_setContentByListIndex(node: Node, index: IListIndex, content: IContent | null): void {
@@ -222,6 +225,9 @@ function dropNestedContents(content: IContent): void {
       deactivateContent(nested);
       nested.unmount();
       deleteContentByNode(binding.node, nested);
+      // 描いた行を捨てたので、その for が描いた並びも捨てて白紙から描かせる（#320。残すと次の適用が、
+      // 捨てた行を自分の行として差分の旧側に数え、台帳から外した Content をプールへ戻してしまう）
+      renderedListByNode.delete(binding.node);
     }
   }
 }
@@ -251,17 +257,37 @@ export function applyChangeToFor(
   const listIndex = getListIndexByBindingInfo(bindingInfo);
   const absAddress = getAbsoluteStateAddressByBinding(bindingInfo);
   const recordedLastValue = getLastListValueByAbsoluteStateAddress(absAddress);
-  // lastListValue はアドレスキーの共有台帳。まだ何も描いていない binding ノード
-  //（content 台帳が空）が、既に描画済みのアドレスに後から参加する形 — マウント
-  // スコープの再初期化（コンポーネントが connectedCallback で shadow を張り直す）や
-  // 後着ノードの binder 適用 — では、共有の記録で差分を取ると「既存 content の
-  // 再利用・維持」を指示され、この binding には無いので落ちる。自分の台帳が空なら
-  // 白紙から全行 add で描く（同じアドレスの他の binding の差分には影響しない）
-  const lastValue = recordedLastValue.length > 0 && !contentByListIndexByNode.has(bindingInfo.node)
-    ? []
-    : recordedLastValue;
-  const diff = createListDiff(listIndex, lastValue, newValue);
-  context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
+  const rendered = renderedListByNode.get(bindingInfo.node);
+  let lastValue: readonly unknown[];
+  let diff: IListDiff;
+  // 共有の記録が、この for の描いた並びを置いて進んだ（#320）。同じリストを描く別の for だけが描いた —
+  // この for は `if` で消されていた・DOM から外されていた — か、行の Content の使い回しでこの for が
+  // 別の行に付け替わった。行の台帳（どの値がどの行か）は共有の差分で進め、描き替えは自分が描いた行と
+  // 今の行を行の同一性で突き合わせて決める。描いた並びが空なら台帳は無い（全行 add）。
+  // 今の行の親がこの for の行でない（要素書き込みが古い親に行を鋳造した台帳の食い違い）なら突き合わせに
+  // 使わない — 別の行の値を描き、その後の書き込みを別の行へ着地させる。従来の差分に戻して、食い違いを
+  // 見える失敗（Content not found）のまま残す
+  const shared = typeof rendered !== 'undefined' && rendered.value !== recordedLastValue
+    ? createListDiff(listIndex, recordedLastValue, newValue)
+    : null;
+  if (shared !== null && shared.newIndexes.every((row) => row.parentListIndex === listIndex || isRetiredListIndex(row.parentListIndex!))) {
+    lastValue = rendered!.value;
+    diff = calcDiffIndexes(getListIndexesByList(lastValue) ?? [], shared.newIndexes);
+  } else {
+    // lastListValue はアドレスキーの共有台帳。まだ何も描いていない binding ノード
+    //（content 台帳が空）が、既に描画済みのアドレスに後から参加する形 — マウント
+    // スコープの再初期化（コンポーネントが connectedCallback で shadow を張り直す）や
+    // 後着ノードの binder 適用 — では、共有の記録で差分を取ると「既存 content の
+    // 再利用・維持」を指示され、この binding には無いので落ちる。自分の台帳が空なら
+    // 白紙から全行 add で描く（同じアドレスの他の binding の差分には影響しない）
+    lastValue = recordedLastValue.length > 0 && !contentByListIndexByNode.has(bindingInfo.node)
+      ? []
+      : recordedLastValue;
+    diff = createListDiff(listIndex, lastValue, newValue);
+  }
+  const newListValue = Array.isArray(newValue) ? newValue : [];
+  context.newListValueByAbsAddress.set(absAddress, newListValue);
+  renderedListByNode.set(bindingInfo.node, getRenderedList(newListValue));
 
   let contentMap = contentByListIndexByNode.get(bindingInfo.node);
   // 要素書き込みの入れ替えを描き直す差分では、同じ位置で外す行の Content を入る行がその場で使い回す（#4）
