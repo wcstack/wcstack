@@ -231,8 +231,10 @@ function computeListDiff(
  * unconnected diff chains hold different objects for the same value); such
  * orphan markers never match the consumers' has() lookups and only pollute
  * the dirty set. Rows without shared identity are represented as add+delete.
+ * 台帳に書かず・キャッシュもしない純粋な突き合わせなので、共有の記録から外れていた `for` が
+ * 自分の描いた行と今の行を突き合わせるのにも使う（applyChangeToFor、#320）。
  */
-function calcDiffIndexes(
+export function calcDiffIndexes(
   oldIndexes: IListIndex[],
   newIndexes: IListIndex[],
 ): IListDiff {

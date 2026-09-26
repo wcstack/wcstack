@@ -1,14 +1,17 @@
 import { createStateAddress } from "../address/StateAddress";
 import { getPathInfo } from "../address/PathInfo";
+import { getResolvedAddress } from "../address/ResolvedAddress";
 import { IStateAddress } from "../address/types";
-import { DELIMITER } from "../define";
+import { DELIMITER, WILDCARD } from "../define";
+import { isRetiredListIndex } from "../list/listIndexesByList";
 import { getLoopContextByNode } from "../list/loopContextByNode";
 import { IListIndex } from "../list/types";
 import { checkDependency } from "../proxy/methods/checkDependency";
+import { getContextListIndex } from "../proxy/methods/getContextListIndex";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
 import { IStateHandler, IStateProxy } from "../proxy/types";
-import { composeMountIndexes, IExportEntry, IMountRecord, translateInnerPath, translateInnerWritePath } from "./mount";
+import { composeMountIndexes, concretizeMountPrefix, IExportEntry, IMountRecord, translateInnerPath, translateInnerWritePath } from "./mount";
 import { createDollarPathApiWrapper } from "./dollarPathApis";
 
 /**
@@ -24,6 +27,11 @@ import { createDollarPathApiWrapper } from "./dollarPathApis";
  * - `users.*.#m1.editing` への書き込み → setByAddress の fast path が
  *   `Reflect.set(proxy, "editing", v)` → 私有データへ（enqueue / 依存 walk は
  *   setByAddress が済ませている — 通常のツリーキーと同じ経路）
+ * - 作者のメソッド・setter の本体の `this.editing = v` → `this` は**作者向けの proxy**
+ *   （authorFacing）で、私有キーの書き込みを上の親ウォークの書き込みへ回す。素の state の
+ *   `this.x = v` と同じく setByAddress を通るので、同値ガード・enqueue・依存 walk・
+ *   キャッシュ更新が走る（#321）。親ウォークが着地する proxy は直接代入のまま —
+ *   そこを回すと setByAddress が自分自身へ再帰する
  * - `users.*.#m1.display` の読み → `Reflect.get(proxy, "display")` → 作者の getter を
  *   **この proxy を `this` に**評価。中の `this.name` は translateInnerPath で
  *   `users.*.name` になり、**アクティブな親 receiver** の文字列読みに落ちる —
@@ -44,6 +52,26 @@ interface IPrivateDataTable {
 }
 
 const privateDataByRecord = new WeakMap<IMountRecord, IPrivateDataTable>();
+
+/**
+ * ホスト要素が立っている行の添字（`for:` の外なら空）。公開 chroot はいつもここから、
+ * オーバーレイはマーカーアドレスが行を持たないときにここから補う — 部分マウントだけの記録は
+ * マーカー基底 `#m<id>` がワイルドカードを持たないので、ワイルドカードの無い getter・メソッドの
+ * 評価中はホストの行が見えない（#322）。プールの使い回しで要素が別の行へ移っても、
+ * 読むたびに今の行を返す。
+ */
+function hostRowIndexes(record: IMountRecord): readonly number[] {
+  return getLoopContextByNode(record.component)?.listIndex.indexes ?? [];
+}
+
+/**
+ * 公開面の文字列パス: 接頭辞のワイルドカードをホスト行の添字で具体化する（`items.0.v` →
+ * `groups.*.items.0.v` → `groups.1.items.0.v`、#323）。context 型（`items` → `groups.*.items`）も
+ * ホストのループ文脈と同じ行に具体化されるだけで、答えは変わらない。
+ */
+function resolvePublicPath(record: IMountRecord, innerPath: string, translated: string): string {
+  return concretizeMountPrefix(innerPath, translated, hostRowIndexes(record));
+}
 
 /** マウントインスタンス（record × listIndex）の私有データ。無ければ初期スナップショットから複製 */
 export function getPrivateData(record: IMountRecord, listIndex: IListIndex | null): Record<string, unknown> {
@@ -71,7 +99,17 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
     private readonly isBase: boolean,
     private readonly receiver: any,
     private readonly handler: IStateHandler,
+    private readonly authorFacing: boolean = false,
   ) {}
+
+  /**
+   * 作者のコード（メソッド・setter の本体）へ `this` として渡す proxy。
+   * 同じ私有データ・同じ評価文脈で、私有キーの書き込みだけを親ウォークへ回す（#321）。
+   */
+  private authorThis(target: Record<string, unknown>, receiver: any): object {
+    return this.authorFacing ? receiver : new Proxy(target, new OverlayValueHandler(
+      this.record, this.markerParentPath, this.listIndex, this.isBase, this.receiver, this.handler, true));
+  }
 
   private accessorNameFor(key: string): string | undefined {
     return this.record.accessorBySuffixByMarkerParent.get(this.markerParentPath)?.get(key)?.accessorName;
@@ -79,6 +117,38 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
 
   private accessorAddress(key: string): IStateAddress {
     return createStateAddress(getPathInfo(this.markerParentPath + DELIMITER + key), this.listIndex);
+  }
+
+  /**
+   * 評価中のインスタンスのホスト行の添字（マーカーアドレスが行を持てばそれ）。
+   * await の間にホストの行がリストから外れた（退役した）インスタンスの添字は古い位置のままで、
+   * いまその位置にある別の行を指す — 読み書きを別の行へ着地させずに投げる。
+   */
+  private hostIndexes(): readonly number[] {
+    const listIndex = this.listIndex;
+    if (listIndex === null) {
+      return hostRowIndexes(this.record);
+    }
+    for (let row: IListIndex | null = listIndex; row !== null; row = row.parentListIndex) {
+      if (isRetiredListIndex(row)) {
+        raiseError(`The host row of <${this.record.component.tagName.toLowerCase()}> was removed.`);
+      }
+    }
+    return listIndex.indexes;
+  }
+
+  /**
+   * ツリーへの文字列パスの読み書きで、接頭辞のワイルドカードをホスト行の添字で具体化する。
+   * partial（`items.0.v` → `groups.*.items.0.v`）はコアが解決できない（getListIndex）ので
+   * いつも（#323）。マーカーアドレスが行を持たない（部分マウントだけの記録の）ときも —
+   * ワイルドカードの無い getter の評価中は、文脈（スタック先頭の `#m1.total`）にホストの行が
+   * 無く context 型を解決できない（#322）。行を持つときの context 型は文脈がそのまま解決する。
+   */
+  private resolveTreePath(innerPath: string, translated: string): string {
+    return translated.indexOf(WILDCARD) !== -1
+      && (this.listIndex === null || getResolvedAddress(translated).wildcardType === "partial")
+      ? concretizeMountPrefix(innerPath, translated, this.hostIndexes())
+      : translated;
   }
 
   get(target: Record<string, unknown>, prop: string | symbol, _receiver: any): any {
@@ -92,15 +162,17 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
     if (prop[0] === "$") {
       if (prop === "$postUpdate") {
         return (path: string): void => {
-          this.receiver.$postUpdate(translateInnerPath(this.record, path));
+          this.receiver.$postUpdate(this.resolveTreePath(path, translateInnerPath(this.record, path)));
         };
       }
       // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API。作者のスコープ相対 indexes の
       // 先頭に、評価中のマーカーアドレスの行添字（＝翻訳で増えたワイルドカード分）を足す
       if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
         const record = this.record;
-        const contextIndexes = this.listIndex?.indexes ?? [];
+        const contextIndexes = this.hostIndexes();
         const receiver = this.receiver;
+        const handler = this.handler;
+        const listIndex = this.listIndex;
         if (prop === "$resolve") {
           return (path: string, indexes: number[] | undefined, ...rest: unknown[]): unknown => {
             // 書き込み形（第 3 引数あり）は読み取り専用マウントを検査する（要件 B14 ①）
@@ -112,7 +184,12 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
         const api = prop;
         return (path: string, indexes?: number[], ...rest: unknown[]): unknown => {
           const translated = api === "$setAll" ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
-          const composed = composeMountIndexes(record, path, translated, indexes, contextIndexes);
+          // 省略時の文脈既定: 評価中の文脈が外側の行を持たない（部分マウントだけの記録の getter）なら、
+          // 自スコープの添字は 0 本 ＝ `[]`。渡さないと親の既定が全ホスト行へ展開し、他の行の値を
+          // 混ぜて返す（#322）。文脈が外側の行を持つ（イベント・内側の行）なら親の既定のまま
+          const effective = typeof indexes === "undefined" && api === "$getAll" && listIndex === null
+            && getContextListIndex(handler, getPathInfo(translated).wildcardPaths[0]) === null ? [] : indexes;
+          const composed = composeMountIndexes(record, path, translated, effective, contextIndexes);
           return receiver[api](translated, composed, ...rest);
         };
       }
@@ -122,7 +199,7 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       const receiver = this.receiver;
       const wrapped = createDollarPathApiWrapper(
         prop,
-        (path) => translateInnerPath(record, path),
+        (path) => this.resolveTreePath(path, translateInnerPath(record, path)),
         (args) => (receiver[prop] as (...a: unknown[]) => unknown)(...args),
       );
       if (wrapped !== null) {
@@ -153,12 +230,12 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       }
       const method = this.record.stateObject[prop];
       if (typeof method === "function") {
-        return method.bind(_receiver);
+        return method.bind(this.authorThis(target, _receiver));
       }
     }
     // ツリー（規則 3）: アクティブな親 receiver の文字列読みに落とす。
     // ループ文脈は push 済みの外側アドレス（マーカー親のワイルドカード）から解決される
-    return this.receiver[translateInnerPath(this.record, prop)];
+    return this.receiver[this.resolveTreePath(prop, translateInnerPath(this.record, prop))];
   }
 
   set(target: Record<string, unknown>, prop: string | symbol, value: any, _receiver: any): boolean {
@@ -180,17 +257,29 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       this.handler.pushAddress(this.accessorAddress(prop));
       this.handler.beginUntrack();
       try {
-        return Reflect.set(this.record.stateObject, accessorName, value, _receiver);
+        return Reflect.set(this.record.stateObject, accessorName, value, this.authorThis(target, _receiver));
       } finally {
         this.handler.endUntrack();
         this.handler.popAddress();
       }
     }
     if (this.isBase && Object.prototype.hasOwnProperty.call(target, prop)) {
+      if (this.authorFacing && this.handler.mutability !== "readonly") {
+        // 素の state の `this.x = v` と同じ経路（親の set トラップ → setByAddress）へ回す。
+        // マーカーのアドレスを push するので、行マウントのワイルドカードは await の後でも
+        // このインスタンスの行に解決される
+        this.handler.pushAddress(createStateAddress(getPathInfo(this.markerParentPath), this.listIndex));
+        try {
+          this.receiver[this.markerParentPath + DELIMITER + prop] = value;
+        } finally {
+          this.handler.popAddress();
+        }
+        return true;
+      }
       target[prop] = value;
       return true;
     }
-    this.receiver[translateInnerWritePath(this.record, prop)] = value;
+    this.receiver[this.resolveTreePath(prop, translateInnerWritePath(this.record, prop))] = value;
     return true;
   }
 
@@ -298,12 +387,12 @@ function createChrootDollarApi(
     return result;
   };
   if (api === "$postUpdate") {
-    return (path: string) => call("readonly", (state) => state.$postUpdate(translateInnerPath(record, path)));
+    return (path: string) => call("readonly", (state) => state.$postUpdate(resolvePublicPath(record, path, translateInnerPath(record, path))));
   }
   return (path: string, indexes?: number[], ...rest: unknown[]) => {
     const writes = api === "$setAll" || (api === "$resolve" && rest.length > 0);
     const translated = writes ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
-    const contextIndexes = getLoopContextByNode(record.component)?.listIndex.indexes ?? [];
+    const contextIndexes = hostRowIndexes(record);
     // $resolve は indexes 必須の API（省略は空列と同義に倒す）。書き込み形（第 3 引数あり）は writable
     const composed = composeMountIndexes(
       record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, contextIndexes);
@@ -335,7 +424,7 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       // パスだけを取る読みの API（`$eq` / `$eqPath` / `$eqIndex` / `$dependOn`）は共有の表で包む
       const pathApi = createDollarPathApiWrapper(
         prop,
-        (path) => translateInnerPath(record, path),
+        (path) => resolvePublicPath(record, path, translateInnerPath(record, path)),
         (args) => {
           let out: unknown;
           parent.createState("readonly", (state) => {
@@ -351,7 +440,7 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       let value: unknown;
       parent.createState("readonly", (state) => {
         value = withHostContext(state as IStateProxy, () =>
-          (state as Record<string, unknown>)[prop[0] === "$" ? prop : translateInnerPath(record, prop)]);
+          (state as Record<string, unknown>)[prop[0] === "$" ? prop : resolvePublicPath(record, prop, translateInnerPath(record, prop))]);
       });
       return value;
     },
@@ -361,7 +450,7 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       }
       parent.createState("writable", (state) => {
         withHostContext(state as IStateProxy, () => {
-          (state as Record<string, unknown>)[prop[0] === "$" ? prop : translateInnerWritePath(record, prop)] = value;
+          (state as Record<string, unknown>)[prop[0] === "$" ? prop : resolvePublicPath(record, prop, translateInnerWritePath(record, prop))] = value;
         });
       });
       return true;
