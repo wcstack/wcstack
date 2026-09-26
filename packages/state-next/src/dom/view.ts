@@ -511,7 +511,9 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
       // a slot: the node and the value are all the row keeps
       const b = rv!.bound?.[k];
       if (b !== undefined) {
-        // already reached by a change during this build: it is a Binding now
+        // already reached by a change during this build: it is a Binding now, applied here (and
+        // so no longer queued: the drain skips it)
+        b.queued = false;
         if (rendered === null) {
           try {
             b.apply();

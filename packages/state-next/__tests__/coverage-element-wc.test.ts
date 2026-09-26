@@ -254,27 +254,58 @@ describe("初期同期の権限（#init= / #sync=）", () => {
     expect(read("empty")).toBe("element");
   });
 
-  it("出力専用メンバーの init=auto は、状態に値があっても要素に書かない（どちらの値もそのまま）", async () => {
+  it("出力専用メンバーは状態から書かれず、要素 → 状態は流れる", async () => {
     const tag = nextTag();
     defineOutput(tag, "element");
-    const { root, read } = await page(`<${tag} data-wcs="status#init=auto: st"></${tag}>`, { st: "state" });
-    expect((root.querySelector(tag) as any).status).toBe("element");
-    expect(read("st")).toBe("state");
-  });
-
-  it("出力専用メンバーに init=state と書いても状態は要素に書かない（書き込みの抑止は宣言が決める）", async () => {
-    const tag = nextTag();
-    defineOutput(tag, "element");
-    const { root, read, write } = await page(`<${tag} data-wcs="status#init=state: st"></${tag}>`, { st: "state" });
+    const { root, read, write } = await page(`<${tag} data-wcs="status: st"></${tag}>`, { st: "state" });
     const c = root.querySelector(tag) as any;
-    expect(c.status).toBe("element");
-    expect(read("st")).toBe("state");
+    expect(read("st")).toBe("element");
     await write((s) => { s.st = "changed"; });
     expect(c.status).toBe("element");
-    // the element → state direction still flows
     c.dispatchEvent(new CustomEvent(`${tag}:status`, { detail: "emitted" }));
     await flush();
     expect(read("st")).toBe("emitted");
+  });
+
+  describe("3.3 と同じく、誤った #init= / #sync= と宣言に無いメンバーは初期化を失敗させる", () => {
+    const out = nextTag();
+    const both = nextTag();
+    const input = nextTag();
+    beforeAll(() => {
+      defineOutput(out);
+      defineTwoWay(both);
+      customElements.define(input, class extends HTMLElement {
+        static wcBindable = { protocol: "wc-bindable", version: 1, inputs: [{ name: "label" }] };
+        label: unknown = "own";
+      });
+    });
+    it.each<[string, M, string]>([
+      [`<${out} data-wcs="status#init=auto: st"></${out}>`, M.InitIncompatible, '"auto" "status"'],
+      [`<${out} data-wcs="status#init=state: st"></${out}>`, M.InitIncompatible, '"state" "status"'],
+      [`<${input} data-wcs="label#init=element: st"></${input}>`, M.InitIncompatible, '"element" "label"'],
+      [`<${input} data-wcs="label#init=auto: st"></${input}>`, M.InitIncompatible, '"auto" "label"'],
+      [`<${input} data-wcs="label#sync=connect: st"></${input}>`, M.SyncConnectNeedsOutput, '"label"'],
+      [`<${both} data-wcs="title: st"></${both}>`, M.MemberUndeclared, '"title"'],
+      [`<button data-wcs="onclick#init=state: go"></button>`, M.EventInitNone, ""],
+      [`<input data-wcs="value#foo=1: st">`, M.ModifierUnknown, '"foo" "foo=1"'],
+      [`<input data-wcs="value#init=none,init=state: st">`, M.ModifierTwice, '"init"'],
+      [`<input data-wcs="value#init=later: st">`, M.ModifierValue, '"init" "later"'],
+      [`<input data-wcs="value#sync=later: st">`, M.ModifierValue, '"sync" "later"'],
+      [`<input type="radio" value="a" data-wcs="radio#init=element: st">`, M.InitUnsupported, '"radio" "element"'],
+      [`<input type="checkbox" value="a" data-wcs="checkbox#init=auto: arr">`, M.InitUnsupported, '"checkbox" "auto"'],
+    ])("%s", async (html, id, values) => {
+      const message = await failure(html, { st: "x", arr: [], go() {} });
+      expect(message).toMatch(core(id));
+      expect(message.replace(core(id), "")).toBe(values);
+    });
+
+    it("許される組み合わせは通る（両方向のメンバーの init=auto、イベントの init=none、ネイティブ要素の init=none）", async () => {
+      const { root } = await page(
+        `<${both} data-wcs="value#init=auto: st"></${both}><button data-wcs="onclick#init=none: go"></button><input data-wcs="value#init=none,sync=call: st">`,
+        { st: "x", go() {} },
+      );
+      expect((root.querySelector(both) as any).value).toBe("x");
+    });
   });
 
   it("init=none は初期同期をせず、次の変化から流れる", async () => {

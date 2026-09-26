@@ -95,4 +95,19 @@ export class DirtyStrategy implements Strategy {
   resetRow(row: StateRow): void {
     row.cache = null;
   }
+
+  dropped(engine: Engine): void {
+    // DIRTY says "its readers were reached", and they were dropped: FAILED is reached again
+    for (const g of engine.patterns.all()) {
+      if (g.getter === null) continue;
+      if (g.depth === 0) {
+        if (g.rootValue === DIRTY) g.rootValue = FAILED;
+      } else {
+        engine.forAllRows(g.lists[g.depth]!, (r) => {
+          const c = r.cache;
+          if (c !== null && c[g.slot] === DIRTY) c[g.slot] = FAILED;
+        });
+      }
+    }
+  }
 }

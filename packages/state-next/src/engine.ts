@@ -20,6 +20,12 @@ function checkDeclarations(target: Record<string, any>): void {
   for (const [old, name] of REMOVED_DECLARATIONS) if (target[old] !== undefined) raise(M.DeclarationRemoved, [old, name]);
 }
 
+/** `**` binds a depth only where a path is read: an assignment, $resolve, $postUpdate and $dependOn refuse it. */
+function unbound(path: string): string {
+  if (path.includes("**")) recursionUnsupported(path);
+  return path;
+}
+
 /** `$1` … `$128`, no leading zero. */
 const INDEX_PARAM = /^\$[1-9]\d{0,2}$/;
 export const MAX_INDEX_PARAM = 128;
@@ -54,6 +60,12 @@ function dig(v: any, segs: readonly string[]): unknown {
 export function rowAt(row: StateRow | null, depth: number): StateRow | null {
   while (row !== null && row.list.depth > depth) row = row.list.parentRow;
   return row !== null && row.list.depth === depth ? row : null;
+}
+
+/** The context row of `p`'s list at depth `k` — null when the context is a row of another list. */
+function ctxRow(ctx: StateRow | null, p: Pattern, k: number): StateRow | null {
+  const r = rowAt(ctx, k);
+  return r !== null && r.list.pattern === p.lists[k] ? r : null;
 }
 
 /**
@@ -116,7 +128,7 @@ export class Engine implements ReconcileHooks {
   /** `$eq` subscriptions of root-level getters. */
   private readonly rootEqSubs: { source: Pattern; key: unknown; sub: EqSub }[] = [];
   private readonly dependOnFn = (path: string) => {
-    this.resolve(path, this.ctx);
+    this.resolve(unbound(path), this.ctx);
     if (this.top !== null && this.top.untracked === 0) this.track(this.rp!, this.rr, this.top);
   };
   private readonly getAllFn = (path: string, indexes?: number[]) => this.getAll(path, indexes);
@@ -124,7 +136,7 @@ export class Engine implements ReconcileHooks {
     this.setAll(path, indexes, value, options);
   private readonly resolveFn = (...args: unknown[]) => this.resolveApi(args);
   private readonly postUpdateFn = (path: string) => {
-    this.resolve(path, this.ctx);
+    this.resolve(unbound(path), this.ctx);
     if (hooks.written !== null) hooks.written(this, this.rp!, this.rr, undefined, undefined, false);
     this.changed(this.rp!, this.rr);
   };
@@ -159,7 +171,7 @@ export class Engine implements ReconcileHooks {
       },
       set(_t, key, value) {
         if (typeof key === "symbol") return Reflect.set(engine.target, key, value);
-        engine.resolve(key, engine.ctx);
+        engine.resolve(unbound(key), engine.ctx);
         engine.write(engine.rp!, engine.rr, value);
         return true;
       },
@@ -191,7 +203,8 @@ export class Engine implements ReconcileHooks {
   }
 
   private onPatternCreated(p: Pattern): void {
-    if (p.last === "**") recursionUnsupported(p.path);
+    // (the recursion add-on makes its `**` templates without this, while the state registers)
+    if (p.path.includes("**")) recursionUnsupported(p.path);
     const parent = p.parent;
     p.underGetter = parent !== null && p.last !== WILDCARD && parent.depth === p.depth &&
       (parent.getter !== null || parent.underGetter);
@@ -239,8 +252,8 @@ export class Engine implements ReconcileHooks {
         const before = old[sel];
         const after = l.rows[sel];
         if (before === after) continue;
-        if (before !== undefined && before.alive) this.strategy.invalidate(this, getter, before);
-        if (after !== undefined) this.strategy.invalidate(this, getter, after);
+        if (before !== undefined && before.alive) this.invalidateUnder(getter, before);
+        if (after !== undefined) this.invalidateUnder(getter, after);
       }
     }
   }
@@ -279,7 +292,7 @@ export class Engine implements ReconcileHooks {
     }
     const idx = parsed.indexes;
     if (idx === null) {
-      this.rr = rowAt(ctx, p.depth);
+      this.rr = ctxRow(ctx, p, p.depth);
       return;
     }
     let row: StateRow | null = null;
@@ -287,7 +300,7 @@ export class Engine implements ReconcileHooks {
       const listP = p.lists[k]!;
       const list: StateList = k === 1 ? this.rootList(listP) : this.childList(row!, listP);
       let i = idx[k - 1];
-      if (i === -1) i = rowAt(ctx, k)?.index ?? -1;
+      if (i === -1) i = ctxRow(ctx, p, k)?.index ?? -1;
       row = list.rows[i] ?? null;
       if (row === null) break;
     }
@@ -510,7 +523,7 @@ export class Engine implements ReconcileHooks {
     if (f !== null) {
       const g = f.getter;
       const watchers = source.eqIndexWatchers ?? (source.eqIndexWatchers = []);
-      if (!watchers.some((w) => w.getter === g)) {
+      if (!watchers.some((w) => w.getter === g && w.level === level)) {
         watchers.push({ getter: g, level });
         const listP = g.lists[level]!;
         (listP.eqIndexKeys ?? (listP.eqIndexKeys = [])).push({ source, getter: g });
@@ -570,17 +583,33 @@ export class Engine implements ReconcileHooks {
     }
   }
 
+  /**
+   * `$eqIndex(source, level)` compares the index of the row at `level`: when `source` changes, the
+   * getter's occurrences under the rows at that level with the old or the new index change.
+   */
   private rekeyEqIndex(source: Pattern, before: unknown, after: unknown): void {
     for (const { getter, level } of source.eqIndexWatchers!) {
-      if (level !== 1) continue; // spike: root lists only
-      const list = this.rootLists.get(getter.lists[1]!);
-      if (list === undefined) continue;
+      const listP = getter.lists[level]!;
       for (const k of [before, after]) {
         if (typeof k !== "number") continue;
-        const r = list.rows[k];
-        if (r !== undefined) this.strategy.invalidate(this, getter, r);
+        if (level === 1) {
+          // a root list: its row at k (the common case, no walk)
+          const r = this.rootLists.get(listP)?.rows[k];
+          if (r !== undefined) this.invalidateUnder(getter, r);
+        } else {
+          this.forAllRows(listP.lists[level - 1]!, (parent) => {
+            const r = parent.children?.get(listP)?.rows[k];
+            if (r !== undefined) this.invalidateUnder(getter, r);
+          });
+        }
       }
     }
+  }
+
+  /** Invalidates getter `g`'s occurrences at or under `row` (row.depth <= g.depth). */
+  private invalidateUnder(g: Pattern, row: StateRow): void {
+    if (row.list.depth === g.depth) this.strategy.invalidate(this, g, row);
+    else this.forRowsUnder(row, g, (r) => this.strategy.invalidate(this, g, r));
   }
 
   changed(p: Pattern, row: StateRow | null): void {
@@ -870,6 +899,7 @@ export class Engine implements ReconcileHooks {
           this.queue = [];
           this.dirtyLists = [];
           this.staleLists = [];
+          this.strategy.dropped(this);
           break;
         }
         const stale = this.staleLists;
@@ -911,6 +941,8 @@ export class Engine implements ReconcileHooks {
     }
     for (let i = 0; i < q.length; i++) {
       const b = q[i];
+      // applied since it was queued (a row slot, when its row was built)
+      if (!b.queued) continue;
       b.queued = false;
       if (b.owner === null || b.owner.alive) this.applyBinding(b);
     }
@@ -920,7 +952,6 @@ export class Engine implements ReconcileHooks {
 
   // ---------------------------------------------------------------- apply, hooks, reports
 
-  /** Applies one binding; a failure is confined to it and reported after the drain. */
   /** A binding that failed to apply: reported after the drain. */
   fail(error: unknown, b: Binding): void {
     this.errors.push({ error, binding: b });
@@ -1040,8 +1071,8 @@ export class Engine implements ReconcileHooks {
     if (ctx === null || p.depth === 0) return [];
     const out: number[] = [];
     for (let k = 1; k <= p.depth; k++) {
-      const r = rowAt(ctx, k);
-      if (r === null || r.list.pattern !== p.lists[k]) break;
+      const r = ctxRow(ctx, p, k);
+      if (r === null) break;
       out.push(r.index);
     }
     if (out.length === 0) {
@@ -1093,7 +1124,7 @@ export class Engine implements ReconcileHooks {
 
   /** $resolve(path, indexes) reads; $resolve(path, indexes, value) writes (the argument count decides). */
   private resolveApi(args: unknown[]): unknown {
-    const path = args[0] as string;
+    const path = unbound(args[0] as string);
     const indexes = (args[1] ?? []) as number[];
     const p = this.pattern(path);
     this.checkArity("$resolve", path, p, indexes, true);

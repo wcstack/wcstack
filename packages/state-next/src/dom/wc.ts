@@ -86,14 +86,20 @@ export function mirrorAttribute(el: Element, attribute: string, v: unknown): voi
   }
 }
 
-/** A property binding on a custom element (with or without a wc-bindable declaration). */
+/** A property binding on a member of a custom element's wc-bindable declaration. */
 export function attachProperty(engine: Engine, spec: Spec, el: Element, name: string, pattern = spec.pattern!,
-  row: StateRow | null, owner: Block | null, bd: Bindable | null): Binding {
-  const out = bd?.properties.get(name) ?? null;
-  const input = bd?.inputs.get(name);
-  // enableDirectionalInitialSync off (3.x opt-out): state wins every initial sync, output-only included
+  row: StateRow | null, owner: Block | null, bd: Bindable): Binding {
+  const out = bd.properties.get(name) ?? null;
+  const input = bd.inputs.get(name);
+  // enableDirectionalInitialSync off (3.x opt-out): no member checks (and no init= / sync=, see
+  // plan.ts); state wins every initial sync, output-only included
   const directional = config.enableDirectionalInitialSync;
-  if (!directional && (spec.init != null || spec.sync != null)) raise(M.DirectionalSyncDisabled);
+  if (directional && out === null && input === undefined) raise(M.MemberUndeclared, [name]);
+  // what the member's shape allows: output-only takes element / none, input-only state / none, two-way any
+  const init = spec.init;
+  const refused = out === null ? init === "element" || init === "auto" : input === undefined && (init === "state" || init === "auto");
+  if (refused) raise(M.InitIncompatible, [init, name]);
+  if (spec.sync === "connect" && out === null) raise(M.SyncConnectNeedsOutput, [name]);
   const outputOnly = directional && out !== null && input === undefined;
   const b = new Binding(engine, K_CUSTOM, el, name, pattern, row, owner, spec.filters, undefined);
   b.inFilters = spec.inFilters;
@@ -114,13 +120,13 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
     });
   }
   // initial authority: output-only members seed state from the element, others the other way
-  const init = spec.init ?? (outputOnly ? "element" : "state");
-  if (init === "state") {
+  const authority = init ?? (outputOnly ? "element" : "state");
+  if (authority === "state") {
     if (!outputOnly) engine.applyBinding(b);
-  } else if (init === "element" || init === "auto") {
+  } else if (authority === "element" || authority === "auto") {
     const seed = (): void => {
       if (owner !== null && !owner.alive) return;
-      if (init === "auto" && engine.readUntracked(b.pattern, b.row) !== undefined) {
+      if (authority === "auto" && engine.readUntracked(b.pattern, b.row) !== undefined) {
         if (!outputOnly) engine.applyBinding(b);
         return;
       }

@@ -182,7 +182,7 @@ export class WcsState extends HTMLElement {
     if (id !== null) {
       const script = (this.getRootNode() as Document | ShadowRoot).getElementById?.(id) ?? document.getElementById(id);
       if (script === null) return Promise.reject(new Error(`[@wcstack/state] ${text(M.NoScript, [id])}`));
-      return Promise.resolve(JSON.parse(script.textContent ?? "{}"));
+      return Promise.resolve(JSON.parse(script.textContent || "{}"));
     }
     const src = this.getAttribute("src");
     if (src !== null) return loadSrc(src);

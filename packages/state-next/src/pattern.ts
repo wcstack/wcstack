@@ -119,7 +119,10 @@ export interface EqSub {
 export const UNSET: unique symbol = Symbol("unset") as never;
 /** Sentinel for "cached value is stale" (dirty strategy). */
 export const DIRTY: unique symbol = Symbol("dirty") as never;
-/** Sentinel for "evaluated, but it threw": someone read it, so a change of its sources must reach it. */
+/**
+ * Sentinel for "evaluated, but it threw" (or stale with its readers dropped by a cut drain):
+ * someone read it, so a change of its sources must reach it.
+ */
 export const FAILED: unique symbol = Symbol("failed") as never;
 
 export class PatternTable {

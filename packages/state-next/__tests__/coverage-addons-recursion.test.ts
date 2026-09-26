@@ -91,9 +91,9 @@ describe("<wcs-state> の中の **", () => {
     expect(seen).toEqual([2, 1]);
   });
 
-  it("描いた後に作る ** のパターンは [wcs/recursion-unsupported]", async () => {
+  it("$resolve の ** は [wcs/recursion-unsupported]（描いた後も）", async () => {
     const { el } = await host(`<p>{{ nodes.length }}</p>`, { nodes: forest(), $recursion: ANCHOR });
-    expect(() => el.createState("readonly", (s: any) => s.$resolve("nodes.**.value", [0]))).toThrow('[wcs/recursion-unsupported] #1101 "nodes.**"');
+    expect(() => el.createState("readonly", (s: any) => s.$resolve("nodes.**.value", [0]))).toThrow('[wcs/recursion-unsupported] #1101 "nodes.**.value"');
   });
 
   it("読み取り専用の状態からの ** の一斉書き込みは拒む", async () => {

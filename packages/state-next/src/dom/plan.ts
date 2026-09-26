@@ -55,13 +55,31 @@ interface Flags {
   sync: string | null;
 }
 
+const INITS = ["state", "element", "auto", "none"];
+const SYNCS = ["call", "connect"];
+
 /** `#ro`, `#prevent`, `#stop`, `#onchange`, `#init=…`, `#sync=…`. */
 function flags(mods: string[]): Flags {
   const on = mods.find((m) => m.startsWith("on"));
-  const value = (key: string): string | null => mods.find((m) => m.startsWith(key + "="))?.slice(key.length + 1) ?? null;
+  // (the keys are compared, never used as property names: the build renames `init` / `sync`)
+  let init: string | null = null;
+  let sync: string | null = null;
+  for (const m of mods) {
+    const i = m.indexOf("=");
+    if (i < 0) continue;
+    if (!config.enableDirectionalInitialSync) raise(M.DirectionalSyncDisabled);
+    const key = m.slice(0, i).trim();
+    const value = m.slice(i + 1).trim();
+    const isInit = key === "init";
+    if (!isInit && key !== "sync") raise(M.ModifierUnknown, [key, m]);
+    if ((isInit ? init : sync) !== null) raise(M.ModifierTwice, [key]);
+    if (!(isInit ? INITS : SYNCS).includes(value)) raise(M.ModifierValue, [key, value]);
+    if (isInit) init = value;
+    else sync = value;
+  }
   return {
     ro: mods.includes("ro"), prevent: mods.includes("prevent"), stop: mods.includes("stop"),
-    event: on ? on.slice(2) : null, init: value("init"), sync: value("sync"),
+    event: on ? on.slice(2) : null, init, sync,
   };
 }
 
@@ -86,6 +104,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
   const path = b.statePathName;
 
   if (b.bindingType === "event") {
+    if (f.init !== null && f.init !== "none") raise(M.EventInitNone);
     if (segs[0] === "eventToken") {
       return { ...blank(), node, kind: K_EVTTOKEN, name: segs.slice(1).join("."), token: path, custom, prevent: f.prevent, stop: f.stop };
     }
@@ -123,6 +142,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     filters: buildFilters(b.outFilters), inFilters: buildFilters(b.inFilters), ro: f.ro, init: f.init, sync: f.sync,
   };
   if (b.bindingType === "radio" || b.bindingType === "checkbox") {
+    if (f.init === "element" || f.init === "auto") raise(M.InitUnsupported, [b.bindingType, f.init]);
     spec.kind = b.bindingType === "radio" ? K_RADIO : K_CHECKBOX;
     if (!f.ro) spec.twoWay = f.event ?? "input";
     return spec;

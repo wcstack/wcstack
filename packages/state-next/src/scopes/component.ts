@@ -63,6 +63,8 @@ interface Mount {
   registered: boolean;
   /** A mounted key its setter just wrote through the host (its `written` is not forwarded again). */
   skip: Pattern | null;
+  /** The entry a change of the component is crossing to the host through: its other entries still take it. */
+  from: Entry | null;
 }
 
 type Slot = Mount["slots"][number];
@@ -239,8 +241,9 @@ function wire(m: Mount): void {
     base.call(C, p);
   };
   // patterns the engine made before (the parents of the component's own accessors): mounted
-  // keys among them, then what now reads through them
-  const made = C.patterns.all();
+  // keys among them, then what now reads through them. A snapshot: both loops walk it (a pattern
+  // made during the first goes through the wrapped onPatternCreated above).
+  const made = [...C.patterns.all()];
   for (const p of made) mountKey(m, whole, p);
   for (const p of made) base.call(C, p);
 }
@@ -272,18 +275,31 @@ function mountKey(m: Mount, whole: Entry | null, p: Pattern): void {
     return;
   }
   const row = e.row;
+  const through = e;
   p.getter = () => H.readUntracked(target, row);
   p.setter = (value: unknown) => {
-    active.add(m.component);
-    try {
-      H.write(target, row, value);
-    } finally {
-      active.delete(m.component);
-    }
+    across(m, through, () => H.write(target, row, value));
     m.skip = p;
   };
   m.synth.set(p, { e, p: target, row });
 }
+
+/** Runs a change of component `m` crossing to its host through entry `e`. */
+function across(m: Mount, e: Entry, fn: () => void): void {
+  const was = active.has(m.component);
+  active.add(m.component);
+  m.from = e;
+  try {
+    fn();
+  } finally {
+    if (!was) active.delete(m.component);
+    m.from = null;
+  }
+}
+
+/** Whether a change crossing from the component's own entry `from` (or from its host) reaches `slot`. */
+const reaches = (slot: Slot, reached: boolean): boolean =>
+  reached || !active.has(slot.m.component) || (slot.m.from !== null && slot.m.from !== slot.e);
 
 /**
  * A path under a mounted key whose host counterpart is a getter (a host getter, a recursive
@@ -311,12 +327,7 @@ function mountUnder(m: Mount, p: Pattern): void {
   if (hp.setter !== null) {
     p.setter = (value: unknown) => {
       const r = at();
-      active.add(C);
-      try {
-        H.write((H as any).rp, r, value);
-      } finally {
-        active.delete(C);
-      }
+      across(m, from.e, () => H.write((H as any).rp, r, value));
       m.skip = p;
     };
   }
@@ -425,7 +436,7 @@ function up(m: Mount, p: Pattern, row: StateRow | null, old: unknown, value: unk
   const hp = (H as any).rp as Pattern;
   const hr = (H as any).rr as StateRow | null;
   if (hp.depth > 0 && hr === null) return;
-  touch(H, hp, hr, old, value, direct);
+  across(m, info.e, () => touch(H, hp, hr, old, value, direct));
 }
 
 /**
@@ -446,11 +457,11 @@ export function crossed(E: Engine, p: Pattern, row: StateRow | null, old: unknow
     for (const [q, byRow] of byP) {
       if (p.isUnder(q)) {
         const set = byRow.get(q.depth === 0 ? null : rowAt(row, q.depth));
-        if (set !== undefined) for (const slot of [...set]) if (reached || !active.has(slot.m.component)) into(slot, q, p, row, old, value, direct);
+        if (set !== undefined) for (const slot of [...set]) if (reaches(slot, reached)) into(slot, q, p, row, old, value, direct);
       } else if (q.isUnder(p)) {
         for (const [r, set] of [...byRow]) {
           if (p.depth !== 0 && rowAt(r, p.depth) !== row) continue;
-          for (const slot of [...set]) if (reached || !active.has(slot.m.component)) refresh(slot);
+          for (const slot of [...set]) if (reaches(slot, reached)) refresh(slot);
         }
       }
     }
@@ -470,7 +481,7 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   const C = new Engine(state, new DirtyStrategy());
   C.element = el;
   (el as any).engine = C;
-  const m: Mount = { el, component: C, host: h, slots: [], synth: new Map(), registered: false, skip: null };
+  const m: Mount = { el, component: C, host: h, slots: [], synth: new Map(), registered: false, skip: null, from: null };
   for (const e of h.entries) m.slots.push({ m, e });
   h.current = m;
   mounts.set(C, m);

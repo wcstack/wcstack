@@ -19,4 +19,6 @@ export interface Strategy {
   readGetter(engine: Engine, getter: Pattern, row: StateRow | null): unknown;
   /** The element under a row was replaced: forget the row's cached values. */
   resetRow(row: StateRow): void;
+  /** A drain was cut short and its queued work dropped: a change must reach every stale cache again. */
+  dropped(engine: Engine): void;
 }

@@ -257,7 +257,6 @@ describe("ホストとコンポーネントの間の行", () => {
     expect(read("user.address.city")).toBe("Kyoto");
     expect(text(root, ".host")).toBe("Kyoto");
     expect(text(c.shadowRoot, ".addr")).toBe("Kyoto");
-    // (the component's own `city` entry, under the one it wrote, keeps its old value — reported separately)
   });
 });
 

@@ -29,9 +29,10 @@ function declare(engine: Engine, target: Record<string, any>): void {
 }
 
 function element(engine: Engine, phase: "mounting" | "connected" | "disconnected" | "reset"): void {
-  const rt = runtimes.get(engine)!;
+  const rt = runtimes.get(engine);
+  // an engine made before the add-on was installed has no runtime (and declares nothing temporal);
   // a server render (@wcstack/server) keeps streams at their initial value and watches off
-  if (phase === "mounting" || document.documentElement?.hasAttribute("data-wcs-server")) return;
+  if (rt === undefined || phase === "mounting" || document.documentElement?.hasAttribute("data-wcs-server")) return;
   if (phase === "disconnected") {
     rt.connected = false;
     rt.watch.deactivate();
