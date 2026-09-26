@@ -10,6 +10,7 @@ vi.mock("../src/stateElementByName", () => ({
 }));
 
 import { getPathInfo } from "../src/address/PathInfo";
+import { setRootNodeByFragment } from "../src/apply/rootNodeByFragment";
 import {
   commitProducerValue,
   hasInitialSyncModifier,
@@ -17,7 +18,7 @@ import {
   resolveInitialSyncPolicy,
 } from "../src/bindings/initialSync";
 import { setConfig } from "../src/config";
-import { setLoopContextSymbol } from "../src/proxy/symbols";
+import { hasByAddressSymbol, setLoopContextSymbol } from "../src/proxy/symbols";
 
 let sequence = 0;
 
@@ -227,5 +228,40 @@ describe("initialSync authority resolution and commit", () => {
     const binding = createBinding(document.createElement("div"));
     expect(() => commitProducerValue(binding, "value"))
       .toThrow(/No state tree found on this root for initial binding sync/);
+  });
+
+  it("バッチ fragment 上の行では fragment ではなく台帳の実ルートから state element を引くこと（#319）", () => {
+    const state: Record<PropertyKey, any> = {
+      [setLoopContextSymbol]: (_context: unknown, callback: () => unknown) => callback(),
+      [hasByAddressSymbol]: () => false,
+    };
+    mocks.getStateElement.mockReturnValue({
+      createState: (_mutability: string, callback: (target: any) => void) => callback(state),
+    });
+    const realRoot = document.createElement("div");
+    const fragment = document.createDocumentFragment();
+    const node = document.createElement("div");
+    fragment.appendChild(node);
+    setRootNodeByFragment(fragment, realRoot);
+    try {
+      commitProducerValue(createBinding(node), "pulled");
+      expect(resolveInitialAuthority(createBinding(node), "auto")).toBe("element");
+    } finally {
+      setRootNodeByFragment(fragment, null);
+    }
+    expect(state.target).toBe("pulled");
+    expect(mocks.getStateElement).toHaveBeenCalledWith(realRoot);
+    expect(mocks.getStateElement).not.toHaveBeenCalledWith(fragment);
+  });
+
+  it("台帳に無い fragment 上のノードは state element を引かずにエラーにすること", () => {
+    const fragment = document.createDocumentFragment();
+    const node = document.createElement("div");
+    fragment.appendChild(node);
+    expect(() => commitProducerValue(createBinding(node), "value"))
+      .toThrow(/No state tree found on this root for initial binding sync/);
+    expect(() => resolveInitialAuthority(createBinding(node), "auto"))
+      .toThrow(/No state tree found on this root for binding/);
+    expect(mocks.getStateElement).not.toHaveBeenCalled();
   });
 });
