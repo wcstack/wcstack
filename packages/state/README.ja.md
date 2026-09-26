@@ -3222,7 +3222,7 @@ const html = await renderToString(template, {
 |---------|------|
 | **サーバー** | `renderToString()` が happy-dom でテンプレートを実行、`$connectedCallback`（`fetch()` 含む）を実行し、全バインディングを適用、ハイドレーションデータを含む `<wcs-ssr>` 要素付きのレンダリング済み HTML を出力 |
 | **クライアント** | `<wcs-state enable-ssr>` が `<wcs-ssr>` の JSON から状態をロード、`$connectedCallback` をスキップ、`hydrateBindings()` が既存の DOM にリアクティビティを接続 |
-| **フォールバック** | サーバー/クライアントのバージョン不一致時、SSR DOM をクリーンアップして `buildBindings()` でフルクライアントサイドレンダリングを実行 |
+| **フォールバック** | サーバー/クライアントのバージョン不一致時、またはサーバーが描いた `for:` の行が別の `for:` / `if:` / `elseif:` / `else:` ブロックの中にあるとき（そのハイドレーションは既知の制限）、SSR DOM をクリーンアップして `buildBindings()` でフルクライアントサイドレンダリングを実行。どちらも理由を `console.warn` で 1 回知らせる |
 
 ### `enable-ssr` の動作
 
