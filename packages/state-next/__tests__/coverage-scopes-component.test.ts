@@ -97,10 +97,16 @@ describe("マウントの対応の形", () => {
     }
   });
 
-  it("コンポーネント側のパスにワイルドカードを含む対応はマウントしない（コンポーネントは自分のデータを読む）", async () => {
-    const tag = define(`<ul><template data-wcs="for: list"><li>{{ . }}</li></template></ul>`, () => ({ list: ["own"] }));
-    const { root } = await page(`<${tag} data-wcs="state.list.*: items"></${tag}>`, { items: ["a", "b"] });
-    expect(texts(root.querySelector(tag)!.shadowRoot!, "li")).toEqual(["own"]);
+  it("コンポーネント側のパスが * で始まる対応も報告する（案内のパスは付けない）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const tag = define(`<p>{{ a }}</p>`, () => ({}));
+      await page(`<${tag} data-wcs="state.*: items"></${tag}>`, { items: ["a"] });
+      await settle();
+      expect(messages(error)).toContain(`[@wcstack/state] <${tag}> maps "state.*": the component-side path of a mount cannot contain "*".`);
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it("丸ごとのマウントの値が最初は null でも、ホストがオブジェクトを書けば読む", async () => {

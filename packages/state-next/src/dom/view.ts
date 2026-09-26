@@ -126,6 +126,19 @@ const TYPE_NAMES = ["text", "prop", "prop", "prop", "prop", "event", "for", "if"
 /** Display surfaces: undefined and null both mean "no value" (B8). Other properties are element inputs. */
 const DISPLAY_PROPS = new Set(["textContent", "innerText", "innerHTML"]);
 
+/** A binding's first value when #init= leaves the element as it is: its first apply only records the value. */
+const HOLD: unique symbol = Symbol() as never;
+
+/**
+ * The first value of a binding on an element with no wc-bindable declaration. `#init=none` and
+ * `element`, and `auto` over an undefined state value, leave the element as it is (3.3): the
+ * value is still read (a getter must be, for a change to reach it) and applied from the next change.
+ */
+export function initialOf(engine: Engine, s: Spec, row: StateRow | null): unknown {
+  const init = s.init;
+  return init === null || init === "state" || (init === "auto" && engine.readUntracked(s.pattern!, row) !== undefined) ? s.initial : HOLD;
+}
+
 export class Binding {
   queued = false;
   readonly engine: Engine;
@@ -175,6 +188,10 @@ export class Binding {
     const fs = this.filters;
     if (fs !== null) for (let i = 0; i < fs.length; i++) v = fs[i](v);
     if (v === this.value) return;
+    if (this.value === HOLD) {
+      this.value = v;
+      return;
+    }
     const n = this.node as any;
     if (this.kind === K_CUSTOM) {
       if (v === undefined) {
@@ -573,7 +590,7 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
           whenDefined(node as Element, block, (bd) => attachCustomOrPlain(engine, s, node as Element, brow, block, bd));
           break;
         }
-        const b = new Binding(engine, s.kind, node, s.name, p, brow, block, s.filters, s.initial);
+        const b = new Binding(engine, s.kind, node, s.name, p, brow, block, s.filters, initialOf(engine, s, brow));
         b.inFilters = s.inFilters;
         adopt(engine, b, true);
         if (rendered === null) {
@@ -599,7 +616,7 @@ export function attachCustomOrPlain(engine: Engine, s: Spec, el: Element, row: S
     attachProperty(engine, s, el, s.name, s.pattern!, row, owner, bd);
     return;
   }
-  const b = new Binding(engine, K_PROP, el, s.name, s.pattern!, row, owner, s.filters, s.initial);
+  const b = new Binding(engine, K_PROP, el, s.name, s.pattern!, row, owner, s.filters, initialOf(engine, s, row));
   b.inFilters = s.inFilters;
   if (hooks.hostBinding !== null && hooks.hostBinding(b)) return;
   adopt(engine, b, true);

@@ -176,6 +176,11 @@ async function load(el: HTMLElement, prop: string, host: Element, light: boolean
   for (const b of bs) {
     const inner = b.name === prop ? "" : b.name.slice(prop.length + 1);
     if (entries.some((e) => e.inner === inner)) raiseError(`<${tag}> maps "${b.name}" twice.`);
+    const star = inner.split(".").indexOf(WILDCARD);
+    if (star >= 0) {
+      const list = inner.split(".").slice(0, star).join(".");
+      raiseError(`<${tag}> maps "${b.name}": the component-side path of a mount cannot contain "*"${list === "" ? "" : ` — map the list itself ("${prop}.${list}: <the host's list>")`}.`);
+    }
     entries.push({ inner, outer: b.pattern, row: b.row });
     // the component reads the host from now on: the binding no longer writes the element
     b.engine.unregister(b);
@@ -268,7 +273,7 @@ function mountKey(m: Mount, whole: Entry | null, p: Pattern): void {
   if (e !== undefined) {
     if (e.inner !== head ? own(h, head) : surface(h, head)) return;
     target = e.outer;
-  } else if (whole !== null && p.parent === null && head[0] !== "$" && !own(h, head) && !h.entries.some((x) => x.inner !== "" && headOf(x.inner) === head)) {
+  } else if (whole !== null && p.parent === null && head[0] !== "$" && !own(h, head)) {
     e = whole;
     target = H.pattern(`${whole.outer.path}.${head}`);
   } else {
@@ -406,8 +411,8 @@ function into(slot: Slot, q: Pattern, p: Pattern, row: StateRow | null, old: unk
   if (slot.e.inner === "") {
     cpath = rest.slice(1);
     const head = headOf(cpath);
-    // the component keeps it private, or a partial entry maps it elsewhere
-    if (head[0] === "$" || own(m.host, head) || m.host.entries.some((x) => x.inner !== "" && headOf(x.inner) === head)) return;
+    // the component keeps it private, or a partial entry maps it elsewhere (the longest prefix wins)
+    if (head[0] === "$" || own(m.host, head) || m.host.entries.some((x) => x.inner !== "" && (cpath === x.inner || cpath.startsWith(`${x.inner}.`)))) return;
   } else {
     cpath = slot.e.inner + rest;
   }

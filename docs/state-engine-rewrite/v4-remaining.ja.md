@@ -73,7 +73,7 @@
 
 ### 2.5 カバレッジの作業で見つかった不具合（2026-09-27）
 
-テストを足す途中で見つかったもの。F1〜F8・F12・F13 は直した（2026-09-27、§8。再現のテストは `__tests__/fixes.test.ts` と `fixes-late-install.test.ts`）。「固定」と書いたものは、今の動きをテストが固定しているので、直すときにそのテストも直す。
+テストを足す途中で見つかったもの。F1〜F10・F12・F13・F16 は直した（2026-09-27、§8。再現のテストは `__tests__/fixes.test.ts` と `fixes-late-install.test.ts`）。「固定」と書いたものは、今の動きをテストが固定しているので、直すときにそのテストも直す。
 
 | # | 場所 | 内容 | 重さ | 状態 |
 |---|---|---|---|---|
@@ -85,16 +85,16 @@
 | F6 | `element.ts` | 中身が空の JSON の `<script>` で初期化に失敗する（3.3 は `{}`） | 中 | 済み |
 | F7 | `dom/wc.ts`・`plan.ts` | `#init=`・`#sync=` の検査が無い。出力専用メンバーへの `init=auto`／`init=state`、イベントへの `init=`、未知の修飾子（`#foo=1`）、`wcBindable` に無いメンバーを、3.3 と README は投げるが、4.0 は黙って受け入れる | 中 | 済み |
 | F8 | `engine.ts`・`recursion/recursion.ts` | README は `$resolve`・`$postUpdate`・`$dependOn`・直接の代入での `**` を `wcs/recursion-unsupported` で拒むと定めるが、4.0 はノードの行の中で通す（行の深さに束ねる）。`$resolve` は族の getter があると黙って undefined | 中 | 済み |
-| F9 | `scopes/component.ts` | 丸ごとのマウントに深い部分対応を足すと、その頭のキーが丸ごとのマウントから外れる（`state: user; state.a.b: outer.b` で `a.c` が undefined）。3.x の README は「最も長い接頭辞が勝つ」 | 要判断 | |
-| F10 | `scopes/component.ts` | コンポーネント側にワイルドカードのある対応（`state.list.*: items`）は、何もマウントせず、エラーも出さない（固定） | 要判断 | |
+| F9 | `scopes/component.ts` | 丸ごとのマウントに深い部分対応を足すと、その頭のキーが丸ごとのマウントから外れる（`state: user; state.a.b: outer.b` で `a.c` が undefined）。3.x の README は「最も長い接頭辞が勝つ」 | 要判断 | 済み（3.x に合わせた） |
+| F10 | `scopes/component.ts` | コンポーネント側にワイルドカードのある対応（`state.list.*: items`）は、何もマウントせず、エラーも出さない | 要判断 | 済み（投げる） |
 | F11 | `features/diagnostics` | README の `wcs/default-getter-mismatch` の警告が無い | 低 | |
 | F12 | `features/temporal.ts` | エンジンを作った後に temporal を install すると、切断・再接続で TypeError（約束は「定義の前に install」） | 低 | 済み |
 | F13 | `dom/view.ts` | 行の構築中に wc-bindable の初期化が届いたスロットの反映が失敗すると、同じ失敗が `$errorCallback` に 2 回届く | 低 | 済み |
 | F14 | `dom/binder.ts` | 状態を受け取った後の bind-component のホストに、後から結線（`state.a: x`）を足して binder に渡すと、黙って捨てられる（固定） | 低 | |
 | F15 | `dom/mount.ts`・`plan.ts` | 構造でない `data-wcs` を持つ `<template>`（`attr.id: x`）は丸ごと無視される（README に記述なし） | 低 | |
-| F16 | `dom/view.ts`・`mount.ts` | wcBindable の無い要素（ネイティブ要素と、宣言の無いカスタム要素）の `#init=` は、検査だけで効き目が無い。3.3 は `init=element`／`none` で初期の state → 要素の書き込みを止め、`init=auto` は状態に値が無ければ止める（F7 を直すときに見つけた） | 要判断 | |
+| F16 | `dom/view.ts`・`mount.ts` | wcBindable の無い要素（ネイティブ要素と、宣言の無いカスタム要素）の `#init=` は、検査だけで効き目が無い。3.3 は `init=element`／`none` で初期の state → 要素の書き込みを止め、`init=auto` は状態に値が無ければ止める（F7 を直すときに見つけた） | 要判断 | 済み（3.3 に合わせた） |
 
-- F16: 入れると束縛を適用する 3 か所（ルートの束縛・行の構築・宣言の無いカスタム要素）に手が入り、core が 50〜80B ほど増える見込み。core の余裕が 284B なので、入れるかどうかを先に決めたい。README の表は wcBindable の要素の話で、ネイティブ要素の `#init=` には触れていない。
+- F9・F10・F16 の決定（2026-09-27）: F9 は 3.x に合わせる、F10 は投げる、F16 は入れる。
 
 **使われていないコード**（削れば core が少し軽くなる。今はテストが直接呼んでいる）: `dom/wc.ts` の `isCustomTag`、`list.ts` の `StateRow.parent`／`depth`、`pattern.ts` の `PatternTable.has`、`scopes/volume.ts` の `fail()` の第 3 引数。届かない防御の分岐（`engine.ts:478`・`:810`・`:1103`、`dom/view.ts:166`・`:629`・`:652`・`:687`・`:830-832`、`dom/plan.ts:37`、`dom/wc.ts:63`、`strategy/dirty.ts:23`、`scopes/component.ts:366`・`:373`・`:481`、`devtools.ts:107`・`:120`、`temporal/stream.ts:204`・`:221`、`temporal/watch.ts:194`、`recursion.ts:186`、`features/diagnostics.ts:80`）。
 
@@ -240,3 +240,22 @@ R1（state-next で `@wcstack/state` を置き換える）の決定を受けて�
 
 - core の増分の大半は F7 の検査（約 190B）。ほかは F1・F3・F4・F8・F13 の分。
 - ESLint と型検査は通る。性能の A/B は取っていない（hot path への変更は、drain の 1 項目ごとの印の確認と、代入ごとの `**` の確認だけ）。
+
+### F9・F10・F16（2026-09-27）
+
+- **F9**: 丸ごとのマウントの隣の部分対応は、最も長い接頭辞が勝つ（3.x の README と同じ）。`state: user; state.a.b: outer.b` では、コンポーネントの `a.b` とその下は `outer.b`、その隣の `a.c` は `user.a.c` を読み書きする。これまでは部分対応の先頭のキー（`a`）を丸ごとのマウントから外していた。
+  - 丸ごとのマウントは、1 段の部分対応の無いキーをすべて受け持つ（`mountKey`）。ホストの変更を丸ごとのマウントからコンポーネントへ渡すとき、部分対応の内側のパスと同じか、その下のパスは渡さない（`into`）。コンポーネントからホストへは、これまでどおりパスを上へたどって最初に見つかる対応を通る（`up`）ので、長い方が勝つ。
+  - コンポーネントが先頭のキーを自分で持つとき（`state = { a: … }`）は、これまでどおり `a` もその下も私有（README の R1）。
+- **F10**: コンポーネント側のパスに `*` のある対応（`state.list.*: items`）は、読み込みで投げる。文面は `<tag> maps "state.list.*": the component-side path of a mount cannot contain "*" — map the list itself ("state.list: <the host's list>").`（`*` で始まるときは案内を付けない）。黙って無視する動きを固定していたテストは、投げるテストに置き換えた。
+- **F16**: wcBindable の無い要素（ネイティブ要素と、宣言の無いカスタム要素）の `#init=none`／`element`、状態の値が undefined のときの `init=auto` は、初期の書き込みだけをしない（3.3 と同じ）。
+  - 束縛の最初の値を印（`HOLD`）にし、最初の適用では値を読んで覚えるだけにする（`initialOf`、`Binding.apply`）。値は読むので、getter に束ねても次の変化が届く。適用をただ飛ばすと、getter のキャッシュが読まれないままで、次の変化が届かない。
+  - `#init=` の付いた束縛は、行のスロットにしない（Binding にする）。
+  - 名前空間（`class.`／`attr.`／`style.`）は、3.3 と同じく `#init=` を無視する。
+  - radio／checkbox の `init=none` も、初めに `checked` を変えない。
+
+| | 前（`d5c7fd54`） | 後 |
+|---|---|---|
+| テスト | 1,287 件（通過 1,286・スキップ 1） | 1,299 件（通過 1,298・スキップ 1） |
+| カバレッジ | 99.75・99.11・100・99.95 | 99.73・99.09・100・99.95 |
+| core（`core.min.js` gzip） | 19,716B | 19,769B（+53B。上限 20,000B まで 231B） |
+| e2e | 131/131 | 131/131 |

@@ -316,3 +316,120 @@ describe("F8 追加: ** のパスをそのまま引く API（$eqPath・$eqIndex�
     expect(errors).toEqual([`[@wcstack/state] [wcs/recursion-unsupported] #1101 "${path}"`]);
   });
 });
+
+describe("F9 丸ごとのマウントの隣の深い部分対応は、最も長い接頭辞が勝つ（3.x と同じ）", () => {
+  async function setup() {
+    const tag = component(`<p class="ab">{{ a.b.v }}</p><p class="ac">{{ a.c }}</p>`, () => ({
+      setC(this: any) { this["a.c"] = "from-component-c"; },
+      setB(this: any) { this["a.b.v"] = "from-component-b"; },
+    }));
+    const p = await page(`<p class="host">{{ user.a.c }}|{{ user.a.b.v }}|{{ outer.b.v }}</p><${tag} data-wcs="state: user; state.a.b: outer.b"></${tag}>`, {
+      user: { a: { b: { v: "user-a-b" }, c: "user-a-c" } },
+      outer: { b: { v: "outer-b" } },
+    });
+    const c = p.root.querySelector(tag) as any;
+    const shown = () => [c.shadowRoot.querySelector(".ab").textContent, c.shadowRoot.querySelector(".ac").textContent, p.root.querySelector(".host")!.textContent];
+    return { ...p, c, shown };
+  }
+
+  it("a.b は深い対応（outer.b）、その隣の a.c は丸ごとのマウント（user.a.c）を読む", async () => {
+    const { shown } = await setup();
+    expect(shown()).toEqual(["outer-b", "user-a-c", "user-a-c|user-a-b|outer-b"]);
+  });
+
+  it("ホストの書き込みは、それぞれの対応を通って届く", async () => {
+    const { write, shown } = await setup();
+    await write((s) => { s["user.a.c"] = "c2"; s["user.a.b.v"] = "not-mapped"; });
+    expect(shown()).toEqual(["outer-b", "c2", "c2|not-mapped|outer-b"]);
+    await write((s) => { s["outer.b.v"] = "b2"; });
+    expect(shown()).toEqual(["b2", "c2", "c2|not-mapped|b2"]);
+    await write((s) => { s["user.a"] = { b: { v: "replaced" }, c: "c3" }; });
+    expect(shown()).toEqual(["b2", "c3", "c3|replaced|b2"]);
+  });
+
+  it("コンポーネントの書き込みは、それぞれの対応の先に届く", async () => {
+    const { c, shown } = await setup();
+    c.state.setC();
+    c.state.setB();
+    await flush();
+    await flush();
+    expect(shown()).toEqual(["from-component-b", "from-component-c", "from-component-c|user-a-b|from-component-b"]);
+  });
+});
+
+describe("F10 コンポーネント側のパスにワイルドカードのある対応は、黙って無視せず報告する", () => {
+  it("state.list.*: items", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const tag = component(`<ul><template data-wcs="for: list"><li>{{ . }}</li></template></ul>`, () => ({ list: ["own"] }));
+      await page(`<${tag} data-wcs="state.list.*: items"></${tag}>`, { items: ["a", "b"] });
+      await flush();
+      const messages = error.mock.calls.map((c) => String((c[0] as Error)?.message ?? c[0]));
+      expect(messages).toContain(`[@wcstack/state] <${tag}> maps "state.list.*": the component-side path of a mount cannot contain "*" — map the list itself ("state.list: <the host's list>").`);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("F16 wcBindable の無い要素の #init= は、初期の書き込みだけをしない（3.3 と同じ。次の変化から流れる）", () => {
+  it.each(["none", "element"])("init=%s: 要素の値のまま。次の書き込みから流れる", async (init) => {
+    const { root, write, read } = await page(`<input value="html" data-wcs="value#init=${init}: name">`, { name: "state" });
+    const input = root.querySelector("input")!;
+    expect(input.value).toBe("html");
+    expect(read("name")).toBe("state");
+    await write((s) => { s.name = "next"; });
+    expect(input.value).toBe("next");
+  });
+
+  it("init=auto: 状態に値があれば書き、undefined なら要素の値のまま", async () => {
+    const { root, write } = await page(`<input class="set" value="html" data-wcs="value#init=auto: a"><input class="unset" value="html" data-wcs="value#init=auto: b">`, { a: "state", b: undefined });
+    const value = (c: string) => (root.querySelector(`.${c}`) as HTMLInputElement).value;
+    expect([value("set"), value("unset")]).toEqual(["state", "html"]);
+    await write((s) => { s.b = "later"; });
+    expect(value("unset")).toBe("later");
+  });
+
+  it("getter に束ねても、次の変化が届く（getter は初めに読まれる）", async () => {
+    const { root, write } = await page(`<p data-wcs="textContent#init=none: label">server</p>`, {
+      n: 1,
+      get label() { return `n=${(this as any).n}`; },
+    });
+    expect(root.querySelector("p")!.textContent).toBe("server");
+    await write((s) => { s.n = 2; });
+    expect(root.querySelector("p")!.textContent).toBe("n=2");
+  });
+
+  it("行の中でも同じ（スロットにしない）", async () => {
+    const { root, write } = await page(`<template data-wcs="for: items"><p data-wcs="textContent#init=none: .v">keep</p></template>`, { items: [{ v: "a" }, { v: "b" }] });
+    expect(texts(root, "p")).toEqual(["keep", "keep"]);
+    await write((s) => { s["items.1.v"] = "B"; });
+    expect(texts(root, "p")).toEqual(["keep", "B"]);
+  });
+
+  it("radio の init=none は初めに checked を変えない", async () => {
+    const { root, write } = await page(`<input type="radio" value="red" checked data-wcs="radio#init=none: color"><input type="radio" value="blue" data-wcs="radio#init=none: color">`, { color: "blue" });
+    const checked = () => Array.from(root.querySelectorAll("input")).map((i) => i.checked);
+    expect(checked()).toEqual([true, false]);
+    await write((s) => { s.color = "red"; });
+    expect(checked()).toEqual([true, false]);
+    await write((s) => { s.color = "blue"; });
+    expect(checked()).toEqual([false, true]);
+  });
+
+  it("名前空間（class. / attr. / style.）は #init= を無視する（3.3 と同じ）", async () => {
+    const { root } = await page(`<p data-wcs="class.on#init=none: flag; attr.title#init=none: t; style.color#init=none: c"></p>`, { flag: true, t: "tt", c: "red" });
+    const p = root.querySelector("p")!;
+    expect([p.classList.contains("on"), p.getAttribute("title"), p.style.color]).toEqual([true, "tt", "red"]);
+  });
+
+  it("wcBindable の無いカスタム要素も同じ", async () => {
+    const tag = `fix-plain-${seq++}`;
+    customElements.define(tag, class extends HTMLElement { value = "own"; });
+    const { root, write } = await page(`<${tag} data-wcs="value#init=none: v"></${tag}>`, { v: "state" });
+    const el = root.querySelector(tag) as any;
+    expect(el.value).toBe("own");
+    await write((s) => { s.v = "next"; });
+    expect(el.value).toBe("next");
+  });
+});

@@ -150,15 +150,16 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
   if (segs.length > 1) {
     const name = segs.slice(1).join(".");
     const head = segs[0];
-    if (head === "class") {
-      spec.kind = K_CLASS;
+    if (head === "class" || head === "attr" || head === "style") {
+      // a namespace takes no initial authority: #init= is ignored (as in 3.3)
+      spec.init = null;
       spec.name = name;
-      spec.initial = el !== null && el.classList.contains(name);
-      return spec;
-    }
-    if (head === "attr" || head === "style") {
-      spec.kind = head === "attr" ? K_ATTR : K_STYLE;
-      spec.name = name;
+      if (head === "class") {
+        spec.kind = K_CLASS;
+        spec.initial = el !== null && el.classList.contains(name);
+      } else {
+        spec.kind = head === "attr" ? K_ATTR : K_STYLE;
+      }
       return spec;
     }
   }
@@ -344,6 +345,8 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
 }
 
 function isSlotKind(s: Spec): boolean {
+  // a slot applies its first value as it is built: #init= needs a Binding (HOLD)
+  if (s.init !== null) return false;
   switch (s.kind) {
     case K_TEXT:
     case K_CLASS:

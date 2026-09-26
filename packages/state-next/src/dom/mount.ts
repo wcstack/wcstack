@@ -3,7 +3,7 @@ import { config } from "../config";
 import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 import { bindAttr, boundPattern, chainAnchorText, compilePlan, directive, elementSpecs, notAfterIf, readChain, splitMustache, textSpec } from "./plan";
-import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
+import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, initialOf, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
 import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
 
 /** The engine mounted on each root (document, shadow root): the binder's lookup. */
@@ -110,7 +110,7 @@ function attach(engine: Engine, spec: Spec, node: Node): void {
     whenDefined(el, null, (bd) => attachCustomOrPlain(engine, spec, el, null, null, bd));
     return;
   }
-  const b = new Binding(engine, spec.kind, node, spec.name, p, null, null, spec.filters, spec.initial);
+  const b = new Binding(engine, spec.kind, node, spec.name, p, null, null, spec.filters, initialOf(engine, spec, null));
   b.inFilters = spec.inFilters;
   engine.register(b);
   engine.applyBinding(b);
