@@ -429,16 +429,17 @@ let naming = -1;
  * (off-document). `fv`: the for view the block is a row of (null for an if branch).
  * Returns the node to insert: the block's element, or a fragment of its nodes.
  */
-export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, fv: ForView | null): Node {
+export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, fv: ForView | null, at: Node | null = null): Node {
   const paths = plan.nodePaths;
   const build = plan.build;
   const nodes = plan.scratch;
   let top: Node;
   let first: ChildNode;
   let all: ChildNode[] | null = null;
+  const adopted = hooks.adopt === null ? null : hooks.adopt(plan, fv === null ? at! : fv.anchor, fv !== null);
   if (plan.single) {
     // clone the block's element itself; paths start at the fragment, so skip their first step
-    top = plan.root!.cloneNode(true);
+    top = adopted ?? plan.root!.cloneNode(true);
     for (let b = 0; b < build.length; b++) {
       const i = build[b];
       let n: Node = top;
@@ -451,7 +452,7 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
     }
     first = top as ChildNode;
   } else {
-    top = plan.fragment.cloneNode(true);
+    top = adopted ?? plan.fragment.cloneNode(true);
     for (let b = 0; b < build.length; b++) {
       const i = build[b];
       let n: Node = top;
@@ -670,7 +671,7 @@ export class IfView {
     this.index = index;
     if (index >= 0) {
       const br = this.branches[index];
-      const top = buildBlock(engine, br.plan, this.row, null);
+      const top = buildBlock(engine, br.plan, this.row, null, br.anchor);
       this.current = takeBlock();
       br.anchor.parentNode!.insertBefore(top, br.anchor);
     }

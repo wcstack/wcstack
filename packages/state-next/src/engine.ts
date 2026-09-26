@@ -856,7 +856,7 @@ export class Engine implements ReconcileHooks {
     try {
       for (let pass = 0; this.queue.length > 0 || this.dirtyLists.length > 0 || this.staleLists.length > 0; pass++) {
         if (pass >= MAX_DRAIN_PASSES) {
-          console.error(`[@wcstack/state] updates did not settle after ${MAX_DRAIN_PASSES} passes; the rest is dropped`);
+          console.error(`[@wcstack/state] updates did not settle after ${MAX_DRAIN_PASSES} passes`);
           for (const b of this.queue) b.queued = false;
           for (const l of this.dirtyLists) l.queued = false;
           for (const l of this.staleLists) l.stale = false;
@@ -968,7 +968,7 @@ export class Engine implements ReconcileHooks {
         // quoted keys: the author reads them (mangle.mjs shortens the unquoted ones)
         this.callHookDetached("$errorCallback", [error, { "path": path, "bindingType": type, "node": binding.node }]);
       } else {
-        console.error(`[@wcstack/state] binding "${type}: ${path}" failed to apply; the rest of this batch continues.`, error);
+        console.error(`[@wcstack/state] binding "${type}: ${path}" failed to apply.`, error);
       }
     }
   }
@@ -1038,7 +1038,7 @@ export class Engine implements ReconcileHooks {
       out.push(r.index);
     }
     if (out.length === 0) {
-      raiseError(`$getAll("${path}"): no loop level in common with the context; pass indexes ([] for all)`);
+      raiseError(`$getAll("${path}"): no loop level in common with the context`);
     }
     return out;
   }

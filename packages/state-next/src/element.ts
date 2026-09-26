@@ -14,13 +14,19 @@ export function configure(factory: () => Strategy): void {
   makeStrategy = factory;
 }
 
+let loads = 0;
+
 async function loadInnerScript(script: HTMLScriptElement): Promise<Record<string, any>> {
-  const url = URL.createObjectURL(new Blob([script.text], { type: "application/javascript" }));
+  // a server (@wcstack/server) removes createObjectURL: a data: URL, unique so no load is cached
+  const blob = typeof URL.createObjectURL === "function";
+  const url = blob
+    ? URL.createObjectURL(new Blob([script.text], { type: "application/javascript" }))
+    : "data:text/javascript;charset=utf-8," + encodeURIComponent(`${script.text}\n//${++loads}`);
   try {
     const mod = await import(/* @vite-ignore */ url);
     return (mod.default ?? {}) as Record<string, any>;
   } finally {
-    URL.revokeObjectURL(url);
+    if (blob) URL.revokeObjectURL(url);
   }
 }
 
@@ -168,7 +174,9 @@ export class WcsState extends HTMLElement {
     }));
   }
 
-  private loadState(): Promise<Record<string, any>> {
+  private async loadState(): Promise<Record<string, any>> {
+    // a parser that inserts the element before its children (a server render) has added them by now
+    await 0;
     const id = this.getAttribute("state");
     if (id !== null) {
       const script = (this.getRootNode() as Document | ShadowRoot).getElementById?.(id) ?? document.getElementById(id);

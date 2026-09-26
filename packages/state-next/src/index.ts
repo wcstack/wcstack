@@ -12,4 +12,5 @@ export { temporal } from "./features/temporal";
 export { diagnostics } from "./features/diagnostics";
 export { listKeys } from "./features/list-keys";
 export { recursion } from "./features/recursion";
+export { ssr } from "./features/ssr";
 export { scopes } from "./features/scopes";

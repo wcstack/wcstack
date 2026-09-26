@@ -10,7 +10,7 @@
 import type { Engine } from "./engine";
 import type { Pattern } from "./pattern";
 import type { StateList, StateRow } from "./list";
-import type { Binding } from "./dom/view";
+import type { Binding, RowPlan } from "./dom/view";
 
 export interface Hooks {
   /** Diagnostics: extra text for an error message (did-you-mean, lint pointer, how to fix). */
@@ -48,6 +48,16 @@ export interface Hooks {
   hostBinding: ((binding: Binding) => boolean) | null;
   /** An element whose content an add-on binds (a Light DOM component): the walker leaves it. */
   componentScope: ((el: Element) => boolean) | null;
+  /**
+   * The page walker replaced a structural template with its anchor (`source` is the template),
+   * or bound a mustache text node (`source` is its expression): SSR records both.
+   */
+  ssrMark: ((engine: Engine, node: Node, source: Element | string) => void) | null;
+  /**
+   * A block is about to be cloned from `plan` for the view anchored at `anchor`: an add-on may
+   * hand over existing nodes instead (SSR hydration) — a fragment, or the single element.
+   */
+  adopt: ((plan: RowPlan, anchor: Node, isFor: boolean) => Node | null) | null;
 }
 
 /** What an add-on does with a `<wcs-state>` it claimed. */
@@ -76,6 +86,8 @@ export const hooks: Hooks = {
   failed: null,
   hostBinding: null,
   componentScope: null,
+  ssrMark: null,
+  adopt: null,
 };
 
 type HookFn = (...args: any[]) => any;

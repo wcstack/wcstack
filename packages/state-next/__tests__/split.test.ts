@@ -15,7 +15,7 @@ import { expectGolden } from "../conformance/compare";
 import { MANGLE_PROPS } from "../mangle.mjs";
 
 const golden = JSON.parse(readFileSync(resolve(__dirname, "golden/current-3.3.0.json"), "utf8"));
-const FEATURES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion"];
+const FEATURES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr"];
 let entry: { getBindingsReady(root: Node): Promise<void> };
 
 beforeAll(async () => {

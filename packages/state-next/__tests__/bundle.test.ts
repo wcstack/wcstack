@@ -28,7 +28,7 @@ beforeAll(async () => {
   });
   const m = await import(/* @vite-ignore */ `${pathToFileURL(outfile).href}?t=${Date.now()}`);
   m.installFormats();
-  m.installFeatures([m.temporal, m.listKeys, m.scopes, m.recursion]);
+  m.installFeatures([m.temporal, m.listKeys, m.scopes, m.recursion, m.ssr]);
   m.bootstrapState();
   entry = m;
 }, 60000);

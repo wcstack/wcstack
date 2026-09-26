@@ -20,6 +20,7 @@ const LINT_CODES = new Set([
 
 /** How to fix it, by what the message says. */
 const GUIDES: [RegExp, string][] = [
+  [/no loop level in common with the context/, "; pass indexes ([] for all)."],
   [/"([^"#]+)#([^"]*)" is not a filter name: a modifier list .* comes before the input filters/, ' — write "<property>#$2|$1".'],
   [/\[wcs\/recursion-unsupported\]/, " It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path argument of $getAll / $setAll — and only when the state declares a $recursion anchor."],
   [/must be single binding/, ' Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).'],

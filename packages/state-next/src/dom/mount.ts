@@ -49,16 +49,13 @@ function walk(engine: Engine, children: ChildNode[]): void {
         if (d.bindingType === "for") {
           const p = engine.pattern(d.statePathName);
           const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);
-          const anchor = document.createComment("wcs-for");
-          el.replaceWith(anchor);
+          const anchor = anchorFor(engine, el, "wcs-for");
           new ForView(engine, plan, listFor(engine, p, null, anchor), anchor).update();
         } else if (d.bindingType === "if") {
           const { parts, end } = readChain(engine, children, i, null);
           const branches = parts.map((part) => {
             const plan = compilePlan(engine, part.el, null, false);
-            const anchor = document.createComment("wcs-if");
-            part.el.replaceWith(anchor);
-            return { plan, pattern: part.pattern, filters: part.filters, anchor };
+            return { plan, pattern: part.pattern, filters: part.filters, anchor: anchorFor(engine, part.el, "wcs-if") };
           });
           attachChain(engine, branches, null, null);
           i = end;
@@ -74,9 +71,20 @@ function walk(engine: Engine, children: ChildNode[]): void {
       }
       if (hooks.componentScope === null || !hooks.componentScope(el)) walk(engine, Array.from(el.childNodes));
     } else if (child.nodeType === 3 && config.enableMustache && (child as Text).data.includes("{{")) {
-      for (const { node, expr } of splitMustache(child as Text)) attach(engine, textSpec(engine, expr, null, 0), node);
+      for (const { node, expr } of splitMustache(child as Text)) {
+        if (hooks.ssrMark !== null) hooks.ssrMark(engine, node, expr);
+        attach(engine, textSpec(engine, expr, null, 0), node);
+      }
     }
   }
+}
+
+/** A structural template leaves the page: its anchor takes its place. */
+function anchorFor(engine: Engine, el: Element, type: string): Comment {
+  const anchor = document.createComment(type);
+  el.replaceWith(anchor);
+  if (hooks.ssrMark !== null) hooks.ssrMark(engine, anchor, el);
+  return anchor;
 }
 
 function attach(engine: Engine, spec: Spec, node: Node): void {
