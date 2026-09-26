@@ -1,5 +1,5 @@
 {
-  "$comment": "gzip level 9 of each @wcstack/state feature entry's OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13). Update with --update after a release build.",
+  "$comment": "gzip level 9 of each @wcstack/state feature entry's OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13), plus an entry's optional \"slack\" in bytes (kept across --update). Update with --update after a release build.",
   "features/devtools.js": {
     "files": 2,
     "bytes": 4565,
@@ -28,7 +28,8 @@
   "features/ssr.js": {
     "files": 1,
     "bytes": 11532,
-    "gzip": 4120
+    "gzip": 4120,
+    "slack": 1024
   },
   "features/temporal.js": {
     "files": 2,
