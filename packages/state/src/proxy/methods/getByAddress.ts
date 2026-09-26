@@ -176,11 +176,17 @@ function _getByAddressWithCache(
     return cacheEntry.value;
   }
   const value = _getByAddress(target, address, receiver, handler, stateElement);
-  setCacheEntryByAbsoluteStateAddress(absAddress, {
-    value: value,
-    dirty: false,
-    generation: generation
-  });
+  // 関数はキャッシュしない。行マウントのメソッド（`users.*.#m1.save`）はワイルドカードを含むので
+  // キャッシュ可に判定されるが、値は評価中の receiver / handler に束ねたメソッドで、次の呼び出しに
+  // 使い回すと前のセッションの文脈で動く — 2 回目からツリーの読みが投げ、私有キーの書き込みも
+  // 描き直されなかった（#321）。関数の値を読み直す費用は小さい
+  if (typeof value !== "function") {
+    setCacheEntryByAbsoluteStateAddress(absAddress, {
+      value: value,
+      dirty: false,
+      generation: generation
+    });
+  }
   return value;
 }
 
