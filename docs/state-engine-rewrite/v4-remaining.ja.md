@@ -12,8 +12,8 @@
 
 **新エンジンの現状**（詳しくは [addons-plan.ja.md](./addons-plan.ja.md) §6）
 - コアと後付け 8 つ（formats・diagnostics・temporal・list-keys・scopes・recursion・ssr・devtools）を実装済み。
-- テスト 839 件（通過 838・スキップ 1）。リポジトリの e2e は 131/131。
-- core 19,000B gzip（上限 20,000B）、全部入りの `auto` 38.7KB（3.3.0 は 80.9KB）。
+- テスト 1,302 件（通過 1,301・スキップ 1）。リポジトリの e2e は 131/131（2026-09-27）。
+- core 18,534B gzip（上限 20,000B）、全部入りの `auto` 38,635B（3.3.0 は 80.9KB）。2026-09-27 から terser を後段に通す（§8）。
 - 公式 js-framework-benchmark の CPU 加重幾何平均は 1.08〜1.11（signals 1.21〜1.25、3.3.0 1.51）。
 
 ## 1. 決めてほしいこと
@@ -113,7 +113,7 @@
 ## 4. ビルド・CI・サイズ・計測
 
 - サイズの検査（`scripts/check-state-size.mjs`・`scripts/check-state-split.mjs`）と基準値（`scripts/state-size-baseline.json`・`scripts/state-split-baseline.json`）を、新しい出力の形に合わせて作り直す。
-- `release.yml` と `ci.yml` のビルド手順を合わせる。state-next は `tsc`＋Rollup ではなく esbuild（`build.mjs`、短縮名の表 `mangle.mjs`）。state を最初にビルドする順序（lint と typescript が取り込むため）は変わらない。
+- `release.yml` と `ci.yml` のビルド手順を合わせる。state-next は `tsc`＋Rollup ではなく esbuild（`build.mjs`、短縮名の表 `mangle.mjs`）と、その後段の terser（`minify.mjs`）。state を最初にビルドする順序（lint と typescript が取り込むため）は変わらない。
 - 4.0 の成果物で、性能とサイズを記録し直す（公式 js-framework-benchmark、DOM 直接との比、`bench/run-all.sh`）。
 
 ## 5. 文書
@@ -279,3 +279,27 @@ R1（state-next で `@wcstack/state` を置き換える）の決定を受けて�
 | core（`core.min.js` gzip） | 19,769B | 19,792B（+23B。上限 20,000B まで 208B） |
 | 診断の後付け（core を除く） | — | 5,270B |
 | e2e | 131/131 | 131/131 |
+
+### サイズ: terser を後段に通す（2026-09-27）
+
+esbuild の出力（実行時のバンドル 3 つと、分割ビルドのすべてのファイル）を terser にもう一度通す（`minify.mjs`）。あわせて、短縮名の表（`mangle.mjs`）に内部の名前を 11 個足した。
+
+**何が効いたか**
+- esbuild も局所の名前は短くしているので、「関数名を短くする」余地は、表に載っていない内部のプロパティ名だけだった（`invalidateUnder`・`checkArity`・`claimed` など 11 個で −55B。esbuild だけの出力で測った）。
+- terser は名前を出現回数の順に付け直すので、gzip がよく効く。名前の付け直しだけで core が −719B、式の畳み込みを合わせて −1.2KB。
+- terser の設定: `module: true`、`compress: { passes: 2 }`、`mangle: true`。プロパティ名は変えない（分割ビルドの後付けは、esbuild が付けた名前で core に届く）。export の名前も変えない。`unsafe` 系は使わない。
+- 試して見送ったもの: 組み込みフィルタの表を配列の形にする（`{factory, arity}` を 24 回書いている）。約 −26B で、読む側のコードが増えるので正味はほぼ 0。
+- 公開の型にある `hasConnectedCallbackPromise`（静的フラグ）は表に入れない。
+
+| gzip | 前（esbuild だけ） | 後 |
+|---|---|---|
+| core（`core.min.js`） | 19,792B | 18,534B（−1,258B。上限 20,000B まで 1,466B） |
+| `/auto`（`auto.min.js`） | 40,965B | 38,635B（−2,330B） |
+| `.`（`index.esm.js`） | 43,656B | 41,466B（−2,190B） |
+| 分割ビルドの core（`core.js`＋チャンク） | 23,984B | 22,620B（−1,364B） |
+
+- 上限 20,000B は esbuild だけの出力で決めた目安。測る物（`core.min.js` の gzip）は同じで、配る物がそのまま小さくなった。
+- 確かめたこと: 縮小バンドルと分割ビルドの突き合わせのテスト（`bundle.test.ts`・`split.test.ts`）は、同じ `minify.mjs` を通した出力で走る。全テスト 1,302 件（通過 1,301・スキップ 1）、e2e 131/131（dist を使う）。
+- `bundle.test.ts` に、短くした名前が要素（`<wcs-state>` のクラスが継ぐ HTMLElement の鎖）と Object のプロパティ名に重ならないことのテストを足した。短くしたクラスのメンバーが、要素のプロパティを隠さないように。
+- 性能: 目標の 2 項目を、同じセッションで順番を入れ替えながら 6 回（各 180 サンプル）測った。中央値は cold 10,000 行 75.3 → 75.2ms、warm 1,000 行 5.8 → 5.8ms、cold 1,000 行 11.0 → 11.3ms、warm 10,000 行 46.9 → 47.2ms で、差はばらつきの範囲。最初の 2 回（各 3 周）は、1 周ごとの中央値が 2 つの山（cold 10,000 行で 40〜56ms と 70〜80ms）のどちらに寄るかで大きく振れたので、周を増やした。
+- ビルドは terser の分だけ遅くなる（24 ファイルで約 1.8 秒。`npm run build` 全体は約 9.5 秒）。devDependencies に `terser` を足した（3.3 のビルドも terser を使う）。

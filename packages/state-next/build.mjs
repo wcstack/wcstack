@@ -11,16 +11,19 @@
 // dist/*.d.ts, dist/split/**/*.d.ts: the types (rollup-plugin-dts)
 // dist/core.min.js       not exported: the core alone, what the core <= 20 KB gzip target measures
 //
+// The runtime bundles and the split build's files then go through terser (minify.mjs).
+//
 // The tooling entries are built without shortened names: their results (a parsed binding's
 // `statePathName`, the manifest) are read by name outside the bundle.
 import { build } from 'esbuild';
 import { rollup } from 'rollup';
 import { dts } from 'rollup-plugin-dts';
 import { gzipSync } from 'node:zlib';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { MANGLE_PROPS } from './mangle.mjs';
+import { terse } from './minify.mjs';
 
 export const FEATURES = ['formats', 'diagnostics', 'temporal', 'list-keys', 'scopes', 'recursion', 'ssr', 'devtools'];
 const base = { bundle: true, format: 'esm', target: 'es2022', legalComments: 'none' };
@@ -33,6 +36,7 @@ rmSync('dist', { recursive: true, force: true });
 // the runtime entries
 for (const [entry, outfile] of [['src/exports.ts', 'dist/index.esm.js'], ['src/auto.ts', 'dist/auto.min.js'], ['src/core-entry.ts', 'dist/core.min.js']]) {
   await build({ ...common, entryPoints: [entry], outfile });
+  await terse(outfile);
   report(outfile);
 }
 
@@ -42,6 +46,7 @@ await build({
   entryPoints: { core: 'src/core.ts', ...Object.fromEntries(FEATURES.map((f) => [`features/${f}`, `src/features/${f}.ts`])) },
   outdir: 'dist/split', splitting: true, chunkNames: 'chunks/[name]-[hash]',
 });
+for (const f of readdirSync('dist/split', { recursive: true })) if (String(f).endsWith('.js')) await terse(resolve('dist/split', String(f)));
 // what a page loads for an entry: the entry and every chunk it imports, transitively
 const closure = (file, seen = new Set()) => {
   if (seen.has(file)) return seen;

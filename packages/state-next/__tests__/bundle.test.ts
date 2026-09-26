@@ -14,25 +14,40 @@ import { runScenario } from "../conformance/run";
 import { expectGolden } from "../conformance/compare";
 // @ts-ignore — a plain ES module next to build.mjs
 import { MANGLE_PROPS } from "../mangle.mjs";
+// @ts-ignore — the second minifier pass build.mjs runs
+import { terse } from "../minify.mjs";
 
 const golden = JSON.parse(readFileSync(resolve(__dirname, "golden/current-3.3.0.json"), "utf8"));
 let entry: { getBindingsReady(root: Node): Promise<void> };
+let shortened: Record<string, string | false> = {};
 let seq = 0;
 
 beforeAll(async () => {
   const dir = resolve(__dirname, "../node_modules/.cache/state-next");
   mkdirSync(dir, { recursive: true });
   const outfile = resolve(dir, "index.bundle.mjs");
-  await build({
+  const result = await build({
     entryPoints: [resolve(__dirname, "../src/index.ts")], bundle: true, minify: true, format: "esm",
-    target: "es2022", outfile, legalComments: "none", mangleProps: MANGLE_PROPS, logLevel: "error",
+    target: "es2022", outfile, legalComments: "none", mangleProps: MANGLE_PROPS, mangleCache: {}, logLevel: "error",
   });
+  shortened = result.mangleCache!;
+  await terse(outfile);
   const m = await import(/* @vite-ignore */ `${pathToFileURL(outfile).href}?t=${Date.now()}`);
   m.installFormats();
   m.installFeatures([m.temporal, m.listKeys, m.scopes, m.recursion, m.ssr, m.devtools]);
   m.bootstrapState();
   entry = m;
 }, 60000);
+
+describe("縮めた名前", () => {
+  it("要素（<wcs-state> のクラス）と Object のプロパティの名前に重ならない", () => {
+    const platform = new Set<string>();
+    for (let o: object | null = document.createElement("div"); o !== null; o = Object.getPrototypeOf(o)) for (const k of Object.getOwnPropertyNames(o)) platform.add(k);
+    const hits = Object.entries(shortened).filter(([, v]) => typeof v === "string" && platform.has(v));
+    expect(Object.keys(shortened).length).toBeGreaterThan(100);
+    expect(hits).toEqual([]);
+  });
+});
 
 describe("縮めたバンドルでの突き合わせ（ゴールデン）", () => {
   for (const s of scenarios) {

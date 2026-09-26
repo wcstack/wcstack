@@ -4,7 +4,7 @@
  * must reach the core through the names the build shortened. vitest isolates this file.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -13,6 +13,8 @@ import { runScenario } from "../conformance/run";
 import { expectGolden } from "../conformance/compare";
 // @ts-ignore — a plain ES module next to build.mjs
 import { MANGLE_PROPS } from "../mangle.mjs";
+// @ts-ignore — the second minifier pass build.mjs runs
+import { terse } from "../minify.mjs";
 
 const golden = JSON.parse(readFileSync(resolve(__dirname, "golden/current-3.3.0.json"), "utf8"));
 const FEATURES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools"];
@@ -26,6 +28,7 @@ beforeAll(async () => {
     outdir, splitting: true, chunkNames: "chunks/[name]-[hash]", bundle: true, minify: true, format: "esm",
     target: "es2022", legalComments: "none", mangleProps: MANGLE_PROPS, logLevel: "error",
   });
+  for (const f of readdirSync(outdir, { recursive: true })) if (String(f).endsWith(".js")) await terse(resolve(outdir, String(f)));
   const load = (file: string) => import(/* @vite-ignore */ `${pathToFileURL(resolve(outdir, file)).href}?t=${Date.now()}`);
   const core = await load("core.js");
   const features = await Promise.all(FEATURES.map(async (f) => (await load(`features/${f}.js`)).default));

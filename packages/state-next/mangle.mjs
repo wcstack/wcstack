@@ -32,6 +32,7 @@ const NAMES = `
   first last nodes current token events top parent byPath queue errors filterName setter listener draining
   watchRendered resolveConnected rejectConnected receiveInitial report rendered sync update dispose write
   children filters forget resetList applyPass deliverFn delegate stale staleLists
+  invalidateUnder checkArity resolveInitialize claimed occurrence loadState onCreate unregister changed mark dropped
 `.trim().split(/\s+/);
 
 export const MANGLE_PROPS = new RegExp(`^(?:${NAMES.join("|")})$`);
