@@ -1,0 +1,22 @@
+NG   [3.3.0] #319 出力専用メンバー（Issue の手順そのまま）  {"spans":[]}  console: ["[@wcstack/state] binding \"for: rows\" failed to apply; the rest of this batch continues. {node: #comment, error: Error: [@wcstack/state] No s"]
+OK   [next] #319 出力専用メンバー（Issue の手順そのまま）  
+NG   [3.3.0] #319 双方向メンバーに #init=element  {"spans":[]}  console: ["[@wcstack/state] binding \"for: rows\" failed to apply; the rest of this batch continues. {node: #comment, error: Error: [@wcstack/state] No s"]
+OK   [next] #319 双方向メンバーに #init=element  
+NG   [3.3.0] #320 if で消して戻した for  {"afterShow":["item 1","item 2","item 3"],"afterReverse":["item 1","item 2","item 3"]}  console: ["[@wcstack/state] binding \"if: showA\" failed to apply; the rest of this batch continues. {node: #comment, error: Error: [@wcstack/state] Cont","[@wcstack/state] binding \"for: items\" failed to apply; the rest of this batch continues. {node: #comment, error: Error: [@wcstack/state] Con"]
+OK   [next] #320 if で消して戻した for  
+NG   [3.3.0] #321 メソッドが私有キーに書く  {"state":"edit","shown":"view"}
+OK   [next] #321 メソッドが私有キーに書く  
+NG   [3.3.0] #322 行の中のコンポーネントの getter で $getAll  {"totals":["",""]}  console: ["[@wcstack/state] binding \"text: #m1.total\" failed to apply; the rest of this batch continues. {node: #comment, error: Error: [@wcstack/state","[@wcstack/state] binding \"text: #m2.total\" failed to apply; the rest of this batch continues. {node: #comment, error: Error: [@wcstack/state"]
+OK   [next] #322 行の中のコンポーネントの getter で $getAll  
+NG   [3.3.0] #323 行の中のコンポーネントから this["items.0.v"] に書く  {"value":3,"shown":["3","4"]}  console: ["[wcstack/state] \"#m2.bump\" rejected. Error: [@wcstack/state] Partial wildcard type is not supported yet: groups.*.items.*.v\n    at ee (https"]
+OK   [next] #323 行の中のコンポーネントから this["items.0.v"] に書く  
+OK   [3.3.0] 行の中のコンポーネント・クラスは先に定義（対照）  
+OK   [next] 行の中のコンポーネント・クラスは先に定義（対照）  
+OK   [3.3.0] 行の中のコンポーネント・クラスは描画の後に定義（autoloader の順）  
+OK   [next] 行の中のコンポーネント・クラスは描画の後に定義（autoloader の順）  
+OK   [next] SSR 行の getter（属性）  
+OK   [next] SSR 入れ子の for の内側の行  
+OK   [next] SSR 行の中の mustache  
+OK   [next] SSR if の中の for  
+OK   [next] SSR 行の中の bind-component・クラスは先に定義  
+OK   [next] SSR 行の中の bind-component・クラスは後で定義  

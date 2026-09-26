@@ -1,0 +1,22 @@
+[3.3.0] V1 最上位のリスト・for で描かない
+   createState: {"writeThrown":"[@wcstack/state] ListIndex not found: items","readThrown":"[@wcstack/state] ListIndex not found: items","raw":"[{\"v\":1},{\"v\":2}]"}
+[3.3.0] V2 入れ子のリスト・外側だけ for で描く
+   createState: {"writeThrown":"[@wcstack/state] ListIndex not found: groups.*.items","readThrown":"[@wcstack/state] ListIndex not found: groups.*.items","raw":"[{\"name\":\"a\",\"items\":[{\"v\":1},{\"v\":2}]}]"}
+   click bump (→7): {"raw":"[{\"name\":\"a\",\"items\":[{\"v\":1},{\"v\":2}]}]","errors":["[wcstack/state] \"bump\" rejected. Error: [@wcstack/state] ListIndex not found: groups.*.items at ee (https://esm.run/@wcstack/state/auto:1:2739) at kc (https://esm.run/@wc"]}
+[3.3.0] V3 入れ子のリスト・どちらも for で描かない
+   createState: {"writeThrown":"[@wcstack/state] ListIndex not found: groups","readThrown":"[@wcstack/state] ListIndex not found: groups","raw":"[{\"name\":\"a\",\"items\":[{\"v\":1},{\"v\":2}]}]"}
+   click bump (→7): {"raw":"[{\"name\":\"a\",\"items\":[{\"v\":1},{\"v\":2}]}]","errors":["[wcstack/state] \"bump\" rejected. Error: [@wcstack/state] ListIndex not found: groups at ee (https://esm.run/@wcstack/state/auto:1:2739) at kc (https://esm.run/@wcstack/st"]}
+[3.3.0] V4 入れ子のリスト・両方 for で描く（対照）
+   createState: {"writeThrown":null,"readThrown":null,"read":5,"raw":"[{\"name\":\"a\",\"items\":[{\"v\":5},{\"v\":2}]}]"}
+   click bump (→7): {"raw":"[{\"name\":\"a\",\"items\":[{\"v\":7},{\"v\":2}]}]","errors":[]}
+[next] V1 最上位のリスト・for で描かない
+   createState: {"writeThrown":null,"readThrown":null,"read":5,"raw":"[{\"v\":5},{\"v\":2}]"}
+[next] V2 入れ子のリスト・外側だけ for で描く
+   createState: {"writeThrown":null,"readThrown":null,"read":5,"raw":"[{\"name\":\"a\",\"items\":[{\"v\":5},{\"v\":2}]}]"}
+   click bump (→7): {"raw":"[{\"name\":\"a\",\"items\":[{\"v\":7},{\"v\":2}]}]","errors":[]}
+[next] V3 入れ子のリスト・どちらも for で描かない
+   createState: {"writeThrown":null,"readThrown":null,"read":5,"raw":"[{\"name\":\"a\",\"items\":[{\"v\":5},{\"v\":2}]}]"}
+   click bump (→7): {"raw":"[{\"name\":\"a\",\"items\":[{\"v\":7},{\"v\":2}]}]","errors":[]}
+[next] V4 入れ子のリスト・両方 for で描く（対照）
+   createState: {"writeThrown":null,"readThrown":null,"read":5,"raw":"[{\"name\":\"a\",\"items\":[{\"v\":5},{\"v\":2}]}]"}
+   click bump (→7): {"raw":"[{\"name\":\"a\",\"items\":[{\"v\":7},{\"v\":2}]}]","errors":[]}

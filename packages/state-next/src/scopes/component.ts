@@ -73,6 +73,14 @@ const hostBindings = new WeakMap<Element, Binding[]>();
 const before = new WeakMap<Element, Map<string, unknown>>();
 /** Components waiting for their host to bind the wiring written in its markup. */
 const waiting = new WeakMap<Element, () => void>();
+/**
+ * SSR: a row is a clone of its plan, so the server's output carries no `data-wcs` on a row's
+ * elements. A host binding made while rendering on the server writes the heads it binds here
+ * instead, so a component whose class is defined before the client adopts the row still waits
+ * for its wiring (as it does for `data-wcs`); the client's host binding removes it.
+ */
+const WIRED = "data-wcs-wired";
+const onServer = (): boolean => document.documentElement?.hasAttribute("data-wcs-server") === true;
 const hosts = new WeakMap<Element, Host>();
 const mounts = new WeakMap<Engine, Mount>();
 /** Mount entries by host engine, host pattern and host row. */
@@ -96,6 +104,11 @@ function fill(path: string, idx: number[]): string {
 export function hostBinding(b: Binding): boolean {
   const el = b.node as Element;
   const head = headOf(b.name);
+  if (!onServer()) el.removeAttribute(WIRED);
+  else if (!wiredInMarkup(el, head)) {
+    const heads = el.getAttribute(WIRED)?.split(" ") ?? [];
+    if (!heads.includes(head)) el.setAttribute(WIRED, [...heads, head].join(" "));
+  }
   if (hosts.get(el)?.prop === head) return true;
   let list = hostBindings.get(el);
   if (list === undefined) hostBindings.set(el, (list = []));
@@ -116,6 +129,9 @@ function wiredInMarkup(host: Element, prop: string): boolean {
   const text = host.getAttribute(config.bindAttributeName);
   return text !== null && new RegExp(`(^|;)\\s*${prop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[.#:]`).test(text);
 }
+
+/** The server's output says the host binds `prop` on this row element (see WIRED). */
+const wiredOnServer = (host: Element, prop: string): boolean => host.getAttribute(WIRED)?.split(" ").includes(prop) === true;
 
 /** A frozen author object is copied into a writable one (same prototype). */
 function melt(o: Record<string, any>): Record<string, any> {
@@ -138,8 +154,9 @@ async function load(el: HTMLElement, prop: string, host: Element, light: boolean
   }
   const wiring = () => (hostBindings.get(host) ?? []).filter((b) => headOf(b.name) === prop);
   // the host binds its wiring when it renders the element (a row before inserting it; the page
-  // when its state loads), or when the element's class is defined
-  if (wiring().length === 0 && wiredInMarkup(host, prop)) await new Promise<void>((r) => waiting.set(host, r));
+  // when its state loads; a server-rendered row when the client adopts it), or when the
+  // element's class is defined
+  if (wiring().length === 0 && (wiredInMarkup(host, prop) || wiredOnServer(host, prop))) await new Promise<void>((r) => waiting.set(host, r));
   waiting.delete(host);
   const bs = wiring();
   const values = before.get(host);

@@ -105,7 +105,7 @@ export const scenarios: Scenario[] = [
       },
     ],
     differs: {
-      reason: "3.3.0 は for で描いていないリスト（nodes）の行のパスへの書き込みを \"ListIndex not found: nodes\" で投げ、展開の読み取り専用の検査に届かない（#319 と同系統）。新エンジンは契約どおり [wcs/recursion-readonly] で拒む",
+      reason: "3.3.0 は for で描いていないリスト（nodes）の行のパスへの書き込みを \"ListIndex not found: nodes\" で投げ、展開の読み取り専用の検査に届かない（#324）。新エンジンは契約どおり [wcs/recursion-readonly] で拒む",
       dom: {
         "それぞれ試す": "<p>[wcs/recursion-readonly] [wcs/recursion-context] [wcs/recursion-setall-form] [wcs/recursion-structural-write] [wcs/recursion-readonly] [wcs/recursion-getall-form] ok|</p>",
       },
@@ -219,7 +219,7 @@ export const scenarios: Scenario[] = [
       { label: "a の行の値を書き換える", run: (a) => a.write((s) => { s["groups.0.items.0.v"] = 7; }) },
     ],
     differs: {
-      reason: "3.3.0 の不具合（#319・$watch の行の監視と同系統）: for で描いていないリスト（groups.*.items）の行のパスへの書き込みが \"ListIndex not found\" で投げる。新エンジンは書き込み、配列を読む getter は上向きには無効化しない（最上位のリストでの 3.3.0 と同じ意味。上のシナリオで確認）",
+      reason: "3.3.0 の不具合（#324。$watch の行の監視と同系統）: for で描いていないリスト（groups.*.items）の行のパスへの書き込みが \"ListIndex not found\" で投げる。新エンジンは書き込み、配列を読む getter は上向きには無効化しない（最上位のリストでの 3.3.0 と同じ意味。上のシナリオで確認）",
       dom: {
         "a の行の値を書き換える": "<section><h2>a|</h2><ul><li>3|</li></ul></section><section><h2>b|</h2><ul><li>6|</li><li>9|</li></ul></section>",
       },
@@ -1028,7 +1028,7 @@ export const scenarios: Scenario[] = [
       { label: "1 行足した配列に置き換え", run: (a) => a.write((s) => { s.items = s.items.concat({ price: 3 }); }) },
     ],
     differs: {
-      reason: "3.3.0 は for も $listKeys も無いリストの添字付きパスへ書けず（ListIndex not found）、行の $watch も発火しない（README の「行の監視には $listKeys が要る」）。新エンジンの行の監視は自分でリストを同期するので、書き込みも発火も働く（承認済みの簡素化）",
+      reason: "3.3.0 は for も $listKeys も無いリストの添字付きパスへ書けず（ListIndex not found・#324）、行の $watch も発火しない（README の「行の監視には $listKeys が要る」）。新エンジンの行の監視は自分でリストを同期するので、書き込みも発火も働く（承認済みの簡素化）",
       dom: {
         "items.1.price": "<p>1:2->20;|</p>",
         "1 行足した配列に置き換え": "<p>1:2->20;2:undefined->3;|</p>",
