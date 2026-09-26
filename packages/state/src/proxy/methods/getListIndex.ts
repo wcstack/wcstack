@@ -12,18 +12,19 @@
  *
  * 設計ポイント:
  * - ワイルドカードや多重ループ、ネストした配列バインディングに柔軟に対応
- * - resolveListIndexesByListで各階層のリストインデックス集合を取得
+ * - getListIndexesByAddressで各階層のリストインデックス集合を取得（台帳が無いリストは
+ *   その場で台帳を生やす — for で描いていないリストの直接添字、#324）
  * - エラー時はraiseErrorで例外を投げる
  */
 
 import { createStateAddress } from "../../address/StateAddress";
 import { IResolvedAddress } from "../../address/types";
-import { resolveListIndexesByList } from "../../list/listIndexesByList";
 import { IListIndex } from "../../list/types";
 import { raiseError } from "../../raiseError";
 import { IStateHandler } from "../types";
 import { getByAddress } from "./getByAddress";
 import { getContextListIndex } from "./getContextListIndex";
+import { getListIndexesByAddress } from "./getListIndexesByAddress";
 
 export function getListIndex(
   target   : object, 
@@ -48,13 +49,12 @@ export function getListIndex(
           raiseError(`wildcardParentPathInfo is null: ${resolvedAddress.pathInfo.path}`);
         const wildcardParentAddress = createStateAddress(wildcardParentPathInfo, parentListIndex);
         const wildcardParentValue = getByAddress(target, wildcardParentAddress, receiver, handler);
-        const wildcardParentListIndexes: IListIndex[] = resolveListIndexesByList(wildcardParentValue, parentListIndex) ?? 
-          raiseError( `ListIndex not found: ${wildcardParentPathInfo.path}`);
+        const wildcardParentListIndexes = getListIndexesByAddress(handler, wildcardParentAddress, wildcardParentValue);
         const wildcardIndex = resolvedAddress.wildcardIndexes[i] ?? 
           raiseError(`wildcardIndex is null: ${resolvedAddress.pathInfo.path}`);
-        // 範囲外 index はリスト自体の不在と別原因なので、メッセージに index を含める。
-        // 親パスだけを名指しすると「リスト自体が見つからない」と誤読させる
-        // （docs/state-bind-component-nested-for-design.md §8.4）。
+        // 範囲外 index は、メッセージに index を含める。親パスだけを名指しすると
+        // 「リスト自体が見つからない」と誤読させる（docs/state-bind-component-nested-for-design.md §8.4）。
+        // 値が配列でないリストも、行 0 件としてここで投げる。
         parentListIndex = wildcardParentListIndexes[wildcardIndex] ??
           raiseError(`ListIndex not found at index ${wildcardIndex} of ${wildcardParentPathInfo.path}`);
       }

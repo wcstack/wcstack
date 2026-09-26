@@ -21,7 +21,7 @@ import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { DELIMITER, WILDCARD } from "../../define";
 import { createListIndex } from "../../list/createListIndex";
 import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
-import { getLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
+import { getLastListValueByAbsoluteStateAddress, rebaseRenderedList, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
 import { ISwapInfo } from "./types";
 import { createListDiff } from "../../list/createListDiff";
 import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/mergeKeyedList";
@@ -464,10 +464,13 @@ function notifySwappedList(
   const stateElement = handler.stateElement;
   const updater = getUpdater();
   const listAbsAddress = liftAddress(stateElement, parentAddress);
+  setListIndexesByList(swapInfo.value, swapInfo.listIndexes);
+  markSwapBaselineList(swapInfo.value);
+  // この配列を描いた `for` が描いたのは書き込む前の並び。画面から外れていて今回は描かない `for` も、
+  // 次に描くときは写しとの差分を取る（#320。下の記録は、今回描く `for` のためのもの）
+  rebaseRenderedList(currentParentValue as readonly unknown[], swapInfo.value);
   if (getLastListValueByAbsoluteStateAddress(listAbsAddress) === currentParentValue) {
-    setListIndexesByList(swapInfo.value, swapInfo.listIndexes);
     setLastListValueByAbsoluteStateAddress(listAbsAddress, swapInfo.value);
-    markSwapBaselineList(swapInfo.value);
   }
   updater.enqueueRenderOnlyAddress(listAbsAddress);
 
