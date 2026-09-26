@@ -1,0 +1,98 @@
+/**
+ * filterMeta.ts — 組み込みフィルタの構造化メタデータ（単一正本・route-a A2-1）。
+ *
+ * これまで vscode-wcs（completionData.ts BUILTIN_FILTERS）が手で持っていたフィルタの
+ * 引数仕様・型・説明を、実装側（@wcstack/state）に**正本として移設**したもの。
+ * manifest.ts がこれを公開し、vscode-wcs はそれを消費して手リストを撤去できる。
+ *
+ * 完全性は __tests__/manifest.test.ts のドリフト検出が保証する
+ * （filterMeta のキー集合 == builtinFilters のキー集合）。フィルタを追加して meta を
+ * 書き忘れると CI が落ちる。
+ */
+
+export type FilterResultType = "boolean" | "number" | "string" | "passthrough";
+export type FilterArgType = "number" | "string" | "any";
+
+export interface IFilterMeta {
+  /** 説明（補完・ホバー用） */
+  description: string;
+  /** 引数を取るか */
+  hasArgs: boolean;
+  /** 適用後の結果型（passthrough は入力型をそのまま返す） */
+  resultType: FilterResultType;
+  /** 受け入れ可能な入力型（'any' は任意） */
+  acceptTypes: "any" | readonly string[];
+  /** 引数の最小数 */
+  minArgs: number;
+  /** 引数の最大数 */
+  maxArgs: number;
+  /** 各引数の期待型（省略時はチェックしない） */
+  argTypes?: readonly FilterArgType[];
+}
+
+/** 組み込みフィルタ名 → 構造化メタデータ。キー集合は builtinFilters と一致しなければならない。 */
+export const builtinFilterMeta: Record<string, IFilterMeta> = {
+  // 比較・論理
+  eq:  { description: "等しいか比較",   hasArgs: true,  resultType: "boolean", acceptTypes: "any",                minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+  ne:  { description: "異なるか比較",   hasArgs: true,  resultType: "boolean", acceptTypes: "any",                minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+  // `not` は真偽性（truthy / falsy）の反転。`if:` が `Boolean()` で寄せるのと同じ規則で、
+  // `else:` はこのフィルタを足した束縛として組み立てられる（structural/createNotFilter.ts）
+  not: { description: "真偽性を反転（falsy → true）", hasArgs: false, resultType: "boolean", acceptTypes: "any",   minArgs: 0, maxArgs: 0 },
+  lt:  { description: "より小さいか",   hasArgs: true,  resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  le:  { description: "以下か",         hasArgs: true,  resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  gt:  { description: "より大きいか",   hasArgs: true,  resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  ge:  { description: "以上か",         hasArgs: true,  resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  // 算術
+  add: { description: "加算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  sub: { description: "減算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  mul: { description: "乗算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  div: { description: "除算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  mod: { description: "剰余", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  abs:   { description: "絶対値",                 hasArgs: false, resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 0 },
+  clamp: { description: "範囲内に丸める (min,max)", hasArgs: true,  resultType: "number", acceptTypes: ["number"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
+  // 数値フォーマット
+  toFixed: { description: "固定小数点表記",                 hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  locale:  { description: "ロケール形式で数値フォーマット", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  // 文字列
+  upper:  { description: "大文字に変換",             hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  lower:  { description: "小文字に変換",             hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  capitalize: { description: "先頭文字を大文字に",       hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  trim:   { description: "前後の空白を削除",         hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  slice:  { description: "部分文字列 (start[,end])", hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
+  // 長さは省略できない（実装が両方読む）。minArgs: 1 だった頃は補完・lint が `substr(0)` を
+  // 通し、実行時にだけ落ちていた
+  substr: { description: "部分文字列 (pos,len)",     hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
+  padStart: { description: "先頭を埋める (length[,char]。char の既定は 0 — JS の既定は空白なので注意)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  padEnd: { description: "末尾を埋める (length[,char]。char の既定は空白 — JS と同じ)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  repeat: { description: "繰り返し (count)",         hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  reverse: { description: "文字順を反転",             hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  truncate: { description: "切り詰めて省略記号 (length[,suffix]。suffix の既定は … — U+2026 の 1 文字)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
+  join:     { description: "配列を連結 ([separator]。既定はカンマ + 空白)",             hasArgs: true, resultType: "string", acceptTypes: ["array"],  minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  // 数値パース・丸め
+  int:     { description: "整数にパース",         hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
+  float:   { description: "浮動小数点数にパース", hasArgs: false, resultType: "number", acceptTypes: ["string", "number"], minArgs: 0, maxArgs: 0 },
+  round:   { description: "四捨五入",             hasArgs: true,  resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  floor:   { description: "切り下げ",             hasArgs: true,  resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  ceil:    { description: "切り上げ",             hasArgs: true,  resultType: "number", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  percent: { description: "パーセンテージ形式",   hasArgs: true,  resultType: "string", acceptTypes: ["number"], minArgs: 0, maxArgs: 1, argTypes: ["number"] },
+  // number だけでなく string も受ける。実用チェーンは fix / percent の後ろに繋がり、
+  // それらは既に string を返すため（builtinFilters.ts の unit を参照）
+  unit:    { description: "単位（接尾辞）を付加",  hasArgs: true,  resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
+  // 日付・時刻
+  // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
+  // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた
+  date:     { description: "ロケール形式の日付 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  time:     { description: "ロケール形式の時刻 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  datetime: { description: "ロケール形式の日時 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  ymd:      { description: "YYYY-MM-DD 形式 ([separator]。既定は -)",   hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  hms:      { description: "HH:MM:SS 形式 ([separator]。既定は :)",     hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  // 真偽値・変換
+  falsy:    { description: "偽値か判定",             hasArgs: false, resultType: "boolean",     acceptTypes: "any",      minArgs: 0, maxArgs: 0 },
+  truthy:   { description: "真値か判定",             hasArgs: false, resultType: "boolean",     acceptTypes: "any",      minArgs: 0, maxArgs: 0 },
+  defaults: { description: "偽値の場合デフォルト値", hasArgs: true,  resultType: "passthrough", acceptTypes: "any",      minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+  coalesce: { description: "null / undefined の場合デフォルト値", hasArgs: true, resultType: "passthrough", acceptTypes: "any", minArgs: 1, maxArgs: 1, argTypes: ["any"] },
+  boolean:  { description: "ブール値に変換",         hasArgs: false, resultType: "boolean",     acceptTypes: "any",      minArgs: 0, maxArgs: 0 },
+  number:   { description: "数値に変換",             hasArgs: false, resultType: "number",      acceptTypes: "any",      minArgs: 0, maxArgs: 0 },
+  string:   { description: "文字列に変換",           hasArgs: false, resultType: "string",      acceptTypes: "any",      minArgs: 0, maxArgs: 0 },
+  nullIfEmpty: { description: "空文字列をnullに変換",   hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+};

@@ -62,6 +62,8 @@ export interface Hooks {
   adopt: ((plan: RowPlan, anchor: Node, isFor: boolean) => Node | null) | null;
   /** A path a binding (or, with `watch`, a `$watch` key) names: diagnostics checks it exists. */
   declared: ((engine: Engine, p: Pattern, watch?: boolean) => void) | null;
+  /** `<wcs-state>` was defined in `registry`: an add-on defines its own tags there (`<wcs-ssr>`). */
+  tags: ((registry: CustomElementRegistry) => void) | null;
 }
 
 /** What an add-on does with a `<wcs-state>` it claimed. */
@@ -94,6 +96,7 @@ export const hooks: Hooks = {
   ssrMark: null,
   adopt: null,
   declared: null,
+  tags: null,
 };
 
 type HookFn = (...args: any[]) => any;

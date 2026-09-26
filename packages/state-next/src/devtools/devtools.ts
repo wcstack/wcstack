@@ -31,6 +31,8 @@ type Sink = (event: Record<string, unknown>) => void;
 type Source = Record<string, any>;
 
 let sink: Sink | null = null;
+/** The attached DevTools' sink (analyzeContract forwards its events there). */
+export const devtoolsSink = (): Sink | null => sink;
 const live = new Set<Engine>();
 
 // ---------------------------------------------------------------- registry (first one wins)

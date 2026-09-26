@@ -1,3 +1,4 @@
+import type { IWritableConfig } from "./public/types";
 import { Engine } from "./engine";
 import { mount } from "./dom/mount";
 import { drainBinds, installBinder } from "./dom/binder";
@@ -225,14 +226,48 @@ export class WcsState extends HTMLElement {
   }
 }
 
-export function define(): void {
-  installBinder();
-  const tag = config.tagNames.state;
-  if (customElements.get(tag) === undefined) customElements.define(tag, class extends WcsState {});
+/**
+ * The registries `<wcs-state>` was defined in: an add-on installed later defines its tags there
+ * too. Weak: a server creates a registry per render, and holding them would keep every render's
+ * registry (and every constructor defined in it) alive.
+ */
+const refs: WeakRef<CustomElementRegistry>[] = [];
+
+/** The registries still alive (dead references are dropped). */
+export function registries(): CustomElementRegistry[] {
+  const live: CustomElementRegistry[] = [];
+  let w = 0;
+  for (const ref of refs) {
+    const r = ref.deref();
+    if (r !== undefined) {
+      live.push(r);
+      refs[w++] = ref;
+    }
+  }
+  refs.length = w;
+  return live;
 }
 
-/** Applies `config` and registers `<wcs-state>` (the named-entry equivalent of the auto bundle). */
-export function bootstrapState(partial?: PartialConfig): void {
-  if (partial) setConfig(partial);
-  define();
+/**
+ * Registers `<wcs-state>` (and the installed add-ons' tags) in `registry` — a scoped registry
+ * does not inherit the global one, so a tree using one needs its own definitions.
+ */
+export function define(registry: CustomElementRegistry = customElements): void {
+  installBinder();
+  if (!registries().includes(registry)) refs.push(new WeakRef(registry));
+  const tag = config.tagNames.state;
+  if (registry.get(tag) === undefined) registry.define(tag, class extends WcsState {});
+  if (hooks.tags !== null) hooks.tags(registry);
 }
+
+/** Applies `config` and registers `<wcs-state>`. The core only: install the add-ons first. */
+export function bootstrapState(partial?: IWritableConfig, registry?: CustomElementRegistry): void {
+  if (partial) setConfig(partial);
+  define(registry);
+}
+
+/**
+ * Waits for the bindings under `root` (3.x built them here; the new engine builds them when the
+ * root's `<wcs-state>` loads its state, so this only waits — the same as getBindingsReady).
+ */
+export const buildBindings = (root: Document | ShadowRoot): Promise<void> => getBindingsReady(root);

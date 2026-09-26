@@ -11,6 +11,7 @@
  */
 import type { Engine } from "../engine";
 import { raise, M } from "../messages";
+import { config } from "../config";
 import type { StateRow } from "../list";
 import { adopt, Binding, K_CUSTOM, type Block, type Spec } from "./view";
 // (view.ts imports this module too: the cycle is fine, everything here is used at call time)
@@ -90,7 +91,10 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
   row: StateRow | null, owner: Block | null, bd: Bindable | null): Binding {
   const out = bd?.properties.get(name) ?? null;
   const input = bd?.inputs.get(name);
-  const outputOnly = out !== null && input === undefined;
+  // enableDirectionalInitialSync off (3.x opt-out): state wins every initial sync, output-only included
+  const directional = config.enableDirectionalInitialSync;
+  if (!directional && (spec.init != null || spec.sync != null)) raise(M.DirectionalSyncDisabled);
+  const outputOnly = directional && out !== null && input === undefined;
   const b = new Binding(engine, K_CUSTOM, el, name, pattern, row, owner, spec.filters, undefined);
   b.inFilters = spec.inFilters;
   b.attribute = input?.attribute ?? null;

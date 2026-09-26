@@ -117,7 +117,12 @@ export interface RowPlan {
   lazy: Spec[];
 }
 
-const TYPE_NAMES = ["text", "prop", "class", "attr", "style", "event", "for", "if", "html", "radio", "checkbox", "prop", "command", "eventToken", "spread"];
+/**
+ * A binding's type as the parser classifies it (@wcstack/state 3.x reports the same in
+ * `$errorCallback`'s info, the console and DevTools): `class.` / `attr.` / `style.` / `command.`
+ * and HTML are properties, `eventToken.` is an event.
+ */
+const TYPE_NAMES = ["text", "prop", "prop", "prop", "prop", "event", "for", "if", "prop", "radio", "checkbox", "prop", "prop", "event", "spread"];
 /** Display surfaces: undefined and null both mean "no value" (B8). Other properties are element inputs. */
 const DISPLAY_PROPS = new Set(["textContent", "innerText", "innerHTML"]);
 

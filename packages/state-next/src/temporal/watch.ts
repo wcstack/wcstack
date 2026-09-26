@@ -18,6 +18,7 @@ import type { Pattern } from "../pattern";
 import type { StateList, StateRow } from "../list";
 import { raiseError } from "../parser/raiseError";
 import { hooks } from "../hooks";
+import { config } from "../config";
 
 type Handler = (this: unknown, cur: unknown, prev: unknown, ...indexes: number[]) => unknown;
 
@@ -113,7 +114,8 @@ export class WatchRuntime {
       if (w.getter) continue;
       const wp = w.p;
       if (wp === p) {
-        this.hit(w, row, direct && (value === null || (typeof value !== "object" && typeof value !== "function")) ? old : undefined);
+        // `prev` reuses the old value the same-value guard reads (none when it is off)
+        this.hit(w, row, direct && config.sameValueGuard && (value === null || (typeof value !== "object" && typeof value !== "function")) ? old : undefined);
       } else if (wp.depth === p.depth && wp.isUnder(p)) {
         // an object above the watched path in the same row was replaced (no primitive written: no prev)
         this.hit(w, row, undefined);

@@ -47,6 +47,8 @@ export const enum M {
   FilterValueNotNumber = 28,
   FilterValueNotDate = 29,
   FilterValueNotArray = 30,
+  DirectionalSyncDisabled = 31,
+  SelectorRemoved = 32,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,
@@ -65,7 +67,6 @@ export const enum M {
   OneModifierList = 115,
   NoPropertyName = 116,
   TooManySegments = 117,
-  SelectorRemoved = 118,
   EmptySegment = 119,
   // [wcs/template-syntax]
   StructuralNotSingle = 201,

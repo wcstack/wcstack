@@ -7,6 +7,7 @@ import { runTransition } from "./protocol/transitionRunner";
 import { raise, M, text } from "./messages";
 import { recursionUnsupported } from "./parser/parseStatePart";
 import { hooks, requireFeature } from "./hooks";
+import { config } from "./config";
 
 /** Declarations an add-on serves: without it installed they fail instead of doing nothing. */
 const DECLARATIONS: [string, string][] = [["$watch", "temporal"], ["$stream", "temporal"], ["$listKeys", "list-keys"], ["$recursion", "recursion"]];
@@ -533,7 +534,7 @@ export class Engine implements ReconcileHooks {
     if (p.getter !== null) raise(M.GetterWithoutSetter, [p.path]);
     if (p.depth > 0 && row === null) raise(M.NoRow, [p.path]);
     const old = this.readData(p, row);
-    if (!occurrence && Object.is(old, value) && (value === null || (typeof value !== "object" && typeof value !== "function"))) return;
+    if (!occurrence && config.sameValueGuard && Object.is(old, value) && (value === null || (typeof value !== "object" && typeof value !== "function"))) return;
     if (p.last === WILDCARD) {
       // element write: the position keeps its row, the row takes the new value
       const r = row!;

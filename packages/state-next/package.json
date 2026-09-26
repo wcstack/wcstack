@@ -4,6 +4,40 @@
   "private": true,
   "description": "Spike: a rewritten @wcstack/state engine (addressing by ownership tree). Not published.",
   "type": "module",
+  "main": "./dist/index.esm.js",
+  "module": "./dist/index.esm.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js"
+    },
+    "./auto": "./dist/auto.min.js",
+    "./core": {
+      "types": "./dist/split/core.d.ts",
+      "import": "./dist/split/core.js"
+    },
+    "./features/*": {
+      "types": "./dist/split/features/*.d.ts",
+      "import": "./dist/split/features/*.js"
+    },
+    "./define": {
+      "types": "./dist/define.d.ts",
+      "import": "./dist/define.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.esm.js"
+    },
+    "./parser": {
+      "types": "./dist/parser.d.ts",
+      "import": "./dist/parser.esm.js"
+    },
+    "./wcs-manifest.json": "./dist/wcs-manifest.json"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "node build.mjs",
     "test": "vitest run",
@@ -13,6 +47,8 @@
   "devDependencies": {
     "esbuild": "0.27.2",
     "happy-dom": "^20.0.11",
+    "rollup": "^4.63.5",
+    "rollup-plugin-dts": "^6.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15"
   }

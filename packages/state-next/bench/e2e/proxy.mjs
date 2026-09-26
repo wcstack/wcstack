@@ -29,8 +29,8 @@ async function ssrDeps() {
       // loaded once (the split build: core + every add-on), defined on every render's registry
       async () => {
         if (core === null) {
-          core = await import(dist("state-next", "core.js"));
-          core.installFeatures(await Promise.all(FEATURES.map(async (f) => (await import(dist("state-next", `features/${f}.js`))).default)));
+          core = await import(dist("state-next", "split/core.js"));
+          core.installFeatures(await Promise.all(FEATURES.map(async (f) => (await import(dist("state-next", `split/features/${f}.js`))).default)));
         }
         core.bootstrapState();
       },

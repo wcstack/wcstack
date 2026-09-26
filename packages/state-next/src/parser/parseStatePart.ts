@@ -15,6 +15,8 @@ export type StatePartParseResult = Pick<ParsedBinding, 'statePathName' | 'outFil
  * （`@wcstack/state` の tooling 専用の解放口 `clearStatePartCacheForTooling` は移植しない）
  */
 const cacheFilterInfos = new Map<string, ParsedFilter[]>();
+/** Tooling (`clearParserCaches`): a long-running process drops what it parsed. */
+export const clearStatePartCache = (): void => cacheFilterInfos.clear();
 
 /**
  * `getPathInfo` が初回 intern で行っていた文字列だけで決まる検査の移植（順序も同じ:

@@ -13,6 +13,8 @@ export type PropPartParseResult = Pick<ParsedBinding, 'propName' | 'propSegments
  * （`@wcstack/state` の tooling 専用の解放口 `clearPropPartCacheForTooling` は移植しない）
  */
 const cacheFilterInfos = new Map<string, ParsedFilter[]>();
+/** Tooling (`clearParserCaches`): a long-running process drops what it parsed. */
+export const clearPropPartCache = (): void => cacheFilterInfos.clear();
 
 // format: propName#moodifier1,modifier2
 // propName-format: path.to.property (e.g., textContent, style.color, not include :)

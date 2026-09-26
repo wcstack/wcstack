@@ -29,7 +29,8 @@ import { config } from "../config";
 import { hooks } from "../hooks";
 
 import { VERSION } from "../version";
-const TAG = "wcs-ssr";
+/** The snapshot element's tag (`config.tagNames.ssr`, `wcs-ssr` by default). */
+const tag = (): string => config.tagNames.ssr;
 const BUILDER = Symbol.for("wcstack.ssr.snapshotBuilder");
 
 export const isServer = (): boolean => document.documentElement?.hasAttribute("data-wcs-server") === true;
@@ -83,7 +84,8 @@ function visitBlock(b: Block): void {
   if (b.children !== null) for (const c of b.children) visitView(c);
 }
 
-const RAW = new Set(["script", "style", "template", "textarea", "title", TAG]);
+const RAW = new Set(["script", "style", "template", "textarea", "title"]);
+const raw = (el: Element): boolean => RAW.has(el.localName) || el.localName === tag();
 
 /** Keeps every text node a text node through HTML serialization and parsing. */
 function protectTexts(parent: Node): void {
@@ -91,7 +93,7 @@ function protectTexts(parent: Node): void {
     if (n.nodeType === 3) {
       if ((n as Text).data === "") n.parentNode!.replaceChild(mark("wcs-e"), n);
       else if (n.nextSibling !== null && n.nextSibling.nodeType === 3) n.parentNode!.insertBefore(mark("wcs-s"), n.nextSibling);
-    } else if (n.nodeType === 1 && !RAW.has((n as Element).localName)) {
+    } else if (n.nodeType === 1 && !raw(n as Element)) {
       protectTexts(n);
     }
   }
@@ -136,7 +138,7 @@ function snapshot(el: Element, engine: Engine): void {
   }
   const root = el.getRootNode() as Document | ShadowRoot;
   protectTexts(root.nodeType === 9 ? (root as Document).body : root);
-  const ssr = document.createElement(TAG);
+  const ssr = document.createElement(tag());
   ssr.setAttribute("version", VERSION);
   const script = document.createElement("script");
   script.type = "application/json";
@@ -159,7 +161,7 @@ function snapshot(el: Element, engine: Engine): void {
 function build(doc: Document): void {
   for (const el of Array.from(doc.querySelectorAll(`${config.tagNames.state}[enable-ssr]`))) {
     if (el.hasAttribute("mount") || el.hasAttribute("bind-component")) continue;
-    if (el.previousElementSibling?.localName === TAG) continue;
+    if (el.previousElementSibling?.localName === tag()) continue;
     const engine = (el as any).engine as Engine | null;
     if (engine !== null && engine !== undefined) snapshot(el, engine);
   }
@@ -222,7 +224,7 @@ function holdRegions(nodes: Iterable<Node>, keep: boolean): void {
       const key = n.previousSibling;
       const r = detach(n as Comment);
       if (keep && key !== null) held.set(key, r);
-    } else if (n.nodeType === 1 && !RAW.has((n as Element).localName)) {
+    } else if (n.nodeType === 1 && !raw(n as Element)) {
       holdRegions((n as Element).childNodes, keep);
     }
   }
@@ -256,7 +258,7 @@ function prepare(container: Node, ssr: Element, adopt: boolean): void {
             n.parentNode!.replaceChild(copy, n);
           }
         }
-      } else if (n.nodeType === 1 && !RAW.has((n as Element).localName)) {
+      } else if (n.nodeType === 1 && !raw(n as Element)) {
         walk(n);
       }
     }
@@ -276,10 +278,10 @@ export function hydrate(engine: Engine): void {
   const callHook = e.callHook;
   e.callHook = (name: string, args?: unknown[]) => (name === "$connectedCallback" ? undefined : callHook.call(engine, name, args));
   const ssr = el.previousElementSibling;
-  if (ssr === null || ssr.localName !== TAG) return;
+  if (ssr === null || ssr.localName !== tag()) return;
   const version = ssr.getAttribute("version");
   const same = version === null || majorMinor(version) === majorMinor(VERSION);
-  if (!same) console.warn(`[@wcstack/state] <${TAG} version="${version}"> does not match ${VERSION}: the page renders on the client.`);
+  if (!same) console.warn(`[@wcstack/state] <${tag()} version="${version}"> does not match ${VERSION}: the page renders on the client.`);
   const script = ssr.querySelector('script[type="application/json"]');
   if (script !== null) {
     const snap = JSON.parse(script.textContent || "{}") as Record<string, unknown>;
@@ -330,7 +332,9 @@ export function ssrMark(engine: Engine, node: Node, source: Element | string): v
   }
 }
 
-const isIfAnchor = (n: Node | null): boolean => isMark(n, "wcs-if");
+/** An anchor of an `if` / `elseif` / `else` chain (the core names them by config). */
+const isIfAnchor = (n: Node | null): boolean =>
+  n !== null && n.nodeType === 8 && [config.commentIfPrefix, config.commentElseIfPrefix, config.commentElsePrefix].includes((n as Comment).data);
 
 /** The `adopt` hook: the next server row (or branch) of the view anchored at `anchor`. */
 export function adopt(plan: RowPlan, anchor: Node, isFor: boolean): Node | null {

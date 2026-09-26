@@ -212,6 +212,10 @@ export interface ChainPart {
  * `else:` templates that follow it, across whitespace and comments. Returns the parts and
  * the index of the last child consumed.
  */
+/** The anchor text of a chain's `k`-th template: `if`, then `elseif`, and `else` (no path). */
+export const chainAnchorText = (k: number, part: ChainPart): string =>
+  k === 0 ? config.commentIfPrefix : part.pattern === null ? config.commentElsePrefix : config.commentElseIfPrefix;
+
 export function readChain(engine: Engine, children: ChildNode[], start: number, list: Pattern | null): { parts: ChainPart[]; end: number } {
   const part = (el: Element, b: ParsedBinding): ChainPart => ({
     el: el as HTMLTemplateElement,
@@ -258,14 +262,14 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
           if (d.bindingType === "for") {
             const p = boundPattern(engine, d.statePathName, list);
             const sub = compilePlan(engine, el as HTMLTemplateElement, p, true);
-            const anchor = document.createComment("wcs-for");
+            const anchor = document.createComment(config.commentForPrefix);
             el.replaceWith(anchor);
             specs.push({ ...blank(), node: target(anchor), kind: K_FOR, pattern: p, plan: sub });
           } else if (d.bindingType === "if") {
             const { parts, end } = readChain(engine, children, i, list);
-            const branches: BranchSpec[] = parts.map((part) => {
+            const branches: BranchSpec[] = parts.map((part, k) => {
               const branchPlan = compilePlan(engine, part.el, list, false);
-              const anchor = document.createComment("wcs-if");
+              const anchor = document.createComment(chainAnchorText(k, part));
               part.el.replaceWith(anchor);
               return { node: target(anchor), plan: branchPlan, pattern: part.pattern, filters: part.filters };
             });

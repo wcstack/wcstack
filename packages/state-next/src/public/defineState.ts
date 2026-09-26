@@ -1,0 +1,417 @@
+/**
+ * defineState.ts
+ *
+ * 状態オブジェクトに型付けを提供するためのユーティリティ。
+ * defineState() はアイデンティティ関数で、ThisType<> を付与することで
+ * メソッド・computed getter 内の this に型補完を提供する。
+ *
+ * テンプレートリテラル型によるドットパスの型解決:
+ * - WcsPaths<T>      : T から生成される全ドットパスの union
+ * - WcsPathValue<T,P>: パス P に対応する値の型
+ * - WcsPathAccessor<T>: ブラケットアクセス用マップ型
+ */
+
+// ============================================================
+// Internal helper types
+// ============================================================
+
+/**
+ * `any` 型を検出する。
+ * `0 extends (1 & T)` は T が `any` の場合のみ true になる。
+ */
+type IsAny<T> = 0 extends (1 & T) ? true : false;
+
+/**
+ * T がドットパス再帰の対象となる「プレーンなデータオブジェクト」かどうかを判定する。
+ * プリミティブ、組み込みオブジェクト (Date, Map 等)、関数、配列、any は除外。
+ */
+type IsPlainObject<T> =
+  IsAny<T> extends true ? false :
+  T extends
+    | string | number | boolean | null | undefined | symbol | bigint
+    | ((...args: any[]) => any) | Date | RegExp | Error
+    | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any>
+    | Promise<any> | readonly any[]
+    ? false
+    : T extends Record<string, any>
+      ? true
+      : false;
+
+/**
+ * T のキーのうち、関数でないもの（データプロパティ・computed getter）を抽出する。
+ * メソッド（イベントハンドラ等）はドットパスの対象外。
+ * `$` プレフィックスキー（$streams / $commandTokens / $on 等の予約宣言）もドットパスにならない。
+ * any 型のプロパティは除外せず保持する。
+ */
+type DataKeys<T> = {
+  [K in keyof T & string]:
+    K extends `$${string}` ? never :
+    IsAny<T[K]> extends true ? K : T[K] extends (...args: any[]) => any ? never : K;
+}[keyof T & string];
+
+// ============================================================
+// WcsPaths — ドットパスの union 生成
+// ============================================================
+
+/**
+ * 型 T から生成される全てのドットパスの union。
+ * 配列プロパティはワイルドカード `*` を使用: `items.*.name`
+ *
+ * 再帰の深さは最大4レベルに制限（コンパイル性能の確保）。
+ *
+ * @example
+ * ```ts
+ * type S = {
+ *   count: number;
+ *   users: { name: string; age: number }[];
+ *   cart: { items: { price: number }[] };
+ * };
+ * type P = WcsPaths<S>;
+ * // = "count" | "users" | "users.*" | "users.*.name" | "users.*.age"
+ * //   | "cart" | "cart.items" | "cart.items.*" | "cart.items.*.price"
+ * ```
+ */
+export type WcsPaths<T, Depth extends readonly any[] = []> =
+  Depth["length"] extends 4 ? never :
+  {
+    [K in DataKeys<T>]:
+      | K
+      | (T[K] extends readonly (infer E)[]
+          ? IsPlainObject<E> extends true
+            ? `${K}.*` | WcsSubPaths<E, `${K}.*.`, [...Depth, 0]>
+            : `${K}.*`
+          : IsPlainObject<T[K]> extends true
+            ? WcsSubPaths<T[K], `${K}.`, [...Depth, 0]>
+            : never)
+  }[DataKeys<T>];
+
+/** @internal プレフィックス付きサブパスの生成ヘルパー */
+type WcsSubPaths<T, Prefix extends string, Depth extends readonly any[]> =
+  WcsPaths<T, Depth> extends infer P extends string
+    ? `${Prefix}${P}`
+    : never;
+
+// ============================================================
+// WcsPathValue — パスから値の型を解決
+// ============================================================
+
+/**
+ * ドットパス P に対応する値の型を T から解決する。
+ *
+ * 解決順序:
+ * 1. T の直接キー（computed getter 含む）
+ * 2. `K.*` → 配列要素型
+ * 3. `K.rest` → オブジェクト/配列のネストを再帰的に辿る
+ *
+ * @example
+ * ```ts
+ * type S = { cart: { items: { price: number; qty: number }[] } };
+ * type V1 = WcsPathValue<S, "cart.items.*.price">; // number
+ * type V2 = WcsPathValue<S, "cart.items.*">;        // { price: number; qty: number }
+ * type V3 = WcsPathValue<S, "cart">;                 // { items: ... }
+ * ```
+ */
+export type WcsPathValue<T, P extends string> =
+  // 1. Direct key (includes computed getters like "users.*.ageCategory")
+  P extends keyof T
+    ? T[P]
+  // 2. K.* → array element type
+  : P extends `${infer K}.*`
+    ? K extends keyof T
+      ? T[K] extends readonly (infer E)[] ? E : never
+      : never
+  // 3. K.rest → recurse into nested structure
+  : P extends `${infer K}.${infer Rest}`
+    ? K extends keyof T
+      ? T[K] extends readonly (infer E)[]
+        // Array: expect *.subpath or *
+        ? Rest extends `*.${infer SubRest}`
+          ? WcsPathValue<E, SubRest>
+          : Rest extends "*"
+            ? E
+            : never
+        // Object: recurse
+        : T[K] extends Record<string, any>
+          ? WcsPathValue<T[K], Rest>
+          : never
+      : never
+    : never;
+
+// ============================================================
+// WcsPathAccessor — ブラケットアクセス用マップ型
+// ============================================================
+
+/**
+ * 全ドットパスに対する型付きブラケットアクセスを提供するマップ型。
+ *
+ * `this["users.*.name"]` のようなアクセスに対して、
+ * WcsPaths で生成されたパスに対応する値の型を返す。
+ */
+type WcsPathAccessor<T> = {
+  [P in WcsPaths<T>]: WcsPathValue<T, P>;
+};
+
+// ============================================================
+// State Proxy API — this 経由でアクセスできるAPI
+// ============================================================
+
+/**
+ * `<wcs-state>` の Proxy 経由で提供されるAPIメソッド。
+ * state定義オブジェクト内のメソッド・getter で `this.` 経由で利用可能。
+ */
+export interface WcsStateApi {
+  /**
+   * ワイルドカードを含むパスにマッチする全要素を配列で取得する。
+   *
+   * @param path - ワイルドカードを含むパス
+   * @param indexes - 各ワイルドカード階層のインデックス（前方一致の接頭辞。`[]` は全階層を展開）。
+   *   省略時はループ文脈の添字（`[$1..$n]` 相当）のうち path と共有するワイルドカード連鎖の
+   *   分が接頭辞として敷かれる（文脈が path より深い分は切り詰め）。共有が無いのに文脈が
+   *   添字を持つ場合は throw する — 異なる文脈の添字は流用しない。
+   *
+   * @example
+   * ```ts
+   * get "cart.totalPrice"() {
+   *   return this.$getAll("cart.items.*.price").reduce((sum, v) => sum + v, 0);
+   * }
+   * ```
+   */
+  $getAll<V = any>(path: string, indexes?: number[]): V[];
+
+  /**
+   * ワイルドカードを含むパスにマッチする**全アドレスへ一括で書き込む**（`$getAll` の対称形）。
+   *
+   * 配列を作り直さずに一括更新するための API。`this.users = this.users.map(...)` は
+   * ListIndex・行 getter キャッシュ・差分描画をまとめて作り直すが、`$setAll` は
+   * in-place な個別書き込みに分解するのでリストの同一性が保たれる。
+   *
+   * - `indexes` は `$getAll` と同じ**前方一致の接頭辞**（`[]` で全階層を展開）。省略は不可。
+   * - 関数を渡すと **mapper**（`(current, ...indexes) => next`）として要素ごとに評価される。
+   * - 配列は既定でブロードキャストされる。1 件ずつ配るには `{ spread: true }` を明示する。
+   * - `undefined` を書こうとした要素はスキップされる（クリアは `null`）。
+   *
+   * @returns 実際に書き込んだ件数（`undefined` でスキップした分を含まない）
+   *
+   * @example
+   * ```ts
+   * toggleAll(e: Event) {
+   *   this.$setAll("users.*.selected", [], (e.target as HTMLInputElement).checked);
+   * }
+   * invertAll() {
+   *   this.$setAll("users.*.selected", [], cur => !cur);
+   * }
+   * ```
+   */
+  $setAll<V = any>(
+    path: string,
+    indexes: number[],
+    value: V | ((current: V, ...indexes: number[]) => V | undefined),
+  ): number;
+  $setAll<V = any>(
+    path: string,
+    indexes: number[],
+    values: readonly V[],
+    options: { spread: true },
+  ): number;
+
+  /**
+   * 指定パスの更新を手動でトリガーする。
+   * Proxy の set トラップを経由せずに内部状態を変更した場合に使用。
+   */
+  $postUpdate(path: string): void;
+
+  /**
+   * パスとインデックス配列を指定して、ワイルドカードを解決した値を取得・設定する。
+   *
+   * @param path - ワイルドカードを含むパス
+   * @param indexes - 各ワイルドカード階層のインデックス
+   * @param value - 設定する値（省略時は取得）
+   */
+  $resolve(path: string, indexes: number[], value?: any): any;
+
+  /**
+   * 指定パスへの依存関係を明示的に登録する。
+   * computed getter 内で動的にパスを組み立てる場合に使用。
+   */
+  $dependOn(path: string): void;
+
+  /**
+   * コールバック実行中の依存追跡（動的依存・`$1` インデックス依存の登録）を
+   * 抑止して fn を実行し、その戻り値を返す。
+   * リスト行 getter が「行外の単一値」を読みたいが、その値の変更で全行を
+   * 再評価させたくない場合に使う（該当行へ直接書き込む設計と組で用いる）。
+   */
+  $untracked<T>(fn: () => T): T;
+
+  /**
+   * 鍵付き購読: `path` の現在値が `key` に等しいかを返し、評価中のリスト行 getter を
+   * その鍵で購読する。`path` への書き込みは旧値・新値の鍵の行だけを再評価する
+   * （パターン依存なら全行）。`path` 自体は依存として追跡しない。
+   * 例: `get "items.*.selected"() { return this.$eq("selectedId", this.$untracked(() => this["items.*.id"])); }`
+   */
+  $eq(path: string, key: unknown): boolean;
+
+  /**
+   * `$eq` の鍵を `keyPath`（ワイルドカードは評価中の行で解決）から依存を張らずに読む形。
+   * 例: `get "items.*.selected"() { return this.$eqPath("selectedId", "items.*.id"); }`
+   */
+  $eqPath(path: string, keyPath: string): boolean;
+
+  /**
+   * `$eq` の鍵を評価中の行の index（`$1` 相当。`level` でワイルドカード段を選ぶ）にする形。
+   * getter を index 依存には記録せず、行の移動時はリスト差分が鍵を付け替えるので、
+   * 1 行削除で再評価されるのは高々 2 行。
+   * 例: `get "items.*.selected"() { return this.$eqIndex("selectedIndex"); }`
+   */
+  $eqIndex(path: string, level?: number): boolean;
+
+  /** `<wcs-state>` 要素への参照 */
+  readonly $stateElement: HTMLElement;
+
+  /**
+   * `$commandTokens` で宣言した command token の名前空間。
+   * `this.$command.<name>` で token を解決できる（バインディングでは
+   * `onclick: $command.<name>` / `command.<method>: $command.<name>`）。
+   */
+  readonly $command: Record<string, { emit(...args: any[]): any }>;
+
+  /** `$stream` 各エントリの状態（"idle" | "active" | "done" | "error"）を返す読み取り専用名前空間 */
+  readonly $streamStatus: Record<string, "idle" | "active" | "done" | "error">;
+
+  /** `$stream` 各エントリの直近エラーを返す読み取り専用名前空間 */
+  readonly $streamError: Record<string, unknown>;
+
+  // computed getter 内での依存追跡付き読み取りの正規形は dotted パス
+  // （`this["$streamStatus.<name>"]` — docs/state-streams-design.md §4-3）
+  readonly [key: `$streamStatus.${string}`]: "idle" | "active" | "done" | "error";
+  readonly [key: `$streamError.${string}`]: unknown;
+
+  // ループインデックス変数 ($1〜$9)
+  // for テンプレート内のイベントハンドラで、ネストされたループの
+  // 各階層のインデックスにアクセスするために使用。
+  // （ランタイムは $1〜$128 まで解決するが、型宣言は実用域の $9 までとする）
+  readonly $1: number;
+  readonly $2: number;
+  readonly $3: number;
+  readonly $4: number;
+  readonly $5: number;
+  readonly $6: number;
+  readonly $7: number;
+  readonly $8: number;
+  readonly $9: number;
+
+  // `$recursion` 宣言済みの再帰パス（`this["nodes.**.total"]`）。深さの族なので
+  // `WcsPaths<T>` の有限展開には現れず、getter のキーに書いた 1 本しか T に現れない。
+  // パターン索引で「`**` を含むキーは読める」とだけ言う（型は any — 深さを型で表せない
+  // 以上、値の型も辿れない）。パターンは `**` を必ず含むので、通常のドットパスの型付けは
+  // 損なわない。VS Code 拡張の preamble（vscode-wcs src/language/preamble.ts）と同じ形 —
+  // 公開型面とエディタの型面は対で保つ。
+  // 素の `nodes.**`（再帰 getter の中でノード自身に束縛される読み）は `.**.` を含まないので、
+  // 末尾が `.**` のキーにも同じ索引を置く。
+  readonly [key: `${string}.**.${string}`]: any;
+  readonly [key: `${string}.**`]: any;
+}
+
+// ============================================================
+// WcsThis — state メソッド/getter 内の this の型
+// ============================================================
+
+/**
+ * state定義オブジェクト内の `this` の型。
+ *
+ * - `T` のプロパティに型付きでアクセス可能（直接キー）
+ * - `WcsPathAccessor<T>` によるネストされたドットパスの型付きアクセス
+ * - `WcsStateApi` のメソッド ($getAll, $postUpdate 等) にアクセス可能
+ * - 動的パス (`this[\`items.${i}.name\`]`) は型チェック対象外（キャストが必要）
+ *
+ * @example
+ * ```ts
+ * defineState({
+ *   count: 0,
+ *   users: [] as { name: string; age: number }[],
+ *   increment() {
+ *     this.count++;                // number
+ *     this["users.*.name"];        // string (パス型解決)
+ *     this.$getAll("users.*.age"); // API
+ *   }
+ * });
+ * ```
+ */
+export type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
+
+// ============================================================
+// defineState — 型付き状態定義関数
+// ============================================================
+
+/**
+ * `<wcs-state>` 用の型付き状態オブジェクトを定義する。
+ *
+ * ランタイムではアイデンティティ関数（引数をそのまま返す）として動作し、
+ * コストはゼロ。TypeScript の `ThisType<>` を利用して、メソッド・getter 内の
+ * `this` に型補完を提供する。
+ *
+ * ### 基本的な使い方 (TypeScript)
+ * ```ts
+ * import { defineState } from '@wcstack/state';
+ *
+ * export default defineState({
+ *   count: 0,
+ *   users: [] as { name: string; age: number }[],
+ *
+ *   increment() {
+ *     this.count++;            // ✅ number
+ *     this["users.*.name"];    // ✅ string (ドットパス型解決)
+ *   },
+ *
+ *   get "users.*.ageCategory"() {
+ *     return this["users.*.age"] < 25 ? "Young" : "Adult";
+ *   }
+ * });
+ * ```
+ *
+ * ### JavaScript (JSDoc)
+ * ```js
+ * import { defineState } from '@wcstack/state';
+ *
+ * export default defineState({
+ *   count: 0,
+ *   increment() {
+ *     this.count++;  // ✅ JSDoc + tsconfig checkJs で型補完
+ *   }
+ * });
+ * ```
+ *
+ * ### HTML インラインスクリプト
+ * ```html
+ * <wcs-state>
+ *   <script type="module">
+ *     import { defineState } from '@wcstack/state';
+ *     export default defineState({
+ *       count: 0,
+ *       increment() { this.count++; }
+ *     });
+ *   </script>
+ * </wcs-state>
+ * ```
+ *
+ * ### ライフサイクルコールバック
+ * ```ts
+ * export default defineState({
+ *   data: null,
+ *   async $connectedCallback() {
+ *     this.data = await fetch('/api/data').then(r => r.json());
+ *   },
+ *   $disconnectedCallback() {
+ *     // cleanup
+ *   },
+ *   $renderedCallback() {
+ *     // called after the bindings are applied
+ *   }
+ * });
+ * ```
+ */
+export function defineState<T extends Record<string, any>>(
+  definition: T & ThisType<WcsThis<T>>
+): T {
+  return definition;
+}

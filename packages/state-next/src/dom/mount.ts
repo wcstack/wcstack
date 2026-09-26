@@ -2,7 +2,7 @@ import type { Engine } from "../engine";
 import { config } from "../config";
 import { raise, M } from "../messages";
 import { hooks } from "../hooks";
-import { bindAttr, boundPattern, compilePlan, directive, elementSpecs, notAfterIf, readChain, splitMustache, textSpec } from "./plan";
+import { bindAttr, boundPattern, chainAnchorText, compilePlan, directive, elementSpecs, notAfterIf, readChain, splitMustache, textSpec } from "./plan";
 import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
 import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
 
@@ -49,13 +49,13 @@ function walk(engine: Engine, children: ChildNode[]): void {
         if (d.bindingType === "for") {
           const p = boundPattern(engine, d.statePathName, null);
           const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);
-          const anchor = anchorFor(engine, el, "wcs-for");
+          const anchor = anchorFor(engine, el, config.commentForPrefix);
           new ForView(engine, plan, listFor(engine, p, null, anchor), anchor).update();
         } else if (d.bindingType === "if") {
           const { parts, end } = readChain(engine, children, i, null);
-          const branches = parts.map((part) => {
+          const branches = parts.map((part, k) => {
             const plan = compilePlan(engine, part.el, null, false);
-            return { plan, pattern: part.pattern, filters: part.filters, anchor: anchorFor(engine, part.el, "wcs-if") };
+            return { plan, pattern: part.pattern, filters: part.filters, anchor: anchorFor(engine, part.el, chainAnchorText(k, part)) };
           });
           attachChain(engine, branches, null, null);
           i = end;
