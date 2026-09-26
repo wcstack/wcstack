@@ -350,23 +350,27 @@ describe("コンポーネントのライフサイクル", () => {
     }
   });
 
-  it("独立して動き出した後に書き足した結線は、そのコンポーネントには当てない（自分の木のまま）", async () => {
-    const tag = define(`<p>{{ name }}</p>`, () => ({ name: "own" }));
-    const h = document.createElement(`cov-cmp-page-${seq++}`);
-    const root = h.attachShadow({ mode: "open" });
-    root.innerHTML = `<wcs-state></wcs-state><${tag}></${tag}><p class="host">{{ user.name }}</p>`;
-    document.body.appendChild(h);
-    const c = root.querySelector(tag) as any;
-    await c.shadowRoot.querySelector("wcs-state").connectedCallbackPromise;
-    // the page's state loads after the component started on its own
-    c.setAttribute("data-wcs", "state: user");
-    const el = root.querySelector("wcs-state") as any;
-    el.setInitialState({ user: { name: "tree" } });
-    await el.connectedCallbackPromise;
-    await settle();
-    expect(text(root, ".host")).toBe("tree");
-    expect(text(c.shadowRoot, "p")).toBe("own");
-    expect(c.state.name).toBe("own");
+  it("独立して動き出した後に書き足した結線は、ページの束縛の誤りとして報告する（黙って捨てない）。コンポーネントは自分の木のまま", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const tag = define(`<p>{{ name }}</p>`, () => ({ name: "own" }));
+      const h = document.createElement(`cov-cmp-page-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><${tag}></${tag}><p class="host">{{ user.name }}</p>`;
+      document.body.appendChild(h);
+      const c = root.querySelector(tag) as any;
+      await c.shadowRoot.querySelector("wcs-state").connectedCallbackPromise;
+      // the page's state loads after the component started on its own
+      c.setAttribute("data-wcs", "state: user");
+      const el = root.querySelector("wcs-state") as any;
+      el.setInitialState({ user: { name: "tree" } });
+      await expect(el.connectedCallbackPromise).rejects.toThrow(`<${tag}>.state has loaded its state: the wiring "state" added afterwards cannot reach it`);
+      await settle();
+      expect(text(c.shadowRoot, "p")).toBe("own");
+      expect(c.state.name).toBe("own");
+    } finally {
+      error.mockRestore();
+    }
   });
 });
 

@@ -111,7 +111,10 @@ export function hostBinding(b: Binding): boolean {
     const heads = el.getAttribute(WIRED)?.split(" ") ?? [];
     if (!heads.includes(head)) el.setAttribute(WIRED, [...heads, head].join(" "));
   }
-  if (hosts.get(el)?.prop === head) return true;
+  // the component took its wiring when it loaded: a mount is not re-wired
+  if (hosts.get(el)?.prop === head) {
+    raiseError(`<${el.localName}>.${head} has loaded its state: the wiring "${b.name}" added afterwards cannot reach it — bind the host's wiring before the component loads.`);
+  }
   let list = hostBindings.get(el);
   if (list === undefined) hostBindings.set(el, (list = []));
   list.push(b);

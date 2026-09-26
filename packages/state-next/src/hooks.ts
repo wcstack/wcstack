@@ -64,6 +64,8 @@ export interface Hooks {
   declared: ((engine: Engine, p: Pattern, watch?: boolean) => void) | null;
   /** `<wcs-state>` was defined in `registry`: an add-on defines its own tags there (`<wcs-ssr>`). */
   tags: ((registry: CustomElementRegistry) => void) | null;
+  /** A wc-bindable property's event read with the default getter (`e.detail`): diagnostics checks its shape. */
+  detail: ((el: Element, name: string, detail: unknown) => void) | null;
 }
 
 /** What an add-on does with a `<wcs-state>` it claimed. */
@@ -97,6 +99,7 @@ export const hooks: Hooks = {
   adopt: null,
   declared: null,
   tags: null,
+  detail: null,
 };
 
 type HookFn = (...args: any[]) => any;

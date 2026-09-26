@@ -58,7 +58,7 @@ describe("プレーンなカスタム要素へのプロパティバインディ�
     expect(c.shadowRoot.querySelector("p").textContent).toBe("tree 2");
   });
 
-  it("自分の状態を受け取った後のコンポーネントに後から結線を渡しても、要素に書かず自分の状態のまま", async () => {
+  it("自分の状態を受け取った後のコンポーネントに後から結線を渡すと投げる（黙って捨てない）。コンポーネントは自分の状態のまま", async () => {
     const tag = component();
     const { root, write } = await page(`<main></main>`, { x: "tree" });
     const c = document.createElement(tag) as any;
@@ -68,7 +68,9 @@ describe("プレーンなカスタム要素へのプロパティバインディ�
     expect(c.shadowRoot.querySelector("p").textContent).toBe("own");
     // the wiring arrives late (handed over through the binder protocol)
     c.setAttribute("data-wcs", "state.a: x");
-    (globalThis as any)[BINDER_KEY].bind(c);
+    expect(() => (globalThis as any)[BINDER_KEY].bind(c)).toThrow(
+      `[@wcstack/state] <${tag}>.state has loaded its state: the wiring "state.a" added afterwards cannot reach it — bind the host's wiring before the component loads.`,
+    );
     await write((s) => { s.x = "tree 2"; });
     expect(c["state.a"]).toBeUndefined();
     expect(c.state.a).toBe("own");

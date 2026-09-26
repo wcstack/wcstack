@@ -43,9 +43,9 @@ function walk(engine: Engine, children: ChildNode[]): void {
         walk(engine, Array.from(el.childNodes));
         continue;
       }
-      if (tag === "template") {
-        const d = directive(el);
-        if (d === null) continue;
+      // a template with no structural directive binds like any element (its content stays inert)
+      const d = tag === "template" ? directive(el) : null;
+      if (d !== null) {
         if (d.bindingType === "for") {
           const p = boundPattern(engine, d.statePathName, null);
           const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);

@@ -277,9 +277,8 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
       const child = children[i];
       if (child.nodeType === 1) {
         const el = child as Element;
-        if (el.localName === "template") {
-          const d = directive(el);
-          if (d === null) continue;
+        const d = el.localName === "template" ? directive(el) : null;
+        if (d !== null) {
           if (d.bindingType === "for") {
             const p = boundPattern(engine, d.statePathName, list);
             const sub = compilePlan(engine, el as HTMLTemplateElement, p, true);

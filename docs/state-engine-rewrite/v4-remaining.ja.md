@@ -73,7 +73,7 @@
 
 ### 2.5 カバレッジの作業で見つかった不具合（2026-09-27）
 
-テストを足す途中で見つかったもの。F1〜F10・F12・F13・F16 は直した（2026-09-27、§8。再現のテストは `__tests__/fixes.test.ts` と `fixes-late-install.test.ts`）。「固定」と書いたものは、今の動きをテストが固定しているので、直すときにそのテストも直す。
+テストを足す途中で見つかったもの。**すべて直した**（2026-09-27、§8。再現のテストは `__tests__/fixes.test.ts`・`fixes-late-install.test.ts`・`fixes-diagnostics.test.ts`）。
 
 | # | 場所 | 内容 | 重さ | 状態 |
 |---|---|---|---|---|
@@ -87,11 +87,11 @@
 | F8 | `engine.ts`・`recursion/recursion.ts` | README は `$resolve`・`$postUpdate`・`$dependOn`・直接の代入での `**` を `wcs/recursion-unsupported` で拒むと定めるが、4.0 はノードの行の中で通す（行の深さに束ねる）。`$resolve` は族の getter があると黙って undefined | 中 | 済み |
 | F9 | `scopes/component.ts` | 丸ごとのマウントに深い部分対応を足すと、その頭のキーが丸ごとのマウントから外れる（`state: user; state.a.b: outer.b` で `a.c` が undefined）。3.x の README は「最も長い接頭辞が勝つ」 | 要判断 | 済み（3.x に合わせた） |
 | F10 | `scopes/component.ts` | コンポーネント側にワイルドカードのある対応（`state.list.*: items`）は、何もマウントせず、エラーも出さない | 要判断 | 済み（投げる） |
-| F11 | `features/diagnostics` | README の `wcs/default-getter-mismatch` の警告が無い | 低 | |
+| F11 | `features/diagnostics` | README の `wcs/default-getter-mismatch` の警告が無い | 低 | 済み |
 | F12 | `features/temporal.ts` | エンジンを作った後に temporal を install すると、切断・再接続で TypeError（約束は「定義の前に install」） | 低 | 済み |
 | F13 | `dom/view.ts` | 行の構築中に wc-bindable の初期化が届いたスロットの反映が失敗すると、同じ失敗が `$errorCallback` に 2 回届く | 低 | 済み |
-| F14 | `dom/binder.ts` | 状態を受け取った後の bind-component のホストに、後から結線（`state.a: x`）を足して binder に渡すと、黙って捨てられる（固定） | 低 | |
-| F15 | `dom/mount.ts`・`plan.ts` | 構造でない `data-wcs` を持つ `<template>`（`attr.id: x`）は丸ごと無視される（README に記述なし） | 低 | |
+| F14 | `dom/binder.ts` | 状態を受け取った後の bind-component のホストに、後から結線（`state.a: x`）を足して binder に渡すと、黙って捨てられる | 低 | 済み（投げる） |
+| F15 | `dom/mount.ts`・`plan.ts` | 構造でない `data-wcs` を持つ `<template>`（`attr.id: x`）は丸ごと無視される（README に記述なし） | 低 | 済み（3.3 と同じく普通の要素として束縛） |
 | F16 | `dom/view.ts`・`mount.ts` | wcBindable の無い要素（ネイティブ要素と、宣言の無いカスタム要素）の `#init=` は、検査だけで効き目が無い。3.3 は `init=element`／`none` で初期の state → 要素の書き込みを止め、`init=auto` は状態に値が無ければ止める（F7 を直すときに見つけた） | 要判断 | 済み（3.3 に合わせた） |
 
 - F9・F10・F16 の決定（2026-09-27）: F9 は 3.x に合わせる、F10 は投げる、F16 は入れる。
@@ -258,4 +258,24 @@ R1（state-next で `@wcstack/state` を置き換える）の決定を受けて�
 | テスト | 1,287 件（通過 1,286・スキップ 1） | 1,299 件（通過 1,298・スキップ 1） |
 | カバレッジ | 99.75・99.11・100・99.95 | 99.73・99.09・100・99.95 |
 | core（`core.min.js` gzip） | 19,716B | 19,769B（+53B。上限 20,000B まで 231B） |
+| e2e | 131/131 | 131/131 |
+
+### F11・F14・F15（2026-09-27）
+
+§2.5 の不具合は、これで全部直した。
+
+- **F11**: wcBindable のプロパティのイベントを既定の getter（`e.detail`）で読むとき、形の食い違いを要素 × プロパティごとに 1 回だけ警告する（`[wcs/default-getter-mismatch]`、文面は 3.3 と同じ）。見分けるのは 3.3 と同じ 2 つの形: detail が undefined なのに要素のプロパティに値がある、detail が `{ <prop>: … }` の包みなのにプロパティがオブジェクトでない。書き込みはそのまま行う。`semantics: "event"` のメンバーは見ない。
+  - 3.3 は core で警告していた。4.0 は core が hook（`hooks.detail`）を呼ぶだけで、検査と文面は診断の後付けにある（`.` と `/auto` は入れる。`/core` だけのページでは警告しない）。
+- **F14**: 状態を受け取った後のコンポーネントのホストに届いた結線（`state.a: x`）は、黙って捨てずに投げる（`<tag>.state has loaded its state: the wiring "state.a" added afterwards cannot reach it — bind the host's wiring before the component loads.`）。マウントを掛け直す仕組みは無い。
+  - binder で後から渡したときは `bind()` から投げる。ページの状態が後から読み込まれ、そのとき初めて結線が付くときは、ページの束縛の誤りとして `<wcs-state>` の初期化が失敗する（4.0 のほかの束縛の誤りと同じ扱い）。
+  - 黙って捨てる動きを固定していた 2 件のテストは、投げるテストに置き換えた。
+  - マークアップに最初から結線が書いてあれば、コンポーネントはその結線を待ってから状態を受け取るので、この誤りは起きない。
+- **F15**: 構造の指示（`for`・`if`・`elseif`・`else`）の無い `data-wcs` を持つ `<template>` は、普通の要素として束縛する（3.3 と同じ）。`<template>` 自身の属性やプロパティが束縛され、中身は描かれない。ページの walker とプランの walker の両方。
+
+| | 前（`1b669157`） | 後 |
+|---|---|---|
+| テスト | 1,299 件（通過 1,298・スキップ 1） | 1,301 件（通過 1,300・スキップ 1） |
+| カバレッジ | 99.73・99.09・100・99.95 | 99.72・99.03・100・99.95 |
+| core（`core.min.js` gzip） | 19,769B | 19,792B（+23B。上限 20,000B まで 208B） |
+| 診断の後付け（core を除く） | — | 5,270B |
 | e2e | 131/131 | 131/131 |

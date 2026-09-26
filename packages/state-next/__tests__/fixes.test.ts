@@ -433,3 +433,22 @@ describe("F16 wcBindable の無い要素の #init= は、初期の書き込み�
     expect(el.value).toBe("next");
   });
 });
+
+describe("F15 構造でない data-wcs を持つ <template> は、普通の要素として束縛する（3.3 と同じ）", () => {
+  it("ページの直下と行の中で、template 要素の属性が束縛され、中身は描かれない", async () => {
+    const { root, write } = await page(
+      `<template class="top" data-wcs="attr.data-id: id"><p>never</p></template>`
+      + `<ul><template data-wcs="for: items"><li><template data-wcs="attr.data-v: .v"><b>never</b></template></li></template></ul>`,
+      { id: "t1", items: [{ v: "a" }] },
+    );
+    const top = root.querySelector("template.top")!;
+    expect(top.getAttribute("data-id")).toBe("t1");
+    expect(root.querySelector("li template")!.getAttribute("data-v")).toBe("a");
+    expect(root.querySelector("p")).toBeNull();
+    expect(root.querySelector("b")).toBeNull();
+    await write((s) => { s.id = "t2"; s["items.0.v"] = "b"; });
+    expect(top.getAttribute("data-id")).toBe("t2");
+    expect(root.querySelector("li template")!.getAttribute("data-v")).toBe("b");
+  });
+});
+

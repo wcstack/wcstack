@@ -12,6 +12,7 @@
 import type { Engine } from "../engine";
 import { raise, M } from "../messages";
 import { config } from "../config";
+import { hooks } from "../hooks";
 import type { StateRow } from "../list";
 import { adopt, Binding, K_CUSTOM, type Block, type Spec } from "./view";
 // (view.ts imports this module too: the cycle is fine, everything here is used at call time)
@@ -109,7 +110,13 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
   // element → state (a declared property)
   if (out !== null && !spec.ro) {
     el.addEventListener(out.event, (e) => {
-      let v = out.getter !== null ? out.getter(e) : (e as CustomEvent).detail;
+      let v: unknown;
+      if (out.getter !== null) v = out.getter(e);
+      else {
+        v = (e as CustomEvent).detail;
+        // the protocol's default getter: diagnostics tells the two shapes it can see are wrong
+        if (hooks.detail !== null && !out.occurrence) hooks.detail(el, name, v);
+      }
       if (b.applying && Object.is(v, b.value)) return; // our own write echoing back
       const fs = b.inFilters;
       if (fs !== null) for (let i = 0; i < fs.length; i++) v = fs[i](v);

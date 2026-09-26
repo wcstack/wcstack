@@ -174,12 +174,43 @@ function failed(_engine: Engine, error: unknown, binding: Binding): void {
   );
 }
 
+// ---------------------------------------------------------------- the default getter
+
+const warnedDetail = new WeakMap<Element, Set<string>>();
+
+/**
+ * A wc-bindable property's event read with the default getter (`e.detail`): warns once per
+ * element and property about the two shapes that cannot be what the element meant (README
+ * "What the element writes back", as @wcstack/state 3.3). The write is applied as it is.
+ * (a) no detail while the element's property has a value — a plain Event, or a forgotten detail;
+ * (b) a detail object with a `<name>` key while the property is not an object — a wrapper.
+ */
+function detail(el: Element, name: string, v: unknown): void {
+  const prop = (el as any)[name];
+  const reason = v === undefined
+    ? prop === undefined ? null : `the event carried no detail (undefined) while element.${name} is ${typeof prop}`
+    : v !== null && typeof v === "object" && Object.prototype.hasOwnProperty.call(v, name) && (prop === null || typeof prop !== "object")
+      ? `the event's detail is an object with a "${name}" key while element.${name} is ${typeof prop}`
+      : null;
+  if (reason === null) return;
+  let said = warnedDetail.get(el);
+  if (said === undefined) warnedDetail.set(el, (said = new Set()));
+  if (said.has(name)) return;
+  said.add(name);
+  console.warn(
+    `[@wcstack/state] [wcs/default-getter-mismatch] <${el.localName}> "${name}": ${reason}. `
+    + "With no getter, state receives e.detail as-is. Dispatch the value itself as detail, or declare "
+    + `getter (e.g. (e) => e.detail.${name}, or (e) => e.target.${name}) on that wcBindable property.`,
+  );
+}
+
 export const diagnostics: Feature = {
   name: "diagnostics",
   install(): void {
     hooks.explain = explain;
     hooks.render = render;
     hooks.declared = declared;
+    hooks.detail = detail;
     addHook("failed", failed);
     addHook("declare", (engine, target) => {
       checkRecursion(target);
