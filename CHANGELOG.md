@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/state`: **a `for` row no longer renders nothing when it holds an element whose wc-bindable member takes its initial value from the element.** An output-only member (listed in `properties` but not in `inputs` — `<wcs-fetch>`'s `value` / `loading`, `<wcs-intersect>`'s `intersecting`, …) and a two-way member marked `#init=element`, or `#init=auto` on a row whose state has no value yet, pull the element's value into state when the binding is set up. When every row of a render is new — the first render, filling an empty list, a wholesale replacement — the rows are activated on a batch `DocumentFragment` before they are inserted, so `getRootNode()` returned the fragment, the state lookup came back empty and the initial sync threw `No state tree found on this root for initial binding sync.` That failed the whole `for:` apply: the list stayed empty with only a `console.error` to show for it, and replacing an already-rendered list with new row objects — a refetch — emptied it as well. It took the element's class being defined before the rows were built, which is always the case with `wcstack/auto` or an I/O node's `auto` loaded first; an undefined class deferred the sync until the rows were in the document. The lookup now resolves a batch fragment to its real root through the same ledger `applyChange` uses, so each row's value is initialized from its own element — also inside a row's `if:`. Present since the directional initial sync shipped in 1.21.0. (#319)
+
 ## [3.3.0] — 2026-09-24
 
 **3.3 is a quality pass over everything 3.0, 3.1 and 3.2 introduced.** Five reviews, each starting from a clean slate so none inherited the previous one's assumptions, raised 137 findings; 116 are fixed here. The changes are in `@wcstack/state`, `@wcstack/server` and the tooling; every other package moves to 3.3.0 only to keep the lockstep version.
