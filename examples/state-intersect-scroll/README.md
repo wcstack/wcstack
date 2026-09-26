@@ -1,8 +1,8 @@
-# state + intersection + `$stream` + `$scan` demo (infinite scroll via `<wcs-intersect>`)
+# state + intersection + `$stream` + `$watch` demo (infinite scroll via `<wcs-intersect>`)
 
 This is the lower-level counterpart to [`infinite-scroll`](../../packages/fetch/examples/infinite-scroll).
 `<wcs-intersect>` reports visibility, an `@wcstack/state` `$stream` entry owns page fetching,
-switchMap-style cancellation, and bounded retry, and a `$scan` accumulates each landed page into a feed
+switchMap-style cancellation, and bounded retry, and a headless `$watch` folds each landed page into a feed
 that outlives every page run — without depending on anything being rendered.
 
 The important part is not merely that the request lives in a stream. The requested page is derived from
@@ -48,7 +48,7 @@ $stream.pageResult
   -> on failure: bounded delay/retry inside the producer
   -> yield { kind: "success", page, pageSize, items }
        v
-$scan.feed (from: "pageResult" — headless, owned by the runtime)
+$watch on pageResult (headless)
   -> fold the success landing into feed.items
   -> a second landing of the same page is dropped by the page key
        v
@@ -76,18 +76,18 @@ settled error with existing items
   they select exactly the next page. A naive `page++` would be incorrect with switchMap because a second
   edge could cancel page N and jump to N+1. The `showError` branch that does exist is retry
   qualification — deciding whether an edge counts as a user gesture — not an exhaust gate.
-- **Page-local and feed-long lifetimes are separate declarations.** `$stream` resets its value on
-  restart, so `pageResult` holds only the current page operation. `$scan.feed` folds each success landing
-  into the long-lived feed; the runtime owns `feed` and keeps it across restarts and reconnects, and
-  nothing has to be bound for it to run. Earlier revisions of this demo committed with
-  `$renderedCallback` — which made the visible stream-status meter load-bearing, since deleting that one
-  `<b>` stopped the feed — and later with a `$watch` handler that concatenated by hand.
-- **The fold keeps a page key.** The runtime folds once per landing, not once per page. A Retry after a
+- **Page-local and feed-long lifetimes are separate values.** `$stream` resets its value on restart, so
+  `pageResult` holds only the current page operation. A `$watch` on `pageResult` folds each success
+  landing into `feed`, a plain property that stays across restarts and reconnects, and nothing has to be
+  bound for the watch to run. Earlier revisions of this demo committed with `$renderedCallback` — which
+  made the visible stream-status meter load-bearing, since deleting that one `<b>` stopped the feed — then
+  with a watch on the stream status, and then with a `$scan` declaration. The fold is a plain `$watch`
+  handler now, so the demo does not depend on `$scan`.
+- **The fold keeps a page key.** The watch runs once per landing, not once per page. A Retry after a
   page is done, or re-attaching the page, runs the current page again, and that landing must not append
-  it twice. `pageSize` rides on the success chunk so the fold stays a pure function of `(feed, chunk)`.
+  it twice. `pageSize` rides on the success chunk so the fold reads nothing but `(feed, chunk)`.
 - **`page` stays a plain property.** A getter derived from `feed` and read by the stream's `args` would
-  restart the stream on its own result, loading every page without the sentinel; the runtime raises
-  `wcs/scan-feedback-loop` for that shape.
+  restart the stream on its own result, loading every page without the sentinel.
 - **`$stream` is switchMap, not retryWhen.** It deliberately has no automatic reconnection. The
   `loadPage` async generator therefore owns a finite `1 + maxRetries` attempt loop and an abort-aware
   fixed delay. Retry progress is yielded as ordinary stream values, which the fold passes over; final
@@ -117,11 +117,12 @@ settled error with existing items
 This example is not a claim that `@wcstack/state` is an RxJS-sized dataflow algebra. The remaining
 imperative parts are real API boundaries:
 
-- Cross-run accumulation is declared (`$scan`), but its idempotency is not. The runtime folds once per
-  landing, so the fold carries a page key against a retry after `done` or a reconnect.
+- Cross-run accumulation is a `$watch` handler that writes `feed`, and its idempotency is a page key in
+  that handler: the watch runs once per landing, so a retry after `done` or a reconnect lands the page
+  again.
 - Re-arming the sentinel is a side effect (firing a command), so it stays in a `$watch`. Commit before
-  re-observe is now the mechanism order — `$scan` writes in one batch and the `$watch` fires at the end of
-  the next — rather than statement order inside one handler.
+  re-observe is the mechanism order — the `pageResult` watch writes `feed` in one batch and the `feed`
+  watch fires at the end of the next — rather than statement order inside one handler.
 - `$stream` has switchMap-style restart, but no `retryWhen`, timer, merge, or occurrence operator. The
   producer therefore owns the attempt loop and abort-aware delay.
 - `retryNonce` converts “run the same page again” from an occurrence into a changing dependency value.
@@ -136,7 +137,7 @@ imperative parts are real API boundaries:
   qualified `retryRequested` event token would collapse both fields and the `window` read into one
   `$on` line.
 
-The graph is declarative at the dependency, cancellation and accumulation edges; retry policy, the
+The graph is declarative at the dependency and cancellation edges; the accumulation, retry policy, the
 re-arm command and the retry qualification remain imperative.
 
 ## Tests
@@ -157,14 +158,8 @@ sentinel out of the observer band — the configuration where the only leave edg
 scrollY — and proves a single scroll round trip still retries. The happy-path test loads all 87 items
 exactly once and reaches the partial-page terminator.
 
-The feed boundary itself — folding with nothing bound, progress chunks that write nothing, a second
-landing of the same page, re-attachment — is pinned without a browser in
-[`packages/state/__tests__/scan.streamCommit.test.ts`](../../packages/state/__tests__/scan.streamCommit.test.ts).
-
 ## See Also
 
-- [`@wcstack/state` scan reference](../../packages/state/docs/scan.md) — `from` / `on`, `resetOn`,
-  firing order, and lifecycle
 - [`@wcstack/state` stream reference](../../packages/state/docs/streams.md) — dependency capture,
   switchMap restart, status/error namespaces, cancellation, and lifecycle
 - [Timing and firing contract](../../docs/timing-and-firing-contract.md) — same-value page selection and

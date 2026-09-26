@@ -84,7 +84,7 @@ Visibility notifications arrive as a task after layout. They are **not microtask
 
 1. `sentinelChanged` (an IntersectionObserver task) computes `page = floor(feed.items.length / pageSize) + 1`
 2. While page N is running, or after it failed, `feed.items.length` is unchanged, so this merely re-assigns N. The primitive same-value guard (on by default) makes the enqueue itself a no-op and the stream does not restart
-3. `$scan` (`from: "pageResult"`) folds the landing of a successful chunk into `feed.items`, and `$watch.feed` calls `reobserve()` at the end of the next batch. The commit is the chunk's landing, not `done`, and a second landing of the same page is dropped by the page key inside the fold
+3. `$watch.pageResult` folds the landing of a successful chunk into `feed.items`, and `$watch.feed` calls `reobserve()` at the end of the next batch. The commit is the chunk's landing, not `done`, and a second landing of the same page is dropped by the page key inside the handler
 4. On the next visibility callback the expression returns N+1. After the updater drains the `page` update, the dependency hit in `$streams.args` aborts the old run and starts a new one with the new args
 
 → No hand-written exhaust guard on `!loading` / `!error` is needed, and an ordinary intersection edge never turns into an out-of-budget retry of a failed page.

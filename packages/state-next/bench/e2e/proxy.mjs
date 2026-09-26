@@ -69,6 +69,9 @@ createServer((req, res) => {
     res.writeHead(r.statusCode, r.headers);
     r.pipe(res);
   });
-  up.on("error", () => { res.writeHead(502); res.end(); });
+  up.on("error", () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+  // the browser closing a stream (EventSource.close()) must close the upstream one too, or the
+  // server keeps counting it (state-sse-dashboard checks the open connections)
+  res.on("close", () => up.destroy());
   req.pipe(up);
 }).listen(PORT, "127.0.0.1");

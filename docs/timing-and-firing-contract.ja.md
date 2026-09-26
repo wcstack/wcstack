@@ -86,7 +86,7 @@
 
 1. `sentinelChanged`（IntersectionObserver task）は `page = floor(feed.items.length / pageSize) + 1` とする
 2. page N の実行中／失敗後は `feed.items.length` が不変なので N を再代入するだけ。既定 ON の primitive same-value guard が enqueue 自体を no-op にし、stream は restart しない
-3. 成功 chunk の着地を `$scan`（`from: "pageResult"`）が `feed.items` へ畳み、次のバッチの `$watch.feed` が `reobserve()` する。commit は `done` ではなく成功 chunk の着地で、同じ page の再着地は fold の page キーが捨てる
+3. 成功 chunk の着地を `$watch.pageResult` が `feed.items` へ畳み、次のバッチの `$watch.feed` が `reobserve()` する。commit は `done` ではなく成功 chunk の着地で、同じ page の再着地はハンドラの page キーが捨てる
 4. 新しい可視性 callback では式が N+1 を返す。`page` 更新の updater drain 後、`$streams.args` の依存 hit が旧 run を abort し、新しい args で run を開始する
 
 → `!loading` / `!error` の手書き exhaust guard は不要で、通常の交差 edge は失敗ページの予算外 retry にもならない。

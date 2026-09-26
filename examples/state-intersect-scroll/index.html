@@ -43,7 +43,7 @@
 <body>
 
 <h1>wcstack: infinite scroll <small>— &lt;wcs-intersect&gt;</small></h1>
-<p class="lead">state + intersection + <code>$stream</code> + <code>$scan</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry, and <code>$scan</code> accumulates the landed pages into a feed that outlives every page run.</p>
+<p class="lead">state + intersection + <code>$stream</code> + <code>$watch</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry, and a headless <code>$watch</code> folds the landed pages into a feed that outlives every page run.</p>
 
 <!-- ============================================================
      App State
@@ -88,7 +88,7 @@
             throw new Error(`Page ${page} failed with HTTP ${response.status}`);
           }
           const items = await response.json();
-          // pageSize rides on the chunk so the feed's fold stays a pure function of
+          // pageSize rides on the chunk so the fold into the feed reads nothing but
           // (feed, chunk): a partial page is the end-of-list signal.
           yield { kind: "success", attempt, page, pageSize, items };
           return;
@@ -117,8 +117,12 @@
       // landed, because sentinelChanged derives it from feed.items.length. Keep it a
       // plain property written by $on: a getter derived from `feed` and read by the
       // stream's args would restart the stream on its own result, without the
-      // sentinel (the runtime raises wcs/scan-feedback-loop for that shape).
+      // sentinel.
       page: 1,
+      // The feed outlives every page run. $stream resets `pageResult` to its initial
+      // value on each restart, so the accumulation across runs lives here, folded by
+      // the pageResult watch below. Nothing has to be bound for it to run.
+      feed: { items: [], pages: [], noMore: false },
       maxRetries: 3,
       // The Retry button increments this dependency to restart a failed page without
       // pretending its page number changed.
@@ -146,31 +150,6 @@
             maxRetries: state.maxRetries,
           }),
           source: loadPage,
-        },
-      },
-
-      // The feed outlives every page run. $stream resets `pageResult` to its initial
-      // value on each restart, so the accumulation across runs lives here: the runtime
-      // folds each landing of `pageResult` once, owns `feed`, and keeps it across
-      // restarts and reconnects. Nothing has to be bound for this to run.
-      $scan: {
-        feed: {
-          from: "pageResult",
-          initial: { items: [], pages: [], noMore: false },
-          fold: (feed, chunk) => {
-            // Progress chunks (loading / retrying) and the restart's reset leave the
-            // feed as is — returning the same object writes nothing.
-            if (chunk?.kind !== "success") return feed;
-            // Page key. The runtime folds once per landing, not once per page: a Retry
-            // after the page is done (retryNonce) or reconnecting the page runs the
-            // current page again, and that landing must not append it twice.
-            if (feed.pages.includes(chunk.page)) return feed;
-            return {
-              items: feed.items.concat(chunk.items),
-              pages: [...feed.pages, chunk.page],
-              noMore: chunk.items.length < chunk.pageSize,
-            };
-          },
         },
       },
 
@@ -245,18 +224,33 @@
       },
 
       $watch: {
+        // Fold each landing of the page run into the feed. Progress chunks (loading /
+        // retrying) and the restart's reset leave the feed as is.
+        pageResult(chunk) {
+          if (chunk?.kind !== "success") return;
+          const feed = this.feed;
+          // Page key. The watch runs once per landing, not once per page: a Retry
+          // after the page is done (retryNonce) or reconnecting the page runs the
+          // current page again, and that landing must not append it twice.
+          if (feed.pages.includes(chunk.page)) return;
+          this.feed = {
+            items: feed.items.concat(chunk.items),
+            pages: [...feed.pages, chunk.page],
+            noMore: chunk.items.length < chunk.pageSize,
+          };
+        },
         // Record when an error settles: the scroll-retry qualification compares the
         // viewport against this moment. A point-in-time read of an out-of-band value
-        // is a side effect, so it stays in a watch rather than in the fold.
+        // is a side effect, so it stays in its own watch rather than in the fold.
         streamStatus(status) {
           if (status !== "error") return;
           this.scrollRetryArmed = false;
           this.errorScrollY = window.scrollY;
         },
-        // Re-arm the sentinel after a full page lands. The $scan write goes out in one
-        // update batch and this watch fires at the end of the next one, so
-        // commit-before-reobserve is the mechanism order ($scan before $watch), not
-        // statement order inside one handler. A partial page sets noMore and stops.
+        // Re-arm the sentinel after a full page lands. The pageResult watch writes the
+        // feed in one update batch and this watch fires at the end of the next one, so
+        // commit-before-reobserve is the mechanism order, not statement order inside
+        // one handler. A partial page sets noMore and stops.
         feed(feed) {
           if (feed.noMore) return;
           this.$command.rearm.emit();
@@ -269,8 +263,8 @@
 <!-- ============================================================
      Feed
      ============================================================ -->
-<!-- Display only. The feed accumulates in $scan whether or not anything here is
-     rendered: deleting this meter changes nothing about loading. -->
+<!-- Display only. The feed accumulates in the pageResult watch whether or not
+     anything here is rendered: deleting this meter changes nothing about loading. -->
 <div class="meter" role="status">
   <span>Loaded <b data-wcs="textContent: loadedCount"></b> items</span>
   <span>over <b data-wcs="textContent: page"></b> pages</span>

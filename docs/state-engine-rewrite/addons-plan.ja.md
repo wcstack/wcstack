@@ -520,7 +520,7 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 - 最初は `adopt` を常に差し込んでいて、同じ回の比較でウォーム 1,000 行が +14% に見えた。引き取りの間だけにして、差が消えた。
 - e2e 全体: 両方で通るものが **124/131**（ssr-router の 5 件が加わった）。現行だけで通るのは `$scan` を使うデモの 6 件、両方で落ちるのは SSE のタイミングの 1 件。
 
-### 後付け 6: 診断と DevTools（2026-09-26・未コミット）
+### 後付け 6: 診断と DevTools（2026-09-26・コミット `70384818`）
 
 `features/diagnostics`（`src/features/diagnostics.ts`）と `features/devtools`（`src/devtools/devtools.ts`）。
 
@@ -563,8 +563,33 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 **サイズ（gzip）**
 - diagnostics 3.2KB（現行 1.1KB）。現行では core と recursion が持っている助言文と再帰の静的検査を含む。
 - devtools 2.6KB（現行 2.2KB）。目安（現行の 50% 以下）を超えた。現行では core が持つバインディングの台帳を、後付けの中で組み立てる分。
+  - 著者が容認した（2026-09-26）。
 - core 19.98KB（直前と同じ）。全部入りの `auto` は 38.1KB（現行 80.9KB の 47%）。
 
 **性能**（全部入りの `auto`、同じ回で直前のコミット `aa735d2d` と交互に 4 周・各 24 サンプル、`addons/devtools-targets-ab/`）: ウォーム 1,000 行 6.2ms（直前 6.25ms）、コールド 10,000 行 77.2ms（直前 77.7ms）。差は揺れの範囲。目標の比は **1.53／1.55 倍**（直前 1.54／1.56）。
 - DOM の床は 4 回測った（`targets-floor4.json`）。2 回だけの集計（`targets.json`）では、床の 1 回（ウォーム 1,000 行・データ込み 2.35ms。同じ回のデータ無し 4.05ms より速い）が外れ値で、ウォームの比が 2.00 倍に見えた。
 - DevTools が付いていないときの費用は、書き込みと drain のたびに受け口を 1 回呼んで、送り先が null かを見るだけ（全部入りの `auto` で直前と同等）。
+
+### 残りの片付け（2026-09-26・未コミット）
+
+後付け 6 つの後に残っていた、e2e の食い違い 7 件を片付けた。
+
+**`$scan` を使うデモ（`state-intersect-scroll`、現行だけで通る 6 件）**
+- §3.1 の置き換えどおり、`$scan.feed` を「素の `feed` プロパティ＋`$watch.pageResult` で畳む」形に書き換えた。
+  - `feed.items`・`feed.pages`・`feed.noMore` の形と、ページの冪等キーはそのまま残した。
+  - `feed` を見る `$watch` が `reobserve()` する順序（書き込みの次のバッチ）も変わらない。
+  - `$scan` の前の版（`21a891cb`）も `$watch` で畳んでいた（そちらは stream の状態の `done` を見ていて、ページのキーは無かった）。`$scan` の設計文書 §3 は「冪等キーはどちらの形でも要る」としている。
+- 現行と state-next の両方で 6/6 が通った。3 回繰り返しても 18/18。
+- 追随: デモの README（英日）、`examples/README.md`、`docs/timing-and-firing-contract(.ja).md` §3 の手順 3。
+  - `timing-and-firing-contract` の機構順序の節（`$scan` → `$watch` → …）は、現行 3.3.0 の説明なので残した。
+- 残り: wcstack-skill の `$scan` の記述（別リポジトリ。state-next が現行を置き換えるときに直す）。
+
+**SSE のテスト（`state-sse-dashboard`、両方で落ちる 1 件）**
+- 原因は比較の道具だった。プロキシ（`bench/e2e/proxy.mjs`）が、ブラウザの切断（`EventSource.close()`）を上流の `serve.mjs` に伝えていなかった。
+  - サーバが旧接続を数え続け、「開いている接続は 2 本」の検査が 4 本で落ちていた。
+  - プロキシを通さない本来の設定では、現行で通る。
+- 応答が閉じたら上流の要求も壊すようにした。現行と state-next の両方で通った（ワーカー 1 つで 3 回繰り返して 3/3）。
+- 並列に繰り返すと落ちるのは、テストがサーバ全体の接続数を見るため（同じテストが同時に走ると数が足される）。道具の問題ではない。
+
+**e2e 全体**: 両方で通るものが **131/131**（`addons/e2e-sweep/after-scan-demo.txt`）。
+

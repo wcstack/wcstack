@@ -1,9 +1,9 @@
-# state + intersection + `$stream` + `$scan` デモ（`<wcs-intersect>` による無限スクロール）
+# state + intersection + `$stream` + `$watch` デモ（`<wcs-intersect>` による無限スクロール）
 
 [`infinite-scroll`](../../packages/fetch/examples/infinite-scroll) の低レベル版です。
 `<wcs-intersect>` は可視性だけを報告し、`@wcstack/state` の `$stream` がページ取得、
 switchMap 型キャンセル、有界リトライを所有します。着地したページを、page の run を跨いで残る feed へ
-畳むのは `$scan` で、**何かが描画されていることに依存しません**。
+畳むのは headless な `$watch` で、**何かが描画されていることに依存しません**。
 
 重要なのは、単に fetch を stream 内へ移したことではありません。要求ページは `page++` ではなく、
 **feed に既にある** item 数から導出します。page N の実行中または失敗後に交差 edge が繰り返されても、
@@ -47,7 +47,7 @@ $stream.pageResult
   -> 失敗時: producer 内で有界 delay/retry
   -> { kind: "success", page, pageSize, items } を yield
        v
-$scan.feed（from: "pageResult" — headless・ランタイム所有）
+pageResult の $watch（headless）
   -> 成功の着地を feed.items へ畳む
   -> 同じ page の 2 回目の着地は page キーが捨てる
        v
@@ -75,21 +75,21 @@ feed の $watch（次の更新バッチ）
   2回目の edge が page N を cancel して N+1 へ飛ばすため、switchMap と組み合わせる実装としては誤りです。
   handler に存在する `showError` 分岐は「その edge がユーザー操作か」を判定する retry 資格判定であり、
   pagination を守る exhaust gate ではありません。
-- **ページ単位と feed 全体の寿命は別の宣言です。** `$stream` の値は restart ごとに reset されるため、
-  `pageResult` は現在ページの操作だけを保持します。成功の着地は `$scan.feed` が長寿命の feed へ畳みます。
-  `feed` はランタイムの所有物で、restart と再接続を跨いで残り、どこにもバインドされていなくても畳まれます。
+- **ページ単位と feed 全体の寿命は別の値です。** `$stream` の値は restart ごとに reset されるため、
+  `pageResult` は現在ページの操作だけを保持します。成功の着地は `pageResult` の `$watch` が `feed` へ畳みます。
+  `feed` は素のプロパティで、restart と再接続を跨いで残り、どこにもバインドされていなくても畳まれます。
   以前の版は `$renderedCallback` で commit しており、表示中の stream status meter が購読の実体
-  ＝ load-bearing になっていました（あの `<b>` を 1 つ消すと feed が止まる）。その次の版は `$watch`
-  ハンドラで手書きの `concat` をしていました。
-- **fold は page キーを持ちます。** ランタイムが畳むのは着地ごとに 1 回で、ページごとに 1 回ではありません。
+  ＝ load-bearing になっていました（あの `<b>` を 1 つ消すと feed が止まる）。その次の版は stream status の
+  watch で、さらにその次の版は `$scan` の宣言で畳んでいました。いまは素の `$watch` ハンドラなので、
+  このデモは `$scan` に依存しません。
+- **畳み込みは page キーを持ちます。** watch が走るのは着地ごとに 1 回で、ページごとに 1 回ではありません。
   done 後の Retry やページの付け直しは現在の page をもう一度走らせ、その着地で同じページを二重に積んでは
-  いけません。`pageSize` を成功 chunk に載せているのは、fold を `(feed, chunk)` だけの純関数に保つためです。
+  いけません。`pageSize` を成功 chunk に載せているのは、畳み込みが `(feed, chunk)` だけを読むようにするためです。
 - **`page` は plain property のままにします。** `feed` から導出した getter を stream の `args` が読むと、
-  stream が自分の結果で restart し、sentinel を経由せずに全ページを読み続けます。ランタイムはこの形に
-  `wcs/scan-feedback-loop` を raise します。
+  stream が自分の結果で restart し、sentinel を経由せずに全ページを読み続けます。
 - **`$stream` は switchMap であって retryWhen ではありません。** 自動再接続は意図的に持たないため、
   async generator `loadPage` が有限の `1 + maxRetries` attempt と abort 対応の固定 delay を所有します。
-  retry 進捗は通常の stream 値として yield し、fold は素通しします。最終失敗は
+  retry 進捗は通常の stream 値として yield し、畳み込みは素通しします。最終失敗は
   `$streamStatus.pageResult === "error"` と `$streamError.pageResult` に現れます。
 - **自動予算後の Retry も依存駆動です。** ボタンは `retryNonce` を増やします。既存 item があれば、
   sentinel から離れて戻る scroll も同じ書き込みを行います。資格は「error 確定時から scrollY が動いたこと」で、
@@ -114,11 +114,11 @@ feed の $watch（次の更新バッチ）
 この例は、`@wcstack/state` が RxJS 規模のデータフロー代数を持つと主張するものではありません。
 残っている命令的処理は、現行 API の実際の境界です。
 
-- run を跨ぐ累積は宣言（`$scan`）になりましたが、その冪等性は宣言になっていません。ランタイムは着地ごとに
-  畳むので、done 後の Retry や再接続に備えて fold が page キーを持ちます。
+- run を跨ぐ累積は `feed` へ書く `$watch` ハンドラで、その冪等性はハンドラの page キーです。watch は着地ごとに
+  走るので、done 後の Retry や再接続は同じ page をもう一度着地させます。
 - sentinel の再武装は副作用（command の発射）なので `$watch` に残ります。commit してから reobserve する順序は、
-  1 つのハンドラ内の文順ではなく、機構の順序（`$scan` があるバッチで書き、`$watch` が次のバッチの終わりに
-  発火する）で表します。
+  1 つのハンドラ内の文順ではなく、機構の順序（`pageResult` の watch があるバッチで `feed` を書き、`feed` の
+  watch が次のバッチの終わりに発火する）で表します。
 - `$stream` が持つのは switchMap 型 restart であり、`retryWhen`、timer、merge、occurrence operator は
   ありません。そのため attempt loop と abort 対応 delay は producer が所有します。
 - `retryNonce` は「同じ page をもう一度」を occurrence から変化する依存値へ変換します。これは意図的ですが、
@@ -132,7 +132,7 @@ feed の $watch（次の更新バッチ）
   `retryRequested` event token を発する I/O ノードがあれば、2つのフィールドと `window` 参照は
   `$on` の1行に畳めます。
 
-宣言的なのは依存・cancel・累積の edge です。retry policy・再武装の command・retry の資格判定は命令的に残ります。
+宣言的なのは依存・cancel の edge です。累積・retry policy・再武装の command・retry の資格判定は命令的に残ります。
 
 ## テスト
 
@@ -151,15 +151,8 @@ npx playwright test state-intersect-scroll
 scroll 一往復で再試行できることを検証します。正常系は各 page を1回ずつ要求して87件すべてを読み、
 partial page で終了します。
 
-feed の境界そのもの（何もバインドしなくても畳まれる・progress chunk は書かない・同じ page の 2 回目の着地・
-付け直し）は、ブラウザ無しで
-[`packages/state/__tests__/scan.streamCommit.test.ts`](../../packages/state/__tests__/scan.streamCommit.test.ts)
-が固定しています。
-
 ## 関連
 
-- [`@wcstack/state` scan リファレンス](../../packages/state/docs/scan.ja.md) — `from` / `on`、`resetOn`、
-  発火順序、ライフサイクル
 - [`@wcstack/state` stream リファレンス](../../packages/state/docs/streams.md) — 依存捕捉、switchMap restart、
   status/error 名前空間、cancel、lifecycle
 - [タイミングと発火の契約](../../docs/timing-and-firing-contract.ja.md) — 同値 page 選択と強制再観測
