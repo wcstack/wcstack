@@ -15,7 +15,7 @@
  * 親子の連鎖が切れ、集計が恒久的に stale になるか `ListIndexes not found` で恒久的に
  * throw する（docs/state-recursive-path-impl-plan.md §3-2 の E1）。
  *
- * 書き手は 4 系統ある。いずれも「観測した」という同じ意味を持つ。
+ * 書き手は 5 系統ある。いずれも「観測した」という同じ意味を持つ。
  * - 読み: `collectWildcardIndexes`（`commitDiffBaseline: true` のときだけ。固定 arity の
  *   `$setAll` は走査を借りるだけで動かさない — docs/state-set-all-design.md §6-2）
  * - 再帰の走査: `recursion/walk.ts`（合併形の `$getAll` と**再帰の `$setAll` の両方**が確定する。
@@ -23,6 +23,10 @@
  *   孤児になるため — docs/state-recursive-path-impl-plan.md §6）
  * - 描画: `applyChangeFromBindings` / `hydrateBindings`（描画側の基準と同時に書く）
  * - 依存ウォーク: `walkDependency`（ウォーク完了後にまとめて確定する）
+ * - 添字から行を引く経路（直接添字・`$postUpdate`・`$resolve` / `$setAll` の行の引き直し —
+ *   proxy/methods/getListIndexesByAddress.ts）: 台帳の無いリストに台帳を生やしたときだけ（#324）。
+ *   生やした行を基準に載せないと、描いていないリストを写し替えたときに行が退役せず、子リストの
+ *   台帳が古い行にぶら下がったまま残る
  *
  * キーは **絶対アドレス**。`IStateAddress` は listIndex が null のとき pathInfo だけで
  * intern されるため、同じパス形状のルートリストを持つ 2 つの state 要素がエントリを

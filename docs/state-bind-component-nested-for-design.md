@@ -429,7 +429,9 @@ e2e を書いていて踏んだ。`groups.0.children.1.name` への書き込み�
 分岐のほか `$getAll`（[`getAll.ts`](../packages/state/src/proxy/apis/getAll.ts)）と
 `$resolve`（[`resolve.ts`](../packages/state/src/proxy/apis/resolve.ts)）にもあったので
 3 箇所とも揃えた。リスト台帳自体が無い場合の `ListIndex not found: <path>` は別原因なので
-従来のまま。
+従来のまま。（追記: #324 で、台帳の無いリストはその場で台帳を生やすようになり、この
+別原因の raise は無くなった。値が配列でないときも行 0 件として `ListIndex not found at
+index N of <path>` になる）
 
 happy-dom では再現せず、実ブラウザの e2e で初めて出た — **§8.6 の裏返しで、
 両方で回す価値がここにもある**。

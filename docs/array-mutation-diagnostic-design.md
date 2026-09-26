@@ -55,8 +55,8 @@ generate–validate–fix ループでも人間の手書きでも頻出の footg
 | V7 | 対照: `s.items = s.items.toSorted(...)` | `["1","2","3"]` | 正しく更新（推奨形） |
 | V8 | 複合代入 `s.items[0] += 1`（`textContent: items.0` バインド） | 表示 `"1"` のまま | **更新されない**（Phase 4 拡張の根拠） |
 | V9 | インクリメント `s.items[0]++` | 表示 `"1"` のまま | **更新されない**（同上） |
-| V10 | `s["items.0"] += 1`（`for` なし・直バインド構成） | get トラップが `ListIndex not found: items` を throw | ループコンテキスト外の数値解決済みパス **read は不可** |
-| V11 | `s["items.0"] = s.items[0] + 1`（同構成） | set トラップが同じく throw | `for` 未確立の構成では数値パス **write も不可**（V6 は `for` あり構成で成功） |
+| V10 | `s["items.0"] += 1`（`for` なし・直バインド構成） | get トラップが `ListIndex not found: items` を throw | ループコンテキスト外の数値解決済みパス **read は不可**（**#324 で解消** — 下の補足 ②） |
+| V11 | `s["items.0"] = s.items[0] + 1`（同構成） | set トラップが同じく throw | `for` 未確立の構成では数値パス **write も不可**（V6 は `for` あり構成で成功）（**#324 で解消** — 下の補足 ②） |
 
 **結論**: 「変異＋自己再代入」は長さ不変の値リフレッシュ（V3、および
 `integration.diffExpansion.test.ts` の契約テスト「同一参照の再代入は in-place 変異後の
@@ -72,6 +72,12 @@ generate–validate–fix ループでも人間の手書きでも頻出の footg
 > ② V10/V11 の観測より、数値解決済みパス（`items.0`）の read/write は `for` レンダリングで
 > ListIndex が確立している構成でのみ動く。診断メッセージが提示する 2 代替のうち
 > `with()` ＋再代入が普遍的に安全で、ドットパス代入はリスト描画コンテキスト前提。
+> **→ #324 で解消**: 数値解決済みパスは、ListIndex の台帳が無いリストでもその場で台帳を生やして
+> 解決するようになった（`packages/state/src/proxy/methods/getListIndexesByAddress.ts`）。V10/V11 と
+> 同じ操作は throw せず、state が書き換わり、以後の読みも新しい値を返す。ドットパス代入は
+> `for` の有無に関わらず使える推奨形になり、診断メッセージの勧める 2 代替はどちらも成立する。
+> ただし V10/V11 の構成にある**マークアップの数値パス**（`textContent: items.0`）の表示は、
+> この書き込みに追従しない（#324 とは別の問題として扱う）。
 
 ## 4. 診断仕様
 

@@ -8,10 +8,11 @@
  * ここが赤くなったら再帰パスの土台が崩れる、という契約だけを入れている。
  *
  * 固定している 5 つの前提:
- *  1. cold start の非対称性 — `for` バインドが 1 つも無い state でも、最初の
- *     ワイルドカード操作が `$getAll` / `$setAll` なら通る。走査を持たず台帳を
- *     作らない `$resolve` だけが `ListIndexes not found` で throw する
- *     （設計書 §7-2 本文の「$setAll も throw する」は誤りで、その訂正の正本）。
+ *  1. cold start — `for` バインドが 1 つも無い state でも、最初の
+ *     ワイルドカード操作が `$getAll` / `$setAll` なら通る（設計書 §7-2 本文の
+ *     「$setAll も throw する」は誤りで、その訂正の正本）。走査を持たない
+ *     `$resolve` も、#324 以降は台帳の無い段でその場で台帳を生やして通る
+ *     （以前は `ListIndexes not found` で throw する唯一の API だった）。
  *     再帰パスが最終的に生成する形そのもの ―― 行 getter が内側で添字を省略した
  *     `$getAll` を撃つ ―― も cold で成立し、1 回の読みで全段の台帳が温まる。
  *  2. 手動アンロールした再帰集計は、`for` がある構成なら構造変更（葉の更新・
@@ -237,42 +238,51 @@ describe("cold start（for バインドが 1 つも無い state）の非対称�
     host.remove();
   });
 
-  it("最初のワイルドカード操作が $resolve(path, indexes) のときだけ ListIndexes not found で throw すること", async () => {
+  it("最初のワイルドカード操作が $resolve(path, indexes) でも、降りた段の台帳をその場で生やして通ること（#324）", async () => {
+    // 修正前は、深さ 2 でも 1 段でも最初の cold な段の名前で落ちた
+    //   — was: "[@wcstack/state] ListIndexes not found: nodes"
     const raw = coldTree();
     const { host, stateEl } = await mount(raw, COLD_HTML);
     expectColdLedger(raw);
 
-    // 深さ 2 でも 1 段でも、落ちるのは最初の cold な段（= nodes）の名前
-    expect(() => read(stateEl, (s: any) => s.$resolve(COLD_LEAF, [0, 0])))
-      .toThrow(/ListIndexes not found: nodes$/);
+    expect(read(stateEl, (s: any) => s.$resolve(COLD_LEAF, [0, 0]))).toBe(10);
+    // 降りた段（nodes と nodes[0].children）だけに台帳ができる
+    expect(getListIndexesByList(raw.nodes), "nodes の台帳").toHaveLength(2);
+    expect(getListIndexesByList(raw.nodes[0].children), "降りた children の台帳").toHaveLength(2);
+    expect(getListIndexesByList(raw.nodes[1].children), "降りなかった children の台帳").toBe(null);
     host.remove();
 
     const raw2 = coldTree();
     const m2 = await mount(raw2, COLD_HTML);
     expectColdLedger(raw2);
-    expect(() => read(m2.stateEl, (s: any) => s.$resolve("nodes.*.value", [0])))
-      .toThrow(/ListIndexes not found: nodes$/);
+    expect(read(m2.stateEl, (s: any) => s.$resolve("nodes.*.value", [0]))).toBe(1);
     m2.host.remove();
   });
 
-  it("cold $resolve が throw したあと、同一 state で $getAll を撃つと同じ $resolve が通ること", async () => {
-    // 台帳を作るのは走査 API（$getAll / $setAll）だけ、という切り分けの正本。
+  it("cold $resolve が生やした台帳を、同一 state の $getAll がそのまま使うこと", async () => {
+    // 台帳の出どころが走査 API でも $resolve でも、行は 1 組にまとまる。
     const raw = coldTree();
     const { host, stateEl } = await mount(raw, COLD_HTML);
     expectColdLedger(raw);
 
+    let rows: unknown = null;
+    let childRows: unknown = null;
     const log = read(stateEl, (s: any) => {
       const out: string[] = [];
-      try { s.$resolve(COLD_LEAF, [0, 1]); out.push("resolve#1 OK"); }
-      catch (e: any) { out.push("resolve#1 THROW " + e.message); }
-      s.$getAll(COLD_LEAF, []);
+      out.push("resolve#1 = " + s.$resolve(COLD_LEAF, [0, 1]));
+      rows = getListIndexesByList(raw.nodes);
+      childRows = getListIndexesByList(raw.nodes[0].children);
+      out.push("getAll = " + JSON.stringify(s.$getAll(COLD_LEAF, [])));
       out.push("resolve#2 = " + s.$resolve(COLD_LEAF, [0, 1]));
       return out;
     });
 
-    expect(log[0]).toContain("resolve#1 THROW");
-    expect(log[0]).toContain("ListIndexes not found: nodes");
-    expect(log[1]).toBe("resolve#2 = 11");
+    // Fixed by #324 — was: "resolve#1 THROW [@wcstack/state] ListIndexes not found: nodes"
+    expect(log).toEqual(["resolve#1 = 11", "getAll = [10,11,20]", "resolve#2 = 11"]);
+    // $getAll は $resolve が生やした台帳（行）を差し替えずに使う
+    expect(rows).not.toBe(null);
+    expect(getListIndexesByList(raw.nodes)).toBe(rows);
+    expect(getListIndexesByList(raw.nodes[0].children)).toBe(childRows);
     host.remove();
   });
 
@@ -307,10 +317,14 @@ describe("cold start（for バインドが 1 つも無い state）の非対称�
     expect(count).toBe(2);
     expect(shapeOf(raw)).toEqual([[-1, -1], [20]]);
     // 降りた枝（nodes[0]）は温まっている
+    expect(getListIndexesByList(raw.nodes[0].children), "降りた枝の台帳").toHaveLength(2);
     expect(read(stateEl, (s: any) => s.$resolve(COLD_LEAF, [0, 1]))).toBe(-1);
-    // 降りなかった枝（nodes[1].children）は cold のままで、その段の名前で落ちる
-    expect(() => read(stateEl, (s: any) => s.$resolve(COLD_LEAF, [1, 0])))
-      .toThrow(/ListIndexes not found: nodes\.\*\.children$/);
+    // 降りなかった枝（nodes[1].children）は cold のまま残る
+    expect(getListIndexesByList(raw.nodes[1].children), "降りなかった枝の台帳").toBe(null);
+    // その枝への $resolve は、台帳をその場で生やして通る
+    // Fixed by #324 — was: throw "[@wcstack/state] ListIndexes not found: nodes.*.children"
+    expect(read(stateEl, (s: any) => s.$resolve(COLD_LEAF, [1, 0]))).toBe(20);
+    expect(getListIndexesByList(raw.nodes[1].children), "$resolve の後").toHaveLength(1);
     host.remove();
   });
 
@@ -528,10 +542,11 @@ describe("集計に必要な for の本数", () => {
   });
 
   it("for: nodes だけを置いて children を描画しなくても、深さ 3 の木の構造変更が全段の集計に追従すること", async () => {
-    // この 1 本の `for` は載っている（飾りではない）。同じ 3 ケースを for ゼロで
-    // 走らせると、深い葉の更新は cold な $resolve が `ListIndexes not found: nodes`
-    // で落ち、行の移動は `ListIndex not found at index 0 of nodes.*.children` で
-    // 恒久 throw する（＝ known-defects 側の担当）。
+    // この 1 本の `for` は、かつては載っていた（飾りではなかった）。同じ 3 ケースを
+    // for ゼロで走らせると、行の移動は `ListIndex not found at index 0 of nodes.*.children`
+    // で恒久 throw し（E1 で修理）、深い葉の更新は cold な $resolve が
+    // `ListIndexes not found: nodes` で落ちた（#324 で修理）。いまは for ゼロでも同じ値に
+    // なる（＝ known-defects 側の「同じ 3 ケースは for を外しても…」が裏を固定する）。
     const cases: [string, (s: any) => void, any][] = [
       ["深い葉の更新", (s) => { s.$resolve(DEEP_LEAF, [0, 0, 0], 500); },
         { gt: 533, d0: [531, 2], d1: [510, 20], d2: [500] }],

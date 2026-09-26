@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { resolve } from '../src/proxy/apis/resolve';
 import { createListIndex } from '../src/list/createListIndex';
-import { setListIndexesByList } from '../src/list/listIndexesByList';
+import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
 import { setStateElement } from '../src/stateElementByName';
 
 vi.mock('../src/proxy/methods/getByAddress', () => ({
@@ -234,18 +234,38 @@ describe('resolve', () => {
     expect(mockStateElement.addDynamicDependency).not.toHaveBeenCalled();
   });
 
-  it('ワイルドカードパスで listIndexes が null の場合はエラーになること', () => {
+  it('ワイルドカードパスで台帳の無いリストは、その場で台帳を生やして行を引くこと（#324）', () => {
+    mockStateElement = createStateElement();
+    setStateElement(document, mockStateElement);
+    const handler = createHandler(mockStateElement);
+    const target = {};
+    const list = ['a', 'b'];
+    expect(getListIndexesByList(list)).toBeNull();
+
+    getByAddressMock.mockReturnValueOnce(list).mockReturnValueOnce('b');
+
+    const resolveFn = resolve(target, '$resolve', target, handler as any);
+
+    expect(resolveFn('items.*', [1])).toBe('b');
+    const rows = getListIndexesByList(list)!;
+    expect(rows).toHaveLength(2);
+    // 値を読んだアドレスは、生やした台帳の行を指している
+    expect(getByAddressMock.mock.calls[1][1].listIndex).toBe(rows[1]);
+  });
+
+  it('ワイルドカードパスの値がリストでない場合は、行が 1 つも無いものとして index 付きのエラーになること', () => {
     mockStateElement = createStateElement();
     setStateElement(document, mockStateElement);
     const handler = createHandler(mockStateElement);
     const target = {};
 
-    // getByAddress がリストではない値を返す（listIndexes が null になる）
+    // getByAddress がリストではない値を返す（台帳は無く、その場で生やしても行は 0 件）
     getByAddressMock.mockReturnValueOnce('not-an-array');
 
     const resolveFn = resolve(target, '$resolve', target, handler as any);
 
-    expect(() => resolveFn('items.*', [0])).toThrow(/ListIndexes not found/);
+    // #324 以前は "ListIndexes not found: items"（台帳が無いこと自体を投げていた）
+    expect(() => resolveFn('items.*', [0])).toThrow(/ListIndex not found at index 0 of items/);
   });
 
   it('ワイルドカードパスで指定インデックスが存在しない場合はエラーになること', () => {

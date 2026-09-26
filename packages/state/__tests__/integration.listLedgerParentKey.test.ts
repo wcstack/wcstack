@@ -182,15 +182,21 @@ describe("$listKeys が先に確定させる台帳", () => {
  * 方針書が名指しで求めた特殊例その 1: **ホストの `for` の中の子スコープをハイドレートする形**。
  * `hydrateBindings` は for ブロックの行を `createListIndex(null, block.index)` で **常に親 null**
  * で鋳造する。実測すると、内側の for ブロックはそもそも台帳に載らない —— 内側スコープへの
- * `$resolve` は `ListIndexes not found` で落ち、SSR が出した DOM がそのまま残る。
+ * 書き込みは SSR が出した DOM に届かず、DOM がそのまま残る。
  *
  * **これは #256 より前からの制限で、main でも同じ**（同じ fixture を main の src に対して
- * 走らせて確認: 初期 DOM ['x','y'] / `.group` 1 個 / 同じ throw / 書き込み後も ['x','y']）。
- * ここで固定するのは「#256 の修理がこの形を変えていない」ことで、`ListIndexes not found` を
+ * 走らせて確認: 初期 DOM ['x','y'] / `.group` 1 個 / 書き込み後も ['x','y']）。
+ * ここで固定するのは「#256 の修理がこの形を変えていない」ことで、DOM が追従しないことを
  * 望ましい着地として認めるものではない（入れ子ハイドレーションを直すなら別の Issue）。
+ *
+ * 追記（#324）: 以前は `$resolve` が `ListIndexes not found: groups.*.items` で落ち、
+ * 書き込みそのものが拒否されていた（拒否されたぶん state と DOM も乖離しなかった）。#324 で
+ * 台帳の無いリストはその場で台帳を生やすようになったので、`$resolve` は通って state だけが
+ * 変わる。DOM が追従しないのは #324 の前から同じで、内側のリストを丸ごと置き換えても
+ * DOM は動かない（v3.3.0 の src でも同じ値を実測）。
  */
 describe("ハイドレーション: ホストの for の中の子スコープ（#256 前からの制限・main と同じ）", () => {
-  it("内側の for は台帳に載らず、子スコープへの $resolve が ListIndexes not found で落ちること", async () => {
+  it("内側の for は台帳に載らず、子スコープへの書き込みが SSR の DOM に届かないこと", async () => {
     document.body.innerHTML = `
       <wcs-ssr name="default">
         <script type="application/json">{"groups":[{"title":"G1","items":[{"name":"x"},{"name":"y"}]}]}</script>
@@ -232,8 +238,17 @@ describe("ハイドレーション: ホストの for の中の子スコープ（
     } catch (e: any) { message = String(e && e.message); }
     await flush();
 
-    expect(message, "main でも同じ throw").toContain("ListIndexes not found: groups.*.items");
+    // Fixed by #324 — was: "[@wcstack/state] ListIndexes not found: groups.*.items"（書き込みごと拒否）
+    expect(message).toBe("NO THROW");
+    expect(stateEl.__state.groups[0].items.map((i: any) => i.name), "state は書き換わる").toEqual(["x2", "y"]);
     expect(txt(), "DOM は SSR のまま").toEqual(["x", "y"]);
+
+    // 対照: 内側のリストを丸ごと置き換えても DOM は動かない（#324 の前から同じ制限）
+    stateEl.createState("writable", (s: any) => {
+      s["groups.0.items"] = [{ name: "p" }, { name: "q" }];
+    });
+    await flush();
+    expect(txt(), "置換でも DOM は SSR のまま").toEqual(["x", "y"]);
   });
 });
 

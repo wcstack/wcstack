@@ -19,8 +19,8 @@
  *  3. 省略形と合併形の書き分け（設計書 §6-2）。合併形を集計 getter に使うと孫が二重計上される
  *     という設計書 §7-1 の警告そのものを、手で畳んだ値で固定する。
  *  4. 構造変更への追従（描画あり・なしの両方）。結果が「先に合併を読んだかどうか」に
- *     依存しないことも対で固定する（各 it 冒頭の読みは `$resolve` の前提であって、
- *     合併の側の都合ではない ── 偶然の救済の除外）。
+ *     依存しないことも対で固定する（各 it 冒頭の読みは #324 までは `$resolve` の前提で、
+ *     合併の側の都合ではなかった ── 偶然の救済の除外）。
  *  5. 空の枝への依存 — 一度読んだ空の children に初めて子が入ったら次の読みで現れる。
  *  6. 依存の登録 — `**` は依存グラフに載らないので、**触れた具体パス**が載る。対照として
  *     木に触らない書き込みでは再評価しないこと（無効化が一律でないこと）も置く。
@@ -45,7 +45,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { State } from "../src/components/State";
 import {
-  flush, forest, makeMount, node, read, recursionState as baseRecursionState, UNION_TOTAL, UNION_VALUES, write, type TNode,
+  flush, forest, makeMount, node, read, recursionState as baseRecursionState, UNION_TOTAL, UNION_VALUES, write, writeError, type TNode,
 } from "./helpers/recursionTestUtils";
 
 beforeAll(() => {
@@ -461,20 +461,27 @@ describe("合併形が構造変更に追従すること（描画ゼロ）", () =
 // 4'. 上の各 it が書き込みの**前に**合併を読んでいることの説明と対照
 //
 // 【偶然の救済に注意】この節の it はどれも冒頭で `union(stateEl)` を読んでいる。
-// これは合併の側の都合ではなく **`$resolve` の前提**（Phase A の A1）である ──
-// cold な state で深い `$resolve` を撃つと ListIndex 台帳が無くて落ちる。
-// つまり「読みを挟まないと結果が変わる」のではなく「読みを挟まないと書けない」。
-// その区別を、①合併を読まなくても書ける経路（素のプロパティ代入）と
-// ②合併**以外**の読みで温めた経路の 2 本で固定する。どちらも結果は同じでなければ
+// これは合併の側の都合ではなく、#324 までは **`$resolve` の前提**（Phase A の A1）だった
+// ── cold な state で深い `$resolve` を撃つと ListIndex 台帳が無くて落ちた。
+// つまり「読みを挟まないと結果が変わる」のではなく「読みを挟まないと書けない」だった。
+// いまは cold な `$resolve` が台帳をその場で生やすので、読みを挟まずに書ける（①の it）。
+// そのうえで、②合併を読まなくても書ける経路（素のプロパティ代入）と
+// ③合併**以外**の読みで温めた経路でも固定する。どれも結果は同じでなければ
 // ならない（読みの有無・読みの種類が結果を変えないこと）。
 // ---------------------------------------------------------------------------
 
 describe("合併の結果が「先に合併を読んだか」に依存しないこと", () => {
-  it("対照: cold な state で深い $resolve を撃つと台帳が無くて落ちること（冒頭の読みの正体）", async () => {
+  it("cold な state で深い $resolve を撃っても書けて、合併は冒頭で読んだ場合と同じになること", async () => {
     const { host, stateEl } = await mount(recursionState(structural()), NO_RENDER_HTML);
 
-    expect(() => write(stateEl, (s: any) => { s.$resolve(valueAt(2), [0, 0, 0], 500); }))
-      .toThrow(/ListIndexes not found/);
+    // Fixed by #324 (a list with no ledger grows one on the spot, diffed against the state-side baseline)
+    //   — was: throw "[@wcstack/state] ListIndexes not found: nodes"
+    expect(writeError(stateEl, (s: any) => { s.$resolve(valueAt(2), [0, 0, 0], 500); })).toBe("");
+    await flush();
+
+    // 「葉の更新」の it（冒頭で合併を読む綴り）と同じ値
+    expect(union(stateEl)).toEqual([1, 10, 500, 20, 30, 300, 2]);
+    expect(sum(stateEl)).toBe(863);
     host.remove();
   });
 
