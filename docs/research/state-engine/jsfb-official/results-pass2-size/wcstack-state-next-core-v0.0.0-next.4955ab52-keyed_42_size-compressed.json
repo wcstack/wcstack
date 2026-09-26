@@ -1,0 +1,1 @@
+{"framework":"wcstack-state-next-core-v0.0.0-next.4955ab52-keyed","keyed":true,"benchmark":"42_size-compressed","type":"size","values":{"DEFAULT":{"values":[20.3,20.3,20.3,20.3,20.3],"median":20.3,"min":20.3,"max":20.3,"mean":20.3,"stddev":0}}}

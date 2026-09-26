@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>@wcstack/state-"keyed"</title>
+    <link href="/css/currentStyle.css" rel="stylesheet"/>
+    <script type="importmap">
+      {
+        "imports": {
+          "@lib/buildData": "./buildData.js"
+        }
+      }
+    </script>
+    <script type="module" src="./dist/auto.min.js"></script>
+  </head>
+  <body>
+    <wcs-state>
+      <script type="module">
+import { buildData } from '@lib/buildData';
+export default {
+  data: [],
+  selectedIndex: null,
+  // selectedIndex は $untrackDependency で読む: 値は使うが依存は張らない。
+  // 選択変更は onSelect が旧・新の2行のアドレスへ直接書き込むため、
+  // selectedIndex 変更の全行展開（O(全行)）が起きない。$1 は追跡したままなので
+  // 位置変更（swap/remove）では従来どおり該当行が再評価される。
+  //
+  // NOTE: 3.2 の正式名は `$untracked` だが、下の getter は**意図的に旧名のまま**。
+  // 計測スクリプトが scripts/ に 8 本あり（audit-state-browser / -tech-allocsample /
+  // -tech-counters / -tech-heap / -tech-heapsnapshot / -tech-keyed / -tech-profile /
+  // -tech-warmth）、どれも getter の本文を**文字列置換**して natural / tracked の
+  // バリアントを作る。うち 6 本は置換に失敗すると "Fixture replacement failed" で落ちる。
+  // このフィクスチャを走らせるスクリプト全体では 14 本。committed な
+  // 計測成果（docs/research/state-next/）との比較可能性も原文に依存している。
+  // 改名するときは計測スクリプト側と同じコミットで揃えること（4.0 で旧名が外れる前まで）。
+  //
+  // **このコメントに目印の文字列を verbatim で書かないこと。**`String.replace(<短い
+  // リテラル>, …)` は先頭 1 件しか置換しないので、コメント側に当たって getter が無傷のまま
+  // 「置換は起きた」と判定され、natural / tracked が manual と同一物になって A/B 比較が
+  // 無言で無意味になる（実測・サイクル 5 指摘 3。2026-09-23 に 1 度やらかしている）。
+  // 目印は「下の getter の本文そのもの」であって、この説明文ではない。
+  get "data.*.selected"() {
+    return this.$1 === this.$untrackDependency(() => this.selectedIndex);
+  },
+  set "data.*.selected"(value) {
+    this.selectedIndex = value ? this.$1 : null;
+  },
+  onSelect(e, $1) {
+    if (this.selectedIndex !== null && this.selectedIndex !== $1)
+      this[`data.${this.selectedIndex}.selected`] = false;
+    this[`data.${$1}.selected`] = true;
+  },
+  onRemove(e, $1) {
+    this.data = this.data.toSpliced($1, 1);
+  },
+  onRun() {
+    this.data = buildData(1000);
+    this.selectedIndex = null;
+  },
+  onRunLots() {
+    this.data = buildData(10000);
+    this.selectedIndex = null;
+  },
+  onAdd() {
+    this.data = this.data.concat(buildData(1000));
+  },
+  onUpdate() {
+    for(let i = 0; i < this.data.length; i += 10) {
+      this[`data.${i}.label`] += " !!!";     
+    }
+  },
+  onClear() {
+    this.data = [];
+    this.selectedIndex = null;
+  },
+  onSwapRows() {
+    if (this.data.length > 998) {
+      // Keyed semantics: replace the array so the list differ sees a reorder
+      // and moves the existing DOM rows. Assigning the two index paths instead
+      // would rewrite the two rows' contents in place (non-keyed behavior).
+      const data = this.data.slice();
+      [data[1], data[998]] = [data[998], data[1]];
+      this.data = data;
+    }
+  }
+}
+      </script>
+    </wcs-state>
+
+    <div class="container">
+      <div class="jumbotron">
+        <div class="row">
+          <div class="col-md-6">
+            <h1>@wcstack/state-"keyed"</h1>
+          </div>
+          <div class="col-md-6">
+            <div class="row">
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="run" data-wcs="onclick: onRun">Create 1,000 rows</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="runlots" data-wcs="onclick: onRunLots">Create 10,000 rows</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="add" data-wcs="onclick: onAdd">Append 1,000 rows</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="update" data-wcs="onclick: onUpdate">Update every 10th row</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="clear" data-wcs="onclick: onClear">Clear</button>
+              </div>
+              <div class="col-sm-6 smallpad">
+                <button class="btn btn-primary btn-block" id="swaprows" data-wcs="onclick: onSwapRows">Swap Rows</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <table class="table table-hover table-striped test-data">
+        <tbody>
+          <template data-wcs="for: data"><tr data-wcs="class.danger: .selected"><td class="col-md-1">{{ .id }}</td><td class="col-md-4"><a data-wcs="onclick: onSelect">{{ .label }}</a></td><td class="col-md-1"><a data-wcs="onclick: onRemove"><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a></td><td class="col-md-6"></td></tr></template>
+        </tbody>
+      </table>
+    </div>
+    <span class="preloadicon glyphicon glyphicon-remove" aria-hidden="true"></span>
+
+  </body>
+</html>

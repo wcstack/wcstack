@@ -1,0 +1,11 @@
+{
+  "name": "js-framework-benchmark-wcstack-state-next",
+  "version": "1.0.0",
+  "private": true,
+  "js-framework-benchmark": {
+    "frameworkVersion": "0.0.0-next.4955ab52",
+    "frameworkHomeURL": "https://github.com/wcstack/wcstack",
+    "issues": []
+  },
+  "scripts": { "dev": "exit 0", "build-prod": "exit 0" }
+}

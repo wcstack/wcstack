@@ -1,0 +1,1 @@
+{"framework":"wcstack-signals-v3.3.0-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"values":[183.2,149.6,175,155.9,177.8],"median":175,"min":149.6,"max":183.2,"mean":168.3,"stddev":14.667992364328526}}}
