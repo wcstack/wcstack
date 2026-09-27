@@ -229,7 +229,7 @@ export class Binding {
     const engine = this.engine;
     if (this.kind === K_RADIO) {
       if (!n.checked) return;
-      engine.write(this.pattern, this.row, this.elementValue());
+      engine.write(this.pattern, this.row, this.elementValue(), false, true);
       return;
     }
     if (this.kind === K_CHECKBOX) {
@@ -237,14 +237,14 @@ export class Binding {
       const cur = engine.readUntracked(this.pattern, this.row);
       const arr = Array.isArray(cur) ? cur : [];
       const has = arr.includes(v);
-      if (n.checked && !has) engine.write(this.pattern, this.row, [...arr, v]);
-      else if (!n.checked && has) engine.write(this.pattern, this.row, arr.filter((x) => x !== v));
+      if (n.checked && !has) engine.write(this.pattern, this.row, [...arr, v], false, true);
+      else if (!n.checked && has) engine.write(this.pattern, this.row, arr.filter((x) => x !== v), false, true);
       return;
     }
     let v: unknown = n[this.name];
     const fs = this.inFilters;
     if (fs !== null) for (let i = 0; i < fs.length; i++) v = fs[i](v);
-    engine.write(this.pattern, this.row, v);
+    engine.write(this.pattern, this.row, v, false, true);
   }
 }
 
@@ -621,7 +621,7 @@ export function attachCustomOrPlain(engine: Engine, s: Spec, el: Element, row: S
   }
   const b = new Binding(engine, K_PROP, el, s.name, s.pattern!, row, owner, s.filters, initialOf(engine, s, row));
   b.inFilters = s.inFilters;
-  if (hooks.hostBinding !== null && hooks.hostBinding(b)) return;
+  if (hooks.hostBinding !== null && hooks.hostBinding(b, s.ro)) return;
   adopt(engine, b, true);
   engine.applyBinding(b);
 }

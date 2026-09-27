@@ -123,7 +123,7 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
       // the element already shows this value: the apply this write causes must not echo it
       // back (or re-mirror the attribute) to the element it came from
       if (b.filters === null) b.value = v;
-      engine.write(b.pattern, b.row, v, out.occurrence);
+      engine.write(b.pattern, b.row, v, out.occurrence, true);
     });
   }
   // initial authority: output-only members seed state from the element, others the other way
@@ -139,7 +139,7 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
       }
       const snapshot = (el as any)[name];
       if (b.filters === null) b.value = snapshot; // seeded from the element: nothing to write back
-      engine.write(b.pattern, b.row, snapshot);
+      engine.write(b.pattern, b.row, snapshot, false, true);
     };
     if (spec.sync === "connect" && !el.isConnected) void Promise.resolve().then(seed);
     else seed();

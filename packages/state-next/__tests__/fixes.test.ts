@@ -552,3 +552,280 @@ describe("F17・F18 再セットの後も", () => {
     expect(texts(root, "i")).toEqual(["0:6", "1:8"]);
   });
 });
+
+describe("R6 コンポーネントのマウントの #ro（3.3 と同じ: コードの書き込みは [wcs/mount-readonly]、要素の書き戻しはしない）", () => {
+  const ro = (tag: string, write: string, mount: string) =>
+    `[@wcstack/state] [wcs/mount-readonly] <${tag}> cannot write "${write}": it is mounted read-only ("${mount}"). Write it on the host, or drop #ro from the mount.`;
+
+  it("丸ごとのマウント（state#ro: user）: メソッド・element.state・$resolve・入れ子の書き込みは投げ、ホストは変わらない", async () => {
+    const tag = component(`<p>{{ name }}</p><i>{{ addr.city }}</i>`, () => ({
+      rename(this: any) { this.name = "Bo"; },
+      move(this: any) { this["addr.city"] = "Kyoto"; },
+      resolve(this: any) { this.$resolve("name", [], "Cy"); },
+    }));
+    const { root, read, write } = await page(`<${tag} data-wcs="state#ro: user"></${tag}>`, { user: { name: "Al", addr: { city: "Tokyo" } } });
+    const c = root.querySelector(tag) as any;
+    expect(() => c.state.rename()).toThrow(ro(tag, "name", "state#ro: user"));
+    expect(() => c.state.move()).toThrow(ro(tag, "addr.city", "state#ro: user"));
+    expect(() => c.state.resolve()).toThrow(ro(tag, "name", "state#ro: user"));
+    expect(() => { c.state.name = "Dan"; }).toThrow(ro(tag, "name", "state#ro: user"));
+    await flush();
+    expect([read("user.name"), read("user.addr.city")]).toEqual(["Al", "Tokyo"]);
+    // the host still writes it, and the component shows it
+    await write((s) => { s["user.name"] = "Eve"; });
+    expect(c.shadowRoot.querySelector("p").textContent).toBe("Eve");
+  });
+
+  it("部分のマウント: #ro の対応だけが読み取り専用で、ほかの対応と私有キーは書ける", async () => {
+    const tag = component(`<p>{{ title }}</p>`, () => ({
+      note: "",
+      setTitle(this: any) { this.title = "T2"; },
+      setBody(this: any) { this.body = "B2"; },
+      setNote(this: any) { this.note = "N2"; },
+    }));
+    const { root, read } = await page(`<${tag} data-wcs="state.title#ro: doc.title; state.body: doc.body"></${tag}>`, { doc: { title: "T", body: "B" } });
+    const c = root.querySelector(tag) as any;
+    expect(() => c.state.setTitle()).toThrow(ro(tag, "title", "state.title#ro: doc.title"));
+    c.state.setBody();
+    c.state.setNote();
+    await flush();
+    expect([read("doc.title"), read("doc.body"), c.state.note]).toEqual(["T", "B2", "N2"]);
+  });
+
+  it("コンポーネントの中の双方向の入力は書き戻さない（投げない）", async () => {
+    const tag = component(`<input data-wcs="value: name"><p>{{ name }}</p>`, () => ({}));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { root, read } = await page(`<${tag} data-wcs="state#ro: user"></${tag}>`, { user: { name: "Al" } });
+      const input = (root.querySelector(tag) as any).shadowRoot.querySelector("input") as HTMLInputElement;
+      expect(input.value).toBe("Al");
+      input.value = "typed";
+      input.dispatchEvent(new Event("input"));
+      await flush();
+      expect(read("user.name")).toBe("Al");
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("行のマウント（state#ro: .）: 行のデータへの書き込みは投げる", async () => {
+    const tag = component(`<p>{{ name }}</p>`, () => ({ rename(this: any) { this.name = "X"; } }));
+    const { root, read } = await page(`<template data-wcs="for: users"><${tag} data-wcs="state#ro: ."></${tag}></template>`, { users: [{ name: "a" }, { name: "b" }] });
+    const second = root.querySelectorAll(tag)[1] as any;
+    expect(() => second.state.rename()).toThrow(ro(tag, "name", "state#ro: users.*"));
+    expect(read("users.1.name")).toBe("b");
+  });
+});
+
+describe("R6 #ro: コンポーネントの中の wc-bindable の要素", () => {
+  it("出力メンバーの初期値もイベントも、読み取り専用の対応へは書かない（投げない）", async () => {
+    const out = `fix-ro-out-${seq++}`;
+    customElements.define(out, class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [{ name: "status", event: `${out}:status` }] };
+      status = "from-element";
+    });
+    const tag = component(`<${out} data-wcs="status: name"></${out}><p>{{ name }}</p>`, () => ({}));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { root, read } = await page(`<${tag} data-wcs="state#ro: user"></${tag}>`, { user: { name: "Al" } });
+      const inner = (root.querySelector(tag) as any).shadowRoot;
+      expect(read("user.name")).toBe("Al");
+      inner.querySelector(out).dispatchEvent(new CustomEvent(`${out}:status`, { detail: "emitted" }));
+      await flush();
+      expect(read("user.name")).toBe("Al");
+      expect(inner.querySelector("p").textContent).toBe("Al");
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("R6 エクスポートした getter（ツリーに無いキーは、そこにマウントしたコンポーネントの accessor が答える）", () => {
+  const settle = async (n = 4) => { for (let i = 0; i < n; i++) await flush(); };
+
+  it("丸ごとのマウント: ホストが user.display を読み、依存（ツリーのキー・私有データ）が伝わる", async () => {
+    const tag = component(`<p>{{ display }}</p>`, () => ({
+      mode: "view",
+      get display() { const s = this as any; return `${s.name}:${s.mode}`; },
+      edit(this: any) { this.mode = "edit"; },
+    }));
+    const { root, write } = await page(`<${tag} data-wcs="state: user"></${tag}><span>{{ user.display }}</span>`, { user: { name: "Al" } });
+    await settle();
+    const span = () => root.querySelector("span")!.textContent;
+    expect(span()).toBe("Al:view");
+    await write((s) => { s["user.name"] = "Bo"; });
+    expect(span()).toBe("Bo:view");
+    (root.querySelector(tag) as any).state.edit();
+    await settle();
+    expect(span()).toBe("Bo:edit");
+  });
+
+  it("ツリーにあるキーはツリーが勝ち、一度だけ wcs/mount-export-shadowed を警告する", async () => {
+    const tag = component(`<p>{{ name }}</p>`, () => ({ get display() { return "component"; } }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { root } = await page(`<${tag} data-wcs="state: user"></${tag}><span>{{ user.display }}</span>`, { user: { name: "Al", display: "tree" } });
+      await settle();
+      expect(root.querySelector("span")!.textContent).toBe("tree");
+      expect(warn.mock.calls.map((c) => String(c[0]))).toContain(
+        `[@wcstack/state] [wcs/mount-export-shadowed] <${tag}>.state.display is exported at "user.display" but the tree already has that key, so readers outside the component get the tree value. Remove the tree key or rename the accessor. See docs/state-overlay-export-design.md X1.`,
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("行のマウント: 行ごとにエクスポートし、.display・$getAll・行の追加に追従する", async () => {
+    const tag = component(`<p>{{ name }}</p>`, () => ({ get display() { return `<${(this as any).name}>`; } }));
+    const { root, write } = await page(
+      `<template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}><b>{{ .display }}</b></template><i>{{ all }}</i>`,
+      { users: [{ name: "a" }, { name: "b" }], get all() { return (this as any).$getAll("users.*.display", []).join(","); } },
+    );
+    await settle();
+    expect(texts(root, "b")).toEqual(["<a>", "<b>"]);
+    expect(root.querySelector("i")!.textContent).toBe("<a>,<b>");
+    await write((s) => { s["users.1.name"] = "B"; });
+    expect(texts(root, "b")).toEqual(["<a>", "<B>"]);
+    expect(root.querySelector("i")!.textContent).toBe("<a>,<B>");
+    await write((s) => { s.users = [...s.users, { name: "c" }]; });
+    await settle();
+    expect(texts(root, "b")).toEqual(["<a>", "<B>", "<c>"]);
+    expect(root.querySelector("i")!.textContent).toBe("<a>,<B>,<c>");
+  });
+
+  it("外からの書き込みは setter を呼び、getter だけなら投げる", async () => {
+    const tag = component(`<p>{{ name }}</p>`, () => ({
+      get display() { return (this as any).name; },
+      get nick() { return (this as any).name; },
+      set nick(v: string) { (this as any).name = v.toUpperCase(); },
+    }));
+    const { root, el, read } = await page(`<${tag} data-wcs="state: user"></${tag}><span>{{ user.nick }}</span>`, { user: { name: "Al" } });
+    await settle();
+    el.createState("writable", (s: any) => { s["user.nick"] = "bo"; });
+    await settle();
+    expect(read("user.name")).toBe("BO");
+    expect(root.querySelector("span")!.textContent).toBe("BO");
+    expect(() => el.createState("writable", (s: any) => { s["user.display"] = "x"; })).toThrow(
+      `[@wcstack/state] Cannot write to "display" on mounted <${tag}>: the accessor has no setter. Add a setter or write to the underlying state paths instead.`,
+    );
+  });
+
+  it("切断すると読めなくなり（undefined）、再接続でまた読める", async () => {
+    const tag = component(`<p>{{ name }}</p>`, () => ({ get display() { return `[${(this as any).name}]`; } }));
+    const { root } = await page(`<div class="box"><${tag} data-wcs="state: user"></${tag}></div><span>{{ user.display }}</span>`, { user: { name: "Al" } });
+    await settle();
+    const span = () => root.querySelector("span")!.textContent;
+    expect(span()).toBe("[Al]");
+    const c = root.querySelector(tag)!;
+    c.remove();
+    await settle();
+    expect(span()).toBe("");
+    root.querySelector(".box")!.appendChild(c);
+    await settle();
+    expect(span()).toBe("[Al]");
+  });
+
+  it("エクスポートしないもの: メソッド・私有データ・ワイルドカードの accessor", async () => {
+    const tag = component(`<p>{{ name }}</p>`, () => ({
+      mode: "private",
+      act() { return 1; },
+      get "tags.*.label"() { return "x"; },
+    }));
+    const { root } = await page(`<${tag} data-wcs="state: user"></${tag}><span>{{ user.mode }}|{{ user.act }}</span>`, { user: { name: "Al", tags: [] } });
+    await settle();
+    expect(root.querySelector("span")!.textContent).toBe("|");
+  });
+
+  it("同じインスタンスに同じキーをエクスポートする 2 つのコンポーネントは wcs/mount-export-ambiguous", async () => {
+    const a = component(`<p>a</p>`, () => ({ get display() { return "a"; } }));
+    const b = component(`<p>b</p>`, () => ({ get display() { return "b"; } }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await page(`<${a} data-wcs="state: user"></${a}><${b} data-wcs="state: user"></${b}><span>{{ user.display }}</span>`, { user: { name: "Al" } });
+      await settle();
+      const messages = error.mock.calls.map((c) => String(c[0]) + String(c[1] ?? ""));
+      expect(messages.some((m) => m.includes(`[wcs/mount-export-ambiguous] "user.display" is exported by two mounted components on the same instance: <${a}> and <${b}>.`))).toBe(true);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("自己再帰のコンポーネント: 各段の total が子の total をエクスポートで読み、深い葉の変更が根まで届く", async () => {
+    const tag = `fix-tree-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      state = {
+        get total() {
+          const s = this as any;
+          return s.value + s.$getAll("children.*.total", []).reduce((x: number, y: number | undefined) => x + (y ?? 0), 0);
+        },
+      };
+      // the markup goes in on connect, as the README's user-card does: a DOM that constructs the
+      // elements of a template's content (happy-dom) would otherwise recurse into itself
+      connectedCallback() {
+        const root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
+        if (root.firstChild === null) root.innerHTML = `<wcs-state bind-component="state"></wcs-state><p>{{ total }}</p><template data-wcs="for: children"><${tag} data-wcs="state: ."></${tag}></template>`;
+      }
+    });
+    const tree = { value: 1, children: [{ value: 2, children: [{ value: 3, children: [] }] }, { value: 4, children: [] }] };
+    const { root, write } = await page(`<${tag} data-wcs="state: tree"></${tag}><span>{{ tree.total }}</span>`, { tree });
+    await settle(8);
+    expect(root.querySelector("span")!.textContent).toBe("10");
+    await write((s) => { s["tree.children.0.children.0.value"] = 30; });
+    await settle(4);
+    expect(root.querySelector("span")!.textContent).toBe("37");
+  });
+});
+
+describe("R6 エクスポートした getter: 境界", () => {
+  const settle = async (n = 4) => { for (let i = 0; i < n; i++) await flush(); };
+
+  it("点を含む名前: 私有データの下はエクスポートし、ツリーの下はしない。継承した accessor もエクスポートする", async () => {
+    class Base { get inherited() { return "from-base"; } }
+    class Card extends Base {
+      form = { v: 1 };
+      get inherited() { return "overridden"; }
+      get "form.label"() { return `#${(this as any)["form.v"]}`; }
+      get "info.upper"() { return String((this as any)["info.text"]).toUpperCase(); }
+    }
+    const tag = component(`<p>{{ name }}</p>`, () => new Card() as any);
+    const { root } = await page(
+      `<${tag} data-wcs="state: user"></${tag}><span class="f">{{ user.form.label }}</span><span class="i">{{ user.info.upper }}</span><span class="h">{{ user.inherited }}</span>`,
+      { user: { name: "Al", info: { text: "t" } } },
+    );
+    await settle();
+    expect(["f", "i", "h"].map((c) => root.querySelector(`.${c}`)!.textContent)).toEqual(["#1", "", "overridden"]);
+  });
+
+  it("ホスト自身の getter が勝つ。同じ位置のエクスポートしないコンポーネントは数えない", async () => {
+    const a = component(`<p>a</p>`, () => ({ get display() { return "component"; }, get other() { return "o"; } }));
+    const b = component(`<p>b</p>`, () => ({ get third() { return "t"; } }));
+    const { root } = await page(`<${a} data-wcs="state: user"></${a}><${b} data-wcs="state: user"></${b}><span class="d">{{ user.display }}</span><span class="o">{{ user.other }}</span>`, {
+      user: { name: "Al" },
+      get "user.display"() { return "host"; },
+    });
+    await settle();
+    expect([root.querySelector(".d")!.textContent, root.querySelector(".o")!.textContent]).toEqual(["host", "o"]);
+  });
+
+  it("外からの書き込み: ツリーにキーがあればツリーへ、コンポーネントがいなければツリーへ書く", async () => {
+    const tag = component(`<p>{{ name }}</p>`, () => ({ get display() { return "c"; }, set display(_v: unknown) { throw new Error("not called"); } }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { root, el, read } = await page(`<div class="box"><${tag} data-wcs="state: user"></${tag}></div>`, { user: { name: "Al", display: "tree" } });
+      await settle();
+      el.createState("writable", (s: any) => { s["user.display"] = "tree 2"; });
+      expect(read("user.display")).toBe("tree 2");
+      const other = await page(`<div class="box"><${tag} data-wcs="state: user"></${tag}></div>`, { user: { name: "Al" } });
+      await settle();
+      other.root.querySelector(tag)!.remove();
+      await settle();
+      other.el.createState("writable", (s: any) => { s["user.display"] = "grown"; });
+      expect(other.read("user.display")).toBe("grown");
+      expect(root.querySelector(tag)).not.toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

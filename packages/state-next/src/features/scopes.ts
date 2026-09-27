@@ -8,7 +8,7 @@ import { addHook, hooks, type Feature } from "../hooks";
 import { raiseError } from "../parser/raiseError";
 import { claimVolume, grafted, guardAncestorWrite, rootEngineCreated } from "../scopes/volume";
 import { claimDcc, dccEngineCreated, dccWritten } from "../scopes/dcc";
-import { claimComponent, componentScope, crossed, hasMounts, hostBinding } from "../scopes/component";
+import { claimComponent, componentScope, crossed, guardReadonlyMount, hasMounts, hostBinding } from "../scopes/component";
 
 export const scopes: Feature = {
   name: "scopes",
@@ -29,9 +29,9 @@ export const scopes: Feature = {
       crossed(engine, p, row, old, value, direct, false);
     });
     addHook("getterReached", (engine, g, row) => crossed(engine, g, row, undefined, undefined, false, true));
-    addHook("beforeWrite", (engine, p) => {
+    addHook("beforeWrite", (engine, p, _row, _value, element) => {
       guardAncestorWrite(engine, p);
-      return false;
+      return guardReadonlyMount(engine, p, element);
     });
     addHook("declare", (engine) => {
       const list = grafted.get(engine);

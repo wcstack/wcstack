@@ -13,7 +13,12 @@
  * one-segment partial entry, which wins over a data default. Unwired, a Shadow DOM component
  * owns an independent tree; a Light DOM one cannot (it shares the page) and fails loudly.
  *
- * Not carried over from @wcstack/state 3.3 (approved): exported getters and `#ro` (deferred).
+ * `#ro` on an entry (`state#ro: user`) is honoured as in 3.3: a component's code writing through it
+ * throws `[wcs/mount-readonly]`, an element's write-back inside the component is dropped.
+ *
+ * A whole mount's accessors are exported at the mount point (README "Exported getters"): the host
+ * reads `user.display` (row by row for `state: .`) from the component mounted there, unless the
+ * tree has the key.
  * A mounted component runs no temporal declaration and no `$renderedCallback`.
  */
 import { Engine, rowAt } from "../engine";
@@ -33,6 +38,8 @@ interface Entry {
   /** The host pattern and row (at the pattern's depth) it is mounted on. */
   readonly outer: Pattern;
   readonly row: StateRow | null;
+  /** Mounted `#ro`: the component reads it and does not write it. */
+  readonly ro: boolean;
 }
 
 /** What a host element keeps across the `<wcs-state>` elements its renders create. */
@@ -65,12 +72,16 @@ interface Mount {
   skip: Pattern | null;
   /** The entry a change of the component is crossing to the host through: its other entries still take it. */
   from: Entry | null;
+  /** Exported accessors (a whole mount's): host pattern (`user.display`) → the component's accessor pattern. */
+  exports: Map<Pattern, Pattern> | null;
 }
 
 type Slot = Mount["slots"][number];
 
 /** Plain property bindings hosts made on custom elements: the candidates for wiring. */
 const hostBindings = new WeakMap<Element, Binding[]>();
+/** Those of them written with `#ro`. */
+const readonlyWiring = new WeakSet<Binding>();
 /** An element property's value before a host's first write to it (a mount takes the component's). */
 const before = new WeakMap<Element, Map<string, unknown>>();
 /** Components waiting for their host to bind the wiring written in its markup. */
@@ -103,7 +114,7 @@ function fill(path: string, idx: number[]): string {
 }
 
 /** The core's hook: a plain property binding on a custom element (before it applies). */
-export function hostBinding(b: Binding): boolean {
+export function hostBinding(b: Binding, ro: boolean): boolean {
   const el = b.node as Element;
   const head = headOf(b.name);
   if (!onServer()) el.removeAttribute(WIRED);
@@ -118,6 +129,7 @@ export function hostBinding(b: Binding): boolean {
   let list = hostBindings.get(el);
   if (list === undefined) hostBindings.set(el, (list = []));
   list.push(b);
+  if (ro) readonlyWiring.add(b);
   let values = before.get(el);
   if (values === undefined) before.set(el, (values = new Map()));
   if (!values.has(head)) values.set(head, (el as any)[head]);
@@ -184,7 +196,7 @@ async function load(el: HTMLElement, prop: string, host: Element, light: boolean
       const list = inner.split(".").slice(0, star).join(".");
       raiseError(`<${tag}> maps "${b.name}": the component-side path of a mount cannot contain "*"${list === "" ? "" : ` — map the list itself ("${prop}.${list}: <the host's list>")`}.`);
     }
-    entries.push({ inner, outer: b.pattern, row: b.row });
+    entries.push({ inner, outer: b.pattern, row: b.row, ro: readonlyWiring.has(b) });
     // the component reads the host from now on: the binding no longer writes the element
     b.engine.unregister(b);
     if (inner !== "") delete (host as any)[b.name];
@@ -361,6 +373,131 @@ function register(m: Mount, on: boolean): void {
       if (set.size === 0) byRow.delete(slot.e.row);
     }
   }
+  const whole = m.host.entries.find((e) => e.inner === "");
+  if (whole === undefined) return;
+  if (m.exports === null) exportAccessors(m, whole);
+  // the host's readers of the exported paths: the component answers them now, or no longer
+  for (const hp of m.exports!.keys()) H.strategy.invalidate(H, hp, whole.row);
+  if (m.exports!.size > 0) H.schedule();
+  if (on) warnShadowed(m, whole);
+}
+
+// ---------------------------------------------------------------- exported accessors
+
+/** Host patterns an export answers (`user.display`, `users.*.display`). */
+const exporting = new WeakSet<Pattern>();
+
+/**
+ * README "Exported getters": a whole mount's accessors (getters and setters, not methods or
+ * private data, no `*` in the name) are read at the mount point. The host's own accessor there
+ * wins; a key the tree has wins (`wcs/mount-export-shadowed`).
+ */
+function exportAccessors(m: Mount, whole: Entry): void {
+  const h = m.host;
+  const H = h.engine!;
+  m.exports = new Map();
+  const seen = new Set<string>();
+  for (let o: object | null = h.state; o !== null && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+    for (const k of Object.getOwnPropertyNames(o)) {
+      if (seen.has(k)) continue;
+      seen.add(k);
+      const d = Object.getOwnPropertyDescriptor(o, k)!;
+      if ((d.get === undefined && d.set === undefined) || k[0] === "$" || k.includes(WILDCARD)) continue;
+      // a dotted accessor exports only from the component's own data (`form.label`), not the tree's
+      const head = headOf(k);
+      if (k !== head && !own(h, head)) continue;
+      const hp = H.pattern(`${whole.outer.path}.${k}`);
+      if (hp.getter !== null && !exporting.has(hp)) continue;
+      if (!exporting.has(hp)) answer(H, hp, whole.outer);
+      m.exports.set(hp, m.component.pattern(k));
+    }
+  }
+}
+
+/** The mount that exports `hp` at host row `row` (the row at the mount point's depth). */
+function exporter(H: Engine, outer: Pattern, row: StateRow | null, hp: Pattern): Mount | null {
+  const set = index.get(H)?.get(outer)?.get(row);
+  if (set === undefined) return null;
+  let found: Mount | null = null;
+  for (const slot of set) {
+    if (slot.e.inner !== "" || slot.m.exports?.has(hp) !== true || slot.m === found) continue;
+    if (found !== null) {
+      raiseError(`[wcs/mount-export-ambiguous] "${hp.path}" is exported by two mounted components on the same instance: <${found.host.el.localName}> and <${slot.m.host.el.localName}>. Mount only one of them there, or rename one accessor. See docs/state-overlay-export-design.md X4.`);
+    }
+    found = slot.m;
+  }
+  return found;
+}
+
+/** Makes host pattern `hp` read (and write) the accessor of the component mounted at `outer`, row by row. */
+function answer(H: Engine, hp: Pattern, outer: Pattern): void {
+  exporting.add(hp);
+  const parent = hp.parent!;
+  const last = hp.last;
+  /** The tree's object that has the key, or null. */
+  const tree = (): any => {
+    const o = H.read(parent, H.ctx) as any;
+    return o !== null && typeof o === "object" && last in o ? o : null;
+  };
+  hp.getter = () => {
+    const o = tree();
+    if (o !== null) return o[last];
+    const m = exporter(H, outer, H.ctx, hp);
+    return m === null ? undefined : m.component.read(m.exports!.get(hp)!, null);
+  };
+  hp.setter = (value: unknown) => {
+    const o = tree();
+    const m = o === null ? exporter(H, outer, H.ctx, hp) : null;
+    if (m === null) {
+      // no component answers it here: the tree's own key
+      const at = H.read(parent, H.ctx) as any;
+      if (at !== null && typeof at === "object") at[last] = value;
+      return;
+    }
+    const cp = m.exports!.get(hp)!;
+    if (findDescriptor(m.host.state, cp.path)?.set === undefined) {
+      raiseError(`Cannot write to "${cp.path}" on mounted <${m.host.el.localName}>: the accessor has no setter. Add a setter or write to the underlying state paths instead.`);
+    }
+    m.component.write(cp, null, value);
+  };
+  if (hp.depth > 0) hp.slot = H.slotCount++;
+}
+
+function warnShadowed(m: Mount, whole: Entry): void {
+  const H = m.host.engine!;
+  for (const [hp, cp] of m.exports!) {
+    const o = H.readUntracked(hp.parent!, whole.row) as any;
+    if (o === null || typeof o !== "object" || !(hp.last in o)) continue;
+    const tag = m.host.el.localName;
+    warnOnce(`${tag}|${hp.path}`, `[wcs/mount-export-shadowed] <${tag}>.${m.host.prop}.${cp.path} is exported at "${hp.path}" but the tree already has that key, so readers outside the component get the tree value. Remove the tree key or rename the accessor. See docs/state-overlay-export-design.md X1.`);
+  }
+}
+
+/** A component's exported accessor was reached (it may now differ): so are the host's readers of it. */
+function exportReached(m: Mount, g: Pattern): void {
+  const whole = m.host.entries.find((e) => e.inner === "")!;
+  const H = m.host.engine!;
+  for (const [hp, cp] of m.exports!) {
+    if (cp !== g) continue;
+    H.strategy.invalidate(H, hp, whole.row);
+    H.schedule();
+  }
+}
+
+/**
+ * The `beforeWrite` hook: a component's write through a `#ro` entry. Code (a method,
+ * `element.state`, `$setAll` / `$resolve`) is refused; an element's write-back (a two-way input
+ * in the component) is dropped, as `#ro` on that binding would (@wcstack/state 3.3).
+ */
+export function guardReadonlyMount(E: Engine, p: Pattern, element: boolean): boolean {
+  const m = mounts.get(E);
+  if (m === undefined) return false;
+  let info: Synth | undefined;
+  for (let s: Pattern | null = p; s !== null && info === undefined; s = s.parent) info = m.synth.get(s);
+  if (info === undefined || !info.e.ro) return false;
+  if (element) return true;
+  const e = info.e;
+  raiseError(`[wcs/mount-readonly] <${m.host.el.localName}> cannot write "${p.path}": it is mounted read-only ("${m.host.prop}${e.inner === "" ? "" : `.${e.inner}`}#ro: ${e.outer.path}"). Write it on the host, or drop #ro from the mount.`);
 }
 
 /** A host engine that has components mounted on it: its state cannot be re-set. */
@@ -460,6 +597,7 @@ export function crossed(E: Engine, p: Pattern, row: StateRow | null, old: unknow
   try {
     const m = mounts.get(E);
     if (!reached && m !== undefined && m.registered && !active.has(m.host.engine!)) up(m, p, row, old, value, direct);
+    if (reached && m !== undefined && m.registered && m.exports !== null) exportReached(m, p);
     const byP = index.get(E);
     if (byP === undefined) return;
     for (const [q, byRow] of byP) {
@@ -489,7 +627,7 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   const C = new Engine(state, new DirtyStrategy());
   C.element = el;
   (el as any).engine = C;
-  const m: Mount = { el, component: C, host: h, slots: [], synth: new Map(), registered: false, skip: null, from: null };
+  const m: Mount = { el, component: C, host: h, slots: [], synth: new Map(), registered: false, skip: null, from: null, exports: null };
   for (const e of h.entries) m.slots.push({ m, e });
   h.current = m;
   mounts.set(C, m);

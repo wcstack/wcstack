@@ -570,10 +570,13 @@ export class Engine implements ReconcileHooks {
 
   // ---------------------------------------------------------------- write
 
-  /** `occurrence`: an event-semantics write, applied even when equal to the current value. */
-  write(p: Pattern, row: StateRow | null, value: unknown, occurrence = false): void {
+  /**
+   * `occurrence`: an event-semantics write, applied even when equal to the current value.
+   * `element`: an element wrote it back (a two-way input, a wc-bindable event), not code.
+   */
+  write(p: Pattern, row: StateRow | null, value: unknown, occurrence = false, element = false): void {
     if (this.readonlyDepth > 0) raise(M.Readonly);
-    if (hooks.beforeWrite !== null && hooks.beforeWrite(this, p, row, value)) return;
+    if (hooks.beforeWrite !== null && hooks.beforeWrite(this, p, row, value, element)) return;
     if (p.setter !== null) {
       const prev = this.ctx;
       this.ctx = row;

@@ -17,8 +17,11 @@ export interface Hooks {
   explain: ((message: string, subject?: string, candidates?: Iterable<string>) => string) | null;
   /** Diagnostics: the full sentence of a numbered core message (`src/messages.ts`). */
   render: ((id: number, args: readonly unknown[]) => string) | null;
-  /** A write before it is applied; true = the add-on handled it ($listKeys, read-only paths). */
-  beforeWrite: ((engine: Engine, p: Pattern, row: StateRow | null, value: unknown) => boolean) | null;
+  /**
+   * A write before it is applied (`element`: an element wrote it back, not code); true = the
+   * add-on handled it ($listKeys, a read-only mount dropping an element's write).
+   */
+  beforeWrite: ((engine: Engine, p: Pattern, row: StateRow | null, value: unknown, element: boolean) => boolean) | null;
   /** A write landed: `direct` for a data write (then `old` is the value before, `value` the new one). */
   written: ((engine: Engine, p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean) => void) | null;
   /** A change reached a getter occurrence whose cached value was current (it may now differ). */
@@ -47,7 +50,7 @@ export interface Hooks {
    * A plain property binding on a custom element, made and not yet registered or applied (a
    * component mount's wiring, `state.x: path`); true = an add-on took it over.
    */
-  hostBinding: ((binding: Binding) => boolean) | null;
+  hostBinding: ((binding: Binding, ro: boolean) => boolean) | null;
   /** An element whose content an add-on binds (a Light DOM component): the walker leaves it. */
   componentScope: ((el: Element) => boolean) | null;
   /**

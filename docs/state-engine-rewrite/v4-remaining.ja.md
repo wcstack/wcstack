@@ -25,7 +25,7 @@
 | R3 | 3.x の最後の minor | (a) 3.4 を出して、旧名にランタイムの警告を出す (b) 約束を取り下げる | CHANGELOG 3.2.0 で「ランタイムの警告は 3.x の最後の minor でだけ出す」と約束した。3.3.0 では入っていない。lint と VS Code 拡張の通知（`wcs/name-alias`）は 3.2 からある |
 | R4 | `substr` | 残す・外す・改名する | [state-3x-naming.ja.md](../state-3x-naming.ja.md) V10 で「4.0 で考える」とした。state-next では formats の後付けにある |
 | R5 | 現行の未解決 Issue | 3.x で直す、または 4.0 で解決として閉じる | #2・#258・#319〜#324 は、どれも state-next で起きない（#258 の行の中のコンポーネントは `faddc735` で直した。#2 は 2026-09-27 に確かめた、§8）。#330〜#338（2026-09-26 登録）は #332 だけが state-next でも起きていた（§2.5 の F17 として直した、§8） |
-| R6 | 後回しにした機能 | 4.0 に入れる、または 4.0 の後 | コンポーネントの mount の「エクスポートした getter」と `#ro`（[addons-plan.ja.md](./addons-plan.ja.md) 後付け 3） |
+| R6 | 後回しにした機能 | 4.0 に入れる、または 4.0 の後 | **済み（2026-09-27）**: コンポーネントの mount の `#ro` と「エクスポートした getter」を入れた（§8） |
 
 ## 2. エンジン（state-next）の残り
 
@@ -348,3 +348,28 @@ esbuild の出力（実行時のバンドル 3 つと、分割ビルドのすべ
 | e2e | 131/131 | 131/131 |
 
 - 性能の A/B は取っていない。hot path への変更は、表示のプロパティへの書き込みの `String(v)` だけ（文字列ならそのまま返る）。数値の段の確かめはパターンを作るときだけ。
+
+### コンポーネントのマウントの `#ro`（2026-09-27）
+
+後回しにしていた R6 のうち `#ro` を入れた。これまでは黙って無視され、コンポーネントからの書き込みがそのままホストに届いていた（3.0 で入った約束に反する）。3.3 と同じ約束にした（README「`#ro` on a mount is honoured (3.0)」、docs/migration-v3.md）。
+
+- `state#ro: user`・`state.title#ro: doc.title`・行の `state#ro: .` の対応を通る、コンポーネントのコードの書き込み（メソッドの `this.x = …`、`element.state.x = …`、入れ子の `this["addr.city"] = …`、`$setAll`／`$resolve`）は、書く前に投げる。文面は 3.3 と同じ: `[wcs/mount-readonly] <tag> cannot write "name": it is mounted read-only ("state#ro: user"). Write it on the host, or drop #ro from the mount.`
+- コンポーネントの中の要素からの書き戻し（双方向の入力、radio／checkbox、wc-bindable のイベントと初期値）は、投げずに書かない（その束縛に `#ro` を付けたのと同じ。3.3 は束縛に `#ro` を足していた）。
+- ホストからの書き込みは、これまでどおりコンポーネントに届く。`#ro` の無い対応と私有キーは書ける。
+- 仕組み: core の `write` に「要素が書き戻した」の印（`element`）を足し、受け口 `beforeWrite` に渡す。受け口 `hostBinding` に結線の `#ro` を渡す。scopes の後付けが、書き込むパターンから上へたどって最初の対応（最も長い接頭辞）の `#ro` を見る（`guardReadonlyMount`）。
+- 3.3 との差: 文面の書けないパスは、3.3 は具体的なパス（`items.0.v`）、4.0 はパターン（`items.*.v`）。
+- テスト 5 件（`fixes.test.ts`）。core 18,740B（+17B）。テスト 1,331 件（通過 1,330・スキップ 1）、e2e 131/131。
+
+### コンポーネントのマウントのエクスポートした getter（2026-09-27）
+
+R6 の残り。3.3 の README「Exported getters」と同じ約束にした: ツリーに無いキーの読みは、その位置にマウントしたコンポーネントの accessor が答える。ツリーにあるキーはツリーが勝つ。私有キーとメソッドは見せない。
+
+- エクスポートするのは丸ごとのマウント（`state: user`、行の `state: .`）の、コンポーネントの状態の accessor（getter／setter。プロトタイプの鎖も見る）。メソッド・私有データ・名前に `*` のある accessor はエクスポートしない。点を含む名前は、頭が私有データのとき（`form.label`）だけエクスポートする（頭がツリーのキーの `info.upper` はツリーの側の accessor）。
+- 仕組み: コンポーネントが登録されたとき、ホストのエンジンの公開パスのパターン（`user.display`、`users.*.display`）に accessor を付ける。getter は、ツリーの親を追跡して読み、キーがあればツリーの値、無ければその行にマウントしたコンポーネントの accessor の値（無ければ undefined）。ホスト自身の accessor がそのパターンにあれば、そちらが勝つ。
+- 依存: コンポーネントの accessor が変わりうるとき（受け口 `getterReached`）、ホストの公開パスを無効にする。登録・切断・再接続でも無効にする（切断中は undefined、再接続でまた読める）。行の `.display`・`$getAll("users.*.display", [])`・行の追加に追従する。
+- 自己再帰のコンポーネント（行ごとに自分をマウントする木）で、各段の `total` が子の `total` を `$getAll("children.*.total", [])` で読み、深い葉の変更が根まで届く。
+- 外からの書き込み: ツリーにキーがあればツリーへ、無ければコンポーネントの setter（getter だけなら 3.3 と同じ文面で投げる: `Cannot write to "display" on mounted <tag>: the accessor has no setter. …`）。コンポーネントがいなければツリーへ書く。
+- 誤りと警告（文面は 3.3 と同じ）: ツリーにあるキーは登録時に一度 `[wcs/mount-export-shadowed]`。同じインスタンスに同じキーをエクスポートする 2 つのコンポーネントは、読んだときに `[wcs/mount-export-ambiguous]`。
+- 3.3 との差: 初めの読みは、コンポーネントが登録される前なら undefined で、登録で収束する（3.3 と同じ）。`binding-path-missing` の遅延の検査（1 マクロタスク後）がそれより前に走ると、警告が出ることがある（3.3 の README と同じ注意）。
+- テスト 11 件（`fixes.test.ts`）。happy-dom は `<template>` の中身の要素も生成するので、自己再帰のテストは中身を `connectedCallback` で入れる（README の user-card と同じ形）。
+- core は変わらない（18,740B）。scopes の後付けが 6,903B → 7,679B（+776B）。テスト 1,342 件（通過 1,341・スキップ 1）、カバレッジ 99.72・99.03・100・99.95、e2e 131/131。
