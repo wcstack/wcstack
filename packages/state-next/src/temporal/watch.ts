@@ -57,8 +57,9 @@ export class WatchRuntime {
   /** Landings of the current batch: watch → row → prev (first write wins). */
   private hits = new Map<Watch, Map<StateRow | null, unknown>>();
   private chain = 0;
-  /** A handler wrote: the next drain continues a chain. */
+  /** Since the last batch: a handler wrote / something else did (then the batch is not the handlers' alone). */
   private handlerWrote = false;
+  private otherWrote = false;
   private inHandler = false;
 
   constructor(engine: Engine, watches: Watch[]) {
@@ -109,6 +110,7 @@ export class WatchRuntime {
 
   written(p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean): void {
     if (this.inHandler) this.handlerWrote = true;
+    else this.otherWrote = true;
     if (!this.active) return;
     for (const w of this.watches) {
       if (w.getter) continue;
@@ -144,8 +146,10 @@ export class WatchRuntime {
   }
 
   drained(): void {
-    const chained = this.handlerWrote;
-    this.handlerWrote = false;
+    // a chain is batches the handlers' writes alone brought (a render chain the handlers only
+    // watch is not one: MAX_RENDER_CHAIN counts that)
+    const chained = this.handlerWrote && !this.otherWrote;
+    this.handlerWrote = this.otherWrote = false;
     if (!this.active || this.hits.size === 0) {
       if (!chained) this.chain = 0;
       return;
@@ -168,6 +172,7 @@ export class WatchRuntime {
         let cur: unknown;
         const saved = engine.ctx;
         this.inHandler = true;
+        engine.feeding++;
         try {
           cur = engine.readUntracked(w.p, row);
           if (w.getter) w.last.set(row, cur);
@@ -178,6 +183,7 @@ export class WatchRuntime {
         } finally {
           engine.ctx = saved;
           this.inHandler = false;
+          engine.feeding--;
         }
       }
     }

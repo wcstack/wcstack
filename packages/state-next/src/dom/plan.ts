@@ -126,7 +126,11 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
         if (stop) e.stopPropagation();
         try {
           if (command !== null) engine.emitCommand(command, e, row);
-          else engine.invoke(path, e, row);
+          else {
+            // an async handler's failure is reported like a sync one's (not left unhandled)
+            const r = engine.invoke(path, e, row) as any;
+            if (r !== null && typeof r === "object" && typeof r.then === "function") r.then(undefined, (error: unknown) => console.error(error));
+          }
         } catch (error) {
           console.error(error);
         }
@@ -311,7 +315,8 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
           // the plan holds the bindings: blocks cloned from it carry nothing left to bind
           el.removeAttribute(bindAttr());
         }
-        walk(el);
+        // a Light DOM component's content is bound by its own engine (as the page walker leaves it)
+        if (hooks.componentScope === null || !hooks.componentScope(el)) walk(el);
       } else if (child.nodeType === 3 && config.enableMustache && (child as Text).data.includes("{{")) {
         for (const { node, expr } of splitMustache(child as Text)) specs.push(textSpec(engine, expr, list, target(node)));
       }
@@ -325,7 +330,8 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
   stripInsignificantWhitespace(frag, new Set(targets), true);
 
   const nodePaths = targets.map((t) => pathOf(frag, t));
-  const single = frag.childNodes.length === 1;
+  // one node cloned alone — not a structural anchor, whose view inserts before it (it needs a parent)
+  const single = frag.childNodes.length === 1 && frag.firstChild!.nodeType !== 8;
   const nested = specs.some((s) => s.kind === K_FOR || s.kind === K_IF);
   const lazy: Spec[] = [];
   if (asRow) {

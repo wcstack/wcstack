@@ -102,17 +102,17 @@
 |---|---|---|---|---|
 | F17 | `dom/plan.ts`（`boundPattern`） | #332 と同じ。マークアップに書いた数値添字のパス（`items.0.v`）は字面どおりのパターンになり、添字のパスへの書き込み（`items.*.v` の行 0 に届く）でも、要素の差し替え（`items.0 = {…}`）でも描き直されない。一覧を丸ごと置き換えたときだけ描き直される。数値添字の getter（`items.0.double`）は `items.*.double` の getter に当たらず、初期から空（`this["items.0.double"]` で読めば値が返る） | 中 | 済み |
 | F18 | `dom/plan.ts` | マークアップの `$1`（`{{ $1\|add(1) }}`、`textContent: $1`）が `binding-path-missing` で束縛に失敗する。README（3.3）は「テンプレートでループの添字を直接表示できる」と定める | 中 | 済み |
-| F20 | `dom/view.ts`（`buildBlock` の `plan.single`）・`dom/plan.ts` | テンプレートの直下が構造のテンプレート 1 つだけ（行が `if:` だけの `for:`、中身が `if:`／`for:` だけの `if:`）だと何も描かれない（`#12` … `Cannot read properties of null (reading 'insertBefore')`）。単独で複製したアンカーのコメントに親が無い。#347・#356・#363 の一部の形 | 高 | |
-| F21 | `dom/view.ts`（`Block.removeNodes`・`insertBefore`） | 要素で包まない位置（ブロックの直下）の入れ子の `if:` の枝・`for:` の行が、外側の行と一緒に動かず、行を消しても残る（`<template for: items><b>…</b><template if: .x>…</template></template>` を反転すると枝が元の位置に残る）。ブロックは作った時の直下のノードしか持たない。#347・#349・#356 の一部の形 | 高 | |
-| F22 | `dom/plan.ts`（`compilePlan` の `walk`） | `if:` の枝・`for:` の行のテンプレートの中の Light DOM の `bind-component` の子の中身を、ページの側が束ねる（`mount.ts` の走査と違い `componentScope` を見ない）。子の `if: x` がページの `x` を読む。#348 の周辺 | 中 | |
-| F23 | `ssr/ssr.ts`（`snapshot`・`build`） | サーバ描画で、ページの直下の Light DOM の `bind-component` の子の `if:` のテンプレートが出力から失われ、クライアントで追従しない（ページのエンジンのアンカーだけを変換する）。#348 の周辺 | 中 | |
-| F24 | `engine.ts`（`walkChange`・`sync`） | #362。元の配列をそのまま返す getter を `for:` で描くと、元のパスへの要素・葉の書き込みで行が描き直されない（同じ配列なので `sync` が何もしない）。別名の getter（#363 の `for: current`）も同じ | 中 | |
-| F25 | `engine.ts`（`markupAccessor`・`resolve`） | #363 の周辺。数値添字のパスの `for:`（`for: groups.0.items`）の行の `{{ .v }}` が空になる（F17 の accessor が行の文脈を `groups.*.items` の行として解こうとする）。#363 が訴える `[wcs/wildcard-rank]` の例外は起きない | 中 | |
-| F26 | `engine.ts`（`write` の葉の分岐・`walkChange`） | #365。同じオブジェクトをリストの 2 つの行に置くと、片方の行への葉の書き込みが、もう片方の行の束縛と行の getter に届かない（読みと、ルートの getter・`$getAll` は新しい値） | 中 | |
-| F27 | `engine.ts`（`drain`・`schedule`） | #353。drain の打ち切り（32 回）は 1 回の drain の中しか数えないので、drain をまたぐ無限ループ（microtask で値を出す要素、`$renderedCallback` から書く）は止まらず、ページが固まる（3.3.x の修正後は `$renderedCallback` の連鎖を 100 段で止める）。`$watch` を挟む循環は止まって報告される | 高 | |
-| F28 | `temporal/watch.ts`（`WatchRuntime.drained`） | #354。32 段を超える有限の描画の連鎖に `$watch`（ハンドラが書く）を足すと、`the chain is cut` が誤って出て、ハンドラが 1 回飛ぶ。連鎖の深さが、そのバッチがハンドラの書き込みから来たかを見ない | 中 | |
-| F29 | `dom/wc.ts`（`whenDefined`）・`scopes/component.ts`・`public/contract.ts` | #357。スコープ付きの CustomElementRegistry の shadow root の中の要素は、定義を global の登録簿で待つので、束縛が掛からない（行だけでなくルートも）。happy-dom は scoped registry を持たないので、コード読みと模擬テストで判定 | 中 | |
-| F30 | `scopes/component.ts`（`mountKey` の setter） | #367 の周辺。ホストの行が消えた後のコンポーネントの書き込みは、消えた行の元のオブジェクトに黙って入る（別の行には着地しない）。3.3.x の修正後は `The host row of <x> was removed.` で拒む | 低 | |
+| F20 | `dom/view.ts`（`buildBlock` の `plan.single`）・`dom/plan.ts` | テンプレートの直下が構造のテンプレート 1 つだけ（行が `if:` だけの `for:`、中身が `if:`／`for:` だけの `if:`）だと何も描かれない（`#12` … `Cannot read properties of null (reading 'insertBefore')`）。単独で複製したアンカーのコメントに親が無い。#347・#356・#363 の一部の形 | 高 | 済み |
+| F21 | `dom/view.ts`（`Block.removeNodes`・`insertBefore`） | 要素で包まない位置（ブロックの直下）の入れ子の `if:` の枝・`for:` の行が、外側の行と一緒に動かず、行を消しても残る（`<template for: items><b>…</b><template if: .x>…</template></template>` を反転すると枝が元の位置に残る）。ブロックは作った時の直下のノードしか持たない。#347・#349・#356 の一部の形 | 高 | 済み |
+| F22 | `dom/plan.ts`（`compilePlan` の `walk`） | `if:` の枝・`for:` の行のテンプレートの中の Light DOM の `bind-component` の子の中身を、ページの側が束ねる（`mount.ts` の走査と違い `componentScope` を見ない）。子の `if: x` がページの `x` を読む。#348 の周辺 | 中 | 済み |
+| F23 | `ssr/ssr.ts`（`snapshot`・`build`） | サーバ描画で、ページの直下の Light DOM の `bind-component` の子の `if:` のテンプレートが出力から失われ、クライアントで追従しない（ページのエンジンのアンカーだけを変換する）。#348 の周辺 | 中 | 済み |
+| F24 | `engine.ts`（`walkChange`・`sync`） | #362。元の配列をそのまま返す getter を `for:` で描くと、元のパスへの要素・葉の書き込みで行が描き直されない（同じ配列なので `sync` が何もしない）。別名の getter（#363 の `for: current`）も同じ | 中 | 済み |
+| F25 | `engine.ts`（`markupAccessor`・`resolve`） | #363 の周辺。数値添字のパスの `for:`（`for: groups.0.items`）の行の `{{ .v }}` が空になる（F17 の accessor が行の文脈を `groups.*.items` の行として解こうとする）。#363 が訴える `[wcs/wildcard-rank]` の例外は起きない | 中 | 済み |
+| F26 | `engine.ts`（`write` の葉の分岐・`walkChange`） | #365。同じオブジェクトをリストの 2 つの行に置くと、片方の行への葉の書き込みが、もう片方の行の束縛と行の getter に届かない（読みと、ルートの getter・`$getAll` は新しい値） | 中 | 4.0 の既知の制限（2026-09-27 に決定） |
+| F27 | `engine.ts`（`drain`・`schedule`） | #353。drain の打ち切り（32 回）は 1 回の drain の中しか数えないので、drain をまたぐ無限ループ（microtask で値を出す要素、`$renderedCallback` から書く）は止まらず、ページが固まる（3.3.x の修正後は `$renderedCallback` の連鎖を 100 段で止める）。`$watch` を挟む循環は止まって報告される | 高 | 済み（async の `$renderedCallback` も止める） |
+| F28 | `temporal/watch.ts`（`WatchRuntime.drained`） | #354。32 段を超える有限の描画の連鎖に `$watch`（ハンドラが書く）を足すと、`the chain is cut` が誤って出て、ハンドラが 1 回飛ぶ。連鎖の深さが、そのバッチがハンドラの書き込みから来たかを見ない | 中 | 済み |
+| F29 | `dom/wc.ts`（`whenDefined`）・`scopes/component.ts`・`public/contract.ts` | #357。スコープ付きの CustomElementRegistry の shadow root の中の要素は、定義を global の登録簿で待つので、束縛が掛からない（行だけでなくルートも）。happy-dom は scoped registry を持たないので、コード読みと模擬テストで判定 | 中 | 済み（Chromium の e2e で確認） |
+| F30 | `scopes/component.ts`（`mountKey` の setter） | #367 の周辺。ホストの行が消えた後のコンポーネントの書き込みは、消えた行の元のオブジェクトに黙って入る（別の行には着地しない）。3.3.x の修正後は `The host row of <x> was removed.` で拒む | 低 | 済み |
 | F19 | `dom/view.ts`（`applyTo`） | 表示のプロパティ（`textContent`・`innerText`）に数値をそのまま書いていた。ブラウザは文字列にするが、happy-dom（`@wcstack/server` のサーバの DOM）は 0 を空にし、`innerText` に数値を書くと投げる。サーバ描画で `textContent: count` の 0 が消える（F18 を直すときに見つけた） | 中 | 済み |
 
 **使われていないコード**（削れば core が少し軽くなる。今はテストが直接呼んでいる）: `dom/wc.ts` の `isCustomTag`、`list.ts` の `StateRow.parent`／`depth`、`pattern.ts` の `PatternTable.has`、`scopes/volume.ts` の `fail()` の第 3 引数。届かない防御の分岐（`engine.ts:478`・`:810`・`:1103`、`dom/view.ts:166`・`:629`・`:652`・`:687`・`:830-832`、`dom/plan.ts:37`、`dom/wc.ts:63`、`strategy/dirty.ts:23`、`scopes/component.ts:366`・`:373`・`:481`、`devtools.ts:107`・`:120`、`temporal/stream.ts:204`・`:221`、`temporal/watch.ts:194`、`recursion.ts:186`、`features/diagnostics.ts:80`）。
@@ -423,3 +423,43 @@ R6 の残り。3.3 の README「Exported getters」と同じ約束にした: ツ
 | #368 プールから使い回した行のコンポーネントの `$connectedCallback` | 起きない | 4.0 は行の要素を使い回さない |
 
 - happy-dom の癖（テストで吸収した）: 定義より前に作った要素を `cloneNode` で複製すると、文書に入るまで upgrade されない（Chromium は複製の時点で upgrade する）。
+
+### F20〜F23・F27・F28・F30 の修正（2026-09-27）
+
+§2.5 の F20〜F30 のうち、7 つを直した。Issue の再現のテストは `__tests__/issues-ssr.test.ts`・`issues-lists.test.ts`・`issues-misc.test.ts` に正式に置いた（一時ファイルから改名）。まだ直していない F24・F25・F26・F29 の形は `it.fails` で残し、`else:` を `if:` の直後に置かない #348 の形 3 は、4.0 では `#202` で失敗することを確かめる形にした。
+
+- **F20・F21**（`dom/view.ts`・`plan.ts`）: ブロックの範囲を「先頭の直下ノード（そこをアンカーにする入れ子のビューがあれば、その描いた最初のノード）から、最後の直下ノードまで」として動かし、消す（`Block.head()`、`lead`、`headAt`）。入れ子のビューはアンカーの前に描くので、範囲は連続している。`for:` の行の並べ替えの基準も `head()` にした。直下が構造のアンカー 1 つだけのテンプレートは、単独で複製しない（`single` はコメントでないときだけ）。直下が要素 1 つのブロック（jsfb の行）は、これまでと同じ経路。
+- **F22**（`dom/plan.ts`）: テンプレートの中の Light DOM の `bind-component` の子の中身は、ページの走査と同じく、コンポーネント自身のエンジンが束ねる（`componentScope`）。
+- **F23**（`ssr/ssr.ts`）: サーバのアンカーをページのルートごとにも記録し、スナップショットで、同じルートの `bind-component` のエンジン（Light DOM のコンポーネント）のアンカーとビューも変換する。ほかのルート（別の `<wcs-state enable-ssr>`）のエンジンは含めない。
+- **F27**（`engine.ts`）: 描画から続いた書き込み（要素の書き戻し、`$renderedCallback` の中の書き込み — async のものは Promise が終わるまで、`$watch` のハンドラの書き込み）だけで始まった drain が 100 回続いたら、そのバッチを適用せずに打ち切り、一度 `#41`（`render chain depth limit exceeded (100 drains that rendering itself started); bindings for this batch were not applied.`）とそのバッチのパスを `console.error` に出す。コードからの書き込み（ユーザーの操作、`await` の続き、`$stream`）で始まった drain と、マクロタスクをまたいだ drain で数え直す。上限 100 は 3.3.x の #338 の修正と同じ。3.3.x は「束縛を適用している間の同期の書き込み」だけを数え、microtask で値を出す要素・async の `$renderedCallback` は止めない（#353）。4.0 はこれらも止める。DevTools への `state:render-chain-limit` の通知は、まだ入れていない。
+- **F28**（`temporal/watch.ts`）: `$watch` の連鎖（32）は、ハンドラの書き込みだけで始まったバッチを数える。ハンドラが描画の連鎖を見ているだけのとき（#354）は数えない。ハンドラの書き込みは描画の連鎖（F27）にも数えるので、`$watch` と描画が交互に回るループは F27 の上限で止まる。
+- **F30**（`scopes/component.ts`）: ホストの行が消えた後のコンポーネントのコードの書き込みは `The host row of <tag> was removed.` で拒む（3.3.x と同じ文面）。要素からの書き込みは捨てる。
+- **async のイベントハンドラ**（`dom/plan.ts`）: `onclick: method` の async のメソッドが拒否した Promise を `console.error` に報告する（これまでは未処理の拒否になっていた）。F30 の確認で見つけた。
+- 番号 #41（`RenderChain`）を足した。
+
+| | 前（`6c45352d`） | 後 |
+|---|---|---|
+| テスト | 1,340 件（通過 1,339・スキップ 1） | 1,522 件（通過 1,507・意図した失敗 14・スキップ 1） |
+| カバレッジ | 99.72・99.03・100・99.95 | 99.71・98.99・100・99.93 |
+| core（`core.min.js` gzip） | 18,736B | 19,070B（+334B。上限 20,000B まで 930B） |
+| e2e | 131/131 | 131/131 |
+
+### F24・F25・F29 と F26 の扱い（2026-09-27）
+
+決定: F24（と同じ仕組みの F25）は「同じ配列を持つ一覧を結び付ける」、F26 は 4.0 の既知の制限として記録する、F29 は Chromium の e2e で確かめて入れる。
+
+- **F24・F25**（`engine.ts`）: 一覧を同期するたびに、配列（本物の配列だけ）ごとにそれを持つ一覧を記録する（`listsByArray`）。同じ配列を持つ一覧が 2 つ以上になると、それらに `shared` の印が付く。印のある一覧の行への要素・葉の書き込みは、同じ配列を持つほかの一覧の同じ位置の行に届く（行の値の更新、子の一覧の同期、`written`、描き直し。`mirror`）。元の配列をそのまま返す getter の `for:`（#362）、別名の getter（#363 の `for: current`）、数値添字のパスの `for:`（`for: groups.0.items`、#363）が、どちら側から書いても追従する。印の無い一覧（ほとんど）は、書き込みの経路でフラグを 1 つ見るだけ。
+  - F25: 数値添字の段の後ろにワイルドカードがあるパス（`groups.0.items.*.v`）には F17 の accessor を付けない。行は自分の値から読み、添字のパスからの書き込みは上の結び付けで届く。
+- **F26**: 4.0 の既知の制限。同じオブジェクトを 1 つの一覧の 2 つの行に置くと、片方の行への葉の書き込みは、もう片方の行の束縛と行の getter に届かない（読み・ルートの getter・`$getAll` は新しい値）。直すには一覧を作るたびに重複を調べる必要があり、行の生成の費用に響くため。テスト（`issues-lists.test.ts` の #365）は `it.fails` で症状を残した。README（移行ガイド）に書く。
+- **F29**（`dom/wc.ts`・`scopes/component.ts`）: 定義を待つ登録簿を、要素の `customElementRegistry`（スコープ付きの登録簿）から引く。行の要素は、テンプレートの中身を文書に取り込んだ時点で global の登録簿を持ち、shadow root に入った時点でスコープ付きのものに替わるので、文書に入っていない要素で、今の登録簿がタグを知らないときは、置かれた後まで 1 マイクロタスク待つ（`customElementRegistry` のあるブラウザだけ）。コンポーネントのホストの定義待ちも同じ登録簿で待つ。
+  - Chromium 149 で確かめた（`e2e/tests/state-scoped-registry.spec.ts`・`e2e/fixtures/state-scoped-registry.html`）: 最初に描いた行・後から足した行・ルートのプロパティの束縛と spread、スコープ付きの登録簿に後から定義した要素。global の登録簿はタグを知らないまま。このテストは `STATE=next` のときだけ走る（3.3 は #357 のまま）。
+  - happy-dom はスコープ付きの登録簿を持たないので、unit では要素に `customElementRegistry` を足して待ちの経路だけを確かめた。#357 の模擬テストは外した。
+
+| | 前（F20〜F30 の修正の後） | 後 |
+|---|---|---|
+| テスト | 1,522 件（意図した失敗 14） | 1,523 件（通過 1,520・意図した失敗 2（F26）・スキップ 1） |
+| カバレッジ | 99.71・98.99・100・99.93 | 99.66・98.87・100・99.93 |
+| core（`core.min.js` gzip） | 19,070B | 19,368B（+298B。上限 20,000B まで 632B） |
+| e2e | 131/131 | 132/132（スコープ付きの登録簿を足した） |
+
+- 性能（F20〜F30 の修正をすべて入れた後。修正の前のコミット `0de3ec55` の src から同じ方法で作ったバンドルと、同じセッションで順番を入れ替えて 4 回・各 96 サンプル）: 中央値は warm 1,000 行作成 5.65 → 5.60ms、cold 10,000 行作成 70.55 → 69.55ms、warm 10,000 行作成 43.8 → 44.5ms、cold 1,000 行作成 10.25 → 10.5ms で、差はばらつきの範囲。F24・F29 を入れる前の計測で warm 10,000 行作成が 3ms 遅く出たが、この計測では消えた。

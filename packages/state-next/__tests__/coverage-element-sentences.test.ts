@@ -9,7 +9,7 @@ import { bootstrapState, diagnostics, getBindingsReady, installFeatures } from "
 import { M, text } from "../src/messages";
 import { SENTENCES } from "../src/diagnostics/messages";
 import { render } from "../src/diagnostics/explain";
-import { MAX_DRAIN_PASSES, MAX_INDEX_PARAM } from "../src/engine";
+import { MAX_DRAIN_PASSES, MAX_INDEX_PARAM, MAX_RENDER_CHAIN } from "../src/engine";
 import { getPathInfo } from "../src/public/pathInfo";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -61,6 +61,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.MemberUndeclared, ["title"], 'Property "title" is not declared by wcBindable.'],
   [M.InitIncompatible, ["auto", "status"], 'init=auto is incompatible with wcBindable member "status".'],
   [M.SyncConnectNeedsOutput, ["label"], 'sync=connect requires observable property "label".'],
+  [M.RenderChain, [], `render chain depth limit exceeded (${MAX_RENDER_CHAIN} drains that rendering itself started); bindings for this batch were not applied.`],
   [M.SelectorRemoved, ["value: @main.count"], '"value: @main.count": the "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.'],
 
   [M.BindTextNoColon, ["value"], `[wcs/binding-syntax] Invalid bindText: "value". Missing ':' separator between propPart and statePart.`],

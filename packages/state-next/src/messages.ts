@@ -57,6 +57,7 @@ export const enum M {
   MemberUndeclared = 38,
   InitIncompatible = 39,
   SyncConnectNeedsOutput = 40,
+  RenderChain = 41,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,

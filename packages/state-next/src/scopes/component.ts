@@ -30,6 +30,7 @@ import { config } from "../config";
 import { DirtyStrategy } from "../strategy/dirty";
 import { mount } from "../dom/mount";
 import { drainBinds } from "../dom/binder";
+import { registryOf } from "../dom/wc";
 import { raiseError } from "../parser/raiseError";
 
 interface Entry {
@@ -163,7 +164,7 @@ async function load(el: HTMLElement, prop: string, host: Element, light: boolean
   if (["state", "src", "json"].some((a) => el.hasAttribute(a)) || el.querySelector('script[type="module"]') !== null) {
     raiseError(`<${config.tagNames.state} bind-component> takes its state from <${tag}>.${prop}: it cannot also load one (state / src / json / an inline script).`);
   }
-  await customElements.whenDefined(tag);
+  await registryOf(host).whenDefined(tag);
   let h = hosts.get(host);
   if (h !== undefined) {
     if (h.prop !== prop) raiseError(`<${tag}> already has a <${config.tagNames.state} bind-component="${h.prop}">.`);
@@ -485,18 +486,23 @@ function exportReached(m: Mount, g: Pattern): void {
 }
 
 /**
- * The `beforeWrite` hook: a component's write through a `#ro` entry. Code (a method,
- * `element.state`, `$setAll` / `$resolve`) is refused; an element's write-back (a two-way input
- * in the component) is dropped, as `#ro` on that binding would (@wcstack/state 3.3).
+ * The `beforeWrite` hook: a component's write through a `#ro` entry, or through an entry whose
+ * host row is gone. Code (a method, `element.state`, `$setAll` / `$resolve`) is refused; an
+ * element's write-back (a two-way input in the component) is dropped, as `#ro` on that binding
+ * would (@wcstack/state 3.3).
  */
 export function guardReadonlyMount(E: Engine, p: Pattern, element: boolean): boolean {
   const m = mounts.get(E);
   if (m === undefined) return false;
   let info: Synth | undefined;
   for (let s: Pattern | null = p; s !== null && info === undefined; s = s.parent) info = m.synth.get(s);
-  if (info === undefined || !info.e.ro) return false;
-  if (element) return true;
+  if (info === undefined) return false;
   const e = info.e;
+  // the host's row went away (an await outlived it): the write has nowhere to land (3.3.x)
+  const gone = e.row !== null && !e.row.alive;
+  if (!gone && !e.ro) return false;
+  if (element) return true;
+  if (gone) raiseError(`The host row of <${m.host.el.localName}> was removed.`);
   raiseError(`[wcs/mount-readonly] <${m.host.el.localName}> cannot write "${p.path}": it is mounted read-only ("${m.host.prop}${e.inner === "" ? "" : `.${e.inner}`}#ro: ${e.outer.path}"). Write it on the host, or drop #ro from the mount.`);
 }
 

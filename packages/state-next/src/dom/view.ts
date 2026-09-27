@@ -307,6 +307,8 @@ export class Block {
   children: (ForView | IfView)[] | null = null;
   /** Run when the block goes away (token unsubscriptions); allocated on first use. */
   cleanups: (() => void)[] | null = null;
+  /** The view anchored at the block's first top-level node: it renders before the block's first node. */
+  lead: ForView | IfView | null = null;
   readonly plan: RowPlan;
 
   constructor(row: StateRow | null, first: ChildNode, nodes: ChildNode[] | null, plan: RowPlan) {
@@ -347,14 +349,33 @@ export class Block {
     return this.nodes === null ? this.first : this.nodes[this.nodes.length - 1];
   }
 
+  /**
+   * The block's first node. A view nested at the block's top level renders before its anchor, so
+   * the block spans from here to its last top-level node, the rows and branches of those views
+   * included.
+   */
+  head(): ChildNode {
+    const v = this.lead;
+    return (v === null ? null : v.headAt(this.first)) ?? this.first;
+  }
+
   insertBefore(parent: Node, ref: Node | null): void {
-    if (this.nodes === null) parent.insertBefore(this.first, ref);
-    else for (const n of this.nodes) parent.insertBefore(n, ref);
+    if (this.nodes === null) {
+      parent.insertBefore(this.first, ref);
+      return;
+    }
+    const last = this.last;
+    for (let n = this.head(); ; ) {
+      const next = n.nextSibling!;
+      parent.insertBefore(n, ref);
+      if (n === last) return;
+      n = next;
+    }
   }
 
   removeNodes(): void {
     if (this.nodes === null) this.first.remove();
-    else for (const n of this.nodes) n.remove();
+    else removeContiguous(this.head(), this.last);
   }
 
   /** Stops the block: runs its cleanups, unregisters its bindings, disposes the views nested in it. */
@@ -567,12 +588,14 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
       case K_FOR: {
         const view = new ForView(engine, s.plan!, listFor(engine, s.pattern!, row, node), node as Comment);
         (block.children ?? (block.children = [])).push(view);
+        if (node === first) block.lead = view;
         view.update();
         break;
       }
       case K_IF: {
         const iv = attachChain(engine, s.branches!.map((br) => ({ plan: br.plan, pattern: br.pattern, filters: br.filters, anchor: own[br.node] })), row, block);
         (block.children ?? (block.children = [])).push(iv);
+        if (node === first) block.lead = iv;
         break;
       }
       case K_COMMAND:
@@ -669,6 +692,11 @@ export class IfView {
     this.row = row;
   }
 
+  /** The first node this chain renders before anchor `n` (the shown branch's, if `n` is its anchor). */
+  headAt(n: Node): ChildNode | null {
+    return this.current !== null && this.branches[this.index].anchor === n ? this.current.head() : null;
+  }
+
   /** Renders the first branch whose condition holds (JavaScript truthiness), or nothing. */
   update(): void {
     if (!this.alive) return;
@@ -738,6 +766,11 @@ export class ForView {
     }
   }
 
+  /** The first node this view renders (before its anchor), or null with no rows. */
+  headAt(_n: Node): ChildNode | null {
+    return this.rowViews.length === 0 ? null : this.rowViews[0].head();
+  }
+
   /** This view's rendering of `row`, or null. */
   viewOf(row: StateRow): RowView | null {
     return this.map === null ? row.view : this.map.get(row) ?? null;
@@ -762,7 +795,7 @@ export class ForView {
 
     if (n === 0) {
       if (o > 0) {
-        removeContiguous(old[0].first, old[o - 1].last);
+        removeContiguous(old[0].head(), old[o - 1].last);
         for (let i = 0; i < o; i++) this.drop(old[i]);
       }
       this.rowViews = [];
@@ -816,7 +849,7 @@ export class ForView {
           src[i] = -1;
         }
       }
-      const next0: Node = ne + 1 < n ? views[ne + 1].first : anchor;
+      const next0: Node = ne + 1 < n ? views[ne + 1].head() : anchor;
       if (!anyKept) {
         const frag = document.createDocumentFragment();
         for (let i = s; i <= ne; i++) {
@@ -837,7 +870,7 @@ export class ForView {
             rv.insertBefore(parent, next);
           }
           views[s + i] = rv;
-          next = rv.first;
+          next = rv.head();
         }
       }
     }

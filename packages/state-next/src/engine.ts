@@ -38,6 +38,11 @@ interface Frame {
 
 /** A drain that keeps producing work this many times in a row is an update loop. */
 export const MAX_DRAIN_PASSES = 32;
+/**
+ * Drains in a row that rendering itself started (an element's write-back, a write in
+ * `$renderedCallback`) beyond this many are an update loop (as @wcstack/state 3.3.x).
+ */
+export const MAX_RENDER_CHAIN = 100;
 /** Nested getter evaluations deeper than this are a runaway chain. */
 const MAX_GETTER_DEPTH = 128;
 
@@ -112,6 +117,24 @@ export class Engine implements ReconcileHooks {
   private staleLists: StateList[] = [];
   private scheduled = false;
   private draining = false;
+  /** The lists over each array (only while more than one list has it do writes mirror). */
+  private readonly listsByArray = new WeakMap<unknown[], StateList[]>();
+  /** Drains in a row that rendering started (MAX_RENDER_CHAIN); a pause between tasks ends it. */
+  private chain = 0;
+  /** Since the last drain started: a write rendering fed back / a write from code (which ends a chain). */
+  private fedBack = false;
+  private codeWrote = false;
+  /**
+   * Inside `$renderedCallback` (until an async one settles) or a `$watch` handler: its writes are
+   * reactions, fed back like an element's (MAX_RENDER_CHAIN).
+   */
+  feeding = 0;
+  private readonly unchainFn = () => {
+    this.chain = 0;
+  };
+  private readonly renderedFn = () => {
+    this.feeding--;
+  };
   // out-parameters of resolve()
   private rp: Pattern | null = null;
   private rr: StateRow | null = null;
@@ -228,7 +251,9 @@ export class Engine implements ReconcileHooks {
       const segs = path.split(".");
       let i = 0;
       while (i < segs.length && !(segs[i].charCodeAt(0) >= 48 && segs[i].charCodeAt(0) <= 57)) i++;
-      if (i === segs.length) return;
+      // none, or a `*` after it: a row of a list over the index path (`for: groups.0.items`) reads its
+      // own item, and a write through the index reaches it as a list with the same array (mirror)
+      if (i === segs.length || segs.indexOf(WILDCARD, i) >= 0) return;
       const container = segs.slice(0, i).join(".");
       const rest = segs.slice(i);
       p.getter = function (this: any) {
@@ -273,8 +298,10 @@ export class Engine implements ReconcileHooks {
   sync(l: StateList): void {
     const value = this.readUntracked(l.pattern, l.parentRow);
     if (value === l.arr) return;
+    const prev = l.arr;
     const old = reconcile(l, value, this);
     if (old === null) return;
+    this.share(l, prev, value);
     if (hooks.listSynced !== null) hooks.listSynced(this, l, old);
     if ((l.view !== null || l.extra !== null) && !l.queued) {
       l.queued = true;
@@ -576,6 +603,8 @@ export class Engine implements ReconcileHooks {
    */
   write(p: Pattern, row: StateRow | null, value: unknown, occurrence = false, element = false): void {
     if (this.readonlyDepth > 0) raise(M.Readonly);
+    if (element || this.feeding > 0) this.fedBack = true;
+    else this.codeWrote = true;
     if (hooks.beforeWrite !== null && hooks.beforeWrite(this, p, row, value, element)) return;
     if (p.setter !== null) {
       const prev = this.ctx;
@@ -600,6 +629,7 @@ export class Engine implements ReconcileHooks {
       r.item = value;
       this.strategy.resetRow(r);
       if (r.children !== null) for (const l of r.children.values()) this.sync(l);
+      if (r.list.shared) this.mirror(r, p, old, value);
     } else {
       const parent = (p.tail.length === 1
         ? (p.depth === 0 ? this.target : row!.item)
@@ -607,11 +637,52 @@ export class Engine implements ReconcileHooks {
       if (parent == null) raise(M.ParentNotObject, [p.path, parent]);
       parent[p.last] = value;
       this.syncListsUnder(p, row);
+      if (row !== null && row.list.shared) this.mirror(row, p, old, value);
     }
     if (p.eqIndexWatchers !== null) this.rekeyEqIndex(p, old, value);
     if (p.depth === 0) this.rekeyEqUnder(p, old, value);
     if (hooks.written !== null) hooks.written(this, p, row, old, value, true);
     this.changed(p, row);
+  }
+
+  /** Files list `l` under its array (and out of `prev`'s): lists that share an array mirror writes. */
+  private share(l: StateList, prev: unknown[] | null, value: unknown): void {
+    const by = this.listsByArray;
+    if (prev !== null) {
+      const was = by.get(prev);
+      if (was !== undefined) was.splice(was.indexOf(l) >>> 0, 1);
+    }
+    const arr = l.arr!;
+    // (a value that is not an array reconciles against a stand-in: nothing to share)
+    if (arr !== value) return;
+    let same = by.get(arr);
+    if (same === undefined) by.set(arr, (same = []));
+    same.push(l);
+    if (same.length > 1) for (const x of same) x.shared = true;
+  }
+
+  /**
+   * A write into row `row` of a list whose array another list has too (`for: shown` over a getter
+   * returning `todos`, `for: groups.0.items`): the other list's row at the same position shows it.
+   */
+  private mirror(row: StateRow, p: Pattern, old: unknown, value: unknown): void {
+    const l = row.list;
+    const suffix = p.path.slice(l.pattern.path.length + 2);
+    for (const m of this.listsByArray.get(l.arr!) ?? []) {
+      if (m === l || m.arr !== l.arr || (m.parentRow !== null && !m.parentRow.alive)) continue;
+      const r = m.rows[row.index];
+      if (r === undefined) continue;
+      const mp = this.pattern(`${m.pattern.path}.*${suffix}`);
+      if (suffix === "") {
+        r.item = value;
+        this.strategy.resetRow(r);
+        if (r.children !== null) for (const c of r.children.values()) this.sync(c);
+      } else {
+        this.syncListsUnder(mp, r);
+      }
+      if (hooks.written !== null) hooks.written(this, mp, r, old, value, true);
+      this.changed(mp, r);
+    }
   }
 
   private syncListsUnder(p: Pattern, row: StateRow | null): void {
@@ -925,20 +996,38 @@ export class Engine implements ReconcileHooks {
     queueMicrotask(this.drainFn);
   }
 
+  /** Drops the queued work of a cut update loop: what it would have shown waits for the next change. */
+  private dropWork(): void {
+    for (const b of this.queue) b.queued = false;
+    for (const l of this.dirtyLists) l.queued = false;
+    for (const l of this.staleLists) l.stale = false;
+    this.queue = [];
+    this.dirtyLists = [];
+    this.staleLists = [];
+    this.strategy.dropped(this);
+  }
+
   drain(): void {
     this.scheduled = false;
+    // a drain only rendering fed (no write from code since the last) continues a chain
+    if (!this.fedBack || this.codeWrote) this.chain = 0;
+    else if (++this.chain === 1) setTimeout(this.unchainFn, 0);
+    this.fedBack = this.codeWrote = false;
+    if (this.chain > MAX_RENDER_CHAIN) {
+      if (this.chain === MAX_RENDER_CHAIN + 1) {
+        const paths = new Set<string>();
+        for (const x of [...this.queue, ...this.dirtyLists, ...this.staleLists]) paths.add(x.pattern.path);
+        console.error(`[@wcstack/state] ${text(M.RenderChain)}`, [...paths]);
+      }
+      this.dropWork();
+      return;
+    }
     this.draining = true;
     try {
       for (let pass = 0; this.queue.length > 0 || this.dirtyLists.length > 0 || this.staleLists.length > 0; pass++) {
         if (pass >= MAX_DRAIN_PASSES) {
           console.error(`[@wcstack/state] ${text(M.DrainNotSettled)}`);
-          for (const b of this.queue) b.queued = false;
-          for (const l of this.dirtyLists) l.queued = false;
-          for (const l of this.staleLists) l.stale = false;
-          this.queue = [];
-          this.dirtyLists = [];
-          this.staleLists = [];
-          this.strategy.dropped(this);
+          this.dropWork();
           break;
         }
         const stale = this.staleLists;
@@ -967,6 +1056,8 @@ export class Engine implements ReconcileHooks {
     } finally {
       this.draining = false;
     }
+    // (writes made while applying are this drain's own passes)
+    this.fedBack = this.codeWrote = false;
     this.report();
     if (hooks.drained !== null) hooks.drained(this);
   }
@@ -1031,7 +1122,21 @@ export class Engine implements ReconcileHooks {
       const paths = [...rendered.keys()];
       const indexes: Record<string, number[][]> = {};
       for (const [p, l] of rendered) if (l.length > 0) indexes[p] = l;
-      this.callHookDetached("$renderedCallback", [paths, indexes]);
+      this.feeding++;
+      let r: any;
+      try {
+        r = this.callHook("$renderedCallback", [paths, indexes]);
+      } catch (e) {
+        console.error(e);
+      }
+      if (r !== null && typeof r === "object" && typeof r.then === "function") {
+        r.then(this.renderedFn, (e: unknown) => {
+          this.renderedFn();
+          console.error(e);
+        });
+      } else {
+        this.feeding--;
+      }
     }
     if (this.errors.length === 0) return;
     const errors = this.errors;

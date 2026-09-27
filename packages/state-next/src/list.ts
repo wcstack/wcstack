@@ -57,6 +57,8 @@ export class StateList {
   queued = false;
   /** Its pattern reads through a getter that changed: re-synced at the next drain pass. */
   stale = false;
+  /** Another list has the same array (a getter returning it, an index path): writes reach both. */
+  shared = false;
 
   constructor(pattern: Pattern, parentRow: StateRow | null) {
     this.pattern = pattern;

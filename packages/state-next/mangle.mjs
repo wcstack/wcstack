@@ -33,6 +33,8 @@ const NAMES = `
   watchRendered resolveConnected rejectConnected receiveInitial report rendered sync update dispose write
   children filters forget resetList applyPass deliverFn delegate stale staleLists
   invalidateUnder checkArity resolveInitialize claimed occurrence loadState onCreate unregister changed mark dropped
+  dropWork fedBack codeWrote feeding unchainFn renderedFn markupAccessor handlerWrote otherWrote
+  listsByArray share mirror shared
 `.trim().split(/\s+/);
 
 export const MANGLE_PROPS = new RegExp(`^(?:${NAMES.join("|")})$`);

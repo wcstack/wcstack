@@ -829,3 +829,158 @@ describe("R6 エクスポートした getter: 境界", () => {
     }
   });
 });
+
+describe("F20・F21 行のブロックの直下の構造のテンプレート", () => {
+  it("F20 行の直下が if: だけでも描かれ、追従する", async () => {
+    const { root, write } = await page(`<ul><template data-wcs="for: items"><template data-wcs="if: .on"><li>{{ .n }}</li></template></template></ul>`,
+      { items: [{ n: 1, on: true }, { n: 2, on: true }] });
+    expect(texts(root, "li")).toEqual(["1", "2"]);
+    await write((s) => { s["items.0.on"] = false; s.items = [...s.items, { n: 3, on: true }]; });
+    expect(texts(root, "li")).toEqual(["2", "3"]);
+  });
+
+  it("F21 行の直下の if: の枝は、行と一緒に並べ替わり、行と一緒に消える", async () => {
+    const { root, write } = await page(
+      `<div><template data-wcs="for: items"><b>{{ .n }}</b><template data-wcs="if: .x"><i>x{{ .n }}</i></template></template></div>`,
+      { items: [{ n: 1, x: true }, { n: 2, x: true }] },
+    );
+    const text = () => root.querySelector("div")!.textContent;
+    expect(text()).toBe("1x12x2");
+    await write((s) => { s.items = [...s.items].reverse(); });
+    expect(text()).toBe("2x21x1");
+    await write((s) => { s.items = s.items.slice(1); });
+    expect(text()).toBe("1x1");
+    await write((s) => { s.items = []; });
+    expect(text()).toBe("");
+  });
+
+  it("F21 行の直下の for: の行も、外側の行と一緒に動く", async () => {
+    const { root, write } = await page(
+      `<div><template data-wcs="for: groups"><template data-wcs="for: .items"><i>{{ . }}</i></template><b>|</b></template></div>`,
+      { groups: [{ items: ["a", "b"] }, { items: ["c"] }] },
+    );
+    const text = () => root.querySelector("div")!.textContent;
+    expect(text()).toBe("ab|c|");
+    await write((s) => { s.groups = [...s.groups].reverse(); });
+    expect(text()).toBe("c|ab|");
+    await write((s) => { s.groups = s.groups.slice(1); });
+    expect(text()).toBe("ab|");
+  });
+});
+
+describe("F30・async のイベントハンドラ", () => {
+  it("ホストの行が消えた後のコンポーネントの書き込みは The host row of <tag> was removed. で拒み、消えた行のデータは変えない", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const tag = component(`<p>{{ name }}</p>`, () => ({ async later(this: any) { await gate; this.name = "late"; } }));
+    const { root, write, read } = await page(`<template data-wcs="for: users"><${tag} data-wcs="state: ."></${tag}></template>`, { users: [{ name: "a" }, { name: "b" }] });
+    const second = root.querySelectorAll(tag)[1] as any;
+    const item = (read("users") as any[])[1];
+    const pending = second.state.later();
+    await write((s) => { s.users = [s.users[0]]; });
+    release();
+    await expect(pending).rejects.toThrow(`[@wcstack/state] The host row of <${tag}> was removed.`);
+    expect(item.name).toBe("b");
+    expect(read("users.0.name")).toBe("a");
+  });
+
+  it("async のイベントハンドラの失敗は console.error に報告する（未処理の拒否にしない）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const failure = new Error("async handler failed");
+      const { root } = await page(`<button data-wcs="onclick: go"></button>`, { async go() { throw failure; } });
+      (root.querySelector("button") as HTMLElement).click();
+      await flush();
+      expect(error).toHaveBeenCalledWith(failure);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("async の $errorCallback", () => {
+  it("失敗は console.error に報告する", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const failure = new Error("error callback failed");
+      await page(`<p>{{ bad }}</p>`, {
+        get bad() { throw new Error("bad"); },
+        async $errorCallback() { throw failure; },
+      });
+      await flush();
+      expect(error).toHaveBeenCalledWith(failure);
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("F24・F25 同じ配列を持つ一覧は、書き込みを互いに届ける", () => {
+  const html = `<ul class="src"><template data-wcs="for: todos"><li>{{ .t }}</li></template></ul>`
+    + `<ul class="alias"><template data-wcs="for: shown"><li><input data-wcs="value: .t"></li></template></ul>`;
+  const state = () => ({ todos: [{ t: "a" }, { t: "b" }], get shown() { return (this as any).todos; } });
+
+  it("元のパスへの葉・要素の書き込みが、getter の一覧の行に届く", async () => {
+    const { root, write } = await page(html, state());
+    const alias = () => Array.from(root.querySelectorAll(".alias input")).map((i) => (i as HTMLInputElement).value);
+    expect(alias()).toEqual(["a", "b"]);
+    await write((s) => { s["todos.0.t"] = "A"; });
+    expect(alias()).toEqual(["A", "b"]);
+    await write((s) => { s["todos.1"] = { t: "B" }; });
+    expect(alias()).toEqual(["A", "B"]);
+  });
+
+  it("getter の一覧の行の入力の書き戻しが、元の一覧の行に届く", async () => {
+    const { root, read } = await page(html, state());
+    const input = root.querySelectorAll(".alias input")[1] as HTMLInputElement;
+    input.value = "typed";
+    input.dispatchEvent(new Event("input"));
+    await flush();
+    await flush();
+    expect(read("todos.1.t")).toBe("typed");
+    expect(texts(root, ".src li")).toEqual(["a", "typed"]);
+  });
+
+  it("F25 数値添字のパスの for の行が描かれ、添字のパスの書き込みが届く", async () => {
+    const { root, write } = await page(`<template data-wcs="for: groups.0.items"><i>{{ .v }}</i></template>`, { groups: [{ items: [{ v: 1 }, { v: 2 }] }] });
+    expect(texts(root, "i")).toEqual(["1", "2"]);
+    await write((s) => { s["groups.0.items.1.v"] = 9; });
+    expect(texts(root, "i")).toEqual(["1", "9"]);
+    await write((s) => { s["groups.0.items"] = [{ v: 7 }]; });
+    expect(texts(root, "i")).toEqual(["7"]);
+  });
+});
+
+describe("F29 要素の登録簿（customElementRegistry）", () => {
+  it("行の要素は、置かれた後の登録簿で定義を待つ（happy-dom に無いプロパティを足して確かめる。実物は e2e）", async () => {
+    const tag = `fix-scoped-${seq++}`;
+    // the row elements' registry once placed (a stand-in for a scoped one: it answers from the global)
+    const scoped = {
+      get: (t: string) => customElements.get(t),
+      whenDefined: (t: string) => customElements.whenDefined(t),
+      upgrade: (e: Element) => customElements.upgrade(e),
+    };
+    const seen: unknown[] = [];
+    Object.defineProperty(HTMLElement.prototype, "customElementRegistry", {
+      configurable: true,
+      get(this: Element) {
+        if (this.localName === tag) seen.push(this.isConnected ? "scoped" : "global");
+        return this.isConnected ? scoped : customElements;
+      },
+    });
+    try {
+      const { root } = await page(`<ul><template data-wcs="for: items"><li><${tag} data-wcs="name: .n"></${tag}></li></template></ul>`, { items: [{ n: "a" }] });
+      expect(seen).toContain("global");
+      expect(seen).toContain("scoped");
+      customElements.define(tag, class extends HTMLElement {
+        static wcBindable = { protocol: "wc-bindable", version: 1, inputs: [{ name: "name" }] };
+        set name(v: unknown) { this.textContent = String(v); }
+      });
+      await flush();
+      await flush();
+      expect(texts(root, tag)).toEqual(["a"]);
+    } finally {
+      delete (HTMLElement.prototype as any).customElementRegistry;
+    }
+  });
+});

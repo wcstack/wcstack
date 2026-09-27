@@ -43,6 +43,8 @@ const startsMark = (n: Node | null, prefix: string): boolean => n !== null && n.
 
 /** Page-level anchors (the walker's) and the template each replaced, by engine. */
 const anchors = new WeakMap<Engine, Map<Node, Element>>();
+/** The engines that recorded anchors in a page (its root node): the page's, and its Light DOM components'. */
+const enginesByRoot = new WeakMap<Node, Set<Engine>>();
 
 /** Nodes from `from` to `to`, siblings, inclusive. */
 function range(from: Node, to: Node): Node[] {
@@ -118,25 +120,36 @@ function data(target: Record<string, any>): Record<string, unknown> {
 let ids = 0;
 
 function snapshot(el: Element, engine: Engine): void {
-  const map = anchors.get(engine) ?? new Map<Node, Element>();
-  // the views the page walker made, top down (a nested view's region stays inside its row's)
-  const byAnchor = new Map<Node, ForView | IfView>();
-  for (const l of engine.rootLists.values()) {
-    if (l.view !== null) byAnchor.set(l.view.anchor, l.view);
-    if (l.extra !== null) for (const v of l.extra) byAnchor.set(v.anchor, v);
+  const root = el.getRootNode() as Document | ShadowRoot;
+  // the page's engine, and those of the Light DOM components in it: their walkers' anchors are in
+  // the page too (a Shadow DOM component's are in its own shadow root)
+  const engines = [engine];
+  for (const E of enginesByRoot.get(root) ?? []) {
+    if (E !== engine && (E.element as Element | null)?.hasAttribute("bind-component") === true) engines.push(E);
   }
-  for (const bs of engine.rootBindings.values()) {
-    for (const b of bs) if (b.chain !== null) for (const br of b.chain.branches) byAnchor.set(br.anchor, b.chain);
-  }
-  const done = new Set<ForView | IfView>();
-  for (const anchor of map.keys()) {
-    const v = byAnchor.get(anchor);
-    if (v !== undefined && !done.has(v) && anchor.isConnected) {
-      done.add(v);
-      visitView(v);
+  const map = new Map<Node, Element>();
+  for (const E of engines) {
+    const own = anchors.get(E);
+    if (own === undefined) continue;
+    // the views the walker made, top down (a nested view's region stays inside its row's)
+    const byAnchor = new Map<Node, ForView | IfView>();
+    for (const l of E.rootLists.values()) {
+      if (l.view !== null) byAnchor.set(l.view.anchor, l.view);
+      if (l.extra !== null) for (const v of l.extra) byAnchor.set(v.anchor, v);
+    }
+    for (const bs of E.rootBindings.values()) {
+      for (const b of bs) if (b.chain !== null) for (const br of b.chain.branches) byAnchor.set(br.anchor, b.chain);
+    }
+    const done = new Set<ForView | IfView>();
+    for (const [anchor, template] of own) {
+      map.set(anchor, template);
+      const v = byAnchor.get(anchor);
+      if (v !== undefined && !done.has(v) && anchor.isConnected) {
+        done.add(v);
+        visitView(v);
+      }
     }
   }
-  const root = el.getRootNode() as Document | ShadowRoot;
   protectTexts(root.nodeType === 9 ? (root as Document).body : root);
   const ssr = document.createElement(tag());
   ssr.setAttribute("version", VERSION);
@@ -321,6 +334,10 @@ export function ssrMark(engine: Engine, node: Node, source: Element | string): v
     let map = anchors.get(engine);
     if (map === undefined) anchors.set(engine, (map = new Map()));
     map.set(node, source);
+    const root = node.getRootNode();
+    let es = enginesByRoot.get(root);
+    if (es === undefined) enginesByRoot.set(root, (es = new Set()));
+    es.add(engine);
     return;
   }
   if (typeof source !== "string" && held.size > 0) {

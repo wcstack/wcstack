@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>state: scoped custom element registry</title>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <div id="host"></div>
+  <script type="module">
+    // #357: a shadow root with its own CustomElementRegistry. <x-greet> is defined there only (the
+    // global registry never knows it); <x-late> is defined there after the page has rendered.
+    await customElements.whenDefined("wcs-state");
+    const reg = new CustomElementRegistry();
+    const State = customElements.get("wcs-state");
+    reg.define("wcs-state", class extends State {});
+    const greet = (tag) => class extends HTMLElement {
+      static wcBindable = {
+        protocol: "wc-bindable", version: 1,
+        properties: [{ name: "greeting", event: `${tag}:greeting` }], inputs: [{ name: "name" }],
+      };
+      set name(v) { this._n = v; this.textContent = `hello ${v}`; }
+      get name() { return this._n; }
+      get greeting() { return `hello ${this._n}`; }
+    };
+    reg.define("x-greet", greet("x-greet"));
+    const root = document.getElementById("host").attachShadow({ mode: "open", customElementRegistry: reg });
+    root.innerHTML = `
+      <wcs-state json='{"people":[{"name":"a"},{"name":"b"}],"one":{"name":"z"}}'></wcs-state>
+      <ul class="prop"><template data-wcs="for: people"><li><x-greet data-wcs="name: .name"></x-greet></li></template></ul>
+      <ul class="spread"><template data-wcs="for: people"><li><x-greet data-wcs="...: ."></x-greet></li></template></ul>
+      <p class="root"><x-greet data-wcs="name: one.name"></x-greet></p>
+      <ul class="late"><template data-wcs="for: people"><li><x-late data-wcs="name: .name"></x-late></li></template></ul>`;
+    window.__defineLate = () => reg.define("x-late", greet("x-late"));
+    window.__write = (fn) => root.querySelector("wcs-state").createState("writable", fn);
+    window.__ready = true;
+  </script>
+</body>
+</html>

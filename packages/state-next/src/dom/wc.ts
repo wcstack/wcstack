@@ -51,20 +51,31 @@ export function readBindable(cls: CustomElementConstructor): Bindable | null {
 
 export const isCustomTag = (el: Element): boolean => el.localName.includes("-");
 
+/** The registry that defines `el`: a scoped one (`attachShadow({ customElementRegistry })`) or the global one. */
+export const registryOf = (el: Element): CustomElementRegistry =>
+  ((el as any).customElementRegistry as CustomElementRegistry | null | undefined) ?? customElements;
+
 /**
  * Runs `attach` once the element's class is defined (at once when it already is) and
  * upgraded, unless its block went away in the meantime.
  */
-export function whenDefined(el: Element, owner: Block | null, attach: (bindable: Bindable | null) => void): void {
+export function whenDefined(el: Element, owner: Block | null, attach: (bindable: Bindable | null) => void, later = false): void {
   const tag = el.localName;
+  const r = registryOf(el);
+  // a row built in a fragment takes the registry of the shadow root it goes into (a scoped one)
+  // when it is placed, in this drain: wait for that before waiting for a definition
+  if (!later && !el.isConnected && r.get(tag) === undefined && "customElementRegistry" in el) {
+    queueMicrotask(() => whenDefined(el, owner, attach, true));
+    return;
+  }
   const run = (): void => {
     if (owner !== null && !owner.alive) return;
-    const cls = customElements.get(tag);
-    customElements.upgrade(el);
+    const cls = r.get(tag);
+    r.upgrade(el);
     attach(cls ? readBindable(cls) : null);
   };
-  if (customElements.get(tag) !== undefined) run();
-  else void customElements.whenDefined(tag).then(run);
+  if (r.get(tag) !== undefined) run();
+  else void r.whenDefined(tag).then(run);
 }
 
 const JSON_TYPES = new Set(["object"]);

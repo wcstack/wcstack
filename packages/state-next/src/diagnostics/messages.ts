@@ -5,7 +5,7 @@
  * without a sentence a type error.
  */
 import { M } from "../messages";
-import { MAX_DRAIN_PASSES, MAX_INDEX_PARAM } from "../engine";
+import { MAX_DRAIN_PASSES, MAX_INDEX_PARAM, MAX_RENDER_CHAIN } from "../engine";
 import { MAX_PATH_SEGMENTS, MODIFIER_SEPARATOR, RECURSION_WILDCARD } from "../parser/define";
 
 type Sentence = (...a: any[]) => string;
@@ -22,6 +22,7 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.SetAllNeedsIndexes]: (p) => `$setAll("${p}") needs indexes ([] for every match)`,
   [M.SetAllSpreadLength]: (p, n) => `$setAll("${p}", …, { spread: true }) needs an array of ${n} values`,
   [M.DrainNotSettled]: () => `updates did not settle after ${MAX_DRAIN_PASSES} passes`,
+  [M.RenderChain]: () => `render chain depth limit exceeded (${MAX_RENDER_CHAIN} drains that rendering itself started); bindings for this batch were not applied.`,
   [M.BindingFailed]: (type, p) => `binding "${type}: ${p}" failed to apply.`,
   [M.LoadFailed]: (src, status) => `failed to load "${src}": ${status}`,
   [M.ElementFailed]: () => "this <wcs-state> failed to initialize; create a new one",
