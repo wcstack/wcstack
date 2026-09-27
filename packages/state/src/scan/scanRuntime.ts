@@ -31,7 +31,7 @@ import { getScopedIndexes } from "../list/wildcardLevel";
 import type { IStateProxy } from "../proxy/types";
 import { getStreamEntries } from "../stream/streamRegistry";
 import { getUpdater } from "../updater/updater";
-import { beginWatchFiring, endWatchFiring } from "../watch/chainDepth";
+import { beginWatchFiring, endWatchFiring, watchChainDepthOf } from "../watch/chainDepth";
 import { getPrevValue } from "../watch/prevValues";
 import { selectLandedRows } from "../watch/rowLanding";
 import { consumePendingScanReset, discardPendingScanResets } from "./eventReset";
@@ -50,6 +50,8 @@ export interface IScanGroup {
   readonly entry: IScanEntry;
   readonly rows: IScanRow[];
   reset: boolean;
+  /** この group を起こした書き込み（`from` の行・`resetOn`）の `$watch` 連鎖の深さの最大（watch/chainDepth.ts・#354） */
+  depth: number;
 }
 
 /** 相 1 の結果。`group.reset` なら相 2 が `initial` の複製を書く（出力が既に initial と同じ値なら書かない） */
@@ -60,12 +62,13 @@ export interface IScanPlan {
 
 const NO_PLANS: readonly IScanPlan[] = Object.freeze([]);
 
-function groupOf(groups: Map<IScanEntry, IScanGroup>, stateElement: IStateElement, entry: IScanEntry): IScanGroup {
+function groupOf(groups: Map<IScanEntry, IScanGroup>, stateElement: IStateElement, entry: IScanEntry, depth: number): IScanGroup {
   let group = groups.get(entry);
   if (typeof group === "undefined") {
-    group = { stateElement, entry, rows: [], reset: false };
+    group = { stateElement, entry, rows: [], reset: false, depth };
     groups.set(entry, group);
   }
+  group.depth = Math.max(group.depth, depth);
   return group;
 }
 
@@ -249,12 +252,12 @@ function commitPlan(plan: IScanPlan, activeStateElements: ReadonlySet<IStateElem
 
 /**
  * 相 1: バッチの `from` / `resetOn` ヒットを集め、宣言順に次の値を決める（書かない）。
- * `depth` は watch runtime が消費した連鎖深さ。fold の中の書き込みも連鎖に数える。
+ * group は自分を起こした書き込みの `$watch` 連鎖の深さ（watch runtime が消費した台帳 — watch/chainDepth.ts）で
+ * 畳む — fold の中の書き込みも、その連鎖に数える（#354）。
  */
 export function planScansOnUpdateBatch(
   batch: ReadonlySet<IAbsoluteStateAddress>,
   activeStateElements: ReadonlySet<IStateElement>,
-  depth: number,
 ): readonly IScanPlan[] {
   // 発火対象でない state（書き込みの後に切断された）の `on` scan の保留 reset を捨てる（D6）。
   // drain のゲートより前に置く — 切断で最後の scan がゲートから外れても、その書き込みの保留は残っている
@@ -273,6 +276,7 @@ export function planScansOnUpdateBatch(
       continue;
     }
     const pathInfo = absAddress.absolutePathInfo.pathInfo;
+    const depth = watchChainDepthOf(batch, absAddress);
     const fromEntries = registry.byFromPath.get(pathInfo.path);
     if (typeof fromEntries !== "undefined") {
       let indexes: number[] = [];
@@ -284,13 +288,13 @@ export function planScansOnUpdateBatch(
         indexes = getScopedIndexes(absAddress.listIndex, pathInfo.wildcardCount);
       }
       for (const entry of fromEntries) {
-        groupOf(groups, stateElement, entry).rows.push({ absAddress, indexes });
+        groupOf(groups, stateElement, entry, depth).rows.push({ absAddress, indexes });
       }
     }
     const resetEntries = registry.byResetPath.get(pathInfo.path);
     if (typeof resetEntries !== "undefined") {
       for (const entry of resetEntries) {
-        groupOf(groups, stateElement, entry).reset = true;
+        groupOf(groups, stateElement, entry, depth).reset = true;
       }
     }
   }
@@ -299,9 +303,9 @@ export function planScansOnUpdateBatch(
   }
   const ordered = Array.from(groups.values()).sort((a, b) => a.entry.order - b.entry.order);
   const plans: IScanPlan[] = [];
-  beginWatchFiring(depth);
   try {
     for (const group of ordered) {
+      beginWatchFiring(group.depth);
       const plan = planGroup(group, batch, activeStateElements);
       if (plan !== null) {
         plans.push(plan);
@@ -315,19 +319,18 @@ export function planScansOnUpdateBatch(
 
 /**
  * 相 2: 計画を宣言順に書く（D18）。同じ drain の `$watch` の発火より前（D11）。
- * scan の書き込みも連鎖深さに数える。
+ * scan の書き込みも、その group を起こした書き込みの連鎖に数える。
  */
 export function commitScanPlans(
   plans: readonly IScanPlan[],
   activeStateElements: ReadonlySet<IStateElement>,
-  depth: number,
 ): void {
   if (plans.length === 0) {
     return;
   }
-  beginWatchFiring(depth);
   try {
     for (const plan of plans) {
+      beginWatchFiring(plan.group.depth);
       commitPlan(plan, activeStateElements);
     }
   } finally {

@@ -3,11 +3,26 @@ import { createListIndex, getHomeParentListIndex, setListIndexValue } from "./cr
 import { disownListIndexes, getListIndexesByList, resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 import { dropKeyedSubscriptionsByListIndex, moveIndexWatchers, rekeyIndexSubscriptions } from "../dependency/keyedDependency";
+import { updateBatch } from "../updater/updateBatch";
 
 const listDiffByOldListByNewList = new WeakMap<readonly unknown[], WeakMap<readonly unknown[], IListDiff>>();
 
 const EMPTY_LIST = Object.freeze([]);
 const EMPTY_SET = new Set<IListIndex>();
+/** 行はそのままで要素が替わった行（syncListIndexes・#359）。新しい配列ごとに、拾ったバッチの番号と一緒に持つ */
+const valueChangesByList = new WeakMap<readonly unknown[], [number, IListIndex[]]>();
+
+/**
+ * 新しい配列 → まだ state に居る前の配列（#362）。配列をそのまま返していた getter が写しを返すようになった
+ * （TodoMVC の絞り込み all → done）ときに、getter の評価が控える（proxy/methods/getByAddress.ts）。
+ * 差分は前の配列の行を新しい配列へ貸さない — 貸すと行の添字が写しの位置へ振り直され、前の配列（`todos`）の
+ * 数値添字の読み書きが別の要素に着地した。前の配列は生きているので、その行を退役させもしない。
+ */
+const livePreviousLists = new WeakMap<object, unknown>();
+
+export function keepPreviousList(list: object, previous: unknown): void {
+  livePreviousLists.set(list, previous);
+}
 
 function getListDiff(rawOldList: readonly unknown[], rawNewList: readonly unknown[]): IListDiff | null {
   const oldList = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
@@ -33,7 +48,7 @@ function setListDiff(oldList: readonly unknown[], newList: readonly unknown[], d
  * @param newList - New list to compare
  * @returns True if lists are identical, false otherwise
  */
-function isSameList(oldList: readonly unknown[], newList: readonly unknown[]): boolean {
+export function isSameList(oldList: readonly unknown[], newList: readonly unknown[]): boolean {
   if (oldList.length !== newList.length) {
     return false;
   }
@@ -56,8 +71,16 @@ function isSameList(oldList: readonly unknown[], newList: readonly unknown[]): b
  * 同じ走査で、行が表している要素も憶えさせる（#256）。行を戻す普通のやり方は
  * 配列を作り直すので ListIndex も作り直される ── 「同じ行が戻ってきた」と言えるのは
  * 行オブジェクトの identity ではなく、この値だけ。
+ * 憶えていた要素と違う行は、行の同一性だけを突き合わせる差分（両方の配列に台帳がある）が「変わらない」と
+ * 見る行で、要素だけが替わっている（#359 — 要素の書き込みがその場で行の要素を替えた配列から、その行の元の
+ * 要素を持つ前の配列へ戻した）。`valueChangeIndexes` に集め、依存ウォークに行ごと描き直させる。
+ * 拾えるのは最初の呼び出しだけ（憶えた要素をここで付け直す）なので、同じバッチの間は、同じ配列への差分を
+ * 取り直した呼び出しにも前の呼び出しが拾った行を渡す（`valueChangesByList`）— 同じ配列を別のパスが描く
+ * （配列をそのまま返す getter の `for`）と、そのパスのリストの展開は同じ配列への差分を取り直す。
  */
-function syncListIndexes(newIndexes: IListIndex[], newList: readonly unknown[]): void {
+function syncListIndexes(diff: IListDiff, newList: readonly unknown[]): void {
+  const newIndexes = diff.newIndexes;
+  let changed: IListIndex[] | undefined;
   for (let i = 0; i < newIndexes.length; i++) {
     if (newIndexes[i].index !== i) {
       const oldIndex = newIndexes[i].index;
@@ -65,8 +88,18 @@ function syncListIndexes(newIndexes: IListIndex[], newList: readonly unknown[]):
       // `$eqIndex` の購読は差分側で鍵を付け替える（dependency/keyedDependency.ts）
       rekeyIndexSubscriptions(newIndexes[i], oldIndex, i);
     }
-    setListIndexValue(newIndexes[i], newList[i]);
+    if (setListIndexValue(newIndexes[i], newList[i])) {
+      (changed ??= []).push(newIndexes[i]);
+    }
   }
+  const kept = valueChangesByList.get(newList);
+  if (kept?.[0] === updateBatch) {
+    changed = changed ? kept[1].concat(changed) : kept[1];
+  }
+  if (changed) {
+    valueChangesByList.set(newList, [updateBatch, changed]);
+  }
+  diff.valueChangeIndexes = changed;
 }
 
 /**
@@ -96,16 +129,19 @@ export function createListDiff(
 ): IListDiff {
   const diff = computeListDiff(parentListIndex, rawOldList, rawNewList);
   syncListIndexes(
-    diff.newIndexes,
+    diff,
     (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST,
   );
   // 捨てた行を退役、返した行を復活として記録する。台帳はこれを見て「共有」と「陳腐化」を
   // 分ける（#256）。両方を毎回の差分で付け直すので、消えない印は残らない。
   // deleteIndexSet と newIndexes は構造上交わらない。
-  retireRows(diff.deleteIndexSet);
   reviveListIndexes(diff.newIndexes);
-  // `$eqIndex` の最内段の監視は listIndex 配列に付く: 配列が変わったら移し、最後の値の位置の行を enqueue
-  moveIndexWatchers(diff.oldIndexes, diff.newIndexes);
+  // 前の配列がまだ state に居る（livePreviousLists）なら、その行も `$eqIndex` の監視も前の配列のまま
+  if (livePreviousLists.get(rawNewList as object) !== rawOldList) {
+    retireRows(diff.deleteIndexSet);
+    // `$eqIndex` の最内段の監視は listIndex 配列に付く: 配列が変わったら移し、最後の値の位置の行を enqueue
+    moveIndexWatchers(diff.oldIndexes, diff.newIndexes);
+  }
   return diff;
 }
 
@@ -144,8 +180,9 @@ function computeListDiff(
       };
     }
     // If old list was empty, create all new indexes
+    // 前の配列がまだ state に居る（livePreviousLists）なら、その行を貸さずに新しい行を作る（#362）
     let newIndexes: IListIndex[] | null = resolveListIndexesByList(newList, parentListIndex);
-    if (oldList.length === 0) {
+    if (oldList.length === 0 || (newIndexes === null && livePreviousLists.get(newList) === oldList)) {
       if (newIndexes === null) {
         newIndexes = [];
         for(let i = 0; i < newList.length; i++) {
@@ -157,7 +194,7 @@ function computeListDiff(
         oldIndexes: oldIndexes,
         newIndexes: newIndexes,
         changeIndexSet: EMPTY_SET,
-        deleteIndexSet: EMPTY_SET,
+        deleteIndexSet: new Set<IListIndex>(oldIndexes),
         addIndexSet: new Set<IListIndex>(newIndexes),
       };
     }

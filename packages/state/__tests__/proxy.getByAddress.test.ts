@@ -15,6 +15,7 @@ function createStateElement(overrides?: Partial<any>) {
     getterPaths: new Set<string>(),
     setterPaths: new Set<string>(),
     addDynamicDependency: vi.fn(),
+    setPathInfo: vi.fn(),
     ...overrides,
   };
 }
@@ -153,6 +154,9 @@ describe('getByAddress', () => {
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe('Ann');
+    // 載せた行のパス（親の要素パスも）は、要素の書き込みの依存ウォークが届くよう静的な辺に登録する（#364）
+    expect(mockStateElement.setPathInfo).toHaveBeenCalledWith('users.*.name', 'prop', 'internal');
+    expect(mockStateElement.setPathInfo).toHaveBeenCalledWith('users.*', 'prop', 'internal');
 
     // クリーンアップ
     setCacheEntryByAbsoluteStateAddress(absAddress, null);

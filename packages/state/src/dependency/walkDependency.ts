@@ -3,10 +3,12 @@ import { calcWildcardLen } from "../address/calcWildcardLen";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { IAbsoluteStateAddress, IPathInfo, IStateAddress } from "../address/types";
+import { dirtyCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
 import { IStateElement } from "../components/types";
 import { config } from "../config";
 import { DELIMITER, WILDCARD } from "../define";
-import { createListDiff } from "../list/createListDiff";
+import { createListDiff, isSameList } from "../list/createListDiff";
+import { getListIndexesByList } from "../list/listIndexesByList";
 import { getStateListBaseline, setStateListBaseline } from "../list/stateListBaseline";
 import { IListDiff, IListIndex } from "../list/types";
 import { listIndexAtWildcard } from "../list/wildcardLevel";
@@ -112,6 +114,23 @@ type Context = {
   readonly keyedMergePath: string | null,
   /** パス → トポロジカル順位。訪問順の決定に使う（topologicalRank.ts 参照） */
   readonly ranks: ReadonlyMap<string, number>,
+  /**
+   * キャッシュを無効にするだけのアドレス（callback を呼ばない）。`for` で描いていないリストの行と、そこから
+   * しか届かない先（#364）。書き込みの着地にすると、描いていないリストの行の `$watch` / `$scan` が配列の
+   * 代入で発火する — README の「headless な行 watch には `$listKeys` が要る」と食い違う（S13）
+   */
+  readonly quiet: Set<IStateAddress>,
+}
+
+/** 依存先を積む。静かな経路からしか届かない先は静かなまま、ほかの経路でも届く先は callback に渡す */
+function pushDependency(context: Context, depAddress: IStateAddress, quiet: boolean, nextEntries: IStateAddress[]): void {
+  if (!quiet) {
+    context.quiet.delete(depAddress);
+  } else if (!context.result.has(depAddress)) {
+    context.quiet.add(depAddress);
+  }
+  context.result.add(depAddress);
+  nextEntries.push(depAddress);
 }
 
 /**
@@ -133,15 +152,14 @@ const EMPTY_INDEXES: IListIndex[] = [];
  *   イディオムは diff に映らないため、全行展開で従来挙動を保つ。
  *   削除だけの置換は除く — 残存行に変化は無く、集計はコンテナ動的エッジが担う）
  * - 他行を読む getter が検出されたリスト（隣接項目参照など。未変更行の派生値も変わりうる）
+ * - `for` で描いていないリスト（ここに来るのは行を据え置いたまま中身が変わりうるときだけ — _collectDependencies）
  */
 function selectExpansionIndexes(
   context: Context,
   sourcePath: string,
-  _lastValue: unknown,
-  _newValue: unknown,
   listDiff: IListDiff,
 ): ExpansionSelection {
-  if (context.listExpansion === "full") {
+  if (context.listExpansion === "full" || !context.listPathSet.has(sourcePath)) {
     return { fullRows: listDiff.newIndexes, movedRows: null };
   }
   if (context.stateElement.crossRowListPaths?.has(sourcePath)) {
@@ -247,7 +265,11 @@ function _walkDependency(
         continue;
       }
       context.visited.add(address);
-      callback(address);
+      if (context.quiet.has(address)) {
+        dirtyCacheEntryByAbsoluteStateAddress(liftAddress(context.stateElement, address));
+      } else {
+        callback(address);
+      }
       nextEntries.length = 0;
       _collectDependencies(context, address, nextEntries);
       for (let i = 0; i < nextEntries.length; i++) {
@@ -268,6 +290,7 @@ function _collectDependencies(
   nextEntries: IStateAddress[],
 ): void {
   const sourcePath = address.pathInfo.path;
+  const quiet = context.quiet.has(address);
 
   /**
    * パスから依存関係をたどる
@@ -278,36 +301,48 @@ function _collectDependencies(
   if (staticDeps) {
     for(const dep of staticDeps) {
       const depPathInfo = getPathInfo(dep);
-      if (context.listPathSet.has(sourcePath) && depPathInfo.lastSegment === WILDCARD) {
+      if (depPathInfo.lastSegment === WILDCARD) {
         //expand indexes
         const newValue = context.stateProxy[getByAddressSymbol](address);
+        // 配列でない値は空のリスト（createListDiff も同じに扱う）
+        const newList: readonly unknown[] = Array.isArray(newValue) ? newValue : [];
         const absAddress = liftAddress(context.stateElement, address);
         const lastValue = getStateListBaseline(absAddress);
+        const listed = context.listPathSet.has(sourcePath);
+        // `for` で描いていないリスト（listPaths に無い）の行へ辺が張られるのは、`$watch` の宣言か、行の下の
+        // 値がキャッシュに載ったとき（cacheEntryByAbsoluteStateAddress.ts・#364）。追加した行には描くものも
+        // キャッシュも無いので、展開するのは行を据え置いたまま中身が変わりうるとき — `$postUpdate`（"full"）と、
+        // 行がもうある配列（台帳の行の数が要素の数と揃う — 同じ配列・前に使った配列に戻した）か同じ要素の並び
+        // （写し）の代入 — だけで、それ以外は差分も取らない（読み手がいなければ台帳を作らない）。キー突合の
+        // 書き込みは変化したフィールドを個別に書いている（selectExpansionIndexes と同じ）。展開した行は
+        // キャッシュを無効にするだけ（context.quiet）
+        if (!listed && context.listExpansion === "diff" && (context.keyedMergePath === sourcePath ||
+          (getListIndexesByList(newList)?.length !== newList.length && !isSameList(lastValue, newList)))) {
+          continue;
+        }
         const listDiff = createListDiff(
-          address.listIndex, lastValue, newValue);
-        context.observedListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
-        const selection = selectExpansionIndexes(context, sourcePath, lastValue, newValue, listDiff);
+          address.listIndex, lastValue, newList);
+        context.observedListValueByAbsAddress.set(absAddress, newList);
+        const selection = selectExpansionIndexes(context, sourcePath, listDiff);
         for(const listIndex of selection.fullRows) {
-          const depAddress = createStateAddress(depPathInfo, listIndex);
-          context.result.add(depAddress);
-          nextEntries.push(depAddress);
+          pushDependency(context, createStateAddress(depPathInfo, listIndex), quiet || !listed, nextEntries);
+        }
+        // 行はそのままで要素が替わった行（#359。このバッチの間に差分が拾った分）も行ごと展開する
+        for(const listIndex of listDiff.valueChangeIndexes ?? EMPTY_INDEXES) {
+          pushDependency(context, createStateAddress(depPathInfo, listIndex), quiet || !listed, nextEntries);
         }
         if (selection.movedRows !== null) {
           const movedPathInfos = getMovedRowExpansionPaths(context, dep, depPathInfo);
           if (movedPathInfos === null) {
             // ネスト配下に index 依存 getter: 安全側で行全体を展開（従来挙動）
             for(const listIndex of selection.movedRows) {
-              const depAddress = createStateAddress(depPathInfo, listIndex);
-              context.result.add(depAddress);
-              nextEntries.push(depAddress);
+              pushDependency(context, createStateAddress(depPathInfo, listIndex), quiet, nextEntries);
             }
           } else if (movedPathInfos.length > 0) {
             // 位置のみ変わった行は index 依存 getter のパスだけを展開する
             for(const listIndex of selection.movedRows) {
               for(const pathInfo of movedPathInfos) {
-                const depAddress = createStateAddress(pathInfo, listIndex);
-                context.result.add(depAddress);
-                nextEntries.push(depAddress);
+                pushDependency(context, createStateAddress(pathInfo, listIndex), quiet, nextEntries);
               }
             }
           }
@@ -315,9 +350,7 @@ function _collectDependencies(
           // 位置のみ変わった行の値は不変。展開・dirty 化とも不要。
         }
       } else {
-        const depAddress = createStateAddress(depPathInfo, address.listIndex);
-        context.result.add(depAddress);
-        nextEntries.push(depAddress);
+        pushDependency(context, createStateAddress(depPathInfo, address.listIndex), quiet, nextEntries);
       }
     }
   }
@@ -389,9 +422,7 @@ function _collectDependencies(
         listIndexes.push(null);
       }
       for(const listIndex of listIndexes) {
-        const depAddress = createStateAddress(depPathInfo, listIndex);
-        context.result.add(depAddress);
-        nextEntries.push(depAddress);
+        pushDependency(context, createStateAddress(depPathInfo, listIndex), quiet, nextEntries);
       }
     }
   }
@@ -476,6 +507,7 @@ export function walkDependency(
     searchType: searchType,
     listExpansion: options?.listExpansion ?? "full",
     keyedMergePath: options?.keyedMergePath ?? null,
+    quiet: new Set<IStateAddress>(),
   };
   _walkDependency(context, startAddress, callback);
   drainKeyedWalk(context, callback);

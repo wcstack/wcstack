@@ -223,9 +223,17 @@ export function getHomeParentListIndex(listIndex: IListIndex): IListIndex | null
   return (listIndex as ListIndex).homeParentListIndex;
 }
 
-/** 台帳専用の入口その 3。差分が返した行に、その行が表している要素を憶えさせる（#256）。 */
-export function setListIndexValue(listIndex: IListIndex, value: unknown): void {
-  (listIndex as ListIndex).value = value;
+/**
+ * 台帳専用の入口その 3。差分が返した行に、その行が表している要素を憶えさせる（#256）。
+ * 要素の書き込みがその場で行の要素を替えたときも呼ぶ（setByAddress の _setByAddressWithSwap・#359）。
+ * 前に憶えていた要素と違えば真を返す — 差分がこれを見て、行はそのままで要素だけが替わった行を
+ * 描き直させる（createListDiff の syncListIndexes）。
+ */
+export function setListIndexValue(listIndex: IListIndex, value: unknown): boolean {
+  const row = listIndex as ListIndex;
+  const changed = row.value !== NO_VALUE && !Object.is(row.value, value);
+  row.value = value;
+  return changed;
 }
 
 /**

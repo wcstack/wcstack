@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createListDiff } from '../src/list/createListDiff';
 import { getListIndexesByList, retireListIndexes, setListIndexesByList } from '../src/list/listIndexesByList';
-import { createListIndex, getHomeParentListIndex } from '../src/list/createListIndex';
+import { createListIndex, getHomeParentListIndex, setListIndexValue } from '../src/list/createListIndex';
+import { advanceUpdateBatch } from '../src/updater/updateBatch';
 
 describe('createListDiff', () => {
   it('calcDiffIndexesで位置が変わった既存要素がchangeIndexSetに含まれること', () => {
@@ -290,5 +291,66 @@ describe('createListDiff', () => {
 
       setListIndexesByList(list, null);
     });
+  });
+});
+
+describe('行はそのままで要素が替わった行（#359）', () => {
+  /** saved の台帳の行を next の台帳が共有し、next の行 0 が要素の書き込みでその場で o3 を映す形 */
+  function setup() {
+    const o1 = { id: 1 };
+    const o2 = { id: 2 };
+    const o3 = { id: 3 };
+    const saved = [o1, o2, o3];
+    createListDiff(null, [], saved);
+    const next = [o1, o2, o3, { id: 4 }];
+    createListDiff(null, saved, next);
+    const row = getListIndexesByList(next)![0];
+    next[0] = o3;
+    setListIndexValue(row, o3);
+    return { saved, next, row };
+  }
+
+  it('両方の配列に台帳がある差分は呼ぶたびに取り直すが、同じバッチの間は後の呼び出しにも拾った行を渡すこと', () => {
+    const { saved, next, row } = setup();
+    const first = createListDiff(null, next, saved);
+    const second = createListDiff(null, next, saved);
+    expect(first.valueChangeIndexes).toEqual([row]);
+    expect(second).not.toBe(first);
+    // 同じ配列を別のパスが描く（配列をそのまま返す getter の for）と、そのパスの展開が取り直す差分
+    expect(second.valueChangeIndexes).toEqual([row]);
+    setListIndexesByList(saved, null);
+    setListIndexesByList(next, null);
+  });
+
+  it('バッチが替われば渡さないこと', () => {
+    const { saved, next, row } = setup();
+    expect(createListDiff(null, next, saved).valueChangeIndexes).toEqual([row]);
+    advanceUpdateBatch();
+    expect(createListDiff(null, next, saved).valueChangeIndexes).toBeUndefined();
+    setListIndexesByList(saved, null);
+    setListIndexesByList(next, null);
+  });
+});
+
+describe('行はそのままで要素が替わった行（#359）: 同じ配列への別の差分', () => {
+  it('同じバッチで別の配列から同じ配列への差分が別の行を拾ったら、両方を渡すこと', () => {
+    const o1 = { id: 1 };
+    const o2 = { id: 2 };
+    const saved = [o1, o2];
+    createListDiff(null, [], saved);
+    const x = [o1, o2, { id: 3 }];
+    createListDiff(null, saved, x);
+    const y = [o1, o2, { id: 4 }];
+    createListDiff(null, saved, y);
+    const [row0, row1] = getListIndexesByList(saved)!;
+    x[0] = o2;
+    setListIndexValue(row0, o2);
+    expect(createListDiff(null, x, saved).valueChangeIndexes).toEqual([row0]);
+    y[1] = o1;
+    setListIndexValue(row1, o1);
+    expect(createListDiff(null, y, saved).valueChangeIndexes).toEqual([row0, row1]);
+    for (const list of [saved, x, y]) {
+      setListIndexesByList(list, null);
+    }
   });
 });

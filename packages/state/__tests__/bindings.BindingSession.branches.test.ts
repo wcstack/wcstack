@@ -47,6 +47,7 @@ vi.mock("../src/event/radioHandler", () => ({ attachRadioEventHandler: mocks.att
 vi.mock("../src/event/checkboxHandler", () => ({ attachCheckboxEventHandler: mocks.attachCheckbox, detachCheckboxEventHandler: mocks.detachCheckbox }));
 
 import { BindingSession, getBindingSession, getOrCreateBindingSession } from "../src/bindings/BindingSession";
+import { getDefinitionCoordinator } from "../src/bindings/DefinitionCoordinator";
 
 function createBinding(node = document.createElement("input"), overrides: Partial<IBindingInfo> = {}): IBindingInfo {
   return {
@@ -435,5 +436,204 @@ describe("BindingSession defensive branches", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(otherRejected).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 定義待ちの registry を引く時点（#357）と、外れて戻ったノードの待ち直し（#352）。
+ * registry はモック（getCustomElementRegistry が mocks.registry を返す）で、引いた時点を差し替えで確かめる。
+ */
+describe("BindingSession 定義待ちの張り方（#352 / #357）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.customTag = null;
+  });
+
+  function pendingRegistry(): any {
+    let define!: (constructor: CustomElementConstructor) => void;
+    const registry = {
+      get: vi.fn(),
+      whenDefined: vi.fn(() => new Promise<CustomElementConstructor>((resolve) => { define = resolve; })),
+      upgrade: vi.fn(),
+      define: () => define(class extends HTMLElement {}),
+    };
+    return registry;
+  }
+
+  function connectedNode(): Element {
+    const root = document.createElement("div").attachShadow({ mode: "open" });
+    const node = document.createElement("x-deferred");
+    root.appendChild(node);
+    return node;
+  }
+
+  const outside = { contains: () => false } as any;
+  const inside = { contains: () => true } as any;
+
+  it("DocumentFragment の中のノードは、その場では待たず、次の microtask にその時の registry で待つこと", async () => {
+    const before = pendingRegistry();
+    const after = pendingRegistry();
+    mocks.registry = before;
+    const fragment = document.createDocumentFragment();
+    const node = fragment.appendChild(document.createElement("x-deferred"));
+    const session = new BindingSession();
+    const callback = vi.fn();
+    session.deferUntilDefined(node, "x-deferred", callback);
+    expect(before.whenDefined).not.toHaveBeenCalled();
+
+    // 差し込み先の木で registry が変わる（fragment の中では global、差し込むとスコープ付き）
+    mocks.registry = after;
+    await Promise.resolve();
+    expect(before.whenDefined).not.toHaveBeenCalled();
+    expect(after.whenDefined).toHaveBeenCalledTimes(1);
+    after.define();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(after.upgrade).toHaveBeenCalledWith(node);
+  });
+
+  it("microtask の前に取り消した・外れた fragment の中の待ちは張らないこと", async () => {
+    mocks.registry = pendingRegistry();
+    const fragment = document.createDocumentFragment();
+    const cancelled = fragment.appendChild(document.createElement("x-deferred"));
+    const removed = fragment.appendChild(document.createElement("x-deferred"));
+    const session = new BindingSession();
+    session.deferUntilDefined(cancelled, "x-deferred", vi.fn())();
+    session.deferUntilDefined(removed, "x-deferred", vi.fn());
+    session.handleMutations(outside, [removed], []);
+    await Promise.resolve();
+    expect(mocks.registry.whenDefined).not.toHaveBeenCalled();
+    expect(session.canWholesaleDestroy()).toBe(true);
+  });
+
+  it("外れたノードの待ちは registry から下ろし、戻ったらその時の registry で待ち直すこと", async () => {
+    const first = pendingRegistry();
+    mocks.registry = first;
+    const node = connectedNode();
+    const session = new BindingSession();
+    const callback = vi.fn();
+    session.deferUntilDefined(node, "x-deferred", callback);
+    expect(getDefinitionCoordinator(first).pendingCount("x-deferred")).toBe(1);
+
+    session.handleMutations(outside, [node], []);
+    // 戻らない要素を registry に掴ませない
+    expect(getDefinitionCoordinator(first).pendingCount("x-deferred")).toBe(0);
+    expect(session.canWholesaleDestroy()).toBe(true);
+
+    const second = pendingRegistry();
+    mocks.registry = second;
+    session.handleMutations(inside, [], [node]);
+    expect(getDefinitionCoordinator(second).pendingCount("x-deferred")).toBe(1);
+    // 張ったままの待ちへの追加の通知は、待ちを重ねない
+    session.handleMutations(inside, [], [node]);
+    expect(second.whenDefined).toHaveBeenCalledTimes(1);
+    expect(getDefinitionCoordinator(second).pendingCount("x-deferred")).toBe(1);
+
+    second.define();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledTimes(1);
+  });
+
+  it("同じノードの先の待ちが microtask に並んでいる間は、後の待ちもその後ろに並び、登録順に走ること", async () => {
+    const registry = pendingRegistry();
+    mocks.registry = registry;
+    const fragment = document.createDocumentFragment();
+    const node = fragment.appendChild(document.createElement("x-deferred"));
+    const session = new BindingSession();
+    const order: string[] = [];
+    // createContent の fragment の中で登録する待ち（two-way・イベントを付ける側）
+    session.deferUntilDefined(node, "x-deferred", () => order.push("attach"));
+    // 差し込んだ後の活性化で登録する待ち（値の遅延適用）
+    document.createElement("div").attachShadow({ mode: "open" }).appendChild(node);
+    session.deferUntilDefined(node, "x-deferred", () => order.push("apply"));
+    expect(registry.whenDefined).not.toHaveBeenCalled();
+
+    await Promise.resolve();
+    registry.define();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual(["attach", "apply"]);
+  });
+
+  it("fragment の中で並べた two-way・イベントを付ける待ちは、並んでいる間に解体されたら張らず、張るときに registry が無ければ record を failed にすること", async () => {
+    mocks.customTag = "x-deferred";
+    const registry = pendingRegistry();
+    mocks.registry = registry;
+    const fragment = document.createDocumentFragment();
+    const disposed = createBinding(fragment.appendChild(document.createElement("x-deferred")));
+    const orphaned = createBinding(fragment.appendChild(document.createElement("x-deferred")));
+    const disposedSession = new BindingSession();
+    const orphanedSession = new BindingSession();
+    disposedSession.initialize([disposed], { registerAddress: false });
+    orphanedSession.initialize([orphaned], { registerAddress: false });
+    expect(orphanedSession.getRecord(orphaned)?.phase).toBe("waiting-definition");
+    disposedSession.dispose();
+    // 差し込んだ先に registry が無い（張るときに引く）
+    mocks.registry = null;
+    await Promise.resolve();
+    expect(registry.whenDefined).not.toHaveBeenCalled();
+    expect(orphanedSession.getRecord(orphaned)?.phase).toBe("failed");
+  });
+
+  it("外れている間に session ごと解体された待ちは、戻っても張り直さないこと", () => {
+    const registry = pendingRegistry();
+    mocks.registry = registry;
+    const node = connectedNode();
+    const session = new BindingSession();
+    session.deferUntilDefined(node, "x-deferred", vi.fn());
+    session.handleMutations(outside, [node], []);
+    session.dispose();
+    session.handleMutations(inside, [], [node]);
+    expect(registry.whenDefined).toHaveBeenCalledTimes(1);
+    expect(getDefinitionCoordinator(registry).pendingCount("x-deferred")).toBe(0);
+
+    // 解体の後に登録した待ちは、外れて戻れば張り直す
+    session.deferUntilDefined(node, "x-deferred", vi.fn());
+    session.handleMutations(outside, [node], []);
+    session.handleMutations(inside, [], [node]);
+    expect(getDefinitionCoordinator(registry).pendingCount("x-deferred")).toBe(1);
+  });
+
+  it("待ち直すときに registry が無ければ reject へ送り、待ちを済ませること", () => {
+    mocks.registry = pendingRegistry();
+    const node = connectedNode();
+    const session = new BindingSession();
+    const rejected = vi.fn();
+    session.deferUntilDefined(node, "x-deferred", vi.fn(), rejected);
+    session.handleMutations(outside, [node], []);
+
+    mocks.registry = null;
+    session.handleMutations(inside, [], [node]);
+    expect(rejected).toHaveBeenCalledTimes(1);
+    expect(String(rejected.mock.calls[0][0])).toMatch(/CustomElementRegistry is unavailable for <x-deferred>/);
+    // 済んだ待ちは次の追加でも張らない
+    mocks.registry = pendingRegistry();
+    session.handleMutations(inside, [], [node]);
+    expect(mocks.registry.whenDefined).not.toHaveBeenCalled();
+    expect(rejected).toHaveBeenCalledTimes(1);
+  });
+
+  it("行の束縛（applyOnReconnect なし）でも、定義を待ったまま外れたものは戻ったときに適用し直すこと", () => {
+    mocks.customTag = "x-deferred";
+    mocks.registry = pendingRegistry();
+    const waiting = createBinding(connectedNode());
+    mocks.customTag = null;
+    const plain = createBinding(connectedNode());
+    const session = new BindingSession();
+    mocks.customTag = "x-deferred";
+    session.initialize([waiting], { registerAddress: false, applyOnReconnect: false });
+    mocks.customTag = null;
+    session.initialize([plain], { registerAddress: false, applyOnReconnect: false });
+
+    session.handleMutations(outside, [waiting.node, plain.node], []);
+    mocks.apply.mockClear();
+    mocks.customTag = "x-deferred";
+    session.handleMutations(inside, [], [waiting.node]);
+    mocks.customTag = null;
+    session.handleMutations(inside, [], [plain.node]);
+    expect(mocks.apply).toHaveBeenCalledTimes(1);
+    expect(mocks.apply).toHaveBeenCalledWith([waiting]);
   });
 });

@@ -243,6 +243,8 @@ computed は lazy。書き込みは `dirtyCacheEntryByAbsoluteStateAddress` で 
 
 `listPaths` に watch パスを載せれば発火させられるが、それは「宣言しただけで for 相当の展開が走る」ことを意味し、swap 判定・`elementPaths` にも波及する。第 1 段では採らず、制約として書く（変更するなら別案件）。
 
+**#364 からの補足。** `listPaths` に無いリストの `list → list.*` も、行を据え置いたまま中身が変わりうるとき（`$postUpdate("items")`、行がもうある配列 — 同じ配列・前に使った配列 — や同じ要素の並びの写しの代入）は全行を展開する（`walkDependency.ts` の `_collectDependencies`）。それ以外の代入では差分も取らない。行の下の値がキャッシュに載ったリストで、据え置いた行のキャッシュを無効にするため。展開した行はキャッシュを無効にするだけで書き込みの着地にしない（`walkDependency` の `context.quiet`）ので、上の表の「発火しない」は `$postUpdate("items")` と同じ配列・写しの代入でも変わらない（`watch.wildcard.test.ts` の S13 の 2 本目）。
+
 固定しているテストは `watch.wildcard.test.ts` の S13 2 本。
 
 ---
@@ -261,8 +263,9 @@ watch ハンドラ内の書き込みは新しい microtask バッチを作るた
 
 `$streams` は自己依存を宣言時に `raiseError` で静的検出しているが、**watch は書き込み先が動的なので同じ手は使えない**。よって実行時に倒す:
 
-- watch runtime が「watch 起点の連鎖深さ」を持つ。watch ハンドラ実行中に立てたフラグ下で enqueue されたバッチは深さ +1 として drain される
-- 深さが **32**（`MAX_PROPAGATION_HOPS` と同値。定数は共有せず `MAX_WATCH_CHAIN_DEPTH` として別に置く）を超えたら、そのバッチの watch 発火を打ち切り `console.error` で該当パスを報告する
+- watch runtime が「watch 起点の連鎖深さ」を持つ。watch ハンドラ実行中に立てたフラグ下で enqueue された**書き込み**に「そのハンドラの深さ + 1」を付け、次のバッチの各ハンドラ（`$scan` なら group）は自分を起こした書き込みの深さで発火する（ハンドラ起点でない書き込みは深さ 0）。深さをバッチ単位で持つと、ハンドラの書き込みと同じバッチに相乗りした別の書き込み（`$renderedCallback` の書き戻しなど）で起きたハンドラまで連鎖の続きに数え、32 段を超える有限の描画の連鎖の途中で誤って打ち切る（#354・`watch/chainDepth.ts`）。`$streams` の restart（drain 終了リスナーの中の `initial` への戻しと status）もハンドラと同じく、restart を起こした依存の書き込みの深さで数え、上限を越えた書き込みが起こす restart は行わない（数えないと、args の依存へ書く watch と restart の書き込みの循環が深さ 0 に戻り続ける）
+- 台帳は drain ごとに必ず消費する（発火する state が無い drain も含む）。消費した深さはそのバッチに弱く結び付け、drain が終われば捨てる。消費しないと、外れた state のハンドラが書いたアドレスと深さが残り、後の別の state のバッチを誤って打ち切る
+- バッチの書き込みの深さの最大が **32**（`MAX_PROPAGATION_HOPS` と同値。定数は共有せず `MAX_WATCH_CHAIN_DEPTH` として別に置く）を超えたら、そのバッチの watch 発火を打ち切り `console.error` で該当パスを報告する
 - 打ち切るのは watch の発火のみ。**値と binding 適用は巻き戻さない**（hop 上限超過時の quarantine と同じ姿勢、`updater.ts:112-127`）
 
 ---

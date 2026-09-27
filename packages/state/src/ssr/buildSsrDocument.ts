@@ -1,4 +1,4 @@
-import { config } from "../config";
+import { config, ssrBlockRemoval } from "../config";
 import { Ssr } from "./Ssr";
 import { VERSION } from "../version";
 import { IWcsSsrSnapshotBuilder, SSR_SNAPSHOT_BUILDER_KEY } from "../protocol/ssrSnapshot";
@@ -61,6 +61,7 @@ export function buildSsrDocument(root: Document): void {
 export function resetSsrRenderState(): void {
   clearFragmentInfos();
   clearSsrPropertyStore();
+  ssrBlockRemoval.seen = false;
 }
 
 const builder: IWcsSsrSnapshotBuilder = {

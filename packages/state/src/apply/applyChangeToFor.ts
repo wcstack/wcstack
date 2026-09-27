@@ -2,10 +2,11 @@ import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
+import { bindLoopContextToContent } from "../bindings/bindLoopContextToContent";
 import { markObserverSkipRemovedChildren } from "../bindings/observerSkip";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
-import { inSsr } from "../config";
-import { WILDCARD } from "../define";
+import { inSsr, ssrBlockRemoval } from "../config";
+import { INDEX_BY_INDEX_NAME, WILDCARD } from "../define";
 import { calcDiffIndexes, createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
 import { getLastListValueByAbsoluteStateAddress, getRenderedList, IRenderedList } from "../list/lastListValueByAbsoluteStateAddress";
@@ -89,6 +90,12 @@ export function hydrateSetContent(node: Node, index: IListIndex, content: IConte
 
 export function hydrateSetLastNode(node: Node, lastNode: Node): void {
   lastNodeByNode.set(node, lastNode);
+}
+
+// SSR ハイドレーション用: サーバーが描いた並びを、この for が描いた並びとして記録する（クライアントで描いた
+// for と同じく、要素の書き込みが描画の基準を書き込む前の写しへ移せるように — #351）
+export function hydrateSetRenderedList(node: Node, list: readonly unknown[]): void {
+  renderedListByNode.set(node, getRenderedList(list));
 }
 
 export function __test_deleteContentByNode(node: Node): void {
@@ -247,6 +254,30 @@ function clearAppliedMarks(content: IContent, context: IApplyContext): void {
 }
 
 /**
+ * 位置が変わった行の添字の束縛（`$1` …）を当て直す。行の中の入れ子の構造ディレクティブ（createContent が
+ * 同じ列に入れる）の Content — 内側の for の行・if の枝、その奥 — も辿る（#360）。内側の for は同じ配列を
+ * 描き続けるので差分が出ず、if は条件が変わらないので、ここで辿らないと外側の軸の添字が古いまま残る。
+ * 添字を条件に持つ構造ディレクティブ（`if: $1|lt(2)`）は当て直してから辿る（真のままなら枝は描き直されない）。
+ * 外れている Content（プールの行・偽の if の枝）は辿らない（戻すときの活性化が全部の束縛を当てる）。
+ */
+function applyIndexBindings(content: IContent, context: IApplyContext): void {
+  for (const binding of getIndexBindingsByContent(content)) {
+    if (!STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
+      applyChange(binding, context);
+      continue;
+    }
+    if (binding.statePathName in INDEX_BY_INDEX_NAME) {
+      applyChange(binding, context);
+    }
+    for (const nested of getContentSetByNode(binding.node)) {
+      if (nested.mounted) {
+        applyIndexBindings(nested, context);
+      }
+    }
+  }
+}
+
+/**
  * 入れ子の `for` が持つ Content を解体して台帳から外す（#4）。その場で使い回す行の中身は新しい行として
  * 作り直されるので、外した Content をアンカーの content 台帳（contentSetByNode）に残すと、置き換えの
  * たびに伸び続ける。プールへ返さないのは、返すと次の適用で内側の `for` が「全行削除」の近道
@@ -376,6 +407,7 @@ export function applyChangeToFor(
           // 外す行の境界も外す（#334。その場で使い回す行は、足す行として境界を置き直す）。SSR の外で
           // 描いた行（同じ文書で後から SSR が始まった）は境界を持たない
           ssrBoundsByContent.get(content)?.forEach((bound) => bound.remove());
+          ssrBlockRemoval.seen = true;
         }
         if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
           // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
@@ -445,6 +477,9 @@ export function applyChangeToFor(
           // より先に適用された形。印が残ると activateContent の applyChange が飛ばし、新しい行に外した行の
           // 値が残る（表示と state が食い違う）。新しい行として適用し直す
           clearAppliedMarks(content, context);
+          // DOM に戻す前に新しい行のループ文脈を張る。戻した瞬間に中のマウント済みコンポーネントの
+          // 再接続（`$connectedCallback`）が同期で走り、要素の行を引く（#368）
+          bindLoopContextToContent(content, loopContext);
         }
         // コンテント活性化の前にDOMツリーに追加しておく必要がある
         if (ssrMode) {
@@ -483,10 +518,7 @@ export function applyChangeToFor(
       content = (typeof contentMap !== 'undefined' ? contentMap.get(index) ?? null : null)!;
       if (diff.changeIndexSet.has(index)) {
         // change
-        const indexBindings = getIndexBindingsByContent(content);
-        for(const indexBinding of indexBindings) {
-          applyChange(indexBinding, context);
-        }
+        applyIndexBindings(content, context);
       }
       // Update lastNode for next iteration to ensure correct order
       // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)

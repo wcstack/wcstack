@@ -369,7 +369,8 @@ describe("同じ配列を別のパスの for が描く", () => {
 
       (shadowRoot.querySelectorAll(".tg")[0] as HTMLButtonElement).click();
       await flushTimes();
-      expect(shown()[0]).toBe("1");
+      // 書いた行はすぐに描き直される（#362。旧: 次にリストを描くまで "a:false,b:false" のまま）
+      expect(shown()).toEqual(["1", "a:true,b:false"]);
       (shadowRoot.querySelector(".add") as HTMLButtonElement).click();
       await flushTimes();
       // 旧: 行は "a:false,b:false" のまま（追加した行も描かない）

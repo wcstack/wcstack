@@ -82,6 +82,16 @@ branch `feat/scoped-custom-element-registry` で実装済み。
   書き込み、後の upgrade が入れるアクセサを覆い隠す。
   [state-binding-init-races.md](./state-binding-init-races.ja.md) §2 の deferred-apply が防いでいる当の失敗である。
 
+ノードが `DocumentFragment` の中に居る間は「対象とするノード」に対する答えがまだ無い。そのノードを支配する
+レジストリは差し込まれたときに決まる（§5 項目 2 の計測）。`state` は `for` / `if` の中身を fragment の中で組んで
+活性化し、同じ同期処理のうちに差し込むので、fragment の中のノードの定義待ちはその場ではなく次の microtask ——
+差し込んだ後 —— にレジストリを引く（#357）。同じ理由で、待ちはノードに付いてツリーを出入りする。ノードが外れると
+待ちをレジストリから下ろし（戻らないノードを掴み続けない）、戻ると今居るツリーのレジストリで待ち直す — その間に属する行が一覧から消えていれば待ち直さない（#352）。
+こうして並べた待ちの後ろには同じノードの後の待ちも並ぶので、リスナーの取り付けと初期同期は、遅延した state の
+書き込みより先に走る。リスナーの取り付けがまだ待っている束縛は、要素がもう定義済みに見えても state の書き込みを
+その後ろへ回す — fragment の中で組んだ中身からはタグが未定義に見え、スコープ付き registry は差し込んだ時点で
+（待ちが走る前に）要素を upgrade する。
+
 **Phase 1 — 登録先を指定できるようにする。** `registerComponents.ts` を持つ 40 パッケージ全てが定義先レジストリを
 受け取り（既定は global）、各 `bootstrapXxx()` が素通しする。`@wcstack/devtools` は意図的に対象外 — 1 タグを
 定義して `document.body` へパネルを挿すので、どのツリーでもなくドキュメントのレジストリに属する。
@@ -163,6 +173,13 @@ const shadow = host.attachShadow({ mode: "open", customElementRegistry: registry
    これを是正する `ShadowRoot.importNode()` は無い（§1）。Phase 3 の設計に入る前に実ブラウザで計測すること。
    その答えが [`structural/createContent.ts`](../packages/state/src/structural/createContent.ts) を変更する
    必要があるか否かを決める。
+   **Chromium 149 で計測した（2026-09-27、#357 の修正時）— そこでは予想が外れた。**
+   `document.importNode(template.content, true)` で作ったクローンは、fragment の中では global レジストリを返し
+   （テンプレート内容そのものの要素は `null`）、scoped registry を持つ shadow root へ差し込むとそのレジストリへ
+   付け替わり、その場で upgrade される。同じ名前の global 定義で upgrade 済みの要素でさえ、差し込んだ後は scoped
+   レジストリを返す（クラスは global のまま）。scoped なツリーから外した要素は scoped レジストリのまま。
+   `document.importNode(node, { customElementRegistry })` は存在し、クローンを生成時からスコープ化する。
+   Safari は未計測。
 3. **Import map はドキュメント単位。** [`importmap.ts`](../packages/autoloader/src/importmap.ts) は
    `document.querySelectorAll('script[type="importmap"]')` を読む。アイランドは自分のモジュールマップを
    持ち込めず、ホストページのものを読む。モジュール解決は本来ドキュメント全体のものなので恐らくこれが正しい
@@ -173,7 +190,9 @@ const shadow = host.attachShadow({ mode: "open", customElementRegistry: registry
 
 - **G5** — `wcstack` にランタイムエントリ（`bootstrapAll(registry)`）を持たせるか、ウィジェットのレシピを
   手書きドキュメントのままにするか。メタパッケージにランタイムを持たせることは、それをインストールする意味を変える。
-- **G6** — 構造レンダリングにスコープ対応クローンが要るか。項目 2 の計測待ち。
+- **G6** — 構造レンダリングにスコープ対応クローンが要るか。Chromium では項目 2 のとおり、無くてもクローンは
+  差し込み先のレジストリに収まる。残るのは Safari と、差し込む前に upgrade させるためにクローンを生成時から
+  スコープ化する（レジストリ付きの `importNode`）かどうか。
 - **G7** — アイランド内の `<wcs-autoloader>` を対応とするか。するなら誰の import map に対してか。
 - **G8** — Firefox での縮退契約は何か。ホストページが既にそのタグを定義していればウィジェットの `define` は
   スキップされ、ウィジェットは無言でホストのバージョン上で動く。パッチレベルの差なら許容でき、メジャーなら
@@ -195,7 +214,8 @@ scoped registry は並列 SSR を解禁 **しない**。[`render.ts`](../package
 
 ## 7. 再検討の時期
 
-Phase 3 のゲートは今すぐ開けられる。ブロッカーはブラウザではなく Phase 3 項目 2 の計測である。
+Phase 3 のゲートは今すぐ開けられる。ブロッカーはブラウザではなく Phase 3 項目 2 の計測である — Chromium 149 では
+済み、Safari は未計測。
 Phase 2 は Firefox の出荷待ち。
 [bugzilla 1874414](https://bugzilla.mozilla.org/show_bug.cgi?id=1874414) と
 [web-features のエントリ](https://web-platform-dx.github.io/web-features-explorer/features/scoped-custom-element-registries/)

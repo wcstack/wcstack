@@ -50,7 +50,16 @@ export interface WcsMessageCatalog {
   patternPathOutsideFor(path: string): string;
   omittedPathOutsideFor(path: string): string;
   loopIndexOutsideFor(path: string): string;
+  /**
+   * 行として読まれない数値添字のパス（添字が 2 つ以上・`*` と混ざる）。添字を通した書き込みが届かない。
+   * 添字が 1 つのパス（`items.0.v`）は行を読むので対象外（#355）。
+   */
   resolvedPathInUi(path: string): string;
+  /**
+   * `for:` の対象が数値の添字を持つリスト（`for: groups.0.items`）。行への双方向束縛と添字のパスの読み書きが
+   * 実行時に投げる（state の #363）。
+   */
+  indexPathInFor(path: string): string;
   /** `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。 */
   indexArity(api: string, path: string, requirement: IndexArityRequirement, wildcardCount: number, actual: number): string;
   /** ワイルドカードの階数がスコープの段数を超える（`$N` を含む）。 */
@@ -81,6 +90,8 @@ export interface WcsMessageCatalog {
   watchKeyEmptySegment(key: string): string;
   watchHandlerNotFunction(key: string): string;
   watchPathMissing(key: string): string;
+  /** 数値添字が 1 つの `$watch` のキー（`items.0.v`）。添字を通した書き込みでは発火しない（#355 で実測）。 */
+  watchIndexKey(key: string): string;
   // --- scanDeclarationValidator ---
   /** `$scan` の値がオブジェクトでないと静的に断定できる（ランタイムは読み込み時に throw）。 */
   scanNotObject(): string;
@@ -244,7 +255,10 @@ const ja: WcsMessageCatalog = {
   patternPathOutsideFor: (p) => `パターンパス "${p}" は <template for> の外側では使用できません`,
   omittedPathOutsideFor: (p) => `省略パス "${p}" は <template for> の外側では使用できません`,
   loopIndexOutsideFor: (p) => `ループインデックス "${p}" は <template for> の外側では使用できません`,
-  resolvedPathInUi: (p) => `解決済みパス "${p}" は UI バインディングでは使用できません。パターンパスを使用してください`,
+  resolvedPathInUi: (p) =>
+    `パス "${p}" は行ではなく素のパスとして読まれるため、添字を通した書き込みがこのバインディングに届きません（最初の値のまま止まることがあります）。指す行に追従するのは、数値の添字がちょうど 1 つで "*" を含まないパス（items.0.name）だけです。<template for> の中でパターンパスを使用してください`,
+  indexPathInFor: (p) =>
+    `for: "${p}" は数値の添字を含むリストです。行は "${p}.*.…" として解決され、行への双方向束縛（value: .v）や添字のパスの読み書きは実行時に例外になります（@wcstack/state #363）。リストの段ごとに for: を入れ子にしてください（例: for: groups の中に for: .items）`,
   indexArity: (api, p, req, wc, actual) =>
     `${api}("${p}") の添字は${req === "exact" ? `ちょうど ${wc} 個` : `${wc} 個以下`}である必要があります（パス中の "*" は ${wc} 個）。${actual} 個指定されています`,
   wildcardRank: (subject, needed, available) =>
@@ -272,6 +286,8 @@ const ja: WcsMessageCatalog = {
   watchKeyEmptySegment: (k) => `$watch のキー "${k}" に空のパスセグメントがあります`,
   watchHandlerNotFunction: (k) => `$watch のエントリ "${k}" の値は関数である必要があります`,
   watchPathMissing: (k) => `$watch のキー "${k}" は状態定義に存在しません（一度も発火しません）`,
+  watchIndexKey: (k) =>
+    `$watch のキー "${k}" は数値の添字を含みます。リストが丸ごと置き換わると発火しますが、添字を通した書き込み（this["${k}"] = …）では発火しません（同じパスをマークアップで束縛していれば発火します）`,
   scanNotObject: () => `$scan は「出力名 → { from | on, initial, fold, resetOn? }」のオブジェクトである必要があります（この形はランタイムが読み込み時に throw します）`,
   scanOutputInvalid: (n) => `$scan の出力名 "${n}" は平坦なプロパティ名である必要があります（"."・"*"・先頭の "$" は使えません）`,
   scanOutputReserved: (n) => `$scan の出力名 "${n}" は Object.prototype から継承される名前です（"constructor" など）`,
@@ -472,7 +488,10 @@ const en: WcsMessageCatalog = {
   patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for>`,
   omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for>`,
   loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for>`,
-  resolvedPathInUi: (p) => `Resolved path "${p}" cannot be used in a UI binding. Use a pattern path instead`,
+  resolvedPathInUi: (p) =>
+    `Path "${p}" is read as a plain path, not as a row, so a write through its index does not reach this binding (it can keep its first value). Only a path with exactly one numeric index and no "*" (items.0.name) follows the row it points at. Use a pattern path inside a <template for> instead`,
+  indexPathInFor: (p) =>
+    `for: "${p}" is a list reached through a numeric index. Its rows resolve as "${p}.*.…", and a two-way binding in a row (value: .v) or a read or write through an index path throws at runtime (@wcstack/state #363). Nest one for: per list level instead (e.g. for: groups, with for: .items inside)`,
   indexArity: (api, p, req, wc, actual) =>
     `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
   wildcardRank: (subject, needed, available) =>
@@ -500,6 +519,8 @@ const en: WcsMessageCatalog = {
   watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
   watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
   watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
+  watchIndexKey: (k) =>
+    `$watch key "${k}" has a numeric index: it fires when the list is replaced, but not on a write through the index (this["${k}"] = …) unless the same path is also bound in the markup`,
   scanNotObject: () => `$scan must be an object mapping output names to { from | on, initial, fold, resetOn? } (the runtime throws on this shape at load time)`,
   scanOutputInvalid: (n) => `$scan output name "${n}" must be a flat property name ("." and "*" and a leading "$" are not allowed)`,
   scanOutputReserved: (n) => `$scan output name "${n}" is a property name inherited from Object.prototype (e.g. "constructor")`,

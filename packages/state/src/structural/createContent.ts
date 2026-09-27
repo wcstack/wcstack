@@ -296,13 +296,15 @@ function appendRowEndMarker(cloneFragment: DocumentFragment, uuid: string): void
 /**
  * SSR ハイドレーション用: 既存の DOM ノード配列から Content を生成する。
  * テンプレートからの clone ではなく、SSR で描画済みのノードをそのまま使う。
+ * `ranged` は createContent と同じ範囲モード（終端マーカーは呼び出し側が `nodes` の末尾に置く）。
  */
 export function createContentFromNodes(
   nodes: Node[],
+  ranged?: boolean,
 ): IContent {
   const fragment = document.createDocumentFragment();
   // ノードを fragment に移動せず、参照だけ持つ Content を作る
-  const content = new Content(fragment);
+  const content = new Content(fragment, ranged);
   // Content の内部状態を直接設定
   (content as any)._childNodeArray = nodes;
   (content as any)._firstNode = nodes.length > 0 ? nodes[0] : null;
@@ -395,9 +397,11 @@ export function createContent(
   if (initialInfo.spreads.length > 0) content.spreads = initialInfo.spreads;
   setBindingSessionByContent(content, initialInfo.bindingSession);
   setBindingsByContent(content, initialInfo.bindingInfos);
+  // 行の位置が変わったときに当て直す列: 添字の束縛（`$1` …）と、入れ子の構造ディレクティブ
+  // （内側の for の行・if の枝の添字の束縛へ辿る入口 — applyChangeToFor.ts の applyIndexBindings・#360）
   const indexBindings: IBindingInfo[] = [];
   for(const binding of initialInfo.bindingInfos) {
-    if (binding.statePathName in INDEX_BY_INDEX_NAME) {
+    if (binding.statePathName in INDEX_BY_INDEX_NAME || recursiveBindingTypes.has(binding.bindingType)) {
       indexBindings.push(binding);
     }
   }

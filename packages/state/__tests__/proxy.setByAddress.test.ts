@@ -33,7 +33,8 @@ vi.mock('../src/updater/updater', () => ({
 
 vi.mock('../src/address/TreePath', () => ({
   getTreePath: vi.fn((stateElement, pathInfo) => {
-    return { stateName: stateElement.name, pathInfo };
+    // キャッシュに載せる行のパスは、その state 要素の静的な辺に登録される（#364）
+    return { stateName: stateElement.name, stateElement, pathInfo };
   }),
 }));
 
@@ -66,6 +67,7 @@ function createStateElement(overrides?: Partial<any>) {
     staticDependency: new Map(),
     dynamicDependency: new Map(),
     bindableEventMap: {},
+    setPathInfo: vi.fn(),
     ...overrides,
   };
 }
@@ -114,7 +116,7 @@ describe('setByAddress', () => {
     const address = createStateAddress(getPathInfo('count'), null);
     const stateElement = createStateElement({ getterPaths: new Set(['count']) });
     const handler = createHandler(stateElement);
-    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, stateElement, pathInfo: address.pathInfo }, address.listIndex);
 
     setCacheEntryByAbsoluteStateAddress(absAddress, { value: 1, dirty: false });
 
@@ -134,7 +136,7 @@ describe('setByAddress', () => {
     const address = createStateAddress(getPathInfo('count'), null);
     const stateElement = createStateElement({ getterPaths: new Set(['count']) });
     const handler = createHandler(stateElement);
-    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, stateElement, pathInfo: address.pathInfo }, address.listIndex);
 
     setByAddress(target, address, 9, target, handler as any);
 
@@ -147,7 +149,7 @@ describe('setByAddress', () => {
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
     const stateElement = createStateElement();
     const handler = createHandler(stateElement);
-    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, stateElement, pathInfo: address.pathInfo }, address.listIndex);
     vi.mocked(getByAddress).mockImplementation((_target, addr) => {
       return addr.pathInfo.path === 'items' ? target.items : null;
     });
@@ -159,6 +161,8 @@ describe('setByAddress', () => {
     expect(cacheEntry!.dirty).toBe(false);
     expect(cacheEntry!.value).toBe(9);
     expect(target.items[0]).toBe(9);
+    // 載せた行のパスは、要素パスからの依存ウォークが届くよう静的な辺に登録する（#364）
+    expect(stateElement.setPathInfo).toHaveBeenCalledWith('items.*', 'prop', 'internal');
 
     setCacheEntryByAbsoluteStateAddress(absAddress, null);
   });
@@ -364,7 +368,8 @@ describe('setByAddress', () => {
     // 事前にswapInfoをセットしておく
     const existingSwapInfo = {
       value: ['a', 'b'],
-      listIndexes: [...indexes]
+      listIndexes: [...indexes],
+      written: new Map(),
     };
     setSwapInfoByList(target.items, existingSwapInfo);
 

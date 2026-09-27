@@ -1,9 +1,10 @@
 /**
  * integration.elementSwapFuzz.test.ts — 要素書き込みの入れ替えと一覧の置き換えのランダム差分テスト
- * （#335・#337）。
+ * （#335・#337・#359）。
  *
  * 1 手は 1〜3 個の操作を 1 バッチに並べる: 要素の差し替え・2 行の入れ替え・別の行の値の写し
  * （入れ替えの片側だけ）・push・同じ中身の写し・逆順・1 行削除・丸ごとの置き換え・空にする、
+ * いまの配列を控える・控えた配列そのものへ戻す（#359 — 前に代入していた配列の台帳は同じ行を持つ）、
  * `if` の切り替え（同じリストを描く 2 つ目の `for` を出し入れする形）。25 手ごとに
  *  - 状態を、同じ操作を素の配列に当てたモデルと突き合わせ（書き込みが別の位置に着地しないこと）、
  *  - 描いた値と `$1` を状態と突き合わせ、
@@ -12,6 +13,8 @@
  *
  * 修理前の実装では、形ごとに 100 seed で 95 / 95 / 100 seed が食い違った（最初に食い違った手で状態
  * そのものも食い違っていた — 書き込みが別の位置に着地した・読みが投げた — のが 7 / 8 / 25 seed）。
+ * 控える・戻す手を足した後、#359 の修理前（行が写した値を映したまま残る）は 100 seed で 0 / 1 / 7 seed が
+ * 食い違った（primitive は seed 3 — 既定の 6 seed に入る）。
  * 1 seed あたりの検出率が高いので既定は形ごとに 6 seed。追い込むときは SWAP_FUZZ_SEEDS で増やす。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
@@ -69,6 +72,11 @@ async function runSeed(variant: Variant, seed: number): Promise<string[]> {
     },
   });
 
+  // 控えた配列（keep）とその長さ。戻す（restore）ときは、モデルも状態も自分の側で控えた配列そのものを代入する
+  const kept = { model: [] as unknown[][], state: [] as unknown[][] };
+  const keptLengths: number[] = [];
+  const keptOf = (s: any): unknown[][] => s === modelProxy ? kept.model : kept.state;
+
   const errors: string[] = [];
   const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => { errors.push(String(args[0])); });
   const { host, shadowRoot, stateEl } = await mount(initial, MARKUP[variant]);
@@ -79,7 +87,7 @@ async function runSeed(variant: Variant, seed: number): Promise<string[]> {
       const ops: Op[] = [];
       let length: number = model.items.length;
       for (let k = 1 + int(3); k > 0; k--) {
-        const kind = int(variant === "objectWithIf" ? 12 : 11);
+        const kind = int(variant === "objectWithIf" ? 13 : 12);
         if (kind <= 2 && length > 0) {
           const i = int(length);
           const value = newValue();
@@ -116,7 +124,17 @@ async function runSeed(variant: Variant, seed: number): Promise<string[]> {
           names.push(`replace ${values.length}`);
           ops.push((s) => { s.items = [...values]; });
           length = values.length;
+        } else if (kind === 11 && keptLengths.length > 0 && int(2) === 0) {
+          // 前に代入していた配列そのものへ戻す（#359）
+          const j = int(keptLengths.length);
+          names.push(`restore ${j}`);
+          ops.push((s) => { s.items = keptOf(s)[j]; });
+          length = keptLengths[j];
         } else if (kind === 11) {
+          names.push(`keep ${keptLengths.length}`);
+          ops.push((s) => { keptOf(s).push(s.items); });
+          keptLengths.push(length);
+        } else if (kind === 12) {
           names.push("toggle");
           ops.push((s) => { s.show = !s.show; });
         }

@@ -269,7 +269,10 @@ describe("その場で生やした台帳の同一性", () => {
     write(stateEl, (s) => { s.items = [...s.items]; });
     await flush();
     const copy = raw(stateEl).items;
-    expect(getListIndexesByList(copy), "置換は台帳を作らない（描画も依存も無い）").toBeNull();
+    // 旧（#364 の前）: 置換は台帳を作らなかった（描画も依存も無い）。いまは $getAll が載せた行の値
+    // （items.*.v）が items からの静的な辺を持つので、依存ウォークが中身の同じ写しとの差分を取り、
+    // 観測した行を写しへ引き継ぐ（据え置いた行の中身が変わりうるので、全行の子を無効にする）
+    expect(getListIndexesByList(copy), "置換は $getAll が観測した行を引き継ぐ").toBe(observedRows);
 
     write(stateEl, (s) => { s["items.0.v"] = 5; });
     await flush();

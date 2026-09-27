@@ -306,6 +306,85 @@ describe("同じリストを回す 2 つの for（#258 の調査で発見）", (
   });
 });
 
+describe("同じ配列を、そのパスの for と配列をそのまま返す getter の for が描く（#351）", () => {
+  const MARKUP =
+    `<wcs-state enable-ssr></wcs-state>` +
+    `<ul class="i"><template data-wcs="for: items"><li>{{ .name }}</li></template></ul>` +
+    `<ul class="v"><template data-wcs="for: visible"><li>{{ .name }}</li></template></ul>`;
+  const make = (): any => ({
+    items: [{ name: "a" }, { name: "b" }],
+    get visible() { return (this as any).items; },
+  });
+  const observe = (): unknown => ({ i: texts("ul.i li"), v: texts("ul.v li") });
+
+  it("配列ごと書き換える: 行が重複せず、CSR と同じに描く（旧: `for: items` に SSR の行が残り、Content not found）", async () => {
+    const { csr, ssr } = await compare(MARKUP, make, [
+      (s) => { s.items = [{ name: "z" }, ...s.items.slice(1)]; },
+      (s) => { s.items = [...s.items, { name: "n" }]; },
+    ], observe);
+    expect(ssr.views).toEqual(csr.views);
+    // 旧（SSR）: { i: ["z", "a", "b"], v: ["z", "b"] }
+    expect(ssr.views[1]).toEqual({ i: ["z", "b"], v: ["z", "b"] });
+    expect(ssr.views[2]).toEqual({ i: ["z", "b", "n"], v: ["z", "b", "n"] });
+    expect(ssr.errors).toEqual([]);
+    expect(ssr.warns).toEqual([]);
+  });
+
+  it("要素を書き込む: 両方の for が新しい要素を描き、以後の追加も描く（旧: 両方の for が Content not found）", async () => {
+    const { csr, ssr } = await compare(MARKUP, make, [
+      (s) => { s["items.0"] = { name: "z" }; },
+      (s) => { s.items = [...s.items, { name: "n" }]; },
+      (s) => { s["items.1.name"] = "y"; },
+    ], observe);
+    expect(ssr.views).toEqual(csr.views);
+    // 旧（SSR）: { i: ["z", "a", "b"], v: ["a", "b"] }
+    expect(ssr.views[1]).toEqual({ i: ["z", "b"], v: ["z", "b"] });
+    expect(ssr.views[2]).toEqual({ i: ["z", "b", "n"], v: ["z", "b", "n"] });
+    expect(ssr.views[3]).toEqual({ i: ["z", "y", "n"], v: ["z", "y", "n"] });
+    expect(ssr.errors).toEqual([]);
+    expect(ssr.warns).toEqual([]);
+  });
+
+  it("getter の for だけのページ: 元のパスへの要素の書き込みの後も、行の追加・削除を描く", async () => {
+    const markup =
+      `<wcs-state enable-ssr></wcs-state>` +
+      `<ul class="v"><template data-wcs="for: visible"><li>{{ .name }}</li></template></ul>`;
+    const { csr, ssr } = await compare(markup, make, [
+      (s) => { s["items.0"] = { name: "z" }; },
+      (s) => { s.items = [...s.items, { name: "n" }]; },
+      (s) => { s.items = s.items.slice(1); },
+    ], () => ({ v: texts("ul.v li") }));
+    expect(ssr.views).toEqual(csr.views);
+    expect(ssr.views[1]).toEqual({ v: ["z", "b"] });
+    expect(ssr.views[2]).toEqual({ v: ["z", "b", "n"] });
+    expect(ssr.views[3]).toEqual({ v: ["b", "n"] });
+    expect(ssr.errors).toEqual([]);
+  });
+
+  it("getter が写しへ切り替わった後も、元のパスの数値添字の書き込みが正しい要素に着地する（#362）", async () => {
+    const markup =
+      `<wcs-state enable-ssr></wcs-state>` +
+      `<ul class="v"><template data-wcs="for: visible"><li>{{ .name }}</li></template></ul>`;
+    const makeFiltered = (): any => ({
+      all: true,
+      items: [{ name: "a" }, { name: "b" }, { name: "c" }, { name: "d" }],
+      get visible() { const s = this as any; return s.all ? s.items : s.items.filter((_: any, i: number) => i % 2 === 1); },
+    });
+    const { csr, ssr } = await compare(markup, makeFiltered, [
+      (s) => { s.all = false; },
+      (s) => { s["items.1.name"] = "X"; },
+      (s) => { s.all = true; },
+      (s) => { s["items.3"] = { name: "Y" }; },
+    ], () => ({ v: texts("ul.v li") }));
+    expect(ssr.views).toEqual(csr.views);
+    expect(ssr.views[1]).toEqual({ v: ["b", "d"] });
+    // 旧: ["X", "b", "c", "d"]（items.1 の行が写しの位置 0 へ振り直され、items[0] に着地した）
+    expect(ssr.views[3]).toEqual({ v: ["a", "X", "c", "d"] });
+    expect(ssr.views[4]).toEqual({ v: ["a", "X", "c", "Y"] });
+    expect(ssr.errors).toEqual([]);
+  });
+});
+
 describe("穴 2（未固定だった部分）: 行の中の {{ }}", () => {
   it("行の葉への書き込み・行の getter・リストの置換に追従する", async () => {
     const make = (): any => {

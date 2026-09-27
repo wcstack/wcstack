@@ -26,6 +26,7 @@ import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { analyzeStatePaths, analyzeWatchEntries, findNonObjectWatch, type PathCandidate, type WatchEntryInfo } from './stateAnalyzer.js';
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
+import { toRowPatternPath } from './indexPath.js';
 
 /** 他 state を指す区切り（@wcstack/state define.ts の STATE_NAME_SEPARATOR）。 */
 const STATE_NAME_SEPARATOR = '@';
@@ -128,9 +129,13 @@ function validateEntry(
     return invalid(msgs.watchHandlerNotFunction(key));
   }
   if (pathSet.size > 0 && !pathSet.has(key) && !matchesRecursion(collectRecursionSpecs(paths), key, p => pathSet.has(p))) {
+    // 数値添字が 1 つのキー（`items.0.v`）は行として実在する。実行時はリストの丸ごと置換では発火するが、
+    // 添字を通した書き込みでは発火しない（同じパスをマークアップで束縛していれば発火する — #355 で実測）。
+    // 「一度も発火しない」は事実に反するので、文面だけ分ける（code・severity は同じ）
+    const rowKey = toRowPatternPath(key, pathSet);
     return {
       code: WcsDiagnosticCode.WatchPathMissing,
-      message: msgs.watchPathMissing(key),
+      message: rowKey !== key && pathSet.has(rowKey) ? msgs.watchIndexKey(key) : msgs.watchPathMissing(key),
       severity: 'warning',
     };
   }

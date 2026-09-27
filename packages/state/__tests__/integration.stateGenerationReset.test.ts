@@ -341,7 +341,10 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     await flush();
     expect(Array.from((stateEl as any).listPaths)).toEqual(["items"]);         // 旧: []
     expect(Array.from((stateEl as any).elementPaths)).toEqual(["items.*"]);    // 旧: []
-    expect(Array.from((stateEl as any)._pathSet).sort()).toEqual(["items", "items.*.upper"]); // 旧: []
+    // バインドのパス（items / items.*.upper）に、描き直しでキャッシュに載った行のパス（items.* /
+    // items.*.name — #364 から静的な辺に載る）が加わる
+    expect(Array.from((stateEl as any)._pathSet).sort())
+      .toEqual(["items", "items.*", "items.*.name", "items.*.upper"]); // 旧: []
     host.remove();
   });
 
@@ -376,9 +379,14 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     expect(Array.from((stateEl as any)._pathSet)).toEqual([]);
     expect(read(stateEl, (s: any) => s.$getAll("items.*.name", [])), "新しい state は入っている")
       .toEqual(["x", "y"]);
-    // 台帳が空なので、その後の全リスト書き込みは依存ウォークで落ちる（main と同じ着地）
-    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; }))
-      .toContain("Cannot expand dynamic dependency with wildcard for non-list address: items.*");
+    // 台帳が空でも、その後の全リスト書き込みは落ちない。#364 の前は、listPaths に無いリストの
+    // `items → items.*` を桁数の合わないアドレスで辿り、依存ウォークが
+    // "Cannot expand dynamic dependency with wildcard for non-list address: items.*" で落ちた
+    // （main と同じ着地）。いまは listPaths に無いリストの行への辺を行の無いアドレスで辿らない
+    // （変化の見える代入では展開しない — walkDependency.ts の _collectDependencies）
+    expect(writeError(stateEl, (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; })).toBe("");
+    await flush();
+    expect(read(stateEl, (s: any) => s.$getAll("items.*.upper", []))).toEqual(["P", "Q"]);
     host.remove();
   });
 
@@ -645,18 +653,22 @@ describe("再セットとリスト差分の基準: 第 1 世代の配列が残�
     host.remove();
   });
 
-  it("バインドの無いリストでは基準が第 1 世代の配列のまま残るが、最初の構造書き込みで上書きされ結果は正しい", async () => {
+  it("バインドの無いリストでも、再セット後の構造書き込みの結果は正しい", async () => {
     // `stateListBaseline` は絶対アドレスがキーなので、世代を跨いで第 1 世代の配列インスタンスを
-    // 握り続ける（世代印は付けていない）。適用し直しが辿るのは依存グラフの辺で、バインドの無い
-    // リストには辺が無いので、ここでは基準が残る。害が出るのは「基準が実体とずれたまま diff を取る」
-    // ときなので、再セット直後に一度も読まずに構造書き込みする最悪順序で固定する。
+    // 握り続ける（世代印は付けていない）。適用し直しが辿るのは依存グラフの辺で、#364 の前は
+    // バインドの無いリストには辺が無かったので、ここでは基準が第 1 世代の配列のまま残った。いまは
+    // `$getAll` が載せた行の値（items.*.n）が items からの静的な辺を持つので、適用し直しの全行展開が
+    // 新しい配列を観測して基準を進める。害が出るのは「基準が実体とずれたまま diff を取る」ときなので、
+    // 再セット直後に一度も読まずに構造書き込みする最悪順序で固定する。
     const first = [{ n: 1 }, { n: 2 }];
     const { host, stateEl } = await mount({ items: first });
     expect(read(stateEl, (s: any) => s.$getAll("items.*.n", []))).toEqual([1, 2]);
 
-    stateEl.setInitialState({ items: [{ n: 9 }, { n: 8 }, { n: 7 }] });
+    const second = [{ n: 9 }, { n: 8 }, { n: 7 }];
+    stateEl.setInitialState({ items: second });
     const address = absOf(stateEl, "items");
-    expect(getStateListBaseline(address), "第 1 世代の配列のまま").toBe(first as any);
+    // 旧（#364 の前）: 第 1 世代の配列のまま（first）
+    expect(getStateListBaseline(address), "適用し直しが新しい配列を観測する").toBe(second as any);
 
     // 読まずに（＝基準を更新しないまま）長さの違う構造書き込み
     expect(writeError(stateEl, (s: any) => { s.items = [{ n: 5 }]; })).toBe("");
