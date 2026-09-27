@@ -1,6 +1,6 @@
 import "../polyfills";
 import { createListIndex, getHomeParentListIndex, setListIndexValue } from "./createListIndex";
-import { resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
+import { disownListIndexes, getListIndexesByList, resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 import { dropKeyedSubscriptionsByListIndex, moveIndexWatchers, rekeyIndexSubscriptions } from "../dependency/keyedDependency";
 
@@ -70,6 +70,17 @@ function syncListIndexes(newIndexes: IListIndex[], newList: readonly unknown[]):
 }
 
 /**
+ * 行を退役させ、その行の鍵付き購読（`$eq` 系）を行と一緒に落とす。差分が捨てた行と、
+ * 要素の書き込みが別の要素に差し替えた行（setByAddress の renewReplacedRow・#333）が使う。
+ */
+export function retireRows(rows: Iterable<IListIndex>): void {
+  retireListIndexes(rows);
+  for (const retired of rows) {
+    dropKeyedSubscriptionsByListIndex(retired);
+  }
+}
+
+/**
  * Creates or updates list indexes by comparing old and new lists.
  * Optimizes by reusing existing list indexes when values match.
  * @param parentListIndex - Parent list index for nested lists, or null for top-level
@@ -91,11 +102,7 @@ export function createListDiff(
   // 捨てた行を退役、返した行を復活として記録する。台帳はこれを見て「共有」と「陳腐化」を
   // 分ける（#256）。両方を毎回の差分で付け直すので、消えない印は残らない。
   // deleteIndexSet と newIndexes は構造上交わらない。
-  retireListIndexes(diff.deleteIndexSet);
-  // 退役した行の鍵付き購読（`$eq` 系）は行と一緒に落とす
-  for (const retired of diff.deleteIndexSet) {
-    dropKeyedSubscriptionsByListIndex(retired);
-  }
+  retireRows(diff.deleteIndexSet);
   reviveListIndexes(diff.newIndexes);
   // `$eqIndex` の最内段の監視は listIndex 配列に付く: 配列が変わったら移し、最後の値の位置の行を enqueue
   moveIndexWatchers(diff.oldIndexes, diff.newIndexes);
@@ -111,7 +118,9 @@ function computeListDiff(
   const oldList: readonly unknown[] = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
   const newList: readonly unknown[] = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
   const cachedDiff = getListDiff(oldList, newList);
-  if (cachedDiff) {
+  // 差分を取った後で新しい配列の台帳が差し替わった（同じバッチの要素書き込みの入れ替えが揃った —
+  // #335）なら、キャッシュした差分の行は古い。台帳どうしで取り直す
+  if (cachedDiff && cachedDiff.newIndexes === getListIndexesByList(newList)) {
     return cachedDiff;
   }
   // 台帳は 1 本の配列につき行集合 1 組（listIndexesByList.ts）。親は「行がぶら下がる親が
@@ -153,7 +162,10 @@ function computeListDiff(
       };
     }
     // If lists are identical, return existing indexes unchanged (optimization)
-    if (isSameList(oldList, newList)) {
+    // 新しい配列が別の行集合を持つなら下で行どうしを突き合わせる — 要素の書き込みは位置を新しい行にするので
+    // （別の要素を書いてから元の要素へ戻す — #333）、同じ中身の配列でも行が違い、前の配列の行（退役した行を
+    // 含む）を被せると、新しい配列を描いた `for` に無い行が台帳に戻る
+    if (isSameList(oldList, newList) && (newIndexes ?? oldIndexes) === oldIndexes) {
       return retValue = {
         oldIndexes: oldIndexes,
         newIndexes: oldIndexes,
@@ -218,6 +230,8 @@ function computeListDiff(
   } finally {
     if (typeof retValue !== "undefined") {
       setListDiff(oldList, newList, retValue);
+      // 差分が両方の台帳の配列を持つので、要素の書き込みはもうその場で書き換えない（listIndexesByList.ts）
+      disownListIndexes(oldIndexes);
       setListIndexesByList(newList, retValue.newIndexes);
     }
   }

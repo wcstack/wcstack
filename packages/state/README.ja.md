@@ -669,7 +669,7 @@ export default {
 - spread 右辺へのフィルタ（`...: target|filter`）はエラー
 - 右辺パスの途中に `*` を含めても OK（例：`...: stores.*.fetch`）
 - 右辺は素のツリーパス（`...: fetchX`、途中の `*` も可）
-- カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）
+- カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）。`for:` / `if:` のテンプレートの中でも同じ — 行や枝はすぐに描かれ、クラスが定義されたらそれぞれの行の要素をその行の値で展開する。定義前に消えた行・閉じた枝は展開しない
 - `wcBindable` 宣言**のない**要素はエラー（明示配線で書いてください）。spread は何を展開すべきかを契約から読み取るため
 
 **Composite shell**（wc-bindable Composition Profile）はそのままサポートされます：composite shell は標準の `target.constructor.wcBindable` を通じて synthesized declaration を露出するため、`"s3.progress"` のような composed name はフラットな要素メンバーキーとして扱われます。state を composed 構造に合わせて (`{ s3: { progress: 0 } }`) 持てば、`...: pipeline` が自動的に nested state path へ展開されます。
@@ -1052,7 +1052,7 @@ export default {
 
 3. **キャッシュ** — getter の結果は具体的なアドレス（パス + ループインデックス）ごとにキャッシュされます。`users.*.fullName` のインデックス 0 とインデックス 1 は別々のキャッシュエントリを持ちます。依存先が変更された場合のみキャッシュが無効化されます。
 
-4. **直接インデックスアクセス** — 数値インデックスで特定の要素にアクセスすることもできます：`this["users.0.name"]` はループコンテキストなしで `users[0].name` に解決されます。
+4. **直接インデックスアクセス** — 数値インデックスで特定の要素にアクセスすることもできます：`this["users.0.name"]` はループコンテキストなしで `users[0].name` に解決されます。要素のパスへ別のオブジェクトを代入する（`this["users.0"] = { ...this["users.0"], name: "z" }`）と、`for:` でリストを描いているかどうかに関わらず、その位置は新しい行になります。その下のパス（`users.0.name`・`$getAll("users.*.name")`・行 getter）は、差し替える前の行のキャッシュではなく新しいオブジェクトから読みます。数値の添字が 1 つのパスなら、バインディングにも同じ綴りを書けて、意味も同じ「*いま 0 番目にある行*」です：`textContent: users.0.name`、`{{ users.1.name }}`、行 getter なら `{{ users.0.fullName }}`。添字のパスへの書き込み（`this["users.0.name"] = …`）、その行を描く `for:` の行やその行に束縛した入力欄からの書き込み、要素の差し替え（`this["users.0"] = {…}`）、並べ替え・行の削除・リストの丸ごと置換に追従し、行 getter はその入力の変化に追従します — リストを `for:` で描いていてもいなくても同じです。このバインディングは state オブジェクトに足す列挙されないアクセサを通して getter と同じように読まれ、getter と同じく、リストのどの行への書き込みでも評価し直されます。そのため `$watch` のキー（`"users.0.name"` など）は値が変わらないまま発火することがあります。その位置に行が無い（空のリスト）ときは空で、配列でないオブジェクトの下のキー（`sales.2024.total`）は素のキーとして読みます。3.3.0 までは、この書き方のバインディングは最初の値のまま止まってリストの丸ごと置換にしか追従せず、行 getter をこの綴りで書くと空のまま `wcs/binding-path-missing` の警告が出ていました。数値の添字が 2 つ以上のパス（`groups.0.items.1.v`）と、拡張できない state オブジェクト（`Object.freeze`・`Object.seal`・`Object.preventExtensions`）の上の数値添字のバインディングは、いまもそのままです。
 
 ### getter は state に対して純粋であること
 
@@ -1733,6 +1733,7 @@ customElements.define("user-card", UserCard);
 - 部分マウントを併用できます: `state: user; state.theme: theme` は `theme` を 2 つ目の入口としてマウントします（最長接頭辞が勝つので、中の `theme.mode` はツリーの `theme.mode` を読みます）
 - ループでは**行そのもの**をマウントします: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`。行コンポーネントの中の `name` は `users.*.name`、中の `for: tags` は `users.*.tags.*` を回します
 - **自前のキーは私有**です（[docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3 の R1）: コンポーネントが自分で宣言したデータキー（`state = { mode: "view" }`）はその要素のもので、ツリーには書かれません。マウント先に同名のキーがあってそれを隠す形（`user.name` の上に `state = { name: "" }`）では、ランタイムが 1 回だけ warn します（`wcs/mount-own-key-shadow`）— ツリーを読みたければ既定値を消し、私有のままにしたければ名前を変えてください
+- `element.state` から取り出したメソッド（`card.state.toggle()`）は、イベントのバインディング（`onclick: toggle`）から呼んだときと同じに動きます。自前のキーへの書き込みもツリーのキーへの書き込みも描き直され、行マウントではその行に着地し、同期メソッドは値を、async メソッドは Promise を返します
 - 配列そのものをルートにマウントする形（`state: rows` ＋ 中で `for`）は非対応です。行をマウントする（`state: .`）か、配列を持つオブジェクトをマウントして中で `for` を回してください（`state: group` ＋ `for: children`）。どちらも契約テストで固定されており、マウントがツリー拡張の唯一の手段です
 
 > プロパティ単位の形（`state.message: user.name`）はそのまま動きます — 同じ機構の上の部分マウントです。

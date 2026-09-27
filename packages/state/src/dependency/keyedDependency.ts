@@ -34,7 +34,7 @@ import { getPathInfo } from "../address/PathInfo";
 import { WILDCARD } from "../define";
 import { createStateAddress } from "../address/StateAddress";
 import { liftAddress } from "../address/liftAddress";
-import { isRetiredListIndex } from "../list/listIndexesByList";
+import { disownListIndexes, isRetiredListIndex } from "../list/listIndexesByList";
 import { dirtyCacheEntryByAbsoluteStateAddress } from "../cache/cacheEntryByAbsoluteStateAddress";
 import { IStateElement } from "../components/types";
 import { IListIndex } from "../list/types";
@@ -373,6 +373,8 @@ export function registerIndexWatcher(
   let watcher: IIndexWatcher | undefined;
   if (typeof byList === "undefined") {
     watchersByIndexes.set(indexes, byList = []);
+    // 監視は配列に付くので、要素の書き込みはもうその場で書き換えない（listIndexesByList.ts）
+    disownListIndexes(indexes);
   } else {
     watcher = byList.find((w) => w.stateElement === stateElement && w.path === path);
   }
@@ -425,6 +427,7 @@ export function moveIndexWatchers(oldIndexes: IListIndex[], newIndexes: IListInd
   watchersByIndexes.delete(oldIndexes);
   const existing = watchersByIndexes.get(newIndexes);
   watchersByIndexes.set(newIndexes, typeof existing === "undefined" ? watchers : existing.concat(watchers));
+  disownListIndexes(newIndexes);
   for (const watcher of watchers) {
     watcher.indexes = newIndexes;
     const last = ledgerOf(watcher.stateElement).lastValue.get(watcher.path);

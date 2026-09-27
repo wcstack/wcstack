@@ -10,7 +10,7 @@ import { checkDependency } from "../proxy/methods/checkDependency";
 import { getContextListIndex } from "../proxy/methods/getContextListIndex";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
-import { IStateHandler, IStateProxy } from "../proxy/types";
+import { IStateHandler, Mutability } from "../proxy/types";
 import { composeMountIndexes, concretizeMountPrefix, IExportEntry, IMountRecord, translateInnerPath, translateInnerWritePath } from "./mount";
 import { createDollarPathApiWrapper } from "./dollarPathApis";
 
@@ -142,11 +142,13 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
    * partial（`items.0.v` → `groups.*.items.0.v`）はコアが解決できない（getListIndex）ので
    * いつも（#323）。マーカーアドレスが行を持たない（部分マウントだけの記録の）ときも —
    * ワイルドカードの無い getter の評価中は、文脈（スタック先頭の `#m1.total`）にホストの行が
-   * 無く context 型を解決できない（#322）。行を持つときの context 型は文脈がそのまま解決する。
+   * 無く context 型を解決できない（#322）。文脈が空のときも — async メソッドの await の後は
+   * ループ文脈が外れている（#331）。行を持ち文脈があるときの context 型は文脈がそのまま解決する。
    */
   private resolveTreePath(innerPath: string, translated: string): string {
     return translated.indexOf(WILDCARD) !== -1
-      && (this.listIndex === null || getResolvedAddress(translated).wildcardType === "partial")
+      && (this.listIndex === null || this.handler.addressStackLength === 0
+        || getResolvedAddress(translated).wildcardType === "partial")
       ? concretizeMountPrefix(innerPath, translated, this.hostIndexes())
       : translated;
   }
@@ -367,6 +369,9 @@ export function writeExportedAccessor(
   return Reflect.set(proxy, entry.suffix, value);
 }
 
+/** 親の state をホスト要素のループ文脈で包んで開き、`fn` の戻り値を返す（公開面の全経路が通る） */
+type HostCall = (mutability: Mutability, fn: (state: any) => unknown) => any;
+
 /**
  * `element.state` の公開面（chroot・M13）。相対キーを変換して親の proxy を通すだけの
  * 薄い翻訳で、値の解決（私有・getter・ツリー）は全て親ウォーク＋オーバーレイが担う。
@@ -376,16 +381,8 @@ export function writeExportedAccessor(
 function createChrootDollarApi(
   record: IMountRecord,
   api: "$getAll" | "$setAll" | "$resolve" | "$postUpdate",
-  withHostContext: <T>(state: IStateProxy, callback: () => T) => T,
+  call: HostCall,
 ): (...args: any[]) => unknown {
-  const parent = record.parentStateElement;
-  const call = (mutability: "readonly" | "writable", fn: (state: any) => unknown): unknown => {
-    let result: unknown;
-    parent.createState(mutability, (state) => {
-      result = withHostContext(state as IStateProxy, () => fn(state));
-    });
-    return result;
-  };
   if (api === "$postUpdate") {
     return (path: string) => call("readonly", (state) => state.$postUpdate(resolvePublicPath(record, path, translateInnerPath(record, path))));
   }
@@ -402,12 +399,10 @@ function createChrootDollarApi(
 }
 
 export function createPublicMountState(record: IMountRecord): Record<string, any> {
-  const parent = record.parentStateElement;
-  const withHostContext = <T>(state: IStateProxy, callback: () => T): T => {
-    const loopContext = getLoopContextByNode(record.component);
-    let result!: T;
-    state[setLoopContextSymbol](loopContext, () => {
-      result = callback();
+  const call: HostCall = (mutability, fn) => {
+    let result: unknown;
+    record.parentStateElement.createState(mutability, (state) => {
+      result = state[setLoopContextSymbol](getLoopContextByNode(record.component), () => fn(state));
     });
     return result;
   };
@@ -419,40 +414,37 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API（chroot 面）。
       // 先頭添字はホスト要素のループ文脈から補う
       if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve" || prop === "$postUpdate") {
-        return createChrootDollarApi(record, prop, withHostContext);
+        return createChrootDollarApi(record, prop, call);
       }
       // パスだけを取る読みの API（`$eq` / `$eqPath` / `$eqIndex` / `$dependOn`）は共有の表で包む
       const pathApi = createDollarPathApiWrapper(
         prop,
         (path) => resolvePublicPath(record, path, translateInnerPath(record, path)),
-        (args) => {
-          let out: unknown;
-          parent.createState("readonly", (state) => {
-            out = withHostContext(state as IStateProxy, () =>
-              ((state as Record<string, unknown>)[prop] as (...a: unknown[]) => unknown)(...args));
-          });
-          return out;
-        },
+        (args) => call("readonly", (state) => state[prop](...args)),
       );
       if (pathApi !== null) {
         return pathApi;
       }
-      let value: unknown;
-      parent.createState("readonly", (state) => {
-        value = withHostContext(state as IStateProxy, () =>
-          (state as Record<string, unknown>)[prop[0] === "$" ? prop : resolvePublicPath(record, prop, translateInnerPath(record, prop))]);
-      });
-      return value;
+      const at = (state: any): any => state[prop[0] === "$" ? prop : resolvePublicPath(record, prop, translateInnerPath(record, prop))];
+      // 値は読み取り専用で読む。メソッド（関数）は呼ばれたときに書き込み可能なセッションと
+      // ホストのループ文脈の中で取り出し直して呼ぶ — イベントから呼んだのと同じ文脈（#331）。
+      // 読み取り専用のまま束ねて返すと、私有キーの書き込みは描き直されず、ツリーのキーの
+      // 書き込みは readonly で投げる。戻り値（同期の値・Promise）はそのまま返す
+      const value = call("readonly", at);
+      // 包むのは作者のメソッドだけ（isPrivateAnchor と同じ判定 — getter を評価しないよう getterKeys が先）。
+      // 関数を値として持つキー（コールバック・クラス）は、その値をそのまま返す（同一性・プロパティを保つ）
+      return prop[0] !== "$" && !record.getterKeys.has(prop) && typeof record.stateObject[prop] === "function"
+        ? function (this: unknown, ...args: unknown[]): unknown {
+          return call("writable", (state) => at(state).apply(this, args));
+        }
+        : value;
     },
     set(_target, prop, value): boolean {
-      if (typeof prop !== "string") {
-        return true;
-      }
-      parent.createState("writable", (state) => {
-        withHostContext(state as IStateProxy, () => {
-          (state as Record<string, unknown>)[prop[0] === "$" ? prop : resolvePublicPath(record, prop, translateInnerWritePath(record, prop))] = value;
+      if (typeof prop === "string") {
+        call("writable", (state) => {
+          state[prop[0] === "$" ? prop : resolvePublicPath(record, prop, translateInnerWritePath(record, prop))] = value;
         });
-      });
+      }
       return true;
     },
     has(_target, prop): boolean {
