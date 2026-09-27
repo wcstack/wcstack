@@ -23,6 +23,7 @@ import { featureNotInstalledMessage } from "../core/featureEntries";
 import { appendHooks, createAttachedHooks, IAttachedHooks, requireFeature } from "../core/addressHooks";
 import { createDeclarationContext, isDeclarationFeatureRegistered, runActivate, runApply, runApplyEarly, runDeactivate, runPreCommit, runRegister, runValidate, runValidateEarly } from "../core/declarationHooks";
 import { getPathInfo } from "../address/PathInfo";
+import { defineIndexPathAccessor, isIndexPath } from "../address/indexPathAccessor";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { requireLifecycleFeature, runConnecting, runDisconnecting, runInitializeFailed, runInitializeFailureCleared, runPreparing, runReconnecting, runReplacingState } from "../core/lifecycleHooks";
@@ -1130,7 +1131,13 @@ export class State extends HTMLElementBase implements IStateElement {
       // 新規パスを 1 回だけ検査して確実な miss を報告する（diagnostics/pathChecks.ts — 開発時の
       // 診断なので features/diagnostics。入っていなければ検査しない）。
       // パスごとに 1 回・バインド確立時のみで、更新のホットパスには乗らない。
-      pathDiagnostics?.check(this, this.__state, path, source);
+      // 数値添字のパス（`items.0.v`）は、いまその位置にある行を読む暗黙の getter にし、存在の検査も
+      // 行のパスとして行う（#332）。検査は生やす前 — 生やした後では、完全一致のキーとして必ず見つかる
+      const indexPath = isIndexPath(this.__state, path);
+      pathDiagnostics?.check(this, this.__state, path, source, indexPath);
+      if (indexPath) {
+        defineIndexPathAccessor(this, path);
+      }
       if (pathInfo.parentPath !== null) {
         let currentPathInfo = pathInfo;
         while(currentPathInfo.parentPath !== null) {

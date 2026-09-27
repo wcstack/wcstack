@@ -19,11 +19,11 @@
 import { liftAddress, absoluteAddressOf } from "../../address/liftAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { DELIMITER, WILDCARD } from "../../define";
-import { createListIndex } from "../../list/createListIndex";
-import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
-import { getLastListValueByAbsoluteStateAddress, rebaseRenderedList, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
+import { createListIndex, getHomeParentListIndex } from "../../list/createListIndex";
+import { getListIndexesByList, isOwnedListIndexes, setListIndexesByList } from "../../list/listIndexesByList";
+import { getLastListValueByAbsoluteStateAddress, hasRenderedList, rebaseRenderedList, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
 import { ISwapInfo } from "./types";
-import { createListDiff } from "../../list/createListDiff";
+import { createListDiff, retireRows } from "../../list/createListDiff";
 import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/mergeKeyedList";
 import { IListIndex } from "../../list/types";
 import { getPathInfo } from "../../address/PathInfo";
@@ -322,6 +322,59 @@ function commitWriteCache(
     // （cache/types.ts の `generation`）。
     generation: stateElement.stateGeneration
   });
+}
+
+/**
+ * 要素の書き込み（`items.0 = {…}`）でその位置の要素が別の値に替わるなら、その位置を新しい行にし、
+ * 新しい行のアドレスを返す（#333）。`for` が描くリストの入れ替えの経路（`_setByAddressWithSwap`）と
+ * 同じ同一性モデル — 行は要素に付き、別の要素は別の行。
+ *
+ * 行の下のパス（`items.*.name`・行 getter）はワイルドカードを含むので行の listIndex ごとに
+ * キャッシュされる（isCacheable）。行を据え置くと、行から子へ静的な辺の無い（`for` で描いていない）
+ * リストでは、依存ウォークが子に届かず古い値が返り続けた。新しい行には子のキャッシュが無いので、
+ * どう読まれても（直接添字・`$getAll`・getter）書いた要素から読み直す。差し替えた行は退役させる —
+ * `$watch` / `$scan` の着地はその行を捨てて新しい行で受け（rowLanding.ts）、要素と一緒に持ち越された
+ * 入れ子のリストの行集合は、次の解決で新しい行へ付け替わる（#256）。
+ * 要素パス自身の `$watch` の prev は、同じバッチでその位置の前の行が記録した値を引き継ぐ（入れ替えの
+ * 経路の notifySwapped と同じ。引き継がないと、同じ位置を 2 回書いたとき 1 回目の値が prev になる）。
+ * 同じ要素の書き込み（通知だけの再代入）は行を据え置く。台帳のその位置がこのアドレスの行でなければ
+ * （台帳が無い・listIndex の無いアドレス）何もしない。
+ */
+function renewReplacedRow(
+  stateElement: IStateHandler["stateElement"],
+  address: IStateAddress,
+  list: any,
+  key: PropertyKey | undefined,
+  value: unknown,
+): IStateAddress {
+  const row = address.listIndex!;
+  const listIndexes = getListIndexesByList(list);
+  if (listIndexes?.[key as number] !== row || list[key as number] === value) {
+    return address;
+  }
+  const renewed = createListIndex(row.parentListIndex, key as number, getHomeParentListIndex(row));
+  // この配列を描いた `for` が描いたのは書き込む前の行。書き込む前の並びの写しに前の台帳を持たせ、描画の
+  // 基準をそこへ移す（入れ替えの経路の notifySwappedList と同じ）。別のパスの `for`（配列をそのまま返す
+  // getter・同じ配列を持つ別のキーや state）は台帳の差し替えを知らず、描いていない新しい行を描いたつもりで
+  // 差分を取っていた。移すのは描いた後の最初の書き込みだけ。同じ配列の入れ替え（別のキーの `for` が描く）の
+  // 途中なら、描いたのは入れ替えの前の並び — 配列もその途中の姿なので、入れ替えが控えた写しを使う
+  if (hasRenderedList(list)) {
+    const image = getSwapInfoByList(list) ?? { value: list.slice(), listIndexes: listIndexes! };
+    setListIndexesByList(image.value, image.listIndexes);
+    rebaseRenderedList(list, image.value);
+  }
+  // 台帳の配列を持つ別の持ち手（差分のキャッシュ・別の配列の台帳・上の写し・入れ替え・`$eqIndex` の監視）が
+  // いれば、写してから差し替える — その場で書き換えると持ち手の行まで書き換わる（#335）。前の書き込みが
+  // 写したまま誰も持っていない台帳は、その場で書き換える（listIndexesByList.ts の isOwnedListIndexes）。
+  // `$eqIndex` の監視は台帳の配列に付くので一緒に移す（移した先は監視が持つので、所有を外す）
+  const next = isOwnedListIndexes(listIndexes!) ? listIndexes! : listIndexes!.slice();
+  next[key as number] = renewed;
+  setListIndexesByList(list, next, true);
+  moveIndexWatchers(listIndexes!, next);
+  retireRows([row]);
+  const renewedAddress = createStateAddress(address.pathInfo, renewed);
+  notifySwapped(stateElement, liftAddress(stateElement, renewedAddress), liftAddress(stateElement, address));
+  return renewedAddress;
 }
 
 function _setByAddress(
@@ -703,6 +756,10 @@ function setByAddressCore(
         }
         devOldValue = oldValue;
         devHasOldValue = true;
+      }
+      if (lastSegment === WILDCARD) {
+        // 以降の通知・キャッシュ・prev の記録は、差し替えた後の行のアドレスで行う（#333）
+        address = renewReplacedRow(stateElement, address, parentValue, key, value);
       }
       // key が undefined（listIndex の無い不正アドレス）なら読みは undefined — 書き込みが下で投げる
       // 購読者の収集は書き込みの**前**（旧値の鍵が要る）。そこからの依存ウォークは

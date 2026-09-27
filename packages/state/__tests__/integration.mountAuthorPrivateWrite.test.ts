@@ -155,12 +155,15 @@ describe("マウントしたコンポーネントの作者のコードからの�
     host.remove();
   });
 
-  it("公開面から取り出したメソッドは読み取り専用のセッションで評価され、私有キーへの書き込みで投げないこと", async () => {
-    // 読み取り専用の receiver へ回すと "This state is readonly" で投げる — 従来どおり私有データへ直接入れる。
-    // 公開面から呼んだメソッドの書き込みの描き直しは、ここでは扱わない
-    const { host, card } = await mountCard();
+  it("公開面から取り出したメソッドも書き込み可能な文脈で呼ばれ、私有キーの書き込みがその回に描き直されること（#331）", async () => {
+    // 以前は読み取り専用のセッションに束ねたまま返され、私有データへ直接入れて描き直されなかった。
+    // 公開面からの呼び出しの詳細は integration.mountPublicMethodCall.test.ts
+    const { host, card, cs } = await mountCard();
     expect(() => card.state.toggle()).not.toThrow();
+    await settle();
     expect(card.state.mode).toBe("edit");
+    expect(text(cs, ".mode")).toBe("edit");
+    expect(text(cs, ".label")).toBe("edit!");
     host.remove();
   });
 });

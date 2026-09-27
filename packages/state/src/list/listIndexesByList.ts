@@ -180,10 +180,32 @@ export function resolveListIndexesByList(
   return listIndexes;
 }
 
-export function setListIndexesByList(list: readonly unknown[], listIndexes: IListIndex[] | null): void {
+/**
+ * 要素の書き込み（setByAddress の renewReplacedRow・#333）が写した台帳のうち、その配列の台帳としてしか
+ * 参照されていないもの。次の要素の書き込みは写さずにその場で書き換えてよい（写すと、1 バッチで全要素を
+ * 書く `$setAll("items.*", …)` が O(n²) になる）。台帳の配列を別の持ち手が捕まえたら外す — 別の配列の
+ * 台帳にする（下の setListIndexesByList）、差分が持つ（createListDiff）、入れ替えが持つ（swapInfo.ts）、
+ * `$eqIndex` の監視が付く（dependency/keyedDependency.ts の registerIndexWatcher / moveIndexWatchers）。
+ */
+const ownedListIndexes = new WeakSet<IListIndex[]>();
+
+export function isOwnedListIndexes(listIndexes: IListIndex[]): boolean {
+  return ownedListIndexes.has(listIndexes);
+}
+
+export function disownListIndexes(listIndexes: IListIndex[]): void {
+  ownedListIndexes.delete(listIndexes);
+}
+
+export function setListIndexesByList(list: readonly unknown[], listIndexes: IListIndex[] | null, owned = false): void {
   if (listIndexes === null) {
     listIndexesByList.delete(list);
     return;
+  }
+  if (owned) {
+    ownedListIndexes.add(listIndexes);
+  } else {
+    disownListIndexes(listIndexes);
   }
   listIndexesByList.set(list, listIndexes);
 }

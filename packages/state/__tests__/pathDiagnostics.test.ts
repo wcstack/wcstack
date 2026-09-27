@@ -15,6 +15,7 @@ import {
   resolvePathExistence,
 } from "../src/diagnostics/pathChecks";
 import { missingRootPathMessage } from "../src/pathDiagnostics";
+import { isIndexPath } from "../src/address/indexPathAccessor";
 import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { IStateElement } from "../src/components/types";
 import type { DevtoolsEvent } from "../src/devtools/types";
@@ -204,6 +205,75 @@ describe("checkDeclaredPath", () => {
     expect(message).toContain("[wcs/watch-path-missing]");
     expect(message).toContain('$watch path "cout"');
     expect(message).toContain('Did you mean "count"?');
+  });
+
+  describe("数値添字のパス（#332 — 束縛はいまその位置にある行を読む）", () => {
+    function rowGetterState(): object {
+      const state = { items: [{ v: 1 }] };
+      Object.defineProperty(state, "items.*.double", { get: () => 0, enumerable: true, configurable: true });
+      return state;
+    }
+    /** State.setPathInfo と同じく、暗黙の getter を生やすかの判定（isIndexPath）を検査へ渡す */
+    function checkBinding(element: IStateElement, state: object, path: string): void {
+      checkDeclaredPath(element, state, path, "binding", isIndexPath(state, path));
+    }
+
+    it("行 getter（items.*.double）を数値添字で束縛しても報告しないこと", () => {
+      const element = createStateElement({ getterPaths: new Set(["items.*.double"]) });
+      checkBinding(element, rowGetterState(), "items.0.double");
+      flushDeferredPathReports(element);
+      // 修正前: `"double" is not declared` の wcs/binding-path-missing
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("行に無いキーの打ち間違いは、書いた綴りのまま報告すること", () => {
+      const element = createStateElement({ getterPaths: new Set(["items.*.double"]) });
+      checkBinding(element, rowGetterState(), "items.0.dubble");
+      flushDeferredPathReports(element);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const message = warn.mock.calls[0][0] as string;
+      expect(message).toContain('Bound path "items.0.dubble"');
+      expect(message).toContain('"dubble" is not declared');
+      expect(message).toContain('Did you mean "double"?');
+    });
+
+    it("空のリスト・まだ行の無い位置の添字は判定不能として報告しないこと", () => {
+      const element = createStateElement();
+      checkBinding(element, { users: [] }, "users.0.name");
+      checkBinding(element, { items: [{ v: 1 }] }, "items.5.v");
+      flushDeferredPathReports(element);
+      // 修正前: `"0" is not declared` / `"5" is not declared`（行が入れば解決するパスへの偽陽性）
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      // 数値のキーを持つオブジェクト（親が配列でない）は素のキーのまま検査する
+      ["sales.2024.totl", { sales: { "2024": { total: 5 } } }, "totl"],
+      ["sales.2025.total", { sales: { "2024": { total: 5 } } }, "2025"],
+      // 負の添字は行になりえない
+      ["items.-1.v", { items: [{ v: 1 }] }, "-1"],
+      // 数値の区切りが 2 つ以上のパスは行を読まない（素のパスのまま）ので、修正前の検査のまま
+      ["grid.5.0", { grid: [[1]] }, "5"],
+    ])("行として読まない数値の区切り（%s）は、修正前と同じく報告すること", (path, state, missingSegment) => {
+      const element = createStateElement();
+      checkBinding(element, state, path);
+      flushDeferredPathReports(element);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain(`"${missingSegment}" is not declared`);
+    });
+
+    it("数値の区切りが 2 つ以上のパス・拡張できない state では、行 getter を宣言済みに数えないこと（束縛は素のパスを読んで空になる）", () => {
+      const state = { groups: [{ items: [{ v: 1 }] }] };
+      Object.defineProperty(state, "groups.*.items.*.double", { get: () => 0, enumerable: true, configurable: true });
+      const element = createStateElement({ getterPaths: new Set(["groups.*.items.*.double", "items.*.double"]) });
+      checkBinding(element, state, "groups.0.items.0.double");
+      checkBinding(element, Object.freeze(rowGetterState()), "items.0.double");
+      flushDeferredPathReports(element);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn.mock.calls[0][0]).toContain('Bound path "groups.0.items.0.double"');
+      expect(warn.mock.calls[1][0]).toContain('Bound path "items.0.double"');
+      expect(warn.mock.calls[1][0]).toContain('"double" is not declared');
+    });
   });
 
   it("報告を devtools sink にも流すこと", () => {
