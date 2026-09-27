@@ -820,6 +820,19 @@ describe('WcsDevtools shell', () => {
       expect(warned[1].title).toContain('depth limit');
     });
 
+    it('描画中の書き込みの連鎖の打ち切り行に警告を付けること（#338・console を見ていないと気づけない種類）', () => {
+      mount();
+      source.emit({ type: 'state:render-chain-limit', maxDepth: 100, paths: ['mode', 'view'] });
+      devtools.__flushRenderForTest();
+      const body = paneBody(devtools, 'timeline');
+      expect(body.textContent).toContain('depth > 100');
+      expect(body.textContent).toContain('mode, view');
+      const warned = Array.from(body.querySelectorAll('.badge-tag.warn')) as HTMLElement[];
+      expect(warned.map((el) => el.textContent)).toEqual(['render-chain-limit']);
+      expect(warned[0].title).toContain('writes made while rendering');
+      expect(warned[0].title).toContain('not rendered');
+    });
+
     it('解決しないパスと隔離された適用失敗の行に警告を付けること（console を見ていないと気づけない種類）', () => {
       mount();
       source.emit({

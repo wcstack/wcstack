@@ -2817,6 +2817,20 @@ If applying a binding throws, the rest of that batch, `$renderedCallback`, `$wat
 
 Without that confinement, a single throw left "new values, half-updated DOM" behind, and silently dropped every `$watch` handler and stream restart for the batch — quietly breaking the firing-order contract documented above.
 
+### A write made while rendering cannot loop forever
+
+Some writes happen while bindings are being applied: a wc-bindable element in a new `for:` row hands its initial value to the state (output-only members, `#init=element`), and `$renderedCallback` may write. Each such write starts a new batch, and that batch renders again. If the rendering writes something new every time — say a row element whose output is bound to the very key the list's getter reads, returning a different value per instance — the page would spin in microtasks and freeze. The chain is cut off after 100 links: the batch that would be the 101st is not rendered (its values stay in the state), and one report names the paths it carried:
+
+```
+[@wcstack/state] render chain depth limit exceeded; bindings for this batch were not applied. { maxDepth: 100, paths: ["mode", "view", "view.*", "view.*.m"] }
+```
+
+The limit is higher than the other two limits (32) because each link here is a whole render. A chain that renders, measures and adjusts can legitimately run past 32 links and still settle — shrinking a heading 1px at a time from 64px to 18px renders 47 times, and drawing 400 rows 10 at a time is 40 links.
+
+Only writes made synchronously while bindings are being applied extend the chain — including an event that an element dispatches synchronously while a binding sets one of its properties. A write that arrives from outside the drain starts the count again from zero: a user action, an I/O node event that arrives asynchronously, a `$stream` value, an `await` continuation. Writes from `$scan`, `$watch` and `$stream` restarts neither extend nor reset it. A write-back that settles, such as the initial sync of an ordinary list's rows, adds one link and stops. The next write from outside renders normally. DevTools receives `state:render-chain-limit`.
+
+A loop whose closing write is not made synchronously while bindings are applied is outside this limit, as it was before the limit existed: an element that reports its value from a microtask (Lit's `updated()`, for example), a cycle that goes through `$watch` or `$scan` (an element writes `x`, `$watch: { x(v) { this.mode = v } }`, and the list reads `mode` — the `$watch` limit does not catch this either), and an async `$renderedCallback`.
+
 ### Values and the DOM are never rolled back
 
 Every failure mode reports and continues; nothing already applied is reverted:
@@ -2825,6 +2839,7 @@ Every failure mode reports and continues; nothing already applied is reverted:
 |---|---|---|
 | Propagation hops | 32 | Quarantine the transaction's remaining records |
 | `$watch` write chain | 32 | Skip watch firing for that batch |
+| Render write chain | 100 | Skip applying bindings for that batch |
 | Binding apply failure | — | Skip that one binding |
 
 ## Configuration

@@ -30,6 +30,48 @@ const pooledContentsByNode: WeakMap<Node, IContent[]> = new WeakMap();
 const isOnlyNodeInParentContentByNode: WeakMap<Node, boolean> = new WeakMap();
 // この for（アンカー）が最後に描いた並び（#320。lastListValueByAbsoluteStateAddress.ts の IRenderedList）
 const renderedListByNode: WeakMap<Node, IRenderedList> = new WeakMap();
+// SSR 描画中の行の境界コメント [`@@wcs-for-start`, `@@wcs-for-end`]（#334）
+const ssrBoundsByContent: WeakMap<IContent, Comment[]> = new WeakMap();
+
+/**
+ * SSR 描画中: 行を境界コメントで挟んで `parent` の `prev` の直後（null なら末尾）に置き、終端コメントを返す
+ * （次の行はその後ろ）。境界は行の Content の範囲の外なので、Content だけを動かすと境界が置き去りになる
+ * （#334 — 描いてある行の中身が自分の境界の前へ出て、足した行の境界が入れ子になった）。描いてある行は
+ * 境界ごと（中の if / for が描いたノードも含めて）動かす。ラベルの添字は今の位置に付け直す（ハイドレーション
+ * は添字で行を組む）。
+ */
+function placeSsrRow(content: IContent, parent: Node, prev: Node | null, label: string): Comment {
+  let bounds = ssrBoundsByContent.get(content);
+  if (typeof bounds === 'undefined') {
+    bounds = [document.createComment(''), document.createComment('')];
+    ssrBoundsByContent.set(content, bounds);
+  }
+  const [start, end] = bounds;
+  start.data = `@@wcs-for-start:${label}`;
+  end.data = `@@wcs-for-end:${label}`;
+  if (!content.mounted) {
+    // 祖先の unmount（if の非表示）で外れた行は、中身だけが外れて境界が残る。外してから置き直す
+    start.remove();
+    end.remove();
+  }
+  const ref = prev === null ? null : prev.nextSibling;
+  if (start.parentNode === null) {
+    // 新しい行・プールから戻す行・祖先の unmount で外れた行・その場で使い回す行（外すときに境界を外した）:
+    // 境界を置いてから中身を挟む（中の if / for は、この後の活性化が境界の内側へ描く）
+    parent.insertBefore(start, ref);
+    parent.insertBefore(end, ref);
+    content.mountAfter(start);
+  } else if (ref !== start) {
+    let node: Node = start;
+    while (node !== end) {
+      const next = node.nextSibling as Node;
+      parent.insertBefore(node, ref);
+      node = next;
+    }
+    parent.insertBefore(end, ref);
+  }
+  return end;
+}
 
 // テスト用ヘルパー（内部状態の操作）
 export function __test_setContentByListIndex(node: Node, index: IListIndex, content: IContent | null): void {
@@ -323,12 +365,18 @@ export function applyChangeToFor(
   let poolBudget = fullDelete
     ? maxPooledContents - getPooledContents(bindingInfo).length
     : Number.POSITIVE_INFINITY;
+  const ssrMode = inSsr();
   if (typeof contentMap !== 'undefined') {
     // Set の for...of は行ごとに反復子の結果オブジェクトを割り当てる（消去の scavenge の引き金）ので forEach で回す
     const map = contentMap;
     diff.deleteIndexSet.forEach((deleteIndex) => {
       const content = map.get(deleteIndex);
       if (typeof content !== 'undefined') {
+        if (ssrMode) {
+          // 外す行の境界も外す（#334。その場で使い回す行は、足す行として境界を置き直す）。SSR の外で
+          // 描いた行（同じ文書で後から SSR が始まった）は境界を持たない
+          ssrBoundsByContent.get(content)?.forEach((bound) => bound.remove());
+        }
         if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
           // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
           // 解体は unmount と同じ（ネストした for / if の Content とアドレス台帳を落とす）
@@ -372,12 +420,12 @@ export function applyChangeToFor(
     fragment = document.createDocumentFragment();
     setRootNodeByFragment(fragment, context.rootNode);
   }
-  const ssrMode = inSsr();
+  // SSR の境界コメントのラベル（`<uuid>:<path>:` ＋ 行の添字）
+  const ssrLabel = ssrMode ? `${bindingInfo.uuid}:${listPathInfo.path}:` : '';
   // 自動命名ポリシーは行ごとではなく apply ごとに 1 回だけ引く
   // （docs/view-transition-design.md §6）。既定の manual では null で、
   // 以降の行ループは分岐 1 つ分しか増えない。
   const autoNaming = getAutoNaming();
-  const uuid = bindingInfo.uuid ?? '';
   // 追加行ごとの WeakMap 解決を避けるためプール配列も 1 回だけ引く（プールの配列
   // 実体は setPooledContent が一度作ったら不変なので、delete ループ後の参照で安定）
   const pooledContents = pooledContentsByNode.get(bindingInfo.node);
@@ -399,30 +447,15 @@ export function applyChangeToFor(
           clearAppliedMarks(content, context);
         }
         // コンテント活性化の前にDOMツリーに追加しておく必要がある
-        if (fragment !== null) {
-          if (ssrMode) {
-            fragment.appendChild(document.createComment(`@@wcs-for-start:${uuid}:${listPathInfo.path}:${index.index}`));
-          }
+        if (ssrMode) {
+          lastNode = fragment !== null
+            ? placeSsrRow(content, fragment, null, ssrLabel + index.index)
+            : placeSsrRow(content, lastNode.parentNode!, lastNode, ssrLabel + index.index);
+        } else if (fragment !== null) {
           content.appendTo(fragment);
-          if (ssrMode) {
-            fragment.appendChild(document.createComment(`@@wcs-for-end:${uuid}:${listPathInfo.path}:${index.index}`));
-          }
-        } else {
-          // Update lastNode for next iteration to ensure correct order
+        } else if (lastNode.nextSibling !== content.firstNode) {
           // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
-          if (lastNode.nextSibling !== content.firstNode) {
-            if (ssrMode) {
-              const startComment = document.createComment(`@@wcs-for-start:${uuid}:${listPathInfo.path}:${index.index}`);
-              lastNode.parentNode!.insertBefore(startComment, lastNode.nextSibling);
-              lastNode = startComment;
-            }
-            content.mountAfter(lastNode);
-          }
-          if (ssrMode) {
-            const endComment = document.createComment(`@@wcs-for-end:${uuid}:${listPathInfo.path}:${index.index}`);
-            const afterNode = content.lastNode ?? lastNode;
-            afterNode.parentNode!.insertBefore(endComment, afterNode.nextSibling);
-          }
+          content.mountAfter(lastNode);
         }
         // コンテントを活性化
         activateContent(content, loopContext, context);
@@ -464,13 +497,14 @@ export function applyChangeToFor(
       // 戻されるだけでは binding が dispose 済みのまま復活しない。位置合わせの
       // 前に判定しておき（mountAfter が mounted を立てる）、戻した後に再活性化する。
       const unmountedByAncestor = !content.mounted;
-      // Stable contents are already in correct relative order — but only
-      // trust that after physical verification (see isPhysicallyAfter).
-      // Contents out of order (and everything unverifiable) settle via the
-      // self-healing mountAfter walk below.
-      const stable = stableIndexSet !== null && stableIndexSet.has(index)
-        && isPhysicallyAfter(lastNode, content.firstNode);
-      if (!stable && lastNode.nextSibling !== content.firstNode) {
+      if (ssrMode) {
+        lastNode = placeSsrRow(content, lastNode.parentNode!, lastNode, ssrLabel + index.index);
+      } else if (!(stableIndexSet !== null && stableIndexSet.has(index) && isPhysicallyAfter(lastNode, content.firstNode))
+        && lastNode.nextSibling !== content.firstNode) {
+        // Stable contents are already in correct relative order — but only
+        // trust that after physical verification (see isPhysicallyAfter).
+        // Contents out of order (and everything unverifiable) settle via the
+        // self-healing mountAfter walk.
         content.mountAfter(lastNode);
       }
       if (unmountedByAncestor) {
@@ -484,7 +518,10 @@ export function applyChangeToFor(
         });
       }
     }
-    lastNode = content.lastNode || lastNode;
+    if (!ssrMode) {
+      // SSR では行の終端コメント（placeSsrRow が返す）のまま
+      lastNode = content.lastNode || lastNode;
+    }
     if (typeof contentMap === 'undefined') {
       contentMap = new WeakMap<IListIndex, IContent>();
       contentByListIndexByNode.set(bindingInfo.node, contentMap);

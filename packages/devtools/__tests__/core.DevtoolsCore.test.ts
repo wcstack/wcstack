@@ -244,6 +244,19 @@ describe('DevtoolsCore', () => {
       ]);
     });
 
+    it('render-chain-limitを記録すること（描画中の書き込みの連鎖のバッチ単位の打ち切り・#338）', () => {
+      const { core, source } = setupConnected();
+      source.emit({ type: 'state:render-chain-limit', maxDepth: 100, paths: ['mode', 'view'] });
+      expect(core.getTimeline()).toEqual([
+        expect.objectContaining({
+          kind: 'render-chain-limit',
+          label: 'depth > 100',
+          detail: 'mode, view',
+          subscriberCount: null,
+        }),
+      ]);
+    });
+
     it('propagation:suppressedを記録すること（state名を持たない辺単位の抑止）', () => {
       const { core, source } = setupConnected();
       source.emit({

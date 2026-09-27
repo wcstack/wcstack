@@ -229,6 +229,10 @@ interface IDeclaredBindingInfo {
   `state:update-batch` は「そのバッチに何が載ったか」の観測であり、watch ハンドラや restart の
   副作用が乗る前の生の集合を報告すべきだから。優先度を省略しても既定 0 で同じ結果になるが、
   それは偶然なので `define.ts` の定数で意図として固定してある。
+- イベント: `state:render-chain-limit`（additive・#338）payload = `{ maxDepth, paths }`。
+  **binding の適用中**に起きた書き込み（行の要素の初期同期・`$renderedCallback` の書き込み）の
+  連鎖が `MAX_RENDER_CHAIN_DEPTH`（100）を超えたときに 1 回。そのバッチの binding は適用せず、値は
+  巻き戻さない（`propagation:hop-limit` と同じ姿勢）。`paths` はそのバッチのパス（重複を畳む）。
 
 ### 4.3.1 `$watch` の失敗
 
