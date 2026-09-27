@@ -111,6 +111,7 @@ UI は `@wcstack/state` 自身でレンダリングする（ドッグフーデ�
 - ring buffer の時系列表示。行種別: `write`（path, value, oldValue?）/
   `batch`（アドレス数・展開でアドレス列挙）/ `command` / `event`（token 名, args 要約,
   subscriberCount）/ `element-(un)registered` / `watch-error`・`watch-chain-limit`（warn）/
+  `render-chain-limit`（warn・描画中の書き込みの連鎖の打ち切り — #338）/
   `propagation-suppressed`・`propagation-coalesced`（定常動作・通常表示）/
   `propagation-hop-limit`・`contract-drift`（warn）。
   `contract:manifest-read`・`contract:unsupported-extension` は情報イベントであり

@@ -236,6 +236,11 @@ The files changed and the firing points. All go through §2's `sink` and conform
   `state:update-batch` observes *what landed in this batch*, so it should report the raw set before
   watch handlers and restarts add their side effects. Omitting the priority would default to 0 and
   give the same result, but that would be a coincidence; the constant in `define.ts` pins the intent.
+- Event: `state:render-chain-limit` (additive, #338), payload = `{ maxDepth, paths }`, emitted once
+  when a chain of writes made *while applying bindings* (a row element's initial sync, a
+  `$renderedCallback` write) exceeds `MAX_RENDER_CHAIN_DEPTH` (100). That batch's bindings are not applied;
+  values are not rolled back (same stance as `propagation:hop-limit`). `paths` are the batch's paths,
+  deduplicated.
 
 ### 4.3.1 `$watch` failures
 

@@ -1077,6 +1077,11 @@ export class WcsDevtools extends HTMLElement {
         ? "a $watch or $scan failure (read, handler, fold or write — see the phase in the detail); the runtime isolated it (console.error only)"
         : "a $watch write chain hit the depth limit and was cut off";
     }
+    // 描画の循環の打ち切り（#338）もランタイムは console に出すだけで続行する（バッチの binding は未適用）
+    if (entry.kind === "render-chain-limit") {
+      kind.classList.add("warn");
+      kind.title = "writes made while rendering kept starting new batches; the chain hit the depth limit and this batch was not rendered";
+    }
     // 配線の死（解決しないパス）と隔離された適用失敗も、ランタイムが console に
     // 出すだけで続行する ＝ 見ていなければ気づけない種類なので warn に乗せる。
     if (entry.kind === "path-unresolved" || entry.kind === "binding-apply-error") {
