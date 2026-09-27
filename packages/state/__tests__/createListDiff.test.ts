@@ -139,6 +139,53 @@ describe('createListDiff', () => {
       setListIndexesByList(listA, null);
       setListIndexesByList(listB, null);
     });
+
+    it('差分を取った後で新しい配列の台帳が差し替わったら、キャッシュを使わず台帳どうしで取り直すこと（#335）', () => {
+      // 要素書き込みの入れ替えが揃うと、いまの配列の台帳は新しい配列に差し替わる。同じバッチで先に取った
+      // 置き換えの差分（`for` がまだ適用していない）は、差し替え前の行を newIndexes に持ったまま
+      const listA = [{ v: 1 }, { v: 2 }];
+      const [rowA0, rowA1] = createListDiff(null, [], listA).newIndexes;
+      const listB = [listA[0], listA[1], { v: 3 }];
+      const d1 = createListDiff(null, listA, listB);
+      const [, , rowB2] = d1.newIndexes;
+      const replaced = createListIndex(null, 0);
+      listB[0] = { v: 9 }; // 要素書き込みが行 0 を差し替えた
+      setListIndexesByList(listB, [replaced, rowA1, rowB2]);
+
+      const d2 = createListDiff(null, listA, listB);
+
+      expect(d2).not.toBe(d1);
+      expect(d2.newIndexes).toEqual([replaced, rowA1, rowB2]);
+      expect([...d2.addIndexSet]).toEqual([replaced, rowB2]);
+      expect([...d2.deleteIndexSet]).toEqual([rowA0]);
+      // 台帳が差分の newIndexes のままなら、キャッシュを返す
+      expect(createListDiff(null, listA, listB)).not.toBe(d1);
+      setListIndexesByList(listB, d1.newIndexes);
+      expect(createListDiff(null, listA, listB)).toBe(d1);
+
+      setListIndexesByList(listA, null);
+      setListIndexesByList(listB, null);
+    });
+
+    it('同じ中身の写しで置き換えた差分（台帳を前の配列と共有）も、写しの台帳が差し替われば取り直すこと（#335）', () => {
+      const listA = [{ v: 1 }, { v: 2 }];
+      const rows = createListDiff(null, [], listA).newIndexes;
+      const listB = [...listA];
+      const d1 = createListDiff(null, listA, listB);
+      expect(d1.newIndexes).toBe(rows);
+      const replaced = createListIndex(null, 1);
+      listB[1] = { v: 9 };
+      setListIndexesByList(listB, [rows[0], replaced]);
+
+      const d2 = createListDiff(null, listA, listB);
+
+      expect([...d2.addIndexSet]).toEqual([replaced]);
+      expect([...d2.deleteIndexSet]).toEqual([rows[1]]);
+      expect(getListIndexesByList(listA)).toBe(rows);
+
+      setListIndexesByList(listA, null);
+      setListIndexesByList(listB, null);
+    });
   });
 
   describe('退役した親の付け替え（#256）', () => {

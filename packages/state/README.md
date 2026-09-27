@@ -1280,6 +1280,10 @@ export default {
 
 Swapping rows this way moves the rendered rows with their values once the swap is complete: the row blocks are reordered rather than rewritten in place, so a row's `$1` and any state it holds outside bindings (such as text typed into an unbound input) follow the value. Writing a value that was not in the list replaces that row in place: its block stays where it is and its bindings show the new value, so an input bound to the row keeps focus while you type. In a list of primitives, equal values cannot be told apart, so writes that end in a reordering of the same values count as a swap.
 
+The swap is complete once every value you moved has left the position it came from. Until then — between the two writes, while the moved value sits at both positions — the rows keep their blocks and show the values by position, and a numeric index (`this["items.0"]`) reads and writes that position. A list that holds equal values in separate rows swaps like any other, but a write that copies a value another row keeps holding cannot be told apart from the first half of a swap. So once your code leaves rows holding equal values for good, its index writes into that array are rendered by position until the array is replaced: the values and `$1` are right, but the blocks stop following the values.
+
+None of this applies to a value that an element inside a row writes to its own row — an input bound with `value: .`, or a wc-bindable output bound with `status: .`. That write updates the row's value and never counts as part of a swap: the row keeps its block and its `$1`, and the element's later writes keep landing on its own row, even when several rows report the same value or one row's element writes a value another row holds.
+
 ## Recursive Paths (`$recursion`)
 
 A path burns its depth into the string. `nodes.*.children.*.total` has exactly two wildcard levels, and nothing about it stretches to three when the tree grows a level — but a tree's depth belongs to the data, not to the code. `$recursion` closes that gap: declare where the shape repeats, then write `**` for "however deep this is".

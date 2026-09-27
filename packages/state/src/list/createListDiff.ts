@@ -1,6 +1,6 @@
 import "../polyfills";
 import { createListIndex, getHomeParentListIndex, setListIndexValue } from "./createListIndex";
-import { resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
+import { getListIndexesByList, resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 import { dropKeyedSubscriptionsByListIndex, moveIndexWatchers, rekeyIndexSubscriptions } from "../dependency/keyedDependency";
 
@@ -111,7 +111,9 @@ function computeListDiff(
   const oldList: readonly unknown[] = (Array.isArray(rawOldList) && rawOldList.length > 0) ? rawOldList : EMPTY_LIST;
   const newList: readonly unknown[] = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
   const cachedDiff = getListDiff(oldList, newList);
-  if (cachedDiff) {
+  // 差分を取った後で新しい配列の台帳が差し替わった（同じバッチの要素書き込みの入れ替えが揃った —
+  // #335）なら、キャッシュした差分の行は古い。台帳どうしで取り直す
+  if (cachedDiff && cachedDiff.newIndexes === getListIndexesByList(newList)) {
     return cachedDiff;
   }
   // 台帳は 1 本の配列につき行集合 1 組（listIndexesByList.ts）。親は「行がぶら下がる親が

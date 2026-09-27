@@ -7,13 +7,12 @@ import { beginPropagationTransaction, extendPropagationContext, getCurrentPropag
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
 import { IBindingInfo, IFilterInfo } from "../types";
-import { setLoopContextSymbol } from "../proxy/symbols";
 import { getCustomElement } from "../getCustomElement";
 import { getCustomElementRegistry } from "../platform/customElementRegistry";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { filterListKey } from "../binding/filterKey";
 import { createHandlerBindingRegistry } from "./handlerBindingRegistry";
-import { beginOccurrenceWrite, endOccurrenceWrite } from "../proxy/occurrenceWrite";
+import { commitElementValue } from "../proxy/occurrenceWrite";
 
 const handlerByHandlerKey: Map<string, (event: Event) => any> = new Map();
 // binding を強参照しない台帳（handlerBindingRegistry.ts のリーク解説を参照）
@@ -254,20 +253,10 @@ const twowayEventHandlerFunction = (
   }
 
   const loopContext = getLoopContextByNode(node);
-  const commitToState = (): void => {
-    // occurrence は同値でも取りこぼしてはならない（§3.3.1 `event`）。トークンは
-    // setByAddress の最初のガード評価で消費されるため、この write 1 回だけに効く。
-    if (isOccurrence) beginOccurrenceWrite();
-    try {
-      stateElement.createState("writable", (state) => {
-        state[setLoopContextSymbol](loopContext, () => {
-          state[statePathName] = filteredNewValue;
-        });
-      });
-    } finally {
-      if (isOccurrence) endOccurrenceWrite();
-    }
-  };
+  // 要素から来た書き込み: 行そのものへ書いても入れ替えにしない（#337）。occurrence は同値でも
+  // 取りこぼしてはならない（§3.3.1 `event`）。トークンは setByAddress の最初のガード評価で
+  // 消費されるため、この write 1 回だけに効く（proxy/occurrenceWrite.ts）。
+  const commitToState = (): void => commitElementValue(stateElement, loopContext, statePathName, filteredNewValue, isOccurrence);
   if (propagationContext !== null) {
     runWithPropagationContext(propagationContext, commitToState);
   } else {

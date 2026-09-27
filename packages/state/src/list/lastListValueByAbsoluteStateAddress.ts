@@ -24,7 +24,7 @@ export function hasLastListValueByAbsoluteStateAddress(address: IAbsoluteStateAd
  * 上の記録はアドレスごとに 1 本なので、同じリストを描く `for` が複数あると、画面から外れていて
  * 描かなかった `for`（`if` で消された・DOM から外された）を待たずに進む。そうした `for` は自分が
  * 描いた並びとの差分を取る（applyChangeToFor）。その並びを配列そのもので覚えると、要素書き込みが
- * 配列と台帳をその場で書き換えたときに「描いた並び」が失われるので、ここを 1 段挟む。
+ * 配列をその場で書き換えて台帳を差し替えたときに「描いた並び」が失われるので、ここを 1 段挟む。
  * 要素書き込みの入れ替えが揃ったら、ここを書き込む前の並びの写しに差し替える（rebaseRenderedList）。
  */
 export interface IRenderedList {

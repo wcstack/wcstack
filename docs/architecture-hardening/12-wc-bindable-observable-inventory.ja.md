@@ -263,9 +263,11 @@ JSON payload の `message` は毎回 fresh object で影響を受けないが、
 完結できる。
 
 **実施済み（2026-08-01）**。ガードは `setByAddress` の汎用パスにあるため、書き込みの出所を伝える経路として
-`packages/state/src/proxy/occurrenceWrite.ts` の one-shot トークンを置いた。`twowayHandler` が occurrence
-property の commit を `beginOccurrenceWrite()` / `endOccurrenceWrite()` で挟み、`setByAddress` が先頭で
-`consumeOccurrenceWrite()` して fast path・一般パス双方のガード判定に使う。
+`packages/state/src/proxy/occurrenceWrite.ts` の one-shot トークンを置いた。`twowayHandler` は要素の値を
+`commitElementValue(…, occurrence)` で commit し（書き込みの間だけトークンを立てる）、`setByAddress` が先頭で
+`consumeElementWrite()` して fast path・一般パス双方のガード判定に使う。（#337 以降、トークンは要素から来た
+書き込みすべてに立ち — 初期同期も同じ関数で commit する —、`setByAddress` はそのリスト要素への書き込みを
+要素書き込みの入れ替えに通さない。要素が自分の行へ出す値は、その行の値の更新になる。）
 
 one-shot にしたのは、フラグを書き込みの呼び出しスタック全体へ張ると、その内側で走る `$updatedCallback` や
 依存伝播が行う無関係な同値書き込みまでガードを失うためである。トークンは最初のガード評価で消費されるので、

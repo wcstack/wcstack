@@ -9,8 +9,8 @@
  * バインドまで古いまま残した（v1.10.0 から）。
  *
  * 修理: `for` ごとに「自分が描いた並び」を覚え、共有の基準と違えば、行の台帳は共有の差分で進めたうえで、
- * 自分の行と今の行を行の同一性で突き合わせる（applyChangeToFor）。要素書き込みは配列と台帳をその場で
- * 書き換えるので、書き込む前の並びの写しを、その配列を描いた全ての `for` に届ける
+ * 自分の行と今の行を行の同一性で突き合わせる（applyChangeToFor）。要素書き込みは配列をその場で
+ * 書き換えて台帳を差し替える（#335）ので、書き込む前の並びの写しを、その配列を描いた全ての `for` に届ける
  * （lastListValueByAbsoluteStateAddress の IRenderedList）。
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
