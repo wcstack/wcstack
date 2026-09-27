@@ -4,7 +4,8 @@ import { IStateElement } from "../components/types";
 import { config } from "../config";
 import { ATTR_NAMESPACE, CLASS_NAMESPACE, COMMAND_NAMESPACE, MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC, STYLE_NAMESPACE } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
-import { hasByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
+import { hasByAddressSymbol } from "../proxy/symbols";
+import { commitElementValue } from "../proxy/occurrenceWrite";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
@@ -199,10 +200,6 @@ export function commitProducerValue(binding: IBindingInfo, value: unknown): void
   if (stateElement === null) {
     raiseError(`No state tree found on this root for initial binding sync.`);
   }
-  const loopContext = getLoopContextByNode(binding.node);
-  stateElement.createState("writable", (state) => {
-    state[setLoopContextSymbol](loopContext, () => {
-      state[binding.statePathName] = filteredValue;
-    });
-  });
+  // 要素から来た書き込み: 行そのものへ書いても入れ替えにしない（proxy/occurrenceWrite.ts・#337）
+  commitElementValue(stateElement, getLoopContextByNode(binding.node), binding.statePathName, filteredValue);
 }

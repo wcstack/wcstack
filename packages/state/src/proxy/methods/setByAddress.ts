@@ -44,7 +44,7 @@ import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddr
 import { config } from "../../config";
 import { devtoolsSink } from "../../platform/devtoolsSink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
-import { consumeOccurrenceWrite } from "../occurrenceWrite";
+import { consumeElementWrite } from "../occurrenceWrite";
 
 /**
  * 宣言済みパスの `prev` 台帳へ旧値を記録する。台帳を読むのは `$watch`
@@ -443,42 +443,89 @@ function _setByAddressWithSwap(
   receiver : any,
   handler  : IStateHandler,
   keyedMergePath: string | null,
-  cacheable: boolean
+  cacheable: boolean,
+  elementWrite: number
 ) {
   // elementsの場合はswapInfoを準備（キーはリストの配列そのもの — swapInfo.ts 参照）
   const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
   const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
   let swapInfo = getSwapInfoByList(parentValue);
+  if (elementWrite) {
+    // 要素から来た書き込み（行の要素が自分の行へ出す値）は、その行の値の更新で入れ替えではない
+    // （proxy/occurrenceWrite.ts・#337）。行はそのまま、途中の入れ替えがあればその写しでもこの行の値にして、
+    // 揃ったかの突き合わせがこの行を動かさないようにする
+    if (swapInfo) {
+      swapInfo.value[address.listIndex!.index] = value;
+    }
+    return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
+  }
   if (swapInfo === null) {
-    const listIndexes = getListIndexesByList(parentValue) ?? [];
+    // 台帳の配列は書き換えないので写さない（下の matchSwappedListIndexes）
     swapInfo = {
-      value: [...parentValue], listIndexes: [...listIndexes]
+      value: [...parentValue], listIndexes: getListIndexesByList(parentValue) ?? []
     }
     setSwapInfoByList(parentValue, swapInfo);
   }
   try {
     return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
   } finally {
-    const index = swapInfo.value.indexOf(value);
-    const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
-    const currentListIndexes = Array.isArray(currentParentValue) ? (getListIndexesByList(currentParentValue) ?? []) : [];
-    const curIndex = address.listIndex!.index;
-    const listIndex = (index !== -1) ? 
-      swapInfo!.listIndexes[index] : 
-      createListIndex(parentAddress.listIndex, -1);
-    currentListIndexes[curIndex] = listIndex;
-    // 重複チェック
-    // 重複していない場合、swapが完了したとみなし、インデックスを更新
-    const listValueSet = new Set(currentParentValue);
-    if (listValueSet.size === swapInfo!.value.length) {
-      for(let i = 0; i < currentListIndexes.length; i++) {
-        currentListIndexes[i].index = i;
-      }
-      // 完了したのでswapInfoを削除
+    const currentListIndexes = matchSwappedListIndexes(swapInfo, parentValue, parentAddress.listIndex);
+    if (currentListIndexes !== null) {
+      // 揃ったので swapInfo を削除し、台帳を新しい配列に差し替える。その場で書き換えると、同じ配列を
+      // 持つ差分のキャッシュ（置き換えの差分の newIndexes）や、同じ中身の配列の台帳（createListDiff の
+      // isSameList）まで書き換わり、`for` が描いていない行を描いたつもりで差分を取る（#335）
       setSwapInfoByList(parentValue, null);
-      notifySwappedList(parentAddress, swapInfo, currentParentValue, currentListIndexes, receiver, handler);
+      setListIndexesByList(parentValue, currentListIndexes);
+      // `$eqIndex` の監視は台帳の配列に付く（差分が付け替えるのと同じ）
+      moveIndexWatchers(swapInfo.listIndexes, currentListIndexes);
+      notifySwappedList(parentAddress, swapInfo, parentValue, currentListIndexes, receiver, handler);
     }
   }
+}
+
+/**
+ * 要素書き込みの入れ替えが揃ったかを見て、揃っていればいまの並びの台帳を返す（#4・#337）。
+ *
+ * 行は値に付いて動く: 値の変わらない位置はその行のまま、値の変わった位置には、その値を書き込む前に
+ * 持っていて今は別の値になった行（動いてきた行）を充て、無ければ新しい行を作る。
+ * 書き込む前の並びにあった値が、動いてきた行より多くの位置に現れているうちは入れ替えの途中（片側だけを
+ * 書いた — 値がまだ元の位置にも残っている）で、null を返す。その間、台帳は書き込む前の行のままなので、
+ * 位置の読み書きはその行の index で当たり、表示も位置どおりに正しい。
+ * 揃った印は値が重複しないことではない（#337）。同じ値の行を含む並びの入れ替えも揃い、別の行と同じ値を
+ * 書いて同じ値の行が増えた並び（入れ替えの片側と区別できない）は、揃わないまま位置どおりに描かれる。
+ * 位置は台帳の行の分だけ見る（行の無い位置は書き込みの宛先にならない）。
+ * 手間は 1 回の書き込みにつき O(n)（`$setAll` は n 回書く）。動いてきた行の無い値が書き込む前の並びに
+ * あるかは、1 つ目は `includes`、2 つ目からは Set で引く（1 つずつ引くと、新しい値を多く書いた並びで
+ * O(k·n) になる）。新しい行は、揃ったと決まってから作る。
+ */
+function matchSwappedListIndexes(swapInfo: ISwapInfo, list: unknown[], parentListIndex: IListIndex | null): IListIndex[] | null {
+  const { value: before, listIndexes: rows } = swapInfo;
+  const movedByValue = new Map<unknown, IListIndex[]>();
+  rows.forEach((row, i) => {
+    if (list[i] !== before[i]) {
+      const moved = movedByValue.get(before[i]);
+      if (moved) {
+        moved.push(row);
+      } else {
+        movedByValue.set(before[i], [row]);
+      }
+    }
+  });
+  let lookups = 0;
+  let beforeValues: Set<unknown> | undefined;
+  const listIndexes: (IListIndex | undefined)[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const listIndex = list[i] === before[i] ? rows[i] : movedByValue.get(list[i])?.shift();
+    if (!listIndex && (lookups++ ? (beforeValues ??= new Set(before)).has(list[i]) : before.includes(list[i]))) {
+      return null;
+    }
+    listIndexes.push(listIndex);
+  }
+  return listIndexes.map((listIndex, i) => {
+    listIndex ??= createListIndex(parentListIndex, i);
+    listIndex.index = i;
+    return listIndex;
+  });
 }
 
 /**
@@ -539,7 +586,8 @@ function notifySwappedList(
     const elementAddress = createStateAddress(elementPathInfo, listIndex);
     const elementAbsAddress = liftAddress(stateElement, elementAddress);
     if (typeof before === "undefined") {
-      const displacedAbsAddress = absoluteAddressOf(stateElement, elementPathInfo, swapInfo.listIndexes[position] ?? null);
+      // 台帳は書き込む前の台帳と同じ長さで作る（matchSwappedListIndexes）
+      const displacedAbsAddress = absoluteAddressOf(stateElement, elementPathInfo, swapInfo.listIndexes[position]);
       notifySwapped(stateElement, elementAbsAddress, displacedAbsAddress);
       // 置き換えで入った行は中身が丸ごと新しい。差分展開だと入れ子のリストの行（`items.*.tags.*`）が
       // 着地せず `$watch` / `$scan` が取り逃すので、この行の下だけ全行展開で通知する
@@ -679,7 +727,9 @@ function setByAddressCore(
   // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
   // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
   // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。
-  const skipSameValueGuard = consumeOccurrenceWrite();
+  // 要素から来た書き込み（proxy/occurrenceWrite.ts）: 2 = occurrence。要素パスへ書いても入れ替えにしない
+  const elementWrite = consumeElementWrite();
+  const skipSameValueGuard = elementWrite > 1;
 
   // --- fast path: 宣言済み getter/setter でも swap 対象でもない、親を持つ葉パス ---
   // 従来は same-value guard の値読み・hasByAddress・実書き込みがそれぞれ親チェーンを
@@ -804,7 +854,7 @@ function setByAddressCore(
   recordDeclaredPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
   try {
     if (isSwappable) {
-      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
+      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable, elementWrite);
     } else {
       return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
     }
