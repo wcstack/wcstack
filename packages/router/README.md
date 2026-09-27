@@ -271,7 +271,7 @@ Place as a child of `<wcs-route>` to declaratively define a guard decision funct
 - The third argument carries the match being entered (`params` / `typedParams` / `searchParams` / `routeName`); `toPath` / `fromPath` are basename-sliced paths
 - `<wcs-guard-handler>` placed outside a `<wcs-route>` is ignored
 - If no `<script type="module">` is present, `guardHandler` is not set
-- **Under a Content-Security-Policy**, the guard script is evaluated through a `blob:` URL, so `script-src blob:` is required. Guards are inline-only — there is no `src=` escape hatch as there is for `<wcs-state>`. See [docs/csp.md](../../docs/csp.md)
+- **Under a Content-Security-Policy**, the guard script is evaluated through a `blob:` URL, so it needs either the page's nonce on the `<script>` that loads router (the blob: import inherits it) or `script-src blob:`. Guards are inline-only — there is no `src=` escape hatch as there is for `<wcs-state>`. See [docs/csp.md](../../docs/csp.md)
 - **Under `require-trusted-types-for 'script'`**, `<wcs-layout>` expands its template through a Trusted Types policy named `wcstack`, so the CSP needs `trusted-types wcstack;` (or your own policy, injected as described in [docs/csp.md](../../docs/csp.md) section 7)
 
 #### Loading data before a route commits

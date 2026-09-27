@@ -328,7 +328,7 @@ install 時に埋める受け口を通ります）。
 
 解決順序: `state` → `src` (.json / .js) → `json` → 内包 `<script>` → `setInitialState()` 待機。
 
-> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。ページの nonce では救えません。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
+> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため、state を読み込む `<script>` にページの nonce を付けるか（blob: の import がその nonce を引き継ぎます）、`script-src blob:` が必要です。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。なお 5 番の `<script>` はブラウザ自身も評価するので、トップレベルのコードは 2 回走ります（副作用を置かないこと）。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
 
 ### 追加の状態をマウントする（`mount=`）
 

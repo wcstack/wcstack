@@ -271,7 +271,7 @@ interface IGuardContext {          // 進入先マッチの frozen スナップ�
 - 第 3 引数に進入先マッチ（`params` / `typedParams` / `searchParams` / `routeName`）が渡る。`toPath` / `fromPath` は basename スライス後のパス
 - `<wcs-route>` の外に配置された `<wcs-guard-handler>` は無視される
 - `<script type="module">` がない場合、`guardHandler` は設定されない
-- **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため `script-src blob:` が必要。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
+- **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため、router を読み込む `<script>` にページの nonce を付けるか（blob: の import がその nonce を引き継ぐ）、`script-src blob:` が必要。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
 - **`require-trusted-types-for 'script'` 下では**、`<wcs-layout>` のテンプレート展開が `wcstack` という名前の Trusted Types policy を通るため、CSP に `trusted-types wcstack;` が必要（または自前の policy を注入する。詳細は [docs/csp.ja.md](../../docs/csp.ja.md) の §7）
 
 #### ルート commit 前のデータロード

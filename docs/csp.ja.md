@@ -2,7 +2,7 @@
 
 - **対象**: CSP を敷いたページで wcstack を使う利用者、および CSP に触れる変更を入れる実装者
 - **状態**: 規範ドキュメント（normative）。表に載っているディレクティブ要求は実装の事実であり、変更する場合は本書も同時に更新すること（MUST）
-- **なぜ存在するか**: wcstack はタグを置くだけで動くことを売りにしているが、**厳格な CSP 下では既定の書き方の一部が動かない**。特に `<wcs-state>` のインライン `<script>` は blob: URL 経由で評価されるため `script-src blob:` を要求する。この事実がどこにも書かれていないと、利用者は原因不明の初期化失敗に突き当たる
+- **なぜ存在するか**: wcstack はタグを置くだけで動くことを売りにしているが、**厳格な CSP 下では既定の書き方の一部が動かない**。特に `<wcs-state>` のインライン `<script>` は blob: URL 経由で評価されるため、state を読み込む `<script>` の nonce か `script-src blob:` を要求する。この事実がどこにも書かれていないと、利用者は原因不明の初期化失敗に突き当たる
 - **関連**: [sri.ja.md](./sri.ja.md)（配信経路の改竄検出。本書と同じく「直パスに寄せる」が答えになる） / [async-io-node-guidelines.ja.md](./async-io-node-guidelines.ja.md) / 各パッケージの README
 - **English**: [csp.md](./csp.md)
 
@@ -26,7 +26,7 @@ Content-Security-Policy:
   connect-src 'self';
 ```
 
-差は 2 点。**`esm.run` は 301 で `cdn.jsdelivr.net` に飛ぶので 2 ホスト要る**（§1）。**`blob:` は `<wcs-state>` のインライン `<script>` を使う場合にだけ要る**（§4）。インライン import map は nonce かハッシュのどちらかが必須（§2 / §3）。
+差は 2 点。**`esm.run` は 301 で `cdn.jsdelivr.net` に飛ぶので 2 ホスト要る**（§1）。**`blob:` は `<wcs-state>` のインライン `<script>` を使う場合にだけ要る**（§4）。それも、state を読み込む `<script>` に nonce を付ければ要らない（`<script type="module" nonce="{RANDOM}" src="…">`。blob: の import がその nonce を引き継ぐ）。インライン import map は nonce かハッシュのどちらかが必須（§2 / §3）。
 
 **nonce を発行できない静的ホスティング（GitHub Pages / オブジェクトストレージ）**
 
@@ -72,6 +72,22 @@ https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js → 200
 
 nonce を発行できない配信形態ではハッシュに置き換えられる。算出方法と、置き換えが**効かない**対象は §3。
 
+### 2.1 `@wcstack/state` の分割エントリ
+
+分割エントリ（`@wcstack/state/core` と `features/*`。state の README「分割エントリ」）は、`eval`・`new Function`・blob: を使わない普通の ES モジュールで、読み込みに要るのは配信元ホストの許可だけ（全部入りの `auto.min.js` と同じ）。違いは、ページに置くインラインのスクリプトの数。
+
+| 書き方 | インラインのスクリプト | 必要な CSP |
+|---|---|---|
+| `dist/auto.min.js`（全部入り） | 無し | 配信元ホスト |
+| README の例（import map と、`installFeatures` を呼ぶインラインの module script） | 2 つ | 配信元ホストと、2 つそれぞれに nonce かハッシュ（§3.1） |
+| 起動を外部ファイル（`/boot.js`）に置き、CDN の完全な URL で import する | 無し | 配信元ホストと `'self'` |
+
+- 分割のファイル（core・`features/*`・`dist/split/chunks/`）は、静的 import で互いを読む。ホストの許可 1 行で全部を覆える。
+- 起動のスクリプトに nonce を付けると、その先の静的 import と動的 import も nonce を引き継ぐ。ホストの許可が無い nonce だけのポリシーや `'strict-dynamic'` でも通る（最小構成で Chromium・Firefox・WebKit を確認、2026-09-28）。
+- ハッシュで 1 ファイルずつ絞ること（§3.2）はできない。chunk や `features/*` は `<script>` タグを持たないので、ハッシュ式を当てる先が無い。
+- 分割エントリは `esm.run` からは読まない（state の README）ので、§1 の 2 ホストの問題は起きない。
+- integrity は [sri.ja.md §5.1](./sri.ja.md#51-wcstackstate-の分割エントリ)。import map の `integrity` も同じインラインの import map に書くので、CSP の要求は上の表から変わらない。
+
 ## 3. nonce が使えないとき — ハッシュで代替できる範囲
 
 静的ホスティング（GitHub Pages / オブジェクトストレージ / CDN 直置き）ではリクエストごとに変わる nonce を発行できない。**wcstack のクイックスタートはまさにその形なので、この構成で CSP を敷くならハッシュが唯一の手段になる。** ただしハッシュが効く対象は nonce が効く対象より狭い。
@@ -80,11 +96,11 @@ nonce を発行できない配信形態ではハッシュに置き換えられ�
 |---|---|---|---|
 | インライン import map（§2） | ○ | ○（`sha256` / `384` / `512` のいずれか） | ダイジェストは `<script>` の中身に対して算出する（§3.1） |
 | 外部 `dist/auto.min.js`（`<script src integrity>`） | ○ | **Chromium のみ**（`sha384`） | `integrity` と同じ値。wcstack が配るのは sha384（§3.2） |
-| `<wcs-state>` の内包 `<script type="module">`（§4） | × | × | blob: URL 経由。インラインスクリプトとして照合されない |
-| `<wcs-route>` のガード（§5） | × | × | 同上。`src=` 退避も存在しない |
+| `<wcs-state>` の内包 `<script type="module">`（§4） | ○（state を読み込む `<script>` に付ける） | × | blob: URL 経由。インラインスクリプトとして照合されない |
+| `<wcs-route>` のガード（§5） | ○（router を読み込む `<script>` に付ける） | × | 同上。`src=` 退避は存在しない |
 | `<script type="application/json">` の state（§4） | 不要 | 不要 | 実行されないので `script-src` の対象外 |
 
-**blob: 経由の 2 つはハッシュでも救えない。** §4 は「nonce では救えない」と書いているが、理由は nonce 固有ではない。blob: URL のモジュールは*外部*スクリプトとして取得されるため、インラインハッシュの照合対象にならず、`integrity` 属性を付ける先も無い。`script-src blob:` を開けるか `src=` に逃がすかの二択は、nonce でもハッシュでも変わらない。
+**blob: 経由の 2 つは、ハッシュでは救えないが nonce なら救える。** blob: URL のモジュールは*外部*スクリプトとして取得されるため、インラインハッシュの照合対象にならず、`integrity` 属性を付ける先も無い。一方、モジュールの `import()` は、import を書いたモジュールを読み込んだ `<script>` の nonce を引き継ぐ（HTML 仕様の descendant script fetch options）。したがって state／router のバンドルを読み込む `<script>` に nonce を付ければ、blob: の import もその nonce で許可される（実物の 3.x の state・state 4.0・router のバンドルで、Chromium・Firefox・WebKit を確認、2026-09-28。Chromium では [e2e/tests/csp.spec.ts](../e2e/tests/csp.spec.ts) が固定している）。nonce を発行できない構成では、`script-src blob:` を開けるか `src=` に逃がすかの二択になる。
 
 ### 3.1 インライン import map のハッシュ — 1 バイトも変えられない
 
@@ -128,7 +144,7 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 
 ### 3.3 本書が扱わないもの
 
-`'strict-dynamic'` との併用は**未検証**。`'strict-dynamic'` はホストベースの許可を無効化するため、`import()` に依存する経路（`@wcstack/autoloader` のコンポーネント解決、`<wcs-state src=…>`、blob: 評価）が落ちる可能性がある。動的 import と CSP の関係は仕様側でも[議論中](https://github.com/w3c/webappsec-csp/issues/506)（`import-src` 提案）で、本書のレシピはいずれも `'strict-dynamic'` なしを前提とする。
+`'strict-dynamic'` との併用は、**wcstack の各経路を通しては未検証**。`'strict-dynamic'` はホストベースの許可を無効化するため、nonce の無いタグ（ホストの許可だけ）で読んだスクリプトからの `import()`（`@wcstack/autoloader` のコンポーネント解決、`<wcs-state src=…>`、blob: 評価）は落ちる。nonce 付きの `<script>` から読んだモジュールの import（静的 import・動的 import・blob:）はその nonce を引き継ぐので、`'strict-dynamic'` の下でも通る（最小構成で Chromium・Firefox・WebKit を確認、2026-09-28）。動的 import と CSP の関係は仕様側でも[議論中](https://github.com/w3c/webappsec-csp/issues/506)（`import-src` 提案）で、本書のレシピはいずれも `'strict-dynamic'` なしを前提とする。
 
 ## 4. `<wcs-state>` の状態ロード — 経路によって要求が違う
 
@@ -141,13 +157,18 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 | `<wcs-state src="./state.js">` | 通常の `import(url)` | `script-src <オリジン>` |
 | `<wcs-state src="./data.json">` | `fetch(url)` | `connect-src <オリジン>` |
 | `setInitialState()` API | なし | **追加不要** |
-| `<wcs-state><script type="module">…</script></wcs-state>` | **blob: URL 経由で `import()`** | **`script-src blob:`** |
+| `<wcs-state><script type="module">…</script></wcs-state>` | **blob: URL 経由で `import()`** | **state を読み込む `<script>` に nonce**、または **`script-src blob:`** |
 
-インライン `<script>` の中身はブラウザからは実行されない（`<wcs-state>` の子なので）。state はテキストを取り出し、blob: URL を作って動的 `import()` する（[loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts)）。ここが CSP に当たる。
+state はインライン `<script>` のテキストを取り出し、blob: URL を作って動的 `import()` する（[loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts)）。ここが CSP に当たる。
 
-**nonce では救えない。** blob: URL からのモジュール読み込みはページの nonce を継承しない。ハッシュでも同じく救えない（§3）。`script-src blob:` を開けるか、外部ファイルに逃がすかの二択になる。
+**state を読み込む `<script>` に nonce を付ければ通る。** `import()` は、それを書いたモジュール（ここでは state のバンドル）を読み込んだ `<script>` の nonce を引き継ぐ（§3）。nonce の無いタグ（ホストの許可だけ）で state を読んでいると、blob: の import は止められる。ハッシュでは救えない（§3）。
 
-**厳格な CSP 下では `src=` を推奨する。** `script-src blob:` は「動的生成スクリプトを全面的に許可する」という意味になり、CSP を敷いた目的の多くを損なう。state 定義を `./state.js` に切り出せば追加ディレクティブは不要になる:
+**ブラウザもこの `<script>` を実行する。** `<wcs-state>` の子でも、文書に置いた `<script type="module">` はブラウザが普通に評価する（`<template>` の中は除く）。export はどこにも届かないので state の結果には影響しないが、次の 2 点が起きる（3.x・4.0 とも、Chromium・Firefox・WebKit で確認、2026-09-28）。
+
+- CSP の下では、nonce の無いこの `<script>` はブラウザの評価が止められ、コンソールに違反が 1 行出る。state 自身の読み込み（blob: 経由）とは別なので、state は動く。
+- この `<script>` にも nonce を付けるか、CSP が無いページでは、トップレベルのコードがブラウザと state で **2 回**走る。トップレベルで副作用（通信・ログ・グローバルへの代入）を起こさないこと。
+
+**厳格な CSP 下では `src=` を推奨する。** blob: も nonce の受け渡しも要らず、上の 2 点も起きない。nonce を発行できない構成で `script-src blob:` を開けると「動的生成スクリプトを全面的に許可する」という意味になり、CSP を敷いた目的の多くを損なう。state 定義を `./state.js` に切り出せば追加ディレクティブは不要になる:
 
 ```html
 <!-- CSP 安全 -->
@@ -159,11 +180,13 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 **相対**の `src="./state.js"` はページではなく base 基準（`/ja/state.js`）で
 解決されて 404 になる。`<base>` の下ではルート絶対で書くこと: `src="/state.js"`。
 
-## 5. router のガードは blob: 必須（回避策なし）
+## 5. router のガード — nonce か blob:
 
-`<wcs-route>` のガードスクリプトも同じく blob: URL 経由で評価される（[loadGuardHandler.ts](../packages/router/src/loadGuardHandler.ts)）。ただし **state と違ってインライン専用で、`src=` に逃がす経路が存在しない**。ガードを使うなら `script-src blob:` が必須になる。
+`<wcs-route>` のガードスクリプトも同じく blob: URL 経由で評価される（[loadGuardHandler.ts](../packages/router/src/loadGuardHandler.ts)）。§4 と同じく、**router を読み込む `<script>` に nonce を付ければ通る**（実物の router のバンドルで Chromium・Firefox・WebKit を確認、2026-09-28）。ガードの `<script>` は `<template>` の中にあるので、ブラウザ自身は評価しない（§4 の 2 点は起きない）。
 
-これは既知の非対称性であり、外部ファイル対応は未実装。CSP を厳格に保ちたい場合は、ガードを使わずルート表示側で制御する。
+ただし **state と違ってインライン専用で、`src=` に逃がす経路が存在しない**。nonce を発行できない構成でガードを使うなら、`script-src blob:` が必須になる。
+
+これは既知の非対称性であり、外部ファイル対応は未実装。nonce を発行できず CSP を厳格に保ちたい場合は、ガードを使わずルート表示側で制御する。
 
 ## 6. I/O ノードの通信系
 
@@ -250,7 +273,12 @@ CSP にブロックされた動的 `import()` の rejection は `Failed to fetch
 
 | 出力 | 意味 |
 |---|---|
-| `... was blocked by Content-Security-Policy` | **CSP 確定**。`script-src blob:` を足すか `src=` に逃がす |
-| `Failed to evaluate the inline <script> of state "…"` | CSP は観測されなかった。多くは state 定義側の構文エラー（元のエラーは `cause` に入っている） |
+| `... was blocked by Content-Security-Policy` | **CSP 確定**。state／router を読み込む `<script>` に nonce を付けるか、`script-src blob:` を足すか、`src=` に逃がす |
+| `Failed to evaluate the inline <script> of …` | CSP は観測されなかった。多くは state 定義側の構文エラー（元のエラーは `cause` に入っている） |
 
 違反が観測できなかった場合に CSP を断定しないのは意図的で、構文エラーを CSP のせいだと誤誘導しないため。
+
+**Firefox は違反イベントを import の失敗より後に出す**（次のタスク。Chromium と WebKit は失敗より先。2026-09-28 確認）。
+
+- state 4.0 は、失敗のあと 1 タスク待ってから判定するので、どのエンジンでも CSP を断定できる。診断の後付けを入れていないページでは、文面の代わりに番号で出る（`[@wcstack/state] #42` が CSP 確定、`#43 "…"` が非断定）。
+- router も、3.3.0 より後の版では同じく 1 タスク待つ（[loadGuardHandler.ts](../packages/router/src/loadGuardHandler.ts)）。3.3.0 までの router と 3.x の state は待たないので、Firefox では CSP で止められても非断定の文面（2 行目）になる。
