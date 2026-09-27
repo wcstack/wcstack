@@ -32,6 +32,7 @@ const untrackedReadHtml = join(workDir, "untracked-read.html");
 const recursionOkHtml = join(workDir, "recursion-ok.html");
 const recursionBadHtml = join(workDir, "recursion-bad.html");
 const recursionSpreadHtml = join(workDir, "recursion-spread.html");
+const indexPathHtml = join(workDir, "index-path.html");
 const scanOkHtml = join(workDir, "scan-ok.html");
 const scanBadHtml = join(workDir, "scan-bad.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
@@ -122,6 +123,24 @@ export default {
   add(item) { this.items.push(item); },
 };
 </script></wcs-state>
+`);
+// 数値添字が 1 つのパスの束縛（#355）。runtime は「いまその位置にある行」を読み、行 getter も
+// 読める（@wcstack/state の #332）ので、添字を `*` に読み替えて存在を判定する。数値の for の行の
+// 省略パス（`.v` → `groups.0.items.*.v`）は素のパスで、runtime は要素を辿って読む（存在する）。
+// ただし `for: groups.0.items` そのものは、行への双方向束縛・添字の書き込みが runtime で投げる
+// （@wcstack/state #363）ので wcs/template-syntax の warning を 1 件だけ出す。
+writeFileSync(indexPathHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default {
+  items: [{ v: 1 }, { v: 2 }],
+  groups: [{ items: [{ v: 1 }] }],
+  get "items.*.double"() { return this["items.*.v"] * 2; },
+};
+</script></wcs-state>
+<p data-wcs="textContent: items.0.v"></p>
+<p data-wcs="textContent: items.0.double"></p>
+<template data-wcs="for: items"><li>{{ items.1.double }}</li></template>
+<template data-wcs="for: groups.0.items"><li data-wcs="textContent: .v"></li></template>
 `);
 writeFileSync(missingPathHtml, `<!doctype html>
 <wcs-state><script type="module">
@@ -253,6 +272,13 @@ check("nested read inside a getter → warning wcs/getter-untracked-read, exit 0
 check("recursive tree: expanded concrete paths are clean, exit 0", ["--lang=en", recursionOkHtml], {
   exit: 0,
   stdout: ["0 error(s), 0 warning(s)"],
+});
+
+// 数値添字のパスを実行時と同じに読む規則がバンドルに載っていないと、binding-path-missing と
+// template-syntax の warning に化ける（#355）。残るのは for: groups.0.items の 1 件だけ（#363）。
+check("numeric-index bindings (items.0.v, row getter items.0.double, .v in for: groups.0.items) resolve; only the numeric for: warns, exit 0", ["--lang=en", indexPathHtml], {
+  exit: 0,
+  stdout: [/warning wcs\/template-syntax for: "groups\.0\.items" is a list reached through a numeric index/, "0 error(s), 1 warning(s)"],
 });
 
 // `**` はオーサリング層だけの記号。data-wcs に書くと runtime は PathInfo の不変条件で

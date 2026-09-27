@@ -14,7 +14,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
 import { write } from "./helpers/recursionTestUtils";
-import { clientLoad, csrMarkup, serverRender, settle } from "./helpers/ssrRoundTrip";
+import { clientLoad, csrMarkup, serverRender, settle, SSR_SERVER_MODES, SsrServerMode } from "./helpers/ssrRoundTrip";
 
 beforeAll(() => {
   bootstrapState();
@@ -57,18 +57,25 @@ async function run(html: string, make: () => any, steps: Step[]): Promise<IRun> 
   }
 }
 
+/** サーバーの描き方（describe.each が切り替える） */
+let serverMode: SsrServerMode = "orchestrated";
+
 async function compare(body: string, data: Record<string, unknown>, steps: Step[]): Promise<{ csr: IRun; ssr: IRun }> {
   const markup = `<wcs-state enable-ssr></wcs-state><div id="root">${body}</div>`;
   const make = (): any => ({ a: false, b: false, c: false, d: false, ...data });
   const csr = await run(csrMarkup(markup), make, steps);
-  const ssr = await run(await serverRender(markup, make), make, steps);
+  const ssr = await run(await serverRender(markup, make, serverMode), make, steps);
   return { csr, ssr };
 }
 
 const T = (bind: string, body: string): string => `<template data-wcs="${bind}">${body}</template>`;
 const set = (key: string, value: unknown): Step => (s) => { s[key] = value; };
 
-describe("#336: if の枝の中の if と、外側の else", () => {
+describe.each(SSR_SERVER_MODES)("#336: if の枝の中の if と、外側の else（サーバー: %s）", (mode) => {
+  beforeAll(() => {
+    serverMode = mode;
+  });
+
   it("内側に else が無い形: 外側の else は外側の if の否定（旧: 内側の if と組み、a=false で何も出ず、b=false で notA が出た）", async () => {
     const body = T("if: a", `<div>A ${T("if: b", "<i>B</i>")}</div>`) + T("else:", "<p>notA</p>");
     const { csr, ssr } = await compare(body, { a: true, b: true },

@@ -19,15 +19,31 @@ import { State } from "../../src/components/State";
 import { buildSsrDocument, resetSsrRenderState } from "../../src/ssr/buildSsrDocument";
 import { flush } from "./recursionTestUtils";
 
+/** サーバーの描き方（`serverRender` の `mode`） */
+export type SsrServerMode = "orchestrated" | "inline";
+
+/** 両方の描き方で流すテストの `describe.each` に渡す並び */
+export const SSR_SERVER_MODES: readonly SsrServerMode[] = ["orchestrated", "inline"];
+
 /** updater の drain と、その後の deferReport・マウントの完了まで流す */
 export async function settle(): Promise<void> {
   await flush();
   await flush();
 }
 
-/** サーバーとして描き、`<wcs-ssr>` 付きの body の HTML を返す。後始末で DOM とサーバーの台帳を捨てる */
-export async function serverRender(markup: string, make: () => any): Promise<string> {
-  document.documentElement.setAttribute("data-wcs-server", "");
+/**
+ * サーバーとして描き、`<wcs-ssr>` 付きの body の HTML を返す。後始末で DOM とサーバーの台帳を捨てる。
+ *
+ * `renderToString` と同じく orchestrated（`data-wcs-server="orchestrated"`）で描き、`<wcs-ssr>` は
+ * 最後の `buildSsrDocument` だけが作る。値を空にすると state の connectedCallback が自分のバインディングの
+ * 完了時点で `<wcs-ssr>` を作り（inline）、最終パスはそれを見て何もしないので、その後に登録される
+ * テンプレート（Light DOM の `bind-component` の子のもの）がスナップショットから抜ける（#348 の調査）
+ *
+ * `mode` に `"inline"` を渡すと値を空にして描く（`renderToString` を通さずに `data-wcs-server` を付けた
+ * サーバーの形）。子の居ないページはどちらでも同じ出力になるはずなので、往復テストの一部は両方で流す。
+ */
+export async function serverRender(markup: string, make: () => any, mode: SsrServerMode = "orchestrated"): Promise<string> {
+  document.documentElement.setAttribute("data-wcs-server", mode === "inline" ? "" : "orchestrated");
   try {
     document.body.innerHTML = markup;
     const el = document.querySelector("wcs-state") as State;

@@ -611,7 +611,10 @@ export default { users: [{ name: "A" }] };
     expect(diags.some(d => d.message.includes('省略パス'))).toBe(true);
   });
 
-  it('UI で解決済みパスを使用すると warning', () => {
+  // #355: 数値添字が 1 つのパスは、実行時に「いまその位置にある行」を読んで書き込みに追従する
+  // （@wcstack/state README「Direct index access」・#332）。修正前は template-syntax の
+  // 「解決済みパスは使用できません」と binding-path-missing の 2 件が出ていた
+  it('数値添字が 1 つのパス（users.0.name）は行として読まれるので、診断を出さない', () => {
     const html = `
 <wcs-state>
   <script type="module">
@@ -620,7 +623,23 @@ export default { users: [{ name: "A" }] };
 </wcs-state>
 <div data-wcs="textContent: users.0.name"></div>`;
     const diags = validateBindings(html, 'data-wcs');
-    expect(diags.some(d => d.message.includes('解決済みパス'))).toBe(true);
+    expect(diags).toEqual([]);
+  });
+
+  it('数値添字が 2 つ以上のパス（groups.0.users.0.name）は素のパスとして読まれるので warning', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default { groups: [{ users: [{ name: "A" }] }] };
+  </script>
+</wcs-state>
+<div data-wcs="textContent: groups.0.users.0.name"></div>`;
+    const diags = validateBindings(html, 'data-wcs');
+    const syntax = diags.filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(syntax).toHaveLength(1);
+    expect(syntax[0].severity).toBe('warning');
+    expect(html.slice(syntax[0].start, syntax[0].end)).toBe('groups.0.users.0.name');
+    expect(syntax[0].message).toContain('素のパス');
   });
 
   it('カスタム属性名で動作する', () => {
@@ -1225,5 +1244,241 @@ export default { count: 1 };
     const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
     expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toBe(true);
     expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toHaveLength(1);
+  });
+});
+
+// #355: 数値添字が 1 つのパス（`items.0.v`）は、実行時に「いまその位置にある行」を読む暗黙の getter になる
+// （@wcstack/state の address/indexPathAccessor.ts の isIndexPath・#332）。行 getter も `items.0.double` で
+// 読める。修正前は存在判定が候補集合との完全一致で、`wcs/binding-path-missing` と `wcs/template-syntax`
+// が 2 件ずつ出ていた。添字が 2 つ以上のパス・`*` と混ざるパスは実行時も素のパスで、配列の上の添字を
+// 要素として辿る（diagnostics/pathChecks.ts）— 存在はするが添字の書き込みは届かないので template-syntax だけ。
+describe('validateBindings — 数値添字のパス（#355）', () => {
+  const ISSUE_STATE = `
+<wcs-state><script type="module">
+export default {
+  items: [{ v: 1 }, { v: 2 }],
+  groups: [{ items: [{ v: 1 }] }],
+  sales: { 2024: { total: 1 } },
+  show: true,
+  get "items.*.double"() { return this["items.*.v"] * 2; },
+};
+</script></wcs-state>`;
+  const at = (path: string) => validateBindings(`${ISSUE_STATE}\n<p data-wcs="textContent: ${path}"></p>`, 'data-wcs', 'wcs-state', 'en');
+  const codesAt = (path: string) => at(path).map(d => d.code);
+
+  it.each([
+    ['items.0.v'],
+    ['items.1.v'],
+    // 行 getter（items.*.double）も数値添字で読める
+    ['items.0.double'],
+    // 行そのもの
+    ['items.0'],
+    // 実行時の数値の判定は Number() — 01 / 1e0 も行 1
+    ['items.01.v'],
+    ['items.1e0.v'],
+    // 数値のキーを持つオブジェクトは素のキー（候補の完全一致）
+    ['sales.2024.total'],
+  ])('%s には診断を出さない', (path) => {
+    expect(at(path)).toEqual([]);
+  });
+
+  it('Issue の再現: 数値添字が 1 つの束縛は 0 件、2 つの束縛（groups.0.items.0.v）は素のパスとして template-syntax の 1 件だけ', () => {
+    const html = `${ISSUE_STATE}
+<p data-wcs="textContent: items.0.v"></p>
+<p data-wcs="textContent: items.0.double"></p>
+<p data-wcs="textContent: groups.0.items.0.v"></p>
+<ul><template data-wcs="for: items"><li data-wcs="textContent: .double"></li></template></ul>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    // 修正前: 6 件（3 つの束縛に binding-path-missing と template-syntax が 1 件ずつ）。groups.0.items.0.v は
+    // 実行時も要素を辿って存在する（警告は出ない）ので、binding-path-missing は出さない
+    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([
+      ['groups.0.items.0.v', WcsDiagnosticCode.TemplateSyntax],
+    ]);
+    const syntax = diags.find(d => d.code === WcsDiagnosticCode.TemplateSyntax)!;
+    expect(syntax.message).toBe(
+      'Path "groups.0.items.0.v" is read as a plain path, not as a row, so a write through its index does not reach this binding (it can keep its first value). Only a path with exactly one numeric index and no "*" (items.0.name) follows the row it points at. Use a pattern path inside a <template for> instead',
+    );
+  });
+
+  it.each([
+    // 行の下に無いメンバー（実行時の存在の検査も "nope" が見つからないと判定する）
+    ['items.0.nope'],
+    // 負の添字は行になりえない（実行時も素のキー "-1" として探して見つからない）
+    ['items.-1.v'],
+    // 配列でない親の数値キーは素のキー（sales.*.total には読み替えない）
+    ['sales.2025.total'],
+    // 未宣言のルート
+    ['missing.0.v'],
+  ])('存在しない行のメンバー %s は binding-path-missing だけ（template-syntax は出さない）', (path) => {
+    expect(codesAt(path)).toEqual([WcsDiagnosticCode.BindingPathMissing]);
+  });
+
+  it('for の行の中で数値添字と * が混ざるパス（.tags.0 → items.*.tags.0）は素のパスなので template-syntax だけが残る', () => {
+    // 修正前は binding-path-missing も出ていた（実行時は要素を辿って存在する）
+    const html = `
+<wcs-state><script type="module">
+export default { items: [{ tags: ["a"] }] };
+</script></wcs-state>
+<template data-wcs="for: items"><li data-wcs="textContent: .tags.0"></li></template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([['.tags.0', WcsDiagnosticCode.TemplateSyntax]]);
+  });
+
+  it.each([
+    ['groups.0.items', 'textContent: .v'],
+    ['items.0.tags', 'value: .'],
+    // 添字が 2 つ以上でも for: 専用の文面 1 件（素のパスの文面と重ねない）
+    ['groups.0.items.0.tags', 'textContent: .'],
+  ])('for: の対象に数値の添字（for: %s）は template-syntax（行への双方向束縛・添字の書き込みが投げる — #363）、行の省略パスは要素を辿って存在扱い', (list, rowBinding) => {
+    // 実行時: 初期表示・リストの置き換えには追従するが、行への双方向束縛（value: .v）は
+    // `Partial wildcard type is not supported yet`、添字の書き込み（s["groups.0.items.0.v"] = 5）は
+    // `[wcs/wildcard-rank]` で投げる。修正前: for に binding-path-missing と template-syntax、行に binding-path-missing
+    const html = `
+<wcs-state><script type="module">
+export default { items: [{ tags: ["x"] }], groups: [{ items: [{ v: 1, tags: ["y"] }] }] };
+</script></wcs-state>
+<template data-wcs="for: ${list}"><li data-wcs="${rowBinding}"></li></template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([[list, WcsDiagnosticCode.TemplateSyntax]]);
+    expect(diags[0].message).toBe(
+      `for: "${list}" is a list reached through a numeric index. Its rows resolve as "${list}.*.…", and a two-way binding in a row (value: .v) or a read or write through an index path throws at runtime (@wcstack/state #363). Nest one for: per list level instead (e.g. for: groups, with for: .items inside)`,
+    );
+  });
+
+  it('入れ子の for（for: groups の中の for: .items）には警告しない（対照）', () => {
+    const html = `${ISSUE_STATE}
+<template data-wcs="for: groups"><template data-wcs="for: .items"><li data-wcs="value: .v"></li></template></template>`;
+    expect(validateBindings(html, 'data-wcs', 'wcs-state', 'en')).toEqual([]);
+  });
+
+  it('数値の for の行でも、行 getter・未宣言のメンバーは binding-path-missing（素のパスは行を持たない）', () => {
+    // 実行時: groups.0.items.*.double は getter（groups.*.items.*.double）を読まず空で描く。実行時の警告は
+    // 出ない（#332 の暗黙のアクセサ groups.0.items が接頭辞の記述子になり、存在の検査が判定不能に倒れる —
+    // state 側の別件）。lint が報告するのは正しい
+    const html = `
+<wcs-state><script type="module">
+export default {
+  groups: [{ items: [{ v: 1 }] }],
+  get "groups.*.items.*.double"() { return this["groups.*.items.*.v"] * 2; },
+};
+</script></wcs-state>
+<template data-wcs="for: groups.0.items"><li data-wcs="textContent: .double"></li><li data-wcs="textContent: .nope"></li></template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([
+      ['groups.0.items', WcsDiagnosticCode.TemplateSyntax],
+      ['.double', WcsDiagnosticCode.BindingPathMissing],
+      ['.nope', WcsDiagnosticCode.BindingPathMissing],
+    ]);
+  });
+
+  // 型の検査も行として読んだ形（items.*.name）の型で行う。修正前（読み替えを入れた直後）は候補が引けず無言だった。
+  // 実行時: class.on: items.0.name は `binding "prop: items.0.name" failed to apply`
+  it.each([
+    ['class.on: items.0.name', 'class.on: items.*.name', WcsDiagnosticCode.BindingTypeExpectation],
+    ['textContent: items.0.tags|upper', 'textContent: items.*.tags|upper', WcsDiagnosticCode.FilterInputType],
+    ['for: items.0.name', 'for: items.*.name', WcsDiagnosticCode.BindingTypeExpectation],
+  ])('型の検査（%s）はパターンパス（%s）と同じ診断を出す', (binding, patternBinding, code) => {
+    const page = (b: string) => `
+<wcs-state><script type="module">
+export default { items: [{ name: "a", tags: ["x"] }] };
+</script></wcs-state>
+<template data-wcs="for: items"><p data-wcs="${b}"></p></template>`;
+    const codes = (b: string) => validateBindings(page(b), 'data-wcs', 'wcs-state', 'en').map(d => d.code).filter(c => c !== WcsDiagnosticCode.TemplateSyntax);
+    expect(codes(binding)).toEqual([code]);
+    expect(codes(patternBinding)).toEqual([code]);
+  });
+
+  it.each([
+    // 配列の上の添字の綴りでない（実行時も素のキー "01" として探して見つからない）
+    ['groups.01.items.0.v'],
+    // 要素の下に無いメンバー
+    ['groups.0.items.0.nope'],
+  ])('素のパス %s は binding-path-missing と template-syntax', (path) => {
+    expect(codesAt(path)).toEqual([WcsDiagnosticCode.BindingPathMissing, WcsDiagnosticCode.TemplateSyntax]);
+  });
+
+  it('$recursion の再帰 getter も数値添字で読める（nodes.0.total）', () => {
+    const html = `
+<wcs-state><script type="module">
+export default {
+  $recursion: { "nodes.*": "children.*" },
+  nodes: [{ value: 1, children: [] }],
+  get "nodes.**.total"() { return this["nodes.**.value"]; },
+};
+</script></wcs-state>
+<p data-wcs="textContent: nodes.0.total"></p>
+<p data-wcs="textContent: nodes.0.nope"></p>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([
+      ['nodes.0.nope', WcsDiagnosticCode.BindingPathMissing],
+    ]);
+  });
+
+  describe('stateSchema 宣言時', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
+        sales: { type: 'object', properties: { 2024: { type: 'object', properties: { total: { type: 'number' } } } } },
+      },
+    };
+    const page = (path: string) => `
+<wcs-state src="./state.ts"></wcs-state>
+<p data-wcs="textContent: ${path}"></p>`;
+    const schemaDiags = (path: string) => validateBindings(page(path), 'data-wcs', 'wcs-state', 'en', undefined, schema);
+
+    it('数値添字が 1 つのパスは読み替えた形（items.*.v）で解決し、診断を出さない', () => {
+      expect(schemaDiags('items.0.v')).toEqual([]);
+      expect(schemaDiags('sales.2024.total')).toEqual([]);
+    });
+
+    it('行の下の未宣言メンバー（items.0.nmae）は wcs/path-nonexistent（error）', () => {
+      // 修正前: `0` のまま配列の上で property を探して unknown に倒れ、沈黙していた
+      const diags = schemaDiags('items.0.nmae');
+      expect(diags.map(d => [d.code, d.severity])).toEqual([[WcsDiagnosticCode.PathNonexistent, 'error']]);
+    });
+
+    it('配列でない親の未宣言の数値キー（sales.2025.total）は素のキーのまま wcs/path-nonexistent', () => {
+      expect(schemaDiags('sales.2025.total').map(d => d.code)).toEqual([WcsDiagnosticCode.PathNonexistent]);
+    });
+  });
+
+  // 素のパス（添字が 2 つ以上・数値の for の行）も、配列の上の添字を要素の形（*）にしてから schema を引く。
+  // 修正前は `0` のまま配列の上で property を探して unknown に倒れ、打ち間違いが完全に無言だった
+  describe('stateSchema 宣言時の素のパス', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        groups: { type: 'array', items: { type: 'object', properties: {
+          items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
+        } } },
+        nodes: { type: 'array', items: { $ref: '#/$defs/node' } },
+      },
+      $defs: {
+        node: { type: 'object', properties: { value: { type: 'number' }, children: { type: 'array', items: { $ref: '#/$defs/node' } } } },
+      },
+    };
+    const schemaDiags = (markup: string) => {
+      const html = `\n<wcs-state src="./state.ts"></wcs-state>\n${markup}`;
+      return validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, schema)
+        .map(d => [html.slice(d.start, d.end), d.code]);
+    };
+
+    it('数値の for の行の打ち間違い（for: groups.0.items の中の .nmae）は wcs/path-nonexistent、正しい .v は存在', () => {
+      expect(schemaDiags('<template data-wcs="for: groups.0.items"><p data-wcs="textContent: .v"></p><p data-wcs="textContent: .nmae"></p></template>')).toEqual([
+        ['groups.0.items', WcsDiagnosticCode.TemplateSyntax],
+        ['.nmae', WcsDiagnosticCode.PathNonexistent],
+      ]);
+    });
+
+    it.each([
+      ['groups.0.items.0.nmae', [WcsDiagnosticCode.PathNonexistent, WcsDiagnosticCode.TemplateSyntax]],
+      ['groups.0.items.0.v', [WcsDiagnosticCode.TemplateSyntax]],
+      // $ref で再帰する schema も辿る
+      ['nodes.0.children.0.valu', [WcsDiagnosticCode.PathNonexistent, WcsDiagnosticCode.TemplateSyntax]],
+      ['nodes.0.children.0.value', [WcsDiagnosticCode.TemplateSyntax]],
+    ])('%s', (path, codes) => {
+      expect(schemaDiags(`<p data-wcs="textContent: ${path}"></p>`).map(([, code]) => code)).toEqual(codes);
+    });
   });
 });

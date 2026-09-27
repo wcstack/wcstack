@@ -5,7 +5,7 @@ import { IStateAddress } from "../address/types";
 import { DELIMITER, WILDCARD } from "../define";
 import { isRetiredListIndex } from "../list/listIndexesByList";
 import { getLoopContextByNode } from "../list/loopContextByNode";
-import { IListIndex } from "../list/types";
+import { IListIndex, ILoopContext } from "../list/types";
 import { checkDependency } from "../proxy/methods/checkDependency";
 import { getContextListIndex } from "../proxy/methods/getContextListIndex";
 import { setLoopContextSymbol } from "../proxy/symbols";
@@ -53,20 +53,48 @@ interface IPrivateDataTable {
 
 const privateDataByRecord = new WeakMap<IMountRecord, IPrivateDataTable>();
 
+/** 要素が最後に立っていた行の文脈（スコープを行へ向けるたびに記録する — mountScope.ts） */
+const lastHostContexts = new WeakMap<IMountRecord, ILoopContext | null>();
 /**
- * ホスト要素が立っている行の添字（`for:` の外なら空）。公開 chroot はいつもここから、
- * オーバーレイはマーカーアドレスが行を持たないときにここから補う — 部分マウントだけの記録は
- * マーカー基底 `#m<id>` がワイルドカードを持たないので、ワイルドカードの無い getter・メソッドの
- * 評価中はホストの行が見えない（#322）。プールの使い回しで要素が別の行へ移っても、
- * 読むたびに今の行を返す。
+ * いまの接続のライフサイクルの `this`（`$connectedCallback` と同じ接続の `$disconnectedCallback` で同じもの）。
+ * その接続が終わったときの行。切断で外す — 外れた `this` は、その接続が終わったもの
  */
-function hostRowIndexes(record: IMountRecord): readonly number[] {
-  return hostRowOf(record)?.indexes ?? [];
+const lifecycleStates = new WeakMap<IMountRecord, [Record<string, any>, { row: IListIndex | null }]>();
+
+export function noteHostContext(record: IMountRecord, context: ILoopContext | null): void {
+  lastHostContexts.set(record, context);
 }
 
-/** ホスト要素がいま立っている行（`for:` の外なら null） */
+export function endHostConnection(record: IMountRecord): void {
+  const current = lifecycleStates.get(record);
+  if (current !== undefined) {
+    // その場の行の差し替え（要素の書き込み — #4）で移った先も含め、終わったときの行に留める
+    current[1].row = hostRowOf(record);
+    lifecycleStates.delete(record);
+  }
+}
+
+/**
+ * ホスト要素の行の文脈（`for:` の外なら null）。要素がいま文脈を持たない（行の中の `if:` が隠した・
+ * プールに居る）ときは最後に立っていた行 — 隠れている間も自分の行を読み書きでき（行が生きていれば）、
+ * 行が消えていれば退役した行になる（isRemovedHost）。
+ */
+function hostContextOf(record: IMountRecord): ILoopContext | null {
+  return getLoopContextByNode(record.component) ?? lastHostContexts.get(record) ?? null;
+}
+
+/**
+ * ホスト要素がいま立っている行。オーバーレイはマーカーアドレスが行を持たないときにここから補う —
+ * 部分マウントだけの記録はマーカー基底 `#m<id>` がワイルドカードを持たないので、ワイルドカードの
+ * 無い getter・メソッドの評価中はホストの行が見えない（#322）。
+ */
 function hostRowOf(record: IMountRecord): IListIndex | null {
-  return getLoopContextByNode(record.component)?.listIndex ?? null;
+  return hostContextOf(record)?.listIndex ?? null;
+}
+
+/** 評価中のインスタンスのホスト行を離れた要素（行が消えた・別の行に使い回された）への読み書き */
+function hostRowRemoved(record: IMountRecord): never {
+  raiseError(`The host row of <${record.component.tagName.toLowerCase()}> was removed.`);
 }
 
 /** 行かその祖先が退役しているか（リストから外れた行） */
@@ -80,12 +108,12 @@ function isRetiredRow(row: IListIndex | null): boolean {
 }
 
 /**
- * 公開面の文字列パス: 接頭辞のワイルドカードをホスト行の添字で具体化する（`items.0.v` →
- * `groups.*.items.0.v` → `groups.1.items.0.v`、#323）。context 型（`items` → `groups.*.items`）も
- * ホストのループ文脈と同じ行に具体化されるだけで、答えは変わらない。
+ * 行が消えて外れた要素か（`$disconnectedCallback`・プールに居る要素）。要素に残った文脈は、いまその位置に
+ * ある別の行を指す — 私有キーは消えた行の私有データで読み書きでき、ツリーのキーは投げる。
+ * 祖先の差し替えの直後は、生きている行も退役した祖先を指したままなので、接続中の要素は含めない
  */
-function resolvePublicPath(record: IMountRecord, innerPath: string, translated: string): string {
-  return concretizeMountPrefix(innerPath, translated, hostRowIndexes(record));
+function isRemovedHost(record: IMountRecord, row: IListIndex | null): boolean {
+  return !record.component.isConnected && isRetiredRow(row);
 }
 
 /** マウントインスタンス（record × listIndex）の私有データ。無ければ初期スナップショットから複製 */
@@ -147,14 +175,14 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
    * 別の行を指す — 読み書きを別の行へ着地させずに投げる。完全マウントは行（とその祖先）の退役で、
    * 部分マウントは要素が評価を始めたときの行を離れた（行が消えて要素が外れた・別の行に使い回された）
    * ことで見分ける。部分マウントの行は祖先の差し替えの直後には退役した祖先を指したまま生きているので、
-   * 退役では見分けられない。行を持たずに始まった評価（要素がまだ行に置かれていない再表示・使い回しの
-   * `$connectedCallback`）は、いまの行を読む（#367）
+   * 退役だけでは見分けられない — 退役した行を指したまま外れた要素（行が消えた `$disconnectedCallback`）は
+   * 投げる（#368）。行を持たずに始まった評価は、いまの行を読む（#367）
    */
   private hostIndexes(): readonly number[] {
     const current = this.listIndex ?? hostRowOf(this.record);
     const row = this.hostRow ?? current;
-    if (this.listIndex === null ? row !== current : isRetiredRow(row)) {
-      raiseError(`The host row of <${this.record.component.tagName.toLowerCase()}> was removed.`);
+    if (this.listIndex === null ? row !== current || isRemovedHost(this.record, row) : isRetiredRow(row)) {
+      hostRowRemoved(this.record);
     }
     return row?.indexes ?? [];
   }
@@ -165,12 +193,14 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
    * いつも（#323）。マーカーアドレスが行を持たない（部分マウントだけの記録の）ときも —
    * ワイルドカードの無い getter の評価中は、文脈（スタック先頭の `#m1.total`）にホストの行が
    * 無く context 型を解決できない（#322）。文脈が空のときも — async メソッドの await の後は
-   * ループ文脈が外れている（#331）。行を持ち文脈があるときの context 型は文脈がそのまま解決する。
+   * ループ文脈が外れている（#331）。行が消えて外れた要素のときも — 文脈は消えた行を指し、位置で
+   * 読むといまその位置の別の行になる（hostIndexes が投げる — #368）。行を持ち文脈があるときの
+   * context 型は文脈がそのまま解決する。
    */
   private resolveTreePath(innerPath: string, translated: string): string {
     return translated.indexOf(WILDCARD) !== -1
       && (this.listIndex === null || this.handler.addressStackLength === 0
-        || getResolvedAddress(translated).wildcardType === "partial")
+        || getResolvedAddress(translated).wildcardType === "partial" || isRemovedHost(this.record, this.listIndex))
       ? concretizeMountPrefix(innerPath, translated, this.hostIndexes())
       : translated;
   }
@@ -410,31 +440,88 @@ function createChrootDollarApi(
   record: IMountRecord,
   api: "$getAll" | "$setAll" | "$resolve" | "$postUpdate",
   call: HostCall,
+  rowIndexes: () => readonly number[],
+  resolve: (innerPath: string, translated: string) => string,
 ): (...args: any[]) => unknown {
   if (api === "$postUpdate") {
-    return (path: string) => call("readonly", (state) => state.$postUpdate(resolvePublicPath(record, path, translateInnerPath(record, path))));
+    return (path: string) => call("readonly", (state) => state.$postUpdate(resolve(path, translateInnerPath(record, path))));
   }
   return (path: string, indexes?: number[], ...rest: unknown[]) => {
     const writes = api === "$setAll" || (api === "$resolve" && rest.length > 0);
     const translated = writes ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
-    const contextIndexes = hostRowIndexes(record);
     // $resolve は indexes 必須の API（省略は空列と同義に倒す）。書き込み形（第 3 引数あり）は writable
     const composed = composeMountIndexes(
-      record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, contextIndexes);
+      record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, rowIndexes());
     const mutability = writes ? "writable" : "readonly";
     return call(mutability, (state) => state[api](translated, composed, ...rest));
   };
 }
 
-export function createPublicMountState(record: IMountRecord): Record<string, any> {
+/**
+ * ライフサイクルの `this`（#368）。行の部品では接続ごとに 1 つで、`$connectedCallback` とその接続の
+ * `$disconnectedCallback` は同じものを受け取る。読み書きは `element.state` と同じくホストの行に着地し、
+ * 接続が続くうちはその場の行の差し替え（要素の書き込み — #4）にも追従する。その接続が終わった後
+ * （取っておいた `this`・await の後）は、終わったときの行に留まり、要素が別の行に使い回されていれば
+ * どちらの行にも着地させずに投げる — #367 のメソッドと同じ。行の中の `if:` が隠しただけなら、その行に着地する。
+ * 行の外の部品は行を持たないので `element.state` そのもの
+ */
+export function createLifecycleMountState(record: IMountRecord): Record<string, any> {
+  if (hostRowOf(record) === null) {
+    return (record.component as unknown as Record<string, Record<string, any>>)[record.stateProp];
+  }
+  let current = lifecycleStates.get(record);
+  if (current === undefined) {
+    const pin = { row: null as IListIndex | null };
+    lifecycleStates.set(record, current = [createPublicMountState(record, pin), pin]);
+  }
+  return current[0];
+}
+
+/**
+ * @param pin ライフサイクルの `this` の接続が終わったときの行（createLifecycleMountState・endHostConnection）。
+ *   省略は `element.state`
+ */
+export function createPublicMountState(record: IMountRecord, pin?: { row: IListIndex | null }): Record<string, any> {
+  const hostContext = (): ILoopContext | null => {
+    const context = hostContextOf(record);
+    // 固定した this は行の部品のものだけ — 行に置かれた要素は最後に立っていた行を必ず持つ（context は null でない）
+    if (pin !== undefined && lifecycleStates.get(record)?.[0] !== chroot && context!.listIndex !== pin.row) {
+      hostRowRemoved(record);
+    }
+    return context;
+  };
+  // 行が消えて外れた要素（isRemovedHost）: 私有キー・メソッド（マーカーのパス）は消えた行の私有データで
+  // 読み書きでき（`$disconnectedCallback` の後始末 — タイマーの id など）、ツリーのキーと `$` API は投げる。
+  // 接続中の要素は含めない — 祖先をコピーに差し替えた後の行は、生きたまま退役した祖先を指し続ける
+  const rowIndexes = (): readonly number[] => {
+    const context = hostContext();
+    if (isRemovedHost(record, context?.listIndex ?? null)) {
+      hostRowRemoved(record);
+    }
+    return context?.listIndex.indexes ?? [];
+  };
+  // 公開面の文字列パス。partial（`items.0.v` → `groups.*.items.0.v`）はコアが解決できないので、接頭辞の
+  // ワイルドカードをホスト行の添字で具体化する（→ `groups.1.items.0.v`、#323）。context 型（`items` →
+  // `groups.*.items`）は具体化しない — call が張るホストのループ文脈がそのまま解決する。位置に具体化すると、
+  // 文脈の行が退役した行や祖先を指しているとき（行が消えた要素・外の部品の行を使い回した直後の内側の行）に、
+  // いまその位置にある別の行を読み書きする（#368）。行が消えて外れた要素のツリーのキーは投げる
+  const resolve = (innerPath: string, translated: string): string =>
+    translated.indexOf(WILDCARD) === -1
+      ? translated
+      : getResolvedAddress(translated).wildcardType === "partial"
+        ? concretizeMountPrefix(innerPath, translated, rowIndexes())
+        : translated.indexOf("#") !== -1 || !isRemovedHost(record, hostRowOf(record))
+          ? translated
+          : hostRowRemoved(record);
   const call: HostCall = (mutability, fn) => {
     let result: unknown;
+    const context = hostContext();
     record.parentStateElement.createState(mutability, (state) => {
-      result = state[setLoopContextSymbol](getLoopContextByNode(record.component), () => fn(state));
+      result = state[setLoopContextSymbol](context, () => fn(state));
     });
     return result;
   };
-  return new Proxy({} as Record<string, any>, {
+  const chroot: Record<string, any> = new Proxy({} as Record<string, any>, {
     get(_target, prop): any {
       if (typeof prop !== "string" || prop === "then") {
         return undefined;
@@ -442,18 +529,18 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API（chroot 面）。
       // 先頭添字はホスト要素のループ文脈から補う
       if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve" || prop === "$postUpdate") {
-        return createChrootDollarApi(record, prop, call);
+        return createChrootDollarApi(record, prop, call, rowIndexes, resolve);
       }
       // パスだけを取る読みの API（`$eq` / `$eqPath` / `$eqIndex` / `$dependOn`）は共有の表で包む
       const pathApi = createDollarPathApiWrapper(
         prop,
-        (path) => resolvePublicPath(record, path, translateInnerPath(record, path)),
+        (path) => resolve(path, translateInnerPath(record, path)),
         (args) => call("readonly", (state) => state[prop](...args)),
       );
       if (pathApi !== null) {
         return pathApi;
       }
-      const at = (state: any): any => state[prop[0] === "$" ? prop : resolvePublicPath(record, prop, translateInnerPath(record, prop))];
+      const at = (state: any): any => state[prop[0] === "$" ? prop : resolve(prop, translateInnerPath(record, prop))];
       // 値は読み取り専用で読む。メソッド（関数）は呼ばれたときに書き込み可能なセッションと
       // ホストのループ文脈の中で取り出し直して呼ぶ — イベントから呼んだのと同じ文脈（#331）。
       // 読み取り専用のまま束ねて返すと、私有キーの書き込みは描き直されず、ツリーのキーの
@@ -470,7 +557,7 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
     set(_target, prop, value): boolean {
       if (typeof prop === "string") {
         call("writable", (state) => {
-          state[prop[0] === "$" ? prop : resolvePublicPath(record, prop, translateInnerWritePath(record, prop))] = value;
+          state[prop[0] === "$" ? prop : resolve(prop, translateInnerWritePath(record, prop))] = value;
         });
       }
       return true;
@@ -493,4 +580,5 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       }
     },
   });
+  return chroot;
 }

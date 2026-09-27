@@ -168,10 +168,11 @@ describe("$watch と $listKeys の併用（設計書 §6-2 の表）", () => {
   });
 
   it("S13: for バインディングも $listKeys も無いと、配列代入で行 watch は発火しないこと（headless の境界）", async () => {
-    // 依存グラフの `items → items.*` 静的子展開は walkDependency が listPaths を
-    // 見て初めて行う。listPaths は `for` バインディングでしか埋まらず、`$watch` 宣言の
+    // 依存グラフの `items → items.*` 静的子展開で行を書き込みの着地にするのは、walkDependency が
+    // listPaths を見たときだけ。listPaths は `for` バインディングでしか埋まらず、`$watch` 宣言の
     // setPathInfo("prop") は listPaths を触らない（設計書 §8）。したがって行の絶対
-    // アドレスがバッチに 1 つも載らず、ハンドラは呼ばれない。
+    // アドレスがバッチに 1 つも載らず、ハンドラは呼ばれない（listPaths に無いリストの行を
+    // 読み直させる展開は、キャッシュを無効にするだけ — #364・設計書 §6-3 の補足と次の it）。
     // **これはスカラーパスの headless 購読と非対称**なので、契約としてここで固定する。
     const calls: unknown[] = [];
     const { host, stateElement } = await mount({
@@ -187,6 +188,35 @@ describe("$watch と $listKeys の併用（設計書 §6-2 の表）", () => {
     await flush();
 
     expect(calls).toEqual([]);
+    host.remove();
+  });
+
+  it("S13: 行の値を読む getter があっても、同じ配列・中身の同じ写しの代入と $postUpdate で行 watch は発火しないこと", async () => {
+    // #364 から、行の値がキャッシュに載った描いていないリストは、行を据え置いたまま中身が変わりうる代入
+    // （同じ配列・中身の同じ写し）と `$postUpdate` で全行のキャッシュを無効にする。それは読み直させるだけで、
+    // 書き込みの着地ではない（修正の途中の版では 0:undefined->1, 1:undefined->2 と全行で発火した）
+    const calls: string[] = [];
+    const { host, stateElement } = await mount({
+      items: [{ price: 1 }, { price: 2 }],
+      get total() { return (this as any).$getAll("items.*.price", []).reduce((a: number, b: number) => a + b, 0); },
+      $watch: {
+        "items.*.price"(cur: unknown, prev: unknown, index: number) { calls.push(`${index}:${prev}->${cur}`); },
+      },
+    } as unknown as IState, `<p data-wcs="textContent: total"></p>`);
+
+    for (const step of [
+      (state: any) => { state.items = state.items; },
+      (state: any) => { state.items = [...state.items]; },
+      (state: any) => { state.$postUpdate("items"); },
+    ]) {
+      stateElement.createState("writable", step);
+      await flush();
+    }
+    expect(calls).toEqual([]);
+    // 対照: 行のパスへの書き込みは今までどおり発火する
+    stateElement.createState("writable", (state: any) => { state["items.1.price"] = 5; });
+    await flush();
+    expect(calls).toEqual(["1:2->5"]);
     host.remove();
   });
 

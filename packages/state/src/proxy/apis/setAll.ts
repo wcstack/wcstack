@@ -18,6 +18,7 @@
 import { getPathInfo } from "../../address/PathInfo";
 import { createStateAddress } from "../../address/StateAddress";
 import { IStateAddress } from "../../address/types";
+import { WILDCARD } from "../../define";
 import { indexArityMessage, setAllSpreadArityMessage, setAllValueKindMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { assertWritable } from "../assertWritable";
@@ -91,9 +92,15 @@ export function setAll(
     }
 
     // --- 第 2 相: 確定したアドレスにだけ書く ---
+    // 要素そのもの（`items.*`）へ書くときは、行を添字タプルから書く直前に引き直す。`for` が描くリストでは、
+    // 先の書き込みが入れ替えを揃えると行が値に付いて動く（setByAddress の _setByAddressWithSwap）ので、第 1 相で
+    // 確定した行は別の位置に居て、同じ位置に 2 回書き、書かない位置が残った
+    const isElementPath = pathInfo.lastSegment === WILDCARD;
     let written = 0;
     for(let i = 0; i < addresses.length; i++) {
-      const address = addresses[i];
+      const address = isElementPath
+        ? createStateAddress(pathInfo, getListIndexByIndexes(target, receiver, handler, pathInfo, resultIndexes[i]))
+        : addresses[i];
       let nextValue: any;
       if (isMapper) {
         // 現在値は書く直前に読む。先行する書き込みが getter 経由で他行に及ぶ場合、

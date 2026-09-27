@@ -21,6 +21,7 @@ import { resolveSchemaPath } from "../core/sidecar/schemaSubset.js";
 import type { JsonSchemaNode } from "../core/sidecar/types.js";
 import { matchesRecursionCandidates, type BindingDiagnostic } from "./bindingValidator.js";
 import { hasRecursionWildcard } from "./recursionPaths.js";
+import { isPlainElementPath, isPlainIndexPath, toPlainPatternPath, toRowPatternPath } from "./indexPath.js";
 
 export function validateTemplateSyntax(
   html: string,
@@ -53,9 +54,12 @@ export function validateTemplateSyntax(
         message: msgs.recursionUnsupported(path, "binding"),
       };
     }
-    if (isValidTemplatePath(path, pathSet, scoped)) return null;
+    // 数値添字が 1 つのパスは行として読む（`items.1.v` → `items.*.v`・#355。bindingValidator と同じ規則）
+    const rowPath = toRowPatternPath(path, pathSet);
+    if (isValidTemplatePath(path, rowPath, pathSet, scoped)) return null;
     if (defaultSchema !== undefined && !path.startsWith("$")) {
-      const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, path.split("."));
+      // 素のパスも配列の上の添字を要素の形（`*`）にしてから引く（bindingValidator と同じ）
+      const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, toPlainPatternPath(rowPath, pathSet).split("."));
       return resolution.kind === "nonexistent"
         ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) }
         : null;
@@ -148,7 +152,8 @@ export function validateTemplateSyntax(
         }
       }
 
-      if (/\.\d+\.|\.\d+$/.test(pathPart)) {
+      // 行として読まれない数値添字のパスだけ（添字が 1 つの `items.1.v` は行を読む — #355）
+      if (isPlainIndexPath(pathPart)) {
         diagnostics.push({
           code: WcsDiagnosticCode.TemplateSyntax,
           start: item.exprStart,
@@ -225,8 +230,10 @@ export function validateTemplateSyntax(
   return diagnostics;
 }
 
+/** `rowPath` は `path` を行として読んだ形（toRowPatternPath。行でなければ `path` と同じ）。 */
 function isValidTemplatePath(
   path: string,
+  rowPath: string,
   pathSet: Set<string>,
   scopedPaths: readonly PathCandidate[],
 ): boolean {
@@ -238,5 +245,6 @@ function isValidTemplatePath(
   }
   // `$recursion` 宣言済みの木の展開形（深さを畳んでから候補集合に当てる）。
   // bindingValidator の validatePathExistence と同じ規則。
-  return pathSet.has(path) || matchesRecursionCandidates(scopedPaths, path, pathSet);
+  return pathSet.has(path) || pathSet.has(rowPath) || matchesRecursionCandidates(scopedPaths, rowPath, pathSet)
+    || isPlainElementPath(path, scopedPaths, pathSet);
 }

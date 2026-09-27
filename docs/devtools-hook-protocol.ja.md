@@ -233,6 +233,8 @@ interface IDeclaredBindingInfo {
   **binding の適用中**に起きた書き込み（行の要素の初期同期・`$renderedCallback` の書き込み）の
   連鎖が `MAX_RENDER_CHAIN_DEPTH`（100）を超えたときに 1 回。そのバッチの binding は適用せず、値は
   巻き戻さない（`propagation:hop-limit` と同じ姿勢）。`paths` はそのバッチのパス（重複を畳む）。
+  `$watch` / `$scan` の書き込みは連鎖を引き継ぐので、それらを挟む循環もこの上限で止まる（#353）。
+  報告は連鎖ごとに 1 回 —— 打ち切ったバッチのリスナーが連鎖を引き継いでも、続くバッチは流さずに適用しない。
 
 ### 4.3.1 `$watch` の失敗
 
@@ -247,7 +249,8 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
   違うので畳まない。
 - イベント: `state:watch-chain-limit` payload = `{ maxDepth, paths }`。watch 起点の書き込み
   連鎖が深さ上限で打ち切られたときに 1 回。値と binding 適用は巻き戻さない
-  （`propagation:hop-limit` と同じ姿勢）。
+  （`propagation:hop-limit` と同じ姿勢）。`$streams` の restart も 1 段に数えるので、restart を
+  挟む連鎖（args で互いを読む stream どうしを含む）は、有効な `$watch` が無くても流れる。
 - イベント: `state:watch-fired`（v1 追補・additive —
   [state-watch-hook-design.md](./state-watch-hook-design.md) §11 の予約イベント）
   payload = `{ path, stateElement? }`。各ハンドラ呼び出しの直前に 1 回。**値は載せない** —

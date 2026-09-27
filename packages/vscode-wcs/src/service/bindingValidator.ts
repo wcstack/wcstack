@@ -21,6 +21,7 @@ import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../c
 import { resolveSchemaPath } from '../core/sidecar/schemaSubset.js';
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
+import { hasIndexSegment, isPlainElementPath, isPlainIndexPath, toPlainPatternPath, toRowPatternPath } from './indexPath.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
@@ -315,15 +316,19 @@ export function validateBindings(
             }
           }
 
-          // UI で解決済みパス（数値セグメントを含む）を使用
-          if (/\.\d+\.|\.\d+$/.test(pathTrimmed)) {
+          // 行として読まれない数値添字のパス（添字が 2 つ以上・`*` と混ざる）。添字が 1 つのパス
+          // （`items.0.v`）は、いまその位置にある行を読んで書き込みに追従するので対象外（#355）。
+          // `for:` の対象は添字が 1 つでも対象: 行が `groups.0.items.*.…` として解決され、行への双方向束縛と
+          // 添字のパスの読み書きが実行時に投げる（state の #363）
+          const isFor = propNoMod === 'for';
+          if (isFor ? hasIndexSegment(pathTrimmed) : isPlainIndexPath(pathTrimmed)) {
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
               code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
-              message: msgs.resolvedPathInUi(pathTrimmed),
+              message: isFor ? msgs.indexPathInFor(pathTrimmed) : msgs.resolvedPathInUi(pathTrimmed),
               severity: 'warning',
             });
           }
@@ -353,8 +358,9 @@ export function validateBindings(
         if (parsed.path && statePaths.length > 0) {
           const pathTrimmed = parsed.path.trim();
           if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
+            // 型は行として読んだ形の候補から引く（`items.0.tags` → `items.*.tags`・#355）
             const chainDiags = validateFilterChainTypes(
-              pathTrimmed, parsed.filters, scopedPaths, bindingStart, msgs,
+              toRowPatternPath(pathTrimmed, scopedPathSet), parsed.filters, scopedPaths, bindingStart, msgs,
             );
             diagnostics.push(...chainDiags);
           }
@@ -371,7 +377,9 @@ export function validateBindings(
       if (parsed.path && scopedPaths.length > 0) {
         const pathTrimmed = parsed.path.trim();
         if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
-          const resultType = resolveResultType(pathTrimmed, parsed.filters, scopedPaths);
+          // 型は行として読んだ形の候補から引く（`class.on: items.0.name` は `items.*.name` の型・#355）
+          const typePath = toRowPatternPath(pathTrimmed, scopedPathSet);
+          const resultType = resolveResultType(typePath, parsed.filters, scopedPaths);
           if (resultType !== null) {
             const typeReq = getExpectedType(
               parsed.property,
@@ -386,7 +394,7 @@ export function validateBindings(
               const schemaDefinite = typeReq.expected === 'array'
                 && parsed.filters.length === 0
                 && applicationSchema !== undefined
-                && scopedPaths.some(p => p.path === pathTrimmed && p.fromSchema === true);
+                && scopedPaths.some(p => p.path === typePath && p.fromSchema === true);
               diagnostics.push({
                 code: schemaDefinite ? WcsDiagnosticCode.PathTypeMismatch : WcsDiagnosticCode.BindingTypeExpectation,
                 start: pathStart,
@@ -675,7 +683,10 @@ function splitByPipe(value: string): string[] {
  * - `$1`〜`$128`: ループインデックス。状態定義に依存しないためスキップ。
  * - `$command.<name>`: $commandTokens 宣言と照合（宣言が解析できている場合のみ）。
  * - `$streamStatus.<name>` / `$streamError.<name>`: $streams 宣言と照合（同上）。
- * - それ以外は状態パスセットとの完全一致 ＋ `$recursion` の深さ畳み込み。
+ * - それ以外は状態パスセットとの完全一致 ＋ `$recursion` の深さ畳み込み。数値添字が 1 つのパス
+ *   （`items.0.double`）は行として読まれるので、完全一致しなければ添字を `*` に読み替えて照合する。
+ *   行として読まれない素のパス（`groups.0.items.*.v`）は、配列の上の添字を要素として辿ってデータの候補と
+ *   照合する（indexPath.ts・#355）。
  */
 function validatePathExistence(
   checkPath: string,
@@ -704,7 +715,13 @@ function validatePathExistence(
     return null;
   }
 
-  if (!scopedPathSet.has(checkPath) && !matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) {
+  if (scopedPathSet.has(checkPath)) return null;
+  const rowPath = toRowPatternPath(checkPath, scopedPathSet);
+  if (
+    !scopedPathSet.has(rowPath)
+    && !matchesRecursionCandidates(scopedPaths, rowPath, scopedPathSet)
+    && !isPlainElementPath(checkPath, scopedPaths, scopedPathSet)
+  ) {
     return msgs.pathMissing(displayPath);
   }
   return null;
@@ -762,11 +779,19 @@ function validateSchemaPathExistence(
     return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
   }
   if (scopedPathSet.has(checkPath)) return null;
+  // 数値添字が 1 つのパスは行として読む（`items.0.v` → `items.*.v`・#355）。schema の解決も読み替えた
+  // 形で行う（`0` のままだと配列の上で property を探して unknown に倒れ、`items.0.nmae` が素通りする）
+  const rowPath = toRowPatternPath(checkPath, scopedPathSet);
+  if (scopedPathSet.has(rowPath)) return null;
   // 再帰の展開形は schema にも「深さの族」としては現れない（`$ref` の再帰は
   // resolveSchemaPath が辿れるが、`$recursion` は script 側の宣言なので schema を
   // 持たない state でも成立する）。候補側の宣言で説明が付くなら error にしない。
-  if (matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) return null;
-  const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, checkPath.split('.'));
+  if (matchesRecursionCandidates(scopedPaths, rowPath, scopedPathSet)) return null;
+  // 素のパスは要素を辿ったデータの候補に当たれば存在（validatePathExistence と同じ。候補集合が先）
+  if (isPlainElementPath(checkPath, scopedPaths, scopedPathSet)) return null;
+  // 素のパス（`groups.0.items.0.nmae`・数値の for の行の `groups.0.items.*.nmae`）も、配列の上の添字を
+  // 要素の形（`*`）にしてから引く。`0` のままだと同じく unknown に倒れて素通りする
+  const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, toPlainPatternPath(rowPath, scopedPathSet).split('.'));
   if (resolution.kind === 'nonexistent') {
     return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: 'error' };
   }

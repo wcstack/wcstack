@@ -272,7 +272,7 @@ describe("行が生きている部分マウントは、修正の前と同じに�
     host.remove();
   });
 
-  it("if の再表示で呼ばれた $connectedCallback が await の後にツリーのキーを読んでも、その行に着地すること（要素がまだ行に置かれていない評価）", async () => {
+  it("if の再表示で呼ばれた $connectedCallback が await の後にツリーのキーを読んでも、その行に着地すること（#368 の前は、要素がまだ行に置かれていない評価だった）", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const { host, texts, write } = await mountTree(
       '{"users":[{"name":"Anna","show":true},{"name":"Ben","show":true}]}',

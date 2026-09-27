@@ -4,9 +4,9 @@ import { setStateListBaseline } from "../list/stateListBaseline";
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { BindingSession, getOrCreateBindingSession } from "../bindings/BindingSession";
-import { collectNodesAndBindingInfos, collectNodesAndBindingInfosOf, IDeferredSpreadEntry } from "../bindings/collectNodesAndBindingInfos";
+import { collectNodesAndBindingInfos, collectNodesAndBindingInfosOf, IDeferredSpreadEntry, markNodeRegistered } from "../bindings/collectNodesAndBindingInfos";
 import { getSubscriberNodes } from "../bindings/getSubscriberNodes";
-import { isLightDomMappedStateElement } from "../bindings/lightDomComponentScope";
+import { findNestedLightDomComponents, isLightDomMappedStateElement } from "../bindings/lightDomComponentScope";
 import { parseCommentNode } from "../bindings/parseCommentNode";
 import { componentApplyHooks } from "../core/componentApplyHooks";
 import { scheduleDeferredSpreads } from "../bindings/initializeBindings";
@@ -20,11 +20,14 @@ import { WILDCARD, INDEX_BY_INDEX_NAME } from "../define";
 import { Ssr, SSR_BLOCK_START, collectComments, isBlockBoundary, isBlockStart, isPlaceholder } from "./Ssr";
 import { getStateElement } from "../stateElementByName";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { hydrateSetContent, hydrateSetLastNode } from "../apply/applyChangeToFor";
+import { hydrateSetContent, hydrateSetLastNode, hydrateSetRenderedList } from "../apply/applyChangeToFor";
 import { waitForStateInitialize } from "../waitForStateInitialize";
 import { setFragmentInfoByUUID, getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
+import { getFilteredValue } from "../apply/getFilteredValue";
+import { planFilters } from "../bindings/planFilters";
 import { setContentByNode } from "../structural/contentsByNode";
 import { createContentFromNodes } from "../structural/createContent";
+import { IContent } from "../structural/types";
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
 import { createNotFilter } from "../structural/createNotFilter";
 import { getFragmentNodeInfos } from "../structural/getFragmentNodeInfos";
@@ -32,6 +35,7 @@ import { optimizeFragment } from "../structural/optimizeFragment";
 import { expandShorthandPaths } from "../structural/expandShorthandPaths";
 import { createListIndex } from "../list/createListIndex";
 import { IListIndex, ILoopContext } from "../list/types";
+import { getLoopContextByNode } from "../list/loopContextByNode";
 import { setListIndexesByList } from "../list/listIndexesByList";
 import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
@@ -49,6 +53,7 @@ interface ISsrBlock {
   index: number | null; // for のみ
   nodes: Node[];       // start〜end 間のノード
   start?: Comment;     // 開始コメント（collectSsrBlocks が付ける）
+  subscribers?: Node[]; // このブロックが自分で持つ購読ノード（hydrateBlocks が付ける）
 }
 
 /**
@@ -147,7 +152,7 @@ function getBlockSubscriberNodes(nodes: Node[]): Node[] {
 }
 
 /**
- * live DOM ノード群（ブロックの start〜end の間）からバインディングを収集する。
+ * live DOM の購読ノード（ブロックが自分で持つもの — hydrateBlocks）からバインディングを収集する。
  *
  * ノードは**動かさない**（#258）。以前は一時的な div へ移して `collectNodesAndBindingInfos` に掛け、
  * 元の位置に戻していた。移すとブロックの中のカスタム要素が切断・再接続され、`bind-component` の子は
@@ -159,7 +164,7 @@ function collectBindingsFromLiveNodes(
 ): { bindingInfos: IBindingInfo[], subscriberNodes: Node[], bindingSession: BindingSession, deferredSpreads: IDeferredSpreadEntry[] } {
   // 3 要素目（未定義カスタム要素への `...: path`）は呼び出し側が
   // ループ文脈を確定させてから予約する（`scheduleDeferredSpreads`）
-  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfosOf(getBlockSubscriberNodes(nodes));
+  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfosOf(nodes);
   const bindingSession = new BindingSession();
   const bindingInfos = bindingSession.initialize(allBindings, {
     registerAddress: false,
@@ -183,9 +188,12 @@ function collectBindingsFromLiveNodes(
  *    （`<!--@@wcs-for:uuid-->`）だけで、テキストの `@@:` はこの後で `Ssr.restoreTextBindings` が戻す。
  *    テンプレートを復帰できなかった入れ子の置き場は text として解釈される（`text: uuid`）ので、
  *    構造の種別だけでは除けない。
- *  - 添字のバインディング（`$1` / `$2` …）。state に依存しないので依存辺のための適用が要らず、SSR が
- *    描いた添字のままでよい。
  * コメントのバインディングは、適用しても失敗の報告をハイドレーションのたびに増やすだけになる。
+ *
+ * 添字のバインディング（`$1` / `$2` …）は除かない（#350）。state に依存しないので依存辺のためには
+ * 要らないが、`{{ $1 }}` のサーバーのテキストは `Ssr.restoreTextBindings` が捨てているので、適用しないと
+ * 行の添字が変わるまで空のままだった。以前除いていたのは、入れ子の for の内側の `$2` が外側のループ文脈
+ * しか持たず読めなかったからで、別のブロックの中の `for` は今はハイドレーションしない（findNestedForBlock）。
  *
  * 以前はループの深さより多いワイルドカードを持つバインディング（外側のブロックに吸収された入れ子の
  * 内側の行）も除いていた。別のブロックの中の `for` は今はハイドレーションせずに全描画へ倒すので
@@ -211,36 +219,114 @@ function collectBlockBindings(out: IBindingInfo[], bindings: readonly IBindingIn
       && !(binding.bindingType === "text" && TEXT_BINDING_COMMENT.test((binding.node as Comment).data))) {
       continue;
     }
-    if (binding.statePathName in INDEX_BY_INDEX_NAME) {
-      continue;
-    }
     out.push(binding);
   }
 }
 
 /**
+ * ブロックが**自分で**持つトップレベルのノード（#347 / #349）。CSR の Content が持つのはテンプレートの
+ * トップレベルのノードだけで、入れ子の `if:`（行の直下・要素で包まない枝の中）の枝は置き場の後ろに
+ * 自分の Content として描かれる。ブロックの `nodes` は入れ子のブロックの境界と中身も含むので、それを飛ばす。
+ * 含めていたので、外した境界コメントが行の終わりになって末尾に足した行が文書に入らず、行を動かすと
+ * 外した境界が文書に戻った。
+ */
+function collectOwnNodes(block: ISsrBlock, blockByStart: Map<Node | undefined, ISsrBlock>): Node[] {
+  const own: Node[] = [];
+  for (let i = 0; i < block.nodes.length; i++) {
+    const nested = blockByStart.get(block.nodes[i]);
+    if (nested) {
+      // 開始コメント・中身・終了コメント
+      i += nested.nodes.length + 1;
+    } else {
+      own.push(block.nodes[i]);
+    }
+  }
+  return own;
+}
+
+/**
+ * ブロックの中の未定義カスタム要素への `...: path`（#330）を、CSR の行（createContent → activateContent）と
+ * 同じくブロックの Content の待ちとして予約する（#358）。
+ *
+ * - 展開した束縛はブロックの束縛の列（と添字の列）に足す。足さないと行をプールから使い回しても当て直されず、
+ *   消した行の値を出し続けた。
+ * - `content.spreads` に持たせる。定義前に使い回した行・開き直した枝は活性化が予約し直す。
+ * - ノードを登録済みにする。しないとこの後の body 全体の走査が同じノードをもう一度拾い、ループ文脈なしの
+ *   2 つ目の展開を予約した。後から発火した方が行のノードの文脈を空にし、要素の出力の書き戻し
+ *   （`items.*.status`）が `ListIndex not found` で失敗した。
+ */
+function scheduleBlockSpreads(
+  content: IContent,
+  deferredSpreads: IDeferredSpreadEntry[],
+  loopContext: ILoopContext | null,
+  session: BindingSession,
+  bindings: IBindingInfo[],
+  indexBindings: IBindingInfo[],
+): void {
+  if (deferredSpreads.length > 0) content.spreads = deferredSpreads;
+  for (const entry of deferredSpreads) markNodeRegistered(entry.node);
+  scheduleDeferredSpreads(deferredSpreads, loopContext, session, bindings, indexBindings);
+}
+
+/**
  * SSR ブロックの DOM ノードを Content 化し、バインディングを登録する。
  * 戻り値はブロックの中で初回値を適用するバインディング（`collectBlockBindings`）。
+ * `rowsByUuid` には for の行（listIndex）を `for`（uuid）ごとに行の添字順で集める。同じ配列を描く `for` は
+ * 同じ組を持つ。リストの値へ紐づけるのは for のバインディングを起こした後（hydrateBindings — for のフィルタを
+ * 通した値が行の並び）。
  */
-function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
-  // for ブロックの listIndex をリストのパスごとに収集（[最初に出会った for の uuid, 行の添字順の listIndex]）
-  const listIndexesByPath: Map<string, [string, IListIndex[]]> = new Map();
+function hydrateBlocks(root: Node, blocks: ISsrBlock[], rowsByUuid: Map<string, IListIndex[]> = new Map()): IBindingInfo[] {
+  // 描いたリスト（for のフィルタを通した値。配列でなければパス）→ 行の組
+  const rowsByList = new Map<unknown, IListIndex[]>();
   const blockBindings: IBindingInfo[] = [];
+  const blockByStart = new Map(blocks.map((block) => [block.start, block]));
+
+  // 購読ノードは**内側のブロックから**割り当てる（#349）。ブロックの `nodes` は入れ子のブロックのノードも
+  // 含むので、文書順（外側が先）に集めると外側が内側の置き場の束縛まで登録し、内側の Content は束縛を
+  // 持たなかった — 外すときに入れ子の枝を連鎖して外さず（Content.unmount は自分の構造の束縛を辿る）、
+  // 前の枝が残って 2 つの枝が同時に出た。内側のブロックは必ず外側より文書で後ろに居る
+  const claimed = new Set<Node>();
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const subscribers = getBlockSubscriberNodes(blocks[i].nodes).filter((node) => !claimed.has(node));
+    for (const node of subscribers) claimed.add(node);
+    blocks[i].subscribers = subscribers;
+  }
 
   for (const block of blocks) {
-    if (block.nodes.length === 0) continue;
-
-    const content = createContentFromNodes(block.nodes);
+    const nodes = collectOwnNodes(block, blockByStart);
+    // 中身が入れ子の境界だけのブロック（サーバー描画の最後に隠れた枝の残り — #356）は描かれていない
+    if (nodes.length === 0) continue;
+    // トップレベルに構造の置き場を持つブロックは CSR と同じく範囲モードにし、終端マーカー（ブロックの最後の
+    // ノード＝入れ子の枝の後ろ）で範囲を閉じる（createContent の resolveRanged）。入れ子の枝は置き場の後ろ＝
+    // 自分のノードの外に描かれるので、閉じないと差分が次の行を枝の手前へ入れ、行を動かすと枝を置き去りにする
+    // （#347）。Text の data は置き場の形にならない
+    const ranged = nodes.some((node) => isPlaceholder((node as Comment).data));
+    if (ranged) {
+      const marker = document.createComment(`wcs-row-end:${block.uuid}`);
+      (block.nodes[block.nodes.length - 1] as ChildNode).after(marker);
+      nodes.push(marker);
+    }
 
     // Content のバインディングを収集
-    const { bindingInfos, subscriberNodes, bindingSession, deferredSpreads } = collectBindingsFromLiveNodes(block.nodes);
+    const { bindingInfos, subscriberNodes, bindingSession, deferredSpreads } = collectBindingsFromLiveNodes(block.subscribers!);
+    // トップレベルの `{{ }}` のコメントは初期化で Text に差し替わった。Content は差し替えた後のノードを
+    // 持つ（CSR の行と同じ）— コメントを持っていたので、行を外す・動かすと値の Text が取り残された（#347）
+    for (const binding of bindingInfos) {
+      if (binding.node !== binding.replaceNode) {
+        const index = nodes.indexOf(binding.node);
+        if (index >= 0) nodes[index] = binding.replaceNode;
+      }
+    }
+    const content = createContentFromNodes(nodes, ranged);
     setBindingSessionByContent(content, bindingSession);
     setBindingsByContent(content, bindingInfos);
     setNodesByContent(content, subscriberNodes);
 
+    // 行の位置が変わったときに当て直す列（createContent と同じ振り分け — 添字の束縛と、入れ子の構造
+    // ディレクティブ。後から描いた枝の添字へ辿る入口・#360）
     const indexBindings: IBindingInfo[] = [];
     for (const binding of bindingInfos) {
-      if (binding.statePathName in INDEX_BY_INDEX_NAME) {
+      if (binding.statePathName in INDEX_BY_INDEX_NAME || STRUCTURAL_TYPES.has(binding.bindingType)) {
         indexBindings.push(binding);
       }
     }
@@ -249,18 +335,24 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
     if (block.type === 'for' && block.index !== null) {
       const placeholderComment = findPlaceholderComment(root, 'for', block.uuid);
       if (placeholderComment) {
-        // 行（listIndex）はリストごとに 1 組。同じリストを回す `for` が 2 つあると、テンプレート
-        // （uuid）ごとに鋳造した行の組を後の方が台帳ごと上書きし、先の `for` は以後の差分で自分の
-        // 行を引けず（`Content not found for ListIndex`）書き込みに追従しなかった（#258 の調査で発見）
-        let entry = listIndexesByPath.get(block.path);
-        if (!entry) {
-          entry = [block.uuid, []];
-          listIndexesByPath.set(block.path, entry);
+        // 行（listIndex）は配列ごとに 1 組（list/listIndexesByList.ts）。同じリストを回す `for` が 2 つあると、
+        // テンプレート（uuid）ごとに鋳造した行の組を後の方が台帳ごと上書きし、先の `for` は以後の差分で自分の
+        // 行を引けず（`Content not found for ListIndex`）書き込みに追従しなかった（#258 の調査で発見）。
+        // 別のパスでも同じ配列なら同じ組にする — 配列をそのまま返す getter の `for`（`for: items` と
+        // `get visible() { return this.items; }` の `for: visible`）がパスごとに鋳造した組は、同じ配列の台帳を
+        // 後の方が上書きし、先の `for` が同じ失敗をした（#351）
+        let rows = rowsByUuid.get(block.uuid);
+        if (!rows) {
+          const list = readHydratedList(placeholderComment, block.uuid) ?? block.path;
+          rows = rowsByList.get(list);
+          if (!rows) {
+            rowsByList.set(list, rows = []);
+          }
+          rowsByUuid.set(block.uuid, rows);
         }
-        const listIndex = entry[1][block.index] ??= createListIndex(null, block.index);
+        const listIndex = rows[block.index] ??= createListIndex(null, block.index);
         hydrateSetContent(placeholderComment, listIndex, content);
-        const lastNode = block.nodes[block.nodes.length - 1];
-        hydrateSetLastNode(placeholderComment, lastNode);
+        hydrateSetLastNode(placeholderComment, content.lastNode as Node);
         setContentByNode(placeholderComment, content);
 
         // ループコンテキストをバインドし、バインディングをアドレスに登録
@@ -276,7 +368,7 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
         });
         collectBlockBindings(blockBindings, bindingInfos);
         // 未定義カスタム要素への `...: path` は行のループ文脈が確定してから予約する
-        scheduleDeferredSpreads(deferredSpreads, stateAddress as unknown as ILoopContext, bindingSession);
+        scheduleBlockSpreads(content, deferredSpreads, stateAddress as unknown as ILoopContext, bindingSession, bindingInfos, indexBindings);
       }
     } else {
       // 行の中の if は行どうしで uuid を共有するので、文書で最初のプレースホルダではなく開始コメントの
@@ -289,6 +381,10 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
         : findPlaceholderComment(root, block.type, block.uuid);
       if (placeholderComment) {
         setContentByNode(placeholderComment, content);
+        // 行の中の枝は置き場（行が文脈を与えた）の行の文脈で束縛する（CSR の applyChangeToIf の活性化と同じ）。
+        // 以前は行のブロックが枝の束縛まで持っていたので要らなかった
+        const loopContext = getLoopContextByNode(placeholderComment);
+        bindLoopContextToContent(content, loopContext);
 
         bindingSession.initialize(bindingInfos, {
           registerAddress: true,
@@ -296,31 +392,32 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[]): IBindingInfo[] {
           applyOnReconnect: false,
         });
         collectBlockBindings(blockBindings, bindingInfos);
-        scheduleDeferredSpreads(deferredSpreads, null, bindingSession);
+        scheduleBlockSpreads(content, deferredSpreads, loopContext, bindingSession, bindingInfos, indexBindings);
       }
     }
   }
 
-  // for ブロックの listIndex を state のリスト値に紐づける（リストごとに、最初の `for` の uuid から引く）
-  for (const [uuid, indexes] of listIndexesByPath.values()) {
-    const placeholderComment = findPlaceholderComment(root, 'for', uuid);
-    if (!placeholderComment) continue;
-    // state から現在のリスト値を取得して listIndexes を設定
-    const rootNode = placeholderComment.getRootNode() as Node;
-    // structuralBindings はまだ登録前なので、getParseBindTextResults を直接使う
-    const fragmentInfo = getFragmentInfoByUUID(uuid);
-    if (!fragmentInfo) continue;
-    const statePathName = fragmentInfo.parseBindTextResult.statePathName;
-    const stateElement = getStateElement(rootNode);
-    if (!stateElement) continue;
+  return blockBindings;
+}
+
+/**
+ * `for` のブロックが描いたリスト — state のいまの値に for のフィルタを通したもの（配列でなければ null）。
+ * structuralBindings はまだ登録前なので、復帰したテンプレートの解析結果からパスとフィルタを引く。
+ */
+function readHydratedList(placeholderComment: Comment, uuid: string): unknown[] | null {
+  const fragmentInfo = getFragmentInfoByUUID(uuid);
+  const stateElement = getStateElement(placeholderComment.getRootNode() as Node);
+  let list: unknown[] | null = null;
+  if (fragmentInfo && stateElement) {
+    const { statePathName, outFilters } = fragmentInfo.parseBindTextResult;
     stateElement.createState("readonly", (state) => {
-      const list = state[statePathName];
-      if (Array.isArray(list)) {
-        setListIndexesByList(list, indexes);
+      const value = getFilteredValue(state[statePathName], planFilters(outFilters, "output"));
+      if (Array.isArray(value)) {
+        list = value;
       }
     });
   }
-  return blockBindings;
+  return list;
 }
 
 function placeholderData(type: string, uuid: string): string {
@@ -349,14 +446,27 @@ function restoreFragments(root: Document, ssrEl: Ssr): void {
   // スナップショットの並び（collectReachableFragments）は描いた文書の文書順なので、外側の枝が描かれて
   // いると内側の置き場が外側の else より前に並ぶ — 並びの直前と組むと、外側の else が内側の if と組んだ
   // （内側に else があると、外側の else は否定の相手を失った）。各階層の中の並びは中身の順のまま
-  const levelByUuid = new Map<string, string>();
+  const levelByUuid = new Map<string, unknown>();
   for (const [uuid, tpl] of templates) {
     for (const placeholder of collectComments(tpl.content, isPlaceholder)) {
       levelByUuid.set(placeholder.data.slice(placeholder.data.indexOf(':') + 1), uuid);
     }
   }
+  // Light DOM の `bind-component` の子のテンプレートは、ページの走査が子を外す（collectStructuralFragments）
+  // ので、どのテンプレートの中身にも置き場が無い（中身には `<template>` のまま居る）。子は自分のスコープで
+  // 組むので、階層は生きている DOM の置き場を囲む一番内側の子。文書の直下とみなすと、ページの else が
+  // 子の if と組んだ（#348）。子の居ないページ（大半）は文書をもう一度走査しない
+  const components = new Set<Node>(findNestedLightDomComponents(root));
+  if (components.size > 0) {
+    for (const placeholder of collectComments(rootNode, isPlaceholder)) {
+      const uuid = placeholder.data.slice(placeholder.data.indexOf(':') + 1);
+      let level = placeholder.parentNode;
+      while (level !== null && !components.has(level)) level = level.parentNode;
+      if (level !== null && !levelByUuid.has(uuid)) levelByUuid.set(uuid, level);
+    }
+  }
   // 階層（文書の直下は undefined）ごとの直前の if / elseif
-  const lastIfByLevel = new Map<string | undefined, ParseBindTextResult | null>();
+  const lastIfByLevel = new Map<unknown, ParseBindTextResult | null>();
   const restored: [string, HTMLTemplateElement, ParseBindTextResult][] = [];
 
   for (const [uuid, tpl] of templates) {
@@ -459,7 +569,8 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
 
   // SSR ブロック境界コメントから既存 DOM を Content 化
   const blocks = collectSsrBlocks(document.body);
-  const blockBindings = hydrateBlocks(document.body, blocks);
+  const rowsByUuid: Map<string, IListIndex[]> = new Map();
+  const blockBindings = hydrateBlocks(document.body, blocks, rowsByUuid);
 
   // ブロック境界コメント (start/end) を除去
   Ssr.removeBlockBoundaryComments(document.body);
@@ -516,9 +627,18 @@ export async function hydrateBindings(root: Document): Promise<boolean> {
       const stateElement = getStateElement(rootNode);
       if (stateElement) {
         stateElement.createState("readonly", (state) => {
-          const value = state[binding.statePathName];
+          // 描いた行の並びは for のフィルタ（`for: items|…`）を通した値 — CSR の applyChangeToFor が受け取り、
+          // 基準に記録する値と同じ。素の値で組んでいたので、行を減らす・並べ替えるフィルタでは台帳の行が
+          // 値の要素より少なく、次の書き込みの差分が投げた
+          const value = getFilteredValue(state[binding.statePathName], binding.outFilters);
           if (Array.isArray(value)) {
+            // 行（listIndex）は配列ごとに 1 組。同じ配列を描く for は同じ行を紐づける（#258・#351 — hydrateBlocks）
+            const rows = rowsByUuid.get(binding.uuid as string);
+            if (rows) setListIndexesByList(value, rows);
             setLastListValueByAbsoluteStateAddress(absAddr, value);
+            // サーバーが描いた並びを、この for が描いた並びとして記録する（クライアントで描いた for と同じく、
+            // 要素の書き込みが描画の基準を書き込む前の写しへ移せるように — #351）
+            hydrateSetRenderedList(binding.node, value);
             // 描画の基準と同時に state 側の基準も進める（E1。applyChangeFromBindings と対称）
             setStateListBaseline(absAddr, value);
           }

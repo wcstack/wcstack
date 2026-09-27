@@ -115,3 +115,90 @@ describe('validateTemplateSyntax — フィルタの旧名（@wcstack/state 3.2�
     expect(unknown[1].start).toBe(html.indexOf('zzz', unknown[0].start + 1));
   });
 });
+
+// #355: `{{ }}` / `<!--@@:-->` も属性の束縛と同じ規則（bindingValidator の同名の describe を参照）。
+// 数値添字が 1 つのパスは実行時に行として読まれ、行 getter も読める。修正前は binding-path-missing と
+// template-syntax（「解決済みパスは使用できません」）が 2 件ずつ出ていた。素のパス（添字が 2 つ以上・
+// `*` と混ざる）は要素を辿ってデータの候補と照合する。
+describe('validateTemplateSyntax — 数値添字のパス（#355）', () => {
+  const ISSUE_STATE = `
+<wcs-state><script type="module">
+export default {
+  items: [{ v: 1 }, { v: 2 }],
+  groups: [{ items: [{ v: 1 }] }],
+  show: true,
+  get "items.*.double"() { return this["items.*.v"] * 2; },
+};
+</script></wcs-state>`;
+  const pathDiags = (html: string) => validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en')
+    .filter(d => d.severity !== 'info')
+    .map(d => [html.slice(d.start, d.end), d.code]);
+
+  it('Issue の再現: {{ items.1.v }} / {{ items.1.double }} は 0 件、{{ groups.0.items.0.v }} は素のパスとして template-syntax の 1 件だけ', () => {
+    const html = `${ISSUE_STATE}
+<template data-wcs="if: show"><p>{{ items.1.v }}</p><p>{{ items.1.double }}</p><p>{{ groups.0.items.0.v }}</p></template>`;
+    // 修正前: 6 件。groups.0.items.0.v は実行時も要素を辿って存在するので binding-path-missing は出さない
+    expect(pathDiags(html)).toEqual([
+      ['groups.0.items.0.v', WcsDiagnosticCode.TemplateSyntax],
+    ]);
+  });
+
+  it('数値の for（for: groups.0.items）の行の {{ .v }} は要素を辿って存在扱い、{{ .nope }} は binding-path-missing', () => {
+    const html = `${ISSUE_STATE}
+<template data-wcs="for: groups.0.items"><p>{{ .v }}</p><p>{{ .nope }}</p></template>`;
+    expect(pathDiags(html)).toEqual([['.nope', WcsDiagnosticCode.BindingPathMissing]]);
+  });
+
+  it('コメントバインディング <!--@@:items.0.double--> も行として読む', () => {
+    const html = `${ISSUE_STATE}
+<p><!--@@:items.0.double--></p>`;
+    expect(pathDiags(html)).toEqual([]);
+  });
+
+  it('存在しない行のメンバー（{{ items.0.nope }}）は binding-path-missing だけ', () => {
+    const html = `${ISSUE_STATE}
+<template data-wcs="if: show"><p>{{ items.0.nope }}</p></template>`;
+    expect(pathDiags(html)).toEqual([['items.0.nope', WcsDiagnosticCode.BindingPathMissing]]);
+  });
+
+  it('stateSchema 宣言時: 読み替えた形で解決し、行の下の未宣言メンバーは wcs/path-nonexistent（error）', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
+      },
+    };
+    const html = `
+<wcs-state src="./state.ts"></wcs-state>
+<template data-wcs="if: ok"><p>{{ items.0.v }}</p><p>{{ items.0.nmae }}</p></template>`;
+    const diags = validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en', undefined, schema)
+      .filter(d => d.severity !== 'info');
+    // 修正前: items.0.nmae は `0` のまま配列の上で property を探して unknown に倒れ、沈黙していた
+    expect(diags.map(d => [html.slice(d.start, d.end), d.code, d.severity])).toEqual([
+      ['items.0.nmae', WcsDiagnosticCode.PathNonexistent, 'error'],
+    ]);
+  });
+
+  it('stateSchema 宣言時: 素のパス（数値の for の行・添字 2 つ）も配列の上の添字を要素の形にして schema を引く', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        groups: { type: 'array', items: { type: 'object', properties: {
+          items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
+        } } },
+      },
+    };
+    const html = `
+<wcs-state src="./state.ts"></wcs-state>
+<template data-wcs="for: groups.0.items"><p>{{ .v }}</p><p>{{ .nmae }}</p></template>
+<template data-wcs="if: ok"><p>{{ groups.0.items.0.nmae }}</p></template>`;
+    const diags = validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en', undefined, schema)
+      .filter(d => d.severity !== 'info');
+    // 修正前: どちらも `0` のまま配列の上で property を探して unknown に倒れ、打ち間違いが無言だった
+    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([
+      ['.nmae', WcsDiagnosticCode.PathNonexistent],
+      ['groups.0.items.0.nmae', WcsDiagnosticCode.TemplateSyntax],
+      ['groups.0.items.0.nmae', WcsDiagnosticCode.PathNonexistent],
+    ]);
+  });
+});

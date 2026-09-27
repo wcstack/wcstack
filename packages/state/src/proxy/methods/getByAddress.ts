@@ -19,7 +19,11 @@
  */
 
 import { liftAddress } from "../../address/liftAddress";
-import { IStateAddress } from "../../address/types";
+import { getPathInfo } from "../../address/PathInfo";
+import { createStateAddress } from "../../address/StateAddress";
+import { IPathInfo, IStateAddress } from "../../address/types";
+import { keepPreviousList } from "../../list/createListDiff";
+import { listIndexAtWildcard } from "../../list/wildcardLevel";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { IStateElement } from "../../components/types";
@@ -187,7 +191,60 @@ function _getByAddressWithCache(
       generation: generation
     });
   }
+  const previous = cacheEntry?.value;
+  if (Array.isArray(value) && value !== previous && stateElement.getterPaths.has(address.pathInfo.path)) {
+    inspectGetterList(target, address, value, previous, receiver, handler);
+  }
   return value;
+}
+
+/** 読んだパスの値をそのまま返したことのある getter（#362）。書き込みの通知はこの getter だけを別名の候補にする */
+const aliasGetterPathInfos = new WeakSet<IPathInfo>();
+
+export function isAliasGetter(pathInfo: IPathInfo): boolean {
+  return aliasGetterPathInfos.has(pathInfo);
+}
+
+/**
+ * getter が新しい配列を返したとき、getter が読んだパスの値と突き合わせる（#362）。
+ *
+ * - 読んだパスの値そのもの（`get shown() { return this.filter === "all" ? this.todos : … }` の all）なら、
+ *   その getter を別名として憶える（setByAddress の notifyWrite が、元のパスへの書き込みを知らせる候補）。
+ * - 前に返した配列が読んだパスにまだ居る（all → done で写しに替わった）なら、差分が前の配列の行を写しへ
+ *   貸さないように控える（list/createListDiff.ts の livePreviousLists）。
+ *
+ * 読んだパスは動的依存の表から引く。getter が配列の同一性を変えたときだけ走るので、書き込みや読みの
+ * ホットパスには乗らない。読むのは getter の行の文脈で読めるパスだけで、依存は張らない。
+ */
+function inspectGetterList(
+  target: object,
+  address: IStateAddress,
+  value: unknown[],
+  previous: unknown,
+  receiver: any,
+  handler: IStateHandler,
+): void {
+  const { path, wildcardCount } = address.pathInfo;
+  handler.beginUntrack();
+  try {
+    for (const [source, targets] of handler.stateElement.dynamicDependency) {
+      const sourcePathInfo = getPathInfo(source);
+      // getter の行の文脈で読めるパスだけ（getter より深いワイルドカードのパスは読まない）
+      if (!targets.includes(path) || sourcePathInfo.wildcardCount > wildcardCount) {
+        continue;
+      }
+      const sourceValue = getByAddress(target,
+        createStateAddress(sourcePathInfo, listIndexAtWildcard(address.listIndex!, sourcePathInfo.wildcardCount - 1, wildcardCount)),
+        receiver, handler);
+      if (sourceValue === value) {
+        aliasGetterPathInfos.add(address.pathInfo);
+      } else if (sourceValue === previous) {
+        keepPreviousList(value, previous);
+      }
+    }
+  } finally {
+    handler.endUntrack();
+  }
 }
 
 export function getByAddress(

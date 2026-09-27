@@ -403,6 +403,9 @@ describe("対照: 基準を共有しない形は修理前から描けている�
  * 突き合わせる今の行の親が、この for の行と食い違う台帳（要素書き込みが古い親の下に行を鋳造した、
  * 修正前からの欠陥）では突き合わせに使わず、従来の差分に戻す。使うと、その行が別の行の値を描き、
  * その後の書き込みを別の行のデータへ着地させた（修正前は Content not found で止まり、state は無事）。
+ * 台帳の食い違いそのものは #361 の修理で起きなくなった — 入れ替えを揃えた書き込みの依存展開は、揃って
+ * 行の index を振り直した後、書いた位置にいま居る行（置き換えで入った新しい行）か、動いた後の書いた行で
+ * 走るので、書いた位置の新しい値（別の行の要素）の入れ子のリストを、その値を持たない行の下で差分しない。
  */
 describe("行の親が食い違う台帳では突き合わせを使わない（#320）", () => {
   it("入れ子の for で要素書き込みと入れ替えを重ねても、書き込みは書いた行のデータに入ること", async () => {
@@ -410,7 +413,7 @@ describe("行の親が食い違う台帳では突き合わせを使わない（#
     const html = `<div class="A"><template data-wcs="for: items"><section><b>{{ .id }}</b>:`
       + `<template data-wcs="for: .tags"><i>{{ .t }}</i></template></section></template></div>`;
     const tags = (...values: number[]) => values.map((t) => ({ t }));
-    const { host, stateEl } = await mount({
+    const { host, shadowRoot, stateEl } = await mount({
       items: [{ id: 110, tags: tags() }, { id: 100, tags: tags(109, 108) }, { id: 103, tags: tags(104) }],
     }, html);
     const data = () => {
@@ -429,8 +432,9 @@ describe("行の親が食い違う台帳では突き合わせを使わない（#
 
     // 誤った突き合わせでは "110:|111:113|114:116"（行 1 に書いたつもりが行 2 の tags が変わる）
     expect(data()).toBe("110:|111:116|114:115");
-    // 台帳の食い違いは従来どおり見える失敗として残る（修正前からの欠陥・この修理の範囲外）
-    expect(errors).toHaveBeenCalled();
+    // #361 の修理の前は、台帳の食い違いが見える失敗（Content not found）として残っていた
+    expect(texts(shadowRoot, "section")).toEqual(["110:", "111:116", "114:115"]);
+    expect(errors).not.toHaveBeenCalled();
     host.remove();
   });
 });

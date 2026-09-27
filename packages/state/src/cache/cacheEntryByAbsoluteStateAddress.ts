@@ -17,6 +17,14 @@ export function setCacheEntryByAbsoluteStateAddress(
     cacheEntryByAbsoluteStateAddress.delete(address);
   } else {
     cacheEntryByAbsoluteStateAddress.set(address, cacheEntry);
+    // 行の値（ワイルドカードを含むパス）は行ごとに載るので、要素パスからの静的な辺に載せ、要素の書き込み・
+    // `$postUpdate` の依存ウォークが届くようにする（#364）。辺はバインドが張るので、行の中を描いていない
+    // リストでは、直接添字・`$getAll`・getter が読んで載せた子のパスに届かず、古い値が返り続けた。
+    // 2 回目からは登録済みのパスの判定 1 回で抜ける（State.setPathInfo）
+    const { stateElement, pathInfo } = address.absolutePathInfo;
+    if (pathInfo.wildcardCount > 0) {
+      stateElement.setPathInfo(pathInfo.path, "prop", "internal");
+    }
   }
 }
 

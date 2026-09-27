@@ -174,17 +174,17 @@ export function warnMountedDollarDeclarations(record: IMountRecord): void {
 
 /**
  * マウントされたコンポーネントのライフサイクル呼び出し（`$connectedCallback` /
- * `$disconnectedCallback`）。`this` は公開 chroot（`element[stateProp]`）。
+ * `$disconnectedCallback`）。`this` は公開 chroot を呼んだときのホストの行に固定したもの
+ * （`createThis` — overlay.ts の createLifecycleMountState。#368）。コールバックが無ければ作らない。
  * 例外・reject は 1 コンポーネントに閉じる（切断時は親も切断中でありうる）。
  */
-export function callMountLifecycleCallback(record: IMountRecord, name: string): void {
+export function callMountLifecycleCallback(record: IMountRecord, name: string, createThis: () => unknown): void {
   const callback = (record.stateObject as Record<string, unknown>)[name];
   if (typeof callback !== "function") {
     return;
   }
   try {
-    const chroot = (record.component as unknown as Record<string, unknown>)[record.stateProp];
-    const result = (callback as (this: unknown) => unknown).call(chroot);
+    const result = (callback as (this: unknown) => unknown).call(createThis());
     if (result instanceof Promise) {
       result.catch((error) => {
         console.error(`[@wcstack/state] mounted <${record.component.tagName.toLowerCase()}> ${name} failed.`, error);

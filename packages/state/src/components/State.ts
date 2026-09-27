@@ -82,6 +82,9 @@ function assertDeclarationFeaturesInstalled(value: IState): void {
   }
 }
 
+/** 静的な辺の子の配列 → その子の集合（`State.addStaticDependency` の重複検査） */
+const staticTargetsByDeps = new WeakMap<string[], Set<string>>();
+
 export class State extends HTMLElementBase implements IStateElement {
   static hasConnectedCallbackPromise = true;
 
@@ -1102,7 +1105,24 @@ export class State extends HTMLElementBase implements IStateElement {
    * @param targetPath
    */
   addStaticDependency(sourcePath: string, targetPath: string): boolean {
-    return this._addDependency(this._staticDependency, sourcePath, targetPath);
+    // 重複の検査は子の配列ごとの Set で引く（#364）。キャッシュに載った行の値も辺に載るので、動的なキーで
+    // 読んだ子（`items.*.m.k0`…）が 1 つの親の下に増える — 配列の includes では子の数の 2 乗になる。
+    // Set は配列に付く（再帰の世代の後始末 forgetGeneration が配列を差し替えたら、次の追加で作り直す）
+    const deps = this._staticDependency.get(sourcePath);
+    if (deps === undefined) {
+      this._staticDependency.set(sourcePath, [targetPath]);
+      return true;
+    }
+    let targets = staticTargetsByDeps.get(deps);
+    if (targets === undefined) {
+      staticTargetsByDeps.set(deps, targets = new Set(deps));
+    }
+    if (targets.has(targetPath)) {
+      return false;
+    }
+    targets.add(targetPath);
+    deps.push(targetPath);
+    return true;
   }
 
   setPathInfo(path: string, bindingType: BindingType, source: PathInfoSource = "binding"): void {

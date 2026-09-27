@@ -98,6 +98,43 @@ function renderChainReports(): unknown[][] {
   return errorSpy.mock.calls.filter((call: unknown[]) => String(call[0]).includes(RENDER_LIMIT_MESSAGE));
 }
 
+/**
+ * 描いた結果を測って書き（`$renderedCallback` の書き戻し）、測った値を見る `$watch` が 1px 詰める —
+ * 64px から `fit` まで。1 周（書き戻し → `$watch` → 描画）で描画の連鎖が 1 段伸びる（#353）
+ */
+async function shrinkViaWatch(fit: number) {
+  let renders = 0;
+  const { host, shadowRoot, stateEl } = await mount(
+    {
+      text: "",
+      size: 64,
+      measured: 0,
+      $renderedCallback(this: any) {
+        renders++;
+        if (this.text !== "" && this.measured !== this.size) this.measured = this.size;
+      },
+      $watch: {
+        measured(this: any, current: number) {
+          if (current > fit) this.size = current - 1;
+        },
+      },
+    },
+    `<p class="text">{{ text }}</p><p class="size">{{ size }}</p><p class="measured">{{ measured }}</p>`,
+  );
+  renders = 0;
+  const before = renderChainReports().length;
+  write(stateEl, "text", "a long heading");
+  await settle();
+  const result = {
+    reports: renderChainReports().length - before,
+    size: read(stateEl, "size"),
+    text: shadowRoot.querySelector(".size")!.textContent,
+    renders,
+  };
+  host.remove();
+  return result;
+}
+
 describe("描画起点の書き込み連鎖の上限（#338）", () => {
   beforeEach(() => {
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -264,7 +301,7 @@ describe("描画起点の書き込み連鎖の上限（#338）", () => {
     }
   });
 
-  it("循環中のパスへ $watch が書いても（drain 終了リスナーの書き込みは数え直さない）打ち切られ、相乗りした $watch の上限の報告も出ること（今の振る舞い）", async () => {
+  it("循環中のパスへ $watch が書いても（drain 終了リスナーの書き込みは数え直さない）打ち切られ、相乗りした $watch の上限は報告しないこと（#354）", async () => {
     const tag = defineOutput((n) => `m${n}`);
     const counter = { evals: 0 };
     const { host, shadowRoot, stateEl } = await mount(
@@ -278,16 +315,16 @@ describe("描画起点の書き込み連鎖の上限（#338）", () => {
     );
     await settle();
 
-    // 今の振る舞いの固定: `$watch` の連鎖深さはバッチ単位で数える（watch/chainDepth.ts）ので、描画の
-    // 循環の各バッチにハンドラの書き込み（saved）が相乗りすると、watch の深さも 1 バッチに 1 段ずつ伸びる。
-    // watch の上限（32）で 1 回打ち切られると深さは 0 に戻ってまた伸びるので、描画の上限（100）までに
-    // 2 回報告する（実測 評価 37 回目・72 回目の後）。ハンドラ自身は循環していないが、その機構から見た連鎖は
-    // 実在する — 修正前（描画の連鎖に上限が無い）も同じ間隔で報告していた。
+    // `$watch` の連鎖深さは書き込みごとに数える（watch/chainDepth.ts）。ハンドラを起こす `mode` は描画中の
+    // 要素の初期同期が書いたもの（ハンドラ起点ではない）なので、ハンドラはいつも深さ 0 から発火し、
+    // ハンドラの書き込み（saved）が同じバッチに相乗りしても伸びない。修正前はバッチ単位で数えていたので
+    // 1 バッチに 1 段ずつ伸び、描画の上限（100）までに `$watch` の上限を 2 回誤って報告していた
+    // （実測 評価 37 回目・72 回目の後。そのバッチのハンドラは飛ばされていた）
     const kinds = errorSpy.mock.calls
       .map((call: unknown[]) => String(call[0]))
       .filter((message) => message.includes("chain depth limit exceeded"))
       .map((message) => (message.includes("$watch") ? "watch" : "render"));
-    expect(kinds).toEqual(["watch", "watch", "render"]);
+    expect(kinds).toEqual(["render"]);
     expect(renderChainReports()).toHaveLength(1);
     expect(counter.evals).toBeLessThanOrEqual(MAX_RENDER_CHAIN_DEPTH + 4);
     expect(shadowRoot.querySelectorAll("li")).toHaveLength(2);
@@ -324,6 +361,134 @@ describe("描画起点の書き込み連鎖の上限（#338）", () => {
     } finally {
       delete globals[TRANSITION_RUNNER_KEY];
     }
+  });
+
+  // #353: 要素の出力を受けて一覧の読むキーへ書くのが `$watch` / `$scan`（drain 終了リスナー）の形。リスナーの
+  // 書き込みはバッチの深さを引き継ぐので、描画の書き戻し 1 回ごとに 1 段伸び、同じ上限で止まる。修正前は
+  // リスナーの書き込みだけが載ったバッチが深さ 0 に戻り、RUNAWAY_CAP まで評価が続いていた
+  describe("$watch / $scan を挟む循環（#353）", () => {
+    function viaListenerHtml(tag: string): string {
+      return `<p>{{ title }}</p>`
+        + `<ul><template data-wcs="for: view"><li><${tag} data-wcs="status: x"></${tag}><span>{{ .m }}</span></li></template></ul>`;
+    }
+
+    async function expectCutOnce(counter: { evals: number }, initial: any): Promise<void> {
+      const tag = defineOutput((n) => `m${n}`);
+      const events: any[] = [];
+      setDevtoolsSink((event) => { events.push(event); });
+      try {
+        const { host, shadowRoot, stateEl } = await mount(initial, viaListenerHtml(tag));
+        await settle();
+
+        // 打ち切りの報告は連鎖が初めて越えたバッチ（要素の書き戻し x）の 1 回だけ。続くバッチ（リスナーが
+        // 書いた mode）は報告せずに適用しない
+        const reports = renderChainReports();
+        expect(reports).toHaveLength(1);
+        expect(reports[0][1]).toEqual({ maxDepth: MAX_RENDER_CHAIN_DEPTH, paths: ["x"] });
+        expect(events.filter((event) => event.type === "state:render-chain-limit")).toHaveLength(1);
+        // 描画 1 回で 1 段（実測 評価 103 回）。`$watch` の上限は掛からない — ハンドラの書き込みは
+        // 描画と要素の書き戻しを挟んで戻ってくるので、ハンドラ起点の連鎖にはならない
+        expect(counter.evals).toBeGreaterThan(MAX_RENDER_CHAIN_DEPTH);
+        expect(counter.evals).toBeLessThanOrEqual(MAX_RENDER_CHAIN_DEPTH + 4);
+        expect(errorSpy.mock.calls.some((call: unknown[]) => String(call[0]).includes("$watch chain depth limit exceeded"))).toBe(false);
+        expect(shadowRoot.querySelectorAll("li")).toHaveLength(2);
+
+        // 止まったまま — マクロタスクを挟んでも評価は続かず、次の作者の書き込みは普通に描かれる
+        const settled = counter.evals;
+        await settle();
+        expect(counter.evals).toBe(settled);
+        write(stateEl, "title", "t1");
+        await settle();
+        expect(shadowRoot.querySelector("p")!.textContent).toBe("t1");
+        expect(counter.evals).toBe(settled);
+        expect(renderChainReports()).toHaveLength(1);
+        host.remove();
+      } finally {
+        setDevtoolsSink(null);
+      }
+    }
+
+    it("要素の出力 x を $watch が一覧の読む mode へ書く循環を、上限で打ち切って 1 回だけ報告すること", async () => {
+      const counter = { evals: 0 };
+      await expectCutOnce(counter, loopState(counter, {
+        x: "",
+        $watch: {
+          x(this: any, current: unknown) { this.mode = current; },
+        },
+      }));
+    });
+
+    it("同じ循環を $scan で書いた形も、上限で打ち切って 1 回だけ報告すること", async () => {
+      const counter = { evals: 0 };
+      const initial = loopState(counter, {
+        x: "",
+        $scan: {
+          mode: { from: "x", initial: "init", fold: (_acc: unknown, current: unknown) => current },
+        },
+      });
+      // mode は scan の出力にする
+      delete initial.mode;
+      await expectCutOnce(counter, initial);
+    });
+
+    it("$watch を挟む連鎖は 1 周で 1 段 — 99 段は収まり、100 段目の書き戻しを打ち切ること", async () => {
+      // 作者の書き込みの drain が深さ 0、最初の書き戻しが 1。k 回詰めた後の書き戻しが深さ k + 1
+      expect(await shrinkViaWatch(64 - (MAX_RENDER_CHAIN_DEPTH - 1))).toEqual({
+        reports: 0,
+        size: 64 - (MAX_RENDER_CHAIN_DEPTH - 1),
+        text: String(64 - (MAX_RENDER_CHAIN_DEPTH - 1)),
+        renders: 2 * MAX_RENDER_CHAIN_DEPTH,
+      });
+      // 100 回目に詰めた値は描くが、それを測った書き戻し（深さ 101）のバッチは適用しない
+      expect(await shrinkViaWatch(64 - MAX_RENDER_CHAIN_DEPTH - 10)).toEqual({
+        reports: 1,
+        size: 64 - MAX_RENDER_CHAIN_DEPTH - 1,
+        text: String(64 - MAX_RENDER_CHAIN_DEPTH),
+        renders: 2 * MAX_RENDER_CHAIN_DEPTH + 1,
+      });
+    });
+
+    it("$watch でつないだ有限の描画の連鎖は 100 段を分け合う — 2 本（描画 94 回）は収まり、3 本（1 本 47 段 × 3）は 101 段目で打ち切ること", async () => {
+      // 1 本は「描いて 1px 詰める」を 64px → 18px（書き戻し 46 回＋完了の印 1 回 ＝ 47 段）。完了の印を見る
+      // $watch が次の本を始める。$watch の書き込みは深さを引き継ぐので、つないだ本の段数は足し合わされる
+      async function fitPhases(phases: number) {
+        let renders = 0;
+        const { host, shadowRoot, stateEl } = await mount(
+          {
+            go: false, phase: 0, s1: 64, s2: 64, s3: 64, f1: false, f2: false, f3: false,
+            $watch: {
+              f1(this: any, done: boolean) { if (done && phases >= 2) this.phase = 2; },
+              f2(this: any, done: boolean) { if (done && phases >= 3) this.phase = 3; },
+            },
+            $renderedCallback(this: any) {
+              renders++;
+              if (!this.go) return;
+              const size = `s${this.phase}`;
+              const fitted = `f${this.phase}`;
+              if (this[size] > 18) this[size] = this[size] - 1;
+              else if (!this[fitted]) this[fitted] = true;
+            },
+          },
+          `<h1>{{ s1 }}</h1><h2>{{ s2 }}</h2><h3>{{ s3 }}</h3><i>{{ phase }}</i>`,
+        );
+        renders = 0;
+        const before = renderChainReports().length;
+        stateEl.createState("writable", (state: any) => { state.go = true; state.phase = 1; });
+        await settle(6);
+        const result = {
+          reports: renderChainReports().length - before,
+          state: ["s1", "s2", "s3"].map((path) => read(stateEl, path)),
+          dom: ["h1", "h2", "h3"].map((tag) => shadowRoot.querySelector(tag)!.textContent),
+          renders,
+        };
+        host.remove();
+        return result;
+      }
+
+      expect(await fitPhases(2)).toEqual({ reports: 0, state: [18, 18, 64], dom: ["18", "18", "64"], renders: 94 });
+      // 1 本ずつなら収まる連鎖でも、つなぐと 3 本目の途中で打ち切られる
+      expect(await fitPhases(3)).toEqual({ reports: 1, state: [18, 18, 57], dom: ["18", "18", "58"], renders: 101 });
+    });
   });
 
   describe("誤検出しない", () => {
@@ -512,6 +677,39 @@ describe("描画起点の書き込み連鎖の上限（#338）", () => {
       expect(renders).toBe(40);
       expect(read(stateEl, "shown")).toBe(400);
       expect(shadowRoot.querySelectorAll("li")).toHaveLength(400);
+      host.remove();
+    });
+
+    // 以下の 2 つは #353（リスナーの書き込みが深さを引き継ぐ）の番人
+    it("$watch を挟んで文字サイズを 1px ずつ詰める有限の連鎖（64px → 18px・46 段）が最後まで収まること", async () => {
+      // 1 段は「描画の書き戻し → $watch → 描画」の 1 周（描画 2 回）。46 段・描画 94 回
+      expect(await shrinkViaWatch(18)).toEqual({ reports: 0, size: 18, text: "18", renders: 94 });
+    });
+
+    it("$watch の書き込みと描画の書き戻しは、別のマクロタスクから何度来ても連鎖を伸ばさないこと（タイマーの tick 相当）", async () => {
+      const { host, shadowRoot, stateEl } = await mount(
+        {
+          n: 0,
+          echo: 0,
+          seen: 0,
+          $watch: {
+            n(this: any, current: number) { this.echo = current; },
+          },
+          $renderedCallback(this: any) {
+            if (this.seen !== this.echo) this.seen = this.echo;
+          },
+        },
+        `<p class="n">{{ n }}</p><p class="echo">{{ echo }}</p><p class="seen">{{ seen }}</p>`,
+      );
+      const ticks = MAX_RENDER_CHAIN_DEPTH + 8;
+      for (let i = 1; i <= ticks; i++) {
+        write(stateEl, "n", i);
+        await macro();
+      }
+      await settle();
+
+      expect(renderChainReports()).toHaveLength(0);
+      expect(shadowRoot.querySelector(".seen")!.textContent).toBe(String(ticks));
       host.remove();
     });
   });

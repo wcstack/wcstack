@@ -24,7 +24,7 @@ import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
 import { IBindingInfo } from "../types";
 import { consumeObserverSkipOnAdd, consumeObserverSkipOnRemove, consumeObserverSkipRemovedChildren, decrementPendingObservation, hasPendingObservation, incrementPendingObservation } from "./observerSkip";
-import { DefinitionCoordinator, getDefinitionCoordinator } from "./DefinitionCoordinator";
+import { getDefinitionCoordinator } from "./DefinitionCoordinator";
 import { commitProducerValue, hasInitialSyncModifier, IInitialSyncPolicy, ResolvedInitialAuthority, resolveInitialAuthority, resolveInitialSyncPolicy } from "./initialSync";
 import { replaceToReplaceNode } from "./replaceToReplaceNode";
 import type { IRowPlan } from "../structural/types";
@@ -100,8 +100,12 @@ interface IInternalBindingRecord extends IBindingRecord {
 
 interface IDeferredDefinition {
   readonly node: Node;
-  active: boolean;
+  /** 登録した世代（session の disposedAt と比べる） */
+  readonly born: number;
+  /** 張っている registry の待ちの取り消し。null はまだ張っていない（fragment の中）か、外れて下ろした */
   cancel: (() => void) | null;
+  /** ノードが今属する registry で待ちを張る（張り済み・session が手放した待ちは何もしない） */
+  arm: () => void;
 }
 
 interface IObservableRoot extends Node {
@@ -109,6 +113,8 @@ interface IObservableRoot extends Node {
 }
 
 let nextRecordId = 0;
+// 次の microtask にまとめて張る定義待ち（全 session で 1 本・登録順）。null は並んでいる待ちが無い
+let armQueue: IDeferredDefinition[] | null = null;
 let nextGeneration = 0;
 
 // プラン行の帳簿は束縛ごとの record ではなく行に 1 つの record（slot 配列）で持つ
@@ -365,6 +371,11 @@ export class BindingSession {
   private readonly optionsByBinding = new WeakMap<IBindingInfo, IBindingOptions>();
   private readonly deferredByNode = new WeakMap<Node, Set<IDeferredDefinition>>();
   private readonly deferred = new Set<IDeferredDefinition>();
+  /**
+   * 最後に session ごと解体した（dispose / destroyRecords — 行の Content が消えた・プールに入った）時点の
+   * 世代。これより前に生まれた record・定義待ちは、外れて戻ってきても張り直さない・適用し直さない（#352）
+   */
+  private disposedAt = 0;
 
   constructor(root: Node | null = null) {
     if (root !== null) this.observe(root);
@@ -546,45 +557,74 @@ export class BindingSession {
     callback: () => void,
     reject: (error: unknown) => void = () => undefined,
   ): () => void {
-    const registry = getCustomElementRegistry(node);
-    if (registry === null) {
-      raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
-    }
-    this.observe(node);
-    addInterestedSession(node, this);
-    const task: IDeferredDefinition = { node, active: true, cancel: null };
-    let tasks = this.deferredByNode.get(node);
-    if (typeof tasks === "undefined") {
-      tasks = new Set();
-      this.deferredByNode.set(node, tasks);
-    }
-    tasks.add(task);
-    this.deferred.add(task);
-    const finish = (): boolean => {
-      if (!task.active) return false;
-      task.active = false;
-      tasks?.delete(task);
-      this.deferred.delete(task);
-      return true;
+    const tasks = this.deferredByNode.get(node) ?? new Set<IDeferredDefinition>();
+    // 済ませる（一度きり）。済んだ・取り消した task はどちらの台帳にも居ない
+    const finish = (): boolean => tasks.delete(task) && this.deferred.delete(task);
+    const wait = (): void => {
+      const registry = getCustomElementRegistry(node);
+      if (registry === null) {
+        raiseError(`CustomElementRegistry is unavailable for <${tagName}>.`);
+      }
+      task.cancel = getDefinitionCoordinator(registry).wait(
+        tagName,
+        () => {
+          if (!finish()) return;
+          try {
+            upgradeCustomElement(registry, node);
+            callback();
+          } catch (error) {
+            reject(error);
+          }
+        },
+        (error) => {
+          if (!finish()) return;
+          reject(error);
+        },
+      );
     };
-    task.cancel = getDefinitionCoordinator(registry).wait(
-      tagName,
-      () => {
-        if (!finish()) return;
+    const task: IDeferredDefinition = {
+      node,
+      born: ++nextGeneration,
+      cancel: null,
+      arm: () => {
+        // 張り済み（cancel あり）か、session の手を離れた（済んだ・取り消した・外れて下ろした）待ちは張らない
+        if (task.cancel !== null || !this.deferred.has(task)) return;
         try {
-          upgradeCustomElement(registry, node);
-          callback();
+          wait();
         } catch (error) {
+          // 後から張る待ちの失敗は呼び出し元へ返せない
+          finish();
           reject(error);
         }
       },
-      (error) => {
-        if (!finish()) return;
-        reject(error);
-      },
-    );
+    };
+    const root = node.getRootNode();
+    // まだ DocumentFragment の中（行を fragment で組んで活性化してから差し込む経路）。fragment の中の要素は
+    // 行き先の registry にまだ結び付いていない — Chromium は global registry を返し、スコープ付き registry の
+    // shadow root へ差し込むとそちらに付け替わる（#357）。差し込みは同じ同期処理のうちに済むので、待つ先は
+    // その後で引く。
+    // 並んでいる待ちがあれば、その後ろに並ぶ（ノードごとの登録順を保つ）。two-way・イベントを
+    // 付ける待ち（createContent の fragment の中で登録）より先に値の遅延適用（差し込んだ後の活性化で登録）が
+    // 走ると、初期同期の前に state の値が要素へ書かれる — `#init=element` の要素の値が消える。
+    // 並べた待ちは microtask 1 回でまとめて、登録順に張る
+    if (armQueue !== null || root.nodeType === 11 && !isObservableRoot(root)) {
+      if (armQueue === null) {
+        const queue: IDeferredDefinition[] = armQueue = [];
+        queueMicrotask(() => {
+          armQueue = null;
+          for (let i = 0; i < queue.length; i++) queue[i].arm();
+        });
+      }
+      armQueue.push(task);
+    } else {
+      wait();
+    }
+    if (isObservableRoot(root)) getBindingOwner(root);
+    addInterestedSession(node, this);
+    this.deferredByNode.set(node, tasks.add(task));
+    this.deferred.add(task);
     return () => {
-      if (!finish()) return;
+      finish();
       task.cancel?.();
     };
   }
@@ -628,7 +668,6 @@ export class BindingSession {
       return;
     }
     for (const task of Array.from(this.deferred)) {
-      task.active = false;
       task.cancel?.();
       this.deferred.delete(task);
       this.deferredByNode.get(task.node)?.delete(task);
@@ -658,12 +697,12 @@ export class BindingSession {
   }
 
   dispose(): void {
+    this.disposedAt = nextGeneration;
     for (const row of Array.from(this.rows)) {
       for (let i = 0; i < row.bindings.length; i++) this.disposeRowSlot(row, i);
     }
     for (const record of Array.from(this.records)) this.disposeRecord(record);
     for (const task of Array.from(this.deferred)) {
-      task.active = false;
       task.cancel?.();
       this.deferred.delete(task);
       this.deferredByNode.get(task.node)?.delete(task);
@@ -698,6 +737,7 @@ export class BindingSession {
    * 実害はない設計（handlerBindingRegistry.ts の弱参照化コメント参照）。
    */
   destroyRecords(): void {
+    this.disposedAt = nextGeneration;
     for (const row of this.rows) this.destroyRowRecord(row);
     this.rows.clear();
     for (const record of this.records) {
@@ -815,18 +855,23 @@ export class BindingSession {
         this.disposeBinding(known);
       }
     }
-    const tasks = this.deferredByNode.get(node);
-    if (typeof tasks !== "undefined") {
-      for (const task of Array.from(tasks)) {
-        task.active = false;
-        task.cancel?.();
-        tasks.delete(task);
-        this.deferred.delete(task);
-      }
-    }
+    // 外れている間は registry の待ちを下ろす（戻らない要素を掴み続けない）。task はノードの台帳（弱参照）
+    // にだけ残し、戻ったら handleAddedNode が張り直す（#352）
+    this.deferredByNode.get(node)?.forEach((task) => {
+      task.cancel?.();
+      task.cancel = null;
+      this.deferred.delete(task);
+    });
   }
 
   handleAddedNode(node: Node, reconnected: IBindingInfo[]): void {
+    // 外れたときに下ろした定義待ちを、今属する registry で張り直す（#352）。外れている間に session ごと
+    // 解体された（行が消えた・プールに入った）待ちは張り直さない — 消えた行の文脈で展開しない
+    this.deferredByNode.get(node)?.forEach((task) => {
+      if (task.born <= this.disposedAt) return;
+      this.deferred.add(task);
+      task.arm();
+    });
     const known = this.knownBindingsByNode.get(node);
     if (typeof known === "undefined") return;
     const bindings = known instanceof Map ? known.values() : [known];
@@ -841,7 +886,11 @@ export class BindingSession {
       if (typeof options === "undefined") continue;
       try {
         this.start(binding, options);
-        if (options.applyOnReconnect && this.shouldApplyState(binding)) reconnected.push(binding);
+        // 要素の定義を待っていた束縛の遅延適用は、外れたときに解体と一緒に取り消された — 再接続で適用し直さない
+        // 束縛（行）でも、その行が生きていれば（外れている間に session ごと解体されていなければ）適用し直し、
+        // 待ちを予約し直す（#352）
+        if ((options.applyOnReconnect || record.pendingDefinitions > 0 && record.generation > this.disposedAt)
+          && this.shouldApplyState(binding)) reconnected.push(binding);
       } catch {
         // Mutation delivery cannot surface initialization errors to a caller.
       }
@@ -1188,29 +1237,22 @@ export class BindingSession {
     record.phase = "waiting-definition";
     record.pendingDefinitions += 1;
     const generation = record.generation;
-    const coordinator: DefinitionCoordinator = getDefinitionCoordinator(registry);
-    const cancel = coordinator.wait(tagName, () => {
+    // 待つ先の registry は deferUntilDefined が引く — 行の中身（createContent の fragment の中）は
+    // 差し込んだ後の木の registry で待つ（#357）
+    addRecordTeardown(record, this.deferUntilDefined(record.info.node, tagName, () => {
       if (!this.isAlive(record, generation)) return;
-      try {
-        upgradeCustomElement(registry, record.info.node);
-        attach();
-        record.pendingDefinitions -= 1;
-        if (record.pendingDefinitions === 0) {
-          record.phase = "active";
-          this.settleInitialRecord(record);
-        }
-      } catch {
-        record.phase = "failed";
-        this.runTeardowns(record);
-        this.records.delete(record);
+      attach();
+      record.pendingDefinitions -= 1;
+      if (record.pendingDefinitions === 0) {
+        record.phase = "active";
+        this.settleInitialRecord(record);
       }
     }, () => {
       if (!this.isAlive(record, generation)) return;
       record.phase = "failed";
       this.runTeardowns(record);
       this.records.delete(record);
-    });
-    addRecordTeardown(record, cancel);
+    }));
   }
 
   private settleInitialRecord(record: IInternalBindingRecord): void {
@@ -1379,4 +1421,12 @@ export function getOrCreateBindingSession(root: Node): BindingSession {
 
 export function getBindingSession(binding: IBindingInfo): BindingSession | null {
   return recordByBinding.get(binding)?.session ?? rowByBinding.get(binding)?.session ?? null;
+}
+
+/**
+ * 要素の定義を待って、まだ two-way・イベントを付けていない（初期同期もしていない）束縛か。
+ * `applyChange` はこの間、要素がもう定義済みに見えても値を直接書かず、定義待ちの後ろへ回す（#357）。
+ */
+export function isWaitingDefinition(binding: IBindingInfo): boolean {
+  return recordByBinding.get(binding)?.phase === "waiting-definition";
 }

@@ -23,9 +23,9 @@ import { MAX_WATCH_CHAIN_DEPTH } from "../src/define";
 import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { DevtoolsEvent } from "../src/devtools/types";
 import type { IState } from "../src/types";
-import { __private__ as chainDepthPrivate } from "../src/watch/chainDepth";
+import { __private__ as chainDepthPrivate, consumeWatchChainDepths } from "../src/watch/chainDepth";
 import { __private__ as runtimePrivate } from "../src/watch/watchRuntime";
-import { flushAsync, makeConnectHost } from "./helpers/streamTestUtils";
+import { flushAsync, flushTimes, makeConnectHost } from "./helpers/streamTestUtils";
 
 beforeAll(() => {
   bootstrapState();
@@ -329,6 +329,248 @@ describe("$watch の発火", () => {
     expect(handler).toHaveBeenCalledTimes(40);
     expect(errorSpy).not.toHaveBeenCalled();
     host.remove();
+  });
+
+  // #354: 深さは書き込みごとに数える（watch/chainDepth.ts）。バッチ単位で数えていたときは、ハンドラの書き込みと
+  // 同じバッチに相乗りした描画の書き戻しで起きたハンドラまで連鎖の続きに数え、32 段を超える有限の描画の
+  // 連鎖の途中で上限を誤って報告し、そのバッチの `$scan` / `$watch` を飛ばしていた
+  describe("32 段を超える有限の描画の連鎖（#354）", () => {
+    /** 描いて測って 1px 詰める（README の 64px → 18px の連鎖・描画 47 回）。測定の代わりに 18 と比べる */
+    function shrinkState(extra: Record<string, unknown>): IState {
+      return {
+        text: "",
+        size: 64,
+        $renderedCallback(this: any) {
+          if (this.text !== "" && this.size > 18) this.size = this.size - 1;
+        },
+        ...extra,
+      } as unknown as IState;
+    }
+
+    async function run(markup: string, state: IState) {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+      const connected = await connectHost(`<i>{{ text }}</i><h1>{{ size }}</h1>${markup}`, state);
+      await flushAsync();
+      connected.stateEl.createState("writable", (s) => { s.text = "a long heading"; });
+      await flushTimes(4);
+      const limitReports = errorSpy.mock.calls.filter((call) => String(call[0]).includes("chain depth limit exceeded"));
+      return { ...connected, limitReports };
+    }
+
+    /** from から to まで 1 ずつ減る列 */
+    function countdown(from: number, to: number): number[] {
+      return Array.from({ length: from - to + 1 }, (_, i) => from - i);
+    }
+
+    it("$watch のハンドラが別のキーへ書いても上限を報告せず、どの値でもハンドラが呼ばれること", async () => {
+      const seen: number[] = [];
+      const { host, shadowRoot, limitReports } = await run(`<p>{{ last }}</p>`, shrinkState({
+        last: 0,
+        $watch: {
+          size(this: any, cur: number) { seen.push(cur); this.last = cur; },
+        },
+      }));
+
+      // 修正前は 62 から数えて 34 個目の 29 のバッチで `$watch chain depth limit exceeded` が出て、29 が来なかった
+      expect(limitReports).toEqual([]);
+      expect(countdown(62, 18).filter((v) => !seen.includes(v))).toEqual([]);
+      expect(shadowRoot.querySelector("h1")!.textContent).toBe("18");
+      expect(shadowRoot.querySelector("p")!.textContent).toBe("18");
+      host.remove();
+    });
+
+    it("$scan の from を描画の連鎖が書き進めても、上限を報告せず、どの着地も畳むこと", async () => {
+      const { host, stateEl, limitReports } = await run(`<p>{{ steps }}</p>`, shrinkState({
+        $scan: {
+          steps: { from: "size", initial: 0, fold: (acc: number) => acc + 1 },
+        },
+      }));
+
+      // size は 63 から 18 まで 46 回着地する。修正前は scan の書き込み（steps）が相乗りしてバッチの深さが
+      // 伸び、33 段目で上限を報告してその回の畳みを飛ばしていた
+      expect(limitReports).toEqual([]);
+      stateEl.createState("readonly", (state) => {
+        expect(state.size).toBe(18);
+        expect(state.steps).toBe(countdown(63, 18).length);
+      });
+      host.remove();
+    });
+
+    it("対照: 相互 $watch の循環は、描画の書き戻しが同じバッチに相乗りしても上限で打ち切られること", async () => {
+      let ticks = 0;
+      const { host, limitReports } = await run(`<p>{{ a }}</p><p>{{ b }}</p>`, shrinkState({
+        a: 0,
+        b: 0,
+        $watch: {
+          size(this: any) { if (this.a === 0) this.a = 1; },
+          a(this: any, cur: number) { ticks++; this.b = cur + 1; },
+          b(this: any, cur: number) { ticks++; this.a = cur + 1; },
+        },
+      }));
+
+      // a / b の書き込みはハンドラ起点なので、描画の書き戻し（size）と同じバッチに載っても深さが伸び続ける
+      expect(limitReports).toHaveLength(1);
+      expect(String(limitReports[0][0])).toContain("$watch chain depth limit exceeded");
+      expect(ticks).toBeGreaterThan(MAX_WATCH_CHAIN_DEPTH - 2);
+      expect(ticks).toBeLessThanOrEqual(MAX_WATCH_CHAIN_DEPTH + 1);
+      host.remove();
+    });
+  });
+
+  // `$stream` の再開（args の依存への書き込みで起きる）は、drain 終了リスナーの中で `initial` と status を書く。
+  // その書き込みは再開を起こした書き込みの連鎖の続きに数える。数えないと、`$watch` が args の依存へ書き、
+  // 再開の書き込みがまたその `$watch` を起こす循環が、上限に掛からずに回り続ける
+  describe("$stream の再開を挟む循環", () => {
+    /** 値を出さずに abort を待つ source（再開のたびに abort される） */
+    const never = (_args: unknown, signal: AbortSignal) => ({
+      [Symbol.asyncIterator]() {
+        return {
+          next: () => new Promise<IteratorResult<unknown>>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+        };
+      },
+    });
+    /** 測定用のハンドラ呼び出しの上限。修正が外れたときにテストをハングさせないため */
+    const CAP = 300;
+
+    async function runCycle(declare: (step: () => void) => Record<string, unknown>) {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+      let calls = 0;
+      const { host, stateEl } = await connectHost(`<i>{{ go }}</i>`, {
+        q: 0,
+        go: false,
+        $stream: {
+          results: { args: (s: any) => s.q, source: never, fold: (acc: unknown[], chunk: unknown) => [...acc, chunk], initial: [] },
+        },
+        // q を進める（args の依存への書き込み ＝ 再開）。go が立つまでは何もしない
+        ...declare(function (this: any) {
+          if (!this.go || ++calls > CAP) return;
+          this.q = this.q + 1;
+        }),
+      } as unknown as IState);
+      await flushTimes(2);
+      stateEl.createState("writable", (s) => { s.go = true; s.q = 100; });
+      await flushTimes(6);
+      const limitReports = errorSpy.mock.calls.filter((call) => String(call[0]).includes("chain depth limit exceeded"));
+      host.remove();
+      return { calls, limitReports };
+    }
+
+    function expectCut(result: { calls: number; limitReports: unknown[][] }): void {
+      expect(result.limitReports).toHaveLength(1);
+      expect(String(result.limitReports[0][0])).toContain("$watch chain depth limit exceeded");
+      // 1 周（ハンドラ → 再開 → ハンドラ）で 2 段伸びる
+      expect(result.calls).toBeLessThanOrEqual(MAX_WATCH_CHAIN_DEPTH / 2 + 1);
+    }
+
+    it("$watch が args の依存へ書き、再開の書き込みがその $watch を起こす循環を、上限で打ち切ること", async () => {
+      expectCut(await runCycle((step) => ({ $watch: { results: step } })));
+    });
+
+    it("循環に関係しない $watch の書き込みが相乗りしても、同じく打ち切ること", async () => {
+      expectCut(await runCycle((step) => ({
+        w: 0,
+        $watch: {
+          results: step,
+          q(this: any, v: number) { this.w = v; },
+        },
+      })));
+    });
+
+    it("再開の書き込みを $scan が畳み、その出力の $watch が args の依存へ書く循環も、上限で打ち切ること", async () => {
+      expectCut(await runCycle((step) => ({
+        $scan: { count: { from: "results", initial: 0, fold: (acc: number) => acc + 1 } },
+        $watch: { count: step },
+      })));
+    });
+
+    it("$stream どうしが args で互いの値を読む循環も、$watch が無くても上限で止まり報告されること", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+      let evaluations = 0;
+      const counted = (read: (s: any) => unknown) => (s: any) => {
+        if (++evaluations > CAP) throw new Error("runaway");
+        return read(s);
+      };
+      const { host, stateEl } = await connectHost("", {
+        go: 0,
+        $stream: {
+          a: { args: counted((s) => [s.b, s.go]), source: never, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] },
+          b: { args: counted((s) => s.a), source: never, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] },
+        },
+      } as unknown as IState);
+      await flushTimes(2);
+      evaluations = 0;
+      stateEl.createState("writable", (s) => { s.go = 1; });
+      await flushTimes(6);
+
+      // 再開のたびに 1 段伸びる。接続時の起動で 2 本とも書くので、連鎖は 2 本並んで回り、それぞれが 1 回報告する
+      expect(evaluations).toBeLessThanOrEqual(MAX_WATCH_CHAIN_DEPTH + 2);
+      const limitReports = errorSpy.mock.calls.filter((call) => String(call[0]).includes("$watch chain depth limit exceeded"));
+      expect(limitReports.length).toBeGreaterThanOrEqual(1);
+      expect(limitReports.length).toBeLessThanOrEqual(2);
+      host.remove();
+    });
+  });
+
+  describe("深さの台帳の持ち越し", () => {
+    it("ハンドラが 5,000 行を書いてから自分のホストを外しても、深さの台帳を持ち越さないこと", async () => {
+      let hostRef: HTMLElement | null = null;
+      const { host, stateEl } = await connectHost(`<i>{{ go }}</i>`, {
+        go: 0,
+        items: Array.from({ length: 5000 }, (_, i) => ({ id: i, v: 0 })),
+        $listKeys: { items: "id" },
+        $watch: {
+          go(this: any, v: number) {
+            this.$setAll("items.*.v", [], v);
+            hostRef!.remove();
+          },
+        },
+      } as unknown as IState);
+      hostRef = host;
+      stateEl.createState("writable", (s) => { s.go = 1; });
+      await flushTimes(3);
+
+      // 発火する state が無くなった後の drain でも台帳は消費され、何も残らない（修正前は 5,000 件のアドレスが残った）
+      expect(consumeWatchChainDepths(new Set())).toBe(0);
+    });
+
+    it("連鎖の途中でハンドラが自分のホストを外しても、残った深さが後の別の state の発火を打ち切らないこと", async () => {
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => { /* silence */ });
+      let hostRef: HTMLElement | null = null;
+      const first = await connectHost(`<i>{{ a }}</i>`, {
+        a: 0,
+        b: 0,
+        $watch: {
+          // a のハンドラは深さ 0, 2, 4, … で cur = 1, 3, 5, … を受ける。深さ 32（上限ちょうど）で書いてから
+          // ホストを外す — その書き込み（b）の深さ 33 は上限を越えているが、発火する state はもう無い
+          a(this: any, cur: number) {
+            this.b = cur + 1;
+            if (cur > MAX_WATCH_CHAIN_DEPTH) hostRef!.remove();
+          },
+          b(this: any, cur: number) { this.a = cur + 1; },
+        },
+      } as unknown as IState);
+      hostRef = first.host;
+      first.stateEl.createState("writable", (s) => { s.a = 1; });
+      await flushTimes(4);
+      // 越えたバッチは、発火する state が無くても 1 回報告される（その drain で台帳を消費する）
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      expect(String(errorSpy.mock.calls[0][0])).toContain("$watch chain depth limit exceeded");
+
+      const seen: number[] = [];
+      const second = await connectHost("", {
+        n: 0,
+        $watch: { n(cur: number) { seen.push(cur); } },
+      } as unknown as IState);
+      second.stateEl.createState("writable", (s) => { s.n = 1; });
+      await flushAsync();
+
+      // 修正前は外れた state の深さ（上限 + 1）が台帳に残り、この作者の書き込みのバッチを打ち切っていた
+      expect(seen).toEqual([1]);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      second.host.remove();
+    });
   });
 });
 

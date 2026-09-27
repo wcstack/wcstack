@@ -128,7 +128,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 
 | チェック | 例 | 診断 |
 |---|---|---|
-| 存在しないパス | `textContent: typo` | ⚠ warning |
+| 存在しないパス（数値添字が 1 つのパスはその位置の行を読むので、`items.0.name` / `items.0.fullName` は `items.*.name` / `items.*.fullName` として照合する — 行 getter も含む。それ以外の数値添字のパスは実行時と同じく要素を辿る素のパスで、`groups.0.items.0.name` や `for: groups.0.items` の中の `.name` はデータのパス `groups.*.items.*.name` として照合する — 行 getter は含まない） | `textContent: typo` | ⚠ warning |
 | 存在しないフィルタ | `textContent: count\|fake` | ⚠ warning |
 | `for:` に非配列 | `for: count` | ❌ error |
 | `if:` に非 boolean | `if: count` | ⚠ warning |
@@ -140,7 +140,8 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | イベント+フィルタ | `onclick: fn\|gt(10)` | ⚠ warning |
 | `<template for>` 外のパターンパス | `textContent: items.*.name` | ⚠ warning |
 | `<template for>` 外の省略パス | `textContent: .name` | ⚠ warning |
-| 解決済みパス（数値インデックス） | `textContent: items.0.name` | ⚠ warning |
+| 行として読まれない数値添字のパス（添字が 2 つ以上・`*` と混ざる。添字を通した書き込みが届かない。添字が 1 つの `items.0.name` はその位置の行を読むので対象外） | `textContent: groups.0.items.0.name` | ⚠ warning |
+| 数値の添字で辿るリストの `for:`（行への双方向束縛・添字の書き込みが実行時に例外になる — `@wcstack/state` #363。`for: groups` の中に `for: .items` を入れ子にする） | `for: groups.0.items` | ⚠ warning |
 | `<template>` 外の `{{ }}` (FOUC) | `<p>{{ count }}</p>` | ℹ info |
 | ネストされたプロパティへの代入 | `this.user.name = "..."` | ⚠ warning |
 | `<!--@@:-->` バインディング表示 | `<!--@@:count-->` | ℹ info |
