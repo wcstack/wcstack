@@ -77,7 +77,7 @@ Playwright の `page.route()` で `/api/items` を隔離して横取りします
 | `calendar` (packages/state/examples) | state 単体。算出 getter を `for:` のイテレーション対象にしたグリッドが、週数変化・年跨ぎを含む月移動に追随すること |
 | `router-i18n` | router + state + i18n パターン。ロケール交渉（URL > storage > navigator > fallback）、head 同期スクリプトの URL 修復、言語切替のハードナビゲーション、後から差し込まれたルート内容の binder 経由バインド。デモ自身のサーバーをルートで立てる（basename 前提のため serve.mjs 非経由） |
 
-### fixture プロトコル回帰テスト (17 spec)
+### fixture プロトコル回帰テスト (18 spec)
 
 `e2e/fixtures/` の最小 HTML に対して実行します。デモではなく**プロトコルの不変条件**を固定するもので、
 happy-dom では再現しない挙動を対象にしています。
@@ -95,6 +95,7 @@ happy-dom では再現しない挙動を対象にしています。
 | `bind-component-depth2` / `bind-component-depth2-nested` | 深さ 2 のコンポーネント連鎖（ADR-15 §1.11/§1.12） |
 | `bind-component-light-dom` | Light DOM の bind-component がデッドロックしないこと（ADR-15 §1.1-1.13） |
 | `deferred-apply` | 後から define された要素にも初期バインド値が適用されること |
+| `deferred-spread-template` | `for:` / `if:` のテンプレートの中の spread（`...: .` / `...: rows.*`）が、後から define された要素でも行・枝を先に描き、define 後にその行の値で展開されること。define 前に消えた行は展開しないこと（#330） |
 | `monitor-initial-snapshot` | devtools hook protocol の初期スナップショット |
 | `router-a11y` | router のスクロール/フォーカス契約 (docs/a11y-design.md §3-1)。Navigation API 経路の仕様既定 (push でトップへ・traverse で復元・フォーカスは body へ) と、`window.navigation` を undefined に潰す fallback 強制で pushState / popstate 経路の SPA 遷移が成立すること (T0-4) |
 | `router-a11y-optin` | オプトインの `focus="heading"` / `announce="title"` (docs/a11y-design.md §3-4)。commit 後にリーフ route の見出しへフォーカスし、live region へ commit 時 title が入ること。初回描画では両方とも動かないこと |

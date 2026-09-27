@@ -671,7 +671,7 @@ Runtime reads `customClass.wcBindable.properties + inputs` and expands each name
 - Filters on the spread target (`...: target|filter`) are rejected.
 - The right-hand path may contain `*` anywhere (e.g. `...: stores.*.fetch`).
 - The right-hand side is a plain tree path (`...: fetchX` or `...: stores.*.fetch`).
-- If the custom element class is not yet registered, expansion is deferred until `customElements.whenDefined(tag)` resolves — autoloader-style late registration is supported.
+- If the custom element class is not yet registered, expansion is deferred until `customElements.whenDefined(tag)` resolves — autoloader-style late registration is supported. This holds inside `for:` / `if:` templates too: the rows and the branch render right away, and each row's element is expanded with that row's values once the class is defined. A row removed, or a branch closed, before the definition is not expanded.
 - Elements **without** a `wcBindable` declaration are rejected (write bindings explicitly). Spread requires the contract to know what to expand.
 
 **Composite shells** (wc-bindable Composition Profile) are supported transparently: a composite shell exposes its synthesized declaration through the standard `target.constructor.wcBindable` surface, and composed names like `"s3.progress"` are kept as flat element member keys. Mirror the composed structure in state (`{ s3: { progress: 0 } }`) and `...: pipeline` expands into nested state paths automatically.
@@ -1054,7 +1054,7 @@ Two-way binding works with path setters — editing the input calls the setter, 
 
 3. **Caching** — Getter results are cached per concrete address (path + loop index). `users.*.fullName` at index 0 has a separate cache entry from index 1. The cache is invalidated only when dependencies change.
 
-4. **Direct index access** — You can also access specific elements by numeric index: `this["users.0.name"]` resolves as `users[0].name` without needing loop context.
+4. **Direct index access** — You can also access specific elements by numeric index: `this["users.0.name"]` resolves as `users[0].name` without needing loop context. Assigning a different object to an element path (`this["users.0"] = { ...this["users.0"], name: "z" }`) makes that position a new row, whether or not a `for:` renders the list, so the paths below it (`users.0.name`, `$getAll("users.*.name")`, row getters) read the new object instead of the cached values of the row it replaced.
 
 ### Getters must be pure with respect to state
 
@@ -1735,6 +1735,7 @@ customElements.define("user-card", UserCard);
 - A partial mount can sit next to it: `state: user; state.theme: theme` mounts `theme` as a second entry point (longest prefix wins, so `theme.mode` inside the component reads the tree's `theme.mode`).
 - In a loop, mount **the row itself**: `<template data-wcs="for: users"><user-row data-wcs="state: ."></user-row></template>`. Inside the row component `name` is `users.*.name`, and its own `for: tags` runs over `users.*.tags.*`.
 - **Own keys are private** (rule R1 in [docs/state-mount-design.md](../../docs/state-mount-design.md) §4-3): a data key the component declares itself (`state = { mode: "view" }`) belongs to that element and is never written to the tree. If it hides a key that exists at the mount point (`state = { name: "" }` mounted over `user.name`), the runtime warns once (`wcs/mount-own-key-shadow`) — remove the default to read the tree, or rename it to keep it private.
+- A method taken from `element.state` (`card.state.toggle()`) runs as it does from an event binding (`onclick: toggle`): writes to own keys and to tree keys re-render, a row mount's call lands on its own row, and a synchronous method returns its value while an async one returns its Promise.
 - Mounting an array as the root (`state: rows` with `for` over it inside) is not supported; mount the row (`state: .`) or the object that holds the array (`state: group` with `for: children` inside). Both forms are contract-tested; mounts are the only way to extend the tree.
 
 > The per-property form (`state.message: user.name`) keeps working — it is a partial mount on

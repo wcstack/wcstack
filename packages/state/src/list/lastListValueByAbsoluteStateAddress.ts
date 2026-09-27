@@ -42,6 +42,11 @@ export function getRenderedList(list: readonly unknown[]): IRenderedList {
   return rendered;
 }
 
+/** この配列を描いた `for` がいて、描いた後にまだ描画の基準を移していないか（setByAddress の renewReplacedRow） */
+export function hasRenderedList(list: readonly unknown[]): boolean {
+  return renderedListByList.has(list);
+}
+
 /**
  * 要素書き込みの入れ替えが揃った（setByAddress の notifySwappedList）。この配列をこれまでに描いた `for` が
  * 描いたのは、書き込む前の並び（`image` — 写しと台帳の写し）。以後この配列を描く `for` は新しい並びを指す。
