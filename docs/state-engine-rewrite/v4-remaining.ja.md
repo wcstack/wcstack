@@ -24,7 +24,7 @@
 | R2 | 4.0 の公開 API の範囲 | 現行の公開物を、残す・落とす・後付けへ、のどれにするか | **済み（2026-09-26）**: 3.3 の公開面にそろえた（§2.3、§8）。内部の部品は公開しない |
 | R3 | 3.x の最後の minor | (a) 3.4 を出して、旧名にランタイムの警告を出す (b) 約束を取り下げる | CHANGELOG 3.2.0 で「ランタイムの警告は 3.x の最後の minor でだけ出す」と約束した。3.3.0 では入っていない。lint と VS Code 拡張の通知（`wcs/name-alias`）は 3.2 からある |
 | R4 | `substr` | 残す・外す・改名する | **決定（2026-09-27）: 外して `slice` に一本化する**。state-next から外した（§8）。[state-3x-naming.ja.md](../state-3x-naming.ja.md) V10 で「4.0 で考える」としていたもの |
-| R5 | 現行の未解決 Issue | 3.x で直す、または 4.0 で解決として閉じる | #2・#258・#319〜#324 は、どれも state-next で起きない（#258 の行の中のコンポーネントは `faddc735` で直した。#2 は 2026-09-27 に確かめた、§8）。#330〜#338（2026-09-26 登録）は #332 だけが state-next でも起きていた（§2.5 の F17 として直した、§8） |
+| R5 | 現行の未解決 Issue | 3.x で直す、または 4.0 で解決として閉じる | #2・#258・#319〜#324 は、どれも state-next で起きない（#258 の行の中のコンポーネントは `faddc735` で直した。#2 は 2026-09-27 に確かめた、§8）。#330〜#338（2026-09-26 登録）は #332 だけが state-next でも起きていた（§2.5 の F17 として直した、§8）。#347〜#368（2026-09-27 登録）は #353・#354・#357・#362・#365 と、#347・#349・#356・#363 の一部の形が state-next でも起きる（§2.5 の F20〜F30、§8） |
 | R6 | 後回しにした機能 | 4.0 に入れる、または 4.0 の後 | **済み（2026-09-27）**: コンポーネントの mount の `#ro` と「エクスポートした getter」を入れた（§8） |
 
 ## 2. エンジン（state-next）の残り
@@ -102,6 +102,17 @@
 |---|---|---|---|---|
 | F17 | `dom/plan.ts`（`boundPattern`） | #332 と同じ。マークアップに書いた数値添字のパス（`items.0.v`）は字面どおりのパターンになり、添字のパスへの書き込み（`items.*.v` の行 0 に届く）でも、要素の差し替え（`items.0 = {…}`）でも描き直されない。一覧を丸ごと置き換えたときだけ描き直される。数値添字の getter（`items.0.double`）は `items.*.double` の getter に当たらず、初期から空（`this["items.0.double"]` で読めば値が返る） | 中 | 済み |
 | F18 | `dom/plan.ts` | マークアップの `$1`（`{{ $1\|add(1) }}`、`textContent: $1`）が `binding-path-missing` で束縛に失敗する。README（3.3）は「テンプレートでループの添字を直接表示できる」と定める | 中 | 済み |
+| F20 | `dom/view.ts`（`buildBlock` の `plan.single`）・`dom/plan.ts` | テンプレートの直下が構造のテンプレート 1 つだけ（行が `if:` だけの `for:`、中身が `if:`／`for:` だけの `if:`）だと何も描かれない（`#12` … `Cannot read properties of null (reading 'insertBefore')`）。単独で複製したアンカーのコメントに親が無い。#347・#356・#363 の一部の形 | 高 | |
+| F21 | `dom/view.ts`（`Block.removeNodes`・`insertBefore`） | 要素で包まない位置（ブロックの直下）の入れ子の `if:` の枝・`for:` の行が、外側の行と一緒に動かず、行を消しても残る（`<template for: items><b>…</b><template if: .x>…</template></template>` を反転すると枝が元の位置に残る）。ブロックは作った時の直下のノードしか持たない。#347・#349・#356 の一部の形 | 高 | |
+| F22 | `dom/plan.ts`（`compilePlan` の `walk`） | `if:` の枝・`for:` の行のテンプレートの中の Light DOM の `bind-component` の子の中身を、ページの側が束ねる（`mount.ts` の走査と違い `componentScope` を見ない）。子の `if: x` がページの `x` を読む。#348 の周辺 | 中 | |
+| F23 | `ssr/ssr.ts`（`snapshot`・`build`） | サーバ描画で、ページの直下の Light DOM の `bind-component` の子の `if:` のテンプレートが出力から失われ、クライアントで追従しない（ページのエンジンのアンカーだけを変換する）。#348 の周辺 | 中 | |
+| F24 | `engine.ts`（`walkChange`・`sync`） | #362。元の配列をそのまま返す getter を `for:` で描くと、元のパスへの要素・葉の書き込みで行が描き直されない（同じ配列なので `sync` が何もしない）。別名の getter（#363 の `for: current`）も同じ | 中 | |
+| F25 | `engine.ts`（`markupAccessor`・`resolve`） | #363 の周辺。数値添字のパスの `for:`（`for: groups.0.items`）の行の `{{ .v }}` が空になる（F17 の accessor が行の文脈を `groups.*.items` の行として解こうとする）。#363 が訴える `[wcs/wildcard-rank]` の例外は起きない | 中 | |
+| F26 | `engine.ts`（`write` の葉の分岐・`walkChange`） | #365。同じオブジェクトをリストの 2 つの行に置くと、片方の行への葉の書き込みが、もう片方の行の束縛と行の getter に届かない（読みと、ルートの getter・`$getAll` は新しい値） | 中 | |
+| F27 | `engine.ts`（`drain`・`schedule`） | #353。drain の打ち切り（32 回）は 1 回の drain の中しか数えないので、drain をまたぐ無限ループ（microtask で値を出す要素、`$renderedCallback` から書く）は止まらず、ページが固まる（3.3.x の修正後は `$renderedCallback` の連鎖を 100 段で止める）。`$watch` を挟む循環は止まって報告される | 高 | |
+| F28 | `temporal/watch.ts`（`WatchRuntime.drained`） | #354。32 段を超える有限の描画の連鎖に `$watch`（ハンドラが書く）を足すと、`the chain is cut` が誤って出て、ハンドラが 1 回飛ぶ。連鎖の深さが、そのバッチがハンドラの書き込みから来たかを見ない | 中 | |
+| F29 | `dom/wc.ts`（`whenDefined`）・`scopes/component.ts`・`public/contract.ts` | #357。スコープ付きの CustomElementRegistry の shadow root の中の要素は、定義を global の登録簿で待つので、束縛が掛からない（行だけでなくルートも）。happy-dom は scoped registry を持たないので、コード読みと模擬テストで判定 | 中 | |
+| F30 | `scopes/component.ts`（`mountKey` の setter） | #367 の周辺。ホストの行が消えた後のコンポーネントの書き込みは、消えた行の元のオブジェクトに黙って入る（別の行には着地しない）。3.3.x の修正後は `The host row of <x> was removed.` で拒む | 低 | |
 | F19 | `dom/view.ts`（`applyTo`） | 表示のプロパティ（`textContent`・`innerText`）に数値をそのまま書いていた。ブラウザは文字列にするが、happy-dom（`@wcstack/server` のサーバの DOM）は 0 を空にし、`innerText` に数値を書くと投げる。サーバ描画で `textContent: count` の 0 が消える（F18 を直すときに見つけた） | 中 | 済み |
 
 **使われていないコード**（削れば core が少し軽くなる。今はテストが直接呼んでいる）: `dom/wc.ts` の `isCustomTag`、`list.ts` の `StateRow.parent`／`depth`、`pattern.ts` の `PatternTable.has`、`scopes/volume.ts` の `fail()` の第 3 引数。届かない防御の分岐（`engine.ts:478`・`:810`・`:1103`、`dom/view.ts:166`・`:629`・`:652`・`:687`・`:830-832`、`dom/plan.ts:37`、`dom/wc.ts:63`、`strategy/dirty.ts:23`、`scopes/component.ts:366`・`:373`・`:481`、`devtools.ts:107`・`:120`、`temporal/stream.ts:204`・`:221`、`temporal/watch.ts:194`、`recursion.ts:186`、`features/diagnostics.ts:80`）。
@@ -110,7 +121,7 @@
 
 | 対象 | やること |
 |---|---|
-| vscode-wcs・lint（`wcs-validate`） | 新しいパーサと manifest に切り替える。manifest の `filters` から `substr` が消えるので、`substr` は `wcs/filter-unknown` になる。`slice(start, start + length)` への書き換えを案内するか（クイックフィックスを含む）を決める。`wcs/name-alias`（今は「3.x の間は動き、4.0 で外れる」）を「4.0 で外れた」エラーにする。state-next の新しいコード（`feature-not-installed`・`declaration-alias`・recursion 系など）を共有の語彙にそろえる。`#番号` のメッセージを解読させるかを決める。テストを流し直し、版を上げる |
+| vscode-wcs・lint（`wcs-validate`） | 新しいパーサと manifest に切り替える。#355（数値添字のパスの束縛への誤った `wcs/template-syntax`・`wcs/binding-path-missing`）: 4.0 は添字の数によらず追従する（F17）ので、添字が 2 つ以上のパスも警告しない（3.3.x の修正は添字 1 つだけ）。manifest の `filters` から `substr` が消えるので、`substr` は `wcs/filter-unknown` になる。`slice(start, start + length)` への書き換えを案内するか（クイックフィックスを含む）を決める。`wcs/name-alias`（今は「3.x の間は動き、4.0 で外れる」）を「4.0 で外れた」エラーにする。state-next の新しいコード（`feature-not-installed`・`declaration-alias`・recursion 系など）を共有の語彙にそろえる。`#番号` のメッセージを解読させるかを決める。テストを流し直し、版を上げる |
 | `@wcstack/typescript` | 前置きの型から旧名（`$trackDependency`・`$untrackDependency` など）を外す。`WcsThis` などの型の出所を R2 に合わせる |
 | `@wcstack/testing` | `file:../state` で state を使う。state-next でテストを流す（`createStateAsync` は足し済み） |
 | `@wcstack/server` | 依存 `^3.3.0` を `^4` へ。SSR の出力は 3.3 と互換が無い（版の検査でクライアント描画に倒れる）ので、移行ガイドに書く。server 自身の変更は不要（後付け 5 で確認） |
@@ -382,3 +393,33 @@ R6 の残り。3.3 の README「Exported getters」と同じ約束にした: ツ
 - リポジトリのページ・e2e のフィクスチャ・デモに `substr` の使用は無かった。
 - 残り: lint・VS Code 拡張の案内（§3）、wcstack-skill の記述（§3）、4.0 の README と移行ガイド（§5）。
 - core 18,736B（−4B）。テスト 1,340 件（通過 1,339・スキップ 1）、e2e 131/131。
+
+### Issue #347〜#368 の確認（2026-09-27）
+
+2026-09-27 に登録された 22 件を state-next で確かめた。#355 は vscode-wcs／lint の Issue で、実行時の確認の対象外（§3 に 4.0 での直し方を書いた）。残り 21 件を 3 つに分けて並行で流した（SSR 7 件・リストと行 8 件・コンポーネントなど 6 件）。再現のテストは `__tests__/tmp-issues-ssr.test.ts`・`tmp-issues-lists.test.ts`・`tmp-issues-misc.test.ts`（未コミット。起きる形は失敗するテストとして残してある）。
+
+| Issue | state-next | 備考 |
+|---|---|---|
+| #347 SSR 後、行の直下に `if:`・`{{ }}` がある一覧を書き換えると崩れる | 一部起きる | SSR 固有の症状は無い。行が `if:` だけの形は F20、行の直下の `if`／`else` の並べ替え・先頭行の削除は F21（どちらも CSR でも同じ） |
+| #348 SSR で Light DOM の `bind-component` の子の `if:` がページの `else:` と組になる | 起きない | Issue の形は期待どおり。周辺に F22（テンプレートの中の Light DOM の子）・F23（SSR で子の `if:` が失われる）。`else:` を `<ul>` の後に置く形は、4.0 では `#202`（`else:` は `if:` の直後） |
+| #349 SSR 後、枝の中の連鎖や包まない 3 段の `if:` で 2 つの枝が同時に出る | 一部起きる | 連鎖と行の中の連鎖は期待どおり。包まない 3 段の `if:` は F21（CSR でも同じ） |
+| #350 SSR 後、行の `{{ $1 }}` が空 | 起きない | |
+| #351 SSR 後、同じ配列を `for: items` と getter の `for:` で描くと行が重複 | 起きない | |
+| #352 定義待ちの間に要素を外して戻すと取り消される | 起きない | 定義待ちはブロックが破棄されたときだけ取り消す |
+| #353 描画の連鎖の上限に掛からない無限ループ | 一部起きる | F27。microtask で値を出す要素・`$renderedCallback` の循環は止まらない。`$watch` を挟む循環は止まる。`$scan` は 4.0 で廃止 |
+| #354 32 段を超える有限の連鎖に `$watch` を足すと上限が誤って出る | 起きる | F28 |
+| #356 SSR の最後に隠れた `if:` の中身が包まない `if:`／`for:` | 起きる（原因は CSR 側） | 表示の症状は同じだが、F20・F21 による（CSR でも同じ）。SSR の出力に何かが残る問題は無い |
+| #357 スコープ付き CustomElementRegistry | 起きる | F29（コード読みと模擬テスト。ルートも待ち続ける） |
+| #358 SSR で作った行の spread | 起きない | |
+| #359 入れ替えが揃わないうちに前の配列へ戻す | 起きない | 行が値と一緒に動かないのは 4.0 の意図した差（位置のモデル） |
+| #360 外側を並べ替えても入れ子のテンプレートの `{{ $1 }}` が古い | 起きない | |
+| #361 入れ替えを 2 つのバッチに分けると `$watch` が別の位置で呼ばれる | 起きない | `$watch` は書いた位置と値で呼ばれる |
+| #362 元の配列を返す getter の `for:` が元のパスへの書き込みで描き直されない | 起きる | F24 |
+| #363 深さ 1 の `for: groups.0.items` で 2 つの数値添字のパスが `[wcs/wildcard-rank]` | 一部起きる | 例外は起きず、書き込みも着地する。表示は F25（行が空）と F24（別名の getter）で期待に届かない。Issue の対照の形は F20 |
+| #364 行の子のパスを描く for が無いと、要素の書き込み・`$postUpdate` が届かない | 起きない | |
+| #365 同じオブジェクトを 2 つの行に置く | 一部起きる | F26（`for:` の行と行の getter だけ古い） |
+| #366 `$eq` の path の数値添字 | 起きない | |
+| #367 部分マウントの async メソッドの await の間に行が消える | 起きない | 別の行には着地しない。周辺に F30 |
+| #368 プールから使い回した行のコンポーネントの `$connectedCallback` | 起きない | 4.0 は行の要素を使い回さない |
+
+- happy-dom の癖（テストで吸収した）: 定義より前に作った要素を `cloneNode` で複製すると、文書に入るまで upgrade されない（Chromium は複製の時点で upgrade する）。
