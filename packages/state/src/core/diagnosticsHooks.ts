@@ -15,7 +15,8 @@ import type { IStateElement } from "../components/types";
 import type { PathInfoSource } from "../pathDiagnostics";
 
 export interface IPathDiagnostics {
-  check(stateElement: IStateElement, state: object | undefined, path: string, source: PathInfoSource): void;
+  /** `indexPath` — 数値添字の束縛として行を読むパス（address/indexPathAccessor.ts の isIndexPath・#332） */
+  check(stateElement: IStateElement, state: object | undefined, path: string, source: PathInfoSource, indexPath: boolean): void;
   reset(stateElement: IStateElement): void;
   markExported(stateElement: IStateElement, path: string): void;
 }

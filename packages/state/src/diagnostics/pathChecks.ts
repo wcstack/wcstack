@@ -55,11 +55,17 @@ const EXISTS: IPathExistenceResult = Object.freeze({
  *
  * 解決の順序は `getByAddress` の実装に合わせる: まず「パス文字列そのものがキーか」
  * （ドットパス getter がこれ）、次にセグメントを 1 つずつ降りる。
+ *
+ * `indexPath` は数値添字の束縛（address/indexPathAccessor.ts の isIndexPath・#332）: いまその位置にある
+ * 行を読むので、親が配列なら数値の区切りを `*` として降りる（`items.0.double` は行 getter
+ * `items.*.double` を見る。行の形は `*` と同じく先頭の要素で見る）。負の添字のような行になりえない
+ * 区切りと、配列でない親（`sales.2024.total`）は素のキーのまま検査する。
  */
 export function resolvePathExistence(
   target: object,
   path: string,
   declaredPaths: Iterable<string>,
+  indexPath?: boolean,
 ): IPathExistenceResult {
   // ドットパス getter / フラットキーの完全一致（`get "users.*.fullName"()` 等）
   if (findDescriptor(target, path) !== undefined) {
@@ -69,13 +75,14 @@ export function resolvePathExistence(
   let current: unknown = target;
   let prefix = "";
   for (let i = 0; i < segments.length; i++) {
-    const segment = segments[i];
+    const segment = indexPath && Array.isArray(current) && +segments[i] >= 0 ? WILDCARD : segments[i];
     const parentPrefix = prefix;
     prefix = i === 0 ? segment : prefix + DELIMITER + segment;
     // 途中のプレフィックスがフラット宣言されている（`cart.totalPrice` が getter で、
-    // その戻り値のサブプロパティを読む形）。戻り値の形は評価しないと分からない
-    if (i > 0 && i < segments.length - 1 && findDescriptor(target, prefix) !== undefined) {
-      return UNKNOWN;
+    // その戻り値のサブプロパティを読む形）。戻り値の形は評価しないと分からない。
+    // 末尾で当たるのは `*` へ読み替えたパスだけ（読み替えの無いパスは冒頭の完全一致で済んでいる）
+    if (i > 0 && findDescriptor(target, prefix) !== undefined) {
+      return i < segments.length - 1 ? UNKNOWN : EXISTS;
     }
     // null / undefined / primitive より深い読みは実行時 undefined 解決 = 判定不能。
     // 「初期値 null のオブジェクトに後から代入する」形を偽陽性で潰さないため
@@ -155,6 +162,7 @@ export function checkDeclaredPath(
   state: object | undefined,
   path: string,
   source: PathInfoSource,
+  indexPath?: boolean,
 ): void {
   if (source === "internal" || typeof state === "undefined") {
     return;
@@ -198,7 +206,7 @@ export function checkDeclaredPath(
   if (stateElement.hasRecursion === true && stateElement.recursionRegistry!.recursiveGetterOwning(path) !== null) {
     return;
   }
-  const result = resolvePathExistence(state, path, stateElement.getterPaths);
+  const result = resolvePathExistence(state, path, stateElement.getterPaths, indexPath);
   if (result.existence !== "missing") {
     return;
   }
