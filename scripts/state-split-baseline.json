@@ -23,7 +23,8 @@
   "features/scopes.js": {
     "files": 2,
     "bytes": 44769,
-    "gzip": 14193
+    "gzip": 14193,
+    "slack": 512
   },
   "features/ssr.js": {
     "files": 1,
