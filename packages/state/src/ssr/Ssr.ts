@@ -96,7 +96,7 @@ export function collectComments(root: Node, match: (data: string) => boolean): C
   return found;
 }
 
-const isPlaceholder = (data: string): boolean => SSR_PLACEHOLDER_COMMENT.test(data);
+export const isPlaceholder = (data: string): boolean => SSR_PLACEHOLDER_COMMENT.test(data);
 export const isBlockStart = (data: string): boolean => SSR_BLOCK_START.test(data);
 export const isBlockBoundary = (data: string): boolean => SSR_BLOCK_START.test(data) || SSR_BLOCK_END.test(data);
 

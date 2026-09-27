@@ -17,7 +17,7 @@ import { setNodesByContent } from "../bindings/nodesByContent";
 import { bindLoopContextToContent } from "../bindings/bindLoopContextToContent";
 import { config } from "../config";
 import { WILDCARD, INDEX_BY_INDEX_NAME } from "../define";
-import { Ssr, SSR_BLOCK_START, collectComments, isBlockBoundary, isBlockStart } from "./Ssr";
+import { Ssr, SSR_BLOCK_START, collectComments, isBlockBoundary, isBlockStart, isPlaceholder } from "./Ssr";
 import { getStateElement } from "../stateElementByName";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { hydrateSetContent, hydrateSetLastNode } from "../apply/applyChangeToFor";
@@ -111,7 +111,8 @@ function findNestedForBlock(root: Node): [ISsrBlock, ISsrBlock] | null {
     }
     const block = parseBlockStart(comment.data);
     // 同じ for（同じテンプレート = uuid）の行が入れ子の順に並ぶのは、サーバーが空でないリストへ
-    // 行をまとめて足したときの境界コメントの順序で、入れ子の for ではない（#258）
+    // 行をまとめて足したときの境界コメントの順序で、入れ子の for ではない（#258）。今のサーバーはこの順に
+    // 並べない（#334）が、同じ minor の修正前のサーバーの出力はバージョン検証を通るので残す
     const outer = open.at(-1);
     if (block.type === 'for' && outer && outer.uuid !== block.uuid) {
       return [block, outer];
@@ -342,14 +343,29 @@ function findPlaceholderComment(root: Node, type: string, uuid: string): Comment
  */
 function restoreFragments(root: Document, ssrEl: Ssr): void {
   const rootNode = root as Node;
-  let lastIfParseResult: ParseBindTextResult | null = null;
+  const templates = ssrEl.templates;
+  // else は**同じ階層**（同じテンプレートの中身か、文書の直下）で直前の if / elseif の否定（#336）。
+  // クライアントの collectStructuralFragments と同じ組み方で、階層は置き場を中身に持つテンプレートで分かる。
+  // スナップショットの並び（collectReachableFragments）は描いた文書の文書順なので、外側の枝が描かれて
+  // いると内側の置き場が外側の else より前に並ぶ — 並びの直前と組むと、外側の else が内側の if と組んだ
+  // （内側に else があると、外側の else は否定の相手を失った）。各階層の中の並びは中身の順のまま
+  const levelByUuid = new Map<string, string>();
+  for (const [uuid, tpl] of templates) {
+    for (const placeholder of collectComments(tpl.content, isPlaceholder)) {
+      levelByUuid.set(placeholder.data.slice(placeholder.data.indexOf(':') + 1), uuid);
+    }
+  }
+  // 階層（文書の直下は undefined）ごとの直前の if / elseif
+  const lastIfByLevel = new Map<string | undefined, ParseBindTextResult | null>();
   const restored: [string, HTMLTemplateElement, ParseBindTextResult][] = [];
 
-  for (const [uuid, tpl] of ssrEl.templates) {
+  for (const [uuid, tpl] of templates) {
     const bindText = tpl.getAttribute(config.bindAttributeName) || '';
     const parseBindTextResults = parseBindTextsForElement(bindText);
     let parseBindTextResult = parseBindTextResults[0];
     const bindingType = parseBindTextResult.bindingType;
+    const level = levelByUuid.get(uuid);
+    const lastIfParseResult = lastIfByLevel.get(level);
 
     // else: 直前の if 条件の not → 条件反転（elseif は独自条件のままでよい）
     if (bindingType === 'else' && lastIfParseResult) {
@@ -361,12 +377,10 @@ function restoreFragments(root: Document, ssrEl: Ssr): void {
     }
 
     // if chain の追跡
-    if (bindingType === 'if') {
-      lastIfParseResult = parseBindTextResult;
-    } else if (bindingType === 'elseif') {
-      lastIfParseResult = parseBindTextResult;
+    if (bindingType === 'if' || bindingType === 'elseif') {
+      lastIfByLevel.set(level, parseBindTextResult);
     } else if (bindingType === 'else') {
-      lastIfParseResult = null;
+      lastIfByLevel.set(level, null);
     }
     restored.push([uuid, tpl, parseBindTextResult]);
   }
@@ -375,8 +389,9 @@ function restoreFragments(root: Document, ssrEl: Ssr): void {
   // プレースホルダ（`<!--@@wcs-if:<uuid>-->`）として居る。親の fragment を解析する時点で子が台帳に
   // 無いと、そのプレースホルダは `text: <uuid>` と解釈されて空の Text に潰され、親から新しく作る
   // 行・枝（行の追加、初めて真になる if）から入れ子が消えていた（実 Chromium で実測。同じモジュールで
-  // サーバー描画する vitest では、サーバーの登録が台帳に残っていて見えない）。並びは文書からの
-  // 幅優先（Ssr の collectReachableFragments）なので子は必ず親より後ろに居る — 逆順に回せば足りる
+  // サーバー描画する vitest では、サーバーの登録が台帳に残っていて見えない）。並び（Ssr の
+  // collectReachableFragments）では、子の置き場は親の置き場より後ろ（描いた親の枝の中）か親の中身でしか
+  // 見つからないので、子は必ず親より後ろに居る — 逆順に回せば足りる
   for (const [uuid, tpl, parseBindTextResult] of restored.reverse()) {
     const fragment = document.importNode(tpl.content, true);
     const forPath = parseBindTextResult.bindingType === "for" ? parseBindTextResult.statePathName : undefined;
