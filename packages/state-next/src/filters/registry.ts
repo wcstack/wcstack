@@ -37,7 +37,7 @@ export interface FilterDefinition {
  */
 export const FORMATS_FILTER_NAMES: readonly string[] = [
   "toFixed", "locale",
-  "upper", "lower", "capitalize", "trim", "slice", "substr", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
+  "upper", "lower", "capitalize", "trim", "slice", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
   "round", "floor", "ceil", "percent", "unit",
   "date", "time", "datetime", "ymd", "hms",
 ];

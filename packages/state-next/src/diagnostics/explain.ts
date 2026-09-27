@@ -31,6 +31,8 @@ const GUIDES: [RegExp, string][] = [
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
   [/\[wcs\/index-arity\] \$resolve/, " $resolve takes one index per \"*\"; $getAll / $setAll take at most that many (fewer expands the rest)."],
   [/"([^"#]+)#[^"]*" is not a filter name: "#" cannot appear in one/, ' Modifiers belong on the left side of the binding, before the ":" — write "$1" here.'],
+  // 4.0 folded substr(start, length) into slice(start, end): the second argument changes meaning
+  [/\[wcs\/filter-unknown\] filter not found: substr\./, ' "substr" was removed in 4.0 — write slice(start, start + length): slice takes the end index, not a length.'],
 ];
 
 export function explain(message: string, subject?: string, candidates?: Iterable<string>): string {

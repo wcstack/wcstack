@@ -82,3 +82,20 @@ it("F17 数値添字の行の getter（items.0.double）は「宣言されてい
     warn.mockRestore();
   }
 });
+
+it("substr は 4.0 で外した: 未知のフィルタとして失敗し、slice(start, start + length) への書き換えを案内する", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const h = document.createElement("fix-substr-page");
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p>{{ name|substr(1,3) }}</p>`;
+    const state = root.querySelector("wcs-state") as any;
+    state.setInitialState({ name: "hello" });
+    document.body.appendChild(h);
+    await expect(state.connectedCallbackPromise).rejects.toThrow(
+      '[@wcstack/state] [wcs/filter-unknown] filter not found: substr. "substr" was removed in 4.0 — write slice(start, start + length): slice takes the end index, not a length.',
+    );
+  } finally {
+    error.mockRestore();
+  }
+});

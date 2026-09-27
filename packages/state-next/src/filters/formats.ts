@@ -4,7 +4,8 @@
  * semantics unchanged.
  *
  * - number display: `toFixed round floor ceil percent unit locale`
- * - string shaping: `upper lower capitalize trim slice substr padStart padEnd repeat reverse truncate join`
+ * - string shaping: `upper lower capitalize trim slice padStart padEnd repeat reverse truncate join`
+ *   (`substr` was removed in 4.0: `slice(start, start + length)`)
  * - date and time: `date time datetime ymd hms`
  *
  * `installFormats()` puts them in the registry. Without it, a formatting filter fails when the
@@ -128,13 +129,6 @@ const slice = (options: string[]): FilterFn => {
   return (value: unknown): string => String(value).slice(...numberedOpts);
 };
 
-/** `substr(start, length)` — both required. */
-const substr = (options: string[]): FilterFn => {
-  const opt1 = requiredNumberOption(options, 0, 'substr');
-  const opt2 = requiredNumberOption(options, 1, 'substr');
-  return (value: unknown): string => String(value).substr(opt1, opt2);
-};
-
 /** Pads the start to a length; the pad string defaults to '0' (JavaScript's default is a space). */
 const padStart = (options: string[]): FilterFn => {
   const opt1 = requiredNumberOption(options, 0, 'padStart');
@@ -248,7 +242,6 @@ export const formatFilters: Readonly<Record<string, FilterDefinition>> = {
   trim: { factory: nullishPassthrough(trim), arity: [0, 0] },
   slice: { factory: nullishPassthrough(slice), arity: [1, 2] },
   // The length is required too (the implementation reads both)
-  substr: { factory: nullishPassthrough(substr), arity: [2, 2] },
   padStart: { factory: nullishPassthrough(padStart), arity: [1, 2] },
   padEnd: { factory: nullishPassthrough(padEnd), arity: [1, 2] },
   repeat: { factory: nullishPassthrough(repeat), arity: [1, 1] },

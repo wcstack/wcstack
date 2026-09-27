@@ -59,9 +59,6 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   capitalize: { description: "先頭文字を大文字に",       hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
   trim:   { description: "前後の空白を削除",         hasArgs: false, resultType: "string", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
   slice:  { description: "部分文字列 (start[,end])", hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "number"] },
-  // 長さは省略できない（実装が両方読む）。minArgs: 1 だった頃は補完・lint が `substr(0)` を
-  // 通し、実行時にだけ落ちていた
-  substr: { description: "部分文字列 (pos,len)",     hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 2, maxArgs: 2, argTypes: ["number", "number"] },
   padStart: { description: "先頭を埋める (length[,char]。char の既定は 0 — JS の既定は空白なので注意)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   padEnd: { description: "末尾を埋める (length[,char]。char の既定は空白 — JS と同じ)", hasArgs: true, resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 2, argTypes: ["number", "string"] },
   repeat: { description: "繰り返し (count)",         hasArgs: true,  resultType: "string", acceptTypes: ["string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },

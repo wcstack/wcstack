@@ -82,8 +82,10 @@ describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () =
     const v4 = JSON.parse(JSON.stringify(getWcsManifest()));
     expect(v4.version).toBe(v3.version);
     expect(v4.syntax).toEqual(v3.syntax);
-    expect([...v4.filters].sort()).toEqual([...v3.filters].sort());
-    expect(v4.filterMeta).toEqual(v3.filterMeta);
+    // 4.0: substr is folded into slice (slice(start, start + length))
+    expect([...v4.filters].sort()).toEqual([...v3.filters].filter((n: string) => n !== "substr").sort());
+    const { substr: _substr, ...v3Meta } = v3.filterMeta;
+    expect(v4.filterMeta).toEqual(v3Meta);
     expect(v4.reservedLifecycle).toEqual(v3.reservedLifecycle);
     // 4.0: $scan is removed; the old filter / declaration names are gone from the runtime
     expect(v4.reservedStateApi).toEqual(v3.reservedStateApi.filter((n: string) => n !== "$scan"));

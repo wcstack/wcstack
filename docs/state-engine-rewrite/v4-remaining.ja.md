@@ -23,7 +23,7 @@
 | R1 | 置き換えの形 | (a) `packages/state` の中身を state-next に差し替え、`@wcstack/state` 4.0 として出す (b) 別の名前のパッケージのまま出す | **決定（2026-09-26）: (a)**。ブランチを main に入れる手順は残り |
 | R2 | 4.0 の公開 API の範囲 | 現行の公開物を、残す・落とす・後付けへ、のどれにするか | **済み（2026-09-26）**: 3.3 の公開面にそろえた（§2.3、§8）。内部の部品は公開しない |
 | R3 | 3.x の最後の minor | (a) 3.4 を出して、旧名にランタイムの警告を出す (b) 約束を取り下げる | CHANGELOG 3.2.0 で「ランタイムの警告は 3.x の最後の minor でだけ出す」と約束した。3.3.0 では入っていない。lint と VS Code 拡張の通知（`wcs/name-alias`）は 3.2 からある |
-| R4 | `substr` | 残す・外す・改名する | [state-3x-naming.ja.md](../state-3x-naming.ja.md) V10 で「4.0 で考える」とした。state-next では formats の後付けにある |
+| R4 | `substr` | 残す・外す・改名する | **決定（2026-09-27）: 外して `slice` に一本化する**。state-next から外した（§8）。[state-3x-naming.ja.md](../state-3x-naming.ja.md) V10 で「4.0 で考える」としていたもの |
 | R5 | 現行の未解決 Issue | 3.x で直す、または 4.0 で解決として閉じる | #2・#258・#319〜#324 は、どれも state-next で起きない（#258 の行の中のコンポーネントは `faddc735` で直した。#2 は 2026-09-27 に確かめた、§8）。#330〜#338（2026-09-26 登録）は #332 だけが state-next でも起きていた（§2.5 の F17 として直した、§8） |
 | R6 | 後回しにした機能 | 4.0 に入れる、または 4.0 の後 | **済み（2026-09-27）**: コンポーネントの mount の `#ro` と「エクスポートした getter」を入れた（§8） |
 
@@ -110,13 +110,13 @@
 
 | 対象 | やること |
 |---|---|
-| vscode-wcs・lint（`wcs-validate`） | 新しいパーサと manifest に切り替える。`wcs/name-alias`（今は「3.x の間は動き、4.0 で外れる」）を「4.0 で外れた」エラーにする。state-next の新しいコード（`feature-not-installed`・`declaration-alias`・recursion 系など）を共有の語彙にそろえる。`#番号` のメッセージを解読させるかを決める。テストを流し直し、版を上げる |
+| vscode-wcs・lint（`wcs-validate`） | 新しいパーサと manifest に切り替える。manifest の `filters` から `substr` が消えるので、`substr` は `wcs/filter-unknown` になる。`slice(start, start + length)` への書き換えを案内するか（クイックフィックスを含む）を決める。`wcs/name-alias`（今は「3.x の間は動き、4.0 で外れる」）を「4.0 で外れた」エラーにする。state-next の新しいコード（`feature-not-installed`・`declaration-alias`・recursion 系など）を共有の語彙にそろえる。`#番号` のメッセージを解読させるかを決める。テストを流し直し、版を上げる |
 | `@wcstack/typescript` | 前置きの型から旧名（`$trackDependency`・`$untrackDependency` など）を外す。`WcsThis` などの型の出所を R2 に合わせる |
 | `@wcstack/testing` | `file:../state` で state を使う。state-next でテストを流す（`createStateAsync` は足し済み） |
 | `@wcstack/server` | 依存 `^3.3.0` を `^4` へ。SSR の出力は 3.3 と互換が無い（版の検査でクライアント描画に倒れる）ので、移行ガイドに書く。server 自身の変更は不要（後付け 5 で確認） |
 | `wcstack`（入口パッケージ） | state の `/auto` を取り込むので、新しい auto で作り直し、サイズを記録する |
 | `@wcstack/devtools` | プロトコル v2 のままで、改修は不要（後付け 6 で確認）。型のずれを見るテスト（`packages/devtools/__tests__/protocol.typesDrift.test.ts`）が `packages/state/src/devtools/types.ts` を読むので、参照先を直す |
-| wcstack-skill（別リポジトリ） | `$scan` の削除、旧名の削除、イベントの委譲（バブリングするイベントの `currentTarget` がルート）、エラーの番号などを反映し、プラグインの版を上げる |
+| wcstack-skill（別リポジトリ） | `$scan` の削除、旧名の削除、`substr` の削除（`slice` へ）、イベントの委譲（バブリングするイベントの `currentTarget` がルート）、エラーの番号などを反映し、プラグインの版を上げる |
 
 ## 4. ビルド・CI・サイズ・計測
 
@@ -373,3 +373,12 @@ R6 の残り。3.3 の README「Exported getters」と同じ約束にした: ツ
 - 3.3 との差: 初めの読みは、コンポーネントが登録される前なら undefined で、登録で収束する（3.3 と同じ）。`binding-path-missing` の遅延の検査（1 マクロタスク後）がそれより前に走ると、警告が出ることがある（3.3 の README と同じ注意）。
 - テスト 11 件（`fixes.test.ts`）。happy-dom は `<template>` の中身の要素も生成するので、自己再帰のテストは中身を `connectedCallback` で入れる（README の user-card と同じ形）。
 - core は変わらない（18,740B）。scopes の後付けが 6,903B → 7,679B（+776B）。テスト 1,342 件（通過 1,341・スキップ 1）、カバレッジ 99.72・99.03・100・99.95、e2e 131/131。
+
+### `substr` を外して `slice` に一本化（2026-09-27、R4）
+
+- formats の後付けから `substr` を外した（実装・組み込みの名前の一覧・メタデータ）。manifest の `filters`・`filterMeta` からも消える。
+- `substr` を書いたページは `[wcs/filter-unknown] filter not found: substr.` で失敗する。診断の後付けは、書き換えを案内する: `"substr" was removed in 4.0 — write slice(start, start + length): slice takes the end index, not a length.`（第 2 引数の意味が違う — 長さと終わりの位置 — ので、名前の近さの候補では直し方が分からない）。
+- 公開面のテスト（`public-surface.test.ts`）は、manifest の `filters`・`filterMeta` を 3.3 から `substr` を除いたものと比べる（意図した差）。
+- リポジトリのページ・e2e のフィクスチャ・デモに `substr` の使用は無かった。
+- 残り: lint・VS Code 拡張の案内（§3）、wcstack-skill の記述（§3）、4.0 の README と移行ガイド（§5）。
+- core 18,736B（−4B）。テスト 1,340 件（通過 1,339・スキップ 1）、e2e 131/131。

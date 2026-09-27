@@ -14,7 +14,7 @@ const SOURCE_ARITY: Readonly<Record<string, readonly [number, number]>> = {
   eq: [1, 1], not: [0, 0], ne: [1, 1], lt: [1, 1], le: [1, 1], gt: [1, 1], ge: [1, 1],
   add: [1, 1], sub: [1, 1], mul: [1, 1], div: [1, 1], mod: [1, 1], abs: [0, 0], clamp: [2, 2],
   toFixed: [0, 1], locale: [0, 1],
-  upper: [0, 0], lower: [0, 0], capitalize: [0, 0], trim: [0, 0], slice: [1, 2], substr: [2, 2],
+  upper: [0, 0], lower: [0, 0], capitalize: [0, 0], trim: [0, 0], slice: [1, 2],
   padStart: [1, 2], padEnd: [1, 2], repeat: [1, 1], reverse: [0, 0], truncate: [1, 2], join: [0, 1],
   int: [0, 0], float: [0, 0], round: [0, 1], floor: [0, 1], ceil: [0, 1], percent: [0, 1], unit: [1, 1],
   date: [0, 1], time: [0, 1], datetime: [0, 1], ymd: [0, 1], hms: [0, 1],
@@ -26,7 +26,7 @@ const SOURCE_ARITY: Readonly<Record<string, readonly [number, number]>> = {
 const SOURCE_ORDER = [
   "eq", "ne", "not", "lt", "le", "gt", "ge",
   "add", "sub", "mul", "div", "mod", "abs", "clamp",
-  "toFixed", "locale", "upper", "lower", "capitalize", "trim", "slice", "substr", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
+  "toFixed", "locale", "upper", "lower", "capitalize", "trim", "slice", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
   "int", "float", "round", "floor", "ceil", "percent", "unit",
   "date", "time", "datetime", "ymd", "hms",
   "falsy", "truthy", "defaults", "coalesce", "boolean", "number", "string", "nullIfEmpty",
@@ -45,7 +45,7 @@ describe("コアと formats の分け方", () => {
   it("formats は数値の表示・文字列の加工・日時の 24 本であること", () => {
     expect(Object.keys(formatFilters).sort()).toEqual([
       "toFixed", "round", "floor", "ceil", "percent", "unit", "locale",
-      "upper", "lower", "capitalize", "trim", "slice", "substr", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
+      "upper", "lower", "capitalize", "trim", "slice", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
       "date", "time", "datetime", "ymd", "hms",
     ].sort());
   });

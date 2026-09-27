@@ -31,9 +31,9 @@ describe('parseFilters', () => {
   });
 
   it('複数引数のフィルターをパースできること', () => {
-    const result = parseFilters(['substr(0,5)'], 'output');
+    const result = parseFilters(['slice(0,5)'], 'output');
     expect(result.length).toBe(1);
-    expect(result[0].filterName).toBe('substr');
+    expect(result[0].filterName).toBe('slice');
     expect(result[0].args).toEqual(['0', '5']);
   });
 
@@ -72,7 +72,7 @@ describe('parseFilters', () => {
   });
 
   it('クォートなしとクォートありの引数を混在できること', () => {
-    const result = parseFilters(['substr(0, 5)'], 'output');
+    const result = parseFilters(['slice(0, 5)'], 'output');
     expect(result[0].args).toEqual(['0', '5']);
   });
 

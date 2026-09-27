@@ -178,9 +178,9 @@ describe('builtinFilters', () => {
       expect(() => getFilter('slice', ['0', 'abc'])).toThrow(/requires a number as option/);
     });
 
-    it('substr: 位置と長さで切り出せること', () => {
-      const fn = getFilter('substr', ['1', '3']);
-      expect(fn('hello')).toBe('ell');
+    it('substr は 4.0 で外した（slice に一本化）: 名前は未知のフィルタ、同じ切り出しは slice(start, start + length)', () => {
+      expect(() => getFilter('substr', ['1', '3'])).toThrow(/\[wcs\/filter-unknown\] filter not found: substr/);
+      expect(getFilter('slice', ['1', '4'])('hello')).toBe('ell');
     });
 
     it('padStart: 文字列をパディングできること', () => {
@@ -365,7 +365,7 @@ describe('builtinFilters', () => {
     });
 
     it('オプション必須のフィルターは、束縛計画の段で引数の個数として拒否されること', () => {
-      const names = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'add', 'sub', 'mul', 'div', 'mod', 'slice', 'padStart', 'repeat', 'substr', 'defaults'];
+      const names = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'add', 'sub', 'mul', 'div', 'mod', 'slice', 'padStart', 'repeat', 'defaults'];
       for (const name of names) {
         expect(() => getFilter(name), name).toThrow(/\[wcs\/filter-arity\] filter ".+" requires at least \d+ argument\(s\) \(0 given\)/);
       }
@@ -373,11 +373,10 @@ describe('builtinFilters', () => {
 
     it('工場を直接呼ぶ経路（tooling）では、工場側の番人が未指定を落とすこと', () => {
       // 引数の個数の検査を経ないので `optionsRequired` が最後の砦になる
-      const names = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'add', 'sub', 'mul', 'div', 'mod', 'slice', 'padStart', 'repeat', 'substr', 'defaults', 'clamp', 'unit', 'truncate'];
+      const names = ['eq', 'ne', 'lt', 'le', 'gt', 'ge', 'add', 'sub', 'mul', 'div', 'mod', 'slice', 'padStart', 'repeat', 'defaults', 'clamp', 'unit', 'truncate'];
       for (const name of names) {
         expect(() => factory(name), name).toThrow(/requires at least one option/);
       }
-      expect(() => factory('substr', ['1'])).toThrow(/requires at least one option/);
       expect(() => factory('clamp', ['0'])).toThrow(/requires at least one option/);
     });
 
@@ -395,8 +394,8 @@ describe('builtinFilters', () => {
         expect(() => getFilter(name, [invalid]), name).toThrow(/requires a number as option/);
       }
       expect(() => getFilter('lt', [''])).toThrow(/requires a number as option/);
-      expect(() => getFilter('substr', [invalid, '1'])).toThrow(/requires a number as option/);
-      expect(() => getFilter('substr', ['1', invalid])).toThrow(/requires a number as option/);
+      expect(() => getFilter('clamp', [invalid, '1'])).toThrow(/requires a number as option/);
+      expect(() => getFilter('clamp', ['1', invalid])).toThrow(/requires a number as option/);
     });
 
     it('数値系フィルターは数値以外を受け付けないこと', () => {
@@ -412,14 +411,6 @@ describe('builtinFilters', () => {
       const neFn = getFilter('ne', ['abc']);
       expect(() => eqFn(1)).toThrow(/requires a number as option/);
       expect(() => neFn(1)).toThrow(/requires a number as option/);
-    });
-
-    it('substr: 長さは省略できず、引数の個数として拒否されること', () => {
-      // 実装は第 2 引数も読む。arity が [1, 2] だった頃は検査を素通りし、工場の
-      // 「requires at least one option」という的外れな文言で落ちていた
-      expect(() => getFilter('substr', ['1']))
-        .toThrow(/\[wcs\/filter-arity\] filter "substr" requires at least 2 argument\(s\) \(1 given\)/);
-      expect(getFilter('substr', ['0', '2'])('hello')).toBe('he');
     });
 
     it('not: boolean以外も真偽性で反転すること', () => {
@@ -646,7 +637,7 @@ describe('eq / ne と型付きリテラル（要件 B9）', () => {
 describe('表示面の空値契約（要件 B8）と書式フィルタ', () => {
   const stringFamily: ReadonlyArray<[string, string[]]> = [
     ['upper', []], ['lower', []], ['capitalize', []], ['trim', []], ['slice', ['1']],
-    ['substr', ['0', '2']], ['padStart', ['3']], ['padEnd', ['3']], ['repeat', ['2']],
+    ['padStart', ['3']], ['padEnd', ['3']], ['repeat', ['2']],
     ['reverse', []], ['truncate', ['3']], ['unit', ['px']],
   ];
 
