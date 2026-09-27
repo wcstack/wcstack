@@ -671,7 +671,7 @@ Runtime reads `customClass.wcBindable.properties + inputs` and expands each name
 - Filters on the spread target (`...: target|filter`) are rejected.
 - The right-hand path may contain `*` anywhere (e.g. `...: stores.*.fetch`).
 - The right-hand side is a plain tree path (`...: fetchX` or `...: stores.*.fetch`).
-- If the custom element class is not yet registered, expansion is deferred until `customElements.whenDefined(tag)` resolves — autoloader-style late registration is supported.
+- If the custom element class is not yet registered, expansion is deferred until `customElements.whenDefined(tag)` resolves — autoloader-style late registration is supported. This holds inside `for:` / `if:` templates too: the rows and the branch render right away, and each row's element is expanded with that row's values once the class is defined. A row removed, or a branch closed, before the definition is not expanded.
 - Elements **without** a `wcBindable` declaration are rejected (write bindings explicitly). Spread requires the contract to know what to expand.
 
 **Composite shells** (wc-bindable Composition Profile) are supported transparently: a composite shell exposes its synthesized declaration through the standard `target.constructor.wcBindable` surface, and composed names like `"s3.progress"` are kept as flat element member keys. Mirror the composed structure in state (`{ s3: { progress: 0 } }`) and `...: pipeline` expands into nested state paths automatically.

@@ -1,6 +1,7 @@
 import { ParseBindTextResult } from "../bindTextParser/types";
 import type { IInitialSyncPolicy, ResolvedInitialAuthority } from "../bindings/initialSync";
 import type { IPlannedBinding } from "../bindings/planFilters";
+import type { IDeferredSpreadEntry } from "../bindings/collectNodesAndBindingInfos";
 
 export interface IContent {
   readonly firstNode: Node | null;
@@ -21,6 +22,11 @@ export interface IContent {
    * 従来経路（deactivate + unmount）で解体する。
    */
   tryDestroy(): boolean;
+  /**
+   * まだ展開していない、未定義カスタム要素への spread（#330）。持つ行だけに付く（形を増やさない）。
+   * 活性化のたびに定義待ちへ予約し、展開したものは外れる
+   */
+  spreads?: IDeferredSpreadEntry[];
 }
 
 export interface IFragmentNodeInfo {
