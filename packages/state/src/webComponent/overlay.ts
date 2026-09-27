@@ -61,7 +61,22 @@ const privateDataByRecord = new WeakMap<IMountRecord, IPrivateDataTable>();
  * 読むたびに今の行を返す。
  */
 function hostRowIndexes(record: IMountRecord): readonly number[] {
-  return getLoopContextByNode(record.component)?.listIndex.indexes ?? [];
+  return hostRowOf(record)?.indexes ?? [];
+}
+
+/** ホスト要素がいま立っている行（`for:` の外なら null） */
+function hostRowOf(record: IMountRecord): IListIndex | null {
+  return getLoopContextByNode(record.component)?.listIndex ?? null;
+}
+
+/** 行かその祖先が退役しているか（リストから外れた行） */
+function isRetiredRow(row: IListIndex | null): boolean {
+  for (; row !== null; row = row.parentListIndex) {
+    if (isRetiredListIndex(row)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -96,6 +111,13 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
     private readonly record: IMountRecord,
     private readonly markerParentPath: string,
     private readonly listIndex: IListIndex | null,
+    /**
+     * 評価中のインスタンスのホスト行。マーカーアドレスが行を持てばそれ、持たない（部分マウントだけの
+     * 記録の）ときは評価を始めたときの要素の行。作者の `this` に引き継ぐので、async メソッドの await の
+     * 後も呼び出したときの行を指す — 読み直すと、その行が消えて要素が使い回された先の別の行を指す（#367）。
+     * null は行の外か、まだ行に置かれていない（hostIndexes が読み直す）
+     */
+    private readonly hostRow: IListIndex | null,
     private readonly isBase: boolean,
     private readonly receiver: any,
     private readonly handler: IStateHandler,
@@ -108,7 +130,7 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
    */
   private authorThis(target: Record<string, unknown>, receiver: any): object {
     return this.authorFacing ? receiver : new Proxy(target, new OverlayValueHandler(
-      this.record, this.markerParentPath, this.listIndex, this.isBase, this.receiver, this.handler, true));
+      this.record, this.markerParentPath, this.listIndex, this.hostRow, this.isBase, this.receiver, this.handler, true));
   }
 
   private accessorNameFor(key: string): string | undefined {
@@ -120,21 +142,21 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
   }
 
   /**
-   * 評価中のインスタンスのホスト行の添字（マーカーアドレスが行を持てばそれ）。
-   * await の間にホストの行がリストから外れた（退役した）インスタンスの添字は古い位置のままで、
-   * いまその位置にある別の行を指す — 読み書きを別の行へ着地させずに投げる。
+   * 評価中のインスタンスのホスト行の添字（`for:` の外なら空）。
+   * await の間にホストの行がリストから外れたインスタンスの添字は古い位置のままで、いまその位置にある
+   * 別の行を指す — 読み書きを別の行へ着地させずに投げる。完全マウントは行（とその祖先）の退役で、
+   * 部分マウントは要素が評価を始めたときの行を離れた（行が消えて要素が外れた・別の行に使い回された）
+   * ことで見分ける。部分マウントの行は祖先の差し替えの直後には退役した祖先を指したまま生きているので、
+   * 退役では見分けられない。行を持たずに始まった評価（要素がまだ行に置かれていない再表示・使い回しの
+   * `$connectedCallback`）は、いまの行を読む（#367）
    */
   private hostIndexes(): readonly number[] {
-    const listIndex = this.listIndex;
-    if (listIndex === null) {
-      return hostRowIndexes(this.record);
+    const current = this.listIndex ?? hostRowOf(this.record);
+    const row = this.hostRow ?? current;
+    if (this.listIndex === null ? row !== current : isRetiredRow(row)) {
+      raiseError(`The host row of <${this.record.component.tagName.toLowerCase()}> was removed.`);
     }
-    for (let row: IListIndex | null = listIndex; row !== null; row = row.parentListIndex) {
-      if (isRetiredListIndex(row)) {
-        raiseError(`The host row of <${this.record.component.tagName.toLowerCase()}> was removed.`);
-      }
-    }
-    return listIndex.indexes;
+    return row?.indexes ?? [];
   }
 
   /**
@@ -267,6 +289,11 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
     }
     if (this.isBase && Object.prototype.hasOwnProperty.call(target, prop)) {
       if (this.authorFacing && this.handler.mutability !== "readonly") {
+        // 部分マウントの私有データは要素ごとに 1 組 — await の間にホストの行が消えて要素が別の行に
+        // 使い回されたら、その行の私有データへ書かずに投げる（#367）
+        if (this.listIndex === null) {
+          this.hostIndexes();
+        }
         // 素の state の `this.x = v` と同じ経路（親の set トラップ → setByAddress）へ回す。
         // マーカーのアドレスを push するので、行マウントのワイルドカードは await の後でも
         // このインスタンスの行に解決される
@@ -332,6 +359,7 @@ export function createOverlayValue(
     record,
     markerParentPath,
     address.listIndex,
+    address.listIndex ?? hostRowOf(record),
     isBase,
     receiver,
     handler,
