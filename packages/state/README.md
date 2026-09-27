@@ -1054,7 +1054,7 @@ Two-way binding works with path setters — editing the input calls the setter, 
 
 3. **Caching** — Getter results are cached per concrete address (path + loop index). `users.*.fullName` at index 0 has a separate cache entry from index 1. The cache is invalidated only when dependencies change.
 
-4. **Direct index access** — You can also access specific elements by numeric index: `this["users.0.name"]` resolves as `users[0].name` without needing loop context.
+4. **Direct index access** — You can also access specific elements by numeric index: `this["users.0.name"]` resolves as `users[0].name` without needing loop context. Assigning a different object to an element path (`this["users.0"] = { ...this["users.0"], name: "z" }`) makes that position a new row, whether or not a `for:` renders the list, so the paths below it (`users.0.name`, `$getAll("users.*.name")`, row getters) read the new object instead of the cached values of the row it replaced.
 
 ### Getters must be pure with respect to state
 

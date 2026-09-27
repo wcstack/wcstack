@@ -1,3 +1,4 @@
+import { disownListIndexes } from "../../list/listIndexesByList";
 import { ISwapInfo } from "./types";
 
 /**
@@ -16,6 +17,8 @@ export function setSwapInfoByList(list: object, swapInfo: ISwapInfo | null): voi
   if (swapInfo === null) {
     swapInfoByList.delete(list);
   } else {
+    // 書き込む前の台帳として持つので、要素の書き込みはもうその場で書き換えない（listIndexesByList.ts）
+    disownListIndexes(swapInfo.listIndexes);
     swapInfoByList.set(list, swapInfo);
   }
 }
