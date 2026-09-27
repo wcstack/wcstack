@@ -171,6 +171,83 @@ describe("内側の <script type=\"module\">", () => {
   });
 });
 
+describe("内側の <script type=\"module\"> と Content-Security-Policy（docs/csp.md §9）", () => {
+  /** A module that fails to import, as a blocked blob: URL does in a browser. */
+  const broken = "data:text/javascript;charset=utf-8," + encodeURIComponent("export default {");
+
+  const violation = (directive: string): Event => {
+    const e = new Event("securitypolicyviolation");
+    (e as any).effectiveDirective = directive;
+    return e;
+  };
+
+  /** The error the element's initialization fails with. */
+  async function failed(html: string): Promise<Error> {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await load(html);
+      throw new Error("(no error)");
+    } catch (e) {
+      return e as Error;
+    } finally {
+      error.mockRestore();
+    }
+  }
+
+  it("script-src の違反が import の失敗より先に来たら（Chromium・WebKit の順）、CSP と断定する #42 で失敗する", async () => {
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      document.dispatchEvent(violation("script-src-elem"));
+      return broken;
+    });
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const e = await failed(`<wcs-state><script type="module">export default {};</script></wcs-state>`);
+    expect(e.message).toBe("[@wcstack/state] #42");
+    expect(e.cause).toBeInstanceOf(Error);
+    expect(revoke).toHaveBeenCalledWith(broken);
+  });
+
+  it("違反が import の失敗より後に来ても（Firefox の順。次のタスクまでに届く）、#42 で失敗する", async () => {
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => broken);
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    // the wait after the rejection is the element's only setTimeout without a delay: the
+    // violation lands there, after the import has failed and before the verdict
+    const timeout = globalThis.setTimeout;
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(((fn: () => void, ms?: number) => {
+      if (ms === undefined) document.dispatchEvent(violation("script-src-elem"));
+      return timeout(fn, ms);
+    }) as typeof setTimeout);
+    const e = await failed(`<wcs-state><script type="module">export default {};</script></wcs-state>`);
+    expect(e.message).toBe("[@wcstack/state] #42");
+  });
+
+  it("script-src 以外の違反では断定せず、元のエラーの文面を添えた #43 で失敗する（元のエラーは cause）", async () => {
+    vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      document.dispatchEvent(violation("style-src-elem"));
+      return broken;
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const e = await failed(`<wcs-state><script type="module">export default {</script></wcs-state>`);
+    expect(e.message).toMatch(/^\[@wcstack\/state\] #43 ".+"$/);
+    expect(e.message).toContain((e.cause as Error).message);
+  });
+
+  it("サーバの data: URL の経路でも、スクリプトの失敗は #43。Error でない throw はその値を文面にする", async () => {
+    await withoutObjectURL(async () => {
+      const e = await failed(`<wcs-state><script type="module">throw "boom"; export default {};</script></wcs-state>`);
+      expect(e.message).toBe('[@wcstack/state] #43 "boom"');
+      expect(e.cause).toBe("boom");
+    });
+  });
+
+  it("読み終えたら違反を見なくなる（後の違反は次の読み込みの判定に残らない）", async () => {
+    const remove = vi.spyOn(document, "removeEventListener");
+    await withoutObjectURL(async () => {
+      await load(`<wcs-state><script type="module">export default { n: 1 };</script></wcs-state>`);
+    });
+    expect(remove).toHaveBeenCalledWith("securitypolicyviolation", expect.any(Function));
+  });
+});
+
 describe("setInitialState と初期化前の要素", () => {
   it("接続して状態を待ち始めた後の setInitialState で初期化する", async () => {
     const { root, el } = mountHost(`<wcs-state></wcs-state><p>{{ n }}</p>`);

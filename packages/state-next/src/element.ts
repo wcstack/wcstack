@@ -18,6 +18,13 @@ export function configure(factory: () => Strategy): void {
 let loads = 0;
 
 async function loadInnerScript(script: HTMLScriptElement): Promise<Record<string, any>> {
+  // an import a Content-Security-Policy blocked rejects without saying why: the violation event
+  // is the only witness (docs/csp.md §9)
+  let blocked = false;
+  const seen = (e: SecurityPolicyViolationEvent): void => {
+    if (e.effectiveDirective.startsWith("script-src")) blocked = true;
+  };
+  document.addEventListener("securitypolicyviolation", seen);
   // a server (@wcstack/server) removes createObjectURL: a data: URL, unique so no load is cached
   const blob = typeof URL.createObjectURL === "function";
   const url = blob
@@ -26,7 +33,12 @@ async function loadInnerScript(script: HTMLScriptElement): Promise<Record<string
   try {
     const mod = await import(/* @vite-ignore */ url);
     return (mod.default ?? {}) as Record<string, any>;
+  } catch (e) {
+    // Firefox fires the violation a task after the rejection (Chromium and WebKit before it)
+    await new Promise((r) => setTimeout(r));
+    throw new Error(`[@wcstack/state] ${blocked ? text(M.InlineBlocked) : text(M.InlineFailed, [e instanceof Error ? e.message : String(e)])}`, { cause: e });
   } finally {
+    document.removeEventListener("securitypolicyviolation", seen);
     if (blob) URL.revokeObjectURL(url);
   }
 }

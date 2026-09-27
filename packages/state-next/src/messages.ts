@@ -58,6 +58,8 @@ export const enum M {
   InitIncompatible = 39,
   SyncConnectNeedsOutput = 40,
   RenderChain = 41,
+  InlineBlocked = 42,
+  InlineFailed = 43,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,

@@ -62,6 +62,8 @@ const RENDERED: [M, unknown[], string][] = [
   [M.InitIncompatible, ["auto", "status"], 'init=auto is incompatible with wcBindable member "status".'],
   [M.SyncConnectNeedsOutput, ["label"], 'sync=connect requires observable property "label".'],
   [M.RenderChain, [], `render chain depth limit exceeded (${MAX_RENDER_CHAIN} drains that rendering itself started); bindings for this batch were not applied.`],
+  [M.InlineBlocked, [], 'The inline <script> of <wcs-state> was blocked by Content-Security-Policy. Inline state is evaluated through a blob: URL: give the page\'s nonce to the <script> that loads @wcstack/state, or allow blob: in script-src. Moving the state into an external file (src="./state.js") needs neither. See https://github.com/wcstack/wcstack/blob/main/docs/csp.md'],
+  [M.InlineFailed, ["Unexpected end of input"], "Failed to evaluate the inline <script> of <wcs-state>: Unexpected end of input. If this page sets a Content-Security-Policy, see https://github.com/wcstack/wcstack/blob/main/docs/csp.md"],
   [M.SelectorRemoved, ["value: @main.count"], '"value: @main.count": the "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.'],
 
   [M.BindTextNoColon, ["value"], `[wcs/binding-syntax] Invalid bindText: "value". Missing ':' separator between propPart and statePart.`],
