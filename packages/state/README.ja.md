@@ -669,7 +669,7 @@ export default {
 - spread 右辺へのフィルタ（`...: target|filter`）はエラー
 - 右辺パスの途中に `*` を含めても OK（例：`...: stores.*.fetch`）
 - 右辺は素のツリーパス（`...: fetchX`、途中の `*` も可）
-- カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）
+- カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）。`for:` / `if:` のテンプレートの中でも同じ — 行や枝はすぐに描かれ、クラスが定義されたらそれぞれの行の要素をその行の値で展開する。定義前に消えた行・閉じた枝は展開しない
 - `wcBindable` 宣言**のない**要素はエラー（明示配線で書いてください）。spread は何を展開すべきかを契約から読み取るため
 
 **Composite shell**（wc-bindable Composition Profile）はそのままサポートされます：composite shell は標準の `target.constructor.wcBindable` を通じて synthesized declaration を露出するため、`"s3.progress"` のような composed name はフラットな要素メンバーキーとして扱われます。state を composed 構造に合わせて (`{ s3: { progress: 0 } }`) 持てば、`...: pipeline` が自動的に nested state path へ展開されます。

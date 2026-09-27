@@ -2,7 +2,7 @@ import { clearAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateA
 import { clearStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo.js";
 import { getBindingsByContent, setBindingsByContent } from "../bindings/bindingsByContent.js";
 import { getBindingSessionByContent, setBindingSessionByContent } from "../bindings/bindingSessionByContent.js";
-import { markNodeRegistered } from "../bindings/collectNodesAndBindingInfos.js";
+import { IDeferredSpreadEntry, markNodeRegistered } from "../bindings/collectNodesAndBindingInfos.js";
 import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent.js";
 import { initializeBindingsByFragment, initializeRowBindings } from "../bindings/initializeBindings.js";
 import { resolveInitializedBinding } from "../bindings/initializeBindingPromiseByNode.js";
@@ -34,6 +34,8 @@ class Content implements IContent {
    * firstNode..lastNode の DOM レンジで行う。
    */
   private _ranged: boolean = false;
+  // 出力しない宣言（持つ行だけに後から付ける — 全行にフィールドを足さない）
+  declare spreads?: IDeferredSpreadEntry[];
   constructor(content: DocumentFragment, ranged: boolean = false) {
     this._content = content;
     this._ranged = ranged;
@@ -390,6 +392,7 @@ export function createContent(
     appendRowEndMarker(cloneFragment, bindingInfo.uuid);
   }
   const content = new Content(cloneFragment, ranged);
+  if (initialInfo.spreads.length > 0) content.spreads = initialInfo.spreads;
   setBindingSessionByContent(content, initialInfo.bindingSession);
   setBindingsByContent(content, initialInfo.bindingInfos);
   const indexBindings: IBindingInfo[] = [];

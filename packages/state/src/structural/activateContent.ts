@@ -4,8 +4,10 @@ import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAdd
 import { addBindingByAbsoluteStateAddress, removeBindingByAbsoluteStateAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
 import { getBindingSessionByContent } from "../bindings/bindingSessionByContent";
+import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import type { BindingSession } from "../bindings/BindingSession";
 import { bindLoopContextToContent, unbindLoopContextToContent } from "../bindings/bindLoopContextToContent";
+import { scheduleDeferredSpreads } from "../bindings/initializeBindings";
 import { ILoopContext } from "../list/types";
 import { getByAddressSymbol } from "../proxy/symbols";
 import type { IBindingInfo } from "../types";
@@ -184,6 +186,10 @@ export function activateContent(
     }
     applyChange(binding, context);
   }
+  // 未定義カスタム要素への spread（#330）は行が生きている間だけ定義を待つ。解体（session の dispose）が
+  // 待ちを取り消すので、使い回す行・再表示する枝はここで予約し直す。持つのは createContent の行だけ
+  //（session あり・プラン行はカスタム要素を持てない）
+  if (content.spreads) scheduleDeferredSpreads(content.spreads, loopContext, session!, bindings, getIndexBindingsByContent(content));
 }
 
 export function deactivateContent(
