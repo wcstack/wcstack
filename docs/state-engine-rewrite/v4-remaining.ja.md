@@ -70,6 +70,10 @@
 
 - ~~#2（リスト要素 getter の隣接項目問題）を state-next で確かめる（R5）~~ 済み（§8）。
 - エラー番号の一覧を、利用者が引ける場所に置く（README か docs）。番号と文面の正本は `src/diagnostics/messages.ts`。
+- root の `<wcs-state>` の属性で分割エントリと設定を指定する案（2026-09-28 検討、決定ではない）: [root-attributes.ja.md](./root-attributes.ja.md)。論点は同文書 §6。
+- `config.debug` がどこからも読まれていない（3.x では `console.debug` の出力に使っていた）。外すか実装し直すかを決める（[root-attributes.ja.md](./root-attributes.ja.md) §8）。
+- ~~CSP の診断（docs/csp §9）が state-next に無い~~ 済み（§8 の 2026-09-28）。
+- `<wcs-state>` の中の `<script type="module">` はブラウザも評価するので、CSP が無いページではトップレベルのコードが 2 回走る（3.x も同じ）。README と docs/csp に書いた。挙動を変えるかは決めていない（§8 の 2026-09-28）。
 
 ### 2.5 カバレッジの作業で見つかった不具合（2026-09-27）
 
@@ -127,7 +131,31 @@
 | `@wcstack/server` | 依存 `^3.3.0` を `^4` へ。SSR の出力は 3.3 と互換が無い（版の検査でクライアント描画に倒れる）ので、移行ガイドに書く。server 自身の変更は不要（後付け 5 で確認） |
 | `wcstack`（入口パッケージ） | state の `/auto` を取り込むので、新しい auto で作り直し、サイズを記録する |
 | `@wcstack/devtools` | プロトコル v2 のままで、改修は不要（後付け 6 で確認）。型のずれを見るテスト（`packages/devtools/__tests__/protocol.typesDrift.test.ts`）が `packages/state/src/devtools/types.ts` を読むので、参照先を直す |
-| wcstack-skill（別リポジトリ） | `$scan` の削除、旧名の削除、`substr` の削除（`slice` へ）、イベントの委譲（バブリングするイベントの `currentTarget` がルート）、エラーの番号などを反映し、プラグインの版を上げる |
+| wcstack-skill（別リポジトリ） | `$scan` の削除、旧名の削除、`substr` の削除（`slice` へ）、イベントの委譲（バブリングするイベントの `currentTarget` がルート）、エラーの番号などを反映し、プラグインの版を上げる。CSP の記述の誤りも直す（§3.1。4.0 を待たずに直せる） |
+
+### 3.1 wcstack-skill の CSP の記述（2026-09-28）
+
+docs/csp（ja / en）と README で直した誤り 2 つ（§8 の 2026-09-28）が、wcstack-skill にも残っている。3.x の挙動についての記述なので、4.0 を待たずに直せる。正本は docs/csp（ja / en）。
+
+- 誤り 1: 「ページの nonce では救えない」。実際は、state／router を読み込む `<script>` に nonce を付ければ、blob: の import はその nonce を引き継いで通る。nonce を付けられないときだけ `script-src blob:` か `src=` が要る（ガードには `src=` が無いのはそのまま）。
+- 誤り 2 は skill には書かれていないが、足すべき事実: `<wcs-state>` の中の `<script type="module">` はブラウザも評価するので、トップレベルのコードが 2 回走る（CSP の有無によらない）。トップレベルに副作用を置かない。
+
+手元の写し（`~/.claude/skills/wcstack-app`）で見つけた、直す場所:
+
+| ファイル | 行 | 今の記述 | 直す向き |
+|---|---|---|---|
+| `SKILL.md` | 58 | 本番／CSP の項: 「a page nonce does not help」「Route guards are blob:-only with no `src=` escape」 | state／router を読み込む `<script>` に nonce を付ければ blob: は要らない |
+| `SKILL.md` | 196 | 落とし穴の表: 「the page nonce does not carry over」 | 同上 |
+| `references/state-binding.md` | 77 | 表: 内包 `<script>` の要求が `script-src blob:` だけ | 「state を読み込む `<script>` に nonce、または `script-src blob:`」 |
+| `references/state-binding.md` | 79 | 「The page's nonce cannot rescue method 5」 | nonce で救える。`src=` は引き続き推奨（blob: も nonce の受け渡しも要らず、2 回の実行も起きない） |
+| `references/state-binding.md` | 81 | 「`<wcs-guard-handler>` is blob:-only with no escape hatch」 | router を読み込む `<script>` に nonce を付ければ通る。`src=` が無いのはそのまま |
+| `references/state-binding.md` | 630 | まとめの 16: 「the page nonce does not carry over」 | 誤り 1 と同じ |
+| `references/router-and-scaffold.md` | 180 | 「Guards force `script-src blob:` under a CSP」 | 81 行目と同じ |
+| `references/router-and-scaffold.md` | 434 | まとめの 10: 「Route guards require `script-src blob:`」 | 81 行目と同じ |
+
+あわせて足すとよいもの:
+- 分割エントリの CSP（docs/csp §2.1）: 要るのはホストの許可だけ。README の例（import map とインラインの起動スクリプト）は、2 つに nonce かハッシュが要る。
+- Firefox では、3.x の state と 3.3.0 までの router が CSP を断定できない（非断定の文面になる。docs/csp §9）。
 
 ## 4. ビルド・CI・サイズ・計測
 
@@ -463,3 +491,43 @@ R6 の残り。3.3 の README「Exported getters」と同じ約束にした: ツ
 | e2e | 131/131 | 132/132（スコープ付きの登録簿を足した） |
 
 - 性能（F20〜F30 の修正をすべて入れた後。修正の前のコミット `0de3ec55` の src から同じ方法で作ったバンドルと、同じセッションで順番を入れ替えて 4 回・各 96 サンプル）: 中央値は warm 1,000 行作成 5.65 → 5.60ms、cold 10,000 行作成 70.55 → 69.55ms、warm 10,000 行作成 43.8 → 44.5ms、cold 1,000 行作成 10.25 → 10.5ms で、差はばらつきの範囲。F24・F29 を入れる前の計測で warm 10,000 行作成が 3ms 遅く出たが、この計測では消えた。
+
+### CSP の診断の移植と CSP の文書の訂正（2026-09-28）
+
+分割エントリと CSP の検討（[root-attributes.ja.md](./root-attributes.ja.md) §4）から始めた。実ブラウザ（Playwright の Chromium・Firefox・WebKit）で確かめたことと、直したこと。
+
+**確かめたこと**
+- 分割エントリの読み込み（静的 import と、`import.meta.url` からの相対の動的 import）は、ホストの許可だけ・nonce だけ・nonce と `'strict-dynamic'` のどれでも通る。
+- モジュールの `import()` は、import を書いたモジュールを読み込んだ `<script>` の nonce を引き継ぐ。state（3.x・state-next）と router のバンドルを nonce 付きの `<script>` で読めば、blob: の import は `script-src blob:` なしで通る。docs/csp の「nonce では救えない」は誤りだった。
+- `<wcs-state>` の中の `<script type="module">` はブラウザも評価する。CSP が無いか、その `<script>` に nonce があると、トップレベルのコードが 2 回走る（3.x も同じ）。docs/csp の「ブラウザからは実行されない」は誤りだった。
+- Firefox は `securitypolicyviolation` を import の失敗より後（次のタスク）に出す。Chromium と WebKit は失敗より先に出す。
+
+**直したこと**
+- state-next に CSP の診断を移した（3.x の `stateLoader/loadFromInnerScript.ts` にあり、state-next に無かった。docs/csp §9 の約束）。`element.ts` の `loadInnerScript` が、読み込みの間だけ違反を購読する。失敗したら 1 タスク待ってから判定する（Firefox の順のため）。CSP を見たら #42（`M.InlineBlocked`）、見なければ元のエラーの文面を添えた #43（`M.InlineFailed`。元のエラーは `cause`）で投げる。文面は診断の後付けにあり、#42 の文面は nonce の手当ても案内する。
+- テスト 7 件（`coverage-element-load.test.ts` に 5 件、文面の表に 2 件）。Firefox の順のテストは、待ちを外すと落ちることを確かめた。作り直した `auto.min.js` で、3 エンジンとも #42 の文面になり、構文エラーでは #43 の文面になることを確かめた。
+- docs/csp（ja / en）: 冒頭・§0・§3 の表と本文・§3.3・§4・§5・§9 を直し、§2.1（分割エントリ）を足した。state・router・ルートの README（ja / en）の CSP の注記を直した。
+- e2e: `e2e/tests/csp.spec.ts` と fixture 3 つ（nonce 付きで state のインラインが読める・nonce が無いと CSP を断定して失敗する・nonce 付きで router のガードが動く）。3.3 と state-next の両方で通る。
+
+| | 前 | 後 |
+|---|---|---|
+| テスト | 1,523 件（通過 1,520・意図した失敗 2・スキップ 1） | 1,530 件（通過 1,527・意図した失敗 2・スキップ 1） |
+| カバレッジ | 99.66・98.87・100・99.93 | 99.66・98.87・100・99.93（変えた 3 ファイルは 100） |
+| core（`core.min.js` gzip） | 19,368B | 19,494B（+126B。上限 20,000B まで 506B） |
+| 全部入りの `auto.min.js`（gzip） | 40,640B | 40,963B（+323B。文面を含む） |
+| e2e | 132/132 | 135/135（CSP の 3 件を足した。3.3 では 134 件通過・スキップ 1） |
+
+**残り**（state-next の外）
+- 3.x の state（`stateLoader/loadFromInnerScript.ts`）は失敗の直後に判定するので、Firefox では CSP で止められても非断定の文面になる。文面も nonce の手当てを案内していない。直すのは 3.4 を出すなら（R3）。
+- ~~router（`loadGuardHandler.ts`）も同じ~~ 済み（下の「router の CSP の診断」）。
+- インラインの `<script>` が 2 回走る件の挙動は変えていない（§2.4）。
+- wcstack-skill の CSP の記述に同じ誤りがある（§3.1）。
+
+### router の CSP の診断（2026-09-28）
+
+上の「残り」のうち、4.0 の後も残る router の分を直した。
+
+- `packages/router/src/loadGuardHandler.ts`: blob: と data: の両方の import が失敗したあと、1 タスク待ってから CSP かどうかを判定する（state-next と同じ。Firefox の順のため）。CSP の文面に nonce の手当て（router を読み込む `<script>` に nonce）を足した。
+- テスト: CSP の文面のテストを新しい文面に合わせ、Firefox の順のテストを 1 件足した（待ちを外すと落ちることを確かめた）。router は 764 件すべて通過、カバレッジ 100・99.5・100・100、lint と型検査も通過。
+- 実ブラウザ（作り直した `auto.min.js`、各 5 回）: Firefox は修正前が 5 回とも非断定、修正後は 5 回とも断定。Chromium と WebKit は前後とも断定。
+- router の `dist/` はリリースのときに作り直すので、コミット済みの dist はまだ修正前（e2e の router はこの dist で動く）。CHANGELOG もリリースのときに書く。
+- docs/csp（ja / en）§9 の「router は待たない」を「3.3.0 より後の版は待つ」に直した。
