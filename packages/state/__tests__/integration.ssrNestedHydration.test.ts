@@ -473,8 +473,9 @@ describe("穴 4: 行の中・if の中の bind-component の子", () => {
 
 describe("入れ子でないものを入れ子と取り違えない・行ごとの if（#258 の検証で見つかった形）", () => {
   it("サーバー描画中に空でないリストへ行をまとめて足しても、全描画に倒さず CSR と同じ行になる", async () => {
-    // 空でないリストに 1 回で 2 行以上を足すと、サーバーの終端コメントが入れ子の順に並ぶ。
-    // 同じ for の行なので入れ子ではない — 倒すと SSR の行が取り残されて重複した
+    // 空でないリストに 1 回で 2 行以上を足すと、以前はサーバーの終端コメントが入れ子の順に並んだ（#334 で
+    // 直り、行の境界は添字の順に並ぶ）。同じ for の行なので入れ子ではない — 倒すと SSR の行が取り残されて
+    // 重複した
     const make = (): any => ({
       count: 0,
       items: [] as any[],
@@ -490,8 +491,9 @@ describe("入れ子でないものを入れ子と取り違えない・行ごと�
     const observe = (): unknown => ({ c: texts("#c"), li: texts("li") });
     const { csr, ssr, serverHtml } = await compare(MARKUP, make, [(s) => { s.count = 7; }], observe);
 
-    // 前の行の終端より先に次の行の開始が来る（入れ子の順）— この形を取り違えていた
-    expect(serverHtml.search(/@@wcs-for-start:\w+:items:5/)).toBeLessThan(serverHtml.search(/@@wcs-for-end:\w+:items:4/));
+    // 前の行の終端の後に次の行の開始が来る（#334。旧: 終端より先に開始が来る入れ子の順で、この形を
+    // 入れ子の for と取り違えていた）
+    expect(serverHtml.search(/@@wcs-for-start:\w+:items:5/)).toBeGreaterThan(serverHtml.search(/@@wcs-for-end:\w+:items:4/));
     expect(ssr.warns.filter((w) => w.includes(FALLBACK))).toEqual([]);
     expect(ssr.views).toEqual(csr.views);
     expect(ssr.views[0]).toEqual({ c: ["0"], li: ["1", "2", "11", "12", "21", "22"] });
