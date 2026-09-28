@@ -70,7 +70,7 @@
 
 - ~~#2（リスト要素 getter の隣接項目問題）を state-next で確かめる（R5）~~ 済み（§8）。
 - エラー番号の一覧を、利用者が引ける場所に置く（README か docs）。番号と文面の正本は `src/diagnostics/messages.ts`。
-- root の `<wcs-state>` の属性で分割エントリと設定を指定する案（2026-09-28 検討、決定ではない）: [root-attributes.ja.md](./root-attributes.ja.md)。論点は同文書 §6。
+- 分割エントリと設定を、root の `<wcs-state>` の属性や状態の `$config`・`$features` で指定する案（2026-09-28 検討、決定ではない）: [root-attributes.ja.md](./root-attributes.ja.md)。3 案を試作で計測し（§10）、属性＋`$config`／`$features` を推奨した（§11。core +314 B、上限まで残り 192 B）。論点は同文書 §6 と §12。
 - `config.debug` がどこからも読まれていない（3.x では `console.debug` の出力に使っていた）。外すか実装し直すかを決める（[root-attributes.ja.md](./root-attributes.ja.md) §8）。
 - ~~CSP の診断（docs/csp §9）が state-next に無い~~ 済み（§8 の 2026-09-28）。
 - `<wcs-state>` の中の `<script type="module">` はブラウザも評価するので、CSP が無いページではトップレベルのコードが 2 回走る（3.x も同じ）。README と docs/csp に書いた。挙動を変えるかは決めていない（§8 の 2026-09-28）。
