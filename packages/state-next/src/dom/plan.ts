@@ -93,6 +93,13 @@ export function boundPattern(engine: Engine, path: string, list: Pattern | null)
     path = `${list.path}.*.${path}`;
   }
   const p = engine.pattern(expandPath(path, list));
+  // each "*" is the row of the enclosing loop at its level, never a row of another list (F32)
+  const d = list === null ? 0 : list.depth + 1;
+  if (p.depth > d) raise(M.WildcardNoLoop, [p.path, p.depth, d]);
+  for (let k = 1; k <= p.depth; k++) {
+    const loop = k === d ? list! : list!.lists[k]!;
+    if (p.lists[k] !== loop) raise(M.WildcardOtherList, [p.path, p.lists[k]!.path, loop.path]);
+  }
   if (hooks.declared !== null) hooks.declared(engine, p);
   return p;
 }

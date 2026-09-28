@@ -106,6 +106,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.CommandTokenUndeclared, ["sav"], '[wcs/token-undeclared] "$command.sav" is not declared in $commandTokens.'],
   [M.WildcardNoLoop, ["items.*.name", 1], '[wcs/wildcard-rank] "items.*.name" needs 1 enclosing loop level(s); the scope provides 0.'],
   [M.WildcardRelative, [".name"], '[wcs/wildcard-rank] ".name" is relative: it needs an enclosing "for" template'],
+  [M.WildcardOtherList, ["b.*.y", "b", "a"], '[wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".'],
   [M.SpreadNoBindable, ["x-el", '"...: obj"'], '[wcs/spread-no-bindable] <x-el> declares no static wcBindable ("...: obj").'],
   [M.DeclarationRemoved, ["$streams", "$stream"], "[wcs/declaration-alias] $streams was removed: write $stream."],
   [M.ApiRemoved, ["$trackDependency", "$dependOn"], "[wcs/name-alias] $trackDependency was removed: write $dependOn."],
@@ -173,6 +174,19 @@ describe("ページで出会う文面", () => {
     } finally {
       error.mockRestore();
     }
+  });
+
+  it("行の中で別のリストの * を束ねると、直し方の案内付きで初期化に失敗する（lint は段の数しか見ないので、lint へは誘導しない）", async () => {
+    await expect(page(`<wcs-state></wcs-state><template data-wcs="for: a"><i>{{ b.*.y }}</i></template>`, { a: [{ y: 1 }], b: [{ y: 2 }] }))
+      .rejects.toThrow(new Error(
+        '[@wcstack/state] [wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".'
+        + ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).',
+      ));
+  });
+
+  it("段が足りない束縛は、囲む段の数を示す", async () => {
+    await expect(page(`<wcs-state></wcs-state><template data-wcs="for: a"><i>{{ a.*.b.*.y }}</i></template>`, { a: [{ b: [] }] }))
+      .rejects.toThrow('[@wcstack/state] [wcs/wildcard-rank] "a.*.b.*.y" needs 2 enclosing loop level(s); the scope provides 1. Wrap it in that many "for" templates');
   });
 });
 

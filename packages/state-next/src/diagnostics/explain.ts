@@ -27,6 +27,7 @@ const GUIDES: [RegExp, string][] = [
   [/\[wcs\/recursion-unsupported\]/, " It is only meaningful in a $recursion declaration, in a recursive getter key, and in the path argument of $getAll / $setAll — and only when the state declares a $recursion anchor."],
   [/must be single binding/, ' Put the structural binding alone in its own data-wcs (e.g. <template data-wcs="for: items">).'],
   [/\[wcs\/wildcard-rank\] .* needs \d+ enclosing/, ' Wrap it in that many "for" templates, or use $resolve(path, indexes) to name the row explicitly.'],
+  [/\[wcs\/wildcard-rank\] .* ranges over the rows of/, ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).'],
   [/\[wcs\/binding-type-expectation\] class\.([^ ]+)/, ' Write "class.$1: path|truthy" to toggle on truthiness.'],
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
   [/\[wcs\/index-arity\] \$resolve/, " $resolve takes one index per \"*\"; $getAll / $setAll take at most that many (fewer expands the rest)."],
@@ -49,7 +50,8 @@ export function explain(message: string, subject?: string, candidates?: Iterable
     out += " No formatting filters are installed — add them with installFormats() (the formats add-on).";
   }
   const code = /\[wcs\/([\w-]+)\]/.exec(message);
-  // (the path-length limit is a runtime cost, not something lint reports)
-  if (code !== null && LINT_CODES.has(code[1]) && !message.includes(" path segments — the limit is ")) out += LINT_HINT;
+  // (the path-length limit is a runtime cost, and lint counts a path's loops without naming their lists:
+  // neither is something lint reports)
+  if (code !== null && LINT_CODES.has(code[1]) && !message.includes(" path segments — the limit is ") && !message.includes(" ranges over the rows of ")) out += LINT_HINT;
   return out;
 }

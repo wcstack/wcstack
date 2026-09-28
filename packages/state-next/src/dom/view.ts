@@ -265,10 +265,12 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
         n[name] = name === "innerHTML" ? trustHtml(s) : s;
       } else if (isHtmlSink(name)) {
         n[name] = trustHtml(v == null ? "" : String(v));
-      } else if (v !== undefined && n[name] !== v && !(name === "value" && n.value === String(v))) {
+      } else if (v !== undefined) {
         // undefined: an element input keeps its own value when state has no opinion (B8);
         // never re-write what the element already shows (keeps the caret while typing)
-        n[name] = v;
+        if (n[name] !== v && !(name === "value" && n.value === String(v))) n[name] = v;
+        // a select's value may name an option not rendered yet: kept for reselect
+        if ((name === "value" || name === "selectedIndex") && n.localName === "select") n[SELECTED] = [name, v];
       }
       return;
     case K_HTML:
@@ -289,6 +291,20 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
       else n.style.setProperty(name, String(v));
       return;
   }
+}
+
+/** A select's last bound `value` / `selectedIndex`: [name, value]. */
+const SELECTED: unique symbol = Symbol() as never;
+
+/**
+ * A view rendered options into `parent`: the select's bound value is applied again. Bindings
+ * apply in document order, so a select's value comes before the options a `for` inside it
+ * renders, and names none of them (3.3 applies it after the options).
+ */
+function reselect(parent: Node): void {
+  const sel: any = (parent as Element).localName === "optgroup" ? parent.parentNode : parent;
+  const r = sel?.[SELECTED];
+  if (r !== undefined) sel[r[0]] = r[1];
 }
 
 /**
@@ -728,7 +744,9 @@ export class IfView {
       const br = this.branches[index];
       const top = buildBlock(engine, br.plan, this.row, null, br.anchor);
       this.current = takeBlock();
-      br.anchor.parentNode!.insertBefore(top, br.anchor);
+      const parent = br.anchor.parentNode!;
+      parent.insertBefore(top, br.anchor);
+      reselect(parent);
     }
   }
 
@@ -810,6 +828,7 @@ export class ForView {
       }
       parent.insertBefore(frag, anchor);
       this.rowViews = views;
+      reselect(parent);
       return;
     }
 
@@ -875,6 +894,7 @@ export class ForView {
       }
     }
     this.rowViews = views;
+    reselect(parent);
   }
 
   dispose(): void {

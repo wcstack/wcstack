@@ -39,6 +39,18 @@ function keysOf(o: object): string[] {
 }
 
 /**
+ * The pattern a path with an explicit index reads through: an index with no `*` after it
+ * (`items.0.x`) has an accessor of its own (Engine.markupAccessor), so whether it reads a getter
+ * is the question of the pattern it names (`items.*.x`). A `*` after the index (`groups.0.items.*.x`,
+ * a row of `for: groups.0.items`) reads its row's own item: the pattern itself.
+ */
+function wildcardForm(engine: Engine, q: Pattern): Pattern | undefined {
+  const segs = q.path.split(".");
+  const i = segs.findIndex((s) => /^\d/.test(s));
+  return i < 0 || segs.indexOf("*", i) >= 0 ? q : engine.patterns.peek(parsePath(q.path).pattern);
+}
+
+/**
  * The segment of `p` that certainly does not exist, with the names that do at its level; null
  * when the path exists or it cannot be told without evaluating a getter (a getter on the way, a
  * null or primitive on the way, a list with no row to look into).
@@ -47,12 +59,7 @@ function missing(engine: Engine, p: Pattern): { seg: string; names: string[] } |
   const chain: Pattern[] = [];
   for (let q: Pattern | null = p; q !== null; q = q.parent) chain.unshift(q);
   let v: any = engine.target;
-  // an explicit index (`items.0.x`) has an accessor of its own (Engine.markupAccessor): whether it
-  // reads a getter is the question of the pattern it names (`items.*.x`)
-  const named = (q: Pattern | null): Pattern | null | undefined => {
-    const parsed = q === null ? null : parsePath(q.path);
-    return parsed === null || parsed.indexes === null ? q : engine.patterns.peek(parsed.pattern);
-  };
+  const named = (q: Pattern | null): Pattern | null | undefined => (q === null ? null : wildcardForm(engine, q));
   for (const q of chain) {
     if (named(q)?.getter != null) return null;
     if (v === null || typeof v !== "object") return null;
@@ -93,7 +100,14 @@ function check(engine: Engine): void {
     const m = missing(engine, p);
     if (m === null) continue;
     const [code, subject] = watch ? ["watch-path-missing", "$watch path"] : ["binding-path-missing", "Bound path"];
-    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}" does not resolve on the state tree: "${m.seg}" is not declared.${didYouMean(m.seg, m.names)} Updates to this path will be silently dropped.${LINT_HINT}`);
+    // a row of `for: groups.0.items` with a row getter declared on `groups.*.items.*` (#388)
+    const w = engine.patterns.peek(parsePath(p.path).pattern);
+    let rowGetter = "";
+    if (w !== undefined && w !== p && w.getter !== null) {
+      const loops = w.lists.slice(1).map((l, k) => `for: ${k === 0 ? l!.path : l!.path.slice(w.lists[k]!.path.length + 2)}`);
+      rowGetter = ` The getter "${w.path}" is declared for the rows of ${loops.join(" → ")}; a list named by an index has rows of its own.`;
+    }
+    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}" does not resolve on the state tree: "${m.seg}" is not declared.${didYouMean(m.seg, m.names)}${rowGetter} Updates to this path will be silently dropped.${LINT_HINT}`);
   }
 }
 

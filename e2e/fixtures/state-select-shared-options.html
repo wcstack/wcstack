@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: the same options in every row's select</title>
+  <!-- #376: a row's select renders a top-level list (`for: options` inside `for: rows`). The 4.0
+       engine renders it (@wcstack/state 3.3 renders no rows); each row's value must be selected. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        options: [{ v: "a" }, { v: "b" }, { v: "c" }],
+        rows: [{ choice: "b" }, { choice: "c" }],
+      };
+    </script>
+
+    <div id="shared">
+      <template data-wcs="for: rows">
+        <select data-wcs="value: .choice">
+          <template data-wcs="for: options"><option data-wcs="value: .v">{{ .v }}</option></template>
+        </select>
+      </template>
+    </div>
+  </wcs-state>
+  <script type="module">
+    window.__write = (fn) => document.querySelector("wcs-state").createState("writable", fn);
+  </script>
+</body>
+</html>

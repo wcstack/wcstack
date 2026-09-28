@@ -24,7 +24,7 @@
 | R2 | 4.0 の公開 API の範囲 | 現行の公開物を、残す・落とす・後付けへ、のどれにするか | **済み（2026-09-26）**: 3.3 の公開面にそろえた（§2.3、§8）。内部の部品は公開しない |
 | R3 | 3.x の最後の minor | (a) 3.4 を出して、旧名にランタイムの警告を出す (b) 約束を取り下げる | CHANGELOG 3.2.0 で「ランタイムの警告は 3.x の最後の minor でだけ出す」と約束した。3.3.0 では入っていない。lint と VS Code 拡張の通知（`wcs/name-alias`）は 3.2 からある |
 | R4 | `substr` | 残す・外す・改名する | **決定（2026-09-27）: 外して `slice` に一本化する**。state-next から外した（§8）。[state-3x-naming.ja.md](../state-3x-naming.ja.md) V10 で「4.0 で考える」としていたもの |
-| R5 | 現行の未解決 Issue | 3.x で直す、または 4.0 で解決として閉じる | #2・#258・#319〜#324 は、どれも state-next で起きない（#258 の行の中のコンポーネントは `faddc735` で直した。#2 は 2026-09-27 に確かめた、§8）。#330〜#338（2026-09-26 登録）は #332 だけが state-next でも起きていた（§2.5 の F17 として直した、§8）。#347〜#368（2026-09-27 登録）は #353・#354・#357・#362・#365 と、#347・#349・#356・#363 の一部の形が state-next でも起きる（§2.5 の F20〜F30、§8） |
+| R5 | 現行の未解決 Issue | 3.x で直す、または 4.0 で解決として閉じる | #2・#258・#319〜#324 は、どれも state-next で起きない（#258 の行の中のコンポーネントは `faddc735` で直した。#2 は 2026-09-27 に確かめた、§8）。#330〜#338（2026-09-26 登録）は #332 だけが state-next でも起きていた（§2.5 の F17 として直した、§8）。#347〜#368（2026-09-27 登録）は #353・#354・#357・#362・#365 と、#347・#349・#356・#363 の一部の形が state-next でも起きる（§2.5 の F20〜F30、§8）。#372〜#391（2026-09-27 登録）は、#377・#382・#388・#389 の一部の形だけが state-next でも起きる。確かめる途中で、別の不具合を 8 つ見つけた（§2.5 の F31〜F38、§8。F31 の `<select>` の初期値は 3.3 からの退行）。F31〜F33・F35〜F37 は直した（#377・#388 の形を含む）。F34（#382）・F38 と #389 の性能は残り |
 | R6 | 後回しにした機能 | 4.0 に入れる、または 4.0 の後 | **済み（2026-09-27）**: コンポーネントの mount の `#ro` と「エクスポートした getter」を入れた（§8） |
 
 ## 2. エンジン（state-next）の残り
@@ -119,13 +119,26 @@
 | F30 | `scopes/component.ts`（`mountKey` の setter） | #367 の周辺。ホストの行が消えた後のコンポーネントの書き込みは、消えた行の元のオブジェクトに黙って入る（別の行には着地しない）。3.3.x の修正後は `The host row of <x> was removed.` で拒む | 低 | 済み |
 | F19 | `dom/view.ts`（`applyTo`） | 表示のプロパティ（`textContent`・`innerText`）に数値をそのまま書いていた。ブラウザは文字列にするが、happy-dom（`@wcstack/server` のサーバの DOM）は 0 を空にし、`innerText` に数値を書くと投げる。サーバ描画で `textContent: count` の 0 が消える（F18 を直すときに見つけた） | 中 | 済み |
 
+**Issue #372〜#391 の確認で見つかったもの（2026-09-28）**
+
+| # | 場所 | 内容 | 重さ | 状態 |
+|---|---|---|---|---|
+| F31 | `dom/plan.ts`（`compilePlan`）・`dom/mount.ts`・`dom/view.ts`（`buildBlock`） | `<select>` の `value:`／`selectedIndex:` を、中の `for:` が `<option>` を作る前に当てるので、初期表示が先頭の選択肢になる（ルートの `<select>`、行の中の `<select>`、#376 の行ごとの `<select>`）。後から値を書けば合う。選択肢を後から読み込む形（空から 3 つ）も同じ。束縛は文書の順に当てるため。3.3 は `<select>` の `value`／`selectedIndex` を選択肢の後に当てる（`packages/state/src/apply/applyChange.ts:146-152`）ので、3.3 からの退行 | 高 | 済み |
+| F32 | `dom/view.ts`（`rowAt`） | F1 のマークアップ側。行の中の束縛の、別のリストのワイルドカードのパス（`for: a` の行の `{{ b.*.y }}`）が、今の行（`a` の行）に解ける。表示は `a` の行の値になり、双方向の書き戻し（`value: b.*.y`）は `a` のデータを壊す。#376 の形で、内側の行から `g.*.n` を読むと tags の行の値になる。F1 はプロキシの `resolve` だけを直していた | 中 | 済み |
+| F33 | `ssr/ssr.ts`（`prepare`・`hydrated`）・`scopes/component.ts`（`start`） | SSR で、ページの直下の Light DOM の `bind-component` の子の `if:` の枝・`for:` の行を、ハイドレーションで引き取らない。子のエンジンがマウントするのは、ページが引き取りを終えた後なので、サーバの描いたノードを捨てて描き直す。子のクラスがハイドレーションの後に定義されると（autoloader）、定義までの間、子の `{{ x }}` が生の `{{x}}` で見え、枝と行が消える。#372・#374 の確認で見つけた | 中 | 済み |
+| F34 | `engine.ts`（`resolve`）・`pattern.ts`（`parsePath`）・`list.ts` | #382 の形 2。数値キーのオブジェクト（`sales = {2024: {total: 10}}`）の `sales.2024.total` を、スクリプトで読むと undefined になり、`$eq` は常に偽になる。書き込みと双方向の書き戻しは `no row for "sales.*.total"` で投げる。数値の段を、入れ物の型によらず `*` と添字にするため。マークアップの読みは F17 の accessor で 10 を描く。3.3 もスクリプト側では投げるので退行ではない。ただ 4.0 は黙って undefined や偽になるので、見つけにくい（`usersById.42.name` のような ID の辞書にも当たる） | 中 | |
+| F35 | `engine.ts`（`postUpdateFn`・`enqueueBound`） | 行の値をその場で書き換え、一覧のパスで知らせる形（`s.todos[0].done = true; s.$postUpdate("todos")`）が、`for: todos` の行の束縛に届かない。届くのはルートの束縛と行の getter だけで、配列が同じなので `sync` も働かない。#377 の確認で見つけた | 中 | 済み |
+| F36 | `engine.ts`（`postUpdateFn`） | #377 の `$postUpdate` の形。同じ配列を持つ 2 つの一覧（元の配列を返す getter の `for: shown` と、`for: todos`）で、`$postUpdate("todos.0.done")`・`$postUpdate("todos.1")` が片方の一覧にしか届かない。F24 の `mirror` を `write()` からしか呼んでいない | 低〜中 | 済み |
+| F37 | `features/diagnostics.ts`（`missing` の `named`） | #388。数値添字のパスの `for:`（`for: groups.0.items`）の行で、行 getter（`{{ .double }}`、`groups.*.items.*.double`）が空で描かれ、警告も出ない。診断の後付けは、F17 の読み替えで getter に当たったとして警告を止める。一方 core は F25 で accessor を付けないので、getter に届かない。打ち間違い（`.nmae`）は警告する | 低〜中 | 済み |
+| F38 | `dom/view.ts`（`attachEvent`）・`engine.ts`（`delegate`） | 束縛を持つ要素を別の root（別の shadow root）へ移すと、その要素のバブリングするイベント（`onclick:`）のハンドラが呼ばれない。委譲のリスナーが元の root にあるため。双方向の入力は要素に直接付くので動く。shadow の中のダイアログを body へ移す形も同じはず（未確認）。#387 の確認で見つけた | 低 | |
+
 **使われていないコード**（削れば core が少し軽くなる。今はテストが直接呼んでいる）: `dom/wc.ts` の `isCustomTag`、`list.ts` の `StateRow.parent`／`depth`、`pattern.ts` の `PatternTable.has`、`scopes/volume.ts` の `fail()` の第 3 引数。届かない防御の分岐（`engine.ts:478`・`:810`・`:1103`、`dom/view.ts:166`・`:629`・`:652`・`:687`・`:830-832`、`dom/plan.ts:37`、`dom/wc.ts:63`、`strategy/dirty.ts:23`、`scopes/component.ts:366`・`:373`・`:481`、`devtools.ts:107`・`:120`、`temporal/stream.ts:204`・`:221`、`temporal/watch.ts:194`、`recursion.ts:186`、`features/diagnostics.ts:80`）。
 
 ## 3. 周辺パッケージと道具
 
 | 対象 | やること |
 |---|---|
-| vscode-wcs・lint（`wcs-validate`） | 新しいパーサと manifest に切り替える。#355（数値添字のパスの束縛への誤った `wcs/template-syntax`・`wcs/binding-path-missing`）: 4.0 は添字の数によらず追従する（F17）ので、添字が 2 つ以上のパスも警告しない（3.3.x の修正は添字 1 つだけ）。manifest の `filters` から `substr` が消えるので、`substr` は `wcs/filter-unknown` になる。`slice(start, start + length)` への書き換えを案内するか（クイックフィックスを含む）を決める。`wcs/name-alias`（今は「3.x の間は動き、4.0 で外れる」）を「4.0 で外れた」エラーにする。state-next の新しいコード（`feature-not-installed`・`declaration-alias`・recursion 系など）を共有の語彙にそろえる。`#番号` のメッセージを解読させるかを決める。テストを流し直し、版を上げる |
+| vscode-wcs・lint（`wcs-validate`） | 新しいパーサと manifest に切り替える。#355（数値添字のパスの束縛への誤った `wcs/template-syntax`・`wcs/binding-path-missing`）: 4.0 は添字の数によらず追従する（F17）ので、添字が 2 つ以上のパスも警告しない（3.3.x の修正は添字 1 つだけ）。#383: 4.0 は `*` と数値の添字を混ぜたパス（行 getter の中の `this["groups.*.sel.0.id"]`・`$eq`）を読めるので、lint・拡張もそう扱う。`[wcs/wildcard-rank]` #1403（行の中で別のリストの `*` を束ねる、F32）は、lint が `*` の数しか見ないので検出しない（4.0 の実行時の文面は lint へ誘導しない）。検出するなら、囲む `for:` の一覧と段ごとに比べる。manifest の `filters` から `substr` が消えるので、`substr` は `wcs/filter-unknown` になる。`slice(start, start + length)` への書き換えを案内するか（クイックフィックスを含む）を決める。`wcs/name-alias`（今は「3.x の間は動き、4.0 で外れる」）を「4.0 で外れた」エラーにする。state-next の新しいコード（`feature-not-installed`・`declaration-alias`・recursion 系など）を共有の語彙にそろえる。`#番号` のメッセージを解読させるかを決める。テストを流し直し、版を上げる |
 | `@wcstack/typescript` | 前置きの型から旧名（`$trackDependency`・`$untrackDependency` など）を外す。`WcsThis` などの型の出所を R2 に合わせる |
 | `@wcstack/testing` | `file:../state` で state を使う。state-next でテストを流す（`createStateAsync` は足し済み） |
 | `@wcstack/server` | 依存 `^3.3.0` を `^4` へ。SSR の出力は 3.3 と互換が無い（版の検査でクライアント描画に倒れる）ので、移行ガイドに書く。server 自身の変更は不要（後付け 5 で確認） |
@@ -531,3 +544,72 @@ R6 の残り。3.3 の README「Exported getters」と同じ約束にした: ツ
 - 実ブラウザ（作り直した `auto.min.js`、各 5 回）: Firefox は修正前が 5 回とも非断定、修正後は 5 回とも断定。Chromium と WebKit は前後とも断定。
 - router の `dist/` はリリースのときに作り直すので、コミット済みの dist はまだ修正前（e2e の router はこの dist で動く）。CHANGELOG もリリースのときに書く。
 - docs/csp（ja / en）§9 の「router は待たない」を「3.3.0 より後の版は待つ」に直した。
+
+### Issue #372〜#391 の確認（2026-09-28）
+
+2026-09-27 に登録された 20 件を state-next で確かめた。4 つに分けて並行で流した（SSR 4 件、リストと行 6 件、添字のパスと性能 5 件、コンポーネントなど 5 件）。確かめた時点では、合わせて 183 件で、通過 153・失敗 30 だった（起きる形は、期待を書いた失敗するテスト）。すべて happy-dom で流し、Chromium の e2e では流していない。再現のテストは、直した後に `__tests__/issues2-ssr.test.ts`・`issues2-lists.test.ts`・`issues2-paths.test.ts`・`issues2-components.test.ts` に正式に置いた（下の「F31〜F33・F35〜F37 の修正」）。4.0 に無いフィルタ名は読み替えた（`uc` → `upper`、`inc(1)` → `add(1)`）。
+
+| Issue | state-next | 備考 |
+|---|---|---|
+| #372 SSR 後、Light DOM の `bind-component` の子の `{{ }}`・`for:` が追従しない | 起きない | 別名・同名の配線、ホストと子の同名の一覧、子の私有リスト、ページの行の中の子とも期待どおり。目印は子の語彙の式のまま（`<!--wcs-t:x-->`）で、範囲はノードで引き当てる。周辺に F33 |
+| #373 SSR 後、`{{ }}` が出力フィルタを失う | 起きない | 目印に式全体（`name\|upper`）が残り、行はテンプレートの計画から束ねる。ハイドレーションの間のちらつきも無い |
+| #374 inline の SSR で、枝・行の中の Light DOM の子の `if:` がスナップショットに載らない | 対象外（orchestrated は起きない） | orchestrated は枝・行・`elseif:`・孫とも期待どおり（F23）。inline のスナップショットは 4.0 に無い。古いレンダラと組むと `<wcs-ssr>` が出ず、ページ全体が警告なしに固まる（下の「F 番号を付けないもの」） |
+| #375 SSR 後、getter を条件にした `if:`／`elseif:` が追従しない | 起きない | 連鎖を組むときに条件を読む（引き取りでも同じ）ので、getter の依存ができる。行 getter・`$1` を読む getter・枝の中の連鎖も期待どおり。router の `get q()` は、query を状態のキーにした形で代用した |
+| #376 行の中でトップレベルのリストを回す `for:` で、外側の一覧が消える | 起きない | CSR・SSR とも描け、`tags` の書き込みと外側の行の追加・削除に追従する（1 本のルートの一覧を、行ごとの `ForView` が `extra` として描く）。内側の行は親の行を持たない（下の「F 番号を付けないもの」）。`<select>` の形は初期値が F31、内側で外側のパス（`g.*.n`）を読むと F32 |
+| #377 配列をそのまま返す getter の行から書くと、元のリスト・`$getAll`・`for:` が古い | 一部起きる | getter のパスへの書き込み、要素の差し替え、getter の連鎖、同じ配列を持つ普通のキーは、F24 の `mirror` で届く。`$postUpdate` の 2 形は起きる（F36）。写しを返す形（`filter = active`）の checkbox は F26 の系統（下の「F 番号を付けないもの」） |
+| #378 退避したキーの添字のパスが、元のキーを絞り込んだ後に別の要素を指す | 起きない | 一覧はパターンごとに行を持ち、配列の台帳が無いので、`backup` は自分の配列から行を作る |
+| #379 共有した内側の配列の要素の差し替えが、片方の外側の行にしか出ない | 起きない | 外側の行ごとの子の一覧が同じ配列を持つので `shared` になり、`mirror` で両方に届く。外側の一覧を写しても失敗しない |
+| #380 入れ替えで `$watch("items.*")` の `prev` がずれる | 起きない | 位置のモデル（行は値と一緒に動かない）。`prev` は、書いた位置の行に最初の書き込みで記録される（#361 と同じ扱い） |
+| #381 1 バッチで一覧を 2 回置き換えると、`$eqIndex` の行 getter が古い | 起きない | `$eqIndex` の付け替えは、`sync` のたびに一覧ごとの前の行と新しい行で行う。2 回・3 回の置き換えの総当たり（575 通り）で、表示と読みが正しい |
+| #382 スクリプトで読む数値添字のパス（`$watch` のキー、数値キーのオブジェクト、空の一覧） | 一部起きる | `$watch("items.0.v")` と空の一覧は期待どおり。数値キーのオブジェクト（`sales.2024.total`）は F34 |
+| #383 行 getter の中の、`*` と数値の添字が混ざったパス（`groups.*.sel.0.id`） | 起きない | 読み・`$eq`・`$resolve` とも期待どおり。葉・要素・一覧の書き込み、外側の並べ替え、行の追加に追従する。`*` は文脈の行、数字は添字として段ごとに解く（lint は §3） |
+| #384 行の部品の shadow の中の、`for:` の外の `state: .` | 起きない（形を指す診断になる） | パースの段階で `[wcs/wildcard-rank] "." is relative: it needs an enclosing "for" template`（#1402）になる。`users.*..` などの書いていないパスは出ない。ただし文面に要素名が無く、走査が止まる（下の「F 番号を付けないもの」） |
+| #385 完全マウントの行の部品で、リストの置き換えが行数の 2 乗以上に遅い | 起きない | 私有キーは部品の state（要素ごと）にあり、ホストの木にマーカーのパスを作らない。2 回目・3 回目の置き換えは 250〜2,000 行でほぼ比例し（2,000 行で 120〜240ms）、繰り返しても遅くならない。部分マウントと同じ程度 |
+| #386 要素の書き込みで行を差し替えると、完全マウントの部品の私有キーが初期値に戻る | 起きない | 位置の行と要素がそのまま残り、私有キーは要素ごとにある（部分マウントと同じ）。行を消すと、`$disconnectedCallback` が控えた値（`tid`）を読める |
+| #387 別の root へ移した要素の束縛が止まる（root の作成順で変わる） | 起きない | 4.0 は root ごとの MutationObserver を持たず、束縛は束ねたエンジンに属する。どちらの向きでも止まらず、元の root の state に追従する（行き先の state には追従しない）。定義待ちも取り消されない。周辺に F38 |
+| #388 `for: groups.0.items` の行の、解決しないパスに診断が出ない | 一部起きる | 打ち間違い（`.nmae`）は警告する。行 getter（`.double`）は空で描かれ、警告も出ない（F37） |
+| #389 要素の書き込みの費用が、行の下で読んだパスの種類の数に比例する | 一部起きる | 辺の登録は無い。ただ要素の書き込みが `forSubtree` で下の全パターンを辿るので、読んだ綴りの種類の数（K）に比例する（K = 10,000 で 0.1〜0.2ms、100,000 で 1.5〜2.8ms。happy-dom）。普通の形での上乗せは無い（×1.01〜1.14） |
+| #390 外側の行の位置が変わる更新が、入れ子の行を辿る | 起きない | 位置の変化は、`$k` を読む getter（`indexWatchers`）にだけ届く。外側 3,000 行の先頭への追加・先頭の削除は、入れ子の行の数に比例しない（0.1〜0.4ms、happy-dom） |
+| #391 自己再帰の部品の木（P2-5）のテストが重い | 対象外（3.3 のテストの Issue） | state-next に同じテストは無い。同じ木（深さ 5、364 個）で、エンジンの時間はマウント 107〜194ms、葉の 100 回の更新 7〜19ms（同じ機械で 3.3 は 319ms・123ms）。3.3 のテストの約 9 秒は、ほとんどが `setTimeout(0)` の待ち。同じ待ち方にすると、state-next も 4〜5.7 秒・1〜2.7 秒になる。再評価は祖先の経路だけ（各段 1 回） |
+
+**F 番号を付けないもの**（どれも判断か文書が要る）
+- **F26 の範囲**: 同じオブジェクトが別の配列の 2 つの一覧に載る形でも、F26 と同じことが起きる。TodoMVC の絞り込みの定番の形（写しを返す `get shown()` の `for: shown` の checkbox）で、`left`（`$getAll("todos.*.done")`）と `for: todos` の行が古いまま残り、入れた行が active の一覧から抜けない。#378 の、`backup` の行への葉の書き込みも同じ。Issue も #365 の系統として扱っていて、3.3 でも起きる。F26 を既知の制限と決めたとき（1 つの一覧の 2 つの行）より範囲が広いので、決定の見直しか、README での回避の案内が要る。
+- **#376 の内側の行**: ルートの一覧の行なので、親の行を持たない。`$1` は内側の添字、`$2` は誤りを出さずに空、イベントに渡る添字も内側のものだけになる。外側の行が要るときは行 getter（`get "g.*.tagsHere"() { return this.tags; }`）で子の一覧にする。移行ガイドに書くかを決める。
+- **#374 の inline**: 古いレンダラ（`data-wcs-server=""`）と組むと、4.0 は `<wcs-ssr>` を出さない。クライアントの `hydrate()` は黙って戻り、ページ全体がサーバの出力のまま固まる。案は、ssr の後付けで警告すること（サーバ側で `orchestrated` でないとき、クライアント側でサーバの目印があるのに `<wcs-ssr>` が無いとき）。core には響かない。
+- **#384 の診断**: #1402 の文面に、要素名と束縛の文字列が無い。また 4.0 は束縛の構文の誤りが 1 つあると、root や部品の走査を止める（未知のフィルタや `:` の抜けでも同じ）。誤りより前の束縛だけが生き、その部品の `$connectedCallback` も走らない。ページの直下なら root の初期化が失敗する（3.3 は警告と、その束縛の失敗だけで済んでいた）。
+- **#389 の性能**: 直すなら、パターンに「下に依存・ルートの束縛・`$eq` の購読がある」印を持たせ、`forSubtree` が印の無い部分木を飛ばす（core +50〜80B の見込み）。
+- ルートの getter で、行の文脈なしにワイルドカードのパス（`this["items.*.v"]`）を読むと、黙って undefined になる。3.3 は投げる。
+- `parsePath` のキャッシュ（`pattern.ts`）はモジュール単位で、上限が無い。動的なキーを大量に読むと増え続ける。パターン表も、エンジンが生きている間は減らない。
+- getter の `$watch` は、値が同じでも呼ばれる（`[1, 1]`）。
+- happy-dom の `Range.deleteContents()` は、ノードの数の 2 乗の時間が掛かる（部品の無い素の行でも、1,000 行を空にするのに 1.7 秒、2,000 行で 8.4 秒）。エンジンの不具合ではないが、happy-dom の上のテストと `@wcstack/server` の描画が遅くなる。
+
+### F31〜F33・F35〜F37 の修正（2026-09-28）
+
+Issue #372〜#391 の確認で見つけた F31〜F38 のうち、6 つを直した。F34（数値キーのオブジェクト）と F38（別の root へ移した要素の委譲されたイベント）は、直し方に判断が要るので残した（下の「残したもの」）。
+
+- **F31**（`dom/view.ts`）: `<select>` の `value`／`selectedIndex` に当てた値を、要素に控える（`applyTo`、symbol のキー）。中の `for:`／`if:` が選択肢を描いた後（`ForView.update`・`IfView.update`）に、`<select>`（`<optgroup>` の中ならその親）へもう一度当てる（`reselect`）。束縛を当てる順は変えていない。選択肢を後から読み込む形・並べ替え・選択肢と値を同じバッチで書く形も合う。選んだ選択肢が消えると、ブラウザが先頭を選ぶ代わりに、何も選ばない（`selectedIndex` -1）。静的な選択肢に無い値を当てたときと同じで、state の値は変わらない。利用者が選んだ値は書き戻しで控え直すので、選択肢が変わっても保たれる。
+  - Chromium で確かめた（`e2e/tests/state-select-options.spec.ts`・`e2e/fixtures/state-select-options.html`・`state-select-shared-options.html`）。最初の描画の形は 3.3 でも通る。選択肢が後から変わる形と #376 の行ごとの `<select>` は `STATE=next` のときだけ走る（3.3 はその形を描かない、または値を当て直さない）。
+- **F32**（`dom/plan.ts` の `boundPattern`）: 束縛のパスの `*` の段ごとに、その段の囲む `for:` の一覧と同じかを、計画を作る時点で確かめる。別の一覧なら `[wcs/wildcard-rank]` #1403（`"b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".`）で投げる。段が足りなければ #1401（囲む段の数も示す: `the scope provides 1.`）。束縛（テキスト・プロパティ・spread）、`for:` の右辺、`if:` の条件がすべてここを通る。
+  - ページの直下の #1401 の検査（`dom/mount.ts`）は、ここに移ったので外した。#1401・#1402 と同じく走査を止める（4.0 の「誤りは大きく失敗させる」）。3.3 は束縛ごとに `ListIndex not found` で失敗させていた。
+  - #1403 の文面には lint への誘導を付けない（lint は `*` の数しか見ない、§3）。直し方の案内（`$resolve(path, indexes)` で getter の中で読む）を付ける。
+- **F33**（`ssr/ssr.ts`・`scopes/component.ts`・`hooks.ts`）: ハイドレーションで、ページの側は Light DOM の `bind-component` の子の部分木に触らない（`prepare` と `holdRegions` が `componentScope` を飛ばし、その子を `deferred` に記録する）。子のエンジンがホストをマウントする直前（`start`）に、新しいフックの `adoptScope` がその部分木だけを戻して領域を預け、子のマウントの間だけ引き取りを有効にする。マウントの後は、そのマウントで預けた分の残りだけを捨てる（ほかのエンジンの領域は残す）。子のクラスがハイドレーションの後に定義されても、定義までサーバの描いた値・枝・行がそのまま見え、定義の後はサーバのノードを引き取る。ページの行の中の子、子の中の孫も同じ。core に増えたのはフックの欄だけ。
+- **F35・F36**（`engine.ts`）: `$postUpdate(path)` は、`path` の下の一覧を書き込みと同じく同期し、それらの行（同じ配列を持つほかの一覧の行も）の束縛を積む（`touched`）。要素のパス（`$postUpdate("todos.1")`）は、行の値を配列の今の要素に取り直す。同じ配列を持つ一覧には `mirror` を通して届く（`direct` は false）。配列のその場の `push` は、これまでどおり検出しない（README の「新しい配列を代入する」）。`write()` の要素の分岐と葉の分岐は、一覧の同期と `mirror` を 1 か所にまとめた（動きは同じ）。
+- **F37**（`features/diagnostics.ts`）: 診断の後付けの数値添字の読み替えを、core が accessor を付ける形（数値の添字の後ろに `*` が無い）だけに限った（`wildcardForm`）。`for: groups.0.items` の行の `{{ .double }}` は `binding-path-missing` で警告し、同じ形の行 getter（`groups.*.items.*.double`）が宣言されていれば、その getter がどの入れ子の `for:` の行に効くかを添える（`The getter "groups.*.items.*.double" is declared for the rows of for: groups → for: .items; a list named by an index has rows of its own.`）。core は変えていない。
+- テスト: Issue の再現を `__tests__/issues2-ssr.test.ts`・`issues2-lists.test.ts`・`issues2-paths.test.ts`・`issues2-components.test.ts` に正式に置いた。まだ直していない形（F34 の 6 件、F38 の 1 件、F26 の系統の 3 件、#374 の inline の 1 件）は `it.fails` で残した。計測（#385・#389・#390・#391 の時間）は単体テストから外し、`bench/issues2.perf.test.ts` に置いた（`npx vitest run --config bench/vitest.perf.config.ts`、約 1 分）。単体テストには正しさ（再評価が祖先の経路だけ、入れ子の `$1` の追従など）だけを残した。
+
+**残したもの**（判断が要る）
+- **F34**: (1) `resolve` で、数値の段の入れ物が配列でなければ、その段を素のキーとして読み書きする（core +100〜200B の見込み。accessor の getter／setter がプロキシを通ると循環するので、データを直接読み書きする経路が要る）、(2) スクリプト側は形を指す誤りにし、`this.sales[2024].total` の書き方を案内する（+40〜80B の見込み）。
+- **F38**: (1) ブロックの外（ページの直下）の要素のイベントだけ、要素に直接付ける（`event.currentTarget` が要素になり、ブロックの中の要素（ルート）と食い違う）、(2) 委譲のリスナーで `composedPath()` を見る。
+- **F26 の範囲**（§8 の「Issue #372〜#391 の確認」の「F 番号を付けないもの」）: TodoMVC の絞り込み（写しを返す getter の行の checkbox）に当たる。決定の見直しか、README での回避の案内。
+- **#389**: `forSubtree` が印の無い部分木を飛ばす案（core +50〜80B の見込み）。
+- core の上限まで残り 287B（下の表）。F34 の (1) を入れると、ほぼ使い切る。[root-attributes.ja.md](./root-attributes.ja.md) §10 の計測は、この修正の前の core（19,494B、残り 506B）が基準なので、推奨の「属性＋`$config`／`$features`」（+314B）をそのまま入れると上限を 27B 超える。
+
+| | 前（`5afa3976`） | 後 |
+|---|---|---|
+| テスト | 1,530 件（通過 1,527・意図した失敗 2・スキップ 1） | 1,715 件（通過 1,701・意図した失敗 13・スキップ 1） |
+| カバレッジ | — | 99.65・98.86・100・99.93 |
+| core（`core.min.js` gzip） | 19,494B | 19,713B（+219B。上限 20,000B まで 287B） |
+| 全部入りの `auto`（gzip） | 40,963B | 41,581B（+618B。diagnostics +259B、ssr +134B、scopes +29B を含む） |
+| e2e（`STATE=next`） | 135/135 | 138/138（`<select>` を足した） |
+
+- 性能: 修正の前（`5afa3976` の src から同じ方法で作った `auto.min.js`）と後を、同じセッションで交互に 4 回ずつ（`scripts/audit-state-tech-warmth.mjs`、create1k・create10k・append1k・clear10k）。4 回の中央値の中央値は、warm 1,000 行作成 7.45 → 7.45ms、cold 1,000 行作成 11.8 → 11.95ms、warm 10,000 行作成 71.0 → 72.8ms、cold 10,000 行作成 80.2 → 81.7ms、append 1,000（warm）10.85 → 10.4ms、clear 10,000（warm）63.15 → 61.7ms で、差はばらつきの範囲（1 回ごとの幅は ±10ms を超える）。

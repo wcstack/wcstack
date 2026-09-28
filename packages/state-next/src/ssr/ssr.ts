@@ -204,6 +204,14 @@ interface Region {
 const held = new Map<Node, Region>();
 const hydrating = new WeakSet<Engine>();
 
+/**
+ * The Light DOM components of a page being hydrated, by host: their content is bound by their own
+ * engine, which starts later (once its host is wired, or its class defined), so it keeps the
+ * server's nodes until then and is prepared when that engine binds it (adoptScope).
+ */
+const deferred = new WeakMap<Node, { ssr: Element; adopt: boolean }>();
+const scoped = (el: Element): boolean => hooks.componentScope !== null && hooks.componentScope(el);
+
 /** Detaches the region starting at `start` (its markers included); its rows. */
 function detach(start: Comment): Region {
   const m = /^wcs-\[(?::(\d+))?$/.exec(start.data)!;
@@ -237,7 +245,7 @@ function holdRegions(nodes: Iterable<Node>, keep: boolean): void {
       const key = n.previousSibling;
       const r = detach(n as Comment);
       if (keep && key !== null) held.set(key, r);
-    } else if (n.nodeType === 1 && !raw(n as Element)) {
+    } else if (n.nodeType === 1 && !raw(n as Element) && !scoped(n as Element)) {
       holdRegions((n as Element).childNodes, keep);
     }
   }
@@ -272,12 +280,33 @@ function prepare(container: Node, ssr: Element, adopt: boolean): void {
           }
         }
       } else if (n.nodeType === 1 && !raw(n as Element)) {
-        walk(n);
+        if (scoped(n as Element)) deferred.set(n, { ssr, adopt });
+        else walk(n);
       }
     }
   };
   walk(container);
   holdRegions(container.childNodes, adopt);
+}
+
+/**
+ * The `adoptScope` hook: a Light DOM component's engine binds its host. Its content is prepared
+ * now, and its blocks take the server's nodes while its walk runs (a walk adopts synchronously).
+ * What it did not adopt is dropped after the walk; the regions of other engines are left alone.
+ */
+export function adoptScope(host: Node): (() => void) | null {
+  const d = deferred.get(host);
+  if (d === undefined) return null;
+  deferred.delete(host);
+  const before = new Set(held.keys());
+  prepare(host, d.ssr, d.adopt);
+  if (!d.adopt) return null;
+  const prev = hooks.adopt;
+  hooks.adopt = adopt;
+  return () => {
+    hooks.adopt = prev;
+    for (const k of Array.from(held.keys())) if (!before.has(k)) held.delete(k);
+  };
 }
 
 const majorMinor = (v: string): string => v.split(".").slice(0, 2).join(".");

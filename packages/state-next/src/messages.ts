@@ -113,6 +113,7 @@ export const enum M {
   // [wcs/wildcard-rank]
   WildcardNoLoop = 1401,
   WildcardRelative = 1402,
+  WildcardOtherList = 1403,
   // [wcs/spread-no-bindable]
   SpreadNoBindable = 1501,
   // [wcs/declaration-alias]

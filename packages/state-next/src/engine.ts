@@ -160,8 +160,17 @@ export class Engine implements ReconcileHooks {
   private readonly resolveFn = (...args: unknown[]) => this.resolveApi(args);
   private readonly postUpdateFn = (path: string) => {
     this.resolve(unbound(path), this.ctx);
-    if (hooks.written !== null) hooks.written(this, this.rp!, this.rr, undefined, undefined, false);
-    this.changed(this.rp!, this.rr);
+    const p = this.rp!;
+    const row = this.rr;
+    // changed in place: an element is what its array holds now
+    if (p.last === WILDCARD && row !== null) {
+      row.item = row.list.arr![row.index];
+      this.strategy.resetRow(row);
+    }
+    this.touched(p, row);
+    if (row !== null && row.list.shared) this.mirror(row, p, undefined, row.item, false);
+    if (hooks.written !== null) hooks.written(this, p, row, undefined, undefined, false);
+    this.changed(p, row);
   };
 
   constructor(target: Record<string, any>, strategy: Strategy) {
@@ -628,17 +637,15 @@ export class Engine implements ReconcileHooks {
       (r.list.arr as unknown[])[r.index] = value;
       r.item = value;
       this.strategy.resetRow(r);
-      if (r.children !== null) for (const l of r.children.values()) this.sync(l);
-      if (r.list.shared) this.mirror(r, p, old, value);
     } else {
       const parent = (p.tail.length === 1
         ? (p.depth === 0 ? this.target : row!.item)
         : this.readUntracked(p.parent!, row)) as any;
       if (parent == null) raise(M.ParentNotObject, [p.path, parent]);
       parent[p.last] = value;
-      this.syncListsUnder(p, row);
-      if (row !== null && row.list.shared) this.mirror(row, p, old, value);
     }
+    this.syncListsUnder(p, row);
+    if (row !== null && row.list.shared) this.mirror(row, p, old, value);
     if (p.eqIndexWatchers !== null) this.rekeyEqIndex(p, old, value);
     if (p.depth === 0) this.rekeyEqUnder(p, old, value);
     if (hooks.written !== null) hooks.written(this, p, row, old, value, true);
@@ -661,27 +668,52 @@ export class Engine implements ReconcileHooks {
     if (same.length > 1) for (const x of same) x.shared = true;
   }
 
+  /** The lists over `l`'s array now (`l` among them), none of a removed row. */
+  private sharing(l: StateList): StateList[] {
+    return (this.listsByArray.get(l.arr!) ?? []).filter((m) => m.arr === l.arr && (m.parentRow === null || m.parentRow.alive));
+  }
+
   /**
    * A write into row `row` of a list whose array another list has too (`for: shown` over a getter
    * returning `todos`, `for: groups.0.items`): the other list's row at the same position shows it.
    */
-  private mirror(row: StateRow, p: Pattern, old: unknown, value: unknown): void {
+  private mirror(row: StateRow, p: Pattern, old: unknown, value: unknown, direct = true): void {
     const l = row.list;
     const suffix = p.path.slice(l.pattern.path.length + 2);
-    for (const m of this.listsByArray.get(l.arr!) ?? []) {
-      if (m === l || m.arr !== l.arr || (m.parentRow !== null && !m.parentRow.alive)) continue;
+    for (const m of this.sharing(l)) {
+      if (m === l) continue;
       const r = m.rows[row.index];
       if (r === undefined) continue;
       const mp = this.pattern(`${m.pattern.path}.*${suffix}`);
       if (suffix === "") {
         r.item = value;
         this.strategy.resetRow(r);
-        if (r.children !== null) for (const c of r.children.values()) this.sync(c);
-      } else {
-        this.syncListsUnder(mp, r);
       }
-      if (hooks.written !== null) hooks.written(this, mp, r, old, value, true);
+      if (direct) this.syncListsUnder(mp, r);
+      else this.touched(mp, r);
+      if (hooks.written !== null) hooks.written(this, mp, r, old, value, direct);
       this.changed(mp, r);
+    }
+  }
+
+  /**
+   * `$postUpdate`: what is at `p` changed in place. Its lists are synced as a write syncs them, and
+   * their rows (and the rows of the lists over the same arrays) show it again: a write reaches a
+   * row's bindings through the row it replaced, an in-place change through none.
+   */
+  private touched(p: Pattern, row: StateRow | null): void {
+    const ls = row === null ? this.rootLists : row.children;
+    if (ls === null) return;
+    for (const l of ls.values()) {
+      if (!l.pattern.isUnder(p)) continue;
+      this.sync(l);
+      for (const m of l.shared ? this.sharing(l) : [l]) {
+        const e = this.pattern(`${m.pattern.path}.*`);
+        for (const r of m.rows) {
+          this.enqueueBound(e, r);
+          this.touched(e, r);
+        }
+      }
     }
   }
 

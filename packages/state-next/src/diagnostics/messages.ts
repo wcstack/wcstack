@@ -107,8 +107,9 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.EventTokenUndeclared]: (name) => `eventToken "${name}" is not declared in $eventTokens.`,
   [M.CommandTokenUndeclared]: (name) => `"$command.${name}" is not declared in $commandTokens.`,
 
-  [M.WildcardNoLoop]: (p, depth) => `"${p}" needs ${depth} enclosing loop level(s); the scope provides 0.`,
+  [M.WildcardNoLoop]: (p, depth, n = 0) => `"${p}" needs ${depth} enclosing loop level(s); the scope provides ${n}.`,
   [M.WildcardRelative]: (p) => `"${p}" is relative: it needs an enclosing "for" template`,
+  [M.WildcardOtherList]: (p, over, loop) => `"${p}" ranges over the rows of "${over}", but the enclosing "for" template at that level renders "${loop}".`,
 
   [M.SpreadNoBindable]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).`,
 

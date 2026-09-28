@@ -644,7 +644,10 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   } else if (hooks.element !== null) {
     hooks.element(C, "mounting");
   }
+  // a Light DOM component in a server-rendered page takes the server's nodes of its content (F33)
+  const adopted = hooks.adoptScope === null ? null : hooks.adoptScope(root);
   mount(C, root as ShadowRoot | Element);
+  if (adopted !== null) adopted();
   drainBinds();
   if (independent) C.watchRendered();
   Object.defineProperty(host, h.prop, { configurable: true, enumerable: true, get: () => C.proxy });
