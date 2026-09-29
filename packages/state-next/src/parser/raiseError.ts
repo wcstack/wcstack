@@ -6,5 +6,5 @@ import { hooks } from "../hooks";
  * `subject`, how to fix it, the lint pointer).
  */
 export function raiseError(message: string, subject?: string, candidates?: Iterable<string>): never {
-  throw new Error(`[@wcstack/state] ${message}${hooks.explain === null ? "" : hooks.explain(message, subject, candidates)}`);
+  throw new Error(`[@wcstack/state] ${message}${hooks.explain?.(message, subject, candidates) ?? ""}`);
 }

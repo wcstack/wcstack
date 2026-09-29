@@ -8,7 +8,7 @@
 import type { Engine } from "../engine";
 import type { Pattern } from "../pattern";
 import type { StateRow } from "../list";
-import { addHook, type Feature } from "../hooks";
+import { chain, first, handled, hooks, type Feature } from "../hooks";
 import { raiseError } from "../parser/raiseError";
 
 type KeyOf = (row: Record<string, unknown>) => unknown;
@@ -84,7 +84,7 @@ function beforeWrite(engine: Engine, p: Pattern, row: StateRow | null, value: un
     }
   }
   if (changes.length > 0) {
-    const list = p.depth === 0 ? engine.rootList(p) : engine.childList(row!, p);
+    const list = engine.childList(p.depth === 0 ? null : row, p);
     for (const [i, f, v] of changes) engine.write(engine.pattern(`${p.path}.*.${f}`), list.rows[i], v);
   }
   return true;
@@ -93,8 +93,8 @@ function beforeWrite(engine: Engine, p: Pattern, row: StateRow | null, value: un
 export const listKeys: Feature = {
   name: "list-keys",
   install(): void {
-    addHook("declare", declare);
-    addHook("beforeWrite", beforeWrite);
+    hooks.declare = chain(hooks.declare, declare);
+    hooks.beforeWrite = first(handled, hooks.beforeWrite, beforeWrite);
   },
 };
 export default listKeys;

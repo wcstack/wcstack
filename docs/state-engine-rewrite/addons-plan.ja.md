@@ -219,7 +219,7 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 | `element` | `$connectedCallback` の後・切断・再接続・再セットの後 |
 | `dollar` | `Engine.dollar` の最後 |
 
-- 1 つの受け口を複数の後付けが使うので、`addHook` でつなぐ（`beforeWrite` は最初に処理したもの、`dollar` は最初に答えたものが勝つ）。
+- 1 つの受け口を複数の後付けが使うので、`addHook` でつなぐ（`beforeWrite` は最初に処理したもの、`dollar` は最初に答えたものが勝つ）。2026-09-29 に、受け口への代入と `chain`／`first` に替えた（`hooks.written = chain(hooks.written, fn)`。受け口の名前を短縮するため、v4-remaining §8）。
 - core は受け口の分だけ 19.23 → 19.49KB gzip。
 
 **`$watch`**（`src/temporal/watch.ts`）
@@ -261,7 +261,7 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 - 短縮したバンドルと分割版のテストが、短縮の誤りを 3 つ捕まえた（直した）。
   - `$stream` の定義の `initial`: 利用者のオブジェクトなので、引用符付きのキーで読む。
   - ストリームの `reader.read()`: `read` を短縮の一覧から外した。
-  - 受け口の名前: `addHook` が文字列で引くので、短縮の一覧から外した。
+  - 受け口の名前: `addHook` が文字列で引くので、短縮の一覧から外した（2026-09-29 に `chain`／`first` に替えて、`element` と `detail` のほかは短縮した）。
 - テスト 680 件が通過。
 
 **サイズ（gzip）**

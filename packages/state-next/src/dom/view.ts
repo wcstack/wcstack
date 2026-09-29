@@ -1,7 +1,7 @@
 import { rowAt, type Engine } from "../engine";
 import type { Pattern } from "../pattern";
 import type { StateList, StateRow } from "../list";
-import type { FilterFn } from "./filters";
+import { pipe, type FilterFn } from "./filters";
 import { isHtmlSink, trustHtml } from "../trustedTypes";
 import { autoNaming, nameBlock } from "./naming";
 import { raise, M } from "../messages";
@@ -123,8 +123,6 @@ export interface RowPlan {
  * and HTML are properties, `eventToken.` is an event.
  */
 const TYPE_NAMES = ["text", "prop", "prop", "prop", "prop", "event", "for", "if", "prop", "radio", "checkbox", "prop", "prop", "event", "spread"];
-/** Display surfaces: undefined and null both mean "no value" (B8). Other properties are element inputs. */
-const DISPLAY_PROPS = new Set(["textContent", "innerText", "innerHTML"]);
 
 /** A binding's first value when #init= leaves the element as it is: its first apply only records the value. */
 const HOLD: unique symbol = Symbol() as never;
@@ -141,21 +139,21 @@ export function initialOf(engine: Engine, s: Spec, row: StateRow | null): unknow
 
 export class Binding {
   queued = false;
-  readonly engine: Engine;
-  readonly kind: number;
-  readonly node: Node;
-  readonly name: string;
-  readonly pattern: Pattern;
+  declare readonly engine: Engine;
+  declare readonly kind: number;
+  declare readonly node: Node;
+  declare readonly name: string;
+  declare readonly pattern: Pattern;
   /** Row at pattern.depth (null for a root-level pattern). */
-  readonly row: StateRow | null;
+  declare readonly row: StateRow | null;
   /** The block that renders this binding (null at the root). */
-  readonly owner: Block | null;
-  readonly filters: FilterFn[] | null;
+  declare readonly owner: Block | null;
+  declare readonly filters: FilterFn[] | null;
   /** Input filters for the value the element writes back. */
   inFilters: FilterFn[] | null = null;
   /** The `if` chain an `if`/`elseif` condition drives. */
-  readonly chain: IfView | null;
-  value: unknown;
+  declare readonly chain: IfView | null;
+  declare value: unknown;
   /** Custom element input: the attribute its value is mirrored to. */
   attribute: string | null = null;
   /** Set while state writes the element (an event it fires synchronously is our own echo). */
@@ -176,7 +174,7 @@ export class Binding {
   }
 
   typeName(): string {
-    return TYPE_NAMES[this.kind] ?? "prop";
+    return TYPE_NAMES[this.kind];
   }
 
   apply(): void {
@@ -184,9 +182,7 @@ export class Binding {
       this.chain.update();
       return;
     }
-    let v = this.engine.read(this.pattern, this.row);
-    const fs = this.filters;
-    if (fs !== null) for (let i = 0; i < fs.length; i++) v = fs[i](v);
+    const v = pipe(this.filters, this.engine.read(this.pattern, this.row));
     if (v === this.value) return;
     if (this.value === HOLD) {
       this.value = v;
@@ -217,33 +213,28 @@ export class Binding {
 
   /** The element's own value (radio / checkbox), through the input filters. */
   elementValue(): unknown {
-    let v: unknown = (this.node as any).value;
-    const fs = this.inFilters;
-    if (fs !== null) for (let i = 0; i < fs.length; i++) v = fs[i](v);
-    return v;
+    return pipe(this.inFilters, (this.node as any).value);
   }
 
   /** Writes the element's value back to state (two-way, radio, checkbox). */
   writeBack(): void {
     const n = this.node as any;
     const engine = this.engine;
+    let v: unknown;
     if (this.kind === K_RADIO) {
       if (!n.checked) return;
-      engine.write(this.pattern, this.row, this.elementValue(), false, true);
-      return;
-    }
-    if (this.kind === K_CHECKBOX) {
-      const v = this.elementValue();
+      v = this.elementValue();
+    } else if (this.kind === K_CHECKBOX) {
+      const e = this.elementValue();
       const cur = engine.readUntracked(this.pattern, this.row);
       const arr = Array.isArray(cur) ? cur : [];
-      const has = arr.includes(v);
-      if (n.checked && !has) engine.write(this.pattern, this.row, [...arr, v], false, true);
-      else if (!n.checked && has) engine.write(this.pattern, this.row, arr.filter((x) => x !== v), false, true);
-      return;
+      const has = arr.includes(e);
+      // checked and listed, or neither: nothing to write
+      if (n.checked ? has : !has) return;
+      v = has ? arr.filter((x) => x !== e) : [...arr, e];
+    } else {
+      v = pipe(this.inFilters, n[this.name]);
     }
-    let v: unknown = n[this.name];
-    const fs = this.inFilters;
-    if (fs !== null) for (let i = 0; i < fs.length; i++) v = fs[i](v);
     engine.write(this.pattern, this.row, v, false, true);
   }
 }
@@ -258,7 +249,8 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
       n.data = v == null ? "" : String(v);
       return;
     case K_PROP:
-      if (DISPLAY_PROPS.has(name)) {
+      // display surfaces: undefined and null both mean "no value" (B8); other properties are element inputs
+      if (name === "textContent" || name === "innerText" || name === "innerHTML") {
         // a string, as a browser's setter makes it (happy-dom — the server's DOM — writes 0 as "", and
         // throws on a number for innerText)
         const s = v == null ? "" : String(v);
@@ -314,10 +306,10 @@ function reselect(parent: Node): void {
 export class Block {
   alive = true;
   /** The row this block renders in (its own row for a RowView; the enclosing row, or null, for an if branch). */
-  readonly row: StateRow | null;
-  readonly first: ChildNode;
+  declare readonly row: StateRow | null;
+  declare readonly first: ChildNode;
   /** All top-level nodes when the plan renders more than one. */
-  readonly nodes: ChildNode[] | null;
+  declare readonly nodes: ChildNode[] | null;
   /** The Binding objects built with this block, unregistered when it goes (allocated on first use). */
   bindings: Binding[] | null = null;
   children: (ForView | IfView)[] | null = null;
@@ -325,7 +317,7 @@ export class Block {
   cleanups: (() => void)[] | null = null;
   /** The view anchored at the block's first top-level node: it renders before the block's first node. */
   lead: ForView | IfView | null = null;
-  readonly plan: RowPlan;
+  declare readonly plan: RowPlan;
 
   constructor(row: StateRow | null, first: ChildNode, nodes: ChildNode[] | null, plan: RowPlan) {
     this.row = row;
@@ -345,12 +337,8 @@ export class Block {
     for (const s of plan.events) {
       if (s.name !== type) continue;
       const path = plan.nodePaths[s.node];
-      let n: Node = this.nodes === null ? this.first : this.nodes[path[0]];
-      for (let j = 1; j < path.length; j++) {
-        n = n.firstChild!;
-        for (let k = path[j]; k > 0; k--) n = n.nextSibling!;
-      }
-      if (n.contains(target)) (hits ?? (hits = [])).push({ node: n, spec: s });
+      const n = nodeAt(this.nodes === null ? this.first : this.nodes[path[0]], path, 1);
+      if (n.contains(target)) (hits ??= []).push({ node: n, spec: s });
     }
     if (hits === null) return false;
     hits.sort((a, b) => (a.node.contains(b.node) ? 1 : -1));
@@ -376,10 +364,6 @@ export class Block {
   }
 
   insertBefore(parent: Node, ref: Node | null): void {
-    if (this.nodes === null) {
-      parent.insertBefore(this.first, ref);
-      return;
-    }
     const last = this.last;
     for (let n = this.head(); ; ) {
       const next = n.nextSibling!;
@@ -414,7 +398,7 @@ export class RowView extends Block {
   /** Position in the view's previous order (set during an update). */
   pos = 0;
   /** [node0, value0, node1, value1, …] by slot; the value is the last one applied. */
-  readonly slots: unknown[] | null;
+  declare readonly slots: unknown[] | null;
   /** The Binding objects the slots became (sparse, allocated on first use). */
   bound: (Binding | undefined)[] | null = null;
 
@@ -425,7 +409,7 @@ export class RowView extends Block {
 
   /** The Binding object of slot k (built on first use; from then on it holds the value). */
   slotBinding(engine: Engine, k: number): Binding {
-    const bound = this.bound ?? (this.bound = new Array(this.plan.lazy.length));
+    const bound = (this.bound ??= new Array(this.plan.lazy.length));
     let b = bound[k];
     if (b === undefined) {
       const s = this.plan.lazy[k];
@@ -454,9 +438,9 @@ export class RowView extends Block {
  * empty: it was created before the read, so a later write of the path fills it.
  */
 export function listFor(engine: Engine, p: Pattern, row: StateRow | null, anchor: Node): StateList {
-  const parent = p.depth === 0 ? null : rowAt(row, p.depth)!;
+  const parent = rowAt(row, p.depth);
   try {
-    return parent === null ? engine.rootList(p) : engine.childList(parent, p);
+    return engine.childList(parent, p);
   } catch (error) {
     engine.fail(error, new Binding(engine, K_FOR, anchor, "for", p, null, null, null, undefined));
     return parent === null ? engine.rootLists.get(p)! : parent.children!.get(p)!;
@@ -470,7 +454,7 @@ export function listFor(engine: Engine, p: Pattern, row: StateRow | null, anchor
 export function adopt(engine: Engine, b: Binding, register: boolean): void {
   if (register) engine.register(b);
   const owner = b.owner;
-  if (owner !== null) (owner.bindings ?? (owner.bindings = [])).push(b);
+  if (owner !== null) (owner.bindings ??= []).push(b);
 }
 
 /** The block built by the last buildBlock call (taken right after it; saves an allocation per row). */
@@ -495,36 +479,19 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
   const paths = plan.nodePaths;
   const build = plan.build;
   const nodes = plan.scratch;
-  let top: Node;
   let first: ChildNode;
   let all: ChildNode[] | null = null;
-  const adopted = hooks.adopt === null ? null : hooks.adopt(plan, fv === null ? at! : fv.anchor, fv !== null);
-  if (plan.single) {
-    // clone the block's element itself; paths start at the fragment, so skip their first step
-    top = adopted ?? plan.root!.cloneNode(true);
-    for (let b = 0; b < build.length; b++) {
-      const i = build[b];
-      let n: Node = top;
-      const path = paths[i];
-      for (let j = 1; j < path.length; j++) {
-        n = n.firstChild!;
-        for (let k = path[j]; k > 0; k--) n = n.nextSibling!;
-      }
-      nodes[i] = n;
-    }
+  const adopted = hooks.adopt?.(plan, fv === null ? at! : fv.anchor, fv !== null);
+  const single = plan.single;
+  // a single plan clones the block's element itself; paths start at the fragment, so skip their first step
+  const top = adopted ?? (single ? plan.root! : plan.fragment).cloneNode(true);
+  for (let b = 0; b < build.length; b++) {
+    const i = build[b];
+    nodes[i] = nodeAt(top, paths[i], single ? 1 : 0);
+  }
+  if (single) {
     first = top as ChildNode;
   } else {
-    top = adopted ?? plan.fragment.cloneNode(true);
-    for (let b = 0; b < build.length; b++) {
-      const i = build[b];
-      let n: Node = top;
-      const path = paths[i];
-      for (let j = 0; j < path.length; j++) {
-        n = n.firstChild!;
-        for (let k = path[j]; k > 0; k--) n = n.nextSibling!;
-      }
-      nodes[i] = n;
-    }
     all = Array.from(top.childNodes) as ChildNode[];
     first = all[0];
   }
@@ -544,7 +511,6 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
     if (all === null) (first as any)[key] = block;
     else for (const n of all) if (n.nodeType === 1) (n as any)[key] = block;
   }
-  const rowDepth = row === null ? 0 : row.list.depth;
   const specs = plan.specs;
   const rendered = engine.rendered;
   // the scratch array is ours until a nested view builds a block of another plan: take
@@ -571,21 +537,11 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
         // already reached by a change during this build: it is a Binding now, applied here (and
         // so no longer queued: the drain skips it)
         b.queued = false;
-        if (rendered === null) {
-          try {
-            b.apply();
-          } catch (error) {
-            engine.fail(error, b);
-          }
-        } else {
-          engine.applyBinding(b);
-        }
+        engine.applyBinding(b);
         continue;
       }
       try {
-        let v = engine.read(s.pattern!, row);
-        const fs = s.filters;
-        if (fs !== null) for (let j = 0; j < fs.length; j++) v = fs[j](v);
+        const v = pipe(s.filters, engine.read(s.pattern!, row));
         if (v !== s.initial) {
           applyTo(s.kind, node, s.name, v);
           slots[2 * k + 1] = v;
@@ -597,59 +553,61 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
       continue;
     }
     switch (s.kind) {
-      case K_EVENT:
-        // a delegated one is found through the block (Block.dispatch)
-        if (!s.delegated) attachEvent(engine, node, s, row);
-        break;
       case K_FOR: {
         const view = new ForView(engine, s.plan!, listFor(engine, s.pattern!, row, node), node as Comment);
-        (block.children ?? (block.children = [])).push(view);
+        (block.children ??= []).push(view);
         if (node === first) block.lead = view;
         view.update();
         break;
       }
       case K_IF: {
         const iv = attachChain(engine, s.branches!.map((br) => ({ plan: br.plan, pattern: br.pattern, filters: br.filters, anchor: own[br.node] })), row, block);
-        (block.children ?? (block.children = [])).push(iv);
+        (block.children ??= []).push(iv);
         if (node === first) block.lead = iv;
         break;
       }
-      case K_COMMAND:
-        whenDefined(node as Element, block, (bd) => attachCommand(engine, s, node as Element, block, bd));
-        break;
-      case K_EVTTOKEN:
-        whenDefined(node as Element, block, (bd) => attachEventToken(engine, s, node as Element, row, bd));
-        break;
-      case K_SPREAD: {
-        const brow = s.pattern!.depth === 0 ? null : rowAt(row, s.pattern!.depth);
-        whenDefined(node as Element, block, (bd) => attachSpread(engine, s, node as Element, brow, block, bd));
-        break;
-      }
-      default: {
-        const p = s.pattern!;
-        const brow = p.depth === 0 ? null : p.depth === rowDepth ? row : rowAt(row, p.depth);
-        if (s.custom && s.kind === K_PROP) {
-          whenDefined(node as Element, block, (bd) => attachCustomOrPlain(engine, s, node as Element, brow, block, bd));
-          break;
-        }
-        const b = new Binding(engine, s.kind, node, s.name, p, brow, block, s.filters, initialOf(engine, s, brow));
-        b.inFilters = s.inFilters;
-        adopt(engine, b, true);
-        if (rendered === null) {
-          try {
-            b.apply();
-          } catch (error) {
-            engine.fail(error, b);
-          }
-        } else {
-          engine.applyBinding(b);
-        }
-        if (s.twoWay !== null) node.addEventListener(s.twoWay, () => b.writeBack());
-      }
+      default:
+        // (a delegated event is found through the block: nothing to attach per row)
+        if (s.kind !== K_EVENT || !s.delegated) attachSpec(engine, s, node, row, block);
     }
   }
   lastBlock = block;
   return top;
+}
+
+/**
+ * Binds a spec that builds no view to `node`, in `block` (null: a root-level element, whose
+ * delegated handlers are stored on the element itself).
+ */
+export function attachSpec(engine: Engine, s: Spec, node: Node, row: StateRow | null, block: Block | null): void {
+  const el = node as Element;
+  switch (s.kind) {
+    case K_EVENT:
+      // in a block, a delegated one is found through the block (Block.dispatch)
+      if (block === null || !s.delegated) attachEvent(engine, node, s, row);
+      return;
+    case K_COMMAND:
+      whenDefined(el, block, (bd) => attachCommand(engine, s, el, block, bd));
+      return;
+    case K_EVTTOKEN:
+      whenDefined(el, block, (bd) => attachEventToken(engine, s, el, row, bd));
+      return;
+  }
+  const p = s.pattern!;
+  const brow = rowAt(row, p.depth);
+  if (s.kind === K_SPREAD) {
+    whenDefined(el, block, (bd) => attachSpread(engine, s, el, brow, block, bd));
+    return;
+  }
+  if (s.custom && s.kind === K_PROP) {
+    whenDefined(el, block, (bd) => attachCustomOrPlain(engine, s, el, brow, block, bd));
+    return;
+  }
+  const b = new Binding(engine, s.kind, node, s.name, p, brow, block, s.filters, initialOf(engine, s, brow));
+  b.inFilters = s.inFilters;
+  adopt(engine, b, true);
+  engine.applyBinding(b);
+  if (s.twoWay !== null) node.addEventListener(s.twoWay, () => b.writeBack());
 }
 
 /** A property binding on a custom element: wc-bindable members get direction and authority, others are plain. */
@@ -660,7 +618,7 @@ export function attachCustomOrPlain(engine: Engine, s: Spec, el: Element, row: S
   }
   const b = new Binding(engine, K_PROP, el, s.name, s.pattern!, row, owner, s.filters, initialOf(engine, s, row));
   b.inFilters = s.inFilters;
-  if (hooks.hostBinding !== null && hooks.hostBinding(b, s.ro)) return;
+  if (hooks.hostBinding?.(b, s.ro)) return;
   adopt(engine, b, true);
   engine.applyBinding(b);
 }
@@ -682,13 +640,13 @@ export function attachChain(engine: Engine, branches: Branch[], row: StateRow | 
   for (const br of branches) {
     if (br.pattern === null) continue;
     const p = br.pattern;
-    const b = new Binding(engine, K_IF, br.anchor, "if", p, p.depth === 0 ? null : rowAt(row, p.depth), owner, null, undefined, iv);
+    const b = new Binding(engine, K_IF, br.anchor, "if", p, rowAt(row, p.depth), owner, null, undefined, iv);
     adopt(engine, b, true);
     if (owner === null) iv.rootBindings.push(b);
     first ??= b;
   }
-  if (first !== null) engine.applyBinding(first);
-  else iv.update();
+  // the first branch is the `if:`: it always has a condition
+  engine.applyBinding(first!);
   return iv;
 }
 
@@ -698,9 +656,9 @@ export class IfView {
   index = -1;
   /** Condition bindings of a root-level chain (a nested chain's belong to its block). */
   readonly rootBindings: Binding[] = [];
-  readonly engine: Engine;
-  readonly branches: Branch[];
-  readonly row: StateRow | null;
+  declare readonly engine: Engine;
+  declare readonly branches: Branch[];
+  declare readonly row: StateRow | null;
 
   constructor(engine: Engine, branches: Branch[], row: StateRow | null) {
     this.engine = engine;
@@ -715,19 +673,12 @@ export class IfView {
 
   /** Renders the first branch whose condition holds (JavaScript truthiness), or nothing. */
   update(): void {
-    if (!this.alive) return;
     const engine = this.engine;
     let index = -1;
     for (let i = 0; i < this.branches.length; i++) {
       const br = this.branches[i];
-      if (br.pattern === null) {
-        index = i;
-        break;
-      }
-      let v = engine.read(br.pattern, br.pattern.depth === 0 ? null : rowAt(this.row, br.pattern.depth));
-      const fs = br.filters;
-      if (fs !== null) for (let k = 0; k < fs.length; k++) v = fs[k](v);
-      if (v) {
+      // `else:` (no condition) always holds
+      if (br.pattern === null || pipe(br.filters, engine.read(br.pattern, rowAt(this.row, br.pattern.depth)))) {
         index = i;
         break;
       }
@@ -760,15 +711,15 @@ export class IfView {
 export class ForView {
   alive = true;
   rowViews: RowView[] = [];
-  readonly engine: Engine;
-  readonly plan: RowPlan;
-  readonly list: StateList;
-  readonly anchor: Comment;
+  declare readonly engine: Engine;
+  declare readonly plan: RowPlan;
+  declare readonly list: StateList;
+  declare readonly anchor: Comment;
   /**
    * The row views by row when another for view already renders this list (the list's first
    * view keeps them on row.view instead).
    */
-  readonly map: Map<StateRow, RowView> | null;
+  declare readonly map: Map<StateRow, RowView> | null;
 
   constructor(engine: Engine, plan: RowPlan, list: StateList, anchor: Comment) {
     this.engine = engine;
@@ -779,7 +730,7 @@ export class ForView {
       list.view = this;
       this.map = null;
     } else {
-      (list.extra ?? (list.extra = [])).push(this);
+      (list.extra ??= []).push(this);
       this.map = new Map();
     }
   }
@@ -819,18 +770,6 @@ export class ForView {
       this.rowViews = [];
       return;
     }
-    if (o === 0) {
-      const frag = document.createDocumentFragment();
-      const views: RowView[] = new Array(n);
-      for (let i = 0; i < n; i++) {
-        frag.appendChild(buildBlock(engine, this.plan, rows[i], this));
-        views[i] = takeBlock() as RowView;
-      }
-      parent.insertBefore(frag, anchor);
-      this.rowViews = views;
-      reselect(parent);
-      return;
-    }
 
     const views: RowView[] = new Array(n);
     let s = 0;
@@ -859,7 +798,8 @@ export class ForView {
       const m = ne - s + 1;
       const src = new Int32Array(m);
       let anyKept = false;
-      for (let i = 0; i < m; i++) {
+      // no rows before: none kept (the first render builds every row)
+      if (o > 0) for (let i = 0; i < m; i++) {
         const rv = this.viewOf(rows[s + i]);
         if (rv !== null && rv.alive) {
           src[i] = rv.pos;
@@ -910,6 +850,15 @@ export class ForView {
     for (const rv of this.rowViews) rv.dispose(this.engine);
     this.map?.clear();
   }
+}
+
+/** The node `path` leads to from `n`, following its steps from `j` on. */
+function nodeAt(n: Node, path: number[], j: number): Node {
+  for (; j < path.length; j++) {
+    n = n.firstChild!;
+    for (let k = path[j]; k > 0; k--) n = n.nextSibling!;
+  }
+  return n;
 }
 
 function removeContiguous(first: ChildNode, last: ChildNode): void {

@@ -1,9 +1,7 @@
 import type { Engine } from "../engine";
-import { config } from "../config";
 import { hooks } from "../hooks";
-import { bindAttr, boundPattern, chainAnchorText, compilePlan, directive, elementSpecs, notAfterIf, readChain, splitMustache, textSpec } from "./plan";
-import { attachChain, attachCustomOrPlain, attachEvent, Binding, ForView, initialOf, K_COMMAND, K_EVENT, K_EVTTOKEN, K_PROP, K_SPREAD, listFor, type Spec } from "./view";
-import { attachCommand, attachEventToken, attachSpread, whenDefined } from "./wc";
+import { elementSpecs, textSpec, walkBindings } from "./plan";
+import { attachChain, attachSpec, ForView, listFor } from "./view";
 
 /** The engine mounted on each root (document, shadow root): the binder's lookup. */
 export const engines = new WeakMap<Node, Engine>();
@@ -31,86 +29,20 @@ export function mountSubtree(engine: Engine, subtree: Element): void {
 }
 
 function walk(engine: Engine, children: ChildNode[]): void {
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i];
-    if (child.nodeType === 1) {
-      const el = child as Element;
-      const tag = el.localName;
-      if (tag === "script" || tag === "style") continue;
-      // markup written inside a <wcs-state> is part of the page (its own attributes are not bindings)
-      if (tag === config.tagNames.state) {
-        walk(engine, Array.from(el.childNodes));
-        continue;
-      }
-      // a template with no structural directive binds like any element (its content stays inert)
-      const d = tag === "template" ? directive(el) : null;
-      if (d !== null) {
-        if (d.bindingType === "for") {
-          const p = boundPattern(engine, d.statePathName, null);
-          const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);
-          const anchor = anchorFor(engine, el, config.commentForPrefix);
-          new ForView(engine, plan, listFor(engine, p, null, anchor), anchor).update();
-        } else if (d.bindingType === "if") {
-          const { parts, end } = readChain(engine, children, i, null);
-          const branches = parts.map((part, k) => {
-            const plan = compilePlan(engine, part.el, null, false);
-            return { plan, pattern: part.pattern, filters: part.filters, anchor: anchorFor(engine, part.el, chainAnchorText(k, part)) };
-          });
-          attachChain(engine, branches, null, null);
-          i = end;
-        } else {
-          notAfterIf(d.bindingType);
-        }
-        continue;
-      }
-      const text = el.getAttribute(bindAttr());
-      if (text !== null && !bound.has(el)) {
-        bound.add(el);
-        for (const spec of elementSpecs(engine, text, null, el, 0)) attach(engine, spec, el);
-      }
-      if (hooks.componentScope === null || !hooks.componentScope(el)) walk(engine, Array.from(el.childNodes));
-    } else if (child.nodeType === 3 && config.enableMustache && (child as Text).data.includes("{{")) {
-      for (const { node, expr } of splitMustache(child as Text)) {
-        if (hooks.ssrMark !== null) hooks.ssrMark(engine, node, expr);
-        attach(engine, textSpec(engine, expr, null, 0), node);
-      }
-    }
-  }
-}
-
-/** A structural template leaves the page: its anchor takes its place. */
-function anchorFor(engine: Engine, el: Element, type: string): Comment {
-  const anchor = document.createComment(type);
-  el.replaceWith(anchor);
-  if (hooks.ssrMark !== null) hooks.ssrMark(engine, anchor, el);
-  return anchor;
-}
-
-function attach(engine: Engine, spec: Spec, node: Node): void {
-  if (spec.kind === K_EVENT) {
-    attachEvent(engine, node, spec, null);
-    return;
-  }
-  const el = node as Element;
-  switch (spec.kind) {
-    case K_COMMAND:
-      whenDefined(el, null, (bd) => attachCommand(engine, spec, el, null, bd));
-      return;
-    case K_EVTTOKEN:
-      whenDefined(el, null, (bd) => attachEventToken(engine, spec, el, null, bd));
-      return;
-    case K_SPREAD:
-      whenDefined(el, null, (bd) => attachSpread(engine, spec, el, null, null, bd));
-      return;
-  }
-  const p = spec.pattern!;
-  if (spec.custom && spec.kind === K_PROP) {
-    whenDefined(el, null, (bd) => attachCustomOrPlain(engine, spec, el, null, null, bd));
-    return;
-  }
-  const b = new Binding(engine, spec.kind, node, spec.name, p, null, null, spec.filters, initialOf(engine, spec, null));
-  b.inFilters = spec.inFilters;
-  engine.register(b);
-  engine.applyBinding(b);
-  if (spec.twoWay !== null) node.addEventListener(spec.twoWay, () => b.writeBack());
+  walkBindings(engine, children, null, true,
+    (anchor, p, plan) => {
+      new ForView(engine, plan, listFor(engine, p, null, anchor), anchor).update();
+    },
+    (branches) => {
+      attachChain(engine, branches, null, null);
+    },
+    (el, text) => {
+      if (bound.has(el)) return;
+      bound.add(el);
+      for (const spec of elementSpecs(engine, text, null, el, 0)) attachSpec(engine, spec, el, null, null);
+    },
+    (node, expr) => {
+      hooks.ssrMark?.(engine, node, expr);
+      attachSpec(engine, textSpec(engine, expr, null, 0), node, null, null);
+    });
 }

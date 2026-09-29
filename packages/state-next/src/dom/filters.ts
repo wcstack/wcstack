@@ -4,7 +4,11 @@ import { installCoreFilters } from "../filters/core";
 
 export type { FilterFn };
 
-let coreInstalled = false;
+/** `v` through the filters `fs` (none when null). */
+export function pipe(fs: FilterFn[] | null, v: unknown): unknown {
+  if (fs !== null) for (let i = 0; i < fs.length; i++) v = fs[i](v);
+  return v;
+}
 
 /**
  * Resolves a binding's parsed filters to functions (at plan time, once per binding spec).
@@ -13,9 +17,6 @@ let coreInstalled = false;
  */
 export function buildFilters(parsed: readonly ParsedFilter[]): FilterFn[] | null {
   if (parsed.length === 0) return null;
-  if (!coreInstalled) {
-    installCoreFilters();
-    coreInstalled = true;
-  }
+  installCoreFilters(); // idempotent
   return parsed.map((f) => resolveFilter(f.filterName, f.args, f.literals));
 }

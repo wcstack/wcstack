@@ -164,7 +164,7 @@ function walk(engine: Engine, spec: Spec, visit: (k: number, row: StateRow) => v
   const arr = engine.read(rootP, null);
   if (!enter(arr, spec.list, 0)) return;
   ancestors.add(arr);
-  down(engine.rootList(rootP).rows, 0);
+  down(engine.childList(null, rootP).rows, 0);
 }
 
 function wrap(engine: Engine): void {

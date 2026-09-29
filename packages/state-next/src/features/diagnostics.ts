@@ -6,7 +6,7 @@
  * nearest name (did-you-mean, the same rule as lint), how to fix it, and a pointer to lint where
  * lint really detects the case. The full `auto` bundle installs it.
  */
-import { addHook, hooks, type Feature } from "../hooks";
+import { chain, hooks, type Feature } from "../hooks";
 import type { Engine } from "../engine";
 import { parsePath, type Pattern } from "../pattern";
 import { raiseError } from "../parser/raiseError";
@@ -232,8 +232,8 @@ export const diagnostics: Feature = {
     hooks.render = render;
     hooks.declared = declared;
     hooks.detail = detail;
-    addHook("failed", failed);
-    addHook("declare", (engine, target) => {
+    hooks.failed = chain(hooks.failed, failed);
+    hooks.declare = chain(hooks.declare, (engine, target) => {
       checkRecursion(target);
       recheck(engine);
     });

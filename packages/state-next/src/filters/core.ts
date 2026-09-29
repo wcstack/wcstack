@@ -62,37 +62,17 @@ const ne = (options: string[], literals?: readonly unknown[]): FilterFn => {
  */
 const not = (): FilterFn => (value: unknown): boolean => !value;
 
-const lt = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'lt');
-  return (value: unknown): boolean => {
-    if (typeof value !== 'number') {valueMustBeNumber('lt');}
-    return value < opt;
-  };
-};
-
-const le = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'le');
-  return (value: unknown): boolean => {
-    if (typeof value !== 'number') {valueMustBeNumber('le');}
-    return value <= opt;
-  };
-};
-
-const gt = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'gt');
-  return (value: unknown): boolean => {
-    if (typeof value !== 'number') {valueMustBeNumber('gt');}
-    return value > opt;
-  };
-};
-
-const ge = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'ge');
-  return (value: unknown): boolean => {
-    if (typeof value !== 'number') {valueMustBeNumber('ge');}
-    return value >= opt;
-  };
-};
+/** A comparison or arithmetic filter: one numeric option, a number value (`lt` … `mod`). */
+const numeric = (name: string, op: (value: number, opt: number) => unknown): FilterDefinition => ({
+  factory: (options: string[]): FilterFn => {
+    const opt = requiredNumberOption(options, 0, name);
+    return (value: unknown): unknown => {
+      if (typeof value !== 'number') {valueMustBeNumber(name);}
+      return op(value, opt);
+    };
+  },
+  arity: [1, 1],
+});
 
 /** JavaScript's truthiness, the same as `boolean` (B10). */
 const truthy = (): FilterFn => (value: unknown): boolean => !!value;
@@ -101,46 +81,6 @@ const truthy = (): FilterFn => (value: unknown): boolean => !!value;
 const falsy = (): FilterFn => (value: unknown): boolean => !value;
 
 const boolean = (): FilterFn => (value: unknown): boolean => Boolean(value);
-
-const add = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'add');
-  return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('add');}
-    return value + opt;
-  };
-};
-
-const sub = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'sub');
-  return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('sub');}
-    return value - opt;
-  };
-};
-
-const mul = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'mul');
-  return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('mul');}
-    return value * opt;
-  };
-};
-
-const div = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'div');
-  return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('div');}
-    return value / opt;
-  };
-};
-
-const mod = (options: string[]): FilterFn => {
-  const opt = requiredNumberOption(options, 0, 'mod');
-  return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('mod');}
-    return value % opt;
-  };
-};
 
 const abs = (): FilterFn => (value: unknown): number => {
   if (typeof value !== 'number') {valueMustBeNumber('abs');}
@@ -198,15 +138,15 @@ export const coreFilters: Readonly<Record<string, FilterDefinition>> = {
   eq: { factory: eq, arity: [1, 1] },
   ne: { factory: ne, arity: [1, 1] },
   not: { factory: not, arity: [0, 0] },
-  lt: { factory: lt, arity: [1, 1] },
-  le: { factory: le, arity: [1, 1] },
-  gt: { factory: gt, arity: [1, 1] },
-  ge: { factory: ge, arity: [1, 1] },
-  add: { factory: add, arity: [1, 1] },
-  sub: { factory: sub, arity: [1, 1] },
-  mul: { factory: mul, arity: [1, 1] },
-  div: { factory: div, arity: [1, 1] },
-  mod: { factory: mod, arity: [1, 1] },
+  lt: numeric('lt', (value, opt) => value < opt),
+  le: numeric('le', (value, opt) => value <= opt),
+  gt: numeric('gt', (value, opt) => value > opt),
+  ge: numeric('ge', (value, opt) => value >= opt),
+  add: numeric('add', (value, opt) => value + opt),
+  sub: numeric('sub', (value, opt) => value - opt),
+  mul: numeric('mul', (value, opt) => value * opt),
+  div: numeric('div', (value, opt) => value / opt),
+  mod: numeric('mod', (value, opt) => value % opt),
   abs: { factory: abs, arity: [0, 0] },
   clamp: { factory: clamp, arity: [2, 2] },
   int: { factory: int, arity: [0, 0] },

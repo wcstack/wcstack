@@ -13,7 +13,7 @@
 **新エンジンの現状**（詳しくは [addons-plan.ja.md](./addons-plan.ja.md) §6）
 - コアと後付け 8 つ（formats・diagnostics・temporal・list-keys・scopes・recursion・ssr・devtools）を実装済み。
 - テスト 1,302 件（通過 1,301・スキップ 1）。リポジトリの e2e は 131/131（2026-09-27）。
-- core 18,534B gzip（上限 20,000B）、全部入りの `auto` 38,635B（3.3.0 は 80.9KB）。2026-09-27 から terser を後段に通す（§8）。
+- core 18,129B gzip（上限 20,000B、2026-09-29 のサイズの削減の後）、全部入りの `auto` 39,891B（3.3.0 は 80.9KB）。2026-09-27 から terser を後段に通す（§8）。
 - 公式 js-framework-benchmark の CPU 加重幾何平均は 1.08〜1.11（signals 1.21〜1.25、3.3.0 1.51）。
 
 ## 1. 決めてほしいこと
@@ -70,7 +70,7 @@
 
 - ~~#2（リスト要素 getter の隣接項目問題）を state-next で確かめる（R5）~~ 済み（§8）。
 - エラー番号の一覧を、利用者が引ける場所に置く（README か docs）。番号と文面の正本は `src/diagnostics/messages.ts`。
-- 分割エントリと設定を、root の `<wcs-state>` の属性や状態の `$config`・`$features` で指定する案（2026-09-28 検討、決定ではない）: [root-attributes.ja.md](./root-attributes.ja.md)。3 案を試作で計測し（§10）、属性＋`$config`／`$features` を推奨した（§11。core +314 B、上限まで残り 192 B）。論点は同文書 §6 と §12。
+- 分割エントリと設定を、root の `<wcs-state>` の属性や状態の `$config`・`$features` で指定する案（2026-09-28 検討、決定ではない）: [root-attributes.ja.md](./root-attributes.ja.md)。3 案を試作で計測し（§10）、属性＋`$config`／`$features` を推奨した（§11。core +314 B、上限まで残り 192 B。この残りは削減の前の 19,494 B が基準。2026-09-29 の削減の後は 18,129 B なので、入れても 1,557 B 残る）。論点は同文書 §6 と §12。
 - `config.debug` がどこからも読まれていない（3.x では `console.debug` の出力に使っていた）。外すか実装し直すかを決める（[root-attributes.ja.md](./root-attributes.ja.md) §8）。
 - ~~CSP の診断（docs/csp §9）が state-next に無い~~ 済み（§8 の 2026-09-28）。
 - `<wcs-state>` の中の `<script type="module">` はブラウザも評価するので、CSP が無いページではトップレベルのコードが 2 回走る（3.x も同じ）。README と docs/csp に書いた。挙動を変えるかは決めていない（§8 の 2026-09-28）。
@@ -613,3 +613,39 @@ Issue #372〜#391 の確認で見つけた F31〜F38 のうち、6 つを直し�
 | e2e（`STATE=next`） | 135/135 | 138/138（`<select>` を足した） |
 
 - 性能: 修正の前（`5afa3976` の src から同じ方法で作った `auto.min.js`）と後を、同じセッションで交互に 4 回ずつ（`scripts/audit-state-tech-warmth.mjs`、create1k・create10k・append1k・clear10k）。4 回の中央値の中央値は、warm 1,000 行作成 7.45 → 7.45ms、cold 1,000 行作成 11.8 → 11.95ms、warm 10,000 行作成 71.0 → 72.8ms、cold 10,000 行作成 80.2 → 81.7ms、append 1,000（warm）10.85 → 10.4ms、clear 10,000（warm）63.15 → 61.7ms で、差はばらつきの範囲（1 回ごとの幅は ±10ms を超える）。
+
+### サイズの削減（2026-09-29）
+
+core のサイズを減らす方策を試作して測り（候補ごとに core の gzip の差）、意味を変えない書き換えを採った。機能の置き場所を変える案（View Transition の自動命名を後付けへ −262B、formats の案内 −194B、コードの名前の表を診断の後付けへ −191B、CSP の診断 −85B、旧名の検査 −81B。どれも上限の見積もり）は、判断が要るので入れていない。
+
+**効かないと分かったこと**: terser の設定の調整（−7B 以下）、よく出る名前（`index`・`getter` など）の短縮（各 0〜5B）、使われていないコードの削除（−6B）、重複を関数にまとめるだけの書き換え（gzip が繰り返しをほぼ只で縮めるので、減らないか増える）。減るのは、1 回しか出ない中身そのものを消したとき。
+
+**入れたもの**
+- engine 系（`engine.ts`・`pattern.ts`・`list.ts`・`strategy/dirty.ts`、約 30 件）: `$` 関数を名前をキーにした表（`api`）にする、`rootList`／`childList` を 1 つにする、`resolve` と `resolveApi` の行を降りるループを `rowOf` にまとめる、書くだけで読まれない欄（`Pattern.id`・`PatternTable.nextId`／`root`）を消す、`force` を `mark` にまとめる、setter・`invoke`・`callHook` の「文脈を差し替えて呼ぶ」を `callAt` にまとめる、など。`reconcile` の「全部挿入」「全部削除」の速い道を消す案（−38B）は入れていない（行の追加・削除の熱い経路のため）。
+- DOM の層（`dom/view.ts`・`plan.ts`・`mount.ts`、15 件）: ページの走査と計画の走査を `walkBindings` 1 つにする、構造でない束縛を付ける処理（ページの直下と行）を `attachSpec` 1 つにする、コンストラクタで代入するフィールドを `declare` にする、フィルタのループを `pipe` にまとめる、届かない分岐を消す、など。
+- element・wc・filters・parser（11 件）: 引用符の外を走査するループ 3 本を 1 本にする、束縛の文字列の解析の分岐を整理する、フィルタの登録の Map を 1 つにする、比較と算術のフィルタ 9 本を表にする、など。文面は変わらない。
+- `tsconfig.json` に `useDefineForClassFields: false`（クラスのフィールドを定義でなく代入で作る。すべてのクラスに効く）。`HTMLElement` を継承するクラス（`WcsState` ほか）のフィールドに、DOM のアクセサと同じ名前は無い。
+- `hooks.x !== null && hooks.x(...)` を `hooks.x?.(...)` にした（約 30 か所）。
+- 後付けの受け口の名前を短縮した: `addHook(name, fn)`（名前を文字列で引く）をやめ、受け口に代入する形（`hooks.written = chain(hooks.written, fn)`、最初の答えが勝つ受け口は `first(handled | known | taken, hooks.x, fn)`）にした。`element`（DevTools に向けた欄と同名）と `detail`（DOM の名前）は短縮しない。
+
+**性能**（この作業の大半）。入れた後で計ると、公式の js-framework-benchmark と同じ CPU 4 倍の減速の下で、いくつかの操作が遅く見えた。原因を切り分けて、次を直した。
+- **呼ぶたびに closure を作る形**が熱い経路に入っていた。プロキシ経由の読み書きのたびに一覧を引く `childList`（`upsert(..., () => new StateList(p, row))`）、書き込みのたびの `syncListsUnder`（`forListsUnder(p, row, (l) => this.sync(l))`）、getter への書き込みの `enqueueBound`、行の位置が変わったときの `onIndexChange` と `invalidateUnder`（同じ深さの近道を消していた）。普通のループと同じ深さの近道に戻し、定数を作るだけの closure はモジュールの定数（`newSet`・`newArray`）にした。4 倍の減速の update10k は、直す前 HEAD と同じか +3〜13%、直した後 HEAD より 11% 速い（中央値、各 320 サンプル）。
+- `$1` を読むたびに正規表現の test と `key.slice(1)` が走っていた（`$n` の 1 桁の速い道を消していた）。戻した。
+- 委譲されるイベントでも、行ごとに `attachSpec` を呼んで何もせずに戻っていた（jsfb の行で 2 回）。行を組み立てるときに飛ばす。
+- 4 倍の減速の create1k は、+1〜15% と回ごとに大きくぶれた。関数名を残したバンドルでプロファイルを取ると、コードの実行時間は HEAD と同じで、GC の時間だけが増えていた（割り当ての総量は HEAD より少ない）。毎回 GC を強制してから計ると、差は消える（HEAD の −2%）。GC がいつ起きるかの違いで、実行は遅くなっていない。追わなかった。
+- 誤った警報: 同じページで繰り返す計測（`scripts/audit-state-tech-warmth.mjs`、1 回あたり 6 サンプル）で 3 回続けて「append（warm）+10%」と出たが、180 サンプルで計ると逆に 10% 速かった。jsfb の計測で出た update10k +5% も、240 サンプルでは 5% 速かった。途中で一度、プロファイラを付けたまま計っていた（引数の取り違え）ので、その回の数値は捨てた。
+- 計り方: `e2e/bench/jsfb-verify.mjs`（公式と同じ 8 操作。作成・追加・全削除はページを毎回読み直す）と、`bench/inpage-ab.mjs`（ページの中で操作を続けて計り、バンドルを順番を入れ替えながら交互に開く。`--profile`・`--alloc`・`--gcbefore` で切り分ける）。このマシン（Windows のデスクトップ）は、ほかのアプリの負荷で周ごとの値が 30〜100% 揺れるので、1 回の比較の差が数%なら、順番を入れ替えた多数のサンプルで確かめる必要があった。
+- 最後の確かめ（公式と同じ 8 操作、`jsfb-verify.mjs`、HEAD と交互に順番を入れ替えて。途中でマシンが眠ったので、4 倍の減速は 5 周、減速なしは組のそろった 4 周）: 4 倍の減速では、どの操作も有意な差が無い（|z| ≤ 1.3。中央値の比は create1k ×1.02、update10k ×0.91、append ×0.93、clear10k ×0.95、swap ×0.92）。減速なしでも、組のそろった周ごとに比べて差はばらつきの範囲（create1k 4.2/4.1・11.05/10.6・11.2/11.15・10.2/10.25ms）。まとめた値で遅く見えた回は、組の無い周がマシンの速い時間帯に入っていたため。
+
+| | 前（`751cac99`） | 後 |
+|---|---|---|
+| core（`core.min.js` gzip） | 19,713B | 18,129B（−1,584B。上限 20,000B まで 1,871B） |
+| 全部入りの `auto`（gzip） | 41,581B | 39,891B（−1,690B） |
+| `index.esm.js`（gzip） | 44,390B | 42,623B（−1,767B） |
+| 分割の core（`core.js` とチャンク） | 23,915B | 22,208B（−1,707B） |
+| テスト | 1,715 件（通過 1,701・意図した失敗 13・スキップ 1） | 同じ |
+| カバレッジ | 99.65・98.86・100・99.93 | 99.71・99.06・100・99.95 |
+| e2e（`STATE=next`） | 138/138 | 138/138 |
+
+- 試作の途中で入れていない案: `reconcile` の速い道の削除（上）、空の一覧に行を作るときの近道の削除を戻す案と `buildBlock` のノード探しのインライン化（どちらも計測で効果が見えず、バイトが増えるだけなので、削った形のまま）。
+- [root-attributes.ja.md](./root-attributes.ja.md) の推奨（+314B）は、入れても上限まで 1,557B 残る。

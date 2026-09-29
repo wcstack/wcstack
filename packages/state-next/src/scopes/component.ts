@@ -532,7 +532,7 @@ function touch(E: Engine, p: Pattern, row: StateRow | null, old: unknown, value:
   } else {
     (E as any).syncListsUnder(p, row);
   }
-  if (hooks.written !== null) hooks.written(E, p, row, old, value, direct);
+  hooks.written?.(E, p, row, old, value, direct);
   E.changed(p, row);
 }
 
@@ -641,13 +641,13 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   if (!independent) {
     wire(m);
     register(m, true);
-  } else if (hooks.element !== null) {
-    hooks.element(C, "mounting");
+  } else {
+    hooks.element?.(C, "mounting");
   }
   // a Light DOM component in a server-rendered page takes the server's nodes of its content (F33)
-  const adopted = hooks.adoptScope === null ? null : hooks.adoptScope(root);
+  const adopted = hooks.adoptScope?.(root);
   mount(C, root as ShadowRoot | Element);
-  if (adopted !== null) adopted();
+  adopted?.();
   drainBinds();
   if (independent) C.watchRendered();
   Object.defineProperty(host, h.prop, { configurable: true, enumerable: true, get: () => C.proxy });
@@ -661,7 +661,7 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
     }
   }
   await C.callHook("$connectedCallback");
-  if (independent && hooks.element !== null && el.isConnected) hooks.element(C, "connected");
+  if (independent && el.isConnected) hooks.element?.(C, "connected");
   return m;
 }
 
@@ -688,14 +688,14 @@ export function claimComponent(el: HTMLElement, _root: Node): Claimed | null {
       register(m, true);
       for (const slot of m.slots) refresh(slot);
       void Promise.resolve(m.component.callHook("$connectedCallback")).then(() => {
-        if (m !== null && m.host.engine === null && hooks.element !== null && el.isConnected) hooks.element(m.component, "connected");
+        if (m !== null && m.host.engine === null && el.isConnected) hooks.element?.(m.component, "connected");
       });
     },
     disconnected() {
       if (m === null) return;
       register(m, false);
       m.component.callHook("$disconnectedCallback");
-      if (m.host.engine === null && hooks.element !== null) hooks.element(m.component, "disconnected");
+      if (m.host.engine === null) hooks.element?.(m.component, "disconnected");
     },
     reset() {
       raiseError(`re-setting a component's state is not supported: write <${host?.localName}>.${prop} instead.`);

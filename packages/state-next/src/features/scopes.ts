@@ -4,7 +4,7 @@
  * (`[data-wc-definition]`, src/scopes/dcc.ts) and component mounts (`<wcs-state
  * bind-component>`, src/scopes/component.ts).
  */
-import { addHook, hooks, type Feature } from "../hooks";
+import { chain, first, handled, hooks, taken, type Feature } from "../hooks";
 import { raiseError } from "../parser/raiseError";
 import { claimVolume, grafted, guardAncestorWrite, rootEngineCreated } from "../scopes/volume";
 import { claimDcc, dccEngineCreated, dccWritten } from "../scopes/dcc";
@@ -13,27 +13,27 @@ import { claimComponent, componentScope, crossed, guardReadonlyMount, hasMounts,
 export const scopes: Feature = {
   name: "scopes",
   install(): void {
-    addHook("claim", claimVolume);
-    addHook("claim", claimDcc);
-    addHook("claim", claimComponent);
+    hooks.claim = first(taken, hooks.claim, claimVolume);
+    hooks.claim = first(taken, hooks.claim, claimDcc);
+    hooks.claim = first(taken, hooks.claim, claimComponent);
     hooks.hostBinding = hostBinding;
     hooks.componentScope = componentScope;
-    addHook("element", (engine, phase) => {
+    hooks.element = chain(hooks.element, (engine, phase) => {
       if (phase !== "mounting") return;
       const root = (engine.element as Node).getRootNode();
       rootEngineCreated(engine, root);
       dccEngineCreated(engine, root);
     });
-    addHook("written", (engine, p, row, old, value, direct) => {
+    hooks.written = chain(hooks.written, (engine, p, row, old, value, direct) => {
       dccWritten(engine, p, value, direct);
       crossed(engine, p, row, old, value, direct, false);
     });
-    addHook("getterReached", (engine, g, row) => crossed(engine, g, row, undefined, undefined, false, true));
-    addHook("beforeWrite", (engine, p, _row, _value, element) => {
+    hooks.getterReached = chain(hooks.getterReached, (engine, g, row) => crossed(engine, g, row, undefined, undefined, false, true));
+    hooks.beforeWrite = first(handled, hooks.beforeWrite, (engine, p, _row, _value, element) => {
       guardAncestorWrite(engine, p);
       return guardReadonlyMount(engine, p, element);
     });
-    addHook("declare", (engine) => {
+    hooks.declare = chain(hooks.declare, (engine) => {
       const list = grafted.get(engine);
       if (list !== undefined && list.length > 0) {
         raiseError(`re-setting a root state with grafted volumes (${list.join(", ")}) is not supported: their data is part of the tree.`);

@@ -10,7 +10,7 @@
 //   `assigned` / `warned`);
 // - a built-in's method or property the bundle touches (`resolve`, `apply`, `map`, `has`, a
 //   RegExp match's `index`, a stream reader's `read`);
-// - a name code reaches by a string (the hook slots: addHook indexes them by name).
+// - a name code reaches by a string.
 // An object the author writes or reads is accessed with quoted keys (a `$stream` definition,
 // the `$errorCallback` info). __tests__/bundle.test.ts and split.test.ts run the conformance
 // scenarios on builds with this list — they caught `index`, `read`, the hook slots and a
@@ -34,7 +34,9 @@ const NAMES = `
   children filters forget resetList applyPass deliverFn delegate stale staleLists
   invalidateUnder checkArity resolveInitialize claimed occurrence loadState onCreate unregister changed mark dropped
   dropWork fedBack codeWrote feeding unchainFn renderedFn markupAccessor handlerWrote otherWrote
-  listsByArray share mirror shared
+  listsByArray share mirror shared landed loadTarget forListsUnder forAllLists api postUpdate callAt rowOf
+  explain render beforeWrite written getterReached listSynced drained declare claim dollar failed hostBinding
+  componentScope ssrMark adopt adoptScope declared tags
 `.trim().split(/\s+/);
 
 export const MANGLE_PROPS = new RegExp(`^(?:${NAMES.join("|")})$`);

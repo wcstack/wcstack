@@ -1,4 +1,4 @@
-import { INDEX_PARAM, type Engine } from "../engine";
+import { INDEX_PARAM, isThenable, type Engine } from "../engine";
 import type { StateRow } from "../list";
 import { UNSET, type Pattern } from "../pattern";
 import { config } from "../config";
@@ -8,7 +8,7 @@ import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 import {
   K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, BUBBLING,
-  type BranchSpec, type RowPlan, type Spec,
+  type Branch, type BranchSpec, type RowPlan, type Spec,
 } from "./view";
 
 /** The binding attribute (`bindAttributeName`, default data-wcs). */
@@ -29,18 +29,14 @@ function blank(): Spec {
   };
 }
 
-const CHECK_TYPES = new Set(["radio", "checkbox"]);
-const VALUE_PROPS = new Set(["value", "valueAsNumber", "valueAsDate"]);
-
 /** Native elements whose property flows back to state (custom elements come with wc-bindable). */
-function isTwoWay(el: Element | null, prop: string): boolean {
-  if (el === null) return false;
+function isTwoWay(el: Element, prop: string): boolean {
   const tag = el.localName;
   if (tag === "input") {
     const type = (el.getAttribute("type") || "text").toLowerCase();
     if (type === "button") return false;
-    if (CHECK_TYPES.has(type) && prop === "checked") return true;
-    return VALUE_PROPS.has(prop);
+    if ((type === "radio" || type === "checkbox") && prop === "checked") return true;
+    return prop === "value" || prop === "valueAsNumber" || prop === "valueAsDate";
   }
   return (tag === "select" || tag === "textarea") && prop === "value";
 }
@@ -100,7 +96,7 @@ export function boundPattern(engine: Engine, path: string, list: Pattern | null)
     const loop = k === d ? list! : list!.lists[k]!;
     if (p.lists[k] !== loop) raise(M.WildcardOtherList, [p.path, p.lists[k]!.path, loop.path]);
   }
-  if (hooks.declared !== null) hooks.declared(engine, p);
+  hooks.declared?.(engine, p);
   return p;
 }
 
@@ -109,9 +105,9 @@ export function notAfterIf(type: string): never {
   raise(M.ElseWithoutIf, [type]);
 }
 
-export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, el: Element | null, node: number): Spec {
+export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, el: Element, node: number): Spec {
   const f = flags(b.propModifiers);
-  const custom = el !== null && el.localName.includes("-");
+  const custom = el.localName.includes("-");
   const segs = b.propSegments;
   const path = b.statePathName;
 
@@ -136,7 +132,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
           else {
             // an async handler's failure is reported like a sync one's (not left unhandled)
             const r = engine.invoke(path, e, row) as any;
-            if (r !== null && typeof r === "object" && typeof r.then === "function") r.then(undefined, (error: unknown) => console.error(error));
+            if (isThenable(r)) r.then(undefined, (error: unknown) => console.error(error));
           }
         } catch (error) {
           console.error(error);
@@ -172,7 +168,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
       spec.name = name;
       if (head === "class") {
         spec.kind = K_CLASS;
-        spec.initial = el !== null && el.classList.contains(name);
+        spec.initial = el.classList.contains(name);
       } else {
         spec.kind = head === "attr" ? K_ATTR : K_STYLE;
       }
@@ -185,7 +181,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
   }
   spec.name = b.propName === "text" ? "textContent" : b.propName;
   spec.custom = custom;
-  if (!custom && !f.ro && isTwoWay(el, spec.name)) spec.twoWay = f.event ?? (el!.localName === "select" ? "change" : "input");
+  if (!custom && !f.ro && isTwoWay(el, spec.name)) spec.twoWay = f.event ?? (el.localName === "select" ? "change" : "input");
   return spec;
 }
 
@@ -281,35 +277,51 @@ export function readChain(engine: Engine, children: ChildNode[], start: number, 
  * bound node, and one spec per binding. Paths are resolved to patterns here, once —
  * blocks never parse or resolve anything. `list` is the enclosing `for` (for `.` paths).
  */
-export function compilePlan(engine: Engine, template: HTMLTemplateElement, list: Pattern | null, asRow: boolean): RowPlan {
-  const frag = document.importNode(template.content, true);
-  const targets: Node[] = [];
-  const specs: Spec[] = [];
-  const target = (node: Node): number => targets.push(node) - 1;
-
-  const walk = (parent: Node): void => {
-    const children = Array.from(parent.childNodes);
+/**
+ * Walks `children` and what they contain for bindings, by the same markup rules for the page
+ * (`page`: the mount — it skips script / style, enters `<wcs-state>`, and marks anchors for SSR)
+ * and for a template's content (a plan). Structural templates are compiled and replaced by
+ * their anchors; the rest is handed to the callbacks.
+ */
+export function walkBindings(engine: Engine, children: ChildNode[], list: Pattern | null, page: boolean,
+  onFor: (anchor: Comment, p: Pattern, plan: RowPlan) => void,
+  onIf: (branches: Branch[]) => void,
+  onElement: (el: Element, text: string) => void,
+  onText: (node: Text, expr: string) => void): void {
+  // a structural template leaves the tree: its anchor takes its place
+  const anchorFor = (el: Element, type: string): Comment => {
+    const anchor = document.createComment(type);
+    el.replaceWith(anchor);
+    if (page) hooks.ssrMark?.(engine, anchor, el);
+    return anchor;
+  };
+  const walk = (children: ChildNode[]): void => {
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
       if (child.nodeType === 1) {
         const el = child as Element;
-        const d = el.localName === "template" ? directive(el) : null;
+        const tag = el.localName;
+        if (page) {
+          if (tag === "script" || tag === "style") continue;
+          // markup written inside a <wcs-state> is part of the page (its own attributes are not bindings)
+          if (tag === config.tagNames.state) {
+            walk(Array.from(el.childNodes));
+            continue;
+          }
+        }
+        // a template with no structural directive binds like any element (its content stays inert)
+        const d = tag === "template" ? directive(el) : null;
         if (d !== null) {
           if (d.bindingType === "for") {
             const p = boundPattern(engine, d.statePathName, list);
-            const sub = compilePlan(engine, el as HTMLTemplateElement, p, true);
-            const anchor = document.createComment(config.commentForPrefix);
-            el.replaceWith(anchor);
-            specs.push({ ...blank(), node: target(anchor), kind: K_FOR, pattern: p, plan: sub });
+            const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);
+            onFor(anchorFor(el, config.commentForPrefix), p, plan);
           } else if (d.bindingType === "if") {
             const { parts, end } = readChain(engine, children, i, list);
-            const branches: BranchSpec[] = parts.map((part, k) => {
-              const branchPlan = compilePlan(engine, part.el, list, false);
-              const anchor = document.createComment(chainAnchorText(k, part));
-              part.el.replaceWith(anchor);
-              return { node: target(anchor), plan: branchPlan, pattern: part.pattern, filters: part.filters };
-            });
-            specs.push({ ...blank(), node: branches[0].node, kind: K_IF, branches });
+            onIf(parts.map((part, k) => {
+              const plan = compilePlan(engine, part.el, list, false);
+              return { plan, pattern: part.pattern, filters: part.filters, anchor: anchorFor(part.el, chainAnchorText(k, part)) };
+            }));
             i = end;
           } else {
             notAfterIf(d.bindingType);
@@ -317,19 +329,39 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
           continue;
         }
         const text = el.getAttribute(bindAttr());
-        if (text !== null) {
-          specs.push(...elementSpecs(engine, text, list, el, target(el)));
-          // the plan holds the bindings: blocks cloned from it carry nothing left to bind
-          el.removeAttribute(bindAttr());
-        }
-        // a Light DOM component's content is bound by its own engine (as the page walker leaves it)
-        if (hooks.componentScope === null || !hooks.componentScope(el)) walk(el);
+        if (text !== null) onElement(el, text);
+        // a Light DOM component's content is bound by its own engine
+        if (!hooks.componentScope?.(el)) walk(Array.from(el.childNodes));
       } else if (child.nodeType === 3 && config.enableMustache && (child as Text).data.includes("{{")) {
-        for (const { node, expr } of splitMustache(child as Text)) specs.push(textSpec(engine, expr, list, target(node)));
+        for (const { node, expr } of splitMustache(child as Text)) onText(node, expr);
       }
     }
   };
-  walk(frag);
+  walk(children);
+}
+
+export function compilePlan(engine: Engine, template: HTMLTemplateElement, list: Pattern | null, asRow: boolean): RowPlan {
+  const frag = document.importNode(template.content, true);
+  const targets: Node[] = [];
+  const specs: Spec[] = [];
+  const target = (node: Node): number => targets.push(node) - 1;
+
+  walkBindings(engine, Array.from(frag.childNodes), list, false,
+    (anchor, p, plan) => {
+      specs.push({ ...blank(), node: target(anchor), kind: K_FOR, pattern: p, plan });
+    },
+    (chain) => {
+      const branches: BranchSpec[] = chain.map((br) => ({ node: target(br.anchor), plan: br.plan, pattern: br.pattern, filters: br.filters }));
+      specs.push({ ...blank(), node: branches[0].node, kind: K_IF, branches });
+    },
+    (el, text) => {
+      specs.push(...elementSpecs(engine, text, list, el, target(el)));
+      // the plan holds the bindings: blocks cloned from it carry nothing left to bind
+      el.removeAttribute(bindAttr());
+    },
+    (node, expr) => {
+      specs.push(textSpec(engine, expr, list, target(node)));
+    });
 
   // Whitespace that never renders is not part of a block: at the top level, and inside
   // elements whose content model has no text (table parts, select). Bound text nodes start
@@ -341,18 +373,14 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
   const single = frag.childNodes.length === 1 && frag.firstChild!.nodeType !== 8;
   const nested = specs.some((s) => s.kind === K_FOR || s.kind === K_IF);
   const lazy: Spec[] = [];
-  if (asRow) {
-    // the row's own locations, bound by kinds that need only the node: slots (see RowView)
-    const d = list!.depth + 1;
-    for (const s of specs) {
-      const p = s.pattern;
-      if (p !== null && p.depth === d && p.lists[d] === list && isSlotKind(s)) s.slot = lazy.push(s) - 1;
-    }
-  }
-  // a node used only by delegated events is never resolved when a block is built
   const used = new Set<number>();
   const events: Spec[] = [];
+  // in a row plan, the row's own locations bound by kinds that need only the node are slots (see RowView)
+  const d = asRow ? list!.depth + 1 : -1;
   for (const s of specs) {
+    const p = s.pattern;
+    if (p !== null && p.depth === d && p.lists[d] === list && isSlotKind(s)) s.slot = lazy.push(s) - 1;
+    // a node used only by delegated events is never resolved when a block is built
     if (s.kind === K_EVENT && s.delegated) events.push(s);
     else if (s.kind === K_IF) for (const br of s.branches!) used.add(br.node);
     else used.add(s.node);

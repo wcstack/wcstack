@@ -70,7 +70,7 @@ export class StateList {
 export interface ReconcileHooks {
   /** A kept row changed position. */
   indexChanged(row: StateRow): void;
-  /** A row left the list. */
+  /** A row left the list (it marks it dead). */
   rowRemoved(row: StateRow): void;
 }
 
@@ -134,15 +134,8 @@ export function reconcile(list: StateList, next: unknown, hooks: ReconcileHooks)
       rows[i] = row ?? new StateRow(list, i, item);
     }
     for (const b of byItem.values()) {
-      if (Array.isArray(b)) {
-        for (const r of b) {
-          r.alive = false;
-          hooks.rowRemoved(r);
-        }
-      } else {
-        b.alive = false;
-        hooks.rowRemoved(b);
-      }
+      if (Array.isArray(b)) for (const r of b) hooks.rowRemoved(r);
+      else hooks.rowRemoved(b);
     }
   }
 

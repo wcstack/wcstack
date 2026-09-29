@@ -1,8 +1,8 @@
-import { DELIMITER, FILTER_SEPARATOR, MODIFIER_SEPARATOR } from "./define";
-import { parseFilters } from "./parseFilters";
+import { DELIMITER, MODIFIER_SEPARATOR } from "./define";
+import { splitFilters } from "./parseFilters";
 import { raise, M } from "../messages";
 import { ParsedBinding, ParsedFilter } from "./types";
-import { indexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils";
+import { trimFn } from "./utils";
 
 // 解析の段の形（フィルタは名前と引数だけ — 実関数はエンジンが引く。要件 D16）
 export type PropPartParseResult = Pick<ParsedBinding, 'propName' | 'propSegments' | 'propModifiers' | 'inFilters'>;
@@ -26,27 +26,7 @@ export const clearPropPartCache = (): void => cacheFilterInfos.clear();
 
 /** Port of `@wcstack/state` `src/bindTextParser/parsePropPart.ts` (behaviour unchanged). */
 export function parsePropPart(propPart: string): PropPartParseResult {
-  const pos = indexOfOutsideQuotes(propPart, FILTER_SEPARATOR);
-  let propText: string = '';
-  let filterTexts: string[] = [];
-  let filtersText = '';
-  let filters: ParsedFilter[] = [];
-  if (pos !== -1) {
-    propText = propPart.slice(0, pos).trim();
-    filtersText = propPart.slice(pos + 1).trim();
-    if (cacheFilterInfos.has(filtersText)) {
-      filters = cacheFilterInfos.get(filtersText)!;
-    } else {
-      filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
-      // 診断に埋める原文は**左辺の全文**。`|` より後ろだけを渡すと `value|:` のように
-      // 末尾が空の形で空文字になる（解析結果のキャッシュ鍵は従来どおり `filtersText`。
-      // 落ちた解析はキャッシュに載らないので、原文を混ぜても鍵は汚れない）
-      filters = parseFilters(filterTexts, "input", propPart);
-      cacheFilterInfos.set(filtersText, filters);
-    }
-  } else {
-    propText = propPart.trim();
-  }
+  const [propText, filters] = splitFilters(propPart, "input", cacheFilterInfos);
 
   // **不変条件**: ここから下の `split` は素で走らせてよい。`propText` は「引用符外の最初の `|`
   // より前」のスライスであり、引用符を含みうるのは入力フィルタの引数（`|` の後ろ）だけなので、

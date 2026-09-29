@@ -4,17 +4,17 @@
  */
 import { describe, it, expect } from "vitest";
 import { Engine, DirtyStrategy } from "../src/index";
-import { addHook } from "../src/hooks";
+import { first, hooks, known } from "../src/hooks";
 import { PatternTable } from "../src/pattern";
 
-describe("addHook（dollar の連鎖）", () => {
+describe("first（dollar の連鎖）", () => {
   it("先に入れたフックの答え（undefined 以外）が勝ち、答えなければ次のフックに回る", () => {
     const asked: string[] = [];
-    addHook("dollar", (_engine, key) => {
+    hooks.dollar = first(known, hooks.dollar, (_engine, key) => {
       asked.push(`first ${key}`);
       return key === "$alpha" ? "from first" : undefined;
     });
-    addHook("dollar", (_engine, key) => {
+    hooks.dollar = first(known, hooks.dollar, (_engine, key) => {
       asked.push(`second ${key}`);
       return key === "$alpha" || key === "$beta" ? "from second" : undefined;
     });
@@ -42,7 +42,7 @@ describe("PatternTable", () => {
 describe("StateRow の parent / depth", () => {
   it("入れ子の行の parent は外側の行、depth はリストの深さ", () => {
     const e = new Engine({ groups: [{ items: [{ v: 1 }] }] }, new DirtyStrategy());
-    const outer = e.rootList(e.pattern("groups")).rows[0];
+    const outer = e.childList(null, e.pattern("groups")).rows[0];
     const inner = e.childList(outer, e.pattern("groups.*.items")).rows[0];
     expect(outer.parent).toBeNull();
     expect(outer.depth).toBe(1);

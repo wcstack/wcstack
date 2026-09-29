@@ -14,17 +14,10 @@ import { raise, M } from "../messages";
 function finalizeArg(text: string, firstQuoteStart: number, lastQuoteEnd: number): string {
   // 先頭側: 最初のクォート文字より前だけが削れる（クォートが無ければ全体が対象）
   const startLimit = firstQuoteStart === -1 ? text.length : firstQuoteStart;
-  let start = 0;
-  while (start < startLimit && /\s/.test(text[start])) {
-    start++;
-  }
   // 末尾側: 最後のクォート文字より後ろだけが削れる（クォートが無ければ全体が対象）
   const endLimit = lastQuoteEnd === -1 ? 0 : lastQuoteEnd;
-  let end = text.length;
-  while (end > endLimit && /\s/.test(text[end - 1])) {
-    end--;
-  }
-  return text.slice(start, end);
+  // (`trim` removes what `\s` matches: WhiteSpace and LineTerminator)
+  return text.slice(startLimit - text.slice(0, startLimit).trimStart().length, endLimit + text.slice(endLimit).trimEnd().length);
 }
 
 /** 引用符の無い引数の型（要件 B9）: true / false / null / 数値は型付き、それ以外は文字列 */
@@ -52,10 +45,13 @@ export function parseFilterArgsWithLiterals(argsText: string): { args: string[];
   let firstQuoteStart = -1;
   let lastQuoteEnd = -1;
 
-  const flush = (): void => {
+  /** Ends an argument; only the last one is dropped when empty (and not quoted). */
+  const flush = (last?: boolean): void => {
     const arg = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
-    args.push(arg);
-    literals.push(toLiteral(arg, hasQuote));
+    if (!last || arg || hasQuote) {
+      args.push(arg);
+      literals.push(toLiteral(arg, hasQuote));
+    }
     current = '';
     hasQuote = false;
     firstQuoteStart = -1;
@@ -89,11 +85,7 @@ export function parseFilterArgsWithLiterals(argsText: string): { args: string[];
     // 閉じていない引用符は受理しない（要件 B2）。以前は黙って閉じたことにしていた
     raise(M.UnterminatedQuote, [inQuote, argsText]);
   }
-  const last = finalizeArg(current, firstQuoteStart, lastQuoteEnd);
-  if (last || hasQuote) {
-    args.push(last);
-    literals.push(toLiteral(last, hasQuote));
-  }
+  flush(true);
 
   return { args, literals };
 }

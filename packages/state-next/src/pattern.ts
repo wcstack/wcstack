@@ -10,7 +10,6 @@
 export const WILDCARD = "*";
 
 export class Pattern {
-  readonly id: number;
   readonly path: string;
   readonly parent: Pattern | null;
   readonly last: string;
@@ -33,8 +32,6 @@ export class Pattern {
   readonly sources: Pattern[] = [];
   /** Sources read from a row other than the evaluating row's own chain (fan out on change). */
   crossSources: Set<Pattern> | null = null;
-  /** The getter read `$1…$n`: a change of the row's position invalidates it. */
-  indexDependent = false;
   /** Cache slot of a row-level getter on its rows. -1 when not a row-level getter. */
   slot = -1;
   /** Root-level getter cache (depth 0). */
@@ -50,27 +47,16 @@ export class Pattern {
 
   private readonly dependentSet = new Set<Pattern>();
 
-  constructor(id: number, path: string, segs: readonly string[], parent: Pattern | null) {
-    this.id = id;
+  constructor(path: string, last: string, parent: Pattern | null) {
     this.path = path;
     this.parent = parent;
-    this.last = segs[segs.length - 1];
-    const lists: (Pattern | null)[] = [null];
-    let depth = 0;
-    let lastWildcard = -1;
-    for (let i = 0; i < segs.length; i++) {
-      if (segs[i] === WILDCARD) {
-        depth++;
-        lastWildcard = i;
-      }
-    }
-    this.depth = depth;
-    this.tail = segs.slice(lastWildcard + 1);
-    // inherit the parent's list table and add our own when we are a wildcard segment
-    if (parent) {
-      for (let k = 1; k < parent.lists.length; k++) lists.push(parent.lists[k]);
-    }
-    if (this.last === WILDCARD) lists.push(parent);
+    this.last = last;
+    // the parent's list table, plus our own when we are a wildcard segment
+    const lists: (Pattern | null)[] = parent === null ? [null] : parent.lists.slice();
+    const w = last === WILDCARD;
+    if (w) lists.push(parent);
+    this.depth = lists.length - 1;
+    this.tail = w ? [] : parent === null ? [last] : [...parent.tail, last];
     this.lists = lists;
   }
 
@@ -91,7 +77,6 @@ export class Pattern {
     this.dependentSet.clear();
     this.sources.length = 0;
     this.crossSources = null;
-    this.indexDependent = false;
     this.eqIndexWatchers = null;
     this.eqIndexKeys = null;
     this.indexWatchers = null;
@@ -127,8 +112,6 @@ export const FAILED: unique symbol = Symbol("failed") as never;
 
 export class PatternTable {
   private readonly byPath = new Map<string, Pattern>();
-  private nextId = 0;
-  readonly root: Pattern[] = [];
   private readonly onCreate: ((p: Pattern) => void) | null;
 
   constructor(onCreate: ((p: Pattern) => void) | null = null) {
@@ -142,12 +125,12 @@ export class PatternTable {
   get(path: string): Pattern {
     let p = this.byPath.get(path);
     if (p !== undefined) return p;
-    const segs = path.split(".");
-    const parent = segs.length > 1 ? this.get(segs.slice(0, -1).join(".")) : null;
-    p = new Pattern(this.nextId++, path, segs, parent);
+    const i = path.lastIndexOf(".");
+    const parent = i < 0 ? null : this.get(path.slice(0, i));
+    p = new Pattern(path, path.slice(i + 1), parent);
     this.onCreate?.(p);
     this.byPath.set(path, p);
-    if (parent) parent.children.push(p); else this.root.push(p);
+    if (parent) parent.children.push(p);
     return p;
   }
 
@@ -175,30 +158,21 @@ const literalCache = new Map<string, ParsedPath>();
 export function parsePath(path: string): ParsedPath {
   const cached = literalCache.get(path);
   if (cached !== undefined) return cached;
-  let hasDigitSegment = false;
+  let literal = true;
   const segs = path.split(".");
-  for (let i = 0; i < segs.length; i++) {
-    const c = segs[i].charCodeAt(0);
-    if (c >= 48 && c <= 57) { hasDigitSegment = true; break; }
-  }
-  if (!hasDigitSegment) {
-    const parsed: ParsedPath = { pattern: path, indexes: null };
-    // literal paths (no explicit index) are few and reused: keep them
-    literalCache.set(path, parsed);
-    return parsed;
-  }
   const indexes: number[] = [];
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i];
-    if (s === WILDCARD) {
-      indexes.push(-1);
-    } else {
-      const c = s.charCodeAt(0);
-      if (c >= 48 && c <= 57) {
-        indexes.push(Number(s));
-        segs[i] = WILDCARD;
-      }
-    }
+    const c = s.charCodeAt(0);
+    if (c >= 48 && c <= 57) {
+      literal = false;
+      indexes.push(Number(s));
+      segs[i] = WILDCARD;
+    } else if (s === WILDCARD) indexes.push(-1);
   }
-  return { pattern: segs.join("."), indexes };
+  if (!literal) return { pattern: segs.join("."), indexes };
+  const parsed: ParsedPath = { pattern: path, indexes: null };
+  // literal paths (no explicit index) are few and reused: keep them
+  literalCache.set(path, parsed);
+  return parsed;
 }

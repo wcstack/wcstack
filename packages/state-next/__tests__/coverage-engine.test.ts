@@ -370,7 +370,7 @@ describe("$eqIndex", () => {
   it("行の外で呼ぶと投げる。行の深さより深い level も投げる", () => {
     const e = setup("", base());
     expect(() => e.proxy.outside()).toThrow(core(M.EqIndexNoRow));
-    const row = e.rootList(e.pattern("items")).rows[0];
+    const row = e.childList(null, e.pattern("items")).rows[0];
     expect(() => e.invoke("tooDeep", new Event("click"), row)).toThrow(core(M.EqIndexNoRow));
   });
 
@@ -726,7 +726,7 @@ describe("DirtyStrategy の無効化", () => {
     const s = e.proxy;
     expect(s.$resolve("groups.*.items.*.scaled", [0, 0])).toBe(2);
     // only group 0 has its nested list so far
-    expect(e.rootList(e.pattern("groups")).rows[1].children).toBeNull();
+    expect(e.childList(null, e.pattern("groups")).rows[1].children).toBeNull();
     s.factor = 3;
     expect(s.$resolve("groups.*.items.*.scaled", [0, 0])).toBe(3);
     expect(s.$resolve("groups.*.items.*.scaled", [1, 0])).toBe(15);

@@ -1,8 +1,7 @@
-import { DELIMITER, FILTER_SEPARATOR, MAX_PATH_SEGMENTS, RECURSION_WILDCARD } from "./define";
-import { parseFilters } from "./parseFilters";
+import { DELIMITER, MAX_PATH_SEGMENTS, RECURSION_WILDCARD } from "./define";
+import { splitFilters } from "./parseFilters";
 import { raise, M } from "../messages";
 import { ParsedBinding, ParsedFilter } from "./types";
-import { indexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils";
 
 // 解析の段の形（フィルタは名前と引数だけ — 実関数はエンジンが引く。要件 D16）。
 // `@wcstack/state` はここで `statePathInfo`（`getPathInfo` の intern 結果）も返していたが、
@@ -24,15 +23,10 @@ export const clearStatePartCache = (): void => cacheFilterInfos.clear();
  * 上限超えのパスも intern されないので毎回落ちる — 状態を持たない検査と同値。
  */
 function checkPathLikeGetPathInfo(path: string): void {
-  if (path.indexOf(RECURSION_WILDCARD) !== -1) {
+  if (path.includes(RECURSION_WILDCARD)) {
     recursionUnsupported(path);
   }
-  let segmentCount = 1;
-  for (let i = 0; i < path.length; i++) {
-    if (path[i] === DELIMITER) {
-      segmentCount++;
-    }
-  }
+  const segmentCount = path.split(DELIMITER).length;
   if (segmentCount > MAX_PATH_SEGMENTS) {
     raise(M.TooManySegments, [path, segmentCount]);
   }
@@ -49,27 +43,8 @@ export function recursionUnsupported(path: string): never {
 }
 
 export function parseStatePart(statePart: string): StatePartParseResult {
-  // 引用符の中の `|` はフィルタの区切りではない（要件 B1 — `join('|')`）
-  const pos = indexOfOutsideQuotes(statePart, FILTER_SEPARATOR);
-  let stateAndPath: string = '';
-  let filterTexts: string[] = [];
-  let filtersText = '';
-  let filters: ParsedFilter[] = [];
-  if (pos !== -1) {
-    stateAndPath = statePart.slice(0, pos).trim();
-    filtersText = statePart.slice(pos + 1).trim();
-    if (cacheFilterInfos.has(filtersText)) {
-      filters = cacheFilterInfos.get(filtersText)!;
-    } else {
-      filterTexts = splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn);
-      // 診断に埋める原文は**右辺の全文**（`parsePropPart` と同じ理由 — `a|` が空文字になる）
-      filters = parseFilters(filterTexts, "output", statePart);
-      cacheFilterInfos.set(filtersText, filters);
-    }
-  } else {
-    stateAndPath = statePart.trim();
-  }
-  if (stateAndPath.indexOf("@") !== -1) {
+  const [stateAndPath, filters] = splitFilters(statePart, "output", cacheFilterInfos);
+  if (stateAndPath.includes("@")) {
     // 名前次元は v2 で撤去（docs/state-mount-design.md D16 / §9）。パスは 1 本のツリー。
     raise(M.SelectorRemoved, [stateAndPath]);
   }

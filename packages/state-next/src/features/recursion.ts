@@ -2,17 +2,17 @@
  * The recursion add-on (@wcstack/state/features/recursion): `$recursion` and `**` — see
  * src/recursion/recursion.ts.
  */
-import { addHook, type Feature } from "../hooks";
+import { chain, first, handled, hooks, type Feature } from "../hooks";
 import { declareRecursion, guardExpansion, recursionSettled } from "../recursion/recursion";
 
 export const recursion: Feature = {
   name: "recursion",
   install(): void {
-    addHook("declare", declareRecursion);
-    addHook("element", (engine, phase) => {
+    hooks.declare = chain(hooks.declare, declareRecursion);
+    hooks.element = chain(hooks.element, (engine, phase) => {
       if (phase === "mounting" || phase === "reset") recursionSettled(engine);
     });
-    addHook("beforeWrite", guardExpansion);
+    hooks.beforeWrite = first(handled, hooks.beforeWrite, guardExpansion);
   },
 };
 export default recursion;

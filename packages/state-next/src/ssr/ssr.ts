@@ -210,7 +210,7 @@ const hydrating = new WeakSet<Engine>();
  * server's nodes until then and is prepared when that engine binds it (adoptScope).
  */
 const deferred = new WeakMap<Node, { ssr: Element; adopt: boolean }>();
-const scoped = (el: Element): boolean => hooks.componentScope !== null && hooks.componentScope(el);
+const scoped = (el: Element): boolean => hooks.componentScope?.(el) === true;
 
 /** Detaches the region starting at `start` (its markers included); its rows. */
 function detach(start: Comment): Region {

@@ -1,8 +1,8 @@
-import { MODIFIER_SEPARATOR } from "./define";
+import { FILTER_SEPARATOR, MODIFIER_SEPARATOR } from "./define";
 import { parseFilterArgsWithLiterals } from "./parseFilterArgs";
 import { raise, M } from "../messages";
 import { FilterIOType, ParsedFilter } from "./types";
-import { indexOfOutsideQuotes, lastIndexOfOutsideQuotes } from "./utils";
+import { indexOfOutsideQuotes, lastIndexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils";
 
 // format: filterName(arg1,arg2) or filterName
 
@@ -73,4 +73,23 @@ export function parseFilters(filterTextList: string[], filterIOType: FilterIOTyp
     const argsText = filterText.substring(openParenIndex + 1, closeParenIndex);
     return { filterName, ...parseFilterArgsWithLiterals(argsText) };
   });
+}
+
+/**
+ * One side of a binding split at its first `|` outside quotes: the text before it (trimmed) and its
+ * parsed filters. `cache` is keyed by the text after the `|`: the same text gives **the same array**
+ * (callers must not change it); a failed parse is not cached. The diagnostics quote the whole side
+ * (`part`): the text after the `|` alone is empty for `a|`.
+ */
+export function splitFilters(part: string, filterIOType: FilterIOType, cache: Map<string, ParsedFilter[]>): [string, ParsedFilter[]] {
+  // 引用符の中の `|` はフィルタの区切りではない（要件 B1 — `join('|')`）
+  const pos = indexOfOutsideQuotes(part, FILTER_SEPARATOR);
+  if (pos === -1) return [part.trim(), []];
+  const filtersText = part.slice(pos + 1).trim();
+  let filters = cache.get(filtersText);
+  if (filters === undefined) {
+    filters = parseFilters(splitOutsideQuotes(filtersText, FILTER_SEPARATOR).map(trimFn), filterIOType, part);
+    cache.set(filtersText, filters);
+  }
+  return [part.slice(0, pos).trim(), filters];
 }

@@ -44,7 +44,7 @@ export function parseWatches(engine: Engine, decl: unknown): Watch[] {
     if (path === "" || path[0] === "$" || path.includes("@") || PROTOTYPE_NAMES.has(path)) raiseError(`$watch path "${path}" is not a path of the state tree.`);
     if (typeof handler !== "function") raiseError(`$watch entry "${path}" must be a function.`);
     const p = engine.pattern(path);
-    if (hooks.declared !== null) hooks.declared(engine, p, true);
+    hooks.declared?.(engine, p, true);
     out.push({ path, p, handler: handler as Handler, getter: false, last: new Map() });
   }
   return out;
@@ -95,7 +95,7 @@ export class WatchRuntime {
   /** Calls fn for every row at p.depth, creating the lists on the way (they then stay synced). */
   private eachRow(p: Pattern, k: number, parent: StateRow | null, fn: (row: StateRow) => void): void {
     const engine = this.engine;
-    const list = k === 1 ? engine.rootList(p.lists[1]!) : engine.childList(parent!, p.lists[k]!);
+    const list = engine.childList(parent, p.lists[k]!);
     for (const row of list.rows) {
       if (k === p.depth) fn(row);
       else this.eachRow(p, k + 1, row, fn);

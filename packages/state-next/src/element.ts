@@ -110,15 +110,15 @@ export class WcsState extends HTMLElement {
       const engine = this.engine;
       if (engine !== null) {
         void Promise.resolve(engine.callHook("$connectedCallback")).then(() => {
-          if (hooks.element !== null && this.isConnected) hooks.element(engine, "connected");
+          if (this.isConnected) hooks.element?.(engine, "connected");
         });
       }
       return;
     }
     this.started = true;
     const root = this.getRootNode();
-    const claimed = hooks.claim === null ? null : hooks.claim(this, root);
-    if (claimed !== null) {
+    const claimed = hooks.claim?.(this, root);
+    if (claimed) {
       this.claimed = claimed;
       void (claimed.load === undefined ? this.loadState() : claimed.load()).then((state) => claimed.start(state)).catch((e) => console.error(e)).finally(() => {
         this.resolveInitialize();
@@ -138,7 +138,7 @@ export class WcsState extends HTMLElement {
     const engine = this.engine;
     if (engine === null) return;
     engine.callHook("$disconnectedCallback");
-    if (hooks.element !== null) hooks.element(engine, "disconnected");
+    hooks.element?.(engine, "disconnected");
   }
 
   /**
@@ -220,13 +220,13 @@ export class WcsState extends HTMLElement {
       const engine = new Engine(state, makeStrategy());
       engine.element = this;
       this.engine = engine;
-      if (hooks.element !== null) hooks.element(engine, "mounting");
+      hooks.element?.(engine, "mounting");
       mount(engine, root as Document | ShadowRoot);
       drainBinds();
       engine.watchRendered();
       this.resolveInitialize();
       await engine.callHook("$connectedCallback");
-      if (hooks.element !== null && this.isConnected) hooks.element(engine, "connected");
+      if (this.isConnected) hooks.element?.(engine, "connected");
       this.resolveConnected();
     } catch (e) {
       this.failed = true;
@@ -248,15 +248,13 @@ const refs: WeakRef<CustomElementRegistry>[] = [];
 /** The registries still alive (dead references are dropped). */
 export function registries(): CustomElementRegistry[] {
   const live: CustomElementRegistry[] = [];
-  let w = 0;
-  for (const ref of refs) {
+  for (const ref of refs.splice(0)) {
     const r = ref.deref();
     if (r !== undefined) {
       live.push(r);
-      refs[w++] = ref;
+      refs.push(ref);
     }
   }
-  refs.length = w;
   return live;
 }
 
@@ -269,7 +267,7 @@ export function define(registry: CustomElementRegistry = customElements): void {
   if (!registries().includes(registry)) refs.push(new WeakRef(registry));
   const tag = config.tagNames.state;
   if (registry.get(tag) === undefined) registry.define(tag, class extends WcsState {});
-  if (hooks.tags !== null) hooks.tags(registry);
+  hooks.tags?.(registry);
 }
 
 /** Applies `config` and registers `<wcs-state>`. The core only: install the add-ons first. */

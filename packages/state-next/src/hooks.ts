@@ -5,7 +5,8 @@
  * the core's internals directly, and the core only calls out through these slots. A slot is
  * null until an installed feature fills it, so a page without the feature pays one null check.
  * Slots are added with the first feature that needs them; several features share one through
- * addHook.
+ * chain / first. The slots `element` and `detail` keep their names (a DevTools-facing field and a DOM
+ * name share them); the others are shortened by the build.
  */
 import type { Engine } from "./engine";
 import type { Pattern } from "./pattern";
@@ -113,22 +114,28 @@ export const hooks: Hooks = {
 
 type HookFn = (...args: any[]) => any;
 
-/**
- * Adds `fn` to a slot, after whatever is there. For `beforeWrite` the first that handles the
- * write wins; for `dollar` / `claim` the first answer (not undefined / not null) wins.
+/*
+ * A feature fills a slot by assigning it (`hooks.written = chain(hooks.written, fn)`), never by
+ * its name as a string: the slot names are shortened by the build (mangle.mjs) like any internal
+ * property.
  */
-export function addHook<K extends keyof Hooks>(name: K, fn: NonNullable<Hooks[K]>): void {
-  const prev = hooks[name] as HookFn | null;
-  const answered = name === "beforeWrite" ? (r: unknown) => r === true
-    : name === "dollar" ? (r: unknown) => r !== undefined
-    : name === "claim" ? (r: unknown) => r !== null
-    : null;
-  hooks[name] = (prev === null
-    ? fn
-    : answered !== null
-      ? (...a: unknown[]) => { const r = prev(...a); return answered(r) ? r : (fn as HookFn)(...a); }
-      : (...a: unknown[]) => { prev(...a); (fn as HookFn)(...a); }) as Hooks[K];
+
+/** A slot several features share: `fn` runs after whatever is there. */
+export function chain<F extends HookFn>(prev: F | null, fn: F): F {
+  return prev === null ? fn : ((...a: unknown[]) => { prev(...a); fn(...a); }) as F;
 }
+
+/** A slot whose first answer wins (`answered` tells one): `fn` is asked when what is there does not answer. */
+export function first<F extends HookFn>(answered: (r: unknown) => boolean, prev: F | null, fn: F): F {
+  return prev === null ? fn : ((...a: unknown[]) => { const r = prev(...a); return answered(r) ? r : fn(...a); }) as F;
+}
+
+/** `beforeWrite`: the first feature that handles the write. */
+export const handled = (r: unknown): boolean => r === true;
+/** `dollar`: the first feature that knows the `$` name (a value, possibly null or false). */
+export const known = (r: unknown): boolean => r !== undefined;
+/** `claim`: the first feature that takes the `<wcs-state>`. */
+export const taken = (r: unknown): boolean => r != null;
 
 /** An add-on entry: `installFeatures([temporal, diagnostics])` before the state is defined. */
 export interface Feature {

@@ -138,9 +138,7 @@ export const codeOf = (id: M): string => {
 
 /** A message without the `[@wcstack/state]` prefix: the full sentence with diagnostics, else the number and the values. */
 export function text(id: M, args: readonly unknown[] = []): string {
-  return hooks.render !== null
-    ? hooks.render(id, args)
-    : `${codeOf(id)}#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
+  return hooks.render?.(id, args) ?? `${codeOf(id)}#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
 }
 
 /** Throws message `id` (`subject` / `candidates` feed the diagnostics add-on's did-you-mean). */

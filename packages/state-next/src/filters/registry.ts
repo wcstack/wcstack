@@ -47,8 +47,7 @@ export const FORMATS_FILTER_NAMES: readonly string[] = [
  * through as filters (`|toString` / `|constructor` / `|valueOf`), which then fail with a
  * meaningless TypeError instead of `[wcs/filter-unknown]`.
  */
-const factories = new Map<string, FilterFactory>();
-const arities = new Map<string, readonly [number, number]>();
+const definitions = new Map<string, FilterDefinition>();
 
 /** Name + arguments → the function already built for them (each is built once). */
 const resolvedByKey = new Map<string, FilterFn>();
@@ -69,9 +68,8 @@ export function filterArgsKey(args: readonly string[], literals: readonly unknow
 /** Called by the install functions. Idempotent — a name registered again replaces the previous one. */
 export function registerFilters(map: Record<string, FilterDefinition>): void {
   for (const name of Object.keys(map)) {
-    const definition = map[name];
-    factories.set(name, definition.factory);
-    arities.set(name, definition.arity);
+    // a copy: the registry keeps what was registered
+    definitions.set(name, { ...map[name] });
   }
   // A new registration can change the answers already built (a page installs once; tests and
   // tooling swap registrations)
@@ -79,12 +77,12 @@ export function registerFilters(map: Record<string, FilterDefinition>): void {
 }
 
 export function hasFilter(name: string): boolean {
-  return factories.has(name);
+  return definitions.has(name);
 }
 
 /** The registered names, which the did-you-mean suggestion reads. */
 export function knownFilterNames(): string[] {
-  return [...factories.keys()];
+  return [...definitions.keys()];
 }
 
 /** Drops the functions already built (tooling that clears its parser caches). */
@@ -114,17 +112,15 @@ export function resolveFilter(name: string, options: string[], literals: readonl
   if (typeof resolved !== "undefined") {
     return resolved;
   }
-  const factory = factories.get(name);
-  if (typeof factory === "undefined") {
-    unknownFilter(name, factories.keys());
+  const definition = definitions.get(name);
+  if (definition === undefined) {
+    unknownFilter(name, definitions.keys());
   }
-  const bounds = arities.get(name) as readonly [number, number];
-  if (options.length < bounds[0] || options.length > bounds[1]) {
-    // Same vocabulary as lint's wcs/filter-arity
-    if (options.length < bounds[0]) raise(M.FilterTooFewArgs, [name, bounds[0], options.length]);
-    raise(M.FilterTooManyArgs, [name, bounds[1], options.length]);
-  }
-  const filterFn = factory(options, literals);
+  // Same vocabulary as lint's wcs/filter-arity
+  const [min, max] = definition.arity;
+  if (options.length < min) raise(M.FilterTooFewArgs, [name, min, options.length]);
+  if (options.length > max) raise(M.FilterTooManyArgs, [name, max, options.length]);
+  const filterFn = definition.factory(options, literals);
   resolvedByKey.set(key, filterFn);
   return filterFn;
 }

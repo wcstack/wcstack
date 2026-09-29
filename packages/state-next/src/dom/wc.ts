@@ -15,6 +15,7 @@ import { config } from "../config";
 import { hooks } from "../hooks";
 import type { StateRow } from "../list";
 import { adopt, Binding, K_CUSTOM, type Block, type Spec } from "./view";
+import { pipe } from "./filters";
 // (view.ts imports this module too: the cycle is fine, everything here is used at call time)
 
 interface PropertyDecl {
@@ -78,21 +79,22 @@ export function whenDefined(el: Element, owner: Block | null, attach: (bindable:
   else void r.whenDefined(tag).then(run);
 }
 
-const JSON_TYPES = new Set(["object"]);
-
 /** Mirrors an input's value to its declared attribute (best effort, never blocks the write). */
 export function mirrorAttribute(el: Element, attribute: string, v: unknown): void {
   try {
     if (v == null) el.removeAttribute(attribute);
-    else if (JSON_TYPES.has(typeof v)) {
-      let s: string;
-      try {
-        s = JSON.stringify(v);
-      } catch {
-        s = String(v);
+    else {
+      // an object as JSON (what JSON cannot write, as its string)
+      let s = v;
+      if (typeof v === "object") {
+        try {
+          s = JSON.stringify(v);
+        } catch {
+          // String(v)
+        }
       }
-      el.setAttribute(attribute, s);
-    } else el.setAttribute(attribute, String(v));
+      el.setAttribute(attribute, String(s));
+    }
   } catch {
     // mirroring is best effort
   }
@@ -126,11 +128,10 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
       else {
         v = (e as CustomEvent).detail;
         // the protocol's default getter: diagnostics tells the two shapes it can see are wrong
-        if (hooks.detail !== null && !out.occurrence) hooks.detail(el, name, v);
+        if (!out.occurrence) hooks.detail?.(el, name, v);
       }
       if (b.applying && Object.is(v, b.value)) return; // our own write echoing back
-      const fs = b.inFilters;
-      if (fs !== null) for (let i = 0; i < fs.length; i++) v = fs[i](v);
+      v = pipe(b.inFilters, v);
       // the element already shows this value: the apply this write causes must not echo it
       // back (or re-mirror the attribute) to the element it came from
       if (b.filters === null) b.value = v;
@@ -178,7 +179,7 @@ export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Bl
     return target[method](...args);
   };
   const unsubscribe = token.subscribe(fn);
-  if (owner !== null) (owner.cleanups ?? (owner.cleanups = [])).push(unsubscribe);
+  if (owner !== null) (owner.cleanups ??= []).push(unsubscribe);
 }
 
 /** `eventToken.<property>: <token>` — the property's event fires the event token. */

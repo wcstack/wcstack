@@ -15,7 +15,7 @@ import {
   VOLUME_INJECTION_PROP,
 } from "./define";
 import { parsePropPart } from "./parsePropPart";
-import { parseStatePart } from "./parseStatePart";
+import { parseStatePart, type StatePartParseResult } from "./parseStatePart";
 import { raise, M } from "../messages";
 import { ParsedBinding, STRUCTURAL_BINDING_TYPE_SET } from "./types";
 import { indexOfOutsideQuotes, splitOutsideQuotes, trimFn } from "./utils";
@@ -60,7 +60,7 @@ export function splitBindTexts(bindText: string): string[] {
  * `if`/`elseif`/`else` sibling order — the engine does those.
  */
 export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
-  const [ ...bindTexts ] = splitBindTexts(bindText).map(trimFn).filter(s => s.length > 0);
+  const bindTexts = splitBindTexts(bindText).map(trimFn).filter(s => s.length > 0);
   const results = bindTexts.map((bindText): ParsedBinding => {
     // 左辺と右辺の区切りも引用符の外だけで探す（要件 B1）。`value|defaults(':'): path` の
     // 引数の中の `:` を区切りとして拾っていた
@@ -77,106 +77,68 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
     // `#` も `|` も引用符の中では出会わない。**修飾子の値に引用符を許す拡張を入れるなら
     // `indexOfOutsideQuotes` に替えること**（`parsePropPart.ts` の同じ注記と対）。
     const keyword = propPart.split(MODIFIER_SEPARATOR)[0].split(FILTER_SEPARATOR)[0].trim();
-    if (keyword !== propPart && KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
-      raise(M.StructuralTakesNoModifiers, [bindText, keyword]);
+    if (KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
+      if (keyword !== propPart) {
+        raise(M.StructuralTakesNoModifiers, [bindText, keyword]);
+      }
+      let stateResult: StatePartParseResult;
+      if (keyword === ELSE_KEYWORD) {
+        if (statePart.length > 0) {
+          // else は値を取らない（要件 B2）。以前は右辺を黙って捨てていた
+          raise(M.ElseTakesNoValue, [bindText]);
+        }
+        stateResult = { statePathName: '#else', outFilters: [] };
+      } else if (keyword === SPREAD_PROP) {
+        // 空の右辺は spread 専用の語彙で先に落とす。`parseStatePart` の一般の空パス診断
+        // （「the right side of a binding must name a state path」）より、ここでは
+        // 「spread target path is required」のほうが直し方を指している
+        if (statePart.length === 0) {
+          raise(M.SpreadNoPath, [bindText]);
+        }
+        stateResult = parseStatePart(statePart);
+        if (stateResult.outFilters.length > 0) {
+          raise(M.SpreadNoFilters, [bindText]);
+        }
+      } else {
+        stateResult = parseStatePart(statePart);
+      }
+      return {
+        propName: keyword,
+        propSegments: [keyword],
+        propModifiers: [],
+        inFilters: [],
+        ...stateResult,
+        bindingType: keyword === SPREAD_PROP ? 'spread' : keyword as ParsedBinding['bindingType'],
+      };
     }
-    if (propPart === ELSE_KEYWORD) {
-      if (statePart.length > 0) {
-        // else は値を取らない（要件 B2）。以前は右辺を黙って捨てていた
-        raise(M.ElseTakesNoValue, [bindText]);
+    const stateResult = parseStatePart(statePart);
+    const propResult = parsePropPart(propPart);
+    const [head] = propResult.propSegments;
+    // 左辺の先頭ドット（`.online:`）は明示のプロパティ形（要件 B5・3.x 計画 D34）。ドットの無い形と
+    // 同じ束縛だが、`on` で始まってもイベントにはならない（`online:` は "line" イベントを待つ）。
+    // 名前空間の語（`.class.x` / `.command.x` …）はプロパティか名前空間か曖昧なので受けない
+    if (head === '' && propResult.propSegments.length > 1) {
+      const propSegments = propResult.propSegments.slice(1);
+      if (propSegments.includes('') || EXPLICIT_PROPERTY_REJECTED_HEADS.has(propSegments[0])) {
+        raise(M.LeadingDotNamespace, [propPart]);
       }
-      return {
-        propName: ELSE_KEYWORD,
-        propSegments: [ELSE_KEYWORD],
-        propModifiers: [],
-        statePathName: '#else',
-        inFilters: [],
-        outFilters: [],
-        bindingType: 'else',
-      };
-    } else if (propPart === SPREAD_PROP) {
-      // 空の右辺は spread 専用の語彙で先に落とす。`parseStatePart` の一般の空パス診断
-      // （「the right side of a binding must name a state path」）より、ここでは
-      // 「spread target path is required」のほうが直し方を指している
-      if (statePart.length === 0) {
-        raise(M.SpreadNoPath, [bindText]);
-      }
-      const stateResult = parseStatePart(statePart);
-      if (stateResult.outFilters.length > 0) {
-        raise(M.SpreadNoFilters, [bindText]);
-      }
-      return {
-        propName: SPREAD_PROP,
-        propSegments: [SPREAD_PROP],
-        propModifiers: [],
-        inFilters: [],
-        ...stateResult,
-        bindingType: 'spread',
-      };
-    } else if (propPart === 'if'
-      || propPart === 'elseif'
-      || propPart === 'for'
-    ) {
-      const stateResult = parseStatePart(statePart);
-      return {
-        propName: propPart,
-        propSegments: [propPart],
-        propModifiers: [],
-        inFilters: [],
-        ...stateResult,
-        bindingType: propPart,
-      };
-    } else if (keyword === 'radio' || keyword === 'checkbox') {
-      // 修飾子（`#ro`・`#onchange` …）と入力フィルタは radio / checkbox のハンドラが読む（要件 B4）
-      const stateResult = parseStatePart(statePart);
-      const propResult = parsePropPart(propPart);
       return {
         ...propResult,
+        propName: propSegments.join(DELIMITER),
+        propSegments,
         ...stateResult,
-        bindingType: keyword,
+        bindingType: 'prop',
       };
-    } else {
-      const stateResult = parseStatePart(statePart);
-      const propResult = parsePropPart(propPart);
-      // 左辺の先頭ドット（`.online:`）は明示のプロパティ形（要件 B5・3.x 計画 D34）。ドットの無い形と
-      // 同じ束縛だが、`on` で始まってもイベントにはならない（`online:` は "line" イベントを待つ）。
-      // 名前空間の語（`.class.x` / `.command.x` …）はプロパティか名前空間か曖昧なので受けない
-      if (propResult.propSegments[0] === '' && propResult.propSegments.length > 1) {
-        const propSegments = propResult.propSegments.slice(1);
-        if (propSegments.includes('') || EXPLICIT_PROPERTY_REJECTED_HEADS.has(propSegments[0])) {
-          raise(M.LeadingDotNamespace, [propPart]);
-        }
-        return {
-          ...propResult,
-          propName: propSegments.join(DELIMITER),
-          propSegments,
-          ...stateResult,
-          bindingType: 'prop',
-        };
-      }
+    }
+    return {
+      ...propResult,
+      ...stateResult,
+      // 修飾子（`#ro`・`#onchange` …）と入力フィルタは radio / checkbox のハンドラが読む（要件 B4）。
       // eventToken.<prop>: <name> は要素 dispatch を state へ流す pub/sub 配線。
       // 値適用ではないため bindingType 'event' として listener attach 経路に乗せる。
-      if (propResult.propSegments[0] === EVENT_TOKEN_NAMESPACE) {
-        return {
-          ...propResult,
-          ...stateResult,
-          bindingType: 'event',
-        };
-      }
-      if (propResult.propSegments[0].startsWith(EVENT_PROP_PREFIX)) {
-        return {
-          ...propResult,
-          ...stateResult,
-          bindingType: 'event',
-        };
-      } else {
-        return {
-          ...propResult,
-          ...stateResult,
-          bindingType: 'prop',
-        };
-      }
-    }
+      bindingType: keyword === 'radio' || keyword === 'checkbox' ? keyword
+        : head === EVENT_TOKEN_NAMESPACE || head.startsWith(EVENT_PROP_PREFIX) ? 'event' : 'prop',
+    };
   });
   // check for sigle binding for 'if', 'elseif', 'else', 'for'
   if (results.length > 1) {

@@ -29,67 +29,43 @@ export class DirtyStrategy implements Strategy {
   };
 
   onWrite(engine: Engine, p: Pattern, row: StateRow | null): void {
-    if (p.getter !== null) {
-      // a write through a getter's setter: the written occurrence itself is stale
-      this.force(p, row);
-      engine.enqueueBound(p, row);
-      engine.walkDependents(p, row, this.mark);
-      return;
-    }
-    engine.walkChange(p, row, this.mark);
+    // a write through a getter's setter: the written occurrence itself is stale
+    if (p.getter !== null) this.mark(p, row);
+    engine.enqueueBound(p, row);
+    engine.walkDependents(p, row, this.mark);
   }
 
   onIndexChange(engine: Engine, row: StateRow): void {
     const watchers = row.list.pattern.indexWatchers;
     if (watchers === null) return;
     for (const g of watchers) {
+      // the row itself (a row getter reading its own index): no closure per moved row
       if (g.depth === row.list.depth) engine.visitGetter(g, row, this.mark);
       else engine.forRowsUnder(row, g, (r) => engine.visitGetter(g, r, this.mark));
     }
   }
 
   invalidate(engine: Engine, g: Pattern, row: StateRow | null): void {
-    this.force(g, row);
-    if (hooks.getterReached !== null) hooks.getterReached(engine, g, row);
+    this.mark(g, row);
+    hooks.getterReached?.(engine, g, row);
     engine.enqueueBound(g, row);
     engine.walkDependents(g, row, this.mark);
   }
 
-  private force(g: Pattern, row: StateRow | null): void {
-    if (g.depth === 0) {
-      if (g.rootValue !== UNSET) g.rootValue = DIRTY;
-    } else if (row !== null && row.cache !== null) {
-      if (row.cache[g.slot] !== UNSET) row.cache[g.slot] = DIRTY;
-    }
-  }
-
   readGetter(engine: Engine, g: Pattern, row: StateRow | null): unknown {
-    if (g.depth === 0) {
-      let v = g.rootValue;
-      if (v !== UNSET && v !== DIRTY && v !== FAILED) return v;
-      try {
-        v = engine.evalGetter(g, null);
-      } catch (e) {
-        g.rootValue = FAILED;
-        throw e;
-      }
-      g.rootValue = v;
-      return v;
-    }
-    if (row === null) return undefined;
-    let c = row.cache;
-    if (c === null) c = row.cache = new Array(engine.slotCount).fill(UNSET);
-    let v = c[g.slot];
+    const root = g.depth === 0;
+    if (!root && row === null) return undefined;
+    const c = root ? null : (row!.cache ??= new Array(engine.slotCount).fill(UNSET));
+    let v = c === null ? g.rootValue : c[g.slot];
     // a getter made after the row's cache (a recursive family, a mounted key) has no entry yet
-    if (v !== UNSET && v !== DIRTY && v !== FAILED && g.slot < c.length) return v;
+    if (v !== UNSET && v !== DIRTY && v !== FAILED && (c === null || g.slot < c.length)) return v;
+    v = FAILED;
     try {
-      v = engine.evalGetter(g, row);
-    } catch (e) {
-      c[g.slot] = FAILED;
-      throw e;
+      return (v = engine.evalGetter(g, c === null ? null : row));
+    } finally {
+      if (c === null) g.rootValue = v;
+      else c[g.slot] = v;
     }
-    c[g.slot] = v;
-    return v;
   }
 
   resetRow(row: StateRow): void {

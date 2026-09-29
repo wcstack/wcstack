@@ -2,7 +2,7 @@
  * The SSR add-on (@wcstack/state/features/ssr): `<wcs-state enable-ssr>` with @wcstack/server —
  * see src/ssr/ssr.ts.
  */
-import { addHook, hooks, type Feature } from "../hooks";
+import { chain, hooks, type Feature } from "../hooks";
 import { adoptScope, hydrate, hydrated, installBuilder, ssrMark } from "../ssr/ssr";
 import { defineSsr } from "../ssr/element";
 import { registries } from "../element";
@@ -12,13 +12,13 @@ export const ssr: Feature = {
   install(): void {
     hooks.ssrMark = ssrMark;
     hooks.adoptScope = adoptScope;
-    addHook("element", (engine, phase) => {
+    hooks.element = chain(hooks.element, (engine, phase) => {
       if (phase === "mounting") hydrate(engine);
       else if (phase === "connected") hydrated(engine);
     });
     installBuilder();
     // `<wcs-ssr>` in every registry `<wcs-state>` is defined in, now and later
-    addHook("tags", defineSsr);
+    hooks.tags = chain(hooks.tags, defineSsr);
     for (const r of registries()) defineSsr(r);
   },
 };
