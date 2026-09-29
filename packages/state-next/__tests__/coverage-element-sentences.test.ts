@@ -66,6 +66,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.InlineFailed, ["Unexpected end of input"], "Failed to evaluate the inline <script> of <wcs-state>: Unexpected end of input. If this page sets a Content-Security-Policy, see https://github.com/wcstack/wcstack/blob/main/docs/csp.md"],
   [M.OptionInvalid, ["bootstrapState", "enableMustache"], `bootstrapState: "enableMustache" is not one of its options, or not of the option's type. 4.0 moved it to the state's $behavior.`],
   [M.BehaviorChanged, [], "a re-set state may not change $behavior: create the element again."],
+  [M.FeaturesNotArray, [], '$features must be an array of add-on names (["temporal", "formats"]).'],
   [M.SelectorRemoved, ["value: @main.count"], '"value: @main.count": the "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.'],
 
   [M.BindTextNoColon, ["value"], `[wcs/binding-syntax] Invalid bindText: "value". Missing ':' separator between propPart and statePart.`],

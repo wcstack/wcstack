@@ -75,6 +75,8 @@ export interface Hooks {
   tags: ((registry: CustomElementRegistry) => void) | null;
   /** A wc-bindable property's event read with the default getter (`e.detail`): diagnostics checks its shape. */
   detail: ((el: Element, name: string, detail: unknown) => void) | null;
+  /** The split auto entry: loads and installs add-ons of its build by name (a state's `$features`). */
+  load: ((names: string[]) => Promise<void>) | null;
 }
 
 /** What an add-on does with a `<wcs-state>` it claimed. */
@@ -110,6 +112,7 @@ export const hooks: Hooks = {
   declared: null,
   tags: null,
   detail: null,
+  load: null,
 };
 
 type HookFn = (...args: any[]) => any;
@@ -150,6 +153,19 @@ export function installFeatures(features: readonly Feature[]): void {
     if (installed.has(f.name)) continue;
     installed.add(f.name);
     f.install();
+  }
+}
+
+/**
+ * A state's `$features` before its engine is made: the missing add-ons, loaded where an entry can
+ * load them (`hooks.load`); undefined when there is nothing to wait for. The engine then checks
+ * every name (a bundle or the full build only checks).
+ */
+export function loadFeatures(state: Record<string, any>): Promise<void> | undefined {
+  const names = state.$features;
+  if (hooks.load !== null && Array.isArray(names)) {
+    const missing = names.filter((n) => !installed.has(n));
+    if (missing.length > 0) return hooks.load(missing);
   }
 }
 

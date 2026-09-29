@@ -6,7 +6,7 @@ import { DirtyStrategy } from "./strategy/dirty";
 import { config, setConfig } from "./config";
 import type { Strategy } from "./strategy/types";
 import { raise, M, text } from "./messages";
-import { hooks, requireFeature, type Claimed } from "./hooks";
+import { hooks, loadFeatures, requireFeature, type Claimed } from "./hooks";
 
 let makeStrategy: () => Strategy = () => new DirtyStrategy();
 
@@ -215,8 +215,10 @@ export class WcsState extends HTMLElement {
       if (this.hasAttribute("mount") || this.hasAttribute("bind-component") || host?.hasAttribute("data-wc-definition")) {
         requireFeature("scopes", "<wcs-state>");
       }
-      if (this.hasAttribute("enable-ssr")) requireFeature("ssr", "enable-ssr");
       const state = await this.loadState();
+      const loading = loadFeatures(state);
+      if (loading) await loading;
+      if (this.hasAttribute("enable-ssr")) requireFeature("ssr", "enable-ssr");
       const engine = new Engine(state, makeStrategy());
       engine.element = this;
       this.engine = engine;

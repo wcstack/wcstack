@@ -60,6 +60,7 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.SyncConnectNeedsOutput]: (name) => `sync=connect requires observable property "${name}".`,
   [M.OptionInvalid]: (where, key) => `${where}: "${key}" is not one of its options, or not of the option's type.${where === "bootstrapState" && MOVED.includes(key) ? " 4.0 moved it to the state's $behavior." : ""}`,
   [M.BehaviorChanged]: () => "a re-set state may not change $behavior: create the element again.",
+  [M.FeaturesNotArray]: () => '$features must be an array of add-on names (["temporal", "formats"]).',
 
   [M.BindTextNoColon]: (t) => `Invalid bindText: "${t}". Missing ':' separator between propPart and statePart.`,
   [M.StructuralTakesNoModifiers]: (t, keyword) => `"${t}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".`,

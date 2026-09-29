@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState, getBindingsReady, installFeatures, scopes, temporal } from "../src/index";
+import { hooks } from "../src/hooks";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
@@ -86,7 +87,7 @@ describe("コンポーネントの mount の優先順位（R1）", () => {
   });
 });
 
-describe("コンポーネントの $behavior", () => {
+describe("コンポーネントの $behavior・$features", () => {
   it("ホストの $behavior を継がず、自分の $behavior で動く", async () => {
     const plain = define(`<p class="own">{{ a }}</p>`, () => ({ a: "own" }));
     const off = define(`<p class="own">{{ a }}</p>`, () => ({ a: "own", $behavior: { enableMustache: false } }));
@@ -99,6 +100,26 @@ describe("コンポーネントの $behavior", () => {
     expect(text(root.querySelector(off)!.shadowRoot, ".own")).toBe("{{ a }}");
   });
 
+  it("$features の足りない後付けを、エンジンを作る前に読み込む", async () => {
+    const seen: string[][] = [];
+    let engineAtLoad: unknown = "unset";
+    const tag = define(`<p class="own">{{ a }}</p>`, () => ({ a: "loaded", $features: ["temporal", "cmp-fake"] }));
+    hooks.load = async (names) => {
+      seen.push(names);
+      // the page host is the last one appended; its component's <wcs-state> has no engine yet
+      engineAtLoad = (document.body.lastElementChild!.shadowRoot!.querySelector(tag)!.shadowRoot!.querySelector("wcs-state") as any).engine;
+      installFeatures(names.map((name) => ({ name, install() {} })));
+    };
+    try {
+      const { root } = await page(`<${tag}></${tag}>`, {});
+      await flush();
+      expect(seen).toEqual([["cmp-fake"]]);
+      expect(engineAtLoad).toBe(null);
+      expect(text(root.querySelector(tag)!.shadowRoot, ".own")).toBe("loaded");
+    } finally {
+      hooks.load = null;
+    }
+  });
 });
 
 describe("コンポーネントとホストの間の変更", () => {

@@ -759,6 +759,11 @@ export class Engine implements ReconcileHooks {
     if (target.$scan !== undefined) raise(M.ScanRemoved);
     // 3.2 renamed these; 4.0 removed the old names (a declaration under one would do nothing)
     for (const [old, name] of REMOVED_DECLARATIONS) if (target[old] !== undefined) raise(M.DeclarationRemoved, [old, name]);
+    const f = target.$features;
+    if (f !== undefined) {
+      if (!Array.isArray(f)) raise(M.FeaturesNotArray);
+      for (const name of f) requireFeature(name, "$features");
+    }
     const c = target.$behavior ?? {};
     if (typeof c !== "object") raise(M.OptionInvalid, ["state", "$behavior"]);
     for (const key in c) if (!BEHAVIOR_KEYS.includes(key) || typeof c[key] !== "boolean") raise(M.OptionInvalid, ["$behavior", key]);

@@ -36,7 +36,7 @@ const NAMES = `
   dropWork fedBack codeWrote feeding unchainFn renderedFn markupAccessor handlerWrote otherWrote
   listsByArray share mirror shared landed loadTarget forListsUnder forAllLists api postUpdate callAt rowOf
   explain render beforeWrite written getterReached listSynced drained declare claim dollar failed hostBinding
-  componentScope ssrMark adopt adoptScope declared tags mustache guard directional
+  componentScope ssrMark adopt adoptScope declared tags mustache guard directional load
 `.trim().split(/\s+/);
 
 export const MANGLE_PROPS = new RegExp(`^(?:${NAMES.join("|")})$`);

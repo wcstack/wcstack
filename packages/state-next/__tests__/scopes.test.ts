@@ -79,6 +79,7 @@ describe("volume <wcs-state mount>", () => {
     [{ $renderedCallback() {} }, "$renderedCallback is not run in a volume"],
     [{ $stream: {} }, "$stream is not run in a volume"],
     [{ $behavior: { sameValueGuard: false } }, "$behavior is not run in a volume"],
+    [{ $features: ["temporal"] }, "$features is not run in a volume"],
   ])("volume で動かない宣言は、接ぎ木せずに報告し、connectedCallbackPromise は解決する（%#）", async (state, message) => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const { read } = await host(`<wcs-state></wcs-state><wcs-state mount="v"></wcs-state>`, [{}, { a: 1, ...state }]);

@@ -62,6 +62,7 @@ export const enum M {
   InlineFailed = 43,
   OptionInvalid = 44,
   BehaviorChanged = 45,
+  FeaturesNotArray = 46,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,

@@ -25,7 +25,7 @@ import { Engine, rowAt } from "../engine";
 import { WILDCARD, type Pattern } from "../pattern";
 import type { StateRow } from "../list";
 import type { Binding } from "../dom/view";
-import { hooks, type Claimed } from "../hooks";
+import { hooks, loadFeatures, type Claimed } from "../hooks";
 import { config } from "../config";
 import { DirtyStrategy } from "../strategy/dirty";
 import { mount } from "../dom/mount";
@@ -624,6 +624,9 @@ export function crossed(E: Engine, p: Pattern, row: StateRow | null, old: unknow
 
 async function start(el: HTMLElement, host: Element, root: Node, state: Record<string, any>): Promise<Mount | null> {
   if (state === UNWIRED) return null;
+  // the add-ons its `$features` names, before anything reads the host's current mount
+  const loading = loadFeatures(state);
+  if (loading) await loading;
   const h = hosts.get(host)!;
   const old = h.current;
   if (old !== null && old.el !== el && old.el.isConnected) {
