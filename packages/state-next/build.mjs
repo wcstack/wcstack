@@ -5,6 +5,9 @@
 //                        `./core` + `./features/*`: ONE esbuild build, so every output shares the
 //                        shortened internal names (mangle.mjs) and an add-on reaches the core's
 //                        internals directly. Core and add-ons must come from the same build.
+// dist/split/auto.js     not exported (a plain path, no bundler can follow it): the split build as one
+//                        <script type="module">; it installs the add-ons the root <wcs-state>'s
+//                        `features` names and loads a state's `$features`, from `./features/` beside it
 // dist/define.js         `./define`: defineState and the types, no runtime
 // dist/manifest.esm.js   `./manifest` (+ dist/wcs-manifest.json): tooling, DOM-free
 // dist/parser.esm.js     `./parser`: tooling, DOM-free
@@ -43,10 +46,16 @@ for (const [entry, outfile] of [['src/exports.ts', 'dist/index.esm.js'], ['src/a
 // the split build
 await build({
   ...common,
-  entryPoints: { core: 'src/core.ts', ...Object.fromEntries(FEATURES.map((f) => [`features/${f}`, `src/features/${f}.ts`])) },
+  entryPoints: { core: 'src/core.ts', auto: 'src/split-auto.ts', ...Object.fromEntries(FEATURES.map((f) => [`features/${f}`, `src/features/${f}.ts`])) },
   outdir: 'dist/split', splitting: true, chunkNames: 'chunks/[name]-[hash]',
 });
 for (const f of readdirSync('dist/split', { recursive: true })) if (String(f).endsWith('.js')) await terse(resolve('dist/split', String(f)));
+// auto.js resolves the add-ons against its own URL: it must stay an entry that no file imports
+// (esbuild would move its code into chunks/, and ./features/ would point beside the chunk)
+if (!readFileSync('dist/split/auto.js', 'utf8').includes('import.meta.url')) throw new Error('dist/split/auto.js does not read its own import.meta.url');
+for (const f of readdirSync('dist/split', { recursive: true })) {
+  if (String(f).endsWith('.js') && /["'](?:\.\.?\/)+auto\.js["']/.test(readFileSync(resolve('dist/split', String(f)), 'utf8'))) throw new Error(`dist/split/${f} imports auto.js`);
+}
 // what a page loads for an entry: the entry and every chunk it imports, transitively
 const closure = (file, seen = new Set()) => {
   if (seen.has(file)) return seen;
@@ -57,6 +66,8 @@ const closure = (file, seen = new Set()) => {
 const core = closure(resolve('dist/split/core.js'));
 const sum = (files) => [...files].reduce((n, f) => n + gz(f), 0);
 console.log(`split: core.js + ${core.size - 1} chunk(s): gzip ${sum(core)} B (per file)`);
+const auto = closure(resolve('dist/split/auto.js'));
+console.log(`split: auto.js + ${auto.size - 1} chunk(s): gzip ${sum(auto)} B (per file); auto.js itself ${gz(resolve('dist/split/auto.js'))} B, beyond the core ${sum([...auto].filter((x) => !core.has(x)))} B`);
 for (const f of FEATURES) {
   const own = [...closure(resolve(`dist/split/features/${f}.js`))].filter((x) => !core.has(x));
   console.log(`split: features/${f}.js: gzip ${sum(own)} B beyond the core`);

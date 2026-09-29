@@ -15,6 +15,8 @@ export default defineConfig({
         'src/core.ts',
         'src/core-entry.ts',
         'src/auto.ts',
+        // tested as built (__tests__/split-auto.test.ts): it runs on import, against the page
+        'src/split-auto.ts',
         // types only
         'src/public/types.ts',
         'src/parser/types.ts',
