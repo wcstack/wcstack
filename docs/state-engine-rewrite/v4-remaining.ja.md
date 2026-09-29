@@ -13,7 +13,7 @@
 **新エンジンの現状**（詳しくは [addons-plan.ja.md](./addons-plan.ja.md) §6）
 - コアと後付け 8 つ（formats・diagnostics・temporal・list-keys・scopes・recursion・ssr・devtools）を実装済み。
 - テスト 1,302 件（通過 1,301・スキップ 1）。リポジトリの e2e は 131/131（2026-09-27）。
-- core 18,129B gzip（上限 20,000B、2026-09-29 のサイズの削減の後）、全部入りの `auto` 39,891B（3.3.0 は 80.9KB）。2026-09-27 から terser を後段に通す（§8）。
+- core 18,369B gzip（上限 20,000B、2026-09-30 の `$behavior`・`$features` の後）、全部入りの `auto` 40,208B（3.3.0 は 80.9KB）。2026-09-27 から terser を後段に通す（§8）。
 - 公式 js-framework-benchmark の CPU 加重幾何平均は 1.08〜1.11（signals 1.21〜1.25、3.3.0 1.51）。
 
 ## 1. 決めてほしいこと
@@ -62,7 +62,7 @@
 - パース結果の `uuid` は無い（新エンジンは構造の束縛に id を使わない）。
 - `$listKeys` は後付け `features/list-keys` に移った（3.3 は core に持っていた）。`.` と `/auto` は入れるので、`/core` だけのページで使うときだけ install が要る。
 - 分割ビルドの `chunks/` のファイル名にハッシュが付く（3.3 は名前だけ。esbuild では名前だけだと衝突する）。
-- 設定の `commentTextPrefix` と `enablePropagationContext` は受け取るが効果が無い（`{{ }}` をコメントにしない、echo は構造で止める）。
+- 設定の `commentTextPrefix`・`enablePropagationContext`・`debug` は消した（渡すと throw）。`enableMustache`・`sameValueGuard`・`enableDirectionalInitialSync` は状態の `$behavior` へ移った（2026-09-30、§8）。
 - `installFeatures` は同じ名前の後付けを 2 回目から飛ばす（3.3 は毎回 `install()` を呼ぶ。どちらも冪等なので結果は同じ）。
 - `.` は型 `IStateElement` を足した（README の表を型にしたもの）。
 
@@ -70,8 +70,8 @@
 
 - ~~#2（リスト要素 getter の隣接項目問題）を state-next で確かめる（R5）~~ 済み（§8）。
 - エラー番号の一覧を、利用者が引ける場所に置く（README か docs）。番号と文面の正本は `src/diagnostics/messages.ts`。
-- 分割エントリと設定を、root の `<wcs-state>` の属性や状態の `$config`・`$features` で指定する案（2026-09-28 検討、決定ではない）: [root-attributes.ja.md](./root-attributes.ja.md)。3 案を試作で計測し（§10）、属性＋`$config`／`$features` を推奨した（§11。core +314 B、上限まで残り 192 B。この残りは削減の前の 19,494 B が基準。2026-09-29 の削減の後は 18,129 B なので、入れても 1,557 B 残る）。論点は同文書 §6 と §12。
-- `config.debug` がどこからも読まれていない（3.x では `console.debug` の出力に使っていた）。外すか実装し直すかを決める（[root-attributes.ja.md](./root-attributes.ja.md) §8）。
+- ~~分割エントリと設定を、root の `<wcs-state>` の属性や状態の宣言キーで指定する案~~ 済み（2026-09-30、§8）: 属性＋`$behavior`／`$features`。検討は [root-attributes.ja.md](./root-attributes.ja.md)、計画と計測は [config-impl-plan.ja.md](./config-impl-plan.ja.md)。
+- ~~`config.debug` がどこからも読まれていない~~ 済み（2026-09-30）: 消した（渡すと throw）。
 - ~~CSP の診断（docs/csp §9）が state-next に無い~~ 済み（§8 の 2026-09-28）。
 - `<wcs-state>` の中の `<script type="module">` はブラウザも評価するので、CSP が無いページではトップレベルのコードが 2 回走る（3.x も同じ）。README と docs/csp に書いた。挙動を変えるかは決めていない（§8 の 2026-09-28）。
 
@@ -138,13 +138,13 @@
 
 | 対象 | やること |
 |---|---|
-| vscode-wcs・lint（`wcs-validate`） | 新しいパーサと manifest に切り替える。#355（数値添字のパスの束縛への誤った `wcs/template-syntax`・`wcs/binding-path-missing`）: 4.0 は添字の数によらず追従する（F17）ので、添字が 2 つ以上のパスも警告しない（3.3.x の修正は添字 1 つだけ）。#383: 4.0 は `*` と数値の添字を混ぜたパス（行 getter の中の `this["groups.*.sel.0.id"]`・`$eq`）を読めるので、lint・拡張もそう扱う。`[wcs/wildcard-rank]` #1403（行の中で別のリストの `*` を束ねる、F32）は、lint が `*` の数しか見ないので検出しない（4.0 の実行時の文面は lint へ誘導しない）。検出するなら、囲む `for:` の一覧と段ごとに比べる。manifest の `filters` から `substr` が消えるので、`substr` は `wcs/filter-unknown` になる。`slice(start, start + length)` への書き換えを案内するか（クイックフィックスを含む）を決める。`wcs/name-alias`（今は「3.x の間は動き、4.0 で外れる」）を「4.0 で外れた」エラーにする。state-next の新しいコード（`feature-not-installed`・`declaration-alias`・recursion 系など）を共有の語彙にそろえる。`#番号` のメッセージを解読させるかを決める。テストを流し直し、版を上げる |
+| vscode-wcs・lint（`wcs-validate`） | 新しいパーサと manifest に切り替える。#355（数値添字のパスの束縛への誤った `wcs/template-syntax`・`wcs/binding-path-missing`）: 4.0 は添字の数によらず追従する（F17）ので、添字が 2 つ以上のパスも警告しない（3.3.x の修正は添字 1 つだけ）。#383: 4.0 は `*` と数値の添字を混ぜたパス（行 getter の中の `this["groups.*.sel.0.id"]`・`$eq`）を読めるので、lint・拡張もそう扱う。`[wcs/wildcard-rank]` #1403（行の中で別のリストの `*` を束ねる、F32）は、lint が `*` の数しか見ないので検出しない（4.0 の実行時の文面は lint へ誘導しない）。検出するなら、囲む `for:` の一覧と段ごとに比べる。manifest の `filters` から `substr` が消えるので、`substr` は `wcs/filter-unknown` になる。`slice(start, start + length)` への書き換えを案内するか（クイックフィックスを含む）を決める。`wcs/name-alias`（今は「3.x の間は動き、4.0 で外れる」）を「4.0 で外れた」エラーにする。state-next の新しいコード（`feature-not-installed`・`declaration-alias`・recursion 系など）を共有の語彙にそろえる。`#番号` のメッセージを解読させるかを決める。状態の宣言キー `$behavior`・`$features` を予約名に（manifest の `reservedStateApi` に載せた）、`$behavior` のキーと型・`$features` と root の `features=` の名前・root 以外の `features=` を lint する（[config-impl-plan.ja.md](./config-impl-plan.ja.md) §4 段 4）。テストを流し直し、版を上げる |
 | `@wcstack/typescript` | 前置きの型から旧名（`$trackDependency`・`$untrackDependency` など）を外す。`WcsThis` などの型の出所を R2 に合わせる |
 | `@wcstack/testing` | `file:../state` で state を使う。state-next でテストを流す（`createStateAsync` は足し済み） |
 | `@wcstack/server` | 依存 `^3.3.0` を `^4` へ。SSR の出力は 3.3 と互換が無い（版の検査でクライアント描画に倒れる）ので、移行ガイドに書く。server 自身の変更は不要（後付け 5 で確認） |
 | `wcstack`（入口パッケージ） | state の `/auto` を取り込むので、新しい auto で作り直し、サイズを記録する |
 | `@wcstack/devtools` | プロトコル v2 のままで、改修は不要（後付け 6 で確認）。型のずれを見るテスト（`packages/devtools/__tests__/protocol.typesDrift.test.ts`）が `packages/state/src/devtools/types.ts` を読むので、参照先を直す |
-| wcstack-skill（別リポジトリ） | `$scan` の削除、旧名の削除、`substr` の削除（`slice` へ）、イベントの委譲（バブリングするイベントの `currentTarget` がルート）、エラーの番号などを反映し、プラグインの版を上げる。CSP の記述の誤りも直す（§3.1。4.0 を待たずに直せる） |
+| wcstack-skill（別リポジトリ） | `$scan` の削除、旧名の削除、`substr` の削除（`slice` へ）、イベントの委譲（バブリングするイベントの `currentTarget` がルート）、エラーの番号、`bootstrapState` から `$behavior` へ移った 3 キー、`$features`・root の `features=`・分割 auto（`dist/split/auto.js`）などを反映し、プラグインの版を上げる。CSP の記述の誤りも直す（§3.1。4.0 を待たずに直せる） |
 
 ### 3.1 wcstack-skill の CSP の記述（2026-09-28）
 
@@ -180,8 +180,9 @@ docs/csp（ja / en）と README で直した誤り 2 つ（§8 の 2026-09-28）
 
 | 文書 | やること |
 |---|---|
-| `packages/state/README.md`・`README.ja.md` | 新エンジンの規範文書として書き直す。変わった約束: `$scan` の削除、旧名の削除、イベントの委譲、要素への書き込みの位置モデル、無いキーへの書き込み、再セットで無いパスは空、エラーの番号、後付けの入口と「状態を定義する前に install する」 |
-| 移行ガイド（`docs/migration-v4.md`・`.ja.md`） | 新しく作る。承認済みの簡素化（volume の注入、volume に書いた `$watch` などがエラー、SSR のインライン snapshot と値の表、`listPaths` などを core に入れない、私有データは要素ごと）と、3.3.0 の不具合を直した差（#319〜#324 など）を並べる |
+| `packages/state/README.md`・`README.ja.md` | 新エンジンの規範文書として書き直す。変わった約束: `$scan` の削除、旧名の削除、イベントの委譲、要素への書き込みの位置モデル、無いキーへの書き込み、再セットで無いパスは空、エラーの番号、後付けの入口と「状態を定義する前に install する」。「設定」を bootstrap（表記: タグ名・束縛の属性名・コメントの接頭辞・`locale`・`enableContractAnalyzer`）と状態の `$behavior`（振る舞い）に分ける。「分割エントリ」に分割 auto（`dist/split/auto.js`、import map 無しの 1 行）と、`features=`（定義の前に要る scopes・開発環境の diagnostics／devtools）と `$features`（その状態が要る後付け）の役割の違い |
+| 移行ガイド（`docs/migration-v4.md`・`.ja.md`） | 新しく作る。承認済みの簡素化（volume の注入、volume に書いた `$watch` などがエラー、SSR のインライン snapshot と値の表、`listPaths` などを core に入れない、私有データは要素ごと）と、3.3.0 の不具合を直した差（#319〜#324 など）を並べる。設定の 3 キーが `bootstrapState` から状態の `$behavior` へ移る（切り貼りで済む）、`debug`・`commentTextPrefix`・`enablePropagationContext` が消える、`bootstrapState` が知らないキー・型の違う値で throw するようになる |
+| [docs/sri.ja.md](../sri.ja.md)・[docs/csp.ja.md](../csp.ja.md)（英語版も） | sri の分割エントリの節と csp §2.1 の表に分割 auto の行: 動的 import は `<script integrity>` の範囲の外、要るのは配信元ホストの許可だけ、起動の `<script>` の nonce で `'strict-dynamic'` でも通る（[root-attributes.ja.md](./root-attributes.ja.md) §4、2026-09-30 に 3 ブラウザで確かめた） |
 | `CHANGELOG.md` | 4.0.0 の項 |
 | [timing-and-firing-contract.ja.md](../timing-and-firing-contract.ja.md)（英語版も） | §3 の見出しの `$streams`、§4.3 の機構の順序（`$scan` → `$watch` → `$streams` restart、`$updatedCallback`）を 4.0 に直す。新エンジンの順序は `$renderedCallback` → `$watch` → stream の再開。§4.3 の「arbiter がある間は順序が反転する」が新エンジンでも成り立つかを確かめる |
 | `CLAUDE.md` | State の構成の説明（`proxy/`・`binding/`・`structural/` など 3.x の構成）と、サイズの検査の記述を直す |
@@ -649,3 +650,26 @@ core のサイズを減らす方策を試作して測り（候補ごとに core 
 
 - 試作の途中で入れていない案: `reconcile` の速い道の削除（上）、空の一覧に行を作るときの近道の削除を戻す案と `buildBlock` のノード探しのインライン化（どちらも計測で効果が見えず、バイトが増えるだけなので、削った形のまま）。
 - [root-attributes.ja.md](./root-attributes.ja.md) の推奨（+314B）は、入れても上限まで 1,557B 残る。
+
+### 設定の分割・`$behavior`・`$features`・分割 auto（2026-09-30）
+
+[root-attributes.ja.md](./root-attributes.ja.md) の推奨（属性＋状態の宣言キー）を、[config-impl-plan.ja.md](./config-impl-plan.ja.md) の計画どおりに入れた。検討で `$config` と呼んでいたキーは、`bootstrapState(config)` と混ざらないように `$behavior` にした（root-attributes §13）。
+
+- **設定の分割**（`config.ts`）: `bootstrapState` の設定はマークアップの表記（タグ名・束縛の属性名・コメントの接頭辞）と `locale`・`enableContractAnalyzer` だけにした。読まれていない `debug`・`commentTextPrefix`・`enablePropagationContext` を消した。知らないキー・型の違う値は `#44` で throw（これまでは黙って無視）。undefined の値は飛ばす。
+- **`$behavior`**（`engine.ts`・`dom/plan.ts`・`dom/wc.ts`・`temporal/watch.ts`）: `enableMustache`・`sameValueGuard`・`enableDirectionalInitialSync` を状態の宣言にした。エンジンを作るときに読み、エンジンの欄（短縮名）に持つ。木ごとに違ってよい。コンポーネントの mount はホストから継がない。ボリュームに書くとエラー。再セットで変えると `#45`。SSR ではサーバも同じ状態を読むので、サーバとクライアントで食い違わない。
+- **`$features`**（`hooks.ts`・`element.ts`・`scopes/component.ts`）: その状態が要る後付けの名前。エンジンを作る前に、足りない分を受け口 `hooks.load` で読み込む（分割 auto だけが埋める）。全部入り・バンドラでは検査だけ。読むものが無ければ待たない（起動の順番は変わらない）。`enable-ssr` の検査は読み込みの後へ移した。配列でなければ `#46`。
+- **分割 auto**（`split-auto.ts`・`load.ts`・`build.mjs`）: `dist/split/auto.js`。import map 無しの 1 行で分割のビルドを使う。root の `<wcs-state>` の `features=` を定義の前に読む（scopes はここでしか入らない）。許可リストの 8 つだけを、自分の `import.meta.url` の隣の `features/` から読む。`exports` には載せない。
+- テスト: `behavior-features.test.ts`・`split-auto.test.ts` を足し、`public-api`・`component`・`scopes` などに足した。実ブラウザ 3 つで、CSP（nonce＋`'strict-dynamic'`）の下の分割 auto を確かめた（[config-impl-plan.ja.md](./config-impl-plan.ja.md) §4）。
+- 性能: `bench/inpage-ab.mjs`（CPU 4 倍の減速、ABBA、各 320 サンプル）で HEAD と有意な差なし（update10k ×1.019・t ≈ 1.4、create1k ×0.963）。
+- カバレッジ付きの全体実行で `split.test.ts` の beforeAll が 60 秒を超える（HEAD でも 65 秒で落ちる。前からある問題）。`split-auto.test.ts` も同じくビルドと terser を回すので、並ぶと起きやすい。カバレッジは `split.test.ts` を除いて取った（src のカバレッジには効かないテスト）。
+
+| | 前（`23debc13`） | 後 |
+|---|---|---|
+| テスト | 1,715 件（通過 1,701・意図した失敗 13・スキップ 1） | 1,749 件（通過 1,735・意図した失敗 13・スキップ 1） |
+| カバレッジ | 99.71・99.06・100・99.95 | 99.71・99.05・100・99.95 |
+| core（`core.min.js` gzip） | 18,129B | 18,369B（+240B。上限 20,000B まで 1,631B） |
+| 全部入りの `auto`（gzip） | 39,891B | 40,208B（+317B） |
+| `index.esm.js`（gzip） | 42,623B | 42,992B（+369B） |
+| 分割の core（`core.js` とチャンク） | 22,208B | 22,328B（+120B） |
+| 分割 auto（`auto.js` とチャンク） | — | 22,536B（`auto.js` の自分の分 602B） |
+| e2e（`STATE=next`） | 138/138 | 138/138 |

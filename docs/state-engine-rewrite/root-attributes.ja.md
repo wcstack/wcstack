@@ -2,7 +2,7 @@
 
 作成 2026-09-28。対象は `research/state-engine` の `9d3ce6f0`（`packages/state-next`）。§9〜§12 は同じ日の続き（`fc3b5771` の後）。
 
-**この文書は決定ではない。** §6 と §12 の論点を決めてから実装に入る。
+**この文書は検討の記録。** 決定と実装は §13 と [config-impl-plan.ja.md](./config-impl-plan.ja.md)（2026-09-30）。この文書の `$config` は、実装では **`$behavior`** という名前になった。
 
 ## 0. 要約
 
@@ -275,3 +275,10 @@ state-next（`fc3b5771` の後の HEAD）に最小限の試作を入れてビル
 | B7 | `locale` の bootstrap での上書き | 残す、または `<html lang>` だけにする |
 | B8 | `enableContractAnalyzer` の行き先 | `analyzeContract` の引数、または bootstrap に残す |
 | B9 | 読まれていない設定キーと移ったキー | 4.0 で消し、渡されたら throw する（今の `setConfig` は知らないキーを黙って無視する） |
+
+## 13. 決定（2026-09-30）
+
+- B1: 属性＋状態の宣言キー（§11 の推奨）。§6・§12 のほかの論点も推奨どおりに置いた（置き方の一覧は [config-impl-plan.ja.md](./config-impl-plan.ja.md) §1）。
+- B3: 状態の宣言キーの名前は `$config` ではなく **`$behavior`**。`bootstrapState(config)`・`getConfig()`・`IWritableConfig` はモノレポのすべての I/O パッケージにある組で、状態の側も `$config` と呼ぶと 2 つが混ざる。§9.1 の分け方の後、bootstrap の設定はマークアップの表記、状態の宣言はその木の振る舞いなので、名前でも分けた。中のキーは今の名前のまま（`enableMustache`・`sameValueGuard`・`enableDirectionalInitialSync`）。
+- 実装した（段 1〜3）。core は 18,129 → 18,369 B（+240 B、上限まで 1,631 B）。§10 の +314 B より小さい理由と計測は [config-impl-plan.ja.md](./config-impl-plan.ja.md) §0・§3。
+- §9.3 の落とし穴（読み込み関数がチャンクへ移ると `./features/` がずれる）は、読み込み関数を共有のモジュールに置き、エントリが自分の `import.meta.url` を引数で渡す形で解いた。`new URL(…, import.meta.url)` をそのまま書くと、Vite（Vitest）が資産の URL に書き換えることも、この形で避けられる。
