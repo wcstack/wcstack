@@ -10,6 +10,9 @@ import { MAX_PATH_SEGMENTS, MODIFIER_SEPARATOR, RECURSION_WILDCARD } from "../pa
 
 type Sentence = (...a: any[]) => string;
 
+/** The options 4.0 moved from `bootstrapState` to the state's `$behavior`. */
+const MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
+
 const CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
 
 export const SENTENCES: Record<M, Sentence> = {
@@ -55,6 +58,8 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.MemberUndeclared]: (name) => `Property "${name}" is not declared by wcBindable.`,
   [M.InitIncompatible]: (init, name) => `init=${init} is incompatible with wcBindable member "${name}".`,
   [M.SyncConnectNeedsOutput]: (name) => `sync=connect requires observable property "${name}".`,
+  [M.OptionInvalid]: (where, key) => `${where}: "${key}" is not one of its options, or not of the option's type.${where === "bootstrapState" && MOVED.includes(key) ? " 4.0 moved it to the state's $behavior." : ""}`,
+  [M.BehaviorChanged]: () => "a re-set state may not change $behavior: create the element again.",
 
   [M.BindTextNoColon]: (t) => `Invalid bindText: "${t}". Missing ':' separator between propPart and statePart.`,
   [M.StructuralTakesNoModifiers]: (t, keyword) => `"${t}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".`,

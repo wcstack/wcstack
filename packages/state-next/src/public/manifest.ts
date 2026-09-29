@@ -100,7 +100,7 @@ export function getWcsManifest(): IWcsManifest {
     reservedLifecycle: ["$connectedCallback", "$disconnectedCallback", "$renderedCallback", "$errorCallback", "$stateReadyCallback"],
     reservedStateApi: [
       "$bindables", "$commands", "$commandTokens", "$command", "$eventTokens", "$on",
-      "$stream", "$watch", "$listKeys", "$recursion", "$streamStatus", "$streamError",
+      "$stream", "$watch", "$listKeys", "$recursion", "$streamStatus", "$streamError", "$behavior",
     ],
   };
 }

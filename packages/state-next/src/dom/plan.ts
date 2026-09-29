@@ -55,7 +55,7 @@ const INITS = ["state", "element", "auto", "none"];
 const SYNCS = ["call", "connect"];
 
 /** `#ro`, `#prevent`, `#stop`, `#onchange`, `#init=…`, `#sync=…`. */
-function flags(mods: string[]): Flags {
+function flags(engine: Engine, mods: string[]): Flags {
   const on = mods.find((m) => m.startsWith("on"));
   // (the keys are compared, never used as property names: the build renames `init` / `sync`)
   let init: string | null = null;
@@ -63,7 +63,7 @@ function flags(mods: string[]): Flags {
   for (const m of mods) {
     const i = m.indexOf("=");
     if (i < 0) continue;
-    if (!config.enableDirectionalInitialSync) raise(M.DirectionalSyncDisabled);
+    if (!engine.directional) raise(M.DirectionalSyncDisabled);
     const key = m.slice(0, i).trim();
     const value = m.slice(i + 1).trim();
     const isInit = key === "init";
@@ -106,7 +106,7 @@ export function notAfterIf(type: string): never {
 }
 
 export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, el: Element, node: number): Spec {
-  const f = flags(b.propModifiers);
+  const f = flags(engine, b.propModifiers);
   const custom = el.localName.includes("-");
   const segs = b.propSegments;
   const path = b.statePathName;
@@ -332,7 +332,7 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
         if (text !== null) onElement(el, text);
         // a Light DOM component's content is bound by its own engine
         if (!hooks.componentScope?.(el)) walk(Array.from(el.childNodes));
-      } else if (child.nodeType === 3 && config.enableMustache && (child as Text).data.includes("{{")) {
+      } else if (child.nodeType === 3 && engine.mustache && (child as Text).data.includes("{{")) {
         for (const { node, expr } of splitMustache(child as Text)) onText(node, expr);
       }
     }

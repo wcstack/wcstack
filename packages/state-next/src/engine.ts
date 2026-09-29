@@ -7,11 +7,13 @@ import { runTransition } from "./protocol/transitionRunner";
 import { raise, M, text } from "./messages";
 import { recursionUnsupported } from "./parser/parseStatePart";
 import { hooks, requireFeature } from "./hooks";
-import { config } from "./config";
 
 /** Declarations an add-on serves: without it installed they fail instead of doing nothing. */
 const REMOVED_DECLARATIONS: [string, string][] = [["$streams", "$stream"], ["$updatedCallback", "$renderedCallback"]];
 const DECLARATIONS: [string, string][] = [["$watch", "temporal"], ["$stream", "temporal"], ["$listKeys", "list-keys"], ["$recursion", "recursion"]];
+
+/** The options of `$behavior` (each true by default): what an engine reads them as is `mustache` / `guard` / `directional`. */
+const BEHAVIOR_KEYS = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
 
 /** `**` binds a depth only where a path is read: an assignment, $resolve, $postUpdate and $dependOn refuse it. */
 function unbound(path: string): string {
@@ -87,6 +89,10 @@ function ctxRow(ctx: StateRow | null, p: Pattern, k: number): StateRow | null {
  */
 export class Engine implements ReconcileHooks {
   target!: Record<string, any>;
+  /** `$behavior` (fixed at construction): `{{ }}` text, the same-value guard, direction-aware initial sync. */
+  mustache!: boolean;
+  guard!: boolean;
+  directional!: boolean;
   readonly patterns: PatternTable;
   readonly strategy: Strategy;
   readonly proxy: Record<string, any>;
@@ -586,7 +592,7 @@ export class Engine implements ReconcileHooks {
     if (p.getter !== null) raise(M.GetterWithoutSetter, [p.path]);
     if (p.depth > 0 && row === null) raise(M.NoRow, [p.path]);
     old = this.readData(p, row);
-    if (!occurrence && config.sameValueGuard && Object.is(old, value) && Object(value) !== value) return;
+    if (!occurrence && this.guard && Object.is(old, value) && Object(value) !== value) return;
     if (p.last === WILDCARD) {
       // element write: the position keeps its row, the row takes the new value
       const r = row!;
@@ -753,6 +759,15 @@ export class Engine implements ReconcileHooks {
     if (target.$scan !== undefined) raise(M.ScanRemoved);
     // 3.2 renamed these; 4.0 removed the old names (a declaration under one would do nothing)
     for (const [old, name] of REMOVED_DECLARATIONS) if (target[old] !== undefined) raise(M.DeclarationRemoved, [old, name]);
+    const c = target.$behavior ?? {};
+    if (typeof c !== "object") raise(M.OptionInvalid, ["state", "$behavior"]);
+    for (const key in c) if (!BEHAVIOR_KEYS.includes(key) || typeof c[key] !== "boolean") raise(M.OptionInvalid, ["$behavior", key]);
+    const [mustache, guard, directional] = BEHAVIOR_KEYS.map((key) => c[key] ?? true);
+    // a re-set keeps the engine, and what was built by the old options
+    if (this.target !== undefined && (mustache !== this.mustache || guard !== this.guard || directional !== this.directional)) raise(M.BehaviorChanged);
+    this.mustache = mustache;
+    this.guard = guard;
+    this.directional = directional;
     hooks.declare?.(this, target);
     this.target = target;
     this.slotCount = 0;

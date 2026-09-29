@@ -86,6 +86,21 @@ describe("コンポーネントの mount の優先順位（R1）", () => {
   });
 });
 
+describe("コンポーネントの $behavior", () => {
+  it("ホストの $behavior を継がず、自分の $behavior で動く", async () => {
+    const plain = define(`<p class="own">{{ a }}</p>`, () => ({ a: "own" }));
+    const off = define(`<p class="own">{{ a }}</p>`, () => ({ a: "own", $behavior: { enableMustache: false } }));
+    const { root } = await page(
+      `<p class="host">{{ x }}</p><${plain} data-wcs="state.a: x"></${plain}><${off} data-wcs="state.a: x"></${off}>`,
+      { x: "tree", $behavior: { enableMustache: false } },
+    );
+    expect(text(root, ".host")).toBe("{{ x }}");
+    expect(text(root.querySelector(plain)!.shadowRoot, ".own")).toBe("tree");
+    expect(text(root.querySelector(off)!.shadowRoot, ".own")).toBe("{{ a }}");
+  });
+
+});
+
 describe("コンポーネントとホストの間の変更", () => {
   it("深い書き込み・$postUpdate は、ホストと、同じデータに載る別のコンポーネントに届く", async () => {
     const tag = define(`<p class="city">{{ address.city }}</p>`, () => ({

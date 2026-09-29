@@ -60,6 +60,8 @@ export const enum M {
   RenderChain = 41,
   InlineBlocked = 42,
   InlineFailed = 43,
+  OptionInvalid = 44,
+  BehaviorChanged = 45,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,

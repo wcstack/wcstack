@@ -87,8 +87,8 @@ describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () =
     const { substr: _substr, ...v3Meta } = v3.filterMeta;
     expect(v4.filterMeta).toEqual(v3Meta);
     expect(v4.reservedLifecycle).toEqual(v3.reservedLifecycle);
-    // 4.0: $scan is removed; the old filter / declaration names are gone from the runtime
-    expect(v4.reservedStateApi).toEqual(v3.reservedStateApi.filter((n: string) => n !== "$scan"));
+    // 4.0: $scan is removed, $behavior is added; the old filter / declaration names are gone from the runtime
+    expect(v4.reservedStateApi).toEqual([...v3.reservedStateApi.filter((n: string) => n !== "$scan"), "$behavior"]);
     expect(v4.filterAliases).toEqual({});
     expect(v4.declarationAliases).toEqual({});
     expect(v4.apiAliases).toEqual({});

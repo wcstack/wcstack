@@ -11,7 +11,6 @@
  */
 import type { Engine } from "../engine";
 import { raise, M } from "../messages";
-import { config } from "../config";
 import { hooks } from "../hooks";
 import type { StateRow } from "../list";
 import { adopt, Binding, K_CUSTOM, type Block, type Spec } from "./view";
@@ -107,7 +106,7 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
   const input = bd.inputs.get(name);
   // enableDirectionalInitialSync off (3.x opt-out): no member checks (and no init= / sync=, see
   // plan.ts); state wins every initial sync, output-only included
-  const directional = config.enableDirectionalInitialSync;
+  const directional = engine.directional;
   if (directional && out === null && input === undefined) raise(M.MemberUndeclared, [name]);
   // what the member's shape allows: output-only takes element / none, input-only state / none, two-way any
   const init = spec.init;

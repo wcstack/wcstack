@@ -18,19 +18,13 @@ export interface IWritableTagNames {
 /** `bootstrapState(config)`: every option is optional (README "Configuration"). */
 export interface IWritableConfig {
   bindAttributeName?: string;
-  commentTextPrefix?: string;
   commentForPrefix?: string;
   commentIfPrefix?: string;
   commentElseIfPrefix?: string;
   commentElsePrefix?: string;
   tagNames?: IWritableTagNames;
   locale?: string;
-  debug?: boolean;
-  enableMustache?: boolean;
-  enableDirectionalInitialSync?: boolean;
-  enablePropagationContext?: boolean;
   enableContractAnalyzer?: boolean;
-  sameValueGuard?: boolean;
 }
 
 /** What `$errorCallback(error, info)` receives about the binding that failed. */

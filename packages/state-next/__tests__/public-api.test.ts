@@ -67,21 +67,35 @@ describe("getConfig と設定", () => {
     const c = getConfig();
     expect({ ...c, locale: undefined }).toEqual({
       bindAttributeName: "data-wcs",
-      commentTextPrefix: "wcs-text", commentForPrefix: "wcs-for", commentIfPrefix: "wcs-if",
+      commentForPrefix: "wcs-for", commentIfPrefix: "wcs-if",
       commentElseIfPrefix: "wcs-elseif", commentElsePrefix: "wcs-else",
       tagNames: { state: "wcs-state", ssr: "wcs-ssr" },
-      locale: undefined, debug: false, enableMustache: true,
-      enableDirectionalInitialSync: true, enablePropagationContext: true, enableContractAnalyzer: false, sameValueGuard: true,
+      locale: undefined, enableContractAnalyzer: false,
     });
   });
 
-  it("型の違う値は受け取らない", () => {
-    setConfig({ debug: "yes" as any, sameValueGuard: 0 as any });
-    expect(getConfig().debug).toBe(false);
-    expect(getConfig().sameValueGuard).toBe(true);
+  it("型の違う値・知らないキー・$behavior へ移ったキーは投げる", () => {
+    expect(() => setConfig({ locale: 1 as any })).toThrow('bootstrapState: "locale" is not one of its options');
+    expect(() => setConfig({ debug: false } as any)).toThrow('"debug" is not one of its options');
+    expect(() => setConfig({ sameValueGuard: false } as any)).toThrow("4.0 moved it to the state's $behavior.");
   });
 
-  it("sameValueGuard: false で同じ値の書き込みも通り、$watch の prev は undefined", async () => {
+  it("$behavior の知らないキー・型の違う値は投げる。再セットで $behavior は変えられない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(page(`<p>{{ n }}</p>`, { n: 1, $behavior: { debug: true } })).rejects.toThrow('$behavior: "debug" is not one of its options');
+    await expect(page(`<p>{{ n }}</p>`, { n: 1, $behavior: { sameValueGuard: "no" } })).rejects.toThrow('$behavior: "sameValueGuard"');
+    error.mockRestore();
+    const { el } = await page(`<p>{{ n }}</p>`, { n: 1, $behavior: { sameValueGuard: false } });
+    el.setInitialState({ n: 2, $behavior: { sameValueGuard: false } });
+    expect(() => el.setInitialState({ n: 3 })).toThrow("a re-set state may not change $behavior");
+  });
+
+  it("$behavior.enableMustache: false で {{ }} を束縛しない", async () => {
+    const { root } = await page(`<p>{{ n }}</p>`, { n: 1, $behavior: { enableMustache: false } });
+    expect(root.querySelector("p")!.textContent).toBe("{{ n }}");
+  });
+
+  it("$behavior.sameValueGuard: false で同じ値の書き込みも通り、$watch の prev は undefined", async () => {
     const seen: [unknown, unknown][] = [];
     const watch = { n(this: any, cur: unknown, prev: unknown) { seen.push([cur, prev]); } };
     const on = await page(`<p>{{ n }}</p>`, { n: 1, $watch: watch });
@@ -89,13 +103,13 @@ describe("getConfig と設定", () => {
     expect(seen).toEqual([]);
     await on.write((s) => { s.n = 2; });
     expect(seen).toEqual([[2, 1]]);
-    setConfig({ sameValueGuard: false });
     seen.length = 0;
-    await on.write((s) => { s.n = 2; });
+    const off = await page(`<p>{{ n }}</p>`, { n: 2, $watch: watch, $behavior: { sameValueGuard: false } });
+    await off.write((s) => { s.n = 2; });
     expect(seen).toEqual([[2, undefined]]);
   });
 
-  it("enableDirectionalInitialSync: false で出力専用メンバーも状態が初期値を渡し、#init= は投げる", async () => {
+  it("$behavior.enableDirectionalInitialSync: false で出力専用メンバーも状態が初期値を渡し、#init= は投げる", async () => {
     const tag = `api-output-${seq++}`;
     customElements.define(tag, class extends HTMLElement {
       static wcBindable = { protocol: "wc-bindable", version: 1, properties: [{ name: "status", event: `${tag}:status` }] };
@@ -104,13 +118,12 @@ describe("getConfig と設定", () => {
     const directional = await page(`<${tag} data-wcs="status: st"></${tag}><p>{{ st }}</p>`, { st: "seed" });
     expect((directional.root.querySelector(tag) as any).status).toBe("ready");
     expect(directional.root.querySelector("p")!.textContent).toBe("ready");
-    setConfig({ enableDirectionalInitialSync: false });
-    const legacy = await page(`<${tag} data-wcs="status: st"></${tag}><p>{{ st }}</p>`, { st: "seed" });
+    const legacy = await page(`<${tag} data-wcs="status: st"></${tag}><p>{{ st }}</p>`, { st: "seed", $behavior: { enableDirectionalInitialSync: false } });
     expect((legacy.root.querySelector(tag) as any).status).toBe("seed");
     expect(legacy.root.querySelector("p")!.textContent).toBe("seed");
     // the binding is refused while the page is bound: the element fails to initialize with it
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(page(`<${tag} data-wcs="status#init=element: st"></${tag}>`, { st: "x" }))
+    await expect(page(`<${tag} data-wcs="status#init=element: st"></${tag}>`, { st: "x", $behavior: { enableDirectionalInitialSync: false } }))
       .rejects.toThrow("init=/sync= modifiers require enableDirectionalInitialSync.");
     error.mockRestore();
   });
