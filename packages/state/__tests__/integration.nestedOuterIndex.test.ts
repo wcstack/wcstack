@@ -10,7 +10,8 @@
  *
  * いまは行の「位置が変わったときに当て直す列」に入れ子の構造ディレクティブのアンカーも入れ
  * （structural/createContent.ts・ssr/hydrateBindings.ts）、当て直しがそこから表示中の入れ子の Content へ
- * 辿る（apply/applyChangeToFor.ts の applyIndexBindings）。当て直すのは添字の束縛だけ。
+ * 辿る（apply/applyChangeToFor.ts の applyIndexBindings）。当て直すのは添字の束縛だけ。辿るのは中 — その奥も
+ * 含む — で動いた行の段の添字を使う入れ子だけ（#390。費用は integration.nestedOuterIndexCost.test.ts）。
  *
  * SSR: ハイドレートした行は、行の中の `if` の枝の中身の束縛も行が持つ。枝の Content がその中身の
  * ループ文脈を張る列まで持っていたので、枝を隠すと行の `$1` の束縛の文脈が外れ、その後の並べ替えが
@@ -186,6 +187,44 @@ describe("さらに深い入れ子・挿入と削除・隠れた枝（CSR）", (
     write(stateEl, (s) => { s.groups = [s.groups[2], s.groups[1], s.groups[0]]; });
     await drain();
     expect(texts(shadowRoot, "i")).toEqual(["4:0", "1:1", "2:1"]);
+    host.remove();
+  });
+
+  it("添字を条件に持つ elseif（elseif: $1|eq(0)）は、並べ替えで条件を評価し直す", async () => {
+    // elseif の置き場は行の中身ではなく、if の否定の枝（else）の中身に居る。行の列に入るのは else の置き場で、
+    // 当て直しはそこから elseif へ辿る
+    const { host, shadowRoot, stateEl } = await mount({
+      groups: [{ n: "a", hot: false }, { n: "b", hot: true }, { n: "c", hot: false }],
+    }, `<template data-wcs="for: groups"><p><template data-wcs="if: .hot"><b>{{ .n }}</b></template>` +
+      `<template data-wcs="elseif: $1|eq(0)"><i>{{ .n }}:{{ $1 }}</i></template></p></template>`);
+    expect(texts(shadowRoot, "b")).toEqual(["b"]);
+    expect(texts(shadowRoot, "i")).toEqual(["a:0"]);
+
+    write(stateEl, (s) => { s.groups = [...s.groups].reverse(); });
+    await drain();
+    expect(texts(shadowRoot, "b")).toEqual(["b"]);
+    expect(texts(shadowRoot, "i")).toEqual(["c:0"]); // 旧: 末尾へ動いた a の枝が a:0 のまま残り、先頭の c は何も描かない
+
+    write(stateEl, (s) => { s.groups = [{ n: "d", hot: false }, ...s.groups]; });
+    await drain();
+    expect(texts(shadowRoot, "i")).toEqual(["d:0"]);
+    host.remove();
+  });
+
+  it("if / elseif の後の else の枝だけに書いた $1 も、並べ替えの後に今の位置になる", async () => {
+    // else の置き場は行の中身ではなく、if の否定の枝の中身に（elseif の置き場と並んで）居る。
+    // 入れ子に添字の束縛があるかは、置き場の奥まで辿って判定する（#390）
+    const { host, shadowRoot, stateEl } = await mount({
+      groups: [{ n: "a", x: false, y: false }, { n: "b", x: true, y: false }, { n: "c", x: false, y: false }],
+    }, `<template data-wcs="for: groups"><p><template data-wcs="if: .x"><b>{{ .n }}</b></template>` +
+      `<template data-wcs="elseif: .y"><u>{{ .n }}</u></template>` +
+      `<template data-wcs="else:"><i>{{ .n }}:{{ $1 }}</i></template></p></template>`);
+    expect(texts(shadowRoot, "i")).toEqual(["a:0", "c:2"]);
+
+    write(stateEl, (s) => { s.groups = [...s.groups].reverse(); });
+    await drain();
+    expect(texts(shadowRoot, "i")).toEqual(["c:0", "a:2"]);
+    expect(texts(shadowRoot, "b")).toEqual(["b"]);
     host.remove();
   });
 });

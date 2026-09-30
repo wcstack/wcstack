@@ -19,7 +19,7 @@
 import { liftAddress, absoluteAddressOf } from "../../address/liftAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { DELIMITER, WILDCARD } from "../../define";
-import { createListIndex, getHomeParentListIndex, setListIndexValue } from "../../list/createListIndex";
+import { createListIndex, getHomeParentListIndex, getRowCacheStamp, setListIndexValue } from "../../list/createListIndex";
 import { getListIndexesByList, isOwnedListIndexes, setListIndexesByList } from "../../list/listIndexesByList";
 import { getLastListValueByAbsoluteStateAddress, hasRenderedList, rebaseRenderedList, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
 import { ISwapInfo } from "./types";
@@ -349,9 +349,10 @@ function commitWriteCache(
   setCacheEntryByAbsoluteStateAddress(absAddress, {
     value: value,
     dirty: false,
-    // 読み側（getByAddress）と同じ世代印を付ける — ヒットになるのは世代が一致する項目だけ
-    // （cache/types.ts の `generation`）。
-    generation: stateElement.stateGeneration
+    // 読み側（getByAddress）と同じ世代印・行の印を付ける — ヒットになるのは両方が一致する項目だけ
+    // （cache/types.ts の `generation` / `rowStamp`）。行の印は書き込みの依存ウォークが進めた後の値
+    generation: stateElement.stateGeneration,
+    rowStamp: absAddress.absolutePathInfo.pathInfo.lastSegment === WILDCARD ? undefined : getRowCacheStamp(absAddress.listIndex)
   });
 }
 

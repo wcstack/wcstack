@@ -154,9 +154,10 @@ describe('getByAddress', () => {
 
     const value = getByAddress(target, address, target, handler as any);
     expect(value).toBe('Ann');
-    // 載せた行のパス（親の要素パスも）は、要素の書き込みの依存ウォークが届くよう静的な辺に登録する（#364）
-    expect(mockStateElement.setPathInfo).toHaveBeenCalledWith('users.*.name', 'prop', 'internal');
+    // 載せた行のリストの連なり（users → users.*）は、リストへの代入の依存ウォークが行へ届くよう静的な辺に
+    // 登録する（#364）。行の下の子のパス（users.*.name）は登録しない — 行の印で無効にする（#389）
     expect(mockStateElement.setPathInfo).toHaveBeenCalledWith('users.*', 'prop', 'internal');
+    expect(mockStateElement.setPathInfo).not.toHaveBeenCalledWith('users.*.name', 'prop', 'internal');
 
     // クリーンアップ
     setCacheEntryByAbsoluteStateAddress(absAddress, null);

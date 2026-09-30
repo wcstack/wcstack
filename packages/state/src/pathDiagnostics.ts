@@ -43,6 +43,15 @@ export function findDescriptor(obj: object, key: string): PropertyDescriptor | u
   return undefined;
 }
 
+/**
+ * 数値添字の束縛の暗黙の getter（address/indexPathAccessor.ts・#332）→ その getter が読む行のパス
+ * （`groups.0.items` → `groups.*.items`）。存在の診断（diagnostics/pathChecks.ts）がパスの途中で当たった
+ * アクセサを作者の宣言と見分け、did-you-mean の候補から外すのに使う（#388）。診断は機能として分けてあるので、
+ * core と共有するこのモジュールに置く（置き場所が別だと、分割ビルドに小さなチャンクが増える）。行のパスは
+ * 定義時に core で求める — 診断から解決の部品を import すると、それも分割ビルドのチャンクになる。
+ */
+export const indexPathRowPaths: WeakMap<object, string> = new WeakMap();
+
 /** `obj` 自身＋プロトタイプチェーンのキー名（did-you-mean の候補集合） */
 function ownKeys(obj: object): string[] {
   const keys: string[] = [];
@@ -59,12 +68,15 @@ function ownKeys(obj: object): string[] {
 /**
  * 失敗した階層の兄弟候補。生オブジェクトのキーに加え、その階層にフラット宣言
  * （ドットパス getter）されているものも混ぜる — `cart.items.*.subtotl` の正解
- * `subtotal` は行オブジェクトには無く getterPaths にしか居ないため。
+ * `subtotal` は行オブジェクトには無く getterPaths にしか居ないため。数値添字の束縛の暗黙の
+ * getter（`root` に生えている）は作者の宣言ではなく、打ち間違えた束縛のパスそのものでもあるので
+ * 候補にしない（`for: users.0.frends` の行に `Did you mean "frends"` と出さない — #388）。
  */
 export function collectCandidates(
   container: object,
   parentPrefix: string,
   declaredPaths: Iterable<string>,
+  root: object,
 ): string[] {
   const candidates = ownKeys(container);
   const prefix = parentPrefix.length > 0 ? parentPrefix + DELIMITER : "";
@@ -74,7 +86,7 @@ export function collectCandidates(
     }
     const rest = declared.slice(prefix.length);
     // 直下の 1 セグメントだけを候補にする（孫は別階層の名前なので提案しない）
-    if (rest.length > 0 && rest.indexOf(DELIMITER) === -1) {
+    if (rest.length > 0 && rest.indexOf(DELIMITER) === -1 && !indexPathRowPaths.has(findDescriptor(root, declared)?.get as object)) {
       candidates.push(rest);
     }
   }
@@ -108,7 +120,7 @@ export function missingRootPathMessage(
   declaredPaths: Iterable<string>,
 ): string {
   return `[${DIAGNOSTIC_CODE.binding}] Path "${path}" does not exist on the state tree.` +
-    `${didYouMean(path, collectCandidates(target, "", declaredPaths))}${LINT_HINT}`;
+    `${didYouMean(path, collectCandidates(target, "", declaredPaths, target))}${LINT_HINT}`;
 }
 
 /**

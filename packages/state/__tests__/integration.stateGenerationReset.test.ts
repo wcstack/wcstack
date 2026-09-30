@@ -341,10 +341,11 @@ describe("再セット後の経路情報: 生きているバインドぶんを�
     await flush();
     expect(Array.from((stateEl as any).listPaths)).toEqual(["items"]);         // 旧: []
     expect(Array.from((stateEl as any).elementPaths)).toEqual(["items.*"]);    // 旧: []
-    // バインドのパス（items / items.*.upper）に、描き直しでキャッシュに載った行のパス（items.* /
-    // items.*.name — #364 から静的な辺に載る）が加わる
+    // バインドのパス（items / items.*.upper）に、描き直しでキャッシュに載った行の要素パス（items.* —
+    // #364 から items → items.* の静的な辺に載る）が加わる。行の下の子のパス（items.*.name）は辺に載せない
+    // （#389 — 行の印で無効にする）
     expect(Array.from((stateEl as any)._pathSet).sort())
-      .toEqual(["items", "items.*", "items.*.name", "items.*.upper"]); // 旧: []
+      .toEqual(["items", "items.*", "items.*.upper"]); // 旧: []
     host.remove();
   });
 

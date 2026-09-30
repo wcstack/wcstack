@@ -15,7 +15,7 @@ import {
   resolvePathExistence,
 } from "../src/diagnostics/pathChecks";
 import { missingRootPathMessage } from "../src/pathDiagnostics";
-import { isIndexPath } from "../src/address/indexPathAccessor";
+import { defineIndexPathAccessor, isIndexPath } from "../src/address/indexPathAccessor";
 import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { IStateElement } from "../src/components/types";
 import type { DevtoolsEvent } from "../src/devtools/types";
@@ -132,6 +132,53 @@ describe("resolvePathExistence", () => {
     const result = resolvePathExistence(target, "cout", NO_GETTERS);
     expect(result.existence).toBe("missing");
     expect(result.missingSegment).toBe("cout");
+  });
+});
+
+describe("resolvePathExistence — 数値添字の束縛が生やした暗黙の getter を途中に含むパス（#388）", () => {
+  /** State.defineTreeAccessor の代わりに、state へそのまま生やす（`for: groups.0.items` を描いた後の形） */
+  function withIndexPathAccessor<T extends object>(state: T, path: string): T {
+    const defineTreeAccessor = (key: string, descriptor: PropertyDescriptor): void => {
+      Object.defineProperty(state, key, descriptor);
+    };
+    defineIndexPathAccessor({ defineTreeAccessor } as unknown as IStateElement, path);
+    return state;
+  }
+  function withGetter<T extends object>(state: T, path: string): T {
+    Object.defineProperty(state, path, { get: () => [], enumerable: true, configurable: true });
+    return state;
+  }
+
+  it("暗黙の getter は宣言とみなさず、その先の行を辿って打ち間違いを missing にすること", () => {
+    const state = withIndexPathAccessor({ groups: [{ items: [{ name: "a" }] }] }, "groups.0.items");
+    // 修正前（#332 の後）: unknown（途中のプレフィックスの getter として、戻り値の形は評価しないと分からないに倒した）
+    expect(resolvePathExistence(state, "groups.0.items.*.nmae", ["groups.0.items"])).toEqual({
+      existence: "missing", missingSegment: "nmae", candidates: ["name"],
+    });
+    expect(resolvePathExistence(state, "groups.0.items.*.name", ["groups.0.items"]).existence).toBe("exists");
+  });
+
+  it("行 getter（groups.*.items.*.double）は素のパスの行（groups.0.items.*.double）を解決しないので missing のままにすること", () => {
+    const state = withIndexPathAccessor(withGetter({ groups: [{ items: [{ n: 1 }] }] }, "groups.*.items.*.double"), "groups.0.items");
+    const result = resolvePathExistence(state, "groups.0.items.*.double", ["groups.*.items.*.double", "groups.0.items"]);
+    expect([result.existence, result.missingSegment]).toEqual(["missing", "double"]);
+  });
+
+  it("数値のキーを持つオブジェクト（sales.2024.items）の暗黙の getter も、その先を辿ること", () => {
+    const state = withIndexPathAccessor({ sales: { "2024": { items: [{ name: "a" }] } } }, "sales.2024.items");
+    const result = resolvePathExistence(state, "sales.2024.items.*.nmae", ["sales.2024.items"]);
+    expect([result.existence, result.missingSegment]).toEqual(["missing", "nmae"]);
+  });
+
+  it("暗黙の getter が読む行のパス（items.*.sub）が宣言されていれば、作者の getter と同じく unknown にすること", () => {
+    // `for: items.0.sub` の行は行 getter `items.*.sub` の戻り値。素のデータの行には `sub` が無い
+    const state = withIndexPathAccessor(withGetter({ items: [{ v: 1 }] }, "items.*.sub"), "items.0.sub");
+    expect(resolvePathExistence(state, "items.0.sub.*.x", ["items.*.sub", "items.0.sub"]).existence).toBe("unknown");
+  });
+
+  it("作者が同名の getter（groups.0.items）を宣言していれば、これまでどおり unknown にすること", () => {
+    const state = withGetter({ groups: [{ items: [{ name: "a" }] }] }, "groups.0.items");
+    expect(resolvePathExistence(state, "groups.0.items.*.nmae", ["groups.0.items"]).existence).toBe("unknown");
   });
 });
 

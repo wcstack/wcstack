@@ -180,9 +180,7 @@ describe("リスト置換の diff-filter 展開（統合）", () => {
     // State.setPathInfo が「バインドされたパスから親方向へ」張るため、この綴りでは
     // items.*.rank が staticMap に載らなかった。移動行の展開対象をそこから引いていたため、
     // 並び替え・挿入で rank が古い値のまま label に流れ込んでいた。
-    // #364 からは、キャッシュに載った行の値も静的な辺に載る（cacheEntryByAbsoluteStateAddress.ts）ので
-    // items.*.rank も staticMap に現れるが、移動行の展開は引き続き indexDependentGetterPaths から引く
-    // — 全行展開へ倒れないことは最後の rankEvals が固定する。
+    // 移動行の展開は indexDependentGetterPaths から引く — 全行展開へ倒れないことは最後の rankEvals が固定する。
     let rankEvals = 0;
     const { host, shadowRoot, stateElement } = await mount(
       {
@@ -194,8 +192,9 @@ describe("リスト置換の diff-filter 展開（統合）", () => {
     );
     const texts = () => Array.from(shadowRoot.querySelectorAll("li")).map(li => li.textContent);
     expect(texts()).toEqual(["1:a", "2:b", "3:c"]);
-    // 旧（#364 の前）: not.toContain — バインドの無い中間 getter は辺に載らなかった
-    expect(stateElement.staticDependency.get("items.*")).toContain("items.*.rank");
+    // バインドの無い中間 getter は静的な辺に載らない（#364 から #389 までは、キャッシュに載った行の値として
+    // 載っていた — 要素の書き込みの費用が行の下で読んだパスの数に比例した）
+    expect(stateElement.staticDependency.get("items.*")).not.toContain("items.*.rank");
 
     // 並び替え: 全行の位置が変わる
     stateElement.createState("writable", (s: any) => {

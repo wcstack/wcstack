@@ -16,7 +16,7 @@ import { setIndexBindingsByContent } from "../bindings/indexBindingsByContent";
 import { setNodesByContent } from "../bindings/nodesByContent";
 import { bindLoopContextToContent } from "../bindings/bindLoopContextToContent";
 import { config } from "../config";
-import { WILDCARD, INDEX_BY_INDEX_NAME } from "../define";
+import { WILDCARD } from "../define";
 import { Ssr, SSR_BLOCK_START, collectComments, isBlockBoundary, isBlockStart, isPlaceholder } from "./Ssr";
 import { getStateElement } from "../stateElementByName";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
@@ -26,7 +26,7 @@ import { setFragmentInfoByUUID, getFragmentInfoByUUID } from "../structural/frag
 import { getFilteredValue } from "../apply/getFilteredValue";
 import { planFilters } from "../bindings/planFilters";
 import { setContentByNode } from "../structural/contentsByNode";
-import { createContentFromNodes } from "../structural/createContent";
+import { ALL_INDEX_BITS, createContentFromNodes, isIndexBinding } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
 import { createNotFilter } from "../structural/createNotFilter";
@@ -322,14 +322,10 @@ function hydrateBlocks(root: Node, blocks: ISsrBlock[], rowsByUuid: Map<string, 
     setBindingsByContent(content, bindingInfos);
     setNodesByContent(content, subscriberNodes);
 
-    // 行の位置が変わったときに当て直す列（createContent と同じ振り分け — 添字の束縛と、入れ子の構造
-    // ディレクティブ。後から描いた枝の添字へ辿る入口・#360）
-    const indexBindings: IBindingInfo[] = [];
-    for (const binding of bindingInfos) {
-      if (binding.statePathName in INDEX_BY_INDEX_NAME || STRUCTURAL_TYPES.has(binding.bindingType)) {
-        indexBindings.push(binding);
-      }
-    }
+    // 行の位置が変わったときに当て直す列（createContent と同じ振り分け — 添字の束縛と、中に添字の束縛を
+    // 持つ入れ子の構造ディレクティブ。後から描いた枝の添字へ辿る入口・#360、#390）。段では絞らない — 入れ子の
+    // for を持つブロックは全描画に倒す（findNestedForBlock）ので、ブロックの中の入れ子は if の枝だけ
+    const indexBindings = bindingInfos.filter((binding) => isIndexBinding(binding, ALL_INDEX_BITS));
     setIndexBindingsByContent(content, indexBindings);
 
     if (block.type === 'for' && block.index !== null) {

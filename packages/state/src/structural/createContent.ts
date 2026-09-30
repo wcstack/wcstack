@@ -281,6 +281,64 @@ function resolveRanged(fragmentInfo: IFragmentInfo): boolean {
   return ranged;
 }
 
+/**
+ * 添字 `$N`（`INDEX_BY_INDEX_NAME` の位置 pos = N - 1）のビット。32 段目より奥の添字は最上位のビットに
+ * まとめる（まとめた添字どうしは区別されず、多めに辿るだけ — 取りこぼしはしない）。
+ */
+export function indexBit(pos: number): number {
+  return 1 << Math.min(pos, 31);
+}
+
+/** `$1` … `$depth` のビット集合（32 段以上は全部） */
+function indexBitsUpTo(depth: number): number {
+  return 2 ** Math.min(depth, 32) - 1;
+}
+
+/** 段で絞らない（if の枝・SSR の行） */
+export const ALL_INDEX_BITS = -1;
+
+/**
+ * テンプレートの中（入れ子のテンプレートも含む）で使う添字（`$1` …）のビット集合。テンプレート単位に一度だけ
+ * 求めてキャッシュする（resolveRanged と同じ門）。入れ子の構造ディレクティブの条件（`if: $1|lt(2)`）は、
+ * 置き場の解析結果として外側のテンプレートの中身に居る。
+ */
+function indexBitsOfFragment(fragmentInfo: IFragmentInfo): number {
+  let bits = fragmentInfo.indexBits;
+  if (typeof bits === 'undefined') {
+    bits = 0;
+    for (const nodeInfo of fragmentInfo.nodeInfos) {
+      for (const result of nodeInfo.parseBindTextResults) {
+        if (result.statePathName in INDEX_BY_INDEX_NAME) {
+          bits |= indexBit(INDEX_BY_INDEX_NAME[result.statePathName]);
+        }
+        if (typeof result.uuid === 'string') {
+          bits |= indexBitsOfFragment(getFragmentInfoByUUID(result.uuid)!);
+        }
+      }
+    }
+    fragmentInfo.indexBits = bits;
+  }
+  return bits;
+}
+
+/** 構造ディレクティブの束縛の中（入れ子の奥も含む）で使う添字のビット集合 */
+export function getIndexBitsByBinding(binding: IBindingInfo): number {
+  return indexBitsOfFragment(getFragmentInfoByUUID(binding.uuid as string)!);
+}
+
+/**
+ * 行の位置が変わったときに当て直す列（indexBindingsByContent）に入れる束縛か: 添字の束縛（`$1` …）と、
+ * 中に `depthBits` の添字の束縛を持つ入れ子の構造ディレクティブ（内側の for の行・if の枝の添字の束縛へ辿る
+ * 入口 — applyChangeToFor.ts の applyIndexBindings・#360）。for の行の位置が変わって値の変わる添字は、その for の
+ * 段の `$d` だけ — 行を動かしうるのはその for と外側の for なので、`depthBits` は `$1` … `$d`。中にそれ以外の添字
+ * しか無い入れ子（内側の行が自分の番号 `$2` だけを描く形など）まで入れると、位置の変わった行ごとに、当て直す
+ * もの無しに入れ子の行を全部辿る（#390）。SSR の行（ssr/hydrateBindings.ts）も同じ振り分け。
+ */
+export function isIndexBinding(binding: IBindingInfo, depthBits: number): boolean {
+  return binding.statePathName in INDEX_BY_INDEX_NAME
+    || (recursiveBindingTypes.has(binding.bindingType) && (getIndexBitsByBinding(binding) & depthBits) !== 0);
+}
+
 const ROW_END_PREFIX = 'wcs-row-end';
 
 /**
@@ -397,11 +455,14 @@ export function createContent(
   if (initialInfo.spreads.length > 0) content.spreads = initialInfo.spreads;
   setBindingSessionByContent(content, initialInfo.bindingSession);
   setBindingsByContent(content, initialInfo.bindingInfos);
-  // 行の位置が変わったときに当て直す列: 添字の束縛（`$1` …）と、入れ子の構造ディレクティブ
-  // （内側の for の行・if の枝の添字の束縛へ辿る入口 — applyChangeToFor.ts の applyIndexBindings・#360）
+  // 行の位置が変わったときに当て直す列（isIndexBinding）。for の行の段は、その for のリストのパスの
+  // ワイルドカードの数 + 1。if の枝は自分の段を持たないので絞らない（辿るときに applyIndexBindings が絞る）
+  const depthBits = bindingInfo.bindingType === 'for'
+    ? indexBitsUpTo(bindingInfo.statePathInfo.wildcardCount + 1)
+    : ALL_INDEX_BITS;
   const indexBindings: IBindingInfo[] = [];
   for(const binding of initialInfo.bindingInfos) {
-    if (binding.statePathName in INDEX_BY_INDEX_NAME || recursiveBindingTypes.has(binding.bindingType)) {
+    if (isIndexBinding(binding, depthBits)) {
       indexBindings.push(binding);
     }
   }
