@@ -33,18 +33,31 @@ export const config: Config = {
 export type PartialConfig = Partial<Omit<Config, "tagNames">> & { tagNames?: Partial<Config["tagNames"]> };
 
 /**
- * Takes each option of the type the default has (an undefined value is left out); any other key
- * or type throws, a key 4.0 moved to the state's `$behavior` or removed included.
+ * Applies the options given; an undefined value is left out. An option `bootstrapState` does not
+ * have (a key 4.0 moved to the state's `$behavior` or removed included), a value of another type
+ * than its default (null, or an array for an object, included) or a tag name it does not define
+ * throws, and then nothing is applied — the same rule as every package's bootstrap.
  */
 export function setConfig(partial: PartialConfig): void {
-  for (const key in partial) {
-    const value = (partial as any)[key];
-    if (value === undefined) continue;
-    const current = (config as any)[key];
-    if (typeof value !== typeof current) raise(M.OptionInvalid, ["bootstrapState", key]);
-    if (key === "tagNames") Object.assign(current, value);
-    else (config as any)[key] = value;
+  const options = config as unknown as Record<string, unknown>;
+  const tags = config.tagNames as Record<string, string>;
+  const given = Object.entries(partial).filter(([, value]) => value !== undefined);
+  const givenTags = Object.entries(partial.tagNames ?? {}).filter(([, tag]) => tag !== undefined);
+  for (const [key, value] of given) {
+    const current = options[key];
+    if (!Object.hasOwn(options, key) || value === null || typeof value !== typeof current || Array.isArray(value) !== Array.isArray(current)) {
+      raise(M.OptionInvalid, ["bootstrapState", key]);
+    }
   }
+  for (const [name, tag] of givenTags) {
+    if (!Object.hasOwn(tags, name) || typeof tag !== "string") raise(M.OptionInvalid, ["bootstrapState", `tagNames.${name}`]);
+  }
+  for (const [key, value] of given) {
+    if (key !== "tagNames") {
+      options[key] = value;
+    }
+  }
+  for (const [name, tag] of givenTags) tags[name] = tag as string;
 }
 
 /** The current configuration (read-only view). */

@@ -90,6 +90,24 @@ describe("bootstrapState の設定", () => {
     expect(config.tagNames).toEqual(DEFAULTS.tagNames);
   });
 
+  it.each([
+    [{ tagNames: null }, "tagNames"],
+    [{ tagNames: ["my-state"] }, "tagNames"],
+    [{ bindAttributeName: null }, "bindAttributeName"],
+    [{ tagNames: { stat: "my-state" } }, "tagNames.stat"],
+    [{ tagNames: { state: 1 } }, "tagNames.state"],
+  ])("null・配列・定義していないタグ名・文字列でないタグ名は投げる（%#）", (partial, key) => {
+    expect(() => setConfig(partial as any)).toThrow(`"bootstrapState" "${key}"`);
+  });
+
+  it("投げたときは、ほかの正しい値も当てない（タグ名の undefined は飛ばす）", () => {
+    expect(() => setConfig({ commentForPrefix: "x-for", tagNames: { state: "my-state", nope: "x" } } as any)).toThrow('"tagNames.nope"');
+    expect(config.commentForPrefix).toBe(DEFAULTS.commentForPrefix);
+    expect(config.tagNames).toEqual(DEFAULTS.tagNames);
+    setConfig({ tagNames: { state: undefined, ssr: "my-ssr" } });
+    expect(config.tagNames).toEqual({ ...DEFAULTS.tagNames, ssr: "my-ssr" });
+  });
+
   it.each(["enableMustache", "sameValueGuard", "enableDirectionalInitialSync", "debug", "commentTextPrefix", "enablePropagationContext"])(
     "4.0 で $behavior へ移ったキー・消えたキー（%s）は投げる",
     (key) => {

@@ -39,13 +39,13 @@ describe("config", () => {
     setConfig({ tagNames: { storage: "wcs-storage" } });
   });
 
-  it("setConfig()でtagNamesの非文字列値は無視され既存値を保持する", () => {
+  it("setConfig()でtagNamesの undefined は飛ばし、文字列でない値は投げて既存値を保持する", () => {
     // 指摘5: { storage: undefined } のような非文字列で汚染されると
-    // customElements.define(undefined, …) が失敗する。typeofガードで弾く。
+    // customElements.define(undefined, …) が失敗する。undefined は飛ばし、ほかは投げる（4.0）。
     setConfig({ tagNames: { storage: undefined as any } });
     expect(config.tagNames.storage).toBe("wcs-storage");
 
-    setConfig({ tagNames: { storage: 123 as any } });
+    expect(() => setConfig({ tagNames: { storage: 123 as any } })).toThrow('"tagNames.storage" is not one of its options');
     expect(config.tagNames.storage).toBe("wcs-storage");
 
     // 正常な文字列は反映される

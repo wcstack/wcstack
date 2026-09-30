@@ -45,15 +45,35 @@ export function getConfig(): IConfig {
   return frozenConfig;
 }
 
+/** A misspelt option would otherwise do nothing: `bootstrapClipboard` refuses it. */
+function invalid(key: string): never {
+  throw new Error(`[@wcstack/clipboard] bootstrapClipboard: "${key}" is not one of its options, or not of the option's type.`);
+}
+
+/**
+ * Applies the options given; an undefined value is left out. An option this package does not
+ * have, a value of another type than its default (null, or an array for an object, included) or
+ * a tag name it does not define throws, and then nothing is applied.
+ */
 export function setConfig(partialConfig: IWritableConfig): void {
-  if (typeof partialConfig.autoTrigger === "boolean") {
-    _config.autoTrigger = partialConfig.autoTrigger;
+  const options = _config as unknown as Record<string, unknown>;
+  const tags = _config.tagNames as Record<string, string>;
+  const given = Object.entries(partialConfig).filter(([, value]) => value !== undefined);
+  const givenTags = Object.entries(partialConfig.tagNames ?? {}).filter(([, tag]) => tag !== undefined);
+  for (const [key, value] of given) {
+    const current = options[key];
+    if (!Object.hasOwn(options, key) || value === null || typeof value !== typeof current || Array.isArray(value) !== Array.isArray(current)) {
+      invalid(key);
+    }
   }
-  if (typeof partialConfig.triggerAttribute === "string") {
-    _config.triggerAttribute = partialConfig.triggerAttribute;
+  for (const [name, tag] of givenTags) {
+    if (!Object.hasOwn(tags, name) || typeof tag !== "string") invalid(`tagNames.${name}`);
   }
-  if (partialConfig.tagNames) {
-    Object.assign(_config.tagNames, partialConfig.tagNames);
+  for (const [key, value] of given) {
+    if (key !== "tagNames") {
+      options[key] = value;
+    }
   }
+  for (const [name, tag] of givenTags) tags[name] = tag as string;
   frozenConfig = null;
 }
