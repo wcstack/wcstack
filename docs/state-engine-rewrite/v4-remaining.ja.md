@@ -144,7 +144,8 @@
 | `@wcstack/server` | 依存 `^3.3.0` を `^4` へ。SSR の出力は 3.3 と互換が無い（版の検査でクライアント描画に倒れる）ので、移行ガイドに書く。server 自身の変更は不要（後付け 5 で確認） |
 | `wcstack`（入口パッケージ） | state の `/auto` を取り込むので、新しい auto で作り直し、サイズを記録する |
 | `@wcstack/devtools` | プロトコル v2 のままで、改修は不要（後付け 6 で確認）。型のずれを見るテスト（`packages/devtools/__tests__/protocol.typesDrift.test.ts`）が `packages/state/src/devtools/types.ts` を読むので、参照先を直す |
-| wcstack-skill（別リポジトリ） | `$scan` の削除、旧名の削除、`substr` の削除（`slice` へ）、イベントの委譲（バブリングするイベントの `currentTarget` がルート）、エラーの番号、`bootstrapState` から `$behavior` へ移った 3 キー、`$features`・root の `features=`・分割 auto（`dist/split/auto.js`）などを反映し、プラグインの版を上げる。CSP の記述の誤りも直す（§3.1。4.0 を待たずに直せる） |
+| I/O パッケージ（41）の bootstrap | **済み（2026-10-01、§8）**: `setConfig` を state-next と同じ規則にした（知らないキー・型の違う値・定義していないタグ名で throw、何も当てない。undefined は飛ばす）。autoloader の読まれていない `scanImportmap` を消した。残り: 各 README の設定の節と移行ガイド（§5） |
+| wcstack-skill（別リポジトリ） | `$scan` の削除、旧名の削除、`substr` の削除（`slice` へ）、イベントの委譲（バブリングするイベントの `currentTarget` がルート）、エラーの番号、`bootstrapState` から `$behavior` へ移った 3 キー、`$features`・root の `features=`・分割 auto（`dist/split/auto.js`）、全パッケージの `bootstrapXxx` が知らないキーで throw すること、autoloader の `scanImportmap` の削除などを反映し、プラグインの版を上げる。CSP の記述の誤りも直す（§3.1。4.0 を待たずに直せる） |
 
 ### 3.1 wcstack-skill の CSP の記述（2026-09-28）
 
@@ -181,7 +182,8 @@ docs/csp（ja / en）と README で直した誤り 2 つ（§8 の 2026-09-28）
 | 文書 | やること |
 |---|---|
 | `packages/state/README.md`・`README.ja.md` | 新エンジンの規範文書として書き直す。変わった約束: `$scan` の削除、旧名の削除、イベントの委譲、要素への書き込みの位置モデル、無いキーへの書き込み、再セットで無いパスは空、エラーの番号、後付けの入口と「状態を定義する前に install する」。「設定」を bootstrap（表記: タグ名・束縛の属性名・コメントの接頭辞・`locale`・`enableContractAnalyzer`）と状態の `$behavior`（振る舞い）に分ける。「分割エントリ」に分割 auto（`dist/split/auto.js`、import map 無しの 1 行）と、`features=`（定義の前に要る scopes・開発環境の diagnostics／devtools）と `$features`（その状態が要る後付け）の役割の違い |
-| 移行ガイド（`docs/migration-v4.md`・`.ja.md`） | 新しく作る。承認済みの簡素化（volume の注入、volume に書いた `$watch` などがエラー、SSR のインライン snapshot と値の表、`listPaths` などを core に入れない、私有データは要素ごと）と、3.3.0 の不具合を直した差（#319〜#324 など）を並べる。設定の 3 キーが `bootstrapState` から状態の `$behavior` へ移る（切り貼りで済む）、`debug`・`commentTextPrefix`・`enablePropagationContext` が消える、`bootstrapState` が知らないキー・型の違う値で throw するようになる |
+| 移行ガイド（`docs/migration-v4.md`・`.ja.md`） | 新しく作る。承認済みの簡素化（volume の注入、volume に書いた `$watch` などがエラー、SSR のインライン snapshot と値の表、`listPaths` などを core に入れない、私有データは要素ごと）と、3.3.0 の不具合を直した差（#319〜#324 など）を並べる。設定の 3 キーが `bootstrapState` から状態の `$behavior` へ移る（切り貼りで済む）、`debug`・`commentTextPrefix`・`enablePropagationContext` が消える、`bootstrapState` が知らないキー・型の違う値で throw するようになる。全パッケージの `bootstrapXxx` も同じ規則で throw する（これまでは黙って無視。`tagNames` の中の知らない名前・文字列でない値も）。autoloader の `scanImportmap` が消える（渡しても効果が無かった） |
+| I/O パッケージの README（ja・en） | 設定の節に「知らないキー・既定値と型の違う値・定義していないタグ名は throw し、何も当てない。undefined は飛ばす」を足す。storage の README に「`tagNames` の文字列でない値は無視する」旨があれば直す |
 | [docs/sri.ja.md](../sri.ja.md)・[docs/csp.ja.md](../csp.ja.md)（英語版も） | sri の分割エントリの節と csp §2.1 の表に分割 auto の行: 動的 import は `<script integrity>` の範囲の外、要るのは配信元ホストの許可だけ、起動の `<script>` の nonce で `'strict-dynamic'` でも通る（[root-attributes.ja.md](./root-attributes.ja.md) §4、2026-09-30 に 3 ブラウザで確かめた） |
 | `CHANGELOG.md` | 4.0.0 の項 |
 | [timing-and-firing-contract.ja.md](../timing-and-firing-contract.ja.md)（英語版も） | §3 の見出しの `$streams`、§4.3 の機構の順序（`$scan` → `$watch` → `$streams` restart、`$updatedCallback`）を 4.0 に直す。新エンジンの順序は `$renderedCallback` → `$watch` → stream の再開。§4.3 の「arbiter がある間は順序が反転する」が新エンジンでも成り立つかを確かめる |
@@ -673,3 +675,27 @@ core のサイズを減らす方策を試作して測り（候補ごとに core 
 | 分割の core（`core.js` とチャンク） | 22,208B | 22,328B（+120B） |
 | 分割 auto（`auto.js` とチャンク） | — | 22,536B（`auto.js` の自分の分 602B） |
 | e2e（`STATE=next`） | 138/138 | 138/138 |
+
+### 全パッケージの bootstrap の設定の検査（2026-10-01）
+
+state の `bootstrapState` と `$behavior` の分割（2026-09-30）の後、ほかのパッケージの bootstrap の設定にも同じ変更が要るかを調べた。state の問題の根（ページ全体の設定に、その木の振る舞いが入っていた）は、ほかには無い。I/O ノードの要素ごとの振る舞いは、最初から要素の属性（`manual`・`url` など）で書く。
+
+| キー | パッケージ | 性質 |
+|---|---|---|
+| `tagNames.*` | 全部（25 はこれだけ） | 表記 |
+| `triggerAttribute`（speech は `listenTriggerAttribute` も） | fetch・storage など 13 | 表記（`data-fetchtarget` の属性名） |
+| `autoTrigger` | 同じ 13 | document に click の委譲を 1 本登録するかのスイッチ。発火させるかは要素の側（`data-xxxtarget` を書くか）で決まる |
+| `enableShadowRoot` | router | ページの既定値。`<wcs-layout>`・outlet の `enable-shadow-root`／`disable-shadow-root` で要素ごとに上書きできる |
+| `basenameFileExtensions` | router | URL の正規化（router と `<wcs-link>` が共有、router は複数置ける） |
+| `loaders`・`observable` | autoloader | 関数の登録、ページ全体の MutationObserver |
+| `createContext` | audio | 関数（AudioContext の生成を差し替える） |
+
+どれも bootstrap に置いてよい。持ち込んだのは次の 2 つ。
+
+- **読まれていないキー**: autoloader の `scanImportmap` は受け取るがどこからも読まれず、`false` でも import map を読んでいた（state の `debug` と同じ）。import map を読まない autoloader は何もしないので、実装せずに消した。
+- **`setConfig` の検査**: 41 パッケージは知らないキー・型の違う値を黙って無視していた（storage だけは文字列でないタグ名を飛ばしていた。`{ storage: undefined }` が `customElements.define(undefined, …)` を落とした指摘への対処）。state-next と同じ規則にした: 知らないキー、既定値と型の違う値（`null`、オブジェクトに配列、も）、定義していないタグ名、文字列でないタグ名は `[@wcstack/<pkg>] bootstrapXxx: "<key>" is not one of its options, or not of the option's type.` で throw し、先に全部を確かめるので何も当てない。undefined の値は飛ばす（`tagNames` の中も）。autoloader の `loaders` はこれまでどおり足し合わせる。state-next も同じ形にした（それまでは当てながら確かめていて、`tagNames` の中は見ていなかった）。
+- 各パッケージの `__tests__/config-options.test.ts` は同じ形で書いた（知らないキー・型・`null`・配列・タグ名、投げたときに当てないこと、undefined）。1 行に書いた `for (…) if (…) 文;` は、v8 のカバレッジが分岐の数を負に数える（`config.ts` の分岐が 95.83% に見えた）ので、ブロックに分けて書いた。
+- テスト: 41 パッケージで 5,105 → 5,481 件、すべて通過。カバレッジのしきい値と lint も通る。storage の「文字列でないタグ名は無視する」テストは「undefined は飛ばし、ほかは投げる」に直した。state-next は 1,755 件（通過 1,741・意図した失敗 13・スキップ 1）。`split-auto.test.ts` の `DOMContentLoaded` の待ちのテストは、負荷の下で `import()` が遅れるとエントリが待ちを登録する前にイベントを出してしまう競合があったので、登録を見届けてから出すようにした。
+- state-next のサイズ（gzip）: `core.min.js`・`auto.min.js` は変わらない（`setConfig` は `bootstrapState` からしか届かない）。`index.esm.js` 42,992 → 43,068B、分割の core 22,328 → 22,418B。
+- 3.x の `packages/state` は 4.0 で state-next に置き換わるので、変えていない。
+- テストを流すため、この worktree に無い依存を本体のチェックアウトの `node_modules` からジャンクションで借りた（git の対象外。作業の後に外した）。
