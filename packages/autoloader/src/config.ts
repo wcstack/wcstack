@@ -3,7 +3,6 @@ import { IConfig, ILoader, IWritableConfig } from "./types.js"
 import { load } from "./vanilla.js"
 
 interface IInternalConfig extends IConfig {
-  scanImportmap: boolean;
   loaders: Record<string, ILoader | string>;
   observable: boolean;
   tagNames: {
@@ -21,7 +20,6 @@ export const VANILLA_LOADER = {
 }
 
 const _config: IInternalConfig = {
-  scanImportmap: true,
   loaders: {
     [VANILLA_KEY]: VANILLA_LOADER,
     [DEFAULT_KEY]: VANILLA_KEY
@@ -63,9 +61,6 @@ export function getConfig(): IConfig {
 }
 
 export function setConfig(partialConfig: IWritableConfig): void {
-  if (typeof partialConfig.scanImportmap === "boolean") {
-    _config.scanImportmap = partialConfig.scanImportmap;
-  }
   if (partialConfig.loaders) {
     Object.assign(_config.loaders, partialConfig.loaders);
   }

@@ -15,14 +15,12 @@ export interface IWritableTagNames {
 }
 
 export interface IConfig {
-  readonly scanImportmap: boolean;
   readonly loaders: Record<string, ILoader | string>;
   readonly observable: boolean;
   readonly tagNames: ITagNames;
 }
 
 export interface IWritableConfig {
-  scanImportmap?: boolean;
   loaders?: Record<string, ILoader | string>;
   observable?: boolean;
   tagNames?: IWritableTagNames;

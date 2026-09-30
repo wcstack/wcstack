@@ -19,7 +19,6 @@ describe('config', () => {
 
   describe('config', () => {
     it('デフォルト設定が正しいこと', () => {
-      expect(config.scanImportmap).toBe(true);
       expect(config.observable).toBe(true);
       expect(config.loaders[VANILLA_KEY]).toBe(VANILLA_LOADER);
       expect(config.loaders[DEFAULT_KEY]).toBe(VANILLA_KEY);
@@ -41,15 +40,6 @@ describe('config', () => {
   });
 
   describe('setConfig', () => {
-    it('scanImportmapを変更できること', () => {
-      const original = config.scanImportmap;
-      setConfig({ scanImportmap: false });
-      expect(config.scanImportmap).toBe(false);
-      
-      // リセット
-      setConfig({ scanImportmap: original });
-    });
-
     it('observableを変更できること', () => {
       const original = config.observable;
       setConfig({ observable: false });
