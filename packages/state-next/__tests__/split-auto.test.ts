@@ -4,7 +4,7 @@
  * page's markup in place. The add-ons it loads come from `./features/` beside it.
  * vitest isolates this file: its `<wcs-state>` definition and add-ons stay here.
  */
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -83,13 +83,26 @@ describe("root の features 属性", () => {
 
   it("文書の解析中（async の module script）は DOMContentLoaded を待ってから読む", async () => {
     Object.defineProperty(document, "readyState", { configurable: true, get: () => "loading" });
-    let done = false;
-    const running = runAuto().then(() => { done = true; });
-    await flush();
-    expect(done).toBe(false);
-    document.dispatchEvent(new Event("DOMContentLoaded"));
-    await running;
-    expect(done).toBe(true);
+    // the import may take longer than a task under load: dispatch only once the entry waits
+    const add = document.addEventListener.bind(document);
+    let waiting!: () => void;
+    const waited = new Promise<void>((resolve) => { waiting = resolve; });
+    const spy = vi.spyOn(document, "addEventListener").mockImplementation((type: string, listener: any, options?: any) => {
+      add(type, listener, options);
+      if (type === "DOMContentLoaded") waiting();
+    });
+    try {
+      let done = false;
+      const running = runAuto().then(() => { done = true; });
+      await waited;
+      await flush();
+      expect(done).toBe(false);
+      document.dispatchEvent(new Event("DOMContentLoaded"));
+      await running;
+      expect(done).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
