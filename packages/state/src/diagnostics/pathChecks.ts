@@ -26,7 +26,9 @@ import type { IStateElement } from "../components/types";
 import { DELIMITER, WILDCARD } from "../define";
 import { devtoolsSink } from "../platform/devtoolsSink";
 import { didYouMean, LINT_HINT } from "../errorGuidance";
-import { collectCandidates, DIAGNOSTIC_CODE, findDescriptor, PathInfoSource, SUBJECT } from "../pathDiagnostics";
+import {
+  collectCandidates, DIAGNOSTIC_CODE, findDescriptor, indexPathRowPaths, PathInfoSource, SUBJECT,
+} from "../pathDiagnostics";
 
 export type PathExistence = "exists" | "missing" | "unknown";
 
@@ -80,8 +82,13 @@ export function resolvePathExistence(
     prefix = i === 0 ? segment : prefix + DELIMITER + segment;
     // 途中のプレフィックスがフラット宣言されている（`cart.totalPrice` が getter で、
     // その戻り値のサブプロパティを読む形）。戻り値の形は評価しないと分からない。
-    // 末尾で当たるのは `*` へ読み替えたパスだけ（読み替えの無いパスは冒頭の完全一致で済んでいる）
-    if (i > 0 && findDescriptor(target, prefix) !== undefined) {
+    // 末尾で当たるのは `*` へ読み替えたパスだけ（読み替えの無いパスは冒頭の完全一致で済んでいる）。
+    // 数値添字の束縛の暗黙の getter（`for: groups.0.items` が生やす — #332）は作者の宣言ではない: いまその
+    // 位置にある行を読むだけなので、それが読む行のパス（`groups.*.items`）の宣言に読み替え、宣言が無ければ
+    // そのままデータを辿る（#388）。作者の宣言は接頭辞そのものの宣言
+    const declared = i > 0 && findDescriptor(target, prefix);
+    const rowPath = declared && indexPathRowPaths.get(declared.get as object);
+    if (declared && (!rowPath || findDescriptor(target, rowPath))) {
       return i < segments.length - 1 ? UNKNOWN : EXISTS;
     }
     // null / undefined / primitive より深い読みは実行時 undefined 解決 = 判定不能。
@@ -102,7 +109,7 @@ export function resolvePathExistence(
       return {
         existence: "missing",
         missingSegment: segment,
-        candidates: collectCandidates(current as object, parentPrefix, declaredPaths),
+        candidates: collectCandidates(current as object, parentPrefix, declaredPaths, target),
       };
     }
     if (typeof descriptor.get === "function") {

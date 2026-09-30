@@ -27,6 +27,7 @@
  * 行なら `this["items.0.v"] = …` と同じ位置へ、行でなければ親へ素のキーとして書く。
  */
 import type { IStateElement } from "../components/types";
+import { indexPathRowPaths } from "../pathDiagnostics";
 import { getPathInfo } from "./PathInfo";
 import { getResolvedAddress } from "./ResolvedAddress";
 
@@ -67,10 +68,13 @@ export function defineIndexPathAccessor(stateElement: IStateElement, path: strin
     }
     return current;
   };
+  const get = function (this: any): any {
+    return access(this);
+  };
+  // 存在の診断が作者の getter と見分ける印と、この getter が読む行のパス（`items.*.v` — #388）
+  indexPathRowPaths.set(get, getResolvedAddress(path).pathInfo.path);
   stateElement.defineTreeAccessor(path, {
-    get(this: any) {
-      return access(this);
-    },
+    get,
     set(this: any, value: unknown) {
       access(this, true, value);
     },

@@ -17,7 +17,7 @@ import { IListDiff, IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { deleteContentByNode, getContentSetByNode } from "../structural/contentsByNode";
-import { createContent } from "../structural/createContent";
+import { createContent, getIndexBitsByBinding, indexBit } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
 import { applyChange } from "./applyChange";
@@ -257,10 +257,12 @@ function clearAppliedMarks(content: IContent, context: IApplyContext): void {
  * 位置が変わった行の添字の束縛（`$1` …）を当て直す。行の中の入れ子の構造ディレクティブ（createContent が
  * 同じ列に入れる）の Content — 内側の for の行・if の枝、その奥 — も辿る（#360）。内側の for は同じ配列を
  * 描き続けるので差分が出ず、if は条件が変わらないので、ここで辿らないと外側の軸の添字が古いまま残る。
+ * 辿るのは、中（入れ子の奥も含む）で動いた行の段の添字（`movedBit` — `for: rows` の行なら `$1`）を使う入れ子
+ * だけ。それ以外の添字（外側の行の番号・入れ子の行の自分の番号）は動いても変わらない（#390）。
  * 添字を条件に持つ構造ディレクティブ（`if: $1|lt(2)`）は当て直してから辿る（真のままなら枝は描き直されない）。
  * 外れている Content（プールの行・偽の if の枝）は辿らない（戻すときの活性化が全部の束縛を当てる）。
  */
-function applyIndexBindings(content: IContent, context: IApplyContext): void {
+function applyIndexBindings(content: IContent, context: IApplyContext, movedBit: number): void {
   for (const binding of getIndexBindingsByContent(content)) {
     if (!STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
       applyChange(binding, context);
@@ -269,9 +271,12 @@ function applyIndexBindings(content: IContent, context: IApplyContext): void {
     if (binding.statePathName in INDEX_BY_INDEX_NAME) {
       applyChange(binding, context);
     }
+    if ((getIndexBitsByBinding(binding) & movedBit) === 0) {
+      continue;
+    }
     for (const nested of getContentSetByNode(binding.node)) {
       if (nested.mounted) {
-        applyIndexBindings(nested, context);
+        applyIndexBindings(nested, context, movedBit);
       }
     }
   }
@@ -373,7 +378,10 @@ export function applyChangeToFor(
     let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
     if (typeof isOnlyNode === 'undefined') {
       const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
-      isOnlyNode = isOnlyNodeInParentContent(bindingInfo.node, lastNode);
+      // 描いた行が祖先の unmount（`if` の非表示・プールに入った行）で既に外れているなら、アンカーから数える。
+      // 外れた末尾には後ろの兄弟が無いので、同じ親に居る兄弟の `for` / `if` を見落として「この for だけ」と
+      // 覚え、親を空にする近道がそのアンカーごと消す（プールから戻した行で内側の for が描いていた行を外す形）
+      isOnlyNode = isOnlyNodeInParentContent(bindingInfo.node, lastNode.parentNode === bindingInfo.node.parentNode ? lastNode : bindingInfo.node);
       isOnlyNodeInParentContentByNode.set(bindingInfo.node, isOnlyNode);
     }
     if (isOnlyNode) {
@@ -517,8 +525,8 @@ export function applyChangeToFor(
       // getContent 相当（undefined→null 正規化は後段の raiseError 判定が null 比較のため維持）
       content = (typeof contentMap !== 'undefined' ? contentMap.get(index) ?? null : null)!;
       if (diff.changeIndexSet.has(index)) {
-        // change
-        applyIndexBindings(content, context);
+        // change（値の変わる添字は、この for の段の `$d` — d はリストのパスのワイルドカードの数 + 1）
+        applyIndexBindings(content, context, indexBit(listPathInfo.wildcardCount));
       }
       // Update lastNode for next iteration to ensure correct order
       // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)

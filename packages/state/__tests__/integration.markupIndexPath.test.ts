@@ -597,3 +597,145 @@ describe("数値添字のパスにマウントしたコンポーネント", () =
     host.remove();
   });
 });
+
+// ---------------------------------------------------------------------------
+// 存在の診断: 数値添字のパスの for が生やした暗黙の getter は、行のパスの途中の宣言ではない（#388）
+// ---------------------------------------------------------------------------
+
+/** 報告の本文（`Updates to this path…` と lint の案内より前）。`hint` は did-you-mean */
+const missingReport = (path: string, segment: string, hint = ""): string =>
+  `[wcs/binding-path-missing] Bound path "${path}" does not resolve on the state tree: "${segment}" is not declared.${hint} Updates`;
+
+function groupsState(): any {
+  const state: any = { groups: [{ items: [{ name: "a", n: 1 }, { name: "b", n: 2 }] }] };
+  Object.defineProperty(state, "groups.*.items.*.double", {
+    get(this: any) { return this["groups.*.items.*.n"] * 2; }, enumerable: true, configurable: true,
+  });
+  return state;
+}
+
+describe("数値添字のパスの for の行の存在の診断（#388）", () => {
+  it("Issue の表: for: groups.0.items の行の打ち間違い（.nmae）と解決しない行のパス（.double）を報告し、正しいパスは報告しないこと", async () => {
+    const console = captureConsole();
+    try {
+      const { host, shadowRoot } = await mount(groupsState(),
+        `<template data-wcs="for: groups.0.items"><i class="typo">{{ .nmae }}</i></template>` +
+        `<template data-wcs="for: groups.0.items"><i class="double">{{ .double }}</i></template>` +
+        `<template data-wcs="for: groups.0.items"><i class="name">{{ .name }}</i></template>`);
+      await settle();
+      expect([txt(shadowRoot, ".typo"), txt(shadowRoot, ".double"), txt(shadowRoot, ".name")]).toEqual([",", ",", "a,b"]);
+      // 修正前（#332 の後）: どちらも無言。描いた後の state にある暗黙の getter `groups.0.items` を作者の getter と
+      // みなし、その先を判定不能に倒していた（v3.3.0 と lint は両方を報告する）
+      expect(console.messages).toEqual([
+        expect.stringContaining(missingReport("groups.0.items.*.nmae", "nmae", ` Did you mean "name"?`)),
+        expect.stringContaining(missingReport("groups.0.items.*.double", "double")),
+      ]);
+      host.remove();
+    } finally {
+      console.restore();
+    }
+  });
+
+  it("同じページの #332 の形（行 getter・行の無い位置・空のリスト）は黙ったまま、数値のキーのオブジェクトの打ち間違いは報告すること", async () => {
+    const console = captureConsole();
+    try {
+      const state: any = { items: [{ v: 1 }], empty: [], sales: { "2024": { total: 5, items: [{ name: "a" }] } } };
+      Object.defineProperty(state, "items.*.double", {
+        get(this: any) { return this["items.*.v"] * 2; }, enumerable: true, configurable: true,
+      });
+      const { host, shadowRoot } = await mount(state,
+        `<i class="d">{{ items.0.double }}</i><i class="far">{{ items.5.v }}</i><i class="e">{{ empty.0.v }}</i>` +
+        `<i class="t">{{ sales.2024.totl }}</i>` +
+        `<template data-wcs="for: sales.2024.items"><b>{{ .nmae }}</b></template>`);
+      await settle();
+      expect([txt(shadowRoot, ".d"), txt(shadowRoot, ".far"), txt(shadowRoot, ".e"), txt(shadowRoot, ".t")]).toEqual(["2", "", "", ""]);
+      // 修正前: `sales.2024.items.*.nmae` だけが無言（暗黙の getter `sales.2024.items` の先を判定不能に倒した）
+      expect(console.messages).toHaveLength(2);
+      expect(console.messages).toEqual(expect.arrayContaining([
+        expect.stringContaining(missingReport("sales.2024.totl", "totl", ` Did you mean "total"?`)),
+        expect.stringContaining(missingReport("sales.2024.items.*.nmae", "nmae", ` Did you mean "name"?`)),
+      ]));
+      host.remove();
+    } finally {
+      console.restore();
+    }
+  });
+
+  it("行 getter（items.*.sub）の戻り値を for: items.0.sub で描く行、作者が宣言した同名の getter の行は、これまでどおり報告しないこと", async () => {
+    const console = captureConsole();
+    try {
+      const state: any = { items: [{ subRaw: [{ x: 1 }, { x: 2 }] }], groups: [{ items: [{ name: "a" }] }], picked: [{ name: "z" }] };
+      Object.defineProperty(state, "items.*.sub", {
+        get(this: any) { return this["items.*.subRaw"]; }, enumerable: true, configurable: true,
+      });
+      Object.defineProperty(state, "groups.0.items", {
+        get(this: any) { return this.picked; }, enumerable: true, configurable: true,
+      });
+      const { host, shadowRoot } = await mount(state,
+        `<template data-wcs="for: items.0.sub"><i class="x">{{ .x }}</i></template>` +
+        `<template data-wcs="for: groups.0.items"><i class="p">{{ .name }}</i><i class="q">{{ .nmae }}</i></template>`);
+      await settle();
+      expect([txt(shadowRoot, ".x"), txt(shadowRoot, ".p")]).toEqual(["1,2", "z"]);
+      // 暗黙の getter の行のパス `items.*.sub` は行 getter（データの行には `sub` が無い）、`groups.0.items` は
+      // 作者の getter: どちらも戻り値の形は評価しないと分からない
+      expect(console.messages).toEqual([]);
+      host.remove();
+    } finally {
+      console.restore();
+    }
+  });
+
+  it("state を再セットすると、新しい世代でも行の打ち間違いを報告し直すこと", async () => {
+    const console = captureConsole();
+    try {
+      const { host, stateEl } = await mount(groupsState(), `<template data-wcs="for: groups.0.items"><i>{{ .nmae }}</i></template>`);
+      await settle();
+      expect(console.messages).toHaveLength(1);
+      stateEl.setInitialState(groupsState());
+      await settle();
+      expect(console.messages).toEqual([
+        expect.stringContaining(missingReport("groups.0.items.*.nmae", "nmae", ` Did you mean "name"?`)),
+        expect.stringContaining(missingReport("groups.0.items.*.nmae", "nmae", ` Did you mean "name"?`)),
+      ]);
+      host.remove();
+    } finally {
+      console.restore();
+    }
+  });
+});
+
+describe("数値添字のパスの暗黙の getter を did-you-mean の候補にしない（#388）", () => {
+  it("for: users.0.frends の行の打ち間違いに、打ち間違えた名前そのものではなく正しい名前を提案すること", async () => {
+    const console = captureConsole();
+    try {
+      const { host } = await mount({ users: [{ friends: [{ name: "f" }] }] },
+        `<template data-wcs="for: users.0.frends"><i>{{ .name }}</i></template>`);
+      await settle();
+      // 修正前: 行のパスの報告が `"frends" is not declared. Did you mean "frends"?`（for: が生やした
+      // 暗黙の getter `users.0.frends` の名前が候補に入り、距離 0 で選ばれた）
+      expect(console.messages).toEqual(expect.arrayContaining([
+        expect.stringContaining(missingReport("users.0.frends.*.name", "frends", ` Did you mean "friends"?`)),
+      ]));
+      expect(console.messages.join("\n")).not.toContain(`Did you mean "frends"?`);
+      host.remove();
+    } finally {
+      console.restore();
+    }
+  });
+
+  it("数値のキーのオブジェクトで、別の束縛の打ち間違い（sales.2024.totl）を提案しないこと", async () => {
+    const console = captureConsole();
+    try {
+      const { host } = await mount({ sales: { "2024": { total: 5 } } },
+        `<i>{{ sales.2024.totl }}</i><i>{{ sales.2024.totla }}</i>`);
+      await settle();
+      expect(console.messages).toEqual([
+        expect.stringContaining(missingReport("sales.2024.totl", "totl", ` Did you mean "total"?`)),
+        expect.stringContaining(missingReport("sales.2024.totla", "totla", ` Did you mean "total"?`)),
+      ]);
+      host.remove();
+    } finally {
+      console.restore();
+    }
+  });
+});

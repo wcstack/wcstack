@@ -39,6 +39,13 @@ class ListIndex implements IListIndex {
   private _value: unknown;
 
   /**
+   * 行の下のキャッシュの印（#389）。行の下の値（`items.*.name`）のキャッシュは載せたときの印を持ち、
+   * 印が進んだ行の項目は読みで外れる。行の要素・途中の値が変わったら、子のパスを 1 つずつ無効にする
+   * 代わりに印を 1 つ進める（cache/cacheEntryByAbsoluteStateAddress.ts）。
+   */
+  cacheStamp = 0;
+
+  /**
    * Creates a new ListIndex instance.
    *
    * @param parentListIndex - Parent list index for nested loops, or null for top-level
@@ -221,6 +228,19 @@ export function reparentListIndex(listIndex: IListIndex, parentListIndex: IListI
  */
 export function getHomeParentListIndex(listIndex: IListIndex): IListIndex | null {
   return (listIndex as ListIndex).homeParentListIndex;
+}
+
+/**
+ * キャッシュ専用の入口。行の下のキャッシュの印を読む（行の無いアドレスは undefined — #389）。
+ * 載せるときと読むときの両方がこれで引くので、行の無いアドレスの項目は印の比較で外れない。
+ */
+export function getRowCacheStamp(listIndex: IListIndex | null): number | undefined {
+  return (listIndex as ListIndex | null)?.cacheStamp;
+}
+
+/** キャッシュ専用の入口その 2。行の下のキャッシュをまとめて無効にする（#389） */
+export function advanceRowCacheStamp(listIndex: IListIndex): void {
+  (listIndex as ListIndex).cacheStamp++;
 }
 
 /**

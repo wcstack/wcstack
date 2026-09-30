@@ -15,4 +15,9 @@ export interface ICacheEntry {
    * 到達不能な分岐を作らない。
    */
   readonly generation?: number;
+  /**
+   * 載せたときの行の印（`getRowCacheStamp(listIndex)`・#389）。行の要素・途中の値が変わると印が進み、
+   * 行の下の項目は読みで外れる（cacheEntryByAbsoluteStateAddress.ts）。行の無いアドレスは undefined。
+   */
+  readonly rowStamp?: number;
 }

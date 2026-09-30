@@ -24,6 +24,7 @@ import { createStateAddress } from "../../address/StateAddress";
 import { IPathInfo, IStateAddress } from "../../address/types";
 import { keepPreviousList } from "../../list/createListDiff";
 import { listIndexAtWildcard } from "../../list/wildcardLevel";
+import { getRowCacheStamp } from "../../list/createListIndex";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { IStateElement } from "../../components/types";
@@ -176,7 +177,12 @@ function _getByAddressWithCache(
   // 旧世代の値と新世代の値を見分けられない。世代の違う項目は単に miss として再評価し、
   // 下で新しい印を付けて上書きする（列挙も掃き出しも要らず、どのアドレス形状でも自己修復する）。
   const generation = stateElement.stateGeneration;
-  if (cacheEntry !== null && cacheEntry.dirty === false && cacheEntry.generation === generation) {
+  // 行の印（#389）。行の要素・途中の値が変わると印が進み、行の下の項目は外れる（cacheEntryByAbsoluteStateAddress.ts）。
+  // 要素のパス（`items.*`）自身は対象にしない: 要素の値はそのパスの dirty でしか変わらず、印で外すと、並べ替えを
+  // まだ振り直していない行・退役した行の位置を添字で読み直し、別の要素を新しい印付きで固定する
+  const rowStamp = address.pathInfo.lastSegment === WILDCARD ? undefined : getRowCacheStamp(address.listIndex);
+  if (cacheEntry !== null && cacheEntry.dirty === false && cacheEntry.generation === generation &&
+    cacheEntry.rowStamp === rowStamp) {
     return cacheEntry.value;
   }
   const value = _getByAddress(target, address, receiver, handler, stateElement);
@@ -188,7 +194,8 @@ function _getByAddressWithCache(
     setCacheEntryByAbsoluteStateAddress(absAddress, {
       value: value,
       dirty: false,
-      generation: generation
+      generation: generation,
+      rowStamp: rowStamp
     });
   }
   const previous = cacheEntry?.value;
