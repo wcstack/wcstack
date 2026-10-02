@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   isInsideForTemplate, getResolvedForListPath, rankOfForList, listsPerLevel, wildcardPrefixes, findOtherListWildcard, isRowOrBranchContent,
+  getInnermostForPath, getRowShorthandForPath, isForBindingRefused,
 } from '../src/service/forContext';
 
 describe('isInsideForTemplate', () => {
@@ -146,5 +147,44 @@ describe('isRowOrBranchContent — HTML のパーサとのずれ（K6 の取り�
     const html = '<template data-wcs=for:rows><b data-wcs="outerHTML: h"></b><div data-wcs=textContent:t><i data-wcs="outerHTML: h"></i></div></template>';
     expect(isRowOrBranchContent(html, at(html, '<b data-wcs="'))).toBe(true);
     expect(isRowOrBranchContent(html, at(html, '<i data-wcs="'))).toBe(false);
+  });
+});
+
+describe('getRowShorthandForPath — 正本パーサが拒む for の行は展開しない（#121）', () => {
+  const rowOffset = (html: string) => html.indexOf('<li');
+
+  it('正しい for は getInnermostForPath と同じ生のパスを返すこと', () => {
+    for (const html of [
+      '<template data-wcs="for: items"><li></li></template>',
+      '<template data-wcs="for: items;"><li></li></template>',
+      '<template data-wcs="for: groups.0.items"><li></li></template>',
+      '<template data-wcs="for: 2024"><li></li></template>',
+      '<template data-wcs="for: groups"><template data-wcs="for: .items"><li></li></template></template>',
+      '<template data-wcs="for: groups"><template data-wcs="for: $1"><li></li></template></template>',
+    ]) {
+      expect(getRowShorthandForPath(html, rowOffset(html)), html).toBe(getInnermostForPath(html, rowOffset(html)));
+      expect(getRowShorthandForPath(html, rowOffset(html)), html).not.toBeNull();
+    }
+  });
+
+  it('囲む for のどれかを正本パーサが [wcs/binding-syntax] で拒むなら null を返すこと', () => {
+    for (const html of [
+      '<template data-wcs="for: items|take(2)"><li></li></template>',
+      '<template data-wcs="for: items | slice(0, 2)"><li></li></template>',
+      '<template data-wcs="for: items|take(2)"><template data-wcs="for: groups"><li></li></template></template>',
+    ]) {
+      expect(getRowShorthandForPath(html, rowOffset(html)), html).toBeNull();
+    }
+    // for の外も null（getInnermostForPath と同じ）
+    expect(getRowShorthandForPath('<li></li>', 0)).toBeNull();
+  });
+
+  it('isForBindingRefused は [wcs/binding-syntax] の拒否だけを数えること', () => {
+    expect(isForBindingRefused('for: items|take(2)')).toBe(true);
+    expect(isForBindingRefused('for#ro: items')).toBe(true);
+    expect(isForBindingRefused('for: items')).toBe(false);
+    expect(isForBindingRefused('for: .items')).toBe(false);
+    // `@state`（#32 — code を持たない拒否。namedStateValidator が報告する）は数えない
+    expect(isForBindingRefused('for: items@other')).toBe(false);
   });
 });

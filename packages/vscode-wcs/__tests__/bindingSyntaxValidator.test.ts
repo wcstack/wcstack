@@ -125,6 +125,52 @@ describe("wcs/binding-syntax（正本パーサと同じ判定 — @wcstack/state
     expect(doc.filter((x) => x.code === "wcs/binding-syntax").map((x) => x.severity)).toEqual(["error"]);
   });
 
+  // #121 で拒まれた for: はテンプレートごと拒まれる（行は存在しない）。報告は wcs/binding-syntax の 1 件だけで、
+  // その for 自身のフィルタ・型の検査（filter-unknown / filter-input-type / binding-type-expectation）も、
+  // 行の短縮パスの存在の検査（`expanded: items|take(2).*.n`）も重ねない（#120 と同じ方針）
+  it("#121 で拒まれた for: には wcs/binding-syntax だけを出し、for 自身と行の短縮パスの検査を重ねないこと", () => {
+    const html = `<wcs-state><script type="module">export default { items: [{ n: 1 }, { n: 2 }, { n: 3 }] };</script></wcs-state>
+<ul><template data-wcs="for: items|take(2)"><li data-wcs="textContent: .n">{{ .n }}</li></template></ul>
+<ul><template data-wcs="for: items|slice(0,2)"><li data-wcs="textContent: .n">{{ .n }}</li></template></ul>`;
+    const d = validateDocument(html, { locale: "en" });
+    expect(d.map((x) => [x.code, x.severity, html.slice(x.start, x.end)])).toEqual([
+      ["wcs/binding-syntax", "error", "for: items|take(2)"],
+      ["wcs/binding-syntax", "error", "for: items|slice(0,2)"],
+    ]);
+  });
+
+  it("拒まれた for: の中では行の短縮パスの綴り違いも・入れ子の for の行も検査せず、短縮パスに依らない束縛は従来どおり検査すること", () => {
+    const html = `<wcs-state><script type="module">export default { items: [{ n: 1 }], groups: [{ n: 1 }], count: 1 };</script></wcs-state>
+<ul><template data-wcs="for: items|take(2)"><li data-wcs="textContent: .nmae">{{ .nmae }}<template data-wcs="for: groups"><b data-wcs="textContent: .nmae">{{ .nmae }}</b></template><i data-wcs="title: count|nosuch">{{ missing }}</i></li></template></ul>`;
+    const d = validateDocument(html, { locale: "en" });
+    expect(d.map((x) => [x.code, html.slice(x.start, x.end)])).toEqual([
+      ["wcs/binding-syntax", "for: items|take(2)"],
+      ["wcs/filter-unknown", "nosuch"],
+      ["wcs/binding-path-missing", "missing"],
+    ]);
+  });
+
+  it("正しい for: の行の短縮パスは従来どおり検査し、if: のフィルタの検査も残ること（対照）", () => {
+    const html = `<wcs-state><script type="module">export default { items: [{ n: 1 }], groups: [{ items: [{ n: 1 }] }], "2024": [{ n: 1 }], count: 1 };</script></wcs-state>
+<ul><template data-wcs="for: items"><li data-wcs="textContent: .nmae">{{ .nmae }}</li></template></ul>
+<ul><template data-wcs="for: items;"><li data-wcs="textContent: .nmae">{{ .nmae }}</li></template></ul>
+<ul><template data-wcs="for: groups.0.items"><li data-wcs="textContent: .nmae">{{ .nmae }}</li></template></ul>
+<ul><template data-wcs="for: 2024"><li data-wcs="textContent: .nmae">{{ .nmae }}</li></template></ul>
+<ul><template data-wcs="for: items"><li data-wcs="textContent: .n">{{ .n }}</li></template></ul>
+<template data-wcs="if: count|nosuch"></template>
+<template data-wcs="elseif: count|slice(0,2)"></template>`;
+    const d = validateDocument(html, { locale: "en" });
+    const missing = d.filter((x) => x.code === "wcs/binding-path-missing");
+    expect(missing.map((x) => html.slice(x.start, x.end))).toEqual(Array(8).fill(".nmae"));
+    expect(missing.map((x) => /\(expanded: ([^)]+)\)/.exec(x.message)?.[1])).toEqual([
+      "items.*.nmae", "items.*.nmae", "items.*.nmae", "items.*.nmae",
+      "groups.0.items.*.nmae", "groups.0.items.*.nmae", "2024.*.nmae", "2024.*.nmae",
+    ]);
+    expect(d.filter((x) => x.code === "wcs/filter-unknown").map((x) => html.slice(x.start, x.end))).toEqual(["nosuch"]);
+    expect(d.filter((x) => x.code === "wcs/filter-input-type").map((x) => html.slice(x.start, x.end))).toEqual(["slice"]);
+    expect(d.filter((x) => x.code === "wcs/binding-syntax")).toEqual([]);
+  });
+
   it("日本語のメッセージを返すこと", () => {
     const d = validateBindingSyntax(`<input data-wcs="value#ro#wo: x">`, "data-wcs", "ja");
     expect(d[0].message).toMatch(/^バインディングの構文エラー（ランタイムは読み込み時に throw します）: /);

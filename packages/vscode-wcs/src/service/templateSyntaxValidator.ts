@@ -15,7 +15,7 @@ import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { splitOutsideQuotes } from "../core/parser/quoteAware.js";
 import {
-  isInsideForTemplate, getInnermostForPath, countWildcardSegments, getResolvedForListPath, rankOfForList, findOtherListWildcard,
+  isInsideForTemplate, getRowShorthandForPath, countWildcardSegments, getResolvedForListPath, rankOfForList, findOtherListWildcard,
 } from "./forContext.js";
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
@@ -203,7 +203,8 @@ export function validateTemplateSyntax(
       // 数値の添字のパス（`{{ items.0.name }}`）は警告しない — 4.0 は添字の数によらず追従する（F17・#355・#383）
 
       if (pathPart.startsWith(".")) {
-        const forPath = insideFor ? getInnermostForPath(html, item.matchStart, bindAttrName) : null;
+        // Not under a for the parser refuses (getRowShorthandForPath — those rows never exist)
+        const forPath = insideFor ? getRowShorthandForPath(html, item.matchStart, bindAttrName) : null;
         if (forPath && !forPath.startsWith(".")) {
           // 単独の `.` は行そのもの＝`<forPath>.*`（末尾に区切りは付かない）。
           // ランタイム: state/src/structural/expandShorthandPaths.ts

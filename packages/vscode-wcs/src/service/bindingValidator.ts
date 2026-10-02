@@ -16,8 +16,8 @@ import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
 import { analyzeCallableBodies, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
 import { getStatePathIndex, isUnresolvedPath, readStateScript, type FileReader } from './statePathResolver.js';
 import {
-  isInsideForTemplate, getInnermostForPath, countWildcardSegments, getResolvedForListPath, rankOfForList,
-  findOtherListWildcard, analyzeElementContexts,
+  isInsideForTemplate, getRowShorthandForPath, countWildcardSegments, getResolvedForListPath, rankOfForList,
+  findOtherListWildcard, analyzeElementContexts, isForBindingRefused,
 } from './forContext.js';
 import { readsEventCurrentTarget } from './scriptAst.js';
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
@@ -227,6 +227,14 @@ export function validateBindings(
       const scopedPathSet = new Set(scopedPaths.map(p => p.path));
       const propNoMod = parsed.property.replace(/#.*$/, '').trim();
 
+      // A `for:` the canonical parser refuses with `[wcs/binding-syntax]` (`for: items|take(2)` — #121) is reported by
+      // bindingSyntaxValidator alone: it is refused as a whole, so no path, filter or type check is stacked on it
+      // (as on a path refused with #120). `if:` / `elseif:` keep their checks
+      if (propNoMod === 'for' && isForBindingRefused(binding)) {
+        pos += binding.length + 1;
+        continue;
+      }
+
       // `#direct`（4.0）はイベント束縛（`on*:`）だけが読む。それ以外（プロパティ・`eventToken.*`・
       // 明示のプロパティ形 `.onclick:`）ではランタイムが黙って無視する。
       if (!propNoMod.startsWith('on')) {
@@ -369,9 +377,10 @@ export function validateBindings(
         const pathTrimmed = parsed.path.trim();
         if (pathTrimmed && !isLiteral(pathTrimmed)) {
           // 省略パスの場合は展開してから検証
+          // (not under a for the parser refuses — getRowShorthandForPath: those rows never exist)
           let checkPath = pathTrimmed;
           if (pathTrimmed.startsWith('.')) {
-            const forPath = getInnermostForPath(html, attr.valueStart, attrName);
+            const forPath = getRowShorthandForPath(html, attr.valueStart, attrName);
             if (forPath && !forPath.startsWith('.')) {
               // 単独の `.` は行そのもの＝`<forPath>.*`（末尾に区切りは付かない）。
               // ランタイム: state/src/structural/expandShorthandPaths.ts
