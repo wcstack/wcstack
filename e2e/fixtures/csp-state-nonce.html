@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: CSP — state inline script, nonce on the loading script</title>
+  <!-- docs/csp.md §4. A policy without blob:. The <script> that loads state carries the
+       page nonce, so the blob: import of the inline state inherits it and is admitted. -->
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'nonce-e2e'">
+  <script nonce="e2e">
+    window.__violations = [];
+    document.addEventListener("securitypolicyviolation", (e) => {
+      window.__violations.push({ directive: e.effectiveDirective, blocked: e.blockedURI });
+    });
+  </script>
+  <script type="module" nonce="e2e" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <!-- No nonce here: the browser's own evaluation of this <script> is refused (one "inline"
+       violation), which does not concern state's load through blob: (docs/csp.md §4). -->
+  <wcs-state>
+    <script type="module">
+export default { message: "inline state loaded" };
+    </script>
+  </wcs-state>
+  <p id="out">{{ message }}</p>
+</body>
+</html>

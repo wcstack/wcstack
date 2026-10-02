@@ -330,7 +330,9 @@ a feature never carries a second copy of the engine, and never a copy of another
 
 Resolution order: `state` → `src` (.json / .js) → `json` → inner `<script>` → wait for `setInitialState()`.
 
-> **Under a Content-Security-Policy:** form 5 (inline `<script type="module">`) is evaluated through a `blob:` URL and therefore requires `script-src blob:`. A page nonce does not cover it. If you enforce a strict CSP, use form 4 (`src="./state.js"`) instead — it needs no extra directive. See [docs/csp.md](../../docs/csp.md).
+The browser also evaluates form 5's `<script type="module">` itself — being inside `<wcs-state>` does not stop it. Its export goes nowhere, so the state is unaffected, but its top-level code runs twice (once by the browser, once by state). Keep side effects (requests, logging, assignments to globals) out of the top level; under a CSP, see the note below.
+
+> **Under a Content-Security-Policy:** form 5 (inline `<script type="module">`) is evaluated through a `blob:` URL and therefore requires either the page's nonce on the `<script>` that loads state (the blob: import inherits it) or `script-src blob:`. If you enforce a strict CSP, use form 4 (`src="./state.js"`) instead — it needs no extra directive. Note that the browser evaluates form 5's `<script>` itself as well: under a CSP that shows up as one violation in the console unless that `<script>` carries the nonce too, and otherwise (with that nonce, or with no CSP) its top-level code runs twice — keep side effects out of it. See [docs/csp.md](../../docs/csp.md).
 
 ### Mounting Additional State (`mount=`)
 
