@@ -58,7 +58,8 @@ function failInitialization(element: IStateElement, message: string): never {
   raiseError(message);
 }
 
-async function initializeBindWebComponent(element: IStateElement, ledger: IBindLedger): Promise<void> {
+/** Resolves `true` when a newer connect of the element took the preparation over */
+async function initializeBindWebComponent(element: IStateElement, ledger: IBindLedger): Promise<boolean> {
   const el = element as unknown as HTMLElement;
     if (el.hasAttribute("bind-component")) {
       // wcs-stateはコンポーネントのトップレベル要素であること
@@ -111,10 +112,17 @@ async function initializeBindWebComponent(element: IStateElement, ledger: IBindL
         // whenDefined を待つと無言でウェッジするので落とす。
         raiseError(`CustomElementRegistry is unavailable for <${customTagName}>.`);
       }
+      const generation = element.connectGeneration;
       await componentRegistry.whenDefined(customTagName.toLowerCase());
       // data-wcs属性がある場合は、上位の状態によりbinding情報の設定が完了するまで待機する
       if (boundComponent.hasAttribute(config.bindAttributeName)) {
         await waitInitializeBinding(boundComponent);
+      }
+      // Moved while initializing: the element connected again before it was initialized, and that
+      // connect prepares it again. Leave the element to it — going on would initialize the scope a
+      // second time and run `$connectedCallback` twice for one connection.
+      if (element.connectGeneration !== generation) {
+        return true;
       }
       if (!(boundComponentStateProp in boundComponent)) {
         raiseError(`Component does not have property "${boundComponentStateProp}" for state binding.`);
@@ -183,7 +191,7 @@ async function initializeBindWebComponent(element: IStateElement, ledger: IBindL
           // 次に入った <wcs-state> が組み直すので触らない（_mountRecord は立てて、
           // connectedCallback の続きが v1 の _initialize に落ちないようにする）
           if (el.parentNode !== parentNode) {
-            return;
+            return false;
           }
           // スコープ根: Shadow DOM 形はコンポーネントの shadowRoot、
           // Light DOM 形はコンポーネント要素自身（そのサブツリーがスコープ・D7）。
@@ -210,11 +218,12 @@ async function initializeBindWebComponent(element: IStateElement, ledger: IBindL
           // ライフサイクルはスコープごとに残る — $connectedCallback を chroot で呼ぶ
           warnMountedDollarDeclarations(record);
           callMountLifecycleCallback(record, "$connectedCallback", () => createLifecycleMountState(record!));
-          return;
+          return false;
         }
       }
       bindWebComponent(element, ledger.boundComponent!, ledger.boundComponentStateProp!, state);
     }
+    return false;
 }
 
 export const bindComponentLifecycleHooks: ILifecycleHooks = {
@@ -226,7 +235,11 @@ export const bindComponentLifecycleHooks: ILifecycleHooks = {
       return null;
     }
     const ledger = ledgerOf(element);
-    return initializeBindWebComponent(element, ledger).then(() => {
+    return initializeBindWebComponent(element, ledger).then((superseded) => {
+      if (superseded) {
+        // a newer connect of this element prepares it and lands its initialization
+        return true;
+      }
       if (ledger.mountRecord === null) {
         // ホスト配線の無い plain Shadow 形: 独立ツリーを持つので core の初期化が続く
         return false;
