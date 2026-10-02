@@ -123,6 +123,14 @@ export function collectNodesAndBindingInfosByFragment(
   return [nodes, allBindings, deferredSpreads];
 }
 
+/**
+ * The nodes of the list not collected yet (`initializeBindings`, #414). A collected node is bound already
+ * — by an earlier walk, or as a row's node — and its loop context is not to be touched again.
+ */
+export function uncollectedNodes(nodes: Node[]): Node[] {
+  return nodes.filter((node) => !registeredNodeSet.has(node));
+}
+
 export function unregisterNode(node: Node): void {
   registeredNodeSet.delete(node);
 }
