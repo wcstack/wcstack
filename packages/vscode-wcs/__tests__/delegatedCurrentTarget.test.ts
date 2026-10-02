@@ -80,6 +80,18 @@ describe('wcs/delegated-current-target — 委譲されるイベントのハン�
     expect(diags.map((d) => textOf(html, d))).toEqual(['onclick', 'onclick']);
   });
 
+  // The same scope as #203: inside a top-level non-structural <template>, only the content the state binds (a route
+  // template, a template a `<wcs-layout layout>` names — not one only enable-shadow-root layouts name)
+  it('アプリの JS が複製するだけの最上位の <template> の中は黙り、レイアウトの雛形の中には出すこと（#203 と同じ範囲）', () => {
+    const html = `${handlerState}<template id="row-tpl"><button data-wcs="onclick: pick"></button></template>
+<template id="main-layout"><button data-wcs="onclick: pick"></button><slot></slot></template>
+<template id="shadow-layout"><button data-wcs="onclick: pick"></button><slot></slot></template>
+<wcs-router><template><wcs-route path="/"><wcs-layout layout="main-layout"><p>a</p></wcs-layout></wcs-route>
+<wcs-route path="/s"><wcs-layout layout="shadow-layout" enable-shadow-root><p>b</p></wcs-layout></wcs-route></template></wcs-router>`;
+    const diags = ofCode(validate(html), WcsDiagnosticCode.DelegatedCurrentTarget);
+    expect(diags.map((d) => d.start)).toEqual([html.indexOf('onclick', html.indexOf('id="main-layout"'))]);
+  });
+
   it('書き換え先は書かれた修飾子に direct を足した形（onclick#prevent,stop → onclick#prevent,stop,direct）', () => {
     const html = `${handlerState}<button data-wcs="onclick#prevent,stop: pick"></button><button data-wcs="onclick: pick"></button>`;
     const diags = ofCode(validate(html), WcsDiagnosticCode.DelegatedCurrentTarget);
@@ -103,11 +115,32 @@ describe('wcs/delegated-current-target — 委譲されるイベントのハン�
     expect(ofCode(validate(html), WcsDiagnosticCode.DelegatedCurrentTarget)).toEqual([]);
   });
 
-  it('ボリュームのメソッドは見ないこと（root の state のハンドラだけ）', () => {
+  it('ボリュームのメソッドは root のハンドラ名（pick）としては見ないこと（マウントパスの下の名前 sub.pick だけ）', () => {
     const html = `<wcs-state><script type="module">export default { go() {} };</script></wcs-state>
 <wcs-state mount="sub"><script type="module">export default { pick(e) { return e.currentTarget; } };</script></wcs-state>
 <button data-wcs="onclick: pick"></button>`;
     expect(ofCode(validate(html), WcsDiagnosticCode.DelegatedCurrentTarget)).toEqual([]);
+  });
+
+  // 4.0 grafts a volume's methods at <mount>.<name> and invokes onclick: cart.pick like a root method (engine.invoke
+  // with the dotted path), so under delegation currentTarget is the root
+  it('ボリュームのメソッド（中のスクリプト・読める src=）も、マウントパスの下のハンドラ名で報告すること', () => {
+    const html = `<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>
+<wcs-state mount="cart"><script type="module">export default { pick(e) { return e.currentTarget.dataset.id; }, plain(e) { return e.target; } };</script></wcs-state>
+<wcs-state mount="ext" src="./ext.js"></wcs-state>
+<div><template shadowrootmode="open"><wcs-state mount="inner"><script type="module">export default { pick(e) { return e.currentTarget; } };</script></wcs-state></template></div>
+<button data-wcs="onclick: cart.pick"></button>
+<button data-wcs="onclick#direct: cart.pick"></button>
+<button data-wcs="onclick: cart.plain"></button>
+<button data-wcs="onsubmit: ext.send"></button>
+<button data-wcs="onclick: inner.pick"></button>`;
+    const fileReader = (path: string) => (path === './ext.js' ? 'export default { send(e) { new FormData(e.currentTarget); } };' : undefined);
+    const diags = ofCode(validateDocument(html, { locale: 'en', fileReader }), WcsDiagnosticCode.DelegatedCurrentTarget);
+    expect(diags.map((d) => textOf(html, d))).toEqual(['onclick', 'onsubmit']);
+    expect(diags[0].message).toContain('"cart.pick"');
+    expect(diags[1].message).toContain('"ext.send"');
+    // without a reader, a volume's src= is not read
+    expect(ofCode(validate(html), WcsDiagnosticCode.DelegatedCurrentTarget).map((d) => textOf(html, d))).toEqual(['onclick']);
   });
 
   it('examples/state-tilt-maze の形（pointer capture・getBoundingClientRect）: #direct なら黙ること', () => {
@@ -183,6 +216,28 @@ describe('#203 の outerHTML: / outerText: と要素の文脈（analyzeElementCo
     expect(outer(validate(html)).map((d) => textOf(html, d))).toEqual(['outerText']);
   });
 
+  // The non-structural <template>s whose content the state binds: a route template (under `<wcs-router>`) and a
+  // layout template a `<wcs-layout layout="id">` names (the light-DOM outlet hands its content to the binder). A
+  // top-level `<template id="tpl">` that only app code clones is not bound — silent
+  it('アプリの JS が複製するだけの最上位の <template> の中の for / if は黙り、router の route は報告すること', () => {
+    const html = `${S}<template id="row-tpl"><template data-wcs="for: items"><span data-wcs="outerHTML: ."></span></template>
+<template data-wcs="if: on"><b data-wcs="outerText: h"></b></template></template>
+<wcs-router><template><wcs-route path="/"><template data-wcs="if: on"><i data-wcs="outerHTML: h"></i></template></wcs-route></template></wcs-router>`;
+    const diags = outer(validate(html));
+    expect(diags).toHaveLength(1);
+    expect(diags[0].start).toBe(html.indexOf('outerHTML: h'));
+  });
+
+  it('<wcs-layout layout="id"> が指すレイアウトの雛形は、文書のどこにあっても報告し、enable-shadow-root のレイアウトだけが指す雛形は黙ること', () => {
+    const html = `${S}<template id="main-layout"><template data-wcs="for: items"><span data-wcs="outerHTML: ."></span></template><slot></slot></template>
+<template id="shadow-layout"><template data-wcs="if: on"><b data-wcs="outerText: h"></b></template><slot></slot></template>
+<wcs-router><template><wcs-route path="/"><wcs-layout layout="main-layout"><p>a</p></wcs-layout></wcs-route>
+<wcs-route path="/s"><wcs-layout layout="shadow-layout" enable-shadow-root><p>b</p></wcs-layout></wcs-route></template></wcs-router>
+<template id="late-layout"><template data-wcs="if: on"><u data-wcs="outerHTML: h"></u></template></template>
+<wcs-layout layout="late-layout"></wcs-layout>`;
+    expect(outer(validate(html)).map((d) => d.start)).toEqual([html.indexOf('outerHTML: .'), html.indexOf('outerHTML: h')]);
+  });
+
   it('route の中の if: の枝に置いた <wcs-state> で、route 全体を「自前の state を持つ template」とみなさないこと', () => {
     const html = `${S}<wcs-router><template><wcs-route path="/">
 <template data-wcs="if: on"><wcs-state json='{}'></wcs-state></template>
@@ -197,15 +252,16 @@ describe('#203 の outerHTML: / outerText: と要素の文脈（analyzeElementCo
       + `<template shadowrootmode="open"><p data-wcs="x: y"></p><wcs-state></wcs-state></template>`
       + `<template data-wcs="for: a"><template id="inner"><p data-wcs="x: y"></p></template></template>`
       + `<noscript><p data-wcs="x: y"></p></noscript>`
-      + `<template data-wcs="for: a"><div data-wcs="text: t"><p data-wcs="x: y"></p></div></template>`;
+      + `<template data-wcs="for: a"><div data-wcs="text: t"><p data-wcs="x: y"></p></div></template>`
+      + `<wcs-router><template><p data-wcs="x: y"></p><template data-wcs="if: a"><p data-wcs="x: y"></p></template></template></wcs-router>`;
     const offsets: number[] = [];
     for (let at = html.indexOf('x: y'); at !== -1; at = html.indexOf('x: y', at + 1)) offsets.push(at);
     const contexts = analyzeElementContexts(html, offsets);
     expect(offsets.map((o) => contexts.get(o))).toEqual([
       { bound: true, rowOrBranch: true, ownStateTemplate: false },
       { bound: true, rowOrBranch: false, ownStateTemplate: false },
-      // 自前の state を持たない template（router の route・雛形）は文書の一部
-      { bound: true, rowOrBranch: false, ownStateTemplate: false },
+      // a top-level template the state does not bind (one app code clones): not bound
+      { bound: false, rowOrBranch: false, ownStateTemplate: false },
       // 自前の <wcs-state> を持つ template（宣言的 shadow root・DCC）— 後ろの <wcs-state> で決まる
       { bound: true, rowOrBranch: false, ownStateTemplate: true },
       // 行の中の構造でない template は複製されても inert
@@ -214,6 +270,9 @@ describe('#203 の outerHTML: / outerText: と要素の文脈（analyzeElementCo
       { bound: false, rowOrBranch: false, ownStateTemplate: false },
       // 中身を置き換える束縛（4.0 の text: も）を持つ要素の子孫
       { bound: false, rowOrBranch: false, ownStateTemplate: false },
+      // a route template is bound where it is inserted (an if in it is a branch)
+      { bound: true, rowOrBranch: false, ownStateTemplate: false },
+      { bound: true, rowOrBranch: true, ownStateTemplate: false },
     ]);
   });
 });

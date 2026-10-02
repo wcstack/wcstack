@@ -132,11 +132,11 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 
 重大度の方針: **error** = ランタイムが throw する・束縛がけっして動かない、**warning** = 動くが黙って違うことをする、**info** = 助言。意図した例外: 存在しないフィルタ（4.0 で外れた名前と `substr` を含む）と `wcs/wildcard-rank`（`for` の外のパターンパス・省略パス・ループの添字 #1401 / #1402、段数の不足 #1401、別のリストの `*` #1403）は、4.0 のランタイムでは初期化で throw しますが **warning** です — ページは実行時に自前のフィルタを登録でき、拡張からはそれが見えないため、また `for` のスコープはマークアップから組み立て直すので、どの形でも厳密とは限らないためです。CI で落としたいときは `wcs-validate --strict` を使ってください。
 
-`outerHTML:` / `outerText:` の検査（#203）は、生のマークアップから要素の入れ子を組み立て直します。終了タグの省略（`<li>…<li>`・`<p>…<div>`・表の行とセル）は直前に開いた要素だけを見て閉じる近似で（HTML のパーサの scope の規則のすべてではない）、`/>` は void 要素と `<svg>` / `<math>` の中だけで閉じたとみなします。引用符の無い `data-wcs` は、囲むテンプレートと要素の判定には読みますが、束縛そのものの検証は引用符付きの属性だけです。
+`outerHTML:` / `outerText:` の検査（#203）は、state が束ねる `for` / `if` テンプレートを見ます: 文書の中のものと、文書の直下の構造でない `<template>` の中のものはその中身を state が束ねるときだけ — `<wcs-router>` の中の route の雛形と、`<wcs-layout layout="id">` が指すレイアウトの雛形（指す `<wcs-layout>` がどれも `enable-shadow-root` なら対象外 — 雛形は outlet の shadow root に置かれ、ページの state は束ねない）。アプリの JS が複製するだけの最上位の `<template id="tpl">` と、自前の `<wcs-state>` を持つ `<template>`（宣言的 shadow root・DCC）の中は見ません。`wcs/delegated-current-target` も同じ範囲です。どちらも router の既定（スクリプトでしか変えられない）を前提にします: タグ名が `wcs-router` / `wcs-layout`（`config.tagNames`）で、レイアウトが light DOM（`config.enableShadowRoot: false` — `true` にすると、ページの state が束ねないレイアウトの雛形も検査の対象になります）。`src` と `layout` を両方持つ `<wcs-layout>` は、router が `src` を読みますが、`layout` の雛形を数えます。生のマークアップから要素の入れ子を組み立て直します。終了タグの省略（`<li>…<li>`・`<p>…<div>`・表の行とセル）は直前に開いた要素だけを見て閉じる近似で（HTML のパーサの scope の規則のすべてではない）、`/>` は void 要素と `<svg>` / `<math>` の中だけで閉じたとみなします。引用符の無い `data-wcs` は、囲むテンプレートと要素の判定には読みますが、束縛そのものの検証は引用符付きの属性だけです。
 
 | チェック | 例 | 診断 |
 |---|---|---|
-| 存在しないパス | `textContent: typo` | ⚠ warning |
+| 存在しないパス（パスの候補が取れないとき、拡張が読めない state の持ち分は黙る — 読めないボリューム `<wcs-state mount="cart" src="./cart.js">` のマウントパスの下とその祖先（`shop.cart` の `shop`）、ページの root の state が読めないときのボリュームの外。「読めない」は、読めない `src=`（reader が無い・URL・先頭 `/`・無いファイル）、素の `export default { … }` でない・トップレベルに spread のあるスクリプト、読み込み元の無い `<wcs-state>`（`setInitialState()` を待つ）。読めた空の state（`json='{}'`・`export default {}`）は読めたので報告する。`<template>` の中・`bind-component` の `<wcs-state>` は別の木で、ページの root の判定に数えない。読める `src=` は中身のキーとメソッドをマウントパスの下に足す — `.js` は同名の `.ts` を先に読む。4.0 はメソッドも接ぎ木する: `onclick: cart.add`。`stateSchema` があれば schema で判定するが、読めない state のイベント束縛のハンドラは除く — schema はメソッドを持たない） | `textContent: typo` | ⚠ warning |
 | ループの添字でも状態のパスでもない `$0`・`$01`・`$1000`（`wcs/binding-path-missing`。ランタイムは同じコードで束縛を失敗させる） | `textContent: $0` | ❌ error |
 | `for` の中の範囲の外の添字（`wcs/index-param-range`。添字は `$1`〜`$128`、上限は manifest の `syntax.indexParam.maxDepth`。`for` の外は「for の外のループ添字」— `wcs/wildcard-rank`） | `textContent: $129` | ❌ error |
 | 存在しないフィルタ（4.0 で外れた旧名 `uc` / `fix` … と `substr` を含む。書き換え先を案内 — `substr(2, 3)` → `slice(2, 5)`） | `textContent: count\|fake` | ⚠ warning |
@@ -150,9 +150,9 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | イベント+フィルタ | `onclick: fn\|gt(10)` | ⚠ warning |
 | `<template for>` 外のパターンパス・省略パス・ループの添字（`wcs/wildcard-rank`。4.0 は初期化で #1401 / #1402 を投げる — code はランタイムと同じ） | `textContent: items.*.name`・`.name`・`$1` | ⚠ warning |
 | 行の中で別のリストの `*` を読む（4.0 の #1403） | `for: a` の中の `textContent: b.*.y` | ⚠ warning |
-| `for` / `if` テンプレートの中の `outerHTML:` / `outerText:`（4.0 は初期化で throw — #203） | `<template data-wcs="for: items"><div data-wcs="outerHTML: h">` | ❌ error |
+| `for` / `if` テンプレートの中の `outerHTML:` / `outerText:`（4.0 は初期化で throw — #203。route・レイアウトの雛形の中も対象、アプリの JS が複製するだけの最上位の `<template>` の中は対象外） | `<template data-wcs="for: items"><div data-wcs="outerHTML: h">` | ❌ error |
 | イベント束縛以外の `#direct`（無視される） | `value#direct: name` | ⚠ warning |
-| 4.0 が root へ委譲するイベント（`click`・`input`・`submit` など 11 種）のハンドラが、イベント引数の `currentTarget` を最初の `await` の前に読む（`wcs/delegated-current-target`。そこでは要素ではなく root になる — `on*#direct:` か `event.target.closest(…)`。`#direct` 付き・カスタム要素の `input` / `change` / `submit`・自前の `<wcs-state>` を持つ `<template>` の中は出さない。router の route の中は出す） | `onclick: pick` で `pick(e) { e.currentTarget.dataset.id }` | ⚠ warning |
+| 4.0 が root へ委譲するイベント（`click`・`input`・`submit` など 11 種）のハンドラ（root の state のメソッド `pick`、またはボリュームのメソッド `cart.pick` — 4.0 はボリュームのメソッドも接ぎ木して同じく呼ぶ）が、イベント引数の `currentTarget` を最初の `await` の前に読む（`wcs/delegated-current-target`。そこでは要素ではなく root になる — `on*#direct:` か `event.target.closest(…)`。`#direct` 付き・カスタム要素の `input` / `change` / `submit`・自前の `<wcs-state>` を持つ `<template>` の中・state が束ねない最上位の `<template>`（アプリの JS が複製するだけの雛形）の中は出さない。router の route と `<wcs-layout layout>` が指すレイアウトの雛形の中は出す — #203 と同じ範囲） | `onclick: pick` で `pick(e) { e.currentTarget.dataset.id }` | ⚠ warning |
 | パスの `__proto__` / `prototype` の段（4.0 の #120） | `textContent: a.__proto__.x` | ❌ error |
 | `<template>` 外の `{{ }}` (FOUC) | `<p>{{ count }}</p>` | ℹ info |
 | ネストされたプロパティへの代入 | `this.user.name = "..."` | ⚠ warning |
@@ -160,7 +160,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 
 フィルタチェーンの型追跡により、`if: count|gt(0)` (number→boolean) は正しく OK と判定されます。
 
-数値の添字のパス（`items.0.name`・`groups.0.items.1.v`・行の中の `groups.*.sel.0.id`）は報告しません — 4.0 は添字の数によらず、いまその位置にある行を読んで書き込みに追従します。存在は添字を `*` に読み替えて確かめます（`items.0.nmae` は存在しないパスとして報告）。
+数値の添字のパス（`items.0.name`・`groups.0.items.1.v`・行の中の `groups.*.sel.0.id`）は報告しません — 4.0 は添字の数によらず、いまその位置にある行を読んで書き込みに追従します。存在は添字を `*` に読み替えて確かめます（`items.0.nmae` は存在しないパスとして報告）。`stateSchema` では、数値の段を `*` に読み替えるのは schema のその位置が配列のときだけで、オブジェクトの下（数値のキーを持つオブジェクト `sales.2024`）はランタイムと同じく素のキーとして引きます（`sales.2024.totl`・宣言の無い `sales.2025.total` は `wcs/path-nonexistent`）。
 
 #### `<wcs-state>` スクリプト（4.0 で外れた名前・4.0 の設定）
 
@@ -178,7 +178,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | 読み込みと併記した `bind-component`（`wcs/bind-component-source`。state はホスト要素のプロパティだけで、ランタイムは読み込みを拒んで console.error — コンポーネントはマウントされない。中のスクリプトはランタイムが読まないので、ほかの検査を重ねない） | `<wcs-state bind-component="state" json='{}'>` | ❌ error |
 | 同じ root の 2 つ目の `<wcs-state>`（`wcs/second-root`。state の木は root ごとに 1 つで、後から読み込んだ方は拒まれる） | `<wcs-state>` を `mount` なしで 2 つ | ❌ error |
 
-診断のコードはランタイムと同じです。4.0 のランタイムは、診断の後付けが無いと `[@wcstack/state] [wcs/template-syntax] #203 "outerHTML"` のようにコード・番号・値だけを出し、全部入りの `auto` は文を出します。どの入口を読んだか（`wcs/feature-not-installed`）など、ページを動かさないと分からないものは静的には出しません。マウントしたコンポーネントで `$watch`・`$stream`・`$renderedCallback` が動かないという警告（`wcs/mount-dollar-declaration`）も出しません — その state はコンポーネントの JavaScript のプロパティにあり、拡張は読みません（`<wcs-state bind-component>` の中に書いたスクリプトはランタイムが読まない — `wcs/bind-component-source`）。ボリュームの `$watch` は接ぎ木ごと拒まれるので、キーの存在（`wcs/watch-path-missing`）は検査しません。
+診断のコードはランタイムと同じです。4.0 のランタイムは、診断の後付けが無いと `[@wcstack/state] [wcs/template-syntax] #203 "outerHTML"` のようにコード・番号・値だけを出し、全部入りの `auto` は文を出します。どの入口を読んだか（`wcs/feature-not-installed`）など、ページを動かさないと分からないものは静的には出しません。マウントしたコンポーネントで `$watch`・`$stream`・`$renderedCallback` が動かないという警告（`wcs/mount-dollar-declaration`）も出しません — その state はコンポーネントの JavaScript のプロパティにあり、拡張は読みません（`<wcs-state bind-component>` の中に書いたスクリプトはランタイムが読まない — `wcs/bind-component-source`）。ボリュームの `$watch` は接ぎ木ごと拒まれるので、キーの存在（`wcs/watch-path-missing`）は検査しません。ページの root の `$watch` のキーはボリュームの配下（`"cart.total"` — 接ぎ木された state への書き込みで発火する）も指せるので、ボリュームのキーと照合し、ボリュームの state が読めないときは束縛と同じく報告しません。ボリュームは、root の `<wcs-state>` を持つ最も内側の `<template>`（宣言的 shadow root・DCC）の root のもので、その root の `$watch` が照合します。それ以外のボリューム（文書の中、route・レイアウトの雛形の中）はページの root のものです。
 
 ### JSDoc Type Validation
 
@@ -212,9 +212,11 @@ this["user.name"] = "Bob";
 drift。診断には安定コード（例 `manifest-schema-version` / `manifest-kind-invalid`）が付きます。
 
 単一の `validateDocument` 入口が IDE 診断と CLI の両方を駆動するため、同じ入力に対して
-エディタと CI で結果が一致します。意図的な非対称が 1 つ: `<wcs-state src="...">` の
-外部 state は CLI だけが（HTML ファイル相対で）解決します——IDE は単一 HTML ファイルを
-解析対象とし `src` はスキップします。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
+エディタと CI で結果が一致します。`<wcs-state src="...">` の外部 state（root もボリュームも）と最寄りの
+`wcstack.manifest.json` は、どちらも同じ reader で HTML ファイル相対に読みます。IDE が読むのはディスクに
+保存した文書（`file:` の URI）のときで、未保存（untitled）や仮想ファイルシステムの文書は `src` を読みません
+（読めない `src` と同じく、そのパスは報告しません）。外部 state のファイルを編集中で保存していないときは、
+ディスク上の内容で検証します。同梱の **`wcs-validate`** CLI は同じ検査を—— `wcstack.manifest.json`
 sidecar および／または HTML の `data-wcs` バインディングに対して——ヘッドレスに CI 実行します。
 CLI は npm では [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint)
 として配布されています（同一の CLI バンドルを同梱する依存ゼロのラッパー）:

@@ -316,6 +316,36 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
  * コメントの中と raw text 要素（`parseWcsStateElements` と同じ — JS の文字列の `<template>` など）は数えない。
  */
 export function createTemplateTester(html: string): (offset: number) => boolean {
+  const tags = collectTemplateTags(html);
+  return (offset) => {
+    let depth = 0;
+    for (const tag of tags) {
+      if (tag.at >= offset) break;
+      depth = tag.close ? Math.max(0, depth - 1) : depth + 1;
+    }
+    return depth > 0;
+  };
+}
+
+/**
+ * Returns a function giving the `<template>` elements that enclose an offset, as the offsets of their start tags from
+ * the outermost to the innermost (empty: in the document). The tags are collected once, as by createTemplateTester.
+ */
+export function createTemplateChain(html: string): (offset: number) => readonly number[] {
+  const tags = collectTemplateTags(html);
+  return (offset) => {
+    const open: number[] = [];
+    for (const tag of tags) {
+      if (tag.at >= offset) break;
+      if (!tag.close) open.push(tag.at);
+      else if (open.length > 0) open.pop();
+    }
+    return open;
+  };
+}
+
+/** The `<template>` start and end tags of the document, in order (not in comments or raw text elements). */
+function collectTemplateTags(html: string): { at: number; close: boolean }[] {
   const lower = asciiLowerCase(html);
   const tags: { at: number; close: boolean }[] = [];
   let pos = 0;
@@ -337,14 +367,7 @@ export function createTemplateTester(html: string): (offset: number) => boolean 
     if (tag !== null) tags.push({ at: lt, close: tag[1] === '/' });
     pos = lt + 1;
   }
-  return (offset) => {
-    let depth = 0;
-    for (const tag of tags) {
-      if (tag.at >= offset) break;
-      depth = tag.close ? Math.max(0, depth - 1) : depth + 1;
-    }
-    return depth > 0;
-  };
+  return tags;
 }
 
 /**
@@ -493,7 +516,7 @@ export function parseAttributeNames(tagContent: string): Set<string> {
  * タグ属性テキストから指定属性の値を抽出する。
  * 引用符なし・シングル・ダブルいずれにも対応。
  */
-function extractAttribute(tagContent: string, attrName: string): string | null {
+export function extractAttribute(tagContent: string, attrName: string): string | null {
   // name="value" or name='value' or name=value
   const regex = new RegExp(
     `(?:^|\\s)${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|(\\S+))`,

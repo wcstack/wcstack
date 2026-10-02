@@ -253,7 +253,7 @@ export default defineState({
   });
 
   describe('ボリューム（mount=）候補の選別（v2）', () => {
-    it('メソッドとイベントトークンはボリューム候補に載らないこと（runtime 未対応）', () => {
+    it('メソッドはマウントパスの下に載り、イベントトークン・コマンドトークンは載らないこと（4.0 の接ぎ木と同じ）', () => {
       const html = `<wcs-state mount="cart">
   <script type="module">
 export default {
@@ -269,9 +269,11 @@ export default {
       expect(pathNames).toContain('cart.items');
       // getter はアクセサとして接ぎ木される（候補に残る）
       expect(pathNames).toContain('cart.total');
-      // メソッドのツリー露出は未対応・$eventTokens / $commandTokens は warn で捨てられる
-      expect(pathNames).not.toContain('cart.save');
+      // 4.0 grafts the method at cart.save (scopes/volume.ts's graft); it keeps the validation-only method kind
+      expect(getStatePathsFromHtml(html).find(p => p.path === 'cart.save')?.kind).toBe('method');
+      // a volume's $eventTokens / $commandTokens do not run (ignored with console.warn — wcs/volume-declaration)
       expect(pathNames).not.toContain('cart.saved');
+      expect(pathNames).not.toContain('cart.fetch');
       expect(pathNames.some(p => p.includes('$'))).toBe(false);
     });
 

@@ -136,6 +136,23 @@ describe('validateTemplateSyntax — 数値の添字のパス（4.0 は添字の
     expect(diags.filter(d => d.code === WcsDiagnosticCode.BindingPathMissing).map(d => html.slice(d.start, d.end)))
       .toEqual(['regions.0.nmae']);
   });
+
+  it('stateSchema の state でも、配列でない親の数値キー（sales.2024）は素のキーのまま引いて打ち間違いを error にする', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
+        sales: { type: 'object', properties: { 2024: { type: 'object', properties: { total: { type: 'number' } } } } },
+      },
+    };
+    const html = `
+<wcs-state src="./state.ts"></wcs-state>
+<p><!--@@: items.0.v--></p><p><!--@@: items.0.nmae--></p>
+<p><!--@@: sales.2024.total--></p><p><!--@@: sales.2024.totl--></p><p><!--@@: sales.2025.total--></p>`;
+    const diags = validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en', undefined, schema);
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent).map(d => html.slice(d.start, d.end)))
+      .toEqual(['items.0.nmae', 'sales.2024.totl', 'sales.2025.total']);
+  });
 });
 
 describe('validateTemplateSyntax — 行の中の別のリストの *（4.0 の #1403）', () => {

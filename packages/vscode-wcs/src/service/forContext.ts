@@ -6,7 +6,7 @@
 
 import { splitBindTexts } from '@wcstack/state/parser';
 import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
-import { asciiLowerCase, parseAttributeNames, RAW_TEXT_ELEMENTS } from '../language/htmlParse.js';
+import { asciiLowerCase, extractAttribute, parseAttributeNames, RAW_TEXT_ELEMENTS } from '../language/htmlParse.js';
 
 /**
  * 指定オフセットが <template data-wcs="for: ..."> の内側にあるかを判定する。
@@ -267,6 +267,29 @@ function propertyNamesOf(value: string): string[] {
  */
 interface ITemplateScope {
   hasOwnState: boolean;
+  /** The `id` attribute (a layout template a `<wcs-layout layout="id">` names? — decided at the end of the scan). */
+  readonly id: string | null;
+  /** Inside a `<wcs-router>` (a route template: the router inserts its content and hands it to the binder). */
+  readonly underRouter: boolean;
+}
+
+/** The router element (`<wcs-router>` — the `<template>` in it holds the routes). The router's default tag name. */
+const ROUTER_TAG = 'wcs-router';
+/** The layout element (`<wcs-layout layout="id">` reads the `<template>` of that id). The router's default tag name. */
+const LAYOUT_TAG = 'wcs-layout';
+
+/**
+ * Whether the state binds the content of a top-level non-structural `<template>`: a route template (inside
+ * `<wcs-router>` — the router hands the content it inserts to the binder) or a layout template a
+ * `<wcs-layout layout="id">` names (the light-DOM outlet hands what it places to the binder; a layout with
+ * `enable-shadow-root` puts the template into the outlet's shadow root, which the page's state does not bind).
+ * Anything else (a `<template id="row-tpl">` that only app code clones, a declarative shadow root) is not bound.
+ * Assumes the router's defaults: the tag names `wcs-router` / `wcs-layout` and `enableShadowRoot: false`
+ * (`config.tagNames` / `config.enableShadowRoot` are not visible here), and that a `<wcs-layout>` with both
+ * `src` and `layout` still names the template (the router reads `src`).
+ */
+function stateBindsTemplate(scope: ITemplateScope, layoutIds: ReadonlySet<string>): boolean {
+  return scope.underRouter || (scope.id !== null && layoutIds.has(scope.id));
 }
 
 interface IOpenElement {
@@ -298,13 +321,17 @@ function closeImplied(stack: { name: string }[], name: string): void {
 export interface IElementContext {
   /**
    * 束縛として読まれる（raw text 要素の中身でも、中身を置き換える束縛を持つ要素の子孫でも、別の `<template>`
-   * の中に入れ子にした構造でない `<template>` の中でもない）。
+   * の中に入れ子にした構造でない `<template>` の中でもない）。Inside a top-level non-structural `<template>`, only
+   * when a state binds its content: one with its own `<wcs-state>` (a declarative shadow root, a DCC —
+   * ownStateTemplate), a route template or a layout template (stateBindsTemplate). The content of a
+   * `<template id="tpl">` that only app code clones is not bound.
    */
   readonly bound: boolean;
   /**
    * for / if / elseif / else テンプレートの行や枝の中で、束縛として読まれる。要素を置き換える束縛
    * （`outerHTML:` / `outerText:`）はここで 4.0 が初期化で拒む（#203 — 行や枝はノードを位置で持つ）。
-   * 自前の `<wcs-state>` を持つ template の中は数えない。
+   * 自前の `<wcs-state>` を持つ template の中は数えない。Only where `bound` holds (inside a top-level template, a route
+   * or layout template — not one that only app code clones).
    */
   readonly rowOrBranch: boolean;
   /**
@@ -334,6 +361,8 @@ interface IPendingContext {
  *     `outerHTML:` / `outerText:`）を持つ要素の子孫
  *   - raw text 要素（`<script>` / `<style>` / `<textarea>` / `<title>` / `<noscript>` / `<iframe>` …）の中身
  * 文書の直下の構造でない `<template>`（router の route）は、差し込まれた先で束縛されるので塞がない。
+ * `bound` (what `wcs/delegated-current-target` checks) and `rowOrBranch` (#203) count the content of such a template
+ * only when a state binds it (its own `<wcs-state>`, a route template, a layout template — stateBindsTemplate).
  *
  * HTML のパーサに合わせて、終了タグの省略（`<li>…<li>`・`<p>…<div>`・表の行とセルなど）は開始タグで
  * 暗に閉じ、`/>` は void 要素と svg / math の中だけで閉じたとみなす（HTML では void でない要素の `/>` は
@@ -350,6 +379,9 @@ export function analyzeElementContexts(
   const pending = [...new Set(offsets)].sort((a, b) => a - b);
   if (pending.length === 0) return out;
   const judged: [number, IPendingContext][] = [];
+  // The template ids a `<wcs-layout layout="id">` without `enable-shadow-root` names. A layout can come before or
+  // after its template, so this is collected over the whole scan and used at the end
+  const layoutIds = new Set<string>();
   let next = 0;
   const NOT_BOUND: IPendingContext = { bound: false, structural: false, scopes: [] };
   const stack: IOpenElement[] = [];
@@ -400,6 +432,10 @@ export function analyzeElementContexts(
         }
       }
     }
+    if (name === LAYOUT_TAG) {
+      const layout = extractAttribute(attrs, 'layout');
+      if (layout !== null && !parseAttributeNames(attrs).has('enable-shadow-root')) layoutIds.add(layout);
+    }
     const foreign = name === 'svg' || name === 'math' || stack.some((e) => e.name === 'svg' || e.name === 'math');
     if (VOID_ELEMENTS.has(name) || (foreign && /\/\s*$/.test(attrs))) continue;
     if (RAW_TEXT_ELEMENTS.has(name)) {
@@ -421,15 +457,22 @@ export function analyzeElementContexts(
     const plainTemplate = name === 'template' && !structural;
     const blocks = (plainTemplate && stack.some((e) => e.name === 'template'))
       || (name !== 'template' && names.some((n) => CONTENT_PROPERTIES.has(n)));
-    stack.push({ name, structural, scope: plainTemplate ? { hasOwnState: false } : null, blocks });
+    const scope: ITemplateScope | null = plainTemplate
+      ? { hasOwnState: false, id: extractAttribute(attrs, 'id'), underRouter: stack.some((e) => e.name === ROUTER_TAG) }
+      : null;
+    stack.push({ name, structural, scope, blocks });
   }
   // 閉じていない文書の末尾
   while (next < pending.length) judged.push([pending[next++], judge()]);
   for (const [offset, context] of judged) {
     const ownStateTemplate = context.scopes.some((scope) => scope.hasOwnState);
+    // Where the walker reads bindings, an enclosing non-structural template is a top-level one (a nested one blocks).
+    // Its content is bound only when a state binds it (its own <wcs-state>, a route template, a layout template)
+    const bound = context.bound
+      && context.scopes.every((scope) => scope.hasOwnState || stateBindsTemplate(scope, layoutIds));
     out.set(offset, {
-      bound: context.bound,
-      rowOrBranch: context.bound && context.structural && !ownStateTemplate,
+      bound,
+      rowOrBranch: bound && context.structural && !ownStateTemplate,
       ownStateTemplate,
     });
   }

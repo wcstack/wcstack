@@ -211,6 +211,27 @@ export default { total: 0, $watch: { total() {} } };
 <wcs-state json="{}"></wcs-state>
 `);
 
+// Paths under a volume loaded with src= (<wcs-state mount="cart" src="./cart.js">): the root's $watch and the
+// bindings read cart.total. The CLI reads src= relative to the HTML (.js tries the same-named .ts first) and stays
+// silent under a volume it cannot read (missing.js) — a correct page passes --strict. A typo under a volume it read
+// is still a warning.
+const volumeDir = join(workDir, "volume");
+mkdirSync(volumeDir);
+const volumeHtml = join(volumeDir, "index.html");
+const volumeTypoHtml = join(volumeDir, "typo.html");
+writeFileSync(join(volumeDir, "cart.js"), "export default { items: [], total: 0 };\n");
+const volumePage = (key) => `<!doctype html>
+<wcs-state mount="cart" src="./cart.js"></wcs-state>
+<wcs-state mount="ext" src="./missing.js"></wcs-state>
+<wcs-state><script type="module">
+export default { count: 0, $watch: { "${key}"() {}, "ext.total"() {} } };
+</script></wcs-state>
+<p data-wcs="textContent: ${key}"></p>
+<p data-wcs="textContent: ext.total"></p>
+`;
+writeFileSync(volumeHtml, volumePage("cart.total"));
+writeFileSync(volumeTypoHtml, volumePage("cart.totl"));
+
 const failures = [];
 let caseCount = 0;
 
@@ -378,6 +399,16 @@ check("4.0 scopes and loop indexes → errors wcs/volume-declaration, wcs/index-
 check("delegated event handler reading event.currentTarget → warning wcs/delegated-current-target (not on #direct), exit 0", ["--lang=en", currentTargetHtml], {
   exit: 0,
   stdout: [/warning wcs\/delegated-current-target .*"onclick#direct:"/, "0 error(s), 1 warning(s)"],
+});
+
+check("paths under a volume loaded with src= (readable or not) are clean under --strict, exit 0", ["--lang=en", "--strict", volumeHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s), 0 info (strict)"],
+});
+
+check("a typo under a readable src= volume → warnings wcs/watch-path-missing and wcs/binding-path-missing, --strict exit 1", ["--lang=en", "--strict", volumeTypoHtml], {
+  exit: 1,
+  stdout: [/warning wcs\/watch-path-missing .*"cart\.totl"/, /warning wcs\/binding-path-missing .*"cart\.totl"/, "0 error(s), 2 warning(s), 0 info (strict)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });

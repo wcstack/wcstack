@@ -88,7 +88,8 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   // validator 側で code を付与して返す。
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale));
-  out.push(...validateWatchDeclarations(text, stateTagName, locale));
+  // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
+  out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader));
   // `$scan` 宣言（runtime の scan/processScanDeclaration.ts と同じ診断 code。3 コード持ち）
   out.push(...validateScanDeclarations(text, stateTagName, locale));
   // `$recursion` 宣言と `**` の使い方（runtime の recursion/ と同じ診断 code）。
