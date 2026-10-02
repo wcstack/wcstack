@@ -150,6 +150,8 @@ DOM の autoTrigger は書き込み（`writeText`）のみを起動します。�
 > ```
 >
 > `bootstrapClipboard()` は要素が接続される前に呼んでください。（`setConfig` は内部用。設定は `bootstrapClipboard` 経由で行います。）
+>
+> 知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
 
 ## 観測可能なプロパティ（出力）
 

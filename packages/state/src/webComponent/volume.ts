@@ -40,6 +40,7 @@ import { IStateProxy } from "../proxy/types";
 import { addVolumeUpdatedCallback, createVolumeChroot, drainPendingVolumes, hasReservedVolumeSlots, IPendingVolumeRequest, IVolumeUpdatedCallback, queuePendingVolume, recordGraftedSlot, setVolumeGraftHandler, translateVolumePath } from "./volumeShared";
 import type { IMountEntry } from "./mountEntries";
 import { normalizeDeclarationAliases } from "../declarationAliases";
+import { v4Migration } from "../core/v4MigrationHooks";
 import { parseBindTextsForElement } from "../bindTextParser/parseBindTextsForElement";
 import { config } from "../config";
 import { onStateElementRegistered } from "../stateElementByName";
@@ -345,6 +346,9 @@ function processVolumeDeclarations(
       );
     }
   }
+  // 3.5 notice (D39): 4.0 refuses to graft a volume that declares `$watch` / `$listKeys` /
+  // `$renderedCallback` / `$behavior` / `$features`, or that injects root paths
+  v4Migration?.volume(mountPath, volumeState, injections.length);
 }
 
 /**

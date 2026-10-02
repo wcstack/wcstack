@@ -17,23 +17,24 @@ import { loadFromScriptFile } from "../stateLoader/loadFromScriptFile";
 import { IState } from "../types";
 import { defineDCC } from "./defineDCC";
 
+/**
+ * A load failure is not wrapped (same rule as `State._loadStateFromSource`): what the loader
+ * throws reaches `failInitializeLoudly` as is, which logs it under the element's
+ * "failed to initialize" line and rejects connectedCallbackPromise with that same value.
+ */
 async function loadDccState(el: HTMLElement, hostElement: Element): Promise<IState> {
-  try {
-    if (el.hasAttribute('src')) {
-      const src = el.getAttribute('src')!;
-      if (src.endsWith('.js')) {
-        return await loadFromScriptFile(src);
-      }
-      raiseError(`DCC: Unsupported src type: ${src}`);
+  if (el.hasAttribute('src')) {
+    const src = el.getAttribute('src')!;
+    if (src.endsWith('.js')) {
+      return await loadFromScriptFile(src);
     }
-    const script = el.querySelector<HTMLScriptElement>('script[type="module"]');
-    if (script) {
-      return await loadFromInnerScript(script, hostElement.tagName.toLowerCase());
-    }
-    raiseError(`DCC: No state source found for "${hostElement.tagName.toLowerCase()}".`);
-  } catch (e) {
-    raiseError(`DCC: Failed to load state: ${e}`);
+    raiseError(`DCC: Unsupported src type: ${src}`);
   }
+  const script = el.querySelector<HTMLScriptElement>('script[type="module"]');
+  if (script) {
+    return await loadFromInnerScript(script, hostElement.tagName.toLowerCase());
+  }
+  raiseError(`DCC: No state source found for "${hostElement.tagName.toLowerCase()}".`);
 }
 
 async function initializeDcc(element: IStateElement, hostElement: Element, shadowRoot: ShadowRoot): Promise<void> {

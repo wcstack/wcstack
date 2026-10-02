@@ -216,6 +216,8 @@ const { autoTrigger, triggerAttribute, tagNames } = getConfig();
 | `triggerAttribute` | string  | `data-timertarget` | DOM クリックトリガで走査する属性。            |
 | `tagNames.timer`   | string  | `wcs-timer`        | 登録するカスタム要素のタグ名。                |
 
+知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
+
 ## ヘッドレス利用（`TimerCore`）
 
 Core は DOM に依存せず、`@wc-bindable/core` の `bind()` と直接組み合わせられます。

@@ -94,10 +94,81 @@ describe('State DCC検出', () => {
   });
 
   it('loadFromInnerScriptが失敗した場合はエラーになること', async () => {
-    loadFromInnerScriptMock.mockRejectedValueOnce(new Error('load error'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const loadError = new Error('load error');
+    loadFromInnerScriptMock.mockRejectedValueOnce(loadError);
     const { stateEl } = createDCCSetup({}, '<script type="module">export default {}</script>');
 
-    await expect((stateEl as any).connectedCallback()).rejects.toThrow(/DCC/);
+    try {
+      // The loader's error is not wrapped (the same rule as the root's _loadStateFromSource)
+      await expect((stateEl as any).connectedCallback()).rejects.toBe(loadError);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  // README, the connectedCallbackPromise row: a DCC load failure also rejects with the original error
+  describe('DCCのロード失敗はローダーのエラーそのもので reject すること', () => {
+    // [label, attributes, content, expected console header, arrange the failure]
+    const sources: Array<[string, Record<string, string>, string | undefined, string, (error: unknown) => void]> = [
+      ['内包スクリプト', {}, '<script type="module">export default {}</script>', '<wcs-state>', (error) => {
+        loadFromInnerScriptMock.mockRejectedValueOnce(error);
+      }],
+      ['src属性（.js）', { src: 'component.js' }, undefined, '<wcs-state src="component.js">', (error) => {
+        loadFromScriptFileMock.mockRejectedValueOnce(error);
+      }],
+    ];
+
+    for (const [label, attrs, content, header, arrange] of sources) {
+      it(`${label}: connectedCallbackPromise と getBindingsReady が同一オブジェクトで reject し、診断が要素とソースと元のエラーを載せること`, async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { host, stateEl } = createDCCSetup(attrs, content);
+        const loaderError = new Error(`dcc loader failed: ${label}`);
+        arrange(loaderError);
+        try {
+          await expect((stateEl as any).connectedCallback()).rejects.toBe(loaderError);
+          await expect(stateEl.connectedCallbackPromise).rejects.toBe(loaderError);
+          // The definition's shadow root has no tree: its bindings-ready reports the same failure
+          await expect(State.getBindingsReady(host.shadowRoot!)).rejects.toBe(loaderError);
+          await expect(stateEl.initializePromise).resolves.toBeUndefined();
+          expect(defineDCCMock).not.toHaveBeenCalled();
+          expect(errorSpy).toHaveBeenCalledTimes(1);
+          expect(errorSpy.mock.calls[0][0]).toBe(`[@wcstack/state] ${header} failed to initialize.`);
+          expect(errorSpy.mock.calls[0][1]).toBe(loaderError);
+        } finally {
+          errorSpy.mockRestore();
+        }
+      });
+    }
+
+    it('Error でない throw 値（文字列）も包まずにそのまま reject すること', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const { stateEl } = createDCCSetup({ src: 'component.js' });
+      loadFromScriptFileMock.mockRejectedValueOnce('module threw a string');
+      try {
+        await expect((stateEl as any).connectedCallback()).rejects.toBe('module threw a string');
+        await expect(stateEl.connectedCallbackPromise).rejects.toBe('module threw a string');
+        expect(errorSpy.mock.calls[0]).toEqual([
+          '[@wcstack/state] <wcs-state src="component.js"> failed to initialize.',
+          'module threw a string',
+        ]);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('DCC 自身の設定エラーは二重 prefix の包みを付けずに自分の文面で reject すること', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const { stateEl } = createDCCSetup({ src: 'component.json' });
+      try {
+        // Was: "[@wcstack/state] DCC: Failed to load state: Error: [@wcstack/state] DCC: Unsupported src type: …"
+        await expect((stateEl as any).connectedCallback()).rejects.toThrow(
+          /^\[@wcstack\/state\] DCC: Unsupported src type: component\.json$/,
+        );
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
   });
 
   // §3.1: DCC の state はテンプレートに属しインスタンスごとにロードされるので、

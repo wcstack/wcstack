@@ -840,6 +840,8 @@ bootstrapFetch({
 });
 ```
 
+Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+
 ## Design Notes
 
 - `value`, `loading`, `error`, `status`, `objectURL`, and `errorInfo` are **output state**

@@ -49,7 +49,7 @@ Loading the bundle alongside an individual package's `/auto` is safe: whichever 
 
 If you want npm packages for local development, install the individual ones (`@wcstack/state`, `@wcstack/router`, …); this package publishes only the bundle and this guide.
 
-`@wcstack/state` also ships **split entries** for a page that deliberately leaves features out: import `bootstrapState` and `installFeatures` from `@wcstack/state/core`, then `installFeatures([...])` with the features you need (`features/temporal` = `$watch` / `$scan` / `$stream`, `features/scopes` = `bind-component` / `mount=` / DCC, plus `recursion`, `ssr`, `formats`, `devtools`, `diagnostics`) **before** calling `bootstrapState()`. A declaration whose feature is missing throws `[wcs/feature-not-installed]`. Load the split files from jsDelivr's plain `/npm/…/dist/split/` paths or a bundler — **never `esm.run`**, which re-bundles a separate engine into each entry. The full-package `/auto` above needs none of this and stays the default; see `npm view @wcstack/state readme`.
+`@wcstack/state` also ships **split entries** for a page that deliberately leaves features out: import `bootstrapState` and `installFeatures` from `@wcstack/state/core`, then `installFeatures([...])` with the features you need (`features/temporal` = `$watch` / `$stream`, and `$scan`, which is deprecated in 3.5 and removed in 4.0 — write `$watch` or `$on` instead; `features/scopes` = `bind-component` / `mount=` / DCC, plus `recursion`, `ssr`, `formats`, `devtools`, `diagnostics`) **before** calling `bootstrapState()`. A declaration whose feature is missing throws `[wcs/feature-not-installed]`. Load the split files from jsDelivr's plain `/npm/…/dist/split/` paths or a bundler — **never `esm.run`**, which re-bundles a separate engine into each entry. The full-package `/auto` above needs none of this and stays the default; see `npm view @wcstack/state readme`.
 
 ---
 
@@ -310,6 +310,8 @@ Older names appear all over the training data. They still work through 3.x and a
 | `this.$dependOn(path)` · `this.$untracked(fn)` | `$trackDependency` · `$untrackDependency` |
 
 Declaring both spellings of a state key fails with `[wcs/declaration-alias]`. `$renderedCallback` reports the **bindings that were applied**, not every state change — use `$watch` for those.
+
+`@wcstack/state` 3.5 also prints each old name once per page at runtime (`[wcs/v4-migration]`), together with two more forms that 4.0 removes: `$scan` (write `$watch` for state paths, `$on` for event tokens) and the `substr(start, length)` filter (write `slice(start, start + length)`).
 
 ---
 
