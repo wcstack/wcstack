@@ -2,6 +2,8 @@
 
 > 🤖 **AI coding agents**: This README is a package-level reference, not the primary entry point for building a wcstack application. If you have not already done so, first read the repository [README](https://github.com/wcstack/wcstack#readme) and [AGENTS.md](https://github.com/wcstack/wcstack/blob/main/AGENTS.md), then use the [wcstack-app skill](https://github.com/wcstack/wcstack-skill).
 
+> **4.0 への準備**: 4.0 はまだリリースされていません。何が変わり、3.x のうちに何ができるかは [3.x → 4.0 移行ガイド（プレビュー）](https://github.com/wcstack/wcstack/blob/main/docs/migration-v4.ja.md) にまとめています。
+
 **これは便利な既存FWの別実装ではありません。パスがビューとモデルの契約になる——フロントエンドの外で確立した系譜を、Web標準の上に持ち込む試みです。**
 
 多くのライブラリは、UI・状態・コンポーネントの結合点を JavaScript の中に置きます。`@wcstack/state` はそこを選びません。仮想DOMも、コンパイルも、hook も、selector も前提にせず、HTML とパス文字列だけを契約として UI と状態を結びつけます。
