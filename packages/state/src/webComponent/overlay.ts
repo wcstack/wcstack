@@ -61,8 +61,19 @@ const lastHostContexts = new WeakMap<IMountRecord, ILoopContext | null>();
  */
 const lifecycleStates = new WeakMap<IMountRecord, [Record<string, any>, { row: IListIndex | null }]>();
 
+/**
+ * 要素が行へ向いたときの、その行の祖先の行（外側の行）。行の親は台帳が付け替える（外側の行を作り直した — #256・
+ * 外側の行が内側の配列を手放した — #394）ので、要素が立っていた外側の行が消えたかは、向いたときの祖先で見る
+ */
+const hostAncestorsByRecord = new WeakMap<IMountRecord, IListIndex[]>();
+
 export function noteHostContext(record: IMountRecord, context: ILoopContext | null): void {
   lastHostContexts.set(record, context);
+  const ancestors: IListIndex[] = [];
+  for (let row = context?.listIndex.parentListIndex ?? null; row !== null; row = row.parentListIndex) {
+    ancestors.push(row);
+  }
+  hostAncestorsByRecord.set(record, ancestors);
 }
 
 export function endHostConnection(record: IMountRecord): void {
@@ -113,7 +124,8 @@ function isRetiredRow(row: IListIndex | null): boolean {
  * 祖先の差し替えの直後は、生きている行も退役した祖先を指したままなので、接続中の要素は含めない
  */
 function isRemovedHost(record: IMountRecord, row: IListIndex | null): boolean {
-  return !record.component.isConnected && isRetiredRow(row);
+  return !record.component.isConnected
+    && (isRetiredRow(row) || hostAncestorsByRecord.get(record)?.some((ancestor) => isRetiredListIndex(ancestor)) === true);
 }
 
 /** マウントインスタンス（record × listIndex）の私有データ。無ければ初期スナップショットから複製 */

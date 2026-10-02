@@ -20,10 +20,10 @@ import { liftAddress, absoluteAddressOf } from "../../address/liftAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { DELIMITER, WILDCARD } from "../../define";
 import { createListIndex, getHomeParentListIndex, getRowCacheStamp, setListIndexValue } from "../../list/createListIndex";
-import { getListIndexesByList, isOwnedListIndexes, setListIndexesByList } from "../../list/listIndexesByList";
-import { getLastListValueByAbsoluteStateAddress, hasRenderedList, rebaseRenderedList, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
+import { clearRowSwapPending, getElementAliases, getListIndexesByList, holdListAtParent, markRowSwapPending, isOwnedListIndexes, releaseListAtParent, setListIndexesByList } from "../../list/listIndexesByList";
+import { getAddressesByLastListValue, getLastListValueByAbsoluteStateAddress, hasRenderedList, markSwappedList, rebaseRenderedList, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
 import { ISwapInfo } from "./types";
-import { createListDiff, retireRows } from "../../list/createListDiff";
+import { createListDiff, keepPreviousList, retireRows } from "../../list/createListDiff";
 import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/mergeKeyedList";
 import { IListIndex } from "../../list/types";
 import { getPathInfo } from "../../address/PathInfo";
@@ -289,6 +289,31 @@ function notifyWrite(
     { listExpansion, keyedMergePath }
   );
   walk(address);
+  // 入れ子のリストの行の下への書き込みは、同じ要素オブジェクトを表す別の配列の行（共有された配列の写し）のアドレスにも知らせる
+  // （#393）。描画だけをやり直させる — 着地はこの書き込みのアドレス 1 つで、依存ウォークもしない（同じバッチの差分が
+  // 途中の配列に作った行も同じ要素を表すので、そこからリストを展開すると台帳の行の親をその行へ付け替えてしまう）
+  if (address.pathInfo.lastSegment !== WILDCARD && address.listIndex !== null && address.listIndex.parentListIndex !== null) {
+    const row = address.listIndex;
+    const listPathInfo = address.pathInfo.wildcardParentPathInfos[row.position];
+    const listAddress = createStateAddress(listPathInfo, row.parentListIndex);
+    const readList = () => receiver[getByAddressSymbol](listAddress);
+    const notify = (aliasAbsAddress: IAbsoluteStateAddress) => {
+      dirtyCacheEntryByAbsoluteStateAddress(aliasAbsAddress);
+      updater.enqueueRenderOnlyAddress(aliasAbsAddress);
+    };
+    for (const alias of getElementAliases(row, readList)) {
+      notify(liftAddress(stateElement, createStateAddress(address.pathInfo, alias)));
+    }
+    // 同じ配列を別のパスの `for` も描いている（`{ items: A, alt: A }` の `alt`）なら、その `for` の同じ行の同じ葉にも知らせる
+    // （描画の基準の逆引き — 描画だけ）。葉の書き込みの依存はパスごとなので、`alt` の `for` は描き直されなかった
+    const leaf = address.pathInfo.path.slice(address.pathInfo.wildcardPaths[row.position].length);
+    for (const drawn of getAddressesByLastListValue(liftAddress(stateElement, listAddress), readList())) {
+      const drawnPathInfo = drawn.absolutePathInfo.pathInfo;
+      if (drawnPathInfo !== listPathInfo && drawnPathInfo.wildcardCount === listPathInfo.wildcardCount) {
+        notify(absoluteAddressOf(stateElement, getPathInfo(drawnPathInfo.path + DELIMITER + WILDCARD + leaf), row));
+      }
+    }
+  }
   // 書いた行のリストを、別のパスの `for` が同じ配列として描いている（配列をそのまま返す getter —
   // TodoMVC の `get shown() { return this.filter === "all" ? this.todos : … }`）なら、そのパスの同じ行へも
   // 知らせる（#362）。行の台帳は配列ごとに 1 組なので 2 つのパスの行は同じ listIndex だが、キャッシュ・依存・
@@ -513,6 +538,7 @@ function _setByAddressWithSwap(
       // この行に着地する
       setListIndexValue(row, value);
       info.written.set(row, updateBatch);
+      markRowSwapPending(row);
       notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
     } else {
       // 揃ったので swapInfo を削除し、台帳を新しい配列に差し替える。その場で書き換えると、同じ配列を
@@ -523,7 +549,9 @@ function _setByAddressWithSwap(
       // 揃う前の書き込みで書いた値を映していた行は、自分の要素（書き込む前のその位置の要素）に戻す（#359。
       // 押し出された行に書いた値を残すと、着地の選別がその値の行と取り違える）
       const positions = [row.index];
+      clearRowSwapPending(row);
       info.written.forEach((batch, written) => {
+        clearRowSwapPending(written);
         setListIndexValue(written, info.value[written.index]);
         if (batch === updateBatch) {
           positions.push(written.index);
@@ -637,6 +665,14 @@ function notifySwappedList(
     setLastListValueByAbsoluteStateAddress(listAbsAddress, swapInfo.value);
   }
   updater.enqueueRenderOnlyAddress(listAbsAddress);
+  // この配列を描いている `for` は、書いたリストのアドレスのものだけとは限らない — 同じ内側の配列を別の外側の行も
+  // 持つ・同じ行の別のパスも持つ（#379。行の台帳は配列ごとに 1 組なので、同じ行を描いている）。その `for` にも
+  // 知らせて描き直させる（描くときにまだこの配列なら、自分が描いた並び — 上で写しへ移した記録 — からの差分を取る）
+  for (const absAddress of getAddressesByLastListValue(listAbsAddress, currentParentValue as readonly unknown[])) {
+    if (markSwappedList(absAddress, currentParentValue as readonly unknown[])) {
+      updater.enqueueRenderOnlyAddress(absAddress);
+    }
+  }
 
   const positionBefore = new Map<IListIndex, number>();
   swapInfo.listIndexes.forEach((listIndex, position) => positionBefore.set(listIndex, position));
@@ -876,6 +912,17 @@ function setByAddressCore(
               return handled;
             }
             dispatchedExport = false;
+          }
+        }
+        if (lastSegment !== WILDCARD && address.listIndex !== null) {
+          // 行の下のパス（外側の行の内側のリスト）が別の値に替わる。前の配列の行がこの行を親に持っていても、この行は
+          // もうその配列を持たない — 台帳の付け替えの元にする（list/listIndexesByList.ts・#394）
+          const previous = (parentValue as Record<PropertyKey, unknown>)[key];
+          if (previous !== value) {
+            if (releaseListAtParent(previous, address.listIndex, parentValue as Record<string, unknown>, lastSegment) && Array.isArray(value)) {
+              keepPreviousList(value, previous);
+            }
+            holdListAtParent(value, address.listIndex);
           }
         }
         return Reflect.set(parentValue, key, value);

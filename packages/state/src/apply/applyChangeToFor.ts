@@ -9,8 +9,8 @@ import { inSsr, ssrBlockRemoval } from "../config";
 import { INDEX_BY_INDEX_NAME, WILDCARD } from "../define";
 import { calcDiffIndexes, createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
-import { getLastListValueByAbsoluteStateAddress, getRenderedList, IRenderedList } from "../list/lastListValueByAbsoluteStateAddress";
-import { getListIndexesByList, isRetiredListIndex } from "../list/listIndexesByList";
+import { getLastListValueByAbsoluteStateAddress, getRenderedList, IRenderedList, isSwappedList } from "../list/lastListValueByAbsoluteStateAddress";
+import { getListIndexesByList, hasReleasedList, isRetiredListIndex } from "../list/listIndexesByList";
 import { computeStableIndexSet } from "../list/stableListOrder";
 import { isSwapBaselineList } from "../list/swapBaselineList";
 import { IListDiff, IListIndex } from "../list/types";
@@ -304,8 +304,11 @@ function dropNestedContents(content: IContent): void {
       nested.unmount();
       deleteContentByNode(binding.node, nested);
       // 描いた行を捨てたので、その for が描いた並びも捨てて白紙から描かせる（#320。残すと次の適用が、
-      // 捨てた行を自分の行として差分の旧側に数え、台帳から外した Content をプールへ戻してしまう）
+      // 捨てた行を自分の行として差分の旧側に数え、台帳から外した Content をプールへ戻してしまう）。行の Content の
+      // 台帳も捨てる — 残すと、同じ行を別の外側の行の for も描いている（2 つの外側の行が同じ配列を持つ — #393）とき、
+      // その for がアドレスに残した描画の基準を自分の描いた並びと取り違え、描いていない行を探して落ちた
       renderedListByNode.delete(binding.node);
+      contentByListIndexByNode.delete(binding.node);
     }
   }
 }
@@ -342,13 +345,20 @@ export function applyChangeToFor(
   // この for は `if` で消されていた・DOM から外されていた — か、行の Content の使い回しでこの for が
   // 別の行に付け替わった。行の台帳（どの値がどの行か）は共有の差分で進め、描き替えは自分が描いた行と
   // 今の行を行の同一性で突き合わせて決める。描いた並びが空なら台帳は無い（全行 add）。
-  // 今の行の親がこの for の行でない（要素書き込みが古い親に行を鋳造した台帳の食い違い）なら突き合わせに
-  // 使わない — 別の行の値を描き、その後の書き込みを別の行へ着地させる。従来の差分に戻して、食い違いを
-  // 見える失敗（Content not found）のまま残す
-  const shared = typeof rendered !== 'undefined' && rendered.value !== recordedLastValue
+  // 今の行の親がこの配列を手放した外側の行（台帳の食い違い）なら突き合わせに使わない — 別の行の値を描き、その後の
+  // 書き込みを別の行へ着地させる。従来の差分（行を付け替える）に戻す。行の親が、この配列をまだ持つ別の外側の行なのは
+  // 食い違いではない（2 つの外側の行が同じ配列を持つ — #393）
+  // 同じ配列を描く別の `for` で要素書き込みの入れ替えが揃い、この for はまだその配列を描く（setByAddress の
+  // notifySwappedList・#379）。自分が描いた並び（入れ替えの前の写しへ移された記録）といまの台帳を、行の同一性だけで
+  // 突き合わせる。差分（createListDiff）は通さない — 台帳の行の親を、書いていない外側の行へ付け替えてしまう（#256）
+  const swapped = typeof rendered !== 'undefined' && isSwappedList(absAddress, newValue);
+  const shared = !swapped && typeof rendered !== 'undefined' && rendered.value !== recordedLastValue
     ? createListDiff(listIndex, recordedLastValue, newValue)
     : null;
-  if (shared !== null && shared.newIndexes.every((row) => row.parentListIndex === listIndex || isRetiredListIndex(row.parentListIndex!))) {
+  if (swapped) {
+    lastValue = rendered!.value;
+    diff = calcDiffIndexes(getListIndexesByList(lastValue)!, getListIndexesByList(newValue as unknown[])!);
+  } else if (shared !== null && shared.newIndexes.every((row) => row.parentListIndex === listIndex || isRetiredListIndex(row.parentListIndex!) || !hasReleasedList(newValue as unknown[], row.parentListIndex!))) {
     lastValue = rendered!.value;
     diff = calcDiffIndexes(getListIndexesByList(lastValue) ?? [], shared.newIndexes);
   } else {

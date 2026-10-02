@@ -25,10 +25,11 @@ class ListIndex implements IListIndex {
   private _chainGeneration: number;
   /**
    * この行集合を最初に展開した親（`home`・#256）。付け替えても変わらない。退役した親から
-   * 付け替えたあと、その親が戻ってきたら戻す先になる。既存の行集合を引き継ぐ行は、鋳造時の
-   * 親ではなくその行集合の home を継ぐ（`createListDiff`）── 1 組の行集合に home は 1 つ。
+   * 付け替えたあと、その親が戻ってきたら戻す先になる。1 組の行集合に home は 1 つ — 別の配列（写し）へ
+   * 引き継いだ行集合は、引き継いだ親を home にする（`createListDiff` の rehomeListIndex・#394。前の home は
+   * 新しい配列を持ったことが無い）。
    */
-  private readonly _homeParentListIndex: IListIndex | null;
+  private _homeParentListIndex: IListIndex | null;
 
   /**
    * この行が表しているリスト要素（#256）。差分が返すたびに付け直す。
@@ -44,6 +45,9 @@ class ListIndex implements IListIndex {
    * 代わりに印を 1 つ進める（cache/cacheEntryByAbsoluteStateAddress.ts）。
    */
   cacheStamp = 0;
+
+  /** 要素オブジェクトの索引が持つ、この行への弱い参照（rowsByElement・#393。載せたときに作る） */
+  ref: WeakRef<ListIndex> | undefined;
 
   /**
    * Creates a new ListIndex instance.
@@ -95,6 +99,10 @@ class ListIndex implements IListIndex {
   /** 行集合を最初に展開した親（付け替えても変わらない）。 */
   get homeParentListIndex(): IListIndex | null {
     return this._homeParentListIndex;
+  }
+
+  set homeParentListIndex(home: IListIndex | null) {
+    this._homeParentListIndex = home;
   }
 
   /** この行が表しているリスト要素（未記録なら `NO_VALUE`）。 */
@@ -230,6 +238,11 @@ export function getHomeParentListIndex(listIndex: IListIndex): IListIndex | null
   return (listIndex as ListIndex).homeParentListIndex;
 }
 
+/** 台帳専用の入口その 2'。行集合を別の配列へ引き継いだ親を home にする（createListDiff・#394） */
+export function rehomeListIndex(listIndex: IListIndex, home: IListIndex | null): void {
+  (listIndex as ListIndex).homeParentListIndex = home;
+}
+
 /**
  * キャッシュ専用の入口。行の下のキャッシュの印を読む（行の無いアドレスは undefined — #389）。
  * 載せるときと読むときの両方がこれで引くので、行の無いアドレスの項目は印の比較で外れない。
@@ -251,9 +264,81 @@ export function advanceRowCacheStamp(listIndex: IListIndex): void {
  */
 export function setListIndexValue(listIndex: IListIndex, value: unknown): boolean {
   const row = listIndex as ListIndex;
-  const changed = row.value !== NO_VALUE && !Object.is(row.value, value);
+  const previous = row.value;
+  const changed = previous !== NO_VALUE && !Object.is(previous, value);
+  if (previous !== value) {
+    rowsByElement.get(previous as object)?.delete(row.ref!);
+    rememberRowOfElement(value, row);
+  }
   row.value = value;
   return changed;
+}
+
+/**
+ * 要素オブジェクト → それを表している入れ子のリストの行（#393）。同じ要素オブジェクトは別の行にも居る — 同じ配列の
+ * 2 つの位置、共有された配列の写し（ほかの外側の行がまだ持つ配列の写しは、行を借りずに新しい行を作る — createListDiff）。
+ * 行の下への書き込み（`groups.1.items.0.v`）は、同じ要素を表す別の行のアドレスにも知らせる（setByAddress の notifyWrite）。
+ * 行は弱く持つ — 外側の行ごと外した行・捨てた state の行は差分を通らず退役の印も付かないので、強く持つと要素が生きている
+ * 間ずっと残った（外側の行を不変更新するたびに内側の行の数だけ増えた）。集合は前に見直した大きさの倍に育ったときに、消えた
+ * 行と、退役した行・退役した外側の行の下の行を外す — 消えた行だけを外すと、GC までの間、外側の行を消して戻すたびに集合が
+ * 育った（500 回で 501）。ルート直下の行は載せない（別の行を引くのは入れ子の行の下への書き込みだけ）
+ */
+const rowsByElement = new WeakMap<object, Set<WeakRef<ListIndex>>>();
+const pruneSizeByRows = new WeakMap<Set<WeakRef<ListIndex>>, number>();
+
+function rememberRowOfElement(element: unknown, row: ListIndex): void {
+  if (typeof element !== "object" || element === null || row.parentListIndex === null) {
+    return;
+  }
+  let held = rowsByElement.get(element);
+  if (typeof held === "undefined") {
+    held = new Set();
+    rowsByElement.set(element, held);
+  } else if (held.size >= (pruneSizeByRows.get(held) ?? 8)) {
+    liveRowsOf(held, row, true);
+    pruneSizeByRows.set(held, held.size * 2 + 8);
+  }
+  held.add(row.ref ??= new WeakRef(row));
+}
+
+/** 集合の生きている行のうち `row` でないもの（消えた行は外す。`stale` なら退役した行・その下の行も外す） */
+function liveRowsOf(held: Set<WeakRef<ListIndex>> | undefined, row: ListIndex, stale = false): ListIndex[] {
+  const rows: ListIndex[] = [];
+  held?.forEach((ref) => {
+    const other = ref.deref();
+    if (typeof other === "undefined" || (stale && isUnderRetiredRow(other))) {
+      held.delete(ref);
+    } else if (other !== row) {
+      rows.push(other);
+    }
+  });
+  return rows;
+}
+
+/** 同じ要素オブジェクトを表している別の行（台帳専用の入口その 4 — list/listIndexesByList.ts の getElementAliases） */
+export function getRowsOfSameElement(listIndex: IListIndex): ListIndex[] {
+  return liveRowsOf(rowsByElement.get((listIndex as ListIndex).value as object), listIndex as ListIndex);
+}
+
+/**
+ * 差分で `newIndexes` から外れた行 ＝ 消費者が画面から外した行（list/listIndexesByList.ts の retireListIndexes /
+ * reviveListIndexes が付け外しする）。「生きた親集合に属さない」の判定材料。要素の索引の見直しも引くのでここに置く
+ */
+export const retiredListIndexes = new WeakSet<IListIndex>();
+
+/** 行か、その祖先の行が退役しているか */
+export function isUnderRetiredRow(listIndex: IListIndex | null): boolean {
+  for (let row = listIndex; row !== null; row = row.parentListIndex) {
+    if (retiredListIndexes.has(row)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** 行が表しているリスト要素（未記録なら undefined ではなく内部の印 — 台帳専用の入口その 5・list/listIndexesByList.ts の covers） */
+export function getListIndexValue(listIndex: IListIndex): unknown {
+  return (listIndex as ListIndex).value;
 }
 
 /**
