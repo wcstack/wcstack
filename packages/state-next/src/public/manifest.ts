@@ -35,7 +35,7 @@ export const DECLARATION_ALIASES: Readonly<Record<string, string>> = Object.free
 export const STATE_API_ALIASES: Readonly<Record<string, string>> = Object.freeze({});
 
 /** Modifier vocabulary (`#` on the left side): flags, and `key=value` keys. */
-const MODIFIER_FLAGS: readonly string[] = Object.freeze(["prevent", "stop", "ro"]);
+const MODIFIER_FLAGS: readonly string[] = Object.freeze(["prevent", "stop", "ro", "direct"]);
 const MODIFIER_KEYS: readonly string[] = Object.freeze(["init", "sync"]);
 /** `$1` … `$128`. */
 const INDEX_PARAM_PREFIX = "$";

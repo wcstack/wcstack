@@ -1372,11 +1372,11 @@ describe("後から状態が届く volume のパスの診断（G6）", () => {
     }
   });
 
-  it("3.x のコメント束縛（<!--@@: path-->・<!--@@wcs-text:path-->）は束ねない（I5。暫定の判断。実行時の警告は出さない）", async () => {
+  it("3.x のコメント束縛（<!--@@: path-->・<!--@@wcs-text:path-->）を、全部入りでも 3.x と同じく束ねる（R7 の決定: 支える）", async () => {
     const { root } = await host(`<wcs-state></wcs-state><p>Hello <!--@@: user.name-->!</p><i><!--@@wcs-text:user.name--></i>`, [{ user: { name: "a" } }]);
-    expect(text(root, "p")).toBe("Hello !");
-    expect(text(root, "i")).toBe("");
-    expect(root.querySelector("p")!.innerHTML).toBe("Hello <!--@@: user.name-->!");
+    expect(text(root, "p")).toBe("Hello a!");
+    expect(text(root, "i")).toBe("a");
+    expect(root.querySelector("p")!.innerHTML).toBe("Hello a!");
   });
 
   it("書式フィルタの壁（formats を入れていない）には lint への誘導を付けず、打ち間違いには新しい入れ方を案内する（I4）", async () => {

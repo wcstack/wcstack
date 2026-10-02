@@ -1719,3 +1719,194 @@ describe("I8: 表示する for の無い一覧の失敗と $errorCallback の in
     expect([forInfo.path, forInfo.node]).toEqual(["items", null]);
   });
 });
+
+describe("R7: コメント束縛（<!--@@: expr--> / <!--@@wcs-text: expr-->。3.x と同じ DOM）", () => {
+  const nodes = (el: Element) => Array.from(el.childNodes, (n) => (n.nodeType === 3 ? `t:${(n as Text).data}` : n.nodeType === 8 ? `c:${(n as Comment).data}` : `e:${(n as Element).outerHTML}`));
+  // what @wcstack/state 3.x (packages/state/src) gives for the same page, before and after the write
+  const V3 = {"before":{"a":["t:Hello ","t:Alice","t:!"],"b":["t:Alice"],"c":["t:2"],"d":["c:@@route:/x","c:@@wcs-route-start:/x","c:@@wcs-text-start:x","c: plain ","c:@@:"],"e":["t:Alice"],"li":[["t:x","t: / ","t:x"],["t:y","t: / ","t:y"]],"span":[["t:Alice"]],"g":"xy"},"after":{"a":["t:Hello ","t:Bob","t:!"],"b":["t:Bob"],"c":["t:6"],"d":["c:@@route:/x","c:@@wcs-route-start:/x","c:@@wcs-text-start:x","c: plain ","c:@@:"],"e":["t:Bob"],"li":[["t:x","t: / ","t:x"],["t:y","t: / ","t:y"],["t:z","t: / ","t:z"]],"span":[["t:Bob"]],"g":"xyz"}};
+
+  it("ページの直下と for: / if: の中で {{ }} と同じテキスト束縛になり（フィルタも）、コメントはテキストに置き換わる。ほかのキーワードのコメントは残る", async () => {
+    const { root, el } = await page(
+      `<p id="a">Hello <!--@@: name-->!</p>`
+      + `<p id="b"><!--@@wcs-text:name--></p>`
+      + `<p id="c"><!-- @@ : count|add(1) --></p>`
+      + `<p id="d"><!--@@route:/x--><!--@@wcs-route-start:/x--><!--@@wcs-text-start:x--><!-- plain --><!--@@:--></p>`
+      + `<p id="e"><!--@@ wcs-text : name --></p>`
+      + `<ul><template data-wcs="for: items"><li><!--@@: .label--> / <!--@@wcs-text:.label--></li></template></ul>`
+      + `<div id="f"><template data-wcs="if: show"><span><!--@@: name--></span></template></div>`
+      + `<div id="g"><template data-wcs="for: items"><!--@@: .label--></template></div>`,
+      { name: "Alice", count: 1, show: true, items: [{ label: "x" }, { label: "y" }] },
+    );
+    const snap = () => ({
+      a: nodes(root.querySelector("#a")!), b: nodes(root.querySelector("#b")!), c: nodes(root.querySelector("#c")!),
+      d: nodes(root.querySelector("#d")!), e: nodes(root.querySelector("#e")!),
+      li: Array.from(root.querySelectorAll("li"), (li) => nodes(li)),
+      span: Array.from(root.querySelectorAll("span"), (s) => nodes(s)),
+      g: root.querySelector("#g")!.textContent,
+    });
+    expect(snap()).toEqual(V3.before);
+    el.createState("writable", (s: any) => { s.name = "Bob"; s.count = 5; s.items = [...s.items, { label: "z" }]; });
+    await flush();
+    expect(snap()).toEqual(V3.after);
+  });
+
+  it("$behavior.enableMustache: false のページでも束ねる（{{ }} は文字のまま。3.x と同じ）", async () => {
+    const { root } = await page(`<p id="m">{{ name }}</p><p id="n">Hi <!--@@: name--></p><ul><template data-wcs="for: items"><li>{{ .label }}<!--@@: .label--></li></template></ul>`, {
+      name: "Alice", items: [{ label: "x" }], $behavior: { enableMustache: false },
+    });
+    expect({ m: nodes(root.querySelector("#m")!), n: nodes(root.querySelector("#n")!), li: nodes(root.querySelector("li")!) })
+      .toEqual({ m: ["t:{{ name }}"], n: ["t:Hi ", "t:Alice"], li: ["t:{{ .label }}", "t:x"] });
+  });
+
+  it("値の中のコメントは束縛にしない: 中身を束縛する要素の値・作者の子・noscript / iframe・カスタム要素が中に描いた値（後順）", async () => {
+    const tag = `quality-fill-comment-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      set body(v: string) { this.querySelector(".slot")!.innerHTML = v; }
+    });
+    const { root } = await page(
+      `<div class="h" data-wcs="innerHTML: html"></div><p class="t" data-wcs="textContent: msg"><!--@@: secret--></p>`
+      + `<noscript><!--@@: secret--></noscript><${tag} data-wcs="body: html"><div class="slot"></div><i><!--@@: msg--></i></${tag}>`,
+      { html: `<b><!--@@: secret--></b>`, msg: "m", secret: "s3cr3t" },
+    );
+    expect(root.querySelector(".h")!.innerHTML).toBe("<b><!--@@: secret--></b>");
+    expect(root.querySelector(".t")!.textContent).toBe("m");
+    expect(root.querySelector(".slot")!.innerHTML).toBe("<b><!--@@: secret--></b>");
+    // the author's own child of the element is bound (walked before the element's bindings)
+    expect(root.querySelector(`${tag} i`)!.textContent).toBe("m");
+    expect(root.innerHTML).not.toContain("s3cr3t");
+  });
+
+  it("<textarea> / <title> の中のコメントは束縛しない（ブラウザのパーサは文字にする。サーバの DOM はコメントにすることがある）: CSR でも SSR でも（data-wcs-raw にも載らない）", async () => {
+    const make = () => {
+      const ta = document.createElement("textarea");
+      ta.append(document.createComment("@@: name"));
+      const title = document.createElement("title");
+      title.append(document.createComment("@@wcs-text: name"));
+      return [ta, title];
+    };
+    const { root } = await page(`<main></main>`, { name: "Alice" });
+    const [ta, title] = make();
+    root.querySelector("main")!.append(ta, title);
+    (globalThis as any)[BINDER_KEY].bind(root.querySelector("main")!);
+    expect([ta.innerHTML, title.innerHTML]).toEqual(["<!--@@: name-->", "<!--@@wcs-text: name-->"]);
+    // the server's DOM (happy-dom, as @wcstack/server's) parses a comment in a <textarea>
+    const r = await ssrRoundTrip(`<textarea><!--@@: name--></textarea><p>{{ name }}</p>`, () => ({ name: "Alice" }));
+    expect(r.server).not.toContain("data-wcs-raw");
+    expect(r.root.querySelector("textarea")!.innerHTML).toBe("<!--@@: name-->");
+    expect(r.root.querySelector("p")!.textContent).toBe("Alice");
+    // with a mustache beside it, the comment goes to the client as the text a browser reads there
+    const r2 = await ssrRoundTrip(`<textarea>{{ name }}<!-- note --></textarea>`, () => ({ name: "Alice" }));
+    expect(r2.server).toContain(`data-wcs-raw="{{ name }}<!-- note -->"`);
+    expect((r2.root.querySelector("textarea") as HTMLTextAreaElement).value).toBe("Alice<!-- note -->");
+  });
+
+  it("SSR: サーバで値を描き、クライアントで束ね直す（enableMustache: false でも。{{ }} は従来どおり）", async () => {
+    for (const mustache of [true, false]) {
+      const { server, root, el } = await ssrRoundTrip(
+        `<p class="c">Hi <!--@@: name-->!</p><p class="m">{{ name }}</p><ul><template data-wcs="for: items"><li><!--@@: .label--></li></template></ul>`,
+        () => ({ name: "Alice", items: [{ label: "x" }], $behavior: { enableMustache: mustache } }),
+      );
+      expect(server).toContain("Alice");
+      expect(server).not.toContain("@@: name");
+      expect(root.querySelector(".c")!.textContent).toBe("Hi Alice!");
+      expect(root.querySelector(".m")!.textContent).toBe(mustache ? "Alice" : "{{ name }}");
+      el.createState("writable", (s: any) => { s.name = "Bob"; s.items = [...s.items, { label: "y" }]; });
+      await flush();
+      expect([root.querySelector(".c")!.textContent, root.querySelector(".m")!.textContent], String(mustache)).toEqual(["Hi Bob!", mustache ? "Bob" : "{{ name }}"]);
+      expect(Array.from(root.querySelectorAll("li"), (li) => li.textContent)).toEqual(["x", "y"]);
+    }
+  });
+
+  it("SSR: 値の中の <!--@@: secret--> は、サーバの出力からもクライアントでも束縛にならない（innerHTML: の値・カスタム要素が描いた値）", async () => {
+    const tag = `quality-fill-comment-ssr-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      set body(v: string) { this.querySelector(".slot")!.innerHTML = v; }
+    });
+    const { server, root } = await ssrRoundTrip(
+      `<div class="h" data-wcs="innerHTML: html"></div><${tag} data-wcs="body: html"><div class="slot"></div></${tag}>`,
+      () => ({ html: `<b><!--@@: secret--></b>`, secret: "s3cr3t" }),
+    );
+    // (the state's data is in the snapshot's JSON: the page's markup is what the client walks)
+    expect(server.replace(/<wcs-ssr[\s\S]*?<\/wcs-ssr>/, "")).not.toContain("s3cr3t");
+    expect(server).toContain(`<div class="slot"></div>`);
+    expect(root.innerHTML).not.toContain("s3cr3t");
+    expect(root.querySelector(".h b")!.innerHTML).toBe("<!--@@: secret-->");
+    expect(root.querySelector(".slot b")!.innerHTML).toBe("<!--@@: secret-->");
+  });
+});
+
+describe("F4: on*#direct:（委譲せず要素に直接付ける。3.x と同じ）", () => {
+  it("(a) #direct,stop はページ側のコードが祖先に付けたリスナーを止め、currentTarget は要素", async () => {
+    const calls: string[] = [];
+    const { root } = await page(`<div class="card"><button data-wcs="onclick#direct,stop: save">s</button></div>`, {
+      save(e: Event) { calls.push(e.currentTarget === root.querySelector("button") ? "save@button" : "save@other"); },
+    });
+    root.querySelector(".card")!.addEventListener("click", () => calls.push("card"));
+    (root.querySelector("button") as HTMLElement).click();
+    expect(calls).toEqual(["save@button"]);
+  });
+
+  it("(b) 祖先が stopPropagation() しても呼ばれる（#direct の無い onclick: は呼ばれない）", async () => {
+    const calls: string[] = [];
+    const { root } = await page(`<div class="content"><button class="d" data-wcs="onclick#direct: save">d</button><button class="n" data-wcs="onclick: save">n</button></div>`, {
+      save(e: Event) { calls.push((e.target as Element).className); },
+    });
+    root.querySelector(".content")!.addEventListener("click", (e) => e.stopPropagation());
+    (root.querySelector(".d") as HTMLElement).click();
+    (root.querySelector(".n") as HTMLElement).click();
+    expect(calls).toEqual(["d"]);
+  });
+
+  it("(c) 別の root へ移した要素でも呼ばれる（F38。委譲の onclick: は呼ばれない）", async () => {
+    const calls: string[] = [];
+    const { root } = await page(`<button class="d" data-wcs="onclick#direct: save">d</button><button class="n" data-wcs="onclick: save">n</button>`, {
+      save(e: Event) { calls.push((e.target as Element).className); },
+    });
+    const other = document.createElement(`quality-other-${seq++}`);
+    const otherRoot = other.attachShadow({ mode: "open" });
+    document.body.appendChild(other);
+    otherRoot.append(root.querySelector(".d")!, root.querySelector(".n")!);
+    (otherRoot.querySelector(".d") as HTMLElement).click();
+    (otherRoot.querySelector(".n") as HTMLElement).click();
+    expect(calls).toEqual(["d"]);
+  });
+
+  it("行の中: 行ごとに要素に付き（添字を渡す）、#prevent と組み合わせられ、行を消すと外れる", async () => {
+    const calls: [number, boolean][] = [];
+    const { root, el } = await page(`<ul><template data-wcs="for: items"><li><a href="#x" data-wcs="onclick#direct,prevent: pick">{{ . }}</a></li></template></ul>`, {
+      items: ["a", "b", "c"],
+      pick(e: Event, i: number) { calls.push([i, e.defaultPrevented]); },
+    });
+    root.querySelector("li")!.addEventListener("click", (e) => e.stopPropagation());
+    const links = Array.from(root.querySelectorAll("a"));
+    links[0].click();
+    links[2].click();
+    expect(calls.splice(0)).toEqual([[0, true], [2, true]]);
+    el.createState("writable", (s: any) => { s.items = ["a", "c"]; });
+    await flush();
+    // the removed row's element: its listener went with the row
+    links[1].dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(calls).toEqual([]);
+    (root.querySelectorAll("a")[1] as HTMLElement).click();
+    expect(calls).toEqual([[1, true]]);
+  });
+
+  it("組み合わせ: 外側の #direct は中の委譲のハンドラより先に走り（DOM の順）、中の #stop で止めるには中も #direct にする", async () => {
+    const calls: string[] = [];
+    const { root } = await page(
+      `<div data-wcs="onclick#direct: outer"><button class="n" data-wcs="onclick#stop: inner">n</button><button class="d" data-wcs="onclick#direct,stop: inner">d</button></div>`,
+      { outer() { calls.push("outer"); }, inner() { calls.push("inner"); } },
+    );
+    (root.querySelector(".n") as HTMLElement).click();
+    expect(calls.splice(0)).toEqual(["outer", "inner"]);
+    (root.querySelector(".d") as HTMLElement).click();
+    expect(calls).toEqual(["inner"]);
+  });
+
+  it("パーサと manifest も #direct を知っている", async () => {
+    const { getWcsManifest } = await import("../src/public/manifest");
+    expect(getWcsManifest().syntax.modifiers.flags).toContain("direct");
+    const { parseBindTextsForElement } = await import("../src/parser/parseBindTextsForElement");
+    expect(parseBindTextsForElement("onclick#direct,stop: save")[0].propModifiers).toEqual(["direct", "stop"]);
+  });
+});

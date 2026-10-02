@@ -81,7 +81,8 @@ describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () =
     const { getWcsManifest } = await import("../src/public/manifest");
     const v4 = JSON.parse(JSON.stringify(getWcsManifest()));
     expect(v4.version).toBe(v3.version);
-    expect(v4.syntax).toEqual(v3.syntax);
+    // 4.0: `#direct` is added (an `on*:` listener on the element itself, not delegated)
+    expect(v4.syntax).toEqual({ ...v3.syntax, modifiers: { ...v3.syntax.modifiers, flags: [...v3.syntax.modifiers.flags, "direct"] } });
     // 4.0: substr is folded into slice (slice(start, start + length))
     expect([...v4.filters].sort()).toEqual([...v3.filters].filter((n: string) => n !== "substr").sort());
     const { substr: _substr, ...v3Meta } = v3.filterMeta;

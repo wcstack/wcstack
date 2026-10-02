@@ -9,7 +9,8 @@
  *   `<!--wcs-]-->`, each row opened by `<!--wcs-|-->` (a branch region carries its index,
  *   `<!--wcs-[:i-->`, and follows the chain's last anchor so the chain's templates stay adjacent);
  * - a page-level anchor becomes `<!--wcs-p:ID-->`, its template kept in `<wcs-ssr>` as
- *   `<template id=ID>`; a page-level mustache text is wrapped in `<!--wcs-t:EXPR-->…<!--wcs-/t-->`;
+ *   `<template id=ID>`; a page-level text binding (a mustache, a comment binding) is wrapped in
+ *   `<!--wcs-t:EXPR-->…<!--wcs-/t-->` (the client puts a comment binding back);
  * - adjacent text nodes are separated (`<!--wcs-s-->`) and empty ones kept (`<!--wcs-e-->`), so
  *   parsing the HTML gives back the rows' exact structure;
  * - `<wcs-ssr version>` before the element holds the state's data (JSON) and the templates.
@@ -200,9 +201,10 @@ function snapshot(el: Element, engine: Engine): void {
       }
       for (const n of out) n.remove();
     }
-    if (raw(h)) {
-      const t = Array.from(h.childNodes, (c) => (rawTexts.has(c) ? `{{ ${rawTexts.get(c)} }}` : c.textContent)).join("");
-      if (t !== h.textContent) h.setAttribute(RAW_ATTR, t);
+    const cs = Array.from(h.childNodes);
+    if (raw(h) && cs.some((c) => rawTexts.has(c))) {
+      // (a comment there — a server's DOM may parse one in a <textarea> — is text to a browser)
+      h.setAttribute(RAW_ATTR, cs.map((c) => (rawTexts.has(c) ? `{{ ${rawTexts.get(c)} }}` : c.nodeType === 8 ? `<!--${(c as Comment).data}-->` : c.textContent)).join(""));
     }
   }
   protectTexts(root.nodeType === 9 ? (root as Document).body : root);
@@ -336,8 +338,9 @@ function prepare(container: Node, ssr: Element, adopt: boolean): void {
           if (d === "wcs-s") n.remove();
           else if (d === "wcs-e") n.replaceWith("");
           else if (d.startsWith("wcs-t:")) {
-            // the value between the markers, back to its mustache
-            const text = `{{ ${decodeURIComponent(d.slice(6))} }}`;
+            // the value between the markers, back to a text binding: a comment binding, which binds
+            // whether or not the page's mustaches are on (it was a mustache, or a comment binding)
+            const text = mark(`@@:${decodeURIComponent(d.slice(6))}`);
             let e: ChildNode | null = n.nextSibling;
             while (e !== null && !isMark(e, "wcs-/t")) {
               const next = e.nextSibling;

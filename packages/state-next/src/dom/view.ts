@@ -17,8 +17,15 @@ import { hooks } from "../hooks";
  * handler is stored on the element. A custom element may dispatch such an event without bubbling
  * (the root never hears it): that one is heard on the element. A non-bubbling event type gets a
  * listener on the element itself.
+ *
+ * `on*#direct:` is not delegated: a listener on the element itself, as 3.x (`currentTarget` is the
+ * element) — `#stop` stops the page's own listeners on its ancestors, an ancestor's
+ * `stopPropagation()` does not keep it from running, and an element moved under another root still
+ * runs it. In a block (a row, a branch) it is attached with the block and removed when the block
+ * goes. It runs where the DOM puts it: an outer `#direct` runs before the delegated handlers inside
+ * it (they run at the root), so an inner `#stop` stops it only if the inner one is `#direct` too.
  */
-export function attachEvent(engine: Engine, node: Node, s: Spec, row: StateRow | null): void {
+export function attachEvent(engine: Engine, node: Node, s: Spec, row: StateRow | null, block: Block | null): void {
   const fn = s.listener!;
   const h = (e: Event): void => fn(e, row);
   if (s.delegated) {
@@ -30,7 +37,10 @@ export function attachEvent(engine: Engine, node: Node, s: Spec, row: StateRow |
       h(e);
     };
     if (s.custom) node.addEventListener(s.name, (e) => e.bubbles || h(e));
-  } else node.addEventListener(s.name, h);
+  } else {
+    node.addEventListener(s.name, h);
+    if (s.direct && block !== null) (block.cleanups ??= []).push(() => node.removeEventListener(s.name, h));
+  }
 }
 
 /** Events that bubble: the only ones a delegated listener can see. */
@@ -79,6 +89,8 @@ export interface Spec {
   listener: ((e: Event, row: StateRow | null) => void) | null;
   /** An event binding whose type bubbles: dispatched from the root listener. */
   delegated: boolean;
+  /** `on*#direct:`: a listener on the element itself (see attachEvent). */
+  direct: boolean;
   /** The row plan of a nested `for`. */
   plan: RowPlan | null;
   /** The branches of an `if` / `elseif` / `else` chain. */
@@ -620,7 +632,7 @@ export function attachSpec(engine: Engine, s: Spec, node: Node, row: StateRow | 
   const el = node as Element;
   switch (s.kind) {
     case K_EVENT:
-      attachEvent(engine, node, s, row);
+      attachEvent(engine, node, s, row, block);
       return;
     case K_COMMAND:
       whenDefined(engine, s, el, block, (bd) => attachCommand(engine, s, el, block, bd));

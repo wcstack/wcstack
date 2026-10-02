@@ -26,7 +26,7 @@ function blank(): Spec {
   return {
     node: 0, kind: K_PROP, name: "", pattern: null, filters: null, initial: UNSET, listener: null, plan: null, branches: null,
     inFilters: null, twoWay: null, custom: false, init: null, sync: null, ro: false, prevent: false, stop: false, token: null, exclude: null,
-    slot: -1, delegated: false,
+    slot: -1, delegated: false, direct: false,
   };
 }
 
@@ -55,7 +55,7 @@ interface Flags {
 const INITS = ["state", "element", "auto", "none"];
 const SYNCS = ["call", "connect"];
 
-/** `#ro`, `#prevent`, `#stop`, `#onchange`, `#init=…`, `#sync=…`. */
+/** `#ro`, `#prevent`, `#stop`, `#onchange`, `#init=…`, `#sync=…` (`#direct`: specFor). */
 function flags(engine: Engine, mods: string[]): Flags {
   const on = mods.find((m) => m.startsWith("on"));
   // (the keys are compared, never used as property names: the build renames `init` / `sync`)
@@ -131,11 +131,13 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     const command = path.startsWith(COMMAND_PREFIX) ? path.slice(COMMAND_PREFIX.length) : null;
     const { prevent, stop } = f;
     const type = b.propName.slice(2);
-    // (a custom element's `change` / `click` may be dispatched without bubbling: see attachEvent)
-    const delegated = BUBBLING.has(type);
+    // `#direct`: a listener on the element itself, as 3.x (see attachEvent). (A custom element's
+    // `change` / `click` may be dispatched without bubbling: see attachEvent too)
+    const direct = b.propModifiers.includes("direct");
+    const delegated = !direct && BUBBLING.has(type);
     if (delegated) engine.delegate(type);
     return {
-      ...blank(), node, kind: K_EVENT, name: type, delegated, custom,
+      ...blank(), node, kind: K_EVENT, name: type, delegated, custom, direct,
       listener(e: Event, row: StateRow | null) {
         if (prevent) e.preventDefault();
         if (stop) e.stopPropagation();
@@ -361,11 +363,29 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
         if (!page && into) walk([...el.childNodes]);
       } else if (child.nodeType === 3 && engine.mustache && (child as Text).data.includes("{{")) {
         for (const { node, expr } of splitMustache(child as Text)) onText(node, expr);
+      } else if (child.nodeType === 8) {
+        // a comment binding, as 3.x (`$behavior.enableMustache` aside): a text binding in its place —
+        // not in a <textarea> / <title>, where a browser's parser makes it text (a server's DOM may not)
+        const m = COMMENT_BINDING.exec((child as Comment).data);
+        const p = m && (child.parentNode as Element).localName;
+        if (p !== null && p !== "textarea" && p !== "title") {
+          const t = document.createTextNode("");
+          child.replaceWith(t);
+          onText(t, m![1]);
+        }
       }
     }
   };
   walk(children);
 }
+
+/**
+ * `<!--@@: expr-->` / `<!--@@wcs-text: expr-->` (3.x's comment binding: a text binding that renders
+ * nothing before it is bound — no FOUC, no element added); no other keyword (a router's `@@route:`,
+ * 3.x's SSR marks). `expr` is a `{{ }}` expression (across lines, as a mustache's: SSR restores both
+ * as this).
+ */
+const COMMENT_BINDING = /^\s*@@\s*(?:wcs-text)?\s*:\s*([\s\S]+?)\s*$/;
 
 /**
  * A template's content. A `<template>` inside `<svg>` is an SVG element (the HTML parser makes it
