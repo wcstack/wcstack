@@ -486,6 +486,8 @@ bootstrapSse({
 });
 ```
 
+Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+
 ## Design Notes
 
 - `message`, `connected`, `loading`, `error`, and `readyState` are **output state**

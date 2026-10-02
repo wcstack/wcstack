@@ -504,6 +504,8 @@ bootstrapRouter({
 });
 ```
 
+Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+
 ## Route transition animations
 
 Route swaps are a plain `removeChild` / `insertBefore` pair, so the outgoing view cannot animate out on its own. Adding [`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) to the page makes the swap run inside a View Transition, which you then style in CSS:

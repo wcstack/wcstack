@@ -426,3 +426,5 @@ bootstrapUpload({
 ```
 
 Use this when you want to customize the tag name or trigger attribute instead of relying on `@wcstack/upload/auto`.
+
+Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.

@@ -504,6 +504,8 @@ bootstrapRouter({
 });
 ```
 
+知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
+
 ## ルート遷移アニメーション
 
 ルートの差し替えは素の `removeChild` / `insertBefore` なので、去っていくビューは自力では退場できない。ページに [`@wcstack/view-transition`](https://github.com/wcstack/wcstack/tree/main/packages/view-transition) を足すと、差し替えが View Transition の中で行われ、見た目は CSS で書ける。

@@ -262,6 +262,8 @@ getConfig(); // deep-frozen の実効設定を読む
 
 `bootstrapNotification()` は要素が接続される**前に**呼ぶと変更が反映されます。
 
+知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
+
 ## ヘッドレス利用（`NotificationCore`）
 
 Core は DOM 依存が無く、`@wc-bindable/core` の `bind()` と直接使えます:

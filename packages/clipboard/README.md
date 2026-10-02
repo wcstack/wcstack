@@ -152,6 +152,8 @@ Add the `monitor` attribute to republish document `copy` / `cut` / `paste` as re
 > ```
 >
 > Call `bootstrapClipboard()` before the elements connect. (`setConfig` is internal; configure through `bootstrapClipboard`.)
+>
+> Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
 
 ## Observable Properties (outputs)
 
