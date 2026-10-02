@@ -25,7 +25,8 @@ async function defineComponent(markup: string, state: () => Record<string, any>,
   const defState = shadow.querySelector("wcs-state") as any;
   defState.setInitialState(state());
   document.body.appendChild(def);
-  await defState.connectedCallbackPromise;
+  // a definition that fails rejects its connectedCallbackPromise with the error (as 3.x)
+  const failure = await defState.connectedCallbackPromise.then(() => null, (e: unknown) => e as Error);
   const create = async (parent: Node = document.body) => {
     const el = document.createElement(tag) as any;
     parent.appendChild(el);
@@ -36,7 +37,7 @@ async function defineComponent(markup: string, state: () => Record<string, any>,
     await flush();
     return el;
   };
-  return { tag, def, defState, create };
+  return { tag, def, defState, create, failure };
 }
 
 const counter = () => ({
@@ -54,9 +55,10 @@ describe("DCC の定義の検査", () => {
   ])("違反は報告され、タグは定義されない（%#）", async (state, message) => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const { tag } = await defineComponent(``, () => state);
+      const { tag, failure } = await defineComponent(``, () => state);
       expect(customElements.get(tag)).toBeUndefined();
-      expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining(message) }));
+      expect(failure!.message).toContain(message);
+      expect(error).toHaveBeenCalledExactlyOnceWith('[@wcstack/state] #49 "wcs-state"', failure);
     } finally {
       error.mockRestore();
     }
@@ -72,9 +74,10 @@ describe("DCC の定義の検査", () => {
       shadow.innerHTML = `<wcs-state bind-component="state"></wcs-state>`;
       (shadow.querySelector("wcs-state") as any).setInitialState({ a: 1 });
       document.body.appendChild(def);
-      await (shadow.querySelector("wcs-state") as any).connectedCallbackPromise;
+      const el = shadow.querySelector("wcs-state") as any;
+      await expect(el.connectedCallbackPromise).rejects.toThrow("cannot define a component");
       expect(customElements.get(tag)).toBeUndefined();
-      expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("cannot define a component") }));
+      expect(error).toHaveBeenCalledWith('[@wcstack/state] #49 "wcs-state" "bind-component" "state"', expect.objectContaining({ message: expect.stringContaining("cannot define a component") }));
     } finally {
       error.mockRestore();
     }

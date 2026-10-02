@@ -96,8 +96,17 @@ export interface Hooks {
 export interface Claimed {
   /** Where the state comes from, when not from the element's own sources. */
   load?(): Promise<Record<string, any>>;
-  /** The loaded state; `connectedCallbackPromise` resolves when this settles (a failure is the add-on's to report). */
-  start(state: Record<string, any>): Promise<void> | void;
+  /**
+   * The loaded state; `connectedCallbackPromise` resolves when this is done, and `built` is called
+   * once its bindings are built (before `$connectedCallback`: getBindingsReady resolves then, as for a
+   * root). When it (or the load) throws, the core reports the failure and rejects the promise with
+   * it — a DCC definition, a component mount: 3.x's README promises it for their configuration
+   * errors, and 4.0 also rejects where 3.x did not (a component whose root failed: 3.x left it
+   * unsettled; a second mount in one scope: 3.x resolved it) — or resolves it, for a lenient claim.
+   */
+  start(state: Record<string, any>, built: () => void): Promise<void> | void;
+  /** A failure resolves `connectedCallbackPromise` instead (a volume settles without grafting, as 3.x). */
+  lenient?: boolean;
   connected(): void;
   disconnected(): void;
   /** `setInitialState` after the start. */

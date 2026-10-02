@@ -46,7 +46,8 @@ export interface IStateElement extends HTMLElement {
   readonly initializePromise: Promise<void>;
   /**
    * Resolves once `connectedCallback` completed (`$connectedCallback` run); a root that fails to
-   * initialize rejects it, and so does one whose `$connectedCallback` rejects (its page is bound).
+   * initialize rejects it, and so does one whose `$connectedCallback` rejects (its page is bound), a
+   * DCC definition and a component mount (`bind-component`) that fail — a volume that fails resolves it.
    */
   readonly connectedCallbackPromise: Promise<void>;
   /** Runs `callback` with a state proxy; its writes are applied in the next drain. */

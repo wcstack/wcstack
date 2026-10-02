@@ -43,6 +43,7 @@ const NAMES = `
   index component exports bindings arr sources drain register setAll fragment controller connected disconnected prop registered fold
   activate deactivate startAll abortAll stopAll consume watch stream hit expr pos started level headAt dispatch fail invoke
   head lead tail touched sharing track drop single nested peek inner outer hits synth watches inHandler eachRow settle restart skip direct
+  lenient built
 `.trim().split(/\s+/);
 
 export const MANGLE_PROPS = new RegExp(`^(?:${NAMES.join("|")})$`);

@@ -69,6 +69,8 @@ const RENDERED: [M, unknown[], string][] = [
   [M.SecondRoot, [], 'a second <wcs-state> on the same root: there is one state tree per root — graft a subtree with <wcs-state mount="path"> (v1\'s name="…" is gone: read the mounted state by its path).'],
   [M.LocaleInvalid, ["en_US"], 'the locale "en_US" (<html lang> or bootstrapState\'s locale) is not a language tag Intl takes (en-US, not en_US): the locale filters use "en".'],
   [M.FeaturesNotArray, [], '$features must be an array of add-on names (["temporal", "formats"]).'],
+  [M.InitFailed, ["wcs-state", "src", "./state.js"], '<wcs-state src="./state.js"> failed to initialize.'],
+  [M.ConnectedFailed, ["wcs-state", "bind-component", "state"], '<wcs-state bind-component="state"> $connectedCallback failed.'],
   [M.SelectorRemoved, ["value: @main.count"], '"value: @main.count": the "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.'],
 
   [M.BindTextNoColon, ["value"], `[wcs/binding-syntax] Invalid bindText: "value". Missing ':' separator between propPart and statePart.`],
@@ -129,6 +131,11 @@ describe("番号付きのメッセージの文面（診断の後付け）", () =
 
   it.each(RENDERED.map(([id, args, expected]) => [id, args, expected] as const))("#%i は値を埋めた文面になる", (id, args, expected) => {
     expect(text(id, args)).toBe(expected);
+  });
+
+  it("初期化の失敗の行は、要素と、あれば読み込み元などの属性を、書かれた順でなく決まった順に並べる", () => {
+    expect(text(M.InitFailed, ["wcs-state"])).toBe("<wcs-state> failed to initialize.");
+    expect(text(M.InitFailed, ["my-state", "mount", "cart", "src", "./cart.js"])).toBe('<my-state mount="cart" src="./cart.js"> failed to initialize.');
   });
 
   it("add-on の知らない番号は、コード・番号・値のまま出す", () => {

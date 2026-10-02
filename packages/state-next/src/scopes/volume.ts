@@ -215,6 +215,8 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
     else held.set(path, v);
   }
   return {
+    // a volume that cannot load resolves its connectedCallbackPromise (3.x; it reports, as below)
+    lenient: true,
     start(state): Promise<void> | void {
       if (problem !== null) return fail(v, problem);
       for (const key of REJECTED) if (state[key] !== undefined) return fail(v, `: ${key} is not run in a volume — declare it on the root state.`);

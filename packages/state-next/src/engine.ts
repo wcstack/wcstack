@@ -642,17 +642,22 @@ export class Engine implements ReconcileHooks {
     if (element || this.feeding > 0) this.fedBack = true;
     else this.codeWrote = true;
     if (hooks.beforeWrite?.(this, p, row, value, element)) return;
-    let old: unknown;
     // a setter's write is not a data write: the add-ons hear of it without old and new values
-    const direct = p.setter === null;
-    if (!direct) {
-      this.callAt(p.setter!, row, [value]);
-      value = undefined;
-    } else {
+    if (p.setter !== null) {
+      // a setter that throws after it wrote: what it wrote still lands (3.x #361), and the error
+      // propagates. One that throws before writing anything lands as well, as one that returns
+      // without writing does (3.x notifies in `finally` too): `$watch` hears of it, a getter recomputes
+      try {
+        this.callAt(p.setter, row, [value]);
+      } finally {
+        this.landed(p, row, undefined, undefined, false);
+      }
+      return;
+    }
     if (p.getter !== null) raise(M.GetterWithoutSetter, [p.path]);
     if (p.depth > 0 && row === null) raise(M.NoRow, [p.path]);
     // under a getter, the value before is read through it (the data has no such path)
-    old = p.underGetter ? this.readUntracked(p, row) : this.readData(p, row);
+    const old = p.underGetter ? this.readUntracked(p, row) : this.readData(p, row);
     if (!occurrence && this.guard && Object.is(old, value) && Object(value) !== value) return;
     if (p.last === WILDCARD) {
       // element write: the position keeps its row, the row takes the new value
@@ -670,8 +675,7 @@ export class Engine implements ReconcileHooks {
     this.syncListsUnder(p, row);
     if (row !== null && row.list.shared) this.mirror(row, p, old, value);
     if (p.depth === 0) this.rekeyEqUnder(p, old, value);
-    }
-    this.landed(p, row, old, value, direct);
+    this.landed(p, row, old, value, true);
   }
 
   /** The lists over `l`'s array now (`l` among them), none of a removed row. */

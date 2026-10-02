@@ -13,6 +13,9 @@ type Sentence = (...a: any[]) => string;
 /** The options 4.0 moved from `bootstrapState` to the state's `$behavior`. */
 const MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
 
+/** `<tag a="v" …>` from the tag and its attributes' names and values. */
+const element = (tag: string, at: string[]): string => `<${tag}${at.map((a, i) => (i % 2 ? `="${a}"` : ` ${a}`)).join("")}>`;
+
 const CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
 
 export const SENTENCES: Record<M, Sentence> = {
@@ -63,6 +66,8 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.SecondRoot]: () => "a second <wcs-state> on the same root: there is one state tree per root — graft a subtree with <wcs-state mount=\"path\"> (v1's name=\"…\" is gone: read the mounted state by its path).",
   [M.LocaleInvalid]: (l) => `the locale "${l}" (<html lang> or bootstrapState's locale) is not a language tag Intl takes (en-US, not en_US): the locale filters use "en".`,
   [M.FeaturesNotArray]: () => '$features must be an array of add-on names (["temporal", "formats"]).',
+  [M.InitFailed]: (tag, ...at) => `${element(tag, at)} failed to initialize.`,
+  [M.ConnectedFailed]: (tag, ...at) => `${element(tag, at)} $connectedCallback failed.`,
 
   [M.BindTextNoColon]: (t) => `Invalid bindText: "${t}". Missing ':' separator between propPart and statePart.`,
   [M.StructuralTakesNoModifiers]: (t, keyword) => `"${t}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".`,

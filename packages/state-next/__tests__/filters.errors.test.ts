@@ -14,7 +14,10 @@ import { raiseError } from "../src/parser/raiseError";
 import { didYouMean, LINT_HINT } from "../src/diagnostics/guidance";
 import { installCoreFilters } from "../src/filters/core";
 import { installFormats } from "../src/filters/formats";
-import { resolveFilter } from "../src/filters/registry";
+import { registerFilters, resolveFilter } from "../src/filters/registry";
+import { RENAMED_FILTERS } from "../src/diagnostics/explain";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { installFeatures } from "../src/hooks";
 import { diagnostics } from "../src/features/diagnostics";
 
@@ -114,6 +117,55 @@ describe("埋め込みサイトのメッセージ契約", () => {
       message = (e as Error).message;
     }
     expect(message).toBe(`[@wcstack/state] [wcs/filter-unknown] filter not found: zzzzzz.${LINT_HINT}`);
+  });
+
+  describe("3.2 で改名し 4.0 で外した旧名", () => {
+    /** 3.x の `filterAliases`（packages/state/src/filters/filterAliases.ts）と同じ表 */
+    const OLD = {
+      inc: "add", dec: "sub", fix: "toFixed", uc: "upper", lc: "lower", cap: "capitalize",
+      rep: "repeat", rev: "reverse", pad: "padStart", null: "nullIfEmpty",
+    };
+    const thrown = (name: string, args: string[] = []): string => {
+      try {
+        resolveFilter(name, args, args);
+      } catch (e) {
+        return (e as Error).message;
+      }
+      return "no error";
+    };
+
+    it.each(Object.entries(OLD))("%s: 正式名 %s を名指し、編集距離の近い別のフィルタ（did-you-mean）は出さない", (old, name) => {
+      expect(thrown(old)).toBe(`[@wcstack/state] [wcs/filter-unknown] filter not found: ${old}. "${old}" was renamed "${name}" in 3.2 and removed in 4.0 — write "${name}".${LINT_HINT}`);
+    });
+
+    it("dec(1) は eq(1) を勧めない（従うと意味が黙って変わる）", () => {
+      const message = thrown("dec", ["1"]);
+      expect(message).not.toContain("Did you mean");
+      expect(message).not.toContain('"eq"');
+      expect(message).toContain('write "sub"');
+    });
+
+    it("substr は slice(start, start + length) を案内し、did-you-mean は出さない", () => {
+      expect(thrown("substr", ["1", "3"])).toBe(`[@wcstack/state] [wcs/filter-unknown] filter not found: substr. "substr" was removed in 4.0 — write slice(start, start + length): slice takes the end index, not a length.${LINT_HINT}`);
+    });
+
+    it("表は lint（vscode-wcs の removedNames.ts）の旧名の表と同じ", () => {
+      const src = readFileSync(join(__dirname, "../../vscode-wcs/src/service/removedNames.ts"), "utf8");
+      const body = /REMOVED_FILTER_NAMES[^{]*\{([\s\S]*?)\}/.exec(src)![1];
+      expect(Object.fromEntries([...body.matchAll(/(\w+): '(\w+)'/g)].map((m) => [m[1], m[2]]))).toEqual(OLD);
+      expect(RENAMED_FILTERS).toEqual(OLD);
+    });
+
+    it("ページが同じ名前のフィルタを登録すれば、それが使われる（旧名の案内は出ない）", () => {
+      registerFilters({ uc: { factory: () => (v: unknown) => `own:${String(v)}`, arity: [0, 0] } });
+      expect(resolveFilter("uc", [], [])("a")).toBe("own:a");
+    });
+
+    it("旧名でない打ち間違いには、これまでどおり did-you-mean を出す", () => {
+      expect(thrown("uppr")).toContain('Did you mean "upper"?');
+      // a prototype key is not an old name
+      expect(thrown("constructor")).not.toContain("was renamed");
+    });
   });
 
   it("引数の個数: [wcs/filter-arity] + lint 誘導（不足と過剰の 2 つの文言）", () => {

@@ -226,6 +226,53 @@ describe("#361 入れ替えを 2 つのバッチに分けても、$watch(\"items
   });
 });
 
+describe("#361 要素のパスの setter が書いてから投げる（3.x の integration.elementSwapUnsettled と同じ形）", () => {
+  /** `refuse`: the setter writes nothing — and throws, or (`"return"`) returns. */
+  const state = (watched: unknown[], refuse?: "throw" | "return") => ({
+    items: [{ id: 1 }, { id: 2 }, { id: 3 }],
+    get "items.*"() { return (this as any).items[(this as any).$1]; },
+    set "items.*"(value: any) {
+      if (refuse === "throw") throw new Error("refused");
+      if (refuse === "return") return;
+      (this as any).items[(this as any).$1] = value;
+      if (value.id === 9) throw new Error("rejected after write");
+    },
+    $watch: { "items.*"(current: any, _previous: unknown, index: number) { watched.push([current.id, index]); } },
+  });
+
+  it("書いた値は描かれ、$watch も呼ばれ、エラーは書いた側へ届く", async () => {
+    const watched: unknown[] = [];
+    const { root, el, write } = await page(`<ul><template data-wcs="for: items"><li>{{ .id }}</li></template></ul>`, state(watched));
+    expect(() => el.createState("writable", (s: any) => { s["items.1"] = { id: 9 }; })).toThrow("rejected after write");
+    await flush();
+    await flush();
+    expect(texts(root, "li")).toEqual(["1", "9", "3"]);
+    expect(watched).toEqual([[9, 1]]);
+    // later writes go on as usual
+    await write((s) => { s["items.1"] = { id: 5 }; s["items.2"] = { id: 6 }; });
+    expect(texts(root, "li")).toEqual(["1", "5", "6"]);
+    expect(watched).toEqual([[9, 1], [5, 1], [6, 2]]);
+  });
+
+  it("何も書かずに投げた setter は、何も書かずに戻った setter と同じに着地する（描画は値のまま。3.x も finally で知らせる）", async () => {
+    const outcome = async (refuse: "throw" | "return") => {
+      const watched: unknown[] = [];
+      const { root, el } = await page(`<ul><template data-wcs="for: items"><li>{{ .id }}</li></template></ul>`, state(watched, refuse));
+      const error = (() => { try { el.createState("writable", (s: any) => { s["items.1"] = { id: 9 }; }); return null; } catch (e) { return (e as Error).message; } })();
+      await flush();
+      await flush();
+      return { error, li: texts(root, "li"), watched };
+    };
+    const thrown = await outcome("throw");
+    const returned = await outcome("return");
+    expect(thrown.error).toContain("refused");
+    expect(returned.error).toBeNull();
+    expect(thrown.li).toEqual(["1", "2", "3"]);
+    // (a setter's write lands without values: $watch hears of it as of any setter's write)
+    expect({ li: thrown.li, watched: thrown.watched }).toEqual({ li: returned.li, watched: returned.watched });
+  });
+});
+
 // ---------------------------------------------------------------- #362
 
 describe("#362 元の配列をそのまま返す getter を for で描いても、元のパスへの書き込みで行が描き直される", () => {

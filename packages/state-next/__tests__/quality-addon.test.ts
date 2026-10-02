@@ -395,7 +395,7 @@ describe("マウントしたコンポーネントの $ 宣言（B9）", () => {
       const { root } = await host(`<wcs-state></wcs-state><${tag} data-wcs="state.x: x"></${tag}>`, [{ x: 1 }]);
       await settle();
       const el = root.querySelector(tag)!.shadowRoot!.querySelector("wcs-state") as any;
-      await el.connectedCallbackPromise;
+      await expect(el.connectedCallbackPromise).rejects.toThrow(`[wcs/mount-dollar-declaration] <${tag}>: $recursion is not run in a mounted component`);
       expect(errors.some((e) => e.includes(`[wcs/mount-dollar-declaration] <${tag}>: $recursion is not run in a mounted component`))).toBe(true);
       expect(el.engine).toBe(null);
     } finally {
@@ -798,14 +798,15 @@ describe("根の失敗とマークアップで結線するコンポーネント�
       document.body.appendChild(h);
       await expect(rootEl.connectedCallbackPromise).rejects.toThrow();
       const inner = root.querySelector(tag)!.shadowRoot!.querySelector("wcs-state") as any;
-      await inner.connectedCallbackPromise;
+      // the component's initialization failed: its promise rejects (3.x left it unsettled), its initializePromise resolves
+      await expect(inner.connectedCallbackPromise).rejects.toThrow(`<${tag}>.state will not mount: the root state failed to initialize.`);
       await inner.initializePromise;
       expect(errors.some((e) => e.includes(`<${tag}>.state will not mount: the root state failed to initialize.`))).toBe(true);
       // one that starts waiting after the failure gives up at once
       const late = document.createElement(tag);
       late.setAttribute("data-wcs", "state: user");
       root.append(late);
-      await (late.shadowRoot!.querySelector("wcs-state") as any).connectedCallbackPromise;
+      await expect((late.shadowRoot!.querySelector("wcs-state") as any).connectedCallbackPromise).rejects.toThrow("will not mount");
       expect(errors.filter((e) => e.includes("will not mount")).length).toBe(2);
     } finally {
       spy.mockRestore();
@@ -1236,7 +1237,8 @@ describe("サイクル 4 の再検証（R4C-3・R4C-4）", () => {
       document.body.appendChild(h);
       await el.connectedCallbackPromise.catch(() => {});
       const [inner, vol] = Array.from(root.querySelector(tag)!.shadowRoot!.querySelectorAll("wcs-state")) as any[];
-      await inner.connectedCallbackPromise;
+      // the component that does not mount rejects (3.x left it unsettled when its root failed); its volume resolves (as 3.x)
+      await expect(inner.connectedCallbackPromise).rejects.toThrow(bad ? "must be an object" : "will not mount: the root state failed to initialize.");
       const settled = await Promise.race([vol.connectedCallbackPromise.then(() => "settled"), new Promise((r) => setTimeout(() => r("pending"), 200))]);
       expect(settled).toBe("settled");
       expect(errors).toContain(`[@wcstack/state] <wcs-state mount="i18n"> will not graft: the root state failed to initialize.`);

@@ -18,8 +18,12 @@
  * Client: before the page is bound, the texts and templates are restored and the page-level
  * regions detached; each block the engine builds takes its region's next row instead of a clone
  * (a row's nested regions are detached and held for its nested views in turn), so the server's
- * nodes stay and get their bindings. `$connectedCallback` does not run (the server ran it). A
- * snapshot of another major.minor is discarded and the page renders on the client.
+ * nodes stay and get their bindings. `$connectedCallback` does not run (the server ran it).
+ *
+ * A snapshot of another major.minor is discarded, and the page renders on the client as it would
+ * without a server: the state comes from its own source, `$connectedCallback` runs, and the server's
+ * rows and marks give way to the templates they came from — those of @wcstack/server 3.x's output
+ * too (`legacy`).
  *
  * Not carried over from @wcstack/state 3.3 (approved): the inline snapshot for servers without
  * the builder protocol, and the property value table (every binding is applied on adoption).
@@ -32,6 +36,7 @@ import { hooks } from "../hooks";
 import { VERSION } from "../version";
 import { isOuter, setsContent, templateContent } from "../dom/plan";
 import { majorMinor } from "./element";
+import { parseBindTextsForElement } from "../parser/parseBindTextsForElement";
 /** The snapshot element's tag (`config.tagNames.ssr`, `wcs-ssr` by default). */
 const tag = (): string => config.tagNames.ssr;
 const BUILDER = Symbol.for("wcstack.ssr.snapshotBuilder");
@@ -392,20 +397,134 @@ export function adoptScope(host: Node): (() => void) | null {
   };
 }
 
+/** The comments under `scope`, in document order. */
+function comments(scope: Node): Comment[] {
+  const out: Comment[] = [];
+  for (const w = document.createTreeWalker(scope, 128); w.nextNode(); ) out.push(w.currentNode as Comment);
+  return out;
+}
+
+/**
+ * A Light DOM component's wiring, one entry per mapping: [the page's path (null: not known — a key
+ * private to the component around), its own path ("" for a whole mount, `state: user`), the path as
+ * its host wrote it (null at the top: the page's)].
+ */
+type Wiring = (string | null)[][];
+
+/** `path` from column `from` of `wiring` to column `to`, by the longest it is or starts with; null: none. */
+function across(wiring: Wiring, path: string, from: number, to: number): string | null {
+  let best: (string | null)[] | null = null;
+  for (const w of wiring) {
+    const k = w[from];
+    if (k !== null && (k === "" || path === k || path.startsWith(`${k}.`)) && (best === null || k.length > best[from]!.length)) best = w;
+  }
+  const v = best?.[to];
+  if (v == null) return null;
+  const k = best![from]!;
+  const rest = k === "" ? path : path.slice(k.length + 1);
+  return v === "" ? rest : rest === "" ? v : `${v}.${rest}`;
+}
+
+/**
+ * The output of @wcstack/server 3.x back to the page as written, as 3.x's own fallback did
+ * (`Ssr.cleanupDom`): a row or a branch (`<!--@@wcs-for-start:…-->` up to its `-end` mark among its
+ * siblings) goes, a text between its marks becomes a comment binding of the path the mark names (3.x
+ * kept no more of it: its filters are lost — the warning says so), a template's mark
+ * (`<!--@@wcs-for:ID-->`) becomes the template `<wcs-ssr>` keeps under that id (whose content has the
+ * marks of the templates in it), and the elements lose `data-wcs-ssr-id`.
+ *
+ * In a Light DOM component, 3.x wrote the marks' paths and a template's own path as the page's
+ * (`state: user` makes `name` `user.name`; a private key `user.#m1.name`, or `#m2.name` in a
+ * partial mount; in a component in a component, through both): they go back to the component's own
+ * through its host's wiring (the content of a template is the component's already).
+ */
+function legacy(container: Node, ssr: Element): void {
+  const wirings = new Map<Element, Wiring>();
+  /** The wiring of the Light DOM component `n` is in (a nested one's composed with the one around), or null. */
+  const wiringOf = (n: Node): Wiring | null => {
+    let h = n.parentElement;
+    while (h !== null && !scoped(h)) h = h.parentElement;
+    if (h === null) return null;
+    let wiring = wirings.get(h);
+    if (wiring === undefined) {
+      const up = wiringOf(h);
+      const prop = h.querySelector(`:scope > ${config.tagNames.state}[bind-component]`)!.getAttribute("bind-component");
+      wirings.set(h, (wiring = []));
+      for (const b of parseBindTextsForElement(h.getAttribute(config.bindAttributeName) ?? "")) {
+        const at = b.statePathName;
+        if (b.propSegments[0] === prop) wiring.push([up ? across(up, at, 1, 0) : at, b.propSegments.slice(1).join("."), up && at]);
+      }
+    }
+    return wiring;
+  };
+  /** A path 3.x wrote at `n`, as the component's own there. */
+  const own = (n: Node, path: string): string => {
+    const wiring = wiringOf(n);
+    if (wiring === null) return path;
+    const m = /^(.*)#m\d+\.(.*)$/.exec(path);
+    if (m === null) return across(wiring, path, 0, 1) ?? path;
+    // after the last private key mark, a component's own path: this one's when what comes before the
+    // mark is this one's mount path (`user.#m1.name`, `user.profile.#m3.name`, `#m2.box.#m4.name` with
+    // `state: box`; nothing for a partial mount, `#m2.name`), else the one's around it, which this one
+    // is mounted on (`#m2.box.k` with `state: box`)
+    const at = m[1].replace(/#m\d+\./g, "").slice(0, -1);
+    return wiring.some((w) => w[1] === "" && (w[0] === at || w[2] === at)) ? m[2] : across(wiring, m[2], 2, 1) ?? m[2];
+  };
+  // from the last: a row's own marks go before the row does
+  for (const c of comments(container).reverse()) {
+    const m = /^@@wcs-(\w+)-start:([\s\S]*)/.exec(c.data);
+    if (m === null) continue;
+    // (no end among its siblings — an output cut short: left as it is)
+    let e = c.nextSibling;
+    while (e !== null && !isMark(e, `@@wcs-${m[1]}-end:${m[2]}`)) e = e.nextSibling;
+    if (e === null) continue;
+    while (c.nextSibling !== e) c.nextSibling!.remove();
+    e.remove();
+    c.replaceWith(...(m[1] === "text" ? [mark(`@@:${own(c, m[2])}`)] : []));
+  }
+  const restore = (scope: Node, at?: Node): void => {
+    for (const c of comments(scope)) {
+      const id = /^@@wcs-(?:for|if|elseif|else):(\S+)$/.exec(c.data)?.[1];
+      const t = Array.from(ssr.querySelectorAll("template")).find((x) => x.id === id);
+      if (t === undefined) continue;
+      const copy = document.importNode(t, true);
+      const a = config.bindAttributeName;
+      copy.removeAttribute("id");
+      copy.setAttribute(a, copy.getAttribute(a)!.replace(/^(\s*\w+\s*:\s*)([^\s|]+)/, (_, k: string, p: string) => k + own(at ?? c, p)));
+      restore(copy.content, at ?? c);
+      // 3.x made each `elseif` an `if` in an `else` of its own (whose content starts with it): back
+      // to the chain of templates it was written as
+      const f = copy.content.firstChild as Element | null;
+      c.replaceWith(...(/^\s*elseif\s*:/.test(f?.getAttribute?.(a) ?? "") ? copy.content.childNodes : [copy]));
+    }
+  };
+  restore(container);
+  for (const e of Array.from((container as ParentNode).querySelectorAll("[data-wcs-ssr-id]"))) e.removeAttribute("data-wcs-ssr-id");
+}
+
 /** The `element` hook, "mounting": a client root with a server snapshot adopts the server's DOM. */
 export function hydrate(engine: Engine): void {
   const el = engine.element as Element;
   if (!el.hasAttribute("enable-ssr") || isServer()) return;
-  // the server ran $connectedCallback; the client does not, whether or not it adopts
-  const e = engine as any;
-  const callHook = e.callHook;
-  e.callHook = (name: string, args?: unknown[]) => (name === "$connectedCallback" ? undefined : callHook.call(engine, name, args));
   const ssr = el.previousElementSibling;
-  if (ssr === null || ssr.localName !== tag()) return;
-  const version = ssr.getAttribute("version");
+  const found = ssr?.localName === tag();
+  const version = found ? ssr!.getAttribute("version") : null;
   const same = version === null || majorMinor(version) === majorMinor(VERSION);
-  if (!same) console.warn(`[@wcstack/state] <${tag()} version="${version}"> does not match ${VERSION}: the page renders on the client.`);
-  const script = ssr.querySelector('script[type="application/json"]');
+  if (same) {
+    // the server ran $connectedCallback; the client does not
+    const e = engine as any;
+    const callHook = e.callHook;
+    e.callHook = (name: string, args?: unknown[]) => (name === "$connectedCallback" ? undefined : callHook.call(engine, name, args));
+  }
+  if (!found) return;
+  // @wcstack/server 3.x's output: marks of its own
+  const old = !same && parseInt(version!) < 4;
+  if (!same) {
+    console.warn(`[@wcstack/state] <${tag()} version="${version}"> does not match ${VERSION}: its snapshot is discarded, and the page renders on the client from its own state.${old
+      ? " 3.x output keeps only the path of a text binding outside a template, so such a binding loses its filters: deploy @wcstack/server 4.0 with this client."
+      : ""}`);
+  }
+  const script = same ? ssr!.querySelector('script[type="application/json"]') : null;
   if (script !== null) {
     const snap = JSON.parse(script.textContent || "{}") as Record<string, unknown>;
     const target = engine.target;
@@ -415,15 +534,17 @@ export function hydrate(engine: Engine): void {
       target[key] = snap[key];
     }
     // the snapshot holds the server's volume data too: a volume adopts it (scopes/volume.ts)
-    e.hydrated = true;
+    (engine as any).hydrated = true;
   }
   const root = el.getRootNode() as Document | ShadowRoot;
   for (const r of Array.from(root.querySelectorAll(`[${RAW_ATTR}]`))) {
     r.textContent = r.getAttribute(RAW_ATTR);
     r.removeAttribute(RAW_ATTR);
   }
-  prepare(root.nodeType === 9 ? (root as Document).body : root, ssr, same);
-  ssr.remove();
+  const container = root.nodeType === 9 ? (root as Document).body : root;
+  if (old) legacy(container, ssr!);
+  else prepare(container, ssr!, same);
+  ssr!.remove();
   if (same) {
     hydrating.add(engine);
     // only while a page is adopted: every other block is built with one null check

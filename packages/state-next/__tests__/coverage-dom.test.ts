@@ -62,7 +62,8 @@ async function failure(html: string, state: Record<string, any> = {}): Promise<E
   el.setInitialState(state);
   document.body.appendChild(h);
   const e = await el.connectedCallbackPromise.then(() => null, (x: unknown) => x);
-  expect(error).toHaveBeenCalledWith(e);
+  // reported once: the element (#49, its sentence in the diagnostics add-on), then the error
+  expect(error).toHaveBeenCalledExactlyOnceWith('[@wcstack/state] #49 "wcs-state"', e);
   error.mockRestore();
   return e as Error;
 }

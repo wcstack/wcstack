@@ -58,7 +58,8 @@ async function page(html: string, state: Record<string, any>) {
 
 const text = (c: Element | ShadowRoot | null | undefined, sel: string) => c!.querySelector(sel)!.textContent;
 const texts = (c: ParentNode, sel: string) => Array.from(c.querySelectorAll(sel)).map((n) => n.textContent);
-const messages = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c) => String((c[0] as Error)?.message ?? c[0]));
+/** Every argument logged, an error by its message (a failed initialization logs a line naming the element, then the error). */
+const messages = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.flatMap((c) => c.map((x) => String((x as Error)?.message ?? x)));
 
 describe("マウントの対応の形", () => {
   it("丸ごとのマウントの隣の部分マウント: 1 段の対応はツリーの同名のキーに勝ち、ツリーのそのキーへの書き込みは届かない。深い対応はその先を読み、入れ子の私有データは自分のまま", async () => {
@@ -335,12 +336,17 @@ describe("コンポーネントのライフサイクル", () => {
       const second = document.createElement("wcs-state") as any;
       second.setAttribute("bind-component", "state");
       one.shadowRoot.appendChild(second);
-      await second.connectedCallbackPromise;
+      // a second mount in one component rejects its connectedCallbackPromise (3.x resolved it; 4.0 treats it as
+      // the configuration errors 3.x's README says reject)
+      await expect(second.connectedCallbackPromise).rejects.toThrow(`<${tag}> already has a connected <wcs-state bind-component="state">.`);
       const two = root.querySelector(".two") as any;
       two.shadowRoot.innerHTML = `<wcs-state bind-component="other"></wcs-state>`;
-      await (two.shadowRoot.querySelector("wcs-state") as any).connectedCallbackPromise;
+      await expect((two.shadowRoot.querySelector("wcs-state") as any).connectedCallbackPromise).rejects.toThrow(`<${tag}> already has a <wcs-state bind-component="state">.`);
+      // each after the line that names the element (#49: this file installs no diagnostics)
       expect(messages(error)).toEqual([
+        '[@wcstack/state] #49 "wcs-state" "bind-component" "state"',
         `[@wcstack/state] <${tag}> already has a connected <wcs-state bind-component="state">.`,
+        '[@wcstack/state] #49 "wcs-state" "bind-component" "other"',
         `[@wcstack/state] <${tag}> already has a <wcs-state bind-component="state">.`,
       ]);
       // the first mount keeps working
@@ -426,8 +432,11 @@ describe("コンポーネントの誤りと警告", () => {
       if (html.parentNode !== document) document.appendChild(html);
     }
     try {
-      await el.connectedCallbackPromise;
-      expect(messages(error)).toEqual(['[@wcstack/state] "bind-component" requires <wcs-state> to be a direct child of a custom element.']);
+      await expect(el.connectedCallbackPromise).rejects.toThrow('"bind-component" requires <wcs-state> to be a direct child of a custom element.');
+      expect(messages(error)).toEqual([
+        '[@wcstack/state] #49 "wcs-state" "bind-component" "state"',
+        '[@wcstack/state] "bind-component" requires <wcs-state> to be a direct child of a custom element.',
+      ]);
     } finally {
       error.mockRestore();
     }

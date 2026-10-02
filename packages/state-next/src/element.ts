@@ -55,8 +55,8 @@ async function loadSrc(src: string): Promise<Record<string, any>> {
 }
 
 /**
- * The root `<wcs-state>` elements of each root node: a new list whenever one connects, without the
- * ones no longer in the page.
+ * The root `<wcs-state>` elements of each root node (and the one a component mount or a DCC definition
+ * has in its shadow root): a new list whenever one connects, without the ones no longer in the page.
  */
 const readyByRoot = new WeakMap<Node, WcsState[]>();
 
@@ -156,13 +156,17 @@ export class WcsState extends HTMLElementBase {
     const claimed = hooks.claim?.(this, root);
     if (claimed) {
       this.claimed = claimed;
+      // the `<wcs-state>` of the shadow root it binds (a component's, a DCC definition's) is that
+      // root's, as 3.x: getBindingsReady there waits for it — until its bindings are built, as a
+      // root's — and fails with it (a volume never fails)
+      if (!claimed.lenient && this.parentNode instanceof ShadowRoot) enroll(this);
       void (claimed.load === undefined ? this.loadState() : claimed.load()).then((state) => {
         this.loaded = true;
-        return claimed.start(state);
-      }).catch((e) => console.error(e)).finally(() => {
+        return claimed.start(state, () => this.built());
+      }).then(() => {
         this.resolveInitialize();
         this.resolveConnected();
-      });
+      }, (e) => this.fail(e, claimed.lenient));
       return;
     }
     void this.start(root);
@@ -278,18 +282,35 @@ export class WcsState extends HTMLElementBase {
       mount(engine, root as Document | ShadowRoot);
       drainBinds();
       engine.watchRendered();
-      this.bound = true;
-      this.resolveInitialize();
+      this.built();
       await engine.callHook("$connectedCallback");
       if (this.isConnected) hooks.element?.(engine, "connected");
       this.resolveConnected();
     } catch (e) {
       // (a root that bound its page and whose $connectedCallback then failed has not: re-set stays open)
       this.failed = !this.bound;
-      this.resolveInitialize();
-      console.error(e);
-      this.rejectConnected(e);
+      this.fail(e);
     }
+  }
+
+  /** The bindings are built (before `$connectedCallback`): getBindingsReady resolves, initializePromise too. */
+  private built(): void {
+    this.bound = true;
+    this.resolveInitialize();
+  }
+
+  /**
+   * Initialization failed: reported once, the element (and where its state comes from) before what
+   * was thrown, as 3.5 — `<wcs-state src="./state.js"> failed to initialize.`, or, once its
+   * bindings were built, `… $connectedCallback failed.` — and connectedCallbackPromise rejects with
+   * it, or resolves for a claim that is `lenient` (a volume).
+   */
+  private fail(e: unknown, lenient?: boolean): void {
+    const at = ["mount", "bind-component", "state", "src"].flatMap((n) => (this.hasAttribute(n) ? [n, this.getAttribute(n)] : []));
+    console.error(`[@wcstack/state] ${text(this.bound ? M.ConnectedFailed : M.InitFailed, [this.localName, ...at])}`, e);
+    this.resolveInitialize();
+    if (lenient) this.resolveConnected();
+    else this.rejectConnected(e);
   }
 }
 
