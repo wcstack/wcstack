@@ -6,7 +6,7 @@
 
 **このブランチ（`research/state-engine`）は、state-next を `@wcstack/state` に差し替えるまで release しない。** `@wcstack/lint` と `@wcstack/typescript` は毎回のリリースで vscode-wcs から作り直して公開されるので、差し替えの前に出すと 4.0 の規則が 3.x の版番号で配られ、3.x の利用者の CI が落ちる。`release.yml` は vscode-wcs の依存が `file:../state-next` を指している間、bump の種類によらず止まる。
 
-`@wcstack/state` 4.0（新エンジン。リポジトリでは `packages/state-next`）のパーサと manifest で検証する。3.x のページには当てはまらない規則になるので、版は 4.0 のリリースまで上げない（3.x のプロジェクトは 1.19.x のまま）。依存は `"@wcstack/state": "file:../state-next"`（import は `@wcstack/state/parser`・`/manifest` のまま。4.0 で `packages/state` と差し替わったら `file:../state` に戻す）。state-next は dist をコミットしないので、`npm test` / `npm run build` は dist が無ければ先にビルドする（`scripts/ensure-state-dist.mjs`）。
+`@wcstack/state` 4.0（新エンジン。リポジトリでは `packages/state-next`）のパーサと manifest で検証する。3.x のページには当てはまらない規則になるので、版は 4.0 のリリースまで上げない（3.x のプロジェクトは 1.20.x のまま）。依存は `"@wcstack/state": "file:../state-next"`（import は `@wcstack/state/parser`・`/manifest` のまま。4.0 で `packages/state` と差し替わったら `file:../state` に戻す）。state-next は dist をコミットしないので、`npm test` / `npm run build` は dist が無ければ先にビルドする（`scripts/ensure-state-dist.mjs`）。
 
 ### 4.0 で外れた名前
 
