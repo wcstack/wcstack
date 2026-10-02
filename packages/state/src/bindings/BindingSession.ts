@@ -864,7 +864,8 @@ export class BindingSession {
     });
   }
 
-  handleAddedNode(node: Node, reconnected: IBindingInfo[]): void {
+  /** `onError`: a caller that can report a binding failing to start again (a mount scope's re-initialization) */
+  handleAddedNode(node: Node, reconnected: IBindingInfo[], onError?: (error: unknown) => void): void {
     // 外れたときに下ろした定義待ちを、今属する registry で張り直す（#352）。外れている間に session ごと
     // 解体された（行が消えた・プールに入った）待ちは張り直さない — 消えた行の文脈で展開しない
     this.deferredByNode.get(node)?.forEach((task) => {
@@ -891,8 +892,9 @@ export class BindingSession {
         // 待ちを予約し直す（#352）
         if ((options.applyOnReconnect || record.pendingDefinitions > 0 && record.generation > this.disposedAt)
           && this.shouldApplyState(binding)) reconnected.push(binding);
-      } catch {
+      } catch (error) {
         // Mutation delivery cannot surface initialization errors to a caller.
+        onError?.(error);
       }
     }
   }

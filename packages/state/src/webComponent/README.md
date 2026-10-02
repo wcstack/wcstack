@@ -82,6 +82,14 @@ template clone が upgrade 済み）では、**新規キー**は `injectedKeys`�
 - connectedCallback で shadow の innerHTML を張り直すコンポーネントは、再接続のたびに
   新しい `<wcs-state>` が同じ shadowRoot に入る。記録は (component, stateProp) で再利用
   （マーカー安定）、alias は冪等、旧スコープは `BindingSession.dispose()` で捨てて組み直す。
+- 同じ DOM のままの再初期化（`<wcs-state>` だけの差し替え）では、収集が登録済みノードを飛ばすので、
+  dispose の後にスコープに残ったノードの binding を `handleAddedNode` で張り直す（`resetScopeSession`）。
+  捨てた DOM の binding は dispose のまま。描かれた値（binding の anchor・束縛された要素の中の text）の
+  `{{ … }}` は mustache 変換しない（データであって markup ではない — `isRenderedText`。再初期化のときだけ渡す）。
+  束縛された要素の下の text は丸ごと飛ばすので、初回の構築の後に作者が束縛付きの要素の下へ足した `{{ }}` も
+  再初期化では変換されない（安全側）。
+- 初期化中の再接続（`<wcs-state>` の初期化が終わる前の移動）は新しい接続が準備を引き取り、古い準備は
+  待ちの後に `connectGeneration` の食い違いを見て着地せずに退く — 再初期化にはならない。
 - shadow を 1 回だけ組む形の再接続は `remountScopeBindings` — 直接エントリを現在の行の
   文脈に張り替え、`rebindAddresses()` が台帳を張り直す（`for` は lastListValue を旧→新へ
   引き継ぐ。行ループ中の同期発火を避けるため microtask に遅延）。
