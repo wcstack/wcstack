@@ -2,9 +2,11 @@ import { BINDER_KEY, IWcsBinder, flushPendingBinds } from "../protocol/binder";
 import { config } from "../config";
 import { convertMustacheToComments } from "../mustache/convertMustacheToComments";
 import { collectStructuralFragments } from "../structural/collectStructuralFragments";
-import { hasInterestedSession } from "./BindingSession";
+import { BindingSession, hasInterestedSession } from "./BindingSession";
 import { areBindingsBuilt } from "../stateElementByName";
 import { initializeBindings } from "./initializeBindings";
+import { getSubscriberNodes } from "./getSubscriberNodes";
+import { isLightDomMappedStateElement } from "./lightDomComponentScope";
 
 /**
  * binder プロトコルの提供側（docs/binder-protocol-design.md）。
@@ -50,26 +52,32 @@ function isElement(node: Node): node is Element {
 }
 
 function bindNow(subtree: Element): void {
-  if (alreadyBound(subtree)) {
+  // A subtree no longer in the document is left alone: one held until the first build may have
+  // left it since (the build's own walk replaces a structural template handed over with its anchor).
+  if (!subtree.isConnected || alreadyBound(subtree)) {
     return;
   }
-  convertMustacheToComments(subtree);
-  collectStructuralFragments(subtree.getRootNode(), subtree);
-  // `getSubscriberNodes` の TreeWalker は**ルート自身を返さない**。`buildBindings` は
-  // `document.body` を渡すので今まで問題にならなかったが、ここには宣言をルートに
-  // 持つノードが来る（`<wcs-head>` が head へ入れる `<title data-wcs="…">`）。
-  // そのときだけ親から走査して、ルートを走査範囲に含める。兄弟の重複登録は
-  // `registeredNodeSet` が弾くので、余計なバインドは生まれない。
-  // 親は Element とは限らない（ShadowRoot 直下なら DocumentFragment、head 直下なら
-  // Element）。`parentElement` だと前者で null になり、ルートを含められない。
-  const declaresOnRoot = subtree.hasAttribute(config.bindAttributeName);
-  const parent = subtree.parentNode;
-  const canWalkFromParent = parent !== null
-    && (parent.nodeType === 1 || parent.nodeType === 9 || parent.nodeType === 11);
-  const walkRoot = declaresOnRoot && canWalkFromParent
-    ? (parent as Element | Document | DocumentFragment)
-    : subtree;
-  initializeBindings(walkRoot, null);
+  // Bind inside the subtree only, its root included (#409). `getSubscriberNodes`'s TreeWalker never
+  // returns its root, and roots that declare on themselves do come here (`<wcs-head>`'s
+  // `<title data-wcs="…">`, a route's content handed over node by node), so the root is taken in by
+  // hand — the shape SSR's hydration uses. This used to walk from the parent instead, which also
+  // reached the root's siblings: a later sibling's structural template, not collected yet, was
+  // registered as a plain binding, failed to apply and was never rendered, and siblings nobody
+  // handed over were bound.
+  const nodes: Node[] = subtree.hasAttribute(config.bindAttributeName) ? [subtree] : [];
+  // A Light DOM mount (wired from the host, its `<wcs-state bind-component>` right under it): the
+  // root's declarations belong to the host, and what is inside to the component's scope, which
+  // collects it once wired (§1.13 — `getSubscriberNodes` prunes a nested one, never its walk root).
+  if (!Array.from(subtree.children).some(
+    (child) => child.localName === config.tagNames.state && isLightDomMappedStateElement(child))) {
+    convertMustacheToComments(subtree);
+    collectStructuralFragments(subtree.getRootNode(), subtree);
+    nodes.push(...getSubscriberNodes(subtree));
+  }
+  // A session of its own, keyed by nothing. A session found by its root is what a scope disposes as a
+  // whole: keyed by `subtree`, a Light DOM mount's host bindings joined the mount scope's session
+  // (keyed by the component), and its re-initialization tore them down.
+  initializeBindings(subtree, null, undefined, nodes, new BindingSession());
 }
 
 /**
@@ -83,7 +91,8 @@ function bindNow(subtree: Element): void {
 const beforeFirstBuild: Element[] = [];
 
 function bind(subtree: Node): void {
-  if (!isElement(subtree) || alreadyBound(subtree)) {
+  // Nothing to bind in a subtree not in a document (held, it would wait for a build that never comes)
+  if (!isElement(subtree) || !subtree.isConnected || alreadyBound(subtree)) {
     return;
   }
   if (!areBindingsBuilt(subtree.getRootNode())) {
