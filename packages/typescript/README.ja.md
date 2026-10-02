@@ -76,7 +76,7 @@ sidecar 規範が許す JSON-Schema サブセットだけ（`type` / `properties
 | `T \| undefined`、`x?: T` | `T`。`x` は `required` に入らない |
 | `A \| B`（オブジェクトや混在プリミティブ） | `{ "anyOf": [A, B] }` |
 | 自分のコードのオブジェクトリテラル / interface / class | `{ "type": "object", "properties": …, "required": … }` |
-| `Date`、`Map`、`Set`、DOM 型、ライブラリ由来の型、`any`、`unknown`、`Record<string, T>` | **素の `{}`** |
+| `Date`、`Map`、`Set`、DOM 型、ライブラリ由来の型、`any`、`unknown`、`Record<string, T>`、インデックスシグネチャを持つオブジェクト型（`{ [year: number]: T }`、`{ [key: string]: T }`） | **素の `{}`** |
 | `get x(): T` | `x: T` — getter はメンバー |
 | `get "users.*.ageCategory"(): string` | `users.items.properties.ageCategory` に注入 — パス getter は計算先のパスのメンバー |
 | メソッド、関数値プロパティ、`$` 始まりキー（`$watch`・`$commandTokens` …） | 捨てる |

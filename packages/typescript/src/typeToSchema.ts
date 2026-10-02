@@ -13,6 +13,9 @@
  *   — never `{ "type": "object" }`: the validator treats a bare `{}` as *unknown*
  *   (silent) and a typed object without the member as *nonexistent* (error).
  * - Nesting stops at `maxDepth` (default 5 = the validator's candidate budget) with a bare `{}`.
+ * - An object type with an index signature (`{ [year: number]: Sale }`, `{ [key: string]: T }`) becomes a bare
+ *   `{}`: its keys are open, and the subset has no open-object form — a typed object would make every key
+ *   (`byYear.2024`) *nonexistent*.
  */
 
 import ts from "typescript";
@@ -140,6 +143,8 @@ function convertArray(type: ts.TypeReference, depth: number, ctx: Context): Json
 function convertObject(type: ts.Type, depth: number, ctx: Context, isRoot: boolean): JsonSchemaNode {
   if (depth >= ctx.maxDepth) return {};
   if (ctx.stack.has(type)) return {};
+  // Open keys (an index signature): unknown to the validator, not an object without members
+  if (ctx.checker.getIndexInfosOfType(type).length > 0) return {};
   ctx.stack.add(type);
   try {
     const properties: Record<string, JsonSchemaNode> = {};
