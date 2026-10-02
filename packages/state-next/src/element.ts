@@ -84,11 +84,18 @@ export function getBindingsReady(root: Node): Promise<void> {
 }
 
 /**
+ * The base of the package's elements: HTMLElement, or — where there is none (Node without a DOM)
+ * — an inert class, so the entries can be imported headless (a tool reading the manifest, a
+ * server framework importing at the top level), as 3.x. Making an element stays a browser's.
+ */
+export const HTMLElementBase = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as typeof HTMLElement;
+
+/**
  * `<wcs-state>` — one engine per element, bound to the element's root node.
  * State resolution order: `state` (id of a JSON script) → `src` → `json` → inner
  * `<script type="module">` → wait for `setInitialState()`.
  */
-export class WcsState extends HTMLElement {
+export class WcsState extends HTMLElementBase {
   static getBindingsReady = getBindingsReady;
   /** Servers (@wcstack/server) wait on connectedCallbackPromise when this is set. */
   static hasConnectedCallbackPromise = true;
@@ -104,6 +111,7 @@ export class WcsState extends HTMLElement {
   private resolveConnected!: () => void;
   private rejectConnected!: (e: unknown) => void;
   private started = false;
+  /** Initialization failed before the page was bound: `setInitialState` refuses (#14). */
   private failed = false;
   private initial: Record<string, any> | null = null;
   /** Taken over by an add-on (a volume, a DCC definition): it never becomes a root. */
@@ -231,7 +239,7 @@ export class WcsState extends HTMLElement {
     if (id !== null) {
       // a JSON script of that id (an element of user content with the same id, earlier, is not it)
       const find = (r: Node): HTMLScriptElement | undefined =>
-        Array.from((r as Document).querySelectorAll<HTMLScriptElement>('script[type="application/json"]')).find((x) => x.id === id);
+        [...(r as Document).querySelectorAll<HTMLScriptElement>('script[type="application/json"]')].find((x) => x.id === id);
       const script = find(this.getRootNode()) ?? find(document);
       if (script === undefined) return Promise.reject(new Error(`[@wcstack/state] ${text(M.NoScript, [id])}`));
       return Promise.resolve(JSON.parse(script.textContent || "{}"));
@@ -276,7 +284,8 @@ export class WcsState extends HTMLElement {
       if (this.isConnected) hooks.element?.(engine, "connected");
       this.resolveConnected();
     } catch (e) {
-      this.failed = true;
+      // (a root that bound its page and whose $connectedCallback then failed has not: re-set stays open)
+      this.failed = !this.bound;
       this.resolveInitialize();
       console.error(e);
       this.rejectConnected(e);

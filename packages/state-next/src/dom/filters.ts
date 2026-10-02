@@ -12,8 +12,8 @@ export function pipe(fs: FilterFn[] | null, v: unknown): unknown {
 
 /**
  * Resolves a binding's parsed filters to functions (at plan time, once per binding spec).
- * The core filters are always available; the formatting ones come with `installFormats()`
- * (the auto bundle installs them).
+ * The core filters are always available; the formatting ones come with the formats add-on
+ * (`installFeatures([formats])`; the full build installs it).
  */
 export function buildFilters(parsed: readonly ParsedFilter[]): FilterFn[] | null {
   if (parsed.length === 0) return null;

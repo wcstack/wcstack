@@ -1372,6 +1372,24 @@ describe("後から状態が届く volume のパスの診断（G6）", () => {
     }
   });
 
+  it("3.x のコメント束縛（<!--@@: path-->・<!--@@wcs-text:path-->）は束ねない（I5。暫定の判断。実行時の警告は出さない）", async () => {
+    const { root } = await host(`<wcs-state></wcs-state><p>Hello <!--@@: user.name-->!</p><i><!--@@wcs-text:user.name--></i>`, [{ user: { name: "a" } }]);
+    expect(text(root, "p")).toBe("Hello !");
+    expect(text(root, "i")).toBe("");
+    expect(root.querySelector("p")!.innerHTML).toBe("Hello <!--@@: user.name-->!");
+  });
+
+  it("書式フィルタの壁（formats を入れていない）には lint への誘導を付けず、打ち間違いには新しい入れ方を案内する（I4）", async () => {
+    const { explain } = await import("../src/diagnostics/explain");
+    const { LINT_HINT } = await import("../src/diagnostics/guidance");
+    const wall = explain(`[wcs/filter-unknown] filter not found: upper. "upper" is in the formats add-on — install it with installFeatures([formats]) from "@wcstack/state/features/formats".`, "upper", []);
+    expect(wall.endsWith(LINT_HINT)).toBe(false);
+    expect(wall).toBe(` On a split auto page: features="formats" on the root, or "$features": ["formats"].`);
+    const typo = explain("[wcs/filter-unknown] filter not found: eqq.", "eqq", ["eq"]);
+    expect(typo).toContain(`add the formats add-on: installFeatures([formats]) from "@wcstack/state/features/formats" (a split auto page: features="formats", or "$features").`);
+    expect(typo.endsWith(LINT_HINT)).toBe(true);
+  });
+
   it("まだページを持たないエンジン（root が null）でも、宣言の無い $watch のパスは警告する", async () => {
     const warns: string[] = [];
     const spy = vi.spyOn(console, "warn").mockImplementation((...a) => { warns.push(a.map(String).join(" ")); });

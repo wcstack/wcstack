@@ -1614,3 +1614,108 @@ describe("G1(b): 宣言の形が誤った再セット", () => {
     expect(root.querySelector("p")!.textContent).toBe("3");
   });
 });
+
+describe("I1: DOM の無い環境での import", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("ブラウザでは HTMLElement を基底にする", async () => {
+    const { HTMLElementBase, WcsState } = await import("../src/element");
+    expect(HTMLElementBase).toBe(HTMLElement);
+    expect(Object.getPrototypeOf(WcsState)).toBe(HTMLElement);
+  });
+
+  it("HTMLElement が無くても . と /core を import でき（要素のクラスは不活性な基底の上）、マニフェストや VERSION を読める", async () => {
+    vi.stubGlobal("HTMLElement", undefined);
+    vi.resetModules();
+    const full = await import("../src/exports");
+    const core = await import("../src/core");
+    const { HTMLElementBase } = await import("../src/element");
+    expect(typeof full.VERSION).toBe("string");
+    expect(core.VERSION).toBe(full.VERSION);
+    expect(typeof full.Ssr).toBe("function");
+    expect(() => new HTMLElementBase()).not.toThrow();
+  });
+});
+
+describe("I2: $connectedCallback が reject した（束ね終えた）root の再セット", () => {
+  it("setInitialState で状態を置き換えられる（初期化に失敗した root は #14 のまま）", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-cc-reset-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p data-wcs="textContent: msg"></p><wcs-state json='{oops'></wcs-state>`;
+    const [el, broken] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+    el.setInitialState({ msg: "a", async $connectedCallback() { throw new Error("network down"); } });
+    document.body.appendChild(h);
+    await expect(el.connectedCallbackPromise).rejects.toThrow("network down");
+    el.setInitialState({ msg: "c" });
+    expect(root.querySelector("p")!.textContent).toBe("c");
+    await expect(broken.connectedCallbackPromise).rejects.toThrow();
+    expect(() => broken.setInitialState({ msg: "x" })).toThrow(/#14/);
+  });
+});
+
+describe("I4: formats アドオンの無いページの書式フィルタ", () => {
+  afterEach(() => vi.resetModules());
+
+  it("壁の文面は公開エントリの入れ方（installFeatures([formats]) と features/formats）を示す", async () => {
+    vi.resetModules();
+    const { resolveFilter } = await import("../src/filters/registry");
+    expect(() => resolveFilter("upper", [], [])).toThrow(
+      `"upper" is in the formats add-on — install it with installFeatures([formats]) from "@wcstack/state/features/formats".`,
+    );
+  });
+});
+
+describe("I6: パーサのエントリ（lint・拡張が使う）も __proto__ / prototype の段を拒む", () => {
+  afterEach(() => vi.resetModules());
+
+  it("実行時と同じ範囲で #120 で拒む: 解決するパス（ドット付きのハンドラ名を含む）は拒み、パスでない右辺（トークン名・単独のメソッド名）は通す", async () => {
+    vi.resetModules();
+    const parser = await import("../src/public/parser");
+    for (const text of ["textContent: user.__proto__", "textContent: fn.prototype.x", "for: __proto__", "if: a.prototype", "onclick: tools.prototype"]) {
+      expect(() => parser.parseBindTextsForElement(text), text).toThrow(/[wcs/binding-syntax].*"__proto__" or "prototype"/);
+    }
+    expect(() => parser.parseBindTextForEmbeddedNode("user.__proto__")).toThrow(/"__proto__" or "prototype"/);
+    for (const text of ["onclick: prototype", "onclick: $command.prototype", "command.go: $command.prototype", "eventToken.value: prototype"]) {
+      expect(() => parser.parseBindTextsForElement(text), text).not.toThrow();
+    }
+    expect(parser.getPathInfo("prototype").segments).toEqual(["prototype"]);
+    expect(parser.parseBindTextsForElement("textContent: user.proto")[0].statePathInfo.segments).toEqual(["user", "proto"]);
+  });
+
+  it("（実行時）単独のメソッド名 prototype と command トークン prototype は動き、ドット付きのハンドラ名は #120 で拒む", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const calls: string[] = [];
+    const { root, el } = await page(
+      `<button class="m" data-wcs="onclick: prototype">m</button><button class="c" data-wcs="onclick: $command.prototype">c</button><button class="d" data-wcs="onclick: tools.prototype">d</button>`,
+      { prototype() { calls.push("method"); }, $commandTokens: ["prototype"], tools: {} },
+    );
+    el.createState("readonly", (s: any) => { s.$command.prototype.subscribe(() => calls.push("command")); });
+    for (const c of ["m", "c", "d"]) (root.querySelector(`.${c}`) as HTMLElement).click();
+    expect(calls).toEqual(["method", "command"]);
+    expect(error.mock.calls.map((c) => String((c[0] as Error).message))).toEqual([expect.stringMatching(/#120/)]);
+  });
+});
+
+describe("I8: 表示する for の無い一覧の失敗と $errorCallback の info.node", () => {
+  it("$getAll だけが読む一覧が再セットで読めなくなると、for の失敗として node: null で報告する", async () => {
+    const infos: { path: string; bindingType: string; node: Node | null }[] = [];
+    const errorCallback = (_e: unknown, info: { path: string; bindingType: string; node: Node | null }) => { infos.push(info); };
+    const { root, el } = await page(`<p data-wcs="textContent: total"></p>`, {
+      items: [{ v: 1 }, { v: 2 }], $errorCallback: errorCallback,
+      get total() { return (this as any).$getAll("items.*.v", []).length; },
+    });
+    expect(root.querySelector("p")!.textContent).toBe("2");
+    el.setInitialState({
+      $errorCallback: errorCallback,
+      get items(): unknown { throw new Error("items unavailable"); },
+      get total() { return 0; },
+    });
+    await flush();
+    const forInfo = infos.find((i) => i.bindingType === "for")!;
+    expect([forInfo.path, forInfo.node]).toEqual(["items", null]);
+  });
+});

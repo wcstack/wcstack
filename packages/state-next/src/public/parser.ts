@@ -15,6 +15,7 @@ import { clearPropPartCache } from "../parser/parsePropPart";
 import { clearStatePartCache } from "../parser/parseStatePart";
 import type { BindingType, ParsedBinding, ParsedFilter } from "../parser/types";
 import { clearPathInfoCache, getPathInfo, type IPathInfo } from "./pathInfo";
+import { raise, M } from "../messages";
 
 hooks.render = render;
 hooks.explain = explain;
@@ -35,7 +36,18 @@ export interface IFilterInfo extends ParsedFilter {
   readonly filterFn: (value: unknown) => unknown;
 }
 
-const withInfo = (b: ParsedBinding): ParseBindTextResult => ({ ...b, statePathInfo: getPathInfo(b.statePathName) });
+/**
+ * The binding with its path's info. A path through `__proto__` / `prototype` is refused (#120) where
+ * the engine refuses it — on a path it resolves — and not on a right side that names no path: a
+ * command token (`$command.x`), an event token (`eventToken.value: x`), a method named alone
+ * (`onclick: save` calls the state's own `save`; a dotted name is a path).
+ */
+const withInfo = (b: ParsedBinding): ParseBindTextResult => {
+  const path = b.statePathName;
+  const notPath = path.startsWith("$command.") || (b.bindingType === "event" && (b.propSegments[0] === "eventToken" || !path.includes(".")));
+  if (!notPath && path.split(".").some((s) => s === "__proto__" || s === "prototype")) raise(M.UnsafeSegment, [path]);
+  return { ...b, statePathInfo: getPathInfo(path) };
+};
 
 /** A `data-wcs` attribute's text → its bindings. */
 export function parseBindTextsForElement(bindText: string): ParseBindTextResult[] {

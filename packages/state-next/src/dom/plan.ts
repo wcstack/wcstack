@@ -218,20 +218,21 @@ const MUSTACHE = /\{\{([\s\S]+?)\}\}/g;
 export function splitMustache(t: Text): { node: Text; expr: string }[] {
   const s = t.data;
   const out: { node: Text; expr: string }[] = [];
-  const parent = t.parentNode!;
-  const doc = t.ownerDocument;
   let last = 0;
   MUSTACHE.lastIndex = 0;
   for (let m = MUSTACHE.exec(s); m !== null; m = MUSTACHE.exec(s)) {
-    if (m.index > last) parent.insertBefore(doc.createTextNode(s.slice(last, m.index)), t);
-    const bound = doc.createTextNode("");
-    parent.insertBefore(bound, t);
+    // where the match starts (not `m.index`: `index` is a name the build shortens)
+    const at = MUSTACHE.lastIndex - m[0].length;
+    // (a string is inserted as a text node of t's document)
+    if (at > last) t.before(s.slice(last, at));
+    const bound = t.ownerDocument.createTextNode("");
+    t.before(bound);
     out.push({ node: bound, expr: m[1].trim() });
-    last = m.index + m[0].length;
+    last = MUSTACHE.lastIndex;
   }
   if (out.length === 0) return out;
-  if (last < s.length) parent.insertBefore(doc.createTextNode(s.slice(last)), t);
-  parent.removeChild(t);
+  if (last < s.length) t.before(s.slice(last));
+  t.remove();
   return out;
 }
 
@@ -317,7 +318,7 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
           walked.add(el);
           // markup written inside a <wcs-state> is part of the page (its own attributes are not bindings)
           if (tag === config.tagNames.state) {
-            walk(Array.from(el.childNodes));
+            walk([...el.childNodes]);
             continue;
           }
         }
@@ -353,11 +354,11 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
         // error in document order). A plan keeps document order (Block.dispatch relies on it): its
         // bindings change nothing in it
         try {
-          if (page && into) walk(Array.from(el.childNodes));
+          if (page && into) walk([...el.childNodes]);
         } finally {
           if (specs !== null) onElement(el, specs);
         }
-        if (!page && into) walk(Array.from(el.childNodes));
+        if (!page && into) walk([...el.childNodes]);
       } else if (child.nodeType === 3 && engine.mustache && (child as Text).data.includes("{{")) {
         for (const { node, expr } of splitMustache(child as Text)) onText(node, expr);
       }
@@ -387,7 +388,7 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
   const specs: Spec[] = [];
   const target = (node: Node): number => targets.push(node) - 1;
 
-  walkBindings(engine, Array.from(frag.childNodes), list, false,
+  walkBindings(engine, [...frag.childNodes], list, false,
     (anchor, p, plan) => {
       specs.push({ ...blank(), node: target(anchor), kind: K_FOR, pattern: p, plan });
     },
@@ -482,7 +483,7 @@ function stripInsignificantWhitespace(parent: Node, keep: Set<Node>, strip: bool
   for (let n = parent.firstChild; n !== null;) {
     const next = n.nextSibling;
     if (n.nodeType === 3) {
-      if (strip && !keep.has(n) && (n as Text).data.trim() === "") parent.removeChild(n);
+      if (strip && !keep.has(n) && (n as Text).data.trim() === "") n.remove();
     } else if (n.nodeType === 1) {
       stripInsignificantWhitespace(n, keep, NO_TEXT.has((n as Element).localName));
     }

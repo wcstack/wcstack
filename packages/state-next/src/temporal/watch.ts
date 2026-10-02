@@ -75,16 +75,29 @@ export class WatchRuntime {
     for (const w of this.watches) {
       w.getter = w.p.getter !== null || w.p.underGetter;
       w.last = new WeakMap();
-      if (w.p.depth === 0) {
-        if (w.getter) w.last.set(ROOT, engine.readUntracked(w.p, null));
-      } else {
-        // a row watch keeps its lists synced, rendered or not; a getter watch is eager per row
-        this.eachRow(w.p, 1, null, (row) => {
-          if (w.getter) w.last.set(row, engine.readUntracked(w.p, row));
-        });
-      }
+      // (the list a row watch reads can be a getter that throws too)
+      this.prime(w, () => {
+        if (w.p.depth === 0) {
+          if (w.getter) w.last.set(ROOT, engine.readUntracked(w.p, null));
+        } else {
+          // a row watch keeps its lists synced, rendered or not; a getter watch is eager per row
+          this.eachRow(w.p, 1, null, (row) => {
+            if (w.getter) this.prime(w, () => w.last.set(row, engine.readUntracked(w.p, row)));
+          });
+        }
+      });
     }
     this.active = true;
+  }
+
+  /** What a watch reads before the writes (its `prev`): what throws is reported, the others go on. */
+  private prime(w: Watch, read: () => void): void {
+    try {
+      read();
+    } catch (error) {
+      console.error(`[@wcstack/state] $watch initial evaluation of "${w.path}" threw.`, error);
+      hooks.noticed?.(this.engine, { "type": "state:watch-error", "phase": "prime", "path": w.path, "error": error });
+    }
   }
 
   deactivate(): void {
@@ -161,6 +174,7 @@ export class WatchRuntime {
     this.chain = chained ? this.chain + 1 : 0;
     if (this.chain >= MAX_CHAIN) {
       console.error(`[@wcstack/state] $watch handlers kept writing for ${MAX_CHAIN} batches; the chain is cut (nothing is rolled back).`);
+      hooks.noticed?.(this.engine, { "type": "state:watch-chain-limit", "maxDepth": MAX_CHAIN, "paths": [...batch.keys()].map((w) => w.path) });
       this.chain = 0;
       return;
     }
@@ -172,6 +186,8 @@ export class WatchRuntime {
       if (entries.length > 1) entries.sort((a, b) => compareRows(a[0]!, b[0]!));
       for (const [row, prev] of entries) {
         let cur: unknown;
+        // (DevTools: the handler fired, or what threw — the value's evaluation or the handler)
+        let phase = "evaluate";
         const saved = engine.ctx;
         this.inHandler = true;
         engine.feeding++;
@@ -179,9 +195,12 @@ export class WatchRuntime {
           cur = engine.readUntracked(w.p, row);
           if (w.getter) w.last.set(row ?? ROOT, cur);
           engine.ctx = row;
+          hooks.noticed?.(engine, { "type": "state:watch-fired", "path": w.path });
+          phase = "handler";
           w.handler.call(engine.proxy, cur, prev, ...engine.indexesOf(row));
         } catch (error) {
           console.error(`[@wcstack/state] $watch "${w.path}" failed; the other watches still run.`, error);
+          hooks.noticed?.(engine, { "type": "state:watch-error", "phase": phase, "path": w.path, "error": error });
         } finally {
           engine.ctx = saved;
           this.inHandler = false;

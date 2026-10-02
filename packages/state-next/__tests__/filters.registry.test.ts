@@ -60,7 +60,7 @@ describe("filters/registry — formats 未 install", () => {
   it("書式フィルタは名指しで落ち、formats 機能にあることを示すこと", () => {
     expect(hasFilter("upper")).toBe(false);
     expect(() => out("upper"))
-      .toThrow(/\[wcs\/filter-unknown\] filter not found: upper\. "upper" is in the formats add-on — install it with installFormats\(\)\./);
+      .toThrow(/\[wcs\/filter-unknown\] filter not found: upper\. "upper" is in the formats add-on — install it with installFeatures\(\[formats\]\) from "@wcstack\/state\/features\/formats"\./);
   });
 
   it("書式フィルタ 24 本のどれを書いても formats 機能を案内すること", () => {
@@ -78,7 +78,7 @@ describe("filters/registry — formats 未 install", () => {
     }
     expect(message).toContain("[wcs/filter-unknown] filter not found: eqq.");
     expect(message).toContain('Did you mean "eq"?');
-    expect(message).toContain("No formatting filters are installed — add them with installFormats()");
+    expect(message).toContain(`No formatting filters are installed — add the formats add-on: installFeatures([formats]) from "@wcstack/state/features/formats"`);
     expect(message.endsWith(LINT_HINT)).toBe(true);
   });
 });

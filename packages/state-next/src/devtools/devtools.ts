@@ -23,6 +23,7 @@ import type { Token } from "../token";
 import { ForView, IfView, K_ATTR, K_CLASS, K_EVENT, K_STYLE, K_TEXT, type Binding, type Block, RowView, type Spec } from "../dom/view";
 import { engines as byRoot } from "../dom/mount";
 import { VERSION } from "../version";
+import { hooks } from "../hooks";
 
 const HOOK = "__WCSTACK_DEVTOOLS_HOOK__";
 const PROTOCOL = 2;
@@ -152,7 +153,7 @@ function snapshot(engine: Engine, old: Map<string, Entry> | undefined): Map<stri
   return out;
 }
 
-const ledgers = new WeakMap<Engine, Map<string, Entry>>();
+let ledgers = new WeakMap<Engine, Map<string, Entry>>();
 
 /** Reports the bindings added and removed since the last look. */
 function sync(engine: Engine): void {
@@ -241,6 +242,12 @@ function createSource(): Source {
     "_setSink"(next: Sink | null): void {
       const attached = sink === null && next !== null;
       sink = next;
+      // detached: the ledgers go — an attach after it is told every binding there, and none of
+      // their nodes is held meanwhile
+      if (next === null) ledgers = new WeakMap();
+      // what the add-ons notice ($watch fired / threw / cut, a path that does not resolve), with the
+      // tree it came from (`stateElement`): built only while a DevTools is attached
+      hooks.noticed = next && ((engine, event) => sink?.({ ...event, "stateElement": engine.element }));
       // a DevTools that attaches late sees the bindings there already
       if (attached) queueMicrotask(() => { for (const e of live) sync(e); });
     },

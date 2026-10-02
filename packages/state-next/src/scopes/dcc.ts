@@ -153,7 +153,7 @@ export function claimDcc(el: HTMLElement, root: Node): Claimed | null {
   if (host === undefined || !host.hasAttribute("data-wc-definition")) return null;
   // the definition's content, before anything touches it: every instance starts from this
   const content = document.createDocumentFragment();
-  for (const n of Array.from(root.childNodes)) content.appendChild(n.cloneNode(true));
+  for (const n of [...root.childNodes]) content.appendChild(n.cloneNode(true));
   const mode = (root as ShadowRoot).mode;
   return {
     start(state) {

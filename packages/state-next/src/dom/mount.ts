@@ -15,7 +15,7 @@ export function mount(engine: Engine, root: Document | ShadowRoot | Element): vo
   const container: Node = root.nodeType === 9 ? (root as Document).body : root;
   engine.root = root;
   engines.set(root, engine);
-  walk(engine, Array.from(container.childNodes));
+  walk(engine, [...container.childNodes]);
   engine.report();
 }
 

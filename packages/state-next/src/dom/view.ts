@@ -523,7 +523,7 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
   if (single) {
     first = top as ChildNode;
   } else {
-    all = Array.from(top.childNodes) as ChildNode[];
+    all = [...top.childNodes] as ChildNode[];
     first = all[0];
   }
   let block: Block;

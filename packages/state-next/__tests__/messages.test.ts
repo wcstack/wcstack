@@ -52,7 +52,7 @@ describe("コアだけのメッセージ（診断の後付けなし）", () => {
   it("後付けの無いページで出会う壁は文章のまま残す", () => {
     expect(() => requireFeature("temporal", "$watch")).toThrow("[@wcstack/state] [wcs/feature-not-installed] $watch needs the add-on @wcstack/state/features/temporal");
     installCoreFilters();
-    expect(() => resolveFilter("date", [], [])).toThrow('[@wcstack/state] [wcs/filter-unknown] filter not found: date. "date" is in the formats add-on — install it with installFormats().');
+    expect(() => resolveFilter("date", [], [])).toThrow('[@wcstack/state] [wcs/filter-unknown] filter not found: date. "date" is in the formats add-on — install it with installFeatures([formats]) from "@wcstack/state/features/formats".');
     expect(() => resolveFilter("nosuch", [], [])).toThrow(/^\[@wcstack\/state\] \[wcs\/filter-unknown\] #501 "nosuch"$/);
   });
 });

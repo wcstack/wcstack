@@ -33,20 +33,30 @@ export interface IBindingErrorInfo {
   readonly path: string;
   /** The binding's type as the parser classifies it. */
   readonly bindingType: BindingType;
-  /** The node the binding is on (the Text node for a text binding). */
-  readonly node: Node;
+  /**
+   * The node the binding is on (the Text node for a text binding); null for a list no `for:`
+   * renders (one only `$getAll` or `$watch` keeps) that failed to read.
+   */
+  readonly node: Node | null;
 }
 
 /** `<wcs-state>` (README "IStateElement"). */
 export interface IStateElement extends HTMLElement {
   /** Resolves when the state is loaded and the page bound — also when initialization fails. */
   readonly initializePromise: Promise<void>;
-  /** Resolves once `connectedCallback` completed (`$connectedCallback` run); a root that fails to initialize rejects it. */
+  /**
+   * Resolves once `connectedCallback` completed (`$connectedCallback` run); a root that fails to
+   * initialize rejects it, and so does one whose `$connectedCallback` rejects (its page is bound).
+   */
   readonly connectedCallbackPromise: Promise<void>;
   /** Runs `callback` with a state proxy; its writes are applied in the next drain. */
   createState(mutability: "readonly" | "writable", callback: (state: Record<string, any>) => void): void;
   /** `createState` whose callback may await; a readonly proxy stays readonly across its awaits. */
   createStateAsync(mutability: "readonly" | "writable", callback: (state: Record<string, any>) => Promise<void>): Promise<void>;
-  /** Before initialization: the initial state. After: replaces the whole state and re-applies every binding. */
+  /**
+   * Before initialization: the initial state. After: replaces the whole state and re-applies every
+   * binding — also on a root whose `$connectedCallback` rejected. Throws on a root that failed to
+   * initialize (#14), and on a loaded volume, component (`bind-component`) or DCC definition.
+   */
   setInitialState(state: Record<string, any>): void;
 }

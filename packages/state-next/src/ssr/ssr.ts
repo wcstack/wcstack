@@ -120,8 +120,8 @@ const raw = (el: Element): boolean => RAW.has(el.localName) || el.localName === 
 function protectTexts(parent: Node): void {
   for (const n of Array.from(parent.childNodes)) {
     if (n.nodeType === 3) {
-      if ((n as Text).data === "") n.parentNode!.replaceChild(mark("wcs-e"), n);
-      else if (n.nextSibling !== null && n.nextSibling.nodeType === 3) n.parentNode!.insertBefore(mark("wcs-s"), n.nextSibling);
+      if ((n as Text).data === "") n.replaceWith(mark("wcs-e"));
+      else if (n.nextSibling !== null && n.nextSibling.nodeType === 3) n.after(mark("wcs-s"));
     } else if (n.nodeType === 1 && !raw(n as Element)) {
       protectTexts(n);
     }
@@ -220,7 +220,7 @@ function snapshot(el: Element, engine: Engine): void {
     while (e !== null && e.localName !== "svg" && e.localName !== "foreignObject") e = e.parentElement;
     const svg = e?.localName === "svg";
     const id = `wcs-${svg ? "s" : "t"}${ids++}`;
-    anchor.parentNode!.replaceChild(mark(`wcs-p:${id}`), anchor);
+    (anchor as ChildNode).replaceWith(mark(`wcs-p:${id}`));
     let c: Node = document.importNode(templateContent(template as HTMLTemplateElement), true);
     // a template in it that is an SVG element goes as an HTML one, which a serializer reads (the
     // client's parser reads it back in its context)
@@ -237,7 +237,7 @@ function snapshot(el: Element, engine: Engine): void {
     t.id = id;
     ssr.append(attrs(template, t, c));
   }
-  el.parentNode!.insertBefore(ssr, el);
+  el.before(ssr);
 }
 
 /** The builder the server calls before it serializes (protocol wcs-ssr-snapshot v1). */
@@ -292,7 +292,7 @@ function detach(start: Comment): Region {
   while (n !== null) {
     const next: Node | null = n.nextSibling;
     if (depth === 0 && isMark(n, "wcs-]")) {
-      n.parentNode!.removeChild(n);
+      (n as ChildNode).remove();
       break;
     }
     if (depth === 0 && isMark(n, "wcs-|")) rows.push([]);
@@ -303,7 +303,7 @@ function detach(start: Comment): Region {
       if (rows.length === 0) rows.push([]);
       rows[rows.length - 1].push(n);
     }
-    n.parentNode!.removeChild(n);
+    (n as ChildNode).remove();
     n = next;
   }
   return { branch: m[1] === undefined ? null : Number(m[1]), rows };
@@ -330,21 +330,22 @@ function prepare(container: Node, ssr: Element, adopt: boolean): void {
       if (n.parentNode !== parent) continue;
       if (n.nodeType === 8) {
         const d = (n as Comment).data;
-        // (a mark the server did not write — in a value — that does not parse is left as it is)
+        // (a mark the server did not write — in a value — that does not parse is left as it is;
+        // a string given to replaceWith goes in as a text node)
         try {
-          if (d === "wcs-s") n.parentNode!.removeChild(n);
-          else if (d === "wcs-e") n.parentNode!.replaceChild(document.createTextNode(""), n);
+          if (d === "wcs-s") n.remove();
+          else if (d === "wcs-e") n.replaceWith("");
           else if (d.startsWith("wcs-t:")) {
             // the value between the markers, back to its mustache
-            const text = document.createTextNode(`{{ ${decodeURIComponent(d.slice(6))} }}`);
-            let e: Node | null = n.nextSibling;
+            const text = `{{ ${decodeURIComponent(d.slice(6))} }}`;
+            let e: ChildNode | null = n.nextSibling;
             while (e !== null && !isMark(e, "wcs-/t")) {
               const next = e.nextSibling;
-              e.parentNode!.removeChild(e);
+              e.remove();
               e = next;
             }
-            e?.parentNode!.removeChild(e);
-            n.parentNode!.replaceChild(text, n);
+            e?.remove();
+            n.replaceWith(text);
           } else if (d.startsWith("wcs-p:")) {
             const t = ssr.querySelector(`template[id="${d.slice(6)}"]`) as HTMLTemplateElement | null;
             if (t !== null) {

@@ -97,7 +97,7 @@ export function clearFilterResolutionCache(): void {
  */
 function unknownFilter(name: string, known: Iterable<string>): never {
   if (FORMATS_FILTER_NAMES.includes(name)) {
-    raiseError(`[wcs/filter-unknown] filter not found: ${name}. "${name}" is in the formats add-on — install it with installFormats().`, name, known);
+    raiseError(`[wcs/filter-unknown] filter not found: ${name}. "${name}" is in the formats add-on — install it with installFeatures([formats]) from "@wcstack/state/features/formats".`, name, known);
   }
   raise(M.FilterUnknown, [name], name, known);
 }

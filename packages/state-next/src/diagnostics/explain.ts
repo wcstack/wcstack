@@ -45,14 +45,19 @@ export function explain(message: string, subject?: string, candidates?: Iterable
   // "value#ro#wo": one modifier list — the fix joins them
   const mods = /"([^"#]+)#([^"]+)": a binding takes one modifier list/.exec(message);
   if (mods !== null) out += ` — write "${mods[1]}#${mods[2].split("#").join(",")}".`;
-  // a typo on a page with no formatting filters at all: the formats add-on may be what is missing
-  if (message.includes("[wcs/filter-unknown]") && !message.includes("formats add-on") && !FORMATS_FILTER_NAMES.some(hasFilter)) {
-    out += " No formatting filters are installed — add them with installFormats() (the formats add-on).";
+  // a formatting filter on a page without the formats add-on (the core names installFeatures), or a
+  // typo on a page with no formatting filters at all: the formats add-on may be what is missing
+  if (message.includes("[wcs/filter-unknown]")) {
+    if (message.includes("formats add-on")) out += ` On a split auto page: features="formats" on the root, or "$features": ["formats"].`;
+    else if (!FORMATS_FILTER_NAMES.some(hasFilter)) {
+      out += ` No formatting filters are installed — add the formats add-on: installFeatures([formats]) from "@wcstack/state/features/formats" (a split auto page: features="formats", or "$features").`;
+    }
   }
   const code = /\[wcs\/([\w-]+)\]/.exec(message);
   // (not something lint reports: the path-length limit is a runtime cost, lint counts a path's loops
-  // without naming their lists, and it does not look yet at a template handed over at the top of
-  // inserted content (#204) or at an `outerHTML:` in a template (#203))
-  if (code !== null && LINT_CODES.has(code[1]) && !/ path segments — the limit is | ranges over the rows of |inserted content was not rendered|replaces its element/.test(message)) out += LINT_HINT;
+  // without naming their lists, it does not look yet at a template handed over at the top of
+  // inserted content (#204) or at an `outerHTML:` in a template (#203), and its manifest knows the
+  // formatting filters — one missing because the formats add-on is not installed is the page's)
+  if (code !== null && LINT_CODES.has(code[1]) && !/ path segments — the limit is | ranges over the rows of |inserted content was not rendered|replaces its element|formats add-on/.test(message)) out += LINT_HINT;
   return out;
 }

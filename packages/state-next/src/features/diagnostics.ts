@@ -115,6 +115,7 @@ function check(engine: Engine): void {
       continue;
     }
     const [code, subject] = watch ? ["watch-path-missing", "$watch path"] : ["binding-path-missing", "Bound path"];
+    hooks.noticed?.(engine, { "type": "state:path-unresolved", "source": watch ? "watch" : "binding", "path": p.path, "missingSegment": m.seg });
     // a row of `for: groups.0.items` with a row getter declared on `groups.*.items.*` (#388)
     const w = engine.patterns.peek(parsePath(p.path).pattern);
     let rowGetter = "";

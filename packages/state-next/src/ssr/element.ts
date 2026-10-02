@@ -5,6 +5,7 @@
  */
 import { config } from "../config";
 import { VERSION } from "../version";
+import { HTMLElementBase } from "../element";
 
 export interface ISsrElement {
   /** The @wcstack/state version that rendered the page. */
@@ -23,7 +24,7 @@ export interface ISsrElement {
 /** `4.0.1` → `4.0`: a snapshot is adoptable by the same major.minor. */
 export const majorMinor = (v: string): string => v.split(".").slice(0, 2).join(".");
 
-export class Ssr extends HTMLElement implements ISsrElement {
+export class Ssr extends HTMLElementBase implements ISsrElement {
   /** The first snapshot element under `root`, or null. */
   static find(root: Node): ISsrElement | null {
     return ((root as ParentNode).querySelector?.(config.tagNames.ssr) as Ssr | null) ?? null;
