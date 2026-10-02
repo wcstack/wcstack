@@ -1172,6 +1172,42 @@ describe('validateBindings — ボリューム（mount=）のマウントパス�
   });
 });
 
+// 4.0 grafts a volume's methods as accessors under the mount path (`cart.add`, `this` chrooted at the mount path —
+// state-next's scopes/volume.ts graft, scopes.test.ts's `onclick: i18n.toJa`). 3.x did not, so the candidates dropped
+// them and `onclick: cart.add` was a false wcs/binding-path-missing
+describe('validateBindings — ボリューム（mount=）のメソッド（4.0 は接ぎ木する）', () => {
+  const ROOT = `<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>`;
+
+  it('中のスクリプトのボリュームのメソッドは、マウントパスの下のイベント束縛のハンドラとして存在すること', () => {
+    const html = `${ROOT}
+<wcs-state mount="cart"><script type="module">export default { total: 0, add() { this.total++; }, async save() {} };</script></wcs-state>
+<button data-wcs="onclick: cart.add"></button>
+<form data-wcs="onsubmit#prevent: cart.save"></form>
+<button data-wcs="onclick: cart.ad"></button>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    expect(diags.map(d => [d.code, html.slice(d.start, d.end)])).toEqual([[WcsDiagnosticCode.BindingPathMissing, 'cart.ad']]);
+  });
+
+  it('メソッドだけのボリュームも読めたボリュームとして照合し、マウントパスを足すこと', () => {
+    const html = `${ROOT}
+<wcs-state mount="ui"><script type="module">export default { open() {} };</script></wcs-state>
+<button data-wcs="onclick: ui.open; title: ui"></button>
+<button data-wcs="onclick: ui.close"></button>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['ui.close']);
+  });
+
+  it('読める src= のボリュームのメソッドも同じく存在すること', () => {
+    const html = `${ROOT}
+<wcs-state mount="cart" src="./cart.js"></wcs-state>
+<button data-wcs="onclick: cart.add"></button>
+<button data-wcs="onclick: cart.remove"></button>`;
+    const reader = (path: string) => (path === './cart.js' ? 'export default { total: 0, add() { this.total++; } };' : undefined);
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', reader);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['cart.remove']);
+  });
+});
+
 describe('validateBindings — 4.0 で外れたフィルタ名（3.x の旧名・substr）', () => {
   const page = (chain: string): string => `
 <wcs-state>
@@ -1304,6 +1340,87 @@ export default {
     const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, schema);
     expect(diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent).map(d => html.slice(d.start, d.end)))
       .toEqual(['users.1.nmae']);
+  });
+
+  // The 4.0 runtime reads a numeric segment under a parent that is not a list (an object keyed by number) as a plain
+  // key (engine.ts's markupAccessor). With a schema it is read as `*` only where the parent is an array — before the
+  // fix `sales.2024.totl` was looked up as `sales.*.totl`, fell to unknown on the object and stayed silent. Inputs from
+  // main's (1.20.0) bindingValidator.test.ts
+  describe('stateSchema 宣言時 — 配列でない親の数値キーは素のキー', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
+        sales: { type: 'object', properties: { 2024: { type: 'object', properties: { total: { type: 'number' } } } } },
+        stats: { type: 'array', items: { type: 'object', properties: {
+          byYear: { type: 'object', properties: { 2024: { type: 'object', properties: { n: { type: 'number' } } } } },
+        } } },
+      },
+    };
+    const page = (path: string) => `
+<wcs-state src="./state.ts"></wcs-state>
+<p data-wcs="textContent: ${path}"></p>`;
+    const schemaDiags = (path: string) => validateBindings(page(path), 'data-wcs', 'wcs-state', 'en', undefined, schema);
+
+    it('数値の添字が 1 つのパス（items.0.v）と、数値キーのオブジェクト（sales.2024.total）は診断を出さない', () => {
+      expect(schemaDiags('items.0.v')).toEqual([]);
+      expect(schemaDiags('sales.2024.total')).toEqual([]);
+      expect(schemaDiags('stats.0.byYear.2024.n')).toEqual([]);
+    });
+
+    it('行の下の未宣言メンバー（items.0.nmae）は wcs/path-nonexistent（error）', () => {
+      expect(schemaDiags('items.0.nmae').map(d => [d.code, d.severity])).toEqual([[WcsDiagnosticCode.PathNonexistent, 'error']]);
+    });
+
+    it.each([
+      // an undeclared numeric key
+      ['sales.2025.total'],
+      // a typo under a declared numeric key
+      ['sales.2024.totl'],
+      // a numeric key under a non-array parent below an array row (an index and a numeric key mixed)
+      ['stats.0.byYear.2024.m'],
+      ['stats.0.byYear.2025.n'],
+    ])('配列でない親の下の %s は素のキーのまま引いて wcs/path-nonexistent', (path) => {
+      expect(schemaDiags(path).map(d => [page(path).slice(d.start, d.end), d.code])).toEqual([[path, WcsDiagnosticCode.PathNonexistent]]);
+    });
+  });
+
+  // A path with two or more indexes and the rows of a numeric `for` also read only the indexes on an array as `*`
+  // (main's 1.20.0 inputs; 4.0 has no "plain path" wcs/template-syntax of 3.x)
+  describe('stateSchema 宣言時 — 添字が 2 つ以上のパス', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        groups: { type: 'array', items: { type: 'object', properties: {
+          items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
+        } } },
+        nodes: { type: 'array', items: { $ref: '#/$defs/node' } },
+      },
+      $defs: {
+        node: { type: 'object', properties: { value: { type: 'number' }, children: { type: 'array', items: { $ref: '#/$defs/node' } } } },
+      },
+    };
+    const schemaDiags = (markup: string) => {
+      const html = `\n<wcs-state src="./state.ts"></wcs-state>\n${markup}`;
+      return validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, schema)
+        .map(d => [html.slice(d.start, d.end), d.code]);
+    };
+
+    it('数値の for の行の打ち間違い（for: groups.0.items の中の .nmae）は wcs/path-nonexistent、正しい .v は存在', () => {
+      expect(schemaDiags('<template data-wcs="for: groups.0.items"><p data-wcs="textContent: .v"></p><p data-wcs="textContent: .nmae"></p></template>')).toEqual([
+        ['.nmae', WcsDiagnosticCode.PathNonexistent],
+      ]);
+    });
+
+    it.each([
+      ['groups.0.items.0.nmae', [WcsDiagnosticCode.PathNonexistent]],
+      ['groups.0.items.0.v', []],
+      // a schema that recurses through $ref is followed too
+      ['nodes.0.children.0.valu', [WcsDiagnosticCode.PathNonexistent]],
+      ['nodes.0.children.0.value', []],
+    ])('%s', (path, codes) => {
+      expect(schemaDiags(`<p data-wcs="textContent: ${path}"></p>`).map(([, code]) => code)).toEqual(codes);
+    });
   });
 });
 

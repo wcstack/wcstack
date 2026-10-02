@@ -66,6 +66,16 @@ describe('provideCompletionItems: プロパティ / パス / フィルタの文�
     expect(result!.items.map(i => i.label)).toContain('name');
   });
 
+  it('イベント束縛のハンドラの候補に、ボリュームのメソッド（マウントパスの下 — 4.0 は接ぎ木する）を含めること', () => {
+    const html = `${STATE}<wcs-state mount="cart"><script type="module">export default { total: 0, add() {} };</script></wcs-state>
+<button data-wcs="onclick: "></button>`;
+    const result = completeAt(html, html.indexOf('onclick: ') + 'onclick: '.length);
+    const labels = result!.items.map(i => i.label);
+    expect(labels).toContain('cart.add');
+    // data paths are not handler candidates (as for the root)
+    expect(labels).not.toContain('cart.total');
+  });
+
   it('`|` の後ろではフィルタ候補を返すこと', () => {
     const html = `${STATE}<p data-wcs="textContent: label|"></p>`;
     const result = completeAt(html, html.indexOf('label|') + 'label|'.length);

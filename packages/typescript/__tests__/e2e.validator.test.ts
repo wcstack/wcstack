@@ -40,6 +40,31 @@ describe("生成した stateSchema を検証器に通す", () => {
     expect(codes.some(([, text]) => text === ".name" || text === "users.length" || text === "when.getTime")).toBe(false);
   });
 
+  it("インデックスシグネチャの型（数値キー・文字列キー）の下は error にせず、数値キーを書いたオブジェクトの打ち間違いは error", () => {
+    const file = tmp.write("index-signature/state.ts", `interface Sale { total: number }
+interface ByYear { [year: number]: Sale }
+export default {
+  idx: {} as ByYear,
+  inline: {} as { [key: string]: Sale },
+  rec: {} as Record<number, Sale>,
+  fixed: { 2024: { total: 0 } },
+};`);
+    const { schema } = generateStateSchema(file);
+    const core = loadSchemaCore();
+    const page = `<wcs-state src="./state.ts"></wcs-state>
+<p data-wcs="textContent: idx.2024.total"></p>
+<p data-wcs="textContent: inline.foo.total"></p>
+<p data-wcs="textContent: rec.2024.total"></p>
+<p data-wcs="textContent: fixed.2024.total"></p>
+<p data-wcs="textContent: fixed.2024.totl"></p>
+<p data-wcs="textContent: fixed.2025.total"></p>`;
+    const diags = core.validateDocument(page, { applicationSchema: schema });
+    expect(diags.filter((d) => d.severity === "error").map((d) => [d.code, page.slice(d.start, d.end)])).toEqual([
+      [core.WcsDiagnosticCode.PathNonexistent, "fixed.2024.totl"],
+      [core.WcsDiagnosticCode.PathNonexistent, "fixed.2025.total"],
+    ]);
+  });
+
   it("schema 無し（従来）では同じ HTML が warning のみ", () => {
     const core = loadSchemaCore();
     const diags = core.validateDocument(html, {

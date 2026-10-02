@@ -19,6 +19,15 @@ import { getWcsManifest } from './wcsManifest.js';
 /** 先頭が数字のセグメント（ランタイムの parsePath と同じ判定: `0`・`12`・`01`）。 */
 const INDEX_SEGMENT = /^\d/;
 
+/**
+ * Whether a segment is a numeric index (starts with a digit). The runtime reads it as the row at that position when
+ * the parent is a list, and as a plain key otherwise (an object keyed by number — `sales.2024`; engine.ts's
+ * markupAccessor).
+ */
+export function isIndexSegment(segment: string): boolean {
+  return INDEX_SEGMENT.test(segment);
+}
+
 /** 数値の添字（先頭が数字のセグメント）を 1 つでも持つか。 */
 export function hasIndexSegment(path: string): boolean {
   return path.split('.').some((segment) => INDEX_SEGMENT.test(segment));

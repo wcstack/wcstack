@@ -144,6 +144,29 @@ export default {
     expect(shallow.properties!.a.properties!.b).toEqual({});
   });
 
+  it("インデックスシグネチャを持つ型（数値キー・文字列キー）は素の {}（キーが開いている — 閉じた object にしない）", () => {
+    const { schema } = schemaOf(`
+interface Sale { total: number }
+interface ByYear { [year: number]: Sale }
+export default {
+  idx: {} as ByYear,
+  inline: {} as { [key: string]: Sale },
+  mixed: {} as { fixed: number; [key: string]: number },
+  rec: {} as Record<number, Sale>,
+  plain: { 2024: { total: 0 } },
+};`);
+    expect(schema.properties!.idx).toEqual({});
+    expect(schema.properties!.inline).toEqual({});
+    expect(schema.properties!.mixed).toEqual({});
+    expect(schema.properties!.rec).toEqual({});
+    // an object literal with numeric keys written out stays a closed object
+    expect(schema.properties!.plain).toEqual({
+      type: "object",
+      properties: { 2024: { type: "object", properties: { total: { type: "number" } }, required: ["total"] } },
+      required: ["2024"],
+    });
+  });
+
   it("再帰型は無限に展開しない", () => {
     const { schema } = schemaOf(`
 interface Node { value: number; children: Node[] }

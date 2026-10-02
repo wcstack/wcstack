@@ -9,12 +9,12 @@
  */
 
 import { splitBindTexts } from '@wcstack/state/parser';
-import { createTemplateTester, findStartTagRegions, parseWcsStateElements } from '../language/htmlParse.js';
+import { createTemplateTester, findStartTagRegions, type WcsStateInfo } from '../language/htmlParse.js';
 import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
 import { analyzeCallableBodies, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
-import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
+import { getStatePathIndex, isUnresolvedPath, readStateScript, type FileReader } from './statePathResolver.js';
 import {
   isInsideForTemplate, getInnermostForPath, countWildcardSegments, getResolvedForListPath, rankOfForList,
   findOtherListWildcard, analyzeElementContexts,
@@ -25,7 +25,7 @@ import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../c
 import { resolveSchemaPath } from '../core/sidecar/schemaSubset.js';
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
-import { candidateKeyOf, classifyIndexParam, hasIndexSegment, hasUnsafeSegment, MAX_INDEX_PARAM, toWildcardForm } from './indexPath.js';
+import { candidateKeyOf, classifyIndexParam, hasIndexSegment, hasUnsafeSegment, isIndexSegment, MAX_INDEX_PARAM, toWildcardForm } from './indexPath.js';
 import { removedFilterMessage } from './removedNames.js';
 
 /** フィルタ名 → FilterInfo のマップ */
@@ -84,30 +84,41 @@ interface ElementSiteCandidate {
 }
 
 /**
- * 文書の root の state（`mount` も `bind-component` も持たない、`<template>` の外の `<wcs-state>`）のメソッドの
- * うち、イベント引数（第 1 引数）の `currentTarget` を同期的に読むもの（scriptAst.ts の readsEventCurrentTarget）。
- * `currentTarget` の綴りが無いスクリプトは解析しない。メソッド短縮記法だけを見る（データプロパティに
- * 置いた関数・外部ファイルの state は読まない — 黙る側）。
+ * The methods of the page's states that read `currentTarget` from their event parameter (the first) synchronously
+ * (scriptAst.ts's readsEventCurrentTarget), as handler names: the root state's (`pick`) and the volumes' under
+ * their mount path (`cart.pick` — 4.0 grafts a volume's methods there and invokes `onclick: cart.pick` like a root
+ * method, so under delegation `currentTarget` is the root too). States inside a `<template>` (a declarative shadow
+ * root, a DCC) are another root's — the document's bindings do not call them. A script without the spelling
+ * `currentTarget` is not analyzed. Only method shorthands are read (a function in a data property is not). The root's
+ * `src=` is not read; a volume's is, through the reader the path checks use (`.js` tries the same-named `.ts`).
  */
-function collectCurrentTargetHandlers(html: string, stateTagName: string): ReadonlySet<string> {
+function collectCurrentTargetHandlers(
+  elements: readonly WcsStateInfo[],
+  html: string,
+  fileReader: FileReader | undefined,
+): ReadonlySet<string> {
   const names = new Set<string>();
-  // `currentTarget` の綴りが文書に無ければ `<wcs-state>` を読まない（イベント束縛のある文書の大半）
-  if (!html.includes('currentTarget')) return names;
-  // `<template>` の中の `<wcs-state>`（宣言的 shadow root・DCC）は別の root の state — 文書の束縛は呼ばない
   let insideTemplate: ((offset: number) => boolean) | null = null;
-  for (const element of parseWcsStateElements(html, stateTagName)) {
-    if (element.mountPath !== null || element.bindComponent) continue;
-    if (!element.scriptBlocks.some((block) => block.content.includes('currentTarget'))) continue;
+  for (const element of elements) {
+    if (element.bindComponent) continue;
+    const volume = element.mountPath;
+    // the scripts that can declare the methods: the inline ones, or a volume's `src=` (the runtime reads one source)
+    let scripts = element.scriptBlocks.map((block) => block.content);
+    if (scripts.length === 0 && volume !== null && element.srcAttr !== undefined && fileReader !== undefined) {
+      const script = readStateScript(element.srcAttr, fileReader);
+      if (script !== undefined) scripts = [script];
+    }
+    scripts = scripts.filter((script) => script.includes('currentTarget'));
+    if (scripts.length === 0) continue;
     if ((insideTemplate ??= createTemplateTester(html))(element.tagStart)) continue;
-    for (const block of element.scriptBlocks) {
-      if (!block.content.includes('currentTarget')) continue;
-      for (const callable of analyzeCallableBodies(block.content)) {
+    for (const script of scripts) {
+      for (const callable of analyzeCallableBodies(script)) {
         if (callable.kind !== 'method' || !callable.body.includes('currentTarget')) continue;
         // 名前の後ろから本体の `{` の手前まで: `(e) ` / 引用符付きの名前なら `"(e) `
-        const head = block.content.slice(callable.end, callable.bodyStart - 1);
+        const head = script.slice(callable.end, callable.bodyStart - 1);
         const params = /\(([^)]*)\)\s*$/.exec(head);
         if (params === null) continue;
-        if (readsEventCurrentTarget(params[1], callable.body)) names.add(callable.name);
+        if (readsEventCurrentTarget(params[1], callable.body)) names.add(volume === null ? callable.name : `${volume}.${callable.name}`);
       }
     }
   }
@@ -150,7 +161,9 @@ export function validateBindings(
 
   // 状態パスを収集（state 名ごとに分類）。schema 由来の候補は補完・型期待用に合流させる
   // （同一パスは schema 優先）。存在判定は候補集合ではなく resolveSchemaPath で行う（下記）。
-  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
+  // The parts in a state the validator could not read (an unreadable volume's subtree, …) — see the verdict below
+  const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
+  const statePaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
 
   // バインド属性を全て検出
   const attrs = findAllBindAttributes(html, attrName);
@@ -169,7 +182,7 @@ export function validateBindings(
   // 委譲されるイベントのハンドラのうち、イベント引数の `currentTarget` を読むメソッド（遅延収集）
   let currentTargetHandlers: ReadonlySet<string> | null = null;
   const getCurrentTargetHandlers = (): ReadonlySet<string> => {
-    currentTargetHandlers ??= collectCurrentTargetHandlers(html, stateTagName);
+    currentTargetHandlers ??= collectCurrentTargetHandlers(pathIndex.elements, html, fileReader);
     return currentTargetHandlers;
   };
 
@@ -251,8 +264,8 @@ export function validateBindings(
       // 4.0 が root へ委譲するイベントの束縛（`onclick: select`。`#direct` 無し）で、ハンドラのメソッドが
       // イベント引数の `currentTarget` を読む（要素ではなく root になる）。カスタム要素の `input` / `change` /
       // `submit` は対象外 — コンポーネントが自分で bubbles しない dispatch をすると、4.0 はそれを要素で聞くので、
-      // どちらになるかが静的に決まらない（ネイティブの bubbling は root で聞く）。ハンドラは単独のメソッド名だけ
-      // （`$command.<名前>`・パスは対象外）。自前の state を持つ template の中かは後で判定する
+      // どちらになるかが静的に決まらない（ネイティブの bubbling は root で聞く）。自前の state を持つ template の中かは後で判定する。
+      // The handler is a method name: the root's (`pick`) or a volume's (`cart.pick`); `$command.<name>` is not a method
       if (propNoMod.startsWith('on') && parsed.path !== null) {
         const eventName = propNoMod.slice(2);
         const handler = parsed.path.trim();
@@ -261,7 +274,7 @@ export function validateBindings(
           && !modifiers.includes(DIRECT_MODIFIER)
           && attr.tagName !== undefined
           && !(attr.tagName.includes('-') && CUSTOM_ELEMENT_OWN_EVENTS.has(eventName))
-          && /^[A-Za-z_][\w$]*$/.test(handler)
+          && /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*$/.test(handler)
           && getCurrentTargetHandlers().has(handler)) {
           currentTargetCandidates.push({
             offset: attr.valueStart,
@@ -380,14 +393,20 @@ export function validateBindings(
             // $getAll / $setAll のパス引数）。data-wcs に書くとランタイムは PathInfo の
             // 不変条件として throw する（`**` を持つ再帰 getter のキーは候補集合に
             // 載っているので、存在検査の**前**に弾かないと素通りしてしまう）。
+            // In a state the validator could not read (isUnresolvedPath) nothing is said about a path without a
+            // stateSchema. With one, the schema is the contract of the whole tree (volumes' subtrees too) and decides —
+            // except for an event handler: the schema carries data only, so it cannot speak to a method there
+            const unresolved = isUnresolvedPath(checkPath, pathIndex.scopes);
             const verdict = hasRecursionWildcard(checkPath)
               ? {
                 code: WcsDiagnosticCode.RecursionUnsupported,
                 message: msgs.recursionUnsupported(checkPath, 'binding'),
                 severity: 'error' as const,
               }
-              : schema !== undefined
+              : schema !== undefined && !(unresolved && propNoMod.startsWith('on'))
               ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs)
+              : unresolved
+              ? null
               : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
             if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
@@ -957,16 +976,21 @@ export function pathExistsInCandidates(
 }
 
 /**
- * stateSchema に対する存在の三値（`resolveSchemaPath`）。数値の添字のパスは添字を `*` に読み替えた形で
- * 引く（`items.0.nmae` を `0` のまま引くと配列の上で property を探して unknown に倒れ、打ち間違いが
- * 素通りする）。読み替えた形が nonexistent でも、書いたままの形が解決する（数値のキーを持つ
- * オブジェクト）なら存在とする。
+ * The three-valued existence of a path against a stateSchema (`resolveSchemaPath`). A numeric segment descends into
+ * the items, like `*`, where the schema has an array there (looked up as `0` on an array, `items.0.nmae` would look
+ * for a property, fall to unknown and let the typo through), and is a plain key otherwise — as the 4.0 runtime reads
+ * a numeric key under a parent that is not a list (an object keyed by number, `sales.2024`; engine.ts's
+ * markupAccessor). Looking `sales.2024.totl` up as `sales.*.totl` fell to unknown on the object and let the typo
+ * through. For a union of an array and an object, a path that is nonexistent through the items still exists when the
+ * written form resolves (the runtime, too, reads the plain path when the row has no value).
  */
 export function resolveIndexedSchemaPath(schema: JsonSchemaNode, path: string): ReturnType<typeof resolveSchemaPath> {
   const defs = schema.$defs ?? {};
-  const resolution = resolveSchemaPath(schema, defs, toWildcardForm(path).split('.'));
-  if (resolution.kind !== 'nonexistent' || !hasIndexSegment(path)) return resolution;
-  const literal = resolveSchemaPath(schema, defs, path.split('.'));
+  const segments = path.split('.');
+  if (!hasIndexSegment(path)) return resolveSchemaPath(schema, defs, segments);
+  const resolution = resolveSchemaPath(schema, defs, segments, isIndexSegment);
+  if (resolution.kind !== 'nonexistent') return resolution;
+  const literal = resolveSchemaPath(schema, defs, segments);
   return literal.kind === 'resolved' ? literal : resolution;
 }
 

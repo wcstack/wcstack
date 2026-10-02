@@ -10,7 +10,7 @@
  */
 
 import { BUILTIN_FILTERS } from "./completionData.js";
-import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
+import { getStatePathIndex, isUnresolvedPath, type FileReader } from "./statePathResolver.js";
 import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { splitOutsideQuotes } from "../core/parser/quoteAware.js";
@@ -38,7 +38,9 @@ export function validateTemplateSyntax(
 
   // schema 由来の候補も合流させる（bindingValidator と同じ規則・D12）。mustache は
   // default state のみを検証するので、存在判定の三値化も default の schema に対して行う。
-  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
+  // Without a stateSchema, nothing is said about a path in a state the validator could not read (as in bindingValidator)
+  const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
+  const allPaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
   const defaultSchema = applicationSchema;
   /** 存在しなければ code / severity / message を返す（stateSchema 宣言時は三値判定）。 */
   const missingVerdict = (
@@ -65,6 +67,7 @@ export function validateTemplateSyntax(
         ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) }
         : null;
     }
+    if (isUnresolvedPath(path, pathIndex.scopes)) return null;
     return { code: WcsDiagnosticCode.BindingPathMissing, severity: "warning", message: msgs.pathMissing(displayPath) };
   };
   if (allPaths.length === 0) return diagnostics;

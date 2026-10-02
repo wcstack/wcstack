@@ -190,11 +190,16 @@ export type PathResolution =
  * dotted / wildcard path を JSON-Schema subset root に対して解決する。
  * segments の "*" は array の items(list context)を表す。`length` は array 上で number。
  * 解決不能は kind:"nonexistent"、動的や未対応構造は kind:"unknown"(runtime を妨げない)。
+ *
+ * With `isIndex`, a segment it accepts (a numeric index, `0`) descends into the items like "*" where the schema
+ * at that position is an array, and is looked up as a plain property otherwise (an object keyed by number) —
+ * decided per segment by its parent's type (`stats.0.byYear.2024.n`: `0` is the items, `2024` a property).
  */
 export function resolveSchemaPath(
   root: JsonSchemaNode,
   rootDefs: Readonly<Record<string, JsonSchemaNode>>,
   segments: readonly string[],
+  isIndex?: (segment: string) => boolean,
 ): PathResolution {
   let current = root;
   for (let depth = 0; depth < segments.length; depth++) {
@@ -203,8 +208,9 @@ export function resolveSchemaPath(
     if (resolved.kind === "ref-error") return resolved;
     const candidates = resolved.nodes;
 
-    // wildcard / list index → array items
-    if (segment === "*") {
+    // wildcard / list index → array items (an index segment only where the schema has an array)
+    if (segment === "*" || (isIndex !== undefined && isIndex(segment)
+      && candidates.some((n) => hasType(n, "array") || isSchemaObject(n.items)))) {
       const items = firstDefined(candidates, (n) => (isSchemaObject(n.items) ? n.items : undefined));
       if (items === undefined) {
         return { kind: "unknown" };

@@ -6,16 +6,79 @@
  *
  * 解決優先順位（wcs-state ランタイムと同一）:
  *   state → src (.json / .js / .ts) → json → inner <script type="module">
+ *
+ * A volume's (`mount=`) candidates go on the tree under its mount path. Where the validator could not read a
+ * state's source, `StatePathScopes` records it, and the checks that report a missing path stay silent there
+ * (`isUnresolvedPath`).
  */
 
-import { parseWcsStateElements, findScriptJsonById, type WcsStateInfo } from '../language/htmlParse.js';
-import { analyzeStatePaths, analyzeJsonPaths, type PathCandidate } from './stateAnalyzer.js';
+import { createTemplateTester, parseWcsStateElements, findScriptJsonById, type WcsStateInfo } from '../language/htmlParse.js';
+import {
+  analyzeStatePaths, analyzeJsonPaths, hasDefaultExportObject, hasTopLevelSpread, type PathCandidate,
+} from './stateAnalyzer.js';
 
 /**
  * 外部ファイルの内容を読み取るコールバック。
  * src 属性の解決に使用する。undefined を返した場合、そのファイルはスキップされる。
  */
 export type FileReader = (relativePath: string) => string | undefined;
+
+/**
+ * The parts of the tree the candidate set cannot vouch for: the states whose source the validator could not read.
+ *
+ * A state is unreadable when no source of it could be read and parsed — an `src=` the reader cannot read (no
+ * reader on the IDE path, a URL, a leading-`/` path, a missing file), a script whose `export default { … }` is not
+ * a plain object literal (`export default make()`, a top-level spread), or an element with no source at all (it
+ * waits for `setInitialState()`). An empty state that was read (`json='{}'`, `export default {}`) is readable: its
+ * paths are known not to exist. Under the mount path of an unreadable volume the runtime reads what was grafted,
+ * so a path the candidates lack cannot be called missing there; the same holds outside every volume when the page's
+ * root state cannot be read.
+ */
+export interface StatePathScopes {
+  /** The mount paths of the volumes considered (readable or not). */
+  readonly mounts: readonly string[];
+  /** The mount paths of the volumes whose state could not be read. */
+  readonly unresolvedMounts: ReadonlySet<string>;
+  /**
+   * The page's root state could not be read: the document has a root `<wcs-state>` (no `mount`, no
+   * `bind-component`, not inside a `<template>`) and none of them could be read.
+   */
+  readonly rootUnresolved: boolean;
+}
+
+/** The document's state path candidates, and the parts they cannot vouch for. */
+export interface StatePathIndex {
+  /**
+   * Every candidate (the root states', and the volumes' under their mount path, with the synthesized mount points).
+   * The same as `getStatePathsFromHtml`.
+   */
+  readonly paths: PathCandidate[];
+  /** The volumes' candidates only (under their mount path, with the synthesized mount points). */
+  readonly volumePaths: PathCandidate[];
+  readonly scopes: StatePathScopes;
+  /** The scanned `<wcs-state>` elements (for callers that need them too — the document is not scanned again). */
+  readonly elements: readonly WcsStateInfo[];
+}
+
+/**
+ * Whether `path` belongs to a state the validator could not read (report nothing about its existence).
+ *
+ * The owner is the volume with the longest mount path that prefixes `path` (`cart.items.*.qty` → `cart`), or the
+ * root when no volume does. An unreadable owner makes the path unknown. An ancestor of an unreadable volume's mount
+ * path (`shop` of `shop.cart`) is unknown too: it exists once that volume grafts.
+ */
+export function isUnresolvedPath(path: string, scopes: StatePathScopes): boolean {
+  let owner: string | null = null;
+  for (const mount of scopes.mounts) {
+    if ((path === mount || path.startsWith(`${mount}.`)) && (owner === null || mount.length > owner.length)) owner = mount;
+  }
+  if (owner !== null) return scopes.unresolvedMounts.has(owner);
+  if (scopes.rootUnresolved) return true;
+  for (const mount of scopes.unresolvedMounts) {
+    if (mount.startsWith(`${path}.`)) return true;
+  }
+  return false;
+}
 
 /**
  * HTML 全体から <wcs-state> 要素を解析し、全ての状態パス候補を収集する。
@@ -36,53 +99,117 @@ export function getStatePathsFromHtml(
   stateTagName: string = 'wcs-state',
   fileReader?: FileReader,
 ): PathCandidate[] {
-  const elements = parseWcsStateElements(html, stateTagName);
-  const allPaths: PathCandidate[] = [];
+  return getStatePathIndex(html, stateTagName, fileReader).paths;
+}
+
+/**
+ * `getStatePathsFromHtml`'s candidates with the parts they cannot vouch for (`StatePathScopes`). The checks that
+ * report a missing path (bindings, mustache, comment bindings, `$watch` keys) stay silent there
+ * (`isUnresolvedPath`). The document's `<wcs-state>` elements are scanned once.
+ */
+export function getStatePathIndex(
+  html: string,
+  stateTagName: string = 'wcs-state',
+  fileReader?: FileReader,
+): StatePathIndex {
+  return resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+}
+
+/**
+ * Builds the candidates and the scopes from scanned `<wcs-state>` elements (for a caller that uses the scan for
+ * more — the document is not scanned again). `includeRoots: false` resolves the volumes only (for a caller that
+ * has the root's candidates itself — `$watch`): `paths` then holds the volumes' candidates and
+ * `scopes.rootUnresolved` is false.
+ */
+export function resolveStatePathIndex(
+  elements: readonly WcsStateInfo[],
+  html: string,
+  fileReader: FileReader | undefined,
+  includeRoots: boolean,
+): StatePathIndex {
+  const paths: PathCandidate[] = [];
+  const volumePaths: PathCandidate[] = [];
+  const mounts: string[] = [];
+  const unresolvedMounts = new Set<string>();
+  // The root elements that take part in the page-root decision (not `bind-component`: its state is the host's)
+  const roots: { readonly element: WcsStateInfo; readonly readable: boolean }[] = [];
   // 合成したマウントポイントは兄弟ボリューム間で重複しうる（`shop.cart` と `shop.user` は
   // どちらも `shop` を合成する）ので、文書全体で 1 回だけ載せる
   const mountPoints = new Set<string>();
 
   for (const element of elements) {
-    const paths = resolveElementPaths(element, html, mountPoints, fileReader);
-    allPaths.push(...paths);
+    if (element.mountPath === null) {
+      if (!includeRoots) continue;
+      const resolved = resolveElementPathsRaw(element, html, fileReader);
+      if (!element.bindComponent) roots.push({ element, readable: resolved.readable });
+      paths.push(...resolved.paths);
+      continue;
+    }
+    const resolved = resolveElementPathsRaw(element, html, fileReader);
+    const grafted = graftVolumePaths(element.mountPath, resolved, mountPoints);
+    // An empty mount= is refused by the runtime (mountAttrValidator reports it): it owns no paths
+    if (element.mountPath !== '') {
+      mounts.push(element.mountPath);
+      if (!resolved.readable) unresolvedMounts.add(element.mountPath);
+    }
+    paths.push(...grafted);
+    volumePaths.push(...grafted);
   }
 
-  return allPaths;
+  return {
+    paths,
+    volumePaths,
+    scopes: { mounts, unresolvedMounts, rootUnresolved: isPageRootUnresolved(roots, html) },
+    elements,
+  };
 }
 
 /**
- * 単一の <wcs-state> 要素からパスを解決する。
- * 優先順位に従い、最初にマッチした初期化方法のパスを返す。
+ * Whether the page's root state could not be read: the document has root elements outside every `<template>` and
+ * none of them could be read. A `<wcs-state>` inside a `<template>` (a declarative shadow root, a DCC) is the root of
+ * another tree and does not count. A document with no page root (a component file) is not "unreadable": its
+ * bindings are checked against the candidates as before. The `<template>` scan runs only when a root is unreadable.
  */
-function resolveElementPaths(
-  element: WcsStateInfo,
+function isPageRootUnresolved(
+  roots: readonly { readonly element: WcsStateInfo; readonly readable: boolean }[],
   html: string,
+): boolean {
+  if (roots.every((root) => root.readable)) return false;
+  const insideTemplate = createTemplateTester(html);
+  const pageRoots = roots.filter((root) => !insideTemplate(root.element.tagStart));
+  return pageRoots.length > 0 && pageRoots.every((root) => !root.readable);
+}
+
+/**
+ * Puts one volume's candidates on the tree under its mount path.
+ */
+function graftVolumePaths(
+  mountPath: string,
+  resolved: ElementPaths,
   mountPoints: Set<string>,
-  fileReader?: FileReader,
 ): PathCandidate[] {
-  const raw = resolveElementPathsRaw(element, html, fileReader);
-  // v2: ボリューム（mount=）の候補はマウントパス接頭辞でツリーに載る。
-  // $ 名前空間（$command / $streamStatus 等）はマウント越しに表現できないので落とす
-  //（runtime もボリュームの $streams / メソッドを実行しない）
-  if (element.mountPath === null) return raw;
-  const prefix = element.mountPath + '.';
+  // Only what 4.0 grafts goes on the tree (state-next's scopes/volume.ts `graft`):
+  // - data, getters / setters and methods, at `<mount>.<key>`. A method is grafted as a function whose `this` is
+  //   the mount path, so it can be an event handler (`onclick: cart.add`); it keeps the validation-only `method`
+  //   kind, which the completion offers for event bindings. 3.x did not graft methods, hence the old drop.
+  // - not the `$` namespace (`$command.*`, `$streamStatus.*`, …): a volume's `$stream` refuses the graft, and its
+  //   `$commandTokens` / `$eventTokens` / `$on` are ignored with a console.warn (wcs/volume-declaration). Event
+  //   tokens are dropped for the same reason.
+  const prefix = mountPath + '.';
   const out: PathCandidate[] = [];
-  for (const p of raw) {
+  for (const p of resolved.paths) {
     if (p.path.startsWith('$')) continue;
-    // メソッドのツリー露出・イベントトークンもボリューム未対応（runtime はメソッドを
-    // 接ぎ木せず、$commandTokens / $eventTokens / $on 宣言は warn で捨てる）—
-    // 候補に載せると存在しないパスを補完・無警告通過させてしまう
-    if (p.kind === 'method' || p.kind === 'eventToken') continue;
+    if (p.kind === 'eventToken') continue;
     out.push({ ...p, path: prefix + p.path });
   }
   // マウントパス**そのもの**もツリー上のオブジェクトとして存在する。以前は接頭辞付きの
   // 子パスしか積んでいなかったので、`state: cart`（コンポーネントの根をマウントする正規の
   // 書き方 — state の README 参照）や `textContent: cart` が `wcs/binding-path-missing` に
   // 誤報されていた。ネストしたマウント（`a.b`）では途中の `a` も同じ理由で載せる。
-  // 子パスが 1 つも解決できなかったときは足さない（存在の根拠がないので断定しない —
-  // `src=` 外部 state を IDE が読まない場合など、`cart.total` も同じく黙る側に揃う）。
-  if (out.length > 0) {
-    const segments = element.mountPath.split('.');
+  // Only for a volume whose state was read (an empty one too: the graft writes `{}` at the mount path). An
+  // unreadable volume adds nothing — it goes to StatePathScopes.unresolvedMounts and its subtree stays silent.
+  if (resolved.readable) {
+    const segments = mountPath.split('.');
     for (let i = 1; i <= segments.length; i++) {
       const path = segments.slice(0, i).join('.');
       // 兄弟ボリューム（`mount="shop.cart"` と `mount="shop.user"`）は共通の接頭辞 `shop` を
@@ -95,40 +222,95 @@ function resolveElementPaths(
   return out;
 }
 
+/** What one `<wcs-state>` yields: its candidates, and whether one of its sources was read (see StatePathScopes). */
+interface ElementPaths {
+  readonly paths: PathCandidate[];
+  readonly readable: boolean;
+}
+
+const UNREADABLE: ElementPaths = { paths: [], readable: false };
+
+/** A JSON text that parses to an object (an empty one too). */
+function isJsonObject(text: string): boolean {
+  try {
+    const data: unknown = JSON.parse(text);
+    return typeof data === 'object' && data !== null && !Array.isArray(data);
+  } catch {
+    return false;
+  }
+}
+
+/** A script whose state the analyzer reads in full: an `export default { … }` literal without a top-level spread. */
+export function isReadableStateScript(script: string): boolean {
+  return hasDefaultExportObject(script) && !hasTopLevelSpread(script);
+}
+
+function fromJson(text: string): ElementPaths {
+  const paths = analyzeJsonPaths(text);
+  // the parse is repeated only for a state with no paths (rare)
+  return { paths, readable: paths.length > 0 || isJsonObject(text) };
+}
+
+function fromScript(script: string): ElementPaths {
+  const paths = analyzeStatePaths(script);
+  return { paths, readable: paths.length > 0 || isReadableStateScript(script) };
+}
+
 function resolveElementPathsRaw(
   element: WcsStateInfo,
   html: string,
   fileReader?: FileReader,
-): PathCandidate[] {
+): ElementPaths {
+  // A source that yields no paths falls through to the next one, as before; one that was read is remembered
+  let readable = false;
+
   // 1. state 属性: <script type="application/json" id="..."> を参照
   if (element.stateAttr) {
     const jsonContent = findScriptJsonById(html, element.stateAttr);
     if (jsonContent) {
-      const paths = analyzeJsonPaths(jsonContent);
-      if (paths.length > 0) return paths;
+      const resolved = fromJson(jsonContent);
+      if (resolved.paths.length > 0) return resolved;
+      readable ||= resolved.readable;
     }
   }
 
   // 2. src 属性: 外部ファイル（.json / .js / .ts）
   if (element.srcAttr && fileReader) {
-    const paths = resolveSrcAttribute(element.srcAttr, fileReader);
-    if (paths.length > 0) return paths;
+    const resolved = resolveSrcAttribute(element.srcAttr, fileReader);
+    if (resolved.paths.length > 0) return resolved;
+    readable ||= resolved.readable;
   }
 
   // 3. json 属性: インライン JSON
   if (element.jsonAttr) {
-    const paths = analyzeJsonPaths(element.jsonAttr);
-    if (paths.length > 0) return paths;
+    const resolved = fromJson(element.jsonAttr);
+    if (resolved.paths.length > 0) return resolved;
+    readable ||= resolved.readable;
   }
 
   // 4. inner <script type="module">: 既存の解析
   if (element.scriptBlocks.length > 0) {
-    return element.scriptBlocks.flatMap(block =>
-      analyzeStatePaths(block.content)
-    );
+    const paths = element.scriptBlocks.flatMap(block => analyzeStatePaths(block.content));
+    return {
+      paths,
+      readable: paths.length > 0 || readable || element.scriptBlocks.some((block) => isReadableStateScript(block.content)),
+    };
   }
 
-  return [];
+  return readable ? { paths: [], readable } : UNREADABLE;
+}
+
+/**
+ * The script of a state loaded with `src=` (`.js` reads the same-named `.ts` first), or undefined when it cannot be
+ * read or is not a script (`.json`).
+ */
+export function readStateScript(srcPath: string, fileReader: FileReader): string | undefined {
+  if (srcPath.endsWith('.js')) {
+    // .ts ファイルが存在すればそちらを優先
+    return fileReader(srcPath.replace(/\.js$/, '.ts')) || fileReader(srcPath) || undefined;
+  }
+  if (srcPath.endsWith('.ts')) return fileReader(srcPath) || undefined;
+  return undefined;
 }
 
 /**
@@ -141,37 +323,11 @@ function resolveElementPathsRaw(
 function resolveSrcAttribute(
   srcPath: string,
   fileReader: FileReader,
-): PathCandidate[] {
+): ElementPaths {
   if (srcPath.endsWith('.json')) {
     const content = fileReader(srcPath);
-    if (content) {
-      return analyzeJsonPaths(content);
-    }
-    return [];
+    return content ? fromJson(content) : UNREADABLE;
   }
-
-  if (srcPath.endsWith('.js')) {
-    // .ts ファイルが存在すればそちらを優先
-    const tsPath = srcPath.replace(/\.js$/, '.ts');
-    const tsContent = fileReader(tsPath);
-    if (tsContent) {
-      return analyzeStatePaths(tsContent);
-    }
-
-    const jsContent = fileReader(srcPath);
-    if (jsContent) {
-      return analyzeStatePaths(jsContent);
-    }
-    return [];
-  }
-
-  if (srcPath.endsWith('.ts')) {
-    const content = fileReader(srcPath);
-    if (content) {
-      return analyzeStatePaths(content);
-    }
-    return [];
-  }
-
-  return [];
+  const script = readStateScript(srcPath, fileReader);
+  return script !== undefined ? fromScript(script) : UNREADABLE;
 }
