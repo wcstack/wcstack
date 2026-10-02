@@ -250,7 +250,7 @@ describe('wcs-guard-handler', () => {
     }
   });
 
-  it('CSP 違反が観測された場合は blob: 許可を促すメッセージで失敗すること', async () => {
+  it('CSP 違反が観測された場合は nonce か blob: 許可を促すメッセージで失敗すること', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const notifyMock = vi.fn();
     const mockRoute: Partial<IRoute> = {
@@ -279,11 +279,53 @@ describe('wcs-guard-handler', () => {
 
       const error = errorSpy.mock.calls[0][1] as Error;
       expect(error.message).toMatch(/blocked by Content-Security-Policy/);
-      expect(error.message).toMatch(/script-src must allow blob:/);
+      // blob: の import は router を読み込んだ <script> の nonce を引き継ぐ（docs/csp.md §5）
+      expect(error.message).toMatch(/give the page's nonce to the <script> that loads @wcstack\/router/);
+      expect(error.message).toMatch(/allow blob: in script-src/);
       // ガードはインライン専用で src= に逃がせないことを明示する
       expect(error.message).toMatch(/inline-only/);
     } finally {
       (URL as any).createObjectURL = original;
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('違反が import の失敗より後に来ても（Firefox の順。次のタスクまでに届く）CSP と断定すること', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const notifyMock = vi.fn();
+    const mockRoute: Partial<IRoute> = {
+      notifyGuardHandlerLoadFailed: notifyMock,
+    };
+
+    const original = URL.createObjectURL;
+    (URL as any).createObjectURL = vi.fn(() => `data:application/javascript;base64,${btoa('export default {')}`);
+    // 両 import が失敗した後の待ちは、この経路で唯一の遅延なしの setTimeout。
+    // そこで違反を発火させれば「失敗の後、判定の前」に届く Firefox の順を再現できる
+    const timeout = globalThis.setTimeout;
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      if (ms === undefined) {
+        const violation = new Event('securitypolicyviolation');
+        (violation as any).effectiveDirective = 'script-src-elem';
+        document.dispatchEvent(violation);
+      }
+      return timeout(fn, ms);
+    }) as typeof setTimeout);
+
+    const script = document.createElement('script');
+    script.setAttribute('type', 'module');
+    script.text = 'export default {';
+
+    try {
+      loadGuardHandler(script, mockRoute as IRoute);
+      await vi.waitFor(() => {
+        expect(notifyMock).toHaveBeenCalled();
+      });
+
+      const error = errorSpy.mock.calls[0][1] as Error;
+      expect(error.message).toMatch(/blocked by Content-Security-Policy/);
+    } finally {
+      (URL as any).createObjectURL = original;
+      timeoutSpy.mockRestore();
       errorSpy.mockRestore();
     }
   });

@@ -210,6 +210,8 @@ interface IWritableConfig {
 | `observable` | `boolean` | `true` | MutationObserverによる動的追加要素の検出を有効化。`false`で無効化。 |
 | `tagNames` | `IWritableTagNames` | `{ autoloader: "wcs-autoloader" }` | カスタム要素のタグ名。名前衝突を避けるために変更可能。 |
 
+知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。効果のなかった `scanImportmap` も、3.5 では警告を出し、4.0 で取り除かれます。
+
 ### デフォルト設定
 
 ```javascript

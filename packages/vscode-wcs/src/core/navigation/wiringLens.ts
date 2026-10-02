@@ -58,6 +58,7 @@ import {
 import { parseWcsStateElements } from '../../language/htmlParse.js';
 import { builtinFilterMeta, getWcsManifest, type IFilterMeta } from '../../service/wcsManifest.js';
 import { canonicalFilterName } from '../../service/completionData.js';
+import { DIRECT_MODIFIER } from '../../service/v4Migration.js';
 import { resolveLocale, type WcsLocale } from '../messages.js';
 
 export interface IWiringLensOptions {
@@ -117,6 +118,11 @@ interface ILensLabels {
   filterAlias(written: string, canonical: string): string;
   readonly flagModifiers: Record<string, string>;
   readonly keyValueModifiers: Record<string, string>;
+  /**
+   * `#direct`（4.0 の修飾子）。3.x の manifest の `flags` には無い — 3.x のランタイムは知らない修飾子を
+   * 無視し、イベント束縛はもともと要素に直接リスナーを付ける。
+   */
+  readonly directModifier: string;
 }
 
 const LABELS: Record<WcsLocale, ILensLabels> = {
@@ -136,7 +142,7 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
     externalState: (src) => `external definition (\`${src}\`) — not statically analyzed`,
     onPrefixModifier: (eventName) => `overrides the two-way trigger event to \`${eventName}\``,
     filterAlias: (written, canonical) =>
-      `\`${written}\` is the old name of \`${canonical}\` — it works through 3.x and goes in 4.0 (@wcstack/state 3.2)`,
+      `\`${written}\` is the old name of \`${canonical}\` — it works through 3.x and is removed in 4.0 (@wcstack/state 3.2)`,
     flagModifiers: {
       prevent: 'calls event.preventDefault()',
       stop: 'calls event.stopPropagation()',
@@ -146,6 +152,8 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
       init: 'binding authority for the initial sync — which side seeds the other when the binding attaches (`state` / `element` / `auto` / `none`)',
       sync: 'when the element snapshot is read for element-authority bindings (`call` = on attach / `connect` = when connected)',
     },
+    directModifier:
+      'takes effect in 4.0: keeps an event binding (`on*:`) on this element instead of delegating it to the root, so `event.currentTarget` stays the element. 3.x ignores the modifier and already listens on the element',
   },
   ja: {
     data: 'データ',
@@ -163,7 +171,7 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
     externalState: (src) => `外部定義（\`${src}\`）— 静的解析の対象外`,
     onPrefixModifier: (eventName) => `双方向バインディングのトリガーイベントを \`${eventName}\` に上書き`,
     filterAlias: (written, canonical) =>
-      `\`${written}\` は \`${canonical}\` の旧名です — 3.x の間は動きますが 4.0 で外れます（@wcstack/state 3.2）`,
+      `\`${written}\` は \`${canonical}\` の旧名です — 3.x の間は動きますが 4.0 で削除されます（@wcstack/state 3.2）`,
     flagModifiers: {
       prevent: 'event.preventDefault() を呼ぶ',
       stop: 'event.stopPropagation() を呼ぶ',
@@ -173,6 +181,8 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
       init: '初期同期の権限指定 — バインド接続時にどちら側の値で初期化するか（`state` / `element` / `auto` / `none`）',
       sync: 'element 権限時に要素スナップショットを読むタイミング（`call` = 接続即時 / `connect` = DOM 接続後）',
     },
+    directModifier:
+      '4.0 で効く: イベント束縛（`on*:`）を root へ委譲せず、この要素にリスナーを付けたままにする（`event.currentTarget` は要素のまま）。3.x はこの修飾子を無視し、もともと要素にリスナーを付ける',
   },
 };
 
@@ -605,6 +615,7 @@ function describeModifier(rawModifier: string, labels: ILensLabels): string | nu
   if (modifier.startsWith(modifiers.eventNamePrefix) && modifier.length > modifiers.eventNamePrefix.length) {
     return labels.onPrefixModifier(modifier.slice(modifiers.eventNamePrefix.length));
   }
+  if (modifier === DIRECT_MODIFIER) return labels.directModifier;
   return null;
 }
 

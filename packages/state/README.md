@@ -139,7 +139,7 @@ Every row is a section of this README. Unless it appears under [Where the neighb
 | **Components** | Two mutually exclusive mechanisms: a JavaScript class with `bind-component`, or HTML-only DCC | [Choosing a mechanism](#choosing-a-component-mechanism) |
 | **Wiring to other elements** | The wc-bindable protocol, spread (`...: obj`), `#init=` / `#sync=` authority, property-to-attribute mirroring | [Binding authority](#binding-authority-init--sync) · [Spread](#spread-binding) · [Inputs](#inputs-and-attribute-mirror) |
 | **Tokens** | Command tokens call an element's methods from state; event tokens carry the element's events back | [Command token](#command-token-method-binding) · [Event token](#event-token-event-binding) |
-| **Time** | `$stream` folds an async source, `$watch` reacts headlessly, `$scan` owns an accumulation that outlives both | [Choosing a time mechanism](#choosing-a-time-mechanism) |
+| **Time** | `$stream` folds an async source, `$watch` reacts headlessly, `$scan` owns an accumulation that outlives both (`$scan` warns in 3.5 and is removed in 4.0 — [Preparing for 4.0](#preparing-for-40-wcsv4-migration)) | [Choosing a time mechanism](#choosing-a-time-mechanism) |
 | **Initialization and lifecycle** | Six ways to supply the state; `$connectedCallback` … `$stateReadyCallback`; `bootstrapState()` / `createState()` | [State initialization](#state-initialization) · [Lifecycle hooks](#lifecycle-hooks) · [API reference](#api-reference) |
 | **Diagnostics** | Unresolved paths, index arity, wildcard rank and getter cycles are reported; one failing binding stays confined, and neither values nor the DOM are rolled back | [Diagnostics](#diagnostics-and-failure-handling) |
 | **Delivery** | Zero runtime dependencies, no build step, ESM, one CDN `/auto` tag; no `unsafe-eval`, Trusted Types supported | [Installation](#installation) · [docs/csp.md](../../docs/csp.md) |
@@ -197,7 +197,7 @@ leaves features out, it can compose them instead:
 </script>
 <script type="module">
   import { bootstrapState, installFeatures } from '@wcstack/state/core';
-  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $stream
+  import temporal from '@wcstack/state/features/temporal';  // $watch / $stream (and $scan: warns in 3.5, removed in 4.0)
   import scopes from '@wcstack/state/features/scopes';      // bind-component, mount=, DCC
 
   installFeatures([temporal, scopes]);
@@ -222,7 +222,7 @@ so the browser evaluates the engine once. Integrity for this form: [docs/sri.md 
 | Entry | What it adds |
 |---|---|
 | `@wcstack/state/core` | The binding engine: `data-wcs`, `for` / `if`, path getters, filters, events, `$command` / `$on`, `bootstrapState`, `installFeatures` |
-| `@wcstack/state/features/temporal` | `$watch`, `$scan`, `$stream` |
+| `@wcstack/state/features/temporal` | `$watch`, `$scan` (warns in 3.5, removed in 4.0 — [Preparing for 4.0](#preparing-for-40-wcsv4-migration)), `$stream` |
 | `@wcstack/state/features/scopes` | `bind-component`, `mount=` volumes, overlay exports, DCC (`data-wc-definition`) |
 | `@wcstack/state/features/recursion` | `$recursion` and `**` paths |
 | `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
@@ -332,7 +332,9 @@ a feature never carries a second copy of the engine, and never a copy of another
 
 Resolution order: `state` → `src` (.json / .js) → `json` → inner `<script>` → wait for `setInitialState()`.
 
-> **Under a Content-Security-Policy:** form 5 (inline `<script type="module">`) is evaluated through a `blob:` URL and therefore requires `script-src blob:`. A page nonce does not cover it. If you enforce a strict CSP, use form 4 (`src="./state.js"`) instead — it needs no extra directive. See [docs/csp.md](../../docs/csp.md).
+The browser also evaluates form 5's `<script type="module">` itself — being inside `<wcs-state>` does not stop it. Its export goes nowhere, so the state is unaffected, but its top-level code runs twice (once by the browser, once by state). Keep side effects (requests, logging, assignments to globals) out of the top level; under a CSP, see the note below.
+
+> **Under a Content-Security-Policy:** form 5 (inline `<script type="module">`) is evaluated through a `blob:` URL and therefore requires either the page's nonce on the `<script>` that loads state (the blob: import inherits it) or `script-src blob:`. If you enforce a strict CSP, use form 4 (`src="./state.js"`) instead — it needs no extra directive. Note that the browser evaluates form 5's `<script>` itself as well: under a CSP that shows up as one violation in the console unless that `<script>` carries the nonce too, and otherwise (with that nonce, or with no CSP) its top-level code runs twice — keep side effects out of it. See [docs/csp.md](../../docs/csp.md).
 
 ### Mounting Additional State (`mount=`)
 
@@ -1573,7 +1575,7 @@ export default {
 | `capitalize` (`cap`) | Capitalize | `name\|capitalize` |
 | `trim` | Trim whitespace | `text\|trim` |
 | `slice(n)` | Slice string | `text\|slice(5)` |
-| `substr(start, length)` | Substring (both arguments required) | `text\|substr(0,10)` |
+| `substr(start, length)` | Substring (both arguments required). Warns in 3.5 and is removed in 4.0: write `slice(start, start + length)` — [Preparing for 4.0](#preparing-for-40-wcsv4-migration) | `text\|substr(0,10)` |
 | `padStart(n, char?)` (`pad`) | Pad the start (default `0`) | `id\|padStart(5,0)` → `"00001"` |
 | `padEnd(n, char?)` | Pad the end (default a space; 3.2) | `code\|padEnd(8)` |
 | `repeat(n)` (`rep`) | Repeat | `text\|repeat(3)` |
@@ -2193,7 +2195,7 @@ The next four sections answer four different questions, and the usual mistake is
 | [Path getter](#path-getters-computed-properties) | What a value **is**, in terms of the current state | No — it is recomputed and cached per address | Lazily, when a demand root reads it | Subtotals, classification, aggregates |
 | [`$stream`](#streams-stream) | An async producer, and the value folded **within one run** | Yes — the runtime owns the output | Per chunk; restarts, back to `initial`, when `args` change | Feeds, sockets, continuous observation |
 | [`$watch`](#watch-watch) | A reaction to a change | No | Once per batch per changed address, after the scan write | Side effects, "when this becomes true" |
-| [`$scan`](#scan-scan) | An accumulation over time, and what resets it | Yes — the runtime owns the output | Once per landing (`from`) or once per event (`on`) | Paging accumulation, history, counters |
+| [`$scan`](#scan-scan) | An accumulation over time, and what resets it | Yes — the runtime owns the output | Once per landing (`from`) or once per event (`on`) | Paging accumulation, history, counters. Warns in 3.5 and is removed in 4.0: fold in a `$watch` (state paths) or `$on` (event tokens) — [Preparing for 4.0](#preparing-for-40-wcsv4-migration) |
 
 Two rules cut most of the confusion:
 
@@ -2316,9 +2318,9 @@ $renderedCallback(paths) {
 }
 ```
 
-**The rule:** logic that must not depend on what is rendered belongs on a `$watch`, a `$scan`, or a `$stream` `args`. Keep `$renderedCallback` for "follow what was drawn".
+**The rule:** logic that must not depend on what is rendered belongs on a `$watch`, a `$scan`, or a `$stream` `args`. Keep `$renderedCallback` for "follow what was drawn". (`$scan` warns in 3.5 and is removed in 4.0; a `$watch` or an `$on` handler covers the same ground — [Preparing for 4.0](#preparing-for-40-wcsv4-migration).)
 
-That example now accumulates its feed with `$scan` (and re-arms the sentinel from a `$watch`), and the `<b>` is display-only again. This shape — `$renderedCallback` testing a path that is not bound anywhere — is detected statically as **`wcs/updated-callback-unbound`**.
+That example now folds each landed page into its feed from a `$watch` on the stream's value (and re-arms the sentinel from a `$watch` on the feed), and the `<b>` is display-only again. This shape — `$renderedCallback` testing a path that is not bound anywhere — is detected statically as **`wcs/updated-callback-unbound`**.
 
 ### The limitation that remains
 
@@ -2392,6 +2394,8 @@ Key rules:
 - **SSR does not run watches** — handler side effects would otherwise execute on both server and client.
 
 ## Scan (`$scan`)
+
+> **`$scan` warns in 3.5 and is removed in 4.0.** Fold a state path from a `$watch` handler that writes the accumulated value, and an event token from an `$on` handler; keep the reset condition in the handler. See [Preparing for 4.0](#preparing-for-40-wcsv4-migration).
 
 `$stream` folds *within* one run — every restart resets the value to `initial` — and `$watch` owns no value. **`$scan`** declares the value that has to outlive both: an accumulation over time, with an owner, a firing unit and a reset condition.
 
@@ -2851,6 +2855,39 @@ Every failure mode reports and continues; nothing already applied is reverted:
 | Render write chain | 100 | Skip applying bindings for that batch |
 | Binding apply failure | — | Skip that one binding |
 
+### Preparing for 4.0 (`wcs/v4-migration`)
+
+3.5 is the last 3.x minor. It names each name and option that 4.0 removes or moves, and still runs it the 3.x way. Each warning is a `console.warn` under the code `wcs/v4-migration`, printed once per name per page. It says what 4.0 does and what to write instead:
+
+```
+[@wcstack/state] [wcs/v4-migration] filter "uc" is removed in 4.0: write "upper" (its name since 3.2).
+See "Preparing for 4.0" in the @wcstack/state README.
+```
+
+| Form | 3.x | 4.0 | Write instead |
+|---|---|---|---|
+| The filter names 3.2 renamed: `inc` `dec` `fix` `uc` `lc` `cap` `rep` `rev` `pad` `null` | Aliases | `[wcs/filter-unknown]` | `add` `sub` `toFixed` `upper` `lower` `capitalize` `repeat` `reverse` `padStart` `nullIfEmpty` |
+| `$trackDependency` / `$untrackDependency` | Aliases | Throws `[wcs/name-alias]` | `$dependOn` / `$untracked` |
+| `$updatedCallback` / `$streams` | Aliases | Throws `[wcs/declaration-alias]` | `$renderedCallback` / `$stream` |
+| `substr(start, length)` | Works | `[wcs/filter-unknown]` | `slice(start, start + length)` (the end index, not a length) |
+| `$scan` | Works | Throws | `$watch` for state paths, `$on` for event tokens |
+| `bootstrapState({ debug })`, `commentTextPrefix`, `enablePropagationContext` | Work | Throw | Remove them. 4.0 reads comment bindings as `<!--@@: path-->` and `<!--@@wcs-text: path-->` only |
+| `bootstrapState({ enableMustache })`, `sameValueGuard`, `enableDirectionalInitialSync` | Page-wide options | Throw; each state tree declares them in `$behavior` | Keep them in 3.x. When you upgrade, move them to `$behavior` in each root and component state (a component does not inherit its host's; a volume may not declare one) |
+| An unknown `bootstrapState` key, or a value of another type (`null`, an array, a non-string tag name, a `tagNames` key other than `state` / `ssr`) | Ignored | Throws | Remove or fix it |
+| A state key `$behavior` | Plain data; 3.x does not read it | The state's behavior options | Warned only when its value differs from the option 3.x runs with, or has a shape 4.0 throws on |
+| A state key `$features` | Plain data | The add-ons the state needs | Warned only when 4.0 would throw on it (not an array of add-on names) |
+| A volume (`<wcs-state mount>`) that declares `$watch`, `$listKeys` or `$renderedCallback` (`$updatedCallback`) | Run relative to the mount path | The volume is not grafted (`console.error`) | Move them to the root state, with absolute paths |
+| A volume that injects root paths (`data-wcs="state.<key>: …"`) | Works (3.1) | The volume is not grafted (`console.error`) | Read the root path in a root getter |
+| A volume that declares `$behavior` / `$features` | Plain data, grafted | The volume is not grafted (`console.error`) | Declare them on the root state |
+
+Where each fires: an old declaration key, `$scan`, `$behavior` and `$features` when the state object is loaded (a volume's when it is grafted); an old filter name and `substr` when a binding that uses it is set up; a `bootstrapState` option when `bootstrapState()` is called; `$trackDependency` / `$untrackDependency` when they are read. The checks sit where an old form is resolved, so a page that writes the canonical names behaves exactly as before; what it runs differs by one comparison where a filter is set up and one where `$dependOn` / `$untracked` is read, with no measurable difference.
+
+The warnings ship in the full entries (`@wcstack/state` and `/auto`). A page on the split entries (`@wcstack/state/core` with `features/*`) prints none. There is no other switch, as in 2.6. A warning fires only on the path that reaches the old form, so a clean console proves nothing about the paths the page did not run. `npx @wcstack/lint <file>` and the VS Code extension report the old names statically (`wcs/name-alias`, info, since 3.2).
+
+The three options that move to `$behavior` keep warning while a page passes them: 3.x reads them only from `bootstrapState`, so there is nothing to change before the upgrade. Writing `$behavior` early is harmless and is checked against the options 3.x runs with. One 4.0 rule has no 3.5 warning: a re-set (`setInitialState()` on an initialized element) may not change `$behavior` — 4.0 throws (#45), so create the element again instead.
+
+`on*#direct:` works in 3.x already. 4.0 delegates `on*:` to the root and adds `#direct` to attach the listener to the element. 3.x attaches every `on*:` to its element and accepts the `#direct` modifier silently. Write it now where the element-attached behavior matters: `onclick#direct,stop:` stops your own listeners on the ancestors, and the handler still runs when an ancestor calls `stopPropagation()`.
+
 ## Configuration
 
 Pass a partial configuration object to `bootstrapState()`:
@@ -2860,8 +2897,7 @@ import { bootstrapState } from '@wcstack/state';
 
 bootstrapState({
   locale: 'ja-JP',
-  debug: true,
-  enableMustache: false,
+  bindAttributeName: 'data-wcs',
   tagNames: { state: 'my-state' },
 });
 ```
@@ -2874,12 +2910,14 @@ All options with defaults:
 | `tagNames.state` | `'wcs-state'` | State element tag name |
 | `tagNames.ssr` | `'wcs-ssr'` | Tag name of the SSR hydration-data element |
 | `locale` | `<html lang>`, else `'en'` | Locale for the locale-dependent filters (`locale` / `date` / `time` / `datetime`) — see [Locale](#locale) |
-| `debug` | `false` | Debug mode |
-| `enableMustache` | `true` | Enable `{{ }}` syntax |
-| `enableDirectionalInitialSync` | `true` | Direction-aware binding authority (`#init=` / `#sync=` binding modifiers) — see [Binding Authority](#binding-authority-init--sync). Default on; set `false` to opt out |
-| `enablePropagationContext` | `true` | Causal propagation tracking across bindings (echo/diamond loop prevention). Default on; set `false` to opt out |
+| `debug` | `false` | Debug mode. Removed in 4.0 (3.5 warns) |
+| `enableMustache` | `true` | Enable `{{ }}` syntax. Moves to the state's `$behavior` in 4.0 (3.5 warns) |
+| `enableDirectionalInitialSync` | `true` | Direction-aware binding authority (`#init=` / `#sync=` binding modifiers) — see [Binding Authority](#binding-authority-init--sync). Default on; set `false` to opt out. Moves to the state's `$behavior` in 4.0 (3.5 warns) |
+| `enablePropagationContext` | `true` | Causal propagation tracking across bindings (echo/diamond loop prevention). Default on; set `false` to opt out. Removed in 4.0 (3.5 warns) |
 | `enableContractAnalyzer` | `false` | Opt-in dev-time contract analyzer (exposes `analyzeContract`) |
-| `sameValueGuard` | `true` | Drop a primitive write whose value is `Object.is`-equal to the current one before anything is enqueued — bindings and `$watch` effectively fire on change only; reference types always pass. `false` lets equal writes through and makes `$watch`'s `prev` `undefined` |
+| `sameValueGuard` | `true` | Drop a primitive write whose value is `Object.is`-equal to the current one before anything is enqueued — bindings and `$watch` effectively fire on change only; reference types always pass. `false` lets equal writes through and makes `$watch`'s `prev` `undefined`. Moves to the state's `$behavior` in 4.0 (3.5 warns) |
+
+4.0 removes `debug`, `commentTextPrefix` and `enablePropagationContext`, and moves `enableMustache`, `enableDirectionalInitialSync` and `sameValueGuard` to the state's `$behavior`. 3.5 warns when a page passes them — see [Preparing for 4.0](#preparing-for-40-wcsv4-migration).
 
 ### Locale
 
@@ -3114,7 +3152,7 @@ Subpath entries for tooling: `@wcstack/state/parser` (the `data-wcs` parser as a
 | Attribute | Description |
 |---|---|
 | `mount` | Static tree path to graft this state onto the root tree as a **volume** (v2 — replaces the removed `name` attribute; one state tree per root) |
-| `state` | ID of a `<script type="application/json">` element |
+| `state` | ID of a `<script type="application/json">` element in the document (looked up with `document.getElementById`, so a script inside a shadow root is not found) |
 | `src` | URL to `.json` or `.js` file |
 | `json` | Inline JSON string |
 | `bind-component` | Property name for web component binding |
@@ -3125,7 +3163,7 @@ Subpath entries for tooling: `@wcstack/state/parser` (the `data-wcs` parser as a
 | Property / Method | Description |
 |---|---|
 | `initializePromise` | Resolves when state is fully initialized — and also **when initialization fails**, so one element's failure never blocks the rest of the page's bindings; the error is delivered on `connectedCallbackPromise` |
-| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await. A **root** element that fails to initialize **rejects** it with the original error, unwrapped, and reports the failure once with `console.error`: an invalid `$` declaration, a source it cannot load, the SSR data merge, a DCC or `bind-component` setup error, or a second root `<wcs-state>` on the same root node (that second element stays unregistered but keeps the state it loaded, so remove it; moving a healthy element in the DOM is not a duplicate and is never refused). A **volume** (`<wcs-state mount="…">`) never rejects it — a volume failure resolves it instead, and some volume failures report nothing of their own: the error leaves as the `connectedCallback` promise that custom-element reactions discard, which a browser console shows as "Uncaught (in promise)" but nothing awaiting these promises (a test recipe, `renderToString()`) ever sees. Detaching an element while its source is still loading rejects nothing — that connection just ends, and re-appending the element (row pooling) initializes it and resolves normally. For the exact behaviour of any single failure site, read `__tests__/integration.initFailureDiagnostics.test.ts`: it pins every case |
+| `connectedCallbackPromise` | Resolves once `connectedCallback` has completed (state loaded, `$connectedCallback` run) — what the testing recipes await. A **root** element that fails to initialize **rejects** it with the original error, unwrapped, and reports the failure once with `console.error`: an invalid `$` declaration, a source it cannot load, the SSR data merge, a DCC or `bind-component` setup error, or a second root `<wcs-state>` on the same root node (that second element stays unregistered but keeps the state it loaded, so remove it; moving a healthy element in the DOM is not a duplicate and is never refused). Two sources are not failures in 3.x and resolve it instead: a `src="*.json"` that cannot be fetched or parsed (logged with `console.error`, with its URL and the HTTP status or the error; the element starts with an empty state, and a volume grafts `{}`), and a `state="<id>"` with no `<script type="application/json">` of that id in the document (one `console.warn`; the state starts empty — the lookup is `document.getElementById`, so a script inside a shadow root is not found). 4.0 rejects in both cases; for `state=` it searches the element's own root first, then the document, and rejects only when the id is in neither. A **volume** (`<wcs-state mount="…">`) never rejects it — a volume failure resolves it instead, and some volume failures report nothing of their own: the error leaves as the `connectedCallback` promise that custom-element reactions discard, which a browser console shows as "Uncaught (in promise)" but nothing awaiting these promises (a test recipe, `renderToString()`) ever sees. Detaching an element while its source is still loading rejects nothing — that connection just ends, and re-appending the element (row pooling) initializes it and resolves normally. For the exact behaviour of any single failure site, read `__tests__/integration.initFailureDiagnostics.test.ts`: it pins every case |
 | `listPaths` | Set of paths used in `for` loops |
 | `getterPaths` | Set of paths defined as getters |
 | `setterPaths` | Set of paths defined as setters |

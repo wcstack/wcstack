@@ -118,15 +118,19 @@ second reason the catalog is deep-frozen.
 
 ### 5. Structural rendering stays outside the router
 
-`<template data-wcs="for: …">` inside a `<wcs-route>` does **not** render: the
-route's nodes sit in an inert `<template>` when state builds its bindings, so
-the inner structural fragment is never registered. Plain bindings inside a route
-*do* work — the About page is translated in place — which makes the boundary
-easy to trip over.
+A route's content is bound when the router stamps it (the binder protocol), so
+plain bindings inside a route work — the About page is translated in place —
+and so does a `<template data-wcs="for: …">` inside an element of the route
+body (`<ul><template data-wcs="for: …">…</template></ul>`). One placed
+**directly** under `<wcs-route>` renders only on the landing route:
+@wcstack/state 3.x draws it only when its first scan of the page finds it
+already stamped, and reports that the binding failed to apply when the router
+hands it over on a navigation. The details are in the router README
+([Where route content lives](../../packages/router/README.md#where-route-content-lives)).
 
-So the router publishes `path`, and state renders the list from a
-`<template data-wcs="if: isList">` outside it. Same split as
-[router-spa](../router-spa/).
+This example keeps the list outside the router anyway: the router publishes
+`path`, and state renders the list from a `<template data-wcs="if: isList">`
+outside it. Same split as [router-spa](../router-spa/).
 
 ## Copying the snippet
 

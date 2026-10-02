@@ -139,7 +139,7 @@
 | **コンポーネント** | 排他的な 2 方式 — JavaScript クラス＋`bind-component` か、HTML だけの DCC か | [機構の選び方](#コンポーネント機構の選び方) |
 | **他要素との配線** | wc-bindable プロトコル、spread（`...: obj`）、`#init=` / `#sync=` の authority、プロパティ→属性ミラー | [バインディング authority](#バインディング-authority-init--sync) · [Spread](#spread-バインディング) · [Inputs](#inputs-と属性ミラー) |
 | **トークン** | command token が state から要素のメソッドを呼び、event token が要素のイベントを state へ戻す | [Command token](#command-tokenメソッドバインディング) · [Event token](#event-tokenイベントバインディング) |
-| **時間** | `$stream` が非同期ソースを fold し、`$watch` が headless に反応し、`$scan` が両者を越えて残る累積値を持つ | [時間を扱う機構の選び方](#時間を扱う機構の選び方) |
+| **時間** | `$stream` が非同期ソースを fold し、`$watch` が headless に反応し、`$scan` が両者を越えて残る累積値を持つ（`$scan` は 3.5 で警告が出て 4.0 で外れる — [4.0 への準備](#40-への準備wcsv4-migration)） | [時間を扱う機構の選び方](#時間を扱う機構の選び方) |
 | **初期化とライフサイクル** | state の供給は 6 通り。`$connectedCallback` 〜 `$stateReadyCallback`、`bootstrapState()` / `createState()` | [状態の初期化](#状態の初期化) · [ライフサイクルフック](#ライフサイクルフック) · [API リファレンス](#api-リファレンス) |
 | **診断** | 解決しないパス・添字の本数・階数・getter の循環を報告する。失敗はそのバインディング 1 本に閉じ、値も DOM も巻き戻さない | [診断と失敗の扱い](#診断と失敗の扱い) |
 | **配布** | ランタイム依存ゼロ、ビルド不要、ESM、CDN の `/auto` 1 タグ。`unsafe-eval` 不要で Trusted Types 対応 | [インストール](#インストール) · [docs/csp.ja.md](../../docs/csp.ja.md) |
@@ -196,7 +196,7 @@
 </script>
 <script type="module">
   import { bootstrapState, installFeatures } from '@wcstack/state/core';
-  import temporal from '@wcstack/state/features/temporal';  // $watch / $scan / $stream
+  import temporal from '@wcstack/state/features/temporal';  // $watch / $stream（$scan は 3.5 で警告、4.0 で外れる）
   import scopes from '@wcstack/state/features/scopes';      // bind-component・mount=・DCC
 
   installFeatures([temporal, scopes]);
@@ -220,7 +220,7 @@
 | エントリ | 足されるもの |
 |---|---|
 | `@wcstack/state/core` | バインディングの本体: `data-wcs`・`for` / `if`・パス getter・フィルタ・イベント・`$command` / `$on`・`bootstrapState`・`installFeatures` |
-| `@wcstack/state/features/temporal` | `$watch`・`$scan`・`$stream` |
+| `@wcstack/state/features/temporal` | `$watch`・`$scan`（3.5 で警告、4.0 で外れる — [4.0 への準備](#40-への準備wcsv4-migration)）・`$stream` |
 | `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
 | `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
@@ -330,7 +330,9 @@ install 時に埋める受け口を通ります）。
 
 解決順序: `state` → `src` (.json / .js) → `json` → 内包 `<script>` → `setInitialState()` 待機。
 
-> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。ページの nonce では救えません。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
+5 番の `<script type="module">` はブラウザ自身も評価します（`<wcs-state>` の中にあっても止まりません）。export はどこにも届かないので state には影響しませんが、トップレベルのコードは 2 回走ります（ブラウザが 1 回、state が 1 回）。トップレベルに副作用（リクエスト・ログ出力・グローバルへの代入）を置かないでください。CSP 下では下の注記を参照してください。
+
+> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため、state を読み込む `<script>` にページの nonce を付けるか（blob: の import がその nonce を引き継ぎます）、`script-src blob:` が必要です。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。なお 5 番の `<script>` はブラウザ自身も評価します。CSP 下では、その `<script>` にも nonce を付けない限りコンソールに違反が 1 件出ます。nonce を付けた場合や CSP が無い場合は、トップレベルのコードが 2 回走ります（副作用を置かないこと）。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
 
 ### 追加の状態をマウントする（`mount=`）
 
@@ -1570,7 +1572,7 @@ export default {
 | `capitalize`（`cap`） | 先頭大文字 | `name\|capitalize` |
 | `trim` | 空白除去 | `text\|trim` |
 | `slice(n)` | 文字列スライス | `text\|slice(5)` |
-| `substr(start, length)` | 部分文字列（引数は 2 つとも必須） | `text\|substr(0,10)` |
+| `substr(start, length)` | 部分文字列（引数は 2 つとも必須）。3.5 で警告が出て 4.0 で外れる: `slice(start, start + length)` と書く — [4.0 への準備](#40-への準備wcsv4-migration) | `text\|substr(0,10)` |
 | `padStart(n, char?)`（`pad`） | 先頭を埋める（既定 `0`） | `id\|padStart(5,0)` → `"00001"` |
 | `padEnd(n, char?)` | 末尾を埋める（既定は空白。3.2） | `code\|padEnd(8)` |
 | `repeat(n)`（`rep`） | 繰り返し | `text\|repeat(3)` |
@@ -2187,7 +2189,7 @@ event token は command token と同じ `Token` pub/sub プリミティブを共
 | [パス getter](#パス-getter算出プロパティ) | その値が現在の state から見て**何であるか** | 持たない（アドレス単位で再計算・キャッシュ） | 評価需要が読んだときに遅延評価 | 小計、分類、集計 |
 | [`$stream`](#streamstream) | 非同期の供給元と、**1 回の実行の中で** fold される値 | 持つ（出力は runtime の所有） | chunk ごと。`args` が変われば `initial` に戻して restart | フィード、ソケット、継続的な観測 |
 | [`$watch`](#watchwatch) | 変更への反応 | 持たない | 変化したアドレスごとにバッチ 1 回、scan の書き込みの後 | 副作用、「条件が成立したとき」 |
-| [`$scan`](#scanscan) | 時間をまたぐ累積値と、それを戻す条件 | 持つ（出力は runtime の所有） | 着地ごと（`from`）またはイベントごと（`on`） | ページ蓄積、履歴、件数 |
+| [`$scan`](#scanscan) | 時間をまたぐ累積値と、それを戻す条件 | 持つ（出力は runtime の所有） | 着地ごと（`from`）またはイベントごと（`on`） | ページ蓄積、履歴、件数。3.5 で警告が出て 4.0 で外れる: `$watch`（state のパス）か `$on`（イベントトークン）で畳む — [4.0 への準備](#40-への準備wcsv4-migration) |
 
 混乱のほとんどは、次の 2 点で解けます。
 
@@ -2310,9 +2312,9 @@ $renderedCallback(paths) {
 }
 ```
 
-**規則:** 描画に依存させたくないロジックは、`$watch`・`$scan`・`$stream` の `args` のどれかに根を置いてください。`$renderedCallback` は「描かれたものに追随する」用途に限ります。
+**規則:** 描画に依存させたくないロジックは、`$watch`・`$scan`・`$stream` の `args` のどれかに根を置いてください。`$renderedCallback` は「描かれたものに追随する」用途に限ります。（`$scan` は 3.5 で警告が出て 4.0 で外れます。同じことは `$watch` か `$on` のハンドラで書けます — [4.0 への準備](#40-への準備wcsv4-migration)。）
 
-上の例はいまは `$scan` で feed を積み（sentinel の再武装は `$watch`）、`<b>` は表示専用に戻っています。この形（`$renderedCallback` が、どのバインディングにも現れないパスを判定に使っている）は **`wcs/updated-callback-unbound`** として静的に検出されます。
+上の例はいまは stream の値に付けた `$watch` で着地したページを feed へ畳み（sentinel の再武装は feed の `$watch`）、`<b>` は表示専用に戻っています。この形（`$renderedCallback` が、どのバインディングにも現れないパスを判定に使っている）は **`wcs/updated-callback-unbound`** として静的に検出されます。
 
 ### 残る制約
 
@@ -2386,6 +2388,8 @@ $renderedCallback(paths) {
 - **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
 
 ## Scan（`$scan`）
+
+> **`$scan` は 3.5 で警告が出て、4.0 で外れます。** state のパスは累積値を書く `$watch` のハンドラで、イベントトークンは `$on` のハンドラで畳み、reset の条件もハンドラに書いてください。[4.0 への準備](#40-への準備wcsv4-migration)を参照。
 
 `$stream` が畳むのは 1 回の run の**内側**で、restart のたびに値は `initial` へ戻ります。`$watch` は値を所有しません。**`$scan`** はその両方を跨いで残る値 —— 時間軸方向の累積 —— を、持ち主・発火単位・reset 条件つきで宣言します。
 
@@ -2845,6 +2849,39 @@ this.$getAll("matrix.*.*", [row]);
 | 描画中の書き込みの連鎖 | 100 | そのバッチのバインディング適用をスキップ |
 | バインディングの適用失敗 | — | その 1 本のみスキップ |
 
+### 4.0 への準備（`wcs/v4-migration`）
+
+3.5 は 3.x の最後の minor です。4.0 が外す・移す名前と設定を名指しで知らせ、動きは 3.x のままにします。警告はコード `wcs/v4-migration` の `console.warn` で、名前ごとにページで 1 回だけ出ます。4.0 での扱いと書き換え先を示します：
+
+```
+[@wcstack/state] [wcs/v4-migration] filter "uc" is removed in 4.0: write "upper" (its name since 3.2).
+See "Preparing for 4.0" in the @wcstack/state README.
+```
+
+| 書き方 | 3.x | 4.0 | 書き換え先 |
+|---|---|---|---|
+| 3.2 で改名したフィルタの旧名: `inc` `dec` `fix` `uc` `lc` `cap` `rep` `rev` `pad` `null` | エイリアス | `[wcs/filter-unknown]` | `add` `sub` `toFixed` `upper` `lower` `capitalize` `repeat` `reverse` `padStart` `nullIfEmpty` |
+| `$trackDependency` / `$untrackDependency` | エイリアス | `[wcs/name-alias]` を投げる | `$dependOn` / `$untracked` |
+| `$updatedCallback` / `$streams` | エイリアス | `[wcs/declaration-alias]` を投げる | `$renderedCallback` / `$stream` |
+| `substr(start, length)` | 動く | `[wcs/filter-unknown]` | `slice(start, start + length)`（第 2 引数は長さではなく終わりの位置） |
+| `$scan` | 動く | 投げる | state のパスは `$watch`、イベントトークンは `$on` |
+| `bootstrapState({ debug })`・`commentTextPrefix`・`enablePropagationContext` | 動く | 投げる | 消す。4.0 のコメント束縛は `<!--@@: path-->` と `<!--@@wcs-text: path-->` だけ |
+| `bootstrapState({ enableMustache })`・`sameValueGuard`・`enableDirectionalInitialSync` | ページ全体の設定 | 投げる。state の木ごとに `$behavior` で宣言する | 3.x の間はそのまま。上げるときに、ルートとコンポーネントの各 state の `$behavior` へ移す（コンポーネントはホストのものを継がない。ボリュームには書けない） |
+| `bootstrapState` の知らないキー・型の違う値（`null`、配列、文字列でないタグ名、`state` / `ssr` 以外の `tagNames` のキー） | 無視 | 投げる | 消すか直す |
+| state のキー `$behavior` | ただのデータ（3.x は読まない） | その state の振る舞いの設定 | 3.x が動かしている設定と値が違うとき、4.0 が投げる形のときだけ警告 |
+| state のキー `$features` | ただのデータ | その state が要る後付け | 4.0 が投げる形（後付けの名前の配列でない）のときだけ警告 |
+| `$watch`・`$listKeys`・`$renderedCallback`（`$updatedCallback`）を宣言したボリューム（`<wcs-state mount>`） | マウントパスに相対で動く | 接ぎ木しない（`console.error`） | ルートの state へ移し、パスを絶対にする |
+| ルートのパスを注入するボリューム（`data-wcs="state.<key>: …"`） | 動く（3.1） | 接ぎ木しない（`console.error`） | ルートの getter でルートのパスを読む |
+| `$behavior` / `$features` を宣言したボリューム | ただのデータとして接ぎ木 | 接ぎ木しない（`console.error`） | ルートの state に書く |
+
+出る時点: 宣言キーの旧名・`$scan`・`$behavior`・`$features` は state オブジェクトを読み込んだとき（ボリュームは接ぎ木したとき）、フィルタの旧名と `substr` はそれを使うバインディングを組み立てたとき、`bootstrapState` の設定は `bootstrapState()` を呼んだとき、`$trackDependency` / `$untrackDependency` はそれを読んだとき。検査は旧い書き方を解決する箇所にあるので、正式名で書いたページの動きは何も変わりません。実行するものの差は、フィルタを組み立てるときと `$dependOn` / `$untracked` を読むときの比較 1 つずつで、計測できる差はありません。
+
+警告は全部入りの入口（`@wcstack/state` と `/auto`）だけが持ちます。分割の入口（`@wcstack/state/core` と `features/*`）のページには出ません。それ以外の切り替えはありません（2.6 と同じ）。警告は旧い書き方に実際に届いた経路でだけ出るので、コンソールが静かでも、ページが通らなかった経路については何も分かりません。`npx @wcstack/lint <file>` と VS Code 拡張は旧名を静的に報告します（`wcs/name-alias`、info、3.2 から）。
+
+`$behavior` へ移る 3 つの設定は、ページが渡している間は警告が出続けます。3.x はこの設定を `bootstrapState` からしか読まないので、上げる前に変えるところはありません。`$behavior` を先に書いても害はなく、3.x が動かしている設定と照らし合わせて検査されます。4.0 の規則のうち 1 つは 3.5 で警告しません: 再セット（初期化済みの要素への `setInitialState()`）で `$behavior` を変えることはできず、4.0 は投げます（#45）。要素を作り直してください。
+
+`on*#direct:` は 3.x でもう書けます。4.0 は `on*:` をルートへ委譲し、要素に直接付ける修飾子 `#direct` を足します。3.x はどの `on*:` も要素に付け、`#direct` は何も言わずに受け取ります。要素に付くことが要る束縛には今から書いておけます: `onclick#direct,stop:` は祖先に付けた自前のリスナーを止め、祖先が `stopPropagation()` してもハンドラは呼ばれます。
+
 ## 設定
 
 `bootstrapState()` に部分的な設定オブジェクトを渡します：
@@ -2854,8 +2891,7 @@ import { bootstrapState } from '@wcstack/state';
 
 bootstrapState({
   locale: 'ja-JP',
-  debug: true,
-  enableMustache: false,
+  bindAttributeName: 'data-wcs',
   tagNames: { state: 'my-state' },
 });
 ```
@@ -2868,12 +2904,14 @@ bootstrapState({
 | `tagNames.state` | `'wcs-state'` | 状態要素のタグ名 |
 | `tagNames.ssr` | `'wcs-ssr'` | SSR ハイドレーションデータ要素のタグ名 |
 | `locale` | `<html lang>`、無ければ `'en'` | ロケール依存フィルタ（`locale` / `date` / `time` / `datetime`）のロケール — [ロケール](#ロケール)を参照 |
-| `debug` | `false` | デバッグモード |
-| `enableMustache` | `true` | `{{ }}` 構文の有効化 |
-| `enableDirectionalInitialSync` | `true` | 方向認識のバインディング authority（`#init=` / `#sync=` バインド modifier）— [バインディング authority](#バインディング-authority-init--sync) 参照。既定 on。`false` で opt-out |
-| `enablePropagationContext` | `true` | バインド間の因果伝播トラッキング（echo/diamond のループ防止）。既定 on。`false` で opt-out |
+| `debug` | `false` | デバッグモード。4.0 で外れる（3.5 は警告） |
+| `enableMustache` | `true` | `{{ }}` 構文の有効化。4.0 で state の `$behavior` へ移る（3.5 は警告） |
+| `enableDirectionalInitialSync` | `true` | 方向認識のバインディング authority（`#init=` / `#sync=` バインド modifier）— [バインディング authority](#バインディング-authority-init--sync) 参照。既定 on。`false` で opt-out。4.0 で state の `$behavior` へ移る（3.5 は警告） |
+| `enablePropagationContext` | `true` | バインド間の因果伝播トラッキング（echo/diamond のループ防止）。既定 on。`false` で opt-out。4.0 で外れる（3.5 は警告） |
 | `enableContractAnalyzer` | `false` | opt-in の開発時 contract analyzer（`analyzeContract` を公開） |
-| `sameValueGuard` | `true` | 現在値と `Object.is` で同値なプリミティブ書き込みを enqueue 前に落とす — バインディングと `$watch` は実質「変化時のみ」発火する（参照型は常に通す）。`false` で同値書き込みを通し、`$watch` の `prev` は `undefined` になる |
+| `sameValueGuard` | `true` | 現在値と `Object.is` で同値なプリミティブ書き込みを enqueue 前に落とす — バインディングと `$watch` は実質「変化時のみ」発火する（参照型は常に通す）。`false` で同値書き込みを通し、`$watch` の `prev` は `undefined` になる。4.0 で state の `$behavior` へ移る（3.5 は警告） |
+
+4.0 は `debug`・`commentTextPrefix`・`enablePropagationContext` を外し、`enableMustache`・`enableDirectionalInitialSync`・`sameValueGuard` を state の `$behavior` へ移します。3.5 はページがこれらを渡すと警告します — [4.0 への準備](#40-への準備wcsv4-migration)を参照。
 
 ### ロケール
 
@@ -3104,7 +3142,7 @@ bootstrapState();
 | 属性 | 説明 |
 |---|---|
 | `mount` | この state をルートツリーへ**ボリューム**として接ぎ木する静的ツリーパス（v2 — 撤去された `name` 属性の後継。ツリーは 1 root に 1 本） |
-| `state` | `<script type="application/json">` 要素の ID |
+| `state` | document 内の `<script type="application/json">` 要素の ID（`document.getElementById` で探すので、shadow root の中の script は見つかりません） |
 | `src` | `.json` または `.js` ファイルの URL |
 | `json` | インライン JSON 文字列 |
 | `bind-component` | Web Component バインディングのプロパティ名 |
@@ -3115,7 +3153,7 @@ bootstrapState();
 | プロパティ / メソッド | 説明 |
 |---|---|
 | `initializePromise` | 状態の完全な初期化時に解決される Promise —— **初期化に失敗したときも解決**します（1 要素の失敗がページの他のバインディングを止めないため）。エラーは `connectedCallbackPromise` に届きます |
-| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。**ルート**要素が初期化に失敗すると、**元のエラーのまま reject** し、`console.error` にも 1 件報告します（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・DCC や `bind-component` の設定エラー・同じ root node に 2 本目のルート `<wcs-state>`。2 本目は登録されないまま読み込んだ state を保持するので取り除いてください。健全な要素の DOM 移動は二重登録ではなく、拒否しません）。**ボリューム**（`<wcs-state mount="…">`）はこの Promise を**拒否しません** —— ボリュームの失敗は解決し、種類によっては自分では何も報告しません。その場合エラーはカスタム要素リアクションが捨てる `connectedCallback` の戻り Promise として出ていき、ブラウザのコンソールには "Uncaught (in promise)" と出ますが、promise を待つ側（テストのレシピや `renderToString()`）には届きません。ロード中に切断された要素は reject しません —— その接続が黙って終わるだけで、付け直せば（行プール）通常どおり初期化して解決します。個々の失敗箇所の正確な挙動は `__tests__/integration.initFailureDiagnostics.test.ts` が固定しています |
+| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。**ルート**要素が初期化に失敗すると、**元のエラーのまま reject** し、`console.error` にも 1 件報告します（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・DCC や `bind-component` の設定エラー・同じ root node に 2 本目のルート `<wcs-state>`。2 本目は登録されないまま読み込んだ state を保持するので取り除いてください。健全な要素の DOM 移動は二重登録ではなく、拒否しません）。ただし 3.x では次の 2 つのソースを失敗として扱わず、この Promise を解決します: 取得またはパースできない `src="*.json"`（URL と、HTTP ステータスまたはエラーを `console.error` に記録し、空の state で始まります。ボリュームなら `{}` を接ぎ木します）と、その id の `<script type="application/json">` が document に無い `state="<id>"`（`console.warn` を 1 回出し、空の state で始まります。探すのは `document.getElementById` なので、shadow root の中の script は見つかりません）。4.0 はどちらの場合も reject します。`state=` については要素自身のルートを先に、次に document を探し、どちらにも無いときだけ reject します。**ボリューム**（`<wcs-state mount="…">`）はこの Promise を**拒否しません** —— ボリュームの失敗は解決し、種類によっては自分では何も報告しません。その場合エラーはカスタム要素リアクションが捨てる `connectedCallback` の戻り Promise として出ていき、ブラウザのコンソールには "Uncaught (in promise)" と出ますが、promise を待つ側（テストのレシピや `renderToString()`）には届きません。ロード中に切断された要素は reject しません —— その接続が黙って終わるだけで、付け直せば（行プール）通常どおり初期化して解決します。個々の失敗箇所の正確な挙動は `__tests__/integration.initFailureDiagnostics.test.ts` が固定しています |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |
 | `setterPaths` | setter として定義されたパスの Set |

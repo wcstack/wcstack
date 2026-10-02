@@ -125,4 +125,26 @@ describe('getConfig', () => {
     expect(result.enableShadowRoot).toBe(config.enableShadowRoot);
     expect(result.tagNames.route).toBe(config.tagNames.route);
   });
+
+  it('getConfigのbasenameFileExtensionsはsetConfigの前後とも凍結された配列で、for…ofで回せること', () => {
+    const before = getConfig().basenameFileExtensions;
+    expect(Array.isArray(before)).toBe(true);
+    expect(Object.isFrozen(before)).toBe(true);
+    expect([...before]).toEqual(['.html']);
+
+    const original = [...config.basenameFileExtensions];
+    try {
+      setConfig({ basenameFileExtensions: ['.htm', '.php'] });
+      const after = getConfig().basenameFileExtensions;
+      expect(Array.isArray(after)).toBe(true);
+      expect(Object.isFrozen(after)).toBe(true);
+      const seen: string[] = [];
+      for (const ext of after) seen.push(ext);
+      expect(seen).toEqual(['.htm', '.php']);
+      // 凍結したのは複製で、内部の配列はそのまま
+      expect(Object.isFrozen(config.basenameFileExtensions)).toBe(false);
+    } finally {
+      setConfig({ basenameFileExtensions: original });
+    }
+  });
 });

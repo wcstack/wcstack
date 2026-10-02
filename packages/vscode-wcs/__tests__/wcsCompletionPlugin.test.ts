@@ -83,6 +83,16 @@ describe('provideCompletionItems: 修飾子の textEdit（拡張が書き換え�
     expect(replacedText(html, ro)).toBe('');
   });
 
+  it('修飾子の候補に 4.0 の direct（委譲しないイベント束縛）を含み、4.0 で効くことを説明すること', () => {
+    const html = `${STATE}<button data-wcs="onclick#prevent,: save"></button>`;
+    const offset = html.indexOf('onclick#prevent,') + 'onclick#prevent,'.length;
+    const result = completeAt(html, offset)!;
+    expect(result.items.map(i => i.label)).toEqual(['prevent', 'stop', 'ro', 'direct']);
+    const direct = result.items.find(i => i.label === 'direct')! as { detail?: string };
+    expect(direct.detail).toContain('4.0');
+    expect(replacedText(html, result.items.find(i => i.label === 'direct')!)).toBe('');
+  });
+
   it('入力途中（`#r`）ではその 1 語だけを置換範囲にすること', () => {
     const html = `${STATE}<input data-wcs="value#r: name">`;
     const offset = html.indexOf('value#r') + 'value#r'.length;
