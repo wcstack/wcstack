@@ -636,7 +636,7 @@ export function crossed(E: Engine, p: Pattern, row: StateRow | null, old: unknow
   }
 }
 
-async function start(el: HTMLElement, host: Element, root: Node, state: Record<string, any>): Promise<Mount | null> {
+async function start(el: HTMLElement, host: Element, root: Node, state: Record<string, any>, built: () => void): Promise<Mount | null> {
   if (state === UNWIRED) return null;
   // the add-ons its `$features` names, before anything reads the host's current mount
   const loading = loadFeatures(state);
@@ -684,6 +684,8 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
       console.error(e);
     }
   }
+  // the bindings are built: what waits for them goes on, whatever $connectedCallback does (as a root)
+  built();
   await C.callHook("$connectedCallback");
   if (independent && el.isConnected) hooks.element?.(C, "connected");
   return m;
@@ -709,8 +711,8 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
         ? Promise.reject(new Error(`[@wcstack/state] "bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`))
         : load(el, prop, host, !shadow)).catch(failed);
     },
-    async start(state) {
-      m = await start(el, host!, shadow ? parent! : host!, state).catch(failed);
+    async start(state, built) {
+      m = await start(el, host!, shadow ? parent! : host!, state, built).catch(failed);
     },
     connected() {
       if (m === null) return;

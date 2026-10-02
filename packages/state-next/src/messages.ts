@@ -65,6 +65,8 @@ export const enum M {
   FeaturesNotArray = 46,
   SecondRoot = 47,
   LocaleInvalid = 48,
+  InitFailed = 49,
+  ConnectedFailed = 50,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,

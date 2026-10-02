@@ -364,7 +364,8 @@ describe("F10 コンポーネント側のパスにワイルドカードのある
       const tag = component(`<ul><template data-wcs="for: list"><li>{{ . }}</li></template></ul>`, () => ({ list: ["own"] }));
       await page(`<${tag} data-wcs="state.list.*: items"></${tag}>`, { items: ["a", "b"] });
       await flush();
-      const messages = error.mock.calls.map((c) => String((c[0] as Error)?.message ?? c[0]));
+      // (logged after the line that names the element)
+      const messages = error.mock.calls.flatMap((c) => c.map((x) => String((x as Error)?.message ?? x)));
       expect(messages).toContain(`[@wcstack/state] <${tag}> maps "state.list.*": the component-side path of a mount cannot contain "*" — map the list itself ("state.list: <the host's list>").`);
     } finally {
       error.mockRestore();

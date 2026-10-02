@@ -20,7 +20,8 @@ async function defineComponent(markup: string, state: () => Record<string, any>,
   shadow.innerHTML = `${markup}<wcs-state></wcs-state>`;
   (shadow.querySelector("wcs-state") as any).setInitialState(state());
   document.body.appendChild(def);
-  await (shadow.querySelector("wcs-state") as any).connectedCallbackPromise;
+  // a definition that fails rejects its connectedCallbackPromise with the error (as 3.x)
+  const failure = await (shadow.querySelector("wcs-state") as any).connectedCallbackPromise.then(() => null, (e: unknown) => e as Error);
   const create = async (parent: Node = document.body) => {
     const el = document.createElement(tag) as any;
     parent.appendChild(el);
@@ -31,7 +32,7 @@ async function defineComponent(markup: string, state: () => Record<string, any>,
     await flush();
     return el;
   };
-  return { tag, create };
+  return { tag, create, failure };
 }
 
 const counter = () => ({
@@ -132,15 +133,17 @@ describe("DCC", () => {
     [{ a: 1, $commands: ["a"] }, 'entry "a" is not a method'],
   ])("$bindables / $commands の違反は定義しない（%#）", async (state, message) => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const { tag } = await defineComponent(``, () => state);
+    const { tag, failure } = await defineComponent(``, () => state);
     expect(customElements.get(tag)).toBeUndefined();
-    expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining(message) }));
+    expect(failure!.message).toContain(message);
+    // reported once: the element (#49: this file installs no diagnostics), then the error
+    expect(error).toHaveBeenCalledExactlyOnceWith('[@wcstack/state] #49 "wcs-state"', failure);
     error.mockRestore();
   });
 
   it("カスタム要素名でないホストと、定義済みのタグは報告する", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    await defineComponent(``, () => ({ a: 1 }), "section");
+    expect((await defineComponent(``, () => ({ a: 1 }), "section")).failure!.message).toContain("not a valid custom element name");
     const { tag } = await defineComponent(``, () => ({ a: 1 }));
     // a second definition host of the tag: an upgraded instance, whose own shadow is its definition
     const again = document.createElement(tag);
@@ -149,8 +152,8 @@ describe("DCC", () => {
     sr.innerHTML = `<wcs-state></wcs-state>`;
     (sr.querySelector("wcs-state") as any).setInitialState({ a: 2 });
     document.body.appendChild(again);
-    await (sr.querySelector("wcs-state") as any).connectedCallbackPromise;
-    const messages = error.mock.calls.map((c) => String((c[0] as Error)?.message ?? c[0]));
+    await expect((sr.querySelector("wcs-state") as any).connectedCallbackPromise).rejects.toThrow("is already defined");
+    const messages = error.mock.calls.map((c) => c.map((x) => String((x as Error)?.message ?? x)).join(" "));
     expect(messages.some((m) => m.includes("not a valid custom element name"))).toBe(true);
     expect(messages.some((m) => m.includes("is already defined"))).toBe(true);
     error.mockRestore();

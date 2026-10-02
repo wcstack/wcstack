@@ -252,7 +252,10 @@ describe("コンポーネントの誤り", () => {
   it("カスタム要素の直下にない bind-component・状態の読み込みとの併用・二重の対応は報告する", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const tag = define(`<p>{{ a }}</p>`, () => ({}));
-    await page(`<div><wcs-state bind-component="state"></wcs-state></div><${tag} data-wcs="state.a: x; state.a: y"></${tag}>`, { x: 1, y: 2 });
+    const { root } = await page(`<div><wcs-state bind-component="state"></wcs-state></div><${tag} data-wcs="state.a: x; state.a: y"></${tag}>`, { x: 1, y: 2 });
+    // a component's configuration error rejects its connectedCallbackPromise with the error (3.x's README promises it)
+    await expect((root.querySelector("div > wcs-state") as any).connectedCallbackPromise).rejects.toThrow("direct child of a custom element");
+    await expect((root.querySelector(tag)!.shadowRoot!.querySelector("wcs-state") as any).connectedCallbackPromise).rejects.toThrow('maps "state.a" twice');
     const tag2 = `cmp-test-${seq++}`;
     customElements.define(tag2, class extends HTMLElement {
       state = {};
@@ -262,7 +265,9 @@ describe("コンポーネントの誤り", () => {
       }
     });
     await page(`<${tag2}></${tag2}>`, {});
-    const messages = error.mock.calls.map((c) => String((c[0] as Error)?.message ?? c[0]));
+    // each reported once: the element (numbered: this file installs no diagnostics), then the error
+    expect(error.mock.calls.filter((c) => c[0] === '[@wcstack/state] #49 "wcs-state" "bind-component" "state"' && c[1] instanceof Error).length).toBe(3);
+    const messages = error.mock.calls.map((c) => c.map((x) => String((x as Error)?.message ?? x)).join(" "));
     expect(messages.some((m) => m.includes("direct child of a custom element"))).toBe(true);
     expect(messages.some((m) => m.includes('maps "state.a" twice'))).toBe(true);
     expect(messages.some((m) => m.includes("cannot also load one"))).toBe(true);

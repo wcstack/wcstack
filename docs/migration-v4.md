@@ -15,7 +15,7 @@
 - `on*:` handlers for the common bubbling events are delegated to the root, so `event.currentTarget` is the root. `#direct` opts a binding out.
 - Writing a list element replaces the value at that position; rows no longer move with values.
 - A volume no longer runs `$watch`, `$listKeys` or `$renderedCallback`, and takes no injections.
-- SSR output is not compatible with 3.x: `@wcstack/server` and the client move together.
+- SSR output is not compatible with 3.x: `@wcstack/server` and the client move together (a 4.0 client renders 3.x output again on the client).
 - A few rendering rules and public API members change.
 
 The path is: **upgrade to 3.5 first, clear its warnings (all but those for the three options that move to `$behavior`, §1.8), then move to 4.0.** All `@wcstack/*` packages move to each version together, as in every release.
@@ -186,7 +186,13 @@ In 4.0 the common bubbling events are delegated, and `event.currentTarget` is th
 
 The sentence comes from the `diagnostics` feature, which `@wcstack/state` and `/auto` include. A page on `/core` without it prints the code, the number and the values (3.x printed the full sentence either way). A number keeps its meaning across versions. The tables in §4 list the messages this guide mentions.
 
-**Do not follow a "Did you mean" for a removed filter name.** The runtime suggests the nearest built-in name, which for an old name is an unrelated filter: `dec` → `eq`, `fix` → `div`, `pad` → `ymd`, `null` → `mul`. Following it changes the meaning silently (`dec(1)` → `eq(1)`). Use the table in §1.4, or the replacement the lint names.
+**A removed filter name gets its replacement, not a "Did you mean".** For the 3.2 old names and `substr`, the message names what to write instead of the nearest built-in name, which for these is an unrelated filter (following `dec` → `eq` would change the meaning silently):
+
+```
+[@wcstack/state] [wcs/filter-unknown] filter not found: dec. "dec" was renamed "sub" in 3.2 and removed in 4.0 — write "sub". Validate statically: npx @wcstack/lint <file>.
+```
+
+The replacement, like the sentence, comes from the `diagnostics` feature. Without it the message is `#501 "dec"`: use the table in §1.4, or the replacement the lint names.
 
 ## 3. Breaking changes
 
@@ -194,13 +200,13 @@ The sentence comes from the `diagnostics` feature, which `@wcstack/state` and `/
 
 | 3.x | In 4.0 | Runtime message | 4.0 lint |
 |---|---|---|---|
-| Old filter names (`uc`, `fix`, …) | throws when the page is initialized | `[wcs/filter-unknown] filter not found: uc.` (#501) | `wcs/filter-unknown` (warning; names the replacement) |
+| Old filter names (`uc`, `fix`, …) | throws when the page is initialized | `[wcs/filter-unknown] filter not found: uc.` followed by `"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".` (#501) | `wcs/filter-unknown` (warning; names the replacement) |
 | `substr(start, length)` | same | `[wcs/filter-unknown] filter not found: substr.` followed by `"substr" was removed in 4.0 — write slice(start, start + length) …` | `wcs/filter-unknown` (warning; suggests the `slice` call) |
 | `$trackDependency` / `$untrackDependency` | throws when read | `[wcs/name-alias] $trackDependency was removed: write $dependOn.` (#1701) | `wcs/name-alias` (error) |
 | `$updatedCallback` / `$streams` | throws when the state loads | `[wcs/declaration-alias] $streams was removed: write $stream.` (#1601) | `wcs/declaration-alias` (error) |
 | `$scan` | throws when the state loads | `$scan was removed (use $watch or $on)` (#1) | `wcs/scan-declaration-invalid` (error) |
 
-For an old filter name, the runtime message also carries a "Did you mean" that points to an unrelated filter; ignore it (§2).
+Without the `diagnostics` feature the runtime message is only the code, the number and the name, and does not name the replacement (§2).
 
 In a volume (`<wcs-state mount=…>`), the removed declaration keys and `$scan` do not throw: the volume is not grafted and the reason goes to `console.error` (§3.5).
 
@@ -353,7 +359,7 @@ A binding inside a `for:` row whose `*` ranges over a different list than the en
 
 #### Markup errors stop initialization *(not final)*
 
-In the current preview, a binding that cannot be read — a syntax error, an unknown filter, a wildcard-rank error — stops the binding there. At page level the `<wcs-state>` fails to initialize (`connectedCallbackPromise` rejects), and the bindings after the error are not attached. An error found while a binding is attached inside a `for:` / `if:` row (an undeclared token or wcBindable member, for example) goes to `$errorCallback` as that binding's failure, and the row is still built; at page level the same error fails initialization. 3.x reported a page-level error and failed only that binding. This behaviour is still under review. Run the 4.0 lint before you deploy.
+In the current preview, a binding that cannot be read — a syntax error, an unknown filter, a wildcard-rank error — stops the binding there. At page level the `<wcs-state>` fails to initialize (`connectedCallbackPromise` rejects), and the bindings after the error are not attached. An error found while a binding is attached inside a `for:` / `if:` row (an undeclared token or wcBindable member, for example) goes to `$errorCallback` as that binding's failure, and the row is still built; at page level the same error fails initialization. 3.x reported a page-level error and failed only that binding. This behaviour is still under review. Run the 4.0 lint before you deploy. As in 3.5, a failed initialization is reported once with `console.error`, first the element and where its state comes from (`<wcs-state src="./state.js"> failed to initialize.`), then the error. A `$connectedCallback` that throws or rejects once the bindings are built is not an initialization failure: it is reported as `<wcs-state …> $connectedCallback failed.` followed by the error, `connectedCallbackPromise` rejects with it, and `getBindingsReady()` resolves, since the page is bound.
 
 #### Comment bindings
 
@@ -445,10 +451,13 @@ The 4.0 lint reports these declarations as `wcs/volume-declaration`, `$behavior`
 | `$watch`, `$stream`, `$renderedCallback` | not run, warning | not run, `[wcs/mount-dollar-declaration]` warning (unchanged) |
 | A write of the host row's element (`this["users.1"] = obj`) | the component's private data is rebuilt | the component element stays, and so do its private keys (see "Writing a list element" in §3.4) |
 
+A component's `<wcs-state bind-component>` that fails to mount rejects its `connectedCallbackPromise` with the error, as 3.x's README promised for configuration errors. 4.0 also rejects in two cases 3.x did not: a component wired to a root that failed to initialize (`<tag>.state will not mount: the root state failed to initialize.`; 3.x left its `connectedCallbackPromise` unsettled, so whatever waited for it hung, whether the component connected with the page or later), and a second `<wcs-state bind-component>` connected in one component (`<tag> already has a connected <wcs-state bind-component="state">.`; 3.x resolved it). `@wcstack/server`'s `renderToString()` and `@wcstack/testing`'s `mount()` wait for every `connectedCallbackPromise`, a Light DOM component's included, so they reject in these cases too. A component's `$connectedCallback` that fails rejects it as well, after the component is rendered (`… $connectedCallback failed.`, §3.4).
+
 ### 3.6 SSR
 
-- **Deploy `@wcstack/server` 4.0 and the 4.0 client together.** 4.0 cannot use the output of a 3.x `@wcstack/server`, which renders with `@wcstack/state` 3.x, and it does not fall back to a clean client render: after a version warning (`<wcs-ssr version="3.5.0"> does not match 4.0.0: the page renders on the client.`), initialization can fail — for example with `[wcs/wildcard-rank] "items.*" needs 1 enclosing loop level(s); the scope provides 0.` — or the page can stay as the server's HTML. Do not serve HTML rendered by 3.x, such as pages cached before the upgrade, to a 4.0 client.
-- The opposite combination, a 4.0 server with a 3.x client, is not supported either.
+- **Deploy `@wcstack/server` 4.0 and the 4.0 client together.** A 4.0 client cannot hydrate the output of a 3.x `@wcstack/server`, which renders with `@wcstack/state` 3.x (or of any other major.minor). It warns — `<wcs-ssr version="3.5.0"> does not match 4.0.0: its snapshot is discarded, and the page renders on the client from its own state.` — and renders the page on the client as if there were no server: the server's snapshot is not used, the state loads from its own source (`json=`, `src=`, the inline script, `setInitialState()`), `$connectedCallback` runs on the client, and the server's rows, branches and markers give way to the templates they were rendered from. In a Light DOM component wired from the page (`data-wcs="state: user"`, `state.label: user.name`), 3.x wrote the paths as the page's (`user.name`); they are mapped back through the host's wiring. The page works, but what the server did is done again on the client (and data that `$connectedCallback` fetches is fetched again).
+- One thing does not come back from 3.x output: a text binding outside the templates — a `{{ }}` or `<!--@@: -->` at page level or in a Light DOM component's content — loses its filters, because 3.x's markers keep only its path (`{{ price|toFixed(2) }}` shows the unformatted value). The warning says so for 3.x output. Inside `for:` / `if:` templates the expressions are kept whole. When you switch, purge the HTML rendered by 3.x, such as pages cached before the upgrade.
+- The opposite combination, a 4.0 server with a 3.x client, is not supported. The 3.x client warns that it falls back to a full render (`SSR version mismatch: server="4.0.0", client="3.5.0". Falling back to full render.`), but it does not read 4.0's markers. Only the `data-wcs` attribute bindings outside templates follow state changes; text bindings, rows and branches stay as the server's HTML.
 - If `@wcstack/state` 4.0 renders under an older `@wcstack/server` (for example through an npm override), the output can lack `<wcs-ssr>` entirely; the page then stays as the server's HTML, with no warning. Use the `@wcstack/server` released with 4.0.
 - The `@wcstack/server` API (`renderToString()`) does not change. The format of its output does: do not post-process the output based on 3.x's markers.
 - Keep the comments in the output. Text bindings and the row and branch markers are comments: removing them in a later minification step (html-minifier's `removeComments` and the like) breaks hydration, and `{{ }}` inside values may be read as bindings on the client.
@@ -543,18 +552,20 @@ The sentences are what `@wcstack/state` and `/auto` print; without the diagnosti
 | `$scan was removed (use $watch or $on)` | #1 | 3.1 |
 | `[wcs/declaration-alias] $streams was removed: write $stream.` | #1601 | 3.1 |
 | `[wcs/name-alias] $trackDependency was removed: write $dependOn.` | #1701 | 3.1 |
-| `[wcs/filter-unknown] filter not found: <name>.` (ignore its "Did you mean" for an old name) | #501 | 3.1 |
+| `[wcs/filter-unknown] filter not found: <name>.` (for an old name, followed by `"<name>" was renamed "<new name>" in 3.2 and removed in 4.0 — write "<new name>".`) | #501 | 3.1 |
 | `bootstrapState: "<key>" is not one of its options, or not of the option's type.` (also with `$behavior:` and `state:` for the state's `$behavior`) | #44 | 3.2 |
 | `a re-set state may not change $behavior: create the element again.` | #45 | 3.2 |
 | `[@wcstack/<package>] bootstrapXxx: "<key>" is not one of its options, or not of the option's type.` | — | 3.2 |
 | `[wcs/template-syntax] "outerHTML:" replaces its element, so it cannot be used inside a "for" / "if" template …` | #203 | 3.4 |
 | `[wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".` | #1403 | 3.4 |
 | `[wcs/binding-syntax] "<path>": a state path cannot go through "__proto__" or "prototype" …` | #120 | 3.4 |
+| `<wcs-state src="./state.js"> failed to initialize.` (`console.error`, followed by the error; names `state=`, `src=`, `mount=` and `bind-component=` when present) | #49 | 3.4 |
+| `<wcs-state> $connectedCallback failed.` (`console.error`, followed by the error; once the bindings are built) | #50 | 3.4 |
 | `<wcs-state mount="p">`: `$watch is not run in a volume — declare it on the root state.` (`console.error`) | — | 3.5 |
 | `<wcs-state mount="p">`: `injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.` (`console.error`) | — | 3.5 |
 | `<wcs-state mount="p"> will not graft: its component is wired to its host.` (`console.error`) | — | 3.5 |
 | `[wcs/mount-dollar-declaration] <tag>: $recursion is not run in a mounted component — declare it on the root state.` | — | 3.5 |
-| `<wcs-ssr version="3.x.y"> does not match 4.0.0: the page renders on the client.` (`console.warn`; despite the wording, there is no clean client render — 3.x output fails or stays frozen) | — | 3.6 |
+| `<wcs-ssr version="3.x.y"> does not match 4.0.0: its snapshot is discarded, and the page renders on the client from its own state.` (`console.warn`; for 3.x output, followed by `3.x output keeps only the path of a text binding outside a template, so such a binding loses its filters: deploy @wcstack/server 4.0 with this client.`) | — | 3.6 |
 | `[wcs/feature-not-installed] <key> needs the add-on @wcstack/state/features/<name>` | — | 3.8 |
 | `$features must be an array of add-on names (["temporal", "formats"]).` | #46 | 3.8 |
 | `[wcs/feature-unknown] "<name>" is not an add-on (…).` | — | 3.8 |

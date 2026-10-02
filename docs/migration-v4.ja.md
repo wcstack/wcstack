@@ -15,7 +15,7 @@
 - よく使うバブリングするイベントの `on*:` ハンドラは、ルートに委譲されます。そのため `event.currentTarget` はルートになります。`#direct` を付けたバインディングは委譲されません。
 - リストの要素への書き込みは、その位置の値を置き換えます。行が値と一緒に動くことはなくなります。
 - ボリュームは `$watch`・`$listKeys`・`$renderedCallback` を実行せず、注入も受け付けません。
-- SSR の出力は 3.x と互換がありません。`@wcstack/server` とクライアントを一緒に上げます。
+- SSR の出力は 3.x と互換がありません。`@wcstack/server` とクライアントを一緒に上げます（4.0 のクライアントは、3.x の出力をクライアントで描き直します）。
 - 描画の規則と公開 API のいくつかが変わります。
 
 進め方は、**まず 3.5 に上げて警告を消し（`$behavior` へ移る 3 つのオプションの警告は除く。§1.8）、それから 4.0 に移る**、です。いつものリリースと同じく、すべての `@wcstack/*` パッケージがそれぞれの版に一緒に上がります。
@@ -186,7 +186,13 @@ export default {
 
 文は `diagnostics` 機能が出します。`@wcstack/state` と `/auto` は、この機能を含みます。これを入れない `/core` のページでは、コード・番号・値だけが出ます（3.x はどちらでも文をそのまま出していました）。番号の意味は版をまたいで変わりません。このガイドに出てくるメッセージは §4 の表にまとめました。
 
-**削除されたフィルタ名への「Did you mean」には従わないでください。** 実行時は組み込みのいちばん近い名前を示しますが、旧名に対しては無関係なフィルタになります: `dec` → `eq`、`fix` → `div`、`pad` → `ymd`、`null` → `mul`。従うと意味が黙って変わります（`dec(1)` → `eq(1)`）。§1.4 の表か、lint が示す書き換え先を使ってください。
+**削除されたフィルタ名には、「Did you mean」ではなく書き換え先が出ます。** 3.2 の旧名と `substr` では、メッセージが組み込みのいちばん近い名前ではなく、書くべきものを示します（旧名にいちばん近い名前は無関係なフィルタで、`dec` → `eq` に従うと意味が黙って変わります）:
+
+```
+[@wcstack/state] [wcs/filter-unknown] filter not found: dec. "dec" was renamed "sub" in 3.2 and removed in 4.0 — write "sub". Validate statically: npx @wcstack/lint <file>.
+```
+
+書き換え先は、文と同じく `diagnostics` 機能が出します。これが無いとメッセージは `#501 "dec"` だけなので、§1.4 の表か、lint が示す書き換え先を使ってください。
 
 ## 3. 互換性のない変更
 
@@ -194,13 +200,13 @@ export default {
 
 | 3.x | 4.0 | 実行時のメッセージ | 4.0 の lint |
 |---|---|---|---|
-| フィルタの旧名（`uc`・`fix` …） | ページの初期化で throw | `[wcs/filter-unknown] filter not found: uc.`（#501） | `wcs/filter-unknown`（warning。書き換え先を示す） |
+| フィルタの旧名（`uc`・`fix` …） | ページの初期化で throw | `[wcs/filter-unknown] filter not found: uc.` に続けて `"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".`（#501） | `wcs/filter-unknown`（warning。書き換え先を示す） |
 | `substr(start, length)` | 同上 | `[wcs/filter-unknown] filter not found: substr.` に続けて `"substr" was removed in 4.0 — write slice(start, start + length) …` | `wcs/filter-unknown`（warning。`slice` の呼び出しを示す） |
 | `$trackDependency` / `$untrackDependency` | 読んだ時点で throw | `[wcs/name-alias] $trackDependency was removed: write $dependOn.`（#1701） | `wcs/name-alias`（error） |
 | `$updatedCallback` / `$streams` | 状態の読み込みで throw | `[wcs/declaration-alias] $streams was removed: write $stream.`（#1601） | `wcs/declaration-alias`（error） |
 | `$scan` | 状態の読み込みで throw | `$scan was removed (use $watch or $on)`（#1） | `wcs/scan-declaration-invalid`（error） |
 
-フィルタの旧名への実行時のメッセージには、無関係なフィルタを指す「Did you mean」も付きます。無視してください（§2）。
+`diagnostics` 機能が無いと、実行時のメッセージはコード・番号・名前だけで、書き換え先を示しません（§2）。
 
 ボリューム（`<wcs-state mount=…>`）では、なくなった宣言キーと `$scan` は throw しません。そのボリュームは接ぎ木されず、理由が `console.error` に出ます（§3.5）。
 
@@ -353,7 +359,7 @@ this.items = items;
 
 #### マークアップの誤りで初期化が止まる *（未確定）*
 
-今のプレビューでは、読めないバインディング（構文の誤り、知らないフィルタ、wildcard-rank の誤り）があると、バインドはそこで止まります。ページの直下なら `<wcs-state>` の初期化が失敗し（`connectedCallbackPromise` が reject）、誤りより後ろのバインディングは付きません。`for:` / `if:` の行の中でバインディングを付けるときに見つかった誤り（宣言の無いトークンや wcBindable のメンバーなど）は、そのバインディングの失敗として `$errorCallback` に届き、行は組み上がります。同じ誤りでも、ページの直下では初期化が失敗します。3.x は、ページの直下の誤りを報告して、そのバインディングだけを失敗させていました。この挙動は見直し中です。デプロイの前に 4.0 の lint を流してください。
+今のプレビューでは、読めないバインディング（構文の誤り、知らないフィルタ、wildcard-rank の誤り）があると、バインドはそこで止まります。ページの直下なら `<wcs-state>` の初期化が失敗し（`connectedCallbackPromise` が reject）、誤りより後ろのバインディングは付きません。`for:` / `if:` の行の中でバインディングを付けるときに見つかった誤り（宣言の無いトークンや wcBindable のメンバーなど）は、そのバインディングの失敗として `$errorCallback` に届き、行は組み上がります。同じ誤りでも、ページの直下では初期化が失敗します。3.x は、ページの直下の誤りを報告して、そのバインディングだけを失敗させていました。この挙動は見直し中です。デプロイの前に 4.0 の lint を流してください。初期化の失敗は、3.5 と同じく `console.error` に 1 回、まず要素と状態の読み込み元（`<wcs-state src="./state.js"> failed to initialize.`）、続けてエラーの順に出ます。バインディングを組み上げた後に `$connectedCallback` が throw・reject するのは、初期化の失敗ではありません: `<wcs-state …> $connectedCallback failed.` に続けてエラーが出て、`connectedCallbackPromise` はそのエラーで reject し、ページは組み上がっているので `getBindingsReady()` は resolve します。
 
 #### コメントバインディング
 
@@ -445,10 +451,13 @@ export default {
 | `$watch`・`$stream`・`$renderedCallback` | 実行しない、警告 | 実行しない、`[wcs/mount-dollar-declaration]` の警告（変わらない） |
 | ホストの行の要素への書き込み（`this["users.1"] = obj`） | コンポーネントの私有データを作り直す | コンポーネントの要素は残り、私有のキーもそのまま（§3.4 の「リストの要素への書き込み」を参照） |
 
+マウントに失敗したコンポーネントの `<wcs-state bind-component>` は、`connectedCallbackPromise` をそのエラーで reject します。3.x の README が設定の誤りについて約束していたとおりです。4.0 は、3.x が reject しなかった 2 つの場合にも reject します: 初期化に失敗した根に配線したコンポーネント（`<tag>.state will not mount: the root state failed to initialize.`。3.x はその `connectedCallbackPromise` を決着させず、ページと一緒に接続したものも後から接続したものも、それを待つ側は止まったままでした）と、1 つのコンポーネントで 2 つ目に接続した `<wcs-state bind-component>`（`<tag> already has a connected <wcs-state bind-component="state">.`。3.x は resolve していました）です。`@wcstack/server` の `renderToString()` と `@wcstack/testing` の `mount()` は、Light DOM のコンポーネントのものも含めてすべての `connectedCallbackPromise` を待つので、これらの場合にも reject します。コンポーネントの `$connectedCallback` が失敗しても、コンポーネントを描いた後で reject します（`… $connectedCallback failed.`、§3.4）。
+
 ### 3.6 SSR
 
-- **`@wcstack/server` 4.0 と 4.0 のクライアントは一緒にデプロイしてください。** 4.0 は、`@wcstack/state` 3.x で描画する 3.x の `@wcstack/server` の出力を使えず、きれいなクライアント描画にも切り替わりません。版の警告（`<wcs-ssr version="3.5.0"> does not match 4.0.0: the page renders on the client.`）の後、初期化が失敗するか（例: `[wcs/wildcard-rank] "items.*" needs 1 enclosing loop level(s); the scope provides 0.`）、ページがサーバの HTML のまま固まります。上げる前にキャッシュしたページなど、3.x で描画した HTML を 4.0 のクライアントに渡さないでください。
-- 逆の組み合わせ（4.0 のサーバと 3.x のクライアント）も扱いません。
+- **`@wcstack/server` 4.0 と 4.0 のクライアントは一緒にデプロイしてください。** 4.0 のクライアントは、`@wcstack/state` 3.x で描画する 3.x の `@wcstack/server` の出力（ほかの major.minor の出力も）をハイドレートできません。警告を出し（`<wcs-ssr version="3.5.0"> does not match 4.0.0: its snapshot is discarded, and the page renders on the client from its own state.`）、サーバが無いときと同じくクライアントで描きます: サーバのスナップショットは使わず、状態は自分の読み込み元（`json=`・`src=`・内側のスクリプト・`setInitialState()`）から読み、`$connectedCallback` はクライアントで走り、サーバの行・枝・印は、描画の元になったテンプレートに戻ります。ページから配線した Light DOM のコンポーネント（`data-wcs="state: user"`、`state.label: user.name`）では、3.x はパスをページのパスで書いていました（`user.name`）。これはホストの配線を通して元に戻します。ページは動きますが、サーバがした仕事はクライアントでもう一度行われます（`$connectedCallback` が取得するデータも取得し直します）。
+- 3.x の出力から戻らないものが 1 つあります: テンプレートの外のテキストのバインディング（ページの直下や Light DOM のコンポーネントの中身の `{{ }}`・`<!--@@: -->`）はフィルタを失います。3.x の印はそのパスしか持たないためです（`{{ price|toFixed(2) }}` は整形しない値を出します）。3.x の出力では、警告もそう言います。`for:` / `if:` のテンプレートの中の式はそのまま残ります。切り替えるときは、上げる前にキャッシュしたページなど、3.x で描画した HTML を消してください。
+- 逆の組み合わせ（4.0 のサーバと 3.x のクライアント）は扱いません。3.x のクライアントは全体を描き直すと警告しますが（`SSR version mismatch: server="4.0.0", client="3.5.0". Falling back to full render.`）、4.0 の印を読みません。状態の変化に追従するのは、テンプレートの外の `data-wcs` 属性のバインディングだけで、テキストのバインディング・行・枝はサーバの HTML のままです。
 - `@wcstack/state` 4.0 を古い `@wcstack/server` の下で描画すると（npm の override など）、出力に `<wcs-ssr>` がまったく無いことがあり、そのときページは警告なしにサーバの HTML のまま固まります。4.0 と一緒にリリースされる `@wcstack/server` を使ってください。
 - `@wcstack/server` の API（`renderToString()`）は変わりません。出力の形は変わるので、3.x の印を前提に出力を加工しないでください。
 - 出力のコメントを消さないでください。テキストのバインディングと、行・枝の印はコメントです。後段の HTML の圧縮（html-minifier の `removeComments` など）で消すと、ハイドレーションが崩れ、値の中の `{{ }}` がクライアントでバインディングとして読まれることがあります。
@@ -543,18 +552,20 @@ lint に見えないもの: `bootstrapXxx()` のオプション、委譲され�
 | `$scan was removed (use $watch or $on)` | #1 | 3.1 |
 | `[wcs/declaration-alias] $streams was removed: write $stream.` | #1601 | 3.1 |
 | `[wcs/name-alias] $trackDependency was removed: write $dependOn.` | #1701 | 3.1 |
-| `[wcs/filter-unknown] filter not found: <name>.`（旧名への「Did you mean」は無視する） | #501 | 3.1 |
+| `[wcs/filter-unknown] filter not found: <name>.`（旧名では、続けて `"<name>" was renamed "<new name>" in 3.2 and removed in 4.0 — write "<new name>".`） | #501 | 3.1 |
 | `bootstrapState: "<key>" is not one of its options, or not of the option's type.`（状態の `$behavior` では `$behavior:` や `state:` で始まる） | #44 | 3.2 |
 | `a re-set state may not change $behavior: create the element again.` | #45 | 3.2 |
 | `[@wcstack/<package>] bootstrapXxx: "<key>" is not one of its options, or not of the option's type.` | — | 3.2 |
 | `[wcs/template-syntax] "outerHTML:" replaces its element, so it cannot be used inside a "for" / "if" template …` | #203 | 3.4 |
 | `[wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".` | #1403 | 3.4 |
 | `[wcs/binding-syntax] "<path>": a state path cannot go through "__proto__" or "prototype" …` | #120 | 3.4 |
+| `<wcs-state src="./state.js"> failed to initialize.`（`console.error`。続けてエラー。`state=`・`src=`・`mount=`・`bind-component=` があれば示す） | #49 | 3.4 |
+| `<wcs-state> $connectedCallback failed.`（`console.error`。続けてエラー。バインディングを組み上げた後） | #50 | 3.4 |
 | `<wcs-state mount="p">`: `$watch is not run in a volume — declare it on the root state.`（`console.error`） | — | 3.5 |
 | `<wcs-state mount="p">`: `injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.`（`console.error`） | — | 3.5 |
 | `<wcs-state mount="p"> will not graft: its component is wired to its host.`（`console.error`） | — | 3.5 |
 | `[wcs/mount-dollar-declaration] <tag>: $recursion is not run in a mounted component — declare it on the root state.` | — | 3.5 |
-| `<wcs-ssr version="3.x.y"> does not match 4.0.0: the page renders on the client.`（`console.warn`。文面と違い、きれいなクライアント描画にはならず、3.x の出力は失敗するか固まる） | — | 3.6 |
+| `<wcs-ssr version="3.x.y"> does not match 4.0.0: its snapshot is discarded, and the page renders on the client from its own state.`（`console.warn`。3.x の出力では、続けて `3.x output keeps only the path of a text binding outside a template, so such a binding loses its filters: deploy @wcstack/server 4.0 with this client.`） | — | 3.6 |
 | `[wcs/feature-not-installed] <key> needs the add-on @wcstack/state/features/<name>` | — | 3.8 |
 | `$features must be an array of add-on names (["temporal", "formats"]).` | #46 | 3.8 |
 | `[wcs/feature-unknown] "<name>" is not an add-on (…).` | — | 3.8 |

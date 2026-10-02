@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState, getBindingsReady, installFeatures, ssr } from "../src/index";
+import { VERSION } from "../src/version";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
@@ -127,9 +128,26 @@ describe("SSR", () => {
     const html = (await serverRender(page, state())).replace(/<wcs-ssr version="[^"]*"/, '<wcs-ssr version="99.0.0"');
     let serverLi: Element | null = null;
     const { root } = await clientLoad(html, state(), (r) => { serverLi = r.querySelector("ol > li"); });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('version="99.0.0"'));
+    expect(warn).toHaveBeenCalledWith(`[@wcstack/state] <wcs-ssr version="99.0.0"> does not match ${VERSION}: its snapshot is discarded, and the page renders on the client from its own state.`);
     expect(serverLi!.isConnected).toBe(false);
     expect(Array.from(root.querySelectorAll("ol > li")).map((li) => li.textContent)).toEqual(["a1", "a2", "b1"]);
+    warn.mockRestore();
+  });
+
+  it("版が違えばスナップショットも捨てる: 状態は自分のソースから読み、$connectedCallback がクライアントで走る", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const calls: string[] = [];
+    const src = (where: string) => ({
+      items: [] as string[],
+      $connectedCallback(this: any) { calls.push(where); this.items = [where]; },
+    });
+    const html = (await serverRender(`<wcs-state enable-ssr></wcs-state><ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul>`, src("server")))
+      .replace(/<wcs-ssr version="[^"]*"/, '<wcs-ssr version="99.0.0"');
+    expect(html).toContain('["server"]');
+    const { root } = await clientLoad(html, src("client"));
+    expect(calls).toEqual(["server", "client"]);
+    expect(Array.from(root.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["client"]);
+    expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
 

@@ -32,12 +32,28 @@ const GUIDES: [RegExp, string][] = [
   [/path segments — the limit/, " Every prefix of a path is interned, so the cost grows with the square of the depth."],
   [/\[wcs\/index-arity\] \$resolve/, " $resolve takes one index per \"*\"; $getAll / $setAll take at most that many (fewer expands the rest)."],
   [/"([^"#]+)#[^"]*" is not a filter name: "#" cannot appear in one/, ' Modifiers belong on the left side of the binding, before the ":" — write "$1" here.'],
-  // 4.0 folded substr(start, length) into slice(start, end): the second argument changes meaning
-  [/\[wcs\/filter-unknown\] filter not found: substr\./, ' "substr" was removed in 4.0 — write slice(start, start + length): slice takes the end index, not a length.'],
 ];
 
+/**
+ * The filter names 3.2 renamed, which 3.x kept as aliases and 4.0 removed (3.x's `filterAliases`;
+ * lint has the same table). Their message names the replacement, not the nearest name: for these
+ * that is an unrelated filter (`dec` → `eq`, `fix` → `div`), and following it changes the meaning.
+ */
+export const RENAMED_FILTERS: Readonly<Record<string, string>> = {
+  inc: "add", dec: "sub", fix: "toFixed", uc: "upper", lc: "lower", cap: "capitalize", rep: "repeat", rev: "reverse", pad: "padStart", null: "nullIfEmpty",
+};
+
+/** How to write a filter 4.0 removed, or null. */
+function removedFilter(name: string): string | null {
+  // 4.0 folded substr(start, length) into slice(start, end): the second argument changes meaning
+  if (name === "substr") return ' "substr" was removed in 4.0 — write slice(start, start + length): slice takes the end index, not a length.';
+  const to = Object.hasOwn(RENAMED_FILTERS, name) ? RENAMED_FILTERS[name] : null;
+  return to === null ? null : ` "${name}" was renamed "${to}" in 3.2 and removed in 4.0 — write "${to}".`;
+}
+
 export function explain(message: string, subject?: string, candidates?: Iterable<string>): string {
-  let out = subject !== undefined && candidates !== undefined ? didYouMean(subject, candidates) : "";
+  const removed = subject !== undefined && message.includes("[wcs/filter-unknown]") ? removedFilter(subject) : null;
+  let out = removed ?? (subject !== undefined && candidates !== undefined ? didYouMean(subject, candidates) : "");
   for (const [re, text] of GUIDES) {
     const m = re.exec(message);
     if (m !== null) out += text.replace(/\$(\d)/g, (_, i: string) => m[Number(i)]);
