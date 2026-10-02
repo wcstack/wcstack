@@ -8,6 +8,16 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Changed
+
+- Docs (CSP): **a page nonce does cover state's inline `<script>` and router guards.** A module's `import()` inherits the nonce of the `<script>` that loaded the importing module, so with the page nonce on the `<script>` that loads `@wcstack/state` or `@wcstack/router`, the `blob:` import of an inline state (`<wcs-state><script type="module">`) and of a `<wcs-guard-handler>` loads under a policy without `script-src blob:` (checked on Chromium, Firefox and WebKit). docs/csp.md and the root, state and router READMEs (en / ja) said a nonce could not help; `script-src blob:` or `src=` is needed only where no nonce can be issued. Guards still have no `src=` form (router's `data:` fallback means `script-src data:` would also pass; the docs say not to open it).
+- Docs (CSP): the browser evaluates a `<script type="module">` inside `<wcs-state>` itself as well — the docs said it never did. With no CSP, or with the nonce on that `<script>`, its top-level code runs twice, so keep side effects out of it; under a CSP without that nonce the browser's run is refused with one console violation and state still loads (state README, docs/csp.md §4).
+- Docs (CSP): docs/csp.md gains §2.1 on the split entries of `@wcstack/state` (only the delivery host is needed; the inline-state `blob:` rule still applies; the README recipe's import map and inline bootstrap each need a nonce or a hash). §3.3 states what `'strict-dynamic'` does to loads with and without a nonce. §9 names router's non-asserting message, says where each package keeps the original error, and records that Firefox fires the violation after the failed import, so state and router up to 3.4.0 report a CSP block there with the non-asserting message; their CSP-confirmed messages name only `script-src blob:` (and `src=`) as the fix.
+
+### Repository
+
+- e2e: `e2e/tests/csp.spec.ts` (fixtures `e2e/fixtures/csp-*.html`) pins the nonce hand-off against an enforcing Chromium: an inline state loads with the nonce on state's `<script>` (no `blob` violation) and, without it, fails with the CSP-confirmed message after exactly one `blob` violation; a router guard runs with the nonce on router's `<script>`.
+
 ## [3.4.0] — 2026-10-02
 
 **3.4 fixes the issues reported against 3.3.0, and the regressions those fixes introduced on the way.** The changes are in `@wcstack/state`, with follow-ups in `@wcstack/devtools`, `@wcstack/lint` and the VS Code extension; every other package moves to 3.4.0 only to keep the lockstep version.

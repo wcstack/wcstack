@@ -352,7 +352,7 @@ const html = await renderToString(`
 
 One `<script>` tag. One custom element. Pure HTML. That's it.
 
-> Enforcing a Content-Security-Policy? The inline `<script type="module">` above is evaluated through a `blob:` URL and needs `script-src blob:`; moving the state into `src="./state.js"` needs no extra directive. Per-feature directive table: [docs/csp.md](docs/csp.md).
+> Enforcing a Content-Security-Policy? The inline `<script type="module">` above is evaluated through a `blob:` URL and needs either the page's nonce on the `<script>` that loads state or `script-src blob:`; moving the state into `src="./state.js"` needs no extra directive. Per-feature directive table: [docs/csp.md](docs/csp.md).
 
 For production, pin the version and add an `integrity` attribute. `dist/auto.min.js` is a self-contained bundle with zero imports, so **one hash covers every line of wcstack that runs** — the usual ESM caveat, where `integrity` protects only the entry and not what it imports, does not apply:
 
