@@ -38,19 +38,22 @@ const BANNER =
 const check = process.argv.includes("--check");
 
 // Published packages: packages/*/package.json scoped under @wcstack/. Auto-picks
-// up new packages and excludes the non-published vscode-wcs extension.
+// up new packages and excludes the non-published vscode-wcs extension and any
+// `private: true` package (packages/state-next until the 4.0 swap), the same rule
+// as release.yml and generate-sri.mjs.
 function publishedPackages() {
   const out = [];
   for (const d of readdirSync(PKGDIR)) {
     const pj = join(PKGDIR, d, "package.json");
     if (!existsSync(pj)) continue;
-    let name;
+    let pkg;
     try {
-      name = JSON.parse(readFileSync(pj, "utf8")).name;
+      pkg = JSON.parse(readFileSync(pj, "utf8"));
     } catch {
       continue;
     }
-    if (typeof name === "string" && name.startsWith("@wcstack/")) out.push(d);
+    if (pkg.private === true) continue;
+    if (typeof pkg.name === "string" && pkg.name.startsWith("@wcstack/")) out.push(d);
   }
   return out.sort();
 }

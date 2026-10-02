@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: deferred spread inside for / if templates</title>
+  <!-- Issue #330: a spread (`...: .` / `...: rows.*`) inside a `for:` / `if:`
+       template on a custom element that is defined only after state has
+       rendered (autoloader, a slow CDN, a <script> after state). Before the
+       fix the template's bindings threw "requires <x-greet> to be registered"
+       and the whole `for:` / `if:` rendered nothing; the top level already
+       deferred to whenDefined. Row `x` is removed before the definition and
+       must not be expanded afterwards. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <script type="module">
+    const count = (selector) => document.querySelectorAll(selector).length;
+    await customElements.whenDefined("wcs-state");
+    const stateEl = document.querySelector("wcs-state");
+    await stateEl.connectedCallbackPromise;
+    await customElements.get("wcs-state").getBindingsReady(document);
+    window.__beforeDefine = {
+      defined: customElements.get("x-greet") !== undefined,
+      dot: count("#dot x-greet"),
+      star: count("#star x-greet"),
+      branch: count("#branch x-greet"),
+      gone: count("#gone x-greet"),
+    };
+    window.__removedEl = document.querySelector("#gone x-greet");
+    stateEl.createState("writable", (state) => { state.gone = state.gone.slice(1); });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    customElements.define("x-greet", class extends HTMLElement {
+      static wcBindable = {
+        protocol: "wc-bindable",
+        version: 1,
+        properties: [{ name: "status", event: "x-greet:status" }],
+        inputs: [{ name: "name" }],
+      };
+      set name(v) { this._n = v; this.textContent = `hello ${v}`; }
+      get name() { return this._n; }
+      get status() { return "ready"; }
+    });
+  </script>
+</head>
+<body>
+  <wcs-state json='{"people":[{"name":"a"},{"name":"b"}],"gone":[{"name":"x"},{"name":"y"}],"show":true,"one":{"name":"z"}}'></wcs-state>
+  <ul id="dot"><template data-wcs="for: people"><li><x-greet data-wcs="...: ."></x-greet></li></template></ul>
+  <ul id="star"><template data-wcs="for: people"><li><x-greet data-wcs="...: people.*"></x-greet></li></template></ul>
+  <div id="branch"><template data-wcs="if: show"><x-greet data-wcs="...: one"></x-greet></template></div>
+  <ul id="gone"><template data-wcs="for: gone"><li><x-greet data-wcs="...: ."></x-greet></li></template></ul>
+</body>
+</html>

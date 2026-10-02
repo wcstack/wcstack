@@ -28,6 +28,17 @@ export const MAX_PROPAGATION_HOPS = 32;
 // 値は MAX_PROPAGATION_HOPS と同値だが、別の打ち切り機構なので定数は共有しない。
 export const MAX_WATCH_CHAIN_DEPTH = 32;
 
+// 描画起点の書き込み連鎖の打ち切り深さ（#338）。binding の適用中に起きた書き込み（行を作るときの
+// 要素の初期同期・`$renderedCallback` など）は新しい microtask バッチを作り、その描画がまた書く —
+// 上の 2 つはどちらもこの連鎖を数えない（hop は 1 transaction の中、watch はハンドラ起点だけ）。
+// 伸ばすのは適用の最中の書き込みだけ（drain 終了リスナーの書き込みは深さを引き継ぐだけ — #353）なので、
+// `$watch` の連鎖とは重ならない（updater/updater.ts）。
+// 上の 2 つの 32 より大きいのは単位が違うから: ここの 1 段は 1 回の描画で、「描いて測って 1px 詰める」
+// 「10 行ずつ段階描画する」のような有限の連鎖が正当に 40〜50 段になる（32 では途中で切れた）。
+// 100 は Vue のスケジューラの RECURSION_LIMIT と同じ値。無限ループの打ち切りまでは Issue の形で十数 ms
+// （Chromium 実測 約 14ms・1 段あたり 0.1ms 強）。
+export const MAX_RENDER_CHAIN_DEPTH = 100;
+
 // updater の drain 終了リスナーの実行順（昇順に呼ばれる。設計書 §3-2 層 1）。
 // watch が先なのは、watch ハンドラの書き込みが同じバッチの stream restart 判定に
 // 影響しないようにするため（watch → restart の一方向）。import 順に順序を持たせると

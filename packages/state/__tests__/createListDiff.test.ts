@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { createListDiff } from '../src/list/createListDiff';
 import { getListIndexesByList, retireListIndexes, setListIndexesByList } from '../src/list/listIndexesByList';
-import { createListIndex, getHomeParentListIndex } from '../src/list/createListIndex';
+import { createListIndex, getHomeParentListIndex, setListIndexValue } from '../src/list/createListIndex';
+import { advanceUpdateBatch } from '../src/updater/updateBatch';
 
 describe('createListDiff', () => {
   it('calcDiffIndexesで位置が変わった既存要素がchangeIndexSetに含まれること', () => {
@@ -139,6 +140,53 @@ describe('createListDiff', () => {
       setListIndexesByList(listA, null);
       setListIndexesByList(listB, null);
     });
+
+    it('差分を取った後で新しい配列の台帳が差し替わったら、キャッシュを使わず台帳どうしで取り直すこと（#335）', () => {
+      // 要素書き込みの入れ替えが揃うと、いまの配列の台帳は新しい配列に差し替わる。同じバッチで先に取った
+      // 置き換えの差分（`for` がまだ適用していない）は、差し替え前の行を newIndexes に持ったまま
+      const listA = [{ v: 1 }, { v: 2 }];
+      const [rowA0, rowA1] = createListDiff(null, [], listA).newIndexes;
+      const listB = [listA[0], listA[1], { v: 3 }];
+      const d1 = createListDiff(null, listA, listB);
+      const [, , rowB2] = d1.newIndexes;
+      const replaced = createListIndex(null, 0);
+      listB[0] = { v: 9 }; // 要素書き込みが行 0 を差し替えた
+      setListIndexesByList(listB, [replaced, rowA1, rowB2]);
+
+      const d2 = createListDiff(null, listA, listB);
+
+      expect(d2).not.toBe(d1);
+      expect(d2.newIndexes).toEqual([replaced, rowA1, rowB2]);
+      expect([...d2.addIndexSet]).toEqual([replaced, rowB2]);
+      expect([...d2.deleteIndexSet]).toEqual([rowA0]);
+      // 台帳が差分の newIndexes のままなら、キャッシュを返す
+      expect(createListDiff(null, listA, listB)).not.toBe(d1);
+      setListIndexesByList(listB, d1.newIndexes);
+      expect(createListDiff(null, listA, listB)).toBe(d1);
+
+      setListIndexesByList(listA, null);
+      setListIndexesByList(listB, null);
+    });
+
+    it('同じ中身の写しで置き換えた差分（台帳を前の配列と共有）も、写しの台帳が差し替われば取り直すこと（#335）', () => {
+      const listA = [{ v: 1 }, { v: 2 }];
+      const rows = createListDiff(null, [], listA).newIndexes;
+      const listB = [...listA];
+      const d1 = createListDiff(null, listA, listB);
+      expect(d1.newIndexes).toBe(rows);
+      const replaced = createListIndex(null, 1);
+      listB[1] = { v: 9 };
+      setListIndexesByList(listB, [rows[0], replaced]);
+
+      const d2 = createListDiff(null, listA, listB);
+
+      expect([...d2.addIndexSet]).toEqual([replaced]);
+      expect([...d2.deleteIndexSet]).toEqual([rows[1]]);
+      expect(getListIndexesByList(listA)).toBe(rows);
+
+      setListIndexesByList(listA, null);
+      setListIndexesByList(listB, null);
+    });
   });
 
   describe('退役した親の付け替え（#256）', () => {
@@ -190,7 +238,7 @@ describe('createListDiff', () => {
      * 行ごとに home が違う集合ができると、「持ち主が戻ってきたか」の判定が
      * `listIndexes[0]` に当たった行で変わってしまう。
      */
-    it('引き継いだ行集合に足した行も、行集合の home を継ぐこと', () => {
+    it('別の親が引き継いで写しに足した行集合は、引き継いだ行も足した行もその親を home にすること（home は 1 つ）', () => {
       const listA = [{ v: 1 }, { v: 2 }];
       const home = createListIndex(null, 0);
       const rows = createListDiff(home, [], listA).newIndexes;
@@ -198,7 +246,11 @@ describe('createListDiff', () => {
         expect(getHomeParentListIndex(row)).toBe(home);
       }
 
-      // 別の生きた親がその行集合を引き継ぎ、先頭に 1 行足す（値照合の経路）
+      // 親が退役し、別の生きた親がその行集合を引き継いで、先頭に 1 行足す（値照合の経路）。生きた親から
+      // 引き継ぐ形は共有された配列の写しなので、行を貸さない（#393 — 下の別の it）。前の home は新しい配列を持ったことが
+      // 無いので、行集合ごと引き継いだ親を home にする — 前の home を継ぐと、home が配列を手放していないうちは行集合が
+      // そちらへ戻され、新しい配列の読み書きが前の home の配列に着地した（#394）
+      retireListIndexes([home]);
       const other = createListIndex(null, 1);
       const listB = [{ v: 0 }, ...listA];
       const grown = createListDiff(other, listA, listB).newIndexes;
@@ -207,7 +259,7 @@ describe('createListDiff', () => {
       expect(grown[1], '引き継いだ行は作り直さない').toBe(rows[0]);
       expect(grown[2]).toBe(rows[1]);
       for (const row of grown) {
-        expect(getHomeParentListIndex(row), '足した行の home も元の行集合のもの').toBe(home);
+        expect(getHomeParentListIndex(row), '引き継いだ行も足した行も、引き継いだ親が home').toBe(other);
       }
 
       setListIndexesByList(listA, null);
@@ -243,5 +295,66 @@ describe('createListDiff', () => {
 
       setListIndexesByList(list, null);
     });
+  });
+});
+
+describe('行はそのままで要素が替わった行（#359）', () => {
+  /** saved の台帳の行を next の台帳が共有し、next の行 0 が要素の書き込みでその場で o3 を映す形 */
+  function setup() {
+    const o1 = { id: 1 };
+    const o2 = { id: 2 };
+    const o3 = { id: 3 };
+    const saved = [o1, o2, o3];
+    createListDiff(null, [], saved);
+    const next = [o1, o2, o3, { id: 4 }];
+    createListDiff(null, saved, next);
+    const row = getListIndexesByList(next)![0];
+    next[0] = o3;
+    setListIndexValue(row, o3);
+    return { saved, next, row };
+  }
+
+  it('両方の配列に台帳がある差分は呼ぶたびに取り直すが、同じバッチの間は後の呼び出しにも拾った行を渡すこと', () => {
+    const { saved, next, row } = setup();
+    const first = createListDiff(null, next, saved);
+    const second = createListDiff(null, next, saved);
+    expect(first.valueChangeIndexes).toEqual([row]);
+    expect(second).not.toBe(first);
+    // 同じ配列を別のパスが描く（配列をそのまま返す getter の for）と、そのパスの展開が取り直す差分
+    expect(second.valueChangeIndexes).toEqual([row]);
+    setListIndexesByList(saved, null);
+    setListIndexesByList(next, null);
+  });
+
+  it('バッチが替われば渡さないこと', () => {
+    const { saved, next, row } = setup();
+    expect(createListDiff(null, next, saved).valueChangeIndexes).toEqual([row]);
+    advanceUpdateBatch();
+    expect(createListDiff(null, next, saved).valueChangeIndexes).toBeUndefined();
+    setListIndexesByList(saved, null);
+    setListIndexesByList(next, null);
+  });
+});
+
+describe('行はそのままで要素が替わった行（#359）: 同じ配列への別の差分', () => {
+  it('同じバッチで別の配列から同じ配列への差分が別の行を拾ったら、両方を渡すこと', () => {
+    const o1 = { id: 1 };
+    const o2 = { id: 2 };
+    const saved = [o1, o2];
+    createListDiff(null, [], saved);
+    const x = [o1, o2, { id: 3 }];
+    createListDiff(null, saved, x);
+    const y = [o1, o2, { id: 4 }];
+    createListDiff(null, saved, y);
+    const [row0, row1] = getListIndexesByList(saved)!;
+    x[0] = o2;
+    setListIndexValue(row0, o2);
+    expect(createListDiff(null, x, saved).valueChangeIndexes).toEqual([row0]);
+    y[1] = o1;
+    setListIndexValue(row1, o1);
+    expect(createListDiff(null, y, saved).valueChangeIndexes).toEqual([row0, row1]);
+    for (const list of [saved, x, y]) {
+      setListIndexesByList(list, null);
+    }
   });
 });

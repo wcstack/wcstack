@@ -4,9 +4,10 @@ import { test, expect, type Page } from "@playwright/test";
 // uses a policy without blob:; what differs is whether the <script> that loads the bundle
 // carries the page nonce, which the bundle's blob: import inherits.
 //
-// Firefox fires the violation after the import has failed (docs/csp.md §9); that ordering is
-// covered by the state unit suite, since this project runs Chromium only.
+// Firefox fires the violation after the import has failed (docs/csp.md §9). This project runs
+// Chromium only, so that ordering is not exercised here.
 
+// CSP reports a blob: URL as its scheme alone: blockedURI is "blob", never "blob:…".
 type Violation = { directive: string; blocked: string };
 
 const violations = (page: Page) => page.evaluate(() => (window as any).__violations as Violation[]);
@@ -26,7 +27,7 @@ test.describe("CSP — @wcstack/state inline <script>", () => {
     await expect(page.locator("#out")).toHaveText("inline state loaded");
     // the one refusal is the browser's own evaluation of the inline <script>, not state's load
     const refused = await violations(page);
-    expect(refused.filter((v) => v.blocked.startsWith("blob:"))).toEqual([]);
+    expect(refused.filter((v) => v.blocked === "blob")).toEqual([]);
     expect(refused.filter((v) => v.blocked === "inline")).toHaveLength(1);
   });
 
@@ -34,6 +35,10 @@ test.describe("CSP — @wcstack/state inline <script>", () => {
     await page.goto("/e2e/fixtures/csp-state-blocked.html");
     expect(await outcome(page)).toMatch(/was blocked by Content-Security-Policy/);
     await expect(page.locator("#out")).toHaveText("{{ message }}");
+    // state's own load is the one blob: refusal; the browser's evaluation of the inline <script> is separate
+    const refused = await violations(page);
+    expect(refused.filter((v) => v.blocked === "blob")).toHaveLength(1);
+    expect(refused.filter((v) => v.blocked === "inline")).toHaveLength(1);
   });
 });
 

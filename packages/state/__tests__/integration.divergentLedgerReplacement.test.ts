@@ -163,19 +163,13 @@ describe("行オブジェクトだけを作り直す置換（#256 / X2）の汚�
   const texts = (sr: ShadowRoot, sel: string) =>
     Array.from(sr.querySelectorAll(sel)).map((e) => e.textContent);
 
-  // 置換そのものが載せるアドレスの内訳（実測）。**重複は無い**（3 件とも別アドレス）が、
-  // 生きている 2 行に加えて **退役した旧行** のアドレスが 1 件混ざる: 依存ウォークが
-  // 縮約エッジを辿る時点では、子の行はまだ旧行にぶら下がっている（台帳の付け替えは
-  // 新しい親で引かれた時に起きる）。退役した行のアドレスには生きたバインディングが
-  // 無いので描画には効かず、**生きている 2 行はどちらも dirty になり再評価される** ——
+  // 置換そのものが載せるアドレスの内訳（実測）。**生きている 2 行はどちらも dirty になり再評価される** ——
   // #256 が直したのはそこで、下の「置換のあとの葉の書き込み」の it がその門。
   //
-  // 受け入れ条件 10 の『should be: 2 件』には**届いていない**。実測は 3 件（うち 1 件は
-  // 退役した行）で、**main でも同じ 3 件**（このファイルを main の src に対して走らせて確認）。
-  // 回帰ではないので、条件を「生きている 2 行が必ず dirty になること ＋ 重複が無いこと」へ
-  // 明示的に改める。3 件を 2 件にするには修理を依存ウォークの内側へ前倒しする必要があり、
-  // 行 identity の保存と「生きた共有は 1 スロット 1 アドレス」を崩しかねないので触らない。
-  it("map-spread の置換では、生きている 2 行と退役した旧行 1 件が dirty になる", async () => {
+  // 受け入れ条件 10 の『should be: 2 件』には、#393 / #394 の修理で届いた。差分は、キャッシュが当たっても
+  // 台帳を引き直す（list/createListDiff.ts）ので、依存ウォークが新しい外側の行の下のリストを展開した時点で子の行は
+  // 新しい行へ付け替わり、退役した旧行のアドレスは載らない（それまでは 3 件 — うち 1 件は退役した行 — で、main も同じ）。
+  it("map-spread の置換では、生きている 2 行だけが dirty になる", async () => {
     const { initial, counter } = fixture();
     const { host, shadowRoot, stateElement } = await mount(initial, NESTED_FOR);
     expect(texts(shadowRoot, ".total")).toEqual(["31", "2"]);
@@ -187,11 +181,11 @@ describe("行オブジェクトだけを作り直す置換（#256 / X2）の汚�
     const ledger = getListIndexesByList(initial.nodes)!;
     expect(ledger, "置換後の生きている行").toHaveLength(2);
 
-    expect(dirty).toHaveLength(3);
-    expect(new Set(dirty).size, "3 件とも別々のアドレス（同一オブジェクトの重複ではない）").toBe(3);
-    expect(dirty.map((a) => a.listIndex!.indexes)).toEqual([[0], [1], [0]]);
-    expect(dirty.map((a) => ledger.includes(a.listIndex!)), "生きた 2 行 ＋ 退役した旧行 1 件")
-      .toEqual([true, true, false]);
+    expect(dirty).toHaveLength(2);
+    expect(new Set(dirty).size, "2 件とも別々のアドレス（同一オブジェクトの重複ではない）").toBe(2);
+    expect(dirty.map((a) => a.listIndex!.indexes)).toEqual([[0], [1]]);
+    expect(dirty.map((a) => ledger.includes(a.listIndex!)), "生きた 2 行だけ（退役した旧行は載らない）")
+      .toEqual([true, true]);
     expect(counter.evals - before, "再評価は生きている 2 行ぶん").toBe(2);
     expect(texts(shadowRoot, ".total"), "置換だけでは表示は変わらない").toEqual(["31", "2"]);
     host.remove();

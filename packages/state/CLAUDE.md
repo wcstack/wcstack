@@ -110,7 +110,7 @@ src/
 wc-bindable 対応カスタム要素に対して `...: target` で properties + inputs を一括配線:
 - `bindingType: 'spread'` として一旦パース → `bindTextParser/expandSpread.ts` で `wcBindable.properties + inputs` を読み propName ごとの個別エントリに展開
 - 後勝ちで explicit binding が spread を上書き（`config.debug` 時 `console.debug` で通知）
-- カスタム要素未登録時は `IDeferredSpreadEntry` を `customElements.whenDefined()` 待ちで保持し、登録後 `processDeferredNode` で再展開（`parseResults` を closure capture することで happy-dom の upgrade 時属性消失を回避）
+- カスタム要素未登録時は `IDeferredSpreadEntry` を `customElements.whenDefined()` 待ちで保持し、登録後 `processDeferredNode` で再展開（`parseResults` を closure capture することで happy-dom の upgrade 時属性消失を回避）。構造テンプレートの行（`for:` / `if:` の Content）でも同じ（#330）: 未展開のものは `content.spreads` に載り、`activateContent` が活性化のたびに行のループ文脈で予約する（解体の dispose が待ちを取り消す）。展開した束縛は行の束縛の列に足され、以後は他の束縛と同じく解体・活性化される
 - filter は禁止、右辺の `*` は途中可
 - commands と event token は spread 対象外（pub/sub 境界を明示）
 

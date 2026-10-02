@@ -50,7 +50,7 @@ describe('loadFromInnerScript', () => {
     }
   });
 
-  it('CSP 違反が観測された場合は blob: 許可と src= 退避を促すメッセージで失敗すること', async () => {
+  it('CSP 違反が観測された場合は nonce・blob: 許可・src= 退避を促すメッセージで失敗すること', async () => {
     const originalCreate = (URL as any).createObjectURL;
     const originalRevoke = (URL as any).revokeObjectURL;
 
@@ -76,9 +76,67 @@ describe('loadFromInnerScript', () => {
       await expect(loadFromInnerScript(script, 'state#csp')).rejects.toThrow(
         /state "state#csp" was blocked by Content-Security-Policy/
       );
-      await expect(loadFromInnerScript(script, 'state#csp')).rejects.toThrow(/script-src must allow blob:/);
+      // the blob: import inherits the nonce of the <script> that loaded @wcstack/state (docs/csp)
+      await expect(loadFromInnerScript(script, 'state#csp')).rejects.toThrow(
+        /give the page's nonce to the <script> that loads @wcstack\/state/
+      );
+      await expect(loadFromInnerScript(script, 'state#csp')).rejects.toThrow(/allow blob: in script-src/);
       await expect(loadFromInnerScript(script, 'state#csp')).rejects.toThrow(/src="\.\/state\.js"/);
     } finally {
+      Object.defineProperty(URL, 'createObjectURL', { value: originalCreate, configurable: true });
+      Object.defineProperty(URL, 'revokeObjectURL', { value: originalRevoke, configurable: true });
+    }
+  });
+
+  it('違反が import の失敗より後に来ても（Firefox の順。次のタスクまでに届く）CSP と断定すること', async () => {
+    const originalCreate = (URL as any).createObjectURL;
+    const originalRevoke = (URL as any).revokeObjectURL;
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: vi.fn(() => `data:application/javascript;base64,${btoa('export default {')}`),
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true });
+    // The wait after the failed import is the only zero-delay setTimeout on this path: firing the
+    // violation there delivers it after the failure and before the decision, Firefox's order
+    const timeout = globalThis.setTimeout;
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number) => {
+      if (ms === undefined) {
+        const violation = new Event('securitypolicyviolation');
+        (violation as any).effectiveDirective = 'script-src-elem';
+        document.dispatchEvent(violation);
+      }
+      return timeout(fn, ms);
+    }) as typeof setTimeout);
+
+    try {
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.textContent = 'export default {';
+
+      const error = await loadFromInnerScript(script, 'state#late-violation').catch((e: Error) => e);
+      expect((error as Error).message).toMatch(/state "state#late-violation" was blocked by Content-Security-Policy/);
+      expect(timeoutSpy).toHaveBeenCalled();
+    } finally {
+      timeoutSpy.mockRestore();
+      Object.defineProperty(URL, 'createObjectURL', { value: originalCreate, configurable: true });
+      Object.defineProperty(URL, 'revokeObjectURL', { value: originalRevoke, configurable: true });
+    }
+  });
+
+  it('読み込みに成功した経路は待たないこと（setTimeout を呼ばない）', async () => {
+    const originalCreate = (URL as any).createObjectURL;
+    const originalRevoke = (URL as any).revokeObjectURL;
+    Object.defineProperty(URL, 'createObjectURL', { value: undefined, configurable: true });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: undefined, configurable: true });
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.textContent = 'export default { ok: true }';
+      expect(await loadFromInnerScript(script, 'state#ok')).toEqual({ ok: true });
+      expect(timeoutSpy).not.toHaveBeenCalled();
+    } finally {
+      timeoutSpy.mockRestore();
       Object.defineProperty(URL, 'createObjectURL', { value: originalCreate, configurable: true });
       Object.defineProperty(URL, 'revokeObjectURL', { value: originalRevoke, configurable: true });
     }

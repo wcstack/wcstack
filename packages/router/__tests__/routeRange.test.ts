@@ -9,8 +9,8 @@ import type { IRouteMatchResult } from '../src/components/types';
 import './setup';
 
 /**
- * ルートの内容を範囲（placeholder 〜 終了マーカー）で持つこと（v4-remaining.ja.md §3 の
- * `@wcstack/router` の行）。ルートの内容に他のコードが描いたもの（state がページの走査で
+ * ルートの内容を範囲（placeholder 〜 終了マーカー）で持つこと（docs/binder-protocol-design.md §9-5、
+ * docs/ssr-router-design.md §4）。ルートの内容に他のコードが描いたもの（state がページの走査で
  * 描いた行・枝と、それを描くアンカー）は、元のノード（childNodeArray）に入っていない。
  */
 
@@ -31,6 +31,31 @@ function makeRoute(html: string, path = '/r'): { route: Route; container: HTMLEl
   document.body.appendChild(container);
   return { route, container };
 }
+
+/** 接続・切断を数える要素（再表示で connectedCallback がもう一度走るか） */
+class RangeCount extends HTMLElement {
+  log: string[] = [];
+  route: { params: Record<string, string> } | null = null;
+  connectedCallback(): void { this.log.push(this.route ? `connected:${this.route.params.id}` : 'connected'); }
+  disconnectedCallback(): void { this.log.push('disconnected'); }
+}
+if (!customElements.get('range-count')) customElements.define('range-count', RangeCount);
+
+/** 接続のたびに、そのとき見えているパラメータ（props.cid）を記録する要素 */
+const probeLog: string[] = [];
+class ParamProbe extends HTMLElement {
+  props?: { cid?: string };
+  connectedCallback(): void { probeLog.push(`c:${this.props?.cid}`); }
+  disconnectedCallback(): void { probeLog.push('d'); }
+}
+if (!customElements.get('param-probe')) customElements.define('param-probe', ParamProbe);
+
+/** disconnectedCallback で任意の書き換えをする要素 */
+class RangeMutator extends HTMLElement {
+  onDisconnect: (() => void) | null = null;
+  disconnectedCallback(): void { this.onDisconnect?.(); }
+}
+if (!customElements.get('range-mutator')) customElements.define('range-mutator', RangeMutator);
 
 const markup = (el: Node): string => Array.from(el.childNodes, (n) =>
   n.nodeType === 8 ? `<!--${(n as Comment).data.replace(/^@@route:.*/, '@@route')}-->` : n.nodeType === 3 ? (n as Text).data : (n as Element).outerHTML).join('');
@@ -69,6 +94,15 @@ describe('ルートの範囲（placeholder 〜 終了マーカー）', () => {
     expect(markup(container)).toBe(`<!--@@route--><h2>a</h2><dialog>d</dialog><p>b</p><!--@@wcs-route-end:/r-->`);
   });
 
+  it('先頭の自分のノードが範囲の外へ移されていても、隠すと内容の先頭に戻す', () => {
+    const { route, container } = makeRoute(`<dialog>d</dialog><p>x</p>`);
+    showRoute(route, mockMatch(route));
+    document.body.appendChild(container.querySelector('dialog')!);
+    hideRoute(route);
+    showRoute(route, mockMatch(route));
+    expect(markup(container)).toBe(`<!--@@route--><dialog>d</dialog><p>x</p><!--@@wcs-route-end:/r-->`);
+  });
+
   it('範囲の中で別の要素の中へ移った自分のノードは、その要素ごと持つ（取り出さない）', () => {
     const { route, container } = makeRoute(`<section></section><p>x</p>`);
     showRoute(route, mockMatch(route));
@@ -98,14 +132,130 @@ describe('ルートの範囲（placeholder 〜 終了マーカー）', () => {
     expect(markup(container)).toBe(`<!--@@route--><p>x</p><!--@@wcs-route-end:/r--><i></i>`);
   });
 
-  it('表示中のルートをもう一度表示しても（パラメータの変化、親の再表示）、内容と描いたものは動かさない', () => {
-    const { route, container } = makeRoute(`<p>x</p>`, '/r/:id');
+  it('表示中のルートをもう一度表示すると（パラメータの変化）、範囲を取り出して同じ順で戻し、カスタム要素は再接続する', () => {
+    const { route, container } = makeRoute(`<h2>t</h2><range-count></range-count><footer>f</footer>`, '/r/:id');
     showRoute(route, mockMatch(route, { id: '1' }));
-    container.querySelector('p')!.after(document.createElement('b'));
+    // state が描いた行に当たる
+    container.querySelector('range-count')!.after(document.createElement('b'));
     const shown = markup(container);
+    const counter = container.querySelector('range-count') as RangeCount;
+    counter.log.length = 0;
+    counter.route = route;
+    const observer = new MutationObserver(() => {});
+    observer.observe(container, { childList: true });
     showRoute(route, mockMatch(route, { id: '2' }));
+    // 順は変わらない（main は H2,P,FOOTER を P,FOOTER,H2 に並べ替えていた）
     expect(markup(container)).toBe(shown);
     expect(route.params).toEqual({ id: '2' });
+    // 外して、同じ順で戻した（ブラウザでは connectedCallback がもう一度走り、新しいパラメータを読める）
+    const records = observer.takeRecords();
+    observer.disconnect();
+    const names = (nodes: NodeList) => Array.from(nodes, (n) => n.nodeName);
+    expect(records.flatMap((r) => names(r.removedNodes))).toEqual(['H2', 'RANGE-COUNT', 'B', 'FOOTER', '#comment']);
+    expect(records.flatMap((r) => names(r.addedNodes))).toEqual(['H2', 'RANGE-COUNT', 'B', 'FOOTER', '#comment']);
+    expect(counter.log).toEqual(['disconnected', 'connected:2']);
+  });
+
+  it('表示中のルートの再表示で、終了マーカーを他のコードが動かしていたら、元のノードと終了マーカーを placeholder の後ろへ戻す', () => {
+    const { route, container } = makeRoute(`<h2>t</h2><p>x</p>`, '/r/:id');
+    showRoute(route, mockMatch(route, { id: '1' }));
+    container.prepend(route.endMarker);
+    showRoute(route, mockMatch(route, { id: '2' }));
+    expect(markup(container)).toBe(`<!--@@route--><h2>t</h2><p>x</p><!--@@wcs-route-end:/r/:id-->`);
+  });
+
+  // state がページの走査で描いたものに当たる: template をアンカーに置き換え、その前に行を描く
+  function drawRows(container: HTMLElement): void {
+    const anchor = document.createComment('wcs-for');
+    container.querySelector('#t')!.replaceWith(anchor);
+    anchor.before(Object.assign(document.createElement('b'), { textContent: 'row' }));
+  }
+
+  it('他のコードが終了マーカーを取り除いても、再表示と退場で、アンカーに置き換えられた template を戻さず、自分のノードの間に描かれたものも持ち運ぶ', () => {
+    const { route, container } = makeRoute(`<h2>t</h2><template id="t"></template><p>x</p>`, '/r/:id');
+    showRoute(route, mockMatch(route, { id: '1' }));
+    drawRows(container);
+    const shown = markup(container);
+    expect(shown).toBe(`<!--@@route--><h2>t</h2><b>row</b><!--wcs-for--><p>x</p><!--@@wcs-route-end:/r/:id-->`);
+    route.endMarker.remove();
+    // パラメータの変化: 初めての表示として書かれたノードを入れ直さない
+    showRoute(route, mockMatch(route, { id: '2' }));
+    expect(markup(container)).toBe(shown);
+    route.endMarker.remove();
+    hideRoute(route);
+    expect(markup(container)).toBe(`<!--@@route-->`);
+    showRoute(route, mockMatch(route, { id: '3' }));
+    expect(markup(container)).toBe(shown);
+  });
+
+  it('終了マーカーが取り除かれたとき、最後の自分のノードより後ろに描かれたものは範囲と見分けられず残るが、template は戻さない', () => {
+    const { route, container } = makeRoute(`<h2>t</h2><template id="t"></template>`, '/r/:id');
+    showRoute(route, mockMatch(route, { id: '1' }));
+    drawRows(container);
+    route.endMarker.remove();
+    showRoute(route, mockMatch(route, { id: '2' }));
+    expect(markup(container)).toBe(`<!--@@route--><h2>t</h2><!--@@wcs-route-end:/r/:id--><b>row</b><!--wcs-for-->`);
+    expect(container.querySelector('template')).toBeNull();
+  });
+
+  it('表示中のルートの再表示は、範囲の外へ移された自分のノード（body のダイアログ）も元の位置へ戻す', () => {
+    const { route, container } = makeRoute(`<h2>a</h2><dialog>d</dialog><p>b</p>`, '/r/:id');
+    showRoute(route, mockMatch(route, { id: '1' }));
+    document.body.appendChild(container.querySelector('dialog')!);
+    showRoute(route, mockMatch(route, { id: '2' }));
+    expect(markup(container)).toBe(`<!--@@route--><h2>a</h2><dialog>d</dialog><p>b</p><!--@@wcs-route-end:/r/:id-->`);
+  });
+
+  it('作者のコードが取り除いた直下のノード（閉じたお知らせ）は、次の入場で戻らない', () => {
+    const { route, container } = makeRoute(`<aside class="notice">n</aside><p>x</p>`);
+    showRoute(route, mockMatch(route));
+    container.querySelector('aside')!.remove();
+    hideRoute(route);
+    showRoute(route, mockMatch(route));
+    expect(markup(container)).toBe(`<!--@@route--><p>x</p><!--@@wcs-route-end:/r-->`);
+  });
+
+  it('二度隠しても（重なったナビゲーション）、持っている内容と描いたものを失わない', () => {
+    const { route, container } = makeRoute(`<p>x</p>`);
+    showRoute(route, mockMatch(route));
+    container.querySelector('p')!.after(Object.assign(document.createElement('b'), { textContent: 'row' }));
+    const shown = markup(container);
+    hideRoute(route);
+    hideRoute(route);
+    expect(markup(container)).toBe(`<!--@@route-->`);
+    showRoute(route, mockMatch(route));
+    expect(markup(container)).toBe(shown);
+  });
+
+  it('外すときの disconnectedCallback が範囲を書き換えても（後ろのノードを外す・placeholder の後ろに足す・終了マーカーを外す）、止まらずに隠して戻せる', () => {
+    const { route, container } = makeRoute(`<range-mutator></range-mutator><i class="partner"></i><p>x</p>`);
+    showRoute(route, mockMatch(route));
+    const mutator = container.querySelector('range-mutator') as RangeMutator;
+    const partner = container.querySelector('i.partner')!;
+    const added = document.createElement('aside');
+    mutator.onDisconnect = () => {
+      partner.remove(); // <wcs-link> が自分の anchor を外すのと同じ
+      route.placeHolder.after(added);
+      route.endMarker.remove();
+    };
+    hideRoute(route);
+    mutator.onDisconnect = null;
+    // 外されたノードは持ち直さない。足されたものは文書に残る
+    expect(markup(container)).toBe(`<!--@@route--><aside></aside>`);
+    expect(partner.parentNode).toBeNull();
+    showRoute(route, mockMatch(route));
+    expect(markup(container)).toBe(`<!--@@route--><range-mutator></range-mutator><p>x</p><!--@@wcs-route-end:/r--><aside></aside>`);
+  });
+
+  it('再表示の disconnectedCallback が後ろのノードを外しても、それは戻さない', () => {
+    const { route, container } = makeRoute(`<range-mutator></range-mutator><i class="partner"></i><p>x</p>`, '/r/:id');
+    showRoute(route, mockMatch(route, { id: '1' }));
+    const mutator = container.querySelector('range-mutator') as RangeMutator;
+    const partner = container.querySelector('i.partner')!;
+    mutator.onDisconnect = () => { partner.remove(); };
+    showRoute(route, mockMatch(route, { id: '2' }));
+    mutator.onDisconnect = null;
+    expect(markup(container)).toBe(`<!--@@route--><range-mutator></range-mutator><p>x</p><!--@@wcs-route-end:/r/:id-->`);
   });
 
   it('placeholder が文書に無いときの表示は、持っている内容を失わない', () => {
@@ -153,6 +303,76 @@ describe('ルートの範囲と Router（入れ子・レイアウト・outlet・
   const outlet = () => document.querySelector('wcs-outlet')!;
   const ends = () => Array.from(outlet().querySelectorAll('*'), (e) => e).concat([outlet()])
     .flatMap((e) => Array.from(e.childNodes)).filter((n) => n.nodeType === 8 && (n as Comment).data.startsWith('@@wcs-route-end:')).map((n) => (n as Comment).data).sort();
+
+  describe('パラメータの変化と入れ子のルート: 子のカスタム要素は 1 回だけ再接続し、そのときに新しいパラメータを読む', () => {
+    const shapes: Array<[string, string]> = [
+      ['子が親の直下', `<wcs-route path="/p/:pid"><h2>P</h2><wcs-route path="c/:cid"><param-probe data-bind="props"></param-probe></wcs-route></wcs-route>`],
+      ['子が親の要素の中', `<wcs-route path="/p/:pid"><div class="wrap"><h2>P</h2><wcs-route path="c/:cid"><param-probe data-bind="props"></param-probe></wcs-route></div></wcs-route>`],
+    ];
+    for (const [name, routes] of shapes) {
+      it(name, async () => {
+        const router = await boot(`<wcs-route path="/"><h1>home</h1></wcs-route>${routes}`);
+        probeLog.length = 0; // the previous test's element left the document
+        await router.navigate('/p/2/c/2');
+        expect(probeLog).toEqual(['c:2']);
+        probeLog.length = 0;
+        // 親と子のパラメータがともに変わる
+        await router.navigate('/p/3/c/3');
+        expect(probeLog).toEqual(['d', 'c:3']);
+        probeLog.length = 0;
+        // 子のパラメータだけ
+        await router.navigate('/p/3/c/4');
+        expect(probeLog).toEqual(['d', 'c:4']);
+        probeLog.length = 0;
+        // 親のパラメータだけ（子は親と一緒に動く）
+        await router.navigate('/p/5/c/4');
+        expect(probeLog).toEqual(['d', 'c:4']);
+        expect(outlet().querySelectorAll('param-probe').length).toBe(1);
+        probeLog.length = 0;
+      });
+    }
+  });
+
+  it('終了マーカーが取り除かれ、自分のダイアログが隣のルートの placeholder より後ろへ移されていても、隠すときに隣のルートを巻き込まない', async () => {
+    const router = await boot(`<wcs-route path="/"><h1>home</h1></wcs-route><wcs-route path="/a"><h2>A</h2><dialog>d</dialog></wcs-route><wcs-route path="/b"><h2>B</h2></wcs-route>`);
+    await router.navigate('/a');
+    const a = router.routeChildNodes[1];
+    const b = router.routeChildNodes[2];
+    a.endMarker.remove();
+    outlet().appendChild(outlet().querySelector('dialog')!);
+    await router.navigate('/b');
+    expect(b.placeHolder.isConnected).toBe(true);
+    expect(Array.from(outlet().querySelectorAll('h2, dialog'), (n) => n.textContent)).toEqual(['B']);
+    await router.navigate('/a');
+    expect(Array.from(outlet().querySelectorAll('h2, dialog'), (n) => n.textContent)).toEqual(['A', 'd']);
+    await router.navigate('/b');
+    expect(Array.from(outlet().querySelectorAll('h2, dialog'), (n) => n.textContent)).toEqual(['B']);
+  });
+
+  it('子の終了マーカーが取り除かれ、子のダイアログが親の範囲の後ろへ移されていても、子を隠すときに親の footer を持ち出さない', async () => {
+    const router = await boot(`<wcs-route path="/"><h1>home</h1></wcs-route><wcs-route path="/p"><h2>P</h2><wcs-route path="c"><p class="c">C</p><dialog>d</dialog></wcs-route><wcs-route path="d"><p class="d">D</p></wcs-route><footer>f</footer></wcs-route>`);
+    await router.navigate('/p/c');
+    const c = router.routeChildNodes[1].routeChildNodes[0];
+    c.endMarker.remove();
+    outlet().appendChild(outlet().querySelector('dialog')!);
+    await router.navigate('/p/d');
+    const shown = () => Array.from(outlet().querySelectorAll('h2, p, dialog, footer'), (n) => n.textContent).join(',');
+    expect(shown()).toBe('P,D,f');
+    await router.navigate('/p/c');
+    expect(shown()).toBe('P,C,d,f');
+  });
+
+  it('親の終了マーカーが取り除かれても、子の印は越えて親の範囲を持ち、子の内容（子の範囲に描かれたものを含む）も一緒に出入りする', async () => {
+    const router = await boot(`<wcs-route path="/"><h1>home</h1></wcs-route><wcs-route path="/p"><h2>P</h2><wcs-route path="c"><p class="c">C</p></wcs-route><footer>f</footer></wcs-route>`);
+    await router.navigate('/p/c');
+    // state が子の範囲に描いたものに当たる
+    outlet().querySelector('p.c')!.after(Object.assign(document.createElement('b'), { textContent: 'row' }));
+    router.routeChildNodes[1].endMarker.remove();
+    await router.navigate('/');
+    expect(outlet().textContent!.replace(/s+/g, '')).toBe('home');
+    await router.navigate('/p/c');
+    expect(Array.from(outlet().querySelectorAll('h1, h2, p, b, footer'), (n) => n.textContent).join(',')).toBe('P,C,row,f');
+  });
 
   it('入れ子のルート: 親を隠すと子の範囲ごと持ち、子だけ・親子ともに戻す往復で内容が重ならない', async () => {
     const router = await boot(`

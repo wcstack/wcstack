@@ -13,6 +13,7 @@ import { filterArgsKey } from "../binding/filterKey";
 import { didYouMean, LINT_HINT } from "../errorGuidance";
 import type { FilterFn, FilterIOType, FilterWithOptions } from "../filters/types";
 import { raiseError } from "../raiseError";
+import { v4Migration } from "./v4MigrationHooks";
 
 /** `options` を受け取って実関数を返す工場（`filters/types.ts` の `FilterWithOptions` の要素） */
 export type FilterFactory = (options?: string[], literals?: readonly unknown[]) => FilterFn;
@@ -116,7 +117,13 @@ export function resolveFilterFn(
   // 旧名（`uc` / `fix` …）は正式名で引く — 3.x の間のエイリアス（要件 B12、4.0 で外す）。
   // 鍵も**正式名**で作るので、`uc` と `upper` は同じ実関数を共有する（旧名 1 つにつき
   // クロージャが 1 つ増えていた）
-  const canonical = aliasesByIOType[filterIOType].get(filterName) ?? filterName;
+  const alias = aliasesByIOType[filterIOType].get(filterName);
+  if (typeof alias !== "undefined") {
+    // The 4.0 notice (3.5, D39), before the resolved-key lookup (keyed by the canonical name), so `uc`
+    // is named even on a page that resolved `upper` first. Reached only when an old name is written
+    v4Migration?.renamed(filterName, alias);
+  }
+  const canonical = alias ?? filterName;
   // 引数の鍵は `binding/filterKey.ts` の 1 本に集約する（原文 `args` と型付きの値 `literals` の
   // 両方 — 要件 B3 / B9）。ハンドラ共有キー側と同じ関数を通すことで、規準のずれを構造的に止める
   const key = `${canonical}${filterArgsKey(args, literals)}:${filterIOType}`;

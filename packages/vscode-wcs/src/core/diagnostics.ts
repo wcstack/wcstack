@@ -147,6 +147,12 @@ export const WcsDiagnosticCode = {
   // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
   // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
   OnPrefixedMember: "wcs/on-prefixed-member",
+  // 4.0 が root へ委譲するイベント（`dom/view.ts` の `BUBBLING`）の `on*:` で、ハンドラのメソッドがイベント引数の
+  // `currentTarget` を同期的に読む。委譲されたイベントの `currentTarget` は要素ではなく root なので、要素を
+  // 使う処理（`setPointerCapture`・`getBoundingClientRect`・`new FormData(e.currentTarget)`）が壊れる。
+  // ランタイムは何も報告しない（root は正しい値）ので lint の code。`#direct` か `event.target.closest(...)` を
+  // 案内する。読みが実行されない分岐にあることもあるので warning。
+  DelegatedCurrentTarget: "wcs/delegated-current-target",
   // 4.0 で外れた API の旧名（`this.$trackDependency` → `$dependOn`、`$untrackDependency` → `$untracked`）。
   // ランタイムは読んだ時点で同じ code（#1701）で throw するので error。3.x（3.2〜3.3）では「動くが 4.0 で
   // 外れる」info だった。フィルタの旧名（`uc` など）は 4.0 のランタイムと同じく `wcs/filter-unknown` で、

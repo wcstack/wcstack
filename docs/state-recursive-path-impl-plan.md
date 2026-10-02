@@ -96,7 +96,7 @@ class TreeState {
 
 | # | 事実 | 影響 |
 |---|---|---|
-| A1 | cold（走査未経験）でも `$getAll` / `$setAll` は成功する。`$resolve` だけが throw する（第 1 相を持たない唯一の API） | 設計書 §7-2 本文を訂正。`$setAll` を throw 側から外した |
+| A1 | cold（走査未経験）でも `$getAll` / `$setAll` は成功する。`$resolve` だけが throw する（第 1 相を持たない唯一の API） | 設計書 §7-2 本文を訂正。`$setAll` を throw 側から外した。**#324 で解消**（台帳の無い段は `$resolve` もその場で台帳を生やす — 設計書 §7-2 の追記） |
 | A2 | 温度は state 単位ではなく**ワイルドカード段単位**。接頭辞で絞った `$setAll(path, [0], v)` は降りなかった枝を cold のまま残す | 再帰の全深さ走査では常に全枝を降りるので実害は無いが、契約として明記する |
 | A3 | **`for` の無いルートリストへの構造書き込みで台帳の世代が分裂する**。集計が恒久 stale か恒久 throw になる | **到達点のブロッカー**。E1 で修理する |
 | A4 | 壊れるのはルートリストだけ。ネストしたリスト（`nodes.*.children`）は `for` 無しでも構造変更に追従する。`for` は 1 本あればよい | 修理範囲を絞れる。回避策（アンカーに `for` を 1 本置く）も存在する |
@@ -484,7 +484,7 @@ Phase A は完了した（§3）。その結果、**Phase A' を新設する** �
 - [x] **E1 — 差分基準を描画経路から切り離す**（ブロッカー）。state 側の共有基準 `src/list/stateListBaseline.ts` を新設し、読み・描画・依存ウォークで共有する。確定はバッチ末尾（updater の drain の `finally`）。
 - [x] **E2 — 深さ超過の診断を循環の誤告発から分ける**。`StateHandler.pushAddress` でスタック全体のアドレス同一性により `[wcs/getter-cycle]` と `[wcs/getter-depth-exceeded]` に分岐する。
 - [x] **E3 — `$129` の無言 `undefined` を診断にする**。`traps/get.ts` で `[wcs/index-param-range]`（ドル記号の charCode ゲート付き）。
-- [x] `integration.recursionKnownDefects.test.ts` の該当ケースを**反転**させた（E1 で 8 件・E2/E3 で 2 件）。反転できなかった 1 件は cold な `$resolve` の throw で、これは E1 ではなく A1（`$resolve` だけが走査の第 1 相を持たない）なので現状固定のまま残した。
+- [x] `integration.recursionKnownDefects.test.ts` の該当ケースを**反転**させた（E1 で 8 件・E2/E3 で 2 件）。反転できなかった 1 件は cold な `$resolve` の throw で、これは E1 ではなく A1（`$resolve` だけが走査の第 1 相を持たない）なので現状固定のまま残した（後に #324 で反転）。
 - [x] 反証レビューで見つかった 2 つの穴（同一バッチ二度書き・周期 8 超の循環）を修理し、それぞれ回帰テストを追加した（同一バッチ 2 件・周期 9 の輪 1 件・直線連鎖の対照 1 件）。診断コード 2 件は README の診断表にも追加した。
 - [x] `packages/state` で `npm run lint`（新規の指摘 0 件）/ 全件テスト 2853 件緑 / `npm run test:coverage` を実行し、閾値を下げていない。
 

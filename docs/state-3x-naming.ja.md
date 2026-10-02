@@ -9,7 +9,7 @@
 - **エイリアス**（D4 / D38）
   - 旧名は 3.x の間は残し、4.0 で外す。
   - フィルタは登録簿の別表でエイリアスを持つ。宣言キーは state の設定時に 1 回だけ正規化し、両方の綴りを宣言したらエラーにする。
-- **告知**（D39）
+- **告知**（D39）— **済み**（3.5 で入れた。末尾の追記）
   - lint は、正式名を提案する info を最初から出す。
   - ランタイムの警告は 3.x の最後の minor だけにする（2.6 の `wcs/v3-migration` と同じ運用）。
 - **対象の絞り方**
@@ -117,3 +117,13 @@
 対応表（`fix`→`toFixed`, `uc`→`upper`, `inc`→`add`, `dec`→`sub`, `lc`→`lower`,
 `cap`→`capitalize`, `rep`→`repeat`, `rev`→`reverse`, `pad`→`padStart`, `null`→`nullIfEmpty`）
 で引ける。そもそも 4.0 で旧名は外れるので、正式名へ書き換えるのが最短。
+
+**追記（2026-10-02、3.5）— D39 のランタイムの警告を入れた**
+
+- 3.x の最後の minor（3.5）で、旧名に `console.warn` を出す。コードは `[wcs/v4-migration]`。名前ごとにページで 1 回出し、4.0 で外れることと書き換え先を言う。2.6 の `wcs/v3-migration` と同じ形で、末尾は README の「Preparing for 4.0」への案内。切り替えは無い（2.6 と同じ）。
+- 対象は 3.2 の旧名（API 2・宣言キー 2・フィルタ 10）。ほかに 4.0 が外すもの（`$scan`、`substr`）、4.0 の `bootstrapState` が投げる設定（外れる 3 つ、`$behavior` へ移る 3 つ、知らないキー・型の違う値）、4.0 の宣言キー `$behavior` / `$features`（3.x は読まない。値が 3.x の動きと違うときと、4.0 が投げる形のときだけ）、4.0 が接ぎ木しないボリューム（`$watch`・`$listKeys`・`$renderedCallback`〔`$updatedCallback` は正規化の後なのでこの名前で見る〕・`$behavior`・`$features` を宣言したもの、ルートのパスを注入するもの。3.x ではどれも動く）にも出す。ボリュームの `$behavior` には、ルート向けの「`bootstrapState` に渡す」案内を出さない（ボリュームの案内と食い違うため。読み込み時に `volumeLoaded` で印を付ける）。再セットで `$behavior` を変える形（4.0 は #45 で投げる）は警告せず、README に書いた。
+- 呼ぶのは旧名を解決する点（宣言の読み込み、ボリュームの読み込みと接ぎ木、プロキシの旧名の分岐、フィルタの旧名の解決、`substr` の工場）。正式名の経路に増えたのは、束縛の計画でのフィルタの解決（`resolveFilterFn`）の `typeof alias` の比較 1 つと、`get.ts` の switch の case の比較 1 つ（`$dependOn` / `$untracked` の前に旧名の case を置いたため）だけで、どちらも計測で差は見えない。旧名を 2 回目以降に読むときは、文面を作る前に名前の `Set` で抜ける。文面と台帳は `src/v4Migration.ts` にあり、全部入りの `bootstrapState()` だけが受け口（`core/v4MigrationHooks.ts`）に置く。分割の `/core` では、受け口への呼び出しごとビルドから落ちる（core +0 B）。
+- サイズ（gzip、3.4.0 の基準との差）: 警告の分は `auto.min.js` +1,015 B、`index.esm.js` +1,264 B、分割の core 0 B、機能のエントリ 0 B。同じブランチのインライン script の CSP の修正（nonce の案内と Firefox の順序）を含めると +1,037 B、+1,287 B、+19 B。`scripts/check-state-split.mjs` は、分割の成果物に `wcs/v4-migration` の文字列が無いことも確かめる。
+- `on*#direct:`（4.0 の委譲しない修飾子）は、3.x がもともと要素に直接付け、知らない修飾子を黙って受け取るので、そのまま書ける（`__tests__/event.directModifier.test.ts` が固定する）。
+- 3.5 で警告が出る書き方を、リポジトリの例から外した: `examples/state-intersect-scroll` は `$scan` を `$watch`（stream の値の着地を feed へ畳む）に書き換え、`examples/state-tilt-maze` は `e.currentTarget` を読むドラッグのハンドラを `on*#direct:` にした（4.0 の委譲で壊れないように）。state の README は `$scan`・`substr`・外れる／移る設定の箇所に注記を足し、設定の例から警告の出るオプションを外した。設計文書（`docs/`）は書き換えていない。
+- 3.x は `$behavior` を読まない。state ごとの設定を 3.x で持つには、3 つの設定を読む 11 か所（`setByAddress` の書き込みの経路 2、`BindingSession` 4、`initialSync`・`rowPlan`・`createContent` の行の計画のキャッシュ、mustache の変換、`event/twowayHandler.ts` のデバッグ出力 1）を、その束縛の root の state 要素から引くように変える必要がある。束縛は state 要素を持っていないので、束縛ごとに root を引く費用が普通の経路に乗る。マウント・ボリューム・再セットでの意味も 4.0 に合わせる必要がある。今回は入れていない。

@@ -10,6 +10,11 @@
 // 3. The gzip of each feature's OWN code (its entry plus the chunks the core does not already carry)
 //    may not grow more than 3 % over scripts/state-split-baseline.json. Feature weight is invisible
 //    to check-state-size.mjs, which only measures the shipped bundles and the core closure.
+//    An entry's optional `slack` (bytes) is added on top of the 3 % — a standing allowance for a
+//    feature expected to grow between releases (`features/ssr.js`: 1 KB). `--update` re-records the
+//    sizes and keeps each entry's `slack`.
+// 4. No split output carries the 3.5 migration notices (`[wcs/v4-migration]`), which belong to the
+//    full entries (`@wcstack/state`, `/auto`).
 //
 // The check reads the built `dist/split/**.js.map`. Run after `npm run build` in packages/state:
 //   node scripts/check-state-split.mjs [--check] [--update] [--allowance 0.03]
@@ -22,6 +27,7 @@ import { gzipSync } from 'node:zlib';
 const root = resolve(import.meta.dirname, '..');
 const splitDir = join(root, 'packages/state/dist/split');
 const baselineFile = join(root, 'scripts/state-split-baseline.json');
+const BASELINE_COMMENT = 'gzip level 9 of each @wcstack/state feature entry\'s OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13), plus an entry\'s optional "slack" in bytes (kept across --update). Update with --update after a release build.';
 const update = process.argv.includes('--update');
 // A bare `--allowance` (or a non-number) used to make the limit NaN, which compares false against
 // every size — the growth gate would switch itself off without a word.
@@ -131,21 +137,39 @@ for (const entry of featureEntries.sort()) {
   current[name] = { files: own.length, bytes, gzip };
   report.push(`${name}: ${own.length} file(s), ${gzip} B gzip of its own`);
 }
+// The 3.5 migration notices (`[wcs/v4-migration]`) ship in the full entries only: the split build places
+// no receptacle (src/core/v4MigrationHooks.ts), so its calls drop out. The text here means a split entry
+// imports src/v4Migration.ts.
+for (const file of outputs) {
+  if ((await readFile(file, 'utf8')).includes('wcs/v4-migration')) {
+    failures.push(`${relative(splitDir, file).replaceAll('\\', '/')} carries the 3.5 migration notices (src/v4Migration.ts belongs to the full entries)`);
+  }
+}
 
 if (failures.length > 0) {
   // `--update` でも先に報告する: 基線を取り直す人に feature 間のコード混入が伝わらないと、
   // 「数字だけ大きい新しい基線」を固定してしまう
-  console.error(`[state split] ${failures.length} violation(s): a feature entry carries code that is not its own`);
+  console.error(`[state split] ${failures.length} violation(s): a split output carries code that is not its own`);
   for (const f of failures) console.error(`  - ${f}`);
   if (update) {
-    console.error('[state split] refusing to re-record the baseline while a feature carries another feature; fix the import first');
+    console.error('[state split] refusing to re-record the baseline while a split output carries code that is not its own; fix the import first');
   }
   process.exit(1);
 }
 
 if (update) {
+  // 取り直しても、エントリごとの上乗せ（slack）は人が決めた値なので引き継ぐ
+  let previous = {};
+  try {
+    previous = JSON.parse(await readFile(baselineFile, 'utf8'));
+  } catch {
+    // 基線がまだ無い: 引き継ぐものも無い
+  }
+  for (const name of Object.keys(current)) {
+    if (typeof previous[name]?.slack === 'number') current[name].slack = previous[name].slack;
+  }
   await writeFile(baselineFile, JSON.stringify({
-    $comment: 'gzip level 9 of each @wcstack/state feature entry\'s OWN code (the entry plus the chunks the core does not already carry) at the recorded release. check-state-split.mjs --check allows +3 % over these (requirement B13). Update with --update after a release build.',
+    $comment: BASELINE_COMMENT,
     ...current,
   }, null, 2) + '\n');
   console.log('[state split] baseline updated', JSON.stringify(current));
@@ -160,9 +184,11 @@ for (const name of Object.keys(current)) {
     grew = true;
     continue;
   }
-  const limit = Math.round(baseline[name].gzip * (1 + allowance));
+  const slack = baseline[name].slack ?? 0;
+  const limit = Math.round(baseline[name].gzip * (1 + allowance)) + slack;
   if (current[name].gzip > limit) {
-    console.error(`[state split] ${name}: ${current[name].gzip} B gzip of its own (baseline ${baseline[name].gzip}, limit ${limit}) EXCEEDED`);
+    const slackNote = slack > 0 ? ` incl. ${slack} B slack` : '';
+    console.error(`[state split] ${name}: ${current[name].gzip} B gzip of its own (baseline ${baseline[name].gzip}, limit ${limit}${slackNote}) EXCEEDED`);
     grew = true;
   }
 }

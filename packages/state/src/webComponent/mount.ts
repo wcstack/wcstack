@@ -174,17 +174,17 @@ export function warnMountedDollarDeclarations(record: IMountRecord): void {
 
 /**
  * マウントされたコンポーネントのライフサイクル呼び出し（`$connectedCallback` /
- * `$disconnectedCallback`）。`this` は公開 chroot（`element[stateProp]`）。
+ * `$disconnectedCallback`）。`this` は公開 chroot を呼んだときのホストの行に固定したもの
+ * （`createThis` — overlay.ts の createLifecycleMountState。#368）。コールバックが無ければ作らない。
  * 例外・reject は 1 コンポーネントに閉じる（切断時は親も切断中でありうる）。
  */
-export function callMountLifecycleCallback(record: IMountRecord, name: string): void {
+export function callMountLifecycleCallback(record: IMountRecord, name: string, createThis: () => unknown): void {
   const callback = (record.stateObject as Record<string, unknown>)[name];
   if (typeof callback !== "function") {
     return;
   }
   try {
-    const chroot = (record.component as unknown as Record<string, unknown>)[record.stateProp];
-    const result = (callback as (this: unknown) => unknown).call(chroot);
+    const result = (callback as (this: unknown) => unknown).call(createThis());
     if (result instanceof Promise) {
       result.catch((error) => {
         console.error(`[@wcstack/state] mounted <${record.component.tagName.toLowerCase()}> ${name} failed.`, error);
@@ -641,6 +641,32 @@ export function composeMountIndexes(
     );
   }
   return [...contextIndexes.slice(0, prefixWildcards), ...indexes];
+}
+
+/**
+ * 文字列パスの読み書き（#322 / #323）: 翻訳で前に付いたワイルドカード（マウントの接頭辞・
+ * 行マウントのマーカー基底）を、ホスト行の添字で具体化する（`items.0.v` →
+ * `groups.*.items.0.v` → `groups.1.items.0.v`）。作者のパスに `*` が無いときだけ —
+ * そのとき翻訳後の `*` は全部接頭辞のもので、作者の `*` は評価中の文脈が解決する。
+ * 添字が足りなければ残りの `*` はそのまま（コアが解決できずに投げる）。
+ * 具体パスは getPathInfo に通さない（行ごとに intern されるのを避ける）。
+ */
+export function concretizeMountPrefix(
+  innerPath: string,
+  translatedPath: string,
+  hostIndexes: readonly number[],
+): string {
+  if (innerPath.indexOf(WILDCARD) !== -1) {
+    return translatedPath;
+  }
+  const segments = translatedPath.split(DELIMITER);
+  let n = 0;
+  for (let i = 0; i < segments.length && n < hostIndexes.length; i++) {
+    if (segments[i] === WILDCARD) {
+      segments[i] = String(hostIndexes[n++]);
+    }
+  }
+  return segments.join(DELIMITER);
 }
 
 // ---------------------------------------------------------------------------

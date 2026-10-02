@@ -37,11 +37,11 @@ wcstack is buildless — load what you need from a CDN. The default is one tag p
 
 Each `/auto` script registers its custom elements and does nothing else. No initialization call, no bootstrap. Tags activate when the browser parses them. The tags fetch in parallel (every `/auto` is self-contained), so multiple tags cost requests, not a waterfall.
 
-For an app that uses the SPA core anyway, **this package ships the bundle**: `wcstack/auto` is `@wcstack/state` + `@wcstack/router` + `@wcstack/fetch` + `@wcstack/storage` + `@wcstack/autoloader` pre-linked by Rollup into one self-contained file (352 KB min / 102 KB gzip as of 3.3.0) — one request, and in production one `integrity` hash covering every line of the core that runs (digests ship with each GitHub Release; see `docs/sri.md`):
+For an app that uses the SPA core anyway, **this package ships the bundle**: `wcstack/auto` is `@wcstack/state` + `@wcstack/router` + `@wcstack/fetch` + `@wcstack/storage` + `@wcstack/autoloader` pre-linked by Rollup into one self-contained file (373 KB min / 109 KB gzip as of 3.5.0) — one request, and in production one `integrity` hash covering every line of the core that runs (digests ship with each GitHub Release; see `docs/sri.md`):
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@3.3.0/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@3.5.0/dist/auto.min.js"
         integrity="sha384-…"></script>
 ```
 
@@ -49,7 +49,7 @@ Loading the bundle alongside an individual package's `/auto` is safe: whichever 
 
 If you want npm packages for local development, install the individual ones (`@wcstack/state`, `@wcstack/router`, …); this package publishes only the bundle and this guide.
 
-`@wcstack/state` also ships **split entries** for a page that deliberately leaves features out: import `bootstrapState` and `installFeatures` from `@wcstack/state/core`, then `installFeatures([...])` with the features you need (`features/temporal` = `$watch` / `$scan` / `$stream`, `features/scopes` = `bind-component` / `mount=` / DCC, plus `recursion`, `ssr`, `formats`, `devtools`, `diagnostics`) **before** calling `bootstrapState()`. A declaration whose feature is missing throws `[wcs/feature-not-installed]`. Load the split files from jsDelivr's plain `/npm/…/dist/split/` paths or a bundler — **never `esm.run`**, which re-bundles a separate engine into each entry. The full-package `/auto` above needs none of this and stays the default; see `npm view @wcstack/state readme`.
+`@wcstack/state` also ships **split entries** for a page that deliberately leaves features out: import `bootstrapState` and `installFeatures` from `@wcstack/state/core`, then `installFeatures([...])` with the features you need (`features/temporal` = `$watch` / `$stream`, and `$scan`, which is deprecated in 3.5 and removed in 4.0 — write `$watch` or `$on` instead; `features/scopes` = `bind-component` / `mount=` / DCC, plus `recursion`, `ssr`, `formats`, `devtools`, `diagnostics`) **before** calling `bootstrapState()`. A declaration whose feature is missing throws `[wcs/feature-not-installed]`. Load the split files from jsDelivr's plain `/npm/…/dist/split/` paths or a bundler — **never `esm.run`**, which re-bundles a separate engine into each entry. The full-package `/auto` above needs none of this and stays the default; see `npm view @wcstack/state readme`.
 
 ---
 
@@ -310,6 +310,8 @@ Older names appear all over the training data. They still work through 3.x and a
 | `this.$dependOn(path)` · `this.$untracked(fn)` | `$trackDependency` · `$untrackDependency` |
 
 Declaring both spellings of a state key fails with `[wcs/declaration-alias]`. `$renderedCallback` reports the **bindings that were applied**, not every state change — use `$watch` for those.
+
+`@wcstack/state` 3.5 also prints each old name once per page at runtime (`[wcs/v4-migration]`), together with two more forms that 4.0 removes: `$scan` (write `$watch` for state paths, `$on` for event tokens) and the `substr(start, length)` filter (write `slice(start, start + length)`).
 
 ---
 

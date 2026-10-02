@@ -1,10 +1,11 @@
-import { config } from "../config";
+import { config, ssrBlockRemoval } from "../config";
 import { IState } from "../types";
 import { VERSION } from "../version";
 import { getFragmentInfoByUUID } from "../structural/fragmentInfoByUUID";
 import { getNormalizedTextCommentData } from "../structural/getFragmentNodeInfos";
 import { resolveNodePath } from "../structural/resolveNodePath";
 import { IFragmentInfo } from "../structural/types";
+import { ParseBindTextResult } from "../bindTextParser/types";
 import { getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore } from "../apply/ssrPropertyStore";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 
@@ -96,8 +97,64 @@ export function collectComments(root: Node, match: (data: string) => boolean): C
   return found;
 }
 
-const isPlaceholder = (data: string): boolean => SSR_PLACEHOLDER_COMMENT.test(data);
+export const isPlaceholder = (data: string): boolean => SSR_PLACEHOLDER_COMMENT.test(data);
 export const isBlockStart = (data: string): boolean => SSR_BLOCK_START.test(data);
+export const isBlockBoundary = (data: string): boolean => SSR_BLOCK_START.test(data) || SSR_BLOCK_END.test(data);
+
+/**
+ * サーバー出力から、取り残されたブロック境界コメントの組を間に残ったものごと除く（#356）。
+ *
+ * 境界は枝・行の Content の外に置かれる（apply/applyChangeToIf・applyChangeToFor）ので、サーバー描画中に
+ * 祖先の `if:` が隠れる・行が消えると、Content のノード（入れ子の置き場を含む）だけが外れ、入れ子の境界の
+ * 組が文書に残る。残った組は、ハイドレーションで「別のブロックの中の `for`」（全描画に倒れる）や、
+ * 描いていない枝として読まれていた。隠してから戻した `if:` も、前の組を後ろに残す。
+ *
+ * 生きている組の開始コメントは自分の置き場の直後に居る（`for:` の行は、同じ `for:` の生きている前の行の
+ * 終了コメントの直後）。そうでない組は取り残されたもので、間に残っているのも取り残された組だけ
+ * （外した Content のノードは外れている）。組は文書順に読むので、前の行が生きているかは読み終えている。
+ * 生きている組の中は辿らない（辿る費用は取り残された組の分だけ）。
+ */
+export function removeStaleBlockBoundaries(root: Node): void {
+  // 生きている `for:` の行の終了コメントの data → その `for:` の uuid（行ごとに添字が違うので data で引ける）
+  const rowEnds = new Map<string | undefined, string>();
+  for (const start of collectComments(root, isBlockStart)) {
+    // 外側の取り残された組と一緒に外れた
+    if (start.parentNode === null) continue;
+    const [, type, info] = SSR_BLOCK_START.exec(start.data) as RegExpExecArray;
+    const uuid = info.split(":")[0];
+    const prev = (start.previousSibling as Comment | null)?.data;
+    const end = `@@wcs-${type}-end:${info}`;
+    if (prev === `@@wcs-${type}:${uuid}` || rowEnds.get(prev) === uuid) {
+      if (type === "for") rowEnds.set(end, uuid);
+      continue;
+    }
+    for (let node: ChildNode | null = start; node !== null;) {
+      const next: ChildNode | null = node.nextSibling;
+      node.remove();
+      node = (node as Comment).data === end ? null : next;
+    }
+  }
+}
+
+/**
+ * `<wcs-ssr>` のテンプレートの束縛の文。**出力フィルタも書き戻す** — `${bindingType}: ${statePathName}` と
+ * 組み直していたので、`if: x|not` が `if: x` としてハイドレーションされて条件が反転し、`else:`（クライアントが
+ * 直前の `if:` の否定として組む）もフィルタの無い条件の否定になっていた。文字列の引数は `'…'` で囲み（`'` は
+ * `"'"` を挟んで繋ぐ — 引数の文法に逃がしは無く、引用符の区間は連ねられる）、型付きの値（数値・真偽・null）は
+ * 原文のまま書くので、読み直すと同じ引数と値（要件 B9）になる。`else:` の条件はクライアントが組み直す。
+ */
+export function structuralBindText(result: ParseBindTextResult): string {
+  if (result.bindingType === "else") return "else:";
+  let text = `${result.bindingType}: ${result.statePathName}`;
+  for (const filter of result.outFilters) {
+    const literals = filter.literals ?? filter.args;
+    text += `|${filter.filterName}`;
+    if (filter.args.length > 0) {
+      text += `(${filter.args.map((arg, i) => typeof literals[i] === "string" ? `'${arg.split("'").join(`'"'"'`)}'` : arg).join(",")})`;
+    }
+  }
+  return text;
+}
 
 /**
  * 直列化用のクローン。`getFragmentNodeInfos` がテンプレート登録時に空 Text へ潰した
@@ -261,6 +318,9 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
    */
   static buildContent(ssrEl: Element, stateData: Record<string, any>, scanRoot?: Node): void {
     const root: Node = scanRoot ?? (ssrEl.ownerDocument as Document);
+    // スナップショットと同じ時点で、出力の本文から取り残された境界を除く（inline 生成・最終パスの両方が通る）。
+    // 取り残しは描いた枝・行を外したときにしか生じないので、外していなければ探さない
+    if (ssrBlockRemoval.seen) removeStaleBlockBoundaries(root);
     // 初期データ JSON
     const jsonScript = document.createElement('script');
     jsonScript.setAttribute('type', 'application/json');
@@ -272,11 +332,7 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
       const tpl = document.createElement('template');
       tpl.setAttribute('id', uuid);
 
-      const bindResult = fragmentInfo.parseBindTextResult;
-      const bindText = bindResult.bindingType === 'else'
-        ? 'else:'
-        : `${bindResult.bindingType}: ${bindResult.statePathName}`;
-      tpl.setAttribute(config.bindAttributeName, bindText);
+      tpl.setAttribute(config.bindAttributeName, structuralBindText(fragmentInfo.parseBindTextResult));
 
       tpl.content.appendChild(cloneFragmentForSnapshot(fragmentInfo));
 
@@ -320,7 +376,7 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
    * SSR ブロック境界コメント (@@wcs-*-start/end) を除去する
    */
   static removeBlockBoundaryComments(root: Node): void {
-    for (const comment of collectComments(root, (d) => SSR_BLOCK_START.test(d) || SSR_BLOCK_END.test(d))) {
+    for (const comment of collectComments(root, isBlockBoundary)) {
       comment.remove();
     }
   }
@@ -409,24 +465,33 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
     // SSR テキストバインディングを @@: 形式に復元
     Ssr.restoreTextBindings(body);
 
-    // プレースホルダーコメント (@@wcs-for:uuid 等) をテンプレートに差し替え
-    for (const comment of collectComments(body, isPlaceholder)) {
-      const tpl = templateByUuid.get(comment.data.split(':')[1]);
-      if (tpl) {
-        const restored = document.createElement('template') as HTMLTemplateElement;
-        const bindAttr = tpl.getAttribute(config.bindAttributeName);
-        if (bindAttr) restored.setAttribute(config.bindAttributeName, bindAttr);
-        const imported = document.importNode(tpl.content, true);
-        if (imported.childNodes.length > 0) {
-          restored.content.appendChild(imported);
-        } else {
-          for (const child of Array.from(tpl.childNodes)) {
-            restored.content.appendChild(document.importNode(child, true));
+    // プレースホルダーコメント (@@wcs-for:uuid 等) をテンプレートに差し替える。
+    // **差し替えたテンプレートの中身にも掛ける**（#258）: スナップショットのテンプレートは平らで
+    // （入れ子のテンプレートは親の中身にプレースホルダとして居る — collectReachableFragments）、
+    // 中身のプレースホルダが指すのはサーバーの uuid。クライアントの台帳には無いので、残すと
+    // `text: <uuid>` と解釈され（binding-path-missing）、入れ子の内側が一度も描かれなかった
+    // （実 Chromium で実測。同じモジュールでサーバー描画する vitest では台帳が残っていて見えない）
+    const restorePlaceholders = (scope: Node): void => {
+      for (const comment of collectComments(scope, isPlaceholder)) {
+        const tpl = templateByUuid.get(comment.data.split(':')[1]);
+        if (tpl) {
+          const restored = document.createElement('template') as HTMLTemplateElement;
+          const bindAttr = tpl.getAttribute(config.bindAttributeName);
+          if (bindAttr) restored.setAttribute(config.bindAttributeName, bindAttr);
+          const imported = document.importNode(tpl.content, true);
+          if (imported.childNodes.length > 0) {
+            restored.content.appendChild(imported);
+          } else {
+            for (const child of Array.from(tpl.childNodes)) {
+              restored.content.appendChild(document.importNode(child, true));
+            }
           }
+          restorePlaceholders(restored.content);
+          comment.parentNode!.replaceChild(restored, comment);
         }
-        comment.parentNode!.replaceChild(restored, comment);
       }
-    }
+    };
+    restorePlaceholders(body);
 
     // data-wcs-ssr-id 属性を除去
     const ssrIdElements = root.querySelectorAll('[data-wcs-ssr-id]');

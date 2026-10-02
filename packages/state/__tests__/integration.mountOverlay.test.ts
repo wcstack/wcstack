@@ -301,8 +301,8 @@ describe("mountOverlay: 実配線（slice 3）", () => {
     defineWiredComponent(tag, () => ({
       count: "1",
       get display() { return `c${this.count}`; },
-      // 私有キーの直接代入はオーバーレイ内で完結する（親を通らない）ので、
-      // 再評価させたいときは作者が $postUpdate を打つ — D21 の規範形
+      // 作者のコードからの私有キーの書き込みは親ウォーク（setByAddress）を通って通知される
+      // （#321）。$postUpdate の併用は冗長だが害はない — 併用した既存コードが壊れないことを固定
       set counter(v: any) { this.count = v; this.$postUpdate("display"); },
       bump() { (this as any).counter = "9"; },
       // オーバーレイの has トラップ（作者コードの `in this`）の面を 1 つの getter で踏む

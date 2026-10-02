@@ -83,6 +83,18 @@ One invariant is worth restating because everything downstream depends on it:
   un-upgraded, shadowing the accessors a later upgrade installs — the exact failure the deferred-apply path in
   [state-binding-init-races.md](./state-binding-init-races.md) §2 exists to prevent.
 
+"The node it is about" has no answer yet while the node sits in a `DocumentFragment`: the registry that governs it
+is decided when it is inserted (measured in §5 item 2). `state` builds and activates `for` / `if` content in a
+fragment and inserts it within the same synchronous pass, so a definition wait for a node still in a fragment
+resolves its registry on the next microtask — after insertion — rather than on the spot (#357). For the same reason
+a wait follows its node out of the tree: when the node leaves, the wait is dropped from the registry (a node that
+never returns is not retained), and when it returns, the wait is re-armed against the registry of the tree it is in
+now — unless the row it belongs to was removed in the meantime (#352). A wait queued this way keeps later waits on
+the same node behind it, so the listener set-up and initial sync still run before a deferred state write. A binding
+whose listener set-up is still waiting also defers its state writes behind it when the element already looks
+defined — content built in a fragment sees the tag as undefined, and the scoped registry upgrades the element on
+insertion, before the wait has run.
+
 **Phase 1 — make registration addressable.** All 40 packages that ship a `registerComponents.ts` now take the
 registry to define into, defaulting to the global one, and each `bootstrapXxx()` threads it through.
 `@wcstack/devtools` is deliberately excluded: it defines one tag and appends its panel to `document.body`, so it
@@ -165,6 +177,13 @@ const shadow = host.attachShadow({ mode: "open", customElementRegistry: registry
    registries, that would be unrecoverable. The shipped MVP has no `ShadowRoot.importNode()` to fix it (§1).
    This must be measured on a real browser before any of phase 3 is designed, because the answer decides whether
    [`structural/createContent.ts`](../packages/state/src/structural/createContent.ts) needs to change at all.
+   **Measured on Chromium 149 (2026-09-27, while fixing #357) — the expectation was wrong there.** A clone made by
+   `document.importNode(template.content, true)` reports the global registry while it is in the fragment (the
+   template content's own elements report `null`), and on insertion into a shadow root with a scoped registry it is
+   re-associated to that registry and upgraded synchronously. Even an element already upgraded by a global
+   definition of the same name reports the scoped registry after insertion, while keeping its global class. An
+   element removed from the scoped tree keeps the scoped registry. `document.importNode(node, { customElementRegistry })`
+   exists and scopes the clone from creation. Safari has not been measured.
 3. **Import maps are document-scoped.** [`importmap.ts`](../packages/autoloader/src/importmap.ts) reads
    `document.querySelectorAll('script[type="importmap"]')`. An island cannot bring its own module map; it reads
    the host page's. That is probably the right semantics — module resolution *is* document-global — but it means
@@ -175,7 +194,9 @@ const shadow = host.attachShadow({ mode: "open", customElementRegistry: registry
 
 - **G5** — Does `wcstack` gain a runtime entry (`bootstrapAll(registry)`), or does the widget recipe stay
   hand-written documentation? Giving the meta-package a runtime changes what installing it means.
-- **G6** — Does structural rendering need scope-aware cloning? Blocked on the measurement in item 2.
+- **G6** — Does structural rendering need scope-aware cloning? On Chromium, item 2 says the clone ends up in the
+  destination's registry without it; what remains is Safari, and whether to scope clones at creation
+  (`importNode` with a registry) so the elements are upgraded before insertion.
 - **G7** — Is `<wcs-autoloader>` supported inside an island, and against whose import map?
 - **G8** — What is the Firefox fallback contract? The widget's `define` is skipped when the host page already
   defined the tag, so the widget silently runs on the host's version. That is acceptable for a patch-level skew
@@ -199,7 +220,8 @@ work, not of this document.
 
 ## 7. When to revisit
 
-Phase 3's gates can be opened now; the blocking work is the phase-3 item 2 measurement, not a browser.
+Phase 3's gates can be opened now; the blocking work is the phase-3 item 2 measurement, not a browser — done on
+Chromium 149, still open on Safari.
 Phase 2 waits for Firefox to ship — track
 [bugzilla 1874414](https://bugzilla.mozilla.org/show_bug.cgi?id=1874414) and
 [the web-features entry](https://web-platform-dx.github.io/web-features-explorer/features/scoped-custom-element-registries/).

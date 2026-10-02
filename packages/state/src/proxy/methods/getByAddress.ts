@@ -19,7 +19,12 @@
  */
 
 import { liftAddress } from "../../address/liftAddress";
-import { IStateAddress } from "../../address/types";
+import { getPathInfo } from "../../address/PathInfo";
+import { createStateAddress } from "../../address/StateAddress";
+import { IPathInfo, IStateAddress } from "../../address/types";
+import { keepPreviousList } from "../../list/createListDiff";
+import { listIndexAtWildcard } from "../../list/wildcardLevel";
+import { getRowCacheStamp } from "../../list/createListIndex";
 import { getCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { getCommandNamespace } from "../../command/commandNamespace";
 import { IStateElement } from "../../components/types";
@@ -172,16 +177,81 @@ function _getByAddressWithCache(
   // 旧世代の値と新世代の値を見分けられない。世代の違う項目は単に miss として再評価し、
   // 下で新しい印を付けて上書きする（列挙も掃き出しも要らず、どのアドレス形状でも自己修復する）。
   const generation = stateElement.stateGeneration;
-  if (cacheEntry !== null && cacheEntry.dirty === false && cacheEntry.generation === generation) {
+  // 行の印（#389）。行の要素・途中の値が変わると印が進み、行の下の項目は外れる（cacheEntryByAbsoluteStateAddress.ts）。
+  // 要素のパス（`items.*`）自身は対象にしない: 要素の値はそのパスの dirty でしか変わらず、印で外すと、並べ替えを
+  // まだ振り直していない行・退役した行の位置を添字で読み直し、別の要素を新しい印付きで固定する
+  const rowStamp = address.pathInfo.lastSegment === WILDCARD ? undefined : getRowCacheStamp(address.listIndex);
+  if (cacheEntry !== null && cacheEntry.dirty === false && cacheEntry.generation === generation &&
+    cacheEntry.rowStamp === rowStamp) {
     return cacheEntry.value;
   }
   const value = _getByAddress(target, address, receiver, handler, stateElement);
-  setCacheEntryByAbsoluteStateAddress(absAddress, {
-    value: value,
-    dirty: false,
-    generation: generation
-  });
+  // 関数はキャッシュしない。行マウントのメソッド（`users.*.#m1.save`）はワイルドカードを含むので
+  // キャッシュ可に判定されるが、値は評価中の receiver / handler に束ねたメソッドで、次の呼び出しに
+  // 使い回すと前のセッションの文脈で動く — 2 回目からツリーの読みが投げ、私有キーの書き込みも
+  // 描き直されなかった（#321）。関数の値を読み直す費用は小さい
+  if (typeof value !== "function") {
+    setCacheEntryByAbsoluteStateAddress(absAddress, {
+      value: value,
+      dirty: false,
+      generation: generation,
+      rowStamp: rowStamp
+    });
+  }
+  const previous = cacheEntry?.value;
+  if (Array.isArray(value) && value !== previous && stateElement.getterPaths.has(address.pathInfo.path)) {
+    inspectGetterList(target, address, value, previous, receiver, handler);
+  }
   return value;
+}
+
+/** 読んだパスの値をそのまま返したことのある getter（#362）。書き込みの通知はこの getter だけを別名の候補にする */
+const aliasGetterPathInfos = new WeakSet<IPathInfo>();
+
+export function isAliasGetter(pathInfo: IPathInfo): boolean {
+  return aliasGetterPathInfos.has(pathInfo);
+}
+
+/**
+ * getter が新しい配列を返したとき、getter が読んだパスの値と突き合わせる（#362）。
+ *
+ * - 読んだパスの値そのもの（`get shown() { return this.filter === "all" ? this.todos : … }` の all）なら、
+ *   その getter を別名として憶える（setByAddress の notifyWrite が、元のパスへの書き込みを知らせる候補）。
+ * - 前に返した配列が読んだパスにまだ居る（all → done で写しに替わった）なら、差分が前の配列の行を写しへ
+ *   貸さないように控える（list/createListDiff.ts の livePreviousLists）。
+ *
+ * 読んだパスは動的依存の表から引く。getter が配列の同一性を変えたときだけ走るので、書き込みや読みの
+ * ホットパスには乗らない。読むのは getter の行の文脈で読めるパスだけで、依存は張らない。
+ */
+function inspectGetterList(
+  target: object,
+  address: IStateAddress,
+  value: unknown[],
+  previous: unknown,
+  receiver: any,
+  handler: IStateHandler,
+): void {
+  const { path, wildcardCount } = address.pathInfo;
+  handler.beginUntrack();
+  try {
+    for (const [source, targets] of handler.stateElement.dynamicDependency) {
+      const sourcePathInfo = getPathInfo(source);
+      // getter の行の文脈で読めるパスだけ（getter より深いワイルドカードのパスは読まない）
+      if (!targets.includes(path) || sourcePathInfo.wildcardCount > wildcardCount) {
+        continue;
+      }
+      const sourceValue = getByAddress(target,
+        createStateAddress(sourcePathInfo, listIndexAtWildcard(address.listIndex!, sourcePathInfo.wildcardCount - 1, wildcardCount)),
+        receiver, handler);
+      if (sourceValue === value) {
+        aliasGetterPathInfos.add(address.pathInfo);
+      } else if (sourceValue === previous) {
+        keepPreviousList(value, previous);
+      }
+    }
+  } finally {
+    handler.endUntrack();
+  }
 }
 
 export function getByAddress(

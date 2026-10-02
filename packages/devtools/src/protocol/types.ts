@@ -213,6 +213,13 @@ export type DevtoolsEventLike =
       readonly paths: readonly string[];
     }
   | {
+      // 描画起点の書き込み連鎖（binding の適用中の書き込みが次のバッチを起こす）が深さ上限で
+      // 打ち切られた（additive・#338）。そのバッチの binding は適用されず、値は巻き戻らない。
+      readonly type: "state:render-chain-limit";
+      readonly maxDepth: number;
+      readonly paths: readonly string[];
+    }
+  | {
       // `$watch` ハンドラの正常発火（protocol v1 追補・配線カバレッジの実測面）。
       // 値は載せない — 「宣言したのに一度も発火しない」の検出には発火の事実で足りる。
       readonly type: "state:watch-fired";

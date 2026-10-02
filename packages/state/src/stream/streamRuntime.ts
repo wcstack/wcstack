@@ -38,7 +38,7 @@ import { assertNoScanFeedback } from "../scan/scanFeedback";
 import { registerUpdateBatchListener } from "../updater/updater";
 import { registerFeatureHooks } from "../core/addressHooks";
 import { IDeclarationHooks, registerDeclarationHooks } from "../core/declarationHooks";
-import { STATE_STREAM_NAME } from "../define";
+import { MAX_WATCH_CHAIN_DEPTH, STATE_STREAM_NAME } from "../define";
 import { inSsr } from "../config";
 import { processStreamsDeclaration } from "./processStreamsDeclaration";
 import { clearStreamNamespace } from "./streamNamespace";
@@ -46,6 +46,7 @@ import { abortAllStreams, clearStreamRegistry } from "./streamRegistry";
 import { streamAddressHooks } from "./addressHooks";
 import { addActiveStateElement, getActiveStateElements } from "./activeStateElements";
 import { traceArgs } from "./argsTrace";
+import { beginWatchFiring, endWatchFiring, watchChainDepthOf } from "../watch/chainDepth";
 import { consumeSource } from "./consumeSource";
 import { getLastNotified, setLastNotified } from "./lastNotified";
 import { getStreamEntries } from "./streamRegistry";
@@ -181,8 +182,8 @@ export function updateStreamStatus(
  *   自然にスキップされる。
  * - status は問わず restart する（done / error からも依存の叩き直しで再試行、§2-2）。
  * - hit は収集してから一括で restart する（イテレーション中の registry 変更を避ける。
- *   entry ごとに最初の hit で break するため「1 drain につき 1 entry 最大 1 restart」
- *   もここで自然に成立する — 同一 tick 内の複数依存書き込みは 1 restart に畳まれる）。
+ *   entry ごとに 1 件だけ積むため「1 drain につき 1 entry 最大 1 restart」もここで自然に
+ *   成立する — 同一 tick 内の複数依存書き込みは 1 restart に畳まれる）。
  * - hits の実行時にも active ＋ entry identity を再チェックする: 先行 restart の
  *   source / args は consumeSource / traceArgs の同期プレフィックスで同期実行される
  *   ため、そこで (a) 他の stateElement（や自分自身のホスト）の同期切断、(b) 同一要素の
@@ -203,6 +204,11 @@ export function updateStreamStatus(
  *   新しい microtask バッチを作る（drain 再入ではない）。自己依存は traceArgs が
  *   宣言時に raiseError で検出するため、restart 書き込みが自分の依存に再 hit する
  *   ループは起きない（§3-1）。
+ * - restart 内の書き込みは、restart を起こした依存の書き込みの `$watch` 連鎖の深さの続きとして数える
+ *   （watch/chainDepth.ts。`$watch` ハンドラと同じ `beginWatchFiring`）。数えないと、`$watch` が args の依存へ
+ *   書き、restart の書き込み（`initial` への戻し）がまたその `$watch` を起こす循環が、深さ 0 に戻り続けて
+ *   `$watch` の連鎖上限に掛からない。上限（MAX_WATCH_CHAIN_DEPTH）を越えた書き込みが起こす restart はしない
+ *   （`$watch` / `$scan` の打ち切りと同じ。restart どうしが args で読み合う循環もここで止まる）。
  */
 function restartStreamsOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void {
   const activeStateElements = getActiveStateElements();
@@ -210,46 +216,58 @@ function restartStreamsOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>):
     // stream 未使用アプリの drain に配列・イテレータ割り当てのコストを載せない
     return;
   }
-  const hits: { stateElement: IStateElement; entry: IStreamEntry }[] = [];
+  const hits: { stateElement: IStateElement; entry: IStreamEntry; depth: number }[] = [];
   for (const stateElement of activeStateElements) {
     for (const entry of getStreamEntries(stateElement).values()) {
+      // バッチに載った依存のうち、最も深い `$watch` 連鎖の深さ（-1 は依存が載っていない）
+      let depth = -1;
       for (const dep of entry.depAddresses) {
         if (batch.has(dep)) {
-          hits.push({ stateElement, entry });
-          break;
+          depth = Math.max(depth, watchChainDepthOf(batch, dep));
         }
+      }
+      // 上限を越えた書き込みが起こす restart はしない — 循環がここで止まる。報告は同じバッチを先に見た
+      // watch runtime のリスナーが済ませている（`$watch` / `$scan` の打ち切りと同じ 1 回）
+      if (depth >= 0 && depth <= MAX_WATCH_CHAIN_DEPTH) {
+        hits.push({ stateElement, entry, depth });
       }
     }
   }
-  for (const { stateElement, entry } of hits) {
-    // 先行 restart の source / args 同期実行は他要素の切断や同一要素の _state 同期再 set を
-    // 行い得るため、実行時に再チェックする（live な Set / registry ビューで即時反映）:
-    // - 切断済み要素は skip（§3-2「未接続の stateElement の entry は restart しない」）
-    // - entry が現行 registry のものでなければ skip — 同期再 set で置換された旧 entry を
-    //   restart すると、registry から到達不能なため abortAllStreams でも止められない
-    //   孤児 consume run がリークする
-    if (
-      !activeStateElements.has(stateElement) ||
-      getStreamEntries(stateElement).get(entry.name) !== entry
-    ) {
-      continue;
-    }
-    try {
-      startStream(stateElement, entry);
-    } catch (e) {
-      entry.controller?.abort();
-      // startStream 実行中（args / source の同期プレフィックス）の自己切断・同期再 set は
-      // 上の再チェックではガードできない。切断済みだと updateStreamStatus の createState が
-      // rootNode 不在で再 throw して drain リスナー外へ漏れる（後続 hits の restart を
-      // 巻き添えにする）ため、entry がまだ現行の live entry である場合のみ error に
-      // 正規化する（切断済みなら abortAllStreams が idle に戻し済み。§3-2 規範 3 / §5-1）。
+  try {
+    for (const { stateElement, entry, depth } of hits) {
+      // 先行 restart の source / args 同期実行は他要素の切断や同一要素の _state 同期再 set を
+      // 行い得るため、実行時に再チェックする（live な Set / registry ビューで即時反映）:
+      // - 切断済み要素は skip（§3-2「未接続の stateElement の entry は restart しない」）
+      // - entry が現行 registry のものでなければ skip — 同期再 set で置換された旧 entry を
+      //   restart すると、registry から到達不能なため abortAllStreams でも止められない
+      //   孤児 consume run がリークする
       if (
-        activeStateElements.has(stateElement) &&
-        getStreamEntries(stateElement).get(entry.name) === entry
+        !activeStateElements.has(stateElement) ||
+        getStreamEntries(stateElement).get(entry.name) !== entry
       ) {
-        updateStreamStatus(stateElement, entry, "error", e);
+        continue;
+      }
+      // restart の書き込みは、それを起こした書き込みの連鎖の続き
+      beginWatchFiring(depth);
+      try {
+        startStream(stateElement, entry);
+      } catch (e) {
+        entry.controller?.abort();
+        // startStream 実行中（args / source の同期プレフィックス）の自己切断・同期再 set は
+        // 上の再チェックではガードできない。切断済みだと updateStreamStatus の createState が
+        // rootNode 不在で再 throw して drain リスナー外へ漏れる（後続 hits の restart を
+        // 巻き添えにする）ため、entry がまだ現行の live entry である場合のみ error に
+        // 正規化する（切断済みなら abortAllStreams が idle に戻し済み。§3-2 規範 3 / §5-1）。
+        if (
+          activeStateElements.has(stateElement) &&
+          getStreamEntries(stateElement).get(entry.name) === entry
+        ) {
+          updateStreamStatus(stateElement, entry, "error", e);
+        }
       }
     }
+  } finally {
+    endWatchFiring();
   }
 }
 

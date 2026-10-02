@@ -236,6 +236,13 @@ The files changed and the firing points. All go through §2's `sink` and conform
   `state:update-batch` observes *what landed in this batch*, so it should report the raw set before
   watch handlers and restarts add their side effects. Omitting the priority would default to 0 and
   give the same result, but that would be a coincidence; the constant in `define.ts` pins the intent.
+- Event: `state:render-chain-limit` (additive, #338), payload = `{ maxDepth, paths }`, emitted once
+  when a chain of writes made *while applying bindings* (a row element's initial sync, a
+  `$renderedCallback` write) exceeds `MAX_RENDER_CHAIN_DEPTH` (100). That batch's bindings are not applied;
+  values are not rolled back (same stance as `propagation:hop-limit`). `paths` are the batch's paths,
+  deduplicated. Writes from `$watch` / `$scan` carry the chain over, so a cycle that goes through them
+  is stopped by this limit too (#353). It is emitted once per chain: when the listeners of the batch
+  that was cut off still hand the chain on, the batches that follow are not applied and not reported.
 
 ### 4.3.1 `$watch` failures
 
@@ -251,7 +258,8 @@ place it becomes visible.
   are fixed differently, so they are not collapsed into one.
 - Event: `state:watch-chain-limit`, payload = `{ maxDepth, paths }`, emitted once when a watch-rooted
   write chain is cut off at the depth limit. Values and DOM are not rolled back (same stance as
-  `propagation:hop-limit`).
+  `propagation:hop-limit`). `$streams` restarts count as links too, so a chain through restarts
+  (including streams whose `args` read each other) is reported even when no `$watch` is active.
 - Event: `state:watch-fired` (v1 addendum, additive — the event reserved in
   [state-watch-hook-design.md](./state-watch-hook-design.md) §11), payload = `{ path, stateElement? }`,
   emitted immediately before each handler invocation. It deliberately carries **no values** —

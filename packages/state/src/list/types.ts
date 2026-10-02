@@ -42,5 +42,11 @@ export interface IListDiff {
   changeIndexSet: Set<IListIndex>;
   deleteIndexSet: Set<IListIndex>;
   addIndexSet: Set<IListIndex>;
+  /**
+   * 行はそのままで要素が替わっていた行（#359）。同じバッチの間に、同じ新しい配列への差分が拾った分
+   * （createListDiff の syncListIndexes）。呼び出しごとに付け直すので、読むのは差分を取った直後だけ
+   * （依存ウォークのリスト展開）。
+   */
+  valueChangeIndexes?: IListIndex[];
 }
 

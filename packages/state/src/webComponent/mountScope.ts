@@ -1,5 +1,5 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { getOrCreateBindingSession } from "../bindings/BindingSession";
+import { type BindingSession, getOrCreateBindingSession } from "../bindings/BindingSession";
 import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
 import { initializeBindings } from "../bindings/initializeBindings";
 import { convertMustacheToComments } from "../mustache/convertMustacheToComments";
@@ -10,6 +10,7 @@ import { ParseBindTextResult } from "../bindTextParser/types";
 import { IContent } from "../structural/types";
 import { getMountRecordByScopeRoot, getMountRecordsForStateElement, getScopeRootByMountRecord, IMountRecord, registerMountRecord, stateElementHasMounts, translateParsedForMount } from "./mount";
 import { notifyExports, registerExports, warnShadowedExports } from "./exportIndex";
+import { noteHostContext } from "./overlay";
 
 /**
  * webComponent/mountScope.ts — マウントされたスコープの構築（Phase 2・impl-plan §3-0）。
@@ -82,6 +83,7 @@ function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot | El
   //（bindings/replaceToReplaceNode.ts）ため、DOM walk では文脈に届かない —
   // happy-dom は切断後も parentNode を残す非準拠で偶然通るが、実ブラウザでは落ちる
   const parentLoopContext = getLoopContextByNode(record.component);
+  noteHostContext(record, parentLoopContext);
   // rootNode は「fragment info の setPathInfo が state element を引く場所」。
   // Shadow DOM 形はエイリアス済みの scopeRoot 自身、Light DOM 形はホストの rootNode
   const rootNode = walkRoot instanceof ShadowRoot ? walkRoot : walkRoot.getRootNode();
@@ -97,16 +99,40 @@ function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot | El
  * swap では listIndex が行と一緒に動くので張り直しは冪等（同じ台帳に戻るだけ）。
  */
 export function remountScopeBindings(record: IMountRecord, scopeRoot: ShadowRoot | Element): void {
-  const session = getOrCreateBindingSession(scopeRoot);
-  // スコープ直下の直接エントリを現在の行の文脈へ張り替える（構築時と対称）。
-  // 台帳の張り直し（rebindAddresses）はこのエントリ経由で新しい listIndex を読む
-  const parentLoopContext = getLoopContextByNode(record.component);
-  session.forEachActiveBindingNode((node) => setLoopContextByNode(node, parentLoopContext));
-  const rebound = session.rebindAddresses();
+  // 台帳の張り直し（rebindAddresses）は直接エントリ経由で新しい listIndex を読む
+  const rebound = pointScopeAtHostRow(record, scopeRoot).rebindAddresses();
   // 空でも呼んで良い（ループが回らないだけ）— 分岐を持たない
   applyChangeFromBindings(rebound);
   // 別の行に付け替わった ＝ その行の公開パスの答えが変わった（X6）
   notifyExports(record);
+}
+
+/**
+ * スコープ直下の直接エントリ（バインディングのノードのループ文脈）を、ホストのいまの行の文脈へ
+ * 張り替える（構築時と対称）。スコープの中にマウントしたコンポーネントの行もこのエントリで決まる
+ */
+export function pointScopeAtHostRow(record: IMountRecord, scopeRoot: ShadowRoot | Element): BindingSession {
+  const session = getOrCreateBindingSession(scopeRoot);
+  const parentLoopContext = getLoopContextByNode(record.component);
+  noteHostContext(record, parentLoopContext);
+  session.forEachActiveBindingNode((node) => setLoopContextByNode(node, parentLoopContext));
+  return session;
+}
+
+/**
+ * 要素を囲むマウントスコープ（外側から順に）の直接エントリを、いまの行へ向ける。スコープの中に
+ * マウントしたコンポーネントは、再接続の `$connectedCallback` の前に自分の行をここで得る — 外側の
+ * `<wcs-state bind-component>` が内側より後に置かれていても（接続は木の順に届く）
+ */
+export function pointEnclosingScopes(node: Node): void {
+  for (let root = node.parentNode; root !== null; root = root.parentNode) {
+    const record = getMountRecordByScopeRoot(root);
+    if (record !== null) {
+      pointEnclosingScopes(record.component);
+      pointScopeAtHostRow(record, root as ShadowRoot | Element);
+      return;
+    }
+  }
 }
 
 /**

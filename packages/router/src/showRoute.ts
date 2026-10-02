@@ -2,6 +2,7 @@ import { assignParams } from "./assignParams";
 import { LayoutOutlet } from "./components/LayoutOutlet";
 import { IRoute, IRouteMatchResult } from "./components/types";
 import { config } from "./config";
+import { holdRoute } from "./hideRoute";
 
 /**
  * ルートへのパラメータ割り当て（setParams + 内容ノードへの data-bind /
@@ -40,20 +41,34 @@ export function assignRouteParams(route: IRoute, matchResult: IRouteMatchResult)
   }
 }
 
+/** Routes placed at least once: their written nodes are never placed again */
+const placed = new WeakSet<IRoute>();
+
 /**
- * ルートの内容を placeholder の後ろへ: `route.held` があればそれを、初めてなら元のノードと
- * `route.endMarker` を。表示中のルート（パラメータの変化）の内容は動かさない。
+ * ルートの内容を placeholder の後ろへ置く: `route.held` があればそれを、初めてなら元のノードと
+ * `route.endMarker` を。表示中のルート（パラメータの変化）は、隠すときと同じく持ち出してすぐ戻す。
+ * パラメータは先に割り当てておく（assignRouteParams）。
  */
-export function showRoute(route: IRoute, matchResult: IRouteMatchResult): boolean {
-  assignRouteParams(route, matchResult);
+export function placeRoute(route: IRoute): void {
   const placeHolder = route.placeHolder;
-  if (placeHolder.parentNode === null) return true;
-  const held = route.held;
-  if (held !== null) {
+  if (placeHolder.parentNode === null) return;
+  if (placed.has(route) || route.endMarker.parentNode !== null) {
+    // Shown before (again on a parameter change, or back from held): take it out as hiding does —
+    // nothing to do when it is held — and put it back, so its custom elements reconnect and read the
+    // new params. Never its written nodes again, even when other code removed the end mark: a
+    // template the state replaced with its anchor would come back.
+    holdRoute(route);
+    placeHolder.after(route.held!);
     route.held = null;
-    placeHolder.after(held);
-  } else if (route.endMarker.parentNode === null) {
+  } else {
     placeHolder.after(...route.childNodeArray, route.endMarker);
   }
+  placed.add(route);
+}
+
+/** パラメータを割り当ててから置く（ルート 1 つ分。複数を出すときは showRouteContent の二相） */
+export function showRoute(route: IRoute, matchResult: IRouteMatchResult): boolean {
+  assignRouteParams(route, matchResult);
+  placeRoute(route);
   return true;
 }

@@ -94,6 +94,14 @@ export type DevtoolsEvent =
       readonly paths: readonly string[];
     }
   | {
+      // 描画起点の書き込み連鎖（binding の適用中の書き込みが次のバッチを起こす）が深さ上限で
+      // 打ち切られた（#338・updater/updater.ts）。そのバッチの binding は適用せず、値は巻き戻さない。
+      readonly type: "state:render-chain-limit";
+      readonly maxDepth: number;
+      /** 打ち切ったバッチに載っていたアドレスのパス（＝ 直前の描画の中で書かれたパス） */
+      readonly paths: readonly string[];
+    }
+  | {
       // `$watch` ハンドラの正常発火（state-watch-hook-design.md §11 で予約済み・
       // static-wiring-dx-design.md §4 の配線カバレッジが消費）。値は載せない —
       // 「宣言したのに一度も発火しない」の検出には発火の事実だけで足りる。

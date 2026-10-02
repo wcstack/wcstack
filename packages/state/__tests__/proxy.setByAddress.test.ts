@@ -33,7 +33,8 @@ vi.mock('../src/updater/updater', () => ({
 
 vi.mock('../src/address/TreePath', () => ({
   getTreePath: vi.fn((stateElement, pathInfo) => {
-    return { stateName: stateElement.name, pathInfo };
+    // キャッシュに載せる行のパスは、その state 要素の静的な辺に登録される（#364）
+    return { stateName: stateElement.name, stateElement, pathInfo };
   }),
 }));
 
@@ -66,6 +67,7 @@ function createStateElement(overrides?: Partial<any>) {
     staticDependency: new Map(),
     dynamicDependency: new Map(),
     bindableEventMap: {},
+    setPathInfo: vi.fn(),
     ...overrides,
   };
 }
@@ -114,7 +116,7 @@ describe('setByAddress', () => {
     const address = createStateAddress(getPathInfo('count'), null);
     const stateElement = createStateElement({ getterPaths: new Set(['count']) });
     const handler = createHandler(stateElement);
-    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, stateElement, pathInfo: address.pathInfo }, address.listIndex);
 
     setCacheEntryByAbsoluteStateAddress(absAddress, { value: 1, dirty: false });
 
@@ -134,7 +136,7 @@ describe('setByAddress', () => {
     const address = createStateAddress(getPathInfo('count'), null);
     const stateElement = createStateElement({ getterPaths: new Set(['count']) });
     const handler = createHandler(stateElement);
-    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, stateElement, pathInfo: address.pathInfo }, address.listIndex);
 
     setByAddress(target, address, 9, target, handler as any);
 
@@ -147,7 +149,7 @@ describe('setByAddress', () => {
     const address = createStateAddress(getPathInfo('items.*'), listIndex);
     const stateElement = createStateElement();
     const handler = createHandler(stateElement);
-    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, pathInfo: address.pathInfo }, address.listIndex);
+    const absAddress = createAbsoluteStateAddress({ stateName: stateElement.name, stateElement, pathInfo: address.pathInfo }, address.listIndex);
     vi.mocked(getByAddress).mockImplementation((_target, addr) => {
       return addr.pathInfo.path === 'items' ? target.items : null;
     });
@@ -159,6 +161,8 @@ describe('setByAddress', () => {
     expect(cacheEntry!.dirty).toBe(false);
     expect(cacheEntry!.value).toBe(9);
     expect(target.items[0]).toBe(9);
+    // 載せた行のパスは、要素パスからの依存ウォークが届くよう静的な辺に登録する（#364）
+    expect(stateElement.setPathInfo).toHaveBeenCalledWith('items.*', 'prop', 'internal');
 
     setCacheEntryByAbsoluteStateAddress(absAddress, null);
   });
@@ -241,14 +245,13 @@ describe('setByAddress', () => {
     setListIndexesByList(target.items, null);
   });
 
-  it('elementsのswapで重複がある場合はswapInfoが残ること', () => {
+  it('elementsのswapで、別々の行が同じ値を持つ並びでも揃えばswapInfoが削除され、行はそのまま残ること（#337）', () => {
+    // 旧: 「値が重複しない」を揃った印にしていたので swapInfo が残り、入れ替えが揃わなかった
     const target = { items: ['a', 'a'] };
     const parentListIndex = createListIndex(null, 0);
-    const listIndex = createListIndex(parentListIndex, 0);
-    const address = createStateAddress(getPathInfo('items.*'), listIndex);
-
     const indexes = createListIndexes(parentListIndex, [], target.items, []);
     setListIndexesByList(target.items, indexes);
+    const address = createStateAddress(getPathInfo('items.*'), indexes[0]);
 
     const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
     const handler = createHandler(stateElement);
@@ -262,8 +265,38 @@ describe('setByAddress', () => {
 
     setByAddress(target, address, 'a', target, handler as any);
 
-    expect(getSwapInfoByList(target.items)).not.toBeNull();
+    expect(getSwapInfoByList(target.items)).toBeNull();
+    expect(getListIndexesByList(target.items)).toEqual([indexes[0], indexes[1]]);
 
+    setListIndexesByList(target.items, null);
+  });
+
+  it('elementsのswapで、別の行の値を書いてその行にも値が残っている間はswapInfoが残り、台帳は書き込む前の行のままであること', () => {
+    const target = { items: ['a', 'b'] };
+    const parentListIndex = createListIndex(null, 0);
+    const indexes = createListIndexes(parentListIndex, [], target.items, []);
+    setListIndexesByList(target.items, indexes);
+    const address = createStateAddress(getPathInfo('items.*'), indexes[0]);
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return null;
+    });
+
+    setByAddress(target, address, 'b', target, handler as any);
+
+    expect(target.items).toEqual(['b', 'b']);
+    expect(getSwapInfoByList(target.items)).not.toBeNull();
+    // 旧: 台帳をその場で書き換え、行 1 の listIndex が位置 0 にも載った（[行 1, 行 1]）
+    expect(getListIndexesByList(target.items)).toBe(indexes);
+    expect(indexes.map((listIndex) => listIndex.index)).toEqual([0, 1]);
+
+    setSwapInfoByList(target.items, null);
     setListIndexesByList(target.items, null);
   });
 
@@ -335,7 +368,8 @@ describe('setByAddress', () => {
     // 事前にswapInfoをセットしておく
     const existingSwapInfo = {
       value: ['a', 'b'],
-      listIndexes: [...indexes]
+      listIndexes: [...indexes],
+      written: new Map(),
     };
     setSwapInfoByList(target.items, existingSwapInfo);
 
@@ -389,71 +423,103 @@ describe('setByAddress', () => {
     setSwapInfoByList(target.items, null);
   });
 
-  it('finallyブロック内でgetByAddressがnullを返す場合も空配列にフォールバックすること', () => {
-    // 88行目の ?? [] をカバーするテスト
+  it('揃った台帳は新しい配列で、書き込む前の台帳の配列は書き換えないこと（#335）', () => {
+    // 書き込む前の台帳の配列は、置き換えの差分としてキャッシュした newIndexes や、同じ中身の別の配列の
+    // 台帳と共有されている。その場で書き換えると、それらの行まで差し替わる
+    const target = { items: ['a', 'b', 'c'] };
     const parentListIndex = createListIndex(null, 0);
-    const listIndex = createListIndex(parentListIndex, 0);
-    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const indexes = createListIndexes(parentListIndex, [], target.items, []);
+    setListIndexesByList(target.items, indexes);
+    const [rowA, rowB, rowC] = indexes;
+    const address = createStateAddress(getPathInfo('items.*'), rowA);
 
     const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
     const handler = createHandler(stateElement);
 
-    const target = { items: ['a'] };
-    
-    // 1回目: swapInfo作成時 → items を返す
-    // 2回目: _setByAddress内 → items を返す
-    // 3回目: finallyブロック内 → null を返す (88行目の ?? [] がトリガーされる)
-    let callCount = 0;
     vi.mocked(getByAddress).mockImplementation((_target, addr) => {
-      callCount++;
-      if (callCount === 3) {
-        // finallyブロック内でnullを返す
-        return null;
-      }
       if (addr.pathInfo.path === 'items') {
         return target.items;
       }
-      return target.items;
+      return null;
     });
 
-    setByAddress(target, address, 'b', target, handler as any);
+    setByAddress(target, address, 'x', target, handler as any);
 
-    // クリーンアップ
-    setSwapInfoByList(target.items, null);
+    const current = getListIndexesByList(target.items)!;
+    expect(current).not.toBe(indexes);
+    expect(indexes).toEqual([rowA, rowB, rowC]);
+    expect(current[0]).not.toBe(rowA);
+    expect(current.slice(1)).toEqual([rowB, rowC]);
+    expect(current.map((listIndex) => listIndex.index)).toEqual([0, 1, 2]);
+
+    setListIndexesByList(target.items, null);
   });
 
-  it('finallyブロック内でgetByAddressが配列ではない値を返す場合は空配列にフォールバックすること', () => {
-    // 94行目の Array.isArray チェックをカバーするテスト
+  it('同じ値の行が複数動く入れ替えは、値ごとに動いてきた行を順に充て、足りないうちは揃わないこと', () => {
+    // [a, a, b, b] → [b, b, a, a]。途中は動いてきた行が値の現れる数に足りない（片側だけ）
+    const target = { items: ['a', 'a', 'b', 'b'] };
     const parentListIndex = createListIndex(null, 0);
-    const listIndex = createListIndex(parentListIndex, 0);
-    const address = createStateAddress(getPathInfo('items.*'), listIndex);
+    const indexes = createListIndexes(parentListIndex, [], target.items, []);
+    setListIndexesByList(target.items, indexes);
+    const [a0, a1, b2, b3] = indexes;
 
     const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
     const handler = createHandler(stateElement);
 
-    const target = { items: ['a'] };
-    
-    // 1回目: swapInfo作成時 → items を返す
-    // 2回目: _setByAddress内 → items を返す
-    // 3回目: finallyブロック内 → 配列ではないがイテラブルな値を返す (94行目がトリガーされる)
-    let callCount = 0;
     vi.mocked(getByAddress).mockImplementation((_target, addr) => {
-      callCount++;
-      if (callCount === 3) {
-        // finallyブロック内で配列ではないがイテラブルな文字列を返す
-        // Array.isArray('ab') は false なので、94行目の else ブランチが実行される
-        return 'ab';
-      }
       if (addr.pathInfo.path === 'items') {
         return target.items;
       }
-      return target.items;
+      return null;
     });
 
-    setByAddress(target, address, 'b', target, handler as any);
+    const writeAt = (listIndex: typeof a0, value: string) =>
+      setByAddress(target, createStateAddress(getPathInfo('items.*'), listIndex), value, target, handler as any);
+    writeAt(a0, 'b');
+    writeAt(a1, 'b');
+    writeAt(b2, 'a');
+    expect(target.items).toEqual(['b', 'b', 'a', 'b']);
+    expect(getSwapInfoByList(target.items)).not.toBeNull();
+    expect(getListIndexesByList(target.items)).toBe(indexes);
 
-    // クリーンアップ
-    setSwapInfoByList(target.items, null);
+    writeAt(b3, 'a');
+    expect(getSwapInfoByList(target.items)).toBeNull();
+    expect(getListIndexesByList(target.items)).toEqual([b2, b3, a0, a1]);
+    expect([b2, b3, a0, a1].map((listIndex) => listIndex.index)).toEqual([0, 1, 2, 3]);
+
+    setListIndexesByList(target.items, null);
+  });
+
+  it('動いてきた行を使い切った値がまだ残っていれば、入れ替えの途中とみなすこと', () => {
+    // [a, b, c] → [b, c, b]: b の行は位置 0 に充てると尽き、位置 2 の b は片側だけの書き込み
+    const target = { items: ['a', 'b', 'c'] };
+    const parentListIndex = createListIndex(null, 0);
+    const indexes = createListIndexes(parentListIndex, [], target.items, []);
+    setListIndexesByList(target.items, indexes);
+    const [rowA, rowB, rowC] = indexes;
+
+    const stateElement = createStateElement({ elementPaths: new Set(['items.*']) });
+    const handler = createHandler(stateElement);
+
+    vi.mocked(getByAddress).mockImplementation((_target, addr) => {
+      if (addr.pathInfo.path === 'items') {
+        return target.items;
+      }
+      return null;
+    });
+
+    const writeAt = (listIndex: typeof rowA, value: string) =>
+      setByAddress(target, createStateAddress(getPathInfo('items.*'), listIndex), value, target, handler as any);
+    writeAt(rowA, 'b');
+    writeAt(rowB, 'c');
+    writeAt(rowC, 'b');
+    expect(target.items).toEqual(['b', 'c', 'b']);
+    expect(getSwapInfoByList(target.items)).not.toBeNull();
+
+    writeAt(rowC, 'a');
+    expect(getListIndexesByList(target.items)).toEqual([rowB, rowC, rowA]);
+
+    setListIndexesByList(target.items, null);
   });
 
   it('bindableEventMapにパスがある場合はCustomEventがディスパッチされること', () => {

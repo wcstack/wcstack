@@ -21,8 +21,8 @@ import { getBindingsByNode } from "../bindings/getBindingsByNode";
 import { waitInitializeBinding } from "../bindings/initializeBindingPromiseByNode";
 import { bindWebComponent, invokeStateReadyCallback } from "./bindWebComponent";
 import { buildMountRecord, callMountLifecycleCallback, getRegisteredMountRecord, IMountRecord, warnMountedDollarDeclarations } from "./mount";
-import { initializeMountScope, remountScopeBindings } from "./mountScope";
-import { createPublicMountState } from "./overlay";
+import { initializeMountScope, pointEnclosingScopes, pointScopeAtHostRow, remountScopeBindings } from "./mountScope";
+import { createLifecycleMountState, createPublicMountState, endHostConnection } from "./overlay";
 import { warnOwnKeyShadowsForMount } from "./ownKeyShadow";
 import { markWebComponentAsComplete, markWebComponentStatePropDeclared } from "./completeWebComponent";
 import { getInjectedKeys, restoreOverwrittenValues, takeOverwrittenObject } from "./preCompletionWrites";
@@ -209,7 +209,7 @@ async function initializeBindWebComponent(element: IStateElement, ledger: IBindL
           // 宣言面はマウントでは実行しない（1 回だけ誘導 warn — 設計書 §4-6）。
           // ライフサイクルはスコープごとに残る — $connectedCallback を chroot で呼ぶ
           warnMountedDollarDeclarations(record);
-          callMountLifecycleCallback(record, "$connectedCallback");
+          callMountLifecycleCallback(record, "$connectedCallback", () => createLifecycleMountState(record!));
           return;
         }
       }
@@ -244,11 +244,10 @@ export const bindComponentLifecycleHooks: ILifecycleHooks = {
     if (typeof ledger === "undefined" || ledger.mountRecord === null) {
       return false;
     }
-    // マウント済みコンポーネントの再接続（行 content のプール再利用）: 現在の行の
+    // マウント済みコンポーネントの再接続（行 content のプール再利用・if の再表示）: 現在の行の
     // listIndex でマウントスコープの台帳を張り直し、最新値を適用する（§1.9 の v2 版）。
-    // microtask に遅らせるのは、この接続が親の行ループ（mountAfter）の最中に同期で発火し、
-    // 新しいループ文脈は直後の activateContent が張るため — 同期で張り直すと旧行の
-    // listIndex を読んでしまう
+    // microtask に遅らせるのは、この接続が親の行ループ（mountAfter）の最中に同期で発火するため —
+    // 同期で張り直すと、親の行の活性化（activateContent）より前に適用が走る
     const mountRecord = ledger.mountRecord;
     // Shadow DOM 形は shadowRoot、Light DOM 形はコンポーネント要素自身
     const scopeRoot = (element as unknown as HTMLElement).parentNode as ShadowRoot | Element;
@@ -256,8 +255,18 @@ export const bindComponentLifecycleHooks: ILifecycleHooks = {
       if (element.connectedRootNode == null) return; // 再接続後すぐ切断された（プール返却）
       remountScopeBindings(mountRecord, scopeRoot);
     });
-    // 接続ごとのライフサイクル（v1 の $connectedCallback 再実行と同じ意味論）
-    callMountLifecycleCallback(mountRecord, "$connectedCallback");
+    // ループ文脈だけは同期で新しい行へ向ける — 囲むスコープ（この要素がマウントスコープの中に居れば、
+    // その直接エントリが自分の行）と自分のスコープ（中にマウントしたコンポーネントの行）（#368）。
+    // 接続の反応が外れた後に届いた古い <wcs-state>（shadow を connectedCallback で組み直す部品 — 挿入で
+    // 積まれた反応が innerHTML の差し替えの後に届く）は張り替えない（スコープ根が無い）
+    if ((element as unknown as HTMLElement).isConnected) {
+      pointEnclosingScopes(mountRecord.component);
+      pointScopeAtHostRow(mountRecord, scopeRoot);
+    }
+    // 接続ごとのライフサイクル（v1 の $connectedCallback 再実行と同じ意味論）。同期で呼ぶ —
+    // for / if は DOM に戻す前に要素のループ文脈を新しい行へ張るので、ここで行のツリーのキーを
+    // 読み書きできる（#368）
+    callMountLifecycleCallback(mountRecord, "$connectedCallback", () => createLifecycleMountState(mountRecord));
     return true;
   },
   disconnecting(element) {
@@ -268,7 +277,10 @@ export const bindComponentLifecycleHooks: ILifecycleHooks = {
     // v2 マウント: 名前登録・streams・watch を持たないので後始末は不要。
     // 台帳エイリアスは消さない（プール再利用の再接続が同じスコープに戻る）。
     // $disconnectedCallback だけは要素のライフサイクルとして呼ぶ（例外は隔離）
-    callMountLifecycleCallback(ledger.mountRecord, "$disconnectedCallback");
+    const mountRecord = ledger.mountRecord;
+    callMountLifecycleCallback(mountRecord, "$disconnectedCallback", () => createLifecycleMountState(mountRecord));
+    // この接続のライフサイクルの `this` は、ここから先は終わったときの行に留まる（overlay.ts）
+    endHostConnection(mountRecord);
     // 公開 getter の答えが消えた（X6）— 親の依存者を再評価させる。プール返却も
     // 恒久破棄もここを通る（行ごと消えた形は $postUpdate が届かず無視される）
     notifyExports(ledger.mountRecord);

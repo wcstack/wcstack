@@ -273,9 +273,11 @@ entirely within wcstack.
 
 **Done (2026-08-01)**. Since the guard lives on `setByAddress`'s general path, a one-shot token in
 `packages/state/src/proxy/occurrenceWrite.ts` was placed as the route for conveying where a write came from.
-`twowayHandler` brackets the commit of an occurrence property with `beginOccurrenceWrite()` / `endOccurrenceWrite()`,
-and `setByAddress` calls `consumeOccurrenceWrite()` at the top and uses it in the guard decision on both the fast path
-and the general path.
+`twowayHandler` commits an element's value through `commitElementValue(…, occurrence)`, which sets the token around
+the write, and `setByAddress` calls `consumeElementWrite()` at the top and uses it in the guard decision on both the
+fast path and the general path. (Since #337 the token marks every write that comes from an element — the initial sync
+commits through the same function — and `setByAddress` also keeps such a write to a list element out of the element
+swap: a value an element writes to its own row updates that row.)
 
 It is one-shot because setting a flag across the whole call stack of a write would also lose the guard for the
 unrelated equal-value writes performed by a `$updatedCallback` or by dependency propagation running inside it. The

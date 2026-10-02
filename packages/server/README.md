@@ -335,6 +335,7 @@ const body = await renderToString(template, {
 - Render Shadow DOM (Declarative Shadow DOM not supported)
 - Register event handlers (restored via client-side hydration)
 - Load components dynamically via `<wcs-autoloader>`
+- Hydrate a `for:` nested inside another `for:`, or inside an `if:` / `elseif:` / `else:` block (a known limitation). The server still renders it, but when at least one row of such a list is in the server output, the client does not hydrate the page: it discards the server-rendered DOM and renders on the client, and `@wcstack/state` logs one `console.warn` naming the template. An `if:` inside `for:` rows hydrates normally
 - Server-render guarded routes (by design — the guard is an authorization point that runs client-side; the outlet is left empty), `<wcs-layout>` routes (adopted pages fall back to client-side rendering), or `<wcs-head>` contents (reflection targets `document.head`, which a body-only render cannot carry)
 
 ## HTML Splitting Pattern

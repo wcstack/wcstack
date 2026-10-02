@@ -279,7 +279,9 @@ for バインドなし・初期状態から:
 
 throw するのは**走査を一度も経ていないリストにいきなり `$resolve` を撃った場合**だけ。[`getListIndexByIndexes`](../packages/state/src/proxy/methods/getListIndexByIndexes.ts) は台帳を**引くだけで作らない**ためで、`$resolve` は第 1 相（走査）を持たない唯一の API である。この cold start は `**` とは無関係の既存の性質。
 
-> **訂正（Phase A 実測・2026-09-09）**: 本節は以前 `$setAll` も throw 側に数えていたが誤りだった。`$setAll` は第 1 相で `collectWildcardIndexes` を回すので cold でも成功する（上のコード片が正しく、本文が間違っていた）。ただし**接頭辞で絞った `$setAll(path, [0], v)` は降りなかった枝を cold のまま残す** — 直後に `$resolve(path, [1, 0])` を撃つと `ListIndexes not found: nodes.*.children` で落ちる。温度は state 単位ではなく**ワイルドカード段単位**である。
+> **追記（#324 で解消）**: 同じ原因で、`for` で描いていないリストの行を添字のパス（`this["items.0.v"]`）で読み書きしても `ListIndex not found: items` で投げていた（直接添字は `getListIndex` の `"all"` 分岐で同じ台帳を引く。README の「Direct index access」が v1.2.0 から成立していなかった）。いまは両方とも、台帳の無い段で**その場で台帳を生やす**（[`getListIndexesByAddress`](../packages/state/src/proxy/methods/getListIndexesByAddress.ts)）。旧リストには `$getAll` の第 1 相と同じ state 側の基準（`stateListBaseline`）を渡すので、行の再利用は `$getAll` と同じ規則になる。基準は読むだけで確定しない（観測の確定は走査・描画・依存ウォークのまま）。したがって「`$resolve` だけが throw する」は過去の性質で、cold でも `$getAll` / `$setAll` / `$resolve` / `$postUpdate` / 直接添字のどれもが通る。行が無い添字（範囲外・値が配列でない）は、描いたかどうかに関わらず `ListIndex not found at index <i> of <path>` で投げる。回帰テストは `packages/state/__tests__/integration.directIndexUnrenderedList.test.ts`。
+
+> **訂正（Phase A 実測・2026-09-09）**: 本節は以前 `$setAll` も throw 側に数えていたが誤りだった。`$setAll` は第 1 相で `collectWildcardIndexes` を回すので cold でも成功する（上のコード片が正しく、本文が間違っていた）。ただし**接頭辞で絞った `$setAll(path, [0], v)` は降りなかった枝を cold のまま残す** — 直後に `$resolve(path, [1, 0])` を撃つと `ListIndexes not found: nodes.*.children` で落ちる。温度は state 単位ではなく**ワイルドカード段単位**である。（#324 以降、この `$resolve` は降りなかった枝の台帳をその場で生やして通る。台帳の温度が段単位であることは変わらない）
 
 **ただし「読み」に限る（Phase A 実測）。** 走査 API が台帳を作るのは事実だが、それは**読みが台帳を作る**という話でしかない。`for` バインドの無いリストに**構造書き込み**（並べ替え・先頭追加・末尾以外の削除・親リスト再代入）を加えると、集計は恒久的に stale になるか `ListIndexes not found` で恒久的に throw する。
 
@@ -410,7 +412,7 @@ async function mount(initial: any, innerHTML: string) {
 | **P5**（§7-2） | `for` バインドを 1 つも置かず、`$getAll("nodes.*.children.*.value", [])` → `$resolve(…, [0,1])` → `$setAll(…, [], 99)` を順に撃つ | `[10,11,20]` → `11` → 3 件書き込み、すべて成功。`$getAll` を経ずに `$resolve` を先に撃った場合だけ `ListIndexes not found: nodes` |
 | **P6**（§6-3） | `getPathInfo("a" + ".*".repeat(129))` | 受理され `wildcardCount = 129`。`MAX_WILDCARD_DEPTH = 128` では止まらない |
 
-P3 で `ListIndexes not found: nodes` を踏んだのは、`$getAll` を経ずに `$resolve` を最初に撃ったため（P5 が切り分け）。`for` の有無は関係しない。
+P3 で `ListIndexes not found: nodes` を踏んだのは、`$getAll` を経ずに `$resolve` を最初に撃ったため（P5 が切り分け）。`for` の有無は関係しない。（#324 以降は、`$getAll` を経ない `$resolve` も通る — §7-2 の追記）
 
 ---
 

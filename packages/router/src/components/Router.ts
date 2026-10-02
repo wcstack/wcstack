@@ -927,7 +927,9 @@ export class Router extends HTMLElement implements IRouter {
   private _offerInitialContentToBinder(): void {
     for (const route of this.outlet.lastRoutes) {
       for (const node of route.childNodeArray) {
-        if (node.nodeType === Node.ELEMENT_NODE) {
+        // A node not in the document (a route inside a <wcs-layout> whose template is still
+        // loading) is handed over by the layout outlet once placed, or found by state's first scan
+        if (node.nodeType === Node.ELEMENT_NODE && node.isConnected) {
           bindSubtree(node, ROUTE_RANGE);
         }
       }

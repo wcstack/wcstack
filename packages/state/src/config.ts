@@ -24,6 +24,15 @@ export function inSsr(): boolean {
   return html ? html.hasAttribute('data-wcs-server') : false;
 }
 
+/**
+ * SSR 描画中に描いた枝・行を外した印（#356）。境界の組は Content の外に置くので、外した枝・行の中に
+ * 入れ子で居た組が取り残され得る。取り残しは if の非表示と行の削除（apply/applyChangeToIf・
+ * applyChangeToFor）からしか生じないので、立っていなければ `<wcs-ssr>` を書き出すときの探索
+ * （ssr/Ssr.ts の removeStaleBlockBoundaries）を省く。下ろすのはサーバーのレンダリング 1 回分の後始末
+ * （ssr/buildSsrDocument.ts の resetSsrRenderState）
+ */
+export const ssrBlockRemoval = { seen: false };
+
 interface IInternalConfig {
   bindAttributeName: string;
   commentTextPrefix: string;

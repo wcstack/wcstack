@@ -172,6 +172,13 @@ interface IRoute extends IRouteChildContainer {
     readonly absolutePath: string;
     readonly uuid: string;
     readonly placeHolder: Comment;
+    /**
+     * ルートの内容の終わりの印（`@@wcs-route-end:<absolutePath>`。SSR の終了マーカーと同じ）。
+     * showRoute が差し込んだ内容の後ろに置き、hideRoute は placeholder からここまでを持つ。
+     */
+    readonly endMarker: Comment;
+    /** 隠している間の内容（範囲を移した DocumentFragment）。showRoute が戻す */
+    held: DocumentFragment | null;
     readonly childNodeArray: Node[];
     readonly routes: IRoute[];
     readonly params: Record<string, string>;
@@ -202,7 +209,7 @@ interface IRoute extends IRouteChildContainer {
      * SSR ハイドレーションの採用: サーバー描画済みノード列を内容として引き取る
      * （docs/ssr-router-design.md §4）
      */
-    adoptChildNodes(nodes: Node[]): void;
+    adoptChildNodes(nodes: Node[], endMarker?: Comment): void;
 }
 /**
  * Router 観測面のコミット 1 回分（docs/router-state-contract-design.md §3.4）。
@@ -458,6 +465,9 @@ declare class Route extends HTMLElement implements IRoute {
     private _uuid;
     private _placeHolder;
     private _childNodeArray;
+    private _endMarker;
+    /** 隠している間の内容（IRoute.held） */
+    held: DocumentFragment | null;
     private _childIndex;
     private _initialized;
     private _routes;
@@ -467,14 +477,17 @@ declare class Route extends HTMLElement implements IRoute {
     get routerNode(): IRouter;
     get uuid(): string;
     get placeHolder(): Comment;
+    /** ルートの内容の終わり（IRoute.endMarker。文面は SSR の終了マーカーと同じ） */
+    get endMarker(): Comment;
     get childNodeArray(): Node[];
     /**
      * SSR ハイドレーションの採用（docs/ssr-router-design.md §4）。
      * サーバー描画済みの DOM ノード列をこのルートの内容として引き取る。
      * 以後の hideRoute / showRoute は採用ノードに対して従来どおり動く。
      * template 由来の fresh クローン（自身の childNodes）は不要になるため破棄する。
+     * `endMarker`（サーバーの終了マーカー）は、以後このルートの範囲の終わりになる。
      */
-    adoptChildNodes(nodes: Node[]): void;
+    adoptChildNodes(nodes: Node[], endMarker?: Comment): void;
     get routes(): IRoute[];
     get childIndex(): number;
     get path(): string;

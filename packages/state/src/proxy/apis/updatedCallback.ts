@@ -67,7 +67,11 @@ export function updatedCallback(
         }
       }
     }
-    result = callback.call(receiver, Array.from(paths), indexesListByPath);
+    // 除いた結果が空の回（私有キーだけが更新された — マウントのメソッドが私有キーに書くたびに来る）は
+    // 作者の語彙で何も更新されていないので呼ばない（#321）
+    if (paths.size > 0 || refs.length === 0) {
+      result = callback.call(receiver, Array.from(paths), indexesListByPath);
+    }
   }
   // ルートのコールバックの**後**に配送する機能（ボリュームの相対 $updatedCallback — webComponent/addressHooks.ts）は
   // updated hook が受ける。hook の無い state は判定 1 個で抜ける

@@ -37,6 +37,7 @@ export type TimelineKind =
   | "element-unregistered"
   | "watch-error"
   | "watch-chain-limit"
+  | "render-chain-limit"
   | "path-unresolved"
   | "binding-apply-error"
   | "propagation-suppressed"
@@ -825,6 +826,17 @@ export class DevtoolsCore {
           sourceId,
           kind: "watch-chain-limit",
           // 打ち切りはバッチ単位（複数ツリーのアドレスが載りうる）— 行の主語は深さ上限
+          label: `depth > ${event.maxDepth}`,
+          detail: event.paths.join(", "),
+          subscriberCount: null,
+        });
+        return;
+      }
+      case "state:render-chain-limit": {
+        // 描画の循環（#338）。watch-chain-limit と同じくバッチ単位の打ち切りなので同じ形で並べる
+        this._appendTimeline({
+          sourceId,
+          kind: "render-chain-limit",
           label: `depth > ${event.maxDepth}`,
           detail: event.paths.join(", "),
           subscriberCount: null,

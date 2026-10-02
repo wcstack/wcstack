@@ -2,20 +2,22 @@ import { getPathInfo } from "../address/PathInfo";
 import { createStateAddress } from "../address/StateAddress";
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding";
 import { getBindingsByContent } from "../bindings/bindingsByContent";
+import { bindLoopContextToContent } from "../bindings/bindLoopContextToContent";
 import { markObserverSkipRemovedChildren } from "../bindings/observerSkip";
 import { getIndexBindingsByContent } from "../bindings/indexBindingsByContent";
-import { inSsr } from "../config";
-import { WILDCARD } from "../define";
-import { createListDiff } from "../list/createListDiff";
+import { inSsr, ssrBlockRemoval } from "../config";
+import { INDEX_BY_INDEX_NAME, WILDCARD } from "../define";
+import { calcDiffIndexes, createListDiff } from "../list/createListDiff";
 import { getListIndexByBindingInfo } from "../list/getListIndexByBindingInfo";
-import { getLastListValueByAbsoluteStateAddress } from "../list/lastListValueByAbsoluteStateAddress";
+import { getLastListValueByAbsoluteStateAddress, getRenderedList, IRenderedList, isSwappedList } from "../list/lastListValueByAbsoluteStateAddress";
+import { getListIndexesByList, hasReleasedList, isRetiredListIndex } from "../list/listIndexesByList";
 import { computeStableIndexSet } from "../list/stableListOrder";
 import { isSwapBaselineList } from "../list/swapBaselineList";
 import { IListDiff, IListIndex } from "../list/types";
 import { raiseError } from "../raiseError";
 import { activateContent, deactivateContent } from "../structural/activateContent";
 import { deleteContentByNode, getContentSetByNode } from "../structural/contentsByNode";
-import { createContent } from "../structural/createContent";
+import { createContent, getIndexBitsByBinding, indexBit } from "../structural/createContent";
 import { IContent } from "../structural/types";
 import { IBindingInfo } from "../types";
 import { applyChange } from "./applyChange";
@@ -27,6 +29,50 @@ const lastNodeByNode: WeakMap<Node, Node> = new WeakMap();
 const contentByListIndexByNode: WeakMap<Node, WeakMap<IListIndex, IContent>> = new WeakMap();
 const pooledContentsByNode: WeakMap<Node, IContent[]> = new WeakMap();
 const isOnlyNodeInParentContentByNode: WeakMap<Node, boolean> = new WeakMap();
+// この for（アンカー）が最後に描いた並び（#320。lastListValueByAbsoluteStateAddress.ts の IRenderedList）
+const renderedListByNode: WeakMap<Node, IRenderedList> = new WeakMap();
+// SSR 描画中の行の境界コメント [`@@wcs-for-start`, `@@wcs-for-end`]（#334）
+const ssrBoundsByContent: WeakMap<IContent, Comment[]> = new WeakMap();
+
+/**
+ * SSR 描画中: 行を境界コメントで挟んで `parent` の `prev` の直後（null なら末尾）に置き、終端コメントを返す
+ * （次の行はその後ろ）。境界は行の Content の範囲の外なので、Content だけを動かすと境界が置き去りになる
+ * （#334 — 描いてある行の中身が自分の境界の前へ出て、足した行の境界が入れ子になった）。描いてある行は
+ * 境界ごと（中の if / for が描いたノードも含めて）動かす。ラベルの添字は今の位置に付け直す（ハイドレーション
+ * は添字で行を組む）。
+ */
+function placeSsrRow(content: IContent, parent: Node, prev: Node | null, label: string): Comment {
+  let bounds = ssrBoundsByContent.get(content);
+  if (typeof bounds === 'undefined') {
+    bounds = [document.createComment(''), document.createComment('')];
+    ssrBoundsByContent.set(content, bounds);
+  }
+  const [start, end] = bounds;
+  start.data = `@@wcs-for-start:${label}`;
+  end.data = `@@wcs-for-end:${label}`;
+  if (!content.mounted) {
+    // 祖先の unmount（if の非表示）で外れた行は、中身だけが外れて境界が残る。外してから置き直す
+    start.remove();
+    end.remove();
+  }
+  const ref = prev === null ? null : prev.nextSibling;
+  if (start.parentNode === null) {
+    // 新しい行・プールから戻す行・祖先の unmount で外れた行・その場で使い回す行（外すときに境界を外した）:
+    // 境界を置いてから中身を挟む（中の if / for は、この後の活性化が境界の内側へ描く）
+    parent.insertBefore(start, ref);
+    parent.insertBefore(end, ref);
+    content.mountAfter(start);
+  } else if (ref !== start) {
+    let node: Node = start;
+    while (node !== end) {
+      const next = node.nextSibling as Node;
+      parent.insertBefore(node, ref);
+      node = next;
+    }
+    parent.insertBefore(end, ref);
+  }
+  return end;
+}
 
 // テスト用ヘルパー（内部状態の操作）
 export function __test_setContentByListIndex(node: Node, index: IListIndex, content: IContent | null): void {
@@ -44,6 +90,12 @@ export function hydrateSetContent(node: Node, index: IListIndex, content: IConte
 
 export function hydrateSetLastNode(node: Node, lastNode: Node): void {
   lastNodeByNode.set(node, lastNode);
+}
+
+// SSR ハイドレーション用: サーバーが描いた並びを、この for が描いた並びとして記録する（クライアントで描いた
+// for と同じく、要素の書き込みが描画の基準を書き込む前の写しへ移せるように — #351）
+export function hydrateSetRenderedList(node: Node, list: readonly unknown[]): void {
+  renderedListByNode.set(node, getRenderedList(list));
 }
 
 export function __test_deleteContentByNode(node: Node): void {
@@ -202,6 +254,35 @@ function clearAppliedMarks(content: IContent, context: IApplyContext): void {
 }
 
 /**
+ * 位置が変わった行の添字の束縛（`$1` …）を当て直す。行の中の入れ子の構造ディレクティブ（createContent が
+ * 同じ列に入れる）の Content — 内側の for の行・if の枝、その奥 — も辿る（#360）。内側の for は同じ配列を
+ * 描き続けるので差分が出ず、if は条件が変わらないので、ここで辿らないと外側の軸の添字が古いまま残る。
+ * 辿るのは、中（入れ子の奥も含む）で動いた行の段の添字（`movedBit` — `for: rows` の行なら `$1`）を使う入れ子
+ * だけ。それ以外の添字（外側の行の番号・入れ子の行の自分の番号）は動いても変わらない（#390）。
+ * 添字を条件に持つ構造ディレクティブ（`if: $1|lt(2)`）は当て直してから辿る（真のままなら枝は描き直されない）。
+ * 外れている Content（プールの行・偽の if の枝）は辿らない（戻すときの活性化が全部の束縛を当てる）。
+ */
+function applyIndexBindings(content: IContent, context: IApplyContext, movedBit: number): void {
+  for (const binding of getIndexBindingsByContent(content)) {
+    if (!STRUCTURAL_BINDING_TYPES.has(binding.bindingType)) {
+      applyChange(binding, context);
+      continue;
+    }
+    if (binding.statePathName in INDEX_BY_INDEX_NAME) {
+      applyChange(binding, context);
+    }
+    if ((getIndexBitsByBinding(binding) & movedBit) === 0) {
+      continue;
+    }
+    for (const nested of getContentSetByNode(binding.node)) {
+      if (nested.mounted) {
+        applyIndexBindings(nested, context, movedBit);
+      }
+    }
+  }
+}
+
+/**
  * 入れ子の `for` が持つ Content を解体して台帳から外す（#4）。その場で使い回す行の中身は新しい行として
  * 作り直されるので、外した Content をアンカーの content 台帳（contentSetByNode）に残すと、置き換えの
  * たびに伸び続ける。プールへ返さないのは、返すと次の適用で内側の `for` が「全行削除」の近道
@@ -222,6 +303,12 @@ function dropNestedContents(content: IContent): void {
       deactivateContent(nested);
       nested.unmount();
       deleteContentByNode(binding.node, nested);
+      // 描いた行を捨てたので、その for が描いた並びも捨てて白紙から描かせる（#320。残すと次の適用が、
+      // 捨てた行を自分の行として差分の旧側に数え、台帳から外した Content をプールへ戻してしまう）。行の Content の
+      // 台帳も捨てる — 残すと、同じ行を別の外側の行の for も描いている（2 つの外側の行が同じ配列を持つ — #393）とき、
+      // その for がアドレスに残した描画の基準を自分の描いた並びと取り違え、描いていない行を探して落ちた
+      renderedListByNode.delete(binding.node);
+      contentByListIndexByNode.delete(binding.node);
     }
   }
 }
@@ -251,17 +338,44 @@ export function applyChangeToFor(
   const listIndex = getListIndexByBindingInfo(bindingInfo);
   const absAddress = getAbsoluteStateAddressByBinding(bindingInfo);
   const recordedLastValue = getLastListValueByAbsoluteStateAddress(absAddress);
-  // lastListValue はアドレスキーの共有台帳。まだ何も描いていない binding ノード
-  //（content 台帳が空）が、既に描画済みのアドレスに後から参加する形 — マウント
-  // スコープの再初期化（コンポーネントが connectedCallback で shadow を張り直す）や
-  // 後着ノードの binder 適用 — では、共有の記録で差分を取ると「既存 content の
-  // 再利用・維持」を指示され、この binding には無いので落ちる。自分の台帳が空なら
-  // 白紙から全行 add で描く（同じアドレスの他の binding の差分には影響しない）
-  const lastValue = recordedLastValue.length > 0 && !contentByListIndexByNode.has(bindingInfo.node)
-    ? []
-    : recordedLastValue;
-  const diff = createListDiff(listIndex, lastValue, newValue);
-  context.newListValueByAbsAddress.set(absAddress, Array.isArray(newValue) ? newValue : []);
+  const rendered = renderedListByNode.get(bindingInfo.node);
+  let lastValue: readonly unknown[];
+  let diff: IListDiff;
+  // 共有の記録が、この for の描いた並びを置いて進んだ（#320）。同じリストを描く別の for だけが描いた —
+  // この for は `if` で消されていた・DOM から外されていた — か、行の Content の使い回しでこの for が
+  // 別の行に付け替わった。行の台帳（どの値がどの行か）は共有の差分で進め、描き替えは自分が描いた行と
+  // 今の行を行の同一性で突き合わせて決める。描いた並びが空なら台帳は無い（全行 add）。
+  // 今の行の親がこの配列を手放した外側の行（台帳の食い違い）なら突き合わせに使わない — 別の行の値を描き、その後の
+  // 書き込みを別の行へ着地させる。従来の差分（行を付け替える）に戻す。行の親が、この配列をまだ持つ別の外側の行なのは
+  // 食い違いではない（2 つの外側の行が同じ配列を持つ — #393）
+  // 同じ配列を描く別の `for` で要素書き込みの入れ替えが揃い、この for はまだその配列を描く（setByAddress の
+  // notifySwappedList・#379）。自分が描いた並び（入れ替えの前の写しへ移された記録）といまの台帳を、行の同一性だけで
+  // 突き合わせる。差分（createListDiff）は通さない — 台帳の行の親を、書いていない外側の行へ付け替えてしまう（#256）
+  const swapped = typeof rendered !== 'undefined' && isSwappedList(absAddress, newValue);
+  const shared = !swapped && typeof rendered !== 'undefined' && rendered.value !== recordedLastValue
+    ? createListDiff(listIndex, recordedLastValue, newValue)
+    : null;
+  if (swapped) {
+    lastValue = rendered!.value;
+    diff = calcDiffIndexes(getListIndexesByList(lastValue)!, getListIndexesByList(newValue as unknown[])!);
+  } else if (shared !== null && shared.newIndexes.every((row) => row.parentListIndex === listIndex || isRetiredListIndex(row.parentListIndex!) || !hasReleasedList(newValue as unknown[], row.parentListIndex!))) {
+    lastValue = rendered!.value;
+    diff = calcDiffIndexes(getListIndexesByList(lastValue) ?? [], shared.newIndexes);
+  } else {
+    // lastListValue はアドレスキーの共有台帳。まだ何も描いていない binding ノード
+    //（content 台帳が空）が、既に描画済みのアドレスに後から参加する形 — マウント
+    // スコープの再初期化（コンポーネントが connectedCallback で shadow を張り直す）や
+    // 後着ノードの binder 適用 — では、共有の記録で差分を取ると「既存 content の
+    // 再利用・維持」を指示され、この binding には無いので落ちる。自分の台帳が空なら
+    // 白紙から全行 add で描く（同じアドレスの他の binding の差分には影響しない）
+    lastValue = recordedLastValue.length > 0 && !contentByListIndexByNode.has(bindingInfo.node)
+      ? []
+      : recordedLastValue;
+    diff = createListDiff(listIndex, lastValue, newValue);
+  }
+  const newListValue = Array.isArray(newValue) ? newValue : [];
+  context.newListValueByAbsAddress.set(absAddress, newListValue);
+  renderedListByNode.set(bindingInfo.node, getRenderedList(newListValue));
 
   let contentMap = contentByListIndexByNode.get(bindingInfo.node);
   // 要素書き込みの入れ替えを描き直す差分では、同じ位置で外す行の Content を入る行がその場で使い回す（#4）
@@ -274,7 +388,10 @@ export function applyChangeToFor(
     let isOnlyNode = isOnlyNodeInParentContentByNode.get(bindingInfo.node);
     if (typeof isOnlyNode === 'undefined') {
       const lastNode = lastNodeByNode.get(bindingInfo.node) || bindingInfo.node;
-      isOnlyNode = isOnlyNodeInParentContent(bindingInfo.node, lastNode);
+      // 描いた行が祖先の unmount（`if` の非表示・プールに入った行）で既に外れているなら、アンカーから数える。
+      // 外れた末尾には後ろの兄弟が無いので、同じ親に居る兄弟の `for` / `if` を見落として「この for だけ」と
+      // 覚え、親を空にする近道がそのアンカーごと消す（プールから戻した行で内側の for が描いていた行を外す形）
+      isOnlyNode = isOnlyNodeInParentContent(bindingInfo.node, lastNode.parentNode === bindingInfo.node.parentNode ? lastNode : bindingInfo.node);
       isOnlyNodeInParentContentByNode.set(bindingInfo.node, isOnlyNode);
     }
     if (isOnlyNode) {
@@ -297,12 +414,19 @@ export function applyChangeToFor(
   let poolBudget = fullDelete
     ? maxPooledContents - getPooledContents(bindingInfo).length
     : Number.POSITIVE_INFINITY;
+  const ssrMode = inSsr();
   if (typeof contentMap !== 'undefined') {
     // Set の for...of は行ごとに反復子の結果オブジェクトを割り当てる（消去の scavenge の引き金）ので forEach で回す
     const map = contentMap;
     diff.deleteIndexSet.forEach((deleteIndex) => {
       const content = map.get(deleteIndex);
       if (typeof content !== 'undefined') {
+        if (ssrMode) {
+          // 外す行の境界も外す（#334。その場で使い回す行は、足す行として境界を置き直す）。SSR の外で
+          // 描いた行（同じ文書で後から SSR が始まった）は境界を持たない
+          ssrBoundsByContent.get(content)?.forEach((bound) => bound.remove());
+          ssrBlockRemoval.seen = true;
+        }
         if (inPlaceContents !== null && inPlaceContents.reused.has(content)) {
           // 同じ位置に入る行がその場で使い回す。自分のノードは DOM に残し、プールにも入れないが、
           // 解体は unmount と同じ（ネストした for / if の Content とアドレス台帳を落とす）
@@ -346,12 +470,12 @@ export function applyChangeToFor(
     fragment = document.createDocumentFragment();
     setRootNodeByFragment(fragment, context.rootNode);
   }
-  const ssrMode = inSsr();
+  // SSR の境界コメントのラベル（`<uuid>:<path>:` ＋ 行の添字）
+  const ssrLabel = ssrMode ? `${bindingInfo.uuid}:${listPathInfo.path}:` : '';
   // 自動命名ポリシーは行ごとではなく apply ごとに 1 回だけ引く
   // （docs/view-transition-design.md §6）。既定の manual では null で、
   // 以降の行ループは分岐 1 つ分しか増えない。
   const autoNaming = getAutoNaming();
-  const uuid = bindingInfo.uuid ?? '';
   // 追加行ごとの WeakMap 解決を避けるためプール配列も 1 回だけ引く（プールの配列
   // 実体は setPooledContent が一度作ったら不変なので、delete ループ後の参照で安定）
   const pooledContents = pooledContentsByNode.get(bindingInfo.node);
@@ -371,32 +495,20 @@ export function applyChangeToFor(
           // より先に適用された形。印が残ると activateContent の applyChange が飛ばし、新しい行に外した行の
           // 値が残る（表示と state が食い違う）。新しい行として適用し直す
           clearAppliedMarks(content, context);
+          // DOM に戻す前に新しい行のループ文脈を張る。戻した瞬間に中のマウント済みコンポーネントの
+          // 再接続（`$connectedCallback`）が同期で走り、要素の行を引く（#368）
+          bindLoopContextToContent(content, loopContext);
         }
         // コンテント活性化の前にDOMツリーに追加しておく必要がある
-        if (fragment !== null) {
-          if (ssrMode) {
-            fragment.appendChild(document.createComment(`@@wcs-for-start:${uuid}:${listPathInfo.path}:${index.index}`));
-          }
+        if (ssrMode) {
+          lastNode = fragment !== null
+            ? placeSsrRow(content, fragment, null, ssrLabel + index.index)
+            : placeSsrRow(content, lastNode.parentNode!, lastNode, ssrLabel + index.index);
+        } else if (fragment !== null) {
           content.appendTo(fragment);
-          if (ssrMode) {
-            fragment.appendChild(document.createComment(`@@wcs-for-end:${uuid}:${listPathInfo.path}:${index.index}`));
-          }
-        } else {
-          // Update lastNode for next iteration to ensure correct order
+        } else if (lastNode.nextSibling !== content.firstNode) {
           // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
-          if (lastNode.nextSibling !== content.firstNode) {
-            if (ssrMode) {
-              const startComment = document.createComment(`@@wcs-for-start:${uuid}:${listPathInfo.path}:${index.index}`);
-              lastNode.parentNode!.insertBefore(startComment, lastNode.nextSibling);
-              lastNode = startComment;
-            }
-            content.mountAfter(lastNode);
-          }
-          if (ssrMode) {
-            const endComment = document.createComment(`@@wcs-for-end:${uuid}:${listPathInfo.path}:${index.index}`);
-            const afterNode = content.lastNode ?? lastNode;
-            afterNode.parentNode!.insertBefore(endComment, afterNode.nextSibling);
-          }
+          content.mountAfter(lastNode);
         }
         // コンテントを活性化
         activateContent(content, loopContext, context);
@@ -423,11 +535,8 @@ export function applyChangeToFor(
       // getContent 相当（undefined→null 正規化は後段の raiseError 判定が null 比較のため維持）
       content = (typeof contentMap !== 'undefined' ? contentMap.get(index) ?? null : null)!;
       if (diff.changeIndexSet.has(index)) {
-        // change
-        const indexBindings = getIndexBindingsByContent(content);
-        for(const indexBinding of indexBindings) {
-          applyChange(indexBinding, context);
-        }
+        // change（値の変わる添字は、この for の段の `$d` — d はリストのパスのワイルドカードの数 + 1）
+        applyIndexBindings(content, context, indexBit(listPathInfo.wildcardCount));
       }
       // Update lastNode for next iteration to ensure correct order
       // Ensure content is in correct position (e.g. if previous siblings were deleted/moved)
@@ -438,13 +547,14 @@ export function applyChangeToFor(
       // 戻されるだけでは binding が dispose 済みのまま復活しない。位置合わせの
       // 前に判定しておき（mountAfter が mounted を立てる）、戻した後に再活性化する。
       const unmountedByAncestor = !content.mounted;
-      // Stable contents are already in correct relative order — but only
-      // trust that after physical verification (see isPhysicallyAfter).
-      // Contents out of order (and everything unverifiable) settle via the
-      // self-healing mountAfter walk below.
-      const stable = stableIndexSet !== null && stableIndexSet.has(index)
-        && isPhysicallyAfter(lastNode, content.firstNode);
-      if (!stable && lastNode.nextSibling !== content.firstNode) {
+      if (ssrMode) {
+        lastNode = placeSsrRow(content, lastNode.parentNode!, lastNode, ssrLabel + index.index);
+      } else if (!(stableIndexSet !== null && stableIndexSet.has(index) && isPhysicallyAfter(lastNode, content.firstNode))
+        && lastNode.nextSibling !== content.firstNode) {
+        // Stable contents are already in correct relative order — but only
+        // trust that after physical verification (see isPhysicallyAfter).
+        // Contents out of order (and everything unverifiable) settle via the
+        // self-healing mountAfter walk.
         content.mountAfter(lastNode);
       }
       if (unmountedByAncestor) {
@@ -458,7 +568,10 @@ export function applyChangeToFor(
         });
       }
     }
-    lastNode = content.lastNode || lastNode;
+    if (!ssrMode) {
+      // SSR では行の終端コメント（placeSsrRow が返す）のまま
+      lastNode = content.lastNode || lastNode;
+    }
     if (typeof contentMap === 'undefined') {
       contentMap = new WeakMap<IListIndex, IContent>();
       contentByListIndexByNode.set(bindingInfo.node, contentMap);

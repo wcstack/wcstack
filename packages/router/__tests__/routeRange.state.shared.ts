@@ -4,7 +4,7 @@ import type { Router } from '../src/components/Router';
 /**
  * `<wcs-route>` の直下の構造テンプレートを、state がページの走査で描く形（router が着地の
  * ルートを先に挿入し、state が後からマウントする — CDN の auto でふつうの順序）。
- * 3.x の state（packages/state/dist）と state-next の両方で流す。
+ * 3.x の state（packages/state/dist、routeRange.state3x.test.ts）と state-next（routeRange.stateNext.test.ts）の両方で流す。
  */
 export const ROUTES = `<wcs-state></wcs-state>
 <wcs-router><template>
@@ -52,7 +52,7 @@ export async function landingThenLeave(write: (el: any, items: string[], on: boo
   }
 }
 
-/** 入れ子のルート（親の直下の if:+else:、子の直下の for:）。指摘者 D の router-nested2 の形 */
+/** 入れ子のルート（親の直下の if:+else:、子の直下の for:） */
 export const NESTED = `<wcs-state></wcs-state>
 <wcs-router><template>
   <wcs-route path="/"><h2>root</h2></wcs-route>
@@ -101,7 +101,7 @@ export async function enterByNavigation(land: string, visits: string[], state: R
   }
 }
 
-/** レイアウトの中のルート（指摘者 D の layout-* の形）。`shadow` でレイアウトを shadow root にする */
+/** レイアウトの中のルート。`shadow` でレイアウトを shadow root にする */
 export const LAYOUT_PAGE = (shadow: boolean): string => `<template id="range-lay"><div class="frame"><b class="lt">{{ msg }}</b><slot></slot></div></template>
 <wcs-state></wcs-state>
 <wcs-router><template>

@@ -1,6 +1,6 @@
 import { getAbsoluteStateAddressByBinding } from "../binding/getAbsoluteStateAddressByBinding.js";
 import { ATTR_NAMESPACE, CLASS_NAMESPACE, COMMAND_NAMESPACE, STYLE_NAMESPACE } from "../define.js";
-import { getBindingSession } from "../bindings/BindingSession.js";
+import { getBindingSession, isWaitingDefinition } from "../bindings/BindingSession.js";
 import { getCustomElement } from "../getCustomElement.js";
 import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 import { raiseError } from "../raiseError.js";
@@ -185,7 +185,10 @@ export function applyChange(binding: IBindingInfo, context: IApplyContext): void
   if (definedApplyVerifiedByBinding.get(binding) !== true) {
     const customTag = getCustomElement(binding.replaceNode);
     if (customTag) {
-      if (getCustomElementRegistry(binding.replaceNode)?.get(customTag) === undefined) {
+      // 定義済みに見えても、束縛がまだ定義を待っている（two-way・イベントも初期同期もまだ）なら同じく待つ —
+      // 行の中身は fragment の中で「未定義」と判断して待ちを並べ、スコープ付き registry の木へ差し込んだ
+      // 時点で upgrade される。ここで書くと初期同期より先に state の値が要素へ入る（#357）
+      if (getCustomElementRegistry(binding.replaceNode)?.get(customTag) === undefined || isWaitingDefinition(binding)) {
         // 未 define のカスタム要素へは今は適用できない（accessor 未確立の要素に
         // 素の own property を書くと upgrade 後に class accessor を隠してしまう）。
         // whenDefined 後に最新 state 値で再適用する（two-way attach / deferred

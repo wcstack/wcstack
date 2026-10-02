@@ -26,7 +26,7 @@ Content-Security-Policy:
   connect-src 'self';
 ```
 
-Two differences. **`esm.run` 301-redirects to `cdn.jsdelivr.net`, so it costs two hosts** (§1). **`blob:` is needed only if you use the inline `<script>` inside `<wcs-state>`** (§4) — and not even then if the `<script>` that loads state carries the nonce (`<script type="module" nonce="{RANDOM}" src="…">`; the blob: import inherits it). An inline import map needs either a nonce or a hash (§2 / §3).
+Two differences. **`esm.run` 301-redirects to `cdn.jsdelivr.net`, so it costs two hosts** (§1). **`blob:` is needed only if you use the inline `<script>` inside `<wcs-state>` (§4) or a router guard (§5)** — and not even then if the `<script>` that loads state (or router) carries the nonce (`<script type="module" nonce="{RANDOM}" src="…">`; the blob: import inherits it). An inline import map needs either a nonce or a hash (§2 / §3).
 
 **Static hosting, where no nonce can be issued (GitHub Pages, object storage)**
 
@@ -74,7 +74,7 @@ Where no nonce can be issued, a hash substitutes for it. How to compute one, and
 
 ### 2.1 The split entries of `@wcstack/state`
 
-The split entries (`@wcstack/state/core` and `features/*`; "Split entries" in the state README) are plain ES modules with no `eval`, no `new Function` and no blob:, so loading them needs only the delivery host in the policy — the same as the all-in-one `auto.min.js`. What differs is how many inline scripts the page carries.
+The split entries (`@wcstack/state/core` and `features/*`; "Split entries" in the state README) are plain ES modules with no `eval` and no `new Function`, so loading them needs only the delivery host in the policy — the same as the all-in-one `auto.min.js`. The inline-state `blob:` rule of §4 still applies: the core carries the same blob: path for `<wcs-state><script type="module">`. What differs is how many inline scripts the page carries.
 
 | Spelling | Inline scripts | CSP needed |
 |---|---|---|
@@ -83,7 +83,7 @@ The split entries (`@wcstack/state/core` and `features/*`; "Split entries" in th
 | The bootstrap in an external file (`/boot.js`) importing the full CDN URLs | none | the delivery host and `'self'` |
 
 - The split files (core, `features/*`, `dist/split/chunks/`) reach one another through static imports; one host entry covers them all.
-- Give the bootstrap script the nonce and the static and dynamic imports beyond it inherit it, so a nonce-only policy with no host entry, or `'strict-dynamic'`, works too (checked in a minimal setup on Chromium, Firefox and WebKit, 2026-09-28).
+- Give the bootstrap script the nonce and the static and dynamic imports beyond it inherit it, so a nonce-only policy with no host entry, or `'strict-dynamic'`, works too (checked only in a minimal setup on Chromium, Firefox and WebKit, 2026-09-28; for `'strict-dynamic'` on wcstack's own paths see §3.3).
 - Narrowing file by file with hashes (§3.2) is not possible: the chunks and `features/*` have no `<script>` tag to hang a hash source on.
 - The split entries are not loaded from `esm.run` (state README), so the two-host issue of §1 does not arise.
 - For integrity see [sri.md §5.1](./sri.md#51-the-split-entries-of-wcstackstate). The import map's `integrity` lives in the same inline import map, so the CSP requirements in the table do not change.
@@ -100,7 +100,7 @@ Static hosting (GitHub Pages, object storage, files served straight off a CDN) c
 | A `<wcs-route>` guard (§5) | Yes (on the `<script>` that loads router) | No | Same; there is no `src=` escape hatch |
 | State in `<script type="application/json">` (§4) | not needed | not needed | Never executed, so `script-src` does not apply |
 
-**A hash does not rescue the two blob: paths, but a nonce does.** A module loaded from a blob: URL is fetched as an *external* script, so it is not a candidate for inline-hash matching and there is nowhere to put an `integrity` attribute. A module's `import()`, on the other hand, inherits the nonce of the `<script>` that loaded the module doing the import (the HTML spec's descendant script fetch options). So a nonce on the `<script>` that loads the state or router bundle admits the blob: import as well (checked with the real 3.x state, state 4.0 and router bundles on Chromium, Firefox and WebKit, 2026-09-28; pinned on Chromium by [e2e/tests/csp.spec.ts](../e2e/tests/csp.spec.ts)). Where no nonce can be issued, it comes down to opening `script-src blob:` or moving to `src=`.
+**A hash does not rescue the two blob: paths, but a nonce does.** A module loaded from a blob: URL is fetched as an *external* script, so it is not a candidate for inline-hash matching and there is nowhere to put an `integrity` attribute. A module's `import()`, on the other hand, inherits the nonce of the `<script>` that loaded the module doing the import (the HTML spec's descendant script fetch options). So a nonce on the `<script>` that loads the state or router bundle admits the blob: import as well (checked with the real state and router bundles on Chromium, Firefox and WebKit, 2026-09-28; pinned on Chromium by [e2e/tests/csp.spec.ts](../e2e/tests/csp.spec.ts)). Where no nonce can be issued, it comes down to opening `script-src blob:` or moving to `src=`.
 
 ### 3.1 Hashing an inline import map — not one byte may change
 
@@ -163,7 +163,7 @@ State pulls the text of the inline `<script>` out, builds a blob: URL, and dynam
 
 **A nonce on the `<script>` that loads state covers it.** An `import()` inherits the nonce of the `<script>` that loaded the module making it — here, the state bundle (§3). Load state through a tag without a nonce (host allowance only) and the blob: import is refused. A hash does not cover it (§3).
 
-**The browser executes that `<script>` too.** Being a child of `<wcs-state>` does not stop it: a `<script type="module">` placed in the document is evaluated by the browser as usual (only one inside a `<template>` is not). Its exports go nowhere, so state's result is unaffected, but two things follow (3.x and 4.0, Chromium, Firefox and WebKit, checked 2026-09-28):
+**The browser executes that `<script>` too.** Being a child of `<wcs-state>` does not stop it: a `<script type="module">` placed in the document is evaluated by the browser as usual (only one inside a `<template>` is not). Its exports go nowhere, so state's result is unaffected, but two things follow (Chromium, Firefox and WebKit, checked 2026-09-28):
 
 - Under a CSP, the browser's own evaluation of that `<script>` is refused when it carries no nonce, and the console shows one violation. It is separate from state's own load (through blob:), so state still works.
 - If that `<script>` carries the nonce as well, or the page has no CSP, its top-level code runs **twice** — once by the browser, once by state. Keep side effects (requests, logging, assignments to globals) out of the top level.
@@ -185,7 +185,7 @@ not against the page, and 404s. Under a `<base>`, write the URL root-absolute:
 
 A `<wcs-route>` guard script is likewise evaluated through a blob: URL ([loadGuardHandler.ts](../packages/router/src/loadGuardHandler.ts)). As in §4, **a nonce on the `<script>` that loads router covers it** (checked with the real router bundle on Chromium, Firefox and WebKit, 2026-09-28). The guard's `<script>` sits inside a `<template>`, so the browser never evaluates it itself (neither effect in §4 occurs).
 
-Unlike state, though, **guards are inline-only — there is no `src=` escape hatch**. Where no nonce can be issued, using guards makes `script-src blob:` mandatory.
+Unlike state, though, **guards are inline-only — there is no `src=` escape hatch**. Where no nonce can be issued, using guards makes `script-src blob:` necessary. (When the blob: import fails, router retries through a `data:` URL, so `script-src data:` lets guards through too — but `data:` is the riskier source to allow; do not open it.)
 
 This asymmetry is known; external-file support is not implemented. To keep a strict policy without a nonce, skip guards and control access on the route-rendering side instead.
 
@@ -270,16 +270,17 @@ The state property-write path swallows setter exceptions by design (the element 
 
 ## 9. Diagnostics — how to read the errors
 
-The rejection from a dynamic `import()` that CSP blocked says only `Failed to fetch dynamically imported module` and never mentions CSP. So state and router subscribe to `securitypolicyviolation` during evaluation and speak with certainty only when a block was actually observed.
+The rejection from a dynamic `import()` that CSP blocked says only `Failed to fetch dynamically imported module` (Chromium; Firefox: `error loading dynamically imported module`) and never mentions CSP. So state and router subscribe to `securitypolicyviolation` during evaluation and speak with certainty only when a block was actually observed.
 
 | Output | Meaning |
 |---|---|
-| `... was blocked by Content-Security-Policy` | **CSP confirmed.** Give the nonce to the `<script>` that loads state / router, add `script-src blob:`, or move to `src=` |
-| `Failed to evaluate the inline <script> of …` | No violation was observed. Usually a syntax error in the state definition (the original error is in `cause`) |
+| `... was blocked by Content-Security-Policy` | **CSP confirmed.** Give the page's nonce to the `<script>` that loads state / router, add `script-src blob:`, or (state only) move to `src=` |
+| `Failed to evaluate the inline <script> of state "…"` (state) / `loadGuardHandler: failed to import guard script …` (router) | No violation was observed. Usually a syntax error in the state definition or the guard. State embeds the original error's message in its own (from 3.5 it also keeps the error in `cause`); router keeps the original error in `cause` |
 
 Not asserting CSP when no violation was observed is deliberate: it keeps a syntax error from being misattributed to the policy.
 
-**Firefox fires the violation event after the import has failed** (in the next task; Chromium and WebKit fire it before the failure — checked 2026-09-28).
+The CSP-confirmed message of state and router up to 3.4.0 names only `script-src blob:` (state also `src=`) as the fix. The nonce on the `<script>` that loads the bundle (§4, §5) works as well. From 3.5 their CSP-confirmed messages name the nonce too.
 
-- State 4.0 waits one task after the failure before deciding, so it can assert CSP on every engine. On a page without the diagnostics add-on the message is a number instead of the sentence (`[@wcstack/state] #42` is CSP confirmed, `#43 "…"` the non-asserting one).
-- Router waits the same one task in versions after 3.3.0 ([loadGuardHandler.ts](../packages/router/src/loadGuardHandler.ts)). Router up to 3.3.0 and 3.x state do not wait, so on Firefox a CSP block yields the non-asserting message (the second row).
+**Firefox fires the violation event after the import has failed** (in the next task; Chromium and WebKit fire it before the failure — checked 2026-09-28). State and router up to 3.4.0 decide as soon as the import fails, so on Firefox a CSP block yields the non-asserting message (the second row). On Firefox, read that row as "check the CSP too". From 3.5, state and router wait that one task before deciding, so Firefox gets the CSP-confirmed message as well.
+
+@wcstack/state 4.0 waits that one task as well. On a page without its diagnostics add-on the message is a number instead of the sentence (`[@wcstack/state] #42` is CSP confirmed, `#43 "…"` the non-asserting one).

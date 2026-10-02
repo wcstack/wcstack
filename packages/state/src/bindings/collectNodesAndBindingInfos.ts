@@ -37,6 +37,8 @@ export interface IDeferredSpreadEntry {
   readonly tagName: string;
   readonly parseResults: ParseBindTextResult[];
   readonly transform?: ParseResultTransform;
+  /** 予約中の定義待ちの取り消し（`scheduleDeferredSpreads` が持つ。行の活性化し直しで待ちを重ねない） */
+  cancel?: () => void;
 }
 
 function processParseResultsForNode(
@@ -67,7 +69,18 @@ export function collectNodesAndBindingInfos(
   root: Document | Element | DocumentFragment,
   transform?: ParseResultTransform,
 ): [ Node[], IBindingInfo[], IDeferredSpreadEntry[] ] {
-  const subscriberNodes = getSubscriberNodes(root);
+  return collectNodesAndBindingInfosOf(getSubscriberNodes(root), transform);
+}
+
+/**
+ * 購読ノードの列を受け取る版。SSR のハイドレーション（ssr/hydrateBindings.ts）が、生きている
+ * ブロックのノード列を**動かさずに**集めるのに使う（根を要求する上の版に掛けるには一時的な
+ * 要素へ移すしかなく、移すとブロックの中のカスタム要素が切断・再接続される — #258）。
+ */
+export function collectNodesAndBindingInfosOf(
+  subscriberNodes: Node[],
+  transform?: ParseResultTransform,
+): [ Node[], IBindingInfo[], IDeferredSpreadEntry[] ] {
   const allBindings: IBindingInfo[] = [];
   const deferredSpreads: IDeferredSpreadEntry[] = [];
   for(const node of subscriberNodes) {
@@ -86,21 +99,28 @@ export function collectNodesAndBindingInfos(
 export function collectNodesAndBindingInfosByFragment(
   root: DocumentFragment,
   nodeInfos: IFragmentNodeInfo[],
-): [ Node[], IBindingInfo[] ] {
+): [ Node[], IBindingInfo[], IDeferredSpreadEntry[] ] {
   const nodes: Node[] = [];
   const allBindings: IBindingInfo[] = [];
+  const deferredSpreads: IDeferredSpreadEntry[] = [];
   for(const nodeInfo of nodeInfos) {
     const node = resolveNodePath(root, nodeInfo.nodePath);
     if (node === null) {
       raiseError(`Node not found by path [${nodeInfo.nodePath.join(', ')}] in fragment.`);
     }
     if (registeredNodeSet.has(node)) continue;
-    const result = processParseResultsForNode(node, nodeInfo.parseBindTextResults, { allowDeferred: false });
-    // deferred is impossible when allowDeferred=false (expandSpread raises instead)
+    const result = processParseResultsForNode(node, nodeInfo.parseBindTextResults, { allowDeferred: true });
+    // 未定義カスタム要素への spread は行の活性化が定義待ちへ予約する（#330。ルートと同じ約束）。
+    // ノードは行のノードの列に入れる — 行のループ文脈はこの列に張られ、展開した束縛がそれを読む。
+    // 行のノードとして台帳にも載せる — 祖先の走査し直し（binder）がルートの待ちとして二重に予約しない
+    if (result.deferred !== null) {
+      deferredSpreads.push(result.deferred);
+      registeredNodeSet.add(node);
+    }
     allBindings.push(...result.bindings);
     nodes.push(node);
   }
-  return [nodes, allBindings];
+  return [nodes, allBindings, deferredSpreads];
 }
 
 export function unregisterNode(node: Node): void {

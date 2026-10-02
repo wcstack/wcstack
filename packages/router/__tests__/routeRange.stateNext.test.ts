@@ -195,3 +195,46 @@ describe('入れ子のレイアウト（state-next）', () => {
     }
   });
 });
+
+describe('パラメータの変化で表示中のルートをもう一度表示する（router 3.5 の持ち出して戻す、state-next）', () => {
+  it('直下の for: / if:+else: の行と枝は並びを保って戻り、重ならず、遷移で入った後も書き込みに追従する', async () => {
+    history.replaceState(null, '', '/');
+    document.body.innerHTML = `<wcs-state></wcs-state>
+<wcs-router><template>
+  <wcs-route path="/"><h2>root</h2></wcs-route>
+  <wcs-route path="/u/:id"><h2>U</h2><template data-wcs="for: items"><p class="row">{{ . }}</p></template><template data-wcs="if: on"><b class="on">on</b></template><template data-wcs="else:"><b class="on">off</b></template><footer class="f">F</footer></wcs-route>
+</template></wcs-router>`;
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ')); };
+    try {
+      await settle();
+      const el = document.querySelector('wcs-state') as any;
+      el.setInitialState({ items: ['a', 'b'], on: true });
+      await el.connectedCallbackPromise;
+      await settle();
+      const router = document.querySelector('wcs-router') as any;
+      const view = () => Array.from(document.querySelectorAll('h2, p.row, b.on, footer.f'), (n) => n.textContent).join(',');
+      const seen: string[] = [];
+      for (const to of ['/u/1', '/u/2', '/u/3']) {
+        await router.navigate(to);
+        await settle();
+        seen.push(view());
+      }
+      expect(seen).toEqual(['U,a,b,on,F', 'U,a,b,on,F', 'U,a,b,on,F']);
+      el.createState('writable', (s: any) => { s.items = ['c']; s.on = false; });
+      await settle();
+      expect(view()).toBe('U,c,off,F');
+      await router.navigate('/u/4');
+      await settle();
+      expect(view()).toBe('U,c,off,F');
+      await router.navigate('/');
+      await settle();
+      expect(view()).toBe('root');
+      expect(errors).toEqual([]);
+    } finally {
+      console.error = original;
+      document.body.innerHTML = '';
+    }
+  });
+});

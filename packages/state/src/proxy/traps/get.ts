@@ -26,6 +26,7 @@ import { DELIMITER, INDEX_BY_INDEX_NAME, INDEX_PARAM_PREFIX, MAX_WILDCARD_DEPTH,
 import { listIndexAtWildcard } from "../../list/wildcardLevel";
 import { raiseError } from "../../raiseError";
 import { NOT_HANDLED } from "../../core/addressHooks";
+import { v4Migration } from "../../core/v4MigrationHooks";
 import { connectedCallback } from "../apis/connectedCallback";
 import { disconnectedCallback } from "../apis/disconnectedCallback";
 import { getAll } from "../apis/getAll";
@@ -42,8 +43,14 @@ import { IStateElement } from "../../components/types";
  * 鍵付き購読の `path` が getter か getter の配下か。getter の値は `path` への書き込みを経ずに変わるので
  * 鍵付き購読では知らせられない — そのときは依存を張る普通の読み取りに戻す（正しいが、変化で全行が
  * 再評価される。鍵付きの形を使わないのと同じ）。
+ *
+ * 数値の添字を含む `path`（`items.0.v`）も同じ扱い（#366）。購読は綴りのまま（`items.0.v`）載るが、
+ * 書き込みは添字をワイルドカードにした綴り（`items.*.v` / `items.*`）で知らせるので、届かなかった。
  */
 function derivesFromGetter(stateElement: IStateElement, path: string): boolean {
+  if (getResolvedAddress(path).wildcardType === "all") {
+    return true;
+  }
   const getterPaths = stateElement.getterPaths;
   if (getterPaths.size === 0) {
     return false;
@@ -199,9 +206,12 @@ export function get(
             )(path, indexes, ...value);
           }
         }
-        // `$dependOn` が正式名、`$trackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）
-        case "$dependOn":
-        case "$trackDependency": {
+        // `$dependOn` が正式名、`$trackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）。
+        // The 4.0 notice (3.5, D39) sits on the alias branch only; the canonical name gains no check
+        case "$trackDependency":
+          v4Migration?.renamed(prop, "$dependOn");
+        // falls through
+        case "$dependOn": {
           return (path: string): void => {
             return trackDependency(
               target,
@@ -280,6 +290,9 @@ export function get(
             if (derivesFromGetter(handler.stateElement, path)) {
               if (handler.stateElement.getterPaths.has(lastAddress.pathInfo.path)) {
                 recordTrackedKeyedPath(handler.stateElement, path);
+                // 答えは行の index で変わる。追跡付きの読みに落ちたら、`$1` を読んだ getter と同じく index 依存に
+                // 記録する — しないと、位置だけが変わった行（差分の changeIndexSet）で評価し直されない
+                handler.stateElement.addIndexDependentGetterPath?.(lastAddress.pathInfo.path);
               }
               return Object.is(receiver[path], levelListIndex.index);
             }
@@ -308,9 +321,12 @@ export function get(
             return Object.is(current, levelListIndex.index);
           };
         }
-        // `$untracked` が正式名、`$untrackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）
-        case "$untracked":
-        case "$untrackDependency": {
+        // `$untracked` が正式名、`$untrackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）。
+        // The 4.0 notice sits on the alias branch only, as for `$trackDependency` above
+        case "$untrackDependency":
+          v4Migration?.renamed(prop, "$untracked");
+        // falls through
+        case "$untracked": {
           return <T>(fn: () => T): T => {
             return untrackDependency(
               target,

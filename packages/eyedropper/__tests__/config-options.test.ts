@@ -33,6 +33,8 @@ describe("bootstrapEyedropper の設定の検査", () => {
 
   it("undefined の値は飛ばし、正しい値は当てる", () => {
     setConfig({ tagNames: undefined } as any);
+    // 知らないキーでも値が undefined なら飛ばす（3.5 の警告の検査と同じ扱い）
+    expect(() => setConfig({ nope: undefined } as any)).not.toThrow();
     setConfig({ tagNames: { [TAG]: undefined } } as any);
     expect(tagOf()).toBe(DEFAULT);
     setConfig({ tagNames: { [TAG]: "x-set" } } as any);

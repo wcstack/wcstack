@@ -23,6 +23,7 @@ import { featureNotInstalledMessage } from "../core/featureEntries";
 import { appendHooks, createAttachedHooks, IAttachedHooks, requireFeature } from "../core/addressHooks";
 import { createDeclarationContext, isDeclarationFeatureRegistered, runActivate, runApply, runApplyEarly, runDeactivate, runPreCommit, runRegister, runValidate, runValidateEarly } from "../core/declarationHooks";
 import { getPathInfo } from "../address/PathInfo";
+import { defineIndexPathAccessor, isIndexPath } from "../address/indexPathAccessor";
 import { IStateProxy, Mutability } from "../proxy/types";
 import { createStateProxy } from "../proxy/StateHandler";
 import { requireLifecycleFeature, runConnecting, runDisconnecting, runInitializeFailed, runInitializeFailureCleared, runPreparing, runReconnecting, runReplacingState } from "../core/lifecycleHooks";
@@ -32,6 +33,7 @@ import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { findDescriptor, PathInfoSource } from "../pathDiagnostics";
 import { pathDiagnostics } from "../core/diagnosticsHooks";
+import { v4Migration } from "../core/v4MigrationHooks";
 import { collectReapplyPaths, reapplyStateBindings } from "../apply/reapplyStateBindings";
 
 function getStateInfo(
@@ -361,43 +363,55 @@ export class State extends HTMLElementBase implements IStateElement {
     return requireSsrHooks(`the "enable-ssr" attribute`).loadState(this) as IState | null;
   }
 
-  /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
+  /**
+   * state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。
+   *
+   * A load failure is not wrapped, here or in the loaders: what was thrown propagates as is —
+   * the SyntaxError of `JSON.parse` (`state=` / `json=`), the `import()` rejection or the
+   * module's own throw (`src="*.js"`), the inline-script loader's Error (the import failure is
+   * its `cause`), the unsupported-extension error, or a non-Error value. On a root,
+   * `_failInitializeLoudly` logs it under the element's "failed to initialize" line and rejects
+   * connectedCallbackPromise with that same value (the README contract); on a volume,
+   * volumeLifecycle logs it under its "failed to load" line. The old wrappers
+   * (`Failed to initialize state: ${e}` here, `Failed to load script file` /
+   * `Failed to parse JSON from script element` in the loaders) were new Errors that kept the
+   * original only as text, losing its type, stack and cause.
+   *
+   * Two sources do not fail at all in 3.x (README): `src="*.json"` that cannot be fetched or
+   * parsed, and `state=` naming no JSON script. Both log and start with an empty state.
+   */
   private async _loadStateFromSource(): Promise<Record<string, any>> {
-    try {
-      if (this.hasAttribute('state')) {
-        const state = this.getAttribute('state');
-        return loadFromScriptJson(state!);
-      } else if (this.hasAttribute('src')) {
-        const src = this.getAttribute('src');
-        if (src && src.endsWith('.json')) {
-          return await loadFromJsonFile(src);
-        } else if (src && src.endsWith('.js')) {
-          return await loadFromScriptFile(src);
-        } else {
-          raiseError(`Unsupported src file type: ${src}`);
-        }
-      } else if (this.hasAttribute('json')) {
-        const json = this.getAttribute('json');
-        return JSON.parse(json!);
+    if (this.hasAttribute('state')) {
+      const state = this.getAttribute('state');
+      return loadFromScriptJson(state!);
+    } else if (this.hasAttribute('src')) {
+      const src = this.getAttribute('src');
+      if (src && src.endsWith('.json')) {
+        return await loadFromJsonFile(src);
+      } else if (src && src.endsWith('.js')) {
+        return await loadFromScriptFile(src);
       } else {
-        const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
-        if (script) {
-          // sourceURL ラベル。v2 はルートに 1 ツリーなので名前次元は無く、要素の
-          // タグ名（DCC 経路が host のタグ名を渡すのと同じ流儀）で特定十分
-          return await loadFromInnerScript(script, config.tagNames.state);
-        } else {
-          const timerId = setTimeout(() => {
-            // v2: name 属性は撤去済み（fail-fast）— 文言に name を出さない（tagName で特定十分）
-            console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element.`);
-          }, NO_SET_TIMEOUT);
-          // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
-          const state = await this._setStatePromise!;
-          clearTimeout(timerId);
-          return state;
-        }
+        raiseError(`Unsupported src file type: ${src}`);
       }
-    } catch(e) {
-      raiseError(`Failed to initialize state: ${e}`);
+    } else if (this.hasAttribute('json')) {
+      const json = this.getAttribute('json');
+      return JSON.parse(json!);
+    } else {
+      const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
+      if (script) {
+        // sourceURL ラベル。v2 はルートに 1 ツリーなので名前次元は無く、要素の
+        // タグ名（DCC 経路が host のタグ名を渡すのと同じ流儀）で特定十分
+        return await loadFromInnerScript(script, config.tagNames.state);
+      } else {
+        const timerId = setTimeout(() => {
+          // v2: name 属性は撤去済み（fail-fast）— 文言に name を出さない（tagName で特定十分）
+          console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element.`);
+        }, NO_SET_TIMEOUT);
+        // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
+        const state = await this._setStatePromise!;
+        clearTimeout(timerId);
+        return state;
+      }
     }
   }
 
@@ -524,8 +538,15 @@ export class State extends HTMLElementBase implements IStateElement {
     }
     this._initializeFailed = true;
     // 診断は必ず 1 件出す。カスタム要素リアクションは connectedCallback の戻り
-    // Promise を捨てるので、ブラウザの "Uncaught (in promise)" 以外に受け手が居ない
-    console.error(`[@wcstack/state] <${config.tagNames.state}> failed to initialize.`, error);
+    // Promise を捨てるので、ブラウザの "Uncaught (in promise)" 以外に受け手が居ない。
+    // The error is logged as thrown (loaders do not wrap it), so the header names the source
+    // that points at a file or script: `state=` / `src=` (`json=` is the data itself, and its
+    // SyntaxError already says where; an inline script's error names the element).
+    const source = ["state", "src"].find((name) => this.hasAttribute(name));
+    console.error(
+      `[@wcstack/state] <${config.tagNames.state}${source ? ` ${source}="${this.getAttribute(source)}"` : ""}> failed to initialize.`,
+      error,
+    );
     this._resolveInitialize?.();
     this._resolveLoading?.();
     // reject より先に handled を立てる。DOM 駆動のマウントでは
@@ -800,6 +821,9 @@ export class State extends HTMLElementBase implements IStateElement {
   loadStateFromSource(): Promise<Record<string, any>> {
     // ボリュームは `_state` を通らずに接ぎ木するので、宣言キーの正規化（要件 B12）はここで行う
     return this._loadStateFromSource().then((state) => {
+      // 3.5 notices (D39): mark the object as a volume's before `state()` sees it, so what 4.0 refuses
+      // in a volume is reported once, at the graft. Only the full entries place the receptacle
+      v4Migration?.volumeLoaded(state);
       normalizeDeclarationAliases(state);
       return state;
     });
@@ -1088,7 +1112,21 @@ export class State extends HTMLElementBase implements IStateElement {
    * @param targetPath
    */
   addDynamicDependency(sourcePath: string, targetPath: string): boolean {
-    return this._addDependency(this._dynamicDependency, sourcePath, targetPath);
+    if (!this._addDependency(this._dynamicDependency, sourcePath, targetPath)) {
+      return false;
+    }
+    // 行の下のパス（`items.*.name`）を読んだ getter には、同じ行の親（`items.*`）からも辺を張る（#364）。
+    // 行の値はキャッシュに当たると親を辿らないので、getter の依存が子のパスにしか付かないことがあり、要素の
+    // 書き込みの依存ウォークがその getter に届かなかった。子のパスを親からの静的な辺に載せて届かせると、
+    // ウォークが行の下で読んだパスをすべて訪ねる（#389）。親は子と同じ行（ワイルドカードの数が同じ）なので、
+    // 辺の先の行の解き方も子からの辺と同じ
+    const pathInfo = getPathInfo(sourcePath);
+    for (let parent = pathInfo.parentPathInfo;
+      parent !== null && parent.wildcardCount > 0 && parent.wildcardCount === pathInfo.wildcardCount;
+      parent = parent.parentPathInfo) {
+      this._addDependency(this._dynamicDependency, parent.path, targetPath);
+    }
+    return true;
   }
 
   /**
@@ -1130,7 +1168,13 @@ export class State extends HTMLElementBase implements IStateElement {
       // 新規パスを 1 回だけ検査して確実な miss を報告する（diagnostics/pathChecks.ts — 開発時の
       // 診断なので features/diagnostics。入っていなければ検査しない）。
       // パスごとに 1 回・バインド確立時のみで、更新のホットパスには乗らない。
-      pathDiagnostics?.check(this, this.__state, path, source);
+      // 数値添字のパス（`items.0.v`）は、いまその位置にある行を読む暗黙の getter にし、存在の検査も
+      // 行のパスとして行う（#332）。検査は生やす前 — 生やした後では、完全一致のキーとして必ず見つかる
+      const indexPath = isIndexPath(this.__state, path);
+      pathDiagnostics?.check(this, this.__state, path, source, indexPath);
+      if (indexPath) {
+        defineIndexPathAccessor(this, path);
+      }
       if (pathInfo.parentPath !== null) {
         let currentPathInfo = pathInfo;
         while(currentPathInfo.parentPath !== null) {

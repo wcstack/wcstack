@@ -537,3 +537,95 @@ function thisMemberName(node: MemberExpression): { name: string; start: number; 
   }
   return null;
 }
+
+// ============================================================
+// イベントハンドラが読む `event.currentTarget`（4.0 のイベント委譲）
+// ============================================================
+
+/**
+ * メソッド（引数リストのテキスト `params` と本体 `body`）が、第 1 引数（イベント）の `currentTarget` を
+ * **同期的に**読むか。4.0 は委譲されるイベントを root で聞くので、そこでの `currentTarget` は要素ではなく
+ * root になる（`wcs/delegated-current-target` の判定）。
+ *
+ * 拾う形: `e.currentTarget` / `e["currentTarget"]` / `const { currentTarget } = e` / 引数の分割代入
+ * `({ currentTarget })`。断定できないときは false（黙る側）:
+ *   - パースできない・第 1 引数が無い・識別子でも分割代入でもない
+ *   - 本体のどこかで同じ名前を束縛し直している（`let e = …`・入れ子の関数の引数・catch の引数・再代入）
+ *   - 入れ子の関数の中の読み（いつ呼ばれるか分からない。非同期なら dispatch の後で `currentTarget` は null）
+ *   - 最初に中断する `await` より後ろの読み（dispatch が終わっているので `currentTarget` は null）。境界は
+ *     `await` の**被演算子の終わり** — 被演算子は中断の前に同期的に評価される（`await fetch(url, { body:
+ *     new FormData(e.currentTarget) })` は読む側）。`for await` は反復対象の式の終わり
+ */
+export function readsEventCurrentTarget(params: string, body: string): boolean {
+  let program: AnyNode;
+  try {
+    program = parse(`(async function* (${params}) {\n${body}\n})`, { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    return false;
+  }
+  const fn = unwrapWrapper(program);
+  if (fn === null || fn.params.length === 0) return false;
+  let first: AnyNode = fn.params[0];
+  if (first.type === 'AssignmentPattern') first = first.left;
+  if (first.type === 'ObjectPattern') return first.properties.some((p) => p.type === 'Property' && propertyKeyIs(p, 'currentTarget'));
+  if (first.type !== 'Identifier') return false;
+  const eventName = first.name;
+
+  // 同じ名前の束縛し直し（どこであれ）・最初の await の位置
+  const rebound = new Set<string>();
+  for (const param of fn.params.slice(1)) bindingNames(param, rebound);
+  /** 最初に中断する位置（被演算子を評価し終えたところ）。それより後ろの読みは dispatch の後 */
+  let suspendAt = Infinity;
+  const scanBindings = (node: AnyNode, nested: boolean): void => {
+    if (isFunctionNode(node)) {
+      if (node.type === 'FunctionDeclaration' && node.id !== null) rebound.add(node.id.name);
+      for (const param of node.params) bindingNames(param, rebound);
+      scanBindings(node.body, true);
+      return;
+    }
+    if (node.type === 'VariableDeclarator') bindingNames(node.id, rebound);
+    else if (node.type === 'CatchClause' && node.param !== null && node.param !== undefined) bindingNames(node.param, rebound);
+    else if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier') rebound.add(node.left.name);
+    else if (node.type === 'ClassDeclaration' && node.id !== null) rebound.add(node.id.name);
+    if (!nested && node.type === 'AwaitExpression') suspendAt = Math.min(suspendAt, node.argument.end);
+    else if (!nested && node.type === 'ForOfStatement' && node.await) suspendAt = Math.min(suspendAt, node.right.end);
+    forEachChild(node, (child) => scanBindings(child, nested));
+  };
+  scanBindings(fn.body, false);
+  // `const { currentTarget } = e` は束縛し直しではない（読み）— 分割代入の左辺に e は現れない
+  if (rebound.has(eventName)) return false;
+
+  let found = false;
+  const visitReads = (node: AnyNode): void => {
+    if (found || isFunctionNode(node) || isClassNode(node)) return;
+    if (node.start >= suspendAt) return;
+    if (node.type === 'MemberExpression' && node.object.type === 'Identifier' && node.object.name === eventName
+      && memberPropertyIs(node, 'currentTarget')) {
+      found = true;
+      return;
+    }
+    if (node.type === 'VariableDeclarator' && node.id.type === 'ObjectPattern'
+      && node.init?.type === 'Identifier' && node.init.name === eventName
+      && node.id.properties.some((p) => p.type === 'Property' && propertyKeyIs(p, 'currentTarget'))) {
+      found = true;
+      return;
+    }
+    forEachChild(node, visitReads);
+  };
+  visitReads(fn.body);
+  return found;
+}
+
+/** `obj.name` / `obj["name"]` の名前が `name` か。 */
+function memberPropertyIs(node: MemberExpression, name: string): boolean {
+  const property = node.property;
+  if (!node.computed) return property.type === 'Identifier' && property.name === name;
+  return property.type === 'Literal' && property.value === name;
+}
+
+/** 分割代入の 1 項目のキーが `name` か（`{ currentTarget }` / `{ currentTarget: el }` / `{ "currentTarget": el }`）。 */
+function propertyKeyIs(property: AnyNode & { type: 'Property' }, name: string): boolean {
+  const key = property.key;
+  if (!property.computed && key.type === 'Identifier') return key.name === name;
+  return key.type === 'Literal' && key.value === name;
+}

@@ -63,15 +63,16 @@ export function removedDeclarationReplacement(name: string): string | null {
 }
 
 /**
- * `substr(start, length)` の書き換え先。引数が 2 つとも数値リテラルで start が 0 以上なら
- * `slice(start, start + length)` を計算して返す（`substr(2, 3)` → `slice(2, 5)`）。それ以外は null
- * （負の start は文字列の長さによって `slice(start)` と `slice(start, start + length)` が分かれるので、
- * 具体形を出さず一般形だけを案内する）。
+ * `substr(start, length)` の書き換え先。引数が 2 つとも 0 以上の整数リテラルなら
+ * `slice(start, start + length)` を計算して返す（`substr(2, 3)` → `slice(2, 5)`）。それ以外は null で、
+ * 具体形を出さず一般形だけを案内する: 負の start は文字列の長さによって `slice(start)` と
+ * `slice(start, start + length)` が分かれ、負の length は `substr` では空文字列なのに、計算した
+ * `slice(2, -1)`（`substr(2, -3)` から）は末尾を削った文字列になる（意味が変わる）。
  */
 export function substrRewrite(args: readonly string[]): string | null {
   if (args.length !== 2) return null;
   const [start, length] = args.map((a) => a.trim());
-  if (!/^\d+$/.test(start) || !/^-?\d+$/.test(length)) return null;
+  if (!/^\d+$/.test(start) || !/^\d+$/.test(length)) return null;
   const s = Number(start);
   return `slice(${s}, ${s + Number(length)})`;
 }

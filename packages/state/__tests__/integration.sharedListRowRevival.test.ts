@@ -26,6 +26,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { bootstrapState } from "../src/bootstrapState";
+import { getContentSetByNode } from "../src/structural/contentsByNode";
 import { flush, makeMount, read, write, writeCount } from "./helpers/recursionTestUtils";
 
 beforeAll(() => {
@@ -441,13 +442,16 @@ describe("共有した children 配列の持ち主（#256）", () => {
 
 /**
  * 出荷文「行の identity で持っているものは残る」の**境界**。素の入れ子 `for` では、
- * 親の行オブジェクトが作り直されると、その行が描いている子リストの DOM は作り直される
- * （外側の行 DOM はプールから使い回され、内側の子セルは別ノードになる）。**main でも同じ**
- * ―― 同じ fixture を main の src に流して実測（行ノードは 2/2 が使い回され、子セルは 0/3）。
- * ここで固定するのは「#256 の修理がこの境界を動かしていない」こと。
+ * 親の行オブジェクトが作り直されると、その行が描いている子リストの DOM は行の identity を持たない
+ * （外側の行 DOM はプールから使い回され、位置は入れ替わりうる）。#256 の修理はこの境界を動かしていない。
+ *
+ * 子セルの扱いだけは #320 で変わった。プールから出た外側の行は別の行を描くので、内側の `for` は
+ * 前の行の子の Content を自分のプールへ戻し、そこから新しい行の子を描く（外側の行と同じ使い回し）。
+ * それまでは前の行の子の Content を台帳（contentSetByNode）に残したまま新しく作っていたので、
+ * 子セルは 0/3 が使い回され、使い回すたびに台帳が前の行の子の数だけ伸びていた。
  */
-describe("置換で残るもの・残らないもの（素の入れ子 for・main と同じ）", () => {
-  it("map-spread のあと、外側の行 DOM は使い回され、子リストの DOM は作り直されること", async () => {
+describe("置換で残るもの・残らないもの（素の入れ子 for）", () => {
+  it("map-spread のあと、外側の行 DOM は使い回され、子リストの DOM はプールから描き直されること", async () => {
     const state: any = { nodes: [NODE(1, [NODE(10), NODE(20)]), NODE(2, [NODE(30)])] };
     Object.defineProperty(state, "nodes.*.total", {
       get(this: any) {
@@ -471,10 +475,26 @@ describe("置換で残るもの・残らないもの（素の入れ子 for・mai
       "外側の行 DOM はプールから使い回される（位置は入れ替わりうる）",
     ).toHaveLength(2);
     expect(kidsAfter.map((n) => n.textContent), "子セルの中身は同じ").toEqual(["10", "20", "30"]);
+    // 外側の行はプールから逆順に出る: 行 0（子 2 つ）を描くのは子 1 つ分の Content しか持たない
+    // 前の行 1 の器で、足りない 1 つだけを作る。#320 以前は 0（全部作り直し）
     expect(
       kidsAfter.filter((n) => kidsBefore.some((b) => b === n)),
-      "子セルは作り直される（main でも同じ）",
-    ).toHaveLength(0);
+      "子セルは前の行の分がプールから使い回される",
+    ).toHaveLength(2);
+
+    // 何度作り直しても、内側の for の台帳は伸びない（#320 以前は 1 回ごとに前の行の子の数だけ伸びた）
+    const innerLedgerSize = () => Array.from(shadowRoot.querySelectorAll(".row")).reduce((sum, row) => {
+      const anchor = Array.from(row.childNodes)
+        .find((n) => n.nodeType === Node.COMMENT_NODE && (n as Comment).data.startsWith("@@wcs-for"))!;
+      return sum + getContentSetByNode(anchor).size;
+    }, 0);
+    const settled = innerLedgerSize();
+    for (let round = 0; round < 3; round++) {
+      write(stateEl, (s: any) => { s.nodes = s.nodes.map((n: any) => ({ ...n })); });
+      await flush();
+    }
+    expect(texts(shadowRoot, ".cv")).toEqual(["10", "20", "30"]);
+    expect(innerLedgerSize()).toBe(settled);
     host.remove();
   });
 });

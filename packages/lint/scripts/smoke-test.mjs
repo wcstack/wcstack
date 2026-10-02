@@ -32,6 +32,8 @@ const untrackedReadHtml = join(workDir, "untracked-read.html");
 const recursionOkHtml = join(workDir, "recursion-ok.html");
 const recursionBadHtml = join(workDir, "recursion-bad.html");
 const recursionSpreadHtml = join(workDir, "recursion-spread.html");
+const indexPathHtml = join(workDir, "index-path.html");
+const currentTargetHtml = join(workDir, "current-target.html");
 const scanHtml = join(workDir, "scan.html");
 const removedNamesHtml = join(workDir, "removed-names.html");
 const v4CleanHtml = join(workDir, "v4-clean.html");
@@ -125,6 +127,23 @@ export default {
 };
 </script></wcs-state>
 `);
+// 数値添字のパスの束縛（#355・#383）。runtime は「いまその位置にある行」を読み、行 getter も
+// 読める（@wcstack/state の #332）ので、添字を `*` に読み替えて存在を判定する。数値の for の行の
+// 省略パス（`.v` → `groups.0.items.*.v`）は素のパスで、runtime は要素を辿って読む（存在する）。
+// 4.0 は `for: groups.0.items` も描くので無診断（3.x の lint は #363 の warning を 1 件出す）。
+writeFileSync(indexPathHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default {
+  items: [{ v: 1 }, { v: 2 }],
+  groups: [{ items: [{ v: 1 }] }],
+  get "items.*.double"() { return this["items.*.v"] * 2; },
+};
+</script></wcs-state>
+<p data-wcs="textContent: items.0.v"></p>
+<p data-wcs="textContent: items.0.double"></p>
+<template data-wcs="for: items"><li>{{ items.1.double }}</li></template>
+<template data-wcs="for: groups.0.items"><li data-wcs="textContent: .v"></li></template>
+`);
 writeFileSync(missingPathHtml, `<!doctype html>
 <wcs-state><script type="module">
 export default { message: "hi" };
@@ -169,6 +188,18 @@ export default {
 `);
 // 4.0 のスコープと添字: ボリュームが拒む $watch（接ぎ木ごと拒まれる）・for の中の $129（添字は $1〜$128）・
 // 同じ root の 2 つ目の <wcs-state>（state の木は root ごとに 1 つ）。
+// 4.0 は click などを root へ委譲するので、ハンドラが読む event.currentTarget は要素ではなく root になる。
+// warning（wcs/delegated-current-target）— 既定では exit 0、--strict で exit 1。#direct なら黙る。
+writeFileSync(currentTargetHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default {
+  picked: "",
+  pick(e) { this.picked = e.currentTarget.dataset.id; },
+};
+</script></wcs-state>
+<button data-id="a" data-wcs="onclick: pick"></button>
+<button data-id="b" data-wcs="onclick#direct: pick"></button>
+`);
 writeFileSync(v4ScopesHtml, `<!doctype html>
 <wcs-state><script type="module">
 export default { items: [1, 2] };
@@ -276,6 +307,13 @@ check("recursive tree: expanded concrete paths are clean, exit 0", ["--lang=en",
   stdout: ["0 error(s), 0 warning(s)"],
 });
 
+// 数値添字のパスを実行時と同じに読む規則がバンドルに載っていないと、binding-path-missing と
+// template-syntax の warning に化ける（#355）。
+check("numeric-index bindings (items.0.v, row getter items.0.double, .v in for: groups.0.items) resolve, exit 0", ["--lang=en", indexPathHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s)"],
+});
+
 // `**` はオーサリング層だけの記号。data-wcs に書くと runtime は PathInfo の不変条件で
 // throw する ＝ ページごと止まるので error(exit 1)。
 check("`**` in data-wcs → error wcs/recursion-unsupported, exit 1", ["--lang=en", recursionBadHtml], {
@@ -335,6 +373,11 @@ check("4.0 forms (numeric index paths, $behavior, $features, #direct, multi-line
 check("4.0 scopes and loop indexes → errors wcs/volume-declaration, wcs/index-param-range and wcs/second-root, exit 1", ["--lang=en", v4ScopesHtml], {
   exit: 1,
   stdout: [/error wcs\/volume-declaration .*mount="cart"/, /error wcs\/index-param-range .*\$129/, /error wcs\/second-root /, "3 error(s), 0 warning(s)"],
+});
+
+check("delegated event handler reading event.currentTarget → warning wcs/delegated-current-target (not on #direct), exit 0", ["--lang=en", currentTargetHtml], {
+  exit: 0,
+  stdout: [/warning wcs\/delegated-current-target .*"onclick#direct:"/, "0 error(s), 1 warning(s)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });

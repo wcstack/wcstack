@@ -63,6 +63,12 @@ export interface WcsMessageCatalog {
   outerInTemplate(property: string): string;
   /** `#direct` をイベント束縛（`on*:`）以外に付けた（ランタイムは黙って無視する）。 */
   directNotEvent(property: string): string;
+  /**
+   * 4.0 が root へ委譲するイベントの束縛（`onclick: select`）で、ハンドラのメソッドがイベント引数の
+   * `currentTarget` を読む（要素ではなく root になる）。`suggestedProperty` は書き換え先の左辺
+   * （書かれた修飾子に `direct` を足した形 — `onclick#prevent,direct`）。
+   */
+  delegatedCurrentTarget(suggestedProperty: string, eventName: string, handler: string): string;
   /** パス getter どうしの循環参照。 */
   getterCycle(cycle: string): string;
   /** `$renderedCallback` が未バインドのパスを判定に使っている（その分岐は走らない）。 */
@@ -265,6 +271,8 @@ const ja: WcsMessageCatalog = {
     `"${prop}:" は要素そのものを置き換えるので、for / if テンプレートの中では使えません（行や枝はノードを位置で持つため。4.0 は初期化で throw します）。包む要素に innerHTML: を束縛してください`,
   directNotEvent: (prop) =>
     `修飾子 #direct はイベント束縛（on*:）だけに効きます。"${prop}" では無視されます`,
+  delegatedCurrentTarget: (suggested, eventName, handler) =>
+    `"${eventName}" イベントの束縛は root へ委譲されるので、"${handler}" の中の event.currentTarget はこの要素ではなく root になります。要素にリスナーを付けるには "${suggested}:" と書くか、event.target.closest(...) で要素を探してください`,
   getterCycle: (cycle) => `パス getter が循環参照しています: ${cycle}`,
   updatedCallbackUnbound: (p) =>
     `$renderedCallback は binding 駆動です。"${p}" はこのドキュメントのどのバインディングにも現れないため、この分岐は一度も実行されません。描画に依存せず反応するなら $watch を使ってください`,
@@ -496,6 +504,8 @@ const en: WcsMessageCatalog = {
     `"${prop}:" replaces its element, so it cannot be used inside a "for" / "if" template (a row or branch keeps its nodes by position; 4.0 throws at init). Bind innerHTML: on a wrapper element instead`,
   directNotEvent: (prop) =>
     `The #direct modifier applies only to event bindings (on*:); it is ignored on "${prop}"`,
+  delegatedCurrentTarget: (suggested, eventName, handler) =>
+    `"${eventName}" bindings are delegated to the root, so event.currentTarget in "${handler}" is the root, not this element. Write "${suggested}:" to keep the listener on the element, or find the element with event.target.closest(...)`,
   getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
   updatedCallbackUnbound: (p) =>
     `$renderedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,

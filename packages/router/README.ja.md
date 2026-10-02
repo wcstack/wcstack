@@ -117,21 +117,26 @@
 
 1.32 以降は 2 つの形がどちらも動きますが、交換可能ではありません。プロジェクト単位でなく、ページごとに選びます。
 
-**既定: 本文を `<wcs-route>` の中に置く。** router が入場時にスタンプし、退場時に取り除きます。中の `data-wcs` バインディングはスタンプ時に束ねられる（binder プロトコル）ので、state が描画するマークアップ —— `for:`・`if:`・テキスト —— も他の場所と同じように動きます。router が提供するものはすべてルート本文を基準にしています: ルートごとの `<wcs-head>`、`focus="heading"` / `announce=` ポリシー（*スタンプされた内容の中の*見出しを探す）、ルート切替ごとのビュートランジション。router が state に渡すのはルート本文の要素だけなので、`<wcs-route>` の直下の（要素に包まれていない）テキストの `{{ }}` が束ねられるのは、着地のルートで state の最初の走査が見つけたときだけで、ナビゲーションで入ったときは束ねられません（3.x も同じ）。そうしたテキストは要素で包みます（`<p>{{ title }}</p>`）。
+**既定: 本文を `<wcs-route>` の中に置く。** router が入場時にスタンプし、退場時に取り除きます。中の `data-wcs` バインディングはスタンプ時に束ねられる（binder プロトコル）ので、state が描画するマークアップ —— `for:`・`if:`・テキスト —— も他の場所と同じように動きます。router が提供するものはすべてルート本文を基準にしています: ルートごとの `<wcs-head>`、`focus="heading"` / `announce=` ポリシー（*スタンプされた内容の中の*見出しを探す）、ルート切替ごとのビュートランジション。router が state に渡すのはルート本文の要素だけなので、`<wcs-route>` の直下の（要素に包まれていない）テキストの `{{ }}` が束ねられるのは、着地のルートで state の最初の走査が見つけたときだけで、ナビゲーションで入ったときは束ねられません（@wcstack/state 3.x・4.0 とも）。そうしたテキストは要素で包みます（`<p>{{ title }}</p>`）。
 
 ```html
 <wcs-route path="/products/:productId(int)">
   <wcs-head><title data-wcs="textContent: product.name"></title></wcs-head>
-  <h2 data-wcs="textContent: product.name"></h2>
-  <ul><template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template></ul>
+  <article>
+    <h2 data-wcs="textContent: product.name"></h2>
+    <ul><template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template></ul>
+  </article>
 </wcs-route>
 ```
 
-この版の router と @wcstack/state 4.0 では、構造のテンプレート（`for:` / `if:` と、その `elseif:` / `else:`）を `<wcs-route>` の直下に置くこともできます。着地のルートでも、ナビゲーションで入ったルートでも描かれ、描いた行や枝はルートと一緒に出入りします。router は state の binder に「ルートの範囲を持ち運ぶ」と宣言して内容を渡し（binder プロトコルの `bind(subtree, { range: true })`）、state はその宣言があるときだけ、内容の直下で渡された構造のテンプレートを描きます。古い router や @wcstack/state 3.x では、直下のテンプレートが描かれるのは、state の最初の走査のときにすでにスタンプされていた場合（着地のルートで、state が router より後に読み込まれたとき）だけで、後から渡されるものは描かれません（4.0 は `[wcs/template-syntax]` #204、3.x は束縛の適用の失敗として報告します）。上の `<ul>` のようにルート本文の要素の中に置けば、どの版でも動きます。
+構造のテンプレート（`for:` / `if:`）は、上の `<ul>` のようにルート本文の要素の中に置きます。これは @wcstack/state のどの版でも動きます。`<wcs-route>` の直下に置いたものは、版によって扱いが変わります。
 
-router は、スタンプしたルート本文の終わりにコメントの印 `<!--@@wcs-route-end:<path>-->`（SSR と同じ印）を置き、退場のときにルートの placeholder からこの印までをまとめて持ち出し、次の入場で戻します。ルート自身のノードのほか、その間に後から描かれたもの（直下のテンプレートが描いた行や枝など）も含みます。作者のコードがこの 2 つのコメントの間に差し込んだノードはルートと一緒に出入りします。ルート本文から外へ移したノード（`<body>` へ移したダイアログなど）は、これまでどおり退場のときにルート本文へ戻して持ちます。印はコメントなので、`wcs-outlet:empty` には影響しません。
+- **@wcstack/state 4.0** は、着地のルートでも、ナビゲーションで入ったルートでも描き、描いた行や枝（`elseif:` / `else:` を含む）はルートと一緒に出入りします。router は state の binder に「ルートの範囲を持ち運ぶ」と宣言して内容を渡し（binder プロトコルの `bind(subtree, { range: true })`）、4.0 はその宣言があるときだけ、内容の直下で渡された構造のテンプレートを描きます。宣言なしで渡されたもの（古い router）は `[wcs/template-syntax]` #204 として報告します。
+- **@wcstack/state 3.x** が描くのは、state のページの最初の走査のときだけです（着地のルートで、router がスタンプした後に state が読み込みを終えたとき）。ナビゲーションで入ったルートは内容を state に渡し、3.x は、渡された構造のテンプレートそのものは描かず、束縛の適用の失敗として報告します。3.x では、`data-wcs` を自分に持つ直下の要素を、テンプレートを含む要素より前に置くこともできません（`<wcs-route>` の直下の `<h2 data-wcs="…">` の後ろに `<ul>` が続く形）。3.x はそうした要素を親から走査して束ねるので、まだ準備のできていない後ろのテンプレートに届き、ナビゲーションのときに同じ失敗を報告します。上の `<article>` のように本文を 1 つの要素で包めば、どちらも避けられます。
 
-**例外: DOM をナビゲーションより長生きさせたいときは state で切り替える（`<template data-wcs="if: …">`）。** スタンプは破棄を伴います —— ルート本文は入場のたびに作り直されます —— ので、再生中の `<video>`、入力途中のフォーム、スクロール済みのリスト、描画済みの `<canvas>` は、離れて戻ってくると生き残りません。そうした内容は router の外に置き、router の `routeName` / `typedParams` 出力が立てる state のフラグにバインドし、ルート要素は空（または `<wcs-head>` だけ）にします。
+router は、スタンプしたルート本文の終わりにコメントの印 `<!--@@wcs-route-end:<path>-->`（SSR と同じ印）を置き、退場のときにルートの placeholder からこの印までをまとめて持ち出し、次の入場で戻します。ルート自身のノードのほか、その間に後から描かれたもの（直下のテンプレートが描いた行や枝など）も含みます。作者のコードがこの 2 つのコメントの間に差し込んだノードはルートと一緒に出入りします。ルート本文から外へ移したノード（`<body>` へ移したダイアログなど）は、これまでどおり退場のときにルート本文へ戻して持ちます。戻すのは持ち出したものなので、作者のコードがルート本文から取り除いた直下のノード（閉じたお知らせなど）は、次の入場でも戻りません。印はコメントなので、`wcs-outlet:empty` には影響しません。
+
+**例外: ナビゲーションをまたいで DOM を文書に置いたままにしたいときは state で切り替える（`<template data-wcs="if: …">`）。** ルートを離れると本文は文書から外され、入場のときに同じノードが戻されます。ノードが持つもの（入力途中のフォームの値）は残りますが、文書につながっていることが要るものは残りません。再生中の `<video>` は止まり、スクロール済みのリストはスクロール位置を失い（Chromium と WebKit）、`disconnectedCallback` で後始末する部品は初めからやり直します。そうした内容は router の外に置き、router の `routeName` / `typedParams` 出力が立てる state のフラグにバインドし、ルート要素は空（または `<wcs-head>` だけ）にします。
 
 ```html
 <wcs-router data-wcs="routeName: routeName">
@@ -275,7 +280,7 @@ interface IGuardContext {          // 進入先マッチの frozen スナップ�
 - 第 3 引数に進入先マッチ（`params` / `typedParams` / `searchParams` / `routeName`）が渡る。`toPath` / `fromPath` は basename スライス後のパス
 - `<wcs-route>` の外に配置された `<wcs-guard-handler>` は無視される
 - `<script type="module">` がない場合、`guardHandler` は設定されない
-- **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため、router を読み込む `<script>` にページの nonce を付けるか（blob: の import がその nonce を引き継ぐ）、`script-src blob:` が必要。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
+- **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため、router を読み込む `<script>` にページの nonce を付けるか（blob: の import がその nonce を引き継ぐ）、`script-src blob:` が必要（blob: の import が失敗すると router は `data:` URL で読み直すので `script-src data:` でも通るが、危険の大きい source なので開けないこと）。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
 - **`require-trusted-types-for 'script'` 下では**、`<wcs-layout>` のテンプレート展開が `wcstack` という名前の Trusted Types policy を通るため、CSP に `trusted-types wcstack;` が必要（または自前の policy を注入する。詳細は [docs/csp.ja.md](../../docs/csp.ja.md) の §7）
 
 #### ルート commit 前のデータロード
@@ -475,7 +480,7 @@ a.active { font-weight: bold; color: blue; }
 </wcs-route>
 ```
 
-定義済みの要素（組み込み要素、およびルート描画前に定義されたカスタム要素）では、パラメータは `connectedCallback` の発火前に割り当てられる。未定義のカスタム要素の場合、割り当ては `customElements.whenDefined()` の解決後まで遅延される。この解決はアップグレードの*後*に起こるため、アップグレード時に走る `connectedCallback` ではパラメータはまだ見えない。`props` / `states` / 属性の setter（または `attributeChangedCallback`）で受け取るか、ルート描画前に要素を定義しておく（例: `@wcstack/router` より先にスクリプトを読み込む）こと。
+定義済みの要素（組み込み要素、およびルート描画前に定義されたカスタム要素）では、パラメータは `connectedCallback` の発火前に割り当てられる。未定義のカスタム要素の場合、割り当ては `customElements.whenDefined()` の解決後まで遅延される。この解決はアップグレードの*後*に起こるため、アップグレード時に走る `connectedCallback` ではパラメータはまだ見えない。`props` / `states` / 属性の setter（または `attributeChangedCallback`）で受け取るか、ルート描画前に要素を定義しておく（例: `@wcstack/router` より先にスクリプトを読み込む）こと。パラメータだけが変わるナビゲーション（`/users/1` → `/users/2`）は、ルートの内容を取り出して同じ位置に戻すので、`connectedCallback` がもう一度（入れ子のルートでも 1 回だけ）走り、新しいパラメータが見える。
 
 ## 設定
 
@@ -501,6 +506,8 @@ bootstrapRouter({
   basenameFileExtensions: [".html"]
 });
 ```
+
+知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
 
 ## ルート遷移アニメーション
 

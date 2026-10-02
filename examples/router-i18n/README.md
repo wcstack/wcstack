@@ -118,22 +118,19 @@ second reason the catalog is deep-frozen.
 
 ### 5. Structural rendering stays outside the router
 
-A `<template data-wcs="for: …">` placed **directly** under `<wcs-route>` works only
-with this version of the router and @wcstack/state 4.0: the router declares to
-state's binder that it carries the route's range, so the template renders whether
-the route is the landing one or entered by navigation, and its rows leave and come
-back with the route. Elsewhere it depends on the path. When the router hands the
-content over — the route is stamped on a navigation, or the page lands on it after
-the state finished loading — it is not rendered: 4.0 refuses it as
-`[wcs/template-syntax]` #204 when the caller makes no such declaration (a router
-older than this one, or `<wcs-head>`, cannot reach the rows a top-level template
-renders: they sit beside it, outside the nodes those remove), and 3.x reports that
-the binding failed to apply. When the router inserted the landing route before the
-state loaded, the state's first scan renders it. To work with every version, wrap
-it in an element: wrapped
-(`<ul><template data-wcs="for: …">…</template></ul>`), it renders when the route
-is stamped, and plain bindings inside a route work too — the About page is
-translated in place — which makes the boundary easy to trip over.
+A route's content is bound when the router stamps it (the binder protocol), so
+plain bindings inside a route work — the About page is translated in place —
+and so does a `<template data-wcs="for: …">` inside an element of the route
+body (`<ul><template data-wcs="for: …">…</template></ul>`), with every version
+of @wcstack/state. One placed **directly** under `<wcs-route>` depends on the
+version. @wcstack/state 3.x renders it only on the landing route: it draws it
+only when its first scan of the page finds it already stamped, and reports that
+the binding failed to apply when the router hands it over on a navigation.
+@wcstack/state 4.0 renders it on the landing route and on a navigation alike,
+because this router declares to its binder that it carries the route's range
+(without that declaration 4.0 refuses it as `[wcs/template-syntax]` #204). The
+details are in the router README
+([Where route content lives](../../packages/router/README.md#where-route-content-lives)).
 
 This example keeps the list outside the router anyway: the router publishes
 `path`, and state renders the list from a `<template data-wcs="if: isList">`

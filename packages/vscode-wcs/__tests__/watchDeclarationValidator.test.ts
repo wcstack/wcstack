@@ -275,3 +275,28 @@ describe('非オブジェクト $watch（error・ランタイムは読み込み�
     expect(viaDocument).toHaveLength(1);
   });
 });
+
+// #355（main の 3.4 から移した入力）: 4.0 は数値添字のキー（`items.0.v`）を、いまその位置にある行として読み、
+// その行への書き込みで発火する（行 getter も同じ形で読む）。3.x の lint は「添字を通した書き込みでは発火しない」と
+// 文面を分けていたが、4.0 では実在するキーは黙り、打ち間違い（行の下・リストの名前）だけが従来の文面で残る。
+describe('validateWatchDeclarations — 数値添字のキー（#355、4.0）', () => {
+  const html = makeHtml(`
+  items: [{ v: 1 }],
+  get "items.*.double"() { return this["items.*.v"] * 2; },
+  $watch: {
+    "items.0.v"(v) { void v; },
+    "items.0.double"(v) { void v; },
+    "items.0.nmae"(v) { void v; },
+    "itms.0.v"(v) { void v; },
+  }`);
+  const diags = validateWatchDeclarations(html, 'wcs-state', 'en');
+
+  it('行として実在するキー（行 getter も含む）は黙り、実在しないキーは「一度も発火しない」と言う', () => {
+    expect(diags.map(d => [html.slice(d.start, d.end), d.code, d.severity])).toEqual([
+      ['items.0.nmae', WcsDiagnosticCode.WatchPathMissing, 'warning'],
+      ['itms.0.v', WcsDiagnosticCode.WatchPathMissing, 'warning'],
+    ]);
+    expect(diags[0].message).toBe('$watch key "items.0.nmae" does not exist in the state definition (it will never fire)');
+    expect(diags[1].message).toContain('will never fire');
+  });
+});

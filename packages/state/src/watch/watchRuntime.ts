@@ -29,7 +29,7 @@ import { devtoolsSink } from "../platform/devtoolsSink";
 import { getScopedIndexes } from "../list/wildcardLevel";
 import type { IStateProxy } from "../proxy/types";
 import { registerEnqueueListener, registerUpdateBatchListener } from "../updater/updater";
-import { beginWatchFiring, consumeWatchChainDepth, endWatchFiring, noteEnqueueForWatchChain } from "./chainDepth";
+import { beginWatchFiring, consumeWatchChainDepths, endWatchFiring, noteEnqueueForWatchChain, watchChainDepthOf } from "./chainDepth";
 import { getComputedSnapshot, setComputedSnapshot } from "./computedSnapshots";
 import { clearPrevValues, getPrevValue } from "./prevValues";
 import { IDeclarationHooks, registerDeclarationHooks } from "../core/declarationHooks";
@@ -177,19 +177,14 @@ function reportWatchError(
 
 function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void {
   const activeStateElements = getActiveWatchStateElements();
+  // 連鎖の深さの台帳は、発火する state が無い drain でも消費する（watch/chainDepth.ts）。何も付いていなければ
+  // 割り当ては無い。深さは書き込みごとなので、上限を越えるのはハンドラ（と `$stream` の再開）の書き込みが
+  // ハンドラを起こし続けた連鎖だけ
+  const deepest = consumeWatchChainDepths(batch);
   try {
-    if (activeStateElements.size === 0) {
-      // watch 未使用アプリの drain に配列・イテレータ割り当てのコストを載せない。
-      // ここも finally を通す: 宣言済みの state が切断されている間（active からは
-      // 外れるが watchPaths は残る）の書き込みで台帳に旧値が積まれるため、
-      // クリアを早期 return の外に置くと次のバッチどころか永久に残る。
-      // 書き込みの後・drain の前に切断された state の `on` scan の保留 reset も、このバッチでは
-      // 発火しないので捨てる（scan/eventReset.ts）。
-      discardSkippedScanResets(batch, activeStateElements);
-      return;
-    }
-    const depth = consumeWatchChainDepth();
-    if (depth > MAX_WATCH_CHAIN_DEPTH) {
+    if (deepest > MAX_WATCH_CHAIN_DEPTH) {
+      // 越えたら、そのバッチの発火をまとめて打ち切る。発火する state が無くても報告する — `$stream` の再開
+      // どうしが args で読み合う循環は `$watch` を持たない（その再開は streamRuntime が深さで止める）。
       // 打ち切るのは同じリスナーの発火（`$scan` の from / resetOn と `$watch`）のみ。
       // 値と binding 適用は巻き戻さない（伝播 hop 上限超過時の quarantine と同じ姿勢、§7-2）。
       // `on` scan の保留 reset もこのバッチでは効かせない（`from` の scan が reset しないのと揃える）。
@@ -204,12 +199,22 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
       }
       return;
     }
+    if (activeStateElements.size === 0) {
+      // watch 未使用アプリの drain に配列・イテレータ割り当てのコストを載せない。
+      // ここも finally を通す: 宣言済みの state が切断されている間（active からは
+      // 外れるが watchPaths は残る）の書き込みで台帳に旧値が積まれるため、
+      // クリアを早期 return の外に置くと次のバッチどころか永久に残る。
+      // 書き込みの後・drain の前に切断された state の `on` scan の保留 reset も、このバッチでは
+      // 発火しないので捨てる（scan/eventReset.ts）。
+      discardSkippedScanResets(batch, activeStateElements);
+      return;
+    }
 
     // `$scan` の from / resetOn を `$watch` より先に畳んで書く（docs/state-scan-design.md D11 / D18）。
     // scan の書き込みは次のバッチに乗るので、この drain の `$watch` の収集には影響しない。同じ drain の
     // `$watch` ハンドラは書いた後の出力を読み、ハンドラが出力へ書いた値はそのまま残る。
-    commitScanPlans(planScansOnUpdateBatch(batch, activeStateElements, depth), activeStateElements, depth);
-    fireWatchHits(batch, activeStateElements, depth);
+    commitScanPlans(planScansOnUpdateBatch(batch, activeStateElements), activeStateElements);
+    fireWatchHits(batch, activeStateElements);
   } finally {
     // 旧値台帳はこの drain 限りのもの。次のバッチへ持ち越さない（§4-1）。
     clearPrevValues();
@@ -220,10 +225,11 @@ function fireWatchOnUpdateBatch(batch: ReadonlySet<IAbsoluteStateAddress>): void
 function fireWatchHits(
   batch: ReadonlySet<IAbsoluteStateAddress>,
   activeStateElements: ReadonlySet<IStateElement>,
-  depth: number,
 ): void {
   // --- 収集フェーズ ---
   const hits: IWatchHit[] = [];
+  // このバッチで書いたパス（リストを代入した — selectWatchLandings）
+  const landedPaths = new Set<string>();
   for (const absAddress of batch) {
     // stateElement 参照で引く。TreePath は
     // stateElement 単位でキャッシュされるので、同名 state が複数の rootNode に
@@ -234,6 +240,7 @@ function fireWatchHits(
       continue;
     }
     const path = absAddress.absolutePathInfo.pathInfo.path;
+    landedPaths.add(path);
     const own = getWatchEntries(stateElement).get(path);
     const fromVolumes = getVolumeWatchEntries(stateElement).get(path);
     if (typeof own === "undefined" && typeof fromVolumes === "undefined") {
@@ -262,10 +269,9 @@ function fireWatchHits(
     return;
   }
   hits.sort(compareHits);
-  const landed = selectWatchLandings(hits);
+  const landed = selectWatchLandings(hits, landedPaths);
 
   // --- 発火フェーズ ---
-  beginWatchFiring(depth);
   try {
     for (const hit of landed) {
       // 先行ハンドラが同期的に切断や `_state` 再 set を行い得るため、発火直前に
@@ -278,6 +284,8 @@ function fireWatchHits(
       if (!stillOwn && !stillVolume) {
         continue;
       }
+      // ハンドラの書き込みは、このハンドラを起こした書き込みの連鎖の続き（watch/chainDepth.ts・#354）
+      beginWatchFiring(watchChainDepthOf(batch, hit.absAddress));
       fireOne(hit);
     }
   } finally {
@@ -290,10 +298,13 @@ function fireWatchHits(
  * 同じ選別 — watch/rowLanding.ts・#274）。`hits` は compareHits でソート済みで、戻り値もその順を保つ。
  *
  * 位置を引くにはリストを読むので、引くのは退役した行を含むヒットがあるか、同じ entry・同じ indexes の
- * ヒットが並ぶ（ソート済みなので隣り合う）entry だけ。行の値を書くだけのバッチ（大多数）は
- * WeakSet の引きだけで抜ける。
+ * ヒットが並ぶ（ソート済みなので隣り合う）か、そのパスのどの段かのリストをこのバッチで代入した entry だけ。
+ * 行の値を書くだけのバッチ（大多数）は WeakSet の引きだけで抜ける。
+ * リストの代入を見るのは、同じバッチの途中の配列にだけ居た行が退役しないため — 差分が退役させるのは、バッチの
+ * 始まりの並びから外した行で、途中の配列で足した行や要素の書き込みが作った行は、その配列を置き換えても退役
+ * しない。その行のアドレスを添字で読むと、範囲外の読みで throw した（`items = [...items, x]; items = [y]`）。
  */
-function selectWatchLandings(hits: IWatchHit[]): IWatchHit[] {
+function selectWatchLandings(hits: IWatchHit[], landedPaths: ReadonlySet<string>): IWatchHit[] {
   let entries: Set<IWatchEntry> | null = null;
   for (let i = 0; i < hits.length; i++) {
     const hit = hits[i];
@@ -303,7 +314,8 @@ function selectWatchLandings(hits: IWatchHit[]): IWatchHit[] {
     const previous = hits[i - 1];
     // ワイルドカードの hit は収集の段階で listIndex を持つものに限っている
     if (hasRetiredRow(hit.absAddress.listIndex!)
-      || (previous?.entry === hit.entry && isSameIndexes(previous.indexes, hit.indexes))) {
+      || (previous?.entry === hit.entry && isSameIndexes(previous.indexes, hit.indexes))
+      || hit.entry.pathInfo.wildcardParentPaths.some((path) => landedPaths.has(path))) {
       (entries ??= new Set()).add(hit.entry);
     }
   }

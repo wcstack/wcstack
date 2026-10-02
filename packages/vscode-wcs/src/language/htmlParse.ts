@@ -165,11 +165,17 @@ export function parseLoadedScriptBlocks(html: string, stateTagName: string = 'wc
 }
 
 /**
- * 中身が文字になる要素（HTML のパーサは中の `<…>` をタグとして読まない）。`<script>` / `<style>` は raw text、
- * `<textarea>` / `<title>` は RCDATA。`templateSyntax.ts` の mustache・コメント束縛の走査が飛ばす要素と同じ。
- * JS で作る shadow DOM（`innerHTML = \`<wcs-state …>\``）・文字列・入力欄の中の `<wcs-state>` は文書の要素ではない。
+ * 中身が要素にならない要素（スクリプトが有効なページの HTML パーサは中の `<…>` をタグとして読まない）。
+ * `<script>` / `<style>` / `<xmp>` / `<iframe>` / `<noembed>` / `<noframes>` / `<noscript>` は raw text、
+ * `<textarea>` / `<title>` は RCDATA、`<plaintext>` は文書の終わりまで文字。JS で作る shadow DOM
+ * （`innerHTML = \`<wcs-state …>\``）・文字列・入力欄の中の `<wcs-state>` / `<template>` / `data-wcs="…"` は
+ * 文書の要素でも束縛でもない。`<wcs-state>` の走査・`createTemplateTester`・forContext の要素の文脈
+ * （analyzeElementContexts）がこの 1 つの集合を使う。mustache・コメント束縛の走査（templateSyntax.ts）は
+ * テキストノードを読むランタイムに合わせた別の規則。
  */
-const RAW_TEXT_ELEMENTS: readonly string[] = ['script', 'style', 'textarea', 'title'];
+export const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set([
+  'script', 'style', 'textarea', 'title', 'xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext',
+]);
 
 /**
  * `pos` から raw text 要素が始まるなら、その開始タグと中身の終わり（終了タグ `</tag` の位置。無ければ文書の終わり —
@@ -181,6 +187,8 @@ function matchRawTextElement(html: string, lower: string, pos: number): { tag: s
   for (const tag of RAW_TEXT_ELEMENTS) {
     const open = matchOpenTag(html, pos, tag);
     if (open === null) continue;
+    // `<plaintext>` は終了タグを持たない（`</plaintext>` も文字）
+    if (tag === 'plaintext') return { tag, open, contentEnd: html.length, closed: false };
     let from = open.end;
     for (;;) {
       const idx = lower.indexOf(`</${tag}`, from);

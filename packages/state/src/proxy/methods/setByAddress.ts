@@ -19,11 +19,11 @@
 import { liftAddress, absoluteAddressOf } from "../../address/liftAddress";
 import { IAbsoluteStateAddress, IStateAddress } from "../../address/types";
 import { DELIMITER, WILDCARD } from "../../define";
-import { createListIndex } from "../../list/createListIndex";
-import { getListIndexesByList, setListIndexesByList } from "../../list/listIndexesByList";
-import { getLastListValueByAbsoluteStateAddress, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
+import { createListIndex, getHomeParentListIndex, getRowCacheStamp, setListIndexValue } from "../../list/createListIndex";
+import { clearRowSwapPending, getElementAliases, getListIndexesByList, holdListAtParent, markRowSwapPending, isOwnedListIndexes, releaseListAtParent, setListIndexesByList } from "../../list/listIndexesByList";
+import { getAddressesByLastListValue, getLastListValueByAbsoluteStateAddress, hasRenderedList, markSwappedList, rebaseRenderedList, setLastListValueByAbsoluteStateAddress } from "../../list/lastListValueByAbsoluteStateAddress";
 import { ISwapInfo } from "./types";
-import { createListDiff } from "../../list/createListDiff";
+import { createListDiff, keepPreviousList, retireRows } from "../../list/createListDiff";
 import { collectFieldWrites, IKeyedListMerge, mergeKeyedList } from "../../list/mergeKeyedList";
 import { IListIndex } from "../../list/types";
 import { getPathInfo } from "../../address/PathInfo";
@@ -31,20 +31,23 @@ import { createStateAddress } from "../../address/StateAddress";
 import { wildcardScopeMessage } from "../../pathDiagnostics";
 import { raiseError } from "../../raiseError";
 import { getUpdater } from "../../updater/updater";
+import { updateBatch } from "../../updater/updateBatch";
 import { IStateHandler, IStateProxy } from "../types";
-import { getByAddress } from "./getByAddress";
+import { getByAddress, isAliasGetter } from "./getByAddress";
 import { isCacheable } from "./isCacheable";
 import { hasByAddress } from "./hasByAddress";
 import { markSwapBaselineList } from "../../list/swapBaselineList";
 import { getSwapInfoByList, setSwapInfoByList } from "./swapInfo";
 import { walkDependency } from "../../dependency/walkDependency";
 import { NOT_HANDLED } from "../../core/addressHooks";
-import { hasKeyedDependents, hasKeyedDescendants, keyedDependents, keyedDescendantDependents } from "../../dependency/keyedDependency";
+import { hasKeyedDependents, hasKeyedDescendants, keyedDependents, keyedDescendantDependents, moveIndexWatchers } from "../../dependency/keyedDependency";
 import { dirtyCacheEntryByAbsoluteStateAddress, setCacheEntryByAbsoluteStateAddress } from "../../cache/cacheEntryByAbsoluteStateAddress";
 import { config } from "../../config";
 import { devtoolsSink } from "../../platform/devtoolsSink";
 import { beginPropagationTransaction, getCurrentPropagationContext } from "../../propagation/propagation";
-import { consumeOccurrenceWrite } from "../occurrenceWrite";
+import { consumeElementWrite } from "../occurrenceWrite";
+import { listIndexAtWildcard } from "../../list/wildcardLevel";
+import { getByAddressSymbol } from "../symbols";
 
 /**
  * 宣言済みパスの `prev` 台帳へ旧値を記録する。台帳を読むのは `$watch`
@@ -252,6 +255,7 @@ function notifyWrite(
     ? (getCurrentPropagationContext() ?? beginPropagationTransaction(-1))
     : null;
   const updater = getUpdater();
+  const stateElement = handler.stateElement;
   updater.enqueueAbsoluteAddress(absAddress, propagationContext);
   // 書いたアドレス自身のキャッシュを、依存ウォークより先に無効化する（#274）。ウォークはリスト展開
   // （list → list.*）と動的依存の親リスト展開で、書いたパスの値を読む。ワイルドカードを含むリストパス
@@ -264,18 +268,18 @@ function notifyWrite(
     dirtyCacheEntryByAbsoluteStateAddress(absAddress);
   }
   // 依存関係のあるキャッシュを無効化（ダーティ）、更新対象として登録
-  walkDependency(
-    handler.stateElement,
-    address,
-    handler.stateElement.staticDependency,
-    handler.stateElement.dynamicDependency,
-    handler.stateElement.listPaths,
+  const walk = (start: IStateAddress): IStateAddress[] => walkDependency(
+    stateElement,
+    start,
+    stateElement.staticDependency,
+    stateElement.dynamicDependency,
+    stateElement.listPaths,
     receiver as IStateProxy,
     "new",
     (depAddress: IStateAddress) => {
       // キャッシュを無効化（ダーティ）
       if (depAddress === address) return;
-      const absDepAddress = liftAddress(handler.stateElement, depAddress);
+      const absDepAddress = liftAddress(stateElement, depAddress);
       dirtyCacheEntryByAbsoluteStateAddress(absDepAddress);
       // 更新対象として登録
       updater.enqueueAbsoluteAddress(absDepAddress, propagationContext);
@@ -283,7 +287,59 @@ function notifyWrite(
     // リスト置換時は追加行・位置変更行のみ展開する（未変更行の再訪を省く。
     // $postUpdate の手動リフレッシュは従来通り全行展開のまま）
     { listExpansion, keyedMergePath }
-  )
+  );
+  walk(address);
+  // 入れ子のリストの行の下への書き込みは、同じ要素オブジェクトを表す別の配列の行（共有された配列の写し）のアドレスにも知らせる
+  // （#393）。描画だけをやり直させる — 着地はこの書き込みのアドレス 1 つで、依存ウォークもしない（同じバッチの差分が
+  // 途中の配列に作った行も同じ要素を表すので、そこからリストを展開すると台帳の行の親をその行へ付け替えてしまう）
+  if (address.pathInfo.lastSegment !== WILDCARD && address.listIndex !== null && address.listIndex.parentListIndex !== null) {
+    const row = address.listIndex;
+    const listPathInfo = address.pathInfo.wildcardParentPathInfos[row.position];
+    const listAddress = createStateAddress(listPathInfo, row.parentListIndex);
+    const readList = () => receiver[getByAddressSymbol](listAddress);
+    const notify = (aliasAbsAddress: IAbsoluteStateAddress) => {
+      dirtyCacheEntryByAbsoluteStateAddress(aliasAbsAddress);
+      updater.enqueueRenderOnlyAddress(aliasAbsAddress);
+    };
+    for (const alias of getElementAliases(row, readList)) {
+      notify(liftAddress(stateElement, createStateAddress(address.pathInfo, alias)));
+    }
+    // 同じ配列を別のパスの `for` も描いている（`{ items: A, alt: A }` の `alt`）なら、その `for` の同じ行の同じ葉にも知らせる
+    // （描画の基準の逆引き — 描画だけ）。葉の書き込みの依存はパスごとなので、`alt` の `for` は描き直されなかった
+    const leaf = address.pathInfo.path.slice(address.pathInfo.wildcardPaths[row.position].length);
+    for (const drawn of getAddressesByLastListValue(liftAddress(stateElement, listAddress), readList())) {
+      const drawnPathInfo = drawn.absolutePathInfo.pathInfo;
+      if (drawnPathInfo !== listPathInfo && drawnPathInfo.wildcardCount === listPathInfo.wildcardCount) {
+        notify(absoluteAddressOf(stateElement, getPathInfo(drawnPathInfo.path + DELIMITER + WILDCARD + leaf), row));
+      }
+    }
+  }
+  // 書いた行のリストを、別のパスの `for` が同じ配列として描いている（配列をそのまま返す getter —
+  // TodoMVC の `get shown() { return this.filter === "all" ? this.todos : … }`）なら、そのパスの同じ行へも
+  // 知らせる（#362）。行の台帳は配列ごとに 1 組なので 2 つのパスの行は同じ listIndex だが、キャッシュ・依存・
+  // 束縛はパスごとで、`todos.*.done` の依存ウォークは `shown.*.done` に届かず、行は次にリストを描くまで
+  // 古いままだった。候補は、書いたパスの各段のリストを読んだ getter のうち、`for` で描き、読んだパスの値を
+  // そのまま返したことのあるもの（getByAddress の isAliasGetter）— 段ごとに依存の表を 1 回引くだけで、別名の
+  // 無いページ（写しだけを返す getter のページを含む）の書き込みには値の読みを足さない。行の深さが同じ（getter の
+  // ワイルドカードの数がその段と同じ）で、いまも値が同じ配列のときだけ別名とする。要素の書き込みは行が新しくなる
+  // （renewReplacedRow・入れ替え）ので、別名の `for` も描き直させる
+  const { path, lastSegment, wildcardCount, wildcardParentPaths, wildcardParentPathInfos } = address.pathInfo;
+  const listIndex = address.listIndex;
+  for (let level = 0; listIndex && level < wildcardCount; level++) {
+    const parentListIndex = listIndexAtWildcard(listIndex, level - 1, wildcardCount);
+    for (const aliasPath of stateElement.dynamicDependency.get(wildcardParentPaths[level]) ?? []) {
+      const aliasPathInfo = getPathInfo(aliasPath);
+      if (stateElement.listPaths.has(aliasPath) && aliasPathInfo.wildcardCount === level && isAliasGetter(aliasPathInfo) &&
+        receiver[getByAddressSymbol](createStateAddress(aliasPathInfo, parentListIndex)) ===
+          receiver[getByAddressSymbol](createStateAddress(wildcardParentPathInfos[level], parentListIndex))) {
+        const aliasAddress = createStateAddress(getPathInfo(aliasPath + path.slice(wildcardParentPaths[level].length)), listIndex);
+        walk(aliasAddress);
+        if (lastSegment === WILDCARD) {
+          updater.enqueueRenderOnlyAddress(liftAddress(stateElement, aliasAddress.parentAddress!));
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -318,10 +374,64 @@ function commitWriteCache(
   setCacheEntryByAbsoluteStateAddress(absAddress, {
     value: value,
     dirty: false,
-    // 読み側（getByAddress）と同じ世代印を付ける — ヒットになるのは世代が一致する項目だけ
-    // （cache/types.ts の `generation`）。
-    generation: stateElement.stateGeneration
+    // 読み側（getByAddress）と同じ世代印・行の印を付ける — ヒットになるのは両方が一致する項目だけ
+    // （cache/types.ts の `generation` / `rowStamp`）。行の印は書き込みの依存ウォークが進めた後の値
+    generation: stateElement.stateGeneration,
+    rowStamp: absAddress.absolutePathInfo.pathInfo.lastSegment === WILDCARD ? undefined : getRowCacheStamp(absAddress.listIndex)
   });
+}
+
+/**
+ * 要素の書き込み（`items.0 = {…}`）でその位置の要素が別の値に替わるなら、その位置を新しい行にし、
+ * 新しい行のアドレスを返す（#333）。`for` が描くリストの入れ替えの経路（`_setByAddressWithSwap`）と
+ * 同じ同一性モデル — 行は要素に付き、別の要素は別の行。
+ *
+ * 行の下のパス（`items.*.name`・行 getter）はワイルドカードを含むので行の listIndex ごとに
+ * キャッシュされる（isCacheable）。行を据え置くと、行から子へ静的な辺の無い（`for` で描いていない）
+ * リストでは、依存ウォークが子に届かず古い値が返り続けた。新しい行には子のキャッシュが無いので、
+ * どう読まれても（直接添字・`$getAll`・getter）書いた要素から読み直す。差し替えた行は退役させる —
+ * `$watch` / `$scan` の着地はその行を捨てて新しい行で受け（rowLanding.ts）、要素と一緒に持ち越された
+ * 入れ子のリストの行集合は、次の解決で新しい行へ付け替わる（#256）。
+ * 要素パス自身の `$watch` の prev は、同じバッチでその位置の前の行が記録した値を引き継ぐ（入れ替えの
+ * 経路の notifySwapped と同じ。引き継がないと、同じ位置を 2 回書いたとき 1 回目の値が prev になる）。
+ * 同じ要素の書き込み（通知だけの再代入）は行を据え置く。台帳のその位置がこのアドレスの行でなければ
+ * （台帳が無い・listIndex の無いアドレス）何もしない。
+ */
+function renewReplacedRow(
+  stateElement: IStateHandler["stateElement"],
+  address: IStateAddress,
+  list: any,
+  key: PropertyKey | undefined,
+  value: unknown,
+): IStateAddress {
+  const row = address.listIndex!;
+  const listIndexes = getListIndexesByList(list);
+  if (listIndexes?.[key as number] !== row || list[key as number] === value) {
+    return address;
+  }
+  const renewed = createListIndex(row.parentListIndex, key as number, getHomeParentListIndex(row));
+  // この配列を描いた `for` が描いたのは書き込む前の行。書き込む前の並びの写しに前の台帳を持たせ、描画の
+  // 基準をそこへ移す（入れ替えの経路の notifySwappedList と同じ）。別のパスの `for`（配列をそのまま返す
+  // getter・同じ配列を持つ別のキーや state）は台帳の差し替えを知らず、描いていない新しい行を描いたつもりで
+  // 差分を取っていた。移すのは描いた後の最初の書き込みだけ。同じ配列の入れ替え（別のキーの `for` が描く）の
+  // 途中なら、描いたのは入れ替えの前の並び — 配列もその途中の姿なので、入れ替えが控えた写しを使う
+  if (hasRenderedList(list)) {
+    const image = getSwapInfoByList(list) ?? { value: list.slice(), listIndexes: listIndexes! };
+    setListIndexesByList(image.value, image.listIndexes);
+    rebaseRenderedList(list, image.value);
+  }
+  // 台帳の配列を持つ別の持ち手（差分のキャッシュ・別の配列の台帳・上の写し・入れ替え・`$eqIndex` の監視）が
+  // いれば、写してから差し替える — その場で書き換えると持ち手の行まで書き換わる（#335）。前の書き込みが
+  // 写したまま誰も持っていない台帳は、その場で書き換える（listIndexesByList.ts の isOwnedListIndexes）。
+  // `$eqIndex` の監視は台帳の配列に付くので一緒に移す（移した先は監視が持つので、所有を外す）
+  const next = isOwnedListIndexes(listIndexes!) ? listIndexes! : listIndexes!.slice();
+  next[key as number] = renewed;
+  setListIndexesByList(list, next, true);
+  moveIndexWatchers(listIndexes!, next);
+  retireRows([row]);
+  const renewedAddress = createStateAddress(address.pathInfo, renewed);
+  notifySwapped(stateElement, liftAddress(stateElement, renewedAddress), liftAddress(stateElement, address));
+  return renewedAddress;
 }
 
 function _setByAddress(
@@ -332,7 +442,9 @@ function _setByAddress(
   receiver : any,
   handler  : IStateHandler,
   keyedMergePath: string | null,
-  cacheable: boolean
+  cacheable: boolean,
+  // false なら書き込みだけ（入れ替えの経路は、どの行に着地させるかを書いた後で決める — _setByAddressWithSwap）
+  notify = true,
 ): any {
   try {
     if (address.pathInfo.path in target) {
@@ -378,7 +490,9 @@ function _setByAddress(
       }
     }
   } finally {
-    notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
+    if (notify) {
+      notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
+    }
   }
 }
 
@@ -390,42 +504,113 @@ function _setByAddressWithSwap(
   receiver : any,
   handler  : IStateHandler,
   keyedMergePath: string | null,
-  cacheable: boolean
+  cacheable: boolean,
+  elementWrite: number
 ) {
   // elementsの場合はswapInfoを準備（キーはリストの配列そのもの — swapInfo.ts 参照）
   const parentAddress = address.parentAddress ?? raiseError(`address.parentAddress is undefined path: ${address.pathInfo.path}`);
   const parentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
-  let swapInfo = getSwapInfoByList(parentValue);
-  if (swapInfo === null) {
-    const listIndexes = getListIndexesByList(parentValue) ?? [];
-    swapInfo = {
-      value: [...parentValue], listIndexes: [...listIndexes]
+  const swapInfo = getSwapInfoByList(parentValue);
+  if (elementWrite) {
+    // 要素から来た書き込み（行の要素が自分の行へ出す値）は、その行の値の更新で入れ替えではない
+    // （proxy/occurrenceWrite.ts・#337）。行はそのまま、途中の入れ替えがあればその写しでもこの行の値にして、
+    // 揃ったかの突き合わせがこの行を動かさないようにする
+    if (swapInfo) {
+      swapInfo.value[address.listIndex!.index] = value;
     }
-    setSwapInfoByList(parentValue, swapInfo);
-  }
-  try {
+    // 行はこの位置のまま書いた要素を映す。同じ行を持つ前の配列へ戻したとき、差分がこの行を描き直させる（#359）
+    setListIndexValue(address.listIndex!, value);
     return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
+  }
+  const row = address.listIndex!;
+  // 書き込む前の並び。台帳の配列は書き換えないので写さない（下の matchSwappedListIndexes）
+  const info = swapInfo ?? {
+    value: [...parentValue], listIndexes: getListIndexesByList(parentValue) ?? [], written: new Map(),
+  };
+  try {
+    // 通知は下で、入れ替えが揃ったかを見てから（揃うと行が動くので、着地させる行が変わる — #361）
+    return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable, false);
   } finally {
-    const index = swapInfo.value.indexOf(value);
-    const currentParentValue = getByAddress(target, parentAddress, receiver, handler) ?? [];
-    const currentListIndexes = Array.isArray(currentParentValue) ? (getListIndexesByList(currentParentValue) ?? []) : [];
-    const curIndex = address.listIndex!.index;
-    const listIndex = (index !== -1) ? 
-      swapInfo!.listIndexes[index] : 
-      createListIndex(parentAddress.listIndex, -1);
-    currentListIndexes[curIndex] = listIndex;
-    // 重複チェック
-    // 重複していない場合、swapが完了したとみなし、インデックスを更新
-    const listValueSet = new Set(currentParentValue);
-    if (listValueSet.size === swapInfo!.value.length) {
-      for(let i = 0; i < currentListIndexes.length; i++) {
-        currentListIndexes[i].index = i;
-      }
-      // 完了したのでswapInfoを削除
+    const currentListIndexes = matchSwappedListIndexes(info, parentValue, parentAddress.listIndex);
+    if (currentListIndexes === null) {
+      setSwapInfoByList(parentValue, info);
+      // 揃うまで行はこの位置のまま書いた要素を映す（#359 — 上の要素から来た書き込みと同じ）。この書き込みは
+      // この行に着地する
+      setListIndexValue(row, value);
+      info.written.set(row, updateBatch);
+      markRowSwapPending(row);
+      notifyWrite(address, absAddress, receiver, handler, keyedMergePath, cacheable);
+    } else {
+      // 揃ったので swapInfo を削除し、台帳を新しい配列に差し替える。その場で書き換えると、同じ配列を
+      // 持つ差分のキャッシュ（置き換えの差分の newIndexes）や、同じ中身の配列の台帳（createListDiff の
+      // isSameList）まで書き換わり、`for` が描いていない行を描いたつもりで差分を取る（#335）
       setSwapInfoByList(parentValue, null);
-      notifySwappedList(parentAddress, swapInfo, currentParentValue, currentListIndexes, receiver, handler);
+      // このバッチで書いた位置 — この書き込みと、揃う前の書き込みの位置（行の index を振り直す前に控える・#361）。
+      // 揃う前の書き込みで書いた値を映していた行は、自分の要素（書き込む前のその位置の要素）に戻す（#359。
+      // 押し出された行に書いた値を残すと、着地の選別がその値の行と取り違える）
+      const positions = [row.index];
+      clearRowSwapPending(row);
+      info.written.forEach((batch, written) => {
+        clearRowSwapPending(written);
+        setListIndexValue(written, info.value[written.index]);
+        if (batch === updateBatch) {
+          positions.push(written.index);
+        }
+      });
+      // この書き込みの行はまだ着地していない — 揃う前に同じ行へ書いていても、その後の読み（同値ガード）が前の値を
+      // キャッシュに載せ直しているので、書いた位置に残るなら通知し直す（notifySwappedList）
+      info.written.delete(row);
+      currentListIndexes.forEach((listIndex, i) => {
+        listIndex.index = i;
+      });
+      setListIndexesByList(parentValue, currentListIndexes);
+      // `$eqIndex` の監視は台帳の配列に付く（差分が付け替えるのと同じ）
+      moveIndexWatchers(info.listIndexes, currentListIndexes);
+      notifySwappedList(parentAddress, info, parentValue, currentListIndexes, receiver, handler, positions);
     }
   }
+}
+
+/**
+ * 要素書き込みの入れ替えが揃ったかを見て、揃っていればいまの並びの台帳を返す（#4・#337）。
+ *
+ * 行は値に付いて動く: 値の変わらない位置はその行のまま、値の変わった位置には、その値を書き込む前に
+ * 持っていて今は別の値になった行（動いてきた行）を充て、無ければ新しい行を作る。
+ * 書き込む前の並びにあった値が、動いてきた行より多くの位置に現れているうちは入れ替えの途中（片側だけを
+ * 書いた — 値がまだ元の位置にも残っている）で、null を返す。その間、台帳は書き込む前の行のままなので、
+ * 位置の読み書きはその行の index で当たり、表示も位置どおりに正しい。
+ * 揃った印は値が重複しないことではない（#337）。同じ値の行を含む並びの入れ替えも揃い、別の行と同じ値を
+ * 書いて同じ値の行が増えた並び（入れ替えの片側と区別できない）は、揃わないまま位置どおりに描かれる。
+ * 位置は台帳の行の分だけ見る（行の無い位置は書き込みの宛先にならない）。
+ * 手間は 1 回の書き込みにつき O(n)（`$setAll` は n 回書く）。動いてきた行の無い値が書き込む前の並びに
+ * あるかは、1 つ目は `includes`、2 つ目からは Set で引く（1 つずつ引くと、新しい値を多く書いた並びで
+ * O(k·n) になる）。新しい行は、揃ったと決まってから作る。行の index の振り直しは呼び手がする（振り直す前の
+ * 位置で、このバッチに書いた位置を控えるため）。
+ */
+function matchSwappedListIndexes(swapInfo: ISwapInfo, list: unknown[], parentListIndex: IListIndex | null): IListIndex[] | null {
+  const { value: before, listIndexes: rows } = swapInfo;
+  const movedByValue = new Map<unknown, IListIndex[]>();
+  rows.forEach((row, i) => {
+    if (list[i] !== before[i]) {
+      const moved = movedByValue.get(before[i]);
+      if (moved) {
+        moved.push(row);
+      } else {
+        movedByValue.set(before[i], [row]);
+      }
+    }
+  });
+  let lookups = 0;
+  let beforeValues: Set<unknown> | undefined;
+  const listIndexes: (IListIndex | undefined)[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const listIndex = list[i] === before[i] ? rows[i] : movedByValue.get(list[i])?.shift();
+    if (!listIndex && (lookups++ ? (beforeValues ??= new Set(before)).has(list[i]) : before.includes(list[i]))) {
+      return null;
+    }
+    listIndexes.push(listIndex);
+  }
+  return listIndexes.map((listIndex, i) => listIndex ?? createListIndex(parentListIndex, i));
 }
 
 /**
@@ -449,6 +634,12 @@ function _setByAddressWithSwap(
  *    `for` が同じ位置で外す行の Content をその場で使い回す（applyChangeToFor の collectInPlaceContents）。
  *  - 値と一緒に動いた行: 値は変わっていないので、依存を無効化して描画だけをやり直す。書き込みを別の
  *    バッチに分けると、途中のバッチで別の値を描いた行が残る。
+ * 書き込みの着地は書いた位置（#361）。このバッチで書いた位置（`positions` — 揃えた書き込みと、揃う前の書き込み）
+ * にいま居る行のうち、このバッチでまだ着地していない行（書いた行のままの位置・動いてきた行）を、その位置の値の
+ * 書き込みとして着地させる。prev は、その位置の書き込みが書いた行のアドレスで記録した値を引き継ぐ。揃う前の
+ * 書き込みはその時点で位置に居た行に着地しており、揃うとその行は値に付いて動く — 同じバッチの書き込みだけで
+ * 揃う入れ替えなら動いた先もこのバッチで書いた位置なので、その着地がそのまま当たる。前のバッチの書き込みと揃う
+ * と、揃えた書き込みの行は前のバッチで書いた位置へ動く — そこはこのバッチでは変わっていないので着地させない。
  * リスト自身も描画だけを積む（updater の enqueueRenderOnlyAddress）。書き込みとして積むと、`items` の
  * `$watch` が配列の参照の変わらない入れ替えで発火する。
  */
@@ -460,16 +651,28 @@ function notifySwappedList(
   currentListIndexes: readonly IListIndex[],
   receiver: any,
   handler: IStateHandler,
+  positions: readonly number[],
 ): void {
   const stateElement = handler.stateElement;
   const updater = getUpdater();
   const listAbsAddress = liftAddress(stateElement, parentAddress);
+  setListIndexesByList(swapInfo.value, swapInfo.listIndexes);
+  markSwapBaselineList(swapInfo.value);
+  // この配列を描いた `for` が描いたのは書き込む前の並び。画面から外れていて今回は描かない `for` も、
+  // 次に描くときは写しとの差分を取る（#320。下の記録は、今回描く `for` のためのもの）
+  rebaseRenderedList(currentParentValue as readonly unknown[], swapInfo.value);
   if (getLastListValueByAbsoluteStateAddress(listAbsAddress) === currentParentValue) {
-    setListIndexesByList(swapInfo.value, swapInfo.listIndexes);
     setLastListValueByAbsoluteStateAddress(listAbsAddress, swapInfo.value);
-    markSwapBaselineList(swapInfo.value);
   }
   updater.enqueueRenderOnlyAddress(listAbsAddress);
+  // この配列を描いている `for` は、書いたリストのアドレスのものだけとは限らない — 同じ内側の配列を別の外側の行も
+  // 持つ・同じ行の別のパスも持つ（#379。行の台帳は配列ごとに 1 組なので、同じ行を描いている）。その `for` にも
+  // 知らせて描き直させる（描くときにまだこの配列なら、自分が描いた並び — 上で写しへ移した記録 — からの差分を取る）
+  for (const absAddress of getAddressesByLastListValue(listAbsAddress, currentParentValue as readonly unknown[])) {
+    if (markSwappedList(absAddress, currentParentValue as readonly unknown[])) {
+      updater.enqueueRenderOnlyAddress(absAddress);
+    }
+  }
 
   const positionBefore = new Map<IListIndex, number>();
   swapInfo.listIndexes.forEach((listIndex, position) => positionBefore.set(listIndex, position));
@@ -483,7 +686,8 @@ function notifySwappedList(
     const elementAddress = createStateAddress(elementPathInfo, listIndex);
     const elementAbsAddress = liftAddress(stateElement, elementAddress);
     if (typeof before === "undefined") {
-      const displacedAbsAddress = absoluteAddressOf(stateElement, elementPathInfo, swapInfo.listIndexes[position] ?? null);
+      // 台帳は書き込む前の台帳と同じ長さで作る（matchSwappedListIndexes）
+      const displacedAbsAddress = absoluteAddressOf(stateElement, elementPathInfo, swapInfo.listIndexes[position]);
       notifySwapped(stateElement, elementAbsAddress, displacedAbsAddress);
       // 置き換えで入った行は中身が丸ごと新しい。差分展開だと入れ子のリストの行（`items.*.tags.*`）が
       // 着地せず `$watch` / `$scan` が取り逃すので、この行の下だけ全行展開で通知する
@@ -508,6 +712,17 @@ function notifySwappedList(
       },
       { listExpansion: "diff" },
     );
+  }
+  // このバッチで書いた位置にいま居る、まだ着地していない行を着地させる（上の説明 — 新しい行は上で着地済み）。
+  // 台帳に行の無い位置（台帳の無い配列への書き込み）には居ない
+  for (const position of positions) {
+    const listIndex = currentListIndexes[position];
+    if (positionBefore.has(listIndex) && swapInfo.written.get(listIndex) !== updateBatch) {
+      const elementAddress = createStateAddress(elementPathInfo, listIndex);
+      const elementAbsAddress = liftAddress(stateElement, elementAddress);
+      notifySwapped(stateElement, elementAbsAddress, absoluteAddressOf(stateElement, elementPathInfo, swapInfo.listIndexes[position]));
+      notifyWrite(elementAddress, elementAbsAddress, receiver, handler, null, isCacheable(stateElement, elementAddress));
+    }
   }
 }
 
@@ -623,7 +838,9 @@ function setByAddressCore(
   // occurrence（wc-bindable の `semantics: "event"`）由来の書き込みは、同値でも
   // 「もう一度起きた」ことを落としてはならないため same-value guard を 1 回だけ飛ばす。
   // トークンはここで消費されるので、この write の内側で走る他の書き込みには波及しない。
-  const skipSameValueGuard = consumeOccurrenceWrite();
+  // 要素から来た書き込み（proxy/occurrenceWrite.ts）: 2 = occurrence。要素パスへ書いても入れ替えにしない
+  const elementWrite = consumeElementWrite();
+  const skipSameValueGuard = elementWrite > 1;
 
   // --- fast path: 宣言済み getter/setter でも swap 対象でもない、親を持つ葉パス ---
   // 従来は same-value guard の値読み・hasByAddress・実書き込みがそれぞれ親チェーンを
@@ -650,6 +867,10 @@ function setByAddressCore(
         }
         devOldValue = oldValue;
         devHasOldValue = true;
+      }
+      if (lastSegment === WILDCARD) {
+        // 以降の通知・キャッシュ・prev の記録は、差し替えた後の行のアドレスで行う（#333）
+        address = renewReplacedRow(stateElement, address, parentValue, key, value);
       }
       // key が undefined（listIndex の無い不正アドレス）なら読みは undefined — 書き込みが下で投げる
       // 購読者の収集は書き込みの**前**（旧値の鍵が要る）。そこからの依存ウォークは
@@ -691,6 +912,17 @@ function setByAddressCore(
               return handled;
             }
             dispatchedExport = false;
+          }
+        }
+        if (lastSegment !== WILDCARD && address.listIndex !== null) {
+          // 行の下のパス（外側の行の内側のリスト）が別の値に替わる。前の配列の行がこの行を親に持っていても、この行は
+          // もうその配列を持たない — 台帳の付け替えの元にする（list/listIndexesByList.ts・#394）
+          const previous = (parentValue as Record<PropertyKey, unknown>)[key];
+          if (previous !== value) {
+            if (releaseListAtParent(previous, address.listIndex, parentValue as Record<string, unknown>, lastSegment) && Array.isArray(value)) {
+              keepPreviousList(value, previous);
+            }
+            holdListAtParent(value, address.listIndex);
           }
         }
         return Reflect.set(parentValue, key, value);
@@ -744,7 +976,7 @@ function setByAddressCore(
   recordDeclaredPrevValue(stateElement, path, absAddress, devOldValue, devHasOldValue);
   try {
     if (isSwappable) {
-      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
+      return _setByAddressWithSwap(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable, elementWrite);
     } else {
       return _setByAddress(target, address, absAddress, value, receiver, handler, keyedMergePath, cacheable);
     }

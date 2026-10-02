@@ -1219,8 +1219,9 @@ export default { name: "a", count: 1 };
     expect(unknown.message).toContain('(here: slice(2, 5))');
   });
 
-  it('substr の start が負・数値でないときは一般形だけを案内する', () => {
-    for (const args of ['-3,2', 'a,2', '1']) {
+  it('substr の start・length が負・数値でないときは一般形だけを案内する', () => {
+    // 負の length は substr では空文字列。slice(2, -1) と案内すると意味が変わる
+    for (const args of ['-3,2', '2,-3', '2, -1', 'a,2', '1', '1.5,2']) {
       const diags = validateBindings(page(`name|substr(${args})`), 'data-wcs', 'wcs-state', 'ja');
       const unknown = diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!;
       expect(unknown.message).toContain('slice(start, start + length)');

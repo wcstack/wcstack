@@ -41,6 +41,9 @@ function deepFreeze<T>(obj: T): T {
 
 function deepClone<T>(obj: T): T {
   if (obj === null || typeof obj !== "object") return obj;
+  // basenameFileExtensions is an array: clone it as one, or getConfig() would hand out
+  // { "0": ".html" }, which for…of cannot iterate. deepFreeze freezes it like any object.
+  if (Array.isArray(obj)) return obj.map((item) => deepClone(item)) as T;
   const clone: Record<string, unknown> = {};
   for (const key of Object.keys(obj)) {
     clone[key] = deepClone((obj as Record<string, unknown>)[key]);

@@ -48,6 +48,7 @@ function createMockRoute(overrides: Partial<IRoute> = {}): IRoute {
     placeHolder: placeholder,
     endMarker: document.createComment('@@wcs-route-end:mock'),
     held: null,
+    routeChildNodes: [],
     guardCheck: vi.fn().mockResolvedValue(undefined),
     shouldChange: vi.fn().mockReturnValue(true),
     ...overrides,

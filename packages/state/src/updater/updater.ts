@@ -1,10 +1,11 @@
 import { IAbsoluteStateAddress } from "../address/types";
 import type { IStateElement } from "../components/types";
 import { beginStateListBaselineBatch, endStateListBaselineBatch } from "../list/stateListBaseline";
+import { advanceUpdateBatch } from "./updateBatch";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
 import { peekBindingsForAddress } from "../binding/getBindingSetByAbsoluteStateAddress";
 import { inSsr } from "../config";
-import { MAX_PROPAGATION_HOPS } from "../define";
+import { MAX_PROPAGATION_HOPS, MAX_RENDER_CHAIN_DEPTH } from "../define";
 import { runTransition } from "../protocol/transitionRunner";
 import { devtoolsSink } from "../platform/devtoolsSink";
 import { IPropagationContext } from "../propagation/types";
@@ -33,6 +34,26 @@ const updateBatchListeners: IRegisteredBatchListener[] = [];
 export type EnqueueListener = (absoluteAddress: IAbsoluteStateAddress) => void;
 
 const enqueueListeners: EnqueueListener[] = [];
+
+/**
+ * 描画起点の書き込み連鎖の深さ（#338・MAX_RENDER_CHAIN_DEPTH）。書き込みは enqueue の時点で 3 通りに分かれる。
+ * - binding の適用（下の applyBindings）の最中: 「次のバッチはこの連鎖の続き」と印を付ける
+ *   （行を作るときの要素の初期同期・binding が設定したその場で要素が同期に出したイベント・`$renderedCallback` など）
+ * - drain の外（作者の操作・非同期に届く I/O ノードのイベント・`$stream` の値・ハイドレーション）: 次のバッチを深さ 0 から
+ *   数え直す。microtask で刻む書き手（`await` の続き・待ちの無い `$stream`）が描画の書き戻しと同じバッチに
+ *   乗り続けても、連鎖を伸ばさない
+ * - drain 終了リスナー（`$scan` / `$watch` / `$streams` restart）の中: 伸ばしも数え直させもせず、今のバッチの
+ *   深さを次のバッチへ引き継ぐ。`$watch` は自分の連鎖上限を持つので重ねて数えない。引き継がないと、描画の
+ *   書き戻しを `$watch` / `$scan` が受けて書く循環（要素が `x` へ書き、`$watch` が `x` から一覧の読むキーへ書く）で、
+ *   リスナーの書き込みだけが載った次のバッチが深さ 0 に戻り、上限に掛からずに回り続けていた（#353）
+ * 適用が書かなかったバッチの次は深さ 0 なので、一度で収まる書き戻し（行の初期同期など）は伸びない。
+ */
+/** 適用中のバッチの深さ + 1。drain 終了リスナーの最中はバッチの深さ、drain の外なら -1 */
+let applyingDepth = -1;
+/** 次に drain されるバッチの深さ */
+let pendingDepth = 0;
+/** 次のバッチに drain の外からの書き込みがある（深さ 0 から数え直す） */
+let pendingExternal = false;
 
 /** 機能の install が呼ぶ（冪等 — 同じ listener は 1 回だけ） */
 export function registerEnqueueListener(listener: EnqueueListener): void {
@@ -121,6 +142,13 @@ class Updater {
     for (let i = 0; i < enqueueListeners.length; i++) {
       enqueueListeners[i](absoluteAddress);
     }
+    // 描画連鎖の印（上の applyingDepth の説明）
+    if (applyingDepth > pendingDepth) {
+      pendingDepth = applyingDepth;
+    }
+    if (applyingDepth < 0) {
+      pendingExternal = true;
+    }
     const requireStartProcess = this._isQueueEmpty();
     this._queueUpdateRecords.push({ absoluteAddress, context });
     if (requireStartProcess) {
@@ -156,6 +184,7 @@ class Updater {
       const renderOnlyAddresses = this._queueRenderOnlyAddresses;
       this._queueUpdateRecords = [];
       this._queueRenderOnlyAddresses = [];
+      advanceUpdateBatch();
       this._applyChange(updateRecords, renderOnlyAddresses);
     });
   }
@@ -197,6 +226,11 @@ class Updater {
     // 呼ばれないので最適化段に上がらず、for...of は反復ごとに結果オブジェクト（Map なら [key, value] の
     // 配列も）を割り当てる。cold の 1,000 行生成では行ごとに数件の依存アドレスが積まれ、その分が
     // 生成の割り当ての 1 割近くを占めていた（設計 R5）。
+    //
+    // このバッチの描画連鎖の深さを消費する（キューはもう次のバッチの分なので、ここから先の印は次のバッチのもの）
+    let depth = pendingExternal ? 0 : pendingDepth;
+    pendingDepth = 0;
+    pendingExternal = false;
     const contextByAbsoluteAddress = new Map<IAbsoluteStateAddress, IPropagationContext | null>();
     // drain 終了リスナーへ渡すのは書き込みの着地だけ。描画だけのアドレスは、この後で適用の対象に足す
     // （同じアドレスの書き込みがあれば、その context のまま着地として残る）。Map の鍵から作り直さず
@@ -286,11 +320,18 @@ class Updater {
     // （README の 3 層表）が黙って破れる。例外は握らない ＝ 伝播は維持する。
     try {
       const applyBindings = (): void => {
-        // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
-        if (propagationContextByBinding.size > 0) {
-          applyChangeFromBindings(processBindings, propagationContextByBinding);
-        } else {
-          applyChangeFromBindings(processBindings);
+        // 遷移越しに後で走っても、このバッチの深さで印を付ける（閉包で持つ）。throw しても必ず下ろす —
+        // 下ろし忘れると、以後の無関係な書き込みが全部この連鎖の続きに数えられる
+        applyingDepth = depth + 1;
+        try {
+          // context が無い場合は従来どおり 1 引数で呼ぶ（呼び出し契約の互換維持）
+          if (propagationContextByBinding.size > 0) {
+            applyChangeFromBindings(processBindings, propagationContextByBinding);
+          } else {
+            applyChangeFromBindings(processBindings);
+          }
+        } finally {
+          applyingDepth = -1;
         }
       };
       // View transition 参加点（docs/view-transition-design.md §7.2）。arbiter が
@@ -304,7 +345,26 @@ class Updater {
       // 無駄なだけでなく、既定の mode="latest" では「アニメーションすべき DOM 変更が
       // 無い遷移」が実行中の本物の遷移をスキップしてしまう（ルート遷移が毎回途中で
       // 切れる／active が空撃ちで振動する）。
-      if (inSsr() || processBindings.length === 0) {
+      if (depth > MAX_RENDER_CHAIN_DEPTH && processBindings.length > 0) {
+        // 描画起点の連鎖の打ち切り（#338）: このバッチの binding を適用しない ＝ 適用が書かないので連鎖が
+        // 止まる。値は巻き戻さず、drain 終了リスナーには通常どおり通知する（hop 上限の quarantine と同じ
+        // 姿勢）。適用するものが無いバッチは連鎖がそこで自然に終わるので報告しない — hop 上限が全部を
+        // quarantine したバッチもここへは来ない（報告は 1 つの機構から 1 回）。
+        // `$watch` / `$scan` を挟む循環（#353）は、適用を止めてもリスナーの書き込みが深さを引き継いで次のバッチを
+        // 作る。報告は連鎖が初めて越えたバッチ（深さは 1 バッチに 1 段までしか伸びないので上限 + 1）だけにし、
+        // 引き継ぐ深さを 1 つ進めて、続くバッチは報告せずに適用しない
+        if (depth++ === MAX_RENDER_CHAIN_DEPTH + 1) {
+          // パスで畳む（行ごとのアドレスが同じパスで並ぶと、循環しているパスが読み取りにくい）
+          const paths = [...new Set(Array.from(landedAddresses, (absAddress) => absAddress.absolutePathInfo.pathInfo.path))];
+          console.error(
+            `[@wcstack/state] render chain depth limit exceeded; bindings for this batch were not applied.`,
+            { maxDepth: MAX_RENDER_CHAIN_DEPTH, paths },
+          );
+          if (devtoolsSink !== null) {
+            devtoolsSink({ type: "state:render-chain-limit", maxDepth: MAX_RENDER_CHAIN_DEPTH, paths });
+          }
+        }
+      } else if (inSsr() || processBindings.length === 0) {
         applyBindings();
       } else {
         const pending = runTransition("state", applyBindings);
@@ -317,7 +377,11 @@ class Updater {
       // 置くのは、リスナー（$watch / $streams restart）の中で走る書き込みが
       // 「このバッチの結果」を基準として見るべきだから。
       endStateListBaselineBatch();
+      // リスナーの書き込みは描画連鎖を伸ばしも数え直させもせず、このバッチの深さを引き継ぐ（applyingDepth の
+      // 説明）。リスナーは throw しない契約（内部バグだけ）なので finally で包まない — 残っても次の drain が戻す
+      applyingDepth = depth;
       notifyUpdateBatchListeners(landedAddresses);
+      applyingDepth = -1;
     }
   }
 

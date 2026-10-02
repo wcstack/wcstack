@@ -1,6 +1,7 @@
 import { ParseBindTextResult } from "../bindTextParser/types";
 import type { IInitialSyncPolicy, ResolvedInitialAuthority } from "../bindings/initialSync";
 import type { IPlannedBinding } from "../bindings/planFilters";
+import type { IDeferredSpreadEntry } from "../bindings/collectNodesAndBindingInfos";
 
 export interface IContent {
   readonly firstNode: Node | null;
@@ -21,6 +22,11 @@ export interface IContent {
    * 従来経路（deactivate + unmount）で解体する。
    */
   tryDestroy(): boolean;
+  /**
+   * まだ展開していない、未定義カスタム要素への spread（#330）。持つ行だけに付く（形を増やさない）。
+   * 活性化のたびに定義待ちへ予約し、展開したものは外れる
+   */
+  spreads?: IDeferredSpreadEntry[];
 }
 
 export interface IFragmentNodeInfo {
@@ -70,4 +76,11 @@ export interface IFragmentInfo {
    * （持たない大多数のテンプレートに追加コストを課さないための門）。
    */
   topLevelStructural?: boolean;
+  /**
+   * 中（入れ子のテンプレートも含む）で使う添字（`$N` → ビット N - 1、32 段目より奥は最上位のビットに
+   * まとめる）の集合。undefined = 未判定で、テンプレート単位に一度だけ算出しキャッシュする。動いた行の段の
+   * 添字を含まないテンプレートの構造ディレクティブは、当て直しで辿らない（createContent の isIndexBinding・
+   * applyChangeToFor の applyIndexBindings・#390）。
+   */
+  indexBits?: number;
 }

@@ -2,7 +2,7 @@
 
 [@wcstack/state](https://github.com/wcstack/wcstack) 4.0 用の VSCode 拡張。HTML 内の `<wcs-state>` インラインスクリプトと `data-wcs` 属性にTypeScript 言語機能を提供します。
 
-> **@wcstack/state 4.0。** 同梱のパーサと manifest は 4.0 のもので、検査は 4.0 の規則に従います: 4.0 で外れた名前（3.2 の旧名・`$scan`・`substr`）は書き換え先を添えて報告し、数値の添字のパス（`items.0.name`・`groups.0.items.1.v`）は報告しません。4.0 の設定（`$behavior`・`$features`・`<wcs-state features>`）と修飾子 `#direct` を理解します。3.x のプロジェクトでは拡張 1.19.x を使ってください。
+> **@wcstack/state 4.0。** 同梱のパーサと manifest は 4.0 のもので、検査は 4.0 の規則に従います: 4.0 で外れた名前（3.2 の旧名・`$scan`・`substr`）は書き換え先を添えて報告し、数値の添字のパス（`items.0.name`・`groups.0.items.1.v`）は報告しません。4.0 の設定（`$behavior`・`$features`・`<wcs-state features>`）と修飾子 `#direct` を理解します。3.x のプロジェクトでは拡張 1.21.x を使ってください（1.21.0 は 3.5 を同梱し、4.0 で変わる形を `wcs/v4-migration` の案内で知らせます）。
 
 ## Features
 
@@ -152,6 +152,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | 行の中で別のリストの `*` を読む（4.0 の #1403） | `for: a` の中の `textContent: b.*.y` | ⚠ warning |
 | `for` / `if` テンプレートの中の `outerHTML:` / `outerText:`（4.0 は初期化で throw — #203） | `<template data-wcs="for: items"><div data-wcs="outerHTML: h">` | ❌ error |
 | イベント束縛以外の `#direct`（無視される） | `value#direct: name` | ⚠ warning |
+| 4.0 が root へ委譲するイベント（`click`・`input`・`submit` など 11 種）のハンドラが、イベント引数の `currentTarget` を最初の `await` の前に読む（`wcs/delegated-current-target`。そこでは要素ではなく root になる — `on*#direct:` か `event.target.closest(…)`。`#direct` 付き・カスタム要素の `input` / `change` / `submit`・自前の `<wcs-state>` を持つ `<template>` の中は出さない。router の route の中は出す） | `onclick: pick` で `pick(e) { e.currentTarget.dataset.id }` | ⚠ warning |
 | パスの `__proto__` / `prototype` の段（4.0 の #120） | `textContent: a.__proto__.x` | ❌ error |
 | `<template>` 外の `{{ }}` (FOUC) | `<p>{{ count }}</p>` | ℹ info |
 | ネストされたプロパティへの代入 | `this.user.name = "..."` | ⚠ warning |

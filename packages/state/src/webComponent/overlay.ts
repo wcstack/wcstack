@@ -1,14 +1,17 @@
 import { createStateAddress } from "../address/StateAddress";
 import { getPathInfo } from "../address/PathInfo";
+import { getResolvedAddress } from "../address/ResolvedAddress";
 import { IStateAddress } from "../address/types";
-import { DELIMITER } from "../define";
+import { DELIMITER, WILDCARD } from "../define";
+import { isRetiredListIndex } from "../list/listIndexesByList";
 import { getLoopContextByNode } from "../list/loopContextByNode";
-import { IListIndex } from "../list/types";
+import { IListIndex, ILoopContext } from "../list/types";
 import { checkDependency } from "../proxy/methods/checkDependency";
+import { getContextListIndex } from "../proxy/methods/getContextListIndex";
 import { setLoopContextSymbol } from "../proxy/symbols";
 import { raiseError } from "../raiseError";
-import { IStateHandler, IStateProxy } from "../proxy/types";
-import { composeMountIndexes, IExportEntry, IMountRecord, translateInnerPath, translateInnerWritePath } from "./mount";
+import { IStateHandler, Mutability } from "../proxy/types";
+import { composeMountIndexes, concretizeMountPrefix, IExportEntry, IMountRecord, translateInnerPath, translateInnerWritePath } from "./mount";
 import { createDollarPathApiWrapper } from "./dollarPathApis";
 
 /**
@@ -24,6 +27,11 @@ import { createDollarPathApiWrapper } from "./dollarPathApis";
  * - `users.*.#m1.editing` への書き込み → setByAddress の fast path が
  *   `Reflect.set(proxy, "editing", v)` → 私有データへ（enqueue / 依存 walk は
  *   setByAddress が済ませている — 通常のツリーキーと同じ経路）
+ * - 作者のメソッド・setter の本体の `this.editing = v` → `this` は**作者向けの proxy**
+ *   （authorFacing）で、私有キーの書き込みを上の親ウォークの書き込みへ回す。素の state の
+ *   `this.x = v` と同じく setByAddress を通るので、同値ガード・enqueue・依存 walk・
+ *   キャッシュ更新が走る（#321）。親ウォークが着地する proxy は直接代入のまま —
+ *   そこを回すと setByAddress が自分自身へ再帰する
  * - `users.*.#m1.display` の読み → `Reflect.get(proxy, "display")` → 作者の getter を
  *   **この proxy を `this` に**評価。中の `this.name` は translateInnerPath で
  *   `users.*.name` になり、**アクティブな親 receiver** の文字列読みに落ちる —
@@ -44,6 +52,81 @@ interface IPrivateDataTable {
 }
 
 const privateDataByRecord = new WeakMap<IMountRecord, IPrivateDataTable>();
+
+/** 要素が最後に立っていた行の文脈（スコープを行へ向けるたびに記録する — mountScope.ts） */
+const lastHostContexts = new WeakMap<IMountRecord, ILoopContext | null>();
+/**
+ * いまの接続のライフサイクルの `this`（`$connectedCallback` と同じ接続の `$disconnectedCallback` で同じもの）。
+ * その接続が終わったときの行。切断で外す — 外れた `this` は、その接続が終わったもの
+ */
+const lifecycleStates = new WeakMap<IMountRecord, [Record<string, any>, { row: IListIndex | null }]>();
+
+/**
+ * 要素が行へ向いたときの、その行の祖先の行（外側の行）。行の親は台帳が付け替える（外側の行を作り直した — #256・
+ * 外側の行が内側の配列を手放した — #394）ので、要素が立っていた外側の行が消えたかは、向いたときの祖先で見る
+ */
+const hostAncestorsByRecord = new WeakMap<IMountRecord, IListIndex[]>();
+
+export function noteHostContext(record: IMountRecord, context: ILoopContext | null): void {
+  lastHostContexts.set(record, context);
+  const ancestors: IListIndex[] = [];
+  for (let row = context?.listIndex.parentListIndex ?? null; row !== null; row = row.parentListIndex) {
+    ancestors.push(row);
+  }
+  hostAncestorsByRecord.set(record, ancestors);
+}
+
+export function endHostConnection(record: IMountRecord): void {
+  const current = lifecycleStates.get(record);
+  if (current !== undefined) {
+    // その場の行の差し替え（要素の書き込み — #4）で移った先も含め、終わったときの行に留める
+    current[1].row = hostRowOf(record);
+    lifecycleStates.delete(record);
+  }
+}
+
+/**
+ * ホスト要素の行の文脈（`for:` の外なら null）。要素がいま文脈を持たない（行の中の `if:` が隠した・
+ * プールに居る）ときは最後に立っていた行 — 隠れている間も自分の行を読み書きでき（行が生きていれば）、
+ * 行が消えていれば退役した行になる（isRemovedHost）。
+ */
+function hostContextOf(record: IMountRecord): ILoopContext | null {
+  return getLoopContextByNode(record.component) ?? lastHostContexts.get(record) ?? null;
+}
+
+/**
+ * ホスト要素がいま立っている行。オーバーレイはマーカーアドレスが行を持たないときにここから補う —
+ * 部分マウントだけの記録はマーカー基底 `#m<id>` がワイルドカードを持たないので、ワイルドカードの
+ * 無い getter・メソッドの評価中はホストの行が見えない（#322）。
+ */
+function hostRowOf(record: IMountRecord): IListIndex | null {
+  return hostContextOf(record)?.listIndex ?? null;
+}
+
+/** 評価中のインスタンスのホスト行を離れた要素（行が消えた・別の行に使い回された）への読み書き */
+function hostRowRemoved(record: IMountRecord): never {
+  raiseError(`The host row of <${record.component.tagName.toLowerCase()}> was removed.`);
+}
+
+/** 行かその祖先が退役しているか（リストから外れた行） */
+function isRetiredRow(row: IListIndex | null): boolean {
+  for (; row !== null; row = row.parentListIndex) {
+    if (isRetiredListIndex(row)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 行が消えて外れた要素か（`$disconnectedCallback`・プールに居る要素）。要素に残った文脈は、いまその位置に
+ * ある別の行を指す — 私有キーは消えた行の私有データで読み書きでき、ツリーのキーは投げる。
+ * 祖先の差し替えの直後は、生きている行も退役した祖先を指したままなので、接続中の要素は含めない
+ */
+function isRemovedHost(record: IMountRecord, row: IListIndex | null): boolean {
+  return !record.component.isConnected
+    && (isRetiredRow(row) || hostAncestorsByRecord.get(record)?.some((ancestor) => isRetiredListIndex(ancestor)) === true);
+}
 
 /** マウントインスタンス（record × listIndex）の私有データ。無ければ初期スナップショットから複製 */
 export function getPrivateData(record: IMountRecord, listIndex: IListIndex | null): Record<string, unknown> {
@@ -68,10 +151,27 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
     private readonly record: IMountRecord,
     private readonly markerParentPath: string,
     private readonly listIndex: IListIndex | null,
+    /**
+     * 評価中のインスタンスのホスト行。マーカーアドレスが行を持てばそれ、持たない（部分マウントだけの
+     * 記録の）ときは評価を始めたときの要素の行。作者の `this` に引き継ぐので、async メソッドの await の
+     * 後も呼び出したときの行を指す — 読み直すと、その行が消えて要素が使い回された先の別の行を指す（#367）。
+     * null は行の外か、まだ行に置かれていない（hostIndexes が読み直す）
+     */
+    private readonly hostRow: IListIndex | null,
     private readonly isBase: boolean,
     private readonly receiver: any,
     private readonly handler: IStateHandler,
+    private readonly authorFacing: boolean = false,
   ) {}
+
+  /**
+   * 作者のコード（メソッド・setter の本体）へ `this` として渡す proxy。
+   * 同じ私有データ・同じ評価文脈で、私有キーの書き込みだけを親ウォークへ回す（#321）。
+   */
+  private authorThis(target: Record<string, unknown>, receiver: any): object {
+    return this.authorFacing ? receiver : new Proxy(target, new OverlayValueHandler(
+      this.record, this.markerParentPath, this.listIndex, this.hostRow, this.isBase, this.receiver, this.handler, true));
+  }
 
   private accessorNameFor(key: string): string | undefined {
     return this.record.accessorBySuffixByMarkerParent.get(this.markerParentPath)?.get(key)?.accessorName;
@@ -79,6 +179,42 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
 
   private accessorAddress(key: string): IStateAddress {
     return createStateAddress(getPathInfo(this.markerParentPath + DELIMITER + key), this.listIndex);
+  }
+
+  /**
+   * 評価中のインスタンスのホスト行の添字（`for:` の外なら空）。
+   * await の間にホストの行がリストから外れたインスタンスの添字は古い位置のままで、いまその位置にある
+   * 別の行を指す — 読み書きを別の行へ着地させずに投げる。完全マウントは行（とその祖先）の退役で、
+   * 部分マウントは要素が評価を始めたときの行を離れた（行が消えて要素が外れた・別の行に使い回された）
+   * ことで見分ける。部分マウントの行は祖先の差し替えの直後には退役した祖先を指したまま生きているので、
+   * 退役だけでは見分けられない — 退役した行を指したまま外れた要素（行が消えた `$disconnectedCallback`）は
+   * 投げる（#368）。行を持たずに始まった評価は、いまの行を読む（#367）
+   */
+  private hostIndexes(): readonly number[] {
+    const current = this.listIndex ?? hostRowOf(this.record);
+    const row = this.hostRow ?? current;
+    if (this.listIndex === null ? row !== current || isRemovedHost(this.record, row) : isRetiredRow(row)) {
+      hostRowRemoved(this.record);
+    }
+    return row?.indexes ?? [];
+  }
+
+  /**
+   * ツリーへの文字列パスの読み書きで、接頭辞のワイルドカードをホスト行の添字で具体化する。
+   * partial（`items.0.v` → `groups.*.items.0.v`）はコアが解決できない（getListIndex）ので
+   * いつも（#323）。マーカーアドレスが行を持たない（部分マウントだけの記録の）ときも —
+   * ワイルドカードの無い getter の評価中は、文脈（スタック先頭の `#m1.total`）にホストの行が
+   * 無く context 型を解決できない（#322）。文脈が空のときも — async メソッドの await の後は
+   * ループ文脈が外れている（#331）。行が消えて外れた要素のときも — 文脈は消えた行を指し、位置で
+   * 読むといまその位置の別の行になる（hostIndexes が投げる — #368）。行を持ち文脈があるときの
+   * context 型は文脈がそのまま解決する。
+   */
+  private resolveTreePath(innerPath: string, translated: string): string {
+    return translated.indexOf(WILDCARD) !== -1
+      && (this.listIndex === null || this.handler.addressStackLength === 0
+        || getResolvedAddress(translated).wildcardType === "partial" || isRemovedHost(this.record, this.listIndex))
+      ? concretizeMountPrefix(innerPath, translated, this.hostIndexes())
+      : translated;
   }
 
   get(target: Record<string, unknown>, prop: string | symbol, _receiver: any): any {
@@ -92,15 +228,17 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
     if (prop[0] === "$") {
       if (prop === "$postUpdate") {
         return (path: string): void => {
-          this.receiver.$postUpdate(translateInnerPath(this.record, path));
+          this.receiver.$postUpdate(this.resolveTreePath(path, translateInnerPath(this.record, path)));
         };
       }
       // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API。作者のスコープ相対 indexes の
       // 先頭に、評価中のマーカーアドレスの行添字（＝翻訳で増えたワイルドカード分）を足す
       if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve") {
         const record = this.record;
-        const contextIndexes = this.listIndex?.indexes ?? [];
+        const contextIndexes = this.hostIndexes();
         const receiver = this.receiver;
+        const handler = this.handler;
+        const listIndex = this.listIndex;
         if (prop === "$resolve") {
           return (path: string, indexes: number[] | undefined, ...rest: unknown[]): unknown => {
             // 書き込み形（第 3 引数あり）は読み取り専用マウントを検査する（要件 B14 ①）
@@ -112,7 +250,12 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
         const api = prop;
         return (path: string, indexes?: number[], ...rest: unknown[]): unknown => {
           const translated = api === "$setAll" ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
-          const composed = composeMountIndexes(record, path, translated, indexes, contextIndexes);
+          // 省略時の文脈既定: 評価中の文脈が外側の行を持たない（部分マウントだけの記録の getter）なら、
+          // 自スコープの添字は 0 本 ＝ `[]`。渡さないと親の既定が全ホスト行へ展開し、他の行の値を
+          // 混ぜて返す（#322）。文脈が外側の行を持つ（イベント・内側の行）なら親の既定のまま
+          const effective = typeof indexes === "undefined" && api === "$getAll" && listIndex === null
+            && getContextListIndex(handler, getPathInfo(translated).wildcardPaths[0]) === null ? [] : indexes;
+          const composed = composeMountIndexes(record, path, translated, effective, contextIndexes);
           return receiver[api](translated, composed, ...rest);
         };
       }
@@ -122,7 +265,7 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       const receiver = this.receiver;
       const wrapped = createDollarPathApiWrapper(
         prop,
-        (path) => translateInnerPath(record, path),
+        (path) => this.resolveTreePath(path, translateInnerPath(record, path)),
         (args) => (receiver[prop] as (...a: unknown[]) => unknown)(...args),
       );
       if (wrapped !== null) {
@@ -153,12 +296,12 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       }
       const method = this.record.stateObject[prop];
       if (typeof method === "function") {
-        return method.bind(_receiver);
+        return method.bind(this.authorThis(target, _receiver));
       }
     }
     // ツリー（規則 3）: アクティブな親 receiver の文字列読みに落とす。
     // ループ文脈は push 済みの外側アドレス（マーカー親のワイルドカード）から解決される
-    return this.receiver[translateInnerPath(this.record, prop)];
+    return this.receiver[this.resolveTreePath(prop, translateInnerPath(this.record, prop))];
   }
 
   set(target: Record<string, unknown>, prop: string | symbol, value: any, _receiver: any): boolean {
@@ -180,17 +323,34 @@ class OverlayValueHandler implements ProxyHandler<Record<string, unknown>> {
       this.handler.pushAddress(this.accessorAddress(prop));
       this.handler.beginUntrack();
       try {
-        return Reflect.set(this.record.stateObject, accessorName, value, _receiver);
+        return Reflect.set(this.record.stateObject, accessorName, value, this.authorThis(target, _receiver));
       } finally {
         this.handler.endUntrack();
         this.handler.popAddress();
       }
     }
     if (this.isBase && Object.prototype.hasOwnProperty.call(target, prop)) {
+      if (this.authorFacing && this.handler.mutability !== "readonly") {
+        // 部分マウントの私有データは要素ごとに 1 組 — await の間にホストの行が消えて要素が別の行に
+        // 使い回されたら、その行の私有データへ書かずに投げる（#367）
+        if (this.listIndex === null) {
+          this.hostIndexes();
+        }
+        // 素の state の `this.x = v` と同じ経路（親の set トラップ → setByAddress）へ回す。
+        // マーカーのアドレスを push するので、行マウントのワイルドカードは await の後でも
+        // このインスタンスの行に解決される
+        this.handler.pushAddress(createStateAddress(getPathInfo(this.markerParentPath), this.listIndex));
+        try {
+          this.receiver[this.markerParentPath + DELIMITER + prop] = value;
+        } finally {
+          this.handler.popAddress();
+        }
+        return true;
+      }
       target[prop] = value;
       return true;
     }
-    this.receiver[translateInnerWritePath(this.record, prop)] = value;
+    this.receiver[this.resolveTreePath(prop, translateInnerWritePath(this.record, prop))] = value;
     return true;
   }
 
@@ -241,6 +401,7 @@ export function createOverlayValue(
     record,
     markerParentPath,
     address.listIndex,
+    address.listIndex ?? hostRowOf(record),
     isBase,
     receiver,
     handler,
@@ -278,6 +439,9 @@ export function writeExportedAccessor(
   return Reflect.set(proxy, entry.suffix, value);
 }
 
+/** 親の state をホスト要素のループ文脈で包んで開き、`fn` の戻り値を返す（公開面の全経路が通る） */
+type HostCall = (mutability: Mutability, fn: (state: any) => unknown) => any;
+
 /**
  * `element.state` の公開面（chroot・M13）。相対キーを変換して親の proxy を通すだけの
  * 薄い翻訳で、値の解決（私有・getter・ツリー）は全て親ウォーク＋オーバーレイが担う。
@@ -287,42 +451,89 @@ export function writeExportedAccessor(
 function createChrootDollarApi(
   record: IMountRecord,
   api: "$getAll" | "$setAll" | "$resolve" | "$postUpdate",
-  withHostContext: <T>(state: IStateProxy, callback: () => T) => T,
+  call: HostCall,
+  rowIndexes: () => readonly number[],
+  resolve: (innerPath: string, translated: string) => string,
 ): (...args: any[]) => unknown {
-  const parent = record.parentStateElement;
-  const call = (mutability: "readonly" | "writable", fn: (state: any) => unknown): unknown => {
-    let result: unknown;
-    parent.createState(mutability, (state) => {
-      result = withHostContext(state as IStateProxy, () => fn(state));
-    });
-    return result;
-  };
   if (api === "$postUpdate") {
-    return (path: string) => call("readonly", (state) => state.$postUpdate(translateInnerPath(record, path)));
+    return (path: string) => call("readonly", (state) => state.$postUpdate(resolve(path, translateInnerPath(record, path))));
   }
   return (path: string, indexes?: number[], ...rest: unknown[]) => {
     const writes = api === "$setAll" || (api === "$resolve" && rest.length > 0);
     const translated = writes ? translateInnerWritePath(record, path) : translateInnerPath(record, path);
-    const contextIndexes = getLoopContextByNode(record.component)?.listIndex.indexes ?? [];
     // $resolve は indexes 必須の API（省略は空列と同義に倒す）。書き込み形（第 3 引数あり）は writable
     const composed = composeMountIndexes(
-      record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, contextIndexes);
+      record, path, translated, api === "$resolve" ? (indexes ?? []) : indexes, rowIndexes());
     const mutability = writes ? "writable" : "readonly";
     return call(mutability, (state) => state[api](translated, composed, ...rest));
   };
 }
 
-export function createPublicMountState(record: IMountRecord): Record<string, any> {
-  const parent = record.parentStateElement;
-  const withHostContext = <T>(state: IStateProxy, callback: () => T): T => {
-    const loopContext = getLoopContextByNode(record.component);
-    let result!: T;
-    state[setLoopContextSymbol](loopContext, () => {
-      result = callback();
+/**
+ * ライフサイクルの `this`（#368）。行の部品では接続ごとに 1 つで、`$connectedCallback` とその接続の
+ * `$disconnectedCallback` は同じものを受け取る。読み書きは `element.state` と同じくホストの行に着地し、
+ * 接続が続くうちはその場の行の差し替え（要素の書き込み — #4）にも追従する。その接続が終わった後
+ * （取っておいた `this`・await の後）は、終わったときの行に留まり、要素が別の行に使い回されていれば
+ * どちらの行にも着地させずに投げる — #367 のメソッドと同じ。行の中の `if:` が隠しただけなら、その行に着地する。
+ * 行の外の部品は行を持たないので `element.state` そのもの
+ */
+export function createLifecycleMountState(record: IMountRecord): Record<string, any> {
+  if (hostRowOf(record) === null) {
+    return (record.component as unknown as Record<string, Record<string, any>>)[record.stateProp];
+  }
+  let current = lifecycleStates.get(record);
+  if (current === undefined) {
+    const pin = { row: null as IListIndex | null };
+    lifecycleStates.set(record, current = [createPublicMountState(record, pin), pin]);
+  }
+  return current[0];
+}
+
+/**
+ * @param pin ライフサイクルの `this` の接続が終わったときの行（createLifecycleMountState・endHostConnection）。
+ *   省略は `element.state`
+ */
+export function createPublicMountState(record: IMountRecord, pin?: { row: IListIndex | null }): Record<string, any> {
+  const hostContext = (): ILoopContext | null => {
+    const context = hostContextOf(record);
+    // 固定した this は行の部品のものだけ — 行に置かれた要素は最後に立っていた行を必ず持つ（context は null でない）
+    if (pin !== undefined && lifecycleStates.get(record)?.[0] !== chroot && context!.listIndex !== pin.row) {
+      hostRowRemoved(record);
+    }
+    return context;
+  };
+  // 行が消えて外れた要素（isRemovedHost）: 私有キー・メソッド（マーカーのパス）は消えた行の私有データで
+  // 読み書きでき（`$disconnectedCallback` の後始末 — タイマーの id など）、ツリーのキーと `$` API は投げる。
+  // 接続中の要素は含めない — 祖先をコピーに差し替えた後の行は、生きたまま退役した祖先を指し続ける
+  const rowIndexes = (): readonly number[] => {
+    const context = hostContext();
+    if (isRemovedHost(record, context?.listIndex ?? null)) {
+      hostRowRemoved(record);
+    }
+    return context?.listIndex.indexes ?? [];
+  };
+  // 公開面の文字列パス。partial（`items.0.v` → `groups.*.items.0.v`）はコアが解決できないので、接頭辞の
+  // ワイルドカードをホスト行の添字で具体化する（→ `groups.1.items.0.v`、#323）。context 型（`items` →
+  // `groups.*.items`）は具体化しない — call が張るホストのループ文脈がそのまま解決する。位置に具体化すると、
+  // 文脈の行が退役した行や祖先を指しているとき（行が消えた要素・外の部品の行を使い回した直後の内側の行）に、
+  // いまその位置にある別の行を読み書きする（#368）。行が消えて外れた要素のツリーのキーは投げる
+  const resolve = (innerPath: string, translated: string): string =>
+    translated.indexOf(WILDCARD) === -1
+      ? translated
+      : getResolvedAddress(translated).wildcardType === "partial"
+        ? concretizeMountPrefix(innerPath, translated, rowIndexes())
+        : translated.indexOf("#") !== -1 || !isRemovedHost(record, hostRowOf(record))
+          ? translated
+          : hostRowRemoved(record);
+  const call: HostCall = (mutability, fn) => {
+    let result: unknown;
+    const context = hostContext();
+    record.parentStateElement.createState(mutability, (state) => {
+      result = state[setLoopContextSymbol](context, () => fn(state));
     });
     return result;
   };
-  return new Proxy({} as Record<string, any>, {
+  const chroot: Record<string, any> = new Proxy({} as Record<string, any>, {
     get(_target, prop): any {
       if (typeof prop !== "string" || prop === "then") {
         return undefined;
@@ -330,40 +541,37 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       // §4-6（P2-9）: 相対パス → 接頭辞合成 → ルート API（chroot 面）。
       // 先頭添字はホスト要素のループ文脈から補う
       if (prop === "$getAll" || prop === "$setAll" || prop === "$resolve" || prop === "$postUpdate") {
-        return createChrootDollarApi(record, prop, withHostContext);
+        return createChrootDollarApi(record, prop, call, rowIndexes, resolve);
       }
       // パスだけを取る読みの API（`$eq` / `$eqPath` / `$eqIndex` / `$dependOn`）は共有の表で包む
       const pathApi = createDollarPathApiWrapper(
         prop,
-        (path) => translateInnerPath(record, path),
-        (args) => {
-          let out: unknown;
-          parent.createState("readonly", (state) => {
-            out = withHostContext(state as IStateProxy, () =>
-              ((state as Record<string, unknown>)[prop] as (...a: unknown[]) => unknown)(...args));
-          });
-          return out;
-        },
+        (path) => resolve(path, translateInnerPath(record, path)),
+        (args) => call("readonly", (state) => state[prop](...args)),
       );
       if (pathApi !== null) {
         return pathApi;
       }
-      let value: unknown;
-      parent.createState("readonly", (state) => {
-        value = withHostContext(state as IStateProxy, () =>
-          (state as Record<string, unknown>)[prop[0] === "$" ? prop : translateInnerPath(record, prop)]);
-      });
-      return value;
+      const at = (state: any): any => state[prop[0] === "$" ? prop : resolve(prop, translateInnerPath(record, prop))];
+      // 値は読み取り専用で読む。メソッド（関数）は呼ばれたときに書き込み可能なセッションと
+      // ホストのループ文脈の中で取り出し直して呼ぶ — イベントから呼んだのと同じ文脈（#331）。
+      // 読み取り専用のまま束ねて返すと、私有キーの書き込みは描き直されず、ツリーのキーの
+      // 書き込みは readonly で投げる。戻り値（同期の値・Promise）はそのまま返す
+      const value = call("readonly", at);
+      // 包むのは作者のメソッドだけ（isPrivateAnchor と同じ判定 — getter を評価しないよう getterKeys が先）。
+      // 関数を値として持つキー（コールバック・クラス）は、その値をそのまま返す（同一性・プロパティを保つ）
+      return prop[0] !== "$" && !record.getterKeys.has(prop) && typeof record.stateObject[prop] === "function"
+        ? function (this: unknown, ...args: unknown[]): unknown {
+          return call("writable", (state) => at(state).apply(this, args));
+        }
+        : value;
     },
     set(_target, prop, value): boolean {
-      if (typeof prop !== "string") {
-        return true;
-      }
-      parent.createState("writable", (state) => {
-        withHostContext(state as IStateProxy, () => {
-          (state as Record<string, unknown>)[prop[0] === "$" ? prop : translateInnerWritePath(record, prop)] = value;
+      if (typeof prop === "string") {
+        call("writable", (state) => {
+          state[prop[0] === "$" ? prop : resolve(prop, translateInnerWritePath(record, prop))] = value;
         });
-      });
+      }
       return true;
     },
     has(_target, prop): boolean {
@@ -384,4 +592,5 @@ export function createPublicMountState(record: IMountRecord): Record<string, any
       }
     },
   });
+  return chroot;
 }

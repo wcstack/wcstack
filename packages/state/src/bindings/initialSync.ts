@@ -1,8 +1,11 @@
+import { getRootNodeByFragment } from "../apply/rootNodeByFragment";
 import { getStateAddressByBindingInfo } from "../binding/getStateAddressByBindingInfo";
+import { IStateElement } from "../components/types";
 import { config } from "../config";
 import { ATTR_NAMESPACE, CLASS_NAMESPACE, COMMAND_NAMESPACE, MODIFIER_KEY_INIT, MODIFIER_KEY_SYNC, STYLE_NAMESPACE } from "../define";
 import { getLoopContextByNode } from "../list/loopContextByNode";
-import { hasByAddressSymbol, setLoopContextSymbol } from "../proxy/symbols";
+import { hasByAddressSymbol } from "../proxy/symbols";
+import { commitElementValue } from "../proxy/occurrenceWrite";
 import { readBindableDeclaration } from "../protocol/wcBindableReader";
 import { raiseError } from "../raiseError";
 import { getStateElement } from "../stateElementByName";
@@ -151,9 +154,24 @@ export function resolveInitialSyncPolicy(binding: IBindingInfo): IInitialSyncPol
   return { authority, syncOn, observable: hasOutput, outputOnly: hasOutput && !hasInput };
 }
 
+/**
+ * 初期同期が読み書きする state 要素を引く。`for:` の行は文書へ挿入する前のバッチ
+ * fragment の上で活性化される（`apply/applyChangeToFor.ts`）ので、その間の
+ * `getRootNode()` は fragment 自身を返す。fragment → 実ルートの台帳
+ * （`setRootNodeByFragment`）で引き直す — `applyChange` と同じ手順。
+ * 引き直さないと、クラス定義済みの要素を `for:` の行に置いたとき初期同期が投げ、
+ * 一覧の反映ごと失敗していた（#319）。
+ */
+function getSyncStateElement(node: Node): IStateElement | null {
+  let rootNode: Node | null = node.getRootNode();
+  if (rootNode instanceof DocumentFragment && !(rootNode instanceof ShadowRoot)) {
+    rootNode = getRootNodeByFragment(rootNode);
+  }
+  return rootNode === null ? null : getStateElement(rootNode);
+}
+
 export function isBindingStateInitialized(binding: IBindingInfo): boolean {
-  const rootNode = binding.replaceNode.getRootNode() as Node;
-  const stateElement = getStateElement(rootNode);
+  const stateElement = getSyncStateElement(binding.replaceNode);
   if (stateElement === null) {
     raiseError(`No state tree found on this root for binding.`);
   }
@@ -178,15 +196,10 @@ export function commitProducerValue(binding: IBindingInfo, value: unknown): void
   for (const filter of binding.inFilters) {
     filteredValue = filter.filterFn(filteredValue);
   }
-  const rootNode = binding.node.getRootNode() as Node;
-  const stateElement = getStateElement(rootNode);
+  const stateElement = getSyncStateElement(binding.node);
   if (stateElement === null) {
     raiseError(`No state tree found on this root for initial binding sync.`);
   }
-  const loopContext = getLoopContextByNode(binding.node);
-  stateElement.createState("writable", (state) => {
-    state[setLoopContextSymbol](loopContext, () => {
-      state[binding.statePathName] = filteredValue;
-    });
-  });
+  // 要素から来た書き込み: 行そのものへ書いても入れ替えにしない（proxy/occurrenceWrite.ts・#337）
+  commitElementValue(stateElement, getLoopContextByNode(binding.node), binding.statePathName, filteredValue);
 }

@@ -18,6 +18,9 @@ describe('ルートの範囲と @wcstack/state 3.x（packages/state/dist）', ()
   it('範囲を持ち運ぶ宣言（binder の第 2 引数）は 3.x では無視され、遷移で入ったルートの直下のテンプレートは従来どおり描かれない（ほかの内容と遷移は壊れない）', async () => {
     const { seen, errors } = await enterByNavigation('/q', ['/p/a', '/p/b', '/q', '/p/a'], { items: ['x', 'y'], on: true });
     expect(seen).toEqual(['Q', 'P,A', 'P,B', 'Q', 'P,A']);
+    // 3.x reports each one it does not render: /p's if: and else: on both entries to /p (4) and
+    // /p/a's for: on both entries to /p/a (2). /p/b has none. (main: the same 6)
+    expect(errors).toHaveLength(6);
     expect(errors.every((e) => e.includes('failed to apply'))).toBe(true);
   });
 });

@@ -43,7 +43,7 @@
 <body>
 
 <h1>wcstack: infinite scroll <small>— &lt;wcs-intersect&gt;</small></h1>
-<p class="lead">state + intersection + <code>$stream</code> + <code>$watch</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry, and a headless <code>$watch</code> folds the landed pages into a feed that outlives every page run.</p>
+<p class="lead">state + intersection + <code>$stream</code> + <code>$watch</code> — a <code>&lt;wcs-intersect&gt;</code> sentinel selects the next page, a dependency-driven stream fetches it with switchMap-style cancellation and bounded retry, and a <code>$watch</code> folds the landed pages into a feed that outlives every page run.</p>
 
 <!-- ============================================================
      App State
@@ -88,7 +88,7 @@
             throw new Error(`Page ${page} failed with HTTP ${response.status}`);
           }
           const items = await response.json();
-          // pageSize rides on the chunk so the fold into the feed reads nothing but
+          // pageSize rides on the chunk so the feed's fold stays a pure function of
           // (feed, chunk): a partial page is the end-of-list signal.
           yield { kind: "success", attempt, page, pageSize, items };
           return;
@@ -116,12 +116,12 @@
       // `page` is the requested page. It changes only after the previous page has
       // landed, because sentinelChanged derives it from feed.items.length. Keep it a
       // plain property written by $on: a getter derived from `feed` and read by the
-      // stream's args would restart the stream on its own result, without the
-      // sentinel.
+      // stream's args would restart the stream on its own result, loading every page
+      // without the sentinel.
       page: 1,
       // The feed outlives every page run. $stream resets `pageResult` to its initial
-      // value on each restart, so the accumulation across runs lives here, folded by
-      // the pageResult watch below. Nothing has to be bound for it to run.
+      // value on each restart, so the accumulation across runs lives here, written by
+      // the `pageResult` watch below. Nothing has to be bound for it to grow.
       feed: { items: [], pages: [], noMore: false },
       maxRetries: 3,
       // The Retry button increments this dependency to restart a failed page without
@@ -224,14 +224,15 @@
       },
 
       $watch: {
-        // Fold each landing of the page run into the feed. Progress chunks (loading /
-        // retrying) and the restart's reset leave the feed as is.
+        // Fold each landing of the stream into the feed. Every chunk is a new object and
+        // lands in its own batch, so the watch fires on every landing; the restart's
+        // reset (undefined) and the progress chunks (loading / retrying) leave the feed
+        // as is.
         pageResult(chunk) {
           if (chunk?.kind !== "success") return;
           const feed = this.feed;
-          // Page key. The watch runs once per landing, not once per page: a Retry
-          // after the page is done (retryNonce) or reconnecting the page runs the
-          // current page again, and that landing must not append it twice.
+          // Page key. A Retry after the page is done (retryNonce) or reconnecting the
+          // page runs the current page again, and that landing must not append it twice.
           if (feed.pages.includes(chunk.page)) return;
           this.feed = {
             items: feed.items.concat(chunk.items),
@@ -241,16 +242,16 @@
         },
         // Record when an error settles: the scroll-retry qualification compares the
         // viewport against this moment. A point-in-time read of an out-of-band value
-        // is a side effect, so it stays in its own watch rather than in the fold.
+        // is a side effect, so it stays in a watch.
         streamStatus(status) {
           if (status !== "error") return;
           this.scrollRetryArmed = false;
           this.errorScrollY = window.scrollY;
         },
-        // Re-arm the sentinel after a full page lands. The pageResult watch writes the
-        // feed in one update batch and this watch fires at the end of the next one, so
-        // commit-before-reobserve is the mechanism order, not statement order inside
-        // one handler. A partial page sets noMore and stops.
+        // Re-arm the sentinel after a full page lands. The feed write above goes out in
+        // its own update batch and this watch fires at the end of it, after the new rows
+        // are rendered, so commit-before-reobserve is the mechanism order, not statement
+        // order inside one handler. A partial page sets noMore and stops.
         feed(feed) {
           if (feed.noMore) return;
           this.$command.rearm.emit();
@@ -263,8 +264,8 @@
 <!-- ============================================================
      Feed
      ============================================================ -->
-<!-- Display only. The feed accumulates in the pageResult watch whether or not
-     anything here is rendered: deleting this meter changes nothing about loading. -->
+<!-- Display only. The feed accumulates in the pageResult watch whether or not anything
+     here is rendered: deleting this meter changes nothing about loading. -->
 <div class="meter" role="status">
   <span>Loaded <b data-wcs="textContent: loadedCount"></b> items</span>
   <span>over <b data-wcs="textContent: page"></b> pages</span>

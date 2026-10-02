@@ -3,7 +3,7 @@ import { getListIndex } from '../src/proxy/methods/getListIndex';
 import { getPathInfo } from '../src/address/PathInfo';
 import { createListIndex } from '../src/list/createListIndex';
 import { createListDiff } from '../src/list/createListDiff';
-import { setListIndexesByList } from '../src/list/listIndexesByList';
+import { getListIndexesByList, setListIndexesByList } from '../src/list/listIndexesByList';
 
 const createListIndexes = (
   parentListIndex,
@@ -24,7 +24,8 @@ import { getByAddress } from '../src/proxy/methods/getByAddress';
 import { getContextListIndex } from '../src/proxy/methods/getContextListIndex';
 
 function createHandler() {
-  return { lastAddressStack: null } as any;
+  // stateElement は台帳の無いリストの差分基準（state 側の基準）を引くときに使う
+  return { lastAddressStack: null, stateElement: {} } as any;
 }
 
 describe('getListIndex', () => {
@@ -101,7 +102,40 @@ describe('getListIndex', () => {
     setListIndexesByList(orders, null);
   });
 
-  it('allでListIndexが見つからない場合はエラーになること', () => {
+  it('allで台帳の無いリストは、その場で台帳を生やして辿れること（#324）', () => {
+    const users = [{ orders: ['a', 'b'] }];
+    const orders = users[0].orders;
+    expect(getListIndexesByList(users)).toBeNull();
+    expect(getListIndexesByList(orders)).toBeNull();
+
+    vi.mocked(getByAddress).mockImplementation((_target, address) => {
+      if (address.pathInfo.path === 'users') {
+        return users;
+      }
+      if (address.pathInfo.path === 'users.*.orders') {
+        return orders;
+      }
+      return null;
+    });
+
+    const resolvedAddress = {
+      pathInfo: getPathInfo('users.*.orders.*.id'),
+      wildcardType: 'all',
+      wildcardIndexes: [0, 1],
+    } as any;
+
+    const result = getListIndex({}, resolvedAddress, {}, createHandler());
+    const usersIndexes = getListIndexesByList(users)!;
+    const ordersIndexes = getListIndexesByList(orders)!;
+    expect(result).toBe(ordersIndexes[1]);
+    // 生やした行は、上の段で引いた行のもとにある
+    expect(ordersIndexes[1].parentListIndex).toBe(usersIndexes[0]);
+
+    setListIndexesByList(users, null);
+    setListIndexesByList(orders, null);
+  });
+
+  it('allで下の段がリストでない場合は、その段の index 付きのエラーになること', () => {
     const users = [{ orders: ['a'] }];
 
     vi.mocked(getByAddress).mockImplementation((_target, address) => {
@@ -117,7 +151,11 @@ describe('getListIndex', () => {
       wildcardIndexes: [0, 0],
     } as any;
 
-    expect(() => getListIndex({}, resolvedAddress, {}, createHandler())).toThrow(/ListIndex not found/);
+    // #324 以前は users に台帳が無いこと自体を "ListIndex not found: users" で投げていた
+    expect(() => getListIndex({}, resolvedAddress, {}, createHandler()))
+      .toThrow("ListIndex not found at index 0 of users.*.orders");
+
+    setListIndexesByList(users, null);
   });
 
   it('allでwildcardIndexがnullならエラーになること', () => {

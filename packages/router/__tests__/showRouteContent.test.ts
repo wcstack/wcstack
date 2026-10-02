@@ -27,6 +27,7 @@ function createMockRoute(overrides: Partial<IRoute> = {}): IRoute {
     placeHolder: placeholder,
     endMarker: document.createComment('@@wcs-route-end:mock'),
     held: null,
+    routeChildNodes: [],
     guardCheck: vi.fn().mockResolvedValue(undefined),
     shouldChange: vi.fn().mockReturnValue(false),
     ...overrides,
@@ -540,5 +541,54 @@ describe('showRouteContent — binder への受け渡し', () => {
     expect(handed).toEqual([]);
     router.remove();
     container.remove();
+  });
+
+  // 読み込み待ちの <wcs-layout> の中のルート: placeholder が文書の外にあり、内容も文書に入らない。
+  // binder（3.x）は切り離されたまま束ね、イベントの束縛が disconnected として失敗していた。
+  // 置かれた後で <wcs-layout-outlet> が渡す（layoutOutlet.state3x.test.ts）
+  function detachedRoute(): { route: IRoute; content: Element; router: Router } {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const layout = document.createElement('div'); // 文書に無い（<wcs-layout> に当たる）
+    const placeholder = document.createComment('@@route:in-layout');
+    layout.appendChild(placeholder);
+    const content = document.createElement('section');
+    content.innerHTML = '<span data-wcs="textContent: x"></span>';
+    const route = createMockRoute({ placeHolder: placeholder, childNodeArray: [content] });
+    return { route, content, router };
+  }
+
+  it('binder が居ても、文書に無いルートの内容は渡さず、保留キューにも溜めないこと', async () => {
+    const handed: Node[] = [];
+    globals[BINDER_KEY] = {
+      protocol: 'wcs-binder',
+      version: 1,
+      bind: (subtree: Node) => { handed.push(subtree); },
+    };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { route, content, router } = detachedRoute();
+
+    await showRouteContent(router, createMatchResult([route]), [createMockRoute()]);
+
+    expect(content.isConnected).toBe(false);
+    expect(handed).toEqual([]);
+    expect((globals[Symbol.for('wcstack.binder.pending')] as Node[] | undefined) ?? []).toEqual([]);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+    router.remove();
+  });
+
+  it('binder が居なければ、文書に無いルートの内容も保留キューに溜めずに警告すること', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { route, content, router } = detachedRoute();
+
+    await showRouteContent(router, createMatchResult([route]), [createMockRoute()]);
+
+    expect(content.isConnected).toBe(false);
+    expect((globals[Symbol.for('wcstack.binder.pending')] as Node[] | undefined) ?? []).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toMatch(/<section> inside a route contains data-wcs bindings/);
+    warnSpy.mockRestore();
+    router.remove();
   });
 });

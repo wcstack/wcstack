@@ -15,6 +15,7 @@ import {
   resolvePathExistence,
 } from "../src/diagnostics/pathChecks";
 import { missingRootPathMessage } from "../src/pathDiagnostics";
+import { defineIndexPathAccessor, isIndexPath } from "../src/address/indexPathAccessor";
 import { setDevtoolsSink } from "../src/platform/devtoolsSink";
 import type { IStateElement } from "../src/components/types";
 import type { DevtoolsEvent } from "../src/devtools/types";
@@ -134,6 +135,53 @@ describe("resolvePathExistence", () => {
   });
 });
 
+describe("resolvePathExistence — 数値添字の束縛が生やした暗黙の getter を途中に含むパス（#388）", () => {
+  /** State.defineTreeAccessor の代わりに、state へそのまま生やす（`for: groups.0.items` を描いた後の形） */
+  function withIndexPathAccessor<T extends object>(state: T, path: string): T {
+    const defineTreeAccessor = (key: string, descriptor: PropertyDescriptor): void => {
+      Object.defineProperty(state, key, descriptor);
+    };
+    defineIndexPathAccessor({ defineTreeAccessor } as unknown as IStateElement, path);
+    return state;
+  }
+  function withGetter<T extends object>(state: T, path: string): T {
+    Object.defineProperty(state, path, { get: () => [], enumerable: true, configurable: true });
+    return state;
+  }
+
+  it("暗黙の getter は宣言とみなさず、その先の行を辿って打ち間違いを missing にすること", () => {
+    const state = withIndexPathAccessor({ groups: [{ items: [{ name: "a" }] }] }, "groups.0.items");
+    // 修正前（#332 の後）: unknown（途中のプレフィックスの getter として、戻り値の形は評価しないと分からないに倒した）
+    expect(resolvePathExistence(state, "groups.0.items.*.nmae", ["groups.0.items"])).toEqual({
+      existence: "missing", missingSegment: "nmae", candidates: ["name"],
+    });
+    expect(resolvePathExistence(state, "groups.0.items.*.name", ["groups.0.items"]).existence).toBe("exists");
+  });
+
+  it("行 getter（groups.*.items.*.double）は素のパスの行（groups.0.items.*.double）を解決しないので missing のままにすること", () => {
+    const state = withIndexPathAccessor(withGetter({ groups: [{ items: [{ n: 1 }] }] }, "groups.*.items.*.double"), "groups.0.items");
+    const result = resolvePathExistence(state, "groups.0.items.*.double", ["groups.*.items.*.double", "groups.0.items"]);
+    expect([result.existence, result.missingSegment]).toEqual(["missing", "double"]);
+  });
+
+  it("数値のキーを持つオブジェクト（sales.2024.items）の暗黙の getter も、その先を辿ること", () => {
+    const state = withIndexPathAccessor({ sales: { "2024": { items: [{ name: "a" }] } } }, "sales.2024.items");
+    const result = resolvePathExistence(state, "sales.2024.items.*.nmae", ["sales.2024.items"]);
+    expect([result.existence, result.missingSegment]).toEqual(["missing", "nmae"]);
+  });
+
+  it("暗黙の getter が読む行のパス（items.*.sub）が宣言されていれば、作者の getter と同じく unknown にすること", () => {
+    // `for: items.0.sub` の行は行 getter `items.*.sub` の戻り値。素のデータの行には `sub` が無い
+    const state = withIndexPathAccessor(withGetter({ items: [{ v: 1 }] }, "items.*.sub"), "items.0.sub");
+    expect(resolvePathExistence(state, "items.0.sub.*.x", ["items.*.sub", "items.0.sub"]).existence).toBe("unknown");
+  });
+
+  it("作者が同名の getter（groups.0.items）を宣言していれば、これまでどおり unknown にすること", () => {
+    const state = withGetter({ groups: [{ items: [{ name: "a" }] }] }, "groups.0.items");
+    expect(resolvePathExistence(state, "groups.0.items.*.nmae", ["groups.0.items"]).existence).toBe("unknown");
+  });
+});
+
 describe("checkDeclaredPath", () => {
   let warn: ReturnType<typeof vi.spyOn>;
 
@@ -204,6 +252,75 @@ describe("checkDeclaredPath", () => {
     expect(message).toContain("[wcs/watch-path-missing]");
     expect(message).toContain('$watch path "cout"');
     expect(message).toContain('Did you mean "count"?');
+  });
+
+  describe("数値添字のパス（#332 — 束縛はいまその位置にある行を読む）", () => {
+    function rowGetterState(): object {
+      const state = { items: [{ v: 1 }] };
+      Object.defineProperty(state, "items.*.double", { get: () => 0, enumerable: true, configurable: true });
+      return state;
+    }
+    /** State.setPathInfo と同じく、暗黙の getter を生やすかの判定（isIndexPath）を検査へ渡す */
+    function checkBinding(element: IStateElement, state: object, path: string): void {
+      checkDeclaredPath(element, state, path, "binding", isIndexPath(state, path));
+    }
+
+    it("行 getter（items.*.double）を数値添字で束縛しても報告しないこと", () => {
+      const element = createStateElement({ getterPaths: new Set(["items.*.double"]) });
+      checkBinding(element, rowGetterState(), "items.0.double");
+      flushDeferredPathReports(element);
+      // 修正前: `"double" is not declared` の wcs/binding-path-missing
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("行に無いキーの打ち間違いは、書いた綴りのまま報告すること", () => {
+      const element = createStateElement({ getterPaths: new Set(["items.*.double"]) });
+      checkBinding(element, rowGetterState(), "items.0.dubble");
+      flushDeferredPathReports(element);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const message = warn.mock.calls[0][0] as string;
+      expect(message).toContain('Bound path "items.0.dubble"');
+      expect(message).toContain('"dubble" is not declared');
+      expect(message).toContain('Did you mean "double"?');
+    });
+
+    it("空のリスト・まだ行の無い位置の添字は判定不能として報告しないこと", () => {
+      const element = createStateElement();
+      checkBinding(element, { users: [] }, "users.0.name");
+      checkBinding(element, { items: [{ v: 1 }] }, "items.5.v");
+      flushDeferredPathReports(element);
+      // 修正前: `"0" is not declared` / `"5" is not declared`（行が入れば解決するパスへの偽陽性）
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      // 数値のキーを持つオブジェクト（親が配列でない）は素のキーのまま検査する
+      ["sales.2024.totl", { sales: { "2024": { total: 5 } } }, "totl"],
+      ["sales.2025.total", { sales: { "2024": { total: 5 } } }, "2025"],
+      // 負の添字は行になりえない
+      ["items.-1.v", { items: [{ v: 1 }] }, "-1"],
+      // 数値の区切りが 2 つ以上のパスは行を読まない（素のパスのまま）ので、修正前の検査のまま
+      ["grid.5.0", { grid: [[1]] }, "5"],
+    ])("行として読まない数値の区切り（%s）は、修正前と同じく報告すること", (path, state, missingSegment) => {
+      const element = createStateElement();
+      checkBinding(element, state, path);
+      flushDeferredPathReports(element);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain(`"${missingSegment}" is not declared`);
+    });
+
+    it("数値の区切りが 2 つ以上のパス・拡張できない state では、行 getter を宣言済みに数えないこと（束縛は素のパスを読んで空になる）", () => {
+      const state = { groups: [{ items: [{ v: 1 }] }] };
+      Object.defineProperty(state, "groups.*.items.*.double", { get: () => 0, enumerable: true, configurable: true });
+      const element = createStateElement({ getterPaths: new Set(["groups.*.items.*.double", "items.*.double"]) });
+      checkBinding(element, state, "groups.0.items.0.double");
+      checkBinding(element, Object.freeze(rowGetterState()), "items.0.double");
+      flushDeferredPathReports(element);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn.mock.calls[0][0]).toContain('Bound path "groups.0.items.0.double"');
+      expect(warn.mock.calls[1][0]).toContain('Bound path "items.0.double"');
+      expect(warn.mock.calls[1][0]).toContain('"double" is not declared');
+    });
   });
 
   it("報告を devtools sink にも流すこと", () => {

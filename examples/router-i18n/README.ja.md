@@ -113,19 +113,17 @@ state "i18n": "subtotal" is not declared. … npx @wcstack/lint <file>
 
 ### 5. 構造レンダリングは router の外に置く
 
-`<wcs-route>` の**直下**に置いた `<template data-wcs="for: …">` が動くのは、この版の
-router と @wcstack/state 4.0 の組み合わせだけである。router が state の binder に
-「ルートの範囲を持ち運ぶ」と宣言するので、着地のルートでも遷移で入ったルートでも
-描画され、描いた行はルートと一緒に出入りする。それ以外では経路による。router が内容を
-渡すとき（遷移でルートをスタンプしたとき、state が読み込みを終えた後にそのルートへ
-着地したとき）は描画されない。4.0 は、宣言の無い呼び出しでは `[wcs/template-syntax]`
-#204 として拒み（この router より古い router や `<wcs-head>` は、直下のテンプレートが
-描く行〔その隣に並ぶ〕に手が届かない）、3.x は束縛の適用の失敗として報告する。router が
-state の読み込みより前に着地のルートを挿入していれば、state の最初の走査が描画する。
-どの版でも動かすには、要素で包むこと。包めば
-（`<ul><template data-wcs="for: …">…</template></ul>`）ルートのスタンプ時に描画され、
-ルート内の素のバインドも**動く**（About ページはその場で翻訳されている）ので、この
-境界は踏み抜きやすい。
+ルートの内容は router がスタンプしたときに束ねられる（binder プロトコル）ので、
+ルート内の素のバインドは動き（About ページはその場で翻訳されている）、ルート本文の
+要素の中に置いた `<template data-wcs="for: …">`
+（`<ul><template data-wcs="for: …">…</template></ul>`）も、@wcstack/state のどの版でも
+描画される。`<wcs-route>` の**直下**に置いたものは版による。@wcstack/state 3.x が
+描画するのは着地のルートだけで、ページの最初の走査ですでにスタンプされていたときにだけ
+描き、ナビゲーションで router から渡されたときは束縛の適用の失敗として報告する。
+@wcstack/state 4.0 は、この router が binder に「ルートの範囲を持ち運ぶ」と宣言するので、
+着地のルートでも遷移で入ったルートでも描画する（宣言が無ければ `[wcs/template-syntax]`
+#204 として拒む）。詳しくは router の README
+（[ルートの本文はどこに置くか](../../packages/router/README.ja.md#ルートの本文はどこに置くか)）にある。
 
 この例では、それでもリストを router の外に置いている。router は `path` を publish し、
 state はその外側の `<template data-wcs="if: isList">` からリストを描画する。
