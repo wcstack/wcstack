@@ -255,7 +255,7 @@ describe("#324 for で描いていないリストの行を添字のパスで読�
   describe("行が無い添字（描いていないリストでも）", () => {
     // 3.x は読みも書きも `ListIndex not found at index <i> of <list>` で投げる。4.0 は書き込みを `no row for "<行のパス>"`
     // で拒み（データは変わらない）、読みは行が無いので undefined を返す（state-next の設計: coverage-engine.test.ts の
-    // 「範囲外の添字も行が無いので undefined」。docs/migration-v4.md には書かれていない）
+    // 「範囲外の添字も行が無いので undefined」。docs/migration-v4.md §3.4 Smaller differences）
     it("範囲外の添字: 書き込み（直接・$resolve）は no row で投げてデータを変えず、読みは undefined", async () => {
       const { el, get } = await page("", { items: [{ v: 1 }, { v: 2 }] });
       const direct = thrown(() => el.createState("writable", (s: any) => { s["items.5.v"] = 1; }));
@@ -417,16 +417,34 @@ describe("#332 マークアップの数値添字のパス（items.0.v）は、�
     expect(c.all()).toEqual([]);
   });
 
-  // 3.x #332 の修正の形が 4.0 で再現しない: 先頭が数値のパスを parsePath（src/pattern.ts）が `*.total` ＋ 添字 2024 に
-  // 読み替え、`*` の上にリストが無い（lists[1] が null）まま childList(null, null) を呼んで new StateList が投げる
-  // （実測: console.error `binding "text: 2024.total" failed to apply. TypeError: Cannot read properties of null
-  // (reading 'depth')`、表示は "" / 期待: "5"）
-  it.fails("先頭が数値のパス（ルートの数値キー {{ 2024.total }}）は行として扱わず、素のキーとして読む", async () => {
-    spyConsole("error");
-    const { root, write } = await page(`<i class="a">{{ 2024.total }}</i>`, { 2024: { total: 5 } });
+  // 3.x #332 の修正の形。以前の 4.0 は先頭が数値のパスを parsePath（src/pattern.ts）が `*.total` ＋ 添字 2024 に
+  // 読み替え、`*` の上にリストが無い（lists[1] が null）まま childList(null, null) を呼んで投げた（TypeError
+  // (reading 'depth')）。ルートはリストでないので、先頭の数値の区切りは素のキーとして読む
+  it("先頭が数値のパス（ルートの数値キー {{ 2024.total }}）は行として扱わず、素のキーとして読む", async () => {
+    const c = spyBoth();
+    const { root, write, read } = await page(`<i class="a">{{ 2024.total }}</i>`, { 2024: { total: 5 } });
     expect(text(root, ".a")).toBe("5");
+    expect(read("2024.total")).toBe(5);
     await write((s) => { s["2024"] = { total: 6 }; });
     expect(text(root, ".a")).toBe("6");
+    await write((s) => { s["2024.total"] = 7; });
+    expect(text(root, ".a")).toBe("7");
+    expect(c.all()).toEqual([]);
+  });
+
+  it("先頭が数値のキーの下の添字（{{ 2024.items.1.v }}）は、2 つ目からの数値の区切りを行として読み、書き込みに追従する", async () => {
+    const c = spyBoth();
+    const { root, write, read } = await page(
+      `<i class="a">{{ 2024.items.1.v }}</i><template data-wcs="for: 2024.items"><li>{{ .v }}</li></template>`,
+      { 2024: { items: [{ v: 1 }, { v: 2 }] } },
+    );
+    expect([text(root, ".a"), texts(root, "li")]).toEqual(["2", ["1", "2"]]);
+    await write((s) => { s["2024.items.1.v"] = 9; });
+    expect([text(root, ".a"), texts(root, "li")]).toEqual(["9", ["1", "9"]]);
+    await write((s) => { s["2024.items"] = [{ v: 5 }, ...s["2024.items"]]; });
+    expect([text(root, ".a"), texts(root, "li")]).toEqual(["1", ["5", "1", "9"]]);
+    expect(read("2024.items.0.v")).toBe(5);
+    expect(c.all()).toEqual([]);
   });
 
   it("数値の区切りが 2 つのパス（groups.0.items.1.v）もエラー無しで表示し、外側の並べ替えでいまの位置の値になる", async () => {
@@ -641,6 +659,24 @@ describe("#332 数値添字の束縛の存在の診断（いまその位置に�
     expect(w.length).toBe(1);
     expect(w[0]).toContain(`"${segment}" is not declared`);
   });
+
+  it("ルートの数値キーの下の for:（for: 2024.items）の行の打ち間違い（.list.0.nmae）も、数値でないキーの下と同じく報告する", async () => {
+    const warns = spyConsole("warn");
+    const rows = () => [{ list: [{ name: "a" }] }];
+    const { root } = await page(
+      `<template data-wcs="for: 2024.items"><i>{{ .list.0.name }}{{ .list.0.nmae }}</i></template>`
+      + `<template data-wcs="for: y.items"><b>{{ .list.0.nmae }}</b></template>`,
+      { 2024: { items: rows() }, y: { items: rows() } },
+    );
+    await flush();
+    expect(texts(root, "i")).toEqual(["a"]);
+    for (const path of ["2024.items.*.list.0.nmae", "y.items.*.list.0.nmae"]) {
+      const w = missingAbout(warns, path);
+      expect(w.length, path).toBe(1);
+      expect(w[0]).toContain(`"nmae" is not declared. Did you mean "name"?`);
+    }
+    expect(missingAll(warns).length).toBe(2);
+  });
 });
 
 describe("#388 数値添字のパスの for: の行の存在の診断（修正の形）", () => {
@@ -681,13 +717,10 @@ describe("#388 数値添字のパスの for: の行の存在の診断（修正�
     expect(missingAll(warns)).toEqual([]);
   });
 
-  // 3.x #388 の修正の形が 4.0 で再現しない: 作者が数値添字のパスの名前で宣言した getter（get "groups.0.items"()）を
-  // 診断が見ず、データの groups[0].items の行を辿って判定する（src/features/diagnostics.ts の missing() が
-  // wildcardForm() で groups.0.items を groups.*.items に読み替え、その pattern に getter が無いので先へ進む）。
-  // 描画は getter の戻り値（picked）を使うので、行の形がデータと違うと正しいパスを「宣言されていない」と誤報する
-  // （実測: `[wcs/binding-path-missing] Bound path "groups.0.items.*.title" … "title" is not declared.` / 期待: 警告無し。
-  // 3.x の回帰テストの {{ .nmae }} も 3.x は黙る（判定不能）が、4.0 はデータの行から "Did you mean "name"" を出す）
-  it.fails("作者が宣言した同名の getter（get \"groups.0.items\"()）の行は、getter の戻り値を描き、その行のパスを報告しない", async () => {
+  // 3.x #388 の修正の形。作者が数値添字のパスの名前で宣言した getter（get "groups.0.items"()）は、診断も
+  // その getter を読むパスとして扱い、判定不能として黙る（src/features/diagnostics.ts の wildcardForm()）。
+  // 以前は groups.*.items に読み替えてデータの groups[0].items の行を辿り、正しいパス（.title）を誤報した
+  it("作者が宣言した同名の getter（get \"groups.0.items\"()）の行は、getter の戻り値を描き、その行のパスを報告しない", async () => {
     const warns = spyConsole("warn");
     const { root } = await page(
       `<template data-wcs="for: groups.0.items"><i class="p">{{ .title }}</i></template>`,
@@ -841,17 +874,25 @@ describe("#366 $eq / $eqPath / $eqIndex の path に数値の添字を書いて�
   };
   const MOVED = ["Y|n|n", "Y|n|n", "Y|n|n|n", "Y|n|n", "Y|n"];
 
-  // 3.x #366 の修正の形が 4.0 で再現しない: 追跡付きの読みに落ちた $eqIndex（path が数値の添字・getter）は、
-  // getter を行の index に依存すると記録しない（src/engine.ts の api.$eqIndex のフォールバックの分岐 —
-  // `if (source.getter !== null || source.underGetter) return row.index === this.read(source, null);` — が、
-  // $1 の読み（engine.ts の dollar()）のように g.lists[level].indexWatchers へ getter を載せない）。
-  // 位置だけが変わった行が評価し直されず、前の答えのまま残る
-  // （実測: ["Y|n|n", "n|Y|n", "Y|n|Y|n", "n|Y|n", "Y|n"] / 期待: ["Y|n|n", "Y|n|n", "Y|n|n|n", "Y|n|n", "Y|n"]）
-  it.fails.each([
+  // 3.x #366 の修正の形。追跡付きの読みに落ちた $eqIndex（path が数値の添字・getter）は、$1 の読みと同じく
+  // getter を行の index に依存すると記録する（src/engine.ts の watchIndex）。以前は記録せず、位置だけが変わった行が
+  // 前の答えのまま残った（["Y|n|n", "n|Y|n", "Y|n|Y|n", "n|Y|n", "Y|n"]）
+  it.each([
     ["数値の添字の path（cur.0）", { cur: [0] }, "cur.0"],
     ["getter の path（curG）", { c: 0, get curG() { return (this as any).c; } }, "curG"],
   ] as [string, Record<string, any>, string][])("$eqIndex の答えが行の移動（並べ替え・先頭への挿入・削除）に追従する（%s）", async (_label, extra, path) => {
     expect(await eqIndexMoves(extra, path)).toEqual(MOVED);
+  });
+
+  it("getter の path の $eqIndex は、path の値の変化にも行の移動の後で追従する（curG）", async () => {
+    const { root, write } = await page(`<ul><template data-wcs="for: rows"><li class="r">{{ .on }}</li></template></ul>`, {
+      rows: ["a", "b", "c"], c: 0,
+      get curG() { return (this as any).c; },
+      get "rows.*.on"() { return (this as any).$eqIndex("curG") ? "Y" : "n"; },
+    });
+    await write((s) => { s.rows = ["c", "a", "b"]; });
+    await write((s) => { s.c = 2; });
+    expect(texts(root, ".r").join("|")).toBe("n|n|Y");
   });
 
   it("$eqIndex の答えが行の移動に追従する（対照: 普通の path（curIdx））", async () => {

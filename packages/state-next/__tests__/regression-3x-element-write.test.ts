@@ -1084,8 +1084,8 @@ describe("#362 元の配列をそのまま返す getter を for で描いても�
     const SHOWN = `<ul><template data-wcs="for: shown"><li class="s">{{ .title }}:{{ .done }}</li></template></ul>`;
     const TODOS = `<ol><template data-wcs="for: todos"><li class="o">{{ .title }}:{{ .done }}</li></template></ol>`;
 
-    // 3.x のテストは active の間に todos.2.done = true（写しにも載る要素への元のパスからの書き込み）も書く。
-    // その形は F26 の系統で 4.0 では描かれないので、下の it.fails に分けた。ここでは同じ手順からその 1 つを抜く
+    // 3.x のテストと同じく、active の間に todos.2.done = true（写しにも載る要素への元のパスからの書き込み）も書く。
+    // 写しの行はその間は古いまま（F26 の系統）だが、all に戻ると描き直す（下の #362 の 2 つの形）
     it.each<[string, boolean, string]>([
       ["for: shown だけ", false, SHOWN],
       ["for: shown ＋ $getAll の集計", true, `${SHOWN}<b class="l">{{ left }}</b>`],
@@ -1106,9 +1106,11 @@ describe("#362 元の配列をそのまま返す getter を for で描いても�
         expect(shown()).toBe("t0:false,t2:false");
         await write((s) => { s["shown.0.title"] = "Z"; });
         expect(titles()).toBe("Z:false,X:true,t2:false,Y:true");
+        await write((s) => { s["todos.2.done"] = true; });
+        expect(titles()).toBe("Z:false,X:true,t2:true,Y:true");
 
         await write((s) => { s.filter = "all"; });
-        expect(shown()).toBe("Z:false,X:true,t2:false,Y:true");
+        expect(shown()).toBe("Z:false,X:true,t2:true,Y:true");
         expect(get((s) => [0, 1, 2, 3].map((i) => s[`todos.${i}.title`]))).toEqual(["Z", "X", "t2", "Y"]);
         await write((s) => { s["todos.1.done"] = false; });
         await write((s) => { s["todos.2.done"] = true; });
@@ -1123,11 +1125,11 @@ describe("#362 元の配列をそのまま返す getter を for で描いても�
       expect(errors).toEqual([]);
     });
 
-    // 3.x #362 の修正の形が 4.0 で再現しない: getter が写し（active）を返している間に、写しにも載る要素へ元のパスから
-    // 書く（todos.2.done = true）と、写しの行は古いまま（F26 の系統 — migration-v4 §5「One object reachable from two
-    // rows」）。4.0 では、getter が元の配列に戻って行を同じオブジェクトのまま引き継いでも描き直されない
-    // （実測 "t0:false,t1:true,t2:false,t3:true" / 期待 "t0:false,t1:true,t2:true,t3:true"。状態は t2:true）
-    it.fails("getter が写しを返している間に元のパスで写しの要素に書いても、getter が元の配列に戻ると行が新しい値を描く", async () => {
+    // 3.x #362 の修正の形。getter が写し（active）を返している間に、写しにも載る要素へ元のパスから書く
+    // （todos.2.done = true）と、写しの行は古いまま（F26 の系統 — migration-v4 §5「One object reachable from two
+    // rows」。そのままの制限）。getter が元の配列に戻ると、その配列を前から持っていた一覧（todos）に合流するので、
+    // 引き継いだ行を書かれたものとして描き直す（engine.ts sync()）。以前は "t0:false,t1:true,t2:false,t3:true" のままだった
+    it("getter が写しを返している間に元のパスで写しの要素に書いても、getter が元の配列に戻ると行が新しい値を描く", async () => {
       const { root, get, write } = await page(SHOWN, mkTodos(false));
       await write((s) => { s.filter = "active"; });
       await write((s) => { s["todos.2.done"] = true; });
@@ -1158,10 +1160,10 @@ describe("#362 元の配列をそのまま返す getter を for で描いても�
       expect(errors).toEqual([]);
     });
 
-    // 3.x #362 の修正の形が 4.0 で再現しない: 同じオブジェクトが 2 本の配列（a と、getter が返している b）に載る間に、
-    // a のパスで書くと、b の行は古いまま（F26 の系統 — migration-v4 §5）。getter が a に戻って行を同じオブジェクトの
-    // まま引き継いでも描き直されない（実測 "a0,a1" / 期待 "a0,A1"。状態は A1）
-    it.fails("getter が生きている 2 本の配列を切り替える: 返していない方の配列のパスで共有の要素に書いた後、戻すと新しい値を描く", async () => {
+    // 3.x #362 の修正の形。同じオブジェクトが 2 本の配列（a と、getter が返している b）に載る間に、a のパスで書くと、
+    // b の行は古いまま（F26 の系統 — migration-v4 §5。そのままの制限）。getter が a に戻ると、a の一覧に合流するので、
+    // 引き継いだ行を書かれたものとして描き直す。以前は "a0,a1" のままだった
+    it("getter が生きている 2 本の配列を切り替える: 返していない方の配列のパスで共有の要素に書いた後、戻すと新しい値を描く", async () => {
       const { root, write } = await page(`<ul><template data-wcs="for: current"><li class="c">{{ .n }}</li></template></ul>`, {
         tab: "a",
         a: [{ n: "a0" }, { n: "a1" }],
@@ -1173,6 +1175,41 @@ describe("#362 元の配列をそのまま返す getter を for で描いても�
       await write((s) => { s["a.1.n"] = "A1"; });
       await write((s) => { s.tab = "a"; });
       expect(rows(root, "c")).toBe("a0,A1");
+    });
+
+    it("元の配列に戻って描き直す行は、行 getter（shown.*.label）も評価し直し、描いた DOM（入力欄）は使い回す", async () => {
+      const state = mkTodos(false);
+      Object.defineProperty(state, "shown.*.label", {
+        get(this: any) { return `${this["shown.*.title"]}!`; }, enumerable: true, configurable: true,
+      });
+      const { root, write } = await page(`<ul><template data-wcs="for: shown"><li class="s">{{ .label }}<input class="i"></li></template></ul>`, state);
+      await write((s) => { s.filter = "active"; });
+      (root.querySelectorAll(".i")[1] as HTMLInputElement).value = "typed";
+      await write((s) => { s["todos.2.title"] = "Z"; });
+      expect(texts(root, ".s").join(",")).toBe("t0!,t2!");
+      await write((s) => { s.filter = "all"; });
+      expect(texts(root, ".s").join(",")).toBe("t0!,t1!,Z!,t3!");
+      expect((root.querySelectorAll(".i")[2] as HTMLInputElement).value).toBe("typed");
+    });
+
+    it("対照: いつも同じ配列を返す getter（for: shown）と for: todos は、配列の置き換えで引き継いだ行を描き直さない（一緒に配列を替えた一覧どうし）", async () => {
+      const { root, el, write } = await page(SHOWN + TODOS, {
+        filter: "all",
+        todos: [0, 1, 2].map((i) => ({ title: "t" + i, done: false })),
+        get shown() { const s = this as any; return s.filter === "all" ? s.todos : s.todos.slice(); },
+      });
+      // the rows of `shown` the engine shows again as if written (the engine's internal entry)
+      const changed = vi.spyOn(el.engine, "changed");
+      const rewritten = () => changed.mock.calls.filter(([p]) => (p as { path: string }).path === "shown.*").length;
+      await write((s) => { s.todos = [...s.todos, { title: "t3", done: false }]; });
+      expect(texts(root, ".s").join(",")).toBe("t0:false,t1:false,t2:false,t3:false");
+      expect(texts(root, ".o").join(",")).toBe("t0:false,t1:false,t2:false,t3:false");
+      expect(rewritten()).toBe(0);
+      // back from a copy to the array for: todos has had all along: the kept rows are shown again
+      await write((s) => { s.filter = "copy"; });
+      await write((s) => { s.filter = "all"; });
+      expect(rewritten()).toBe(4);
+      changed.mockRestore();
     });
 
     it("対照: 写しから写しへの切り替えは、残る要素の行（描いた DOM）を使い回す", async () => {

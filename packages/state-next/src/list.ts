@@ -40,6 +40,8 @@ export class StateList {
   readonly depth: number;
   /** The array the rows were last reconciled against. */
   arr: unknown[] | null = null;
+  /** The array before that (lists that change arrays together saw the same writes). */
+  was: unknown[] | null = null;
   rows: StateRow[] = [];
   /** The first for view that renders this list, if any (its row views are on row.view). */
   view: ForView | null = null;

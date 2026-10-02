@@ -44,12 +44,13 @@
 - [ ] 行の並べ替えは、要素への書き込みではなく、新しい配列の代入で行う（§3.4）。
 - [ ] 行や枝の要素を `[data-wcs]` で選ぶ CSS やテストのセレクタを置き換える（§3.4）。
 - [ ] `for:` / `if:` のテンプレートの中の `outerHTML:` / `outerText:` を、包む要素の `innerHTML:` に置き換える（§3.4）。
+- [ ] `for:` のフィルタを、フィルタを通したリストを返す getter に置き換える（§3.4）。
 - [ ] ボリュームの `$watch` / `$listKeys` / `$renderedCallback` を、ルートの状態へ移す（§3.5）。
 - [ ] ボリュームへの注入を、ルートの状態の getter に置き換える（§3.5）。
 - [ ] `listPaths` / `getterPaths` / `setterPaths` / `nextVersion()` を使っている箇所を置き換える（§3.7）。
 - [ ] `/core` のページ: `$listKeys` を使うなら `features/list-keys` を入れる（§3.8）。
 - [ ] `/core` のページ: 開発中は `features/diagnostics` を入れる（§3.8）。
-- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、数値の添字を持つキーの `$watch`（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。
+- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、数値の添字を持つキーや、複数の行が持つ配列の `$watch`、リストの末尾より先の読み（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。
 - [ ] `@wcstack/lint` 4.0 を流し、報告を直す（§4）。
 
 > **コメントバインディングは残ります。** `<!--@@: path-->` と `<!--@@wcs-text: path-->` は 4.0 でも使えます。lint が、描画前の表示のちらつき（FOUC）を避けるために `<template>` の外の `{{ }}` の代わりに勧めている書き方で、4.0 は `enableMustache` を切っていてもバインドします。なくなるのは、キーワードを変える `commentTextPrefix` オプションだけです。詳しくは §3.4。
@@ -347,6 +348,22 @@ this.items = items;
 
 3.5 の lint は警告し、4.0 の lint は `wcs/template-syntax`（error）で報告します。
 
+#### `for:` のフィルタ
+
+`for:` は出力フィルタを受け付けません。`for: items|take(2)` は、どのフィルタでも（登録されていない名前でも）初期化を `[wcs/binding-syntax] #121` で失敗させます。3.x は、フィルタを通した配列の行を描いていました。`for: items` の行は `items.<添字>` なので、フィルタを通した配列の行は別の要素を指してしまい、行を通した書き込みが違う要素に着地します。フィルタを通したリストを返す getter を宣言し、それを回してください。
+
+```html
+<!-- 3.x -->
+<template data-wcs="for: items|take(2)">…</template>
+
+<!-- 4.0。get firstTwo() { return this.items.slice(0, 2); } を宣言して -->
+<template data-wcs="for: firstTwo">…</template>
+```
+
+この getter は写しを返すので、§5 の制限が当たります。元のパスからの書き込み（`this["items.1.n"] = 7`）は写しの行に届きません。行を通して書いてください（`firstTwo.1.n`、または行の中のバインディング）。
+
+探し方: `for:` のバインディングの `|` を探します。3.5 の lint は報告せず、4.0 の lint は `wcs/binding-syntax`（error）で報告します。
+
 #### 行の中の、別のリストの `*`
 
 `for:` の行の中のバインディングで、ある段の `*` が、その段を囲む `for:` とは別のリストの行を指すもの（`for: a` の中の `{{ b.*.y }}`）は、ページの初期化で `[wcs/wildcard-rank] #1403` で throw します。3.x は、そのバインディングごとに `ListIndex not found` で失敗させていました。別のリストの行は、getter の中で `$resolve(path, indexes)` を使って読んでください。3.5 の lint は警告し、4.0 の lint は `wcs/wildcard-rank`（warning）で報告します。
@@ -380,6 +397,8 @@ this.items = items;
 - `__proto__` か `prototype` を通るパスは `[wcs/binding-syntax] #120` で throw します。バインディング、書き込み、`$resolve`、`$setAll`、`this.__proto__` のような読みが対象です。
 - `state="id"` は、その id の `<script type="application/json">` だけを読みます。
 - 数値の添字を持つ `$watch` のキー（`"items.0.v"`）は、その添字の値が変わったときだけ発火します。3.x（3.4 以降）は、添字を通した書き込み、要素の差し替え、リストのどの行への書き込みでも発火し、値が変わっていないこともありました。
+- 複数の外側の行が同じ配列を持つとき、その要素への書き込みは、`$watch("groups.*.items.*")` を、配列を持つ外側の行ごとに 1 回ずつ、それぞれの添字で発火させます。その配列を持つどのパスでも値が変わったためです。3.x は、書いた位置で 1 回だけ発火させていました。
+- リストの末尾より先の添字: 書き込み（`this["items.5.v"] = 1`、`$resolve("items.*.v", [5], 1)`）は `no row for "items.*.v"` で throw して何も変えず、読みは `undefined` を返します。3.x は、どちらも `ListIndex not found` で throw していました。
 
 ### 3.5 ボリュームとマウントしたコンポーネント
 
@@ -527,7 +546,7 @@ export default {
 | `wcs/volume-declaration` | ボリュームの `$stream`・`$watch`・`$listKeys`・`$renderedCallback`（error）、`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback`（warning） | error / warning |
 | `wcs/template-syntax` | `for:` / `if:` の中の `outerHTML:` / `outerText:`（error）。イベント以外のバインディングの `#direct`（warning） | error / warning |
 | `wcs/wildcard-rank` | 行の中の別のリストの `*`（#1403）。どの `for` の外にもあるパターンのパス・省略パス・ループのインデックス | warning（実行時は throw） |
-| `wcs/binding-syntax` | パスの `__proto__` / `prototype` の段 | error |
+| `wcs/binding-syntax` | パスの `__proto__` / `prototype` の段、`for:` のフィルタ | error |
 | `wcs/index-param-range` | `for` の中の `$129` 以上。スクリプトの `this.$0`・`this.$129` | error |
 | `wcs/second-root` | 文書の 2 つ目のルートの `<wcs-state>`（3.x の実行時も拒否していたもの） | error |
 | `wcs/bind-component-source` | `state` / `src` / `json` やインラインのスクリプトを持つ `<wcs-state bind-component>`（3.x の実行時も拒否していたもの） | error |
@@ -548,6 +567,7 @@ lint に見えないもの: `bootstrapXxx()` のオプション、委譲され�
 | `a re-set state may not change $behavior: create the element again.` | #45 | 3.2 |
 | `[@wcstack/<package>] bootstrapXxx: "<key>" is not one of its options, or not of the option's type.` | — | 3.2 |
 | `[wcs/template-syntax] "outerHTML:" replaces its element, so it cannot be used inside a "for" / "if" template …` | #203 | 3.4 |
+| `[wcs/binding-syntax] "for: items\|take(2)": "for:" takes no filters …` | #121 | 3.4 |
 | `[wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".` | #1403 | 3.4 |
 | `[wcs/binding-syntax] "<path>": a state path cannot go through "__proto__" or "prototype" …` | #120 | 3.4 |
 | `<wcs-state mount="p">`: `$watch is not run in a volume — declare it on the root state.`（`console.error`） | — | 3.5 |
@@ -562,7 +582,7 @@ lint に見えないもの: `bootstrapXxx()` のオプション、委譲され�
 
 ## 5. プレビューの既知の制限 *（未確定）*
 
-- **1 つのオブジェクトが 2 つの行から届く。** 同じオブジェクトを 1 つのリストの 2 つの位置に置くと、片方の行の下への書き込み（`this["items.0.name"] = "z"`）は、もう片方の行のバインディングと行 getter に届きません。素の読み、ルートの getter、`$getAll` は新しい値を返します。1 つのオブジェクトが 2 つのリストから届く場合も同じです。TodoMVC 風の絞り込み（`todos` を絞り込んだ写しを返す `get shown()` を `for: shown` で描き、checkbox が行に書き込む形）が当たります。3.x にも同じ問題があります（#365）。4.0 の既知の制限として記録されており、範囲は見直し中です。
+- **1 つのオブジェクトが 2 つの行から届く。** 同じオブジェクトを 1 つのリストの 2 つの位置に置くと、片方の行の下への書き込み（`this["items.0.name"] = "z"`）は、もう片方の行のバインディングと行 getter に届きません。素の読み、ルートの getter、`$getAll` は新しい値を返します。1 つのオブジェクトが 2 つのリストから届く場合も同じです。TodoMVC 風の絞り込み（`todos` を絞り込んだ写しを返す `get shown()` を `for: shown` で描き、checkbox が行に書き込む形）が当たります。getter が `todos` そのものを返すのに戻ると、引き継いだ行は描き直されます。3.x にも同じ問題があります（#365）。4.0 の既知の制限として記録されており、範囲は見直し中です。
 - **プレーンなオブジェクトの下の数値のキー**（`sales.2024.total`・`usersById.42.name`）。マークアップでは描かれますが、4.0 ではスクリプトの読み（`this["sales.2024.total"]`、getter の中も）が `undefined` になり、そのパスへの `$eq` は常に偽になり、書き込みは `no row for "sales.*.total"` で throw し、双方向の書き戻しも失敗します。3.x（3.4 以降）は、これまでどおり素のキーとして読み、`$resolve` / `$setAll` では素のキーとして書きます。決まるまでは、読みは `this.sales[2024].total` と書き、書き込みはトップレベルのキーに新しいオブジェクトを代入するか（`this.sales = { ...this.sales, 2024: { ...this.sales[2024], total: 10 } }`）、数値でないキーを使ってください。
 - **再セットの後**、`Object.keys(this)`・`in`・`delete`・`JSON.stringify(this)` は古い状態を見ます。
 - **マークアップの誤りと初期化**: §3.4 を参照。

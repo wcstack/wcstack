@@ -90,6 +90,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.TooManySegments, ["a.b", 513], '[wcs/binding-syntax] "a.b" has 513 path segments — the limit is 512.'],
   [M.UnsafeSegment, ["a.__proto__"], '[wcs/binding-syntax] "a.__proto__": a state path cannot go through "__proto__" or "prototype" (it would reach every object\'s prototype).'],
   [M.EmptySegment, ["value: a..b"], '[wcs/binding-syntax] "value: a..b": the right side of a binding must name a state path — write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are the loop-relative shorthand).'],
+  [M.ForNoFilters, ["for: items|take(2)"], '[wcs/binding-syntax] "for: items|take(2)": "for:" takes no filters — a row is "<path>.<index>", so the rows of a filtered list would name other elements. Declare a getter that returns the filtered list and loop over it ("for: <getter>").'],
 
   [M.StructuralNotSingle, ["for: a; value: b"], `[wcs/template-syntax] Invalid bindText: "for: a; value: b". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`],
   [M.ElseWithoutIf, ["else"], '[wcs/template-syntax] "else:" must follow an "if:" template'],

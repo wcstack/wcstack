@@ -928,7 +928,7 @@ describe("#358 SSR のハイドレーションで作った行・枝の、未定�
 
 // ================================================================ #370
 
-describe("#370 スナップショットが for: / if: / elseif: の出力フィルタを保ち、ハイドレーション後に条件が反転しない", () => {
+describe("#370 スナップショットが if: / elseif: の出力フィルタを保ち、ハイドレーション後に条件が反転しない（for: のフィルタは 4.0 では拒む）", () => {
   const wrap = (body: string) => `<div id="root">${body}</div>`;
   /** The structural bindings of the snapshot's templates, in document order. */
   const snapshotBindTexts = (out: string): string[] => {
@@ -938,7 +938,10 @@ describe("#370 スナップショットが for: / if: / elseif: の出力フィ�
   };
 
   it("if: x|not と else:", async () => {
-    const r = await both(wrap(`${T("if: x|not", "<b>notX</b>")}${T("else:", "<i>X</i>")}`), () => ({ x: false }), [set("x", true), set("x", false)], rootView);
+    let out = "";
+    const r = await both(wrap(`${T("if: x|not", "<b>notX</b>")}${T("else:", "<i>X</i>")}`), () => ({ x: false }), [set("x", true), set("x", false)], rootView,
+      { edit: (o) => { out = o; return o; } });
+    expect(snapshotBindTexts(out)).toEqual(["if: x|not", "else:"]);
     expectViews(r, ["notX", "X", "notX"]);
   });
 
@@ -962,23 +965,52 @@ describe("#370 スナップショットが for: / if: / elseif: の出力フィ�
     expectViews(r, ["AB", "Q", "SP", "AB"]);
   });
 
-  const FOR_TAKE = wrap(`<ul>${T("for: items|take(2)", `<li data-wcs="textContent: .n"></li>`)}</ul>`);
-  const forTakeSteps: Step[] = [(s) => { s.items = [{ n: 0 }, ...s.items]; }, set("items.1.n", 7), (s) => { s.items = s.items.slice(2); }];
+  /** Loads `body` under a root `<wcs-state>` (on a server: an orchestrated render); the rejection of its connectedCallbackPromise. */
+  const refusal = async (body: string, server: boolean): Promise<{ reason: string | null; logged: string[] }> => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    if (server) document.documentElement.setAttribute("data-wcs-server", "orchestrated");
+    try {
+      const h = document.createElement(`rx3-ssr-refuse-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state${server ? " enable-ssr" : ""}></wcs-state>${body}`;
+      const el = root.querySelector("wcs-state") as any;
+      el.setInitialState({ items: [{ n: 1 }, { n: 2 }, { n: 3 }] });
+      document.body.appendChild(h);
+      const reason = await el.connectedCallbackPromise.then(() => null, (e: Error) => e.message);
+      h.remove();
+      return { reason, logged: error.mock.calls.map(msg) };
+    } finally {
+      document.documentElement.removeAttribute("data-wcs-server");
+      error.mockRestore();
+    }
+  };
 
-  it("for: のフィルタ: スナップショットがフィルタごと書き出し、ハイドレーション後の表示と書き込みが CSR と同じで、投げない", async () => {
-    let out = "";
-    const r = await both(FOR_TAKE, () => ({ items: [{ n: 1 }, { n: 2 }, { n: 3 }] }), forTakeSteps, rootView, { edit: (o) => { out = o; return o; } });
-    expect(snapshotBindTexts(out)).toEqual(["for: items|take(2)"]);
-    expect(r.ssr.views).toEqual(r.csr.views);
-    expect({ csr: r.csr.errors, ssr: r.ssr.errors }).toEqual({ csr: [], ssr: [] });
+  // 3.x #370 は for: の出力フィルタをスナップショットに保ち、フィルタの後のリストを描いた。4.0 は for: のフィルタを
+  // 受け付けない: for: items の行は items.<添字> なので、フィルタの後の配列の行は別の要素を指してしまう。以前の 4.0 は
+  // フィルタを黙って捨て、フィルタの前のリストを描いた（CSR / SSR とも ["123", "0123", "0723", "23"]）。いまは正本パーサが
+  // [wcs/binding-syntax] #121 で拒む（spread の #105 と同じ — lint も同じパーサで報告する。migration-v4 §3.4）。
+  // 代わりに、絞り込んだリストを返す getter を for: で回す
+  it.each([
+    ["CSR", false, "for: items|take(2)"],
+    ["サーバーの描画", true, "for: items|take(2)"],
+    ["CSR・登録されていないフィルタの名前", false, "for: items|nosuch"],
+    ["CSR・行の中の for:", false, "for: .items|take(1)"],
+  ] as [string, boolean, string][])("for: のフィルタはバインディングを読む時点で [wcs/binding-syntax] で拒み、黙って捨てない（%s: %s）", async (label, server, bind) => {
+    const body = label.includes("行の中")
+      ? wrap(`<ul>${T("for: groups", `<li>${T(bind, "<b></b>")}</li>`)}</ul>`)
+      : wrap(`<ul>${T(bind, `<li data-wcs="textContent: .n"></li>`)}</ul>`);
+    const r = await refusal(body, server);
+    expect(r.reason).toBe(`[@wcstack/state] [wcs/binding-syntax] #121 "${bind}"`);
+    expect(r.logged).toEqual([r.reason]);
   });
 
-  // 3.x #370 の for: の形が 4.0 で再現しない（SSR に限らず CSR でも）: for: の出力フィルタが黙って捨てられ、
-  // フィルタの前のリストを描く（実測 CSR / SSR とも ["123", "0123", "0723", "23"] / 期待 ["12", "01", "07", "23"]）。
-  // src/dom/plan.ts の walkBindings（`d.bindingType === "for"` の枝）が d.outFilters を読まず、
-  // src/dom/view.ts の listFor / new ForView（mount.ts:47、view.ts:600）がパスのリストだけを回す。migration-v4 §3 に記載なし
-  it.fails("for: のフィルタ（配列を返す take(2)）: 行がフィルタの後のリストに合う（3.x の期待）", async () => {
-    const r = await both(FOR_TAKE, () => ({ items: [{ n: 1 }, { n: 2 }, { n: 3 }] }), forTakeSteps, rootView);
+  // （行への書き込みは getter のパスから: 写しの行は元のパス（items.1.n）からの書き込みを受け取らない — F26、migration-v4 §5）
+  it("対照: フィルタで絞り込んだリストを返す getter を for: で回せば、SSR でも CSR と同じに描き、書き込みに追従する", async () => {
+    const html = wrap(`<ul>${T("for: firstTwo", `<li data-wcs="textContent: .n"></li>`)}</ul>`);
+    const r = await both(html, () => ({
+      items: [{ n: 1 }, { n: 2 }, { n: 3 }],
+      get firstTwo() { return (this as any).items.slice(0, 2); },
+    }), [(s) => { s.items = [{ n: 0 }, ...s.items]; }, set("firstTwo.1.n", 7), (s) => { s.items = s.items.slice(2); }], rootView);
     expectViews(r, ["12", "01", "07", "23"]);
   });
 

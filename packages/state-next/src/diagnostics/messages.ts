@@ -83,6 +83,7 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.TooManySegments]: (p, n) => `"${p}" has ${n} path segments — the limit is ${MAX_PATH_SEGMENTS}.`,
   [M.SelectorRemoved]: (t) => `"${t}": the "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`,
   [M.UnsafeSegment]: (p) => `"${p}": a state path cannot go through "__proto__" or "prototype" (it would reach every object's prototype).`,
+  [M.ForNoFilters]: (t) => `"${t}": "for:" takes no filters — a row is "<path>.<index>", so the rows of a filtered list would name other elements. Declare a getter that returns the filtered list and loop over it ("for: <getter>").`,
   [M.EmptySegment]: (t) => `"${t}": the right side of a binding must name a state path — write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are the loop-relative shorthand).`,
 
   [M.StructuralNotSingle]: (t) => `Invalid bindText: "${t}". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`,
