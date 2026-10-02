@@ -957,11 +957,9 @@ describe("#361 修理の続きで直った古い欠陥", () => {
     p.host.remove();
   });
 
-  // 3.x #361 の修正の形が 4.0 で再現しない: setter が書いてから投げると、その書き込みが知らされない
-  // （実測: 状態は 1, 9, 3 だが <li> は 1, 2, 3、$watch は呼ばれず、以後の書き込みでも行 1 は 2 のまま /
-  // 期待: <li> は 1, 9, 3、$watch は [[9, 1]]）。src/engine.ts の write() が callAt(p.setter) の後の landed() を
-  // try/finally で守っていない
-  it.fails("要素のパスの setter が書いてから投げても、書いた値は描かれ、$watch も呼ばれる", async () => {
+  // 3.x #361 の修正の形: setter が書いてから投げても、その書き込みは知らされる（<li> は 1, 9, 3、$watch は [[9, 1]]）。
+  // 4.0 は src/engine.ts の write() が callAt(p.setter) の後の landed() を try/finally で守る
+  it("要素のパスの setter が書いてから投げても、書いた値は描かれ、$watch も呼ばれる", async () => {
     const watched: unknown[] = [];
     const p = await page(`<ul><template data-wcs="for: items"><li>{{ .id }}</li></template></ul>`, {
       items: rows(1, 2, 3),

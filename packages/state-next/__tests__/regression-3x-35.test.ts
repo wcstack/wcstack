@@ -472,10 +472,9 @@ describe("#411 読み込みに失敗した source は、投げられたエラー
     }
   });
 
-  // 3.5 の「失敗の見出しが要素の source を名指す」（CHANGELOG 3.5.0 Changed）は 4.0 に無い。
-  // 4.0 の element.ts の start() の catch は console.error(e) だけで、どの <wcs-state> の src が失敗したかを出さない
-  // （v4-remaining §3.2「初期化の失敗」(a) の残り）。
-  it.fails("失敗の報告が src= を名指す（3.5: [@wcstack/state] <wcs-state src=\"…\"> failed to initialize.）", async () => {
+  // 3.5 の「失敗の見出しが要素の source を名指す」（CHANGELOG 3.5.0 Changed）。4.0 は見出し #49 で要素と source を名指す
+  // （element.ts の fail()。v4-remaining §3.2「初期化の失敗」(a)）。
+  it("失敗の報告が src= を名指す（3.5: [@wcstack/state] <wcs-state src=\"…\"> failed to initialize.）", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     (globalThis as any).__r35Probe2 = new RangeError("boom");
     const src = `data:text/javascript,${encodeURIComponent(`throw globalThis.__r35Probe2; //${seq++}.js`)}`;
@@ -529,9 +528,8 @@ describe("#411 読み込みに失敗した source は、投げられたエラー
   });
 
   // 3.x（3.5）の README は「DCC の設定・ロードの失敗は、元のエラーそのもので connectedCallbackPromise を reject する」と約束する。
-  // 4.0 は claim の経路（element.ts:159-165 の .catch(console.error).finally(resolve)）を通るので、失敗しても resolve する
-  // （v4-remaining §3.2「初期化の失敗」(b) の未決: 直すか移行ガイドに書く）。
-  it.fails("DCC の定義の state の読み込みに失敗すると、その SyntaxError で connectedCallbackPromise を reject する", async () => {
+  // 4.0 も claim の経路の失敗で reject する（ボリュームだけは resolve — Claimed.lenient。v4-remaining §3.2「初期化の失敗」(b)）。
+  it("DCC の定義の state の読み込みに失敗すると、その SyntaxError で connectedCallbackPromise を reject する", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const tag = `r35-dcc-${seq++}`;
     const def = document.createElement(tag);
@@ -550,9 +548,8 @@ describe("#411 読み込みに失敗した source は、投げられたエラー
   });
 
   // 3.x の README の「scope ごとの表」: マウントしたコンポーネントの初期化の失敗は、そのコンポーネントの
-  // connectedCallbackPromise を reject する。4.0 は scopes/component.ts の claim の失敗を element.ts:162 で
-  // console.error にして resolve する（上と同じ未決）。
-  it.fails("bind-component の設定の誤り（ホストの state が object でない）は、コンポーネントの connectedCallbackPromise を reject する", async () => {
+  // connectedCallbackPromise を reject する。4.0 も同じ（上と同じ claim の経路）。
+  it("bind-component の設定の誤り（ホストの state が object でない）は、コンポーネントの connectedCallbackPromise を reject する", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const tag = `r35-bad-cmp-${seq++}`;
     customElements.define(tag, class extends HTMLElement {
