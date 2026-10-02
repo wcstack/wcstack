@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: CSP — router guard, nonce on the loading script</title>
+  <!-- docs/csp.md §5. A policy without blob:. The <script> that loads router carries the page
+       nonce, so the guard's blob: import inherits it. The guard's <script> sits inside the
+       router's <template>, so the browser never evaluates it itself. -->
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'nonce-e2e'">
+  <script type="module" nonce="e2e" src="/packages/router/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-router basename="/e2e/fixtures">
+    <template>
+      <!-- The .html file name is dropped from the internal path (router README §2.1), so this is "/". -->
+      <wcs-route path="/" guard="/denied">
+        <wcs-guard-handler>
+          <script type="module">
+export default function () {
+  window.__guard = "ran";
+  return true;
+}
+          </script>
+        </wcs-guard-handler>
+        <p id="out">guarded route</p>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</body>
+</html>

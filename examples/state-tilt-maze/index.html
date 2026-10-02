@@ -381,9 +381,12 @@
 <!-- ============================================================
      Board — physics space and CSS space are the same 320x320 px
      ============================================================ -->
+<!-- dragStart / dragMove read e.currentTarget (pointer capture, the board's rect), so
+     those two listeners must sit on the board itself: #direct. 3.x attaches every on*:
+     to its element anyway; 4.0 delegates on*: to the root unless #direct is given. -->
 <div class="board" tabindex="0" role="application"
      aria-label="Maze board. Use the arrow keys to tilt the board and roll the ball to the flag."
-     data-wcs="onpointerdown: dragStart; onpointermove: dragMove; onpointerup: dragEnd; onpointercancel: dragEnd; onkeydown: keyDown; onkeyup: keyUp; onblur: keyClear">
+     data-wcs="onpointerdown#direct: dragStart; onpointermove#direct: dragMove; onpointerup: dragEnd; onpointercancel: dragEnd; onkeydown: keyDown; onkeyup: keyUp; onblur: keyClear">
   <template data-wcs="for: walls">
     <div class="wall" data-wcs="attr.style: .css"></div>
   </template>

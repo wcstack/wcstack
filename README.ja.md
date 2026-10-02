@@ -350,7 +350,7 @@ const html = await renderToString(`
 
 `<script>` タグ1つ。カスタム要素1つ。あとはHTML。以上。
 
-> Content-Security-Policy を敷いている場合: 上記の内包 `<script type="module">` は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。state を `src="./state.js"` に切り出せば追加ディレクティブは不要になります。機能別のディレクティブ表は [docs/csp.ja.md](docs/csp.ja.md)。
+> Content-Security-Policy を敷いている場合: 上記の内包 `<script type="module">` は `blob:` URL 経由で評価されるため、state を読み込む `<script>` にページの nonce を付けるか、`script-src blob:` が必要です。state を `src="./state.js"` に切り出せば追加ディレクティブは不要になります。機能別のディレクティブ表は [docs/csp.ja.md](docs/csp.ja.md)。
 
 本番ではバージョンを固定して `integrity` を付けてください。`dist/auto.min.js` は import ゼロの自己完結バンドルなので、**ハッシュ 1 個で実行される wcstack のコード全体をカバーできます** — 「integrity はエントリしか守らず import 先は対象外」という ESM の通例が当てはまりません:
 

@@ -14,6 +14,7 @@ import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { bindSubtree, getBinder } from "../protocol/binder.js";
 import { inSsr } from "../inSsr.js";
 import { runGuardPhase } from "../showRouteContent.js";
+import { ROUTE_RANGE } from "../routeRange.js";
 import { assignRouteParams } from "../showRoute.js";
 import {
   ROUTE_END_PREFIX,
@@ -831,12 +832,12 @@ export class Router extends HTMLElement implements IRouter {
         nodes.push(node);
         node = node.nextSibling;
       }
-      route.adoptChildNodes(nodes);
+      // 終了マーカーは残し、以後このルートの範囲の終わりとして使う（hideRoute）
+      route.adoptChildNodes(nodes, end);
     }
 
-    // マーカー除去と目印の撤去
+    // 開始マーカーの除去と目印の撤去（終了マーカーは各ルートの範囲の終わりとして残る）
     for (const { comment } of startByPath.values()) comment.remove();
-    for (const { comment } of endByPath.values()) comment.remove();
     (this.outlet as unknown as Element).removeAttribute(SSR_OUTLET_ATTR);
 
     // 表示済み状態の確立。内容は既に見えているので挿入はしない — パラメータ
@@ -913,14 +914,8 @@ export class Router extends HTMLElement implements IRouter {
     });
     (this.outlet as unknown as Element).setAttribute(SSR_OUTLET_ATTR, '');
     for (const route of this.outlet.lastRoutes) {
-      // applyRoute 成功後の placeholder は必ず outlet 配下の DOM に居る
-      const parentNode = route.placeHolder.parentNode!;
-      const contentNodes = route.childNodeArray;
-      const start = document.createComment(`${ROUTE_START_PREFIX}${route.absolutePath}`);
-      const end = document.createComment(`${ROUTE_END_PREFIX}${route.absolutePath}`);
-      parentNode.insertBefore(start, contentNodes[0] ?? route.placeHolder.nextSibling);
-      const last = contentNodes[contentNodes.length - 1];
-      parentNode.insertBefore(end, last ? last.nextSibling : start.nextSibling);
+      // 終了マーカーは showRoute が置いた route.endMarker をそのまま使う
+      route.placeHolder.after(document.createComment(`${ROUTE_START_PREFIX}${route.absolutePath}`));
     }
   }
 
@@ -932,8 +927,10 @@ export class Router extends HTMLElement implements IRouter {
   private _offerInitialContentToBinder(): void {
     for (const route of this.outlet.lastRoutes) {
       for (const node of route.childNodeArray) {
-        if (node.nodeType === Node.ELEMENT_NODE) {
-          bindSubtree(node);
+        // A node not in the document (a route inside a <wcs-layout> whose template is still
+        // loading) is handed over by the layout outlet once placed, or found by state's first scan
+        if (node.nodeType === Node.ELEMENT_NODE && node.isConnected) {
+          bindSubtree(node, ROUTE_RANGE);
         }
       }
     }

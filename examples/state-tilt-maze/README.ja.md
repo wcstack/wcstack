@@ -103,6 +103,12 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD チ
   キャプチャするとボタンの click が奪われます。そこでドラッグ開始を
   `phase === "playing"`（ボードにオーバーレイが無い唯一のフェーズ）に
   ゲートしています。
+- **ドラッグのリスナーは `#direct`。** `dragStart` と `dragMove` は
+  `e.currentTarget` を読む（ポインタのキャプチャとボードの大きさの計測）ので、
+  `onpointerdown#direct:` / `onpointermove#direct:` で束縛しています。
+  `@wcstack/state` 3.x はどの `on*:` も要素に付けますが、4.0 は `on*:` を
+  ルートへ委譲し、そこでは `currentTarget` がルートになります。`#direct` を
+  付けるとリスナーは要素に残ります。
 
 ## 検証済み
 

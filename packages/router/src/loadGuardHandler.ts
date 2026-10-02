@@ -14,14 +14,16 @@ const CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
  * 真ならブロック確定として対処方法を書き、偽なら構文エラー等と区別できないので
  * 元のエラーを主にして CSP は参照先を添えるに留める。
  *
- * ガードは state と違ってインライン専用（`<wcs-route>` 直下の `<script>`）なので、
- * `src=` に逃がすという回避策が無い。CSP を敷くなら blob: の許可が必須になる。
+ * blob: の import は、router を読み込んだ `<script>` の nonce を引き継ぐので、そこに nonce を
+ * 付ければ通る（docs/csp.md §5）。ガードは state と違ってインライン専用（`<wcs-route>` 直下の
+ * `<script>`）なので、`src=` に逃がすという回避策が無い。nonce を付けられない構成で CSP を敷くなら、
+ * blob: の許可が必須になる。
  */
 function describeImportFailure(error: unknown, firstError: unknown, cspBlocked: boolean): string {
   if (cspBlocked) {
     return `The guard <script> was blocked by Content-Security-Policy. ` +
-      `Guard scripts are inline-only and are evaluated through a blob: URL, ` +
-      `so script-src must allow blob:. See ${CSP_GUIDE}`;
+      `Guard scripts are inline-only and are evaluated through a blob: URL: ` +
+      `give the page's nonce to the <script> that loads @wcstack/router, or allow blob: in script-src. See ${CSP_GUIDE}`;
   }
   return `loadGuardHandler: failed to import guard script. ` +
     `data: URL error: ${(error as Error)?.message ?? String(error)}` +
@@ -67,6 +69,9 @@ async function importModule(script: HTMLScriptElement, route: IRoute): Promise<G
       try {
         scriptModule = await import(`data:application/javascript;base64,${b64}`) as ScriptModule;
       } catch (e) {
+        // Firefox は違反イベントを import の失敗より後（次のタスク）に出す（Chromium と WebKit は先）。
+        // 判定の前に 1 タスク待って、どのエンジンでも CSP を観測できるようにする
+        await new Promise((resolve) => setTimeout(resolve));
         // 両 import が失敗した場合、Blob URL 側の元エラーを cause として失わないように包む
         // （Blob URL も失敗していなければ firstError は null）
         raiseError(describeImportFailure(e, firstError, cspBlocked), { cause: firstError ?? e });

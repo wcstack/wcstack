@@ -127,9 +127,10 @@ describe('SSR ハイドレーション（クライアント採用）', () => {
     // 内容は 1 つだけ・サーバーのノードそのもの
     expect(document.querySelectorAll('h1').length).toBe(1);
     expect(document.querySelector('h1')).toBe(h1Before);
-    // マーカー・目印は撤去される
+    // 開始マーカー・目印は撤去され、終了マーカーはルートの範囲の終わりとして残る
+    // （クライアントの showRoute が置くものと同じ形）
     expect(document.querySelector('wcs-outlet')!.hasAttribute('data-wcs-ssr')).toBe(false);
-    expect(outletComments().some((data) => data.startsWith('@@wcs-route-'))).toBe(false);
+    expect(outletComments().filter((data) => data.startsWith('@@wcs-route-'))).toEqual(['@@wcs-route-end:/']);
     // a11y region はクライアント側で生成される
     expect(router.a11yRegion).not.toBeNull();
   });
