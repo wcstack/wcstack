@@ -4,7 +4,9 @@
  * HTML 内の指定位置が <template data-wcs="for:"> の内側にあるかを判定する。
  */
 
+import { splitBindTexts } from '@wcstack/state/parser';
 import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
+import { asciiLowerCase, parseAttributeNames, RAW_TEXT_ELEMENTS } from '../language/htmlParse.js';
 
 /**
  * 指定オフセットが <template data-wcs="for: ..."> の内側にあるかを判定する。
@@ -59,7 +61,10 @@ export function getInnermostForPath(html: string, offset: number, bindAttrName: 
 
 /** offset を囲む for テンプレート 1 枚（生 for パス + テンプレート同一性のアンカー）。 */
 export interface IEnclosingFor {
-  /** for 属性値の生テキスト（`@state` / フィルタが付き得る）。 */
+  /**
+   * for 属性値の最初の式の生テキスト（`@state` / フィルタが付き得る）。末尾の空の式
+   * （`for: items;` の `;` から後ろ — ランタイムは空の式を数えない）は含まない。
+   */
   readonly path: string;
   /** 開始タグ `<template` の開始オフセット。テンプレート実体の同一性キー
    *  （`$1`〜`$9` のようにループ実体で参照先が決まる要素のスコープ判定に使う）。 */
@@ -104,11 +109,21 @@ export function getEnclosingFors(html: string, offset: number, bindAttrName: str
 
     const depth = getForTemplateDepthAt(html, match.index, offset, bindAttrName);
     if (depth > 0) {
-      enclosing.push({ path: match[1].trim(), anchor: match.index });
+      enclosing.push({ path: firstExpressionOf(match[1]), anchor: match.index });
     }
   }
 
   return enclosing;
+}
+
+/**
+ * for 属性値（`for:` の後ろ）の最初の式。`for: items;` のように末尾に `;` を書いても 3.x の構造ディレクティブ
+ * （空の式は数えない）なので、引用符の外の最初の `;` で切る — 切らないと `items;` が for のリストのパスとして
+ * 合成され、行の `items.*.name` や `.name` を別のリストと取り違える。
+ */
+function firstExpressionOf(raw: string): string {
+  const semicolon = indexOfOutsideQuotes(raw, ';');
+  return (semicolon === -1 ? raw : raw.slice(0, semicolon)).trim();
 }
 
 /** パスに含まれるワイルドカードセグメント（`*`）の本数。 */
@@ -134,18 +149,26 @@ function forPathOf(raw: string): string {
 }
 
 /**
- * 指定オフセットで**ワイルドカードを解決できる段数**（＝そのスコープの階数）。
- * 囲む for が無ければ 0。
+ * 囲む for が描くリストのパス（getResolvedForListPath の結果）が与える段数 ＝ そのスコープで
+ * **ワイルドカードを解決できる段数**。囲む for が無ければ段数は 0（呼び手が null を 0 と読む）。
  *
  * 段数は「囲む for の枚数」ではない。for のパス自身が階数を持つ入れ子
- * （`for: matrix` の中の `for: matrix.*`）があるため、ランタイム
- * （structural/expandShorthandPaths.ts）と同じ合成を行ってから数える:
- * 相対 for（`.products`）は外側の行パス `<prev>.*` に連結し、絶対 for はそのまま
- * 置き換える。最後にそのパスの `*` の本数 + 1（ループ自身が 1 段増やす）が答え。
+ * （`for: matrix` の中の `for: matrix.*`）があるため、合成したリストのパスの `*` の本数 + 1
+ * （ループ自身が 1 段増やす）が答え。
  */
-export function getAvailableWildcardRank(html: string, offset: number, bindAttrName: string = 'data-wcs'): number {
+export function rankOfForList(resolvedListPath: string): number {
+  return countWildcardSegments(resolvedListPath) + 1;
+}
+
+/**
+ * offset を囲む最も内側の for テンプレートが描くリストのパスを、相対 for を外側から合成した形で返す
+ * （`for: groups` の中の `for: .items` → `groups.*.items`）。囲まれていなければ null。
+ * 合成はランタイム（structural/expandShorthandPaths.ts）と同じ: 相対 for は外側の行パス `<prev>.*` に
+ * 連結し、絶対 for はそのまま置き換える。
+ */
+export function getResolvedForListPath(html: string, offset: number, bindAttrName: string = 'data-wcs'): string | null {
   const chain = getEnclosingForPaths(html, offset, bindAttrName);
-  if (chain.length === 0) return 0;
+  if (chain.length === 0) return null;
   let resolved = '';
   for (const raw of chain) {
     const path = forPathOf(raw);
@@ -157,8 +180,260 @@ export function getAvailableWildcardRank(html: string, offset: number, bindAttrN
       resolved = path;
     }
   }
-  return countWildcardSegments(resolved) + 1;
+  return resolved;
 }
+
+/** パスの各 `*` の手前（その `*` が回るリスト）を外側から順に返す（`a.*.b.*.c` → [`a`, `a.*.b`]）。 */
+export function wildcardPrefixes(path: string): string[] {
+  const segments = path.split('.');
+  const out: string[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i] === '*') out.push(segments.slice(0, i).join('.'));
+  }
+  return out;
+}
+
+/**
+ * 段ごとのリスト（外側 → 内側）。段 k（1 始まり）の `*` が回るのは、その段で囲む for のリスト。
+ * 最も内側の段は for のリストそのもの、それより外の段はそのパスの k 番目の `*` の手前
+ * （`groups.*.items` → [`groups`, `groups.*.items`]）。
+ */
+export function listsPerLevel(resolvedListPath: string): string[] {
+  return [...wildcardPrefixes(resolvedListPath), resolvedListPath];
+}
+
+/**
+ * 束縛のパスの各 `*` が、その段で囲む for のリストの行か。最初に食い違った段の「パスの `*` が回るリスト」と
+ * 「その段の for のリスト」を返す。食い違いが無い・判定できない（相対 for が解けない・段数が足りない —
+ * それは段数の検査の担当）なら null。
+ *
+ * 3.x のランタイム（list/getListIndexByBindingInfo.ts）は、最も内側のループ文脈のパスと束縛のパスの
+ * ワイルドカードの接頭辞（`wildcardPathSet`）の**共通部分**の数だけ添字を渡す。`for: a` の行の中の
+ * `b.*.y` は共通部分が無く添字が null のまま解決に進み、`Cannot resolve state address for binding with
+ * wildcard statePathName "b.*.y" because list index is null.` で囲む for ごと失敗する。接頭辞は入れ子
+ * なので、共通部分の数 ＝ 外側から一致した段の数で、ここで段ごとに比べるのと同じ判定になる。
+ * 4.0 は同じ形をバインド確立時に `[wcs/wildcard-rank]`（#1403）で拒む。
+ */
+export function findOtherListWildcard(path: string, resolvedListPath: string): { over: string; loop: string } | null {
+  if (resolvedListPath.startsWith('.')) return null;
+  const loops = listsPerLevel(resolvedListPath);
+  const overs = wildcardPrefixes(path);
+  if (overs.length > loops.length) return null;
+  for (let k = 0; k < overs.length; k++) {
+    if (overs[k] !== loops[k]) return { over: overs[k], loop: loops[k] };
+  }
+  return null;
+}
+
+
+// ------------------------------------------------------------------ 要素の置かれた文脈（1 回の走査）
+
+/** 子を持たない要素（終了タグが無い）。 */
+const VOID_ELEMENTS = new Set([
+  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr',
+]);
+/** 要素の中身を値で置き換える束縛（その要素の子は束縛として読まれない）。 */
+const CONTENT_PROPERTIES = new Set(['textContent', 'innerText', 'innerHTML', 'outerHTML', 'outerText']);
+const STRUCTURAL_DIRECTIVE_NAMES = new Set(['for', 'if', 'elseif', 'else']);
+/** `<p>` を暗に閉じる開始タグ（直前に開いた `<p>` だけを見る近似）。 */
+const P_CLOSERS = new Set([
+  'address', 'article', 'aside', 'blockquote', 'details', 'dialog', 'div', 'dl', 'fieldset', 'figcaption', 'figure',
+  'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'main', 'menu', 'nav', 'ol', 'p',
+  'pre', 'section', 'table', 'ul',
+]);
+/** 開始タグが暗に閉じる、開いたままの要素（終了タグの省略。`<li>…<li>`・`<td>…<td>` など）。 */
+const IMPLIED_CLOSE: Record<string, ReadonlySet<string>> = {
+  li: new Set(['p', 'li']),
+  dt: new Set(['p', 'dt', 'dd']),
+  dd: new Set(['p', 'dt', 'dd']),
+  option: new Set(['option']),
+  optgroup: new Set(['option', 'optgroup']),
+  tr: new Set(['td', 'th', 'tr']),
+  td: new Set(['td', 'th']),
+  th: new Set(['td', 'th']),
+  thead: new Set(['td', 'th', 'tr', 'thead', 'tbody', 'tfoot']),
+  tbody: new Set(['td', 'th', 'tr', 'thead', 'tbody', 'tfoot']),
+  tfoot: new Set(['td', 'th', 'tr', 'thead', 'tbody', 'tfoot']),
+};
+
+/** 束縛属性の値の各式の左辺の名前（修飾子・入力フィルタ・明示のプロパティ形の `.` を外した形）。 */
+function propertyNamesOf(value: string): string[] {
+  // 空の式（末尾の `;` — `for: items;`）は数えない
+  return splitBindTexts(value).filter((expr) => expr.trim().length > 0).map((expr) => {
+    const colon = indexOfOutsideQuotes(expr, ':');
+    const left = (colon === -1 ? expr : expr.slice(0, colon)).trim();
+    const name = left.split(/[|#]/)[0].trim();
+    return name.startsWith('.') ? name.slice(1) : name;
+  });
+}
+
+/**
+ * 構造ディレクティブの無い `<template>` 1 つ。中に**自前の** `<wcs-state>`（`mount` の無いもの）があるか
+ * どうかは、その `<wcs-state>` に来るまで分からないので、走査しながら書き込む。
+ */
+interface ITemplateScope {
+  hasOwnState: boolean;
+}
+
+interface IOpenElement {
+  readonly name: string;
+  /** 構造ディレクティブ（for / if / elseif / else）を持つ `<template>`。 */
+  readonly structural: boolean;
+  /** 構造ディレクティブの無い `<template>`（それ以外は null）。 */
+  readonly scope: ITemplateScope | null;
+  /**
+   * この要素の子孫は束縛として読まれない: 中身を置き換える束縛を持つ要素と、別の `<template>` の中に置いた
+   * 構造でない `<template>`（行・枝・router の route が中身を差し込んでも、入れ子の template は inert のまま —
+   * アプリの JS が複製する雛形 `<template id="row-tpl">` など）。文書の直下の `<template>`（router の route
+   * そのもの・コンポーネントの雛形）は塞がない — 差し込まれた先で束縛される。
+   */
+  readonly blocks: boolean;
+}
+
+/** 開始タグ `name` が暗に閉じる、開いたままの要素（直前に開いたもの）を積み上げから外す。 */
+function closeImplied(stack: IOpenElement[], name: string): void {
+  const implied = IMPLIED_CLOSE[name];
+  if (implied !== undefined) {
+    while (stack.length > 0 && implied.has(stack[stack.length - 1].name)) stack.pop();
+  } else if (P_CLOSERS.has(name) && stack.length > 0 && stack[stack.length - 1].name === 'p') {
+    stack.pop();
+  }
+}
+
+/** 要素（の開始タグの中の束縛属性）が置かれた文脈。 */
+export interface IElementContext {
+  /**
+   * 束縛として読まれる（raw text 要素の中身でも、中身を置き換える束縛を持つ要素の子孫でも、別の `<template>`
+   * の中に入れ子にした構造でない `<template>` の中でもない）。
+   */
+  readonly bound: boolean;
+  /**
+   * for / if / elseif / else テンプレートの行や枝の中で、束縛として読まれる。要素を置き換える束縛
+   * （`outerHTML:` / `outerText:`）はここで問題になる（3.x は置き換えた中身を取り残し、4.0 は初期化で拒む）。
+   * 自前の `<wcs-state>` を持つ template の中は数えない。
+   */
+  readonly rowOrBranch: boolean;
+  /**
+   * 自前の `<wcs-state>` を持つ `<template>`（宣言的 shadow root・DCC・コンポーネントの雛形）の中。そこの
+   * 束縛は文書の root の state ではなく、その template の state に付く。router の route の `<template>` は
+   * 自前の state を持たないので、文書の一部として扱う。
+   */
+  readonly ownStateTemplate: boolean;
+}
+
+/** 走査の途中で決めた判定（自前の state の有無は、囲む template の走査が終わってから決まる）。 */
+interface IPendingContext {
+  readonly bound: boolean;
+  readonly structural: boolean;
+  readonly scopes: readonly ITemplateScope[];
+}
+
+/**
+ * offsets（要素の開始タグの中 — 束縛属性の値の位置）ごとに、その要素が置かれた文脈を返す。
+ * 文書のタグを**1 回だけ**走査し、開いている要素の積み上げで判定する（offset の数によらず走査は 1 回 —
+ * 束縛ごとに文書を数え直さない）。template の中に自前の `<wcs-state>` があるかは offset より後ろで分かる
+ * ことがあるので、文書の終わりまで走査してから決める。
+ *
+ * HTML のパーサに合わせて、終了タグの省略（`<li>…<li>`・`<p>…<div>`・表の行とセルなど）は開始タグで
+ * 暗に閉じ、`/>` は void 要素と svg / math の中だけで閉じたとみなす（HTML では void でない要素の `/>` は
+ * 無視される）。offset が raw text 要素（`<script>` / `<style>` / `<textarea>` / `<title>` / `<noscript>` /
+ * `<iframe>` …）の中なら束縛ではない。
+ * 既知の限界: 暗に閉じる規則は「直前に開いた要素」だけを見る近似（HTML の scope の規則のすべてではない）。
+ */
+export function analyzeElementContexts(
+  html: string,
+  offsets: readonly number[],
+  bindAttrName: string = 'data-wcs',
+  stateTagName: string = 'wcs-state',
+): Map<number, IElementContext> {
+  const out = new Map<number, IElementContext>();
+  const pending = [...new Set(offsets)].sort((a, b) => a - b);
+  if (pending.length === 0) return out;
+  const judged: [number, IPendingContext][] = [];
+  let next = 0;
+  const NOT_BOUND: IPendingContext = { bound: false, structural: false, scopes: [] };
+  const stack: IOpenElement[] = [];
+  const judge = (): IPendingContext => ({
+    bound: !stack.some((e) => e.blocks),
+    structural: stack.some((e) => e.structural),
+    scopes: stack.flatMap((e) => (e.scope === null ? [] : [e.scope])),
+  });
+  const stateTag = asciiLowerCase(stateTagName);
+  const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // 引用符の無い値（`data-wcs=for:items`）も HTML では属性値（空白・`>` まで）
+  const bindAttr = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>\`]+))`, 'i');
+  const tag = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+  let lower: string | null = null;
+  let match: RegExpExecArray | null;
+  while ((match = tag.exec(html)) !== null) {
+    const end = match.index + match[0].length;
+    // offset を含む（または越えた）タグに来た: 積み上がっているのが祖先。要素自身も終了タグの省略で
+    // 前の要素を閉じる（`<p …>t<div outerHTML>`・`<option>…<option outerHTML>`）ので、閉じてから判定する
+    if (next < pending.length && end > pending[next]) {
+      const isStart = match[2] !== undefined && match[1] !== '/';
+      if (isStart && match.index < pending[next]) closeImplied(stack, asciiLowerCase(match[2]));
+      while (next < pending.length && pending[next] < end) judged.push([pending[next++], judge()]);
+    }
+    if (match[2] === undefined) continue; // コメント
+    const name = asciiLowerCase(match[2]);
+    if (match[1] === '/') {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].name === name) {
+          stack.length = i;
+          break;
+        }
+      }
+      continue;
+    }
+    const attrs = match[3];
+    closeImplied(stack, name);
+    if (name === stateTag && !parseAttributeNames(attrs).has('mount')) {
+      // 自前の `<wcs-state>`: 最も内側の構造でない template（宣言的 shadow root・DCC・雛形）の state。
+      // 構造テンプレート（for / if の行や枝）を越えて上へは探さない — route の中の `if:` の枝に置いた
+      // `<wcs-state>` で route 全体を「自前の state」とみなすと、route の検査がまとめて黙る
+      for (let i = stack.length - 1; i >= 0 && !stack[i].structural; i--) {
+        const scope = stack[i].scope;
+        if (scope !== null) {
+          scope.hasOwnState = true;
+          break;
+        }
+      }
+    }
+    const foreign = name === 'svg' || name === 'math' || stack.some((e) => e.name === 'svg' || e.name === 'math');
+    if (VOID_ELEMENTS.has(name) || (foreign && /\/\s*$/.test(attrs))) continue;
+    if (RAW_TEXT_ELEMENTS.has(name)) {
+      const close = (lower ??= asciiLowerCase(html)).indexOf(`</${name}`, end);
+      const stop = close === -1 ? html.length : close;
+      // 中身の中の offset: ブラウザでは文字であって束縛ではない
+      while (next < pending.length && pending[next] < stop) judged.push([pending[next++], NOT_BOUND]);
+      if (close === -1) break;
+      tag.lastIndex = close;
+      continue;
+    }
+    const match3 = bindAttr.exec(attrs);
+    const value = match3 === null ? null : match3[1] ?? match3[2] ?? match3[3];
+    const names = value === null ? [] : propertyNamesOf(value);
+    // 構造ディレクティブは単独の束縛（`for: items`）。修飾子付き（`for#x:`）は正本パーサが拒む形なので数えない
+    const structural = name === 'template' && names.length === 1 && STRUCTURAL_DIRECTIVE_NAMES.has(names[0])
+      && !value!.slice(0, Math.max(0, indexOfOutsideQuotes(value!, ':'))).includes('#');
+    const plainTemplate = name === 'template' && !structural;
+    const blocks = (plainTemplate && stack.some((e) => e.name === 'template'))
+      || (name !== 'template' && names.some((n) => CONTENT_PROPERTIES.has(n)));
+    stack.push({ name, structural, scope: plainTemplate ? { hasOwnState: false } : null, blocks });
+  }
+  // 閉じていない文書の末尾
+  while (next < pending.length) judged.push([pending[next++], judge()]);
+  for (const [offset, context] of judged) {
+    const ownStateTemplate = context.scopes.some((scope) => scope.hasOwnState);
+    out.set(offset, {
+      bound: context.bound,
+      rowOrBranch: context.bound && context.structural && !ownStateTemplate,
+      ownStateTemplate,
+    });
+  }
+  return out;
+}
+
 
 /**
  * 指定位置での for テンプレートのネスト深度を計算する。

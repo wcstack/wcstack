@@ -37,7 +37,7 @@ export default {
 - `data-wcs="` → `textContent`, `class.`, `style.`, `onclick`, `for`, `if` ...
 - `data-wcs="textContent: ` → `count`, `users`, `users.*.name` ...
 - `data-wcs="textContent: count|` → `gt`, `eq`, `upper`, `trim` ...
-- `data-wcs="onclick#` → `prevent`, `stop`, `ro`
+- `data-wcs="onclick#` → `prevent`, `stop`, `ro`, `direct`（`direct` は `@wcstack/state` 4.0 で効く修飾子: 4.0 は bubbling するイベントを root へ委譲するが、`#direct` はリスナーを要素に付けたままにする。3.x はこの修飾子を無視し、もともと要素に付けるので、今から書いても 3.x の動きは変わらない）
 - `data-wcs="for: ` → 配列型のパスのみ表示
 - `data-wcs="onclick: ` → メソッドと `$command.<name>` のみ表示
 - `data-wcs="command.play: ` → `$command.<name>`（`$commandTokens` 宣言由来）のみ表示
@@ -115,7 +115,7 @@ Mustache 構文 `{{ }}` とコメントバインディング構文 `<!--@@:-->` 
 
 バインディングパスは HTML に直接書かれた実行時識別子なので、ソースマップ無しでナビゲーションが成立します。4 機能とも診断と同じ位置付き参照インデックスへのクエリです。
 
-- **Hover**: バインディングパスに種別（data / computed / list / メソッド / command トークン / event トークン）・推定型・所属 state・宣言行を表示。`for` 短縮パスは展開後（`` `.name` → `users.*.name` ``）を表示。フィルタ名にはシグネチャ・説明・型変換（`number → string`）、修飾子（`#prevent` / `#ro` / `#init=` / `#sync=` / `#on<event>`）には意味説明。解決できないパスには何も出しません（誤ヒントゼロ）— ただし `src` 外部 state は「外部定義」と明示します。
+- **Hover**: バインディングパスに種別（data / computed / list / メソッド / command トークン / event トークン）・推定型・所属 state・宣言行を表示。`for` 短縮パスは展開後（`` `.name` → `users.*.name` ``）を表示。フィルタ名にはシグネチャ・説明・型変換（`number → string`）、修飾子（`#prevent` / `#ro` / `#init=` / `#sync=` / `#on<event>` / `#direct`）には意味説明。解決できないパスには何も出しません（誤ヒントゼロ）— ただし `src` 外部 state は「外部定義」と明示します。
 - **定義へ移動**（F12）: `data-wcs` / `{{ }}` / `<!--@@:-->` のパスからインライン `<wcs-state>` スクリプト内の宣言へジャンプ。ドットパスは第 1 セグメントへフォールバック。`$command.<name>` は `$commandTokens` へ、event-token 配線は `$eventTokens` へ。`src` 外部 state のパスは `<wcs-state src=…>` タグへジャンプします。
 - **参照の検索**（Shift+F12）: 双方向。バインディングパスから全チャネルの出現へ（短縮形は展開後パスと統合）、state スクリプト内の宣言名からそれを読む全バインディングへ（配下パス含む）。
 - **インレイヒント**: `for` 短縮パスの後ろに展開後パス（`.name` `= users.*.name` — ランタイムが実際に行う属性書き換えと同一）、フィルタ鎖の末尾に結果型（`→ string`）、spread（`...: target`）に展開規模（`→ 13 props` — 組み込み wcs-* タグ限定。ユーザー定義タグは静的展開不能）。型が静的に決まらない場合はヒントを出しません。
@@ -140,13 +140,28 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | イベント+フィルタ | `onclick: fn\|gt(10)` | ⚠ warning |
 | `<template for>` 外のパターンパス | `textContent: items.*.name` | ⚠ warning |
 | `<template for>` 外の省略パス | `textContent: .name` | ⚠ warning |
+| ループの添字ではない `$` ＋数字（添字は `$1`〜`$128`、先頭に 0 を付けない。ランタイムは状態のパスとして読んで束縛を失敗させる — for の中では for ごと。文書の root の state がそのキーを宣言していると確かめられたとき — `state=` / `json=`・読めた `src=`・スクリプトのトップレベル — だけ報告しない。`wcs/binding-path-missing`） | `textContent: $0` / `$129` | ⚠ warning |
+| 行の中の別のリストの `*`（その段で囲む for のリストの行でない。ランタイムは解決できず、囲む for ごと描けない。`wcs/wildcard-rank`） | `for: a` の中の `textContent: b.*.y` | ⚠ warning |
+| for / if / elseif / else テンプレートの中の `outerHTML:` / `outerText:`（行や枝は元のノードを持ち続けるので、置き換えた中身が取り残される。4.0 は初期化で拒む。包む要素に `innerHTML:` を束縛する。router の route の `<template>` は文書の一部として扱う（その中に入れ子にした構造でない `<template>` — アプリが複製する雛形 — は inert のまま）。自前の `<wcs-state>` を持つ `<template>`（宣言的 shadow root・DCC）の中は検査しない。`wcs/template-syntax`） | `for: items` の中の `outerHTML: .html` | ⚠ warning |
 | 行として読まれない数値添字のパス（添字が 2 つ以上・`*` と混ざる。添字を通した書き込みが届かない。添字が 1 つの `items.0.name` はその位置の行を読むので対象外） | `textContent: groups.0.items.0.name` | ⚠ warning |
 | 数値の添字で辿るリストの `for:`（行への双方向束縛・添字の書き込みが実行時に例外になる — `@wcstack/state` #363。`for: groups` の中に `for: .items` を入れ子にする） | `for: groups.0.items` | ⚠ warning |
 | `<template>` 外の `{{ }}` (FOUC) | `<p>{{ count }}</p>` | ℹ info |
 | ネストされたプロパティへの代入 | `this.user.name = "..."` | ⚠ warning |
+| スクリプトのループの添字の表の外の読み（getter・メソッド・`$watch` のハンドラ。ランタイムは読んだ時点で投げる。単純代入 `this.$0 = v` は投げないので報告しない。`wcs/index-param-range`） | `this.$0` / `this.$129` | ⚠ warning |
+| 同じ root の 2 つ目の `<wcs-state>`（`mount` も `bind-component` も `name` も無く — `name` 付きは登録の前に失敗する —、`<template>` の外。ランタイムは後から登録しに来た方を拒む。部分木は `<wcs-state mount="path">` で接ぎ木する。`wcs/second-root`） | `<wcs-state>` を 2 つ | ⚠ warning |
 | `<!--@@:-->` バインディング表示 | `<!--@@:count-->` | ℹ info |
 
 フィルタチェーンの型追跡により、`if: count|gt(0)` (number→boolean) は正しく OK と判定されます。
+
+### 4.0 への準備（`wcs/v4-migration`）
+
+`@wcstack/state` 3.x では動き、4.0 で削除される・読み方が変わる書き方を **info** で知らせます（既定の CLI でも `--strict` でも CI を落としません）。文面は「4.0 への準備（3.x ではこのまま動きます）」で始まり、3.x のままで書ける書き換え先を案内します。3.x でも既に正しく動かない形（4.0 は初期化で拒む）は、上の表のとおりそれぞれの code の warning です。3.2 で改名した旧名は `wcs/name-alias`（info）のままです。
+
+| 書き方 | 書き換え先 |
+|---|---|
+| root の state の `$scan` | パスの変化を畳むなら `$watch` のハンドラ、イベントを畳むなら `$on` のハンドラで、出力のプロパティへ書く |
+| フィルタ `substr(start, length)`（`data-wcs` / `{{ }}` / `<!--@@:-->`） | `slice(start, start + length)` — slice の第 2 引数は終わりの位置。引数が 0 以上のリテラルなら具体形も示す（`substr(2, 3)` → `slice(2, 5)`） |
+| 4.0 が root へ委譲するイベント（`click`・`dblclick`・`input`・`change`・`submit`・`keydown`・`keyup`・`mousedown`・`mouseup`・`pointerdown`・`pointerup`）の `on*:` で、ハンドラのメソッドがイベント引数の `currentTarget` を読む（4.0 では要素ではなく root になる） | `onclick#direct:`（リスナーを要素に付けたままにする。3.x は修飾子を無視する）か `event.target.closest(...)`。root の state のメソッドが同期的に読む場合だけ — 最初の `await` が中断する前（被演算子の中は数える: `await fetch(url, { body: new FormData(e.currentTarget) })`）、入れ子の関数の外。カスタム要素の `input` / `change` / `submit`（コンポーネントが bubbles しない dispatch をすると 4.0 は要素で聞く）と、自前の `<wcs-state>` を持つ `<template>`（宣言的 shadow root・DCC）の中には出さない。router の route の `<template>` は文書の一部として扱う |
 
 ### JSDoc Type Validation
 

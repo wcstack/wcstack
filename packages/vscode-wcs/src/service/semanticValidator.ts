@@ -9,6 +9,7 @@
  *   wcs/getter-cycle             — パス getter どうしの循環参照
  *   wcs/getter-untracked-read    — getter の中の `this.form.name`（追跡されるのは `form` だけ）
  *   wcs/updated-callback-unbound — `$updatedCallback` が未バインドのパスを判定に使っている
+ *   wcs/index-param-range        — `this.$0` / `this.$129`（ループの添字の表の外。読んだ時点で throw）
  *
  * （もう 1 つの意味論検査 `wcs/wildcard-rank` は HTML 側の for スコープが要るため
  *   bindingValidator / templateSyntaxValidator に同居している。）
@@ -27,7 +28,8 @@ import { parseWcsScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
-import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, type ThisMemberRef } from './scriptAst.js';
+import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
+import { isOutOfRangeIndexName, MAX_INDEX_PARAM } from './v4Migration.js';
 import { countWildcardSegments, getInnermostForPath } from './forContext.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 import { findBuiltinTagOccurrences } from './ioNodeValidator.js';
@@ -82,7 +84,8 @@ const OLD_DECLARATION_MEMBER_NAMES: ReadonlySet<string> = new Set(Object.keys(OL
 const OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:(]|=(?!=)))/g;
 
 /**
- * 旧名の宣言キーの**メンバー参照**（`this.$streams`）を AST で集める。script 相対オフセット。
+ * `names` に当たる**メンバー参照**（旧名の宣言キー `this.$streams`・添字の表の外の `this.$129`）を AST で
+ * 集める。script 相対オフセット。
  *
  * 断定できないときは null を返し、呼び出し側が正規表現へ落とす:
  *   - `export default { … }` が読めない（class 構文の state など）
@@ -117,25 +120,60 @@ const OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:
  * どれも「断定できないときは黙る」側の割り切りで、正規表現フォールバックは走らない
  * （`astReads` は非 null で返る）。
  */
-function collectDeclarationAliasReads(script: string): { name: string; start: number }[] | null {
+function collectStateThisReads(script: string, names: MemberNameFilter): StateThisRead[] | null {
   if (!hasDefaultExportObject(script)) return null;
-  const out: { name: string; start: number }[] = [];
+  const out: StateThisRead[] = [];
   const take = (refs: ThisMemberRef[] | null, base: number): boolean => {
     if (refs === null) return false;
-    for (const ref of refs) out.push({ name: ref.name, start: base + ref.start });
+    for (const ref of refs) out.push({ name: ref.name, start: base + ref.start, end: base + ref.end, written: ref.written === true });
     return true;
   };
   for (const callable of analyzeCallableBodies(script)) {
-    if (!take(collectThisMemberRefs(callable.body, OLD_DECLARATION_MEMBER_NAMES), callable.bodyStart)) return null;
+    if (!take(collectThisMemberRefs(callable.body, names), callable.bodyStart)) return null;
   }
   for (const handler of analyzeWatchHandlerSources(script)) {
     const refs = handler.kind === 'body'
-      ? collectThisMemberRefs(handler.text, OLD_DECLARATION_MEMBER_NAMES)
-      : collectThisMemberRefsInValue(handler.text, OLD_DECLARATION_MEMBER_NAMES);
+      ? collectThisMemberRefs(handler.text, names)
+      : collectThisMemberRefsInValue(handler.text, names);
     if (!take(refs, handler.start)) return null;
   }
   out.sort((a, b) => a.start - b.start);
   return out;
+}
+
+/** `this.<name>` の読み 1 件（script 相対オフセット。名前の範囲 — 引用符は含まない）。 */
+interface StateThisRead {
+  readonly name: string;
+  readonly start: number;
+  readonly end: number;
+  /** 読まずに書くだけ（`this.x = v`・分割代入の左辺）。set トラップは添字の範囲を見ない */
+  readonly written: boolean;
+}
+
+/**
+ * 1 回の AST 走査で集める `this.<name>`: 旧名の宣言キー（`wcs/declaration-alias-read`）と、
+ * ループの添字の表の外の `$` ＋数字（`wcs/index-param-range`）。本体ごとのパースを検査ごとに重ねない。
+ */
+const STATE_THIS_READ_FILTER = (name: string): boolean =>
+  OLD_DECLARATION_MEMBER_NAMES.has(name) || isOutOfRangeIndexName(name);
+
+/**
+ * スクリプトの `this.$0` / `this.$129` / `this["$01"]`（`$` ＋数字だけで、ループの添字 `$1`〜`$128` でない名前）。
+ * ランタイム（proxy/traps/get.ts）は読んだ時点で `[wcs/index-param-range]` を投げる。AST で読めたときだけ
+ * 報告する（class 構文の state など、読めない形は黙る）。severity は warning — 3.x で既に投げる形だが、
+ * 分岐の中の読みは実行されないこともある。
+ */
+function validateIndexParamReads(reads: readonly StateThisRead[] | null, scriptStart: number, locale?: string): WcsDiagnostic[] {
+  if (reads === null) return [];
+  const msgs = getMessages(locale);
+  // 単純代入の左辺（`this.$0 = 1`）は set トラップだけを通り、3.x は範囲を見ない — 読みだけを報告する
+  return reads.filter((read) => !read.written && isOutOfRangeIndexName(read.name)).map((read) => ({
+    code: WcsDiagnosticCode.IndexParamRange,
+    start: scriptStart + read.start,
+    end: scriptStart + read.end,
+    message: msgs.indexParamRange(read.name, MAX_INDEX_PARAM),
+    severity: 'warning' as const,
+  }));
 }
 
 /**
@@ -162,7 +200,12 @@ function collectDeclarationAliasReads(script: string): { name: string; start: nu
  *      （ランタイムが止める形なので、error を出さないのは安全側）。読み出し側の warning /
  *      info の切り替えも同じ方針（誤検出しうる経路を warning にしない）。
  */
-function validateNameAliases(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
+function validateNameAliases(
+  script: string,
+  scriptStart: number,
+  locale: string | undefined,
+  reads: readonly StateThisRead[] | null,
+): WcsDiagnostic[] {
   const msgs = getMessages(locale);
   const scan = maskCommentsAndStrings(script);
   const out: WcsDiagnostic[] = [];
@@ -207,7 +250,7 @@ function validateNameAliases(script: string, scriptStart: number, locale?: strin
   // 旧名の宣言キーの**読み出し**。AST で `this.<name>` を断定できたら warning
   // （黙って undefined になる ＝ `wcs/on-prefixed-member` などと同じ層）。
   // 読めない形（class 構文など）だけ正規表現へ落として info に留める。
-  const astReads = collectDeclarationAliasReads(script);
+  const astReads = reads === null ? null : reads.filter((read) => OLD_DECLARATION_MEMBER_NAMES.has(read.name));
   if (astReads !== null) {
     for (const read of astReads) pushRead(read.name, read.start, 'own');
   } else {
@@ -645,7 +688,10 @@ export function validateSemantics(
     (nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks));
   for (const block of blocks) {
     out.push(...validateIndexArity(block.content, block.contentStart, locale));
-    out.push(...validateNameAliases(block.content, block.contentStart, locale));
+    // `this.<name>` の読みは 1 回の AST 走査で集め、旧名の検査と添字の範囲の検査で分ける
+    const reads = collectStateThisReads(block.content, STATE_THIS_READ_FILTER);
+    out.push(...validateNameAliases(block.content, block.contentStart, locale, reads));
+    out.push(...validateIndexParamReads(reads, block.contentStart, locale));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
   }

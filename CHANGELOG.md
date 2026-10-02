@@ -8,6 +8,20 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/lint` and the VS Code extension: **`wcs/v4-migration` (info) names the forms that 3.x runs and 4.0 removes or reads differently**, as 2.6's `wcs/v3-migration` did for 3.0: `$scan` on the root state (fold in a `$watch` or `$on` handler instead), the `substr` filter (write `slice(start, start + length)`; with non-negative literal arguments the message gives the exact form, `substr(2, 3)` → `slice(2, 5)`), and an `on*:` binding of an event that 4.0 delegates to the root (`click`, `dblclick`, `input`, `change`, `submit`, `keydown`, `keyup`, `mousedown`, `mouseup`, `pointerdown`, `pointerup`) whose handler method reads `currentTarget` from its event parameter — before its first `await` resumes, inside a router route `<template>` too — since in 4.0 that is the root, not the element: write `onclick#direct:` (keeping any modifiers already written: `onclick#prevent,direct:`) or use `event.target.closest(...)`. Info never changes the exit code, `--strict` included. Completion and hover offer the `#direct` modifier; 3.x ignores it and already listens on the element, so it can be written today.
+- `@wcstack/lint` and the VS Code extension: warnings for forms that 3.x already mishandles and 4.0 refuses at initialization — `outerHTML:` / `outerText:` inside a `for` / `if` / `elseif` / `else` template (`wcs/template-syntax`: the replacement is left on the page when the row or branch goes), a `*` over another list than the `for` around it, such as `b.*.y` in a row of `for: a` (`wcs/wildcard-rank`: the enclosing `for` fails to render), `this.$0` / `this.$129` read in a state script (new `wcs/index-param-range`), and a second root `<wcs-state>` (new `wcs/second-root`). None of them is an error, so a 3.x project's CI keeps passing without `--strict`.
+
+### Changed
+
+- `@wcstack/lint` and the VS Code extension: `$0`, `$01` or `$129` in markup is reported as `wcs/binding-path-missing` (warning), the code the 3.x runtime fails with, instead of `wcs/wildcard-rank` ("needs 129 loop levels") or `wcs/template-syntax` ("a loop index outside `for`"); it stays silent only where the state is confirmed to declare that key (an `src=` state is read for it).
+- `@wcstack/lint` and the VS Code extension: `wcs/name-alias` now says the old name "is removed in 4.0" (it said "goes in 4.0").
+
+### Fixed
+
+- `@wcstack/lint` and the VS Code extension: a `for:` with a trailing `;` (`for: items;`) no longer makes the paths in its rows look like `items;.*.name` — a false `wcs/binding-path-missing` on `.name`.
+
 ## [3.4.0] — 2026-10-02
 
 **3.4 fixes the issues reported against 3.3.0, and the regressions those fixes introduced on the way.** The changes are in `@wcstack/state`, with follow-ups in `@wcstack/devtools`, `@wcstack/lint` and the VS Code extension; every other package moves to 3.4.0 only to keep the lockstep version.

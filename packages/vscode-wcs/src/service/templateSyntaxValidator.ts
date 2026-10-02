@@ -14,7 +14,10 @@ import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
 import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { splitOutsideQuotes } from "../core/parser/quoteAware.js";
-import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from "./forContext.js";
+import {
+  isInsideForTemplate, getInnermostForPath, countWildcardSegments, getResolvedForListPath, rankOfForList, findOtherListWildcard,
+} from "./forContext.js";
+import { classifyIndexParam, createDeclaredKeyTester, MAX_INDEX_PARAM, SUBSTR_FILTER, substrRewrite } from "./v4Migration.js";
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
 import { resolveSchemaPath } from "../core/sidecar/schemaSubset.js";
@@ -71,6 +74,10 @@ export function validateTemplateSyntax(
   const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
+
+  // root の state が宣言しているトップレベルのキー（`$0` のようなキーの判定にだけ使う。遅延収集）
+  let declaredKey: ((key: string) => boolean) | null = null;
+  const isDeclaredKey = (key: string): boolean => (declaredKey ??= createDeclaredKeyTester(html, stateTagName, fileReader))(key);
 
   const mustaches = findAllMustacheSyntax(html);
   const comments = findAllCommentBindings(html);
@@ -130,16 +137,29 @@ export function validateTemplateSyntax(
           severity: "warning",
         });
       }
+      // `$` ＋数字だけのパスで、ループの添字（`$1`〜`$128`）の表の外（`$0`・`$01`・`$129`）。ランタイムは
+      // 状態のパスとして読んで `[wcs/binding-path-missing]` で失敗させる（bindingValidator と同じ規則）
+      const indexParam = classifyIndexParam(pathPart);
+      if (indexParam === "notIndex" && !pathSet.has(pathPart) && !isDeclaredKey(pathPart)) {
+        diagnostics.push({
+          code: WcsDiagnosticCode.BindingPathMissing,
+          start: item.exprStart,
+          end: item.exprStart + pathPart.length,
+          message: msgs.indexParamNotIndex(pathPart, MAX_INDEX_PARAM),
+          severity: "warning",
+        });
+      }
       // for の**段数**を超える階数（`matrix.*.*` / `$2`）。上の 2 つは「for の外か」の
       // 二値しか見ておらず、深さ方向は未検査だった。available === 0 は上が担う。
       //（`@` 入りの式は上で continue 済み）
-      if (insideFor && !pathPart.startsWith(".")) {
-        const indexMatch = /^\$(\d+)$/.exec(pathPart);
-        const needed = indexMatch !== null
-          ? Number(indexMatch[1])
+      if (insideFor && !pathPart.startsWith(".") && indexParam !== "notIndex") {
+        const indexN = indexParam === "index" ? Number(pathPart.slice(1)) : null;
+        const needed = indexN !== null
+          ? indexN
           : (pathPart.includes("*") ? countWildcardSegments(pathPart) : 0);
         if (needed > 0) {
-          const available = getAvailableWildcardRank(html, item.matchStart, bindAttrName);
+          const resolvedList = getResolvedForListPath(html, item.matchStart, bindAttrName);
+          const available = resolvedList === null ? 0 : rankOfForList(resolvedList);
           if (available > 0 && needed > available) {
             diagnostics.push({
               code: WcsDiagnosticCode.WildcardRank,
@@ -148,6 +168,18 @@ export function validateTemplateSyntax(
               message: msgs.wildcardRank(`"${pathPart}"`, needed, available),
               severity: "warning",
             });
+          } else if (indexN === null && resolvedList !== null) {
+            // 各段の `*` はその段で囲む for のリストの行（bindingValidator と同じ規則）
+            const other = findOtherListWildcard(pathPart, resolvedList);
+            if (other !== null) {
+              diagnostics.push({
+                code: WcsDiagnosticCode.WildcardRank,
+                start: item.exprStart,
+                end: item.exprStart + pathPart.length,
+                message: msgs.wildcardOtherList(pathPart, other.over, other.loop),
+                severity: "warning",
+              });
+            }
           }
         }
       }
@@ -222,6 +254,21 @@ export function validateTemplateSyntax(
           end: item.exprStart + filterOffset + filterName.length,
           message: msgs.filterUnknown(filterName),
           severity: "warning",
+        });
+      } else if (filterName === SUBSTR_FILTER) {
+        // 3.x では動き、4.0 で削除される（bindingValidator と同じ予告）。引数は引用符の外の `,` で切る
+        const trimmed = segment.trim();
+        const open = trimmed.indexOf("(");
+        const close = trimmed.lastIndexOf(")");
+        const args = open !== -1 && close > open
+          ? splitOutsideQuotes(trimmed.slice(open + 1, close), ",").map((a) => a.trim()).filter((a, i, all) => a !== "" || i < all.length - 1)
+          : [];
+        diagnostics.push({
+          code: WcsDiagnosticCode.V4Migration,
+          start: item.exprStart + filterOffset,
+          end: item.exprStart + filterOffset + filterName.length,
+          message: msgs.v4SubstrRemoved(substrRewrite(args)),
+          severity: "info",
         });
       }
     }

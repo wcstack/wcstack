@@ -60,7 +60,12 @@ export const WcsDiagnosticCode = {
   IndexArity: "wcs/index-arity",
   // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
   // `$2` を 1 段のループで読む）。既存の「for の外」検査の深さ方向の一般化。
+  // 段数が足りていても、`*` がその段で囲む for のリストの行でない（`for: a` の行の中の `b.*.y`）
+  // ときも同じ code（ランタイムは囲む `for` ごと描けない — 4.0 は #1403 で同じ code を投げる）。
   WildcardRank: "wcs/wildcard-rank",
+  // スクリプトの `this.$0` / `this.$129` / `this["$01"]`（`$` ＋数字だけで、`$1`〜`$128` でない名前）。
+  // ランタイム（proxy/traps/get.ts）は読んだ時点で同じ code で raiseError する。
+  IndexParamRange: "wcs/index-param-range",
   // パス getter どうしの循環参照。ランタイムはアドレススタック上限まで再帰してから落ちる。
   GetterCycle: "wcs/getter-cycle",
   // `$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている。
@@ -173,6 +178,16 @@ export const WcsDiagnosticCode = {
   BaseHrefMissing: "wcs/base-href-missing",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
+  // 文書（`<template>` の外）に、`mount` も `bind-component` も持たない `<wcs-state>` が 2 つ以上ある。
+  // ランタイム（stateElementByName.ts の setStateElement）は後から登録しに来た方を raiseError で拒む
+  // （v2 から 1 root 1 ツリー）。4.0 も同じ code（#47）。
+  SecondRoot: "wcs/second-root",
+  // --- @wcstack/state 4.0 への予告（3.x 系だけの code — 2.6 の wcs/v3-migration と同じ運用） ---
+  // 3.x では正しく動くが 4.0 で外れる・読み方が変わる書き方（`$scan`・`substr`・委譲される
+  // イベントのハンドラが読む `event.currentTarget`）。severity は常に info — 3.x の CI を
+  // （`--strict` でも）落とさない。3.x で既に壊れている形は
+  // ここに入れず、その形の code（wcs/wildcard-rank など）で warning にする。
+  V4Migration: "wcs/v4-migration",
   // --- deprecations ---
   // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
   // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。
