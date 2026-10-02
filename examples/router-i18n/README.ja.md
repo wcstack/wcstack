@@ -113,13 +113,18 @@ state "i18n": "subtotal" is not declared. … npx @wcstack/lint <file>
 
 ### 5. 構造レンダリングは router の外に置く
 
-`<wcs-route>` の中に置いた `<template data-wcs="for: …">` は**描画されない**。state
-がバインドを組み立てる時点でルートのノードは inert な `<template>` の中にあり、
-内側の構造フラグメントが登録されないためである。ルート内の素のバインドは**動く**
-（About ページはその場で翻訳されている）ので、この境界は踏み抜きやすい。
+ルートの内容は router がスタンプしたときに束ねられる（binder プロトコル）ので、
+ルート内の素のバインドは動き（About ページはその場で翻訳されている）、ルート本文の
+要素の中に置いた `<template data-wcs="for: …">`
+（`<ul><template data-wcs="for: …">…</template></ul>`）も描画される。
+`<wcs-route>` の**直下**に置いたものが描画されるのは着地のルートだけである。
+@wcstack/state 3.x がそれを描くのは、ページの最初の走査ですでにスタンプされていた
+ときだけで、ナビゲーションで router から渡されたときは束縛の適用の失敗として報告する。
+詳しくは router の README
+（[ルートの本文はどこに置くか](../../packages/router/README.ja.md#ルートの本文はどこに置くか)）にある。
 
-そこで router は `path` を publish し、state はその外側の
-`<template data-wcs="if: isList">` からリストを描画する。
+この例では、それでもリストを router の外に置いている。router は `path` を publish し、
+state はその外側の `<template data-wcs="if: isList">` からリストを描画する。
 [router-spa](../router-spa/) と同じ分担である。
 
 ## スニペットを持っていく
