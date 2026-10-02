@@ -8,6 +8,12 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [3.5.0] — 2026-10-02
+
+**3.5 is the last 3.x minor: it prepares pages for 4.0 without changing how they run.** It keeps the promise of 3.2 — runtime warnings for the renamed names, in the last 3.x minor only — and extends them to everything 4.0 removes or rejects: `@wcstack/state` prints `[wcs/v4-migration]` warnings (once per message per page, in the full entries only), every package's `bootstrapXxx(config)` warns about an option 4.0 refuses, and `@wcstack/lint` adds `wcs/v4-migration` hints plus warnings for forms 3.x already mishandles (no new error, so a 3.x project's CI keeps passing). The new [migration guide](./docs/migration-v4.md) lays out the path: upgrade to 3.5, clear its warnings (all but those for the three options that move to `$behavior`), then move to 4.0.
+
+It is a minor because it adds warnings and changes some observable behaviour on purpose: a failed state source rejects `connectedCallbackPromise` with the error that was thrown instead of a `Failed to initialize state: …` wrapper; a route's content now ends with an `<!--@@wcs-route-end:…-->` comment and leaves and returns as one range, so what state rendered beside it no longer stays behind; a parameter-only navigation keeps the content in order; and a layout's bindings are bound on the first navigation. The CSP documentation is corrected: a page nonce on the `<script>` that loads state or router covers the `blob:` imports. `@wcstack/state`'s `auto.min.js` grows by 1.1 KB gzip (the warnings; the split `/core` by 0.1 KB), and `wcstack/auto` from 368 to 373 KB min (108 → 109 KB gzip). Known issue: [#409](https://github.com/wcstack/wcstack/issues/409) — in a route entered by navigation, a structural template after an element that binds on itself is not rendered; wrap the route body in one element.
+
 ### Added
 
 - `@wcstack/state`: **`[wcs/v4-migration]` warnings.** 3.5 is the last 3.x minor, so it keeps the promise of 3.2 — runtime warnings for the renamed names in the last 3.x minor only. It prints each message once per page with what to write instead: the old filter names `inc` `dec` `fix` `uc` `lc` `cap` `rep` `rev` `pad` `null`, `$trackDependency` / `$untrackDependency`, and the declaration keys `$updatedCallback` / `$streams`. It also names what 4.0 removes or rejects: `$scan` (use `$watch` or `$on`); the `substr` filter (`slice(start, start + length)`); the `bootstrapState` options `debug`, `commentTextPrefix` and `enablePropagationContext`; the options `enableMustache`, `sameValueGuard` and `enableDirectionalInitialSync`, which move to the state's `$behavior` (3.x does not read `$behavior`, so keep them in `bootstrapState()` until you upgrade); unknown options and values of the wrong type; a `$behavior` or `$features` state key whose value 3.x does not run with or that 4.0 throws on; and the volumes 4.0 refuses to graft — one that declares `$watch`, `$listKeys`, `$renderedCallback`, `$behavior` or `$features`, or that injects root paths (`data-wcs="state.<key>: …"`), all of which work in 3.x. Nothing about how 3.x runs changes, and the checks sit only where an old form is resolved (a canonical `$` read or filter costs the same). The warnings ship in the full entries (`@wcstack/state`, `/auto`) and not in the split `/core`: `auto.min.js` grows by 1.0 KB gzip and the split core by 0 B; `scripts/check-state-split.mjs` now fails if a split output carries them. `on*#direct:`, which 4.0 adds, already works in 3.x, because 3.x attaches every `on*:` to its element, so pages can write it now. The state README has a "Preparing for 4.0" section; `examples/state-intersect-scroll` folds its feed with `$watch` instead of `$scan`, and `examples/state-tilt-maze` binds its drag handlers with `on*#direct:`.
@@ -583,7 +589,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.0...HEAD
+[3.5.0]: https://github.com/wcstack/wcstack/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/wcstack/wcstack/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/wcstack/wcstack/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/wcstack/wcstack/compare/v3.1.0...v3.2.0
