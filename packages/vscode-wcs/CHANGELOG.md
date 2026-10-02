@@ -2,11 +2,13 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 1.20.0 — 2026-10-02
+
+`@wcstack/state` 3.4.0 の dist を同梱。3.4.0 から実行時が数値添字が 1 つのパスの束縛（`items.0.v`）をその位置の行として読むので、診断もその読み方に揃える。
 
 ### 修正
 
-- **数値添字のパスの束縛（`textContent: items.0.v`・`{{ items.1.v }}`・行 getter の `items.0.double`）の診断を、`@wcstack/state` の実行時の読み方に揃えた**（#355）。`@wcstack/state` は #332（未リリース）から、数値添字が 1 つのパスを「いまその位置にある行」として読み、書き込みに追従し、行 getter も読む（実行時の警告も出ない）。拡張は存在判定が候補集合との完全一致で（`items.0.double` は行 getter `items.*.double` に当たらない）、`wcs/template-syntax` は数値のセグメントがあれば一律に「解決済みパスは UI バインディングでは使用できません」と言っていたので、束縛 1 つに warning が 2 件出ていた（Issue のページで 10 件 → いまは `groups.0.items.0.v` の `wcs/template-syntax` 1 件だけ）。判定は `service/indexPath.ts` に置き、実行時の `isIndexPath`（`address/indexPathAccessor.ts`）と `resolvePathExistence`（`diagnostics/pathChecks.ts`）に合わせた。
+- **数値添字のパスの束縛（`textContent: items.0.v`・`{{ items.1.v }}`・行 getter の `items.0.double`）の診断を、`@wcstack/state` の実行時の読み方に揃えた**（#355）。`@wcstack/state` は #332（3.4.0）から、数値添字が 1 つのパスを「いまその位置にある行」として読み、書き込みに追従し、行 getter も読む（実行時の警告も出ない）。拡張は存在判定が候補集合との完全一致で（`items.0.double` は行 getter `items.*.double` に当たらない）、`wcs/template-syntax` は数値のセグメントがあれば一律に「解決済みパスは UI バインディングでは使用できません」と言っていたので、束縛 1 つに warning が 2 件出ていた（Issue のページで 10 件 → いまは `groups.0.items.0.v` の `wcs/template-syntax` 1 件だけ）。判定は `service/indexPath.ts` に置き、実行時の `isIndexPath`（`address/indexPathAccessor.ts`）と `resolvePathExistence`（`diagnostics/pathChecks.ts`）に合わせた。
   - **数値添字が 1 つのパス**（`*` を持たず、先頭が数値でなく、親がリスト）は、添字を `*` に読み替えて照合する: `items.01.v` / `items.1e0.v` も行 1、オブジェクトの数値キー（`sales.2024.total`）は素のキーのまま、`items.-1.v` と `items.0.nope` は従来どおり `wcs/binding-path-missing`。拡張できない state（`Object.freeze` など）では実行時は素のパスになるが、静的には見ない。型の検査（`class.` / `for:` の型・フィルタの入力型）も読み替えた形の型で行う — `class.on: items.0.name`（文字列。実行時は `binding "prop: items.0.name" failed to apply`）・`textContent: items.0.tags|upper`・`for: items.0.name` に、パターンパス（`items.*.name` など）と同じ診断が出る。
   - **添字が 2 つ以上のパス・`*` と混ざるパス**（`groups.0.items.0.v`・`for` の行の `.tags.0`）は実行時も素のパスで、添字を通した書き込みが届かないので `wcs/template-syntax` を残し、文面をそのとおりに改めた。存在は実行時と同じく配列の上の添字（`"0"` のような配列のキーの綴りだけ）を要素として辿り、要素の形（`*`）のデータの候補と照合するので、`groups.0.items.0.v`・`.tags.0` の偽の `wcs/binding-path-missing` は消えた。素のパスは行を持たないので、行 getter をこの形で読むと実行時は空で描く — `wcs/binding-path-missing` のまま（`groups.01.items.0.v` も同じ）。要素の個数は静的に見ないので、その位置に要素があるものとして扱う。
   - **`for:` の対象が数値の添字を持つリスト**（`for: groups.0.items`・`for: items.0.tags`）には、添字が 1 つでも `wcs/template-syntax`（warning）を出す。実行時は初期表示とリストの置き換えには追従するが、行が `groups.0.items.*.…` として解決され、行への双方向束縛（`value: .v`）は `Partial wildcard type is not supported yet`、添字のパスへの書き込み（`this["groups.0.items.0.v"] = 5`）は `[wcs/wildcard-rank]` で投げる（`@wcstack/state` #363）。文面は `for: groups` の中に `for: .items` を入れ子にする形を勧める。行の中の省略パス（`.v` → `groups.0.items.*.v`）は上の素のパスとして存在するので、警告は `for:` の 1 か所に出る。
