@@ -21,8 +21,8 @@ export function mount(engine: Engine, root: Document | ShadowRoot | Element): vo
 
 /**
  * Binds a subtree that entered the document after the mount (the binder protocol). It never throws
- * for markup reasons (the protocol): an error in the markup is reported, and what was walked before
- * it stays bound. A structural template handed over itself (a route's top-level node) is refused:
+ * for markup reasons (the protocol): an error in the markup is reported, and what is before it in
+ * document order (the elements it is in too) stays bound. A structural template handed over itself (a route's top-level node) is refused:
  * what it renders would sit beside it, where whoever inserted it does not reach (a router removes
  * only its own nodes).
  */

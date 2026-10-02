@@ -34,13 +34,17 @@ export const scopes: Feature = {
       guardAncestorWrite(engine, p);
       return guardReadonlyMount(engine, p, element);
     });
-    hooks.declare = chain(hooks.declare, (engine) => {
+    // first, before what is installed (in any order) replaces its runtime for the new state:
+    // a refused re-set leaves the old state, its watches, streams and keys as they were
+    const declared = hooks.declare;
+    hooks.declare = (engine, target) => {
       const list = grafted.get(engine);
       if (list !== undefined && list.length > 0) {
         raiseError(`re-setting a root state with grafted volumes (${list.join(", ")}) is not supported: their data is part of the tree.`);
       }
       if (hasMounts(engine)) raiseError("re-setting a root state with mounted components is not supported: they read its data.");
-    });
+      declared?.(engine, target);
+    };
   },
 };
 export default scopes;

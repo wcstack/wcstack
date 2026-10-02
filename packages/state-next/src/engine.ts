@@ -825,6 +825,9 @@ export class Engine implements ReconcileHooks {
     const [mustache, guard, directional] = BEHAVIOR_KEYS.map((key) => c[key] ?? true);
     // a re-set keeps the engine, and what was built by the old options
     if (this.target !== undefined && (mustache !== this.mustache || guard !== this.guard || directional !== this.directional)) raise(M.BehaviorChanged);
+    // (read before anything is taken in: a malformed declaration leaves a re-set's old state in place)
+    const commands = commandNamespace(target, this.commands);
+    const events = eventTokens(target, this.deliverFn);
     this.mustache = mustache;
     this.guard = guard;
     this.directional = directional;
@@ -834,8 +837,8 @@ export class Engine implements ReconcileHooks {
     for (const p of this.patterns.all()) p.forget();
     this.rootEqSubs.length = 0;
     this.registerAccessors(target);
-    this.commands = commandNamespace(target, this.commands);
-    this.events = eventTokens(target, this.deliverFn);
+    this.commands = commands;
+    this.events = events;
   }
 
   private resetList(l: StateList): void {

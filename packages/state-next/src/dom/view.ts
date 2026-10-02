@@ -8,13 +8,15 @@ import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 
 /**
- * `on*:` bindings of a native element's bubbling events are delegated: one listener per
- * event type on the root (so `event.currentTarget` is the root — decided 2026-09-25). Inside
- * a block the handler is not attached to the element at all: the block's top node carries
- * the block, which finds its handlers from its plan when an event passes (Block.dispatch).
- * Outside any block (a root-level element), and where a block's content can shift before the
- * element (see compilePlan), the handler is stored on the element. A custom element's event
- * (it may not bubble) and a non-bubbling one get a listener on the element itself.
+ * `on*:` bindings of bubbling events are delegated: one listener per event type on the root
+ * (so `event.currentTarget` is the root — decided 2026-09-25), which runs the handlers of the
+ * elements the event passed, innermost first. Inside a block the handler is not attached to the
+ * element at all: the block's top node carries the block, which finds its handlers from its plan
+ * when an event passes (Block.dispatch). Outside any block (a root-level element), where a
+ * block's content can shift before the element (see compilePlan), and on a custom element, the
+ * handler is stored on the element. A custom element may dispatch such an event without bubbling
+ * (the root never hears it): that one is heard on the element. A non-bubbling event type gets a
+ * listener on the element itself.
  */
 export function attachEvent(engine: Engine, node: Node, s: Spec, row: StateRow | null): void {
   const fn = s.listener!;
@@ -27,6 +29,7 @@ export function attachEvent(engine: Engine, node: Node, s: Spec, row: StateRow |
       prev(e);
       h(e);
     };
+    if (s.custom) node.addEventListener(s.name, (e) => e.bubbles || h(e));
   } else node.addEventListener(s.name, h);
 }
 
@@ -256,13 +259,13 @@ export class Binding {
   }
 }
 
+/** A property that is the element's content (its children are a value). */
+export const isContent = (name: string): boolean => name === "textContent" || name === "innerText" || name === "innerHTML";
+
 /**
  * Writes `v` to the element: the kinds that need nothing but the node and the name (the
  * ones a row slot can hold).
  */
-/** A property that is the element's content (its children are a value). */
-export const isContent = (name: string): boolean => name === "textContent" || name === "innerText" || name === "innerHTML";
-
 export function applyTo(kind: number, n: any, name: string, v: unknown): void {
   switch (kind) {
     case K_TEXT:
@@ -311,9 +314,10 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
 const SELECTED: unique symbol = Symbol() as never;
 
 /**
- * A view rendered options into `parent`: the select's bound value is applied again. Bindings
- * apply in document order, so a select's value comes before the options a `for` inside it
- * renders, and names none of them (3.3 applies it after the options).
+ * A view rendered options into `parent`: the select's bound value is applied again. A block binds
+ * its plan in document order, so a select's value there comes before the options a `for` inside
+ * it renders, and names none of them; so does a value applied before a later change renders more
+ * options (3.3 applies it after the options). (On the page a select's children are bound first.)
  */
 function reselect(parent: Node): void {
   const sel: any = (parent as Element).localName === "optgroup" ? parent.parentNode : parent;
@@ -469,7 +473,7 @@ export function listFor(engine: Engine, p: Pattern, row: StateRow | null, anchor
   try {
     return engine.childList(parent, p);
   } catch (error) {
-    engine.fail(error, new Binding(engine, K_FOR, anchor, "for", p, null, null, null, undefined));
+    engine.failAt(error, p.path, anchor, "for");
     return parent === null ? engine.rootLists.get(p)! : parent.children!.get(p)!;
   }
 }

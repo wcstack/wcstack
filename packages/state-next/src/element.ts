@@ -259,9 +259,10 @@ export class WcsState extends HTMLElement {
       const loading = loadFeatures(state);
       if (loading) await loading;
       if (this.hasAttribute("enable-ssr")) requireFeature("ssr", "enable-ssr");
-      // one state tree per root: another <wcs-state> already bound this root (and still does)
+      // one state tree per root: another <wcs-state> already bound this root (and still does —
+      // whatever its $connectedCallback did then), or a component's took it
       const other = engines.get(root)?.element as WcsState | undefined;
-      if (other?.isConnected && !other.failed) raise(M.SecondRoot);
+      if (other?.isConnected && (other.bound || other.claimed)) raise(M.SecondRoot);
       const engine = new Engine(state, makeStrategy());
       engine.element = this;
       this.engine = engine;

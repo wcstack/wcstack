@@ -124,8 +124,11 @@ export class WatchRuntime {
 
   getterReached(g: Pattern, row: StateRow | null): void {
     if (!this.active) return;
-    // a getter, or a path under it in the same row
-    for (const w of this.watches) if (w.getter && w.p.depth === g.depth && w.p.isUnder(g)) this.hit(w, row, w.last.get(row ?? ROOT));
+    // a getter, or a path under it in the same row — also one that became so after the activation
+    // (a mounted component's exported getter, a volume's accessor grafted later)
+    for (const w of this.watches) {
+      if ((w.getter ||= w.p.getter !== null || w.p.underGetter) && w.p.depth === g.depth && w.p.isUnder(g)) this.hit(w, row, w.last.get(row ?? ROOT));
+    }
   }
 
   /** Rows that entered a list a row watch ranges over fire (and nested lists under them sync). */

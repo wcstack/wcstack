@@ -10,6 +10,8 @@ import { chain, hooks, type Feature } from "../hooks";
 import type { Engine } from "../engine";
 import { parsePath, type Pattern } from "../pattern";
 import { raiseError } from "../parser/raiseError";
+import { config } from "../config";
+import type { WcsState } from "../element";
 import type { Binding } from "../dom/view";
 import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
 import { didYouMean, LINT_HINT } from "../diagnostics/guidance";
@@ -21,6 +23,8 @@ import { explain, render } from "../diagnostics/explain";
 const named = new WeakMap<Engine, Map<Pattern, boolean>>();
 const checked = new WeakMap<Engine, Set<Pattern>>();
 const due = new WeakSet<Engine>();
+/** Volumes (`<wcs-state mount>`) whose loading settled: the paths under them are checked from then on. */
+const settled = new WeakSet<Element>();
 
 function findDescriptor(o: object, key: string): PropertyDescriptor | undefined {
   for (let x: object | null = o; x !== null && x !== Object.prototype; x = Object.getPrototypeOf(x)) {
@@ -99,6 +103,17 @@ function check(engine: Engine): void {
     done.add(p);
     const m = missing(engine, p);
     if (m === null) continue;
+    // under the mount path of a volume on the page still loading: checked again once it settles (3.x D22)
+    const v = [...((engine.root as ParentNode | null)?.querySelectorAll(`${config.tagNames.state}[mount]`) ?? [])]
+      .find((e) => !settled.has(e) && (p.path + ".").startsWith(e.getAttribute("mount") + "."));
+    if (v !== undefined) {
+      done.delete(p);
+      void (v as WcsState).initializePromise.then(() => {
+        settled.add(v);
+        schedule(engine);
+      });
+      continue;
+    }
     const [code, subject] = watch ? ["watch-path-missing", "$watch path"] : ["binding-path-missing", "Bound path"];
     // a row of `for: groups.0.items` with a row getter declared on `groups.*.items.*` (#388)
     const w = engine.patterns.peek(parsePath(p.path).pattern);

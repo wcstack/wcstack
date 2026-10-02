@@ -32,7 +32,7 @@ import { mount } from "../dom/mount";
 import { drainBinds } from "../dom/binder";
 import { registryOf } from "../dom/wc";
 import { raiseError } from "../parser/raiseError";
-import { onRootFailed, watchRoot } from "./volume";
+import { onRootFailed, orphan, rootEngineCreated, watchRoot, wired } from "./volume";
 
 interface Entry {
   /** The component-side path ("" = the whole state). */
@@ -662,6 +662,9 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   if (!independent) {
     wire(m);
     register(m, true);
+    // the volumes in it are refused (graft), those that loaded first and those that load later
+    wired.add(C);
+    rootEngineCreated(C, root);
   } else {
     hooks.element?.(C, "mounting");
   }
@@ -695,15 +698,19 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
   const shadow = parent instanceof ShadowRoot;
   const host = shadow ? (parent as ShadowRoot).host : parent instanceof Element ? parent : null;
   let m: Mount | null = null;
+  // a component that does not mount: the volumes in its shadow root have no tree to graft onto
+  const failed = (e: unknown): never => {
+    if (shadow) orphan(parent!);
+    throw e;
+  };
   return {
     load() {
-      if (host === null || !host.localName.includes("-")) {
-        return Promise.reject(new Error(`[@wcstack/state] "bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`));
-      }
-      return load(el, prop, host, !shadow);
+      return (host === null || !host.localName.includes("-")
+        ? Promise.reject(new Error(`[@wcstack/state] "bind-component" requires <${config.tagNames.state}> to be a direct child of a custom element.`))
+        : load(el, prop, host, !shadow)).catch(failed);
     },
     async start(state) {
-      m = await start(el, host!, shadow ? parent! : host!, state);
+      m = await start(el, host!, shadow ? parent! : host!, state).catch(failed);
     },
     connected() {
       if (m === null) return;

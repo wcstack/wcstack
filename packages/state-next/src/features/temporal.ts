@@ -13,9 +13,16 @@ interface Runtime {
   watch: WatchRuntime;
   stream: StreamRuntime;
   connected: boolean;
+  /** The state it was made for: a re-set refused after it (list-keys, recursion) leaves the old one in place. */
+  target: object;
 }
 
 const runtimes = new WeakMap<Engine, Runtime>();
+/** The engine's runtime when it is its state's (not one a refused re-set left: that one never runs). */
+function live(engine: Engine): Runtime | undefined {
+  const rt = runtimes.get(engine);
+  return rt?.target === engine.target ? rt : undefined;
+}
 
 function declare(engine: Engine, target: Record<string, any>): void {
   const watch = new WatchRuntime(engine, parseWatches(engine, target.$watch));
@@ -25,7 +32,7 @@ function declare(engine: Engine, target: Record<string, any>): void {
     old.watch.deactivate();
     old.stream.abortAll();
   }
-  runtimes.set(engine, { watch, stream, connected: old?.connected ?? false });
+  runtimes.set(engine, { watch, stream, connected: old?.connected ?? false, target });
 }
 
 function element(engine: Engine, phase: "mounting" | "connected" | "disconnected" | "reset"): void {
@@ -33,14 +40,16 @@ function element(engine: Engine, phase: "mounting" | "connected" | "disconnected
   // an engine made before the add-on was installed has no runtime (and declares nothing temporal);
   // a server render (@wcstack/server) keeps streams at their initial value and watches off
   if (rt === undefined || phase === "mounting" || document.documentElement?.hasAttribute("data-wcs-server")) return;
+  // (kept on a runtime a refused re-set left too: the next re-set takes it over)
+  if (phase !== "reset") rt.connected = phase === "connected";
+  // a refused state's runtime never runs, nor stops (writes `$streamStatus`), on the state that stayed
+  if (rt.target !== engine.target) return;
   if (phase === "disconnected") {
-    rt.connected = false;
     rt.watch.deactivate();
     rt.stream.stopAll();
     return;
   }
-  if (phase === "connected") rt.connected = true;
-  else if (!rt.connected) return;
+  if (!rt.connected) return;
   rt.watch.activate();
   rt.stream.startAll();
 }
@@ -52,16 +61,16 @@ export const temporal: Feature = {
   install(): void {
     hooks.declare = chain(hooks.declare, declare);
     hooks.element = chain(hooks.element, element);
-    hooks.written = chain(hooks.written, (engine, p, row, old, value, direct) => runtimes.get(engine)?.watch.written(p, row, old, value, direct));
+    hooks.written = chain(hooks.written, (engine, p, row, old, value, direct) => live(engine)?.watch.written(p, row, old, value, direct));
     hooks.getterReached = chain(hooks.getterReached, (engine, g, row) => {
-      const rt = runtimes.get(engine);
+      const rt = live(engine);
       if (rt === undefined) return;
       rt.watch.getterReached(g, row);
       rt.stream.getterReached(g);
     });
-    hooks.listSynced = chain(hooks.listSynced, (engine, list, old) => runtimes.get(engine)?.watch.listSynced(list, old));
+    hooks.listSynced = chain(hooks.listSynced, (engine, list, old) => live(engine)?.watch.listSynced(list, old));
     hooks.drained = chain(hooks.drained, (engine) => {
-      const rt = runtimes.get(engine);
+      const rt = live(engine);
       if (rt === undefined) return;
       rt.watch.drained();
       rt.stream.drained();

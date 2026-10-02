@@ -6,7 +6,8 @@
  * `p` (`this.x` is the tree's `p.x`). Load order does not matter: a volume that loads before its
  * root grafts when the root engine is created, before the page is bound; if the root fails to
  * initialize, its volumes report it and settle. A root hydrated from a server snapshot (SSR)
- * already holds the volume's data at `p`: the volume adopts it (3.x D14).
+ * already holds the volume's data at `p`: the volume adopts it (3.x D14). A volume in a component
+ * wired to its host (`data-wcs="state…"`) is refused, whenever it loads (3.x left it pending).
  *
  * Not carried over from @wcstack/state 3.3 (approved simplifications, each an error rather than
  * a silent no-op): injections on the volume element (`data-wcs="state.k: …"`), and a volume's
@@ -38,6 +39,8 @@ const slots = new WeakMap<Node, Map<string, Volume>>();
 /** Loaded volumes waiting for their root's engine; null: the root's `<wcs-state>` failed to initialize. */
 const waiting = new WeakMap<Node, Volume[] | null>();
 const ORPHAN = "will not graft: the root state failed to initialize.";
+/** The engines of components wired to their host: they read the host's tree, a volume has none to graft onto. */
+export const wired = new WeakSet<Engine>();
 /** The mount paths grafted onto each engine. */
 export const grafted = new WeakMap<Engine, string[]>();
 
@@ -103,6 +106,7 @@ function callLifecycle(v: Volume, name: "$connectedCallback" | "$disconnectedCal
 }
 
 function graft(v: Volume, engine: Engine): void {
+  if (wired.has(engine)) return fail(v, "will not graft: its component is wired to its host.");
   const state = v.state!;
   const target = engine.target;
   const segs = v.path.split(".");
@@ -162,14 +166,23 @@ function graft(v: Volume, engine: Engine): void {
  */
 export function watchRoot(el: HTMLElement, root: Node): null {
   (el as WcsState).connectedCallbackPromise.catch(() => {
-    // a stray second one (#47) beside the root that binds the page: nothing failed for what waits there
+    // a root that bound the page (only its $connectedCallback failed), or a stray second one (#47)
+    // beside the root that binds it: nothing failed for what waits there
     const live = engines.get(root)?.element as Element | undefined;
-    if (live !== undefined && live !== el && live.isConnected) return;
-    for (const v of waiting.get(root) ?? []) fail(v, ORPHAN);
-    waiting.set(root, null);
+    if ((el as WcsState).bound || (live !== undefined && live !== el && live.isConnected)) return;
+    orphan(root);
     for (const f of giveUp.get(root) ?? []) f();
   });
   return null;
+}
+
+/**
+ * The state of `root` failed to initialize (the page's root, or a component's in its shadow root):
+ * the volumes waiting there, and those that load later, report it and settle.
+ */
+export function orphan(root: Node): void {
+  for (const v of waiting.get(root) ?? []) fail(v, ORPHAN);
+  waiting.set(root, null);
 }
 
 /** What else waits on a root node's `<wcs-state>` (a component, for the page's wiring). */

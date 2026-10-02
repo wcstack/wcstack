@@ -307,6 +307,13 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
   - スナップショットから状態を重ねた根（SSR のクライアント）では、マウントパスに既にある値を衝突とせず、採用する（現行の D14）。データは書かず、accessor とメソッドだけを登録する。根のキーとの衝突の報告は、それ以外の根に限る。
   - 根が初期化に失敗したら、待っている volume は `will not graft: the root state failed to initialize.` と報告して決着する（`connectedCallbackPromise` は解決する）。その後に読み込んだ volume も同じ。根のエンジンが新しくできれば、待ちに戻る。根が無いあいだは、現行と同じく待ち続ける。
   - 行の getter（`get "items.*.sub"()`）にキャッシュの枠を割り当てた（以前は常に undefined だった）。`$eqIndex` のパスもマウントからの相対にした。
+- 後の変更（2026-10-02、品質改善のサイクル 4）:
+  - 結線した部品の shadow root の中の volume は、拒む（支えない）と決めた。部品のエンジンが結線で作られた時点で、そこで待つ volume を `will not graft: its component is wired to its host.` と報告して決着させ、後から読み込む volume も同じにする（部品のエンジンを `wired` に入れ、`graft` が拒む）。結線した部品はホストの木を読むので、接ぎ木する木が無い。3.x は pending のまま。支える案（結線の分岐でもマウントパスを部品のキーにする）は、サイズと 3.x の挙動から採らなかった。
+  - 束ね終えた根の `$connectedCallback` が reject しても、`watchRoot` は根の失敗とみなさない（`bound` を見る）。
+  - 根の再セットの拒否は、`declare` の連鎖の先頭で行う（後付けの入れる順に依らず、temporal・list-keys が新しい状態に差し替える前に拒む）。
+  - SSR の `hydrate` は、`element` の連鎖の先頭で行う（先に入れた scopes の接ぎ木より前に、スナップショットを重ねる）。
+  - 部品の claim の `load`／`start` が失敗したら（ページの根の失敗、状態がオブジェクトでない、など）、その shadow root で待つ volume を根の失敗と同じく報告して決着させ、後から来るものも拒む（`orphan`）。
+  - 拒まれた再セットの残り（`$listKeys`／`$recursion` の宣言の誤り）: temporal の runtime は作ったときの状態を覚え、根の状態と違う runtime は、どの受け口（接続・切断・書き込み・getter・一覧・drain）でも動かさない（拒まれた状態のハンドラや stream が、残った状態の上で動かない。接続の旗だけは持ち続け、次の再セットに引き継ぐ）。診断は、読み込み中の volume のマウントパスの配下を、その volume が決着してから確かめ直す（決着した後は警告する）。list-keys の鍵の表は状態のオブジェクトごとに持つ（残った状態の鍵が効き続ける）。古い状態の `$watch`／`$stream` が止まるのは残る（文書に記録）。
 
 **DCC**（`src/scopes/dcc.ts`）
 - `[data-wc-definition]` のホストの shadow の中にある `<wcs-state>` から、ホストのタグの要素クラスを定義する。各インスタンスは定義の中身の複製を shadow に持ち、その中の `<wcs-state>` は普通の根になる。

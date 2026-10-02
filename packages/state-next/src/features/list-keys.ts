@@ -13,7 +13,8 @@ import { raiseError } from "../parser/raiseError";
 
 type KeyOf = (row: Record<string, unknown>) => unknown;
 
-const keysByEngine = new WeakMap<Engine, Map<Pattern, KeyOf>>();
+/** By state object: a re-set refused after the declaration (recursion) leaves the old state's keys in force. */
+const keysByTarget = new WeakMap<object, Map<Pattern, KeyOf>>();
 /** The merged array is being written: the write goes through as a plain one. */
 let merging = false;
 const PROTO = "__proto__";
@@ -32,7 +33,7 @@ function declare(engine: Engine, target: Record<string, any>): void {
       else raiseError(`$listKeys "${path}" must be a field name or a function.`);
     }
   }
-  keysByEngine.set(engine, keys);
+  keysByTarget.set(target, keys);
 }
 
 function isPlain(v: unknown): v is Record<string, unknown> {
@@ -55,7 +56,7 @@ function keyed(path: string, rows: readonly unknown[], keyOf: KeyOf): Map<unknow
 
 function beforeWrite(engine: Engine, p: Pattern, row: StateRow | null, value: unknown): boolean {
   if (merging || !Array.isArray(value)) return false;
-  const keyOf = keysByEngine.get(engine)?.get(p);
+  const keyOf = keysByTarget.get(engine.target)?.get(p);
   if (keyOf === undefined) return false;
   const old = engine.readData(p, row);
   if (!Array.isArray(old) || old === value) return false;

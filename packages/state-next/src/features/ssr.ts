@@ -12,10 +12,14 @@ export const ssr: Feature = {
   install(): void {
     hooks.ssrMark = ssrMark;
     hooks.adoptScope = adoptScope;
-    hooks.element = chain(hooks.element, (engine, phase) => {
+    // the snapshot first, before what is installed (in any order) runs at "mounting": a volume
+    // grafting there adopts it, and its $connectedCallback writes over it (3.x D14)
+    const prev = hooks.element;
+    hooks.element = (engine, phase) => {
       if (phase === "mounting") hydrate(engine);
-      else if (phase === "connected") hydrated(engine);
-    });
+      prev?.(engine, phase);
+      if (phase === "connected") hydrated(engine);
+    };
     installBuilder();
     // `<wcs-ssr>` in every registry `<wcs-state>` is defined in, now and later
     hooks.tags = chain(hooks.tags, defineSsr);

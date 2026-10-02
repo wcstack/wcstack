@@ -239,7 +239,7 @@ describe("N1: 1 行の組み立てが途中で失敗した後の一覧", () => {
   });
 });
 
-describe("A3: カスタム要素の on*: は要素に直接付く", () => {
+describe("A3: カスタム要素のバブルしないイベント", () => {
   it("バブリングしない change を出すカスタム要素でも、ページの直下と行の中の両方でハンドラが呼ばれる", async () => {
     const calls: string[] = [];
     const { root } = setup(
@@ -1457,5 +1457,160 @@ describe("R3-3: 外した <wcs-state> と getBindingsReady", () => {
     expect(await race(getBindingsReady(root), 100)).toBe("rejected");
     root.prepend(el);
     expect(await race(getBindingsReady(root), 100)).toBe("resolved");
+  });
+});
+
+describe("H1: カスタム要素の on*:（委譲とバブルしないイベント）", () => {
+  const card = (): string => {
+    const t = `quality-card-${seq++}`;
+    customElements.define(t, class extends HTMLElement {});
+    return t;
+  };
+
+  for (const [label, wrap] of [
+    ["ページの直下", (s: string) => s],
+    ["行の中（カードが行の先頭）", (s: string) => `<template data-wcs="for: items">${s}</template>`],
+    ["行の中（カードが入れ子）", (s: string) => `<ul><template data-wcs="for: items"><li>${s}</li></template></ul>`],
+  ] as const) {
+    it(`カードの中のボタンの #stop でカードのハンドラは呼ばれず、#stop が無ければ内側から順に呼ばれる（${label}）`, async () => {
+      const t = card();
+      const calls: string[] = [];
+      const { root } = await page(wrap(`<${t} data-wcs="onclick: open"><button class="stop" data-wcs="onclick#stop: del">x</button><button class="go" data-wcs="onclick: del">y</button></${t}>`), {
+        items: [1], open() { calls.push("open"); }, del() { calls.push("del"); },
+      });
+      (root.querySelector(".stop") as HTMLElement).click();
+      expect(calls.splice(0)).toEqual(["del"]);
+      (root.querySelector(".go") as HTMLElement).click();
+      expect(calls.splice(0)).toEqual(["del", "open"]);
+    });
+  }
+
+  it("バブルするイベントは委譲（currentTarget はルート）、バブルしないイベントは要素の上で。カード自身に出たバブルするイベントでもハンドラは 1 回", async () => {
+    const t = card();
+    const seen: [string, EventTarget | null][] = [];
+    const { root } = await page(`<${t} data-wcs="onclick: hit; onchange: hit"></${t}>`, { hit(e: Event) { seen.push([e.type, e.currentTarget]); } });
+    const el = root.querySelector(t)!;
+    el.dispatchEvent(new Event("click", { bubbles: true }));
+    el.dispatchEvent(new Event("change"));
+    expect(seen).toEqual([["click", root], ["change", el]]);
+  });
+});
+
+describe("H2: $connectedCallback が失敗した（束ね終えた）root の横の 2 本目", () => {
+  it("束縛を作り終えた後に $connectedCallback が reject しても、2 本目は #47 で拒まれ、後から渡した本文は 1 本目の状態で束ねる", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-cc-reject-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p>{{ msg }}</p><main></main>`;
+    const first = root.querySelector("wcs-state") as any;
+    first.setInitialState({ msg: "A", async $connectedCallback() { throw new Error("fetch failed"); } });
+    document.body.appendChild(h);
+    await expect(first.connectedCallbackPromise).rejects.toThrow("fetch failed");
+    const second = document.createElement("wcs-state") as any;
+    second.setInitialState({ msg: "B" });
+    root.append(second);
+    await expect(second.connectedCallbackPromise).rejects.toThrow(/#47/);
+    const section = document.createElement("section");
+    section.innerHTML = `<i>{{ msg }}</i>`;
+    root.querySelector("main")!.append(section);
+    (globalThis as any)[BINDER_KEY].bind(section);
+    expect(section.textContent).toBe("A");
+    await expect(getBindingsReady(root)).resolves.toBeUndefined();
+  });
+  it("部品の shadow root（bind-component の <wcs-state> が束ねた）に迷い込んだ 2 本目も #47 で拒まれる", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const tag = `quality-cmp-second-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      state = { a: "C" };
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" }).innerHTML = `<wcs-state bind-component="state"></wcs-state><p>{{ a }}</p>`;
+      }
+    });
+    const host = document.createElement(tag);
+    document.body.appendChild(host);
+    const root = host.shadowRoot!;
+    await (root.querySelector("wcs-state") as any).connectedCallbackPromise;
+    expect(root.querySelector("p")!.textContent).toBe("C");
+    const stray = document.createElement("wcs-state") as any;
+    stray.setInitialState({ a: "S" });
+    root.appendChild(stray);
+    await expect(stray.connectedCallbackPromise).rejects.toThrow(/#47/);
+    const late = document.createElement("i");
+    late.setAttribute("data-wcs", "textContent: a");
+    root.appendChild(late);
+    (globalThis as any)[BINDER_KEY].bind(late);
+    expect(late.textContent).toBe("C");
+  });
+});
+
+describe("H3: binder に渡したサブツリーの誤りと、それを含む要素", () => {
+  it("誤りを含む要素（文書順で誤りより前）の束縛と誤りより前の子は束ね、誤りより後ろは束ねない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root } = await page(`<main></main>`, { msg: "m", on: true });
+    const box = document.createElement("div");
+    box.innerHTML = `<section data-wcs="class.on: on"><p class="a" data-wcs="text: msg"></p><p data-wcs="text msg"></p><p class="c" data-wcs="text: msg"></p></section>`;
+    const section = box.firstElementChild!;
+    root.querySelector("main")!.appendChild(section);
+    (globalThis as any)[BINDER_KEY].bind(section);
+    expect(section.classList.contains("on")).toBe(true);
+    expect(section.querySelector(".a")!.textContent).toBe("m");
+    expect(section.querySelector(".c")!.textContent).toBe("");
+    expect(error.mock.calls.map((c) => String((c[0] as Error).message))).toEqual([expect.stringContaining("#101")]);
+  });
+
+  it("誤りの後で束ねた要素が中に描いた値も、束縛として読まない（渡し直しても）", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const tag = `quality-fill-bad-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      set body(v: string) { this.querySelector(".slot")!.innerHTML = v; }
+    });
+    const calls: string[] = [];
+    const { root } = await page(`<main></main>`, {
+      comment: `{{ secret }} <button data-wcs="onclick: wipe">win</button>`, secret: "s3cr3t", wipe() { calls.push("wiped"); },
+    });
+    const box = document.createElement("div");
+    box.innerHTML = `<${tag} data-wcs="body: comment"><div class="slot"></div><p data-wcs="text msg"></p></${tag}>`;
+    const el = box.firstElementChild!;
+    root.querySelector("main")!.appendChild(el);
+    const binder = (globalThis as any)[BINDER_KEY];
+    binder.bind(el);
+    binder.bind(el.querySelector(".slot")!);
+    expect(el.querySelector(".slot")!.textContent).toBe("{{ secret }} win");
+    (el.querySelector("button") as HTMLElement).click();
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("H4: iframe 以外の attr.srcdoc:", () => {
+  it("属性として書く（srcdoc 属性を見るカスタム要素に届き、値が無ければ属性を外す）", async () => {
+    const tag = `quality-sandbox-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      static observedAttributes = ["srcdoc"];
+      seen: (string | null)[] = [];
+      attributeChangedCallback(_n: string, _o: string | null, v: string | null): void { this.seen.push(v); }
+    });
+    const { root, el } = await page(`<${tag} data-wcs="attr.srcdoc: doc"></${tag}><div data-wcs="attr.srcdoc: doc"></div>`, { doc: "<b>x</b>" });
+    const sandbox = root.querySelector(tag) as any;
+    expect(sandbox.seen).toEqual(["<b>x</b>"]);
+    expect(root.querySelector("div")!.getAttribute("srcdoc")).toBe("<b>x</b>");
+    el.createState("writable", (s: any) => { s.doc = null; });
+    await flush();
+    expect(sandbox.seen).toEqual(["<b>x</b>", null]);
+  });
+});
+
+describe("G1(b): 宣言の形が誤った再セット", () => {
+  it("$commandTokens / $eventTokens / $on の誤りで投げた再セットは、古い状態をそのまま残す（束縛も古い状態のまま動く）", async () => {
+    const { root, el } = await page(`<p>{{ n }}</p>`, { n: 1 });
+    for (const bad of [{ $commandTokens: "go" }, { $eventTokens: ["a", "a"] }, { $eventTokens: ["a"], $on: { b() {} } }]) {
+      expect(() => el.setInitialState({ n: 2, ...bad })).toThrow();
+    }
+    let n: unknown;
+    el.createState("readonly", (s: any) => { n = s.n; });
+    expect(n).toBe(1);
+    el.createState("writable", (s: any) => { s.n = 3; });
+    await flush();
+    expect(root.querySelector("p")!.textContent).toBe("3");
   });
 });

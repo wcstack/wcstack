@@ -108,7 +108,7 @@ export const isOuter = (name: string): boolean => name === "outerHTML" || name =
  * A binding after which the element's children are not markup to bind: it sets the element's content
  * (they are a value), or replaces the element (they are out of the page).
  */
-const setsContent = (s: Spec): boolean =>
+export const setsContent = (s: Spec): boolean =>
   s.kind === K_HTML || isOuter(s.name) || (s.kind === K_PROP && isContent(s.name));
 
 /** An `elseif:` / `else:` template with no `if:` before it. */
@@ -131,11 +131,11 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     const command = path.startsWith(COMMAND_PREFIX) ? path.slice(COMMAND_PREFIX.length) : null;
     const { prevent, stop } = f;
     const type = b.propName.slice(2);
-    // a custom element's `change` / `click` may be dispatched without bubbling: on the element
-    const delegated = !custom && BUBBLING.has(type);
+    // (a custom element's `change` / `click` may be dispatched without bubbling: see attachEvent)
+    const delegated = BUBBLING.has(type);
     if (delegated) engine.delegate(type);
     return {
-      ...blank(), node, kind: K_EVENT, name: type, delegated,
+      ...blank(), node, kind: K_EVENT, name: type, delegated, custom,
       listener(e: Event, row: StateRow | null) {
         if (prevent) e.preventDefault();
         if (stop) e.stopPropagation();
@@ -182,8 +182,8 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
         spec.kind = K_CLASS;
         spec.initial = el.classList.contains(name);
       } else {
-        // (the srcdoc attribute is an HTML sink: written as the property, through the policy)
-        spec.kind = head === "attr" ? (name === "srcdoc" ? K_PROP : K_ATTR) : K_STYLE;
+        // (an iframe's srcdoc attribute is an HTML sink: written as the property, through the policy)
+        spec.kind = head === "attr" ? (name === "srcdoc" && el.localName === "iframe" ? K_PROP : K_ATTR) : K_STYLE;
       }
       return spec;
     }
@@ -348,10 +348,15 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
         // have rendered a value there). A Light DOM component's content is bound by its own engine
         const into = tag !== "noscript" && tag !== "iframe" && !specs?.some(setsContent) && !hooks.componentScope?.(el);
         // On the page an element's children are bound before it: what its bindings then put anywhere
-        // in it (a custom element rendering a value into a child of its own) is never walked. A plan
-        // keeps document order (Block.dispatch relies on it): its bindings change nothing in it
-        if (page && into) walk(Array.from(el.childNodes));
-        if (specs !== null) onElement(el, specs);
+        // in it (a custom element rendering a value into a child of its own) is never walked — nor
+        // after an error in them, which leaves the walk with the element bound (it is before the
+        // error in document order). A plan keeps document order (Block.dispatch relies on it): its
+        // bindings change nothing in it
+        try {
+          if (page && into) walk(Array.from(el.childNodes));
+        } finally {
+          if (specs !== null) onElement(el, specs);
+        }
         if (!page && into) walk(Array.from(el.childNodes));
       } else if (child.nodeType === 3 && engine.mustache && (child as Text).data.includes("{{")) {
         for (const { node, expr } of splitMustache(child as Text)) onText(node, expr);
@@ -423,8 +428,9 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
   // in a row plan, the row's own locations bound by kinds that need only the node are slots (see RowView)
   const d = asRow ? list!.depth + 1 : -1;
   for (const s of specs) {
-    // a node used only by delegated events is never resolved when a block is built
-    if (s.kind === K_EVENT && s.delegated && !shifts(targets[s.node], frag)) {
+    // a node used only by delegated events is never resolved when a block is built (a custom
+    // element's are attached: it may dispatch them without bubbling)
+    if (s.kind === K_EVENT && s.delegated && !s.custom && !shifts(targets[s.node], frag)) {
       events.push(s);
       continue;
     }

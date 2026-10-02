@@ -5,8 +5,10 @@
  * field names, `$watch` under getters.
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { bootstrapState, getBindingsReady, installFeatures, listKeys, recursion, scopes, ssr, temporal } from "../src/index";
+import { bootstrapState, diagnostics, getBindingsReady, installFeatures, listKeys, recursion, scopes, ssr, temporal } from "../src/index";
 import { WatchRuntime } from "../src/temporal/watch";
+import { Engine } from "../src/engine";
+import { DirtyStrategy } from "../src/strategy/dirty";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
@@ -220,13 +222,18 @@ describe("SSR と volume（B2）", () => {
   const page = (rootFirst: boolean) => {
     const vol = `<wcs-state mount="cart"></wcs-state>`;
     const r = `<wcs-state enable-ssr></wcs-state>`;
-    return `${rootFirst ? r + vol : vol + r}<p>{{ cart.n }}/{{ cart.double }}</p><button data-wcs="onclick: cart.add">+</button>`;
+    return `${rootFirst ? r + vol : vol + r}<p>{{ cart.n }}/{{ cart.double }}/{{ cart.where }}</p><button data-wcs="onclick: cart.add">+</button>`;
   };
   const volume = () => ({
     n: 1,
+    where: "",
     get double() { return (this as any).n * 2; },
     add(this: any) { this.n++; },
-    $connectedCallback(this: any) { if (document.documentElement.hasAttribute("data-wcs-server")) this.n = 10; },
+    // the volume's own lifecycle runs on the client too, on the snapshot (3.x V7 / D14): a client write stays
+    $connectedCallback(this: any) {
+      if (document.documentElement.hasAttribute("data-wcs-server")) this.n = 10;
+      else this.where = "client";
+    },
   });
 
   async function load(html: string, rootFirst: boolean, server: boolean) {
@@ -249,19 +256,19 @@ describe("SSR と volume（B2）", () => {
     }
   }
 
-  it.each([["根が先", true], ["volume が先", false]])("%s: クライアントの volume はサーバのデータを引き取り、メソッドと getter が動く", async (_name, rootFirst) => {
+  it.each([["根が先", true], ["volume が先", false]])("%s: クライアントの volume はサーバのデータを引き取り、メソッドと getter が動き、クライアントの $connectedCallback の書き込みが残る（G3）", async (_name, rootFirst) => {
     const server = await load(page(rootFirst), rootFirst, true);
     const html = server.root.innerHTML;
     server.h.remove();
-    expect(html).toContain(`"cart":{"n":10}`);
+    expect(html).toContain(`"cart":{"n":10,"where":""}`);
     const errors: string[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a.map(String).join(" ")); });
     try {
       const { root } = await load(html, rootFirst, false);
-      expect(text(root, "p")).toBe("10/20");
+      expect(text(root, "p")).toBe("10/20/client");
       (root.querySelector("button") as HTMLElement).click();
       await flush();
-      expect(text(root, "p")).toBe("11/22");
+      expect(text(root, "p")).toBe("11/22/client");
       expect(errors).toEqual([]);
     } finally {
       spy.mockRestore();
@@ -867,13 +874,6 @@ describe("サイクル 3 の再検証（R3-9・R3-10・R3-11）", () => {
   });
 });
 
-describe("ssr.ts が数で書いた束縛の種類", () => {
-  it("K_HTML は 8、K_PROP は 1（ssr.ts は core の chunk の export を増やさないように数で比べる）", async () => {
-    const { K_HTML, K_PROP } = await import("../src/dom/view");
-    expect([K_HTML, K_PROP]).toEqual([8, 1]);
-  });
-});
-
 describe("サイクル 3 の再検証 2（S3-1〜S3-5）", () => {
   beforeAll(() => {
     customElements.define("qa-self-srv", class extends HTMLElement {
@@ -935,10 +935,11 @@ describe("サイクル 3 の再検証 2（S3-1〜S3-5）", () => {
     expect(out).toContain(`<code>Write {{ name }} here</code> and {{ x }}`);
   });
 
-  it("ssr.ts の中身を束縛する判定（数と名前）が dom/view と同じ（S3-5）", async () => {
-    const { isContent } = await import("../src/dom/view");
-    const names = ["textContent", "innerText", "innerHTML", "outerHTML", "text", "html", "value", "title"];
-    expect(names.filter(isContent)).toEqual(["textContent", "innerText", "innerHTML"]);
+  it("中身を束縛するカスタム要素（html:・innerText:）の値も、サーバの出力に残る（S3-5・H5: dom/plan の setsContent）", async () => {
+    const { out } = await ssrRoundTrip(`<qa-x-srv data-wcs="html: html"></qa-x-srv><qa-y-srv data-wcs="innerText: text"></qa-y-srv>`,
+      () => ({ html: "<b>bold</b>", text: "plain" }));
+    expect(out).toContain(`<qa-x-srv data-wcs="html: html"><b>bold</b></qa-x-srv>`);
+    expect(out).toContain(`<qa-y-srv data-wcs="innerText: text">plain</qa-y-srv>`);
   });
 });
 
@@ -1068,5 +1069,318 @@ describe("サイクル 3 の再検証 5: 中身が文字の要素の外へ移さ
     expect(out).toContain(`<qa-rte-srv data-wcs="mode: mode"></qa-rte-srv>`);
     expect(root.innerHTML).not.toContain("s3cr3t");
     expect(root.querySelector("p")!.textContent).toBe("1");
+  });
+});
+
+// ---------------------------------------------------------------- cycle 4
+
+describe("scopes が拒んだ再セット（G1(a)）", () => {
+  it("接ぎ木した volume のある根の再セットを拒んでも、古い状態の $watch と $listKeys は動き続ける", async () => {
+    const calls: unknown[] = [];
+    const first = { id: 1, v: "a" };
+    const { root, els } = await host(
+      `<wcs-state></wcs-state><wcs-state mount="cart"></wcs-state><p>{{ count }}</p><ul><template data-wcs="for: items"><li>{{ .v }}</li></template></ul>`,
+      [{ count: 0, items: [first], $listKeys: { items: "id" }, $watch: { count(cur: unknown) { calls.push(cur); } } }, { n: 1 }],
+    );
+    expect(() => els[0].setInitialState({ count: 100, items: [], $watch: { count() { calls.push("new"); } } })).toThrow(/grafted volumes/);
+    els[0].createState("writable", (s: any) => { s.count = 2; });
+    await flush();
+    expect(text(root, "p")).toBe("2");
+    expect(calls).toEqual([2]);
+    els[0].createState("writable", (s: any) => { s.items = [{ id: 1, v: "b" }]; });
+    await flush();
+    let row: any;
+    els[0].createState("readonly", (s: any) => { row = s.items[0]; });
+    expect(row).toBe(first);
+  });
+
+  it("マウントした部品のある根の再セットを拒んでも、古い状態の $watch は動き続ける", async () => {
+    const tag = define(`<b>{{ name }}</b>`, () => ({}));
+    const calls: unknown[] = [];
+    const { root, els } = await host(`<wcs-state></wcs-state><${tag} data-wcs="state.name: who"></${tag}><p>{{ who }}</p>`,
+      [{ who: "a", $watch: { who(cur: unknown) { calls.push(cur); } } }]);
+    await settle();
+    expect(() => els[0].setInitialState({ who: "x" })).toThrow(/mounted components/);
+    els[0].createState("writable", (s: any) => { s.who = "b"; });
+    await settle();
+    expect([text(root, "p"), calls]).toEqual(["b", ["b"]]);
+  });
+});
+
+describe("活性化の後に getter になったパスの $watch（G2）", () => {
+  it.each([["先に定義した", false], ["後から定義した", true]])("%s部品のエクスポートした getter を見る $watch が、変わると発火する", async (_n, late) => {
+    const tag = `qa-g2-${seq++}`;
+    const make = () => customElements.define(tag, class extends HTMLElement {
+      state = { get display() { return `<${(this as any).name}>`; } };
+      constructor() { super(); this.attachShadow({ mode: "open" }).innerHTML = `<wcs-state bind-component="state"></wcs-state><i>{{ display }}</i>`; }
+    });
+    if (!late) make();
+    const seen: unknown[] = [];
+    const { root, els } = await host(`<wcs-state></wcs-state><${tag} data-wcs="state: user"></${tag}><p>{{ user.display }}</p>`,
+      [{ user: { name: "a" }, $watch: { "user.display"(cur: unknown) { seen.push(cur); } } }]);
+    if (late) { await settle(); make(); }
+    await settle();
+    els[0].createState("writable", (s: any) => { s["user.name"] = "b"; });
+    await settle();
+    expect([text(root, "p"), seen]).toEqual(["<b>", ["<a>", "<b>"]]);
+  });
+
+  it("根の接続の後に接ぎ木した volume の getter を見る $watch が、変わると発火する", async () => {
+    const h = document.createElement(`quality-addon-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><wcs-state mount="cart"></wcs-state><p>{{ cart.total }}</p>`;
+    const [el, vol] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+    const seen: unknown[] = [];
+    el.setInitialState({ $watch: { "cart.total"(cur: unknown) { seen.push(cur); } } });
+    document.body.appendChild(h);
+    await el.connectedCallbackPromise;
+    await flush();
+    vol.setInitialState({ qty: 1, price: 10, get total() { return (this as any).qty * (this as any).price; } });
+    await vol.connectedCallbackPromise;
+    await flush();
+    seen.length = 0;
+    el.createState("writable", (s: any) => { s["cart.qty"] = 3; });
+    await flush();
+    expect([text(root, "p"), seen]).toEqual(["30", [30]]);
+  });
+});
+
+describe("結線した部品の shadow root の中の volume（G4: 拒む）", () => {
+  const WIRED = "will not graft: its component is wired to its host.";
+
+  it.each([["部品より先に状態が届く", false], ["部品の後に状態が届く", true]])("%s volume は明示のエラーで決着し、接ぎ木しない。ホストの状態は変わらない", async (_n, late) => {
+    const tag = `qa-g4-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      state = {};
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" }).innerHTML = `<wcs-state bind-component="state"></wcs-state><wcs-state mount="i18n"${late ? "" : ` json='{"hello":"Hi"}'`}></wcs-state><b>{{ i18n.hello }}|{{ name }}</b>`;
+      }
+    });
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a.map(String).join(" ")); });
+    try {
+      const { root, els } = await host(`<wcs-state></wcs-state><${tag} data-wcs="state: user"></${tag}>`, [{ user: { name: "ann" } }]);
+      await settle();
+      const c = root.querySelector(tag)!;
+      const vol = c.shadowRoot!.querySelectorAll("wcs-state")[1] as any;
+      if (late) vol.setInitialState({ hello: "Hi" });
+      await vol.connectedCallbackPromise;
+      await settle();
+      expect(errors.some((e) => e.includes(`<wcs-state mount="i18n"> ${WIRED}`))).toBe(true);
+      expect(c.shadowRoot!.querySelector("b")!.textContent).toBe("|ann");
+      let user = "";
+      els[0].createState("readonly", (s: any) => { user = JSON.stringify(s.user); });
+      expect(user).toBe(JSON.stringify({ name: "ann" }));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("結線していない部品の中の volume は、従来どおり部品の木に接ぎ木する", async () => {
+    const tag = define(`<wcs-state mount="i18n" json='{"hello":"Hi"}'></wcs-state><b>{{ i18n.hello }} {{ name }}</b>`, () => ({ name: "own" }));
+    const { root } = await host(`<wcs-state></wcs-state><${tag}></${tag}>`, [{}]);
+    await settle();
+    const c = root.querySelector(tag)!;
+    await (c.shadowRoot!.querySelectorAll("wcs-state")[1] as any).connectedCallbackPromise;
+    await settle();
+    expect(c.shadowRoot!.querySelector("b")!.textContent).toBe("Hi own");
+  });
+});
+
+describe("束ねた後に $connectedCallback が失敗した根（H2: watchRoot）", () => {
+  it("後から定義した Light DOM の部品は、根の失敗として拒まれずにマウントする", async () => {
+    const tag = `qa-h2-${seq++}`;
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a.map(String).join(" ")); });
+    try {
+      const h = document.createElement(`quality-addon-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><${tag} data-wcs="state: user"><wcs-state bind-component="state"></wcs-state><b>{{ name }}</b></${tag}><p>{{ user.name }}</p>`;
+      const el = root.querySelector("wcs-state") as any;
+      el.setInitialState({ user: { name: "a" }, async $connectedCallback() { await 0; throw new Error("initial fetch failed"); } });
+      document.body.appendChild(h);
+      await el.connectedCallbackPromise.catch(() => {});
+      await flush();
+      expect(text(root, "p")).toBe("a");
+      customElements.define(tag, class extends HTMLElement { state = {}; });
+      await (root.querySelector(`${tag} > wcs-state`) as any).connectedCallbackPromise;
+      await settle();
+      expect(errors.filter((e) => e.includes("will not mount") || e.includes("will not graft"))).toEqual([]);
+      expect(text(root, "b")).toBe("a");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("サイクル 4 の再検証（R4C-3・R4C-4）", () => {
+  it.each([["ページの根の初期化が失敗する", false], ["部品の状態がオブジェクトでない", true]])("結線した部品がマウントされない（%s）とき、その shadow root の中の volume は報告して決着する", async (_n, bad) => {
+    const tag = `qa-r4c3-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      state: any = bad ? null : {};
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" }).innerHTML = `<wcs-state bind-component="state"></wcs-state><wcs-state mount="i18n" json='{"hello":"Hi"}'></wcs-state>`;
+      }
+    });
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a.map(String).join(" ")); });
+    try {
+      const h = document.createElement(`quality-addon-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><${tag} data-wcs="state: user"></${tag}>`;
+      const el = root.querySelector("wcs-state") as any;
+      // ($scan: removed in 4.0, the root fails)
+      el.setInitialState(bad ? { user: { name: "a" } } : { user: { name: "a" }, $scan: {} });
+      document.body.appendChild(h);
+      await el.connectedCallbackPromise.catch(() => {});
+      const [inner, vol] = Array.from(root.querySelector(tag)!.shadowRoot!.querySelectorAll("wcs-state")) as any[];
+      await inner.connectedCallbackPromise;
+      const settled = await Promise.race([vol.connectedCallbackPromise.then(() => "settled"), new Promise((r) => setTimeout(() => r("pending"), 200))]);
+      expect(settled).toBe("settled");
+      expect(errors).toContain(`[@wcstack/state] <wcs-state mount="i18n"> will not graft: the root state failed to initialize.`);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it.each([["$listKeys", { $listKeys: "nope" }], ["$recursion", { $recursion: "nope" }]])("再セットした状態の %s の誤りで投げた後も、古い状態の $listKeys は効き、切断・再接続で拒まれた状態の $watch は動かない", async (_n, bad) => {
+    const log: string[] = [];
+    const first = { id: 1, v: "a" };
+    const { h, els } = await host(`<wcs-state></wcs-state><p>{{ count }}</p><ul><template data-wcs="for: items"><li>{{ .v }}</li></template></ul>`,
+      [{ count: 0, items: [first], $listKeys: { items: "id" }, $watch: { count(c: unknown) { log.push(`kept:${c}`); } } }]);
+    expect(() => els[0].setInitialState({ count: 100, items: [], $watch: { count(c: unknown) { log.push(`refused:${c}`); } }, ...bad })).toThrow();
+    h.remove();
+    document.body.appendChild(h);
+    await flush();
+    els[0].createState("writable", (s: any) => { s.count = 5; s.items = [{ id: 1, v: "b" }]; });
+    await flush();
+    let row: any;
+    els[0].createState("readonly", (s: any) => { row = s.items[0]; });
+    expect(log.filter((l) => l.startsWith("refused"))).toEqual([]);
+    expect(row).toBe(first);
+  });
+});
+
+describe("拒まれた再セットの後の $stream（R4D-2）", () => {
+  const stream = (tag: string) => ({ feed: { initial: "-", args: (s: any) => s.q, async *source(q: unknown) { yield `${tag}:${q}`; } } });
+  const wait = () => new Promise((r) => setTimeout(r, 10));
+
+  it("残った状態の args の入力が変わっても、拒まれた状態の stream は動かない", async () => {
+    const { root, els } = await host(`<wcs-state></wcs-state><p>{{ feed }}</p>`, [{ q: "a", $stream: stream("kept") }]);
+    await wait();
+    expect(text(root, "p")).toBe("kept:a");
+    expect(() => els[0].setInitialState({ q: "x", $listKeys: "bad", $stream: stream("refused") })).toThrow();
+    els[0].createState("writable", (s: any) => { s.q = "b"; });
+    await wait();
+    expect(text(root, "p")).not.toBe("refused:b");
+  });
+
+  it("その後に要素を外しても、拒まれた状態の stream は残った状態に書かない（例外にならない）", async () => {
+    const errors: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a); });
+    try {
+      const { h, els } = await host(`<wcs-state></wcs-state><p>{{ q }}</p>`, [{ q: "a" }]);
+      expect(() => els[0].setInitialState({ q: "x", $listKeys: "bad", $stream: stream("refused") })).toThrow();
+      expect(() => h.remove()).not.toThrow();
+      await flush();
+      expect(errors).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("拒まれた再セットの後、外した間に直した再セットをしても、stream は戻すまで動かず、戻すと動く", async () => {
+    const { h, root, els } = await host(`<wcs-state></wcs-state><p>{{ feed }}</p>`, [{ q: "a", $stream: stream("one") }]);
+    await wait();
+    expect(() => els[0].setInitialState({ q: "x", $listKeys: "bad", $stream: stream("refused") })).toThrow();
+    h.remove();
+    els[0].setInitialState({ q: "c", $stream: stream("fixed") });
+    await wait();
+    expect(text(root, "p")).toBe("-");
+    document.body.appendChild(h);
+    await wait();
+    expect(text(root, "p")).toBe("fixed:c");
+  });
+});
+
+// (last: the diagnostics add-on, installed here, stays installed for what follows in this file)
+describe("後から状態が届く volume のパスの診断（G6）", () => {
+  beforeAll(() => installFeatures([diagnostics]));
+
+  it("マウントパスの配下は binding-path-missing を出さず、それ以外の宣言の無いパスは従来どおり警告する", async () => {
+    const warns: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...a) => { warns.push(a.map(String).join(" ")); });
+    try {
+      const h = document.createElement(`quality-addon-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><wcs-state mount="shop.cart"></wcs-state><p>{{ shop.cart.count }}</p><i>{{ user.nmae }}</i>`;
+      const [el, vol] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+      el.setInitialState({ user: { name: "a" } });
+      document.body.appendChild(h);
+      await el.connectedCallbackPromise;
+      // the volume's module is still loading when the paths are checked
+      await new Promise((r) => setTimeout(r, 20));
+      vol.setInitialState({ count: 3 });
+      await vol.connectedCallbackPromise;
+      await flush();
+      expect(text(root, "p")).toBe("3");
+      const missing = warns.filter((w) => w.includes("binding-path-missing"));
+      expect(missing.length).toBe(1);
+      expect(missing[0]).toContain(`"user.nmae"`);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("volume のマウントパスの配下の宣言の無いパスは、読み込みが終わるまでは警告せず、終わった後に警告する（R4D-1）", async () => {
+    const warns: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...a) => { warns.push(a.map(String).join(" ")); });
+    const missing = () => warns.filter((w) => w.includes("binding-path-missing")).map((w) => /"([^"]+)" does not/.exec(w)![1]);
+    try {
+      const h = document.createElement(`quality-addon-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><wcs-state mount="user" json='{"name":"a"}'></wcs-state><wcs-state mount="cart"></wcs-state><p>{{ user.nmae }}</p><b>{{ cart.count }}</b><i>{{ cart.cuont }}</i>`;
+      const [el, , cart] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+      el.setInitialState({});
+      document.body.appendChild(h);
+      await el.connectedCallbackPromise;
+      await new Promise((r) => setTimeout(r, 20));
+      // a volume that grafted: its typo is warned; one still loading: nothing yet
+      expect(missing()).toEqual(["user.nmae"]);
+      cart.setInitialState({ count: 3 });
+      await cart.connectedCallbackPromise;
+      await flush();
+      await flush();
+      expect(text(root, "b")).toBe("3");
+      expect(missing()).toEqual(["user.nmae", "cart.cuont"]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("mount 属性を持つ volume 以外の要素は、その配下の警告を黙らせない（R4C-1）", async () => {
+    const warns: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...a) => { warns.push(a.map(String).join(" ")); });
+    try {
+      await host(`<wcs-state></wcs-state><x-portal mount="settings"></x-portal><p>{{ settings.titel }}</p>`, [{ settings: { title: "t" } }]);
+      await flush();
+      expect(warns.filter((w) => w.includes("binding-path-missing") && w.includes(`"settings.titel"`)).length).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("まだページを持たないエンジン（root が null）でも、宣言の無い $watch のパスは警告する", async () => {
+    const warns: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...a) => { warns.push(a.map(String).join(" ")); });
+    try {
+      new Engine({ $watch: { "a.b"() {} } }, new DirtyStrategy());
+      await flush();
+      expect(warns.filter((w) => w.includes("watch-path-missing") && w.includes(`"a.b"`)).length).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -29,7 +29,7 @@ import { config } from "../config";
 import { hooks } from "../hooks";
 
 import { VERSION } from "../version";
-import { isOuter, templateContent } from "../dom/plan";
+import { isOuter, setsContent, templateContent } from "../dom/plan";
 import { majorMinor } from "./element";
 /** The snapshot element's tag (`config.tagNames.ssr`, `wcs-ssr` by default). */
 const tag = (): string => config.tagNames.ssr;
@@ -449,8 +449,7 @@ export function ssrMark(engine: Engine, node: Node, source: Element | string | S
       // a custom element (a Light DOM component binds its own) whose content no binding sets: what
       // is in it now is the page's (see kept)
       const el = node as Element;
-      // (K_HTML = 8, K_PROP = 1 of dom/view, as numbers: imported, they would be exports of the core chunk)
-      if (source.some((s) => s.kind === 8 || (s.kind === 1 && /^(textContent|innerText|innerHTML)$/.test(s.name)))) skip.add(el);
+      if (source.some(setsContent)) skip.add(el);
       else if (el.localName.includes("-") && !scoped(el)) {
         const own = new Map<Node, string>();
         for (const w = document.createTreeWalker(el, 133); w.nextNode(); ) own.set(w.currentNode, (w.currentNode as Text).data);
