@@ -63,7 +63,10 @@ interface Synth {
 }
 
 interface Mount {
-  readonly el: HTMLElement;
+  /** Its `<wcs-state>`: a new one that takes the scope over replaces it (resume). */
+  el: HTMLElement;
+  /** The nodes of the scope root once it was bound: still there, a new `<wcs-state>` takes the scope over. */
+  nodes: ChildNode[];
   readonly component: Engine;
   readonly host: Host;
   readonly slots: { m: Mount; e: Entry }[];
@@ -76,6 +79,12 @@ interface Mount {
   from: Entry | null;
   /** Exported accessors (a whole mount's): host pattern (`user.display`) → the component's accessor pattern. */
   exports: Map<Pattern, Pattern> | null;
+  /**
+   * It failed before its bindings were built (a markup error): what it bound before the error follows
+   * the host while it is connected, as a root's does (#384), and no lifecycle hook runs — its
+   * `$connectedCallback` never did.
+   */
+  broken?: boolean;
 }
 
 type Slot = Mount["slots"][number];
@@ -276,6 +285,43 @@ function wire(m: Mount): void {
   const made = [...C.patterns.all()];
   for (const p of made) mountKey(m, whole, p);
   for (const p of made) base.call(C, p);
+  // a mount in a host row goes with the row (4.0 discards a removed row's element): it renders no
+  // more — what it would read of the row throws (live), its own keys stay readable and writable
+  const rows = h.entries.filter((e) => e.row !== null);
+  if (rows.length > 0) {
+    const drain = C.drain;
+    C.drain = () => {
+      if (rows.every((e) => e.row!.alive)) drain.call(C);
+    };
+  }
+}
+
+/**
+ * `element.state` is the component's proxy, handed out as an object: a function the state declares
+ * (a method, or a function-valued key it starts with) read off it always runs on it, whatever `this`
+ * it is called with — detached (`const { toggle } = element.state`), as a listener
+ * (`button.addEventListener("click", element.state.toggle)`), by a timer — as 3.x's `bind` did
+ * (#331; an explicit `call(other)` is ignored, as with `bind`). It is wrapped once per function, in a
+ * proxy that keeps the function's properties, statics, `new`, `name` and identity across reads; a
+ * function a key comes to hold later, the tree's or its own, is returned as it is. Only reads through
+ * the proxy itself are wrapped, not through a view of it (`createStateAsync("readonly")`, whose
+ * methods must run on the read-only view). A root's proxy is only lent to a callback, and a volume's
+ * methods are bound to its chroot already.
+ */
+function bindMethods(C: Engine, state: object): void {
+  const methods = new Map<unknown, unknown>();
+  for (let o: object | null = state; o !== null && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+    for (const k of Object.getOwnPropertyNames(o)) {
+      const v = Object.getOwnPropertyDescriptor(o, k)!.value;
+      if (typeof v === "function" && k !== "constructor") methods.set(v, null);
+    }
+  }
+  const apply = (f: (...a: unknown[]) => unknown, _self: unknown, args: unknown[]): unknown => Reflect.apply(f, C.proxy, args);
+  C.bound = (fn) => {
+    let b = methods.get(fn);
+    if (b === null) methods.set(fn, (b = new Proxy(fn, { apply })));
+    return b;
+  };
 }
 
 function findDescriptor(o: object, key: string): PropertyDescriptor | undefined {
@@ -306,12 +352,22 @@ function mountKey(m: Mount, whole: Entry | null, p: Pattern): void {
   }
   const row = e.row;
   const through = e;
-  p.getter = () => H.readUntracked(target, row);
+  p.getter = () => H.readUntracked(target, live(m, row));
   p.setter = (value: unknown) => {
     across(m, through, () => H.write(target, row, value));
     m.skip = p;
   };
   m.synth.set(p, { e, p: target, row });
+}
+
+/**
+ * The host row an entry is mounted on, for reading or writing through it. A removed row is gone
+ * for good (4.0 never puts a removed row's element in another row): nothing of it is the
+ * component's any more, and the position it had may hold another row now (3.4 #367 / #368).
+ */
+function live(m: Mount, row: StateRow | null): StateRow | null {
+  if (row !== null && !row.alive) raiseError(`The host row of <${m.host.el.localName}> was removed.`);
+  return row;
 }
 
 /** Runs a change of component `m` crossing to its host through entry `e`. */
@@ -345,19 +401,24 @@ function mountUnder(m: Mount, p: Pattern): void {
   const hp = H.pattern(info.p.path + p.path.slice(s.path.length));
   if (hp.getter === null) return;
   const from = info;
+  /**
+   * The host row of `hp`: the entry's own row (not the row now at its position), and under it the
+   * component's rows (a component path with a `*` of its own).
+   */
   const at = (): StateRow | null => {
-    const crow = p.depth === 0 ? null : rowAt(C.ctx, p.depth);
-    H.resolve(fill(hp.path, [...H.indexesOf(from.row), ...C.indexesOf(crow)]), null);
+    const r = live(m, from.row);
+    if (p.depth === 0) return r;
+    H.resolve(fill(hp.path, [...H.indexesOf(r), ...C.indexesOf(rowAt(C.ctx, p.depth))]), null);
     return (H as any).rr as StateRow | null;
   };
   p.getter = () => {
     const r = at();
-    return hp.depth > 0 && r === null ? undefined : H.readUntracked((H as any).rp, r);
+    return hp.depth > 0 && r === null ? undefined : H.readUntracked(hp, r);
   };
   if (hp.setter !== null) {
     p.setter = (value: unknown) => {
       const r = at();
-      across(m, from.e, () => H.write((H as any).rp, r, value));
+      across(m, from.e, () => H.write(hp, r, value));
       m.skip = p;
     };
   }
@@ -516,7 +577,7 @@ export function guardReadonlyMount(E: Engine, p: Pattern, element: boolean): boo
   const gone = e.row !== null && !e.row.alive;
   if (!gone && !e.ro) return false;
   if (element) return true;
-  if (gone) raiseError(`The host row of <${m.host.el.localName}> was removed.`);
+  live(m, e.row);
   raiseError(`[wcs/mount-readonly] <${m.host.el.localName}> cannot write "${p.path}": it is mounted read-only ("${m.host.prop}${e.inner === "" ? "" : `.${e.inner}`}#ro: ${e.outer.path}"). Write it on the host, or drop #ro from the mount.`);
 }
 
@@ -596,6 +657,9 @@ function up(m: Mount, p: Pattern, row: StateRow | null, old: unknown, value: unk
     m.skip = null; // its setter wrote through the host
     return;
   }
+  // its host row went away (a write there is refused; `$postUpdate` is not a write): the position
+  // it had may hold another row now
+  if (info.row !== null && !info.row.alive) return;
   const idx = [...H.indexesOf(info.row), ...m.component.indexesOf(row)];
   H.resolve(fill(info.p.path + p.path.slice(s.path.length), idx), null);
   const hp = (H as any).rp as Pattern;
@@ -636,8 +700,8 @@ export function crossed(E: Engine, p: Pattern, row: StateRow | null, old: unknow
   }
 }
 
-async function start(el: HTMLElement, host: Element, root: Node, state: Record<string, any>, built: () => void): Promise<Mount | null> {
-  if (state === UNWIRED) return null;
+async function start(el: HTMLElement, host: Element, root: Node, state: Record<string, any>, built: () => void): Promise<void> {
+  if (state === UNWIRED) return;
   // the add-ons its `$features` names, before anything reads the host's current mount
   const loading = loadFeatures(state);
   if (loading) await loading;
@@ -651,10 +715,12 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
     raiseError(`<${host.localName}> already has a connected <${config.tagNames.state} bind-component="${h.prop}">.`);
   }
   if (old !== null) register(old, false);
+  if (old !== null && takesOver(old, el, root)) return resume(old, el, root, built);
   const C = new Engine(state, new DirtyStrategy());
   C.element = el;
   (el as any).engine = C;
-  const m: Mount = { el, component: C, host: h, slots: [], synth: new Map(), registered: false, skip: null, from: null, exports: null };
+  bindMethods(C, state);
+  const m: Mount = { el, nodes: [], component: C, host: h, slots: [], synth: new Map(), registered: false, skip: null, from: null, exports: null };
   for (const e of h.entries) m.slots.push({ m, e });
   h.current = m;
   mounts.set(C, m);
@@ -672,6 +738,7 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   const adopted = hooks.adoptScope?.(root);
   mount(C, root as ShadowRoot | Element);
   adopted?.();
+  m.nodes = [...root.childNodes];
   drainBinds();
   if (independent) C.watchRendered();
   Object.defineProperty(host, h.prop, { configurable: true, enumerable: true, get: () => C.proxy });
@@ -686,9 +753,86 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   }
   // the bindings are built: what waits for them goes on, whatever $connectedCallback does (as a root)
   built();
+  // taken out while it initialized: it hears the host, and runs `$connectedCallback`, when it is back
+  if (!el.isConnected) {
+    register(m, false);
+    return;
+  }
   await C.callHook("$connectedCallback");
   if (independent && el.isConnected) hooks.element?.(C, "connected");
-  return m;
+}
+
+/**
+ * Whether a new `<wcs-state bind-component>` takes the scope of the old mount `o` over (resume)
+ * instead of binding its root afresh: when nodes the old engine bound or rendered are still in the
+ * root (it swapped only its `<wcs-state>`). A kept `<style>`, whitespace or other nodes without
+ * bindings do not count: content rendered again, its `<wcs-state>` included, is bound afresh. Nodes
+ * with bindings added since next to kept bound ones (the old engine cannot take them, a new one
+ * cannot take the kept ones) are reported.
+ */
+function takesOver(o: Mount, el: Node, root: Node): boolean {
+  // (a `<wcs-state>` in another root of the host finds none of the old nodes there)
+  const C = o.component;
+  const attr = `[${config.bindAttributeName}]`;
+  const binds = (n: Node): boolean => n.nodeType === 1 && ((n as Element).matches(attr) || (n as Element).querySelector(attr) !== null);
+  // the root's children the old engine binds or rendered
+  const kept = new Set<Node>();
+  const top = (n: Node | null): void => {
+    while (n !== null && n.parentNode !== root) n = n.parentNode;
+    if (n !== null) kept.add(n);
+  };
+  const range = (v: { headAt(n: Node): Node | null }, anchor: Node): void => {
+    for (let n = v.headAt(anchor); n !== null && n !== anchor; n = n.nextSibling) top(n);
+    top(anchor);
+  };
+  for (const bs of C.rootBindings.values()) {
+    for (const b of bs) {
+      if (b.chain === null) top(b.node);
+      else for (const br of b.chain.branches) range(b.chain, br.anchor);
+    }
+  }
+  for (const l of C.rootLists.values()) for (const v of [l.view, ...(l.extra ?? [])]) if (v !== null) range(v, v.anchor);
+  for (const n of o.nodes) if (n.parentNode === root && binds(n)) kept.add(n);
+  if (kept.size === 0) return false;
+  const added = [...root.childNodes].filter((n) => n !== el && !kept.has(n) && !o.nodes.includes(n)
+    && (binds(n) || (C.mustache && n.textContent!.includes("{{"))));
+  if (added.length > 0) {
+    console.warn(`[@wcstack/state] <${o.host.el.localName}>: ${added.length} node(s) added beside the content taken over are not bound.`);
+  }
+  return true;
+}
+
+/**
+ * A new `<wcs-state bind-component>` over the content the old one bound (a component that swapped only
+ * its `<wcs-state>`): it takes the scope over, as a reconnection — the old engine's bindings, rows and
+ * `{{ }}` anchors are on these nodes. Walking them again would bind nothing (an element walked once is
+ * left alone) and read the text the bindings rendered as markup (3.x #417 / #419). Nodes with bindings
+ * added since are not bound (takesOver reports them).
+ */
+async function resume(m: Mount, el: HTMLElement, root: Node, built: () => void): Promise<void> {
+  // the old element lets go of the engine (its createState no longer reaches the scope)
+  (m.el as any).engine = null;
+  m.el = el;
+  m.component.element = el;
+  (el as any).engine = m.component;
+  m.nodes = m.nodes.filter((n) => n.parentNode === root);
+  // (taken out while it initialized: it hears the host when it is back, as a mount does)
+  if (el.isConnected) await reconnect(m, built);
+  else built();
+}
+
+/**
+ * A mount connected again (or taken over, resume): it hears the host from now on, then
+ * `$connectedCallback` — after `built`, for a take-over (getBindingsReady goes on as for a mount).
+ */
+async function reconnect(m: Mount, built?: () => void): Promise<void> {
+  register(m, true);
+  for (const slot of m.slots) refresh(slot);
+  built?.();
+  if (m.broken) return;
+  // (async: a `$connectedCallback` that throws rejects, as one that rejects does)
+  await m.component.callHook("$connectedCallback");
+  if (m.host.engine === null && m.el.isConnected) hooks.element?.(m.component, "connected");
 }
 
 /** `<wcs-state bind-component="prop">`: claimed instead of becoming a root of its page. */
@@ -699,7 +843,11 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
   const parent = el.parentNode;
   const shadow = parent instanceof ShadowRoot;
   const host = shadow ? (parent as ShadowRoot).host : parent instanceof Element ? parent : null;
-  let m: Mount | null = null;
+  /** Its mount, from the moment it is made (`$connectedCallback` may still run, or have thrown); null once another `<wcs-state>` took it over. */
+  const mine = (): Mount | null => {
+    const m = host === null ? undefined : hosts.get(host)?.current;
+    return m?.el === el ? m : null;
+  };
   // a component that does not mount: the volumes in its shadow root have no tree to graft onto
   const failed = (e: unknown): never => {
     if (shadow) orphan(parent!);
@@ -712,19 +860,28 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
         : load(el, prop, host, !shadow)).catch(failed);
     },
     async start(state, built) {
-      m = await start(el, host!, shadow ? parent! : host!, state, built).catch(failed);
-    },
-    connected() {
-      if (m === null) return;
-      register(m, true);
-      for (const slot of m.slots) refresh(slot);
-      void Promise.resolve(m.component.callHook("$connectedCallback")).then(() => {
-        if (m !== null && m.host.engine === null && el.isConnected) hooks.element?.(m.component, "connected");
+      let bound = false;
+      await start(el, host!, shadow ? parent! : host!, state, () => {
+        bound = true;
+        built();
+      }).catch((e) => {
+        // (one whose `$connectedCallback` failed is an ordinary mount)
+        const m = mine();
+        if (!bound && m !== null) m.broken = true;
+        return failed(e);
       });
     },
+    connected() {
+      // (not mounted yet, or a newer `<wcs-state>` took the scope over); a failed
+      // `$connectedCallback` is reported as a root's on reconnect is
+      const m = mine();
+      if (m !== null) reconnect(m).catch((e) => console.error(e));
+    },
     disconnected() {
+      const m = mine();
       if (m === null) return;
       register(m, false);
+      if (m.broken) return;
       m.component.callHook("$disconnectedCallback");
       if (m.host.engine === null) hooks.element?.(m.component, "disconnected");
     },

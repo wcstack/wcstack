@@ -13,8 +13,9 @@
  * - 行の要素の書き込み（this["users.1"] = obj）は、その位置の値を差し替え、コンポーネントの要素と私有キーは残る
  *   （docs/migration-v4.md §3.4・§3.5）。
  * - 誤りの文言（3.x の `The host row of <x> was removed.` など）は確かめない。投げる・報告されることだけを確かめる。
- * 4.0 でまだ再現しない形は it.fails で残す（行が消えた後の読み・切り離して呼ぶ公開面のメソッド・マウントしたキーの
- * 下にあるホストの行の getter の位置での解決）。
+ * - 行が消えた後のツリーのキーの読み（マウントしたキーの下のホストの行の getter も）は、3.4 と同じに
+ *   `The host row of <x> was removed.` で投げる。私有キーは読み書きできる。消えた行のコンポーネントはもう描かない。
+ * - 公開面（element.state）の作者のメソッドは、その proxy に束縛して返す（切り離して呼べる）。
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { bootstrapState, getBindingsReady, installFeatures, scopes } from "../src/index";
@@ -697,15 +698,89 @@ describe("#331 マウントしたコンポーネントのメソッドを公開�
     expect(read("user.name")).toBe("Alice!");
   });
 
-  // 3.x #331 の修正の形が 4.0 で再現しない: element.state の作者のメソッドは束縛されずに返るので、切り離して呼ぶと
-  // this が undefined（実測 TypeError: Cannot read properties of undefined (reading 'mode') / 期待 mode=edit・name=Bob）
-  it.fails("取り出したメソッドを切り離して呼んでも（const { toggle } = element.state）同じに動く", async () => {
+  // 4.0: element.state の作者のメソッドは、その proxy に束縛して返す（メソッドごとに 1 つ、初めて読んだときに作る）
+  it("取り出したメソッドを切り離して呼んでも（const { toggle } = element.state）同じに動く", async () => {
     const { card } = await publicCard();
     const { toggle, rename } = card.state;
     toggle();
     rename();
     await settle();
     expect([text(card, ".mode"), text(card, ".name")]).toEqual(["edit", "Bob"]);
+  });
+
+  it("取り出したメソッドは読むたびに同じ関数で、クラスのプロトタイプのメソッドも、行のマウントでも切り離して呼べる", async () => {
+    class CardState {
+      mode = "view";
+      flip(this: any) { this.mode = this.mode === "view" ? "edit" : "view"; }
+      mark(this: any) { this.name = `${this.name}*`; }
+    }
+    const tag = component('<span class="name">{{ name }}</span><span class="mode">{{ mode }}</span>', () => new CardState());
+    const { comps, texts, json } = await page(FOR("state: .")(tag), USERS(), tag);
+    const ben = comps()[1];
+    expect(ben.state.flip).toBe(ben.state.flip);
+    // as a listener (the event target would be its `this`), it still runs on the state
+    const button = document.createElement("button");
+    button.addEventListener("click", ben.state.flip);
+    button.click();
+    expect(ben.state.mode).toBe("edit");
+    button.click();
+    expect(ben.state.mode).toBe("view");
+    expect(ben.state.flip).not.toBe(comps()[0].state.flip);
+    const { flip, mark } = ben.state;
+    flip();
+    mark();
+    await settle();
+    expect(texts(".mode")).toEqual(["view", "edit", "view"]);
+    expect(json("users")).toEqual([{ name: "Anna" }, { name: "Ben*" }, { name: "Cy" }]);
+    // (the class's own constructor is not one of its methods)
+    expect(ben.state.constructor).toBe(CardState);
+  });
+
+  it("this で読む関数は、プロパティ（debounce の cancel）・クラスの static と new・name を保ち、どう呼んでも（切り離し・リスナー・call(other)）状態の上で走る（3.x の bind と同じ）", async () => {
+    const seen: unknown[] = [];
+    class Model { static create() { return new this(); } }
+    const search = Object.assign(function (this: any) { seen.push(this); }, { cancel: () => "cancelled" });
+    function run() { return "ran"; }
+    const tag = component('<span class="name">{{ name }}</span>', () => ({
+      search,
+      Model,
+      run,
+      probe(this: any) {
+        return [this.search.cancel(), this.Model.create() instanceof Model, new this.Model() instanceof Model, this.run.name, this.run()];
+      },
+    }));
+    const { comps } = await page(`<${tag} data-wcs="state: user"></${tag}>`, { user: { name: "Alice" } }, tag);
+    const card = comps()[0];
+    expect(card.state.probe()).toEqual(["cancelled", true, true, "run", "ran"]);
+    card.state.search.call({ other: true });
+    card.state.search();
+    const { search: detached } = card.state;
+    detached();
+    const button = document.createElement("button");
+    button.addEventListener("click", card.state.search);
+    button.click();
+    expect(seen).toEqual([card.state, card.state, card.state, card.state]);
+  });
+
+  it("コンポーネントの <wcs-state> の createStateAsync(\"readonly\") は、メソッドを経た書き込みも（切り離して呼んでも）拒む（writable では書ける）", async () => {
+    const { card } = await publicCard();
+    const el = card.shadowRoot.querySelector("wcs-state");
+    await expect(el.createStateAsync("readonly", async (s: any) => {
+      await flush();
+      s.toggle();
+    })).rejects.toThrow("#8");
+    // the readonly view hands the method out as it is: detached, it has no state to write to
+    await expect(el.createStateAsync("readonly", async (s: any) => {
+      await flush();
+      const { toggle } = s;
+      toggle();
+    })).rejects.toThrow();
+    expect(card.state.mode).toBe("view");
+    await el.createStateAsync("writable", async (s: any) => {
+      await flush();
+      s.toggle();
+    });
+    expect(card.state.mode).toBe("edit");
   });
 
   it("関数でない値の読みと $ API（$getAll / $untracked）は従来どおり", async () => {
@@ -865,9 +940,8 @@ describe("#367 部分マウント（state.name: .name）の async メソッド�
     expect(["resolved Cy", "resolved Dan"]).not.toContain(outcome);
   });
 
-  // 3.x #367 の修正の形が 4.0 で再現しない: 行が消えた後のツリーのキーの読みは投げず、消えた行の最後の値を返す
-  // （実測 "Ben" で resolve / 期待 reject）。書き込みは投げる（上のテスト）。ほかの行は読まない（上のテスト）。
-  it.fails.each(["state.name: .name", "state: ."])("（3.4 の形）await の後にツリーのキーを読むだけでも、行が消えた旨で reject する（%s）", async (wiring) => {
+  // 行が消えた後のツリーのキーの読みも、書き込みと同じに投げる（3.4 #367。消えた行の最後の値も返さない）
+  it.each(["state.name: .name", "state: ."])("（3.4 の形）await の後にツリーのキーを読むだけでも、行が消えた旨で reject する（%s）", async (wiring) => {
     const { gate, release } = deferred();
     const tag = component(PUBLIC_CARD, () => ({ ...publicState(gate)(), async peek(this: any) { await gate; return this.name; } }));
     const { comps, write } = await page(FOR(wiring)(tag), USERS(), tag);
@@ -877,6 +951,22 @@ describe("#367 部分マウント（state.name: .name）の async メソッド�
     await write((s) => { s.users = [s.users[0], s.users[2], { name: "Dan" }]; });
     release();
     await expect(result).rejects.toThrow();
+  });
+
+  it("行を消した同じタスクの $postUpdate（書き込みではない）は投げず、消えた行の位置にいまある別の行（Cy）を描き直さない", async () => {
+    const tag = component(PUBLIC_CARD, publicState());
+    const rendered: Record<string, number[][]>[] = [];
+    const { comps, write } = await page(`<div><template data-wcs="for: users"><p>{{ .name }}</p><${tag} data-wcs="state.name: .name"></${tag}></template></div>`, {
+      ...USERS(),
+      $renderedCallback(_paths: string[], indexes: Record<string, number[][]>) { rendered.push(indexes); },
+    }, tag);
+    const ben = comps()[1];
+    // (the host's drain has not taken Ben's element out yet: its mount still hears its changes)
+    await write((s) => {
+      s.users = [s.users[0], s.users[2]];
+      ben.state.$postUpdate("name");
+    });
+    expect(rendered.map((r) => r["users.*.name"] ?? [])).not.toContainEqual([[1]]);
   });
 
   it("行が消えただけ（足さない）でも reject し、残った行に書かない", async () => {
@@ -982,7 +1072,7 @@ const disconnectLogger = (log: string[]) => (): Record<string, any> => ({
 
 /**
  * A removed row's element: its `$disconnectedCallback` never reads another row's name and its
- * write does not land (3.4 throws on the read already; 4.0 may read the removed row's own last value).
+ * write does not land (3.4 and 4.0 throw on the read already; the "（3.4 の形）" test pins that).
  */
 const onlyOwn = (log: string[], own: string[]): void => {
   for (const entry of log) expect(entry === "threw" || own.includes(entry.slice("read:".length)), entry).toBe(true);
@@ -1061,10 +1151,9 @@ describe.each(["state: .", "state.name: .name; state.flag: .flag"])("#368 行が
     expect(flagsOf(json("users"))).toEqual(["Anna:-", "Cy:-"]);
   });
 
-  // 3.x #368 の修正の形が 4.0 で再現しない: 行が消えた後の $disconnectedCallback のツリーのキーの読み（this.name、
-  // $getAll / $resolve も）は投げず、消えた行の最後の値を返す（実測 ["read:Ben", "threw"] / 期待 ["threw"]）。
-  // 書き込みは投げ、ほかの行は読まない（上のテスト）。
-  it.fails("（3.4 の形）行の直下の要素: ツリーのキーの読みも、行が消えた旨で投げる", async () => {
+  // 行が消えた後の $disconnectedCallback のツリーのキーの読みも、書き込みと同じに投げる（3.4 #368。私有キーは
+  // 読み書きできる — 下の後始末のテスト）
+  it("（3.4 の形）行の直下の要素: ツリーのキーの読みも、行が消えた旨で投げる", async () => {
     const log: string[] = [];
     const tag = component(NAME_ONLY, disconnectLogger(log));
     const { write } = await page(FOR(wiring)(tag), FLAGS(), tag);
@@ -1432,20 +1521,19 @@ describe.each(["state: .", "state.profile: .profile"])("#367 / #368 マウント
     expect(log.filter((l) => l.startsWith("disc:")).every((l) => l === "disc:BEN" || l === "disc:CY" || l === "disc:ANNA")).toBe(true);
   });
 
-  // 3.x #368 の修正の形が 4.0 で再現しない: 行が消えた後の $disconnectedCallback が、マウントしたキーの下のホストの
-  // 行の getter を読むと、消えた行の位置にいまある別の行（Cy）の値を返す（実測 "disc:CY" / 期待 投げる、少なくとも CY ではない）。
-  it.fails("$disconnectedCallback の読みは、消えた行の位置にいまある別の行（Cy）の値を返さない", async () => {
+  // マウントしたキーの下のホストの行の getter は、消えた行の位置ではなくその行から解決する: 行が消えた後の読みは、
+  // その位置にいまある別の行（Cy）を読まず、行が消えた旨で投げる（3.4 #368）
+  it("$disconnectedCallback の読みは、消えた行の位置にいまある別の行（Cy）の値を返さない", async () => {
     const log: string[] = [];
     const tag = profileCard(log, Promise.resolve());
     const { write } = await page(FOR(wiring)(tag), PROFILES(), tag);
     await write((s) => { s.users = [s.users[0], s.users[2]]; });
-    expect(log).toHaveLength(1);
-    expect(log).not.toContain("disc:CY");
+    expect(log).toEqual(["disc:threw"]);
   });
 
-  // 3.x #367 の修正の形が 4.0 で再現しない: await の間に行が消えると、await の後の同じ読みが消えた行の位置にいまある
-  // 別の行（Cy）の値を返す（実測 "later:CY" / 期待 投げる、少なくとも CY ではない）。
-  it.fails("async メソッドの await の後の読みは、消えた行の位置にいまある別の行（Cy）の値を返さない", async () => {
+  // await の間に行が消えると、await の後の同じ読みは、消えた行の位置にいまある別の行（Cy）を読まず、行が消えた旨で
+  // 投げる（3.4 #367）
+  it("async メソッドの await の後の読みは、消えた行の位置にいまある別の行（Cy）の値を返さない", async () => {
     const log: string[] = [];
     const { gate, release } = deferred();
     const tag = profileCard(log, gate);
@@ -1456,8 +1544,7 @@ describe.each(["state: .", "state.profile: .profile"])("#367 / #368 マウント
     log.length = 0;
     release();
     await settle();
-    expect(log).toHaveLength(1);
-    expect(log).not.toContain("later:CY");
+    expect(log).toEqual(["later:threw"]);
   });
 });
 

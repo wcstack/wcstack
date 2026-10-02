@@ -133,6 +133,12 @@ export class Engine implements ReconcileHooks {
   readonly blockKey = Symbol("wcs.block");
   /** The <wcs-state> element (`this.$stateElement`). */
   element: unknown = null;
+  /**
+   * A mounted component's (scopes add-on): a function read off the proxy itself, made to run on it
+   * when called detached — the proxy is `element.state`, and `const { toggle } = element.state`
+   * works (3.x #331). Undefined (or no answer): as it is.
+   */
+  declare bound?: (fn: (...args: any[]) => unknown) => unknown;
   /** `$command`: the command tokens declared in `$commandTokens`. */
   commands!: Readonly<Record<string, Token>>;
   /** The event tokens declared in `$eventTokens`, with the `$on` handlers subscribed. */
@@ -258,7 +264,7 @@ export class Engine implements ReconcileHooks {
     const engine = this;
     // the handler reads engine.target, not the proxy's target: a re-set swaps the state
     this.proxy = new Proxy(target, {
-      get(_t, key) {
+      get(_t, key, receiver) {
         const t = engine.target;
         if (typeof key === "symbol") return Reflect.get(t, key);
         if (key.charCodeAt(0) === 36 /* $ */) return engine.dollar(key);
@@ -266,7 +272,8 @@ export class Engine implements ReconcileHooks {
           const p = engine.patterns.peek(key);
           if (p === undefined || p.getter === null) {
             const v = t[key];
-            if (typeof v === "function") return v;
+            // (a view of the proxy — the readonly createStateAsync's — gets it as it is)
+            if (typeof v === "function") return (receiver === engine.proxy && engine.bound?.(v)) || v;
           }
           // a known top-level key: no path to parse
           if (p !== undefined && p.depth === 0) return engine.read(p, null);

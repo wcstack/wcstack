@@ -469,6 +469,7 @@ export default {
 | `$recursion` | 実行しない、警告 | `[wcs/mount-dollar-declaration] <tag>: $recursion is not run in a mounted component — declare it on the root state.` で throw |
 | `$watch`・`$stream`・`$renderedCallback` | 実行しない、警告 | 実行しない、`[wcs/mount-dollar-declaration]` の警告（変わらない） |
 | ホストの行の要素への書き込み（`this["users.1"] = obj`） | コンポーネントの私有データを作り直す | コンポーネントの要素は残り、私有のキーもそのまま（§3.4 の「リストの要素への書き込み」を参照） |
+| `<wcs-state bind-component>` を新しいものに差し替える | スコープをもう一度初期化する（残したノードのバインディングを張り直し、足したノードも束ねる） | 古い要素が束ねた・描いたノードが残っていれば、新しい要素がスコープを引き継ぐ。それらのバインディング・行・`{{ }}` の text はそのまま。その横に足したバインディングのあるノード（`data-wcs`・`{{ }}`）は束ねず、`console.warn` で知らせる。残っていなければ（中身ごと描き直した。残したノードのうち `<style>` や空白のようなバインディングの無いものは数えない）、新しい要素が中身を束ね直す |
 
 マウントに失敗したコンポーネントの `<wcs-state bind-component>` は、`connectedCallbackPromise` をそのエラーで reject します。3.x の README が設定の誤りについて約束していたとおりです。4.0 は、3.x が reject しなかった 2 つの場合にも reject します: 初期化に失敗した根に配線したコンポーネント（`<tag>.state will not mount: the root state failed to initialize.`。3.x はその `connectedCallbackPromise` を決着させず、ページと一緒に接続したものも後から接続したものも、それを待つ側は止まったままでした）と、1 つのコンポーネントで 2 つ目に接続した `<wcs-state bind-component>`（`<tag> already has a connected <wcs-state bind-component="state">.`。3.x は resolve していました）です。`@wcstack/server` の `renderToString()` と `@wcstack/testing` の `mount()` は、Light DOM のコンポーネントのものも含めてすべての `connectedCallbackPromise` を待つので、これらの場合にも reject します。コンポーネントの `$connectedCallback` が失敗しても、コンポーネントを描いた後で reject します（`… $connectedCallback failed.`、§3.4）。
 
