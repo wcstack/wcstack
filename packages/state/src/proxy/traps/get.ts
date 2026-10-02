@@ -26,6 +26,7 @@ import { DELIMITER, INDEX_BY_INDEX_NAME, INDEX_PARAM_PREFIX, MAX_WILDCARD_DEPTH,
 import { listIndexAtWildcard } from "../../list/wildcardLevel";
 import { raiseError } from "../../raiseError";
 import { NOT_HANDLED } from "../../core/addressHooks";
+import { v4Migration } from "../../core/v4MigrationHooks";
 import { connectedCallback } from "../apis/connectedCallback";
 import { disconnectedCallback } from "../apis/disconnectedCallback";
 import { getAll } from "../apis/getAll";
@@ -205,9 +206,12 @@ export function get(
             )(path, indexes, ...value);
           }
         }
-        // `$dependOn` が正式名、`$trackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）
-        case "$dependOn":
-        case "$trackDependency": {
+        // `$dependOn` が正式名、`$trackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）。
+        // The 4.0 notice (3.5, D39) sits on the alias branch only; the canonical name gains no check
+        case "$trackDependency":
+          v4Migration?.renamed(prop, "$dependOn");
+        // falls through
+        case "$dependOn": {
           return (path: string): void => {
             return trackDependency(
               target,
@@ -317,9 +321,12 @@ export function get(
             return Object.is(current, levelListIndex.index);
           };
         }
-        // `$untracked` が正式名、`$untrackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）
-        case "$untracked":
-        case "$untrackDependency": {
+        // `$untracked` が正式名、`$untrackDependency` は 3.x の間のエイリアス（要件 B12・4.0 で外す）。
+        // The 4.0 notice sits on the alias branch only, as for `$trackDependency` above
+        case "$untrackDependency":
+          v4Migration?.renamed(prop, "$untracked");
+        // falls through
+        case "$untracked": {
           return <T>(fn: () => T): T => {
             return untrackDependency(
               target,

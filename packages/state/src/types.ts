@@ -71,6 +71,7 @@ export interface IBindingErrorInfo {
 
 export interface IWritableConfig {
   bindAttributeName?: string;
+  /** @deprecated Removed in 4.0, whose `bootstrapState` throws on it (3.5 warns `wcs/v4-migration`). */
   commentTextPrefix?: string;
   commentForPrefix?: string;
   commentIfPrefix?: string;
@@ -78,10 +79,15 @@ export interface IWritableConfig {
   commentElsePrefix?: string;
   tagNames?: IWritableTagNames;
   locale?: string;
+  /** @deprecated Removed in 4.0, whose `bootstrapState` throws on it (3.5 warns `wcs/v4-migration`). */
   debug?: boolean;
+  /** Moves to the state's `$behavior` in 4.0 (3.5 warns `wcs/v4-migration`); in 3.x, set it here. */
   enableMustache?: boolean;
+  /** Moves to the state's `$behavior` in 4.0 (3.5 warns `wcs/v4-migration`); in 3.x, set it here. */
   enableDirectionalInitialSync?: boolean;
+  /** @deprecated Removed in 4.0, whose `bootstrapState` throws on it (3.5 warns `wcs/v4-migration`). */
   enablePropagationContext?: boolean;
   enableContractAnalyzer?: boolean;
+  /** Moves to the state's `$behavior` in 4.0 (3.5 warns `wcs/v4-migration`); in 3.x, set it here. */
   sameValueGuard?: boolean;
 }

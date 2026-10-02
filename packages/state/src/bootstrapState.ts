@@ -8,6 +8,7 @@ import scopes from "./features/scopes";
 import ssr from "./features/ssr";
 import temporal from "./features/temporal";
 import { IWritableConfig } from "./types";
+import { installV4Migration } from "./v4Migration";
 
 /**
  * full / auto が入れる機能（設計案 §4）。分割エントリの利用者は、このうち要るものだけを
@@ -22,5 +23,9 @@ export const ALL_FEATURES: readonly IStateFeature[] = [formats, temporal, recurs
  */
 export function bootstrapState(config?: IWritableConfig, registry?: CustomElementRegistry): void {
   installFeatures(ALL_FEATURES);
+  // The 4.0 migration notices (`[wcs/v4-migration]`, the last 3.x minor, D39). Only the full entries
+  // install them, so the split `/core` does not carry them. The options are read before they apply
+  // (nothing about how 3.x runs changes)
+  installV4Migration(config);
   bootstrapCore(config, registry);
 }
