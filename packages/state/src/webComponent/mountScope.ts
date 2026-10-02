@@ -1,5 +1,5 @@
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
-import { type BindingSession, getOrCreateBindingSession } from "../bindings/BindingSession";
+import { type BindingSession, getOrCreateBindingSession, hasInterestedSession } from "../bindings/BindingSession";
 import { getLoopContextByNode, setLoopContextByNode } from "../list/loopContextByNode";
 import { initializeBindings } from "../bindings/initializeBindings";
 import { convertMustacheToComments } from "../mustache/convertMustacheToComments";
@@ -8,6 +8,7 @@ import { collectStructuralFragments } from "../structural/collectStructuralFragm
 import { raiseError } from "../raiseError";
 import { ParseBindTextResult } from "../bindTextParser/types";
 import { IContent } from "../structural/types";
+import { IBindingInfo } from "../types";
 import { getMountRecordByScopeRoot, getMountRecordsForStateElement, getScopeRootByMountRecord, IMountRecord, registerMountRecord, stateElementHasMounts, translateParsedForMount } from "./mount";
 import { notifyExports, registerExports, warnShadowedExports } from "./exportIndex";
 import { noteHostContext } from "./overlay";
@@ -57,14 +58,15 @@ export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot
   // dispose は records と deferred を空にするだけで session 自体は使い回せる）。
   // 旧 for が残した lastListValue は applyChangeToFor 側の「content 台帳が空の
   // binding は白紙から描く」ガードが吸収する
+  // The nodes still in the scope are bound again by resetScopeSession — the collection below skips them.
   if (existing !== null) {
-    getOrCreateBindingSession(scopeRoot).dispose();
+    resetScopeSession(scopeRoot);
   }
   registerMountRecord(scopeRoot, record);
   if (scopeRoot instanceof ShadowRoot) {
     setStateElementAlias(scopeRoot, record.parentStateElement);
   }
-  buildMountScopeBindings(record, scopeRoot);
+  buildMountScopeBindings(record, scopeRoot, existing !== null);
   // Register exports and alias edges once. Notify parents that evaluated before
   // registration, including on reinitialization when values may have changed.
   registerExports(record);
@@ -73,10 +75,50 @@ export function initializeMountScope(record: IMountRecord, scopeRoot: ShadowRoot
   setBindingsReadyForScope(scopeRoot, Promise.resolve());
 }
 
-function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot | Element): void {
+/**
+ * Dispose the scope's bindings, then restart the ones whose nodes are still in the scope. A
+ * re-initialization does not always bring new content: a component that renders once keeps its nodes
+ * when only its `<wcs-state>` is swapped. (A component moved while its `<wcs-state>` initializes does
+ * not come here: the newer connect takes the preparation over — bindComponentLifecycle.ts.) Those nodes
+ * are registered already, so the collection skips them, and the dispose alone left them dead. The restart
+ * is the one a reconnect does (`handleAddedNode`): the session still knows their bindings, including a
+ * text binding, whose anchor is the text node that replaced the comment and which a subscriber walk would
+ * not find. The bindings of a discarded DOM are not in the scope and stay disposed. A binding that fails
+ * to start again is reported, not swallowed as a mutation delivery has to.
+ */
+function resetScopeSession(scopeRoot: ShadowRoot | Element): void {
+  const session = getOrCreateBindingSession(scopeRoot);
+  session.dispose();
+  const restarted: IBindingInfo[] = [];
+  const walker = document.createTreeWalker(scopeRoot);
+  while (walker.nextNode()) {
+    session.handleAddedNode(walker.currentNode, restarted, (error) => {
+      console.error("[@wcstack/state] a binding failed to start again on the mount scope's re-initialization.", error);
+    });
+  }
+  applyChangeFromBindings(restarted);
+}
+
+/**
+ * A text node that holds what a binding rendered: the anchor of a `{{ }}` binding, or text inside a bound
+ * element (a property binding's output, a row's). On a re-initialization on the same DOM a `{{ … }}` in it
+ * is data: converting it would bind what the data says (the component's private keys included) and
+ * replace the anchor of the binding that rendered it. Passed on a re-initialization only: nothing in the
+ * scope is bound on a first build.
+ */
+function isRenderedText(textNode: Text, walkRoot: Node): boolean {
+  for (let node: Node = textNode; node !== walkRoot; node = node.parentNode!) {
+    if (hasInterestedSession(node)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildMountScopeBindings(record: IMountRecord, walkRoot: ShadowRoot | Element, again: boolean): void {
   const transform = (parsed: ParseBindTextResult, forPath?: string): ParseBindTextResult =>
     translateParsedForMount(record, parsed, forPath);
-  convertMustacheToComments(walkRoot);
+  convertMustacheToComments(walkRoot, again ? (textNode) => isRenderedText(textNode, walkRoot) : undefined);
   // スコープ直下のバインディングのループ文脈は、行 content の初期化と同じく
   // **直接エントリ**で渡す（ホスト要素の文脈＝境界ホップの解決結果）。
   // text binding は登録前に comment が replaceNode に差し替えられて切断される

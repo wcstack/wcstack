@@ -4,12 +4,19 @@ import { SVG_NAMESPACE } from "../define.js";
 const MUSTACHE_REGEX = /\{\{\s*(.+?)\s*\}\}/g;
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE"]);
 
-export function convertMustacheToComments(root: Document | Element | DocumentFragment): void {
+/**
+ * `skip` keeps a text node with a `{{ … }}` as it is — a mount scope initialized again on the same DOM
+ * passes the text its bindings rendered, which is data (webComponent/mountScope.ts).
+ */
+export function convertMustacheToComments(
+  root: Document | Element | DocumentFragment,
+  skip?: (textNode: Text) => boolean,
+): void {
   if (!config.enableMustache) {
     return;
   }
 
-  convertTextNodes(root);
+  convertTextNodes(root, skip);
 
   const templates = Array.from(root.querySelectorAll("template"));
 
@@ -32,7 +39,7 @@ export function convertMustacheToComments(root: Document | Element | DocumentFra
   }
 }
 
-function convertTextNodes(root: Document | Element | DocumentFragment): void {
+function convertTextNodes(root: Document | Element | DocumentFragment, skip?: (textNode: Text) => boolean): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
 
@@ -44,15 +51,15 @@ function convertTextNodes(root: Document | Element | DocumentFragment): void {
     if (textNode.parentElement && SKIP_TAGS.has(textNode.parentElement.tagName)) {
       continue;
     }
-    replaceTextNode(textNode);
+    replaceTextNode(textNode, skip);
   }
 }
 
-function replaceTextNode(textNode: Text): void {
+function replaceTextNode(textNode: Text, skip?: (textNode: Text) => boolean): void {
   const text = textNode.data;
   MUSTACHE_REGEX.lastIndex = 0;
 
-  if (!MUSTACHE_REGEX.test(text)) {
+  if (!MUSTACHE_REGEX.test(text) || skip?.(textNode)) {
     return;
   }
 
