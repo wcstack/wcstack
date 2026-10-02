@@ -1001,7 +1001,8 @@ describe("#370 スナップショットが if: / elseif: の出力フィルタ�
       : wrap(`<ul>${T(bind, `<li data-wcs="textContent: .n"></li>`)}</ul>`);
     const r = await refusal(body, server);
     expect(r.reason).toBe(`[@wcstack/state] [wcs/binding-syntax] #121 "${bind}"`);
-    expect(r.logged).toEqual([r.reason]);
+    // the init-failure header (#49) names the element, then the error itself
+    expect(r.logged).toEqual([`[@wcstack/state] #49 "wcs-state" ${r.reason}`]);
   });
 
   // （行への書き込みは getter のパスから: 写しの行は元のパス（items.1.n）からの書き込みを受け取らない — F26、migration-v4 §5）
