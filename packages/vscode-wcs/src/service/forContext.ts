@@ -4,7 +4,8 @@
  * HTML 内の指定位置が <template data-wcs="for:"> の内側にあるかを判定する。
  */
 
-import { splitBindTexts } from '@wcstack/state/parser';
+import { parseBindTextsForElement, splitBindTexts } from '@wcstack/state/parser';
+import { WcsDiagnosticCode } from '../core/diagnostics.js';
 import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
 import { asciiLowerCase, extractAttribute, parseAttributeNames, RAW_TEXT_ELEMENTS } from '../language/htmlParse.js';
 
@@ -57,6 +58,39 @@ export function isInsideForTemplate(html: string, offset: number, bindAttrName: 
 export function getInnermostForPath(html: string, offset: number, bindAttrName: string = 'data-wcs'): string | null {
   const chain = getEnclosingForPaths(html, offset, bindAttrName);
   return chain.length === 0 ? null : chain[chain.length - 1];
+}
+
+/** How a canonical parser error names its code (`[@wcstack/state] [wcs/binding-syntax] #121 "…"`). */
+const BINDING_SYNTAX_MARKER = `[${WcsDiagnosticCode.BindingSyntax}]`;
+
+/**
+ * Whether the canonical parser refuses a `for:` binding with `[wcs/binding-syntax]`: an output filter
+ * (`for: items|take(2)` — #121), an unclosed quote, an empty filter, a modifier on `for`. bindingSyntaxValidator
+ * reports it, and that error is the only diagnostic for it: the runtime refuses the binding as a whole (and with it
+ * the template, whose rows never exist), so the lint stacks no checks on the binding or on its rows — as it stacks
+ * no existence check on a path the parser refuses with #120. The parser's other refusals (`@state`, `**`) keep
+ * their own reporting and are not counted here.
+ */
+export function isForBindingRefused(bindText: string): boolean {
+  try {
+    parseBindTextsForElement(bindText);
+    return false;
+  } catch (e) {
+    return (e as Error).message.includes(BINDING_SYNTAX_MARKER);
+  }
+}
+
+/**
+ * The for path a row shorthand at offset expands against (`.name` → `<for path>.*.name`): the innermost enclosing
+ * for's raw path, as getInnermostForPath. null outside a for, and inside a for the canonical parser refuses
+ * (isForBindingRefused) at any depth: the runtime refuses that template, so its rows never exist, and expanding
+ * against the raw text would name `items|take(2).*.name` in a false `wcs/binding-path-missing`. The same single
+ * scan of the document as getInnermostForPath.
+ */
+export function getRowShorthandForPath(html: string, offset: number, bindAttrName: string = 'data-wcs'): string | null {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  if (chain.length === 0 || chain.some((raw) => isForBindingRefused(`for: ${raw}`))) return null;
+  return chain[chain.length - 1];
 }
 
 /** offset を囲む for テンプレート 1 枚（生 for パス + テンプレート同一性のアンカー）。 */
