@@ -2,12 +2,14 @@ import { ILoopContext } from "../list/types";
 import { IBindingInfo } from "../types";
 import { INDEX_BY_INDEX_NAME } from "../define";
 import {
-  collectNodesAndBindingInfos,
+  collectNodesAndBindingInfosOf,
   collectNodesAndBindingInfosByFragment,
   IDeferredSpreadEntry,
   ParseResultTransform,
   processDeferredNode,
+  uncollectedNodes,
 } from "./collectNodesAndBindingInfos";
+import { getSubscriberNodes } from "./getSubscriberNodes";
 import { IFragmentNodeInfo, IRowPlan } from "../structural/types";
 import { setLoopContextByNode } from "../list/loopContextByNode";
 import { applyChangeFromBindings } from "../apply/applyChangeFromBindings";
@@ -58,9 +60,16 @@ export function initializeBindings(
   root: Document | DocumentFragment | Element,
   parentLoopContext: ILoopContext | null,
   transform?: ParseResultTransform,
+  // The subscriber nodes to bind. The binder passes its own: the walk never returns `root` itself (binder.ts)
+  nodes: Node[] = getSubscriberNodes(root),
+  // The binder passes a session of its own: one keyed by its subtree could be a mount scope's (binder.ts)
+  session: BindingSession = getOrCreateBindingSession(root),
 ): void {
-  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfos(root, transform);
-  const session = getOrCreateBindingSession(root);
+  // Only the nodes not collected yet (#414). A collected node is bound already — by an earlier walk, or
+  // as a row's node — and keeps the loop context it was given: a subtree handed over again (the router
+  // hands a route's content over on every entry) reset its rows' nodes to `parentLoopContext`, and a
+  // row's `if:` failed on its next toggle.
+  const [subscriberNodes, allBindings, deferredSpreads] = collectNodesAndBindingInfosOf(uncollectedNodes(nodes), transform);
   for (const node of subscriberNodes) {
     setLoopContextByNode(node, parentLoopContext);
   }
