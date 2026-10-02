@@ -102,7 +102,10 @@ export const COMMON_EVENTS: PropertyInfo[] = [
 
 /**
  * バインディング修飾子（`prop#modifier` — カンマ区切りで複数指定可）。
- * prevent/stop はイベント系、ro は two-way / radio / checkbox の書き戻し抑止。
+ * prevent/stop/direct はイベント系、ro は two-way / radio / checkbox の書き戻し抑止。
+ * direct は 4.0 の修飾子: `on*:` を root へ委譲せず、その要素にリスナーを付けたままにする
+ * （currentTarget は要素）。3.x のランタイムは知らない修飾子を無視し（event/handler.ts は prevent / stop
+ * だけを見る）、イベント束縛はもともと要素に付けるので、今から書いても 3.x では同じに動く。
  * このほか two-way では `on<event>`（例: `value#onblur`）でトリガーイベントを上書きできる
  * （event/twowayHandler.ts）— イベント名は自由記述のため静的候補には含めない。
  */
@@ -110,4 +113,5 @@ export const EVENT_MODIFIERS = [
   { name: 'prevent', description: 'event.preventDefault() を呼び出す' },
   { name: 'stop', description: 'event.stopPropagation() を呼び出す' },
   { name: 'ro', description: '双方向バインディングの書き戻しを抑止（読み取り専用）' },
+  { name: 'direct', description: '4.0 で効く: イベントを root へ委譲せず、この要素にリスナーを付ける（currentTarget は要素のまま。3.x はもともと要素に付けるので変わらない）' },
 ];

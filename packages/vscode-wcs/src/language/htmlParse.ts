@@ -88,6 +88,52 @@ export function findStartTagRegions(html: string): StartTagRegion[] {
 }
 
 /**
+ * 中身が要素にならない要素（スクリプトが有効なページの HTML パーサが raw text / RCDATA として読むもの）。
+ * 中に書かれた `<wcs-state>` や `data-wcs="…"` は文字であって、要素でも束縛でもない。
+ */
+export const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set([
+  'script', 'style', 'textarea', 'title', 'xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext',
+]);
+
+/**
+ * ASCII の英大文字だけを小文字にする。`toLowerCase` は `İ` のように小文字が長くなる文字で長さが変わり、
+ * 小文字化した写しで探した位置が原文とずれる — タグ名の照合（HTML は ASCII で大小を区別しない）はこれで行う。
+ */
+export function asciiLowerCase(text: string): string {
+  return text.replace(/[A-Z]+/g, (s) => s.toLowerCase());
+}
+
+/**
+ * offset が `<template>` の中（の文字列位置）かを答える関数を返す。文書を 1 回だけ走査して
+ * `<template>` / `</template>` のタグ位置を集める（コメントと raw text 要素の中身は飛ばす）。
+ */
+export function createTemplateTester(html: string): (offset: number) => boolean {
+  const lower = asciiLowerCase(html);
+  const tags: { at: number; close: boolean }[] = [];
+  const tag = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][^\s/>]*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = tag.exec(html)) !== null) {
+    if (match[2] === undefined) continue; // コメント
+    const name = lower.slice(match.index + 1 + match[1].length, match.index + match[0].length);
+    if (name === 'template') {
+      tags.push({ at: match.index, close: match[1] === '/' });
+    } else if (match[1] === '' && RAW_TEXT_ELEMENTS.has(name)) {
+      const close = lower.indexOf(`</${name}`, tag.lastIndex);
+      if (close === -1) break;
+      tag.lastIndex = close + 2 + name.length;
+    }
+  }
+  return (offset) => {
+    let depth = 0;
+    for (const t of tags) {
+      if (t.at >= offset) break;
+      depth = t.close ? Math.max(0, depth - 1) : depth + 1;
+    }
+    return depth > 0;
+  };
+}
+
+/**
  * <wcs-state> 要素のメタ情報。
  * 属性（json, state, src）と内部スクリプトブロックを保持する。
  */
