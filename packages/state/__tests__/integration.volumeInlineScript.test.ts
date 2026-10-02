@@ -62,6 +62,12 @@ describe("ボリューム × インライン script", () => {
     // `packages/server/__tests__/render.test.ts` が固定する
     const reported = errors.mock.calls.map((c) => String(c[0]));
     expect(reported.some((m) => m.includes(`volume "v" failed to load`))).toBe(true);
+    // The report carries the inline-script loader's own Error as thrown (prefixed, the import
+    // failure kept as `cause`), not a "Failed to initialize state" wrapper around it
+    const report = errors.mock.calls.find((c) => String(c[0]).includes(`volume "v" failed to load`))!;
+    expect(report[1]).toBeInstanceOf(Error);
+    expect((report[1] as Error).message).toMatch(/^\[@wcstack\/state\] Failed to evaluate the inline <script> of state "wcs-state"/);
+    expect((report[1] as Error).cause).toBeDefined();
     errors.mockRestore();
     host.remove();
   }, 20000);

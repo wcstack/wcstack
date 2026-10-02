@@ -362,43 +362,55 @@ export class State extends HTMLElementBase implements IStateElement {
     return requireSsrHooks(`the "enable-ssr" attribute`).loadState(this) as IState | null;
   }
 
-  /** state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。 */
+  /**
+   * state / src / json / inner <script> / API set のソース解決（_initialize とボリュームで共用）。
+   *
+   * A load failure is not wrapped, here or in the loaders: what was thrown propagates as is —
+   * the SyntaxError of `JSON.parse` (`state=` / `json=`), the `import()` rejection or the
+   * module's own throw (`src="*.js"`), the inline-script loader's Error (the import failure is
+   * its `cause`), the unsupported-extension error, or a non-Error value. On a root,
+   * `_failInitializeLoudly` logs it under the element's "failed to initialize" line and rejects
+   * connectedCallbackPromise with that same value (the README contract); on a volume,
+   * volumeLifecycle logs it under its "failed to load" line. The old wrappers
+   * (`Failed to initialize state: ${e}` here, `Failed to load script file` /
+   * `Failed to parse JSON from script element` in the loaders) were new Errors that kept the
+   * original only as text, losing its type, stack and cause.
+   *
+   * Two sources do not fail at all in 3.x (README): `src="*.json"` that cannot be fetched or
+   * parsed, and `state=` naming no JSON script. Both log and start with an empty state.
+   */
   private async _loadStateFromSource(): Promise<Record<string, any>> {
-    try {
-      if (this.hasAttribute('state')) {
-        const state = this.getAttribute('state');
-        return loadFromScriptJson(state!);
-      } else if (this.hasAttribute('src')) {
-        const src = this.getAttribute('src');
-        if (src && src.endsWith('.json')) {
-          return await loadFromJsonFile(src);
-        } else if (src && src.endsWith('.js')) {
-          return await loadFromScriptFile(src);
-        } else {
-          raiseError(`Unsupported src file type: ${src}`);
-        }
-      } else if (this.hasAttribute('json')) {
-        const json = this.getAttribute('json');
-        return JSON.parse(json!);
+    if (this.hasAttribute('state')) {
+      const state = this.getAttribute('state');
+      return loadFromScriptJson(state!);
+    } else if (this.hasAttribute('src')) {
+      const src = this.getAttribute('src');
+      if (src && src.endsWith('.json')) {
+        return await loadFromJsonFile(src);
+      } else if (src && src.endsWith('.js')) {
+        return await loadFromScriptFile(src);
       } else {
-        const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
-        if (script) {
-          // sourceURL ラベル。v2 はルートに 1 ツリーなので名前次元は無く、要素の
-          // タグ名（DCC 経路が host のタグ名を渡すのと同じ流儀）で特定十分
-          return await loadFromInnerScript(script, config.tagNames.state);
-        } else {
-          const timerId = setTimeout(() => {
-            // v2: name 属性は撤去済み（fail-fast）— 文言に name を出さない（tagName で特定十分）
-            console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element.`);
-          }, NO_SET_TIMEOUT);
-          // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
-          const state = await this._setStatePromise!;
-          clearTimeout(timerId);
-          return state;
-        }
+        raiseError(`Unsupported src file type: ${src}`);
       }
-    } catch(e) {
-      raiseError(`Failed to initialize state: ${e}`);
+    } else if (this.hasAttribute('json')) {
+      const json = this.getAttribute('json');
+      return JSON.parse(json!);
+    } else {
+      const script = this.querySelector<HTMLScriptElement>('script[type="module"]');
+      if (script) {
+        // sourceURL ラベル。v2 はルートに 1 ツリーなので名前次元は無く、要素の
+        // タグ名（DCC 経路が host のタグ名を渡すのと同じ流儀）で特定十分
+        return await loadFromInnerScript(script, config.tagNames.state);
+      } else {
+        const timerId = setTimeout(() => {
+          // v2: name 属性は撤去済み（fail-fast）— 文言に name を出さない（tagName で特定十分）
+          console.warn(`[@wcstack/state] Warning: No state source found for <${config.tagNames.state}> element.`);
+        }, NO_SET_TIMEOUT);
+        // 要注意！！！APIでセットする場合はここで待機する必要がある --(1)
+        const state = await this._setStatePromise!;
+        clearTimeout(timerId);
+        return state;
+      }
     }
   }
 
@@ -525,8 +537,15 @@ export class State extends HTMLElementBase implements IStateElement {
     }
     this._initializeFailed = true;
     // 診断は必ず 1 件出す。カスタム要素リアクションは connectedCallback の戻り
-    // Promise を捨てるので、ブラウザの "Uncaught (in promise)" 以外に受け手が居ない
-    console.error(`[@wcstack/state] <${config.tagNames.state}> failed to initialize.`, error);
+    // Promise を捨てるので、ブラウザの "Uncaught (in promise)" 以外に受け手が居ない。
+    // The error is logged as thrown (loaders do not wrap it), so the header names the source
+    // that points at a file or script: `state=` / `src=` (`json=` is the data itself, and its
+    // SyntaxError already says where; an inline script's error names the element).
+    const source = ["state", "src"].find((name) => this.hasAttribute(name));
+    console.error(
+      `[@wcstack/state] <${config.tagNames.state}${source ? ` ${source}="${this.getAttribute(source)}"` : ""}> failed to initialize.`,
+      error,
+    );
     this._resolveInitialize?.();
     this._resolveLoading?.();
     // reject より先に handled を立てる。DOM 駆動のマウントでは

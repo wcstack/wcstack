@@ -8,6 +8,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/state`: **a root `<wcs-state>` whose source fails to load now rejects `connectedCallbackPromise` with the error that was thrown, as the README promises, instead of a new `Failed to initialize state: …` Error.** A failing `state=`, `src="*.js"`, `json=` or inline `<script type="module">` source rejected `connectedCallbackPromise` — and with it `getBindingsReady()`, `@wcstack/testing`'s `mount()` and `@wcstack/server`'s `renderToString()` — with a wrapper that kept the original only as text, losing its type, stack and `cause`; two loaders wrapped it once more (`Failed to load script file: …`, `Failed to parse JSON from script element: …`), and a DCC definition wrapped it with `DCC: Failed to load state: …`. The same object now arrives: `JSON.parse`'s `SyntaxError` for `state=` / `json=`, the `import()` rejection or the module's own thrown value for `src="*.js"`, and for an inline script the loader's own Error, which names the script and keeps the import failure as `cause` (it now carries the `[@wcstack/state]` prefix itself). A non-`Error` thrown value is passed through as well, and a volume's `volume "…" failed to load.` report carries the same unwrapped error. Code that matched the old `Failed to initialize state` text must match the original error instead.
+
+### Changed
+
+- `@wcstack/state`: **the "failed to initialize" console report names the element's source.** The header reads `[@wcstack/state] <wcs-state src="./state.js"> failed to initialize.` (or `state="cfg"`) when the element has one, followed by the error as thrown; `json=` and inline sources keep `<wcs-state>`, since their errors locate themselves.
+- `@wcstack/state`: **the two sources that do not fail in 3.x now say so.** A `src="*.json"` that cannot be fetched or parsed was logged as `Failed to load JSON file:` with no package prefix and no URL; it now logs `[@wcstack/state] Failed to load JSON file "<url>", so the state starts empty (4.0 rejects instead):` followed by the HTTP status or the error. A `state="<id>"` with no `<script type="application/json">` of that id in the document started with an empty state silently; it now warns once, naming the id and that 3.x looks only in the document (not inside shadow roots). Both still resolve `connectedCallbackPromise` (a volume grafts `{}`) as before; the README now states both exceptions.
+
 ## [3.4.0] — 2026-10-02
 
 **3.4 fixes the issues reported against 3.3.0, and the regressions those fixes introduced on the way.** The changes are in `@wcstack/state`, with follow-ups in `@wcstack/devtools`, `@wcstack/lint` and the VS Code extension; every other package moves to 3.4.0 only to keep the lockstep version.
