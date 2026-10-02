@@ -302,6 +302,8 @@ export class Engine implements ReconcileHooks {
   private onPatternCreated(p: Pattern): void {
     // (the recursion add-on makes its `**` templates without this, while the state registers)
     if (p.path.includes("**")) recursionUnsupported(p.path);
+    // a path through an object's prototype would read and write every object's (once per path)
+    if (p.last === "__proto__" || p.last === "prototype") raise(M.UnsafeSegment, [p.path]);
     const parent = p.parent;
     p.underGetter = parent !== null && p.last !== WILDCARD && parent.depth === p.depth &&
       (parent.getter !== null || parent.underGetter);
@@ -333,9 +335,7 @@ export class Engine implements ReconcileHooks {
         const v = this[path];
         if (v !== undefined) return v;
         // not a list there (an object with numeric keys): the path read literally, as 3.3's markup did
-        let o = this[container];
-        for (let k = 0; k < rest.length && o != null; k++) o = o[rest[k]];
-        return o;
+        return dig(this[container], rest);
       };
       p.setter = function (this: any, v: unknown) {
         this[path] = v;

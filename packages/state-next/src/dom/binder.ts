@@ -10,13 +10,14 @@ import { engines, mountSubtree } from "./mount";
  */
 
 /** Subtrees handed over before their root's engine finished its first mount. */
-const early: Element[] = [];
+const early = new Set<Element>();
 
 function bind(subtree: Node): void {
   // not in a document (it left, or was replaced, as a chain's `else:` template by its anchor): nothing to bind
   if (subtree.nodeType !== 1 || !subtree.isConnected) return;
   const engine = engines.get(subtree.getRootNode());
-  if (engine === undefined) early.push(subtree as Element);
+  // (once each: the router hands the same nodes over on every insertion)
+  if (engine === undefined) early.add(subtree as Element);
   else mountSubtree(engine, subtree as Element);
 }
 
@@ -26,7 +27,9 @@ function bind(subtree: Node): void {
  */
 export function drainBinds(): void {
   // (one that left the document meanwhile is dropped: handed over again if it comes back)
-  for (const subtree of early.splice(0)) bind(subtree);
+  const waiting = [...early];
+  early.clear();
+  for (const subtree of waiting) bind(subtree);
   flushPendingBinds();
 }
 

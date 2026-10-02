@@ -17,8 +17,8 @@ const keysByEngine = new WeakMap<Engine, Map<Pattern, KeyOf>>();
 /** The merged array is being written: the write goes through as a plain one. */
 let merging = false;
 const PROTO = "__proto__";
-/** A field name that is one path segment (no `.` / `*`, not an index, not a `$` name). */
-const SEGMENT = /^[^\d.*$][^.*]*$/;
+/** A field name that is one path segment (no `.` / `*`, not an index, not a `$` name, not `prototype`: a path refuses it). */
+const SEGMENT = /^(?!prototype$)[^\d.*$][^.*]*$/;
 
 function declare(engine: Engine, target: Record<string, any>): void {
   const decl = target.$listKeys;

@@ -428,7 +428,7 @@ async function ssrRoundTrip(html: string | ((root: ShadowRoot) => void), state: 
     el.createState("writable", fn);
     await flush();
   };
-  return { root, write };
+  return { root, write, out };
 }
 
 describe("SSR の引き取り: 隣り合う if の連鎖（D1）", () => {
@@ -629,5 +629,444 @@ describe("lint への誘導を付けないメッセージ（#203・#204）", () 
       expect(explain(message)).not.toContain("npx @wcstack/lint");
     }
     expect(explain(render(M.ElseWithoutIf, ["else"]))).toContain("npx @wcstack/lint");
+  });
+});
+
+// ---------------------------------------------------------------- cycle 3
+
+describe("SSR: 値から描いた Light DOM の子（E2）", () => {
+  beforeAll(() => {
+    customElements.define("qa-text-srv", class extends HTMLElement {
+      set body(v: string) { this.textContent = v; }
+    });
+    customElements.define("qa-html-srv", class extends HTMLElement {
+      set markup(v: string) { this.innerHTML = v; }
+    });
+    customElements.define("qa-append-srv", class extends HTMLElement {
+      set body(v: string) { this.append(Object.assign(document.createElement("span"), { textContent: v })); }
+    });
+    customElements.define("qa-y-srv", class extends HTMLElement {});
+    customElements.define("qa-fill-srv", class extends HTMLElement {
+      set body(v: string) { this.querySelector(".slot")!.innerHTML = v; }
+    });
+  });
+
+  it("作者が書いた子（.slot）の中に値から描いたものも、サーバの出力に残らない（R3-5）", async () => {
+    const calls: string[] = [];
+    const { root, out } = await roundTrip(`<qa-fill-srv data-wcs="body: comment"><div class="slot"></div></qa-fill-srv><p>{{ count }}</p>`,
+      () => ({ comment: `my token is {{ secret }} <button data-wcs="onclick: wipe">win</button><b data-wcs="nope nope">x</b>`, secret: "s3cr3t", count: 1, wipe() { calls.push("wiped"); } }));
+    expect(out).toContain(`<qa-fill-srv data-wcs="body: comment"><div class="slot"></div></qa-fill-srv>`);
+    root.querySelector("button")?.click();
+    expect(calls).toEqual([]);
+    expect(root.innerHTML).not.toContain("s3cr3t");
+    expect(root.querySelector("p")!.textContent).toBe("1");
+  });
+
+  it("中身を束縛するカスタム要素（innerHTML:・textContent:）の値は、ネイティブの要素と同じくサーバの出力に残る（R3-6）", async () => {
+    const { out } = await ssrRoundTrip(`<qa-x-srv data-wcs="innerHTML: html"></qa-x-srv><qa-y-srv data-wcs="textContent: text"></qa-y-srv>`,
+      () => ({ html: "<b>bold</b>", text: "plain" }));
+    expect(out).toContain(`<qa-x-srv data-wcs="innerHTML: html"><b>bold</b></qa-x-srv>`);
+    expect(out).toContain(`<qa-y-srv data-wcs="textContent: text">plain</qa-y-srv>`);
+  });
+  /** The client: the elements' classes are not loaded yet (an autoloader page). */
+  async function roundTrip(html: string, state: () => Record<string, any>) {
+    let out = "";
+    const { root, write } = await ssrRoundTrip(html, state, (r) => { out = r.innerHTML; r.innerHTML = out.replace(/-srv/g, "-cli"); });
+    return { root, write, out };
+  }
+
+  it("利用者の文の {{ … }} はサーバの出力に残らず、クライアントで別のパスとして展開されない", async () => {
+    const { root, out } = await roundTrip(`<qa-text-srv data-wcs="body: comment"></qa-text-srv>`, () => ({ comment: "my token is {{ secret }}", secret: "s3cr3t" }));
+    // (the snapshot's JSON carries the value: it is data there, not markup)
+    expect(out).toContain('<qa-text-srv data-wcs="body: comment"></qa-text-srv>');
+    expect(root.innerHTML).not.toContain("s3cr3t");
+  });
+
+  it("サニタイズした HTML の data-wcs は、状態のメソッドに結ばれない", async () => {
+    const calls: string[] = [];
+    const { root, out } = await roundTrip(`<qa-html-srv data-wcs="markup: comment"></qa-html-srv>`,
+      () => ({ comment: `<button data-wcs="onclick: deleteAccount">win</button>`, deleteAccount() { calls.push("deleted"); } }));
+    expect(out).toContain('<qa-html-srv data-wcs="markup: comment"></qa-html-srv>');
+    root.querySelector("button")?.click();
+    expect(calls).toEqual([]);
+  });
+
+  it("要素が書いたマークアップ（{{ }}・for・if）は残り、引き取って動く。{{ を含まない値の文はサーバの出力に残る", async () => {
+    const { root, write, out } = await roundTrip(
+      `<qa-append-srv data-wcs="body: comment">Hi {{ name }}!<ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul><template data-wcs="if: show"><b>B</b></template></qa-append-srv>`
+      + `<qa-text-srv data-wcs="body: note"></qa-text-srv>`,
+      () => ({ comment: "{{ secret }}", secret: "s3cr3t", name: "Ann", items: ["x", "y"], show: true, note: "plain note" }),
+    );
+    expect(out).toContain("plain note");
+    expect(root.innerHTML).not.toContain("s3cr3t");
+    const host = root.querySelector("qa-append-cli")!;
+    expect(host.textContent).toBe("Hi Ann!xyB");
+    await write((s) => { s.name = "Bo"; s.items = ["z"]; s.show = false; });
+    expect(host.textContent).toBe("Hi Bo!z");
+  });
+});
+
+describe("SSR: 中身が文字の要素の {{ }}（E5）", () => {
+  it("<textarea> の {{ }} はサーバでは値を出し、クライアントでは元のテンプレートから束ねる", async () => {
+    let out = "";
+    const { root, write } = await ssrRoundTrip(`<textarea>{{ comment }}</textarea>`,
+      () => ({ comment: "hello {{ secret }}", secret: "s3cr3t" }), (r) => { out = r.innerHTML; });
+    expect(out).toContain(`<textarea data-wcs-raw="{{ comment }}">hello {{ secret }}</textarea>`);
+    const ta = root.querySelector("textarea")!;
+    expect(ta.hasAttribute("data-wcs-raw")).toBe(false);
+    expect(ta.textContent).toBe("hello {{ secret }}");
+    await write((s) => { s.comment = "changed"; });
+    expect(ta.textContent).toBe("changed");
+  });
+
+  it("文字と {{ }} の混ざった <title> も同じ。束ねる文字の無い中身が文字の要素（<style>）には印を付けない", async () => {
+    let out = "";
+    const { root, write } = await ssrRoundTrip(`<title>Shop - {{ page }}</title><style>p { color: red }</style>`,
+      () => ({ page: "Top" }), (r) => { out = r.innerHTML; });
+    expect(out).toContain(`<title data-wcs-raw="Shop - {{ page }}">Shop - Top</title><style>`);
+    await write((s) => { s.page = "Cart"; });
+    expect(root.querySelector("title")!.textContent).toBe("Shop - Cart");
+  });
+});
+
+describe("SSR: 値の中の wcs- のコメント（E8）", () => {
+  it.each([
+    ["壊れたエスケープ", "<p>hi<!--wcs-t:%E0%A4%A--></p>"],
+    ["引用符を含むテンプレートの印", "<p>hi<!--wcs-p:x\"]--></p>"],
+    ["行の印の無い範囲", "<p><!--wcs-[--><b>x</b></p>"],
+    ["不正な範囲の印", "<p><!--wcs-[x--><b>x</b><!--wcs-]--></p>"],
+  ])("innerHTML: の値に%sがあっても、引き取りは止まらない", async (_n, html) => {
+    const { root, write } = await ssrRoundTrip(`<div data-wcs="innerHTML: html"></div><p class="c">{{ count }}</p>`, () => ({ html, count: 1 }));
+    await write((s) => { s.count = 2; });
+    expect(root.querySelector("p.c")!.textContent).toBe("2");
+  });
+});
+
+describe("SVG の中の構造テンプレートの SSR（F1・R3-7・R3-8）", () => {
+  const SVG = "http://www.w3.org/2000/svg";
+  /** `<svg>` with `<template data-wcs="for: groups"><g data-wcs="attr.data-k: .n"><template data-wcs="for: .pts"><circle data-wcs="attr.cx: .x"/>…` built with the DOM. */
+  const build = (r: ShadowRoot) => {
+    const el = (name: string, attrs: Record<string, string>, ...kids: Node[]) => {
+      const e = document.createElementNS(SVG, name);
+      for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+      e.append(...kids);
+      return e;
+    };
+    r.append(el("svg", {}, el("template", { "data-wcs": "for: groups" },
+      el("g", { "data-wcs": "attr.data-k: .n" }, el("template", { "data-wcs": "for: .pts" }, el("circle", { "data-wcs": "attr.cx: .x" }))))));
+  };
+  const shapes = (root: ShadowRoot) => Array.from(root.querySelectorAll("svg g, svg circle"), (e) =>
+    `${e.localName}${e.getAttribute("data-k") ?? e.getAttribute("cx")}:${e.namespaceURI === SVG ? "svg" : "html"}`);
+
+  it("入れ子の for を含む SVG のテンプレートも出力でき、client で SVG のまま戻って、innerHTML を使わずに引き取る", async () => {
+    const html = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML")!;
+    let parsedByInnerHTML = 0;
+    const { root, write, out } = await ssrRoundTrip(build, () => ({ groups: [{ n: "a", pts: [{ x: 1 }] }, { n: "b", pts: [{ x: 2 }, { x: 3 }] }] }), () => {
+      // a Trusted Types sink: the client must not parse strings to restore the template
+      Object.defineProperty(Element.prototype, "innerHTML", { ...html, set(v) { parsedByInnerHTML++; html.set!.call(this, v); } });
+    });
+    try {
+      expect(out).toMatch(/<template id="wcs-s\d+" data-wcs="for: groups"><svg><g data-wcs="attr.data-k: .n"><template data-wcs="for: .pts"><circle/);
+      expect(shapes(root)).toEqual(["ga:svg", "circle1:svg", "gb:svg", "circle2:svg", "circle3:svg"]);
+      await write((s) => { s.groups = [...s.groups, { n: "c", pts: [{ x: 4 }] }]; });
+      expect(shapes(root)).toEqual(["ga:svg", "circle1:svg", "gb:svg", "circle2:svg", "circle3:svg", "gc:svg", "circle4:svg"]);
+      expect(parsedByInnerHTML).toBe(0);
+    } finally {
+      Object.defineProperty(Element.prototype, "innerHTML", html);
+    }
+  });
+});
+
+describe("根の失敗とマークアップで結線するコンポーネント（E7）", () => {
+  it("ページの状態の初期化に失敗すると、結線を待つコンポーネントも報告して決着する", async () => {
+    const tag = define(`<b>{{ name }}</b>`, () => ({ name: "" }));
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a.map(String).join(" ")); });
+    try {
+      const h = document.createElement(`quality-addon-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><${tag} data-wcs="state: user"></${tag}>`;
+      const rootEl = root.querySelector("wcs-state") as any;
+      rootEl.setInitialState({ user: { name: "a" }, $scan: {} });
+      document.body.appendChild(h);
+      await expect(rootEl.connectedCallbackPromise).rejects.toThrow();
+      const inner = root.querySelector(tag)!.shadowRoot!.querySelector("wcs-state") as any;
+      await inner.connectedCallbackPromise;
+      await inner.initializePromise;
+      expect(errors.some((e) => e.includes(`<${tag}>.state will not mount: the root state failed to initialize.`))).toBe(true);
+      // one that starts waiting after the failure gives up at once
+      const late = document.createElement(tag);
+      late.setAttribute("data-wcs", "state: user");
+      root.append(late);
+      await (late.shadowRoot!.querySelector("wcs-state") as any).connectedCallbackPromise;
+      expect(errors.filter((e) => e.includes("will not mount")).length).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("サイクル 3 の再検証（R3-9・R3-10・R3-11）", () => {
+  it("onRootFailed の待ちは、戻り値で外せる（外した後の失敗では呼ばれない。R3-9）", async () => {
+    const { onRootFailed, watchRoot } = await import("../src/scopes/volume");
+    const root = document.createElement("div");
+    const calls: string[] = [];
+    const stop = onRootFailed(root, () => calls.push("a"));
+    onRootFailed(root, () => calls.push("b"));
+    expect(stop()).toBe(true);
+    const failed = Promise.reject(new Error("x"));
+    watchRoot({ connectedCallbackPromise: failed } as any, root);
+    await failed.catch(() => {});
+    await flush();
+    expect(calls).toEqual(["b"]);
+  });
+
+  it("同じ root の 2 本目の <wcs-state>（#47）は、生きた根の root を失敗にしない。後から来た volume も接ぎ木する（R3-10）", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a.map(String).join(" ")); });
+    try {
+      const h = document.createElement(`quality-addon-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state json='{"a":1}'></wcs-state><p>{{ cart.n }}</p>`;
+      document.body.appendChild(h);
+      const first = root.querySelector("wcs-state") as any;
+      await first.connectedCallbackPromise;
+      const stray = document.createElement("wcs-state") as any;
+      stray.setAttribute("json", '{"b":1}');
+      root.append(stray);
+      await expect(stray.connectedCallbackPromise).rejects.toThrow();
+      await flush();
+      const v = document.createElement("wcs-state") as any;
+      v.setAttribute("mount", "cart");
+      v.setInitialState({ n: 5 });
+      root.append(v);
+      await v.connectedCallbackPromise;
+      await flush();
+      expect(text(root, "p")).toBe("5");
+      expect(errors.filter((e) => e.includes("will not graft"))).toEqual([]);
+      // what waits on the root there (a component, for its wiring) is not told it failed
+      const { onRootFailed } = await import("../src/scopes/volume");
+      let failed = false;
+      onRootFailed(root, () => { failed = true; })();
+      expect(failed).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("$listKeys の取り直しで prototype というフィールドが変わっても、投げずに行へそのまま入る（R3-11）", async () => {
+    const first = { id: 1, name: "a", prototype: "x" };
+    const { root, els } = await host(`<wcs-state></wcs-state><ul><template data-wcs="for: items"><li>{{ .name }}</li></template></ul>`, [{ items: [first], $listKeys: { items: "id" } }]);
+    els[0].createState("writable", (s: any) => { s.items = [{ id: 1, name: "b", prototype: "y" }]; });
+    await flush();
+    let row: any;
+    els[0].createState("readonly", (s: any) => { row = s.items[0]; });
+    expect(row).toBe(first);
+    expect(row.prototype).toBe("y");
+    expect(text(root, "li")).toBe("b");
+  });
+});
+
+describe("ssr.ts が数で書いた束縛の種類", () => {
+  it("K_HTML は 8、K_PROP は 1（ssr.ts は core の chunk の export を増やさないように数で比べる）", async () => {
+    const { K_HTML, K_PROP } = await import("../src/dom/view");
+    expect([K_HTML, K_PROP]).toEqual([8, 1]);
+  });
+});
+
+describe("サイクル 3 の再検証 2（S3-1〜S3-5）", () => {
+  beforeAll(() => {
+    customElements.define("qa-self-srv", class extends HTMLElement {
+      set body(v: string) { this.innerHTML = v; }
+    });
+    customElements.define("qa-wrap", class extends HTMLElement {});
+    customElements.define("qa-kid", class extends HTMLElement { state = {}; });
+  });
+
+  it.each([
+    ["<textarea>", `<textarea>my token is {{ secret }}</textarea>`],
+    ["構造テンプレート", `<template data-wcs="if: secret"><button data-wcs="onclick: wipe">win</button></template>`],
+    ["壊れた構造テンプレート", `<template data-wcs="else:"></template>`],
+  ])("値の中の%sもサーバの出力に残らず、展開・メソッド・初期化の失敗が起きない（S3-1）", async (_n, comment) => {
+    const calls: string[] = [];
+    let out = "";
+    const { root } = await ssrRoundTrip(`<qa-self-srv data-wcs="body: comment"></qa-self-srv><p>{{ count }}</p>`,
+      () => ({ comment, secret: "s3cr3t", count: 1, wipe() { calls.push("wiped"); } }),
+      (r) => { out = r.innerHTML; r.innerHTML = out.replace(/qa-self-srv/g, "qa-self-cli"); });
+    expect(out).toContain(`<qa-self-srv data-wcs="body: comment"></qa-self-srv>`);
+    root.querySelector("button")?.click();
+    expect(calls).toEqual([]);
+    expect(root.innerHTML).not.toContain("s3cr3t");
+    expect(root.querySelector("p")!.textContent).toBe("1");
+  });
+
+  it("束縛したカスタム要素の中の Light DOM コンポーネントも、SSR で印を失わず引き取って動く（S3-2）", async () => {
+    const { root, write } = await ssrRoundTrip(
+      `<qa-wrap data-wcs="attr.title: t"><qa-kid data-wcs="state.x: v; state.items: items"><wcs-state bind-component="state"></wcs-state><b>{{ x }}</b><ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul></qa-kid></qa-wrap>`,
+      () => ({ t: "T", v: "one", items: ["a", "b"] }),
+    );
+    await flush();
+    const kid = root.querySelector("qa-kid")!;
+    expect(kid.querySelector("b")!.textContent + Array.from(kid.querySelectorAll("li"), (li) => li.textContent).join("")).toBe("oneab");
+    await write((s) => { s.v = "two"; s.items = ["a", "b", "c"]; });
+    await flush();
+    expect(kid.querySelector("b")!.textContent + Array.from(kid.querySelectorAll("li"), (li) => li.textContent).join("")).toBe("twoabc");
+  });
+
+  it("<foreignObject> の中のテンプレートは HTML のまま戻り、行も HTML の要素になる（S3-3）", async () => {
+    const { root, write, out } = await ssrRoundTrip(`<svg><foreignObject><template data-wcs="for: items"><div>{{ . }}</div></template></foreignObject></svg>`,
+      () => ({ items: ["a", "b"] }));
+    expect(out).toMatch(/<template id="wcs-t\d+" data-wcs="for: items"><div>/);
+    await write((s) => { s.items = ["a", "b", "c"]; });
+    const divs = Array.from(root.querySelectorAll("foreignObject div"));
+    expect(divs.map((d) => `${d.textContent}:${d.namespaceURI === "http://www.w3.org/1999/xhtml" ? "html" : "svg"}`)).toEqual(["a:html", "b:html", "c:html"]);
+  });
+
+  it("<svg> の中の <foreignObject> の中の入れ子のテンプレートは、空にならずに出力される（S3-3）", async () => {
+    const { out } = await ssrRoundTrip(`<svg><template data-wcs="for: pts"><g><foreignObject><template data-wcs="if: .on"><div>{{ .n }}</div></template></foreignObject></g></template></svg>`,
+      () => ({ pts: [{ on: true, n: "x" }] }));
+    expect(out).toMatch(/<template id="wcs-s\d+" data-wcs="for: pts"><svg><g><foreignObject><template data-wcs="if: .on"><div>/);
+  });
+
+  it("mustache を切った状態では、束縛したカスタム要素の中の作者の {{ を含む文字が SSR で消えない（S3-4）", async () => {
+    let out = "";
+    await ssrRoundTrip(`<qa-wrap data-wcs="attr.title: t"><code>Write {{ name }} here</code> and {{ x }}</qa-wrap>`,
+      () => ({ t: "T", $behavior: { enableMustache: false } }), (r) => { out = r.innerHTML; });
+    expect(out).toContain(`<code>Write {{ name }} here</code> and {{ x }}`);
+  });
+
+  it("ssr.ts の中身を束縛する判定（数と名前）が dom/view と同じ（S3-5）", async () => {
+    const { isContent } = await import("../src/dom/view");
+    const names = ["textContent", "innerText", "innerHTML", "outerHTML", "text", "html", "value", "title"];
+    expect(names.filter(isContent)).toEqual(["textContent", "innerText", "innerHTML"]);
+  });
+});
+
+describe("サイクル 3 の再検証 3: 作者が書いた子を値で書き換える（E2 の残り）", () => {
+  beforeAll(() => {
+    // the text node the author wrote, updated in place
+    customElements.define("qa-label-srv", class extends HTMLElement {
+      set body(v: string) { (this.firstChild as Text).data = v; }
+    });
+    // the <textarea> the author wrote, filled (defaultValue and textContent replace its text)
+    customElements.define("qa-editor-srv", class extends HTMLElement {
+      set body(v: string) { this.querySelector("textarea")!.defaultValue = v; }
+    });
+    customElements.define("qa-editor2-srv", class extends HTMLElement {
+      set body(v: string) { this.querySelector("textarea")!.textContent = v; }
+    });
+  });
+
+  it.each([
+    ["作者の文字をその場で書き換える", `<qa-label-srv data-wcs="body: comment">loading</qa-label-srv>`, `<qa-label-srv data-wcs="body: comment"></qa-label-srv>`],
+    ["作者の <textarea> に defaultValue で書く", `<qa-editor-srv data-wcs="body: comment"><textarea></textarea></qa-editor-srv>`, `<qa-editor-srv data-wcs="body: comment"><textarea></textarea></qa-editor-srv>`],
+    ["作者の <textarea> に textContent で書く", `<qa-editor2-srv data-wcs="body: comment"><textarea>draft</textarea></qa-editor2-srv>`, `<qa-editor2-srv data-wcs="body: comment"><textarea></textarea></qa-editor2-srv>`],
+  ])("%s値の {{ … }} はサーバの出力に残らず、クライアントで展開されない", async (_n, markup, expected) => {
+    let out = "";
+    const { root } = await ssrRoundTrip(`${markup}<p>{{ count }}</p>`, () => ({ comment: "my token is {{ secret }}", secret: "s3cr3t", count: 1 }),
+      (r) => { out = r.innerHTML; r.innerHTML = out.replace(/-srv/g, "-cli"); });
+    expect(out).toContain(expected);
+    expect(root.innerHTML).not.toContain("s3cr3t");
+    expect(root.querySelector("p")!.textContent).toBe("1");
+  });
+
+  it("作者の文字を {{ を含まない値に書き換えたものは、サーバの出力に残る", async () => {
+    let out = "";
+    await ssrRoundTrip(`<qa-label-srv data-wcs="body: comment">loading</qa-label-srv>`, () => ({ comment: "plain" }),
+      (r) => { out = r.innerHTML; r.innerHTML = out.replace(/-srv/g, "-cli"); });
+    expect(out).toContain(`<qa-label-srv data-wcs="body: comment">plain</qa-label-srv>`);
+  });
+
+  it("束縛したカスタム要素の中の、{{ }} を持つ <textarea> はテンプレートを失わない（値が歩いた後に変わっても）", async () => {
+    let out = "";
+    const { root, write } = await ssrRoundTrip(`<qa-wrap data-wcs="attr.title: t"><textarea>Re: {{ c }}</textarea></qa-wrap>`,
+      () => ({ t: "T", c: "first", secret: "s3cr3t", async $connectedCallback(this: any) { this.c = "later {{ secret }}"; } }),
+      // (a browser parses the textarea's content as text)
+      (r) => { out = r.innerHTML; const t = r.querySelector("textarea")!; t.textContent = `${t.textContent}`; });
+    expect(out).toContain(`<textarea data-wcs-raw="Re: {{ c }}">Re: later {{ secret }}</textarea>`);
+    const ta = root.querySelector("textarea")!;
+    expect(ta.textContent).toBe("Re: later {{ secret }}");
+    await write((s) => { s.c = "new"; });
+    expect(ta.textContent).toBe("Re: new");
+  });
+
+  it("束縛したカスタム要素の中の {{ }} の値は、{{ を含んでも（歩いた後に変わっても）印の間に残り、クライアントで展開されない", async () => {
+    let out = "";
+    const { root, write } = await ssrRoundTrip(`<qa-wrap data-wcs="attr.title: t"><i>{{ comment }}</i></qa-wrap>`,
+      () => ({ t: "T", comment: "first", secret: "s3cr3t", async $connectedCallback(this: any) { this.comment = "my token is {{ secret }}"; } }),
+      (r) => { out = r.innerHTML; });
+    expect(out).toContain(`<i><!--wcs-t:comment-->my token is {{ secret }}<!--wcs-/t--></i>`);
+    const i = root.querySelector("i")!;
+    expect(i.textContent).toBe("my token is {{ secret }}");
+    await write((s) => { s.comment = "changed"; });
+    expect(i.textContent).toBe("changed");
+  });
+});
+
+describe("サイクル 3 の再検証 4: 印のコメントを捨てる要素と mustache の文字（R4-1）", () => {
+  beforeAll(() => {
+    // tidies its light DOM: drops the comments in it
+    customElements.define("qa-strip-srv", class extends HTMLElement {
+      set mode(_v: string) { for (const n of Array.from(this.childNodes)) if (n.nodeType === 8) n.remove(); }
+    });
+    // re-appends its children without the comments
+    customElements.define("qa-tidy-srv", class extends HTMLElement {
+      set mode(_v: string) { this.replaceChildren(...Array.from(this.childNodes).filter((n) => n.nodeType !== 8)); }
+    });
+    // puts a mark of its own (not the page's) before a text with {{
+    customElements.define("qa-forge-srv", class extends HTMLElement {
+      set mode(v: string) { this.prepend(document.createComment("wcs-t:x"), v); }
+    });
+  });
+
+  /** The client: the elements' classes are not loaded yet (an autoloader page). */
+  async function roundTrip(html: string, state: () => Record<string, any>) {
+    let out = "";
+    const r = await ssrRoundTrip(html, state, (root) => { out = root.innerHTML; root.innerHTML = out.replace(/-srv/g, "-cli"); });
+    // (the element's part: the snapshot's JSON carries the value as data)
+    return { ...r, out: /<qa-\w+-srv[\s\S]*<\/qa-\w+-srv>/.exec(out)![0] };
+  }
+
+  it.each([["qa-strip"], ["qa-tidy"]])("印を失った mustache の値（%s）はサーバの出力に残らず、クライアントで展開されない", async (tag) => {
+    const { root, out } = await roundTrip(`<${tag}-srv data-wcs="mode: mode">Hi {{ comment }}!</${tag}-srv><p>{{ count }}</p>`,
+      () => ({ mode: "m", comment: "my token is {{ secret }}", secret: "s3cr3t", count: 1 }));
+    expect(out).not.toContain("{{ secret }}");
+    expect(root.querySelector(`${tag}-cli`)!.textContent).toBe("Hi !");
+    expect(root.innerHTML).not.toContain("s3cr3t");
+    expect(root.querySelector("p")!.textContent).toBe("1");
+  });
+
+  it("印を失った値の、走査で失敗する式（{{ a.* }}）で、クライアントの初期化が失敗しない", async () => {
+    const { root, out } = await roundTrip(`<qa-tidy-srv data-wcs="mode: mode">Hi {{ comment }}!</qa-tidy-srv><p>{{ count }}</p>`,
+      () => ({ mode: "m", comment: "{{ a.* }}", a: [], count: 1 }));
+    expect(out).not.toContain("{{ a.* }}");
+    // (a failed initialization would reject the round trip's connectedCallbackPromise)
+    expect(root.querySelector("p")!.textContent).toBe("1");
+  });
+
+  it("要素が自分で置いた wcs-t: のコメントの後ろの {{ を含む文字も、サーバの出力に残らない", async () => {
+    const { root, out } = await roundTrip(`<qa-forge-srv data-wcs="mode: mode"><b>x</b></qa-forge-srv><p>{{ count }}</p>`,
+      () => ({ mode: "my token is {{ secret }}", secret: "s3cr3t", count: 1 }));
+    expect(out).toContain(`<qa-forge-srv data-wcs="mode: mode"><b>x</b></qa-forge-srv>`);
+    expect(root.innerHTML).not.toContain("s3cr3t");
+  });
+});
+
+describe("サイクル 3 の再検証 5: 中身が文字の要素の外へ移された mustache の文字（R5-1）", () => {
+  beforeAll(() => {
+    // turns the <textarea> it was given into its own content (its text nodes moved into it)
+    customElements.define("qa-rte-srv", class extends HTMLElement {
+      set mode(_v: string) { const ta = this.querySelector("textarea")!; this.append(...Array.from(ta.childNodes)); ta.remove(); }
+    });
+  });
+
+  it("<textarea> の {{ }} の値が要素の外へ移されると、サーバの出力に残らず、クライアントで展開されない", async () => {
+    let out = "";
+    const { root } = await ssrRoundTrip(`<qa-rte-srv data-wcs="mode: mode"><textarea>{{ comment }}</textarea></qa-rte-srv><p>{{ count }}</p>`,
+      () => ({ mode: "m", comment: "my token is {{ secret }}", secret: "s3cr3t", count: 1 }),
+      (r) => { out = r.innerHTML; r.innerHTML = out.replace(/-srv/g, "-cli"); });
+    expect(out).toContain(`<qa-rte-srv data-wcs="mode: mode"></qa-rte-srv>`);
+    expect(root.innerHTML).not.toContain("s3cr3t");
+    expect(root.querySelector("p")!.textContent).toBe("1");
   });
 });

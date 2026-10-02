@@ -66,6 +66,8 @@ const RENDERED: [M, unknown[], string][] = [
   [M.InlineFailed, ["Unexpected end of input"], "Failed to evaluate the inline <script> of <wcs-state>: Unexpected end of input. If this page sets a Content-Security-Policy, see https://github.com/wcstack/wcstack/blob/main/docs/csp.md"],
   [M.OptionInvalid, ["bootstrapState", "enableMustache"], `bootstrapState: "enableMustache" is not one of its options, or not of the option's type. 4.0 moved it to the state's $behavior.`],
   [M.BehaviorChanged, [], "a re-set state may not change $behavior: create the element again."],
+  [M.SecondRoot, [], 'a second <wcs-state> on the same root: there is one state tree per root — graft a subtree with <wcs-state mount="path"> (v1\'s name="…" is gone: read the mounted state by its path).'],
+  [M.LocaleInvalid, ["en_US"], 'the locale "en_US" (<html lang> or bootstrapState\'s locale) is not a language tag Intl takes (en-US, not en_US): the locale filters use "en".'],
   [M.FeaturesNotArray, [], '$features must be an array of add-on names (["temporal", "formats"]).'],
   [M.SelectorRemoved, ["value: @main.count"], '"value: @main.count": the "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.'],
 
@@ -86,6 +88,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.OneModifierList, ["value#ro#wo"], '[wcs/binding-syntax] "value#ro#wo": a binding takes one modifier list after a single "#"'],
   [M.NoPropertyName, ["#ro"], '[wcs/binding-syntax] "#ro": the left side of a binding must name a property — write "<property>: <path>" (modifiers and input filters come after the name).'],
   [M.TooManySegments, ["a.b", 513], '[wcs/binding-syntax] "a.b" has 513 path segments — the limit is 512.'],
+  [M.UnsafeSegment, ["a.__proto__"], '[wcs/binding-syntax] "a.__proto__": a state path cannot go through "__proto__" or "prototype" (it would reach every object\'s prototype).'],
   [M.EmptySegment, ["value: a..b"], '[wcs/binding-syntax] "value: a..b": the right side of a binding must name a state path — write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are the loop-relative shorthand).'],
 
   [M.StructuralNotSingle, ["for: a; value: b"], `[wcs/template-syntax] Invalid bindText: "for: a; value: b". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`],

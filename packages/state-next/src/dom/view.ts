@@ -275,8 +275,10 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
         // throws on a number for innerText); innerHTML keeps a TrustedHTML as it is
         n[name] = name === "innerHTML" ? trustHtml(v) : v == null ? "" : String(v);
       } else if (isHtmlSink(name)) {
-        // (outerHTML / srcdoc) undefined writes nothing: "" would take the element itself out
-        if (v !== undefined) n[name] = trustHtml(v);
+        // srcdoc without a value: the attribute goes (the frame shows its src again, as attr.srcdoc:
+        // did); outerHTML: undefined writes nothing ("" would take the element itself out)
+        if (v == null && name === "srcdoc") n.removeAttribute(name);
+        else if (v !== undefined) n[name] = trustHtml(v);
       } else if (v !== undefined) {
         // undefined: an element input keeps its own value when state has no opinion (B8);
         // never re-write what the element already shows (keeps the caret while typing)

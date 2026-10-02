@@ -27,11 +27,12 @@ export function isHtmlSink(prop: string): boolean {
 }
 
 /**
- * A value for an HTML sink: an object (a TrustedHTML the page made with its own policy) as it is,
- * anything else as a string (null / undefined: empty) passed through the installed policy (if any).
+ * A value for an HTML sink: a TrustedHTML (the page made it with its own policy) as it is, anything
+ * else — an array or another object too, which the sink would turn into markup — as a string
+ * (null / undefined: empty) passed through the installed policy (if any).
  */
 export function trustHtml(value: unknown): unknown {
-  if (typeof value === "object" && value !== null) return value;
+  if ((globalThis as any).trustedTypes?.isHTML(value)) return value;
   const s = value == null ? "" : String(value);
   const policy = getTrustedTypesPolicy();
   const create = policy?.createHTML;

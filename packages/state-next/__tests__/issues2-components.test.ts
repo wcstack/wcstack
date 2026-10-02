@@ -27,7 +27,8 @@ async function page(html: string, state: Record<string, any>) {
   el.setInitialState(state);
   document.body.appendChild(h);
   await el.connectedCallbackPromise.catch(() => {});
-  await getBindingsReady(root);
+  // (a page that fails to initialize rejects it too)
+  await getBindingsReady(root).catch(() => {});
   await flush();
   await flush();
   const write = async (fn: (s: any) => void) => {

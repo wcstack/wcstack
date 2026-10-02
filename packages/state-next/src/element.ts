@@ -1,6 +1,6 @@
 import type { IWritableConfig } from "./public/types";
 import { Engine } from "./engine";
-import { mount } from "./dom/mount";
+import { engines, mount } from "./dom/mount";
 import { drainBinds, installBinder } from "./dom/binder";
 import { DirtyStrategy } from "./strategy/dirty";
 import { config, setConfig } from "./config";
@@ -54,11 +54,33 @@ async function loadSrc(src: string): Promise<Record<string, any>> {
   return (mod.default ?? {}) as Record<string, any>;
 }
 
-/** Resolves when the bindings of `root` are built (the state element on it initialized). */
-const readyByRoot = new WeakMap<Node, Promise<void>>();
+/**
+ * The root `<wcs-state>` elements of each root node: a new list whenever one connects, without the
+ * ones no longer in the page.
+ */
+const readyByRoot = new WeakMap<Node, WcsState[]>();
 
+/** Puts `el` among the `<wcs-state>` elements of its root (a new list, without the ones that left). */
+function enroll(el: WcsState): void {
+  const root = el.getRootNode();
+  readyByRoot.set(root, [...(readyByRoot.get(root) ?? []).filter((e) => e.isConnected && e !== el), el]);
+}
+
+/**
+ * Resolves when the bindings of `root` are built — by any `<wcs-state>` in it now, whatever its
+ * `$connectedCallback` does then, as 3.x — and rejects, with the first failure, only when every one
+ * failed before building them. A stray one (a second root, #47; one that fails to load) changes
+ * nothing while another binds the root; one taken out of the page counts no more once another
+ * connects (a root replaced: the new one decides).
+ */
 export function getBindingsReady(root: Node): Promise<void> {
-  return readyByRoot.get(root) ?? Promise.resolve();
+  const els = readyByRoot.get(root) ?? [];
+  return Promise.any(els.map((el) => el.initializePromise.then((): unknown => el.bound || el.connectedCallbackPromise))).then(
+    () => {},
+    // none, or every one failed: one connected since (the list is a new one) may still bind the root
+    // (quoted: `errors` is a name the build shortens, an AggregateError's is not)
+    (e: AggregateError) => (els.length ? readyByRoot.get(root) !== els ? getBindingsReady(root) : Promise.reject(e["errors"][0]) : undefined),
+  );
 }
 
 /**
@@ -88,6 +110,8 @@ export class WcsState extends HTMLElement {
   private claimed: Claimed | null = null;
   /** A claimed element's state is loaded: `setInitialState` from now on is the add-on's re-set. */
   private loaded = false;
+  /** The root's bindings are built (getBindingsReady resolves, whatever `$connectedCallback` does). */
+  bound?: boolean;
   private receiveInitial: ((state: Record<string, any>) => void) | null = null;
 
   constructor() {
@@ -108,12 +132,14 @@ export class WcsState extends HTMLElement {
         this.claimed.connected();
         return;
       }
+      enroll(this);
       // reconnected: $connectedCallback runs again (after the first initialization)
       const engine = this.engine;
       if (engine !== null) {
+        // (a rejection is reported as the first connection's is)
         void Promise.resolve(engine.callHook("$connectedCallback")).then(() => {
           if (this.isConnected) hooks.element?.(engine, "connected");
-        });
+        }, (e) => console.error(e));
       }
       return;
     }
@@ -131,8 +157,8 @@ export class WcsState extends HTMLElement {
       });
       return;
     }
-    const ready = this.start(root);
-    readyByRoot.set(root, ready.catch(() => {}));
+    void this.start(root);
+    enroll(this);
   }
 
   disconnectedCallback(): void {
@@ -203,8 +229,11 @@ export class WcsState extends HTMLElement {
     await 0;
     const id = this.getAttribute("state");
     if (id !== null) {
-      const script = (this.getRootNode() as Document | ShadowRoot).getElementById?.(id) ?? document.getElementById(id);
-      if (script === null) return Promise.reject(new Error(`[@wcstack/state] ${text(M.NoScript, [id])}`));
+      // a JSON script of that id (an element of user content with the same id, earlier, is not it)
+      const find = (r: Node): HTMLScriptElement | undefined =>
+        Array.from((r as Document).querySelectorAll<HTMLScriptElement>('script[type="application/json"]')).find((x) => x.id === id);
+      const script = find(this.getRootNode()) ?? find(document);
+      if (script === undefined) return Promise.reject(new Error(`[@wcstack/state] ${text(M.NoScript, [id])}`));
       return Promise.resolve(JSON.parse(script.textContent || "{}"));
     }
     const src = this.getAttribute("src");
@@ -230,6 +259,9 @@ export class WcsState extends HTMLElement {
       const loading = loadFeatures(state);
       if (loading) await loading;
       if (this.hasAttribute("enable-ssr")) requireFeature("ssr", "enable-ssr");
+      // one state tree per root: another <wcs-state> already bound this root (and still does)
+      const other = engines.get(root)?.element as WcsState | undefined;
+      if (other?.isConnected && !other.failed) raise(M.SecondRoot);
       const engine = new Engine(state, makeStrategy());
       engine.element = this;
       this.engine = engine;
@@ -237,6 +269,7 @@ export class WcsState extends HTMLElement {
       mount(engine, root as Document | ShadowRoot);
       drainBinds();
       engine.watchRendered();
+      this.bound = true;
       this.resolveInitialize();
       await engine.callHook("$connectedCallback");
       if (this.isConnected) hooks.element?.(engine, "connected");
@@ -246,7 +279,6 @@ export class WcsState extends HTMLElement {
       this.resolveInitialize();
       console.error(e);
       this.rejectConnected(e);
-      throw e;
     }
   }
 }

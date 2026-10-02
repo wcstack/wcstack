@@ -63,6 +63,8 @@ export const enum M {
   OptionInvalid = 44,
   BehaviorChanged = 45,
   FeaturesNotArray = 46,
+  SecondRoot = 47,
+  LocaleInvalid = 48,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,
@@ -82,6 +84,7 @@ export const enum M {
   NoPropertyName = 116,
   TooManySegments = 117,
   EmptySegment = 119,
+  UnsafeSegment = 120,
   // [wcs/template-syntax]
   StructuralNotSingle = 201,
   ElseWithoutIf = 202,

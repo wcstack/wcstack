@@ -32,7 +32,7 @@ import { mount } from "../dom/mount";
 import { drainBinds } from "../dom/binder";
 import { registryOf } from "../dom/wc";
 import { raiseError } from "../parser/raiseError";
-import { watchRoot } from "./volume";
+import { onRootFailed, watchRoot } from "./volume";
 
 interface Entry {
   /** The component-side path ("" = the whole state). */
@@ -176,7 +176,14 @@ async function load(el: HTMLElement, prop: string, host: Element, light: boolean
   // the host binds its wiring when it renders the element (a row before inserting it; the page
   // when its state loads; a server-rendered row when the client adopts it), or when the
   // element's class is defined
-  if (wiring().length === 0 && (wiredInMarkup(host, prop) || wiredOnServer(host, prop))) await new Promise<void>((r) => waiting.set(host, r));
+  if (wiring().length === 0 && (wiredInMarkup(host, prop) || wiredOnServer(host, prop))) {
+    // (if the page's state fails, its wiring never comes)
+    let stop!: () => boolean;
+    await new Promise<void>((r, j) => {
+      waiting.set(host, r);
+      stop = onRootFailed(host.getRootNode(), () => j(new Error(`[@wcstack/state] <${tag}>.${prop} will not mount: the root state failed to initialize.`)));
+    }).finally(() => stop());
+  }
   waiting.delete(host);
   const bs = wiring();
   const values = before.get(host);

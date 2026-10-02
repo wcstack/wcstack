@@ -403,29 +403,39 @@ describe("A9: 同じオブジェクトを表示する束縛", () => {
 });
 
 describe("A10: HTML の書き込み先", () => {
-  it("オブジェクト（ページ自身の policy の TrustedHTML）は文字列にせず、state の policy も通さない", async () => {
+  it("TrustedHTML（ページ自身の policy で作ったもの）は文字列にせず、state の policy も通さない", async () => {
     const seen: unknown[] = [];
     setTrustedTypesPolicy({ createHTML(s: string) { seen.push(s); return s; } });
     const trusted = { toString: () => "<b>trusted</b>" };
-    const div = document.createElement("div");
-    // what the sink receives (a browser under Trusted Types enforcement refuses a string here)
-    const writes: unknown[] = [];
-    Object.defineProperty(div, "innerHTML", { set(v: unknown) { writes.push(v); }, configurable: true });
-    const { applyTo, K_HTML, K_PROP } = await import("../src/dom/view");
-    applyTo(K_HTML, div, "html", trusted);
-    applyTo(K_PROP, div, "innerHTML", trusted);
-    applyTo(K_PROP, div, "innerHTML", 1);
-    expect(writes).toEqual([trusted, trusted, "1"]);
-    expect(seen).toEqual(["1"]);
+    // a browser with Trusted Types: what isHTML says is a TrustedHTML
+    (globalThis as any).trustedTypes = { isHTML: (v: unknown) => v === trusted };
+    try {
+      const div = document.createElement("div");
+      // what the sink receives (a browser under Trusted Types enforcement refuses a string here)
+      const writes: unknown[] = [];
+      Object.defineProperty(div, "innerHTML", { set(v: unknown) { writes.push(v); }, configurable: true });
+      const { applyTo, K_HTML, K_PROP } = await import("../src/dom/view");
+      applyTo(K_HTML, div, "html", trusted);
+      applyTo(K_PROP, div, "innerHTML", trusted);
+      applyTo(K_PROP, div, "innerHTML", 1);
+      expect(writes).toEqual([trusted, trusted, "1"]);
+      expect(seen).toEqual(["1"]);
+    } finally {
+      delete (globalThis as any).trustedTypes;
+    }
   });
 
-  it("outerHTML: / srcdoc: の undefined は何も書かない（要素は DOM に残る）", async () => {
-    const { root, proxy } = setup(`<p><b data-wcs="outerHTML: frag">old</b></p><iframe data-wcs="srcdoc: doc"></iframe>`, { frag: undefined, doc: "<i>d</i>" });
+  it("outerHTML: の undefined は何も書かない（要素は DOM に残る）。srcdoc: の null / undefined は属性を外す（R3-4）", async () => {
+    const { root, proxy } = setup(`<p><b data-wcs="outerHTML: frag">old</b></p><iframe data-wcs="srcdoc: doc"></iframe><iframe class="a" data-wcs="attr.srcdoc: doc"></iframe>`, { frag: undefined, doc: "<i>d</i>" });
     await flush();
     expect(root.querySelector("p > b")!.textContent).toBe("old");
-    proxy.doc = undefined;
-    await flush();
-    expect((root.querySelector("iframe") as HTMLIFrameElement).srcdoc).toBe("<i>d</i>");
+    const frames = Array.from(root.querySelectorAll("iframe"));
+    expect(frames.map((fr) => fr.getAttribute("srcdoc"))).toEqual(["<i>d</i>", "<i>d</i>"]);
+    for (const v of [undefined, "<u>x</u>", null]) {
+      proxy.doc = v;
+      await flush();
+      expect(frames.map((fr) => fr.getAttribute("srcdoc"))).toEqual(v == null ? [null, null] : [v, v]);
+    }
   });
 });
 
@@ -557,20 +567,17 @@ describe("B3: 束縛が要素に入れた値は束縛として読まない", () 
     expect(root.querySelector(".body > p")!.textContent).toBe("hello");
   });
 
-  it("BN2: 定義が後から来るカスタム要素の innerHTML: の子は、値が入る前でも走査しない（定義の後に値が入る）", async () => {
+  it("BN2・E1: 定義の前のカスタム要素の innerHTML: も、待たずにその場で当てる（HTML の書き込み先は wc-bindable のメンバーではない）。元の子は走査しない", async () => {
     const tag = `quality-late-${seq++}`;
-    let called = 0;
     const { root } = await page(
       `<${tag} data-wcs="innerHTML: html"><b>{{ secret }}</b><button data-wcs="onclick: danger">b</button></${tag}><p data-wcs="textContent: msg"><i>{{ secret }}</i></p>`,
-      { secret: "SECRET", msg: "m", html: "<u>value</u>", danger() { called++; } },
+      { secret: "SECRET", msg: "m", html: "<u>value</u>", danger() {} },
     );
-    (root.querySelector("button") as HTMLElement).click();
-    expect(root.querySelector("b")!.textContent).toBe("{{ secret }}");
-    expect(called).toBe(0);
+    expect(root.querySelector(tag)!.innerHTML).toBe("<u>value</u>");
+    expect(root.querySelector("p")!.textContent).toBe("m");
     customElements.define(tag, class extends HTMLElement {});
     await flush();
     expect(root.querySelector(tag)!.innerHTML).toBe("<u>value</u>");
-    expect(root.querySelector("p")!.textContent).toBe("m");
   });
 
   it("BN2: 書き込みが失敗した innerHTML: の要素（Trusted Types が拒んだ）の子も走査しない", async () => {
@@ -1030,5 +1037,425 @@ describe("N2: 多くの行の下のタグが後から定義されたとき", () 
     await flush();
     expect(seen).toHaveLength(20);
     expect(calls - before).toBe(1);
+  });
+});
+
+describe("E1: HTML の書き込み先と、注入したサニタイザ policy", () => {
+  const sanitized: string[] = [];
+  const strip = { createHTML: (s: string) => { sanitized.push(s); return s.replace(/<[^>]*>/g, ""); } };
+  const payload = () => [`<img src=x onerror="alert(1)">hi`];
+
+  it("配列（や TrustedHTML でないオブジェクト）は文字列にして policy に通す（innerHTML: / html: / 行の中）", async () => {
+    sanitized.length = 0;
+    setTrustedTypesPolicy(strip);
+    const { root } = await page(
+      `<div class="a" data-wcs="innerHTML: body"></div><div class="b" data-wcs="html: body"></div><template data-wcs="for: rows"><div class="c" data-wcs="innerHTML: .body"></div></template>`,
+      { body: payload(), rows: [{ body: payload() }] },
+    );
+    expect(root.querySelector("img")).toBeNull();
+    expect([".a", ".b", ".c"].map((s) => root.querySelector(s)!.innerHTML)).toEqual(["hi", "hi", "hi"]);
+    expect(sanitized).toHaveLength(3);
+  });
+
+  it("attr.srcdoc: と、wc-bindable の要素への innerHTML:（向きの検査を切っていても）も policy を通る", async () => {
+    sanitized.length = 0;
+    setTrustedTypesPolicy(strip);
+    const tag = `quality-panel-tt-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [], inputs: [{ name: "title" }] };
+    });
+    const { root } = await page(`<${tag} data-wcs="innerHTML: body"></${tag}><iframe data-wcs="attr.srcdoc: body"></iframe>`, {
+      body: `<img src=x onerror="alert(1)">x`, $behavior: { enableDirectionalInitialSync: false },
+    });
+    expect(root.querySelector(`${tag} img`)).toBeNull();
+    expect(root.querySelector(tag)!.innerHTML).toBe("x");
+    expect((root.querySelector("iframe") as HTMLIFrameElement).srcdoc).toBe("x");
+    expect(sanitized).toHaveLength(2);
+  });
+});
+
+describe("F1: <svg> の中の構造のテンプレート", () => {
+  it("for: と if: を SVG の要素として描く（SVG の <template> は .content を持たない）", async () => {
+    const h = document.createElement(`quality-svg-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><svg width="200" height="100"><template data-wcs="for: points"><circle data-wcs="attr.cx: .x" r="5"></circle></template><template data-wcs="if: on"><rect width="1" height="1"></rect></template></svg>`;
+    const tpl = root.querySelector("svg template")!;
+    expect(tpl.namespaceURI).toBe("http://www.w3.org/2000/svg");
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState({ points: [{ x: 1 }, { x: 3 }], on: true });
+    document.body.appendChild(h);
+    await el.connectedCallbackPromise;
+    await flush();
+    const circles = Array.from(root.querySelectorAll("circle"));
+    expect(circles.map((c) => [c.getAttribute("cx"), c.namespaceURI])).toEqual([["1", "http://www.w3.org/2000/svg"], ["3", "http://www.w3.org/2000/svg"]]);
+    expect(root.querySelector("rect")!.namespaceURI).toBe("http://www.w3.org/2000/svg");
+  });
+
+  it("SVG のテンプレートの中身を取り出しても、テンプレート自身は子を失わない", async () => {
+    const { templateContent } = await import("../src/dom/plan");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "template");
+    t.appendChild(document.createElementNS("http://www.w3.org/2000/svg", "circle"));
+    svg.appendChild(t);
+    const f = templateContent(t as unknown as HTMLTemplateElement);
+    expect(f.firstChild!.nodeName).toBe("circle");
+    expect(t.childNodes).toHaveLength(1);
+  });
+});
+
+describe("F2: 同じ root の 2 本目の <wcs-state>", () => {
+  it("2 本目は #47 で初期化に失敗し、ページの束縛は 1 本目のまま（取り外した後の付け替えは通す）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root, el } = await page(`<p>{{ user }}</p>`, { user: "page" });
+    const second = document.createElement("wcs-state") as any;
+    second.setInitialState({ user: "second" });
+    root.appendChild(second);
+    await expect(second.connectedCallbackPromise).rejects.toThrow(/#47/);
+    const later = document.createElement("i");
+    later.setAttribute("data-wcs", "textContent: user");
+    root.appendChild(later);
+    (globalThis as any)[BINDER_KEY].bind(later);
+    expect(later.textContent).toBe("page");
+    // the first taken out, a new one put in: it takes the root over
+    el.remove();
+    second.remove();
+    const third = document.createElement("wcs-state") as any;
+    third.setInitialState({ user: "third" });
+    root.prepend(third);
+    await third.connectedCallbackPromise;
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("E3: state=\"id\" の JSON script", () => {
+  it("同じ id の別の要素（利用者の HTML）が先にあっても、その id の JSON script を読む", async () => {
+    const h = document.createElement(`quality-clobber-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<p id="app-state">{"role":"admin"}</p><script type="application/json" id="app-state">{"role":"guest"}</script><wcs-state state="app-state"></wcs-state><b>{{ role }}</b>`;
+    document.body.appendChild(h);
+    const el = root.querySelector("wcs-state") as any;
+    await el.connectedCallbackPromise;
+    await flush();
+    expect(root.querySelector("b")!.textContent).toBe("guest");
+  });
+});
+
+describe("E4: プロトタイプに届くパス", () => {
+  afterEach(() => {
+    delete (Object.prototype as any).polluted;
+  });
+
+  it("__proto__ / prototype の段を持つパスは #120 で拒み、Object.prototype に書かない", async () => {
+    const { el } = await page(``, { prefs: {}, items: [{ a: 1 }] });
+    const attempts = [
+      (s: any) => { s["__proto__.polluted"] = 1; },
+      (s: any) => { s["constructor.prototype.polluted"] = 1; },
+      (s: any) => { s[`prefs.${"__proto__.polluted"}`] = 1; },
+      (s: any) => { s.$resolve("items.*.__proto__.polluted", [0], 1); },
+    ];
+    for (const write of attempts) {
+      expect(() => el.createState("writable", write)).toThrow(/#120/);
+    }
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
+  it("束縛のパスでも初期化の時点で拒む", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-proto-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><input data-wcs="value: __proto__.polluted">`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState({ name: "a" });
+    document.body.appendChild(h);
+    await expect(el.connectedCallbackPromise).rejects.toThrow(/#120/);
+    expect(error).toHaveBeenCalled();
+  });
+});
+
+describe("E6・F3: 既定のロケール（formats）", () => {
+  it("Intl が受け取らない <html lang> / locale は 1 回警告してフィルタの既定を \"en\" にし、値が変わるとまた確かめる（config.locale は設定した値のまま）", async () => {
+    const { config, setConfig } = await import("../src/config");
+    const { installFormats } = await import("../src/filters/formats");
+    const { resolveFilter } = await import("../src/filters/registry");
+    const getFilter = (name: string) => resolveFilter(name, [], []);
+    installFormats();
+    const original = config.locale;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      setConfig({ locale: "en_US" });
+      const fn = getFilter("locale");
+      expect(fn(1234.5)).toBe((1234.5).toLocaleString("en"));
+      expect(config.locale).toBe("en_US");
+      fn(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      setConfig({ locale: "de-DE" });
+      expect(fn(1234.5)).toBe((1234.5).toLocaleString("de-DE"));
+      // checked again for a value set again (once: the reads after it do not warn)
+      setConfig({ locale: "ja_JP" });
+      expect([fn(1), fn(2)]).toEqual([(1).toLocaleString("en"), (2).toLocaleString("en")]);
+      expect(warn).toHaveBeenCalledTimes(2);
+      // a correct locale set before the first use: the wrong one before it is never checked (no warning)
+      setConfig({ locale: "fr_FR" });
+      setConfig({ locale: "de-DE" });
+      expect(fn(1234.5)).toBe((1234.5).toLocaleString("de-DE"));
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      setConfig({ locale: original });
+    }
+  });
+});
+
+describe("E9・F5: getBindingsReady", () => {
+  it("初期化に失敗した root では reject する", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-ready-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p data-wcs="text msg"></p>`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState({ msg: "m" });
+    document.body.appendChild(h);
+    await expect(getBindingsReady(root)).rejects.toThrow(/#101/);
+  });
+});
+
+describe("E10: 初期構築の前に渡されたサブツリー", () => {
+  it("同じサブツリーを何度渡されても 1 つとして持ち、構築の後に 1 回束ねる", async () => {
+    const h = document.createElement(`quality-early-dup-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    document.body.appendChild(h);
+    const p = document.createElement("p");
+    p.setAttribute("data-wcs", "textContent: msg");
+    root.appendChild(p);
+    const binder = (globalThis as any)[BINDER_KEY];
+    for (let i = 0; i < 5; i++) binder.bind(p);
+    p.remove();
+    const engine = new Engine({ msg: "late" }, new DirtyStrategy());
+    mount(engine, root);
+    root.appendChild(p);
+    const report = vi.spyOn(engine, "report");
+    drainBinds();
+    expect(p.textContent).toBe("late");
+    expect(report).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("E12: 再接続の $connectedCallback の失敗", () => {
+  it("非同期の失敗は console に報告する（未処理の reject にしない）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    let n = 0;
+    const { h } = await page(`<p></p>`, { async $connectedCallback() { if (n++ > 0) throw new Error("again"); } });
+    h.remove();
+    document.body.appendChild(h);
+    await flush();
+    expect(error.mock.calls.map((c) => String((c[0] as Error).message))).toEqual(["again"]);
+  });
+});
+
+describe("F7: 数値の段を持つパスの、配列でない入れ物", () => {
+  it("数値のキーのオブジェクトを辿り、途中が無ければ undefined", async () => {
+    const { root } = setup(`<p>{{ sales.2024.total }}</p><i>{{ sales.1999.total }}</i>`, { sales: { 2024: { total: 10 } } });
+    await flush();
+    expect([root.querySelector("p")!.textContent, root.querySelector("i")!.textContent]).toEqual(["10", ""]);
+  });
+});
+
+describe("F1・SSR: <svg> の中の構造のテンプレートの往復", () => {
+  it("クライアントで戻したテンプレートから作る行も SVG の要素になる（サーバの行も SVG のまま）", async () => {
+    const SVG = "http://www.w3.org/2000/svg";
+    const state = () => ({ points: [{ x: 1 }], on: true });
+    const { root, el } = await ssrRoundTrip(
+      `<svg width="200" height="100"><template data-wcs="for: points"><circle data-wcs="attr.cx: .x" r="5"></circle></template><template data-wcs="if: on"><rect width="1" height="1"></rect></template></svg>`,
+      state,
+    );
+    expect(Array.from(root.querySelectorAll("circle")).map((c) => [c.getAttribute("cx"), c.namespaceURI])).toEqual([["1", SVG]]);
+    el.createState("writable", (s: any) => { s.points = [{ x: 1 }, { x: 3 }]; s.on = false; });
+    await flush();
+    el.createState("writable", (s: any) => { s.on = true; });
+    await flush();
+    expect(Array.from(root.querySelectorAll("circle")).map((c) => [c.getAttribute("cx"), c.namespaceURI])).toEqual([["1", SVG], ["3", SVG]]);
+    expect(Array.from(root.querySelectorAll("rect")).map((r) => r.namespaceURI)).toEqual([SVG]);
+  });
+});
+
+describe("raw text の要素（noscript・iframe）の中", () => {
+  it("ページの走査は入らない（中の {{ }} を束縛しない。スクリプトの動くページでは中身は文字で、サーバが値を描いたかもしれない）", async () => {
+    const { root } = await page(`<noscript><p>{{ secret }}</p></noscript><iframe>{{ secret }}</iframe><p class="out">{{ secret }}</p>`, { secret: "S" });
+    expect(root.querySelector("noscript")!.textContent).toContain("{{ secret }}");
+    expect(root.querySelector("iframe")!.textContent).toBe("{{ secret }}");
+    expect(root.querySelector(".out")!.textContent).toBe("S");
+  });
+});
+
+describe("R3-1: ページの走査は子を先に（後順）", () => {
+  it("カスタム要素が束縛の値を、作者の書いた子の中に描いても、その値を束縛にしない（{{ }} も data-wcs も）", async () => {
+    const tag = `quality-fill-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      set body(v: string) { this.querySelector(".slot")!.innerHTML = v; }
+    });
+    const calls: string[] = [];
+    const { root } = await page(`<${tag} data-wcs="body: comment"><div class="slot"></div><p>{{ secret }}</p></${tag}>`, {
+      comment: `my token is {{ secret }} <button data-wcs="onclick: wipe">win</button><b data-wcs="nope nope">x</b>`,
+      secret: "s3cr3t", wipe() { calls.push("wiped"); },
+    });
+    expect(root.querySelector(".slot")!.textContent).toBe("my token is {{ secret }} winx");
+    (root.querySelector("button") as HTMLElement).click();
+    expect(calls).toEqual([]);
+    // the author's own child of the element is bound (it was walked before the element's bindings)
+    expect(root.querySelector(`${tag} > p`)!.textContent).toBe("s3cr3t");
+  });
+});
+
+describe("R3-3: 2 本目の <wcs-state> と getBindingsReady", () => {
+  it("文書順で先の root が束ねたページでは、迷い込んだ 2 本目が失敗しても getBindingsReady は 1 本目のまま resolve する", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-ready-two-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state json='{"user":"page"}'></wcs-state><p>{{ user }}</p><wcs-state json='{"user":"stray"}'></wcs-state>`;
+    document.body.appendChild(h);
+    const [first, second] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+    await expect(getBindingsReady(root)).resolves.toBeUndefined();
+    await expect(second.connectedCallbackPromise).rejects.toThrow(/#47/);
+    await first.connectedCallbackPromise;
+    expect(root.querySelector("p")!.textContent).toBe("page");
+    await expect(getBindingsReady(root)).resolves.toBeUndefined();
+  });
+});
+
+describe("R3-3: getBindingsReady の時点（3.x の契約）", () => {
+  const race = (p: Promise<unknown>, ms: number) =>
+    Promise.race([p.then(() => "resolved", () => "rejected"), new Promise((r) => setTimeout(() => r("pending"), ms))]);
+
+  for (const [label, cc] of [
+    ["遅い", async () => { await new Promise((r) => setTimeout(r, 300)); }],
+    ["終わらない", () => new Promise(() => {})],
+    ["投げる", async () => { throw new Error("boom"); }],
+  ] as const) {
+    it(`束縛ができたら resolve する（$connectedCallback が${label}ときも）`, async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const h = document.createElement(`quality-ready-cc-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><p>{{ a }}</p>`;
+      (root.querySelector("wcs-state") as any).setInitialState({ a: "A", $connectedCallback: cc });
+      document.body.appendChild(h);
+      expect(await race(getBindingsReady(root), 100)).toBe("resolved");
+      expect(root.querySelector("p")!.textContent).toBe("A");
+    });
+  }
+
+  it("先に接続した <wcs-state> が #47 で負けても（後から状態を受け取る 1 本目、先に束ねた 2 本目）、接続の直後に尋ねた分も後で尋ねた分も resolve する", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-ready-lose-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p>{{ a }}</p><wcs-state json='{"a":"B"}'></wcs-state>`;
+    document.body.appendChild(h);
+    const [slow, fast] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+    // asked right after connecting: the slot holds the last connected (the fast one)
+    const early = getBindingsReady(root);
+    await fast.connectedCallbackPromise;
+    slow.setInitialState({ a: "A" });
+    await expect(slow.connectedCallbackPromise).rejects.toThrow(/#47/);
+    await expect(early).resolves.toBeUndefined();
+    await expect(getBindingsReady(root)).resolves.toBeUndefined();
+    expect(root.querySelector("p")!.textContent).toBe("B");
+  });
+
+  it("後から接続した方が勝ったとき、先に接続した要素の待ちから尋ねても勝った方に引き継ぐ", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-ready-handover-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p>{{ a }}</p>`;
+    document.body.appendChild(h);
+    const slow = root.querySelector("wcs-state") as any;
+    // asked while only the slow one is connected
+    const early = getBindingsReady(root);
+    const fast = document.createElement("wcs-state") as any;
+    fast.setInitialState({ a: "B" });
+    root.appendChild(fast);
+    await fast.connectedCallbackPromise;
+    slow.setInitialState({ a: "A" });
+    await expect(slow.connectedCallbackPromise).rejects.toThrow(/#47/);
+    await expect(early).resolves.toBeUndefined();
+  });
+});
+
+describe("R3-3: 迷い込んだ <wcs-state> と getBindingsReady", () => {
+  const race = (p: Promise<unknown>, ms: number) =>
+    Promise.race([p.then(() => "resolved", () => "rejected"), new Promise((r) => setTimeout(() => r("pending"), ms))]);
+
+  it("束ね終えた root に、状態を受け取らない <wcs-state> が後から加わっても resolve する", async () => {
+    const h = document.createElement(`quality-stray-late-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state json='{"a":"A"}'></wcs-state><p>{{ a }}</p>`;
+    document.body.appendChild(h);
+    expect(await race(getBindingsReady(root), 100)).toBe("resolved");
+    root.appendChild(document.createElement("wcs-state"));
+    expect(await race(getBindingsReady(root), 100)).toBe("resolved");
+  });
+
+  for (const [label, stray] of [
+    ["壊れた json", `<wcs-state json='{oops'></wcs-state>`],
+    ["無い state id", `<wcs-state state="nope"></wcs-state>`],
+    ["状態を受け取らない（先に置かれた）", `<wcs-state></wcs-state>`],
+  ]) {
+    it(`同時に置かれた迷い込んだ <wcs-state>（${label}）は、ほかが束ねれば結果に影響しない`, async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const h = document.createElement(`quality-stray-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = label.includes("先に") ? `${stray}<wcs-state json='{"a":"A"}'></wcs-state><p>{{ a }}</p>` : `<wcs-state json='{"a":"A"}'></wcs-state><p>{{ a }}</p>${stray}`;
+      document.body.appendChild(h);
+      expect(await race(getBindingsReady(root), 200)).toBe("resolved");
+      expect(root.querySelector("p")!.textContent).toBe("A");
+    });
+  }
+
+  it("束ねた要素が 1 つも無く、すべて失敗したときだけ、最初の失敗で reject する", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-stray-all-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state json='{oops'></wcs-state><wcs-state state="nope"></wcs-state>`;
+    document.body.appendChild(h);
+    await expect(getBindingsReady(root)).rejects.toThrow(/JSON|Unexpected|position/i);
+  });
+});
+
+describe("R3-3: 外した <wcs-state> と getBindingsReady", () => {
+  const race = (p: Promise<unknown>, ms: number) =>
+    Promise.race([p.then(() => "resolved", () => "rejected"), new Promise((r) => setTimeout(() => r("pending"), ms))]);
+
+  it("root を差し替えると（外した方が束ねていても）新しい root が決める: 失敗なら reject、状態を待つ間は待ち、受け取れば resolve", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-replace-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state json='{"a":"A"}'></wcs-state><p>{{ a }}</p>`;
+    document.body.appendChild(h);
+    expect(await race(getBindingsReady(root), 100)).toBe("resolved");
+    // replaced by a broken one
+    root.innerHTML = `<wcs-state json='{oops'></wcs-state><p>{{ a }}</p>`;
+    expect(await race(getBindingsReady(root), 100)).toBe("rejected");
+    // replaced by one that waits for its state
+    root.innerHTML = `<wcs-state></wcs-state><p>{{ a }}</p>`;
+    const waiting = getBindingsReady(root);
+    expect(await race(waiting, 50)).toBe("pending");
+    (root.querySelector("wcs-state") as any).setInitialState({ a: "B" });
+    expect(await race(waiting, 100)).toBe("resolved");
+    expect(root.querySelector("p")!.textContent).toBe("B");
+  });
+
+  it("外して戻した（再接続した）要素は、また数に入る", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const h = document.createElement(`quality-reattach-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state json='{"a":"A"}'></wcs-state><p>{{ a }}</p>`;
+    document.body.appendChild(h);
+    const el = root.querySelector("wcs-state")!;
+    await getBindingsReady(root);
+    el.remove();
+    // a broken one comes meanwhile (the list leaves the removed one out)
+    const broken = document.createElement("wcs-state");
+    broken.setAttribute("json", "{oops");
+    root.appendChild(broken);
+    expect(await race(getBindingsReady(root), 100)).toBe("rejected");
+    root.prepend(el);
+    expect(await race(getBindingsReady(root), 100)).toBe("resolved");
   });
 });

@@ -29,7 +29,7 @@ import { config } from "../config";
 import { hooks } from "../hooks";
 
 import { VERSION } from "../version";
-import { isOuter } from "../dom/plan";
+import { isOuter, templateContent } from "../dom/plan";
 import { majorMinor } from "./element";
 /** The snapshot element's tag (`config.tagNames.ssr`, `wcs-ssr` by default). */
 const tag = (): string => config.tagNames.ssr;
@@ -47,6 +47,23 @@ const startsMark = (n: Node | null, prefix: string): boolean => n !== null && n.
 const anchors = new WeakMap<Engine, Map<Node, Element>>();
 /** The engines that recorded anchors in a page (its root node): the page's, and its Light DOM components'. */
 const enginesByRoot = new WeakMap<Node, Set<Engine>>();
+/**
+ * The custom elements the page's walker bound, with the nodes in them then (and a text's data): the
+ * walk is post-order, so its anchors, text marks and rows are there, and the element's own bindings
+ * have not written yet. What an element renders from a value comes later: in the server's HTML the
+ * client would walk it as the page's markup (a user's `{{ … }}`, a `data-wcs` in sanitized HTML),
+ * so the snapshot leaves it — and a text with `{{` that it was not then (a value's, in a node of
+ * its own or one the page wrote) — to the client.
+ */
+const kept = new WeakMap<Node, Map<Node, string>>();
+/** What the client does not walk: a region (rows it adopts), an element whose content a binding sets. */
+const skip = new WeakSet<Node>();
+/**
+ * Mustache texts: their expressions. In an element whose content is text (`<textarea>`, `<title>`),
+ * a mark would be text to the browser, and the value the client's markup: the element takes its
+ * template along instead (`data-wcs-raw`), and the client puts it back before binding the page.
+ */
+const rawTexts = new WeakMap<Node, string>();
 
 /** Nodes from `from` to `to`, siblings, inclusive. */
 function range(from: Node, to: Node): Node[] {
@@ -58,18 +75,25 @@ function range(from: Node, to: Node): Node[] {
   return out;
 }
 
+/** `to` with `from`'s attributes, and `content` (into a template's content when it has one). */
+function attrs<T extends Element>(from: Element, to: T, ...content: Node[]): T {
+  for (const a of Array.from(from.attributes)) to.setAttribute(a.name, a.value);
+  ((to as unknown as HTMLTemplateElement).content ?? to).append(...content);
+  return to;
+}
+
 const lastOf = (b: Block): Node => (b.nodes === null ? b.first : b.nodes[b.nodes.length - 1]);
 
 /** Moves the blocks' nodes right after `after`, as one region. */
 function region(after: Node, blocks: Block[], branch: number | null): void {
-  const frag = document.createDocumentFragment();
-  frag.append(mark(branch === null ? "wcs-[" : `wcs-[:${branch}`));
+  const nodes: Node[] = [mark(branch === null ? "wcs-[" : `wcs-[:${branch}`)];
   for (const b of blocks) {
-    if (branch === null) frag.append(mark("wcs-|"));
-    frag.append(...range(b.first, lastOf(b)));
+    if (branch === null) nodes.push(mark("wcs-|"));
+    nodes.push(...range(b.first, lastOf(b)));
   }
-  frag.append(mark("wcs-]"));
-  after.parentNode!.insertBefore(frag, after.nextSibling);
+  nodes.push(mark("wcs-]"));
+  (after as ChildNode).after(...nodes);
+  for (const n of nodes) skip.add(n);
 }
 
 function visitView(v: ForView | IfView): void {
@@ -89,6 +113,7 @@ function visitBlock(b: Block): void {
 }
 
 const RAW = new Set(["script", "style", "template", "textarea", "title"]);
+const RAW_ATTR = "data-wcs-raw";
 const raw = (el: Element): boolean => RAW.has(el.localName) || el.localName === tag();
 
 /** Keeps every text node a text node through HTML serialization and parsing. */
@@ -152,6 +177,34 @@ function snapshot(el: Element, engine: Engine): void {
       }
     }
   }
+  for (const h of Array.from(root.querySelectorAll("*"))) {
+    const own = kept.get(h);
+    if (own !== undefined) {
+      // what the client does not walk is left: what `skip` has, and — the page's — a Light DOM
+      // component (bound later, by its own engine). A text without `{{` is no markup to the client,
+      // whoever wrote it; one the page wrote is left as it was written, and a mustache's where the
+      // client puts its expression back: right after its mark (the client replaces what follows it),
+      // or in a text element (`data-wcs-raw`). Elsewhere it goes: an element may drop comments, or
+      // move a text element's text out, and its value would be the client's markup
+      const w = document.createTreeWalker(h, 133, {
+        acceptNode: (n) => (skip.has(n) || (n.nodeType === 1 && own.has(n) && scoped(n as Element)) ? 2 : 1),
+      });
+      const out: ChildNode[] = [];
+      for (let n = w.nextNode(); n !== null; n = w.nextNode()) {
+        const p = n.previousSibling!;
+        if (n.nodeType === 3
+          ? (n as Text).data.includes("{{")
+            && !(raw(n.parentNode as Element) ? rawTexts.has(n) : own.has(p) && startsMark(p, "wcs-t:"))
+            && (rawTexts.has(n) || own.get(n) !== (n as Text).data)
+          : !own.has(n)) out.push(n as ChildNode);
+      }
+      for (const n of out) n.remove();
+    }
+    if (raw(h)) {
+      const t = Array.from(h.childNodes, (c) => (rawTexts.has(c) ? `{{ ${rawTexts.get(c)} }}` : c.textContent)).join("");
+      if (t !== h.textContent) h.setAttribute(RAW_ATTR, t);
+    }
+  }
   protectTexts(root.nodeType === 9 ? (root as Document).body : root);
   const ssr = document.createElement(tag());
   ssr.setAttribute("version", VERSION);
@@ -161,13 +214,28 @@ function snapshot(el: Element, engine: Engine): void {
   ssr.append(script);
   for (const [anchor, template] of map) {
     if (!anchor.isConnected) continue;
-    const id = `wcs-t${ids++}`;
+    // the anchor's context, by name (a server's DOM may not know <foreignObject> leads back to HTML):
+    // SVG under <svg> — its id says so (`wcs-s…`) — and HTML under <foreignObject>
+    let e = anchor.parentNode as Element | null;
+    while (e !== null && e.localName !== "svg" && e.localName !== "foreignObject") e = e.parentElement;
+    const svg = e?.localName === "svg";
+    const id = `wcs-${svg ? "s" : "t"}${ids++}`;
     anchor.parentNode!.replaceChild(mark(`wcs-p:${id}`), anchor);
+    let c: Node = document.importNode(templateContent(template as HTMLTemplateElement), true);
+    // a template in it that is an SVG element goes as an HTML one, which a serializer reads (the
+    // client's parser reads it back in its context)
+    for (const x of Array.from((c as Element).querySelectorAll("template"))) {
+      if (x instanceof SVGElement) x.replaceWith(attrs(x, document.createElement("template"), ...x.childNodes));
+    }
+    // an SVG template's content goes in <svg>, so the client's parser reads it as SVG
+    if (svg) {
+      const w = document.createElementNS(e!.namespaceURI, "svg");
+      w.append(c);
+      c = w;
+    }
     const t = document.createElement("template");
     t.id = id;
-    for (const a of Array.from(template.attributes)) t.setAttribute(a.name, a.value);
-    t.content.append(document.importNode((template as HTMLTemplateElement).content, true));
-    ssr.append(t);
+    ssr.append(attrs(template, t, c));
   }
   el.parentNode!.insertBefore(ssr, el);
 }
@@ -216,7 +284,7 @@ const scoped = (el: Element): boolean => hooks.componentScope?.(el) === true;
 
 /** Detaches the region starting at `start` (its markers included); its rows. */
 function detach(start: Comment): Region {
-  const m = /^wcs-\[(?::(\d+))?$/.exec(start.data)!;
+  const m = /^wcs-\[(?::(\d+))?/.exec(start.data)!;
   const rows: Node[][] = [];
   let depth = 0;
   let n: Node | null = start.nextSibling;
@@ -231,7 +299,8 @@ function detach(start: Comment): Region {
     else {
       if (startsMark(n, "wcs-[")) depth++;
       else if (isMark(n, "wcs-]")) depth--;
-      if (m[1] !== undefined && rows.length === 0) rows.push([]);
+      // (a branch has no row marks; a list's node before its first one is a value's)
+      if (rows.length === 0) rows.push([]);
       rows[rows.length - 1].push(n);
     }
     n.parentNode!.removeChild(n);
@@ -261,26 +330,34 @@ function prepare(container: Node, ssr: Element, adopt: boolean): void {
       if (n.parentNode !== parent) continue;
       if (n.nodeType === 8) {
         const d = (n as Comment).data;
-        if (d === "wcs-s") n.parentNode!.removeChild(n);
-        else if (d === "wcs-e") n.parentNode!.replaceChild(document.createTextNode(""), n);
-        else if (d.startsWith("wcs-t:")) {
-          // the value between the markers, back to its mustache
-          let e: Node | null = n.nextSibling;
-          while (e !== null && !isMark(e, "wcs-/t")) {
-            const next = e.nextSibling;
-            e.parentNode!.removeChild(e);
-            e = next;
+        // (a mark the server did not write — in a value — that does not parse is left as it is)
+        try {
+          if (d === "wcs-s") n.parentNode!.removeChild(n);
+          else if (d === "wcs-e") n.parentNode!.replaceChild(document.createTextNode(""), n);
+          else if (d.startsWith("wcs-t:")) {
+            // the value between the markers, back to its mustache
+            const text = document.createTextNode(`{{ ${decodeURIComponent(d.slice(6))} }}`);
+            let e: Node | null = n.nextSibling;
+            while (e !== null && !isMark(e, "wcs-/t")) {
+              const next = e.nextSibling;
+              e.parentNode!.removeChild(e);
+              e = next;
+            }
+            e?.parentNode!.removeChild(e);
+            n.parentNode!.replaceChild(text, n);
+          } else if (d.startsWith("wcs-p:")) {
+            const t = ssr.querySelector(`template[id="${d.slice(6)}"]`) as HTMLTemplateElement | null;
+            if (t !== null) {
+              const p = n.parentNode as Element;
+              // an SVG template (`wcs-s…`): its content came in <svg> (so parsed as SVG)
+              const copy = d[10] === "s"
+                ? attrs(t, document.createElementNS(p.namespaceURI, "template"), ...document.importNode(t.content.firstChild!, true).childNodes)
+                : document.importNode(t, true);
+              copy.removeAttribute("id");
+              p.replaceChild(copy, n);
+            }
           }
-          e?.parentNode!.removeChild(e);
-          n.parentNode!.replaceChild(document.createTextNode(`{{ ${decodeURIComponent(d.slice(6))} }}`), n);
-        } else if (d.startsWith("wcs-p:")) {
-          const t = ssr.querySelector(`template[id="${d.slice(6)}"]`) as HTMLTemplateElement | null;
-          if (t !== null) {
-            const copy = document.importNode(t, true);
-            copy.removeAttribute("id");
-            n.parentNode!.replaceChild(copy, n);
-          }
-        }
+        } catch { /* */ }
       } else if (n.nodeType === 1 && !raw(n as Element)) {
         if (scoped(n as Element)) deferred.set(n, { ssr, adopt });
         else walk(n);
@@ -337,6 +414,10 @@ export function hydrate(engine: Engine): void {
     e.hydrated = true;
   }
   const root = el.getRootNode() as Document | ShadowRoot;
+  for (const r of Array.from(root.querySelectorAll(`[${RAW_ATTR}]`))) {
+    r.textContent = r.getAttribute(RAW_ATTR);
+    r.removeAttribute(RAW_ATTR);
+  }
   prepare(root.nodeType === 9 ? (root as Document).body : root, ssr, same);
   ssr.remove();
   if (same) {
@@ -365,11 +446,25 @@ export function ssrMark(engine: Engine, node: Node, source: Element | string | S
       // binding there, and walk the value as the page's markup. The server renders the element as
       // written; the client binds it and applies the value
       for (let i = source.length; i-- > 0; ) if (isOuter(source[i].name)) source.splice(i, 1);
+      // a custom element (a Light DOM component binds its own) whose content no binding sets: what
+      // is in it now is the page's (see kept)
+      const el = node as Element;
+      // (K_HTML = 8, K_PROP = 1 of dom/view, as numbers: imported, they would be exports of the core chunk)
+      if (source.some((s) => s.kind === 8 || (s.kind === 1 && /^(textContent|innerText|innerHTML)$/.test(s.name)))) skip.add(el);
+      else if (el.localName.includes("-") && !scoped(el)) {
+        const own = new Map<Node, string>();
+        for (const w = document.createTreeWalker(el, 133); w.nextNode(); ) own.set(w.currentNode, (w.currentNode as Text).data);
+        kept.set(el, own);
+      }
       return;
     }
     if (typeof source === "string") {
-      node.parentNode!.insertBefore(mark(`wcs-t:${encodeURIComponent(source)}`), node);
-      node.parentNode!.insertBefore(mark("wcs-/t"), node.nextSibling);
+      rawTexts.set(node, source);
+      if (raw(node.parentNode as Element)) return;
+      const open = mark(`wcs-t:${encodeURIComponent(source)}`);
+      const close = mark("wcs-/t");
+      (node as Text).before(open);
+      (node as Text).after(close);
       return;
     }
     let map = anchors.get(engine);

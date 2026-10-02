@@ -6,6 +6,7 @@ import { parseBindTextForEmbeddedNode, parseBindTextsForElement, type ParsedBind
 import { buildFilters, type FilterFn } from "./filters";
 import { raise, M } from "../messages";
 import { hooks } from "../hooks";
+import { isHtmlSink } from "../trustedTypes";
 import {
   K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, BUBBLING,
   isContent, type Branch, type BranchSpec, type RowPlan, type Spec,
@@ -181,7 +182,8 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
         spec.kind = K_CLASS;
         spec.initial = el.classList.contains(name);
       } else {
-        spec.kind = head === "attr" ? K_ATTR : K_STYLE;
+        // (the srcdoc attribute is an HTML sink: written as the property, through the policy)
+        spec.kind = head === "attr" ? (name === "srcdoc" ? K_PROP : K_ATTR) : K_STYLE;
       }
       return spec;
     }
@@ -191,7 +193,8 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     return spec;
   }
   spec.name = b.propName === "text" ? "textContent" : b.propName;
-  spec.custom = custom;
+  // an HTML sink is never a wc-bindable member: written at once, through the policy
+  spec.custom = custom && !isHtmlSink(spec.name);
   if (!custom && !f.ro && isTwoWay(el, spec.name)) spec.twoWay = f.event ?? (el.localName === "select" ? "change" : "input");
   return spec;
 }
@@ -335,17 +338,21 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
           }
           continue;
         }
-        const kids = Array.from(el.childNodes);
         const text = el.getAttribute(bindAttr());
         const specs = text === null ? null : elementSpecs(engine, text, list, el, 0);
-        if (specs !== null) onElement(el, specs);
         // What a binding puts in an element is a value, not markup. An element whose content a
         // binding sets (`textContent:` / `innerHTML:` / `html:`) is not walked at all — whenever the
         // value lands (a custom element's waits for its definition), and if it fails — nor one a
-        // binding replaces (`outerHTML:` / `outerText:`: its children leave the page); of any other,
-        // only the nodes it had before its bindings, wherever in it they are now. A Light DOM
-        // component's content is bound by its own engine
-        if (!specs?.some(setsContent) && !hooks.componentScope?.(el)) walk(kids.filter((n) => el.contains(n)));
+        // binding replaces (`outerHTML:` / `outerText:`: its children leave the page). Nor is the
+        // content of a <noscript> or an <iframe>: raw text to a page that runs scripts (a server may
+        // have rendered a value there). A Light DOM component's content is bound by its own engine
+        const into = tag !== "noscript" && tag !== "iframe" && !specs?.some(setsContent) && !hooks.componentScope?.(el);
+        // On the page an element's children are bound before it: what its bindings then put anywhere
+        // in it (a custom element rendering a value into a child of its own) is never walked. A plan
+        // keeps document order (Block.dispatch relies on it): its bindings change nothing in it
+        if (page && into) walk(Array.from(el.childNodes));
+        if (specs !== null) onElement(el, specs);
+        if (!page && into) walk(Array.from(el.childNodes));
       } else if (child.nodeType === 3 && engine.mustache && (child as Text).data.includes("{{")) {
         for (const { node, expr } of splitMustache(child as Text)) onText(node, expr);
       }
@@ -355,12 +362,22 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
 }
 
 /**
+ * A template's content. A `<template>` inside `<svg>` is an SVG element (the HTML parser makes it
+ * so) and has no `.content`: its children are its content (a copy of them: the template keeps them).
+ */
+export const templateContent = (t: HTMLTemplateElement): DocumentFragment => {
+  const r = document.createRange();
+  r.selectNodeContents(t);
+  return t.content ?? r.cloneContents();
+};
+
+/**
  * Compiles a template into a plan: the fragment to clone, the child-index path of every
  * bound node, and one spec per binding. Paths are resolved to patterns here, once —
  * blocks never parse or resolve anything. `list` is the enclosing `for` (for `.` paths).
  */
 export function compilePlan(engine: Engine, template: HTMLTemplateElement, list: Pattern | null, asRow: boolean): RowPlan {
-  const frag = document.importNode(template.content, true);
+  const frag = document.importNode(templateContent(template), true);
   const targets: Node[] = [];
   const specs: Spec[] = [];
   const target = (node: Node): number => targets.push(node) - 1;

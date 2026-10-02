@@ -60,6 +60,8 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.SyncConnectNeedsOutput]: (name) => `sync=connect requires observable property "${name}".`,
   [M.OptionInvalid]: (where, key) => `${where}: "${key}" is not one of its options, or not of the option's type.${where === "bootstrapState" && MOVED.includes(key) ? " 4.0 moved it to the state's $behavior." : ""}`,
   [M.BehaviorChanged]: () => "a re-set state may not change $behavior: create the element again.",
+  [M.SecondRoot]: () => "a second <wcs-state> on the same root: there is one state tree per root — graft a subtree with <wcs-state mount=\"path\"> (v1's name=\"…\" is gone: read the mounted state by its path).",
+  [M.LocaleInvalid]: (l) => `the locale "${l}" (<html lang> or bootstrapState's locale) is not a language tag Intl takes (en-US, not en_US): the locale filters use "en".`,
   [M.FeaturesNotArray]: () => '$features must be an array of add-on names (["temporal", "formats"]).',
 
   [M.BindTextNoColon]: (t) => `Invalid bindText: "${t}". Missing ':' separator between propPart and statePart.`,
@@ -80,6 +82,7 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.NoPropertyName]: (prop) => `"${prop}": the left side of a binding must name a property — write "<property>: <path>" (modifiers and input filters come after the name).`,
   [M.TooManySegments]: (p, n) => `"${p}" has ${n} path segments — the limit is ${MAX_PATH_SEGMENTS}.`,
   [M.SelectorRemoved]: (t) => `"${t}": the "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`,
+  [M.UnsafeSegment]: (p) => `"${p}": a state path cannot go through "__proto__" or "prototype" (it would reach every object's prototype).`,
   [M.EmptySegment]: (t) => `"${t}": the right side of a binding must name a state path — write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are the loop-relative shorthand).`,
 
   [M.StructuralNotSingle]: (t) => `Invalid bindText: "${t}". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`,

@@ -158,14 +158,32 @@ function graft(v: Volume, engine: Engine): void {
 /**
  * A root `<wcs-state>` (the one no claim took; asked by the last, claimComponent): if it fails to
  * initialize, the volumes waiting on `root` settle instead of waiting forever, and so do the ones
- * that load later.
+ * that load later — and the components waiting there for their wiring (onRootFailed).
  */
 export function watchRoot(el: HTMLElement, root: Node): null {
   (el as WcsState).connectedCallbackPromise.catch(() => {
+    // a stray second one (#47) beside the root that binds the page: nothing failed for what waits there
+    const live = engines.get(root)?.element as Element | undefined;
+    if (live !== undefined && live !== el && live.isConnected) return;
     for (const v of waiting.get(root) ?? []) fail(v, ORPHAN);
     waiting.set(root, null);
+    for (const f of giveUp.get(root) ?? []) f();
   });
   return null;
+}
+
+/** What else waits on a root node's `<wcs-state>` (a component, for the page's wiring). */
+const giveUp = new WeakMap<Node, Set<() => void>>();
+
+/**
+ * Calls `fn` when (or if) the root `<wcs-state>` on `root` fails to initialize; the function
+ * returned stops waiting (what `fn` holds is not kept for as long as the page lives).
+ */
+export function onRootFailed(root: Node, fn: () => void): () => boolean {
+  if (waiting.get(root) === null) fn();
+  const s = giveUp.get(root) ?? new Set();
+  giveUp.set(root, s.add(fn));
+  return () => s.delete(fn);
 }
 
 /** `<wcs-state mount="p">`: claimed instead of becoming a root. */

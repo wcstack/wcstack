@@ -38,6 +38,7 @@ const NAMES = `
   listsByArray mirror shared landed loadTarget forListsUnder forAllLists api callAt rowOf
   explain render beforeWrite written getterReached listSynced drained declare claim dollar failed hostBinding
   componentScope ssrMark adopt adoptScope declared tags mustache guard directional load unfile epoch failAt trySync
+  head lead tail touched sharing track drop single nested peek inner outer hits synth watches inHandler eachRow settle restart skip
 `.trim().split(/\s+/);
 
 export const MANGLE_PROPS = new RegExp(`^(?:${NAMES.join("|")})$`);

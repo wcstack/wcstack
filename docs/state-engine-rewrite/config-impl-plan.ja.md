@@ -177,6 +177,6 @@ export default {
 - **再セットで `$behavior` を省く**: 既定値と比べるので、最初に既定でない値を書いた状態は、再セットでも同じ `$behavior` を書く必要がある。「省いたら前の値のまま」にもできる（数 B）。
 - **全部入りで `$features` の名前を誤る**: `[wcs/feature-not-installed] $features needs the add-on @wcstack/state/features/temporl` になる（入っていない、としか言えない）。許可リストは分割 auto にしか無い。diagnostics の後付けで did-you-mean を足せる。
 - **性能**: `bench/inpage-ab.mjs`（CPU 4 倍の減速、HEAD と今の `auto.min.js` を ABBA、各 320 サンプル）。update10k は中央値 43.2 → 44.0 ms（×1.019、p25 ×1.005、ページ 8 組の差の平均 +0.7 ms・t ≈ 1.4）、create1k は 16.3 → 15.7 ms（×0.963）。どちらも有意な差ではない。書き込みの同値ガードは、モジュールの `config` の読みがエンジンの欄の読みに変わっただけ。
-- **起動の順番**: `$features` で読み込む要素は、ネットワークの分だけ遅れて起動する。`getBindingsReady` は `start` の Promise を持つので、それも待つ。
+- **起動の順番**: `$features` で読み込む要素は、ネットワークの分だけ遅れて起動する。`getBindingsReady` は束縛ができた時点（`initializePromise`）を待つので、`$features` の読み込みも待つ。`$connectedCallback` は待たない。
 - **`features=` を読むのは文書の root だけ**: shadow root の中、後から挿入された要素（ルーターが描く中身など）の `features=` は読まない（lint で知らせる）。
 - **カバレッジ付きの全体実行で `split.test.ts` がタイムアウトする**: HEAD でも起きる（beforeAll が 65 秒、上限 60 秒。単体でもカバレッジ無しで約 40 秒）。この作業の前からある問題で、`split-auto.test.ts` も同じくビルドと terser を回すので、並ぶと起きやすくなる。

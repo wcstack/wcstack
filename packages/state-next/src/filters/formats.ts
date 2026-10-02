@@ -16,6 +16,7 @@ import { config } from "../config";
 import { optionsRequired, valueMustBeArray, valueMustBeDate, valueMustBeNumber } from "./errorMessages";
 import { numberOption, requiredNumberOption } from "./options";
 import { registerFilters, type FilterDefinition, type FilterFactory, type FilterFn } from "./registry";
+import { M, text } from "../messages";
 
 /**
  * Extends the display-side empty-value contract (requirement B8) to the filters that build their
@@ -91,6 +92,26 @@ const unit = (options: string[]): FilterFn => {
   return (value: unknown): string => String(value) + opt;
 };
 
+let seen: string | undefined;
+let valid = "en";
+
+/**
+ * The default locale (`config.locale`) as Intl takes it, checked when it changes (an identity
+ * compare per apply): one it does not (`<html lang="en_US">`) is "en" (as 3.x), with a warning.
+ */
+function defaultLocale(): string {
+  if (config.locale !== seen) {
+    seen = config.locale;
+    try {
+      valid = Intl.getCanonicalLocales(seen)[0];
+    } catch {
+      console.warn(`[@wcstack/state] ${text(M.LocaleInvalid, [seen])}`);
+      valid = "en";
+    }
+  }
+  return valid;
+}
+
 /**
  * Locale-formatted number. The locale-dependent filters (`locale date time datetime`) fix an
  * **explicit** locale at construction but read the default `config.locale` **on every apply**: a
@@ -102,7 +123,7 @@ const locale = (options: string[]): FilterFn => {
   const explicit = options?.[0];
   return (value: unknown): string => {
     if (typeof value !== 'number') {valueMustBeNumber('locale');}
-    return value.toLocaleString(explicit ?? config.locale);
+    return value.toLocaleString(explicit ?? defaultLocale());
   };
 };
 
@@ -181,7 +202,7 @@ const date = (options: string[]): FilterFn => {
   const explicit = options?.[0];
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('date');}
-    return value.toLocaleDateString(explicit ?? config.locale);
+    return value.toLocaleDateString(explicit ?? defaultLocale());
   };
 };
 
@@ -190,7 +211,7 @@ const time = (options: string[]): FilterFn => {
   const explicit = options?.[0];
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('time');}
-    return value.toLocaleTimeString(explicit ?? config.locale);
+    return value.toLocaleTimeString(explicit ?? defaultLocale());
   };
 };
 
@@ -199,7 +220,7 @@ const datetime = (options: string[]): FilterFn => {
   const explicit = options?.[0];
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('datetime');}
-    return value.toLocaleString(explicit ?? config.locale);
+    return value.toLocaleString(explicit ?? defaultLocale());
   };
 };
 
