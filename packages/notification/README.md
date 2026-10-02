@@ -264,6 +264,8 @@ getConfig(); // read the (deep-frozen) effective config
 
 Call `setConfig()` / `bootstrapNotification()` **before** the elements connect for the change to take effect.
 
+Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+
 ## Headless usage (`NotificationCore`)
 
 The Core has no DOM dependency and can be used directly with `bind()` from `@wc-bindable/core`:

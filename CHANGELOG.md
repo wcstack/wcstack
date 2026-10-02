@@ -8,6 +8,18 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- Every I/O package, `@wcstack/router` and `@wcstack/autoloader` (41 packages): **`bootstrapXxx(config)` warns about an option that 4.0 will reject**, once per key per page, with `console.warn`: an option the package does not have (`bootstrapFetch({ autoTriger: false })`), a value of another type than the option's default (`null`, or an array for an object, included), and a `tagNames` key the package does not define or a tag name that is not a string. 4.0 throws on each of them and applies nothing; 3.5 only warns, and the option is still ignored or applied exactly as in 3.4. An `undefined` value is skipped, as in 4.0. The message reads `[@wcstack/<pkg>] bootstrapXxx: "<key>" is not one of its options, or not of the option's type. 3.x ignores it or applies it unchecked; 4.0 throws on it.` The check runs once per `bootstrapXxx(config)` call. `dist/auto.min.js` calls `bootstrapXxx()` without options, so the check is dropped from it (each changes by a few bytes); an app that bundles a package itself carries about 0.2 KB more per package (min + gzip).
+
+### Deprecated
+
+- `@wcstack/autoloader`: **`scanImportmap` is deprecated.** Nothing ever read it — with `false` the autoloader still scanned the import map — and 4.0 removes it (passing it throws). 3.5 still stores it and warns once that it has no effect.
+
+### Fixed
+
+- `@wcstack/router`: **`getConfig().basenameFileExtensions` is an array.** `getConfig()` deep-cloned the config as plain objects, so the extensions came back as a frozen `{ "0": ".html" }`, which `for…of` and array methods cannot use. It is now a frozen array. The router itself reads the live config, so routing was not affected.
+
 ## [3.4.0] — 2026-10-02
 
 **3.4 fixes the issues reported against 3.3.0, and the regressions those fixes introduced on the way.** The changes are in `@wcstack/state`, with follow-ups in `@wcstack/devtools`, `@wcstack/lint` and the VS Code extension; every other package moves to 3.4.0 only to keep the lockstep version.

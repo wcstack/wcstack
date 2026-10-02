@@ -185,6 +185,8 @@ bootstrapRaf({
 });
 ```
 
+Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+
 ## Accessibility
 
 **WCAG 2.2.2 Pause, Stop, Hide**: a frame loop that animates visible content needs a user-reachable pause — and the parts are already here: `pause` / `resume` / `stop` are first-class commands, so one visible control wired to them satisfies the criterion. For motion that exists for its own sake, also consider the opt-in [`reduced-motion="pause"`](#attributes--inputs) gate above, which honors the user's OS-level preference automatically.

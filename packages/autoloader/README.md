@@ -210,6 +210,8 @@ interface IWritableConfig {
 | `observable` | `boolean` | `true` | Enables MutationObserver to detect dynamically added elements. Set to `false` to disable. |
 | `tagNames` | `IWritableTagNames` | `{ autoloader: "wcs-autoloader" }` | Custom element tag name. Can be changed to avoid naming conflicts. |
 
+Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0. `scanImportmap`, which never had an effect, also logs a warning in 3.5 and is removed in 4.0.
+
 ### Default Configuration
 
 ```javascript

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { config, getConfig, setConfig, DEFAULT_KEY, VANILLA_KEY, VANILLA_LOADER } from '../src/config';
 
 describe('config', () => {
@@ -41,13 +41,18 @@ describe('config', () => {
   });
 
   describe('setConfig', () => {
-    it('scanImportmapを変更できること', () => {
+    it('scanImportmapを変更できること（3.5 は効果がなく 4.0 で取り除くと警告する）', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const original = config.scanImportmap;
-      setConfig({ scanImportmap: false });
-      expect(config.scanImportmap).toBe(false);
-      
-      // リセット
-      setConfig({ scanImportmap: original });
+      try {
+        setConfig({ scanImportmap: false });
+        expect(config.scanImportmap).toBe(false);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('"scanImportmap" has no effect and is removed in 4.0'));
+      } finally {
+        // リセット
+        setConfig({ scanImportmap: original });
+        warn.mockRestore();
+      }
     });
 
     it('observableを変更できること', () => {
