@@ -105,6 +105,26 @@ describe("wcs/binding-syntax（正本パーサと同じ判定 — @wcstack/state
     expect(codes(`<p data-wcs="textContent: a.__proto__x; title: b.prototypes"></p>`)).toEqual([]);
   });
 
+  // 4.0 の正本パーサは for: の出力フィルタを #121 で拒む（ランタイムは初期化で失敗する。#370 の判断 — spread の #105 と同じ形）
+  it("for: の出力フィルタを error で報告し、位置は for の式を指すこと（4.0 の #121）", () => {
+    for (const expr of ["for: items|take(2)", "for: .items|nosuch", "for: items | slice(0, 2)"]) {
+      const html = `<ul><template data-wcs="${expr}"><li></li></template></ul>`;
+      const d = codes(html);
+      expect(d, expr).toHaveLength(1);
+      expect(d[0].code).toBe("wcs/binding-syntax");
+      expect(d[0].severity).toBe("error");
+      expect(html.slice(d[0].start, d[0].end)).toBe(expr);
+      expect(d[0].message).toContain('"for:" takes no filters');
+      expect(d[0].message).not.toContain("Validate statically");
+    }
+    // フィルタの無い for: と、if: のフィルタは報告しない
+    expect(codes(`<template data-wcs="for: items"></template><template data-wcs="if: items|not"></template>`)).toEqual([]);
+    // validateDocument からも同じ 1 件が wcs/binding-syntax で届く
+    const doc = validateDocument(`<wcs-state><script type="module">export default { items: [1, 2, 3] };</script></wcs-state>`
+      + `<ul><template data-wcs="for: items|take(2)"><li></li></template></ul>`, { locale: "en" });
+    expect(doc.filter((x) => x.code === "wcs/binding-syntax").map((x) => x.severity)).toEqual(["error"]);
+  });
+
   it("日本語のメッセージを返すこと", () => {
     const d = validateBindingSyntax(`<input data-wcs="value#ro#wo: x">`, "data-wcs", "ja");
     expect(d[0].message).toMatch(/^バインディングの構文エラー（ランタイムは読み込み時に throw します）: /);

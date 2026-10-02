@@ -115,4 +115,14 @@ describe('parseBindTextsForElement — 文法エラーの語彙', () => {
     expect(() => parseBindTextsForElement('...: ')).toThrow(/\[wcs\/binding-syntax\] Invalid spread binding ".*": spread target path is required/);
     expect(() => parseBindTextsForElement('...: ')).toThrow(/npx @wcstack\/lint/);
   });
+
+  it('for: の出力フィルタを [wcs/binding-syntax] #121 で拒み、lint への誘導が付くこと（#370 — lint は同じパーサで報告する）', () => {
+    for (const text of ['for: items|take(2)', 'for: .items|nosuch', "for: items|join(',')|uc"]) {
+      expect(() => parseBindTextsForElement(text), text).toThrow(`[wcs/binding-syntax] "${text}": "for:" takes no filters`);
+      expect(() => parseBindTextsForElement(text), text).toThrow(/npx @wcstack\/lint/);
+    }
+    // filters elsewhere, and a for: without one, still parse
+    expect(parseBindTextsForElement('for: items')[0].outFilters).toEqual([]);
+    expect(parseBindTextsForElement('if: items|not')[0].outFilters.map((f) => f.filterName)).toEqual(['not']);
+  });
 });

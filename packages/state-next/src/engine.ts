@@ -194,8 +194,12 @@ export class Engine implements ReconcileHooks {
       const row = rowAt(this.ctx, level);
       if (row === null) raise(M.EqIndexNoRow, [path]);
       const source = this.pattern(path);
-      // a getter (or a path under one) changes without a write: an ordinary tracked read
-      if (source.getter !== null || source.underGetter) return row.index === this.read(source, null);
+      // a getter (or a path under one) changes without a write: an ordinary tracked read, and the
+      // row's index is read as `$1` reads it (a moved row compares again)
+      if (source.getter !== null || source.underGetter) {
+        this.watchIndex(level);
+        return row.index === this.read(source, null);
+      }
       const f = this.top;
       if (f !== null) {
         const g = f.getter;
@@ -329,7 +333,8 @@ export class Engine implements ReconcileHooks {
       };
     } else {
       const segs = path.split(".");
-      const i = segs.findIndex((s) => s.charCodeAt(0) >= 48 && s.charCodeAt(0) <= 57);
+      // (a leading numeric segment is a root key, not an index: parsePath)
+      const i = segs.findIndex((s, j) => j > 0 && s.charCodeAt(0) >= 48 && s.charCodeAt(0) <= 57);
       // none, or a `*` after it: a row of a list over the index path (`for: groups.0.items`) reads its
       // own item, and a write through the index reaches it as a list with the same array (mirror)
       if (i < 0 || segs.indexOf(WILDCARD, i) >= 0) return;
@@ -371,7 +376,9 @@ export class Engine implements ReconcileHooks {
   /** Reconciles a list's rows with the current value of its pattern. */
   sync(l: StateList): void {
     const value = this.readUntracked(l.pattern, l.parentRow);
-    if (value === l.arr) return;
+    const before = l.arr;
+    if (value === before) return;
+    l.was = before;
     // out of the lists over its array before (filed again under the new one below)
     this.unfile(l);
     const old = reconcile(l, value, this);
@@ -381,7 +388,16 @@ export class Engine implements ReconcileHooks {
     if (l.arr === value) {
       const same = upsert(this.listsByArray, value as unknown[], newArray<StateList>);
       same.push(l);
-      if (same.length > 1) for (const x of same) x.shared = true;
+      if (same.length > 1) {
+        for (const x of same) x.shared = true;
+        // joining a list that did not share our array before (a getter back from a copy to the
+        // array it filters): the rows we kept missed the writes made through it, so they are
+        // shown again as if written (F26 — the moves of lists that change arrays together cost nothing)
+        if (same.some((x) => x.was !== before)) {
+          const e = this.pattern(`${l.pattern.path}.*`);
+          for (const r of old) if (r.alive) this.changed(e, r);
+        }
+      }
     }
     hooks.listSynced?.(this, l, old);
     if ((l.view !== null || l.extra !== null) && !l.queued) {
@@ -527,6 +543,19 @@ export class Engine implements ReconcileHooks {
     }
   }
 
+  /** The getter evaluating now reads the index of its row at level `n`: a move of that row re-evaluates it. */
+  private watchIndex(n: number): void {
+    const f = this.top;
+    if (f !== null && f.untracked === 0) {
+      const g = f.getter;
+      const listP = g.lists[n];
+      if (listP) {
+        const w = listP.indexWatchers ?? (listP.indexWatchers = []);
+        if (!w.includes(g)) w.push(g);
+      }
+    }
+  }
+
   private dollar(key: string): unknown {
     const c = key.charCodeAt(1);
     if (c >= 48 && c <= 57) {
@@ -534,18 +563,8 @@ export class Engine implements ReconcileHooks {
       if (n < 1 || n > MAX_INDEX_PARAM) {
         raise(M.IndexParamRange, [key]);
       }
-      {
-        const f = this.top;
-        if (f !== null && f.untracked === 0) {
-          const g = f.getter;
-          const listP = g.lists[n];
-          if (listP) {
-            const w = listP.indexWatchers ?? (listP.indexWatchers = []);
-            if (!w.includes(g)) w.push(g);
-          }
-        }
-        return rowAt(this.ctx, n)?.index;
-      }
+      this.watchIndex(n);
+      return rowAt(this.ctx, n)?.index;
     }
     const fn = this.api[key];
     if (fn !== undefined) return fn;

@@ -46,12 +46,15 @@ function keysOf(o: object): string[] {
  * The pattern a path with an explicit index reads through: an index with no `*` after it
  * (`items.0.x`) has an accessor of its own (Engine.markupAccessor), so whether it reads a getter
  * is the question of the pattern it names (`items.*.x`). A `*` after the index (`groups.0.items.*.x`,
- * a row of `for: groups.0.items`) reads its row's own item: the pattern itself.
+ * a row of `for: groups.0.items`) reads its row's own item: the pattern itself. So does a path the
+ * author declared a getter under (`get "groups.0.items"()`): that getter is what it reads (#388).
  */
 function wildcardForm(engine: Engine, q: Pattern): Pattern | undefined {
   const segs = q.path.split(".");
-  const i = segs.findIndex((s) => /^\d/.test(s));
-  return i < 0 || segs.indexOf("*", i) >= 0 ? q : engine.patterns.peek(parsePath(q.path).pattern);
+  // (a leading numeric segment is a root key, not an index: parsePath)
+  const i = segs.findIndex((s, j) => j > 0 && /^\d/.test(s));
+  return i < 0 || segs.indexOf("*", i) >= 0 || findDescriptor(engine.target, q.path)?.get !== undefined
+    ? q : engine.patterns.peek(parsePath(q.path).pattern);
 }
 
 /**

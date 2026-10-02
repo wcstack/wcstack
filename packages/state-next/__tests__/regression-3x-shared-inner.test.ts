@@ -279,24 +279,25 @@ describe("#379 共有した内側の配列の要素を差し替えると、そ�
     expect(errors).toEqual([]);
   });
 
-  // 3.x #379 の修正の形（「$watch("groups.*.items.*") は書いた位置で 1 回」）が 4.0 で再現しない: 同じ配列を持つ外側の行の
-  // 位置ごとに呼ばれる（実測 [["B", 0, 1], ["B", 1, 1]] / 期待 [["B", 0, 1]]）。engine.ts の mirror() が共有するほかの一覧の
-  // 行ごとに landed() → hooks.written を呼び、temporal/watch.ts の written() がそれぞれを hit にする
-  it.fails("$watch(\"groups.*.items.*\") は書いた位置で 1 回、2 つのバッチの入れ替えは揃ったバッチで書いた位置で呼ばれる", async () => {
+  // 3.x #379 の修正の形は「$watch("groups.*.items.*") は書いた位置で 1 回」（3.x は [["B", 0, 1]]）。4.0 は意図して変えた:
+  // 同じ配列を持つ外側の行の位置ごとに 1 回ずつ呼ぶ（その配列を持つどのパスの値も変わったため — migration-v4 §3.4）。
+  // engine.ts の mirror() が共有するほかの一覧の行ごとに landed() → hooks.written を呼び、temporal/watch.ts の written() が
+  // それぞれを hit にする
+  it("$watch(\"groups.*.items.*\") は配列を持つ外側の行ごとに 1 回（3.x は書いた位置で 1 回）、2 つのバッチの入れ替えもそれぞれのバッチで同じく呼ばれる", async () => {
     const watched: [string, number, number][] = [];
     const p = await page(GROUPS, {
       ...shared("a", "b", "c"),
       $watch: { "groups.*.items.*"(cur: any, _prev: unknown, g: number, r: number) { watched.push([cur.v, g, r]); } },
     });
     await p.write((s) => { s["groups.0.items.1"] = { v: "B" }; });
-    expect(watched).toEqual([["B", 0, 1]]);
+    expect(watched).toEqual([["B", 0, 1], ["B", 1, 1]]);
     watched.length = 0;
     let first: unknown;
     await p.write((s) => { first = s["groups.0.items.0"]; s["groups.0.items.0"] = s["groups.0.items.2"]; });
-    expect(watched).toEqual([["c", 0, 0]]);
+    expect(watched).toEqual([["c", 0, 0], ["c", 1, 0]]);
     watched.length = 0;
     await p.write((s) => { s["groups.0.items.2"] = first; });
-    expect(watched).toEqual([["a", 0, 2]]);
+    expect(watched).toEqual([["a", 0, 2], ["a", 1, 2]]);
     expect(view(p.root)).toEqual(["c,B,a", "c,B,a"]);
   });
 });
@@ -598,12 +599,15 @@ describe("#379 / #397 2 つのページの <wcs-state> が同じ素の配列を�
     expect(errors).toEqual([]);
   });
 
-  // 3.x #379 のテストの形（first が自分の書き込みの後に N,M,P を描く）が 4.0 で再現しない: first の位置 0 は a のまま
-  // （実測 ["a,M,P", "a,M,P"] / 期待 ["N,M,P", "N,M,P"]）。second の書き込みは first の state には知らされず、first の
-  // 要素の書き込みは書いた位置の行だけを描き直す（engine.ts write() の要素の分岐 — 一覧全体を読み直さない）。別の state が
-  // その場で変えた値は、その state から見て「その場の変更」（$postUpdate が要る）なので、不具合ではなく 3.x の副作用に頼った形
-  it.fails("参考: first が自分の書き込みの後に、second が書いた位置 0 も描く（3.x の描き直しの副作用）", async () => {
+  // 3.x #379 のテストの形は、first が自分の書き込みの後に N,M,P を描く（3.x の描き直しの副作用）。4.0 では first の位置 0 は
+  // a のまま: second の書き込みは first の state には知らされず、first の要素の書き込みは書いた位置の行だけを描き直す
+  // （engine.ts write() の要素の分岐 — 一覧全体を読み直さない）。別の state がその場で変えた値は、その state から見て
+  // 「その場の変更」なので、その要素のパスの $postUpdate で知らせる（リストのパスの $postUpdate は配列の同一性で同期するので、
+  // その場で差し替えた要素を拾わない — その場の push と同じ。README の Arrays）。不具合ではなく 3.x の副作用に頼った形
+  it("参考: first は自分の書き込みの後も second が書いた位置 0 を描かず（3.x は描いた）、要素のパスの $postUpdate で知らせれば描く", async () => {
     const { first } = await setup();
+    expect(view(first.root)).toEqual(["a,M,P", "a,M,P"]);
+    await first.write((s) => { s.$postUpdate("groups.0.items.0"); });
     expect(view(first.root)).toEqual(["N,M,P", "N,M,P"]);
   });
 });

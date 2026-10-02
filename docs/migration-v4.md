@@ -44,12 +44,13 @@ When upgrading to 4.0 (§2, §3):
 - [ ] Reorder rows by assigning a new array, not by writing list elements (§3.4).
 - [ ] Replace CSS or test selectors on `[data-wcs]` that target row or branch elements (§3.4).
 - [ ] Replace `outerHTML:` / `outerText:` inside `for:` / `if:` templates with `innerHTML:` on a wrapper (§3.4).
+- [ ] Replace filters on `for:` with a getter that returns the filtered list (§3.4).
 - [ ] Move volume `$watch` / `$listKeys` / `$renderedCallback` to the root state (§3.5).
 - [ ] Replace volume injections with getters on the root state (§3.5).
 - [ ] Replace uses of `listPaths` / `getterPaths` / `setterPaths` / `nextVersion()` (§3.7).
 - [ ] Pages on `/core`: install `features/list-keys` if they use `$listKeys` (§3.8).
 - [ ] Pages on `/core`: install `features/diagnostics` while developing (§3.8).
-- [ ] Read the changes nothing reports: children of content-binding elements, `<noscript>` / `<iframe>`, comments in `<textarea>` / `<title>`, `$watch` on a numeric-index key (§3.4); post-processing of SSR output (§3.6); the extra child node in the router outlet (§3.9).
+- [ ] Read the changes nothing reports: children of content-binding elements, `<noscript>` / `<iframe>`, comments in `<textarea>` / `<title>`, `$watch` on a numeric-index key or on an array several rows share, reads past the end of a list (§3.4); post-processing of SSR output (§3.6); the extra child node in the router outlet (§3.9).
 - [ ] Run `@wcstack/lint` 4.0 and fix what it reports (§4).
 
 > **Comment bindings stay.** `<!--@@: path-->` and `<!--@@wcs-text: path-->` are still supported in 4.0. This is the form the lint recommends instead of `{{ }}` outside a `<template>`, to avoid a flash of unrendered text, and 4.0 binds it even when `enableMustache` is off. Only the `commentTextPrefix` option, which renamed the keyword, is gone. Details in §3.4.
@@ -353,6 +354,22 @@ A row or a branch keeps its nodes by position, so a binding that replaces its el
 
 The 3.5 lint warns about it; the 4.0 lint reports it as `wcs/template-syntax` (error).
 
+#### Filters on `for:`
+
+`for:` takes no output filters. `for: items|take(2)` fails initialization with `[wcs/binding-syntax] #121`, whatever the filter (an unregistered name too); 3.x rendered the rows of the filtered array. A row of `for: items` is `items.<index>`, so the rows of a filtered array would name other elements, and writes through them would land on the wrong ones. Declare a getter that returns the filtered list, and loop over it:
+
+```html
+<!-- 3.x -->
+<template data-wcs="for: items|take(2)">…</template>
+
+<!-- 4.0, with get firstTwo() { return this.items.slice(0, 2); } -->
+<template data-wcs="for: firstTwo">…</template>
+```
+
+The getter returns a copy, so the limitation in §5 applies: a write through the original path (`this["items.1.n"] = 7`) does not reach the copy's row. Write through the row instead (`firstTwo.1.n`, or a binding inside the row).
+
+How to find it: look for `|` in `for:` bindings. The 3.5 lint does not report it; the 4.0 lint reports it as `wcs/binding-syntax` (error).
+
 #### A `*` from another list inside a row
 
 A binding inside a `for:` row whose `*` ranges over a different list than the enclosing `for:` at that level (`{{ b.*.y }}` inside `for: a`) throws `[wcs/wildcard-rank] #1403` when the page is initialized. 3.x failed each such binding with `ListIndex not found`. Read the other list's row in a getter with `$resolve(path, indexes)`. The 3.5 lint warns about it; the 4.0 lint reports it as `wcs/wildcard-rank` (warning).
@@ -386,6 +403,8 @@ At page level, an element's children are bound before the element's own bindings
 - A path that goes through `__proto__` or `prototype` throws `[wcs/binding-syntax] #120`: in bindings, writes, `$resolve`, `$setAll`, and reads such as `this.__proto__`.
 - `state="id"` reads only a `<script type="application/json">` with that id.
 - A `$watch` key with a numeric index (`"items.0.v"`) fires only when the value at that index changes. 3.x (since 3.4) fires it on a write through the index, on an element replacement, and on a write to any row of the list, possibly with an unchanged value.
+- When several outer rows hold the same array, writing one of its elements fires `$watch("groups.*.items.*")` once for every outer row that holds it, each with its own indexes: the value changed at every one of those paths. 3.x fired it once, at the position written.
+- An index past the end of a list: a write (`this["items.5.v"] = 1`, `$resolve("items.*.v", [5], 1)`) throws `no row for "items.*.v"` and changes nothing, and a read returns `undefined`. 3.x threw `ListIndex not found` on both.
 
 ### 3.5 Volumes and mounted components
 
@@ -536,7 +555,7 @@ Run `npx @wcstack/lint@4 <files>` once 4.0 is published (the VS Code extension s
 | `wcs/volume-declaration` | `$stream`, `$watch`, `$listKeys`, `$renderedCallback` in a volume (error); `$commandTokens`, `$eventTokens`, `$on`, `$errorCallback` in a volume (warning) | error / warning |
 | `wcs/template-syntax` | `outerHTML:` / `outerText:` inside `for:` / `if:` (error); `#direct` on a binding that is not an event binding (warning) | error / warning |
 | `wcs/wildcard-rank` | another list's `*` inside a row (#1403); a pattern path, shorthand path or loop index outside any `for` | warning (the runtime throws) |
-| `wcs/binding-syntax` | a `__proto__` / `prototype` path segment | error |
+| `wcs/binding-syntax` | a `__proto__` / `prototype` path segment; filters on `for:` | error |
 | `wcs/index-param-range` | `$129` and above inside a `for`; `this.$0`, `this.$129` in the script | error |
 | `wcs/second-root` | a second root `<wcs-state>` in the document (the runtime refused it in 3.x too) | error |
 | `wcs/bind-component-source` | `<wcs-state bind-component>` with `state` / `src` / `json` or an inline script (the runtime refused it in 3.x too) | error |
@@ -557,6 +576,7 @@ The sentences are what `@wcstack/state` and `/auto` print; without the diagnosti
 | `a re-set state may not change $behavior: create the element again.` | #45 | 3.2 |
 | `[@wcstack/<package>] bootstrapXxx: "<key>" is not one of its options, or not of the option's type.` | — | 3.2 |
 | `[wcs/template-syntax] "outerHTML:" replaces its element, so it cannot be used inside a "for" / "if" template …` | #203 | 3.4 |
+| `[wcs/binding-syntax] "for: items\|take(2)": "for:" takes no filters …` | #121 | 3.4 |
 | `[wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".` | #1403 | 3.4 |
 | `[wcs/binding-syntax] "<path>": a state path cannot go through "__proto__" or "prototype" …` | #120 | 3.4 |
 | `<wcs-state src="./state.js"> failed to initialize.` (`console.error`, followed by the error; names `state=`, `src=`, `mount=` and `bind-component=` when present) | #49 | 3.4 |
@@ -573,7 +593,7 @@ The sentences are what `@wcstack/state` and `/auto` print; without the diagnosti
 
 ## 5. Known limitations of the preview *(not final)*
 
-- **One object reachable from two rows.** When the same object sits at two positions of one list, a write below one of the rows (`this["items.0.name"] = "z"`) does not reach the other row's bindings and row getters; plain reads, root getters and `$getAll` see the new value. The same happens when one object is reachable from two lists, as in a TodoMVC-style filter: `get shown()` returning a filtered copy of `todos`, rendered with `for: shown`, while a checkbox writes the row. 3.x has the same issue (#365). It is recorded as a known 4.0 limitation, and its scope is under review.
+- **One object reachable from two rows.** When the same object sits at two positions of one list, a write below one of the rows (`this["items.0.name"] = "z"`) does not reach the other row's bindings and row getters; plain reads, root getters and `$getAll` see the new value. The same happens when one object is reachable from two lists, as in a TodoMVC-style filter: `get shown()` returning a filtered copy of `todos`, rendered with `for: shown`, while a checkbox writes the row. When the getter returns `todos` itself again, the rows it kept are shown again. 3.x has the same issue (#365). It is recorded as a known 4.0 limitation, and its scope is under review.
 - **Numeric keys under a plain object** (`sales.2024.total`, `usersById.42.name`). Markup renders them, but in 4.0 a script read (`this["sales.2024.total"]`, also inside a getter) gives `undefined`, `$eq` on such a path is always false, a write throws `no row for "sales.*.total"`, and a two-way write-back fails. 3.x (since 3.4) still reads them as plain keys, and writes them that way through `$resolve` / `$setAll`. Until this is settled, read them as `this.sales[2024].total`, and write by assigning a new object to the top-level key (`this.sales = { ...this.sales, 2024: { ...this.sales[2024], total: 10 } }`), or use keys that are not numbers.
 - **After a re-set**, `Object.keys(this)`, `in`, `delete` and `JSON.stringify(this)` still see the old state.
 - **Markup errors and initialization**: see §3.4.

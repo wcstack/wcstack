@@ -142,7 +142,8 @@ export class PatternTable {
 /**
  * A concrete path (`data.3.label`, `data.*.label`, `selectedIndex`) split into its
  * pattern and the explicit indexes it carries. `*` segments take their index from the
- * evaluation context, so they are returned as `-1`.
+ * evaluation context, so they are returned as `-1`. A leading numeric segment is a key of
+ * the root (`2024.total`), never an index: the root is not a list.
  */
 export interface ParsedPath {
   pattern: string;
@@ -160,7 +161,7 @@ export function parsePath(path: string): ParsedPath {
   for (let i = 0; i < segs.length; i++) {
     const s = segs[i];
     const c = s.charCodeAt(0);
-    if (c >= 48 && c <= 57) {
+    if (i > 0 && c >= 48 && c <= 57) {
       literal = false;
       indexes.push(Number(s));
       segs[i] = WILDCARD;

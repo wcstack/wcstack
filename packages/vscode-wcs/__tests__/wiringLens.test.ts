@@ -363,13 +363,16 @@ describe('wiringLens: レビュー指摘の回帰（誤 hint ゼロ）', () => {
     expect(hover.range.start).toBe(base + attr.lastIndexOf('uc'));
   });
 
-  it('for パスのフィルタは正本パーサで除去してから展開すること（ランタイムの書き換えと同一）', () => {
+  // 4.0 の正本パーサは for: のフィルタを [wcs/binding-syntax] #121 で拒む（ランタイムは初期化で失敗する）。
+  // 不正な for 式の中は静的に解決できない（expandOccurrencePath の null）ので、ヒントを出さない
+  it('フィルタ付きの for（正本パーサが拒む）の中の短縮パスにはヒントを出さず、フィルタの無い for は展開すること', () => {
     const html = `<wcs-state><script type="module">export default { rows: [{ label: 1 }] };</script></wcs-state>
 <template data-wcs="for: rows|slice(0,2)"><span data-wcs="textContent: .label"></span></template>`;
-    const labels = getInlayHints(html, 0, html.length)
-      .filter((h) => h.kind === 'shorthand')
-      .map((h) => h.label);
-    expect(labels).toEqual(['= rows.*.label']);
+    const shorthand = (h: string) => getInlayHints(h, 0, h.length)
+      .filter((x) => x.kind === 'shorthand')
+      .map((x) => x.label);
+    expect(shorthand(html)).toEqual([]);
+    expect(shorthand(html.replace('rows|slice(0,2)', 'rows'))).toEqual(['= rows.*.label']);
   });
 
   it('passthrough フィルタ（defaults / null）は型を断定せずヒントを抑止すること', () => {

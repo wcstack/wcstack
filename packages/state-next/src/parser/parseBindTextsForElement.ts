@@ -101,6 +101,10 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
         }
       } else {
         stateResult = parseStatePart(statePart);
+        // a row of `for: p` is `p.<index>`: the rows of a filtered list would name other elements (#370)
+        if (keyword === 'for' && stateResult.outFilters.length > 0) {
+          raise(M.ForNoFilters, [bindText]);
+        }
       }
       return {
         propName: keyword,
