@@ -8,6 +8,14 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [3.4.0] — 2026-10-02
+
+**3.4 fixes the issues reported against 3.3.0, and the regressions those fixes introduced on the way.** The changes are in `@wcstack/state`, with follow-ups in `@wcstack/devtools`, `@wcstack/lint` and the VS Code extension; every other package moves to 3.4.0 only to keep the lockstep version.
+
+Most of it is list-row bookkeeping and SSR hydration. A numeric-index path (`this["items.0.v"]`) and a binding that spells one (`{{ items.0.v }}`) now read and follow the row at that position whether or not a `for:` renders the list; replacing a list element updates every read below its row; an inner array that several outer rows share is drawn and written consistently; and hydration now handles nested templates, filtered conditions, and rows added while the server rendered.
+
+It is a minor rather than a patch because some behaviour changes on purpose: a binding with one numeric index follows its row instead of keeping its first value, a render loop through `$watch` or `$scan` is cut off by the render chain limit, devtools gains a `render-chain-limit` event, and `wcstack/auto` grows from 352 to 368 KB min (102 → 108 KB gzip). A few sequences that 3.3.0 got right only because indexes happened to line up now go wrong: the same inner array held under different keys by different outer rows ([#396](https://github.com/wcstack/wcstack/issues/396)), and an inner array shared across `<wcs-state>` elements ([#397](https://github.com/wcstack/wcstack/issues/397)). The `@wcstack/state` README lists these limits with the DOM-only one ([#398](https://github.com/wcstack/wcstack/issues/398)).
+
 ### Fixed
 
 - `@wcstack/state`: **a `for` row no longer renders nothing when it holds an element whose wc-bindable member takes its initial value from the element.** An output-only member (listed in `properties` but not in `inputs` — `<wcs-fetch>`'s `value` / `loading`, `<wcs-intersect>`'s `intersecting`, …) and a two-way member marked `#init=element`, or `#init=auto` on a row whose state has no value yet, pull the element's value into state when the binding is set up. When every row of a render is new — the first render, filling an empty list, a wholesale replacement — the rows are activated on a batch `DocumentFragment` before they are inserted, so `getRootNode()` returned the fragment, the state lookup came back empty and the initial sync threw `No state tree found on this root for initial binding sync.` That failed the whole `for:` apply: the list stayed empty with only a `console.error` to show for it, and replacing an already-rendered list with new row objects — a refetch — emptied it as well. It took the element's class being defined before the rows were built, which is always the case with `wcstack/auto` or an I/O node's `auto` loaded first; an undefined class deferred the sync until the rows were in the document. The lookup now resolves a batch fragment to its real root through the same ledger `applyChange` uses, so each row's value is initialized from its own element — also inside a row's `if:`. Present since the directional initial sync shipped in 1.21.0. (#319)
@@ -69,7 +77,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 - `scripts/check-state-split.mjs`: an entry of `scripts/state-split-baseline.json` may carry a `slack` in bytes that is added on top of the 3 % allowance and kept when the baseline is re-recorded with `--update`. `features/ssr.js` gets 1 KB: the #258 fixes left it at exactly its limit (4,244 B gzip against 4,244 B), with more SSR work (#334, #336) still open. The EXCEEDED message names the slack when an entry has one.
 - `scripts/state-split-baseline.json`: `features/scopes.js` gets 512 B of slack. The follow-up fixes (#331, #367) took it past its 3 % allowance (14,681 B gzip against 14,619 B).
-- `scripts/state-size-baseline.json` / `scripts/state-split-baseline.json`: re-recorded before a release to take the growth of the #347–#370 fixes (split core 54,798 → 57,283 B, `auto.min.js` 80,860 → 84,802 B, `index.esm.js` 83,423 → 87,414 B gzip). The fixes took the core 841 B and both bundles about 1.5 KB past the 3 % allowance; the slack of `features/scopes.js` and `features/ssr.js` is kept.
+- `scripts/state-size-baseline.json` / `scripts/state-split-baseline.json`: re-recorded for the release (split core 54,798 → 59,159 B, `auto.min.js` 80,860 → 86,648 B, `index.esm.js` 83,423 → 89,275 B gzip). The #347–#370 fixes took the core 841 B and both bundles about 1.5 KB past the 3 % allowance, and the #379 / #393 / #394 fixes took the core past it again (59,062 B against 59,001 B); the slack of `features/scopes.js` and `features/ssr.js` is kept.
 
 ## [3.3.0] — 2026-09-24
 
@@ -533,7 +541,9 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/wcstack/wcstack/compare/v3.3.0...v3.4.0
+[3.3.0]: https://github.com/wcstack/wcstack/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/wcstack/wcstack/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/wcstack/wcstack/compare/v3.0.0...v3.1.0
 [3.0.0]: https://github.com/wcstack/wcstack/compare/v2.6.1...v3.0.0
