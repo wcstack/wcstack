@@ -279,6 +279,6 @@ The rejection from a dynamic `import()` that CSP blocked says only `Failed to fe
 
 Not asserting CSP when no violation was observed is deliberate: it keeps a syntax error from being misattributed to the policy.
 
-The CSP-confirmed message of state and router up to 3.4.0 names only `script-src blob:` (state also `src=`) as the fix. The nonce on the `<script>` that loads the bundle (§4, §5) works as well.
+The CSP-confirmed message of state and router up to 3.4.0 names only `script-src blob:` (state also `src=`) as the fix. The nonce on the `<script>` that loads the bundle (§4, §5) works as well. From 3.5 their CSP-confirmed messages name the nonce too.
 
-**Firefox fires the violation event after the import has failed** (in the next task; Chromium and WebKit fire it before the failure — checked 2026-09-28). State and router up to 3.4.0 decide as soon as the import fails, so on Firefox a CSP block yields the non-asserting message (the second row). On Firefox, read that row as "check the CSP too".
+**Firefox fires the violation event after the import has failed** (in the next task; Chromium and WebKit fire it before the failure — checked 2026-09-28). State and router up to 3.4.0 decide as soon as the import fails, so on Firefox a CSP block yields the non-asserting message (the second row). On Firefox, read that row as "check the CSP too". From 3.5, state and router wait that one task before deciding, so Firefox gets the CSP-confirmed message as well.
