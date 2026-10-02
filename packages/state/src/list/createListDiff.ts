@@ -1,6 +1,6 @@
 import "../polyfills";
-import { createListIndex, getHomeParentListIndex, setListIndexValue } from "./createListIndex";
-import { disownListIndexes, getListIndexesByList, resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
+import { createListIndex, rehomeListIndex, setListIndexValue } from "./createListIndex";
+import { disownListIndexes, isHeldElsewhere, markListLent, resolveListIndexesByList, retireListIndexes, reviveListIndexes, setListIndexesByList } from "./listIndexesByList";
 import { IListDiff, IListIndex } from "./types";
 import { dropKeyedSubscriptionsByListIndex, moveIndexWatchers, rekeyIndexSubscriptions } from "../dependency/keyedDependency";
 import { updateBatch } from "../updater/updateBatch";
@@ -17,11 +17,17 @@ const valueChangesByList = new WeakMap<readonly unknown[], [number, IListIndex[]
  * （TodoMVC の絞り込み all → done）ときに、getter の評価が控える（proxy/methods/getByAddress.ts）。
  * 差分は前の配列の行を新しい配列へ貸さない — 貸すと行の添字が写しの位置へ振り直され、前の配列（`todos`）の
  * 数値添字の読み書きが別の要素に着地した。前の配列は生きているので、その行を退役させもしない。
+ * 前の配列は弱く持つ — 強く持つと、写しを書き直すたびに写しの鎖（とそれぞれの行）が残った（同じ外側の行の 2 つのキーに
+ * 写しを書き直す 300 回で happy-dom のヒープが 58 MB → 594 MB）。state から消えた前の配列は、もう生きていない
  */
-const livePreviousLists = new WeakMap<object, unknown>();
+const livePreviousLists = new WeakMap<object, WeakRef<object>>();
 
 export function keepPreviousList(list: object, previous: unknown): void {
-  livePreviousLists.set(list, previous);
+  livePreviousLists.set(list, new WeakRef(Object(previous)));
+}
+
+function previousOf(list: object): unknown {
+  return livePreviousLists.get(list)?.deref();
 }
 
 function getListDiff(rawOldList: readonly unknown[], rawNewList: readonly unknown[]): IListDiff | null {
@@ -137,12 +143,26 @@ export function createListDiff(
   // deleteIndexSet と newIndexes は構造上交わらない。
   reviveListIndexes(diff.newIndexes);
   // 前の配列がまだ state に居る（livePreviousLists）なら、その行も `$eqIndex` の監視も前の配列のまま
-  if (livePreviousLists.get(rawNewList as object) !== rawOldList) {
+  if (previousOf(rawNewList as object) !== rawOldList) {
     retireRows(diff.deleteIndexSet);
     // `$eqIndex` の最内段の監視は listIndex 配列に付く: 配列が変わったら移し、最後の値の位置の行を enqueue
     moveIndexWatchers(diff.oldIndexes, diff.newIndexes);
   }
   return diff;
+}
+
+/**
+ * 前の配列の行を新しい配列へ貸した（#393 — listIndexesByList.ts の markListLent）。行集合は新しい配列を持つ親のものに
+ * なるので、home もそこへ移す（#394。前の home は新しい配列を持ったことが無く、手放してもいないので、戻すと別の外側の行の
+ * 配列を引いた）
+ */
+function lendRows(oldList: readonly unknown[], rows: IListIndex[], parentListIndex: IListIndex | null): void {
+  markListLent(oldList);
+  if (parentListIndex !== null) {
+    for (const row of rows) {
+      rehomeListIndex(row, parentListIndex);
+    }
+  }
 }
 
 function computeListDiff(
@@ -155,18 +175,16 @@ function computeListDiff(
   const newList: readonly unknown[] = (Array.isArray(rawNewList) && rawNewList.length > 0) ? rawNewList : EMPTY_LIST;
   const cachedDiff = getListDiff(oldList, newList);
   // 差分を取った後で新しい配列の台帳が差し替わった（同じバッチの要素書き込みの入れ替えが揃った —
-  // #335）なら、キャッシュした差分の行は古い。台帳どうしで取り直す
-  if (cachedDiff && cachedDiff.newIndexes === getListIndexesByList(newList)) {
+  // #335）なら、キャッシュした差分の行は古い。台帳どうしで取り直す。台帳はキャッシュが当たっても引き直す —
+  // 行の親が退役した・配列を手放した外側の行のままだと、行の下の読みが別の外側の行の配列を引く（#256 / #394）
+  if (cachedDiff && cachedDiff.newIndexes === resolveListIndexesByList(newList, parentListIndex)) {
     return cachedDiff;
   }
   // 台帳は 1 本の配列につき行集合 1 組（listIndexesByList.ts）。親は「行がぶら下がる親が
   // 退役していたら、この親へ付け替える」ための差し替え先として渡す（#256）。
   const oldIndexes = resolveListIndexesByList(oldList, parentListIndex) || [];
-  // 1 組の行集合の home は 1 つ（#256）。前の行集合を引き継ぐ差分で新しく鋳造する行は、
-  // 鋳造時の親ではなくその行集合の home を継ぐ ── 行ごとに home が違う集合ができると、
-  // 「持ち主が戻ってきたか」の判定が行の並び順で変わる。
-  const homeParentListIndex = oldIndexes.length > 0 ?
-    getHomeParentListIndex(oldIndexes[0]) : parentListIndex;
+  // 新しく鋳造する行の home は鋳造した親（createListIndex の既定）。前の行集合を引き継ぐ行も、引き継いだ親を home に
+  // する（lendRows）— 1 組の行集合に home は 1 つ（#256）
   let retValue: IListDiff | undefined;
   try {
     // Early return for empty list
@@ -182,11 +200,16 @@ function computeListDiff(
     // If old list was empty, create all new indexes
     // 前の配列がまだ state に居る（livePreviousLists）なら、その行を貸さずに新しい行を作る（#362）
     let newIndexes: IListIndex[] | null = resolveListIndexesByList(newList, parentListIndex);
-    if (oldList.length === 0 || (newIndexes === null && livePreviousLists.get(newList) === oldList)) {
+    // ほかの外側の行もまだ持っている配列の行は、写しに貸さない（#393 — listIndexesByList.ts の holdersByList）。元の配列は
+    // その外側の行にまだ居るので、行を退役させもしない
+    if (newIndexes === null && parentListIndex !== null && isHeldElsewhere(oldList, parentListIndex)) {
+      keepPreviousList(newList, oldList);
+    }
+    if (oldList.length === 0 || (newIndexes === null && previousOf(newList) === oldList)) {
       if (newIndexes === null) {
         newIndexes = [];
         for(let i = 0; i < newList.length; i++) {
-          const newListIndex = createListIndex(parentListIndex, i, homeParentListIndex);
+          const newListIndex = createListIndex(parentListIndex, i);
           newIndexes.push(newListIndex);
         }
       }
@@ -203,6 +226,9 @@ function computeListDiff(
     // （別の要素を書いてから元の要素へ戻す — #333）、同じ中身の配列でも行が違い、前の配列の行（退役した行を
     // 含む）を被せると、新しい配列を描いた `for` に無い行が台帳に戻る
     if (isSameList(oldList, newList) && (newIndexes ?? oldIndexes) === oldIndexes) {
+      if (oldList !== newList) {
+        lendRows(oldList, oldIndexes, parentListIndex);
+      }
       return retValue = {
         oldIndexes: oldIndexes,
         newIndexes: oldIndexes,
@@ -232,6 +258,8 @@ function computeListDiff(
     // Build new indexes array by matching values with old list
     const changeIndexSet: Set<IListIndex> = new Set();
     const addIndexSet: Set<IListIndex> = new Set();
+    // 前の配列の行を 1 つでも新しい配列へ貸したか（listIndexesByList.ts の markListLent・#393）
+    let lent = false;
     for(let i = 0; i < newList.length; i++) {
       const newValue = newList[i];
       const existingIndexes = indexByValue.get(newValue);
@@ -239,12 +267,13 @@ function computeListDiff(
       
       if (typeof oldIndex === "undefined") {
         // New element
-        const newListIndex = createListIndex(parentListIndex, i, homeParentListIndex);
+        const newListIndex = createListIndex(parentListIndex, i);
         newIndexes.push(newListIndex);
         addIndexSet.add(newListIndex);
       } else {
         // Reuse existing element
         const existingListIndex = oldIndexes[oldIndex];
+        lent = true;
         // Judge position change against the old list's order (oldIndexes array
         // order), not the mutable .index — an earlier diff in the same batch
         // may have already moved .index toward a list that was never applied.
@@ -256,6 +285,9 @@ function computeListDiff(
       }
     }
     
+    if (lent) {
+      lendRows(oldList, newIndexes, parentListIndex);
+    }
     const deleteIndexSet: Set<IListIndex> = (new Set(oldIndexes)).difference(new Set(newIndexes));
     return retValue = {
       oldIndexes: oldIndexes,

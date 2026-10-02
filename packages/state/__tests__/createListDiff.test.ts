@@ -238,7 +238,7 @@ describe('createListDiff', () => {
      * 行ごとに home が違う集合ができると、「持ち主が戻ってきたか」の判定が
      * `listIndexes[0]` に当たった行で変わってしまう。
      */
-    it('引き継いだ行集合に足した行も、行集合の home を継ぐこと', () => {
+    it('別の親が引き継いで写しに足した行集合は、引き継いだ行も足した行もその親を home にすること（home は 1 つ）', () => {
       const listA = [{ v: 1 }, { v: 2 }];
       const home = createListIndex(null, 0);
       const rows = createListDiff(home, [], listA).newIndexes;
@@ -246,7 +246,11 @@ describe('createListDiff', () => {
         expect(getHomeParentListIndex(row)).toBe(home);
       }
 
-      // 別の生きた親がその行集合を引き継ぎ、先頭に 1 行足す（値照合の経路）
+      // 親が退役し、別の生きた親がその行集合を引き継いで、先頭に 1 行足す（値照合の経路）。生きた親から
+      // 引き継ぐ形は共有された配列の写しなので、行を貸さない（#393 — 下の別の it）。前の home は新しい配列を持ったことが
+      // 無いので、行集合ごと引き継いだ親を home にする — 前の home を継ぐと、home が配列を手放していないうちは行集合が
+      // そちらへ戻され、新しい配列の読み書きが前の home の配列に着地した（#394）
+      retireListIndexes([home]);
       const other = createListIndex(null, 1);
       const listB = [{ v: 0 }, ...listA];
       const grown = createListDiff(other, listA, listB).newIndexes;
@@ -255,7 +259,7 @@ describe('createListDiff', () => {
       expect(grown[1], '引き継いだ行は作り直さない').toBe(rows[0]);
       expect(grown[2]).toBe(rows[1]);
       for (const row of grown) {
-        expect(getHomeParentListIndex(row), '足した行の home も元の行集合のもの').toBe(home);
+        expect(getHomeParentListIndex(row), '引き継いだ行も足した行も、引き継いだ親が home').toBe(other);
       }
 
       setListIndexesByList(listA, null);

@@ -1506,7 +1506,12 @@ describe("欠陥6: 描画ありでも、in-place の深い変異を構造変化�
   //         なお混ざり *方* は固定契約ではない: C-replace のプローブは同じ操作で鏡像の
   //         t0=[221,112]（value が残り children が動く形）を観測している。ここで
   //         固定するのは「行と子サブツリーが分離する」ことで、下の実測値はその現れ。
-  it("in-place の arr.reverse() は、描画ありでも行の value と子サブツリーがずれる", async () => {
+  //         #393 / #394 の修理（行の下の読みを行のいまの親から引く・差分のキャッシュが当たっても台帳を引き直す）の後は、
+  //         行 1（value 1）も value 2 の子（20 → total 120）を抱えて 121 になる（それまでは 221）。
+  //         R1 の修理（行のアドレスは、いまの親がそのキーで行の配列を持たなければ憶えた親を使う — address/StateAddress.ts）
+  //         の後は、この形では行と子サブツリーが揃い、should be の値になる。in-place の並べ替えが保証外であることは変わらない
+  //         （揃うのはこの形での結果で、契約ではない）。
+  it("in-place の arr.reverse() でも、この形では行の value と子サブツリーが揃うこと（保証外）", async () => {
     for (const [label, assign] of [
       ["同一参照", (s: any, arr: any[]) => { s.nodes = arr; }],
       ["コピー", (s: any, arr: any[]) => { s.nodes = [...arr]; }],
@@ -1524,10 +1529,10 @@ describe("欠陥6: 描画ありでも、in-place の深い変異を構造変化�
       // 行の value は正しく反転している（生データも [2,1]）
       expect(txt(shadowRoot, ".v0"), label).toEqual(["2", "1"]);
       expect(valuesAt(stateEl, 0), label).toEqual([2, 1]);
-      // ところが子は動いていない。行 0（value 2）の子が value 10 のまま
-      expect(txt(shadowRoot, ".v1"), label).toEqual(["10", "20"]); // should be: ["20","10"]
-      expect(txt(shadowRoot, ".t0"), label).toEqual(["112", "221"]); // should be: ["222","111"]
-      expect(totalsAt(stateEl, 0), label).toEqual([112, 221]);
+      // 子も行に付いて動く（R1 の修理の前は、行 0（value 2）の子が value 1 の子のまま）
+      expect(txt(shadowRoot, ".v1"), label).toEqual(["20", "10"]);
+      expect(txt(shadowRoot, ".t0"), label).toEqual(["222", "111"]);
+      expect(totalsAt(stateEl, 0), label).toEqual([222, 111]);
     }
   });
 });

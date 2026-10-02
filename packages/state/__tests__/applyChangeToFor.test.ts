@@ -5,7 +5,8 @@ vi.mock('../src/binding/getAbsoluteStateAddressByBinding', () => {
   return {
     getAbsoluteStateAddressByBinding: vi.fn((binding) => {
       if (cache.has(binding)) return cache.get(binding);
-      const addr = { absolutePathInfo: { stateName: binding.stateName, pathInfo: binding.statePathInfo }, listIndex: null };
+      // 描画の基準の逆引きは state 要素ごと（lastListValueByAbsoluteStateAddress.ts・#379）
+      const addr = { absolutePathInfo: { stateName: binding.stateName, pathInfo: binding.statePathInfo, stateElement: document }, listIndex: null };
       cache.set(binding, addr);
       return addr;
     }),
