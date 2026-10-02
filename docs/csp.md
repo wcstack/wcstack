@@ -275,10 +275,10 @@ The rejection from a dynamic `import()` that CSP blocked says only `Failed to fe
 | Output | Meaning |
 |---|---|
 | `... was blocked by Content-Security-Policy` | **CSP confirmed.** Give the page's nonce to the `<script>` that loads state / router, add `script-src blob:`, or (state only) move to `src=` |
-| `Failed to evaluate the inline <script> of state "…"` (state) / `loadGuardHandler: failed to import guard script …` (router) | No violation was observed. Usually a syntax error in the state definition or the guard. State embeds the original error's message in its own; router keeps the original error in `cause` |
+| `Failed to evaluate the inline <script> of state "…"` (state) / `loadGuardHandler: failed to import guard script …` (router) | No violation was observed. Usually a syntax error in the state definition or the guard. State embeds the original error's message in its own (from 3.5 it also keeps the error in `cause`); router keeps the original error in `cause` |
 
 Not asserting CSP when no violation was observed is deliberate: it keeps a syntax error from being misattributed to the policy.
 
-The CSP-confirmed message of state and router up to 3.4.0 names only `script-src blob:` (state also `src=`) as the fix. The nonce on the `<script>` that loads the bundle (§4, §5) works as well.
+The CSP-confirmed message of state and router up to 3.4.0 names only `script-src blob:` (state also `src=`) as the fix. The nonce on the `<script>` that loads the bundle (§4, §5) works as well. From 3.5 their CSP-confirmed messages name the nonce too.
 
-**Firefox fires the violation event after the import has failed** (in the next task; Chromium and WebKit fire it before the failure — checked 2026-09-28). State and router up to 3.4.0 decide as soon as the import fails, so on Firefox a CSP block yields the non-asserting message (the second row). On Firefox, read that row as "check the CSP too".
+**Firefox fires the violation event after the import has failed** (in the next task; Chromium and WebKit fire it before the failure — checked 2026-09-28). State and router up to 3.4.0 decide as soon as the import fails, so on Firefox a CSP block yields the non-asserting message (the second row). On Firefox, read that row as "check the CSP too". From 3.5, state and router wait that one task before deciding, so Firefox gets the CSP-confirmed message as well.

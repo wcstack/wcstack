@@ -274,10 +274,10 @@ CSP にブロックされた動的 `import()` の rejection は `Failed to fetch
 | 出力 | 意味 |
 |---|---|
 | `... was blocked by Content-Security-Policy` | **CSP 確定**。state／router を読み込む `<script>` にページの nonce を付けるか、`script-src blob:` を足すか、（state のみ）`src=` に逃がす |
-| `Failed to evaluate the inline <script> of state "…"`（state）／`loadGuardHandler: failed to import guard script …`（router） | CSP は観測されなかった。多くは state 定義やガードの構文エラー。元のエラーは、state ではその文面がメッセージに埋め込まれ、router では `cause` に入っている |
+| `Failed to evaluate the inline <script> of state "…"`（state）／`loadGuardHandler: failed to import guard script …`（router） | CSP は観測されなかった。多くは state 定義やガードの構文エラー。元のエラーは、state ではその文面がメッセージに埋め込まれ（3.5 からは `cause` にも入る）、router では `cause` に入っている |
 
 違反が観測できなかった場合に CSP を断定しないのは意図的で、構文エラーを CSP のせいだと誤誘導しないため。
 
-3.4.0 までの state と router の CSP 確定メッセージは、対処として `script-src blob:`（state は `src=` も）しか挙げない。バンドルを読み込む `<script>` に nonce を付ける方法（§4・§5）でも通る。
+3.4.0 までの state と router の CSP 確定メッセージは、対処として `script-src blob:`（state は `src=` も）しか挙げない。バンドルを読み込む `<script>` に nonce を付ける方法（§4・§5）でも通る。3.5 からは、CSP 確定メッセージも nonce を挙げる。
 
-**Firefox は違反イベントを import の失敗より後に出す**（次のタスク。Chromium と WebKit は失敗より先。2026-09-28 確認）。3.4.0 までの state と router は、import が失敗した時点で判定するので、Firefox では CSP で止められても非断定の文面（2 行目）になる。Firefox では 2 行目を「CSP も疑う」と読むこと。
+**Firefox は違反イベントを import の失敗より後に出す**（次のタスク。Chromium と WebKit は失敗より先。2026-09-28 確認）。3.4.0 までの state と router は、import が失敗した時点で判定するので、Firefox では CSP で止められても非断定の文面（2 行目）になる。Firefox では 2 行目を「CSP も疑う」と読むこと。3.5 からは、state と router がその 1 タスクを待ってから判定するので、Firefox でも CSP 確定メッセージになる。
