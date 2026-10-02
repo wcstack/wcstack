@@ -2,6 +2,7 @@ import { assignParams } from "../assignParams.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { ILayout, ILayoutOutlet } from "./types.js";
+import { offerToBinder } from "../routeRange.js";
 
 export class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
   private _layout: (ILayout & Pick<Element,'childNodes'>) | null = null;
@@ -92,6 +93,10 @@ export class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
 
         this.appendChild(fragmentForTemplate);
       }
+      // 置いた後で binder へ渡す（D5）。遷移で入ったルートの内容は router が渡す時点では文書の外で、
+      // レイアウトのテンプレート自身の束縛もここでしか渡せない（shadow root の中は対象外）。light DOM は
+      // 初期化の前は空なので、子が置いたもの。写して回す（渡した直下の for: が行を足すと番号がずれる）
+      offerToBinder(Array.from(this.childNodes));
     } finally {
       this._initializing = false;
     }

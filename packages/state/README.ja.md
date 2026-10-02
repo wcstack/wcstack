@@ -328,7 +328,9 @@ install 時に埋める受け口を通ります）。
 
 解決順序: `state` → `src` (.json / .js) → `json` → 内包 `<script>` → `setInitialState()` 待機。
 
-> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため `script-src blob:` が必要です。ページの nonce では救えません。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
+5 番の `<script type="module">` はブラウザ自身も評価します（`<wcs-state>` の中にあっても止まりません）。export はどこにも届かないので state には影響しませんが、トップレベルのコードは 2 回走ります（ブラウザが 1 回、state が 1 回）。トップレベルに副作用（リクエスト・ログ出力・グローバルへの代入）を置かないでください。CSP 下では下の注記を参照してください。
+
+> **Content-Security-Policy 下では:** 5 番（内包 `<script type="module">`）は `blob:` URL 経由で評価されるため、state を読み込む `<script>` にページの nonce を付けるか（blob: の import がその nonce を引き継ぎます）、`script-src blob:` が必要です。厳格な CSP を敷く場合は 4 番（`src="./state.js"`）を使ってください。追加ディレクティブは不要です。なお 5 番の `<script>` はブラウザ自身も評価します。CSP 下では、その `<script>` にも nonce を付けない限りコンソールに違反が 1 件出ます。nonce を付けた場合や CSP が無い場合は、トップレベルのコードが 2 回走ります（副作用を置かないこと）。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)。
 
 ### 追加の状態をマウントする（`mount=`）
 
