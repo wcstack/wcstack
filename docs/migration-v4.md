@@ -498,7 +498,7 @@ New in 4.0, and optional:
   - Shown route content now ends with a comment, `<!--@@wcs-route-end:/path-->` (the text of the SSR end marker), so the outlet has one more child node. `:empty` is unaffected.
   - Leaving a route takes out everything from the route's start to that marker — including rows and branches that `@wcstack/state` rendered there and nodes your code inserted — and entering puts it back. The router up to 3.4.0 moved only the route's original nodes and left the rest in the outlet. Showing the route that is already shown (a parameter change) does not move its content.
   - `for:` / `if:` templates placed directly under `<wcs-route>` render when the route is entered by navigation, with `@wcstack/state` 4.0. With the router up to 3.4.0, inside `<wcs-head>`, or when other code inserts the content, 4.0 does not render them and reports `[wcs/template-syntax] #204` on the console; 3.x never rendered them. Wrapped in an element, they render in every combination.
-  - Route content inside a `<wcs-layout>`, and the layout template's own bindings, are bound on the first navigation into it too (the router up to 3.4.0 had them bound from the second).
+  - Route content inside a `<wcs-layout>`, and the layout template's own bindings, are bound on the first navigation into it too (the router up to 3.4.0 left them unbound when the route was entered by navigation, and a `for:` inside never rendered, even on later visits).
   - Unchanged: text `{{ }}` placed directly in a route body or a layout template, not inside an element, is not bound when the route is entered by navigation. Wrap it in an element.
 - **`@wcstack/server`**: §3.6.
 - **`@wcstack/autoloader` and the I/O node packages**: the `bootstrapXxx()` options rule and `scanImportmap` (§3.2).
