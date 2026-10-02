@@ -18,7 +18,7 @@
 - SSR output is not compatible with 3.x: `@wcstack/server` and the client move together.
 - A few rendering rules and public API members change.
 
-The path is: **upgrade to 3.5 first, clear its warnings, then move to 4.0.** All `@wcstack/*` packages move to each version together, as in every release.
+The path is: **upgrade to 3.5 first, clear its warnings (all but those for the three options that move to `$behavior`, §1.8), then move to 4.0.** All `@wcstack/*` packages move to each version together, as in every release.
 
 ## Summary checklist
 
