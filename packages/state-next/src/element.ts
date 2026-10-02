@@ -86,6 +86,8 @@ export class WcsState extends HTMLElement {
   private initial: Record<string, any> | null = null;
   /** Taken over by an add-on (a volume, a DCC definition): it never becomes a root. */
   private claimed: Claimed | null = null;
+  /** A claimed element's state is loaded: `setInitialState` from now on is the add-on's re-set. */
+  private loaded = false;
   private receiveInitial: ((state: Record<string, any>) => void) | null = null;
 
   constructor() {
@@ -120,7 +122,10 @@ export class WcsState extends HTMLElement {
     const claimed = hooks.claim?.(this, root);
     if (claimed) {
       this.claimed = claimed;
-      void (claimed.load === undefined ? this.loadState() : claimed.load()).then((state) => claimed.start(state)).catch((e) => console.error(e)).finally(() => {
+      void (claimed.load === undefined ? this.loadState() : claimed.load()).then((state) => {
+        this.loaded = true;
+        return claimed.start(state);
+      }).catch((e) => console.error(e)).finally(() => {
         this.resolveInitialize();
         this.resolveConnected();
       });
@@ -147,8 +152,9 @@ export class WcsState extends HTMLElement {
    */
   setInitialState(state: Record<string, any>): void {
     if (this.failed) raise(M.ElementFailed);
-    if (this.claimed !== null && this.receiveInitial === null) {
-      this.claimed.reset(state);
+    // (until a claimed element's state is loaded, this supplies it like a root's)
+    if (this.loaded) {
+      this.claimed!.reset(state);
       return;
     }
     if (this.engine !== null) {
@@ -181,6 +187,11 @@ export class WcsState extends HTMLElement {
     const engine = this.engine;
     if (engine === null) raise(M.NotInitialized);
     await callback(mutability === "writable" ? engine.proxy : new Proxy(engine.proxy, {
+      // as in createState("readonly"), the writes of $setAll and $resolve (path, indexes, value) refuse
+      get(t, k) {
+        const v = t[k as string];
+        return k === "$setAll" || k === "$resolve" ? (...a: unknown[]) => (a.length > 2 && raise(M.Readonly), v(...a)) : v;
+      },
       set() {
         raise(M.Readonly);
       },
@@ -245,19 +256,15 @@ export class WcsState extends HTMLElement {
  * too. Weak: a server creates a registry per render, and holding them would keep every render's
  * registry (and every constructor defined in it) alive.
  */
-const refs: WeakRef<CustomElementRegistry>[] = [];
+let refs: WeakRef<CustomElementRegistry>[] = [];
 
-/** The registries still alive (dead references are dropped). */
+/**
+ * The registries still alive (dead references are dropped). A registry deref() returned stays
+ * alive until the end of this job, so the second deref() of each kept reference finds it.
+ */
 export function registries(): CustomElementRegistry[] {
-  const live: CustomElementRegistry[] = [];
-  for (const ref of refs.splice(0)) {
-    const r = ref.deref();
-    if (r !== undefined) {
-      live.push(r);
-      refs.push(ref);
-    }
-  }
-  return live;
+  refs = refs.filter((r) => r.deref());
+  return refs.map((r) => r.deref()!);
 }
 
 /**

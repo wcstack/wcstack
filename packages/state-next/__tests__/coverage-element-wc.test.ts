@@ -6,7 +6,6 @@
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState, getBindingsReady } from "../src/index";
-import { isCustomTag } from "../src/dom/wc";
 import { M } from "../src/messages";
 
 // the core's own message (no diagnostics add-on here): [@wcstack/state] [wcs/<code>] #<number> <values>
@@ -128,11 +127,6 @@ describe("wc-bindable の宣言の読み取り", () => {
     const message = await failure(`<${tag} data-wcs="command.go: $command.t"></${tag}>`, { $commandTokens: ["t"] });
     expect(message).toMatch(core(M.NoCommand));
     expect(message).toBe(`[@wcstack/state] [wcs/token-misconfigured] #1203 "${tag}" "go"`);
-  });
-
-  it("isCustomTag はタグ名にハイフンを含む要素だけを真とする", () => {
-    expect(isCustomTag(document.createElement("x-foo"))).toBe(true);
-    expect(isCustomTag(document.createElement("div"))).toBe(false);
   });
 });
 
@@ -393,11 +387,12 @@ describe("コマンドトークン（command.<method>:）", () => {
     expect(message).toBe(`[@wcstack/state] [wcs/token-misconfigured] #1202 "${tag}" "command.go"`);
   });
 
-  it("要素が文書から外れた後の emit は要素を呼ばず、その購読を外す", async () => {
+  it("文書から外れている間の emit は要素を呼ばずに購読を保ち、同じ要素が戻ればまた呼ぶ", async () => {
     const tag = nextTag();
     defineCommands(tag);
-    const { root, el } = await page(`<${tag} data-wcs="command.go: $command.t"></${tag}>`, { $commandTokens: ["t"] });
+    const { root, el } = await page(`<main><${tag} data-wcs="command.go: $command.t"></${tag}></main>`, { $commandTokens: ["t"] });
     const c = root.querySelector(tag) as any;
+    const main = root.querySelector("main")!;
     const emit = (n: number): unknown => {
       let r: unknown;
       el.createState("writable", (s: any) => { r = s.$command.t.emit(n); });
@@ -409,12 +404,33 @@ describe("コマンドトークン（command.<method>:）", () => {
       return n;
     };
     expect(emit(1)).toEqual([2]);
+    // a route hidden with its nodes kept, then shown again
     c.remove();
-    expect(size()).toBe(1);
     expect(emit(2)).toEqual([undefined]);
     expect(c.got).toEqual([1]);
-    expect(size()).toBe(0);
-    expect(emit(3)).toEqual([]);
+    expect(size()).toBe(1);
+    main.appendChild(c);
+    expect(emit(3)).toEqual([6]);
+    expect(c.got).toEqual([1, 3]);
+  });
+
+  it("回収された要素の購読は、次の emit で外す", async () => {
+    const tag = nextTag();
+    defineCommands(tag);
+    // stands in for a garbage collection: the reference the subscription keeps is already dead
+    vi.stubGlobal("WeakRef", class { deref(): undefined { return undefined; } });
+    let p: Awaited<ReturnType<typeof page>>;
+    try {
+      p = await page(`<${tag} data-wcs="command.go: $command.t"></${tag}>`, { $commandTokens: ["t"] });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    let r: unknown;
+    let size = -1;
+    p.el.createState("writable", (s: any) => { r = s.$command.t.emit(1); size = s.$command.t.size; });
+    expect(r).toEqual([undefined]);
+    expect(size).toBe(0);
+    expect((p.root.querySelector(tag) as any).got).toEqual([]);
   });
 
   it("行の中のコマンドは行ごとに購読し、行が消えるとその場で購読を外す（1 要素に複数のコマンド）", async () => {

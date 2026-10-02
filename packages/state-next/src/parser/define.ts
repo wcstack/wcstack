@@ -35,5 +35,3 @@ export const MAX_PATH_SEGMENTS = 512;
 
 /** Recursive wildcard — only meaningful in `$recursion` declarations, never in a binding path. */
 export const RECURSION_WILDCARD = '**';
-
-/** Appended to the syntax diagnostics that `@wcstack/lint` also detects. */

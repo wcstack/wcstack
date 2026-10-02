@@ -134,10 +134,6 @@ export class PatternTable {
     return p;
   }
 
-  has(path: string): boolean {
-    return this.byPath.has(path);
-  }
-
   all(): IterableIterator<Pattern> {
     return this.byPath.values();
   }

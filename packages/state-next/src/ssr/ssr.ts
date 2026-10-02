@@ -24,11 +24,13 @@
  * the builder protocol, and the property value table (every binding is applied on adoption).
  */
 import type { Engine } from "../engine";
-import { ForView, type Block, type IfView, type RowPlan } from "../dom/view";
+import { ForView, type Block, type IfView, type RowPlan, type Spec } from "../dom/view";
 import { config } from "../config";
 import { hooks } from "../hooks";
 
 import { VERSION } from "../version";
+import { isOuter } from "../dom/plan";
+import { majorMinor } from "./element";
 /** The snapshot element's tag (`config.tagNames.ssr`, `wcs-ssr` by default). */
 const tag = (): string => config.tagNames.ssr;
 const BUILDER = Symbol.for("wcstack.ssr.snapshotBuilder");
@@ -309,8 +311,6 @@ export function adoptScope(host: Node): (() => void) | null {
   };
 }
 
-const majorMinor = (v: string): string => v.split(".").slice(0, 2).join(".");
-
 /** The `element` hook, "mounting": a client root with a server snapshot adopts the server's DOM. */
 export function hydrate(engine: Engine): void {
   const el = engine.element as Element;
@@ -333,6 +333,8 @@ export function hydrate(engine: Engine): void {
       if (d !== undefined && (d.get !== undefined || d.set !== undefined || typeof d.value === "function")) continue;
       target[key] = snap[key];
     }
+    // the snapshot holds the server's volume data too: a volume adopts it (scopes/volume.ts)
+    e.hydrated = true;
   }
   const root = el.getRootNode() as Document | ShadowRoot;
   prepare(root.nodeType === 9 ? (root as Document).body : root, ssr, same);
@@ -352,9 +354,19 @@ export function hydrated(engine: Engine): void {
   hooks.adopt = null;
 }
 
-/** The `ssrMark` hook: on the server, records; on the client, a held region follows its template's anchor. */
-export function ssrMark(engine: Engine, node: Node, source: Element | string): void {
+/**
+ * The `ssrMark` hook: on the server, records (and leaves `outerHTML:` / `outerText:` to the client); on the client,
+ * a held region follows its template's anchor.
+ */
+export function ssrMark(engine: Engine, node: Node, source: Element | string | Spec[]): void {
   if (isServer()) {
+    if (source instanceof Array) {
+      // `outerHTML:` / `outerText:` replace the element with the value: the client would find no
+      // binding there, and walk the value as the page's markup. The server renders the element as
+      // written; the client binds it and applies the value
+      for (let i = source.length; i-- > 0; ) if (isOuter(source[i].name)) source.splice(i, 1);
+      return;
+    }
     if (typeof source === "string") {
       node.parentNode!.insertBefore(mark(`wcs-t:${encodeURIComponent(source)}`), node);
       node.parentNode!.insertBefore(mark("wcs-/t"), node.nextSibling);
@@ -369,10 +381,11 @@ export function ssrMark(engine: Engine, node: Node, source: Element | string): v
     es.add(engine);
     return;
   }
+  // (an element's specs are never a key: the templates the anchors replaced are)
   if (typeof source !== "string" && held.size > 0) {
-    const r = held.get(source);
+    const r = held.get(source as Element);
     if (r !== undefined) {
-      held.delete(source);
+      held.delete(source as Element);
       held.set(node, r);
     }
   }

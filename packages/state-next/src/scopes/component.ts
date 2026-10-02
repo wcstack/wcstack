@@ -19,7 +19,7 @@
  * A whole mount's accessors are exported at the mount point (README "Exported getters"): the host
  * reads `user.display` (row by row for `state: .`) from the component mounted there, unless the
  * tree has the key.
- * A mounted component runs no temporal declaration and no `$renderedCallback`.
+ * A mounted component runs no temporal declaration and no `$renderedCallback`, and refuses `$recursion`.
  */
 import { Engine, rowAt } from "../engine";
 import { WILDCARD, type Pattern } from "../pattern";
@@ -32,6 +32,7 @@ import { mount } from "../dom/mount";
 import { drainBinds } from "../dom/binder";
 import { registryOf } from "../dom/wc";
 import { raiseError } from "../parser/raiseError";
+import { watchRoot } from "./volume";
 
 interface Entry {
   /** The component-side path ("" = the whole state). */
@@ -104,7 +105,8 @@ let registered = 0;
 const active = new Set<Engine>();
 
 const UNWIRED = {};
-const INERT = ["$watch", "$stream", "$listKeys", "$renderedCallback"];
+/** Declarations a mounted component does not run (`$listKeys` runs: it keys the component's own lists). */
+const INERT = ["$watch", "$stream", "$renderedCallback"];
 
 const headOf = (path: string): string => path.split(".", 1)[0];
 
@@ -377,16 +379,20 @@ function register(m: Mount, on: boolean): void {
   const whole = m.host.entries.find((e) => e.inner === "");
   if (whole === undefined) return;
   if (m.exports === null) exportAccessors(m, whole);
-  // the host's readers of the exported paths: the component answers them now, or no longer
-  for (const hp of m.exports!.keys()) H.strategy.invalidate(H, hp, whole.row);
+  // the host's readers of the exported paths: the component answers them now (a re-set of the
+  // host while it was away forgot the answer), or no longer
+  for (const hp of m.exports!.keys()) {
+    if (on && hp.getter === null) answer(H, hp, whole.outer);
+    H.strategy.invalidate(H, hp, whole.row);
+  }
   if (m.exports!.size > 0) H.schedule();
   if (on) warnShadowed(m, whole);
 }
 
 // ---------------------------------------------------------------- exported accessors
 
-/** Host patterns an export answers (`user.display`, `users.*.display`). */
-const exporting = new WeakSet<Pattern>();
+/** The getters `answer` gave host patterns (a re-set of the host forgets them with its accessors). */
+const exporting = new WeakSet<object>();
 
 /**
  * README "Exported getters": a whole mount's accessors (getters and setters, not methods or
@@ -408,8 +414,9 @@ function exportAccessors(m: Mount, whole: Entry): void {
       const head = headOf(k);
       if (k !== head && !own(h, head)) continue;
       const hp = H.pattern(`${whole.outer.path}.${k}`);
-      if (hp.getter !== null && !exporting.has(hp)) continue;
-      if (!exporting.has(hp)) answer(H, hp, whole.outer);
+      // the host's own accessor there wins
+      if (hp.getter === null) answer(H, hp, whole.outer);
+      else if (!exporting.has(hp.getter)) continue;
       m.exports.set(hp, m.component.pattern(k));
     }
   }
@@ -432,7 +439,6 @@ function exporter(H: Engine, outer: Pattern, row: StateRow | null, hp: Pattern):
 
 /** Makes host pattern `hp` read (and write) the accessor of the component mounted at `outer`, row by row. */
 function answer(H: Engine, hp: Pattern, outer: Pattern): void {
-  exporting.add(hp);
   const parent = hp.parent!;
   const last = hp.last;
   /** The tree's object that has the key, or null. */
@@ -446,6 +452,7 @@ function answer(H: Engine, hp: Pattern, outer: Pattern): void {
     const m = exporter(H, outer, H.ctx, hp);
     return m === null ? undefined : m.component.read(m.exports!.get(hp)!, null);
   };
+  exporting.add(hp.getter);
   hp.setter = (value: unknown) => {
     const o = tree();
     const m = o === null ? exporter(H, outer, H.ctx, hp) : null;
@@ -628,6 +635,10 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   const loading = loadFeatures(state);
   if (loading) await loading;
   const h = hosts.get(host)!;
+  // a mounted engine is never "mounting": its `$recursion` would run half set up — refused, as in a volume
+  if (h.engine && state.$recursion) {
+    raiseError(`[wcs/mount-dollar-declaration] <${host.localName}>: $recursion is not run in a mounted component — declare it on the root state.`);
+  }
   const old = h.current;
   if (old !== null && old.el !== el && old.el.isConnected) {
     raiseError(`<${host.localName}> already has a connected <${config.tagNames.state} bind-component="${h.prop}">.`);
@@ -669,9 +680,10 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
 }
 
 /** `<wcs-state bind-component="prop">`: claimed instead of becoming a root of its page. */
-export function claimComponent(el: HTMLElement, _root: Node): Claimed | null {
+export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
   const prop = el.getAttribute("bind-component");
-  if (prop === null) return null;
+  // the last claim: a `<wcs-state>` neither a volume nor a DCC definition nor a component is a root
+  if (prop === null) return watchRoot(el, root);
   const parent = el.parentNode;
   const shadow = parent instanceof ShadowRoot;
   const host = shadow ? (parent as ShadowRoot).host : parent instanceof Element ? parent : null;

@@ -1,4 +1,4 @@
-/** The formats add-on (@wcstack/state/features/formats): the 24 formatting filters (locale-aware). */
+/** The formats add-on (@wcstack/state/features/formats): the 23 formatting filters (locale-aware). */
 import type { Feature } from "../hooks";
 import { installFormats } from "../filters/formats";
 

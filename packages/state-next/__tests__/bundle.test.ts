@@ -95,3 +95,18 @@ describe("縮めたバンドルでの DevTools の面（外へ渡すキーは縮
     }
   });
 });
+
+describe("縮めたバンドルでの manifest（外へ渡すキーは縮められない）", () => {
+  it("getWcsManifest() がソースと同じキーと値を返す（filters が縮められない）", async () => {
+    const outfile = resolve(__dirname, "../node_modules/.cache/state-next/manifest.bundle.mjs");
+    await build({
+      entryPoints: [resolve(__dirname, "../src/public/manifest.ts")], bundle: true, minify: true, format: "esm",
+      target: "es2022", outfile, legalComments: "none", mangleProps: MANGLE_PROPS, logLevel: "error",
+    });
+    await terse(outfile);
+    const bundled = await import(/* @vite-ignore */ `${pathToFileURL(outfile).href}?t=${Date.now()}`);
+    const { getWcsManifest } = await import("../src/public/manifest");
+    expect(Object.keys(bundled.getWcsManifest())).toContain("filters");
+    expect(bundled.getWcsManifest()).toEqual(getWcsManifest());
+  }, 60000);
+});

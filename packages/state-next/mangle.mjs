@@ -18,25 +18,24 @@
 const NAMES = `
   pattern patterns depth kind lists strategy initial branches parentRow delegated chain owner exclude alive
   propSegments propModifiers propName statePathName inFilters outFilters twoWay untracked
-  readUntracked readGetter readData evalGetter applyBinding visitGetter walkDependents walkChange enqueueBound
-  enqueue enqueueSlots slotBinding schedule noteRendered callHook callHookDetached
-  rootBindings rootLists rootList childList rootValue dirtyLists scheduled frames depthNow slotCount readonlyDepth
-  blockKey dependents dependentSet addDependent crossSources indexDependent underGetter indexWatchers
-  eqSubs eqIndexWatchers eqIndexKeys rootEqSubs subscribeEq rekeyEq rekeyEqUnder rekeyEqIndex syncListsUnder
-  rowRemoved indexChanged invalidate onWrite onIndexChange beforeDrain resetRow forSubtree forAllRows forRowsUnder
-  onPatternCreated registerAccessors emitCommand fireEventToken indexesOf resolveApi contextIndexes forMatches
-  drainFn untrackedFn eqIndexFn eqFn eqPathFn dependOnFn getAllFn setAllFn resolveFn postUpdateFn
+  readUntracked readGetter readData evalGetter applyBinding visitGetter walkDependents enqueueBound
+  enqueue enqueueSlots slotBinding schedule noteRendered callHook
+  rootBindings rootLists childList rootValue dirtyLists scheduled frames depthNow slotCount readonlyDepth
+  blockKey dependents dependentSet addDependent crossSources underGetter indexWatchers
+  eqSubs eqIndexWatchers eqIndexKeys rootEqSubs subscribeEq rekeyEqUnder rekeyEqIndex syncListsUnder
+  rowRemoved indexChanged invalidate onWrite onIndexChange resetRow forSubtree forAllRows forRowsUnder
+  onPatternCreated registerAccessors emitCommand fireEventToken indexesOf forMatches drainFn
   subscribers elementValue writeBack typeName removeNodes viewOf isUnder rowViews queued applying
   nodePaths scratch lazy specs slots bound cleanups
   bindingType node path row ctx plan list view rows item extra cache slot custom prevent stop init anchor
   first last nodes current token events top parent byPath queue errors filterName setter listener draining
   watchRendered resolveConnected rejectConnected receiveInitial report rendered sync update dispose write
-  children filters forget resetList applyPass deliverFn delegate stale staleLists
+  children filters forget resetList deliverFn delegate stale staleLists
   invalidateUnder checkArity resolveInitialize claimed occurrence loadState onCreate unregister changed mark dropped
   dropWork fedBack codeWrote feeding unchainFn renderedFn markupAccessor handlerWrote otherWrote
-  listsByArray share mirror shared landed loadTarget forListsUnder forAllLists api postUpdate callAt rowOf
+  listsByArray mirror shared landed loadTarget forListsUnder forAllLists api callAt rowOf
   explain render beforeWrite written getterReached listSynced drained declare claim dollar failed hostBinding
-  componentScope ssrMark adopt adoptScope declared tags mustache guard directional load
+  componentScope ssrMark adopt adoptScope declared tags mustache guard directional load unfile epoch failAt
 `.trim().split(/\s+/);
 
 export const MANGLE_PROPS = new RegExp(`^(?:${NAMES.join("|")})$`);

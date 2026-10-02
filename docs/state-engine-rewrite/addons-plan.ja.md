@@ -302,6 +302,11 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 - 次は接ぎ木せずに報告し、`connectedCallbackPromise` は解決する（現行と同じ）: 不正なマウントパス、同じパスの 2 つ目、根に既にあるキー。
 - 次は投げる（現行と同じ）: volume の再セット、volume を持つ根の再セット、volume を含む祖先の書き換え。
 - 承認済みの簡素化: 注入（`data-wcs="state.k: …"`）と、volume に書いた `$watch`／`$listKeys`／`$renderedCallback`／`$stream` は、黙って無視せずにエラーにする。`$commandTokens` など根の持ち物は警告する。
+- 後の変更（2026-10-01、品質改善のサイクル 1）:
+  - メソッドは、データではなく、パスの accessor として登録する（`p.<method>` の getter が、閉じた `this` に束ねた関数を返す）。getter／setter と同じく、根の `registerAccessors` を通す。スナップショットやマウントパスの丸ごとの書き換えでデータが入れ替わっても残る。`Object.keys(p)` にメソッドは出ない。
+  - スナップショットから状態を重ねた根（SSR のクライアント）では、マウントパスに既にある値を衝突とせず、採用する（現行の D14）。データは書かず、accessor とメソッドだけを登録する。根のキーとの衝突の報告は、それ以外の根に限る。
+  - 根が初期化に失敗したら、待っている volume は `will not graft: the root state failed to initialize.` と報告して決着する（`connectedCallbackPromise` は解決する）。その後に読み込んだ volume も同じ。根のエンジンが新しくできれば、待ちに戻る。根が無いあいだは、現行と同じく待ち続ける。
+  - 行の getter（`get "items.*.sub"()`）にキャッシュの枠を割り当てた（以前は常に undefined だった）。`$eqIndex` のパスもマウントからの相対にした。
 
 **DCC**（`src/scopes/dcc.ts`）
 - `[data-wc-definition]` のホストの shadow の中にある `<wcs-state>` から、ホストのタグの要素クラスを定義する。各インスタンスは定義の中身の複製を shadow に持ち、その中の `<wcs-state>` は普通の根になる。
@@ -391,7 +396,9 @@ A は「診断は後付け」（scope-classification の決定）と同じ線で
 
 **現行と変えたこと**
 - 後回し（承認済み）: エクスポートした getter（ホストからコンポーネントの getter を読む）と `#ro`。
-- マウントしたコンポーネントで動かないのは、`$watch`／`$stream`／`$listKeys`／`$renderedCallback`（`[wcs/mount-dollar-declaration]` で警告）。token（`$commandTokens` など）と `$errorCallback` は、コンポーネント自身のエンジンで動く（現行は無視して警告）。
+- マウントしたコンポーネントで動かないのは、`$watch`／`$stream`／`$renderedCallback`（`[wcs/mount-dollar-declaration]` で警告）。token（`$commandTokens` など）と `$errorCallback` は、コンポーネント自身のエンジンで動く（現行は無視して警告）。
+  - 2026-10-01 訂正: 当初は `$listKeys` も「動かない」側に入れて警告していたが、実際はコンポーネント自身の一覧に効いていた。警告から外し、効くことを約束にした。
+  - 2026-10-01 追記: `$recursion` は、結線したコンポーネントでは、エンジンを作る前に `[wcs/mount-dollar-declaration]` のエラーで拒む。結線したエンジンには `"mounting"` が来ないので、宣言が半端に動いていた。現行 3.x の README の表では、マウントしたコンポーネントの `$recursion` は警告して動かさない（「not run — warning」。拒否は volume の欄だけ）。4.0 では警告ではなくエラーにした（volume と同じ扱い）。
 - 私有データは要素ごと。行の要素を直接書き換える（`users.1 = obj`）と、行と要素がそのまま残るので、私有データも残る。これは承認済みの「要素の書き込みは位置のモデル」と同じ。現行は、行の私有データをスナップショットから作り直す。
 
 **確かめたこと**

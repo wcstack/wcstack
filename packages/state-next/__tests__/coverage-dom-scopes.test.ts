@@ -2,7 +2,7 @@
  * coverage-dom-scopes.test.ts — a property binding on a custom element without a wc-bindable
  * declaration, with the scopes add-on installed (src/dom/view.ts attachCustomOrPlain).
  */
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState, getBindingsReady, installFeatures, scopes } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -58,7 +58,7 @@ describe("プレーンなカスタム要素へのプロパティバインディ�
     expect(c.shadowRoot.querySelector("p").textContent).toBe("tree 2");
   });
 
-  it("自分の状態を受け取った後のコンポーネントに後から結線を渡すと投げる（黙って捨てない）。コンポーネントは自分の状態のまま", async () => {
+  it("自分の状態を受け取った後のコンポーネントに後から結線を渡すと報告する（黙って捨てない。binder は投げない）。コンポーネントは自分の状態のまま", async () => {
     const tag = component();
     const { root, write } = await page(`<main></main>`, { x: "tree" });
     const c = document.createElement(tag) as any;
@@ -66,11 +66,16 @@ describe("プレーンなカスタム要素へのプロパティバインディ�
     await (c.shadowRoot.querySelector("wcs-state") as any).connectedCallbackPromise;
     await flush();
     expect(c.shadowRoot.querySelector("p").textContent).toBe("own");
-    // the wiring arrives late (handed over through the binder protocol)
+    // the wiring arrives late (handed over through the binder protocol): bind() never throws for
+    // markup reasons (the protocol), the error goes to the console
     c.setAttribute("data-wcs", "state.a: x");
-    expect(() => (globalThis as any)[BINDER_KEY].bind(c)).toThrow(
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(() => (globalThis as any)[BINDER_KEY].bind(c)).not.toThrow();
+    expect(error).toHaveBeenCalledTimes(1);
+    expect((error.mock.calls[0][0] as Error).message).toBe(
       `[@wcstack/state] <${tag}>.state has loaded its state: the wiring "state.a" added afterwards cannot reach it — bind the host's wiring before the component loads.`,
     );
+    error.mockRestore();
     await write((s) => { s.x = "tree 2"; });
     expect(c["state.a"]).toBeUndefined();
     expect(c.state.a).toBe("own");

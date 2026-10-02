@@ -173,10 +173,14 @@ function wrap(engine: Engine): void {
   const created = e.onPatternCreated;
   e.onPatternCreated = (p: Pattern) => {
     const spec = specs.get(engine);
-    if (spec !== undefined && p.path.includes("**")) {
-      // a recursive key's own pattern while the accessors are registered: an inert template
-      if (!registering.has(engine)) created.call(engine, p);
-      else if (p.getter !== null) p.getter = () => recursionUnsupported(p.path);
+    if (p.path.includes("**")) {
+      // a recursive key's own pattern while the accessors are registered: an inert template that
+      // refuses to be read, and stays one when every pattern is looked at again (a volume grafting
+      // its accessors, a re-set — one that drops `$recursion` forgets it: refused again); a new one
+      // later is refused by the core (made patterns are interned after this runs)
+      const known = engine.patterns.peek(p.path) === p;
+      if (registering.has(engine) || (spec === undefined && known)) p.getter = () => recursionUnsupported(p.path);
+      else if (!known) created.call(engine, p);
       return;
     }
     if (spec !== undefined && p.getter === null) {

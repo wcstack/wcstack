@@ -26,9 +26,14 @@ export function isHtmlSink(prop: string): boolean {
   return prop === "innerHTML" || prop === "outerHTML" || prop === "srcdoc";
 }
 
-/** A string for an HTML sink, passed through the installed policy (if any). */
-export function trustHtml(value: string): unknown {
+/**
+ * A value for an HTML sink: an object (a TrustedHTML the page made with its own policy) as it is,
+ * anything else as a string (null / undefined: empty) passed through the installed policy (if any).
+ */
+export function trustHtml(value: unknown): unknown {
+  if (typeof value === "object" && value !== null) return value;
+  const s = value == null ? "" : String(value);
   const policy = getTrustedTypesPolicy();
   const create = policy?.createHTML;
-  return typeof create === "function" ? create.call(policy, value) : value;
+  return typeof create === "function" ? create.call(policy, s) : s;
 }

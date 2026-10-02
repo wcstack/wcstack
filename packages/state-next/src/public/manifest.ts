@@ -92,7 +92,8 @@ export function getWcsManifest(): IWcsManifest {
         propNamespaces: { eventToken: EVENT_TOKEN_NAMESPACE, command: COMMAND_NAMESPACE, class: CLASS_NAMESPACE, attr: ATTR_NAMESPACE, style: STYLE_NAMESPACE },
       },
     },
-    filters: [...Object.keys(coreFilters), ...Object.keys(formatFilters)],
+    // quoted: `filters` is an internal name the bundles shorten (mangle.mjs)
+    "filters": [...Object.keys(coreFilters), ...Object.keys(formatFilters)],
     filterMeta: builtinFilterMeta,
     filterAliases: builtinFilterAliases,
     declarationAliases: DECLARATION_ALIASES,

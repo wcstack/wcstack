@@ -20,7 +20,8 @@ export interface ISsrElement {
   verifyVersion(): boolean;
 }
 
-const majorMinor = (v: string): string => v.split(".").slice(0, 2).join(".");
+/** `4.0.1` → `4.0`: a snapshot is adoptable by the same major.minor. */
+export const majorMinor = (v: string): string => v.split(".").slice(0, 2).join(".");
 
 export class Ssr extends HTMLElement implements ISsrElement {
   /** The first snapshot element under `root`, or null. */

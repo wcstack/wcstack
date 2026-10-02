@@ -8,7 +8,7 @@ import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 import {
   K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, BUBBLING,
-  type Branch, type BranchSpec, type RowPlan, type Spec,
+  isContent, type Branch, type BranchSpec, type RowPlan, type Spec,
 } from "./view";
 
 /** The binding attribute (`bindAttributeName`, default data-wcs). */
@@ -100,6 +100,16 @@ export function boundPattern(engine: Engine, path: string, list: Pattern | null)
   return p;
 }
 
+/** A binding that replaces its element with the value (`outerHTML:` / `outerText:`). */
+export const isOuter = (name: string): boolean => name === "outerHTML" || name === "outerText";
+
+/**
+ * A binding after which the element's children are not markup to bind: it sets the element's content
+ * (they are a value), or replaces the element (they are out of the page).
+ */
+const setsContent = (s: Spec): boolean =>
+  s.kind === K_HTML || isOuter(s.name) || (s.kind === K_PROP && isContent(s.name));
+
 /** An `elseif:` / `else:` template with no `if:` before it. */
 export function notAfterIf(type: string): never {
   raise(M.ElseWithoutIf, [type]);
@@ -120,7 +130,8 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     const command = path.startsWith(COMMAND_PREFIX) ? path.slice(COMMAND_PREFIX.length) : null;
     const { prevent, stop } = f;
     const type = b.propName.slice(2);
-    const delegated = BUBBLING.has(type);
+    // a custom element's `change` / `click` may be dispatched without bubbling: on the element
+    const delegated = !custom && BUBBLING.has(type);
     if (delegated) engine.delegate(type);
     return {
       ...blank(), node, kind: K_EVENT, name: type, delegated,
@@ -145,7 +156,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
   }
   if (segs[0] === "command" && segs.length > 1) {
     if (!path.startsWith(COMMAND_PREFIX)) raise(M.CommandRightSide, [b.propName, path]);
-    return { ...blank(), node, kind: K_COMMAND, name: segs.slice(1).join("."), token: path.slice(COMMAND_PREFIX.length), custom };
+    return { ...blank(), node, kind: K_COMMAND, name: segs.slice(1).join("."), token: path, custom };
   }
 
   const pattern = boundPattern(engine, path, list);
@@ -240,15 +251,15 @@ export interface ChainPart {
   filters: FilterFn[] | null;
 }
 
+/** The anchor text of a chain's `k`-th template: `if`, then `elseif`, and `else` (no path). */
+export const chainAnchorText = (k: number, part: ChainPart): string =>
+  k === 0 ? config.commentIfPrefix : part.pattern === null ? config.commentElsePrefix : config.commentElseIfPrefix;
+
 /**
  * Reads an `if` chain starting at children[start] (an `if:` template): the `elseif:` /
  * `else:` templates that follow it, across whitespace and comments. Returns the parts and
  * the index of the last child consumed.
  */
-/** The anchor text of a chain's `k`-th template: `if`, then `elseif`, and `else` (no path). */
-export const chainAnchorText = (k: number, part: ChainPart): string =>
-  k === 0 ? config.commentIfPrefix : part.pattern === null ? config.commentElsePrefix : config.commentElseIfPrefix;
-
 export function readChain(engine: Engine, children: ChildNode[], start: number, list: Pattern | null): { parts: ChainPart[]; end: number } {
   const part = (el: Element, b: ParsedBinding): ChainPart => ({
     el: el as HTMLTemplateElement,
@@ -272,11 +283,9 @@ export function readChain(engine: Engine, children: ChildNode[], start: number, 
   return { parts, end };
 }
 
-/**
- * Compiles a template into a plan: the fragment to clone, the child-index path of every
- * bound node, and one spec per binding. Paths are resolved to patterns here, once —
- * blocks never parse or resolve anything. `list` is the enclosing `for` (for `.` paths).
- */
+/** The elements a page walk has visited: each is bound once, however often it is handed over. */
+const walked = new WeakSet<Element>();
+
 /**
  * Walks `children` and what they contain for bindings, by the same markup rules for the page
  * (`page`: the mount — it skips script / style, enters `<wcs-state>`, and marks anchors for SSR)
@@ -286,7 +295,7 @@ export function readChain(engine: Engine, children: ChildNode[], start: number, 
 export function walkBindings(engine: Engine, children: ChildNode[], list: Pattern | null, page: boolean,
   onFor: (anchor: Comment, p: Pattern, plan: RowPlan) => void,
   onIf: (branches: Branch[]) => void,
-  onElement: (el: Element, text: string) => void,
+  onElement: (el: Element, specs: Spec[]) => void,
   onText: (node: Text, expr: string) => void): void {
   // a structural template leaves the tree: its anchor takes its place
   const anchorFor = (el: Element, type: string): Comment => {
@@ -302,7 +311,10 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
         const el = child as Element;
         const tag = el.localName;
         if (page) {
-          if (tag === "script" || tag === "style") continue;
+          // walked before (a subtree handed over again): left alone — its text and rows show
+          // values now, which are not markup
+          if (tag === "script" || tag === "style" || walked.has(el)) continue;
+          walked.add(el);
           // markup written inside a <wcs-state> is part of the page (its own attributes are not bindings)
           if (tag === config.tagNames.state) {
             walk(Array.from(el.childNodes));
@@ -328,10 +340,17 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
           }
           continue;
         }
+        const kids = Array.from(el.childNodes);
         const text = el.getAttribute(bindAttr());
-        if (text !== null) onElement(el, text);
-        // a Light DOM component's content is bound by its own engine
-        if (!hooks.componentScope?.(el)) walk(Array.from(el.childNodes));
+        const specs = text === null ? null : elementSpecs(engine, text, list, el, 0);
+        if (specs !== null) onElement(el, specs);
+        // What a binding puts in an element is a value, not markup. An element whose content a
+        // binding sets (`textContent:` / `innerHTML:` / `html:`) is not walked at all — whenever the
+        // value lands (a custom element's waits for its definition), and if it fails — nor one a
+        // binding replaces (`outerHTML:` / `outerText:`: its children leave the page); of any other,
+        // only the nodes it had before its bindings, wherever in it they are now. A Light DOM
+        // component's content is bound by its own engine
+        if (!specs?.some(setsContent) && !hooks.componentScope?.(el)) walk(kids.filter((n) => el.contains(n)));
       } else if (child.nodeType === 3 && engine.mustache && (child as Text).data.includes("{{")) {
         for (const { node, expr } of splitMustache(child as Text)) onText(node, expr);
       }
@@ -340,6 +359,11 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
   walk(children);
 }
 
+/**
+ * Compiles a template into a plan: the fragment to clone, the child-index path of every
+ * bound node, and one spec per binding. Paths are resolved to patterns here, once —
+ * blocks never parse or resolve anything. `list` is the enclosing `for` (for `.` paths).
+ */
 export function compilePlan(engine: Engine, template: HTMLTemplateElement, list: Pattern | null, asRow: boolean): RowPlan {
   const frag = document.importNode(template.content, true);
   const targets: Node[] = [];
@@ -354,8 +378,15 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
       const branches: BranchSpec[] = chain.map((br) => ({ node: target(br.anchor), plan: br.plan, pattern: br.pattern, filters: br.filters }));
       specs.push({ ...blank(), node: branches[0].node, kind: K_IF, branches });
     },
-    (el, text) => {
-      specs.push(...elementSpecs(engine, text, list, el, target(el)));
+    (el, own) => {
+      const n = target(el);
+      for (const s of own) {
+        // a row or a branch keeps its nodes by position: a binding that replaces its element (once —
+        // the element is out of the page after) has no place in one
+        if (isOuter(s.name)) raise(M.OuterInTemplate, [s.name]);
+        s.node = n;
+      }
+      specs.push(...own);
       // the plan holds the bindings: blocks cloned from it carry nothing left to bind
       el.removeAttribute(bindAttr());
     },
@@ -375,18 +406,38 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
   const lazy: Spec[] = [];
   const used = new Set<number>();
   const events: Spec[] = [];
+  // what a block binds as it is built (the delegated events it finds by path are not among them)
+  const own: Spec[] = [];
   // in a row plan, the row's own locations bound by kinds that need only the node are slots (see RowView)
   const d = asRow ? list!.depth + 1 : -1;
   for (const s of specs) {
+    // a node used only by delegated events is never resolved when a block is built
+    if (s.kind === K_EVENT && s.delegated && !shifts(targets[s.node], frag)) {
+      events.push(s);
+      continue;
+    }
+    own.push(s);
     const p = s.pattern;
     if (p !== null && p.depth === d && p.lists[d] === list && isSlotKind(s)) s.slot = lazy.push(s) - 1;
-    // a node used only by delegated events is never resolved when a block is built
-    if (s.kind === K_EVENT && s.delegated) events.push(s);
-    else if (s.kind === K_IF) for (const br of s.branches!) used.add(br.node);
+    if (s.kind === K_IF) for (const br of s.branches!) used.add(br.node);
     else used.add(s.node);
   }
   const build = [...used].sort((a, b) => a - b);
-  return { fragment: frag, root: single ? frag.firstChild : null, nodePaths, build, events, specs, single, nested, scratch: [], lazy };
+  return { fragment: frag, root: single ? frag.firstChild : null, nodePaths, build, events, specs: own, single, nested, scratch: [], lazy };
+}
+
+/**
+ * Whether the path to `n` from its block's top node can change once the block renders: a
+ * structural anchor before it on the way (its view renders before the anchor) or a custom element
+ * above it (a Light DOM component may add children). Such an element's delegated events are not
+ * found by path: they are stored on the element as its block is built.
+ */
+function shifts(n: Node, top: Node): boolean {
+  for (; n.parentNode !== top; n = n.parentNode!) {
+    if ((n.parentNode as Element).localName.includes("-")) return true;
+    for (let s = n.previousSibling; s; s = s.previousSibling) if (s.nodeType === 8) return true;
+  }
+  return false;
 }
 
 function isSlotKind(s: Spec): boolean {

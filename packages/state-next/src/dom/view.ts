@@ -8,17 +8,26 @@ import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 
 /**
- * `on*:` bindings of bubbling events are delegated: one listener per event type on the
- * root (so `event.currentTarget` is the root — decided 2026-09-25). Inside a block the
- * handler is not attached to the element at all: the block's top node carries the block,
- * which finds its handlers from its plan when an event passes (Block.dispatch). Outside
- * any block (a root-level element) the handler is stored on the element. A non-bubbling
- * event gets a listener on the element itself.
+ * `on*:` bindings of a native element's bubbling events are delegated: one listener per
+ * event type on the root (so `event.currentTarget` is the root — decided 2026-09-25). Inside
+ * a block the handler is not attached to the element at all: the block's top node carries
+ * the block, which finds its handlers from its plan when an event passes (Block.dispatch).
+ * Outside any block (a root-level element), and where a block's content can shift before the
+ * element (see compilePlan), the handler is stored on the element. A custom element's event
+ * (it may not bubble) and a non-bubbling one get a listener on the element itself.
  */
 export function attachEvent(engine: Engine, node: Node, s: Spec, row: StateRow | null): void {
   const fn = s.listener!;
-  if (s.delegated) (node as any)[engine.delegate(s.name)] = fn;
-  else node.addEventListener(s.name, (e) => fn(e, row));
+  const h = (e: Event): void => fn(e, row);
+  if (s.delegated) {
+    const key = engine.delegate(s.name);
+    const prev = (node as any)[key];
+    // two of one type on one element (`onclick: a; onclick: b`): both run
+    (node as any)[key] = prev === undefined ? h : (e: Event): void => {
+      prev(e);
+      h(e);
+    };
+  } else node.addEventListener(s.name, h);
 }
 
 /** Events that bubble: the only ones a delegated listener can see. */
@@ -84,7 +93,7 @@ export interface Spec {
   ro: boolean;
   prevent: boolean;
   stop: boolean;
-  /** Command / event token name. */
+  /** The path a command / event token binding names: `$command.<token>` / the event token's name. */
   token: string | null;
   /** Spread: members bound explicitly after it on the same element (last wins). */
   exclude: string[] | null;
@@ -106,8 +115,9 @@ export interface RowPlan {
   nodePaths: number[][];
   /** The node paths a block resolves when it is built (the others serve only delegated events). */
   build: number[];
-  /** The delegated event specs: found through the block when an event passes. */
+  /** The delegated event specs found through the block (by their node paths) when an event passes. */
   events: Spec[];
+  /** The specs bound as a block is built (all but `events`). */
   specs: Spec[];
   /** The block renders exactly one top-level node. */
   single: boolean;
@@ -183,7 +193,10 @@ export class Binding {
       return;
     }
     const v = pipe(this.filters, this.engine.read(this.pattern, this.row));
-    if (v === this.value) return;
+    // the same object may have changed in place ($postUpdate, an array assigned again): shown
+    // again — but an element input keeps the object it already has, and an HTML sink the markup it
+    // parsed (a TrustedHTML does not change: parsing it again would rebuild the nodes)
+    if (v === this.value && (typeof v !== "object" || v === null || this.kind === K_CUSTOM || this.kind === K_HTML || isHtmlSink(this.name))) return;
     if (this.value === HOLD) {
       this.value = v;
       return;
@@ -243,6 +256,9 @@ export class Binding {
  * Writes `v` to the element: the kinds that need nothing but the node and the name (the
  * ones a row slot can hold).
  */
+/** A property that is the element's content (its children are a value). */
+export const isContent = (name: string): boolean => name === "textContent" || name === "innerText" || name === "innerHTML";
+
 export function applyTo(kind: number, n: any, name: string, v: unknown): void {
   switch (kind) {
     case K_TEXT:
@@ -250,13 +266,13 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
       return;
     case K_PROP:
       // display surfaces: undefined and null both mean "no value" (B8); other properties are element inputs
-      if (name === "textContent" || name === "innerText" || name === "innerHTML") {
+      if (isContent(name)) {
         // a string, as a browser's setter makes it (happy-dom — the server's DOM — writes 0 as "", and
-        // throws on a number for innerText)
-        const s = v == null ? "" : String(v);
-        n[name] = name === "innerHTML" ? trustHtml(s) : s;
+        // throws on a number for innerText); innerHTML keeps a TrustedHTML as it is
+        n[name] = name === "innerHTML" ? trustHtml(v) : v == null ? "" : String(v);
       } else if (isHtmlSink(name)) {
-        n[name] = trustHtml(v == null ? "" : String(v));
+        // (outerHTML / srcdoc) undefined writes nothing: "" would take the element itself out
+        if (v !== undefined) n[name] = trustHtml(v);
       } else if (v !== undefined) {
         // undefined: an element input keeps its own value when state has no opinion (B8);
         // never re-write what the element already shows (keeps the caret while typing)
@@ -266,7 +282,7 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
       }
       return;
     case K_HTML:
-      n.innerHTML = trustHtml(v == null ? "" : String(v));
+      n.innerHTML = trustHtml(v);
       return;
     case K_CLASS:
       if (v != null && typeof v !== "boolean") {
@@ -333,17 +349,22 @@ export class Block {
   dispatch(type: string, e: Event): boolean {
     const target = e.target as Node;
     const plan = this.plan;
-    let hits: { node: Node; spec: Spec }[] | null = null;
+    // the specs are in document order (an element's own together): the elements the event passed
+    // are met outermost first, so each one's handlers go in front — innermost first
+    const hits: Spec[][] = [];
+    let last: Node | null = null;
     for (const s of plan.events) {
       if (s.name !== type) continue;
       const path = plan.nodePaths[s.node];
       const n = nodeAt(this.nodes === null ? this.first : this.nodes[path[0]], path, 1);
-      if (n.contains(target)) (hits ??= []).push({ node: n, spec: s });
+      if (!n.contains(target)) continue;
+      if (n !== last) hits.unshift([]);
+      hits[0].push(s);
+      last = n;
     }
-    if (hits === null) return false;
-    hits.sort((a, b) => (a.node.contains(b.node) ? 1 : -1));
-    for (const { spec } of hits) {
-      spec.listener!(e, this.row);
+    // stopPropagation stops the elements further out, not the rest of the same element's (as the DOM)
+    for (const own of hits) {
+      for (const s of own) s.listener!(e, this.row);
       if (e.cancelBubble) return true;
     }
     return false;
@@ -567,8 +588,14 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
         break;
       }
       default:
-        // (a delegated event is found through the block: nothing to attach per row)
-        if (s.kind !== K_EVENT || !s.delegated) attachSpec(engine, s, node, row, block);
+        // (the delegated events found through the block are not among the specs: nothing per row)
+        // A binding refused as it is attached (an undeclared token or member, a failing `#init=auto`
+        // read) fails alone: the row is still built whole, so its view's records stay right
+        try {
+          attachSpec(engine, s, node, row, block);
+        } catch (error) {
+          engine.failAt(error, s.pattern?.path ?? s.token!, node, TYPE_NAMES[s.kind]);
+        }
     }
   }
   lastBlock = block;
@@ -576,15 +603,14 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
 }
 
 /**
- * Binds a spec that builds no view to `node`, in `block` (null: a root-level element, whose
- * delegated handlers are stored on the element itself).
+ * Binds a spec that builds no view to `node`, in `block` (null: a root-level element). A
+ * delegated event that reaches here is stored on the element (attachEvent).
  */
 export function attachSpec(engine: Engine, s: Spec, node: Node, row: StateRow | null, block: Block | null): void {
   const el = node as Element;
   switch (s.kind) {
     case K_EVENT:
-      // in a block, a delegated one is found through the block (Block.dispatch)
-      if (block === null || !s.delegated) attachEvent(engine, node, s, row);
+      attachEvent(engine, node, s, row);
       return;
     case K_COMMAND:
       whenDefined(el, block, (bd) => attachCommand(engine, s, el, block, bd));

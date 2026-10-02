@@ -29,6 +29,19 @@ interface Frame {
   getter: Pattern;
   row: StateRow | null;
   untracked: number;
+  /** The evaluation this frame runs (`$eq` tells its keys from an earlier evaluation's). */
+  epoch: number;
+}
+
+/** Getter evaluations so far (each frame takes the next: an evaluation's identity). */
+let evals = 0;
+
+/** A `$eq` subscription of a getter occurrence, kept on its row (or the engine, at the root). */
+export interface EqEntry {
+  source: Pattern;
+  key: unknown;
+  sub: EqSub;
+  epoch: number;
 }
 
 /** A drain that keeps producing work this many times in a row is an update loop. */
@@ -60,6 +73,12 @@ export function isThenable(r: any): r is PromiseLike<unknown> {
 /** Map-key equality: Object.is, except +0 and -0 are equal (keys of a Map). */
 function sameValueZero(a: unknown, b: unknown): boolean {
   return a === b || (a !== a && b !== b);
+}
+
+/** Drops a `$eq` subscription; a key nobody waits for any more leaves the map (it may be a row's item). */
+function unsubEq(source: Pattern, key: unknown, sub: EqSub): void {
+  const set = source.eqSubs?.get(key);
+  if (set !== undefined && set.delete(sub) && set.size === 0) source.eqSubs!.delete(key);
 }
 
 function dig(v: any, segs: readonly string[]): unknown {
@@ -98,7 +117,6 @@ export class Engine implements ReconcileHooks {
   readonly proxy: Record<string, any>;
   /** Number of row-level getter slots. */
   slotCount = 0;
-  /** Drain pass counter (walk de-duplication). */
   /** Evaluation context: the row a getter / method / setter runs for. */
   ctx: StateRow | null = null;
   /** Writes throw while > 0: a readonly createState callback, or a getter being evaluated. */
@@ -155,7 +173,7 @@ export class Engine implements ReconcileHooks {
   private readonly drainFn = () => this.drain();
   private readonly deliverFn = (handler: (...a: unknown[]) => unknown, args: unknown[]) => handler(this.proxy, ...args);
   /** `$eq` subscriptions of root-level getters. */
-  private readonly rootEqSubs: { source: Pattern; key: unknown; sub: EqSub }[] = [];
+  private readonly rootEqSubs: EqEntry[] = [];
   /** The `$` functions of the state (`this.$eq`, …), by name. */
   private readonly api: Record<string, unknown> = {
     $untracked: (fn: () => unknown) => {
@@ -207,17 +225,17 @@ export class Engine implements ReconcileHooks {
       this.write(p, row, args[2]);
     },
     $postUpdate: (path: string) => {
-    this.resolve(unbound(path), this.ctx);
-    const p = this.rp!;
-    const row = this.rr;
-    // changed in place: an element is what its array holds now
-    if (p.last === WILDCARD && row !== null) {
-      row.item = row.list.arr![row.index];
-      this.strategy.resetRow(row);
-    }
-    this.touched(p, row);
-    if (row !== null && row.list.shared) this.mirror(row, p, undefined, row.item, false);
-    this.landed(p, row, undefined, undefined, false);
+      this.resolve(unbound(path), this.ctx);
+      const p = this.rp!;
+      const row = this.rr;
+      // changed in place: an element is what its array holds now
+      if (p.last === WILDCARD && row !== null) {
+        row.item = row.list.arr![row.index];
+        this.strategy.resetRow(row);
+      }
+      this.touched(p, row);
+      if (row !== null && row.list.shared) this.mirror(row, p, undefined, row.item, false);
+      this.landed(p, row, undefined, undefined, false);
     },
   };
 
@@ -337,18 +355,14 @@ export class Engine implements ReconcileHooks {
   sync(l: StateList): void {
     const value = this.readUntracked(l.pattern, l.parentRow);
     if (value === l.arr) return;
-    const prev = l.arr;
+    // out of the lists over its array before (filed again under the new one below)
+    this.unfile(l);
     const old = reconcile(l, value, this);
     if (old === null) return;
-    // filed under its array (and out of prev's): lists that share an array mirror writes
-    const by = this.listsByArray;
-    if (prev !== null) {
-      const was = by.get(prev);
-      if (was !== undefined) was.splice(was.indexOf(l) >>> 0, 1);
-    }
+    // filed under its array: lists that share an array mirror writes
     // (a value that is not an array reconciles against a stand-in: nothing to share)
     if (l.arr === value) {
-      const same = upsert(by, value as unknown[], newArray<StateList>);
+      const same = upsert(this.listsByArray, value as unknown[], newArray<StateList>);
       same.push(l);
       if (same.length > 1) for (const x of same) x.shared = true;
     }
@@ -379,15 +393,25 @@ export class Engine implements ReconcileHooks {
     row.alive = false;
     const subs = row.eqSubs;
     if (subs !== null) {
-      for (const e of subs) e.source.eqSubs?.get(e.key)?.delete(e.sub);
+      for (const e of subs) unsubEq(e.source, e.key, e.sub);
       row.eqSubs = null;
     }
-    // the rows of its nested lists go with it
+    // the rows of its nested lists go with it, and the lists leave the ledger of their arrays
     if (row.children !== null) {
       for (const l of row.children.values()) {
+        this.unfile(l);
         for (const r of l.rows) this.rowRemoved(r);
       }
     }
+  }
+
+  /** Takes `l` out of the lists over its array; one left alone with it no longer mirrors. */
+  private unfile(l: StateList): void {
+    const was = this.listsByArray.get(l.arr!);
+    if (was === undefined) return;
+    was.splice(was.indexOf(l) >>> 0, 1);
+    l.shared = false;
+    if (was.length === 1) was[0].shared = false;
   }
 
   // ---------------------------------------------------------------- resolve / read
@@ -429,7 +453,8 @@ export class Engine implements ReconcileHooks {
       const parent = this.read(p.parent!, row) as any;
       return parent == null ? undefined : parent[p.last];
     }
-    if (p.parent === null && !(p.last in this.target)) {
+    // (`then` / `toJSON` are probes — await, JSON.stringify — not reads of the state: undefined)
+    if (p.parent === null && !(p.last in this.target) && p.last !== "then" && p.last !== "toJSON") {
       raise(M.PathMissing, [p.path], p.last, Object.keys(this.target));
     }
     return this.readData(p, row);
@@ -464,10 +489,11 @@ export class Engine implements ReconcileHooks {
     if (this.depthNow >= MAX_GETTER_DEPTH) raise(M.GetterDepth, [g.path]);
     const depth = this.depthNow++;
     this.readonlyDepth++;
-    const frame = (this.frames[depth] ??= { getter: g, row, untracked: 0 });
+    const frame = (this.frames[depth] ??= { getter: g, row, untracked: 0, epoch: 0 });
     frame.getter = g;
     frame.row = row;
     frame.untracked = 0;
+    frame.epoch = ++evals;
     const outer = this.top;
     this.top = frame;
     const prev = this.ctx;
@@ -519,7 +545,7 @@ export class Engine implements ReconcileHooks {
     return hooks.dollar?.(this, key);
   }
 
-/**
+  /**
    * `$eq(path, key)`: is the value of `path` equal to `key`? Inside a getter the occurrence
    * subscribes under `key` instead of depending on `path`: a write to `path` re-evaluates
    * only the occurrences keyed under its old and its new value. A `path` that is a getter
@@ -531,23 +557,33 @@ export class Engine implements ReconcileHooks {
     const row = this.rr;
     if (source.getter !== null || source.underGetter || source.depth > 0) return sameValueZero(this.read(source, row), key);
     const f = this.top;
-    if (f !== null && f.untracked === 0) this.subscribeEq(source, key, f.getter, f.row);
+    if (f !== null && f.untracked === 0) this.subscribeEq(source, key, f);
     return sameValueZero(this.readUntracked(source, null), key);
   }
 
-  private subscribeEq(source: Pattern, key: unknown, getter: Pattern, row: StateRow | null): void {
+  /**
+   * Subscribes the occurrence evaluating in `f` under `key`. A key it subscribed in an earlier
+   * evaluation and not in this one moved; one of this evaluation stays (`$eq(p, a) || $eq(p, b)`).
+   */
+  private subscribeEq(source: Pattern, key: unknown, f: Frame): void {
+    const getter = f.getter;
+    const row = f.row;
     const list = row === null ? this.rootEqSubs : (row.eqSubs ?? (row.eqSubs = []));
     for (let i = 0; i < list.length; i++) {
       const e = list[i];
       if (e.sub.getter !== getter || e.source !== source) continue;
-      if (sameValueZero(e.key, key)) return;
-      source.eqSubs?.get(e.key)?.delete(e.sub); // the key moved
-      list.splice(i, 1);
-      break;
+      if (sameValueZero(e.key, key)) {
+        e.epoch = f.epoch;
+        return;
+      }
+      if (e.epoch !== f.epoch) {
+        unsubEq(source, e.key, e.sub);
+        list.splice(i--, 1);
+      }
     }
     const sub: EqSub = { getter, row };
     upsert((source.eqSubs ??= new Map()), key, newSet<EqSub>).add(sub);
-    list.push({ source, key, sub });
+    list.push({ source, key, sub, epoch: f.epoch });
   }
 
   /** A root write to `p` (or an object above a `$eq` source): re-key every source at or under it. */
@@ -562,7 +598,7 @@ export class Engine implements ReconcileHooks {
         if (set === undefined) continue;
         for (const sub of set) {
           if (sub.row !== null && !sub.row.alive) {
-            set.delete(sub);
+            unsubEq(q, k, sub);
             continue;
           }
           this.strategy.invalidate(this, sub.getter, sub.row);
@@ -591,7 +627,8 @@ export class Engine implements ReconcileHooks {
     } else {
     if (p.getter !== null) raise(M.GetterWithoutSetter, [p.path]);
     if (p.depth > 0 && row === null) raise(M.NoRow, [p.path]);
-    old = this.readData(p, row);
+    // under a getter, the value before is read through it (the data has no such path)
+    old = p.underGetter ? this.readUntracked(p, row) : this.readData(p, row);
     if (!occurrence && this.guard && Object.is(old, value) && Object(value) !== value) return;
     if (p.last === WILDCARD) {
       // element write: the position keeps its row, the row takes the new value
@@ -718,10 +755,10 @@ export class Engine implements ReconcileHooks {
     const blockKey = this.blockKey;
     root.addEventListener(type, (e) => {
       for (let n = e.target as any; n !== null && n !== root; n = n.parentNode) {
-        // a root-level element's own handler
+        // a handler stored on the element (a root-level one, or one a block pinned)
         const fn = n[key];
         if (fn !== undefined) {
-          fn(e, null);
+          fn(e);
           if (e.cancelBubble) return;
         }
         // a block's top node: the handlers of the block's elements the event passed
@@ -1016,7 +1053,7 @@ export class Engine implements ReconcileHooks {
               this.sync(l);
             } catch (error) {
               // reported as a failure of the list's for binding; the list keeps its rows
-              this.errors.push([error, { pattern: l.pattern, node: l.view?.anchor ?? null, typeName: () => "for" } as unknown as Binding]);
+              this.failAt(error, l.pattern.path, l.view?.anchor ?? null, "for");
             }
           }
         }
@@ -1031,7 +1068,16 @@ export class Engine implements ReconcileHooks {
           // list views first (they build rows), then bindings
           for (const l of lists) {
             l.queued = false;
-            for (const v of [l.view, ...(l.extra ?? [])]) if (v !== null && v.alive) v.update();
+            for (const v of [l.view, ...(l.extra ?? [])]) {
+              if (v === null || !v.alive) continue;
+              // a row that fails to build (a binding refused as it is attached) fails this view
+              // alone: the rest of the pass is still applied (nothing stays queued)
+              try {
+                v.update();
+              } catch (error) {
+                this.failAt(error, l.pattern.path, v.anchor, "for");
+              }
+            }
           }
           for (let i = 0; i < q.length; i++) {
             const b = q[i];
@@ -1059,6 +1105,14 @@ export class Engine implements ReconcileHooks {
   /** A binding that failed to apply: reported after the drain. */
   fail(error: unknown, b: Binding): void {
     this.errors.push([error, b]);
+  }
+
+  /**
+   * A failure of what has no Binding object, reported like a binding's: a list that failed to sync
+   * or render (its `for`), a binding refused as it was attached in a row.
+   */
+  failAt(error: unknown, path: string, node: Node | null, type: string): void {
+    this.fail(error, { pattern: { path }, node, typeName: () => type } as unknown as Binding);
   }
 
   applyBinding(b: Binding): void {

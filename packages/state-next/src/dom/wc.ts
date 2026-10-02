@@ -49,8 +49,6 @@ export function readBindable(cls: CustomElementConstructor): Bindable | null {
   return out;
 }
 
-export const isCustomTag = (el: Element): boolean => el.localName.includes("-");
-
 /** The registry that defines `el`: a scoped one (`attachShadow({ customElementRegistry })`) or the global one. */
 export const registryOf = (el: Element): CustomElementRegistry =>
   ((el as any).customElementRegistry as CustomElementRegistry | null | undefined) ?? customElements;
@@ -165,17 +163,19 @@ function noBindable(id: M, el: Element, what: string): never {
 /** `command.<method>: $command.<token>` — the element's method subscribes to the token. */
 export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Block | null, bd: Bindable | null): void {
   const method = spec.name;
-  const token = engine.command(spec.token!);
+  // (the path, "$command.<token>")
+  const token = engine.command(spec.token!.slice(9));
   if (bd === null) noBindable(M.NoBindable, el, `command.${method}`);
   if (!bd.commands.has(method)) raise(M.NoCommand, [el.localName, method]);
   const ref = new WeakRef(el);
   const fn = (...args: unknown[]): unknown => {
     const target = ref.deref() as any;
-    if (target === undefined || !target.isConnected) {
+    if (target === undefined) {
       unsubscribe();
       return undefined;
     }
-    return target[method](...args);
+    // detached for now (a route hidden with its nodes kept): not called, still subscribed
+    return target.isConnected ? target[method](...args) : undefined;
   };
   const unsubscribe = token.subscribe(fn);
   if (owner !== null) (owner.cleanups ??= []).push(unsubscribe);

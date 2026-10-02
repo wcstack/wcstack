@@ -21,7 +21,7 @@ export class StateRow {
    */
   bindings: Binding[] | null = null;
   /** `$eq` subscriptions of getters evaluated at this row (dropped with the row). */
-  eqSubs: { source: Pattern; key: unknown; sub: import("./pattern").EqSub }[] | null = null;
+  eqSubs: import("./engine").EqEntry[] | null = null;
   /** Nested lists under this row, by list pattern. */
   children: Map<Pattern, StateList> | null = null;
   alive = true;
@@ -30,14 +30,6 @@ export class StateRow {
     this.list = list;
     this.index = index;
     this.item = item;
-  }
-
-  get parent(): StateRow | null {
-    return this.list.parentRow;
-  }
-
-  get depth(): number {
-    return this.list.depth;
   }
 }
 
@@ -105,10 +97,7 @@ export function reconcile(list: StateList, next: unknown, hooks: ReconcileHooks)
   if (start > oe) {
     for (let i = start; i <= ne; i++) rows[i] = new StateRow(list, i, arr[i]);
   } else if (start > ne) {
-    for (let i = start; i <= oe; i++) {
-      old[i].alive = false;
-      hooks.rowRemoved(old[i]);
-    }
+    for (let i = start; i <= oe; i++) hooks.rowRemoved(old[i]);
   } else {
     const byItem = new Map<unknown, Bucket>();
     for (let i = start; i <= oe; i++) {

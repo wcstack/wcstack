@@ -112,7 +112,8 @@ describe("volume の接ぎ木", () => {
     expect(text(root, "p")).toBe("1/2");
     // the intermediate object was created on the root tree, holding the volume's data only
     expect(Object.keys(read("a") as object)).toEqual(["b"]);
-    expect(Object.keys(read("a.b") as object).sort()).toEqual(["greet", "x"]);
+    // methods live on their paths like the accessors, not in the data (a snapshot or a write of the mount path keeps them)
+    expect(Object.keys(read("a.b") as object)).toEqual(["x"]);
     // the subclass's method, not the base's; `this` is the chroot
     expect((read("a.b.greet") as () => string)()).toBe("volume:1");
     await write((s) => { s["a.b.double"] = 10; });

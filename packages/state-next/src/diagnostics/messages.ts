@@ -84,6 +84,7 @@ export const SENTENCES: Record<M, Sentence> = {
 
   [M.StructuralNotSingle]: (t) => `Invalid bindText: "${t}". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`,
   [M.ElseWithoutIf]: (type) => `"${type}:" must follow an "if:" template`,
+  [M.OuterInTemplate]: (name) => `"${name}:" replaces its element, so it cannot be used inside a "for" / "if" template (a row or branch keeps its nodes by position): bind innerHTML: on a wrapper element instead.`,
 
   [M.PathMissing]: (p) => `Path "${p}" does not exist on the state tree.`,
 

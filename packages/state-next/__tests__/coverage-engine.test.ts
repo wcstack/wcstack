@@ -302,7 +302,8 @@ describe("$eq / $eqPath", () => {
     e.proxy.want = "user";
     await flush();
     expect(texts("p")).toEqual(["false", "true"]);
-    expect(e.pattern("role").eqSubs!.get("admin")!.size).toBe(0);
+    // a key nobody waits for any more leaves the map
+    expect(e.pattern("role").eqSubs!.has("admin")).toBe(false);
     expect(e.pattern("role").eqSubs!.get("user")!.size).toBe(1);
     e.proxy.role = "user";
     await flush();
@@ -348,7 +349,7 @@ describe("$eq / $eqPath", () => {
     expect(subs.get(1)!.size).toBe(1);
     e.proxy.selectedId = 1;
     await flush();
-    expect(subs.get(1)!.size).toBe(0);
+    expect(subs.has(1)).toBe(false);
     expect(texts("li")).toEqual(["false", "false"]);
     e.proxy.selectedId = 3;
     await flush();

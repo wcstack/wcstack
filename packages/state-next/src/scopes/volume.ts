@@ -4,7 +4,9 @@
  * setters become root accessors at `p.<key>`, its methods live at `p.<method>`, and inside all
  * of them — and in its `$connectedCallback` / `$disconnectedCallback` — `this` is chrooted at
  * `p` (`this.x` is the tree's `p.x`). Load order does not matter: a volume that loads before its
- * root grafts when the root engine is created, before the page is bound.
+ * root grafts when the root engine is created, before the page is bound; if the root fails to
+ * initialize, its volumes report it and settle. A root hydrated from a server snapshot (SSR)
+ * already holds the volume's data at `p`: the volume adopts it (3.x D14).
  *
  * Not carried over from @wcstack/state 3.3 (approved simplifications, each an error rather than
  * a silent no-op): injections on the volume element (`data-wcs="state.k: …"`), and a volume's
@@ -13,6 +15,7 @@
 import type { Engine } from "../engine";
 import type { Pattern } from "../pattern";
 import type { Claimed } from "../hooks";
+import type { WcsState } from "../element";
 import { config } from "../config";
 import { engines } from "../dom/mount";
 import { raiseError } from "../parser/raiseError";
@@ -32,8 +35,9 @@ interface Volume {
 const rootEngines = new WeakMap<Node, Engine>();
 /** Mount paths held on each root (reserved when a volume connects, kept once grafted). */
 const slots = new WeakMap<Node, Map<string, Volume>>();
-/** Loaded volumes waiting for their root's engine. */
-const waiting = new WeakMap<Node, Volume[]>();
+/** Loaded volumes waiting for their root's engine; null: the root's `<wcs-state>` failed to initialize. */
+const waiting = new WeakMap<Node, Volume[] | null>();
+const ORPHAN = "will not graft: the root state failed to initialize.";
 /** The mount paths grafted onto each engine. */
 export const grafted = new WeakMap<Engine, string[]>();
 
@@ -42,7 +46,7 @@ const NOT_RUN = ["$commandTokens", "$eventTokens", "$on", "$errorCallback"];
 const PREFIX = (path: string) => `[@wcstack/state] <${config.tagNames.state} mount="${path}">`;
 
 /** `$` APIs that take a state path: inside a volume the path is relative to the mount. */
-const PATH_APIS = new Set(["$getAll", "$setAll", "$resolve", "$postUpdate", "$dependOn", "$eq"]);
+const PATH_APIS = new Set(["$getAll", "$setAll", "$resolve", "$postUpdate", "$dependOn", "$eq", "$eqIndex"]);
 
 function chrootOf(engine: Engine, prefix: string): object {
   const at = (key: string) => `${prefix}.${key}`;
@@ -70,9 +74,8 @@ function validPath(path: string): boolean {
 export function rootEngineCreated(engine: Engine, root: Node): void {
   rootEngines.set(root, engine);
   const list = waiting.get(root);
-  if (list === undefined) return;
   waiting.delete(root);
-  for (const v of list) graft(v, engine);
+  for (const v of list ?? []) graft(v, engine);
 }
 
 function release(v: Volume): void {
@@ -81,8 +84,8 @@ function release(v: Volume): void {
 }
 
 /** Reports a volume that will not graft, releases its slot and settles its promise. */
-function fail(v: Volume, message: string, error?: unknown): void {
-  console.error(`${PREFIX(v.path)} ${message}`, ...(error === undefined ? [] : [error]));
+function fail(v: Volume, message: string): void {
+  console.error(`${PREFIX(v.path)} ${message}`);
   release(v);
   v.settle?.();
   v.settle = null;
@@ -105,43 +108,44 @@ function graft(v: Volume, engine: Engine): void {
   const segs = v.path.split(".");
   let at: any = target;
   for (const s of segs) at = at == null ? undefined : at[s];
-  if (at !== undefined) return fail(v, `will not graft: the root state already has "${v.path}".`);
+  // a root hydrated from a server snapshot (ssr/ssr.ts) has the volume's data there already: adopted
+  if (at !== undefined && (engine as any).hydrated !== true) return fail(v, `will not graft: the root state already has "${v.path}".`);
   const chroot = chrootOf(engine, v.path);
   v.chroot = chroot;
-  // the data (methods bound to the chroot); accessors apart
+  // the data; accessors and methods (bound to the chroot) apart, as root accessors at `p.<key>`,
+  // so that whatever replaces the data (the snapshot, a write of the mount path) keeps them
   const data: Record<string, unknown> = {};
-  const accessors: [string, PropertyDescriptor][] = [];
+  const defs: PropertyDescriptorMap = {};
   const seen = new Set<string>();
   for (let o: object | null = state; o !== null && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
     for (const key of Object.getOwnPropertyNames(o)) {
       if (seen.has(key) || key === "constructor") continue;
       seen.add(key);
-      const d = Object.getOwnPropertyDescriptor(o, key)!;
-      if (d.get !== undefined || d.set !== undefined) accessors.push([key, d]);
-      else if (key[0] === "$") continue;
-      else data[key] = typeof d.value === "function" ? d.value.bind(chroot) : d.value;
+      const { get, set, value } = Object.getOwnPropertyDescriptor(o, key)!;
+      if (get !== undefined || set !== undefined) {
+        defs[`${v.path}.${key}`] = {
+          get: get && function () { return get.call(chroot); },
+          set: set && function (next: unknown) { set.call(chroot, next); },
+        };
+      } else if (key[0] === "$") continue;
+      else if (typeof value === "function") {
+        const fn = value.bind(chroot);
+        defs[`${v.path}.${key}`] = { get: () => fn };
+      } else data[key] = value;
     }
   }
-  // intermediate objects of a deep mount path, then the volume's own object
-  for (let i = 1; i < segs.length; i++) {
-    const p = engine.pattern(segs.slice(0, i).join("."));
-    if (engine.readData(p, null) == null) engine.write(p, null, {});
+  if (at === undefined) {
+    // intermediate objects of a deep mount path, then the volume's own object
+    for (let i = 1; i < segs.length; i++) {
+      const p = engine.pattern(segs.slice(0, i).join("."));
+      if (engine.readData(p, null) == null) engine.write(p, null, {});
+    }
+    engine.write(engine.pattern(v.path), null, data);
   }
-  engine.write(engine.pattern(v.path), null, data);
-  const defined: Pattern[] = [];
-  for (const [key, d] of accessors) {
-    const p = engine.pattern(`${v.path}.${key}`);
-    const get = d.get;
-    const set = d.set;
-    p.getter = get === undefined ? null : function () { return get.call(chroot); };
-    p.setter = set === undefined ? null : function (value: unknown) { set.call(chroot, value); };
-    defined.push(p);
-  }
-  if (defined.length > 0) {
-    // paths under the new accessors now read through them
-    for (const p of engine.patterns.all()) (engine as any).onPatternCreated(p);
-    for (const p of defined) engine.changed(p, null);
-  }
+  // registered as the root's own are (a row-level getter gets its cache slot; the paths under
+  // them read through them)
+  (engine as any).registerAccessors(Object.defineProperties({}, defs));
+  for (const path in defs) engine.changed(engine.pattern(path), null);
   v.engine = engine;
   let list = grafted.get(engine);
   if (list === undefined) grafted.set(engine, (list = []));
@@ -149,6 +153,19 @@ function graft(v: Volume, engine: Engine): void {
   if (v.el.isConnected) callLifecycle(v, "$connectedCallback");
   v.settle?.();
   v.settle = null;
+}
+
+/**
+ * A root `<wcs-state>` (the one no claim took; asked by the last, claimComponent): if it fails to
+ * initialize, the volumes waiting on `root` settle instead of waiting forever, and so do the ones
+ * that load later.
+ */
+export function watchRoot(el: HTMLElement, root: Node): null {
+  (el as WcsState).connectedCallbackPromise.catch(() => {
+    for (const v of waiting.get(root) ?? []) fail(v, ORPHAN);
+    waiting.set(root, null);
+  });
+  return null;
 }
 
 /** `<wcs-state mount="p">`: claimed instead of becoming a root. */
@@ -175,12 +192,10 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
       return new Promise<void>((resolve) => {
         v.settle = resolve;
         const engine = rootEngines.get(root) ?? engines.get(root);
+        const list = waiting.get(root);
         if (engine !== undefined) graft(v, engine);
-        else {
-          let list = waiting.get(root);
-          if (list === undefined) waiting.set(root, (list = []));
-          list.push(v);
-        }
+        else if (list === null) fail(v, ORPHAN);
+        else waiting.set(root, [...(list ?? []), v]);
       });
     },
     connected() {

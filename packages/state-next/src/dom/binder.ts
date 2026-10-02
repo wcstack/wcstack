@@ -24,7 +24,8 @@ function bind(subtree: Node): void {
  * before the mount, or (queued by the protocol) before any binder existed.
  */
 export function drainBinds(): void {
-  for (const subtree of early.splice(0)) bind(subtree);
+  // one that left the document meanwhile is dropped (handed over again if it comes back)
+  for (const subtree of early.splice(0)) if (subtree.isConnected) bind(subtree);
   flushPendingBinds();
 }
 

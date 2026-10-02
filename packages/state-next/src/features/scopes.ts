@@ -15,6 +15,7 @@ export const scopes: Feature = {
   install(): void {
     hooks.claim = first(taken, hooks.claim, claimVolume);
     hooks.claim = first(taken, hooks.claim, claimDcc);
+    // last: what it does not take is a root, which it watches for the volumes (watchRoot)
     hooks.claim = first(taken, hooks.claim, claimComponent);
     hooks.hostBinding = hostBinding;
     hooks.componentScope = componentScope;

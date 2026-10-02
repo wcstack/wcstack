@@ -1,19 +1,15 @@
 import type { Engine } from "../engine";
 import { hooks } from "../hooks";
-import { elementSpecs, textSpec, walkBindings } from "./plan";
+import { textSpec, walkBindings } from "./plan";
 import { attachChain, attachSpec, ForView, listFor } from "./view";
 
 /** The engine mounted on each root (document, shadow root): the binder's lookup. */
 export const engines = new WeakMap<Node, Engine>();
 
 /**
- * Elements outside any block whose data-wcs is bound: walking a subtree again (the binder
- * protocol hands over route content on every insertion) leaves them alone. Blocks need no
- * record — their plans drop the attribute, so a rendered row carries nothing to bind.
+ * Binds everything under `root` to `engine` and renders it. An element walked once is left
+ * alone after (walkBindings): the binder protocol hands route content over on every insertion.
  */
-const bound = new WeakSet<Element>();
-
-/** Binds everything under `root` to `engine` and renders it. */
 export function mount(engine: Engine, root: Document | ShadowRoot | Element): void {
   const container: Node = root.nodeType === 9 ? (root as Document).body : root;
   engine.root = root;
@@ -22,9 +18,17 @@ export function mount(engine: Engine, root: Document | ShadowRoot | Element): vo
   engine.report();
 }
 
-/** Binds a subtree that entered the document after the mount (the binder protocol). */
+/**
+ * Binds a subtree that entered the document after the mount (the binder protocol). It never throws
+ * for markup reasons (the protocol): an error in the markup is reported, and what was walked before
+ * it stays bound.
+ */
 export function mountSubtree(engine: Engine, subtree: Element): void {
-  walk(engine, [subtree]);
+  try {
+    walk(engine, [subtree]);
+  } catch (e) {
+    console.error(e);
+  }
   engine.report();
 }
 
@@ -36,10 +40,9 @@ function walk(engine: Engine, children: ChildNode[]): void {
     (branches) => {
       attachChain(engine, branches, null, null);
     },
-    (el, text) => {
-      if (bound.has(el)) return;
-      bound.add(el);
-      for (const spec of elementSpecs(engine, text, null, el, 0)) attachSpec(engine, spec, el, null, null);
+    (el, specs) => {
+      hooks.ssrMark?.(engine, el, specs);
+      for (const spec of specs) attachSpec(engine, spec, el, null, null);
     },
     (node, expr) => {
       hooks.ssrMark?.(engine, node, expr);

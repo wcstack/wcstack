@@ -11,7 +11,7 @@
 import type { Engine } from "./engine";
 import type { Pattern } from "./pattern";
 import type { StateList, StateRow } from "./list";
-import type { Binding, RowPlan } from "./dom/view";
+import type { Binding, RowPlan, Spec } from "./dom/view";
 
 export interface Hooks {
   /** Diagnostics: extra text for an error message (did-you-mean, lint pointer, how to fix). */
@@ -56,9 +56,11 @@ export interface Hooks {
   componentScope: ((el: Element) => boolean) | null;
   /**
    * The page walker replaced a structural template with its anchor (`source` is the template),
-   * or bound a mustache text node (`source` is its expression): SSR records both.
+   * bound a mustache text node (`source` is its expression), or is about to bind an element
+   * (`source` is its specs, which the hook may take some out of): SSR records the first two, and
+   * on the server leaves `outerHTML:` to the client.
    */
-  ssrMark: ((engine: Engine, node: Node, source: Element | string) => void) | null;
+  ssrMark: ((engine: Engine, node: Node, source: Element | string | Spec[]) => void) | null;
   /**
    * A block is about to be cloned from `plan` for the view anchored at `anchor`: an add-on may
    * hand over existing nodes instead (SSR hydration) — a fragment, or the single element.

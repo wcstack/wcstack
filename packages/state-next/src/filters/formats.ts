@@ -1,5 +1,5 @@
 /**
- * filters/formats.ts — the formats add-on (24 filters): presentation, as opposed to the logic the
+ * filters/formats.ts — the formats add-on (23 filters): presentation, as opposed to the logic the
  * core set (`./core`) provides. Ported from `@wcstack/state` (`formats/builtinFilters.ts`) with the
  * semantics unchanged.
  *
