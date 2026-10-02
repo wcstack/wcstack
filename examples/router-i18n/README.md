@@ -118,16 +118,19 @@ second reason the catalog is deep-frozen.
 
 ### 5. Structural rendering stays outside the router
 
-A `<template data-wcs="for: …">` placed **directly** under `<wcs-route>` is **not
-a supported shape**. @wcstack/state 3.x does not render it. @wcstack/state 4.0
-refuses it as `[wcs/template-syntax]` #204 when the router stamps the route on a
-navigation. When the page lands on that route, it depends on the load order: if
-the state finished loading first, the router hands the content over and it is
-refused as #204 too; if the router inserted the content before the state loaded,
-it renders — and the rows stay behind when the route exits, until the router side
-is fixed. That is why 4.0 refuses it: the router stamps and removes only the
-route's own top-level nodes, and the rows a top-level template renders sit beside
-it, out of the router's reach. Wrap it in an element instead: wrapped
+A `<template data-wcs="for: …">` placed **directly** under `<wcs-route>` works only
+with this version of the router and @wcstack/state 4.0: the router declares to
+state's binder that it carries the route's range, so the template renders whether
+the route is the landing one or entered by navigation, and its rows leave and come
+back with the route. Elsewhere it depends on the path. When the router hands the
+content over — the route is stamped on a navigation, or the page lands on it after
+the state finished loading — it is not rendered: 4.0 refuses it as
+`[wcs/template-syntax]` #204 when the caller makes no such declaration (a router
+older than this one, or `<wcs-head>`, cannot reach the rows a top-level template
+renders: they sit beside it, outside the nodes those remove), and 3.x reports that
+the binding failed to apply. When the router inserted the landing route before the
+state loaded, the state's first scan renders it. To work with every version, wrap
+it in an element: wrapped
 (`<ul><template data-wcs="for: …">…</template></ul>`), it renders when the route
 is stamped, and plain bindings inside a route work too — the About page is
 translated in place — which makes the boundary easy to trip over.

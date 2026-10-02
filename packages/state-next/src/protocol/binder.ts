@@ -33,6 +33,22 @@
  */
 export const BINDER_KEY = Symbol.for("wcstack.binder");
 
+/**
+ * What the caller declares about a subtree it hands over (the second argument of `bind`; additive
+ * since version 1 — a binder that predates it ignores it, and leaving it out keeps the old contract).
+ */
+export interface IWcsBindOptions {
+  /**
+   * The caller carries the range the subtree sits in: on removal it takes everything from its own
+   * start mark up to its end mark along — what the binder rendered beside the subtree included, as
+   * the rows a structural template handed over at the top of the content renders before its anchor —
+   * and puts it all back on reinsertion. A binder may then render such a template; without this, it
+   * refuses one (@wcstack/state 4.0: #204), since what it rendered beside the subtree would be left
+   * behind (docs/binder-protocol-design.md §2, §9).
+   */
+  readonly range?: boolean;
+}
+
 export interface IWcsBinder {
   readonly protocol: "wcs-binder";
   /** Integer protocol version. All versions >= 1 are participant-compatible. */
@@ -51,8 +67,10 @@ export interface IWcsBinder {
    *     the same nodes are moved (measured: design doc §8-3).
    *   - Never throws for markup reasons; a subtree with no declarations is a
    *     no-op.
+   *   - `options` (optional) is what the caller declares about the subtree
+   *     ({@link IWcsBindOptions}).
    */
-  bind(subtree: Node): void;
+  bind(subtree: Node, options?: IWcsBindOptions): void;
 }
 
 /**
@@ -110,15 +128,19 @@ function takenSet(): WeakSet<Node> {
  *
  * Returns whether a binder took it *now*. A `false` does not yet mean the markup
  * is doomed — check {@link wasBoundBy} once module scripts have run.
+ *
+ * `options` goes to the binder with the subtree. A subtree held for a later binder
+ * is handed over without it: that binder's first walk of the page binds what is
+ * still in place there.
  */
-export function bindSubtree(subtree: Node): boolean {
+export function bindSubtree(subtree: Node, options?: IWcsBindOptions): boolean {
   const binder = getBinder();
   if (binder === null) {
     pendingQueue().push(subtree);
     return false;
   }
   takenSet().add(subtree);
-  binder.bind(subtree);
+  binder.bind(subtree, options);
   return true;
 }
 

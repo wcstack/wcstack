@@ -232,6 +232,13 @@ inSsr() かつ enable-ssr あり → SSR 初期化（下記）→ resolve して
    guard と自然に合成する）、DOM 変更なしで `commitNavigation` + `lastRoutes`
    設定 + マーカー除去。以後のナビゲーションは従来コードがそのまま動く
    （`hideRoute` は採用ノードを剥がし、戻れば `showRoute` が再挿入する）。
+   2026-10-02 の改訂: 終了マーカー（`@@wcs-route-end:`）は除去せず、採用したルートの
+   範囲の終わり（`route.endMarker`）として残す。クライアントの `showRoute` も初めての
+   表示で同じ文面の終了マーカーを内容の後ろに置き、`hideRoute` は placeholder から
+   終了マーカーまでの範囲（state がその間に描いた行・枝を含む）を持ち出して、次の
+   `showRoute` で戻す。サーバーの `_renderForSsr` は、`showRoute` が置いた終了マーカーを
+   そのまま使い（二重に置かない）、開始マーカーだけを placeholder の直後に置く
+   （docs/state-engine-rewrite/v4-remaining.ja.md §3 の `@wcstack/router` の行）。
 4. 検証失敗（マーカー欠損・集合不一致・マーカー無し）: **outlet の中身を捨てて
    従来経路**（fragment append + `applyRoute`）。安全側は常に CSR。
 

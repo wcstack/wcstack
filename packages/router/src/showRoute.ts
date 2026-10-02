@@ -40,16 +40,20 @@ export function assignRouteParams(route: IRoute, matchResult: IRouteMatchResult)
   }
 }
 
+/**
+ * ルートの内容を placeholder の後ろへ: `route.held` があればそれを、初めてなら元のノードと
+ * `route.endMarker` を。表示中のルート（パラメータの変化）の内容は動かさない。
+ */
 export function showRoute(route: IRoute, matchResult: IRouteMatchResult): boolean {
   assignRouteParams(route, matchResult);
-  const parentNode = route.placeHolder.parentNode;
-  const nextSibling = route.placeHolder.nextSibling;
-  for (const node of route.childNodeArray) {
-    if (nextSibling) {
-      parentNode?.insertBefore(node, nextSibling);
-    } else {
-      parentNode?.appendChild(node);
-    }
+  const placeHolder = route.placeHolder;
+  if (placeHolder.parentNode === null) return true;
+  const held = route.held;
+  if (held !== null) {
+    route.held = null;
+    placeHolder.after(held);
+  } else if (route.endMarker.parentNode === null) {
+    placeHolder.after(...route.childNodeArray, route.endMarker);
   }
   return true;
 }

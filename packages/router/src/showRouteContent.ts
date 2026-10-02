@@ -5,6 +5,7 @@ import { GuardCancel } from "./GuardCancel";
 import { runTransition } from "./protocol/transitionRunner";
 import { warnUnboundMarkup } from "./unboundMarkupWarning";
 import { bindSubtree } from "./protocol/binder";
+import { ROUTE_RANGE } from "./routeRange";
 
 /**
  * 差し込んだルート内容を binder へ渡す。binder が居なければ、バインドが効かない
@@ -20,7 +21,7 @@ import { bindSubtree } from "./protocol/binder";
 function bindRouteContent(route: IRoute): void {
   for (const node of route.childNodeArray) {
     if (node.nodeType !== 1) continue;
-    if (bindSubtree(node)) continue;
+    if (bindSubtree(node, ROUTE_RANGE)) continue;
     warnUnboundMarkup(
       node as Element,
       `<${(node as Element).tagName.toLowerCase()}> inside a route`,

@@ -1910,3 +1910,44 @@ describe("F4: on*#direct:（委譲せず要素に直接付ける。3.x と同じ
     expect(parseBindTextsForElement("onclick#direct,stop: save")[0].propModifiers).toEqual(["direct", "stop"]);
   });
 });
+
+describe("#204 を緩める: binder の bind(subtree, { range: true })（挿入した側が範囲を持ち運ぶ宣言）", () => {
+  const handOver = (root: ShadowRoot, html: string): Node[] => {
+    const box = document.createElement("template");
+    box.innerHTML = html;
+    const nodes = [...box.content.childNodes];
+    root.querySelector("main")!.append(...nodes);
+    return nodes;
+  };
+
+  it("宣言付きで渡された直下の for: / if: を描き、別々に渡された if: と else: は 1 つの連鎖になる", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root, el } = await page(`<main></main>`, { items: ["a", "b"], on: false });
+    const binder = (globalThis as any)[BINDER_KEY];
+    const nodes = handOver(root, `<template data-wcs="for: items"><p class="row">{{ . }}</p></template><template data-wcs="if: on"><b class="on">on</b></template><template data-wcs="else:"><b class="off">off</b></template>`);
+    for (const n of nodes) binder.bind(n, { range: true });
+    const main = root.querySelector("main")!;
+    const show = () => Array.from(main.querySelectorAll(".row, .on, .off"), (n) => n.textContent).join(",");
+    expect(show()).toBe("a,b,off");
+    expect(main.querySelectorAll("template").length).toBe(0);
+    el.createState("writable", (s: any) => { s.on = true; s.items = ["c"]; });
+    await flush();
+    expect(show()).toBe("c,on");
+    // handed over again (a router does on every insertion): nothing more
+    for (const n of nodes) binder.bind(n, { range: true });
+    expect(show()).toBe("c,on");
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("宣言の無い bind（<wcs-head>、古い router）は従来どおり #204 で拒み、宣言が false でも同じ", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root } = await page(`<main></main>`, { items: ["a"] });
+    const binder = (globalThis as any)[BINDER_KEY];
+    const [a] = handOver(root, `<template data-wcs="for: items"><p class="row">{{ . }}</p></template>`);
+    binder.bind(a);
+    const [b] = handOver(root, `<template data-wcs="if: items"><p class="row">x</p></template>`);
+    binder.bind(b, { range: false });
+    expect(root.querySelectorAll("main .row").length).toBe(0);
+    expect(error.mock.calls.map((c) => String((c[0] as Error).message))).toEqual([expect.stringContaining("#204"), expect.stringContaining("#204")]);
+  });
+});

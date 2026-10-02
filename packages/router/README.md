@@ -117,7 +117,7 @@ That's what `<wcs-router>`, `<wcs-route>`, and friends explore. One CDN import, 
 
 Two shapes work since 1.32, and they are not interchangeable. Pick per page, not per project.
 
-**Default: put the content inside `<wcs-route>`.** The router stamps it on entry and removes it on exit. `data-wcs` bindings inside it are bound when it is stamped (the binder protocol), so state-rendered markup — `for:`, `if:`, text — works there like anywhere else. Everything the router offers is keyed to the route body: `<wcs-head>` per route, the `focus="heading"` / `announce=` policies (they look for the heading *in the stamped content*), and a view transition per route swap.
+**Default: put the content inside `<wcs-route>`.** The router stamps it on entry and removes it on exit. `data-wcs` bindings inside it are bound when it is stamped (the binder protocol), so state-rendered markup — `for:`, `if:`, text — works there like anywhere else. Everything the router offers is keyed to the route body: `<wcs-head>` per route, the `focus="heading"` / `announce=` policies (they look for the heading *in the stamped content*), and a view transition per route swap. The router hands state only the route body's elements, so a `{{ }}` in text directly under `<wcs-route>` (not inside an element) is bound only on the landing route, by state's first scan — not when the route is entered by navigation (3.x behaves the same). Wrap such text in an element (`<p>{{ title }}</p>`).
 
 ```html
 <wcs-route path="/products/:productId(int)">
@@ -127,7 +127,9 @@ Two shapes work since 1.32, and they are not interchangeable. Pick per page, not
 </wcs-route>
 ```
 
-Put a structural template (`for:` / `if:`) inside an element of the route body, as the `<ul>` above does — not directly under `<wcs-route>`. The router stamps and removes only the route's own top-level nodes, and the rows or branch a top-level template renders sit beside it, out of the router's reach: they would be left behind on exit. (@wcstack/state 4.0 refuses one the router hands over, reporting `[wcs/template-syntax]` #204.)
+A structural template (`for:` / `if:`, with its `elseif:` / `else:`) may also sit directly under `<wcs-route>` with this version of the router and @wcstack/state 4.0: it renders whether the route is the landing one or entered by navigation, and its rows or branch leave and come back with the route. The router tells state's binder that it carries the route's range (`bind(subtree, { range: true })`, the binder protocol), and only then does state render a template handed over at the top of the content. With an older router, or with @wcstack/state 3.x, a top-level template renders only when state's first scan finds it already stamped (the landing route, with state loading after the router); one handed over later is not rendered (4.0 reports `[wcs/template-syntax]` #204; 3.x reports that the binding failed to apply) — put it inside an element of the route body, as the `<ul>` above does, and it works with every version.
+
+The router marks where a stamped route body ends with a comment, `<!--@@wcs-route-end:<path>-->` (the same marker SSR uses), and on exit takes everything from the route's placeholder up to it along — the route's own nodes and whatever was rendered among them since, such as the rows or branch a top-level template rendered — and puts it all back on the next entry. A node your own code inserts between those two comments goes and comes back with the route; one you moved out of the route body (a dialog moved to `<body>`) is taken back into it on exit, as before. The marker is a comment, so `wcs-outlet:empty` is unaffected.
 
 **Exception: switch it with state (`<template data-wcs="if: …">`) when the DOM must outlive the navigation.** Stamping is a teardown — a route body is rebuilt on every entry — so a `<video>` mid-playback, a half-filled form, a scrolled list, or a `<canvas>` you drew on does not survive leaving and coming back. Keep such content outside the router, bound to a state flag that the router's `routeName` / `typedParams` outputs set, and leave the route element empty (or holding only `<wcs-head>`).
 
@@ -358,6 +360,8 @@ console.log(router.typedParams.userId);  // 123 (number)
 ### Layout (wcs-layout)
 
 Loads a template, inserts children into `<slot>`, and writes to `<wcs-layout-outlet>`. Light DOM supported. External file supported.
+
+With @wcstack/state, the outlet hands the elements it places — and with them the `data-wcs` / `{{ }}` inside elements of the layout template and of the route content in its slots — to state's binder once they are in the page (the template loads asynchronously), so both are bound on the very first navigation into the layout, not only on the landing route. Only elements are handed over: a `{{ }}` in text directly under the layout template (not inside an element) is not bound on a navigation — wrap it in an element, as for a route body (see "Where route content lives"). With `enable-shadow-root`, the template lives in the outlet's shadow root, which the page's state does not bind (the route content in the light DOM is bound).
 
 | Attribute | Description |
 |------|------|
