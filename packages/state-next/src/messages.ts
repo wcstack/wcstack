@@ -86,6 +86,7 @@ export const enum M {
   StructuralNotSingle = 201,
   ElseWithoutIf = 202,
   OuterInTemplate = 203,
+  TemplateHandedOver = 204,
   // [wcs/binding-path-missing]
   PathMissing = 301,
   // [wcs/binding-type-expectation]

@@ -123,9 +123,11 @@
 <wcs-route path="/products/:productId(int)">
   <wcs-head><title data-wcs="textContent: product.name"></title></wcs-head>
   <h2 data-wcs="textContent: product.name"></h2>
-  <template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template>
+  <ul><template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template></ul>
 </wcs-route>
 ```
+
+構造のテンプレート（`for:` / `if:`）は、上の `<ul>` のようにルート本文の要素の中に置きます。`<wcs-route>` の直下には置きません。router がスタンプし取り除くのはルート自身の直下のノードだけで、直下のテンプレートが描く行や枝はその隣に並び、router の手が届きません。そのため退場しても残ってしまいます。（@wcstack/state 4.0 は、router から渡されたそうしたテンプレートを描かず、`[wcs/template-syntax]` #204 として報告します。）
 
 **例外: DOM をナビゲーションより長生きさせたいときは state で切り替える（`<template data-wcs="if: …">`）。** スタンプは破棄を伴います —— ルート本文は入場のたびに作り直されます —— ので、再生中の `<video>`、入力途中のフォーム、スクロール済みのリスト、描画済みの `<canvas>` は、離れて戻ってくると生き残りません。そうした内容は router の外に置き、router の `routeName` / `typedParams` 出力が立てる state のフラグにバインドし、ルート要素は空（または `<wcs-head>` だけ）にします。
 

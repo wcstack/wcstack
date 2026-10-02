@@ -7,6 +7,8 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { bootstrapState, DirtyStrategy, Engine, getBindingsReady, installFeatures, mount, scopes, setTrustedTypesPolicy, ssr } from "../src/index";
 import { drainBinds } from "../src/dom/binder";
+import { resolve } from "node:path";
+import ts from "typescript";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const BINDER_KEY = Symbol.for("wcstack.binder");
@@ -720,5 +722,313 @@ describe("B5: 接続直後の volume への setInitialState", () => {
     expect(root.querySelector("p")!.textContent).toBe("5");
     // once loaded, a re-set is the volume's (refused)
     expect(() => v.setInitialState({ n: 6 })).toThrow(/re-setting a volume/);
+  });
+});
+
+describe("C6: 縮める名前（mangle.mjs）と DOM・組み込みの名前", () => {
+  // a name in the list is shortened everywhere: an access that TypeScript resolves to a lib
+  // declaration (a DOM object's `children`, a built-in's method) would break in every bundle
+  it("縮める名前のアクセスが、lib の宣言（DOM・組み込み）に解決されるところが src に無い", async () => {
+    const { MANGLE_PROPS } = (await import("../mangle.mjs" as string)) as { MANGLE_PROPS: RegExp };
+    const cfg = ts.getParsedCommandLineOfConfigFile(resolve(__dirname, "../tsconfig.json"), {}, {
+      ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {},
+    })!;
+    const program = ts.createProgram(cfg.fileNames.filter((f) => f.includes("/src/")), cfg.options);
+    const checker = program.getTypeChecker();
+    const found: string[] = [];
+    for (const sf of program.getSourceFiles()) {
+      if (!sf.fileName.includes("/src/")) continue;
+      const visit = (node: ts.Node): void => {
+        if (ts.isPropertyAccessExpression(node) && MANGLE_PROPS.test(node.name.text)) {
+          const decls = checker.getSymbolAtLocation(node.name)?.declarations ?? [];
+          if (decls.some((d) => d.getSourceFile().fileName.includes("/node_modules/"))) {
+            found.push(`${sf.fileName.split("/src/")[1]}:${sf.getLineAndCharacterOfPosition(node.getStart()).line + 1} ${node.getText()}`);
+          }
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(sf);
+    }
+    expect(found).toEqual([]);
+  }, 60_000);
+});
+
+describe("C1: getter の一覧を通るパスの解決（resolve の戻り値の上書き）", () => {
+  const state = () => ({
+    todos: [{ title: "a", done: false }, { title: "b", done: true }],
+    filter: { done: false },
+    get visible() { const s = this as any; return s.todos.filter((t: any) => t.done === s["filter.done"]); },
+  });
+
+  it("{{ visible.0.title }} は名指した行を表示し、getter が変わると追従する", async () => {
+    const { proxy, texts } = setup(`<p>{{ visible.0.title }}</p>`, state());
+    await flush();
+    expect(texts("p")).toEqual(["a"]);
+    proxy["filter.done"] = true;
+    await flush();
+    expect(texts("p")).toEqual(["b"]);
+  });
+
+  it("getter が古いうちに名指した行へ書いても、別のパス（getter が読んだパス）に書かない", async () => {
+    const s: any = state();
+    const { proxy } = setup(``, s);
+    expect(proxy.visible).toHaveLength(1);
+    proxy["filter.done"] = true;
+    proxy["visible.0.title"] = "B";
+    expect(s.filter.done).toBe(true);
+    expect(s.todos[1].title).toBe("B");
+  });
+});
+
+describe("C3: 行の getter のキャッシュの穴", () => {
+  it("後から作られた getter の番号の前に穴があっても、穴を undefined のキャッシュとして読まない", async () => {
+    const { root, el } = await page(`<ul><template data-wcs="for: items"><li>{{ .x }}</li></template></ul>`, {
+      items: [{ v: 1, tags: ["t1"] }, { v: 2, tags: ["t2"] }],
+      show: false,
+      get "items.*.x"() { return (this as any)["items.*.v"] * 10; },
+    });
+    const binder = (globalThis as any)[BINDER_KEY];
+    const handOver = (html: string): void => {
+      const box = document.createElement("div");
+      box.innerHTML = html;
+      root.appendChild(box);
+      binder.bind(box);
+    };
+    // $1 behind a closed if (its slot made first, not read yet), then a later slot read at once
+    handOver(`<template data-wcs="if: show"><template data-wcs="for: items"><b>{{ $1 }}</b></template></template>`);
+    handOver(`<template data-wcs="for: items"><i>{{ .tags.0 }}</i></template>`);
+    await flush();
+    expect(Array.from(root.querySelectorAll("i")).map((n) => n.textContent)).toEqual(["t1", "t2"]);
+    el.createState("writable", (s: any) => { s.show = true; });
+    await flush();
+    expect(Array.from(root.querySelectorAll("b")).map((n) => n.textContent)).toEqual(["0", "1"]);
+  });
+});
+
+describe("C4: $postUpdate と $eq", () => {
+  for (const path of ["filter", "filter.status"]) {
+    it(`その場で変えて $postUpdate("${path}") すると、$eq で待つ getter に届く`, async () => {
+      const { proxy, texts } = setup(`<p>{{ isA }}</p><i>{{ filter.status }}</i>`, {
+        filter: { status: "a" },
+        get isA() { return (this as any).$eq("filter.status", "a"); },
+      });
+      await flush();
+      expect(texts("p")).toEqual(["true"]);
+      proxy.filter.status = "b";
+      proxy.$postUpdate(path);
+      await flush();
+      expect([texts("i"), texts("p")]).toEqual([["b"], ["false"]]);
+    });
+  }
+});
+
+describe("C5: $eqIndex の付け替え", () => {
+  const list = `<template data-wcs="for: items"><li>{{ .sel }}</li></template>`;
+  const items = () => [{ id: 1 }, { id: 2 }, { id: 3 }];
+
+  it("元のパスが getter なら、追跡付きの読みになる（getter の変化で選択が動く）", async () => {
+    const { proxy, texts } = setup(list, {
+      items: items(), selectedId: 1,
+      get selectedIndex() { const s = this as any; return s.items.findIndex((i: any) => i.id === s.selectedId); },
+      get "items.*.sel"() { return (this as any).$eqIndex("selectedIndex"); },
+    });
+    await flush();
+    expect(texts("li")).toEqual(["true", "false", "false"]);
+    proxy.selectedId = 3;
+    await flush();
+    expect(texts("li")).toEqual(["false", "false", "true"]);
+  });
+
+  it("元のパスの上のオブジェクトの置き換えと、その場の変更の $postUpdate でも選択が動く", async () => {
+    const { proxy, texts } = setup(list, {
+      items: items(), ui: { sel: 0 },
+      get "items.*.sel"() { return (this as any).$eqIndex("ui.sel"); },
+    });
+    await flush();
+    proxy.ui = { sel: 2 };
+    await flush();
+    expect(texts("li")).toEqual(["false", "false", "true"]);
+    proxy.ui.sel = 1;
+    proxy.$postUpdate("ui");
+    await flush();
+    expect(texts("li")).toEqual(["false", "true", "false"]);
+    proxy["ui.sel"] = 0;
+    await flush();
+    expect(texts("li")).toEqual(["true", "false", "false"]);
+  });
+});
+
+describe("C11: 描いている一覧のキーが無い状態への再セット", () => {
+  it("その一覧の for の失敗として報告し、再セットは最後まで進む（reset の受け口が呼ばれ、以後の書き込みも描かれる）", async () => {
+    const { hooks } = await import("../src/hooks");
+    const phases: string[] = [];
+    const prev = hooks.element;
+    hooks.element = (engine, phase) => {
+      prev?.(engine, phase);
+      phases.push(phase);
+    };
+    try {
+      const { root, el } = await page(`<ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul><p>{{ n }}</p>`, { items: ["x"], n: 0 });
+      const reported: [string, string][] = [];
+      expect(() => el.setInitialState({
+        n: 1,
+        $errorCallback(_e: unknown, info: { path: string; bindingType: string }) { reported.push([info.bindingType, info.path]); },
+      })).not.toThrow();
+      expect(reported).toEqual([["for", "items"]]);
+      expect(phases).toContain("reset");
+      expect(root.querySelector("p")!.textContent).toBe("1");
+      el.createState("writable", (s: any) => { s.n = 2; });
+      await flush();
+      expect(root.querySelector("p")!.textContent).toBe("2");
+    } finally {
+      hooks.element = prev;
+    }
+  });
+});
+
+// D3 (an if / else chain handed over one template at a time) is refused as a whole since N1: see "N1"
+
+describe("D4: ネイティブ要素の command. / eventToken. / ...:", () => {
+  it("定義を待たずに、その場で #1202 / #1501 で拒む（行では束縛の失敗、ページでは初期化の失敗）", async () => {
+    const reported: string[] = [];
+    const { root } = setup(
+      `<template data-wcs="for: rows"><dialog data-wcs="command.showModal: $command.open"></dialog><button data-wcs="eventToken.value: clicked"></button><input data-wcs="...: form"></template>`,
+      {
+        rows: [1], form: { a: 1 }, $commandTokens: ["open"], $eventTokens: ["clicked"],
+        $errorCallback(e: unknown) { reported.push(String((e as Error).message)); },
+      },
+    );
+    await flush();
+    expect(root.querySelectorAll("dialog")).toHaveLength(1);
+    expect(reported.map((m) => /#\d+/.exec(m)![0])).toEqual(["#1202", "#1202", "#1501"]);
+    expect(() => setup(`<dialog data-wcs="command.showModal: $command.open"></dialog>`, { $commandTokens: ["open"] })).toThrow(/#1202/);
+  });
+});
+
+describe("D5・D6: 定義が遅れて来るカスタム要素", () => {
+  it("定義の後に束縛が拒まれたら、その束縛の失敗として $errorCallback に届く（未処理の reject にならない）", async () => {
+    const tag = `quality-late-member-${seq++}`;
+    const reported: [string, string][] = [];
+    await page(`<${tag} data-wcs="nope: x"></${tag}>`, {
+      x: 1, $errorCallback(_e: unknown, info: { path: string; bindingType: string }) { reported.push([info.bindingType, info.path]); },
+    });
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [{ name: "value", event: "change" }] };
+    });
+    await flush();
+    expect(reported).toEqual([["prop", "x"]]);
+  });
+
+  it("定義の後の適用の失敗も、次の無関係な書き込みを待たずにすぐ報告する", async () => {
+    const tag = `quality-late-apply-${seq++}`;
+    const reported: string[] = [];
+    await page(`<${tag} data-wcs="foo: x"></${tag}>`, {
+      x: 1, $errorCallback(e: unknown) { reported.push(String((e as Error).message)); },
+    });
+    customElements.define(tag, class extends HTMLElement {
+      set foo(_v: unknown) { throw new Error("boom"); }
+      get foo(): unknown { return 0; }
+    });
+    await flush();
+    expect(reported).toEqual(["boom"]);
+  });
+
+  it("定義の前に行が消えたら、定義されても束縛を付けない", async () => {
+    const tag = `quality-late-gone-${seq++}`;
+    const { root, el } = await page(`<template data-wcs="for: rows"><${tag} data-wcs="foo: .v"></${tag}></template>`, { rows: [{ v: 1 }] });
+    const old = root.querySelector(tag) as any;
+    el.createState("writable", (s: any) => { s.rows = []; });
+    await flush();
+    let set = 0;
+    customElements.define(tag, class extends HTMLElement {
+      set foo(_v: unknown) { set++; }
+      get foo(): unknown { return undefined; }
+    });
+    customElements.upgrade(old);
+    await flush();
+    expect(set).toBe(0);
+  });
+});
+
+describe("D6: 置かれる前に消えた行（登録簿を待つ経路）", () => {
+  it("行が置かれた後の登録簿を待つ間に行が消えたら、定義されても束縛を付けない", async () => {
+    const tag = `quality-scoped-gone-${seq++}`;
+    // the row elements' registry (a stand-in for a scoped one): the wait for it goes through a microtask
+    Object.defineProperty(HTMLElement.prototype, "customElementRegistry", {
+      configurable: true,
+      get(this: Element) { return customElements; },
+    });
+    try {
+      const { engine, proxy } = setup(`<ul><template data-wcs="for: items"><li><${tag} data-wcs="foo: .v"></${tag}></li></template></ul>`, { items: [] });
+      await flush();
+      // built and removed within the same task, before the row's wait starts
+      proxy.items = [{ v: 1 }];
+      engine.drain();
+      proxy.items = [];
+      engine.drain();
+      let set = 0;
+      customElements.define(tag, class extends HTMLElement {
+        set foo(_v: unknown) { set++; }
+        get foo(): unknown { return undefined; }
+      });
+      await flush();
+      await flush();
+      expect(set).toBe(0);
+    } finally {
+      delete (HTMLElement.prototype as any).customElementRegistry;
+    }
+  });
+});
+
+describe("N1: binder に直接渡された構造のテンプレート（ルートの本文の直下）", () => {
+  it("描かずに #204 で報告する（描いた行が渡した側の手の届かない隣に残らない）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root } = await page(`<div id="outlet"></div>`, { items: ["a", "b"], on: true });
+    const outlet = root.getElementById("outlet")!;
+    const tpl = document.createElement("template");
+    tpl.innerHTML = `<h2>list</h2><template data-wcs="for: items"><p>{{ . }}</p></template><template data-wcs="if: on"><b>on</b></template><template data-wcs="else:"><i>off</i></template>`;
+    const nodes = Array.from(tpl.content.childNodes);
+    outlet.append(...nodes);
+    const binder = (globalThis as any)[BINDER_KEY];
+    for (const n of nodes) binder.bind(n);
+    expect(outlet.querySelectorAll("p, b, i")).toHaveLength(0);
+    expect(error.mock.calls.map((c) => String((c[0] as Error).message))).toEqual([
+      '[@wcstack/state] [wcs/template-syntax] #204 "for"',
+      '[@wcstack/state] [wcs/template-syntax] #204 "if"',
+      '[@wcstack/state] [wcs/template-syntax] #204 "else"',
+    ]);
+    // what the inserter removes is all there is
+    for (const n of nodes) n.parentNode?.removeChild(n);
+    expect(outlet.childNodes).toHaveLength(0);
+  });
+
+  it("要素で包んだテンプレートは、渡されたときに描く", async () => {
+    const { root } = await page(`<div id="outlet"></div>`, { items: ["a", "b"] });
+    const outlet = root.getElementById("outlet")!;
+    const ul = document.createElement("ul");
+    ul.innerHTML = `<template data-wcs="for: items"><li>{{ . }}</li></template>`;
+    outlet.append(ul);
+    (globalThis as any)[BINDER_KEY].bind(ul);
+    expect(Array.from(ul.querySelectorAll("li")).map((n) => n.textContent)).toEqual(["a", "b"]);
+  });
+});
+
+describe("N2: 多くの行の下のタグが後から定義されたとき", () => {
+  it("$renderedCallback は定義 1 つにつき 1 回（行ごとではない）", async () => {
+    const tag = `quality-late-many-${seq++}`;
+    let calls = 0;
+    await page(`<ul><template data-wcs="for: rows"><li><${tag} data-wcs="foo: .v"></${tag}></li></template></ul>`, {
+      rows: Array.from({ length: 20 }, (_, i) => ({ v: i })), $renderedCallback() { calls++; },
+    });
+    const before = calls;
+    const seen: unknown[] = [];
+    customElements.define(tag, class extends HTMLElement {
+      set foo(v: unknown) { seen.push(v); }
+      get foo(): unknown { return undefined; }
+    });
+    await flush();
+    await flush();
+    expect(seen).toHaveLength(20);
+    expect(calls - before).toBe(1);
   });
 });

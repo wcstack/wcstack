@@ -16,6 +16,9 @@ type KeyOf = (row: Record<string, unknown>) => unknown;
 const keysByEngine = new WeakMap<Engine, Map<Pattern, KeyOf>>();
 /** The merged array is being written: the write goes through as a plain one. */
 let merging = false;
+const PROTO = "__proto__";
+/** A field name that is one path segment (no `.` / `*`, not an index, not a `$` name). */
+const SEGMENT = /^[^\d.*$][^.*]*$/;
 
 function declare(engine: Engine, target: Record<string, any>): void {
   const decl = target.$listKeys;
@@ -85,7 +88,19 @@ function beforeWrite(engine: Engine, p: Pattern, row: StateRow | null, value: un
   }
   if (changes.length > 0) {
     const list = engine.childList(p.depth === 0 ? null : row, p);
-    for (const [i, f, v] of changes) engine.write(engine.pattern(`${p.path}.*.${f}`), list.rows[i], v);
+    for (const [i, f, v] of changes) {
+      // a field name is the server's. `__proto__` (an own key from JSON) is not a field: copied, it
+      // would replace the row's prototype. A name that is not one path segment (`@odata.etag`,
+      // `2fa`) or is a row getter's goes into the row as it is, the row told as a whole.
+      if (f === PROTO) continue;
+      const r = list.rows[i];
+      const fp = SEGMENT.test(f) ? engine.pattern(`${p.path}.*.${f}`) : null;
+      if (fp?.getter === null) engine.write(fp, r, v);
+      else {
+        (r.item as Record<string, unknown>)[f] = v;
+        engine.write(engine.pattern(`${p.path}.*`), r, r.item, true);
+      }
+    }
   }
   return true;
 }

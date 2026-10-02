@@ -13,7 +13,8 @@ import { engines, mountSubtree } from "./mount";
 const early: Element[] = [];
 
 function bind(subtree: Node): void {
-  if (subtree.nodeType !== 1) return;
+  // not in a document (it left, or was replaced, as a chain's `else:` template by its anchor): nothing to bind
+  if (subtree.nodeType !== 1 || !subtree.isConnected) return;
   const engine = engines.get(subtree.getRootNode());
   if (engine === undefined) early.push(subtree as Element);
   else mountSubtree(engine, subtree as Element);
@@ -24,8 +25,8 @@ function bind(subtree: Node): void {
  * before the mount, or (queued by the protocol) before any binder existed.
  */
 export function drainBinds(): void {
-  // one that left the document meanwhile is dropped (handed over again if it comes back)
-  for (const subtree of early.splice(0)) if (subtree.isConnected) bind(subtree);
+  // (one that left the document meanwhile is dropped: handed over again if it comes back)
+  for (const subtree of early.splice(0)) bind(subtree);
   flushPendingBinds();
 }
 

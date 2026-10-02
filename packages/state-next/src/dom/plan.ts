@@ -256,31 +256,26 @@ export const chainAnchorText = (k: number, part: ChainPart): string =>
   k === 0 ? config.commentIfPrefix : part.pattern === null ? config.commentElsePrefix : config.commentElseIfPrefix;
 
 /**
- * Reads an `if` chain starting at children[start] (an `if:` template): the `elseif:` /
- * `else:` templates that follow it, across whitespace and comments. Returns the parts and
- * the index of the last child consumed.
+ * Reads an `if` chain starting at `first` (an `if:` template): the `elseif:` / `else:` templates
+ * that follow it in the tree, across whitespace and comments. The walker skips the ones taken (each
+ * is out of the tree, its anchor in its place).
  */
-export function readChain(engine: Engine, children: ChildNode[], start: number, list: Pattern | null): { parts: ChainPart[]; end: number } {
+export function readChain(engine: Engine, first: Element, list: Pattern | null): ChainPart[] {
   const part = (el: Element, b: ParsedBinding): ChainPart => ({
     el: el as HTMLTemplateElement,
     pattern: b.bindingType === "else" ? null : boundPattern(engine, b.statePathName, list),
     filters: b.bindingType === "else" ? null : buildFilters(b.outFilters),
   });
-  const first = children[start] as Element;
   const parts = [part(first, directive(first)!)];
-  let end = start;
-  for (let i = start + 1; i < children.length; i++) {
-    const c = children[i];
-    if (c.nodeType === 3 && (c as Text).data.trim() === "") continue;
-    if (c.nodeType === 8) continue;
+  for (let c = first.nextSibling; c !== null; c = c.nextSibling) {
+    if ((c.nodeType === 3 && (c as Text).data.trim() === "") || c.nodeType === 8) continue;
     if (c.nodeType !== 1 || (c as Element).localName !== "template") break;
     const b = directive(c as Element);
     if (b === null || (b.bindingType !== "elseif" && b.bindingType !== "else")) break;
     parts.push(part(c as Element, b));
-    end = i;
     if (b.bindingType === "else") break;
   }
-  return { parts, end };
+  return parts;
 }
 
 /** The elements a page walk has visited: each is bound once, however often it is handed over. */
@@ -307,6 +302,8 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
   const walk = (children: ChildNode[]): void => {
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
+      // (out of the tree: an `elseif:` / `else:` template its chain's anchor replaced)
+      if (child.parentNode === null) continue;
       if (child.nodeType === 1) {
         const el = child as Element;
         const tag = el.localName;
@@ -329,12 +326,10 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
             const plan = compilePlan(engine, el as HTMLTemplateElement, p, true);
             onFor(anchorFor(el, config.commentForPrefix), p, plan);
           } else if (d.bindingType === "if") {
-            const { parts, end } = readChain(engine, children, i, list);
-            onIf(parts.map((part, k) => {
+            onIf(readChain(engine, el, list).map((part, k) => {
               const plan = compilePlan(engine, part.el, list, false);
               return { plan, pattern: part.pattern, filters: part.filters, anchor: anchorFor(part.el, chainAnchorText(k, part)) };
             }));
-            i = end;
           } else {
             notAfterIf(d.bindingType);
           }

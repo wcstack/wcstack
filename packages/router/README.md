@@ -123,9 +123,11 @@ Two shapes work since 1.32, and they are not interchangeable. Pick per page, not
 <wcs-route path="/products/:productId(int)">
   <wcs-head><title data-wcs="textContent: product.name"></title></wcs-head>
   <h2 data-wcs="textContent: product.name"></h2>
-  <template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template>
+  <ul><template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template></ul>
 </wcs-route>
 ```
+
+Put a structural template (`for:` / `if:`) inside an element of the route body, as the `<ul>` above does — not directly under `<wcs-route>`. The router stamps and removes only the route's own top-level nodes, and the rows or branch a top-level template renders sit beside it, out of the router's reach: they would be left behind on exit. (@wcstack/state 4.0 refuses one the router hands over, reporting `[wcs/template-syntax]` #204.)
 
 **Exception: switch it with state (`<template data-wcs="if: …">`) when the DOM must outlive the navigation.** Stamping is a teardown — a route body is rebuilt on every entry — so a `<video>` mid-playback, a half-filled form, a scrolled list, or a `<canvas>` you drew on does not survive leaving and coming back. Keep such content outside the router, bound to a state flag that the router's `routeName` / `typedParams` outputs set, and leave the route element empty (or holding only `<wcs-head>`).
 

@@ -40,7 +40,8 @@ export class Ssr extends HTMLElement implements ISsrElement {
 
   get templates(): Map<string, HTMLTemplateElement> {
     const map = new Map<string, HTMLTemplateElement>();
-    for (const t of Array.from(this.children)) if (t.localName === "template") map.set(t.id, t as HTMLTemplateElement);
+    // quoted: `children` is an internal name the bundles shorten (mangle.mjs)
+    for (const t of Array.from(this["children"])) if (t.localName === "template") map.set(t.id, t as HTMLTemplateElement);
     return map;
   }
 

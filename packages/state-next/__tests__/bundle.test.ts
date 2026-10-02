@@ -110,3 +110,19 @@ describe("縮めたバンドルでの manifest（外へ渡すキーは縮めら�
     expect(bundled.getWcsManifest()).toEqual(getWcsManifest());
   }, 60000);
 });
+
+describe("縮めたバンドルでの <wcs-ssr>（DOM の名前は縮められない）", () => {
+  it("templates・getTemplate()・stateData が子を読める（children が縮められない）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = `<wcs-ssr version="1.0.0"><script type="application/json">{"a":1}</script><template id="t1"><p></p></template></wcs-ssr>`;
+    document.body.appendChild(host);
+    try {
+      const ssr = host.querySelector("wcs-ssr") as any;
+      expect([...ssr.templates.keys()]).toEqual(["t1"]);
+      expect(ssr.getTemplate("t1")).not.toBe(null);
+      expect(ssr.stateData).toEqual({ a: 1 });
+    } finally {
+      host.remove();
+    }
+  });
+});

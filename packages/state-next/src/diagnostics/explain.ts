@@ -50,8 +50,9 @@ export function explain(message: string, subject?: string, candidates?: Iterable
     out += " No formatting filters are installed — add them with installFormats() (the formats add-on).";
   }
   const code = /\[wcs\/([\w-]+)\]/.exec(message);
-  // (the path-length limit is a runtime cost, and lint counts a path's loops without naming their lists:
-  // neither is something lint reports)
-  if (code !== null && LINT_CODES.has(code[1]) && !message.includes(" path segments — the limit is ") && !message.includes(" ranges over the rows of ")) out += LINT_HINT;
+  // (not something lint reports: the path-length limit is a runtime cost, lint counts a path's loops
+  // without naming their lists, and it does not look yet at a template handed over at the top of
+  // inserted content (#204) or at an `outerHTML:` in a template (#203))
+  if (code !== null && LINT_CODES.has(code[1]) && !/ path segments — the limit is | ranges over the rows of |inserted content was not rendered|replaces its element/.test(message)) out += LINT_HINT;
   return out;
 }

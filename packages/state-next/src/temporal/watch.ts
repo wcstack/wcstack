@@ -27,11 +27,12 @@ interface Watch {
   readonly handler: Handler;
   /** A getter (or under one): kept evaluated, `prev` is its previous evaluation. */
   getter: boolean;
-  /** Previous evaluation by row (getter watches). */
-  readonly last: Map<StateRow | null, unknown>;
+  /** Previous evaluation by row (getter watches; the root's under ROOT): a removed row takes its entry with it. */
+  last: WeakMap<object, unknown>;
 }
 
 const MAX_CHAIN = 32;
+const ROOT = {};
 const PROTOTYPE_NAMES = new Set(Object.getOwnPropertyNames(Object.prototype));
 
 export function parseWatches(engine: Engine, decl: unknown): Watch[] {
@@ -44,7 +45,7 @@ export function parseWatches(engine: Engine, decl: unknown): Watch[] {
     if (typeof handler !== "function") raiseError(`$watch entry "${path}" must be a function.`);
     const p = engine.pattern(path);
     hooks.declared?.(engine, p, true);
-    out.push({ path, p, handler: handler as Handler, getter: false, last: new Map() });
+    out.push({ path, p, handler: handler as Handler, getter: false, last: new WeakMap() });
   }
   return out;
 }
@@ -73,9 +74,9 @@ export class WatchRuntime {
     this.chain = 0;
     for (const w of this.watches) {
       w.getter = w.p.getter !== null || w.p.underGetter;
-      w.last.clear();
+      w.last = new WeakMap();
       if (w.p.depth === 0) {
-        if (w.getter) w.last.set(null, engine.readUntracked(w.p, null));
+        if (w.getter) w.last.set(ROOT, engine.readUntracked(w.p, null));
       } else {
         // a row watch keeps its lists synced, rendered or not; a getter watch is eager per row
         this.eachRow(w.p, 1, null, (row) => {
@@ -112,30 +113,29 @@ export class WatchRuntime {
     else this.otherWrote = true;
     if (!this.active) return;
     for (const w of this.watches) {
-      if (w.getter) continue;
       const wp = w.p;
-      if (wp === p) {
-        // `prev` reuses the old value the same-value guard reads (none when it is off)
-        this.hit(w, row, direct && this.engine.guard && (value === null || (typeof value !== "object" && typeof value !== "function")) ? old : undefined);
-      } else if (wp.depth === p.depth && wp.isUnder(p)) {
-        // an object above the watched path in the same row was replaced (no primitive written: no prev)
-        this.hit(w, row, undefined);
-      }
+      // the watched path, or an object above it in the same row (a getter's row replaced included)
+      if (wp.depth !== p.depth || !wp.isUnder(p)) continue;
+      // `prev`: a getter's previous evaluation; for data, the old value the same-value guard reads
+      // when a primitive was written there (none when it is off, or above it)
+      this.hit(w, row, w.getter ? w.last.get(row ?? ROOT) : wp === p && direct && this.engine.guard && (value === null || (typeof value !== "object" && typeof value !== "function")) ? old : undefined);
     }
   }
 
   getterReached(g: Pattern, row: StateRow | null): void {
     if (!this.active) return;
-    for (const w of this.watches) if (w.getter && w.p === g) this.hit(w, row, w.last.get(row));
+    // a getter, or a path under it in the same row
+    for (const w of this.watches) if (w.getter && w.p.depth === g.depth && w.p.isUnder(g)) this.hit(w, row, w.last.get(row ?? ROOT));
   }
 
   /** Rows that entered a list a row watch ranges over fire (and nested lists under them sync). */
   listSynced(list: StateList, old: StateRow[]): void {
     if (!this.active) return;
-    const before = new Set(old);
+    let before: Set<StateRow> | null = null;
     for (const w of this.watches) {
       const wp = w.p;
       if (wp.depth < list.depth || wp.lists[list.depth] !== list.pattern) continue;
+      before ??= new Set(old);
       for (const row of list.rows) {
         if (before.has(row)) continue;
         if (wp.depth === list.depth) this.hit(w, row, undefined);
@@ -174,7 +174,7 @@ export class WatchRuntime {
         engine.feeding++;
         try {
           cur = engine.readUntracked(w.p, row);
-          if (w.getter) w.last.set(row, cur);
+          if (w.getter) w.last.set(row ?? ROOT, cur);
           engine.ctx = row;
           w.handler.call(engine.proxy, cur, prev, ...engine.indexesOf(row));
         } catch (error) {

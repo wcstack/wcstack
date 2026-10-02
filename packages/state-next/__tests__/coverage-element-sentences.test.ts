@@ -90,6 +90,7 @@ const RENDERED: [M, unknown[], string][] = [
 
   [M.StructuralNotSingle, ["for: a; value: b"], `[wcs/template-syntax] Invalid bindText: "for: a; value: b". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`],
   [M.ElseWithoutIf, ["else"], '[wcs/template-syntax] "else:" must follow an "if:" template'],
+  [M.TemplateHandedOver, ["for"], '[wcs/template-syntax] a "for:" template at the top of inserted content was not rendered, as it would render beside itself out of the inserter\'s reach: wrap it in an element.'],
   [M.OuterInTemplate, ["outerHTML"], '[wcs/template-syntax] "outerHTML:" replaces its element, so it cannot be used inside a "for" / "if" template (a row or branch keeps its nodes by position): bind innerHTML: on a wrapper element instead.'],
   [M.PathMissing, ["itemz"], '[wcs/binding-path-missing] Path "itemz" does not exist on the state tree.'],
   [M.ClassNeedsBoolean, ["active", "string"], "[wcs/binding-type-expectation] class.active needs a boolean, got string."],

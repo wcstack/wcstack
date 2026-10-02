@@ -1,25 +1,28 @@
 /**
- * Regressions of the add-on review (cycle 1, B1–B9): volumes (row-level getters, `$eqIndex`, a
- * failed root, SSR), exported getters across a host re-set, and the `$` declarations of a mounted
- * component.
+ * Regressions of the add-on review. Cycle 1 (B1–B9, BN1, S1, U1): volumes (row-level getters,
+ * `$eqIndex`, a failed root, SSR), exported getters across a host re-set, the `$` declarations of a
+ * mounted component, `$recursion` re-sets. Cycle 2 (D1, D2, C2, C7–C9): SSR adoption, `$listKeys`
+ * field names, `$watch` under getters.
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { bootstrapState, getBindingsReady, installFeatures, listKeys, recursion, scopes, ssr } from "../src/index";
+import { bootstrapState, getBindingsReady, installFeatures, listKeys, recursion, scopes, ssr, temporal } from "../src/index";
+import { WatchRuntime } from "../src/temporal/watch";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
 
 beforeAll(() => {
   // scopes before ssr, as the full build installs them
-  installFeatures([listKeys, scopes, recursion, ssr]);
+  installFeatures([temporal, listKeys, scopes, recursion, ssr]);
   bootstrapState();
 });
 
 /** A shadow root with `html`; states handed to its <wcs-state> elements in document order. */
-async function host(html: string, states: Record<string, any>[]) {
+async function host(html: string, states: Record<string, any>[], build?: (root: ShadowRoot) => void) {
   const h = document.createElement(`quality-addon-${seq++}`);
   const root = h.attachShadow({ mode: "open" });
   root.innerHTML = html;
+  build?.(root);
   const els = Array.from(root.querySelectorAll("wcs-state")) as any[];
   els.forEach((el, i) => el.setInitialState(states[i]));
   document.body.appendChild(h);
@@ -391,5 +394,240 @@ describe("マウントしたコンポーネントの $ 宣言（B9）", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+// ---------------------------------------------------------------- cycle 2
+
+/** Renders `html` on the "server" and hydrates its output; `before` sees the parsed page before the state loads. */
+async function ssrRoundTrip(html: string | ((root: ShadowRoot) => void), state: () => Record<string, any>, before?: (root: ShadowRoot) => void) {
+  document.documentElement.setAttribute("data-wcs-server", "orchestrated");
+  let out: string;
+  try {
+    // (a function builds the page with the DOM: happy-dom's parser moves a <tr> out of a <template> in a <table>)
+    const server = typeof html === "string"
+      ? await host(`<wcs-state enable-ssr></wcs-state>${html}`, [state()])
+      : await host(`<wcs-state enable-ssr></wcs-state>`, [state()], html);
+    (globalThis as any)[Symbol.for("wcstack.ssr.snapshotBuilder")].build(server.root);
+    out = server.root.innerHTML;
+    server.h.remove();
+  } finally {
+    document.documentElement.removeAttribute("data-wcs-server");
+  }
+  const h = document.createElement(`quality-addon-${seq++}`);
+  const root = h.attachShadow({ mode: "open" });
+  root.innerHTML = out;
+  before?.(root);
+  const el = root.querySelector("wcs-state") as any;
+  el.setInitialState(state());
+  document.body.appendChild(h);
+  await el.connectedCallbackPromise;
+  await getBindingsReady(root);
+  await flush();
+  const write = async (fn: (s: any) => void) => {
+    el.createState("writable", fn);
+    await flush();
+  };
+  return { root, write };
+}
+
+describe("SSR の引き取り: 隣り合う if の連鎖（D1）", () => {
+  it("行の中の別々の if: の連鎖は、それぞれ自分の枝を引き取り、以後の変更も自分のノードに届く", async () => {
+    const { root, write } = await ssrRoundTrip(
+      `<ul><template data-wcs="for: items"><li><template data-wcs="if: .a"><span>A</span></template>
+      <template data-wcs="if: .b"><em>B</em></template></li></template></ul>`,
+      () => ({ items: [{ a: true, b: true }] }),
+    );
+    expect(root.querySelectorAll("span").length).toBe(1);
+    expect(root.querySelectorAll("em").length).toBe(1);
+    await write((s) => { s["items.0.a"] = false; });
+    expect(root.querySelectorAll("span").length).toBe(0);
+    expect(root.querySelectorAll("em").length).toBe(1);
+  });
+
+  it("ページ直下の隣り合う連鎖も、サーバのノードをそのまま引き取る", async () => {
+    let em: Element | null = null;
+    let i: Element | null = null;
+    const { root } = await ssrRoundTrip(
+      `<template data-wcs="if: a"><i>A</i></template><template data-wcs="else:"><i>notA</i></template>
+      <template data-wcs="if: b"><em>B</em></template>`,
+      () => ({ a: false, b: true }),
+      (r) => { em = r.querySelector("em"); i = r.querySelector("i"); },
+    );
+    expect(Array.from(root.querySelectorAll("i,em"), (n) => n.textContent)).toEqual(["notA", "B"]);
+    expect(root.querySelector("em")).toBe(em);
+    expect(root.querySelector("i")).toBe(i);
+  });
+});
+
+describe("SSR の引き取り: 行の形の検査（D2）", () => {
+  it("行の中の Light DOM の要素が子を先頭に足していると、行を作り直し、束縛は正しいノードに付く", async () => {
+    const tag = `quality-card-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      connectedCallback() {
+        if (!this.querySelector("h2")) this.prepend(Object.assign(document.createElement("h2"), { textContent: "card" }));
+      }
+    });
+    const { root, write } = await ssrRoundTrip(
+      `<ul><template data-wcs="for: items"><li><${tag}><span data-wcs="textContent: .name"></span></${tag}></li></template></ul>`,
+      () => ({ items: [{ name: "Bob" }] }),
+    );
+    await write((s) => { s["items.0.name"] = "Ann"; });
+    expect(Array.from(root.querySelectorAll("li"), (li) => li.textContent)).toEqual(["cardAnn"]);
+  });
+
+  it("<tbody> を書かない表の行（パーサが <tbody> を補う）も、行の数と束縛が合う", async () => {
+    const { root, write } = await ssrRoundTrip(
+      (r) => {
+        const table = document.createElement("table");
+        const t = document.createElement("template");
+        t.setAttribute("data-wcs", "for: items");
+        t.content.append(Object.assign(document.createElement("tr"), { innerHTML: `<td data-wcs="textContent: .name"></td>` }));
+        table.append(t);
+        r.append(table);
+      },
+      () => ({ items: [{ name: "a" }, { name: "b" }] }),
+      // (the same parser quirk empties the snapshot's <template> of its <tr>: put it back as a browser parses it)
+      (r) => {
+        const t = r.querySelector("wcs-ssr template") as HTMLTemplateElement;
+        t.content.append(Object.assign(document.createElement("tr"), { innerHTML: `<td data-wcs="textContent: .name"></td>` }));
+        // the parser put the rows and the region's end marker in a <tbody>, its start marker outside
+        expect(r.querySelector("table > tbody")).not.toBe(null);
+      },
+    );
+    expect(Array.from(root.querySelectorAll("td"), (td) => td.textContent)).toEqual(["a", "b"]);
+    await write((s) => { s["items.1.name"] = "B"; });
+    expect(Array.from(root.querySelectorAll("td"), (td) => td.textContent)).toEqual(["a", "B"]);
+  });
+
+  it("形の合う行は、これまでどおりサーバのノードを引き取る", async () => {
+    let li: Element | null = null;
+    const { root, write } = await ssrRoundTrip(
+      `<ul><template data-wcs="for: items"><li><b data-wcs="textContent: .name"></b></li></template></ul>`,
+      () => ({ items: [{ name: "a" }] }),
+      (r) => { li = r.querySelector("li"); },
+    );
+    expect(root.querySelector("li")).toBe(li);
+    await write((s) => { s["items.0.name"] = "z"; });
+    expect(root.querySelector("b")!.textContent).toBe("z");
+  });
+});
+
+describe("$listKeys の取り直しのフィールド名（C2）", () => {
+  const listHost = (items: unknown[]) => host(
+    `<wcs-state></wcs-state><ul><template data-wcs="for: items"><li>{{ .name }}/{{ .double }}</li></template></ul>`,
+    [{ items, $listKeys: { items: "id" }, get "items.*.double"() { return (this as any)["items.*.n"] * 2; } }],
+  );
+  const write = async (el: any, fn: (s: any) => void) => {
+    el.createState("writable", fn);
+    await flush();
+  };
+
+  it("__proto__ を含む名前（JSON の \"__proto__.polluted\"）でも Object.prototype を汚さない", async () => {
+    const { els } = await listHost([{ id: 1, name: "a", n: 1 }]);
+    await write(els[0], (s) => { s.items = JSON.parse(`[{"id":1,"name":"a","n":1,"__proto__.polluted":"yes"}]`); });
+    const polluted = ({} as any).polluted;
+    delete (Object.prototype as any).polluted;
+    expect(polluted).toBeUndefined();
+    let kept: any;
+    els[0].createState("readonly", (s: any) => { kept = s.items[0]; });
+    expect(kept["__proto__.polluted"]).toBe("yes");
+  });
+
+  it("JSON の自前の __proto__ キーは、残した行のプロトタイプを差し替えない", async () => {
+    const { els } = await listHost([{ id: 1, name: "a", n: 1 }]);
+    await write(els[0], (s) => { s.items = JSON.parse(`[{"id":1,"name":"a","n":1,"__proto__":{"isAdmin":true}}]`); });
+    let row: any;
+    els[0].createState("readonly", (s: any) => { row = s.items[0]; });
+    expect(Object.getPrototypeOf(row)).toBe(Object.prototype);
+    expect(row.isAdmin).toBeUndefined();
+  });
+
+  it("1 段のパスにならない名前（@odata.etag・2fa）と行の getter と同じ名前は、行にそのまま入り、行が描き直される", async () => {
+    const first = { id: 1, name: "a", n: 1, "@odata.etag": "W/1", "2fa": false };
+    const { root, els } = await listHost([first]);
+    await write(els[0], (s) => { s.items = [{ id: 1, name: "A", n: 2, "@odata.etag": "W/2", "2fa": true, double: 99 }]; });
+    let row: any;
+    els[0].createState("readonly", (s: any) => { row = s.items[0]; });
+    expect(row).toBe(first);
+    expect([row["@odata.etag"], row["2fa"], row.double]).toEqual(["W/2", true, 99]);
+    // the getter still answers the binding
+    expect(root.querySelector("li")!.textContent).toBe("A/4");
+  });
+});
+
+describe("$watch と getter（C7・C8・C9）", () => {
+  it("getter の下のパスへの watch が、getter が変わると発火する（C7）", async () => {
+    const calls: unknown[] = [];
+    const { els } = await host(`<wcs-state></wcs-state>`, [{
+      items: [{ name: "a" }, { name: "b" }],
+      sel: 0,
+      get current() { return (this as any).items[(this as any).sel]; },
+      $watch: { "current.name"(cur: unknown, prev: unknown) { calls.push([cur, prev]); } },
+    }]);
+    els[0].createState("writable", (s: any) => { s.sel = 1; });
+    await flush();
+    expect(calls).toEqual([["b", "a"]]);
+  });
+
+  it("行の getter の下のパスへの watch も、その行の葉の変更で発火する（C7）", async () => {
+    const calls: unknown[] = [];
+    const { els } = await host(`<wcs-state></wcs-state>`, [{
+      items: [{ name: "a" }, { name: "b" }],
+      get "items.*.info"() { return { label: String((this as any)["items.*.name"]).toUpperCase() }; },
+      $watch: { "items.*.info.label"(cur: unknown, prev: unknown, i: number) { calls.push([cur, prev, i]); } },
+    }]);
+    els[0].createState("writable", (s: any) => { s["items.1.name"] = "z"; });
+    await flush();
+    expect(calls).toEqual([["Z", "B", 1]]);
+  });
+
+  it("行の getter への watch が、行のオブジェクトの差し替えと $postUpdate でも発火する（C8）", async () => {
+    const calls: unknown[] = [];
+    const { els } = await host(`<wcs-state></wcs-state>`, [{
+      items: [{ v: 1 }, { v: 2 }],
+      get "items.*.double"() { return (this as any)["items.*.v"] * 2; },
+      $watch: { "items.*.double"(cur: unknown, prev: unknown, i: number) { calls.push([cur, prev, i]); } },
+    }]);
+    const write = async (fn: (s: any) => void) => { els[0].createState("writable", fn); await flush(); };
+    await write((s) => { s["items.0.v"] = 3; });
+    await write((s) => { s["items.1"] = { v: 5 }; });
+    await write((s) => { s.items[0].v = 7; s.$postUpdate("items.0"); });
+    expect(calls).toEqual([[6, 2, 0], [10, 4, 1], [14, 6, 0]]);
+  });
+
+  it("行の getter への watch は、取り除いた行を強く持たない（C9）", async () => {
+    let rt: any = null;
+    const orig = WatchRuntime.prototype.drained;
+    WatchRuntime.prototype.drained = function (this: any) { rt = this; return orig.call(this); };
+    try {
+      const calls: unknown[] = [];
+      const { els } = await host(`<wcs-state></wcs-state>`, [{
+        items: [{ v: 1 }],
+        get "items.*.double"() { return (this as any)["items.*.v"] * 2; },
+        $watch: { "items.*.double"(cur: unknown) { calls.push(cur); } },
+      }]);
+      for (let i = 0; i < 3; i++) {
+        els[0].createState("writable", (s: any) => { s.items = [{ v: i }, { v: i + 1 }]; });
+        await flush();
+      }
+      expect(rt.watches[0].last).toBeInstanceOf(WeakMap);
+      expect(calls).toEqual([0, 2, 2, 4, 4, 6]);
+    } finally {
+      WatchRuntime.prototype.drained = orig;
+    }
+  });
+});
+
+describe("lint への誘導を付けないメッセージ（#203・#204）", () => {
+  it("#204 と #203 には lint への誘導を付けず、lint が見る template-syntax の誤りには付ける", async () => {
+    const { explain, render } = await import("../src/diagnostics/explain");
+    const { M } = await import("../src/messages");
+    for (const [id, args] of [[M.TemplateHandedOver, ["for"]], [M.OuterInTemplate, ["outerHTML"]]] as const) {
+      const message = render(id, args);
+      expect(message).toContain("[wcs/template-syntax]");
+      expect(explain(message)).not.toContain("npx @wcstack/lint");
+    }
+    expect(explain(render(M.ElseWithoutIf, ["else"]))).toContain("npx @wcstack/lint");
   });
 });

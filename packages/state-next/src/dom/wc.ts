@@ -13,7 +13,7 @@ import type { Engine } from "../engine";
 import { raise, M } from "../messages";
 import { hooks } from "../hooks";
 import type { StateRow } from "../list";
-import { adopt, Binding, K_CUSTOM, type Block, type Spec } from "./view";
+import { adopt, Binding, failSpec, K_CUSTOM, type Block, type Spec } from "./view";
 import { pipe } from "./filters";
 // (view.ts imports this module too: the cycle is fine, everything here is used at call time)
 
@@ -54,26 +54,50 @@ export const registryOf = (el: Element): CustomElementRegistry =>
   ((el as any).customElementRegistry as CustomElementRegistry | null | undefined) ?? customElements;
 
 /**
- * Runs `attach` once the element's class is defined (at once when it already is) and
- * upgraded, unless its block went away in the meantime.
+ * Runs `attach` (for spec `s`) once the element's class is defined (at once when it already is) and
+ * upgraded, unless its block went away in the meantime (`pending`). A native element has no definition to wait
+ * for: it is attached at once (and refused there, as a custom element with no declaration is).
  */
-export function whenDefined(el: Element, owner: Block | null, attach: (bindable: Bindable | null) => void, later = false): void {
+export function whenDefined(engine: Engine, s: Spec, el: Element, owner: Block | null, attach: (bindable: Bindable | null) => void, later = false): void {
   const tag = el.localName;
+  if (!tag.includes("-")) return attach(null);
   const r = registryOf(el);
   // a row built in a fragment takes the registry of the shadow root it goes into (a scoped one)
   // when it is placed, in this drain: wait for that before waiting for a definition
   if (!later && !el.isConnected && r.get(tag) === undefined && "customElementRegistry" in el) {
-    queueMicrotask(() => whenDefined(el, owner, attach, true));
+    queueMicrotask(() => whenDefined(engine, s, el, owner, attach, true));
     return;
   }
   const run = (): void => {
-    if (owner !== null && !owner.alive) return;
     const cls = r.get(tag);
     r.upgrade(el);
     attach(cls ? readBindable(cls) : null);
   };
-  if (r.get(tag) !== undefined) run();
-  else void r.whenDefined(tag).then(run);
+  if (!later && r.get(tag) !== undefined) return run();
+  // a row gone while it waited for its registry waits for nothing (its block's cleanups have run)
+  if (owner !== null && !owner.alive) return;
+  // later, outside any drain: a failure is the binding's; it and what was applied are reported by
+  // a drain (one for every element the definition upgrades: one `$renderedCallback`)
+  pending(r.whenDefined(tag), owner, () => {
+    try {
+      run();
+    } catch (error) {
+      failSpec(engine, error, s, el);
+    }
+    engine.schedule();
+  });
+}
+
+/**
+ * Runs `fn` once `p` settles, unless `owner` went away first. Its own scope: the reaction holds
+ * only `f`, so a removed row of a tag never defined keeps nothing alive.
+ */
+function pending(p: Promise<unknown>, owner: Block | null, fn: () => void): void {
+  let f: (() => void) | null = fn;
+  if (owner !== null) (owner.cleanups ??= []).push(() => {
+    f = null;
+  });
+  void p.then(() => f?.());
 }
 
 /** Mirrors an input's value to its declared attribute (best effort, never blocks the write). */

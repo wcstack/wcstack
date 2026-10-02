@@ -190,6 +190,8 @@ export class Engine implements ReconcileHooks {
       const row = rowAt(this.ctx, level);
       if (row === null) raise(M.EqIndexNoRow, [path]);
       const source = this.pattern(path);
+      // a getter (or a path under one) changes without a write: an ordinary tracked read
+      if (source.getter !== null || source.underGetter) return row.index === this.read(source, null);
       const f = this.top;
       if (f !== null) {
         const g = f.getter;
@@ -235,6 +237,8 @@ export class Engine implements ReconcileHooks {
       }
       this.touched(p, row);
       if (row !== null && row.list.shared) this.mirror(row, p, undefined, row.item, false);
+      // the value before is not known: the `$eq` / `$eqIndex` occurrences under every key change
+      if (p.depth === 0) this.rekeyEqUnder(p, undefined, undefined, true);
       this.landed(p, row, undefined, undefined, false);
     },
   };
@@ -351,6 +355,15 @@ export class Engine implements ReconcileHooks {
     return l;
   }
 
+  /** Syncs `l`; a failure (a missing key, a getter that throws) is its for binding's, and it keeps its rows. */
+  private trySync(l: StateList): void {
+    try {
+      this.sync(l);
+    } catch (error) {
+      this.failAt(error, l.pattern.path, l.view?.anchor ?? null, "for");
+    }
+  }
+
   /** Reconciles a list's rows with the current value of its pattern. */
   sync(l: StateList): void {
     const value = this.readUntracked(l.pattern, l.parentRow);
@@ -420,9 +433,10 @@ export class Engine implements ReconcileHooks {
   resolve(path: string, ctx: StateRow | null): void {
     const parsed = parsePath(path);
     const p = this.pattern(parsed.pattern);
-    this.rp = p;
     const idx = parsed.indexes;
     this.rr = p.depth === 0 ? null : idx === null ? ctxRow(ctx, p, p.depth) : this.rowOf(p, idx, ctx);
+    // set last: finding the row can sync a list over a getter, whose evaluation resolves paths too
+    this.rp = p;
   }
 
   /** The row at p.depth addressed by `idx` (one index per `*`; -1 takes the one of `ctx`). */
@@ -586,14 +600,20 @@ export class Engine implements ReconcileHooks {
     list.push({ source, key, sub, epoch: f.epoch });
   }
 
-  /** A root write to `p` (or an object above a `$eq` source): re-key every source at or under it. */
-  private rekeyEqUnder(p: Pattern, before: unknown, after: unknown): void {
+  /**
+   * A root write to `p` (or an object above a `$eq` / `$eqIndex` source): re-key every source at or
+   * under it. `all` (`$postUpdate`, which knows no value before): every key.
+   */
+  private rekeyEqUnder(p: Pattern, before: unknown, after: unknown, all?: boolean): void {
     this.forSubtree(p, (q) => {
       const map = q.eqSubs;
-      if (map === null) return;
+      if (map === null && q.eqIndexWatchers === null) return;
       const rest = q === p ? [] : q.path.slice(p.path.length + 1).split(".");
+      const b = dig(before, rest);
+      const a = dig(after, rest);
+      if (q.eqIndexWatchers !== null) this.rekeyEqIndex(q, b, a, all);
       // the occurrences keyed under the value before and the value after
-      for (const k of [dig(before, rest), dig(after, rest)]) {
+      if (map !== null) for (const k of all ? map.keys() : [b, a]) {
         const set = map.get(k);
         if (set === undefined) continue;
         for (const sub of set) {
@@ -645,7 +665,6 @@ export class Engine implements ReconcileHooks {
     }
     this.syncListsUnder(p, row);
     if (row !== null && row.list.shared) this.mirror(row, p, old, value);
-    if (p.eqIndexWatchers !== null) this.rekeyEqIndex(p, old, value);
     if (p.depth === 0) this.rekeyEqUnder(p, old, value);
     }
     this.landed(p, row, old, value, direct);
@@ -709,18 +728,17 @@ export class Engine implements ReconcileHooks {
 
   /**
    * `$eqIndex(source, level)` compares the index of the row at `level`: when `source` changes, the
-   * getter's occurrences under the rows at that level with the old or the new index change.
+   * getter's occurrences under the rows at that level with the old or the new index change (`all`:
+   * under every row).
    */
-  private rekeyEqIndex(source: Pattern, before: unknown, after: unknown): void {
+  private rekeyEqIndex(source: Pattern, before: unknown, after: unknown, all?: boolean): void {
     for (const { getter, level } of source.eqIndexWatchers!) {
-      const listP = getter.lists[level]!;
-      for (const k of [before, after]) {
-        if (typeof k !== "number") continue;
-        this.forAllLists(listP, (l) => {
-          const r = l.rows[k];
+      this.forAllLists(getter.lists[level]!, (l) => {
+        for (const k of all ? l.rows.keys() : [before, after]) {
+          const r = typeof k === "number" ? l.rows[k] : undefined;
           if (r !== undefined) this.invalidateUnder(getter, r);
-        });
-      }
+        }
+      });
     }
   }
 
@@ -821,7 +839,8 @@ export class Engine implements ReconcileHooks {
   }
 
   private resetList(l: StateList): void {
-    this.sync(l);
+    // a list whose key the new state lacks fails alone: the re-set goes on (and ends with its hook)
+    this.trySync(l);
     const element = this.pattern(`${l.pattern.path}.*`);
     for (const row of l.rows) {
       row.cache = null;
@@ -1049,12 +1068,7 @@ export class Engine implements ReconcileHooks {
           this.staleLists = [];
           for (const l of stale) {
             l.stale = false;
-            try {
-              this.sync(l);
-            } catch (error) {
-              // reported as a failure of the list's for binding; the list keeps its rows
-              this.failAt(error, l.pattern.path, l.view?.anchor ?? null, "for");
-            }
+            this.trySync(l);
           }
         }
         const lists = this.dirtyLists;

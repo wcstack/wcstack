@@ -1,6 +1,7 @@
 import type { Engine } from "../engine";
 import { hooks } from "../hooks";
-import { textSpec, walkBindings } from "./plan";
+import { directive, textSpec, walkBindings } from "./plan";
+import { raise, M } from "../messages";
 import { attachChain, attachSpec, ForView, listFor } from "./view";
 
 /** The engine mounted on each root (document, shadow root): the binder's lookup. */
@@ -21,10 +22,14 @@ export function mount(engine: Engine, root: Document | ShadowRoot | Element): vo
 /**
  * Binds a subtree that entered the document after the mount (the binder protocol). It never throws
  * for markup reasons (the protocol): an error in the markup is reported, and what was walked before
- * it stays bound.
+ * it stays bound. A structural template handed over itself (a route's top-level node) is refused:
+ * what it renders would sit beside it, where whoever inserted it does not reach (a router removes
+ * only its own nodes).
  */
 export function mountSubtree(engine: Engine, subtree: Element): void {
   try {
+    const d = subtree.localName === "template" ? directive(subtree) : null;
+    if (d !== null) raise(M.TemplateHandedOver, [d.bindingType]);
     walk(engine, [subtree]);
   } catch (e) {
     console.error(e);

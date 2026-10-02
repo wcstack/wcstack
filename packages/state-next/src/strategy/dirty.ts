@@ -57,8 +57,9 @@ export class DirtyStrategy implements Strategy {
     if (!root && row === null) return undefined;
     const c = root ? null : (row!.cache ??= new Array(engine.slotCount).fill(UNSET));
     let v = c === null ? g.rootValue : c[g.slot];
-    // a getter made after the row's cache (a recursive family, a mounted key) has no entry yet
-    if (v !== UNSET && v !== DIRTY && v !== FAILED && (c === null || g.slot < c.length)) return v;
+    // a getter made after the row's cache (a recursive family, a mounted key, a binder's subtree) has
+    // no entry yet — nor one whose slot lies before a later getter's written past the end (a hole)
+    if (v !== UNSET && v !== DIRTY && v !== FAILED && (c === null || g.slot in c)) return v;
     v = FAILED;
     try {
       return (v = engine.evalGetter(g, c === null ? null : row));

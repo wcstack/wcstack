@@ -134,6 +134,10 @@ export interface RowPlan {
  */
 const TYPE_NAMES = ["text", "prop", "prop", "prop", "prop", "event", "for", "if", "prop", "radio", "checkbox", "prop", "prop", "event", "spread"];
 
+/** A binding refused as it is attached fails alone (reported as its own failure). */
+export const failSpec = (engine: Engine, error: unknown, s: Spec, node: Node): void =>
+  engine.failAt(error, s.pattern?.path ?? s.token!, node, TYPE_NAMES[s.kind]);
+
 /** A binding's first value when #init= leaves the element as it is: its first apply only records the value. */
 const HOLD: unique symbol = Symbol() as never;
 
@@ -594,7 +598,7 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
         try {
           attachSpec(engine, s, node, row, block);
         } catch (error) {
-          engine.failAt(error, s.pattern?.path ?? s.token!, node, TYPE_NAMES[s.kind]);
+          failSpec(engine, error, s, node);
         }
     }
   }
@@ -613,20 +617,20 @@ export function attachSpec(engine: Engine, s: Spec, node: Node, row: StateRow | 
       attachEvent(engine, node, s, row);
       return;
     case K_COMMAND:
-      whenDefined(el, block, (bd) => attachCommand(engine, s, el, block, bd));
+      whenDefined(engine, s, el, block, (bd) => attachCommand(engine, s, el, block, bd));
       return;
     case K_EVTTOKEN:
-      whenDefined(el, block, (bd) => attachEventToken(engine, s, el, row, bd));
+      whenDefined(engine, s, el, block, (bd) => attachEventToken(engine, s, el, row, bd));
       return;
   }
   const p = s.pattern!;
   const brow = rowAt(row, p.depth);
   if (s.kind === K_SPREAD) {
-    whenDefined(el, block, (bd) => attachSpread(engine, s, el, brow, block, bd));
+    whenDefined(engine, s, el, block, (bd) => attachSpread(engine, s, el, brow, block, bd));
     return;
   }
   if (s.custom && s.kind === K_PROP) {
-    whenDefined(el, block, (bd) => attachCustomOrPlain(engine, s, el, brow, block, bd));
+    whenDefined(engine, s, el, block, (bd) => attachCustomOrPlain(engine, s, el, brow, block, bd));
     return;
   }
   const b = new Binding(engine, s.kind, node, s.name, p, brow, block, s.filters, initialOf(engine, s, brow));

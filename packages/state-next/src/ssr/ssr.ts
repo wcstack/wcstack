@@ -401,10 +401,15 @@ export function adopt(plan: RowPlan, anchor: Node, isFor: boolean): Node | null 
   let key = anchor;
   let branch = 0;
   if (!isFor) {
-    for (let p = anchor.previousSibling; p !== null && (isIfAnchor(p) || (p.nodeType === 3 && (p as Text).data.trim() === "")); p = p.previousSibling) {
-      if (isIfAnchor(p)) branch++;
+    // only this chain: an `if` anchor starts one (a chain right before or after is another)
+    const head = config.commentIfPrefix;
+    if (!isMark(anchor, head)) {
+      for (let p = anchor.previousSibling; p !== null && (isIfAnchor(p) || (p.nodeType === 3 && (p as Text).data.trim() === "")); p = p.previousSibling) {
+        if (isIfAnchor(p)) branch++;
+        if (isMark(p, head)) break;
+      }
     }
-    for (let n = anchor.nextSibling; n !== null && (isIfAnchor(n) || (n.nodeType === 3 && (n as Text).data.trim() === "")); n = n.nextSibling) {
+    for (let n = anchor.nextSibling; n !== null && !isMark(n, head) && (isIfAnchor(n) || (n.nodeType === 3 && (n as Text).data.trim() === "")); n = n.nextSibling) {
       if (isIfAnchor(n)) key = n;
     }
   }
@@ -417,6 +422,13 @@ export function adopt(plan: RowPlan, anchor: Node, isFor: boolean): Node | null 
   const frag = document.createDocumentFragment();
   frag.append(...nodes);
   holdRegions(frag.childNodes, true);
-  if (plan.single) return frag.childNodes.length === 1 ? frag.firstChild : null;
-  return frag.childNodes.length === plan.fragment.childNodes.length ? frag : null;
+  if (frag.childNodes.length !== plan.fragment.childNodes.length) return null;
+  // where a binding lands, the server's row has the plan's nodes — not so when a Light DOM element
+  // added children before them, or the parser put a <tbody> around a <tr>: then it is rendered anew
+  for (const path of plan.nodePaths) {
+    let a: Node = plan.fragment;
+    let b: Node | undefined = frag;
+    for (const i of path) if ((b = b?.childNodes[i])?.nodeName !== (a = a.childNodes[i]).nodeName) return null;
+  }
+  return plan.single ? frag.firstChild : frag;
 }

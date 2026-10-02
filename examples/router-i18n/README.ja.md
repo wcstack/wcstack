@@ -113,13 +113,20 @@ state "i18n": "subtotal" is not declared. … npx @wcstack/lint <file>
 
 ### 5. 構造レンダリングは router の外に置く
 
-`<wcs-route>` の中に置いた `<template data-wcs="for: …">` は**描画されない**。state
-がバインドを組み立てる時点でルートのノードは inert な `<template>` の中にあり、
-内側の構造フラグメントが登録されないためである。ルート内の素のバインドは**動く**
-（About ページはその場で翻訳されている）ので、この境界は踏み抜きやすい。
+`<wcs-route>` の**直下**に置いた `<template data-wcs="for: …">` は**サポートしない形**
+である。@wcstack/state 3.x は描画しない。@wcstack/state 4.0 は、遷移で router が
+ルートをスタンプしたときは `[wcs/template-syntax]` #204 として拒む。そのルートに
+着地したときは読み込み順による。state が先に読み込みを終えていれば、router が内容を
+渡すので同じく #204 で拒む。router が state の読み込みより前に内容を挿入していれば
+描画してしまい、退場しても行が残る（router 側の修正まで）。4.0 が拒むのは、router が
+スタンプし取り除くのはルート自身の直下のノードだけで、直下のテンプレートが描く行は
+その隣に並び、router の手が届かないためである。代わりに要素で包むこと。包めば
+（`<ul><template data-wcs="for: …">…</template></ul>`）ルートのスタンプ時に描画され、
+ルート内の素のバインドも**動く**（About ページはその場で翻訳されている）ので、この
+境界は踏み抜きやすい。
 
-そこで router は `path` を publish し、state はその外側の
-`<template data-wcs="if: isList">` からリストを描画する。
+この例では、それでもリストを router の外に置いている。router は `path` を publish し、
+state はその外側の `<template data-wcs="if: isList">` からリストを描画する。
 [router-spa](../router-spa/) と同じ分担である。
 
 ## スニペットを持っていく
