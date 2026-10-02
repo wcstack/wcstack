@@ -92,6 +92,25 @@ interface IStateProxy extends IState {
 }
 type Mutability = "readonly" | "writable";
 
+type ParseBindTextResult = IParsedBinding;
+
+/**
+ * パース結果の変換フック（Phase 2 のマウント — impl-plan §3-0 の 1）。
+ * マウントされたスコープの収集は、これで各パース結果を親ツリーの絶対パスへ書き換える。
+ * `uuid` を持つエントリ（構造フラグメントの参照）には掛けない — フラグメント側の
+ * パース結果は登録時（collectStructuralFragments）に変換済みで、二重に掛けると
+ * 接頭辞が二重になる。
+ */
+type ParseResultTransform = (parsed: ParseBindTextResult, forPath?: string) => ParseBindTextResult;
+interface IDeferredSpreadEntry {
+    readonly node: Node;
+    readonly tagName: string;
+    readonly parseResults: ParseBindTextResult[];
+    readonly transform?: ParseResultTransform;
+    /** 予約中の定義待ちの取り消し（`scheduleDeferredSpreads` が持つ。行の活性化し直しで待ちを重ねない） */
+    cancel?: () => void;
+}
+
 interface IContent {
     readonly firstNode: Node | null;
     readonly lastNode: Node | null;
@@ -111,6 +130,11 @@ interface IContent {
      * 従来経路（deactivate + unmount）で解体する。
      */
     tryDestroy(): boolean;
+    /**
+     * まだ展開していない、未定義カスタム要素への spread（#330）。持つ行だけに付く（形を増やさない）。
+     * 活性化のたびに定義待ちへ予約し、展開したものは外れる
+     */
+    spreads?: IDeferredSpreadEntry[];
 }
 
 /**
@@ -651,6 +675,36 @@ interface IAbsoluteStateAddress {
 }
 
 type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread';
+/**
+ * 文法の段が読むフィルタ（名前と引数だけ。要件 D16）。実関数は束縛計画の段で
+ * 登録簿から解決される（`core/filterRegistry.ts`）ので、パース結果はここで止まる。
+ */
+interface IParsedFilter {
+    readonly filterName: string;
+    readonly args: string[];
+    /**
+     * 引数の型付きの値（要件 B9）。引用符の無い `true` / `false` / `null` / 数値は型付き、引用符付きは
+     * 文字列のまま。`args` は引用符を外した原文（書式フィルタはこちらを読む）。組み立てた側が省略したら
+     * `args` と同じ扱い。
+     */
+    readonly literals?: readonly unknown[];
+}
+/**
+ * バインディング式のパース結果（DOM 非依存の部分）。`@wcstack/state/parser` の
+ * ParseBindTextResult がこれをそのまま公開するため、Node 等の DOM lib 型を
+ * ここに足してはならない（足すなら IBindingInfo 側へ）。
+ */
+interface IParsedBinding {
+    readonly propName: string;
+    readonly propSegments: string[];
+    readonly propModifiers: string[];
+    readonly statePathName: string;
+    readonly statePathInfo: IPathInfo;
+    readonly inFilters: IParsedFilter[];
+    readonly outFilters: IParsedFilter[];
+    readonly bindingType: BindingType;
+    readonly uuid?: string | null;
+}
 
 interface IState {
     [key: string]: any;

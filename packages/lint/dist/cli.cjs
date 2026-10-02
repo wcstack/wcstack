@@ -3230,7 +3230,8 @@ var ja = {
   patternPathOutsideFor: (p) => `\u30D1\u30BF\u30FC\u30F3\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   omittedPathOutsideFor: (p) => `\u7701\u7565\u30D1\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   loopIndexOutsideFor: (p) => `\u30EB\u30FC\u30D7\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9 "${p}" \u306F <template for> \u306E\u5916\u5074\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
-  resolvedPathInUi: (p) => `\u89E3\u6C7A\u6E08\u307F\u30D1\u30B9 "${p}" \u306F UI \u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u3067\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093\u3002\u30D1\u30BF\u30FC\u30F3\u30D1\u30B9\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044`,
+  resolvedPathInUi: (p) => `\u30D1\u30B9 "${p}" \u306F\u884C\u3067\u306F\u306A\u304F\u7D20\u306E\u30D1\u30B9\u3068\u3057\u3066\u8AAD\u307E\u308C\u308B\u305F\u3081\u3001\u6DFB\u5B57\u3092\u901A\u3057\u305F\u66F8\u304D\u8FBC\u307F\u304C\u3053\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306B\u5C4A\u304D\u307E\u305B\u3093\uFF08\u6700\u521D\u306E\u5024\u306E\u307E\u307E\u6B62\u307E\u308B\u3053\u3068\u304C\u3042\u308A\u307E\u3059\uFF09\u3002\u6307\u3059\u884C\u306B\u8FFD\u5F93\u3059\u308B\u306E\u306F\u3001\u6570\u5024\u306E\u6DFB\u5B57\u304C\u3061\u3087\u3046\u3069 1 \u3064\u3067 "*" \u3092\u542B\u307E\u306A\u3044\u30D1\u30B9\uFF08items.0.name\uFF09\u3060\u3051\u3067\u3059\u3002<template for> \u306E\u4E2D\u3067\u30D1\u30BF\u30FC\u30F3\u30D1\u30B9\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044`,
+  indexPathInFor: (p) => `for: "${p}" \u306F\u6570\u5024\u306E\u6DFB\u5B57\u3092\u542B\u3080\u30EA\u30B9\u30C8\u3067\u3059\u3002\u884C\u306F "${p}.*.\u2026" \u3068\u3057\u3066\u89E3\u6C7A\u3055\u308C\u3001\u884C\u3078\u306E\u53CC\u65B9\u5411\u675F\u7E1B\uFF08value: .v\uFF09\u3084\u6DFB\u5B57\u306E\u30D1\u30B9\u306E\u8AAD\u307F\u66F8\u304D\u306F\u5B9F\u884C\u6642\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08@wcstack/state #363\uFF09\u3002\u30EA\u30B9\u30C8\u306E\u6BB5\u3054\u3068\u306B for: \u3092\u5165\u308C\u5B50\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: for: groups \u306E\u4E2D\u306B for: .items\uFF09`,
   indexArity: (api, p, req, wc, actual) => `${api}("${p}") \u306E\u6DFB\u5B57\u306F${req === "exact" ? `\u3061\u3087\u3046\u3069 ${wc} \u500B` : `${wc} \u500B\u4EE5\u4E0B`}\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30D1\u30B9\u4E2D\u306E "*" \u306F ${wc} \u500B\uFF09\u3002${actual} \u500B\u6307\u5B9A\u3055\u308C\u3066\u3044\u307E\u3059`,
   wildcardRank: (subject, needed, available) => `${subject} \u306F ${needed} \u6BB5\u306E\u30EB\u30FC\u30D7\u304C\u5FC5\u8981\u3067\u3059\u304C\u3001\u73FE\u5728\u306E\u30B9\u30B3\u30FC\u30D7\u306F ${available} \u6BB5\u3067\u3059`,
   getterCycle: (cycle) => `\u30D1\u30B9 getter \u304C\u5FAA\u74B0\u53C2\u7167\u3057\u3066\u3044\u307E\u3059: ${cycle}`,
@@ -3252,6 +3253,7 @@ var ja = {
   watchKeyEmptySegment: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`,
   watchHandlerNotFunction: (k) => `$watch \u306E\u30A8\u30F3\u30C8\u30EA "${k}" \u306E\u5024\u306F\u95A2\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
   watchPathMissing: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\uFF08\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093\uFF09`,
+  watchIndexKey: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u6570\u5024\u306E\u6DFB\u5B57\u3092\u542B\u307F\u307E\u3059\u3002\u30EA\u30B9\u30C8\u304C\u4E38\u3054\u3068\u7F6E\u304D\u63DB\u308F\u308B\u3068\u767A\u706B\u3057\u307E\u3059\u304C\u3001\u6DFB\u5B57\u3092\u901A\u3057\u305F\u66F8\u304D\u8FBC\u307F\uFF08this["${k}"] = \u2026\uFF09\u3067\u306F\u767A\u706B\u3057\u307E\u305B\u3093\uFF08\u540C\u3058\u30D1\u30B9\u3092\u30DE\u30FC\u30AF\u30A2\u30C3\u30D7\u3067\u675F\u7E1B\u3057\u3066\u3044\u308C\u3070\u767A\u706B\u3057\u307E\u3059\uFF09`,
   scanNotObject: () => `$scan \u306F\u300C\u51FA\u529B\u540D \u2192 { from | on, initial, fold, resetOn? }\u300D\u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u3053\u306E\u5F62\u306F\u30E9\u30F3\u30BF\u30A4\u30E0\u304C\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
   scanOutputInvalid: (n) => `$scan \u306E\u51FA\u529B\u540D "${n}" \u306F\u5E73\u5766\u306A\u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08"."\u30FB"*"\u30FB\u5148\u982D\u306E "$" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF09`,
   scanOutputReserved: (n) => `$scan \u306E\u51FA\u529B\u540D "${n}" \u306F Object.prototype \u304B\u3089\u7D99\u627F\u3055\u308C\u308B\u540D\u524D\u3067\u3059\uFF08"constructor" \u306A\u3069\uFF09`,
@@ -3426,7 +3428,8 @@ var en = {
   patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for>`,
   omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for>`,
   loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for>`,
-  resolvedPathInUi: (p) => `Resolved path "${p}" cannot be used in a UI binding. Use a pattern path instead`,
+  resolvedPathInUi: (p) => `Path "${p}" is read as a plain path, not as a row, so a write through its index does not reach this binding (it can keep its first value). Only a path with exactly one numeric index and no "*" (items.0.name) follows the row it points at. Use a pattern path inside a <template for> instead`,
+  indexPathInFor: (p) => `for: "${p}" is a list reached through a numeric index. Its rows resolve as "${p}.*.\u2026", and a two-way binding in a row (value: .v) or a read or write through an index path throws at runtime (@wcstack/state #363). Nest one for: per list level instead (e.g. for: groups, with for: .items inside)`,
   indexArity: (api, p, req, wc, actual) => `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
   wildcardRank: (subject, needed, available) => `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
   getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
@@ -3448,6 +3451,7 @@ var en = {
   watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
   watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
   watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
+  watchIndexKey: (k) => `$watch key "${k}" has a numeric index: it fires when the list is replaced, but not on a write through the index (this["${k}"] = \u2026) unless the same path is also bound in the markup`,
   scanNotObject: () => `$scan must be an object mapping output names to { from | on, initial, fold, resetOn? } (the runtime throws on this shape at load time)`,
   scanOutputInvalid: (n) => `$scan output name "${n}" must be a flat property name ("." and "*" and a leading "$" are not allowed)`,
   scanOutputReserved: (n) => `$scan output name "${n}" is a property name inherited from Object.prototype (e.g. "constructor")`,
@@ -3798,6 +3802,49 @@ function escape(key) {
   return key.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
+// src/service/indexPath.ts
+var ARRAY_INDEX_KEY = /^(?:0|[1-9]\d*)$/;
+function isNumericSegment(segment) {
+  return segment !== "" && !Number.isNaN(Number(segment));
+}
+function rowIndexPosition(segments) {
+  if (segments[0] === "" || segments.includes("*")) return -1;
+  let position = -1;
+  for (let i = 0; i < segments.length; i++) {
+    if (!isNumericSegment(segments[i])) continue;
+    if (i === 0 || position !== -1) return -1;
+    position = i;
+  }
+  return position;
+}
+function isPlainIndexPath(path) {
+  return hasIndexSegment(path) && rowIndexPosition(path.split(".")) === -1;
+}
+function hasIndexSegment(path) {
+  return path.split(".").some((segment, i) => i > 0 && isNumericSegment(segment));
+}
+function toRowPatternPath(path, pathSet) {
+  const segments = path.split(".");
+  const position = rowIndexPosition(segments);
+  if (position === -1 || Number(segments[position]) < 0) return path;
+  if (!pathSet.has(`${segments.slice(0, position).join(".")}.*`)) return path;
+  segments[position] = "*";
+  return segments.join(".");
+}
+function toPlainPatternPath(path, pathSet) {
+  const segments = path.split(".");
+  for (let i = 1; i < segments.length; i++) {
+    if (ARRAY_INDEX_KEY.test(segments[i]) && pathSet.has(`${segments.slice(0, i).join(".")}.*`)) {
+      segments[i] = "*";
+    }
+  }
+  return segments.join(".");
+}
+function isPlainElementPath(path, candidates, pathSet) {
+  const pattern = toPlainPatternPath(path, pathSet);
+  return candidates.some((c) => c.path === pattern && (c.kind === "data" || c.kind === "list"));
+}
+
 // src/service/bindingValidator.ts
 var filterMap = new Map(BUILTIN_FILTERS.map((f) => [f.name, f]));
 function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
@@ -3995,14 +4042,15 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
               }
             }
           }
-          if (/\.\d+\.|\.\d+$/.test(pathTrimmed)) {
+          const isFor = propNoMod === "for";
+          if (isFor ? hasIndexSegment(pathTrimmed) : isPlainIndexPath(pathTrimmed)) {
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
               code: WcsDiagnosticCode.TemplateSyntax,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
-              message: msgs.resolvedPathInUi(pathTrimmed),
+              message: isFor ? msgs.indexPathInFor(pathTrimmed) : msgs.resolvedPathInUi(pathTrimmed),
               severity: "warning"
             });
           }
@@ -4027,7 +4075,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
           const pathTrimmed = parsed.path.trim();
           if (pathTrimmed && !pathTrimmed.startsWith(".") && !isLiteral(pathTrimmed)) {
             const chainDiags = validateFilterChainTypes(
-              pathTrimmed,
+              toRowPatternPath(pathTrimmed, scopedPathSet),
               parsed.filters,
               scopedPaths,
               bindingStart,
@@ -4043,7 +4091,8 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
       if (parsed.path && scopedPaths.length > 0) {
         const pathTrimmed = parsed.path.trim();
         if (pathTrimmed && !pathTrimmed.startsWith(".") && !isLiteral(pathTrimmed)) {
-          const resultType = resolveResultType(pathTrimmed, parsed.filters, scopedPaths);
+          const typePath = toRowPatternPath(pathTrimmed, scopedPathSet);
+          const resultType = resolveResultType(typePath, parsed.filters, scopedPaths);
           if (resultType !== null) {
             const typeReq = getExpectedType(
               parsed.property,
@@ -4052,7 +4101,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
-              const schemaDefinite = typeReq.expected === "array" && parsed.filters.length === 0 && applicationSchema !== void 0 && scopedPaths.some((p) => p.path === pathTrimmed && p.fromSchema === true);
+              const schemaDefinite = typeReq.expected === "array" && parsed.filters.length === 0 && applicationSchema !== void 0 && scopedPaths.some((p) => p.path === typePath && p.fromSchema === true);
               diagnostics.push({
                 code: schemaDefinite ? WcsDiagnosticCode.PathTypeMismatch : WcsDiagnosticCode.BindingTypeExpectation,
                 start: pathStart,
@@ -4216,7 +4265,9 @@ function validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSe
     }
     return null;
   }
-  if (!scopedPathSet.has(checkPath) && !matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) {
+  if (scopedPathSet.has(checkPath)) return null;
+  const rowPath = toRowPatternPath(checkPath, scopedPathSet);
+  if (!scopedPathSet.has(rowPath) && !matchesRecursionCandidates(scopedPaths, rowPath, scopedPathSet) && !isPlainElementPath(checkPath, scopedPaths, scopedPathSet)) {
     return msgs.pathMissing(displayPath);
   }
   return null;
@@ -4234,8 +4285,11 @@ function validateSchemaPathExistence(checkPath, displayPath, scopedPaths, scoped
     return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
   }
   if (scopedPathSet.has(checkPath)) return null;
-  if (matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) return null;
-  const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, checkPath.split("."));
+  const rowPath = toRowPatternPath(checkPath, scopedPathSet);
+  if (scopedPathSet.has(rowPath)) return null;
+  if (matchesRecursionCandidates(scopedPaths, rowPath, scopedPathSet)) return null;
+  if (isPlainElementPath(checkPath, scopedPaths, scopedPathSet)) return null;
+  const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, toPlainPatternPath(rowPath, scopedPathSet).split("."));
   if (resolution.kind === "nonexistent") {
     return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: "error" };
   }
@@ -4668,9 +4722,10 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
         message: msgs.recursionUnsupported(path, "binding")
       };
     }
-    if (isValidTemplatePath(path, pathSet2, scoped)) return null;
+    const rowPath = toRowPatternPath(path, pathSet2);
+    if (isValidTemplatePath(path, rowPath, pathSet2, scoped)) return null;
     if (defaultSchema !== void 0 && !path.startsWith("$")) {
-      const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, path.split("."));
+      const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, toPlainPatternPath(rowPath, pathSet2).split("."));
       return resolution.kind === "nonexistent" ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) } : null;
     }
     return { code: WcsDiagnosticCode.BindingPathMissing, severity: "warning", message: msgs.pathMissing(displayPath) };
@@ -4740,7 +4795,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
           }
         }
       }
-      if (/\.\d+\.|\.\d+$/.test(pathPart)) {
+      if (isPlainIndexPath(pathPart)) {
         diagnostics.push({
           code: WcsDiagnosticCode.TemplateSyntax,
           start: item.exprStart,
@@ -4805,14 +4860,14 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
   }
   return diagnostics;
 }
-function isValidTemplatePath(path, pathSet, scopedPaths) {
+function isValidTemplatePath(path, rowPath, pathSet, scopedPaths) {
   if (/^\$\d+$/.test(path)) return true;
   if (path.startsWith("$streamStatus.") || path.startsWith("$streamError.")) {
     const prefix = path.startsWith("$streamStatus.") ? "$streamStatus." : "$streamError.";
     const hasNamespace = scopedPaths.some((p) => p.path.startsWith(prefix));
     return !hasNamespace || pathSet.has(path);
   }
-  return pathSet.has(path) || matchesRecursionCandidates(scopedPaths, path, pathSet);
+  return pathSet.has(path) || pathSet.has(rowPath) || matchesRecursionCandidates(scopedPaths, rowPath, pathSet) || isPlainElementPath(path, scopedPaths, pathSet);
 }
 
 // src/core/parser/positionalParser.ts
@@ -6717,9 +6772,10 @@ function validateEntry(entry, pathSet, paths, msgs) {
     return invalid(msgs.watchHandlerNotFunction(key));
   }
   if (pathSet.size > 0 && !pathSet.has(key) && !matchesRecursion(collectRecursionSpecs(paths), key, (p) => pathSet.has(p))) {
+    const rowKey = toRowPatternPath(key, pathSet);
     return {
       code: WcsDiagnosticCode.WatchPathMissing,
-      message: msgs.watchPathMissing(key),
+      message: rowKey !== key && pathSet.has(rowKey) ? msgs.watchIndexKey(key) : msgs.watchPathMissing(key),
       severity: "warning"
     };
   }

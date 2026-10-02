@@ -197,6 +197,10 @@ type DevtoolsEventLike = {
     readonly maxDepth: number;
     readonly paths: readonly string[];
 } | {
+    readonly type: "state:render-chain-limit";
+    readonly maxDepth: number;
+    readonly paths: readonly string[];
+} | {
     readonly type: "state:watch-fired";
     readonly path: string;
     /**
@@ -305,7 +309,7 @@ interface IDevtoolsHookRegistryLike {
  * sources / roster / wiring をクリアし、残留参照を持たない。
  */
 
-type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit" | "path-unresolved" | "binding-apply-error" | "propagation-suppressed" | "propagation-coalesced" | "propagation-hop-limit" | "contract-drift";
+type TimelineKind = "write" | "batch" | "command" | "event" | "element-registered" | "element-unregistered" | "watch-error" | "watch-chain-limit" | "render-chain-limit" | "path-unresolved" | "binding-apply-error" | "propagation-suppressed" | "propagation-coalesced" | "propagation-hop-limit" | "contract-drift";
 interface ITimelineEntry {
     readonly seq: number;
     readonly time: number;

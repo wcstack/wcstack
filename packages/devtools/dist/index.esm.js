@@ -863,6 +863,17 @@ class DevtoolsCore {
                 });
                 return;
             }
+            case "state:render-chain-limit": {
+                // 描画の循環（#338）。watch-chain-limit と同じくバッチ単位の打ち切りなので同じ形で並べる
+                this._appendTimeline({
+                    sourceId,
+                    kind: "render-chain-limit",
+                    label: `depth > ${event.maxDepth}`,
+                    detail: event.paths.join(", "),
+                    subscriberCount: null,
+                });
+                return;
+            }
             case "state:path-unresolved": {
                 // ランタイムは warn で続行する（既存ページを止めないため）。lint を
                 // 走らせていない相手には、ここが「配線が死んでいる」唯一の可視面になる。
@@ -2010,6 +2021,11 @@ class WcsDevtools extends HTMLElement {
             kind.title = entry.kind === "watch-error"
                 ? "a $watch or $scan failure (read, handler, fold or write — see the phase in the detail); the runtime isolated it (console.error only)"
                 : "a $watch write chain hit the depth limit and was cut off";
+        }
+        // 描画の循環の打ち切り（#338）もランタイムは console に出すだけで続行する（バッチの binding は未適用）
+        if (entry.kind === "render-chain-limit") {
+            kind.classList.add("warn");
+            kind.title = "writes made while rendering kept starting new batches; the chain hit the depth limit and this batch was not rendered";
         }
         // 配線の死（解決しないパス）と隔離された適用失敗も、ランタイムが console に
         // 出すだけで続行する ＝ 見ていなければ気づけない種類なので warn に乗せる。

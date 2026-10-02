@@ -90,6 +90,8 @@ interface IStateProxy extends IState {
 }
 type Mutability = "readonly" | "writable";
 
+type ParseBindTextResult = IParsedBinding;
+
 /**
  * Filter/types.ts
  *
@@ -105,6 +107,23 @@ type Mutability = "readonly" | "writable";
  * - Supports filters with options and combinations of multiple filters
  */
 type FilterFn<T = unknown> = (value: unknown) => T;
+
+/**
+ * パース結果の変換フック（Phase 2 のマウント — impl-plan §3-0 の 1）。
+ * マウントされたスコープの収集は、これで各パース結果を親ツリーの絶対パスへ書き換える。
+ * `uuid` を持つエントリ（構造フラグメントの参照）には掛けない — フラグメント側の
+ * パース結果は登録時（collectStructuralFragments）に変換済みで、二重に掛けると
+ * 接頭辞が二重になる。
+ */
+type ParseResultTransform = (parsed: ParseBindTextResult, forPath?: string) => ParseBindTextResult;
+interface IDeferredSpreadEntry {
+    readonly node: Node;
+    readonly tagName: string;
+    readonly parseResults: ParseBindTextResult[];
+    readonly transform?: ParseResultTransform;
+    /** 予約中の定義待ちの取り消し（`scheduleDeferredSpreads` が持つ。行の活性化し直しで待ちを重ねない） */
+    cancel?: () => void;
+}
 
 interface IContent {
     readonly firstNode: Node | null;
@@ -125,6 +144,11 @@ interface IContent {
      * 従来経路（deactivate + unmount）で解体する。
      */
     tryDestroy(): boolean;
+    /**
+     * まだ展開していない、未定義カスタム要素への spread（#330）。持つ行だけに付く（形を増やさない）。
+     * 活性化のたびに定義待ちへ予約し、展開したものは外れる
+     */
+    spreads?: IDeferredSpreadEntry[];
 }
 
 /**
@@ -1413,6 +1437,11 @@ type DevtoolsEvent = {
     readonly type: "state:watch-chain-limit";
     readonly maxDepth: number;
     /** 打ち切ったバッチに載っていたアドレスのパス（報告用） */
+    readonly paths: readonly string[];
+} | {
+    readonly type: "state:render-chain-limit";
+    readonly maxDepth: number;
+    /** 打ち切ったバッチに載っていたアドレスのパス（＝ 直前の描画の中で書かれたパス） */
     readonly paths: readonly string[];
 } | {
     readonly type: "state:watch-fired";
