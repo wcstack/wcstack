@@ -8,6 +8,22 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/state`: **`[wcs/v4-migration]` warnings.** 3.5 is the last 3.x minor, so it keeps the promise of 3.2 — runtime warnings for the renamed names in the last 3.x minor only. It prints each message once per page with what to write instead: the old filter names `inc` `dec` `fix` `uc` `lc` `cap` `rep` `rev` `pad` `null`, `$trackDependency` / `$untrackDependency`, and the declaration keys `$updatedCallback` / `$streams`. It also names what 4.0 removes or rejects: `$scan` (use `$watch` or `$on`); the `substr` filter (`slice(start, start + length)`); the `bootstrapState` options `debug`, `commentTextPrefix` and `enablePropagationContext`; the options `enableMustache`, `sameValueGuard` and `enableDirectionalInitialSync`, which move to the state's `$behavior` (3.x does not read `$behavior`, so keep them in `bootstrapState()` until you upgrade); unknown options and values of the wrong type; a `$behavior` or `$features` state key whose value 3.x does not run with or that 4.0 throws on; and the volumes 4.0 refuses to graft — one that declares `$watch`, `$listKeys`, `$renderedCallback`, `$behavior` or `$features`, or that injects root paths (`data-wcs="state.<key>: …"`), all of which work in 3.x. Nothing about how 3.x runs changes, and the checks sit only where an old form is resolved (a canonical `# Changelog
+
+All notable changes to the wcstack packages are documented here. All published `@wcstack/*` packages and the `wcstack` entry package share one version and are released in lockstep; a release bumps every package whether or not it changed. The VS Code extension (`packages/vscode-wcs`) is versioned separately and keeps [its own changelog](./packages/vscode-wcs/CHANGELOG.md).
+
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). What counts as a breaking change is defined in the root README under [Versioning and breaking changes](./README.md#versioning-and-breaking-changes). Upgrading from 2.x: read the [v2 → v3 migration guide](./docs/migration-v3.md) first; from 1.x, the [v1 → v2 migration guide](./docs/migration-v2.md).
+
+Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
+
+ read or filter costs the same). The warnings ship in the full entries (`@wcstack/state`, `/auto`) and not in the split `/core`: `auto.min.js` grows by 1.0 KB gzip and the split core by 0 B; `scripts/check-state-split.mjs` now fails if a split output carries them. `on*#direct:`, which 4.0 adds, already works in 3.x, because 3.x attaches every `on*:` to its element, so pages can write it now. The state README has a "Preparing for 4.0" section; `examples/state-intersect-scroll` folds its feed with `$watch` instead of `$scan`, and `examples/state-tilt-maze` binds its drag handlers with `on*#direct:`.
+
+### Fixed
+
+- `@wcstack/state`: **a Content-Security-Policy block of the inline `<script>` in `<wcs-state>` is now named on Firefox too, and the message points to the nonce.** The loader decided as soon as the import failed, but Firefox fires `securitypolicyviolation` a task after the rejection, so there a CSP block got the message that does not assert CSP. The loader now waits one task before deciding, only on the failure path, as the router's guard loader does. The message also names the fix that needs no `blob:`: give the page's nonce to the `<script>` that loads `@wcstack/state`, whose nonce the blob: import inherits.
+
 ## [3.4.0] — 2026-10-02
 
 **3.4 fixes the issues reported against 3.3.0, and the regressions those fixes introduced on the way.** The changes are in `@wcstack/state`, with follow-ups in `@wcstack/devtools`, `@wcstack/lint` and the VS Code extension; every other package moves to 3.4.0 only to keep the lockstep version.

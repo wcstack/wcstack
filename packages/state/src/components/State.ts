@@ -33,6 +33,7 @@ import { HTMLElementBase } from "../platform/HTMLElementBase";
 import { getAllPropertyDescriptors } from "../getAllPropertyDescriptors";
 import { findDescriptor, PathInfoSource } from "../pathDiagnostics";
 import { pathDiagnostics } from "../core/diagnosticsHooks";
+import { v4Migration } from "../core/v4MigrationHooks";
 import { collectReapplyPaths, reapplyStateBindings } from "../apply/reapplyStateBindings";
 
 function getStateInfo(
@@ -801,6 +802,9 @@ export class State extends HTMLElementBase implements IStateElement {
   loadStateFromSource(): Promise<Record<string, any>> {
     // ボリュームは `_state` を通らずに接ぎ木するので、宣言キーの正規化（要件 B12）はここで行う
     return this._loadStateFromSource().then((state) => {
+      // 3.5 notices (D39): mark the object as a volume's before `state()` sees it, so what 4.0 refuses
+      // in a volume is reported once, at the graft. Only the full entries place the receptacle
+      v4Migration?.volumeLoaded(state);
       normalizeDeclarationAliases(state);
       return state;
     });
