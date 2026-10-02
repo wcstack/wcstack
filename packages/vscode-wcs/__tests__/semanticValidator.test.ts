@@ -157,15 +157,15 @@ describe("wcs/getter-cycle — getter の循環参照", () => {
     expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
   });
 
-  it("$trackDependency で明示登録した依存も辺として数えること", () => {
-    const html = script(`{ get a() { this.$trackDependency("b"); return 0; }, get b() { return this.a; } }`);
+  it("$dependOn で明示登録した依存も辺として数えること", () => {
+    const html = script(`{ get a() { this.$dependOn("b"); return 0; }, get b() { return this.a; } }`);
     expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(2);
   });
 
   // --- AST 化で黙るようになった形（ランタイムが依存に登録しない読み） ---
 
-  it("$untrackDependency の中の読みは辺にしないこと", () => {
-    const html = script(`{ get a() { return this.$untrackDependency(() => this.b); }, get b() { return this.a; } }`);
+  it("$untracked の中の読みは辺にしないこと", () => {
+    const html = script(`{ get a() { return this.$untracked(() => this.b); }, get b() { return this.a; } }`);
     expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.GetterCycle)).toHaveLength(0);
   });
 
@@ -326,8 +326,8 @@ describe("wcs/getter-untracked-read — パス読み取りの先の素のプロ�
     expect(found(`set g(v) { this.x = this.form.name; }, m() { return this.form.name; }, $watch: { form() { return this.form.name; } }`)).toHaveLength(0);
   });
 
-  it("$untrackDependency の中と入れ子 function の中は報告しないこと", () => {
-    expect(found(`get g() { function f() { return this.form.name; } return this.$untrackDependency(() => this.form.name) + f(); }`)).toHaveLength(0);
+  it("$untracked の中と入れ子 function の中は報告しないこと", () => {
+    expect(found(`get g() { function f() { return this.form.name; } return this.$untracked(() => this.form.name) + f(); }`)).toHaveLength(0);
   });
 
   it("代入左辺（this.form.name = x）と複合代入・増減（this.form.age++）は報告しないこと（wcs/nested-assign の担当）", () => {
@@ -380,12 +380,13 @@ describe("wcs/wildcard-rank — 階数 vs for の段数", () => {
     expect(codes(validateBindings(html, "data-wcs", "wcs-state", "en"), WcsDiagnosticCode.WildcardRank)).toHaveLength(0);
   });
 
-  it("for の外は既存の診断が担うので二重報告しないこと", () => {
+  it("for の外は「for の外」の 1 件だけで、段数の検査を重ねないこと（code はランタイムの #1401 と同じ wcs/wildcard-rank）", () => {
     const html = `${STATE}<li data-wcs="textContent: matrix.*.*"></li>`;
     const diagnostics = validateBindings(html, "data-wcs", "wcs-state", "en");
-    expect(codes(diagnostics, WcsDiagnosticCode.WildcardRank)).toHaveLength(0);
-    // 既存の「for の外」診断は従来どおり出る
-    expect(diagnostics.some((d) => d.message.includes("outside a <template for>"))).toBe(true);
+    const rank = codes(diagnostics, WcsDiagnosticCode.WildcardRank);
+    expect(rank).toHaveLength(1);
+    expect(rank[0].message).toContain("outside a <template for>");
+    expect(codes(diagnostics, WcsDiagnosticCode.TemplateSyntax)).toHaveLength(0);
   });
 
   it("省略パスと @state 越境では黙ること（過小近似）", () => {
@@ -412,8 +413,8 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
       export default {
         page: 1,
         items: [],
-        $streams: { pageResult: { source() {}, initial: null } },
-        $updatedCallback(paths) {
+        $stream: { pageResult: { source() {}, initial: null } },
+        $renderedCallback(paths) {
           if (!paths.includes("$streamStatus.pageResult")) return;
           this.items = this.items.concat(this.pageResult.items);
         },
@@ -428,6 +429,7 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     );
     expect(found).toHaveLength(1);
     expect(found[0].message).toContain('"$streamStatus.pageResult" is not bound anywhere');
+    expect(found[0].message).toContain("$renderedCallback is binding-driven");
     expect(found[0].message).toContain("$watch");
   });
 
@@ -450,7 +452,7 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     const html = `<wcs-state><script type="module">
       export default {
         page: 1, total: 0,
-        $updatedCallback(paths) { for (const p of paths) { if (p === "total") this.page = 1; } },
+        $renderedCallback(paths) { for (const p of paths) { if (p === "total") this.page = 1; } },
       };
     </script></wcs-state><div data-wcs="textContent: page"></div>`;
     expect(codes(
@@ -463,7 +465,7 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     const html = `<wcs-state><script type="module">
       export default {
         items: [{ price: 1 }],
-        $updatedCallback(paths) { if (paths.includes("items.*.price")) { this.page = 1; } },
+        $renderedCallback(paths) { if (paths.includes("items.*.price")) { this.page = 1; } },
       };
     </script></wcs-state>
     <template data-wcs="for: items"><li data-wcs="textContent: .price"></li></template>`;
@@ -477,7 +479,7 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     const html = `<wcs-state><script type="module">
       export default {
         page: 1, total: 0,
-        $updatedCallback(paths) { if (paths.includes("page")) { const t = this["total"]; } },
+        $renderedCallback(paths) { if (paths.includes("page")) { const t = this["total"]; } },
       };
     </script></wcs-state><div data-wcs="textContent: page"></div>`;
     expect(codes(
@@ -490,7 +492,7 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     const html = `<wcs-state><script type="module">
       export default {
         page: 1,
-        $updatedCallback(paths) { if (paths.includes("not-a-declared-path")) { this.page = 1; } },
+        $renderedCallback(paths) { if (paths.includes("not-a-declared-path")) { this.page = 1; } },
       };
     </script></wcs-state><div data-wcs="textContent: page"></div>`;
     expect(codes(
@@ -503,7 +505,7 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     const html = `<wcs-state><script type="module">
       export default {
         page: 1, total: 0,
-        $updatedCallback(paths) { /* if (paths.includes("total")) {} */ if (paths.includes("page")) { this.page = 1; } },
+        $renderedCallback(paths) { /* if (paths.includes("total")) {} */ if (paths.includes("page")) { this.page = 1; } },
       };
     </script></wcs-state><div data-wcs="textContent: page"></div>`;
     expect(codes(
@@ -512,26 +514,38 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     )).toHaveLength(0);
   });
 
-  it("$updatedCallback が無ければ何もしないこと", () => {
+  it("$renderedCallback が無ければ何もしないこと", () => {
     const html = `<wcs-state><script type="module">export default { page: 1 };</script></wcs-state>`;
     expect(codes(
       validateSemantics(html, "wcs-state", "en", "data-wcs"),
       WcsDiagnosticCode.UpdatedCallbackUnbound,
     )).toHaveLength(0);
   });
+
+  it("4.0 で外れた $updatedCallback は対象にしない（宣言そのものが wcs/declaration-alias で止まる）", () => {
+    const html = `<wcs-state><script type="module">
+      export default {
+        page: 1, total: 0,
+        $updatedCallback(paths) { if (paths.includes("total")) this.page = 1; },
+      };
+    </script></wcs-state><div data-wcs="textContent: page"></div>`;
+    const diags = validateSemantics(html, "wcs-state", "en", "data-wcs");
+    expect(codes(diags, WcsDiagnosticCode.UpdatedCallbackUnbound)).toHaveLength(0);
+    expect(codes(diags, WcsDiagnosticCode.DeclarationAlias)).toHaveLength(1);
+  });
 });
 
-describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2）", () => {
+describe("wcs/name-alias — 4.0 で外れた API の旧名（error）", () => {
   // Fixed by review（サイクル 5）— 走査が `blankComments`（コメントだけ潰す）だったので
-  // 文字列リテラルの中の例示に info が出ていた。`maskCommentsAndStrings` に寄せた。
-  it("文字列リテラルの中の旧名 API 呼び出しには info を出さないこと", () => {
+  // 文字列リテラルの中の例示に診断が出ていた。`maskCommentsAndStrings` に寄せた。
+  it("文字列リテラルの中の旧名 API 呼び出しには出さないこと", () => {
     const inString = `
     <wcs-state><script type="module">
       export default { note: "see obj.$trackDependency(x)", a: 1 };
     </script></wcs-state>`;
     expect(validateSemantics(inString, "wcs-state", "en", "data-wcs")
       .filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(0);
-    // 対照: 実コードなら従来どおり出る
+    // 対照: 実コードなら出る
     const real = `
     <wcs-state><script type="module">
       export default { a: 1, get x() { this.$trackDependency("a"); return this.a; } };
@@ -540,13 +554,11 @@ describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2�
       .filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(1);
   });
 
-  it("旧名の API 呼び出しと宣言キーに info で正式名を提案し、正式名とコメントの中は黙ること", () => {
+  it("旧名の API は error で正式名を提案し、正式名とコメントの中は黙ること（ランタイムは読んだ時点で #1701）", () => {
     const html = `
     <wcs-state><script type="module">
       export default {
         a: 1,
-        $streams: { s: { source() {} } },
-        $updatedCallback(paths) {},
         get x() { this.$trackDependency("a"); return this.$untrackDependency(() => this.a); },
         get y() { this.$dependOn("a"); return this.$untracked(() => this.a); },
         // this.$trackDependency("a") in a comment
@@ -554,13 +566,75 @@ describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2�
     </script></wcs-state>`;
     const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
       .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
-    expect(found.map((d) => html.slice(d.start, d.end))).toEqual([
-      "$trackDependency", "$untrackDependency", "$streams", "$updatedCallback",
-    ]);
-    expect(found.every((d) => d.severity === "info")).toBe(true);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$trackDependency", "$untrackDependency"]);
+    expect(found.every((d) => d.severity === "error")).toBe(true);
+    expect(found[0].message).toContain("removed in 4.0");
     expect(found[0].message).toContain('"$dependOn"');
-    expect(found[2].message).toContain('"$stream"');
-    expect(found[3].message).toContain('"$renderedCallback"');
+    expect(found[1].message).toContain('"$untracked"');
+  });
+
+  it("日本語の文面も「4.0 で外れた」と正式名を言うこと", () => {
+    const html = script(`{ a: 1, get x() { this.$trackDependency("a"); return 0; } }`);
+    const found = validateSemantics(html, "wcs-state", "ja", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    expect(found[0].message).toContain("4.0 で外れました");
+    expect(found[0].message).toContain('"$dependOn"');
+  });
+});
+
+describe("wcs/declaration-alias — 4.0 で外れた宣言キー（ランタイムは読み込み時に #1601）", () => {
+  const pick = (html: string) =>
+    validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias);
+
+  it("$streams / $updatedCallback を宣言したら（正式名を併記していなくても）error で正式名を提案すること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        a: 1,
+        $streams: { s: { source() {} } },
+        $updatedCallback(paths) {},
+      };
+    </script></wcs-state>`;
+    const found = pick(html);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams", "$updatedCallback"]);
+    expect(found.every((d) => d.severity === "error")).toBe(true);
+    expect(found[0].message).toContain("removed in 4.0");
+    expect(found[0].message).toContain('"$stream"');
+    expect(found[1].message).toContain('"$renderedCallback"');
+    // 3.x の info（wcs/name-alias）へは落とさない
+    expect(validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(0);
+  });
+
+  it("ボリューム（mount=）の旧名の宣言は、読み込み（#1601）ではなく「接ぎ木を拒んで console.error」と言うこと", () => {
+    const html = `
+    <wcs-state mount="cart"><script type="module">
+      export default { items: [], $updatedCallback(paths) {} };
+    </script></wcs-state>`;
+    const found = pick(html);
+    expect(found.map((d) => [html.slice(d.start, d.end), d.severity])).toEqual([["$updatedCallback", "error"]]);
+    expect(found[0].message).toContain("refuses to graft");
+    expect(found[0].message).toContain("console.error");
+    expect(found[0].message).toContain("declare it on the root state");
+    expect(found[0].message).not.toContain("throws at load time");
+    const ja = validateSemantics(html, "wcs-state", "ja", "data-wcs").filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias);
+    expect(ja[0].message).toContain("接ぎ木を拒んで console.error");
+  });
+
+  it("正式名と両方宣言しても旧名の 1 件だけを報告すること", () => {
+    const html = `
+    <wcs-state><script type="module">
+      export default {
+        $streams: { s: { source() {} } },
+        $stream: { t: { source() {} } },
+      };
+    </script></wcs-state>`;
+    expect(pick(html).map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
+  });
+
+  it("正式名だけなら何も出さないこと", () => {
+    expect(pick(script(`{ $stream: { t: { source() {} } }, $renderedCallback() {} }`))).toHaveLength(0);
   });
 
   // Fixed by review — 宣言キーの走査が正規表現ベースで、文字列リテラルの中を誤検出し
@@ -573,15 +647,12 @@ describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2�
         "$updatedCallback"(paths) {},
       };
     </script></wcs-state>`;
-    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
-      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
-    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$updatedCallback"]);
+    expect(pick(html).map((d) => html.slice(d.start, d.end))).toEqual(["$updatedCallback"]);
   });
 
   // 宣言オブジェクトが静的に読めない形（class 構文の state — ボリュームの通常形）では
-  // 正規表現へフォールバックする。3.2 の移行漏れがもっとも起きやすい場所なので、
-  // 「読めないから黙る」ではなく info を出す側に倒す。
-  it("class 構文の state でも旧名の宣言キーに wcs/name-alias（info）が出ること", () => {
+  // 正規表現へフォールバックする。誤検出しうる経路なので warning に留める。
+  it("class 構文の state ではフォールバックして warning に留めること", () => {
     const html = `
     <wcs-state mount="cart"><script type="module">
       export default class Cart {
@@ -590,65 +661,32 @@ describe("wcs/name-alias — 3.x の間だけ残る旧名（@wcstack/state 3.2�
         $updatedCallback(paths) {}
       }
     </script></wcs-state>`;
-    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
-      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
+    const found = pick(html);
     expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams", "$updatedCallback"]);
-    expect(found.every((d) => d.severity === "info")).toBe(true);
+    expect(found.every((d) => d.severity === "warning")).toBe(true);
     expect(found[0].message).toContain('"$stream"');
-    expect(found[1].message).toContain('"$renderedCallback"');
   });
 
-  // Fixed by review（サイクル 5）— フォールバック正規表現の `;` 分岐に番人が無く、
-  // 外しても 972 green だった（`;` の直後に空白を挟まず書いた class フィールドだけが差分）。
+  // Fixed by review（サイクル 5）— フォールバック正規表現の `;` 分岐の番人。
   it("class フィールドを `;` 区切りで詰めて書いても検出すること（正規表現の `;` 分岐）", () => {
     const html = `
     <wcs-state><script type="module">
       export default class C { a = 1;$streams = { s: { source() {} } } }
     </script></wcs-state>`;
-    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
-      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
-    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
+    expect(pick(html).map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
   });
 
-  it("class 構文で旧名と正式名の両方を宣言しても error には昇格せず info に留まること", () => {
-    const html = `
-    <wcs-state mount="cart"><script type="module">
-      export default class Cart {
-        $streams = { s: { source() {} } };
-        $stream = { t: { source() {} } };
-      }
-    </script></wcs-state>`;
-    const diags = validateSemantics(html, "wcs-state", "en", "data-wcs");
-    // 正規表現ベースの経路は誤検出しうるので、ランタイムが止める形でも error にはしない（安全側）
-    expect(diags.filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias)).toHaveLength(0);
-    const found = diags.filter((d) => d.code === WcsDiagnosticCode.NameAlias);
-    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
-    expect(found[0].severity).toBe("info");
-  });
-
-  it("宣言キー側の文言は従来どおり「3.x の間は動く」ままであること（経路の切り分け）", () => {
-    const html = `
-    <wcs-state><script type="module">
-      export default { a: 1, $streams: { s: { source() {} } } };
-    </script></wcs-state>`;
-    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
-      .filter((d) => d.code === WcsDiagnosticCode.NameAlias);
-    expect(found).toHaveLength(1);
-    expect(found[0].message).toContain("It works through 3.x");
-    expect(found[0].message).not.toContain("undefined");
+  it("Object.prototype の名前（constructor）を旧名と取り違えないこと", () => {
+    expect(pick(script(`{ constructor: 1, toString() { return ""; } }`))).toHaveLength(0);
   });
 });
 
-// Fixed by review（サイクル 3）— 読み出しは宣言と違い 3.x でも動かない
-//（normalizeDeclarationAliases が正式名へ写したあと旧名を delete するので黙って undefined）。
-// `wcs/name-alias`（「動くが 4.0 で外れる」info）に相乗りしていたので code を分け、
-// 断定できる AST 経路は warning に上げた（フォールバックの正規表現経路は info のまま）。
-describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（@wcstack/state 3.2）", () => {
+describe("wcs/declaration-alias-read — 4.0 で外れた宣言キーの読み出し", () => {
   const reads = (html: string) =>
     validateSemantics(html, "wcs-state", "en", "data-wcs")
       .filter((d) => d.code === WcsDiagnosticCode.DeclarationAliasRead);
 
-  it("AST 経路（export default { … }）では warning にし、文言は「動かない」趣旨にすること", () => {
+  it("AST 経路（export default { … }）では warning にし、undefined になることと正式名を言うこと", () => {
     const html = `
     <wcs-state><script type="module">
       export default {
@@ -662,9 +700,8 @@ describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（
     expect(found.every((d) => d.severity === "warning")).toBe(true);
     expect(found[0].message).toContain('"$stream"');
     expect(found[0].message).toContain("undefined");
-    // 宣言側の「3.x の間は動きます」という言い回しは流用しない
-    expect(found[0].message).not.toContain("It works through 3.x");
-    // `wcs/name-alias`（info）へは相乗りしない
+    expect(found[0].message).toContain("removed");
+    // `wcs/name-alias` へは相乗りしない
     expect(validateSemantics(html, "wcs-state", "en", "data-wcs")
       .filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(0);
   });
@@ -707,11 +744,7 @@ describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（
     expect(found[0].severity).toBe("warning");
   });
 
-  // Fixed by review（サイクル 3）— 「正規化で delete されるので undefined」という文言は
-  // class 構文には当てはまらない。ランタイムの delete は `owner === state`（自前プロパティ）
-  // のときだけなので（packages/state/src/declarationAliases.ts）、プロトタイプに置いた
-  // `$updatedCallback()` / `$streams` は今も読める。経路ごとに文言を分ける。
-  it("class 構文（AST で読めない形）ではフォールバックして info に留め、両方の形を説明すること", () => {
+  it("class 構文（AST で読めない形）ではフォールバックして info に留めること", () => {
     const html = `
     <wcs-state mount="cart"><script type="module">
       export default class Cart {
@@ -721,49 +754,17 @@ describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（
     const found = reads(html);
     expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["$streams"]);
     expect(found[0].severity).toBe("info");
-    // 自前プロパティなら undefined、プロトタイプなら今は読める — 断定しない
-    expect(found[0].message).toContain("own property");
-    expect(found[0].message).toContain("prototype");
-    expect(found[0].message).toContain("undefined");
-    expect(found[0].message).not.toContain("does not work, not even in 3.x");
   });
 
-  it("AST 経路（オブジェクトリテラル）では旧名が必ず自前プロパティなので undefined と断定すること", () => {
-    const html = `
-    <wcs-state><script type="module">
-      export default { a: 1, peek() { return this.$streams; } };
-    </script></wcs-state>`;
-    const found = reads(html);
-    expect(found[0].severity).toBe("warning");
-    expect(found[0].message).toContain("does not work, not even in 3.x");
-    expect(found[0].message).toContain("own property");
-    // プロトタイプの但し書きは付けない（リテラルにプロトタイプの旧名は無い）
-    expect(found[0].message).not.toContain("prototype");
+  it("日本語の文面", () => {
+    const html = script(`{ a: 1, peek() { return this.$streams; } }`);
+    const message = validateSemantics(html, "wcs-state", "ja", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.DeclarationAliasRead)[0].message;
+    expect(message).toContain("4.0 で外れた宣言キー");
+    expect(message).toContain("undefined");
   });
 
-  it("日本語でも経路ごとに文言が分かれること", () => {
-    const literal = `
-    <wcs-state><script type="module">
-      export default { a: 1, peek() { return this.$streams; } };
-    </script></wcs-state>`;
-    const klass = `
-    <wcs-state><script type="module">
-      export default class C { peek() { return this.$streams; } }
-    </script></wcs-state>`;
-    const ja = (html: string) =>
-      validateSemantics(html, "wcs-state", "ja", "data-wcs")
-        .filter((d) => d.code === WcsDiagnosticCode.DeclarationAliasRead)[0].message;
-    expect(ja(literal)).toContain("3.x でも動きません");
-    expect(ja(literal)).not.toContain("プロトタイプ");
-    expect(ja(klass)).toContain("プロトタイプ");
-    expect(ja(klass)).toContain("自前プロパティ");
-  });
-
-  // Fixed by review（サイクル 4）— AST 化で `$watch` ハンドラの中の読み出しが
-  // 「info」から「無診断」へ落ちていた（`analyzeCallableBodies` はトップレベルしか返さず、
-  // それでも `astReads` は非 null なので正規表現フォールバックも走らなかった）。
-  // `$watch` のハンドラだけはランタイムが `this` を state に束縛して呼ぶ
-  //（packages/state/src/watch/watchRuntime.ts:404 の `entry.handler.call(state, …)`）。
+  // Fixed by review（サイクル 4）— `$watch` のハンドラだけはランタイムが `this` を state に束縛して呼ぶ。
   it("$watch ハンドラ（メソッド短縮記法）の中の読み出しを warning で検出すること", () => {
     const html = `
     <wcs-state><script type="module">
@@ -807,16 +808,13 @@ describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（
     expect(reads(html)).toEqual([]);
   });
 
-  it("this を束縛しない宣言面（$scan の fold / $stream の source / $on / $listKeys）は検出しないこと", () => {
-    // ランタイムはどれも素の関数呼び出し（scanRuntime.ts の fold(…) / consumeSource.ts の
-    // source(…) / Token.ts の fn(…) / mergeKeyedList.ts の spec(row)）。ここで拾うと誤検出になる
+  it("this を束縛しない宣言面（$stream の source / $on / $listKeys）は検出しないこと", () => {
     const html = `
     <wcs-state><script type="module">
       export default {
         rows: [],
         $eventTokens: ["tick"],
         $stream: { feed: { source() { return this.$streams; } } },
-        $scan: { total: { from: "rows", initial: 0, fold(acc) { return this.$streams; } } },
         $on: { tick() { return this.$updatedCallback; } },
         $listKeys: { rows: (row) => this.$streams },
       };
@@ -825,25 +823,17 @@ describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（
   });
 
   it("severity と code の対応が経路ごとに固定されていること", () => {
-    const astRead = `
-    <wcs-state><script type="module">
-      export default { a: 1, peek() { return this.$streams; } };
-    </script></wcs-state>`;
+    const astRead = script(`{ a: 1, peek() { return this.$streams; } }`);
     const fallbackRead = `
     <wcs-state><script type="module">
       export default class C { peek() { return this.$streams; } }
     </script></wcs-state>`;
-    const declaration = `
+    const declaration = script(`{ a: 1, $streams: { s: { source() {} } } }`);
+    const fallbackDeclaration = `
     <wcs-state><script type="module">
-      export default { a: 1, $streams: { s: { source() {} } } };
+      export default class C { $streams = {}; }
     </script></wcs-state>`;
-    const both = `
-    <wcs-state><script type="module">
-      export default {
-        $streams: { s: { source() {} } },
-        $stream: { t: { source() {} } },
-      };
-    </script></wcs-state>`;
+    const api = script(`{ a: 1, get x() { this.$untrackDependency(() => 0); return 0; } }`);
     const pick = (html: string) =>
       validateSemantics(html, "wcs-state", "en", "data-wcs")
         .filter((d) => d.code === WcsDiagnosticCode.DeclarationAliasRead
@@ -852,68 +842,8 @@ describe("wcs/declaration-alias-read — 旧名の宣言キーの読み出し（
         .map((d) => [d.code, d.severity]);
     expect(pick(astRead)).toEqual([[WcsDiagnosticCode.DeclarationAliasRead, "warning"]]);
     expect(pick(fallbackRead)).toEqual([[WcsDiagnosticCode.DeclarationAliasRead, "info"]]);
-    expect(pick(declaration)).toEqual([[WcsDiagnosticCode.NameAlias, "info"]]);
-    expect(pick(both)).toEqual([[WcsDiagnosticCode.DeclarationAlias, "error"]]);
-  });
-});
-
-// Fixed by review — ランタイムは旧名と正式名の両方宣言を読み込み時に throw する
-//（ページ初期化ごと止まる）のに、拡張側は info を 2 件出すだけで error が 0 件だった。
-describe("wcs/declaration-alias — 旧名と正式名の両方宣言（@wcstack/state 3.2）", () => {
-  const both = (keys: string) => `
-    <wcs-state><script type="module">
-      export default {
-        a: 1,
-${keys}
-      };
-    </script></wcs-state>`;
-
-  it("$streams と $stream を両方宣言したら error にすること", () => {
-    const html = both(`        $streams: { s: { source() {} } },
-        $stream: { t: { source() {} } },`);
-    const diags = validateSemantics(html, "wcs-state", "en", "data-wcs");
-    const errors = diags.filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].severity).toBe("error");
-    expect(html.slice(errors[0].start, errors[0].end)).toBe("$streams");
-    expect(errors[0].message).toContain('"$stream"');
-    // 旧名の案内（info）へは落とさない — 止まる形なので error だけを出す
-    expect(diags.filter((d) => d.code === WcsDiagnosticCode.NameAlias)).toHaveLength(0);
-  });
-
-  it("$updatedCallback と $renderedCallback を両方宣言したら error にすること", () => {
-    const html = both(`        $updatedCallback(paths) {},
-        $renderedCallback(paths) {},`);
-    const errors = validateSemantics(html, "wcs-state", "ja", "data-wcs")
-      .filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias);
-    expect(errors).toHaveLength(1);
-    expect(html.slice(errors[0].start, errors[0].end)).toBe("$updatedCallback");
-    expect(errors[0].message).toContain("$renderedCallback");
-  });
-
-  it("正式名だけ・旧名だけなら error にはしないこと", () => {
-    for (const keys of [`        $stream: { t: { source() {} } },`, `        $streams: { s: { source() {} } },`]) {
-      const diags = validateSemantics(both(keys), "wcs-state", "en", "data-wcs");
-      expect(diags.filter((d) => d.code === WcsDiagnosticCode.DeclarationAlias)).toHaveLength(0);
-    }
-  });
-});
-
-describe("wcs/name-alias — 補足", () => {
-  it("$renderedCallback も updated-callback-unbound の対象になること", () => {
-    const html = `
-    <wcs-state><script type="module">
-      export default {
-        page: 1,
-        other: 2,
-        $renderedCallback(paths) {
-          if (!paths.includes("other")) return;
-        },
-      };
-    </script></wcs-state><div data-wcs="textContent: page"></div>`;
-    expect(codes(
-      validateSemantics(html, "wcs-state", "en", "data-wcs"),
-      WcsDiagnosticCode.UpdatedCallbackUnbound,
-    )).toHaveLength(1);
+    expect(pick(declaration)).toEqual([[WcsDiagnosticCode.DeclarationAlias, "error"]]);
+    expect(pick(fallbackDeclaration)).toEqual([[WcsDiagnosticCode.DeclarationAlias, "warning"]]);
+    expect(pick(api)).toEqual([[WcsDiagnosticCode.NameAlias, "error"]]);
   });
 });

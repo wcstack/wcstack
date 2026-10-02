@@ -12,7 +12,7 @@ const SAMPLE = [
   '    export default { count: 0, items: [{ label: 1 }] };',
   '  </script>',
   '</wcs-state>',
-  '<div data-wcs="textContent: count | fix(0)"></div>',
+  '<div data-wcs="textContent: count | toFixed(0)"></div>',
   '<template data-wcs="for: items">',
   '  <span data-wcs="textContent: .label"></span>',
   '</template>',

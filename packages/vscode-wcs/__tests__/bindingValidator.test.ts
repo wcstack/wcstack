@@ -611,7 +611,7 @@ export default { users: [{ name: "A" }] };
     expect(diags.some(d => d.message.includes('省略パス'))).toBe(true);
   });
 
-  it('UI で解決済みパスを使用すると warning', () => {
+  it('数値の添字のパス（users.0.name）は警告しない（4.0 は行として読んで追従する — #355）', () => {
     const html = `
 <wcs-state>
   <script type="module">
@@ -619,8 +619,7 @@ export default { users: [{ name: "A" }] };
   </script>
 </wcs-state>
 <div data-wcs="textContent: users.0.name"></div>`;
-    const diags = validateBindings(html, 'data-wcs');
-    expect(diags.some(d => d.message.includes('解決済みパス'))).toBe(true);
+    expect(validateBindings(html, 'data-wcs')).toEqual([]);
   });
 
   it('カスタム属性名で動作する', () => {
@@ -645,7 +644,7 @@ export default {
   items: [],
   $commandTokens: ["play", "pause"],
   $eventTokens: ["userChanged"],
-  $streams: {
+  $stream: {
     metrics: { source(a, s) { return x; }, initial: [] },
   },
 };
@@ -713,7 +712,7 @@ export default { count: 0 };
     const html = `${TOKEN_STATE}\n<span data-wcs="textContent: $streamStatus.typo"></span>`;
     const diags = validateBindings(html, 'data-wcs');
     expect(diags).toHaveLength(1);
-    expect(diags[0].message).toContain('$streams 宣言に存在しません');
+    expect(diags[0].message).toContain('$stream 宣言に存在しません');
   });
 
   it('$streams 宣言がない場合は $streamStatus.* を検証しない（誤警告回避）', () => {
@@ -1173,57 +1172,268 @@ describe('validateBindings — ボリューム（mount=）のマウントパス�
   });
 });
 
-describe('validateBindings — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
-  it('旧名は正式名と同じ検査を受け、wcs/name-alias（info）で正式名を提案する', () => {
-    const html = `
+describe('validateBindings — 4.0 で外れたフィルタ名（3.x の旧名・substr）', () => {
+  const page = (chain: string): string => `
 <wcs-state>
   <script type="module">
 export default { name: "a", count: 1 };
   </script>
 </wcs-state>
-<div data-wcs="textContent: name|uc; title: count|rep(1,2)"></div>`;
-    const diags = validateBindings(html, 'data-wcs');
-    const alias = diags.filter(d => d.code === WcsDiagnosticCode.NameAlias);
-    expect(alias.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'rep']);
-    expect(alias.every(d => d.severity === 'info')).toBe(true);
-    expect(alias[0].message).toContain('"upper"');
-    // 引数の個数は正式名（repeat は 1 個）の範囲で検査する
-    expect(diags.some(d => d.code === WcsDiagnosticCode.FilterArity)).toBe(true);
-  });
-
-  // Fixed by review — エイリアス正規化が validateFilterUsage にしか入っておらず、
-  // フィルタ鎖の型検査 2 か所（validateFilterChainTypes / resolveResultType）が
-  // 正式名キーだけの Map を旧名で引いて黙って中断していた（旧名を書くと型警告が消える）。
-  it('旧名でもフィルタ鎖の入力型検査（wcs/filter-input-type）が正式名と同じに出ること', () => {
-    const page = (chain: string): string => `
-<wcs-state>
-  <script type="module">
-export default { count: 1 };
-  </script>
-</wcs-state>
 <div data-wcs="textContent: ${chain}"></div>`;
-    const canonicalDiags = validateBindings(page('count|upper'), 'data-wcs');
-    const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
-    expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.FilterInputType)).toBe(true);
-    expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.FilterInputType)).toHaveLength(1);
-    // 文言・範囲は**書かれた名前**のまま（直す対象を指す）
-    const inputType = aliasDiags.find(d => d.code === WcsDiagnosticCode.FilterInputType)!;
-    expect(page('count|uc').slice(inputType.start, inputType.end)).toBe('uc');
-    // 旧名の案内（info）は従来どおり併記される
-    expect(aliasDiags.some(d => d.code === WcsDiagnosticCode.NameAlias)).toBe(true);
+
+  it('旧名は wcs/filter-unknown（ランタイムと同じ）で、正式名を案内する', () => {
+    const html = page('name|uc; title: count|rep(1,2)');
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'ja');
+    const unknown = diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'rep']);
+    expect(unknown.every(d => d.severity === 'warning')).toBe(true);
+    expect(unknown[0].message).toContain('4.0 で外れました');
+    expect(unknown[0].message).toContain('"upper"');
+    expect(unknown[1].message).toContain('"repeat"');
+    // 旧名の wcs/name-alias（3.x の info）はもう出さない
+    expect(diags.some(d => d.code === WcsDiagnosticCode.NameAlias)).toBe(false);
+    // 未知のフィルタなので引数の検査はしない（正式名の検査に読み替えない）
+    expect(diags.some(d => d.code === WcsDiagnosticCode.FilterArity)).toBe(false);
   });
 
-  it('旧名でもフィルタ鎖を通した結果型でのバインド型期待（wcs/binding-type-expectation）が出ること', () => {
-    const page = (chain: string): string => `
+  it('英語の文面も正式名を言う', () => {
+    const diags = validateBindings(page('name|lc'), 'data-wcs', 'wcs-state', 'en');
+    const unknown = diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!;
+    expect(unknown.message).toContain('removed in 4.0');
+    expect(unknown.message).toContain('"lower"');
+  });
+
+  it('旧名を通るフィルタ鎖は型検査を中断する（正式名の型に読み替えない）', () => {
+    const diags = validateBindings(page('count|uc'), 'data-wcs');
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.FilterInputType)).toHaveLength(0);
+    const typed = validateBindings(page('count|upper'), 'data-wcs');
+    expect(typed.some(d => d.code === WcsDiagnosticCode.FilterInputType)).toBe(true);
+  });
+
+  it('substr は slice(start, start + length) への書き換えを案内し、数値リテラルなら具体形も示す', () => {
+    const html = page('name|substr(2,3)');
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    const unknown = diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!;
+    expect(html.slice(unknown.start, unknown.end)).toBe('substr');
+    expect(unknown.message).toContain('slice(start, start + length)');
+    expect(unknown.message).toContain('(here: slice(2, 5))');
+  });
+
+  it('substr の start が負・数値でないときは一般形だけを案内する', () => {
+    for (const args of ['-3,2', 'a,2', '1']) {
+      const diags = validateBindings(page(`name|substr(${args})`), 'data-wcs', 'wcs-state', 'ja');
+      const unknown = diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!;
+      expect(unknown.message).toContain('slice(start, start + length)');
+      expect(unknown.message).not.toContain('ここでは');
+    }
+  });
+
+  it('入力フィルタ（左辺）の旧名も同じに報告する', () => {
+    const html = `
+<wcs-state><script type="module">export default { name: "a" };</script></wcs-state>
+<input data-wcs="value|uc: name">`;
+    const unknown = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['uc']);
+  });
+
+  it('Object.prototype の名前（constructor）を旧名と取り違えない', () => {
+    const diags = validateBindings(page('name|constructor'), 'data-wcs', 'wcs-state', 'en');
+    expect(diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!.message).toBe('Filter "constructor" is not a built-in filter');
+  });
+});
+
+describe('validateBindings — 数値の添字のパス（4.0 は添字の数によらず追従する — #355・#383）', () => {
+  const STATE = `
 <wcs-state>
   <script type="module">
-export default { count: 1 };
+export default {
+  users: [{ name: "A", done: false }],
+  groups: [{ items: [{ v: 1 }], sel: [{ id: 1 }] }],
+  sales: { 2024: { total: 10 } },
+  get "users.*.label"() { return this["users.*.name"]; },
+};
   </script>
-</wcs-state>
-<div data-wcs="class.on: ${chain}"></div>`;
-    const canonicalDiags = validateBindings(page('count|upper'), 'data-wcs');
-    const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
-    expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toBe(true);
-    expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toHaveLength(1);
+</wcs-state>`;
+
+  it('添字が 2 つ以上・`*` と混ざるパス・数値キーのオブジェクトも、警告せず存在を確かめる', () => {
+    const html = `${STATE}
+<div data-wcs="textContent: groups.0.items.0.v"></div>
+<div data-wcs="textContent: users.0.label"></div>
+<div data-wcs="textContent: sales.2024.total"></div>
+<template data-wcs="for: groups">
+  <span data-wcs="textContent: groups.*.sel.0.id"></span>
+</template>
+<template data-wcs="for: groups.0.items">
+  <input data-wcs="value: .v">
+</template>`;
+    expect(validateBindings(html, 'data-wcs')).toEqual([]);
+  });
+
+  it('添字を * に読み替えても無いパス（打ち間違い）は wcs/binding-path-missing', () => {
+    const html = `${STATE}
+<div data-wcs="textContent: users.0.nmae"></div>
+<div data-wcs="textContent: groups.0.items.1.w"></div>`;
+    const diags = validateBindings(html, 'data-wcs');
+    const missing = diags.filter(d => d.code === WcsDiagnosticCode.BindingPathMissing);
+    expect(missing.map(d => html.slice(d.start, d.end))).toEqual(['users.0.nmae', 'groups.0.items.1.w']);
+    // 3.x の「解決済みパス」の wcs/template-syntax は出さない
+    expect(diags.some(d => d.code === WcsDiagnosticCode.TemplateSyntax)).toBe(false);
+  });
+
+  it('型は添字を * に読み替えた候補から引く（class.x: users.0.name は文字列 — wcs/binding-type-expectation）', () => {
+    const html = `${STATE}
+<div data-wcs="class.on: users.0.name; class.done: users.0.done"></div>`;
+    const typed = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.BindingTypeExpectation);
+    expect(typed.map(d => html.slice(d.start, d.end))).toEqual(['users.0.name']);
+  });
+
+  it('stateSchema の state でも、添字を * に読み替えて打ち間違いを error にする（数値キーのオブジェクトは通す）', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        users: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } } } },
+        sales: { type: 'object', properties: { '2024': { type: 'object', properties: { total: { type: 'number' } } } } },
+      },
+    };
+    const html = `
+<wcs-state src="./state.ts"></wcs-state>
+<div data-wcs="textContent: users.0.name"></div>
+<div data-wcs="textContent: users.1.nmae"></div>
+<div data-wcs="textContent: sales.2024.total"></div>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, schema);
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent).map(d => html.slice(d.start, d.end)))
+      .toEqual(['users.1.nmae']);
+  });
+});
+
+describe('validateBindings — 行の中の別のリストの *（4.0 の [wcs/wildcard-rank] #1403・F32）', () => {
+  const STATE = `
+<wcs-state>
+  <script type="module">
+export default {
+  a: [{ x: 1 }],
+  b: [{ y: 2 }],
+  groups: [{ items: [{ v: 1 }] }],
+};
+  </script>
+</wcs-state>`;
+
+  it('for: a の行の中の b.*.y は、その段の for のリストと食い違うので warning', () => {
+    const html = `${STATE}
+<template data-wcs="for: a">
+  <span data-wcs="textContent: b.*.y"></span>
+  <span data-wcs="textContent: a.*.x"></span>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    const rank = diags.filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank.map(d => html.slice(d.start, d.end))).toEqual(['b.*.y']);
+    expect(rank[0].severity).toBe('warning');
+    expect(rank[0].message).toContain('ranges over the rows of "b"');
+    expect(rank[0].message).toContain('renders "a"');
+    expect(rank[0].message).toContain('$resolve(path, indexes)');
+  });
+
+  it('入れ子の for は段ごとに比べる（相対 for・数値の添字のリストを含む）', () => {
+    const html = `${STATE}
+<template data-wcs="for: groups">
+  <template data-wcs="for: .items">
+    <span data-wcs="textContent: groups.*.items.*.v"></span>
+    <span data-wcs="textContent: a.*.items.*.v"></span>
+  </template>
+</template>
+<template data-wcs="for: groups.0.items">
+  <span data-wcs="textContent: groups.0.items.*.v"></span>
+</template>`;
+    const rank = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank.map(d => html.slice(d.start, d.end))).toEqual(['a.*.items.*.v']);
+  });
+
+  it('for: の右辺も、囲む for の段と比べる（行の中の for: b.*.items）', () => {
+    const html = `${STATE}
+<template data-wcs="for: a">
+  <template data-wcs="for: b.*.items"></template>
+</template>`;
+    const rank = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank.map(d => html.slice(d.start, d.end))).toEqual(['b.*.items']);
+  });
+
+  it('段数が足りない形は従来どおり段数の warning だけ（二重に報告しない）', () => {
+    const html = `${STATE}
+<template data-wcs="for: a">
+  <span data-wcs="textContent: b.*.items.*.v"></span>
+</template>`;
+    const rank = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank).toHaveLength(1);
+    expect(rank[0].message).toContain('needs 2 enclosing loop level(s)');
+  });
+});
+
+describe('validateBindings — for / if テンプレートの中の outerHTML: / outerText:（4.0 の #203）', () => {
+  it('for / if / else の中は error、テンプレートの外と、構造でないテンプレートの中は通す', () => {
+    const html = `
+<wcs-state><script type="module">export default { items: [], ok: true, h: "" };</script></wcs-state>
+<div data-wcs="outerHTML: h"></div>
+<template data-wcs="for: items"><div data-wcs="outerHTML: h"></div></template>
+<template data-wcs="if: ok"><p><span data-wcs=".outerText: h"></span></p></template>
+<template data-wcs="else:"><b data-wcs="outerHTML#ro: h"></b></template>
+<template><i data-wcs="outerHTML: h"></i></template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['outerHTML', '.outerText', 'outerHTML']);
+    expect(diags.every(d => d.severity === 'error')).toBe(true);
+    expect(diags[0].message).toContain('"outerHTML:" replaces its element');
+    expect(diags[1].message).toContain('"outerText:"');
+  });
+
+  it('行の中でも、ランタイムが読まない場所（構造でない <template> の中・textContent / innerHTML を束縛した要素の子孫）は通す', () => {
+    const html = `
+<wcs-state><script type="module">export default { items: [], h: "" };</script></wcs-state>
+<template data-wcs="for: items">
+  <template><div data-wcs="outerHTML: h"></div></template>
+  <div data-wcs="textContent: h"><i data-wcs="outerHTML: h"></i></div>
+  <div data-wcs="innerHTML: h"><p><b data-wcs="outerText: h"></b></p></div>
+  <section><u data-wcs="outerHTML: h"></u></section>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags).toHaveLength(1);
+    expect(html.slice(html.lastIndexOf('<', diags[0].start), diags[0].start)).toBe('<u data-wcs="');
+  });
+
+  it('要素自身が終了タグの省略で前の <p> / <option> を閉じる形も報告する', () => {
+    const p = `<template data-wcs="for: a"><p data-wcs="textContent: n">t<div data-wcs="outerHTML: h"></div></template>`;
+    const option = `<template data-wcs="for: a"><select><option data-wcs="textContent: n">a<option data-wcs="outerHTML: h"></select></template>`;
+    for (const html of [p, option]) {
+      const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+      expect(diags.map(d => html.slice(d.start, d.end)), html).toEqual(['outerHTML']);
+      expect(diags[0].severity).toBe('error');
+    }
+  });
+
+  it('validateDocument（CLI と同じ入口）でも同じ code と範囲になる', () => {
+    const html = `<template data-wcs="for: items"><div data-wcs="outerHTML: h"></div></template>`;
+    const diags = validateDocument(html, { locale: 'en' }).filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['outerHTML']);
+  });
+});
+
+describe('validateBindings — 修飾子 #direct（4.0）', () => {
+  it('イベント束縛（on*:）の #direct は通し、それ以外は「無視される」warning', () => {
+    const html = `
+<wcs-state><script type="module">export default { v: "", save() {} };</script></wcs-state>
+<button data-wcs="onclick#direct: save; onsubmit#prevent,direct: save"></button>
+<input data-wcs="value#ro, direct: v">
+<input data-wcs=".onclick#direct: v">`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['direct', 'direct']);
+    expect(diags.every(d => d.severity === 'warning')).toBe(true);
+    expect(diags[0].message).toContain('applies only to event bindings');
+    expect(diags[0].message).toContain('"value"');
+  });
+
+  it('eventToken.* の #direct も無視されるので warning', () => {
+    const html = `
+<wcs-state><script type="module">export default { $eventTokens: ["t"] };</script></wcs-state>
+<x-el data-wcs="eventToken.value#direct: t"></x-el>`;
+    const diags = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['direct']);
   });
 });

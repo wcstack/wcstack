@@ -2,6 +2,49 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased — @wcstack/state 4.0 と同時に出す
+
+**このブランチ（`research/state-engine`）は、state-next を `@wcstack/state` に差し替えるまで release しない。** `@wcstack/lint` と `@wcstack/typescript` は毎回のリリースで vscode-wcs から作り直して公開されるので、差し替えの前に出すと 4.0 の規則が 3.x の版番号で配られ、3.x の利用者の CI が落ちる。`release.yml` は vscode-wcs の依存が `file:../state-next` を指している間、bump の種類によらず止まる。
+
+`@wcstack/state` 4.0（新エンジン。リポジトリでは `packages/state-next`）のパーサと manifest で検証する。3.x のページには当てはまらない規則になるので、版は 4.0 のリリースまで上げない（3.x のプロジェクトは 1.19.x のまま）。依存は `"@wcstack/state": "file:../state-next"`（import は `@wcstack/state/parser`・`/manifest` のまま。4.0 で `packages/state` と差し替わったら `file:../state` に戻す）。state-next は dist をコミットしないので、`npm test` / `npm run build` は dist が無ければ先にビルドする（`scripts/ensure-state-dist.mjs`）。
+
+### 4.0 で外れた名前
+
+- **フィルタの旧名（`uc` / `fix` …）と `substr` は `wcs/filter-unknown`（warning）** — 4.0 のランタイムと同じ code。文面は書き換え先を言う（`"uc" は 4.0 で外れました … "upper"`）。`substr(start, length)` には `slice(start, start + length)` を案内し、引数が 0 以上のリテラルなら具体形も示す（`substr(2, 3)` → `slice(2, 5)`）。正式名の検査（引数・型）へ読み替えるのはやめた。hover も書き換え先を言う。拡張にコードアクションの仕組みが無いので、クイックフィックスは付けていない。
+- **`wcs/name-alias` は error** — `$trackDependency` / `$untrackDependency` は 4.0 では読んだ時点で `[wcs/name-alias]`（#1701）で throw する。3.x の「3.x の間は動き、4.0 で外れる」info をやめた。
+- **`wcs/declaration-alias` は旧名の宣言キーそのもの（error）** — `$streams` / `$updatedCallback` は 4.0 では読み込み時に `[wcs/declaration-alias]`（#1601）で throw する。3.x は「旧名と正式名を両方書いた」形だけが error で、旧名だけなら `wcs/name-alias`（info）だった。class 構文の state（宣言が静的に読めない形）は warning。`wcs/declaration-alias-read` の文面も 4.0 に合わせた（宣言キーが無いので `undefined`）。
+- **`$scan` は 1 件の `wcs/scan-declaration-invalid`（error）** — 4.0 は読み込み時に `$scan was removed (use $watch or $on)` で throw する（ボリューム・マウントしたコンポーネントでも）。3.x のエントリの検査（形・`from` / `resetOn`・`wcs/scan-source-computed`・`wcs/scan-path-missing`）は外した。
+- **preamble** から `$trackDependency` / `$untrackDependency`・`$scan` / `$streams` の型を外した（書けば型エラー）。`wcs/updated-callback-unbound` は `$renderedCallback` だけを見る。
+
+### 4.0 の新しい規則
+
+- **数値の添字のパス（#355・#383）** — 4.0 は添字の数によらず、いまその位置にある行を読んで書き込みに追従する（F17）。`items.0.name`・`groups.0.items.1.v`・行の中の `groups.*.sel.0.id`・`for: groups.0.items` に `wcs/template-syntax`（「解決済みパス」）を出さない。存在は書いたままの形、なければ添字を `*` に読み替えた形で確かめる（`items.0.nmae` は `wcs/binding-path-missing`。`stateSchema` の state も同じ規則で `wcs/path-nonexistent`）。型（`class.x: items.0.done`）も読み替えた候補から引く。`$watch` のキー（`"items.0.v"`）の存在も同じ規則で確かめる。hover も読み替えた候補の種別と型を出す。
+- **`wcs/wildcard-rank` に「行の中の別のリストの `*`」（#1403・F32）** — `for: a` の行の中の `b.*.y` は、4.0 がバインド確立時に投げる。囲む `for:` の一覧と段ごとに比べる（相対 `for:`・数値の添字のリスト・`for:` の右辺も）。warning。
+- **`wcs/template-syntax` に `for` / `if` テンプレートの中の `outerHTML:` / `outerText:`（#203、error）** — 行や枝はノードを位置で持つので、4.0 は初期化で拒む。
+- **`wcs/binding-syntax` に `__proto__` / `prototype` の段（#120）** — 4.0 の正本パーサがパスを指す右辺で拒む形を、そのまま報告する（`$command.<名前>`・イベントトークン・単独のメソッド名は対象外。実行時と同じ範囲）。
+- **`$behavior` / `$features` / `features=`（新設 `wcs/behavior-invalid`・`wcs/feature-unknown`・`wcs/features-invalid`）** — `$behavior` のキー（3 つ）と boolean の値・オブジェクトでない形・ボリュームの宣言（error）。`$features` と root の `features=` の後付けの名前（8 つ、did-you-mean 付き、error）、配列でない `$features`・ボリュームの `$features`（error）、文書の root 以外の `<wcs-state>` の `features=`（読まれないので warning）。preamble は `$behavior` と `$features` を型付けする。キーと値の型・名前は 4.0 の manifest（新しい項目 `behaviorOptions`・`features`）から読む — 拡張は自分の表を持たない（文面・preamble の型・did-you-mean の候補も manifest から作る）。値が `undefined` のリテラルなら、ボリュームでも宣言なし扱い（ランタイムは `state[key] !== undefined` で拒む）。
+- **ループの添字の範囲（新設 `wcs/index-param-range`、error）** — 添字は `$1`〜`$128`（上限は manifest の `syntax.indexParam.maxDepth`、添字の形はランタイムの `INDEX_PARAM` とテストで突き合わせる）。`for` の中のマークアップの `$129`〜`$999`（属性・mustache・コメント束縛 — ランタイムはバインディングを同じ code で失敗させる。段数の `wcs/wildcard-rank` は重ねない）と、スクリプトの `this.$0` / `this.$129` / `this["$1000"]`（getter・メソッド・`$watch` のハンドラ。読んだ時点で throw。class 構文の state は正規表現で拾って warning）。`for` の外の `$129` はランタイムが先に #1401 で投げるので「for の外のループ添字」（`wcs/wildcard-rank`、warning — 下）。
+- **マークアップの `$0`・`$01`・`$1000` は `wcs/binding-path-missing`（error）** — 添字の形でなく、`$` の名前空間に状態のパスも無い。ランタイムは同じ code でバインディングを失敗させる（`for` の中でも外でも）。候補集合によらず断定できるので error（存在しないふつうのパスは warning のまま）。これまでは `$0` を「for の外のループ添字」と扱い、`for` の中では黙っていた。
+- **`for` の外のパターンパス・省略パス・ループの添字は `wcs/wildcard-rank`（warning のまま）** — これまでは `wcs/template-syntax` だった。4.0 は初期化で `[wcs/wildcard-rank]` #1401 / #1402 を投げるので、code をランタイムに揃えた（重大度は README の例外のとおり warning）。mustache・コメント束縛の `{{ $1 }}` も、属性と同じく for の外で報告する（これまでは黙っていた）。
+- **ボリュームが受け付けない宣言（新設 `wcs/volume-declaration`）** — 表は 4.0 の `scopes/volume.ts`（テストで突き合わせる）。`$stream`・`$watch`・`$listKeys`・`$renderedCallback` は接ぎ木を拒んで `console.error`（その state は木に載らない — error）。`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback` は `console.warn` で知らせて無視（warning）。class 構文の state は 1 段下げる。ほかの検査が自分の code で報告するもの（`$scan`・`$recursion`・`$behavior`・`$features`・旧名の `$streams` / `$updatedCallback`）は重ねない。ボリュームの `$watch` のキーの存在（`wcs/watch-path-missing`）は検査しない（宣言ごと動かない）。
+- **読み込みと併記した `bind-component`（新設 `wcs/bind-component-source`、error）** — `<wcs-state bind-component>` の state はホスト要素のプロパティだけで、`state` / `src` / `json` 属性や中の `<script type="module">` と併記すると、ランタイムは読み込みを拒む（コンポーネントはマウントされない。3.x も同じ）。マウントしたコンポーネントで動かない `$watch`・`$stream`・`$renderedCallback`（`[wcs/mount-dollar-declaration]` の警告）は、その state がコンポーネントの JavaScript にあるので静的には出さない（HTML の中に書いたスクリプトは読まれない — この診断で報告する）。その中のスクリプトには、ほかの宣言・スクリプトの検査を重ねない（`$recursion`・`$scan`・`$watch`・`$behavior`・配列の変更など。これまでは `$recursion` を「マウントしたコンポーネントでは `wcs/mount-dollar-declaration` で拒まれる」と報告していたが、ランタイムはその手前で読み込みごと拒む）。
+- **文書の `<wcs-state>` だけを数える** — `<script>` / `<style>` / `<textarea>` / `<title>` の中身（JS で作る shadow DOM の `innerHTML` の文字列など）の `<wcs-state>` は文書の要素ではない。`<wcs-state>` の走査（`parseWcsStateElements`）がこれらを飛ばすようにした（mustache・コメント束縛の走査と同じ要素）。`<wcs-state>` の中のスクリプトの文字列にある `</wcs-state>` も要素の終わりと読まない。root の判定（`<template>` の中か）も、文字列の中の `<template>` を数えない。
+- **同じ root の 2 つ目の `<wcs-state>`（新設 `wcs/second-root`、error）** — 文書（`<template>` の外）で `mount` も `bind-component` も持たない `<wcs-state>` が 2 つ以上あると、ランタイムは後から読み込んだ方を拒む（4.0 の #47。v2 から同じ規則）。部分木は `<wcs-state mount="path">` で接ぎ木する。
+- **修飾子 `#direct`** — 補完の候補・hover の説明に足した。イベント束縛（`on*:`）以外に付けると無視されるので `wcs/template-syntax`（warning）。
+- **コメント束縛** — 4.0 も束ねる（`enableMustache: false` のページでも）。式が複数行にまたがる `<!--@@: … -->` と `{{ … }}` を拾うようにした（これまでは 1 行だけで、複数行の式は検証されなかった）。`<textarea>` / `<title>` の中のコメントは束縛として扱わない（ブラウザが文字にする）。`<script>` / `<style>` の中のコメントも拾わない。式の位置を区切りの文字列と取り違える癖（`<!--@@wcs-text: wcs-text-->`）も直した。4.0 に無い設定 `commentTextPrefix` の引数は外した。
+
+### そのほか
+
+- `__tests__/nameAliases.drift.test.ts` は、凍結した 3.x の旧名の表が 4.0 の manifest（旧名の表は空・旧名は組み込みに無い）とランタイムの src（拒む宣言キーと API）に矛盾しないことを確かめる。`$behavior` のキーと後付けの名前は manifest から読む（manifest がランタイムの表 — engine.ts の `BEHAVIOR_KEYS`・`load.ts` の `FEATURE_NAMES` — と一致することは、state-next の `public-surface.test.ts` が固定する）。ボリュームの表（`REJECTED` / `NOT_RUN`）と bind-component と併記できない読み込みは、ランタイムの src とテストで突き合わせる。
+- ボリューム（`mount=`）の文面: 4.0 のボリュームは読み込み（#1601 などの throw）を通らず、接ぎ木を拒んで `console.error` で報告する。`wcs/declaration-alias`（旧名の宣言キー）・`$scan`・`$behavior` / `$features`・`$recursion` のボリュームの文面をそれに合わせた（重大度は error のまま — その state は木に載らない）。
+- #203 の判定を HTML のパーサに寄せた: 構造テンプレートの値の末尾の `;`、終了タグの省略（`<li>…<li>`・`<p>…<div>`・表）、void でない要素の `/>`（無視する。svg / math の中だけ閉じる）、`<textarea>` / `<title>` の中（束縛ではない）、引用符の無い属性値。
+- #203 の誤検出を外した: 行の中でも、構造でない `<template>` の中と、`textContent:` / `innerHTML:` などの中身を置き換える束縛を持つ要素の子孫（と `<noscript>` / `<iframe>` の中）は、ランタイムが束縛として読まないので報告しない。
+- #120 で拒まれたパス（`a.__proto__.x`・`{{ obj.prototype }}`）に `wcs/binding-path-missing` を重ねない。
+- `$features` の要素・`$behavior` の値の隣のコメントで判定を落とさない。`$scan: undefined` は宣言なし扱い（ランタイムと同じ）。
+- 重大度の例外を README に書いた: `wcs/filter-unknown`（外れた名前・`substr` を含む）と `wcs/wildcard-rank`（#1401・#1403）は 4.0 では初期化で throw するが warning（実行時のフィルタ登録が見えない・for のスコープの再構成が厳密でないため）。
+- `scripts/ensure-state-dist.mjs`: 古いリンク（`../state` のまま）を検出して止める（照合は `realpathSync.native` で、Windows では大小を区別しない — 小文字のドライブ文字 `c:\…` で起動したときに正しいリンクを古いと取り違えないため）、`.d.ts` も確かめる、並行するビルドをロックで直列にする。
+- 文書走査のコストを足さない: mustache / コメント束縛の走査は `<template>` の深さと raw text の範囲を 1 回だけ集める（これまでは式ごとに文書の頭から数え直していた）。
+
 ## 1.19.0 — 2026-09-24
 
 `@wcstack/state` 3.3.0 の dist を同梱。3.2（名前の正典化）の追随漏れと、分割規則の二重実装を潰す。3.3 が新たに拒否する形（`.state:`、右辺の空セグメント、フィルタの閉じ括弧より後ろの残余、プロパティ名の無い左辺）は同梱した正本パーサがそのまま `wcs/binding-syntax` として報告する。

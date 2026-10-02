@@ -32,8 +32,10 @@ const untrackedReadHtml = join(workDir, "untracked-read.html");
 const recursionOkHtml = join(workDir, "recursion-ok.html");
 const recursionBadHtml = join(workDir, "recursion-bad.html");
 const recursionSpreadHtml = join(workDir, "recursion-spread.html");
-const scanOkHtml = join(workDir, "scan-ok.html");
-const scanBadHtml = join(workDir, "scan-bad.html");
+const scanHtml = join(workDir, "scan.html");
+const removedNamesHtml = join(workDir, "removed-names.html");
+const v4CleanHtml = join(workDir, "v4-clean.html");
+const v4ScopesHtml = join(workDir, "v4-scopes.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
 // 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
 const schemaDir = join(workDir, "schema");
@@ -130,33 +132,52 @@ export default { message: "hi" };
 <div data-wcs="textContent: missingPath"></div>
 `);
 
-// $scan（時間軸の累積）。宣言の形と getter source は runtime（scan/processScanDeclaration.ts）と
-// 同じ code の error。正しい宣言（from / on / resetOn）は出力が候補パスとして実体化され無診断。
-writeFileSync(scanOkHtml, `<!doctype html>
+// @wcstack/state 4.0 は $scan を外した（読み込み時に throw）。宣言のキーに error を 1 件だけ出す。
+writeFileSync(scanHtml, `<!doctype html>
 <wcs-state><script type="module">
 export default {
   page: 1,
-  $eventTokens: ["pageArrived"],
-  $streams: { pageResult: { args: (s) => s.page, source: (page, signal) => load(page, signal) } },
-  $scan: {
-    feed: { from: "pageResult", initial: { items: [] }, fold: (acc, chunk) => acc },
-    log: { on: "pageArrived", initial: [], fold: (acc, event) => [...acc, event.detail], resetOn: ["page"] },
-  },
+  $scan: { total: { from: "page", initial: 0, fold: (acc, cur) => acc + cur } },
 };
 </script></wcs-state>
-<p data-wcs="textContent: feed.items.length"></p>
 `);
-writeFileSync(scanBadHtml, `<!doctype html>
+// 4.0 で外れた API の旧名（ランタイムは読んだ時点で [wcs/name-alias] で throw）と、4.0 の $behavior の知らないキー。
+writeFileSync(removedNamesHtml, `<!doctype html>
 <wcs-state><script type="module">
 export default {
-  get total() { return 1; },
-  $eventTokens: ["tick"],
-  $scan: {
-    count: { on: "tikc", initial: 0, fold: (acc) => acc + 1 },
-    sum: { from: "total", initial: 0, fold: (acc, cur) => acc + cur },
-  },
+  a: 1,
+  $behavior: { enableMustach: false },
+  get x() { this.$trackDependency("a"); return this.a; },
 };
 </script></wcs-state>
+`);
+// 4.0 の書き方は無診断: 数値の添字のパス（#355）・$behavior・$features・#direct・複数行のコメント束縛。
+writeFileSync(v4CleanHtml, `<!doctype html>
+<wcs-state features="formats"><script type="module">
+export default {
+  $behavior: { enableMustache: false },
+  $features: ["formats"],
+  groups: [{ items: [{ v: 1 }] }],
+  save() {},
+};
+</script></wcs-state>
+<p data-wcs="textContent: groups.0.items.0.v"></p>
+<button data-wcs="onclick#direct: save"></button>
+<p><!--@@:
+  groups.0.items.0.v
+--></p>
+`);
+// 4.0 のスコープと添字: ボリュームが拒む $watch（接ぎ木ごと拒まれる）・for の中の $129（添字は $1〜$128）・
+// 同じ root の 2 つ目の <wcs-state>（state の木は root ごとに 1 つ）。
+writeFileSync(v4ScopesHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default { items: [1, 2] };
+</script></wcs-state>
+<wcs-state mount="cart"><script type="module">
+export default { total: 0, $watch: { total() {} } };
+</script></wcs-state>
+<template data-wcs="for: items"><p data-wcs="textContent: $129"></p></template>
+<wcs-state json="{}"></wcs-state>
 `);
 
 const failures = [];
@@ -296,15 +317,24 @@ check("nearest wcstack.manifest.json declares stateSchema → typo is error wcs/
   stdout: [/index\.html:\d+:\d+ error wcs\/path-nonexistent .*"mesage"/, "1 error(s), 0 warning(s)"],
 });
 
-check("$scan declarations with from / on / resetOn are clean, exit 0", ["--lang=en", scanOkHtml], {
+check("$scan (removed in 4.0) → error wcs/scan-declaration-invalid, exit 1", ["--lang=en", scanHtml], {
+  exit: 1,
+  stdout: [/error wcs\/scan-declaration-invalid .*removed in 4\.0/, "1 error(s), 0 warning(s)"],
+});
+
+check("4.0 removed API name + unknown $behavior key → errors wcs/name-alias and wcs/behavior-invalid, exit 1", ["--lang=en", removedNamesHtml], {
+  exit: 1,
+  stdout: [/error wcs\/name-alias /, /error wcs\/behavior-invalid /, "2 error(s), 0 warning(s)"],
+});
+
+check("4.0 forms (numeric index paths, $behavior, $features, #direct, multi-line comment binding) are clean, exit 0", ["--lang=en", v4CleanHtml], {
   exit: 0,
   stdout: ["0 error(s), 0 warning(s)"],
 });
 
-// 未宣言トークンと getter source は runtime が読み込み時に raise する形 ＝ error（exit 1）。
-check("$scan: undeclared token + getter source → errors wcs/scan-declaration-invalid and wcs/scan-source-computed, exit 1", ["--lang=en", scanBadHtml], {
+check("4.0 scopes and loop indexes → errors wcs/volume-declaration, wcs/index-param-range and wcs/second-root, exit 1", ["--lang=en", v4ScopesHtml], {
   exit: 1,
-  stdout: [/error wcs\/scan-declaration-invalid /, /error wcs\/scan-source-computed /, "2 error(s), 0 warning(s)"],
+  stdout: [/error wcs\/volume-declaration .*mount="cart"/, /error wcs\/index-param-range .*\$129/, /error wcs\/second-root /, "3 error(s), 0 warning(s)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });

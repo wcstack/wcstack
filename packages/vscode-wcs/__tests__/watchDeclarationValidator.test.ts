@@ -58,6 +58,19 @@ describe('validateWatchDeclarations', () => {
       expect(validateWatchDeclarations(html)).toEqual([]);
     });
 
+    it('数値の添字のキー（items.0.price・groups.0.items.1.v）は添字を * に読み替えて照合する（4.0 — #355）', () => {
+      const html = makeHtml(`
+  items: [{ price: 1 }],
+  groups: [{ items: [{ v: 1 }] }],
+  $watch: {
+    "items.0.price"(cur, prev) { void cur; void prev; },
+    "groups.0.items.1.v"(cur, prev) { void cur; void prev; },
+    "items.0.prce"(cur, prev) { void cur; void prev; },
+  }`);
+      const diags = validateWatchDeclarations(html);
+      expect(diags.map(d => [d.code, html.slice(d.start, d.end)])).toEqual([[WcsDiagnosticCode.WatchPathMissing, 'items.0.prce']]);
+    });
+
     it('$listKeys が実体化したパスも既知として扱う', () => {
       // items が空配列でも $listKeys の宣言から行のキーフィールドが確定する
       const html = makeHtml(`

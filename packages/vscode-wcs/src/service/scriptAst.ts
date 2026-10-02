@@ -66,7 +66,7 @@ const SUFFIX = '\n})';
 
 /** ランタイム API のうち、第 1 引数の文字列リテラルがそのまま依存パスになるもの。 */
 const PATH_ARG_APIS = new Set(['$getAll', '$resolve', '$dependOn', '$trackDependency']);
-/** 明示の依存登録（`$dependOn` が正式名、`$trackDependency` は 3.x の間の旧名 — @wcstack/state 3.2） */
+/** 明示の依存登録（`$dependOn` が正式名。`$trackDependency` は 3.x の旧名で、4.0 は読んだ時点で throw する — wcs/name-alias。辺としては同じに数える） */
 const TRACK_APIS = new Set(['$dependOn', '$trackDependency']);
 /** この呼び出しの引数の中は依存追跡が抑止される（`$untracked` が正式名、`$untrackDependency` は旧名）。 */
 const UNTRACK_APIS = new Set(['$untracked', '$untrackDependency']);
@@ -446,9 +446,12 @@ export interface ThisMemberRef {
   readonly end: number;
 }
 
+/** 集めるメンバー名（`Set` か、`has` だけを持つ判定 — `$0` / `$129` のように名前を列挙できないとき）。 */
+export type MemberNameFilter = Pick<ReadonlySet<string>, 'has'>;
+
 /**
  * getter / メソッド本体から `this.<name>` / `this["<name>"]` のメンバー参照を集める。
- * 名前は `names` に含まれるものだけ。パースできなければ null（呼び出し側は断定しない側に倒す）。
+ * 名前は `names` に含まれるもの（`names.has(name)` が true のもの）だけ。パースできなければ null（呼び出し側は断定しない側に倒す）。
  *
  * 依存解析（`collectGetterReads`）とは別物なので、エイリアス（`const self = this`）は追わず
  * 素の `this` だけを見る — 取りこぼしても誤検出を出さない側に倒す。`this` の束縛だけは
@@ -456,7 +459,7 @@ export interface ThisMemberRef {
  * 正規表現（`/\.\s*\$streams\b/`）と違い、文字列リテラルの中（`"obj.$streams"`）や
  * 他オブジェクトのプロパティ（`other.$streams`）には当たらない。
  */
-export function collectThisMemberRefs(body: string, names: ReadonlySet<string>): ThisMemberRef[] | null {
+export function collectThisMemberRefs(body: string, names: MemberNameFilter): ThisMemberRef[] | null {
   let program: AnyNode;
   try {
     program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
@@ -479,7 +482,7 @@ const VALUE_SUFFIX = ')\n})';
  * state ではない（モジュールスコープ ＝ ESM では undefined）ので**空**を返す — ここで拾うと
  * 誤検出になる。パースできなければ null。
  */
-export function collectThisMemberRefsInValue(value: string, names: ReadonlySet<string>): ThisMemberRef[] | null {
+export function collectThisMemberRefsInValue(value: string, names: MemberNameFilter): ThisMemberRef[] | null {
   let program: AnyNode;
   try {
     program = parse(VALUE_PREFIX + value + VALUE_SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
@@ -500,7 +503,7 @@ export function collectThisMemberRefsInValue(value: string, names: ReadonlySet<s
  * 関数本体（`this` が state を指すスコープ）から `this.<name>` を集める。
  * `offsetShift` はラッパー接頭辞の長さ（返すオフセットは入力テキスト相対になる）。
  */
-function walkThisMembers(root: AnyNode, names: ReadonlySet<string>, offsetShift: number): ThisMemberRef[] {
+function walkThisMembers(root: AnyNode, names: MemberNameFilter, offsetShift: number): ThisMemberRef[] {
   const out: ThisMemberRef[] = [];
   const walk = (node: AnyNode, thisIsState: boolean): void => {
     // class 本体の `this` は state ではない（中身ごと見ない）

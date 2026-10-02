@@ -1,4 +1,9 @@
 import * as esbuild from 'esbuild';
+import { ensureStateDist } from './scripts/ensure-state-dist.mjs';
+
+// cli.cjs / schema-core.cjs などは `@wcstack/state/parser`・`/manifest` を inline する。依存先（file:../state-next）は
+// dist をコミットしないので、無ければ先にビルドする（scripts/ensure-state-dist.mjs）。
+ensureStateDist();
 
 const isWatch = process.argv.includes('--watch');
 

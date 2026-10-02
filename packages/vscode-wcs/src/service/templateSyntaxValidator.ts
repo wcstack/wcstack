@@ -9,18 +9,21 @@
  * pure(DOM / vscode 非依存)。
  */
 
-import { BUILTIN_FILTERS, canonicalFilterName } from "./completionData.js";
+import { BUILTIN_FILTERS } from "./completionData.js";
 import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
 import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { splitOutsideQuotes } from "../core/parser/quoteAware.js";
-import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from "./forContext.js";
+import {
+  isInsideForTemplate, getInnermostForPath, countWildcardSegments, getResolvedForListPath, rankOfForList, findOtherListWildcard,
+} from "./forContext.js";
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
-import { resolveSchemaPath } from "../core/sidecar/schemaSubset.js";
 import type { JsonSchemaNode } from "../core/sidecar/types.js";
-import { matchesRecursionCandidates, type BindingDiagnostic } from "./bindingValidator.js";
+import { pathExistsInCandidates, resolveIndexedSchemaPath, type BindingDiagnostic } from "./bindingValidator.js";
 import { hasRecursionWildcard } from "./recursionPaths.js";
+import { removedFilterMessage } from "./removedNames.js";
+import { classifyIndexParam, hasUnsafeSegment, MAX_INDEX_PARAM } from "./indexPath.js";
 
 export function validateTemplateSyntax(
   html: string,
@@ -53,9 +56,11 @@ export function validateTemplateSyntax(
         message: msgs.recursionUnsupported(path, "binding"),
       };
     }
+    // 正本パーサが #120 で拒むパスは `wcs/binding-syntax` が報告する（存在の検査を重ねない）
+    if (hasUnsafeSegment(path)) return null;
     if (isValidTemplatePath(path, pathSet, scoped)) return null;
     if (defaultSchema !== undefined && !path.startsWith("$")) {
-      const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, path.split("."));
+      const resolution = resolveIndexedSchemaPath(defaultSchema, path);
       return resolution.kind === "nonexistent"
         ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) }
         : null;
@@ -108,9 +113,11 @@ export function validateTemplateSyntax(
     const insideFor = item.insideTemplate && isInsideForTemplate(html, item.matchStart, bindAttrName);
 
     if (pathPart && !/^-?\d|^["'`]|^true$|^false$|^null$/.test(pathPart)) {
+      // for の外のパターンパス・省略パス・ループの添字は、ランタイムと同じ `wcs/wildcard-rank`（#1401 / #1402。
+      // 重大度は bindingValidator と同じく warning）
       if (!insideFor && pathPart.includes("*")) {
         diagnostics.push({
-          code: WcsDiagnosticCode.TemplateSyntax,
+          code: WcsDiagnosticCode.WildcardRank,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
           message: msgs.patternPathOutsideFor(pathPart),
@@ -119,23 +126,54 @@ export function validateTemplateSyntax(
       }
       if (!insideFor && pathPart.startsWith(".")) {
         diagnostics.push({
-          code: WcsDiagnosticCode.TemplateSyntax,
+          code: WcsDiagnosticCode.WildcardRank,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
           message: msgs.omittedPathOutsideFor(pathPart),
           severity: "warning",
         });
       }
+      const outsideIndex = insideFor ? null : classifyIndexParam(pathPart);
+      if (outsideIndex !== null && outsideIndex.kind !== "notIndex") {
+        diagnostics.push({
+          code: WcsDiagnosticCode.WildcardRank,
+          start: item.exprStart,
+          end: item.exprStart + pathPart.length,
+          message: msgs.loopIndexOutsideFor(pathPart),
+          severity: "warning",
+        });
+      }
+      // `$` ＋数字だけのパス（bindingValidator と同じ規則）: `$0` / `$01` / `$1000` は添字でもパスでもない
+      // （ランタイムは `[wcs/binding-path-missing]` で失敗させる）、for の中の `$129` は `[wcs/index-param-range]`
+      const indexParam = classifyIndexParam(pathPart);
+      if (indexParam !== null && indexParam.kind === "notIndex") {
+        diagnostics.push({
+          code: WcsDiagnosticCode.BindingPathMissing,
+          start: item.exprStart,
+          end: item.exprStart + pathPart.length,
+          message: msgs.indexParamNotPath(pathPart, MAX_INDEX_PARAM),
+          severity: "error",
+        });
+      } else if (insideFor && indexParam !== null && indexParam.kind === "range") {
+        diagnostics.push({
+          code: WcsDiagnosticCode.IndexParamRange,
+          start: item.exprStart,
+          end: item.exprStart + pathPart.length,
+          message: msgs.indexParamRange(pathPart, MAX_INDEX_PARAM),
+          severity: "error",
+        });
+      }
       // for の**段数**を超える階数（`matrix.*.*` / `$2`）。上の 2 つは「for の外か」の
       // 二値しか見ておらず、深さ方向は未検査だった。available === 0 は上が担う。
       //（`@` 入りの式は上で continue 済み）
       if (insideFor && !pathPart.startsWith(".")) {
-        const indexMatch = /^\$(\d+)$/.exec(pathPart);
+        const indexMatch = indexParam !== null && indexParam.kind === "index" ? indexParam : null;
         const needed = indexMatch !== null
-          ? Number(indexMatch[1])
-          : (pathPart.includes("*") ? countWildcardSegments(pathPart) : 0);
+          ? indexMatch.n
+          : (indexParam === null && pathPart.includes("*") ? countWildcardSegments(pathPart) : 0);
         if (needed > 0) {
-          const available = getAvailableWildcardRank(html, item.matchStart, bindAttrName);
+          const resolvedList = getResolvedForListPath(html, item.matchStart, bindAttrName);
+          const available = resolvedList === null ? 0 : rankOfForList(resolvedList);
           if (available > 0 && needed > available) {
             diagnostics.push({
               code: WcsDiagnosticCode.WildcardRank,
@@ -144,19 +182,22 @@ export function validateTemplateSyntax(
               message: msgs.wildcardRank(`"${pathPart}"`, needed, available),
               severity: "warning",
             });
+          } else if (indexMatch === null && resolvedList !== null) {
+            // 各段の `*` は**その段で囲む for のリスト**の行（4.0 の F32・#1403）。bindingValidator と同じ規則
+            const other = findOtherListWildcard(pathPart, resolvedList);
+            if (other !== null) {
+              diagnostics.push({
+                code: WcsDiagnosticCode.WildcardRank,
+                start: item.exprStart,
+                end: item.exprStart + pathPart.length,
+                message: msgs.wildcardOtherList(pathPart, other.over, other.loop),
+                severity: "warning",
+              });
+            }
           }
         }
       }
-
-      if (/\.\d+\.|\.\d+$/.test(pathPart)) {
-        diagnostics.push({
-          code: WcsDiagnosticCode.TemplateSyntax,
-          start: item.exprStart,
-          end: item.exprStart + pathPart.length,
-          message: msgs.resolvedPathInUi(pathPart),
-          severity: "warning",
-        });
-      }
+      // 数値の添字のパス（`{{ items.0.name }}`）は警告しない — 4.0 は添字の数によらず追従する（F17・#355・#383）
 
       if (pathPart.startsWith(".")) {
         const forPath = insideFor ? getInnermostForPath(html, item.matchStart, bindAttrName) : null;
@@ -200,22 +241,13 @@ export function validateTemplateSyntax(
       // 範囲は名前の先頭から（区切りの `|` の後の空白を含めない）
       const filterOffset = segmentStart + (segment.length - segment.trimStart().length);
       segmentStart += segment.length + 1;
-      const canonical = canonicalFilterName(filterName);
-      if (filterName && canonical !== filterName && filterNameSet.has(canonical)) {
-        // 旧名（3.x のエイリアス）は動く — info で正式名を提案する（要件 B12）
-        diagnostics.push({
-          code: WcsDiagnosticCode.NameAlias,
-          start: item.exprStart + filterOffset,
-          end: item.exprStart + filterOffset + filterName.length,
-          message: msgs.nameAlias(filterName, canonical),
-          severity: "info",
-        });
-      } else if (filterName && !filterNameSet.has(filterName)) {
+      if (filterName && !filterNameSet.has(filterName)) {
+        // 4.0 で外れた名前（3.x の旧名・`substr`）も未知のフィルタ。文面だけ書き換え先を案内する
         diagnostics.push({
           code: WcsDiagnosticCode.FilterUnknown,
           start: item.exprStart + filterOffset,
           end: item.exprStart + filterOffset + filterName.length,
-          message: msgs.filterUnknown(filterName),
+          message: removedFilterMessage(filterName, filterArgsOf(segment), msgs) ?? msgs.filterUnknown(filterName),
           severity: "warning",
         });
       }
@@ -223,6 +255,17 @@ export function validateTemplateSyntax(
   }
 
   return diagnostics;
+}
+
+/** フィルタの区間（`substr(2, 3)`）の引数（最初の `(` と最後の `)` の間を引用符の外の `,` で切る。ランタイムと同じ）。 */
+function filterArgsOf(segment: string): string[] {
+  const text = segment.trim();
+  const open = text.indexOf("(");
+  const close = text.lastIndexOf(")");
+  if (open === -1 || close <= open) return [];
+  const args = splitOutsideQuotes(text.slice(open + 1, close), ",").map((a) => a.trim());
+  if (args[args.length - 1] === "") args.pop();
+  return args;
 }
 
 function isValidTemplatePath(
@@ -236,7 +279,7 @@ function isValidTemplatePath(
     const hasNamespace = scopedPaths.some((p) => p.path.startsWith(prefix));
     return !hasNamespace || pathSet.has(path);
   }
-  // `$recursion` 宣言済みの木の展開形（深さを畳んでから候補集合に当てる）。
+  // `$recursion` 宣言済みの木の展開形（深さを畳んでから候補集合に当てる）・数値の添字のパス。
   // bindingValidator の validatePathExistence と同じ規則。
-  return pathSet.has(path) || matchesRecursionCandidates(scopedPaths, path, pathSet);
+  return pathExistsInCandidates(path, scopedPaths, pathSet);
 }

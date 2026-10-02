@@ -21,11 +21,12 @@
  *   のような識別子参照は静的に解決できないため疑わない（誤検出を出さない側に倒す）。
  */
 
-import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { analyzeStatePaths, analyzeWatchEntries, findNonObjectWatch, type PathCandidate, type WatchEntryInfo } from './stateAnalyzer.js';
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
+import { toWildcardForm } from './indexPath.js';
 
 /** 他 state を指す区切り（@wcstack/state define.ts の STATE_NAME_SEPARATOR）。 */
 const STATE_NAME_SEPARATOR = '@';
@@ -41,7 +42,11 @@ export function validateWatchDeclarations(
   const msgs = getMessages(locale);
   const out: WcsDiagnostic[] = [];
 
-  for (const block of parseWcsScriptBlocks(html, stateTagName)) {
+  for (const block of parseLoadedScriptBlocks(html, stateTagName)) {
+    // ボリューム（`mount=`）の `$watch` は、4.0 のランタイムが中身を見る前に接ぎ木ごと拒む
+    // （scopes/volume.ts の REJECTED）。scopeDeclarationValidator が `wcs/volume-declaration` で報告するので、
+    // 動かない宣言の形・キーの検査は重ねない
+    if (block.mountPath !== null) continue;
     // 値がオブジェクトでないと断定できる宣言（`$watch: "x"` / `$watch() {}` 等)。
     // ランタイムは読み込み時に raiseError するため error。entries は 0 件になる形
     // なので、下の early-continue より前に検査する。
@@ -127,7 +132,9 @@ function validateEntry(
   if (entry.definitelyNotFunction) {
     return invalid(msgs.watchHandlerNotFunction(key));
   }
-  if (pathSet.size > 0 && !pathSet.has(key) && !matchesRecursion(collectRecursionSpecs(paths), key, p => pathSet.has(p))) {
+  // 数値の添字のキー（`items.0.v`）は添字を `*` に読み替えた形でも照合する — 4.0 は添字のパスを行として読み、
+  // その行の書き込みで発火する（#355。束縛の存在の照合と同じ — bindingValidator の pathExistsInCandidates）
+  if (pathSet.size > 0 && !pathSet.has(key) && !pathSet.has(toWildcardForm(key)) && !matchesRecursion(collectRecursionSpecs(paths), key, p => pathSet.has(p))) {
     return {
       code: WcsDiagnosticCode.WatchPathMissing,
       message: msgs.watchPathMissing(key),

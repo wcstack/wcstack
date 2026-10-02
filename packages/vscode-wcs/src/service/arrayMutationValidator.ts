@@ -27,7 +27,7 @@
  * quoted キー（this.obj["key"]）と添字内のネスト bracket は対象外（設計 doc §6）。
  */
 
-import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import {
@@ -82,7 +82,7 @@ function toAccessor(path: string): string {
  */
 export function validateArrayMutations(html: string, stateTagName: string = 'wcs-state', locale?: string): WcsDiagnostic[] {
   const msgs = getMessages(locale);
-  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  const blocks = parseLoadedScriptBlocks(html, stateTagName);
   const diagnostics: WcsDiagnostic[] = [];
 
   for (const block of blocks) {

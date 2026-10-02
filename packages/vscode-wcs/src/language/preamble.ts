@@ -5,8 +5,20 @@
  * 仮想 TypeScript ドキュメントの先頭に注入することで、
  * import なしで defineState() + パス型補完を提供する。
  *
- * @wcstack/state の defineState.ts と同等の型を含む。
+ * @wcstack/state（4.0）の defineState.ts と同等の型を含む。4.0 で外れた旧名（`$trackDependency` /
+ * `$untrackDependency`）と宣言（`$scan` / `$streams`）は型に持たない — 書けば型エラーになり、
+ * lint（`wcs/name-alias` など）と同じ場所を指す。
+ *
+ * `$behavior` のキーと型、`$features` の名前は manifest（`behaviorOptions` / `features`）から作る。
  */
+
+import { getWcsManifest } from '../service/wcsManifest.js';
+
+const manifest = getWcsManifest();
+/** `{ enableMustache?: boolean; … }`（manifest の `behaviorOptions`）。 */
+const BEHAVIOR_TYPE = `{ ${Object.entries(manifest.behaviorOptions).map(([key, option]) => `${key}?: ${option.type}`).join('; ')} }`;
+/** `"formats" | "diagnostics" | …`（manifest の `features`）。 */
+const FEATURE_NAME_TYPE = manifest.features.map((name) => JSON.stringify(name)).join(' | ');
 
 export const WCS_PREAMBLE = `
 // --- @wcstack/state type preamble (auto-injected by vscode-wcs) ---
@@ -60,10 +72,6 @@ interface WcsStateApi {
   $resolve(path: string, indexes: number[], value?: any): any;
   $dependOn(path: string): void;
   $untracked<T>(fn: () => T): T;
-  /** @deprecated $dependOn の旧名（@wcstack/state 3.2 — 4.0 で外れる） */
-  $trackDependency(path: string): void;
-  /** @deprecated $untracked の旧名（@wcstack/state 3.2 — 4.0 で外れる） */
-  $untrackDependency<T>(fn: () => T): T;
   $eq(path: string, key: unknown): boolean;
   $eqPath(path: string, keyPath: string): boolean;
   $eqIndex(path: string, level?: number): boolean;
@@ -85,14 +93,12 @@ interface WcsStateApi {
   // 末尾が \`.**\` のキーにも同じ索引を置く（@wcstack/state の defineState と対）。
   readonly [key: \`\${string}.**\`]: any;
 }
-// $scan の出力と $streams の値は、ランタイムが宣言キーの名前で実体化するプロパティ。T には宣言
-// オブジェクトの中にしか現れないので、getter やメソッドの this から読めるよう any で写す。initial の
-// 型は使わない — 空配列の initial が never[] になり、正しい読み（要素のプロパティ）まで型エラーになるため。
+// $stream の値は、ランタイムが宣言キーの名前で実体化するプロパティ。T には宣言オブジェクトの中にしか
+// 現れないので、getter やメソッドの this から読めるよう any で写す。initial の型は使わない — 空配列の
+// initial が never[] になり、正しい読み（要素のプロパティ）まで型エラーになるため。
 // T に同名のプロパティを明示的に事前宣言していれば写さない（交差でその型まで any に潰さないため）。
 type _WcsDeclaredValues<T> =
-  (T extends { $scan: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {}) &
-  (T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {}) &
-  (T extends { $streams: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
+  (T extends { $stream: infer S } ? { [K in Exclude<keyof S & string, keyof T>]: any } : {});
 type _WcsThis<T> = T & WcsStateApi & _WcsPathAccessor<T> & _WcsDeclaredValues<T>;
 // $listKeys: { "<listPath>": "<field>" | (row) => key }（list/listKeys.ts）。
 // キー指定の関数引数に文脈型を与えるためだけの宣言（noImplicitAny 下の偽エラー回避）。
@@ -101,23 +107,20 @@ type _WcsListKeys = Record<string, string | ((row: any) => unknown)>;
 // ハンドラ引数に文脈型を与えるためだけの宣言（$listKeys と同じ理由）。
 // this は ThisType<_WcsThis<T>> により state 型になる。
 type _WcsWatch = Record<string, (cur: any, prev: any, ...indexes: number[]) => void>;
-// $scan: { "<output>": { from | on, initial, fold, resetOn? } }（scan/processScanDeclaration.ts）。
-// fold の引数に文脈型を与えるためだけの宣言。from と on で第 2 引数の意味が変わる（cur か event）ので
-// 引数は any に倒す。fold に this は渡らない（ランタイムは this 無しで呼ぶ）ので this: void と書く —
-// 書かないと defineState の ThisType がメソッド形の fold にも state 型の this を与えてしまう。
-type _WcsScan = Record<string, {
-  from?: string;
-  on?: string;
-  initial: any;
-  fold: (this: void, acc: any, ...args: any[]) => any;
-  resetOn?: string[];
-}>;
 // $recursion: { "<anchor>": "<repeat>" }（recursion/declaration.ts）。初版は単一の自己再帰
 // のみで、アンカーも反復サブパスも「固定プロパティ列 + 末尾の .*」に限る。形の検証は
 // service/recursionValidator.ts（wcs/recursion-declaration-invalid）が担う。
 type _WcsRecursion = Record<string, string>;
+// $behavior: その木の振る舞い（4.0 で bootstrapState から移った 3 キー。既定はどれも true）。
+// 値が boolean でない形は型エラーになる。知らないキーは lint（wcs/behavior-invalid）が報告する。
+type _WcsBehavior = ${BEHAVIOR_TYPE};
+// $features: その state が要る後付け（4.0。分割 auto は読み込み、全部入り・バンドラは入っているかを検査する）。
+type _WcsFeatureName = ${FEATURE_NAME_TYPE};
 function defineState<T extends Record<string, any>>(
-  def: T & { $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $scan?: _WcsScan; $recursion?: _WcsRecursion } & ThisType<_WcsThis<T>>
+  def: T & {
+    $listKeys?: _WcsListKeys; $watch?: _WcsWatch; $recursion?: _WcsRecursion;
+    $behavior?: _WcsBehavior; $features?: readonly _WcsFeatureName[];
+  } & ThisType<_WcsThis<T>>
 ): T { return def; }
 // --- end preamble ---
 `;

@@ -65,6 +65,46 @@ describe("wcs/binding-syntax（正本パーサと同じ判定 — @wcstack/state
     expect(codes(`<p><!--@@:count|gt(0)--></p>`)).toEqual([]);
   });
 
+  // 4.0 の正本パーサはパスを指す右辺の `__proto__` / `prototype` の段を #120 で拒む（実行時と同じ範囲）
+  it("パスの __proto__ / prototype の段を報告すること（4.0 の #120 — 属性・mustache・コメント束縛）", () => {
+    const cases: [string, string][] = [
+      [`<p data-wcs="textContent: a.__proto__.x"></p>`, "textContent: a.__proto__.x"],
+      [`<p data-wcs="title: items.*.prototype"></p>`, "title: items.*.prototype"],
+      [`<button data-wcs="onclick: handlers.__proto__"></button>`, "onclick: handlers.__proto__"],
+      [`<p>{{ a.__proto__ }}</p>`, "a.__proto__"],
+      [`<p><!--@@: Foo.prototype.bar--></p>`, "Foo.prototype.bar"],
+    ];
+    for (const [html, range] of cases) {
+      const d = codes(html);
+      expect(d, html).toHaveLength(1);
+      expect(d[0].code).toBe("wcs/binding-syntax");
+      expect(d[0].severity).toBe("error");
+      expect(html.slice(d[0].start, d[0].end)).toBe(range);
+      expect(d[0].message).toContain('cannot go through "__proto__" or "prototype"');
+    }
+  });
+
+  it("#120 で拒まれたパスには存在の検査（wcs/binding-path-missing）を重ねないこと（属性・for の短縮パス・mustache）", () => {
+    const html = `<wcs-state><script type="module">export default { obj: {}, items: [] };</script></wcs-state>
+<p data-wcs="textContent: obj.__proto__.x"></p>
+<template data-wcs="for: items"><b data-wcs="textContent: .__proto__"></b></template>
+<p>{{ obj.prototype }}</p>
+<p data-wcs="textContent: obj.missing"></p>`;
+    const d = validateDocument(html, { locale: "en" });
+    expect(d.filter((x) => x.code === "wcs/binding-syntax").map((x) => html.slice(x.start, x.end)))
+      .toEqual(["textContent: obj.__proto__.x", "textContent: .__proto__", "obj.prototype"]);
+    // 存在の検査は、拒まれていないパスだけに出る
+    expect(d.filter((x) => x.code === "wcs/binding-path-missing").map((x) => html.slice(x.start, x.end))).toEqual(["obj.missing"]);
+  });
+
+  it("パスを指さない右辺（コマンドトークン・イベントトークン・単独のメソッド名）の __proto__ は報告しないこと（実行時と同じ）", () => {
+    expect(codes(`<button data-wcs="onclick: $command.__proto__"></button>`)).toEqual([]);
+    expect(codes(`<x-el data-wcs="eventToken.value: __proto__"></x-el>`)).toEqual([]);
+    expect(codes(`<button data-wcs="onclick: __proto__"></button>`)).toEqual([]);
+    // 段の名前に含まれるだけ（`__proto__x` / `prototypes`）は対象外
+    expect(codes(`<p data-wcs="textContent: a.__proto__x; title: b.prototypes"></p>`)).toEqual([]);
+  });
+
   it("日本語のメッセージを返すこと", () => {
     const d = validateBindingSyntax(`<input data-wcs="value#ro#wo: x">`, "data-wcs", "ja");
     expect(d[0].message).toMatch(/^バインディングの構文エラー（ランタイムは読み込み時に throw します）: /);
