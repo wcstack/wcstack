@@ -105,6 +105,12 @@ state.isPlaying ──active──▶ <wcs-wakelock> ──held──▶ HUD chi
   capture retargets the derived `click` — so a capture started on the Start
   overlay would eat its button's click. Dragging is therefore gated on
   `phase === "playing"`, the only phase with no overlay covering the board.
+- **The drag listeners are `#direct`.** `dragStart` and `dragMove` read
+  `e.currentTarget` (to capture the pointer and to measure the board), so
+  they are bound as `onpointerdown#direct:` / `onpointermove#direct:`.
+  `@wcstack/state` 3.x attaches every `on*:` to its element anyway; 4.0
+  delegates `on*:` to the root, where `currentTarget` would be the root,
+  unless `#direct` keeps the listener on the element.
 
 ## Verified
 

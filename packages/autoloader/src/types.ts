@@ -15,6 +15,7 @@ export interface IWritableTagNames {
 }
 
 export interface IConfig {
+  /** @deprecated Read nowhere: it has no effect. Removed in 4.0, where passing it throws. */
   readonly scanImportmap: boolean;
   readonly loaders: Record<string, ILoader | string>;
   readonly observable: boolean;
@@ -22,6 +23,7 @@ export interface IConfig {
 }
 
 export interface IWritableConfig {
+  /** @deprecated Read nowhere: it has no effect. Removed in 4.0, where passing it throws. */
   scanImportmap?: boolean;
   loaders?: Record<string, ILoader | string>;
   observable?: boolean;

@@ -74,6 +74,13 @@ export interface IRoute extends IRouteChildContainer {
   readonly absolutePath: string;
   readonly uuid: string;
   readonly placeHolder: Comment;
+  /**
+   * ルートの内容の終わりの印（`@@wcs-route-end:<absolutePath>`。SSR の終了マーカーと同じ）。
+   * showRoute が差し込んだ内容の後ろに置き、hideRoute は placeholder からここまでを持つ。
+   */
+  readonly endMarker: Comment;
+  /** 隠している間の内容（範囲を移した DocumentFragment）。showRoute が戻す */
+  held: DocumentFragment | null;
   readonly childNodeArray: Node[];
   readonly routes: IRoute[];
   readonly params: Record<string, string>;
@@ -104,7 +111,7 @@ export interface IRoute extends IRouteChildContainer {
    * SSR ハイドレーションの採用: サーバー描画済みノード列を内容として引き取る
    * （docs/ssr-router-design.md §4）
    */
-  adoptChildNodes(nodes: Node[]): void;
+  adoptChildNodes(nodes: Node[], endMarker?: Comment): void;
 }
 
 /**

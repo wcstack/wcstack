@@ -2,6 +2,37 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+`@wcstack/state` 4.0 で外れる・読み方が変わる書き方を、3.x のうちに知らせる（2.6 の `wcs/v3-migration` と同じ運用）。3.x では動く形は **`wcs/v4-migration`（info）** — 既定の CLI でも `--strict` でも CI を落とさない。3.x でも既に正しく動かない形（4.0 は初期化で拒む）は、その形の code の **warning**。error は 1 件も足さない。
+
+### 4.0 への準備（`wcs/v4-migration`、新設、info）
+
+文面は「4.0 への準備（3.x ではこのまま動きます）」（en: "Preparing for 4.0 (this still runs on 3.x)"）で始まり、3.x のままで書ける書き換え先を言う。
+
+- **root の state の `$scan`** — 4.0 は読み込み時に throw する。パスの変化は `$watch`、イベントは `$on` のハンドラで畳むよう案内する。値が `undefined` のリテラルは宣言なし扱い。ボリューム・マウントしたコンポーネントの `$scan` は 3.x でも動かず既存の `wcs/scan-declaration-invalid` が報告するので重ねない。宣言の形の検査（3.x の事実）とは別の関数（`validateScanV4Migration`）で、`$scan` の綴りが無い文書は `<wcs-state>` を読まない。
+- **フィルタ `substr`**（`data-wcs`・入力フィルタ・`{{ }}`・`<!--@@:-->`） — `slice(start, start + length)` を案内し、引数が 0 以上の整数リテラルなら具体形も示す（`substr(2, 3)` → `slice(2, 5)`）。負の数・引用符付き・識別子の引数は一般形だけ（負の数は文字列の長さで `slice` の結果が変わるので、具体形にすると意味が変わる）。
+- **4.0 が root へ委譲するイベントのハンドラが読む `event.currentTarget`** — `click`・`dblclick`・`input`・`change`・`submit`・`keydown`・`keyup`・`mousedown`・`mouseup`・`pointerdown`・`pointerup`（state-next の `BUBBLING` の写し）の `on*:` で、`#direct` が無く、ハンドラが root の state のメソッドで、第 1 引数の `currentTarget` を読む（`e.currentTarget`・`e["currentTarget"]`・`const { currentTarget } = e`・引数の分割代入）とき。4.0 ではそこが要素ではなく root になる。書き換え先は書かれた修飾子に `direct` を足した左辺（`onclick#prevent:` → `onclick#prevent,direct:`）か `event.target.closest(...)`。最初に中断する `await` の**被演算子の中**の読みは中断の前なので拾う（`await fetch(url, { body: new FormData(e.currentTarget) })` — よくある async の submit）。router の route の `<template>` の中の束縛も文書の root の state の束縛として扱う。誤報を避けて黙る形: 中断した後・入れ子の関数の中の読み（3.x でも dispatch 後は null）、引数の名前の束縛し直し、カスタム要素の `input` / `change` / `submit`（コンポーネントが bubbles しない dispatch をすると 4.0 は要素で聞く — ネイティブの bubbling はカスタム要素でも 4.0 は root で聞くので `click` などは出す）、自前の `<wcs-state>` を持つ `<template>`（宣言的 shadow root・DCC）の中の束縛と、その `<wcs-state>` のメソッド、ボリュームのメソッド・データプロパティに置いた関数・外部ファイルの state。判定は acorn（`scriptAst.ts` の `readsEventCurrentTarget`）で、`currentTarget` の綴りがあるメソッドだけを解析する。
+
+### 3.x でも既に壊れている形（warning）
+
+3.x の実行時の挙動を確かめたうえで、4.0 の予告ではなく 3.x の不具合として、その形の code の warning にした。
+
+- **for / if / elseif / else テンプレートの中の `outerHTML:` / `outerText:`（`wcs/template-syntax`）** — 3.x は描けるが、行や枝は元のノードを持ち続けるので、行が外れる・リストが置き換わる・枝が閉じると、置き換えた中身がページに取り残される（実測）。4.0 は初期化で拒む（#203）。明示のプロパティ形 `.outerHTML:` も対象、`class.outerHTML:` は対象外。別の `<template>` の中に入れ子にした構造でない `<template>`（行や枝の中の template、route の中に置いたアプリの雛形 `<template id="row-tpl">` など — 中身が差し込まれても入れ子の template は inert のまま）の中、中身を置き換える束縛（`textContent:` / `innerHTML:` など）を持つ要素の子孫、raw text 要素（`<noscript>` / `<iframe>` を含む）の中は束縛として読まれないので報告しない。文書の直下の `<template>`（router の route そのもの）は差し込まれた先で束縛されるので、その中の for / if も対象。自前の `<wcs-state>` を持つ `<template>`（宣言的 shadow root・DCC）の中は検査しない — `<wcs-state>` の持ち主は最も内側の構造でない template で、for / if の枝を越えて上へは探さない（route の中の `if:` の枝に置いた `<wcs-state>` で route 全体が黙らないように）。終了タグの省略（`<li>…<li>`・`<p>…<div>`・表）は HTML のパーサに合わせて閉じる。
+- **行の中の別のリストの `*`（`wcs/wildcard-rank`）** — `for: a` の行の中の `b.*.y`。3.x はループ文脈とパスのワイルドカードの接頭辞の共通部分だけ添字を渡すので、添字が null のまま解決に進み、囲む `for` ごと描けない（`Cannot resolve state address for binding with wildcard statePathName "b.*.y" because list index is null.`、実測）。囲む for の一覧と段ごとに比べる（相対 `for:`・絶対 `for:`・`for:` の右辺・mustache / コメント束縛も）。4.0 は #1403 で拒む。
+- **ループの添字の表の外の `$` ＋数字** — マークアップの `$0` / `$01` / `$129` / `$1000` は、ランタイムの表（`$1`〜`$128`）に無いので状態のパスとして読まれ、`[wcs/binding-path-missing]` で束縛（for の中では囲む for ごと）が失敗する（実測）。同じ code（`wcs/binding-path-missing`、warning）で報告する。黙るのは、文書の root の state（`<template>` の外）がそのキーを宣言していると**確かめられた**ときだけ（宣言していれば 3.x はそのキーを読む）。宣言は `state=` / `json=`・`src=`（CLI と IDE が `fileReader` で読めたとき — `.js` は同名の `.ts` を先に読む）・中のスクリプトのトップレベルから集める。読めない `src=`・宣言の無い class 構文・状態の候補が 1 つも無い文書でも報告する（これまでの「for の外のループ添字」「129 段のループが要る」も候補によらず出ていた）。宣言的 shadow root の `<wcs-state>` のキーは数えない。これまで for の中の `$129` は「129 段のループが要る」（`wcs/wildcard-rank`）、for の外の `$0` は「for の外のループ添字」（`wcs/template-syntax`）と言っていたのを改めた。スクリプトの `this.$0` / `this.$129` / `this["$01"]`（getter・メソッド・`$watch` のハンドラ）は、ランタイムが読んだ時点で `[wcs/index-param-range]` を投げるので、**`wcs/index-param-range`（新設、warning）**。読みだけ — 単純代入・分割代入の左辺（`this.$0 = v`）は set トラップしか通らず投げないので報告しない（複合代入 `+=` は先に読むので報告する）。AST で読めた state だけ（class 構文は黙る）。旧名の宣言キーの読み（`wcs/declaration-alias-read`）と同じ 1 回の AST 走査で集める。
+- **同じ root の 2 つ目の `<wcs-state>`（`wcs/second-root`、新設、warning）** — `mount` も `bind-component` も `name` も無い（`name=` の要素は登録の前に初期化で失敗するので root を占めない）`<wcs-state>` が文書（`<template>`・コメント・`<script>` / `<style>` / `<textarea>` / `<title>` などの中身の外）に 2 つ以上。ランタイムは後から登録しに来た方を拒む（"A state tree is already registered on this root"）。v2 からの規則で 3.x の lint は報告していなかった。router の route（`<wcs-router><template>` の中）・宣言的 shadow root・JS の `innerHTML` の文字列は数えない。`<wcs-state` の開始タグが 2 つ以上ある文書だけを 1 回走査する。
+
+### そのほか
+
+- **`wcs/name-alias` の文面** — 「4.0 で外れる」（en: "goes in 4.0"）を「4.0 で削除される」（en: "is removed in 4.0"）に。フィルタの旧名の hover、`wcs/declaration-alias-read` の class 構文向けの文面も同じ。
+- **修飾子 `#direct`** — 補完の候補と hover に足した（4.0 で効く・3.x はもともと要素にリスナーを付けるので変わらない、と説明する）。3.x のランタイムは知らない修飾子を無視し（`event/handler.ts` は `prevent` / `stop` だけを見る）、正本パーサも受け付けるので、`onclick#direct:` に診断は出ない（テストで固定）。
+- **`for: items;`（末尾の `;`）** — for の右辺は引用符の外の最初の `;` までを読む（`forContext.ts` の `getEnclosingFors`）。`items;` を for のリストのパスとして合成すると、行の `items.*.name` を別のリストの `*` と取り違えていた（今回の検査）。同じ原因で以前から出ていた、行の省略パス（`.name` → `items;.*.name`）の偽の `wcs/binding-path-missing` も消えた。
+- **preamble** — 旧名 API（`$trackDependency` / `$untrackDependency`）の `@deprecated` も「4.0 で削除される / removed in 4.0」に揃えた。
+- **文書走査のコストを足さない** — 要素の置かれた文脈（行・枝の中か・自前の state を持つ template の中か）は、候補（`outerHTML:` / `outerText:` と委譲されるイベントの束縛）を集めてからループの後で 1 回だけ走査する（`forContext.ts` の `analyzeElementContexts`。template が自前の `<wcs-state>` を持つかは offset より後ろで分かることがあるので、文書の終わりまで 1 回走査してから決める）。`asciiLowerCase`・raw text 要素の表・template の判定（`createTemplateTester`）は `language/htmlParse.ts` に 1 つだけ置いた。別のリストの `*` の判定は、段数の検査がもともと束縛ごとに引いていた囲む for のリスト（`getAvailableWildcardRank` を `getResolvedForListPath` ＋ `rankOfForList` に分けた）をそのまま使う — 呼び出しの回数は変わらない。スクリプトの `this.$129` は旧名の読みと同じ 1 回の AST 走査で集める。
+- 予告しないもの: `<textarea>` / `<title>` の中のコメント束縛は、ブラウザのパーサが文字にするので 3.x でも 4.0 でも束縛されない（4.0 でも変わらない — mustache は両方とも束縛する）。`$behavior` / `$features` には触れていない。
+- リポジトリの examples / packages の HTML（`wcs-validate` を全件に）: 0 error / 102 warning / 27 info → 0 error / 102 warning / 29 info。増えたのは `wcs/v4-migration` の 2 件だけ（`examples/state-intersect-scroll` の `$scan`、`examples/state-tilt-maze` の `onpointerdown: dragStart` — `dragStart` が `e.currentTarget.setPointerCapture` / `getBoundingClientRect` を読む。4.0 ではそのまま壊れる）。
+
 ## 1.20.0 — 2026-10-02
 
 `@wcstack/state` 3.4.0 の dist を同梱。3.4.0 から実行時が数値添字が 1 つのパスの束縛（`items.0.v`）をその位置の行として読むので、診断もその読み方に揃える。

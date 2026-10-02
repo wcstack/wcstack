@@ -9,8 +9,27 @@ describe('loadFromScriptFile', () => {
     expect(data).toEqual({ value: 123 });
   });
 
-  it('存在しないURLの場合はエラーになること', async () => {
-    await expect(loadFromScriptFile('file:///not-found-module.js')).rejects.toThrow(/Failed to load script file/);
+  it('存在しないURLの場合は import() のエラーを包まずにそのまま reject すること', async () => {
+    const error = await loadFromScriptFile('file:///not-found-module.js').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    // Was: a new "[@wcstack/state] Failed to load script file: …" Error with the original as text
+    expect((error as Error).message).not.toMatch(/Failed to load script file/);
+  });
+
+  it('モジュール自身が投げた値をそのまま（同一オブジェクトで）reject すること', async () => {
+    const probe = new TypeError('thrown by the module');
+    (globalThis as any).__wcsLoaderProbe = probe;
+    try {
+      const url = `data:text/javascript,${encodeURIComponent('throw globalThis.__wcsLoaderProbe;')}`;
+      await expect(loadFromScriptFile(url)).rejects.toBe(probe);
+    } finally {
+      delete (globalThis as any).__wcsLoaderProbe;
+    }
+  });
+
+  it('モジュールが Error でない値（文字列）を投げても包まずに reject すること', async () => {
+    const url = `data:text/javascript,${encodeURIComponent('throw "module threw a string";')}`;
+    await expect(loadFromScriptFile(url)).rejects.toBe('module threw a string');
   });
 
   it('default が falsy の場合は空オブジェクトを返すこと', async () => {

@@ -3,6 +3,7 @@ import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { IRouteMatchResult, IRoute, IRouter, GuardHandler, GuardData, ISegmentInfo } from "./types.js";
 import { RouteCore } from "../core/RouteCore.js";
+import { ROUTE_END_PREFIX } from "../ssrMarkers.js";
 
 // NOTE: `static wcBindable` は宣言しない — RouteCore.ts 冒頭の NOTE を参照
 // （docs/router-state-contract-design.md §5.1 / D2）。
@@ -14,6 +15,9 @@ export class Route extends HTMLElement implements IRoute {
   private _uuid: string = getUUID();
   private _placeHolder: Comment = document.createComment(`@@route:${this._uuid}`);
   private _childNodeArray: Node[] | undefined;
+  private _endMarker: Comment | undefined;
+  /** 隠している間の内容（IRoute.held） */
+  held: DocumentFragment | null = null;
   private _childIndex: number = 0;
   private _initialized: boolean = false;
   private _routes: IRoute[] | undefined;
@@ -48,6 +52,14 @@ export class Route extends HTMLElement implements IRoute {
     return this._placeHolder;
   }
 
+  /** ルートの内容の終わり（IRoute.endMarker。文面は SSR の終了マーカーと同じ） */
+  get endMarker(): Comment {
+    if (typeof this._endMarker === 'undefined') {
+      this._endMarker = document.createComment(`${ROUTE_END_PREFIX}${this.absolutePath}`);
+    }
+    return this._endMarker;
+  }
+
   get childNodeArray(): Node[] {
     if (typeof this._childNodeArray === 'undefined') {
       this._childNodeArray = Array.from(this.childNodes);
@@ -60,9 +72,13 @@ export class Route extends HTMLElement implements IRoute {
    * サーバー描画済みの DOM ノード列をこのルートの内容として引き取る。
    * 以後の hideRoute / showRoute は採用ノードに対して従来どおり動く。
    * template 由来の fresh クローン（自身の childNodes）は不要になるため破棄する。
+   * `endMarker`（サーバーの終了マーカー）は、以後このルートの範囲の終わりになる。
    */
-  adoptChildNodes(nodes: Node[]): void {
+  adoptChildNodes(nodes: Node[], endMarker?: Comment): void {
     this._childNodeArray = [...nodes];
+    if (endMarker) {
+      this._endMarker = endMarker;
+    }
     while (this.firstChild) {
       this.removeChild(this.firstChild);
     }

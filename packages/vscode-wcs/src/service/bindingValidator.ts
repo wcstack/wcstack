@@ -9,13 +9,21 @@
  */
 
 import { splitBindTexts } from '@wcstack/state/parser';
-import { findStartTagRegions } from '../language/htmlParse.js';
+import { createTemplateTester, findStartTagRegions, parseWcsStateElements } from '../language/htmlParse.js';
 import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, canonicalFilterName, type FilterInfo } from './completionData.js';
 import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
-import { mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
+import { analyzeCallableBodies, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
 import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
-import { isInsideForTemplate, getInnermostForPath, getAvailableWildcardRank, countWildcardSegments } from './forContext.js';
+import {
+  isInsideForTemplate, getInnermostForPath, countWildcardSegments, getResolvedForListPath, rankOfForList,
+  findOtherListWildcard, analyzeElementContexts,
+} from './forContext.js';
+import { readsEventCurrentTarget } from './scriptAst.js';
+import {
+  classifyIndexParam, createDeclaredKeyTester, DIRECT_MODIFIER, MAX_INDEX_PARAM, modifiersOf, SUBSTR_FILTER, substrRewrite,
+  V4_DELEGATED_EVENTS,
+} from './v4Migration.js';
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../core/messages.js';
 import { resolveSchemaPath } from '../core/sidecar/schemaSubset.js';
@@ -74,6 +82,20 @@ export function validateBindings(
     return structuralTemplates;
   };
 
+  // 要素の置かれた文脈（行・枝の中か・inert な template の中か）で決まる検査は、候補を集めてから
+  // ループの後で 1 回の走査（analyzeElementContexts）にまとめて判定する — 束縛ごとに文書を数え直さない
+  const outerCandidates: ElementSiteCandidate[] = [];
+  const currentTargetCandidates: (ElementSiteCandidate & { eventName: string; handler: string })[] = [];
+  // 委譲されるイベントのハンドラのうち、イベント引数の `currentTarget` を読むメソッド（遅延収集）
+  let currentTargetHandlers: ReadonlySet<string> | null = null;
+  // root の state が宣言しているトップレベルのキー（`$0` のようなキーの判定にだけ使う。遅延収集）
+  let declaredKey: ((key: string) => boolean) | null = null;
+  const isDeclaredKey = (key: string): boolean => (declaredKey ??= createDeclaredKeyTester(html, stateTagName, fileReader))(key);
+  const getCurrentTargetHandlers = (): ReadonlySet<string> => {
+    currentTargetHandlers ??= collectCurrentTargetHandlers(html, stateTagName);
+    return currentTargetHandlers;
+  };
+
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
 
@@ -114,6 +136,49 @@ export function validateBindings(
       const scopedPaths = statePaths;
       const scopedPathSet = new Set(scopedPaths.map(p => p.path));
       const propNoMod = parsed.property.replace(/#.*$/, '').trim();
+      const leadingSpace = binding.length - binding.trimStart().length;
+
+      // 要素そのものを置き換える束縛（`outerHTML:` / `outerText:`。明示のプロパティ形 `.outerHTML:` も）。
+      // for / if テンプレートの行や枝の中にあるかは、ループの後でまとめて判定する（`class.outerHTML:` は対象外）
+      {
+        const outerName = propNoMod.startsWith('.') ? propNoMod.slice(1) : propNoMod;
+        if (outerName === 'outerHTML' || outerName === 'outerText') {
+          outerCandidates.push({
+            offset: attr.valueStart,
+            start: bindingStart + leadingSpace,
+            end: bindingStart + leadingSpace + propNoMod.length,
+            property: outerName,
+          });
+        }
+      }
+
+      // 4.0 が root へ委譲するイベントの束縛（`onclick: select`。`#direct` 無し）で、ハンドラのメソッドが
+      // イベント引数の `currentTarget` を読む（4.0 では要素ではなく root になる）。カスタム要素の
+      // `input` / `change` / `submit` は対象外 — コンポーネントが自分で bubbles しない dispatch をすると、4.0 は
+      // それを要素で聞くので、どちらになるかが静的に決まらない（ネイティブの bubbling は 4.0 も root で聞く）。
+      // ハンドラは単独のメソッド名だけ（`$command.<名前>`・パスは対象外）。自前の state を持つ template の中かは
+      // 後で判定する
+      if (propNoMod.startsWith('on') && parsed.path !== null) {
+        const eventName = propNoMod.slice(2);
+        const handler = parsed.path.trim();
+        const modifiers = modifiersOf(parsed.property);
+        if (V4_DELEGATED_EVENTS.has(eventName)
+          && !modifiers.includes(DIRECT_MODIFIER)
+          && attr.tagName !== undefined
+          && !(attr.tagName.includes('-') && CUSTOM_ELEMENT_OWN_EVENTS.has(eventName))
+          && /^[A-Za-z_][\w$]*$/.test(handler)
+          && getCurrentTargetHandlers().has(handler)) {
+          currentTargetCandidates.push({
+            offset: attr.valueStart,
+            start: bindingStart + leadingSpace,
+            end: bindingStart + leadingSpace + propNoMod.length,
+            // 書き換え先の左辺: 書かれた修飾子に `direct` を足す（`onclick#prevent` → `onclick#prevent,direct`）
+            property: `${propNoMod}#${[...modifiers, DIRECT_MODIFIER].join(',')}`,
+            eventName,
+            handler,
+          });
+        }
+      }
 
       // スプレッド `...: target` — フィルタ禁止・ターゲット必須（parseBindTextsForElement.ts と対応）。
       // ターゲット自体は通常の state パスなので、存在検証は共通ロジックに流す。
@@ -274,8 +339,25 @@ export function validateBindings(
             });
           }
 
-          // for 外でループインデックス（$1〜）を使用
-          if (!insideFor && /^\$\d+$/.test(pathTrimmed)) {
+          // `$` ＋数字だけのパス: `$1`〜`$128` はループの添字。表の外（`$0`・`$01`・`$129`）は添字ではなく、
+          // ランタイムは状態のパスとして読んで `[wcs/binding-path-missing]` で失敗させる（for の中では囲む
+          // for ごと）。root の state がそのキーを宣言していると確かめられたとき（3.x はそのキーを読む）だけ
+          // 黙る — 候補が読めない state（class 構文・読めない src=）でも報告する（これまでの「for の外の
+          // ループ添字」「129 段のループが要る」も候補によらず出ていた）
+          const indexParam = classifyIndexParam(pathTrimmed);
+          if (indexParam === 'notIndex' && !scopedPathSet.has(pathTrimmed) && !isDeclaredKey(pathTrimmed)) {
+            const pathStart = bindingStart + binding.indexOf(parsed.path);
+            diagnostics.push({
+              code: WcsDiagnosticCode.BindingPathMissing,
+              start: pathStart,
+              end: pathStart + pathTrimmed.length,
+              message: msgs.indexParamNotIndex(pathTrimmed, MAX_INDEX_PARAM),
+              severity: 'warning',
+            });
+          }
+
+          // for 外でループインデックス（$1〜$128）を使用
+          if (!insideFor && indexParam === 'index') {
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
@@ -295,16 +377,18 @@ export function validateBindings(
           // `@state` セレクタは v2 で撤去（runtime では parse error）— namedStateValidator が
           // error を出すので、その式には段数検査を重ねない（binding 生テキストで見る
           // ── parsed.path は `@state` を落としたあとの値なので、そこでは判別できない）
-          if (insideFor && !pathTrimmed.startsWith('.') && !binding.includes('@')) {
-            const indexMatch = /^\$(\d+)$/.exec(pathTrimmed);
-            const needed = indexMatch !== null
-              ? Number(indexMatch[1])
+          // 表の外の `$N`（上で報告済み）は段数の検査に掛けない
+          if (insideFor && !pathTrimmed.startsWith('.') && !binding.includes('@') && indexParam !== 'notIndex') {
+            const indexN = indexParam === 'index' ? Number(pathTrimmed.slice(1)) : null;
+            const needed = indexN !== null
+              ? indexN
               : (pathTrimmed.includes('*') ? countWildcardSegments(pathTrimmed) : 0);
             if (needed > 0) {
-              const available = getAvailableWildcardRank(html, attr.valueStart, attrName);
+              const resolvedList = getResolvedForListPath(html, attr.valueStart, attrName);
+              const available = resolvedList === null ? 0 : rankOfForList(resolvedList);
+              const pathOffset = binding.indexOf(parsed.path);
+              const pathStart = bindingStart + pathOffset;
               if (available > 0 && needed > available) {
-                const pathOffset = binding.indexOf(parsed.path);
-                const pathStart = bindingStart + pathOffset;
                 diagnostics.push({
                   code: WcsDiagnosticCode.WildcardRank,
                   start: pathStart,
@@ -312,6 +396,19 @@ export function validateBindings(
                   message: msgs.wildcardRank(`"${pathTrimmed}"`, needed, available),
                   severity: 'warning',
                 });
+              } else if (indexN === null && resolvedList !== null) {
+                // 段数が足りていても、各段の `*` は**その段で囲む for のリスト**の行でなければならない
+                // （`for: a` の行の中の `b.*.y` — ランタイムは添字を渡せず、囲む for ごと描けない）
+                const other = findOtherListWildcard(pathTrimmed, resolvedList);
+                if (other !== null) {
+                  diagnostics.push({
+                    code: WcsDiagnosticCode.WildcardRank,
+                    start: pathStart,
+                    end: pathStart + pathTrimmed.length,
+                    message: msgs.wildcardOtherList(pathTrimmed, other.over, other.loop),
+                    severity: 'warning',
+                  });
+                }
               }
             }
           }
@@ -413,7 +510,91 @@ export function validateBindings(
     }
   }
 
+  if (outerCandidates.length > 0 || currentTargetCandidates.length > 0) {
+    const contexts = analyzeElementContexts(
+      html,
+      [...outerCandidates, ...currentTargetCandidates].map((c) => c.offset),
+      attrName,
+      stateTagName,
+    );
+    // for / if テンプレートの行や枝が持つノードを、要素ごと置き換える束縛。3.x は置き換えた中身を
+    // 行や枝が外れても取り残し、4.0 は初期化で拒む（#203）。3.x で既に壊れる形なので warning
+    for (const c of outerCandidates) {
+      if (contexts.get(c.offset)?.rowOrBranch !== true) continue;
+      diagnostics.push({
+        code: WcsDiagnosticCode.TemplateSyntax,
+        start: c.start,
+        end: c.end,
+        message: msgs.outerInTemplate(c.property),
+        severity: 'warning',
+      });
+    }
+    // 自前の `<wcs-state>` を持つ template（宣言的 shadow root・DCC・コンポーネントの雛形）の中の束縛は、
+    // 文書の root の state ではなくその template の state のメソッドを呼ぶので黙る。router の route の
+    // `<template>` は自前の state を持たないので、文書の root の state の束縛として扱う
+    for (const c of currentTargetCandidates) {
+      const context = contexts.get(c.offset);
+      if (context === undefined || !context.bound || context.ownStateTemplate) continue;
+      diagnostics.push({
+        code: WcsDiagnosticCode.V4Migration,
+        start: c.start,
+        end: c.end,
+        message: msgs.v4DelegatedCurrentTarget(c.property, c.eventName, c.handler),
+        severity: 'info',
+      });
+    }
+  }
+
   return diagnostics;
+}
+
+/** 要素の置かれた文脈で決まる検査の候補（offset は束縛属性の値の開始 — analyzeElementContexts に渡す）。 */
+interface ElementSiteCandidate {
+  readonly offset: number;
+  readonly start: number;
+  readonly end: number;
+  /**
+   * 文面に出す左辺。outerHTML / outerText は名前（明示のプロパティ形の `.` を外す）、委譲されるイベントは
+   * 書き換え先（書かれた修飾子に `direct` を足した形）
+   */
+  readonly property: string;
+}
+
+/**
+ * カスタム要素が自分で dispatch しうるイベント。bubbles しない dispatch は 4.0 も要素で聞く
+ * （state-next の `dom/view.ts` の attachEvent）ので、`currentTarget` がどちらになるか静的に決まらない。
+ */
+const CUSTOM_ELEMENT_OWN_EVENTS: ReadonlySet<string> = new Set(['input', 'change', 'submit']);
+
+/**
+ * 文書の root の state（`mount` も `bind-component` も持たない `<wcs-state>`）のメソッドのうち、
+ * イベント引数（第 1 引数）の `currentTarget` を同期的に読むもの（scriptAst.ts の readsEventCurrentTarget）。
+ * `currentTarget` の綴りが無いスクリプトは解析しない。メソッド短縮記法だけを見る（データプロパティに
+ * 置いた関数・外部ファイルの state は読まない — 黙る側）。
+ */
+function collectCurrentTargetHandlers(html: string, stateTagName: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  // `currentTarget` の綴りが文書に無ければ `<wcs-state>` を読まない（イベント束縛のある文書の大半）
+  if (!html.includes('currentTarget')) return names;
+  // `<template>` の中の `<wcs-state>`（宣言的 shadow root・DCC）は別の root の state — 文書の束縛は呼ばない
+  let insideTemplate: ((offset: number) => boolean) | null = null;
+  for (const element of parseWcsStateElements(html, stateTagName)) {
+    if (element.mountPath !== null || element.bindComponent) continue;
+    if (!element.scriptBlocks.some((block) => block.content.includes('currentTarget'))) continue;
+    if ((insideTemplate ??= createTemplateTester(html))(element.tagStart)) continue;
+    for (const block of element.scriptBlocks) {
+      if (!block.content.includes('currentTarget')) continue;
+      for (const callable of analyzeCallableBodies(block.content)) {
+        if (callable.kind !== 'method' || !callable.body.includes('currentTarget')) continue;
+        // 名前の後ろから本体の `{` の手前まで: `(e) ` / 引用符付きの名前なら `"(e) `
+        const head = block.content.slice(callable.end, callable.bodyStart - 1);
+        const params = /\(([^)]*)\)\s*$/.exec(head);
+        if (params === null) continue;
+        if (readsEventCurrentTarget(params[1], callable.body)) names.add(callable.name);
+      }
+    }
+  }
+  return names;
 }
 
 // ============================================================
@@ -423,6 +604,8 @@ export function validateBindings(
 export interface BindAttrLocation {
   value: string;
   valueStart: number;
+  /** 属性を持つ要素のタグ名（小文字）。 */
+  tagName?: string;
 }
 
 interface ParsedFilter {
@@ -470,7 +653,7 @@ export function findAllBindAttributes(html: string, attrName: string): BindAttrL
       // 値の終端は同じ属性領域の中だけで探す（タグを跨いだら属性ではない）
       const valueEnd = html.indexOf(quote, valueStart);
       if (valueEnd === -1 || valueEnd > tag.end) continue;
-      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart });
+      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart, tagName: tag.tagName });
       regex.lastIndex = valueEnd - tag.start;
     }
   }
@@ -621,6 +804,16 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number, msgs: W
       severity: 'warning',
     });
     return diagnostics;
+  }
+  if (filter.name === SUBSTR_FILTER) {
+    // 3.x では動き、4.0 で削除される（`slice` に一本化）。info で書き換え先を案内する
+    diagnostics.push({
+      code: WcsDiagnosticCode.V4Migration,
+      start: bindingStart + filter.offset,
+      end: bindingStart + filter.offset + filter.name.length,
+      message: msgs.v4SubstrRemoved(substrRewrite(filter.args)),
+      severity: 'info',
+    });
   }
 
   // 引数の個数チェック

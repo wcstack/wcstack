@@ -60,9 +60,9 @@ interface WcsStateApi {
   $resolve(path: string, indexes: number[], value?: any): any;
   $dependOn(path: string): void;
   $untracked<T>(fn: () => T): T;
-  /** @deprecated $dependOn の旧名（@wcstack/state 3.2 — 4.0 で外れる） */
+  /** @deprecated $dependOn の旧名（@wcstack/state 3.2 — 4.0 で削除される / removed in 4.0） */
   $trackDependency(path: string): void;
-  /** @deprecated $untracked の旧名（@wcstack/state 3.2 — 4.0 で外れる） */
+  /** @deprecated $untracked の旧名（@wcstack/state 3.2 — 4.0 で削除される / removed in 4.0） */
   $untrackDependency<T>(fn: () => T): T;
   $eq(path: string, key: unknown): boolean;
   $eqPath(path: string, keyPath: string): boolean;

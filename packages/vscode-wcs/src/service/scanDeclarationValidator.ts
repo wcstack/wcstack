@@ -10,6 +10,9 @@
  * - **パスが存在しない** — `from` / `resetOn` のタイプミスは黙って一度も畳まれない（reset されない）。
  *   `wcs/watch-path-missing` と同じ性質なので warning に揃える。
  *
+ * root の state の `$scan` 宣言には、4.0 で削除されることを `wcs/v4-migration`（info）で予告する（validateScanV4Migration）
+ * （3.x では動くので CI を落とさない。書き換え先は `$watch` / `$on` のハンドラ — どちらも 3.x で書ける）。
+ *
  * 1 本のパスに複数の問題があるときは、ランタイムが先に落とす方を返す（形 → wildcard → getter →
  * 自分の from との関係 → scan 出力の読み → 存在）。
  *
@@ -43,6 +46,9 @@ import {
   type ScanEntryInfo,
   type ScanStringField,
 } from './stateAnalyzer.js';
+
+/** 宣言の名前の直後から見て、値が `undefined` のリテラルか（`$scan: undefined` / `"$scan": undefined`）。 */
+const UNDEFINED_VALUE = /^["']?\s*:\s*undefined\s*(?:[,}]|$)/;
 
 /**
  * HTML 内の全 `<wcs-state>` について `$scan` 宣言を検証する。
@@ -113,6 +119,40 @@ export function validateScanDeclarations(
     }
   }
 
+  return out;
+}
+
+/**
+ * root の state の `$scan` 宣言に、4.0 で削除されることを `wcs/v4-migration`（info）で予告する。
+ * 3.x では動くので CI を落とさない。書き換え先は `$watch` / `$on` のハンドラ（どちらも 3.x で書ける）。
+ * 宣言の形の検査（validateScanDeclarations）とは独立 — 3.x の事実と 4.0 の予告を混ぜない。
+ * ボリューム・マウントしたコンポーネントの `$scan` は 3.x でも動かず、validateScanDeclarations が
+ * 報告するので重ねない。値が `undefined` のリテラルは宣言なし扱い（どちらのランタイムも読まない）。
+ * `$scan` の綴りが無い文書は `<wcs-state>` を読まない。
+ */
+export function validateScanV4Migration(
+  html: string,
+  stateTagName: string = 'wcs-state',
+  locale?: string,
+): WcsDiagnostic[] {
+  if (!html.includes('$scan')) return [];
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  for (const element of parseWcsStateElements(html, stateTagName)) {
+    if (element.bindComponent) continue;
+    for (const block of element.scriptBlocks) {
+      if (block.mountPath !== null || !block.content.includes('$scan')) continue;
+      const scanSpan = analyzeDeclarationSpans(block.content).find(span => span.name === '$scan');
+      if (scanSpan === undefined || UNDEFINED_VALUE.test(block.content.slice(scanSpan.end, scanSpan.end + 32))) continue;
+      out.push({
+        code: WcsDiagnosticCode.V4Migration,
+        start: block.contentStart + scanSpan.start,
+        end: block.contentStart + scanSpan.end,
+        message: msgs.v4ScanRemoved(),
+        severity: 'info',
+      });
+    }
+  }
   return out;
 }
 

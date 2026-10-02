@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Storage } from "../src/components/Storage";
 import { bootstrapStorage } from "../src/bootstrapStorage";
 import { registerComponents } from "../src/registerComponents";
@@ -39,14 +39,22 @@ describe("config", () => {
     setConfig({ tagNames: { storage: "wcs-storage" } });
   });
 
-  it("setConfig()でtagNamesの非文字列値は無視され既存値を保持する", () => {
+  it("setConfig()でtagNamesの非文字列値は無視され既存値を保持する（3.5 は文字列でない値を警告する）", () => {
     // 指摘5: { storage: undefined } のような非文字列で汚染されると
     // customElements.define(undefined, …) が失敗する。typeofガードで弾く。
-    setConfig({ tagNames: { storage: undefined as any } });
-    expect(config.tagNames.storage).toBe("wcs-storage");
+    // undefined は 4.0 でも飛ばすので警告しない。ほかは 4.0 で投げるので 3.5 は警告する。
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      setConfig({ tagNames: { storage: undefined as any } });
+      expect(config.tagNames.storage).toBe("wcs-storage");
+      expect(warn).not.toHaveBeenCalled();
 
-    setConfig({ tagNames: { storage: 123 as any } });
-    expect(config.tagNames.storage).toBe("wcs-storage");
+      setConfig({ tagNames: { storage: 123 as any } });
+      expect(config.tagNames.storage).toBe("wcs-storage");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"tagNames.storage" is not one of its options'));
+    } finally {
+      warn.mockRestore();
+    }
 
     // 正常な文字列は反映される
     setConfig({ tagNames: { storage: "x-storage" } });

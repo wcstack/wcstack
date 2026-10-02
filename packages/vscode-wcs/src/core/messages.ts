@@ -64,6 +64,30 @@ export interface WcsMessageCatalog {
   indexArity(api: string, path: string, requirement: IndexArityRequirement, wildcardCount: number, actual: number): string;
   /** ワイルドカードの階数がスコープの段数を超える（`$N` を含む）。 */
   wildcardRank(subject: string, needed: number, available: number): string;
+  /**
+   * 段数は足りているが、パスの `*` がその段で囲む for のリストの行でない（`for: a` の行の中の `b.*.y`）。
+   * `over` はパスの `*` が回るリスト、`loop` はその段の for が描くリスト。
+   */
+  wildcardOtherList(path: string, over: string, loop: string): string;
+  /** マークアップの `$0` / `$01` / `$129` / `$1000`（ループの添字でない `$` ＋数字。ランタイムは状態のパスとして読んで失敗する）。 */
+  indexParamNotIndex(path: string, max: number): string;
+  /** スクリプトの `this.$0` / `this.$129`（ランタイムは読んだ時点で wcs/index-param-range を投げる）。 */
+  indexParamRange(name: string, max: number): string;
+  /** for / if / elseif / else テンプレートの中の `outerHTML:` / `outerText:`（3.x は置き換えた中身を取り残す・4.0 は初期化で拒む）。 */
+  outerInTemplate(property: string): string;
+  /** 文書に 2 つ目の root の `<wcs-state>`（ランタイムは後から登録しに来た方を拒む）。 */
+  secondRoot(): string;
+  // --- wcs/v4-migration（3.x では動き、4.0 で外れる・読み方が変わる書き方。info） ---
+  /** `$scan` 宣言（4.0 で外れる）。 */
+  v4ScanRemoved(): string;
+  /** `substr` フィルタ（4.0 で外れる）。`rewrite` は引数が 0 以上のリテラルのときの具体形（`slice(2, 5)`）。 */
+  v4SubstrRemoved(rewrite: string | null): string;
+  /**
+   * 4.0 が root へ委譲するイベントの束縛（`onclick: select`）で、ハンドラのメソッドがイベント引数の
+   * `currentTarget` を読む（4.0 では要素ではなく root になる）。`suggestedProperty` は書き換え先の左辺
+   * （書かれた修飾子に `direct` を足した形 — `onclick#prevent,direct`）。
+   */
+  v4DelegatedCurrentTarget(suggestedProperty: string, eventName: string, handler: string): string;
   /** パス getter どうしの循環参照。 */
   getterCycle(cycle: string): string;
   /** `$updatedCallback` が未バインドのパスを判定に使っている（その分岐は走らない）。 */
@@ -263,6 +287,22 @@ const ja: WcsMessageCatalog = {
     `${api}("${p}") の添字は${req === "exact" ? `ちょうど ${wc} 個` : `${wc} 個以下`}である必要があります（パス中の "*" は ${wc} 個）。${actual} 個指定されています`,
   wildcardRank: (subject, needed, available) =>
     `${subject} は ${needed} 段のループが必要ですが、現在のスコープは ${available} 段です`,
+  wildcardOtherList: (p, over, loop) =>
+    `"${p}" の "*" は "${over}" の行を指しますが、その段で囲む for テンプレートが描くのは "${loop}" です。束縛の "*" は囲むループの行なので、ランタイムはこの "*" を解決できず、囲む for ごと描けません（4.0 も同じ形をバインド確立時に拒みます）。別のリストの行は getter の中で $resolve(path, indexes) で読んでください`,
+  indexParamNotIndex: (p, max) =>
+    `"${p}" はループの添字ではありません（添字は $1 から $${max} まで、先頭に 0 を付けない形）。ランタイムは状態のパスとして読み、このバインディングを wcs/binding-path-missing で失敗させます（for の中では囲む for ごと描けません）`,
+  indexParamRange: (name, max) =>
+    `"${name}" はループの添字ではありません（添字は $1 から $${max} まで、先頭に 0 を付けない形）。ランタイムは読んだ時点で wcs/index-param-range を投げます`,
+  outerInTemplate: (prop) =>
+    `"${prop}:" は要素そのものを置き換えますが、for / if テンプレートの行や枝は元のノードを持ち続けるので、行や枝が外れたり描き直されたりしても置き換えた中身がページに残ります（4.0 はこの形を初期化で拒みます）。包む要素に innerHTML: を束縛してください`,
+  secondRoot: () =>
+    '同じ root に 2 つ目の <wcs-state> があります。state の木は root ごとに 1 つで、ランタイムは後から登録しに来た方を拒みます（"A state tree is already registered on this root"）。部分木は <wcs-state mount="path"> で接ぎ木してください',
+  v4ScanRemoved: () =>
+    `4.0 への準備（3.x ではこのまま動きます）: $scan は 4.0 で削除されます（読み込み時に throw します）。パスの変化を畳むなら $watch のハンドラ、イベントを畳むなら $on のハンドラで、出力のプロパティへ書いてください（どちらも 3.x で書けます）`,
+  v4SubstrRemoved: (rewrite) =>
+    `4.0 への準備（3.x ではこのまま動きます）: フィルタ "substr" は 4.0 で削除されます。slice(start, start + length) と書いてください — slice の第 2 引数は長さではなく終わりの位置です${rewrite === null ? '' : `（ここでは ${rewrite}）`}`,
+  v4DelegatedCurrentTarget: (suggested, eventName, handler) =>
+    `4.0 への準備（3.x ではこのまま動きます）: 4.0 は "${eventName}" イベントを root へ委譲するので、"${handler}" の中の event.currentTarget はこの要素ではなく root になります。要素にリスナーを残すには "${suggested}:" と書くか（3.x は修飾子 #direct を無視し、もともと要素にリスナーを付けます）、event.target.closest(...) で要素を探してください`,
   getterCycle: (cycle) => `パス getter が循環参照しています: ${cycle}`,
   updatedCallbackUnbound: (p) =>
     `$updatedCallback は binding 駆動です。"${p}" はこのドキュメントのどのバインディングにも現れないため、この分岐は一度も実行されません。描画に依存せず反応するなら $watch を使ってください`,
@@ -327,11 +367,11 @@ const ja: WcsMessageCatalog = {
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
   nameAlias: (written, canonical) =>
-    `"${written}" は "${canonical}" の旧名です。3.x の間は動きますが 4.0 で外れるので、"${canonical}" と書いてください（@wcstack/state 3.2）`,
+    `"${written}" は "${canonical}" の旧名です。3.x の間は動きますが 4.0 で削除されるので、"${canonical}" と書いてください（@wcstack/state 3.2）`,
   declarationAliasRead: (alias, canonical) =>
     `"${alias}" の読み出しは 3.x でも動きません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写し、旧名の自前プロパティを削除するため、this["${alias}"] は undefined になります。"${canonical}" を読んでください（@wcstack/state 3.2）`,
   declarationAliasReadUncertain: (alias, canonical) =>
-    `"${alias}" の読み出しは旧名のままにできません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写します。旧名が自前プロパティなら削除されるので this["${alias}"] は undefined になり、class のプロトタイプに置いたメソッド / アクセサなら今は読めますが 4.0 で外れます。どちらの形でも "${canonical}" を読んでください（@wcstack/state 3.2）`,
+    `"${alias}" の読み出しは旧名のままにできません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写します。旧名が自前プロパティなら削除されるので this["${alias}"] は undefined になり、class のプロトタイプに置いたメソッド / アクセサなら今は読めますが 4.0 で削除されます。どちらの形でも "${canonical}" を読んでください（@wcstack/state 3.2）`,
   declarationAlias: (alias, canonical) =>
     `この state は "${alias}" と "${canonical}" を両方宣言しています。"${alias}" は "${canonical}" の旧名（3.x の間は動きます）なので、"${canonical}" だけを残してください（ランタイムは読み込み時に throw します）`,
   onPrefixedMember: (member, tag, modifiers) =>
@@ -496,6 +536,22 @@ const en: WcsMessageCatalog = {
     `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
   wildcardRank: (subject, needed, available) =>
     `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
+  wildcardOtherList: (p, over, loop) =>
+    `"${p}" ranges over the rows of "${over}", but the enclosing "for" template at that level renders "${loop}". A "*" in a binding is the row of the loop around it, so the runtime cannot resolve this one and the enclosing "for" fails to render (4.0 refuses the same form when the binding is established). Read a row of another list in a getter, with $resolve(path, indexes)`,
+  indexParamNotIndex: (p, max) =>
+    `"${p}" is not a loop index (they run from $1 to $${max}, with no leading zeros). The runtime reads it as a state path and fails this binding with wcs/binding-path-missing (inside a "for", the whole "for" fails to render)`,
+  indexParamRange: (name, max) =>
+    `"${name}" is not a loop index (they run from $1 to $${max}, with no leading zeros): the runtime throws wcs/index-param-range when it is read`,
+  outerInTemplate: (prop) =>
+    `"${prop}:" replaces its element, but a row or branch of a "for" / "if" template keeps holding the original node, so the replacement is left on the page when the row or branch is removed or re-rendered (4.0 refuses this form at initialization). Bind innerHTML: on a wrapper element instead`,
+  secondRoot: () =>
+    'A second <wcs-state> on the same root: there is one state tree per root, and the runtime rejects the one that registers second ("A state tree is already registered on this root"). Graft a subtree with <wcs-state mount="path">',
+  v4ScanRemoved: () =>
+    `Preparing for 4.0 (this still runs on 3.x): $scan is removed in 4.0 (it throws at load time). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there (both work on 3.x)`,
+  v4SubstrRemoved: (rewrite) =>
+    `Preparing for 4.0 (this still runs on 3.x): the "substr" filter is removed in 4.0. Write slice(start, start + length) — slice takes the end index, not a length${rewrite === null ? '' : ` (here: ${rewrite})`}`,
+  v4DelegatedCurrentTarget: (suggested, eventName, handler) =>
+    `Preparing for 4.0 (this still runs on 3.x): 4.0 delegates "${eventName}" events to the root, so event.currentTarget in "${handler}" will be the root, not this element. Write "${suggested}:" to keep the listener on the element (3.x ignores the #direct modifier and already listens on the element), or find the element with event.target.closest(...)`,
   getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
   updatedCallbackUnbound: (p) =>
     `$updatedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
@@ -560,11 +616,11 @@ const en: WcsMessageCatalog = {
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   nameAlias: (written, canonical) =>
-    `"${written}" is the old name of "${canonical}". It works through 3.x and goes in 4.0 — write "${canonical}" (@wcstack/state 3.2)`,
+    `"${written}" is the old name of "${canonical}". It works through 3.x and is removed in 4.0 — write "${canonical}" (@wcstack/state 3.2)`,
   declarationAliasRead: (alias, canonical) =>
     `Reading "${alias}" does not work, not even in 3.x. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time and deletes the old own property, so this["${alias}"] is undefined. Read "${canonical}" instead (@wcstack/state 3.2)`,
   declarationAliasReadUncertain: (alias, canonical) =>
-    `Reading "${alias}" cannot stay on the old name. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time. If the old name is an own property it is deleted, so this["${alias}"] is undefined; if it sits on a class prototype (a method or accessor) it still reads today but goes in 4.0. Either way, read "${canonical}" (@wcstack/state 3.2)`,
+    `Reading "${alias}" cannot stay on the old name. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time. If the old name is an own property it is deleted, so this["${alias}"] is undefined; if it sits on a class prototype (a method or accessor) it still reads today but is removed in 4.0. Either way, read "${canonical}" (@wcstack/state 3.2)`,
   declarationAlias: (alias, canonical) =>
     `The state declares both "${alias}" and "${canonical}". "${alias}" is the old name of "${canonical}" (it works through 3.x) — keep "${canonical}" (the runtime throws at load time)`,
   onPrefixedMember: (member, tag, modifiers) =>

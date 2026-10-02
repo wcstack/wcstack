@@ -35,6 +35,7 @@ const recursionSpreadHtml = join(workDir, "recursion-spread.html");
 const indexPathHtml = join(workDir, "index-path.html");
 const scanOkHtml = join(workDir, "scan-ok.html");
 const scanBadHtml = join(workDir, "scan-bad.html");
+const v4MigrationHtml = join(workDir, "v4-migration.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
 // 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
 const schemaDir = join(workDir, "schema");
@@ -176,6 +177,18 @@ export default {
   },
 };
 </script></wcs-state>
+`);
+
+// 4.0 で外れる形（3.x では動く）: $scan と substr。どちらも wcs/v4-migration の info だけ
+writeFileSync(v4MigrationHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default {
+  name: "hello",
+  $scan: { count: { from: "name", initial: 0, fold: (acc) => acc + 1 } },
+};
+</script></wcs-state>
+<p data-wcs="textContent: name|substr(2, 3)"></p>
+<p data-wcs="textContent: count"></p>
 `);
 
 const failures = [];
@@ -325,6 +338,13 @@ check("nearest wcstack.manifest.json declares stateSchema → typo is error wcs/
 check("$scan declarations with from / on / resetOn are clean, exit 0", ["--lang=en", scanOkHtml], {
   exit: 0,
   stdout: ["0 error(s), 0 warning(s)"],
+});
+
+// 4.0 への予告（wcs/v4-migration）は info — 3.x では動く形なので、--strict でも CI を落とさない
+// （2.6 の wcs/v3-migration と同じ契約）。severity を warning へ上げると、このケースが落ちる。
+check("--strict: wcs/v4-migration ($scan / substr) is info and does not fail, exit 0", ["--lang=en", "--strict", v4MigrationHtml], {
+  exit: 0,
+  stdout: [/info wcs\/v4-migration Preparing for 4\.0 .*\$scan/, /info wcs\/v4-migration Preparing for 4\.0 .*slice\(2, 5\)/, "0 error(s), 0 warning(s), 2 info (strict)"],
 });
 
 // 未宣言トークンと getter source は runtime が読み込み時に raise する形 ＝ error（exit 1）。

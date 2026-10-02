@@ -14,14 +14,18 @@ const CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
  *
  * 真ならブロック確定として対処方法まで書く。偽のときは構文エラー等と区別できないので、
  * 元のエラーを主にして CSP は参照先を添えるに留める（誤誘導を避ける）。
+ *
+ * The blob: import inherits the nonce of the `<script>` that loaded @wcstack/state (checked on
+ * Chromium, Firefox and WebKit), so giving that script the page's nonce is a fix that needs no blob:
+ * in script-src.
  */
 function describeImportFailure(name: string, error: unknown, cspBlocked: boolean): string {
   const detail = (error as Error)?.message ?? String(error);
   if (cspBlocked) {
     return `The inline <script> of state "${name}" was blocked by Content-Security-Policy. ` +
-      `Inline state is evaluated through a blob: URL, so script-src must allow blob:. ` +
-      `Prefer moving the state into an external file and loading it with src="./state.js", ` +
-      `which requires no extra CSP directive. See ${CSP_GUIDE}`;
+      `Inline state is evaluated through a blob: URL: give the page's nonce to the <script> that loads ` +
+      `@wcstack/state, or allow blob: in script-src. Moving the state into an external file ` +
+      `(src="./state.js") needs neither. See ${CSP_GUIDE}`;
   }
   return `Failed to evaluate the inline <script> of state "${name}": ${detail}. ` +
     `If this page sets a Content-Security-Policy, see ${CSP_GUIDE}`;
@@ -67,9 +71,13 @@ export async function loadFromInnerScript(script: HTMLScriptElement, sourceLabel
       scriptModule = await import(`data:application/javascript;base64,${b64}`) as ScriptModule;
     }
   } catch (e) {
-    // 呼び出し元（State._initialize / _initializeDCC）が raiseError で
-    // `[@wcstack/state]` を付けるため、ここでは prefix を重ねない。
-    throw new Error(describeImportFailure(sourceLabel, e, cspBlocked), { cause: e });
+    // Firefox fires the violation a task after the rejection (Chromium and WebKit before it): wait one
+    // task before deciding, while still listening, so a CSP block is named on every engine. Only the
+    // failure path waits
+    await new Promise((resolve) => setTimeout(resolve));
+    // The callers pass this error through unwrapped (connectedCallbackPromise rejects with it),
+    // so it carries the package prefix itself, like the other loaders' errors.
+    throw new Error(`[@wcstack/state] ${describeImportFailure(sourceLabel, e, cspBlocked)}`, { cause: e });
   } finally {
     document.removeEventListener("securitypolicyviolation", onViolation);
   }

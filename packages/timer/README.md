@@ -225,6 +225,8 @@ const { autoTrigger, triggerAttribute, tagNames } = getConfig();
 | `triggerAttribute` | string               | `data-timertarget` | Attribute scanned for DOM click triggering.         |
 | `tagNames.timer`   | string               | `wcs-timer`        | Custom element tag name to register.                |
 
+Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+
 ## Headless usage (`TimerCore`)
 
 The Core has no DOM dependency and can be used directly with `bind()` from `@wc-bindable/core`:

@@ -82,7 +82,9 @@ describe('showRoute', () => {
 
     showRoute(route, mockMatch(route, {}));
 
-    expect(span.nextSibling).toBe(nextElement);
+    // 内容の後ろに終了マーカー、その後ろに元の兄弟
+    expect(span.nextSibling).toBe(route.endMarker);
+    expect(route.endMarker.nextSibling).toBe(nextElement);
   });
 
   it('nextSiblingがない場合、appendChildを使用すること', () => {
@@ -101,7 +103,8 @@ describe('showRoute', () => {
 
     showRoute(route, mockMatch(route, {}));
 
-    expect(container.lastChild).toBe(span);
+    expect(span.nextSibling).toBe(route.endMarker);
+    expect(container.lastChild).toBe(route.endMarker);
   });
 
   it('ルート要素自体がdata-bind属性を持つ場合にパラメータを割り当てること', () => {
