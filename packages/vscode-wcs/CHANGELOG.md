@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 1.21.0 — 2026-10-02
+
+`@wcstack/state` 3.5.0 の dist を同梱。3.5 は 3.x の最後の minor で、実行時も `[wcs/v4-migration]` で同じ形を知らせる。
 
 `@wcstack/state` 4.0 で外れる・読み方が変わる書き方を、3.x のうちに知らせる（2.6 の `wcs/v3-migration` と同じ運用）。3.x では動く形は **`wcs/v4-migration`（info）** — 既定の CLI でも `--strict` でも CI を落とさない。3.x でも既に正しく動かない形（4.0 は初期化で拒む）は、その形の code の **warning**。error は 1 件も足さない。
 
