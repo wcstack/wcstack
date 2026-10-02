@@ -5,8 +5,12 @@
  *
  * 4.0: the 3.x old names are gone from the runtime, so the three old-name tables are empty
  * (declaring or reading an old name fails with its canonical name). `$scan` is no longer reserved.
+ * 4.0 adds the state's `$behavior` options (`behaviorOptions`) and the add-on names `$features` and the
+ * root `<wcs-state features>` take (`features` — the split loader's allow-list, load.ts). The `$behavior`
+ * options are a copy of the engine's list, so this bundle stays without the engine; public-surface.test.ts pins both.
  */
 import { config } from "../config";
+import { FEATURE_NAMES } from "../load";
 import { WILDCARD } from "../pattern";
 import { coreFilters } from "../filters/core";
 import { formatFilters } from "../filters/formats";
@@ -14,7 +18,7 @@ import { STRUCTURAL_BINDING_TYPE_SET } from "../parser/types";
 import {
   ATTR_NAMESPACE, BINDING_SEPARATOR, CLASS_NAMESPACE, COMMAND_NAMESPACE, DELIMITER, ELSE_KEYWORD,
   EVENT_PROP_PREFIX, EVENT_TOKEN_NAMESPACE, FILTER_SEPARATOR, MODIFIER_SEPARATOR, PROP_VALUE_SEPARATOR,
-  SPREAD_PROP, STYLE_NAMESPACE,
+  MAX_INDEX_PARAM, SPREAD_PROP, STYLE_NAMESPACE,
 } from "../parser/define";
 import { builtinFilterMeta, type IFilterMeta } from "./filterMeta";
 
@@ -37,9 +41,13 @@ export const STATE_API_ALIASES: Readonly<Record<string, string>> = Object.freeze
 /** Modifier vocabulary (`#` on the left side): flags, and `key=value` keys. */
 const MODIFIER_FLAGS: readonly string[] = Object.freeze(["prevent", "stop", "ro", "direct"]);
 const MODIFIER_KEYS: readonly string[] = Object.freeze(["init", "sync"]);
-/** `$1` … `$128`. */
+/** `$1` … `$128` (the limit is the engine's: parser/define.ts). */
 const INDEX_PARAM_PREFIX = "$";
-const MAX_INDEX_PARAM = 128;
+/**
+ * A state's `$behavior` options, in the order the engine reads them (engine.ts `BEHAVIOR_KEYS` — not imported, so this
+ * DOM-free bundle stays without the engine and the core keeps its own list; public-surface.test.ts pins them equal).
+ */
+const BEHAVIOR_OPTION_KEYS: readonly string[] = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
 
 export interface IWcsManifest {
   version: number;
@@ -70,6 +78,10 @@ export interface IWcsManifest {
   reservedLifecycle: readonly string[];
   /** Reserved state keys and `$` namespaces. */
   reservedStateApi: readonly string[];
+  /** A state's `$behavior` options (4.0): each key, the type of its value and its value when left out. */
+  behaviorOptions: Readonly<Record<string, { type: "boolean"; default: boolean }>>;
+  /** The add-on names `$features` and the root `<wcs-state features>` take (4.0). */
+  features: readonly string[];
 }
 
 export function getWcsManifest(): IWcsManifest {
@@ -103,5 +115,8 @@ export function getWcsManifest(): IWcsManifest {
       "$bindables", "$commands", "$commandTokens", "$command", "$eventTokens", "$on",
       "$stream", "$watch", "$listKeys", "$recursion", "$streamStatus", "$streamError", "$behavior", "$features",
     ],
+    // every option is a boolean, true when left out (engine.ts `loadTarget`: `typeof … === "boolean"`, `?? true`)
+    behaviorOptions: Object.fromEntries(BEHAVIOR_OPTION_KEYS.map((key) => [key, { type: "boolean" as const, default: true }])),
+    features: [...FEATURE_NAMES],
   };
 }

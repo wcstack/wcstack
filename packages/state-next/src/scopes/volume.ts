@@ -44,7 +44,7 @@ export const wired = new WeakSet<Engine>();
 /** The mount paths grafted onto each engine. */
 export const grafted = new WeakMap<Engine, string[]>();
 
-const REJECTED = ["$stream", "$streams", "$scan", "$recursion", "$watch", "$listKeys", "$renderedCallback", "$behavior", "$features"];
+const REJECTED = ["$stream", "$streams", "$scan", "$recursion", "$watch", "$listKeys", "$renderedCallback", "$updatedCallback", "$behavior", "$features"];
 const NOT_RUN = ["$commandTokens", "$eventTokens", "$on", "$errorCallback"];
 const PREFIX = (path: string) => `[@wcstack/state] <${config.tagNames.state} mount="${path}">`;
 

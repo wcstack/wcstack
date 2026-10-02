@@ -158,9 +158,9 @@ export default {
 4.0 の差し替えの作業として [v4-remaining.ja.md](./v4-remaining.ja.md) に載せた（state の README は 3.x の規範文書なので、今は書き換えない）。
 - state の README（ja・en）: 「設定」を bootstrap（表記）と `$behavior`（振る舞い）に分ける。「分割エントリ」に分割 auto、`features=` と `$features` の役割の違い。移行ガイドに、3 キーが移る・3 キーが消える・`bootstrapState` が throw する。
 - [docs/sri.ja.md](../sri.ja.md) の分割エントリの節、[docs/csp.ja.md](../csp.ja.md) §2.1 の表に分割 auto の行（en も）。
-- vscode-wcs: 予約キーに `$behavior`・`$features`（manifest の `reservedStateApi` から読めるようにした）。`$behavior` のキーと型、`$features` と `features=` の名前、root 以外の `features=` の lint。
+- vscode-wcs: 予約キーに `$behavior`・`$features`（manifest の `reservedStateApi` から読めるようにした）。`$behavior` のキーと型、`$features` と `features=` の名前、root 以外の `features=` の lint。**済み（2026-10-02）**: キーと型・名前は manifest の `behaviorOptions`・`features` から読む（拡張は自分の表を持たない）。
 - wcstack-skill の参照（`$behavior`・`$features`・`features=`・分割 auto）。
-- manifest に root の属性（`features`）を載せるか（未決）。
+- ~~manifest に root の属性（`features`）を載せるか（未決）。~~ **済み（2026-10-02）**: manifest に `features`（`$features` と root の `features=` が取る後付けの名前。load.ts の許可リスト `FEATURE_NAMES` から作る）と `behaviorOptions`（`$behavior` のキーと型。engine.ts の `BEHAVIOR_KEYS` の写しで、`public-surface.test.ts` が一致を固定する）を載せた。
 
 ## 5. 選択を変えたときの増分（試作で計測）
 

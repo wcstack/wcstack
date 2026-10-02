@@ -93,6 +93,28 @@ describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () =
     expect(v4.filterAliases).toEqual({});
     expect(v4.declarationAliases).toEqual({});
     expect(v4.apiAliases).toEqual({});
+    // 4.0 adds the $behavior options and the add-on names (lint and the VS Code extension read them)
+    expect(Object.keys(v4).filter((k) => !(k in v3)).sort()).toEqual(["behaviorOptions", "features"]);
+  });
+
+  it("4.0 の behaviorOptions と features は、ランタイムが読む表から作られている", async () => {
+    const { getWcsManifest } = await import("../src/public/manifest");
+    const { BEHAVIOR_KEYS } = await import("../src/engine");
+    const { FEATURE_NAMES } = await import("../src/load");
+    const { ALL_FEATURES } = await import("../src/features/all");
+    const m = getWcsManifest();
+    // every option a boolean, true when left out (engine.ts loadTarget)
+    expect(m.behaviorOptions).toEqual(Object.fromEntries(BEHAVIOR_KEYS.map((k) => [k, { type: "boolean", default: true }])));
+    expect(Object.keys(m.behaviorOptions)).toEqual(["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"]);
+    // the split loader's allow-list, the add-ons the full build installs, and the split build's entries agree
+    expect(m.features).toEqual([...FEATURE_NAMES]);
+    expect(m.features).toEqual(ALL_FEATURES.map((f) => f.name));
+    const build = readFileSync(join(ROOT, "build.mjs"), "utf8");
+    const listed = /export const FEATURES = \[([^\]]*)\]/.exec(build)!;
+    expect([...listed[1].matchAll(/'([^']+)'/g)].map((x) => x[1])).toEqual(m.features);
+    // the loop index limit is the engine's
+    const { MAX_INDEX_PARAM } = await import("../src/engine");
+    expect(m.syntax.indexParam.maxDepth).toBe(MAX_INDEX_PARAM);
   });
 
   it("各フィルタのメタデータの引数の数が、実装の引数の数と一致する", async () => {

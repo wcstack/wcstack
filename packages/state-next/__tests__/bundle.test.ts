@@ -106,7 +106,7 @@ describe("縮めたバンドルでの manifest（外へ渡すキーは縮めら�
     await terse(outfile);
     const bundled = await import(/* @vite-ignore */ `${pathToFileURL(outfile).href}?t=${Date.now()}`);
     const { getWcsManifest } = await import("../src/public/manifest");
-    expect(Object.keys(bundled.getWcsManifest())).toContain("filters");
+    expect(Object.keys(bundled.getWcsManifest())).toEqual(expect.arrayContaining(["filters", "behaviorOptions", "features"]));
     expect(bundled.getWcsManifest()).toEqual(getWcsManifest());
   }, 60000);
 });

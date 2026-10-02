@@ -1911,6 +1911,35 @@ describe("F4: on*#direct:（委譲せず要素に直接付ける。3.x と同じ
   });
 });
 
+describe("K2: テンプレートの中の outerHTML / outerText の名前（#203 は要素を置き換えるプロパティだけ）", () => {
+  it("class.outerHTML: / attr.outerText: / on…: のイベントは for: の中でも拒まず、要素の子も走査する。.outerHTML: と outerText: は拒む", async () => {
+    const calls: string[] = [];
+    const { root, el } = await page(
+      `<template data-wcs="for: items"><p data-wcs="class.outerHTML: .on; attr.outerText: .t; onouterHTML: hit"><b>{{ .t }}</b></p></template>`,
+      { items: [{ on: true, t: "x" }], hit() { calls.push("hit"); } },
+    );
+    const p = root.querySelector("p")!;
+    expect([p.classList.contains("outerHTML"), p.getAttribute("outerText"), p.textContent]).toEqual([true, "x", "x"]);
+    p.dispatchEvent(new Event("outerHTML"));
+    expect(calls).toEqual(["hit"]);
+    const { compilePlan } = await import("../src/dom/plan");
+    const engine = el.engine as Engine;
+    for (const bind of [".outerHTML: html", "outerText: t"]) {
+      const t = document.createElement("template");
+      t.innerHTML = `<p data-wcs="${bind}"></p>`;
+      expect(() => compilePlan(engine, t, null, false), bind).toThrow(/#203|replaces its element/);
+    }
+  });
+
+  it("ページの直下の class.outerHTML: の要素の子は束ね、SSR のサーバも class.outerHTML: を外さない", async () => {
+    const { root } = await page(`<div data-wcs="class.outerHTML: on"><i>{{ t }}</i></div>`, { on: true, t: "x" });
+    expect([root.querySelector("div")!.className, root.querySelector("i")!.textContent]).toEqual(["outerHTML", "x"]);
+    const r = await ssrRoundTrip(`<div data-wcs="class.outerHTML: on"><i>{{ t }}</i></div>`, () => ({ on: true, t: "x" }));
+    expect(r.server).toContain(`class="outerHTML"`);
+    expect([r.root.querySelector("div")!.className, r.root.querySelector("i")!.textContent]).toEqual(["outerHTML", "x"]);
+  });
+});
+
 describe("#204 を緩める: binder の bind(subtree, { range: true })（挿入した側が範囲を持ち運ぶ宣言）", () => {
   const handOver = (root: ShadowRoot, html: string): Node[] => {
     const box = document.createElement("template");

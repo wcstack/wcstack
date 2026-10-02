@@ -184,12 +184,23 @@ describe("ページで出会う文面", () => {
     }
   });
 
-  it("行の中で別のリストの * を束ねると、直し方の案内付きで初期化に失敗する（lint は段の数しか見ないので、lint へは誘導しない）", async () => {
+  it("行の中で別のリストの * を束ねると、直し方の案内と lint への誘導付きで初期化に失敗する（lint は 4.0 のパーサでこれを静的に検出する）", async () => {
     await expect(page(`<wcs-state></wcs-state><template data-wcs="for: a"><i>{{ b.*.y }}</i></template>`, { a: [{ y: 1 }], b: [{ y: 2 }] }))
       .rejects.toThrow(new Error(
         '[@wcstack/state] [wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".'
-        + ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).',
+        + ' A "*" in a binding is the row of the loop around it: read a row of another list in a getter, with $resolve(path, indexes).'
+        + ' Validate statically: npx @wcstack/lint <file>.',
       ));
+  });
+
+  it("範囲の外の添字（$0・$129）を読むと、lint への誘導付きで投げる（lint はマークアップの $129 とスクリプトの this.$N を静的に検出する）", async () => {
+    const { Engine, DirtyStrategy } = await import("../src/index");
+    for (const key of ["$0", "$129"]) {
+      const e = new Engine({ items: [1], get "items.*.x"() { return (this as any)[key]; } }, new DirtyStrategy());
+      expect(() => e.proxy.$resolve("items.*.x", [0])).toThrow(new Error(
+        `[@wcstack/state] [wcs/index-param-range] "${key}": list index parameters run from $1 to $${MAX_INDEX_PARAM}. Validate statically: npx @wcstack/lint <file>.`,
+      ));
+    }
   });
 
   it("段が足りない束縛は、囲む段の数を示す", async () => {

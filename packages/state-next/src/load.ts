@@ -6,11 +6,12 @@
  */
 import type { Feature } from "./hooks";
 
-const NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools"];
+/** The add-on names (`$features`, the root `<wcs-state features>`): the tooling manifest publishes them as `features`. */
+export const FEATURE_NAMES: readonly string[] = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools"];
 
 export function loader(base: string): (names: string[]) => Promise<Feature[]> {
   return (names) => Promise.all(names.map(async (name) => {
-    if (!NAMES.includes(name)) throw new Error(`[@wcstack/state] [wcs/feature-unknown] "${name}" is not an add-on (${NAMES.join(", ")}).`);
+    if (!FEATURE_NAMES.includes(name)) throw new Error(`[@wcstack/state] [wcs/feature-unknown] "${name}" is not an add-on (${FEATURE_NAMES.join(", ")}).`);
     // `base`, not `import.meta.url` here: a bundler (Vite, Vitest) rewrites a `new URL(…, import.meta.url)` it sees
     return ((await import(/* @vite-ignore */ new URL(`./features/${name}.js`, base).href)) as { default: Feature }).default;
   }));

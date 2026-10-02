@@ -449,7 +449,7 @@ export function ssrMark(engine: Engine, node: Node, source: Element | string | S
       // `outerHTML:` / `outerText:` replace the element with the value: the client would find no
       // binding there, and walk the value as the page's markup. The server renders the element as
       // written; the client binds it and applies the value
-      for (let i = source.length; i-- > 0; ) if (isOuter(source[i].name)) source.splice(i, 1);
+      for (let i = source.length; i-- > 0; ) if (isOuter(source[i])) source.splice(i, 1);
       // a custom element (a Light DOM component binds its own) whose content no binding sets: what
       // is in it now is the page's (see kept)
       const el = node as Element;

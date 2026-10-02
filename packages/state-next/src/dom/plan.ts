@@ -101,15 +101,18 @@ export function boundPattern(engine: Engine, path: string, list: Pattern | null)
   return p;
 }
 
-/** A binding that replaces its element with the value (`outerHTML:` / `outerText:`). */
-export const isOuter = (name: string): boolean => name === "outerHTML" || name === "outerText";
+/**
+ * A binding that replaces its element with the value (`outerHTML:` / `outerText:`, the properties —
+ * not `class.outerHTML:`, `attr.outerText:` or an `on…:` event of that name).
+ */
+export const isOuter = (s: Spec): boolean => s.kind === K_PROP && (s.name === "outerHTML" || s.name === "outerText");
 
 /**
  * A binding after which the element's children are not markup to bind: it sets the element's content
  * (they are a value), or replaces the element (they are out of the page).
  */
 export const setsContent = (s: Spec): boolean =>
-  s.kind === K_HTML || isOuter(s.name) || (s.kind === K_PROP && isContent(s.name));
+  s.kind === K_HTML || isOuter(s) || (s.kind === K_PROP && isContent(s.name));
 
 /** An `elseif:` / `else:` template with no `if:` before it. */
 export function notAfterIf(type: string): never {
@@ -421,7 +424,7 @@ export function compilePlan(engine: Engine, template: HTMLTemplateElement, list:
       for (const s of own) {
         // a row or a branch keeps its nodes by position: a binding that replaces its element (once —
         // the element is out of the page after) has no place in one
-        if (isOuter(s.name)) raise(M.OuterInTemplate, [s.name]);
+        if (isOuter(s)) raise(M.OuterInTemplate, [s.name]);
         s.node = n;
       }
       specs.push(...own);

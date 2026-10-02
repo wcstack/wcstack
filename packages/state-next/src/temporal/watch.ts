@@ -194,6 +194,9 @@ export class WatchRuntime {
         try {
           cur = engine.readUntracked(w.p, row);
           if (w.getter) w.last.set(row ?? ROOT, cur);
+          // an explicit index (`items.0.v`, read like a getter: a write to another row, a list change,
+          // can reach it) fires when the value at that index changed
+          if (w.getter && cur === prev && /(^|\.)\d/.test(w.path)) continue;
           engine.ctx = row;
           hooks.noticed?.(engine, { "type": "state:watch-fired", "path": w.path });
           phase = "handler";

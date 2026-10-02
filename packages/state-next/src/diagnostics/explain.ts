@@ -17,7 +17,7 @@ export function render(id: number, args: readonly unknown[]): string {
 /** Codes lint detects statically: only these point the author to a lint run. */
 const LINT_CODES = new Set([
   "binding-syntax", "template-syntax", "filter-unknown", "filter-arity", "index-arity",
-  "wildcard-rank", "token-undeclared", "binding-path-missing",
+  "wildcard-rank", "token-undeclared", "binding-path-missing", "index-param-range",
 ]);
 
 /** How to fix it, by what the message says. */
@@ -54,10 +54,11 @@ export function explain(message: string, subject?: string, candidates?: Iterable
     }
   }
   const code = /\[wcs\/([\w-]+)\]/.exec(message);
-  // (not something lint reports: the path-length limit is a runtime cost, lint counts a path's loops
-  // without naming their lists, it does not look yet at a template handed over at the top of
-  // inserted content (#204) or at an `outerHTML:` in a template (#203), and its manifest knows the
-  // formatting filters — one missing because the formats add-on is not installed is the page's)
-  if (code !== null && LINT_CODES.has(code[1]) && !/ path segments — the limit is | ranges over the rows of |inserted content was not rendered|replaces its element|formats add-on/.test(message)) out += LINT_HINT;
+  // (not something lint reports: the path-length limit is a runtime cost, a template handed over at
+  // the top of inserted content (#204) is the page's order of loading, not its markup, and lint's
+  // manifest knows the formatting filters — one missing because the formats add-on is not installed
+  // is the page's. A row of another list (#1403) and an `outerHTML:` in a template (#203) lint does
+  // report, as of its 4.0 parser)
+  if (code !== null && LINT_CODES.has(code[1]) && !/ path segments — the limit is |inserted content was not rendered|formats add-on/.test(message)) out += LINT_HINT;
   return out;
 }

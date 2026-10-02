@@ -7,13 +7,18 @@ import { runTransition } from "./protocol/transitionRunner";
 import { raise, M, text } from "./messages";
 import { recursionUnsupported } from "./parser/parseStatePart";
 import { hooks, requireFeature } from "./hooks";
+import { INDEX_PARAM, MAX_INDEX_PARAM } from "./parser/define";
 
 /** Declarations an add-on serves: without it installed they fail instead of doing nothing. */
 const REMOVED_DECLARATIONS: [string, string][] = [["$streams", "$stream"], ["$updatedCallback", "$renderedCallback"]];
 const DECLARATIONS: [string, string][] = [["$watch", "temporal"], ["$stream", "temporal"], ["$listKeys", "list-keys"], ["$recursion", "recursion"]];
 
-/** The options of `$behavior` (each true by default): what an engine reads them as is `mustache` / `guard` / `directional`. */
-const BEHAVIOR_KEYS = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
+/**
+ * The options of `$behavior` (each true by default): what an engine reads them as is `mustache` / `guard` / `directional`.
+ * The tooling manifest publishes the same list (`behaviorOptions`, public/manifest.ts — public-surface.test.ts pins
+ * them equal; the manifest does not import the engine).
+ */
+export const BEHAVIOR_KEYS: readonly string[] = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
 
 /** `**` binds a depth only where a path is read: an assignment, $resolve, $postUpdate and $dependOn refuse it. */
 function unbound(path: string): string {
@@ -21,9 +26,8 @@ function unbound(path: string): string {
   return path;
 }
 
-/** `$1` … `$128`, no leading zero. */
-export const INDEX_PARAM = /^\$[1-9]\d{0,2}$/;
-export const MAX_INDEX_PARAM = 128;
+/** `$1` … `$128`, no leading zero (parser/define.ts — the tooling manifest reads them there too). */
+export { INDEX_PARAM, MAX_INDEX_PARAM };
 
 interface Frame {
   getter: Pattern;

@@ -626,15 +626,15 @@ describe("$watch と getter（C7・C8・C9）", () => {
   });
 });
 
-describe("lint への誘導を付けないメッセージ（#203・#204）", () => {
-  it("#204 と #203 には lint への誘導を付けず、lint が見る template-syntax の誤りには付ける", async () => {
+describe("lint への誘導（#203・#204・#1403）", () => {
+  it("#204 には lint への誘導を付けず、lint が静的に検出する #203（テンプレートの中の outerHTML:）と #1403（行の中の別のリストの *）には付ける", async () => {
     const { explain, render } = await import("../src/diagnostics/explain");
     const { M } = await import("../src/messages");
-    for (const [id, args] of [[M.TemplateHandedOver, ["for"]], [M.OuterInTemplate, ["outerHTML"]]] as const) {
-      const message = render(id, args);
-      expect(message).toContain("[wcs/template-syntax]");
-      expect(explain(message)).not.toContain("npx @wcstack/lint");
-    }
+    const handedOver = render(M.TemplateHandedOver, ["for"]);
+    expect(handedOver).toContain("[wcs/template-syntax]");
+    expect(explain(handedOver)).not.toContain("npx @wcstack/lint");
+    expect(explain(render(M.OuterInTemplate, ["outerHTML"]))).toContain("npx @wcstack/lint");
+    expect(explain(render(M.WildcardOtherList, ["b.*.y", "b", "a"]))).toContain("npx @wcstack/lint");
     expect(explain(render(M.ElseWithoutIf, ["else"]))).toContain("npx @wcstack/lint");
   });
 });
@@ -1400,5 +1400,49 @@ describe("後から状態が届く volume のパスの診断（G6）", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("K: vscode-wcs の 4.0 切り替えの検証で見つかったランタイムの点", () => {
+  it("K1: volume の $updatedCallback（3.x の名前。4.0 では無い）は黙って捨てず、$renderedCallback と同じく接ぎ木を拒む", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a) => { errors.push(a.map(String).join(" ")); });
+    try {
+      const { root } = await host(`<wcs-state></wcs-state><wcs-state mount="v"></wcs-state><p>{{ v.n }}</p>`,
+        [{}, { n: 3, $updatedCallback() {} }]);
+      expect(text(root, "p")).toBe("");
+      expect(errors.filter((e) => e.includes(`mount="v"`) && e.includes("$updatedCallback is not run in a volume"))).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("K3: 数値の添字のキーの $watch（items.0.v）は、その添字の値が変わったときだけ発火する（別の行への書き込み・値の変わらない一覧の差し替えでは発火しない）", async () => {
+    const calls: unknown[][] = [];
+    const { els } = await host(`<wcs-state></wcs-state><p>{{ items.0.v }}</p>`, [{
+      items: [{ v: 10 }, { v: 1 }],
+      $watch: { "items.0.v": (cur: unknown, prev: unknown) => { calls.push([cur, prev]); } },
+    }]);
+    const write = async (fn: (s: any) => void) => {
+      els[0].createState("writable", fn);
+      await flush();
+      return calls.splice(0);
+    };
+    expect(await write((s) => { s["items.1.v"] = 20; })).toEqual([]);
+    expect(await write((s) => { s["items.0.v"] = 11; })).toEqual([[11, 10]]);
+    expect(await write((s) => { s.items = [s.items[0], s.items[1], { v: 99 }]; })).toEqual([]);
+    expect(await write((s) => { s.items = [{ v: 12 }, ...s.items]; })).toEqual([[12, 11]]);
+  });
+
+  it("K3: getter の $watch は従来どおり、変化が届けば値が同じでも発火する（3.x と同じ。添字のキーだけの扱い）", async () => {
+    const calls: unknown[][] = [];
+    const { els } = await host(`<wcs-state></wcs-state>`, [{
+      items: [{ v: 10 }, { v: 1 }],
+      get first() { return (this as any)["items.0.v"]; },
+      $watch: { first: (cur: unknown, prev: unknown) => { calls.push([cur, prev]); } },
+    }]);
+    els[0].createState("writable", (s: any) => { s["items.1.v"] = 20; });
+    await flush();
+    expect(calls).toEqual([[10, 10]]);
   });
 });

@@ -33,5 +33,9 @@ export const STYLE_NAMESPACE = 'style';
  */
 export const MAX_PATH_SEGMENTS = 512;
 
+/** `$1` … `$128`, no leading zero: a loop index parameter (anything else after the `$` is not one). */
+export const INDEX_PARAM = /^\$[1-9]\d{0,2}$/;
+export const MAX_INDEX_PARAM = 128;
+
 /** Recursive wildcard — only meaningful in `$recursion` declarations, never in a binding path. */
 export const RECURSION_WILDCARD = '**';
