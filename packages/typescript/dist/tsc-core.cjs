@@ -206,9 +206,9 @@ interface WcsStateApi {
   $resolve(path: string, indexes: number[], value?: any): any;
   $dependOn(path: string): void;
   $untracked<T>(fn: () => T): T;
-  /** @deprecated $dependOn \u306E\u65E7\u540D\uFF08@wcstack/state 3.2 \u2014 4.0 \u3067\u5916\u308C\u308B\uFF09 */
+  /** @deprecated $dependOn \u306E\u65E7\u540D\uFF08@wcstack/state 3.2 \u2014 4.0 \u3067\u524A\u9664\u3055\u308C\u308B / removed in 4.0\uFF09 */
   $trackDependency(path: string): void;
-  /** @deprecated $untracked \u306E\u65E7\u540D\uFF08@wcstack/state 3.2 \u2014 4.0 \u3067\u5916\u308C\u308B\uFF09 */
+  /** @deprecated $untracked \u306E\u65E7\u540D\uFF08@wcstack/state 3.2 \u2014 4.0 \u3067\u524A\u9664\u3055\u308C\u308B / removed in 4.0\uFF09 */
   $untrackDependency<T>(fn: () => T): T;
   $eq(path: string, key: unknown): boolean;
   $eqPath(path: string, keyPath: string): boolean;

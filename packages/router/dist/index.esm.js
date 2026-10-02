@@ -24,6 +24,10 @@ function deepFreeze(obj) {
 function deepClone(obj) {
     if (obj === null || typeof obj !== "object")
         return obj;
+    // basenameFileExtensions is an array: clone it as one, or getConfig() would hand out
+    // { "0": ".html" }, which for…of cannot iterate. deepFreeze freezes it like any object.
+    if (Array.isArray(obj))
+        return obj.map((item) => deepClone(item));
     const clone = {};
     for (const key of Object.keys(obj)) {
         clone[key] = deepClone(obj[key]);
@@ -39,7 +43,40 @@ function getConfig() {
     }
     return frozenConfig;
 }
+// The defaults as shipped, for warnInvalid: a value 3.x lets through unchecked must not change
+// what a later call is compared against.
+const defaults = { ..._config, tagNames: { ..._config.tagNames } };
+const warned$1 = new Set();
+/**
+ * 3.5 forward-compat check. Warns, once per key per page, about an option that 4.0's
+ * bootstrapRouter throws on: one this package does not have, a value of another type than its
+ * default (null, or an array for an object, included), or a tag name it does not define or that is
+ * not a string. An undefined value is left out, as in 4.0. It only warns: setConfig then goes on
+ * exactly as in 3.x. Bootstrap-time only, never on a hot path.
+ */
+function warnInvalid(given, known, path = "") {
+    for (const [key, value] of Object.entries(given)) {
+        const name = path + key;
+        const current = known[key];
+        if (value === undefined) {
+            continue;
+        }
+        if (!Object.prototype.hasOwnProperty.call(known, key) ||
+            value === null ||
+            typeof value !== typeof current ||
+            Array.isArray(value) !== Array.isArray(current)) {
+            if (!warned$1.has(name)) {
+                warned$1.add(name);
+                console.warn(`[@wcstack/router] bootstrapRouter: "${name}" is not one of its options, or not of the option's type. 3.x ignores it or applies it unchecked; 4.0 throws on it.`);
+            }
+        }
+        else if (name === "tagNames") {
+            warnInvalid(value, current, "tagNames.");
+        }
+    }
+}
 function setConfig(partialConfig) {
+    warnInvalid(partialConfig, defaults);
     if (partialConfig.tagNames) {
         Object.assign(_config.tagNames, partialConfig.tagNames);
     }
@@ -561,6 +598,25 @@ class RouteCore extends EventTarget {
     }
 }
 
+/**
+ * SSR ハイドレーションマーカー（docs/ssr-router-design.md §3.3 / §4）。
+ *
+ * サーバー（_renderForSsr）が書き、クライアント（_hydrateFromSsr / Link の採用）が
+ * 読む。キーは route の absolutePath — placeholder の UUID はパースごとに再生成され
+ * サーバーとクライアントで一致しないため、同一 template から決定的に導ける
+ * absolutePath だけが突合キーになれる。
+ */
+/** サーバー描画済み outlet の目印（要素属性） */
+const SSR_OUTLET_ATTR = 'data-wcs-ssr';
+/** Link がサーバーで生成した anchor の目印（要素属性）。クライアントが採用して外す */
+const SSR_LINK_ATTR = 'data-wcs-ssr-link';
+/** route placeholder コメントの安定キー形式（`@@wcs-route-ph:<absolutePath>`） */
+const ROUTE_PH_PREFIX = '@@wcs-route-ph:';
+/** 表示中ルート内容の開始マーカー（`@@wcs-route-start:<absolutePath>`） */
+const ROUTE_START_PREFIX = '@@wcs-route-start:';
+/** 表示中ルート内容の終了マーカー（`@@wcs-route-end:<absolutePath>`） */
+const ROUTE_END_PREFIX = '@@wcs-route-end:';
+
 // NOTE: `static wcBindable` は宣言しない — RouteCore.ts 冒頭の NOTE を参照
 // （docs/router-state-contract-design.md §5.1 / D2）。
 class Route extends HTMLElement {
@@ -571,6 +627,9 @@ class Route extends HTMLElement {
     _uuid = getUUID();
     _placeHolder = document.createComment(`@@route:${this._uuid}`);
     _childNodeArray;
+    _endMarker;
+    /** 隠している間の内容（IRoute.held） */
+    held = null;
     _childIndex = 0;
     _initialized = false;
     _routes;
@@ -597,6 +656,13 @@ class Route extends HTMLElement {
     get placeHolder() {
         return this._placeHolder;
     }
+    /** ルートの内容の終わり（IRoute.endMarker。文面は SSR の終了マーカーと同じ） */
+    get endMarker() {
+        if (typeof this._endMarker === 'undefined') {
+            this._endMarker = document.createComment(`${ROUTE_END_PREFIX}${this.absolutePath}`);
+        }
+        return this._endMarker;
+    }
     get childNodeArray() {
         if (typeof this._childNodeArray === 'undefined') {
             this._childNodeArray = Array.from(this.childNodes);
@@ -608,9 +674,13 @@ class Route extends HTMLElement {
      * サーバー描画済みの DOM ノード列をこのルートの内容として引き取る。
      * 以後の hideRoute / showRoute は採用ノードに対して従来どおり動く。
      * template 由来の fresh クローン（自身の childNodes）は不要になるため破棄する。
+     * `endMarker`（サーバーの終了マーカー）は、以後このルートの範囲の終わりになる。
      */
-    adoptChildNodes(nodes) {
+    adoptChildNodes(nodes, endMarker) {
         this._childNodeArray = [...nodes];
+        if (endMarker) {
+            this._endMarker = endMarker;
+        }
         while (this.firstChild) {
             this.removeChild(this.firstChild);
         }
@@ -1102,6 +1172,182 @@ function assignParams(element, params) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/binder.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// binder protocol — how a package that inserts DOM hands those nodes to whoever
+// owns data bindings on the page.
+//
+// The dual of transition-runner: that one hands a *mutation* to whoever animates
+// it, this one hands *new nodes* to whoever binds them.
+//
+// A `data-wcs` binding exists only for nodes @wcstack/state walked when it built
+// its bindings. Nodes that arrive later — the content of a route that was not
+// active at that moment, a <wcs-head> child reflected into <head> — were never
+// walked, so their bindings silently do nothing, however often they are inserted.
+// @wcstack/router must not depend on @wcstack/state (zero runtime dependencies,
+// independently publishable), so state installs a binder on a well-known global
+// symbol and inserters look it up lazily.
+//
+// No binder installed means nothing happens — byte-for-byte the behavior these
+// packages had before the protocol existed.
+//
+// docs/binder-protocol-design.md is the normative description.
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/binder.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/binder.ts). Those copies are generated — do not edit them.
+/**
+ * Global key the binder installs itself under. `Symbol.for` so independently
+ * loaded copies of this file (two CDN bundles on one page) still agree.
+ */
+const BINDER_KEY = Symbol.for("wcstack.binder");
+/**
+ * The installed binder, or null when there is none or it speaks a version this
+ * reader does not.
+ *
+ * Looked up on every call rather than cached, for the same reason
+ * transition-runner does: the page's composition can change at any point, and a
+ * stale cache would keep calling into a binder that is no longer there.
+ */
+function getBinder() {
+    const candidate = globalThis[BINDER_KEY];
+    if (candidate === undefined || candidate === null)
+        return null;
+    if (candidate.protocol !== "wcs-binder")
+        return null;
+    if (typeof candidate.version !== "number" || candidate.version < 1)
+        return null;
+    if (typeof candidate.bind !== "function")
+        return null;
+    return candidate;
+}
+/**
+ * Subtrees offered before a binder existed, and the set of everything a binder
+ * has taken. Both live on global symbols so that independently loaded copies of
+ * this file — the router's and state's — share one queue.
+ *
+ * The queue is needed because of load order: the router's auto bundle runs
+ * before state's, so `<wcs-head>` reflects its children into `<head>` while
+ * there is still nothing to bind them. Offering them to a binder that arrives
+ * later is the difference between working and silently blank.
+ */
+const PENDING_KEY = Symbol.for("wcstack.binder.pending");
+const TAKEN_KEY = Symbol.for("wcstack.binder.taken");
+function pendingQueue() {
+    const globals = globalThis;
+    let queue = globals[PENDING_KEY];
+    if (queue === undefined) {
+        queue = [];
+        globals[PENDING_KEY] = queue;
+    }
+    return queue;
+}
+function takenSet() {
+    const globals = globalThis;
+    let taken = globals[TAKEN_KEY];
+    if (taken === undefined) {
+        taken = new WeakSet();
+        globals[TAKEN_KEY] = taken;
+    }
+    return taken;
+}
+/**
+ * Hand `subtree` to the installed binder, or hold it for one that arrives later.
+ *
+ * Returns whether a binder took it *now*. A `false` does not yet mean the markup
+ * is doomed — check {@link wasBoundBy} once module scripts have run.
+ *
+ * `options` goes to the binder with the subtree. A subtree held for a later binder
+ * is handed over without it: that binder's first walk of the page binds what is
+ * still in place there.
+ */
+function bindSubtree(subtree, options) {
+    const binder = getBinder();
+    if (binder === null) {
+        pendingQueue().push(subtree);
+        return false;
+    }
+    takenSet().add(subtree);
+    binder.bind(subtree, options);
+    return true;
+}
+/** Whether any binder has taken this subtree. */
+function wasBoundBy(subtree) {
+    return takenSet().has(subtree);
+}
+
+/**
+ * binder への宣言: router はルートの範囲（placeholder 〜 終了マーカー）を持ち運ぶ
+ * （hideRoute / showRoute）。範囲の中に描かれたもの（直下の構造テンプレートの行・枝）も
+ * 一緒に出入りするので、binder はそうしたテンプレートを描いてよい（docs/binder-protocol-design.md §2）。
+ */
+const ROUTE_RANGE = { range: true };
+/**
+ * 文書に置いたノードの要素を、範囲を持ち運ぶ宣言付きで binder へ渡す（挿入の後に渡す — D5）。
+ * binder が居なければ渡さない: 保留キューに溜めず、後から来る state の最初の走査が拾う。
+ */
+function offerToBinder(nodes) {
+    if (getBinder() === null)
+        return;
+    for (const node of nodes) {
+        if (node.nodeType === 1) {
+            bindSubtree(node, ROUTE_RANGE);
+        }
+    }
+}
+/** The placeholders and end marks of a route's descendants */
+function innerMarks(route, marks) {
+    for (const child of route.routeChildNodes) {
+        marks.add(child.placeHolder).add(child.endMarker);
+        innerMarks(child, marks);
+    }
+    return marks;
+}
+/**
+ * The nodes between a route's placeholder and its end mark, in order. When the end mark is not
+ * after the placeholder (other code moved or removed it), the range ends at the last of the route's
+ * own nodes still beside the placeholder, and never runs past another route's mark (a sibling's
+ * placeholder, a parent's end mark): what follows cannot be told from what is not the route's, and
+ * an own node beyond goes back as one moved out of the range. Read in full before anything is
+ * moved: moving runs disconnectedCallback, which may change what follows the placeholder.
+ */
+function rangeOf(route) {
+    const placeHolder = route.placeHolder;
+    const end = route.endMarker;
+    const marked = end.parentNode !== null && end.parentNode === placeHolder.parentNode &&
+        (placeHolder.compareDocumentPosition(end) & 4 /* DOCUMENT_POSITION_FOLLOWING */) !== 0;
+    const inner = marked ? null : innerMarks(route, new Set());
+    const nodes = [];
+    let length = 0;
+    for (let node = placeHolder.nextSibling; node !== null && node !== end; node = node.nextSibling) {
+        if (inner !== null && node.nodeType === 8 && /^@@(route:|wcs-route-)/.test(node.data) && !inner.has(node)) {
+            break;
+        }
+        nodes.push(node);
+        if (marked || route.childNodeArray.includes(node)) {
+            length = nodes.length;
+        }
+    }
+    nodes.length = length;
+    return nodes;
+}
+/**
+ * Moves `nodes` into `target` in order. Each move may run a disconnectedCallback, which may move or
+ * remove a node that comes later in the list (a `<wcs-link>` removes its anchor): such a node is
+ * left where that callback put it.
+ */
+function moveInto(target, nodes) {
+    const from = nodes.map((node) => node.parentNode);
+    for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].parentNode === from[i]) {
+            target.appendChild(nodes[i]);
+        }
+    }
+}
+
 class LayoutOutlet extends HTMLElement {
     _layout = null;
     _initialized = false;
@@ -1188,6 +1434,10 @@ class LayoutOutlet extends HTMLElement {
                 }
                 this.appendChild(fragmentForTemplate);
             }
+            // 置いた後で binder へ渡す（D5）。遷移で入ったルートの内容は router が渡す時点では文書の外で、
+            // レイアウトのテンプレート自身の束縛もここでしか渡せない（shadow root の中は対象外）。light DOM は
+            // 初期化の前は空なので、子が置いたもの。写して回す（渡した直下の for: が行を足すと番号がずれる）
+            offerToBinder(Array.from(this.childNodes));
         }
         finally {
             this._initializing = false;
@@ -1237,14 +1487,16 @@ const CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
  * 真ならブロック確定として対処方法を書き、偽なら構文エラー等と区別できないので
  * 元のエラーを主にして CSP は参照先を添えるに留める。
  *
- * ガードは state と違ってインライン専用（`<wcs-route>` 直下の `<script>`）なので、
- * `src=` に逃がすという回避策が無い。CSP を敷くなら blob: の許可が必須になる。
+ * blob: の import は、router を読み込んだ `<script>` の nonce を引き継ぐので、そこに nonce を
+ * 付ければ通る（docs/csp.md §5）。ガードは state と違ってインライン専用（`<wcs-route>` 直下の
+ * `<script>`）なので、`src=` に逃がすという回避策が無い。nonce を付けられない構成で CSP を敷くなら、
+ * blob: の許可が必須になる。
  */
 function describeImportFailure(error, firstError, cspBlocked) {
     if (cspBlocked) {
         return `The guard <script> was blocked by Content-Security-Policy. ` +
-            `Guard scripts are inline-only and are evaluated through a blob: URL, ` +
-            `so script-src must allow blob:. See ${CSP_GUIDE}`;
+            `Guard scripts are inline-only and are evaluated through a blob: URL: ` +
+            `give the page's nonce to the <script> that loads @wcstack/router, or allow blob: in script-src. See ${CSP_GUIDE}`;
     }
     return `loadGuardHandler: failed to import guard script. ` +
         `data: URL error: ${error?.message ?? String(error)}` +
@@ -1292,6 +1544,9 @@ async function importModule(script, route) {
                 scriptModule = await import(`data:application/javascript;base64,${b64}`);
             }
             catch (e) {
+                // Firefox は違反イベントを import の失敗より後（次のタスク）に出す（Chromium と WebKit は先）。
+                // 判定の前に 1 タスク待って、どのエンジンでも CSP を観測できるようにする
+                await new Promise((resolve) => setTimeout(resolve));
                 // 両 import が失敗した場合、Blob URL 側の元エラーを cause として失わないように包む
                 // （Blob URL も失敗していなければ firstError は null）
                 raiseError(describeImportFailure(e, firstError, cspBlocked), { cause: firstError ?? e });
@@ -1730,11 +1985,42 @@ function normalizeBasename(path) {
     return p;
 }
 
+/**
+ * ルートの内容を `route.held` へ持ち出す: placeholder から `route.endMarker` までの範囲。
+ * state が描いた行・枝とアンカーは childNodeArray に無いので、範囲で持つ。範囲の外へ
+ * 移された自分のノード（body のダイアログ）は元の順の位置で持ち、親の無いもの
+ * （アンカーに置き換えられた template）は戻さない。すでに持っていれば何もしない
+ * （重なったナビゲーションが二度隠しても、持っている内容を失わない）。
+ */
+function holdRoute(route) {
+    if (route.held !== null) {
+        return;
+    }
+    // Decide which nodes go, and in which order, before moving any: a move runs disconnectedCallback.
+    const nodes = rangeOf(route);
+    const top = new Set(nodes);
+    const outer = [...nodes, ...route.childNodeArray];
+    let prev = null;
+    for (const node of route.childNodeArray) {
+        if (top.has(node)) {
+            prev = node;
+        }
+        else if (node.parentNode !== null && !outer.some((other) => other !== node && other.contains(node))) {
+            // an own node moved out of the range goes back where it was written (one inside another goes with it)
+            nodes.splice(prev === null ? 0 : nodes.indexOf(prev) + 1, 0, node);
+            top.add(node);
+            prev = node;
+        }
+    }
+    const held = document.createDocumentFragment();
+    moveInto(held, nodes);
+    held.appendChild(route.endMarker);
+    route.held = held;
+}
+/** ルートの内容を隠す: パラメータを消し、内容を持ち出す */
 function hideRoute(route) {
     route.clearParams();
-    for (const node of route.childNodeArray) {
-        node.parentNode?.removeChild(node);
-    }
+    holdRoute(route);
 }
 
 /**
@@ -1773,19 +2059,30 @@ function assignRouteParams(route, matchResult) {
         }
     }
 }
-function showRoute(route, matchResult) {
-    assignRouteParams(route, matchResult);
-    const parentNode = route.placeHolder.parentNode;
-    const nextSibling = route.placeHolder.nextSibling;
-    for (const node of route.childNodeArray) {
-        if (nextSibling) {
-            parentNode?.insertBefore(node, nextSibling);
-        }
-        else {
-            parentNode?.appendChild(node);
-        }
+/** Routes placed at least once: their written nodes are never placed again */
+const placed = new WeakSet();
+/**
+ * ルートの内容を placeholder の後ろへ置く: `route.held` があればそれを、初めてなら元のノードと
+ * `route.endMarker` を。表示中のルート（パラメータの変化）は、隠すときと同じく持ち出してすぐ戻す。
+ * パラメータは先に割り当てておく（assignRouteParams）。
+ */
+function placeRoute(route) {
+    const placeHolder = route.placeHolder;
+    if (placeHolder.parentNode === null)
+        return;
+    if (placed.has(route) || route.endMarker.parentNode !== null) {
+        // Shown before (again on a parameter change, or back from held): take it out as hiding does —
+        // nothing to do when it is held — and put it back, so its custom elements reconnect and read the
+        // new params. Never its written nodes again, even when other code removed the end mark: a
+        // template the state replaced with its anchor would come back.
+        holdRoute(route);
+        placeHolder.after(route.held);
+        route.held = null;
     }
-    return true;
+    else {
+        placeHolder.after(...route.childNodeArray, route.endMarker);
+    }
+    placed.add(route);
 }
 
 // ===========================================================================
@@ -1848,109 +2145,6 @@ function runTransition(source, mutate, types) {
         return undefined;
     }
     return runner.run(mutate, { source, types });
-}
-
-// ===========================================================================
-// AUTO-GENERATED FILE - DO NOT EDIT.
-// Generated from /protocol/binder.ts by scripts/sync-protocol-types.mjs.
-// Run `node scripts/sync-protocol-types.mjs` after editing the source.
-// ===========================================================================
-// binder protocol — how a package that inserts DOM hands those nodes to whoever
-// owns data bindings on the page.
-//
-// The dual of transition-runner: that one hands a *mutation* to whoever animates
-// it, this one hands *new nodes* to whoever binds them.
-//
-// A `data-wcs` binding exists only for nodes @wcstack/state walked when it built
-// its bindings. Nodes that arrive later — the content of a route that was not
-// active at that moment, a <wcs-head> child reflected into <head> — were never
-// walked, so their bindings silently do nothing, however often they are inserted.
-// @wcstack/router must not depend on @wcstack/state (zero runtime dependencies,
-// independently publishable), so state installs a binder on a well-known global
-// symbol and inserters look it up lazily.
-//
-// No binder installed means nothing happens — byte-for-byte the behavior these
-// packages had before the protocol existed.
-//
-// docs/binder-protocol-design.md is the normative description.
-//
-// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/binder.ts), then run
-// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
-// (packages/<pkg>/src/protocol/binder.ts). Those copies are generated — do not edit them.
-/**
- * Global key the binder installs itself under. `Symbol.for` so independently
- * loaded copies of this file (two CDN bundles on one page) still agree.
- */
-const BINDER_KEY = Symbol.for("wcstack.binder");
-/**
- * The installed binder, or null when there is none or it speaks a version this
- * reader does not.
- *
- * Looked up on every call rather than cached, for the same reason
- * transition-runner does: the page's composition can change at any point, and a
- * stale cache would keep calling into a binder that is no longer there.
- */
-function getBinder() {
-    const candidate = globalThis[BINDER_KEY];
-    if (candidate === undefined || candidate === null)
-        return null;
-    if (candidate.protocol !== "wcs-binder")
-        return null;
-    if (typeof candidate.version !== "number" || candidate.version < 1)
-        return null;
-    if (typeof candidate.bind !== "function")
-        return null;
-    return candidate;
-}
-/**
- * Subtrees offered before a binder existed, and the set of everything a binder
- * has taken. Both live on global symbols so that independently loaded copies of
- * this file — the router's and state's — share one queue.
- *
- * The queue is needed because of load order: the router's auto bundle runs
- * before state's, so `<wcs-head>` reflects its children into `<head>` while
- * there is still nothing to bind them. Offering them to a binder that arrives
- * later is the difference between working and silently blank.
- */
-const PENDING_KEY = Symbol.for("wcstack.binder.pending");
-const TAKEN_KEY = Symbol.for("wcstack.binder.taken");
-function pendingQueue() {
-    const globals = globalThis;
-    let queue = globals[PENDING_KEY];
-    if (queue === undefined) {
-        queue = [];
-        globals[PENDING_KEY] = queue;
-    }
-    return queue;
-}
-function takenSet() {
-    const globals = globalThis;
-    let taken = globals[TAKEN_KEY];
-    if (taken === undefined) {
-        taken = new WeakSet();
-        globals[TAKEN_KEY] = taken;
-    }
-    return taken;
-}
-/**
- * Hand `subtree` to the installed binder, or hold it for one that arrives later.
- *
- * Returns whether a binder took it *now*. A `false` does not yet mean the markup
- * is doomed — check {@link wasBoundBy} once module scripts have run.
- */
-function bindSubtree(subtree) {
-    const binder = getBinder();
-    if (binder === null) {
-        pendingQueue().push(subtree);
-        return false;
-    }
-    takenSet().add(subtree);
-    binder.bind(subtree);
-    return true;
-}
-/** Whether any binder has taken this subtree. */
-function wasBoundBy(subtree) {
-    return takenSet().has(subtree);
 }
 
 /**
@@ -2034,8 +2228,16 @@ function bindRouteContent(route) {
     for (const node of route.childNodeArray) {
         if (node.nodeType !== 1)
             continue;
-        if (bindSubtree(node))
+        if (node.isConnected) {
+            if (bindSubtree(node, ROUTE_RANGE))
+                continue;
+        }
+        else if (getBinder() !== null) {
+            // Not in the document: the content of a route inside a <wcs-layout> whose template is still
+            // loading. A binder must not take a detached subtree (3.x binds it detached, and its event
+            // bindings fail as disconnected); the layout outlet hands it over once it has placed it.
             continue;
+        }
         warnUnboundMarkup(node, `<${node.tagName.toLowerCase()}> inside a route`, `Load @wcstack/state on this page, or render data-driven markup outside ` +
             `<wcs-router> — bind the router's \`path\` into state and gate the markup ` +
             `with <template data-wcs="if: …">. See examples/router-i18n.`);
@@ -2113,16 +2315,29 @@ async function showRouteContent(routerNode, matchResult, lastRoutes) {
                 hideRoute(route);
             }
         }
-        let force = false;
+        // The routes to show (new ones, ones whose params changed, and every one under the first of
+        // them) get their params first, all of them: putting a parent back moves its children's content
+        // too, and their connectedCallback must already see the new params.
+        const shown = [];
         for (const route of matchResult.routes) {
-            if (!lastRouteSet.has(route) || route.shouldChange(matchResult.params) || force) {
-                force = showRoute(route, matchResult);
-                // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
-                // document に居るので、そこは binder に渡す必要も報告する必要も無い。
-                // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
-                if (lastRoutes.length > 0 && !lastRouteSet.has(route)) {
-                    bindRouteContent(route);
-                }
+            if (shown.length > 0 || !lastRouteSet.has(route) || route.shouldChange(matchResult.params)) {
+                shown.push(route);
+                assignRouteParams(route, matchResult);
+            }
+        }
+        let moved = false;
+        for (const route of shown) {
+            const again = lastRouteSet.has(route);
+            // A route shown again under one shown again was moved along with it: not twice.
+            if (!(again && moved)) {
+                placeRoute(route);
+            }
+            moved ||= again;
+            // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
+            // document に居るので、そこは binder に渡す必要も報告する必要も無い。
+            // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
+            if (lastRoutes.length > 0 && !again) {
+                bindRouteContent(route);
             }
         }
     };
@@ -2316,25 +2531,6 @@ function inSsr() {
     const html = document.documentElement;
     return html ? html.hasAttribute('data-wcs-server') : false;
 }
-
-/**
- * SSR ハイドレーションマーカー（docs/ssr-router-design.md §3.3 / §4）。
- *
- * サーバー（_renderForSsr）が書き、クライアント（_hydrateFromSsr / Link の採用）が
- * 読む。キーは route の absolutePath — placeholder の UUID はパースごとに再生成され
- * サーバーとクライアントで一致しないため、同一 template から決定的に導ける
- * absolutePath だけが突合キーになれる。
- */
-/** サーバー描画済み outlet の目印（要素属性） */
-const SSR_OUTLET_ATTR = 'data-wcs-ssr';
-/** Link がサーバーで生成した anchor の目印（要素属性）。クライアントが採用して外す */
-const SSR_LINK_ATTR = 'data-wcs-ssr-link';
-/** route placeholder コメントの安定キー形式（`@@wcs-route-ph:<absolutePath>`） */
-const ROUTE_PH_PREFIX = '@@wcs-route-ph:';
-/** 表示中ルート内容の開始マーカー（`@@wcs-route-start:<absolutePath>`） */
-const ROUTE_START_PREFIX = '@@wcs-route-start:';
-/** 表示中ルート内容の終了マーカー（`@@wcs-route-end:<absolutePath>`） */
-const ROUTE_END_PREFIX = '@@wcs-route-end:';
 
 const EMPTY_RECORD = Object.freeze({});
 /**
@@ -3101,12 +3297,11 @@ class Router extends HTMLElement {
                 nodes.push(node);
                 node = node.nextSibling;
             }
-            route.adoptChildNodes(nodes);
+            // 終了マーカーは残し、以後このルートの範囲の終わりとして使う（hideRoute）
+            route.adoptChildNodes(nodes, end);
         }
-        // マーカー除去と目印の撤去
+        // 開始マーカーの除去と目印の撤去（終了マーカーは各ルートの範囲の終わりとして残る）
         for (const { comment } of startByPath.values())
-            comment.remove();
-        for (const { comment } of endByPath.values())
             comment.remove();
         this.outlet.removeAttribute(SSR_OUTLET_ATTR);
         // 表示済み状態の確立。内容は既に見えているので挿入はしない — パラメータ
@@ -3180,14 +3375,8 @@ class Router extends HTMLElement {
         });
         this.outlet.setAttribute(SSR_OUTLET_ATTR, '');
         for (const route of this.outlet.lastRoutes) {
-            // applyRoute 成功後の placeholder は必ず outlet 配下の DOM に居る
-            const parentNode = route.placeHolder.parentNode;
-            const contentNodes = route.childNodeArray;
-            const start = document.createComment(`${ROUTE_START_PREFIX}${route.absolutePath}`);
-            const end = document.createComment(`${ROUTE_END_PREFIX}${route.absolutePath}`);
-            parentNode.insertBefore(start, contentNodes[0] ?? route.placeHolder.nextSibling);
-            const last = contentNodes[contentNodes.length - 1];
-            parentNode.insertBefore(end, last ? last.nextSibling : start.nextSibling);
+            // 終了マーカーは showRoute が置いた route.endMarker をそのまま使う
+            route.placeHolder.after(document.createComment(`${ROUTE_START_PREFIX}${route.absolutePath}`));
         }
     }
     /**
@@ -3198,8 +3387,10 @@ class Router extends HTMLElement {
     _offerInitialContentToBinder() {
         for (const route of this.outlet.lastRoutes) {
             for (const node of route.childNodeArray) {
-                if (node.nodeType === Node.ELEMENT_NODE) {
-                    bindSubtree(node);
+                // A node not in the document (a route inside a <wcs-layout> whose template is still
+                // loading) is handed over by the layout outlet once placed, or found by state's first scan
+                if (node.nodeType === Node.ELEMENT_NODE && node.isConnected) {
+                    bindSubtree(node, ROUTE_RANGE);
                 }
             }
         }
@@ -3857,7 +4048,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "3.4.0";
+var version = "3.5.0";
 var pkg = {
 	version: version};
 
