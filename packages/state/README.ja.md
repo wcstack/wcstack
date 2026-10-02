@@ -3140,7 +3140,7 @@ bootstrapState();
 | 属性 | 説明 |
 |---|---|
 | `mount` | この state をルートツリーへ**ボリューム**として接ぎ木する静的ツリーパス（v2 — 撤去された `name` 属性の後継。ツリーは 1 root に 1 本） |
-| `state` | `<script type="application/json">` 要素の ID |
+| `state` | document 内の `<script type="application/json">` 要素の ID（`document.getElementById` で探すので、shadow root の中の script は見つかりません） |
 | `src` | `.json` または `.js` ファイルの URL |
 | `json` | インライン JSON 文字列 |
 | `bind-component` | Web Component バインディングのプロパティ名 |
@@ -3151,7 +3151,7 @@ bootstrapState();
 | プロパティ / メソッド | 説明 |
 |---|---|
 | `initializePromise` | 状態の完全な初期化時に解決される Promise —— **初期化に失敗したときも解決**します（1 要素の失敗がページの他のバインディングを止めないため）。エラーは `connectedCallbackPromise` に届きます |
-| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。**ルート**要素が初期化に失敗すると、**元のエラーのまま reject** し、`console.error` にも 1 件報告します（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・DCC や `bind-component` の設定エラー・同じ root node に 2 本目のルート `<wcs-state>`。2 本目は登録されないまま読み込んだ state を保持するので取り除いてください。健全な要素の DOM 移動は二重登録ではなく、拒否しません）。**ボリューム**（`<wcs-state mount="…">`）はこの Promise を**拒否しません** —— ボリュームの失敗は解決し、種類によっては自分では何も報告しません。その場合エラーはカスタム要素リアクションが捨てる `connectedCallback` の戻り Promise として出ていき、ブラウザのコンソールには "Uncaught (in promise)" と出ますが、promise を待つ側（テストのレシピや `renderToString()`）には届きません。ロード中に切断された要素は reject しません —— その接続が黙って終わるだけで、付け直せば（行プール）通常どおり初期化して解決します。個々の失敗箇所の正確な挙動は `__tests__/integration.initFailureDiagnostics.test.ts` が固定しています |
+| `connectedCallbackPromise` | `connectedCallback` の完了（state のロードと `$connectedCallback` の実行）で解決される Promise — テストのレシピが await するもの。**ルート**要素が初期化に失敗すると、**元のエラーのまま reject** し、`console.error` にも 1 件報告します（`$` 宣言の不正・ソースのロード失敗・SSR データの merge 失敗・DCC や `bind-component` の設定エラー・同じ root node に 2 本目のルート `<wcs-state>`。2 本目は登録されないまま読み込んだ state を保持するので取り除いてください。健全な要素の DOM 移動は二重登録ではなく、拒否しません）。ただし 3.x では次の 2 つのソースを失敗として扱わず、この Promise を解決します: 取得またはパースできない `src="*.json"`（URL と、HTTP ステータスまたはエラーを `console.error` に記録し、空の state で始まります。ボリュームなら `{}` を接ぎ木します）と、その id の `<script type="application/json">` が document に無い `state="<id>"`（`console.warn` を 1 回出し、空の state で始まります。探すのは `document.getElementById` なので、shadow root の中の script は見つかりません）。4.0 はどちらの場合も reject します。`state=` については要素自身のルートを先に、次に document を探し、どちらにも無いときだけ reject します。**ボリューム**（`<wcs-state mount="…">`）はこの Promise を**拒否しません** —— ボリュームの失敗は解決し、種類によっては自分では何も報告しません。その場合エラーはカスタム要素リアクションが捨てる `connectedCallback` の戻り Promise として出ていき、ブラウザのコンソールには "Uncaught (in promise)" と出ますが、promise を待つ側（テストのレシピや `renderToString()`）には届きません。ロード中に切断された要素は reject しません —— その接続が黙って終わるだけで、付け直せば（行プール）通常どおり初期化して解決します。個々の失敗箇所の正確な挙動は `__tests__/integration.initFailureDiagnostics.test.ts` が固定しています |
 | `listPaths` | `for` ループで使用されるパスの Set |
 | `getterPaths` | getter として定義されたパスの Set |
 | `setterPaths` | setter として定義されたパスの Set |

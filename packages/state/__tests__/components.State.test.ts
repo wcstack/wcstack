@@ -446,10 +446,12 @@ describe('State component', () => {
     script.textContent = 'export default { value: 1 };';
     stateEl.appendChild(script);
 
-    loadFromInnerScriptMock.mockRejectedValueOnce(new Error('load failed'));
-    await expect(stateEl.connectedCallback()).rejects.toThrow(/Failed to initialize state/);
+    const loadError = new Error('load failed');
+    loadFromInnerScriptMock.mockRejectedValueOnce(loadError);
+    // The loader's error is rethrown as is (not wrapped)
+    await expect(stateEl.connectedCallback()).rejects.toBe(loadError);
     // #257: 同上（無言のハングではなく reject ＋ 診断 1 件）
-    await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/load failed/);
+    await expect(stateEl.connectedCallbackPromise).rejects.toBe(loadError);
     await expect(stateEl.initializePromise).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledTimes(1);
     errorSpy.mockRestore();
@@ -460,13 +462,129 @@ describe('State component', () => {
     // どれも _loadStateFromSource の中で落ちるので、着地は 1 つ
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const stateEl = createStateElement({ src: 'data.js' });
-    loadFromScriptFileMock.mockRejectedValueOnce(new Error('import failed'));
-    await expect(stateEl.connectedCallback()).rejects.toThrow(/Failed to initialize state/);
-    await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/import failed/);
+    const importError = new Error('import failed');
+    loadFromScriptFileMock.mockRejectedValueOnce(importError);
+    await expect(stateEl.connectedCallback()).rejects.toBe(importError);
+    await expect(stateEl.connectedCallbackPromise).rejects.toBe(importError);
     await expect(stateEl.initializePromise).resolves.toBeUndefined();
     expect(stateEl.initialized).toBe(false);
     expect(errorSpy).toHaveBeenCalledTimes(1);
     errorSpy.mockRestore();
+  });
+
+  // README, the connectedCallbackPromise row: a root that fails to initialize rejects with the
+  // original error, unwrapped. A source that cannot load is no exception: the object the loader
+  // threw arrives as is, and the console logs it after a header naming the element and its source.
+  describe('ソースのロード失敗はローダーのエラーそのもので reject すること', () => {
+    // [label, attributes, expected console header, arrange the failure]
+    const sources: Array<[string, Record<string, string>, string, (error: unknown) => (() => void) | void]> = [
+      ['state属性（JSON script）', { state: 'state-data' }, '<wcs-state state="state-data">', (error) => {
+        loadFromScriptJsonMock.mockImplementationOnce(() => { throw error; });
+      }],
+      ['src属性（.js）', { src: 'data.js' }, '<wcs-state src="data.js">', (error) => {
+        loadFromScriptFileMock.mockRejectedValueOnce(error);
+      }],
+      // Not the real behaviour of src="*.json": the real loadFromJsonFile never rejects (it logs
+      // and resolves {} — a 3.x exception the README states, pinned with the real loader in
+      // integration.initFailureDiagnostics.test.ts). This mocked rejection pins only that
+      // _loadStateFromSource does not wrap what a loader rejects with.
+      ['src属性（.json、モックのローダーが reject した場合）', { src: 'data.json' }, '<wcs-state src="data.json">', (error) => {
+        loadFromJsonFileMock.mockRejectedValueOnce(error);
+      }],
+      ['json属性', { json: '{broken' }, '<wcs-state>', (error) => {
+        // The loader of json= is JSON.parse itself: make it throw for this attribute value only
+        const originalParse = JSON.parse;
+        const parseSpy = vi.spyOn(JSON, 'parse').mockImplementation((text: string, reviver?: any) => {
+          if (text === '{broken') throw error;
+          return originalParse(text, reviver);
+        });
+        return () => parseSpy.mockRestore();
+      }],
+      ['内包スクリプト', {}, '<wcs-state>', (error) => {
+        loadFromInnerScriptMock.mockRejectedValueOnce(error);
+      }],
+    ];
+
+    for (const [label, attrs, header, arrange] of sources) {
+      it(`${label}: connectedCallbackPromise と getBindingsReady が同一オブジェクトで reject し、診断が要素とソースと元のエラーを載せること`, async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const stateEl = createStateElement(attrs);
+        if (label === '内包スクリプト') {
+          const script = document.createElement('script');
+          script.type = 'module';
+          script.textContent = 'export default {};';
+          stateEl.appendChild(script);
+        }
+        const host = createHostWithState(stateEl);
+        const loaderError = new Error(`loader failed: ${label}`);
+        const restore = arrange(loaderError);
+        try {
+          await expect(stateEl.connectedCallback()).rejects.toBe(loaderError);
+          await expect(stateEl.connectedCallbackPromise).rejects.toBe(loaderError);
+          await expect(State.getBindingsReady(host.shadowRoot!)).rejects.toBe(loaderError);
+          await expect(stateEl.initializePromise).resolves.toBeUndefined();
+          expect(errorSpy).toHaveBeenCalledTimes(1);
+          // The context (which element, which source) is the header; the original error
+          // (message, type, stack) is the same object after it
+          expect(errorSpy.mock.calls[0][0]).toBe(`[@wcstack/state] ${header} failed to initialize.`);
+          expect(errorSpy.mock.calls[0][1]).toBe(loaderError);
+        } finally {
+          restore?.();
+          errorSpy.mockRestore();
+        }
+      });
+    }
+
+    it('state と src が両方あるときは、読む側（state）を見出しに出すこと', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const stateEl = createStateElement({ state: 'cfg', src: 'data.js' });
+      createHostWithState(stateEl);
+      const loaderError = new Error('state wins');
+      loadFromScriptJsonMock.mockImplementationOnce(() => { throw loaderError; });
+      try {
+        await expect(stateEl.connectedCallback()).rejects.toBe(loaderError);
+        expect(errorSpy.mock.calls[0][0]).toBe('[@wcstack/state] <wcs-state state="cfg"> failed to initialize.');
+        expect(loadFromScriptFileMock).not.toHaveBeenCalled();
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('Error でない throw 値（文字列）も包まずにそのまま reject し、診断に載ること', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const stateEl = createStateElement({ src: 'data.js' });
+      createHostWithState(stateEl);
+      loadFromScriptFileMock.mockRejectedValueOnce('module threw a string');
+      try {
+        await expect(stateEl.connectedCallback()).rejects.toBe('module threw a string');
+        await expect(stateEl.connectedCallbackPromise).rejects.toBe('module threw a string');
+        expect(errorSpy).toHaveBeenCalledTimes(1);
+        expect(errorSpy.mock.calls[0]).toEqual([
+          '[@wcstack/state] <wcs-state src="data.js"> failed to initialize.',
+          'module threw a string',
+        ]);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
+    it('src属性の拡張子エラーは包み直されず、自分の文面で 1 回だけ prefix が付くこと', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const stateEl = createStateElement({ src: 'data.txt' });
+      createHostWithState(stateEl);
+      try {
+        const reason = await stateEl.connectedCallback().then(
+          () => { throw new Error('expected a rejection'); },
+          (error: unknown) => error,
+        );
+        expect((reason as Error).message).toBe('[@wcstack/state] Unsupported src file type: data.txt');
+        await expect(stateEl.connectedCallbackPromise).rejects.toBe(reason);
+        expect(errorSpy.mock.calls[0][0]).toBe('[@wcstack/state] <wcs-state src="data.txt"> failed to initialize.');
+        expect(errorSpy.mock.calls[0][1]).toBe(reason);
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
   });
 
   it('setInitialStateで状態を注入できること', async () => {

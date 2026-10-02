@@ -75,9 +75,9 @@ export async function loadFromInnerScript(script: HTMLScriptElement, sourceLabel
     // task before deciding, while still listening, so a CSP block is named on every engine. Only the
     // failure path waits
     await new Promise((resolve) => setTimeout(resolve));
-    // 呼び出し元（State._initialize / _initializeDCC）が raiseError で
-    // `[@wcstack/state]` を付けるため、ここでは prefix を重ねない。
-    throw new Error(describeImportFailure(sourceLabel, e, cspBlocked), { cause: e });
+    // The callers pass this error through unwrapped (connectedCallbackPromise rejects with it),
+    // so it carries the package prefix itself, like the other loaders' errors.
+    throw new Error(`[@wcstack/state] ${describeImportFailure(sourceLabel, e, cspBlocked)}`, { cause: e });
   } finally {
     document.removeEventListener("securitypolicyviolation", onViolation);
   }

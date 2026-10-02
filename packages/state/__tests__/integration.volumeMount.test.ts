@@ -1173,7 +1173,9 @@ describe("volume: $commandTokens / $eventTokens の宣言は warn されるこ�
 });
 
 /**
- * ボリュームのロード失敗（404 / JSON パースエラー / import 失敗）の隔離 — v2 レビューの修理。
+ * ボリュームのロード失敗（json= / state= のパースエラー / import 失敗 / インライン script の失敗）の
+ * 隔離 — v2 レビューの修理。`src="*.json"` の 404 やパースエラーはここに来ない（3.x の例外:
+ * loadFromJsonFile が記録して `{}` を返し、それが接ぎ木される — integration.initFailureDiagnostics.test.ts）。
  * 旧挙動: _loadStateFromSource の throw で _resolveInitialize / _resolveLoading /
  * _resolveConnectedCallback が未解決のまま残り、waitForStateInitialize（全 <wcs-state> の
  * initializePromise を Promise.all で待つ）がページ全体を無言でウェッジ。さらに
@@ -1204,6 +1206,11 @@ describe("volume: ロード失敗の隔離", () => {
 
       // 隔離レポートは出る（無言にしない）
       expect(error.mock.calls.some((c) => c.some((a) => String(a).includes('volume "broken" failed to load')))).toBe(true);
+      // The report carries the loader's error as thrown: JSON.parse's SyntaxError, not a wrapper
+      // (was: a new "Failed to initialize state: SyntaxError: …" Error)
+      const report = error.mock.calls.find((c) => String(c[0]).includes('volume "broken" failed to load'))!;
+      expect(report[1]).toBeInstanceOf(SyntaxError);
+      expect((report[1] as Error).message).not.toMatch(/Failed to initialize state/);
       // ページの他のバインディングは生きている
       expect((shadowRoot.querySelector("#count") as HTMLElement).textContent).toBe("1");
       // 接ぎ木は載っていない（枠の持ち主は手放すが、読みの寛容は残る — 読みは undefined で騒がない）
