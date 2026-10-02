@@ -1,10 +1,11 @@
 import { GuardData, IRoute, IRouteMatchResult, IRouter } from "./components/types";
 import { hideRoute } from "./hideRoute";
-import { showRoute } from "./showRoute";
+import { assignRouteParams, placeRoute } from "./showRoute";
 import { GuardCancel } from "./GuardCancel";
 import { runTransition } from "./protocol/transitionRunner";
 import { warnUnboundMarkup } from "./unboundMarkupWarning";
-import { bindSubtree } from "./protocol/binder";
+import { bindSubtree, getBinder } from "./protocol/binder";
+import { ROUTE_RANGE } from "./routeRange";
 
 /**
  * 差し込んだルート内容を binder へ渡す。binder が居なければ、バインドが効かない
@@ -20,7 +21,14 @@ import { bindSubtree } from "./protocol/binder";
 function bindRouteContent(route: IRoute): void {
   for (const node of route.childNodeArray) {
     if (node.nodeType !== 1) continue;
-    if (bindSubtree(node)) continue;
+    if (node.isConnected) {
+      if (bindSubtree(node, ROUTE_RANGE)) continue;
+    } else if (getBinder() !== null) {
+      // Not in the document: the content of a route inside a <wcs-layout> whose template is still
+      // loading. A binder must not take a detached subtree (3.x binds it detached, and its event
+      // bindings fail as disconnected); the layout outlet hands it over once it has placed it.
+      continue;
+    }
     warnUnboundMarkup(
       node as Element,
       `<${(node as Element).tagName.toLowerCase()}> inside a route`,
@@ -110,16 +118,29 @@ export async function showRouteContent(
         hideRoute(route);
       }
     }
-    let force = false;
+    // The routes to show (new ones, ones whose params changed, and every one under the first of
+    // them) get their params first, all of them: putting a parent back moves its children's content
+    // too, and their connectedCallback must already see the new params.
+    const shown: IRoute[] = [];
     for (const route of matchResult.routes) {
-      if (!lastRouteSet.has(route) || route.shouldChange(matchResult.params) || force) {
-        force = showRoute(route, matchResult);
-        // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
-        // document に居るので、そこは binder に渡す必要も報告する必要も無い。
-        // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
-        if (lastRoutes.length > 0 && !lastRouteSet.has(route)) {
-          bindRouteContent(route);
-        }
+      if (shown.length > 0 || !lastRouteSet.has(route) || route.shouldChange(matchResult.params)) {
+        shown.push(route);
+        assignRouteParams(route, matchResult);
+      }
+    }
+    let moved = false;
+    for (const route of shown) {
+      const again = lastRouteSet.has(route);
+      // A route shown again under one shown again was moved along with it: not twice.
+      if (!(again && moved)) {
+        placeRoute(route);
+      }
+      moved ||= again;
+      // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
+      // document に居るので、そこは binder に渡す必要も報告する必要も無い。
+      // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
+      if (lastRoutes.length > 0 && !again) {
+        bindRouteContent(route);
       }
     }
   };

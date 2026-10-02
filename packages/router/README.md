@@ -117,17 +117,23 @@ That's what `<wcs-router>`, `<wcs-route>`, and friends explore. One CDN import, 
 
 Two shapes work since 1.32, and they are not interchangeable. Pick per page, not per project.
 
-**Default: put the content inside `<wcs-route>`.** The router stamps it on entry and removes it on exit. `data-wcs` bindings inside it are bound when it is stamped (the binder protocol), so state-rendered markup — `for:`, `if:`, text — works there like anywhere else. Everything the router offers is keyed to the route body: `<wcs-head>` per route, the `focus="heading"` / `announce=` policies (they look for the heading *in the stamped content*), and a view transition per route swap.
+**Default: put the content inside `<wcs-route>`.** The router stamps it on entry and removes it on exit. `data-wcs` bindings inside it are bound when it is stamped (the binder protocol), so state-rendered markup — `for:`, `if:`, text — works there like anywhere else. Everything the router offers is keyed to the route body: `<wcs-head>` per route, the `focus="heading"` / `announce=` policies (they look for the heading *in the stamped content*), and a view transition per route swap. The router hands state only the route body's elements, so a `{{ }}` in text directly under `<wcs-route>` (not inside an element) is bound only on the landing route, by state's first scan — not when the route is entered by navigation. Wrap such text in an element (`<p>{{ title }}</p>`).
 
 ```html
 <wcs-route path="/products/:productId(int)">
   <wcs-head><title data-wcs="textContent: product.name"></title></wcs-head>
-  <h2 data-wcs="textContent: product.name"></h2>
-  <template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template>
+  <article>
+    <h2 data-wcs="textContent: product.name"></h2>
+    <ul><template data-wcs="for: product.variants"><li data-wcs="textContent: .name"></li></template></ul>
+  </article>
 </wcs-route>
 ```
 
-**Exception: switch it with state (`<template data-wcs="if: …">`) when the DOM must outlive the navigation.** Stamping is a teardown — a route body is rebuilt on every entry — so a `<video>` mid-playback, a half-filled form, a scrolled list, or a `<canvas>` you drew on does not survive leaving and coming back. Keep such content outside the router, bound to a state flag that the router's `routeName` / `typedParams` outputs set, and leave the route element empty (or holding only `<wcs-head>`).
+Put a structural template (`for:` / `if:`) inside an element of the route body, as the `<ul>` above does. One directly under `<wcs-route>` is rendered only by state's first scan of the page — the landing route, when state finishes loading after the router stamped it. A route entered by navigation hands its content to state, and @wcstack/state 3.x does not render a structural template handed over itself: it reports that the binding failed to apply. With 3.x, a top-level element that carries `data-wcs` itself must not come before the element that holds the template either (an `<h2 data-wcs="…">` directly under `<wcs-route>`, followed by the `<ul>`): 3.x binds such an element by walking from its parent, which reaches the later template before it is set up, and reports the same failure on navigation. Wrapping the body in one element, as the `<article>` above does, avoids both.
+
+The router marks where a stamped route body ends with a comment, `<!--@@wcs-route-end:<path>-->` (the same marker SSR uses), and on exit takes everything from the route's placeholder up to it along — the route's own nodes and whatever was rendered among them since, such as the rows a top-level template rendered on the landing route — and puts it all back on the next entry. A node your own code inserts between those two comments goes and comes back with the route; one you moved out of the route body (a dialog moved to `<body>`) is taken back into it on exit, as before. What comes back is what was taken out: a top-level node your code removed from the route body (a dismissed notice) stays removed on the next entry. The marker is a comment, so `wcs-outlet:empty` is unaffected.
+
+**Exception: switch it with state (`<template data-wcs="if: …">`) when the DOM must stay in the document across the navigation.** Leaving a route removes its body from the document, and entering puts the same nodes back. What the nodes hold survives (a half-filled form keeps its input), but what needs them to stay connected does not: a `<video>` stops playing, a scrolled list loses its scroll position (in Chromium and WebKit), and a component that tears down in `disconnectedCallback` starts over. Keep such content outside the router, bound to a state flag that the router's `routeName` / `typedParams` outputs set, and leave the route element empty (or holding only `<wcs-head>`).
 
 ```html
 <wcs-router data-wcs="routeName: routeName">
@@ -357,6 +363,8 @@ console.log(router.typedParams.userId);  // 123 (number)
 
 Loads a template, inserts children into `<slot>`, and writes to `<wcs-layout-outlet>`. Light DOM supported. External file supported.
 
+With @wcstack/state, the outlet hands the elements it places — and with them the `data-wcs` / `{{ }}` inside elements of the layout template and of the route content in its slots — to state's binder once they are in the page (the template loads asynchronously), so both are bound on the very first navigation into the layout, not only on the landing route. Only elements are handed over: a `{{ }}` in text directly under the layout template (not inside an element) is not bound on a navigation — wrap it in an element, as for a route body (see "Where route content lives"). With `enable-shadow-root`, the template lives in the outlet's shadow root, which the page's state does not bind (the route content in the light DOM is bound).
+
 | Attribute | Description |
 |------|------|
 | `layout` | The id attribute of the template tag used as the template. |
@@ -469,7 +477,7 @@ Elements with the `data-bind` attribute automatically receive matched route para
 </wcs-route>
 ```
 
-For elements that are already defined (built-in elements and custom elements defined before the route renders), parameters are assigned before `connectedCallback` fires. For custom elements that are not yet defined, assignment is deferred until `customElements.whenDefined()` resolves — that happens *after* the upgrade, so the `connectedCallback` run by the upgrade does not see the parameters yet. Read them in the `props` / `states` / attribute setter (or in `attributeChangedCallback`) instead, or make sure the element is defined before the route is rendered (e.g. load its script before `@wcstack/router`).
+For elements that are already defined (built-in elements and custom elements defined before the route renders), parameters are assigned before `connectedCallback` fires. For custom elements that are not yet defined, assignment is deferred until `customElements.whenDefined()` resolves — that happens *after* the upgrade, so the `connectedCallback` run by the upgrade does not see the parameters yet. Read them in the `props` / `states` / attribute setter (or in `attributeChangedCallback`) instead, or make sure the element is defined before the route is rendered (e.g. load its script before `@wcstack/router`). A navigation that changes only a parameter (`/users/1` → `/users/2`) takes the route's content out and puts it back in place, so `connectedCallback` runs again — once, in a nested route too — and sees the new parameters.
 
 ## Configuration
 
