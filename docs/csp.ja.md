@@ -274,7 +274,7 @@ CSP にブロックされた動的 `import()` の rejection は `Failed to fetch
 | 出力 | 意味 |
 |---|---|
 | `... was blocked by Content-Security-Policy` | **CSP 確定**。state／router を読み込む `<script>` にページの nonce を付けるか、`script-src blob:` を足すか、（state のみ）`src=` に逃がす |
-| `Failed to evaluate the inline <script> of state "…"`（state）／`loadGuardHandler: failed to import guard script …`（router） | CSP は観測されなかった。多くは state 定義やガードの構文エラー。元のエラーは、state ではその文面がメッセージに埋め込まれ、router では `cause` に入っている |
+| `Failed to evaluate the inline <script> of state "…"`（state）／`loadGuardHandler: failed to import guard script …`（router） | CSP は観測されなかった。多くは state 定義やガードの構文エラー。元のエラーは、state ではその文面がメッセージに埋め込まれ（3.5 からは `cause` にも入る）、router では `cause` に入っている |
 
 違反が観測できなかった場合に CSP を断定しないのは意図的で、構文エラーを CSP のせいだと誤誘導しないため。
 

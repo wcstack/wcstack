@@ -275,7 +275,7 @@ The rejection from a dynamic `import()` that CSP blocked says only `Failed to fe
 | Output | Meaning |
 |---|---|
 | `... was blocked by Content-Security-Policy` | **CSP confirmed.** Give the page's nonce to the `<script>` that loads state / router, add `script-src blob:`, or (state only) move to `src=` |
-| `Failed to evaluate the inline <script> of state "…"` (state) / `loadGuardHandler: failed to import guard script …` (router) | No violation was observed. Usually a syntax error in the state definition or the guard. State embeds the original error's message in its own; router keeps the original error in `cause` |
+| `Failed to evaluate the inline <script> of state "…"` (state) / `loadGuardHandler: failed to import guard script …` (router) | No violation was observed. Usually a syntax error in the state definition or the guard. State embeds the original error's message in its own (from 3.5 it also keeps the error in `cause`); router keeps the original error in `cause` |
 
 Not asserting CSP when no violation was observed is deliberate: it keeps a syntax error from being misattributed to the policy.
 
