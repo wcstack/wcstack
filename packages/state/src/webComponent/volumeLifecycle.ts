@@ -153,7 +153,10 @@ async function initializeVolume(element: IStateElement, ledger: IVolumeLedger): 
     await Promise.resolve();
     volumeState = await element.loadStateFromSource!();
   } catch (error) {
-    // ロード失敗（404 / JSON パースエラー / import 失敗）は 1 ボリュームに閉じる
+    // A load failure lands here: a `json=` / `state=` parse error, a `src="*.js"` import failure,
+    // an inline-script failure, an unsupported `src` extension. Not a `src="*.json"` 404 or parse
+    // error — loadFromJsonFile logs it and resolves `{}`, which grafts (README, 3.x exception).
+    // ロード失敗は 1 ボリュームに閉じる
     // （graftIsolated と同じ隔離規範 — 接ぎ木は載らず、枠も返す着地）。
     // 未解決のまま投げると waitForStateInitialize が全 <wcs-state> の
     // initializePromise を Promise.all で待つためページ全体が無言でウェッジし、

@@ -20,6 +20,7 @@ import { raiseError } from "../raiseError.js";
 import { optionMustBeNumber, optionsRequired, valueMustBeArray, valueMustBeDate, valueMustBeNumber } from "./errorMessages.js";
 import { FilterFn, FilterWithOptions, FilterWithOptionsFn } from "../filters/types";
 import { builtinFilterAliases } from "../filters/filterAliases";
+import { v4Migration } from "../core/v4MigrationHooks";
 
 function validateNumberString(value: string): boolean {
   if (!value || isNaN(Number(value))) {
@@ -426,6 +427,9 @@ const slice = (options?:string[]): FilterFn<string> => {
  * @returns Filter function that returns substring
  */
 const substr = (options?:string[]): FilterFn<string> => {
+  // 4.0 removes `substr` in favour of `slice` (3.5 notice, D39). The registry caches the resolved
+  // function per argument list, so this factory runs once per distinct use
+  v4Migration?.removed('substr');
   const opt1 = requiredNumberOption(options, 0, 'substr');
   const opt2 = requiredNumberOption(options, 1, 'substr');
   return (value: unknown): string => {

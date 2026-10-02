@@ -1,4 +1,3 @@
-import { raiseError } from "../raiseError";
 import { IState } from "../types";
 
 /**
@@ -20,10 +19,9 @@ export function resolveAgainstDocument(url: string): string {
 }
 
 export async function loadFromScriptFile(url: string): Promise<IState> {
-  try {
-    const module = await import(/* @vite-ignore */ resolveAgainstDocument(url));
-    return module.default || {};
-  } catch (e) {
-    raiseError(`Failed to load script file: ${e}`);
-  }
+  // A failure is not wrapped: the import() rejection (the module could not be fetched or parsed)
+  // or the value the module itself threw propagates as is, and the element rejects
+  // connectedCallbackPromise with that same value. The console report names the src.
+  const module = await import(/* @vite-ignore */ resolveAgainstDocument(url));
+  return module.default || {};
 }

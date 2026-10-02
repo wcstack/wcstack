@@ -28,11 +28,16 @@
  *
  * 載る throw 元は「`_initialize` が投げうるもの全部」— コードから導いてある:
  * `_state` セッタの宣言検証 7 種（$recursion / $commandTokens / $eventTokens / $on /
- * $streams / $listKeys / $watch）、`_loadStateFromSource` の 4 種（src の拡張子・json の
- * パース・内包スクリプト・外部モジュール — 後ろ 3 つは components.State.test.ts 側）、
- * SSR データの merge、`setStateElement` の
+ * $streams / $listKeys / $watch）、`_loadStateFromSource` のロード失敗（src の拡張子・
+ * state= と json= の JSON パース・内包スクリプト・外部モジュール — どれもローダーが投げたものを
+ * 包まずに届ける。実ローダーでの確認はこのファイル、ローダーごとの同一性は
+ * components.State.test.ts のモック側）、SSR データの merge、`setStateElement` の
  * 「1 rootNode 1 ツリー」違反（**別の**要素が 2 本目に来た形 — 同じ要素の再登録は冪等で、
  * ロード中の remove → append は拒否しない）。
+ *
+ * 3.x の例外（README の connectedCallbackPromise の行）: `src="*.json"` の取得・パース失敗と、
+ * JSON script の無い `state="<id>"` は初期化失敗ではない — 記録（console.error / console.warn）
+ * して空の state で始まり、promise は解決する（4.0 は reject）。下の「3.x の例外」describe が固定する。
  *
  * 載**らない**もの: ロード中に剥がされた要素。作者のミスが 1 つも無いので初期化失敗では
  * なく**中断**として扱う（診断も reject も毒化も無し）。第 2 ラウンドはこれを失敗として
@@ -156,10 +161,95 @@ describe("#257 初期化失敗: ソースと SSR merge", () => {
     document.body.appendChild(host);
     const stateEl = shadowRoot.querySelector("wcs-state") as State;
     try {
-      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/Failed to initialize state/);
+      // JSON.parse's SyntaxError itself (was: a new "Failed to initialize state: SyntaxError: …" Error)
+      const reason = await rejection(stateEl.connectedCallbackPromise);
+      expect(reason).toBeInstanceOf(SyntaxError);
+      expect((reason as Error).message).not.toMatch(/Failed to initialize state/);
+      await expect(State.getBindingsReady(shadowRoot)).rejects.toBe(reason);
       await expect(stateEl.initializePromise).resolves.toBeUndefined();
       expect(errorSpy.mock.calls.length).toBe(1);
+      // The context is the header; the original error is the same object after it
+      expect(errorSpy.mock.calls[0][0]).toBe("[@wcstack/state] <wcs-state> failed to initialize.");
+      expect(errorSpy.mock.calls[0][1]).toBe(reason);
     } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+
+  it("内包スクリプトのロード失敗は、ローダーのエラー（prefix と cause 付き）のまま reject すること", async () => {
+    // This environment (vitest reading src/) cannot resolve a blob: dynamic import, so the real
+    // loadFromInnerScript fails to evaluate (the same premise as integration.volumeInlineScript.test.ts)
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const host = document.createElement(uniqueTag("initfail-inline"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state><script type="module">export default { a: 1 };</script></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      const reason = await rejection(stateEl.connectedCallbackPromise);
+      expect(reason).toBeInstanceOf(Error);
+      expect((reason as Error).message).toMatch(/^\[@wcstack\/state\] Failed to evaluate the inline <script> of state "wcs-state"/);
+      expect((reason as Error).cause).toBeDefined();
+      expect(errorSpy.mock.calls.length).toBe(1);
+      expect(errorSpy.mock.calls[0][0]).toBe("[@wcstack/state] <wcs-state> failed to initialize.");
+      expect(errorSpy.mock.calls[0][1]).toBe(reason);
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  }, 20000);
+
+  it("state 属性の JSON script のパース失敗は SyntaxError のまま reject し、見出しが state= を名指すこと", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const id = uniqueTag("initfail-state-json");
+    // loadFromScriptJson looks the id up in the document
+    const script = document.createElement("script");
+    script.type = "application/json";
+    script.id = id;
+    script.textContent = "{bad";
+    document.body.appendChild(script);
+    const host = document.createElement(uniqueTag("initfail-state"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state state="${id}"></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      // Was: a new "Failed to initialize state: Error: [@wcstack/state] Failed to parse JSON from script element:SyntaxError…"
+      const reason = await rejection(stateEl.connectedCallbackPromise);
+      expect(reason).toBeInstanceOf(SyntaxError);
+      await expect(State.getBindingsReady(shadowRoot)).rejects.toBe(reason);
+      expect(errorSpy.mock.calls.length).toBe(1);
+      expect(errorSpy.mock.calls[0][0]).toBe(`[@wcstack/state] <wcs-state state="${id}"> failed to initialize.`);
+      expect(errorSpy.mock.calls[0][1]).toBe(reason);
+    } finally {
+      errorSpy.mockRestore();
+      host.remove();
+      script.remove();
+    }
+  });
+
+  it("src 属性（.js）のモジュールが投げた値は同一オブジェクトで reject し、見出しが src= を名指すこと", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const probe = new RangeError("thrown while the state module evaluated");
+    (globalThis as any).__wcsInitProbe = probe;
+    // The trailing comment makes the attribute end in ".js" (the src check), and the module throws the probe
+    const src = `data:text/javascript,${encodeURIComponent("throw globalThis.__wcsInitProbe; //.js")}`;
+    const host = document.createElement(uniqueTag("initfail-src-js"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    const stateEl = document.createElement("wcs-state") as State;
+    stateEl.setAttribute("src", src);
+    shadowRoot.appendChild(stateEl);
+    document.body.appendChild(host);
+    try {
+      // Was: a new "Failed to initialize state: Error: [@wcstack/state] Failed to load script file: RangeError…"
+      await expect(stateEl.connectedCallbackPromise).rejects.toBe(probe);
+      await expect(State.getBindingsReady(shadowRoot)).rejects.toBe(probe);
+      expect(errorSpy.mock.calls.length).toBe(1);
+      expect(errorSpy.mock.calls[0][0]).toBe(`[@wcstack/state] <wcs-state src="${src}"> failed to initialize.`);
+      expect(errorSpy.mock.calls[0][1]).toBe(probe);
+    } finally {
+      delete (globalThis as any).__wcsInitProbe;
       errorSpy.mockRestore();
       host.remove();
     }
@@ -187,6 +277,118 @@ describe("#257 初期化失敗: ソースと SSR merge", () => {
       expect(errorSpy.mock.calls.length).toBe(1);
     } finally {
       errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+});
+
+// The two 3.x exceptions the README states next to connectedCallbackPromise: a source that does not
+// fail. Kept as they are in a minor (no resolve → reject change); 4.0 rejects both. Real loaders.
+describe("3.x の例外: 失敗として扱わないソース（記録して空の state で始まる）", () => {
+  it("src=\"*.json\" の HTTP エラーは URL とステータスを記録し、ルートは空の state で解決すること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, statusText: "Not Found", json: async () => ({}) }));
+    const host = document.createElement(uniqueTag("swallow-json"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state src="./missing-state.json"></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      expect(await settle(stateEl.connectedCallbackPromise)).toBe("resolved");
+      await expect(State.getBindingsReady(shadowRoot)).resolves.toBeUndefined();
+      expect(stateEl.initialized).toBe(true);
+      let keys: string[] = ["sentinel"];
+      stateEl.createState("readonly", (s: any) => { keys = Object.keys(s); });
+      expect(keys).toEqual([]);
+      // One record from the loader, none from the element ("failed to initialize")
+      expect(errorSpy.mock.calls).toEqual([[
+        '[@wcstack/state] Failed to load JSON file "./missing-state.json", so the state starts empty (4.0 rejects instead):',
+        "HTTP 404 Not Found",
+      ]]);
+    } finally {
+      vi.unstubAllGlobals();
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+
+  it("src=\"*.json\" のボリュームは取得に失敗しても空の state を接ぎ木し、自分の失敗は報告しないこと", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const networkError = new TypeError("Failed to fetch");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(networkError));
+    const host = document.createElement(uniqueTag("swallow-json-vol"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<wcs-state json='{"count":1}'></wcs-state>` +
+      `<wcs-state mount="cfg" src="./cfg.json"></wcs-state>`;
+    document.body.appendChild(host);
+    const rootElement = shadowRoot.querySelector("wcs-state:not([mount])") as State;
+    const volumeElement = shadowRoot.querySelector("wcs-state[mount]") as State;
+    try {
+      expect(await settle(volumeElement.connectedCallbackPromise)).toBe("resolved");
+      expect(await settle(rootElement.connectedCallbackPromise)).toBe("resolved");
+      await State.getBindingsReady(shadowRoot);
+      let cfg: unknown;
+      rootElement.createState("readonly", (s: any) => { cfg = s.cfg; });
+      expect(cfg).toEqual({});
+      expect(errorSpy.mock.calls.length).toBe(1);
+      expect(errorSpy.mock.calls[0][0]).toContain('"./cfg.json"');
+      expect(errorSpy.mock.calls[0][1]).toBe(networkError);
+      expect(errorSpy.mock.calls.some((c) => String(c[0]).includes("failed to load"))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+
+  it("JSON script の無い state=\"<id>\" は id を名指しで 1 回 warn し、空の state で解決すること", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const id = uniqueTag("missing-state-id");
+    const host = document.createElement(uniqueTag("swallow-state"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML = `<wcs-state state="${id}"></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      expect(await settle(stateEl.connectedCallbackPromise)).toBe("resolved");
+      expect(stateEl.initialized).toBe(true);
+      expect(warnSpy.mock.calls).toEqual([[
+        `[@wcstack/state] state="${id}": no <script type="application/json" id="${id}"> in the document (3.x does not look inside shadow roots), so the state starts empty.`,
+      ]]);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+      host.remove();
+    }
+  });
+});
+
+describe("3.x の例外: state= は document だけを探すこと", () => {
+  it("shadow root の中の JSON script は見つからず、document を探したと warn して空の state で解決すること", async () => {
+    // mount(..., { root: "shadow" }) in @wcstack/testing puts the page in a shadow root like this.
+    // 4.0 searches the element's own root first and finds the script; 3.x keeps its lookup
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const id = uniqueTag("shadow-state-id");
+    const host = document.createElement(uniqueTag("shadow-state"));
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    shadowRoot.innerHTML =
+      `<script type="application/json" id="${id}">{"count":1}</script>` +
+      `<wcs-state state="${id}"></wcs-state>`;
+    document.body.appendChild(host);
+    const stateEl = shadowRoot.querySelector("wcs-state") as State;
+    try {
+      expect(await settle(stateEl.connectedCallbackPromise)).toBe("resolved");
+      let keys: string[] = ["sentinel"];
+      stateEl.createState("readonly", (s: any) => { keys = Object.keys(s); });
+      expect(keys).toEqual([]);
+      expect(warnSpy.mock.calls).toEqual([[
+        `[@wcstack/state] state="${id}": no <script type="application/json" id="${id}"> in the document (3.x does not look inside shadow roots), so the state starts empty.`,
+      ]]);
+    } finally {
+      warnSpy.mockRestore();
       host.remove();
     }
   });
@@ -388,7 +590,7 @@ describe("#257 初期化失敗: 同居するボリューム", () => {
     const volumeElement = shadowRoot.querySelector("wcs-state[mount]") as State;
     const rootElement = shadowRoot.querySelector("wcs-state:not([mount])") as State;
     try {
-      await expect(rootElement.connectedCallbackPromise).rejects.toThrow(/Failed to initialize state/);
+      await expect(rootElement.connectedCallbackPromise).rejects.toThrow(SyntaxError);
       expect(errorSpy.mock.calls.length).toBe(1);
       // ボリュームのロードのほうが遅い形（保留に積もうとした時点でルートは既に失敗済み）
       volumeElement.setInitialState({ lang: "en" });
@@ -414,7 +616,7 @@ describe("#257 初期化失敗: 同居するボリューム", () => {
     document.body.appendChild(host);
     const brokenRoot = shadowRoot.querySelector("wcs-state") as State;
     try {
-      await expect(brokenRoot.connectedCallbackPromise).rejects.toThrow(/Failed to initialize state/);
+      await expect(brokenRoot.connectedCallbackPromise).rejects.toThrow(SyntaxError);
       expect(errorSpy.mock.calls.length).toBe(1);
       // 作者の復旧操作: 壊れたルートを取り除く
       brokenRoot.remove();
@@ -708,9 +910,14 @@ describe("#257 初期化失敗: _initialize より前の raise（bind-component 
     document.body.appendChild(host);
     const stateEl = shadowRoot.querySelector("wcs-state") as State;
     try {
-      await expect(stateEl.connectedCallbackPromise).rejects.toThrow(/DCC: No state source found/);
+      // The DCC load path does not wrap either (was: "DCC: Failed to load state: Error: [@wcstack/state] DCC: No state source …")
+      const reason = await rejection(stateEl.connectedCallbackPromise);
+      expect((reason as Error).message).toBe('[@wcstack/state] DCC: No state source found for "' + host.localName + '".');
       await expect(stateEl.initializePromise).resolves.toBeUndefined();
       expect(errorSpy.mock.calls.length).toBe(1);
+      expect(errorSpy.mock.calls[0][0]).toBe("[@wcstack/state] <wcs-state> failed to initialize.");
+      expect(errorSpy.mock.calls[0][1]).toBe(reason);
+      await expect(State.getBindingsReady(shadowRoot)).rejects.toBe(reason);
     } finally {
       errorSpy.mockRestore();
       host.remove();

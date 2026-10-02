@@ -9,6 +9,7 @@
 import { STATE_STREAM_NAME, STATE_RENDERED_CALLBACK_NAME } from "./define";
 import { LINT_HINT } from "./errorGuidance";
 import { raiseError } from "./raiseError";
+import { v4Migration } from "./core/v4MigrationHooks";
 
 export const DECLARATION_ALIASES: Readonly<Record<string, string>> = {
   $updatedCallback: STATE_RENDERED_CALLBACK_NAME,
@@ -43,6 +44,10 @@ export function normalizeDeclarationAliases(state: object): void {
   if (normalizedStates.has(state)) {
     return;
   }
+  // 4.0 migration notices (3.5, D39): declaration keys 4.0 removes (old names, `$scan`) and 4.0's
+  // `$behavior` / `$features`. Once per state object, before the old names are rewritten. Only the
+  // full entries place the receptacle
+  v4Migration?.state(state);
   for (const alias of Object.keys(DECLARATION_ALIASES)) {
     if (!(alias in state)) {
       continue;
