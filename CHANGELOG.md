@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [3.5.1] — 2026-10-03
+
+**3.5.1 fixes two binder bugs in `@wcstack/state` that 3.5.0 left in route content handed over by `@wcstack/router`.** A structural template after an element that binds on itself was never rendered in a route entered by navigation ([#409](https://github.com/wcstack/wcstack/issues/409), the known issue of 3.5.0 — wrapping the route body is no longer needed), and a row's `if:` failed after the route content was handed over again on re-entry ([#414](https://github.com/wcstack/wcstack/issues/414)). No API changes; the split `/core` grows by 37 B gzip.
+
 ### Fixed
 
 - `@wcstack/state`: **a structural template after an element that binds on itself now renders in content handed over by the router** ([#409](https://github.com/wcstack/wcstack/issues/409)). When the root of a handed-over subtree carried `data-wcs` itself, the binder walked from its parent and reached the root's later siblings: a sibling's `<template data-wcs="for: …">` / `if: …`, not yet collected, was registered as a plain binding, reported `binding "for: …" failed to apply`, and was never rendered, even on re-entry. It happened in a route entered by navigation, in a route the router placed after state had built its bindings, and in the light DOM of a shadow-root `<wcs-layout>`. The binder now binds only inside the subtree it was handed, its root included, so siblings nobody handed over are no longer bound either. A Light DOM mount handed over as the root leaves its inside to the component's own scope (its structural templates failed the same way), and a subtree that is not in the document, when handed over or by the time a held one is bound, is skipped. Wrapping the route body in one element is no longer needed for this; a structural template handed over as the root itself is still not rendered by 3.x.
@@ -594,7 +598,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.0...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.1...HEAD
+[3.5.1]: https://github.com/wcstack/wcstack/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/wcstack/wcstack/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/wcstack/wcstack/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/wcstack/wcstack/compare/v3.2.0...v3.3.0
