@@ -271,6 +271,13 @@ export class WcsState extends HTMLElementBase {
       const state = await this.loadState();
       const loading = loadFeatures(state);
       if (loading) await loading;
+      // taken out of its root while it loaded (the page's content replaced): nothing is mounted on the
+      // root it left — it starts again, with this state, when it connects again
+      if (this.getRootNode() !== root) {
+        this.initial = state;
+        this.started = false;
+        return;
+      }
       if (this.hasAttribute("enable-ssr")) requireFeature("ssr", "enable-ssr");
       // one state tree per root: another <wcs-state> already bound this root (and still does —
       // whatever its $connectedCallback did then), or a component's took it

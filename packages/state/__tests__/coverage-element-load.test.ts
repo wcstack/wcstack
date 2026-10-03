@@ -84,12 +84,18 @@ describe("state 属性（JSON の <script> の id）", () => {
     }
   });
 
-  it("読み込む前に要素が外されても document から探し、要素のあった根に束ねる（外したときには何も呼ばない）", async () => {
+  it("読み込む前に要素が外されても document から探す。外した根には束ねず、戻されたらその根に束ねる（外したときには何も呼ばない）", async () => {
     document.body.insertAdjacentHTML("beforeend", `<script type="application/json" id="cov-detached">{"msg":"detached"}</script>`);
     try {
       const { root, el } = mountHost(`<wcs-state state="cov-detached"></wcs-state><p>{{ msg }}</p>`);
       // the load reads its source a microtask later: by then the element has no root to search
       el.remove();
+      await new Promise((r) => setTimeout(r, 0));
+      // loaded, but out of the root it was in: nothing is mounted there
+      expect(el.engine).toBeNull();
+      expect(text(root)).toBe("{{ msg }}");
+      // back in its root: it starts again and binds it
+      root.prepend(el);
       await el.connectedCallbackPromise;
       await getBindingsReady(root);
       expect(text(root)).toBe("detached");

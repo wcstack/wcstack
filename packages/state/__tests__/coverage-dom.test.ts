@@ -669,3 +669,37 @@ describe("取り除かれた根（binder プロトコル）", () => {
     document.body.innerHTML = "";
   });
 });
+
+describe("読み込み中に取り除かれた根", () => {
+  it("状態が後から来ても取り除かれたページの根には束ねず（新しいページの根が束ねる）、再び接続されたらその状態で始まる", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // the old page's root waits for its state
+      document.body.innerHTML = `<wcs-state></wcs-state>`;
+      const old = document.body.querySelector("wcs-state") as any;
+      await flush();
+      document.body.innerHTML = `<wcs-state json='{"msg": "new"}'></wcs-state><p>{{ msg }}</p>`;
+      const rootEl = document.body.querySelector("wcs-state") as any;
+      // its state comes now, while it is out of the page
+      old.setInitialState({ msg: "old" });
+      await rootEl.connectedCallbackPromise;
+      await getBindingsReady(document);
+      await flush();
+      expect(document.body.querySelector("p")!.textContent).toBe("new");
+      expect(old.engine).toBeNull();
+      expect(error).not.toHaveBeenCalled();
+      // connected again (here, in a shadow root): it starts, with the state it was given
+      const h = document.createElement(`cov-dom-late-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<p>{{ msg }}</p>`;
+      root.prepend(old);
+      document.body.appendChild(h);
+      await old.connectedCallbackPromise;
+      expect(root.querySelector("p")!.textContent).toBe("old");
+      expect(document.body.querySelector("p")!.textContent).toBe("new");
+    } finally {
+      error.mockRestore();
+      document.body.innerHTML = "";
+    }
+  });
+});
