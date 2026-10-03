@@ -9,9 +9,11 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ## [Unreleased]
 
 <!--
-  Draft of the 4.0.0 entry. Release prep renames this heading to `## [4.0.0] — <date>` (or to
-  the rc version for a 4.0.0-rc.N on npm's `next` tag), opens a new empty `## [Unreleased]` above
-  it, and re-measures the sizes and the benchmark below. Sizes: gzip level 9, `npm run build` in
+  Draft of the 4.0.0 entry. It stays under [Unreleased] for the whole rc series: an rc
+  (4.0.0-rc.N on npm's `next` tag) gets no heading of its own — its GitHub Release points here —
+  and what an rc changes is edited into this draft. Only the final release renames this heading
+  to `## [4.0.0] — <date>`, opens a new empty `## [Unreleased]` above it, and re-measures the
+  sizes and the benchmark below. Sizes: gzip level 9, `npm run build` in
   packages/state-next at cb21670e, against the committed 3.5.4 dist of packages/state. The
   benchmark figures are the last recorded ones (v4-remaining §0), not re-run for this draft.
   Still to record at release: `wcstack/auto`'s size, and the state size gates rebuilt for the
@@ -20,7 +22,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 **4.0 replaces the engine inside `@wcstack/state` with a rewritten one — a smaller core and faster updates behind the same markup, `$` APIs and package entries.** It removes what 3.2 renamed and what 3.5 warned about (`$scan`, the old names, `substr`, three `bootstrapState()` options), moves three more options into each state's `$behavior`, and delegates the common `on*:` events to the root. Every published package moves to 4.0.0, and every package's `bootstrapXxx(config)` now throws on an option it does not have instead of ignoring it. Upgrade to 3.5 first and clear its warnings, then follow the [3.x → 4.0 migration guide](./docs/migration-v4.md); deploy `@wcstack/server` 4.0 together with the 4.0 client. Known limitations are in the guide's [§5](./docs/migration-v4.md#5-known-limitations-of-the-preview-not-final).
 
-Size (gzip, 3.5.4 → 4.0): `auto.min.js` 88,005 → 45,710 B (−48 %), `index.esm.js` 90,932 → 48,781 B (−46 %), the split `/core` with its chunks 59,334 → 23,565 B (−60 %); the core alone (`dist/core.min.js`, not an entry) is 19,434 B against its 20,000 B target. Speed: on the official js-framework-benchmark the CPU-weighted geometric mean is 1.08–1.11 (3.3.0: 1.51; `@wcstack/signals`: 1.21–1.25).
+Size (gzip, 3.5.4 → 4.0): `auto.min.js` 88,005 → 45,710 B (−48 %), `index.esm.js` 90,932 → 48,781 B (−46 %), the split `/core` with its chunks 59,334 → 23,565 B (−60 %); the core alone (`dist/core.min.js`, built for the size gate and not published) is 19,434 B against its 20,000 B target. Speed: on the official js-framework-benchmark the CPU-weighted geometric mean is 1.08–1.11 (3.3.0: 1.51; `@wcstack/signals`: 1.21–1.25).
 
 ### Removed
 
@@ -30,6 +32,7 @@ Size (gzip, 3.5.4 → 4.0): `auto.min.js` 88,005 → 45,710 B (−48 %), `index.
 - `@wcstack/state`: **the `bootstrapState()` options `debug`, `commentTextPrefix` and `enablePropagationContext`**; passing one throws (#44). Comment bindings keep the default keyword (`<!--@@: path-->`, `<!--@@wcs-text: path-->`).
 - `@wcstack/state`: `IStateElement.listPaths` / `getterPaths` / `setterPaths` / `nextVersion()`, the internal static methods of `Ssr`, and `uuid` in `/parser` results ([guide §3.7](./docs/migration-v4.md#37-public-api-javascript--typescript)).
 - `@wcstack/autoloader`: **`scanImportmap`**, which nothing ever read; passing it throws.
+- `@wcstack/state`: **source maps.** The package publishes no `.map` files; 3.5.4 shipped 24 beside its bundles (6.7 MB of its 8.4 MB unpacked). The 4.0 bundles are minified with shortened internal names, so a stack trace points into them; debug the engine from `packages/state/src` in the repository.
 
 ### Changed
 

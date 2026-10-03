@@ -1,6 +1,11 @@
-// Usage from e2e/: node bench/replace1k-compare.mjs --before de487346 --after 4abb5ed9
+// Usage from e2e/: node bench/replace1k-compare.mjs --before <rev> [--after <rev, default HEAD>]
 // Rebuild both sources with shared dependencies. Alternate AB / BA session pairs.
 // Each session uses a fresh Chromium process. Measure DOM completion, not paint.
+//
+// Both revisions must build the way the checked-out packages/state does (its node_modules is
+// shared and the build commands are compared): two 4.0 revisions here (`node build.mjs`, esbuild +
+// terser), two 3.x revisions (`tsc` + Rollup) from a 3.x checkout such as main — the comparison
+// in docs/state-overlay-export-design.md (`--before de487346 --after 4abb5ed9`) is one of those.
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
@@ -31,9 +36,17 @@ const out = resolve(arg("out", resolve(root, "e2e/bench/results/replace1k-source
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 const git = (...gitArgs) => execFileSync("git", gitArgs, { cwd: root, windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
 const revisions = Object.fromEntries(["before", "after"].map((label) => {
-  const requested = arg(label, label === "before" ? "de487346" : "HEAD");
+  const requested = arg(label, label === "before" ? undefined : "HEAD");
+  if (requested === undefined) throw new Error("--before <rev> is required (see the header)");
   return [label, git("rev-parse", "--verify", `${requested}^{commit}`).toString().trim()];
 }));
+/**
+ * What a revision's build reads under packages/state: 3.x builds with tsc + Rollup
+ * (`rollup.config.js`), 4.0 with esbuild + terser (`build.mjs`, `mangle.mjs`, `minify.mjs`).
+ */
+const BUILD_INPUTS = ["src", "package.json", "tsconfig.json", "scripts", "rollup.config.js", "build.mjs", "mangle.mjs", "minify.mjs"];
+const buildInputs = (revision) => BUILD_INPUTS.map((f) => `packages/state/${f}`)
+  .filter((path) => git("ls-tree", "--name-only", revision, "--", path).toString().trim() !== "");
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = sorted.length >> 1;
@@ -47,13 +60,16 @@ function summarize(values) {
 function version(name, base) {
   return createRequire(resolve(base, "package.json"))(`${name}/package.json`).version;
 }
+/** A dependency only one engine's build has (esbuild: 4.0), or null. */
+function optionalVersion(name, base) {
+  try { return version(name, base); } catch { return null; }
+}
 
 async function build(label, work) {
   const snapshot = resolve(work, label);
   await mkdir(snapshot);
   const archive = resolve(work, `${label}.tar`);
-  await writeFile(archive, git("archive", revisions[label], "tsconfig.json", "packages/state/src",
-    "packages/state/package.json", "packages/state/tsconfig.json", "packages/state/rollup.config.js", "packages/state/scripts"));
+  await writeFile(archive, git("archive", revisions[label], "tsconfig.json", ...buildInputs(revisions[label])));
   execFileSync("tar", ["-xf", archive, "-C", snapshot], { windowsHide: true });
   const cwd = resolve(snapshot, "packages/state");
   const pkg = JSON.parse(await readFile(resolve(cwd, "package.json"), "utf8"));
@@ -203,7 +219,7 @@ try {
   const environment = {
     node: process.version, platform: process.platform, release: os.release(), arch: process.arch,
     cpu: os.cpus()[0].model, logicalCpus: os.cpus().length,
-    typescript: version("typescript", stateDir), rollup: version("rollup", stateDir),
+    typescript: version("typescript", stateDir), rollup: version("rollup", stateDir), esbuild: optionalVersion("esbuild", stateDir),
     terser: version("terser", stateDir), playwright: version("@playwright/test", resolve(root, "e2e")),
     packageLockSha256: hash(await readFile(resolve(stateDir, "package-lock.json"))),
   };

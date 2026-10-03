@@ -513,6 +513,7 @@ export default {
 - `features/diagnostics` を入れない `/core` では、メッセージが番号になります（§2）。開発中は `diagnostics` を入れてください。
 - 3.x と同じく、`installFeatures([...])` は `bootstrapState()` の前に呼びます。機能を入れる前に、その機能のキーを宣言した状態が定義されると、`[wcs/feature-not-installed]` で失敗します。
 - `dist/split/chunks/` の下のファイル名に、中身のハッシュが付くようになりました。チャンクのファイルを自分で並べている場合（preload のリンク、import map の `integrity`）は、4.0 のビルドから名前を取り直してください。
+- パッケージにソースマップ（`.map`）は入りません（3.5.4 は各バンドルの隣にありました）。スタックトレースは最小化したバンドルを指します。エンジンの中を追うときは、リポジトリのソース（`packages/state/src`）を使ってください。
 
 4.0 で増えたもの（使わなくてもかまいません）:
 

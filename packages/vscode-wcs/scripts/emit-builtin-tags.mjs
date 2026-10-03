@@ -55,6 +55,11 @@ const packagesRoot = path.resolve(here, "../..");
 const SKIP = new Set([
   "state", "router", "signals", "autoloader", "devtools", "server",
   "poc-visual-editor", "vscode-wcs",
+  // 4.0 エンジンの開発中の名前。R1 の差し替えで packages/state に移り、リポジトリには無い。
+  // ただ dist はコミットしていなかった（packages/state-next/.gitignore）ので、差し替えより前に
+  // ビルドしたチェックアウトには packages/state-next/dist/auto.min.js が git の外に残る。
+  // 読むとカタログに wcs-state・wcs-ssr が package: "state-next" で混ざり、--check が落ちる。
+  "state-next",
   // エントリバンドル（SPA コア 5 パッケージの auto を丸ごと内包）。import すると
   // メンバーの全タグを再捕捉して catalog の package: を "wcstack" に上書きしてしまう
   // （正本は各メンバー側）。docs/distribution-robustness-impl-plan.md D8。
