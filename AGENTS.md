@@ -2,7 +2,7 @@
 
 Guidance for AI coding agents working in this repository. (Claude Code users: [CLAUDE.md](./CLAUDE.md) is the more detailed, tool-specific guide; this file is the vendor-neutral summary.)
 
-**wcstack** (Web Components Stack) is a monorepo of focused, zero-dependency TypeScript packages for building Web Components-based SPAs — standards-first (Custom Elements, Shadow DOM, ES Modules, Import Maps), zero-config, buildless. Project site: **https://wcstack.github.io**
+**wcstack** (Web Components Stack) is a monorepo of focused TypeScript packages for building Web Components-based SPAs — standards-first (Custom Elements, Shadow DOM, ES Modules, Import Maps), zero-config, buildless, with zero runtime dependencies (except `@wcstack/server`, which depends on `@wcstack/state` and `happy-dom`). Project site: **https://wcstack.github.io**
 
 ## Building an app WITH wcstack?
 
@@ -23,35 +23,39 @@ If your task is to generate an application that *uses* wcstack (rather than modi
 
 ### Layout & commands
 
-- Each package under `packages/` is independent — **there is no root `package.json`**. Run commands inside a package directory:
+- Each package under `packages/` is built and tested on its own — **there is no root `package.json`**. Run commands inside a package directory:
   ```bash
   npm run build          # rimraf dist .tsc-out → tsc → rollup
-  npm test               # vitest run (happy-dom environment)
-  npm run test:coverage  # enforces ~100/97/100/100 thresholds
+  npm test               # vitest run
+  npm run test:coverage  # enforces the package's coverage thresholds
   npm run lint           # eslint on src/
   npx vitest run __tests__/someFile.test.ts   # single test file
   ```
-- All packages are ESM only (`"type": "module"`). Published packages share one version, bumped in lockstep by the release workflow.
-- Tests live in `__tests__/` per package; test descriptions are written in Japanese. Code, comments, and commit messages are in English. User-facing docs come in `README.md` / `README.ja.md` pairs — update both.
+- Exceptions: `packages/lint` has no source (its build copies the vscode-wcs CLI bundle, `test` is a smoke test); `packages/vscode-wcs` builds with esbuild and has no `lint`; `state`, `typescript` and `testing` add steps to the build (CLAUDE.md → Build Pipeline). Tests run under happy-dom, except `server`, `typescript` and `vscode-wcs` (Node).
+- Coverage thresholds are set per package in `vitest.config.ts` (statements / branches / functions / lines): 100/100/100/100 or 100/97/100/100 for most, `state` 99.5/98.5/100/99.5, `testing` / `typescript` 95/90/95/95, none in `server` / `vscode-wcs`.
+- All packages are ESM only (`"type": "module"`). Published packages share one version, bumped in lockstep by the release workflow; `vscode-wcs` is versioned separately.
+- Tests live in `__tests__/` per package; test descriptions are written in Japanese. Code and commit messages are in English; source comments are mixed English / Japanese — follow the surrounding file. User-facing docs come in `README.md` / `README.ja.md` pairs — update both (the unscoped `wcstack` package has an English README only).
 
 ### Things that bite
 
-- **Generated files**: `rollup.config.js`, `eslint.config.js`, `src/protocol/wcBindable.ts`, and IO-core copies are synced from single sources by `scripts/sync-*.mjs`. Never edit the copies; edit the template/source and run the sync script (CI fails on drift). The AI-agents banner directly below each published package README's H1 is likewise managed — its text lives in `scripts/sync-readme-agents-banner.mjs`; edit the rest of the README freely, but change that one line only via the script (`node scripts/sync-readme-agents-banner.mjs`).
-- **CI validates all HTML**: the `wcs-validate` CI job runs the static-contract validator over every `*.html` / `*.manifest.json` in `examples/` and `packages/` and fails on error-severity findings. Do not commit intentionally-broken fixtures — generate them in a temp dir at test runtime.
-- **The `@wcstack/state` size gates have little headroom in places.** `scripts/check-state-size.mjs --check` allows 3 % over `scripts/state-size-baseline.json`, and `scripts/check-state-split.mjs --check` allows 3 % per feature over `scripts/state-split-baseline.json`, plus an entry's optional `slack` in bytes (kept across `--update`; `features/ssr.js` has 1 KB). On main after the 3.3.0 issue fixes (#325–#329) the split core sits at 59,333 B gzip against 61,113 B (about 1.8 KB, re-recorded at 3.5.2), `auto.min.js` and `index.esm.js` have about 3 %, and `features/scopes.js` is 15,197 B with 3 % plus its 512 B slack; CLAUDE.md keeps the current numbers. Re-record with `--update` on both scripts as part of the release, and treat a failure before then as a real signal, not as a stale baseline.
-- **`vscode-wcs` reads `@wcstack/state`'s *committed* `dist`**, through a `file:../state` symlink. `packages/state/dist` is only rebuilt at release, so a parser change in `packages/state/src` does not reach the extension, the `wcs-validate` CLI, or the vsix until someone runs `npm run build` in `packages/state`. Until then the extension silently behaves like the old parser: `wcs/binding-syntax` diagnostics go missing, and `wiringLens` features (hover, go-to-definition, find-references, inlay hints) plus `bindingSyntaxValidator` go quiet on the affected forms. **Before packaging or publishing the extension, build `packages/state` first** — and re-run the vscode-wcs tests then, because fresh diagnostics can change existing expectations. (CI is safe: `release.yml` and the `wcs-validate` job both build `@wcstack/state` first.)
-- **Protocols are the heart of the project**: `wc-bindable-protocol`, `command-token`, and `event-token` (see `docs/` and per-package READMEs — the normative references) must not be changed casually. Component packages follow a Core (framework-agnostic logic) / Shell (custom element) split.
+- **Generated files** are synced from single sources by `scripts/sync-*.mjs`: from `/protocol`, each package's `src/protocol/*` copies (`wcBindable.ts`, `wcBindableReader.ts`, `upgradeProperties.ts`, `transitionRunner.ts`, `binder.ts`, `ssrSnapshot.ts`) and `__tests__/protocol.upgradeProperties.test.ts`; from `/io-core`, the `src/core/operationLane.ts` / `platformCapability.ts` copies; from `/config-templates`, each `@wcstack/*` package's `rollup.config.js` / `eslint.config.js` (except the hand-written ones registered in `DEVIATIONS` in `scripts/sync-package-configs.mjs`; `packages/wcstack` keeps a hand-maintained copy and `packages/vscode-wcs` is outside the sync). Never edit the copies; edit the source and run the sync script (CI fails on drift). `packages/vscode-wcs/src/service/generated/builtinTags.generated.ts` and `packages/vscode-wcs/wcs.html-data.json` are generated too, from the committed dists, by `packages/vscode-wcs/scripts/emit-builtin-tags.mjs` (CI runs `--check`). The AI-agents banner directly below each `@wcstack/*` package README's H1 is likewise managed — its text lives in `scripts/sync-readme-agents-banner.mjs`; edit the rest of the README freely, but change that one line only via the script (`node scripts/sync-readme-agents-banner.mjs`).
+- **CI validates all HTML**: the `wcs-validate` CI job runs the static-contract validator over every `*.html` / `*.manifest.json` in `examples/` and `packages/` (skipping `node_modules`, `dist`, `coverage`, `.tsc-out` and `test-fixture` directories) and fails on error-severity findings. Do not commit intentionally-broken fixtures — generate them in a temp dir at test runtime. The one exception is `packages/vscode-wcs/test-fixture/`, which holds pages broken on purpose for opening by hand in the extension.
+- **The `@wcstack/state` size gates have little headroom in places.** `scripts/check-state-size.mjs --check` allows 3 % over `scripts/state-size-baseline.json`, and `scripts/check-state-split.mjs --check` allows 3 % per feature over `scripts/state-split-baseline.json`, plus an entry's optional `slack` in bytes (kept across `--update`; `features/ssr.js` has 1 KB); the split check also fails a feature entry that carries core code or another feature's code. At the 3.5.2 baselines the split core sits at 59,333 B gzip against 61,113 B (about 1.8 KB), `auto.min.js` and `index.esm.js` have about 3 %, and `features/scopes.js` is 15,197 B with 3 % plus its 512 B slack; CLAUDE.md keeps the current numbers and the two extra CI gates (core / feature coupling, `defineState`-only import size). Re-record with `--update` on both scripts as part of the release, and treat a failure before then as a real signal, not as a stale baseline.
+- **`vscode-wcs` reads `@wcstack/state`'s *committed* `dist`**, through a `file:../state` symlink. Every published package's `dist` is committed but only rebuilt at release, so a parser change in `packages/state/src` does not reach the extension, the `wcs-validate` CLI, `@wcstack/typescript`'s `schema-core.cjs` / `tsc-core.cjs`, or the vsix until someone runs `npm run build` in `packages/state`. Until then the extension silently behaves like the old parser: `wcs/binding-syntax` diagnostics go missing, and `wiringLens` features (hover, go-to-definition, find-references, inlay hints) plus `bindingSyntaxValidator` go quiet on the affected forms. **Before packaging or publishing the extension, build `packages/state` first** — and re-run the vscode-wcs tests then, because fresh diagnostics can change existing expectations. (CI is safe: `release.yml` and the `wcs-validate` job both build `@wcstack/state` first.) Conversely, `npm run build` in `packages/testing` rebuilds `state`, `router` and `server` in place and dirties their committed `dist`.
+- **Protocols are the heart of the project**: `wc-bindable-protocol`, `command-token`, and `event-token` (see `docs/` and per-package READMEs — the normative references), plus the internal `transition-runner` / `binder` / `ssr-snapshot` protocols (canonical sources in `/protocol/`), must not be changed casually. Component packages follow a Core (framework-agnostic logic, `src/core/`) / Shell (custom element, `src/components/`) split.
 - When changing `data-wcs` syntax, protocols, or router behavior, the wcstack-app skill's references (separate repo above) must be updated to match.
 
 ## Key packages
 
 | Package | Role |
 |---|---|
+| `wcstack` | npm entry point; `wcstack/auto` bundles state + router + fetch + storage + autoloader as one script |
 | `@wcstack/state` | Reactive state + declarative `data-wcs` binding |
 | `@wcstack/router` | Declarative SPA routing (Navigation API) |
 | `@wcstack/signals` | Signals-based lightweight reactive core |
 | `@wcstack/autoloader` | Import-Map-driven auto-registration of custom elements |
 | `@wcstack/lint` | Static-contract validator CLI (`wcs-validate`) |
+| `@wcstack/testing` | Headless test helpers (`mount()` / `settle()` / `fire()`) |
 | 30+ I/O node packages | Declarative wrappers over Web platform APIs (`<wcs-fetch>`, `<wcs-ws>`, `<wcs-camera>`, …) |
 
 Full catalog: root [README.md](./README.md) and https://wcstack.github.io
