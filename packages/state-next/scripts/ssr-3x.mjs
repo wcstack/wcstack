@@ -1,14 +1,19 @@
-// Records __tests__/golden/ssr-3x-353.json (or the file the first argument names, relative to this
+// Records __tests__/golden/ssr-3x-354.json (or the file the first argument names, relative to this
 // package): pages rendered by @wcstack/server 3.x with @wcstack/state 3.x, from their checked-in dists
 // (packages/server/dist, packages/state/dist), for the test of a 4.0 client on 3.x output
 // (__tests__/ssr-3x.test.ts). Neither package needs its own node_modules: the server's imports resolve
 // here (happy-dom from this package's devDependencies, @wcstack/state to the 3.x dist). The output
 // depends only on the dists (the pages render in order: the private keys' numbers `#mN` run across them).
 //
-// __tests__/golden/ssr-3x.json holds the pages up to `filters` as the 3.5.0 dists rendered them, before
-// 3.5.3 (wcstack#373) made a text mark carry the binding's whole expression, filters included (a Light
-// DOM child's in its own vocabulary). It is frozen, the record of the output up to 3.5.2: the checked-in
-// dists no longer produce it, so this script does not write it.
+// Two older records are frozen, the checked-in dists no longer producing them; this script refuses to
+// write either:
+// - __tests__/golden/ssr-3x.json holds the pages up to `filters` as the 3.5.0 dists rendered them,
+//   before 3.5.3 (wcstack#373) made a text mark carry the binding's whole expression, filters included
+//   (a Light DOM child's in its own vocabulary): the record of the output up to 3.5.2;
+// - __tests__/golden/ssr-3x-353.json holds all the pages below as the 3.5.3 dists rendered them, before
+//   3.5.4 (wcstack#427) made the mark of an expression a comment cannot hold (one with a `--`, which
+//   falls back to the path) name the path a Light DOM child wrote (`other`, `label`) instead of its
+//   host's (`#mN.other`, `user.name`): the record of the 3.5.3 output.
 import { register } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -141,15 +146,16 @@ const pages = {
 <x-num data-wcs="state.p: price"><wcs-state bind-component="state"></wcs-state><p class="p">{{ p|toFixed(2) }}</p></x-num>
 <x-light data-wcs="state: user"><wcs-state bind-component="state"></wcs-state><p class="age">{{ age|add(1)|unit(' y') }}</p><p class="mine">{{ mine|upper }}</p></x-light>
 </body></html>`,
-  // 3.5.3+: an expression a comment cannot hold (`--`): the mark falls back to the path, in a Light DOM
-  // child the page's — here a private key's (`#mN.…`)
+  // 3.5.3+: an expression a comment cannot hold (`--`): the mark falls back to the path; in a Light DOM
+  // child, 3.5.3 writes the page's — here a private key's (`#mN.…`) — and 3.5.4 the child's own
   fallback: `<!DOCTYPE html><html><head></head><body>
 <wcs-state enable-ssr json='{"title":"T","user":{"name":"Ann"}}'></wcs-state>
 <p class="page">{{ title|unit('--') }}</p>
 <x-part data-wcs="state.label: user.name"><wcs-state bind-component="state"></wcs-state><p class="own">{{ other|unit('--') }}</p><p class="kept">{{ label|unit('!') }}</p></x-part>
 <x-light data-wcs="state: user"><wcs-state bind-component="state"></wcs-state><p class="own">{{ mine|unit('--') }}</p><p class="kept">{{ name|unit('!') }}</p></x-light>
 </body></html>`,
-  // 3.5.3+: the same, of a wired path: the mark is the page's path, not the child's
+  // 3.5.3+: the same, of a wired path: 3.5.3's mark is the page's path (`user.name`), 3.5.4's the
+  // child's (`label`, `name`)
   "fallback-wired": `<!DOCTYPE html><html><head></head><body>
 <wcs-state enable-ssr json='{"user":{"name":"Ann"}}'></wcs-state>
 <x-part data-wcs="state.label: user.name"><wcs-state bind-component="state"></wcs-state><p class="wired">{{ label|unit('--') }}</p></x-part>
@@ -157,8 +163,9 @@ const pages = {
 </body></html>`,
 };
 
-const target = process.argv[2] ?? "__tests__/golden/ssr-3x-353.json";
-if (/(^|[\\/])ssr-3x\.json$/.test(target)) throw new Error(`${target} is frozen (the 3.5.0 output): see the top of this script`);
+const target = process.argv[2] ?? "__tests__/golden/ssr-3x-354.json";
+const frozen = new Map([["ssr-3x.json", "3.5.0"], ["ssr-3x-353.json", "3.5.3"]]).get(/[^\\/]*$/.exec(target)[0]);
+if (frozen) throw new Error(`${target} is frozen (the ${frozen} output): see the top of this script`);
 const out = {};
 for (const [name, html] of Object.entries(pages)) out[name] = { page: html, output: await renderToString(html, { bootstraps }) };
 const file = new URL(target, here);

@@ -520,11 +520,14 @@ function across(wiring: Wiring, path: string, from: number, to: number): string 
  * component, through both), and so the marks' paths before 3.5.3: they go back to the component's own
  * through its host's wiring (the content of a template is the component's already). A mark from 3.5.3
  * is the component's own text, not mapped (it may name a key that is one of the page's wired paths
- * too: `state.x: v; state.v: w`), but for an expression a comment cannot hold (one with a `--`), which
- * 3.5.3 writes as the page's path, unfiltered: one naming a private key (`#mN.`, never in the
- * component's own text) is mapped back; a wired one cannot be told from the component's own text, and
- * is read as it — a component key of that name shows its value, the right one only when the wiring keeps
- * the name (a limit: migration guide §3.6).
+ * too: `state.x: v; state.v: w`). An expression a comment cannot hold (one with a `--`) falls back to
+ * its path, unfiltered. From 3.5.4 (wcstack#427) that is the path the component wrote, read as written
+ * like any other mark: the value shows, without its filters. 3.5.3 wrote the page's path there
+ * instead, which is mapped back when it names a private key (`#mN.`: never in the component's own
+ * text, so the mapping cannot misread a 3.5.4 mark); a wired one cannot be told from the component's
+ * own text, and is read as it — a component key of that name shows its value, the right one only when
+ * the wiring keeps the name, else the text stays empty (a limit of 3.5.3 output only: migration guide
+ * §3.6).
  */
 function legacy(container: Node, ssr: Element, fresh: boolean): void {
   const wirings = new Map<Element, Wiring>();
@@ -547,12 +550,12 @@ function legacy(container: Node, ssr: Element, fresh: boolean): void {
   };
   /**
    * A path 3.x wrote at `n`, as the component's own there (`asIs`: a text mark from 3.5.3, left as it
-   * is but for a private key's path).
+   * is but for a private key's path, which 3.5.3's fallback writes).
    */
   const own = (n: Node, path: string, asIs?: boolean): string => {
     const wiring = wiringOf(n);
     if (wiring === null) return path;
-    // (no `|`: a 3.5.3 mark with filters is the component's own text, a `#m1.` in it an argument's)
+    // (no `|`: a mark with filters, from 3.5.3, is the component's own text, a `#m1.` in it an argument's)
     const m = /^([^|]*)#m\d+\.([^|]*)$/.exec(path);
     if (m === null) return asIs ? path : across(wiring, path, 0, 1) ?? path;
     // after the last private key mark, a component's own path: this one's when what comes before the
