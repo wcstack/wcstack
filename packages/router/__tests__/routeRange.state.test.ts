@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import './setup';
-import { bootstrapState } from '../../state-next/src/exports';
-import { engines } from '../../state-next/src/dom/mount';
+import { bootstrapState } from '../../state/src/exports';
+import { engines } from '../../state/src/dom/mount';
 import { enterByNavigation, enterLayoutByNavigation, landingThenLeave, ROUTES, settle, shown } from './routeRange.state.shared';
 
 beforeAll(() => bootstrapState());
@@ -9,7 +9,7 @@ beforeAll(() => bootstrapState());
 // content the router hands over before the new one mounts (one state per page in real use)
 afterEach(() => { engines.delete(document); });
 
-describe('ルートの範囲と state-next（4.0）', () => {
+describe('ルートの範囲と @wcstack/state（4.0）', () => {
   it('着地のルートで state が描いた行・枝は、退出すると残らず、戻ると重ならずに戻る', async () => {
     const errors = await landingThenLeave(async (el, items, on) => {
       el.createState('writable', (s: any) => { s.items = items; s.on = on; });
@@ -19,7 +19,7 @@ describe('ルートの範囲と state-next（4.0）', () => {
   });
 });
 
-describe('範囲を持ち運ぶ宣言（binder の range）と state-next: 遷移で入ったルートの直下の構造テンプレート', () => {
+describe('範囲を持ち運ぶ宣言（binder の range）と @wcstack/state: 遷移で入ったルートの直下の構造テンプレート', () => {
   it('遷移で入ったルートと入れ子のルートの直下の for: / if:+else: を描き、退出で消え、再入場で重ならない', async () => {
     const { seen, errors } = await enterByNavigation('/q', ['/p/a', '/p/b', '/q', '/p/a'], { items: ['x', 'y'], on: true });
     expect(seen).toEqual(['Q', 'P,on,A,x,y', 'P,on,B', 'Q', 'P,on,A,x,y']);
@@ -139,7 +139,7 @@ describe('範囲を持ち運ぶ宣言（binder の range）と state-next: 遷�
   });
 });
 
-describe('レイアウトの中のルートに遷移で入る（state-next）', () => {
+describe('レイアウトの中のルートに遷移で入る（@wcstack/state）', () => {
   it('初めての入場で、ルートの内容とレイアウトのテンプレート自身の束縛を束ね、往復で重ならない', async () => {
     const { seen, errors } = await enterLayoutByNavigation(false);
     expect(seen).toEqual([
@@ -159,7 +159,7 @@ describe('レイアウトの中のルートに遷移で入る（state-next）', 
   });
 });
 
-describe('入れ子のレイアウト（state-next）', () => {
+describe('入れ子のレイアウト（@wcstack/state）', () => {
   it('レイアウトの中のルートの中のレイアウトにも、遷移で初めて入ったときから束ね、往復で重ならない', async () => {
     history.replaceState(null, '', '/');
     document.body.innerHTML = `<template id="outer-lay"><section class="outer"><b class="lo">{{ msg }}</b><slot></slot></section></template>
@@ -196,7 +196,7 @@ describe('入れ子のレイアウト（state-next）', () => {
   });
 });
 
-describe('パラメータの変化で表示中のルートをもう一度表示する（router 3.5 の持ち出して戻す、state-next）', () => {
+describe('パラメータの変化で表示中のルートをもう一度表示する（router 3.5 の持ち出して戻す、@wcstack/state）', () => {
   it('直下の for: / if:+else: の行と枝は並びを保って戻り、重ならず、遷移で入った後も書き込みに追従する', async () => {
     history.replaceState(null, '', '/');
     document.body.innerHTML = `<wcs-state></wcs-state>

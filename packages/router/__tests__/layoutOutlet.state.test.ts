@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
 import './setup';
-// @ts-ignore - the committed 3.x bundle (packages/state/dist)
+// @ts-ignore - the committed bundle (packages/state/dist)
 import { bootstrapState } from '../../state/dist/index.esm.js';
 import type { Router } from '../src/components/Router';
 import { settle } from './routeRange.state.shared';
@@ -8,12 +8,12 @@ import { BINDER_KEY } from '../src/protocol/binder';
 
 /**
  * LayoutOutlet は置いた中身を binder へ渡す（layoutOutlet.binder.test.ts）。着地のルートでは、
- * state の最初の走査が同じ中身をすでに束ねているので、3.x の binder には同じノードを
+ * state の最初の走査が同じ中身をすでに束ねているので、state の binder には同じノードを
  * もう一度渡すことになる。イベントの束縛が二重になれば 1 回のクリックで 2 回数えるので、
  * それで二重に束ねていないことを確かめる。
  *
  * router は文書に無いノード（読み込み待ちの <wcs-layout> の中のルートの内容）を binder に
- * 渡さない。3.x はそれを切り離されたまま束ね、イベントの束縛が「disconnected binding」の
+ * 渡さない。3.x の state はそれを切り離されたまま束ね、イベントの束縛が「disconnected binding」の
  * 未処理の拒否になっていた。置かれた後で outlet が渡す。
  */
 
@@ -57,7 +57,7 @@ async function clickAndLeaveAndReturn(landing: string, slowLayout = false): Prom
   const errors: string[] = [];
   const original = console.error;
   console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ')); };
-  // the binder 3.x installed: record what is handed to it, and whether it was in the document then
+  // the binder the state installed: record what is handed to it, and whether it was in the document then
   const binder = (globalThis as Record<symbol, any>)[BINDER_KEY];
   const bind = binder.bind;
   const handed: Node[] = [];
@@ -112,7 +112,7 @@ const COUNTED = [
   'lt=[4] x=[4] li=[a/b]',
 ];
 
-describe('LayoutOutlet と @wcstack/state 3.x（packages/state/dist）', () => {
+describe('LayoutOutlet と @wcstack/state（packages/state/dist）', () => {
   it('着地のルート: state の走査が束ねた中身を outlet がもう一度渡しても二重に束ねない（1 クリックで 1 回）', async () => {
     const run = await clickAndLeaveAndReturn('/l/x');
     expect(run.seen).toEqual(COUNTED);
