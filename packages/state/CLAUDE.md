@@ -11,7 +11,7 @@
 ## Commands
 
 ```bash
-npm run build            # clean → tsc → rollup
+npm run build            # clean → tsc → rollup → emit-manifest (dist/wcs-manifest.json)
 npm test                 # vitest run
 npm run test:watch       # vitest watch
 npm run test:coverage    # カバレッジ付き (99.5/98.5/100/99.5)
@@ -24,7 +24,7 @@ npx vitest run __tests__/someFile.test.ts  # 単一テスト実行
 ```
 src/
 ├── exports.ts              # パッケージエントリポイント (bootstrapState / defineState / Ssr / getWcsManifest 等)
-├── bootstrapState.ts       # 初期化: registerComponents + registerHandler
+├── bootstrapState.ts       # 初期化: 全機能 (ALL_FEATURES) と v4-migration 通知を install → core/bootstrapCore.ts (設定解決 + registerComponents + registerBinder)
 ├── config.ts               # グローバル設定 (属性名, コメントプレフィックス等)
 ├── define.ts               # 定数: DELIMITER('.'), WILDCARD('*'), MAX_WILDCARD_DEPTH(128)
 ├── types.ts                # IState, IConfig, ITagNames
@@ -50,22 +50,26 @@ src/
 │   └── *.ts                # data-wcs 属性値のパース
 ├── apply/
 │   ├── applyChange.ts      # 変更適用のエントリポイント
-│   ├── applyChangeTo*.ts   # Text, Attribute, Class, Style, Property, Element, SubObject, If, For
+│   ├── applyChangeTo*.ts   # Text, Attribute, Class, Style, Property, Checkbox, Radio, Command, WebComponent, If, For
 │   ├── getValue.ts         # プロキシからの値取得
 │   └── getFilteredValue.ts # フィルタパイプライン適用
 ├── structural/
 │   ├── activateContent.ts  # コンテンツのマウント/アンマウント
 │   ├── createContent.ts    # template からコンテンツ生成
 │   ├── collectStructuralFragments.ts  # for/if テンプレート収集
-│   └── contentByNode.ts    # ノードからコンテンツ管理
+│   └── contentsByNode.ts   # ノードからコンテンツ管理
 ├── list/
 │   ├── createListIndex.ts  # リストインデックス生成
 │   ├── createListDiff.ts   # 配列差分計算
 │   ├── loopContext.ts       # ループコンテキストスタック
 │   └── listIndexesByList.ts # リストからインデックスマップ
 ├── filters/
+│   ├── filterMeta.ts       # 組み込みフィルタのメタ情報 (builtinFilterMeta)
+│   └── filterAliases.ts    # フィルタの別名 (builtinFilterAliases)
+├── formats/                # 書式フィルタ群 (features/formats が install)
 │   ├── builtinFilters.ts   # 組み込みフィルタ (eq, ne, lt, gt, uc, lc, date 等 40+種)
-│   └── errorMessages.ts    # フィルタエラーメッセージ
+│   ├── errorMessages.ts    # フィルタエラーメッセージ
+│   └── install.ts          # core/filterRegistry.ts への登録
 ├── event/
 │   ├── handler.ts          # イベントハンドラ
 │   └── twowayHandler.ts    # 双方向バインディング
@@ -90,14 +94,14 @@ src/
 ## Architecture
 
 ### Core Flow
-1. `bootstrapState()` → カスタム要素登録 + イベントハンドラ登録
+1. `bootstrapState()` → 機能の install + カスタム要素登録 + binder プロトコル登録
 2. `<wcs-state>` の `connectedCallback` → 状態ロード (JSON/Script/属性)
 3. DOM 走査 → `data-wcs` 属性と `<!--wcs-*-->` コメントノードを収集
 4. バインディング情報を解析 → Proxy 経由でリアクティブにDOM更新
 
 ### Binding Syntax
 ```
-[property][#modifier]: [path][|(filter | filter(args))...]
+property[#modifier]: path[|filter[|filter(args)...]]
 ```
 - `property`: DOM プロパティ名 (textContent, value, class 等)
 - `#modifier`: 修飾子

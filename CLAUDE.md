@@ -4,25 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Language
 
-ユーザーへの応答は常に日本語で行うこと。コード・コミットメッセージ・変数名などは英語のまま。
+ユーザーへの応答は常に日本語で行うこと。
+
+- Code, identifiers, and commit messages are in English.
+- Source comments are mixed English / Japanese — follow the language of the surrounding file.
+- Test descriptions are written in Japanese.
 
 ## Project Overview
 
-**wcstack** (Web Components Stack) is a monorepo of focused TypeScript packages for building Web Components-based SPAs. The design philosophy is standards-first (Custom Elements, Shadow DOM, ES Modules, Import Maps), zero-config, buildless, with zero runtime dependencies. Each package is a self-contained custom element (or core utility) that can be dropped onto a page via CDN/Import Map and composed like LEGO bricks.
+**wcstack** (Web Components Stack) is a monorepo of focused TypeScript packages for building Web Components-based SPAs. The design philosophy is standards-first (Custom Elements, Shadow DOM, ES Modules, Import Maps), zero-config, buildless, with zero runtime dependencies (the exception is `@wcstack/server`, which depends on `@wcstack/state` and `happy-dom`). Each package is a self-contained custom element (or core utility) that can be dropped onto a page via CDN/Import Map and composed like LEGO bricks.
+
+## Repository Layout
+
+- `packages/` — one directory per package (see Monorepo Structure).
+- `protocol/` — canonical sources of the cross-package protocols (`wc-bindable`, `wc-bindable-reader`, `upgrade-properties` + its test, `transition-runner`, `binder`, `ssr-snapshot`). `scripts/sync-protocol-types.mjs` copies them into `packages/<pkg>/src/protocol/` (the test into `__tests__/`).
+- `io-core/` — canonical IO-core helpers (`operation-lane`, `platform-capability`). `scripts/sync-io-core.mjs` copies them into `packages/<pkg>/src/core/`.
+- `config-templates/` — canonical `rollup.config.js` / `eslint.config.js`. `scripts/sync-package-configs.mjs` writes the `@wcstack/*` copies; packages in its `DEVIATIONS` keep a hand-written file (or none, like `lint`), and `packages/wcstack` (a hand-kept copy) and `packages/vscode-wcs` are outside the sync.
+- `scripts/` — the sync scripts, `sync-readme-agents-banner.mjs` (the AI-agents line under each package README's H1), the `@wcstack/state` size / split / coupling gates, `conformance-*.mjs`, `generate-sri.mjs`, and `audit-state-*` measurement tooling.
+- `e2e/` — Playwright real-browser tests over the local `packages/*/dist` (own `package.json`; `.github/workflows/e2e.yml`).
+- `examples/`, `docs/` — see below. `CHANGELOG.md` follows Keep a Changelog; `packages/vscode-wcs` keeps its own.
+
+Generated copies carry a do-not-edit banner: edit the canonical source and re-run the sync script. CI's `protocol-types-sync` job runs each sync script with `--check` and fails on drift.
 
 ## Monorepo Structure
 
-Each package lives under `packages/` and is independently built, tested, versioned, and published. There is no root-level `package.json` or workspace orchestration — every package is managed on its own. All published packages currently share the same version (kept aligned on release).
+Each package lives under `packages/` and is built and tested on its own. There is no root-level `package.json` or workspace orchestration (the root `package-lock.json` is an empty stub) — run commands inside a package directory. All published packages (`@wcstack/*` and `wcstack`) share one version and are released in lockstep: `release.yml` bumps every package to the same version whether or not it changed. `packages/vscode-wcs` is versioned separately.
 
 **Core / framework packages:**
-- **`@wcstack/state`** (`<wcs-state>`) — Reactive state management with declarative data binding via `data-wcs` attributes. Reactive proxy, computed properties, list rendering with diffing, conditional rendering, wildcard paths, filter pipeline.
-- **`@wcstack/router`** (`<wcs-router>`, `<wcs-route>`, `<wcs-layout>`) — Declarative SPA routing on the Navigation API (popstate fallback). Typed path params (`:id(int)`, `:slug(slug)`), nested layouts, head management (`<wcs-head>`), route guards, basename support.
-- **`@wcstack/autoloader`** — Auto-detects and dynamically imports undefined custom elements by scanning the DOM and Import Map entries with `@components/` prefixes. Uses MutationObserver for dynamically-added elements.
+- **`@wcstack/state`** (`<wcs-state>`; `<wcs-ssr>` carries SSR hydration data) — Reactive state management with declarative data binding via `data-wcs` attributes. Reactive proxy, computed properties, list rendering with diffing, conditional rendering, wildcard paths, filter pipeline.
+- **`@wcstack/router`** (`<wcs-router>`, `<wcs-route>`, `<wcs-outlet>`, `<wcs-layout>`, `<wcs-layout-outlet>`, `<wcs-link>`, `<wcs-head>`, `<wcs-guard-handler>`) — Declarative SPA routing on the Navigation API (popstate fallback). Typed path params (`:id(int)`, `:slug(slug)`), nested layouts, head management (`<wcs-head>`), route guards, basename support.
+- **`@wcstack/autoloader`** (`<wcs-autoloader>`) — Auto-detects and dynamically imports undefined custom elements by scanning the DOM and Import Map entries with `@components/` prefixes. Uses MutationObserver for dynamically-added elements.
 - **`@wcstack/signals`** — Signals-based lightweight reactive core (an alternative to `state`, not a replacement) with async-IO resource adapters and a `wc-bindable` → signal bridge.
 - **`@wcstack/view-transition`** (`<wcs-view-transition>`) — View Transition arbiter. A policy tag (renders nothing, binds no data) that makes `router` route swaps and `state` list/branch updates animate; it owns exclusion (`latest` / `queue` / `exhaust`) and the `view-transition-name` policy. `state`/`router` never import it — they find it through the transition-runner protocol on a global symbol. See [docs/view-transition-design.md](docs/view-transition-design.md).
 
 **I/O node components** — declarative wrappers over a Web platform API, exposed via the `wc-bindable-protocol` so they interoperate with `state`/`signals`:
-- **`@wcstack/fetch`** (`<wcs-fetch>`) — Async data fetching
+- **`@wcstack/fetch`** (`<wcs-fetch>`, `<wcs-fetch-header>`, `<wcs-fetch-body>`, `<wcs-infinite-scroll>`) — Async data fetching
 - **`@wcstack/storage`** (`<wcs-storage>`) — localStorage / sessionStorage binding
 - **`@wcstack/upload`** (`<wcs-upload>`) — File upload with progress
 - **`@wcstack/websocket`** (`<wcs-ws>`) — Real-time WebSocket comms
@@ -63,8 +79,12 @@ Each package lives under `packages/` and is independently built, tested, version
 
 **Other packages:**
 - **`wcstack`** (unscoped entry package, `packages/wcstack`) — The npm entry point and the SPA-core bundle: `wcstack/auto` ships `dist/auto.min.js` bundling state + router + fetch + storage + autoloader by inlining the members' published `/auto` entries with Rollup (`exports` has only `./auto` — deliberately no `index.esm.js`). It must build after all members; release.yml appends it last to the build order. Its README doubles as the AI authoring guide (`npm view wcstack readme`). See docs/distribution-robustness-impl-plan.md.
-- **`@wcstack/server`** — Server-side rendering for wcstack components.
-- **`packages/vscode-wcs`** (`wcstack-intellisense`) — VSCode extension providing TypeScript language features for `<wcs-state>` inline scripts in HTML. Versioned independently from the published npm packages.
+- **`@wcstack/server`** — Server-side rendering for wcstack components (`renderToString()` on happy-dom).
+- **`@wcstack/devtools`** (`<wcs-devtools>`) — In-page DevTools overlay (state trees, wiring, update timeline). It reaches the runtimes only through the DevTools Hook Protocol (`globalThis.__WCSTACK_DEVTOOLS_HOOK__`, [docs/devtools-hook-protocol.md](docs/devtools-hook-protocol.md)) and never imports `@wcstack/state`.
+- **`@wcstack/lint`** (bin `wcs-validate`) — Static-contract validator CLI. No source of its own: `npm run build` builds `packages/vscode-wcs` and copies its `dist/cli.cjs` (`scripts/build.mjs`).
+- **`@wcstack/typescript`** (bins `wcs-schema`, `wcs-tsc`) — `wcs-schema` derives the manifest `stateSchema` from a typed state file; `wcs-tsc` type-checks `<wcs-state>` inline scripts in HTML. Its build also builds `packages/vscode-wcs` and copies `schema-core.cjs` / `tsc-core.cjs` (`scripts/build-schema-core.mjs`).
+- **`@wcstack/testing`** — Headless test helpers (`mount()` / `settle()` / `fire()` / `installDom()`) for Vitest + happy-dom. Its build first rebuilds `packages/state`, `router` and `server` from source (`scripts/build-deps.mjs`), rewriting their committed dist.
+- **`packages/vscode-wcs`** (`wcstack-intellisense`) — VSCode extension providing TypeScript language features for `<wcs-state>` inline scripts in HTML, and the canonical validator core behind `wcs-validate`. Versioned independently from the published npm packages.
 
 ## Build & Development Commands
 
@@ -79,6 +99,11 @@ npm run test:coverage    # Run tests with coverage (enforces thresholds)
 npm run lint             # ESLint on src/
 ```
 
+Exceptions:
+- `packages/lint`: `test` / `test:coverage` run `scripts/smoke-test.mjs`, `lint` is `node --check` on its two scripts, no `test:watch`.
+- `packages/vscode-wcs`: no `clean` or `lint`; `build` is `node esbuild.config.js`.
+- `packages/server` adds `test:e2e` (`vitest.e2e.config.ts`).
+
 To run a single test file:
 ```bash
 npx vitest run __tests__/someFile.test.ts
@@ -86,27 +111,35 @@ npx vitest run __tests__/someFile.test.ts
 
 ## Build Pipeline
 
-Each package follows the same build flow: `rimraf dist .tsc-out` → `tsc` → `rollup -c`
+Each package follows the same build flow: `rimraf dist .tsc-out` → `tsc` → `rollup -c`, with these exceptions:
+- `state` appends `node scripts/emit-manifest.mjs` (writes `dist/wcs-manifest.json`).
+- `typescript` appends `scripts/build-schema-core.mjs`; `testing` prepends `scripts/build-deps.mjs` (see Other packages).
+- `lint` is `scripts/build.mjs` and `vscode-wcs` is `node esbuild.config.js` — neither runs tsc / Rollup.
 
 Rollup produces two outputs from `src/exports.ts`:
 - `dist/index.esm.js` — ESM bundle, and what `exports["."]` resolves to (minified in `@wcstack/state` — requirement N1; `WCS_STATE_UNMINIFIED=1 npm run build` gives readable names for profiling)
 - `dist/index.d.ts` — Bundled type declarations (via rollup-plugin-dts)
 
+`@wcstack/state` also emits `dist/split/**` (the `/core` and `/features/*` entries), `dist/define.js`, `dist/parser.esm.js` and `dist/manifest.esm.js`.
+
 Most packages add a third entry from `src/auto.ts` — `dist/auto.min.js`, exposed as `exports["./auto"]`. It lets a page activate the component with a single `<script>` tag (no manual registration), and is **bundled self-contained with no static imports**, so one `integrity` attribute covers the whole runtime. `src/auto.ts` must import only from `./exports`; a relative import of a sibling dist file would silently destroy that property. See [docs/sri.md](docs/sri.md).
 
-There is deliberately no `dist/index.esm.min.js`: it appeared in no `exports` map, and its only consumer was the old auto stub. A minified named-export bundle now exists only where there is no self-contained auto bundle (`@wcstack/signals`, which has no `src/auto.ts` by design).
+There is deliberately no `dist/index.esm.min.js`: it appeared in no `exports` map, and its only consumer was the old auto stub. A minified named-export bundle is still built only where there is no self-contained auto bundle: `@wcstack/signals` (no `src/auto.ts` by design) and `@wcstack/server`. Neither appears in an `exports` map.
 
-Two size gates guard `@wcstack/state`: `scripts/check-state-size.mjs` (the shipped bundles and the core closure, against `scripts/state-size-baseline.json`) and `scripts/check-state-split.mjs` (per-feature gzip against `scripts/state-split-baseline.json`, plus the rules that a feature entry carries no other feature's code and that no split output carries the 3.5 `wcs/v4-migration` warnings, which ship in the full entries only). Both allow 3 % over baseline; an entry of `scripts/state-split-baseline.json` may also carry a `slack` in bytes on top of the 3 % (kept across `--update`) — `features/ssr.js` has 1 KB, `features/scopes.js` has 512 B (#367). Both baselines were last re-recorded for the 3.5.2 release: the split core is 59,333 B against a 61,113 B limit, `auto.min.js` 87,889 B (limit 90,526 B), `index.esm.js` 90,800 B (limit 93,524 B), `features/scopes.js` 15,197 B and `features/ssr.js` 4,893 B plus their slack. Re-record both baselines with `--update` as part of each release; between releases, treat a failure as a real signal rather than a stale baseline.
+Two size gates guard `@wcstack/state`: `scripts/check-state-size.mjs` (the shipped bundles and the core closure, against `scripts/state-size-baseline.json`) and `scripts/check-state-split.mjs` (per-feature gzip against `scripts/state-split-baseline.json`, plus the rules that a feature entry carries neither core code nor another feature's code, and that no split output carries the 3.5 `wcs/v4-migration` warnings, which ship in the full entries only). Both allow 3 % over baseline; an entry of `scripts/state-split-baseline.json` may also carry a `slack` in bytes on top of the 3 % (kept across `--update`) — `features/ssr.js` has 1 KB, `features/scopes.js` has 512 B (#367). Both baselines were last re-recorded for the 3.5.2 release: the split core is 59,333 B against a 61,113 B limit, `auto.min.js` 87,889 B (limit 90,526 B), `index.esm.js` 90,800 B (limit 93,524 B), `features/scopes.js` 15,197 B and `features/ssr.js` 4,893 B plus their slack. Re-record both baselines with `--update` as part of each release; between releases, treat a failure as a real signal rather than a stale baseline. CI's `state` job also runs `scripts/audit-state-tech-coupling.mjs --check` (the core / feature value-import graph against `scripts/state-coupling-baseline.json`) and `scripts/audit-state-tech-helper-import.mjs --check --max-gzip 1024` (a `defineState`-only import stays ≤ 1 KB gzip).
 
-`packages/state/dist` is committed, but only rebuilt at release. `packages/vscode-wcs` depends on it through `"@wcstack/state": "file:../state"` (a symlink), so it reads the *committed* dist, not `packages/state/src`. A parser change therefore does not reach the extension, the `wcs-validate` CLI, or the vsix until `npm run build` is run in `packages/state` — meanwhile the extension behaves like the old parser (missing `wcs/binding-syntax` diagnostics; `wiringLens` hover / definition / references / inlay hints and `bindingSyntaxValidator` silent on the affected forms). **Build `packages/state` before packaging or publishing the extension, and re-run the vscode-wcs tests afterwards**, since newly-appearing diagnostics can change existing expectations. CI is safe: `release.yml` and the `wcs-validate` job both build `@wcstack/state` first.
+Every published package's `dist` is committed (`packages/vscode-wcs`'s is not), but only rebuilt at release, so between releases it lags `src`. `packages/vscode-wcs` depends on `@wcstack/state` through `"@wcstack/state": "file:../state"` (a symlink), so it reads the *committed* dist, not `packages/state/src`. A parser or manifest change therefore does not reach the extension, the `wcs-validate` CLI, `@wcstack/typescript`'s `schema-core.cjs` / `tsc-core.cjs`, or the vsix until `npm run build` is run in `packages/state` — meanwhile the extension behaves like the old parser (missing `wcs/binding-syntax` diagnostics; `wiringLens` hover / definition / references / inlay hints and `bindingSyntaxValidator` silent on the affected forms). **Build `packages/state` before packaging or publishing the extension, and re-run the vscode-wcs tests afterwards**, since newly-appearing diagnostics can change existing expectations. CI is safe: `release.yml` and the `wcs-validate` job both build `@wcstack/state` first.
+
+Two more traps around committed dists: `npm run build` in `packages/testing` rebuilds `state`, `router` and `server` in place and dirties their committed dist (restore with `git checkout -- packages/<pkg>/dist` when that was not the intent); and `packages/vscode-wcs/src/service/generated/builtinTags.generated.ts` + `packages/vscode-wcs/wcs.html-data.json` are generated from the committed dists by `packages/vscode-wcs/scripts/emit-builtin-tags.mjs` (release.yml regenerates them; CI runs `--check`) — never edit them by hand.
 
 ## Testing
 
-- **Framework:** Vitest with happy-dom environment
-- **Test location:** `__tests__/` directory in each package, pattern `*.{test,spec}.ts`
-- **Setup file:** `__tests__/setup.ts` per package
-- **Coverage thresholds:** roughly 100% statements / functions / lines and ~97%+ branches (each package configures its own; treat 100/97/100/100 as the baseline target)
+- **Framework:** Vitest with happy-dom environment, except `server` / `vscode-wcs` (Vitest default, Node) and `typescript` (`node`); `lint` has no Vitest, only a smoke test
+- **Test location:** `__tests__/` directory in each package, pattern `__tests__/**/*.{test,spec}.{js,ts}` (`vscode-wcs`: `__tests__/**/*.test.ts`)
+- **Setup file:** `__tests__/setup.ts` per package, except `server`, `testing`, `typescript`, `vscode-wcs`
+- **Coverage thresholds** (statements / branches / functions / lines, in each package's `vitest.config.ts`): 100/100/100/100 in 20 packages, 100/97/100/100 in 24, `state` 99.5/98.5/100/99.5, `testing` and `typescript` 95/90/95/95, none in `server` and `vscode-wcs`. Treat 100/97/100/100 as the baseline for a new package
 - Test descriptions are written in Japanese
+- Real-browser coverage lives in `e2e/` (Playwright, over the local `packages/*/dist`)
 
 ## Linting
 
@@ -114,7 +147,6 @@ ESLint flat config format. Notable rules:
 - `no-explicit-any` and `no-this-alias` are off
 - Unused vars prefixed with `_` are allowed
 - Test files have relaxed rules
-- `src/auto/` directories are excluded
 
 ## TypeScript Configuration
 
@@ -126,18 +158,20 @@ Root `tsconfig.json` sets ESNext target/module with bundler module resolution, s
 
 These protocols are how `state`/`signals` talk to I/O node components, and how custom tags bind to one another. They are the heart of the project — read the per-package `README.md` and `docs/` before changing them.
 
-- **`wc-bindable-protocol`** — A component declares its bindable surface with `static wcBindable`, exposing `properties` (two-way bindable), `event`, and `getter`. This lets `data-wcs` (and signals' `bindNode`) wire DOM elements together without per-element glue. I/O node components implement this so they interoperate with `state`.
+- **`wc-bindable-protocol`** — A component declares its bindable surface as `static wcBindable = { protocol: "wc-bindable", version, properties, inputs?, commands? }` (canonical types: `/protocol/wc-bindable.ts`). `properties` are observable outputs: each names the `event` the element dispatches on change, an optional `getter` that reads the value from that event, and an optional `semantics` (`"state"` / `"event"` / `"handle"`). `inputs` (the settable surface, with an optional `attribute` hint) and `commands` (invocable methods) are declarative metadata. This lets `data-wcs` (and signals' `bindNode`) wire DOM elements together without per-element glue. I/O node components implement this so they interoperate with `state`.
 - **`command-token` protocol** — `state → element` imperative command invocation: `$commandTokens` / `$command.<name>` / `command.<method>:`. Positional arguments are passed through verbatim (`Token.emit` → `Reflect.apply`); the runtime does not `await` them.
 - **`event-token` protocol** — the dual of command-token: `element → state` event dispatch. `$eventTokens` / `eventToken.<prop>: <name>` / `$on`. Keys are `wcBindable` property names.
 - **`transition-runner` protocol** — how a package that mutates the DOM (`state`'s drain, `router`'s route swap) hands that mutation to whoever arbitrates view transitions. Canonical source `/protocol/transition-runner.ts`, mirrored per package by `scripts/sync-protocol-types.mjs`. No arbiter installed = the mutation runs directly and synchronously, exactly as before the protocol existed. Invariant: a mutation handed to `run()` is applied exactly once, whatever is decided about animating it.
+- **`binder` / `ssr-snapshot` protocols** — the same global-symbol pattern: `router` hands DOM it inserted to `state` for binding (`/protocol/binder.ts`, [docs/binder-protocol-design.md](docs/binder-protocol-design.md)), and `server` asks `state` to build the hydration snapshots as a final pass (`/protocol/ssr-snapshot.ts`, docs/ssr-router-design.md §5). Both are mirrored by `scripts/sync-protocol-types.mjs`.
+- **DevTools Hook Protocol** — `globalThis.__WCSTACK_DEVTOOLS_HOOK__`, through which `@wcstack/devtools` observes the runtimes without importing them ([docs/devtools-hook-protocol.md](docs/devtools-hook-protocol.md)).
 
 ### Component package layout (I/O node pattern)
 
 Each I/O node component splits into two layers:
-- **Core** (`XxxCore.ts`, often under `core/`) — framework-agnostic logic over the platform API. Holds state, exposes `commands`, emits events. Testable without the DOM custom element.
-- **Shell** (`WcsXxx.ts` / `WcsXxxShell.ts`, often under `shell/`) — the actual custom element (`HTMLElement` subclass) that wraps Core, handles attributes/lifecycle, and declares `static wcBindable`. The Shell class is exported so adopters can subclass it.
+- **Core** (`src/core/XxxCore.ts`) — framework-agnostic logic over the platform API. Holds state, exposes `commands`, emits events. Testable without the DOM custom element. Packages using the shared request lane / capability layer carry generated copies of `io-core/` next to it.
+- **Shell** (`src/components/<Name>.ts`) — the actual custom element (`HTMLElement` subclass) that wraps Core, handles attributes/lifecycle, and declares `static wcBindable`. The class is usually `WcsXxx`; a few older packages (fetch, storage, timer, raf, debounce) name it `Xxx` and export it as `WcsXxx` (`export { Fetch as WcsFetch }`). The Shell class is exported so adopters can subclass it.
 
-`exports.ts` is the Rollup entry; `src/auto/` holds the single-tag bootstrap.
+`src/exports.ts` is the Rollup entry; `src/auto.ts` is the single-tag bootstrap (it calls the package's `bootstrapXxx()`, which registers the tags via `registerComponents.ts`).
 
 ### Autoloader Flow
 1. Parses the page's Import Map for `@components/` namespace entries
@@ -147,36 +181,40 @@ Each I/O node component splits into two layers:
 5. Observes DOM via MutationObserver for elements added after initial scan
 
 ### Router Architecture
-- `Router.ts` orchestrates navigation, matching routes, and rendering
-- `Route.ts` matches URL patterns and manages route visibility
-- `Layout.ts` / `LayoutOutlet.ts` handle nested layout templates
-- `Navigation.ts` wraps the Navigation API with popstate fallback
-- Route priority: static paths > parameterized > catch-all (`*`)
+- `src/components/Router.ts` orchestrates navigation, matching routes, and rendering; it also holds the `popstate` fallback
+- `src/components/Route.ts` holds a route's parsed path and weight; `matchRoutes.ts` / `testPath.ts` match the URL, `showRoute.ts` / `hideRoute.ts` toggle visibility
+- `src/components/Layout.ts` / `LayoutOutlet.ts` handle nested layout templates
+- `src/Navigation.ts` only feature-detects the Navigation API (`getNavigation()`)
+- Route priority: more segments first, then more static segments (`users` > `:id` > `*`), then definition order — catch-all `*` is lowest (README §3.3)
 - Supports basename for sub-directory deployment
 
 ### State Reactive System
-- `defineState.ts` / `bootstrapState.ts` initialize state from inline JSON, `<script>` tags, or external files
+
+A directory map of the main folders is in [packages/state/CLAUDE.md](packages/state/CLAUDE.md). In short:
+- `bootstrapState.ts` installs every feature (`ALL_FEATURES`) and the 3.5 `wcs/v4-migration` notices, then runs `core/bootstrapCore.ts` (config, tag registration, binder). The split entries (`@wcstack/state/core` + `/features/*`, from `entries/` and `features/`) install only what a page imports
+- `defineState.ts` is the type-only identity helper, shipped alone as `@wcstack/state/define` (`entries/define.ts`); `stateLoader/` reads state from inline JSON, an inline `<script>`, or external JSON / script files
 - `proxy/` implements a reactive proxy that tracks property access and mutations
-- `binding/` handles the binding lifecycle; `bindings/` has specific handlers (value, text, html, class, style, attribute, etc.)
+- `bindings/` owns the binding lifecycle (node collection, `initializeBindings`, `BindingSession`, the binder); `binding/` resolves a binding to its state address; `apply/` holds the per-kind appliers (text, property, class, style, attribute, checkbox / radio, `for` / `if`, command, web component)
 - `structural/` manages `<template>` conditional and list rendering
 - `list/` provides array diffing for efficient DOM updates
-- `filters/` provides the value transformation pipeline
+- Filters: the built-ins are `formats/builtinFilters.ts` (installed by the `formats` feature into `core/filterRegistry.ts`); `filters/` holds their metadata and aliases
+- `updater/` batches writes and applies them to the DOM; `ssr/` builds and hydrates SSR snapshots
 - `command/`, `event/`, `token/`, `protocol/` implement the command-token / event-token / wc-bindable interop
-- Binding syntax: `[property][#modifier]: [path][|(filter | filter(args))...]` — v2 removed the `@state` selector (parse error with a migration hint): one state tree per root; graft subtrees with `<wcs-state mount="path">` volumes and read them as `path.…`
+- Binding syntax: `property[#modifier]: path[|filter[|filter(args)...]]` — v2 removed the `@state` selector (parse error with a migration hint): one state tree per root; graft subtrees with `<wcs-state mount="path">` volumes and read them as `path.…`
 
 ## Examples
 
 - Root `examples/` holds cross-package demo apps only (e.g. `state-camera-record-upload`, `state-notification-chat`, `state-cross-tab-todo`, `ssr`) plus `websocket-chat/` — one chat scenario implemented in five stacks (vanilla / state / signals / React / Vue) on one shared WebSocket server. See `examples/README.md` for the full list and ports.
-- `examples/shared/server.js` is the shared static-file + JSON API core; each demo's `server.js` is a thin file declaring only its own routes. `websocket-chat/shared/` keeps its own self-contained server (needs the `ws` dependency).
-- Single-package demos live in that package's own `examples/` (e.g. `fetch` has `pagination` / `users-crud` / `infinite-scroll`, `speech` has `speech-echo` / `speak-highlight`, `defined` has `defined-loader`, `view-transition` has `list-transitions`, `state` has its basics).
+- `examples/shared/server.js` is the shared static-file + JSON API core; each demo's `server.js` is a thin file declaring only its own routes. `websocket-chat/shared/` keeps its own self-contained server (needs the `ws` dependency), and so does `ssr/` (renders with `@wcstack/server`).
+- Single-package demos live in that package's own `examples/` (e.g. `fetch` has `pagination` / `users-crud` / `infinite-scroll`, `speech` has `speech-echo` / `speak-highlight`, `defined` has `defined-loader`, `midi` has `midi-fader`, `view-transition` has `list-transitions`, `state` has its basics).
 - All state-based demos load packages via CDN one-liners (`https://esm.run/@wcstack/<pkg>/auto`); signals demos import from the single `@wcstack/signals/dom` CDN entry (mixing `.`/`.dom` entries on one CDN page duplicates the reactive core).
 
 ## Docs & Design Notes
 
-`docs/` contains design documents, implementation plans, and spec proposals (e.g. tag-design notes, `signals-migration-plan.md`, `spec-proposal-*.md`, `timing-and-firing-contract.md`, `async-io-node-guidelines.md`). Consult the relevant doc before extending a component's behavior or its protocol. Per-package `README.md`/`README.ja.md` are the normative references for that package.
+`docs/` contains design documents, implementation plans, and spec proposals (e.g. tag-design notes, `signals-migration-plan.md`, `spec-proposal-*.md`, `timing-and-firing-contract.md`, `async-io-node-guidelines.md`). Consult the relevant doc before extending a component's behavior or its protocol. Per-package `README.md`/`README.ja.md` are the normative references for that package — update both (the unscoped `wcstack` package has an English README only).
 
 The AI app-building skill (`wcstack-app`) lives in the separate [wcstack/wcstack-skill](https://github.com/wcstack/wcstack-skill) repository. When changing `data-wcs` syntax, the wc-bindable / command-token / event-token protocols, or router attributes/behavior, update that skill's references to match (its plugin version tracks the wcstack release it was verified against).
 
 ## Module System
 
-All packages use `"type": "module"` (ESM only). No CommonJS support.
+All packages use `"type": "module"` (ESM only); no package ships a CommonJS entry point. The only `.cjs` files are bundled Node tools: `@wcstack/lint`'s `dist/cli.cjs`, `@wcstack/typescript`'s `schema-core.cjs` / `tsc-core.cjs`, and the vscode-wcs extension's esbuild output.
