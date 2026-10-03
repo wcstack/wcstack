@@ -1,16 +1,30 @@
 name: Release
 
+# Two kinds of run (scripts/compute-next-version.mjs computes the version and
+# holds the guards; "Plan the release" below refuses any other combination):
+#
+#   stable      patch / minor / major from X.Y.Z, or release (X.Y.Z-rc.N → X.Y.Z).
+#               Runs from main only; npm dist-tag `latest`; pushes to main.
+#   prerelease  premajor-rc (X.Y.Z → (X+1).0.0-rc.1) or prerelease-rc
+#               (X.Y.Z-rc.N → X.Y.Z-rc.(N+1)). Runs from any branch but main
+#               (the 4.0 rc: research/state-engine); npm dist-tag `next`; a
+#               GitHub prerelease; pushes back to the branch it ran on.
+#
+# Dispatch an rc with: gh workflow run release.yml --ref research/state-engine -f version_type=premajor-rc
 on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: "Version bump type"
+        description: "patch / minor / major / release (rc.N → final): npm latest, from main. premajor-rc (→ X+1.0.0-rc.1) / prerelease-rc (rc.N → rc.N+1): npm next, from a branch other than main."
         required: true
         type: choice
         options:
           - patch
           - minor
           - major
+          - premajor-rc
+          - prerelease-rc
+          - release
 
 permissions:
   contents: write
@@ -23,17 +37,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # packages/state is the 4.0 engine (its wcs-manifest.json carries behaviorOptions,
-      # the marker the golden scripts use). Until the prerelease path for the 4.0 rc (R8,
-      # docs/state-engine-rewrite/v4-remaining.ja.md) exists, no bump type is safe: patch
-      # and minor would publish 4.0 as 3.x, major would skip the rc and land on latest.
-      - name: Refuse to release the 4.0 engine without the rc path
-        run: |
-          if node -e "process.exit(require('./packages/state/dist/wcs-manifest.json').behaviorOptions ? 0 : 1)"; then
-            echo "::error::packages/state is the 4.0 engine; the rc release path (R8) is not in place yet."
-            exit 1
-          fi
 
       # No registry-url on purpose. It makes setup-node write an .npmrc whose
       # `_authToken=${NODE_AUTH_TOKEN}` expands to an empty string once the
@@ -108,6 +111,41 @@ jobs:
           echo "list=$pkgs" >> "$GITHUB_OUTPUT"
           echo "publish_list=$pkgs" >> "$GITHUB_OUTPUT"
 
+      # Compute the single unified target version — the highest current version
+      # across the publish targets with the requested bump applied, so a lagging
+      # package (a freshly added 1.0.0) is pulled onto the shared line — and
+      # refuse, before any of the long steps, a run that would publish the wrong
+      # thing:
+      #   - the 4.0 engine (behaviorOptions in packages/state/dist/wcs-manifest.json)
+      #     under a major below 4, or the 3.x engine under 4 or more;
+      #   - a stable release from a branch other than main (it goes to `latest`;
+      #     before this guard a run from another branch pushed that branch's HEAD
+      #     onto main);
+      #   - a prerelease from main (main carries stable versions only — an rc
+      #     commit there would make main's next 3.x patch start from the rc);
+      #   - a bump that does not fit the current version (patch / minor / major
+      #     on an rc: use `release`; prerelease-rc / release on a stable one).
+      # The unit tests run first: CI runs only on pull requests to main, so on an
+      # rc branch this is the only place they run before a publish.
+      # The branch name reaches the script through the environment, never
+      # through ${{ }} interpolation: a git ref may contain $( ) and backticks.
+      - name: Plan the release
+        id: plan
+        run: |
+          set -euo pipefail
+          node --test --test-reporter=dot scripts/compute-next-version.test.mjs
+          versions=$(
+            for pkg in ${{ steps.discover.outputs.publish_list }}; do
+              node -p "require('./packages/$pkg/package.json').version"
+            done | tr '\n' ' '
+          )
+          echo "current_versions=$versions" >> "$GITHUB_OUTPUT"
+          node scripts/compute-next-version.mjs \
+            --bump "${{ inputs.version_type }}" \
+            --branch "$GITHUB_REF_NAME" --ref-type "$GITHUB_REF_TYPE" \
+            --state-manifest packages/state/dist/wcs-manifest.json \
+            $versions | tee -a "$GITHUB_OUTPUT"
+
       - name: Install dependencies
         run: |
           for pkg in ${{ steps.discover.outputs.list }}; do
@@ -123,6 +161,23 @@ jobs:
             (cd "packages/$pkg" && npm run build)
             echo "::endgroup::"
           done
+
+      # "Plan the release" read the committed state dist, which lags src between
+      # releases; the build above just replaced it. Plan again from the fresh
+      # wcs-manifest.json so a stale committed dist cannot carry a run past the
+      # engine guard. No version has been bumped yet, so the target must agree.
+      - name: Re-check the plan against the fresh state build
+        run: |
+          set -euo pipefail
+          fresh=$(node scripts/compute-next-version.mjs \
+            --bump "${{ inputs.version_type }}" \
+            --branch "$GITHUB_REF_NAME" --ref-type "$GITHUB_REF_TYPE" \
+            --state-manifest packages/state/dist/wcs-manifest.json \
+            ${{ steps.plan.outputs.current_versions }} | sed -n 's/^version=//p')
+          if [ "$fresh" != "${{ steps.plan.outputs.version }}" ]; then
+            echo "::error::the plan changed after the build: ${{ steps.plan.outputs.version }} before, ${fresh:-<refused>} now"
+            exit 1
+          fi
 
       # @wcstack/server's npm ci installs @wcstack/state from the registry, which
       # lags src until this very release is published — its tests would gate the
@@ -143,28 +198,16 @@ jobs:
             echo "::endgroup::"
           done
 
-      # Compute a single unified target version: take the highest current
-      # version across all packages and apply the requested bump. Then pin
-      # every package to that exact version, pulling any lagging packages
-      # (e.g. a freshly added 1.0.0) onto the shared line.
+      # Pin every package to the target version "Plan the release" computed,
+      # pulling any lagging packages (e.g. a freshly added 1.0.0) onto the
+      # shared line. (The bump used to be computed here with `sort -V` and
+      # `IFS=. read`, which cannot read a prerelease suffix.)
       - name: Bump versions
         id: bump
         run: |
           set -euo pipefail
-          versions=$(
-            for pkg in ${{ steps.discover.outputs.publish_list }}; do
-              node -p "require('./packages/$pkg/package.json').version"
-            done
-          )
-          max=$(printf '%s\n' $versions | sort -V | tail -1)
-          IFS=. read -r major minor patch <<< "$max"
-          case "${{ inputs.version_type }}" in
-            major) major=$((major + 1)); minor=0; patch=0 ;;
-            minor) minor=$((minor + 1)); patch=0 ;;
-            patch) patch=$((patch + 1)) ;;
-          esac
-          target="$major.$minor.$patch"
-          echo "Bumping all packages from max $max to $target"
+          target="${{ steps.plan.outputs.version }}"
+          echo "Bumping all packages from max ${{ steps.plan.outputs.current }} to $target"
           for pkg in ${{ steps.discover.outputs.publish_list }}; do
             (cd "packages/$pkg" && npm version "$target" --no-git-tag-version --allow-same-version)
           done
@@ -173,10 +216,12 @@ jobs:
           # runtime dependency; testing declares state/server peers) keep their
           # old ranges and, across a major, would hand consumers a mismatched
           # pair at install time (e.g. server 2.0.0 + state 1.x, or an
-          # unsatisfiable peer). Align them to the unified target. Lockfiles
-          # cannot follow yet — the target versions reach the registry only at
-          # the publish step below — so the lock sync runs right after publish
-          # and amends the release commit before tagging.
+          # unsatisfiable peer). Align them to the unified target: ^X.Y.Z, or the
+          # exact version for an rc (rcs may still break each other, so an rc's
+          # packages install only with the same rc). Lockfiles cannot follow
+          # yet — the target versions reach the registry only at the publish
+          # step below — so the lock sync runs right after publish and amends
+          # the release commit before tagging.
           rewritten=$(node scripts/align-internal-dep-ranges.mjs "$target" \
             $(for pkg in ${{ steps.discover.outputs.publish_list }}; do printf 'packages/%s ' "$pkg"; done))
           echo "Internal @wcstack/* ranges aligned in: ${rewritten:-<none>}"
@@ -280,6 +325,15 @@ jobs:
       # `node scripts/npm-trust-setup.mjs --verify`, which reads how each
       # package was actually published rather than how it is configured.
       # `--provenance` is not passed: a trusted publish attests automatically.
+      # The registration pins the repository and this workflow's filename only
+      # (no `environment`, and npm has no branch filter), so an rc run on a
+      # branch other than main publishes the same way; its provenance names
+      # that branch's commit.
+      #
+      # The dist-tag comes from the plan: `next` for an rc, `latest` otherwise.
+      # The rc needs it: npm 11 refuses to publish a prerelease without --tag
+      # ("You must specify a tag using --tag when publishing a prerelease
+      # version"); older npm would have moved `latest` onto the rc.
       #
       # A package npm has never seen cannot have a trusted publisher — npm only
       # accepts the configuration for one that already exists — so a newly added
@@ -300,8 +354,8 @@ jobs:
                 echo "::error::$name is not on the registry yet, so it has no trusted publisher and this workflow cannot publish it. Publish its first version manually, then register it with scripts/npm-trust-setup.mjs --run."
                 exit 1
               fi
-              echo "::group::publish — $name"
-              (cd "packages/$pkg" && npm publish --access public)
+              echo "::group::publish — $name (dist-tag ${{ steps.plan.outputs.dist_tag }})"
+              (cd "packages/$pkg" && npm publish --access public --tag "${{ steps.plan.outputs.dist_tag }}")
             fi
             echo "::endgroup::"
           done
@@ -334,10 +388,15 @@ jobs:
           git commit --amend --no-edit
 
       # Push only after all npm publishes succeed so git history and tags reflect a completed release.
+      # The commit goes back to the branch the run is on: main for a stable
+      # release (the plan refuses one from any other branch), the rc branch for
+      # a prerelease (the plan refuses one from main) — so main stays on stable
+      # versions while an rc line is out.
       - name: Tag and push release
         run: |
+          set -euo pipefail
           git tag "v${{ steps.bump.outputs.version }}"
-          git push origin HEAD:main
+          git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
           git push origin "v${{ steps.bump.outputs.version }}"
 
       # Create GitHub Release.
@@ -353,14 +412,28 @@ jobs:
       # sri.json rides along as an asset for tooling — and, being served from
       # GitHub rather than the CDN, it is the independent source that makes
       # verifying a jsDelivr response meaningful.
+      #
+      # An rc is a GitHub prerelease (never marked "Latest"), and its notes
+      # start from the version it was bumped from (v3.5.4 for rc.1, rc.N for
+      # rc.N+1) when that tag exists, instead of leaving the base to GitHub's
+      # guess. A stable release keeps the automatic base.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tag="v${{ steps.bump.outputs.version }}"
+          notes_args=(-f tag_name="$tag")
+          create_args=()
+          if [ "${{ steps.plan.outputs.prerelease }}" = "true" ]; then
+            create_args+=(--prerelease)
+            previous="v${{ steps.plan.outputs.current }}"
+            if git rev-parse -q --verify "refs/tags/$previous" >/dev/null; then
+              notes_args+=(-f previous_tag_name="$previous")
+            fi
+          fi
           gh api "repos/${{ github.repository }}/releases/generate-notes" \
-            -f tag_name="$tag" \
+            "${notes_args[@]}" \
             --jq .body > generated-notes.md
           cat sri-notes.md > release-notes.md
           printf '\n---\n\n' >> release-notes.md
@@ -368,4 +441,5 @@ jobs:
           gh release create "$tag" \
             --title "$tag" \
             --notes-file release-notes.md \
+            "${create_args[@]}" \
             sri.json
