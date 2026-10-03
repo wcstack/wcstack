@@ -257,6 +257,7 @@ function snapshot(el: Element, engine: Engine): void {
  * binding, `radio:`, a row's), where it differs from what the markup gives back. The page then shows
  * the server's values before the client binds it, or without JS; the client's bindings find them
  * there, and write over them from then on. On a page with a `<wcs-state>` only (enable-ssr or not).
+ * A password's value never goes into the HTML (3.x wrote it): the client's binding fills it in.
  */
 function forms(doc: Document): void {
   if (doc.querySelector(config.tagNames.state) === null) return;
@@ -273,7 +274,7 @@ function forms(doc: Document): void {
       if (n.value !== n.defaultValue && !n.value.includes("{{") && !Array.from(n.childNodes).some((c) => rawTexts.has(c as Node))) n.textContent = n.value;
     } else if (n.type === "checkbox" || n.type === "radio") {
       n.toggleAttribute("checked", n.checked);
-    } else if (n.value !== n.defaultValue) {
+    } else if (n.type !== "password" && n.value !== n.defaultValue) {
       n.setAttribute("value", n.value);
     }
   }

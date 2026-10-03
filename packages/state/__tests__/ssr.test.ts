@@ -260,6 +260,18 @@ describe("SSR のフォームの値（3.x と同じく HTML に書く）", () =>
     expect((root.querySelector("select") as HTMLSelectElement).selectedOptions.length).toBe(1);
   });
 
+  it("type=password の値はサーバの HTML に書かず、クライアントのバインディングが入れる", async () => {
+    const html = await serverRender(
+      `<wcs-state enable-ssr></wcs-state><input class="pw" type="password" data-wcs="value: pw"><input class="name" data-wcs="value: name">`,
+      { pw: "s3cret", name: "Alice" },
+    );
+    // (the element's markup only: the snapshot holds the state, as any enable-ssr state)
+    expect(html).toContain(`<input class="pw" type="password" data-wcs="value: pw">`);
+    expect(html).toContain(`<input class="name" data-wcs="value: name" value="Alice">`);
+    const { root } = await clientLoad(html, { pw: "s3cret", name: "Alice" });
+    expect((root.querySelector("input.pw") as HTMLInputElement).value).toBe("s3cret");
+  });
+
   it("<wcs-state> の無い文書のフォーム要素には触れない", () => {
     const h = document.createElement(`ssr-plain-${seq++}`);
     const root = h.attachShadow({ mode: "open" });
