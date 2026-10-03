@@ -103,6 +103,19 @@ jobs:
       # committed dist が入力なので npm ci 不要・src が dist より先行していても安定。
       - run: node packages/vscode-wcs/scripts/emit-builtin-tags.mjs --check
 
+  release-plan:
+    # The release planning release.yml runs before it publishes (version bump,
+    # npm dist-tag, the branch / engine guards, internal range alignment):
+    # tested here so a broken rule fails a PR rather than a release. release.yml
+    # runs the same tests again, since an rc branch gets no CI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test scripts/compute-next-version.test.mjs
+
   bindable-conformance:
     # settable wcBindable member ⇒ declared in inputs. A runtime check that
     # imports each package's committed dist bundle and inspects the *evaluated*

@@ -8,8 +8,10 @@
 // peerDependencies keep their old ranges, and across a major that ships a
 // mismatched pair to consumers (e.g. server 2.0.0 declaring "@wcstack/state":
 // "^1.9.1" pairs installs with state 1.x). This script rewrites every such
-// entry to ^<target-version>. `file:` specifiers (local dev links) are left
-// alone — they never reach the registry.
+// entry to ^<target-version> — or, for a prerelease target (4.0.0-rc.1), to the
+// exact version, so an rc's packages install only with the same rc
+// (`internalRange` in scripts/compute-next-version.mjs says why). `file:`
+// specifiers (local dev links) are left alone — they never reach the registry.
 //
 // Prints each package dir it changed, one per line (consumed by release.yml
 // to know which lockfiles need the post-publish sync). Exits non-zero only on
@@ -17,13 +19,22 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { internalRange, parseVersion } from "./compute-next-version.mjs";
 
 const [target, ...pkgDirs] = process.argv.slice(2);
-if (!target || !/^\d+\.\d+\.\d+$/.test(target) || pkgDirs.length === 0) {
+let validTarget = false;
+try {
+  parseVersion(target);
+  validTarget = true;
+} catch {
+  // reported below
+}
+if (!validTarget || pkgDirs.length === 0) {
   console.error("Usage: node scripts/align-internal-dep-ranges.mjs <target-version> <pkg-dir>...");
   process.exit(1);
 }
 
+const next = internalRange(target);
 for (const dir of pkgDirs) {
   const manifestPath = join(dir, "package.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
@@ -31,7 +42,6 @@ for (const dir of pkgDirs) {
   for (const section of ["dependencies", "peerDependencies"]) {
     for (const [name, range] of Object.entries(manifest[section] ?? {})) {
       if (name.startsWith("@wcstack/") && !range.startsWith("file:")) {
-        const next = `^${target}`;
         if (range !== next) {
           manifest[section][name] = next;
           changed = true;
