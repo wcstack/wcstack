@@ -243,6 +243,10 @@ The files changed and the firing points. All go through §2's `sink` and conform
   deduplicated. Writes from `$watch` / `$scan` carry the chain over, so a cycle that goes through them
   is stopped by this limit too (#353). It is emitted once per chain: when the listeners of the batch
   that was cut off still hand the chain on, the batches that follow are not applied and not reported.
+  The 4.0 engine (`packages/state-next`) also sends it, with `maxDepth: 32`, when one drain does not
+  settle within `MAX_DRAIN_PASSES` (32) passes (an element that writes back synchronously when a
+  binding sets it), once per chain as well. In 4.0, `paths` lists the paths of the work that was
+  dropped (the bindings and lists that would have been applied next), deduplicated.
 
 ### 4.3.1 `$watch` failures
 

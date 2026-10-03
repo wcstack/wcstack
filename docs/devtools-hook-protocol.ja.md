@@ -235,6 +235,9 @@ interface IDeclaredBindingInfo {
   巻き戻さない（`propagation:hop-limit` と同じ姿勢）。`paths` はそのバッチのパス（重複を畳む）。
   `$watch` / `$scan` の書き込みは連鎖を引き継ぐので、それらを挟む循環もこの上限で止まる（#353）。
   報告は連鎖ごとに 1 回 —— 打ち切ったバッチのリスナーが連鎖を引き継いでも、続くバッチは流さずに適用しない。
+  4.0 のエンジン（`packages/state-next`）は、1 回の drain が `MAX_DRAIN_PASSES`（32）回のパスで落ち着かない
+  とき（binding が値を設定すると同期に書き戻す要素など）にも、同じイベントを `maxDepth: 32` で、これも
+  連鎖ごとに 1 回送る。4.0 の `paths` は、捨てた仕事（次に適用するはずだった binding と一覧）のパス（重複を畳む）。
 
 ### 4.3.1 `$watch` の失敗
 

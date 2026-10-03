@@ -672,7 +672,7 @@ describe("#338 行の要素の出力を、その一覧の元になるルート�
       });
       await new Promise((r) => setTimeout(r, 20));
       const messages = error.mock.calls.map((x) => String((x[0] as Error)?.message ?? x[0]));
-      // the drain is cut at MAX_DRAIN_PASSES (32) and reported (#11, no path named); the list shows the last pass
+      // the drain is cut at MAX_DRAIN_PASSES (32) and reported (#11, with the paths); the list shows the last pass
       expect(evals).toBeLessThanOrEqual(34);
       expect(messages).toEqual(["[@wcstack/state] #11"]);
       expect(texts(root, "span").length).toBe(2);

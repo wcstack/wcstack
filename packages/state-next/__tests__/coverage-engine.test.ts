@@ -591,7 +591,8 @@ describe("落ち着かない更新（MAX_DRAIN_PASSES）", () => {
     mount(e, document);
     await flush();
     expect(error).toHaveBeenCalledTimes(1);
-    expect(error).toHaveBeenCalledWith(expect.stringMatching(core(M.DrainNotSettled)));
+    // reported with the paths the dropped work would have rendered
+    expect(error).toHaveBeenCalledWith(expect.stringMatching(core(M.DrainNotSettled)), ["n", "arr", "rows"]);
     stop = true;
     e.proxy.n = 100;
     e.proxy.arr = [100];

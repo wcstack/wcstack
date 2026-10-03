@@ -84,10 +84,10 @@ export interface Hooks {
   /** The split auto entry: loads and installs add-ons of its build by name (a state's `$features`). */
   load?: ((names: string[]) => Promise<void>) | null;
   /**
-   * An event an add-on reports for the DevTools protocol (a `$watch` handler fired or threw, a
-   * `$watch` chain cut, a path that does not resolve): `event` is the protocol's payload, its keys
-   * quoted (`{ "type": "state:watch-fired", "path": … }`). Called as `hooks.noticed?.(engine, {…})`,
-   * the payload is built only while the slot is filled.
+   * An event an add-on (or the core) reports for the DevTools protocol (a `$watch` handler fired or
+   * threw, a `$watch` chain or an update loop cut, a path that does not resolve): `event` is the
+   * protocol's payload, its keys quoted (`{ "type": "state:watch-fired", "path": … }`). Called as
+   * `hooks.noticed?.(engine, {…})`, the payload is built only while the slot is filled.
    */
   noticed?: ((engine: Engine, event: Record<string, unknown>) => void) | null;
 }

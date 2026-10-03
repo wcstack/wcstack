@@ -935,15 +935,113 @@ describe("#389 行の下を動的なキーで多く読んでも、要素の書�
     expect(await appendAfterMidWrite(html)).toContainEqual(["L44", undefined, 3]);
   });
 
-  // 3.x #389 の修正の形が 4.0 で再現しない: リストの代入で、同じオブジェクトのまま残った既存の行の行 getter が
-  // 評価し直され、値が変わらないまま $watch が発火する（実測 [["L11","L11",0],["L72","L72",1],["L33","L33",2],["L44",undefined,3]] /
-  // 期待 [["L44",undefined,3]]）。4.0 自身の src/temporal/watch.ts の冒頭の「whole-array assignment fires only for the rows
-  // that entered the list (a row kept by identity did not change)」にも反する。途中の値の書き込みが無くても同じ
+  // リストの代入は残った行の行 getter にも届く（評価し直す — #364）が、値の変わらないプリミティブは着地ではない
+  // （src/temporal/watch.ts の drained）。修正前は [["L11","L11",0],["L72","L72",1],["L33","L33",2],["L44",undefined,3]] と発火した
   for (const [label, html] of VARIANTS389) {
-    it.fails(`途中の値を書いた後のリストへの行の追加で、残った行の行 getter の $watch は発火しない（${label}）`, async () => {
+    it(`途中の値を書いた後のリストへの行の追加で、残った行の行 getter の $watch は発火しない（${label}）`, async () => {
       expect(await appendAfterMidWrite(html)).toEqual([["L44", undefined, 3]]);
     });
   }
+
+  /** 行 getter `items.*.label` を watch するページ。発火を [cur, prev, index] で集める */
+  const labelPage = async (html: string, label: (self: any) => unknown) => {
+    const fired: unknown[] = [];
+    const loaded = await page(`<b>{{ items.length }}</b>${html}`, {
+      items: [{ id: 1 }, { id: 2 }],
+      get "items.*.label"() { return label(this); },
+      $watch: { "items.*.label"(cur: unknown, prev: unknown, i: unknown) { fired.push([cur, prev, i]); } },
+    });
+    return { ...loaded, fired };
+  };
+
+  it.each(VARIANTS389)("リストの代入で残った行の行 getter の値が変わるときは、その行も発火する（値の変わらない行だけを落とす — %s）", async (_label, html) => {
+    const { write, fired } = await labelPage(html, (self) => `${self["items.*.id"]}/${self.items.length}`);
+    await write((s) => { s.items = [...s.items, { id: 3 }]; });
+    expect(fired).toEqual([["1/3", "1/2", 0], ["2/3", "2/2", 1], ["3/3", undefined, 2]]);
+  });
+
+  it.each(VARIANTS389)("要素の書き込みで行を差し替えると、行 getter の値が同じでも発火する（書き込みの着地 — %s）", async (_label, html) => {
+    const { write, fired } = await labelPage(html, (self) => `L${self["items.*.id"]}`);
+    await write((s) => { s["items.1"] = { id: 2 }; });
+    expect(fired).toEqual([["L2", "L2", 1]]);
+    fired.length = 0;
+    // 値の変わる差し替えは、もちろん発火する
+    await write((s) => { s["items.0"] = { id: 9 }; });
+    expect(fired).toEqual([["L9", "L1", 0]]);
+  });
+
+  it.each(VARIANTS389)("リストが残した行は、行 getter が同じオブジェクトを返しても発火しない（届き直しただけ。同じオブジェクトを返す形は 3.x も発火しない — %s）", async (_label, html) => {
+    const shared = { n: 1 };
+    const { write, fired } = await labelPage(html, (self) => (self["items.*.id"] === 1 ? shared : null));
+    await write((s) => { s.items = [...s.items, { id: 3 }]; });
+    // 行 0 は同じオブジェクト、行 1 は null のまま（どちらも落とす）、行 2 は新しい行
+    expect(fired).toEqual([[null, undefined, 2]]);
+  });
+
+  it.each(VARIANTS389)("行 getter が読む値が本当に変われば、どの行の値も変わらなくても全行が発火する（3.x D4: $watch 自身の発火条件は無い — %s）", async (_label, html) => {
+    const fired: unknown[] = [];
+    const { write } = await page(`<b>{{ now }}</b>${html}`, {
+      now: 5,
+      items: [{ due: 1 }, { due: 10 }, { due: 20 }],
+      get "items.*.overdue"() { return (this as any)["items.*.due"] < (this as any).now; },
+      $watch: { "items.*.overdue"(cur: unknown, prev: unknown, i: unknown) { fired.push([cur, prev, i]); } },
+    });
+    await write((s) => { s.now = 6; });
+    expect(fired).toEqual([[true, true, 0], [false, false, 1], [false, false, 2]]);
+    fired.length = 0;
+    // 値の変わる行も、変わらない行も発火する
+    await write((s) => { s.now = 15; });
+    expect(fired).toEqual([[true, true, 0], [true, false, 1], [false, false, 2]]);
+  });
+
+  it.each(VARIANTS389)("同じバッチでリストの代入の後に行 getter の依存を書いても、書いた順に依らず全行が発火する（%s）", async (_label, html) => {
+    const make = (fired: unknown[]) => ({
+      now: 5,
+      items: [{ due: 1 }, { due: 10 }],
+      get "items.*.overdue"() { return (this as any)["items.*.due"] < (this as any).now; },
+      $watch: { "items.*.overdue"(cur: unknown, prev: unknown, i: unknown) { fired.push([cur, prev, i]); } },
+    });
+    const expected = [[true, true, 0], [false, false, 1], [false, undefined, 2]];
+    const listFirst: unknown[] = [];
+    const a = await page(html, make(listFirst));
+    await a.write((s) => { s.items = [...s.items, { due: 30 }]; s.now = 6; });
+    expect(listFirst).toEqual(expected);
+    const nowFirst: unknown[] = [];
+    const b = await page(html, make(nowFirst));
+    await b.write((s) => { s.now = 6; s.items = [...s.items, { due: 30 }]; });
+    expect(nowFirst).toEqual(expected);
+  });
+
+  it.each(VARIANTS389)("行 getter が読む getter をたどっても書いたパスに届かなければ（菱形に読んでいても）、リストの代入で残った行は発火しない（%s）", async (_label, html) => {
+    const fired: unknown[] = [];
+    const { write } = await page(html, {
+      k: 1,
+      items: [{ id: 1 }, { id: 2 }],
+      get c() { return (this as any).k; },
+      get a() { return (this as any).c; },
+      get b() { return (this as any).c; },
+      get "items.*.v"() { return (this as any)["items.*.id"] + (this as any).a + (this as any).b; },
+      $watch: { "items.*.v"(cur: unknown, prev: unknown, i: unknown) { fired.push([cur, prev, i]); } },
+    });
+    await write((s) => { s.items = [...s.items, { id: 3 }]; });
+    expect(fired).toEqual([[5, undefined, 2]]);
+    fired.length = 0;
+    // 菱形の奥の k を書けば、どの行も発火する
+    await write((s) => { s.k = 2; });
+    expect(fired).toEqual([[5, 3, 0], [6, 4, 1], [7, 5, 2]]);
+  });
+
+  it.each(VARIANTS389)("行 getter がリストから求めたルートの getter（count）を読むなら、リストの代入で残った行も発火する（%s）", async (_label, html) => {
+    const fired: unknown[] = [];
+    const { write } = await page(html, {
+      items: [{ id: 1 }, { id: 2 }],
+      get count() { return (this as any).items.length; },
+      get "items.*.many"() { return (this as any).count > 1; },
+      $watch: { "items.*.many"(cur: unknown, prev: unknown, i: unknown) { fired.push([cur, prev, i]); } },
+    });
+    await write((s) => { s.items = [...s.items, { id: 3 }]; });
+    expect(fired).toEqual([[true, true, 0], [true, true, 1], [true, undefined, 2]]);
+  });
 });
 
 // ================================================================ #362

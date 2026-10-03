@@ -45,7 +45,7 @@ describe("$watch", () => {
     error.mockRestore();
   });
 
-  it("互いに書き合う監視は 32 回で打ち切る", async () => {
+  it("互いに書き合う監視は 33 回で打ち切る（3.x と同じく、深さ 32 までの書き込みが起こしたハンドラは動く）", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     let fired = 0;
     const { write } = await host("", {
@@ -54,9 +54,24 @@ describe("$watch", () => {
     });
     await write((s) => { s.n = 1; });
     for (let i = 0; i < 40; i++) await flush();
-    expect(fired).toBe(32);
+    expect(fired).toBe(33);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("the chain is cut"));
     error.mockRestore();
+  });
+
+  it("先頭の段が数字のキーの getter（get \"2024.parity\"）の $watch は添字のキーではない: y.parity と同じく、値が変わらなくても依存の変化で発火する", async () => {
+    const seen: string[] = [];
+    const { write } = await host("", {
+      n: 1,
+      get "2024.parity"() { return (this as any).n % 2; },
+      get "y.parity"() { return (this as any).n % 2; },
+      $watch: {
+        "2024.parity"(cur: number, prev: number) { seen.push(`2024:${prev}->${cur}`); },
+        "y.parity"(cur: number, prev: number) { seen.push(`y:${prev}->${cur}`); },
+      },
+    });
+    await write((s) => { s.n = 3; });
+    expect(seen).toEqual(["2024:1->1", "y:1->1"]);
   });
 
   it("$connectedCallback の中の書き込みでは発火せず、その後から発火する", async () => {
@@ -153,6 +168,13 @@ describe("$stream", () => {
     // a finished run is not aborted afterwards
     expect(m.runs[0].signal.aborted).toBe(false);
     expect(read("$streamStatus.s")).toBe("active");
+  });
+
+  it("args が $eq で読む依存が同じ回に 2 回変わり、args に 2 回届いても、再開は 1 回", async () => {
+    const m = manual();
+    const { write } = await host("", { sel: 1, $stream: { s: { args: (st: any) => st.$eq("sel", 1), source: m.source } } });
+    await write((st) => { st.sel = 2; st.sel = 1; });
+    expect(m.runs.map((r) => r.args)).toEqual([true, true]);
   });
 
   it("実行中の再開では前の実行を中止し、その後の塊は捨てる。値は initial に戻る", async () => {

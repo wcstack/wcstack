@@ -50,7 +50,7 @@
 - [ ] `listPaths` / `getterPaths` / `setterPaths` / `nextVersion()` を使っている箇所を置き換える（§3.7）。
 - [ ] `/core` のページ: `$listKeys` を使うなら `features/list-keys` を入れる（§3.8）。
 - [ ] `/core` のページ: 開発中は `features/diagnostics` を入れる（§3.8）。
-- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、数値の添字を持つキーや、複数の行が持つ配列の `$watch`、リストの末尾より先の読み（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。
+- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、数値の添字を持つキーや、複数の行が持つ配列の `$watch`、リストの代入で残った行の、行 getter の `$watch`、リストの末尾より先の読み（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。
 - [ ] `@wcstack/lint` 4.0 を流し、報告を直す（§4）。
 
 > **コメントバインディングは残ります。** `<!--@@: path-->` と `<!--@@wcs-text: path-->` は 4.0 でも使えます。lint が、描画前の表示のちらつき（FOUC）を避けるために `<template>` の外の `{{ }}` の代わりに勧めている書き方で、4.0 は `enableMustache` を切っていてもバインドします。なくなるのは、キーワードを変える `commentTextPrefix` オプションだけです。詳しくは §3.4。
@@ -403,6 +403,9 @@ this.items = items;
 - `__proto__` か `prototype` を通るパスは `[wcs/binding-syntax] #120` で throw します。バインディング、書き込み、`$resolve`、`$setAll`、`this.__proto__` のような読みが対象です。
 - `state="id"` は、その id の `<script type="application/json">` だけを読みます。
 - 数値の添字を持つ `$watch` のキー（`"items.0.v"`）は、その添字の値が変わったときだけ発火します。3.x（3.4 以降）は、添字を通した書き込み、要素の差し替え、リストのどの行への書き込みでも発火し、値が変わっていないこともありました。
+- `$watch` のハンドラと `$stream` の再開の連鎖が上限を超えると（3.x と同じく、深さ 32 を超えた書き込み）、その書き込みが起こしたハンドラと再開だけを飛ばし、同じバッチのほかのハンドラは動きます。3.x はバッチごと飛ばしていました。再開の書き込みは描画の連鎖（100 回の drain）にも数えます。microtask ごとに続く要素の書き戻しが stream を再開させると、50 回ほどで打ち切られます（stream が無ければ 100 回）。
+- `$stream` の source が実行の開始（再開）と同じタスクの中で（同期に、または microtask で）出した値は、それが起こす再開の連鎖に数えます。値が別の stream の `args` に届くと、その stream は 1 段深く再開します。そのため、すぐに値を出す source で互いの値を読む 2 本の stream は、ページを固めずに打ち切られます。後のタスクで届いた値と、値が起こす `$watch` のハンドラは、数え直しです。
+- リストの代入や並べ替えで残った行の、行 getter の `$watch`（`items.*.label`）は、値が変わったときだけ発火します。ただし、同じバッチの書き込みが、その getter が行の外で読んだもの — `now`、`items.length`、それらを読むルートの getter（`get count() { return this.items.length }`）— を変えたとき、または別の行の同じパス（`items.0.due`）に書いたときは発火します。3.5.1 は、getter を DOM に束ねていれば、残った行を値の変化に関わらずすべて発火させ、getter が同じオブジェクトを返すときだけ発火させませんでした。
 - 複数の外側の行が同じ配列を持つとき、その要素への書き込みは、`$watch("groups.*.items.*")` を、配列を持つ外側の行ごとに 1 回ずつ、それぞれの添字で発火させます。その配列を持つどのパスでも値が変わったためです。3.x は、書いた位置で 1 回だけ発火させていました。
 - リストの末尾より先の添字: 書き込み（`this["items.5.v"] = 1`、`$resolve("items.*.v", [5], 1)`）は `no row for "items.*.v"` で throw して何も変えず、読みは `undefined` を返します。3.x は、どちらも `ListIndex not found` で throw していました。
 
@@ -532,7 +535,7 @@ export default {
 - **`@wcstack/server`**: §3.6。
 - **`@wcstack/autoloader` と I/O ノードのパッケージ**: `bootstrapXxx()` のオプションの規則と `scanImportmap`（§3.2）。
 - **`wcstack/auto`** は `@wcstack/state`・router・fetch・storage・autoloader を同梱しているので、ここまでの変更がすべて及びます。
-- **`@wcstack/devtools`**: そのまま動きます（フックのプロトコル v2）。
+- **`@wcstack/devtools`**: そのまま動きます（フックのプロトコル v2）。1 回の更新が 32 回のパスで落ち着かないときも `state:render-chain-limit` を送ります（`maxDepth: 32`）。
 - **binder プロトコル**: `bind(subtree, options?)` に省略できる第 2 引数が加わります。内容を差し込み、後でひとまとまりとして出し入れするコード（3.5 以降の router）は `{ range: true }` を渡し、そのときだけ差し込んだ内容の先頭の `for:` / `if:` のテンプレートが描かれます。binder を自分で呼ぶ場合だけ関係します。
 - **[wcstack-app skill](https://github.com/wcstack/wcstack-skill)** は、別に 4.0 に合わせて更新します。
 

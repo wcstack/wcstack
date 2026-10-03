@@ -50,7 +50,7 @@ When upgrading to 4.0 (§2, §3):
 - [ ] Replace uses of `listPaths` / `getterPaths` / `setterPaths` / `nextVersion()` (§3.7).
 - [ ] Pages on `/core`: install `features/list-keys` if they use `$listKeys` (§3.8).
 - [ ] Pages on `/core`: install `features/diagnostics` while developing (§3.8).
-- [ ] Read the changes nothing reports: children of content-binding elements, `<noscript>` / `<iframe>`, comments in `<textarea>` / `<title>`, `$watch` on a numeric-index key or on an array several rows share, reads past the end of a list (§3.4); post-processing of SSR output (§3.6); the extra child node in the router outlet (§3.9).
+- [ ] Read the changes nothing reports: children of content-binding elements, `<noscript>` / `<iframe>`, comments in `<textarea>` / `<title>`, `$watch` on a numeric-index key or on an array several rows share, a row getter `$watch` on the rows a list assignment kept, reads past the end of a list (§3.4); post-processing of SSR output (§3.6); the extra child node in the router outlet (§3.9).
 - [ ] Run `@wcstack/lint` 4.0 and fix what it reports (§4).
 
 > **Comment bindings stay.** `<!--@@: path-->` and `<!--@@wcs-text: path-->` are still supported in 4.0. This is the form the lint recommends instead of `{{ }}` outside a `<template>`, to avoid a flash of unrendered text, and 4.0 binds it even when `enableMustache` is off. Only the `commentTextPrefix` option, which renamed the keyword, is gone. Details in §3.4.
@@ -403,6 +403,9 @@ At page level, an element's children are bound before the element's own bindings
 - A path that goes through `__proto__` or `prototype` throws `[wcs/binding-syntax] #120`: in bindings, writes, `$resolve`, `$setAll`, and reads such as `this.__proto__`.
 - `state="id"` reads only a `<script type="application/json">` with that id.
 - A `$watch` key with a numeric index (`"items.0.v"`) fires only when the value at that index changes. 3.x (since 3.4) fires it on a write through the index, on an element replacement, and on a write to any row of the list, possibly with an unchanged value.
+- When a chain of `$watch` handlers and `$stream` restarts goes past its limit (writes more than 32 deep, as in 3.x), only the handlers and restarts those writes fired are skipped; the batch's other handlers still run. 3.x skipped the whole batch. A restart's writes also count toward the render chain (100 drains): element write-backs that restart a stream a microtask apart are cut after about 50 (100 without the stream).
+- A value a `$stream` source yields in the same task as its run's (re)start (synchronously or in a microtask) counts toward the chain of the restarts it causes: when it reaches another stream's `args`, that stream restarts one link deeper, so two streams that read each other's values with a source that yields at once are cut instead of freezing the page. A value from a later task, and the `$watch` handlers a value fires, start afresh.
+- A row getter `$watch` (`items.*.label`) on a row that a list assignment or re-sort kept fires only when its value changed, unless a write in the same batch changed something the getter read outside its row: `now`, `items.length`, or a root getter that reads them (`get count() { return this.items.length }`) — or wrote the same path in another row (`items.0.due`). 3.5.1 fired every kept row whose getter was bound to the DOM, changed or not, and skipped it only when the getter returned the same object.
 - When several outer rows hold the same array, writing one of its elements fires `$watch("groups.*.items.*")` once for every outer row that holds it, each with its own indexes: the value changed at every one of those paths. 3.x fired it once, at the position written.
 - An index past the end of a list: a write (`this["items.5.v"] = 1`, `$resolve("items.*.v", [5], 1)`) throws `no row for "items.*.v"` and changes nothing, and a read returns `undefined`. 3.x threw `ListIndex not found` on both.
 
@@ -532,7 +535,7 @@ New in 4.0, and optional:
 - **`@wcstack/server`**: §3.6.
 - **`@wcstack/autoloader` and the I/O node packages**: the `bootstrapXxx()` options rule and `scanImportmap` (§3.2).
 - **`wcstack/auto`** bundles `@wcstack/state`, the router, fetch, storage and the autoloader, so it brings all of the above.
-- **`@wcstack/devtools`**: works unchanged (hook protocol v2).
+- **`@wcstack/devtools`**: works unchanged (hook protocol v2). `state:render-chain-limit` is also sent when one update does not settle within 32 passes (`maxDepth: 32`).
 - **The binder protocol**: `bind(subtree, options?)` gains an optional second argument. Code that inserts content and later moves it in and out as one block passes `{ range: true }` (the router 3.5 and later does), and only then are `for:` / `if:` templates at the top of the inserted content rendered. This matters only if you call the binder yourself.
 - **The [wcstack-app skill](https://github.com/wcstack/wcstack-skill)** is updated separately for 4.0.
 

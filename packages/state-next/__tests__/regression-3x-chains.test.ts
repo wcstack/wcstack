@@ -13,7 +13,7 @@
  * 3.x の `$updatedCallback` は 4.0 の `$renderedCallback`（最初の描画では呼ばれない）。
  * 既存の issues*.test.ts が移した Issue の再現手順そのものは重ねない（報告に記す）。
  */
-import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { bootstrapState, devtools, getBindingsReady, installFeatures, ssr, temporal } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -99,6 +99,16 @@ function loopState(counter: { evals: number }, extra: Record<string, unknown> = 
     ...extra,
   };
 }
+
+const RUNNER_KEY = Symbol.for("wcstack.transition-runner");
+/** A view-transition arbiter that applies every update in a later macrotask (a transition's update callback). */
+const deferringRunner = () => ({
+  protocol: "wcs-transition-runner", version: 1, naming: "manual", namingLimit: 200,
+  accepts: () => true,
+  run(mutate: () => void): Promise<void> {
+    return new Promise<void>((resolve) => { setTimeout(() => { mutate(); resolve(); }, 0); });
+  },
+});
 
 const loopHtml = (tag: string, key = "mode") =>
   `<p>{{ title }}</p><ul><template data-wcs="for: view"><li><${tag} data-wcs="status: ${key}"></${tag}><span>{{ .m }}</span></li></template></ul>`;
@@ -215,10 +225,9 @@ describe("#338 描画が起こす書き込みの終わらない連鎖は打ち�
     host.remove();
   });
 
-  // 3.x #338 の修正の形が 4.0 で再現しない: 打ち切りは console.error（#11 / #41）にだけ出て、DevTools には何も
-  // 流れない（実測 limit の付くイベント 0 件 / 期待 1 件 — 3.x は state:render-chain-limit）。src/engine.ts の
-  // drain() は打ち切りの 2 か所（MAX_RENDER_CHAIN の報告・MAX_DRAIN_PASSES の報告）で hooks.noticed を呼ばない
-  it.fails("打ち切りが DevTools へ 1 回流れる（3.x: state:render-chain-limit）", async () => {
+  // 打ち切りの 2 か所（MAX_RENDER_CHAIN・MAX_DRAIN_PASSES — src/engine.ts の cutLoop）は console.error と同じパスで
+  // DevTools にも送る
+  it("打ち切りが DevTools へ 1 回流れる（3.x: state:render-chain-limit）", async () => {
     errorSpy();
     const events = listen();
     const tag = defineOutput((n) => `m${n}`);
@@ -229,6 +238,74 @@ describe("#338 描画が起こす書き込みの終わらない連鎖は打ち�
 
     const limits = events.filter((e) => typeof e.type === "string" && /limit|settle/.test(e.type) && e.type !== "state:watch-chain-limit");
     expect(limits).toHaveLength(1);
+  });
+
+  it("DevTools へは 3.x の形（state:render-chain-limit・上限・パス）で流れ、1 回の drain の中で落ち着かない循環（上限 32）も drain をまたぐ描画の連鎖（上限 100）も送る", async () => {
+    const error = errorSpy();
+    const events = listen();
+    // 行の要素が一覧の元のキーへ直接書き戻す: 1 回の drain の中で落ち着かない（MAX_DRAIN_PASSES）
+    const first = await page(loopHtml(defineOutput((n) => `m${n}`)), loopState({ evals: 0 }));
+    await settle();
+    first.host.remove();
+    // 書き戻しを $renderedCallback が一覧の元のキーへ移す: drain をまたいで回る（MAX_RENDER_CHAIN）
+    const second = await page(loopHtml(defineOutput((n) => `m${n}`), "x"), loopState({ evals: 0 }, {
+      x: "",
+      $renderedCallback(this: any) { if (this.x !== "" && this.mode !== this.x) this.mode = this.x; },
+    }));
+    await settle();
+    second.write((s) => { s.mode = "kick"; });
+    await settle();
+    second.host.remove();
+
+    expect(events.filter((e) => e.type === "state:render-chain-limit")).toEqual([
+      { "type": "state:render-chain-limit", "maxDepth": 32, "paths": ["view"], "stateElement": first.el },
+      { "type": "state:render-chain-limit", "maxDepth": 100, "paths": ["view"], "stateElement": second.el },
+    ]);
+    // console にも同じパスを添える
+    expect(error.mock.calls.map((c) => c[1])).toEqual([["view"], ["view"]]);
+  });
+
+  it("1 回の drain の中で落ち着かない循環（#11）を $watch が drain ごとに始め直しても、#11 は連鎖ごとに 1 回だけ報告され（DevTools も）、描画の連鎖の上限で止まる", async () => {
+    const error = errorSpy();
+    // setter の中で出力イベントを同期に出す要素: 値を設定するたびに書き戻す
+    const tag = `regression-3x-chains-sync-${seq++}`;
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = {
+        protocol: "wc-bindable", version: 1,
+        properties: [{ name: "status", event: `${tag}:status` }],
+        inputs: [{ name: "value" }],
+      };
+      _status: unknown = 0;
+      get status(): unknown { return this._status; }
+      set value(v: unknown) {
+        this._status = v;
+        this.dispatchEvent(new CustomEvent(`${tag}:status`, { detail: v }));
+      }
+    });
+    let evals = 0;
+    const { host, write } = await page(`<${tag} data-wcs="value: a; status: b"></${tag}>`, {
+      b: 0,
+      kick: 0,
+      go: false,
+      get a(): number {
+        if (++evals > 20000) throw new Error("runaway-evals");
+        return (this as any).b + (this as any).kick + 1;
+      },
+      // 打ち切られた drain の書き戻しを見て、次の drain で同じ循環を始め直す
+      $watch: { b(this: any) { if (this.go) this.kick = this.kick + 1; } },
+    });
+    await settle();
+    // 読み込みの時の循環（ここでは $watch は何もしない）の報告は数えない
+    error.mockClear();
+    const events = listen();
+    write((s) => { s.go = true; s.kick = 1; });
+    await settle();
+    host.remove();
+
+    // #11（上限 32）は 1 回、続く drain は描画の連鎖として数えられ #41（上限 100）で止まる
+    expect(events.filter((e) => e.type === "state:render-chain-limit").map((e) => e.maxDepth)).toEqual([32, 100]);
+    expect(error).toHaveBeenCalledTimes(2);
+    expect(evals).toBeLessThan(20000);
   });
 
   it("循環中のパスを $watch が見て別のキーへ書いても打ち切られ、相乗りした $watch の上限は報告しない（#354）", async () => {
@@ -257,11 +334,9 @@ describe("#338 描画が起こす書き込みの終わらない連鎖は打ち�
     host.remove();
   });
 
-  // 3.x #338 の修正の形が 4.0 で再現しない: 遷移の arbiter が適用を次のマクロタスクへ遅らせると、適用の中の
-  // 要素の書き戻しが起こす drain は毎回連鎖 1 段目に戻り、打ち切られずに回り続ける（1 マクロタスクに 1 周なので
-  // ページは固まらないが、止まらない。実測 130 マクロタスクで評価 130 回超・報告 0 / 期待 報告 1）。
-  // src/engine.ts の drain() が連鎖 1 段目で setTimeout(unchainFn) を仕掛け、マクロタスクを跨ぐと chain を 0 に戻す
-  it.fails("ビュー遷移の arbiter が適用を別のマクロタスクへ遅らせても、その適用の中の書き込みは連鎖として数えられ打ち切られる", async () => {
+  // 遅れた適用の書き戻しが起こす drain は、マクロタスクの区切りで戻る連鎖ではなく、その適用を出した drain の連鎖の
+  // 続きを数える（src/engine.ts の carried。1 マクロタスクに 1 周なのでページは固まらないが、数えないと止まらない）
+  it("ビュー遷移の arbiter が適用を別のマクロタスクへ遅らせても、その適用の中の書き込みは連鎖として数えられ打ち切られる", async () => {
     const RUNNER_KEY = Symbol.for("wcstack.transition-runner");
     const globals = globalThis as unknown as Record<symbol, unknown>;
     globals[RUNNER_KEY] = {
@@ -292,7 +367,38 @@ describe("#338 描画が起こす書き込みの終わらない連鎖は打ち�
       host?.remove();
       await settle();
     }
-  });
+  }, 30000);
+
+  it("ビュー遷移の arbiter が適用を遅らせても、$watch を挟む描画の循環（要素の出力 x → $watch → mode）も打ち切られる", async () => {
+    const globals = globalThis as unknown as Record<symbol, unknown>;
+    globals[RUNNER_KEY] = deferringRunner();
+    const error = errorSpy();
+    let frozen = false;
+    const tag = defineOutput((n) => (frozen ? "frozen" : `m${n}`));
+    const counter = { evals: 0 };
+    let host: HTMLElement | null = null;
+    try {
+      const loaded = await page(loopHtml(tag, "x"), loopState(counter, {
+        x: "",
+        $watch: { x(this: any, current: unknown) { this.mode = current; } },
+      }));
+      host = loaded.host;
+      await settle();
+      loaded.write((s) => { s.mode = "kick"; });
+      // 1 周は drain 2 回（書き戻し → $watch の書き込み）、遅れた適用 1 回。上限の 100 段は 50 周あまり
+      await settle(120);
+      const settled = counter.evals;
+      await settle(20);
+      expect({ reports: error.mock.calls.length, rows: loaded.root.querySelectorAll("li").length, stopped: counter.evals === settled })
+        .toEqual({ reports: 1, rows: 2, stopped: true });
+      expect(counter.evals).toBeLessThan(RUNAWAY_CAP / 4);
+    } finally {
+      frozen = true;
+      delete globals[RUNNER_KEY];
+      host?.remove();
+      await settle();
+    }
+  }, 30000);
 });
 
 describe("#338 有限の連鎖・外から刻む書き込みは打ち切らない（誤検出しない）", () => {
@@ -380,6 +486,59 @@ describe("#338 有限の連鎖・外から刻む書き込みは打ち切らな�
     expect(root.querySelector(".echo")!.textContent).toBe(String(ticks));
     host.remove();
   });
+
+  it("ビュー遷移の待ちが空にならない間に、利用者の入力（要素の書き戻し）と、それを $renderedCallback が写す書き込みが 150 回来ても打ち切らない", async () => {
+    // 遷移を 1 つずつ順に流す arbiter: 1 つの遷移は 2 マクロタスク（更新コールバック → アニメーションの終わり）
+    const queue: (() => void)[] = [];
+    let busy = false;
+    const pump = (): void => {
+      const job = queue.shift();
+      if (job === undefined) {
+        busy = false;
+        return;
+      }
+      setTimeout(() => { job(); setTimeout(pump, 0); }, 0);
+    };
+    const globals = globalThis as unknown as Record<symbol, unknown>;
+    globals[RUNNER_KEY] = {
+      ...deferringRunner(),
+      run(mutate: () => void): Promise<void> {
+        return new Promise<void>((resolve) => {
+          queue.push(() => { mutate(); resolve(); });
+          if (!busy) {
+            busy = true;
+            pump();
+          }
+        });
+      },
+    };
+    const error = errorSpy();
+    try {
+      const { host, root, read } = await page(`<input data-wcs="value: text"><p>{{ text }}</p><b>{{ echo }}</b>`, {
+        text: "",
+        echo: "",
+        $renderedCallback(this: any) { if (this.echo !== this.text) this.echo = this.text; },
+      });
+      const input = root.querySelector("input")!;
+      let pendingAtEveryInput = true;
+      for (let i = 0; i < 150; i++) {
+        input.value = `x${i}`;
+        input.dispatchEvent(new Event("input"));
+        await flush();
+        if (i > 0 && !busy) pendingAtEveryInput = false;
+      }
+      for (let i = 0; i < 100 && busy; i++) await flush();
+
+      // 入力の間ずっと遷移が待っていた（待ちの間は数え直さない、という数え方なら 100 回目で打ち切っていた）
+      expect(pendingAtEveryInput).toBe(true);
+      expect(error).not.toHaveBeenCalled();
+      expect(read("echo")).toBe("x149");
+      expect([root.querySelector("p")!.textContent, root.querySelector("b")!.textContent]).toEqual(["x149", "x149"]);
+      host.remove();
+    } finally {
+      delete globals[RUNNER_KEY];
+    }
+  }, 30000);
 
   /** `$renderedCallback` が 1 回の描画ごとに 1 つ数え上げる（count を 1 にする作者の書き込みから target まで） */
   async function countUp(target: number) {
@@ -624,12 +783,9 @@ describe("#354 $watch の連鎖の深さは書き込みごと — 有限の描�
     host.remove();
   });
 
-  // 3.x #354 の修正の形が 4.0 で再現しない: 描画の書き戻し（$renderedCallback の size）が同じバッチに載っている
-  // 間は、相互 $watch の連鎖が毎バッチ 0 段に戻る。書き戻しが止んでから 32 段で打ち切るので、循環が 32 段を
-  // 大きく超えて回る（実測 ハンドラ 76 回・報告 1 / 期待 33 回以下）。src/temporal/watch.ts の drained() は
-  // 連鎖を「ハンドラの書き込みだけのバッチ」（handlerWrote && !otherWrote）で数え、ほかの書き込みが 1 つでも
-  // 相乗りすると chain = 0 にする
-  it.fails("相互 $watch の循環は、描画の書き戻しが同じバッチに相乗りしても $watch の上限（32 段）で打ち切られる", async () => {
+  // 深さは書き込みごと（src/temporal/watch.ts の hit）: 同じバッチに相乗りした描画の書き戻し（深さ 0）は、相互 $watch の
+  // 連鎖を 0 段に戻さない（バッチ単位で数えていたときは、書き戻しが止むまで数え直し、76 回まで回った）
+  it("相互 $watch の循環は、描画の書き戻しが同じバッチに相乗りしても $watch の上限（32 段）で打ち切られる", async () => {
     let ticks = 0;
     const { host, error, events } = await run(`<p>{{ a }}</p><p>{{ b }}</p>`, shrinkState({
       a: 0,
@@ -648,9 +804,122 @@ describe("#354 $watch の連鎖の深さは書き込みごと — 有限の描�
     expect(ticks).toBeLessThanOrEqual(32 + 1);
   });
 
+  it("打ち切るのは上限の深さの書き込みが起こしたハンドラだけ — 同じバッチに相乗りした size の $watch は、打ち切りの後も描画の連鎖の着地をすべて数える", async () => {
+    let ticks = 0;
+    const { host, read, error, events } = await run(`<p>{{ a }}</p><p>{{ b }}</p>`, shrinkState({
+      a: 0,
+      b: 0,
+      steps: 0,
+      $watch: {
+        size(this: any) {
+          this.steps = this.steps + 1;
+          if (this.a === 0) this.a = 1;
+        },
+        a(this: any, cur: number) { if (++ticks > 1000) return; this.b = cur + 1; },
+        b(this: any, cur: number) { if (++ticks > 1000) return; this.a = cur + 1; },
+      },
+    }));
+    host.remove();
+
+    expect(watchLimits(events)).toEqual([expect.objectContaining({ "maxDepth": 32, "paths": [expect.stringMatching(/^[ab]$/)] })]);
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(ticks).toBeLessThanOrEqual(32 + 1);
+    // size は 63 から 18 まで 46 回着地する
+    expect(read("size")).toBe(18);
+    expect(read("steps")).toBe(46);
+  });
+
+  it("同じバッチで同じパスへ浅い書き込みが先に着地しても、後から着地した深い書き込みの深さで数える（連鎖を数え直さない）", async () => {
+    const error = errorSpy();
+    const events = listen();
+    let fired = 0;
+    const { host, write } = await page(`<p>{{ t }}</p>`, {
+      a: 0,
+      t: 0,
+      // a は宣言の順で先に発火し、t へ浅い深さで書く
+      $watch: {
+        a(this: any, cur: number) { this.t = cur; },
+        t(this: any, cur: number) { if (++fired > 1000) return; this.t = cur + 1; },
+      },
+    });
+    write((s) => { s.t = 1; });
+    // 連鎖の途中で a を書く
+    for (let i = 0; i < 10; i++) await null;
+    write((s) => { s.a = 500; });
+    await settle();
+    host.remove();
+
+    expect(fired).toBe(33);
+    expect(watchLimits(events)).toHaveLength(1);
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+
+  it("（3.x と同じ）ハンドラが 33 回書き継ぐ連鎖は最後まで書き終え、34 回目が要る連鎖はそこで打ち切られる", async () => {
+    /** n を 1 にする作者の書き込みから、ハンドラが target まで 1 つずつ書き継ぐ */
+    async function chain(target: number) {
+      const error = errorSpy();
+      const { host, write, read } = await page("", {
+        n: 0,
+        $watch: { n(this: any, cur: number) { if (cur < target) this.n = cur + 1; } },
+      });
+      write((s) => { s.n = 1; });
+      await settle();
+      const result = { n: read("n"), reports: error.mock.calls.length };
+      host.remove();
+      error.mockRestore();
+      return result;
+    }
+    // ハンドラの書き込み 32 回: 報告しない
+    expect(await chain(33)).toEqual({ n: 33, reports: 0 });
+    // 33 回: 書き終える（その書き込みの先は上限を超えるので、報告は出る — 3.x と同じ）
+    expect(await chain(34)).toEqual({ n: 34, reports: 1 });
+    // 34 回目は書かれない
+    expect(await chain(35)).toEqual({ n: 34, reports: 1 });
+  });
+
+  it("同じタスクの中で後から始まった別の循環の打ち切りも、その新しいパスで報告する", async () => {
+    const error = errorSpy();
+    const events = listen();
+    const { host, write } = await page("", {
+      a: 0,
+      b: 0,
+      $watch: {
+        a(this: any, cur: number) { this.a = cur + 1; },
+        b(this: any, cur: number) { this.b = cur + 1; },
+      },
+    });
+    write((s) => { s.a = 1; });
+    // a の循環が打ち切られるまで、マクロタスクを挟まずに待つ
+    for (let i = 0; i < 200; i++) await null;
+    write((s) => { s.b = 1; });
+    await settle();
+    host.remove();
+
+    expect(watchLimits(events).map((e) => e.paths)).toEqual([["a"], ["b"]]);
+    expect(error).toHaveBeenCalledTimes(2);
+  });
+
+  it("行の $watch が行ごとに自分へ書く循環は、どの行も同じ深さで打ち切られ、報告は 1 回でパスは 1 つ", async () => {
+    const error = errorSpy();
+    const events = listen();
+    const fired = [0, 0];
+    const { host, write } = await page("", {
+      items: [{ v: 0 }, { v: 0 }],
+      $watch: { "items.*.v"(this: any, cur: number, _prev: unknown, i: number) { if (++fired[i] > 1000) return; this["items.*.v"] = cur + 1; } },
+    });
+    write((s) => { s["items.0.v"] = 1; s["items.1.v"] = 1; });
+    await settle();
+    host.remove();
+
+    expect(fired).toEqual([33, 33]);
+    expect(watchLimits(events)).toEqual([expect.objectContaining({ "maxDepth": 32, "paths": ["items.*.v"] })]);
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+
   // `$stream` の再開（args の依存への書き込みで起きる）は drain の終わりで `initial` を書く。その書き込みも
-  // 再開を起こした書き込みの連鎖の続きに数えないと、`$watch` が args の依存へ書き、再開の書き込みがまた
-  // その `$watch` を起こす循環が、上限に掛からずに回り続ける
+  // 再開を起こした書き込みの連鎖の続きに数える（src/temporal/stream.ts — 再開を起こした書き込みの深さ + 1 で書き、
+  // 描画の連鎖からも反応として数える）。数えないと、`$watch` が args の依存へ書き、再開の書き込みがまた
+  // その `$watch` を起こす循環が、上限に掛からずに microtask だけで回り続け、ページが固まる
   describe("$stream の再開を挟む循環", () => {
     /** 値を出さずに abort を待つ source（再開のたびに abort される） */
     const never = (_args: unknown, signal: AbortSignal) => ({
@@ -692,37 +961,162 @@ describe("#354 $watch の連鎖の深さは書き込みごと — 有限の描�
     function expectCut(result: { calls: number; reports: number; watchLimits: number }): void {
       expect(result.calls).toBeLessThanOrEqual(40);
       expect(result.reports).toBe(1);
+      expect(result.watchLimits).toBe(1);
     }
 
-    // 以下 3 つ: 3.x #354 の修正の形が 4.0 で再現しない: 再開の循環がどちらの上限にも掛からず、ハンドラの止め金
-    // （CAP = 300 回）まで microtask だけで回る — その間マクロタスクは 1 つも回らない（ページが固まる。実測
-    // ハンドラ 301 回・報告 0 / 期待 40 回以下・報告 1）。再開の書き込み（src/temporal/stream.ts の start() の
-    // engine.write(name, initial) と $streamError / $streamStatus）は drain の終わり（hooks.drained）で、ハンドラの
-    // 外・feeding の外で書かれる。そのため src/temporal/watch.ts の written() は otherWrote を立てて $watch の連鎖を
-    // 0 に戻し、src/engine.ts の write() は codeWrote を立てて描画の連鎖も 0 に戻す
-    it.fails("$watch が args の依存へ書き、再開の書き込みがその $watch を起こす循環を打ち切る", async () => {
+    // 以下 3 つ: 修正前は再開の循環がどちらの上限にも掛からず、ハンドラの止め金（CAP = 300 回）まで microtask だけで
+    // 回った（マクロタスクが 1 つも回らない）
+    it("$watch が args の依存へ書き、再開の書き込みがその $watch を起こす循環を打ち切る", async () => {
       expectCut(await runCycle((step) => ({ $watch: { results: step } })));
     });
 
-    it.fails("循環に関係しない $watch の書き込みが相乗りしても、同じく打ち切る", async () => {
+    it("循環に関係しない $watch の書き込みが相乗りしても、同じく打ち切る", async () => {
       expectCut(await runCycle((step) => ({
         w: 0,
         $watch: { results: step, q(this: any, v: number) { this.w = v; } },
       })));
     });
 
-    it.fails("（$scan を $watch に書き換えた形）再開の書き込みを $watch が数え、その数の $watch が args の依存へ書く循環も打ち切る", async () => {
+    it("有限の再開の連鎖（$watch が args の依存へ 10 回書いて止まる・20 段）は打ち切らず、どの再開も起きる", async () => {
+      const error = errorSpy();
+      let starts = 0;
+      const { host, write, read } = await page(`<i>{{ q }}</i>`, {
+        q: 0,
+        go: false,
+        $stream: {
+          results: {
+            args: (s: any) => s.q,
+            source: (args: unknown, signal: AbortSignal) => { starts++; return never(args, signal); },
+            fold: (acc: unknown[], chunk: unknown) => [...acc, chunk],
+            initial: [],
+          },
+        },
+        $watch: { results(this: any) { if (this.go && this.q < 110) this.q = this.q + 1; } },
+      });
+      await settle(2);
+      starts = 0;
+      write((s) => { s.go = true; s.q = 100; });
+      await settle(6);
+
+      expect(error).not.toHaveBeenCalled();
+      expect(read("q")).toBe(110);
+      // q = 100 の再開と、$watch が進めた 10 回の再開
+      expect(starts).toBe(11);
+      host.remove();
+    });
+
+    it("打ち切った循環の後も、args の依存への作者の書き込みで $stream は再開する（報告は増えない）", async () => {
+      const error = errorSpy();
+      let starts = 0;
+      const { host, write, read } = await page(`<i>{{ q }}</i>`, {
+        q: 0,
+        go: false,
+        $stream: {
+          results: {
+            args: (s: any) => s.q,
+            source: (args: unknown, signal: AbortSignal) => { starts++; return never(args, signal); },
+            fold: (acc: unknown[], chunk: unknown) => [...acc, chunk],
+            initial: [],
+          },
+        },
+        $watch: { results(this: any) { if (this.go && this.q < 1000) this.q = this.q + 1; } },
+      });
+      await settle(2);
+      write((s) => { s.go = true; s.q = 100; });
+      await settle(6);
+      expect(error).toHaveBeenCalledTimes(1);
+      const cutAt = read("q");
+      expect(cutAt).toBeLessThan(130);
+
+      starts = 0;
+      write((s) => { s.go = false; s.q = 500; });
+      await settle(2);
+      expect(starts).toBe(1);
+      expect(read("$streamStatus.results")).toBe("active");
+      expect(error).toHaveBeenCalledTimes(1);
+      host.remove();
+    });
+
+    it("$stream どうしが args で互いの値を読み、source がすぐに値を出す循環も、microtask だけで回り続けず止まり報告される", async () => {
+      const error = errorSpy();
+      const events = listen();
+      let evaluations = 0;
+      const counted = (read: (s: any) => unknown) => (s: any) => {
+        if (++evaluations > 2000) throw new Error("runaway");
+        return read(s);
+      };
+      // 待たずに 1 つ値を出して終わる source（その値は microtask で届く）
+      const once = async function* (args: unknown) { yield args; };
+      const { host } = await page("", {
+        $stream: {
+          a: { args: counted((s) => s.b), source: once, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] },
+          b: { args: counted((s) => s.a), source: once, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] },
+        },
+      });
+      await settle();
+      host.remove();
+
+      // 止め金（2000 回の評価で投げる）に届く前に、上限で止まっている（修正前は止め金まで microtask だけで回った）
+      expect(evaluations).toBeLessThanOrEqual(80);
+      expect(watchLimits(events)).toHaveLength(1);
+      expect(error).toHaveBeenCalledTimes(1);
+    });
+
+    /** 値を出す時機: 次のタスク・postMessage・setImmediate（あれば）・すぐに解決する Promise（同じタスクの microtask） */
+    const channel = typeof MessageChannel === "function" ? new MessageChannel() : null;
+    const posted: (() => void)[] = [];
+    if (channel !== null) channel.port1.onmessage = () => posted.shift()!();
+    afterAll(() => { channel?.port1.close(); });
+    const timings: [string, (fn: () => void) => void][] = [
+      ["setTimeout", (fn) => { setTimeout(fn, 0); }],
+      ["Promise.resolve", (fn) => { void Promise.resolve().then(fn); }],
+      ...(channel !== null ? [["postMessage", (fn: () => void) => { posted.push(fn); channel.port2.postMessage(0); }] as [string, (fn: () => void) => void]] : []),
+      ...(typeof setImmediate === "function" ? [["setImmediate", (fn: () => void) => { setImmediate(fn); }] as [string, (fn: () => void) => void]] : []),
+    ];
+
+    it.each(timings)("値ごとに args の依存を進める有限の自動ページ送り（40 ページ）は、source が値を出す時機に依らず最後まで進む（%s）", async (_label, deliver) => {
+      const error = errorSpy();
+      let starts = 0;
+      const later = (args: unknown, signal: AbortSignal) => {
+        starts++;
+        return new ReadableStream({
+          start(c) {
+            deliver(() => {
+              if (signal.aborted) return;
+              c.enqueue(args);
+              c.close();
+            });
+          },
+        });
+      };
+      const { host, write, read } = await page("", {
+        page: 0,
+        go: false,
+        $stream: { rows: { args: (s: any) => s.page, source: later, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] } },
+        // 値が届くたびに次のページへ（自動のページ送り）
+        $watch: { rows(this: any, cur: unknown[]) { if (this.go && cur.length > 0 && this.page < 40) this.page = this.page + 1; } },
+      });
+      await settle();
+      starts = 0;
+      write((s) => { s.go = true; s.page = 1; });
+      await settle(100);
+
+      expect(read("page")).toBe(40);
+      expect(starts).toBe(40);
+      expect(error).not.toHaveBeenCalled();
+      host.remove();
+    });
+
+    it("（$scan を $watch に書き換えた形）再開の書き込みを $watch が数え、その数の $watch が args の依存へ書く循環も打ち切る", async () => {
       expectCut(await runCycle((step) => ({
         count: 0,
         $watch: { results(this: any) { this.count = this.count + 1; }, count: step },
       })));
     });
 
-    // 3.x #354 の修正の形が 4.0 で再現しない: 2 本の再開が互いを起こし続け、args の止め金（CAP = 300 回の評価で
-    // 投げる）まで microtask だけで回る — 接続時の起動でもう回り始める（実測 評価 301 回・報告 0 / 期待 40 回以下・
-    // 報告 1〜2）。$watch が無いので $watch の上限は関係せず、再開の書き込みは codeWrote として描画の連鎖を
-    // 毎 drain 0 に戻す（src/engine.ts の drain() 冒頭）
-    it.fails("$stream どうしが args で互いの値を読む循環も、$watch が無くても止まり報告される", async () => {
+    // 2 本の再開が互いを起こし続ける — 接続時の起動でもう回り始める。$watch が無くても再開の深さで止まり、
+    // state:watch-chain-limit で報告される（修正前は args の止め金 CAP = 300 回まで microtask だけで回った）
+    it("$stream どうしが args で互いの値を読む循環も、$watch が無くても止まり報告される", async () => {
       const error = errorSpy();
       let evaluations = 0;
       const counted = (read: (s: any) => unknown) => (s: any) => {
@@ -779,6 +1173,59 @@ describe("#354 $watch の連鎖の深さは書き込みごと — 有限の描�
     expect(seen).toEqual([1]);
     expect(error.mock.calls.length).toBe(reportsAfterFirst);
     second.host.remove();
+  });
+
+  it("（$stream の形）連鎖の終わりでハンドラが args の依存へ書いてからホストを外しても、残った再開の深さが、つなぎ直した後の作者の書き込みからの再開の連鎖を打ち切らない", async () => {
+    const error = errorSpy();
+    /** 値を出さずに abort を待つ source */
+    const parked = (_args: unknown, signal: AbortSignal) => ({
+      [Symbol.asyncIterator]() {
+        return {
+          next: () => new Promise<IteratorResult<unknown>>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+          }),
+        };
+      },
+    });
+    let hostRef: HTMLElement | null = null;
+    let laps = 0;
+    const loaded = await page(`<i>{{ n }}</i>`, {
+      n: 0,
+      q: 0,
+      go: false,
+      $stream: { results: { args: (s: any) => s.q, source: parked, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] } },
+      $watch: {
+        // 20 段の有限の連鎖。最後のハンドラが args の依存（q）へ書き、ホストを外す（再開は止まる）
+        n(this: any, cur: number) {
+          if (cur < 20) {
+            this.n = cur + 1;
+            return;
+          }
+          this.q = this.q + 1;
+          hostRef!.remove();
+        },
+        // 再開の結果を見て q を進める 15 周（30 段: 上限の内）
+        results(this: any) {
+          if (this.go && laps < 15) {
+            laps++;
+            this.q = this.q + 1;
+          }
+        },
+      },
+    });
+    hostRef = loaded.host;
+    loaded.write((s) => { s.n = 1; });
+    await settle();
+    expect(hostRef.isConnected).toBe(false);
+
+    document.body.appendChild(hostRef);
+    await settle();
+    loaded.write((s) => { s.go = true; s.q = 100; });
+    await settle(6);
+
+    expect(laps).toBe(15);
+    expect(error).not.toHaveBeenCalled();
+    hostRef.remove();
   });
 
   it("（描画の連鎖の形）書き戻しの連鎖の途中で <wcs-state> がページを離れても、別の state の次の書き込みとその書き戻しは普通に描かれる", async () => {

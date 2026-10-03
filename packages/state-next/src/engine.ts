@@ -162,6 +162,15 @@ export class Engine implements ReconcileHooks {
   private readonly listsByArray = new WeakMap<unknown[], StateList[]>();
   /** Drains in a row that rendering started (MAX_RENDER_CHAIN); a pause between tasks ends it. */
   private chain = 0;
+  /**
+   * For the drain the write-backs of an apply an arbiter deferred start: its place in that apply's
+   * chain (0: none). The pause before the apply ends the task's chain, not this one. Only what the
+   * apply writes synchronously is carried: an async `$renderedCallback` writing after an `await`
+   * starts a task chain again, so such a loop runs one lap per arbiter task and is never cut.
+   */
+  private carried = 0;
+  /** This chain was reported as not settling within a drain (#11): reported once a chain. */
+  private unsettled = false;
   /** Since the last drain started: a write rendering fed back / a write from code (which ends a chain). */
   private fedBack = false;
   private codeWrote = false;
@@ -172,6 +181,7 @@ export class Engine implements ReconcileHooks {
   feeding = 0;
   private readonly unchainFn = () => {
     this.chain = 0;
+    this.unsettled = false;
   };
   private readonly renderedFn = () => {
     this.feeding--;
@@ -1077,27 +1087,41 @@ export class Engine implements ReconcileHooks {
     this.strategy.dropped(this);
   }
 
+  /**
+   * Cuts an update loop past `max` (`id`: its message): reported with the paths its queued work
+   * would have rendered (the console, and DevTools as `state:render-chain-limit`), then dropped.
+   */
+  private cutLoop(id: M, max: number): void {
+    const paths = [...new Set([...this.queue, ...this.dirtyLists, ...this.staleLists].map((x) => x.pattern.path))];
+    console.error(`[@wcstack/state] ${text(id)}`, paths);
+    hooks.noticed?.(this, { "type": "state:render-chain-limit", "maxDepth": max, "paths": paths });
+    this.dropWork();
+  }
+
   drain(): void {
     this.scheduled = false;
-    // a drain only rendering fed (no write from code since the last) continues a chain
-    if (!this.fedBack || this.codeWrote) this.chain = 0;
-    else if (++this.chain === 1) setTimeout(this.unchainFn, 0);
+    // a drain only rendering fed (no write from code since the last) continues a chain: the carried
+    // one of a deferred apply, or the task's
+    const carried = this.carried;
+    this.carried = 0;
+    let chain = 0;
+    if (!this.fedBack || this.codeWrote) this.unchainFn();
+    else if (carried > 0) chain = carried;
+    else if ((chain = ++this.chain) === 1) setTimeout(this.unchainFn, 0);
     this.fedBack = this.codeWrote = false;
-    if (this.chain > MAX_RENDER_CHAIN) {
-      if (this.chain === MAX_RENDER_CHAIN + 1) {
-        const paths = new Set<string>();
-        for (const x of [...this.queue, ...this.dirtyLists, ...this.staleLists]) paths.add(x.pattern.path);
-        console.error(`[@wcstack/state] ${text(M.RenderChain)}`, [...paths]);
-      }
-      this.dropWork();
+    if (chain > MAX_RENDER_CHAIN) {
+      if (chain === MAX_RENDER_CHAIN + 1) this.cutLoop(M.RenderChain, MAX_RENDER_CHAIN);
+      else this.dropWork();
       return;
     }
     this.draining = true;
     try {
       for (let pass = 0; this.queue.length > 0 || this.dirtyLists.length > 0 || this.staleLists.length > 0; pass++) {
         if (pass >= MAX_DRAIN_PASSES) {
-          console.error(`[@wcstack/state] ${text(M.DrainNotSettled)}`);
-          this.dropWork();
+          // (once a chain: a reaction that starts the same loop again in each drain is not reported again)
+          if (this.unsettled) this.dropWork();
+          else this.cutLoop(M.DrainNotSettled, MAX_DRAIN_PASSES);
+          this.unsettled = true;
           break;
         }
         const stale = this.staleLists;
@@ -1137,8 +1161,12 @@ export class Engine implements ReconcileHooks {
             b.queued = false;
             if (b.owner === null || b.owner.alive) this.applyBinding(b);
           }
-          // applied later by the arbiter, outside any drain: report its failures now
-          if (!this.draining) this.report();
+          // applied later by the arbiter, outside any drain: report its failures now, and the drain
+          // what it fed back starts (a write-back, `$renderedCallback`) is the next of this drain's chain
+          if (!this.draining) {
+            this.report();
+            if (this.scheduled) this.carried = chain + 1;
+          }
         });
         if (pending !== undefined) pending.then(undefined, (e) => console.error(e));
       }
@@ -1149,6 +1177,8 @@ export class Engine implements ReconcileHooks {
     this.fedBack = this.codeWrote = false;
     this.report();
     hooks.drained?.(this);
+    // (as is the one a carried drain's reactions start)
+    if (carried > 0 && this.scheduled) this.carried = chain + 1;
   }
 
   // ---------------------------------------------------------------- apply, hooks, reports

@@ -5,12 +5,27 @@
  * `args` runs as a getter of its own (a pattern with no path in the state), so the paths it reads
  * are tracked like any getter's; a change that reaches it restarts the stream at the end of the
  * drain, once (switchMap: abort, reset to `initial`, re-run `args`, call `source`). Its
- * dependencies are captured afresh on every run. `$streamStatus.<name>` / `$streamError.<name>`
- * are read-only companions kept on the state.
+ * dependencies are captured afresh on every run. `$streamStatus.<name>` / `$streamError.<name>` are
+ * read-only companions kept on the state.
+ *
+ * A restart's writes are reactions: they continue the render chain (MAX_RENDER_CHAIN), and the
+ * `$watch` chain (watch.ts) one deeper than the write that reached `args` (#354). That depth is the
+ * deepest such write's for a data path `args` reads, but the first one's since `args` was last
+ * evaluated when the change came through a getter (a reached getter is not reached again until it
+ * is read), and 0 when a list re-synced in the drain reached it: such loops are left to the render
+ * chain. A restart more than MAX_CHAIN deep is not made (the chain is cut and reported); the next
+ * change of its inputs restarts it.
+ *
+ * A value a source yields is new input, as a write from code: `$watch` handlers it fires start a
+ * chain afresh. But a value that reaches another stream's `args` within the task the run started in
+ * (synchronously or in its microtasks) restarts that stream as deep as the run: streams that read each
+ * other's values with a source that yields at once cannot loop on microtasks alone. A value from a
+ * later task (a network response, a message, a timer) restarts it afresh.
  */
 import type { Engine } from "../engine";
 import { FAILED, UNSET, type Pattern } from "../pattern";
 import { raiseError } from "../parser/raiseError";
+import { MAX_CHAIN, thisTask, type WatchRuntime } from "./watch";
 
 type Status = "idle" | "active" | "done" | "error";
 
@@ -24,6 +39,8 @@ interface Entry {
   readonly args: (() => unknown) | null;
   controller: AbortController | null;
   restart: boolean;
+  /** The `$watch` chain depth of what asked for the restart (meaningful while `restart`). */
+  depth: number;
 }
 
 const STATUS = "$streamStatus";
@@ -67,7 +84,7 @@ export function parseStreams(engine: Engine, target: Record<string, any>): Entry
     status[name] = "idle";
     errors[name] = null;
     entries.push({
-      name, source, fold, initial, controller: null, restart: false,
+      name, source, fold, initial, controller: null, restart: false, depth: 0,
       g: args === undefined ? null : engine.pattern(`$streamArgs.${name}`),
       args: args === undefined ? null : function (this: unknown) { return args(this); },
     });
@@ -80,10 +97,15 @@ export function parseStreams(engine: Engine, target: Record<string, any>): Entry
 export class StreamRuntime {
   readonly engine: Engine;
   readonly entries: Entry[];
+  /** The engine's `$watch` runtime: it holds the depth of the write made now, and reports a cut. */
+  readonly watch: WatchRuntime;
+  /** While a run folds a value in the task it started in: the run's depth (for the restarts it causes). */
+  private fed = 0;
 
-  constructor(engine: Engine, entries: Entry[]) {
+  constructor(engine: Engine, entries: Entry[], watch: WatchRuntime) {
     this.engine = engine;
     this.entries = entries;
+    this.watch = watch;
   }
 
   private set(ns: string, name: string, value: unknown): void {
@@ -121,16 +143,40 @@ export class StreamRuntime {
   }
 
   getterReached(g: Pattern): void {
-    for (const e of this.entries) if (e.g === g) e.restart = true;
+    const depth = Math.max(this.watch.depth, this.fed);
+    for (const e of this.entries) {
+      if (e.g !== g) continue;
+      // (a restart a stop or a re-set dropped leaves its depth behind)
+      e.depth = e.restart ? Math.max(e.depth, depth) : depth;
+      e.restart = true;
+    }
   }
 
   /** At the end of a drain (after the watches): each stream whose `args` inputs changed restarts once. */
   drained(): void {
+    const engine = this.engine;
+    const watch = this.watch;
+    const cut: string[] = [];
     for (const e of this.entries) {
       if (!e.restart) continue;
+      const depth = e.depth;
       e.restart = false;
-      this.start(e, false);
+      if (depth > MAX_CHAIN) {
+        cut.push(e.name);
+        // reached, not re-run: the next change of its inputs must reach it again
+        e.g!.rootValue = FAILED;
+        continue;
+      }
+      watch.depth = depth + 1;
+      engine.feeding++;
+      try {
+        this.start(e, false);
+      } finally {
+        engine.feeding--;
+        watch.depth = 0;
+      }
     }
+    if (cut.length > 0) watch.chainCut(cut);
   }
 
   private start(e: Entry, eager: boolean): void {
@@ -171,13 +217,21 @@ export class StreamRuntime {
     const signal = ctrl.signal;
     const live = (): boolean => !signal.aborted && e.controller === ctrl;
     const p = engine.pattern(e.name);
+    // the run's depth and task, for the restarts its values cause in that task
+    const depth = this.watch.depth;
+    const task = thisTask();
     let acc = e.initial;
     try {
       const producer: any = await e.source(args, signal);
       if (!live()) return;
       const chunk = (v: unknown): void => {
         acc = e.fold !== undefined ? e.fold(acc, v) : v;
-        engine.write(p, null, acc);
+        this.fed = thisTask() === task ? depth : 0;
+        try {
+          engine.write(p, null, acc);
+        } finally {
+          this.fed = 0;
+        }
       };
       if (producer !== null && typeof producer?.getReader === "function") {
         // a ReadableStream: only reader.cancel() can unwind a parked read

@@ -253,3 +253,19 @@ describe("add-on を入れる前に作られたエンジン", () => {
     }
   });
 });
+
+describe("タスクの数え方（$stream の値・$watch の打ち切りの報告）", () => {
+  it("MessageChannel の無い環境では、タイマーで次のタスクを数える", async () => {
+    vi.resetModules();
+    vi.stubGlobal("MessageChannel", undefined);
+    try {
+      const { thisTask } = await import("../src/temporal/watch");
+      const first = thisTask();
+      expect(thisTask()).toBe(first);
+      await flush();
+      expect(thisTask()).toBe(first + 1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

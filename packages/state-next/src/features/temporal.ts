@@ -26,7 +26,7 @@ function live(engine: Engine): Runtime | undefined {
 
 function declare(engine: Engine, target: Record<string, any>): void {
   const watch = new WatchRuntime(engine, parseWatches(engine, target.$watch));
-  const stream = new StreamRuntime(engine, parseStreams(engine, target));
+  const stream = new StreamRuntime(engine, parseStreams(engine, target), watch);
   const old = runtimes.get(engine);
   if (old !== undefined) {
     old.watch.deactivate();
