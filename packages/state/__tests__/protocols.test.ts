@@ -183,6 +183,33 @@ describe("初期化済みの要素への setInitialState（再セット）", () 
     expect(Array.from(root.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["y", "z"]);
   });
 
+  it("新しい状態に無いトップレベルのキーは、その下のパスと同じく空になる（失敗にせず、古い値も残さない）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { root, el } = await host(
+        `<wcs-state></wcs-state><p class="t">{{ msg }}</p><p class="p" data-wcs="textContent: msg"></p><p class="d">{{ user.name }}</p><p class="g">{{ shout }}</p><input data-wcs="value: msg"><ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul>`,
+        { msg: "a", user: { name: "ann" }, items: ["x"], get shout() { return `${(this as any).msg}!`; } },
+      );
+      const q = (sel: string) => root.querySelector(sel)!.textContent;
+      // (the getter comes with the new state; msg and items do not)
+      el.setInitialState({ user: {}, get shout() { return `${(this as any).msg}!`; } });
+      expect([q(".t"), q(".p"), q(".d"), q(".g")]).toEqual(["", "", "", "undefined!"]);
+      expect(root.querySelectorAll("li").length).toBe(0);
+      // an element input keeps its own value when state has none (B8)
+      expect((root.querySelector("input") as HTMLInputElement).value).toBe("a");
+      expect(error).not.toHaveBeenCalled();
+      // written again, the bindings follow (the key exists now, as undefined)
+      el.createState("writable", (s: any) => { s.msg = "b"; s.items = ["y"]; });
+      await flush();
+      expect([q(".t"), q(".p")]).toEqual(["b", "b"]);
+      expect(Array.from(root.querySelectorAll("li"), (li) => li.textContent)).toEqual(["y"]);
+      // a key no state had still fails on read
+      expect(() => el.createState("readonly", (s: any) => s.never)).toThrow("[wcs/binding-path-missing]");
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("書き込みではない: $renderedCallback を呼ばない（その後の書き込みでは呼ぶ）", async () => {
     const { el } = await host(`<wcs-state></wcs-state><p>{{ n }}</p>`, { n: 1 });
     const rendered = vi.fn();

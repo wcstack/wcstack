@@ -840,7 +840,11 @@ export class Engine implements ReconcileHooks {
    * keys); rows are kept where their list's array is the same instance.
    */
   reset(target: Record<string, any>): void {
+    const old = this.target;
     this.loadTarget(target);
+    // a key the old state had and this one lacks is empty (B8), as a missing path under a key is —
+    // not a key never declared, which fails on read: its bindings, lists and getters read undefined
+    for (const k in old) if (!(k in target) && k[0] !== "$") target[k] = undefined;
     for (const bs of this.rootBindings.values()) for (const b of bs) this.enqueue(b);
     for (const l of this.rootLists.values()) this.resetList(l);
     this.rendered = null;
@@ -887,7 +891,7 @@ export class Engine implements ReconcileHooks {
   }
 
   private resetList(l: StateList): void {
-    // a list whose key the new state lacks fails alone: the re-set goes on (and ends with its hook)
+    // a list that cannot be read (its getter throws) fails alone: the re-set goes on (and ends with its hook)
     this.trySync(l);
     const element = this.pattern(`${l.pattern.path}.*`);
     for (const row of l.rows) {
