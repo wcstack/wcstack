@@ -32,6 +32,21 @@ describe('renderToString', () => {
   });
 });
 
+describe('入れ子のテンプレート（素の Node）', () => {
+  // 4.0 の state はテンプレートの中の入れ子のテンプレートを名前空間で見分ける。SVGElement のグローバルは
+  // サーバのウィンドウ（GLOBALS_KEYS）に無いので、instanceof で見ると素の Node で ReferenceError になっていた
+  it('for の中の for と、if の中の for を、投げずに描く', async () => {
+    const result = await renderToString(`
+      <wcs-state enable-ssr json='{"show":true,"groups":[{"items":[{"n":"a"},{"n":"b"}]}],"tags":["x","y"]}'></wcs-state>
+      <ul><template data-wcs="for: groups"><li><ol><template data-wcs="for: .items"><li data-wcs="textContent: .n"></li></template></ol></li></template></ul>
+      <div><template data-wcs="if: show"><p><template data-wcs="for: tags"><span data-wcs="textContent: ."></span></template></p></template></div>
+    `);
+    const doc = parseResult(result);
+    expect(Array.from(doc.querySelectorAll('ol li'), (el) => el.textContent)).toEqual(['a', 'b']);
+    expect(Array.from(doc.querySelectorAll('p span'), (el) => el.textContent)).toEqual(['x', 'y']);
+  });
+});
+
 describe('enable-ssr 属性', () => {
   it('enable-ssr がある場合 <wcs-ssr> が生成される', async () => {
     const result = await renderToString(`

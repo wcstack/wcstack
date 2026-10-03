@@ -235,7 +235,8 @@ function snapshot(el: Element, engine: Engine): void {
     // a template in it that is an SVG element goes as an HTML one, which a serializer reads (the
     // client's parser reads it back in its context)
     for (const x of Array.from((c as Element).querySelectorAll("template"))) {
-      if (x instanceof SVGElement) x.replaceWith(attrs(x, document.createElement("template"), ...x.childNodes));
+      // by namespace, not `instanceof SVGElement`: a server window (@wcstack/server) need not expose that global
+      if (x.namespaceURI === "http://www.w3.org/2000/svg") x.replaceWith(attrs(x, document.createElement("template"), ...x.childNodes));
     }
     // an SVG template's content goes in <svg>, so the client's parser reads it as SVG
     if (svg) {
