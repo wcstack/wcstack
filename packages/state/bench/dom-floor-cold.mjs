@@ -5,7 +5,7 @@
 // click, so this is the same condition — the ratio targets use it since 2026-09-25):
 //   cold: a fresh page per sample, the first creation on it (like audit-state-tech-warmth's cold)
 //   warm: one page, clear + create repeated (like audit-state-tech-dom.mjs, whose 37 ms is this)
-// Run from the repository root after `npm ci` in e2e/:  node packages/state-next/bench/dom-floor-cold.mjs
+// Run from the repository root after `npm ci` in e2e/:  node packages/state/bench/dom-floor-cold.mjs
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createRequire } from "node:module";

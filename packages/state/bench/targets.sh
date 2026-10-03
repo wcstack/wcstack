@@ -4,25 +4,26 @@
 # ratio is not decided by one noisy floor sample. The ratios use the floor that builds its
 # data inside the timer, like the benchmark's state method (same condition, since
 # 2026-09-25); the *Excl ratios use the historical floor that builds it before the timer.
-#   OUT=docs/research/state-engine/targets ROUNDS=3 bash packages/state-next/bench/targets.sh
+# Since the 4.0 swap packages/state/dist is 4.0 (next); CURRENT_BUNDLE names the 3.x auto.min.js.
+#   OUT=docs/research/state-engine/targets ROUNDS=3 CURRENT_BUNDLE=<3.x auto.min.js> bash packages/state/bench/targets.sh
 set -u
 ROUNDS=${ROUNDS:-3}
 OUT=${OUT:-docs/research/state-engine/targets}
 mkdir -p "$OUT"
-node packages/state-next/bench/dom-floor-cold.mjs --out "$OUT/dom-floor-a.json"
+node packages/state/bench/dom-floor-cold.mjs --out "$OUT/dom-floor-a.json"
 BUNDLES=${BUNDLES:-"current next"}
 for r in $(seq 1 "$ROUNDS"); do
   for b in $BUNDLES; do
     case "$b" in
-      next) f="$(pwd)/packages/state-next/dist/auto.min.js" ;;
-      *) f="$(pwd)/packages/state/dist/auto.min.js" ;;
+      next) f="$(pwd)/packages/state/dist/auto.min.js" ;;
+      *) f="${CURRENT_BUNDLE:?set CURRENT_BUNDLE to a 3.x auto.min.js}" ;;
     esac
     echo "=== round $r $b ($(date +%H:%M:%S))"
     node scripts/audit-state-tech-warmth.mjs --bundle "$f" --raw --ops create1k,create10k --suffix "statenext-$b-r$r" 2>&1 | tail -2 | cut -c1-110
   done
 done
 mv docs/research/state-next/warm-vs-cold-file-manual-plain-jsfb-statenext-*.json "$OUT/" 2>/dev/null
-node packages/state-next/bench/dom-floor-cold.mjs --out "$OUT/dom-floor-b.json"
+node packages/state/bench/dom-floor-cold.mjs --out "$OUT/dom-floor-b.json"
 node -e '
 const fs=require("fs"),d=process.argv[1];
 const med=(xs)=>{const s=[...xs].sort((a,b)=>a-b),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};

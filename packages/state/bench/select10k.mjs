@@ -5,7 +5,7 @@
 //   tracked  an ordinary tracked getter: this.$1 === this.selectedIndex
 //   eqIndex  the keyed subscription: this.$eqIndex("selectedIndex")
 // Run from the repository root after `npm ci` in e2e/, with no other benchmark running:
-//   node packages/state-next/bench/select10k.mjs --bundle <file> --variant tracked --label x --out <file>
+//   node packages/state/bench/select10k.mjs --bundle <file> --variant tracked --label x --out <file>
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createRequire } from "node:module";

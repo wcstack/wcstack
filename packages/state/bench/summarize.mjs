@@ -1,8 +1,8 @@
 // Pools the samples of one run-all.sh session across rounds and prints:
 //   - per measure: median per bundle, the A/A floor (current vs currentB), next vs current
 //   - the two targets: next / DOM floor under the same condition (warm 1,000, cold 10,000)
-//   - the gzip size of state-next's auto bundle
-// Run from the repository root: node packages/state-next/bench/summarize.mjs <dir>
+//   - the gzip size of the 4.0 auto bundle (packages/state/dist)
+// Run from the repository root: node packages/state/bench/summarize.mjs <dir>
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -77,7 +77,7 @@ if (floor) {
   }
 }
 
-const bundlePath = "packages/state-next/dist/auto.min.js";
+const bundlePath = "packages/state/dist/auto.min.js";
 const code = await readFile(bundlePath);
 const size = { file: bundlePath, bytes: code.length, gzip: gzipSync(code, { level: 9 }).length };
 

@@ -18,8 +18,8 @@ import { runScenario } from "../conformance/run";
 
 export const GOLDEN_PATH = resolve(__dirname, "golden/current-3.3.0.json");
 
-/** The 3.x dist to record from: WCS_GOLDEN_DIST, or the checked-in packages/state/dist. */
-const DIST = process.env.WCS_GOLDEN_DIST ? resolve(process.env.WCS_GOLDEN_DIST) : resolve(__dirname, "../../state/dist");
+/** The 3.x dist to record from: WCS_GOLDEN_DIST, or else this package's dist — 4.0 since the swap, so refused. */
+const DIST = process.env.WCS_GOLDEN_DIST ? resolve(process.env.WCS_GOLDEN_DIST) : resolve(__dirname, "../dist");
 
 /** Throws unless `dist` is a 3.x @wcstack/state dist. */
 export function assert3xDist(dist: string): void {

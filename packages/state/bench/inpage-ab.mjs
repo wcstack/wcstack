@@ -3,7 +3,7 @@
 // is noisier than a few percent), and the bundles take turns page by page, the order reversed on
 // every other page (ABBA), so neither gets the fresher machine. Run from e2e/ (where
 // @playwright/test is installed), after building the bundles:
-//   node ../packages/state-next/bench/inpage-ab.mjs --bundles a.js,b.js --op update10k \
+//   node ../packages/state/bench/inpage-ab.mjs --bundles a.js,b.js --op update10k \
 //     [--pages 8] [--iters 40] [--warmup 5] [--throttle 4] [--out file.json]
 // --throttle 4 is the official benchmark's CPU slowdown. Diagnosis:
 //   --profile   CPU self time by function over the loop (build the bundles without identifier

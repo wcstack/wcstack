@@ -1,8 +1,8 @@
 // Real-browser check of the two protocol receptacles with the packages that use them:
 // @wcstack/router hands route content and <wcs-head> clones to the binder, and
 // <wcs-view-transition naming="auto"> takes state's DOM changes through the transition
-// runner. Runs the same page on the current @wcstack/state as a control.
-//   node packages/state-next/bench/protocols-browser.mjs   (repository root, after the build)
+// runner. (It ran a 3.x @wcstack/state as a control until the 4.0 swap; packages/state/dist is 4.0 since.)
+//   node packages/state/bench/protocols-browser.mjs   (repository root, after the build)
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createRequire } from "node:module";
@@ -42,7 +42,7 @@ let browser;
 try {
   for (let i = 0; ; i++) { try { if ((await fetch(`${origin}/packages/router/dist/auto.min.js`)).ok) break; } catch {} if (i > 75) throw new Error("server"); await new Promise((r) => setTimeout(r, 200)); }
   browser = await chromium.launch({ headless: true });
-  for (const [label, bundle] of [["current @wcstack/state", "/packages/state/dist/auto.min.js"], ["state-next", "/packages/state-next/dist/auto.min.js"]]) {
+  for (const [label, bundle] of [["@wcstack/state 4.0", "/packages/state/dist/auto.min.js"]]) {
     const page = await browser.newPage();
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
