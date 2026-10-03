@@ -1131,6 +1131,27 @@ describe("F2: 同じ root の 2 本目の <wcs-state>", () => {
     await third.connectedCallbackPromise;
     expect(error).toHaveBeenCalledTimes(1);
   });
+
+  it("束縛を作れずに失敗した 1 本目はその root を持たない: 2 本目は #47 で拒まれずに root を引き継ぐ", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const h = document.createElement(`quality-failed-root-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><p data-wcs="textContent: a|"></p>`;
+      const first = root.querySelector("wcs-state") as any;
+      first.setInitialState({ a: 1 });
+      document.body.appendChild(h);
+      await expect(first.connectedCallbackPromise).rejects.toThrow("[wcs/binding-syntax]");
+      const second = document.createElement("wcs-state") as any;
+      second.setInitialState({ a: 2 });
+      root.appendChild(second);
+      await second.connectedCallbackPromise;
+      expect(second.engine).not.toBeNull();
+      h.remove();
+    } finally {
+      error.mockRestore();
+    }
+  });
 });
 
 describe("E3: state=\"id\" の JSON script", () => {
