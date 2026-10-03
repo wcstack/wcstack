@@ -46,6 +46,9 @@ declare function loadStateFile(file: string, options?: LoadStateOptions): Loaded
  *   — never `{ "type": "object" }`: the validator treats a bare `{}` as *unknown*
  *   (silent) and a typed object without the member as *nonexistent* (error).
  * - Nesting stops at `maxDepth` (default 5 = the validator's candidate budget) with a bare `{}`.
+ * - An object type with an index signature (`{ [year: number]: Sale }`, `{ [key: string]: T }`) becomes a bare
+ *   `{}`: its keys are open, and the subset has no open-object form — a typed object would make every key
+ *   (`byYear.2024`) *nonexistent*.
  */
 
 interface JsonSchemaNode {

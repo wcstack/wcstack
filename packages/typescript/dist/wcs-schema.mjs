@@ -130,6 +130,9 @@ function loadStateFile(file, options = {}) {
  *   — never `{ "type": "object" }`: the validator treats a bare `{}` as *unknown*
  *   (silent) and a typed object without the member as *nonexistent* (error).
  * - Nesting stops at `maxDepth` (default 5 = the validator's candidate budget) with a bare `{}`.
+ * - An object type with an index signature (`{ [year: number]: Sale }`, `{ [key: string]: T }`) becomes a bare
+ *   `{}`: its keys are open, and the subset has no open-object form — a typed object would make every key
+ *   (`byYear.2024`) *nonexistent*.
  */
 const DEFAULT_MAX_DEPTH = 5;
 /**
@@ -231,6 +234,9 @@ function convertObject(type, depth, ctx, isRoot) {
     if (depth >= ctx.maxDepth)
         return {};
     if (ctx.stack.has(type))
+        return {};
+    // Open keys (an index signature): unknown to the validator, not an object without members
+    if (ctx.checker.getIndexInfosOfType(type).length > 0)
         return {};
     ctx.stack.add(type);
     try {
@@ -567,7 +573,7 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "3.5.1";
+var version = "3.5.2";
 var pkg = {
 	version: version};
 
