@@ -35,7 +35,8 @@
     "./wcs-manifest.json": "./dist/wcs-manifest.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/core.min.js"
   ],
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
