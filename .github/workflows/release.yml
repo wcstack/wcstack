@@ -187,7 +187,7 @@ jobs:
             fi
           done
           if [ -n "$published" ]; then
-            echo "::error::$target is already on npm for:$published — but v$target is not tagged. A previous run published and stopped before it pushed (a partial release); this run will not publish the rest. Recovering needs a human: see CLAUDE.md (Release)."
+            echo "::error::$target is already on npm for:$published — but v$target is not tagged. A previous run published and stopped before it pushed (a partial release); this run will not publish the rest. Recovering needs a human (the bump commit existed only on the runner)."
             exit 1
           fi
 
