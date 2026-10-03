@@ -22,8 +22,9 @@ jobs:
           # Discover CI-target packages: any packages/* whose package.json is
           # scoped under @wcstack/, plus the unscoped `wcstack` entry bundle
           # (a buildable package since docs/distribution-robustness-impl-plan.md
-          # Phase 4). Auto-includes new scoped packages; still excludes
-          # non-published ones (e.g. the vscode-wcs extension).
+          # Phase 4). Auto-includes new scoped packages, private ones too
+          # (packages/state-next on research/state-engine); still excludes
+          # the unscoped ones (e.g. the vscode-wcs extension).
           all=()
           for dir in packages/*/; do
             [ -f "${dir}package.json" ] || continue
@@ -182,8 +183,8 @@ jobs:
         working-directory: packages/lint
       # @wcstack/typescript は lint と同型: wcs-schema の自己検査と end-to-end テストが
       # vscode-wcs から bundle した validator core（dist/schema-core.cjs）を使う。matrix の
-      # typescript job は state の committed dist しか見ないので、vscode-wcs の変更・state の
-      # src 変更に対しては「新鮮な state × vscode-wcs × typescript」をここでゲートする。
+      # typescript job は packages/typescript/ を触る PR でしか動かないので、vscode-wcs の変更・
+      # state の src 変更に対しては「新鮮な state × vscode-wcs × typescript」をここでゲートする。
       - name: Build and test @wcstack/typescript against the freshly built validator core
         run: |
           set -euo pipefail

@@ -13,7 +13,7 @@
 **新エンジンの現状**（詳しくは [addons-plan.ja.md](./addons-plan.ja.md) §6）
 - コアと後付け 8 つ（formats・diagnostics・temporal・list-keys・scopes・recursion・ssr・devtools）を実装済み。
 - テスト 1,302 件（通過 1,301・スキップ 1）。リポジトリの e2e は 131/131（2026-09-27）。
-- core 18,369B gzip（上限 20,000B、2026-09-30 の `$behavior`・`$features` の後）、全部入りの `auto` 40,208B（3.3.0 は 80.9KB）。2026-09-27 から terser を後段に通す（§8）。
+- core 19,434B gzip（`dist/core.min.js`。上限 20,000B まで 566B。2026-10-03、main の 3.5.0 の取り込みの後の作業ツリーをビルドして測った）、全部入りの `auto` 45,651B（3.3.0 は 80.9KB）。2026-09-27 から terser を後段に通す（§8）。上限を確かめる検査は無い — `build.mjs` がサイズを表示するだけで、テストにも CI にもしきい値は無い（§4）。
 - 公式 js-framework-benchmark の CPU 加重幾何平均は 1.08〜1.11（signals 1.21〜1.25、3.3.0 1.51）。
 
 ## 1. 決めてほしいこと
@@ -201,7 +201,11 @@ R3 の決定（3.5 を最後の minor にする）に沿って、main から 6 �
 
 ## 4. ビルド・CI・サイズ・計測
 
-- サイズの検査（`scripts/check-state-size.mjs`・`scripts/check-state-split.mjs`）と基準値（`scripts/state-size-baseline.json`・`scripts/state-split-baseline.json`）を、新しい出力の形に合わせて作り直す。
+- 3.x の `@wcstack/state` の CI の検査 4 つを、新しい出力の形に合わせて作り直す（`--update` で基準値を取り直すだけでは足りない。どれも `packages/state` の 3.x のビルドを前提にしていて、今は state-next を測らない）。
+  - サイズの検査（`scripts/check-state-size.mjs`・`scripts/check-state-split.mjs`）と基準値（`scripts/state-size-baseline.json`・`scripts/state-split-baseline.json`）。`check-state-split.mjs` は `dist/split/**.js.map` を読み、3.x の src のディレクトリを後付けに割り当てる（`FEATURE_BY_DIR`）が、state-next はソースマップを出さない。
+  - 結合の検査（`scripts/audit-state-tech-coupling.mjs --check`、基準値 `scripts/state-coupling-baseline.json`）。パッケージの `tsconfig.json` で tsc に出力させて import のグラフを読むが、state-next の tsconfig は `noEmit: true`。
+  - helper だけの import のサイズの検査（`scripts/audit-state-tech-helper-import.mjs --check --max-gzip 1024`）。パッケージの `rollup.config.js` を import して組むが、state-next には無い（esbuild の `build.mjs`）。
+  - core の上限（`dist/core.min.js` の gzip ≤ 20,000B）を確かめる検査も、今は無い（`build.mjs` が表示するだけ）。作り直すときに検査に入れるかを決める。
 - `release.yml` と `ci.yml` のビルド手順を合わせる。state-next は `tsc`＋Rollup ではなく esbuild（`build.mjs`、短縮名の表 `mangle.mjs`）と、その後段の terser（`minify.mjs`）。state を最初にビルドする順序（lint と typescript が取り込むため）は変わらない。
 - 4.0 の成果物で、性能とサイズを記録し直す（公式 js-framework-benchmark、DOM 直接との比、`bench/run-all.sh`）。
 
