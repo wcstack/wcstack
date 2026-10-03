@@ -1,7 +1,14 @@
-// Records __tests__/golden/ssr-3x.json: pages rendered by @wcstack/server 3.x with @wcstack/state 3.x,
-// from their checked-in dists (packages/server/dist, packages/state/dist), for the test of a 4.0 client
-// on 3.x output (__tests__/ssr-3x.test.ts). Neither package needs its own node_modules: the server's
-// imports resolve here (happy-dom from this package's devDependencies, @wcstack/state to the 3.x dist).
+// Records __tests__/golden/ssr-3x-353.json (or the file the first argument names, relative to this
+// package): pages rendered by @wcstack/server 3.x with @wcstack/state 3.x, from their checked-in dists
+// (packages/server/dist, packages/state/dist), for the test of a 4.0 client on 3.x output
+// (__tests__/ssr-3x.test.ts). Neither package needs its own node_modules: the server's imports resolve
+// here (happy-dom from this package's devDependencies, @wcstack/state to the 3.x dist). The output
+// depends only on the dists (the pages render in order: the private keys' numbers `#mN` run across them).
+//
+// __tests__/golden/ssr-3x.json holds the pages up to `filters` as the 3.5.0 dists rendered them, before
+// 3.5.3 (wcstack#373) made a text mark carry the binding's whole expression, filters included (a Light
+// DOM child's in its own vocabulary). It is frozen, the record of the output up to 3.5.2: the checked-in
+// dists no longer produce it, so this script does not write it.
 import { register } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 
@@ -26,6 +33,9 @@ const components = {
   "y-own": { box: "mine" },
   "y-own-x": { box: { x: "own-x" } },
   "y-deep": { profile: "deep-own" },
+  // (the 3.5.3+ pages')
+  "x-kid": {},
+  "x-num": {},
 };
 const bootstraps = [async () => {
   for (const [tag, state] of Object.entries(components)) {
@@ -115,14 +125,46 @@ const pages = {
 <p class="price">{{ price|toFixed(2) }}</p>
 <ul><template data-wcs="for: items"><li>{{ .|toFixed(2) }}</li></template></ul>
 </body></html>`,
+  // 3.5.3+: a Light DOM child wired with the names swapped (`state.x: v; state.v: w`): its marks are in
+  // its own vocabulary, where `v` is the page's `w`
+  swap: `<!DOCTYPE html><html><head></head><body>
+<wcs-state enable-ssr json='{"v":"host-v","w":"host-w"}'></wcs-state>
+<p class="page">{{ v }} / {{ w }}</p>
+<x-kid data-wcs="state.x: v; state.v: w"><wcs-state bind-component="state"></wcs-state><p class="kid">{{ v }} / {{ x }}</p></x-kid>
+</body></html>`,
+  // 3.5.3+: a filter chain, a string argument (in a comment binding too), filters in Light DOM children
+  // (a partial mount; a whole one, on a private key too)
+  exprs: `<!DOCTYPE html><html><head></head><body>
+<wcs-state enable-ssr json='{"price":3.14159,"name":"Ann","user":{"name":"Bo","age":3}}'></wcs-state>
+<p class="chain">{{ price|mul(10)|round|unit(' pt') }}</p>
+<p class="str"><!--@@: name|padStart(6,'*') --></p>
+<x-num data-wcs="state.p: price"><wcs-state bind-component="state"></wcs-state><p class="p">{{ p|toFixed(2) }}</p></x-num>
+<x-light data-wcs="state: user"><wcs-state bind-component="state"></wcs-state><p class="age">{{ age|add(1)|unit(' y') }}</p><p class="mine">{{ mine|upper }}</p></x-light>
+</body></html>`,
+  // 3.5.3+: an expression a comment cannot hold (`--`): the mark falls back to the path, in a Light DOM
+  // child the page's — here a private key's (`#mN.…`)
+  fallback: `<!DOCTYPE html><html><head></head><body>
+<wcs-state enable-ssr json='{"title":"T","user":{"name":"Ann"}}'></wcs-state>
+<p class="page">{{ title|unit('--') }}</p>
+<x-part data-wcs="state.label: user.name"><wcs-state bind-component="state"></wcs-state><p class="own">{{ other|unit('--') }}</p><p class="kept">{{ label|unit('!') }}</p></x-part>
+<x-light data-wcs="state: user"><wcs-state bind-component="state"></wcs-state><p class="own">{{ mine|unit('--') }}</p><p class="kept">{{ name|unit('!') }}</p></x-light>
+</body></html>`,
+  // 3.5.3+: the same, of a wired path: the mark is the page's path, not the child's
+  "fallback-wired": `<!DOCTYPE html><html><head></head><body>
+<wcs-state enable-ssr json='{"user":{"name":"Ann"}}'></wcs-state>
+<x-part data-wcs="state.label: user.name"><wcs-state bind-component="state"></wcs-state><p class="wired">{{ label|unit('--') }}</p></x-part>
+<x-light data-wcs="state: user"><wcs-state bind-component="state"></wcs-state><p class="wired">{{ name|unit('--') }}</p></x-light>
+</body></html>`,
 };
 
+const target = process.argv[2] ?? "__tests__/golden/ssr-3x-353.json";
+if (/(^|[\\/])ssr-3x\.json$/.test(target)) throw new Error(`${target} is frozen (the 3.5.0 output): see the top of this script`);
 const out = {};
 for (const [name, html] of Object.entries(pages)) out[name] = { page: html, output: await renderToString(html, { bootstraps }) };
-const file = new URL("__tests__/golden/ssr-3x.json", here);
+const file = new URL(target, here);
 writeFileSync(file, JSON.stringify({
   engine: `@wcstack/server ${version("server")} + @wcstack/state ${version("state")} (their checked-in dists)`,
   components,
   pages: out,
 }, null, 2) + "\n");
-console.log(`__tests__/golden/ssr-3x.json: ${Object.keys(out).length} pages`);
+console.log(`${target}: ${Object.keys(out).length} pages`);
