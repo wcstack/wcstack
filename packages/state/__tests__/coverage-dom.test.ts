@@ -703,3 +703,47 @@ describe("読み込み中に取り除かれた根", () => {
     }
   });
 });
+
+describe("読み込み中に別の根へ移された根", () => {
+  it("状態が来る前に shadow root へ移された根は、移った先の根で始まる（そこの getBindingsReady も resolve する）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      document.body.innerHTML = `<wcs-state></wcs-state>`;
+      const el = document.body.querySelector("wcs-state") as any;
+      await flush();
+      // moved, and connected there, while it waits for its state
+      const h = document.createElement(`cov-dom-moved-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<p>{{ msg }}</p>`;
+      document.body.appendChild(h);
+      root.prepend(el);
+      el.setInitialState({ msg: "moved" });
+      await el.connectedCallbackPromise;
+      await getBindingsReady(root);
+      expect(el.engine).not.toBeNull();
+      expect(root.querySelector("p")!.textContent).toBe("moved");
+      // the document it left has none to wait for
+      await getBindingsReady(document);
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      document.body.innerHTML = "";
+    }
+  });
+});
+
+describe("getBindingsReady と取り除かれた <wcs-state>", () => {
+  it("ただ 1 つの <wcs-state> が取り除かれて戻らない根では、待つものが無いので resolve する（状態を待つ間は待つ）", async () => {
+    const h = document.createElement(`cov-dom-ready-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><p>{{ msg }}</p>`;
+    document.body.appendChild(h);
+    const el = root.querySelector("wcs-state") as any;
+    const settled = (p: Promise<unknown>) => Promise.race([p.then(() => "resolved", () => "rejected"), new Promise((r) => setTimeout(() => r("pending"), 20))]);
+    // waiting for its state: pending
+    expect(await settled(getBindingsReady(root))).toBe("pending");
+    el.remove();
+    expect(await settled(getBindingsReady(root))).toBe("resolved");
+    h.remove();
+  });
+});
