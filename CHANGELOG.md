@@ -8,9 +8,17 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [3.5.3] — 2026-10-03
+
+**3.5.3 fixes server-rendered text losing its output filters on hydration** ([#373](https://github.com/wcstack/wcstack/issues/373)). With `enable-ssr`, a `{{ price|toFixed(2) }}` rendered as `3.14` by the server came back as `3.14159` once the page hydrated, and every later write stayed unfiltered — page-level text, comment bindings, filter chains, and the text of server-rendered `for:` rows and `if:` branches. The text markers the server writes now carry the binding's whole expression; upgrading the server's `@wcstack/state` is enough, as every 3.x client already reads them. The same change fixes a Light DOM `bind-component` child's aliased `{{ }}` hydrating empty (symptom 1 of [#372](https://github.com/wcstack/wcstack/issues/372)). No API changes; `auto.min.js` grows by 84 B gzip, the split `/core` by 1 B. The contributor guides (CLAUDE.md, AGENTS.md) are brought in line with the repository.
+
 ### Fixed
 
 - `@wcstack/state`: **server-rendered `{{ }}` text keeps its output filters after hydration** ([#373](https://github.com/wcstack/wcstack/issues/373)). The comments the server writes around a text binding (`<!--@@wcs-text-start:…-->` / `<!--@@wcs-text-end:…-->`) carried only the binding's path, and hydration rebuilds the binding from them, so `{{ price|toFixed(2) }}` came back as `{{ price }}`: the page showed `3.14159` instead of the server's `3.14`, and every later write stayed unfiltered, with nothing reported. The same happened to `<!--@@: … -->`, to filter chains (`{{ name|upper|trim }}`) and to the `{{ }}` in server-rendered `for:` rows and `if:` branches (a branch hidden and shown again stayed unfiltered); the version-mismatch full render lost the filters of page-level text. The markers now carry the binding's whole expression (`price|toFixed(2)`; `items.*.price|toFixed(2)` in a row), which every 3.x client already reads as it is: a 3.5.x client hydrating the new server's output is fixed as well, and output from an older server hydrates as before — the fix takes effect when the server renders with the fixed `@wcstack/state`, and clients need no update. An expression a comment cannot hold (one containing `--`) is still written as its path alone. The same change fixes symptom 1 of [#372](https://github.com/wcstack/wcstack/issues/372): a `{{ }}` in a Light DOM `bind-component` child that reads an aliased key (`state.p: price`, `{{ p|toFixed(2) }}`) carried the host's path, which the child's scope could not resolve, and hydrated empty for good — also when the child sits in a `for:` row or an `if:` branch. It now carries the child's own expression. The full bundles grow by 84 B (`auto.min.js`) / 99 B (`index.esm.js`) gzip, the split `/core` by 1 B, `features/ssr` by 70 B.
+
+### Repository
+
+- `CLAUDE.md` / `AGENTS.md` / `packages/state/CLAUDE.md` checked against the repository and corrected: the `wc-bindable` shape (`properties` are observable outputs; `inputs` / `commands` are metadata), the I/O shell location (`src/components/`, `src/auto.ts`), the `@wcstack/state` file roles, the four packages the list missed (`@wcstack/devtools`, `@wcstack/lint`, `@wcstack/typescript`, `@wcstack/testing`), the per-package exceptions to the commands, build, test environment and coverage thresholds, the extra CI size gates, the `binder` / `ssr-snapshot` / DevTools-hook protocols and the generated files; source comments are documented as mixed English / Japanese (follow the surrounding file). The ESLint template drops a leftover `src/auto/**` ignore (no package has that directory; `src/auto.ts` was already linted).
 
 ## [3.5.2] — 2026-10-03
 
@@ -613,7 +621,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.2...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.3...HEAD
+[3.5.3]: https://github.com/wcstack/wcstack/compare/v3.5.2...v3.5.3
 [3.5.2]: https://github.com/wcstack/wcstack/compare/v3.5.1...v3.5.2
 [3.5.1]: https://github.com/wcstack/wcstack/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/wcstack/wcstack/compare/v3.4.0...v3.5.0
