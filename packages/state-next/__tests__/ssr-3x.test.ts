@@ -3,8 +3,11 @@
  * the client from its templates.
  * - `golden/ssr-3x.json`: the output up to 3.5.2 (recorded from the 3.5.0 dists of packages/server and
  *   packages/state; frozen, see scripts/ssr-3x.mjs), whose text marks name the path alone;
- * - `golden/ssr-3x-353.json`: the output from 3.5.3 (`node scripts/ssr-3x.mjs`, from the checked-in
- *   dists), whose text marks hold the binding's expression, a Light DOM child's in its own vocabulary.
+ * - `golden/ssr-3x-353.json`: the output of 3.5.3 (recorded from its dists; frozen), whose text marks
+ *   hold the binding's expression, a Light DOM child's in its own vocabulary — but for an expression a
+ *   comment cannot hold (one with a `--`), whose mark falls back to the path, the page's;
+ * - `golden/ssr-3x-354.json`: the output from 3.5.4 (`node scripts/ssr-3x.mjs`, from the checked-in
+ *   dists), the same but for that fallback mark, which names the path the child wrote (wcstack#427).
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 import { readFileSync } from "node:fs";
@@ -20,6 +23,7 @@ type Golden = {
 const read = (file: string) => JSON.parse(readFileSync(resolve(__dirname, "golden", file), "utf8")) as Golden;
 const golden = read("ssr-3x.json");
 const golden353 = read("ssr-3x-353.json");
+const golden354 = read("ssr-3x-354.json");
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
 
@@ -27,9 +31,10 @@ beforeAll(() => {
   // (no diagnostics: the add-on's warning is its own text)
   installFeatures([ssr, formats, scopes]);
   bootstrapState();
-  // the custom elements the server rendered with (both records define the shared ones alike)
-  for (const [tag, state] of Object.entries({ ...golden.components, ...golden353.components })) {
+  // the custom elements the server rendered with (the records define the shared ones alike)
+  for (const [tag, state] of Object.entries({ ...golden.components, ...golden353.components, ...golden354.components })) {
     expect(golden.components[tag] ?? state).toEqual(state);
+    expect(golden353.components[tag] ?? state).toEqual(state);
     customElements.define(tag, class extends HTMLElement { state = structuredClone(state); });
   }
 });
@@ -270,25 +275,44 @@ describe("3.x の @wcstack/server の出力（版の違い）", () => {
   });
 });
 
-describe("3.5.3 以降の 3.x の出力（テキストの印がフィルタ込みの式を持ち、Light DOM の子の印はその子の語彙）", () => {
-  const out = (name: string) => golden353.pages[name].output;
+/** A record of the output from 3.5.3 on, read: a page's output, and the page rendered with and without it. */
+function reading(record: Golden) {
+  const out = (name: string) => record.pages[name].output;
   /**
    * The page rendered on the client alone (`csr`: without `enable-ssr`, whose root runs no
-   * `$connectedCallback` when it finds no snapshot), and from the 3.5.3 output (`ssr3`).
+   * `$connectedCallback` when it finds no snapshot), and from the record's output (`ssr3`).
    */
   const both = async (name: string, state?: () => Record<string, any>) => ({
-    csr: await load(name, state?.(), (r) => r.querySelector("wcs-state")!.removeAttribute("enable-ssr"), golden353.pages[name].page),
+    csr: await load(name, state?.(), (r) => r.querySelector("wcs-state")!.removeAttribute("enable-ssr"), record.pages[name].page),
     ssr3: await load(name, state?.(), undefined, out(name)),
   });
-  /** What a page shows: its text, the whitespace collapsed. */
-  const shown = (root: ShadowRoot) => root.textContent!.replace(/\s+/g, " ").trim();
+  return { out, both };
+}
+/** What a page shows: its text, the whitespace collapsed. */
+const shown = (root: ShadowRoot) => root.textContent!.replace(/\s+/g, " ").trim();
+
+/**
+ * The records from 3.5.3 on: 3.5.3's (frozen) and 3.5.4's render the same pages alike, but for the mark
+ * of an expression a comment cannot hold in a Light DOM child (the describes after this one).
+ */
+const records: [string, Golden][] = [["3.5.3", golden353], ["3.5.4", golden354]];
+
+describe.each(records)("%s の 3.x の出力（テキストの印がフィルタ込みの式を持ち、Light DOM の子の印はその子の語彙）", (release, record) => {
+  const { out, both } = reading(record);
 
   it("記録は 3.5.3 以降のサーバと state の出力で、テキストの印が式を持つ（テンプレートの印はページのパスのまま）", () => {
-    expect(golden353.engine).toMatch(/^@wcstack\/server 3\.\d+\.\d+ \+ @wcstack\/state 3\.\d+\.\d+/);
+    expect(record.engine).toMatch(/^@wcstack\/server 3\.\d+\.\d+ \+ @wcstack\/state 3\.\d+\.\d+/);
     const [minor, patch] = /<wcs-ssr version="3\.(\d+)\.(\d+)"/.exec(out("basic"))!.slice(1).map(Number);
     expect(minor * 1000 + patch).toBeGreaterThanOrEqual(5003);
+    // the release the record is named after
+    expect(record.engine).toContain(`@wcstack/server ${release} + @wcstack/state ${release} `);
+    expect(out("basic")).toContain(`<wcs-ssr version="${release}">`);
     // the same pages as the frozen record (the older format), and the 3.5.3 ones
-    for (const name of Object.keys(golden.pages)) expect(golden353.pages[name].page).toBe(golden.pages[name].page);
+    for (const name of Object.keys(golden.pages)) expect(record.pages[name].page).toBe(golden.pages[name].page);
+    // (the records from 3.5.3 on: the same pages, all of them, and components)
+    expect(Object.keys(record.pages)).toEqual(Object.keys(golden353.pages));
+    for (const name of Object.keys(golden353.pages)) expect(record.pages[name].page).toBe(golden353.pages[name].page);
+    expect(record.components).toEqual(golden353.components);
     expect(out("filters")).toContain("<!--@@wcs-text-start:price|toFixed(2)-->3.14<!--@@wcs-text-end:price|toFixed(2)-->");
     expect(out("swap")).toContain("<!--@@wcs-text-start:v-->host-w<!--@@wcs-text-end:v--> / <!--@@wcs-text-start:x-->host-v<!--@@wcs-text-end:x-->");
     for (const mark of ["@@wcs-text-start:name-->", "@@wcs-text-start:age|add(1)-->", "@@wcs-text-start:mine-->", "@@wcs-text-start:other-->", "@@wcs-text-start:box.x-->", 'data-wcs="for: user.tags"', 'data-wcs="if: user.on|not"']) {
@@ -297,11 +321,8 @@ describe("3.5.3 以降の 3.x の出力（テキストの印がフィルタ込�
     for (const mark of ["@@wcs-text-start:price|mul(10)|round|unit(' pt')-->31 pt", "@@wcs-text-start:name|padStart(6,'*')-->***Ann", "@@wcs-text-start:p|toFixed(2)-->3.14", "@@wcs-text-start:age|add(1)|unit(' y')-->4 y", "@@wcs-text-start:mine|upper-->OWN"]) {
       expect(out("exprs")).toContain(mark);
     }
-    // an expression a comment cannot hold falls back to the path: in a Light DOM child, the page's
+    // an expression a comment cannot hold falls back to the path: on the page, the page's
     expect(out("fallback")).toContain("<!--@@wcs-text-start:title-->T--");
-    expect(out("fallback")).toMatch(/<!--@@wcs-text-start:#m\d+\.other-->o--/);
-    expect(out("fallback")).toMatch(/<!--@@wcs-text-start:user\.#m\d+\.mine-->own--/);
-    expect(out("fallback-wired")).toContain("<!--@@wcs-text-start:user.name-->Ann--");
   });
 
   const cases: [string, (s: any) => void, (() => Record<string, any>)?][] = [
@@ -351,7 +372,7 @@ describe("3.5.3 以降の 3.x の出力（テキストの印がフィルタ込�
     expect(view()).toEqual(["13 pt", "****Bo", "1.25", "8 y", "OWN"]);
   });
 
-  it("コメントに入らない式（--）は印がパスに戻る: フィルタは外れ（3.5.2 以前と同じ）、Light DOM の子の私有のキー（#mN.）は子のキーに戻す", async () => {
+  it("コメントに入らない式（--）は印がパスに戻る: フィルタは外れ（3.5.2 以前と同じ）、Light DOM の子の私有のキーは子の値を出す（3.5.3 の印の #mN. は子のキーに戻す）", async () => {
     const { csr, ssr3 } = await both("fallback");
     expect(error).not.toHaveBeenCalled();
     clean(ssr3.root);
@@ -369,10 +390,25 @@ describe("3.5.3 以降の 3.x の出力（テキストの印がフィルタ込�
     });
     expect(error).not.toHaveBeenCalled();
   });
+});
+
+/** The text marks of a record's page, in order. */
+const marks = (record: Golden, name: string) => Array.from(record.pages[name].output.matchAll(/<!--@@wcs-text-start:(.*?)-->/g), (m) => m[1]);
+
+describe("3.5.3 の出力: Light DOM の子でコメントに入らない式の印はページのパス", () => {
+  const { out, both } = reading(golden353);
+
+  it("私有のキーの印は #mN. を含むページのパス、配線したキーの印はページのパス（user.name）", () => {
+    // an expression a comment cannot hold falls back to the path: in a Light DOM child, the page's
+    expect(out("fallback")).toMatch(/<!--@@wcs-text-start:#m\d+\.other-->o--/);
+    expect(out("fallback")).toMatch(/<!--@@wcs-text-start:user\.#m\d+\.mine-->own--/);
+    expect(out("fallback-wired")).toContain("<!--@@wcs-text-start:user.name-->Ann--");
+  });
 
   it("（制限）配線したキーの式がコメントに入らないと、印はページのパス（user.name）になり、子の語彙として読む: 子にそのキーは無く、空のまま書き込みにも追従しない", async () => {
     // (the page's path cannot be told from the child's own text: `user.name` may be the child's own
-    // key, and mapping it through the wiring would misread that common case — see legacy)
+    // key, and mapping it through the wiring would misread that common case — see legacy; 3.5.4
+    // writes the child's path instead, below)
     const { csr, ssr3 } = await both("fallback-wired");
     clean(ssr3.root);
     const view = (root: ShadowRoot) => ["x-part > p.wired", "x-light > p.wired"].map((s) => root.querySelector(s)!.textContent);
@@ -382,6 +418,49 @@ describe("3.5.3 以降の 3.x の出力（テキストの印がフィルタ込�
     expect({ csr: view(csr.root), ssr3: view(ssr3.root) }).toEqual({ csr: ["Bo--", "Bo--"], ssr3: ["", ""] });
     expect(error).not.toHaveBeenCalled();
   });
+});
+
+describe("3.5.4 の出力: Light DOM の子でコメントに入らない式の印は子の書いたパス（wcstack#427）", () => {
+  const { out, both } = reading(golden354);
+
+  it("印は子自身のパス（other・mine・label・name）で、#mN. もページのパスも持たない。ほかのページは 3.5.3 と（版を除き）同じ出力", () => {
+    expect({ fallback: marks(golden354, "fallback"), wired: marks(golden354, "fallback-wired") }).toEqual({
+      fallback: ["title", "other", "label|unit('!')", "mine", "name|unit('!')"],
+      wired: ["label", "name"],
+    });
+    for (const name of ["fallback", "fallback-wired"]) expect(out(name)).not.toMatch(/@@wcs-text-start:[^>]*#m\d+\./);
+    // (3.5.3's: the page's paths)
+    const numbered = (name: string) => marks(golden353, name).map((m) => m.replace(/#m\d+\./g, "#mN."));
+    expect({ fallback: numbered("fallback"), wired: numbered("fallback-wired") }).toEqual({
+      fallback: ["title", "#mN.other", "label|unit('!')", "user.#mN.mine", "name|unit('!')"],
+      wired: ["user.name", "user.name"],
+    });
+    const unversioned = (html: string) => html.replace(/<wcs-ssr version="[^"]+"/, "<wcs-ssr");
+    for (const name of Object.keys(golden354.pages).filter((n) => !n.startsWith("fallback"))) {
+      expect(unversioned(out(name))).toBe(unversioned(golden353.pages[name].output));
+    }
+  });
+
+  it("配線したキーの式がコメントに入らなくても、印は子のパス（label・name）なので値を出し（SSR の無いページの値からフィルタを除いたもの）、書き込みに追従する", async () => {
+    const { csr, ssr3 } = await both("fallback-wired");
+    expect(error).not.toHaveBeenCalled();
+    clean(ssr3.root);
+    const view = (root: ShadowRoot) => ["x-part > p.wired", "x-light > p.wired"].map((s) => root.querySelector(s)!.textContent);
+    // the client alone's text without `|unit('--')`: the mark kept the path alone
+    const unfiltered = (texts: (string | null)[]) => texts.map((t) => t!.replace(/--$/, ""));
+    expect({ csr: view(csr.root), ssr3: view(ssr3.root) }).toEqual({ csr: ["Ann--", "Ann--"], ssr3: ["Ann", "Ann"] });
+    expect(view(ssr3.root)).toEqual(unfiltered(view(csr.root)));
+    const writes = (s: any) => { s["user.name"] = "Bo"; };
+    await csr.write(writes);
+    await ssr3.write(writes);
+    expect({ csr: view(csr.root), ssr3: view(ssr3.root) }).toEqual({ csr: ["Bo--", "Bo--"], ssr3: ["Bo", "Bo"] });
+    expect(view(ssr3.root)).toEqual(unfiltered(view(csr.root)));
+    expect(error).not.toHaveBeenCalled();
+  });
+});
+
+describe("<wcs-ssr version> が、テキストの印を 3.5.3 以降のものとして読むかを決める", () => {
+  const { out } = reading(golden353);
 
   // the version decides how a text mark reads: the swap page's marks are 3.5.3's (the child's own
   // vocabulary); read as older output, they go through the host's wiring, which turns the child's `v`
