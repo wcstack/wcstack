@@ -1,15 +1,77 @@
 {
-  "$comment": "Baseline for `node scripts/audit-state-tech-coupling.mjs --check` (CI gate for @wcstack/state, docs/state-next-major-wiring-design.md §7-1). evaluatedModules: the only modules allowed to run code at module evaluation (allocations such as `new Map()` and initializers annotated `/*#__PURE__*/` do not count). maxCoreToFeatureEdges: value imports from core modules into feature modules may not exceed this; tighten it when the audit reports fewer. It read 41 while the audit still counted components/State.ts — the core's own element — as a feature, 62 once that was corrected, and 6 after S3-S5 moved the wiring behind receptacles; the nine that remain are entry edges: the full entry installing its seven features (bootstrapState -> features/*), exports -> ssr/Ssr, and manifest.ts -> formats/builtinFilters (the manifest lists the filter names from the implementation, which is the single source of truth for tooling). reachability.noFeatures: the entry may not reach ANY feature group (the split core entry, wiring design §7-1). reachability: entries whose reachable module count must stay at or below the limit (defineState must reach only itself, requirements N2).",
-  "evaluatedModules": [
-    "auto.ts"
+  "$comment": "Baseline for `node scripts/check-state-coupling.mjs --check` (CI gate for @wcstack/state 4.0; the rules are in the script header). coreToFeature: the only imports from a module outside the add-ons into an add-on module (G2). featureToCore: the core modules each add-on may import (G5). evaluatedModules: the only modules that may run code when evaluated (E1). Re-record with --update after a deliberate change; the rules without a baseline (S1-S3, G1, G3, G4) always hold.",
+  "coreToFeature": [
+    "auto.ts -> features/all.ts",
+    "exports.ts -> features/all.ts",
+    "exports.ts -> ssr/element.ts",
+    "public/contract.ts -> devtools/devtools.ts",
+    "public/manifest.ts -> filters/formats.ts",
+    "public/parser.ts -> diagnostics/explain.ts"
   ],
-  "maxCoreToFeatureEdges": 9,
-  "reachability": {
-    "defineState.ts": {
-      "maxFiles": 1
-    },
-    "entries/core.ts": {
-      "noFeatures": true
-    }
-  }
+  "featureToCore": {
+    "devtools": [
+      "dom/mount.ts",
+      "dom/view.ts",
+      "hooks.ts",
+      "version.ts"
+    ],
+    "diagnostics": [
+      "config.ts",
+      "engine.ts",
+      "filters/registry.ts",
+      "hooks.ts",
+      "messages.ts",
+      "parser/define.ts",
+      "parser/raiseError.ts",
+      "pattern.ts",
+      "trustedTypes.ts"
+    ],
+    "formats": [
+      "config.ts",
+      "filters/errorMessages.ts",
+      "filters/options.ts",
+      "filters/registry.ts",
+      "messages.ts"
+    ],
+    "list-keys": [
+      "hooks.ts",
+      "parser/raiseError.ts"
+    ],
+    "recursion": [
+      "hooks.ts",
+      "parser/parseStatePart.ts",
+      "parser/raiseError.ts"
+    ],
+    "scopes": [
+      "config.ts",
+      "dom/binder.ts",
+      "dom/mount.ts",
+      "dom/wc.ts",
+      "engine.ts",
+      "hooks.ts",
+      "parser/raiseError.ts",
+      "pattern.ts",
+      "strategy/dirty.ts"
+    ],
+    "ssr": [
+      "config.ts",
+      "dom/plan.ts",
+      "dom/view.ts",
+      "element.ts",
+      "hooks.ts",
+      "parser/parseBindTextsForElement.ts",
+      "version.ts"
+    ],
+    "temporal": [
+      "hooks.ts",
+      "parser/raiseError.ts",
+      "pattern.ts"
+    ]
+  },
+  "evaluatedModules": [
+    "auto.ts",
+    "core-entry.ts",
+    "public/parser.ts",
+    "split-auto.ts"
+  ]
 }

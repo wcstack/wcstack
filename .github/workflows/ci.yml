@@ -71,6 +71,13 @@ jobs:
                 fi
               done
             fi
+
+            # The @wcstack/state size / structure gates and their baselines live in scripts/:
+            # a PR that changes only them must still run them.
+            if echo "$changed" | grep -qE '^scripts/(check-state-[a-z]+\.mjs|state-[a-z]+-baseline\.json)$' \
+              && [[ " ${selected[*]} " != *" state "* ]]; then
+              selected+=("state")
+            fi
           fi
 
           if [ ${#selected[@]} -eq 0 ]; then
@@ -275,39 +282,26 @@ jobs:
           for member in $members; do
             ( cd "../$member" && npm ci && npm run build )
           done
-      # T1 static coupling gate for @wcstack/state (docs/state-next-major-wiring-design.md
-      # §7-1). Compiles src with tsc into a temporary directory and checks the value-import
-      # graph against scripts/state-coupling-baseline.json: no module outside the baseline may
-      # run registration code at module evaluation (the "stays after a mere import" class that
-      # S2 removed), the number of core → feature value edges may not grow, and defineState
-      # must keep reaching only itself. Needs this package's node_modules (typescript).
-      - name: Check the core / feature coupling of @wcstack/state against its baseline
-        if: ${{ matrix.package == 'state' }}
-        run: node ../../scripts/audit-state-tech-coupling.mjs --check
-      # Size gate for the side-effect-free helper entry (requirements N2 / N3): re-exporting
-      # only defineState from the bundle must stay tiny after tree-shaking (309 bytes gzip at
-      # the time of writing; limit 1 KB). Builds src/exports.ts in memory with this package's
-      # Rollup config, so it needs node_modules and precedes the dist build.
-      - name: Check the helper-only import size of @wcstack/state
-        if: ${{ matrix.package == 'state' }}
-        run: node ../../scripts/audit-state-tech-helper-import.mjs --check --max-gzip 1024
       - run: npm run lint
       - run: npm run build
-      # Size gate for the shipped bundles of @wcstack/state (requirements N3 / D18): auto.min.js,
-      # index.esm.js and the `core` entry with its chunks may not grow more than 3 % gzip over
-      # scripts/state-size-baseline.json (the last recorded release build); an intended increase is
-      # recorded with --update.
-      - name: Check the shipped bundle sizes of @wcstack/state against the release baseline
+      # Size gate for the shipped files of @wcstack/state 4.0 (requirements N2 / N3, D18): the
+      # full entries, the split core with its chunks, each add-on and split/auto.js beyond the core
+      # may not grow more than 3 % gzip (plus an entry's optional slack) over
+      # scripts/state-size-baseline.json, re-recorded with --update at each release; and two
+      # absolute limits — dist/core.min.js <= 20,000 B gzip (the 4.0 core target) and the
+      # `/define` helper entry <= 1,024 B. Reads dist only, so it runs after the build.
+      - name: Check the shipped sizes of @wcstack/state against the release baseline and the core target
         if: ${{ matrix.package == 'state' }}
         run: node ../../scripts/check-state-size.mjs --check
-      # One core chunk (requirement B13, wiring design §7-1): every `@wcstack/state/features/*`
-      # entry must import the core's chunk instead of carrying a copy, must not carry another
-      # feature's code (cross-feature calls go through src/bridge/*), and its own gzip may not grow
-      # more than 3 % over scripts/state-split-baseline.json. Reads the source maps of the split
-      # build, so it runs after the build.
-      - name: Check that no feature entry of @wcstack/state re-bundles the core or another feature
+      # Structure gate (requirement B13, wiring design §7-1): bundles src with esbuild in memory
+      # and checks that each add-on carries only its own code beyond the core chunk, that the core
+      # entries reach no add-on, that `/define` imports nothing, and that the core <-> add-on
+      # imports and the modules that run code on evaluation match
+      # scripts/state-coupling-baseline.json. Needs this package's node_modules (esbuild,
+      # typescript); compares the split entries with the freshly built dist/split.
+      - name: Check the core / add-on structure of @wcstack/state against its baseline
         if: ${{ matrix.package == 'state' }}
-        run: node ../../scripts/check-state-split.mjs --check
+        run: node ../../scripts/check-state-coupling.mjs --check
       - run: npm run typecheck --if-present
       - run: npm run size --if-present
       - run: npm run test:coverage

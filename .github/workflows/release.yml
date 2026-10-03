@@ -24,6 +24,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      # packages/state is the 4.0 engine (its wcs-manifest.json carries behaviorOptions,
+      # the marker the golden scripts use). Until the prerelease path for the 4.0 rc (R8,
+      # docs/state-engine-rewrite/v4-remaining.ja.md) exists, no bump type is safe: patch
+      # and minor would publish 4.0 as 3.x, major would skip the rc and land on latest.
+      - name: Refuse to release the 4.0 engine without the rc path
+        run: |
+          if node -e "process.exit(require('./packages/state/dist/wcs-manifest.json').behaviorOptions ? 0 : 1)"; then
+            echo "::error::packages/state is the 4.0 engine; the rc release path (R8) is not in place yet."
+            exit 1
+          fi
+
       # No registry-url on purpose. It makes setup-node write an .npmrc whose
       # `_authToken=${NODE_AUTH_TOKEN}` expands to an empty string once the
       # token is gone, and npm reads that empty value as "auth is already

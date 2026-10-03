@@ -136,7 +136,7 @@ The DOM trigger **always posts a string** — the literal `data-worker-text`, or
 >
 > Call `bootstrapWorker()` before the elements connect. (`setConfig` is internal; configure through `bootstrapWorker`.)
 >
-> Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+> `bootstrapWorker()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.
 
 ## Observable Properties (outputs)
 
