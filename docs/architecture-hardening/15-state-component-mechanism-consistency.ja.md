@@ -12,8 +12,8 @@
   対応状況の一覧は §0。
 - **対象**: `@wcstack/state` の
   [`protocol/`](../../packages/state/src/protocol/) /
-  [`dcc/`](../../packages/state/src/dcc/) /
-  [`webComponent/`](../../packages/state/src/webComponent/)
+  [`dcc/`](https://github.com/wcstack/wcstack/tree/v3.5.4/packages/state/src/dcc) /
+  [`webComponent/`](https://github.com/wcstack/wcstack/tree/v3.5.4/packages/state/src/webComponent)
 - **対象スナップショット**: wcstack `065774839c36d2a34a22c928f968acdbb169a98f`（`@wcstack/state@1.25.0`）
 - **検証方法**: ソース読解＋happy-dom 上の一時 probe テスト（§8 に再現手順。probe 自体はリポジトリに残していない）
 - **English**: [15-state-component-mechanism-consistency.md](15-state-component-mechanism-consistency.md)
@@ -79,41 +79,41 @@
 
 | ファイル | 対象 |
 |---|---|
-| [`webComponent/bindWebComponent.ts`](../../packages/state/src/webComponent/bindWebComponent.ts) | §1.2 / §1.1 |
-| [`webComponent/outerState.ts`](../../packages/state/src/webComponent/outerState.ts) | §1.1（mapped 専用 proxy と lastValue 台帳を削除し 1 本化） |
-| [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.1（台帳書き込みと listIndex 解決を除去） |
-| [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) | §1.1（内部チャネルを分離） |
-| [`webComponent/completeWebComponent.ts`](../../packages/state/src/webComponent/completeWebComponent.ts) / [`apply/applyChange.ts`](../../packages/state/src/apply/applyChange.ts) | §1.7（チャネル選択ゲートのキーを stateProp 名に） |
-| [`webComponent/MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts) | §1.7（派生バインディングを BindingSession 経由で購読者登録） |
-| [`webComponent/crossBoundaryAddress.ts`](../../packages/state/src/webComponent/crossBoundaryAddress.ts)（新規） / [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.8（越境をパスでなくアドレスで行う） |
-| [`webComponent/outerListPath.ts`](../../packages/state/src/webComponent/outerListPath.ts)（新規） / [`components/State.ts`](../../packages/state/src/components/State.ts) | §1.8（`for` パスのリスト宣言を親 state へ伝播） |
-| [`bindings/BindingSession.ts`](../../packages/state/src/bindings/BindingSession.ts) | §1.8（行バインディングを親のパターン台帳へ相乗り） |
-| [`proxy/methods/isCacheable.ts`](../../packages/state/src/proxy/methods/isCacheable.ts)（新規） | §1.8（mapped な state ではキャッシュを二重に持たない） |
-| [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) / [`components/types.ts`](../../packages/state/src/components/types.ts) | §1.9（切断済み state element へ通知しない・`hasRootNode`） |
-| [`components/State.ts`](../../packages/state/src/components/State.ts) / [`webComponent/MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts) | §1.9（再接続でマップ済みパスを読み直す・派生規則の memo を捨てる） |
-| [`list/wildcardLevel.ts`](../../packages/state/src/list/wildcardLevel.ts)（新規） | §1.10（ワイルドカード位置 → チェーン段の変換を末尾起点に集約。Δ=0 で挙動不変） |
-| [`webComponent/baseListIndex.ts`](../../packages/state/src/webComponent/baseListIndex.ts)（新規） | §1.10（子スコープの base 深さ Δ と、行生成時の親 listIndex） |
-| [`list/getListIndexByBindingInfo.ts`](../../packages/state/src/list/getListIndexByBindingInfo.ts) / [`list/getIndexValueByLoopContext.ts`](../../packages/state/src/list/getIndexValueByLoopContext.ts) / [`proxy/methods/getContextListIndex.ts`](../../packages/state/src/proxy/methods/getContextListIndex.ts) / [`proxy/methods/checkDependency.ts`](../../packages/state/src/proxy/methods/checkDependency.ts) / [`proxy/traps/get.ts`](../../packages/state/src/proxy/traps/get.ts) / [`dependency/walkDependency.ts`](../../packages/state/src/dependency/walkDependency.ts) | §1.10（末尾起点への書き換え 7 箇所） |
-| [`apply/applyChangeToFor.ts`](../../packages/state/src/apply/applyChangeToFor.ts) / [`dependency/walkDependency.ts`](../../packages/state/src/dependency/walkDependency.ts) / [`proxy/apis/getAll.ts`](../../packages/state/src/proxy/apis/getAll.ts) / [`proxy/methods/setByAddress.ts`](../../packages/state/src/proxy/methods/setByAddress.ts) | §1.10（行生成 5 経路すべてで base を親に渡す） |
-| [`list/loopContext.ts`](../../packages/state/src/list/loopContext.ts) / [`webComponent/outerListPath.ts`](../../packages/state/src/webComponent/outerListPath.ts) / [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.10（段数の検査を Δ 込みに） |
-| [`event/handler.ts`](../../packages/state/src/event/handler.ts) / [`event/eventTokenHandler.ts`](../../packages/state/src/event/eventTokenHandler.ts) / [`proxy/apis/updatedCallback.ts`](../../packages/state/src/proxy/apis/updatedCallback.ts) / [`proxy/apis/getAll.ts`](../../packages/state/src/proxy/apis/getAll.ts) | §1.10（Δ をユーザーランドに漏らさない） |
-| [`proxy/methods/getByAddress.ts`](../../packages/state/src/proxy/methods/getByAddress.ts) | §1.10 副産物（親が居ないパスの読みを `undefined` に。生の `TypeError` がバッチを道連れにするのを断つ） |
-| [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
-| [`dcc/processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts)（新規） | §1.5 / §2.3 / §1.6 |
-| [`dcc/wcBindable.ts`](../../packages/state/src/dcc/wcBindable.ts) | §1.6（`commands` 生成） |
-| [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)（新規） | §2.4（State と DCC で走査を共有） |
-| [`components/State.ts`](../../packages/state/src/components/State.ts) | §2.4 / §2.6 / §3.1 |
-| [`components/types.ts`](../../packages/state/src/components/types.ts) | §3.5 / §2.2（`initialized`） |
-| [`dcc/dispatchBindableEvent.ts`](../../packages/state/src/dcc/dispatchBindableEvent.ts)（新規） | §2.1 |
-| [`dcc/dccPropertyFactories.ts`](../../packages/state/src/dcc/dccPropertyFactories.ts) | §2.2 |
-| [`proxy/methods/setByAddress.ts`](../../packages/state/src/proxy/methods/setByAddress.ts) / [`proxy/apis/postUpdate.ts`](../../packages/state/src/proxy/apis/postUpdate.ts) | §2.1 |
-| [`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts) | §3.3（コメントのみ・挙動不変） |
+| [`webComponent/bindWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/bindWebComponent.ts) | §1.2 / §1.1 |
+| [`webComponent/outerState.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/outerState.ts) | §1.1（mapped 専用 proxy と lastValue 台帳を削除し 1 本化） |
+| [`webComponent/innerState.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts) | §1.1（台帳書き込みと listIndex 解決を除去） |
+| [`apply/applyChangeToWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts) | §1.1（内部チャネルを分離） |
+| [`webComponent/completeWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/completeWebComponent.ts) / [`apply/applyChange.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts) | §1.7（チャネル選択ゲートのキーを stateProp 名に） |
+| [`webComponent/MappingRule.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts) | §1.7（派生バインディングを BindingSession 経由で購読者登録） |
+| [`webComponent/crossBoundaryAddress.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/crossBoundaryAddress.ts)（新規） / [`webComponent/innerState.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts) | §1.8（越境をパスでなくアドレスで行う） |
+| [`webComponent/outerListPath.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/outerListPath.ts)（新規） / [`components/State.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts) | §1.8（`for` パスのリスト宣言を親 state へ伝播） |
+| [`bindings/BindingSession.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts) | §1.8（行バインディングを親のパターン台帳へ相乗り） |
+| [`proxy/methods/isCacheable.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/isCacheable.ts)（新規） | §1.8（mapped な state ではキャッシュを二重に持たない） |
+| [`apply/applyChangeToWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts) / [`components/types.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/types.ts) | §1.9（切断済み state element へ通知しない・`hasRootNode`） |
+| [`components/State.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts) / [`webComponent/MappingRule.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts) | §1.9（再接続でマップ済みパスを読み直す・派生規則の memo を捨てる） |
+| [`list/wildcardLevel.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/wildcardLevel.ts)（新規） | §1.10（ワイルドカード位置 → チェーン段の変換を末尾起点に集約。Δ=0 で挙動不変） |
+| [`webComponent/baseListIndex.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/baseListIndex.ts)（新規） | §1.10（子スコープの base 深さ Δ と、行生成時の親 listIndex） |
+| [`list/getListIndexByBindingInfo.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/getListIndexByBindingInfo.ts) / [`list/getIndexValueByLoopContext.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/getIndexValueByLoopContext.ts) / [`proxy/methods/getContextListIndex.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getContextListIndex.ts) / [`proxy/methods/checkDependency.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/checkDependency.ts) / [`proxy/traps/get.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/traps/get.ts) / [`dependency/walkDependency.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) | §1.10（末尾起点への書き換え 7 箇所） |
+| [`apply/applyChangeToFor.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts) / [`dependency/walkDependency.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) / [`proxy/apis/getAll.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts) / [`proxy/methods/setByAddress.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) | §1.10（行生成 5 経路すべてで base を親に渡す） |
+| [`list/loopContext.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/loopContext.ts) / [`webComponent/outerListPath.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/outerListPath.ts) / [`webComponent/innerState.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts) | §1.10（段数の検査を Δ 込みに） |
+| [`event/handler.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/handler.ts) / [`event/eventTokenHandler.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/eventTokenHandler.ts) / [`proxy/apis/updatedCallback.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/updatedCallback.ts) / [`proxy/apis/getAll.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts) | §1.10（Δ をユーザーランドに漏らさない） |
+| [`proxy/methods/getByAddress.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getByAddress.ts) | §1.10 副産物（親が居ないパスの読みを `undefined` に。生の `TypeError` がバッチを道連れにするのを断つ） |
+| [`dcc/defineDCC.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
+| [`dcc/processDccDeclarations.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/processDccDeclarations.ts)（新規） | §1.5 / §2.3 / §1.6 |
+| [`dcc/wcBindable.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/wcBindable.ts) | §1.6（`commands` 生成） |
+| [`getAllPropertyDescriptors.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/getAllPropertyDescriptors.ts)（新規） | §2.4（State と DCC で走査を共有） |
+| [`components/State.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts) | §2.4 / §2.6 / §3.1 |
+| [`components/types.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/types.ts) | §3.5 / §2.2（`initialized`） |
+| [`dcc/dispatchBindableEvent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dispatchBindableEvent.ts)（新規） | §2.1 |
+| [`dcc/dccPropertyFactories.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dccPropertyFactories.ts) | §2.2 |
+| [`proxy/methods/setByAddress.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) / [`proxy/apis/postUpdate.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/postUpdate.ts) | §2.1 |
+| [`stateElementByName.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts) | §3.3（コメントのみ・挙動不変） |
 | `src/dcc/README.md` / `src/webComponent/README.md` | §3.6（実装の現状に書き直し） |
 
 回帰テストは
-[`webComponent.bindWebComponent.semantics.test.ts`](../../packages/state/__tests__/webComponent.bindWebComponent.semantics.test.ts)（新規・§6 の穴を塞ぐ）、
-[`dcc.processDccDeclarations.test.ts`](../../packages/state/__tests__/dcc.processDccDeclarations.test.ts)（新規）、
-[`src.getAllPropertyDescriptors.test.ts`](../../packages/state/__tests__/src.getAllPropertyDescriptors.test.ts)（新規）、
+[`webComponent.bindWebComponent.semantics.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/webComponent.bindWebComponent.semantics.test.ts)（新規・§6 の穴を塞ぐ）、
+[`dcc.processDccDeclarations.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/dcc.processDccDeclarations.test.ts)（新規）、
+[`src.getAllPropertyDescriptors.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/src.getAllPropertyDescriptors.test.ts)（新規）、
 `dcc.defineDCC.test.ts` / `webComponent.bindWebComponent.test.ts` / `components.State.test.ts`（追記）。
 新規テスト（unit / e2e とも）はいずれも修正前のコードに対して失敗することを確認済み。
 
@@ -144,10 +144,10 @@ mapped の意味論自体は**内部チャネルとしては筋が通ってい�
 **修正（G1 = (b) 内部チャネルを分離）**:
 
 - 公開 proxy は 1 種類だけになり、mapped / plain の区別が消えた
-  （[`outerState.ts`](../../packages/state/src/webComponent/outerState.ts)）。
+  （[`outerState.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/outerState.ts)）。
   mapped でも素通し先の innerState proxy がマッピング経由で親 state に解決するので、
   read はライブ・write は親に届く
-- 内部チャネルは [`applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) が
+- 内部チャネルは [`applyChangeToWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts) が
   `getStateElementByWebComponent` で state element を直接引いて `$postUpdate` する形に分離した。
   `element[stateProp]` を一切触らない（この関数が選ばれるのは `isWebComponentComplete` が真のときだけなので、
   state element は必ず登録済み）
@@ -167,7 +167,7 @@ mapped の意味論自体は**内部チャネルとしては筋が通ってい�
 <my-component data-wcs="class.on: flag"></my-component>  <!-- state.* が 1 件も無い -->
 ```
 
-このとき `bindings` は空になり [`MappingRule.ts:32-34`](../../packages/state/src/webComponent/MappingRule.ts)
+このとき `bindings` は空になり [`MappingRule.ts:32-34`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts)
 が即 return してマッピングが 1 件も作られないが、outerState は mapped 意味論のまま残る。
 
 probe 実測:
@@ -176,7 +176,7 @@ probe 実測:
 - `component.state.msg = 'written'` → **完全な no-op**（inner の値は `'hello'` のまま。`$postUpdate('msg')` だけが飛ぶ）
 - 同条件で `data-wcs` を外すと read/write とも正常
 
-既存の [`webComponent.bindWebComponent.test.ts`](../../packages/state/__tests__/webComponent.bindWebComponent.test.ts)
+既存の [`webComponent.bindWebComponent.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/webComponent.bindWebComponent.test.ts)
 は outerState / innerState / MappingRule を全てモックしているため、この経路の意味論は 1 度も検証されていなかった。
 
 **修正**: 分岐条件を「`<stateProp>.*` バインドが 1 件以上あるか」に変更した。
@@ -186,7 +186,7 @@ probe 実測:
 
 ### 1.3 DCC 要素は再接続すると必ず throw する ✅ 修正済み
 
-[`defineDCC.ts:49-52`](../../packages/state/src/dcc/defineDCC.ts) の `connectedCallback` は
+[`defineDCC.ts:49-52`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) の `connectedCallback` は
 `this._shadow` / `this.shadowRoot` のガード無しに `attachShadow` を呼ぶ。
 
 ```
@@ -198,13 +198,13 @@ Shadow root cannot be created on a host which already hosts a shadow tree.
 
 踏む経路は日常的:
 
-- `if` の false → true 再マウント（[`applyChangeToIf.ts:35,49`](../../packages/state/src/apply/applyChangeToIf.ts) が
+- `if` の false → true 再マウント（[`applyChangeToIf.ts:35,49`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToIf.ts) が
   同一ノードを `unmount()` → `mountAfter()` する）
-- `for` の**行プーリング**（[`applyChangeToFor.ts:188-195`](../../packages/state/src/apply/applyChangeToFor.ts) で
+- `for` の**行プーリング**（[`applyChangeToFor.ts:188-195`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts) で
   プールに戻し、`235` 行目で `pop()` して再利用する）
 
 `<wcs-state>` 本体は `_initialized` と `_connectGeneration` で再接続を丁寧に扱っている
-（[`State.ts:347-371`](../../packages/state/src/components/State.ts)）のと真逆の作りであり、
+（[`State.ts:347-371`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)）のと真逆の作りであり、
 **同一パッケージ内でライフサイクル規律が揃っていない**ことがそのまま欠陥になっている。
 
 **修正**: `connectedCallback` の冒頭に `if (this._shadow !== null) return;` を置いた。
@@ -214,14 +214,14 @@ closed mode では `this.shadowRoot` が `null` になるため、判定はフ�
 ### 1.4 リスト内の DCC は初期値を無言で落とす ✅ 修正済み
 
 `for` の全追加高速パスは fragment に組んでから `activateContent` し
-（[`applyChangeToFor.ts:244,266`](../../packages/state/src/apply/applyChangeToFor.ts)）、
+（[`applyChangeToFor.ts:244,266`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts)）、
 fragment を DOM に挿すのは `306` 行目。よって binding 適用時点で DCC は**未接続**である。
 
 DCC の `stateElement` getter は `_shadow`（`connectedCallback` で初めて代入される）に依存するため、
-[`dccPropertyFactories.ts:26-27`](../../packages/state/src/dcc/dccPropertyFactories.ts) の
+[`dccPropertyFactories.ts:26-27`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dccPropertyFactories.ts) の
 `if (!stateEl) return;` で書き込みが黙って捨てられる。
 
-[`applyChange.ts:137-145`](../../packages/state/src/apply/applyChange.ts) の未定義要素ガードは
+[`applyChange.ts:137-145`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts) の未定義要素ガードは
 **「define 待ち」しか持たず「connect 待ち」が無い**。I/O ノード Shell は素のフィールド代入なので
 未接続でも値が Core に残る ＝ **この失敗は DCC 固有**。
 
@@ -245,8 +245,8 @@ DCC の `stateElement` getter は `_shadow`（`connectedCallback` で初めて�
 
 ### 1.5 `$bindables` の重複で wcBindable 宣言が丸ごと無効化される ✅ 修正済み
 
-[`createWcBindable`](../../packages/state/src/dcc/wcBindable.ts) は重複名を素通しする。
-一方 reader の [`readNamedList`](../../packages/state/src/protocol/wcBindableReader.ts)（118-129 行）は
+[`createWcBindable`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/wcBindable.ts) は重複名を素通しする。
+一方 reader の [`readNamedList`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/protocol/wcBindableReader.ts)（118-129 行）は
 重複名を見つけると `null` を返し、`readBindableDeclaration()` 全体が `null` になる。
 
 probe 実測: `$bindables: ["count","count"]` → `readBindableDeclaration()` が `null`。
@@ -258,15 +258,15 @@ probe 実測: `$bindables: ["count","count"]` → `readBindableDeclaration()` �
 
 ### 1.6 DCC のメソッドに command-token を張れない（構造的に不可能） ✅ 修正済み
 
-- [`defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) はメソッドを prototype に生やす
+- [`defineDCC.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) はメソッドを prototype に生やす
 - しかし `createWcBindable` は `properties` / `inputs` のみを生成し **`commands` を作らない**
-- [`applyChangeToCommand.ts:73-75`](../../packages/state/src/apply/applyChangeToCommand.ts) は
+- [`applyChangeToCommand.ts:73-75`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToCommand.ts) は
   `declaredCommands` 未宣言なら `raiseError`
 
 probe 実測: 生成される宣言は `{protocol, version, properties:[…], inputs:[…]}` のみ。
 `command.inc: $command.x` は必ず失敗する。
 
-対になる event-token は `properties` を参照する（[`eventTokenHandler.ts:86`](../../packages/state/src/event/eventTokenHandler.ts)）
+対になる event-token は `properties` を参照する（[`eventTokenHandler.ts:86`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/eventTokenHandler.ts)）
 ので DCC で動く。すなわち **command-token / event-token の双対性が DCC でだけ崩れている**。
 README「Declarative Custom Components (DCC)」節にこの制約の記載は無い。
 
@@ -283,7 +283,7 @@ README「Declarative Custom Components (DCC)」節にこの制約の記載は無
 呼び出し側が観測しないものを記述することになる。
 
 宣言モジュールは `$bindables` 専用ではなくなったので
-`processBindablesDeclaration.ts` → [`processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts) に改名した。
+`processBindablesDeclaration.ts` → [`processDccDeclarations.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/processDccDeclarations.ts) に改名した。
 回帰は実ブラウザで固定（[`e2e/tests/state-dcc-command.spec.ts`](../../e2e/tests/state-dcc-command.spec.ts)）。
 
 ### 1.7 §1.1 で分離した内部チャネルが一度も選ばれていなかった ✅ 修正済み（2026-08-10・後日発見）
@@ -316,12 +316,12 @@ innerState 経由で親をライブ読みする経路、後者は子自身の `s
 **修正**:
 
 - 完了台帳のキーを `IStateElement` → **state プロパティ名**に変更
-  （[`completeWebComponent.ts`](../../packages/state/src/webComponent/completeWebComponent.ts)）。
+  （[`completeWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/completeWebComponent.ts)）。
   完了はプロパティ単位の事実（`defineProperty(component, stateProp, …)` が済んだか）なので粒度が正しく、
   かつ型が違う（`string` vs `IStateElement`）ので今回の取り違えが**書けなくなる**。
   ゲートが正しく真になると 2 の経路自体を通らなくなる
 - 派生バインディングを `addBindingByNode` ではなく、**プライマリを所有する `BindingSession`** に
-  `initialize({ registerAddress: true })` で登録（[`MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts)）。
+  `initialize({ registerAddress: true })` で登録（[`MappingRule.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts)）。
   絶対アドレス台帳への登録・teardown・ノード削除時の破棄が既存のライフサイクルにそのまま乗るため、
   台帳エントリが component を強参照したまま残らない。`propSegments` は stateProp を保つ
   （適用側が先頭セグメントで束ね先の state 要素を引くため）。node 台帳へは積まない
@@ -355,7 +355,7 @@ breaking なので本修正には含めていない。
   （このスキップ自体は今も正しい）。
 
 回帰は happy-dom
-（[`integration.bindComponentDelivery.test.ts`](../../packages/state/__tests__/integration.bindComponentDelivery.test.ts)）と
+（[`integration.bindComponentDelivery.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDelivery.test.ts)）と
 実ブラウザ（[`e2e/tests/state-bind-component-parent-write.spec.ts`](../../e2e/tests/state-bind-component-parent-write.spec.ts)）の
 両方で固定した。判別子は **Shadow 内のビュー**であること — 親スコープのビューは親自身のバインディングなので
 断線していても更新され、それを見ていると壊れていることに気づけない。
@@ -389,23 +389,23 @@ breaking なので本修正には含めていない。
 
 **修正**:
 
-- **越境をアドレスで行う**（[`crossBoundaryAddress.ts`](../../packages/state/src/webComponent/crossBoundaryAddress.ts)（新規） /
-  [`innerState.ts`](../../packages/state/src/webComponent/innerState.ts)）。
+- **越境をアドレスで行う**（[`crossBoundaryAddress.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/crossBoundaryAddress.ts)（新規） /
+  [`innerState.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts)）。
   `Reflect.get/set` の直前アドレスを動的スコープに積み、innerState 側で外側のワイルドカードパスへの
   ループ文脈に組み直す。listIndex 台帳（`listIndexesByList`）は**配列オブジェクトの同一性**で
   引かれるため、親子は同じ `IListIndex` インスタンスを共有しており、そのまま流用できる。
   push/pop は `hasMappedComponentState` が真の state 要素でだけ行い、通常 state の
   `getByAddress` / `setByAddress` には載せない
-- **リストであることを外向きに伝播**（[`outerListPath.ts`](../../packages/state/src/webComponent/outerListPath.ts)（新規） /
-  [`State.setPathInfo`](../../packages/state/src/components/State.ts)）。
+- **リストであることを外向きに伝播**（[`outerListPath.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/outerListPath.ts)（新規） /
+  [`State.setPathInfo`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)）。
   子が `for` を宣言した時点でマッピングを引き、マップ先の state 要素にも `setPathInfo(outerPath, "for")` を届ける。
   `_initializeBindWebComponent` はバインディング収集より前に走るので、この時点でマッピング規則は既にある
-- **行バインディングを親のパターン台帳へ相乗り**（[`BindingSession.registerAddress`](../../packages/state/src/bindings/BindingSession.ts)）。
+- **行バインディングを親のパターン台帳へ相乗り**（[`BindingSession.registerAddress`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts)）。
   リスト行の binding は `(absolutePathInfo, listIndex)` の 2 段キーで登録されるので、**同じ listIndex** で
   親の `rows.*.name` にも購読者として載せられる。派生バインディング 1 本では行を表現できない（node が
   親スコープのコンポーネント要素 1 つしかない）という §1.7 の制約を、購読者を子側の実バインディングに
   することで回避している。後始末は `record.outerPatternPathInfo` から既存の teardown が対称に行う
-- **mapped な state ではキャッシュ層を持たない**（[`isCacheable.ts`](../../packages/state/src/proxy/methods/isCacheable.ts)（新規））。
+- **mapped な state ではキャッシュ層を持たない**（[`isCacheable.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/isCacheable.ts)（新規））。
   上の 3 点を入れても親起点の行書き込みが届かず、原因は**子側のキャッシュ**だった。値の正本は親にあり
   無効化も親の依存 walk が担うので、子側の複製には無効化が届かない。二重に持たないのが唯一の整合手段で、
   失うのは重複していた一段だけ（親のキャッシュはそのまま効く）
@@ -425,7 +425,7 @@ memo すると後から来た本物の read が memo に当たって**購読者�
 「合成できない別インスタンス」という前提そのものを解消した。
 
 回帰は happy-dom
-（[`integration.bindComponentListRow.test.ts`](../../packages/state/__tests__/integration.bindComponentListRow.test.ts)）で
+（[`integration.bindComponentListRow.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentListRow.test.ts)）で
 初期描画・リスト置換・親からの行フィールド書き込み・子からの書き戻し・行ノードの再利用・
 台帳の後始末・親スコープとの併用・**同一コンポーネントの複数インスタンス**（伝播も購読も
 state 要素インスタンス単位で成立する必要がある）・`$getAll` の横断読み・従来の成立形と
@@ -457,11 +457,11 @@ README の ["Loop with Components"](../../packages/state/README.md) の形
 **修正は 3 つで、どれも欠けると別々の形で落ちる。**
 
 1. **切断済みの state element には通知しない**
-   （[`applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts)）。
+   （[`applyChangeToWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts)）。
    `IStateElement.hasRootNode` を足して判定する（**登録済みと使用可能は別**）。
    ここは値を運ばない再読込通知なので、切断中の子に送る意味がそもそも無い
 2. **再接続時にマップ済みパスを読み直す**
-   （[`State._reloadMappedPathsAfterReconnect`](../../packages/state/src/components/State.ts)）。
+   （[`State._reloadMappedPathsAfterReconnect`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)）。
    1 だけでは、shadow を **constructor で組む**コンポーネントのビューが古いまま残る。
    この形では `<wcs-state>` が再接続で使い回され、`_initialized` が真なので
    `_initializeBindWebComponent` も `_initialize` も走らない ＝ 子のバインディングは
@@ -469,7 +469,7 @@ README の ["Loop with Components"](../../packages/state/README.md) の形
    `connectedCallback` で shadow を組み直す形は新しい state element になるので
    1 だけでも通ってしまう — **両方の形をテストしないと 2 の欠落が見えない**
 3. **派生マッピング規則の memo を捨てる**
-   （[`MappingRule.resetDerivedMappingRules`](../../packages/state/src/webComponent/MappingRule.ts)）。
+   （[`MappingRule.resetDerivedMappingRules`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts)）。
    1 と 2 を入れても、差し替え後の行だけが**行フィールドの書き込み**を受け取れない。
    派生規則（§1.7 の 3）は導出と同時に親スコープへ購読者を立てるが、その購読者は子の切断で
    teardown される一方 **memo は要素をキーに残る**ので、再接続後は導出が二度と走らず
@@ -477,7 +477,7 @@ README の ["Loop with Components"](../../packages/state/README.md) の形
    再接続では bindWebComponent が走らないので、読み直しの直前に同じ状態へ戻す
 
 回帰は happy-dom
-（[`integration.bindComponentRowReplace.test.ts`](../../packages/state/__tests__/integration.bindComponentRowReplace.test.ts)）と
+（[`integration.bindComponentRowReplace.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentRowReplace.test.ts)）と
 実ブラウザ（[`e2e/tests/state-bind-component-row-replace.spec.ts`](../../e2e/tests/state-bind-component-row-replace.spec.ts)）の
 両方で固定した。どちらも **shadow を constructor で組む形と connectedCallback で組む形の
 両方**を並べている（上記 2 の理由）。判別子は Shadow 内のビュー — 親スコープの行は
@@ -532,8 +532,8 @@ base を親に渡す必要がある — `createListDiff` は既存台帳があ�
 [state-bind-component-nested-for-design.md](../state-bind-component-nested-for-design.md)。
 
 回帰は happy-dom
-（[`integration.bindComponentNestedFor.test.ts`](../../packages/state/__tests__/integration.bindComponentNestedFor.test.ts)・
-[`webComponent.baseListIndex.test.ts`](../../packages/state/__tests__/webComponent.baseListIndex.test.ts)）と
+（[`integration.bindComponentNestedFor.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentNestedFor.test.ts)・
+[`webComponent.baseListIndex.test.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/__tests__/webComponent.baseListIndex.test.ts)）と
 実ブラウザ（[`e2e/tests/state-bind-component-nested-for.spec.ts`](../../e2e/tests/state-bind-component-nested-for.spec.ts)）の
 両方。どちらも **shadow を constructor で組む形と connectedCallback で組む形の両方**を並べている
 （§1.9 の理由）。実ブラウザ側でだけ出た事象が 1 件あった — 範囲外の行への書き込みが
@@ -569,7 +569,7 @@ base を親に渡す必要がある — `createListDiff` は既存台帳があ�
 確かめてから登録するので、段数が合わない段では止まって従来の挙動に戻る。
 解除も全段を 1 つずつ守る（各段は互いに独立した資源）。
 
-回帰は [`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts)。
+回帰は [`integration.bindComponentDepthN.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDepthN.test.ts)。
 **深さ 1 を同じテストに対照として含めている**のが要点で、深さ 1 が通り深さ 2 が落ちるなら
 テストの書き方ではなく機構の限界を指す。深さは 1〜4 を変数にし、shadow を constructor で
 組む形と connectedCallback で組む形の両方を並べている（§1.9 の理由）。
@@ -615,7 +615,7 @@ host { groups: [ { children: [...] }, ... ] }
 には Δ を含まない段数を使い続けることに注意 —— 照合とは別物。
 
 回帰は happy-dom
-（[`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts)）と
+（[`integration.bindComponentDepthN.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDepthN.test.ts)）と
 実ブラウザ（[`e2e/tests/state-bind-component-depth2.spec.ts`](../../e2e/tests/state-bind-component-depth2.spec.ts)）の両方。
 **fixture は §1.11（平坦）と §1.12（Δ>0）で 2 枚に分けてある** —— §1.12 の失敗は初期描画で
 throw してドキュメント全体をウェッジするので、同居させると §1.11 側も道連れになって
@@ -657,7 +657,7 @@ Light DOM ではこの 2 つが両方失われている。**両方を明示的�
 片方だけでは足りない。1 だけ直すと（`waitForStateInitialize` から除くだけ）循環は解けるが、
 子スコープの `@name` 参照が子 state の名前登録より先に評価されて解決に失敗する。
 
-実装は 3 箇所（判定は [`bindings/lightDomComponentScope.ts`](../../packages/state/src/bindings/lightDomComponentScope.ts) に集約）。
+実装は 3 箇所（判定は [`bindings/lightDomComponentScope.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/lightDomComponentScope.ts) に集約）。
 
 | | 変更 |
 |---|---|
@@ -679,7 +679,7 @@ plain 形が「子 state の登録前に `@name` を解決する」形に退行�
 これは Shadow DOM 形（子が別 rootNode）と同じ扱いで、README にも明記した。
 
 回帰は happy-dom
-（[`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts)）と
+（[`integration.bindComponentLightDom.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentLightDom.test.ts)）と
 実ブラウザ（[`e2e/tests/state-bind-component-light-dom.spec.ts`](../../e2e/tests/state-bind-component-light-dom.spec.ts)）の
 両方。plain 形も同じファイルに残してあり、退行すれば落ちる。実ブラウザ側の制御実験では、
 修正を外すと **6/6 が失敗**する（mapped の throw がドキュメント全体をウェッジするため、
@@ -699,7 +699,7 @@ Shadow DOM を使うこと。
 `$bindables: ["user"]` で `user.name` を書いても発火しない。配列の in-place 変異・`$postUpdate`・
 getter 由来の派生値も同様。wcBindable の `properties[].event` は「変更で発火する」契約なので乖離していた。
 
-**修正**: 判定を [`dispatchBindableEvent.ts`](../../packages/state/src/dcc/dispatchBindableEvent.ts) に
+**修正**: 判定を [`dispatchBindableEvent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dispatchBindableEvent.ts) に
 切り出し、3 経路をカバーした。
 
 1. **完全一致** — 従来どおり。`detail` は書き込んだ値
@@ -735,10 +735,10 @@ coalesce する必要があり、それは `dispatchBindableEvent` の責務を�
 - `getterFn` は同期。state 未初期化なら `console.warn` して `undefined` を返す
 - `setterFn` / `callFn` は `initializePromise.then()` 経由で**非同期**
 
-（[`dccPropertyFactories.ts`](../../packages/state/src/dcc/dccPropertyFactories.ts)）
+（[`dccPropertyFactories.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dccPropertyFactories.ts)）
 
 `el.count = 5; el.count` は旧値を返す。また
-[`readProducerSnapshot`](../../packages/state/src/bindings/BindingSession.ts) は
+[`readProducerSnapshot`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts) は
 `target[name]` を同期読みするため、`#init=element` / `#init=auto` では `undefined` が
 `commitProducerValue` 経由で親 state に commit されうる。
 既定は `state` authority（properties と inputs の両方に載るため）なので通常経路では当たらない。
@@ -759,15 +759,15 @@ warn を出すと通常フローが騒がしくなる（§1.4 の e2e で実際�
 
 | 宣言 | 検証 |
 |---|---|
-| `$commandTokens` | 配列 / 非空文字列 / 予約名衝突 / 重複 を全て `raiseError`（[`processCommandTokensDeclaration.ts:17-39`](../../packages/state/src/command/processCommandTokensDeclaration.ts)） |
+| `$commandTokens` | 配列 / 非空文字列 / 予約名衝突 / 重複 を全て `raiseError`（[`processCommandTokensDeclaration.ts:17-39`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/command/processCommandTokensDeclaration.ts)） |
 | `$streams` | getterPaths / setterPaths との衝突検査あり |
-| `$bindables` | [`defineDCC.ts:28-30`](../../packages/state/src/dcc/defineDCC.ts) の `Array.isArray(...) ? ... : []` のみ |
+| `$bindables` | [`defineDCC.ts:28-30`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) の `Array.isArray(...) ? ... : []` のみ |
 
 結果、非配列は無言で無視（`$bindables: "count"` が黙って空扱い）、実在しないプロパティ名も無検証
 （probe 実測: `["nosuch"]` がそのまま `properties` / `inputs` に載る → 親からの書き込みが expando に着地して消える）、
 `$` 始まりの名前も無検証（`isInternalProperty` で prototype には生えないのに wcBindable には載る）。
 
-**修正**: [`processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts) を新設し、
+**修正**: [`processDccDeclarations.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/processDccDeclarations.ts) を新設し、
 `$commandTokens` と同じ強度で **非配列 / 非文字列・空文字列 / `$` 始まり / 重複** を `raiseError` する。
 
 **存在検査**（G2 と同時に実施）: `getAllPropertyDescriptors`（§2.4 で共有化した走査）に
@@ -794,18 +794,18 @@ state をクラスインスタンスや `Object.create(proto)` で書くと両�
 オブジェクトリテラルが規約なので顕在化しにくいが、走査が 2 本ある事実そのものが
 §2.3 の存在検査を入れられない理由にもなっていた。
 
-**修正**: 走査を [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts)
+**修正**: 走査を [`getAllPropertyDescriptors.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/getAllPropertyDescriptors.ts)
 に切り出して両者で共有した。同名は手前（自身に近い側）が勝つ — プロパティ解決の実際の優先順位と一致する。
 元の実装は遠いプロトタイプが後勝ちで上書きしていたが、名前の集合しか見ない
 getterPaths / setterPaths には影響が無かったため露見していなかった。
 
 ### 2.5 DCC の inner `<wcs-state>` は `:not([name])` 固定 🟡 部分修正
 
-[`defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) の `stateTagSelector`。`name` を付けると
+[`defineDCC.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) の `stateTagSelector`。`name` を付けると
 `stateElement` が常に `null` になり、全 getter が `undefined`、全 setter が no-op になる。
 
 逆に bind-component は Light DOM で `name` を**必須**とする
-（[`State.ts:278`](../../packages/state/src/components/State.ts)）。
+（[`State.ts:278`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)）。
 同じ「コンポーネント内 state」なのに命名規約が正反対で、相互バリデーションも無い。
 
 **修正**: 挙動は変えず、`$bindables` を宣言しているのに無名の `<wcs-state>` が見つからない場合に
@@ -814,7 +814,7 @@ getterPaths / setterPaths には影響が無かったため露見していなか
 ### 2.6 bind-component と state ソース属性の二重指定が片方を無言で捨てる ✅ 修正済み
 
 `_initializeBindWebComponent()` → `setInitialState()` → `_resolveSetState()`
-（[`State.ts:628-634`](../../packages/state/src/components/State.ts)）だが、
+（[`State.ts:628-634`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)）だが、
 `_initialize()` は `state` / `src` / `json` / inner `<script>` があればそちらを採用し `_setStatePromise` を await しない
 （`State.ts:213-240`）。結果、`createInnerState` で作った proxy ごと破棄され、親↔子マッピングが死ぬ。
 
@@ -849,7 +849,7 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
   `src/dcc/README.md` と `src/webComponent/README.md` からも相互に参照する
 - **3.3** ~~root 判定が 2 系統~~ ❌ **本書の誤り（2026-08-05 訂正）**。
   `instanceof ShadowRoot`（`State.ts:268,357` / `setByAddress.ts:237`）と
-  `rootNode.constructor.name === ...`（[`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts)）の
+  `rootNode.constructor.name === ...`（[`stateElementByName.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts)）の
   併存を「揃っていない」と書いたが、後者は**必要**だった。SSR では `@wcstack/server` の
   `installGlobals` が happy-dom の一部だけを `globalThis` に載せ、その `GLOBALS_KEYS` に
   `Document` は入っていない。Node にも `Document` は無いので `rootNode instanceof Document` は
@@ -865,10 +865,10 @@ state を参照しないので、`<wcs-state>` の初期化前に呼んでも安
   `defineDCC` が具象 `State` を import して cast していた（dcc → components の逆参照）。
   インターフェースに setter を追加し、`defineDCC` は `import type { IStateElement }` のみに依存する。
   `stateElement` の型も `dccPropertyFactories` 側と揃った
-- **3.6** ✅ 修正済み。[`src/dcc/README.md`](../../packages/state/src/dcc/README.md) が設計メモのまま残り
+- **3.6** ✅ 修正済み。[`src/dcc/README.md`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/README.md) が設計メモのまま残り
   実装と食い違っていた（`typeof func.constructor.name === "AsyncFunction"` は常に false、
   イベントを host ではなく stateElement に dispatch する旧仕様など）。
-  [`src/webComponent/README.md`](../../packages/state/src/webComponent/README.md) も断片のみだった。
+  [`src/webComponent/README.md`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/README.md) も断片のみだった。
   どちらも「正本は `packages/state/README.md`」と明示したうえで実装側の補足に書き直し、
   未修正の制約は本書へリンクする形にした
 

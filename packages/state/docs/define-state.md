@@ -10,12 +10,14 @@ By wrapping your state object with `defineState()`, you get:
 - **Dot-path autocompletion** — `this["users.*.name"]` resolves to `string` in the IDE
 - **State Proxy API types** — `$getAll`, `$postUpdate`, `$1`–`$9`, etc. are typed on `this`
 
+Import it from **`@wcstack/state/define`**: that entry carries `defineState` and the types only, with no runtime. Importing `defineState` from `@wcstack/state` works too, but brings in the whole engine with it.
+
 ## Basic Usage
 
 ### TypeScript
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   count: 0,
@@ -35,7 +37,7 @@ export default defineState({
 ### JavaScript (with JSDoc / `checkJs`)
 
 ```javascript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   count: 0,
@@ -50,7 +52,7 @@ export default defineState({
 ```html
 <wcs-state>
   <script type="module">
-    import { defineState } from '@wcstack/state';
+    import { defineState } from '@wcstack/state/define';
     export default defineState({
       count: 0,
       increment() { this.count++; }
@@ -59,20 +61,23 @@ export default defineState({
 </wcs-state>
 ```
 
+In the browser, a bare specifier needs an import map entry — for example `"@wcstack/state/define": "https://cdn.jsdelivr.net/npm/@wcstack/state@4/dist/define.js"` (jsDelivr's `/npm/` path does not read `exports`, so name the file).
+
 ## How It Works
 
 `defineState<T>()` infers the type `T` from the object literal you pass in. It then applies `ThisType<WcsThis<T>>` so that `this` inside every method and getter is typed as:
 
 ```
-WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>
+WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>
 ```
 
 | Layer | What it provides |
 |---|---|
 | `T` | Direct properties — `this.count`, `this.users`, `this["users.*.ageCategory"]` |
-| `WcsStateApi` | Proxy APIs — `this.$getAll()`, `this.$postUpdate()`, `this.$1`–`$9` |
+| `WcsStateApi` | Proxy APIs — `this.$getAll()`, `this.$postUpdate()`, `this.$1`–`$9`, `this["$streamStatus.<name>"]` |
 | `WcsPathAccessor<T>` | Dot-path resolution — `this["users.*.name"]`, `this["cart.items.*.price"]` |
-| `Record<string, any>` | Fallback for dynamic paths — `this[\`items.${i}.name\`]` |
+
+There is no catch-all index signature: a bracket access is typed only when its key is one of the paths above, so a path that does not exist (`this["users.*.nmae"]`) is a type error, and so is a dynamic path ([Dynamic paths are not typed](#dynamic-paths-are-not-typed)). One exception: inside a getter whose return type is inferred, the reads its return value depends on are typed `any` ([Getters with an inferred return type](#getters-with-an-inferred-return-type)).
 
 ## Dot-Path Type Resolution
 
@@ -81,7 +86,7 @@ WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>
 `WcsPaths<T>` generates a union of all valid dot-notation paths from a type. Arrays use `*` as a wildcard.
 
 ```typescript
-import type { WcsPaths } from '@wcstack/state';
+import type { WcsPaths } from '@wcstack/state/define';
 
 type AppState = {
   count: number;
@@ -105,6 +110,7 @@ type Paths = WcsPaths<AppState>;
 | Array of primitives | `key`, `key.*` |
 | Built-in object (`Date`, `Map`, `Set`, `RegExp`, etc.) | `key` only (no recursion) |
 | Function (methods) | Excluded entirely |
+| `$`-prefixed key (`$stream`, `$watch`, `$connectedCallback`, …) | Excluded entirely |
 
 **Recursion depth limit:** 4 levels (to preserve compilation performance).
 
@@ -113,7 +119,7 @@ type Paths = WcsPaths<AppState>;
 `WcsPathValue<T, P>` resolves the value type at a given dot-path.
 
 ```typescript
-import type { WcsPathValue } from '@wcstack/state';
+import type { WcsPathValue } from '@wcstack/state/define';
 
 type AppState = {
   cart: { items: { price: number; qty: number }[] };
@@ -172,7 +178,8 @@ export default defineState({
 Only keys that actually contain `**` take the `any` type (the bare `this["nodes.**"]`, which
 binds to the node itself inside a recursive getter, included) — ordinary dot paths keep their
 resolved value type, and a typo in one is still an error. The VS Code extension's preamble
-declares the same signature, so the editor and `tsc` agree. See
+declares the same signature, so the editor and `tsc` agree. See the README's
+[Recursive Paths](../README.md#recursive-paths-recursion) section and
 [state-recursive-path-design.md](../../../docs/state-recursive-path-design.md).
 
 ## State Proxy API (`WcsStateApi`)
@@ -183,18 +190,27 @@ The following properties and methods are available on `this` inside `defineState
 
 | API | Signature | Description |
 |---|---|---|
-| `$getAll` | `$getAll<V>(path: string, defaultValue?: V[]): V[]` | Get all values matching a wildcard path |
+| `$getAll` | `$getAll<V = any>(path: string, indexes?: number[]): V[]` | Get all values matching a wildcard path. `indexes` is a prefix over the wildcards (`[]` = every match); omitted, it is taken from the loop context |
+| `$setAll` | `$setAll<V = any>(path: string, indexes: number[], value: V \| ((current: V, ...indexes: number[]) => V \| undefined)): number` | Write to every address matching a wildcard path (broadcast or mapper). A second overload takes an array and `{ spread: true }` to hand one entry to each address. Returns the number of addresses written |
 | `$postUpdate` | `$postUpdate(path: string): void` | Manually trigger update for a path |
-| `$resolve` | `$resolve(path: string, indexes: number[], value?: any): any` | Resolve a wildcard path with specific indexes |
+| `$resolve` | `$resolve(path: string, indexes: number[], value?: any): any` | Read (two arguments) or write (three) a wildcard path at specific indexes |
 | `$dependOn` | `$dependOn(path: string): void` | Manually register a dependency |
 | `$untracked` | `$untracked<T>(fn: () => T): T` | Run fn with dependency tracking (dynamic deps and `$1` index deps) suppressed |
+| `$eq` | `$eq(path: string, key: unknown): boolean` | Keyed selection: is the value of `path` equal to `key`? |
+| `$eqPath` | `$eqPath(path: string, keyPath: string): boolean` | `$eq` with the key read from `keyPath` (wildcards resolve to the current row) |
+| `$eqIndex` | `$eqIndex(path: string, level?: number): boolean` | `$eq` with the current row's index as the key |
+
+The README's [Proxy APIs](../README.md#proxy-apis) and [Keyed selection](../README.md#keyed-selection-eq--eqpath--eqindex) sections describe their behavior. The 3.x names `$trackDependency` / `$untrackDependency` are not in the types; at runtime they throw `[wcs/name-alias]`.
 
 ### Properties
 
 | API | Type | Description |
 |---|---|---|
 | `$stateElement` | `HTMLElement` | Reference to the `<wcs-state>` element |
-| `$1` – `$9` | `number` | Loop index variables (0-based value, 1-based naming) |
+| `$command` | `Record<string, { emit(...args: any[]): any }>` | The command tokens declared in `$commandTokens` |
+| `$streamStatus` / `$streamError` | `Record<string, …>` | The `$stream` companion namespaces (reads through this object register no dependency) |
+| `this["$streamStatus.<name>"]` / `this["$streamError.<name>"]` | `"idle" \| "active" \| "done" \| "error"` / `unknown` | The tracked form to use inside getters |
+| `$1` – `$9` | `number` | Loop index variables (0-based value, 1-based naming). The runtime resolves up to `$128`; the types stop at `$9` |
 
 ### Lifecycle Callbacks
 
@@ -218,12 +234,14 @@ defineState({
 });
 ```
 
+The 3.x name `$updatedCallback` throws when the state loads; write `$renderedCallback`.
+
 ## `$stream` Declaration
 
 Alongside `$commandTokens` / `$eventTokens` / `$on`, the state object recognizes the `$stream` declaration map. Each entry folds an async producer (async iterable / async generator / `ReadableStream`) into a single reactive property:
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 // Any (args, AbortSignal) => AsyncIterable | ReadableStream producer works.
 declare function llmStream(prompt: string, signal: AbortSignal): AsyncIterable<string>;
@@ -254,7 +272,7 @@ See [Streams](./streams.md) for the full contract — cooperative cancellation, 
 ### Counter
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   count: 0,
@@ -266,7 +284,7 @@ export default defineState({
 ### User List with Computed Properties
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   users: [
@@ -286,7 +304,7 @@ export default defineState({
 ### Shopping Cart with Getter Chaining
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 type CartItem = { productId: number; quantity: number; unitPrice: number };
 
@@ -323,7 +341,7 @@ export default defineState({
 ### Event Handler with Loop Index
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   items: [] as { name: string }[],
@@ -335,10 +353,12 @@ export default defineState({
 });
 ```
 
+A handler also receives the loop indexes after the event (`onDelete(event, index)`); type them as `number`.
+
 ### Async Data Loading
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   loading: false,
@@ -361,25 +381,42 @@ export default defineState({
 
 ## Known Limitations
 
-### Generic type arguments inside `ThisType<>`
+### Getters with an inferred return type
 
-Due to a TypeScript limitation, generic type arguments on `this` methods do not work inside `defineState()`:
+A getter's type is part of `T`, and `T` is what types `this` — so when a getter has no return type annotation, TypeScript breaks the circle by typing the `this` reads its return value depends on as `any`. Inside such a getter a misspelled path in that chain is not reported, and a type argument on a `this` method there is an error:
 
 ```typescript
 defineState({
   items: [] as { price: number }[],
   get total() {
-    // ❌ this.$getAll<number>(...) — type argument not allowed
-    // ✅ Use type assertion instead:
+    // ❌ this.$getAll<number>(...) — TS2347 "Untyped function calls may not accept type arguments"
+    // ✅ assert the result instead:
     const prices = this.$getAll("items.*.price", []) as number[];
     return prices.reduce((s, v) => s + v, 0);
-  }
+  },
+  get checked(): number {
+    // ✅ with the return type annotated, `this` is fully typed (typos are errors)
+    return this.$getAll<number>("items.*.price", []).length;
+  },
 });
 ```
 
-### `Record<string, any>` fallback
+Methods are not affected, and neither is a read whose result the return value does not depend on. Annotate a getter's return type when you want its body checked.
 
-`WcsThis<T>` includes `Record<string, any>` to support dynamic path access like `this[\`items.${i}.name\`]`. As a side effect, all bracket-access expressions resolve to `any` at the type level. The IDE still shows typed paths as autocompletion suggestions, but the inferred type at the access site is `any`.
+### Dynamic paths are not typed
+
+`WcsThis<T>` has no catch-all index signature, so a path built at run time is not one of the typed keys. Under `strict`, `` this[`items.${i}.name`] `` is an error (TS7053, "Element implicitly has an 'any' type"). Read and write such addresses through `$resolve`, which takes the indexes separately (and returns `any`), or cast:
+
+```typescript
+defineState({
+  items: [] as { name: string }[],
+  rename(i: number, name: string) {
+    // ❌ this[`items.${i}.name`] = name;             — TS7053
+    this.$resolve("items.*.name", [i], name);         // ✅
+    // (this as Record<string, any>)[`items.${i}.name`] = name;   // ✅ also works
+  },
+});
+```
 
 ### Recursion depth limit
 
@@ -397,6 +434,8 @@ npx wcs-validate --strict index.html    # paths the type lacks are now errors, f
 `wcs-schema check src/state.ts` fails CI when the manifest drifts from the type. The whole TypeScript story for a wcstack app is collected in [docs/typescript.md](../../../docs/typescript.md).
 
 ## Exported Types
+
+`@wcstack/state/define` exports the function and the types below; `@wcstack/state` and `@wcstack/state/core` export the same names.
 
 | Type | Description |
 |---|---|

@@ -2,7 +2,7 @@
 
 status: **実装済み（2026-08-11・未リリース）**
 関連: [ADR-15 §1.7 / §1.8 / §1.9 / §1.10](architecture-hardening/15-state-component-mechanism-consistency.ja.md)、
-[packages/state/src/webComponent/README.md](../packages/state/src/webComponent/README.md)
+[packages/state/src/webComponent/README.md](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/README.md)
 
 本書は調査 → 設計 → 実装の記録。設計の前提が**計測で確認された**こと、および
 実装中に**別件として発見した課題**（§8）が要点。
@@ -64,7 +64,7 @@ setLoopContext          proxy/methods/setLoopContext.ts:52
 
 ## 2. 壁の正体
 
-`_outerLoopContext`（[innerState.ts:37-55](../packages/state/src/webComponent/innerState.ts)）が
+`_outerLoopContext`（[innerState.ts:37-55](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts)）が
 親スコープの読み書きに使うループ文脈を決めている。候補は 2 つ:
 
 1. `getLoopContextByNode(コンポーネント要素)` — コンポーネント自身が親の `for` の中にいる形（§1.7）
@@ -122,7 +122,7 @@ children 台帳（groups[i].children の listIndexesByList）:
 
 ### 3.2 なぜ「末尾アンカー」で Δ が消えるか
 
-`IListIndex.at()` は負値を受け付ける（[createListIndex.ts:127-133](../packages/state/src/list/createListIndex.ts)）。
+`IListIndex.at()` は負値を受け付ける（[createListIndex.ts:127-133](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/createListIndex.ts)）。
 チェーン長が Δ+W のとき、段 Δ+i は末尾から数えて `i - W` である:
 
 ```
@@ -175,13 +175,13 @@ export function getBaseListIndex(stateElement: IStateElement): IListIndex | null
 
 | 箇所 | 現在 | 変更後 |
 |---|---|---|
-| [getContextListIndex.ts:37](../packages/state/src/proxy/methods/getContextListIndex.ts) | `address.listIndex?.at(index)` | `at(index - address.pathInfo.wildcardCount)` |
-| [getListIndexByBindingInfo.ts:28](../packages/state/src/list/getListIndexByBindingInfo.ts) | `at(wildcardLen - 1)` | `at(wildcardLen - 1 - loopContext.pathInfo.wildcardCount)` |
-| [getIndexValueByLoopContext.ts:14](../packages/state/src/list/getIndexValueByLoopContext.ts) | `at(indexPos)` | `at(indexPos - loopContext.pathInfo.wildcardCount)` |
-| [get.ts:83](../packages/state/src/proxy/traps/get.ts)（`$1` の値読み） | `listIndex.indexes[index]` | 末尾から `index` 番目 |
-| [walkDependency.ts:355](../packages/state/src/dependency/walkDependency.ts) | `at(wildcardLen - 1)` | `at(wildcardLen - 1 - address.pathInfo.wildcardCount)` |
-| [walkDependency.ts:379](../packages/state/src/dependency/walkDependency.ts) | 同上 | 同上 |
-| [checkDependency.ts:33](../packages/state/src/proxy/methods/checkDependency.ts) | `at(level)` × 2 | 各 address 自身の W で末尾アンカー |
+| [getContextListIndex.ts:37](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getContextListIndex.ts) | `address.listIndex?.at(index)` | `at(index - address.pathInfo.wildcardCount)` |
+| [getListIndexByBindingInfo.ts:28](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/getListIndexByBindingInfo.ts) | `at(wildcardLen - 1)` | `at(wildcardLen - 1 - loopContext.pathInfo.wildcardCount)` |
+| [getIndexValueByLoopContext.ts:14](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/getIndexValueByLoopContext.ts) | `at(indexPos)` | `at(indexPos - loopContext.pathInfo.wildcardCount)` |
+| [get.ts:83](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/traps/get.ts)（`$1` の値読み） | `listIndex.indexes[index]` | 末尾から `index` 番目 |
+| [walkDependency.ts:355](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) | `at(wildcardLen - 1)` | `at(wildcardLen - 1 - address.pathInfo.wildcardCount)` |
+| [walkDependency.ts:379](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) | 同上 | 同上 |
+| [checkDependency.ts:33](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/checkDependency.ts) | `at(level)` × 2 | 各 address 自身の W で末尾アンカー |
 
 `checkDependency` だけは補足が要る。ここは 2 つの address の共有ワイルドカード段を突き合わせて
 「他行読み取り」を検出する。Δ>0 で先頭アンカーのままだと**base の段どうしを比較する**ことになり、
@@ -194,11 +194,11 @@ diff-filter 展開が全行フォールバックしない = 無言の更新漏�
 
 | 箇所 | 用途 |
 |---|---|
-| [applyChangeToFor.ts:153](../packages/state/src/apply/applyChangeToFor.ts) | 子の `for: items` の描画 |
-| [walkDependency.ts:64](../packages/state/src/dependency/walkDependency.ts)（`_walkExpandWildcard`） | 動的依存のワイルドカード展開 |
-| [walkDependency.ts:284](../packages/state/src/dependency/walkDependency.ts) | 静的子展開 |
-| [getAll.ts:75](../packages/state/src/proxy/apis/getAll.ts) | `$getAll` |
-| [setByAddress.ts:224,226](../packages/state/src/proxy/methods/setByAddress.ts) | リスト代入（`$listKeys` 突合含む） |
+| [applyChangeToFor.ts:153](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts) | 子の `for: items` の描画 |
+| [walkDependency.ts:64](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts)（`_walkExpandWildcard`） | 動的依存のワイルドカード展開 |
+| [walkDependency.ts:284](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) | 静的子展開 |
+| [getAll.ts:75](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts) | `$getAll` |
+| [setByAddress.ts:224,226](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) | リスト代入（`$listKeys` 突合含む） |
 
 いずれも `createListDiff(コンテナ address.listIndex, ...)` の形なので、共通ヘルパで
 `address.listIndex ?? getBaseListIndex(stateElement)` に倒す。全箇所で `stateElement` は
@@ -210,18 +210,18 @@ context か handler から引ける。
 
 ### (C) 境界の段数ガードを Δ 込みにする — 2 箇所
 
-- [innerState.ts `_outerLoopContext`](../packages/state/src/webComponent/innerState.ts):
+- [innerState.ts `_outerLoopContext`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts):
   **分岐順を入れ替える**。越境アドレス（内側 = より具体的）を先に見て、その listIndex 長が
   外側パスのワイルドカード数と一致すれば採用。しなければ従来どおりノードループ文脈へ。
   Δ 導入後は子の行 listIndex が arity Δ+1 = 外側 W なので、既存の長さ検査がそのまま通る
-- [outerListPath.ts `getOuterRowPathInfo`](../packages/state/src/webComponent/outerListPath.ts):
+- [outerListPath.ts `getOuterRowPathInfo`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/outerListPath.ts):
   `outer.wildcardCount !== inner.wildcardCount` の棄却を `outer !== inner + Δ` に緩める。
-  [BindingSession.registerAddress:980](../packages/state/src/bindings/BindingSession.ts) が
+  [BindingSession.registerAddress:980](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts) が
   親のパターン台帳へ相乗りさせる listIndex は arity Δ+inner = outer になるので、親が要求する鍵と一致する
 
 ### (D) ループ文脈スタックの検証 — 1 箇所
 
-[loopContext.ts:40](../packages/state/src/list/loopContext.ts) の
+[loopContext.ts:40](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/loopContext.ts) の
 `listIndex.length !== pathInfo.wildcardCount` は Δ>0 で誤検知する。
 `LoopContextStack` は state 要素ごとの持ち物（`State._loopContextStack`）なので、
 生成時に base 深さの供給元を渡して `!== Δ + wildcardCount` にする。
@@ -233,14 +233,14 @@ context か handler から引ける。
 
 | 箇所 | 現在 | 変更後 |
 |---|---|---|
-| [event/handler.ts:49](../packages/state/src/event/handler.ts) | `listIndex.indexes` | 先頭 Δ 個を落とす |
-| [event/eventTokenHandler.ts:109](../packages/state/src/event/eventTokenHandler.ts) | 同上 | 同上 |
-| [proxy/apis/updatedCallback.ts:51](../packages/state/src/proxy/apis/updatedCallback.ts) | 同上 | 同上 |
-| [proxy/apis/getAll.ts:50](../packages/state/src/proxy/apis/getAll.ts) | 同上 | 同上 |
+| [event/handler.ts:49](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/handler.ts) | `listIndex.indexes` | 先頭 Δ 個を落とす |
+| [event/eventTokenHandler.ts:109](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/eventTokenHandler.ts) | 同上 | 同上 |
+| [proxy/apis/updatedCallback.ts:51](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/updatedCallback.ts) | 同上 | 同上 |
+| [proxy/apis/getAll.ts:50](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts) | 同上 | 同上 |
 
 Δ は `listIndex.length - loopContext.pathInfo.wildcardCount` で局所的に求まる。
 
-`$resolve(path, indexes)`（[resolve.ts](../packages/state/src/proxy/apis/resolve.ts)）は
+`$resolve(path, indexes)`（[resolve.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/resolve.ts)）は
 段ごとに**台帳の配列位置**で引くので、チェーン段数に依存しない。**変更不要**。
 これは偶然ではなく、`$resolve` が「await を跨いでも安全な素の数値配列」で設計されている帰結。
 
@@ -269,7 +269,7 @@ context か handler から引ける。
 ### テスト
 
 happy-dom 統合テスト
-[`integration.bindComponentNestedFor.test.ts`](../packages/state/__tests__/integration.bindComponentNestedFor.test.ts)（20 ケース）:
+[`integration.bindComponentNestedFor.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentNestedFor.test.ts)（20 ケース）:
 
 - 初期描画（2 グループ × 各行）
 - 親からの行フィールド書き込み → 子の該当行だけが更新
@@ -286,7 +286,7 @@ happy-dom 統合テスト
 子への配送が死んでいても更新される。
 
 base listIndex 自体は
-[`webComponent.baseListIndex.test.ts`](../packages/state/__tests__/webComponent.baseListIndex.test.ts)
+[`webComponent.baseListIndex.test.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/__tests__/webComponent.baseListIndex.test.ts)
 で単体固定（キャッシュしないことを含む）。
 
 実ブラウザは
@@ -361,7 +361,7 @@ Phase 0 として計画していた「入れ子形と分かる診断メッセー
 この窓は開かない。素の入れ子 `for`（コンポーネント無し）でも Δ=0 の既存形でも再現せず、
 **親の通知と子の `for` が別経路で流れる入れ子形でだけ**開く。
 
-[`getByAddress`](../packages/state/src/proxy/methods/getByAddress.ts) で
+[`getByAddress`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getByAddress.ts) で
 **親が居ないパスの読みを `undefined` にした**。`undefined` は既に
 「state に意見が無い」＝プロパティ書き込みをスキップする値なので DOM は触られず、
 直後に `for` が行ごと外して整合する。
@@ -385,7 +385,7 @@ stale な読み 1 本が同じバッチの無関係な更新まで道連れに�
 無言のハングは「原因の分かる失敗」になる。
 
 **2026-08-11 修正**（後続ブランチ fix/nested-for-followups）:
-[`stateElementByName.ts`](../packages/state/src/stateElementByName.ts) の
+[`stateElementByName.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts) の
 ready promise 生成を try/catch で包み、`buildBindings` / `hydrateBindings` の例外で
 reject するようにした。Document / ShadowRoot 両経路。例外は unhandled rejection として
 漏れる代わりに `await getBindingsReady()` の呼び出し元へ届く。
@@ -418,7 +418,7 @@ e2e を書いていて踏んだ。`groups.0.children.1.name` への書き込み�
 `ListIndex not found: groups.*.children` を投げる。実際の原因は
 「そのリストに index 1 が無い」ことなのに、メッセージは**親パス**を名指しするので
 「リスト自体が見つからない」と読めてしまい、切り分けを誤らせる
-（[`getListIndex.ts`](../packages/state/src/proxy/methods/getListIndex.ts) の `"all"` 分岐）。
+（[`getListIndex.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getListIndex.ts) の `"all"` 分岐）。
 
 本件の変更とは無関係な既存挙動（`getListIndex` は未変更）で、
 挙動そのもの（範囲外書き込みで raise する）は妥当。**メッセージだけが誤解を招く**ので、
@@ -426,8 +426,8 @@ e2e を書いていて踏んだ。`groups.0.children.1.name` への書き込み�
 
 **2026-08-11 修正**（後続ブランチ fix/nested-for-followups）: 上記の形に変更した。
 同型の「範囲外 index なのに親パスだけを名指しする raise」は `getListIndex` の `"all"`
-分岐のほか `$getAll`（[`getAll.ts`](../packages/state/src/proxy/apis/getAll.ts)）と
-`$resolve`（[`resolve.ts`](../packages/state/src/proxy/apis/resolve.ts)）にもあったので
+分岐のほか `$getAll`（[`getAll.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts)）と
+`$resolve`（[`resolve.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/resolve.ts)）にもあったので
 3 箇所とも揃えた。リスト台帳自体が無い場合の `ListIndex not found: <path>` は別原因なので
 従来のまま。（追記: #324 で、台帳の無いリストはその場で台帳を生やすようになり、この
 別原因の raise は無くなった。値が配列でないときも行 0 件として `ListIndex not found at

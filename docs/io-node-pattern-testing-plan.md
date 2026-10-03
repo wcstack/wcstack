@@ -26,7 +26,7 @@ This makes the vector structure in §5 and phased rollout in §9 of the [trace c
 | [fetch.test.ts](../packages/fetch/__tests__/fetch.test.ts) | Same-turn `url` / `manual` writes, equal-URL suppression, reconnect, trigger, body reset | Map flag transitions, update orders, execution paths, and missing cases |
 | [fetchCore.phase4.test.ts](../packages/fetch/__tests__/fetchCore.phase4.test.ts), [operationLane.test.ts](../packages/fetch/__tests__/operationLane.test.ts) | Existing asynchronous lane checks | Map success, failure, cancellation, and late completion to action sequences |
 | [debounceCore.test.ts](../packages/debounce/__tests__/debounceCore.test.ts) | Leading/trailing, pending, cancel/flush, timers after dispose | Map all four configurations against input count and boundary times |
-| [integration.commandBinding.test.ts](../packages/state/__tests__/integration.commandBinding.test.ts) | Command binding to a synthetic element | Add wiring through actual I/O tags |
+| [integration.commandBinding.test.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.commandBinding.test.ts) | Command binding to a synthetic element | Add wiring through actual I/O tags |
 | [Shared upgrade tests](../protocol/upgrade-properties.test.ts) | upgradeProperties checks using synthetic objects | Check writes before actual tag upgrade and resulting execution counts |
 | [Structural checks](../scripts/conformance-io-nodes.mjs), [input declaration checks](../scripts/conformance-bindable-inputs.mjs) | Implementation structure and declarations | Keep temporal runtime checks in a separate suite |
 

@@ -36,7 +36,7 @@
 | getter の書き方 | 初期値 | 葉更新後 | 理由 |
 |---|---|---|---|
 | 生オブジェクトを JS で再帰（`this.children[i].children…`） | 131 / 110 / 100 | **131 / 110** / 200 | 依存は `children` コンテナだけ。in-place 変異規範（深い書き込みは祖先に伝わらない）により祖先が再評価されない |
-| 数値添字パス `this["children.0.children.0.value"]` | throw | — | ワイルドカードマウント下では文脈 `*` ＋明示添字 ＝ `partial` → `Partial wildcard type is not supported yet`（[getListIndex.ts](../packages/state/src/proxy/methods/getListIndex.ts)） |
+| 数値添字パス `this["children.0.children.0.value"]` | throw | — | ワイルドカードマウント下では文脈 `*` ＋明示添字 ＝ `partial` → `Partial wildcard type is not supported yet`（[getListIndex.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getListIndex.ts)） |
 | `this.$getAll("children.*.value")` | 正しい | 131 / **210** / 200 | 1 段下には依存が張られる。2 段下（孫）は届かない ＝ 深さ固定 |
 | **本命** `value + Σ $getAll("children.*.total")` | **不可** | — | 子の `total` は `root.children.*.#m<id>.total` に載り、親の `root.children.*.total` はマーカー無し → ツリーの未存在パス（D10 / D20 の帰結） |
 

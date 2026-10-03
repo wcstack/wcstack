@@ -88,7 +88,7 @@ v2.4.0 の `auto` ソースマップでは、220 個のソースファイルに�
 
 個別ファイルで大きいのは `components/State.ts`（16,952 bytes）と `bindings/BindingSession.ts`（12,910 bytes）。上の表は主要項目の抜粋で、全ファイルを網羅していない。
 
-[State.ts](../packages/state/src/components/State.ts)は streams・watch・scan・recursion・DCC・SSR を直接 import する。[bootstrapState.ts](../packages/state/src/bootstrapState.ts)はコンポーネント、binder、SSR snapshot builder、DevTools source を登録する。アプリの state で追加機能を宣言しなければ実行を避けられる場合はあるが、`auto` から実装コードが除去されるわけではない。
+[State.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)は streams・watch・scan・recursion・DCC・SSR を直接 import する。[bootstrapState.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bootstrapState.ts)はコンポーネント、binder、SSR snapshot builder、DevTools source を登録する。アプリの state で追加機能を宣言しなければ実行を避けられる場合はあるが、`auto` から実装コードが除去されるわけではない。
 
 SSR 関連ファイル（`components/Ssr.ts`、`hydrateBindings.ts`、`buildSsrDocument.ts`、`apply/ssrPropertyStore.ts`、`protocol/ssrSnapshot.ts`）は合計約 **10,086 bytes**。ディレクトリ別集計とルートファイルにまたがる内訳なので、上の表に加算してはいけない。他ファイル内部の SSR 分岐も含まない。
 
@@ -106,8 +106,8 @@ SSR 関連ファイル（`components/Ssr.ts`、`hydrateBindings.ts`、`buildSsrD
 
 対象の登録は次の 2 つ。
 
-- [watchRuntime.ts](../packages/state/src/watch/watchRuntime.ts) の `registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY)`。
-- [streamRuntime.ts](../packages/state/src/stream/streamRuntime.ts) の `registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY)`。
+- [watchRuntime.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/watchRuntime.ts) の `registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY)`。
+- [streamRuntime.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stream/streamRuntime.ts) の `registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY)`。
 
 モジュール評価時に実行されるため、Rollup はリスナーとその参照先を保持し、更新処理や DOM バインディングまで残す。`VERSION` だけの export でも同様で、minify 後 87,332 bytes、gzip 26,161 bytes だった。
 

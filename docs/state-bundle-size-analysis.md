@@ -88,7 +88,7 @@ The v2.4.0 `auto` source map attributes code to 220 source files. Selected non-o
 
 The largest individual files are `components/State.ts` (16,952 bytes) and `bindings/BindingSession.ts` (12,910 bytes). The selected rows above do not cover every file.
 
-[State.ts](../packages/state/src/components/State.ts) imports streams, watch, scan, recursion, DCC, and SSR directly. [bootstrapState.ts](../packages/state/src/bootstrapState.ts) registers components, the binder, the SSR snapshot builder, and the DevTools source. Not declaring an optional feature in an application's state can avoid executing its work, but does not remove its implementation from `auto`.
+[State.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts) imports streams, watch, scan, recursion, DCC, and SSR directly. [bootstrapState.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bootstrapState.ts) registers components, the binder, the SSR snapshot builder, and the DevTools source. Not declaring an optional feature in an application's state can avoid executing its work, but does not remove its implementation from `auto`.
 
 SSR-related files (`components/Ssr.ts`, `hydrateBindings.ts`, `buildSsrDocument.ts`, `apply/ssrPropertyStore.ts`, and `protocol/ssrSnapshot.ts`) account for about **10,086 bytes**, spread across the directory totals and root files. This is not additive to those totals and excludes SSR branches inside other files.
 
@@ -106,8 +106,8 @@ An entry that re-exports only `defineState` from `dist/index.esm.js` still retai
 
 The two registrations are:
 
-- `registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY)` in [watchRuntime.ts](../packages/state/src/watch/watchRuntime.ts).
-- `registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY)` in [streamRuntime.ts](../packages/state/src/stream/streamRuntime.ts).
+- `registerUpdateBatchListener(fireWatchOnUpdateBatch, WATCH_LISTENER_PRIORITY)` in [watchRuntime.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/watchRuntime.ts).
+- `registerUpdateBatchListener(restartStreamsOnUpdateBatch, STREAM_LISTENER_PRIORITY)` in [streamRuntime.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stream/streamRuntime.ts).
 
 They execute during module evaluation. Rollup retains the listeners and their transitive references, including update and DOM-binding code. This also affects a `VERSION`-only export (87,332 minified bytes; 26,161 gzip bytes).
 

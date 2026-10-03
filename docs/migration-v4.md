@@ -1,8 +1,8 @@
-# @wcstack/state 3.x → 4.0 migration guide (preview)
+# @wcstack/state 3.x → 4.0 migration guide
 
 **日本語版**: [migration-v4.ja.md](./migration-v4.ja.md)
 
-> **Preview — 4.0 is not released yet.** This guide describes the 4.0 engine as it stands in development (October 2026), so that 3.x users can prepare. Names, messages and details may still change before the release. Items marked *(not final)* are known to be under review. The 4.0.0 entry of the [CHANGELOG](../CHANGELOG.md) will be the definitive list.
+> **4.0 is out as a release candidate.** `4.0.0-rc.N` is published on npm's `next` tag — `npm i @wcstack/state@next`, and the same tag for every other `@wcstack/*` package — and 4.0.0 follows on `latest`. This guide describes 4.0 as the release candidate ships it. The 4.0.0 entry of the [CHANGELOG](../CHANGELOG.md) summarizes the changes; §5 lists the known limitations.
 
 **Who this is for**: application developers whose pages use `@wcstack/state` 3.x — through `@wcstack/state`, `/auto`, the split entries or the `wcstack/auto` bundle — together with the packages released alongside it (`@wcstack/router`, `@wcstack/server`, the I/O node packages, `@wcstack/lint`).
 
@@ -46,11 +46,12 @@ When upgrading to 4.0 (§2, §3):
 - [ ] Replace `outerHTML:` / `outerText:` inside `for:` / `if:` templates with `innerHTML:` on a wrapper (§3.4).
 - [ ] Replace filters on `for:` with a getter that returns the filtered list (§3.4).
 - [ ] Move volume `$watch` / `$listKeys` / `$renderedCallback` to the root state (§3.5).
-- [ ] Replace volume injections with getters on the root state (§3.5).
+- [ ] Replace volume injections with getters on the root state, and remove every `data-wcs` from volume elements (§3.5).
 - [ ] Replace uses of `listPaths` / `getterPaths` / `setterPaths` / `nextVersion()` (§3.7).
+- [ ] Import `defineState` from `@wcstack/state/define`, not from `@wcstack/state` (§3.7).
 - [ ] Pages on `/core`: install `features/list-keys` if they use `$listKeys` (§3.8).
 - [ ] Pages on `/core`: install `features/diagnostics` while developing (§3.8).
-- [ ] Read the changes nothing reports: children of content-binding elements, `<noscript>` / `<iframe>`, comments in `<textarea>` / `<title>`, `$watch` on a numeric-index key or on an array several rows share, a row getter `$watch` on the rows a list assignment kept, reads past the end of a list (§3.4); post-processing of SSR output (§3.6); the extra child node in the router outlet (§3.9).
+- [ ] Read the changes nothing reports: children of content-binding elements, `<noscript>` / `<iframe>`, comments in `<textarea>` / `<title>`, reads past the end of a list (§3.4); when `$watch` handlers fire — row watches without a `for:`, row getter watches, whole-array assignments, numeric-index keys, arrays several rows share (§3.4); post-processing of SSR output (§3.6); the extra child node in the router outlet (§3.9).
 - [ ] Run `@wcstack/lint` 4.0 and fix what it reports (§4).
 
 > **Comment bindings stay.** `<!--@@: path-->` and `<!--@@wcs-text: path-->` are still supported in 4.0. This is the form the lint recommends instead of `{{ }}` outside a `<template>`, to avoid a flash of unrendered text, and 4.0 binds it even when `enableMustache` is off. Only the `commentTextPrefix` option, which renamed the keyword, is gone. Details in §3.4.
@@ -61,7 +62,7 @@ When upgrading to 4.0 (§2, §3):
 
 ### 1.1 Pin the major version, then take 3.5
 
-`https://esm.run/@wcstack/state/auto` follows the latest release, so it will load 4.0 on the day 4.0 is published. Pin the major version until you have migrated; the pinned URL picks up 3.5:
+`https://esm.run/@wcstack/state/auto` follows the latest release, so it will load 4.0 on the day 4.0.0 is published (the release candidate on `next` does not reach it). Pin the major version until you have migrated; the pinned URL picks up 3.5:
 
 ```html
 <script type="module" src="https://esm.run/@wcstack/state@3/auto"></script>
@@ -173,10 +174,10 @@ In 4.0 the common bubbling events are delegated, and `event.currentTarget` is th
 
 ## 2. Upgrading to 4.0
 
-- Move every `@wcstack/*` package to the same 4.0 version.
+- Move every `@wcstack/*` package to the same 4.0 version. While 4.0 is a release candidate, take it from the `next` tag (`npm i @wcstack/state@next @wcstack/router@next …`), or name the version (`4.0.0-rc.1`).
 - Deploy `@wcstack/server` 4.0 and the 4.0 client together (§3.6).
-- Update CDN URLs to the new major version (`https://esm.run/@wcstack/state@4/auto`).
-- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension get the 4.0 rules in releases published together with 4.0. Keep the 3.5 ones for 3.x projects: the 4.0 rules report forms that 3.x still accepts.
+- Update CDN URLs to the new major version (`https://esm.run/@wcstack/state@4/auto`). `@4` resolves once 4.0.0 is published; a range does not pick a release candidate, so name it while trying one (`https://esm.run/@wcstack/state@4.0.0-rc.1/auto`).
+- `@wcstack/lint` and `@wcstack/typescript` move with every `@wcstack/*` release, so they carry the 4.0 rules from the release candidate on (`npx @wcstack/lint@next <files>`); the VS Code extension ships them as 2.0.0, together with 4.0.0. Keep the 3.5 ones (extension 1.21.x) for 3.x projects: the 4.0 rules report forms that 3.x still accepts.
 
 **How 4.0 reports errors.** Messages carry the same `[wcs/<code>]` codes as the lint, and many also have a number:
 
@@ -309,7 +310,7 @@ Handlers run where the DOM puts them. An outer `#direct` handler runs before the
 
 `#direct` can be added on 3.x already (§1.7).
 
-How to find it: the 3.5 lint reports handlers of bubbling events that read `event.currentTarget` (`wcs/v4-migration`). It cannot see `#stop` inside elements your own code listens on, `stopPropagation()` in page code, or elements you move between roots: look for those yourself. The 4.0 lint warns (`wcs/template-syntax`) when `#direct` is put on a binding that is not an event binding.
+How to find it: the 3.5 lint reports handlers of bubbling events that read `event.currentTarget` (`wcs/v4-migration`, info); the 4.0 lint reports the same handlers as `wcs/delegated-current-target` (warning) — an `on*:` of a delegated event, without `#direct`, whose handler reads `currentTarget` from its event argument before its first `await`. Neither can see `#stop` inside elements your own code listens on, `stopPropagation()` in page code, or elements you move between roots: look for those yourself. The 4.0 lint warns (`wcs/template-syntax`) when `#direct` is put on a binding that is not an event binding.
 
 ### 3.4 Rendering and binding rules
 
@@ -374,9 +375,9 @@ How to find it: look for `|` in `for:` bindings. The 3.5 lint does not report it
 
 A binding inside a `for:` row whose `*` ranges over a different list than the enclosing `for:` at that level (`{{ b.*.y }}` inside `for: a`) throws `[wcs/wildcard-rank] #1403` when the page is initialized. 3.x failed each such binding with `ListIndex not found`. Read the other list's row in a getter with `$resolve(path, indexes)`. The 3.5 lint warns about it; the 4.0 lint reports it as `wcs/wildcard-rank` (warning).
 
-#### Markup errors stop initialization *(not final)*
+#### Markup errors stop initialization
 
-In the current preview, a binding that cannot be read — a syntax error, an unknown filter, a wildcard-rank error — stops the binding there. At page level the `<wcs-state>` fails to initialize (`connectedCallbackPromise` rejects), and the bindings after the error are not attached. An error found while a binding is attached inside a `for:` / `if:` row (an undeclared token or wcBindable member, for example) goes to `$errorCallback` as that binding's failure, and the row is still built; at page level the same error fails initialization. 3.x reported a page-level error and failed only that binding. This behaviour is still under review. Run the 4.0 lint before you deploy. As in 3.5, a failed initialization is reported once with `console.error`, first the element and where its state comes from (`<wcs-state src="./state.js"> failed to initialize.`), then the error. A `$connectedCallback` that throws or rejects once the bindings are built is not an initialization failure: it is reported as `<wcs-state …> $connectedCallback failed.` followed by the error, `connectedCallbackPromise` rejects with it, and `getBindingsReady()` resolves, since the page is bound.
+A binding that cannot be read — a syntax error, an unknown filter or a wrong argument count, a wildcard-rank error, `for:` with filters, `outerHTML:` in a template — stops the walk there. At page level the `<wcs-state>` fails to initialize (`connectedCallbackPromise` rejects): what comes before the error in document order is bound and keeps following writes, what comes after it is not. An element that failed to initialize cannot be re-armed — `setInitialState()` on it throws (#14); remove it and create a new one. An error found while a binding is attached inside a `for:` / `if:` row (an undeclared token or wcBindable member, for example) goes to `$errorCallback` as that binding's failure, and the row is still built; at page level the same error fails initialization. 3.x reported a page-level error and failed only that binding. Run the 4.0 lint before you deploy: it reports these forms (§4.1). As in 3.5, a failed initialization is reported once with `console.error`, first the element and where its state comes from (`<wcs-state src="./state.js"> failed to initialize.`), then the error. A `$connectedCallback` that throws or rejects once the bindings are built is not an initialization failure: it is reported as `<wcs-state …> $connectedCallback failed.` followed by the error, `connectedCallbackPromise` rejects with it, and `getBindingsReady()` resolves, since the page is bound.
 
 #### Comment bindings
 
@@ -397,17 +398,24 @@ In the current preview, a binding that cannot be read — a syntax error, an unk
 
 At page level, an element's children are bound before the element's own bindings. A custom element's first property writes, and the order in which `$errorCallback` receives failures, are therefore reversed compared with 3.x (children first). Inside templates the order is document order, as before.
 
+#### When `$watch` handlers fire
+
+`$watch` handlers still run at the end of an update batch, with `cur`, `prev` and the row's indexes. What fires a handler on a row path changed:
+
+- **A row watch needs neither a `for:` nor `$listKeys`.** `$watch: { "items.*.price"(cur, prev, i) { … } }` fires for a list that the page does not render: 4.0 keeps the lists a row watch ranges over in step by itself. In 3.x, with neither a `for:` binding nor `$listKeys`, assigning the list fired such a watch zero times.
+- **A row getter watch is evaluated eagerly.** A watch on a wildcard getter (`get "items.*.total"()`) evaluates the getter for every row when the watch starts, and again for a row when something it read changes, whether or not a binding shows it; `prev` is that row's previous value. In 3.x such a watch fired only where the getter was also bound to the DOM, and `prev` was always `undefined`. The getter now runs for every row of the list: keep a watched row getter cheap and free of side effects.
+- **Assigning a whole array fires only the rows that came in.** Rows are matched to the new array's elements by identity: a row watch fires for the elements that were not in the list before (`prev` `undefined`), not for the rows the assignment kept (a re-sort fires no data row watch). A kept row's getter watch (`items.*.label`) fires only when its value changed, unless a write in the same batch changed something the getter read outside its row — `now`, `items.length`, or a root getter that reads them (`get count() { return this.items.length }`) — or wrote the same path in another row (`items.0.due`) (#389). In 3.x, assigning a whole array to a rendered list fired a data row watch (`items.*.price`) for every row, with `prev` `undefined`, unless `$listKeys` was declared, and 3.5.1 fired a row getter watch on every kept row whose getter was bound to the DOM, changed or not. With `$listKeys`, a refetched array still writes only the changed fields into the kept rows, and those writes fire, as in 3.x.
+- **A numeric index in the key** (`"items.0.v"`) fires only when the value at that index changes. 3.x (since 3.4) fires it on a write through the index, on an element replacement, and on a write to any row of the list, possibly with an unchanged value.
+- **An array several outer rows share.** Writing one of its elements fires `$watch("groups.*.items.*")` once for every outer row that holds it, each with its own indexes: the value changed at every one of those paths. 3.x fired it once, at the position written.
+
 #### Smaller differences
 
 - Writing a top-level key that the state does not have creates it (3.x failed the write). Reading one still throws `[wcs/binding-path-missing]`.
-- A re-set (`setInitialState()` on an initialized element) whose new state lacks a top-level key the old state had empties the bindings to it, renders no rows for a list under it, and gives a getter that reads it `undefined`, until the key is written — as a deeper path the new state lacks already did. 3.x reported those bindings and that list as failures and left the old text and rows on the page. The new state object is not written to (a frozen state can be re-set). A getter on a class state's prototype that the new state drops is the exception: its bindings still fail, as in 3.x.
+- A re-set (`setInitialState()` on an initialized element) whose new state lacks a top-level key the old state had empties the bindings to it, renders no rows for a list under it, and gives a getter that reads it `undefined`, until the key is written — as a deeper path the new state lacks already did. 3.x reported those bindings and that list as failures and left the old text and rows on the page. The new state object is not written to (a frozen state can be re-set). A getter on a class state's prototype that the new state drops is the exception: its bindings still fail, as in 3.x (§5).
 - A path that goes through `__proto__` or `prototype` throws `[wcs/binding-syntax] #120`: in bindings, writes, `$resolve`, `$setAll`, and reads such as `this.__proto__`.
 - `state="id"` reads only a `<script type="application/json">` with that id.
-- A `$watch` key with a numeric index (`"items.0.v"`) fires only when the value at that index changes. 3.x (since 3.4) fires it on a write through the index, on an element replacement, and on a write to any row of the list, possibly with an unchanged value.
 - When a chain of `$watch` handlers and `$stream` restarts goes past its limit (writes more than 32 deep, as in 3.x), only the handlers and restarts those writes fired are skipped; the batch's other handlers still run. 3.x skipped the whole batch. A restart's writes also count toward the render chain (100 drains): element write-backs that restart a stream a microtask apart are cut after about 50 (100 without the stream).
 - A value a `$stream` source yields in the same task as its run's (re)start (synchronously or in a microtask) counts toward the chain of the restarts it causes: when it reaches another stream's `args`, that stream restarts one link deeper, so two streams that read each other's values with a source that yields at once are cut instead of freezing the page. A value from a later task, and the `$watch` handlers a value fires, start afresh.
-- A row getter `$watch` (`items.*.label`) on a row that a list assignment or re-sort kept fires only when its value changed, unless a write in the same batch changed something the getter read outside its row: `now`, `items.length`, or a root getter that reads them (`get count() { return this.items.length }`) — or wrote the same path in another row (`items.0.due`). 3.5.1 fired every kept row whose getter was bound to the DOM, changed or not, and skipped it only when the getter returned the same object.
-- When several outer rows hold the same array, writing one of its elements fires `$watch("groups.*.items.*")` once for every outer row that holds it, each with its own indexes: the value changed at every one of those paths. 3.x fired it once, at the position written.
 - An index past the end of a list: a write (`this["items.5.v"] = 1`, `$resolve("items.*.v", [5], 1)`) throws `no row for "items.*.v"` and changes nothing, and a read returns `undefined`. 3.x threw `ListIndex not found` on both.
 
 ### 3.5 Volumes and mounted components
@@ -421,9 +429,12 @@ At page level, an element's children are bound before the element's own bindings
 | `$behavior`, `$features` | — | refused |
 | `$commandTokens`, `$eventTokens`, `$on`, `$errorCallback` | not run, warning | not run, `console.warn` |
 | An injection on the volume element (`data-wcs="state.taxRate: settings.taxRate"`, 3.1) | supported | refused: the volume is not grafted, `console.error` |
+| Any other `data-wcs` on the volume element (`data-wcs="class.ready: loaded"`) | — | refused as an injection, the same way: any `data-wcs` attribute on a `<wcs-state mount>` counts |
+| A mount path the root state already has (`mount="cart"` with a root key `cart`) | not grafted: a collision error, reported with `console.error` as `volume "cart" failed to graft.` | not grafted: `console.error` with `will not graft: the root state already has "cart".` |
+| Changing `mount` after the volume initialized | ignored, with a `console.warn` | ignored, without a message (the element does not observe the attribute) |
 | The volume's methods | not on the tree | reachable by path (`onclick: p.method`, `this["p.method"]`) |
 
-The messages read `$watch is not run in a volume — declare it on the root state.` and `injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.`, after `[@wcstack/state] <wcs-state mount="p">`. A refused volume still resolves its `connectedCallbackPromise`.
+The messages read `$watch is not run in a volume — declare it on the root state.` and `injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.`, after `[@wcstack/state] <wcs-state mount="p">`. A refused volume still resolves its `connectedCallbackPromise`. To move a volume to another path, remove the element and add a new one with the new `mount`; to bind something to the volume element itself, wrap it in an element of your own.
 
 Move the declarations to the root state, with full paths. Inside the root's handlers `this` is the root state, so paths are written from the root (`this["cart.items"]`).
 
@@ -503,13 +514,24 @@ A component's `<wcs-state bind-component>` that fails to mount rejects its `conn
 | `@wcstack/state/parser` results | no `uuid`; a `__proto__` / `prototype` segment in a path is rejected with #120 |
 | `@wcstack/state/manifest` | the old-name tables are empty (`builtinFilterAliases` is `{}`); `$scan` is no longer reserved; `$behavior` and `$features` are reserved; new `behaviorOptions` and `features` |
 | `defineState` types | without `$trackDependency` / `$untrackDependency` |
+| `import { defineState } from "@wcstack/state"` alone, through a bundler | keeps the engine: about 21 KB gzip (3.x tree-shook it down to `defineState`). Import it from `@wcstack/state/define` (69 B, no runtime) |
 | `installFeatures()` | skips a feature it already installed (3.x called `install()` again; both are idempotent) |
 | `@wcstack/state` | also exports the type `IStateElement` |
+
+A state file that only needs the types should import `defineState` from `@wcstack/state/define`, which carries the identity function and the types and nothing else:
+
+```ts
+// 4.0: keeps the state file free of the engine
+import { defineState } from "@wcstack/state/define";
+```
+
+A bundler cannot drop the 4.0 engine's modules from the `@wcstack/state` entry, so importing only `defineState` from it keeps the whole engine (about 21 KB gzip). That costs nothing in a bundle that runs the engine anyway; it matters where the state file is bundled without it — a page that loads the runtime from a CDN, a build that only type-checks or tests the state.
 
 ### 3.8 Split entries and features
 
 - **`$listKeys` moved out of the core** into a new feature, `@wcstack/state/features/list-keys`. `@wcstack/state` and `/auto` include it. A `/core` page that uses `$listKeys` must install it; otherwise the state fails with `[wcs/feature-not-installed] $listKeys needs the add-on @wcstack/state/features/list-keys`.
 - `features/temporal` serves `$watch` and `$stream` (`$scan` is gone).
+- **`/core` carries the 24 logic filters** — comparison (`eq`, `ne`, `not`, `lt`, `le`, `gt`, `ge`), arithmetic (`add`, `sub`, `mul`, `div`, `mod`, `abs`, `clamp`), conversion (`int`, `float`, `boolean`, `number`, `string`, `truthy`, `falsy`) and defaults (`defaults`, `coalesce`, `nullIfEmpty`). The 3.x `/core` answered only `not`, and every other filter needed `features/formats`. `features/formats` now holds the 23 formatting filters (`upper`, `date`, `round`, `truncate`, …): a `/core` page that installed it only for a logic filter can drop it. A formatting filter without it fails with `[wcs/filter-unknown]`, naming the add-on.
 - On `/core` without `features/diagnostics`, messages are numbered (§2). Install `diagnostics` while developing.
 - Call `installFeatures([...])` before `bootstrapState()`, as in 3.x. A state that declares a feature's key before that feature is installed fails with `[wcs/feature-not-installed]`.
 - The file names under `dist/split/chunks/` now carry a content hash. If you list chunk files yourself (preload links, `integrity` in an import map), take the names from the 4.0 build.
@@ -533,14 +555,14 @@ New in 4.0, and optional:
 - **`@wcstack/router` 3.5 and later** (you get these on the way, with 3.5)
   - Shown route content now ends with a comment, `<!--@@wcs-route-end:/path-->` (the text of the SSR end marker), so the outlet has one more child node. `:empty` is unaffected.
   - Leaving a route takes out everything from the route's start to that marker — including rows and branches that `@wcstack/state` rendered there and nodes your code inserted — and entering puts it back. The router up to 3.4.0 moved only the route's original nodes and left the rest in the outlet. What comes back is what was taken out: a top-level node your code removed from the route body stays removed on the next entry. Showing the route that is already shown (a parameter change) takes its content out and puts it back in order, so its custom elements reconnect once and see the new parameters, nested routes included (the router up to 3.4.0 re-inserted the original nodes one by one, which reordered them, and reconnected a nested route wrapped in an element twice, first with the old parameter).
-  - `for:` / `if:` templates placed directly under `<wcs-route>` render when the route is entered by navigation, with `@wcstack/state` 4.0. With the router up to 3.4.0, inside `<wcs-head>`, or when other code inserts the content, 4.0 does not render them and reports `[wcs/template-syntax] #204` on the console; 3.x never rendered them. Wrapped in an element, they render in every combination.
+  - `for:` / `if:` templates placed directly under `<wcs-route>` render when the route is entered by navigation, with `@wcstack/state` 4.0. So do those at the top of a `<wcs-layout>` template (the layout outlet hands its content over the same way; not with `enable-shadow-root`, whose shadow root the page's state does not bind), on the landing route and on navigation, and their rows or branch leave and come back with the route. With the router up to 3.4.0, inside `<wcs-head>`, or when other code inserts the content, 4.0 does not render them and reports `[wcs/template-syntax] #204` on the console; 3.x never rendered them. Wrapped in an element, they render in every combination.
   - Route content inside a `<wcs-layout>`, and the layout template's own bindings, are bound on the first navigation into it too (the router up to 3.4.0 left them unbound when the route was entered by navigation, and a `for:` inside never rendered, even on later visits).
   - Unchanged: text `{{ }}` placed directly in a route body or a layout template, not inside an element, is not bound when the route is entered by navigation. Wrap it in an element.
 - **`@wcstack/server`**: §3.6.
 - **`@wcstack/autoloader` and the I/O node packages**: the `bootstrapXxx()` options rule and `scanImportmap` (§3.2).
 - **`wcstack/auto`** bundles `@wcstack/state`, the router, fetch, storage and the autoloader, so it brings all of the above.
-- **`@wcstack/devtools`**: works unchanged (hook protocol v2). `state:render-chain-limit` is also sent when one update does not settle within 32 passes (`maxDepth: 32`).
-- **The binder protocol**: `bind(subtree, options?)` gains an optional second argument. Code that inserts content and later moves it in and out as one block passes `{ range: true }` (the router 3.5 and later does), and only then are `for:` / `if:` templates at the top of the inserted content rendered. This matters only if you call the binder yourself.
+- **`@wcstack/devtools`**: works unchanged (hook protocol v2). `state:render-chain-limit` is also sent when one update does not settle within 32 passes (`maxDepth: 32`). Its coverage view shows a row `$watch` without a `for:` or `$listKeys` as `never` until it fires, not `prerequisite-missing`: that prerequisite was 3.x's (§3.4).
+- **The binder protocol**: `bind(subtree, options?)` gains an optional second argument. Code that inserts content and later moves it in and out as one block passes `{ range: true }` (the router 3.5 and later does, for route content and for a layout's content), and only then are `for:` / `if:` templates at the top of the inserted content rendered. This matters only if you call the binder yourself.
 - **The [wcstack-app skill](https://github.com/wcstack/wcstack-skill)** is updated separately for 4.0.
 
 ## 4. Finding affected code
@@ -549,7 +571,7 @@ Before upgrading, the 3.5 console warnings and the 3.5 lint (§1.2, §1.3) find 
 
 ### 4.1 The 4.0 lint
 
-Run `npx @wcstack/lint@4 <files>` once 4.0 is published (the VS Code extension shows the same codes). `--strict` also fails CI on warnings, which helps because two of the warnings below throw at run time. With `--strict`, expect the false warnings on paths of a volume loaded with `src=` (§3.5).
+Run `npx @wcstack/lint@4 <files>` — `@next` while 4.0 is a release candidate (the VS Code extension 2.0 shows the same codes). The 4.0 lint has no `wcs/v4-migration`: what 3.5 pointed out as info is an error or a warning of its own code there, because 4.0 breaks on it. `--strict` also fails CI on warnings, which helps because two of the warnings below throw at run time. With `--strict`, expect the false warnings on paths of a volume loaded with `src=` (§3.5).
 
 | Code | What it reports | Severity |
 |---|---|---|
@@ -562,6 +584,7 @@ Run `npx @wcstack/lint@4 <files>` once 4.0 is published (the VS Code extension s
 | `wcs/features-invalid` | `$features` not an array or in a volume (error); `features=` on a `<wcs-state>` that is not the document's root (warning) | error / warning |
 | `wcs/volume-declaration` | `$stream`, `$watch`, `$listKeys`, `$renderedCallback` in a volume (error); `$commandTokens`, `$eventTokens`, `$on`, `$errorCallback` in a volume (warning) | error / warning |
 | `wcs/template-syntax` | `outerHTML:` / `outerText:` inside `for:` / `if:` (error); `#direct` on a binding that is not an event binding (warning) | error / warning |
+| `wcs/delegated-current-target` | an `on*:` handler of a delegated event, without `#direct`, that reads `event.currentTarget` (the root in 4.0, §3.3) — 3.5 reported it as `wcs/v4-migration` | warning |
 | `wcs/wildcard-rank` | another list's `*` inside a row (#1403); a pattern path, shorthand path or loop index outside any `for` | warning (the runtime throws) |
 | `wcs/binding-syntax` | a `__proto__` / `prototype` path segment; filters on `for:` | error |
 | `wcs/index-param-range` | `$129` and above inside a `for`; `this.$0`, `this.$129` in the script | error |
@@ -599,9 +622,18 @@ The sentences are what `@wcstack/state` and `/auto` print; without the diagnosti
 | `[wcs/feature-unknown] "<name>" is not an add-on (…).` | — | 3.8 |
 | `[wcs/template-syntax] a "for:" template at the top of inserted content was not rendered, …` | #204 | 3.9 |
 
-## 5. Known limitations of the preview *(not final)*
+## 5. Known limitations
 
-- **One object reachable from two rows.** When the same object sits at two positions of one list, a write below one of the rows (`this["items.0.name"] = "z"`) does not reach the other row's bindings and row getters; plain reads, root getters and `$getAll` see the new value. The same happens when one object is reachable from two lists, as in a TodoMVC-style filter: `get shown()` returning a filtered copy of `todos`, rendered with `for: shown`, while a checkbox writes the row. When the getter returns `todos` itself again, the rows it kept are shown again. 3.x has the same issue (#365). It is recorded as a known 4.0 limitation, and its scope is under review.
-- **Numeric keys under a plain object** (`sales.2024.total`, `usersById.42.name`). Markup renders them, but in 4.0 a script read (`this["sales.2024.total"]`, also inside a getter) gives `undefined`, `$eq` on such a path is always false, a write throws `no row for "sales.*.total"`, and a two-way write-back fails. 3.x (since 3.4) still reads them as plain keys, and writes them that way through `$resolve` / `$setAll`. Until this is settled, read them as `this.sales[2024].total`, and write by assigning a new object to the top-level key (`this.sales = { ...this.sales, 2024: { ...this.sales[2024], total: 10 } }`), or use keys that are not numbers.
-- **After a re-set**, `Object.keys(this)`, `in`, `delete` and `JSON.stringify(this)` still see the old state.
-- **Markup errors and initialization**: see §3.4.
+The cases below are known in 4.0 and are to be fixed in 4.0.x. Each comes with a way around it.
+
+- **One object reachable from two rows.** When the same object sits at two positions of one list, a write below one of the rows (`this["items.0.name"] = "z"`) does not reach the other row's bindings and row getters; plain reads, root getters and `$getAll` see the new value. When one object is reachable from two arrays, as in a TodoMVC-style filter (`get shown()` returns a filtered copy of `todos`, rendered with `for: shown`, and a checkbox in a row writes `done`), the write also misses `for: todos`, the getters that read `todos.*` paths (`$getAll("todos.*.done")`), and the filter itself: the checked row stays in the "active" view. When the getter returns `todos` itself again, the rows it kept are shown again — unless another list already moved to that array in an earlier update. 3.x has the same issue (#365). Replace the changed item instead of writing below it (`this.todos = this.todos.map((x) => x === t ? { ...x, done: !x.done } : x)`), or call `this.$postUpdate("todos")` after the write.
+- **Numeric keys under a plain object** (`sales.2024.total`, `usersById.42.name`). Markup renders them, but in 4.0 a script read (`this["sales.2024.total"]`, also inside a getter) gives `undefined`, `$eq` on such a path is always false, a write throws `no row for "sales.*.total"`, and a two-way write-back fails. 3.x (since 3.4) still reads them as plain keys, and writes them that way through `$resolve` / `$setAll`. Read them as `this.sales[2024].total`, and write by assigning a new object to the top-level key (`this.sales = { ...this.sales, 2024: { ...this.sales[2024], total: 10 } }`), or use keys that are not numbers.
+- **Enumerating the state after a re-set.** After `setInitialState()` on an initialized element, `Object.keys(this)`, `in`, `delete`, `for…in`, spreading (`{ ...this }`) and `JSON.stringify(this)` still work on the keys of the state the element started with: a key only the new state has is missing, and a key it dropped is still listed. Reads and writes by name are not affected. Keep data you enumerate or serialize under one key (`JSON.stringify(this.form)`).
+- **Re-setting a class-based state with an object that lacks one of its getters.** A getter defined on the class that the new state does not have is not emptied like the other keys a re-set drops (§3.4): its bindings keep the old value and report `[wcs/binding-path-missing]`, and reading it in code throws. Re-set with an instance of the same class, or give the new state that key.
+- **An endless `$watch` → `$stream` loop whose source yields at once freezes the page.** When a `$watch` on a stream's value changes what the stream's `args` reads, and the source yields without waiting for anything (an async generator that yields from memory, a `ReadableStream` that enqueues in `start`), the loop runs on microtasks alone: the chain limit is reported once (`… the chain is cut`), but the loop does not stop. Give such a loop an end condition (`if (cur.length > 0 && this.page < this.lastPage) this.page++`). A source that waits for the network or a timer keeps the page responsive.
+- **A component host that is not in the page when the page is bound waits forever.** The page binds the `data-wcs` it has when its `<wcs-state>` loads, what `for:` / `if:` render, and what the router hands over. A host such as `<my-card data-wcs="state: user">` that your code removed before then and puts back later, or inserts for the first time later, is never wired: its content keeps the raw `{{ }}`, its `<wcs-state bind-component>` never settles, and nothing is reported. Render the host from a `for:` / `if:` template, or hand it over right after inserting it: `globalThis[Symbol.for("wcstack.binder")]?.bind(host)` (the binder protocol, [@wcstack/state README](../packages/state/README.md#structural-templates-in-inserted-content)).
+- **Putting a replaced `<wcs-state bind-component>` back.** If you replace a component's `<wcs-state bind-component>` with a new one, then remove the new one and re-insert the old element, the component stays stopped: it no longer follows the page's data, and its `$connectedCallback` does not run. Insert a new `<wcs-state bind-component>` element instead of the old one.
+- **A root `<wcs-state>` taken out of the page and put back.** Its bindings keep working, but a `<wcs-state mount>` that connects while the root is out waits forever (its data is never grafted, its `connectedCallbackPromise` never settles), and route content shown meanwhile is not bound until the router hands it over again. Keep the root `<wcs-state>` in the page; if a volume got stuck, remove it and insert a new `<wcs-state mount>` element once the root is back.
+- **A synchronous throw in a root's `$connectedCallback` when the `<wcs-state>` is re-inserted** is not caught: it surfaces as an uncaught exception, not as the `console.error` report of a first connection. A synchronous throw in a root's `$disconnectedCallback` escapes the same way, every time. Declare these callbacks `async` (a rejection is reported with `console.error`), or catch inside them.
+- **SSR: a comment between the templates of one `if:` / `elseif:` / `else:` chain.** Hydration then discards the server's branch and renders it again: custom elements in it are created again, and anything typed there before hydration is lost. The result is otherwise correct. Remove comments from between a chain's templates; whitespace, a comment before the `if:` template and comments inside a branch are fine.
+- **Memory after the page's root is replaced.** When the root `<wcs-state>` is removed together with the content it bound (and its volumes), that state and DOM stay in memory until another `<wcs-state>` binds the same document or shadow root — and, for a volume's mount path, until a volume with that path connects there. Nothing else is affected; a page that keeps its root `<wcs-state>` is not concerned.

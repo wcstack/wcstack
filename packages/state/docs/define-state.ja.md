@@ -10,12 +10,14 @@
 - **ドットパス自動補完** — `this["users.*.name"]` が IDE で `string` として解決される
 - **State Proxy API の型** — `$getAll`, `$postUpdate`, `$1`〜`$9` 等が `this` 上で型付け
 
+import 元は **`@wcstack/state/define`** にしてください: このエントリは `defineState` と型だけを持ち、ランタイムを含みません。`@wcstack/state` から `defineState` を import しても動きますが、エンジン全体が一緒に読み込まれます。
+
 ## 基本的な使い方
 
 ### TypeScript
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   count: 0,
@@ -35,7 +37,7 @@ export default defineState({
 ### JavaScript（JSDoc / `checkJs`）
 
 ```javascript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   count: 0,
@@ -50,7 +52,7 @@ export default defineState({
 ```html
 <wcs-state>
   <script type="module">
-    import { defineState } from '@wcstack/state';
+    import { defineState } from '@wcstack/state/define';
     export default defineState({
       count: 0,
       increment() { this.count++; }
@@ -59,20 +61,23 @@ export default defineState({
 </wcs-state>
 ```
 
+ブラウザでは bare specifier に import map のエントリが必要です — たとえば `"@wcstack/state/define": "https://cdn.jsdelivr.net/npm/@wcstack/state@4/dist/define.js"`（jsDelivr の `/npm/` パスは `exports` を読まないので、ファイル名まで書きます）。
+
 ## 仕組み
 
 `defineState<T>()` は渡されたオブジェクトリテラルから型 `T` を推論します。`ThisType<WcsThis<T>>` を適用することで、メソッドや getter 内の `this` が以下の型になります:
 
 ```
-WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>
+WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>
 ```
 
 | レイヤー | 提供する型 |
 |---|---|
 | `T` | 直接プロパティ — `this.count`, `this.users`, `this["users.*.ageCategory"]` |
-| `WcsStateApi` | Proxy API — `this.$getAll()`, `this.$postUpdate()`, `this.$1`〜`$9` |
+| `WcsStateApi` | Proxy API — `this.$getAll()`, `this.$postUpdate()`, `this.$1`〜`$9`, `this["$streamStatus.<name>"]` |
 | `WcsPathAccessor<T>` | ドットパス解決 — `this["users.*.name"]`, `this["cart.items.*.price"]` |
-| `Record<string, any>` | 動的パスのフォールバック — `this[\`items.${i}.name\`]` |
+
+何でも受け付ける索引シグネチャはありません: ブラケットアクセスに型が付くのは、キーが上のいずれかのパスであるときだけです。そのため存在しないパス（`this["users.*.nmae"]`）は型エラーになり、動的パスも同様です（[動的パスには型が付かない](#動的パスには型が付かない)）。例外が 1 つあります: 戻り値の型が推論される getter の中では、戻り値が依存する読みが `any` になります（[戻り値の型が推論される getter](#戻り値の型が推論される-getter)）。
 
 ## ドットパス型解決
 
@@ -81,7 +86,7 @@ WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>
 `WcsPaths<T>` は型からドット区切りの全パスを union として生成します。配列は `*` をワイルドカードとして使用します。
 
 ```typescript
-import type { WcsPaths } from '@wcstack/state';
+import type { WcsPaths } from '@wcstack/state/define';
 
 type AppState = {
   count: number;
@@ -105,6 +110,7 @@ type Paths = WcsPaths<AppState>;
 | プリミティブの配列 | `key`, `key.*` |
 | 組み込みオブジェクト (`Date`, `Map`, `Set`, `RegExp` 等) | `key` のみ（再帰なし） |
 | 関数（メソッド） | 完全に除外 |
+| `$` で始まるキー（`$stream`, `$watch`, `$connectedCallback` など） | 完全に除外 |
 
 **再帰の深さ制限:** 最大4レベル（コンパイル性能の確保）。
 
@@ -113,7 +119,7 @@ type Paths = WcsPaths<AppState>;
 `WcsPathValue<T, P>` は指定されたドットパスの値の型を解決します。
 
 ```typescript
-import type { WcsPathValue } from '@wcstack/state';
+import type { WcsPathValue } from '@wcstack/state/define';
 
 type AppState = {
   cart: { items: { price: number; qty: number }[] };
@@ -172,7 +178,7 @@ export default defineState({
 `any` になるのは実際に `**` を含むキーだけです（再帰 getter の中でノード自身に束縛される素の
 `this["nodes.**"]` も含みます）。通常のドットパスは解決された値の型を保ち、綴り間違いは従来どおり
 型エラーになります。VS Code 拡張の preamble も同じシグネチャを宣言しているので、エディタと `tsc` の
-判定は一致します。
+判定は一致します。README の [再帰パス](../README.ja.md#再帰パスrecursion) 節と
 [state-recursive-path-design.md](../../../docs/state-recursive-path-design.md) も参照してください。
 
 ## State Proxy API (`WcsStateApi`)
@@ -183,18 +189,27 @@ export default defineState({
 
 | API | シグネチャ | 説明 |
 |---|---|---|
-| `$getAll` | `$getAll<V>(path: string, defaultValue?: V[]): V[]` | ワイルドカードパスにマッチする全値を取得 |
+| `$getAll` | `$getAll<V = any>(path: string, indexes?: number[]): V[]` | ワイルドカードパスにマッチする全値を取得。`indexes` はワイルドカードに対する前方一致の接頭辞（`[]` = 全件）。省略時はループ文脈から取る |
+| `$setAll` | `$setAll<V = any>(path: string, indexes: number[], value: V \| ((current: V, ...indexes: number[]) => V \| undefined)): number` | ワイルドカードパスにマッチする全アドレスへ書き込む（ブロードキャストまたは mapper）。配列と `{ spread: true }` を取る 2 つ目のオーバーロードは、各アドレスに 1 件ずつ配る。戻り値は書き込んだアドレス数 |
 | `$postUpdate` | `$postUpdate(path: string): void` | パスの更新を手動トリガー |
-| `$resolve` | `$resolve(path: string, indexes: number[], value?: any): any` | ワイルドカードを特定インデックスで解決 |
+| `$resolve` | `$resolve(path: string, indexes: number[], value?: any): any` | ワイルドカードを特定インデックスで解決して読む（引数 2 つ）・書く（引数 3 つ） |
 | `$dependOn` | `$dependOn(path: string): void` | 依存関係を手動登録 |
 | `$untracked` | `$untracked<T>(fn: () => T): T` | fn 実行中の依存追跡（動的依存・`$1` インデックス依存）を抑止して値を読む |
+| `$eq` | `$eq(path: string, key: unknown): boolean` | 鍵付き選択: `path` の値が `key` と等しいか |
+| `$eqPath` | `$eqPath(path: string, keyPath: string): boolean` | 鍵を `keyPath`（ワイルドカードは評価中の行で解決）から読む `$eq` |
+| `$eqIndex` | `$eqIndex(path: string, level?: number): boolean` | 評価中の行の index を鍵にする `$eq` |
+
+挙動は README の [Proxy API](../README.ja.md#proxy-api) 節と [鍵付き選択](../README.ja.md#鍵付き選択eq--eqpath--eqindex) 節にあります。3.x の名前 `$trackDependency` / `$untrackDependency` は型にありません。ランタイムでは `[wcs/name-alias]` を throw します。
 
 ### プロパティ
 
 | API | 型 | 説明 |
 |---|---|---|
 | `$stateElement` | `HTMLElement` | `<wcs-state>` 要素への参照 |
-| `$1` 〜 `$9` | `number` | ループインデックス変数（値は0始まり、名前は1始まり） |
+| `$command` | `Record<string, { emit(...args: any[]): any }>` | `$commandTokens` で宣言した command token |
+| `$streamStatus` / `$streamError` | `Record<string, …>` | `$stream` のコンパニオン名前空間（このオブジェクト経由の読みは依存を登録しない） |
+| `this["$streamStatus.<name>"]` / `this["$streamError.<name>"]` | `"idle" \| "active" \| "done" \| "error"` / `unknown` | getter 内で使う、追跡される形 |
+| `$1` 〜 `$9` | `number` | ループインデックス変数（値は0始まり、名前は1始まり）。ランタイムは `$128` まで解決しますが、型は `$9` までです |
 
 ### ライフサイクルコールバック
 
@@ -218,12 +233,14 @@ defineState({
 });
 ```
 
+3.x の名前 `$updatedCallback` は状態の読み込み時に throw します。`$renderedCallback` と書いてください。
+
 ## `$stream` 宣言
 
 `$commandTokens` / `$eventTokens` / `$on` と並んで、状態オブジェクトは `$stream` 宣言マップを認識します。各エントリは非同期プロデューサー（async iterable / async generator / `ReadableStream`）を単一のリアクティブプロパティに畳み込みます:
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 // (args, AbortSignal) => AsyncIterable | ReadableStream のプロデューサーなら何でもよい
 declare function llmStream(prompt: string, signal: AbortSignal): AsyncIterable<string>;
@@ -254,7 +271,7 @@ stream は `$connectedCallback` の後に起動し、各チャンクを `this.an
 ### カウンター
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   count: 0,
@@ -266,7 +283,7 @@ export default defineState({
 ### ユーザーリストと computed プロパティ
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   users: [
@@ -286,7 +303,7 @@ export default defineState({
 ### ショッピングカートと getter チェーン
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 type CartItem = { productId: number; quantity: number; unitPrice: number };
 
@@ -323,7 +340,7 @@ export default defineState({
 ### イベントハンドラとループインデックス
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   items: [] as { name: string }[],
@@ -335,10 +352,12 @@ export default defineState({
 });
 ```
 
+ハンドラはイベントの後ろにループインデックスも受け取ります（`onDelete(event, index)`）。型は `number` にしてください。
+
 ### 非同期データ読み込み
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   loading: false,
@@ -361,25 +380,42 @@ export default defineState({
 
 ## 既知の制限事項
 
-### `ThisType<>` 内でのジェネリック型引数
+### 戻り値の型が推論される getter
 
-TypeScript の制限により、`defineState()` 内の `this` メソッドにジェネリック型引数を付けることはできません:
+getter の型は `T` の一部で、`this` の型を決めるのはその `T` です — そのため戻り値の型注釈が無い getter では、TypeScript はこの循環を断つために、戻り値が依存する `this` の読みを `any` にします。そのような getter の中では、その依存の連鎖にある綴り間違いのパスは報告されず、`this` のメソッドに型引数を付けるとエラーになります:
 
 ```typescript
 defineState({
   items: [] as { price: number }[],
   get total() {
-    // ❌ this.$getAll<number>(...) — 型引数は使用不可
-    // ✅ 型アサーションで対応:
+    // ❌ this.$getAll<number>(...) — TS2347「Untyped function calls may not accept type arguments」
+    // ✅ 代わりに結果をアサーションする:
     const prices = this.$getAll("items.*.price", []) as number[];
     return prices.reduce((s, v) => s + v, 0);
-  }
+  },
+  get checked(): number {
+    // ✅ 戻り値の型を注釈すれば `this` は完全に型付けされる（綴り間違いもエラー）
+    return this.$getAll<number>("items.*.price", []).length;
+  },
 });
 ```
 
-### `Record<string, any>` フォールバック
+メソッドは影響を受けません。戻り値が依存しない読みも同様です。getter の本体を型チェックさせたいときは、戻り値の型を注釈してください。
 
-`WcsThis<T>` は動的パスアクセス（`this[\`items.${i}.name\`]`）をサポートするため `Record<string, any>` を含みます。副作用として、ブラケットアクセスの型レベルでの解決結果は `any` になります。IDE は型付きパスを自動補完候補として表示しますが、アクセス箇所での推論型は `any` です。
+### 動的パスには型が付かない
+
+`WcsThis<T>` には何でも受け付ける索引シグネチャが無いため、実行時に組み立てたパスは型付きのキーになりません。`strict` では `` this[`items.${i}.name`] `` はエラーです（TS7053「Element implicitly has an 'any' type」）。そのようなアドレスは、インデックスを別に渡す `$resolve`（戻り値は `any`）で読み書きするか、キャストしてください:
+
+```typescript
+defineState({
+  items: [] as { name: string }[],
+  rename(i: number, name: string) {
+    // ❌ this[`items.${i}.name`] = name;             — TS7053
+    this.$resolve("items.*.name", [i], name);         // ✅
+    // (this as Record<string, any>)[`items.${i}.name`] = name;   // ✅ これも可
+  },
+});
+```
 
 ### 再帰の深さ制限
 
@@ -397,6 +433,8 @@ npx wcs-validate --strict index.html    # 型に無いパスは error に、偽�
 `wcs-schema check src/state.ts` は manifest が型から乖離すると CI を落とします。wcstack アプリの TypeScript の話全体は [docs/typescript.ja.md](../../../docs/typescript.ja.md) にまとめています。
 
 ## エクスポートされる型
+
+`@wcstack/state/define` は関数と下の型をエクスポートします。`@wcstack/state` と `@wcstack/state/core` も同じ名前をエクスポートします。
 
 | 型 | 説明 |
 |---|---|

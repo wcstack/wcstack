@@ -16,11 +16,11 @@
 │
 ├── 省略パス (Shorthand Path) — for コンテキスト内のドット始まりパス
 │   ├── 単層省略 (Single-level Shorthand)  — .name → users.*.name
-│   └── 多層省略 (Multi-level Shorthand)   — .products.*.name → categories.*.products.*.name
+│   └── 多層省略 (Multi-level Shorthand)   — for: .products 内の .name → categories.*.products.*.name
 │
 ├── 解決済みパス (Resolved Path) — `*` が具体的なインデックスに置換済み
 │   ├── 完全解決パス (Fully Resolved Path)    — 全 `*` が解決: users.0.name
-│   └── 部分解決パス (Partially Resolved Path) — 一部の `*` が未解決（非サポート）
+│   └── 混在パス (Mixed Path)                 — インデックスと `*` が混在: categories.0.products.*.name
 │
 └── 算出パス (Computed Path) — getter で定義された仮想パス
     └── 例: get "users.*.ageCategory"() { ... }
@@ -106,10 +106,12 @@ categories.*.products.*.name     → string
 </template>
 ```
 
+マークアップでは、各 `*` はその階層で外側にある `for` の行を指す。囲む `for` の段数より `*` が多いパスや、別のリストを指す `*`（`for: users` の中の `{{ items.*.title }}`）は `[wcs/wildcard-rank]` で失敗する。
+
 ## 3. 省略パス (Shorthand Path)
 
 `for` テンプレート内でドット `.` から始まるパス。
-親の `for` パスを暗黙の接頭辞として補完し、パターンパスに展開される。
+親の `for` パスを暗黙の接頭辞として補完し、パターンパスに展開される。`.` 単独は現在の要素そのもの。
 
 ### 単層省略 (Single-level Shorthand)
 
@@ -119,6 +121,7 @@ categories.*.products.*.name     → string
 for: users のコンテキスト内:
   .name       → users.*.name
   .age        → users.*.age
+  .           → users.*
 ```
 
 **使用例:**
@@ -172,9 +175,8 @@ for: categories > for: .products のコンテキスト内:
 
 ## 4. 解決済みパス (Resolved Path)
 
-
 パターンパスの `*` を具体的なインデックスに置き換えたパス。
-主にメソッド内でプログラム的に使用する。
+**いまそのインデックスにある行**を指し、スクリプトだけでなくバインディングでも使える。書き込み・並べ替え・削除・リストの置き換えに追従する。リストの末尾を越えたインデックスの読みは `undefined` になり、そこへの書き込みは `no row for "users.*.name"`（`#3`）を throw する。詳細は README の [仕組み](../README.ja.md#仕組み)（直接インデックスアクセス）を参照。
 
 ### 完全解決パス (Fully Resolved Path)
 
@@ -184,6 +186,13 @@ for: categories > for: .products のコンテキスト内:
 users.0.name           → "Alice"
 users.1.age            → 25
 cart.items.2.price     → 300
+```
+
+**使用例（バインディング）:**
+```html
+<p data-wcs="textContent: users.0.name"></p>
+<p>{{ users.1.name }}</p>
+<template data-wcs="if: users.0.active">...</template>
 ```
 
 **使用例（メソッド内）:**
@@ -200,16 +209,30 @@ increment() {
 }
 ```
 
-### 部分解決パス (Partially Resolved Path) — 非サポート
+先頭以外の数字のセグメントは常にインデックスとして読まれるため、素のオブジェクトの下の数値キー（`sales.2024.total`）は既知の制限になる — 同じ README の節を参照。
 
-一部の `*` のみがインデックスに置換され、残りが未解決のパス。
+### 混在パス (Mixed Path)
+
+一部の `*` だけがインデックスに置換され、残りが `*` のままのパス。
 
 ```
-categories.0.products.*.name    ← 非サポート
+categories.0.products.*.name
 ```
 
-このパターンは `@wcstack/state` ではサポートされない。
-全ての `*` を解決するか、全て `*` のままにする。
+残った `*` はパターンパスと同じく展開・ループされ、インデックスがその階層を固定する:
+
+```html
+<template data-wcs="for: categories.0.products">
+  <span data-wcs="textContent: .name"></span>
+  <!-- .name → categories.0.products.*.name -->
+</template>
+```
+
+```javascript
+this.$getAll("categories.0.products.*.name", [])   // 最初のカテゴリの商品名すべて
+```
+
+このループの中では、インデックスで固定した階層はループコンテキストにならない: そこで `categories.*.name` と書くと `[wcs/wildcard-rank]`（`#1403`）で失敗する — `categories.0.name` と書く。
 
 ## 5. 算出パス (Computed Path)
 
@@ -235,7 +258,7 @@ export default {
 **特徴:**
 - パターンパスの形式で定義可能（`users.*.ageCategory`）
 - 静的パスの形式でも定義可能（`cart.totalPrice`）
-- 依存パスの変更時に自動再計算される
+- 遅延評価されキャッシュされる。依存パスが変わった後に読まれたとき再計算される
 - 読み取り専用（setter を定義しない限り）
 
 ## パス分類の早見表
@@ -246,10 +269,10 @@ export default {
 | ネストパス | `cart.totalPrice` | なし | なし | オブジェクト階層アクセス |
 | 単層パターン | `users.*.name` | 1つ | なし | for テンプレート内バインディング |
 | 多層パターン | `a.*.b.*.c` | 2つ以上 | なし | ネスト for テンプレート |
-| 単層省略 | `.name` | なし（展開後あり） | なし | for テンプレート内ショートハンド |
-| 多層省略 | `.products.*.name` | なし（展開後あり） | なし | ネスト for テンプレート内ショートハンド |
-| 完全解決パス | `users.0.name` | なし | あり | メソッド内プログラム的アクセス |
-| 部分解決パス | `a.0.b.*.c` | 混在 | 混在 | **非サポート** |
+| 単層省略 | `.name` | 記述上なし（展開後 1つ） | なし | for テンプレート内ショートハンド |
+| 多層省略 | `for: .products` 内の `.name` | 記述上なし（展開後 2つ以上） | なし | ネスト for テンプレート内ショートハンド |
+| 完全解決パス | `users.0.name` | なし | あり | バインディングとスクリプト: いまそのインデックスにある行 |
+| 混在パス | `a.0.b.*.c` | 一部 | 一部 | 1 行のリストに対する `for:`、`$getAll` |
 | 算出パス | `get "x.*.y"()` | 任意 | なし | 派生データの自動計算 |
 
 ## シチュエーション別 利用可能マトリクス
@@ -264,18 +287,18 @@ export default {
 
 | シチュエーション | 単純 | ネスト | パターン | 省略 | 解決済み | 算出 |
 |---|---|---|---|---|---|---|
-| `for` 外の `data-wcs` | ✅ | ✅ | ❌ ^1 | ❌ ^2 | ❌ ^3 | ✅ |
-| `for` 内の `data-wcs` | ✅ | ✅ | ✅ | ✅ | ❌ ^3 | ✅ |
-| `for` 外の `{{ }}` / `<!--@@:-->` | ✅ | ✅ | ❌ ^1 | ❌ ^2 | ❌ ^3 | ✅ |
-| `for` 内の `{{ }}` / `<!--@@:-->` | ✅ | ✅ | ✅ | ✅ | ❌ ^3 | ✅ |
-| `for:` の値（イテレーション対象） | ✅ | ✅ | ✅ ^4 | ⚠ ^5 | ❌ | ✅ ^4 |
-| `if:` / `elseif:` の値 | ✅ | ✅ | ⚠ ^6 | ✅ | ❌ | ✅ |
+| `for` 外の `data-wcs` | ✅ | ✅ | ❌ ^1 | ❌ ^2 | ✅ ^3 | ✅ |
+| `for` 内の `data-wcs` | ✅ | ✅ | ✅ | ✅ | ✅ ^3 | ✅ |
+| `for` 外の `{{ }}` / `<!--@@:-->` | ✅ | ✅ | ❌ ^1 | ❌ ^2 | ✅ ^3 | ✅ |
+| `for` 内の `{{ }}` / `<!--@@:-->` | ✅ | ✅ | ✅ | ✅ | ✅ ^3 | ✅ |
+| `for:` の値（イテレーション対象） | ✅ | ✅ | ✅ ^4 | ⚠ ^5 | ✅ ^3 | ✅ ^4 |
+| `if:` / `elseif:` の値 | ✅ | ✅ | ⚠ ^6 | ⚠ ^6 | ✅ ^3 | ✅ |
 | イベントハンドラ `onclick:` の値 | — | — | — | — | — | — |
 
-^1 ループコンテキストがないため `*` を解決できない
-^2 親の `for` がないため展開先がない
-^3 UI バインディングは具体的なインデックスを使用しない（ループコンテキストが `*` を自動解決する）
-^4 パターンパスはネストされた `for` 内で可能（例: `for: users.*.items` — 親 `for: users` のコンテキストで `*` が解決される）。配列を返す算出 getter もイテレーション対象にできる。静的パス形式（`get weeks()` → `for: weeks`）でも、パターン形式（`get "weeks.*.days"()` → `for: weeks.*.days`。この場合はパターンパスと同じくネストされた `for` が必要）でもよい — `packages/state/examples/calendar` 参照
+^1 ループコンテキストがないため `*` を解決できない — `[wcs/wildcard-rank]`（`#1401`）で失敗する
+^2 親の `for` がないため展開先がない — `[wcs/wildcard-rank]`（`#1402`）で失敗する
+^3 いまそのインデックスにある行（`users.0.name`）。混在パスは `for:` の値として使える（`for: categories.0.products`）
+^4 パターンパスはネストされた `for` 内で可能（例: `for: users.*.items` — 親 `for: users` のコンテキストで `*` が解決される）。配列を返す算出 getter もイテレーション対象にできる。静的パス形式（`get weeks()` → `for: weeks`）でも、パターン形式（`get "weeks.*.days"()` → `for: weeks.*.days`。この場合はパターンパスと同じくネストされた `for` が必要）でもよい — `packages/state/examples/calendar` 参照。`for:` にはフィルタを付けられない
 ^5 ネストされた `for` 内でのみ可能（例: `for: .products`）
 ^6 `for` テンプレート内でのみ可能
 
@@ -284,40 +307,41 @@ export default {
 | シチュエーション | 単純 | ネスト | パターン | 省略 | 解決済み | 算出 |
 |---|---|---|---|---|---|---|
 | **プロパティ宣言**（キー名） | ✅ | ❌ ^7 | ❌ ^7 | ❌ | ❌ | ❌ |
-| **getter/setter 宣言**（キー名） | ✅ ^8 | ✅ | ✅ | ❌ | ❌ | ❌ |
-| **getter 内 読み取り** | ✅ | ✅ | ⚠ ^9 | ❌ | ⚠ ^10 | ✅ |
+| **getter/setter 宣言**（キー名） | ✅ ^8 | ✅ | ✅ | ❌ | ❌ | — |
+| **getter 内 読み取り** | ✅ | ✅ | ⚠ ^9 | ❌ | ✅ ^10 | ✅ |
 | **メソッド内（for コンテキスト外）** | ✅ | ✅ | ❌ ^11 | ❌ | ✅ | ✅ ^12 |
 | **メソッド内（for コンテキスト内）** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ ^12 |
-| **`$getAll(path)`** | ❌ ^13 | ❌ ^13 | ✅ | ❌ | ❌ | ❌ |
-| **`$resolve(path, indexes)`** | ❌ ^14 | ❌ ^14 | ✅ | ❌ | ❌ | ❌ |
+| **`$getAll(path, indexes?)`** | ⚠ ^13 | ⚠ ^13 | ✅ | ❌ | ✅ ^14 | ✅ |
+| **`$resolve(path, indexes)`** | ⚠ ^15 | ⚠ ^15 | ✅ | ❌ | ⚠ ^15 | ✅ |
 | **`$postUpdate(path)`** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| **`$dependOn(path)`** | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **`$dependOn(path)`** | ✅ | ✅ | ✅ | ❌ | ✅ | ⚠ ^16 |
 
 ^7 データプロパティはオブジェクトリテラルのキーであり、パスではない（`count: 0` は有効だが `"cart.totalPrice": 0` はデータ構造が異なる）
-^8 getter の単純パス宣言はネストパスの算出値（例: `get "totalPrice"()` — 事実上 `get totalPrice()`）
-^9 宣言と同一のワイルドカードスコープを共有するパターンパスのみ可能（後述「getter 内のワイルドカードスコープ」参照）。ただし `$getAll`・`$resolve` の引数には制約なし
-^10 `this["users.0.name"]` は技術的に動作するが、依存追跡が正確でない可能性がある。`$resolve` の使用を推奨
-^11 ループコンテキストがないため `*` を解決できない。`$getAll` または `$resolve` を使用する
-^12 算出パスの読み取りのみ（setter が定義されていない場合、書き込み不可）
-^13 `$getAll` はワイルドカードにマッチする全要素を返す API であり、静的パスには通常使用しない（技術的には動作する）
-^14 `$resolve` はワイルドカードをインデックスで解決する API であり、ワイルドカードのないパスには不要
+^8 単純パスで宣言した getter は通常のトップレベル getter（`get "totalPrice"()` は `get totalPrice()` と同じ）
+^9 getter 自身のワイルドカード階層を共有するパターンパスだけが解決される（後述「getter 内のワイルドカードスコープ」参照）。それ以外の `*` は `undefined` を読む。`$getAll`・`$resolve` の引数には適用されない
+^10 `this["users.0.name"]` は追跡される: そのインデックスの値が変わると — 書き込み・並べ替え・リストの置き換え — getter は再計算される
+^11 ループコンテキストがないため `*` を解決できない: 読みは `undefined`、書き込みは `no row for "users.*.name"`（`#3`）を throw する。`$getAll`・`$setAll`・`$resolve` を使用する
+^12 算出パスは読み取りのみ（setter の無いものへの書き込みは throw する）
+^13 ワイルドカードの無いパスへの `$getAll` は要素 1 つの配列（`[value]`）を返す — 動くが、この API の用途ではない
+^14 完全解決パスは要素 1 つの配列になる。混在パスは `*` を展開する（`$getAll("categories.0.products.*.name", [])`）
+^15 `$resolve` は `*` 1 つにつきちょうど 1 つのインデックスを要する（`[wcs/index-arity]`）。`*` の無いパスでは `indexes` は `[]` で、ただの読み書きになる — 不要
+^16 `$dependOn` は getter を評価しないので、getter の入力に追従するのは、ほかのもの（バインディング・`$watch`）がその getter を評価し続けている間だけ。getter に依存するには getter 自体を読む（`this.total`）
 
 ### イベントハンドラ特記
 
-`onclick:` 等のイベントハンドラの値はパスではなく**メソッド名**を指定する。
-パスの分類は適用されない。
+`onclick:` 等のイベントハンドラの値は値のパスではなく**メソッド名**を指定するので、パスの分類は適用されない。ドット付きの名前は、そのパスにマウントされた volume のメソッドを指す（`onclick: cart.checkout`）。
 
 ```html
 <button data-wcs="onclick: increment">+</button>
 <button data-wcs="onclick#prevent: handleSubmit">送信</button>
 ```
 
-`for` テンプレート内のイベントハンドラでは、メソッドの引数 `$1`〜`$9` でループインデックスにアクセスする。
+`for` テンプレート内では、ハンドラはイベントに続いてループインデックスを受け取る。`this.$1`, `this.$2`, … でも同じインデックスが得られる。
 
 ```html
 <template data-wcs="for: users">
   <button data-wcs="onclick: deleteUser">削除</button>
-  <!-- deleteUser(event, $1) の $1 が配列インデックス -->
+  <!-- deleteUser(event, index) — index は行のインデックス（$1） -->
 </template>
 ```
 
@@ -325,9 +349,10 @@ export default {
 
 getter がパターンパスで宣言されている場合、getter 本体内の `this["..."]` アクセスは
 **宣言と同一のワイルドカードスコープ（同じ配列の同じ `*` 位置）を共有するパス**のみ使用可能。
+各 `*` はその階層で getter が評価されている行に解決される。その階層に行が無い `*` は `undefined` を読む — エラーにはならないので、誤りは空の値として現れる。
 
 この制約は `this["..."]` による直接アクセスに適用される。
-`$getAll` や `$resolve` の引数パスには適用されない（これらは独自にワイルドカードを解決する）。
+`$getAll` や `$resolve` の引数パスには適用されない（これらは独自にワイルドカードを解決する）。パスが getter のスコープの外にあるときは、インデックスを明示する（全件なら `[]`）: インデックスを省略した `$getAll` はループコンテキストからそれを取り、パスがそのコンテキストとワイルドカード階層を 1 つも共有しなければ throw する。
 
 #### ワイルドカードスコープとは
 
@@ -356,15 +381,15 @@ export default {
     // ✅ OK: users.* を共有（ネストしたプロパティも可）
     return this["users.*.profile.bio"];
 
-    // ❌ NG: items.* は別の配列スコープ
+    // ❌ NG: items.* は別の配列スコープ（undefined を読む）
     // return this["items.*.title"];
 
-    // ❌ NG: users.*.profile.licenses.* は users.* より深いワイルドカード階層
+    // ❌ NG: users.*.profile.licenses.* は users.* より深いワイルドカード階層（undefined を読む）
     // return this["users.*.profile.licenses.*.title"];
   },
 
   get "users.*.summary"() {
-    // ✅ OK: $getAll はスコープ制約の対象外
+    // ✅ OK: $getAll はスコープ制約の対象外（[] = 全ユーザー）
     const allNames = this.$getAll("users.*.name", []);
 
     // ✅ OK: $resolve もスコープ制約の対象外

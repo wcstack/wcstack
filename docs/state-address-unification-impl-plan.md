@@ -42,13 +42,13 @@
 | # | 事実 | 計画への影響 |
 |---|---|---|
 | **F1** | state のカバレッジ閾値は設計書 §9 の 100/97/100/100 ではなく **99.5 / 98.5 / 100 / 99.5**（[vitest.config.ts](../packages/state/vitest.config.ts)） | 受け入れ条件は実際の閾値で書く。branches 98.5% は余裕が薄いので、分岐を足すコミット（C1b・C4）ごとに `test:coverage` を回す |
-| **F2** | [rowLanding.ts](../packages/state/src/watch/rowLanding.ts) の `placementOf` は**引数を足さなくてよい**。`row.absAddress` が要素を運んでいる | 設計書 §4-6 の「引数の追加が要る 4 箇所 3 関数」は、引数追加＝`getStateAddressByBindingInfo` の 1 関数、順序入れ替え＝`hydrateBlocks`、`placementOf` は行から取る、に縮む |
+| **F2** | [rowLanding.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/rowLanding.ts) の `placementOf` は**引数を足さなくてよい**。`row.absAddress` が要素を運んでいる | 設計書 §4-6 の「引数の追加が要る 4 箇所 3 関数」は、引数追加＝`getStateAddressByBindingInfo` の 1 関数、順序入れ替え＝`hydrateBlocks`、`placementOf` は行から取る、に縮む |
 | **F3** | `parentAbsoluteAddress` / `parentAbsolutePathInfo` の読み手は `src/address/` の外に**ゼロ** | 設計書 §5-2 は「1 本にまとまる」だが、実際は絶対側の親連鎖が死にコード。`AbsolutePathInfo` のコンストラクタが親連鎖を**先行生成**している分（パス 1 本につき祖先ぶんの割当）も Phase 2 で落とせる |
 | **F4** | state の vitest には GC を強制する手段が無い（`global.gc` の使用例ゼロ・`--expose-gc` 設定なし）。リポジトリの既存手段は CDP の `HeapProfiler.collectGarbage`（[memory-profile.mjs](../e2e/bench/memory-profile.mjs)） | GC 回帰は **Playwright spec** で書く（§4-3）。e2e の CI は src が dist より新しいパッケージをビルドしてから走るので、spec は新しいコードを見る |
-| **F5** | 互換 getter `get absolutePathInfo() { return this }` の戻り値は**アドレス自身**で、`TreePath` ではない | **`patternLedger` のキーに使えない**。[getBindingSetByAbsoluteStateAddress.ts:136](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L136) を同じコミットで内部フィールドへ切り替える。忘れると行バインディングの更新が**例外なしで全滅**する（§7-1 の C2） |
+| **F5** | 互換 getter `get absolutePathInfo() { return this }` の戻り値は**アドレス自身**で、`TreePath` ではない | **`patternLedger` のキーに使えない**。[getBindingSetByAbsoluteStateAddress.ts:136](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L136) を同じコミットで内部フィールドへ切り替える。忘れると行バインディングの更新が**例外なしで全滅**する（§7-1 の C2） |
 | **F6** | Phase 1 で改名できるのは型・ファイル・関数まで。**プロパティ名 `absolutePathInfo` は改名できない**（devtools が `absoluteAddress.absolutePathInfo.pathInfo.path` を読む＝プロトコル面） | Phase 1 の「振る舞い不変」は、このプロパティ名を残すことで守る |
 | **F7** | [docs/README.md](./README.md) の規則 4: 消えたファイルへの参照は**コミットのパーマリンク**にする。対象の相対リンクは 3 本（設計書 §7-1・`devtools-hook-protocol.md:326`・同 `.ja.md:318`、いずれも `AbsoluteStateAddress.ts#L5`） | Phase 2 の docs コミットで処理する。`AbsolutePathInfo.ts` への相対リンクは docs に無いので Phase 1 では不要 |
-| **F8** | [prevValues.ts](../packages/state/src/watch/prevValues.ts) の台帳は**強参照の `Map`**（drain 終端でクリア） | 保持関係は今日と同じで変更不要。ただし GC 試験は **drain が終わってから**観測する |
+| **F8** | [prevValues.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/prevValues.ts) の台帳は**強参照の `Map`**（drain 終端でクリア） | 保持関係は今日と同じで変更不要。ただし GC 試験は **drain が終わってから**観測する |
 | **F9** | 「素の Node の SSR スモーク」に当たるのは root e2e の `ssr-router.spec.ts`（`serve.mjs` が素の Node で `packages/server/dist` を通して描画する）。`packages/server` の `test:e2e` は happy-dom 上の vitest で、素の Node ではない | Phase 2 の受け入れ条件は前者を指す |
 | **F10** | 読みのベンチで、**同一バンドルどうしの中央値が 25% ずれた**（Phase 0 の A/A 測定）。ページごとの最初の計測がまだ遅く、サンプルが約 44ns と約 83ns の二峰に割れる。1 ページ 5 サンプルの**最小値**なら A/A の差は R1 で 0.0ns・R2 で 0.5ns・R3 で 1.5ns（約 1% 以内） | §5-2 の「中央値の差をノイズ床とする」は、そのままでは**どの変種も床以内になって規則が効かない**。統計量を最小値（p25 併記）に精密化する（§5-2） |
 
@@ -62,7 +62,7 @@
 
 - [x] `__tests__/addressLedgerKeyGuard.test.ts` を新設。`src/**/*.ts` を読み、**モジュール直下**（行頭の `const` / `let` / `var` / `export const`）の `WeakMap` / `Map` / `WeakSet` / `Set` 宣言で、`IStateAddress` または `ILoopContext` をキーにするものを失敗にする。前例は `__tests__/tagNameMap.test.ts`。走査の部品は `__tests__/helpers/sourceScan.ts` に分けた — Phase 1 の import 境界の番人（§6-B）が同じ部品を使う。
 - [x] 宣言が複数行にまたがる綴り・CRLF・型注釈が無くコンストラクタの型引数だけに現れる綴り（`new Map<ILoopContext, …>()`）・入れ子（`Map<string, WeakMap<IStateAddress, …>>`）を拾う。関数内の局所コレクション、モジュール直下の関数式の本体、クラスのフィールドは拾わない。
-- [x] 許可リストは 1 件: [getListIndexByBindingInfo.ts:7](../packages/state/src/list/getListIndexByBindingInfo.ts#L7)。理由（内側キー `IBindingInfo` がツリー単位）をテスト内に書いた。**許可リストの各項目が今も該当宣言として実在すること**も試験する — 古い許可を残さないためで、同時に「実ソースから実際に検出できている」ことの証明になる。
+- [x] 許可リストは 1 件: [getListIndexByBindingInfo.ts:7](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/getListIndexByBindingInfo.ts#L7)。理由（内側キー `IBindingInfo` がツリー単位）をテスト内に書いた。**許可リストの各項目が今も該当宣言として実在すること**も試験する — 古い許可を残さないためで、同時に「実ソースから実際に検出できている」ことの証明になる。
 - [x] **番人自身の試験**（11 件）。加えて、走査したファイル数が 200 を超えることを確認する（空振りの番人は無いのと同じ）。
 
 実ソースの該当は許可リストの 1 件だけ。`walkDependency` の `visited` / `result` と `StateHandler` の `seen` は局所なので対象外（設計書 §6-4 のとおり）。
@@ -144,7 +144,7 @@
 
 ### 5-1. 最小パッチ
 
-統合本体を書かずに R1 の実コストを測る。Phase 0 のブランチから捨てブランチを切り、**`createStateAddress` に省略可能な第 3 引数 `stateElement?` を足す**。渡すのは [traps/get.ts:220](../packages/state/src/proxy/traps/get.ts#L220)（`handler.stateElement` が手元にある）と、R2・R3 が通る経路だけ。要素が渡されたときだけ新しい intern を通す。型も台帳も触らない。
+統合本体を書かずに R1 の実コストを測る。Phase 0 のブランチから捨てブランチを切り、**`createStateAddress` に省略可能な第 3 引数 `stateElement?` を足す**。渡すのは [traps/get.ts:220](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/traps/get.ts#L220)（`handler.stateElement` が手元にある）と、R2・R3 が通る経路だけ。要素が渡されたときだけ新しい intern を通す。型も台帳も触らない。
 
 - 変種 **(b)**: `src/address/` に `WeakMap<IStateElement, Map<IPathInfo, TreePath>>`。`TreePath` が `nullRowAddress` / `rowAddresses` を持つ（設計書 §5-4）。
 - 変種 **(a2)**: 同じ `Map<IPathInfo, TreePath>` を要素の symbol キーのプロパティに置く。`State` クラスは**フィールドとして宣言**する（後付けのプロパティ追加は要素の hidden class を変える）。モックには初回に遅延生成。
@@ -282,9 +282,9 @@ export function liftAddress(stateElement: IStateElement, address: IStateAddress)
 **C1a — `createStateAddress` のシグネチャ変更（機械的・巨大）**
 `createStateAddress(stateElement, pathInfo, listIndex)`。intern はまだ要素を**使わない**（引数は `_stateElement`）。振る舞い不変なので、**テストの期待値を 1 つも変えずに緑**になることがこのコミットの検証になる。
 
-- [ ] `src/` 31 箇所。27 箇所は手元の `handler.stateElement` / `context.stateElement` を渡す。ただし「どの要素か」は箇所ごとに確認する — 規則は**そのアドレスを消費する proxy の要素**。判断が要るのは [overlay.ts](../packages/state/src/webComponent/overlay.ts)（:80 / :248 / :262 — 親子のツリーをまたぐ）・[event/handler.ts:69](../packages/state/src/event/handler.ts#L69)・`recursion/walk.ts`。取り違えは C4 の assert が捕まえる。
-- [ ] `getStateAddressByBindingInfo(binding, stateElement)`（D12）。呼び出し元の鎖は `getValue(state, binding)` ← [applyChange.ts:94](../packages/state/src/apply/applyChange.ts#L94)（`context.stateElement`）と [initialSync.ts:142](../packages/state/src/bindings/initialSync.ts#L142)。
-- [ ] [hydrateBindings.ts:226](../packages/state/src/hydrateBindings.ts#L226) — 要素の解決（今は :271）をアドレス生成より前へ。
+- [ ] `src/` 31 箇所。27 箇所は手元の `handler.stateElement` / `context.stateElement` を渡す。ただし「どの要素か」は箇所ごとに確認する — 規則は**そのアドレスを消費する proxy の要素**。判断が要るのは [overlay.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/overlay.ts)（:80 / :248 / :262 — 親子のツリーをまたぐ）・[event/handler.ts:69](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/handler.ts#L69)・`recursion/walk.ts`。取り違えは C4 の assert が捕まえる。
+- [ ] `getStateAddressByBindingInfo(binding, stateElement)`（D12）。呼び出し元の鎖は `getValue(state, binding)` ← [applyChange.ts:94](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts#L94)（`context.stateElement`）と [initialSync.ts:142](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/initialSync.ts#L142)。
+- [ ] [hydrateBindings.ts:226](https://github.com/wcstack/wcstack/blob/v2.6.1/packages/state/src/hydrateBindings.ts#L226) — 要素の解決（今は :271）をアドレス生成より前へ。
 - [ ] `rowLanding.placementOf` — `row.absAddress` から取る（F2）。
 - [ ] テスト 17 ファイル・123 箇所。要素のモックが既にスコープにあるテストはそれを渡す。無いテスト（`StateAddress.test.ts` など）のために `__tests__/helpers/addressTestUtils.ts` に共有のモック要素を 1 つ置く。
 
@@ -342,7 +342,7 @@ export function liftAddress(stateElement: IStateElement, address: IStateAddress)
 ## 8. Phase 3 — 互換面の撤去（PR ③・次の major）（**中止**・2026-09-20）
 
 - [ ] deprecated な `absolutePathInfo` getter を削除。
-- [ ] `DEVTOOLS_PROTOCOL_VERSION` を 3 へ — state（[devtools/types.ts:19](../packages/state/src/devtools/types.ts#L19)）と devtools（[protocol/types.ts:16](../packages/devtools/src/protocol/types.ts#L16)）の両方。protocol doc の英日両方。
+- [ ] `DEVTOOLS_PROTOCOL_VERSION` を 3 へ — state（[devtools/types.ts:19](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/devtools/types.ts#L19)）と devtools（[protocol/types.ts:16](../packages/devtools/src/protocol/types.ts#L16)）の両方。protocol doc の英日両方。
 - [ ] devtools の両読みは**消さない**（旧 state 2.x を見に行ける間）。
 - [ ] リリースノートに明記する: 旧 devtools をピン留めしたページは、この版の state で**検査対象アプリごと例外を受ける**（registry の配送にも `DevtoolsCore.onEvent` にも try/catch が無い — 設計書 §7-1）。
 
