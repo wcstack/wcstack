@@ -232,7 +232,7 @@ R3 の決定（3.5 を最後の minor にする）に沿って、main から 6 �
 - 全パッケージを 4.0.0 にそろえる（版をそろえる方針）。vscode-wcs は別の版。
 - **リリースの実行中はブランチを凍結する**: release.yml はディスパッチの後にブランチが動いていれば公開の前に止まり、公開の間に push されると最後の push が失敗する（npm には版が出たのにタグが無い状態になり、次の実行は拒む — 戻すのは人）。rc の間は research へのマージ、4.0.0 の間は main へのマージを止める。
 - CHANGELOG: 4.0 の下書きは rc の間ずっと `[Unreleased]` に置き、rc ごとの見出しは作らない（rc の GitHub Release が `[Unreleased]` を案内する）。rc で変わったことは下書きに書き足す。`[4.0.0] — 日付` に改めるのは最終版のときだけ（CHANGELOG の `[Unreleased]` の注記と CLAUDE.md にも書いた）。
-- rc（R8、経路は §4）: `research/state-engine` で release.yml を `premajor-rc` で実行する（`gh workflow run release.yml --ref research/state-engine -f version_type=premajor-rc`）。次の rc は `prerelease-rc`。npm の `next` に載り、main は 3.x のまま（3.x の patch は main から従来どおり出せる）。`@wcstack/lint` / `@wcstack/typescript` も rc と一緒に `next` に載る。拡張は出さない（R11）。
+- rc（R8、経路は §4）: `research/state-engine` で release.yml を `premajor-rc` で実行する（`gh workflow run release.yml --ref research/state-engine -f version_type=premajor-rc`）。次の rc は `prerelease-rc`（rc.1 は部分リリースになったので、rc.2 から — §8「4.0.0-rc.1 の部分リリース」）。npm の `next` に載り、main は 3.x のまま（3.x の patch は main から従来どおり出せる）。`@wcstack/lint` / `@wcstack/typescript` も rc と一緒に `next` に載る。拡張は出さない（R11）。
 - **CDN のピン**: state の README（en/ja）の分割エントリーの URL は版を名指しする（import map の例と `dist/split/auto.js`。どちらも 3.5.4 では 4.0 のファイルにならない — `split/auto.js` は 3.5.4 に無い）。rc を出す前の準備で、その rc の版（`4.0.0-rc.N`）に合わせて commit する。4.0.0 の準備では `4.0.0` に改め、ほかのパッケージの README の 3.x の手順どおりのピン（media-query など）も 4.0.0 に上げる。`docs/sri(.ja).md` の 3.5.4 の例は 3.x の説明なので変えない。
 - 4.0.0: ブランチを push し、PR とレビューを経て main に入れてから、main で `release` を実行する（`latest`。`major` は拒むので、rc を経ずに 4.0.0 は出ない）。拡張の 2.0.0 を同時に出す。その後、npm の `next` は最後の rc を指したまま残る（workflow の OIDC の資格は publish にしか使えないので、揃えるなら手で `npm dist-tag add <pkg>@4.0.0 next`）。4.0.0 の後の 3.x の修正は、この経路では出せない（安定版は main からだけで、main は 4.0 のエンジン）。
 
@@ -766,3 +766,16 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 
 - lint・typescript の dist はテストのために作り直し、コミット済みのもの（取り込みの結果 — main の 3.5.0 のビルド）に戻した。41 パッケージのコミット済みの dist も main の 3.5.0 のビルド（警告する版）で、このブランチの src（投げる版）とは違う — dist はリリースのときに作り直す。
 - 41 パッケージのテストは、取り込みのレビューで流した（router 以外の 40 パッケージで lint・tsc・カバレッジ付きテスト、計 4,706 件すべて通過）。
+
+### 4.0.0-rc.1 の部分リリース（2026-10-04）
+
+- `premajor-rc` の実行（run 37151131398、6573b5cc）は、公開の段で router の `prepublishOnly`（build + test:coverage）が落ちて止まった。`__tests__/version.test.ts` が `VERSION` を `.` で割って先頭 3 つを数値として読み、`4.0.0-rc.1` の `0-rc` で落ちた。このテストは版を上げた後にしか落ちないが、release.yml の「Test all packages」は版上げの前に走っていたので見逃した。
+- npm の `next` に出たのは 31 パッケージ（state と、アルファベット順で accelerometer〜resize）。router 以降の 18 パッケージ（wcstack を含む）は出ていない。`latest` は 3.5.4 のまま。タグも bump の commit も無い（runner の上にだけあった）。
+- 復旧（ユーザーの決定）: rc.1 は欠けたまま残し、rc.2 に進む。
+  - router のテストがプレリリースの後置を受け付けるようにした。
+  - release.yml のテストを版上げと再ビルドの後（公開の前）に移した。
+  - 全パッケージの版を手で `4.0.0-rc.1` にした（`npm version`。内部の `@wcstack/*` の範囲は ^3.5.4 のまま。rc.2 の実行が厳密な版にそろえる）。
+  - 版を rc.2 に上げた状態で、全パッケージの `prepublishOnly` を手元で通してから `prerelease-rc` を実行する。
+  - rc.2 を出した後、31 パッケージの rc.1 を deprecate する（npm のログインと OTP が要るので、ユーザーが実行する）。
+- ドキュメントの rc の例と state README の CDN のピンは rc.2 に合わせた。
+- A1（`@wcstack/state`（`.`）から `defineState` だけを import してもエンジン、約 21 KB が残る）: 4.0 の仕様として受け入れる（2026-10-04、ユーザーの決定）。型だけが要る用途には `@wcstack/state/define`（40 B）を案内する（移行ガイド §3.7・state README）。

@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/testing",
-  "version": "3.5.4",
+  "version": "4.0.0-rc.1",
   "description": "Headless test helpers for wcstack pages: mount HTML under happy-dom, await bindings, read/write state, settle updates - the README recipe as one import.",
   "type": "module",
   "main": "./dist/index.esm.js",
