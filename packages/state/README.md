@@ -3106,6 +3106,8 @@ In short:
 - **Lists:** writing a list element replaces the value at that position — to move rows, assign a new array ([`$resolve`](#resolve--access-by-explicit-index)); `for:` takes no filters ([Loop](#loop-for)); `data-wcs` is removed from row and branch elements, and `outerHTML:` / `outerText:` cannot be used inside templates ([What the page walk binds](#what-the-page-walk-binds)).
 - **Volumes:** a volume no longer runs `$watch`, `$listKeys` or `$renderedCallback`, and takes no injections ([`mount=`](#mounting-additional-state-mount)).
 - **SSR:** the output of a 3.x server is rendered again on the client ([Server-Side Rendering](#server-side-rendering)).
+- **`$watch`:** a row watch fires without a `for:` or `$listKeys`, a watch on a row getter is evaluated for every row, and assigning a whole array fires only the rows that came in ([Watch](#watch-watch)).
+- **TypeScript:** import `defineState` from `@wcstack/state/define` — imported from `@wcstack/state`, it keeps the engine in a bundle ([TypeScript Support](#typescript-support)).
 
 `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension (from 2.0.0) carry the 4.0 rules in the releases published with 4.0. Keep the 3.5-era versions for 3.x projects: the 4.0 rules report forms 3.x still accepts.
 
@@ -3367,10 +3369,10 @@ it("matches the rendered snapshot", async () => {
 
 ## TypeScript Support
 
-`defineState()` wraps your state object and provides type-safe `this` inside methods and getters — with zero runtime cost (identity function).
+`defineState()` wraps your state object and provides type-safe `this` inside methods and getters — with zero runtime cost (identity function). Import it from **`@wcstack/state/define`**, which carries `defineState` and the types and nothing else (69 B):
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   count: 0,
@@ -3387,6 +3389,8 @@ export default defineState({
   }
 });
 ```
+
+`@wcstack/state` and `/core` export `defineState` too, but a bundler cannot drop the engine from those entries: a state file that imports `defineState` from `@wcstack/state` keeps the whole engine (about 21 KB gzip) in its bundle. That is harmless where the bundle runs the engine anyway, and wasteful where the state file is bundled on its own (the runtime loaded from a CDN, a type-check or test build) — so prefer `/define`.
 
 Utility types `WcsPaths<T>` and `WcsPathValue<T, P>` are also exported for advanced use cases. See [docs/define-state.md](docs/define-state.md) for full documentation.
 
@@ -3410,7 +3414,7 @@ Installs every add-on (from `@wcstack/state`; the `/core` entry's `bootstrapStat
 | `getBindingsReady(root)` | Resolves once the bindings under `root` (a `document` or a shadow root) are built, without waiting for `$connectedCallback`; rejects if the root's `<wcs-state>` failed to initialize — see [Initialization failures](#initialization-failures) |
 | `buildBindings(root)` | Waits for the bindings under a `document` or `ShadowRoot`, the same as `getBindingsReady(root)`: a root's bindings are built when its `<wcs-state>` has loaded its state |
 | `getConfig()` | The current configuration (read-only view) |
-| `defineState(obj)` | Identity function that types `this` inside methods and getters — see [TypeScript Support](#typescript-support) |
+| `defineState(obj)` | Identity function that types `this` inside methods and getters — see [TypeScript Support](#typescript-support). In a state file, import it from `@wcstack/state/define` |
 | `setTrustedTypesPolicy(policy)` / `getTrustedTypesPolicy()` / `TRUSTED_TYPES_POLICY_SLOT` | The Trusted Types policy the HTML sinks use — see [Security](#security) and [docs/csp.md §7](../../docs/csp.md) |
 | `VERSION` | The package version; stamped into `<wcs-ssr>` and compared on hydration |
 | `Ssr` | The `<wcs-ssr>` element class (`ISsrElement`: `version`, `stateData`, `templates`, `getTemplate()`, `verifyVersion()`; `hydrateProps` is always empty) |

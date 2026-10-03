@@ -3096,6 +3096,8 @@ this.$getAll("matrix.*.*", [row]);
 - **リスト:** リストの要素への書き込みはその位置の値を置き換えます —— 行を動かすには新しい配列を代入します（[`$resolve`](#resolve--明示的なインデックスでのアクセス)）。`for:` はフィルタを取りません（[ループ](#ループ-for)）。行と枝の要素からは `data-wcs` が取り除かれ、テンプレートの中では `outerHTML:` / `outerText:` を使えません（[ページ走査が何をバインドするか](#ページ走査が何をバインドするか)）。
 - **ボリューム:** ボリュームはもう `$watch`・`$listKeys`・`$renderedCallback` を実行せず、注入も受けません（[`mount=`](#追加の状態をマウントするmount)）。
 - **SSR:** 3.x のサーバーの出力は、クライアントで描画し直されます（[サーバーサイドレンダリング](#サーバーサイドレンダリング)）。
+- **`$watch`:** 行の watch は `for:` も `$listKeys` も無くても発火し、行 getter の watch はすべての行で評価され、配列を丸ごと代入すると入ってきた行だけが発火します（[Watch](#watchwatch)）。
+- **TypeScript:** `defineState` は `@wcstack/state/define` から import します —— `@wcstack/state` から import すると、バンドルにエンジンが残ります（[TypeScript サポート](#typescript-サポート)）。
 
 `@wcstack/lint`・`@wcstack/typescript`・VS Code 拡張（2.0.0 から）は、4.0 と同時に公開されるリリースで 4.0 の規則を持ちます。3.x のプロジェクトでは 3.5 時代のバージョンを使い続けてください: 4.0 の規則は、3.x がまだ受け付ける書き方を報告します。
 
@@ -3353,10 +3355,10 @@ it("描画結果がスナップショットと一致する", async () => {
 
 ## TypeScript サポート
 
-`defineState()` で状態オブジェクトをラップすると、メソッドや getter 内の `this` に型補完が効きます。ランタイムコストはゼロ（アイデンティティ関数）です。
+`defineState()` で状態オブジェクトをラップすると、メソッドや getter 内の `this` に型補完が効きます。ランタイムコストはゼロ（アイデンティティ関数）です。**`@wcstack/state/define`** から import してください。`defineState` と型だけを持ち、ほかには何も持ちません（69 B）:
 
 ```typescript
-import { defineState } from '@wcstack/state';
+import { defineState } from '@wcstack/state/define';
 
 export default defineState({
   count: 0,
@@ -3373,6 +3375,8 @@ export default defineState({
   }
 });
 ```
+
+`@wcstack/state` と `/core` も `defineState` を export しますが、バンドラはそれらの入口からエンジンを落とせません: `defineState` を `@wcstack/state` から import した state ファイルは、バンドルにエンジン全体（gzip で約 21 KB）を残します。どのみちエンジンを動かすバンドルでは害はありませんが、state ファイルだけを束ねるところ（ランタイムを CDN から読む、型検査やテストのビルド）では無駄になるので、`/define` を使ってください。
 
 ユーティリティ型 `WcsPaths<T>` と `WcsPathValue<T, P>` もエクスポートされます。詳細は [docs/define-state.ja.md](docs/define-state.ja.md) を参照してください。
 
@@ -3396,7 +3400,7 @@ bootstrapState(config?, registry?);
 | `getBindingsReady(root)` | `root`（`document` または shadow root）配下のバインディングが構築されたら、`$connectedCallback` を待たずに解決。その root のルート `<wcs-state>` が初期化に失敗した場合は reject — [初期化の失敗](#初期化の失敗) 参照 |
 | `buildBindings(root)` | `getBindingsReady(root)` と同じく、`document` / `ShadowRoot` 配下のバインディングを待つ: root のバインディングは、その `<wcs-state>` が state を読み込んだときに構築される |
 | `getConfig()` | 現在の設定（読み取り専用ビュー） |
-| `defineState(obj)` | メソッドと getter 内の `this` に型を付けるアイデンティティ関数 — [TypeScript サポート](#typescript-サポート) 参照 |
+| `defineState(obj)` | メソッドと getter 内の `this` に型を付けるアイデンティティ関数 — [TypeScript サポート](#typescript-サポート) 参照。state ファイルでは `@wcstack/state/define` から import する |
 | `setTrustedTypesPolicy(policy)` / `getTrustedTypesPolicy()` / `TRUSTED_TYPES_POLICY_SLOT` | HTML のシンクが使う Trusted Types のポリシー — [セキュリティ](#セキュリティ) と [docs/csp.ja.md §7](../../docs/csp.ja.md) 参照 |
 | `VERSION` | パッケージのバージョン。`<wcs-ssr>` に刻印され、ハイドレーション時に照合される |
 | `Ssr` | `<wcs-ssr>` 要素のクラス（`ISsrElement`: `version`・`stateData`・`templates`・`getTemplate()`・`verifyVersion()`。`hydrateProps` は常に空） |
