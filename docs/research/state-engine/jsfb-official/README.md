@@ -81,3 +81,51 @@ mkdir -p frameworks/non-keyed   # サーバの一覧が要求する
 cd webdriver-ts && node dist/benchmarkRunner.js --headless --framework keyed/vanillajs keyed/wcstack-signals keyed/wcstack-state-next
 node ../summarize.mjs results
 ```
+
+## 4.0.0-rc.2 の計測（2026-10-04）
+
+同じハーネス（`f2df01a`）を新しく clone して、4.0.0-rc.2・3.5.4・signals・vanillajs を 1 回のセッションで測った（`results-rc2/`、`summary-rc2.json`）。
+
+- Windows 11、Chrome 154（`--headless=new`）、puppeteer ランナー、既定の回数と CPU スロットル。4 つとも公式の `isKeyed` を通過。ハーネスの妥当性検査も通過。
+- `wcstack-state-4`（`pages/wcstack-state-4/`）と `wcstack-state-3`（`pages/wcstack-state-3/`）は、同じページ（`packages/state/__e2e__/benchmark/index.html`。getter は正式名の `$untracked`。旧名 `$untrackDependency` は 4.0 で外れた）を、それぞれ 4.0.0-rc.2 の `dist/auto.min.js`（全部入り）と v3.5.4 の `dist/auto.min.js`（タグ `v3.5.4` から）で読む。
+- `wcstack-signals` は 9 月と同じページで、rc.2 のビルド（`dom.esm.min.js`＋core チャンク）。signals の src は 3.5.4 から変わっていない（版だけ）。
+
+**CPU の加重幾何平均**（小さいほど速い）: vanillajs 1.02、signals 1.20、**4.0.0-rc.2 1.06**、3.5.4 1.44。script（JS の時間）だけの幾何平均（vanillajs を 1）: signals 2.97、4.0 2.02、3.5.4 6.25。paint は 4 つとも 1.03〜1.07。
+
+| 項目（ms、中央値） | vanillajs | signals | 3.5.4 | 4.0.0-rc.2 |
+|---|---:|---:|---:|---:|
+| create rows（1k） | 57.8 | 72.7 | 82.2 | 61.0 |
+| replace all rows（1k） | 62.7 | 77.2 | 93.3 | 62.1 |
+| partial update（4x） | 36.9 | 40.2 | 38.6 | 39.2 |
+| select row（4x） | 13.3 | 13.7 | 12.5 | 12.3 |
+| swap rows（4x） | 35.6 | 39.4 | 41.1 | 37.4 |
+| remove row（2x） | 28.4 | 27.0 | 35.4 | 26.2 |
+| create many rows（10k） | 646.6 | 772.2 | 1048.9 | 672.9 |
+| append 1k to 1k（2x） | 63.6 | 82.3 | 111.0 | 69.1 |
+| clear 1k rows（4x） | 22.7 | 32.4 | 42.3 | 28.3 |
+
+- 3.5.4 との差が大きいのは、行を作る・消す項目（create 10k は 1048.9 → 672.9ms、append は 1.75 → 1.09 倍、clear は 1.86 → 1.25 倍、remove は 1.35 → 1.00 倍）。3.5.4 の script は create 10k で 413.5ms、4.0 は 65.1ms。
+- 4.0 が vanillajs から離れているのは clear（1.25 倍。script 23.2 対 18.4ms）と、script だけで見た partial update（4.0 対 signals 2.5ms。9 月と同じく、`this[\`data.${i}.label\`]` の書き込みがパス文字列の解決を通るため）。
+- 9 月の 2 回目（vanillajs 1.03、signals 1.21、state-next 1.08）と比べて、CPU は揺れの範囲で変わっていない。
+
+**メモリ（MB、中央値）**
+
+| 項目 | vanillajs | signals | 3.5.4 | 4.0.0-rc.2 |
+|---|---:|---:|---:|---:|
+| ready memory | 0.55 | 0.61 | 1.73 | 1.19 |
+| run memory（1k 行） | 2.03 | 3.72 | 6.32 | 2.95 |
+| create/clear 1k ×5 | 0.65 | 0.91 | 5.77 | 1.65 |
+| 幾何平均 | 1.00 | 1.42 | 4.42 | 2.00 |
+
+- 1,000 行を持ったときは 4.0 が signals より軽く、3.5.4 の半分以下。読み込み直後と、作成と消去のくり返しの後は signals の方が軽い。9 月の state-next（1.06 / 2.87 / 1.48）より少し重い。
+
+**サイズと first paint**
+
+| 項目 | vanillajs | signals | 3.5.4 | 4.0.0-rc.2 |
+|---|---:|---:|---:|---:|
+| 非圧縮（KB） | 11.7 | 21.2 | 290.9 | 133.7 |
+| 圧縮（brotli、KB） | 2.5 | 7.9 | 75.2 | 42.6 |
+| first paint（ms、1 回） | 112.3 | 174.6 | 499.7 | 244.9 |
+
+- 4.0 の値は全部入りの `auto.min.js`（後付けの機能をすべて含む）。9 月の state-next（`4955ab52`）の 111.9 / 35.4KB から増えた。core だけ（`/core`）のページは今回は測っていない。
+- first paint は 1 回ずつの値で、9 月に同じ実装で 133〜232ms に散らばったので、差は読めない。

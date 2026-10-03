@@ -1,0 +1,1 @@
+{"framework":"wcstack-signals-v4.0.0-rc.2-keyed","keyed":true,"benchmark":"25_run-clear-memory","type":"memory","values":{"DEFAULT":{"min":0.912175178527832,"max":0.912175178527832,"median":0.912175178527832,"mean":0.912175178527832,"stddev":null,"values":[0.912175178527832]}}}
