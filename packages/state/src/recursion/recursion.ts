@@ -19,6 +19,7 @@ import type { Engine } from "../engine";
 import type { Pattern } from "../pattern";
 import type { StateRow } from "../list";
 import { raiseError } from "../parser/raiseError";
+import { raise, M } from "../messages";
 import { recursionUnsupported } from "../parser/parseStatePart";
 
 const NAME = "$recursion";
@@ -218,10 +219,11 @@ function wrap(engine: Engine): void {
   e.setAll = (path: string, indexes: number[], value: unknown, options?: { spread?: boolean }) => {
     const spec = specs.get(engine);
     if (spec === undefined || !path.includes("**")) return setAll.call(engine, path, indexes, value, options);
-    if (!Array.isArray(indexes)) throw new Error(`$setAll("${path}") needs indexes ([] for every match)`);
+    // (the core's own messages where the core's $setAll has one)
+    if (!Array.isArray(indexes)) raise(M.SetAllNeedsIndexes, [path]);
     if (indexes.length > 0) raiseError(`${code("setall-form")} $setAll("${path}", indexes, …) with "**" takes no partial prefix: pass [] to write every node.`);
-    if (typeof value === "function" || options?.spread === true) throw new Error(`$setAll("${path}", [], value) with "**" takes a plain value (no mapper, no spread).`);
-    if (e.readonlyDepth > 0) throw new Error("This state is readonly.");
+    if (typeof value === "function" || options?.spread === true) raiseError(`${code("setall-form")} $setAll("${path}", [], value) with "**" takes a plain value (no mapper, no spread).`);
+    if (e.readonlyDepth > 0) raise(M.Readonly);
     const suffix = suffixOf(spec, path);
     if (suffix === `.${spec.key}` || suffix.startsWith(`.${spec.key}.`)) {
       raiseError(`${code("structural-write")} "${path}" writes the recursion structure itself (the "${spec.key}" lists).`);

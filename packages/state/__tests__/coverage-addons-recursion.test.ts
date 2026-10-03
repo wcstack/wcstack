@@ -98,7 +98,7 @@ describe("<wcs-state> の中の **", () => {
 
   it("読み取り専用の状態からの ** の一斉書き込みは拒む", async () => {
     const { el } = await host(``, { nodes: forest(), $recursion: ANCHOR });
-    expect(() => el.createState("readonly", (s: any) => s.$setAll("nodes.**.selected", [], true))).toThrow("This state is readonly.");
+    expect(() => el.createState("readonly", (s: any) => s.$setAll("nodes.**.selected", [], true))).toThrow('[@wcstack/state] #8');
     let all: unknown;
     el.createState("readonly", (s: any) => { all = s.$getAll("nodes.**.selected", []); });
     expect(all).toEqual([undefined, undefined, undefined]);

@@ -89,9 +89,11 @@ describe("全深さの $getAll と一斉書き込み", () => {
     const e = make(withTotal({ nodes: forest() }));
     expect(e.proxy.$setAll("nodes.**.selected", [], true)).toBe(5);
     expect(e.proxy.$getAll("nodes.**.selected", [])).toEqual([true, true, true, true, true]);
-    expect(() => e.proxy.$setAll("nodes.**.value", [], (v: number) => v + 1)).toThrow("plain value");
-    expect(() => e.proxy.$setAll("nodes.**.value", [], [1], { spread: true })).toThrow("plain value");
-    expect(() => e.proxy.$setAll("nodes.**.value", undefined as any, 1)).toThrow("needs indexes");
+    // the standard form: the package prefix, then the code (or the core's message number, as the core's $setAll)
+    const plain = '[@wcstack/state] [wcs/recursion-setall-form] $setAll("nodes.**.value", [], value) with "**" takes a plain value (no mapper, no spread).';
+    expect(() => e.proxy.$setAll("nodes.**.value", [], (v: number) => v + 1)).toThrow(plain);
+    expect(() => e.proxy.$setAll("nodes.**.value", [], [1], { spread: true })).toThrow(plain);
+    expect(() => e.proxy.$setAll("nodes.**.value", undefined as any, 1)).toThrow('[@wcstack/state] #9 "nodes.**.value"');
     expect(() => e.proxy.$setAll("nodes.**.children.*", [], 1)).toThrow("[wcs/recursion-structural-write]");
     expect(() => e.proxy.$setAll("nodes.**.total", [], 1)).toThrow("[wcs/recursion-readonly]");
     const shared: any[] = [{ value: 9, children: [] }];
