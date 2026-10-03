@@ -242,4 +242,49 @@ describe("取り除かれた根", () => {
       document.body.innerHTML = "";
     }
   });
+
+  it("根を待ったまま取り除かれた volume は、次のページの同じマウントパスの volume に譲り、古いページの値は接ぎ木されない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // the old page: its root never gets a state, its volume loads and waits
+      document.body.innerHTML = `<wcs-state mount="cfg" json='{"flag": "old"}'></wcs-state><wcs-state></wcs-state>`;
+      const old = document.body.querySelector("wcs-state[mount]") as any;
+      await flush();
+      await flush();
+      document.body.innerHTML = `<wcs-state mount="cfg" json='{"flag": "new"}'></wcs-state><wcs-state json='{}'></wcs-state><p>{{ cfg.flag }}</p>`;
+      const els = Array.from(document.body.querySelectorAll("wcs-state")) as any[];
+      await Promise.all(els.map((el) => el.connectedCallbackPromise));
+      await getBindingsReady(document);
+      await flush();
+      expect(document.body.querySelector("p")!.textContent).toBe("new");
+      // the old one settled (it yielded), without a report
+      await old.connectedCallbackPromise;
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("状態を読み込む前に取り除かれた volume も譲り、後から状態が来ても接ぎ木しない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      document.body.innerHTML = `<wcs-state mount="cfg"></wcs-state><wcs-state></wcs-state>`;
+      const old = document.body.querySelector("wcs-state[mount]") as any;
+      await flush();
+      document.body.innerHTML = `<wcs-state mount="cfg" json='{"flag": "new"}'></wcs-state><wcs-state json='{}'></wcs-state><p>{{ cfg.flag }}</p>`;
+      const els = Array.from(document.body.querySelectorAll("wcs-state")) as any[];
+      await Promise.all(els.map((el) => el.connectedCallbackPromise));
+      await getBindingsReady(document);
+      // its state comes late: it settles and does not graft
+      old.setInitialState({ flag: "late" });
+      await old.connectedCallbackPromise;
+      await flush();
+      expect(document.body.querySelector("p")!.textContent).toBe("new");
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      document.body.innerHTML = "";
+    }
+  });
 });

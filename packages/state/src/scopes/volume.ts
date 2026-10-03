@@ -228,15 +228,28 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
     let held = slots.get(root);
     if (held === undefined) slots.set(root, (held = new Map()));
     const other = held.get(path);
-    // (one grafted onto a root that left the page holds it no more)
-    if (other !== undefined && other !== v && (other.engine === null || live(other.engine))) problem = `will not graft: another volume already holds "${path}".`;
-    else held.set(path, v);
+    // one grafted onto a root that left the page holds it no more, nor does one waiting for its root
+    // out of the page (the page's content replaced): that one yields, and never grafts. (One out of
+    // the page that no other volume asks for still grafts when its root comes.)
+    if (other !== undefined && other !== v && (other.engine === null ? other.el.isConnected : live(other.engine))) {
+      problem = `will not graft: another volume already holds "${path}".`;
+    } else {
+      if (other?.engine === null) {
+        const list = waiting.get(root);
+        if (Array.isArray(list)) waiting.set(root, list.filter((x) => x !== other));
+        other.settle?.();
+        other.settle = null;
+      }
+      held.set(path, v);
+    }
   }
   return {
     // a volume that cannot load resolves its connectedCallbackPromise (3.x; it reports, as below)
     lenient: true,
     start(state): Promise<void> | void {
       if (problem !== null) return fail(v, problem);
+      // (it yielded its slot while it loaded: see above)
+      if (slots.get(root)!.get(path) !== v) return;
       for (const key of REJECTED) if (state[key] !== undefined) return fail(v, `${key} is not run in a volume — declare it on the root state.`);
       for (const key of NOT_RUN) if (state[key] !== undefined) console.warn(`${PREFIX(path)} ${key} is not run in a volume (it belongs to the root).`);
       v.state = state;
