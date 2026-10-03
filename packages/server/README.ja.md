@@ -12,15 +12,15 @@
 
 ### 基本機能
 - **テンプレートの完全レンダリング**: `@wcstack/state` のバインディングをサーバーサイドで実行 — テキスト、属性、`for` ループ、`if`/`elseif`/`else` 条件分岐、フィルタ、Mustache `{{ }}` 構文に対応
-- **ハイドレーションデータの自動生成**: 状態スナップショット、テンプレートフラグメント、プロパティマップを含む `<wcs-ssr>` 要素を生成し、クライアント側でシームレスにハイドレーション
+- **ハイドレーションデータの自動生成**: 状態のデータとページ直下のテンプレートを含む `<wcs-ssr>` 要素を生成し、行・枝・テキストバインディングをコメントで印付けして、クライアント側でシームレスにハイドレーション
 - **非同期データ取得**: `$connectedCallback` 内の `fetch()` に対応 — サーバーはすべての非同期処理の完了を待ってからレンダリング
 - **RenderCore**: `wc-bindable` プロトコルに準拠したヘッドレスのイベント駆動レンダリングクラス。`html` / `loading` / `error` の状態を監視可能
 - **ブラウザ依存ゼロ**: Node.js 上で動作し、ランタイム依存は happy-dom のみ
 
 ### ユニークな機能
 - **ドロップイン SSR**: クライアント側テンプレートの変更不要。`<wcs-state>` に `enable-ssr` を追加して `renderToString()` で呼び出すだけ
-- **テンプレートフラグメントの保存**: `for`/`if` テンプレートのソースを UUID 参照付きでキャプチャし、クライアント側で構造ディレクティブを再実行可能に
-- **プロパティハイドレーション**: 属性では表現できない DOM プロパティ（`innerHTML` など）を個別にシリアライズし、ハイドレーション時に復元
+- **テンプレートフラグメントの保存**: ページ直下の `for`/`if` テンプレートを、アンカーのコメントが名指す id で `<wcs-ssr>` に残し、クライアントがそれを戻して以後の描画に使えるように
+- **フォームの値をマークアップに**: input の `value` / `checked`、select で選ばれている option、textarea のテキストを HTML に書き込み、クライアントがバインドする前からページに値が見える。その他の DOM プロパティ（`innerHTML` など）は描画結果がそのまま HTML に入り、クライアントは引き取ったノードに全バインディングを当てる
 - **wc-bindable プロトコル**: `RenderCore` は標準プロトコルでレンダリング状態を公開し、サーバーでもクライアントでも同じ `bind()` パターンで利用可能
 
 ## インストール
@@ -95,14 +95,14 @@ console.log(renderer.html);
 >
 > 予算は「ready 待ち」と「`finally` の後始末（drain）」で共有します。後始末には残り時間を渡しますが、`CLEANUP_MIN_TIMEOUT_MS`（1,000 ms）は下回りません（0 は「上限なし」と同義になるため）。したがって実時間の最悪値は `timeoutMs + 1,000 ms` です。`timeoutMs: 0` では後始末も無制限になります — それが「上限を外す」の意味です。
 
-> **長時間動くプロセスについて。** 後始末の最後に、state 側がそのレンダリングのために貯めたものを捨てさせます（ssr-snapshot builder の `reset()`）。構造テンプレートとハイドレーション props の台帳がレンダリングのたびに積み上がるのを防ぐためです。ウィンドウを閉じた後に走り、任意メンバなので、これを持たない古い提供側では台帳が長く残るだけです。どちらでも**出力は変わりません** — スナップショットは常に自分の文書の中で閉じています。
+> **長時間動くプロセスについて。** 後始末の最後に、state 側がそのレンダリングのために持っていたものを捨てさせます（ssr-snapshot builder の `reset()`）。`@wcstack/state` 4.0 はここでテンプレートの id を振り直すので、レンダリングをまたいで id が増え続けず、毎回 `wcs-t0` から番号が付きます。ウィンドウを閉じた後に走り、任意メンバなので、これを持たない提供側には呼ばれないだけです。どちらでもスナップショットは常に自分の文書の中で閉じています。
 
 **レンダリングパイプライン:**
 1. happy-dom ウィンドウを作成し、ブラウザグローバルをインストール
 2. HTML をパースし、すべての `<wcs-state>` 要素の `connectedCallback` を発火
 3. すべての `$connectedCallback` プロミス（`fetch()` 呼び出し含む）の完了を待機
 4. `buildBindings` の完了を待機
-5. `enable-ssr` を持つ状態に `<wcs-ssr>` 要素を生成
+5. `@wcstack/state` のスナップショットビルダーを呼び出す — フォームの値をマークアップに書き込み、`enable-ssr` を持つ状態に `<wcs-ssr>` 要素を生成
 6. グローバルを復元し、レンダリング済み HTML を返却
 
 ### `RenderCore`
@@ -158,24 +158,19 @@ static wcBindable = {
 
 ## SSR 出力構造
 
-`<wcs-state>` に `enable-ssr` 属性がある場合、`renderToString()` はその直前にハイドレーションデータを含む `<wcs-ssr>` 要素を挿入します：
+`<wcs-state>` に `enable-ssr` 属性がある場合、`renderToString()` はその直前に `<wcs-ssr>` 要素を挿入します。中身はページを描いた `@wcstack/state` のバージョン、状態のデータ、ページ直下のテンプレートです。描画結果はその場に残り、コメントで印付けされます：
 
 ```html
 <!-- renderToString() が生成 -->
-<wcs-ssr version="0.1.0">
+<wcs-ssr version="4.0.0">
 
   <!-- 状態スナップショット -->
   <script type="application/json">{"items":["Apple","Banana","Cherry"]}</script>
 
-  <!-- テンプレートフラグメント（クライアント側での再実行用） -->
-  <template id="uuid-1234" data-wcs="for: items">
+  <!-- ページ直下のテンプレート（アンカーのコメントが名指す id 付き） -->
+  <template id="wcs-t0" data-wcs="for: items">
     <li data-wcs="textContent: items.*"></li>
   </template>
-
-  <!-- 属性で代替不可なプロパティ（オプション） -->
-  <script type="application/json" data-wcs-ssr-props>
-    {"wcs-ssr-0": {"innerHTML": "<b>rich</b>"}}
-  </script>
 
 </wcs-ssr>
 
@@ -183,13 +178,36 @@ static wcBindable = {
 
 <!-- レンダリング済み出力（即座に表示） -->
 <ul>
-  <li>Apple</li>
-  <li>Banana</li>
-  <li>Cherry</li>
+  <!--wcs-p:wcs-t0--><!--wcs-[--><!--wcs-|--><li>Apple</li><!--wcs-|--><li>Banana</li><!--wcs-|--><li>Cherry</li><!--wcs-]-->
 </ul>
 ```
 
+| マーク | 意味 |
+|--------|------|
+| `<!--wcs-p:ID-->` | ページ直下の `for:` / `if:` / `elseif:` / `else:` テンプレートがあった位置。テンプレートは `<wcs-ssr>` の中に `<template id="ID">` として残る（`wcs-t0`, `wcs-t1`, … とレンダリングごとに採番） |
+| `<!--wcs-[-->` 〜 `<!--wcs-]-->` | リストの行。アンカーの直後に置かれ、各行は `<!--wcs-\|-->` で始まる |
+| `<!--wcs-[:i-->` 〜 `<!--wcs-]-->` | `if:` / `elseif:` / `else:` の連なりが描いた枝（`i` は連なりの中の位置、0 始まり）。連なりの最後のアンカーの直後に置かれる。どの枝も描かれなければ領域は無い |
+| `<!--wcs-t:EXPR-->値<!--wcs-/t-->` | ページ直下のテキストバインディング（`{{ }}` または `<!--@@: -->`）。`EXPR` はフィルタも含めた式全体（URI エンコード） |
+| `<!--wcs-s-->` / `<!--wcs-e-->` | 隣り合う 2 つのテキストノードの区切り / 空のテキストノードの代わり。HTML をパースし直しても同じテキストノードに戻るようにする |
+| `data-wcs-raw="…"` | `{{ }}` を含むテキスト専用要素（`<textarea>`、`<title>`）に付く。書かれたままの中身で、クライアントがこれを戻す |
+
+行や枝の中の入れ子の `for:` / `if:` は自分のアンカーのコメントをそのまま持ち、その直後に同じ形で領域が続きます。
+
+- **出力のコメントは消さないこと。** 後段の minify（`removeComments` など）で消すとハイドレーションが壊れます。また、形式は API ではないので、これを当てにして出力を後処理しないでください。
+- プロパティの値の表はありません。バインディングが描いた結果（`innerHTML` を含む）はそのまま HTML に入り、クライアントは引き取ったノードに全バインディングを当てます。3.x の `data-wcs-ssr-id` 属性と `<script type="application/json" data-wcs-ssr-props>` は無くなりました。
+- フォームの値は、マークアップと違う場合にマークアップへ書き込まれます（`<wcs-state>` のあるページなら `enable-ssr` の有無を問わない）: input の `value` 属性と `checked` 属性、select で選ばれている option の `selected`、textarea のテキスト。パスワードの値は書き込まず（クライアントのバインディングが入れる）、`{{` を含む textarea の値も書き込みません。
+- `<wcs-ssr>` が生成されるのはルートの `<wcs-state enable-ssr>` だけで、ボリューム（`mount="…"`）やコンポーネントの `<wcs-state bind-component>` には生成されません。ボリュームのデータはルートのスナップショットに入ります。
+
 クライアント側の `@wcstack/state` はハイドレーション時に `<wcs-ssr>` 要素を読み取り、状態とテンプレートを復元し、再レンダリングなしでリアクティビティを再開します。
+
+### サーバーとクライアントのバージョン
+
+`<wcs-ssr version>` はページを描いた `@wcstack/state` のバージョンで、クライアントは自分と同じ major.minor のスナップショットだけをハイドレーションします。**`@wcstack/server` とクライアントは同じ major.minor でそろえて同時にデプロイしてください。**
+
+- 4.0 のクライアントは 3.x のサーバーの出力を捨てます。`<wcs-ssr version="3.5.0"> does not match 4.0.0: its snapshot is discarded, and the page renders on the client from its own state.` と警告し、サーバーが無かったものとしてクライアントでページを描きます — 状態は自分のソースから読み込まれ、`$connectedCallback` はクライアントで実行され、サーバーの行・枝・マーカーは元のテンプレートに戻されます。さらに、3.5.2 までの 3.x サーバーの出力では、テンプレートの外のテキストバインディングがフィルタを失います（警告にもそう出ます）。切り替えるときは、3.x のサーバーが描いてキャッシュされた HTML を破棄してください。
+- 4.0 のサーバーと 3.x のクライアントの組み合わせはサポートしません。3.x のクライアントは 4.0 のマーカーを読めません。
+
+詳しくは[移行ガイド §3.6](https://github.com/wcstack/wcstack/blob/main/docs/migration-v4.ja.md#36-ssr) を参照してください。
 
 ## サーバー統合の例
 
@@ -298,8 +316,8 @@ createServer(async (req, res) => {
 ### ハイドレーション
 
 - `enable-ssr` 付き `<wcs-state>` の `<wcs-ssr>` メタデータ自動生成
-- クライアント側でのハイドレーション（再レンダリングなしでバインディング復元）
-- `enable-ssr` を外した `<wcs-state>` はクライアントのみで動作（部分 CSR）
+- クライアント側でのハイドレーション（再レンダリングなしでバインディング復元）。サーバーの行と枝は、入れ子のものも含めてその場で引き取られる
+- `enable-ssr` の無い `<wcs-state>` もサーバーでは描画されるが、`<wcs-ssr>` が付かずハイドレーションされない。クライアントで状態に追従するのはテンプレートの外の `data-wcs` 属性のバインディングだけで、`{{ }}` のテキスト・行・枝はサーバーが描いたまま残る
 
 ### カスタム要素の待機
 
@@ -314,9 +332,9 @@ createServer(async (req, res) => {
 const body = await renderToString(template, {
   url: `http://localhost:3000${req.url}`,
   bootstraps: [
-    bootstrapState,
     // HTMLElement を継承するクラスは純 Node でトップレベル import できないため
     // 非同期ローダーで渡す（DOM グローバル設置後にモジュール評価される）
+    async () => (await import('@wcstack/state')).bootstrapState(),
     async () => (await import('@wcstack/router')).bootstrapRouter(),
   ],
 });
@@ -335,7 +353,10 @@ const body = await renderToString(template, {
 - Shadow DOM のレンダリング（Declarative Shadow DOM 非対応）
 - イベントハンドラの登録（クライアント側のハイドレーションで復元）
 - `<wcs-autoloader>` による動的コンポーネント読み込み
-- 別の `for:` の中の `for:`、`if:` / `elseif:` / `else:` の中の `for:` のハイドレーション（既知の制限）。サーバーは描画するが、そのリストの行がサーバー出力に 1 行でもあると、クライアントはハイドレーションせずにサーバーが描いた DOM を捨てて描き直す（`@wcstack/state` がテンプレートを名指しして `console.warn` を 1 回出す）。`for:` の行の中の `if:` は通常どおりハイドレーションされる
+- `outerHTML:` / `outerText:` の適用（クライアントで適用される。サーバー出力には書かれたままの要素が入るので、検索エンジンや JS なしの表示が見る HTML にその値は載らない）
+- ページ直下でバインドされた Light DOM のカスタム要素が値から描く子要素の描画（クライアントが描く。自分で書いた子要素は出力に残る）
+- `$watch` ハンドラや `$stream` のソースの実行（サーバーではストリームは `initial` の値のまま。どちらもクライアントで始まる）
+- guard 付きルートのサーバー描画（設計上 — guard はクライアントで実行される認可の地点なので、アウトレットは空のまま）、`<wcs-layout>` ルート（採用したページはクライアント描画へフォールバック）、`<wcs-head>` の中身（反映先は `document.head` で、body だけの出力には載らない）
 
 ## HTML の分割パターン
 
@@ -358,13 +379,13 @@ const page = `<!DOCTYPE html>
 ### 複数パッケージを使う場合
 
 ```javascript
-import { bootstrapState, getBindingsReady } from '@wcstack/state';
-import { bootstrapFetch } from '@wcstack/fetch';
-
 const ssrBody = await renderToString(template, {
   baseUrl: 'http://localhost:3001',
-  bootstraps: [bootstrapState, bootstrapFetch],
-  ready: [(doc) => getBindingsReady(doc)],
+  // 非同期ローダーで渡す: これらのパッケージは純 Node でトップレベル import できない
+  bootstraps: [
+    async () => (await import('@wcstack/state')).bootstrapState(),
+    async () => (await import('@wcstack/fetch')).bootstrapFetch(),
+  ],
 });
 ```
 
@@ -380,21 +401,21 @@ const ssrBody = await renderToString(template, {
 
 4. **HTML パースとコールバック**: `document.body.innerHTML` に HTML をセットすることで、happy-dom の要素ライフサイクルが発火。各 `<wcs-state>` がデータソースをロードし `$connectedCallback` を実行。`hasConnectedCallbackPromise` を持つ全カスタム要素を安定化ループで待機 — await 後に DOM を再走査し、動的追加された要素も検出（最大 10 回）。
 
-5. **Ready**: ユーザー提供の ready 関数を待機（デフォルトは `getBindingsReady()`） — テキスト補間、属性マッピング、リスト展開、条件評価。
+5. **Ready**: `getBindingsReady()` を持つ全カスタム要素クラスのそれを待機（`<wcs-state>` のバインディング構築。`waitForReady` 参照） — テキスト補間、属性マッピング、リスト展開、条件評価。
 
-6. **SSR メタデータ**: 各 `<wcs-state enable-ssr>` が `connectedCallback` 内で自動的に `<wcs-ssr>` 要素を生成。
+6. **SSR メタデータ**: `@wcstack/state` が設置したスナップショットビルダー（ssr-snapshot プロトコル）を最終パスとして呼び出す。フォームの値をマークアップに書き込み、各リストの行と描かれた枝をアンカー直後の印付きの領域へ移し、各ルートの `<wcs-state enable-ssr>` の直前に `<wcs-ssr>` 要素を挿入。
 
 7. **クリーンアップ**: 元のグローバルを復元し、happy-dom ウィンドウを閉じる。
 
 ### クライアント側のハイドレーション
 
-クライアント側の `@wcstack/state` は `<wcs-ssr>` 要素を検出し、以下を行います：
-1. JSON スナップショットから状態を復元（ネットワークリクエストをスキップ）
-2. UUID 参照を使ってテンプレートフラグメントを再接続
-3. props スクリプトから属性で代替不可なプロパティを適用
+クライアント側の `@wcstack/state` は `<wcs-ssr>` 要素を検出し、バージョンが自分と同じ major.minor なら以下を行います：
+1. 状態を自分のソースから読み込んでスナップショットのデータで上書きし（getter・setter・メソッドはそのまま）、サーバーで実行済みの `$connectedCallback` はスキップ
+2. テンプレートをアンカー（`<!--wcs-p:ID-->`）の位置に戻し、テキストのマーカーをバインディングに戻す
+3. サーバーの行と枝をその場で引き取り、全バインディングを当てる — その中のカスタム要素は一度だけ接続され、切断されることはない。テンプレートと形の合わなくなったサーバーの行はその場で作り直し、クライアントが描かない行や枝（行が減った、別の枝）はページのバインドが済むとすぐに取り除く
 4. 通常のリアクティブバインディングを再開
 
-レンダリング済みの DOM は即座に表示されます — ハイドレーションはインタラクティビティの復元のみを行います。
+レンダリング済みの DOM は即座に表示されます — ハイドレーションはインタラクティビティの復元のみを行います。別の major.minor のスナップショットは捨てられ、ページはクライアントで描かれます（[サーバーとクライアントのバージョン](#サーバーとクライアントのバージョン)）。
 
 ## ライセンス
 
