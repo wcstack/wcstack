@@ -223,7 +223,7 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
   const v: Volume = { el, root, path, state: null, engine: null, chroot: null, settle: null };
   let problem: string | null = null;
   if (!validPath(path)) problem = `has an invalid mount path: it must be a static path (no "*", "$", "#", "@").`;
-  else if (el.hasAttribute(config.bindAttributeName)) problem = `: injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.`;
+  else if (el.hasAttribute(config.bindAttributeName)) problem = `injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.`;
   else {
     let held = slots.get(root);
     if (held === undefined) slots.set(root, (held = new Map()));
@@ -237,8 +237,8 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
     lenient: true,
     start(state): Promise<void> | void {
       if (problem !== null) return fail(v, problem);
-      for (const key of REJECTED) if (state[key] !== undefined) return fail(v, `: ${key} is not run in a volume — declare it on the root state.`);
-      for (const key of NOT_RUN) if (state[key] !== undefined) console.warn(`${PREFIX(path)}: ${key} is not run in a volume (it belongs to the root).`);
+      for (const key of REJECTED) if (state[key] !== undefined) return fail(v, `${key} is not run in a volume — declare it on the root state.`);
+      for (const key of NOT_RUN) if (state[key] !== undefined) console.warn(`${PREFIX(path)} ${key} is not run in a volume (it belongs to the root).`);
       v.state = state;
       return new Promise<void>((resolve) => {
         v.settle = resolve;

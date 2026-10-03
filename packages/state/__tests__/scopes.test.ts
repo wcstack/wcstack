@@ -83,18 +83,19 @@ describe("volume <wcs-state mount>", () => {
   ])("volume で動かない宣言は、接ぎ木せずに報告し、connectedCallbackPromise は解決する（%#）", async (state, message) => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const { read } = await host(`<wcs-state></wcs-state><wcs-state mount="v"></wcs-state>`, [{}, { a: 1, ...state }]);
-    expect(error).toHaveBeenCalledWith(expect.stringContaining(message));
+    // the whole sentence: the element, a space, the message
+    expect(error).toHaveBeenCalledWith(`[@wcstack/state] <wcs-state mount="v"> ${message} — declare it on the root state.`);
     expect(() => read("v")).toThrow("[wcs/binding-path-missing]");
     error.mockRestore();
   });
 
   it.each([
-    [`<wcs-state mount="a.*"></wcs-state>`, "invalid mount path"],
-    [`<wcs-state mount="v" data-wcs="state.k: x"></wcs-state>`, "injections"],
+    [`<wcs-state mount="a.*"></wcs-state>`, '[@wcstack/state] <wcs-state mount="a.*"> has an invalid mount path: it must be a static path (no "*", "$", "#", "@").'],
+    [`<wcs-state mount="v" data-wcs="state.k: x"></wcs-state>`, '[@wcstack/state] <wcs-state mount="v"> injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.'],
   ])("マウントパスの誤りと注入は報告する（%#）", async (volume, message) => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     await host(`<wcs-state></wcs-state>${volume}`, [{ x: 1 }, { a: 1 }]);
-    expect(error).toHaveBeenCalledWith(expect.stringContaining(message));
+    expect(error).toHaveBeenCalledWith(message);
     error.mockRestore();
   });
 
@@ -127,7 +128,7 @@ describe("volume <wcs-state mount>", () => {
   it("根の持ち物の宣言（$commandTokens など）は動かないことを警告する", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     await host(`<wcs-state></wcs-state><wcs-state mount="v"></wcs-state>`, [{}, { $commandTokens: ["x"] }]);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("$commandTokens is not run in a volume"));
+    expect(warn).toHaveBeenCalledWith('[@wcstack/state] <wcs-state mount="v"> $commandTokens is not run in a volume (it belongs to the root).');
     warn.mockRestore();
   });
 });
