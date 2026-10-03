@@ -778,4 +778,5 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 版を rc.2 に上げた状態で、全パッケージの `prepublishOnly` を手元で通してから `prerelease-rc` を実行する。
   - rc.2 を出した後、31 パッケージの rc.1 を deprecate する（npm のログインと OTP が要るので、ユーザーが実行する）。
 - ドキュメントの rc の例と state README の CDN のピンは rc.2 に合わせた。
+- rc.2 の 1 回目の実行（run 37154155325、385d5c2f）は「Install dependencies」で止まった（公開の前なので何も出ていない）。server の lockfile は `../state` へのリンクを記録しており（main でも同じ。公開後の lock の同期がそう書く）、`npm ci` はリンク先の版を範囲と突き合わせる。手で版だけを rc.1 にしたので、server の `^3.5.4` が state の 4.0.0-rc.1 を満たさなかった。workflow は版上げの前に `npm ci` するので、自分の実行ではこうならない。rc.1 の実行が公開の後にしたはずのこと（server と testing の内部の範囲を厳密な rc.1 にし、lockfile を同期する）を commit して、全パッケージのクリーンな `npm ci` を確かめてから再実行した。
 - A1（`@wcstack/state`（`.`）から `defineState` だけを import してもエンジン、約 21 KB が残る）: 4.0 の仕様として受け入れる（2026-10-04、ユーザーの決定）。型だけが要る用途には `@wcstack/state/define`（40 B）を案内する（移行ガイド §3.7・state README）。
