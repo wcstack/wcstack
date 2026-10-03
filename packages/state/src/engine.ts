@@ -127,10 +127,10 @@ export class Engine implements ReconcileHooks {
   readonlyDepth = 0;
   /**
    * Top-level keys a re-set dropped (the old state had them, the new one lacks them): they read as
-   * undefined, not as keys never declared (read). Kept here — the author's state object is not written
-   * to (it may be frozen, or a Proxy that refuses).
+   * undefined, not as keys never declared (read; the diagnostics add-on reads it too). Kept here — the
+   * author's state object is not written to (it may be frozen, or a Proxy that refuses).
    */
-  private readonly dropped = new Set<string>();
+  readonly dropped = new Set<string>();
   /** The node the bindings were mounted on (delegated listeners live here). */
   root: Node | null = null;
   /** Delegated event types → the property (per engine) their element handlers are stored under. */
