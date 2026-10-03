@@ -39,7 +39,7 @@ auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<
 | ペイン | 内容 |
 |---|---|
 | **State** | 各ルート state ツリー（root node ごとに 1 本・ラベルはルート由来 — v2 に名前次元は無い）のトップレベルキー、配列/オブジェクトの展開、computed getter。値クリックでインライン編集 — 書き込みは通常のリアクティブパイプライン（set トラップ → 更新バッチ → DOM）を通るため、アプリコードが書いたのと同じようにページが反応する。**パス**クリックで束縛ノードをハイライト。ツリーの下には、マウント記録の **Overlays** と、`$eq` / `$eqPath` / `$eqIndex` の購読を path ごとに数えた **Keyed selection**（行・鍵・リスト単位の監視の数と最後の値）が出る。path が getter で、読む getter が全部再評価される形には `tracked` バッジが付く（`@wcstack/state` 3.0 以降）。 |
-| **Wiring** | ライブ binding 台帳: binding ごとの `property ← path` 行と型バッジ（`text` / `prop` / `for` / …）。**⌖ pick** でページ要素をクリックするとその要素の配線だけに絞れる。行クリックで束縛ノードをハイライト。 |
+| **Wiring** | ライブ binding 台帳: binding ごとの `property ← path` 行と型バッジ（`text` / `prop` / `for` / …）。**⌖ pick** でページ要素をクリックするとその要素の配線だけに絞れる。行クリックで束縛ノードをハイライト。**coverage** の切り替えは、state が宣言したものと、パネルが観測を始めてから起きたことを突き合わせる: `$watch` のキーごと（`fired` ×n / `never`）、command・event トークンごと（`emitted` ×n / `never` / `emitted-unheard` — どの発火も購読者ゼロ）、宣言したバインディングごと（`attached` / `never-attached`）。`@wcstack/state` 3.x では、リストに `for` のバインドも `$listKeys` の宣言も無いワイルドカードの行 watch は、`never` ではなく `prerequisite-missing` と出る（3.x ではリストへの書き込みがその watch に届かない）。4.0 の行 watch はどちらも要らないので、4.0 のページでは出ない。 |
 | **Timeline** | ring buffer（既定 500 件）: `write`（旧値が取れた場合は併記）、`batch`（drain ごとの dedup 済み更新アドレス）、`command` / `event` トークン発火（引数要約 + 購読者数 — **購読者ゼロの空撃ちには警告バッジ**。whenDefined 前配線レースの検出に効く）、state 要素の登録/解除。⏸ で一時停止、🗑 でクリア。 |
 
 ## 属性
@@ -78,8 +78,9 @@ import { DevtoolsCore, getOrCreateHookRegistry, formatValue, scanDeclaredBinding
 
 const core = new DevtoolsCore({ timelineCapacity: 200 });
 core.connect();
-core.onChange((kind) => { /* "sources" | "roster" | "wiring" | "timeline" */ });
+core.onChange((kind) => { /* "sources" | "roster" | "wiring" | "timeline" | "coverage" */ });
 core.getRoster();      // 観測中の <wcs-state> 要素
+core.getCoverageReport(); // 宣言 × 実測（coverage ビュー）
 core.getTimeline();    // ring buffer スナップショット
 ```
 

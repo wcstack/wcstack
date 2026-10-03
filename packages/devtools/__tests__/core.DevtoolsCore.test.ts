@@ -37,11 +37,11 @@ interface IFakeSource extends IDevtoolsSourceLike {
   emit(event: DevtoolsEventLike): void;
 }
 
-function createFakeSource(id: string, summaries: IStateElementSummaryLike[] = []): IFakeSource {
+function createFakeSource(id: string, summaries: IStateElementSummaryLike[] = [], packageVersion = '0.0.0'): IFakeSource {
   const source: IFakeSource = {
     id,
     kind: 'state',
-    packageVersion: '0.0.0',
+    packageVersion,
     sink: null,
     summaries,
     getStateElements: vi.fn(() => source.summaries) as unknown as () => IStateElementSummaryLike[],
@@ -79,9 +79,9 @@ describe('DevtoolsCore', () => {
   beforeEach(cleanupGlobal);
   afterEach(cleanupGlobal);
 
-  function setupConnected(summaries: IStateElementSummaryLike[] = []) {
+  function setupConnected(summaries: IStateElementSummaryLike[] = [], packageVersion?: string) {
     const registry = getOrCreateHookRegistry();
-    const source = createFakeSource('state:test', summaries);
+    const source = createFakeSource('state:test', summaries, packageVersion);
     registry.register(source);
     const core = new DevtoolsCore();
     core.connect();
@@ -569,6 +569,45 @@ describe('DevtoolsCore', () => {
       expect(watch.status).toBe('prerequisite-missing');
       expect(watch.note).toContain('$listKeys declaration would still let list writes fire it');
     });
+
+    it('3.x のランタイム（packageVersion 3.x）では、for も $listKeys も無い行 watch を従来どおり prerequisite-missing にすること', () => {
+      const { core } = setupConnected([
+        { ...summaryOf('main'), watchPaths: new Set(['items.*.price']), keyedListPaths: null } as never,
+      ], '3.5.4');
+      const watch = core.getCoverageReport().find((e) => e.kind === 'watch' && e.name === 'items.*.price')!;
+      expect(watch.status).toBe('prerequisite-missing');
+      expect(watch.note).toContain('no for binding and no $listKeys declaration');
+    });
+
+    it('版を読めないランタイムは旧ランタイムとして扱い、前提の判定を残すこと', () => {
+      const { core } = setupConnected([
+        { ...summaryOf('main'), watchPaths: new Set(['items.*.price']) },
+      ], 'dev');
+      const watch = core.getCoverageReport().find((e) => e.kind === 'watch' && e.name === 'items.*.price')!;
+      expect(watch.status).toBe('prerequisite-missing');
+    });
+
+    it.each(['4.0.0', '4.0.0-rc.1', '4.2.3'])(
+      '4.0 のランタイム（packageVersion %s）では、for も $listKeys も無い行 watch を prerequisite-missing にせず never にすること',
+      (packageVersion) => {
+        const { core, source } = setupConnected([
+          {
+            ...summaryOf('main'),
+            // 4.0 の行 watch は自分のリストを同期し続けるので、for も $listKeys も要らない
+            // （packages/state/src/temporal/watch.ts）。paths.list が空でも前提は問わない
+            watchPaths: new Set(['items.*.price', 'rows.*.cells.*.v', 'count']),
+            keyedListPaths: null,
+          } as never,
+        ], packageVersion);
+        source.emit({ type: 'state:watch-fired', path: 'rows.*.cells.*.v' });
+        const byName = new Map(core.getCoverageReport().filter((e) => e.kind === 'watch').map((e) => [e.name, e]));
+        expect(byName.get('items.*.price')).toEqual({ kind: 'watch', name: 'items.*.price', status: 'never', count: 0, note: null });
+        expect(byName.get('count')).toMatchObject({ status: 'never', note: null });
+        // 発火したものは版によらず fired
+        expect(byName.get('rows.*.cells.*.v')).toMatchObject({ status: 'fired', count: 1 });
+        expect([...byName.values()].some((e) => e.status === 'prerequisite-missing')).toBe(false);
+      },
+    );
 
     it('token宣言のemitted/neverを数えること', () => {
       const { core, source } = setupConnected([
