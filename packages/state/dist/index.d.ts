@@ -928,8 +928,12 @@ declare class Ssr extends HTMLElementBase implements ISsrElement {
     static removeStructuralComments(root: Node): void;
     /**
      * SSR テキストバインディングコメントを復元する。
-     * <!--@@wcs-text-start:path-->text<!--@@wcs-text-end:path-->
-     * → <!--@@: path--> (バインディングシステムが認識する形式)
+     * <!--@@wcs-text-start:expression-->text<!--@@wcs-text-end:expression-->
+     * → <!--@@: expression--> (バインディングシステムが認識する形式)
+     *
+     * The marker is read as an opaque expression, never as a path: since #373 the server writes the
+     * binding's expression with its output filters (`price|toFixed(2)`, `items.*.price|toFixed(2)`; see
+     * `textMarker`), before it the path alone. Both read the same way here, and so in every 3.x client.
      */
     static restoreTextBindings(root: Node): void;
     /**
