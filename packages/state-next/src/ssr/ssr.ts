@@ -509,17 +509,24 @@ function across(wiring: Wiring, path: string, from: number, to: number): string 
 /**
  * The output of @wcstack/server 3.x back to the page as written, as 3.x's own fallback did
  * (`Ssr.cleanupDom`): a row or a branch (`<!--@@wcs-for-start:…-->` up to its `-end` mark among its
- * siblings) goes, a text between its marks becomes a comment binding of the path the mark names (3.x
- * kept no more of it: its filters are lost — the warning says so), a template's mark
- * (`<!--@@wcs-for:ID-->`) becomes the template `<wcs-ssr>` keeps under that id (whose content has the
- * marks of the templates in it), and the elements lose `data-wcs-ssr-id`.
+ * siblings) goes, a text between its marks becomes a comment binding of what the mark holds (before
+ * 3.5.3 the path alone, its filters lost: the warning says so; from 3.5.3, `fresh`, the binding's
+ * expression as written: wcstack#373), a template's mark (`<!--@@wcs-for:ID-->`) becomes the template
+ * `<wcs-ssr>` keeps under that id (whose content has the marks of the templates in it), and the
+ * elements lose `data-wcs-ssr-id`.
  *
- * In a Light DOM component, 3.x wrote the marks' paths and a template's own path as the page's
- * (`state: user` makes `name` `user.name`; a private key `user.#m1.name`, or `#m2.name` in a
- * partial mount; in a component in a component, through both): they go back to the component's own
- * through its host's wiring (the content of a template is the component's already).
+ * In a Light DOM component, 3.x wrote a template's own path as the page's (`state: user` makes `name`
+ * `user.name`; a private key `user.#m1.name`, or `#m2.name` in a partial mount; in a component in a
+ * component, through both), and so the marks' paths before 3.5.3: they go back to the component's own
+ * through its host's wiring (the content of a template is the component's already). A mark from 3.5.3
+ * is the component's own text, not mapped (it may name a key that is one of the page's wired paths
+ * too: `state.x: v; state.v: w`), but for an expression a comment cannot hold (one with a `--`), which
+ * 3.5.3 writes as the page's path, unfiltered: one naming a private key (`#mN.`, never in the
+ * component's own text) is mapped back; a wired one cannot be told from the component's own text, and
+ * is read as it — a component key of that name shows its value, the right one only when the wiring keeps
+ * the name (a limit: migration guide §3.6).
  */
-function legacy(container: Node, ssr: Element): void {
+function legacy(container: Node, ssr: Element, fresh: boolean): void {
   const wirings = new Map<Element, Wiring>();
   /** The wiring of the Light DOM component `n` is in (a nested one's composed with the one around), or null. */
   const wiringOf = (n: Node): Wiring | null => {
@@ -538,12 +545,16 @@ function legacy(container: Node, ssr: Element): void {
     }
     return wiring;
   };
-  /** A path 3.x wrote at `n`, as the component's own there. */
-  const own = (n: Node, path: string): string => {
+  /**
+   * A path 3.x wrote at `n`, as the component's own there (`asIs`: a text mark from 3.5.3, left as it
+   * is but for a private key's path).
+   */
+  const own = (n: Node, path: string, asIs?: boolean): string => {
     const wiring = wiringOf(n);
     if (wiring === null) return path;
-    const m = /^(.*)#m\d+\.(.*)$/.exec(path);
-    if (m === null) return across(wiring, path, 0, 1) ?? path;
+    // (no `|`: a 3.5.3 mark with filters is the component's own text, a `#m1.` in it an argument's)
+    const m = /^([^|]*)#m\d+\.([^|]*)$/.exec(path);
+    if (m === null) return asIs ? path : across(wiring, path, 0, 1) ?? path;
     // after the last private key mark, a component's own path: this one's when what comes before the
     // mark is this one's mount path (`user.#m1.name`, `user.profile.#m3.name`, `#m2.box.#m4.name` with
     // `state: box`; nothing for a partial mount, `#m2.name`), else the one's around it, which this one
@@ -561,7 +572,7 @@ function legacy(container: Node, ssr: Element): void {
     if (e === null) continue;
     while (c.nextSibling !== e) c.nextSibling!.remove();
     e.remove();
-    c.replaceWith(...(m[1] === "text" ? [mark(`@@:${own(c, m[2])}`)] : []));
+    c.replaceWith(...(m[1] === "text" ? [mark(`@@:${own(c, m[2], fresh)}`)] : []));
   }
   const restore = (scope: Node, at?: Node): void => {
     for (const c of comments(scope)) {
@@ -598,10 +609,14 @@ export function hydrate(engine: Engine): void {
     e.callHook = (name: string, args?: unknown[]) => (name === "$connectedCallback" ? undefined : callHook.call(engine, name, args));
   }
   if (!found) return;
-  // @wcstack/server 3.x's output: marks of its own
+  // @wcstack/server 3.x's output: marks of its own; from 3.5.3 on a text mark holds the binding's
+  // expression (see legacy). A prerelease, or a version that does not parse, counts as older
   const old = !same && parseInt(version!) < 4;
+  const v = /^3\.(\d+)\.(\d+)$/.exec(version!);
+  const fresh = v !== null && (+v[1] - 5 || +v[2] - 3) >= 0;
   if (!same) {
-    console.warn(`[@wcstack/state] <${tag()} version="${version}"> does not match ${VERSION}: its snapshot is discarded, and the page renders on the client from its own state.${old
+    // (the filters' sentence: output before 3.5.3 only)
+    console.warn(`[@wcstack/state] <${tag()} version="${version}"> does not match ${VERSION}: its snapshot is discarded, and the page renders on the client from its own state.${old && !fresh
       ? " 3.x output keeps only the path of a text binding outside a template, so such a binding loses its filters: deploy @wcstack/server 4.0 with this client."
       : ""}`);
   }
@@ -623,7 +638,7 @@ export function hydrate(engine: Engine): void {
     r.removeAttribute(RAW_ATTR);
   }
   const container = root.nodeType === 9 ? (root as Document).body : root;
-  if (old) legacy(container, ssr!);
+  if (old) legacy(container, ssr!, fresh);
   else prepare(container, ssr!, same);
   ssr!.remove();
   if (same) {
