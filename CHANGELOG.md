@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [3.5.4] — 2026-10-03
+
+**3.5.4 fixes one more case of server-rendered text in a Light DOM `bind-component` child.** When a text binding's expression cannot go into an HTML comment (it contains `--`), 3.5.3's SSR marker fell back to the path translated to the host's vocabulary, so the child's text hydrated empty; it now falls back to the path the child wrote, and shows the value (unfiltered, as for any such fallback). Upgrading the server's `@wcstack/state` is enough. No API changes; `auto.min.js` grows by 32 B gzip, the split `/core` by 0 B.
+
 ### Fixed
 
 - `@wcstack/state`: **a `{{ }}` in a Light DOM `bind-component` child whose expression contains `--` no longer hydrates empty.** An expression an HTML comment cannot hold falls back to its path in the SSR text markers (#373), but the fallback wrote the path translated to the host's vocabulary (`v` for the child's `x` under `state.x: v`, `#m1.other` for a private key), which the child's scope could not resolve: the text stayed empty after hydration (reported as a missing path or a failed binding, or not at all). It now writes the path the binding's own text names (`x`, `other`); the value shows unfiltered, as for any fallback. A 4.0 client reading such output reads it as written. `auto.min.js` grows by 32 B gzip, the split `/core` by 0 B.
@@ -625,7 +629,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.3...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.4...HEAD
+[3.5.4]: https://github.com/wcstack/wcstack/compare/v3.5.3...v3.5.4
 [3.5.3]: https://github.com/wcstack/wcstack/compare/v3.5.2...v3.5.3
 [3.5.2]: https://github.com/wcstack/wcstack/compare/v3.5.1...v3.5.2
 [3.5.1]: https://github.com/wcstack/wcstack/compare/v3.5.0...v3.5.1
