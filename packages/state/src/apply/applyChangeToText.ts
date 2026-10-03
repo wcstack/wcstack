@@ -1,5 +1,6 @@
 import { inSsr } from "../config";
 import { IBindingInfo } from "../binding/types";
+import { ssrHooks } from "../core/ssrHooks";
 import { IApplyContext } from "./types";
 
 const ssrWrappedNodes: WeakSet<Node> = new WeakSet();
@@ -19,9 +20,12 @@ export function applyChangeToText(binding: IBindingInfo, _context: IApplyContext
     ssrWrappedNodes.add(binding.replaceNode);
     const parentNode = binding.replaceNode.parentNode;
     if (parentNode) {
-      const path = binding.statePathName;
-      const startComment = document.createComment(`@@wcs-text-start:${path}`);
-      const endComment = document.createComment(`@@wcs-text-end:${path}`);
+      // The binding's expression, output filters included (#373): hydration turns the marker back into
+      // `<!--@@: <marker>-->` as it is (ssr/Ssr.ts restoreTextBindings). The path alone without the ssr
+      // feature (a split-core page), as before
+      const expression = ssrHooks?.textMarker(binding) ?? binding.statePathName;
+      const startComment = document.createComment(`@@wcs-text-start:${expression}`);
+      const endComment = document.createComment(`@@wcs-text-end:${expression}`);
       parentNode.insertBefore(startComment, binding.replaceNode);
       parentNode.insertBefore(endComment, binding.replaceNode.nextSibling);
     }

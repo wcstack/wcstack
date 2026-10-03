@@ -124,3 +124,5 @@ http://localhost:3001 を開いてください。
 <div class="info-box">This block is visible...</div>
 <!--@@wcs-if-end:u1:show-->
 ```
+
+テキストの境界コメントは束縛の式を出力フィルタごと運ぶので、ハイドレーションは同じ束縛を復元します。`{{ price|toFixed(2) }}` は `<!--@@wcs-text-start:price|toFixed(2)-->3.14<!--@@wcs-text-end:price|toFixed(2)-->`、`for:` の行の `{{ .price|toFixed(2) }}` は `<!--@@wcs-text-start:users.*.price|toFixed(2)-->…` になります。コメントに入れられない式（`--` を含むもの）はパスだけを書きます。

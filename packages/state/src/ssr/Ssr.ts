@@ -6,6 +6,8 @@ import { getNormalizedTextCommentData } from "../structural/getFragmentNodeInfos
 import { resolveNodePath } from "../structural/resolveNodePath";
 import { IFragmentInfo } from "../structural/types";
 import { ParseBindTextResult } from "../bindTextParser/types";
+import { parseCommentNode } from "../bindings/parseCommentNode";
+import type { IBindingInfo, IParsedFilter } from "../binding/types";
 import { getAllSsrPropertyNodes, getSsrProperties, clearSsrPropertyStore } from "../apply/ssrPropertyStore";
 import { HTMLElementBase } from "../platform/HTMLElementBase";
 
@@ -145,8 +147,13 @@ export function removeStaleBlockBoundaries(root: Node): void {
  */
 export function structuralBindText(result: ParseBindTextResult): string {
   if (result.bindingType === "else") return "else:";
-  let text = `${result.bindingType}: ${result.statePathName}`;
-  for (const filter of result.outFilters) {
+  return `${result.bindingType}: ${bindExpression(result.statePathName, result.outFilters)}`;
+}
+
+/** The right-hand side of a binding: the path and its output filters, on one line (the rules above) */
+function bindExpression(statePathName: string, outFilters: readonly IParsedFilter[]): string {
+  let text = statePathName;
+  for (const filter of outFilters) {
     const literals = filter.literals ?? filter.args;
     text += `|${filter.filterName}`;
     if (filter.args.length > 0) {
@@ -154,6 +161,42 @@ export function structuralBindText(result: ParseBindTextResult): string {
     }
   }
   return text;
+}
+
+/**
+ * Text that cannot go into a comment as it is, by the HTML comment rules: no `--` (which covers `<!--`,
+ * `-->` and `--!>`) and no trailing `-` (a trailing `<!-`); NUL and CR, which the HTML parser rewrites;
+ * and the line terminators, which the reader's `.+` does not match. (A leading `>` / `->` cannot occur:
+ * the marker's `@@wcs-text-start:` comes first.)
+ */
+const COMMENT_UNSAFE = /--|-$|[\0\n\r\u2028\u2029]/;
+
+/**
+ * What a text binding's boundary comments carry (`<!--@@wcs-text-start:…-->` / `<!--@@wcs-text-end:…-->`,
+ * written by apply/applyChangeToText on the server): the binding's **expression**, output filters
+ * included (#373). Hydration (`restoreTextBindings`) turns the marker back into `<!--@@: <marker>-->` as
+ * it is, so the path alone restored `{{ price|toFixed(2) }}` as `price` — the server's `3.14` became
+ * `3.14159`, and so did every later write, in the rows and branches the client adopts too.
+ *
+ * - A binding from a comment (`{{ }}` / `<!--@@: -->` on the page, or in a Light DOM `bind-component`
+ *   child) carries the comment's own text. Inside a mount the parsed `statePathName` is in the host's
+ *   vocabulary (webComponent/mount.ts translateParsedForMount), which the child's scope cannot translate
+ *   again on the client (#372, symptom 1).
+ * - Text cloned from a template into a row or a branch has no comment left (structural/
+ *   getFragmentNodeInfos normalizes it to a Text): the path and the filters are serialized, the path
+ *   with its shorthand expanded. In a Light DOM child's own `for:` / `if:` that path is the host's — its
+ *   templates are registered translated — which is what hydration needs today: it adopts those rows and
+ *   branches in the page's scope (#372).
+ *
+ * An expression a comment cannot hold falls back to the path alone, the format before #373. The path itself
+ * is not checked: a state key containing `--` breaks the comment, as it did before #373 (paths come from
+ * the author's markup, never from data).
+ */
+export function textMarker(binding: IBindingInfo): string {
+  const expression = binding.node.nodeType === Node.COMMENT_NODE
+    ? parseCommentNode(binding.node) ?? binding.statePathName
+    : bindExpression(binding.statePathName, binding.outFilters);
+  return COMMENT_UNSAFE.test(expression) ? binding.statePathName : expression;
 }
 
 /**
@@ -392,19 +435,23 @@ export class Ssr extends HTMLElementBase implements ISsrElement {
 
   /**
    * SSR テキストバインディングコメントを復元する。
-   * <!--@@wcs-text-start:path-->text<!--@@wcs-text-end:path-->
-   * → <!--@@: path--> (バインディングシステムが認識する形式)
+   * <!--@@wcs-text-start:expression-->text<!--@@wcs-text-end:expression-->
+   * → <!--@@: expression--> (バインディングシステムが認識する形式)
+   *
+   * The marker is read as an opaque expression, never as a path: since #373 the server writes the
+   * binding's expression with its output filters (`price|toFixed(2)`, `items.*.price|toFixed(2)`; see
+   * `textMarker`), before it the path alone. Both read the same way here, and so in every 3.x client.
    */
   static restoreTextBindings(root: Node): void {
     for (const comment of collectComments(root, (d) => SSR_TEXT_START.test(d))) {
-      const path = (SSR_TEXT_START.exec(comment.data) as RegExpExecArray)[1];
-      const bindComment = document.createComment(`@@: ${path}`);
+      const expression = (SSR_TEXT_START.exec(comment.data) as RegExpExecArray)[1];
+      const bindComment = document.createComment(`@@: ${expression}`);
       comment.parentNode!.insertBefore(bindComment, comment);
 
       let sibling: Node | null = comment.nextSibling;
       comment.remove();
 
-      const endPattern = `@@wcs-text-end:${path}`;
+      const endPattern = `@@wcs-text-end:${expression}`;
       while (sibling) {
         const next: Node | null = sibling.nextSibling;
         if (sibling.nodeType === Node.COMMENT_NODE && (sibling as Comment).data === endPattern) {
