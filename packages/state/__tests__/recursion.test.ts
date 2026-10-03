@@ -102,6 +102,39 @@ describe("全深さの $getAll と一斉書き込み", () => {
     expect(bad.proxy.$resolve("nodes.*.value", [0])).toBe(1);
   });
 
+  it("一斉書き込みの構造・読み取り専用の判定は 3.x と同じ: 添字の綴りは子ノード、子ノードの下はノードの下として読む", () => {
+    const e = make(withTotal({ nodes: forest() }));
+    const before = JSON.stringify(e.proxy.$getAll("nodes.**", []));
+    // the structure: the node itself, a child node (any spelling), the child list and its length
+    for (const path of ["nodes.**", "nodes.**.children", "nodes.**.children.*", "nodes.**.children.0", "nodes.**.children.length", "nodes.**.children.0.children", "nodes.**.children.*.children.length"]) {
+      expect(() => e.proxy.$setAll(path, [], {}), path).toThrow("[wcs/recursion-structural-write]");
+    }
+    // a family, one level down, through an index spelling, or inside its value: the getter's
+    for (const path of ["nodes.**.total", "nodes.**.children.*.total", "nodes.**.children.0.total", "nodes.**.total.x"]) {
+      expect(() => e.proxy.$setAll(path, [], 1), path).toThrow('[wcs/recursion-readonly] "' + path + '" writes into the recursive getter "nodes.**.total".');
+    }
+    // nothing was written
+    expect(JSON.stringify(e.proxy.$getAll("nodes.**", []))).toBe(before);
+    // a leaf under a child node is a leaf: each node's children (the roots are nobody's)
+    expect(e.proxy.$setAll("nodes.**.children.*.value", [], 0)).toBe(3);
+    expect(e.proxy.$getAll("nodes.**.value", [])).toEqual([1, 0, 0, 0, 2]);
+  });
+
+  it("繰り返しが複数のセグメント（branch.children.*）なら、子リストまでの途中のオブジェクトも構造", () => {
+    const tree = () => [
+      { value: 1, branch: { children: [{ value: 10, branch: { children: [] } }] } },
+      { value: 2, branch: { children: [] } },
+    ];
+    const e = new Engine({ $recursion: { "nodes.*": "branch.children.*" }, nodes: tree() }, new DirtyStrategy());
+    for (const path of ["nodes.**", "nodes.**.branch", "nodes.**.branch.children", "nodes.**.branch.children.length", "nodes.**.branch.children.0"]) {
+      expect(() => e.proxy.$setAll(path, [], {}), path).toThrow("[wcs/recursion-structural-write]");
+    }
+    expect(e.proxy.$setAll("nodes.**.value", [], 5)).toBe(3);
+    expect(e.proxy.$getAll("nodes.**.value", [])).toEqual([5, 5, 5]);
+    expect(e.proxy.$setAll("nodes.**.branch.children.*.value", [], 7)).toBe(1);
+    expect(e.proxy.$getAll("nodes.**.value", [])).toEqual([5, 7, 5]);
+  });
+
   it("展開への書き込みはどの経路でも [wcs/recursion-readonly]", () => {
     const e = make(withTotal({ nodes: forest() }));
     expect(e.proxy.$resolve("nodes.*.children.*.total", [0, 0])).toBe(110);
