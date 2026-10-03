@@ -10,7 +10,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ### Fixed
 
-- `@wcstack/state`: **a `{{ }}` in a Light DOM `bind-component` child whose expression contains `--` no longer hydrates empty.** An expression an HTML comment cannot hold falls back to its path in the SSR text markers (#373), but the fallback wrote the path translated to the host's vocabulary (`v` for the child's `x` under `state.x: v`, `#m1.other` for a private key), which the child's scope could not resolve: the text stayed empty after hydration, with a `binding-path-missing` error. It now writes the path the binding's own text names (`x`, `other`); the value shows unfiltered, as for any fallback. A 4.0 client reading such output reads it as written. `auto.min.js` grows by 32 B gzip, the split `/core` by 0 B.
+- `@wcstack/state`: **a `{{ }}` in a Light DOM `bind-component` child whose expression contains `--` no longer hydrates empty.** An expression an HTML comment cannot hold falls back to its path in the SSR text markers (#373), but the fallback wrote the path translated to the host's vocabulary (`v` for the child's `x` under `state.x: v`, `#m1.other` for a private key), which the child's scope could not resolve: the text stayed empty after hydration (reported as a missing path or a failed binding, or not at all). It now writes the path the binding's own text names (`x`, `other`); the value shows unfiltered, as for any fallback. A 4.0 client reading such output reads it as written. `auto.min.js` grows by 32 B gzip, the split `/core` by 0 B.
 
 ## [3.5.3] — 2026-10-03
 
