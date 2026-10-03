@@ -233,14 +233,6 @@ jobs:
           mkdir -p packages/server/node_modules/@wcstack
           ln -s ../../../state packages/server/node_modules/@wcstack/state
 
-      - name: Test all packages
-        run: |
-          for pkg in ${{ steps.discover.outputs.list }}; do
-            echo "::group::test — $pkg"
-            (cd "packages/$pkg" && npm run typecheck --if-present && npm run test:coverage)
-            echo "::endgroup::"
-          done
-
       # Pin every package to the target version "Plan the release" computed,
       # pulling any lagging packages (e.g. a freshly added 1.0.0) onto the
       # shared line. (The bump used to be computed here with `sort -V` and
@@ -292,6 +284,21 @@ jobs:
           for pkg in ${{ steps.discover.outputs.list }}; do
             echo "::group::rebuild — $pkg"
             (cd "packages/$pkg" && npm run build)
+            echo "::endgroup::"
+          done
+
+      # The tests run here, at the target version, and not before the bump: each
+      # package's prepublishOnly runs them again inside "Publish to npm", one
+      # package at a time, so a test that only fails at the new version (router's
+      # VERSION check could not read "4.0.0-rc.1") used to stop the publish loop
+      # midway, after the earlier packages were on npm (4.0.0-rc.1 went out
+      # partial). Every test passing at the target version before the first
+      # publish keeps prepublishOnly from failing on that account.
+      - name: Test all packages (at the target version)
+        run: |
+          for pkg in ${{ steps.discover.outputs.list }}; do
+            echo "::group::test — $pkg"
+            (cd "packages/$pkg" && npm run typecheck --if-present && npm run test:coverage)
             echo "::endgroup::"
           done
 
