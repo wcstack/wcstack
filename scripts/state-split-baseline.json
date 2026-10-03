@@ -3,7 +3,7 @@
   "features/devtools.js": {
     "files": 2,
     "bytes": 4565,
-    "gzip": 2192
+    "gzip": 2191
   },
   "features/diagnostics.js": {
     "files": 1,
@@ -18,23 +18,23 @@
   "features/recursion.js": {
     "files": 1,
     "bytes": 15777,
-    "gzip": 5380
+    "gzip": 5382
   },
   "features/scopes.js": {
     "files": 2,
-    "bytes": 47294,
-    "gzip": 15024,
+    "bytes": 47727,
+    "gzip": 15197,
     "slack": 512
   },
   "features/ssr.js": {
     "files": 1,
-    "bytes": 13534,
-    "gzip": 4892,
+    "bytes": 13535,
+    "gzip": 4893,
     "slack": 1024
   },
   "features/temporal.js": {
     "files": 2,
     "bytes": 30329,
-    "gzip": 9941
+    "gzip": 9940
   }
 }
