@@ -174,3 +174,98 @@ describe("SSR", () => {
     expect(root.querySelector("p")!.textContent).toBe("5");
   });
 });
+
+describe("SSR のフォームの値（3.x と同じく HTML に書く）", () => {
+  const formPage = `<wcs-state enable-ssr></wcs-state>
+<input class="name" data-wcs="value: name">
+<input class="agreed" type="checkbox" checked data-wcs="checked: agreed">
+<input class="news" type="checkbox" data-wcs="checked: news">
+<select class="idx" data-wcs="selectedIndex: idx"><option>A</option><option>B</option><option>C</option></select>
+<select class="color" data-wcs="value: color"><template data-wcs="for: colors"><option data-wcs="value: .; textContent: ."></option></template></select>
+<textarea class="memo" data-wcs="value: memo"></textarea>
+<ul><template data-wcs="for: todos"><li><input type="checkbox" data-wcs="checked: .done"><input class="t" data-wcs="value: .t"></li></template></ul>
+<input class="r1" type="radio" name="size" value="s" checked data-wcs="radio: size"><input class="r2" type="radio" name="size" value="m" data-wcs="radio: size">`;
+
+  const formState = () => ({
+    name: "Alice", agreed: false, news: true, idx: 2, color: "green", colors: ["red", "green", "blue"],
+    memo: "Hello </textarea> & World", todos: [{ done: true, t: "a" }, { done: false, t: "b" }], size: "m",
+  });
+
+  it("value / checked / selectedIndex / select の value / textarea / 行の中 / radio: の値がサーバの HTML に入る", async () => {
+    const html = await serverRender(formPage, formState());
+    // what a browser parses out of the server's HTML, before any script runs
+    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+    const q = (sel: string) => doc.querySelector(sel) as any;
+    expect(q("input.name").getAttribute("value")).toBe("Alice");
+    expect(q("input.agreed").hasAttribute("checked")).toBe(false);
+    expect(q("input.news").hasAttribute("checked")).toBe(true);
+    expect(Array.from(doc.querySelectorAll("select.idx option"), (o) => o.hasAttribute("selected"))).toEqual([false, false, true]);
+    expect(Array.from(doc.querySelectorAll("select.color option"), (o) => o.hasAttribute("selected"))).toEqual([false, true, false]);
+    expect(q("textarea.memo").textContent).toBe("Hello </textarea> & World");
+    expect(Array.from(doc.querySelectorAll("li input[type=checkbox]"), (i) => i.hasAttribute("checked"))).toEqual([true, false]);
+    expect(Array.from(doc.querySelectorAll("li input.t"), (i) => i.getAttribute("value"))).toEqual(["a", "b"]);
+    expect([q("input.r1").hasAttribute("checked"), q("input.r2").hasAttribute("checked")]).toEqual([false, true]);
+  });
+
+  it("ハイドレーションはサーバのフォーム要素を引き取り、以後の書き込みに従う", async () => {
+    const html = await serverRender(formPage, formState());
+    let serverInputs: Element[] = [];
+    const { root, write } = await clientLoad(html, formState(), (r) => { serverInputs = Array.from(r.querySelectorAll("input, select, textarea")); });
+    for (const n of serverInputs) expect(n.isConnected).toBe(true);
+    const q = (sel: string) => root.querySelector(sel) as any;
+    expect(q("input.name").value).toBe("Alice");
+    expect(q("input.agreed").checked).toBe(false);
+    expect(q("input.news").checked).toBe(true);
+    expect(q("select.idx").selectedIndex).toBe(2);
+    expect(q("select.color").value).toBe("green");
+    expect(q("textarea.memo").value).toBe("Hello </textarea> & World");
+    expect(q("input.r2").checked).toBe(true);
+    await write((s) => {
+      s.name = "Bob"; s.agreed = true; s.news = false; s.idx = 0; s.color = "blue"; s.memo = "next";
+      s["todos.1.done"] = true; s.size = "s";
+    });
+    expect(q("input.name").value).toBe("Bob");
+    expect(q("input.agreed").checked).toBe(true);
+    expect(q("input.news").checked).toBe(false);
+    expect(q("select.idx").selectedIndex).toBe(0);
+    expect(q("select.color").value).toBe("blue");
+    expect(q("textarea.memo").value).toBe("next");
+    expect(Array.from(root.querySelectorAll("li input[type=checkbox]"), (i: any) => i.checked)).toEqual([true, true]);
+    expect(q("input.r1").checked).toBe(true);
+  });
+
+  it("サーバが変えていないフォーム要素の HTML は変えず、{{ を含む textarea の値はクライアントに任せる", async () => {
+    const html = await serverRender(
+      `<wcs-state enable-ssr></wcs-state><input class="plain" name="q"><input class="same" value="x" data-wcs="value: same"><select class="plain"><option disabled>-</option><option>A</option><option>B</option></select><textarea class="tpl" data-wcs="value: tpl"></textarea>`,
+      { same: "x", tpl: "{{ secret }}" },
+    );
+    expect(html).toContain(`<input class="plain" name="q">`);
+    expect(html).toContain(`<input class="same" value="x" data-wcs="value: same">`);
+    expect(html).toContain(`<select class="plain"><option disabled="">-</option><option>A</option><option>B</option></select>`);
+    expect(html).toContain(`<textarea class="tpl" data-wcs="value: tpl"></textarea>`);
+    const { root } = await clientLoad(html, { same: "x", tpl: "{{ secret }}" });
+    expect((root.querySelector("textarea") as HTMLTextAreaElement).value).toBe("{{ secret }}");
+  });
+
+  it("複数選択の select は最初の option だけの選択も書き、mustache を持つ textarea の中身はクライアントが戻す", async () => {
+    const state = () => ({ first: "a", t: "T", v: "V" });
+    const html = await serverRender(
+      `<wcs-state enable-ssr></wcs-state><select multiple data-wcs="value: first"><option value="a">A</option><option value="b">B</option></select><textarea data-wcs="value: v">{{ t }}</textarea>`,
+      state(),
+    );
+    expect(html).toContain(`<option value="a" selected="">A</option><option value="b">B</option>`);
+    expect(html).toContain(`data-wcs-raw="{{ t }}"`);
+    const { root } = await clientLoad(html, state());
+    expect((root.querySelector("textarea") as HTMLTextAreaElement).value).toBe("V");
+    expect((root.querySelector("select") as HTMLSelectElement).selectedOptions.length).toBe(1);
+  });
+
+  it("<wcs-state> の無い文書のフォーム要素には触れない", () => {
+    const h = document.createElement(`ssr-plain-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<input>`;
+    (root.querySelector("input") as HTMLInputElement).value = "typed";
+    (globalThis as any)[Symbol.for("wcstack.ssr.snapshotBuilder")].build(root);
+    expect(root.innerHTML).toBe("<input>");
+  });
+});
