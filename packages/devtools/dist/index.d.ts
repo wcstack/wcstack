@@ -69,6 +69,8 @@ interface IStateElementSummaryLike {
      * $listKeys 宣言」なので、前提判定の正確化に paths.list と対で使う
      *（明示 index 書き込みは前提に依らず発火し得る）。旧ランタイムにはフィールド自体が
      * 無いため optional（undefined = $listKeys 側が観測不能）。宣言なしは null。
+     * The prerequisite is @wcstack/state 3.x's: a 4.0 runtime fires row watches without a `for`
+     * or `$listKeys`, so the coverage report does not judge it there (DevtoolsCore).
      */
     readonly keyedListPaths?: ReadonlySet<string> | null;
 }
@@ -345,7 +347,9 @@ type CoreChangeListener = (kind: CoreChangeKind) => void;
  * 配線カバレッジ 1 行（static-wiring-dx-design.md §4 — 宣言 × 実測の突合）。
  * - watch: `fired`（count 回）/ `never` / `prerequisite-missing`
  *   （ワイルドカード行 watch は「for バインド or $listKeys 宣言」が無いと
- *   リスト書き込みが行へ届かない — 「未発火」と区別しないと誤警告になる）
+ *   リスト書き込みが行へ届かない — 「未発火」と区別しないと誤警告になる）.
+ *   `prerequisite-missing` is reported for a @wcstack/state 3.x runtime only: 4.0 row watches
+ *   need neither (see rowWatchNeedsListBinding).
  * - command / eventToken: `emitted`（count 回）/ `never` /
  *   `emitted-unheard`（全 emit が subscriberCount 0 = 空撃ち。§4 の突合対象）
  * - binding: canonical declared がある場合のみ。`attached` / `never-attached`

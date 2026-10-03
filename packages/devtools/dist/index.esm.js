@@ -235,6 +235,23 @@ function rootLabelOf(rootNode) {
     }
     return rootNode.nodeName.toLowerCase();
 }
+/**
+ * Whether list writes reach a wildcard row watch of this runtime only when each list it ranges
+ * over is bound by a `for` (`paths.list`) or declared in `$listKeys` (`keyedListPaths`).
+ *
+ * That is @wcstack/state 3.x (state-watch-hook-design.md §6-3). 4.0 keeps the lists a row watch
+ * ranges over synced itself, so its row watches fire on list writes without either
+ * (packages/state/src/temporal/watch.ts) — the prerequisite does not exist there, and a row watch
+ * that has not fired is plain `never`. (A 4.0 summary's `paths.list` also holds the lists of every
+ * declared path, the `$watch` keys' own included, so it never reads as "no for binding" anyway.)
+ *
+ * Decided by the major of the source's `packageVersion`: a devtools 4.x can meet a 3.x runtime on a
+ * page that pinned `@wcstack/state@3` while migrating. A version that does not parse is taken as an
+ * old runtime, which keeps the report as cautious as it was before 4.0.
+ */
+function rowWatchNeedsListBinding(packageVersion) {
+    return !(Number.parseInt(String(packageVersion), 10) >= 4);
+}
 /** token カバレッジ 1 行の判定（§4: 空撃ちのみ / 一部空撃ち / 正常 / 未発火） */
 function tokenCoverageOf(kind, name, stat) {
     if (stat === undefined) {
@@ -464,6 +481,8 @@ class DevtoolsCore {
             if (stateElement !== undefined && summary.element !== stateElement) {
                 continue;
             }
+            // a roster entry exists only while its source is registered (onSourceUnregistered drops both)
+            const needsListBinding = rowWatchNeedsListBinding(this._sources.get(entry.sourceId).packageVersion);
             // --- watch: 宣言（watchPaths）× 実測（watch-fired 台帳・自ツリー + 旧 payload 合算） ---
             for (const path of summary.watchPaths ?? []) {
                 const count = this._measuredFor(this._watchFiredStats, pathKeyOf(path), summary.element)?.count ?? 0;
@@ -471,7 +490,12 @@ class DevtoolsCore {
                     out.push({ kind: "watch", name: path, status: "fired", count, note: null });
                     continue;
                 }
-                // ワイルドカード行 watch に**リスト書き込み**が届く前提 = 各 `.*` 階層の
+                // 4.0: a row watch keeps its lists synced itself — nothing to be missing
+                if (!needsListBinding) {
+                    out.push({ kind: "watch", name: path, status: "never", count: 0, note: null });
+                    continue;
+                }
+                // (@wcstack/state 3.x) ワイルドカード行 watch に**リスト書き込み**が届く前提 = 各 `.*` 階層の
                 // リストが「for バインド（paths.list）or `$listKeys` 宣言（keyedListPaths）」
                 // されていること（watch 設計 §6-3）。未成立は「未発火」と区別する。
                 // 前提はリスト置換経路に限る主張 — 明示 index 書き込み（`$resolve` /

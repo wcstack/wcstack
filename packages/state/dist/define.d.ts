@@ -231,7 +231,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  *
  * ### 基本的な使い方 (TypeScript)
  * ```ts
- * import { defineState } from '@wcstack/state';
+ * import { defineState } from '@wcstack/state/define';
  *
  * export default defineState({
  *   count: 0,
@@ -250,7 +250,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  *
  * ### JavaScript (JSDoc)
  * ```js
- * import { defineState } from '@wcstack/state';
+ * import { defineState } from '@wcstack/state/define';
  *
  * export default defineState({
  *   count: 0,
@@ -264,7 +264,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  * ```html
  * <wcs-state>
  *   <script type="module">
- *     import { defineState } from '@wcstack/state';
+ *     import { defineState } from '@wcstack/state/define';
  *     export default defineState({
  *       count: 0,
  *       increment() { this.count++; }

@@ -40,43 +40,32 @@ function getConfig() {
     }
     return frozenConfig;
 }
-// The defaults as shipped, for warnInvalid: a value 3.x lets through unchecked must not change
-// what a later call is compared against.
-const defaults = { ..._config, tagNames: { ..._config.tagNames } };
-const warned = new Set();
-/**
- * 3.5 forward-compat check. Warns, once per key per page, about an option that 4.0's
- * bootstrapDefined throws on: one this package does not have, a value of another type than its
- * default (null, or an array for an object, included), or a tag name it does not define or that is
- * not a string. An undefined value is left out, as in 4.0. It only warns: setConfig then goes on
- * exactly as in 3.x. Bootstrap-time only, never on a hot path.
- */
-function warnInvalid(given, known, path = "") {
-    for (const [key, value] of Object.entries(given)) {
-        const name = path + key;
-        const current = known[key];
-        if (value === undefined) {
-            continue;
-        }
-        if (!Object.prototype.hasOwnProperty.call(known, key) ||
-            value === null ||
-            typeof value !== typeof current ||
-            Array.isArray(value) !== Array.isArray(current)) {
-            if (!warned.has(name)) {
-                warned.add(name);
-                console.warn(`[@wcstack/defined] bootstrapDefined: "${name}" is not one of its options, or not of the option's type. 3.x ignores it or applies it unchecked; 4.0 throws on it.`);
-            }
-        }
-        else if (name === "tagNames") {
-            warnInvalid(value, current, "tagNames.");
-        }
-    }
+/** A misspelt option would otherwise do nothing: `bootstrapDefined` refuses it. */
+function invalid(key) {
+    throw new Error(`[@wcstack/defined] bootstrapDefined: "${key}" is not one of its options, or not of the option's type.`);
 }
+/**
+ * Applies the options given; an undefined value is left out. An option this package does not
+ * have, a value of another type than its default (null, or an array for an object, included) or
+ * a tag name it does not define throws, and then nothing is applied.
+ */
 function setConfig(partialConfig) {
-    warnInvalid(partialConfig, defaults);
-    if (partialConfig.tagNames) {
-        Object.assign(_config.tagNames, partialConfig.tagNames);
+    const options = _config;
+    const tags = _config.tagNames;
+    const given = Object.entries(partialConfig).filter(([, value]) => value !== undefined);
+    const givenTags = Object.entries(partialConfig.tagNames ?? {}).filter(([, tag]) => tag !== undefined);
+    for (const [key, value] of given) {
+        const current = options[key];
+        if (!Object.hasOwn(options, key) || value === null || typeof value !== typeof current || Array.isArray(value) !== Array.isArray(current)) {
+            invalid(key);
+        }
     }
+    for (const [name, tag] of givenTags) {
+        if (!Object.hasOwn(tags, name) || typeof tag !== "string")
+            invalid(`tagNames.${name}`);
+    }
+    for (const [name, tag] of givenTags)
+        tags[name] = tag;
     frozenConfig = null;
 }
 
