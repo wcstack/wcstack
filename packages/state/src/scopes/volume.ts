@@ -36,8 +36,11 @@ interface Volume {
 const rootEngines = new WeakMap<Node, Engine>();
 /** Mount paths held on each root (reserved when a volume connects, kept once grafted). */
 const slots = new WeakMap<Node, Map<string, Volume>>();
-/** Loaded volumes waiting for their root's engine; null: the root's `<wcs-state>` failed to initialize. */
-const waiting = new WeakMap<Node, Volume[] | null>();
+/**
+ * Loaded volumes waiting for their root's engine; an element: the root's `<wcs-state>` that failed
+ * to initialize (what loads later fails with it while it is in the page: failed()).
+ */
+const waiting = new WeakMap<Node, Volume[] | Element>();
 const ORPHAN = "will not graft: the root state failed to initialize.";
 /** The engines of components wired to their host: they read the host's tree, a volume has none to graft onto. */
 export const wired = new WeakSet<Engine>();
@@ -73,12 +76,24 @@ function validPath(path: string): boolean {
   return path !== "" && path.split(".").every((s) => s !== "" && !/[*$#@\s]/.test(s));
 }
 
+/**
+ * An engine whose `<wcs-state>` is in the page: a root taken out of it (the page's content
+ * replaced) stays registered until another root replaces it, and nothing grafts onto it meanwhile.
+ */
+const live = (e: Engine | undefined): Engine | undefined => ((e?.element as Node | undefined)?.isConnected ? e : undefined);
+
+/** The root `<wcs-state>` on `root` failed to initialize, and is still in the page. */
+function failed(root: Node): boolean {
+  const w = waiting.get(root);
+  return w !== undefined && !Array.isArray(w) && w.isConnected;
+}
+
 /** The engine created on `root`: graft the volumes that were waiting for it (before its page is bound). */
 export function rootEngineCreated(engine: Engine, root: Node): void {
   rootEngines.set(root, engine);
   const list = waiting.get(root);
   waiting.delete(root);
-  for (const v of list ?? []) graft(v, engine);
+  if (Array.isArray(list)) for (const v of list) graft(v, engine);
 }
 
 function release(v: Volume): void {
@@ -170,19 +185,21 @@ export function watchRoot(el: HTMLElement, root: Node): null {
     // beside the root that binds it: nothing failed for what waits there
     const live = engines.get(root)?.element as Element | undefined;
     if ((el as WcsState).bound || (live !== undefined && live !== el && live.isConnected)) return;
-    orphan(root);
+    orphan(root, el);
     for (const f of giveUp.get(root) ?? []) f();
   });
   return null;
 }
 
 /**
- * The state of `root` failed to initialize (the page's root, or a component's in its shadow root):
- * the volumes waiting there, and those that load later, report it and settle.
+ * The state of `root` failed to initialize (`el`: the page's root, or a component's in its shadow
+ * root): the volumes waiting there report it and settle, and so do those that load later while
+ * `el` is in the page.
  */
-export function orphan(root: Node): void {
-  for (const v of waiting.get(root) ?? []) fail(v, ORPHAN);
-  waiting.set(root, null);
+export function orphan(root: Node, el: Element): void {
+  const list = waiting.get(root);
+  if (Array.isArray(list)) for (const v of list) fail(v, ORPHAN);
+  waiting.set(root, el);
 }
 
 /** What else waits on a root node's `<wcs-state>` (a component, for the page's wiring). */
@@ -193,7 +210,7 @@ const giveUp = new WeakMap<Node, Set<() => void>>();
  * returned stops waiting (what `fn` holds is not kept for as long as the page lives).
  */
 export function onRootFailed(root: Node, fn: () => void): () => boolean {
-  if (waiting.get(root) === null) fn();
+  if (failed(root)) fn();
   const s = giveUp.get(root) ?? new Set();
   giveUp.set(root, s.add(fn));
   return () => s.delete(fn);
@@ -211,7 +228,8 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
     let held = slots.get(root);
     if (held === undefined) slots.set(root, (held = new Map()));
     const other = held.get(path);
-    if (other !== undefined && other !== v) problem = `will not graft: another volume already holds "${path}".`;
+    // (one grafted onto a root that left the page holds it no more)
+    if (other !== undefined && other !== v && (other.engine === null || live(other.engine))) problem = `will not graft: another volume already holds "${path}".`;
     else held.set(path, v);
   }
   return {
@@ -224,11 +242,11 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
       v.state = state;
       return new Promise<void>((resolve) => {
         v.settle = resolve;
-        const engine = rootEngines.get(root) ?? engines.get(root);
+        const engine = live(rootEngines.get(root)) ?? live(engines.get(root));
         const list = waiting.get(root);
         if (engine !== undefined) graft(v, engine);
-        else if (list === null) fail(v, ORPHAN);
-        else waiting.set(root, [...(list ?? []), v]);
+        else if (failed(root)) fail(v, ORPHAN);
+        else waiting.set(root, [...(Array.isArray(list) ? list : []), v]);
       });
     },
     connected() {

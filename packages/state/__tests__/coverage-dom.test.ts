@@ -646,3 +646,26 @@ describe("lisKeep（行の移動を最小にする最長増加部分列）", () 
     expect(Array.from(lisKeep(new Int32Array(0)))).toEqual([]);
   });
 });
+
+describe("取り除かれた根（binder プロトコル）", () => {
+  it("文書から取り除かれた根の engine には束ねず、新しい根の最初のマウントが束ねる", async () => {
+    document.body.innerHTML = `<wcs-state json='{"msg": "old"}'></wcs-state>`;
+    const old = document.body.querySelector("wcs-state") as any;
+    await old.connectedCallbackPromise;
+    // the old root leaves; the new one has no state yet when the content is handed over
+    document.body.innerHTML = `<wcs-state></wcs-state><main></main>`;
+    const rootEl = document.body.querySelector("wcs-state") as any;
+    const section = document.createElement("section");
+    section.innerHTML = `<p data-wcs="textContent: msg"></p>`;
+    document.body.querySelector("main")!.appendChild(section);
+    (globalThis as any)[BINDER_KEY].bind(section);
+    expect(section.querySelector("p")!.textContent).toBe("");
+    rootEl.setInitialState({ msg: "new" });
+    await rootEl.connectedCallbackPromise;
+    expect(section.querySelector("p")!.textContent).toBe("new");
+    rootEl.createState("writable", (s: any) => { s.msg = "next"; });
+    await flush();
+    expect(section.querySelector("p")!.textContent).toBe("next");
+    document.body.innerHTML = "";
+  });
+});

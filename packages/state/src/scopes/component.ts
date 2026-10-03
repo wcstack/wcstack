@@ -850,7 +850,7 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
   };
   // a component that does not mount: the volumes in its shadow root have no tree to graft onto
   const failed = (e: unknown): never => {
-    if (shadow) orphan(parent!);
+    if (shadow) orphan(parent!, el);
     throw e;
   };
   return {
