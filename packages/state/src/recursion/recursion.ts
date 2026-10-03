@@ -19,6 +19,7 @@ import type { Engine } from "../engine";
 import type { Pattern } from "../pattern";
 import type { StateRow } from "../list";
 import { raiseError } from "../parser/raiseError";
+import { raise, M } from "../messages";
 import { recursionUnsupported } from "../parser/parseStatePart";
 
 const NAME = "$recursion";
@@ -218,16 +219,27 @@ function wrap(engine: Engine): void {
   e.setAll = (path: string, indexes: number[], value: unknown, options?: { spread?: boolean }) => {
     const spec = specs.get(engine);
     if (spec === undefined || !path.includes("**")) return setAll.call(engine, path, indexes, value, options);
-    if (!Array.isArray(indexes)) throw new Error(`$setAll("${path}") needs indexes ([] for every match)`);
+    // (the core's own messages where the core's $setAll has one)
+    if (!Array.isArray(indexes)) raise(M.SetAllNeedsIndexes, [path]);
     if (indexes.length > 0) raiseError(`${code("setall-form")} $setAll("${path}", indexes, …) with "**" takes no partial prefix: pass [] to write every node.`);
-    if (typeof value === "function" || options?.spread === true) throw new Error(`$setAll("${path}", [], value) with "**" takes a plain value (no mapper, no spread).`);
-    if (e.readonlyDepth > 0) throw new Error("This state is readonly.");
+    if (typeof value === "function" || options?.spread === true) raiseError(`${code("setall-form")} $setAll("${path}", [], value) with "**" takes a plain value (no mapper, no spread).`);
+    if (e.readonlyDepth > 0) raise(M.Readonly);
     const suffix = suffixOf(spec, path);
-    if (suffix === `.${spec.key}` || suffix.startsWith(`.${spec.key}.`)) {
-      raiseError(`${code("structural-write")} "${path}" writes the recursion structure itself (the "${spec.key}" lists).`);
+    // the checks (3.x's): an index spelling is a `*` (`.children.0` is a child node), and a child
+    // node's path is a node's (`.children.*.total` is the family `.total` one level down)
+    let rest = suffix.replace(/\.\d+(?=\.|$)/g, ".*");
+    while (rest.startsWith(spec.step)) rest = rest.slice(spec.step.length);
+    // the structure: a node, the objects on the way to its child list and the list, the list's length
+    const segs = spec.key.split(".");
+    if (rest === "" || rest === `.${spec.key}.length` || segs.some((_, i) => rest === `.${segs.slice(0, i + 1).join(".")}`)) {
+      raiseError(`${code("structural-write")} "${path}" writes the recursion structure itself (a node, its "${spec.key}" list or that list's length, or an object on the way to it).`);
     }
     for (const s of spec.families.keys()) {
-      if (suffix === s || suffix.startsWith(`${s}.`)) raiseError(`${code("readonly")} "${path}" writes into the recursive getter "${spec.list}.**${s}".`);
+      // (a family under a child node, `.children.*.x`, is `.x` at every depth below the first: refused
+      // before anything is written, not part-way through)
+      let f = s;
+      while (f.startsWith(spec.step)) f = f.slice(spec.step.length);
+      if (rest === f || rest.startsWith(`${f}.`)) raiseError(`${code("readonly")} "${path}" writes into the recursive getter "${spec.list}.**${s}".`);
     }
     // every node first: a tree that fails the walk writes nothing
     const nodes: [number, StateRow][] = [];

@@ -70,16 +70,18 @@ function enroll(el: WcsState): void {
  * Resolves when the bindings of `root` are built — by any `<wcs-state>` in it now, whatever its
  * `$connectedCallback` does then, as 3.x — and rejects, with the first failure, only when every one
  * failed before building them. A stray one (a second root, #47; one that fails to load) changes
- * nothing while another binds the root; one taken out of the page counts no more once another
- * connects (a root replaced: the new one decides).
+ * nothing while another binds the root; one taken out of the page (or moved to another root) counts
+ * no more (a root replaced: the new one decides). With none in it — none ever, or only ones that left —
+ * it resolves at once: there is nothing to wait for (a page without state).
  */
 export function getBindingsReady(root: Node): Promise<void> {
-  const els = readyByRoot.get(root) ?? [];
+  const list = readyByRoot.get(root) ?? [];
+  const els = list.filter((e) => e.getRootNode() === root);
   return Promise.any(els.map((el) => el.initializePromise.then((): unknown => el.bound || el.connectedCallbackPromise))).then(
     () => {},
     // none, or every one failed: one connected since (the list is a new one) may still bind the root
     // (quoted: `errors` is a name the build shortens, an AggregateError's is not)
-    (e: AggregateError) => (els.length ? readyByRoot.get(root) !== els ? getBindingsReady(root) : Promise.reject(e["errors"][0]) : undefined),
+    (e: AggregateError) => (els.length ? readyByRoot.get(root) !== list ? getBindingsReady(root) : Promise.reject(e["errors"][0]) : undefined),
   );
 }
 
@@ -271,6 +273,16 @@ export class WcsState extends HTMLElementBase {
       const state = await this.loadState();
       const loading = loadFeatures(state);
       if (loading) await loading;
+      // taken out of its root while it loaded (the page's content replaced, or moved to another root):
+      // nothing is mounted on the root it left. It starts again where it is now, or when it connects
+      // again. A state given by setInitialState() is kept for that; a state= / src= / json= / inline
+      // script source is read again (a fetch runs again, an inline module is evaluated again)
+      if (this.getRootNode() !== root) {
+        this.initial = state;
+        this.started = false;
+        if (this.isConnected) this.connectedCallback();
+        return;
+      }
       if (this.hasAttribute("enable-ssr")) requireFeature("ssr", "enable-ssr");
       // one state tree per root: another <wcs-state> already bound this root (and still does —
       // whatever its $connectedCallback did then), or a component's took it

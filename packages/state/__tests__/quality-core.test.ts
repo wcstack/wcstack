@@ -865,8 +865,8 @@ describe("C5: $eqIndex の付け替え", () => {
   });
 });
 
-describe("C11: 描いている一覧のキーが無い状態への再セット", () => {
-  it("その一覧の for の失敗として報告し、再セットは最後まで進む（reset の受け口が呼ばれ、以後の書き込みも描かれる）", async () => {
+describe("C11: 描いている一覧のキーが無い状態・一覧が読めない状態への再セット", () => {
+  it("キーの無い一覧は空になり（失敗にしない）、読めない一覧はその for の失敗として報告し、どちらも再セットは最後まで進む（reset の受け口が呼ばれ、以後の書き込みも描かれる）", async () => {
     const { hooks } = await import("../src/hooks");
     const phases: string[] = [];
     const prev = hooks.element;
@@ -877,16 +877,22 @@ describe("C11: 描いている一覧のキーが無い状態への再セット",
     try {
       const { root, el } = await page(`<ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul><p>{{ n }}</p>`, { items: ["x"], n: 0 });
       const reported: [string, string][] = [];
-      expect(() => el.setInitialState({
-        n: 1,
-        $errorCallback(_e: unknown, info: { path: string; bindingType: string }) { reported.push([info.bindingType, info.path]); },
-      })).not.toThrow();
-      expect(reported).toEqual([["for", "items"]]);
+      const $errorCallback = (_e: unknown, info: { path: string; bindingType: string }) => { reported.push([info.bindingType, info.path]); };
+      // a key the old state had: empty, as a missing path under a key is
+      expect(() => el.setInitialState({ n: 1, $errorCallback })).not.toThrow();
+      expect(reported).toEqual([]);
+      expect(root.querySelectorAll("li").length).toBe(0);
       expect(phases).toContain("reset");
       expect(root.querySelector("p")!.textContent).toBe("1");
       el.createState("writable", (s: any) => { s.n = 2; });
       await flush();
       expect(root.querySelector("p")!.textContent).toBe("2");
+      // a list that cannot be read fails alone
+      phases.length = 0;
+      expect(() => el.setInitialState({ n: 3, get items(): unknown[] { throw new Error("boom"); }, $errorCallback })).not.toThrow();
+      expect(reported).toEqual([["for", "items"]]);
+      expect(phases).toContain("reset");
+      expect(root.querySelector("p")!.textContent).toBe("3");
     } finally {
       hooks.element = prev;
     }
@@ -1124,6 +1130,27 @@ describe("F2: 同じ root の 2 本目の <wcs-state>", () => {
     root.prepend(third);
     await third.connectedCallbackPromise;
     expect(error).toHaveBeenCalledTimes(1);
+  });
+
+  it("束縛を作れずに失敗した 1 本目はその root を持たない: 2 本目は #47 で拒まれずに root を引き継ぐ", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const h = document.createElement(`quality-failed-root-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><p data-wcs="textContent: a|"></p>`;
+      const first = root.querySelector("wcs-state") as any;
+      first.setInitialState({ a: 1 });
+      document.body.appendChild(h);
+      await expect(first.connectedCallbackPromise).rejects.toThrow("[wcs/binding-syntax]");
+      const second = document.createElement("wcs-state") as any;
+      second.setInitialState({ a: 2 });
+      root.appendChild(second);
+      await second.connectedCallbackPromise;
+      expect(second.engine).not.toBeNull();
+      h.remove();
+    } finally {
+      error.mockRestore();
+    }
   });
 });
 

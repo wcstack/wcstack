@@ -697,6 +697,9 @@ describe("#405 3.5 の [wcs/v4-migration] の警告が約束する 4.0 の振る
 
   it.each([
     [{ $behavior: true }],
+    // (3.5 does not warn on these two: its check takes null for no $behavior and an array for an object)
+    [{ $behavior: null }],
+    [{ $behavior: [] }],
     [{ $behavior: { mustache: false } }],
     [{ $behavior: { enableMustache: "false" } }],
     [{ $features: "temporal" }],
@@ -706,11 +709,10 @@ describe("#405 3.5 の [wcs/v4-migration] の警告が約束する 4.0 の振る
     expect(await init({ v: 1, ...decl })).not.toBe("ok");
   });
 
-  it("投げない $behavior / $features（3.5 も警告しない）: 既定と同じ値・{}・null・後付けの名前の配列・[]", async () => {
+  it("投げない $behavior / $features（3.5 も警告しない）: 既定と同じ値・{}・後付けの名前の配列・[]", async () => {
     for (const decl of [
       { $behavior: { enableMustache: true, sameValueGuard: true, enableDirectionalInitialSync: true } },
       { $behavior: {} },
-      { $behavior: null },
       { $features: ["temporal"] },
       { $features: [] },
     ]) {

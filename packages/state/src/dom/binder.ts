@@ -15,10 +15,11 @@ const early = new Set<Element>();
 function bind(subtree: Node, options?: IWcsBindOptions): void {
   // not in a document (it left, or was replaced, as a chain's `else:` template by its anchor): nothing to bind
   if (subtree.nodeType !== 1 || !subtree.isConnected) return;
+  // (a root taken out of the page stays registered until another replaces it: not one to bind to)
   const engine = engines.get(subtree.getRootNode());
   // (once each: the router hands the same nodes over on every insertion. One handed over early is
   // walked by the first mount where it is: the declaration is not needed then)
-  if (engine === undefined) early.add(subtree as Element);
+  if (engine === undefined || (engine.element as Node | null)?.isConnected === false) early.add(subtree as Element);
   else mountSubtree(engine, subtree as Element, options?.range);
 }
 

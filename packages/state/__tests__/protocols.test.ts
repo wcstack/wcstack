@@ -183,6 +183,81 @@ describe("初期化済みの要素への setInitialState（再セット）", () 
     expect(Array.from(root.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["y", "z"]);
   });
 
+  it("新しい状態に無いトップレベルのキーは、その下のパスと同じく空になる（失敗にせず、古い値も残さない）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { root, el } = await host(
+        `<wcs-state></wcs-state><p class="t">{{ msg }}</p><p class="p" data-wcs="textContent: msg"></p><p class="d">{{ user.name }}</p><p class="g">{{ shout }}</p><input data-wcs="value: msg"><ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul>`,
+        { msg: "a", user: { name: "ann" }, items: ["x"], get shout() { return `${(this as any).msg}!`; } },
+      );
+      const q = (sel: string) => root.querySelector(sel)!.textContent;
+      // (the getter comes with the new state; msg and items do not)
+      const next = { user: {}, get shout() { return `${(this as any).msg}!`; } };
+      el.setInitialState(next);
+      expect([q(".t"), q(".p"), q(".d"), q(".g")]).toEqual(["", "", "", "undefined!"]);
+      expect(root.querySelectorAll("li").length).toBe(0);
+      // an element input keeps its own value when state has none (B8)
+      expect((root.querySelector("input") as HTMLInputElement).value).toBe("a");
+      expect(error).not.toHaveBeenCalled();
+      // the author's object is not written to
+      expect(Object.keys(next)).toEqual(["user", "shout"]);
+      // written again, the bindings follow
+      el.createState("writable", (s: any) => { s.msg = "b"; s.items = ["y"]; });
+      await flush();
+      expect([q(".t"), q(".p")]).toEqual(["b", "b"]);
+      expect(Array.from(root.querySelectorAll("li"), (li) => li.textContent)).toEqual(["y"]);
+      // a key no state had still fails on read
+      expect(() => el.createState("readonly", (s: any) => s.never)).toThrow("[wcs/binding-path-missing]");
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it.each([
+    ["凍結した状態", () => Object.freeze({ user: Object.freeze({}) })],
+    ["拡張を禁じた状態", () => Object.preventExtensions({ user: {} })],
+    ["書き込みを拒む Proxy の状態", () => new Proxy({ user: {} } as Record<string, any>, { set: () => false, defineProperty: () => false })],
+  ])("%s への再セットも、無いトップレベルのキーを空にし、状態のオブジェクトを変えない", async (_name, make) => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { root, el } = await host(
+        `<wcs-state></wcs-state><p class="t">{{ msg }}</p><ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul>`,
+        { msg: "a", user: {}, items: ["x"] },
+      );
+      const next = make();
+      expect(() => el.setInitialState(next)).not.toThrow();
+      expect(root.querySelector(".t")!.textContent).toBe("");
+      expect(root.querySelectorAll("li").length).toBe(0);
+      expect(Object.keys(next)).toEqual(["user"]);
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("続けて 2 回再セットしても、前の再セットで無くなったキーは空のまま（3 回目に戻れば描く）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { root, el } = await host(`<wcs-state></wcs-state><p class="t">{{ msg }}</p><p class="n">{{ n }}</p>`, { msg: "a", n: 1 });
+      const q = (sel: string) => root.querySelector(sel)!.textContent;
+      el.setInitialState({ n: 2 });
+      expect([q(".t"), q(".n")]).toEqual(["", "2"]);
+      // the second state lacks msg too (the first one never had it)
+      const second = { n: 3 };
+      el.setInitialState(second);
+      expect([q(".t"), q(".n")]).toEqual(["", "3"]);
+      expect(Object.keys(second)).toEqual(["n"]);
+      el.setInitialState({ msg: "c", n: 4 });
+      expect([q(".t"), q(".n")]).toEqual(["c", "4"]);
+      expect(error).not.toHaveBeenCalled();
+      // a key that is back is the state's again: dropped by the next re-set, it is empty again
+      el.setInitialState({ n: 5 });
+      expect([q(".t"), q(".n")]).toEqual(["", "5"]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("書き込みではない: $renderedCallback を呼ばない（その後の書き込みでは呼ぶ）", async () => {
     const { el } = await host(`<wcs-state></wcs-state><p>{{ n }}</p>`, { n: 1 });
     const rendered = vi.fn();

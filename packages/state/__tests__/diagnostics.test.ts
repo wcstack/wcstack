@@ -96,6 +96,20 @@ describe("束ねたパスが状態に無い（wcs/binding-path-missing）", () =
     expect(second).toEqual([]);
   });
 
+  it("再セットで無くなったトップレベルのキーの下のパスと $watch は警告しない（宣言されたことの無いキーは警告する）", async () => {
+    const { el } = await page(
+      `<p>{{ obj.x }}</p><p>{{ ghost.z }}</p><ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul>`,
+      { obj: { x: 1 }, items: ["a"], b: 1 },
+    );
+    const got = await warnings(async () => {
+      el.setInitialState({ $watch: { b() {}, "obj.y"() {} } });
+      await flush();
+    });
+    // the dropped keys (obj, items, b) are declared; ghost never was
+    expect(got).toHaveLength(1);
+    expect(got[0]).toContain('[wcs/binding-path-missing] Bound path "ghost.z"');
+  });
+
   it("マウントしたコンポーネントの中のマウントしたキーは黙る", async () => {
     const tag = `diag-cmp-${seq++}`;
     customElements.define(tag, class extends HTMLElement {

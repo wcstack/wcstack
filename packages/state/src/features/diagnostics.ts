@@ -82,6 +82,8 @@ function missing(engine: Engine, p: Pattern): { seg: string; names: string[] } |
       continue;
     }
     const d = findDescriptor(v, q.last);
+    // a top-level key a re-set dropped is declared: it reads undefined, and a write fills it
+    if (d === undefined && q.parent === null && engine.dropped.has(q.last)) return null;
     if (d === undefined) {
       const names = keysOf(v);
       // getters declared one level under the same parent (`items.*.subtotal`)

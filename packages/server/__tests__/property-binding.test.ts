@@ -76,47 +76,32 @@ describe('属性で代替可能なプロパティ', () => {
   });
 });
 
-describe('属性で代替不可なプロパティ（ハイドレーション用データ）', () => {
-  it('innerHTML が wcs-ssr 内に格納される', async () => {
+
+// 3.x は属性で表せないプロパティ（innerHTML など）を、要素の data-wcs-ssr-id と <wcs-ssr> の
+// script[data-wcs-ssr-props] の値の表に入れ、クライアントがそれを戻していた。4.0 には値の表が無い:
+// サーバの HTML には描いた結果がそのまま入り、クライアントは引き取ったノードに全バインディングを当て直す
+// （@wcstack/state の src/ssr/ssr.ts「Not carried over」）。
+describe('属性で代替不可なプロパティ（4.0: 値の表は無い）', () => {
+  it('innerHTML の値はサーバの HTML に描かれ、値の表（data-wcs-ssr-id / props）は出ない', async () => {
     const result = await renderToString(`
       <wcs-state enable-ssr json='{"html":"<b>bold</b>"}'></wcs-state>
       <div data-wcs="innerHTML: html"></div>
     `);
     const doc = parseResult(result);
-
-    // 要素に data-wcs-ssr-id が振られている
-    const el = doc.querySelector('div[data-wcs-ssr-id]');
-    const ssrId = el?.getAttribute('data-wcs-ssr-id');
-    expect(ssrId).toBeTruthy();
-
-    // <wcs-ssr> 内の props script にデータがある
-    const propsScript = doc.querySelector('wcs-ssr script[data-wcs-ssr-props]');
-    expect(propsScript).not.toBeNull();
-    const propsData = JSON.parse(propsScript?.textContent ?? '{}');
-    expect(propsData[ssrId!]).toBeDefined();
-    expect(propsData[ssrId!].innerHTML).toBe('<b>bold</b>');
+    expect(doc.querySelector('div[data-wcs="innerHTML: html"]')?.innerHTML).toBe('<b>bold</b>');
+    expect(doc.querySelector('[data-wcs-ssr-id]')).toBeNull();
+    expect(doc.querySelector('wcs-ssr script[data-wcs-ssr-props]')).toBeNull();
   });
 
-  it('value/checked 等の既知プロパティは props に含まれない', async () => {
+  it('value / checked は属性に入り、値の表は出ない', async () => {
     const result = await renderToString(`
       <wcs-state enable-ssr json='{"name":"Alice","agreed":true}'></wcs-state>
       <input data-wcs="value: name" />
       <input type="checkbox" data-wcs="checked: agreed" />
     `);
     const doc = parseResult(result);
-
-    // 属性に反映されている
-    const input = doc.querySelector('input[data-wcs="value: name"]');
-    expect(input?.getAttribute('value')).toBe('Alice');
-
-    // props スクリプトに value/checked は含まれない（属性化済み）
-    const propsScript = doc.querySelector('wcs-ssr script[data-wcs-ssr-props]');
-    if (propsScript) {
-      const propsData = JSON.parse(propsScript.textContent ?? '{}');
-      for (const id of Object.keys(propsData)) {
-        expect(propsData[id].value).toBeUndefined();
-        expect(propsData[id].checked).toBeUndefined();
-      }
-    }
+    expect(doc.querySelector('input[data-wcs="value: name"]')?.getAttribute('value')).toBe('Alice');
+    expect(doc.querySelector('input[data-wcs="checked: agreed"]')?.hasAttribute('checked')).toBe(true);
+    expect(doc.querySelector('wcs-ssr script[data-wcs-ssr-props]')).toBeNull();
   });
 });

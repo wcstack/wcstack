@@ -89,15 +89,60 @@ describe("全深さの $getAll と一斉書き込み", () => {
     const e = make(withTotal({ nodes: forest() }));
     expect(e.proxy.$setAll("nodes.**.selected", [], true)).toBe(5);
     expect(e.proxy.$getAll("nodes.**.selected", [])).toEqual([true, true, true, true, true]);
-    expect(() => e.proxy.$setAll("nodes.**.value", [], (v: number) => v + 1)).toThrow("plain value");
-    expect(() => e.proxy.$setAll("nodes.**.value", [], [1], { spread: true })).toThrow("plain value");
-    expect(() => e.proxy.$setAll("nodes.**.value", undefined as any, 1)).toThrow("needs indexes");
+    // the standard form: the package prefix, then the code (or the core's message number, as the core's $setAll)
+    const plain = '[@wcstack/state] [wcs/recursion-setall-form] $setAll("nodes.**.value", [], value) with "**" takes a plain value (no mapper, no spread).';
+    expect(() => e.proxy.$setAll("nodes.**.value", [], (v: number) => v + 1)).toThrow(plain);
+    expect(() => e.proxy.$setAll("nodes.**.value", [], [1], { spread: true })).toThrow(plain);
+    expect(() => e.proxy.$setAll("nodes.**.value", undefined as any, 1)).toThrow('[@wcstack/state] #9 "nodes.**.value"');
     expect(() => e.proxy.$setAll("nodes.**.children.*", [], 1)).toThrow("[wcs/recursion-structural-write]");
     expect(() => e.proxy.$setAll("nodes.**.total", [], 1)).toThrow("[wcs/recursion-readonly]");
     const shared: any[] = [{ value: 9, children: [] }];
     const bad = make({ nodes: [{ value: 1, children: shared }, { value: 2, children: shared }] });
     expect(() => bad.proxy.$setAll("nodes.**.value", [], 0)).toThrow("[wcs/recursion-shared-list]");
     expect(bad.proxy.$resolve("nodes.*.value", [0])).toBe(1);
+  });
+
+  it("一斉書き込みの構造・読み取り専用の判定は 3.x と同じ: 添字の綴りは子ノード、子ノードの下はノードの下として読む", () => {
+    const e = make(withTotal({ nodes: forest() }));
+    const before = JSON.stringify(e.proxy.$getAll("nodes.**", []));
+    // the structure: the node itself, a child node (any spelling), the child list and its length
+    for (const path of ["nodes.**", "nodes.**.children", "nodes.**.children.*", "nodes.**.children.0", "nodes.**.children.length", "nodes.**.children.0.children", "nodes.**.children.*.children.length"]) {
+      expect(() => e.proxy.$setAll(path, [], {}), path).toThrow("[wcs/recursion-structural-write]");
+    }
+    // a family, one level down, through an index spelling, or inside its value: the getter's
+    for (const path of ["nodes.**.total", "nodes.**.children.*.total", "nodes.**.children.0.total", "nodes.**.total.x"]) {
+      expect(() => e.proxy.$setAll(path, [], 1), path).toThrow('[wcs/recursion-readonly] "' + path + '" writes into the recursive getter "nodes.**.total".');
+    }
+    // nothing was written
+    expect(JSON.stringify(e.proxy.$getAll("nodes.**", []))).toBe(before);
+    // a leaf under a child node is a leaf: each node's children (the roots are nobody's)
+    expect(e.proxy.$setAll("nodes.**.children.*.value", [], 0)).toBe(3);
+    expect(e.proxy.$getAll("nodes.**.value", [])).toEqual([1, 0, 0, 0, 2]);
+  });
+
+  it("子ノードの下の族（nodes.**.children.*.label2）への一斉書き込みは、どの綴りでも書く前に拒む（途中まで書かない）", () => {
+    const nodes = forest();
+    const e = make({ nodes, get "nodes.**.children.*.label2"() { return "L"; } });
+    for (const path of ["nodes.**.label2", "nodes.**.children.*.label2", "nodes.**.children.0.label2"]) {
+      expect(() => e.proxy.$setAll(path, [], "x"), path).toThrow('[wcs/recursion-readonly] "' + path + '" writes into the recursive getter "nodes.**.children.*.label2".');
+    }
+    // nothing was written: the roots have no label2 of their own
+    expect(nodes.map((n) => Object.hasOwn(n, "label2"))).toEqual([false, false]);
+  });
+
+  it("繰り返しが複数のセグメント（branch.children.*）なら、子リストまでの途中のオブジェクトも構造", () => {
+    const tree = () => [
+      { value: 1, branch: { children: [{ value: 10, branch: { children: [] } }] } },
+      { value: 2, branch: { children: [] } },
+    ];
+    const e = new Engine({ $recursion: { "nodes.*": "branch.children.*" }, nodes: tree() }, new DirtyStrategy());
+    for (const path of ["nodes.**", "nodes.**.branch", "nodes.**.branch.children", "nodes.**.branch.children.length", "nodes.**.branch.children.0"]) {
+      expect(() => e.proxy.$setAll(path, [], {}), path).toThrow("[wcs/recursion-structural-write]");
+    }
+    expect(e.proxy.$setAll("nodes.**.value", [], 5)).toBe(3);
+    expect(e.proxy.$getAll("nodes.**.value", [])).toEqual([5, 5, 5]);
+    expect(e.proxy.$setAll("nodes.**.branch.children.*.value", [], 7)).toBe(1);
+    expect(e.proxy.$getAll("nodes.**.value", [])).toEqual([5, 7, 5]);
   });
 
   it("展開への書き込みはどの経路でも [wcs/recursion-readonly]", () => {

@@ -250,8 +250,40 @@ function snapshot(el: Element, engine: Engine): void {
   el.before(ssr);
 }
 
+/**
+ * The form controls' current state into their markup, as 3.x wrote it: an input's value (its
+ * `value` attribute) and checkedness (`checked`), a textarea's value (its text), the options a
+ * select has selected (`selected`) — whatever set them (a `value:` / `checked:` / `selectedIndex:`
+ * binding, `radio:`, a row's), where it differs from what the markup gives back. The page then shows
+ * the server's values before the client binds it, or without JS; the client's bindings find them
+ * there, and write over them from then on. On a page with a `<wcs-state>` only (enable-ssr or not).
+ * A password's value never goes into the HTML (3.x wrote it): the client's binding fills it in.
+ */
+function forms(doc: Document): void {
+  if (doc.querySelector(config.tagNames.state) === null) return;
+  for (const n of Array.from(doc.querySelectorAll<any>("input,textarea,select"))) {
+    if (n.localName === "select") {
+      const o: HTMLOptionElement[] = Array.from(n.options);
+      // (a single select without a marked option, its first enabled one selected: what a parser selects)
+      if (n.multiple || o.some((x) => x.hasAttribute("selected")) || o[n.selectedIndex] !== o.find((x) => !x.disabled)) {
+        for (const x of o) x.toggleAttribute("selected", x.selected);
+      }
+    } else if (n.localName === "textarea") {
+      // (a value with `{{` in it would be the client's markup there, a mustache; a mustache in it is
+      // the client's to put back — see snapshot: both left to the client)
+      if (n.value !== n.defaultValue && !n.value.includes("{{") && !Array.from(n.childNodes).some((c) => rawTexts.has(c as Node))) n.textContent = n.value;
+    } else if (n.type === "checkbox" || n.type === "radio") {
+      n.toggleAttribute("checked", n.checked);
+    } else if (n.type !== "password" && n.value !== n.defaultValue) {
+      n.setAttribute("value", n.value);
+    }
+  }
+}
+
 /** The builder the server calls before it serializes (protocol wcs-ssr-snapshot v1). */
 function build(doc: Document): void {
+  // first: moving the rows into their regions (snapshot) may change what a select has selected
+  forms(doc);
   for (const el of Array.from(doc.querySelectorAll(`${config.tagNames.state}[enable-ssr]`))) {
     if (el.hasAttribute("mount") || el.hasAttribute("bind-component")) continue;
     if (el.previousElementSibling?.localName === tag()) continue;

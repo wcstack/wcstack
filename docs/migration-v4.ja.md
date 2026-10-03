@@ -245,7 +245,7 @@ export default {
 
 `$behavior`:
 
-- キーは boolean の 3 つで、既定はどれも `true`。意味は 3.x のオプションと同じです。知らないキーや boolean でない値は `#44` で throw します。
+- キーは boolean の 3 つで、既定はどれも `true`。意味は 3.x のオプションと同じです。知らないキー、boolean でない値、オブジェクトでない `$behavior` は `#44` で throw します。`null` と配列もここに入り、この 2 つは 3.5 が警告しません。
 - 効く範囲は状態の木ごとで、それを宣言した `<wcs-state>` の木全体（ボリュームを含む）です。3.x のオプションはページ全体に効きましたが、4.0 では**ルートの状態ごと**に、要るものがそれぞれ宣言します — ページのルート、shadow root の中のルートの `<wcs-state>`、マウントしたコンポーネント、DCC。ホストからは何も引き継ぎません。ボリュームには書けません（§3.5）。
 - 再セット（初期化済みの要素への `setInitialState()`）で変えることはできず、`#45` で throw します。`$behavior` を書かない状態での再セットは既定値と比べるので、再セットする状態にも同じ宣言を書いてください。
 - `/auto` のページでも、JSON の状態でも書けます。3.x の `/auto` には、これらのオプションを渡す方法がありませんでした。
@@ -400,6 +400,7 @@ this.items = items;
 #### 小さな違い
 
 - 状態に無いトップレベルのキーに書き込むと、そのキーが作られます（3.x は書き込みが失敗しました）。読むのはこれまでどおり `[wcs/binding-path-missing]` で throw します。
+- 再設定（初期化済みの要素への `setInitialState()`）の新しい状態に、古い状態にあったトップレベルのキーが無いと、そのキーが書き込まれるまで、そこへのバインディングは空になり、その下のリストは行を描かず、それを読む getter は `undefined` を得ます。新しい状態に無い深いパスは、もともとこうでした。3.x はそのバインディングとリストを失敗として報告し、古いテキストと行をページに残しました。新しい状態のオブジェクトには書き込みません（凍結した状態でも再設定できます）。例外はクラスの状態のプロトタイプにある getter で、新しい状態にそれが無いと、3.x と同じくそこへのバインディングは失敗します。
 - `__proto__` か `prototype` を通るパスは `[wcs/binding-syntax] #120` で throw します。バインディング、書き込み、`$resolve`、`$setAll`、`this.__proto__` のような読みが対象です。
 - `state="id"` は、その id の `<script type="application/json">` だけを読みます。
 - 数値の添字を持つ `$watch` のキー（`"items.0.v"`）は、その添字の値が変わったときだけ発火します。3.x（3.4 以降）は、添字を通した書き込み、要素の差し替え、リストのどの行への書き込みでも発火し、値が変わっていないこともありました。
@@ -484,6 +485,7 @@ export default {
 - `@wcstack/state` 4.0 を古い `@wcstack/server` の下で描画すると（npm の override など）、出力に `<wcs-ssr>` がまったく無いことがあり、そのときページは警告なしにサーバの HTML のまま固まります。4.0 と一緒にリリースされる `@wcstack/server` を使ってください。
 - `@wcstack/server` の API（`renderToString()`）は変わりません。出力の形は変わるので、3.x の印を前提に出力を加工しないでください。
 - 出力のコメントを消さないでください。テキストのバインディングと、行・枝の印はコメントです。後段の HTML の圧縮（html-minifier の `removeComments` など）で消すと、ハイドレーションが崩れ、値の中の `{{ }}` がクライアントでバインディングとして読まれることがあります。
+- 3.x と同じく、フォームの値はマークアップと違うものをサーバの HTML に書きます。input の `value` 属性と `checked` 属性、select で選ばれている option の `selected`、textarea のテキストです。違いは 3 つで、パスワードの値は書かず、select の `value:` はその option に印を付け（3.x は `<select>` に `value` 属性を書いていました）、値に `{{` を含む textarea はクライアントに任せます。
 - `outerHTML:` / `outerText:` はサーバでは当てず、クライアントで当てます。サーバの出力には要素が書いたとおりに載るので、その値は検索エンジンや JavaScript の無い表示には出ません。
 - ページの直下でバインドした Light DOM のカスタム要素が値から描いた子は、サーバの出力に入りません（クライアントが描きます）。書いた子は残ります。
 - 3.x（3.4.0 以降）と同じく、ハイドレーションはサーバの行・枝をその場で引き取ります: その中のカスタム要素はページを読み込んだときに一度だけ接続され、切断・再接続されることはありません。`<tbody>` を書かない `<table>` の `<tr>` の行は、ブラウザのパーサが補う `<tbody>` の中に残ります。テンプレートと形が合わなくなったサーバの行（束縛するノードの前に子を足す Light DOM の要素）は、その場で描き直します（前後の行はそのままです）。描き直した行は、束縛を当てる前にページに入ります（引き取った行と同じで、行を束縛してから挿入するクライアントだけの描画とは違います）。そのため、その中のカスタム要素は、束縛の値が届く前に接続されます。クライアントが描かない行・枝（行が少ない、別の枝）は、ページを束縛し終えたところで外します。
@@ -554,7 +556,7 @@ export default {
 | `wcs/name-alias` | `$trackDependency`・`$untrackDependency` | error |
 | `wcs/declaration-alias` | `$streams`・`$updatedCallback` | error |
 | `wcs/scan-declaration-invalid` | `$scan` | error |
-| `wcs/behavior-invalid` | `$behavior`: 知らないキー、boolean でない値、オブジェクトでない、ボリュームでの宣言 | error |
+| `wcs/behavior-invalid` | `$behavior`: 知らないキー、boolean でない値、オブジェクトでない（`null` と配列を含む）、ボリュームでの宣言 | error |
 | `wcs/feature-unknown` | `$features` や `features=` の知らない名前 | error |
 | `wcs/features-invalid` | 配列でない `$features`、ボリュームの `$features`（error）。文書のルートでない `<wcs-state>` の `features=`（warning） | error / warning |
 | `wcs/volume-declaration` | ボリュームの `$stream`・`$watch`・`$listKeys`・`$renderedCallback`（error）、`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback`（warning） | error / warning |

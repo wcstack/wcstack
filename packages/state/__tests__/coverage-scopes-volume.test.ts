@@ -177,3 +177,114 @@ describe("volume のライフサイクル", () => {
     expect(calls).toEqual(["connected:1", "disconnected:1"]);
   });
 });
+
+describe("取り除かれた根", () => {
+  it("文書から取り除かれた根の engine には接ぎ木せず、後から接続された新しい根に接ぎ木する（3.x と同じ）", async () => {
+    document.body.innerHTML = `<wcs-state json='{"count": 1}'></wcs-state>`;
+    const old = document.body.querySelector("wcs-state") as any;
+    await old.connectedCallbackPromise;
+    await getBindingsReady(document);
+    // the old root leaves; the volume comes before the new root in document order
+    document.body.innerHTML = `
+      <wcs-state mount="cfg" json='{"flag": true}'></wcs-state>
+      <wcs-state json='{"count": 7}'></wcs-state>
+      <p id="flag">{{ cfg.flag }}</p>
+    `;
+    const [volume, rootEl] = Array.from(document.body.querySelectorAll("wcs-state")) as any[];
+    await Promise.all([volume.connectedCallbackPromise, rootEl.connectedCallbackPromise]);
+    await getBindingsReady(document);
+    await flush();
+    let flag: unknown;
+    rootEl.createState("readonly", (s: any) => { flag = s["cfg.flag"]; });
+    expect(flag).toBe(true);
+    expect(document.getElementById("flag")!.textContent).toBe("true");
+    // nothing was grafted onto the old root's engine
+    expect(old.engine.target).not.toHaveProperty("cfg");
+    document.body.innerHTML = "";
+  });
+
+  it("取り除かれた根に接ぎ木された volume はマウントパスを持ち続けず、次のページの同じパスの volume が接ぎ木される", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      document.body.innerHTML = `<wcs-state json='{}'></wcs-state><wcs-state mount="cfg" json='{"flag": 1}'></wcs-state>`;
+      await Promise.all(Array.from(document.body.querySelectorAll("wcs-state"), (el: any) => el.connectedCallbackPromise));
+      document.body.innerHTML = `<wcs-state json='{}'></wcs-state><wcs-state mount="cfg" json='{"flag": 2}'></wcs-state><p>{{ cfg.flag }}</p>`;
+      const els = Array.from(document.body.querySelectorAll("wcs-state")) as any[];
+      await Promise.all(els.map((el) => el.connectedCallbackPromise));
+      await getBindingsReady(document);
+      await flush();
+      expect(document.body.querySelector("p")!.textContent).toBe("2");
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("初期化に失敗した根が文書から取り除かれた後は、後から読み込まれた volume は失敗せず新しい根を待って接ぎ木される", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      document.body.innerHTML = `<wcs-state json='{broken'></wcs-state>`;
+      const bad = document.body.querySelector("wcs-state") as any;
+      await bad.connectedCallbackPromise.catch(() => {});
+      await flush();
+      expect(error).toHaveBeenCalled();
+      error.mockClear();
+      document.body.innerHTML = `<wcs-state mount="cfg" json='{"flag": true}'></wcs-state><wcs-state json='{}'></wcs-state><p>{{ cfg.flag }}</p>`;
+      const els = Array.from(document.body.querySelectorAll("wcs-state")) as any[];
+      await Promise.all(els.map((el) => el.connectedCallbackPromise));
+      await getBindingsReady(document);
+      await flush();
+      expect(document.body.querySelector("p")!.textContent).toBe("true");
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("根を待ったまま取り除かれた volume は、次のページの同じマウントパスの volume に譲り、古いページの値は接ぎ木されない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // the old page: its root never gets a state, its volume loads and waits
+      document.body.innerHTML = `<wcs-state mount="cfg" json='{"flag": "old"}'></wcs-state><wcs-state></wcs-state>`;
+      const old = document.body.querySelector("wcs-state[mount]") as any;
+      await flush();
+      await flush();
+      document.body.innerHTML = `<wcs-state mount="cfg" json='{"flag": "new"}'></wcs-state><wcs-state json='{}'></wcs-state><p>{{ cfg.flag }}</p>`;
+      const els = Array.from(document.body.querySelectorAll("wcs-state")) as any[];
+      await Promise.all(els.map((el) => el.connectedCallbackPromise));
+      await getBindingsReady(document);
+      await flush();
+      expect(document.body.querySelector("p")!.textContent).toBe("new");
+      // the old one settled (it yielded), without a report
+      await old.connectedCallbackPromise;
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      document.body.innerHTML = "";
+    }
+  });
+
+  it("状態を読み込む前に取り除かれた volume も譲り、後から状態が来ても接ぎ木しない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      document.body.innerHTML = `<wcs-state mount="cfg"></wcs-state><wcs-state></wcs-state>`;
+      const old = document.body.querySelector("wcs-state[mount]") as any;
+      await flush();
+      document.body.innerHTML = `<wcs-state mount="cfg" json='{"flag": "new"}'></wcs-state><wcs-state json='{}'></wcs-state><p>{{ cfg.flag }}</p>`;
+      const els = Array.from(document.body.querySelectorAll("wcs-state")) as any[];
+      await Promise.all(els.map((el) => el.connectedCallbackPromise));
+      await getBindingsReady(document);
+      // its state comes late: it settles and does not graft
+      old.setInitialState({ flag: "late" });
+      await old.connectedCallbackPromise;
+      await flush();
+      expect(document.body.querySelector("p")!.textContent).toBe("new");
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      document.body.innerHTML = "";
+    }
+  });
+});

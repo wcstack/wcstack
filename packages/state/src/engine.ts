@@ -125,6 +125,12 @@ export class Engine implements ReconcileHooks {
   ctx: StateRow | null = null;
   /** Writes throw while > 0: a readonly createState callback, or a getter being evaluated. */
   readonlyDepth = 0;
+  /**
+   * Top-level keys a re-set dropped (the old state had them, the new one lacks them): they read as
+   * undefined, not as keys never declared (read; the diagnostics add-on reads it too). Kept here — the
+   * author's state object is not written to (it may be frozen, or a Proxy that refuses).
+   */
+  readonly dropped = new Set<string>();
   /** The node the bindings were mounted on (delegated listeners live here). */
   root: Node | null = null;
   /** Delegated event types → the property (per engine) their element handlers are stored under. */
@@ -505,7 +511,7 @@ export class Engine implements ReconcileHooks {
       return parent == null ? undefined : parent[p.last];
     }
     // (`then` / `toJSON` are probes — await, JSON.stringify — not reads of the state: undefined)
-    if (p.parent === null && !(p.last in this.target) && p.last !== "then" && p.last !== "toJSON") {
+    if (p.parent === null && !(p.last in this.target) && !this.dropped.has(p.last) && p.last !== "then" && p.last !== "toJSON") {
       raise(M.PathMissing, [p.path], p.last, Object.keys(this.target));
     }
     return this.readData(p, row);
@@ -840,7 +846,15 @@ export class Engine implements ReconcileHooks {
    * keys); rows are kept where their list's array is the same instance.
    */
   reset(target: Record<string, any>): void {
+    const old = this.target;
     this.loadTarget(target);
+    // a key the old state had (or an earlier re-set dropped) and this one lacks is empty (B8), as a
+    // missing path under a key is — not a key never declared, which fails on read: its bindings, lists
+    // and getters read undefined, until it is written. (for…in: an accessor on a class state's
+    // prototype is not enumerable, so one the new state drops still fails on read)
+    const dropped = this.dropped;
+    for (const k in old) if (k[0] !== "$") dropped.add(k);
+    for (const k of dropped) if (k in target) dropped.delete(k);
     for (const bs of this.rootBindings.values()) for (const b of bs) this.enqueue(b);
     for (const l of this.rootLists.values()) this.resetList(l);
     this.rendered = null;
@@ -863,8 +877,9 @@ export class Engine implements ReconcileHooks {
       if (!Array.isArray(f)) raise(M.FeaturesNotArray);
       for (const name of f) requireFeature(name, "$features");
     }
-    const c = target.$behavior ?? {};
-    if (typeof c !== "object") raise(M.OptionInvalid, ["state", "$behavior"]);
+    // an options object: null and an array are not one (as for bootstrapState's options)
+    const c = target.$behavior === undefined ? {} : target.$behavior;
+    if (typeof c !== "object" || !c || Array.isArray(c)) raise(M.OptionInvalid, ["state", "$behavior"]);
     for (const key in c) if (!BEHAVIOR_KEYS.includes(key) || typeof c[key] !== "boolean") raise(M.OptionInvalid, ["$behavior", key]);
     const [mustache, guard, directional] = BEHAVIOR_KEYS.map((key) => c[key] ?? true);
     // a re-set keeps the engine, and what was built by the old options
@@ -886,7 +901,7 @@ export class Engine implements ReconcileHooks {
   }
 
   private resetList(l: StateList): void {
-    // a list whose key the new state lacks fails alone: the re-set goes on (and ends with its hook)
+    // a list that cannot be read (its getter throws) fails alone: the re-set goes on (and ends with its hook)
     this.trySync(l);
     const element = this.pattern(`${l.pattern.path}.*`);
     for (const row of l.rows) {

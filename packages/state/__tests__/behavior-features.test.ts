@@ -42,12 +42,15 @@ describe("$behavior", () => {
     expect([e.mustache, e.guard, e.directional]).toEqual([false, true, false]);
   });
 
-  it("知らないキー・boolean でない値・オブジェクトでない $behavior は投げる", () => {
+  it("知らないキー・boolean でない値・オブジェクトでない $behavior（null・配列も）は投げる", () => {
     expect(() => make({ $behavior: { debug: true } })).toThrow(core(M.OptionInvalid));
     expect(() => make({ $behavior: { debug: true } })).toThrow('"$behavior" "debug"');
     expect(() => make({ $behavior: { sameValueGuard: "no" } })).toThrow('"$behavior" "sameValueGuard"');
     expect(() => make({ $behavior: 5 })).toThrow('"state" "$behavior"');
-    expect(make({ $behavior: null }).guard).toBe(true);
+    expect(() => make({ $behavior: null })).toThrow('"state" "$behavior"');
+    expect(() => make({ $behavior: [] })).toThrow('"state" "$behavior"');
+    // undefined is no declaration
+    expect(make({ $behavior: undefined }).guard).toBe(true);
   });
 
   it("再セットは同じ $behavior なら通り、変わる（省いて既定に戻るのも）と投げる", () => {
