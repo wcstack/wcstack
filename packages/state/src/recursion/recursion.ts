@@ -235,7 +235,11 @@ function wrap(engine: Engine): void {
       raiseError(`${code("structural-write")} "${path}" writes the recursion structure itself (a node, its "${spec.key}" list or that list's length, or an object on the way to it).`);
     }
     for (const s of spec.families.keys()) {
-      if (rest === s || rest.startsWith(`${s}.`)) raiseError(`${code("readonly")} "${path}" writes into the recursive getter "${spec.list}.**${s}".`);
+      // (a family under a child node, `.children.*.x`, is `.x` at every depth below the first: refused
+      // before anything is written, not part-way through)
+      let f = s;
+      while (f.startsWith(spec.step)) f = f.slice(spec.step.length);
+      if (rest === f || rest.startsWith(`${f}.`)) raiseError(`${code("readonly")} "${path}" writes into the recursive getter "${spec.list}.**${s}".`);
     }
     // every node first: a tree that fails the walk writes nothing
     const nodes: [number, StateRow][] = [];

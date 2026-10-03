@@ -120,6 +120,16 @@ describe("全深さの $getAll と一斉書き込み", () => {
     expect(e.proxy.$getAll("nodes.**.value", [])).toEqual([1, 0, 0, 0, 2]);
   });
 
+  it("子ノードの下の族（nodes.**.children.*.label2）への一斉書き込みは、どの綴りでも書く前に拒む（途中まで書かない）", () => {
+    const nodes = forest();
+    const e = make({ nodes, get "nodes.**.children.*.label2"() { return "L"; } });
+    for (const path of ["nodes.**.label2", "nodes.**.children.*.label2", "nodes.**.children.0.label2"]) {
+      expect(() => e.proxy.$setAll(path, [], "x"), path).toThrow('[wcs/recursion-readonly] "' + path + '" writes into the recursive getter "nodes.**.children.*.label2".');
+    }
+    // nothing was written: the roots have no label2 of their own
+    expect(nodes.map((n) => Object.hasOwn(n, "label2"))).toEqual([false, false]);
+  });
+
   it("繰り返しが複数のセグメント（branch.children.*）なら、子リストまでの途中のオブジェクトも構造", () => {
     const tree = () => [
       { value: 1, branch: { children: [{ value: 10, branch: { children: [] } }] } },
