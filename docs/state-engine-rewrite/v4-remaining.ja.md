@@ -205,6 +205,7 @@ R3 の決定（3.5 を最後の minor にする）に沿って、main から 6 �
 
 ## 4. ビルド・CI・サイズ・計測
 
+- **済み（2026-10-03、research/gates-4x）**: 4 つの検査を 2 つにまとめて作り直した。`scripts/check-state-size.mjs` は dist だけを読み、相対の上限（基準値＋3 %＋任意の slack）と絶対の上限 2 つ（`dist/core.min.js` ≤ 20,000 B、`dist/define.js` ≤ 1,024 B）を見る。`scripts/check-state-coupling.mjs` は src を esbuild でメモリ上に束ね、metafile から次を確かめる: 後付けが自分以外のコードを持たないこと、core の入口が後付けに届かないこと、core ↔ 後付けの import の一覧、評価時に処理を走らせるモジュールの一覧。`check-state-split.mjs`・`audit-state-tech-coupling.mjs`・`audit-state-tech-helper-import.mjs` と `state-split-baseline.json` は外した。helper の検査は `/define` を測る。4.0 の `.` は、`defineState` だけを import しても約 21 KB（gzip）が残り、tree-shake されない（`element.ts` が import だけで残る）ため。数値と規則は CLAUDE.md。以下は元の記述。
 - 3.x の `@wcstack/state` の CI の検査 4 つを、新しい出力の形に合わせて作り直す（`--update` で基準値を取り直すだけでは足りない。どれも `packages/state` の 3.x のビルドを前提にしていて、今は state-next を測らない）。
   - サイズの検査（`scripts/check-state-size.mjs`・`scripts/check-state-split.mjs`）と基準値（`scripts/state-size-baseline.json`・`scripts/state-split-baseline.json`）。`check-state-split.mjs` は `dist/split/**.js.map` を読み、3.x の src のディレクトリを後付けに割り当てる（`FEATURE_BY_DIR`）が、state-next はソースマップを出さない。
   - 結合の検査（`scripts/audit-state-tech-coupling.mjs --check`、基準値 `scripts/state-coupling-baseline.json`）。パッケージの `tsconfig.json` で tsc に出力させて import のグラフを読むが、state-next の tsconfig は `noEmit: true`。
