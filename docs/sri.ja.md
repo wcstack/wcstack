@@ -98,6 +98,7 @@ wcstack の配信に `/combine/` を使ってはならない（MUST NOT）。`es
 |---|---|
 | wcstack のランタイムコード全体（`dist/auto.min.js` の中身） | **守られる**（静的 import ゼロの自己完結バンドル） |
 | `dist/index.esm.js` からの named import | 守られない（module 内の `import` は囲む script の integrity の対象外。§5 参照） |
+| `@wcstack/state` 4.0 の分割 auto（`dist/split/auto.js`） | `auto.js` 自身だけ。それが読み込むチャンクと機能は守られない（§5.2） |
 | `<wcs-state>` の state 定義（インライン `<script>` / `src="./state.js"`） | 守られない（実行時にページ側のコードを動的 import する） |
 | `<wcs-route>` のガードスクリプト | 守られない（同上） |
 | `@wcstack/autoloader` が解決するコンポーネント | 守られない（同上） |
@@ -152,12 +153,31 @@ URL ごとに要る — エントリ・各機能・`dist/split/chunks/` の各�
 </script>
 ```
 
-チャンクのファイル名にハッシュは付けない。ダイジェストはビルドではなく固定したバージョンに紐づく。
-全ブラウザで守りたいページは単一タグの `dist/auto.min.js` を使う — 分割エントリはそれを置き換えない。
+3.x では、チャンクのファイル名にハッシュは付けない。ダイジェストはビルドではなく固定したバージョンに紐づく。
+4.0 からは内容のハッシュが付く（`dist/split/chunks/chunk-<hash>.js`）。名前は、固定したバージョンの
+`dist/split/chunks/` から取る。全ブラウザで守りたいページは単一タグの `dist/auto.min.js` を使う — 分割エントリは
+それを置き換えない。
+
+### 5.2 `@wcstack/state` の分割 auto（4.0）
+
+`dist/split/auto.js` は、import map なしで、1 つの `<script type="module">` から分割ビルドを読み込む
+（[移行ガイド §3.8](./migration-v4.ja.md#38-分割エントリと機能)）。そのタグの `integrity` 属性が守るのは
+`auto.js` 自身だけ。`dist/split/chunks/` の共有チャンクは静的に、機能（`./features/<名前>.js`。root の
+`<wcs-state features>` と状態の `$features` が挙げる名前）は動的に import し、どれもタグの integrity の外の、
+別のリクエストになる。
+
+- §5.1 と同じく、それらのリクエストを覆えるのは import map の `integrity` キーだけ（Chromium・Safari）。
+  ダイジェストは URL ごとに要る — 各チャンクと、ページが読み込みうる各機能。
+- 読み込めるものはビルドで決まっている: 機能は `auto.js` 自身の URL からの相対で解決し、既知の 8 つの名前しか
+  受け付けないので、マークアップや取得した状態がページに別の URL を import させることはできず、すべて `auto.js`
+  と同じバージョンから来る。
+- バージョンを固定した直接のパス（`/npm/@wcstack/state@<version>/dist/split/auto.js`）で読み込む。`esm.run`
+  を通すと、モジュール自身の URL が別のものになる（§3）。
+- 全ブラウザで守りたいなら、単一タグの `dist/auto.min.js` を使う（§4）。
 
 ## 6. 実装者向け — 壊してはいけない不変条件
 
-1. `src/auto.ts` は `./exports` からのみ import する。兄弟の dist ファイルを相対 import してはならない（MUST NOT）。それをやると `auto.min.js` が再びスタブに戻り、integrity のカバー率がほぼゼロになる。**「integrity が付いているのに守られていない」は integrity が無いより悪い**
-2. `dist/auto.min.js` は Rollup の実エントリであり、コピーされる手書きスタブではない（[config-templates/rollup.config.js](../config-templates/rollup.config.js)）
+1. `src/auto.ts` はソースのモジュールだけを import する — 多くのパッケージは `./exports`、`@wcstack/state` 4.0 は `./element`・`./hooks`・`./features/all`。兄弟の dist ファイルを相対 import してはならない（MUST NOT）。それをやると `auto.min.js` が再びスタブに戻り、integrity のカバー率がほぼゼロになる。**「integrity が付いているのに守られていない」は integrity が無いより悪い**
+2. `dist/auto.min.js` はバンドラの実エントリであり、コピーされる手書きスタブではない — Rollup のエントリ（[config-templates/rollup.config.js](../config-templates/rollup.config.js)）、`@wcstack/state` 4.0 では `build.mjs` の esbuild のエントリ
 3. ダイジェストは公開する tree から算出する。CDN のレスポンスから採ってはならない（MUST NOT）
 4. パッケージを増やしたら [scripts/generate-sri.mjs](../scripts/generate-sri.mjs) が自動で拾う。`dist/auto.min.js` を持たないパッケージは `withoutBootstrap` に明示的に列挙され、黙って落ちることはない

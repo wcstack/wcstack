@@ -98,6 +98,7 @@ For the single-request form, use the **`wcstack` entry bundle** instead: one Rol
 |---|---|
 | the whole wcstack runtime (the contents of `dist/auto.min.js`) | **yes** (self-contained bundle, zero static imports) |
 | named imports out of `dist/index.esm.js` | no (an `import` inside a module is outside the enclosing script's integrity — see §5) |
+| `@wcstack/state` 4.0's split auto entry (`dist/split/auto.js`) | only `auto.js` itself; the chunks and features it imports are not (§5.2) |
 | the state definition for `<wcs-state>` (inline `<script>` or `src="./state.js"`) | no (page-side code, dynamically imported at runtime) |
 | a `<wcs-route>` guard script | no (same) |
 | components resolved by `@wcstack/autoloader` | no (same) |
@@ -153,13 +154,32 @@ cover them, and every URL needs its own digest — the entry, each feature, and 
 </script>
 ```
 
-Chunk file names carry no hash, so a digest is tied to a pinned version rather than to a build. A
-page that wants protection in every browser uses the single-tag `dist/auto.min.js` form, which the
-split entries deliberately do not replace.
+In 3.x, chunk file names carry no hash, so a digest is tied to a pinned version rather than to a
+build. From 4.0 they carry a content hash (`dist/split/chunks/chunk-<hash>.js`): take the names
+from the `dist/split/chunks/` of the version you pin. A page that wants protection in every browser
+uses the single-tag `dist/auto.min.js` form, which the split entries deliberately do not replace.
+
+### 5.2 The split auto entry of `@wcstack/state` (4.0)
+
+`dist/split/auto.js` loads the split build from one `<script type="module">`, without an import map
+([migration guide §3.8](./migration-v4.md#38-split-entries-and-features)). An `integrity` attribute
+on that tag covers `auto.js` itself and nothing else: it imports the shared chunks under
+`dist/split/chunks/` statically, and the features (`./features/<name>.js`, the names the root
+`<wcs-state features>` and the states' `$features` give) dynamically, each a request of its own
+outside the tag's integrity.
+
+- As in §5.1, only the import map's `integrity` key can cover those requests (Chromium and Safari),
+  one digest per URL: each chunk, and each feature the page may load.
+- What it can load is fixed by the build: the features are resolved against `auto.js`'s own URL and
+  only the eight known names are accepted, so markup or a fetched state cannot make the page import
+  another URL, and everything comes from the same version as `auto.js`.
+- It has to be loaded from a version-pinned direct path (`/npm/@wcstack/state@<version>/dist/split/auto.js`):
+  through `esm.run` the module's own URL is a different one (§3).
+- For protection in every browser, use the single-tag `dist/auto.min.js` (§4).
 
 ## 6. For implementers — invariants not to break
 
-1. `src/auto.ts` imports from `./exports` only. It MUST NOT relatively import a sibling dist file. Doing so turns `auto.min.js` back into a stub and drops integrity coverage to nearly zero. **"integrity is present but protects nothing" is worse than no integrity at all**
-2. `dist/auto.min.js` is a real Rollup entry, not a hand-written stub that gets copied ([config-templates/rollup.config.js](../config-templates/rollup.config.js))
+1. `src/auto.ts` imports source modules only — `./exports` in most packages; `@wcstack/state` 4.0 imports `./element`, `./hooks` and `./features/all`. It MUST NOT relatively import a sibling dist file. Doing so turns `auto.min.js` back into a stub and drops integrity coverage to nearly zero. **"integrity is present but protects nothing" is worse than no integrity at all**
+2. `dist/auto.min.js` is a real bundler entry, not a hand-written stub that gets copied — a Rollup entry ([config-templates/rollup.config.js](../config-templates/rollup.config.js)), or in `@wcstack/state` 4.0 an esbuild entry of its `build.mjs`
 3. Digests are computed from the tree being published. They MUST NOT be taken from a CDN response
 4. New packages are picked up automatically by [scripts/generate-sri.mjs](../scripts/generate-sri.mjs). Packages with no `dist/auto.min.js` are listed explicitly under `withoutBootstrap`, so none of them can drop out silently

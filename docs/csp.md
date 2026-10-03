@@ -81,12 +81,14 @@ The split entries (`@wcstack/state/core` and `features/*`; "Split entries" in th
 | `dist/auto.min.js` (all-in-one) | none | the delivery host |
 | The README example (an import map plus an inline module script calling `installFeatures`) | 2 | the delivery host, plus a nonce or a hash on each of the two (§3.1) |
 | The bootstrap in an external file (`/boot.js`) importing the full CDN URLs | none | the delivery host and `'self'` |
+| The split auto entry, `dist/split/auto.js` (4.0; [migration guide §3.8](./migration-v4.md#38-split-entries-and-features)) | none | the delivery host |
 
 - The split files (core, `features/*`, `dist/split/chunks/`) reach one another through static imports; one host entry covers them all.
+- The split auto entry carries no inline script. It imports the chunks statically and the features (`./features/<name>.js`) dynamically, resolved against its own URL, so they come from the host that serves it and the allowance does not widen. With the nonce on the `<script>` that loads it, a nonce-only policy with `'strict-dynamic'` (`script-src 'nonce-…' 'strict-dynamic'`) passes through to the features (checked on Chromium, Firefox and WebKit with Playwright, 2026-09-30: `features="scopes"`, `$features: ["formats", "list-keys"]`, no violation). See [root-attributes.ja.md §4](./state-engine-rewrite/root-attributes.ja.md#4-分割エントリfeatures) (ja).
 - Give the bootstrap script the nonce and the static and dynamic imports beyond it inherit it, so a nonce-only policy with no host entry, or `'strict-dynamic'`, works too (checked only in a minimal setup on Chromium, Firefox and WebKit, 2026-09-28; for `'strict-dynamic'` on wcstack's own paths see §3.3).
 - Narrowing file by file with hashes (§3.2) is not possible: the chunks and `features/*` have no `<script>` tag to hang a hash source on.
 - The split entries are not loaded from `esm.run` (state README), so the two-host issue of §1 does not arise.
-- For integrity see [sri.md §5.1](./sri.md#51-the-split-entries-of-wcstackstate). The import map's `integrity` lives in the same inline import map, so the CSP requirements in the table do not change.
+- For integrity see [sri.md §5.1](./sri.md#51-the-split-entries-of-wcstackstate) and, for the split auto entry, [§5.2](./sri.md#52-the-split-auto-entry-of-wcstackstate-40). The import map's `integrity` lives in the same inline import map, so the CSP requirements in the table do not change — except on a split auto page, where an import map added only for `integrity` is a new inline script and needs a nonce or a hash (§2).
 
 ## 3. When a nonce is unavailable — what a hash can replace
 
@@ -159,7 +161,7 @@ This is the most important point in this document. **The CSP requirement changes
 | the `setInitialState()` API | none | **nothing extra** |
 | `<wcs-state><script type="module">…</script></wcs-state>` | **`import()` through a blob: URL** | **a nonce on the `<script>` that loads state**, or **`script-src blob:`** |
 
-State pulls the text of the inline `<script>` out, builds a blob: URL, and dynamically `import()`s it ([loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts)). That is what CSP catches.
+State pulls the text of the inline `<script>` out, builds a blob: URL, and dynamically `import()`s it ([loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts) in 3.x; `loadInnerScript` in `element.ts` in 4.0, the same path, in the split `/core` too). That is what CSP catches.
 
 **A nonce on the `<script>` that loads state covers it.** An `import()` inherits the nonce of the `<script>` that loaded the module making it — here, the state bundle (§3). Load state through a tag without a nonce (host allowance only) and the blob: import is refused. A hash does not cover it (§3).
 
@@ -210,11 +212,11 @@ Paths that bind a Blob (a `@wcstack/fetch` Blob turned into an object URL, a `@w
 | `<wcs-layout>` template expansion ([Layout.ts](../packages/router/src/components/Layout.ts)) | markup the author wrote (an in-document `<template>`, or an app asset fetched with `src`) | signed by the shared `wcstack` identity policy |
 | `new Worker(src)` ([WorkerCore.ts](../packages/worker/src/core/WorkerCore.ts)) | the `src` attribute the author wrote | signed by the shared `wcstack` identity policy |
 | `<wcs-fetch target>` HTML replace mode ([Fetch.ts](../packages/fetch/src/components/Fetch.ts)) | the response body | **an adopter-supplied sanitizing policy is required**; wcstack never signs it |
-| `innerHTML:` / `outerHTML:` / `srcdoc:` property bindings ([applyChangeToProperty.ts](../packages/state/src/apply/applyChangeToProperty.ts)) | a state value | **an adopter-supplied sanitizing policy is required**; wcstack never signs it |
+| `innerHTML:` / `outerHTML:` / `srcdoc:` property bindings ([applyChangeToProperty.ts](../packages/state/src/apply/applyChangeToProperty.ts) in 3.x; in 4.0 `trustedTypes.ts`, which also covers `html:` and an `<iframe>`'s `attr.srcdoc:`) | a state value | **an adopter-supplied sanitizing policy is required**; wcstack never signs it |
 
 The split is the whole point. The first two carry strings the page author wrote, which is the same ground Lit stands on when it signs its template literals. The last two carry remote data and user-influenced state — signing those with an identity policy would not be "Trusted Types support", it would be turning the policy off, and a security review is right to reject it.
 
-**DCC definition no longer has a sink at all.** [defineDCC.ts](../packages/state/src/dcc/defineDCC.ts) clones the definition's shadow tree node by node instead of round-tripping it through `innerHTML`, so `@wcstack/state` needs no `trusted-types` allowlist entry on its own.
+**DCC definition no longer has a sink at all.** [defineDCC.ts](../packages/state/src/dcc/defineDCC.ts) (4.0: `scopes/dcc.ts`) clones the definition's shadow tree node by node instead of round-tripping it through `innerHTML`, so `@wcstack/state` needs no `trusted-types` allowlist entry on its own.
 
 ### The policy to allow
 
@@ -255,6 +257,8 @@ The two remote-data sinks keep failing — deliberately — but they now say so,
 
 The state property-write path swallows setter exceptions by design (the element is allowed to reject a value), so before this it broke *silently*. Enforcement is confirmed by probing a throwaway element rather than by matching the wording of an error, so a page that installs a `default` policy is correctly read as "not blocked".
 
+In `@wcstack/state` 4.0 the state line comes from the diagnostics feature, which `@wcstack/state` and `/auto` include. It does not probe: it is printed once per page when an HTML-sink write fails with a `TypeError` in a browser that has Trusted Types, and the failure is then reported like any binding that fails to apply — to `$errorCallback`, or as `binding "<type>: <path>" failed to apply.` on the console. On `/core` without that feature only the binding failure is reported (`#12` on the console, with the browser's error).
+
 ### Notes
 
 - **The shared policy object is reachable from page scripts.** To create `wcstack` exactly once across packages, the created policy is kept in a global slot (`Symbol.for("wcstack.trustedTypes.internal")`). Any script running on the page can therefore read it and use its `createHTML` as a Trusted Types bypass gadget. This does not weaken the DOM-XSS case Trusted Types is aimed at — reaching the slot requires script execution, which is already game over — but it is the price of the single shared policy name, and it is stated here because a policy review will ask. Giving each package its own policy name would remove the global slot at the cost of one CSP entry per package.
@@ -275,7 +279,7 @@ The rejection from a dynamic `import()` that CSP blocked says only `Failed to fe
 | Output | Meaning |
 |---|---|
 | `... was blocked by Content-Security-Policy` | **CSP confirmed.** Give the page's nonce to the `<script>` that loads state / router, add `script-src blob:`, or (state only) move to `src=` |
-| `Failed to evaluate the inline <script> of state "…"` (state) / `loadGuardHandler: failed to import guard script …` (router) | No violation was observed. Usually a syntax error in the state definition or the guard. State embeds the original error's message in its own (from 3.5 it also keeps the error in `cause`); router keeps the original error in `cause` |
+| `Failed to evaluate the inline <script> of state "…"` (state 3.x; 4.0: `… of <wcs-state>: …`) / `loadGuardHandler: failed to import guard script …` (router) | No violation was observed. Usually a syntax error in the state definition or the guard. State embeds the original error's message in its own (from 3.5 it also keeps the error in `cause`); router keeps the original error in `cause` |
 
 Not asserting CSP when no violation was observed is deliberate: it keeps a syntax error from being misattributed to the policy.
 

@@ -17,6 +17,8 @@ wcstack mutates the DOM in exactly three places:
 | Conditional branches | [`applyChangeToIf`](../packages/state/src/apply/applyChangeToIf.ts) | same — detached the moment the condition turns false |
 | Route contents | [`hideRoute`](../packages/router/src/hideRoute.ts) / [`showRoute`](../packages/router/src/showRoute.ts) | `removeChild` then `insertBefore`, synchronously |
 
+The first two rows name the `@wcstack/state` 3.x code this design was written against. In 4.0 the same sites are `ForView` / `IfView` in `dom/view.ts`, and removal is still synchronous (4.0 keeps no content pool).
+
 Two things already work without any framework change, and were simply never
 documented:
 
@@ -61,7 +63,7 @@ other frameworks.
 | G2 | How is exclusion handled (one transition at a time)? | **By the `<wcs-view-transition>` tag.** It is the single arbiter: it coalesces every request made in the same microtask into one transition and applies a declared `mode` (`latest` / `queue` / `exhaust`) when one is already running. |
 | G3 | Automatic or manual `view-transition-name`? | **Both, selected on the tag** via `naming="manual" \| "auto"` (default `manual`). |
 | G4 | `prefers-reduced-motion` | **Skip by default.** The mutation then runs synchronously — byte-for-byte today's behavior. Override with `reduced-motion="animate"`. |
-| G5 | SSR / hydration | **Disabled.** The arbiter itself refuses to start a transition while the document carries `data-wcs-server`, and the tag is inert without `document.startViewTransition`. The gate lives in the arbiter, not in each participant: the protocol is public, and a third-party participant has no reason to know wcstack's SSR marker. `@wcstack/state` keeps its own `inSsr()` short-circuit as a fast path, and `@wcstack/router` needs none. |
+| G5 | SSR / hydration | **Disabled.** The arbiter itself refuses to start a transition while the document carries `data-wcs-server`, and the tag is inert without `document.startViewTransition`. The gate lives in the arbiter, not in each participant: the protocol is public, and a third-party participant has no reason to know wcstack's SSR marker. `@wcstack/state` 3.x keeps its own `inSsr()` short-circuit as a fast path; `@wcstack/state` 4.0 and `@wcstack/router` rely on the arbiter's gate alone. |
 
 ## 4. The transition-runner protocol
 
@@ -143,7 +145,8 @@ taken, so it cannot be assigned inside the mutation callback. That rules out
   the first element of every structural content (list row, `if` branch) as it
   mounts, plus a `view-transition-class` (`wcs-row` / `wcs-branch`) so CSS can
   address the whole group. The name follows the *content*, so pooled reuse and
-  reordering both behave the way the DOM does.
+  reordering both behave the way the DOM does. (4.0 has no pool: it names a block
+  when it builds it, and a row it keeps keeps its element and its name.)
 
 Auto naming is capped (`naming-limit`, default 200 names). Every named element
 becomes its own snapshot group, and a few hundred of them make a transition
@@ -186,37 +189,61 @@ The `navigate` event's `intercept({ handler })` awaits `run()`, so navigation is
 
 ### 7.2 `@wcstack/state`
 
-The single wrap point is the drain in
-[`Updater._applyChange`](../packages/state/src/updater/updater.ts) —
-`applyChangeFromBindings(processBindings)`. Consequences, normative:
+The wrap point is each pass of the drain in `Engine.drain` (`engine.ts`): the DOM
+changes of a pass — the list views first, then the queued bindings — go to
+`runTransition("state", …)`. Consequences, normative:
 
 - The drain is already a microtask; with a transition it becomes **a frame**. Code
   that writes state and then reads the DOM after `await Promise.resolve()` must
-  instead await the transition (or use `$updatedCallback`, which still fires after
-  the bindings have been applied, inside the callback).
-- **The mechanism order inverts.** `notifyUpdateBatchListeners` runs in the drain's
-  `finally`, on the original microtask, because `$scan`, `$watch` and the `$streams`
-  restart consume state addresses and not the DOM. `$updatedCallback` rides with the
-  bindings into the update callback. So the order the state README declares fixed —
-  `$updatedCallback` → `$scan` → `$watch` → `$streams` restart — becomes
-  `$scan` → `$watch` → `$streams` restart → `$updatedCallback` while the arbiter accepts
-  `state`. This is deliberate (holding `$watch` for a frame would be worse), and it
-  is the one documented exception to that layer being fixed.
-- **A batch with no bindings to apply is never handed to the arbiter.** Every write
-  is enqueued whether or not its path is bound, so the drain routinely runs with
-  `processBindings.length === 0` — a `$watch`-only path, a `$streams` internal
-  value, the intermediate addresses of a list replacement. Asking for a transition
-  there would snapshot the whole page for a mutation that changes nothing, and
-  under `latest` it would cut short a route transition that *is* animating.
-- Participation is **per document, not per element**: one updater drains every
-  `<wcs-state>`, so `for="state"` turns it on for all of them.
-- Initial rendering is never wrapped. Only the drain is.
-- `inSsr()` short-circuits to the synchronous path (G5).
+  instead await the transition (or use `$renderedCallback`, which still fires right
+  after the deferred bindings have been applied, inside the callback; the binding
+  failures of that apply reach `$errorCallback` there too).
+- **The mechanism order inverts.** At the end of a drain the engine reports —
+  `$renderedCallback`, then the binding failures (`$errorCallback` or the console)
+  — and then runs its `drained` hook, where the temporal feature runs the `$watch`
+  handlers and then the `$stream` restarts. `$watch` and the restart stay on the
+  original microtask, because they consume state and not the DOM; `$renderedCallback`
+  rides with the deferred bindings into the update callback. So the declared order —
+  `$renderedCallback` → `$watch` → `$stream` restart — becomes `$watch` →
+  `$stream` restart → `$renderedCallback` while the arbiter defers state's changes.
+  This is deliberate (holding `$watch` for a frame would be worse), and it is the one
+  documented exception to that layer being fixed. Where the arbiter applies the change
+  synchronously inside `run()` — §4 rule 3, and `exhaust` while a running transition
+  is past its update callback — the declared order holds.
+- **The render chain carries across the hand-off.** What the deferred apply writes
+  synchronously (an element's write-back, a synchronous `$renderedCallback`) counts
+  as the next drain of the chain that handed the change over, so the render-chain
+  limit (100 drains) still cuts an update loop through the arbiter. Writes made after
+  an `await` in an async `$renderedCallback` start a new chain: such a loop runs one
+  lap per transition and is not cut.
+- **A pass with nothing to render is never handed to the arbiter.** A write queues
+  only the bindings and lists that render its path. A write to a path nothing renders
+  — a `$watch`-only path, a `$stream` internal value — still schedules a drain, for
+  its `$watch` / `$stream` reactions, but that drain runs no pass and calls no
+  `run()`. Asking for a transition there would snapshot the whole page for a mutation
+  that changes nothing, and under `latest` it would cut short a route transition that
+  *is* animating.
+- Participation is **per document, not per element**: each `<wcs-state>` engine
+  drains on its own microtask and hands its passes to the same arbiter, so
+  `for="state"` turns it on for all of them; requests made in the same microtask
+  join one transition (§4 rule 4).
+- Initial rendering is never wrapped: the page is bound when its state loads, outside
+  any drain. Only the drain is.
+- Under SSR the arbiter's `data-wcs-server` gate applies the change synchronously
+  (G5); 4.0's state has no SSR short-circuit of its own.
+
+`@wcstack/state` 3.x wrapped `Updater._applyChange` (`applyChangeFromBindings(processBindings)`)
+once per drain, one updater draining every `<wcs-state>`; it enqueued every write
+whether bound or not and skipped batches with `processBindings.length === 0`; it
+short-circuited with `inSsr()`; and its order `$updatedCallback` → `$scan` →
+`$watch` → `$streams` restart became `$scan` → `$watch` → `$streams` restart →
+`$updatedCallback` under the arbiter.
 
 ## 8. Invariants
 
 1. A page without `<wcs-view-transition>` behaves exactly as before — same code
-   path, same timing, no cost beyond one symbol lookup per drain.
+   path, same timing, no cost beyond a symbol lookup per drain pass (and, in
+   `@wcstack/state` 4.0, per list or branch update, for auto naming).
 2. A DOM mutation handed to `run()` is applied exactly once, whatever the runner
    decides about animating it.
 3. The runner never rejects for its own reasons; only a throwing `mutate` rejects.
