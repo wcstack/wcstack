@@ -377,6 +377,8 @@
 
 解決順序: `state` → `src` (.json / .js) → `json` → 内包 `<script>` → `setInitialState()` 待機。
 
+状態の読み込み中にルートから外されたルートの `<wcs-state>`（ページの中身が入れ替わった、要素が移された）は、そこには何もマウントせず、次に接続された場所で（すでに接続されていればすぐに）始め直します。`setInitialState()` で渡された状態はそのために保持しますが、`state` / `src` / `json` / 内包スクリプトのソースは読み直します —— fetch はもう一度走り、内包モジュールはトップレベルのコードも含めてもう一度評価されます。
+
 `state="<id>"` が読むのは、その id を持つ `<script type="application/json">` だけです — まず要素自身のルート（shadow root）で、次に document で探し、同じ id を持つ別の要素は対象になりません。読めないソースは、その要素の初期化を失敗させます: そのような script がない（`#16`）、`.json` を取得できない（`#13`、HTTP ステータス付き）、JSON がパースできない、モジュールが throw する（[初期化の失敗](#初期化の失敗)）。空の JSON script は `{}` として扱います。
 
 5 番の `<script type="module">` はブラウザ自身も評価します（`<wcs-state>` の中にあっても止まりません）。export はどこにも届かないので state には影響しませんが、トップレベルのコードは 2 回走ります（ブラウザが 1 回、state が 1 回）。トップレベルに副作用（リクエスト・ログ出力・グローバルへの代入）を置かないでください。CSP 下では下の注記を参照してください。
@@ -400,7 +402,7 @@
 
 拒否されたボリュームは、接ぎ木せずに決着し、理由を報告して、`connectedCallbackPromise` を resolve します。state の読み込みに失敗したボリュームも同じです。そのほかの拒否: 別のボリュームがすでに持っているマウントパス（`will not graft: another volume already holds "cart".`）、ルートの state がすでに持っているパス（`will not graft: the root state already has "cart".` —— ただし SSR では、ボリュームはそこにあるサーバーのデータを引き継ぎます）、ホストに配線されたコンポーネントの shadow root の中のボリューム（`will not graft: its component is wired to its host.` —— そのコンポーネントはホストのツリーを読むので、データはホストの state に置いてください）。ルートの `<wcs-state>` が初期化に失敗した場合、それを待っていたボリュームと、後から読み込まれるボリュームは `will not graft: the root state failed to initialize.` を報告し、永久に待たずに決着します。それが終点です: あとから修正版のルートを接続しても復帰しません —— 壊れたルートとボリュームを取り除き、新しい要素を追加してください。ボリュームの `$connectedCallback` が throw した場合は `console.error` で報告され、ボリュームは接ぎ木されたままです。
 
-接ぎ木済みのボリュームは、外してもデータとマウントパスを保ちます: アンマウントはありません。ルートはその下のパスに書き込めますが、ボリュームの接ぎ木先より上にあるオブジェクトを置き換える書き込み（`mount="shop.cart"` のときの `this.shop = …`）は throw し、ルートやボリュームの再設定（`setInitialState()`）も throw します。マウントパスは静的パスのみです（`*`・`$`・`#`・`@`・空白は不可）。初期化後に `mount` 属性を変更することはできず、変更は無視されます —— 要素を取り除き、望むパスで新しい要素を追加してください。
+接ぎ木済みのボリュームは、外してもデータとマウントパスを保ちます: アンマウントはありません。ルートを待っている間にページから外されたボリューム（ページの中身が入れ替わった）は、同じマウントパスを求める新しいボリュームにそれを譲り、接ぎ木せずに settle します。ルートはその下のパスに書き込めますが、ボリュームの接ぎ木先より上にあるオブジェクトを置き換える書き込み（`mount="shop.cart"` のときの `this.shop = …`）は throw し、ルートやボリュームの再設定（`setInitialState()`）も throw します。マウントパスは静的パスのみです（`*`・`$`・`#`・`@`・空白は不可）。初期化後に `mount` 属性を変更することはできず、変更は無視されます —— 要素を取り除き、望むパスで新しい要素を追加してください。
 
 **スコープごとに動くもの**（ここに無言で無視されるものはありません）:
 
@@ -3042,7 +3044,7 @@ this.$getAll("matrix.*.*", [row]);
 | マウントされたコンポーネント（`<wcs-state bind-component>`） | コンポーネントのバインディングが構築されたら resolve —— 失敗したときも | マウントが失敗すると reject: ホストのプロパティがオブジェクトでない、配線のエラー、1 つのコンポーネントの中の 2 つ目の接続済み `<wcs-state bind-component>`、初期化に失敗したルートに配線されたコンポーネント（`<tag>.state will not mount: the root state failed to initialize.`）、コンポーネントの描画後に失敗した `$connectedCallback` |
 | ボリューム（`<wcs-state mount>`） | resolve | 常に resolve —— 失敗した・拒否されたボリュームは報告して、接ぎ木せずに決着する（`scopes` アドオンが無いときは reject） |
 
-`getBindingsReady(root)` は、`root`（`document` または shadow root）のバインディングが、そこに接続された `<wcs-state>` によって構築されたら resolve します —— `$connectedCallback` は、どれほど遅くても、決着しても throw しても待ちません。reject するのは、そのルートに接続されたすべての `<wcs-state>` がバインディングを構築する前に失敗した場合だけで、最初の失敗を伴います。はぐれた要素（`#47` で拒否された 2 つ目のルート、ソースの読み込みに失敗したもの）は、別の要素がそのルートをバインドしている間は何も変えません。ルートの `<wcs-state>` が置き換えられた（取り除かれ、新しいものが追加された）ときは、新しいものが決めます。そこにある唯一の `<wcs-state>` が `setInitialState()` を待っている間は pending のままです。DCC の定義や Shadow DOM コンポーネントの shadow root では、その `<wcs-state>` に従います: コンポーネントのバインディングが構築されたら resolve し、マウントが失敗したら reject します。Light DOM コンポーネントはページのルートの中身をバインドし、その失敗は `getBindingsReady(document)` には届きません。ボリュームがこれを reject させることはありません。
+`getBindingsReady(root)` は、`root`（`document` または shadow root）のバインディングが、そこに接続された `<wcs-state>` によって構築されたら resolve します —— `$connectedCallback` は、どれほど遅くても、決着しても throw しても待ちません。reject するのは、そのルートに接続されたすべての `<wcs-state>` がバインディングを構築する前に失敗した場合だけで、最初の失敗を伴います。はぐれた要素（`#47` で拒否された 2 つ目のルート、ソースの読み込みに失敗したもの）は、別の要素がそのルートをバインドしている間は何も変えません。ルートの `<wcs-state>` が置き換えられた（取り除かれ、新しいものが追加された）ときは、新しいものが決めます。そこにある唯一の `<wcs-state>` が `setInitialState()` を待っている間は pending のままで、そこに 1 つも無いとき —— 初めから無い、またはそのルートから外されたものしか無い —— はすぐに resolve します。DCC の定義や Shadow DOM コンポーネントの shadow root では、その `<wcs-state>` に従います: コンポーネントのバインディングが構築されたら resolve し、マウントが失敗したら reject します。Light DOM コンポーネントはページのルートの中身をバインドし、その失敗は `getBindingsReady(document)` には届きません。ボリュームがこれを reject させることはありません。
 
 `@wcstack/server` の `renderToString()` と `@wcstack/testing` の `mount()` は、Light DOM コンポーネントのものも含めてすべての `connectedCallbackPromise` を待つので、上の場合にはこれらも reject します。これらのケースは [`__tests__/init-failure.test.ts`](__tests__/init-failure.test.ts) で固定されています。
 
