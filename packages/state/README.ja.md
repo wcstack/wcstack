@@ -191,9 +191,9 @@
 <script type="importmap">
 {
   "imports": {
-    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/core.js",
-    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/features/temporal.js",
-    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/features/scopes.js"
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.1/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.1/dist/split/features/temporal.js",
+    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.1/dist/split/features/scopes.js"
   }
 }
 </script>
@@ -252,7 +252,7 @@
 ページが名指したアドオンを、同じビルドから読み込みます。
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/auto.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.1/dist/split/auto.js"></script>
 <wcs-state features="scopes diagnostics">
   <script type="module">
     export default {

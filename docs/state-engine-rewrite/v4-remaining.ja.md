@@ -233,6 +233,7 @@ R3 の決定（3.5 を最後の minor にする）に沿って、main から 6 �
 - **リリースの実行中はブランチを凍結する**: release.yml はディスパッチの後にブランチが動いていれば公開の前に止まり、公開の間に push されると最後の push が失敗する（npm には版が出たのにタグが無い状態になり、次の実行は拒む — 戻すのは人）。rc の間は research へのマージ、4.0.0 の間は main へのマージを止める。
 - CHANGELOG: 4.0 の下書きは rc の間ずっと `[Unreleased]` に置き、rc ごとの見出しは作らない（rc の GitHub Release が `[Unreleased]` を案内する）。rc で変わったことは下書きに書き足す。`[4.0.0] — 日付` に改めるのは最終版のときだけ（CHANGELOG の `[Unreleased]` の注記と CLAUDE.md にも書いた）。
 - rc（R8、経路は §4）: `research/state-engine` で release.yml を `premajor-rc` で実行する（`gh workflow run release.yml --ref research/state-engine -f version_type=premajor-rc`）。次の rc は `prerelease-rc`。npm の `next` に載り、main は 3.x のまま（3.x の patch は main から従来どおり出せる）。`@wcstack/lint` / `@wcstack/typescript` も rc と一緒に `next` に載る。拡張は出さない（R11）。
+- **CDN のピン**: state の README（en/ja）の分割エントリーの URL は版を名指しする（import map の例と `dist/split/auto.js`。どちらも 3.5.4 では 4.0 のファイルにならない — `split/auto.js` は 3.5.4 に無い）。rc を出す前の準備で、その rc の版（`4.0.0-rc.N`）に合わせて commit する。4.0.0 の準備では `4.0.0` に改め、ほかのパッケージの README の 3.x の手順どおりのピン（media-query など）も 4.0.0 に上げる。`docs/sri(.ja).md` の 3.5.4 の例は 3.x の説明なので変えない。
 - 4.0.0: ブランチを push し、PR とレビューを経て main に入れてから、main で `release` を実行する（`latest`。`major` は拒むので、rc を経ずに 4.0.0 は出ない）。拡張の 2.0.0 を同時に出す。その後、npm の `next` は最後の rc を指したまま残る（workflow の OIDC の資格は publish にしか使えないので、揃えるなら手で `npm dist-tag add <pkg>@4.0.0 next`）。4.0.0 の後の 3.x の修正は、この経路では出せない（安定版は main からだけで、main は 4.0 のエンジン）。
 
 ## 7. 進め方の案
