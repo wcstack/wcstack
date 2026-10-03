@@ -72,6 +72,15 @@ jobs:
               done
             fi
 
+            # Two suites run packages/state/src directly: devtools' protocol drift test
+            # (the 4.0 runtime's event / summary shapes against the consumer's types) and
+            # router's routeRange.state test. A state-only change must run them too.
+            if echo "$changed" | grep -qE '^packages/state/'; then
+              for pkg in devtools router; do
+                [[ " ${selected[*]} " == *" $pkg "* ]] || selected+=("$pkg")
+              done
+            fi
+
             # The @wcstack/state size / structure gates and their baselines live in scripts/:
             # a PR that changes only them must still run them.
             if echo "$changed" | grep -qE '^scripts/(check-state-[a-z]+\.mjs|state-[a-z]+-baseline\.json)$' \
