@@ -77,19 +77,20 @@ export default {
          / this["regions.*.prefectures.*.cities.*.area"];
   },
 
-  // Prefecture level — aggregate from cities
+  // Prefecture level — aggregate from this prefecture's cities
+  // (indexes omitted: they default to the loop context [$1, $2])
   get "regions.*.prefectures.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.cities.*.population", [])
+    return this.$getAll("regions.*.prefectures.*.cities.*.population")
       .reduce((a, b) => a + b, 0);
   },
 
-  // Region level — aggregate from prefectures
+  // Region level — aggregate from this region's prefectures (context [$1])
   get "regions.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.totalPopulation", [])
+    return this.$getAll("regions.*.prefectures.*.totalPopulation")
       .reduce((a, b) => a + b, 0);
   },
 
-  // Top level — aggregate from regions
+  // Top level — no loop context; [] means "every match"
   get totalPopulation() {
     return this.$getAll("regions.*.totalPopulation", [])
       .reduce((a, b) => a + b, 0);
@@ -97,7 +98,7 @@ export default {
 };
 ```
 
-Five computed properties, three levels of nesting, zero extra components. `$getAll` collects all values matching a wildcard, and bottom-up aggregation flows naturally.
+Four computed properties, three levels of nesting, zero extra components. `$getAll` collects the values matching a wildcard, and bottom-up aggregation flows naturally. Its second argument is a prefix of indexes: omitted, it is taken from the row the getter is evaluated for, so a prefecture sums only its own cities; `[]` means every match. Passing `[]` inside the prefecture getter would sum the cities of every prefecture — see [`$getAll`](../README.md#getall--aggregate-across-array-elements) in the README.
 
 ---
 
@@ -205,7 +206,7 @@ The `*` in a path resolves to the loop index at runtime.
 
 ```
 Template:
-  <template data-wcs="for: users">     ← pushes index onto stack
+  <template data-wcs="for: users">     ← each row supplies its index
     {{ .fullName }}                      ← reads users.*.fullName
 
 At index 0:  this["users.*.firstName"]  →  users[0].firstName  →  "Alice"
@@ -361,6 +362,12 @@ this.items.splice(index, 1);
 
 This design pairs well with ES2023's non-destructive array methods (`toSpliced`, `toSorted`, `toReversed`, `with`).
 
+When something has to change an object or array in place, announce it afterwards with `this.$postUpdate(path)`.
+
+### Getters Must Be Pure
+
+A getter's cache is invalidated only through what it read **through `this`**. `Date.now()`, the DOM or a module variable read inside a getter is invisible to the dependency graph, so the first value computed sticks — put such inputs into state. Likewise, `this.form.name` tracks only `form`; read `this["form.name"]` to depend on the field. The README's [Getters must be pure with respect to state](../README.md#getters-must-be-pure-with-respect-to-state) section lists the rules and the escape hatches (`$dependOn`, `$untracked`).
+
 ---
 
 ## Summary
@@ -373,7 +380,9 @@ This design pairs well with ES2023's non-destructive array methods (`toSpliced`,
 | Auto dependency tracking | Access registers dependencies. No manual dependency arrays |
 | Per-element cache | Only the affected element is invalidated |
 | Getter chaining | Cross-getter references cascade computation |
-| `$getAll` | Collects all values matching a wildcard for aggregation |
+| `$getAll` | Collects the values matching a wildcard for aggregation — within the current row (indexes omitted) or across every match (`[]`) |
 | Path setter | `set "a.*.b"(v)` — custom write logic |
 
 The idea behind path getters is simple — define computed properties **where the data lives, not where the components are**. This single decision removes the obligation to split components and fundamentally changes how nested data is handled.
+
+The README's [Path Getters](../README.md#path-getters-computed-properties) section is the reference for how they are resolved, cached and invalidated.
