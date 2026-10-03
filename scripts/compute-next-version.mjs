@@ -6,6 +6,7 @@
 // Usage:
 //   node scripts/compute-next-version.mjs --bump <type> --branch <name> \
 //     [--ref-type branch] [--state-manifest packages/state/dist/wcs-manifest.json] \
+//     [--tags <file, one tag per line; default: git tag --list "v*">] \
 //     <current-version>...
 //
 // Bump types:
@@ -19,26 +20,35 @@
 //   - (a) packages/state is the 4.0 engine (`behaviorOptions` in its
 //     dist/wcs-manifest.json) and the target's major is below 4 — and, the
 //     other way round, the 3.x engine with a target of 4 or more;
+//   - a new major reaches npm `latest` only through `release`, at the end of an
+//     rc series (so `major` never succeeds: start the series with premajor-rc);
 //   - (b) a final (stable) release runs from main only — it goes to npm's
 //     `latest` dist-tag and its commit is pushed to the branch the run is on;
-//   - (c) a prerelease never runs from main — main carries stable versions only,
-//     so its next patch is computed from a stable version, and an rc of main's
-//     code is never published.
+//   - (c) a prerelease runs only from research/state-engine or a release/*
+//     branch — never from main, which carries stable versions only, so its next
+//     patch is computed from a stable version and an rc of main's code is never
+//     published;
+//   - no prerelease-rc once v<X.Y.Z> is tagged (no rc after the final release);
+//   - no target that is tagged already.
 //
 // Prints GitHub step output lines on stdout:
 //   current=<highest current version>
 //   version=<target version>
 //   prerelease=true|false
 //   dist_tag=next|latest
+//   previous_tag=<the tag the release notes start from, or empty>
 //
 // The functions are exported for scripts/compute-next-version.test.mjs and for
 // scripts/align-internal-dep-ranges.mjs (internalRange).
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 export const BUMPS = Object.freeze(["patch", "minor", "major", "premajor-rc", "prerelease-rc", "release"]);
 export const MAIN = "main";
+/** Where a prerelease may run: an exact branch name, or a prefix ending in "/". */
+export const PRERELEASE_BRANCHES = Object.freeze(["research/state-engine", "release/"]);
 
 // X.Y.Z with an optional prerelease (semver §9); no build metadata — npm
 // ignores it for precedence, and this repository never publishes it.
@@ -132,7 +142,7 @@ export function nextVersion(current, bump) {
       return `${base}-rc.${rc + 1}`;
     case "release":
       if (prerelease.length === 0) {
-        throw new Error(`the current version ${current} is not a prerelease: there is no rc to release; choose patch, minor or major`);
+        throw new Error(`the current version ${current} is not a prerelease: there is no rc to release; choose patch or minor`);
       }
       return base;
     default:
@@ -164,10 +174,36 @@ export function isEngine4Manifest(manifest) {
   return manifest !== null && typeof manifest === "object" && manifest.behaviorOptions != null;
 }
 
+/** Whether a prerelease may run from this branch (PRERELEASE_BRANCHES). */
+export function isPrereleaseBranch(branch) {
+  return PRERELEASE_BRANCHES.some((b) =>
+    b.endsWith("/") ? branch.startsWith(b) && branch.length > b.length : branch === b,
+  );
+}
+
+const prereleaseBranchesText = () =>
+  PRERELEASE_BRANCHES.map((b) => (b.endsWith("/") ? `a ${b}* branch` : b)).join(" or ");
+
+/** The versions the `v<version>` tags name (tags that are not a version are ignored). */
+function taggedVersions(tags) {
+  const out = [];
+  for (const tag of tags) {
+    if (!tag.startsWith("v")) continue;
+    try {
+      parseVersion(tag.slice(1));
+      out.push(tag.slice(1));
+    } catch {
+      // not a release tag
+    }
+  }
+  return out;
+}
+
 /** The reasons to refuse this release; empty when it may run. */
-export function releaseGuards({ target, branch, refType = "branch", engine4 }) {
+export function releaseGuards({ target, current, bump, branch, refType = "branch", engine4, tags = [] }) {
   const errors = [];
-  const { major } = parseVersion(target);
+  const { major, minor, patch } = parseVersion(target);
+  const base = `${major}.${minor}.${patch}`;
   const prerelease = isPrerelease(target);
   if (refType !== "branch") {
     errors.push(`the release runs from a branch, not a ${refType} (${branch})`);
@@ -180,21 +216,44 @@ export function releaseGuards({ target, branch, refType = "branch", engine4 }) {
   if (!engine4 && major >= 4) {
     errors.push(`packages/state is the 3.x engine: ${target} would publish the 3.x code as ${major}.x`);
   }
-  if (!prerelease && branch !== MAIN) {
+  if (!prerelease && current !== undefined && major > parseVersion(current).major && bump !== "release") {
     errors.push(
-      `a final release (${target}, npm "latest") runs from ${MAIN} only, not from ${branch}`,
+      `${target} is a new major on npm "latest": a major gets there only through "release", at the end of an rc series — start the series with premajor-rc on ${prereleaseBranchesText()}`,
     );
   }
-  if (prerelease && branch === MAIN) {
+  if (!prerelease && branch !== MAIN) {
+    errors.push(`a final release (${target}, npm "latest") runs from ${MAIN} only, not from ${branch}`);
+  }
+  if (prerelease && !isPrereleaseBranch(branch)) {
     errors.push(
-      `a prerelease (${target}, npm "next") does not run from ${MAIN}: ${MAIN} carries stable versions only — run it from the rc branch`,
+      branch === MAIN
+        ? `a prerelease (${target}, npm "next") does not run from ${MAIN}: ${MAIN} carries stable versions only — run it from ${prereleaseBranchesText()}`
+        : `a prerelease (${target}, npm "next") runs only from ${prereleaseBranchesText()}, not from ${branch}`,
     );
+  }
+  if (bump === "prerelease-rc" && tags.includes(`v${base}`)) {
+    errors.push(`v${base} is already released: there is no rc after the final release (${target})`);
+  }
+  if (tags.includes(`v${target}`)) {
+    errors.push(`v${target} is already tagged: ${target} is out, and the branch's package.json lags its tag — this needs a human`);
   }
   return errors;
 }
 
+/**
+ * The tag the GitHub Release notes start from. A prerelease: the version it was bumped from
+ * (v3.5.4 for 4.0.0-rc.1, rc.N for rc.N+1) when that tag exists. A stable release: the highest
+ * stable tag below the target — never an rc, so the final release's notes cover the whole series.
+ * Empty when there is none (GitHub then picks the base itself).
+ */
+export function previousTag({ target, current, tags }) {
+  if (isPrerelease(target)) return tags.includes(`v${current}`) ? `v${current}` : "";
+  const stable = taggedVersions(tags).filter((v) => !isPrerelease(v) && compareVersions(v, target) < 0);
+  return stable.length === 0 ? "" : `v${maxVersion(stable)}`;
+}
+
 /** The whole plan; throws an Error whose `reasons` lists every refusal. */
-export function planRelease({ bump, versions, branch, refType = "branch", engine4 }) {
+export function planRelease({ bump, versions, branch, refType = "branch", engine4, tags = [] }) {
   const current = maxVersion(versions);
   let version;
   try {
@@ -202,18 +261,26 @@ export function planRelease({ bump, versions, branch, refType = "branch", engine
   } catch (error) {
     throw Object.assign(new Error(error.message), { reasons: [error.message] });
   }
-  const reasons = releaseGuards({ target: version, branch, refType, engine4 });
+  const reasons = releaseGuards({ target: version, current, bump, branch, refType, engine4, tags });
   if (reasons.length > 0) {
     throw Object.assign(new Error(reasons.join("; ")), { reasons });
   }
-  return { current, version, prerelease: isPrerelease(version), distTag: distTagFor(version) };
+  return {
+    current,
+    version,
+    prerelease: isPrerelease(version),
+    distTag: distTagFor(version),
+    previousTag: previousTag({ target: version, current, tags }),
+  };
 }
+
+const VALUE_OPTIONS = ["--bump", "--branch", "--ref-type", "--state-manifest", "--tags"];
 
 function parseArgs(argv) {
   const options = { versions: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--bump" || a === "--branch" || a === "--ref-type" || a === "--state-manifest") {
+    if (VALUE_OPTIONS.includes(a)) {
       const value = argv[++i];
       if (value === undefined) throw new Error(`${a} needs a value`);
       options[a.slice(2)] = value;
@@ -226,6 +293,18 @@ function parseArgs(argv) {
   return options;
 }
 
+/** The repository's tags: one per line in `--tags <file>`, or `git tag --list "v*"` here. */
+function readTags(file) {
+  const text =
+    file === undefined
+      ? execFileSync("git", ["tag", "--list", "v*"], { encoding: "utf8", windowsHide: true })
+      : readFileSync(file, "utf8");
+  return text
+    .split(/\r?\n/)
+    .map((t) => t.trim())
+    .filter((t) => t !== "");
+}
+
 function main(argv) {
   let options;
   try {
@@ -236,7 +315,7 @@ function main(argv) {
   } catch (error) {
     console.error(`::error::compute-next-version: ${error.message}`);
     console.error(
-      "Usage: node scripts/compute-next-version.mjs --bump <type> --branch <name> [--ref-type branch] [--state-manifest <path>] <current-version>...",
+      "Usage: node scripts/compute-next-version.mjs --bump <type> --branch <name> [--ref-type branch] [--state-manifest <path>] [--tags <file>] <current-version>...",
     );
     return 1;
   }
@@ -248,6 +327,13 @@ function main(argv) {
     console.error(`::error::compute-next-version: cannot read ${manifestPath} (the engine guard needs it): ${error.message}`);
     return 1;
   }
+  let tags;
+  try {
+    tags = readTags(options.tags);
+  } catch (error) {
+    console.error(`::error::compute-next-version: cannot read the tags (the tag guard needs them): ${error.message}`);
+    return 1;
+  }
   try {
     const plan = planRelease({
       bump: options.bump,
@@ -255,13 +341,16 @@ function main(argv) {
       branch: options.branch,
       refType: options["ref-type"] ?? "branch",
       engine4,
+      tags,
     });
     console.log(`current=${plan.current}`);
     console.log(`version=${plan.version}`);
     console.log(`prerelease=${plan.prerelease}`);
     console.log(`dist_tag=${plan.distTag}`);
+    console.log(`previous_tag=${plan.previousTag}`);
     console.error(
-      `Release plan: ${plan.current} → ${plan.version} (${options.bump}) from ${options.branch}, npm dist-tag "${plan.distTag}", state engine ${engine4 ? "4.0" : "3.x"}`,
+      `Release plan: ${plan.current} → ${plan.version} (${options.bump}) from ${options.branch}, npm dist-tag "${plan.distTag}", ` +
+        `notes from ${plan.previousTag || "GitHub's choice"}, state engine ${engine4 ? "4.0" : "3.x"}`,
     );
     return 0;
   } catch (error) {

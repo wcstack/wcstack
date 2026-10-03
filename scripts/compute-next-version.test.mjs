@@ -6,7 +6,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,10 +16,12 @@ import {
   distTagFor,
   internalRange,
   isEngine4Manifest,
+  isPrereleaseBranch,
   maxVersion,
   nextVersion,
   parseVersion,
   planRelease,
+  previousTag,
   releaseGuards,
 } from "./compute-next-version.mjs";
 
@@ -98,12 +100,13 @@ describe("nextVersion", () => {
     assert.throws(() => nextVersion("3.5.4", "prepatch"), /unknown bump/);
   });
 
-  it("every bump type the workflow offers is handled", () => {
+  it("every bump type the workflow offers is handled (main offers the stable ones, research all)", () => {
     const yaml = readFileSync(join(here, "..", ".github", "workflows", "release.yml"), "utf8");
-    const options = /version_type:[\s\S]*?options:\n((?:\s+- [\w-]+.*\n)+)/.exec(yaml);
+    const options = /version_type:[\s\S]*?options:\r?\n((?:\s+- [\w-]+.*\r?\n)+)/.exec(yaml);
     assert.ok(options, "release.yml has version_type options");
     const offered = [...options[1].matchAll(/- ([\w-]+)/g)].map((m) => m[1]);
-    assert.deepEqual(offered, [...BUMPS]);
+    assert.deepEqual(offered.filter((b) => !BUMPS.includes(b)), []);
+    assert.ok(offered.includes("patch") && offered.includes("minor"), offered.join(", "));
   });
 });
 
@@ -127,50 +130,106 @@ describe("releaseGuards", () => {
     assert.ok(errors.some((e) => pattern.test(e)), `expected ${pattern} in ${JSON.stringify(errors)}`);
   };
 
-  it("lets through the planned runs: rcs from research, 4.0.0 and 3.x patches from main", () => {
-    ok({ target: "4.0.0-rc.1", branch: "research/state-engine", engine4: true });
-    ok({ target: "4.0.0-rc.2", branch: "release/4.0.0-rc.2", engine4: true });
-    ok({ target: "4.0.0", branch: "main", engine4: true });
-    ok({ target: "3.5.5", branch: "main", engine4: false });
+  it("lets through the planned runs: rcs from research or release/*, 4.0.0 and 3.x patches / minors from main", () => {
+    ok({ target: "4.0.0-rc.1", current: "3.5.4", bump: "premajor-rc", branch: "research/state-engine", engine4: true });
+    ok({ target: "4.0.0-rc.2", current: "4.0.0-rc.1", bump: "prerelease-rc", branch: "release/4.0.0-rc.2", engine4: true });
+    ok({ target: "4.0.0", current: "4.0.0-rc.3", bump: "release", branch: "main", engine4: true });
+    ok({ target: "3.5.5", current: "3.5.4", bump: "patch", branch: "main", engine4: false });
+    ok({ target: "3.6.0", current: "3.5.4", bump: "minor", branch: "main", engine4: false });
+    ok({ target: "4.1.0", current: "4.0.3", bump: "minor", branch: "main", engine4: true });
   });
 
   it("(a) the 4.0 engine never ships under a major below 4", () => {
-    refused({ target: "3.5.5", branch: "main", engine4: true }, /4\.0 engine .* would publish it as 3\.x/);
-    refused({ target: "3.6.0", branch: "research/state-engine", engine4: true }, /would publish it as 3\.x/);
+    refused({ target: "3.5.5", current: "3.5.4", bump: "patch", branch: "main", engine4: true }, /4\.0 engine .* would publish it as 3\.x/);
+    refused({ target: "3.6.0", current: "3.5.4", bump: "minor", branch: "research/state-engine", engine4: true }, /would publish it as 3\.x/);
   });
 
   it("(a) the other way round: the 3.x engine never ships as 4.x", () => {
-    refused({ target: "4.0.0", branch: "main", engine4: false }, /3\.x engine: 4\.0\.0 would publish the 3\.x code as 4\.x/);
-    refused({ target: "4.0.0-rc.1", branch: "fix/x", engine4: false }, /3\.x engine/);
+    refused({ target: "4.0.0", current: "4.0.0-rc.1", bump: "release", branch: "main", engine4: false }, /3\.x engine: 4\.0\.0 would publish the 3\.x code as 4\.x/);
+    refused({ target: "4.0.0-rc.1", current: "3.5.4", bump: "premajor-rc", branch: "research/state-engine", engine4: false }, /3\.x engine/);
+  });
+
+  it("a new major reaches latest only through release: major on main is refused, with either engine", () => {
+    // research merged into main before the first rc: the 4.0 engine, still at 3.5.4
+    const errors = releaseGuards({ target: "4.0.0", current: "3.5.4", bump: "major", branch: "main", engine4: true });
+    assert.equal(errors.length, 1, JSON.stringify(errors));
+    assert.match(errors[0], /4\.0\.0 is a new major on npm "latest": a major gets there only through "release"/);
+    // main as it is today (3.x): the engine guard refuses it too
+    assert.equal(releaseGuards({ target: "4.0.0", current: "3.5.4", bump: "major", branch: "main", engine4: false }).length, 2);
+    // the end of an rc series is the way
+    ok({ target: "4.0.0", current: "4.0.0-rc.3", bump: "release", branch: "main", engine4: true });
+    // a major inside one release line is not a new major
+    ok({ target: "4.0.1", current: "4.0.0", bump: "patch", branch: "main", engine4: true });
   });
 
   it("(b) a final release runs from main only — 4.x or not", () => {
-    refused({ target: "4.0.0", branch: "research/state-engine", engine4: true }, /final release .* from main only, not from research\/state-engine/);
-    refused({ target: "3.5.5", branch: "maint/3.x", engine4: false }, /from main only/);
+    refused({ target: "4.0.0", current: "4.0.0-rc.1", bump: "release", branch: "research/state-engine", engine4: true }, /final release .* from main only, not from research\/state-engine/);
+    refused({ target: "3.5.5", current: "3.5.4", bump: "patch", branch: "maint/3.x", engine4: false }, /from main only/);
   });
 
-  it("(c) a prerelease does not run from main", () => {
-    refused({ target: "4.0.0-rc.3", branch: "main", engine4: true }, /prerelease .* does not run from main/);
+  it("(c) a prerelease runs only from research/state-engine or a release/* branch", () => {
+    const rc = { target: "4.0.0-rc.3", current: "4.0.0-rc.2", bump: "prerelease-rc", engine4: true };
+    refused({ ...rc, branch: "main" }, /prerelease .* does not run from main/);
+    for (const branch of ["fix/x", "research/state-engine-2", "research/other", "release", "release/", "releases/4.0"]) {
+      refused({ ...rc, branch }, new RegExp(`runs only from research/state-engine or a release/\\* branch, not from ${branch.replace(/[/.]/g, "\\$&")}$`));
+    }
+    for (const branch of ["research/state-engine", "release/4.0", "release/4.0.0-rc.3"]) ok({ ...rc, branch });
+    assert.equal(isPrereleaseBranch("release/x"), true);
+    assert.equal(isPrereleaseBranch("release/"), false);
+  });
+
+  it("no prerelease-rc once v<X.Y.Z> is tagged", () => {
+    const rc = { target: "4.0.0-rc.4", current: "4.0.0-rc.3", bump: "prerelease-rc", branch: "research/state-engine", engine4: true };
+    refused({ ...rc, tags: ["v3.5.4", "v4.0.0-rc.3", "v4.0.0"] }, /v4\.0\.0 is already released: there is no rc after the final release/);
+    ok({ ...rc, tags: ["v3.5.4", "v4.0.0-rc.3"] });
+  });
+
+  it("no target that is tagged already", () => {
+    refused({ target: "4.0.0-rc.1", current: "3.5.4", bump: "premajor-rc", branch: "research/state-engine", engine4: true, tags: ["v3.5.4", "v4.0.0-rc.1"] }, /v4\.0\.0-rc\.1 is already tagged/);
+    refused({ target: "3.5.5", current: "3.5.4", bump: "patch", branch: "main", engine4: false, tags: ["v3.5.5"] }, /v3\.5\.5 is already tagged/);
   });
 
   it("refuses a tag ref", () => {
-    refused({ target: "4.0.0-rc.1", branch: "v3.5.4", refType: "tag", engine4: true }, /from a branch, not a tag/);
+    refused({ target: "4.0.0-rc.1", current: "3.5.4", bump: "premajor-rc", branch: "v3.5.4", refType: "tag", engine4: true }, /from a branch, not a tag/);
+  });
+});
+
+describe("previousTag (where the release notes start)", () => {
+  const tags = ["v3.4.0", "v3.5.3", "v3.5.4", "v4.0.0-rc.1", "v4.0.0-rc.2", "not-a-version", "vX"];
+
+  it("a prerelease: the tag of the version it was bumped from, when it exists", () => {
+    assert.equal(previousTag({ target: "4.0.0-rc.1", current: "3.5.4", tags }), "v3.5.4");
+    assert.equal(previousTag({ target: "4.0.0-rc.3", current: "4.0.0-rc.2", tags }), "v4.0.0-rc.2");
+    assert.equal(previousTag({ target: "4.0.0-rc.4", current: "4.0.0-rc.3", tags }), "");
+  });
+
+  it("a stable release: the highest stable tag below it, never an rc", () => {
+    assert.equal(previousTag({ target: "4.0.0", current: "4.0.0-rc.2", tags }), "v3.5.4");
+    assert.equal(previousTag({ target: "3.5.5", current: "3.5.4", tags }), "v3.5.4");
+    assert.equal(previousTag({ target: "4.0.1", current: "4.0.0", tags: [...tags, "v4.0.0"] }), "v4.0.0");
+    assert.equal(previousTag({ target: "1.0.0", current: "0.9.0", tags }), "");
   });
 });
 
 describe("planRelease", () => {
-  it("3.5.4 + premajor-rc on research → 4.0.0-rc.1 on next", () => {
+  it("3.5.4 + premajor-rc on research → 4.0.0-rc.1 on next, notes from v3.5.4", () => {
     assert.deepEqual(
-      planRelease({ bump: "premajor-rc", versions: ["3.5.4", "3.5.4"], branch: "research/state-engine", engine4: true }),
-      { current: "3.5.4", version: "4.0.0-rc.1", prerelease: true, distTag: "next" },
+      planRelease({ bump: "premajor-rc", versions: ["3.5.4", "3.5.4"], branch: "research/state-engine", engine4: true, tags: ["v3.5.4"] }),
+      { current: "3.5.4", version: "4.0.0-rc.1", prerelease: true, distTag: "next", previousTag: "v3.5.4" },
     );
   });
 
-  it("4.0.0-rc.3 + release on main → 4.0.0 on latest", () => {
+  it("4.0.0-rc.3 + release on main → 4.0.0 on latest, notes from the last stable tag", () => {
     assert.deepEqual(
-      planRelease({ bump: "release", versions: ["4.0.0-rc.3"], branch: "main", engine4: true }),
-      { current: "4.0.0-rc.3", version: "4.0.0", prerelease: false, distTag: "latest" },
+      planRelease({ bump: "release", versions: ["4.0.0-rc.3"], branch: "main", engine4: true, tags: ["v3.5.4", "v4.0.0-rc.3"] }),
+      { current: "4.0.0-rc.3", version: "4.0.0", prerelease: false, distTag: "latest", previousTag: "v3.5.4" },
     );
+  });
+
+  it("main's patch and minor work as before (3.x engine)", () => {
+    const tags = ["v3.5.3", "v3.5.4"];
+    assert.equal(planRelease({ bump: "patch", versions: ["3.5.4", "1.0.0"], branch: "main", engine4: false, tags }).version, "3.5.5");
+    assert.equal(planRelease({ bump: "minor", versions: ["3.5.4"], branch: "main", engine4: false, tags }).version, "3.6.0");
   });
 
   it("collects every refusal (the old guard's case: patch with the 4.0 engine on research)", () => {
@@ -195,9 +254,15 @@ describe("isEngine4Manifest", () => {
     assert.equal(isEngine4Manifest(null), false);
   });
 
-  it("the committed 4.0 build of packages/state carries the marker the guard reads", () => {
-    const manifest = JSON.parse(readFileSync(join(here, "..", "packages", "state", "dist", "wcs-manifest.json"), "utf8"));
-    assert.equal(isEngine4Manifest(manifest), true);
+  // Whatever engine this tree holds (4.0 on research, 3.x on main): the committed manifest reads
+  // as the engine the tree builds — the 4.0 engine is the one built by build.mjs (esbuild), 3.x
+  // by Rollup. It checks that the build still emits the marker the guard reads, on either tree.
+  it("the committed packages/state manifest reads as the engine this tree builds", (t) => {
+    const state = join(here, "..", "packages", "state");
+    const manifestPath = join(state, "dist", "wcs-manifest.json");
+    if (!existsSync(manifestPath)) return t.skip("no committed packages/state/dist/wcs-manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    assert.equal(isEngine4Manifest(manifest), existsSync(join(state, "build.mjs")));
   });
 });
 
@@ -207,32 +272,60 @@ describe("CLI", () => {
   const engine3 = join(tmp, "engine3.json");
   writeFileSync(engine4, JSON.stringify({ version: 2, behaviorOptions: {} }));
   writeFileSync(engine3, JSON.stringify({ version: 2 }));
+  const tags = join(tmp, "tags.txt");
+  writeFileSync(tags, "v3.5.3\r\nv3.5.4\nv4.0.0-rc.2\nnot-a-release\n\n");
   const run = (...args) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8" });
 
   it("prints the step outputs for an rc", () => {
-    const r = run("--bump", "premajor-rc", "--branch", "research/state-engine", "--state-manifest", engine4, "3.5.4", "1.0.0");
+    const r = run("--bump", "premajor-rc", "--branch", "research/state-engine", "--state-manifest", engine4, "--tags", tags, "3.5.4", "1.0.0");
     assert.equal(r.status, 0, r.stderr);
-    assert.equal(r.stdout, "current=3.5.4\nversion=4.0.0-rc.1\nprerelease=true\ndist_tag=next\n");
-    assert.match(r.stderr, /3\.5\.4 → 4\.0\.0-rc\.1 .* "next", state engine 4\.0/);
+    assert.equal(r.stdout, "current=3.5.4\nversion=4.0.0-rc.1\nprerelease=true\ndist_tag=next\nprevious_tag=v3.5.4\n");
+    assert.match(r.stderr, /3\.5\.4 → 4\.0\.0-rc\.1 .* "next", notes from v3\.5\.4, state engine 4\.0/);
   });
 
   it("prints the step outputs for the final release", () => {
-    const r = run("--bump", "release", "--branch", "main", "--ref-type", "branch", "--state-manifest", engine4, "4.0.0-rc.2");
+    const r = run("--bump", "release", "--branch", "main", "--ref-type", "branch", "--state-manifest", engine4, "--tags", tags, "4.0.0-rc.2");
     assert.equal(r.status, 0, r.stderr);
-    assert.equal(r.stdout, "current=4.0.0-rc.2\nversion=4.0.0\nprerelease=false\ndist_tag=latest\n");
+    assert.equal(r.stdout, "current=4.0.0-rc.2\nversion=4.0.0\nprerelease=false\ndist_tag=latest\nprevious_tag=v3.5.4\n");
+  });
+
+  it("reads the tags with git when --tags is not given", () => {
+    const repo = mkdtempSync(join(tmpdir(), "wcs-next-version-git-"));
+    const git = (...args) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.invalid", ...args], { cwd: repo, encoding: "utf8" });
+    try {
+      git("init", "-q");
+      git("commit", "-q", "--allow-empty", "-m", "x");
+      git("tag", "v3.5.4");
+      git("tag", "v3.5.5-rc.1");
+      git("tag", "unrelated");
+      const r = spawnSync(process.execPath, [SCRIPT, "--bump", "patch", "--branch", "main", "--state-manifest", engine3, "3.5.4"], { cwd: repo, encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      assert.match(r.stdout, /^version=3\.5\.5$/m);
+      assert.match(r.stdout, /^previous_tag=v3\.5\.4$/m);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 
   it("exits 1 with ::error:: lines and no outputs when a guard refuses", () => {
-    const r = run("--bump", "premajor-rc", "--branch", "main", "--state-manifest", engine3, "3.5.4");
+    const r = run("--bump", "premajor-rc", "--branch", "main", "--state-manifest", engine3, "--tags", tags, "3.5.4");
     assert.equal(r.status, 1);
     assert.equal(r.stdout, "");
     const errors = r.stderr.split("\n").filter((l) => l.startsWith("::error::"));
     assert.equal(errors.length, 2, r.stderr);
   });
 
-  it("exits 1 on a missing manifest, missing options or an unknown option", () => {
-    assert.match(run("--bump", "patch", "--branch", "main", "--state-manifest", join(tmp, "none.json"), "3.5.4").stderr, /cannot read/);
-    assert.equal(run("--bump", "patch", "--branch", "main", "--state-manifest", join(tmp, "none.json"), "3.5.4").status, 1);
+  it("exits 1 on major from main with the 4.0 engine (research merged before the first rc)", () => {
+    const r = run("--bump", "major", "--branch", "main", "--state-manifest", engine4, "--tags", tags, "3.5.4");
+    assert.equal(r.status, 1);
+    assert.equal(r.stdout, "");
+    assert.match(r.stderr, /::error::4\.0\.0 is a new major on npm "latest"/);
+  });
+
+  it("exits 1 on a missing manifest or tag file, missing options or an unknown option", () => {
+    assert.match(run("--bump", "patch", "--branch", "main", "--state-manifest", join(tmp, "none.json"), "--tags", tags, "3.5.4").stderr, /cannot read/);
+    assert.equal(run("--bump", "patch", "--branch", "main", "--state-manifest", join(tmp, "none.json"), "--tags", tags, "3.5.4").status, 1);
+    assert.match(run("--bump", "patch", "--branch", "main", "--state-manifest", engine3, "--tags", join(tmp, "none.txt"), "3.5.4").stderr, /cannot read the tags/);
     assert.equal(run("--bump", "patch", "3.5.4").status, 1);
     assert.equal(run("--bump", "patch", "--branch", "main", "--dry", "3.5.4").status, 1);
     assert.equal(run("--bump").status, 1);
