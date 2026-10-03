@@ -39,6 +39,7 @@
     ],
     "recursion": [
       "hooks.ts",
+      "messages.ts",
       "parser/parseStatePart.ts",
       "parser/raiseError.ts"
     ],
