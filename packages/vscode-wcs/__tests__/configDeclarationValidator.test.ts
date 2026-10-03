@@ -47,13 +47,13 @@ describe('$behavior', () => {
     expect(more.map(d => d.text)).toEqual(['null', '{}', 'enableDirectionalInitialSync']);
   });
 
-  it('オブジェクトでない $behavior は error、null と配列はランタイムが通すので黙る', () => {
-    for (const value of ['"off"', '1', 'true', '() => ({})']) {
+  it('オブジェクトでない $behavior（null・配列も）は error、値が読めない式は黙る', () => {
+    for (const value of ['"off"', '1', 'true', '() => ({})', 'null', '[]', '[{ enableMustache: false }]']) {
       const found = diagnose(state(`  $behavior: ${value},`));
       expect(found.map(d => [d.code, d.text]), value).toEqual([[WcsDiagnosticCode.BehaviorInvalid, '$behavior']]);
     }
     expect(diagnose(state(`  $behavior() { return {}; },`)).map(d => d.text)).toEqual(['$behavior']);
-    for (const value of ['null', '[]', 'BEHAVIOR', 'make()']) {
+    for (const value of ['undefined', 'BEHAVIOR', 'make()']) {
       expect(diagnose(state(`  $behavior: ${value},`)), value).toEqual([]);
     }
   });

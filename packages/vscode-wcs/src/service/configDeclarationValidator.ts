@@ -4,7 +4,7 @@
  *
  *   - `$behavior`（状態の宣言キー）: オブジェクトで、キーと値の型は manifest の `behaviorOptions`
  *     （今は enableMustache・sameValueGuard・enableDirectionalInitialSync の 3 つ、どれも boolean）。ランタイムは読み込み時に #44 で throw する
- *     （`null` と配列は通る — `$behavior ?? {}` と `typeof … === "object"`）。ボリューム（`mount=`）では
+ *     （`null` と配列もオブジェクトではないので throw する — `undefined` は宣言なし）。ボリューム（`mount=`）では
  *     宣言できない（ランタイムは接ぎ木を拒み、console.error で報告する）。マウントしたコンポーネント（`bind-component`）は自分の
  *     エンジンを作るので、自分の `$behavior` を持てる。
  *   - `$features`（状態の宣言キー）: 後付けの名前の配列。配列でなければ #46 で throw、知らない名前は
@@ -88,8 +88,8 @@ function validateBehavior(block: WcsScriptBlock, msgs: WcsMessageCatalog, out: W
   }
   if (decl.value === undefined) return;
   const kind = literalKind(decl.value);
-  // `null` / 配列はランタイムが通す（`?? {}` / `typeof [] === "object"`）
-  if (kind === 'string' || kind === 'number' || kind === 'boolean' || kind === 'function') {
+  // null and an array too: no options object, which the runtime refuses (#44)
+  if (kind === 'string' || kind === 'number' || kind === 'boolean' || kind === 'function' || kind === 'null' || kind === 'array') {
     push(out, WcsDiagnosticCode.BehaviorInvalid, base + decl.start, base + decl.end, msgs.behaviorNotObject(BEHAVIOR_KEYS));
     return;
   }

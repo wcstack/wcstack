@@ -863,8 +863,9 @@ export class Engine implements ReconcileHooks {
       if (!Array.isArray(f)) raise(M.FeaturesNotArray);
       for (const name of f) requireFeature(name, "$features");
     }
-    const c = target.$behavior ?? {};
-    if (typeof c !== "object") raise(M.OptionInvalid, ["state", "$behavior"]);
+    // an options object: null and an array are not one (as for bootstrapState's options)
+    const c = target.$behavior === undefined ? {} : target.$behavior;
+    if (typeof c !== "object" || !c || Array.isArray(c)) raise(M.OptionInvalid, ["state", "$behavior"]);
     for (const key in c) if (!BEHAVIOR_KEYS.includes(key) || typeof c[key] !== "boolean") raise(M.OptionInvalid, ["$behavior", key]);
     const [mustache, guard, directional] = BEHAVIOR_KEYS.map((key) => c[key] ?? true);
     // a re-set keeps the engine, and what was built by the old options
