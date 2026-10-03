@@ -76,7 +76,7 @@ Only the JSON-Schema subset the sidecar spec allows (`type`, `properties`, `requ
 | `T \| undefined`, `x?: T` | `T`, and `x` is left out of `required` |
 | `A \| B` (objects or mixed primitives) | `{ "anyOf": [A, B] }` |
 | object literals, interfaces, classes from your code | `{ "type": "object", "properties": …, "required": … }` |
-| `Date`, `Map`, `Set`, DOM types, anything from a library, `any`, `unknown`, `Record<string, T>` | a **bare `{}`** |
+| `Date`, `Map`, `Set`, DOM types, anything from a library, `any`, `unknown`, `Record<string, T>`, an object type with an index signature (`{ [year: number]: T }`, `{ [key: string]: T }`) | a **bare `{}`** |
 | `get x(): T` | `x: T` — getters are members |
 | `get "users.*.ageCategory"(): string` | injected as `users.items.properties.ageCategory` — a path getter is a member at the path it computes |
 | methods, function-valued properties, `$`-prefixed keys (`$watch`, `$commandTokens`, …) | dropped |

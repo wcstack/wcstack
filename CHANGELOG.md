@@ -8,11 +8,16 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [3.5.2] — 2026-10-03
+
+**3.5.2 fixes three bugs in `@wcstack/state`'s `bind-component` mounts and one in `@wcstack/typescript`.** A component scope initialized again on the same DOM — a render-once component that swaps only its `<wcs-state bind-component>`, or one moved while it initializes — left its own bindings dead ([#417](https://github.com/wcstack/wcstack/issues/417)), ran `$connectedCallback` twice for one connection ([#418](https://github.com/wcstack/wcstack/issues/418)), and turned a `{{ … }}` inside rendered values into a live binding that could display the component's private keys ([#419](https://github.com/wcstack/wcstack/issues/419), template injection — upgrade if a component renders untrusted data). `wcs-schema` no longer emits an object type with an index signature as a closed object, which made every path under it a `wcs/path-nonexistent` error ([#421](https://github.com/wcstack/wcstack/issues/421)). No API changes; `auto.min.js` grows by 148 B gzip, the split `/core` by 26 B.
+
 ### Fixed
 
 - `@wcstack/state`: **a `bind-component` scope initialized again on the same DOM keeps its own bindings** ([#417](https://github.com/wcstack/wcstack/issues/417)). A render-once component that swaps only its `<wcs-state bind-component>` initialized its scope again over the nodes it had already bound; the collection skipped them as registered, so `data-wcs`, `{{ }}`, events and `for` / `if` in the scope stopped following the state, with nothing reported. The nodes still in the scope are now bound again (a discarded DOM stays disposed), and a binding that fails to start again is reported with `console.error`.
 - `@wcstack/state`: **a mounted component moved while its `<wcs-state>` initializes runs `$connectedCallback` once** ([#418](https://github.com/wcstack/wcstack/issues/418)). Moving (or removing and re-inserting) the component before its `<wcs-state bind-component>` finished initializing ran the preparation twice: the scope was built twice — the second time as a re-initialization on the same DOM, which left its bindings dead (#417) — and `$connectedCallback` ran twice for one connection. The newer connection now takes the preparation over.
 - `@wcstack/state`: **a `{{ … }}` inside a rendered value is no longer turned into a binding when a `bind-component` scope is initialized again on the same DOM** ([#419](https://github.com/wcstack/wcstack/issues/419)). The mustache conversion ran again over the rendered scope and read text a binding had written as markup: a value containing `{{ path }}` became a live binding resolved in the component scope — its private keys included — and the `{{ }}` binding that rendered it stopped updating. On a re-initialization, text under a bound node is now left as data. Elements with `data-wcs` inside an `innerHTML:` binding's output are still collected there. `auto.min.js` +148 B gzip, `index.esm.js` +149 B, the split `/core` +26 B (the three fixes together).
+- `@wcstack/typescript`: **`wcs-schema` emits an object type with an index signature as a bare `{}`** ([#421](https://github.com/wcstack/wcstack/issues/421)). `interface ByYear { [year: number]: Sale }` or `{ [key: string]: Sale }` became a closed object without members, so every path under it (`idx.2024.total`) was a `wcs/path-nonexistent` error and `wcs-validate` exited 1 even without `--strict`. Its keys are open and the schema subset has no open-object form, so it is now unknown to the validator, like `Record<K, T>`; a type that mixes declared properties with an index signature becomes `{}` too.
 
 ## [3.5.1] — 2026-10-03
 
@@ -604,7 +609,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.1...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.2...HEAD
+[3.5.2]: https://github.com/wcstack/wcstack/compare/v3.5.1...v3.5.2
 [3.5.1]: https://github.com/wcstack/wcstack/compare/v3.5.0...v3.5.1
 [3.5.0]: https://github.com/wcstack/wcstack/compare/v3.4.0...v3.5.0
 [3.4.0]: https://github.com/wcstack/wcstack/compare/v3.3.0...v3.4.0
