@@ -125,6 +125,12 @@ export class Engine implements ReconcileHooks {
   ctx: StateRow | null = null;
   /** Writes throw while > 0: a readonly createState callback, or a getter being evaluated. */
   readonlyDepth = 0;
+  /**
+   * Top-level keys a re-set dropped (the old state had them, the new one lacks them): they read as
+   * undefined, not as keys never declared (read). Kept here — the author's state object is not written
+   * to (it may be frozen, or a Proxy that refuses).
+   */
+  private readonly dropped = new Set<string>();
   /** The node the bindings were mounted on (delegated listeners live here). */
   root: Node | null = null;
   /** Delegated event types → the property (per engine) their element handlers are stored under. */
@@ -505,7 +511,7 @@ export class Engine implements ReconcileHooks {
       return parent == null ? undefined : parent[p.last];
     }
     // (`then` / `toJSON` are probes — await, JSON.stringify — not reads of the state: undefined)
-    if (p.parent === null && !(p.last in this.target) && p.last !== "then" && p.last !== "toJSON") {
+    if (p.parent === null && !(p.last in this.target) && !this.dropped.has(p.last) && p.last !== "then" && p.last !== "toJSON") {
       raise(M.PathMissing, [p.path], p.last, Object.keys(this.target));
     }
     return this.readData(p, row);
@@ -842,9 +848,13 @@ export class Engine implements ReconcileHooks {
   reset(target: Record<string, any>): void {
     const old = this.target;
     this.loadTarget(target);
-    // a key the old state had and this one lacks is empty (B8), as a missing path under a key is —
-    // not a key never declared, which fails on read: its bindings, lists and getters read undefined
-    for (const k in old) if (!(k in target) && k[0] !== "$") target[k] = undefined;
+    // a key the old state had (or an earlier re-set dropped) and this one lacks is empty (B8), as a
+    // missing path under a key is — not a key never declared, which fails on read: its bindings, lists
+    // and getters read undefined, until it is written. (for…in: an accessor on a class state's
+    // prototype is not enumerable, so one the new state drops still fails on read)
+    const dropped = this.dropped;
+    for (const k in old) if (k[0] !== "$") dropped.add(k);
+    for (const k of dropped) if (k in target) dropped.delete(k);
     for (const bs of this.rootBindings.values()) for (const b of bs) this.enqueue(b);
     for (const l of this.rootLists.values()) this.resetList(l);
     this.rendered = null;
