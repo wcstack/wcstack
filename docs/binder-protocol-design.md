@@ -178,7 +178,7 @@ binder?.bind(node, { range: true });  // 居なければ今日と同じ挙動（
 
 **クローンをやめて移動しても、移すのは「バインドされていないノード」である。** 症状は何も変わらない。
 
-さらに独立した第 2 の障害がある。`buildBindings` は `initializeBindings(document.body, null)` で **body しか走査しない**（[buildBindings.ts:15](../packages/state/src/buildBindings.ts#L15)）。仮に子を `<head>` に置いたままにしても、そこは走査範囲の外である。
+さらに独立した第 2 の障害がある。`buildBindings` は `initializeBindings(document.body, null)` で **body しか走査しない**（[buildBindings.ts:15](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/buildBindings.ts#L15)）。仮に子を `<head>` に置いたままにしても、そこは走査範囲の外である。
 
 ### 8-3. 結論 2（副産物）: **バインドは `<head>` への移動に耐える**
 

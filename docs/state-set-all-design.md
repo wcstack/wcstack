@@ -3,7 +3,7 @@
 - **状態**: 論点整理完了・決定済み（2026-08-24）。§0 の決定レコードが正本。
 - **対象**: `@wcstack/state` の core 拡張（proxy API 1 個）。updater / 依存グラフの機構自体には触らない。
 - **一言で**: `$getAll`（読み）の対称形。「**リスト全置換を回避して in-place に一括更新する**」ための唯一の手段。
-- **双対**: [`$getAll`](../packages/state/src/proxy/apis/getAll.ts)。走査（添字タプルの列挙）を共有し、順序が一致することを規範とする。
+- **双対**: [`$getAll`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts)。走査（添字タプルの列挙）を共有し、順序が一致することを規範とする。
 
 ---
 
@@ -33,7 +33,7 @@ this.$getAll("users.*.selected", []);        // ✅ 読める
 this["users.*.selected"] = true;             // ❌ throw
 ```
 
-後者が throw するのは、生の `*` が [`ResolvedAddress`](../packages/state/src/address/ResolvedAddress.ts) で `wildcardType: "context"` に分類され、[`getListIndex`](../packages/state/src/proxy/methods/getListIndex.ts) がループ文脈を要求するため。メソッド内（文脈なし）では `ListIndex not found` になる。
+後者が throw するのは、生の `*` が [`ResolvedAddress`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/ResolvedAddress.ts) で `wildcardType: "context"` に分類され、[`getListIndex`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getListIndex.ts) がループ文脈を要求するため。メソッド内（文脈なし）では `ListIndex not found` になる。
 
 現状の回避策は自前ループしかない。
 
@@ -55,7 +55,7 @@ this.users = this.users.map(u => ({ ...u, selected: true }));   // ← これを
 
 配列を作り直すと ListIndex・行 getter キャッシュ・差分描画が全部作り直しになる（in-place 変異規範）。`$setAll` は「**意味は一括更新、実体は in-place な個別書き込み**」を提供する。これが単なる糖衣ではない理由。
 
-なお [`setByAddress`](../packages/state/src/proxy/methods/setByAddress.ts) の same-value guard（既定 ON）が効くので、既に同値の行は書き込み自体がスキップされる。全選択の 2 回目がほぼ無コストになるのはこの API にとって嬉しい性質。
+なお [`setByAddress`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) の same-value guard（既定 ON）が効くので、既に同値の行は書き込み自体がスキップされる。全選択の 2 回目がほぼ無コストになるのはこの API にとって嬉しい性質。
 
 ---
 
@@ -208,7 +208,7 @@ state に関数を保持するケースは実質無いため、配列と違っ�
 
 ## 8. 末尾ワイルドカード（D8）
 
-`$setAll("users.*", [], value)` を許す。`$getAll("users.*", [])` の対称形として自然であり、実装上も追加コストが無い（[`setByAddress`](../packages/state/src/proxy/methods/setByAddress.ts) の leaf-`*` 分岐が既に `Reflect.set(parentArray, index, value)` を行う）。
+`$setAll("users.*", [], value)` を許す。`$getAll("users.*", [])` の対称形として自然であり、実装上も追加コストが無い（[`setByAddress`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) の leaf-`*` 分岐が既に `Reflect.set(parentArray, index, value)` を行う）。
 
 意味論は**各要素の in-place 置換**。
 

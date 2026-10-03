@@ -58,20 +58,20 @@
 
 ### 1-1. 名前付き State はグローバルではない
 
-登録簿は **rootNode ごとの flat な `Map<name, IStateElement>`** である（[stateElementByName.ts:9](../packages/state/src/stateElementByName.ts#L9)）。`@name` はバインド先ノードの `getRootNode()` で引いた登録簿から兄弟 state を選ぶだけで、**Shadow DOM 境界を越えない**（[applyChange.ts:188](../packages/state/src/apply/applyChange.ts#L188)）。つまり今の名前付き State は Unix の `/` ではなく **Windows のドライブレター**に相当する。「別の名前空間を作る」機能であって、「どこからでも届く」機能ではない。
+登録簿は **rootNode ごとの flat な `Map<name, IStateElement>`** である（[stateElementByName.ts:9](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts#L9)）。`@name` はバインド先ノードの `getRootNode()` で引いた登録簿から兄弟 state を選ぶだけで、**Shadow DOM 境界を越えない**（[applyChange.ts:188](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts#L188)）。つまり今の名前付き State は Unix の `/` ではなく **Windows のドライブレター**に相当する。「別の名前空間を作る」機能であって、「どこからでも届く」機能ではない。
 
 ### 1-2. 名前が担っている 4 つの役割
 
 | 役割 | 現状 | 本設計での置き換え |
 |---|---|---|
 | (a) 1 ページに複数ソース（`src` 2 本・「島」） | [examples/router-i18n](../examples/router-i18n/index.html#L260)（リポジトリで唯一の実使用） | **ボリューム** `<wcs-state mount="i18n" src=...>` — 島はそのまま成立する（§3-1） |
-| (b) Light DOM `bind-component` の `name` 必須 | [State.ts:298](../packages/state/src/components/State.ts#L298)。理由は登録簿が rootNode-flat で、同じ root に無名を 2 つ置けないから | **DOM 祖先によるスコープ解決**（D7）。同名 2 個を同一スコープに置けない制限（README「リストの行には Shadow DOM を使え」）も消える |
+| (b) Light DOM `bind-component` の `name` 必須 | [State.ts:298](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L298)。理由は登録簿が rootNode-flat で、同じ root に無名を 2 つ置けないから | **DOM 祖先によるスコープ解決**（D7）。同名 2 個を同一スコープに置けない制限（README「リストの行には Shadow DOM を使え」）も消える |
 | (c) README 原則 #2「Component ↔ Component は `@stateName`」 | [README.md:49-55](../packages/state/README.md#L49) | 「**ホストがマウント表を書く**」に書き換える（§2-2） |
 | (d) ツール群の name 次元 | manifest `states[name]`・vscode-wcs の索引キー `(stateName, path)`・`testing.state(name)`・SSR `findByName`・devtools `keys(name, rootNode)` | 全て **path 次元だけ**になる（§6） |
 
 ### 1-3. bind-component の現在の機構 ＝ 2 本の state と橋渡し
 
-`webComponent/` は 12 ファイル **999 行**で、その大半が「子の state 要素と親の state 要素を橋渡しする」ためにある（[webComponent/README.md](../packages/state/src/webComponent/README.md)）。
+`webComponent/` は 12 ファイル **999 行**で、その大半が「子の state 要素と親の state 要素を橋渡しする」ためにある（[webComponent/README.md](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/README.md)）。
 
 | ファイル | 行 | 役割 | 本設計 |
 |---|---|---|---|
@@ -86,16 +86,16 @@
 
 さらに core 側に散っている橋渡しの痕跡:
 
-- `BindingSession` の相乗り登録 `outerPatternPathInfo` / `outerPatternPathInfosRest`（[BindingSession.ts:84-95](../packages/state/src/bindings/BindingSession.ts#L84)、[:996-1017](../packages/state/src/bindings/BindingSession.ts#L996)）— 境界の枚数ぶん同じ行バインディングを台帳に積む（§1.8 / §1.11）
-- proxy の `hasMappedComponentState` 分岐 ×6（[getByAddress.ts:90](../packages/state/src/proxy/methods/getByAddress.ts#L90)、[setByAddress.ts:137](../packages/state/src/proxy/methods/setByAddress.ts#L137)、[isCacheable.ts:19](../packages/state/src/proxy/methods/isCacheable.ts#L19) 等）— **mapped な state はキャッシュを持てない**
+- `BindingSession` の相乗り登録 `outerPatternPathInfo` / `outerPatternPathInfosRest`（[BindingSession.ts:84-95](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts#L84)、[:996-1017](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts#L996)）— 境界の枚数ぶん同じ行バインディングを台帳に積む（§1.8 / §1.11）
+- proxy の `hasMappedComponentState` 分岐 ×6（[getByAddress.ts:90](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getByAddress.ts#L90)、[setByAddress.ts:137](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts#L137)、[isCacheable.ts:19](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/isCacheable.ts#L19) 等）— **mapped な state はキャッシュを持てない**
 - `list/wildcardLevel.ts`（57 行）の末尾起点 `at(i - W)` 解決 — 相対パスの段数と listIndex 段数のズレを吸収するためだけにある
 - `applyChangeToWebComponent.ts`（63 行）— 値を運ばない再読込通知チャネル
 
-そして **`data-wcs="state: user"`（丸ごと）は無言の no-op** として固定されている（[integration.bindComponentDelivery.test.ts:126-133](../packages/state/__tests__/integration.bindComponentDelivery.test.ts#L126)、[applyChangeToWebComponent.ts:32](../packages/state/src/apply/applyChangeToWebComponent.ts#L32)）。「サブツリーをマウントする」形は今日存在しない。
+そして **`data-wcs="state: user"`（丸ごと）は無言の no-op** として固定されている（[integration.bindComponentDelivery.test.ts:126-133](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDelivery.test.ts#L126)、[applyChangeToWebComponent.ts:32](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts#L32)）。「サブツリーをマウントする」形は今日存在しない。
 
 ### 1-4. コードベースは既に名前から離れている
 
-- `$watch` は `@stateName` 越境を**拒否**する（[processWatchDeclaration.ts:66](../packages/state/src/watch/processWatchDeclaration.ts#L66)）
+- `$watch` は `@stateName` 越境を**拒否**する（[processWatchDeclaration.ts:66](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/processWatchDeclaration.ts#L66)）
 - クロス state 読み取り設計は「最初の実需を失って優先度低下」のまま未決
 - i18n は辞書の正本を ES モジュールに置き、辞書 state は「`@i18n` で引くためだけの射影」と明記済み（[i18n-design.md:144](./i18n-design.md#L144)）
 
@@ -203,7 +203,7 @@
 |---|---|---|
 | `<wcs-state name="x">` | 属性 | `<wcs-state mount="x">` |
 | `path@x` / `path@default` | `data-wcs`・`{{ }}`・spread `...: obj@x`・shorthand `.name@x` | `x.path` / `path` |
-| `@` を含む `$updatedCallback` のパス表記（`path@name`） | [updatedCallback.ts:48](../packages/state/src/proxy/apis/updatedCallback.ts#L48) | 絶対パス（コンポーネント内は相対） |
+| `@` を含む `$updatedCallback` のパス表記（`path@name`） | [updatedCallback.ts:48](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/updatedCallback.ts#L48) | 絶対パス（コンポーネント内は相対） |
 | `State.getBindingsReady(root)` の「コンポーネントスコープは対象外」注記 | README | D12 |
 | `<wcs-ssr name>` | SSR | 1 ツリー 1 本（D14） |
 | `testing.mount().state(name)` | `@wcstack/testing` | `state()`（ルート）。ボリュームはルートのパスで読む |
@@ -247,7 +247,7 @@
 | R3 | ツリーにキーがあればツリー、無ければ私有（動的） | ❌ | ✅ | ✅ | ❌ `<wcs-fetch>` 後に来るキーを私有が隠し続ける |
 | R4 | `$local: ["editing"]` を明示宣言。未宣言の own data key は既定値（マウント時は無視） | ✅ | ✅ | ✅ | ✅ |
 
-R1 を採る理由: 一文で言える（「**自分で書いたキーは自分のもの。書いていないキーはマウント先のもの**」）、新しい宣言が要らない、Unix のマウントと同じ向き（上に載せた側が勝つ）。代償は既存の mapped コンポーネントの既定値がツリーを隠すことで、これは**バインド時にマウント先の値がオブジェクトで同名キーを持てば `console.warn`**（[pathDiagnostics](../packages/state/src/pathDiagnostics.ts) と同じ「バインド確立時 1 回・ホットパス外」）と lint（`wcs-schema` の `stateSchema` ＋ マウントパスで静的に検出できる）で導く。R4 は優先順位 1 と 5 を入れ替える案で、既存例を無傷にしたいなら採る。**著者判断 → R1 に決着（2026-09-01）**。
+R1 を採る理由: 一文で言える（「**自分で書いたキーは自分のもの。書いていないキーはマウント先のもの**」）、新しい宣言が要らない、Unix のマウントと同じ向き（上に載せた側が勝つ）。代償は既存の mapped コンポーネントの既定値がツリーを隠すことで、これは**バインド時にマウント先の値がオブジェクトで同名キーを持てば `console.warn`**（[pathDiagnostics](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts) と同じ「バインド確立時 1 回・ホットパス外」）と lint（`wcs-schema` の `stateSchema` ＋ マウントパスで静的に検出できる）で導く。R4 は優先順位 1 と 5 を入れ替える案で、既存例を無傷にしたいなら採る。**著者判断 → R1 に決着（2026-09-01）**。
 
 **私有状態の寿命（D21）**: 私有オブジェクトはマウントインスタンス `(mountPathInfo, listIndex)` ごとに 1 つで、要素ごとではない。行コンポーネント `state: .` が `state = { editing: false }` を持つとき、swap で行が動けば `editing` は行に付いて回り（listIndex は行と一緒に動く）、`replaceRows` で新しい行になれば初期スナップショットから作り直される。要素寿命にすると行 content のプール再利用で「別の行の `editing`」を引き継ぐ（無言の取り違え）。初期スナップショットはバインド時に own data key を浅く複製したもの。Phase 1（v1 機構）は要素寿命のまま（v1 の既存挙動）で、2.0 で改善として扱う。
 
@@ -462,11 +462,11 @@ scopeRoot(Node: Document | ShadowRoot | mount host) → IStateElement | MountRec
 
 ## 11. 調査で確認した事実の所在
 
-- 登録簿: [stateElementByName.ts:9](../packages/state/src/stateElementByName.ts#L9) / 名前解決の rootNode 依存: [applyChange.ts:188](../packages/state/src/apply/applyChange.ts#L188) / `@` のパース: [parseStatePart.ts:40](../packages/state/src/bindTextParser/parseStatePart.ts#L40) / 区切り定義: [define.ts:33](../packages/state/src/define.ts#L33)
-- Light DOM の `name` 必須: [State.ts:298](../packages/state/src/components/State.ts#L298) / 再接続時の名前再登録: [State.ts:476-480](../packages/state/src/components/State.ts#L476) / SSR の name: [State.ts:498-501](../packages/state/src/components/State.ts#L498)、[Ssr.ts:141-149](../packages/state/src/components/Ssr.ts#L141)
-- 丸ごとマウントが no-op: [applyChangeToWebComponent.ts:32](../packages/state/src/apply/applyChangeToWebComponent.ts#L32)、[integration.bindComponentDelivery.test.ts:126](../packages/state/__tests__/integration.bindComponentDelivery.test.ts#L126)
-- 橋渡し機構: [webComponent/README.md](../packages/state/src/webComponent/README.md)、[BindingSession.ts:996](../packages/state/src/bindings/BindingSession.ts#L996)、[isCacheable.ts:19](../packages/state/src/proxy/methods/isCacheable.ts#L19)、[wildcardLevel.ts](../packages/state/src/list/wildcardLevel.ts)
-- DCC のセレクタ: [defineDCC.ts:50](../packages/state/src/dcc/defineDCC.ts#L50)
+- 登録簿: [stateElementByName.ts:9](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts#L9) / 名前解決の rootNode 依存: [applyChange.ts:188](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts#L188) / `@` のパース: [parseStatePart.ts:40](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parseStatePart.ts#L40) / 区切り定義: [define.ts:33](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/define.ts#L33)
+- Light DOM の `name` 必須: [State.ts:298](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L298) / 再接続時の名前再登録: [State.ts:476-480](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L476) / SSR の name: [State.ts:498-501](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L498)、[Ssr.ts:141-149](https://github.com/wcstack/wcstack/blob/v2.6.1/packages/state/src/components/Ssr.ts#L141)
+- 丸ごとマウントが no-op: [applyChangeToWebComponent.ts:32](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts#L32)、[integration.bindComponentDelivery.test.ts:126](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDelivery.test.ts#L126)
+- 橋渡し機構: [webComponent/README.md](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/README.md)、[BindingSession.ts:996](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts#L996)、[isCacheable.ts:19](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/isCacheable.ts#L19)、[wildcardLevel.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/wildcardLevel.ts)
+- DCC のセレクタ: [defineDCC.ts:50](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts#L50)
 - ツール: [typescript/src/manifest.ts:24](../packages/typescript/src/manifest.ts#L24)、[wcsSchema.ts:4](../packages/typescript/src/cli/wcsSchema.ts#L4)、[testing/src/mount.ts:52](../packages/testing/src/mount.ts#L52)、[vscode-wcs referenceIndex.ts:100](../packages/vscode-wcs/src/core/index/referenceIndex.ts#L100)、[wcstack-manifest-schema.md:33](./wcstack-manifest-schema.md#L33)、[devtools-hook-protocol.md:86](./devtools-hook-protocol.md#L86)
 - 実使用: [examples/router-i18n/index.html:260](../examples/router-i18n/index.html#L260)（`@i18n` 15 箇所）。state の `__tests__` で `<wcs-state name=` 21 箇所・`name=`/`@` を含むテストファイル 48・`stateName` を参照するテストファイル 76
 - ベンチ: [e2e/bench/jsfb-verify.mjs](../e2e/bench/jsfb-verify.mjs)、[e2e/bench/memory-profile.mjs](../e2e/bench/memory-profile.mjs)

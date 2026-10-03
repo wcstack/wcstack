@@ -197,9 +197,11 @@ interface IDeclaredBindingInfo {
 
 変更ファイルと発火点。すべて §2 の `sink` 経由・原則 1 準拠。
 
+> **この節は @wcstack/state 3.x のランタイムについて書いている**。ファイルへのリンクは v3.5.4 のタグの 3.x を指す。4.0 のエンジンは同じプロトコル（v2）を 1 つの後付け [`packages/state/src/devtools/devtools.ts`](../packages/state/src/devtools/devtools.ts)（`features/devtools`）で話す: 要約とイベントを自分の台帳から組み立て、drain ごとにバインディングの一覧を取って差分を `state:binding-added` / `state:binding-removed` として送り、遅れてアタッチした DevTools にもその時点のバインディングを送る（§6）。
+
 ### 4.1 state 要素の登録簿を列挙可能化
 
-- [stateElementByName.ts](../packages/state/src/stateElementByName.ts) の WeakMap は維持し、
+- [stateElementByName.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts) の WeakMap は維持し、
   **並走する `Set<IStateElement>`（モジュールローカル）を追加**。register で add /
   unregister（`State.ts` の disconnectedCallback → `setStateElementByName(…, null)`）で delete。
 - これだけは常時 ON の台帳（原則 2 の明示的例外）。サイズは `<wcs-state>` 要素数に拘束され、
@@ -209,7 +211,7 @@ interface IDeclaredBindingInfo {
 
 ### 4.2 書き込みログ
 
-- [setByAddress.ts](../packages/state/src/proxy/methods/setByAddress.ts) の
+- [setByAddress.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) の
   same-value guard **通過後**（実書き込みのみ）に発火。
 - payload = `{ absoluteAddress, value, oldValue, hasOldValue }`（`absoluteAddress` が
   stateElement・path・listIndex を運ぶ — v2 の絶対アドレスは stateElement 参照が正）。
@@ -219,7 +221,7 @@ interface IDeclaredBindingInfo {
 
 ### 4.3 更新バッチ（drain）
 
-- 既存の [updater.ts](../packages/state/src/updater/updater.ts)
+- 既存の [updater.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/updater/updater.ts)
   `registerUpdateBatchListener` をそのまま使う。**ランタイム変更ゼロ**。
 - bridge が attach 時に register / detach 時に unregister する（$streams リスナーと同格の
   消費者としてぶら下がる）。
@@ -271,7 +273,10 @@ restart を巻き添えにしないため、[state-watch-hook-design.ja.md](./st
   場合のみ（[state-watch-hook-design.md](./state-watch-hook-design.md) §6-3）。明示 index
   書き込み（`$resolve` / `items.0.price` 代入 — `$getAll` で listIndex 台帳が生えた後）は
   前提に依らず発火し得るため、この前提はリスト書き込み経路に限る主張。正確な判定には
-  両面が要る。出すのはパスのみ — キー指定（文字列/関数）は境界を越えない。
+  両面が要る。出すのはパスのみ — キー指定（文字列/関数）は境界を越えない。この前提は 3.x の
+  ランタイムのもの: 4.0 のランタイム（`packageVersion` が 4 以上）は行 watch がまたがるリストを
+  自分で追従させ、`for` も `$listKeys` も無くても発火させるので、消費側は前提を古いランタイム
+  についてだけ判定する（`@wcstack/devtools` はそうしている）。
 - いずれも `devtoolsSink !== null` の内側でのみ生成する（コスト規範 §1-1）。
 
 ### 4.3.2 黙って死ぬ配線
@@ -284,7 +289,7 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
   （または `$watch` 宣言時）に「このパスは解決しない」と確定したとき、(state 要素, パス) ごとに
   1 回だけ流れる。判定は**過小近似** — getter の戻り値の先・空リスト・null 親・mapped な
   `bind-component` の子はすべて沈黙するので、**イベントが無いことは正しさの証明にならない**
-  （[pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)）。
+  （[pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)）。
 - Event: `state:binding-apply-error`（v1 追補・additive）、
   payload = `{ path, bindingType, error }`。binding 1 本の適用が throw したときに流れる。
   ランタイムは失敗を隔離してバッチの残り・`$updatedCallback`・drain リスナーを守る —
@@ -292,7 +297,7 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
 
 ### 4.4 binding 台帳の増減
 
-- [getBindingSetByAbsoluteStateAddress.ts](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts)
+- [getBindingSetByAbsoluteStateAddress.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts)
   の `addBindingByAbsoluteStateAddress` / `removeBindingByAbsoluteStateAddress` /
   `clearBindingSetByAbsoluteStateAddress` に発火点を置く。
 - イベント: `state:binding-added` / `state:binding-removed`
@@ -302,8 +307,8 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
 
 ### 4.5 token 発火（command / event）
 
-- [CommandToken.ts](../packages/state/src/command/CommandToken.ts) /
-  [EventToken.ts](../packages/state/src/event/EventToken.ts) の `emit` を薄く override
+- [CommandToken.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/command/CommandToken.ts) /
+  [EventToken.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/EventToken.ts) の `emit` を薄く override
   （`sink && sink(...)` → `super.emit(...)`）。
 - プロトコル外部仕様（command-token-protocol / event-token-protocol）は不変更。
 - イベント: `state:token-emit`
@@ -340,6 +345,8 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
 
 接続タイミングで得られる情報を 2 層に分ける。**この差は仕様であり、UI に明示する。**
 
+> この制限は 3.x のランタイムのもの。4.0 のランタイムも台帳は持たないが、バインディングを列挙できる: DevTools がアタッチすると、その時点のバインディングをすべて `state:binding-added` として送るので、遅れてアタッチしてもライブの台帳が見える。
+
 | 情報 | 先行ロード時 | 遅延アタッチ時 |
 |---|---|---|
 | state 要素一覧・状態ツリー・値の読み書き | ✓ | ✓（4.1 registry + pull） |
@@ -348,7 +355,7 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
 | 宣言配線ビュー（element⇔path の対応） | ✓ | ✓（**DOM 再スキャン**で代替） |
 
 - 復元不能の理由: binding 台帳のキー `IAbsoluteStateAddress` のキャッシュは
-  [AbsoluteStateAddress.ts:4](../packages/state/src/address/AbsoluteStateAddress.ts#L4) の
+  [AbsoluteStateAddress.ts:4](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/AbsoluteStateAddress.ts#L4) の
   WeakMap 二段で**列挙不能**。列挙可能化は GC 寿命を変えるため却下。
 - 代替の DOM 再スキャン: `data-wcs` 属性と `<!--wcs-*-->` コメントは binding 構築後も
   DOM に残るため、devtools 側が `bindTextParser` 相当（または同パーサの import）で

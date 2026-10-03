@@ -203,9 +203,11 @@ interface IDeclaredBindingInfo {
 
 The files changed and the firing points. All go through §2's `sink` and conform to principle 1.
 
+> **This section describes the @wcstack/state 3.x runtime**; the file links point to it at the v3.5.4 tag. The 4.0 engine speaks the same protocol (v2) from one add-on, [`packages/state/src/devtools/devtools.ts`](../packages/state/src/devtools/devtools.ts) (`features/devtools`): it builds the same summaries and events from its own bookkeeping, takes the binding ledger after every drain and reports the difference as `state:binding-added` / `state:binding-removed`, and reports the bindings already there to a DevTools that attaches late (§6).
+
 ### 4.1 Make the state element registry enumerable
 
-- Keep the WeakMap in [stateElementByName.ts](../packages/state/src/stateElementByName.ts) and
+- Keep the WeakMap in [stateElementByName.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts) and
   **add a parallel `Set<IStateElement>` (module-local)**. Add on register, delete on unregister
   (`State.ts`'s disconnectedCallback → `setStateElementByName(…, null)`).
 - This is the one always-on ledger (the explicit exception to principle 2). Its size is bounded by the number
@@ -216,7 +218,7 @@ The files changed and the firing points. All go through §2's `sink` and conform
 
 ### 4.2 The write log
 
-- Fires in [setByAddress.ts](../packages/state/src/proxy/methods/setByAddress.ts) **after** the same-value guard
+- Fires in [setByAddress.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) **after** the same-value guard
   (actual writes only).
 - payload = `{ absoluteAddress, value, oldValue, hasOldValue }` (the `absoluteAddress` carries the
   stateElement, path and listIndex — in v2 the state-element reference is the identity).
@@ -226,7 +228,7 @@ The files changed and the firing points. All go through §2's `sink` and conform
 
 ### 4.3 The update batch (drain)
 
-- Uses the existing `registerUpdateBatchListener` in [updater.ts](../packages/state/src/updater/updater.ts)
+- Uses the existing `registerUpdateBatchListener` in [updater.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/updater/updater.ts)
   as-is. **Zero runtime changes.**
 - The bridge registers on attach and unregisters on detach (hanging off it as a consumer of the same standing
   as the `$streams` listener).
@@ -282,7 +284,9 @@ place it becomes visible.
   (`$resolve` / `items.0.price` assignments, once `$getAll` has materialized the listIndex ledger)
   can fire it regardless, so the prerequisite governs the list-write path only. Consumers need both
   sides to judge it exactly. Only the paths are exposed — key specs (strings/functions) never cross
-  the boundary.
+  the boundary. The prerequisite is the 3.x runtime's: a 4.0 runtime (`packageVersion` 4 or later)
+  keeps the lists a row watch ranges over synced itself and fires it without a `for` or `$listKeys`,
+  so a consumer judges the prerequisite only for an older runtime (`@wcstack/devtools` does so).
 - All are constructed only inside `devtoolsSink !== null` (cost rule §1-1).
 
 ### 4.3.2 Silent wiring failures
@@ -296,7 +300,7 @@ console is the only other place they appear.
   (state element, path) when binding establishment (or a `$watch` declaration) proves the path cannot
   resolve. The check **under-approximates** — a getter return value, an empty list, a `null` parent or
   a mapped `bind-component` child all stay silent — so absence of this event is not proof of
-  correctness ([pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)).
+  correctness ([pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)).
 - Event: `state:binding-apply-error` (v1 addendum, additive),
   payload = `{ path, bindingType, error }`, emitted when applying one binding throws. The
   runtime isolates the failure so the rest of the batch, `$updatedCallback` and the drain listeners
@@ -307,7 +311,7 @@ console is the only other place they appear.
 
 - Firing points go into `addBindingByAbsoluteStateAddress` / `removeBindingByAbsoluteStateAddress` /
   `clearBindingSetByAbsoluteStateAddress` in
-  [getBindingSetByAbsoluteStateAddress.ts](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts).
+  [getBindingSetByAbsoluteStateAddress.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts).
 - Events: `state:binding-added` / `state:binding-removed`,
   payload = `{ absoluteAddress, binding /* a live IBindingInfo reference */ }`.
   Clear is `state:binding-cleared`, `{ absoluteAddress }`.
@@ -315,8 +319,8 @@ console is the only other place they appear.
 
 ### 4.5 Token emission (command / event)
 
-- Thinly override `emit` in [CommandToken.ts](../packages/state/src/command/CommandToken.ts) and
-  [EventToken.ts](../packages/state/src/event/EventToken.ts) (`sink && sink(...)` → `super.emit(...)`).
+- Thinly override `emit` in [CommandToken.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/command/CommandToken.ts) and
+  [EventToken.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/EventToken.ts) (`sink && sink(...)` → `super.emit(...)`).
 - The external protocol specs (command-token-protocol / event-token-protocol) are unchanged.
 - Event: `state:token-emit`,
   payload = `{ kind: "command" | "event", tokenName, args: unknown[], subscriberCount, stateElement? }`.
@@ -353,6 +357,8 @@ console is the only other place they appear.
 
 The information available at attach time splits into two layers. **The difference is by design, and is surfaced in the UI.**
 
+> This limitation is the 3.x runtime's. The 4.0 runtime keeps no ledger either, but it can list its bindings: when a DevTools attaches, it reports every binding there as `state:binding-added`, so a late attach sees the live ledger too.
+
 | Information | Loaded first | Attached late |
 |---|---|---|
 | the element list, the state tree, reading and writing values | ✓ | ✓ (4.1's registry plus pull) |
@@ -361,7 +367,7 @@ The information available at attach time splits into two layers. **The differenc
 | the declared wiring view (the element⇔path correspondence) | ✓ | ✓ (substituted by **re-scanning the DOM**) |
 
 - Why it cannot be reconstructed: the cache of the binding ledger's key `IAbsoluteStateAddress` is a two-level
-  WeakMap in [AbsoluteStateAddress.ts:4](../packages/state/src/address/AbsoluteStateAddress.ts#L4) and is
+  WeakMap in [AbsoluteStateAddress.ts:4](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/AbsoluteStateAddress.ts#L4) and is
   **not enumerable**. Making it enumerable would change GC lifetimes, so that is rejected.
 - The substitute, re-scanning the DOM: `data-wcs` attributes and `<!--wcs-*-->` comments remain in the DOM after
   bindings are built, so the devtools side can assemble a **declaration-level wiring view** with the equivalent

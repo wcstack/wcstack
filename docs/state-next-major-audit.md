@@ -77,7 +77,7 @@ This table lists major areas, not all files. SSR spans multiple areas. Removing 
 
 `State.ts` directly connects declarations, lifecycle, DOM, and features; `updater.ts` also references watch/scan. Watch and stream runtimes register listeners at module evaluation, retaining about 27 KB gzip even for a `defineState` import. Adding subpaths or blanket `sideEffects: false` without relocating initialization is insufficient.
 
-Sources: [State](../packages/state/src/components/State.ts), [updater](../packages/state/src/updater/updater.ts), [watch](../packages/state/src/watch/watchRuntime.ts), [streams](../packages/state/src/stream/streamRuntime.ts), [bootstrap](../packages/state/src/bootstrapState.ts).
+Sources: [State](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts), [updater](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/updater/updater.ts), [watch](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/watchRuntime.ts), [streams](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stream/streamRuntime.ts), [bootstrap](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bootstrapState.ts).
 
 ## 4. Runtime and memory
 
@@ -116,7 +116,7 @@ Timer resolution makes ratios against 0.1ms misleading; no such speedup ratio is
 
 **Switching to signals does not remove the dependency when every row reads the same scalar.** Test per-row subscriptions, downstream suppression when computed values remain equal, and a dedicated keyed-selection subscription index separately. Ordinary value comparisons should not require manual notification, but arbitrary getters cannot be promised O(1) selection updates.
 
-Sources: [fixture](../packages/state/__e2e__/benchmark/index.html), [dependency registration](../packages/state/src/proxy/methods/checkDependency.ts), [dependency traversal](../packages/state/src/dependency/walkDependency.ts).
+Sources: [fixture](../packages/state/__e2e__/benchmark/index.html), [dependency registration](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/checkDependency.ts), [dependency traversal](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts).
 
 ### 4.3 Candidate bottlenecks
 
@@ -176,7 +176,7 @@ Empty-value behavior also differs between representations of the same value. Bro
 
 These combine native DOM behavior with framework-specific skip rules. Define absence, explicit clearing, and display conversion as a contract. If undefined means no opinion and null means clearing, specify corresponding mustache and attribute behavior, including attribute removal.
 
-Sources: [binding parser](../packages/state/src/bindTextParser/parseBindTextsForElement.ts), [property parser](../packages/state/src/bindTextParser/parsePropPart.ts), [filter parser](../packages/state/src/bindTextParser/parseFilters.ts), [argument parser](../packages/state/src/bindTextParser/parseFilterArgs.ts), [resolve](../packages/state/src/proxy/apis/resolve.ts), [StateHandler](../packages/state/src/proxy/StateHandler.ts), [filters](../packages/state/src/filters/builtinFilters.ts), [DOM application](../packages/state/src/apply/).
+Sources: [binding parser](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parseBindTextsForElement.ts), [property parser](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parsePropPart.ts), [filter parser](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parseFilters.ts), [argument parser](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parseFilterArgs.ts), [resolve](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/resolve.ts), [StateHandler](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/StateHandler.ts), [filters](https://github.com/wcstack/wcstack/blob/v2.6.1/packages/state/src/filters/builtinFilters.ts), [DOM application](https://github.com/wcstack/wcstack/tree/v3.5.4/packages/state/src/apply).
 
 ### 5.2 Asymmetries to resolve or explain
 

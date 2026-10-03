@@ -12,8 +12,8 @@
   The status table is §0.
 - **Applies to**: `@wcstack/state`'s
   [`protocol/`](../../packages/state/src/protocol/) /
-  [`dcc/`](../../packages/state/src/dcc/) /
-  [`webComponent/`](../../packages/state/src/webComponent/)
+  [`dcc/`](https://github.com/wcstack/wcstack/tree/v3.5.4/packages/state/src/dcc) /
+  [`webComponent/`](https://github.com/wcstack/wcstack/tree/v3.5.4/packages/state/src/webComponent)
 - **Snapshot**: wcstack `065774839c36d2a34a22c928f968acdbb169a98f` (`@wcstack/state@1.25.0`)
 - **Method**: reading the source plus temporary probe tests on happy-dom (§8 has the reproduction steps; the probes themselves are not kept in the repository)
 - **日本語版**: [15-state-component-mechanism-consistency.ja.md](15-state-component-mechanism-consistency.ja.md)
@@ -76,41 +76,41 @@ The fixes were implemented in the following.
 
 | File | Topic |
 |---|---|
-| [`webComponent/bindWebComponent.ts`](../../packages/state/src/webComponent/bindWebComponent.ts) | §1.2 / §1.1 |
-| [`webComponent/outerState.ts`](../../packages/state/src/webComponent/outerState.ts) | §1.1 (the mapped-only proxy and the lastValue ledger deleted, unified into one) |
-| [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.1 (the ledger write and listIndex resolution removed) |
-| [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) | §1.1 (the internal channel separated) |
-| [`webComponent/completeWebComponent.ts`](../../packages/state/src/webComponent/completeWebComponent.ts) / [`apply/applyChange.ts`](../../packages/state/src/apply/applyChange.ts) | §1.7 (the channel-selection gate keyed on the stateProp name) |
-| [`webComponent/MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts) | §1.7 (derived bindings registered as subscribers through the BindingSession) |
-| [`webComponent/crossBoundaryAddress.ts`](../../packages/state/src/webComponent/crossBoundaryAddress.ts) (new) / [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.8 (crossing the boundary by address rather than by path) |
-| [`webComponent/outerListPath.ts`](../../packages/state/src/webComponent/outerListPath.ts) (new) / [`components/State.ts`](../../packages/state/src/components/State.ts) | §1.8 (propagating the `for` path's list declaration to the parent state) |
-| [`bindings/BindingSession.ts`](../../packages/state/src/bindings/BindingSession.ts) | §1.8 (row bindings riding along in the parent's pattern ledger) |
-| [`proxy/methods/isCacheable.ts`](../../packages/state/src/proxy/methods/isCacheable.ts) (new) | §1.8 (no second cache in a mapped state) |
-| [`apply/applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) / [`components/types.ts`](../../packages/state/src/components/types.ts) | §1.9 (not notifying a disconnected state element; `hasRootNode`) |
-| [`components/State.ts`](../../packages/state/src/components/State.ts) / [`webComponent/MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts) | §1.9 (re-reading mapped paths on reconnection; discarding the memo of derived rules) |
-| [`list/wildcardLevel.ts`](../../packages/state/src/list/wildcardLevel.ts) (new) | §1.10 (the wildcard-position → chain-level conversion collected onto a tail origin. Behavior unchanged at Δ=0) |
-| [`webComponent/baseListIndex.ts`](../../packages/state/src/webComponent/baseListIndex.ts) (new) | §1.10 (a child scope's base depth Δ, and the parent listIndex at row creation) |
-| [`list/getListIndexByBindingInfo.ts`](../../packages/state/src/list/getListIndexByBindingInfo.ts) / [`list/getIndexValueByLoopContext.ts`](../../packages/state/src/list/getIndexValueByLoopContext.ts) / [`proxy/methods/getContextListIndex.ts`](../../packages/state/src/proxy/methods/getContextListIndex.ts) / [`proxy/methods/checkDependency.ts`](../../packages/state/src/proxy/methods/checkDependency.ts) / [`proxy/traps/get.ts`](../../packages/state/src/proxy/traps/get.ts) / [`dependency/walkDependency.ts`](../../packages/state/src/dependency/walkDependency.ts) | §1.10 (the seven sites rewritten onto a tail origin) |
-| [`apply/applyChangeToFor.ts`](../../packages/state/src/apply/applyChangeToFor.ts) / [`dependency/walkDependency.ts`](../../packages/state/src/dependency/walkDependency.ts) / [`proxy/apis/getAll.ts`](../../packages/state/src/proxy/apis/getAll.ts) / [`proxy/methods/setByAddress.ts`](../../packages/state/src/proxy/methods/setByAddress.ts) | §1.10 (passing the base to the parent on all five row-creation routes) |
-| [`list/loopContext.ts`](../../packages/state/src/list/loopContext.ts) / [`webComponent/outerListPath.ts`](../../packages/state/src/webComponent/outerListPath.ts) / [`webComponent/innerState.ts`](../../packages/state/src/webComponent/innerState.ts) | §1.10 (level checks including Δ) |
-| [`event/handler.ts`](../../packages/state/src/event/handler.ts) / [`event/eventTokenHandler.ts`](../../packages/state/src/event/eventTokenHandler.ts) / [`proxy/apis/updatedCallback.ts`](../../packages/state/src/proxy/apis/updatedCallback.ts) / [`proxy/apis/getAll.ts`](../../packages/state/src/proxy/apis/getAll.ts) | §1.10 (not leaking Δ into userland) |
-| [`proxy/methods/getByAddress.ts`](../../packages/state/src/proxy/methods/getByAddress.ts) | a by-product of §1.10 (a read of a path with no parent returns `undefined`, so a raw `TypeError` no longer takes the batch down with it) |
-| [`dcc/defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
-| [`dcc/processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts) (new) | §1.5 / §2.3 / §1.6 |
-| [`dcc/wcBindable.ts`](../../packages/state/src/dcc/wcBindable.ts) | §1.6 (generating `commands`) |
-| [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts) (new) | §2.4 (State and DCC share the traversal) |
-| [`components/State.ts`](../../packages/state/src/components/State.ts) | §2.4 / §2.6 / §3.1 |
-| [`components/types.ts`](../../packages/state/src/components/types.ts) | §3.5 / §2.2 (`initialized`) |
-| [`dcc/dispatchBindableEvent.ts`](../../packages/state/src/dcc/dispatchBindableEvent.ts) (new) | §2.1 |
-| [`dcc/dccPropertyFactories.ts`](../../packages/state/src/dcc/dccPropertyFactories.ts) | §2.2 |
-| [`proxy/methods/setByAddress.ts`](../../packages/state/src/proxy/methods/setByAddress.ts) / [`proxy/apis/postUpdate.ts`](../../packages/state/src/proxy/apis/postUpdate.ts) | §2.1 |
-| [`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts) | §3.3 (a comment only; behavior unchanged) |
+| [`webComponent/bindWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/bindWebComponent.ts) | §1.2 / §1.1 |
+| [`webComponent/outerState.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/outerState.ts) | §1.1 (the mapped-only proxy and the lastValue ledger deleted, unified into one) |
+| [`webComponent/innerState.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts) | §1.1 (the ledger write and listIndex resolution removed) |
+| [`apply/applyChangeToWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts) | §1.1 (the internal channel separated) |
+| [`webComponent/completeWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/completeWebComponent.ts) / [`apply/applyChange.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts) | §1.7 (the channel-selection gate keyed on the stateProp name) |
+| [`webComponent/MappingRule.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts) | §1.7 (derived bindings registered as subscribers through the BindingSession) |
+| [`webComponent/crossBoundaryAddress.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/crossBoundaryAddress.ts) (new) / [`webComponent/innerState.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts) | §1.8 (crossing the boundary by address rather than by path) |
+| [`webComponent/outerListPath.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/outerListPath.ts) (new) / [`components/State.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts) | §1.8 (propagating the `for` path's list declaration to the parent state) |
+| [`bindings/BindingSession.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts) | §1.8 (row bindings riding along in the parent's pattern ledger) |
+| [`proxy/methods/isCacheable.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/isCacheable.ts) (new) | §1.8 (no second cache in a mapped state) |
+| [`apply/applyChangeToWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts) / [`components/types.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/types.ts) | §1.9 (not notifying a disconnected state element; `hasRootNode`) |
+| [`components/State.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts) / [`webComponent/MappingRule.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts) | §1.9 (re-reading mapped paths on reconnection; discarding the memo of derived rules) |
+| [`list/wildcardLevel.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/wildcardLevel.ts) (new) | §1.10 (the wildcard-position → chain-level conversion collected onto a tail origin. Behavior unchanged at Δ=0) |
+| [`webComponent/baseListIndex.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/baseListIndex.ts) (new) | §1.10 (a child scope's base depth Δ, and the parent listIndex at row creation) |
+| [`list/getListIndexByBindingInfo.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/getListIndexByBindingInfo.ts) / [`list/getIndexValueByLoopContext.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/getIndexValueByLoopContext.ts) / [`proxy/methods/getContextListIndex.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getContextListIndex.ts) / [`proxy/methods/checkDependency.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/checkDependency.ts) / [`proxy/traps/get.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/traps/get.ts) / [`dependency/walkDependency.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) | §1.10 (the seven sites rewritten onto a tail origin) |
+| [`apply/applyChangeToFor.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts) / [`dependency/walkDependency.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) / [`proxy/apis/getAll.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts) / [`proxy/methods/setByAddress.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) | §1.10 (passing the base to the parent on all five row-creation routes) |
+| [`list/loopContext.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/loopContext.ts) / [`webComponent/outerListPath.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/outerListPath.ts) / [`webComponent/innerState.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts) | §1.10 (level checks including Δ) |
+| [`event/handler.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/handler.ts) / [`event/eventTokenHandler.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/eventTokenHandler.ts) / [`proxy/apis/updatedCallback.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/updatedCallback.ts) / [`proxy/apis/getAll.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts) | §1.10 (not leaking Δ into userland) |
+| [`proxy/methods/getByAddress.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getByAddress.ts) | a by-product of §1.10 (a read of a path with no parent returns `undefined`, so a raw `TypeError` no longer takes the batch down with it) |
+| [`dcc/defineDCC.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) | §1.3 / §1.4 / §2.4 / §2.5 / §2.7 / §3.5 |
+| [`dcc/processDccDeclarations.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/processDccDeclarations.ts) (new) | §1.5 / §2.3 / §1.6 |
+| [`dcc/wcBindable.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/wcBindable.ts) | §1.6 (generating `commands`) |
+| [`getAllPropertyDescriptors.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/getAllPropertyDescriptors.ts) (new) | §2.4 (State and DCC share the traversal) |
+| [`components/State.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts) | §2.4 / §2.6 / §3.1 |
+| [`components/types.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/types.ts) | §3.5 / §2.2 (`initialized`) |
+| [`dcc/dispatchBindableEvent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dispatchBindableEvent.ts) (new) | §2.1 |
+| [`dcc/dccPropertyFactories.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dccPropertyFactories.ts) | §2.2 |
+| [`proxy/methods/setByAddress.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/setByAddress.ts) / [`proxy/apis/postUpdate.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/postUpdate.ts) | §2.1 |
+| [`stateElementByName.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts) | §3.3 (a comment only; behavior unchanged) |
 | `src/dcc/README.md` / `src/webComponent/README.md` | §3.6 (rewritten to the implementation as it stands) |
 
 The regression tests are
-[`webComponent.bindWebComponent.semantics.test.ts`](../../packages/state/__tests__/webComponent.bindWebComponent.semantics.test.ts) (new, closing the gap of §6),
-[`dcc.processDccDeclarations.test.ts`](../../packages/state/__tests__/dcc.processDccDeclarations.test.ts) (new),
-[`src.getAllPropertyDescriptors.test.ts`](../../packages/state/__tests__/src.getAllPropertyDescriptors.test.ts) (new),
+[`webComponent.bindWebComponent.semantics.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/webComponent.bindWebComponent.semantics.test.ts) (new, closing the gap of §6),
+[`dcc.processDccDeclarations.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/dcc.processDccDeclarations.test.ts) (new),
+[`src.getAllPropertyDescriptors.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/src.getAllPropertyDescriptors.test.ts) (new),
 plus additions to `dcc.defineDCC.test.ts` / `webComponent.bindWebComponent.test.ts` / `components.State.test.ts`.
 Every new test (unit and e2e alike) was confirmed to fail against the pre-fix code.
 
@@ -134,9 +134,9 @@ The mapped semantics themselves **made sense as an internal channel**. When the 
 **The fix (G1 = (b), separating the internal channel)**:
 
 - The public proxy is now one kind, and the mapped / plain distinction is gone
-  ([`outerState.ts`](../../packages/state/src/webComponent/outerState.ts)).
+  ([`outerState.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/outerState.ts)).
   Even under mapping, the innerState proxy it passes through resolves to the parent state through the mapping, so reads are live and writes reach the parent.
-- The internal channel was separated into [`applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts) pulling the state element directly with `getStateElementByWebComponent` and calling `$postUpdate`. It never touches `element[stateProp]` (that function is selected only where `isWebComponentComplete` is true, so the state element is always registered).
+- The internal channel was separated into [`applyChangeToWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts) pulling the state element directly with `getStateElementByWebComponent` and calling `$postUpdate`. It never touches `element[stateProp]` (that function is selected only where `isWebComponentComplete` is true, so the state element is always registered).
 - The now-unnecessary mapped-only proxy and `lastValueByAbsoluteStateAddress.ts` were deleted. `innerState.get` also lost its listIndex resolution and ledger write, removing one `createAbsoluteStateAddress` allocation per read.
 
 The regression is pinned in a real browser
@@ -151,7 +151,7 @@ The branch was `component.hasAttribute(config.bindAttributeName)`, not "is there
 <my-component data-wcs="class.on: flag"></my-component>  <!-- not one state.* -->
 ```
 
-Here `bindings` is empty and [`MappingRule.ts:32-34`](../../packages/state/src/webComponent/MappingRule.ts) returns immediately with not one mapping created, while outerState stays with mapped semantics.
+Here `bindings` is empty and [`MappingRule.ts:32-34`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts) returns immediately with not one mapping created, while outerState stays with mapped semantics.
 
 Measured by probe:
 
@@ -159,13 +159,13 @@ Measured by probe:
 - `component.state.msg = 'written'` → **a complete no-op** (the inner value stays `'hello'`; only `$postUpdate('msg')` flies)
 - Remove the `data-wcs` under the same conditions and both read and write work
 
-The existing [`webComponent.bindWebComponent.test.ts`](../../packages/state/__tests__/webComponent.bindWebComponent.test.ts) mocks outerState / innerState / MappingRule entirely, so the semantics of this route had never once been verified.
+The existing [`webComponent.bindWebComponent.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/webComponent.bindWebComponent.test.ts) mocks outerState / innerState / MappingRule entirely, so the semantics of this route had never once been verified.
 
 **The fix**: the branch condition became "is there at least one `<stateProp>.*` binding". Even with a `data-wcs`, zero mapping targets take the plain branch and reads / writes pass through to the inner state. Alongside that, `webComponent.bindWebComponent.semantics.test.ts` was added to pin the actual read / write results against the real modules (the gap of §6).
 
 ### 1.3 A DCC element always throws on reconnection ✅ fixed
 
-The `connectedCallback` in [`defineDCC.ts:49-52`](../../packages/state/src/dcc/defineDCC.ts) calls `attachShadow` with no guard on `this._shadow` / `this.shadowRoot`.
+The `connectedCallback` in [`defineDCC.ts:49-52`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) calls `attachShadow` with no guard on `this._shadow` / `this.shadowRoot`.
 
 ```
 Failed to execute 'attachShadow' on 'Element':
@@ -176,20 +176,20 @@ Shadow root cannot be created on a host which already hosts a shadow tree.
 
 The routes that hit it are everyday ones:
 
-- an `if` remounting from false → true ([`applyChangeToIf.ts:35,49`](../../packages/state/src/apply/applyChangeToIf.ts) does `unmount()` → `mountAfter()` on the same node)
-- **row pooling** in a `for` ([`applyChangeToFor.ts:188-195`](../../packages/state/src/apply/applyChangeToFor.ts) returns it to the pool and line 235 `pop()`s it for reuse)
+- an `if` remounting from false → true ([`applyChangeToIf.ts:35,49`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToIf.ts) does `unmount()` → `mountAfter()` on the same node)
+- **row pooling** in a `for` ([`applyChangeToFor.ts:188-195`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts) returns it to the pool and line 235 `pop()`s it for reuse)
 
-`<wcs-state>` itself handles reconnection carefully with `_initialized` and `_connectGeneration` ([`State.ts:347-371`](../../packages/state/src/components/State.ts)), so this is the exact opposite construction, and **the lifecycle discipline not lining up within one package** is itself the defect.
+`<wcs-state>` itself handles reconnection carefully with `_initialized` and `_connectGeneration` ([`State.ts:347-371`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)), so this is the exact opposite construction, and **the lifecycle discipline not lining up within one package** is itself the defect.
 
 **The fix**: `if (this._shadow !== null) return;` at the top of `connectedCallback`. A shadow tree is retained after the host disconnects, so doing nothing from the second time on is correct. In closed mode `this.shadowRoot` is `null`, so the check is done on the field.
 
 ### 1.4 A DCC inside a list silently drops its initial value ✅ fixed
 
-The all-append fast path of `for` builds into a fragment and then `activateContent`s ([`applyChangeToFor.ts:244,266`](../../packages/state/src/apply/applyChangeToFor.ts)), inserting the fragment into the DOM at line 306. So at the moment the bindings are applied, the DCC is **unconnected**.
+The all-append fast path of `for` builds into a fragment and then `activateContent`s ([`applyChangeToFor.ts:244,266`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts)), inserting the fragment into the DOM at line 306. So at the moment the bindings are applied, the DCC is **unconnected**.
 
-The DCC's `stateElement` getter depends on `_shadow` (first assigned in `connectedCallback`), so `if (!stateEl) return;` in [`dccPropertyFactories.ts:26-27`](../../packages/state/src/dcc/dccPropertyFactories.ts) silently discards the write.
+The DCC's `stateElement` getter depends on `_shadow` (first assigned in `connectedCallback`), so `if (!stateEl) return;` in [`dccPropertyFactories.ts:26-27`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dccPropertyFactories.ts) silently discards the write.
 
-The undefined-element guard in [`applyChange.ts:137-145`](../../packages/state/src/apply/applyChange.ts) **only has "wait for define" and no "wait for connect"**. An I/O node Shell assigns plain fields, so the value survives in Core even while unconnected — meaning **this failure is DCC-specific**.
+The undefined-element guard in [`applyChange.ts:137-145`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts) **only has "wait for define" and no "wait for connect"**. An I/O node Shell assigns plain fields, so the value survives in Core even while unconnected — meaning **this failure is DCC-specific**.
 
 **The fix (G4 = (a), solved on the DCC side)**: the shadow is built lazily through `_ensureShadow()`, called from both `connectedCallback` and the `stateElement` getter. Since the accessor can resolve `stateElement` even while unconnected, the write is queued onto the inner `<wcs-state>`'s `initializePromise` and applied after connection and the state load. No pending buffer is needed.
 
@@ -199,7 +199,7 @@ An extra pitfall found during implementation: `template.content` belongs to an i
 
 ### 1.5 A duplicate in `$bindables` invalidates the whole wcBindable declaration ✅ fixed
 
-[`createWcBindable`](../../packages/state/src/dcc/wcBindable.ts) passes duplicate names straight through. The reader's [`readNamedList`](../../packages/state/src/protocol/wcBindableReader.ts) (lines 118-129), meanwhile, returns `null` on finding a duplicate, making the whole `readBindableDeclaration()` `null`.
+[`createWcBindable`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/wcBindable.ts) passes duplicate names straight through. The reader's [`readNamedList`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/protocol/wcBindableReader.ts) (lines 118-129), meanwhile, returns `null` on finding a duplicate, making the whole `readBindableDeclaration()` `null`.
 
 Measured by probe: `$bindables: ["count","count"]` → `readBindableDeclaration()` is `null`. As a result, no two-way binding, no spread, and `resolveInitialSyncPolicy` passes it through as "not a bindable element". **No error and no warning. Our own factory is rejected by our own reader.**
 
@@ -207,13 +207,13 @@ Measured by probe: `$bindables: ["count","count"]` → `readBindableDeclaration(
 
 ### 1.6 A command-token cannot be attached to a DCC method (structurally impossible) ✅ fixed
 
-- [`defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts) puts methods on the prototype
+- [`defineDCC.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) puts methods on the prototype
 - but `createWcBindable` generates only `properties` / `inputs` and **creates no `commands`**
-- and [`applyChangeToCommand.ts:73-75`](../../packages/state/src/apply/applyChangeToCommand.ts) `raiseError`s where `declaredCommands` has no declaration
+- and [`applyChangeToCommand.ts:73-75`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToCommand.ts) `raiseError`s where `declaredCommands` has no declaration
 
 Measured by probe: the generated declaration is only `{protocol, version, properties:[…], inputs:[…]}`. `command.inc: $command.x` always fails.
 
-Its counterpart, the event-token, references `properties` ([`eventTokenHandler.ts:86`](../../packages/state/src/event/eventTokenHandler.ts)) and therefore works on a DCC. That is, **the duality of command-token / event-token breaks on DCC alone**. The README's "Declarative Custom Components (DCC)" section documents no such limitation.
+Its counterpart, the event-token, references `properties` ([`eventTokenHandler.ts:86`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/event/eventTokenHandler.ts)) and therefore works on a DCC. That is, **the duality of command-token / event-token breaks on DCC alone**. The README's "Declarative Custom Components (DCC)" section documents no such limitation.
 
 Note that 1.5 and 1.6 come from the same root (`createWcBindable` implements only part of (1)'s declaration spec). They are **the third and fourth of the same class** as the "it was not creating `inputs`" defect recorded in [10-defaulting-rollout-status.md, the 7th item](10-defaulting-rollout-status.md).
 
@@ -221,7 +221,7 @@ Note that 1.5 and 1.6 come from the same root (`createWcBindable` implements onl
 
 `async` is uniformly `true`. Since `callFn` always chains onto `initializePromise`, the return value as the caller sees it is a Promise even where the state-side method is synchronous. Reporting the state method's own asyncness would describe something the caller never observes.
 
-The declaration module is no longer `$bindables`-specific, so `processBindablesDeclaration.ts` was renamed to [`processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts). The regression is pinned in a real browser ([`e2e/tests/state-dcc-command.spec.ts`](../../e2e/tests/state-dcc-command.spec.ts)).
+The declaration module is no longer `$bindables`-specific, so `processBindablesDeclaration.ts` was renamed to [`processDccDeclarations.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/processDccDeclarations.ts). The regression is pinned in a real browser ([`e2e/tests/state-dcc-command.spec.ts`](../../e2e/tests/state-dcc-command.spec.ts)).
 
 ### 1.7 The internal channel separated in §1.1 had never once been selected ✅ fixed (2026-08-10, discovered later)
 
@@ -236,9 +236,9 @@ G1 was a paired fix: unifying the public proxy (§1.1) and separating the intern
 **The fix**:
 
 - The completion ledger's key changed from `IStateElement` to **the state property name**
-  ([`completeWebComponent.ts`](../../packages/state/src/webComponent/completeWebComponent.ts)).
+  ([`completeWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/completeWebComponent.ts)).
   Completion is a per-property fact (has `defineProperty(component, stateProp, …)` happened), so the granularity is right, and the types differ (`string` versus `IStateElement`) so this particular mix-up **becomes unwritable**. With the gate correctly true, route 2 is no longer taken at all.
-- Derived bindings are registered not with `addBindingByNode` but with `initialize({ registerAddress: true })` on **the `BindingSession` that owns the primary** ([`MappingRule.ts`](../../packages/state/src/webComponent/MappingRule.ts)). Registration into the absolute-address ledger, teardown, and destruction on node removal all ride the existing lifecycle, so no ledger entry is left strongly referencing the component. `propSegments` keeps the stateProp (the apply side pulls the bound state element from the first segment). They are not pushed into the node ledger (keeping the prefix would otherwise contaminate the primary extraction filter on a rebind).
+- Derived bindings are registered not with `addBindingByNode` but with `initialize({ registerAddress: true })` on **the `BindingSession` that owns the primary** ([`MappingRule.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts)). Registration into the absolute-address ledger, teardown, and destruction on node removal all ride the existing lifecycle, so no ledger entry is left strongly referencing the component. `propSegments` keeps the stateProp (the apply side pulls the bound state element from the first segment). They are not pushed into the node ledger (keeping the prefix would otherwise contaminate the primary extraction filter on a rebind).
 
 **The gate excludes a propSegments length of 1.** Now that the ledger is keyed on the stateProp name, `data-wcs="state: user"` (writing the stateProp itself as the property name, i.e. one segment of propSegments) would pass the gate too. `applyChangeToWebComponent` presumes "the first segment is the bound state element, the rest is the child-side path" and `raiseError`s where the remainder is empty, which punches through the `updater` drain (which catches no exception) and **takes unrelated updates riding the same batch down with it**. That form was a silent no-op before the fix too (the public property is getter-only, so the assignment is a strict TypeError that `applyChangeToProperty`'s try/catch swallows), so it stays a no-op. It was measured that "one misconfigured tag makes other bindings in the same batch unupdatable". The idea of failing `data-wcs="<stateProp>: <path>"` fast at bind time (the same treatment as §2.6's ban on co-specification) is breaking and is not part of this fix.
 
@@ -249,7 +249,7 @@ G1 was a paired fix: unifying the public proxy (§1.1) and separating the intern
   → That form itself was **made to work in §1.8**. A row's subscription is solved not by one derived binding but by having the child's own row bindings ride along in the parent's pattern ledger (this skip itself is still correct).
 
 The regression is pinned both on happy-dom
-([`integration.bindComponentDelivery.test.ts`](../../packages/state/__tests__/integration.bindComponentDelivery.test.ts)) and in a real browser
+([`integration.bindComponentDelivery.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDelivery.test.ts)) and in a real browser
 ([`e2e/tests/state-bind-component-parent-write.spec.ts`](../../e2e/tests/state-bind-component-parent-write.spec.ts)). The discriminator is **the view inside the Shadow** — a view in the parent scope is the parent's own binding and updates even while the channel is broken, so watching that never reveals the breakage. It covers two forms: a leaf mapping (`state.name: user.name`) and a subpath read under an object mapping (`state.user: user` plus the child reading `user.name`). Only the latter hits break 3. Both were confirmed to fail against the pre-fix code.
 
 ### 1.8 A child scope cannot iterate the parent's list with `for` ✅ fixed (2026-08-10)
@@ -262,17 +262,17 @@ The form §1.7 excluded as "a case where registration is impossible" — the chi
 
 **The fix**:
 
-- **Cross the boundary by address** ([`crossBoundaryAddress.ts`](../../packages/state/src/webComponent/crossBoundaryAddress.ts) (new) / [`innerState.ts`](../../packages/state/src/webComponent/innerState.ts)). The address immediately before `Reflect.get/set` is pushed into a dynamic scope, and innerState reassembles it into a loop context for the outer wildcard path. Since the listIndex ledger (`listIndexesByList`) is keyed on **array object identity**, parent and child share the same `IListIndex` instance and it can be reused directly. The push/pop happens only on a state element where `hasMappedComponentState` is true, and never on an ordinary state's `getByAddress` / `setByAddress`.
-- **Propagate outward that it is a list** ([`outerListPath.ts`](../../packages/state/src/webComponent/outerListPath.ts) (new) / [`State.setPathInfo`](../../packages/state/src/components/State.ts)). When the child declares a `for`, the mapping is pulled and `setPathInfo(outerPath, "for")` is delivered to the mapped state element too. `_initializeBindWebComponent` runs before binding collection, so the mapping rules already exist at that point.
-- **Row bindings ride along in the parent's pattern ledger** ([`BindingSession.registerAddress`](../../packages/state/src/bindings/BindingSession.ts)). A list row's binding is registered under the two-level key `(absolutePathInfo, listIndex)`, so it can also be registered as a subscriber to the parent's `rows.*.name` **under the same listIndex**. That works around §1.7's constraint — one derived binding cannot represent a row (its node is the single component element in the parent scope) — by making the subscriber the child's real binding. Cleanup is done symmetrically by the existing teardown through `record.outerPatternPathInfo`.
-- **No cache layer in a mapped state** ([`isCacheable.ts`](../../packages/state/src/proxy/methods/isCacheable.ts) (new)). Even with the three above, a parent-originated row write did not arrive, and the cause was **the child-side cache**. The authoritative value is in the parent and its invalidation is the parent's dependency walk, so the invalidation never reaches the child's copy. Not holding a second copy is the only consistent measure, and what is lost is only the duplicated layer (the parent's cache still works).
+- **Cross the boundary by address** ([`crossBoundaryAddress.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/crossBoundaryAddress.ts) (new) / [`innerState.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/innerState.ts)). The address immediately before `Reflect.get/set` is pushed into a dynamic scope, and innerState reassembles it into a loop context for the outer wildcard path. Since the listIndex ledger (`listIndexesByList`) is keyed on **array object identity**, parent and child share the same `IListIndex` instance and it can be reused directly. The push/pop happens only on a state element where `hasMappedComponentState` is true, and never on an ordinary state's `getByAddress` / `setByAddress`.
+- **Propagate outward that it is a list** ([`outerListPath.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/outerListPath.ts) (new) / [`State.setPathInfo`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)). When the child declares a `for`, the mapping is pulled and `setPathInfo(outerPath, "for")` is delivered to the mapped state element too. `_initializeBindWebComponent` runs before binding collection, so the mapping rules already exist at that point.
+- **Row bindings ride along in the parent's pattern ledger** ([`BindingSession.registerAddress`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts)). A list row's binding is registered under the two-level key `(absolutePathInfo, listIndex)`, so it can also be registered as a subscriber to the parent's `rows.*.name` **under the same listIndex**. That works around §1.7's constraint — one derived binding cannot represent a row (its node is the single component element in the parent scope) — by making the subscriber the child's real binding. Cleanup is done symmetrically by the existing teardown through `record.outerPatternPathInfo`.
+- **No cache layer in a mapped state** ([`isCacheable.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/isCacheable.ts) (new)). Even with the three above, a parent-originated row write did not arrive, and the cause was **the child-side cache**. The authoritative value is in the parent and its invalidation is the parent's dependency walk, so the invalidation never reaches the child's copy. Not holding a second copy is the only consistent measure, and what is lost is only the duplicated layer (the parent's cache still works).
 
 **A reference for translation must have no side effect** (from review). Points 2 and 3 both pull the mapping from inside `BindingSession.registerAddress`. `getOuterAbsolutePathInfo` **registers a subscriber binding through `session.initialize` while it derives the rule**, so calling it directly re-enters `initialize` from inside a session operation (measured in the nested form: one re-entry). A `registerSubscriber: false` was added to separate a reference-only route. The key point is not to memoize the reference-only result: memoizing it would make a later genuine read hit the memo and **skip the subscriber registration forever** (registration for the second row onward hits the ledger the first row's read established, so the derivation only reruns on the first).
 
 **The support range.** What works is "the component is outside the parent's `for`, and the child iterates a mapped array". The nested form where **both** a parent-scope loop and a child-scope loop apply (the child also having a `for` on top of the rule `state.items: rows.*.children`) was initially out of scope (`getOuterRowPathInfo` rejected it as a wildcard-level mismatch). **Resolved on 2026-08-11 in §1.10** — parenting the child's row listIndex to the parent scope's row dissolved the premise of "two instances that cannot be composed".
 
 The regression is on happy-dom
-([`integration.bindComponentListRow.test.ts`](../../packages/state/__tests__/integration.bindComponentListRow.test.ts)), covering the first render, list replacement, a row-field write from the parent, a write-back from the child, reuse of row nodes, ledger cleanup, coexistence with the parent scope, **several instances of the same component** (propagation and subscription both have to work per state element instance), a cross-cutting `$getAll` read, and non-regression of the previously working forms and of plain components. The real browser is
+([`integration.bindComponentListRow.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentListRow.test.ts)), covering the first render, list replacement, a row-field write from the parent, a write-back from the child, reuse of row nodes, ledger cleanup, coexistence with the parent scope, **several instances of the same component** (propagation and subscription both have to work per state element instance), a cross-cutting `$getAll` read, and non-regression of the previously working forms and of plain components. The real browser is
 [`e2e/tests/state-bind-component-list.spec.ts`](../../e2e/tests/state-bind-component-list.spec.ts).
 
 ### 1.9 Replacing a list whose rows contain components kills `for` ✅ fixed (2026-08-10)
@@ -291,17 +291,17 @@ The isolation (measured on happy-dom):
 **There are three fixes, and missing any one of them fails in a different way.**
 
 1. **Do not notify a disconnected state element**
-   ([`applyChangeToWebComponent.ts`](../../packages/state/src/apply/applyChangeToWebComponent.ts)).
+   ([`applyChangeToWebComponent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToWebComponent.ts)).
    `IStateElement.hasRootNode` was added for the check (**registered and usable are different things**). This is a re-read notification carrying no value, so there is no point sending it to a disconnected child in the first place.
 2. **Re-read mapped paths on reconnection**
-   ([`State._reloadMappedPathsAfterReconnect`](../../packages/state/src/components/State.ts)).
+   ([`State._reloadMappedPathsAfterReconnect`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)).
    With only 1, the view of a component that **builds its shadow in the constructor** stays stale. In that form `<wcs-state>` is reused on reconnection and, `_initialized` being true, neither `_initializeBindWebComponent` nor `_initialize` runs — the child's bindings are not re-established. Since 1 drops the notification during disconnection, nothing fixes it unless it is re-read here. The form that rebuilds the shadow in `connectedCallback` gets a new state element and passes with 1 alone — **so the missing 2 is invisible unless both forms are tested**.
 3. **Discard the memo of derived mapping rules**
-   ([`MappingRule.resetDerivedMappingRules`](../../packages/state/src/webComponent/MappingRule.ts)).
+   ([`MappingRule.resetDerivedMappingRules`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/src/webComponent/MappingRule.ts)).
    Even with 1 and 2, only the rows after a replacement fail to receive **row-field writes**. A derived rule (break 3 of §1.7) stands a subscriber up in the parent scope as it derives, but that subscriber is torn down when the child disconnects while **the memo remains, keyed on the element**, so after reconnection the derivation never runs again and no subscriber is re-established. `buildPrimaryMappingRule` does the same cleanup on a rebind. Since bindWebComponent does not run on reconnection, the same state is restored immediately before the re-read.
 
 The regression is pinned both on happy-dom
-([`integration.bindComponentRowReplace.test.ts`](../../packages/state/__tests__/integration.bindComponentRowReplace.test.ts)) and in a real browser
+([`integration.bindComponentRowReplace.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentRowReplace.test.ts)) and in a real browser
 ([`e2e/tests/state-bind-component-row-replace.spec.ts`](../../e2e/tests/state-bind-component-row-replace.spec.ts)). Both line up **the form that builds the shadow in the constructor and the form that builds it in connectedCallback** (for the reason in 2 above). The discriminator is the view inside the Shadow — a parent-scope row is the parent's own binding and updates even where delivery to the child is dead.
 
 ### 1.10 A component inside a parent-scope `for` cannot run a `for` in the child either ✅ fixed (2026-08-11)
@@ -323,8 +323,8 @@ What made the implementation work was a rewrite that avoided plumbing Δ everywh
 The details, and a separate matter found during implementation (**the structure where an exception during binding initialization left the ready promise unresolved forever** — fixed on 2026-08-11 by plumbing the reject through; design doc §8.2), are in [state-bind-component-nested-for-design.md](../state-bind-component-nested-for-design.md) (ja).
 
 The regression is on happy-dom
-([`integration.bindComponentNestedFor.test.ts`](../../packages/state/__tests__/integration.bindComponentNestedFor.test.ts),
-[`webComponent.baseListIndex.test.ts`](../../packages/state/__tests__/webComponent.baseListIndex.test.ts)) and in a real browser
+([`integration.bindComponentNestedFor.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentNestedFor.test.ts),
+[`webComponent.baseListIndex.test.ts`](https://github.com/wcstack/wcstack/blob/v1.33.0/packages/state/__tests__/webComponent.baseListIndex.test.ts)) and in a real browser
 ([`e2e/tests/state-bind-component-nested-for.spec.ts`](../../e2e/tests/state-bind-component-nested-for.spec.ts)). Both line up **the form that builds the shadow in the constructor and the form that builds it in connectedCallback** (the reason in §1.9). One phenomenon appeared only in the real browser — the existing behavior where a write to an out-of-range row throws `ListIndex not found: <parent path>`, whose message points at the wrong cause (unrelated to this work, but recorded in design doc §8.4; fixed on 2026-08-11 to an indexed message).
 
 ### 1.11 A parent-origin row-field write does not cross more than one boundary ✅ fixed (2026-08-13)
@@ -359,7 +359,7 @@ registered only after checking `Δ + innerW === outerW`, so a hop whose arity do
 stops the walk and falls back to the previous behavior. Teardown releases every hop
 individually (each is an independent resource).
 
-The regression is [`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts).
+The regression is [`integration.bindComponentDepthN.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDepthN.test.ts).
 The point is that **depth 1 is kept in the same test as the control**: if depth 1 passes and
 depth 2 fails, that points at the mechanism rather than at how the test was written. Depth is
 parameterised from 1 to 4, and both the constructor-built and connectedCallback-built shadow
@@ -411,7 +411,7 @@ keeps using the Δ-free wildcard count for **indexing** `wildcardPaths` — that
 quantity from the arity being compared.
 
 The regression is on happy-dom
-([`integration.bindComponentDepthN.test.ts`](../../packages/state/__tests__/integration.bindComponentDepthN.test.ts))
+([`integration.bindComponentDepthN.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDepthN.test.ts))
 and in a real browser
 ([`e2e/tests/state-bind-component-depth2.spec.ts`](../../e2e/tests/state-bind-component-depth2.spec.ts)).
 **The fixtures are split in two, §1.11 (flat) and §1.12 (Δ>0)** — the §1.12 failure throws
@@ -458,7 +458,7 @@ scope's `@name` references are evaluated before the child state has registered i
 resolve.
 
 Three call sites change; the predicate lives in
-[`bindings/lightDomComponentScope.ts`](../../packages/state/src/bindings/lightDomComponentScope.ts).
+[`bindings/lightDomComponentScope.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/lightDomComponentScope.ts).
 
 | | Change |
 |---|---|
@@ -482,7 +482,7 @@ that parent has a `data-wcs`".
 the Shadow DOM form, where the child lives in a different rootNode, and is stated in both READMEs.
 
 The regression is on happy-dom
-([`integration.bindComponentLightDom.test.ts`](../../packages/state/__tests__/integration.bindComponentLightDom.test.ts))
+([`integration.bindComponentLightDom.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentLightDom.test.ts))
 and in a real browser
 ([`e2e/tests/state-bind-component-light-dom.spec.ts`](../../e2e/tests/state-bind-component-light-dom.spec.ts)).
 The plain form is kept in the same files, so a regression there fails too. In the real-browser control
@@ -501,7 +501,7 @@ shapes that put a component on every row of a list.
 
 `setByAddress` decided on an exact match of `bindableEventMap[address.pathInfo.path]`. With `$bindables: ["user"]`, writing `user.name` did not fire. In-place array mutation, `$postUpdate`, and getter-derived values were likewise silent. wcBindable's `properties[].event` is contracted to "fire on a change", so this diverged.
 
-**The fix**: the decision was carved out into [`dispatchBindableEvent.ts`](../../packages/state/src/dcc/dispatchBindableEvent.ts), covering three routes.
+**The fix**: the decision was carved out into [`dispatchBindableEvent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dispatchBindableEvent.ts), covering three routes.
 
 1. **An exact match** — as before. The `detail` is the value written.
 2. **A subpath** — `user.name` / `items.*.done` fire the `user` / `items` member. An entry in `$bindables` is always a flat top-level name (a dotted name is rejected by §2.3's existence check), so looking at the first segment suffices. In this case no `detail` is attached — carrying a value that is not the whole member would mislead.
@@ -520,9 +520,9 @@ Since an observer takes the form "the event notifies, the value is read from the
 - `getterFn` is synchronous. Where the state is uninitialized it `console.warn`s and returns `undefined`
 - `setterFn` / `callFn` are **asynchronous**, going through `initializePromise.then()`
 
-([`dccPropertyFactories.ts`](../../packages/state/src/dcc/dccPropertyFactories.ts))
+([`dccPropertyFactories.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/dccPropertyFactories.ts))
 
-`el.count = 5; el.count` returns the old value. And since [`readProducerSnapshot`](../../packages/state/src/bindings/BindingSession.ts) reads `target[name]` synchronously, `#init=element` / `#init=auto` could commit `undefined` into the parent state through `commitProducerValue`. The default is `state` authority (being on both properties and inputs), so the ordinary route does not hit it.
+`el.count = 5; el.count` returns the old value. And since [`readProducerSnapshot`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/BindingSession.ts) reads `target[name]` synchronously, `#init=element` / `#init=auto` could commit `undefined` into the parent state through `commitProducerValue`. The default is `state` authority (being on both properties and inputs), so the ordinary route does not hit it.
 
 **The fix**: `initialized` (the synchronous counterpart of `initializePromise`) was added to `IStateElement`, and `setterFn` now **writes synchronously where already initialized**. Only while uninitialized does it queue onto `initializePromise` as before — so §1.4's route of "not dropping a value written to an unconnected row" stays.
 
@@ -534,13 +534,13 @@ Since an observer takes the form "the event notifies, the value is read from the
 
 | Declaration | Validation |
 |---|---|
-| `$commandTokens` | array / non-empty string / reserved-name collision / duplicates all `raiseError` ([`processCommandTokensDeclaration.ts:17-39`](../../packages/state/src/command/processCommandTokensDeclaration.ts)) |
+| `$commandTokens` | array / non-empty string / reserved-name collision / duplicates all `raiseError` ([`processCommandTokensDeclaration.ts:17-39`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/command/processCommandTokensDeclaration.ts)) |
 | `$streams` | collision checks against getterPaths / setterPaths |
-| `$bindables` | only `Array.isArray(...) ? ... : []` in [`defineDCC.ts:28-30`](../../packages/state/src/dcc/defineDCC.ts) |
+| `$bindables` | only `Array.isArray(...) ? ... : []` in [`defineDCC.ts:28-30`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) |
 
 As a result, a non-array is silently ignored (`$bindables: "count"` quietly treated as empty), a nonexistent property name is unchecked (measured by probe: `["nosuch"]` goes into `properties` / `inputs` as-is → a write from the parent lands on an expando and vanishes), and a name starting with `$` is unchecked (it never appears on the prototype thanks to `isInternalProperty`, yet it goes into wcBindable).
 
-**The fix**: [`processDccDeclarations.ts`](../../packages/state/src/dcc/processDccDeclarations.ts) was added, `raiseError`ing on **a non-array / a non-string or empty string / a leading `$` / duplicates** with the same strength as `$commandTokens`.
+**The fix**: [`processDccDeclarations.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/processDccDeclarations.ts) was added, `raiseError`ing on **a non-array / a non-string or empty string / a leading `$` / duplicates** with the same strength as `$commandTokens`.
 
 **The existence check** (done together with G2): `raiseError` where the name is absent from `getAllPropertyDescriptors` (the traversal shared in §2.4). It also looks at the kind, steering a method written in `$bindables` and a value property written in `$commands` to the other declaration.
 
@@ -555,19 +555,19 @@ For `$streams`, the choice was "allow stream names as existing too, and generate
 
 Writing the state as a class instance or through `Object.create(proto)` makes the two disagree, giving the state "it is in getterPaths but no accessor grows on the DCC prototype". An object literal being the convention makes it unlikely to surface, but the mere fact of two traversals was also the reason §2.3's existence check could not be added.
 
-**The fix**: the traversal was carved out into [`getAllPropertyDescriptors.ts`](../../packages/state/src/getAllPropertyDescriptors.ts) and shared by both. For the same name, the nearer one (closer to the object itself) wins — matching the actual precedence of property resolution. The original implementation had the more distant prototype overwrite last, but since getterPaths / setterPaths only look at the set of names, it never surfaced.
+**The fix**: the traversal was carved out into [`getAllPropertyDescriptors.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/getAllPropertyDescriptors.ts) and shared by both. For the same name, the nearer one (closer to the object itself) wins — matching the actual precedence of property resolution. The original implementation had the more distant prototype overwrite last, but since getterPaths / setterPaths only look at the set of names, it never surfaced.
 
 ### 2.5 The DCC's inner `<wcs-state>` is fixed at `:not([name])` 🟡 partially fixed
 
-`stateTagSelector` in [`defineDCC.ts`](../../packages/state/src/dcc/defineDCC.ts). Add a `name` and `stateElement` is always `null`, making every getter `undefined` and every setter a no-op.
+`stateTagSelector` in [`defineDCC.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts). Add a `name` and `stateElement` is always `null`, making every getter `undefined` and every setter a no-op.
 
-Conversely, bind-component **requires** a `name` in the Light DOM ([`State.ts:278`](../../packages/state/src/components/State.ts)). For the same "state inside a component", the naming conventions are exact opposites, with no cross-validation.
+Conversely, bind-component **requires** a `name` in the Light DOM ([`State.ts:278`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)). For the same "state inside a component", the naming conventions are exact opposites, with no cross-validation.
 
 **The fix**: behavior is unchanged, but a `console.warn` is emitted where `$bindables` is declared and no unnamed `<wcs-state>` is found (the branch previously failed silently). Unifying the naming convention itself is untouched, pending §3.
 
 ### 2.6 Specifying both bind-component and a state source attribute silently discards one ✅ fixed
 
-The path is `_initializeBindWebComponent()` → `setInitialState()` → `_resolveSetState()` ([`State.ts:628-634`](../../packages/state/src/components/State.ts)), but `_initialize()` prefers `state` / `src` / `json` / an inner `<script>` where present and does not await `_setStatePromise` (`State.ts:213-240`). The result is that the proxy built by `createInnerState` is discarded along with everything else, and the parent↔child mapping dies.
+The path is `_initializeBindWebComponent()` → `setInitialState()` → `_resolveSetState()` ([`State.ts:628-634`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)), but `_initialize()` prefers `state` / `src` / `json` / an inner `<script>` where present and does not await `_setStatePromise` (`State.ts:213-240`). The result is that the proxy built by `createInnerState` is discarded along with everything else, and the parent↔child mapping dies.
 
 **The fix**: `_initializeBindWebComponent` detects co-specification with `state` / `src` / `json` / an inner `<script type="module">` and `raiseError`s. Co-specification is always a configuration mistake, so failing fast is correct.
 
@@ -585,10 +585,10 @@ The path is `_initializeBindWebComponent()` → `setInitialState()` → `_resolv
 - **3.2** ✅ fixed (G3). The range over which wcBindable is required did not line up between mechanisms. spread (`...:`) and command-token require wcBindable and `raiseError` where it is undeclared, but a bind-component component has no wcBindable, so `state.msg: x` passes. **The same "component", yet different syntax is writable.**
 
   This was reframed as a design consequence rather than a defect. bind-component wires through **paths** rather than a declared property surface, so it is coherent that the syntaxes requiring a `wcBindable` declaration are unavailable. Rather than unify them, it was **made normative**: a new "Choosing a Component Mechanism" section was added to README.md / README.ja.md with a table across six axes — how it is defined, where the state lives, whether there is a `static wcBindable`, binding a value from the parent / invoking a method from the parent, whether spread is available, and reading / writing its own state — stating that they are mutually exclusive and giving guidance on choosing. `src/dcc/README.md` and `src/webComponent/README.md` cross-reference it.
-- **3.3** ~~Root determination happens two ways~~ ❌ **an error in this document (corrected 2026-08-05)**. The coexistence of `instanceof ShadowRoot` (`State.ts:268,357` / `setByAddress.ts:237`) and `rootNode.constructor.name === ...` ([`stateElementByName.ts`](../../packages/state/src/stateElementByName.ts)) was written up as "not lined up", but the latter was **necessary**. Under SSR, `@wcstack/server`'s `installGlobals` puts only part of happy-dom onto `globalThis`, and its `GLOBALS_KEYS` does not include `Document`. Node has no `Document` either, so `rootNode instanceof Document` would be a ReferenceError. `ShadowRoot` is in the list, which is why the instanceof elsewhere works. **The action taken = adding a comment explaining why** (they are not unified). The point that bindings are not built for a `DocumentFragment` root is a fact, but a fragment is given its own destination through `setRootNodeByFragment`, so it is not an omission here.
+- **3.3** ~~Root determination happens two ways~~ ❌ **an error in this document (corrected 2026-08-05)**. The coexistence of `instanceof ShadowRoot` (`State.ts:268,357` / `setByAddress.ts:237`) and `rootNode.constructor.name === ...` ([`stateElementByName.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts)) was written up as "not lined up", but the latter was **necessary**. Under SSR, `@wcstack/server`'s `installGlobals` puts only part of happy-dom onto `globalThis`, and its `GLOBALS_KEYS` does not include `Document`. Node has no `Document` either, so `rootNode instanceof Document` would be a ReferenceError. `ShadowRoot` is in the list, which is why the instanceof elsewhere works. **The action taken = adding a comment explaining why** (they are not unified). The point that bindings are not built for a `DocumentFragment` root is a fact, but a fragment is given its own destination through `setRootNodeByFragment`, so it is not an omission here.
 - **3.4** ✅ fixed (G3). The etiquette on a duplicate definition was uneven. A duplicate DCC tag `console.warn`ed and skipped, while a duplicate state name `raiseError`ed (`stateElementByName.ts`). The DCC side was aligned to `raiseError`. Settling for a warning means first-wins and **an instance of a different template growing**, producing "it looks like it works but the contents differ". That is right to fail as an authoring error.
 - **3.5** ✅ fixed. `IStateElement` had `bindableEventMap` (readonly) but no `setBindableEventMap`, so `defineDCC` imported the concrete `State` and cast (a backwards reference from dcc → components). A setter was added to the interface, and `defineDCC` now depends only on `import type { IStateElement }`. The type of `stateElement` lines up with `dccPropertyFactories` too.
-- **3.6** ✅ fixed. [`src/dcc/README.md`](../../packages/state/src/dcc/README.md) remained a design memo and disagreed with the implementation (`typeof func.constructor.name === "AsyncFunction"` is always false; the old spec of dispatching events at the stateElement rather than the host; and so on). [`src/webComponent/README.md`](../../packages/state/src/webComponent/README.md) was only fragments. Both were rewritten as supplements to the implementation, stating explicitly that "`packages/state/README.md` is authoritative", with unfixed limitations linked to this document.
+- **3.6** ✅ fixed. [`src/dcc/README.md`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/README.md) remained a design memo and disagreed with the implementation (`typeof func.constructor.name === "AsyncFunction"` is always false; the old spec of dispatching events at the stateElement rather than the host; and so on). [`src/webComponent/README.md`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/README.md) was only fragments. Both were rewritten as supplements to the implementation, stating explicitly that "`packages/state/README.md` is authoritative", with unfixed limitations linked to this document.
 
 ---
 

@@ -77,7 +77,7 @@ v2.4.0 の既存調査では `auto` が 229,206 bytes / gzip 66,981 bytes。今�
 
 `State.ts` が宣言処理・ライフサイクル・DOM・追加機能を直接結び、`updater.ts` も watch/scan を参照する。watch/stream はモジュール評価時に更新リスナーを登録するため、`defineState` だけでも約27 KB gzip のランタイムが残る。副作用の位置を変えずにサブパスを増やしたり `sideEffects: false` を付けたりする案は不十分。
 
-参照: [State](../packages/state/src/components/State.ts)、[updater](../packages/state/src/updater/updater.ts)、[watch](../packages/state/src/watch/watchRuntime.ts)、[streams](../packages/state/src/stream/streamRuntime.ts)、[bootstrap](../packages/state/src/bootstrapState.ts)。
+参照: [State](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)、[updater](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/updater/updater.ts)、[watch](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/watchRuntime.ts)、[streams](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stream/streamRuntime.ts)、[bootstrap](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bootstrapState.ts)。
 
 ## 4. 実行性能とメモリ
 
@@ -116,7 +116,7 @@ onSelect(event, index) { this.selectedIndex = index; }
 
 **Signals に置き換えるだけでは、全行が同じ scalar を読むという依存関係は消えない。** 行ごとの購読、計算結果が変化しない場合の下流通知停止、選択キーに対する専用の購読索引などを分けて試す。単なる値比較のために手動通知を要求しない方向が望ましいが、汎用 getter から常に O(1) を得られるとは約束できない。
 
-参照: [fixture](../packages/state/__e2e__/benchmark/index.html)、[依存登録](../packages/state/src/proxy/methods/checkDependency.ts)、[依存展開](../packages/state/src/dependency/walkDependency.ts)。
+参照: [fixture](../packages/state/__e2e__/benchmark/index.html)、[依存登録](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/checkDependency.ts)、[依存展開](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts)。
 
 ### 4.3 ボトルネック候補
 
@@ -176,7 +176,7 @@ readonly は深い不変性の保証とは別に、**同じ明示的パス書き
 
 これは各 DOM API と独自 skip 規則の組合せ。すべてを一律代入するより、値不在・明示クリア・表示変換の表を定義する。例えば「undefined は状態が値を持たない、null はクリア」とするなら、mustache と attr の扱いまで規範を揃え、属性削除をどう表すかも決める。
 
-根拠: [binding parser](../packages/state/src/bindTextParser/parseBindTextsForElement.ts)、[prop parser](../packages/state/src/bindTextParser/parsePropPart.ts)、[filter parser](../packages/state/src/bindTextParser/parseFilters.ts)、[filter args](../packages/state/src/bindTextParser/parseFilterArgs.ts)、[resolve](../packages/state/src/proxy/apis/resolve.ts)、[StateHandler](../packages/state/src/proxy/StateHandler.ts)、[filters](../packages/state/src/filters/builtinFilters.ts)、[適用関数](../packages/state/src/apply/)。
+根拠: [binding parser](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parseBindTextsForElement.ts)、[prop parser](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parsePropPart.ts)、[filter parser](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parseFilters.ts)、[filter args](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parseFilterArgs.ts)、[resolve](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/resolve.ts)、[StateHandler](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/StateHandler.ts)、[filters](https://github.com/wcstack/wcstack/blob/v2.6.1/packages/state/src/filters/builtinFilters.ts)、[適用関数](https://github.com/wcstack/wcstack/tree/v3.5.4/packages/state/src/apply)。
 
 ### 5.2 整理したい非対称性
 

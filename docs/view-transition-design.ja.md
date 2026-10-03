@@ -12,8 +12,8 @@ wcstack が DOM を変更する箇所はちょうど 3 つ。
 
 | 箇所 | コード | 現在の削除のされ方 |
 |---|---|---|
-| リスト行 | [`applyChangeToFor`](../packages/state/src/apply/applyChangeToFor.ts) | `deactivateContent` → `content.unmount()` を**同期**実行。ノードはその場で detach され、content はアンカーごとのプールへ |
-| 条件分岐 | [`applyChangeToIf`](../packages/state/src/apply/applyChangeToIf.ts) | 同じ — 条件が false になった瞬間に detach |
+| リスト行 | [`applyChangeToFor`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts) | `deactivateContent` → `content.unmount()` を**同期**実行。ノードはその場で detach され、content はアンカーごとのプールへ |
+| 条件分岐 | [`applyChangeToIf`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToIf.ts) | 同じ — 条件が false になった瞬間に detach |
 | ルートコンテンツ | [`hideRoute`](../packages/router/src/hideRoute.ts) / [`showRoute`](../packages/router/src/showRoute.ts) | `removeChild` → `insertBefore` を同期実行 |
 
 上の 2 行は、この設計が書かれた時点の `@wcstack/state` 3.x のコード。4.0 では同じ箇所は `dom/view.ts` の `ForView` / `IfView` で、削除はやはり同期（4.0 は content のプールを持たない）。

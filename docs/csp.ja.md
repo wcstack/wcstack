@@ -161,7 +161,7 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 | `setInitialState()` API | なし | **追加不要** |
 | `<wcs-state><script type="module">…</script></wcs-state>` | **blob: URL 経由で `import()`** | **state を読み込む `<script>` に nonce**、または **`script-src blob:`** |
 
-state はインライン `<script>` のテキストを取り出し、blob: URL を作って動的 `import()` する（3.x は [loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts)、4.0 は `element.ts` の `loadInnerScript`。同じ経路で、分割の `/core` も同じ）。ここが CSP に当たる。
+state はインライン `<script>` のテキストを取り出し、blob: URL を作って動的 `import()` する（[element.ts](../packages/state/src/element.ts) の `loadInnerScript`。3.x も `stateLoader/loadFromInnerScript.ts` で同じことをしていた。分割の `/core` も同じ経路）。ここが CSP に当たる。
 
 **state を読み込む `<script>` に nonce を付ければ通る。** `import()` は、それを書いたモジュール（ここでは state のバンドル）を読み込んだ `<script>` の nonce を引き継ぐ（§3）。nonce の無いタグ（ホストの許可だけ）で state を読んでいると、blob: の import は止められる。ハッシュでは救えない（§3）。
 
@@ -211,11 +211,11 @@ Blob をバインドする経路（`@wcstack/fetch` の Blob → object URL、`@
 | `<wcs-layout>` のテンプレート展開（[Layout.ts](../packages/router/src/components/Layout.ts)） | 作者が書いたマークアップ（文書内の `<template>`、または `src` で取得するアプリの資産） | 共有 `wcstack` identity policy で署名 |
 | `new Worker(src)`（[WorkerCore.ts](../packages/worker/src/core/WorkerCore.ts)） | 作者が書いた `src` 属性 | 共有 `wcstack` identity policy で署名 |
 | `<wcs-fetch target>` の HTML 置換モード（[Fetch.ts](../packages/fetch/src/components/Fetch.ts)） | レスポンス本文 | **利用側の sanitizer 付き policy が必須**。wcstack は署名しない |
-| `innerHTML:` / `outerHTML:` / `srcdoc:` プロパティバインド（3.x は [applyChangeToProperty.ts](../packages/state/src/apply/applyChangeToProperty.ts)。4.0 は `trustedTypes.ts` で、`html:` と `<iframe>` の `attr.srcdoc:` も対象） | 状態の値 | **利用側の sanitizer 付き policy が必須**。wcstack は署名しない |
+| `innerHTML:` / `outerHTML:` / `srcdoc:` プロパティバインド（[trustedTypes.ts](../packages/state/src/trustedTypes.ts)。`html:` と `<iframe>` の `attr.srcdoc:` も対象。3.x は `apply/applyChangeToProperty.ts`） | 状態の値 | **利用側の sanitizer 付き policy が必須**。wcstack は署名しない |
 
 この線引きが本体。上 2 つはページの作者が書いた文字列で、Lit がテンプレートリテラルに署名しているのと同じ地面に立つ。下 2 つはリモートのデータとユーザー入力が混ざり得る状態で、そこに identity policy を噛ませるのは「Trusted Types 対応」ではなく policy を切ることであり、セキュリティレビューで落ちるのが正しい。
 
-**DCC 定義は sink 自体が無くなった。** [defineDCC.ts](../packages/state/src/dcc/defineDCC.ts)（4.0 は `scopes/dcc.ts`）は定義要素の shadow tree を innerHTML で往復させず、ノード単位でクローンする。したがって `@wcstack/state` 単体なら `trusted-types` の allowlist は要らない。
+**DCC 定義は sink 自体が無くなった。** [scopes/dcc.ts](../packages/state/src/scopes/dcc.ts)（3.x は `dcc/defineDCC.ts`）は定義要素の shadow tree を innerHTML で往復させず、ノード単位でクローンする。したがって `@wcstack/state` 単体なら `trusted-types` の allowlist は要らない。
 
 ### 許可すべきポリシー
 

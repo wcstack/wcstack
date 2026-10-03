@@ -43,7 +43,7 @@
 
 指摘の前提を実測で補正した結果。番号は後段の受け入れ条件から参照する。
 
-1. **live DOM テストは今日でも約 15 行で成立する**。happy-dom の `Window` → `GLOBALS_KEYS` 差し替え（[server/render.ts](../packages/server/src/render.ts) と同じ 17 キー）→ `bootstrapState()` → `innerHTML` → `connectedCallbackPromise` → [`getBindingsReady(document)`](../packages/state/src/stateElementByName.ts) → `createStateAsync("writable")` で mount / 書き換え / 検証ができた（`count 1→42`、`li 2→3`）。vitest の happy-dom 環境なら globals 差し替えは不要。**欠けているのは文書と薄い包み**であり、ランタイムではない。
+1. **live DOM テストは今日でも約 15 行で成立する**。happy-dom の `Window` → `GLOBALS_KEYS` 差し替え（[server/render.ts](../packages/server/src/render.ts) と同じ 17 キー）→ `bootstrapState()` → `innerHTML` → `connectedCallbackPromise` → [`getBindingsReady(document)`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts) → `createStateAsync("writable")` で mount / 書き換え / 検証ができた（`count 1→42`、`li 2→3`）。vitest の happy-dom 環境なら globals 差し替えは不要。**欠けているのは文書と薄い包み**であり、ランタイムではない。
 2. `@wcstack/server` の `renderToString()` はスナップショットテストにそのまま使えるが、README は SSR 用途としてしか説明していない。
 3. アプリ作者向けのテスト記述は README / AGENTS.md / state README / wcstack-skill の**どこにも無い**。e2e は 28 本（`e2e/tests/*.spec.ts`）で全て wcstack 自身の検証用。
 4. `.ts` state 側の型は **state 本体が公開済み**（`defineState` / `WcsPaths` / `WcsPathValue`、[define-state.md](../packages/state/docs/define-state.md)）。VSCode 非依存で `tsc` に効く。

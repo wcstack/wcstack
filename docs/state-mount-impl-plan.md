@@ -316,7 +316,7 @@ P2-1 → P2-2 → P2-5（chroot が無いと何も動かない）→ P2-3 → P2
 | P3-4 | **名前の撤去**: `name` 属性・`@` パース（`parseStatePart` / `expandShorthandPaths` / `expandSpread` / `{{ }}`）・`STATE_NAME_SEPARATOR`・`IParsedBinding.stateName`・`IAbsolutePathInfo.stateName`・`IApplyContext.stateName`・`StateHandler.stateName`・`updatedCallback` の `path@name`・`processWatchDeclaration` の `@` 検査・manifest `delimiters.stateName`・devtools bridge の `name` payload | src 40 ファイル | N1–N6 |
 | P3-5 | `@` を含むパスは **parse error**（移行ヒント付き）。`name` 属性は **throw**（`mount` を指す） | `parseStatePart.ts`、`State.ts` | N1, N2 |
 | P3-6 | 登録簿を `rootNode → IStateElement`（単数）に。「already registered」を「ルートが 2 つ」に文言変更 | `scopeRegistry.ts` | N3 |
-| P3-7 | Light DOM `bind-component` の `name` 必須を撤去（[State.ts:298](../packages/state/src/components/State.ts#L298)）。`getSubscriberNodes` の除外と `_initializeLightDomComponentScope` は P2-1 のスコープ根で置き換わっていることを確認 | `State.ts`、`bindings/getSubscriberNodes.ts` | L1–L3 |
+| P3-7 | Light DOM `bind-component` の `name` 必須を撤去（[State.ts:298](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L298)）。`getSubscriberNodes` の除外と `_initializeLightDomComponentScope` は P2-1 のスコープ根で置き換わっていることを確認 | `State.ts`、`bindings/getSubscriberNodes.ts` | L1–L3 |
 | P3-8 | DCC: `stateTagSelector` から `:not([name])` を落とす | `dcc/defineDCC.ts` | — |
 | P3-9 | SSR（state 側）: `<wcs-ssr>` から `name` を落とし、rootNode 単位に。`Ssr.findByName` → `Ssr.find(root)`。スナップショットに接ぎ木済みボリュームの**データ**を含める。hydrate ではボリューム要素がモジュールをロードし、データはスナップショットの部分木を採用（接ぎ木せず・衝突検査を掛けない・D14） | `components/Ssr.ts`、`hydrateBindings.ts`、`components/State.ts` | S1, S2, S4 |
 | P3-10 | SSR（server 側）: `renderToString` / `installGlobals` の名前依存を除去。ボリュームのデータをスナップショットに含める | `packages/server` | S3 |

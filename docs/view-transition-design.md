@@ -13,8 +13,8 @@ wcstack mutates the DOM in exactly three places:
 
 | Site | Code | How removal happens today |
 |---|---|---|
-| List rows | [`applyChangeToFor`](../packages/state/src/apply/applyChangeToFor.ts) | `deactivateContent` then `content.unmount()` **synchronously**; nodes are detached at once and the content goes to the per-anchor pool |
-| Conditional branches | [`applyChangeToIf`](../packages/state/src/apply/applyChangeToIf.ts) | same — detached the moment the condition turns false |
+| List rows | [`applyChangeToFor`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts) | `deactivateContent` then `content.unmount()` **synchronously**; nodes are detached at once and the content goes to the per-anchor pool |
+| Conditional branches | [`applyChangeToIf`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToIf.ts) | same — detached the moment the condition turns false |
 | Route contents | [`hideRoute`](../packages/router/src/hideRoute.ts) / [`showRoute`](../packages/router/src/showRoute.ts) | `removeChild` then `insertBefore`, synchronously |
 
 The first two rows name the `@wcstack/state` 3.x code this design was written against. In 4.0 the same sites are `ForView` / `IfView` in `dom/view.ts`, and removal is still synchronous (4.0 keeps no content pool).

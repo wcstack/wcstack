@@ -56,9 +56,9 @@
 
 候補 5 パッケージの全 `customElements.define` は `registry.get(...)` ガード済みで、2 回目の評価は no-op:
 
-- state: [packages/state/src/registerComponents.ts:10-17](../packages/state/src/registerComponents.ts)、router: 7 タグ全部([packages/router/src/registerComponents.ts:15-38](../packages/router/src/registerComponents.ts))、fetch: 4 タグ、storage / autoloader: 各 1 タグ+autoloader は await 前後の二重ガード([packages/autoloader/src/eagerload.ts:85-104](../packages/autoloader/src/eagerload.ts))。
-- グローバル登録(binder / ssr-snapshot / view-transition naming)はすべて `Symbol.for` 上で「先勝ち・後客は譲る」ガード済み([packages/state/src/bindings/binder.ts:121-125](../packages/state/src/bindings/binder.ts) — コメントが「1 ページに 2 つの state バンドル」をまさに想定)。import 時副作用のイベントリスナは 5 パッケージともゼロ。
-- 系統的注意(ドキュメント化対象): 併載時は**先に評価された側がページを所有**する。後から読んだ個別パッケージの `bootstrapState({...})` 等は不活性インスタンスに作用し効かない([packages/state/src/bootstrapState.ts:15-16](../packages/state/src/bootstrapState.ts) に明記済み)。
+- state: [packages/state/src/registerComponents.ts:10-17](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/registerComponents.ts)、router: 7 タグ全部([packages/router/src/registerComponents.ts:15-38](../packages/router/src/registerComponents.ts))、fetch: 4 タグ、storage / autoloader: 各 1 タグ+autoloader は await 前後の二重ガード([packages/autoloader/src/eagerload.ts:85-104](../packages/autoloader/src/eagerload.ts))。
+- グローバル登録(binder / ssr-snapshot / view-transition naming)はすべて `Symbol.for` 上で「先勝ち・後客は譲る」ガード済み([packages/state/src/bindings/binder.ts:121-125](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/binder.ts) — コメントが「1 ページに 2 つの state バンドル」をまさに想定)。import 時副作用のイベントリスナは 5 パッケージともゼロ。
+- 系統的注意(ドキュメント化対象): 併載時は**先に評価された側がページを所有**する。後から読んだ個別パッケージの `bootstrapState({...})` 等は不活性インスタンスに作用し効かない([packages/state/src/bootstrapState.ts:15-16](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bootstrapState.ts) に明記済み)。
 
 ### 1.6 サイズ実測(D2 の材料)と build 順の構造(D7 の根拠)
 

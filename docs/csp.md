@@ -161,7 +161,7 @@ This is the most important point in this document. **The CSP requirement changes
 | the `setInitialState()` API | none | **nothing extra** |
 | `<wcs-state><script type="module">…</script></wcs-state>` | **`import()` through a blob: URL** | **a nonce on the `<script>` that loads state**, or **`script-src blob:`** |
 
-State pulls the text of the inline `<script>` out, builds a blob: URL, and dynamically `import()`s it ([loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts) in 3.x; `loadInnerScript` in `element.ts` in 4.0, the same path, in the split `/core` too). That is what CSP catches.
+State pulls the text of the inline `<script>` out, builds a blob: URL, and dynamically `import()`s it (`loadInnerScript` in [element.ts](../packages/state/src/element.ts); 3.x did the same in `stateLoader/loadFromInnerScript.ts`; the split `/core` takes the same path). That is what CSP catches.
 
 **A nonce on the `<script>` that loads state covers it.** An `import()` inherits the nonce of the `<script>` that loaded the module making it — here, the state bundle (§3). Load state through a tag without a nonce (host allowance only) and the blob: import is refused. A hash does not cover it (§3).
 
@@ -212,11 +212,11 @@ Paths that bind a Blob (a `@wcstack/fetch` Blob turned into an object URL, a `@w
 | `<wcs-layout>` template expansion ([Layout.ts](../packages/router/src/components/Layout.ts)) | markup the author wrote (an in-document `<template>`, or an app asset fetched with `src`) | signed by the shared `wcstack` identity policy |
 | `new Worker(src)` ([WorkerCore.ts](../packages/worker/src/core/WorkerCore.ts)) | the `src` attribute the author wrote | signed by the shared `wcstack` identity policy |
 | `<wcs-fetch target>` HTML replace mode ([Fetch.ts](../packages/fetch/src/components/Fetch.ts)) | the response body | **an adopter-supplied sanitizing policy is required**; wcstack never signs it |
-| `innerHTML:` / `outerHTML:` / `srcdoc:` property bindings ([applyChangeToProperty.ts](../packages/state/src/apply/applyChangeToProperty.ts) in 3.x; in 4.0 `trustedTypes.ts`, which also covers `html:` and an `<iframe>`'s `attr.srcdoc:`) | a state value | **an adopter-supplied sanitizing policy is required**; wcstack never signs it |
+| `innerHTML:` / `outerHTML:` / `srcdoc:` property bindings ([trustedTypes.ts](../packages/state/src/trustedTypes.ts), which also covers `html:` and an `<iframe>`'s `attr.srcdoc:`; 3.x: `apply/applyChangeToProperty.ts`) | a state value | **an adopter-supplied sanitizing policy is required**; wcstack never signs it |
 
 The split is the whole point. The first two carry strings the page author wrote, which is the same ground Lit stands on when it signs its template literals. The last two carry remote data and user-influenced state — signing those with an identity policy would not be "Trusted Types support", it would be turning the policy off, and a security review is right to reject it.
 
-**DCC definition no longer has a sink at all.** [defineDCC.ts](../packages/state/src/dcc/defineDCC.ts) (4.0: `scopes/dcc.ts`) clones the definition's shadow tree node by node instead of round-tripping it through `innerHTML`, so `@wcstack/state` needs no `trusted-types` allowlist entry on its own.
+**DCC definition no longer has a sink at all.** [scopes/dcc.ts](../packages/state/src/scopes/dcc.ts) (3.x: `dcc/defineDCC.ts`) clones the definition's shadow tree node by node instead of round-tripping it through `innerHTML`, so `@wcstack/state` needs no `trusted-types` allowlist entry on its own.
 
 ### The policy to allow
 

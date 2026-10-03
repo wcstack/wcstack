@@ -286,7 +286,7 @@ D16 の決定（「実関数の解決は束縛計画の段。文法段だけを 
 - **DCC**: barrier を DCC のロード失敗（`dcc/dccLifecycle.ts`）と同じ着地 `_failInitializeLoudly` に載せた。診断は 1 件、`connectedCallbackPromise` は reject。DCC の `<wcs-state>` はそのシャドウのツリーの持ち主なので、ツリーごと利用不能になる（ロード失敗と同じ）。
 - **`mount=`**: `_failInitializeLoudly` に `ownsTree` 引数を足し、false のときはルートの印付け（`markBindingsUnavailable`）と保留ボリュームへの通知（`runInitializeFailed`）を飛ばす。ボリュームはツリーの持ち主ではなく、ルートより先に接続したボリュームでは rootNode にまだ誰も居ないので、既定の着地だとまだ来ていないルートのノードを利用不能と印付けしてしまう（§9 に書いたとおり）。
 - **他のボリュームの失敗は変えていない**: `_initializeVolume` の失敗は従来どおり promise を解決してから raise する（`integration.initFailureDiagnostics.test.ts` が固定、枠の寿命は別 Issue）。barrier だけが reject になるのは、「機能を入れ忘れた」はページの作者に必ず直してもらう設定であり、`mount()` のようなテストの入口で黙って通してはいけないから。
-- **テスト**: [core.lifecycleHooks.test.ts](../packages/state/__tests__/core.lifecycleHooks.test.ts) の 2 件を着地まで確かめる形にした（`connectedCallbackPromise` の reject・診断 1 件・ツリーの印付け — DCC は付く、`mount=` は付かない）。`mount=` を既定の着地に戻すと後者が落ちることも確かめた。全テスト 3,743 件成功、カバレッジ不変。
+- **テスト**: [core.lifecycleHooks.test.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/core.lifecycleHooks.test.ts) の 2 件を着地まで確かめる形にした（`connectedCallbackPromise` の reject・診断 1 件・ツリーの印付け — DCC は付く、`mount=` は付かない）。`mount=` を既定の着地に戻すと後者が落ちることも確かめた。全テスト 3,743 件成功、カバレッジ不変。
 
 ## 9. 決めたこと・決めていないこと
 

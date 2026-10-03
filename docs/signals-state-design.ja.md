@@ -324,7 +324,7 @@ h('ul', null,
 1. **アンカー方式を流用** — 既存の anchor コメントで領域を確保（`insertReactive` と同じ位置決め）。
 2. **行ごとに `createRoot`** — 各行を独立 owner 配下で生成。行が消えたらその root を dispose → 行内 effect が確実に死ぬ。
 3. **reconcile** — 旧 `key → {node, dispose}` の Map を持ち、新配列を走査して: マッチ→ノード再利用 / 新規→`createRoot` で行生成 / 消滅→root dispose + ノード除去 / 並び替え→`insertBefore` で最小移動（初期は素朴な順次 insert、後で two-ended / LIS 最適化）。
-4. **キー戦略** — 既定は値の `===`（[state の createListDiff](../packages/state/src/list/createListDiff.ts) も `===` ベース・重複値は添字配列で吸収という発想）。`key` オプションで明示も可。
+4. **キー戦略** — 既定は値の `===`（[state の createListDiff](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/createListDiff.ts) も `===` ベース・重複値は添字配列で吸収という発想）。`key` オプションで明示も可。
 
 **state の `createListDiff` は流用しない。** 同関数は `IListIndex` / `loopContext` / パスアドレッシング / 配列参照キーの WeakMap キャッシュに密結合で、signals の cell ベース fine-grained モデルに乗らない。**アルゴリズムの考え方（indexByValue で重複値を添字配列管理、add/delete/change の集合化）だけ参考にし、signals 専用に書き起こす**。
 

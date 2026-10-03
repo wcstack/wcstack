@@ -67,7 +67,7 @@ export interface IWcBindableProperty {
   readonly getter?: (event: Event) => any;
 }
 ```
-（[wcBindable.ts:20-24](../packages/state/src/protocol/wcBindable.ts#L20-L24)、25パッケージ共通の自動生成コピー元）
+（[wcBindable.ts:20-24](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/protocol/wcBindable.ts#L20-L24)、25パッケージ共通の自動生成コピー元）
 
 `getter` は `(event: Event) => any` という単一引数しか取れない。実行時に生成される動的キー（例: RESTの`resource-id: 42`、RPCの`correlation-id: "req-7"`）に対して、`loading.42` のような個別プロパティを**宣言することも、`getter`にキーを渡すことも、プロトコル上できない**。
 

@@ -324,7 +324,7 @@ h('ul', null,
 1. **Reuse the anchor scheme** — reserve the region with the existing anchor comments (the same positioning as `insertReactive`).
 2. **A `createRoot` per row** — create each row under an independent owner. When a row goes, dispose its root → its inner effects reliably die.
 3. **Reconcile** — hold a Map of old `key → {node, dispose}`, walk the new array and: a match → reuse the node / new → create the row under a `createRoot` / gone → dispose the root and remove the node / reordered → minimal movement with `insertBefore` (naive sequential inserts at first, optimized to two-ended / LIS later).
-4. **The key strategy** — `===` on the value by default ([state's createListDiff](../packages/state/src/list/createListDiff.ts) is `===`-based too, with the idea of absorbing duplicate values through an index array). An explicit `key` option is also available.
+4. **The key strategy** — `===` on the value by default ([state's createListDiff](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/createListDiff.ts) is `===`-based too, with the idea of absorbing duplicate values through an index array). An explicit `key` option is also available.
 
 **state's `createListDiff` is not reused.** That function is tightly coupled to `IListIndex` / `loopContext` / path addressing / a WeakMap cache keyed on the array reference, and does not fit signals' cell-based fine-grained model. **Only the thinking behind the algorithm (managing duplicate values with an indexByValue index array, aggregating add/delete/change) is taken as reference, and it is written afresh for signals.**
 

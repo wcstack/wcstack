@@ -60,13 +60,13 @@
 
 設計書 §4-1 は当初 `Object.freeze` の理由を「辞書は不変なので誤書き込みを即エラーに」だけとしていたが、**もう 1 つ効いている**。
 
-実行時のパス存在検査は、**getter に当たった時点で `UNKNOWN` を返して打ち切る**（[pathDiagnostics.ts:161](../packages/state/src/pathDiagnostics.ts#L161) 付近、`typeof descriptor.get === "function"` の分岐）。辞書が素のデータ（value descriptor）である限り検査は最後まで進み、`missing` を確定できる。§12 が「追加実装ゼロで効く」と言えるのは**辞書に getter が 1 つも無いこと**が条件で、`Object.freeze` された plain object はそれを構造的に保証する。
+実行時のパス存在検査は、**getter に当たった時点で `UNKNOWN` を返して打ち切る**（[pathDiagnostics.ts:161](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts#L161) 付近、`typeof descriptor.get === "function"` の分岐）。辞書が素のデータ（value descriptor）である限り検査は最後まで進み、`missing` を確定できる。§12 が「追加実装ゼロで効く」と言えるのは**辞書に getter が 1 つも無いこと**が条件で、`Object.freeze` された plain object はそれを構造的に保証する。
 
 **この因果を設計書 §4-1 と §12 に明記した。** 後から「ここに getter を 1 個足すだけ」で診断が静かに死ぬのを防ぐため。
 
 ### 0-4. 確認して設計どおりだった 3 件（変更不要）
 
-- **`<wcs-state src="x.js">` は `await import(url)` の `module.default` を state にする**（[State.ts:242](../packages/state/src/components/State.ts#L242)、[loadFromScriptFile.ts](../packages/state/src/stateLoader/loadFromScriptFile.ts)）。設計書 §4-2 の `export default { lang, t }` はそのまま動く。**named export は無視される**ので `export { lang }` だけでは載らない点に注意
+- **`<wcs-state src="x.js">` は `await import(url)` の `module.default` を state にする**（[State.ts:242](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L242)、[loadFromScriptFile.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateLoader/loadFromScriptFile.ts)）。設計書 §4-2 の `export default { lang, t }` はそのまま動く。**named export は無視される**ので `export { lang }` だけでは載らない点に注意
 - **`<wcs-head>` の link 重複キーは `link:${rel}:${href}:${media}`**（[Head.ts:113-118](../packages/router/src/components/Head.ts#L113)）。`hreflang` が入っていないので `x-default` 併記の衝突は実在する。設計書 §9-2 のとおり
 - **router のパラメータ型はユーザー拡張できない**。`RouteCore` が `Object.keys(builtinParamTypes).includes(...)` で検査し、外れたら `any` に落ちる（[RouteCore.ts:261](../packages/router/src/core/RouteCore.ts#L261)）。`enum` 型を足すには core の型定義（[types.ts:40](../packages/router/src/types.ts#L40)）ごと触ることになる。設計書 D9 の「当面は `slug` ＋ guard」は正しい
 
@@ -126,7 +126,7 @@ autoloader 非依存、shadow root からの同一実体 import、`missing` 診�
   **推奨されている回避策が推奨されているロード方法で動かない**状態だった
 - 既存 examples に `<wcs-state src>` の利用が 1 件も無かったため、露出していなかった
 
-修正は `new URL(url, document.baseURI)` の 1 行（[loadFromScriptFile.ts](../packages/state/src/stateLoader/loadFromScriptFile.ts)）。
+修正は `new URL(url, document.baseURI)` の 1 行（[loadFromScriptFile.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateLoader/loadFromScriptFile.ts)）。
 **T1-0 として Phase 1 の先頭に繰り上げ済み**（本書 Phase 1）。
 
 #### 結果-2（設計変更・反映要）: ロケールは `/:lang` ではなく **router の basename** に置く
@@ -198,7 +198,7 @@ Phase 0 と**並行可能**。設計書 §10。
 | ID | 内容 |
 |---|---|
 | **T1-0** | **完了（2026-08-27）**。`<wcs-state src="*.js">` を document の base URL で解決する（Phase 0 の結果-1）。`resolveAgainstDocument` を切り出して単体テスト 4 本。state 2529 tests green / lint 0 / カバレッジ閾値維持 |
-| **T1-1** | **完了（2026-08-27）**。4 箇所で明示引数だけを構築時に確定し、既定の `config.locale` は適用のたびに読むようにした（[builtinFilters.ts](../packages/state/src/filters/builtinFilters.ts)）。他の 42 フィルタは `config.locale` を読まないので対象外。テスト 8 本（4 フィルタ × 既定の追随／明示引数の固定）。期待値は `Intl` 自身から作り、2 ロケールの書式が同じだと検査が空振りする点も 1 行で塞いだ |
+| **T1-1** | **完了（2026-08-27）**。4 箇所で明示引数だけを構築時に確定し、既定の `config.locale` は適用のたびに読むようにした（[builtinFilters.ts](https://github.com/wcstack/wcstack/blob/v2.6.1/packages/state/src/filters/builtinFilters.ts)）。他の 42 フィルタは `config.locale` を読まないので対象外。テスト 8 本（4 フィルタ × 既定の追随／明示引数の固定）。期待値は `Intl` 自身から作り、2 ロケールの書式が同じだと検査が空振りする点も 1 行で塞いだ |
 | **T1-2** | テストを `__tests__/filters.builtinFilters.test.ts` に追加。**2 つの挙動を両方固定する**: (a) `setConfig` 後に構築したバインドは新ロケールを使う (b) 構築済みのバインドは再描画されない限り変わらない。**(b) を仕様としてテストに書く**のが重要で、書かないと将来「なぜ切り替わらないのか」を誰かがバグとして直そうとする |
 | **T1-3** | 順序診断。最初のバインド構築後に `setConfig({locale})` でロケールが**変化した**ら `console.warn` する（1 回だけ）。実装は「最初のフィルタ構築時に `config.locale` を読んだ」フラグ 1 個で足りる |
 | **T1-1b** | **完了（2026-08-27）**。`bootstrapState` の `locale` 既定を `document.documentElement.lang` にした（Phase 0 の結果-5）。明示指定が優先、不正な BCP-47 タグは警告して既定へ。**破壊的変更なので minor bump とリリースノートが要る**（未実施） |
@@ -206,7 +206,7 @@ Phase 0 と**並行可能**。設計書 §10。
 
 ### T1-3 の裁定事項
 
-診断 code の語彙は**コンソール → lint → IDE の三面で共有する**規約がある（[errorGuidance.ts](../packages/state/src/errorGuidance.ts) 冒頭）。しかしこれは**実行順序の問題で、静的に検出できるものが何も無い**ため lint 側に対応物が作れない。
+診断 code の語彙は**コンソール → lint → IDE の三面で共有する**規約がある（[errorGuidance.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/errorGuidance.ts) 冒頭）。しかしこれは**実行順序の問題で、静的に検出できるものが何も無い**ため lint 側に対応物が作れない。
 
 - **案 A**: code 無しの `console.warn`（`[@wcstack/state]` プレフィクスのみ）
 - **案 B**: `wcs/locale-set-after-binding` を新設し、三面共有規約に「runtime 専用 code」の例外を作る

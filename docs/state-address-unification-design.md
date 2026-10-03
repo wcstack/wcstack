@@ -53,7 +53,7 @@
 
 ## 1. 現状 — 5 本の型と正方形
 
-[types.ts](../packages/state/src/address/types.ts) にあるのは 3 本ではなく 5 本である。
+[types.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/types.ts) にあるのは 3 本ではなく 5 本である。
 
 | 型 | 内容 | intern キー | 寿命 |
 |---|---|---|---|
@@ -100,12 +100,12 @@ v2（[state-mount-design.md](./state-mount-design.md) D16）で名前次元を�
 
 v2 の不変条件は「**1 rootNode に 1 ツリー**」であって「**1 ページに 1 ツリー**」ではない。
 
-- rootNode はページに複数ある。独自の `<wcs-state>` を持つコンポーネントの ShadowRoot がそれぞれ自分のツリーを持つ（[stateElementByName.ts](../packages/state/src/stateElementByName.ts) の `stateElementByNode`・`liveStateElements`）。
-- マウントスコープとボリュームは**別ツリーではない**。`setStateElementAlias` は子の ShadowRoot に**親の**要素を別名で載せるだけ、`mount=` のボリュームは[自分の台帳を持たず](../packages/state/src/webComponent/volume.ts)ルートへ接ぎ木する。よって実効的な濃度はページあたりたいてい 1 だが、**1 とは限らない**。
+- rootNode はページに複数ある。独自の `<wcs-state>` を持つコンポーネントの ShadowRoot がそれぞれ自分のツリーを持つ（[stateElementByName.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts) の `stateElementByNode`・`liveStateElements`）。
+- マウントスコープとボリュームは**別ツリーではない**。`setStateElementAlias` は子の ShadowRoot に**親の**要素を別名で載せるだけ、`mount=` のボリュームは[自分の台帳を持たず](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/webComponent/volume.ts)ルートへ接ぎ木する。よって実効的な濃度はページあたりたいてい 1 だが、**1 とは限らない**。
 
 そして決定的なのは **updater がモジュール単一**であることだ。
 
-- [updater.ts:304](../packages/state/src/updater/updater.ts#L304) — `const updater = new Updater()`
+- [updater.ts:304](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/updater/updater.ts#L304) — `const updater = new Updater()`
 - drain のバッチ通知は `ReadonlySet<IAbsoluteStateAddress>`（`$scan` / `$watch` / `$streams` restart が消費）
 - 恒久台帳（cache / bindings / listBaseline / prevValues / scan / stream の依存集合）はすべてモジュール単位の WeakMap
 
@@ -113,7 +113,7 @@ v2 の不変条件は「**1 rootNode に 1 ツリー**」であって「**1 ペ�
 
 ### 3-1. 行（`ListIndex`）はツリーに属さない
 
-ツリーをまたぐのは updater だけではない。行の正本台帳 [listIndexesByList.ts](../packages/state/src/list/listIndexesByList.ts) は**配列だけをキーにするモジュール単一の WeakMap** で、「1 本の配列につき行集合は 1 組」を全ツリーで共有する。
+ツリーをまたぐのは updater だけではない。行の正本台帳 [listIndexesByList.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/listIndexesByList.ts) は**配列だけをキーにするモジュール単一の WeakMap** で、「1 本の配列につき行集合は 1 組」を全ツリーで共有する。
 
 **実測（2026-09-18）**: 独立した ShadowRoot に `<wcs-state>` を 2 つ置き、**同じ配列インスタンス**を両方の初期値に渡して `for` で描画すると、
 
@@ -136,7 +136,7 @@ const absAddress  = createAbsoluteStateAddress(absPathInfo, address.listIndex);
 
 この 2 行が `src/address/` の外に **21 箇所**（`getAbsolutePathInfo` の呼びは 19 箇所）。全箇所で `stateElement` は `handler.stateElement` / `context.stateElement` から自明に取れる。**選択の余地がない決定的変換を毎回手で書いている**。
 
-最ホットな例は読みのキャッシュ経路で、[getByAddress.ts:172-173](../packages/state/src/proxy/methods/getByAddress.ts#L172) がキャッシュを引くためだけに毎回 2 段持ち上げる。その直前の [traps/get.ts:220](../packages/state/src/proxy/traps/get.ts#L220) は `handler.stateElement` を同じ関数の中で既に触っている（`hasRecursion` の判定）。
+最ホットな例は読みのキャッシュ経路で、[getByAddress.ts:172-173](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getByAddress.ts#L172) がキャッシュを引くためだけに毎回 2 段持ち上げる。その直前の [traps/get.ts:220](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/traps/get.ts#L220) は `handler.stateElement` を同じ関数の中で既に触っている（`hasRecursion` の判定）。
 
 ### 4-2. 降ろし（downgrade）
 
@@ -149,7 +149,7 @@ const absAddress  = createAbsoluteStateAddress(absPathInfo, address.listIndex);
 
 ### 4-3. 「ツリー非依存アドレスを台帳のキーにしてはならない」という罠
 
-これが本書を書く一番の理由である。[stateListBaseline.ts](../packages/state/src/list/stateListBaseline.ts) には次のコメントがある。
+これが本書を書く一番の理由である。[stateListBaseline.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/stateListBaseline.ts) には次のコメントがある。
 
 > キーは **絶対アドレス**。`IStateAddress` は listIndex が null のとき pathInfo だけで intern されるため、同じパス形状のルートリストを持つ 2 つの state 要素がエントリを共有してしまう（`createStateAddress` の `_cacheNullListIndex`）。
 
@@ -163,8 +163,8 @@ const absAddress  = createAbsoluteStateAddress(absPathInfo, address.listIndex);
 
 既に「stateElement で分割してから、stateElement を内包するキーで引く」二重キーが出ている。
 
-- [computedSnapshots.ts:19](../packages/state/src/watch/computedSnapshots.ts#L19) — `WeakMap<IStateElement, Map<IAbsoluteStateAddress, unknown>>`
-- [apply/types.ts:20](../packages/state/src/apply/types.ts#L20) — `updatedAbsAddressSetByStateElement: Map<IStateElement, Set<IAbsoluteStateAddress>>`
+- [computedSnapshots.ts:19](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/computedSnapshots.ts#L19) — `WeakMap<IStateElement, Map<IAbsoluteStateAddress, unknown>>`
+- [apply/types.ts:20](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/types.ts#L20) — `updatedAbsAddressSetByStateElement: Map<IStateElement, Set<IAbsoluteStateAddress>>`
 
 どちらも「絶対アドレスは stateElement を含む」という前提があれば外側のキーは要らない（実際には走査の都合で分けている）。次元の所在が型から読み取れていないということでもある。
 
@@ -177,13 +177,13 @@ const absAddress  = createAbsoluteStateAddress(absPathInfo, address.listIndex);
 | `handler` / `context` / 引数から要素が取れる | 27 | proxy の traps・methods・apis、`walkDependency`（6）、`applyChangeToFor`、`reapplyStateBindings`、`overlay`、`recursion/walk` ほか |
 | 引数の追加か解決順の入れ替えが要る | 4（3 関数） | 下記 |
 
-- [getStateAddressByBindingInfo.ts](../packages/state/src/binding/getStateAddressByBindingInfo.ts)（2 箇所）— `IBindingInfo` は要素を持たない。呼び出し元は [applyChange.ts:94](../packages/state/src/apply/applyChange.ts#L94) の `getValue(context.state, binding)` と [initialSync.ts](../packages/state/src/bindings/initialSync.ts) の `isBindingStateInitialized` の 2 つで、**どちらも要素を既に持っている**（`context.stateElement`／直前の `getStateElement(rootNode)`）。
-- [rowLanding.ts](../packages/state/src/watch/rowLanding.ts) の `placementOf(state, pathInfo, row)` — proxy しか受け取らないが、引数の `row.absAddress` が要素を運んでいるので、そこから取る。**引数の追加は要らない**（2026-09-18 の実装計画時に確認。当初は「引数を 1 つ通す」と書いていた）。
-- [hydrateBindings.ts](../packages/state/src/hydrateBindings.ts) の `hydrateBlocks` — 要素の解決（`getStateElement(rootNode)`）がアドレス生成より**後**にある。順序を入れ替える。
+- [getStateAddressByBindingInfo.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getStateAddressByBindingInfo.ts)（2 箇所）— `IBindingInfo` は要素を持たない。呼び出し元は [applyChange.ts:94](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts#L94) の `getValue(context.state, binding)` と [initialSync.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/initialSync.ts) の `isBindingStateInitialized` の 2 つで、**どちらも要素を既に持っている**（`context.stateElement`／直前の `getStateElement(rootNode)`）。
+- [rowLanding.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/watch/rowLanding.ts) の `placementOf(state, pathInfo, row)` — proxy しか受け取らないが、引数の `row.absAddress` が要素を運んでいるので、そこから取る。**引数の追加は要らない**（2026-09-18 の実装計画時に確認。当初は「引数を 1 つ通す」と書いていた）。
+- [hydrateBindings.ts](https://github.com/wcstack/wcstack/blob/v2.6.1/packages/state/src/hydrateBindings.ts) の `hydrateBlocks` — 要素の解決（`getStateElement(rootNode)`）がアドレス生成より**後**にある。順序を入れ替える。
 
-バインディングには今日、非対称がある。`getStateAddressByBindingInfo` は**切断中でも引ける**が、[getAbsoluteStateAddressByBinding.ts](../packages/state/src/binding/getAbsoluteStateAddressByBinding.ts) は root が解決できないと raise する。統合すると前者が消えるので、どちらの前提に寄せるかを決める必要がある（D12）。
+バインディングには今日、非対称がある。`getStateAddressByBindingInfo` は**切断中でも引ける**が、[getAbsoluteStateAddressByBinding.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getAbsoluteStateAddressByBinding.ts) は root が解決できないと raise する。統合すると前者が消えるので、どちらの前提に寄せるかを決める必要がある（D12）。
 
-`ILoopContext` も `IStateAddress` を継承している（[list/types.ts:27](../packages/state/src/list/types.ts#L27)）。`hydrateBlocks` と `applyChangeToFor` の生成箇所はループ文脈を作るためのもので、統合後は**ループ文脈も要素を持つ**（§5-1）。
+`ILoopContext` も `IStateAddress` を継承している（[list/types.ts:27](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/types.ts#L27)）。`hydrateBlocks` と `applyChangeToFor` の生成箇所はループ文脈を作るためのもので、統合後は**ループ文脈も要素を持つ**（§5-1）。
 
 テスト側は `createStateAddress(` が **17 ファイル・123 箇所**、`stateElement` のモックを自前で作るテストが**約 60 ファイル**ある。後者は intern の置き場所の選択に効く（§5-5）。
 
@@ -204,7 +204,7 @@ export interface IStateAddress {
 
 `IAbsoluteStateAddress` は削除。全台帳のキーを `IStateAddress` に統一する。**アドレスがツリーを持つので意味は一切変わらない** — 今日 `IAbsoluteStateAddress` と書いてある場所が `IStateAddress` になるだけで、識別の粒度は同じ。
 
-内部には intern 中間ノード（§5-4）への参照も持つ。`patternLedger` は今日 `address.absolutePathInfo` で行バインディングを引いている（[getBindingSetByAbsoluteStateAddress.ts:136](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L136)）。これを再解決なしで引き続けるため。`src/address/` と `patternLedger` 以外は読まない。
+内部には intern 中間ノード（§5-4）への参照も持つ。`patternLedger` は今日 `address.absolutePathInfo` で行バインディングを引いている（[getBindingSetByAbsoluteStateAddress.ts:136](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L136)）。これを再解決なしで引き続けるため。`src/address/` と `patternLedger` 以外は読まない。
 
 `ILoopContext` は `IStateAddress` を継承しているので、**ループ文脈も要素を持つようになる**。ループ文脈は DOM の content に結び付く値で、content は 1 つのツリーにしか属さないから意味は変わらない。ただし今日は §3-1 の形で 2 ツリーが同じループ文脈オブジェクトを共有しうるのに対し、統合後はツリーごとに別オブジェクトになる。
 
@@ -232,7 +232,7 @@ const _cache: WeakMap<IListIndex, WeakMap<IPathInfo, IStateAddress>> = new WeakM
 const _cacheNullListIndex: WeakMap<IPathInfo, IStateAddress> = new WeakMap();
 ```
 
-のキー `IPathInfo` は強参照の `Map<string, IPathInfo>` に載っていて**不滅**である（[PathInfo.ts:5](../packages/state/src/address/PathInfo.ts#L5)）。したがってこの WeakMap のエントリは実質不滅。今日はアドレスがツリーを知らないので害がない。**ここへ `stateElement` を持つアドレスを入れると、不滅のキーから `<wcs-state>` 要素への強参照が伸び、要素を DOM から外しても永久に回収されなくなる。**
+のキー `IPathInfo` は強参照の `Map<string, IPathInfo>` に載っていて**不滅**である（[PathInfo.ts:5](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/PathInfo.ts#L5)）。したがってこの WeakMap のエントリは実質不滅。今日はアドレスがツリーを知らないので害がない。**ここへ `stateElement` を持つアドレスを入れると、不滅のキーから `<wcs-state>` 要素への強参照が伸び、要素を DOM から外しても永久に回収されなくなる。**
 
 今日の絶対側がリークしないのは、経路の途中に `stateElement` を弱キーとする段があるからである（`WeakMap<IStateElement, WeakMap<IPathInfo, IAbsolutePathInfo>>`）。WeakMap は ephemeron なので、値（アドレス）が自分のキー（要素）を参照していても要素は保持されない。**要るのは「その段があること」であって「外側にあること」ではない**。段の位置を決めるのは GC ではなく引きの回数である（§5-5）。
 
@@ -240,7 +240,7 @@ const _cacheNullListIndex: WeakMap<IPathInfo, IStateAddress> = new WeakMap();
 
 ### 5-4. `IAbsolutePathInfo` は内部に残す
 
-行バインディング台帳 [patternLedger](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L81) は `(absolutePathInfo, listIndex)` の 2 段キーで引き、**登録側でアドレスを一切 intern しない**（[state-row-instantiation-redesign.md](./state-row-instantiation-redesign.md) §3-3）。これは行のホットパスを支える実測済みの構造なので壊さない。
+行バインディング台帳 [patternLedger](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L81) は `(absolutePathInfo, listIndex)` の 2 段キーで引き、**登録側でアドレスを一切 intern しない**（[state-row-instantiation-redesign.md](./state-row-instantiation-redesign.md) §3-3）。これは行のホットパスを支える実測済みの構造なので壊さない。
 
 そこで `IAbsolutePathInfo` は**公開概念からは落とすが、`src/address/` 内部の intern 中間ノードとして残す**。アドレス intern の内部表であり、`patternLedger` のキーでもある。名前は「ツリーに固定されたパス」を表す **`ITreePath`** に改める — `Absolute` は絶対/相対の対が無くなった時点で意味を失う語である。当初の第一候補 `IScopedPath` は採らない。state の `src/` では `scope` が**マウントスコープ**の語として定着しており（`scopeRoot`・`getScopedIndexes`・`mountScope` ほか）、「マウントスコープ内のパス」と読まれるため。`Tree` は既存の `translateTreePath`（ツリーの絶対パスへ翻訳）と同じ意味で、§1 の「パス × ツリー」をそのまま名にできる。
 
@@ -326,7 +326,7 @@ class TreePath {
 
 **却下理由**: 単一 updater の queue とバッチ（`ReadonlySet<...>`）がツリーをまたぐ。ここを通すには `(stateElement, address)` のタプルを作るか、queue をツリー別に分けて drain を協調させるしかない。
 
-- タプル案 — intern 済みアドレスが今提供している「オブジェクト同一性 1 発で dedup できる」性質（[updater.ts の `_applyChange` の前提](../packages/state/src/updater/updater.ts#L176)）が失われる。coalescing のために `Map<IStateElement, Map<IStateAddress, _>>` の 2 段が要る。
+- タプル案 — intern 済みアドレスが今提供している「オブジェクト同一性 1 発で dedup できる」性質（[updater.ts の `_applyChange` の前提](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/updater/updater.ts#L176)）が失われる。coalescing のために `Map<IStateElement, Map<IStateAddress, _>>` の 2 段が要る。
 - queue 分割案 — drain の単位がツリーごとになり、`$scan` → `$watch` → `$streams` restart の**機構間順序がツリーをまたいで保証できなくなる**（[state-scan-design.md](./state-scan-design.md) D11）。これは契約の変更であり、本書の範囲を超える。
 
 どちらも複雑さの移動にしかならない。**「1 つの drain が全ツリーを見る」という現行の契約を保つ限り、アドレスがツリーを持つのが素直**。
@@ -361,7 +361,7 @@ class TreePath {
 
 - `src/**/*.ts` を走査し、**モジュール直下**の `WeakMap` / `Map` / `WeakSet` / `Set` の型引数が `IStateAddress` または `ILoopContext` で始まる宣言を失敗にするテストを置く。関数内の局所集合（`walkDependency` の `visited`・`StateHandler` の `seen`）は 1 回の walk に閉じるので対象外。
 - ESLint の `no-restricted-syntax` でも書けるが、各パッケージの `eslint.config.js` は `/config-templates/` からの**自動生成**で、パッケージ固有の規則を足す口が無い。ソースを走査するテストには前例がある（`__tests__/tagNameMap.test.ts`）。
-- 許可リストが 1 件要る。[getListIndexByBindingInfo.ts:7](../packages/state/src/list/getListIndexByBindingInfo.ts#L7) の `WeakMap<ILoopContext, WeakMap<IBindingInfo, _>>` は今日すでにこの綴りである。ただし内側のキー `IBindingInfo` が DOM ノード単位＝ツリー単位なので、§3-1 の形でループ文脈が共有されても混線しない。**理由つきで許可する**。
+- 許可リストが 1 件要る。[getListIndexByBindingInfo.ts:7](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/getListIndexByBindingInfo.ts#L7) の `WeakMap<ILoopContext, WeakMap<IBindingInfo, _>>` は今日すでにこの綴りである。ただし内側のキー `IBindingInfo` が DOM ノード単位＝ツリー単位なので、§3-1 の形でループ文脈が共有されても混線しない。**理由つきで許可する**。
 
 2026-09-18 時点で、この 1 件以外にモジュール寿命の該当台帳は無い。つまり罠は**今日は踏まれていない**。
 
@@ -380,7 +380,7 @@ class TreePath {
 - §4.2 — `{ absoluteAddress, value, oldValue, hasOldValue }`、「the `absoluteAddress` carries the stateElement, path and listIndex — in v2 the state-element reference is the identity」
 - §4.3 — `state:update-batch` の `{ addresses: ReadonlySet<IAbsoluteStateAddress> }`
 - §4.4 — `{ absoluteAddress, binding }`
-- §5 の表の脚注が [AbsoluteStateAddress.ts:5](../packages/state/src/address/AbsoluteStateAddress.ts#L5) を**行番号つきで**参照している
+- §5 の表の脚注が [AbsoluteStateAddress.ts:5](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/AbsoluteStateAddress.ts#L5) を**行番号つきで**参照している
 
 consumer は `absoluteAddress.absolutePathInfo.pathInfo.path` の経路でパスを読む。**その consumer はリポジトリ内にある。** [packages/devtools](../packages/devtools) は構造的なミラー型（[protocol/types.ts](../packages/devtools/src/protocol/types.ts) の `IAbsoluteAddressLike` / `IAbsolutePathInfoLike`）を持ち、[DevtoolsCore.ts](../packages/devtools/src/core/DevtoolsCore.ts) の 4 箇所（`_labelOf`・`state:binding-added` のパスと要素・`state:binding-cleared`）で旧経路を読む。テストで旧形に触れるのは 2 ファイル・44 箇所。プロトコル文書は英日 2 本あり、[devtools-hook-protocol.ja.md](./devtools-hook-protocol.ja.md) も同じ行番号参照を持つ。
 
@@ -393,7 +393,7 @@ buildless 配布なので devtools と state のバージョンが揃わない�
 
 現実に多いのは下の行で、これは state 側の getter では守れない。devtools は読み取りを 1 つのヘルパーに集め、`address.pathInfo ?? address.absolutePathInfo.pathInfo`（`stateElement` も同様）の両読みにする。旧 state 2.x を見に行ける間は残す。
 
-**版印は互換の手段にならない。** `DEVTOOLS_PROTOCOL_VERSION` の不一致は `console.warn` を出すだけで、先勝ちの registry がそのままイベントを配送する（[bridge.ts](../packages/state/src/devtools/bridge.ts) の `getOrCreateHookRegistry`・protocol §2）。版を上げても旧 consumer は旧経路を読みに来る。しかも **registry の配送にも `DevtoolsCore` の `onEvent` にも try/catch が無い**。旧経路が消えたあとの `TypeError` は、state の計装点（updater の `_applyChange` を含む 23 箇所）から**検査対象アプリの更新経路へ伝播する**。壊れるのは devtools の表示だけではない。
+**版印は互換の手段にならない。** `DEVTOOLS_PROTOCOL_VERSION` の不一致は `console.warn` を出すだけで、先勝ちの registry がそのままイベントを配送する（[bridge.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/devtools/bridge.ts) の `getOrCreateHookRegistry`・protocol §2）。版を上げても旧 consumer は旧経路を読みに来る。しかも **registry の配送にも `DevtoolsCore` の `onEvent` にも try/catch が無い**。旧経路が消えたあとの `TypeError` は、state の計装点（updater の `_applyChange` を含む 23 箇所）から**検査対象アプリの更新経路へ伝播する**。壊れるのは devtools の表示だけではない。
 
 **方針**:
 
@@ -408,7 +408,7 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
 
 アドレス自身が `pathInfo` と `stateElement` を持つので、`this` を返すだけで `absoluteAddress.absolutePathInfo.pathInfo.path` が通る。ただし `parentAbsolutePathInfo` は返さない（`packages/devtools` は読んでいない — grep で確認済み）。
 
-**この getter は内部では使えない。** 戻り値はアドレス自身であって、intern の中間ノード（§5-4）ではない。`patternLedger` は中間ノードをキーにしているので、[getBindingSetByAbsoluteStateAddress.ts:136](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L136) の `patternLedger.get(address.absolutePathInfo)` を getter 越しのまま残すと、行バインディングの引きが**例外なしで全て外れる**。getter を生やすのと同じコミットで、この引きを内部フィールドへ切り替える（実装計画 §7-1 の C2）。
+**この getter は内部では使えない。** 戻り値はアドレス自身であって、intern の中間ノード（§5-4）ではない。`patternLedger` は中間ノードをキーにしているので、[getBindingSetByAbsoluteStateAddress.ts:136](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts#L136) の `patternLedger.get(address.absolutePathInfo)` を getter 越しのまま残すと、行バインディングの引きが**例外なしで全て外れる**。getter を生やすのと同じコミットで、この引きを内部フィールドへ切り替える（実装計画 §7-1 の C2）。
 
 ### 7-2. README の internals 節
 
@@ -469,7 +469,7 @@ get absolutePathInfo(): { pathInfo: IPathInfo; stateElement: IStateElement } { r
   - **基準（2026-09-18・main `bf27363f`・この開発機）**: R1 42.7 / R2 46.4 / R3 128.6 ns/読み。絶対値は機械に依存するので、比較は必ず同一セッションの main と並べて行う。
 - **クロスツリー**: 独立した `<wcs-state>` を持つコンポーネントを 2 つ並べ、**同じパス形状のルート配列**を持たせて baseline が混線しないことを確認する（§4-3 が今日ぎりぎりで避けている事故の再現テスト）。これは統合前に**現行で落ちるか通るか**を先に測る。
 - **クロスツリー（同じ配列インスタンス）**: 2 ツリーに**同じ配列インスタンス**を持たせ、片方の行への書き込みが、もう片方の台帳（cache・bindings・baseline）と描画に触れないことを確認する。今日は `IAbsolutePathInfo` がこれを分けているので現行では通るはず（§3-1）。**統合後に落ちたら I1 違反**。D5 の assert を有効にして同じ試験を流し、発火しないことも見る。
-  - **基準（2026-09-18・PR ⓪）**: [integration.crossTreeAddress.test.ts](../packages/state/__tests__/integration.crossTreeAddress.test.ts) の 6 件が現行実装で緑（上の「同じパス形状」も同じファイル）。§3-1 の実測（`ListIndex` の共有）もここに固定した。変異での確認: 行付きの intern からだけ要素の段を落とす（D11 が禁じる形）と、「同じパス形状」の 2 件は緑のまま、「同じ配列インスタンス」の 3 件が落ちる — 片方への書き込みがもう片方のキャッシュを書き換え、片方を外すと残った側が**更新されなくなる**。例外は出ない。
+  - **基準（2026-09-18・PR ⓪）**: [integration.crossTreeAddress.test.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.crossTreeAddress.test.ts) の 6 件が現行実装で緑（上の「同じパス形状」も同じファイル）。§3-1 の実測（`ListIndex` の共有）もここに固定した。変異での確認: 行付きの intern からだけ要素の段を落とす（D11 が禁じる形）と、「同じパス形状」の 2 件は緑のまま、「同じ配列インスタンス」の 3 件が落ちる — 片方への書き込みがもう片方のキャッシュを書き換え、片方を外すと残った側が**更新されなくなる**。例外は出ない。
 - **devtools 互換**: 旧形の payload（`absolutePathInfo` 経由）と新形の両方を `DevtoolsCore` に流し、roster / wiring / timeline が同じになること。state 側は getter 経由の旧経路が読めること。§7-1 の表の 2 行がそれぞれ 1 本の試験になる。
 - **SSR**: `@wcstack/server` の hydration 経路（`hydrateBindings`）が旧台帳側に登録する経路を持つので、素の Node での SSR スモークを通す（vitest は素 Node の代替にならない）。該当するのは root e2e の `ssr-router.spec.ts` — `serve.mjs` が素の Node で `packages/server/dist` を通して描画する。`packages/server` の `test:e2e` は happy-dom 上の vitest なので、これには当たらない。
 
