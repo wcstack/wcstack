@@ -245,7 +245,7 @@ export default {
 
 `$behavior`:
 
-- Three boolean keys, each `true` by default, with the same meaning as the 3.x options. An unknown key or a value that is not a boolean throws `#44`.
+- Three boolean keys, each `true` by default, with the same meaning as the 3.x options. An unknown key, a value that is not a boolean, or a `$behavior` that is not an object throws `#44` — `null` and an array included, which 3.5 does not warn about.
 - It applies per state tree: to the tree of the `<wcs-state>` that declares it, its volumes included. A 3.x option covered the whole page; in 4.0 **each root state** that needs it declares its own — the page's root, a root `<wcs-state>` in a shadow root, a mounted component, a DCC. Nothing is inherited from a host. A volume cannot declare it (§3.5).
 - A re-set (`setInitialState()` on an initialized element) cannot change it: that throws `#45`. A re-set state without `$behavior` is compared with the defaults, so repeat the declaration in it.
 - It also works on `/auto` pages and in JSON states. In 3.x, `/auto` had no way to pass these options.
@@ -400,6 +400,7 @@ At page level, an element's children are bound before the element's own bindings
 #### Smaller differences
 
 - Writing a top-level key that the state does not have creates it (3.x failed the write). Reading one still throws `[wcs/binding-path-missing]`.
+- A re-set (`setInitialState()` on an initialized element) whose new state lacks a top-level key the old state had empties the bindings to it, renders no rows for a list under it, and gives a getter that reads it `undefined`, until the key is written — as a deeper path the new state lacks already did. 3.x reported those bindings and that list as failures and left the old text and rows on the page. The new state object is not written to (a frozen state can be re-set). A getter on a class state's prototype that the new state drops is the exception: its bindings still fail, as in 3.x.
 - A path that goes through `__proto__` or `prototype` throws `[wcs/binding-syntax] #120`: in bindings, writes, `$resolve`, `$setAll`, and reads such as `this.__proto__`.
 - `state="id"` reads only a `<script type="application/json">` with that id.
 - A `$watch` key with a numeric index (`"items.0.v"`) fires only when the value at that index changes. 3.x (since 3.4) fires it on a write through the index, on an element replacement, and on a write to any row of the list, possibly with an unchanged value.
@@ -484,6 +485,7 @@ A component's `<wcs-state bind-component>` that fails to mount rejects its `conn
 - If `@wcstack/state` 4.0 renders under an older `@wcstack/server` (for example through an npm override), the output can lack `<wcs-ssr>` entirely; the page then stays as the server's HTML, with no warning. Use the `@wcstack/server` released with 4.0.
 - The `@wcstack/server` API (`renderToString()`) does not change. The format of its output does: do not post-process the output based on 3.x's markers.
 - Keep the comments in the output. Text bindings and the row and branch markers are comments: removing them in a later minification step (html-minifier's `removeComments` and the like) breaks hydration, and `{{ }}` inside values may be read as bindings on the client.
+- As in 3.x, form values go into the server's HTML where they differ from the markup: an input's `value` and `checked` attributes, `selected` on the options a select has selected, a textarea's text. Three differences: a password's value is left out, a select's `value:` marks its option (3.x wrote a `value` attribute on the `<select>`), and a textarea whose value contains `{{` is left to the client.
 - `outerHTML:` / `outerText:` are applied on the client, not on the server. The server output contains the element as written, so the value is not in the HTML that search engines or no-JS views see.
 - Children that a Light DOM custom element bound at page level renders from a value are not in the server output; the client renders them. Children you wrote stay in it.
 - As in 3.x (since 3.4.0), hydration adopts the server's rows and branches where they are: a custom element in them is connected once, when the page is parsed, and is never disconnected and connected again. The `<tr>` rows of a `<table>` written without `<tbody>` stay in the `<tbody>` the browser's parser adds. A server row that no longer matches its template (a Light DOM element that added children before a bound node) is rendered again in its place, and the rows around it stay. The new row is in the page before its bindings are applied (like an adopted row, and unlike a client-only render, which binds a row before inserting it), so a custom element in it connects before its bound values arrive. Rows and branches the client does not render (fewer rows, another branch) are removed as soon as the page is bound.
@@ -554,7 +556,7 @@ Run `npx @wcstack/lint@4 <files>` once 4.0 is published (the VS Code extension s
 | `wcs/name-alias` | `$trackDependency`, `$untrackDependency` | error |
 | `wcs/declaration-alias` | `$streams`, `$updatedCallback` | error |
 | `wcs/scan-declaration-invalid` | `$scan` | error |
-| `wcs/behavior-invalid` | `$behavior`: unknown key, non-boolean value, not an object, declared in a volume | error |
+| `wcs/behavior-invalid` | `$behavior`: unknown key, non-boolean value, not an object (`null` and an array included), declared in a volume | error |
 | `wcs/feature-unknown` | an unknown name in `$features` or in `features=` | error |
 | `wcs/features-invalid` | `$features` not an array or in a volume (error); `features=` on a `<wcs-state>` that is not the document's root (warning) | error / warning |
 | `wcs/volume-declaration` | `$stream`, `$watch`, `$listKeys`, `$renderedCallback` in a volume (error); `$commandTokens`, `$eventTokens`, `$on`, `$errorCallback` in a volume (warning) | error / warning |

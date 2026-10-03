@@ -1544,11 +1544,13 @@ this.$setAll("nodes.**.selected", [], false);   // 全深さの全ノード
 | 形 | 拒否する理由 |
 |---|---|
 | 非空の接頭辞 | 接頭辞ではどの深さに適用されるのか言えない（`wcs/recursion-setall-form`） |
-| 添字の省略 | 書き込み API は文脈を取らないので束縛する深さが無い —— `[]` を渡す |
-| mapper 関数 | `(current, ...indexes)` の添字の本数が深さごとに変わる |
-| `{ spread: true }` | 1 次元配列を木へ配るには作者が走査順を知っている必要があり、契約として使えない |
-| `nodes.**.children` と、その下のすべて: `nodes.**.children.*` / `nodes.**.children.length` / `nodes.**.children.0` / `nodes.**.children.0.total` | 構造そのものへの書き込み（`length` への代入はリストを切り詰める）は、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
-| `nodes.**.total`、およびその値の内側を指すパス | 再帰 getter に setter は無い。導出元を書く（`wcs/recursion-readonly`） |
+| 添字の省略 | 書き込み API は文脈を取らないので束縛する深さが無い —— `[]` を渡す（`indexes` の無い `$setAll` と同じく `#9`） |
+| mapper 関数 | `(current, ...indexes)` の添字の本数が深さごとに変わる（`wcs/recursion-setall-form`） |
+| `{ spread: true }` | 1 次元配列を木へ配るには作者が走査順を知っている必要があり、契約として使えない（`wcs/recursion-setall-form`） |
+| `nodes.**` / `nodes.**.children` / `nodes.**.children.*` / `nodes.**.children.length` —— 反復サブパスが多段（`branch.children.*`）なら、子リストへ至る途中の `nodes.**.branch` も。添字綴りも同じ形に畳まれるので `nodes.**.children.0` は子ノード | 構造そのものへの書き込み（`length` への代入はリストを切り詰める）は、その書き込み自身が確定済みの子アドレスを壊す（`wcs/recursion-structural-write`） |
+| `nodes.**.total`、およびその値の内側を指すパス —— 子ノードのパスも同じ形に畳まれるので `nodes.**.children.0.total` と `nodes.**.children.*.total` も getter。子ノードの下に宣言した getter（`get "nodes.**.children.*.x"`）があれば `nodes.**.x` も拒否する | 再帰 getter に setter は無い。導出元を書く（`wcs/recursion-readonly`） |
+
+それ以外は葉です。子ノードの下の葉もそうで、`$setAll("nodes.**.children.*.value", [], v)` は各ノードの子の `value`（根以外のすべてのノード）に書き込みます。
 
 読み取り専用の規則は `**` の綴りに依存しません。再帰 getter の具体的な展開形 —— `nodes.*.total` / `nodes.*.children.*.total` / … —— への書き込みも、固定本数の `$setAll` でも値付きの `$resolve(path, indexes, value)` でも直接代入でも、またその深さが実体化済みかどうかに関わらず、書き込みの入口で拒否します。この検査が無かったときは、未実体化の展開形が「無いキー」に見えてノードのオブジェクトに書き込まれ、代入値が getter のキャッシュ結果として固定されていました。
 
@@ -2990,8 +2992,8 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `wcs/recursion-declaration-invalid` | `$recursion` 宣言か `**` getter のキーが、このバージョンが受け付けない形 —— 要素を指さない・途中に添字セグメントを持つ（`"nodes.0.items.*"`）アンカー / 反復サブパス、複数アンカー、getter でない・setter を持つ `**` キー —— そして `diagnostics` アドオンがあれば、構造を名指す getter、同じ具体パスへ展開する 2 本の getter、展開形と同名の具体 getter。lint が先に出し、実行時は宣言を読んだ時点で throw する | 文面のとおり宣言を直す |
 | `wcs/recursion-anchor` | 宣言済みのアンカーと合致しない `**` パス（このバージョンは state ごとに単一の自己再帰アンカー）、または `**` の後ろが整形されていない —— 何も無い（`get "nodes.**"`）、空セグメント（`nodes.**.` / `nodes.**..x`）や `**` 直後の素の `*`（`nodes.**.*`） | 宣言どおりに綴り、その後ろに実在するパスを書く |
 | `wcs/recursion-context` | **束縛**形の `**` を、束縛先の深さが無い場所で読んだ —— トップレベル、またはアンカー外の getter | 再帰 getter か行 getter の中から読むか、`[]` で全深さを合併する |
-| `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | `**` に対して定義できない `indexes` の形。コードが付くのは非空の接頭辞（両 API）と、`$getAll` の配列でない `indexes`（`null`・文字列など）。`$setAll` の省略・mapper・`{ spread: true }` も同じ誤りで、lint は同じコードで報告するが、実行時は形を名指しした文面で throw するだけでコードは付かない | 現在の深さなら省略、全深さなら `[]` |
-| `wcs/recursion-structural-write` | 再帰 `$setAll` が構造そのもの —— 子リスト、その `length`、子ノード、またはそれらの配下のすべて —— を指している | 葉のプロパティへブロードキャストする |
+| `wcs/recursion-getall-form` / `wcs/recursion-setall-form` | `**` に対して定義できない `indexes` の形。コードが付くのは非空の接頭辞（両 API）と、`$getAll` の配列でない `indexes`（`null`・文字列など）。`$setAll` の省略・mapper・`{ spread: true }` も同じ誤りで、lint は同じコードで報告する。実行時は mapper と `{ spread: true }` が `[wcs/recursion-setall-form]` で、添字の省略は `indexes` の無い `$setAll` と同じく `#9` で throw する | 現在の深さなら省略、全深さなら `[]` |
+| `wcs/recursion-structural-write` | 再帰 `$setAll` が構造そのもの（ノード・子リスト・その `length`・子ノード・反復サブパスが多段なら子リストへ至る途中のオブジェクト）を指している | 葉のプロパティへブロードキャストする（子ノードの下の葉 `nodes.**.children.*.value` もその 1 つ） |
 | `wcs/recursion-readonly` | 書き込みが再帰 getter、またはその導出値の内側を指している —— 再帰 `$setAll` の `nodes.**.total` でも、`nodes.*.children.*.total` のような具体的な展開形への書き込み（固定本数の `$setAll`・値付き `$resolve`・直接代入）でも | getter の導出元を書く |
 | `wcs/recursion-shared-list` / `wcs/recursion-cycle` | 走査が同じ配列インスタンスに 2 度到達した —— 2 つのノードが 1 本の子リストを共有、または自分の祖先から到達可能 | 各ノードに自分の子配列を持たせる |
 | `wcs/recursion-depth-exceeded` | 展開後のパスがワイルドカード 128 段を超える —— 木がエンジンのアドレス可能な深さより深いか、循環している | 木を平らにするか、循環を探す |
@@ -3170,7 +3172,7 @@ export default {
 | `sameValueGuard` | `true` | 現在値と `Object.is` で同値なプリミティブ書き込みを enqueue 前に落とす — バインディングと `$watch` は実質「変化時のみ」発火する（参照型は常に通す）。`false` で同値書き込みを通し、`$watch` の `prev` は `undefined` になる |
 | `enableDirectionalInitialSync` | `true` | 方向認識のバインディング authority（`#init=` / `#sync=` バインド modifier）— [バインディング authority](#バインディング-authority-init--sync) 参照。`false` で opt-out: `#init=` / `#sync=` は throw し、すべての初期同期で state が勝つ |
 
-- 各キーは boolean です。未知のキー、boolean でない値、オブジェクトでない `$behavior` は throw します（`#44`）。
+- 各キーは boolean です。未知のキー、boolean でない値、オブジェクトでない `$behavior`（`null` と配列も含む）は throw します（`#44`）。
 - 宣言した `<wcs-state>` のツリーに、そのボリュームも含めて適用されます。**ルートの state はそれぞれ自分で宣言します** —— ページのルート、shadow root の中のルートの `<wcs-state>`、マウントされたコンポーネント、DCC: ホストから継承されるものはありません。ボリュームは宣言できません（[`mount=`](#追加の状態をマウントするmount)）。
 - 再設定（初期化済みの要素への `setInitialState()`）でこれを変えることはできません: 変えると `#45` を throw します —— 要素を作り直してください。`$behavior` を持たない再設定の state は既定値と比べられるので、宣言を繰り返し書いてください。
 - `/auto` のページでも JSON の state（`"$behavior": { "enableMustache": false }`）でも使えます。SSR ではサーバーが同じ state を読むので、サーバーとクライアントの振る舞いは一致します。
@@ -3425,7 +3427,7 @@ bootstrapState(config?, registry?);
 | `createStateAsync(mutability, callback)` | `createState` の非同期版。readonly のプロキシはコールバックの `await` をまたいでも readonly のままで、`$setAll` と `$resolve(path, indexes, value)` の書き込みも拒否する |
 | `setInitialState(state)` | プログラムから状態を設定 — 下記参照 |
 
-`setInitialState(state)` は、初期化前なら初期 state を渡します。初期化済みの要素では state 全体を入れ替え、戻る前にすべてのバインディングを新しい state で適用し直します。再設定は書き込みではないので、`$watch` のハンドラも `$renderedCallback` も呼びません。新しい state にトップレベルのキーが無いバインディングは適用に失敗し（報告され、テキストは元のまま）、新しい state に無い深いパスは `undefined` と読めるのでテキストは空になり、新しい state にキーが無いリストはその `for` の失敗として報告されて行を保ち、再設定は続行します。リストは配列の同一性で突き合わせるので、長さが変わったリストは新しい配列で渡してください（push や splice でその場で長さを変えた同じ配列インスタンスでの再設定は非対応です）。新しい state の `$behavior` が違う場合（`#45`）や、宣言の形が誤っている場合は throw し、古い state をそのまま残します。読み込み済みのボリューム（`<wcs-state mount="…">` —— データはルートの木へ複製済みなので、ルートのマウントパスの下へ書いてください）、コンポーネント（`bind-component`）や DCC の定義、ボリュームやマウント済みコンポーネントのあるツリー、初期化に失敗した要素（`#14`）では throw します —— 失敗した要素は再始動できないので、取り除いて作り直してください。バインディングの構築後に `$connectedCallback` が失敗したルートは再設定できます。再設定の後も、`Object.keys(this)`・`in`・`delete`・`JSON.stringify(this)` は古い state オブジェクトを見ます（このバージョンの既知の制約）。
+`setInitialState(state)` は、初期化前なら初期 state を渡します。初期化済みの要素では state 全体を入れ替え、戻る前にすべてのバインディングを新しい state で適用し直します。再設定は書き込みではないので、`$watch` のハンドラも `$renderedCallback` も呼びません。新しい state に無いパスは、深さによらず `undefined` と読みます。そこへのバインディングは空になり（要素の入力は、ほかの `undefined` の値と同じく自分の値を保ちます）、新しい state にキーが無いリストは行を描かず、それを読む getter は `undefined` を得ます。古い state にあったトップレベルのキーは、書き込まれるまでこのままです。どの state にも無かったキーは、どこでも同じく読むと失敗します（`#301`）。この扱いは要素の側で覚えていて、新しい state のオブジェクトには書き込まないので、凍結した state（Immer・Redux Toolkit）でも再設定できます。例外が 1 つあり、クラスの state のプロトタイプにある getter は列挙されないので、新しい state にそれが無いと、そこへのバインディングは適用に失敗します（報告され、テキストは元のまま）。読めないリスト（getter が throw する）はその `for` の失敗として報告され、再設定は続行します。リストは配列の同一性で突き合わせるので、長さが変わったリストは新しい配列で渡してください（push や splice でその場で長さを変えた同じ配列インスタンスでの再設定は非対応です）。新しい state の `$behavior` が違う場合（`#45`）や、宣言の形が誤っている場合は throw し、古い state をそのまま残します。読み込み済みのボリューム（`<wcs-state mount="…">` —— データはルートの木へ複製済みなので、ルートのマウントパスの下へ書いてください）、コンポーネント（`bind-component`）や DCC の定義、ボリュームやマウント済みコンポーネントのあるツリー、初期化に失敗した要素（`#14`）では throw します —— 失敗した要素は再始動できないので、取り除いて作り直してください。バインディングの構築後に `$connectedCallback` が失敗したルートは再設定できます。再設定の後も、`Object.keys(this)`・`in`・`delete`・`JSON.stringify(this)` は古い state オブジェクトを見ます（このバージョンの既知の制約）。
 
 ## アーキテクチャ
 
