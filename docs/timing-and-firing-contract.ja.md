@@ -151,7 +151,7 @@ arbiter が預からない —— `run()` の中で同期的に適用し、順�
 
 3.x: drain の適用（`Updater._applyChange`）を 1 つのまとまりとして arbiter に渡し、SSR では state 自身が同期パスへ短絡した（`inSsr()`。4.0 は arbiter に任せる）。宣言どおりの順序 `$updatedCallback` → `$scan` → `$watch` → `$streams` restart が、`$scan` → `$watch` → `$streams` restart → `$updatedCallback` になった。
 
-規範記述: [view-transition-design.ja.md](./view-transition-design.ja.md) §7.2（3.x の drain に対して書かれている）。
+規範記述: [view-transition-design.ja.md](./view-transition-design.ja.md) §7.2。
 
 ---
 

@@ -138,7 +138,7 @@ What does **not** change: initial rendering is never wrapped (only the drain is)
 
 3.x: the apply of a drain (`Updater._applyChange`) was handed to the arbiter as one unit, state itself short-circuited to the synchronous path under SSR (`inSsr()`; 4.0 leaves that to the arbiter), and the declared order `$updatedCallback` → `$scan` → `$watch` → `$streams` restart became `$scan` → `$watch` → `$streams` restart → `$updatedCallback`.
 
-Normative description: [view-transition-design.md](./view-transition-design.md) §7.2 (written against the 3.x drain).
+Normative description: [view-transition-design.md](./view-transition-design.md) §7.2.
 
 ---
 
