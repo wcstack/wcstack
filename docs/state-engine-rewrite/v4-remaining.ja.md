@@ -780,3 +780,10 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - ドキュメントの rc の例と state README の CDN のピンは rc.2 に合わせた。
 - rc.2 の 1 回目の実行（run 37154155325、385d5c2f）は「Install dependencies」で止まった（公開の前なので何も出ていない）。server の lockfile は `../state` へのリンクを記録しており（main でも同じ。公開後の lock の同期がそう書く）、`npm ci` はリンク先の版を範囲と突き合わせる。手で版だけを rc.1 にしたので、server の `^3.5.4` が state の 4.0.0-rc.1 を満たさなかった。workflow は版上げの前に `npm ci` するので、自分の実行ではこうならない。rc.1 の実行が公開の後にしたはずのこと（server と testing の内部の範囲を厳密な rc.1 にし、lockfile を同期する）を commit して、全パッケージのクリーンな `npm ci` を確かめてから再実行した。
 - A1（`@wcstack/state`（`.`）から `defineState` だけを import してもエンジン、約 21 KB が残る）: 4.0 の仕様として受け入れる（2026-10-04、ユーザーの決定）。型だけが要る用途には `@wcstack/state/define`（40 B）を案内する（移行ガイド §3.7・state README）。
+
+### 4.0.0-rc.2 の公開（2026-10-04）
+
+- `prerelease-rc` の 2 回目の実行（run 37154825167、3b96e9ab）で公開した。全 49 パッケージが npm の `next` で 4.0.0-rc.2（`latest` は 3.5.4 のまま）。タグ `v4.0.0-rc.2` と GitHub のプレリリース。bump の commit は 4436fa72。
+- 確かめたこと: 全パッケージの dist-tag、server の依存と testing の peer が厳密な `4.0.0-rc.2`、state README の CDN のピン（`@4.0.0-rc.2/dist/split/…`）と `esm.run` の `/auto`（state・router・wcstack）がどれも 200。
+- サイズと結合のゲートの基準値を rc.2 の dist で取り直した。core.min.js 19,530B（上限 20,000B）、split core 23,652B、`index.esm.js` 49,331B、`auto.min.js` 46,249B（gzip）。
+- 残り: rc.1 の 31 パッケージの deprecate（ユーザー）。rc を試してもらった結果で必要なら rc.3。4.0.0 は §6 の手順（main へのマージ → main で `release`。拡張 2.0.0・スキル v4.0.0・CDN のピンを 4.0.0 に）。
