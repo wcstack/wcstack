@@ -1,8 +1,8 @@
-# @wcstack/state 3.x → 4.0 移行ガイド（プレビュー）
+# @wcstack/state 3.x → 4.0 移行ガイド
 
 **English**: [migration-v4.md](./migration-v4.md)
 
-> **プレビュー — 4.0 はまだリリースされていません。** このガイドは、開発中（2026 年 10 月時点）の 4.0 のエンジンについて書いたもので、3.x の利用者が前もって準備できるように公開しています。名前・メッセージ・細部はリリースまでに変わることがあります。*（未確定）* と書いた項目は、見直し中と分かっているものです。最終的な一覧は [CHANGELOG](../CHANGELOG.md)（英語）の 4.0.0 の項になります。
+> **4.0 はリリース候補として出ています。** `4.0.0-rc.N` を npm の `next` タグで公開しています（`npm i @wcstack/state@next`。ほかの `@wcstack/*` パッケージも同じタグ）。4.0.0 はその後に `latest` で出ます。このガイドは、リリース候補が出している 4.0 について書いています。変更の要約は [CHANGELOG](../CHANGELOG.md)（英語）の 4.0.0 の項に、既知の制限は §5 にあります。
 
 **対象**: `@wcstack/state` 3.x を使っているアプリの開発者です。`@wcstack/state`・`/auto`・分割エントリ・`wcstack/auto` のどれで読み込んでいるかは問いません。一緒にリリースされるパッケージ（`@wcstack/router`・`@wcstack/server`・I/O ノードのパッケージ・`@wcstack/lint`）も含みます。
 
@@ -46,11 +46,12 @@
 - [ ] `for:` / `if:` のテンプレートの中の `outerHTML:` / `outerText:` を、包む要素の `innerHTML:` に置き換える（§3.4）。
 - [ ] `for:` のフィルタを、フィルタを通したリストを返す getter に置き換える（§3.4）。
 - [ ] ボリュームの `$watch` / `$listKeys` / `$renderedCallback` を、ルートの状態へ移す（§3.5）。
-- [ ] ボリュームへの注入を、ルートの状態の getter に置き換える（§3.5）。
+- [ ] ボリュームへの注入を、ルートの状態の getter に置き換え、ボリュームの要素から `data-wcs` をすべて外す（§3.5）。
 - [ ] `listPaths` / `getterPaths` / `setterPaths` / `nextVersion()` を使っている箇所を置き換える（§3.7）。
+- [ ] `defineState` を `@wcstack/state` ではなく `@wcstack/state/define` から import する（§3.7）。
 - [ ] `/core` のページ: `$listKeys` を使うなら `features/list-keys` を入れる（§3.8）。
 - [ ] `/core` のページ: 開発中は `features/diagnostics` を入れる（§3.8）。
-- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、数値の添字を持つキーや、複数の行が持つ配列の `$watch`、リストの代入で残った行の、行 getter の `$watch`、リストの末尾より先の読み（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。
+- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、リストの末尾より先の読み（§3.4）。`$watch` のハンドラが呼ばれる場面 — `for:` の無い行の watch、行 getter の watch、配列の丸ごとの代入、数値の添字を持つキー、複数の行が持つ配列（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。
 - [ ] `@wcstack/lint` 4.0 を流し、報告を直す（§4）。
 
 > **コメントバインディングは残ります。** `<!--@@: path-->` と `<!--@@wcs-text: path-->` は 4.0 でも使えます。lint が、描画前の表示のちらつき（FOUC）を避けるために `<template>` の外の `{{ }}` の代わりに勧めている書き方で、4.0 は `enableMustache` を切っていてもバインドします。なくなるのは、キーワードを変える `commentTextPrefix` オプションだけです。詳しくは §3.4。
@@ -61,7 +62,7 @@
 
 ### 1.1 メジャー版を固定して、3.5 にする
 
-`https://esm.run/@wcstack/state/auto` は最新版を指すので、4.0 が公開された日から 4.0 を読み込みます。移行が終わるまでは、メジャー版を固定してください。固定した URL は 3.5 を読み込みます。
+`https://esm.run/@wcstack/state/auto` は最新版を指すので、4.0.0 が公開された日から 4.0 を読み込みます（`next` のリリース候補は届きません）。移行が終わるまでは、メジャー版を固定してください。固定した URL は 3.5 を読み込みます。
 
 ```html
 <script type="module" src="https://esm.run/@wcstack/state@3/auto"></script>
@@ -173,10 +174,10 @@ export default {
 
 ## 2. 4.0 に上げる
 
-- すべての `@wcstack/*` パッケージを同じ 4.0 の版にします。
+- すべての `@wcstack/*` パッケージを同じ 4.0 の版にします。4.0 がリリース候補のあいだは `next` タグから取るか（`npm i @wcstack/state@next @wcstack/router@next …`）、版を名指しします（`4.0.0-rc.1`）。
 - `@wcstack/server` 4.0 と 4.0 のクライアントを一緒にデプロイします（§3.6）。
-- CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。
-- `@wcstack/lint`・`@wcstack/typescript`・VS Code 拡張の 4.0 の規則は、4.0 と同時に出すリリースに入ります。3.x のプロジェクトでは 3.5 のものを使い続けてください。4.0 の規則は、3.x が受け付ける書き方も報告します。
+- CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。`@4` が解決するのは 4.0.0 の公開後です。範囲の指定はリリース候補を選ばないので、試すときは版を名指しします（`https://esm.run/@wcstack/state@4.0.0-rc.1/auto`）。
+- `@wcstack/lint` と `@wcstack/typescript` はどの `@wcstack/*` のリリースでも一緒に上がるので、リリース候補から 4.0 の規則を持ちます（`npx @wcstack/lint@next <files>`）。VS Code 拡張は 2.0.0 として 4.0.0 と同時に出します。3.x のプロジェクトでは 3.5 のもの（拡張は 1.21.x）を使い続けてください。4.0 の規則は、3.x が受け付ける書き方も報告します。
 
 **4.0 のエラーの出方。** メッセージには lint と同じ `[wcs/<code>]` が付き、多くには番号も付きます。
 
@@ -309,7 +310,7 @@ autoloader の `scanImportmap` オプションは削除されます。3.x は受
 
 `#direct` は 3.x のうちに付けておけます（§1.7）。
 
-探し方: 3.5 の lint は、`event.currentTarget` を読む、バブリングするイベントのハンドラを報告します（`wcs/v4-migration`）。ページ側のコードがリスナーを付けた要素の中の `#stop`、ページ側のコードの `stopPropagation()`、ルートをまたいで移す要素は見えないので、自分で探してください。4.0 の lint は、イベント以外のバインディングに `#direct` を付けると警告します（`wcs/template-syntax`）。
+探し方: 3.5 の lint は、`event.currentTarget` を読む、バブリングするイベントのハンドラを報告します（`wcs/v4-migration`、info）。4.0 の lint は同じハンドラを `wcs/delegated-current-target`（warning）で報告します — 委譲されるイベントの `#direct` の無い `on*:` で、ハンドラが最初の `await` より前にイベントの引数の `currentTarget` を読むものです。どちらにも、ページ側のコードがリスナーを付けた要素の中の `#stop`、ページ側のコードの `stopPropagation()`、ルートをまたいで移す要素は見えないので、自分で探してください。4.0 の lint は、イベント以外のバインディングに `#direct` を付けると警告します（`wcs/template-syntax`）。
 
 ### 3.4 描画とバインディングの規則
 
@@ -374,9 +375,9 @@ this.items = items;
 
 `for:` の行の中のバインディングで、ある段の `*` が、その段を囲む `for:` とは別のリストの行を指すもの（`for: a` の中の `{{ b.*.y }}`）は、ページの初期化で `[wcs/wildcard-rank] #1403` で throw します。3.x は、そのバインディングごとに `ListIndex not found` で失敗させていました。別のリストの行は、getter の中で `$resolve(path, indexes)` を使って読んでください。3.5 の lint は警告し、4.0 の lint は `wcs/wildcard-rank`（warning）で報告します。
 
-#### マークアップの誤りで初期化が止まる *（未確定）*
+#### マークアップの誤りで初期化が止まる
 
-今のプレビューでは、読めないバインディング（構文の誤り、知らないフィルタ、wildcard-rank の誤り）があると、バインドはそこで止まります。ページの直下なら `<wcs-state>` の初期化が失敗し（`connectedCallbackPromise` が reject）、誤りより後ろのバインディングは付きません。`for:` / `if:` の行の中でバインディングを付けるときに見つかった誤り（宣言の無いトークンや wcBindable のメンバーなど）は、そのバインディングの失敗として `$errorCallback` に届き、行は組み上がります。同じ誤りでも、ページの直下では初期化が失敗します。3.x は、ページの直下の誤りを報告して、そのバインディングだけを失敗させていました。この挙動は見直し中です。デプロイの前に 4.0 の lint を流してください。初期化の失敗は、3.5 と同じく `console.error` に 1 回、まず要素と状態の読み込み元（`<wcs-state src="./state.js"> failed to initialize.`）、続けてエラーの順に出ます。バインディングを組み上げた後に `$connectedCallback` が throw・reject するのは、初期化の失敗ではありません: `<wcs-state …> $connectedCallback failed.` に続けてエラーが出て、`connectedCallbackPromise` はそのエラーで reject し、ページは組み上がっているので `getBindingsReady()` は resolve します。
+読めないバインディング（構文の誤り、知らないフィルタや引数の数の誤り、wildcard-rank の誤り、フィルタ付きの `for:`、テンプレートの中の `outerHTML:`）があると、走査はそこで止まります。ページの直下なら `<wcs-state>` の初期化が失敗し（`connectedCallbackPromise` が reject）、文書の順で誤りより前のバインディングは付いて書き込みに追従し、後ろのバインディングは付きません。初期化に失敗した要素は組み直せず、`setInitialState()` は throw します（#14）。外して新しい要素を作ってください。`for:` / `if:` の行の中でバインディングを付けるときに見つかった誤り（宣言の無いトークンや wcBindable のメンバーなど）は、そのバインディングの失敗として `$errorCallback` に届き、行は組み上がります。同じ誤りでも、ページの直下では初期化が失敗します。3.x は、ページの直下の誤りを報告して、そのバインディングだけを失敗させていました。デプロイの前に 4.0 の lint を流してください。これらの書き方を報告します（§4.1）。初期化の失敗は、3.5 と同じく `console.error` に 1 回、まず要素と状態の読み込み元（`<wcs-state src="./state.js"> failed to initialize.`）、続けてエラーの順に出ます。バインディングを組み上げた後に `$connectedCallback` が throw・reject するのは、初期化の失敗ではありません: `<wcs-state …> $connectedCallback failed.` に続けてエラーが出て、`connectedCallbackPromise` はそのエラーで reject し、ページは組み上がっているので `getBindingsReady()` は resolve します。
 
 #### コメントバインディング
 
@@ -397,17 +398,24 @@ this.items = items;
 
 ページの直下では、要素の子を先にバインドしてから、要素自身のバインディングを付けます。そのため、カスタム要素への最初のプロパティの書き込みの順と、`$errorCallback` に失敗が届く順は、3.x と逆になります（子が先）。テンプレートの中は、これまでどおり文書の順です。
 
+#### `$watch` のハンドラが呼ばれる場面
+
+`$watch` のハンドラは、これまでどおり更新のバッチの終わりに、`cur`・`prev`・行の添字を受け取って走ります。行のパスのハンドラを呼ぶものが変わりました。
+
+- **行の watch に `for:` も `$listKeys` も要りません。** `$watch: { "items.*.price"(cur, prev, i) { … } }` は、ページが描いていないリストでも発火します。4.0 は、行の watch がまたがるリストを自分で追従させます。3.x では、`for:` のバインディングも `$listKeys` も無いと、リストを代入してもこの watch は一度も発火しませんでした。
+- **行 getter の watch は先行して評価されます。** ワイルドカードの getter（`get "items.*.total"()`）の watch は、watch が始まるときにすべての行で getter を評価し、行ごとに、読んだものが変わるたびに評価し直します。バインディングがそれを表示しているかどうかは問いません。`prev` はその行の前の値です。3.x では、getter が DOM にもバインドされているところでしか発火せず、`prev` は常に `undefined` でした。getter はリストのすべての行で走るようになるので、watch する行 getter は軽く、副作用の無いものにしてください。
+- **配列を丸ごと代入すると、入ってきた行だけが発火します。** 行は新しい配列の要素と同一性で対応付けられます。行の watch は、前のリストに無かった要素で発火し（`prev` は `undefined`）、代入で残った行では発火しません（並べ替えではデータの行の watch は 1 つも発火しません）。残った行の getter の watch（`items.*.label`）は、値が変わったときだけ発火します。ただし、同じバッチの書き込みが、その getter が行の外で読んだもの — `now`、`items.length`、それらを読むルートの getter（`get count() { return this.items.length }`）— を変えたとき、または別の行の同じパス（`items.0.due`）に書いたときは発火します（#389）。3.x では、描いているリストに配列を丸ごと代入すると、データの行の watch（`items.*.price`）は、`$listKeys` を宣言していない限りすべての行で `prev` を `undefined` にして発火し、3.5.1 は、行 getter の watch を、getter を DOM に束ねていれば残った行すべてで、値の変化に関わらず発火させていました。`$listKeys` があれば、3.x と同じく、取り直した配列は変わったフィールドだけを残った行に書き込み、その書き込みが発火します。
+- **キーの数値の添字**（`"items.0.v"`）は、その添字の値が変わったときだけ発火します。3.x（3.4 以降）は、添字を通した書き込み、要素の差し替え、リストのどの行への書き込みでも発火し、値が変わっていないこともありました。
+- **複数の外側の行が持つ配列。** その要素への書き込みは、`$watch("groups.*.items.*")` を、配列を持つ外側の行ごとに 1 回ずつ、それぞれの添字で発火させます。その配列を持つどのパスでも値が変わったためです。3.x は、書いた位置で 1 回だけ発火させていました。
+
 #### 小さな違い
 
 - 状態に無いトップレベルのキーに書き込むと、そのキーが作られます（3.x は書き込みが失敗しました）。読むのはこれまでどおり `[wcs/binding-path-missing]` で throw します。
-- 再設定（初期化済みの要素への `setInitialState()`）の新しい状態に、古い状態にあったトップレベルのキーが無いと、そのキーが書き込まれるまで、そこへのバインディングは空になり、その下のリストは行を描かず、それを読む getter は `undefined` を得ます。新しい状態に無い深いパスは、もともとこうでした。3.x はそのバインディングとリストを失敗として報告し、古いテキストと行をページに残しました。新しい状態のオブジェクトには書き込みません（凍結した状態でも再設定できます）。例外はクラスの状態のプロトタイプにある getter で、新しい状態にそれが無いと、3.x と同じくそこへのバインディングは失敗します。
+- 再設定（初期化済みの要素への `setInitialState()`）の新しい状態に、古い状態にあったトップレベルのキーが無いと、そのキーが書き込まれるまで、そこへのバインディングは空になり、その下のリストは行を描かず、それを読む getter は `undefined` を得ます。新しい状態に無い深いパスは、もともとこうでした。3.x はそのバインディングとリストを失敗として報告し、古いテキストと行をページに残しました。新しい状態のオブジェクトには書き込みません（凍結した状態でも再設定できます）。例外はクラスの状態のプロトタイプにある getter で、新しい状態にそれが無いと、3.x と同じくそこへのバインディングは失敗します（§5）。
 - `__proto__` か `prototype` を通るパスは `[wcs/binding-syntax] #120` で throw します。バインディング、書き込み、`$resolve`、`$setAll`、`this.__proto__` のような読みが対象です。
 - `state="id"` は、その id の `<script type="application/json">` だけを読みます。
-- 数値の添字を持つ `$watch` のキー（`"items.0.v"`）は、その添字の値が変わったときだけ発火します。3.x（3.4 以降）は、添字を通した書き込み、要素の差し替え、リストのどの行への書き込みでも発火し、値が変わっていないこともありました。
 - `$watch` のハンドラと `$stream` の再開の連鎖が上限を超えると（3.x と同じく、深さ 32 を超えた書き込み）、その書き込みが起こしたハンドラと再開だけを飛ばし、同じバッチのほかのハンドラは動きます。3.x はバッチごと飛ばしていました。再開の書き込みは描画の連鎖（100 回の drain）にも数えます。microtask ごとに続く要素の書き戻しが stream を再開させると、50 回ほどで打ち切られます（stream が無ければ 100 回）。
 - `$stream` の source が実行の開始（再開）と同じタスクの中で（同期に、または microtask で）出した値は、それが起こす再開の連鎖に数えます。値が別の stream の `args` に届くと、その stream は 1 段深く再開します。そのため、すぐに値を出す source で互いの値を読む 2 本の stream は、ページを固めずに打ち切られます。後のタスクで届いた値と、値が起こす `$watch` のハンドラは、数え直しです。
-- リストの代入や並べ替えで残った行の、行 getter の `$watch`（`items.*.label`）は、値が変わったときだけ発火します。ただし、同じバッチの書き込みが、その getter が行の外で読んだもの — `now`、`items.length`、それらを読むルートの getter（`get count() { return this.items.length }`）— を変えたとき、または別の行の同じパス（`items.0.due`）に書いたときは発火します。3.5.1 は、getter を DOM に束ねていれば、残った行を値の変化に関わらずすべて発火させ、getter が同じオブジェクトを返すときだけ発火させませんでした。
-- 複数の外側の行が同じ配列を持つとき、その要素への書き込みは、`$watch("groups.*.items.*")` を、配列を持つ外側の行ごとに 1 回ずつ、それぞれの添字で発火させます。その配列を持つどのパスでも値が変わったためです。3.x は、書いた位置で 1 回だけ発火させていました。
 - リストの末尾より先の添字: 書き込み（`this["items.5.v"] = 1`、`$resolve("items.*.v", [5], 1)`）は `no row for "items.*.v"` で throw して何も変えず、読みは `undefined` を返します。3.x は、どちらも `ListIndex not found` で throw していました。
 
 ### 3.5 ボリュームとマウントしたコンポーネント
@@ -421,9 +429,12 @@ this.items = items;
 | `$behavior`・`$features` | — | 拒否 |
 | `$commandTokens`・`$eventTokens`・`$on`・`$errorCallback` | 実行しない、警告 | 実行しない、`console.warn` |
 | ボリュームの要素への注入（`data-wcs="state.taxRate: settings.taxRate"`、3.1） | 使える | 拒否: ボリュームは接ぎ木されず、`console.error` |
+| ボリュームの要素のほかの `data-wcs`（`data-wcs="class.ready: loaded"`） | — | 注入と同じく拒否。`<wcs-state mount>` の `data-wcs` 属性は、何を書いていても注入として数える |
+| ルートの状態がすでに持つパスへのマウント（ルートのキー `cart` があるときの `mount="cart"`） | 接ぎ木しない: 衝突の誤りを、`console.error` に `volume "cart" failed to graft.` として報告 | 接ぎ木しない: `console.error` に `will not graft: the root state already has "cart".` |
+| 初期化した後の `mount` の変更 | 無視して `console.warn` | 何も言わずに無視（要素はこの属性を監視しない） |
 | ボリュームのメソッド | 木に出ない | パスで呼べる（`onclick: p.method`・`this["p.method"]`） |
 
-メッセージは `[@wcstack/state] <wcs-state mount="p">` に続けて、`$watch is not run in a volume — declare it on the root state.`、`injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.` と出ます。拒否されたボリュームも、`connectedCallbackPromise` は resolve します。
+メッセージは `[@wcstack/state] <wcs-state mount="p">` に続けて、`$watch is not run in a volume — declare it on the root state.`、`injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.` と出ます。拒否されたボリュームも、`connectedCallbackPromise` は resolve します。ボリュームを別のパスへ移すには、要素を外して新しい `mount` の要素を足します。ボリュームの要素そのものに何かをバインドしたいときは、自前の要素で包んでください。
 
 宣言は、パスを全部書いた形でルートの状態に移します。ルートのハンドラの中の `this` はルートの状態なので、パスはルートから書きます（`this["cart.items"]`）。
 
@@ -503,13 +514,24 @@ export default {
 | `@wcstack/state/parser` の結果 | `uuid` が無い。パスの `__proto__` / `prototype` の段を #120 で拒む |
 | `@wcstack/state/manifest` | 旧名の表は空（`builtinFilterAliases` は `{}`）。`$scan` は予約名から外れた。`$behavior`・`$features` を予約。`behaviorOptions`・`features` を追加 |
 | `defineState` の型 | `$trackDependency` / `$untrackDependency` が無い |
+| バンドラを通した、`import { defineState } from "@wcstack/state"` だけの import | エンジンが残る: gzip で約 21 KB（3.x は `defineState` まで tree-shake できた）。`@wcstack/state/define`（69 B、ランタイムなし）から import する |
 | `installFeatures()` | 入れ済みの機能は飛ばす（3.x は毎回 `install()` を呼んでいた。どちらも冪等） |
 | `@wcstack/state` | 型 `IStateElement` も export する |
+
+型だけが要る状態のファイルは、`defineState` を `@wcstack/state/define` から import してください。アイデンティティ関数と型だけを持ち、ほかには何も持ちません。
+
+```ts
+// 4.0: 状態のファイルにエンジンを持ち込まない
+import { defineState } from "@wcstack/state/define";
+```
+
+バンドラは、4.0 のエンジンのモジュールを `@wcstack/state` の入口から落とせないので、そこから `defineState` だけを import してもエンジン全体（gzip で約 21 KB）が残ります。どのみちエンジンを動かすバンドルでは損はありませんが、エンジン抜きで状態のファイルを束ねるところ — ランタイムを CDN から読むページ、状態の型検査やテストだけのビルド — では効いてきます。
 
 ### 3.8 分割エントリと機能
 
 - **`$listKeys` は core の外**の新しい機能 `@wcstack/state/features/list-keys` に移りました。`@wcstack/state` と `/auto` は含みます。`$listKeys` を使う `/core` のページは、これを入れる必要があります。入れないと、状態が `[wcs/feature-not-installed] $listKeys needs the add-on @wcstack/state/features/list-keys` で失敗します。
 - `features/temporal` が受け持つのは `$watch` と `$stream` です（`$scan` はなくなりました）。
+- **`/core` は 24 の論理フィルタを持ちます** — 比較（`eq`・`ne`・`not`・`lt`・`le`・`gt`・`ge`）、算術（`add`・`sub`・`mul`・`div`・`mod`・`abs`・`clamp`）、変換（`int`・`float`・`boolean`・`number`・`string`・`truthy`・`falsy`）、既定値（`defaults`・`coalesce`・`nullIfEmpty`）。3.x の `/core` が答えるのは `not` だけで、ほかのフィルタにはどれも `features/formats` が要りました。`features/formats` が持つのは、書式の 23 のフィルタ（`upper`・`date`・`round`・`truncate` …）になりました。論理フィルタのためだけにこれを入れていた `/core` のページは、外せます。これを入れずに書式のフィルタを使うと、その機能を名指しした `[wcs/filter-unknown]` で失敗します。
 - `features/diagnostics` を入れない `/core` では、メッセージが番号になります（§2）。開発中は `diagnostics` を入れてください。
 - 3.x と同じく、`installFeatures([...])` は `bootstrapState()` の前に呼びます。機能を入れる前に、その機能のキーを宣言した状態が定義されると、`[wcs/feature-not-installed]` で失敗します。
 - `dist/split/chunks/` の下のファイル名に、中身のハッシュが付くようになりました。チャンクのファイルを自分で並べている場合（preload のリンク、import map の `integrity`）は、4.0 のビルドから名前を取り直してください。
@@ -532,14 +554,14 @@ export default {
 - **`@wcstack/router` 3.5 以降**（3.5 に上げた時点で入ります）
   - 表示中のルートの内容の終わりに、コメント `<!--@@wcs-route-end:/path-->`（SSR の終了マーカーと同じ文字）が入ります。outlet の子ノードが 1 つ増えます。`:empty` には影響しません。
   - ルートを出るときは、ルートの始まりからこの印までをまとめて取り出し、入るときに戻します。`@wcstack/state` がそこに描いた行・枝や、自分のコードが差し込んだノードも一緒に出入りします。3.4.0 までの router は元のノードだけを出し入れし、ほかは outlet に残っていました。戻るのは取り出したものだけなので、自分のコードがルートの本文から取り除いた直下のノードは、次に入っても戻りません。表示中のルートをもう一度表示するとき（パラメータの変化）は、内容を取り出して同じ順で戻すので、中のカスタム要素は 1 回だけつながり直し、新しいパラメータを読みます。入れ子のルートでも同じです（3.4.0 までの router は元のノードを 1 つずつ入れ直して並びを崩し、要素で包んだ入れ子のルートでは 2 回つながり直して、1 回目は古いパラメータを読んでいました）。
-  - `<wcs-route>` の直下に置いた `for:` / `if:` のテンプレートは、`@wcstack/state` 4.0 と組み合わせると、ナビゲーションで入ったときにも描かれます。3.4.0 までの router、`<wcs-head>` の中、ほかのコードが差し込んだ内容では、4.0 は描かずに `[wcs/template-syntax] #204` をコンソールに出します。3.x はこの形を一度も描きませんでした。要素で包めば、どの組み合わせでも描かれます。
+  - `<wcs-route>` の直下に置いた `for:` / `if:` のテンプレートは、`@wcstack/state` 4.0 と組み合わせると、ナビゲーションで入ったときにも描かれます。`<wcs-layout>` のテンプレートの先頭に置いたものも同じで（レイアウトの outlet も同じ形で内容を渡します。shadow root をページの状態がバインドしない `enable-shadow-root` では描かれません）、着地のルートでもナビゲーションでも描かれ、行や枝はルートと一緒に出入りします。3.4.0 までの router、`<wcs-head>` の中、ほかのコードが差し込んだ内容では、4.0 は描かずに `[wcs/template-syntax] #204` をコンソールに出します。3.x はこの形を一度も描きませんでした。要素で包めば、どの組み合わせでも描かれます。
   - `<wcs-layout>` の中のルートの内容と、レイアウトのテンプレート自身のバインディングも、最初にナビゲーションで入ったときからバインドされます（3.4.0 までの router では、ナビゲーションで入るとバインドされず、中の `for:` はその後に入り直しても描かれませんでした）。
   - 変わらない制限: ルートの本文やレイアウトのテンプレートの直下に、要素で包まずに書いたテキストの `{{ }}` は、ナビゲーションで入ったときにはバインドされません。要素で包んでください。
 - **`@wcstack/server`**: §3.6。
 - **`@wcstack/autoloader` と I/O ノードのパッケージ**: `bootstrapXxx()` のオプションの規則と `scanImportmap`（§3.2）。
 - **`wcstack/auto`** は `@wcstack/state`・router・fetch・storage・autoloader を同梱しているので、ここまでの変更がすべて及びます。
-- **`@wcstack/devtools`**: そのまま動きます（フックのプロトコル v2）。1 回の更新が 32 回のパスで落ち着かないときも `state:render-chain-limit` を送ります（`maxDepth: 32`）。
-- **binder プロトコル**: `bind(subtree, options?)` に省略できる第 2 引数が加わります。内容を差し込み、後でひとまとまりとして出し入れするコード（3.5 以降の router）は `{ range: true }` を渡し、そのときだけ差し込んだ内容の先頭の `for:` / `if:` のテンプレートが描かれます。binder を自分で呼ぶ場合だけ関係します。
+- **`@wcstack/devtools`**: そのまま動きます（フックのプロトコル v2）。1 回の更新が 32 回のパスで落ち着かないときも `state:render-chain-limit` を送ります（`maxDepth: 32`）。カバレッジのビューは、`for:` も `$listKeys` も無い行の `$watch` を、発火するまで `prerequisite-missing` ではなく `never` と出します。その前提は 3.x のものでした（§3.4）。
+- **binder プロトコル**: `bind(subtree, options?)` に省略できる第 2 引数が加わります。内容を差し込み、後でひとまとまりとして出し入れするコード（3.5 以降の router。ルートの内容とレイアウトの内容）は `{ range: true }` を渡し、そのときだけ差し込んだ内容の先頭の `for:` / `if:` のテンプレートが描かれます。binder を自分で呼ぶ場合だけ関係します。
 - **[wcstack-app skill](https://github.com/wcstack/wcstack-skill)** は、別に 4.0 に合わせて更新します。
 
 ## 4. 影響する箇所を探す
@@ -548,7 +570,7 @@ export default {
 
 ### 4.1 4.0 の lint
 
-4.0 の公開後に `npx @wcstack/lint@4 <files>` を流します（VS Code 拡張も同じコードを出します）。`--strict` を付けると warning でも CI が失敗します。下の warning のうち 2 つは実行時に throw するので、付けると役に立ちます。`--strict` では、`src=` で読み込むボリュームのパスへの誤った警告（§3.5）も失敗になる点に注意してください。
+`npx @wcstack/lint@4 <files>` を流します。4.0 がリリース候補のあいだは `@next` です（VS Code 拡張 2.0 も同じコードを出します）。4.0 の lint に `wcs/v4-migration` はありません。3.5 が info で知らせていたものは、4.0 ではその場で壊れるので、それぞれのコードの error か warning になります。`--strict` を付けると warning でも CI が失敗します。下の warning のうち 2 つは実行時に throw するので、付けると役に立ちます。`--strict` では、`src=` で読み込むボリュームのパスへの誤った警告（§3.5）も失敗になる点に注意してください。
 
 | コード | 報告するもの | 重大度 |
 |---|---|---|
@@ -561,6 +583,7 @@ export default {
 | `wcs/features-invalid` | 配列でない `$features`、ボリュームの `$features`（error）。文書のルートでない `<wcs-state>` の `features=`（warning） | error / warning |
 | `wcs/volume-declaration` | ボリュームの `$stream`・`$watch`・`$listKeys`・`$renderedCallback`（error）、`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback`（warning） | error / warning |
 | `wcs/template-syntax` | `for:` / `if:` の中の `outerHTML:` / `outerText:`（error）。イベント以外のバインディングの `#direct`（warning） | error / warning |
+| `wcs/delegated-current-target` | 委譲されるイベントの、`#direct` の無い `on*:` のハンドラが `event.currentTarget`（4.0 ではルート。§3.3）を読む — 3.5 では `wcs/v4-migration` で報告していたもの | warning |
 | `wcs/wildcard-rank` | 行の中の別のリストの `*`（#1403）。どの `for` の外にもあるパターンのパス・省略パス・ループのインデックス | warning（実行時は throw） |
 | `wcs/binding-syntax` | パスの `__proto__` / `prototype` の段、`for:` のフィルタ | error |
 | `wcs/index-param-range` | `for` の中の `$129` 以上。スクリプトの `this.$0`・`this.$129` | error |
@@ -598,9 +621,18 @@ lint に見えないもの: `bootstrapXxx()` のオプション、委譲され�
 | `[wcs/feature-unknown] "<name>" is not an add-on (…).` | — | 3.8 |
 | `[wcs/template-syntax] a "for:" template at the top of inserted content was not rendered, …` | #204 | 3.9 |
 
-## 5. プレビューの既知の制限 *（未確定）*
+## 5. 既知の制限
 
-- **1 つのオブジェクトが 2 つの行から届く。** 同じオブジェクトを 1 つのリストの 2 つの位置に置くと、片方の行の下への書き込み（`this["items.0.name"] = "z"`）は、もう片方の行のバインディングと行 getter に届きません。素の読み、ルートの getter、`$getAll` は新しい値を返します。1 つのオブジェクトが 2 つのリストから届く場合も同じです。TodoMVC 風の絞り込み（`todos` を絞り込んだ写しを返す `get shown()` を `for: shown` で描き、checkbox が行に書き込む形）が当たります。getter が `todos` そのものを返すのに戻ると、引き継いだ行は描き直されます。3.x にも同じ問題があります（#365）。4.0 の既知の制限として記録されており、範囲は見直し中です。
-- **プレーンなオブジェクトの下の数値のキー**（`sales.2024.total`・`usersById.42.name`）。マークアップでは描かれますが、4.0 ではスクリプトの読み（`this["sales.2024.total"]`、getter の中も）が `undefined` になり、そのパスへの `$eq` は常に偽になり、書き込みは `no row for "sales.*.total"` で throw し、双方向の書き戻しも失敗します。3.x（3.4 以降）は、これまでどおり素のキーとして読み、`$resolve` / `$setAll` では素のキーとして書きます。決まるまでは、読みは `this.sales[2024].total` と書き、書き込みはトップレベルのキーに新しいオブジェクトを代入するか（`this.sales = { ...this.sales, 2024: { ...this.sales[2024], total: 10 } }`）、数値でないキーを使ってください。
-- **再セットの後**、`Object.keys(this)`・`in`・`delete`・`JSON.stringify(this)` は古い状態を見ます。
-- **マークアップの誤りと初期化**: §3.4 を参照。
+次の場合は 4.0 で分かっている制限で、4.0.x で直す予定です。どれにも回避の方法があります。
+
+- **1 つのオブジェクトが 2 つの行から届く。** 同じオブジェクトを 1 つのリストの 2 つの位置に置くと、片方の行の下への書き込み（`this["items.0.name"] = "z"`）は、もう片方の行のバインディングと行 getter に届きません。素の読み、ルートの getter、`$getAll` は新しい値を返します。1 つのオブジェクトが 2 つの配列から届く場合 — TodoMVC 風の絞り込み（`todos` を絞り込んだ写しを返す `get shown()` を `for: shown` で描き、行の checkbox が `done` に書き込む形）— では、書き込みは `for: todos`、`todos.*` のパスを読む getter（`$getAll("todos.*.done")`）、絞り込みそのものにも届きません。チェックした行は「未完了」の表示に残ります。getter が `todos` そのものを返すのに戻ると、引き継いだ行は描き直されます — ほかのリストが前の更新でその配列に移っていた場合を除きます。3.x にも同じ問題があります（#365）。行の下に書き込む代わりに、変わった要素を差し替えるか（`this.todos = this.todos.map((x) => x === t ? { ...x, done: !x.done } : x)`）、書き込みの後に `this.$postUpdate("todos")` を呼んでください。
+- **プレーンなオブジェクトの下の数値のキー**（`sales.2024.total`・`usersById.42.name`）。マークアップでは描かれますが、4.0 ではスクリプトの読み（`this["sales.2024.total"]`、getter の中も）が `undefined` になり、そのパスへの `$eq` は常に偽になり、書き込みは `no row for "sales.*.total"` で throw し、双方向の書き戻しも失敗します。3.x（3.4 以降）は、これまでどおり素のキーとして読み、`$resolve` / `$setAll` では素のキーとして書きます。読みは `this.sales[2024].total` と書き、書き込みはトップレベルのキーに新しいオブジェクトを代入するか（`this.sales = { ...this.sales, 2024: { ...this.sales[2024], total: 10 } }`）、数値でないキーを使ってください。
+- **再セットの後の状態の列挙。** 初期化済みの要素に `setInitialState()` をした後も、`Object.keys(this)`・`in`・`delete`・`for…in`・スプレッド（`{ ...this }`）・`JSON.stringify(this)` は、要素が最初に持った状態のキーで動きます。新しい状態にだけあるキーは出ず、落としたキーは出たままです。名前を指した読み書きには影響しません。列挙や直列化をするデータは、1 つのキーの下にまとめてください（`JSON.stringify(this.form)`）。
+- **クラスの状態を、その getter を持たないオブジェクトで再セットする。** クラスに定義した getter で新しい状態に無いものは、再セットで落としたほかのキーのように空になりません（§3.4）。そのバインディングは古い値のまま `[wcs/binding-path-missing]` を報告し、コードから読むと throw します。同じクラスのインスタンスで再セットするか、新しい状態にもそのキーを持たせてください。
+- **すぐに値を出す source の `$watch` → `$stream` の終わりの無い循環で、ページが固まる。** stream の値の `$watch` が、その stream の `args` が読むものを変え、source が何も待たずに値を出すと（メモリから yield する async generator、`start` で enqueue する `ReadableStream`）、循環は microtask だけで回ります。連鎖の上限は 1 回報告されますが（`… the chain is cut`）、循環は止まりません。こうした循環には終わりの条件を付けてください（`if (cur.length > 0 && this.page < this.lastPage) this.page++`）。ネットワークやタイマーを待つ source なら、ページは応答し続けます。
+- **ページをバインドするときにページに無かったコンポーネントのホストは、待ち続ける。** ページがバインドするのは、`<wcs-state>` が読み込まれた時点にある `data-wcs` と、`for:` / `if:` が描くもの、router が渡すものです。`<my-card data-wcs="state: user">` のようなホストを、それより前に自分のコードが外して後で戻したり、後から初めて差し込んだりすると、配線されません。中身は生の `{{ }}` のまま、`<wcs-state bind-component>` は決着せず、何も報告されません。ホストを `for:` / `if:` のテンプレートから描くか、差し込んだ直後に渡してください: `globalThis[Symbol.for("wcstack.binder")]?.bind(host)`（binder プロトコル。[@wcstack/state の README](../packages/state/README.ja.md#挿入された内容の中の構造テンプレート)）。
+- **差し替えた `<wcs-state bind-component>` を戻す。** コンポーネントの `<wcs-state bind-component>` を新しいものに差し替え、その新しい方を外して古い要素を入れ直すと、コンポーネントは止まったままになります。ページのデータに追従せず、`$connectedCallback` も走りません。古い要素ではなく、新しい `<wcs-state bind-component>` 要素を入れてください。
+- **ページから外して戻したルートの `<wcs-state>`。** バインディングは動き続けますが、ルートが外れているあいだに接続した `<wcs-state mount>` は待ち続け（データは接ぎ木されず、`connectedCallbackPromise` は決着しません）、そのあいだに表示したルートの内容は、router がもう一度渡すまでバインドされません。ルートの `<wcs-state>` はページに置いたままにしてください。ボリュームが止まったら、ルートが戻った後で、それを外して新しい `<wcs-state mount>` 要素を入れてください。
+- **`<wcs-state>` を入れ直したときに、ルートの `$connectedCallback` が同期で投げると、** 捕まりません。最初の接続のときの `console.error` の報告ではなく、捕まらない例外として出ます。ルートの `$disconnectedCallback` が同期で投げたときも、毎回同じように外へ漏れます。これらのコールバックを `async` にするか（reject は `console.error` に報告されます）、中で捕まえてください。
+- **SSR: 1 つの `if:` / `elseif:` / `else:` の連鎖のテンプレートの間のコメント。** ハイドレーションはサーバの枝を捨てて描き直します。その中のカスタム要素は作り直され、ハイドレーションの前に打った文字は失われます。それ以外の結果は正しくなります。連鎖のテンプレートの間からコメントを外してください。空白、`if:` のテンプレートの前のコメント、枝の中のコメントは問題ありません。
+- **ページのルートを置き換えた後のメモリ。** ルートの `<wcs-state>` を、それがバインドした内容（とボリューム）ごと外すと、その状態と DOM は、別の `<wcs-state>` が同じ document か shadow root をバインドするまで — ボリュームのマウントパスについては、そのパスのボリュームがそこに接続するまで — メモリに残ります。ほかへの影響はありません。ルートの `<wcs-state>` を置いたままにするページには関係ありません。
