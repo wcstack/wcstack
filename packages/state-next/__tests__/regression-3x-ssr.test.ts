@@ -481,12 +481,10 @@ describe("#258-5 ハイドレーションした for の行・if の枝の中の 
       expectViews(r, [["1/a", "1/a"], ["10/a", "10/a"], ["20/b", "20/b"]]);
     });
 
-    // 3.x #258（bind-component の子）の修正の後半「ハイドレーションはブロックの中のカスタム要素を切断しない」が 4.0 で
-    // 再現しない: 子は親への書き込みに追従する（上の 3 つは通る）が、ハイドレーションの間に行・枝の中の要素が一度
-    // 切断されて再接続される（実測 row: connected×2 → disconnected×2 → connected×2、branch: connected → disconnected →
-    // connected / 期待 接続 1 回ずつ）。src/ssr/ssr.ts の detach() が領域のノードを文書から外し（remove()）、adopt() が
-    // DocumentFragment に入れてから view が錨の後ろへ挿し直すため（connectedCallback / disconnectedCallback が 2 回ずつ走る）
-    it.fails(`${form}: ハイドレーションで行・枝の中の子を切断・再接続しない`, async () => {
+    // 3.x #258（bind-component の子）の修正の後半「ハイドレーションはブロックの中のカスタム要素を切断しない」。4.0 は
+    // かつて領域のノードを文書から外して（detach()）view が錨の前へ挿し直し、行・枝の中の要素が一度切断されて再接続されていた
+    // （row: connected×2 → disconnected×2 → connected×2）。今はサーバーのノードをその場に残して引き取る（目印だけを外す）
+    it(`${form}: ハイドレーションで行・枝の中の子を切断・再接続しない`, async () => {
       const tag = define();
       const row = await kidCase(tag, `<div>${T("for: items", `<${tag} data-wcs="state.n: .n; state.label: .label">${body}</${tag}>`)}</div>`, rowState, []);
       const branch = await kidCase(tag, T("if: show", `<${tag} data-wcs="state: item">${body}</${tag}>`), ifState, []);
@@ -520,6 +518,155 @@ describe("#258-5 ハイドレーションした for の行・if の枝の中の 
       ["n=10d=20s=10", "n=20d=40s=20"],
       ["n=7d=14s=7", "n=8d=16s=8", "n=9d=18s=9"],
       ["n=70d=140s=70", "n=8d=16s=8", "n=9d=18s=9"],
+    ]);
+  });
+});
+
+describe("#258-5 追加: ハイドレーションはサーバーのノードをその場で引き取り、行・枝の中のカスタム要素を切断しない", () => {
+  /** `c` / `d` per connectedCallback / disconnectedCallback of the probes (and of the Light DOM kids), and the elements connected. */
+  const log: string[] = [];
+  const seen: Element[] = [];
+  const PROBE = `rx3-ssr-probe-${seq++}`;
+  const KID = `rx3-ssr-pkid-${seq++}`;
+  beforeAll(() => {
+    customElements.define(PROBE, class extends HTMLElement {
+      connectedCallback(): void { log.push("c"); seen.push(this); }
+      disconnectedCallback(): void { log.push("d"); }
+    });
+    customElements.define(KID, class extends HTMLElement {
+      state: Record<string, unknown> = {};
+      connectedCallback(): void { log.push("c"); seen.push(this); }
+      disconnectedCallback(): void { log.push("d"); }
+    });
+  });
+  const P = `<${PROBE}></${PROBE}>`;
+
+  interface Hydrated { csr: Run; ssr: Run; atLoad: string[]; connected: boolean[] }
+  /**
+   * CSR vs SSR. `atLoad` is the lifecycle while the client loaded (hydrated) the page; `connected`, for
+   * each element connected meanwhile (the server's, as the client parsed them, and any built anew),
+   * whether it is in the page then.
+   */
+  async function hydrated(html: string, state: () => any, steps: Step[], opts?: Opts): Promise<Hydrated> {
+    const c = await play(csr, html, state, steps, view, opts);
+    let atLoad: string[] | null = null;
+    let connected: boolean[] = [];
+    const s = await play(ssrLoad, html, state, steps, (r) => {
+      if (atLoad === null) {
+        atLoad = [...log];
+        connected = seen.map((e) => e.isConnected);
+      }
+      return view(r);
+    }, { ...opts, beforeClient: () => { log.length = 0; seen.length = 0; } });
+    return { csr: c, ssr: s, atLoad: atLoad!, connected };
+  }
+  /** The page as rendered — its markup, anchors included (CSR and SSR put every node in the same place) — and its text. */
+  const view = (r: ShadowRoot) => ({ html: r.querySelector("#root")!.innerHTML, text: flat(r.querySelector("#root")) });
+  const textsOf = (r: Run) => (r.views as { text: string }[]).map((v) => v.text);
+  /** Both modes give the same markup and text at each step, and no error. */
+  function expectSame(r: Hydrated): void {
+    expect(r.ssr.views).toEqual(r.csr.views);
+    expect({ csr: r.csr.errors, ssr: r.ssr.errors }).toEqual({ csr: [], ssr: [] });
+    expect(r.ssr.warns).toEqual(r.csr.warns);
+  }
+  /** Each of the `n` elements connected once, none disconnected, all still in the page. */
+  function expectInPlace(r: Hydrated, n: number): void {
+    expect(r.atLoad).toEqual(Array(n).fill("c"));
+    expect(r.connected).toEqual(Array(n).fill(true));
+  }
+
+  it("入れ子の for（行の要素の中の for と、行の直下の for）: 外と内の行の要素を切断せず、以後の書き込み・並べ替え・追加・削除が効く", async () => {
+    const html = `<div id="root">${T("for: groups", `<section>${P}<h3>{{ .t }}</h3><ul>${T("for: .items", `<li>${P}{{ .n }}</li>`)}</ul></section>`
+      + T("for: .items", `${P}<b>{{ .n }}</b>`))}</div>`;
+    const state = () => ({ groups: [{ t: "A", items: [{ n: 1 }, { n: 2 }] }, { t: "B", items: [{ n: 3 }] }] });
+    const r = await hydrated(html, state, [
+      set("groups.0.items.1.n", 20),
+      (s) => { s.groups = [s.groups[1], s.groups[0]]; },
+      (s) => { s["groups.1.items"] = [...s.groups[1].items, { n: 4 }]; },
+      (s) => { s.groups = [s.groups[1]]; },
+    ]);
+    expectSame(r);
+    // 2 sections, 3 + 3 rows of items
+    expectInPlace(r, 8);
+    expect(textsOf(r.ssr)).toEqual(["A1212B33", "A120120B33", "B33A120120", "B33A12041204", "A12041204"]);
+  });
+
+  it.each([
+    ["if: の枝", { a: true, b: true }, [set("a", false), set("b", false), set("a", true)]],
+    ["elseif: の枝（要素で包まない）", { a: false, b: true }, [set("b", false), set("a", true), set("b", false)]],
+    ["else: の枝", { a: false, b: false }, [set("b", true), set("a", true), set("a", false)]],
+  ] as const)("if / elseif / else の連鎖の %s を切断せずに引き取り（錨は CSR と同じ所）、以後の切り替えが効く", async (_name, data, steps) => {
+    const html = `<div id="root">x${T("if: a", `<p>${P}A</p>`)}\n${T("elseif: b", `${P}B`)}\n${T("else:", `<i>${P}C</i>`)}y</div>`;
+    const r = await hydrated(html, () => ({ ...data }), [...steps]);
+    expectSame(r);
+    expectInPlace(r, 1);
+  });
+
+  it("if の枝の中の for の行と、行の中の if / elseif / else（行ごとに違う枝）を切断しない", async () => {
+    const html = `<div id="root">${T("if: show", `<ul>${T("for: items", `<li>${P}{{ .n }}${T("if: .a", `${P}a`)}${T("elseif: .b", `<b>${P}b</b>`)}${T("else:", `${P}c`)}</li>`)}</ul>`)}</div>`;
+    const state = () => ({ show: true, items: [{ n: 1, a: true }, { n: 2, b: true }, { n: 3 }] });
+    const r = await hydrated(html, state, [
+      (s) => { s.items = [s.items[2], s.items[0], s.items[1]]; },
+      set("items.0.a", true),
+      push(() => ({ n: 4, b: true })),
+      set("show", false),
+      set("show", true),
+    ]);
+    expectSame(r);
+    expectInPlace(r, 6);
+    expect(textsOf(r.ssr)).toEqual(["1a2b3c", "3c1a2b", "3a1a2b", "3a1a2b4b", "", "3a1a2b4b"]);
+  });
+
+  it("行の中の行の Light DOM の bind-component の子（自分の for: の行も持つ）を切断せず、以後の書き込みが子に届く", async () => {
+    const kid = `<${KID} data-wcs="state.n: .n; state.list: .list"><wcs-state bind-component="state"></wcs-state>`
+      + `<b class="kn" data-wcs="textContent: n"></b><ul>${T("for: list", `<li>${P}{{ . }}</li>`)}</ul></${KID}>`;
+    const html = `<div id="root">${T("for: groups", `<section>${T("for: .items", kid)}</section>`)}</div>`;
+    const state = () => ({ groups: [{ items: [{ n: 1, list: ["a", "b"] }, { n: 2, list: ["c"] }] }, { items: [{ n: 3, list: [] }] }] });
+    const r = await hydrated(html, state, [
+      set("groups.0.items.1.n", 20),
+      (s) => { s["groups.0.items.0.list"] = [...s.groups[0].items[0].list, "z"]; },
+      (s) => { s.groups = [s.groups[1], s.groups[0]]; },
+    ]);
+    expectSame(r);
+    // 3 kids, 3 rows of their own lists
+    expectInPlace(r, 6);
+    expect(textsOf(r.ssr)).toEqual(["1ab2c3", "1ab20c3", "1abz20c3", "31abz20c"]);
+  });
+
+  it("プランと形の合わない行だけを、その場で作り直す（前後の行は切断せず、順序も保つ）", async () => {
+    const html = `<div id="root"><ul>${T("for: items", `<li>${P}<span data-wcs="textContent: .n"></span></li>`)}</ul></div>`;
+    const r = await hydrated(html, () => ({ items: [{ n: 1 }, { n: 2 }, { n: 3 }] }), [
+      set("items.1.n", 20),
+      (s) => { s.items = [s.items[2], s.items[1], s.items[0]]; },
+    ], { edit: (out) => out.replace("<span>2</span>", "<i></i><span>2</span>") });
+    expectSame(r);
+    // the three rows' probes as parsed, then the new row's: the server's middle row goes, the others stay
+    expect(r.atLoad).toEqual(["c", "c", "c", "c", "d"]);
+    expect(r.connected).toEqual([true, false, true, true]);
+    expect(textsOf(r.ssr)).toEqual(["123", "1203", "3201"]);
+  });
+
+  it("クライアントの行がサーバーより少なければ、余った行だけを外す", async () => {
+    const html = `<div id="root"><ul>${T("for: items", `<li>${P}{{ .n }}</li>`)}</ul></div>`;
+    const r = await hydrated(html, () => ({ items: [{ n: 1 }, { n: 2 }, { n: 3 }] }), [push(() => ({ n: 4 }))], {
+      edit: (out) => out.replace(/(<script type="application\/json">)[^<]*(<\/script>)/, `$1{"items":[{"n":1},{"n":2}]}$2`),
+    });
+    expect(r.atLoad).toEqual(["c", "c", "c", "d"]);
+    expect(r.connected).toEqual([true, true, false]);
+    expect(textsOf(r.ssr)).toEqual(["12", "124"]);
+    expect(r.ssr.errors).toEqual([]);
+  });
+
+  it("行・枝の値のテキストにある {{ }} は、引き取った後もページのマークアップにならない", async () => {
+    const html = `<div id="root"><p>${T("for: items", "[{{ .s }}]")}</p><p>${T("if: show", "({{ s }})")}</p>`
+      + `<ul>${T("for: items", `<li><b>{{ .s }}</b><i data-wcs="innerHTML: .h"></i></li>`)}</ul></div>`;
+    const state = () => ({ show: true, s: "{{ secret }}", secret: "LEAK", items: [{ s: "{{ secret }}", h: "<u>{{ secret }}</u>" }] });
+    const r = await hydrated(html, state, [set("secret", "LEAK2"), set("items.0.s", "x")]);
+    expectSame(r);
+    expect(textsOf(r.ssr)).toEqual([
+      "[{{secret}}]({{secret}}){{secret}}{{secret}}",
+      "[{{secret}}]({{secret}}){{secret}}{{secret}}",
+      "[x]({{secret}})x{{secret}}",
     ]);
   });
 });

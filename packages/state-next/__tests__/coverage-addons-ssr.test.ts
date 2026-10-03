@@ -322,4 +322,47 @@ describe("クライアントでの引き取り", () => {
     expect(texts(root, "dd")).toEqual(["a1", "a2", "b1"]);
     expect(root.innerHTML).not.toContain("junk");
   });
+
+  it.each([
+    ["真ん中", "b", 1],
+    ["最後", "c", 2],
+  ] as const)("中身の無いサーバの行（壊れた出力、%sの行）は、その場所でクライアントが作る（ほかの行はサーバのノードのまま）", async (_name, x, at) => {
+    const html = await serverRender(`<wcs-state enable-ssr></wcs-state><ul><template data-wcs="for: xs"><li>{{ . }}</li></template></ul>`, { xs: ["a", "b", "c"] });
+    let server: Element[] = [];
+    const { root } = await clientLoad(html.replace(`<!--wcs-|--><li>${x}</li>`, "<!--wcs-|-->"), { xs: [] }, (r) => {
+      server = Array.from(r.querySelectorAll("li"));
+    });
+    expect(texts(root, "li")).toEqual(["a", "b", "c"]);
+    const lis = Array.from(root.querySelectorAll("li"));
+    expect(lis.filter((_, i) => i !== at)).toEqual(server);
+  });
+
+  it("どのビューも取らなかったサーバの行は、束縛ができた時（initializePromise）にはもうページに無い", async () => {
+    const html = await serverRender(`<wcs-state enable-ssr></wcs-state><ul><template data-wcs="for: xs"><li>{{ . }}</li></template></ul>`
+      + `<template data-wcs="if: on"><p>on</p></template>`, { xs: ["a", "b", "c"], on: true });
+    let atReady: string[] = [];
+    const { root } = await clientLoad(withData(html, { xs: ["a"], on: false }), {}, (r) => {
+      void (r.querySelector("wcs-state") as any).initializePromise.then(() => {
+        atReady = Array.from(r.querySelectorAll("li, p"), (n) => n.textContent!);
+      });
+    });
+    expect(atReady).toEqual(["a"]);
+    expect(texts(root, "li, p")).toEqual(["a"]);
+  });
+
+  it("版が違えば、行の直下の入れ子の for の領域ごとサーバのノードを捨てて描き直す", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const html = (await serverRender(page, state())).replace(/<wcs-ssr version="[^"]*"/, '<wcs-ssr version="99.0.0"');
+      let server: Element[] = [];
+      const { root } = await clientLoad(html, state(), (r) => { server = Array.from(r.querySelectorAll("dt, dd")); });
+      expect(server.length).toBe(4);
+      for (const n of server) expect(n.isConnected).toBe(false);
+      expect(texts(root, "dt")).toEqual(["a", "b"]);
+      expect(texts(root, "dd")).toEqual(["a1", "a2"]);
+      expect(root.innerHTML).not.toContain("wcs-]");
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

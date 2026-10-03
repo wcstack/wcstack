@@ -3,7 +3,7 @@
  * see src/ssr/ssr.ts.
  */
 import { chain, hooks, type Feature } from "../hooks";
-import { adoptScope, hydrate, hydrated, installBuilder, ssrMark } from "../ssr/ssr";
+import { adoptScope, hydrate, installBuilder, ssrMark } from "../ssr/ssr";
 import { defineSsr } from "../ssr/element";
 import { registries } from "../element";
 
@@ -18,7 +18,6 @@ export const ssr: Feature = {
     hooks.element = (engine, phase) => {
       if (phase === "mounting") hydrate(engine);
       prev?.(engine, phase);
-      if (phase === "connected") hydrated(engine);
     };
     installBuilder();
     // `<wcs-ssr>` in every registry `<wcs-state>` is defined in, now and later

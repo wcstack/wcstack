@@ -507,6 +507,44 @@ describe("SSR の引き取り: 行の形の検査（D2）", () => {
     expect(Array.from(root.querySelectorAll("td"), (td) => td.textContent)).toEqual(["a", "B"]);
   });
 
+  it("<tbody> を書かない表の if: の <tr> に続く for: の <tr> も、一覧を失わず、サーバの行をその場で引き取る（前の空の for:・後ろに書いた <tbody> があっても）", async () => {
+    const rows: Record<string, string> = { "for: none": `<td data-wcs="textContent: .n"></td>`, "if: on": `<td>on</td>`, "for: items": `<td data-wcs="textContent: .n"></td>` };
+    let server: Element[] = [];
+    const { root, write } = await ssrRoundTrip(
+      (r) => {
+        const table = document.createElement("table");
+        for (const [bind, cells] of Object.entries(rows)) {
+          const t = document.createElement("template");
+          t.setAttribute("data-wcs", bind);
+          t.content.append(Object.assign(document.createElement("tr"), { innerHTML: cells }));
+          table.append(t);
+        }
+        table.append(Object.assign(document.createElement("tbody"), { innerHTML: "<tr><td>static</td></tr>" }));
+        r.append(table);
+      },
+      () => ({ none: [] as { n: number }[], on: true, items: [{ n: 1 }, { n: 2 }] }),
+      (r) => {
+        for (const t of Array.from(r.querySelectorAll("wcs-ssr template")) as HTMLTemplateElement[]) {
+          t.content.append(Object.assign(document.createElement("tr"), { innerHTML: rows[t.getAttribute("data-wcs")!] }));
+        }
+        // the parser's <tbody> took the `if:` region's rows and end marker, and the `for:` after it
+        expect(r.querySelector("table > tbody")).not.toBe(null);
+        server = Array.from(r.querySelectorAll("tr"));
+      },
+    );
+    const texts = () => Array.from(root.querySelectorAll("tr"), (tr) => tr.textContent);
+    expect(texts()).toEqual(["on", "1", "2", "static"]);
+    expect(Array.from(root.querySelectorAll("tr"))).toEqual(server);
+    await write((s) => { s.on = false; });
+    expect(texts()).toEqual(["1", "2", "static"]);
+    await write((s) => { s.items = [...s.items, { n: 4 }]; });
+    expect(texts()).toEqual(["1", "2", "4", "static"]);
+    await write((s) => { s.on = true; });
+    expect(texts()).toEqual(["on", "1", "2", "4", "static"]);
+    await write((s) => { s.none = [{ n: 9 }]; });
+    expect(texts()).toEqual(["9", "on", "1", "2", "4", "static"]);
+  });
+
   it("形の合う行は、これまでどおりサーバのノードを引き取る", async () => {
     let li: Element | null = null;
     const { root, write } = await ssrRoundTrip(
@@ -517,6 +555,145 @@ describe("SSR の引き取り: 行の形の検査（D2）", () => {
     expect(root.querySelector("li")).toBe(li);
     await write((s) => { s["items.0.name"] = "z"; });
     expect(root.querySelector("b")!.textContent).toBe("z");
+  });
+});
+
+describe("SSR の引き取り: 表（パーサが補う <tbody> と、書いた <tbody>）", () => {
+  /** `c` / `d` per connectedCallback / disconnectedCallback of the probes. */
+  const log: string[] = [];
+  const PROBE = `quality-probe-${seq++}`;
+  beforeAll(() => {
+    customElements.define(PROBE, class extends HTMLElement {
+      connectedCallback(): void { log.push("c"); }
+      disconnectedCallback(): void { log.push("d"); }
+    });
+  });
+  type Kid = Node | string;
+  const el = (tag: string, ...kids: Kid[]): HTMLElement => {
+    const e = document.createElement(tag);
+    e.append(...kids);
+    return e;
+  };
+  const tpl = (bind: string, ...kids: Kid[]): HTMLTemplateElement => {
+    const t = document.createElement("template");
+    t.setAttribute("data-wcs", bind);
+    t.content.append(...kids);
+    return t;
+  };
+  /** A row of one cell. */
+  const TR = (...kids: Kid[]) => el("tr", el("td", ...kids));
+  const P = () => document.createElement(PROBE);
+
+  /** The page's content, under `#root`, built with the DOM each time (happy-dom's parser fosters a <template> out of a <table>). */
+  type Build = () => Node[];
+  const page = (build: Build) => (r: ShadowRoot): void => {
+    const div = Object.assign(document.createElement("div"), { id: "root" });
+    div.append(...build());
+    r.append(div);
+  };
+  /** The table's texts, and its markup without <tbody> tags (a client render puts rows straight in the <table>). */
+  const view = (r: ShadowRoot) => {
+    const root = r.querySelector("#root")!;
+    return { text: Array.from(root.querySelectorAll("caption, th, td"), (n) => n.textContent).join(","), html: root.innerHTML.replace(/<\/?tbody>/g, "") };
+  };
+
+  /**
+   * CSR, then SSR: the server's output parsed as a browser does (comments stay in the <table>, a <tr>
+   * outside a section opens a <tbody>), hydrated. `atLoad` is the probes' lifecycle meanwhile, `kept`
+   * whether each of the server's probes, rows and sections is still in the page.
+   */
+  async function tables(build: Build, state: () => Record<string, any>, steps: ((s: any) => void)[]) {
+    const csr = await host(`<wcs-state></wcs-state>`, [state()], page(build));
+    document.documentElement.setAttribute("data-wcs-server", "orchestrated");
+    let out: string;
+    try {
+      const server = await host(`<wcs-state enable-ssr></wcs-state>`, [state()], page(build));
+      (globalThis as any)[Symbol.for("wcstack.ssr.snapshotBuilder")].build(server.root);
+      out = server.root.innerHTML;
+      server.h.remove();
+    } finally {
+      document.documentElement.removeAttribute("data-wcs-server");
+    }
+    // (happy-dom's parser empties a <template> of its table parts: their content as a browser parses it)
+    const sources = new Map<string, HTMLTemplateElement>();
+    const visit = (n: Node): void => {
+      if (n instanceof HTMLTemplateElement) sources.set(n.getAttribute("data-wcs")!, n);
+      n.childNodes.forEach(visit);
+    };
+    build().forEach(visit);
+    let serverNodes: Element[] = [];
+    log.length = 0;
+    const ssr = await host(out, [state()], (r) => {
+      for (const t of Array.from(r.querySelectorAll("wcs-ssr template")) as HTMLTemplateElement[]) {
+        t.content.replaceChildren(...Array.from(sources.get(t.getAttribute("data-wcs")!)!.content.cloneNode(true).childNodes));
+      }
+      serverNodes = Array.from(r.querySelectorAll(`#root ${PROBE}, #root tr, #root caption, #root thead, #root tbody`));
+    });
+    await flush();
+    const atLoad = [...log];
+    const kept = serverNodes.map((n) => n.isConnected);
+    const views = { csr: [view(csr.root)], ssr: [view(ssr.root)] };
+    for (const step of steps) {
+      csr.els[0].createState("writable", step);
+      ssr.els[0].createState("writable", step);
+      await flush();
+      await flush();
+      views.csr.push(view(csr.root));
+      views.ssr.push(view(ssr.root));
+    }
+    csr.h.remove();
+    ssr.h.remove();
+    return { views, atLoad, kept, probes: serverNodes.filter((n) => n.localName === PROBE).length };
+  }
+  /** SSR shows what CSR shows at each step, and hydration took every server node in place. */
+  function expectInPlace(r: Awaited<ReturnType<typeof tables>>): void {
+    expect(r.views.ssr).toEqual(r.views.csr);
+    expect(r.probes).toBeGreaterThan(0);
+    expect(r.atLoad).toEqual(Array(r.probes).fill("c"));
+    expect(r.kept.every(Boolean)).toBe(true);
+  }
+
+  it("for: の行が <tbody>（行のまとまり）: 入れ子にせず、行を重ねず、その場で引き取る", async () => {
+    const r = await tables(() => [el("table", tpl("for: groups", el("tbody", TR(P(), "{{ .name }}"))))], () => ({ groups: [{ name: "a" }, { name: "b" }] }), [
+      (s) => { s.groups = [...s.groups, { name: "c" }]; },
+      (s) => { s.groups = [...s.groups].reverse(); },
+      (s) => { s.groups = s.groups.slice(1); },
+    ]);
+    expect(r.views.ssr.map((v) => v.text)).toEqual(["a,b", "a,b,c", "c,b,a", "b,a"]);
+    expectInPlace(r);
+  });
+
+  it("if: / else: の枝が <tbody>、その後ろに for: の <tr>: 枝を入れ子にせず、一覧も引き取る", async () => {
+    const r = await tables(() => [el("table", tpl("if: on", el("tbody", TR(P(), "on"))), tpl("else:", el("tbody", TR(P(), "off"))), tpl("for: rows", TR(P(), "{{ .n }}")))],
+      () => ({ on: true, rows: [{ n: 1 }, { n: 2 }] }), [
+        (s) => { s.on = false; },
+        (s) => { s.rows = [...s.rows, { n: 3 }]; },
+        (s) => { s.on = true; },
+      ]);
+    expect(r.views.ssr.map((v) => v.text)).toEqual(["on,1,2", "off,1,2", "off,1,2,3", "on,1,2,3"]);
+    expectInPlace(r);
+  });
+
+  it("if: の <caption>、for: の <tr>、if: の <tr>: 閉じた領域の始まりが要素の前にあっても、後ろの if: を失わない", async () => {
+    const r = await tables(() => [el("table", tpl("if: title", el("caption", "{{ title }}")), tpl("for: rows", TR(P(), "{{ .n }}")), tpl("if: foot", TR(P(), "foot")))],
+      () => ({ title: "T", foot: true, rows: [{ n: 1 }, { n: 2 }] }), [
+        (s) => { s.rows = [...s.rows, { n: 3 }]; },
+        (s) => { s.foot = false; },
+        (s) => { s.foot = true; s.title = ""; },
+      ]);
+    expect(r.views.ssr.map((v) => v.text)).toEqual(["T,1,2,foot", "T,1,2,3,foot", "T,1,2,3", "1,2,3,foot"]);
+    expectInPlace(r);
+  });
+
+  it("if: の <thead>、for: の <tr>（行の直下に if: の <tr>）: 一覧をその場で引き取る", async () => {
+    const r = await tables(() => [el("table", tpl("if: head", el("thead", el("tr", el("th", "H")))), tpl("for: rows", TR(P(), "{{ .n }}"), tpl("if: .x", TR(P(), "x"))))],
+      () => ({ head: true, rows: [{ n: 1, x: true }, { n: 2, x: false }] }), [
+        (s) => { s.rows = [{ n: 5, x: true }]; },
+        (s) => { s.head = false; },
+        (s) => { s["rows.0.x"] = false; },
+      ]);
+    expect(r.views.ssr.map((v) => v.text)).toEqual(["H,1,x,2", "H,5,x", "5,x", "5"]);
+    expectInPlace(r);
   });
 });
 

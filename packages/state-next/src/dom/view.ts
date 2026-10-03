@@ -524,18 +524,20 @@ export function buildBlock(engine: Engine, plan: RowPlan, row: StateRow | null, 
   const nodes = plan.scratch;
   let first: ChildNode;
   let all: ChildNode[] | null = null;
+  // SSR hydration: the server's nodes, where they are (the add-on put the plan's nodes in them in
+  // `nodes`); the view then inserts an empty fragment
   const adopted = hooks.adopt?.(plan, fv === null ? at! : fv.anchor, fv !== null);
-  const single = plan.single;
+  const single = !adopted && plan.single;
   // a single plan clones the block's element itself; paths start at the fragment, so skip their first step
-  const top = adopted ?? (single ? plan.root! : plan.fragment).cloneNode(true);
-  for (let b = 0; b < build.length; b++) {
+  const top = adopted ? document.createDocumentFragment() : (single ? plan.root! : plan.fragment).cloneNode(true);
+  if (!adopted) for (let b = 0; b < build.length; b++) {
     const i = build[b];
     nodes[i] = nodeAt(top, paths[i], single ? 1 : 0);
   }
   if (single) {
     first = top as ChildNode;
   } else {
-    all = [...top.childNodes] as ChildNode[];
+    all = adopted || [...top.childNodes] as ChildNode[];
     first = all[0];
   }
   let block: Block;

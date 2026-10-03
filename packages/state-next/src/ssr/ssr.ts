@@ -15,10 +15,13 @@
  *   parsing the HTML gives back the rows' exact structure;
  * - `<wcs-ssr version>` before the element holds the state's data (JSON) and the templates.
  *
- * Client: before the page is bound, the texts and templates are restored and the page-level
- * regions detached; each block the engine builds takes its region's next row instead of a clone
- * (a row's nested regions are detached and held for its nested views in turn), so the server's
- * nodes stay and get their bindings. `$connectedCallback` does not run (the server ran it).
+ * Client: before the page is bound, the texts and templates are restored and the regions read where
+ * they are (their marks go; the page's walk passes their nodes by); each block the engine builds
+ * takes its region's next row instead of a clone (a row's nested regions wait for its nested views
+ * in turn). The server's nodes never leave the page — no custom element in a row or a branch is
+ * disconnected — and get their bindings; a view's anchors move after its rows instead. A row that
+ * does not fit its plan is built anew in its place, and the rows no view took go once the page is
+ * bound. `$connectedCallback` does not run (the server ran it).
  *
  * A snapshot of another major.minor is discarded, and the page renders on the client as it would
  * without a server: the state comes from its own source, `$connectedCallback` runs, and the server's
@@ -34,7 +37,7 @@ import { config } from "../config";
 import { hooks } from "../hooks";
 
 import { VERSION } from "../version";
-import { isOuter, setsContent, templateContent } from "../dom/plan";
+import { isOuter, setsContent, templateContent, walked } from "../dom/plan";
 import { majorMinor } from "./element";
 import { parseBindTextsForElement } from "../parser/parseBindTextsForElement";
 /** The snapshot element's tag (`config.tagNames.ssr`, `wcs-ssr` by default). */
@@ -274,12 +277,17 @@ export function installBuilder(): void {
 interface Region {
   /** The branch the region renders (null: a list). */
   readonly branch: number | null;
+  /** Each row's nodes, where the server put them (a region in the row included). */
   readonly rows: Node[][];
+  /**
+   * The region's end mark, after its rows: the server put a view's rows after its anchor, and the view
+   * renders them before it — the anchor goes here when the view takes the first row (null after).
+   */
+  tail: ChildNode | null;
 }
 
 /** Regions waiting for their view, by the node right before them (a view's anchor). */
 const held = new Map<Node, Region>();
-const hydrating = new WeakSet<Engine>();
 
 /**
  * The Light DOM components of a page being hydrated, by host: their content is bound by their own
@@ -289,47 +297,78 @@ const hydrating = new WeakSet<Engine>();
 const deferred = new WeakMap<Node, { ssr: Element; adopt: boolean }>();
 const scoped = (el: Element): boolean => hooks.componentScope?.(el) === true;
 
-/** Detaches the region starting at `start` (its markers included); its rows. */
-function detach(start: Comment): Region {
+/** An element regions may be in: not a text element, nor a Light DOM component (its engine reads its own). */
+const enters = (n: Node): boolean => n.nodeType === 1 && !raw(n as Element) && !scoped(n as Element);
+
+/** A region's nodes: its rows', and its end mark. */
+const nodesOf = (r: Region): Node[] => r.rows.flat().concat(r.tail ?? []);
+
+/** Takes a region's nodes out of the page (rows no view took, or not the plan's). */
+const drop = (r: Region): void => {
+  for (const n of nodesOf(r)) (n as ChildNode).remove();
+};
+
+/**
+ * Reads the region `start` opens where it is: its marks go but its end mark, and its nodes stay (no
+ * custom element in them is disconnected). It is held by the node before it, its view's anchor (the
+ * page's walk then passes its nodes by: its blocks bind them where they are), or dropped (`keep`
+ * false, or no node before it). A region in it — in a row, after a view's anchor of the row, or in an
+ * element of it — is read in turn. Its nodes go in `row` (the row it is in); returns the node after it.
+ */
+function read(start: Comment, keep: boolean, row?: Node[]): Node | null {
   const m = /^wcs-\[(?::(\d+))?/.exec(start.data)!;
+  const key = start.previousSibling;
+  const parent = start.parentNode!;
   const rows: Node[][] = [];
-  let depth = 0;
   let n: Node | null = start.nextSibling;
   start.remove();
-  while (n !== null) {
-    const next: Node | null = n.nextSibling;
-    if (depth === 0 && isMark(n, "wcs-]")) {
+  while (n !== null && !isMark(n, "wcs-]")) {
+    let next: Node | null = n.nextSibling;
+    if (isMark(n, "wcs-|")) {
+      rows.push([]);
       (n as ChildNode).remove();
-      break;
-    }
-    if (depth === 0 && isMark(n, "wcs-|")) rows.push([]);
-    else {
-      if (startsMark(n, "wcs-[")) depth++;
-      else if (isMark(n, "wcs-]")) depth--;
+    } else {
       // (a branch has no row marks; a list's node before its first one is a value's)
       if (rows.length === 0) rows.push([]);
-      rows[rows.length - 1].push(n);
+      const own = rows[rows.length - 1];
+      if (startsMark(n, "wcs-[")) next = read(n as Comment, keep, own);
+      else {
+        own.push(n);
+        if (enters(n)) strip(n, keep);
+      }
     }
-    (n as ChildNode).remove();
     n = next;
   }
-  return { branch: m[1] === undefined ? null : Number(m[1]), rows };
+  // (cut short — a parser moved its end mark into an element (see mend): it ends with its parent)
+  const r: Region = { branch: m[1] === undefined ? null : Number(m[1]), rows, tail: (n ?? parent.appendChild(mark("wcs-]"))) as ChildNode };
+  const nodes = nodesOf(r);
+  n = r.tail!.nextSibling;
+  // (not spread: a region may have more nodes than a call takes arguments)
+  for (const x of nodes) {
+    row?.push(x);
+    if (keep) walked.add(x);
+  }
+  if (keep && key !== null) {
+    held.set(key, r);
+  } else {
+    drop(r);
+  }
+  return n;
 }
 
-/** Holds every region directly under `nodes` (not inside another), keyed by the node before it. */
-function holdRegions(nodes: Iterable<Node>, keep: boolean): void {
-  for (const n of Array.from(nodes)) {
+/** Reads every region under `parent` (see read). */
+function strip(parent: Node, keep: boolean): void {
+  for (let n: Node | null = parent.firstChild; n !== null; ) {
     if (startsMark(n, "wcs-[")) {
-      const key = n.previousSibling;
-      const r = detach(n as Comment);
-      if (keep && key !== null) held.set(key, r);
-    } else if (n.nodeType === 1 && !raw(n as Element) && !scoped(n as Element)) {
-      holdRegions((n as Element).childNodes, keep);
+      n = read(n as Comment, keep);
+    } else {
+      if (enters(n)) strip(n, keep);
+      n = n.nextSibling;
     }
   }
 }
 
-/** Texts and templates back to what the page was written with; the regions detached. */
+/** Texts and templates back to what the page was written with; the regions read (see strip). */
 function prepare(container: Node, ssr: Element, adopt: boolean): void {
   const walk = (parent: Node): void => {
     for (const n of Array.from(parent.childNodes)) {
@@ -374,27 +413,69 @@ function prepare(container: Node, ssr: Element, adopt: boolean): void {
     }
   };
   walk(container);
-  holdRegions(container.childNodes, adopt);
+  mend(container);
+  strip(container, adopt);
+}
+
+/**
+ * A region a parser cut: its start mark in a <table>, its rows and end mark in the <tbody> the parser
+ * added at its first <tr> (the regions after it with them). The comments and templates right before
+ * the <tbody> that the cut region starts with go into it — its anchor and marks: nothing in them
+ * connects — and the rows stay where they are. A <tbody> written in the page (a row of a list of
+ * them, a branch) holds no end mark of a region that starts before it, and is left alone.
+ */
+function mend(container: Node): void {
+  for (const body of Array.from((container as ParentNode).querySelectorAll("table > tbody"))) {
+    const run: Node[] = [];
+    for (let p = body.previousSibling; p !== null && (p.nodeType === 8 || isBlank(p) || (p as Element).localName === "template"); p = p.previousSibling) run.unshift(p);
+    // the regions the run leaves open (an end mark whose start is before the run — past an element —
+    // closes a region that stays where it is, with what comes before the mark)
+    let from = 0;
+    let open = 0;
+    run.forEach((n, i) => {
+      if (startsMark(n, "wcs-[")) open++;
+      else if (isMark(n, "wcs-]") && --open < 0) {
+        open = 0;
+        from = i + 1;
+      }
+    });
+    if (open === 0) continue;
+    // ... and the <tbody> ends one: the parser moved its rows in
+    let depth = 0;
+    for (let c = body.firstChild; c !== null; c = c.nextSibling) {
+      if (startsMark(c, "wcs-[")) depth++;
+      else if (isMark(c, "wcs-]") && depth-- === 0) {
+        body.prepend(...run.slice(from));
+        break;
+      }
+    }
+  }
 }
 
 /**
  * The `adoptScope` hook: a Light DOM component's engine binds its host. Its content is prepared
  * now, and its blocks take the server's nodes while its walk runs (a walk adopts synchronously).
- * What it did not adopt is dropped after the walk; the regions of other engines are left alone.
+ * What it did not adopt is dropped after the walk: the regions held then are its own (a page's are
+ * read and adopted in one go too, and dropped before anything else runs).
  */
 export function adoptScope(host: Node): (() => void) | null {
   const d = deferred.get(host);
   if (d === undefined) return null;
   deferred.delete(host);
-  const before = new Set(held.keys());
   prepare(host, d.ssr, d.adopt);
   if (!d.adopt) return null;
   const prev = hooks.adopt;
   hooks.adopt = adopt;
   return () => {
     hooks.adopt = prev;
-    for (const k of Array.from(held.keys())) if (!before.has(k)) held.delete(k);
+    release();
   };
+}
+
+/** Drops the held regions: rows no view took. */
+function release(): void {
+  for (const r of held.values()) drop(r);
+  held.clear();
 }
 
 /** The comments under `scope`, in document order. */
@@ -546,18 +627,14 @@ export function hydrate(engine: Engine): void {
   else prepare(container, ssr!, same);
   ssr!.remove();
   if (same) {
-    hydrating.add(engine);
-    // only while a page is adopted: every other block is built with one null check
+    // only while the page is adopted — its walk, which runs now: every other block is built with one
+    // null check. What no view took then goes before anything else runs
     hooks.adopt = adopt;
+    queueMicrotask(() => {
+      release();
+      hooks.adopt = null;
+    });
   }
-}
-
-/** The `element` hook, "connected": the page is bound — what was not adopted is gone. */
-export function hydrated(engine: Engine): void {
-  if (!hydrating.has(engine)) return;
-  hydrating.delete(engine);
-  held.clear();
-  hooks.adopt = null;
 }
 
 /**
@@ -613,9 +690,40 @@ export function ssrMark(engine: Engine, node: Node, source: Element | string | S
 /** An anchor of an `if` / `elseif` / `else` chain (the core names them by config). */
 const isIfAnchor = (n: Node | null): boolean =>
   n !== null && n.nodeType === 8 && [config.commentIfPrefix, config.commentElseIfPrefix, config.commentElsePrefix].includes((n as Comment).data);
+const isBlank = (n: Node): boolean => n.nodeType === 3 && (n as Text).data.trim() === "";
 
-/** The `adopt` hook: the next server row (or branch) of the view anchored at `anchor`. */
-export function adopt(plan: RowPlan, anchor: Node, isFor: boolean): Node | null {
+/** The next of the plan's nodes after `n`: a held region after an anchor is the anchor's view's. */
+const after = (n: Node): Node | null => (held.get(n)?.tail ?? n).nextSibling;
+
+/**
+ * Whether a row's top-level nodes `own` have the plan's nodes where a binding lands — not so when a
+ * Light DOM element added children before them, or a parser moved them (see mend); puts them
+ * in `plan.scratch` for the block.
+ */
+function fits(plan: RowPlan, own: Node[]): boolean {
+  if (own.length !== plan.fragment.childNodes.length) return false;
+  const paths = plan.nodePaths;
+  for (let i = 0; i < paths.length; i++) {
+    const path = paths[i];
+    let a: Node = plan.fragment;
+    let b: Node | null | undefined = own[path[0]];
+    for (let j = 0; ; ) {
+      a = a.childNodes[path[j]];
+      if (b?.nodeName !== a.nodeName) return false;
+      if (++j === path.length) break;
+      b = b.firstChild;
+      for (let k = path[j]; k > 0 && b !== null; k--) b = after(b);
+    }
+    plan.scratch[i] = b;
+  }
+  return true;
+}
+
+/**
+ * The `adopt` hook: the next server row (or branch) of the view anchored at `anchor` — its top-level
+ * nodes, left where they are (the view inserts nothing, and no custom element in them is disconnected).
+ */
+export function adopt(plan: RowPlan, anchor: Node, isFor: boolean): ChildNode[] | null {
   if (held.size === 0) return null;
   let key = anchor;
   let branch = 0;
@@ -623,31 +731,48 @@ export function adopt(plan: RowPlan, anchor: Node, isFor: boolean): Node | null 
     // only this chain: an `if` anchor starts one (a chain right before or after is another)
     const head = config.commentIfPrefix;
     if (!isMark(anchor, head)) {
-      for (let p = anchor.previousSibling; p !== null && (isIfAnchor(p) || (p.nodeType === 3 && (p as Text).data.trim() === "")); p = p.previousSibling) {
+      for (let p = anchor.previousSibling; p !== null && (isIfAnchor(p) || isBlank(p)); p = p.previousSibling) {
         if (isIfAnchor(p)) branch++;
         if (isMark(p, head)) break;
       }
     }
-    for (let n = anchor.nextSibling; n !== null && !isMark(n, head) && (isIfAnchor(n) || (n.nodeType === 3 && (n as Text).data.trim() === "")); n = n.nextSibling) {
+    // up to the anchor its region follows (the branch's nodes come right after it)
+    for (let n = anchor.nextSibling; !held.has(key) && n !== null && !isMark(n, head) && (isIfAnchor(n) || isBlank(n)); n = n.nextSibling) {
       if (isIfAnchor(n)) key = n;
     }
   }
   const r = held.get(key);
-  if (r === undefined || (!isFor && r.branch !== branch)) return null;
+  if (r === undefined) return null;
+  if (!isFor && r.branch !== branch) {
+    // the server rendered another branch: it goes, this one is built
+    held.delete(key);
+    drop(r);
+    return null;
+  }
   const nodes = r.rows.shift();
   if (r.rows.length === 0) held.delete(key);
+  // a view renders before its anchor (a branch before its own: the chain's anchors from it on), and
+  // the server put its rows after: the anchors go where the rows end
+  r.tail?.replaceWith(...range(anchor, key));
+  r.tail = null;
   if (nodes === undefined) return null;
-  // siblings again, then the row's own nested regions wait for its nested views
-  const frag = document.createDocumentFragment();
-  frag.append(...nodes);
-  holdRegions(frag.childNodes, true);
-  if (frag.childNodes.length !== plan.fragment.childNodes.length) return null;
-  // where a binding lands, the server's row has the plan's nodes — not so when a Light DOM element
-  // added children before them, or the parser put a <tbody> around a <tr>: then it is rendered anew
-  for (const path of plan.nodePaths) {
-    let a: Node = plan.fragment;
-    let b: Node | undefined = frag;
-    for (const i of path) if ((b = b?.childNodes[i])?.nodeName !== (a = a.childNodes[i]).nodeName) return null;
+  // the row's own top-level nodes (a region in it is a nested view's)
+  let own: Node[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const inner = held.get(nodes[i]);
+    own.push(nodes[i]);
+    // (its nodes follow it, up to its end mark)
+    if (inner !== undefined) while (i < nodes.length && nodes[i] !== inner.tail) i++;
   }
-  return plan.single ? frag.firstChild : frag;
+  if (!fits(plan, own)) {
+    // rendered anew, in its place (the rows around it stay; an empty one's place is before the next
+    // row, or the anchor): its nodes found before it is in the page (a custom element in it may add
+    // children as it connects)
+    const fresh = (plan.single ? plan.root! : plan.fragment).cloneNode(true);
+    own = plan.single ? [fresh] : [...fresh.childNodes];
+    fits(plan, own);
+    ((nodes[0] ?? r.rows.find((x) => x.length > 0)?.[0] ?? anchor) as ChildNode).before(fresh);
+    for (const n of nodes) (n as ChildNode).remove();
+  }
+  return own as ChildNode[];
 }

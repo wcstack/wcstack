@@ -67,9 +67,10 @@ export interface Hooks {
   ssrMark?: ((engine: Engine, node: Node, source: Element | string | Spec[]) => void) | null;
   /**
    * A block is about to be cloned from `plan` for the view anchored at `anchor`: an add-on may
-   * hand over existing nodes instead (SSR hydration) — a fragment, or the single element.
+   * hand over existing nodes instead (SSR hydration) — the block's top-level nodes, already where
+   * the block renders (the view inserts nothing), with the plan's nodes in them in `plan.scratch`.
    */
-  adopt?: ((plan: RowPlan, anchor: Node, isFor: boolean) => Node | null) | null;
+  adopt?: ((plan: RowPlan, anchor: Node, isFor: boolean) => ChildNode[] | null) | null;
   /**
    * A Light DOM component's engine is about to bind `root` (its host): SSR hands over the server's
    * nodes there too; the function returned is called when the walk is done.

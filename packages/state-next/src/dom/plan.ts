@@ -287,8 +287,12 @@ export function readChain(engine: Engine, first: Element, list: Pattern | null):
   return parts;
 }
 
-/** The elements a page walk has visited: each is bound once, however often it is handed over. */
-const walked = new WeakSet<Element>();
+/**
+ * The elements a page walk has visited: each is bound once, however often it is handed over. SSR
+ * hydration adds the top-level nodes of the server's rows and branches (a text's too): their blocks
+ * bind them where they are, and the walk passes them by.
+ */
+export const walked = new WeakSet<Node>();
 
 /**
  * Walks `children` and what they contain for bindings, by the same markup rules for the page
@@ -364,7 +368,7 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
           if (specs !== null) onElement(el, specs);
         }
         if (!page && into) walk([...el.childNodes]);
-      } else if (child.nodeType === 3 && engine.mustache && (child as Text).data.includes("{{")) {
+      } else if (child.nodeType === 3 && engine.mustache && (child as Text).data.includes("{{") && !walked.has(child)) {
         for (const { node, expr } of splitMustache(child as Text)) onText(node, expr);
       } else if (child.nodeType === 8) {
         // a comment binding, as 3.x (`$behavior.enableMustache` aside): a text binding in its place —
