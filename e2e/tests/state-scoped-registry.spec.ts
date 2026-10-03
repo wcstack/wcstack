@@ -3,9 +3,8 @@ import { collectErrors } from "./helpers";
 
 // #357: bindings on the custom elements of a shadow root with a scoped CustomElementRegistry.
 // happy-dom has no scoped registries, so this is the only place the contract is checked.
-// @wcstack/state 3.3 waits on the global registry for these elements (the issue); the 4.0 engine
-// (state-next) reads the element's own registry. Runs with STATE=next (packages/state-next/bench/e2e).
-test.skip(process.env.STATE !== "next", "@wcstack/state 3.3 does not bind the elements of a scoped registry (#357)");
+// @wcstack/state 3.3 waited on the global registry for these elements (the issue); the 4.0 engine
+// reads the element's own registry.
 
 declare global {
   interface Window {
