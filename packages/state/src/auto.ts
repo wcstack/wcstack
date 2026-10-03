@@ -1,9 +1,7 @@
-// Single-tag bootstrap entry.
-//
-// Rollup bundles this self-contained into dist/auto.min.js, so a page can
-// activate the component with one <script> tag and a single `integrity`
-// attribute covers every line that runs. Do not import from a sibling dist
-// file here — a relative import would fall outside the entry's SRI hash.
-import { bootstrapState } from "./exports";
+import { define } from "./element";
+import { installFeatures } from "./hooks";
+import { ALL_FEATURES } from "./features/all";
 
-await bootstrapState();
+// the auto bundle is the full engine: the core and every add-on
+installFeatures(ALL_FEATURES);
+define();

@@ -24,24 +24,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Guard for the research/state-engine branch (docs/state-engine-rewrite/
-      # v4-remaining.ja.md §3 / §6). There packages/vscode-wcs validates against
-      # the 4.0 engine, packages/state-next ("@wcstack/state": "file:../state-next").
-      # @wcstack/lint and @wcstack/typescript are rebuilt from vscode-wcs on every
-      # release, so releasing in that state would ship the 4.0 rules under a 3.x
-      # version and break the CI of every 3.x user — and even a major bump would
-      # publish @wcstack/state 4.0.0 from the 3.x packages/state. So nothing is
-      # released, whatever the bump type, until state-next has replaced
-      # packages/state and vscode-wcs points back at file:../state.
-      - name: Refuse to release while vscode-wcs validates against packages/state-next
-        run: |
-          set -euo pipefail
-          spec=$(node -p "(require('./packages/vscode-wcs/package.json').devDependencies || {})['@wcstack/state'] || ''")
-          if [ "$spec" = "file:../state-next" ]; then
-            echo "::error::packages/vscode-wcs depends on \"@wcstack/state\": \"$spec\" (the unreleased 4.0 engine). Replace packages/state with packages/state-next and point vscode-wcs back at file:../state before releasing (docs/state-engine-rewrite/v4-remaining.ja.md R1, §6)."
-            exit 1
-          fi
-
       # No registry-url on purpose. It makes setup-node write an .npmrc whose
       # `_authToken=${NODE_AUTH_TOKEN}` expands to an empty string once the
       # token is gone, and npm reads that empty value as "auth is already
@@ -91,12 +73,9 @@ jobs:
       # first; this keeps the release in the same order.
       #
       # A `private: true` package is never published, so it is neither built,
-      # tested, version-bumped, committed nor published here: packages/state-next
-      # (the 4.0 engine until it replaces packages/state — its dist is
-      # gitignored, so `git add packages/state-next/dist` would fail, and its
-      # test:coverage is not a release gate). While vscode-wcs depends on it the
-      # guard above stops the release anyway; vscode-wcs builds its dist itself
-      # when lint / typescript build vscode-wcs (scripts/ensure-state-dist.mjs).
+      # tested, version-bumped, committed nor published here (its dist may be
+      # gitignored, so `git add packages/<pkg>/dist` would fail, and its
+      # test:coverage is not a release gate).
       - name: Discover packages
         id: discover
         run: |

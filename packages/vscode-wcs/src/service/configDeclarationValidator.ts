@@ -15,8 +15,8 @@
  *     だけで、ほかは黙って無視される（設計 A3: 実行時は読まず、lint だけが知らせる）。
  *
  * 名前の表は 4.0 の manifest（`behaviorOptions` / `features`）から読む。manifest はランタイムが読む表
- * （engine.ts の `BEHAVIOR_KEYS`・load.ts の `FEATURE_NAMES`）と一致し、それは state-next の
- * `public-surface.test.ts` が固定する。
+ * （engine.ts の `BEHAVIOR_KEYS`・load.ts の `FEATURE_NAMES`）と一致し、それは @wcstack/state の
+ * `__tests__/public-surface.test.ts` が固定する。
  *
  * 精度方針は既存の宣言の検査と同じ: 値が識別子参照・式なら黙る（断定できる形だけを報告する）。
  * pure（DOM / vscode 非依存）。

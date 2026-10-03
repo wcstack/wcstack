@@ -2,8 +2,8 @@
  * explicitPropertyHeads.drift.test.ts
  *
  * 明示のプロパティ形（`.name:`）の先頭に置けない語の集合が、ランタイム正本
- * （`packages/state/src/bindTextParser/parseBindTextsForElement.ts` の
- * `EXPLICIT_PROPERTY_REJECTED_HEADS`）とずれていないことを固定する。
+ * （`packages/state/src/parser/parseBindTextsForElement.ts` の
+ * `EXPLICIT_PROPERTY_REJECTED_HEADS`。定数の値は `src/parser/define.ts`）とずれていないことを固定する。
  *
  * 5 語は manifest から導出できるが、6 語目の `state`（`VOLUME_INJECTION_PROP`）は manifest に
  * 載っていないので拡張側で手書きしている。手書きが 1 語でもずれると、正本パーサが
@@ -28,8 +28,8 @@ function constValue(source: string, name: string): string {
 }
 
 describe('明示プロパティ形の拒否語が正本とずれていないこと', () => {
-  const define = readFileSync(join(STATE_SRC, 'define.ts'), 'utf8');
-  const parser = readFileSync(join(STATE_SRC, 'bindTextParser', 'parseBindTextsForElement.ts'), 'utf8');
+  const define = readFileSync(join(STATE_SRC, 'parser', 'define.ts'), 'utf8');
+  const parser = readFileSync(join(STATE_SRC, 'parser', 'parseBindTextsForElement.ts'), 'utf8');
 
   it('正本の EXPLICIT_PROPERTY_REJECTED_HEADS と同じ語の集合であること', () => {
     // 正本は定数名の列挙なので、定数名 → 値を define.ts から引いて実値の集合にする

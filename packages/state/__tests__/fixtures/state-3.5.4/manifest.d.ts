@@ -1,0 +1,144 @@
+/**
+ * filterMeta.ts — 組み込みフィルタの構造化メタデータ（単一正本・route-a A2-1）。
+ *
+ * これまで vscode-wcs（completionData.ts BUILTIN_FILTERS）が手で持っていたフィルタの
+ * 引数仕様・型・説明を、実装側（@wcstack/state）に**正本として移設**したもの。
+ * manifest.ts がこれを公開し、vscode-wcs はそれを消費して手リストを撤去できる。
+ *
+ * 完全性は __tests__/manifest.test.ts のドリフト検出が保証する
+ * （filterMeta のキー集合 == builtinFilters のキー集合）。フィルタを追加して meta を
+ * 書き忘れると CI が落ちる。
+ */
+type FilterResultType = "boolean" | "number" | "string" | "passthrough";
+type FilterArgType = "number" | "string" | "any";
+interface IFilterMeta {
+    /** 説明（補完・ホバー用） */
+    description: string;
+    /** 引数を取るか */
+    hasArgs: boolean;
+    /** 適用後の結果型（passthrough は入力型をそのまま返す） */
+    resultType: FilterResultType;
+    /** 受け入れ可能な入力型（'any' は任意） */
+    acceptTypes: "any" | readonly string[];
+    /** 引数の最小数 */
+    minArgs: number;
+    /** 引数の最大数 */
+    maxArgs: number;
+    /** 各引数の期待型（省略時はチェックしない） */
+    argTypes?: readonly FilterArgType[];
+}
+/** 組み込みフィルタ名 → 構造化メタデータ。キー集合は builtinFilters と一致しなければならない。 */
+declare const builtinFilterMeta: Record<string, IFilterMeta>;
+
+/**
+ * filters/filterAliases.ts — 組み込みフィルタの旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md V1〜V9）。
+ *
+ * 旧名は 3.x の間エイリアスとして残り、4.0 で外す（D4）。解決は登録簿（core/filterRegistry）が行い、
+ * 実装・引数の個数・メタデータは正式名だけが持つ。formats の install と manifest（tooling）の両方が読むので、
+ * 実装にもメタデータにも依存しない小さな表として独立させている。
+ */
+declare const builtinFilterAliases: Readonly<Record<string, string>>;
+
+declare const DECLARATION_ALIASES: Readonly<Record<string, string>>;
+
+type BindingType = 'text' | 'prop' | 'event' | 'for' | 'if' | 'elseif' | 'else' | 'radio' | 'checkbox' | 'spread';
+
+declare const STRUCTURAL_BINDING_TYPE_SET: Set<BindingType>;
+
+/**
+ * マニフェストのバージョン（構造を変えたら上げる）。
+ *
+ * 3.1 で `syntax.bindingTypes.explicitPropertyPrefix`、3.2 で `filterAliases`、
+ * 3.x の次で `declarationAliases` / `apiAliases` を足したので 2。
+ * 消費側（vscode-wcs）はまだこの定数を参照していないが、公開している以上ドリフトさせない。
+ */
+declare const WCS_MANIFEST_VERSION = 2;
+/**
+ * state API の旧名 → 正式名（要件 B12・docs/state-3x-naming.ja.md）。正本は
+ * `proxy/traps/get.ts` の case ラベルで、ここはそれを機械可読にした写し
+ * （一致は `__tests__/manifest.test.ts` が固定する）。
+ */
+declare const STATE_API_ALIASES: Readonly<Record<string, string>>;
+interface IWcsManifest {
+    version: number;
+    syntax: {
+        /** バインド属性名（既定 data-wcs） */
+        bindAttribute: string;
+        /** タグ名（既定 wcs-state） */
+        tagName: string;
+        /** パス区切り（`.`） */
+        pathDelimiter: string;
+        /** ワイルドカード（`*`） */
+        wildcard: string;
+        /** バインディング構文 `[prop][#mod]: [path][|filter...]` の区切り文字 */
+        delimiters: {
+            binding: string;
+            propValue: string;
+            modifier: string;
+            filter: string;
+        };
+        /** 構造ディレクティブ（`<template data-wcs="for: ...">` 等） */
+        structuralDirectives: readonly string[];
+        /**
+         * 修飾子（`#` 後）の語彙。flags は値を取らない形（`#prevent`）、keyValue は
+         * `=` で値を取る形（`#init=element`）、eventNamePrefix は `on` + イベント名の形
+         * （`#onchange` — two-way / radio / checkbox のイベント名上書き。README「Modifiers」）。
+         * define.ts の定数が単一正本で、ランタイムの消費箇所も同じ定数に分岐する。
+         */
+        modifiers: {
+            flags: readonly string[];
+            keyValue: readonly string[];
+            eventNamePrefix: string;
+        };
+        /** リストインデックス参照名（`$1`..`$N`）。prefix + 1 始まり連番、maxDepth まで。 */
+        indexParam: {
+            prefix: string;
+            maxDepth: number;
+        };
+        /**
+         * bindingType 判別の語彙（parseBindTextsForElement の分岐と同一の定数から導出）。
+         * 判別順: else → spread → 構造ディレクティブ/radio/checkbox → eventToken・`on*`
+         * （event）→ prop。propNamespaces は左辺先頭セグメントの特殊 namespace で、
+         * apply 層のディスパッチキー集合との一致はテストが強制する。
+         * 既知の未収載: `radio` / `checkbox`（BindingType union のみが正本）。
+         */
+        bindingTypes: {
+            elseKeyword: string;
+            spread: string;
+            eventPropertyPrefix: string;
+            /** 左辺の先頭に付けると、名前が `on` で始まってもイベントにしない明示のプロパティ形（`.online:`、要件 B5） */
+            explicitPropertyPrefix: string;
+            propNamespaces: {
+                eventToken: string;
+                command: string;
+                class: string;
+                attr: string;
+                style: string;
+            };
+        };
+    };
+    /** 組み込みフィルタ名（builtinFilters から自動導出＝実装が正本） */
+    filters: string[];
+    /** 組み込みフィルタの構造化メタデータ（説明・引数仕様・型）。vscode-wcs の手リスト撤去用。 */
+    filterMeta: Record<string, IFilterMeta>;
+    /** 組み込みフィルタの旧名 → 正式名（要件 B12）。旧名も解決するが、ツールは正式名を提案する */
+    filterAliases: Readonly<Record<string, string>>;
+    /**
+     * 宣言キーの旧名 → 正式名（要件 B12。`$updatedCallback` → `$renderedCallback`、
+     * `$streams` → `$stream`）。ランタイムは旧名も受けるが、ツールは正式名を提案する。
+     * `reservedLifecycle` / `reservedStateApi` は**正式名だけ**なので、旧名が予約かどうかは
+     * この表と併せて判断する
+     */
+    declarationAliases: Readonly<Record<string, string>>;
+    /** state API の旧名 → 正式名（`$trackDependency` → `$dependOn` 等、要件 B12） */
+    apiAliases: Readonly<Record<string, string>>;
+    /** 予約ライフサイクルフック名（正式名のみ。旧名は `declarationAliases` を見る） */
+    reservedLifecycle: readonly string[];
+    /** 予約 state API（プロトコル系の `$` 名前空間。正式名のみ） */
+    reservedStateApi: readonly string[];
+}
+/** 機械可読な単一正本を返す。vscode-wcs はこれを消費する想定。 */
+declare function getWcsManifest(): IWcsManifest;
+
+export { DECLARATION_ALIASES, STATE_API_ALIASES, STRUCTURAL_BINDING_TYPE_SET, WCS_MANIFEST_VERSION, builtinFilterAliases, builtinFilterMeta, getWcsManifest };
+export type { FilterArgType, FilterResultType, IFilterMeta, IWcsManifest };

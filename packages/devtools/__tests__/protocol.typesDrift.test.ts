@@ -12,12 +12,21 @@
  * ここでは両ソースを**テキストとして**読み、対応するインターフェースのメンバ名集合を
  * 突き合わせる。型そのものは比較しない — 片側が `IStateElement`、もう片側が `unknown`
  * なのは設計どおりで、`?` の有無（旧ランタイム耐性）も同様。捕まえるのは名前の欠落だけ。
+ *
+ * ランタイム側の型宣言は 3.x の `packages/state/src/devtools/types.ts` にあった。4.0 の state
+ * （4.0 の差し替えで packages/state）はプロトコル v2 のまま話すが、型宣言を持たない
+ * （`src/devtools/devtools.ts` がイベントを素のオブジェクトで送る）。そこで v2 の型宣言は 3.5.4 の写し
+ * （`__tests__/fixtures/state-3.5.4-devtools-types.ts.txt`、凍結）と突き合わせ、4.0 のランタイムとは
+ * プロトコル版とグローバル名だけを突き合わせる。
  */
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const RUNTIME_TYPES = resolve(__dirname, "..", "..", "state", "src", "devtools", "types.ts");
+/** The protocol v2 declaration of the runtime side: 3.x's src/devtools/types.ts as of 3.5.4 (frozen). */
+const RUNTIME_TYPES = resolve(__dirname, "fixtures", "state-3.5.4-devtools-types.ts.txt");
+/** The 4.0 runtime, which speaks v2 without type declarations of its own. */
+const RUNTIME_4 = resolve(__dirname, "..", "..", "state", "src", "devtools", "devtools.ts");
 const CONSUMER_TYPES = resolve(__dirname, "..", "src", "protocol", "types.ts");
 
 /**
@@ -143,8 +152,7 @@ function variantsByType(body: string): Map<string, string> {
 
 describe("DevTools Hook Protocol 両側の型宣言のドリフト", () => {
   const runtimeSource = (() => {
-    // 見つからないときは skip せず落とす — 番人が黙って空振りするほうが有害
-    // （このリポジトリでは packages/state は常に隣にある）。
+    // 見つからないときは skip せず落とす — 番人が黙って空振りするほうが有害。
     expect(existsSync(RUNTIME_TYPES), `${RUNTIME_TYPES} が読めない`).toBe(true);
     return stripComments(readFileSync(RUNTIME_TYPES, "utf8"));
   })();
@@ -159,6 +167,18 @@ describe("DevTools Hook Protocol 両側の型宣言のドリフト", () => {
     for (const name of ["DEVTOOLS_PROTOCOL_VERSION", "DEVTOOLS_HOOK_GLOBAL"]) {
       expect(constant(consumerSource, name), name).toBe(constant(runtimeSource, name));
     }
+  });
+
+  it("4.0 のランタイム（packages/state）もプロトコル版とグローバル名が同じであること", () => {
+    expect(existsSync(RUNTIME_4), `${RUNTIME_4} が読めない`).toBe(true);
+    const runtime4 = stripComments(readFileSync(RUNTIME_4, "utf8"));
+    const constant = (source: string, name: string): string => {
+      const found = new RegExp(`\\b${name}\\s*=\\s*([^;]+);`).exec(source);
+      expect(found, name).not.toBeNull();
+      return found![1].trim();
+    };
+    expect(constant(runtime4, "PROTOCOL"), "PROTOCOL").toBe(constant(consumerSource, "DEVTOOLS_PROTOCOL_VERSION"));
+    expect(constant(runtime4, "HOOK"), "HOOK").toBe(constant(consumerSource, "DEVTOOLS_HOOK_GLOBAL"));
   });
 
   it.each(INTERFACE_PAIRS)("%s と %s のフィールド名が一致すること", (runtime, consumer) => {

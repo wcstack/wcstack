@@ -174,7 +174,7 @@ export default { $behavior: { enableMustach: true }, $features: ["formatz"] };
 
 describe('名前の表は @wcstack/state 4.0 の manifest から読む', () => {
   // manifest がランタイムの読む表（engine.ts の BEHAVIOR_KEYS・load.ts の FEATURE_NAMES）と一致することは、
-  // state-next の __tests__/public-surface.test.ts が固定する。ここでは拡張が manifest をそのまま使うことを固定する
+  // @wcstack/state の __tests__/public-surface.test.ts が固定する。ここでは拡張が manifest をそのまま使うことを固定する
   const manifest = getWcsManifest();
 
   it('BEHAVIOR_KEYS は manifest の behaviorOptions のキー', () => {

@@ -3,8 +3,8 @@ import { collectErrors } from "./helpers";
 
 // A <select> whose options a `for` renders: its bound value is applied before the options exist
 // (bindings apply in document order), and must be selected once they are. @wcstack/state 3.3
-// applies a select's value after the options of the same batch; the 4.0 engine (state-next)
-// applies it again whenever a view renders options into the select (F31).
+// applied a select's value after the options of the same batch; the 4.0 engine applies it
+// again whenever a view renders options into the select (F31).
 
 declare global {
   interface Window {
@@ -32,8 +32,8 @@ test("最初の描画で、<select> の値が for の描いた選択肢から選
 });
 
 test.describe("選択肢が後から変わる", () => {
-  test.skip(process.env.STATE !== "next", "@wcstack/state 3.3 applies a select's value only in the batch that writes it, and renders no rows over a top-level list inside a row (#376)");
-
+  // (3.3 applied a select's value only in the batch that wrote it, and rendered no rows over a
+  // top-level list inside a row — #376)
   test("行ごとに同じ選択肢（行の中でトップレベルのリストを回す for:、#376）も、行の値が選ばれる", async ({ page }) => {
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/state-select-shared-options.html");

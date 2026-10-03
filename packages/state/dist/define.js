@@ -1,1 +1,1 @@
-function n(n){return n}export{n as defineState};
+function n(e){return e}export{n as defineState};

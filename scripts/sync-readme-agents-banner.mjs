@@ -39,8 +39,7 @@ const check = process.argv.includes("--check");
 
 // Published packages: packages/*/package.json scoped under @wcstack/. Auto-picks
 // up new packages and excludes the non-published vscode-wcs extension and any
-// `private: true` package (packages/state-next until the 4.0 swap), the same rule
-// as release.yml and generate-sri.mjs.
+// `private: true` package, the same rule as release.yml and generate-sri.mjs.
 function publishedPackages() {
   const out = [];
   for (const d of readdirSync(PKGDIR)) {

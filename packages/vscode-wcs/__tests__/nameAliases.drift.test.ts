@@ -11,7 +11,7 @@
  *   - ランタイム（`@wcstack/state` の src — `node_modules/@wcstack/state` の実体）が拒む宣言キー・API の
  *     旧名が、拡張の表と同じ（宣言キーは `engine.ts` の `REMOVED_DECLARATIONS`、API は `#1701` で投げる名前）
  *
- * src は依存の実体（今は `packages/state-next`、4.0 の差し替えの後は `packages/state`）から読む。
+ * src は依存の実体（`packages/state`）から読む。
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, realpathSync } from 'node:fs';
