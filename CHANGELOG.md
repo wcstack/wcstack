@@ -9,9 +9,11 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ## [Unreleased]
 
 <!--
-  Draft of the 4.0.0 entry. Release prep renames this heading to `## [4.0.0] — <date>` (or to
-  the rc version for a 4.0.0-rc.N on npm's `next` tag), opens a new empty `## [Unreleased]` above
-  it, and re-measures the sizes and the benchmark below. Sizes: gzip level 9, `npm run build` in
+  Draft of the 4.0.0 entry. It stays under [Unreleased] for the whole rc series: an rc
+  (4.0.0-rc.N on npm's `next` tag) gets no heading of its own — its GitHub Release points here —
+  and what an rc changes is edited into this draft. Only the final release renames this heading
+  to `## [4.0.0] — <date>`, opens a new empty `## [Unreleased]` above it, and re-measures the
+  sizes and the benchmark below. Sizes: gzip level 9, `npm run build` in
   packages/state-next at cb21670e, against the committed 3.5.4 dist of packages/state. The
   benchmark figures are the last recorded ones (v4-remaining §0), not re-run for this draft.
   Still to record at release: `wcstack/auto`'s size, and the state size gates rebuilt for the

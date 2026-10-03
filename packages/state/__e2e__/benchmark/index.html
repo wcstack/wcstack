@@ -26,10 +26,10 @@ export default {
   // 位置変更（swap/remove）では従来どおり該当行が再評価される。
   //
   // NOTE: 下の getter の本文は、計測スクリプトが**文字列置換**して natural / tracked の
-  // バリアントを作る目印でもある（scripts/ の audit-state-browser / -tech-allocsample /
-  // -tech-counters / -tech-heap / -tech-heapsnapshot / -tech-keyed / -tech-profile /
-  // -tech-warmth と packages/state-next/bench/select10k.mjs）。うち 6 本は置換に失敗すると
-  // "Fixture replacement failed" で落ちる。getter を書き換えるときは、これらと同じコミットで
+  // バリアントを作る目印でもある（scripts/ の audit-state-tech-allocsample / -tech-heap /
+  // -tech-heapsnapshot / -tech-keyed / -tech-profile / -tech-warmth と
+  // packages/state/bench/select10k.mjs。3.x の audit-state-browser / -tech-counters は 4.0 の
+  // 差し替えの後に外した）。うち 6 本は置換に失敗すると "Fixture replacement failed" で落ちる。getter を書き換えるときは、これらと同じコミットで
   // 揃えること（2026-09-27 に 4.0 で外れる旧名から正式名へ揃えた）。
   //
   // **このコメントに目印の文字列を verbatim で書かないこと。**`String.replace(<短い
