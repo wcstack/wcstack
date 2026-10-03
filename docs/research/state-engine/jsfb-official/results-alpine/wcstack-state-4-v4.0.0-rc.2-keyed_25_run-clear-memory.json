@@ -1,0 +1,1 @@
+{"framework":"wcstack-state-4-v4.0.0-rc.2-keyed","keyed":true,"benchmark":"25_run-clear-memory","type":"memory","values":{"DEFAULT":{"min":1.6504926681518555,"max":1.6504926681518555,"median":1.6504926681518555,"mean":1.6504926681518555,"stddev":null,"values":[1.6504926681518555]}}}

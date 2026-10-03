@@ -129,3 +129,46 @@ node ../summarize.mjs results
 
 - 4.0 の値は全部入りの `auto.min.js`（後付けの機能をすべて含む）。9 月の state-next（`4955ab52`）の 111.9 / 35.4KB から増えた。core だけ（`/core`）のページは今回は測っていない。
 - first paint は 1 回ずつの値で、9 月に同じ実装で 133〜232ms に散らばったので、差は読めない。
+
+## Alpine との比較（2026-10-04）
+
+vanillajs・Alpine・4.0.0-rc.2 を 1 回のセッションで測った（`results-alpine/`、`summary-alpine.json`）。ハーネスと条件は上の rc.2 の計測と同じ。Alpine は公式の実装（`frameworks/keyed/alpine`、Alpine 3.14.7 を rollup で 1 本にしたもの。公式の結果表と同じ版）をそのままビルドした。3 つとも `isKeyed` を通過。
+
+- 先に vanillajs と Alpine だけを測ったセッションでは、vanillajs の 4x スロットルの項目（partial update・swap・remove）の paint が上の rc.2 のセッションより 10ms 前後大きく、セッションをまたいだ比較はできなかった。そのため 4.0 も同じセッションで測り直した。このセッションの 4.0 のサイズの段は、ハーネスが first paint のイベントを拾えずに 1 度落ちた（`startTime` of undefined）ので、その段だけを単独で再実行した（サイズのバイト数は rc.2 の計測と同じ）。
+
+**CPU の加重幾何平均**: vanillajs 1.02、**4.0.0-rc.2 1.05**、Alpine 2.35（Alpine は 4.0 の約 2.2 倍）。script（JS の時間）だけの幾何平均（vanillajs を 1）: 4.0 2.05、Alpine 17.11。paint は 3 つとも 1.07〜1.09。
+
+| 項目（ms、中央値） | vanillajs | Alpine | 4.0.0-rc.2 | Alpine ÷ 4.0 |
+|---|---:|---:|---:|---:|
+| create rows（1k） | 58.3 | 167.8 | 62.3 | 2.7 |
+| replace all rows（1k） | 61.8 | 179.5 | 66.9 | 2.7 |
+| partial update（4x） | 45.0 | 45.5 | 46.6 | 1.0 |
+| select row（4x） | 14.8 | 73.6 | 14.7 | 5.0 |
+| swap rows（4x） | 33.5 | 54.6 | 38.4 | 1.4 |
+| remove row（2x） | 36.0 | 35.0 | 32.9 | 1.1 |
+| create many rows（10k） | 625.6 | 1671.6 | 661.6 | 2.5 |
+| append 1k to 1k（2x） | 68.2 | 173.9 | 65.0 | 2.7 |
+| clear 1k rows（4x） | 21.1 | 130.4 | 24.0 | 5.4 |
+
+- 差は行を作る・置き換える・消す項目と select row に出る。Alpine の script は create 10k で 996ms（4.0 は 64ms）、select row で 59ms（4.0 は 2.6ms）。partial update と remove row はほぼ同じ。
+- 4.0 の値は上の rc.2 のセッション（加重幾何平均 1.06、vanillajs 1.02）と揺れの範囲で一致する。公式の結果表の Alpine は vanillajs の 2.93 倍で、このセッション（2.35 ÷ 1.02 ≈ 2.3 倍）より大きい（機械が違う）。
+
+**メモリ（MB、中央値）**
+
+| 項目 | vanillajs | Alpine | 4.0.0-rc.2 |
+|---|---:|---:|---:|
+| ready memory | 0.57 | 0.79 | 1.18 |
+| run memory（1k 行） | 2.03 | 16.92 | 2.95 |
+| create/clear 1k ×5 | 0.63 | 1.58 | 1.65 |
+
+- 1,000 行を持ったときは Alpine が 4.0 の約 5.7 倍。読み込み直後は 4.0 の方が重く、作成と消去のくり返しの後はほぼ同じ。
+
+**サイズと first paint**
+
+| 項目 | vanillajs | Alpine | 4.0.0-rc.2 |
+|---|---:|---:|---:|
+| 非圧縮（KB） | 11.7 | 47.4 | 133.7 |
+| 圧縮（brotli、KB） | 2.5 | 14.7 | 42.6 |
+| first paint（ms、1 回） | 161.5 | 156.0 | 222.1 |
+
+- 配る量は 4.0（全部入りの `auto.min.js`）が Alpine の約 2.9 倍。first paint は 1 回ずつの値で、差は読めない。
