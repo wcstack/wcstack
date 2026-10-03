@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { applyChangeToText } from '../src/apply/applyChangeToText';
 import { getPathInfo } from '../src/address/PathInfo';
+import { setSsrHooks, ssrHooks } from '../src/core/ssrHooks';
 import type { IBindingInfo } from '../src/types';
 import type { IApplyContext } from '../src/apply/types';
 
@@ -104,5 +105,36 @@ describe('applyChangeToText', () => {
     expect(textNode.nodeValue).toBe('test');
 
     document.documentElement.removeAttribute('data-wcs-server');
+  });
+
+  it('SSRモードの境界コメントには ssr 機能の textMarker が返す式を書き、ssr 機能が無い（分割の core）ときはパスだけを書くこと（#373）', () => {
+    // Renders one text binding in SSR mode and returns its parent's markup
+    const render = (): string => {
+      const parent = document.createElement('p');
+      const textNode = document.createTextNode('');
+      parent.appendChild(textNode);
+      const binding = {
+        ...createBinding(textNode),
+        outFilters: [{ filterName: 'upper', args: [], literals: [], filterFn: (v: unknown) => v }],
+      } as IBindingInfo;
+      applyChangeToText(binding, dummyContext, 'test');
+      return parent.innerHTML;
+    };
+    document.documentElement.setAttribute('data-wcs-server', '');
+    try {
+      // This file installs no feature: the path alone, the format before #373
+      expect(ssrHooks).toBeNull();
+      expect(render()).toBe('<!--@@wcs-text-start:value-->test<!--@@wcs-text-end:value-->');
+      setSsrHooks({
+        hydrate: async () => false,
+        loadState: () => null,
+        emitSnapshot: async () => undefined,
+        textMarker: (binding) => `${binding.statePathName}|${binding.outFilters[0].filterName}`,
+      });
+      expect(render()).toBe('<!--@@wcs-text-start:value|upper-->test<!--@@wcs-text-end:value|upper-->');
+    } finally {
+      setSsrHooks(null);
+      document.documentElement.removeAttribute('data-wcs-server');
+    }
   });
 });

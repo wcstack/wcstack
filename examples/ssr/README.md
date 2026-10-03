@@ -125,3 +125,5 @@ The server generates HTML like this:
 <div class="info-box">This block is visible...</div>
 <!--@@wcs-if-end:u1:show-->
 ```
+
+A text marker carries the binding's expression, output filters included, so hydration restores the same binding: `{{ price|toFixed(2) }}` renders as `<!--@@wcs-text-start:price|toFixed(2)-->3.14<!--@@wcs-text-end:price|toFixed(2)-->`, and `{{ .price|toFixed(2) }}` in a `for:` row as `<!--@@wcs-text-start:users.*.price|toFixed(2)-->…`. An expression a comment cannot hold (one containing `--`) is written as its path alone.

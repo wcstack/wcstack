@@ -12,10 +12,11 @@ import { getBindingsReady } from "../stateElementByName";
 import { VERSION } from "../version";
 import { registerSsrSnapshotBuilder } from "./buildSsrDocument";
 import { hydrateBindings } from "./hydrateBindings";
-import { Ssr } from "./Ssr";
+import { Ssr, textMarker } from "./Ssr";
 
 export const ssrFeatureHooks: ISsrHooks = {
   hydrate: hydrateBindings,
+  textMarker,
   loadState(element) {
     const root = element.parentNode;
     if (!root) return null;

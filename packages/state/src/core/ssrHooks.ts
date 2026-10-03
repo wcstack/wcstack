@@ -9,7 +9,9 @@
  *   hydrate       ルート登録（stateElementByName）で、`enable-ssr` のクライアント側
  *   loadState     `_initialize` の冒頭で、`<wcs-ssr>` に載った state データを読む
  *   emitSnapshot  サーバー側の `connectedCallback` の末尾で `<wcs-ssr>` を書き出す
+ *   textMarker    server side: apply/applyChangeToText asks what to write into a text binding's boundary comments
  */
+import type { IBindingInfo } from "../binding/types";
 import { raiseError } from "../raiseError";
 import { featureNotInstalledMessage } from "./featureEntries";
 
@@ -20,6 +22,11 @@ export interface ISsrHooks {
   loadState(element: Element): Record<string, any> | null;
   /** サーバー: バインディング完了後に `<wcs-ssr>` を書き出す */
   emitSnapshot(element: Element): Promise<void>;
+  /**
+   * Server: what a text binding's boundary comments carry (`<!--@@wcs-text-start:…-->`): the binding's
+   * expression, output filters included (#373). Without the ssr feature the core writes the path alone.
+   */
+  textMarker(binding: IBindingInfo): string;
 }
 
 /** 置かれていなければ null。`enable-ssr` の無いページはここを一度も見ない */
