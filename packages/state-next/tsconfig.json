@@ -9,5 +9,8 @@
     "src/**/*",
     "__tests__/**/*",
     "conformance/**/*"
+  ],
+  "exclude": [
+    "__tests__/fixtures/**"
   ]
 }

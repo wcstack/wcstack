@@ -1,0 +1,36 @@
+{
+  "$comment": "The fields of @wcstack/state 3.5.4 package.json that __tests__/public-surface.test.ts compares (frozen at the 4.0 swap).",
+  "name": "@wcstack/state",
+  "version": "3.5.4",
+  "main": "./dist/index.esm.js",
+  "module": "./dist/index.esm.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js"
+    },
+    "./auto": "./dist/auto.min.js",
+    "./core": {
+      "types": "./dist/split/core.d.ts",
+      "import": "./dist/split/core.js"
+    },
+    "./features/*": {
+      "types": "./dist/split/features/*.d.ts",
+      "import": "./dist/split/features/*.js"
+    },
+    "./define": {
+      "types": "./dist/define.d.ts",
+      "import": "./dist/define.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.esm.js"
+    },
+    "./parser": {
+      "types": "./dist/parser.d.ts",
+      "import": "./dist/parser.esm.js"
+    },
+    "./wcs-manifest.json": "./dist/wcs-manifest.json"
+  }
+}

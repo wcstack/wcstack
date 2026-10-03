@@ -1,6 +1,7 @@
 /**
- * public-surface.test.ts — 公開面が @wcstack/state 3.3 と同じであること。
- * 3.3 側はコミット済みの配布物（packages/state/dist の .d.ts・wcs-manifest.json・parser.esm.js）、
+ * public-surface.test.ts — 公開面が @wcstack/state 3.x（3.3 でそろえ、3.5.4 で凍結）と同じであること。
+ * 3.x 側は 3.5.4 の配布物の写し（__tests__/fixtures/state-3.5.4 — .d.ts・wcs-manifest.json・parser.esm.js と
+ * package.json の exports。4.0 の差し替えで packages/state/dist が 4.0 になったので、その前に写して凍結した）、
  * 4.0 側は各入口のソースを読む。意図した差は下の表に理由付きで書く。
  */
 import { describe, it, expect } from "vitest";
@@ -10,7 +11,8 @@ import { join, resolve } from "node:path";
 import ts from "typescript";
 
 const ROOT = resolve(__dirname, "..");
-const V3 = resolve(ROOT, "../state");
+/** the 3.x side: the 3.5.4 dist files this test reads, frozen at the 4.0 swap (packages/state/dist is 4.0 since) */
+const V3 = resolve(__dirname, "fixtures/state-3.5.4");
 
 /** An entry's exports, name → "value" | "type", by the TypeScript checker. */
 function exportsOf(file: string): Map<string, "value" | "type"> {
@@ -34,14 +36,14 @@ const TS_TIMEOUT = 60_000;
 
 const FEATURES_V3 = ["temporal", "scopes", "recursion", "ssr", "devtools", "formats", "diagnostics"];
 
-/** [entry, 3.3 .d.ts, 4.0 source] */
+/** [entry, 3.x .d.ts (in V3), 4.0 source] */
 const ENTRIES: [string, string, string][] = [
-  [".", "dist/index.d.ts", "src/exports.ts"],
-  ["./core", "dist/split/core.d.ts", "src/core.ts"],
-  ...FEATURES_V3.map((f): [string, string, string] => [`./features/${f}`, `dist/split/features/${f}.d.ts`, `src/features/${f}.ts`]),
-  ["./define", "dist/define.d.ts", "src/public/defineState.ts"],
-  ["./manifest", "dist/manifest.d.ts", "src/public/manifest.ts"],
-  ["./parser", "dist/parser.d.ts", "src/public/parser.ts"],
+  [".", "index.d.ts", "src/exports.ts"],
+  ["./core", "split/core.d.ts", "src/core.ts"],
+  ...FEATURES_V3.map((f): [string, string, string] => [`./features/${f}`, `split/features/${f}.d.ts`, `src/features/${f}.ts`]),
+  ["./define", "define.d.ts", "src/public/defineState.ts"],
+  ["./manifest", "manifest.d.ts", "src/public/manifest.ts"],
+  ["./parser", "parser.d.ts", "src/public/parser.ts"],
 ];
 
 /** Names 4.0 adds, by entry (each with its reason). */
@@ -68,7 +70,7 @@ describe("入口ごとの export が 3.3 と同じ", () => {
   }, TS_TIMEOUT);
 
   it("package.json の exports の入口と、指す先のファイルの配置が 3.3 と同じ", () => {
-    const v3 = JSON.parse(readFileSync(join(V3, "package.json"), "utf8"));
+    const v3 = JSON.parse(readFileSync(join(V3, "package.exports.json"), "utf8"));
     const v4 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
     expect(v4.exports).toEqual(v3.exports);
     expect({ main: v4.main, module: v4.module, types: v4.types }).toEqual({ main: v3.main, module: v3.module, types: v3.types });
@@ -77,7 +79,7 @@ describe("入口ごとの export が 3.3 と同じ", () => {
 
 describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () => {
   it("構文・フィルタ・メタデータ・予約名", async () => {
-    const v3 = JSON.parse(readFileSync(join(V3, "dist/wcs-manifest.json"), "utf8"));
+    const v3 = JSON.parse(readFileSync(join(V3, "wcs-manifest.json"), "utf8"));
     const { getWcsManifest } = await import("../src/public/manifest");
     const v4 = JSON.parse(JSON.stringify(getWcsManifest()));
     expect(v4.version).toBe(v3.version);
@@ -187,12 +189,12 @@ describe("parser の結果と誤りの文面が 3.3 と同じ", () => {
     inFilters: b.inFilters.map((f: any) => ({ filterName: f.filterName, args: f.args })),
     outFilters: b.outFilters.map((f: any) => ({ filterName: f.filterName, args: f.args })),
   });
-  // 3.3's parser, copied into this package (vitest does not load a module from outside it)
+  // 3.x's parser (3.5.4), copied under node_modules as .mjs (the fixture has no package.json saying it is ESM)
   const load = async () => {
     const dir = join(ROOT, "node_modules/.cache/state-next");
     mkdirSync(dir, { recursive: true });
     const copy = join(dir, "parser-3.3.mjs");
-    copyFileSync(join(V3, "dist/parser.esm.js"), copy);
+    copyFileSync(join(V3, "parser.esm.js"), copy);
     return {
       v3: await import(/* @vite-ignore */ `${pathToFileURL(copy).href}?t=${Date.now()}`),
       v4: await import("../src/public/parser"),

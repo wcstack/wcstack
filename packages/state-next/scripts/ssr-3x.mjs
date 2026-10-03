@@ -14,11 +14,23 @@
 //   3.5.4 (wcstack#427) made the mark of an expression a comment cannot hold (one with a `--`, which
 //   falls back to the path) name the path a Light DOM child wrote (`other`, `label`) instead of its
 //   host's (`#mN.other`, `user.name`): the record of the 3.5.3 output.
+//
+// Since the 4.0 swap (docs/state-engine-rewrite/v4-remaining.ja.md R1) packages/state/dist is the 4.0
+// engine, so ssr-3x-354.json is frozen too: this refuses a 4.0 state dist (its wcs-manifest.json
+// declares `behaviorOptions`, which 3.x's does not) and a 4.x server. WCS_3X_PACKAGES names a folder
+// holding the 3.x `state/` and `server/` packages (their package.json and dist) to render with instead.
 import { register } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
+import { resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const here = new URL("../", import.meta.url);
-const packages = new URL("../../", import.meta.url);
+const packages = process.env.WCS_3X_PACKAGES ? pathToFileURL(resolve(process.env.WCS_3X_PACKAGES) + sep) : new URL("../../", import.meta.url);
+const version = (p) => JSON.parse(readFileSync(new URL(`${p}/package.json`, packages), "utf8")).version;
+if ("behaviorOptions" in JSON.parse(readFileSync(new URL("state/dist/wcs-manifest.json", packages), "utf8"))) {
+  throw new Error(`${new URL("state/dist", packages).pathname} is a 4.0 dist: the 3.x records are frozen since the 4.0 swap — set WCS_3X_PACKAGES to a folder with the 3.x state/ and server/`);
+}
+if (parseInt(version("server")) >= 4) throw new Error(`@wcstack/server ${version("server")} is not 3.x: set WCS_3X_PACKAGES to a folder with the 3.x state/ and server/`);
 const state = new URL("state/dist/index.esm.js", packages).href;
 register("data:text/javascript," + encodeURIComponent(`
 export async function resolve(specifier, context, next) {
@@ -27,7 +39,6 @@ export async function resolve(specifier, context, next) {
   return next(specifier, context);
 }`));
 const { renderToString } = await import(new URL("server/dist/index.esm.js", packages).href);
-const version = (p) => JSON.parse(readFileSync(new URL(`${p}/package.json`, packages), "utf8")).version;
 
 /** The custom elements the pages use (tag → the host's `state`), defined on the server as in the test. */
 const components = {
