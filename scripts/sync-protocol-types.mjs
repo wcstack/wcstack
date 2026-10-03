@@ -2,8 +2,9 @@
 // Propagates the single-source wc-bindable protocol sources from /protocol
 // into consuming packages as generated, do-not-edit copies:
 //   packages/<pkg>/src/protocol/wcBindable.ts
-//   packages/state/src/protocol/wcBindableReader.ts
+//   packages/<pkg>/src/protocol/wcBindableReader.ts (no consumer since the 4.0 state, see below)
 //   packages/<pkg>/src/protocol/transitionRunner.ts
+//   packages/<pkg>/src/protocol/binder.ts, ssrSnapshot.ts, upgradeProperties.ts
 //
 // Each package's own types file re-exports from that copy, so the package stays
 // independently buildable/publishable with zero runtime dependency (the types erase
@@ -50,23 +51,26 @@ const TARGET_PACKAGES = [
   "router", "server",
   // view-transition policy node (docs/view-transition-design.md)
   "view-transition",
-  // reactive engine / consumer
-  "state",
+  // (not state: the 4.0 engine reads a wcBindable declaration in its own src/dom/wc.ts and carries
+  // only the binder and transition-runner copies)
 ];
 
-const READER_TARGET_PACKAGES = ["state"];
+// The 3.x state was the reader's one consumer; the 4.0 engine reads the declaration itself
+// (src/dom/wc.ts), so the canonical /protocol/wc-bindable-reader.ts has no copy for now.
+const READER_TARGET_PACKAGES = [];
 
 // transition-runner protocol (docs/view-transition-design.md §4): the two packages
 // that mutate the DOM on the page's behalf, plus the arbiter that installs itself.
-const TRANSITION_RUNNER_TARGET_PACKAGES = ["router", "state", "state-next", "view-transition"];
+const TRANSITION_RUNNER_TARGET_PACKAGES = ["router", "state", "view-transition"];
 
 // binder protocol (docs/binder-protocol-design.md): the package that inserts DOM on
 // the page's behalf, plus the one that owns bindings and installs itself.
-const BINDER_TARGET_PACKAGES = ["router", "state", "state-next"];
+const BINDER_TARGET_PACKAGES = ["router", "state"];
 
 // ssr-snapshot protocol (docs/ssr-router-design.md §5): the SSR renderer that
-// orchestrates the final snapshot pass, plus the state owner that provides it.
-const SSR_SNAPSHOT_TARGET_PACKAGES = ["server", "state"];
+// orchestrates the final snapshot pass. The state owner that provides it (the 4.0
+// engine's ssr add-on, src/ssr/ssr.ts) declares the key itself, without a copy.
+const SSR_SNAPSHOT_TARGET_PACKAGES = ["server"];
 
 // custom element の Shell を持つパッケージ（= connectedCallback で property upgrade が要る）。
 // state / server は Shell が wcBindable.inputs を宣言しないため対象外。

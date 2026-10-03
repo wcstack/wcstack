@@ -22,9 +22,8 @@ jobs:
           # Discover CI-target packages: any packages/* whose package.json is
           # scoped under @wcstack/, plus the unscoped `wcstack` entry bundle
           # (a buildable package since docs/distribution-robustness-impl-plan.md
-          # Phase 4). Auto-includes new scoped packages, private ones too
-          # (packages/state-next on research/state-engine); still excludes
-          # the unscoped ones (e.g. the vscode-wcs extension).
+          # Phase 4). Auto-includes new scoped packages, private ones too;
+          # still excludes the unscoped ones (e.g. the vscode-wcs extension).
           all=()
           for dir in packages/*/; do
             [ -f "${dir}package.json" ] || continue
@@ -131,11 +130,9 @@ jobs:
     # それでも解決できないパスは warning に留まり build を落とさない（--errors-only で表示も抑制）。
     # vscode-wcs は @wcstack/* でなく detect-changes matrix 対象外なので独立 job にする。
     #
-    # vscode-wcs / lint は @wcstack/state の dist（parser / manifest）を file: 依存（symlink）経由で
-    # inline して消費する。依存先は 4.0 のエンジン packages/state-next（"@wcstack/state":
-    # "file:../state-next"。4.0 のリリースで packages/state の中身と差し替わったら file:../state に
-    # 戻す — docs/state-engine-rewrite/v4-remaining.ja.md R1・§3）。state-next は dist をコミット
-    # しないので、最初に src からビルドし、「新鮮な state × vscode-wcs / lint」を PR 時点で
+    # vscode-wcs / lint は @wcstack/state の dist（parser / manifest）を file:../state（symlink）経由で
+    # inline して消費する。コミット済み dist はリリース間で src に遅行するため、最初に
+    # state を src から再ビルドし、「新鮮な state × vscode-wcs / lint」を PR 時点で
     # ゲートする（#183 の残り半分 — stale dist に対して緑のまま release で初めて落ちる
     # 経路を塞ぐ。docs/distribution-robustness-impl-plan.md Phase 2）。
     runs-on: ubuntu-latest
@@ -147,17 +144,15 @@ jobs:
           cache: npm
           cache-dependency-path: |
             packages/vscode-wcs/package-lock.json
-            packages/state-next/package-lock.json
+            packages/state/package-lock.json
       # node_modules/@wcstack/state は npm の file: 依存で symlink になるため、
       # vscode-wcs の npm ci より先に走っても後から走っても新鮮な dist が見える。
-      # esbuild の inline（vscode-wcs の build）より前であることだけが要件
-      # （dist が無ければ vscode-wcs の build / test が scripts/ensure-state-dist.mjs で自分でビルドするが、
-      # 古い dist はそのまま使うので、ここで必ず src から作り直す）。
-      - name: Build @wcstack/state 4.0 (packages/state-next) from source (vscode-wcs and lint inline its dist)
+      # esbuild の inline（vscode-wcs の build）より前であることだけが要件。
+      - name: Build @wcstack/state from source (vscode-wcs and lint inline its dist)
         run: |
           npm ci
           npm run build
-        working-directory: packages/state-next
+        working-directory: packages/state
       - run: npm ci
         working-directory: packages/vscode-wcs
       - run: npm run build
