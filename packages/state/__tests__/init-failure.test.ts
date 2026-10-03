@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, beforeAll, afterEach, vi, type MockInstance } from "vitest";
 import { bootstrapState, diagnostics, getBindingsReady, installFeatures, scopes, ssr } from "../src/index";
+import { VERSION } from "../src/version";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
@@ -79,7 +80,8 @@ describe("失敗の報告は要素を名指す（3.5 と同じ見出し）", () 
 
   it("SSR のスナップショットが読めないときも、同じ見出しで reject する", async () => {
     spy();
-    const { el } = page(`<wcs-ssr version="0.0.0"><script type="application/json">{bad</script></wcs-ssr><wcs-state enable-ssr></wcs-state>`, {});
+    // (the engine's own version: a snapshot of another one is discarded unread)
+    const { el } = page(`<wcs-ssr version="${VERSION}"><script type="application/json">{bad</script></wcs-ssr><wcs-state enable-ssr></wcs-state>`, {});
     const reason = await rejection(el.connectedCallbackPromise);
     expect(reason).toBeInstanceOf(SyntaxError);
     expect(error).toHaveBeenCalledExactlyOnceWith("[@wcstack/state] <wcs-state> failed to initialize.", reason);

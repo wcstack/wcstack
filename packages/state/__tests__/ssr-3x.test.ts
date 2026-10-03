@@ -15,6 +15,11 @@ import { resolve } from "node:path";
 import { bootstrapState, getBindingsReady, installFeatures, scopes, ssr } from "../src/index";
 import { formats } from "../src/features/formats";
 
+// The client is 4.x here, whatever package.json says: until the release bumps it, the package keeps
+// the last 3.x version (3.5.4), and the engine reads `<wcs-ssr version>` by major.minor — it would
+// take these 3.5.x outputs for its own.
+vi.mock("../src/version", () => ({ VERSION: "4.0.0" }));
+
 type Golden = {
   engine: string;
   components: Record<string, Record<string, unknown>>;
