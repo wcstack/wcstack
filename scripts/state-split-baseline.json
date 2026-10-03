@@ -28,8 +28,8 @@
   },
   "features/ssr.js": {
     "files": 1,
-    "bytes": 13759,
-    "gzip": 4964,
+    "bytes": 13836,
+    "gzip": 4999,
     "slack": 1024
   },
   "features/temporal.js": {

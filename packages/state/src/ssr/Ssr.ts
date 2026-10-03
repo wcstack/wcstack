@@ -188,15 +188,20 @@ const COMMENT_UNSAFE = /--|-$|[\0\n\r\u2028\u2029]/;
  *   templates are registered translated — which is what hydration needs today: it adopts those rows and
  *   branches in the page's scope (#372).
  *
- * An expression a comment cannot hold falls back to the path alone, the format before #373. The path itself
- * is not checked: a state key containing `--` breaks the comment, as it did before #373 (paths come from
- * the author's markup, never from data).
+ * An expression a comment cannot hold falls back to its path alone, filters dropped (the format before #373):
+ * for a binding from a comment, the path its own text names — in a Light DOM child that is the child's
+ * vocabulary, where `statePathName` is the host's, which the child's scope cannot resolve (it hydrated empty,
+ * and a 4.0 client misreads it). A path a comment cannot hold either (a key with `--`) is written as
+ * `statePathName`, which breaks the comment as it did before #373 (paths come from the author's markup,
+ * never from data).
  */
 export function textMarker(binding: IBindingInfo): string {
-  const expression = binding.node.nodeType === Node.COMMENT_NODE
-    ? parseCommentNode(binding.node) ?? binding.statePathName
-    : bindExpression(binding.statePathName, binding.outFilters);
-  return COMMENT_UNSAFE.test(expression) ? binding.statePathName : expression;
+  const comment = binding.node.nodeType === Node.COMMENT_NODE;
+  const source = comment ? parseCommentNode(binding.node) : null;
+  const expression = source ?? (comment ? binding.statePathName : bindExpression(binding.statePathName, binding.outFilters));
+  if (!COMMENT_UNSAFE.test(expression)) return expression;
+  const path = source?.split("|")[0].trim();
+  return path && !COMMENT_UNSAFE.test(path) ? path : binding.statePathName;
 }
 
 /**

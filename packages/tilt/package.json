@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/tilt",
-  "version": "3.5.3",
+  "version": "3.5.4",
   "description": "Declarative Device Orientation component for Web Components. Framework-agnostic deviceorientation wrapper via wc-bindable-protocol.",
   "type": "module",
   "main": "./dist/index.esm.js",
