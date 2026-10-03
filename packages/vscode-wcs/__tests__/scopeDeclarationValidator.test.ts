@@ -221,7 +221,7 @@ describe('文書にボリュームも bind-component も無ければ解析しな
 });
 
 describe('表が @wcstack/state 4.0 の src とずれていないこと', () => {
-  // 依存の実体（今は packages/state-next、4.0 の差し替えの後は packages/state）の src を読む
+  // 依存の実体（packages/state）の src を読む
   const src = join(realpathSync(join(__dirname, '..', 'node_modules', '@wcstack', 'state')), 'src');
   const listOf = (text: string, name: string): string[] => {
     const body = new RegExp(`const ${name}\\s*=\\s*\\[([^\\]]*)\\]`).exec(text);

@@ -1173,7 +1173,7 @@ describe('validateBindings — ボリューム（mount=）のマウントパス�
 });
 
 // 4.0 grafts a volume's methods as accessors under the mount path (`cart.add`, `this` chrooted at the mount path —
-// state-next's scopes/volume.ts graft, scopes.test.ts's `onclick: i18n.toJa`). 3.x did not, so the candidates dropped
+// @wcstack/state's src/scopes/volume.ts graft, scopes.test.ts's `onclick: i18n.toJa`). 3.x did not, so the candidates dropped
 // them and `onclick: cart.add` was a false wcs/binding-path-missing
 describe('validateBindings — ボリューム（mount=）のメソッド（4.0 は接ぎ木する）', () => {
   const ROOT = `<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>`;

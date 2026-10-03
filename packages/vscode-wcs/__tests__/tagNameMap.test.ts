@@ -30,16 +30,9 @@ const OUTSIDE_CATALOG = new Set([
   "wcs-devtools",
 ]);
 
-/**
- * 4.0 の新エンジン（`packages/state-next`、非公開）。リリースで `packages/state` の中身と差し替わる
- * （docs/state-engine-rewrite/v4-remaining.ja.md R1）までの間だけ、state と同じタグを宣言して並んでいる。
- */
-const TRANSITIONAL_DUPLICATES = new Set(['state-next']);
-
 function declaredTagsByPackage(): Map<string, string[]> {
   const out = new Map<string, string[]>();
   for (const dir of readdirSync(PACKAGES_DIR)) {
-    if (TRANSITIONAL_DUPLICATES.has(dir)) continue;
     const file = join(PACKAGES_DIR, dir, "src", "exports.ts");
     if (!existsSync(file)) continue;
     const text = readFileSync(file, "utf8");

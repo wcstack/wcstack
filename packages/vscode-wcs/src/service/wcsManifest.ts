@@ -5,7 +5,7 @@
  * @wcstack/state の正本から導出するための薄い再エクスポート層（route-a A2-1）。
  * 二重実装・手作業同期によるドリフトを排除する。
  *
- * 公開パッケージ `@wcstack/state/manifest`（devDependency: `"@wcstack/state": "file:../state-next"` — 4.0 のエンジン —
+ * 公開パッケージ `@wcstack/state/manifest`（devDependency: `"@wcstack/state": "file:../state"` — 4.0 のエンジン —
  * ＋ build 済 dist）を消費。4.0 の旧名の表（`filterAliases` など）は空なので、移行の案内は removedNames.ts が持つ。
  * linkage はこの1ファイルに隔離してあるので、将来 npm 公開版へ切替える際もここだけ変えればよい。
  * 区切り文字など他のマニフェスト項目が必要になれば `getWcsManifest().syntax` から引ける。

@@ -24,7 +24,7 @@ const pick = (html: string, diagnostics: { code: string; start: number; end: num
   diagnostics.filter(d => codes.includes(d.code)).map(d => [d.code, d.severity, html.slice(d.start, d.end)]);
 
 describe('添字の形と上限は 4.0 の正本と同じ', () => {
-  // 依存の実体（今は packages/state-next）の src を読む
+  // 依存の実体（packages/state）の src を読む
   const src = join(realpathSync(join(__dirname, '..', 'node_modules', '@wcstack', 'state')), 'src');
 
   it('上限は manifest の syntax.indexParam.maxDepth（128）', () => {

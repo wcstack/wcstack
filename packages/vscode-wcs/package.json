@@ -76,7 +76,7 @@
     "@types/node": "^25.5.0",
     "@types/vscode": "^1.110.0",
     "@vitest/coverage-v8": "^4.1.1",
-    "@wcstack/state": "file:../state-next",
+    "@wcstack/state": "file:../state",
     "acorn": "^8.18.0",
     "esbuild": "^0.25.12",
     "vitest": "^4.1.1"

@@ -55,10 +55,6 @@ const packagesRoot = path.resolve(here, "../..");
 const SKIP = new Set([
   "state", "router", "signals", "autoloader", "devtools", "server",
   "poc-visual-editor", "vscode-wcs",
-  // 4.0 の新エンジン（非公開・dist は gitignore）。リリースで packages/state と差し替わるまで state と
-  // 同じタグ（wcs-state / wcs-ssr）を持つ — state と同じくタグ契約の対象外（__tests__/tagNameMap.test.ts の
-  // TRANSITIONAL_DUPLICATES と同じ扱い。docs/state-engine-rewrite/v4-remaining.ja.md R1）。
-  "state-next",
   // エントリバンドル（SPA コア 5 パッケージの auto を丸ごと内包）。import すると
   // メンバーの全タグを再捕捉して catalog の package: を "wcstack" に上書きしてしまう
   // （正本は各メンバー側）。docs/distribution-robustness-impl-plan.md D8。

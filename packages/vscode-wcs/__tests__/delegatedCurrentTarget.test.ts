@@ -182,7 +182,7 @@ describe('wcs/delegated-current-target — 委譲されるイベントのハン�
   });
 
   it('DELEGATED_EVENTS が @wcstack/state 4.0 の dom/view.ts の BUBBLING と一致すること', () => {
-    // 依存の実体（今は packages/state-next、4.0 の差し替えの後は packages/state）の src を読む
+    // 依存の実体（packages/state）の src を読む
     const src = join(realpathSync(join(__dirname, '..', 'node_modules', '@wcstack', 'state')), 'src');
     const view = readFileSync(join(src, 'dom', 'view.ts'), 'utf8');
     const body = /export const BUBBLING = new Set\(\[([^\]]*)\]\)/.exec(view);

@@ -188,7 +188,7 @@ function graftVolumePaths(
   resolved: ElementPaths,
   mountPoints: Set<string>,
 ): PathCandidate[] {
-  // Only what 4.0 grafts goes on the tree (state-next's scopes/volume.ts `graft`):
+  // Only what 4.0 grafts goes on the tree (@wcstack/state's src/scopes/volume.ts `graft`):
   // - data, getters / setters and methods, at `<mount>.<key>`. A method is grafted as a function whose `this` is
   //   the mount path, so it can be an event handler (`onclick: cart.add`); it keeps the validation-only `method`
   //   kind, which the completion offers for event bindings. 3.x did not graft methods, hence the old drop.
