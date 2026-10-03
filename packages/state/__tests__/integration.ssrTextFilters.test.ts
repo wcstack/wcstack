@@ -87,9 +87,9 @@ const marked = (expression: string, text: string): string =>
 
 let seq = 0;
 /** A Light DOM child (a partial mount). Its content (the child's `<wcs-state>` and bindings) is in the markup */
-function defineKid(): string {
+function defineKid(own: Record<string, unknown> = {}): string {
   const tag = `ssr-text-kid-${++seq}`;
-  customElements.define(tag, class extends HTMLElement { state: Record<string, unknown> = {}; });
+  customElements.define(tag, class extends HTMLElement { state: Record<string, unknown> = { ...own }; });
   return tag;
 }
 
@@ -243,6 +243,20 @@ describe("#373: 行・枝・子の中の {{ }} の出力フィルタ", () => {
     expect(ssr.views).toEqual(["x / 3.14 / y", "x / 2.72 / y"]);
     expect(ssr.errors).toEqual([]);
   });
+
+  it("Light DOM の子の中で -- を含む式は、子の語彙のパスに戻る（配線したキー・私有のキーとも。旧: ホストのパスを書き、空のまま）", async () => {
+    const tag = defineKid({ other: "mine" });
+    const body = `<${tag} data-wcs="state.x: v; state.v: w"><wcs-state bind-component="state"></wcs-state>` +
+      `<span class="v">{{ x|unit('--') }}</span><span class="v">{{ other|unit(' --') }}</span><span class="v">{{ v|toFixed(1) }}</span></${tag}>`;
+    const { csr, ssr, serverHtml } = await compare(body, { v: "host-v", w: 1.25 }, [set("v", "v2"), set("w", 2.5)]);
+    // The child's own path, filters dropped — not the host's `v` / `#mN.other`
+    expect(serverHtml).toContain(marked("x", "host-v--"));
+    expect(serverHtml).toContain(marked("other", "mine --"));
+    expect(csr.views).toEqual(["host-v-- / mine -- / 1.3", "v2-- / mine -- / 1.3", "v2-- / mine -- / 2.5"]);
+    // The fallback texts show their unfiltered values (the known limit) and follow writes; the rest match CSR
+    expect(ssr.views).toEqual(["host-v / mine / 1.3", "v2 / mine / 1.3", "v2 / mine / 2.5"]);
+    expect(ssr.errors).toEqual([]);
+  });
 });
 
 describe("textMarker（境界コメントに書く式）", () => {
@@ -286,6 +300,9 @@ describe("textMarker（境界コメントに書く式）", () => {
     expect(textMarker(bindingOf(`v|unit('-->')`, text()))).toBe("v");
     expect(textMarker(bindingOf(`v|unit('--!>')`, text()))).toBe("v");
     expect(textMarker(bindingOf(`v|unit(' --')`, document.createComment(`@@: v|unit(' --')`), "v"))).toBe("v");
+    // From a comment, the path its own text names (a Light DOM child's vocabulary), not the translated statePathName
+    expect(textMarker(bindingOf(`p|unit('--')`, document.createComment(`@@:  p | unit('--')  `), "price"))).toBe("p");
+    expect(textMarker(bindingOf(`other|unit('--')`, document.createComment(`@@: other|unit('--')`), "#m1.other"))).toBe("other");
     expect(textMarker(bindingOf("v-", document.createComment("@@: v-"), "x"))).toBe("x");
     const multiline = bindingOf("v", text());
     expect(textMarker({ ...multiline, outFilters: [{ filterName: "unit", args: ["a\nb"], literals: ["a\nb"], filterFn: (x: unknown) => x }] }))

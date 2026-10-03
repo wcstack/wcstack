@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/state`: **a `{{ }}` in a Light DOM `bind-component` child whose expression contains `--` no longer hydrates empty.** An expression an HTML comment cannot hold falls back to its path in the SSR text markers (#373), but the fallback wrote the path translated to the host's vocabulary (`v` for the child's `x` under `state.x: v`, `#m1.other` for a private key), which the child's scope could not resolve: the text stayed empty after hydration, with a `binding-path-missing` error. It now writes the path the binding's own text names (`x`, `other`); the value shows unfiltered, as for any fallback. A 4.0 client reading such output reads it as written. `auto.min.js` grows by 32 B gzip, the split `/core` by 0 B.
+
 ## [3.5.3] — 2026-10-03
 
 **3.5.3 fixes server-rendered text losing its output filters on hydration** ([#373](https://github.com/wcstack/wcstack/issues/373)). With `enable-ssr`, a `{{ price|toFixed(2) }}` rendered as `3.14` by the server came back as `3.14159` once the page hydrated, and every later write stayed unfiltered — page-level text, comment bindings, filter chains, and the text of server-rendered `for:` rows and `if:` branches. The text markers the server writes now carry the binding's whole expression; upgrading the server's `@wcstack/state` is enough, as every 3.x client already reads them. The same change fixes a Light DOM `bind-component` child's aliased `{{ }}` hydrating empty (symptom 1 of [#372](https://github.com/wcstack/wcstack/issues/372)). No API changes; `auto.min.js` grows by 84 B gzip, the split `/core` by 1 B. The contributor guides (CLAUDE.md, AGENTS.md) are brought in line with the repository.
