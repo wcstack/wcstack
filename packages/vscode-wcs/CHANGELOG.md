@@ -2,11 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased — @wcstack/state 4.0 と同時に出す
+## Unreleased — 2.0.0（@wcstack/state 4.0.0 と同時に出す）
 
-**このブランチ（`research/state-engine`）は、state-next を `@wcstack/state` に差し替えるまで release しない。** `@wcstack/lint` と `@wcstack/typescript` は毎回のリリースで vscode-wcs から作り直して公開されるので、差し替えの前に出すと 4.0 の規則が 3.x の版番号で配られ、3.x の利用者の CI が落ちる。`release.yml` は vscode-wcs の依存が `file:../state-next` を指している間、bump の種類によらず止まる。
-
-`@wcstack/state` 4.0（新エンジン。リポジトリでは `packages/state-next`）のパーサと manifest で検証する。3.x のページには当てはまらない規則になるので、版は 4.0 のリリースまで上げない（3.x のプロジェクトは 1.21.x のまま。package.json の 1.21.0 は 3.x 向けに公開した最新の版で、4.0 のリリースで上げる）。依存は `"@wcstack/state": "file:../state-next"`（import は `@wcstack/state/parser`・`/manifest` のまま。4.0 で `packages/state` と差し替わったら `file:../state` に戻す）。state-next は dist をコミットしないので、`npm test` / `npm run build` は dist が無ければ先にビルドする（`scripts/ensure-state-dist.mjs`）。
+`@wcstack/state` 4.0 のパーサと manifest（`@wcstack/state/parser`・`/manifest`）で検証する。3.x のページには当てはまらない規則なので、メジャーを上げた 2.0.0 として `@wcstack/state` 4.0.0 と同時に出す（R11）。4.0.0-rc の間は拡張を出さない — rc を試すプロジェクトは、同じ規則を `@wcstack/lint@next`（rc と一緒に公開される）で使える。3.x のプロジェクトは 1.21.x のまま。package.json の版は、出すまで 1.21.0（3.x 向けに公開した最新の版）。
 
 ### 4.0 で外れた名前
 
@@ -35,14 +33,13 @@
 
 ### そのほか
 
-- `__tests__/nameAliases.drift.test.ts` は、凍結した 3.x の旧名の表が 4.0 の manifest（旧名の表は空・旧名は組み込みに無い）とランタイムの src（拒む宣言キーと API）に矛盾しないことを確かめる。`$behavior` のキーと後付けの名前は manifest から読む（manifest がランタイムの表 — engine.ts の `BEHAVIOR_KEYS`・`load.ts` の `FEATURE_NAMES` — と一致することは、state-next の `public-surface.test.ts` が固定する）。ボリュームの表（`REJECTED` / `NOT_RUN`）と bind-component と併記できない読み込みは、ランタイムの src とテストで突き合わせる。
+- `__tests__/nameAliases.drift.test.ts` は、凍結した 3.x の旧名の表が 4.0 の manifest（旧名の表は空・旧名は組み込みに無い）とランタイムの src（拒む宣言キーと API）に矛盾しないことを確かめる。`$behavior` のキーと後付けの名前は manifest から読む（manifest がランタイムの表 — engine.ts の `BEHAVIOR_KEYS`・`load.ts` の `FEATURE_NAMES` — と一致することは、`@wcstack/state` の `public-surface.test.ts` が固定する）。ボリュームの表（`REJECTED` / `NOT_RUN`）と bind-component と併記できない読み込みは、ランタイムの src とテストで突き合わせる。
 - ボリューム（`mount=`）の文面: 4.0 のボリュームは読み込み（#1601 などの throw）を通らず、接ぎ木を拒んで `console.error` で報告する。`wcs/declaration-alias`（旧名の宣言キー）・`$scan`・`$behavior` / `$features`・`$recursion` のボリュームの文面をそれに合わせた（重大度は error のまま — その state は木に載らない）。
 - #203 の判定を HTML のパーサに寄せた: 構造テンプレートの値の末尾の `;`、終了タグの省略（`<li>…<li>`・`<p>…<div>`・表）、void でない要素の `/>`（無視する。svg / math の中だけ閉じる）、`<textarea>` / `<title>` の中（束縛ではない）、引用符の無い属性値。
 - #203 の誤検出を外した: 行の中でも、構造でない `<template>` の中と、`textContent:` / `innerHTML:` などの中身を置き換える束縛を持つ要素の子孫（と `<noscript>` / `<iframe>` の中）は、ランタイムが束縛として読まないので報告しない。
 - #120 で拒まれたパス（`a.__proto__.x`・`{{ obj.prototype }}`）に `wcs/binding-path-missing` を重ねない。
 - `$features` の要素・`$behavior` の値の隣のコメントで判定を落とさない。`$scan: undefined` は宣言なし扱い（ランタイムと同じ）。
 - 重大度の例外を README に書いた: `wcs/filter-unknown`（外れた名前・`substr` を含む）と `wcs/wildcard-rank`（#1401・#1403）は 4.0 では初期化で throw するが warning（実行時のフィルタ登録が見えない・for のスコープの再構成が厳密でないため）。
-- `scripts/ensure-state-dist.mjs`: 古いリンク（`../state` のまま）を検出して止める（照合は `realpathSync.native` で、Windows では大小を区別しない — 小文字のドライブ文字 `c:\…` で起動したときに正しいリンクを古いと取り違えないため）、`.d.ts` も確かめる、並行するビルドをロックで直列にする。
 - 文書走査のコストを足さない: mustache / コメント束縛の走査は `<template>` の深さと raw text の範囲を 1 回だけ集める（これまでは式ごとに文書の頭から数え直していた）。
 
 ### Fixes from the review of the 4.0 lint (2026-10-03)

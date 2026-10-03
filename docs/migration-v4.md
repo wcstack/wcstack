@@ -535,6 +535,7 @@ A bundler cannot drop the 4.0 engine's modules from the `@wcstack/state` entry, 
 - On `/core` without `features/diagnostics`, messages are numbered (§2). Install `diagnostics` while developing.
 - Call `installFeatures([...])` before `bootstrapState()`, as in 3.x. A state that declares a feature's key before that feature is installed fails with `[wcs/feature-not-installed]`.
 - The file names under `dist/split/chunks/` now carry a content hash. If you list chunk files yourself (preload links, `integrity` in an import map), take the names from the 4.0 build.
+- The package ships no source maps (3.5.4 had a `.map` file beside each bundle). A stack trace points into the minified bundles; to step through the engine, use the source in the repository (`packages/state/src`).
 
 New in 4.0, and optional:
 

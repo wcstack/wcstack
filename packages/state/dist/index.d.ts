@@ -58,8 +58,9 @@ interface IStateElement extends HTMLElement {
  * Resolves when the bindings of `root` are built — by any `<wcs-state>` in it now, whatever its
  * `$connectedCallback` does then, as 3.x — and rejects, with the first failure, only when every one
  * failed before building them. A stray one (a second root, #47; one that fails to load) changes
- * nothing while another binds the root; one taken out of the page counts no more once another
- * connects (a root replaced: the new one decides).
+ * nothing while another binds the root; one taken out of the page (or moved to another root) counts
+ * no more (a root replaced: the new one decides). With none in it — none ever, or only ones that left —
+ * it resolves at once: there is nothing to wait for (a page without state).
  */
 declare function getBindingsReady(root: Node): Promise<void>;
 /**
