@@ -185,7 +185,7 @@ In 4.0 the common bubbling events are delegated, and `event.currentTarget` is th
 [@wcstack/state] [wcs/filter-unknown] #501 "uc"                   ← /core without features/diagnostics
 ```
 
-The sentence comes from the `diagnostics` feature, which `@wcstack/state` and `/auto` include. A page on `/core` without it prints the code, the number and the values (3.x printed the full sentence either way). A number keeps its meaning across versions. The tables in §4 list the messages this guide mentions.
+The sentence comes from the `diagnostics` feature, which `@wcstack/state` and `/auto` include. A page on `/core` without it prints the code, the number and the values (3.x printed the full sentence either way). A number keeps its meaning across versions. The tables in §4 list the messages this guide mentions. Every number is listed in [state-errors.md](./state-errors.md).
 
 **A removed filter name gets its replacement, not a "Did you mean".** For the 3.2 old names and `substr`, the message names what to write instead of the nearest built-in name, which for these is an unrelated filter (following `dec` → `eq` would change the meaning silently):
 

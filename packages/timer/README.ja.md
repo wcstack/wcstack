@@ -216,7 +216,7 @@ const { autoTrigger, triggerAttribute, tagNames } = getConfig();
 | `triggerAttribute` | string  | `data-timertarget` | DOM クリックトリガで走査する属性。            |
 | `tagNames.timer`   | string  | `wcs-timer`        | 登録するカスタム要素のタグ名。                |
 
-知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
+`bootstrapTimer()` は、持っていないオプション、既定値と型の違う値（`null` や、オブジェクトの所の配列を含む）、定義していない `tagNames` のキー、文字列でないタグ名で例外を投げます。当てる前にすべてのオプションを確かめるので、投げたときは何も当てません。値が `undefined` のオプションは飛ばします。
 
 ## ヘッドレス利用（`TimerCore`）
 
