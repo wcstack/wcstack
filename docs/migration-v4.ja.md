@@ -2,7 +2,7 @@
 
 **English**: [migration-v4.md](./migration-v4.md)
 
-> **4.0 はリリース候補として出ています。** `4.0.0-rc.N` を npm の `next` タグで公開しています（`npm i @wcstack/state@next`。ほかの `@wcstack/*` パッケージも同じタグ）。4.0.0 はその後に `latest` で出ます。このガイドは、リリース候補が出している 4.0 について書いています。変更の要約は [CHANGELOG](../CHANGELOG.md)（英語）の 4.0.0 の項に、既知の制限は §5 にあります。
+> **4.0 はリリース候補として出ています。** `4.0.0-rc.N` を npm の `next` タグで公開しています（`npm i @wcstack/state@next`。ほかの `@wcstack/*` パッケージも同じタグ）。4.0.0 はその後に `latest` で出ます。このガイドは、リリース候補が出している 4.0 について書いています。変更の要約は [CHANGELOG](../CHANGELOG.md)（英語）の 4.0 の項（4.0.0 を出すまでは `[Unreleased]` の下）に、既知の制限は §5 にあります。
 
 **対象**: `@wcstack/state` 3.x を使っているアプリの開発者です。`@wcstack/state`・`/auto`・分割エントリ・`wcstack/auto` のどれで読み込んでいるかは問いません。一緒にリリースされるパッケージ（`@wcstack/router`・`@wcstack/server`・I/O ノードのパッケージ・`@wcstack/lint`）も含みます。
 

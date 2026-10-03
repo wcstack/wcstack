@@ -2,7 +2,7 @@
 
 **日本語版**: [migration-v4.ja.md](./migration-v4.ja.md)
 
-> **4.0 is out as a release candidate.** `4.0.0-rc.N` is published on npm's `next` tag — `npm i @wcstack/state@next`, and the same tag for every other `@wcstack/*` package — and 4.0.0 follows on `latest`. This guide describes 4.0 as the release candidate ships it. The 4.0.0 entry of the [CHANGELOG](../CHANGELOG.md) summarizes the changes; §5 lists the known limitations.
+> **4.0 is out as a release candidate.** `4.0.0-rc.N` is published on npm's `next` tag — `npm i @wcstack/state@next`, and the same tag for every other `@wcstack/*` package — and 4.0.0 follows on `latest`. This guide describes 4.0 as the release candidate ships it. The 4.0 entry of the [CHANGELOG](../CHANGELOG.md) summarizes the changes (under `[Unreleased]` until 4.0.0 is published); §5 lists the known limitations.
 
 **Who this is for**: application developers whose pages use `@wcstack/state` 3.x — through `@wcstack/state`, `/auto`, the split entries or the `wcstack/auto` bundle — together with the packages released alongside it (`@wcstack/router`, `@wcstack/server`, the I/O node packages, `@wcstack/lint`).
 
