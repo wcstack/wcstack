@@ -143,4 +143,5 @@ export function reconcile(list: StateList, next: unknown, hooks: ReconcileHooks)
   return old;
 }
 
-const EMPTY: unknown[] = [];
+/** What a list whose value is not an array reconciles against (engine: an index there is a key). */
+export const EMPTY: unknown[] = [];
