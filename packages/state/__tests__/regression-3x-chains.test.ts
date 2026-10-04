@@ -1062,22 +1062,30 @@ describe("#354 $watch の連鎖の深さは書き込みごと — 有限の描�
       expect(error).toHaveBeenCalledTimes(1);
     });
 
-    /** 値を出す時機: 次のタスク・postMessage・setImmediate（あれば）・すぐに解決する Promise（同じタスクの microtask） */
+    /**
+     * 値を出す時機。後のタスク: 次のタスク・setImmediate（あれば）。同じタスク: すぐに解決する Promise（microtask）と、
+     * Node の postMessage — Node は 1 つのポートに溜まったメッセージを（届けている間に足されたものも 1000 件まで）、別の
+     * ポートのメッセージ（エンジンがタスクの変わり目を知る目印）を挟まずに続けて届けるので、その間はタスクが変わらない
+     * （ブラウザーでは後のタスク）
+     */
     const channel = typeof MessageChannel === "function" ? new MessageChannel() : null;
     const posted: (() => void)[] = [];
     if (channel !== null) channel.port1.onmessage = () => posted.shift()!();
     afterAll(() => { channel?.port1.close(); });
-    const timings: [string, (fn: () => void) => void][] = [
+    type Timing = [string, (fn: () => void) => void];
+    const laterTasks: Timing[] = [
       ["setTimeout", (fn) => { setTimeout(fn, 0); }],
+      ...(typeof setImmediate === "function" ? [["setImmediate", (fn: () => void) => { setImmediate(fn); }] as Timing] : []),
+    ];
+    const sameTask: Timing[] = [
       ["Promise.resolve", (fn) => { void Promise.resolve().then(fn); }],
-      ...(channel !== null ? [["postMessage", (fn: () => void) => { posted.push(fn); channel.port2.postMessage(0); }] as [string, (fn: () => void) => void]] : []),
-      ...(typeof setImmediate === "function" ? [["setImmediate", (fn: () => void) => { setImmediate(fn); }] as [string, (fn: () => void) => void]] : []),
+      ...(channel !== null ? [["Node の postMessage", (fn: () => void) => { posted.push(fn); channel.port2.postMessage(0); }] as Timing] : []),
     ];
 
-    it.each(timings)("値ごとに args の依存を進める有限の自動ページ送り（40 ページ）は、source が値を出す時機に依らず最後まで進む（%s）", async (_label, deliver) => {
-      const error = errorSpy();
+    /** 値が届くたびに args の依存（page）を進める、last ページまでの自動ページ送り。source は deliver の時機に 1 つ値を出す */
+    async function paging(deliver: (fn: () => void) => void, last: number) {
       let starts = 0;
-      const later = (args: unknown, signal: AbortSignal) => {
+      const source = (args: unknown, signal: AbortSignal) => {
         starts++;
         return new ReadableStream({
           start(c) {
@@ -1089,22 +1097,143 @@ describe("#354 $watch の連鎖の深さは書き込みごと — 有限の描�
           },
         });
       };
-      const { host, write, read } = await page("", {
+      const loaded = await page("", {
         page: 0,
         go: false,
-        $stream: { rows: { args: (s: any) => s.page, source: later, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] } },
+        $stream: { rows: { args: (s: any) => s.page, source, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] } },
         // 値が届くたびに次のページへ（自動のページ送り）
-        $watch: { rows(this: any, cur: unknown[]) { if (this.go && cur.length > 0 && this.page < 40) this.page = this.page + 1; } },
+        $watch: { rows(this: any, cur: unknown[]) { if (this.go && cur.length > 0 && this.page < last) this.page = this.page + 1; } },
       });
       await settle();
       starts = 0;
-      write((s) => { s.go = true; s.page = 1; });
+      loaded.write((s) => { s.go = true; s.page = 1; });
       await settle(100);
+      return { ...loaded, starts: () => starts };
+    }
+
+    it.each(laterTasks)("値ごとに args の依存を進める有限の自動ページ送り（40 ページ）は、source が後のタスクで値を出せば最後まで進む（%s）", async (_label, deliver) => {
+      const error = errorSpy();
+      const { host, read, starts } = await paging(deliver, 40);
 
       expect(read("page")).toBe(40);
-      expect(starts).toBe(40);
+      expect(starts()).toBe(40);
       expect(error).not.toHaveBeenCalled();
       host.remove();
+    });
+
+    // 同じタスクで届いた値が起こす $watch は、その値を出した再開の連鎖の続き。1 周（ハンドラ → 再開）2 段なので、
+    // 有限でも 16 周あたりで打ち切られる（3.x と同じく、再開の initial の書き込みで回る形が 16 周あたりで止まるのと同じ数え方）
+    it.each(sameTask)("値ごとに args の依存を進める自動ページ送りは、source が同じタスクで値を出すと 1 周 2 段で数えて上限で打ち切られ、作者の次の書き込みで続きから再開する（%s）", async (_label, deliver) => {
+      const error = errorSpy();
+      const events = listen();
+      const { host, write, read, starts } = await paging(deliver, 40);
+
+      const cutAt = read("page");
+      expect(cutAt).toBeGreaterThanOrEqual(15);
+      expect(cutAt).toBeLessThanOrEqual(20);
+      // (打ち切りはハンドラか再開のどちらかで起きる: 再開で起きれば page は 1 つ先へ進んでいる)
+      expect(cutAt - starts()).toBeGreaterThanOrEqual(0);
+      expect(cutAt - starts()).toBeLessThanOrEqual(1);
+      expect(watchLimits(events)).toHaveLength(1);
+      expect(error).toHaveBeenCalledTimes(1);
+
+      // 作者の書き込みは連鎖を新しく始める: 続きのページから、また上限まで進む
+      write((s) => { s.page = cutAt + 1; });
+      await settle(100);
+      expect(read("page")).toBeGreaterThan(cutAt + 10);
+      host.remove();
+    });
+
+    // 値ごとに args の依存を進める終わりの無いページ送りで、source が待たずに値を出す形（migration-v4 §5 の既知の制限だった）。
+    // 同じタスクで届いた値が起こす $watch は、その値を出した再開の連鎖の続き（1 周 = ハンドラ → 再開の 2 段）なので、
+    // 上限で打ち切られ、ループが止まる。修正前は値が $watch を深さ 0 から起こし直し、止め金（CAP = 300 周）まで
+    // microtask だけで回った（マクロタスクが 1 つも回らず、ページが固まる）
+    const atOnce: [string, (args: unknown) => unknown][] = [
+      ["メモリから yield する async generator", (args) => (async function* () { yield args; })()],
+      ["start で enqueue する ReadableStream", (args) => new ReadableStream({ start(c) { c.enqueue(args); c.close(); } })],
+    ];
+    it.each(atOnce)("値ごとに args の依存を進める終わりの無いページ送りは、source がすぐに値を出しても上限で止まり、1 回だけ報告される（%s）", async (_label, source) => {
+      const error = errorSpy();
+      const events = listen();
+      let laps = 0;
+      let lapsAtNextTask = -1;
+      const { host, write, read } = await page(`<i>{{ page }}</i>`, {
+        page: 0,
+        go: false,
+        $stream: { rows: { args: (s: any) => s.page, source, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] } },
+        // 終わりの条件が無い（値が届くたびに次のページへ）
+        $watch: { rows(this: any, cur: unknown[]) { if (this.go && cur.length > 0 && ++laps <= CAP) this.page = this.page + 1; } },
+      });
+      await settle();
+      write((s) => { s.go = true; s.page = 1; });
+      // 次のマクロタスクが回った時点の周回数（microtask だけで回り続けると、止め金に届いてからになる）
+      setTimeout(() => { lapsAtNextTask = laps; }, 0);
+      await settle(6);
+
+      expect(laps).toBeLessThanOrEqual(40);
+      expect(lapsAtNextTask).toBe(laps);
+      expect(watchLimits(events)).toHaveLength(1);
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("the chain is cut"));
+
+      // 止まったまま（次のタスクでも回り出さない）
+      const stoppedAt = laps;
+      await settle(4);
+      expect(laps).toBe(stoppedAt);
+
+      // 入力の次の本当の変更（作者の書き込み）で再開する
+      write((s) => { s.go = false; s.page = 500; });
+      await settle(4);
+      expect(read("rows")).toEqual([500]);
+      expect(read("$streamStatus.rows")).toBe("done");
+      expect(error).toHaveBeenCalledTimes(1);
+      host.remove();
+    });
+
+    it("終わりの条件の無いハンドラ（再開の initial の書き込みでも、すぐに届く値でも args の依存を進める）も上限で止まる", async () => {
+      const error = errorSpy();
+      const events = listen();
+      let laps = 0;
+      const { host, write } = await page("", {
+        page: 0,
+        go: false,
+        $stream: { rows: { args: (s: any) => s.page, source: async function* (args: unknown) { yield args; }, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] } },
+        $watch: { rows(this: any) { if (this.go && ++laps <= CAP) this.page = this.page + 1; } },
+      });
+      await settle();
+      write((s) => { s.go = true; s.page = 1; });
+      await settle(6);
+      host.remove();
+
+      expect(laps).toBeLessThanOrEqual(40);
+      expect(watchLimits(events)).toHaveLength(1);
+      expect(error).toHaveBeenCalledTimes(1);
+    });
+
+    // 値の代わりに終わりの状態（done / error）を getter で見る形。同じタスクの終わりの書き込みも、その再開の連鎖の続きに数える
+    const endings: [string, (args: unknown) => AsyncGenerator<unknown>, string][] = [
+      ["すぐに終わる（done）", async function* (args) { yield args; }, "done"],
+      ["すぐに投げる（error）", async function* () { throw new Error("at once"); }, "error"],
+    ];
+    it.each(endings)("$streamStatus を読む getter の $watch が args の依存を進める循環も、source が%s と上限で止まる", async (_label, source, status) => {
+      const error = errorSpy();
+      const events = listen();
+      let laps = 0;
+      const { host, write } = await page("", {
+        page: 0,
+        go: false,
+        get ended() { return this["$streamStatus.rows"] === status; },
+        $stream: { rows: { args: (s: any) => s.page, source, fold: (acc: unknown[], c: unknown) => [...acc, c], initial: [] } },
+        $watch: { ended(this: any, cur: boolean) { if (this.go && cur && ++laps <= CAP) this.page = this.page + 1; } },
+      });
+      await settle();
+      write((s) => { s.go = true; s.page = 1; });
+      await settle(6);
+      host.remove();
+
+      expect(laps).toBeLessThanOrEqual(40);
+      expect(watchLimits(events)).toHaveLength(1);
+      expect(error).toHaveBeenCalledTimes(1);
     });
 
     it("（$scan を $watch に書き換えた形）再開の書き込みを $watch が数え、その数の $watch が args の依存へ書く循環も打ち切る", async () => {

@@ -15,10 +15,11 @@
  *
  * A handler's writes form the next batch. Each write carries a chain depth (as @wcstack/state
  * 3.4, #354): 0, or one more than the depth of what fired the handler making it — or restarted the
- * `$stream` making it (stream.ts). For a data path that is the deepest write landing there in the
- * batch; for a getter, the first write since it was last evaluated (a reached getter is not reached
- * again until it is read), and 0 when a list re-synced in the drain reached it — loops through those
- * are left to the render chain (MAX_RENDER_CHAIN). A handler fired more than MAX_CHAIN deep does not
+ * `$stream` making it (stream.ts: its run's values and end too, within the task the run started in).
+ * For a data path that is the deepest write landing there in the batch; for a getter, the first write
+ * since it was last evaluated (a reached getter is not reached again until it is read), and 0 when a
+ * list re-synced in the drain reached it — loops through those are left to the render chain
+ * (MAX_RENDER_CHAIN). A handler fired more than MAX_CHAIN deep does not
  * run (as 3.x: 33 links run): the chain is cut and reported once. Writes riding in the same batch (a
  * render's write-back) neither lengthen nor reset it.
  *
