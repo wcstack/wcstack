@@ -602,6 +602,59 @@ describe("#258-5 追加: ハイドレーションはサーバーのノードを�
     expectInPlace(r, 1);
   });
 
+  // 連鎖のテンプレートの間のコメント（空白と混ざっても）は、連鎖を切らない（CSR と同じ）。ハイドレーションも枝を引き取る
+  // （migration-v4 §5 の既知の制限だった: 修正前は枝を捨てて描き直し、枝の中のカスタム要素を作り直した）
+  it.each([
+    ["if: の枝", { a: true, b: true }, [set("a", false), set("b", false), set("a", true)]],
+    ["elseif: の枝（要素で包まない）", { a: false, b: true }, [set("b", false), set("a", true), set("b", false)]],
+    ["else: の枝", { a: false, b: false }, [set("b", true), set("a", true), set("a", false)]],
+  ] as const)("テンプレートの間にコメントのある if / elseif / else の連鎖の %s も、切断せずに引き取り、以後の切り替えが効く", async (_name, data, steps) => {
+    const html = `<div id="root">x<!-- before -->${T("if: a", `<p>${P}A</p>`)}<!-- a|b -->${T("elseif: b", `${P}B`)}\n<!-- b|c --> <!-- 2 -->\n`
+      + `${T("else:", `<i>${P}C</i>`)}<!-- after -->y</div>`;
+    const r = await hydrated(html, () => ({ ...data }), [...steps]);
+    expectSame(r);
+    expectInPlace(r, 1);
+  });
+
+  it("行の中の if / elseif / else の間にコメントがあっても、行ごとに違う枝を切断せずに引き取る", async () => {
+    const html = `<div id="root"><ul>${T("for: items", `<li>${P}{{ .n }}${T("if: .a", `${P}a`)}<!-- a|b -->${T("elseif: .b", `<b>${P}b</b>`)}`
+      + `<!-- b|c -->\n${T("else:", `${P}c`)}</li>`)}</ul></div>`;
+    const state = () => ({ items: [{ n: 1, a: true }, { n: 2, b: true }, { n: 3 }] });
+    const r = await hydrated(html, state, [
+      (s) => { s.items = [s.items[2], s.items[0], s.items[1]]; },
+      set("items.0.a", true),
+      set("items.1.a", false),
+    ]);
+    expectSame(r);
+    expectInPlace(r, 6);
+    expect(textsOf(r.ssr)).toEqual(["1a2b3c", "3c1a2b", "3a1a2b", "3a1c2b"]);
+  });
+
+  // コメントバインディングもコメントなので連鎖を切らない。行の中では、引き取る時にはもう値の文字になっている
+  it.each([
+    ["ページの連鎖", { a: true, b: false }],
+    ["ページの連鎖（else の枝）", { a: false, b: false }],
+    ["行の中の連鎖", { a: true, b: true }],
+    ["行の中の連鎖（else の枝）", { a: false, b: true }],
+  ] as const)("連鎖のテンプレートの間のコメントバインディング（%s）も、枝を切断せずに引き取り、以後の書き込みが効く", async (_name, { a, b }) => {
+    const chain = (p: string) => `${T(`if: ${p}a`, `<p>${P}A</p>`)}<!--@@: ${p}note-->\n${T("else:", `<i>${P}C</i>`)}`;
+    const html = b ? `<div id="root"><ul>${T("for: items", `<li>${chain(".")}</li>`)}</ul></div>` : `<div id="root">${chain("")}</div>`;
+    const state = () => (b ? { items: [{ a, note: "N" }] } : { a, note: "N" });
+    const r = await hydrated(html, state, b ? [set("items.0.note", "M"), set("items.0.a", !a)] : [set("note", "M"), set("a", !a)]);
+    expectSame(r);
+    expectInPlace(r, 1);
+    expect(textsOf(r.ssr)).toEqual(a ? ["AN", "AM", "MC"] : ["NC", "MC", "AM"]);
+  });
+
+  it("2 つの連鎖が並び、それぞれのテンプレートの間にコメントがあっても、どちらの枝も引き取る", async () => {
+    const html = `<div id="root">${T("if: a", `<p>${P}A</p>`)}<!-- 1 -->${T("else:", `<i>${P}notA</i>`)}<!-- between -->`
+      + `${T("if: b", `<p>${P}B</p>`)}<!-- 2 -->${T("else:", `<i>${P}notB</i>`)}</div>`;
+    const r = await hydrated(html, () => ({ a: false, b: true }), [set("a", true), set("b", false)]);
+    expectSame(r);
+    expectInPlace(r, 2);
+    expect(textsOf(r.ssr)).toEqual(["notAB", "AB", "AnotB"]);
+  });
+
   it("if の枝の中の for の行と、行の中の if / elseif / else（行ごとに違う枝）を切断しない", async () => {
     const html = `<div id="root">${T("if: show", `<ul>${T("for: items", `<li>${P}{{ .n }}${T("if: .a", `${P}a`)}${T("elseif: .b", `<b>${P}b</b>`)}${T("else:", `${P}c`)}</li>`)}</ul>`)}</div>`;
     const state = () => ({ show: true, items: [{ n: 1, a: true }, { n: 2, b: true }, { n: 3 }] });
