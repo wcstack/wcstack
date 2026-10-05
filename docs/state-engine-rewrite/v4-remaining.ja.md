@@ -908,3 +908,19 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - core.min.js は 19,525B（+25B、上限まで 475B）、後付けは 499B。`split/auto.js` は 610B で上限 620B まで 10B。
 - manifest に `nativeCommands`。vscode-wcs（`wcs-validate`）が表に無いメソッドを error にする。
 - 残り: wcstack-skill の command-token の参照、VS Code 拡張の補完。
+
+### 4.0.0-rc.5 の公開（2026-10-06）
+
+- `research/primitive-dom-commands`（`native-commands` の後付け機能: ネイティブ要素の `command.<method>:`）を research に取り込み、`prerelease-rc`（run 37361706414、5f31f729）で公開した。
+- 全 49 パッケージが npm の `next` で 4.0.0-rc.5（`latest` は 3.5.4 のまま）。タグ `v4.0.0-rc.5` と GitHub のプレリリース。bump の commit は 276b6043。
+- 取り込みの後、公開の前に確かめたこと:
+  - state 3,002 件（カバレッジ 99.78 / 99.28 / 100 / 99.95、lint・型検査）、router 822 件、server 100 件と e2e 18 件
+  - vscode-wcs 1,167 件、lint のスモーク 26 件、typescript 58 件、devtools 170 件、e2e 145 件
+  - リポジトリ全体のバリデーターでエラー 0 件、生成ファイルの同期の検査 4 本、組み込みタグのカタログの検査
+- 公開の後に確かめたこと:
+  - 全パッケージの dist-tag（3 つが約 1 分遅れて見えた）
+  - server の依存が厳密な `4.0.0-rc.5`
+  - CDN（`split/features/native-commands.js` を含む）と `esm.run` の `/auto` が 200
+- ゲートの基準値を rc.5 の dist で取り直した。
+  - core.min.js 19,525B（上限まで 475B）、native-commands 499B
+  - `index.esm.js` 50,306B、`auto.min.js` 47,329B
