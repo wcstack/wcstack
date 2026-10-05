@@ -199,7 +199,7 @@ export default defineState({
 | `$eqPath` | `$eqPath(path: string, keyPath: string): boolean` | 鍵を `keyPath`（ワイルドカードは評価中の行で解決）から読む `$eq` |
 | `$eqIndex` | `$eqIndex(path: string, level?: number): boolean` | 評価中の行の index を鍵にする `$eq` |
 
-挙動は README の [Proxy API](../README.ja.md#proxy-api) 節と [鍵付き選択](../README.ja.md#鍵付き選択eq--eqpath--eqindex) 節にあります。3.x の名前 `$trackDependency` / `$untrackDependency` は型にありません。ランタイムでは `[wcs/name-alias]` を throw します。
+挙動は README の [Proxy API](../README.ja.md#proxy-api) 節と [鍵付き選択](../README.ja.md#鍵付き選択eq--eqpath--eqindex) 節にあります。3.x の名前 `$trackDependency` / `$untrackDependency` は型にありません。ランタイムでは、`diagnostics` アドオンが入っていれば（`@wcstack/state`・`/auto`）読んだ時点で `[wcs/name-alias]` を throw し、入っていなければ `undefined` を読みます。
 
 ### プロパティ
 

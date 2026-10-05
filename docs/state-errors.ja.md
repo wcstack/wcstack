@@ -1,7 +1,7 @@
 # @wcstack/state 4.0 のメッセージ番号
 
 - **対象**: 番号（`#501`）の付いた `[@wcstack/state]` のメッセージを読む人。とくに、診断の後付けを入れずに分割の `/core` を読み込むページ
-- **状態**: リファレンス。`@wcstack/state` 4.0 の `src/messages.ts`（番号とコード）と `src/diagnostics/messages.ts`（文面）から生成した。番号は足すだけで、一度付いた番号の意味は版をまたいで変わらない。表に無い番号（118）は割り当てていない
+- **状態**: リファレンス。`@wcstack/state` 4.0 の `src/messages.ts`（番号）と `src/diagnostics/messages.ts`（コードと文面）から生成した。番号は足すだけで、一度付いた番号の意味は版をまたいで変わらない。表に無い番号（118）は割り当てていない
 - **関連**: [migration-v4.ja.md](./migration-v4.ja.md) §2・§4.2（上げるときに出会うメッセージ）、[csp.ja.md](./csp.ja.md) §9（#42 / #43）
 - **English**: [state-errors.md](./state-errors.md)
 
@@ -13,20 +13,21 @@
 
 ```
 [@wcstack/state] [wcs/filter-unknown] filter not found: uc. "uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper". Validate statically: npx @wcstack/lint <file>.
-[@wcstack/state] [wcs/filter-unknown] #501 "uc"
+[@wcstack/state] #501 "uc"
 ```
 
 | | 診断の後付けあり | なし |
 |---|---|---|
 | どこで | `@wcstack/state`（`bootstrapState()` がすべての後付けを入れる）、`/auto`、`/parser`。`installFeatures([diagnostics])` の後の `/core`。`features="diagnostics"` の分割 auto | `/core` だけ |
-| 文面 | `[@wcstack/state] [wcs/<コード>] <文>` | `[@wcstack/state] [wcs/<コード>] #<番号> <値>` |
+| 文面 | `[@wcstack/state] [wcs/<コード>] <文>` | `[@wcstack/state] #<番号> <値>` |
 
-- **コード**は番号の百の位から決まる: 1xx は `binding-syntax`、2xx は `template-syntax`、3xx は `binding-path-missing`、…（表の「Code」の列）。1〜51 にはコードが無いので、文か `#<番号>` から始まる。コードは `@wcstack/lint` と VS Code 拡張が報告するものと同じ。
+- **コード**は番号の百の位から決まる: 1xx は `binding-syntax`、2xx は `template-syntax`、3xx は `binding-path-missing`、…（表の「Code」の列）。後付けが文の前に書く。後付けが無いとメッセージにコードは付かない（4.0.0-rc.1〜rc.3 は番号の前にも書いていた）ので、番号の「Code」の列で読む。1〜51 にはコードが無いので、後付けがあるときは文から始まる。コードは `@wcstack/lint` と VS Code 拡張が報告するものと同じ。
+- **#1・#1601・#1701 は後付けがあるときだけ出る。** 4.0 で外した 3.x の名前を見つけるのは後付けの仕事: 宣言の `$scan`・`$streams`・`$updatedCallback` と、`$trackDependency` / `$untrackDependency` の読み取り。後付けが無いと、これらの名前の宣言は無視され、読むと `undefined` になる（エンジンの知らないほかの `$` の名前と同じ）。
 - **値**は、後付けが無いとき、番号の後に表の「Values」の列の順で並ぶ。文字列は JSON（`"uc"`）、それ以外は `String(値)`。
 - **案内**: 後付けがあると、エンジンがエラーの経路で投げるメッセージの後に、直し方が続くことがある — 「Did you mean」（編集距離 2 まで）、4.0 で外れたフィルタ名にはその書き換え先（「Did you mean」の代わり）、その場合の直し方、lint が検出するコードには `Validate statically: npx @wcstack/lint <file>.`。コンソールに書くメッセージ（#11・#12・#17・#25・#41・#48・#49・#50・#51）は文だけ。
 - **#44** はオプションを渡した場所を名指す（`bootstrapState`、`$behavior`、`$behavior` がオブジェクトでないときは `state`）。`bootstrapState` に 4.0 で移ったオプションを渡したときは、文の後に ` 4.0 moved it to the state's $behavior.` が付く。
 - **#49 / #50 / #51** は要素のタグ名と、要素が持つ `mount`・`bind-component`・`state`・`src` の名前と値を受け取り、文では要素の形（`<wcs-state src="./state.js">`）に描く。
-- **番号の無いメッセージ**は、何を入れていても全文で出る: ページが意図して出会う関門（`[wcs/feature-not-installed] … needs the add-on @wcstack/state/features/<name>`、formats の後付けの無いページの書式のフィルタ）、`[wcs/feature-unknown]`、後付けそのもののメッセージ（ボリューム・コンポーネント・SSR・`$watch` / `$stream`・devtools）。
+- **番号の無いメッセージ**は、何を入れていても全文で出る: ページが意図して出会う関門（`[wcs/feature-not-installed] … needs the add-on @wcstack/state/features/<name>`、formats の後付けの無いページでのそのフィルタ — 書式・算術・変換・既定値）、`[wcs/feature-unknown]`、後付けそのもののメッセージ（ボリューム・コンポーネント・SSR・`$watch` / `$stream`・devtools）。
 
 ## 2. 番号の一覧
 

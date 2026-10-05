@@ -166,10 +166,10 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 
 | チェック | 例 | 診断 |
 |---|---|---|
-| 4.0 で外れた API の旧名（`wcs/name-alias`。読んだ時点で throw） | `this.$trackDependency("a")` → `$dependOn` | ❌ error |
-| 4.0 で外れた宣言キー（`wcs/declaration-alias`。読み込み時に throw — ボリュームは接ぎ木を拒んで console.error） | `$streams` → `$stream`、`$updatedCallback` → `$renderedCallback` | ❌ error |
+| 4.0 で外れた API の旧名（`wcs/name-alias`。ランタイムの `diagnostics` 機能があれば読んだ時点で throw） | `this.$trackDependency("a")` → `$dependOn` | ❌ error |
+| 4.0 で外れた宣言キー（`wcs/declaration-alias`。ランタイムの `diagnostics` 機能があれば読み込み時に throw — ボリュームは接ぎ木を拒んで console.error） | `$streams` → `$stream`、`$updatedCallback` → `$renderedCallback` | ❌ error |
 | 4.0 で外れた宣言キーの読み出し（`wcs/declaration-alias-read`。黙って undefined） | `this.$streams` | ⚠ warning |
-| 4.0 で外れた `$scan`（`wcs/scan-declaration-invalid`。読み込み時に throw — ボリュームは接ぎ木を拒んで console.error） | `$scan: { … }` → `$watch` / `$on` で畳む | ❌ error |
+| 4.0 で外れた `$scan`（`wcs/scan-declaration-invalid`。ランタイムの `diagnostics` 機能があれば読み込み時に throw — ボリュームは接ぎ木を拒んで console.error） | `$scan: { … }` → `$watch` / `$on` で畳む | ❌ error |
 | `$behavior` のキー・値・形、ボリュームの `$behavior`（`wcs/behavior-invalid`。キーと値の型は manifest の `behaviorOptions`） | `$behavior: { enableMustach: false }` | ❌ error |
 | `$features` / root の `features=` の知らない名前（`wcs/feature-unknown`。名前は manifest の `features`） | `$features: ["temporl"]` | ❌ error |
 | 配列でない・ボリュームの `$features`（error）、root 以外の `<wcs-state>` の `features=`（読まれない — warning）（`wcs/features-invalid`） | `<wcs-state mount="x" features="formats">` | ❌ / ⚠ |

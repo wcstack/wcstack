@@ -200,7 +200,7 @@ The following properties and methods are available on `this` inside `defineState
 | `$eqPath` | `$eqPath(path: string, keyPath: string): boolean` | `$eq` with the key read from `keyPath` (wildcards resolve to the current row) |
 | `$eqIndex` | `$eqIndex(path: string, level?: number): boolean` | `$eq` with the current row's index as the key |
 
-The README's [Proxy APIs](../README.md#proxy-apis) and [Keyed selection](../README.md#keyed-selection-eq--eqpath--eqindex) sections describe their behavior. The 3.x names `$trackDependency` / `$untrackDependency` are not in the types; at runtime they throw `[wcs/name-alias]`.
+The README's [Proxy APIs](../README.md#proxy-apis) and [Keyed selection](../README.md#keyed-selection-eq--eqpath--eqindex) sections describe their behavior. The 3.x names `$trackDependency` / `$untrackDependency` are not in the types; at runtime they throw `[wcs/name-alias]` when read, where the `diagnostics` add-on is installed (`@wcstack/state`, `/auto`), and read `undefined` without it.
 
 ### Properties
 

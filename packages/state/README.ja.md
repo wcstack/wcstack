@@ -226,21 +226,21 @@
 
 | エントリ | 足されるもの |
 |---|---|
-| `@wcstack/state/core` | バインディングの本体: `data-wcs`・`{{ }}` とコメントバインディング・`for` / `if`・パス getter・イベント・`$command` / `$on`・24 個のロジックフィルタ（比較・算術・型変換・デフォルト）・`bootstrapState`・`installFeatures` |
+| `@wcstack/state/core` | バインディングの本体: `data-wcs`・`{{ }}` とコメントバインディング・`for` / `if`・パス getter・イベント・`$command` / `$on`・条件の 10 個のフィルタ（`eq` `ne` `not` `lt` `le` `gt` `ge` `truthy` `falsy` `boolean`）・`bootstrapState`・`installFeatures` |
 | `@wcstack/state/features/temporal` | `$watch`・`$stream` |
 | `@wcstack/state/features/list-keys` | `$listKeys` |
 | `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
 | `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
-| `@wcstack/state/features/formats` | 23 個の書式フィルタ（`upper`・`date`・`round`・`truncate` …） |
+| `@wcstack/state/features/formats` | 残りの 37 個のフィルタ: 算術・型変換・デフォルト（`add`・`int`・`coalesce` …）と書式（`upper`・`date`・`round`・`truncate` …） |
 | `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
-| `@wcstack/state/features/diagnostics` | エラーメッセージの文章（did-you-mean と lint への案内を含む）と、開発時の警告（束縛や `$watch` のパスが解決しない、`wcs/default-getter-mismatch`）。入れなければ、メッセージは code・番号・値だけになり（[エラーメッセージ](#エラーメッセージと番号)）、これらの警告は出ない |
+| `@wcstack/state/features/diagnostics` | エラーメッセージの文章（did-you-mean と lint への案内を含む）と、開発時の警告（束縛や `$watch` のパスが解決しない、`wcs/default-getter-mismatch`）。入れなければ、メッセージは番号と値だけになり（[エラーメッセージ](#エラーメッセージと番号)）、これらの警告は出ず、4.0 で外した 3.x の名前（`$scan`・`$streams`・`$updatedCallback`・`$trackDependency`・`$untrackDependency`）も見つけない |
 | `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
 
 アドオンが入っていない宣言は黙って無視されません。state の読み込み時に
 `[wcs/feature-not-installed] $watch needs the add-on @wcstack/state/features/temporal` を throw し
 （`mount=`・`bind-component`・`data-wc-definition` は同じ形で `scopes` を、`enable-ssr` は `ssr` を
-名指します）、`formats` なしの書式フィルタは束縛計画の段で、アドオン名を挙げた `[wcs/filter-unknown]`
+名指します）、`formats` なしの `formats` のフィルタは束縛計画の段で、アドオン名を挙げた `[wcs/filter-unknown]`
 を throw します。install は冪等で — 2 回目の install は読み飛ばされます — どのエントリも core の
 チャンクを 1 つだけ共有します。アドオンがエンジンの 2 つ目のコピーを抱えることも、**別のアドオン**の
 コピーを抱えることもありません（アドオンをまたぐ呼び出しは、持ち主のアドオンが install 時に埋める
@@ -1671,7 +1671,7 @@ export default {
 
 ## フィルタ
 
-47 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます: core に 24 個のロジックフィルタ（比較・算術・型変換・真偽値 / デフォルト）、`formats` アドオンに 23 個の書式フィルタ（数値フォーマット・文字列・日付 / 時刻）があり、全部入りのエントリには両方が含まれます。
+47 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます: core に条件の 10 個のフィルタ（`eq`・`ne`・`not`・`lt`・`le`・`gt`・`ge`・`truthy`・`falsy`・`boolean`）、`formats` アドオンに残りの 37 個（算術・数値フォーマット・文字列・型変換・日付 / 時刻・デフォルト）があり、全部入りのエントリには両方が含まれます。`formats` なしの `/core` で `formats` のフィルタを使うと、束縛計画の段でアドオン名を挙げて失敗します。
 
 3.x が 3.2 の改名の別名として残していた名前（`inc`・`dec`・`fix`・`uc`・`lc`・`cap`・`rep`・`rev`・`pad`・`null`）と `substr` フィルタは存在しません: 未知の名前と同じく失敗し、メッセージが代わりに書くものを示します（`"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".`。`substr(start, length)` は `slice(start, start + length)`）。
 
@@ -2353,7 +2353,7 @@ event token は command token と同じ `Token` pub/sub プリミティブを共
 
 ## Stream（`$stream`）
 
-command token / event token が運ぶのは離散的なやり取りです。**`$stream`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$renderedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。`$stream` は `temporal` アドオンです（全部入りのエントリに含まれる）。3.x の名前 `$streams` は `[wcs/declaration-alias] $streams was removed: write $stream.`（`#1601`）を throw します。
+command token / event token が運ぶのは離散的なやり取りです。**`$stream`** は残る形 —— 連続的なフローをカバーします。非同期 producer（async iterable / async generator / `ReadableStream`）を宣言すると、フレームワークがそれを **fold して単一の reactive プロパティに畳み込みます** —— 各チャンクは通常のパス代入を通るため、バインディング・パス getter・`$renderedCallback` は自分で値を代入した場合とまったく同じように反応します。`args` 関数が読んだ state パスが変化すると、実行中の producer は abort され、新しい引数で source が張り直されます（switchMap 型の依存駆動 restart）。stream は `$connectedCallback` 完了後に eager に起動し、要素の disconnect で abort されます。`$stream` は `temporal` アドオンです（全部入りのエントリに含まれる）。3.x の名前 `$streams` は、`diagnostics` アドオンが入っていれば（`@wcstack/state`・`/auto`）`[wcs/declaration-alias] $streams was removed: write $stream.`（`#1601`）を throw します。入っていなければ、その宣言は無視されます。
 
 `$renderedCallback` は引き続き binding 駆動です。stream 宣言だけでは headless な購読にならず、その value/status/error の live DOM binding が実際に適用されたときだけ callback の path に現れます。描画せずに stream の値へ反応したい場合は、そのパスに [`$watch`](#watchwatch) を宣言してください。観測契約は [stream リファレンス](docs/streams.md) を参照してください。
 
@@ -2754,7 +2754,7 @@ export default {
 
 状態オブジェクトに `$connectedCallback` / `$disconnectedCallback` / `$renderedCallback` / `$errorCallback` を定義すると、初期化・クリーンアップ・更新時・バインディング失敗時のフックとして利用できます。
 
-> `$renderedCallback` が受けるのは**適用されたバインディング**の更新で、state の更新全体ではありません（それには `$watch`）。3.x の名前 `$updatedCallback` は `[wcs/declaration-alias] $updatedCallback was removed: write $renderedCallback.`（`#1601`）を throw します。
+> `$renderedCallback` が受けるのは**適用されたバインディング**の更新で、state の更新全体ではありません（それには `$watch`）。3.x の名前 `$updatedCallback` は、`diagnostics` アドオンが入っていれば（`@wcstack/state`・`/auto`）`[wcs/declaration-alias] $updatedCallback was removed: write $renderedCallback.`（`#1601`）を throw します。入っていなければ、その宣言は無視されます。
 
 ```html
 <wcs-state>
@@ -2836,16 +2836,16 @@ li {
 
 ### エラーメッセージと番号
 
-メッセージはすべて `[@wcstack/state]` で始まります。`@wcstack/lint` と VS Code 拡張も検査する事柄についてのメッセージは同じ診断 code（`[wcs/filter-unknown]`）を持ち、ほとんどのメッセージは番号（`#501`）を持ちます。番号の百の位がその code を表します —— 1xx `binding-syntax`、2xx `template-syntax`、3xx `binding-path-missing`、4xx `binding-type-expectation`、5xx `filter-unknown`、6xx `filter-arity`、7xx `getter-cycle`、8xx `getter-depth-exceeded`、9xx `index-arity`、10xx `index-param-range`、11xx `recursion-unsupported`、12xx `token-misconfigured`、13xx `token-undeclared`、14xx `wildcard-rank`、15xx `spread-no-bindable`、16xx `declaration-alias`、17xx `name-alias`。1〜99 は code を持ちません。番号は追加されるだけなので、番号の意味はバージョンをまたいで変わりません。
+メッセージはすべて `[@wcstack/state]` で始まります。ほとんどのメッセージは番号（`#501`）を持ち、`@wcstack/lint` と VS Code 拡張も検査する事柄についてのメッセージは同じ診断 code（`[wcs/filter-unknown]`）を持ちます。番号の百の位がその code を表します —— 1xx `binding-syntax`、2xx `template-syntax`、3xx `binding-path-missing`、4xx `binding-type-expectation`、5xx `filter-unknown`、6xx `filter-arity`、7xx `getter-cycle`、8xx `getter-depth-exceeded`、9xx `index-arity`、10xx `index-param-range`、11xx `recursion-unsupported`、12xx `token-misconfigured`、13xx `token-undeclared`、14xx `wildcard-rank`、15xx `spread-no-bindable`、16xx `declaration-alias`、17xx `name-alias`。1〜99 は code を持ちません。番号は追加されるだけなので、番号の意味はバージョンをまたいで変わりません。
 
-番号付きメッセージの文章 —— いちばん近い名前（lint と同じ規則による did-you-mean）、直し方、そして lint が検出できる場合は lint への案内 —— は、`@wcstack/state` と `/auto` に含まれる `diagnostics` アドオンが出します。それを入れていない `/core` のページでは、メッセージは code・番号・表示するはずだった値だけになります:
+番号付きメッセージの code と文章 —— いちばん近い名前（lint と同じ規則による did-you-mean）、直し方、そして lint が検出できる場合は lint への案内 —— は、`@wcstack/state` と `/auto` に含まれる `diagnostics` アドオンが出します。それを入れていない `/core` のページでは、メッセージは番号と表示するはずだった値だけになります:
 
 ```
 [@wcstack/state] [wcs/filter-unknown] filter not found: uc. "uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper". Validate statically: npx @wcstack/lint <file>.
-[@wcstack/state] [wcs/filter-unknown] #501 "uc"
+[@wcstack/state] #501 "uc"
 ```
 
-1 行目が `@wcstack/state` と `/auto` の出力、2 行目が `features/diagnostics` なしの `/core` の出力です。`/core` で開発するときは `diagnostics` を入れてください。アドオンなしのページが意図して突き当たる障壁（`[wcs/feature-not-installed]`、`formats` なしの書式フィルタ）は、core の中でも完全な文章です。
+1 行目が `@wcstack/state` と `/auto` の出力、2 行目が `features/diagnostics` なしの `/core` の出力です。`/core` で開発するときは `diagnostics` を入れてください: 4.0 で外した 3.x の名前（#1・#1601・#1701）を見つけるのもこのアドオンで、入れていないページはそれらを無視します（その名前の宣言は何もせず、読むと `undefined`）。アドオンなしのページが意図して突き当たる障壁（`[wcs/feature-not-installed]`、`formats` なしの `formats` のフィルタ）は、core の中でも完全な文章です。
 
 <details>
 <summary>番号付きメッセージ</summary>
@@ -3029,7 +3029,7 @@ this.$getAll("matrix.*.*", [row]);
 初期化を失敗させるもの:
 
 - 読めないソース（[状態の初期化](#状態の初期化)）。
-- 不正な宣言: 削除された名前（`$scan`・`$streams`・`$updatedCallback`）、形の誤った `$behavior` / `$features` / `$commandTokens` / `$eventTokens` / `$on`、アドオンが入っていない宣言（`[wcs/feature-not-installed]`）。
+- 不正な宣言: 削除された名前（`$scan`・`$streams`・`$updatedCallback`。`diagnostics` アドオンがあるとき）、形の誤った `$behavior` / `$features` / `$commandTokens` / `$eventTokens` / `$on`、アドオンが入っていない宣言（`[wcs/feature-not-installed]`）。
 - ページのバインド中に見つかったマークアップの誤り: 構文エラー、未知のフィルタや誤った引数の個数、wildcard-rank のエラー、フィルタ付きの `for:`、テンプレートの中の `outerHTML:`、クラスが定義済みの要素での wc-bindable の設定ミス。走査はそのエラーで止まります: 文書順でそれより前はバインドされ、後はバインドされません。デプロイの前に `npx @wcstack/lint` を実行してください。
 - 別の `<wcs-state>` がすでにバインドしているルートの上の、2 つ目のルート `<wcs-state>`（`#47`）。state ツリーはルートごとに 1 本です。部分木は `mount=` で接ぎ木してください。
 

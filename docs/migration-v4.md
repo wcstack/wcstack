@@ -179,14 +179,14 @@ In 4.0 the common bubbling events are delegated, and `event.currentTarget` is th
 - Update CDN URLs to the new major version (`https://esm.run/@wcstack/state@4/auto`). `@4` resolves once 4.0.0 is published; a range does not pick a release candidate, so name it while trying one (`https://esm.run/@wcstack/state@4.0.0-rc.3/auto`).
 - `@wcstack/lint` and `@wcstack/typescript` move with every `@wcstack/*` release, so they carry the 4.0 rules from the release candidate on (`npx @wcstack/lint@next <files>`); the VS Code extension ships them as 2.0.0, together with 4.0.0. Keep the 3.5 ones (extension 1.21.x) for 3.x projects: the 4.0 rules report forms that 3.x still accepts.
 
-**How 4.0 reports errors.** Messages carry the same `[wcs/<code>]` codes as the lint, and many also have a number:
+**How 4.0 reports errors.** With the `diagnostics` feature, messages carry the same `[wcs/<code>]` codes as the lint and a sentence; without it, a number and the values:
 
 ```
 [@wcstack/state] [wcs/filter-unknown] filter not found: uc.      ← @wcstack/state and /auto
-[@wcstack/state] [wcs/filter-unknown] #501 "uc"                   ← /core without features/diagnostics
+[@wcstack/state] #501 "uc"                                        ← /core without features/diagnostics
 ```
 
-The sentence comes from the `diagnostics` feature, which `@wcstack/state` and `/auto` include. A page on `/core` without it prints the code, the number and the values (3.x printed the full sentence either way). A number keeps its meaning across versions. The tables in §4 list the messages this guide mentions. Every number is listed in [state-errors.md](./state-errors.md).
+The code and the sentence come from the `diagnostics` feature, which `@wcstack/state` and `/auto` include. A page on `/core` without it prints only the number and the values (3.x printed the full sentence either way); the hundreds of a number name its code (`#501` is `filter-unknown`). A number keeps its meaning across versions. The tables in §4 list the messages this guide mentions. Every number is listed in [state-errors.md](./state-errors.md).
 
 **A removed filter name gets its replacement, not a "Did you mean".** For the 3.2 old names and `substr`, the message names what to write instead of the nearest built-in name, which for these is an unrelated filter (following `dec` → `eq` would change the meaning silently):
 
@@ -204,11 +204,11 @@ The replacement, like the sentence, comes from the `diagnostics` feature. Withou
 |---|---|---|---|
 | Old filter names (`uc`, `fix`, …) | throws when the page is initialized | `[wcs/filter-unknown] filter not found: uc.` followed by `"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".` (#501) | `wcs/filter-unknown` (warning; names the replacement) |
 | `substr(start, length)` | same | `[wcs/filter-unknown] filter not found: substr.` followed by `"substr" was removed in 4.0 — write slice(start, start + length) …` | `wcs/filter-unknown` (warning; suggests the `slice` call) |
-| `$trackDependency` / `$untrackDependency` | throws when read | `[wcs/name-alias] $trackDependency was removed: write $dependOn.` (#1701) | `wcs/name-alias` (error) |
-| `$updatedCallback` / `$streams` | throws when the state loads | `[wcs/declaration-alias] $streams was removed: write $stream.` (#1601) | `wcs/declaration-alias` (error) |
-| `$scan` | throws when the state loads | `$scan was removed (use $watch or $on)` (#1) | `wcs/scan-declaration-invalid` (error) |
+| `$trackDependency` / `$untrackDependency` | throws when read (with `diagnostics`) | `[wcs/name-alias] $trackDependency was removed: write $dependOn.` (#1701) | `wcs/name-alias` (error) |
+| `$updatedCallback` / `$streams` | throws when the state loads (with `diagnostics`) | `[wcs/declaration-alias] $streams was removed: write $stream.` (#1601) | `wcs/declaration-alias` (error) |
+| `$scan` | throws when the state loads (with `diagnostics`) | `$scan was removed (use $watch or $on)` (#1) | `wcs/scan-declaration-invalid` (error) |
 
-Without the `diagnostics` feature the runtime message is only the code, the number and the name, and does not name the replacement (§2).
+Without the `diagnostics` feature the runtime message for an old filter name or `substr` is only the number and the name, and does not name the replacement (§2). The other three rows are detected only by the `diagnostics` feature, which `@wcstack/state` and `/auto` include: on `/core` without it, `$scan`, `$streams` and `$updatedCallback` are ignored like any unknown `$` key, and `$trackDependency` / `$untrackDependency` read `undefined`. Install it while migrating a `/core` page, or rely on the lint, which reports all of them.
 
 In a volume (`<wcs-state mount=…>`), the removed declaration keys and `$scan` do not throw: the volume is not grafted and the reason goes to `console.error` (§3.5).
 
@@ -532,8 +532,8 @@ A bundler cannot drop the 4.0 engine's modules from the `@wcstack/state` entry, 
 
 - **`$listKeys` moved out of the core** into a new feature, `@wcstack/state/features/list-keys`. `@wcstack/state` and `/auto` include it. A `/core` page that uses `$listKeys` must install it; otherwise the state fails with `[wcs/feature-not-installed] $listKeys needs the add-on @wcstack/state/features/list-keys`.
 - `features/temporal` serves `$watch` and `$stream` (`$scan` is gone).
-- **`/core` carries the 24 logic filters** — comparison (`eq`, `ne`, `not`, `lt`, `le`, `gt`, `ge`), arithmetic (`add`, `sub`, `mul`, `div`, `mod`, `abs`, `clamp`), conversion (`int`, `float`, `boolean`, `number`, `string`, `truthy`, `falsy`) and defaults (`defaults`, `coalesce`, `nullIfEmpty`). The 3.x `/core` answered only `not`, and every other filter needed `features/formats`. `features/formats` now holds the 23 formatting filters (`upper`, `date`, `round`, `truncate`, …): a `/core` page that installed it only for a logic filter can drop it. A formatting filter without it fails with `[wcs/filter-unknown]`, naming the add-on.
-- On `/core` without `features/diagnostics`, messages are numbered (§2). Install `diagnostics` while developing.
+- **`/core` carries the 10 condition filters** — `eq`, `ne`, `not`, `lt`, `le`, `gt`, `ge`, `truthy`, `falsy`, `boolean`. The 3.x `/core` answered only `not`, and every other filter needed `features/formats`; the others still do. `features/formats` holds 37: arithmetic (`add`, `sub`, `mul`, `div`, `mod`, `abs`, `clamp`), conversion (`int`, `float`, `number`, `string`), defaults (`defaults`, `coalesce`, `nullIfEmpty`) and the formatting filters (`upper`, `date`, `round`, `truncate`, …). One of them on a page without it fails with `[wcs/filter-unknown]`, naming the add-on. (4.0.0-rc.1 to rc.3 carried the arithmetic, conversion and defaults filters in `/core` too; a `/core` page that dropped `features/formats` for them installs it again.)
+- On `/core` without `features/diagnostics`, a message is a number and the values (§2), and the 3.x names 4.0 removed are not detected (§3.1). Install `diagnostics` while developing.
 - Call `installFeatures([...])` before `bootstrapState()`, as in 3.x. A state that declares a feature's key before that feature is installed fails with `[wcs/feature-not-installed]`.
 - The file names under `dist/split/chunks/` now carry a content hash. If you list chunk files yourself (preload links, `integrity` in an import map), take the names from the 4.0 build.
 - The package ships no source maps (3.5.4 had a `.map` file beside each bundle). A stack trace points into the minified bundles; to step through the engine, use the source in the repository (`packages/state/src`).
@@ -596,7 +596,7 @@ The lint does not see: `bootstrapXxx()` options, `#stop` and `stopPropagation()`
 
 ### 4.2 Runtime messages
 
-The sentences are what `@wcstack/state` and `/auto` print; without the diagnostics feature a message shows its code, number and values instead.
+The sentences are what `@wcstack/state` and `/auto` print; without the diagnostics feature a message shows its number and values instead.
 
 | Message | Number | § |
 |---|---|---|
