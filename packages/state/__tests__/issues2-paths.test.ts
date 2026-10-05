@@ -2,7 +2,7 @@
  * issues2-paths.test.ts — 現行 @wcstack/state 3.3 の Issue #382・#383・#388・#389・#390
  * （数値添字のパスの読み書き・`*` と数値添字の混ざったパス・数値添字の `for:` の診断・
  * 要素の書き込みと入れ子の一覧の性能）を state-next で流す。各 Issue の「期待」を確かめる。
- * F37（#388 の診断）も置く。まだ直していない F34（数値キーのオブジェクト）は it.fails で症状を残す。
+ * F37（#388 の診断）と F34（数値キーのオブジェクト）の直しも確かめる。
  * 性能（#389・#390）の計測は bench/issues2.perf.test.ts（単体テストには #390 の正しさだけを置く）。
  */
 import { describe, it, expect, beforeAll, vi, afterEach } from "vitest";
@@ -105,7 +105,7 @@ describe("#382 数値添字のパスのスクリプト側の読み書き・$watc
     });
   });
 
-  // F34（まだ直していない）: スクリプト側の読み・書き・$eq は、数値の段を一覧の添字として解く。it.fails で症状を残す
+  // F34: 数値の段は、入れ物が配列なら一覧の添字、配列でなければ（オブジェクト）素のキー。スクリプトの読み・書き・$eq・書き戻しも
   describe("2. 数値のキーを持つオブジェクト（sales.2024.total）", () => {
     const state = () => ({
       sales: { 2024: { total: 10 } } as Record<number, { total: number }>,
@@ -120,19 +120,19 @@ describe("#382 数値添字のパスのスクリプト側の読み書き・$watc
       expect(text(root, ".lit")).toBe("10");
     });
 
-    it.fails("{{ t }}（getter の中の this[\"sales.2024.total\"]）は 10", async () => {
+    it("{{ t }}（getter の中の this[\"sales.2024.total\"]）は 10", async () => {
       const errors = spyConsole("error");
       const { root } = await page(markup, state());
       expect(errors).toEqual([]);
       expect(text(root, ".t")).toBe("10");
     });
 
-    it.fails("スクリプトの読み s[\"sales.2024.total\"] は 10", async () => {
+    it("スクリプトの読み s[\"sales.2024.total\"] は 10", async () => {
       const { read } = await page(markup, state());
       expect(read("sales.2024.total")).toBe(10);
     });
 
-    it.fails("スクリプトの書き込み s[\"sales.2024.total\"] = 11 は書ける（{{ sales.2024.total }} を描いていても）", async () => {
+    it("スクリプトの書き込み s[\"sales.2024.total\"] = 11 は書ける（{{ sales.2024.total }} を描いていても）", async () => {
       const { el, root } = await page(markup, state());
       const e = thrown(() => el.createState("writable", (s: any) => { s["sales.2024.total"] = 11; }));
       await flush(); await flush();
@@ -152,7 +152,7 @@ describe("#382 数値添字のパスのスクリプト側の読み書き・$watc
       expect(calls).toEqual([[12, 10]]);
     });
 
-    it.fails("get hit() の $eq(\"sales.2024.total\", 11) は n、書き込みの後は Y", async () => {
+    it("get hit() の $eq(\"sales.2024.total\", 11) は n、書き込みの後は Y", async () => {
       const errors = spyConsole("error");
       const { root, write } = await page(markup, state());
       expect(errors).toEqual([]);
@@ -161,12 +161,12 @@ describe("#382 数値添字のパスのスクリプト側の読み書き・$watc
       expect(text(root, ".hit")).toBe("Y");
     });
 
-    it.fails("（Issue の表に無い対照）$eq(\"sales.2024.total\", 10) は Y", async () => {
+    it("（Issue の表に無い対照）$eq(\"sales.2024.total\", 10) は Y", async () => {
       const { root } = await page(markup, state());
       expect(text(root, ".hit10")).toBe("Y");
     });
 
-    it.fails("（Issue の表に無い形）双方向の束縛 value: sales.2024.total の書き戻し", async () => {
+    it("（Issue の表に無い形）双方向の束縛 value: sales.2024.total の書き戻し", async () => {
       const errors = spyConsole("error");
       const { root, read } = await page(`<input data-wcs="value: sales.2024.total"><p class="lit">{{ sales.2024.total }}</p>`, { sales: { 2024: { total: 10 } } });
       const input = root.querySelector("input") as HTMLInputElement;
@@ -178,6 +178,97 @@ describe("#382 数値添字のパスのスクリプト側の読み書き・$watc
       expect(e).toBeUndefined();
       expect(errors).toEqual([]);
       expect(text(root, ".lit")).toBe("11");
+    });
+
+    it("その段への書き込みの後、束縛・getter・$eq が追従する（s[\"sales.2024\"] の置き換えでも）", async () => {
+      const errors = spyConsole("error");
+      const { root, write, read } = await page(markup, state());
+      const shown = () => [text(root, ".lit"), text(root, ".t"), text(root, ".hit"), text(root, ".hit10")];
+      await write((s) => { s["sales.2024.total"] = 11; });
+      expect(shown()).toEqual(["11", "11", "Y", "n"]);
+      await write((s) => { s["sales.2024"] = { total: 10 }; });
+      expect(shown()).toEqual(["10", "10", "n", "Y"]);
+      expect(read("sales")).toEqual({ 2024: { total: 10 } });
+      // 上のキーの置き換えも、これまでどおり届く
+      await write((s) => { s.sales = { 2024: { total: 11 } }; });
+      expect(shown()).toEqual(["11", "11", "Y", "n"]);
+      expect(errors).toEqual([]);
+    });
+
+    it("$resolve・$setAll・$getAll も素のキーとして読み書きする（usersById.42.name）", async () => {
+      const { root, el } = await page(`<p class="n">{{ usersById.42.name }}</p>`, { usersById: { 42: { name: "ann" } } });
+      const got: unknown[] = [];
+      el.createState("writable", (s: any) => {
+        s.$resolve("usersById.42.name", [], "bob");
+        got.push(s.$resolve("usersById.42.name", []), s["usersById.42.name"]);
+        expect(s.$setAll("usersById.42.name", [], "cy")).toBe(1);
+        got.push(s.$getAll("usersById.42.name"));
+      });
+      await flush();
+      expect(got).toEqual(["bob", "bob", ["cy"]]);
+      expect(text(root, ".n")).toBe("cy");
+    });
+
+    it("$watch(\"sales.2024.total\") は、その段への書き込みで発火する", async () => {
+      const calls: unknown[][] = [];
+      const { write } = await page(`<p>x</p>`, {
+        sales: { 2024: { total: 10 } },
+        $watch: { "sales.2024.total"(cur: unknown, prev: unknown) { calls.push([cur, prev]); } },
+      });
+      await write((s) => { s["sales.2024.total"] = 12; });
+      expect(calls).toEqual([[12, 10]]);
+    });
+
+    it("行の中のオブジェクトの数値キー（for: items の {{ .byYear.2024 }}）も読み書きできる", async () => {
+      const errors = spyConsole("error");
+      const { root, write, read } = await page(`<template data-wcs="for: items"><i>{{ .byYear.2024 }}</i></template><p class="x">{{ x }}</p>`, {
+        items: [{ byYear: { 2024: 1 } }, { byYear: { 2024: 2 } }],
+        get x() { return (this as any)["items.1.byYear.2024"]; },
+      });
+      expect([texts(root, "i"), text(root, ".x")]).toEqual([["1", "2"], "2"]);
+      expect(read("items.0.byYear.2024")).toBe(1);
+      await write((s) => { s["items.1.byYear.2024"] = 5; });
+      expect([texts(root, "i"), text(root, ".x")]).toEqual([["1", "5"], "5"]);
+      expect(errors).toEqual([]);
+    });
+
+    it("オブジェクトのキーの下の配列（byId.42.tags.0）は、ふたたび一覧の添字", async () => {
+      const { root, write, read } = await page(`<p class="t">{{ byId.42.tags.0 }}</p>`, { byId: { 42: { tags: ["a", "b"] } } });
+      expect(read("byId.42.tags.1")).toBe("b");
+      await write((s) => { s["byId.42.tags.0"] = "z"; });
+      expect(text(root, ".t")).toBe("z");
+      expect(read("byId")).toEqual({ 42: { tags: ["z", "b"] } });
+    });
+
+    it("オブジェクトの数値キーの下の一覧（for: byYear.2024.items）の行へ、添字のパスで書き込める", async () => {
+      const errors = spyConsole("error");
+      const { root, write, el } = await page(`<template data-wcs="for: byYear.2024.items"><i>{{ .v }}</i></template><p class="s">{{ sum }}</p>`, {
+        byYear: { 2024: { items: [{ v: 1 }, { v: 2 }] } },
+        get sum() { return (this as any).$getAll("byYear.2024.items.*.v").reduce((a: number, b: number) => a + b, 0); },
+      });
+      expect([texts(root, "i"), text(root, ".s")]).toEqual([["1", "2"], "3"]);
+      await write((s) => { s["byYear.2024.items.1.v"] = 5; });
+      expect([texts(root, "i"), text(root, ".s")]).toEqual([["1", "5"], "6"]);
+      el.createState("writable", (s: any) => { s.$postUpdate("byYear.2024"); });
+      await flush();
+      expect(errors).toEqual([]);
+    });
+
+    it("キーは書いたとおりの綴りで引く（2024-01・007 は数に直さない）", async () => {
+      const { root, write, read } = await page(`<p class="d">{{ byDay.007 }}</p>`, { byDay: { "2024-01": 3, "007": 7 } });
+      expect([read("byDay.2024-01"), read("byDay.007")]).toEqual([3, 7]);
+      await write((s) => { s["byDay.007"] = 8; });
+      expect(text(root, ".d")).toBe("8");
+      expect(read("byDay")).toEqual({ "2024-01": 3, "007": 8 });
+    });
+
+    it("入れ物がオブジェクトでない（undefined）なら、これまでどおり行の無い添字（読みは undefined、書き込みは投げる）", async () => {
+      const { el, read } = await page(`<p>x</p>`, { usersById: undefined, byId: { 42: undefined } });
+      expect(read("usersById.42.name")).toBeUndefined();
+      expect(() => el.createState("writable", (s: any) => { s["usersById.42.name"] = "x"; })).toThrow('no row for "usersById.*.name"');
+      // キーの下の段が undefined なら、親がオブジェクトでないと投げる
+      expect(read("byId.42.name")).toBeUndefined();
+      expect(() => el.createState("writable", (s: any) => { s["byId.42.name"] = "x"; })).toThrow('cannot write "byId.42.name": its parent is undefined');
     });
   });
 

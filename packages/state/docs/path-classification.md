@@ -209,7 +209,7 @@ increment() {
 }
 ```
 
-A numeric segment after the first is always read as an index, so numeric keys under a plain object (`sales.2024.total`) are a known limitation — see the same README section.
+A numeric segment after the first is an index where the value before it is an array; under any other object it is a key, spelled as written (`sales.2024.total`, `usersById.42.name`) — see the same README section.
 
 ### Mixed Path
 

@@ -1,5 +1,5 @@
 import { Pattern, PatternTable, parsePath, WILDCARD, type EqSub } from "./pattern";
-import { StateList, StateRow, reconcile, type ReconcileHooks } from "./list";
+import { StateList, StateRow, reconcile, EMPTY, type ReconcileHooks } from "./list";
 import type { Strategy } from "./strategy/types";
 import type { Binding } from "./dom/view";
 import { commandNamespace, eventTokens, type Token } from "./token";
@@ -278,8 +278,15 @@ export class Engine implements ReconcileHooks {
     this.patterns = new PatternTable((p) => this.onPatternCreated(p));
     this.loadTarget(target);
     const engine = this;
-    // the handler reads engine.target, not the proxy's target: a re-set swaps the state
-    this.proxy = new Proxy(target, {
+    // the handler reads engine.target, not the proxy's target (a stand-in): a re-set swaps the state.
+    // So do `in`, `delete`, `Object.keys(this)`, `instanceof` (the forwarded traps below); a descriptor
+    // is reported configurable, as the stand-in has none (a frozen state's would break the invariants)
+    const handler: ProxyHandler<object> = {
+      getOwnPropertyDescriptor(_t, key) {
+        const d = Reflect.getOwnPropertyDescriptor(engine.target, key);
+        if (d) d.configurable = true;
+        return d;
+      },
       get(_t, key, receiver) {
         const t = engine.target;
         if (typeof key === "symbol") return Reflect.get(t, key);
@@ -303,7 +310,11 @@ export class Engine implements ReconcileHooks {
         engine.write(engine.rp!, engine.rr, value);
         return true;
       },
-    });
+    };
+    for (const trap of ["has", "ownKeys", "deleteProperty", "defineProperty", "getPrototypeOf"]) {
+      (handler as any)[trap] = (_t: object, ...a: unknown[]) => (Reflect as any)[trap](engine.target, ...a);
+    }
+    this.proxy = new Proxy({}, handler);
   }
 
   // ---------------------------------------------------------------- patterns
@@ -345,7 +356,9 @@ export class Engine implements ReconcileHooks {
    * Markup names two things the tree does not hold, as `this[...]` reads them: an explicit index
    * (`items.0.v`, the row at that index now) and a loop index (`items.*.$1`, `$1` in a row).
    * Their patterns (only markup makes them: the proxy parses an index into a row) read — and an
-   * index path writes — through the proxy, so the reads are tracked like a getter's.
+   * index path writes — as the proxy resolves them, so the reads are tracked like a getter's.
+   * Where a number is a key of an object (`sales.2024.total`), the path resolves to the pattern
+   * itself (rowOf): it is read and written through its parent.
    */
   private markupAccessor(p: Pattern): void {
     const path = p.path;
@@ -361,16 +374,18 @@ export class Engine implements ReconcileHooks {
       // none, or a `*` after it: a row of a list over the index path (`for: groups.0.items`) reads its
       // own item, and a write through the index reaches it as a list with the same array (mirror)
       if (i < 0 || segs.indexOf(WILDCARD, i) >= 0) return;
-      const container = segs.slice(0, i).join(".");
-      const rest = segs.slice(i);
-      p.getter = function (this: any) {
-        const v = this[path];
-        if (v !== undefined) return v;
-        // not a list there (an object with numeric keys): the path read literally, as 3.3's markup did
-        return dig(this[container], rest);
+      // (the parent read from the context row: the occurrence's, the setter's — at p.depth)
+      p.getter = () => {
+        this.resolve(path, this.ctx);
+        if (this.rp !== p) return this.read(this.rp!, this.rr);
+        return (this.read(p.parent!, this.ctx) as any)?.[last];
       };
-      p.setter = function (this: any, v: unknown) {
-        this[path] = v;
+      p.setter = (v: unknown) => {
+        this.resolve(path, this.ctx);
+        if (this.rp !== p) return this.write(this.rp!, this.rr, v);
+        const o = this.read(p.parent!, this.ctx) as any;
+        if (o == null) raise(M.ParentNotObject, [path, o]);
+        o[last] = v;
       };
     }
     if (p.depth > 0) p.slot = this.slotCount++;
@@ -475,24 +490,37 @@ export class Engine implements ReconcileHooks {
   /** Splits a concrete path into (pattern, row) — written to this.rp / this.rr. */
   resolve(path: string, ctx: StateRow | null): void {
     const parsed = parsePath(path);
-    const p = this.pattern(parsed.pattern);
+    const p = (this.rp = this.pattern(parsed.pattern));
     const idx = parsed.indexes;
-    this.rr = p.depth === 0 ? null : idx === null ? ctxRow(ctx, p, p.depth) : this.rowOf(p, idx, ctx);
-    // set last: finding the row can sync a list over a getter, whose evaluation resolves paths too
-    this.rp = p;
+    this.rr = p.depth === 0 ? null : idx === null ? ctxRow(ctx, p, p.depth) : this.rowOf(p, idx, ctx, path);
   }
 
-  /** The row at p.depth addressed by `idx` (one index per `*`; -1 takes the one of `ctx`). */
-  private rowOf(p: Pattern, idx: readonly number[], ctx: StateRow | null): StateRow | null {
+  /**
+   * The row at p.depth addressed by `idx` (one index per `*`; -1 takes the one of `ctx`). The pattern
+   * it is at goes to this.rp — set last: finding the row can sync a list over a getter, whose
+   * evaluation resolves paths too. An index of `path` (the proxy's) into an object that is not an
+   * array (`sales.2024.total`) is a key: the pattern keeps it as written (into null or a string, it
+   * has no row).
+   */
+  private rowOf(p: Pattern, idx: readonly number[], ctx: StateRow | null, path?: string): StateRow | null {
     let row: StateRow | null = null;
-    for (let k = 1; k <= p.depth; k++) {
+    for (let k = 1, j = 0, v; k <= p.depth; k++) {
       const listP = p.lists[k]!;
       const list = this.childList(row, listP);
-      let i = idx[k - 1];
-      if (i === -1) i = ctxRow(ctx, p, k)?.index ?? -1;
+      let i = idx[j++];
+      if (i < 0) i = ctxRow(ctx, p, k)?.index ?? -1;
+      else if (path && list.arr === EMPTY && Object((v = this.readUntracked(listP, row))) === v) {
+        const segs = p.path.split(".");
+        const n = listP.path.split(".").length;
+        segs[n] = path.split(".")[n];
+        p = this.pattern(segs.join("."));
+        k--;
+        continue;
+      }
       row = list.rows[i] ?? null;
       if (row === null) break;
     }
+    this.rp = p;
     return row;
   }
 
@@ -847,12 +875,13 @@ export class Engine implements ReconcileHooks {
    */
   reset(target: Record<string, any>): void {
     const old = this.target;
-    this.loadTarget(target);
     // a key the old state had (or an earlier re-set dropped) and this one lacks is empty (B8), as a
     // missing path under a key is — not a key never declared, which fails on read: its bindings, lists
-    // and getters read undefined, until it is written. (for…in: an accessor on a class state's
-    // prototype is not enumerable, so one the new state drops still fails on read)
+    // and getters read undefined, until it is written. Its accessors too: those on a class state's
+    // prototype, which for…in does not list, are the top-level patterns with a getter
     const dropped = this.dropped;
+    for (const p of this.patterns.all()) if (p.parent === null && p.getter !== null) dropped.add(p.last);
+    this.loadTarget(target);
     for (const k in old) if (k[0] !== "$") dropped.add(k);
     for (const k of dropped) if (k in target) dropped.delete(k);
     for (const bs of this.rootBindings.values()) for (const b of bs) this.enqueue(b);
