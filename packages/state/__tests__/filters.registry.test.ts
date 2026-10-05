@@ -49,7 +49,7 @@ describe("filters/registry — formats 未 install", () => {
       .toThrow(/\[wcs\/filter-arity\] filter "not" accepts at most 0 argument\(s\) \(1 given\)/);
   });
 
-  it("コアの 24 本はすべて formats なしで解決できること", () => {
+  it("コアの 10 本はすべて formats なしで解決できること", () => {
     for (const [name, { arity }] of Object.entries(coreFilters)) {
       expect(hasFilter(name), name).toBe(true);
       expect(() => out(name, Array<string>(arity[0]).fill("1")), name).not.toThrow();
@@ -63,7 +63,7 @@ describe("filters/registry — formats 未 install", () => {
       .toThrow(/\[wcs\/filter-unknown\] filter not found: upper\. "upper" is in the formats add-on — install it with installFeatures\(\[formats\]\) from "@wcstack\/state\/features\/formats"\./);
   });
 
-  it("書式フィルタ 24 本のどれを書いても formats 機能を案内すること", () => {
+  it("formats の 37 本（算術・型変換・欠損値を含む）のどれを書いても formats 機能を案内すること", () => {
     for (const name of FORMATS_FILTER_NAMES) {
       expect(() => out(name), name).toThrow(`"${name}" is in the formats add-on`);
     }

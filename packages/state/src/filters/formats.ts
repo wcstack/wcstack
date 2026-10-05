@@ -1,21 +1,27 @@
 /**
- * filters/formats.ts — the formats add-on (23 filters): presentation, as opposed to the logic the
- * core set (`./core`) provides. Ported from `@wcstack/state` (`formats/builtinFilters.ts`) with the
- * semantics unchanged.
+ * filters/formats.ts — the formats add-on (37 filters): the values a binding computes and shows, as
+ * opposed to the conditions the core set (`./core`) tests. Ported from `@wcstack/state`
+ * (`formats/builtinFilters.ts`) with the semantics unchanged.
  *
  * - number display: `toFixed round floor ceil percent unit locale`
  * - string shaping: `upper lower capitalize trim slice padStart padEnd repeat reverse truncate join`
  *   (`substr` was removed in 4.0: `slice(start, start + length)`)
  * - date and time: `date time datetime ymd hms`
+ * - arithmetic: `add sub mul div mod abs clamp`
+ * - conversions: `number string int float`
+ * - missing values: `defaults coalesce nullIfEmpty`
  *
- * `installFormats()` puts them in the registry. Without it, a formatting filter fails when the
+ * (The last three groups were the core's up to 4.0.0-rc.3.)
+ *
+ * `installFormats()` puts them in the registry. Without it, one of these filters fails when the
  * bindings are planned with `[wcs/filter-unknown]` naming this add-on (never passes silently).
  * The locale-dependent four (`locale date time datetime`) read `config.locale` as their default.
  */
 import { config } from "../config";
 import { optionsRequired, valueMustBeArray, valueMustBeDate, valueMustBeNumber } from "./errorMessages";
-import { numberOption, requiredNumberOption } from "./options";
+import { firstLiteral, numberOption, requiredNumberOption } from "./options";
 import { registerFilters, type FilterDefinition, type FilterFactory, type FilterFn } from "./registry";
+import { coreFilters, numeric } from "./core";
 import { M, text } from "../messages";
 
 /**
@@ -248,11 +254,63 @@ const hms = (options: string[]): FilterFn => {
   };
 };
 
+const abs = (): FilterFn => (value: unknown): number => {
+  if (typeof value !== 'number') {valueMustBeNumber('abs');}
+  return Math.abs(value);
+};
+
+/** Constrains a number to the inclusive range [min, max] (`style.width: ratio|clamp(0,1)|percent(0)`). */
+const clamp = (options: string[]): FilterFn => {
+  const min = requiredNumberOption(options, 0, 'clamp');
+  const max = requiredNumberOption(options, 1, 'clamp');
+  return (value: unknown): number => {
+    if (typeof value !== 'number') {valueMustBeNumber('clamp');}
+    return Math.min(Math.max(value, min), max);
+  };
+};
+
+// The conversions convert — an absent value is converted too (`string` gives "undefined");
+// put `coalesce` in front when a missing value should not be converted.
+const number = (): FilterFn => (value: unknown): number => Number(value);
+
+const string = (): FilterFn => (value: unknown): string => String(value);
+
+const int = (): FilterFn => (value: unknown): number => parseInt(String(value), 10);
+
+const float = (): FilterFn => (value: unknown): number => parseFloat(String(value));
+
+/** Replaces a falsy value (JavaScript's truthiness) with the typed literal: defaults(0) gives 0, defaults('0') "0" (B9). */
+const defaults = (options: string[], literals?: readonly unknown[]): FilterFn => {
+  const opt = options?.[0] ?? optionsRequired('defaults');
+  const fallback = firstLiteral(opt, literals);
+  return (value: unknown): unknown => {
+    if (!value) {return fallback;}
+    return value;
+  };
+};
+
+/** Replaces only null / undefined (`defaults` also replaces 0, false and "") — SQL's COALESCE. */
+const coalesce = (options: string[], literals?: readonly unknown[]): FilterFn => {
+  const opt = options?.[0] ?? optionsRequired('coalesce');
+  const fallback = firstLiteral(opt, literals);
+  return (value: unknown): unknown => value ?? fallback;
+};
+
+/** "" → null, anything else unchanged. */
+const nullIfEmpty = (): FilterFn => (value: unknown): unknown => (value === "") ? null : value;
+
+const { eq, ne, not, lt, le, gt, ge, falsy, truthy, boolean } = coreFilters;
+
 /**
- * The formats add-on: factory and [min, max] argument count (B3 — the same bounds lint uses).
- * The key order is the source's, for the did-you-mean tie-breaking (see `coreFilters`).
+ * What `installFormats()` registers: factory and [min, max] argument count (B3 — the same bounds
+ * lint uses), in the order the registry keeps them. The did-you-mean suggestion gives a tie to the
+ * first registered, so the order is the one the full build registered up to 4.0.0-rc.3, when this
+ * add-on had the 23 display filters and the core 24: the display filters, then that core set, each
+ * in the source's (lint's) relative order. The core's 10 are registered here too, in their place
+ * (the core registers them again when it first plans a binding, and a name registered again keeps
+ * its place).
  */
-export const formatFilters: Readonly<Record<string, FilterDefinition>> = {
+const registered: Readonly<Record<string, FilterDefinition>> = {
   toFixed: { factory: toFixed, arity: [0, 1] },
   locale: { factory: locale, arity: [0, 1] },
 
@@ -282,7 +340,31 @@ export const formatFilters: Readonly<Record<string, FilterDefinition>> = {
   datetime: { factory: datetime, arity: [0, 1] },
   ymd: { factory: ymd, arity: [0, 1] },
   hms: { factory: hms, arity: [0, 1] },
+
+  // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
+  eq, ne, not, lt, le, gt, ge,
+  add: numeric('add', (value, opt) => value + opt),
+  sub: numeric('sub', (value, opt) => value - opt),
+  mul: numeric('mul', (value, opt) => value * opt),
+  div: numeric('div', (value, opt) => value / opt),
+  mod: numeric('mod', (value, opt) => value % opt),
+  abs: { factory: abs, arity: [0, 0] },
+  clamp: { factory: clamp, arity: [2, 2] },
+  int: { factory: int, arity: [0, 0] },
+  float: { factory: float, arity: [0, 0] },
+  falsy, truthy,
+  defaults: { factory: defaults, arity: [1, 1] },
+  coalesce: { factory: coalesce, arity: [1, 1] },
+  boolean,
+  number: { factory: number, arity: [0, 0] },
+  string: { factory: string, arity: [0, 0] },
+  nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] },
 };
+
+/** The formats add-on's own filters (what `registered` holds beyond the core set), in that order. */
+export const formatFilters: Readonly<Record<string, FilterDefinition>> = /*#__PURE__*/ Object.fromEntries(
+  /*#__PURE__*/ Object.entries(registered).filter(([name]) => !(name in coreFilters)),
+);
 
 let installed = false;
 
@@ -290,5 +372,5 @@ let installed = false;
 export function installFormats(): void {
   if (installed) return;
   installed = true;
-  registerFilters(formatFilters);
+  registerFilters(registered);
 }

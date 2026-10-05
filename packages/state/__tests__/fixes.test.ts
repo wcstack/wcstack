@@ -2,13 +2,14 @@
  * fixes.test.ts — カバレッジの作業で見つかった不具合（docs/state-engine-rewrite/v4-remaining.ja.md §2.5）の修正。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { bootstrapState, DirtyStrategy, Engine, getBindingsReady, installFeatures, mount, recursion, scopes, temporal } from "../src/index";
+import { bootstrapState, DirtyStrategy, Engine, getBindingsReady, installFeatures, installFormats, mount, recursion, scopes, temporal } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
 
 beforeAll(() => {
   installFeatures([temporal, scopes, recursion]);
+  installFormats(); // add (the formats add-on's)
   bootstrapState();
 });
 

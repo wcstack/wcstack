@@ -8,7 +8,7 @@
  * 引用符の無い true / false / null / 数値は型付き、引用符付きは文字列。
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { installCoreFilters, coreFilters } from "../src/filters/core";
+import { installCoreFilters } from "../src/filters/core";
 import { installFormats, formatFilters } from "../src/filters/formats";
 import { resolveFilter } from "../src/filters/registry";
 import { installFeatures } from "../src/hooks";
@@ -125,7 +125,7 @@ describe("padEnd / coalesce", () => {
   it("工場を直接呼ぶ経路でも、引数が無ければ名指しで落ち、型付きの値が無ければ原文を使うこと", () => {
     // 束縛計画の引数個数の検査を経ない呼び出し（tooling）でも黙って進まない
     expect(() => formatFilters.padEnd.factory([], [])).toThrow(/padEnd requires at least one option/);
-    expect(() => coreFilters.coalesce.factory([], [])).toThrow(/coalesce requires at least one option/);
-    expect(coreFilters.coalesce.factory(["0"], [])(null)).toBe("0");
+    expect(() => formatFilters.coalesce.factory([], [])).toThrow(/coalesce requires at least one option/);
+    expect(formatFilters.coalesce.factory(["0"], [])(null)).toBe("0");
   });
 });

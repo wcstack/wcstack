@@ -28,6 +28,7 @@
     ],
     "formats": [
       "config.ts",
+      "filters/core.ts",
       "filters/errorMessages.ts",
       "filters/options.ts",
       "filters/registry.ts",

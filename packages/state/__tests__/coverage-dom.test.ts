@@ -4,7 +4,7 @@
  * The core alone (no diagnostics add-on): failures read as numbered messages.
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
-import { bootstrapState, getBindingsReady, getTrustedTypesPolicy, setTrustedTypesPolicy } from "../src/index";
+import { bootstrapState, getBindingsReady, getTrustedTypesPolicy, installFormats, setTrustedTypesPolicy } from "../src/index";
 import { lisKeep } from "../src/dom/view";
 import { M } from "../src/messages";
 
@@ -18,6 +18,7 @@ const BINDER_KEY = Symbol.for("wcstack.binder");
 let seq = 0;
 
 beforeAll(() => {
+  installFormats(); // mul (the formats add-on's)
   bootstrapState();
 });
 

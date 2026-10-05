@@ -31,15 +31,17 @@ export interface FilterDefinition {
 }
 
 /**
- * The names the formats add-on registers. Only the names live here (not the code), so that a page
- * without the add-on can still say where a formatting filter comes from instead of calling it a
- * typo. A test keeps this list equal to the add-on's table.
+ * The formats add-on's filters (37: up to 4.0.0-rc.3 the 23 display ones, then the core's
+ * arithmetic, conversion and missing-value 14). Only the names live here (not the code), so that a
+ * page without the add-on can still say where one of them comes from instead of calling it a typo.
+ * A test keeps this list equal to the add-on's table.
  */
 export const FORMATS_FILTER_NAMES: readonly string[] = [
   "toFixed", "locale",
   "upper", "lower", "capitalize", "trim", "slice", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
   "round", "floor", "ceil", "percent", "unit",
   "date", "time", "datetime", "ymd", "hms",
+  "add", "sub", "mul", "div", "mod", "abs", "clamp", "int", "float", "defaults", "coalesce", "number", "string", "nullIfEmpty",
 ];
 
 /**

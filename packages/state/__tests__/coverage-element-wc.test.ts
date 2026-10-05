@@ -5,7 +5,7 @@
  * The core alone (no diagnostics add-on): errors read as numbered messages.
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { bootstrapState, getBindingsReady } from "../src/index";
+import { bootstrapState, getBindingsReady, installFormats } from "../src/index";
 import { M } from "../src/messages";
 
 // the core's own message (no diagnostics add-on here): [@wcstack/state] [wcs/<code>] #<number> <values>
@@ -16,6 +16,7 @@ let seq = 0;
 const nextTag = (): string => `cov-wc-${seq++}`;
 
 beforeAll(() => {
+  installFormats(); // int / mul (the formats add-on's)
   bootstrapState();
 });
 
