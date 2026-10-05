@@ -237,7 +237,17 @@ var config = {
   locale: typeof document !== "undefined" ? document.documentElement?.lang || "en" : "en",
   enableContractAnalyzer: false
 };
-var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools"];
+var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands"];
+var NATIVE_COMMANDS = {
+  "*": ["focus", "blur", "click", "scrollIntoView", "showPopover", "hidePopover", "togglePopover"],
+  "dialog": ["show", "showModal", "close", "requestClose"],
+  "form": ["requestSubmit", "checkValidity", "reportValidity"],
+  "input": ["select", "setSelectionRange", "showPicker", "setCustomValidity", "checkValidity", "reportValidity"],
+  "textarea": ["select", "setSelectionRange", "setCustomValidity", "checkValidity", "reportValidity"],
+  "select": ["showPicker", "setCustomValidity", "checkValidity", "reportValidity"],
+  "audio": ["play", "pause", "load"],
+  "video": ["play", "pause", "load"]
+};
 var WILDCARD = "*";
 function optionsRequired(fnName) {
   raise(26, [fnName]);
@@ -749,9 +759,13 @@ function getWcsManifest() {
     ],
     // every option is a boolean, true when left out (engine.ts `loadTarget`: `typeof … === "boolean"`, `?? true`)
     behaviorOptions: Object.fromEntries(BEHAVIOR_OPTION_KEYS.map((key) => [key, { type: "boolean", default: true }])),
-    features: [...FEATURE_NAMES]
+    features: [...FEATURE_NAMES],
+    nativeCommands: Object.fromEntries(Object.entries(NATIVE_COMMANDS).map(([tag, methods]) => [tag, [...methods]]))
   };
 }
+
+// src/service/wcsManifest.ts
+var NATIVE_COMMANDS2 = getWcsManifest().nativeCommands ?? null;
 
 // src/language/preamble.ts
 var manifest = getWcsManifest();

@@ -695,6 +695,60 @@
     "scopes",
     "recursion",
     "ssr",
-    "devtools"
-  ]
+    "devtools",
+    "native-commands"
+  ],
+  "nativeCommands": {
+    "*": [
+      "focus",
+      "blur",
+      "click",
+      "scrollIntoView",
+      "showPopover",
+      "hidePopover",
+      "togglePopover"
+    ],
+    "dialog": [
+      "show",
+      "showModal",
+      "close",
+      "requestClose"
+    ],
+    "form": [
+      "requestSubmit",
+      "checkValidity",
+      "reportValidity"
+    ],
+    "input": [
+      "select",
+      "setSelectionRange",
+      "showPicker",
+      "setCustomValidity",
+      "checkValidity",
+      "reportValidity"
+    ],
+    "textarea": [
+      "select",
+      "setSelectionRange",
+      "setCustomValidity",
+      "checkValidity",
+      "reportValidity"
+    ],
+    "select": [
+      "showPicker",
+      "setCustomValidity",
+      "checkValidity",
+      "reportValidity"
+    ],
+    "audio": [
+      "play",
+      "pause",
+      "load"
+    ],
+    "video": [
+      "play",
+      "pause",
+      "load"
+    ]
+  }
 }

@@ -950,10 +950,11 @@ var SENTENCES = {
     1201
     /* CommandRightSide */
   ]: (prop, p) => `"${prop}: ${p}": the right-hand side must be $command.<name>`,
+  // a native element's command (no hyphen: never a custom element) is the native-commands add-on's
   [
     1202
     /* NoBindable */
-  ]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).`,
+  ]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).${!tag.includes("-") && what.startsWith("command.") ? " A native element's command needs the add-on @wcstack/state/features/native-commands." : ""}`,
   [
     1203
     /* NoCommand */
@@ -962,6 +963,10 @@ var SENTENCES = {
     1204
     /* NoProperty */
   ]: (tag, prop) => `<${tag}> declares no property "${prop}".`,
+  [
+    1205
+    /* NativeNoCommand */
+  ]: (tag, method, allowed) => `<${tag}> has no command "${method}" (a native <${tag}>'s commands: ${allowed}).`,
   [
     1301
     /* EventTokenUndeclared */
@@ -1639,7 +1644,17 @@ var config = {
   locale: typeof document !== "undefined" ? document.documentElement?.lang || "en" : "en",
   enableContractAnalyzer: false
 };
-var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools"];
+var FEATURE_NAMES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands"];
+var NATIVE_COMMANDS = {
+  "*": ["focus", "blur", "click", "scrollIntoView", "showPopover", "hidePopover", "togglePopover"],
+  "dialog": ["show", "showModal", "close", "requestClose"],
+  "form": ["requestSubmit", "checkValidity", "reportValidity"],
+  "input": ["select", "setSelectionRange", "showPicker", "setCustomValidity", "checkValidity", "reportValidity"],
+  "textarea": ["select", "setSelectionRange", "setCustomValidity", "checkValidity", "reportValidity"],
+  "select": ["showPicker", "setCustomValidity", "checkValidity", "reportValidity"],
+  "audio": ["play", "pause", "load"],
+  "video": ["play", "pause", "load"]
+};
 var WILDCARD2 = "*";
 function optionsRequired(fnName) {
   raise2(26, [fnName]);
@@ -2151,8 +2166,16 @@ function getWcsManifest() {
     ],
     // every option is a boolean, true when left out (engine.ts `loadTarget`: `typeof … === "boolean"`, `?? true`)
     behaviorOptions: Object.fromEntries(BEHAVIOR_OPTION_KEYS.map((key) => [key, { type: "boolean", default: true }])),
-    features: [...FEATURE_NAMES]
+    features: [...FEATURE_NAMES],
+    nativeCommands: Object.fromEntries(Object.entries(NATIVE_COMMANDS).map(([tag, methods]) => [tag, [...methods]]))
   };
+}
+
+// src/service/wcsManifest.ts
+var NATIVE_COMMANDS2 = getWcsManifest().nativeCommands ?? null;
+function nativeCommandsOf(tag) {
+  if (NATIVE_COMMANDS2 === null) return null;
+  return [...NATIVE_COMMANDS2["*"] ?? [], ...Object.hasOwn(NATIVE_COMMANDS2, tag) ? NATIVE_COMMANDS2[tag] : []];
 }
 
 // src/service/completionData.ts
@@ -2169,6 +2192,41 @@ var STRUCTURAL_DIRECTIVES = [...STRUCTURAL_BINDING_TYPE_SET2].map((name) => ({
   name,
   ...STRUCTURAL_DIRECTIVE_INFO[name]
 }));
+
+// src/service/suggestion.ts
+function suggestion(input, candidates, msgs) {
+  let best = null;
+  let bestDistance = 3;
+  for (const c of candidates) {
+    const d = editDistance2(input.toLowerCase(), c.toLowerCase(), bestDistance);
+    if (d < bestDistance) {
+      best = c;
+      bestDistance = d;
+    }
+  }
+  return best !== null ? msgs.didYouMean(best) : "";
+}
+function editDistance2(a, b, bound) {
+  if (Math.abs(a.length - b.length) >= bound) return bound;
+  const prev = new Array(b.length + 1);
+  const curr = new Array(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    for (let j = 1; j <= b.length; j++) {
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      if (curr[j] < rowMin) rowMin = curr[j];
+    }
+    if (rowMin >= bound) return bound;
+    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+  }
+  return Math.min(prev[b.length], bound);
+}
 
 // src/service/recursionPaths.ts
 var RECURSION_WILDCARD2 = "**";
@@ -9897,6 +9955,7 @@ var ja = {
   featuresAttrNotRoot: () => `features \u5C5E\u6027\u3092\u8AAD\u3080\u306E\u306F\u6587\u66F8\u306E root \u306E <wcs-state>\uFF08mount \u3068 bind-component \u3092\u6301\u305F\u306A\u3044\u6700\u521D\u306E\u3082\u306E\uFF09\u3060\u3051\u3067\u3059\u3002\u3053\u306E\u8981\u7D20\u306E features \u306F\u7121\u8996\u3055\u308C\u307E\u3059 \u2014 root \u306E <wcs-state> \u306B\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   onPrefixedMember: (member, tag, modifiers) => `"${member}" \u306F <${tag}> \u306E\u30E1\u30F3\u30D0\u30FC\u3067\u3059\u304C\u3001"on" \u3067\u59CB\u307E\u308B\u540D\u524D\u306F\u30A4\u30D9\u30F3\u30C8\u675F\u7E1B\u306B\u306A\u308A\uFF08"${member.slice(2)}" \u30A4\u30D9\u30F3\u30C8\u3092\u5F85\u3064\uFF09\u3001\u5024\u306F\u5C4A\u304D\u307E\u305B\u3093\u3002\u30D7\u30ED\u30D1\u30C6\u30A3\u3068\u3057\u3066\u675F\u7E1B\u3059\u308B\u306B\u306F ".${member}${modifiers ? `#${modifiers}` : ""}:" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044\uFF08@wcstack/state 3.1\uFF09`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" \u306F <${tag}> \u306E command \u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
+  nativeCommandUnknown: (method, tag, allowed) => `"${method}" \u306F\u30CD\u30A4\u30C6\u30A3\u30D6\u306E <${tag}> \u306B command \u3067\u547C\u3079\u308B\u30E1\u30BD\u30C3\u30C9\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u547C\u3079\u308B\u306E\u306F ${allowed}\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u521D\u671F\u5316\u3067 wcs/token-misconfigured \u3092\u6295\u3052\u307E\u3059\uFF09`,
   spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
   ariaAttrUnknown: (name) => `"${name}" \u306F WAI-ARIA \u306E\u5C5E\u6027\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002setAttribute \u306F\u305D\u306E\u307E\u307E\u66F8\u304D\u8FBC\u307F\u307E\u3059\u304C\u3001\u652F\u63F4\u6280\u8853\u306B\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059`,
@@ -10082,6 +10141,7 @@ var en = {
   featuresAttrNotRoot: () => `The features attribute is read only on the document's root <wcs-state> (the first one without mount and bind-component); it is ignored here \u2014 put it on the root <wcs-state>`,
   onPrefixedMember: (member, tag, modifiers) => `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}${modifiers ? `#${modifiers}` : ""}:" to bind the property (@wcstack/state 3.1)`,
   tagCommandUnknown: (name, tag, declared) => `"${name}" is not a command of <${tag}> (declared: ${declared})`,
+  nativeCommandUnknown: (method, tag, allowed) => `"${method}" is not a command of a native <${tag}> (its commands: ${allowed}; the runtime throws wcs/token-misconfigured at initialization)`,
   spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
   ariaAttrUnknown: (name) => `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
@@ -10664,6 +10724,18 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
         scopedPaths.filter((p) => p.kind === "command").map((p) => p.path)
       );
       if (propNoMod.startsWith("command.")) {
+        const allowed = attr.tagName !== void 0 && !attr.tagName.includes("-") ? nativeCommandsOf(attr.tagName) : null;
+        const method = propNoMod.slice("command.".length);
+        if (allowed !== null && !allowed.includes(method)) {
+          const methodStart = bindingStart + binding.indexOf("command.") + "command.".length;
+          diagnostics.push({
+            code: WcsDiagnosticCode.TokenMisconfigured,
+            start: methodStart,
+            end: methodStart + method.length,
+            message: msgs.nativeCommandUnknown(method, attr.tagName, allowed.join(", ")) + suggestion(method, allowed, msgs),
+            severity: "error"
+          });
+        }
         const tokenPath = parsed.path?.trim() ?? "";
         if (tokenPath) {
           const pathOffset = binding.indexOf(parsed.path);
@@ -13273,39 +13345,6 @@ function findDataSlot(paths, path) {
 function normalizeSeed(raw) {
   const compact = raw.replace(/\s+/g, "");
   return compact === "" ? raw : compact;
-}
-function suggestion(input, candidates, msgs) {
-  let best = null;
-  let bestDistance = 3;
-  for (const c of candidates) {
-    const d = editDistance2(input.toLowerCase(), c.toLowerCase(), bestDistance);
-    if (d < bestDistance) {
-      best = c;
-      bestDistance = d;
-    }
-  }
-  return best !== null ? msgs.didYouMean(best) : "";
-}
-function editDistance2(a, b, bound) {
-  if (Math.abs(a.length - b.length) >= bound) return bound;
-  const prev = new Array(b.length + 1);
-  const curr = new Array(b.length + 1);
-  for (let j = 0; j <= b.length; j++) prev[j] = j;
-  for (let i = 1; i <= a.length; i++) {
-    curr[0] = i;
-    let rowMin = curr[0];
-    for (let j = 1; j <= b.length; j++) {
-      curr[j] = Math.min(
-        prev[j] + 1,
-        curr[j - 1] + 1,
-        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
-      );
-      if (curr[j] < rowMin) rowMin = curr[j];
-    }
-    if (rowMin >= bound) return bound;
-    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
-  }
-  return Math.min(prev[b.length], bound);
 }
 function findBuiltinTagOccurrences(html) {
   const out = [];

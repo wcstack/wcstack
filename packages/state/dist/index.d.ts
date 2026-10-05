@@ -523,6 +523,8 @@ interface IWcsManifest {
     }>>;
     /** The add-on names `$features` and the root `<wcs-state features>` take (4.0). */
     features: readonly string[];
+    /** What a native element's `command.<method>:` may call, by tag; `*` is every element's (4.0, the native-commands add-on). */
+    nativeCommands: Readonly<Record<string, readonly string[]>>;
 }
 declare function getWcsManifest(): IWcsManifest;
 

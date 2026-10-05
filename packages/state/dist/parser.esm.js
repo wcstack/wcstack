@@ -415,9 +415,11 @@ var SENTENCES = {
   [1001 /* IndexParamRange */]: (key) => `"${key}": list index parameters run from $1 to $${MAX_INDEX_PARAM}.`,
   [1101 /* RecursionUnsupported */]: (p) => `"${p}" uses "${RECURSION_WILDCARD}", which is not accepted here.`,
   [1201 /* CommandRightSide */]: (prop, p) => `"${prop}: ${p}": the right-hand side must be $command.<name>`,
-  [1202 /* NoBindable */]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).`,
+  // a native element's command (no hyphen: never a custom element) is the native-commands add-on's
+  [1202 /* NoBindable */]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).${!tag.includes("-") && what.startsWith("command.") ? " A native element's command needs the add-on @wcstack/state/features/native-commands." : ""}`,
   [1203 /* NoCommand */]: (tag, method) => `<${tag}> declares no command "${method}".`,
   [1204 /* NoProperty */]: (tag, prop) => `<${tag}> declares no property "${prop}".`,
+  [1205 /* NativeNoCommand */]: (tag, method, allowed) => `<${tag}> has no command "${method}" (a native <${tag}>'s commands: ${allowed}).`,
   [1301 /* EventTokenUndeclared */]: (name) => `eventToken "${name}" is not declared in $eventTokens.`,
   [1302 /* CommandTokenUndeclared */]: (name) => `"$command.${name}" is not declared in $commandTokens.`,
   [1401 /* WildcardNoLoop */]: (p, depth, n = 0) => `"${p}" needs ${depth} enclosing loop level(s); the scope provides ${n}.`,
