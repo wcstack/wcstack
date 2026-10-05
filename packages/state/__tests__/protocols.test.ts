@@ -258,6 +258,37 @@ describe("初期化済みの要素への setInitialState（再セット）", () 
     }
   });
 
+  it("クラスの状態の getter を持たない状態への再セットも、その getter を他の無くなったキーと同じく空にする", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      class Person {
+        first = "ann";
+        get full() { return `${this.first}!`; }
+        get tags() { return [this.first]; }
+      }
+      const { root, el } = await host(
+        `<wcs-state></wcs-state><p class="f">{{ full }}</p><p class="g">{{ greet }}</p><ul><template data-wcs="for: tags"><li>{{ . }}</li></template></ul>`,
+        Object.assign(new Person(), { greet: "" }),
+      );
+      const q = (sel: string) => root.querySelector(sel)!.textContent;
+      expect([q(".f"), root.querySelectorAll("li").length]).toEqual(["ann!", 1]);
+      // the new state is a plain object: neither `full`, `tags` nor its class
+      el.setInitialState({ first: "bob", get greet() { return `hi ${(this as any).full}`; } });
+      expect([q(".f"), q(".g")]).toEqual(["", "hi undefined"]);
+      expect(root.querySelectorAll("li").length).toBe(0);
+      let read: unknown = "-";
+      el.createState("readonly", (s: any) => { read = s.full; });
+      expect(read).toBeUndefined();
+      expect(error).not.toHaveBeenCalled();
+      // written, it is the state's key
+      el.createState("writable", (s: any) => { s.full = "cy"; });
+      await flush();
+      expect([q(".f"), q(".g")]).toEqual(["cy", "hi cy"]);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("再セットの後の列挙（Object.keys・in・for…in・スプレッド・JSON.stringify・delete）は、いまの状態のキーを使う", async () => {
     const { el } = await host(`<wcs-state></wcs-state><p>{{ a }}</p>`, { a: 1, b: 2 });
     const next: Record<string, any> = { a: 3, c: 4 };

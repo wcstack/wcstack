@@ -875,12 +875,13 @@ export class Engine implements ReconcileHooks {
    */
   reset(target: Record<string, any>): void {
     const old = this.target;
-    this.loadTarget(target);
     // a key the old state had (or an earlier re-set dropped) and this one lacks is empty (B8), as a
     // missing path under a key is — not a key never declared, which fails on read: its bindings, lists
-    // and getters read undefined, until it is written. (for…in: an accessor on a class state's
-    // prototype is not enumerable, so one the new state drops still fails on read)
+    // and getters read undefined, until it is written. Its accessors too: those on a class state's
+    // prototype, which for…in does not list, are the top-level patterns with a getter
     const dropped = this.dropped;
+    for (const p of this.patterns.all()) if (p.parent === null && p.getter !== null) dropped.add(p.last);
+    this.loadTarget(target);
     for (const k in old) if (k[0] !== "$") dropped.add(k);
     for (const k of dropped) if (k in target) dropped.delete(k);
     for (const bs of this.rootBindings.values()) for (const b of bs) this.enqueue(b);
