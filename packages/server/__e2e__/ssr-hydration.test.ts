@@ -128,6 +128,42 @@ describe('SSR → ハイドレーション結合テスト', () => {
     expect(document.querySelector('p.content')).not.toBeNull();
   });
 
+  it('if / elseif / else の連鎖のテンプレートの間にコメントがあっても、サーバーの枝の要素をそのまま引き取る → 表示切替', async () => {
+    // --- サーバー ---
+    const ssrHtml = await renderToString(`
+      <wcs-state enable-ssr json='{"mode":"b"}'></wcs-state>
+      <template data-wcs="if: mode|eq(a)"><p class="a">A</p></template>
+      <!-- the second branch -->
+      <template data-wcs="elseif: mode|eq(b)"><p class="b">B</p></template>
+      <!-- otherwise --><!-- none -->
+      <template data-wcs="else:"><p class="none">none</p></template>
+    `);
+
+    expect(ssrHtml).toContain('<p class="b">B</p>');
+    expect(ssrHtml).toContain('<!-- the second branch -->');
+
+    // --- クライアント ---
+    document.body.innerHTML = ssrHtml;
+    // サーバーが描いた枝の要素（パースしたもの）
+    const serverP = document.querySelector('p.b');
+    expect(serverP).not.toBeNull();
+    const stateEl = document.querySelector('wcs-state') as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // 捨てて描き直さず、同じ要素が残る
+    expect(document.querySelector('p.b')).toBe(serverP);
+    expect(document.querySelectorAll('p').length).toBe(1);
+
+    stateEl.createState('writable', (state: any) => { state.mode = 'a'; });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(Array.from(document.querySelectorAll('p')).map(p => p.className)).toEqual(['a']);
+
+    stateEl.createState('writable', (state: any) => { state.mode = 'z'; });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(Array.from(document.querySelectorAll('p')).map(p => p.className)).toEqual(['none']);
+  });
+
   it('Mustache テキスト: SSR → ハイドレーション → 状態変化', async () => {
     // --- サーバー ---
     const ssrHtml = await renderToString(`

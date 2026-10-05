@@ -779,16 +779,18 @@ export function adopt(plan: RowPlan, anchor: Node, isFor: boolean): ChildNode[] 
   let key = anchor;
   let branch = 0;
   if (!isFor) {
-    // only this chain: an `if` anchor starts one (a chain right before or after is another)
+    // only this chain: an `if` anchor starts one (a chain right before or after is another). No
+    // element is between its anchors: whitespace, comments (readChain) and the text a comment binding
+    // there renders may be
     const head = config.commentIfPrefix;
     if (!isMark(anchor, head)) {
-      for (let p = anchor.previousSibling; p !== null && (isIfAnchor(p) || isBlank(p)); p = p.previousSibling) {
+      for (let p = anchor.previousSibling; p !== null && p.nodeType !== 1; p = p.previousSibling) {
         if (isIfAnchor(p)) branch++;
         if (isMark(p, head)) break;
       }
     }
     // up to the anchor its region follows (the branch's nodes come right after it)
-    for (let n = anchor.nextSibling; !held.has(key) && n !== null && !isMark(n, head) && (isIfAnchor(n) || isBlank(n)); n = n.nextSibling) {
+    for (let n = anchor.nextSibling; !held.has(key) && n !== null && !isMark(n, head) && n.nodeType !== 1; n = n.nextSibling) {
       if (isIfAnchor(n)) key = n;
     }
   }
