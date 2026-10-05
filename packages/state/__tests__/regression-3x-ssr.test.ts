@@ -1205,14 +1205,14 @@ describe("#370 スナップショットが if: / elseif: の出力フィルタ�
     expect(r.logged).toEqual([`[@wcstack/state] #49 "wcs-state" ${r.reason}`]);
   });
 
-  // （行への書き込みは getter のパスから: 写しの行は元のパス（items.1.n）からの書き込みを受け取らない — F26、migration-v4 §5）
+  // （写しの行への書き込み（firstTwo.1.n）は items の要素に入り、元のパスへの書き込み（items.0.n）は写しの行に届く — F26 の修正）
   it("対照: フィルタで絞り込んだリストを返す getter を for: で回せば、SSR でも CSR と同じに描き、書き込みに追従する", async () => {
     const html = wrap(`<ul>${T("for: firstTwo", `<li data-wcs="textContent: .n"></li>`)}</ul>`);
     const r = await both(html, () => ({
       items: [{ n: 1 }, { n: 2 }, { n: 3 }],
       get firstTwo() { return (this as any).items.slice(0, 2); },
-    }), [(s) => { s.items = [{ n: 0 }, ...s.items]; }, set("firstTwo.1.n", 7), (s) => { s.items = s.items.slice(2); }], rootView);
-    expectViews(r, ["12", "01", "07", "23"]);
+    }), [(s) => { s.items = [{ n: 0 }, ...s.items]; }, set("firstTwo.1.n", 7), set("items.0.n", 5), (s) => { s.items = s.items.slice(2); }], rootView);
+    expectViews(r, ["12", "01", "07", "57", "23"]);
   });
 
   it("バージョン不一致でクライアントが描き直すときも、テンプレートのフィルタを保つ", async () => {

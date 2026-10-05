@@ -952,6 +952,258 @@ describe("F24・F25 同じ配列を持つ一覧は、書き込みを互いに届
   });
 });
 
+describe("F26 getter が 2 つの配列に置いたオブジェクトは、どちらの行から書いても、それを持つところへ届く", () => {
+  const todos = () => [{ title: "a", done: false }, { title: "b", done: false }, { title: "c", done: true }];
+  /** filter / todos / shown (a copy filtered by `filter`, or `todos` itself for "all") / left ($getAll), plus `extra` (accessors kept). */
+  const filtered = (extra: object = {}) => Object.defineProperties({
+    filter: "active",
+    todos: todos(),
+    get shown() {
+      const s = this as any;
+      return s.filter === "all" ? s.todos : s.todos.filter((t: any) => t.done === (s.filter === "done"));
+    },
+    get left() { return (this as any).$getAll("todos.*.done", []).filter((d: boolean) => !d).length; },
+  }, Object.getOwnPropertyDescriptors(extra));
+  const SHOWN = `<ul class="shown"><template data-wcs="for: shown"><li><input type="checkbox" data-wcs="checked: .done"><span>{{ .title }}:{{ .done }}</span></li></template></ul>`;
+  const TODOS = `<ul class="todos"><template data-wcs="for: todos"><li><span>{{ .title }}:{{ .done }}</span></li></template></ul>`;
+  const LEFT = `<b>{{ left }}</b>`;
+  const rowsOf = (root: ParentNode, cls: string) => texts(root, `ul.${cls} span`).join(",");
+  /** Ticks (or unticks) the checkbox of row `i` of `for: shown`, as the user does. */
+  const tick = async (root: ParentNode, i: number, on: boolean) => {
+    const box = root.querySelectorAll("ul.shown input")[i] as HTMLInputElement;
+    box.checked = on;
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    await flush();
+  };
+
+  it("TodoMVC の絞り込み（active）: 写しの行の checkbox が for: todos の行・$getAll の集計・絞り込みそのものに届く", async () => {
+    const { root, read } = await page(LEFT + SHOWN + TODOS, filtered());
+    expect([texts(root, "b")[0], rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["2", "a:false,b:false", "a:false,b:false,c:true"]);
+    await tick(root, 0, true);
+    expect(read("todos.0.done")).toBe(true);
+    // the ticked row leaves the "active" view
+    expect([texts(root, "b")[0], rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["1", "b:false", "a:true,b:false,c:true"]);
+  });
+
+  it("TodoMVC の絞り込み（done）: 写しの行の checkbox を外すと、その行が done の一覧から抜ける", async () => {
+    const { root } = await page(LEFT + SHOWN + TODOS, filtered({ filter: "done" }));
+    expect(rowsOf(root, "shown")).toBe("c:true");
+    await tick(root, 0, false);
+    expect([texts(root, "b")[0], rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["3", "", "a:false,b:false,c:false"]);
+  });
+
+  it("元のパスへの書き込み（todos.0.title・todos.1.done）が写しの行に届き、絞り込みを評価し直す（for: todos を描かなくても）", async () => {
+    const { root, write } = await page(SHOWN, filtered());
+    await write((s) => { s["todos.0.title"] = "A"; });
+    expect(rowsOf(root, "shown")).toBe("A:false,b:false");
+    await write((s) => { s["todos.1.done"] = true; });
+    expect(rowsOf(root, "shown")).toBe("A:false");
+  });
+
+  it("対照: 写しが持たないオブジェクトへの書き込みでは絞り込みを評価し直さない（getter は配列を読み、そのオブジェクトは読んでいない）。$getAll で読む絞り込みは追従する", async () => {
+    const plain = await page(SHOWN, filtered({ filter: "done" }));
+    await plain.write((s) => { s["todos.0.done"] = true; });
+    expect(rowsOf(plain.root, "shown")).toBe("c:true");
+    const tracked = await page(SHOWN, filtered({
+      filter: "done",
+      get shown() {
+        const s = this as any;
+        const done = s.$getAll("todos.*.done", []);
+        return s.todos.filter((_: any, i: number) => done[i] === (s.filter === "done"));
+      },
+    }));
+    await tracked.write((s) => { s["todos.0.done"] = true; });
+    expect(rowsOf(tracked.root, "shown")).toBe("a:true,c:true");
+  });
+
+  it("対照: 配列を読んで数を返す getter（this.todos.filter(...).length）は、行への書き込みで評価し直さない（依存の境界のまま）", async () => {
+    const { root } = await page(`<i>{{ remaining }}</i>${SHOWN}`, filtered({
+      get remaining() { return (this as any).todos.filter((t: any) => !t.done).length; },
+    }));
+    await tick(root, 0, true);
+    expect([texts(root, "i")[0], rowsOf(root, "shown")]).toEqual(["2", "b:false"]);
+  });
+
+  it("getter の連鎖（todos → active → shown）: 写しの行への書き込みが途中の getter も評価し直す", async () => {
+    const { root, write } = await page(`<p>{{ active.length }}</p>${SHOWN}${TODOS}`, {
+      filter: "active",
+      todos: todos(),
+      get active() { return (this as any).todos.filter((t: any) => !t.done); },
+      get shown() { const s = this as any; return s.filter === "active" ? s.active : s.todos; },
+    });
+    await tick(root, 1, true);
+    expect([texts(root, "p")[0], rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["1", "a:false", "a:false,b:true,c:true"]);
+    await write((s) => { s["todos.0.title"] = "A"; });
+    expect(rowsOf(root, "shown")).toBe("A:false");
+    await write((s) => { s.filter = "all"; });
+    expect(rowsOf(root, "shown")).toBe("A:false,b:true,c:true");
+  });
+
+  describe("1 つの更新で 2 つの行に書く（先の書き込みで評価し直しを待つ getter の、引き継ぐ行にも届く）", () => {
+    const chain = () => ({
+      filter: "active",
+      todos: todos(),
+      get active() { return (this as any).todos.filter((t: any) => !t.done); },
+      get shown() { const s = this as any; return s.filter === "all" ? s.todos : s.todos.filter((t: any) => !t.done); },
+      // a copy of a getter's copy: reached through `active`, which the walk evaluates again first
+      get firstOfActive() { return (this as any).active.slice(0, 2); },
+    });
+    const html = `${SHOWN}<ol><template data-wcs="for: firstOfActive"><li>{{ .title }}</li></template></ol>`;
+
+    it.each<[string, (s: any) => void]>([
+      ["元のパスから", (s) => { s["todos.0.title"] = "A"; s["todos.1.title"] = "B"; }],
+      ["写しの行のパスから", (s) => { s["shown.0.title"] = "A"; s["shown.1.title"] = "B"; }],
+    ])("%s", async (_name, fn) => {
+      const { root, write } = await page(html, chain());
+      await write(fn);
+      expect([rowsOf(root, "shown"), texts(root, "ol li").join(",")]).toEqual(["A:false,B:false", "A,B"]);
+    });
+  });
+
+  it("同じ配列の別の写し（for: shown と for: firstTwo）: 片方の行への書き込みがもう片方の行に届く", async () => {
+    const { root } = await page(`${SHOWN}<ol><template data-wcs="for: firstTwo"><li>{{ .title }}:{{ .done }}</li></template></ol>`, filtered({
+      filter: "all",
+      get firstTwo() { return (this as any).todos.slice(0, 2); },
+    }));
+    await tick(root, 1, true);
+    expect([rowsOf(root, "shown"), texts(root, "ol li").join(",")]).toEqual(["a:false,b:true,c:true", "a:false,b:true"]);
+  });
+
+  it("並べ替えた写し（sorted）: 元のパスへの書き込みで並べ替え直し、行（入力欄）は使い回す", async () => {
+    const { root, write } = await page(`<ul><template data-wcs="for: sorted"><li><span>{{ .title }}</span><input class="i"></li></template></ul>`, {
+      todos: [{ title: "b" }, { title: "c" }, { title: "a" }],
+      get sorted() { return [...(this as any).todos].sort((x: any, y: any) => x.title.localeCompare(y.title)); },
+    });
+    expect(texts(root, "span").join(",")).toBe("a,b,c");
+    (root.querySelectorAll(".i")[0] as HTMLInputElement).value = "typed";
+    await write((s) => { s["todos.2.title"] = "d"; });
+    expect(texts(root, "span").join(",")).toBe("b,c,d");
+    expect((root.querySelectorAll(".i")[2] as HTMLInputElement).value).toBe("typed");
+  });
+
+  it("対照: 新しいオブジェクトを返す getter（map）の行への書き込みでは getter を評価し直さず、行を作り直さない", async () => {
+    let evaluated = 0;
+    const { root, write, read } = await page(`<ul><template data-wcs="for: rows"><li><span>{{ .n }}</span><input class="i"></li></template></ul>`, {
+      items: [{ n: "a" }, { n: "b" }],
+      get rows() { evaluated++; return (this as any).items.map((x: any) => ({ ...x })); },
+    });
+    (root.querySelectorAll(".i")[1] as HTMLInputElement).value = "typed";
+    const before = evaluated;
+    await write((s) => { s["rows.1.n"] = "B"; });
+    expect([texts(root, "span").join(","), evaluated - before, (root.querySelectorAll(".i")[1] as HTMLInputElement).value, read("items.1.n")])
+      .toEqual(["a,B", 0, "typed", "b"]);
+  });
+
+  it("行の getter（todos.*.label・shown.*.label）も、どちらの行から書いても評価し直す", async () => {
+    const label = (list: string) => function (this: any) { return `${this[`${list}.*.title`]}${this[`${list}.*.done`] ? "!" : ""}`; };
+    const { root, write } = await page(
+      `<ul class="shown"><template data-wcs="for: shown"><li><input type="checkbox" data-wcs="checked: .done"><span>{{ .label }}</span></li></template></ul>` +
+      `<ul class="todos"><template data-wcs="for: todos"><li><span>{{ .label }}</span></li></template></ul>`,
+      Object.defineProperties(filtered(), { "shown.*.label": { get: label("shown") }, "todos.*.label": { get: label("todos") } }),
+    );
+    await tick(root, 0, true);
+    expect([rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["b", "a!,b,c!"]);
+    await write((s) => { s["todos.1.title"] = "B"; });
+    expect([rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["B", "a!,B,c!"]);
+  });
+
+  it("配列をそのまま返す getter（filter = all）は評価し直さず、書いた行の行 getter だけを評価し直す", async () => {
+    const calls: number[] = [];
+    const { root, write } = await page(`<ul><template data-wcs="for: shown"><li>{{ .label }}</li></template></ul>`, Object.defineProperties(filtered({ filter: "all" }), {
+      "shown.*.label": { get(this: any) { calls.push(this.$1); return this["shown.*.title"]; } },
+    }));
+    calls.length = 0;
+    await write((s) => { s["todos.1.title"] = "B"; });
+    expect([texts(root, "li").join(","), calls]).toEqual(["a,B,c", [1]]);
+  });
+
+  it("#362 の取りこぼし: 同じ写しを持つ 2 つの一覧の片方が先に元の配列へ移った後の書き込みも、もう片方の行に届く", async () => {
+    const { root, write } = await page(`${SHOWN}<ol><template data-wcs="for: shown2"><li>{{ .title }}:{{ .done }}</li></template></ol>`, {
+      f1: "active",
+      f2: "active",
+      todos: todos(),
+      get active() { return (this as any).todos.filter((t: any) => !t.done); },
+      get shown() { const s = this as any; return s.f1 === "all" ? s.todos : s.active; },
+      get shown2() { const s = this as any; return s.f2 === "all" ? s.todos : s.active; },
+    });
+    await write((s) => { s.f2 = "all"; });
+    await write((s) => { s["shown2.0.title"] = "A"; });
+    expect(rowsOf(root, "shown")).toBe("A:false,b:false");
+    await write((s) => { s.f1 = "all"; });
+    expect([rowsOf(root, "shown"), texts(root, "ol li").join(",")]).toEqual(["A:false,b:false,c:true", "A:false,b:false,c:true"]);
+  });
+
+  it("写しの行で入れ子の配列を差し替えると、同じオブジェクトを持つ for: todos の行の入れ子の一覧も描き直す", async () => {
+    const { root, write } = await page(
+      `<ul class="shown"><template data-wcs="for: shown"><li>{{ .title }}</li></template></ul>` +
+      `<ul class="todos"><template data-wcs="for: todos"><li>{{ .title }}:<template data-wcs="for: .tags"><i>{{ . }}</i></template></li></template></ul>`,
+      filtered({ todos: [{ title: "a", done: false, tags: ["p"] }, { title: "b", done: true, tags: [] }] }),
+    );
+    await write((s) => { s["shown.0.tags"] = ["x", "y"]; });
+    expect(texts(root, "ul.todos i")).toEqual(["x", "y"]);
+  });
+
+  it("$watch(\"todos.*.done\") は、写しの行から書いた todos の行でも呼ばれる", async () => {
+    const seen: unknown[][] = [];
+    const { root } = await page(SHOWN + TODOS, filtered({
+      $watch: { "todos.*.done"(cur: unknown, _prev: unknown, i: number) { seen.push([i, cur]); } },
+    }));
+    await tick(root, 1, true);
+    expect(seen).toEqual([[1, true]]);
+  });
+
+  it("その場の変更を写しの行のパスで知らせる $postUpdate(\"shown.0.title\") も、for: todos の行に届く", async () => {
+    const { root, write } = await page(SHOWN + TODOS, filtered());
+    await write((s) => { s.todos[1].title = "B"; s.$postUpdate("shown.1.title"); });
+    expect([rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["a:false,B:false", "a:false,B:false,c:true"]);
+  });
+
+  it("評価ごとに互いを読む getter（読む向きが入れ替わる）でも、行への書き込みは止まる", async () => {
+    const { root, write } = await page(`<ul><template data-wcs="for: x"><li>{{ .title }}</li></template></ul><ol><template data-wcs="for: y"><li>{{ .title }}</li></template></ol>`, {
+      flip: false,
+      todos: todos(),
+      get x() { const s = this as any; return s.flip ? s.y : s.todos.slice(0, 2); },
+      get y() { const s = this as any; return s.flip ? s.todos.slice(1) : s.x; },
+    });
+    await write((s) => { s.flip = true; });
+    expect([texts(root, "ul li").join(","), texts(root, "ol li").join(",")]).toEqual(["b,c", "b,c"]);
+    await write((s) => { s["x.0.title"] = "B"; });
+    expect([texts(root, "ul li").join(","), texts(root, "ol li").join(",")]).toEqual(["B,c", "B,c"]);
+  });
+
+  it("getter が読む配列でないパス（opts.min、getter の下の limits.max）と数を返す getter は、写しの行への書き込みで評価し直さない", async () => {
+    let counted = 0;
+    const { root, write } = await page(`<p>{{ count }}</p><ul><template data-wcs="for: big"><li>{{ .v }}</li></template></ul>`, {
+      opts: { min: 2 },
+      items: [{ v: 1 }, { v: 2 }, { v: 3 }],
+      get limits() { return { max: 9 }; },
+      get big() { const s = this as any; return s.items.filter((x: any) => x.v >= s["opts.min"] && x.v <= s["limits.max"]); },
+      get count() { counted++; return (this as any).items.length; },
+    });
+    const before = counted;
+    await write((s) => { s["big.0.v"] = 1; });
+    expect([texts(root, "li").join(","), texts(root, "p")[0], counted - before]).toEqual(["3", "3", 0]);
+  });
+
+  it("volume（mount=\"cart\"）の中の絞り込み: 写しの行の checkbox が cart.todos の行と絞り込みに届く", async () => {
+    const h = document.createElement(`fix-page-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><wcs-state mount="cart"></wcs-state>`
+      + SHOWN.replace("for: shown", "for: cart.shown") + TODOS.replace("for: todos", "for: cart.todos");
+    const [el, volume] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+    el.setInitialState({});
+    volume.setInitialState(filtered());
+    document.body.appendChild(h);
+    await Promise.all([el.connectedCallbackPromise, volume.connectedCallbackPromise]);
+    await getBindingsReady(root);
+    await flush();
+    await flush();
+    await tick(root, 0, true);
+    expect([rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["b:false", "a:true,b:false,c:true"]);
+  });
+});
+
 describe("F29 要素の登録簿（customElementRegistry）", () => {
   it("行の要素は、置かれた後の登録簿で定義を待つ（happy-dom に無いプロパティを足して確かめる。実物は e2e）", async () => {
     const tag = `fix-scoped-${seq++}`;

@@ -1,4 +1,4 @@
-import { Pattern, PatternTable, parsePath, WILDCARD, type EqSub } from "./pattern";
+import { DIRTY, Pattern, PatternTable, parsePath, WILDCARD, type EqSub } from "./pattern";
 import { StateList, StateRow, reconcile, EMPTY, type ReconcileHooks } from "./list";
 import type { Strategy } from "./strategy/types";
 import type { Binding } from "./dom/view";
@@ -266,7 +266,7 @@ export class Engine implements ReconcileHooks {
         this.strategy.resetRow(row);
       }
       this.touched(p, row);
-      if (row !== null && row.list.shared) this.mirror(row, p, undefined, row.item, false);
+      if (row !== null) this.mirror(row, p, undefined, row.item, false);
       // the value before is not known: the `$eq` / `$eqIndex` occurrences under every key change
       if (p.depth === 0) this.rekeyEqUnder(p, undefined, undefined, true);
       this.landed(p, row, undefined, undefined, false);
@@ -416,7 +416,6 @@ export class Engine implements ReconcileHooks {
     const value = this.readUntracked(l.pattern, l.parentRow);
     const before = l.arr;
     if (value === before) return;
-    l.was = before;
     // out of the lists over its array before (filed again under the new one below)
     this.unfile(l);
     const old = reconcile(l, value, this);
@@ -426,16 +425,8 @@ export class Engine implements ReconcileHooks {
     if (l.arr === value) {
       const same = upsert(this.listsByArray, value as unknown[], newArray<StateList>);
       same.push(l);
-      if (same.length > 1) {
-        for (const x of same) x.shared = true;
-        // joining a list that did not share our array before (a getter back from a copy to the
-        // array it filters): the rows we kept missed the writes made through it, so they are
-        // shown again as if written (F26 — the moves of lists that change arrays together cost nothing)
-        if (same.some((x) => x.was !== before)) {
-          const e = this.pattern(`${l.pattern.path}.*`);
-          for (const r of old) if (r.alive) this.changed(e, r);
-        }
-      }
+      // (the rows it kept are up to date: a write into an object reached every list showing it, F26)
+      if (same.length > 1) for (const x of same) x.shared = true;
     }
     hooks.listSynced?.(this, l, old);
     if ((l.view !== null || l.extra !== null) && !l.queued) {
@@ -743,7 +734,7 @@ export class Engine implements ReconcileHooks {
       parent[p.last] = value;
     }
     this.syncListsUnder(p, row);
-    if (row !== null && row.list.shared) this.mirror(row, p, old, value);
+    if (row !== null) this.mirror(row, p, old, value);
     if (p.depth === 0) this.rekeyEqUnder(p, old, value);
     this.landed(p, row, old, value, true);
   }
@@ -756,14 +747,23 @@ export class Engine implements ReconcileHooks {
   /**
    * A write into row `row` of a list whose array another list has too (`for: shown` over a getter
    * returning `todos`, `for: groups.0.items`): the other list's row at the same position shows it.
+   *
+   * A write into the row's object (not the element) reaches it wherever else it is (F26, `get
+   * shown()` filtering `todos`). From the array holding it (the list's own, or one its getter read
+   * at a data path), the write goes to the getters that read that array and returned one holding the
+   * object (a filter, a sort, a slice: evaluated again), on down their dependents, and to the rows
+   * holding the object in the lists over those arrays. A getter whose array does not hold the object
+   * is not reached: it read the array, not the object (the dependency boundary).
    */
   private mirror(row: StateRow, p: Pattern, old: unknown, value: unknown, direct = true): void {
     const l = row.list;
+    // another list has its array, or it is over a getter or a getter reads it: its object may be in
+    // another array too. A plain list pays these checks only
+    if (!l.shared && l.pattern.getter === null && !l.pattern.dependents.length) return;
+    const o = row.item;
     const suffix = p.path.slice(l.pattern.path.length + 2);
-    for (const m of this.sharing(l)) {
-      if (m === l) continue;
-      const r = m.rows[row.index];
-      if (r === undefined) continue;
+    const land = (m: StateList, r: StateRow | undefined): void => {
+      if (r === undefined || r === row) return;
       const mp = this.pattern(`${m.pattern.path}.*${suffix}`);
       if (suffix === "") {
         r.item = value;
@@ -772,7 +772,40 @@ export class Engine implements ReconcileHooks {
       if (direct) this.syncListsUnder(mp, r);
       else this.touched(mp, r);
       this.landed(mp, r, old, value, direct);
-    }
+    };
+    for (const m of this.sharing(l)) land(m, m.rows[row.index]);
+    if (suffix === "") return;
+    // (a leaf write: the row's item is an object. The lists over its own array were reached above)
+    const seen = new Set<unknown>([l.arr]);
+    const has = (a: unknown): a is unknown[] => Array.isArray(a) && a.includes(o);
+    const down = (arr: unknown, deps: Pattern[]): void => {
+      if (!seen.has(arr) && seen.add(arr)) for (const m of this.listsByArray.get(arr as unknown[]) ?? []) for (const r of m.rows) if (r.item === o) land(m, r);
+      // each getter once (a cycle across evaluations ends). One passing the array on (`get shown()
+      // { return this.todos }`) is not evaluated again: the lists over it were reached already. One
+      // reached before (earlier in the batch, or just now through a getter it reads) is evaluated again
+      // in the drain, its list synced then: the rows it keeps are those its list shows now
+      for (const g of deps) {
+        let v = g.rootValue;
+        const stale = v === DIRTY;
+        if (stale) v = this.rootLists.get(g)?.arr;
+        if ((stale || has(v)) && !seen.has(g.dependents) && seen.add(g.dependents)) {
+          if (!stale && v !== arr) this.strategy.invalidate(this, g, null);
+          down(v, g.dependents);
+        }
+      }
+    };
+    const up = (g: Pattern): void => {
+      for (const s of g.sources) {
+        if (seen.has(s) || !seen.add(s)) continue;
+        if (s.getter !== null) up(s);
+        else if (!s.underGetter) {
+          const a = this.readData(s, null);
+          if (has(a)) down(a, s.dependents);
+        }
+      }
+    };
+    if (l.pattern.getter !== null) up(l.pattern);
+    else down(l.arr!, l.pattern.dependents);
   }
 
   /**
