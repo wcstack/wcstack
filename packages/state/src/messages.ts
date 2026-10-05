@@ -67,6 +67,7 @@ export const enum M {
   LocaleInvalid = 48,
   InitFailed = 49,
   ConnectedFailed = 50,
+  DisconnectedFailed = 51,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,

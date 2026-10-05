@@ -396,7 +396,7 @@
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-ボリュームはデータ・getter・setter・メソッドを持ち、`$connectedCallback` / `$disconnectedCallback` を宣言できます。そのどれの中でも `this` はマウントパスを基点にします: `this.items` はツリーの `cart.items` で、パスを取る `$` API（`$getAll`・`$setAll`・`$resolve`・`$postUpdate`・`$dependOn`・`$eq`・`$eqPath`・`$eqIndex`）もマウント相対のパスを取ります。getter と setter はツリーの `cart.<キー>` のアクセサになり、メソッドはパスで呼べます —— `onclick: cart.checkout`、ルートからは `this["cart.checkout"]()`。読み込み順は自由です: ルートより先に接続されたボリュームは、ルートのエンジンが作られるとき、ページがバインドされる前に接ぎ木されます。
+ボリュームはデータ・getter・setter・メソッドを持ち、`$connectedCallback` / `$disconnectedCallback` を宣言できます。そのどれの中でも `this` はマウントパスを基点にします: `this.items` はツリーの `cart.items` で、パスを取る `$` API（`$getAll`・`$setAll`・`$resolve`・`$postUpdate`・`$dependOn`・`$eq`・`$eqPath`・`$eqIndex`）もマウント相対のパスを取ります。getter と setter はツリーの `cart.<キー>` のアクセサになり、メソッドはパスで呼べます —— `onclick: cart.checkout`、ルートからは `this["cart.checkout"]()`。読み込み順は自由です: ルートより先に接続されたボリュームは、ルートのエンジンが作られるとき、ページがバインドされる前に接ぎ木されます。ルートの `<wcs-state>` がページから外れている間に接続されたボリュームは、それが戻されたときに接ぎ木されます。
 
 ボリュームは、ツリー全体に反応する宣言を実行しません。`$watch`・`$stream`・`$listKeys`・`$renderedCallback`・`$recursion`・`$behavior`・`$features` —— そして削除された `$scan`・`$streams`・`$updatedCallback` —— を宣言したボリュームは拒否されます: 接ぎ木されず、`console.error` が要素を名指して `$watch is not run in a volume — declare it on the root state.` と伝えます。これらはルートの state にフルパスで宣言してください —— ルートのハンドラの中では `this` はルートで（`$watch: { "cart.total"(cur) { … } }`）、ルートの `$renderedCallback(paths)` はルートから書いたパス（`cart.items.*.name`）を受け取るので、接頭辞で絞り込みます。`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback` は、`console.warn` を出して実行されません。ボリュームは注入も受けません: ボリューム要素に `data-wcs`（`state.taxRate: settings.taxRate`）があると、そのボリュームは拒否されます —— ルートのパスはルートの getter で読んでください（`get cartTotalWithTax() { return this["cart.subtotal"] * (1 + this["settings.taxRate"]); }`）。
 
@@ -894,7 +894,7 @@ this.items = await (await fetch("/api/items")).json();
 </wcs-route>
 ```
 
-バインダはマークアップを理由に throw しません: 引き渡された部分木の中のエラーは `console.error` で報告され、それより前の部分はバインドされたまま残り、ナビゲーションは続きます。もう一度引き渡された部分木（router は挿入のたびに中身を引き渡します）がバインドされるのは 1 回だけです。引き渡されるのは要素だけなので、ルートの本体に要素の外で直接書いた `{{ }}` は、ナビゲーションでそのルートに入ったときにはバインドされません —— 要素で包んでください。これが問題になるのは、バインダを自分で呼ぶ場合か、`<wcs-route>` の直下に `for:` / `if:` を書く場合だけです。
+バインダはマークアップを理由に throw しません: 引き渡された部分木の中のエラーは `console.error` で報告され、それより前の部分はバインドされたまま残り、ナビゲーションは続きます。もう一度引き渡された部分木（router は挿入のたびに中身を引き渡します）がバインドされるのは 1 回だけで、ルートの `<wcs-state>` がページから外れている間に引き渡された部分木は、その要素が戻されたときに —— 引き渡されたときの範囲の宣言のとおりに —— バインドされます。引き渡されるのは要素だけなので、ルートの本体に要素の外で直接書いた `{{ }}` は、ナビゲーションでそのルートに入ったときにはバインドされません —— 要素で包んでください。これが問題になるのは、バインダを自分で呼ぶ場合か、`<wcs-route>` の直下に `for:` / `if:` を書く場合だけです。
 
 ## パス getter（算出プロパティ）
 
@@ -1978,7 +1978,8 @@ customElements.define("my-component", MyComponent);
 - **マウントされた**スコープは、自身のバインディングとリストに対して `$listKeys`・`$commandTokens` / `$eventTokens` / `$on`・`$errorCallback` を実行し、自身の `$behavior` / `$features` も実行する。`$watch`・`$stream`・`$renderedCallback` は実行せず（`wcs/mount-dollar-declaration` を 1 回警告）、`$recursion` / `**` getter は `[wcs/mount-dollar-declaration]` を throw する。これらはルート state に宣言すること。配線されていない Shadow DOM の子は独立したツリーを持つため、いずれも宣言できる
 - コンポーネントが state を読み込んだ後に追加されたホストの配線（後からバインドした `state.a: x`）はコンポーネントに届かず、throw する —— ホストの配線は、コンポーネントが読み込む前にバインドすること
 - マウントに失敗したコンポーネントは `connectedCallbackPromise` を reject する —— 初期化に失敗したルートに配線されたコンポーネントも含む（`<tag>.state will not mount: the root state failed to initialize.`）—— [初期化の失敗](#初期化の失敗) 参照
-- 古い `<wcs-state bind-component>` がバインド・描画したノードが残っている間に、コンポーネントがそれを新しい `<wcs-state bind-component>` に置き換えると、新しい要素がスコープを引き継ぐ: それらのバインディング・行・`{{ }}` のテキストはそのまま残り、その横に追加されたバインディング付きのノードはバインドされない（`console.warn` がそう伝える）。その中身を新しい要素で描画し直すと、新しい要素が改めてバインドする
+- 古い `<wcs-state bind-component>` がバインド・描画したノードが残っている間に、コンポーネントがそれを新しい `<wcs-state bind-component>` に置き換えると、新しい要素がスコープを引き継ぐ: それらのバインディング・行・`{{ }}` のテキストはそのまま残り、その横に追加されたバインディング付きのノードはバインドされない（`console.warn` がそう伝える）。その中身を新しい要素で描画し直すと、新しい要素が改めてバインドする。新しい要素を外して古い要素を元の場所に戻すと、古い要素が同じようにスコープを引き継ぎ直す
+- ページがバインドしなかったホスト —— ページの state が読み込まれる前にページから外され、あるいは後から `for:` / `if:` やルーターではなくコードで挿入されたもの —— は、その `<wcs-state bind-component>` が接続したときに配線される: ホストの `data-wcs` はそのとき、あるいはページの `<wcs-state>` がページに入ったときにバインドされる（Light DOM コンポーネントの中では、そのコンポーネントがマウントされたときに、そのコンポーネントが）
 
 ### ループ内でのコンポーネント使用
 
@@ -2901,6 +2902,7 @@ li {
 | 48 | | `the locale "<locale>" (<html lang> or bootstrapState's locale) is not a language tag Intl takes (en-US, not en_US): the locale filters use "en".` |
 | 49 | | `<wcs-state src="…"> failed to initialize.` |
 | 50 | | `<wcs-state src="…"> $connectedCallback failed.` |
+| 51 | | `<wcs-state src="…"> $disconnectedCallback failed.` |
 | 101 | `binding-syntax` | `Invalid bindText: "<text>". Missing ':' separator between propPart and statePart.` |
 | 102 | `binding-syntax` | `"<text>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` |
 | 103 | `binding-syntax` | `"<text>": "else" takes no value — write "else:".` |
@@ -3033,7 +3035,7 @@ this.$getAll("matrix.*.*", [row]);
 
 `for:` / `if:` の行の中で、バインディングの取り付け時に見つかったエラー（未宣言の token、要素が宣言していないメンバ）は、初期化の失敗ではなく、そのバインディングの失敗になります: `$errorCallback` に届き、行はそのまま構築されます。state にないトップレベルのキーへのバインディングは、初期化の失敗ではなく適用の失敗です。初期化に失敗した要素は再始動できません —— `setInitialState()` は throw します（`#14`）。取り除いて新しい要素を作ってください。
 
-**失敗した `$connectedCallback` は初期化の失敗ではありません。** `$connectedCallback` はバインディングが構築された後に走ります。throw または reject したものは `<wcs-state …> $connectedCallback failed.`（`#50`）に続けてエラーとして報告され、`connectedCallbackPromise` はそのエラーで reject します —— ただしページはバインドされています: `getBindingsReady()` は resolve し、要素は再設定もできます。再接続時に失敗した `$connectedCallback` は `console.error` で報告されます。
+**失敗した `$connectedCallback` は初期化の失敗ではありません。** `$connectedCallback` はバインディングが構築された後に走ります。throw または reject したものは `<wcs-state …> $connectedCallback failed.`（`#50`）に続けてエラーとして報告され、`connectedCallbackPromise` はそのエラーで reject します —— ただしページはバインドされています: `getBindingsReady()` は resolve し、要素は再設定もできます。再接続時に throw または reject したルートの `$connectedCallback` も同じ形で報告され、throw または reject したルートの `$disconnectedCallback` は `<wcs-state …> $disconnectedCallback failed.`（`#51`）に続けてエラーとして報告されます —— どちらも要素のコールバックの外へは漏れません。マウントされたコンポーネントの再接続時に失敗した `$connectedCallback` は `console.error` で報告されます。
 
 **各 Promise が約束すること:**
 

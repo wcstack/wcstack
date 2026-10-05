@@ -35,12 +35,13 @@ function declare(engine: Engine, target: Record<string, any>): void {
   runtimes.set(engine, { watch, stream, connected: old?.connected ?? false, target });
 }
 
-function element(engine: Engine, phase: "mounting" | "connected" | "disconnected" | "reset"): void {
+function element(engine: Engine, phase: "mounting" | "back" | "connected" | "disconnected" | "reset"): void {
   const rt = runtimes.get(engine);
   // an engine made before the add-on was installed has no runtime (and declares nothing temporal);
   // a server render (@wcstack/server) keeps streams at their initial value and watches off
   if (rt === undefined || phase === "mounting" || document.documentElement?.hasAttribute("data-wcs-server")) return;
-  // (kept on a runtime a refused re-set left too: the next re-set takes it over)
+  // (kept on a runtime a refused re-set left too: the next re-set takes it over. "back" comes after
+  // "disconnected", before $connectedCallback runs again: not connected yet)
   if (phase !== "reset") rt.connected = phase === "connected";
   // a refused state's runtime never runs, nor stops (writes `$streamStatus`), on the state that stayed
   if (rt.target !== engine.target) return;

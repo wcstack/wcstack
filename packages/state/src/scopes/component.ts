@@ -28,10 +28,11 @@ import type { Binding } from "../dom/view";
 import { hooks, loadFeatures, type Claimed } from "../hooks";
 import { config } from "../config";
 import { DirtyStrategy } from "../strategy/dirty";
-import { mount } from "../dom/mount";
-import { drainBinds } from "../dom/binder";
+import { engines, mount, mountSubtree } from "../dom/mount";
+import { bind, drainBinds } from "../dom/binder";
 import { registryOf } from "../dom/wc";
 import { raiseError } from "../parser/raiseError";
+import type { WcsState } from "../element";
 import { onRootFailed, orphan, rootEngineCreated, watchRoot, wired } from "./volume";
 
 interface Entry {
@@ -159,6 +160,27 @@ function wiredInMarkup(host: Element, prop: string): boolean {
   return text !== null && new RegExp(`(^|;)\\s*${prop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[.#:]`).test(text);
 }
 
+/**
+ * A host whose wiring is in its markup, and which the page did not bind: it was out of the page when
+ * the page's state loaded, or was inserted since — by code, not by a `for:` / `if:` (which binds it
+ * before inserting it) or the router (which hands it over). Its `<wcs-state>` hands it over as the
+ * router does (src/dom/binder.ts): it is bound now, or once its root's state is in the page (it has not
+ * loaded yet, or its `<wcs-state>` is out). In a Light DOM component, that component's engine binds it,
+ * when it mounts (now, if it has). A host the page did bind is left alone (an element is walked once),
+ * and so is one whose root failed before binding the page (onRootFailed refuses the component).
+ */
+function wireLate(host: Element): void {
+  let scope = host.parentElement;
+  while (scope !== null && !componentScope(scope)) scope = scope.parentElement;
+  const E = engines.get(scope ?? host.getRootNode());
+  const el = E?.element as WcsState | undefined;
+  // (the binder binds to the page's engine now, or keeps the host for when it is in the page)
+  if (el?.isConnected ? el.bound : scope === null) {
+    if (scope === null) bind(host);
+    else mountSubtree(E!, host);
+  }
+}
+
 /** The server's output says the host binds `prop` on this row element (see WIRED). */
 const wiredOnServer = (host: Element, prop: string): boolean => host.getAttribute(WIRED)?.split(" ").includes(prop) === true;
 
@@ -184,8 +206,10 @@ async function load(el: HTMLElement, prop: string, host: Element, light: boolean
   const wiring = () => (hostBindings.get(host) ?? []).filter((b) => headOf(b.name) === prop);
   // the host binds its wiring when it renders the element (a row before inserting it; the page
   // when its state loads; a server-rendered row when the client adopts it), or when the
-  // element's class is defined
-  if (wiring().length === 0 && (wiredInMarkup(host, prop) || wiredOnServer(host, prop))) {
+  // element's class is defined — or, written in its markup on a host the page did not bind, now
+  const marked = wiredInMarkup(host, prop);
+  if (marked && wiring().length === 0) wireLate(host);
+  if (wiring().length === 0 && (marked || wiredOnServer(host, prop))) {
     // (if the page's state fails, its wiring never comes)
     let stop!: () => boolean;
     await new Promise<void>((r, j) => {
@@ -853,6 +877,8 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
     if (shadow) orphan(parent!, el);
     throw e;
   };
+  /** Its bindings were built (it mounted, or took a scope over). */
+  let bound = false;
   return {
     load() {
       return (host === null || !host.localName.includes("-")
@@ -860,7 +886,6 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
         : load(el, prop, host, !shadow)).catch(failed);
     },
     async start(state, built) {
-      let bound = false;
       await start(el, host!, shadow ? parent! : host!, state, () => {
         bound = true;
         built();
@@ -872,10 +897,19 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
       });
     },
     connected() {
-      // (not mounted yet, or a newer `<wcs-state>` took the scope over); a failed
-      // `$connectedCallback` is reported as a root's on reconnect is
+      // a failed `$connectedCallback` is reported as a root's on reconnect is
       const m = mine();
       if (m !== null) reconnect(m).catch((e) => console.error(e));
+      // a newer `<wcs-state>` took the scope over: put back where it was, this one takes the scope over
+      // again, as a new one would — once the DOM operation that put it back is done (it may take the
+      // newer one out), and refused while the newer one is still in
+      else if (bound) {
+        void Promise.resolve().then(() => {
+          if (el.parentNode === parent) return start(el, host!, shadow ? parent! : host!, hosts.get(host!)!.state, () => {});
+        }).catch((e) => console.error(e));
+      }
+      // still waiting for its host's wiring: the host is back (wireLate)
+      else if (waiting.has(host!)) wireLate(host!);
     },
     disconnected() {
       const m = mine();

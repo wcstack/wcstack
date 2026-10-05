@@ -71,6 +71,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.FeaturesNotArray, [], '$features must be an array of add-on names (["temporal", "formats"]).'],
   [M.InitFailed, ["wcs-state", "src", "./state.js"], '<wcs-state src="./state.js"> failed to initialize.'],
   [M.ConnectedFailed, ["wcs-state", "bind-component", "state"], '<wcs-state bind-component="state"> $connectedCallback failed.'],
+  [M.DisconnectedFailed, ["wcs-state", "src", "./state.js"], '<wcs-state src="./state.js"> $disconnectedCallback failed.'],
   [M.SelectorRemoved, ["value: @main.count"], '"value: @main.count": the "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.'],
 
   [M.BindTextNoColon, ["value"], `[wcs/binding-syntax] Invalid bindText: "value". Missing ':' separator between propPart and statePart.`],

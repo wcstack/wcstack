@@ -68,6 +68,7 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.FeaturesNotArray]: () => '$features must be an array of add-on names (["temporal", "formats"]).',
   [M.InitFailed]: (tag, ...at) => `${element(tag, at)} failed to initialize.`,
   [M.ConnectedFailed]: (tag, ...at) => `${element(tag, at)} $connectedCallback failed.`,
+  [M.DisconnectedFailed]: (tag, ...at) => `${element(tag, at)} $disconnectedCallback failed.`,
 
   [M.BindTextNoColon]: (t) => `Invalid bindText: "${t}". Missing ':' separator between propPart and statePart.`,
   [M.StructuralTakesNoModifiers]: (t, keyword) => `"${t}": "${keyword}" takes no modifiers or filters on its left side — write "${keyword}:".`,

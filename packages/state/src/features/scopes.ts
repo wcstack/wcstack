@@ -6,7 +6,7 @@
  */
 import { chain, first, handled, hooks, taken, type Feature } from "../hooks";
 import { raiseError } from "../parser/raiseError";
-import { claimVolume, grafted, guardAncestorWrite, rootEngineCreated } from "../scopes/volume";
+import { claimVolume, grafted, guardAncestorWrite, rootEngineCreated, rootMoved } from "../scopes/volume";
 import { claimDcc, dccEngineCreated, dccWritten } from "../scopes/dcc";
 import { claimComponent, componentScope, crossed, guardReadonlyMount, hasMounts, hostBinding } from "../scopes/component";
 
@@ -20,7 +20,7 @@ export const scopes: Feature = {
     hooks.hostBinding = hostBinding;
     hooks.componentScope = componentScope;
     hooks.element = chain(hooks.element, (engine, phase) => {
-      if (phase !== "mounting") return;
+      if (phase !== "mounting") return rootMoved(engine, phase);
       const root = (engine.element as Node).getRootNode();
       rootEngineCreated(engine, root);
       dccEngineCreated(engine, root);
@@ -40,7 +40,7 @@ export const scopes: Feature = {
     hooks.declare = (engine, target) => {
       const list = grafted.get(engine);
       if (list !== undefined && list.length > 0) {
-        raiseError(`re-setting a root state with grafted volumes (${list.join(", ")}) is not supported: their data is part of the tree.`);
+        raiseError(`re-setting a root state with grafted volumes (${list.map((v) => v.path).join(", ")}) is not supported: their data is part of the tree.`);
       }
       if (hasMounts(engine)) raiseError("re-setting a root state with mounted components is not supported: they read its data.");
       declared?.(engine, target);

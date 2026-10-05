@@ -1267,14 +1267,15 @@ describe("E10: 初期構築の前に渡されたサブツリー", () => {
 });
 
 describe("E12: 再接続の $connectedCallback の失敗", () => {
-  it("非同期の失敗は console に報告する（未処理の reject にしない）", async () => {
+  it("非同期の失敗は、初回の接続と同じく要素を名指して console に報告する（未処理の reject にしない）", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     let n = 0;
     const { h } = await page(`<p></p>`, { async $connectedCallback() { if (n++ > 0) throw new Error("again"); } });
     h.remove();
     document.body.appendChild(h);
     await flush();
-    expect(error.mock.calls.map((c) => String((c[0] as Error).message))).toEqual(["again"]);
+    // (this file installs no diagnostics: the report is numbered, #50 = "<wcs-state> $connectedCallback failed.")
+    expect(error.mock.calls.map((c) => [c[0], String((c[1] as Error).message)])).toEqual([['[@wcstack/state] #50 "wcs-state"', "again"]]);
   });
 });
 

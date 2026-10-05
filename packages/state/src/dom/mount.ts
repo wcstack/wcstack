@@ -4,7 +4,10 @@ import { directive, textSpec, walkBindings } from "./plan";
 import { raise, M } from "../messages";
 import { attachChain, attachSpec, ForView, listFor } from "./view";
 
-/** The engine mounted on each root (document, shadow root): the binder's lookup. */
+/**
+ * The engine mounted on each root (document, shadow root): the binder's lookup. A root's while its
+ * `<wcs-state>` is in the page (src/element.ts): the root node outlives the content it bound.
+ */
 export const engines = new WeakMap<Node, Engine>();
 
 /**
