@@ -4,7 +4,8 @@
  * implementation — `@wcstack/lint` and the VS Code extension read it. DOM-free, no side effects.
  *
  * 4.0: the 3.x old names are gone from the runtime, so the three old-name tables are empty
- * (declaring or reading an old name fails with its canonical name). `$scan` is no longer reserved.
+ * (with the diagnostics add-on, declaring or reading an old name fails with its canonical name;
+ * without it the name does nothing). `$scan` is no longer reserved.
  * 4.0 adds the state's `$behavior` options (`behaviorOptions`) and the add-on names `$features` and the
  * root `<wcs-state features>` take (`features` — the split loader's allow-list, load.ts). The `$behavior`
  * options are a copy of the engine's list, so this bundle stays without the engine; public-surface.test.ts pins both.
@@ -32,10 +33,10 @@ export const WCS_MANIFEST_VERSION = 2;
 /** Filter old names → canonical (3.2): removed in 4.0. */
 export const builtinFilterAliases: Readonly<Record<string, string>> = Object.freeze({});
 
-/** Declaration-key old names → canonical (3.2): removed in 4.0 (`$streams` fails as `[wcs/declaration-alias]`). */
+/** Declaration-key old names → canonical (3.2): removed in 4.0 (`$streams` fails as `[wcs/declaration-alias]` with the diagnostics add-on). */
 export const DECLARATION_ALIASES: Readonly<Record<string, string>> = Object.freeze({});
 
-/** State API old names → canonical (3.2): removed in 4.0 (`$trackDependency` fails as `[wcs/name-alias]`). */
+/** State API old names → canonical (3.2): removed in 4.0 (`$trackDependency` fails as `[wcs/name-alias]` with the diagnostics add-on). */
 export const STATE_API_ALIASES: Readonly<Record<string, string>> = Object.freeze({});
 
 /** Modifier vocabulary (`#` on the left side): flags, and `key=value` keys. */

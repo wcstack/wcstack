@@ -5,8 +5,8 @@
  */
 import { didYouMean, LINT_HINT } from "./guidance";
 import { FORMATS_FILTER_NAMES, hasFilter } from "../filters/registry";
-import { codeOf, type M } from "../messages";
-import { SENTENCES } from "./messages";
+import type { M } from "../messages";
+import { codeOf, SENTENCES } from "./messages";
 
 /** A numbered core message as its sentence (the number and the values if it is not known here). */
 export function render(id: number, args: readonly unknown[]): string {

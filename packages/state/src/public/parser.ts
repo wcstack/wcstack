@@ -5,7 +5,7 @@
  *
  * This entry is a bundle of its own, so it turns its copy of the diagnostics renderer on: a
  * syntax error reads as the full sentence with its guidance, as 3.x's parser threw it (the core
- * alone throws the code and the message number).
+ * alone throws the message number and the values).
  */
 import { hooks } from "../hooks";
 import { explain, render } from "../diagnostics/explain";

@@ -51,7 +51,7 @@ Loading the bundle alongside an individual package's `/auto` is safe: whichever 
 
 If you want npm packages for local development, install the individual ones (`@wcstack/state`, `@wcstack/router`, …); this package publishes only the bundle and this guide.
 
-`@wcstack/state` also ships **split entries** for a page that deliberately leaves features out. The full-package `/auto` above includes every feature, needs none of this, and stays the default. The features are `temporal` (`$watch` / `$stream`), `list-keys` (`$listKeys`), `scopes` (`bind-component`, `mount=`, DCC), `recursion` (`$recursion`), `ssr` (`enable-ssr`), `formats` (the locale formatting filters), `diagnostics` (full message sentences and development warnings) and `devtools`. A declaration whose feature is missing throws `[wcs/feature-not-installed]`. Two ways to load them:
+`@wcstack/state` also ships **split entries** for a page that deliberately leaves features out. The full-package `/auto` above includes every feature, needs none of this, and stays the default. The features are `temporal` (`$watch` / `$stream`), `list-keys` (`$listKeys`), `scopes` (`bind-component`, `mount=`, DCC), `recursion` (`$recursion`), `ssr` (`enable-ssr`), `formats` (every filter but the 10 conditions: arithmetic, conversion, defaults and the formatting filters), `diagnostics` (full message sentences and development warnings) and `devtools`. A declaration whose feature is missing throws `[wcs/feature-not-installed]`. Two ways to load them:
 
 - **The split auto entry**, one tag and no import map. `features="…"` on the document's root `<wcs-state>` names what must be there before any `<wcs-state>` starts (`scopes`) and the development aids (`diagnostics`, `devtools`); each state's `$features` names what it needs (`$features: ["temporal", "formats"]`), loaded before that state is built. An unknown name fails with `[wcs/feature-unknown]`.
 
@@ -295,7 +295,7 @@ Where a handler needs the element-level behaviour, write `on*#direct:`. The list
 - A `$connectedCallback` that throws or rejects is reported as `… $connectedCallback failed.`; `connectedCallbackPromise` rejects, but `getBindingsReady()` resolves — the page is bound.
 - A binding that fails inside a `for:` / `if:` row, or that fails to apply later, goes to `$errorCallback(error, { path, bindingType, node })` when the state declares one, else to the console; the rest of the page keeps working.
 - One root `<wcs-state>` per document or shadow root: a second one fails to initialize. Graft more state with `mount=`.
-- On `/core` without the `diagnostics` feature, messages carry a code, a number and the values (`[@wcstack/state] [wcs/filter-unknown] #501 "uc"`) instead of the sentence: look the number up in [`docs/state-errors.md`](https://github.com/wcstack/wcstack/blob/main/docs/state-errors.md).
+- On `/core` without the `diagnostics` feature, messages carry a number and the values (`[@wcstack/state] #501 "uc"`) instead of the code and the sentence: look the number up in [`docs/state-errors.md`](https://github.com/wcstack/wcstack/blob/main/docs/state-errors.md).
 
 ---
 
@@ -411,7 +411,7 @@ Older names appear all over the training data. 4.0 rejects them: write the name 
 | `$watch` (fold a path's changes) · `$on` (fold event tokens) into an ordinary key | `$scan` |
 | `this.$dependOn(path)` · `this.$untracked(fn)` | `$trackDependency` · `$untrackDependency` |
 
-An old filter name or `substr` fails initialization with `[wcs/filter-unknown]` (the full entries name the replacement); `$streams`, `$updatedCallback` and `$scan` throw when the state loads; `$trackDependency` / `$untrackDependency` throw when read. The lint reports the declarations and API names as errors, and the filters as `wcs/filter-unknown` warnings (a page may register filters of its own) — which still throw at run time. `$renderedCallback` reports the **bindings that were applied**, not every state change — use `$watch` for those.
+An old filter name or `substr` fails initialization with `[wcs/filter-unknown]` (the full entries name the replacement); `$streams`, `$updatedCallback` and `$scan` throw when the state loads; `$trackDependency` / `$untrackDependency` throw when read (the `diagnostics` feature, which `/auto` includes, detects these five; on `/core` without it they do nothing). The lint reports the declarations and API names as errors, and the filters as `wcs/filter-unknown` warnings (a page may register filters of its own) — which still throw at run time. `$renderedCallback` reports the **bindings that were applied**, not every state change — use `$watch` for those.
 
 ---
 

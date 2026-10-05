@@ -83,7 +83,7 @@ export default {
 - 各エントリはオブジェクト（`{ args?, source, fold?, initial? }`）であること。
 - `source` は関数であること。`fold` は（あれば）関数であること。`fold` があるのに `initial` が無ければエラー（reduce にはシード値が必要）。
 - `args` は（あれば）関数であること。
-- 3.x の名前 `$streams` は削除されました: 宣言すると `[wcs/declaration-alias] $streams was removed: write $stream.`（`#1601`）を throw します。
+- 3.x の名前 `$streams` は削除されました: `diagnostics` アドオンが入っていれば（`@wcstack/state`・`/auto`）、宣言すると `[wcs/declaration-alias] $streams was removed: write $stream.`（`#1601`）を throw します。入っていなければ、その宣言は無視されます。
 
 起動 / restart 時（`args` 評価時）に検出される違反:
 

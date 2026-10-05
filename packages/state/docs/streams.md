@@ -83,7 +83,7 @@ Violations of the declaration are raised when the state is taken in: on the firs
 - Each entry must be an object (`{ args?, source, fold?, initial? }`).
 - `source` must be a function. `fold`, if present, must be a function. `fold` without `initial` is an error (reduce needs a seed value).
 - `args`, if present, must be a function.
-- The 3.x name `$streams` is removed: declaring it throws `[wcs/declaration-alias] $streams was removed: write $stream.` (`#1601`).
+- The 3.x name `$streams` is removed: declaring it throws `[wcs/declaration-alias] $streams was removed: write $stream.` (`#1601`) where the `diagnostics` add-on is installed (`@wcstack/state`, `/auto`); without it the declaration is ignored.
 
 Violations detected when `args` is evaluated (at start / restart):
 

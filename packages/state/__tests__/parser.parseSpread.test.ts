@@ -3,7 +3,7 @@ import { parseBindTextsForElement } from '../src/parser/parseBindTextsForElement
 import { installFeatures } from "../src/hooks";
 import { diagnostics } from "../src/features/diagnostics";
 
-// the sentences are the diagnostics add-on's (the core alone gives the code and the message number)
+// the sentences are the diagnostics add-on's (the core alone gives the message number and the values)
 installFeatures([diagnostics]);
 
 describe('parseBindTextsForElement - spread (...)', () => {

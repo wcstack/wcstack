@@ -3,8 +3,8 @@ import { bootstrapState, getBindingsReady, Engine, DirtyStrategy, mount } from "
 import { drainBinds } from "../src/dom/binder";
 import { M } from "../src/messages";
 
-// the core's own message (no diagnostics add-on here): [@wcstack/state] [wcs/<code>] #<number> <values>
-const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] (\[wcs/[\w-]+\] )?#${id}( |$)`);
+// the core's own message (no diagnostics add-on here): [@wcstack/state] #<number> <values>
+const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] #${id}( |$)`);
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const RUNNER_KEY = Symbol.for("wcstack.transition-runner");
@@ -207,7 +207,7 @@ describe("初期化済みの要素への setInitialState（再セット）", () 
       expect([q(".t"), q(".p")]).toEqual(["b", "b"]);
       expect(Array.from(root.querySelectorAll("li"), (li) => li.textContent)).toEqual(["y"]);
       // a key no state had still fails on read
-      expect(() => el.createState("readonly", (s: any) => s.never)).toThrow("[wcs/binding-path-missing]");
+      expect(() => el.createState("readonly", (s: any) => s.never)).toThrow('#301 "never"');
     } finally {
       error.mockRestore();
     }

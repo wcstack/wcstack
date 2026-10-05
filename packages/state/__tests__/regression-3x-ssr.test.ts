@@ -1200,7 +1200,7 @@ describe("#370 スナップショットが if: / elseif: の出力フィルタ�
       ? wrap(`<ul>${T("for: groups", `<li>${T(bind, "<b></b>")}</li>`)}</ul>`)
       : wrap(`<ul>${T(bind, `<li data-wcs="textContent: .n"></li>`)}</ul>`);
     const r = await refusal(body, server);
-    expect(r.reason).toBe(`[@wcstack/state] [wcs/binding-syntax] #121 "${bind}"`);
+    expect(r.reason).toBe(`[@wcstack/state] #121 "${bind}"`);
     // the init-failure header (#49) names the element, then the error itself
     expect(r.logged).toEqual([`[@wcstack/state] #49 "wcs-state" ${r.reason}`]);
   });

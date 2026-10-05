@@ -293,7 +293,7 @@ describe("#376 行の中でトップレベルのリストを回す for: も描�
     await expect(page(`<ul><template data-wcs="for: a"><li>{{ b.*.y }}</li></template></ul>`, {
       a: [{ y: "A0" }, { y: "A1" }],
       b: [{ y: "B0" }, { y: "B1" }],
-    })).rejects.toThrow('[@wcstack/state] [wcs/wildcard-rank] #1403 "b.*.y" "b" "a"');
+    })).rejects.toThrow('[@wcstack/state] #1403 "b.*.y" "b" "a"');
   });
 
   it("F32: for: a の行の中の value: b.*.y も誤りになる（a のデータを壊さない）", async () => {

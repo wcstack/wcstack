@@ -227,21 +227,21 @@ The file names under `dist/split/chunks/` carry a content hash: if you list chun
 
 | Entry | What it adds |
 |---|---|
-| `@wcstack/state/core` | The binding engine: `data-wcs`, `{{ }}` and comment bindings, `for` / `if`, path getters, events, `$command` / `$on`, the 24 logic filters (comparison, arithmetic, conversion, defaults), `bootstrapState`, `installFeatures` |
+| `@wcstack/state/core` | The binding engine: `data-wcs`, `{{ }}` and comment bindings, `for` / `if`, path getters, events, `$command` / `$on`, the 10 condition filters (`eq` `ne` `not` `lt` `le` `gt` `ge` `truthy` `falsy` `boolean`), `bootstrapState`, `installFeatures` |
 | `@wcstack/state/features/temporal` | `$watch`, `$stream` |
 | `@wcstack/state/features/list-keys` | `$listKeys` |
 | `@wcstack/state/features/scopes` | `bind-component`, `mount=` volumes, overlay exports, DCC (`data-wc-definition`) |
 | `@wcstack/state/features/recursion` | `$recursion` and `**` paths |
 | `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
-| `@wcstack/state/features/formats` | The 23 formatting filters (`upper`, `date`, `round`, `truncate`, …) |
+| `@wcstack/state/features/formats` | The other 37 filters: arithmetic, conversion and defaults (`add`, `int`, `coalesce`, …) and formatting (`upper`, `date`, `round`, `truncate`, …) |
 | `@wcstack/state/features/devtools` | The DevTools hook protocol source |
-| `@wcstack/state/features/diagnostics` | The sentences of error messages, with the did-you-mean and the pointer to lint, and the development-time warnings (a bound or `$watch` path that does not resolve, `wcs/default-getter-mismatch`). Without it a message is its code, its number and its values ([Error messages](#error-messages-and-numbers)), and those warnings are not printed |
+| `@wcstack/state/features/diagnostics` | The sentences of error messages, with the did-you-mean and the pointer to lint, and the development-time warnings (a bound or `$watch` path that does not resolve, `wcs/default-getter-mismatch`). Without it a message is its number and its values ([Error messages](#error-messages-and-numbers)), those warnings are not printed, and the 3.x names 4.0 removed (`$scan`, `$streams`, `$updatedCallback`, `$trackDependency`, `$untrackDependency`) are not detected |
 | `@wcstack/state/define` | `defineState` and the types only — no runtime at all |
 
 A declaration whose add-on is missing does not fail quietly: it throws
 `[wcs/feature-not-installed] $watch needs the add-on @wcstack/state/features/temporal` when the state
 is loaded (`mount=`, `bind-component` and `data-wc-definition` name `scopes` the same way, and
-`enable-ssr` names `ssr`), and a formatting filter without `formats` throws `[wcs/filter-unknown]`
+`enable-ssr` names `ssr`), and a filter of `formats` without it throws `[wcs/filter-unknown]`
 naming the add-on when the bindings are planned. Installing is idempotent — an add-on installed
 again is skipped — and every entry shares one core chunk: an add-on never carries a second copy of
 the engine, and never a copy of another add-on either (a call across that seam goes through a
@@ -1677,7 +1677,7 @@ Handlers run where the DOM puts them. An outer `#direct` handler runs **before**
 
 ## Filters
 
-47 built-in filters are available for both input (DOM → state) and output (state → DOM) directions: 24 logic filters in the core (comparison, arithmetic, type conversion, boolean / default) and 23 formatting filters in the `formats` add-on (number formatting, string, date / time), which the full entries include.
+47 built-in filters are available for both input (DOM → state) and output (state → DOM) directions: the 10 condition filters in the core (`eq`, `ne`, `not`, `lt`, `le`, `gt`, `ge`, `truthy`, `falsy`, `boolean`) and the other 37 in the `formats` add-on (arithmetic, number formatting, string, type conversion, date / time, defaults), which the full entries include. On `/core` without `formats`, a filter of `formats` fails when the bindings are planned, naming the add-on.
 
 The names 3.x kept as aliases of the 3.2 renames (`inc`, `dec`, `fix`, `uc`, `lc`, `cap`, `rep`, `rev`, `pad`, `null`) and the `substr` filter do not exist: they fail like any unknown name, and the message names what to write instead (`"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".`; `substr(start, length)` is `slice(start, start + length)`).
 
@@ -2363,7 +2363,7 @@ Two rules cut most of the confusion:
 
 ## Streams (`$stream`)
 
-Command tokens and event tokens carry discrete interactions. **`$stream`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$renderedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects. `$stream` is the `temporal` add-on (in the full entries). The 3.x name `$streams` throws `[wcs/declaration-alias] $streams was removed: write $stream.` (`#1601`).
+Command tokens and event tokens carry discrete interactions. **`$stream`** covers the remaining shape: a continuous flow. Declare an async producer (async iterable / async generator / `ReadableStream`) and the framework **folds it into a single reactive property** — each chunk goes through normal path assignment, so bindings, path getters, and `$renderedCallback` react exactly as if you had assigned the value yourself. When a state path read by the `args` function changes, the running producer is aborted and the source is restarted with the new arguments (switchMap-style dependency-driven restart). Streams start eagerly after `$connectedCallback` completes and are aborted when the element disconnects. `$stream` is the `temporal` add-on (in the full entries). The 3.x name `$streams` throws `[wcs/declaration-alias] $streams was removed: write $stream.` (`#1601`) where the `diagnostics` add-on is installed (`@wcstack/state`, `/auto`); without it the declaration is ignored.
 
 `$renderedCallback` remains binding-driven: a stream declaration alone is not a headless subscription. Its path appears in the callback only when a live DOM binding for that value/status/error is actually applied. To react to a stream's value without rendering it, declare [`$watch`](#watch-watch) on that path; see the [stream reference](docs/streams.md) for the observation contract.
 
@@ -2764,7 +2764,7 @@ All bindings work inside `<svg>` elements. Use `attr.*` for SVG attributes:
 
 State objects can define `$connectedCallback`, `$disconnectedCallback`, `$renderedCallback`, and `$errorCallback` for initialization, cleanup, update, and binding-failure handling.
 
-> `$renderedCallback` receives updates of **applied bindings**, not every state update (use `$watch` for those). The 3.x name `$updatedCallback` throws `[wcs/declaration-alias] $updatedCallback was removed: write $renderedCallback.` (`#1601`).
+> `$renderedCallback` receives updates of **applied bindings**, not every state update (use `$watch` for those). The 3.x name `$updatedCallback` throws `[wcs/declaration-alias] $updatedCallback was removed: write $renderedCallback.` (`#1601`) where the `diagnostics` add-on is installed (`@wcstack/state`, `/auto`); without it the declaration is ignored.
 
 ```html
 <wcs-state>
@@ -2846,16 +2846,16 @@ Only a batch that actually has bindings to apply is handed to the tag, so a writ
 
 ### Error messages and numbers
 
-Every message starts with `[@wcstack/state]`. A message about something `@wcstack/lint` and the VS Code extension also check carries the same code (`[wcs/filter-unknown]`), and most messages carry a number (`#501`). The hundreds of a number name its code — 1xx `binding-syntax`, 2xx `template-syntax`, 3xx `binding-path-missing`, 4xx `binding-type-expectation`, 5xx `filter-unknown`, 6xx `filter-arity`, 7xx `getter-cycle`, 8xx `getter-depth-exceeded`, 9xx `index-arity`, 10xx `index-param-range`, 11xx `recursion-unsupported`, 12xx `token-misconfigured`, 13xx `token-undeclared`, 14xx `wildcard-rank`, 15xx `spread-no-bindable`, 16xx `declaration-alias`, 17xx `name-alias`; 1–99 carry no code. Numbers are only ever added, so a number keeps its meaning across versions.
+Every message starts with `[@wcstack/state]`. Most messages have a number (`#501`), and a message about something `@wcstack/lint` and the VS Code extension also check has the same code (`[wcs/filter-unknown]`). The hundreds of a number name its code — 1xx `binding-syntax`, 2xx `template-syntax`, 3xx `binding-path-missing`, 4xx `binding-type-expectation`, 5xx `filter-unknown`, 6xx `filter-arity`, 7xx `getter-cycle`, 8xx `getter-depth-exceeded`, 9xx `index-arity`, 10xx `index-param-range`, 11xx `recursion-unsupported`, 12xx `token-misconfigured`, 13xx `token-undeclared`, 14xx `wildcard-rank`, 15xx `spread-no-bindable`, 16xx `declaration-alias`, 17xx `name-alias`; 1–99 carry no code. Numbers are only ever added, so a number keeps its meaning across versions.
 
-The sentence of a numbered message — with the nearest name (did-you-mean, by the same rule as the lint), how to fix it, and a pointer to the lint where the lint detects the case — comes from the `diagnostics` add-on, which `@wcstack/state` and `/auto` include. On a `/core` page without it, a message is its code, its number and the values it would show:
+The code and the sentence of a numbered message — with the nearest name (did-you-mean, by the same rule as the lint), how to fix it, and a pointer to the lint where the lint detects the case — come from the `diagnostics` add-on, which `@wcstack/state` and `/auto` include. On a `/core` page without it, a message is its number and the values it would show:
 
 ```
 [@wcstack/state] [wcs/filter-unknown] filter not found: uc. "uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper". Validate statically: npx @wcstack/lint <file>.
-[@wcstack/state] [wcs/filter-unknown] #501 "uc"
+[@wcstack/state] #501 "uc"
 ```
 
-The first line is what `@wcstack/state` and `/auto` print, the second what `/core` without `features/diagnostics` prints. Install `diagnostics` while developing on `/core`. The barriers a page without add-ons meets on purpose (`[wcs/feature-not-installed]`, a formatting filter without `formats`) are full sentences in the core.
+The first line is what `@wcstack/state` and `/auto` print, the second what `/core` without `features/diagnostics` prints. Install `diagnostics` while developing on `/core`: it also detects the 3.x names 4.0 removed (#1, #1601, #1701), which a page without it ignores (a declaration under one does nothing, reading one gives `undefined`). The barriers a page without add-ons meets on purpose (`[wcs/feature-not-installed]`, a filter of `formats` without it) are full sentences in the core.
 
 <details>
 <summary>The numbered messages</summary>
@@ -3039,7 +3039,7 @@ The header (`#49`) names `mount=`, `bind-component=`, `state=` and `src=` when t
 What fails initialization:
 
 - A source that cannot be read ([State Initialization](#state-initialization)).
-- An invalid declaration: a removed name (`$scan`, `$streams`, `$updatedCallback`), a `$behavior` / `$features` / `$commandTokens` / `$eventTokens` / `$on` of the wrong shape, a declaration whose add-on is not installed (`[wcs/feature-not-installed]`).
+- An invalid declaration: a removed name (`$scan`, `$streams`, `$updatedCallback`; with the `diagnostics` add-on), a `$behavior` / `$features` / `$commandTokens` / `$eventTokens` / `$on` of the wrong shape, a declaration whose add-on is not installed (`[wcs/feature-not-installed]`).
 - A markup error found while the page is bound: a syntax error, an unknown filter or a wrong argument count, a wildcard-rank error, `for:` with filters, `outerHTML:` in a template, a wc-bindable misconfiguration on an element whose class is already defined. The walk stops at the error: what comes before it in document order is bound, what comes after it is not. Run `npx @wcstack/lint` before you deploy.
 - A second root `<wcs-state>` on a root that another one already binds (`#47`). There is one state tree per root; graft a subtree with `mount=`.
 

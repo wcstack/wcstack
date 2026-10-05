@@ -2,13 +2,14 @@
  * fixes.test.ts — カバレッジの作業で見つかった不具合（docs/state-engine-rewrite/v4-remaining.ja.md §2.5）の修正。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { bootstrapState, DirtyStrategy, Engine, getBindingsReady, installFeatures, mount, recursion, scopes, temporal } from "../src/index";
+import { bootstrapState, DirtyStrategy, Engine, getBindingsReady, installFeatures, installFormats, mount, recursion, scopes, temporal } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
 
 beforeAll(() => {
   installFeatures([temporal, scopes, recursion]);
+  installFormats(); // add (the formats add-on's)
   bootstrapState();
 });
 
@@ -258,7 +259,7 @@ describe("F8 ** は代入・$resolve・$postUpdate・$dependOn では [wcs/recur
     });
     (root.querySelector("button") as HTMLElement).click();
     await flush();
-    expect(errors).toEqual([`[@wcstack/state] [wcs/recursion-unsupported] #1101 "${path}"`]);
+    expect(errors).toEqual([`[@wcstack/state] #1101 "${path}"`]);
     expect(read("nodes.0.value")).toBe(1);
   });
 
@@ -313,7 +314,7 @@ describe("F8 追加: ** のパスをそのまま引く API（$eqPath・$eqIndex�
     });
     (root.querySelector("button") as HTMLElement).click();
     await flush();
-    expect(errors).toEqual([`[@wcstack/state] [wcs/recursion-unsupported] #1101 "${path}"`]);
+    expect(errors).toEqual([`[@wcstack/state] #1101 "${path}"`]);
   });
 });
 
@@ -520,7 +521,7 @@ describe("F18 マークアップの $1（ループの添字）を束縛できる
   it("ループの外の $1 は、ループが無いとして投げる", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      await expect(page(`<p>{{ $1 }}</p>`, {})).rejects.toThrow('[@wcstack/state] [wcs/wildcard-rank] #1401 "$1" 1');
+      await expect(page(`<p>{{ $1 }}</p>`, {})).rejects.toThrow('[@wcstack/state] #1401 "$1" 1');
     } finally {
       error.mockRestore();
     }

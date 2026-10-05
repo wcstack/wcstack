@@ -365,7 +365,7 @@ describe("#348 SSR のハイドレーションで、Light DOM の bind-component
       const html = `<template data-wcs="if: a"><p class="a">A</p></template><ul><template data-wcs="for: items"><li><${kid} data-wcs="state.x: .x"><wcs-state bind-component="state"></wcs-state><template data-wcs="if: x"><i>X</i></template></${kid}></li></template></ul><template data-wcs="else:"><p class="na">notA</p></template>`;
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
       try {
-        await expect(load(html, () => ({ a: true, items: [{ x: true }, { x: false }] }))).rejects.toThrow('[wcs/template-syntax] #202 "else"');
+        await expect(load(html, () => ({ a: true, items: [{ x: true }, { x: false }] }))).rejects.toThrow('#202 "else"');
       } finally {
         error.mockRestore();
       }

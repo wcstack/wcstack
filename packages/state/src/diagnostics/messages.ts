@@ -1,14 +1,32 @@
 /**
  * The sentences of the core's numbered messages (src/messages.ts), in the diagnostics add-on:
  * the core carries the number and the values, this renders what the core used to say. Each
- * sentence follows its `[wcs/<code>] ` (added from the number). `Record<M, …>` makes a number
- * without a sentence a type error.
+ * sentence follows its `[wcs/<code>] ` (`codeOf`: the code the hundreds of the number name).
+ * `Record<M, …>` makes a number without a sentence a type error.
  */
 import { M } from "../messages";
 import { MAX_DRAIN_PASSES, MAX_INDEX_PARAM, MAX_RENDER_CHAIN } from "../engine";
 import { MAX_PATH_SEGMENTS, MODIFIER_SEPARATOR, RECURSION_WILDCARD } from "../parser/define";
 
 type Sentence = (...a: any[]) => string;
+
+/**
+ * The code of each hundred of message numbers ("" = none): the code lint and the VS Code extension
+ * report for the same case. The core carried this up to 4.0.0-rc.3; without this add-on a message
+ * now reads as its number and values alone.
+ */
+export const CODES = [
+  "", "binding-syntax", "template-syntax", "binding-path-missing", "binding-type-expectation",
+  "filter-unknown", "filter-arity", "getter-cycle", "getter-depth-exceeded", "index-arity",
+  "index-param-range", "recursion-unsupported", "token-misconfigured", "token-undeclared",
+  "wildcard-rank", "spread-no-bindable", "declaration-alias", "name-alias",
+];
+
+/** `[wcs/<code>] ` for a message number, or "" when it has none. */
+export const codeOf = (id: M): string => {
+  const c = CODES[(id / 100) | 0];
+  return c ? `[wcs/${c}] ` : "";
+};
 
 /** The options 4.0 moved from `bootstrapState` to the state's `$behavior`. */
 const MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];

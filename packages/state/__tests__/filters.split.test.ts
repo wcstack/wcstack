@@ -1,14 +1,15 @@
 /**
- * filters.split.test.ts — コア 24 本と formats 24 本の分け方（scope-classification §8 案 A）と、
- * 各フィルタの引数の個数（要件 B3）を固定する。
+ * filters.split.test.ts — コア 10 本と formats 37 本の分け方と、各フィルタの引数の個数（要件 B3）を
+ * 固定する。4.0.0-rc.3 まではコア 24 本・formats 23 本（scope-classification §8 案 A）で、算術・
+ * 型変換・欠損値の 14 本をコアの大きさの目標のために formats へ移した。
  *
  * 引数の個数の表は @wcstack/state 3.3.0 の `builtinFilterArity`（＝ filterMeta の minArgs / maxArgs、
  * lint と同じ正本）の写し。ここが変わる＝ lint / エディタと食い違う、ということ。
  */
 import { describe, it, expect } from "vitest";
-import { coreFilters } from "../src/filters/core";
-import { formatFilters } from "../src/filters/formats";
-import { FORMATS_FILTER_NAMES } from "../src/filters/registry";
+import { coreFilters, installCoreFilters } from "../src/filters/core";
+import { formatFilters, installFormats } from "../src/filters/formats";
+import { FORMATS_FILTER_NAMES, knownFilterNames } from "../src/filters/registry";
 
 const SOURCE_ARITY: Readonly<Record<string, readonly [number, number]>> = {
   eq: [1, 1], not: [0, 0], ne: [1, 1], lt: [1, 1], le: [1, 1], gt: [1, 1], ge: [1, 1],
@@ -32,27 +33,41 @@ const SOURCE_ORDER = [
   "falsy", "truthy", "defaults", "coalesce", "boolean", "number", "string", "nullIfEmpty",
 ];
 
+/** 4.0.0-rc.3 のコアの 24 本（3.x の相対順） */
+const SOURCE_ARITY_CORE_RC3 = [
+  "eq", "ne", "not", "lt", "le", "gt", "ge",
+  "add", "sub", "mul", "div", "mod", "abs", "clamp",
+  "int", "float",
+  "falsy", "truthy", "defaults", "coalesce", "boolean", "number", "string", "nullIfEmpty",
+];
+
+/** 4.0.0-rc.3 までの formats の 23 本とコアの 24 本 */
+const DISPLAY = SOURCE_ORDER.filter((name) => !SOURCE_ARITY_CORE_RC3.includes(name));
+
 describe("コアと formats の分け方", () => {
-  it("コアは条件・算術・型変換・欠損値の 24 本であること", () => {
+  it("コアは条件の 10 本であること", () => {
     expect(Object.keys(coreFilters).sort()).toEqual([
       "eq", "ne", "not", "lt", "le", "gt", "ge", "truthy", "falsy", "boolean",
+    ].sort());
+  });
+
+  it("formats は数値の表示・文字列の加工・日時・算術・型変換・欠損値の 37 本であること", () => {
+    expect(Object.keys(formatFilters).sort()).toEqual([
+      "toFixed", "round", "floor", "ceil", "percent", "unit", "locale",
+      "upper", "lower", "capitalize", "trim", "slice", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
+      "date", "time", "datetime", "ymd", "hms",
       "add", "sub", "mul", "div", "mod", "abs", "clamp",
       "number", "string", "int", "float",
       "defaults", "coalesce", "nullIfEmpty",
     ].sort());
   });
 
-  it("formats は数値の表示・文字列の加工・日時の 24 本であること", () => {
-    expect(Object.keys(formatFilters).sort()).toEqual([
-      "toFixed", "round", "floor", "ceil", "percent", "unit", "locale",
-      "upper", "lower", "capitalize", "trim", "slice", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
-      "date", "time", "datetime", "ymd", "hms",
-    ].sort());
-  });
-
-  it("各表の並びは 3.x（lint）の相対順であること（did-you-mean の同距離先勝ちを lint と揃える）", () => {
+  it("コアの表は 3.x（lint）の相対順、formats の表は表示の 23 本・移した 14 本のそれぞれが 3.x の相対順であること", () => {
     expect(Object.keys(coreFilters)).toEqual(SOURCE_ORDER.filter((name) => name in coreFilters));
-    expect(Object.keys(formatFilters)).toEqual(SOURCE_ORDER.filter((name) => name in formatFilters));
+    expect(Object.keys(formatFilters)).toEqual([
+      ...DISPLAY,
+      ...SOURCE_ARITY_CORE_RC3.filter((name) => name in formatFilters),
+    ]);
   });
 
   it("登録簿が formats 機能の案内に使う名前の表が、formats の実際の表と一致すること", () => {
@@ -64,6 +79,14 @@ describe("コアと formats の分け方", () => {
     const formats = Object.keys(formatFilters);
     expect(core.filter((name) => formats.includes(name))).toEqual([]);
     expect([...core, ...formats].sort()).toEqual(Object.keys(SOURCE_ARITY).sort());
+  });
+});
+
+describe("登録の順（did-you-mean の同距離先勝ちの順）", () => {
+  it("formats を入れてからコアの集合を入れるページ（. と /auto）は、4.0.0-rc.3 と同じ順で登録すること（表示の 23 本、次に当時のコアの 24 本）", () => {
+    installFormats();
+    installCoreFilters();
+    expect(knownFilterNames()).toEqual([...DISPLAY, ...SOURCE_ARITY_CORE_RC3]);
   });
 });
 

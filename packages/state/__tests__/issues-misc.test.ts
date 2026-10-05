@@ -266,7 +266,10 @@ describe("#353 描画の連鎖の上限に掛からない形の無限ループ�
     }, true);
   });
 
-  it("形 3: $scan を挟む — state-next では $scan は廃止（宣言すると読み込みで失敗する）", async () => {
+  // 4.0 では $scan は廃止。診断の後付けがあれば（. と /auto）宣言すると読み込みで失敗する（regression-3x-35 の #405）。
+  // 4.0.0-rc.3 の後でその検出は診断の後付けへ移った: このファイル（後付けなし）では他の知らない $ キーと同じく無視され、
+  // 循環の元（mode を書く $scan）が無いので、ページは普通に立ち上がる
+  it("形 3: $scan を挟む — 4.0 では $scan は廃止（診断の後付けの無いページでは無視される）", async () => {
     const tag = defineOut({ initial: "distinct", emit: "none" });
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -282,7 +285,8 @@ describe("#353 描画の連鎖の上限に掛からない形の無限ループ�
         failure = e;
       }
       note("#353 形 3（$scan）", { failure: String((failure as Error)?.message ?? failure), errors: messagesOf(error) });
-      expect(failure).not.toBeNull();
+      expect(failure).toBeNull();
+      expect(messagesOf(error)).toEqual([]);
     } finally {
       error.mockRestore();
     }

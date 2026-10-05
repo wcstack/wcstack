@@ -179,14 +179,14 @@ export default {
 - CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。`@4` が解決するのは 4.0.0 の公開後です。範囲の指定はリリース候補を選ばないので、試すときは版を名指しします（`https://esm.run/@wcstack/state@4.0.0-rc.3/auto`）。
 - `@wcstack/lint` と `@wcstack/typescript` はどの `@wcstack/*` のリリースでも一緒に上がるので、リリース候補から 4.0 の規則を持ちます（`npx @wcstack/lint@next <files>`）。VS Code 拡張は 2.0.0 として 4.0.0 と同時に出します。3.x のプロジェクトでは 3.5 のもの（拡張は 1.21.x）を使い続けてください。4.0 の規則は、3.x が受け付ける書き方も報告します。
 
-**4.0 のエラーの出方。** メッセージには lint と同じ `[wcs/<code>]` が付き、多くには番号も付きます。
+**4.0 のエラーの出方。** `diagnostics` 機能があると、メッセージには lint と同じ `[wcs/<code>]` と文が付きます。無いと、番号と値が出ます。
 
 ```
 [@wcstack/state] [wcs/filter-unknown] filter not found: uc.      ← @wcstack/state と /auto
-[@wcstack/state] [wcs/filter-unknown] #501 "uc"                   ← features/diagnostics を入れない /core
+[@wcstack/state] #501 "uc"                                        ← features/diagnostics を入れない /core
 ```
 
-文は `diagnostics` 機能が出します。`@wcstack/state` と `/auto` は、この機能を含みます。これを入れない `/core` のページでは、コード・番号・値だけが出ます（3.x はどちらでも文をそのまま出していました）。番号の意味は版をまたいで変わりません。このガイドに出てくるメッセージは §4 の表にまとめました。すべての番号は [state-errors.ja.md](./state-errors.ja.md) にあります。
+コードと文は `diagnostics` 機能が出します。`@wcstack/state` と `/auto` は、この機能を含みます。これを入れない `/core` のページでは、番号と値だけが出ます（3.x はどちらでも文をそのまま出していました）。番号の百の位がコードを表します（`#501` は `filter-unknown`）。番号の意味は版をまたいで変わりません。このガイドに出てくるメッセージは §4 の表にまとめました。すべての番号は [state-errors.ja.md](./state-errors.ja.md) にあります。
 
 **削除されたフィルタ名には、「Did you mean」ではなく書き換え先が出ます。** 3.2 の旧名と `substr` では、メッセージが組み込みのいちばん近い名前ではなく、書くべきものを示します（旧名にいちばん近い名前は無関係なフィルタで、`dec` → `eq` に従うと意味が黙って変わります）:
 
@@ -204,11 +204,11 @@ export default {
 |---|---|---|---|
 | フィルタの旧名（`uc`・`fix` …） | ページの初期化で throw | `[wcs/filter-unknown] filter not found: uc.` に続けて `"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".`（#501） | `wcs/filter-unknown`（warning。書き換え先を示す） |
 | `substr(start, length)` | 同上 | `[wcs/filter-unknown] filter not found: substr.` に続けて `"substr" was removed in 4.0 — write slice(start, start + length) …` | `wcs/filter-unknown`（warning。`slice` の呼び出しを示す） |
-| `$trackDependency` / `$untrackDependency` | 読んだ時点で throw | `[wcs/name-alias] $trackDependency was removed: write $dependOn.`（#1701） | `wcs/name-alias`（error） |
-| `$updatedCallback` / `$streams` | 状態の読み込みで throw | `[wcs/declaration-alias] $streams was removed: write $stream.`（#1601） | `wcs/declaration-alias`（error） |
-| `$scan` | 状態の読み込みで throw | `$scan was removed (use $watch or $on)`（#1） | `wcs/scan-declaration-invalid`（error） |
+| `$trackDependency` / `$untrackDependency` | 読んだ時点で throw（`diagnostics` があるとき） | `[wcs/name-alias] $trackDependency was removed: write $dependOn.`（#1701） | `wcs/name-alias`（error） |
+| `$updatedCallback` / `$streams` | 状態の読み込みで throw（`diagnostics` があるとき） | `[wcs/declaration-alias] $streams was removed: write $stream.`（#1601） | `wcs/declaration-alias`（error） |
+| `$scan` | 状態の読み込みで throw（`diagnostics` があるとき） | `$scan was removed (use $watch or $on)`（#1） | `wcs/scan-declaration-invalid`（error） |
 
-`diagnostics` 機能が無いと、実行時のメッセージはコード・番号・名前だけで、書き換え先を示しません（§2）。
+`diagnostics` 機能が無いと、フィルタの旧名と `substr` の実行時のメッセージは番号と名前だけで、書き換え先を示しません（§2）。ほかの 3 行は `diagnostics` 機能だけが見つけます（`@wcstack/state` と `/auto` は含みます）。これを入れない `/core` では、`$scan`・`$streams`・`$updatedCallback` はほかの知らない `$` キーと同じく無視され、`$trackDependency` / `$untrackDependency` は `undefined` を読みます。`/core` のページを移行する間はこれを入れるか、どれも報告する lint に頼ってください。
 
 ボリューム（`<wcs-state mount=…>`）では、なくなった宣言キーと `$scan` は throw しません。そのボリュームは接ぎ木されず、理由が `console.error` に出ます（§3.5）。
 
@@ -532,8 +532,8 @@ import { defineState } from "@wcstack/state/define";
 
 - **`$listKeys` は core の外**の新しい機能 `@wcstack/state/features/list-keys` に移りました。`@wcstack/state` と `/auto` は含みます。`$listKeys` を使う `/core` のページは、これを入れる必要があります。入れないと、状態が `[wcs/feature-not-installed] $listKeys needs the add-on @wcstack/state/features/list-keys` で失敗します。
 - `features/temporal` が受け持つのは `$watch` と `$stream` です（`$scan` はなくなりました）。
-- **`/core` は 24 の論理フィルタを持ちます** — 比較（`eq`・`ne`・`not`・`lt`・`le`・`gt`・`ge`）、算術（`add`・`sub`・`mul`・`div`・`mod`・`abs`・`clamp`）、変換（`int`・`float`・`boolean`・`number`・`string`・`truthy`・`falsy`）、既定値（`defaults`・`coalesce`・`nullIfEmpty`）。3.x の `/core` が答えるのは `not` だけで、ほかのフィルタにはどれも `features/formats` が要りました。`features/formats` が持つのは、書式の 23 のフィルタ（`upper`・`date`・`round`・`truncate` …）になりました。論理フィルタのためだけにこれを入れていた `/core` のページは、外せます。これを入れずに書式のフィルタを使うと、その機能を名指しした `[wcs/filter-unknown]` で失敗します。
-- `features/diagnostics` を入れない `/core` では、メッセージが番号になります（§2）。開発中は `diagnostics` を入れてください。
+- **`/core` は条件の 10 のフィルタを持ちます** — `eq`・`ne`・`not`・`lt`・`le`・`gt`・`ge`・`truthy`・`falsy`・`boolean`。3.x の `/core` が答えるのは `not` だけで、ほかのフィルタにはどれも `features/formats` が要りました。残りは今も要ります。`features/formats` が持つのは 37 です: 算術（`add`・`sub`・`mul`・`div`・`mod`・`abs`・`clamp`）、変換（`int`・`float`・`number`・`string`）、既定値（`defaults`・`coalesce`・`nullIfEmpty`）、書式のフィルタ（`upper`・`date`・`round`・`truncate` …）。これを入れずにそのどれかを使うと、その機能を名指しした `[wcs/filter-unknown]` で失敗します。（4.0.0-rc.1〜rc.3 は算術・変換・既定値のフィルタも `/core` に持っていました。それらのために `features/formats` を外した `/core` のページは、入れ直してください。）
+- `features/diagnostics` を入れない `/core` では、メッセージが番号と値になり（§2）、4.0 で外した 3.x の名前も見つかりません（§3.1）。開発中は `diagnostics` を入れてください。
 - 3.x と同じく、`installFeatures([...])` は `bootstrapState()` の前に呼びます。機能を入れる前に、その機能のキーを宣言した状態が定義されると、`[wcs/feature-not-installed]` で失敗します。
 - `dist/split/chunks/` の下のファイル名に、中身のハッシュが付くようになりました。チャンクのファイルを自分で並べている場合（preload のリンク、import map の `integrity`）は、4.0 のビルドから名前を取り直してください。
 - パッケージにソースマップ（`.map`）は入りません（3.5.4 は各バンドルの隣にありました）。スタックトレースは最小化したバンドルを指します。エンジンの中を追うときは、リポジトリのソース（`packages/state/src`）を使ってください。
@@ -596,7 +596,7 @@ lint に見えないもの: `bootstrapXxx()` のオプション、委譲され�
 
 ### 4.2 実行時のメッセージ
 
-文は `@wcstack/state` と `/auto` が出すものです。diagnostics 機能が無いと、代わりにコード・番号・値が出ます。
+文は `@wcstack/state` と `/auto` が出すものです。diagnostics 機能が無いと、代わりに番号と値が出ます。
 
 | メッセージ | 番号 | § |
 |---|---|---|

@@ -71,7 +71,7 @@ describe("** の束縛と全深さの読み書き", () => {
 
   it("$resolve は ** を受け付けない（族の雛形の getter も [wcs/recursion-unsupported]）", () => {
     const e = make(withTotal({ nodes: forest() }));
-    expect(() => e.proxy.$resolve("nodes.**.total", [])).toThrow('[wcs/recursion-unsupported] #1101 "nodes.**.total"');
+    expect(() => e.proxy.$resolve("nodes.**.total", [])).toThrow('#1101 "nodes.**.total"');
     // the expansions are ordinary getters
     expect(e.proxy.$resolve("nodes.*.total", [0])).toBe(11);
   });
@@ -93,7 +93,7 @@ describe("<wcs-state> の中の **", () => {
 
   it("$resolve の ** は [wcs/recursion-unsupported]（描いた後も）", async () => {
     const { el } = await host(`<p>{{ nodes.length }}</p>`, { nodes: forest(), $recursion: ANCHOR });
-    expect(() => el.createState("readonly", (s: any) => s.$resolve("nodes.**.value", [0]))).toThrow('[wcs/recursion-unsupported] #1101 "nodes.**.value"');
+    expect(() => el.createState("readonly", (s: any) => s.$resolve("nodes.**.value", [0]))).toThrow('#1101 "nodes.**.value"');
   });
 
   it("読み取り専用の状態からの ** の一斉書き込みは拒む", async () => {
@@ -111,7 +111,7 @@ describe("<wcs-state> の中の **", () => {
     expect(before).toEqual([1, 10, 2]);
     el.setInitialState({ nodes: forest() });
     await flush();
-    expect(() => el.createState("readonly", (s: any) => s.$getAll("nodes.**.value", []))).toThrow("[wcs/recursion-unsupported]");
+    expect(() => el.createState("readonly", (s: any) => s.$getAll("nodes.**.value", []))).toThrow('#1101 "nodes.**"');
     let written: unknown;
     el.createState("writable", (s: any) => { written = s.$setAll("nodes.*.value", [], 5); });
     await flush();

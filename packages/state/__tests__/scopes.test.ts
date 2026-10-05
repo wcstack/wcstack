@@ -85,7 +85,7 @@ describe("volume <wcs-state mount>", () => {
     const { read } = await host(`<wcs-state></wcs-state><wcs-state mount="v"></wcs-state>`, [{}, { a: 1, ...state }]);
     // the whole sentence: the element, a space, the message
     expect(error).toHaveBeenCalledWith(`[@wcstack/state] <wcs-state mount="v"> ${message} — declare it on the root state.`);
-    expect(() => read("v")).toThrow("[wcs/binding-path-missing]");
+    expect(() => read("v")).toThrow('#301 "v"');
     error.mockRestore();
   });
 

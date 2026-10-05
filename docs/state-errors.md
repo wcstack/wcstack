@@ -1,7 +1,7 @@
 # @wcstack/state 4.0 message numbers
 
 - **Audience**: anyone reading a `[@wcstack/state]` message that carries a number (`#501`), above all on a page that loads the split `/core` without the diagnostics feature
-- **Status**: reference, generated from `src/messages.ts` (the numbers and codes) and `src/diagnostics/messages.ts` (the sentences) of `@wcstack/state` 4.0. Numbers are only ever added: a number keeps its meaning across versions. A number missing from the table (118) is not assigned
+- **Status**: reference, generated from `src/messages.ts` (the numbers) and `src/diagnostics/messages.ts` (the codes and the sentences) of `@wcstack/state` 4.0. Numbers are only ever added: a number keeps its meaning across versions. A number missing from the table (118) is not assigned
 - **See also**: [migration-v4.md](./migration-v4.md) §2 and §4.2 (the messages that matter when upgrading), [csp.md](./csp.md) §9 (#42 / #43)
 - **日本語版**: [state-errors.ja.md](./state-errors.ja.md)
 
@@ -13,20 +13,21 @@ The same message reads differently depending on whether the diagnostics feature 
 
 ```
 [@wcstack/state] [wcs/filter-unknown] filter not found: uc. "uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper". Validate statically: npx @wcstack/lint <file>.
-[@wcstack/state] [wcs/filter-unknown] #501 "uc"
+[@wcstack/state] #501 "uc"
 ```
 
 | | With the diagnostics feature | Without it |
 |---|---|---|
 | Where | `@wcstack/state` (`bootstrapState()` installs every feature), `/auto`, `/parser`; `/core` after `installFeatures([diagnostics])`; the split auto entry with `features="diagnostics"` | `/core` alone |
-| Text | `[@wcstack/state] [wcs/<code>] <sentence>` | `[@wcstack/state] [wcs/<code>] #<number> <values>` |
+| Text | `[@wcstack/state] [wcs/<code>] <sentence>` | `[@wcstack/state] #<number> <values>` |
 
-- **The code** comes from the hundreds of the number: 1xx `binding-syntax`, 2xx `template-syntax`, 3xx `binding-path-missing`, and so on (the "Code" column). Numbers 1–51 have no code, so their messages start with the sentence, or with `#<number>`. The codes are the ones `@wcstack/lint` and the VS Code extension report.
+- **The code** comes from the hundreds of the number: 1xx `binding-syntax`, 2xx `template-syntax`, 3xx `binding-path-missing`, and so on (the "Code" column). The feature writes it before the sentence; without the feature the message carries no code (4.0.0-rc.1 to rc.3 wrote it before the number too), and the "Code" column of the number tells it. Numbers 1–51 have no code, so with the feature their messages start with the sentence. The codes are the ones `@wcstack/lint` and the VS Code extension report.
+- **#1, #1601 and #1701 come only with the feature.** It detects the 3.x names 4.0 removed: the declarations `$scan`, `$streams` and `$updatedCallback`, and reading `$trackDependency` / `$untrackDependency`. Without it a declaration under one of these names is ignored and reading one gives `undefined`, as for any `$` name the engine does not know.
 - **The values**, without the feature, follow the number in the order of the "Values" column: a string is written as JSON (`"uc"`), anything else as `String(value)`.
 - **Guidance.** With the feature, a message the engine throws through its error path can be followed by how to fix it: a "Did you mean" (edit distance 2 at most), the replacement of a filter name 4.0 removed (instead of a "Did you mean"), a fix for the case, and `Validate statically: npx @wcstack/lint <file>.` for the codes the lint detects. Messages written to the console (#11, #12, #17, #25, #41, #48, #49, #50, #51) carry the sentence only.
 - **#44** names where the option was given (`bootstrapState`, `$behavior`, or `state` when `$behavior` is not an object). For `bootstrapState` and one of the options 4.0 moved, the sentence adds ` 4.0 moved it to the state's $behavior.`
 - **#49 / #50 / #51** take the element's tag and then the name and value of each of `mount`, `bind-component`, `state` and `src` it has; the sentence renders them as the element (`<wcs-state src="./state.js">`).
-- **Messages without a number** are printed in full whatever is installed: the barriers a page meets on purpose (`[wcs/feature-not-installed] … needs the add-on @wcstack/state/features/<name>`, a formatting filter without the formats feature), `[wcs/feature-unknown]`, and the messages of the features themselves (volumes, components, SSR, `$watch` / `$stream`, devtools).
+- **Messages without a number** are printed in full whatever is installed: the barriers a page meets on purpose (`[wcs/feature-not-installed] … needs the add-on @wcstack/state/features/<name>`, a filter of the formats feature — formatting, arithmetic, conversion or defaults — on a page without it), `[wcs/feature-unknown]`, and the messages of the features themselves (volumes, components, SSR, `$watch` / `$stream`, devtools).
 
 ## 2. The numbers
 
