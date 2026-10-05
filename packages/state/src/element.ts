@@ -60,10 +60,12 @@ async function loadSrc(src: string): Promise<Record<string, any>> {
  */
 const readyByRoot = new WeakMap<Node, WcsState[]>();
 
-/** Puts `el` among the `<wcs-state>` elements of its root (a new list, without the ones that left). */
-function enroll(el: WcsState): void {
-  const root = el.getRootNode();
-  readyByRoot.set(root, [...(readyByRoot.get(root) ?? []).filter((e) => e.isConnected && e !== el), el]);
+/**
+ * Puts `el` among the `<wcs-state>` elements of `root` (a new list, without the ones that left) — or,
+ * taken out of it, takes it off: the list holds nothing of a page that went.
+ */
+function enroll(el: WcsState, root: Node = el.getRootNode()): void {
+  readyByRoot.set(root, [...(readyByRoot.get(root) ?? []), el].filter((e, i, a) => e.isConnected && a.lastIndexOf(e) === i));
 }
 
 /**
@@ -143,13 +145,18 @@ export class WcsState extends HTMLElementBase {
         return;
       }
       enroll(this);
-      // reconnected: $connectedCallback runs again (after the first initialization)
       const engine = this.engine;
       if (engine !== null) {
-        // (a rejection is reported as the first connection's is)
-        void Promise.resolve(engine.callHook("$connectedCallback")).then(() => {
+        // back in the page: it holds its root again (unless another <wcs-state> bound it meanwhile),
+        // binds what was handed over while it was out, and the add-ons hear of it (the volumes that
+        // connected meanwhile graft) — then $connectedCallback runs again
+        const root = engine.root;
+        if (root === this.getRootNode() && !engines.has(root)) engines.set(root, engine);
+        drainBinds();
+        hooks.element?.(engine, "back");
+        this.rerun("$connectedCallback", M.ConnectedFailed, () => {
           if (this.isConnected) hooks.element?.(engine, "connected");
-        }, (e) => console.error(e));
+        });
       }
       return;
     }
@@ -182,7 +189,13 @@ export class WcsState extends HTMLElementBase {
     }
     const engine = this.engine;
     if (engine === null) return;
-    engine.callHook("$disconnectedCallback");
+    // out of the page, it lets go of its root (it holds it again when it is back): what outlives the
+    // page's content — its root node, the document — does not keep its state and the DOM it bound
+    // (a root that failed before its mount has none: enroll takes the root it is in now)
+    const root = engine.root;
+    if (engines.get(root!) === engine) engines.delete(root!);
+    enroll(this, root);
+    this.rerun("$disconnectedCallback", M.DisconnectedFailed);
     hooks.element?.(engine, "disconnected");
   }
 
@@ -319,11 +332,25 @@ export class WcsState extends HTMLElementBase {
    * it, or resolves for a claim that is `lenient` (a volume).
    */
   private fail(e: unknown, lenient?: boolean): void {
-    const at = ["mount", "bind-component", "state", "src"].flatMap((n) => (this.hasAttribute(n) ? [n, this.getAttribute(n)] : []));
-    console.error(`[@wcstack/state] ${text(this.bound ? M.ConnectedFailed : M.InitFailed, [this.localName, ...at])}`, e);
+    this.report(this.bound ? M.ConnectedFailed : M.InitFailed, e);
     this.resolveInitialize();
     if (lenient) this.resolveConnected();
     else this.rejectConnected(e);
+  }
+
+  /** Reports a failure once: the element (and where its state comes from), then what was thrown. */
+  private report(id: M, e: unknown): void {
+    const at = ["mount", "bind-component", "state", "src"].flatMap((n) => (this.hasAttribute(n) ? [n, this.getAttribute(n)] : []));
+    console.error(`[@wcstack/state] ${text(id, [this.localName, ...at])}`, e);
+  }
+
+  /**
+   * Runs a lifecycle callback of a root that connected before (on reconnect, on disconnect) at once: a
+   * failure — thrown or rejected — is reported as a first connection's is, never thrown out of the
+   * element's callback.
+   */
+  private rerun(name: string, id: M, then?: () => void): void {
+    void (async () => this.engine!.callHook(name))().then(then, (e) => this.report(id, e));
   }
 }
 

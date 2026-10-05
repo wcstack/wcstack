@@ -21,7 +21,7 @@ import { config } from "../config";
 import { engines } from "../dom/mount";
 import { raiseError } from "../parser/raiseError";
 
-interface Volume {
+export interface Volume {
   readonly el: HTMLElement;
   readonly root: Node;
   readonly path: string;
@@ -32,8 +32,6 @@ interface Volume {
   settle: (() => void) | null;
 }
 
-/** Root engines by root node, known from the moment they are created (before their mount). */
-const rootEngines = new WeakMap<Node, Engine>();
 /** Mount paths held on each root (reserved when a volume connects, kept once grafted). */
 const slots = new WeakMap<Node, Map<string, Volume>>();
 /**
@@ -44,8 +42,8 @@ const waiting = new WeakMap<Node, Volume[] | Element>();
 const ORPHAN = "will not graft: the root state failed to initialize.";
 /** The engines of components wired to their host: they read the host's tree, a volume has none to graft onto. */
 export const wired = new WeakSet<Engine>();
-/** The mount paths grafted onto each engine. */
-export const grafted = new WeakMap<Engine, string[]>();
+/** The volumes grafted onto each engine. */
+export const grafted = new WeakMap<Engine, Volume[]>();
 
 const REJECTED = ["$stream", "$streams", "$scan", "$recursion", "$watch", "$listKeys", "$renderedCallback", "$updatedCallback", "$behavior", "$features"];
 const NOT_RUN = ["$commandTokens", "$eventTokens", "$on", "$errorCallback"];
@@ -77,8 +75,8 @@ function validPath(path: string): boolean {
 }
 
 /**
- * An engine whose `<wcs-state>` is in the page: a root taken out of it (the page's content
- * replaced) stays registered until another root replaces it, and nothing grafts onto it meanwhile.
+ * An engine whose `<wcs-state>` is in the page: nothing grafts onto one that is out (a root out of the
+ * page lets go of its root node; a component whose `<wcs-state>` alone left stays registered).
  */
 const live = (e: Engine | undefined): Engine | undefined => ((e?.element as Node | undefined)?.isConnected ? e : undefined);
 
@@ -90,7 +88,6 @@ function failed(root: Node): boolean {
 
 /** The engine created on `root`: graft the volumes that were waiting for it (before its page is bound). */
 export function rootEngineCreated(engine: Engine, root: Node): void {
-  rootEngines.set(root, engine);
   const list = waiting.get(root);
   waiting.delete(root);
   if (Array.isArray(list)) for (const v of list) graft(v, engine);
@@ -99,6 +96,22 @@ export function rootEngineCreated(engine: Engine, root: Node): void {
 function release(v: Volume): void {
   const held = slots.get(v.root);
   if (held?.get(v.path) === v) held.delete(v.path);
+}
+
+/**
+ * A root engine's `<wcs-state>` left the page ("disconnected"), or is back ("back"; a component's:
+ * "connected"). Out, the mount paths its volumes hold let go of it (they are kept on the root node,
+ * which outlives the content it bound). Back, and still its root's engine (the core holds the root
+ * again unless another `<wcs-state>` bound it meanwhile), the volumes that connected meanwhile graft,
+ * and its own hold their paths again — unless another volume took one meanwhile.
+ */
+export function rootMoved(engine: Engine, phase: string): void {
+  const list = grafted.get(engine) ?? [];
+  if (phase === "disconnected") for (const v of list) release(v);
+  else if (phase !== "reset" && live(engines.get(engine.root!)) === engine) {
+    rootEngineCreated(engine, engine.root!);
+    for (const v of list) if (!slots.get(v.root)!.has(v.path)) slots.get(v.root)!.set(v.path, v);
+  }
 }
 
 /** Reports a volume that will not graft, releases its slot and settles its promise. */
@@ -168,7 +181,7 @@ function graft(v: Volume, engine: Engine): void {
   v.engine = engine;
   let list = grafted.get(engine);
   if (list === undefined) grafted.set(engine, (list = []));
-  list.push(v.path);
+  list.push(v);
   if (v.el.isConnected) callLifecycle(v, "$connectedCallback");
   v.settle?.();
   v.settle = null;
@@ -255,7 +268,7 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
       v.state = state;
       return new Promise<void>((resolve) => {
         v.settle = resolve;
-        const engine = live(rootEngines.get(root)) ?? live(engines.get(root));
+        const engine = live(engines.get(root));
         const list = waiting.get(root);
         if (engine !== undefined) graft(v, engine);
         else if (failed(root)) fail(v, ORPHAN);
@@ -279,7 +292,7 @@ export function claimVolume(el: HTMLElement, root: Node): Claimed | null {
 export function guardAncestorWrite(engine: Engine, p: Pattern): void {
   const list = grafted.get(engine);
   if (list === undefined || p.depth !== 0) return;
-  for (const path of list) {
+  for (const { path } of list) {
     if (path.startsWith(`${p.path}.`)) raiseError(`writing "${p.path}" would replace the volume grafted at "${path}"; write the paths under it instead.`);
   }
 }

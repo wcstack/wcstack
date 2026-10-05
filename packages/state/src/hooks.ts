@@ -38,10 +38,12 @@ export interface Hooks {
   /** A state object was received (construction, or a re-set before it replaces the old one). */
   declare?: ((engine: Engine, target: Record<string, any>) => void) | null;
   /**
-   * A root engine's lifecycle: "mounting" (created, its page not bound yet), "connected"
-   * (after `$connectedCallback`, and on reconnect), "disconnected", "reset" (after a re-set).
+   * A root engine's lifecycle: "mounting" (created, its page not bound yet), "back" (its `<wcs-state>`
+   * connected again, before `$connectedCallback` runs again: it holds its root again, unless another
+   * one bound it meanwhile), "connected" (after `$connectedCallback`, and on reconnect), "disconnected",
+   * "reset" (after a re-set).
    */
-  element?: ((engine: Engine, phase: "mounting" | "connected" | "disconnected" | "reset") => void) | null;
+  element?: ((engine: Engine, phase: "mounting" | "back" | "connected" | "disconnected" | "reset") => void) | null;
   /**
    * A `<wcs-state>` an add-on takes over instead of it becoming a root (a volume, a DCC
    * definition): asked when it connects; the core then only loads its state.

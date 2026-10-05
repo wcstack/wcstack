@@ -131,8 +131,8 @@ export class Engine implements ReconcileHooks {
    * author's state object is not written to (it may be frozen, or a Proxy that refuses).
    */
   readonly dropped = new Set<string>();
-  /** The node the bindings were mounted on (delegated listeners live here). */
-  root: Node | null = null;
+  /** The node the bindings were mounted on (delegated listeners live here); none before the mount. */
+  root?: Node;
   /** Delegated event types → the property (per engine) their element handlers are stored under. */
   private readonly delegated = new Map<string, symbol>();
   /** Property (per engine) on a block's top node(s) holding the block, for delegated events. */
