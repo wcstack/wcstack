@@ -844,3 +844,21 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - マウントしたコンポーネントの同期の `$disconnectedCallback` の throw は、まだ外へ漏れる（`scopes/component.ts`）。
 - binder プロトコルの `flushPendingBinds` は range を落とす（生成されたコピーなので、正本 `/protocol/binder.ts` で直す）。
 - `mangle.mjs` の `fed` は使われなくなった。
+
+### 4.0.0-rc.3 の公開（2026-10-05）
+
+- `prerelease-rc` の実行（run 37300105190、73c7a9e0）で公開した。中身は rc.2 の後の既知の制限の解消（上の節）。
+  - 全 49 パッケージが npm の `next` で 4.0.0-rc.3（`latest` は 3.5.4 のまま）。
+  - タグ `v4.0.0-rc.3` と GitHub のプレリリース。bump の commit は 144046ea。
+  - テストを版上げの後・公開の前に走らせるようにしてから、初めての rc。部分リリースにはならなかった。
+- 公開の前に確かめたこと:
+  - e2e（Playwright）139 件
+  - vscode-wcs 1,160 件、lint のスモーク 26 件
+  - 手元で試算した版の計画（rc.2 → rc.3）
+- 公開の後に確かめたこと:
+  - 全パッケージの dist-tag（@wcstack/upload は数十秒遅れて見えた）
+  - server の依存が厳密な `4.0.0-rc.3`
+  - state README の CDN のピンと、`esm.run` の `/auto`（state・router・wcstack）がどれも 200
+- サイズと結合のゲートの基準値を rc.3 の dist で取り直した。
+  - core.min.js 19,930B（上限 20,000B まで 70B。core に足すものは、どこかで削って払う必要がある）
+  - split core 24,121B、`index.esm.js` 49,916B、`auto.min.js` 46,849B（gzip）
