@@ -1172,17 +1172,35 @@ describe("F26 getter が 2 つの配列に置いたオブジェクトは、ど�
     expect([texts(root, "ul li").join(","), texts(root, "ol li").join(",")]).toEqual(["B,c", "B,c"]);
   });
 
-  it("getter が読む普通のパス（opts.min）と数を返す getter は、写しの行への書き込みで評価し直さない", async () => {
+  it("getter が読む配列でないパス（opts.min、getter の下の limits.max）と数を返す getter は、写しの行への書き込みで評価し直さない", async () => {
     let counted = 0;
     const { root, write } = await page(`<p>{{ count }}</p><ul><template data-wcs="for: big"><li>{{ .v }}</li></template></ul>`, {
       opts: { min: 2 },
       items: [{ v: 1 }, { v: 2 }, { v: 3 }],
-      get big() { const s = this as any; return s.items.filter((x: any) => x.v >= s["opts.min"]); },
+      get limits() { return { max: 9 }; },
+      get big() { const s = this as any; return s.items.filter((x: any) => x.v >= s["opts.min"] && x.v <= s["limits.max"]); },
       get count() { counted++; return (this as any).items.length; },
     });
     const before = counted;
     await write((s) => { s["big.0.v"] = 1; });
     expect([texts(root, "li").join(","), texts(root, "p")[0], counted - before]).toEqual(["3", "3", 0]);
+  });
+
+  it("volume（mount=\"cart\"）の中の絞り込み: 写しの行の checkbox が cart.todos の行と絞り込みに届く", async () => {
+    const h = document.createElement(`fix-page-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><wcs-state mount="cart"></wcs-state>`
+      + SHOWN.replace("for: shown", "for: cart.shown") + TODOS.replace("for: todos", "for: cart.todos");
+    const [el, volume] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+    el.setInitialState({});
+    volume.setInitialState(filtered());
+    document.body.appendChild(h);
+    await Promise.all([el.connectedCallbackPromise, volume.connectedCallbackPromise]);
+    await getBindingsReady(root);
+    await flush();
+    await flush();
+    await tick(root, 0, true);
+    expect([rowsOf(root, "shown"), rowsOf(root, "todos")]).toEqual(["b:false", "a:true,b:false,c:true"]);
   });
 });
 

@@ -721,8 +721,8 @@ export class Engine implements ReconcileHooks {
    * returning `todos`, `for: groups.0.items`): the other list's row at the same position shows it.
    *
    * A write into the row's object (not the element) reaches it wherever else it is (F26, `get
-   * shown()` filtering `todos`). From the top-level array holding it (the list's own, or one its
-   * getter read), the write goes to the getters that read that array and returned one holding the
+   * shown()` filtering `todos`). From the array holding it (the list's own, or one its getter read
+   * at a data path), the write goes to the getters that read that array and returned one holding the
    * object (a filter, a sort, a slice: evaluated again), on down their dependents, and to the rows
    * holding the object in the lists over those arrays. A getter whose array does not hold the object
    * is not reached: it read the array, not the object (the dependency boundary).
@@ -770,7 +770,7 @@ export class Engine implements ReconcileHooks {
       for (const s of g.sources) {
         if (seen.has(s) || !seen.add(s)) continue;
         if (s.getter !== null) up(s);
-        else if (s.parent === null) {
+        else if (!s.underGetter) {
           const a = this.readData(s, null);
           if (has(a)) down(a, s.dependents);
         }
