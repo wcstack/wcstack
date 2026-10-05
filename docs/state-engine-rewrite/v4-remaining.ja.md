@@ -887,3 +887,16 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - lint のスモーク 26 件、e2e（Chromium）142 件
 - 文書も合わせた: CHANGELOG・移行ガイド §2 / §3.1 / §3.8 / §4.2・state-errors・state README・streams / define-state・wcstack の AI ガイド・vscode-wcs README。
 - スキル（wcstack-skill）の 4.0 版で、`/core` のフィルタの数と、`/core` のメッセージの形を直すこと。
+
+### 4.0.0-rc.4 の公開（2026-10-06）
+
+- `prerelease-rc` の実行（run 37351211073、5ad45acf）で公開した。中身は rc.3 の後の次の 3 つ。
+  - core の縮小（上の節）
+  - 新しいデモ `examples/state-intersect-fetch`
+  - `state-intersect-scroll` の e2e の Firefox 対応
+- 全 49 パッケージが npm の `next` で 4.0.0-rc.4（`latest` は 3.5.4 のまま）。タグ `v4.0.0-rc.4` と GitHub のプレリリース。bump の commit は ae2be0ba。
+- 公開の後に確かめたこと:
+  - 全パッケージの dist-tag（`@wcstack/view-transition` と `wcstack` は、npm の表示が 2 分ほど遅れた。版は公開済みだった）
+  - server の依存が厳密な `4.0.0-rc.4`
+  - state README の CDN のピンと、`esm.run` の `/auto`（state・router・wcstack）がどれも 200
+- ゲートの基準値を rc.4 の dist で取り直した（gzip は縮小の後の値と同じ）。core.min.js は 19,500B で、上限まで 500B。
