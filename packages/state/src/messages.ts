@@ -1,13 +1,14 @@
 /**
  * The core's messages, by number. The prose lives in the diagnostics add-on
- * (`src/diagnostics/messages.ts`); without it a message reads
- * `[@wcstack/state] [wcs/binding-syntax] #108 "a|b("` — the code shared with lint and the VS Code
- * extension, the message number, and the values it would have shown. With it (the full `auto`
- * bundle installs it) the message is the full sentence, followed by the guidance.
+ * (`src/diagnostics/messages.ts`); without it a message reads `[@wcstack/state] #108 "a|b("` —
+ * the message number and the values it would have shown. With it (the full `auto` bundle installs
+ * it) the message is the code shared with lint and the VS Code extension and the full sentence
+ * (`[wcs/binding-syntax] Invalid filter format: …`), followed by the guidance.
  *
- * The hundreds of a number name its code (`CODES`): 1xx binding-syntax, 2xx template-syntax, …;
- * 1–99 carry no code. Numbers are only ever added, so a number read on a page keeps its meaning
- * across versions. `M` is a const enum: the build inlines the numbers.
+ * The hundreds of a number name its code (the diagnostics add-on's `CODES`, in the core up to
+ * 4.0.0-rc.3): 1xx binding-syntax, 2xx template-syntax, …; 1–99 carry no code. Numbers are only
+ * ever added, so a number read on a page keeps its meaning across versions. `M` is a const enum:
+ * the build inlines the numbers.
  *
  * Kept as full text in the core, not numbered: the barriers a page without add-ons meets on
  * purpose (`[wcs/feature-not-installed]`, a formatting filter without the formats add-on).
@@ -134,23 +135,9 @@ export const enum M {
   ApiRemoved = 1701,
 }
 
-/** The code of each hundred of message numbers ("" = none). */
-export const CODES = [
-  "", "binding-syntax", "template-syntax", "binding-path-missing", "binding-type-expectation",
-  "filter-unknown", "filter-arity", "getter-cycle", "getter-depth-exceeded", "index-arity",
-  "index-param-range", "recursion-unsupported", "token-misconfigured", "token-undeclared",
-  "wildcard-rank", "spread-no-bindable", "declaration-alias", "name-alias",
-];
-
-/** `[wcs/<code>] ` for a message number, or "" when it has none. */
-export const codeOf = (id: M): string => {
-  const c = CODES[(id / 100) | 0];
-  return c ? `[wcs/${c}] ` : "";
-};
-
-/** A message without the `[@wcstack/state]` prefix: the full sentence with diagnostics, else the number and the values. */
+/** A message without the `[@wcstack/state]` prefix: the code and the full sentence with diagnostics, else the number and the values. */
 export function text(id: M, args: readonly unknown[] = []): string {
-  return hooks.render?.(id, args) ?? `${codeOf(id)}#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
+  return hooks.render?.(id, args) ?? `#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
 }
 
 /** Throws message `id` (`subject` / `candidates` feed the diagnostics add-on's did-you-mean). */

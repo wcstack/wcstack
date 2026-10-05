@@ -640,7 +640,7 @@ describe("B3: 束縛が要素に入れた値は束縛として読まない", () 
 describe("T2: テンプレートの中の outerHTML: / outerText:", () => {
   it("for: と if: のテンプレートの中では、計画を作る時点で拒む（#203）", () => {
     expect(() => setup(`<ul><template data-wcs="for: items"><li><span data-wcs="outerHTML: .h"></span></li></template></ul>`, { items: [] }))
-      .toThrow("[@wcstack/state] [wcs/template-syntax] #203 \"outerHTML\"");
+      .toThrow("[@wcstack/state] #203 \"outerHTML\"");
     expect(() => setup(`<template data-wcs="if: on"><b data-wcs="outerText: t"></b></template>`, { on: true, t: "x" }))
       .toThrow(/#203 "outerText"|"outerText:"/);
   });
@@ -1006,9 +1006,9 @@ describe("N1: binder に直接渡された構造のテンプレート（ルー�
     for (const n of nodes) binder.bind(n);
     expect(outlet.querySelectorAll("p, b, i")).toHaveLength(0);
     expect(error.mock.calls.map((c) => String((c[0] as Error).message))).toEqual([
-      '[@wcstack/state] [wcs/template-syntax] #204 "for"',
-      '[@wcstack/state] [wcs/template-syntax] #204 "if"',
-      '[@wcstack/state] [wcs/template-syntax] #204 "else"',
+      '[@wcstack/state] #204 "for"',
+      '[@wcstack/state] #204 "if"',
+      '[@wcstack/state] #204 "else"',
     ]);
     // what the inserter removes is all there is
     for (const n of nodes) n.parentNode?.removeChild(n);
@@ -1141,7 +1141,7 @@ describe("F2: 同じ root の 2 本目の <wcs-state>", () => {
       const first = root.querySelector("wcs-state") as any;
       first.setInitialState({ a: 1 });
       document.body.appendChild(h);
-      await expect(first.connectedCallbackPromise).rejects.toThrow("[wcs/binding-syntax]");
+      await expect(first.connectedCallbackPromise).rejects.toThrow('#112 "a|"');
       const second = document.createElement("wcs-state") as any;
       second.setInitialState({ a: 2 });
       root.appendChild(second);

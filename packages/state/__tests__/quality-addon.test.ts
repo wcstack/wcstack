@@ -82,7 +82,7 @@ describe("$recursion を持つ根への volume の接ぎ木（BN1）", () => {
       await flush();
       expect(text(root, "i")).toBe("6");
       // a `**` path made later is still refused
-      expect(() => els[0].createState("readonly", (s: any) => s.$resolve("nodes.**.w", [0]))).toThrow("[wcs/recursion-unsupported]");
+      expect(() => els[0].createState("readonly", (s: any) => s.$resolve("nodes.**.w", [0]))).toThrow('#1101 "nodes.**.w"');
     } finally {
       spy.mockRestore();
     }
@@ -103,7 +103,7 @@ describe("$recursion を外す再セット（S1）", () => {
     let names: string[] = [];
     els[0].createState("readonly", (s: any) => { names = Object.keys(s.$command); });
     expect(names).toEqual(["go"]);
-    expect(() => els[0].createState("readonly", (s: any) => s.$resolve("nodes.**.w", [0]))).toThrow("[wcs/recursion-unsupported]");
+    expect(() => els[0].createState("readonly", (s: any) => s.$resolve("nodes.**.w", [0]))).toThrow('#1101 "nodes.**.w"');
   });
 
   it("外した後は、以前宣言していた ** のパスも黙って undefined にならず拒む（U1）", async () => {
@@ -111,7 +111,7 @@ describe("$recursion を外す再セット（S1）", () => {
     const { els } = await host(`<wcs-state></wcs-state>`, [rec]);
     els[0].setInitialState({ nodes: [] });
     for (const read of [(s: any) => s["nodes.**.total"], (s: any) => s.$resolve("nodes.**.total", []), (s: any) => s["nodes.**.other"]]) {
-      expect(() => els[0].createState("readonly", read)).toThrow("[wcs/recursion-unsupported]");
+      expect(() => els[0].createState("readonly", read)).toThrow("#1101 ");
     }
   });
 

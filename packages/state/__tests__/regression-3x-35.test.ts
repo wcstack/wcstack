@@ -18,7 +18,7 @@
  * quality-core.test.ts（F4）と coverage-element-load.test.ts にすでにある。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
-import { bootstrapState, config, getBindingsReady, installFeatures, scopes, ssr, temporal } from "../src/index";
+import { bootstrapState, config, diagnostics, getBindingsReady, installFeatures, scopes, ssr, temporal } from "../src/index";
 import { formats } from "../src/features/formats";
 import { getBinder } from "../src/protocol/binder";
 
@@ -595,6 +595,12 @@ describe("#411 読み込みに失敗した source は、投げられたエラー
 });
 
 describe("#405 3.5 の [wcs/v4-migration] の警告が約束する 4.0 の振る舞い", () => {
+  // 3.5 の警告が約束した 4.0 は `.` と `/auto`（診断の後付けを入れた形）。4.0.0-rc.3 の後で、旧名の検出と
+  // メッセージの [wcs/<code>] はコアから診断の後付けへ移った: この describe（このファイルの最後）から入れる
+  beforeAll(() => {
+    installFeatures([diagnostics]);
+  });
+
   /** How a page over `state` (and `markup`) initializes: "ok", or the failure's message. */
   async function init(state: Record<string, any>, markup = ""): Promise<string> {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -636,7 +642,7 @@ describe("#405 3.5 の [wcs/v4-migration] の警告が約束する 4.0 の振る
   it.each([
     ["$updatedCallback", { $updatedCallback() {} }, "[wcs/declaration-alias]"],
     ["$streams", { $streams: {} }, "[wcs/declaration-alias]"],
-    ["$scan", { $scan: {} }, "#1"],
+    ["$scan", { $scan: {} }, "$scan was removed (use $watch or $on)"],
   ])("宣言キー %s は state の読み込みで投げる", async (_name, decl, code) => {
     expect(await init({ v: 1, ...decl })).toContain(code);
   });

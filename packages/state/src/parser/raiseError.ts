@@ -1,7 +1,7 @@
 import { hooks } from "../hooks";
 
 /**
- * Throws `[@wcstack/state] <message>`. The core's messages state the code and the fact; the
+ * Throws `[@wcstack/state] <message>`. The core's messages state the fact (a number and values); the
  * diagnostics add-on, when installed, appends the guidance (the nearest of `candidates` to
  * `subject`, how to fix it, the lint pointer).
  */

@@ -8,8 +8,8 @@ import { M } from "../src/messages";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-// the core's own message (no diagnostics add-on here): [@wcstack/state] [wcs/<code>] #<number> <values>
-const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] (\[wcs/[\w-]+\] )?#${id}( |$)`);
+// the core's own message (no diagnostics add-on here): [@wcstack/state] #<number> <values>
+const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] #${id}( |$)`);
 
 function setup(html: string, state: Record<string, any>): Engine {
   document.body.innerHTML = html;

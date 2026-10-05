@@ -50,7 +50,7 @@ describe("宣言（wcs/recursion-declaration-invalid ほか）", () => {
   });
 
   it("$recursion の無い状態の ** は [wcs/recursion-unsupported]", () => {
-    expect(() => new Engine({ get "nodes.**.x"() { return 1; } }, new DirtyStrategy())).toThrow("[wcs/recursion-unsupported]");
+    expect(() => new Engine({ get "nodes.**.x"() { return 1; } }, new DirtyStrategy())).toThrow('#1101 "nodes.**.x"');
   });
 });
 
@@ -82,7 +82,7 @@ describe("全深さの $getAll と一斉書き込み", () => {
 
   it("再帰の getter の中で [] を使うと自分を含むので [wcs/getter-cycle]", () => {
     const e = make({ nodes: forest(), get "nodes.**.bad"() { return (this as any).$getAll("nodes.**.bad", []).length; } });
-    expect(() => e.proxy.$resolve("nodes.*.bad", [0])).toThrow("[wcs/getter-cycle]");
+    expect(() => e.proxy.$resolve("nodes.*.bad", [0])).toThrow('#701 "nodes.*.bad"');
   });
 
   it("一斉書き込みは書いた数を返し、形の誤りや木の誤りでは何も書かない", () => {
@@ -176,7 +176,7 @@ describe("<wcs-state> の中の再帰パス", () => {
     const el = root.querySelector("wcs-state") as any;
     el.setInitialState(withTotal({ nodes: forest(), $recursion: { "nodes.*": "children.*" } }));
     document.body.appendChild(h);
-    await expect(el.connectedCallbackPromise).rejects.toThrow("[wcs/recursion-unsupported]");
+    await expect(el.connectedCallbackPromise).rejects.toThrow('#1101 "nodes.**.total"');
     error.mockRestore();
   });
 

@@ -9,8 +9,8 @@ import { config, getConfig, setConfig } from "../src/config";
 import { hooks, loadFeatures } from "../src/hooks";
 import { M } from "../src/messages";
 
-// the core's own message (no diagnostics add-on here): [@wcstack/state] [wcs/<code>] #<number> <values>
-const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] (\[wcs/[\w-]+\] )?#${id}( |$)`);
+// the core's own message (no diagnostics add-on here): [@wcstack/state] #<number> <values>
+const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] #${id}( |$)`);
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const make = (state: Record<string, any>) => new Engine(state, new DirtyStrategy());

@@ -8,8 +8,8 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState, getBindingsReady, installFormats } from "../src/index";
 import { M } from "../src/messages";
 
-// the core's own message (no diagnostics add-on here): [@wcstack/state] [wcs/<code>] #<number> <values>
-const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] (\[wcs/[\w-]+\] )?#${id}( |$)`);
+// the core's own message (no diagnostics add-on here): [@wcstack/state] #<number> <values>
+const core = (id: M) => new RegExp(String.raw`^\[@wcstack/state\] #${id}( |$)`);
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
@@ -127,7 +127,7 @@ describe("wc-bindable の宣言の読み取り", () => {
     // "go" is a method of the class but a bare string in commands: not a declared command
     const message = await failure(`<${tag} data-wcs="command.go: $command.t"></${tag}>`, { $commandTokens: ["t"] });
     expect(message).toMatch(core(M.NoCommand));
-    expect(message).toBe(`[@wcstack/state] [wcs/token-misconfigured] #1203 "${tag}" "go"`);
+    expect(message).toBe(`[@wcstack/state] #1203 "${tag}" "go"`);
   });
 });
 
@@ -385,7 +385,7 @@ describe("コマンドトークン（command.<method>:）", () => {
     customElements.define(tag, class extends HTMLElement {});
     const message = await failure(`<${tag} data-wcs="command.go: $command.t"></${tag}>`, { $commandTokens: ["t"] });
     expect(message).toMatch(core(M.NoBindable));
-    expect(message).toBe(`[@wcstack/state] [wcs/token-misconfigured] #1202 "${tag}" "command.go"`);
+    expect(message).toBe(`[@wcstack/state] #1202 "${tag}" "command.go"`);
   });
 
   it("文書から外れている間の emit は要素を呼ばずに購読を保ち、同じ要素が戻ればまた呼ぶ", async () => {
@@ -473,12 +473,12 @@ describe("イベントトークン（eventToken.<property>:）", () => {
     const plain = nextTag();
     customElements.define(plain, class extends HTMLElement {});
     const noBindable = await failure(`<${plain} data-wcs="eventToken.value: made"></${plain}>`, { $eventTokens: ["made"] });
-    expect(noBindable).toBe(`[@wcstack/state] [wcs/token-misconfigured] #1202 "${plain}" "eventToken.value"`);
+    expect(noBindable).toBe(`[@wcstack/state] #1202 "${plain}" "eventToken.value"`);
     const tag = nextTag();
     defineNotifier(tag);
     const noProperty = await failure(`<${tag} data-wcs="eventToken.nope: made"></${tag}>`, { $eventTokens: ["made"] });
     expect(noProperty).toMatch(core(M.NoProperty));
-    expect(noProperty).toBe(`[@wcstack/state] [wcs/token-misconfigured] #1204 "${tag}" "nope"`);
+    expect(noProperty).toBe(`[@wcstack/state] #1204 "${tag}" "nope"`);
   });
 
   it("#prevent・#stop はトークンを発火する前にイベントの既定動作と伝播を止める", async () => {
@@ -510,7 +510,7 @@ describe("イベントトークン（eventToken.<property>:）", () => {
       expect(error).toHaveBeenCalledTimes(1);
       const reported = error.mock.calls[0][0] as Error;
       expect(reported.message).toMatch(core(M.EventTokenUndeclared));
-      expect(reported.message).toBe('[@wcstack/state] [wcs/token-undeclared] #1301 "nosuch"');
+      expect(reported.message).toBe('[@wcstack/state] #1301 "nosuch"');
     } finally {
       error.mockRestore();
     }
@@ -541,7 +541,7 @@ describe("スプレッド（...:）", () => {
     customElements.define(tag, class extends HTMLElement {});
     const message = await failure(`<${tag} data-wcs="...: obj"></${tag}>`, { obj: {} });
     expect(message).toMatch(core(M.SpreadNoBindable));
-    expect(message).toBe(`[@wcstack/state] [wcs/spread-no-bindable] #1501 "${tag}" ${JSON.stringify('"...: obj"')}`);
+    expect(message).toBe(`[@wcstack/state] #1501 "${tag}" ${JSON.stringify('"...: obj"')}`);
   });
 
   it("for の中の `...: .` は行ごとにその行のオブジェクトへ展開する", async () => {
