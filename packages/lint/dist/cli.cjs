@@ -339,32 +339,8 @@ var LINT_HINT = " Validate statically: npx @wcstack/lint <file>.";
 function raiseError(message, subject, candidates) {
   throw new Error(`[@wcstack/state] ${message}${hooks.explain?.(message, subject, candidates) ?? ""}`);
 }
-var CODES = [
-  "",
-  "binding-syntax",
-  "template-syntax",
-  "binding-path-missing",
-  "binding-type-expectation",
-  "filter-unknown",
-  "filter-arity",
-  "getter-cycle",
-  "getter-depth-exceeded",
-  "index-arity",
-  "index-param-range",
-  "recursion-unsupported",
-  "token-misconfigured",
-  "token-undeclared",
-  "wildcard-rank",
-  "spread-no-bindable",
-  "declaration-alias",
-  "name-alias"
-];
-var codeOf = (id) => {
-  const c = CODES[id / 100 | 0];
-  return c ? `[wcs/${c}] ` : "";
-};
 function text(id, args = []) {
-  return hooks.render?.(id, args) ?? `${codeOf(id)}#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
+  return hooks.render?.(id, args) ?? `#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
 }
 function raise(id, args, subject, candidates) {
   raiseError(text(id, args), subject, candidates);
@@ -392,7 +368,21 @@ var FORMATS_FILTER_NAMES = [
   "time",
   "datetime",
   "ymd",
-  "hms"
+  "hms",
+  "add",
+  "sub",
+  "mul",
+  "div",
+  "mod",
+  "abs",
+  "clamp",
+  "int",
+  "float",
+  "defaults",
+  "coalesce",
+  "number",
+  "string",
+  "nullIfEmpty"
 ];
 var definitions = /* @__PURE__ */ new Map();
 function hasFilter(name) {
@@ -584,6 +574,30 @@ function parseStatePart(statePart) {
 }
 var MAX_DRAIN_PASSES = 32;
 var MAX_RENDER_CHAIN = 100;
+var CODES = [
+  "",
+  "binding-syntax",
+  "template-syntax",
+  "binding-path-missing",
+  "binding-type-expectation",
+  "filter-unknown",
+  "filter-arity",
+  "getter-cycle",
+  "getter-depth-exceeded",
+  "index-arity",
+  "index-param-range",
+  "recursion-unsupported",
+  "token-misconfigured",
+  "token-undeclared",
+  "wildcard-rank",
+  "spread-no-bindable",
+  "declaration-alias",
+  "name-alias"
+];
+var codeOf = (id) => {
+  const c = CODES[id / 100 | 0];
+  return c ? `[wcs/${c}] ` : "";
+};
 var MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
 var element = (tag, at2) => `<${tag}${at2.map((a, i) => i % 2 ? `="${a}"` : ` ${a}`).join("")}>`;
 var CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
@@ -1263,26 +1277,26 @@ function findStartTagRegions(html) {
   let lower2 = null;
   let i = 0;
   while (i < html.length) {
-    const lt = html.indexOf("<", i);
-    if (lt === -1) break;
-    const next = html[lt + 1];
-    if (html.startsWith("<!--", lt)) {
-      const close = html.indexOf("-->", lt + 4);
+    const lt2 = html.indexOf("<", i);
+    if (lt2 === -1) break;
+    const next = html[lt2 + 1];
+    if (html.startsWith("<!--", lt2)) {
+      const close = html.indexOf("-->", lt2 + 4);
       i = close === -1 ? html.length : close + 3;
       continue;
     }
     if (next === "!" || next === "?" || next === "/") {
-      const close = html.indexOf(">", lt + 1);
+      const close = html.indexOf(">", lt2 + 1);
       i = close === -1 ? html.length : close + 1;
       continue;
     }
     if (next === void 0 || !/[A-Za-z]/.test(next)) {
-      i = lt + 1;
+      i = lt2 + 1;
       continue;
     }
-    let n = lt + 1;
+    let n = lt2 + 1;
     while (n < html.length && /[^\s/>]/.test(html[n])) n++;
-    const tagName = asciiLowerCase(html.slice(lt + 1, n));
+    const tagName = asciiLowerCase(html.slice(lt2 + 1, n));
     let j = n;
     let quote = null;
     while (j < html.length) {
@@ -1296,10 +1310,10 @@ function findStartTagRegions(html) {
       }
       j++;
     }
-    const gt = j < html.length ? j : html.length;
-    const selfClosing = html[gt - 1] === "/";
-    out.push({ tagName, start: n, end: selfClosing ? gt - 1 : gt });
-    i = gt + 1;
+    const gt2 = j < html.length ? j : html.length;
+    const selfClosing = html[gt2 - 1] === "/";
+    out.push({ tagName, start: n, end: selfClosing ? gt2 - 1 : gt2 });
+    i = gt2 + 1;
     if (tagName === "script" || tagName === "style") {
       const close = (lower2 ??= asciiLowerCase(html)).indexOf(`</${tagName}`, i);
       i = close === -1 ? html.length : close;
@@ -1343,8 +1357,8 @@ function matchRawTextElement(html, lower2, pos) {
   return null;
 }
 function afterCloseTag(html, closeStart) {
-  const gt = html.indexOf(">", closeStart);
-  return gt === -1 ? html.length : gt + 1;
+  const gt2 = html.indexOf(">", closeStart);
+  return gt2 === -1 ? html.length : gt2 + 1;
 }
 function parseWcsStateElements(html, stateTagName = "wcs-state") {
   const elements = [];
@@ -1450,22 +1464,22 @@ function collectTemplateTags(html) {
   const tags = [];
   let pos = 0;
   while (pos < html.length) {
-    const lt = html.indexOf("<", pos);
-    if (lt === -1) break;
-    if (html.startsWith("<!--", lt)) {
-      const commentEnd = html.indexOf("-->", lt + 4);
+    const lt2 = html.indexOf("<", pos);
+    if (lt2 === -1) break;
+    if (html.startsWith("<!--", lt2)) {
+      const commentEnd = html.indexOf("-->", lt2 + 4);
       if (commentEnd === -1) break;
       pos = commentEnd + 3;
       continue;
     }
-    const raw = matchRawTextElement(html, lower2, lt);
+    const raw = matchRawTextElement(html, lower2, lt2);
     if (raw !== null) {
       pos = raw.closed ? afterCloseTag(html, raw.contentEnd) : html.length;
       continue;
     }
-    const tag = /^<(\/?)template(?=[\s/>])/i.exec(html.slice(lt, lt + 11));
-    if (tag !== null) tags.push({ at: lt, close: tag[1] === "/" });
-    pos = lt + 1;
+    const tag = /^<(\/?)template(?=[\s/>])/i.exec(html.slice(lt2, lt2 + 11));
+    if (tag !== null) tags.push({ at: lt2, close: tag[1] === "/" });
+    pos = lt2 + 1;
   }
   return tags;
 }
@@ -1609,32 +1623,8 @@ var hooks2 = {};
 function raiseError2(message, subject, candidates) {
   throw new Error(`[@wcstack/state] ${message}${hooks2.explain?.(message, subject, candidates) ?? ""}`);
 }
-var CODES2 = [
-  "",
-  "binding-syntax",
-  "template-syntax",
-  "binding-path-missing",
-  "binding-type-expectation",
-  "filter-unknown",
-  "filter-arity",
-  "getter-cycle",
-  "getter-depth-exceeded",
-  "index-arity",
-  "index-param-range",
-  "recursion-unsupported",
-  "token-misconfigured",
-  "token-undeclared",
-  "wildcard-rank",
-  "spread-no-bindable",
-  "declaration-alias",
-  "name-alias"
-];
-var codeOf2 = (id) => {
-  const c = CODES2[id / 100 | 0];
-  return c ? `[wcs/${c}] ` : "";
-};
 function text2(id, args = []) {
-  return hooks2.render?.(id, args) ?? `${codeOf2(id)}#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
+  return hooks2.render?.(id, args) ?? `#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
 }
 function raise2(id, args, subject, candidates) {
   raiseError2(text2(id, args), subject, candidates);
@@ -1738,42 +1728,6 @@ var numeric = (name, op) => ({
 var truthy = () => (value) => !!value;
 var falsy = () => (value) => !value;
 var boolean = () => (value) => Boolean(value);
-var abs = () => (value) => {
-  if (typeof value !== "number") {
-    valueMustBeNumber("abs");
-  }
-  return Math.abs(value);
-};
-var clamp = (options) => {
-  const min = requiredNumberOption(options, 0, "clamp");
-  const max = requiredNumberOption(options, 1, "clamp");
-  return (value) => {
-    if (typeof value !== "number") {
-      valueMustBeNumber("clamp");
-    }
-    return Math.min(Math.max(value, min), max);
-  };
-};
-var number = () => (value) => Number(value);
-var string = () => (value) => String(value);
-var int = () => (value) => parseInt(String(value), 10);
-var float = () => (value) => parseFloat(String(value));
-var defaults = (options, literals) => {
-  const opt = options?.[0] ?? optionsRequired("defaults");
-  const fallback = firstLiteral(opt, literals);
-  return (value) => {
-    if (!value) {
-      return fallback;
-    }
-    return value;
-  };
-};
-var coalesce = (options, literals) => {
-  const opt = options?.[0] ?? optionsRequired("coalesce");
-  const fallback = firstLiteral(opt, literals);
-  return (value) => value ?? fallback;
-};
-var nullIfEmpty = () => (value) => value === "" ? null : value;
 var coreFilters = {
   eq: { factory: eq, arity: [1, 1] },
   ne: { factory: ne, arity: [1, 1] },
@@ -1782,23 +1736,9 @@ var coreFilters = {
   le: numeric("le", (value, opt) => value <= opt),
   gt: numeric("gt", (value, opt) => value > opt),
   ge: numeric("ge", (value, opt) => value >= opt),
-  add: numeric("add", (value, opt) => value + opt),
-  sub: numeric("sub", (value, opt) => value - opt),
-  mul: numeric("mul", (value, opt) => value * opt),
-  div: numeric("div", (value, opt) => value / opt),
-  mod: numeric("mod", (value, opt) => value % opt),
-  abs: { factory: abs, arity: [0, 0] },
-  clamp: { factory: clamp, arity: [2, 2] },
-  int: { factory: int, arity: [0, 0] },
-  float: { factory: float, arity: [0, 0] },
   falsy: { factory: falsy, arity: [0, 0] },
   truthy: { factory: truthy, arity: [0, 0] },
-  defaults: { factory: defaults, arity: [1, 1] },
-  coalesce: { factory: coalesce, arity: [1, 1] },
-  boolean: { factory: boolean, arity: [0, 0] },
-  number: { factory: number, arity: [0, 0] },
-  string: { factory: string, arity: [0, 0] },
-  nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] }
+  boolean: { factory: boolean, arity: [0, 0] }
 };
 var nullishPassthrough = (factory) => (options) => {
   const filterFn = factory(options);
@@ -1983,7 +1923,44 @@ var hms = (options) => {
     return `${hours}${opt}${minutes}${opt}${seconds}`;
   };
 };
-var formatFilters = {
+var abs = () => (value) => {
+  if (typeof value !== "number") {
+    valueMustBeNumber("abs");
+  }
+  return Math.abs(value);
+};
+var clamp = (options) => {
+  const min = requiredNumberOption(options, 0, "clamp");
+  const max = requiredNumberOption(options, 1, "clamp");
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("clamp");
+    }
+    return Math.min(Math.max(value, min), max);
+  };
+};
+var number = () => (value) => Number(value);
+var string = () => (value) => String(value);
+var int = () => (value) => parseInt(String(value), 10);
+var float = () => (value) => parseFloat(String(value));
+var defaults = (options, literals) => {
+  const opt = options?.[0] ?? optionsRequired("defaults");
+  const fallback = firstLiteral(opt, literals);
+  return (value) => {
+    if (!value) {
+      return fallback;
+    }
+    return value;
+  };
+};
+var coalesce = (options, literals) => {
+  const opt = options?.[0] ?? optionsRequired("coalesce");
+  const fallback = firstLiteral(opt, literals);
+  return (value) => value ?? fallback;
+};
+var nullIfEmpty = () => (value) => value === "" ? null : value;
+var { eq: eq2, ne: ne2, not: not2, lt, le, gt, ge, falsy: falsy2, truthy: truthy2, boolean: boolean2 } = coreFilters;
+var registered = {
   toFixed: { factory: toFixed, arity: [0, 1] },
   locale: { factory: locale, arity: [0, 1] },
   // The `String(value)` family passes an absent value through (B8 — see nullishPassthrough)
@@ -2009,8 +1986,36 @@ var formatFilters = {
   time: { factory: time, arity: [0, 1] },
   datetime: { factory: datetime, arity: [0, 1] },
   ymd: { factory: ymd, arity: [0, 1] },
-  hms: { factory: hms, arity: [0, 1] }
+  hms: { factory: hms, arity: [0, 1] },
+  // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
+  eq: eq2,
+  ne: ne2,
+  not: not2,
+  lt,
+  le,
+  gt,
+  ge,
+  add: numeric("add", (value, opt) => value + opt),
+  sub: numeric("sub", (value, opt) => value - opt),
+  mul: numeric("mul", (value, opt) => value * opt),
+  div: numeric("div", (value, opt) => value / opt),
+  mod: numeric("mod", (value, opt) => value % opt),
+  abs: { factory: abs, arity: [0, 0] },
+  clamp: { factory: clamp, arity: [2, 2] },
+  int: { factory: int, arity: [0, 0] },
+  float: { factory: float, arity: [0, 0] },
+  falsy: falsy2,
+  truthy: truthy2,
+  defaults: { factory: defaults, arity: [1, 1] },
+  coalesce: { factory: coalesce, arity: [1, 1] },
+  boolean: boolean2,
+  number: { factory: number, arity: [0, 0] },
+  string: { factory: string, arity: [0, 0] },
+  nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] }
 };
+var formatFilters = /* @__PURE__ */ Object.fromEntries(
+  /* @__PURE__ */ Object.entries(registered).filter(([name]) => !(name in coreFilters))
+);
 var STRUCTURAL_BINDING_TYPE_SET2 = /* @__PURE__ */ new Set([
   "if",
   "elseif",

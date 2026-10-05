@@ -38,9 +38,9 @@ declare const STRUCTURAL_BINDING_TYPE_SET: ReadonlySet<BindingType>;
 declare const WCS_MANIFEST_VERSION = 2;
 /** Filter old names → canonical (3.2): removed in 4.0. */
 declare const builtinFilterAliases: Readonly<Record<string, string>>;
-/** Declaration-key old names → canonical (3.2): removed in 4.0 (`$streams` fails as `[wcs/declaration-alias]`). */
+/** Declaration-key old names → canonical (3.2): removed in 4.0 (`$streams` fails as `[wcs/declaration-alias]` with the diagnostics add-on). */
 declare const DECLARATION_ALIASES: Readonly<Record<string, string>>;
-/** State API old names → canonical (3.2): removed in 4.0 (`$trackDependency` fails as `[wcs/name-alias]`). */
+/** State API old names → canonical (3.2): removed in 4.0 (`$trackDependency` fails as `[wcs/name-alias]` with the diagnostics add-on). */
 declare const STATE_API_ALIASES: Readonly<Record<string, string>>;
 interface IWcsManifest {
     version: number;

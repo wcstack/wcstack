@@ -47,32 +47,8 @@ function raiseError(message, subject, candidates) {
 }
 
 // src/messages.ts
-var CODES = [
-  "",
-  "binding-syntax",
-  "template-syntax",
-  "binding-path-missing",
-  "binding-type-expectation",
-  "filter-unknown",
-  "filter-arity",
-  "getter-cycle",
-  "getter-depth-exceeded",
-  "index-arity",
-  "index-param-range",
-  "recursion-unsupported",
-  "token-misconfigured",
-  "token-undeclared",
-  "wildcard-rank",
-  "spread-no-bindable",
-  "declaration-alias",
-  "name-alias"
-];
-var codeOf = (id) => {
-  const c = CODES[id / 100 | 0];
-  return c ? `[wcs/${c}] ` : "";
-};
 function text(id, args = []) {
-  return hooks.render?.(id, args) ?? `${codeOf(id)}#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
+  return hooks.render?.(id, args) ?? `#${id}${args.map((a) => ` ${typeof a === "string" ? JSON.stringify(a) : String(a)}`).join("")}`;
 }
 function raise(id, args, subject, candidates) {
   raiseError(text(id, args), subject, candidates);
@@ -102,7 +78,21 @@ var FORMATS_FILTER_NAMES = [
   "time",
   "datetime",
   "ymd",
-  "hms"
+  "hms",
+  "add",
+  "sub",
+  "mul",
+  "div",
+  "mod",
+  "abs",
+  "clamp",
+  "int",
+  "float",
+  "defaults",
+  "coalesce",
+  "number",
+  "string",
+  "nullIfEmpty"
 ];
 var definitions = /* @__PURE__ */ new Map();
 function hasFilter(name) {
@@ -310,6 +300,30 @@ var MAX_DRAIN_PASSES = 32;
 var MAX_RENDER_CHAIN = 100;
 
 // src/diagnostics/messages.ts
+var CODES = [
+  "",
+  "binding-syntax",
+  "template-syntax",
+  "binding-path-missing",
+  "binding-type-expectation",
+  "filter-unknown",
+  "filter-arity",
+  "getter-cycle",
+  "getter-depth-exceeded",
+  "index-arity",
+  "index-param-range",
+  "recursion-unsupported",
+  "token-misconfigured",
+  "token-undeclared",
+  "wildcard-rank",
+  "spread-no-bindable",
+  "declaration-alias",
+  "name-alias"
+];
+var codeOf = (id) => {
+  const c = CODES[id / 100 | 0];
+  return c ? `[wcs/${c}] ` : "";
+};
 var MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
 var element = (tag, at) => `<${tag}${at.map((a, i) => i % 2 ? `="${a}"` : ` ${a}`).join("")}>`;
 var CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
