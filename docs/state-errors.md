@@ -27,6 +27,7 @@ The same message reads differently depending on whether the diagnostics feature 
 - **Guidance.** With the feature, a message the engine throws through its error path can be followed by how to fix it: a "Did you mean" (edit distance 2 at most), the replacement of a filter name 4.0 removed (instead of a "Did you mean"), a fix for the case, and `Validate statically: npx @wcstack/lint <file>.` for the codes the lint detects. Messages written to the console (#11, #12, #17, #25, #41, #48, #49, #50, #51) carry the sentence only.
 - **#44** names where the option was given (`bootstrapState`, `$behavior`, or `state` when `$behavior` is not an object). For `bootstrapState` and one of the options 4.0 moved, the sentence adds ` 4.0 moved it to the state's $behavior.`
 - **#49 / #50 / #51** take the element's tag and then the name and value of each of `mount`, `bind-component`, `state` and `src` it has; the sentence renders them as the element (`<wcs-state src="./state.js">`).
+- **#1202** on a native element's `command.<method>:` (no hyphen in the tag, the `what` starting `command.`) adds ` A native element's command needs the add-on @wcstack/state/features/native-commands.` With that feature installed (`@wcstack/state`, `/auto`), a native element's command is checked against its table instead, and a method outside it is **#1205**.
 - **Messages without a number** are printed in full whatever is installed: the barriers a page meets on purpose (`[wcs/feature-not-installed] … needs the add-on @wcstack/state/features/<name>`, a filter of the formats feature — formatting, arithmetic, conversion or defaults — on a page without it), `[wcs/feature-unknown]`, and the messages of the features themselves (volumes, components, SSR, `$watch` / `$stream`, devtools).
 
 ## 2. The numbers
@@ -125,6 +126,7 @@ The same message reads differently depending on whether the diagnostics feature 
 | 1202 | `wcs/token-misconfigured` | `NoBindable` | `<tag> declares no static wcBindable (<what>).` | `<tag>` `<what>` |
 | 1203 | `wcs/token-misconfigured` | `NoCommand` | `<tag> declares no command "<method>".` | `<tag>` `<method>` |
 | 1204 | `wcs/token-misconfigured` | `NoProperty` | `<tag> declares no property "<property>".` | `<tag>` `<property>` |
+| 1205 | `wcs/token-misconfigured` | `NativeNoCommand` | `<tag> has no command "<method>" (a native <tag>'s commands: <methods>).` | `<tag>` `<method>` `<methods>` |
 | 1301 | `wcs/token-undeclared` | `EventTokenUndeclared` | `eventToken "<name>" is not declared in $eventTokens.` | `<name>` |
 | 1302 | `wcs/token-undeclared` | `CommandTokenUndeclared` | `"$command.<name>" is not declared in $commandTokens.` | `<name>` |
 | 1401 | `wcs/wildcard-rank` | `WildcardNoLoop` | `"<path>" needs <depth> enclosing loop level(s); the scope provides <n>.` | `<path>` `<depth>` `<n>` |

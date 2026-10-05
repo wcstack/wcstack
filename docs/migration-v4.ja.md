@@ -513,7 +513,7 @@ export default {
 | `IWritableConfig` / `getConfig()` | §3.2 の 6 つのオプションが無い |
 | `$errorCallback(error, info)` | `for:` が描いていないリストでは `info.node` が `null`（型は `Node \| null`） |
 | `@wcstack/state/parser` の結果 | `uuid` が無い。パスの `__proto__` / `prototype` の段を #120 で拒む |
-| `@wcstack/state/manifest` | 旧名の表は空（`builtinFilterAliases` は `{}`）。`$scan` は予約名から外れた。`$behavior`・`$features` を予約。`behaviorOptions`・`features` を追加 |
+| `@wcstack/state/manifest` | 旧名の表は空（`builtinFilterAliases` は `{}`）。`$scan` は予約名から外れた。`$behavior`・`$features` を予約。`behaviorOptions`・`features`・`nativeCommands`（ネイティブ要素の `command.<method>:` が呼べるもの）を追加 |
 | `defineState` の型 | `$trackDependency` / `$untrackDependency` が無い |
 | バンドラを通した、`import { defineState } from "@wcstack/state"` だけの import | エンジンが残る: gzip で約 21 KB（3.x は `defineState` まで tree-shake できた）。`@wcstack/state/define`（69 B、ランタイムなし）から import する |
 | `installFeatures()` | 入れ済みの機能は飛ばす（3.x は毎回 `install()` を呼んでいた。どちらも冪等） |
@@ -549,7 +549,8 @@ import { defineState } from "@wcstack/state/define";
 
 - **`features="…"`** は、文書のルートの `<wcs-state>`（`mount` も `bind-component` も持たない最初のもの）に書き、`<wcs-state>` を定義する前に 1 回だけ読まれます。どの `<wcs-state>` が始まる前にも要る `scopes` と、開発用の機能（`diagnostics`・`devtools`）を書く場所です。読むのは分割 auto のエントリだけです。
 - **`$features: ["temporal", "formats"]`** は、その状態が要る機能を状態の中に書くものです。分割 auto のエントリは、足りない機能を状態を組み立てる前に読み込みます。ほかのエントリは、入っているかを確かめるだけです。配列でなければ `#46` で throw します。
-- 名前は `formats`・`diagnostics`・`temporal`・`list-keys`・`scopes`・`recursion`・`ssr`・`devtools` です。`features=` にほかの名前があると、分割 auto のエントリは `<wcs-state>` を定義する前に `[wcs/feature-unknown]` で失敗します。`$features` にあると、分割 auto のエントリでは `[wcs/feature-unknown]`、ほかのエントリでは `[wcs/feature-not-installed]` で、その状態が失敗します。
+- 名前は `formats`・`diagnostics`・`temporal`・`list-keys`・`scopes`・`recursion`・`ssr`・`devtools`・`native-commands` です。`features=` にほかの名前があると、分割 auto のエントリは `<wcs-state>` を定義する前に `[wcs/feature-unknown]` で失敗します。`$features` にあると、分割 auto のエントリでは `[wcs/feature-unknown]`、ほかのエントリでは `[wcs/feature-not-installed]` で、その状態が失敗します。
+- **ネイティブ要素のコマンド**（`native-commands` 機能。`@wcstack/state` と `/auto` は含みます）: ネイティブ要素の `command.<method>:` —— `<dialog data-wcs="command.showModal: $command.open">`、`<input>` の `focus`、`<video>` の `play` —— を、決まったメソッドの表から呼べます。3.x はネイティブ要素を拒否しました（`command binding requires a wc-bindable custom element`）。[README](../packages/state/README.ja.md#ネイティブ要素のコマンド) を参照。
 
 ### 3.9 ほかのパッケージ
 

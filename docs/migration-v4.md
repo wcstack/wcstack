@@ -513,7 +513,7 @@ A component's `<wcs-state bind-component>` that fails to mount rejects its `conn
 | `IWritableConfig` / `getConfig()` | without the six options of §3.2 |
 | `$errorCallback(error, info)` | `info.node` is `null` (type `Node \| null`) for a list that no `for:` renders |
 | `@wcstack/state/parser` results | no `uuid`; a `__proto__` / `prototype` segment in a path is rejected with #120 |
-| `@wcstack/state/manifest` | the old-name tables are empty (`builtinFilterAliases` is `{}`); `$scan` is no longer reserved; `$behavior` and `$features` are reserved; new `behaviorOptions` and `features` |
+| `@wcstack/state/manifest` | the old-name tables are empty (`builtinFilterAliases` is `{}`); `$scan` is no longer reserved; `$behavior` and `$features` are reserved; new `behaviorOptions`, `features` and `nativeCommands` (what a native element's `command.<method>:` may call) |
 | `defineState` types | without `$trackDependency` / `$untrackDependency` |
 | `import { defineState } from "@wcstack/state"` alone, through a bundler | keeps the engine: about 21 KB gzip (3.x tree-shook it down to `defineState`). Import it from `@wcstack/state/define` (69 B, no runtime) |
 | `installFeatures()` | skips a feature it already installed (3.x called `install()` again; both are idempotent) |
@@ -549,7 +549,8 @@ New in 4.0, and optional:
 
 - **`features="…"`** on the document's root `<wcs-state>` (the first one without `mount` and `bind-component`) is read once, before `<wcs-state>` is defined. It is the place for `scopes`, which must be there before any `<wcs-state>` starts, and for development aids (`diagnostics`, `devtools`). Only the split auto entry reads it.
 - **`$features: ["temporal", "formats"]`** in a state names the features that state needs. The split auto entry loads the missing ones before it builds the state; the other entries only check that they are installed. A value that is not an array throws `#46`.
-- The names are `formats`, `diagnostics`, `temporal`, `list-keys`, `scopes`, `recursion`, `ssr` and `devtools`. Any other name in `features=` makes the split auto entry fail with `[wcs/feature-unknown]` before it defines `<wcs-state>`. In `$features`, it fails that state with `[wcs/feature-unknown]` on the split auto entry and with `[wcs/feature-not-installed]` on the other entries.
+- The names are `formats`, `diagnostics`, `temporal`, `list-keys`, `scopes`, `recursion`, `ssr`, `devtools` and `native-commands`. Any other name in `features=` makes the split auto entry fail with `[wcs/feature-unknown]` before it defines `<wcs-state>`. In `$features`, it fails that state with `[wcs/feature-unknown]` on the split auto entry and with `[wcs/feature-not-installed]` on the other entries.
+- **Native element commands**, the `native-commands` feature (`@wcstack/state` and `/auto` include it): `command.<method>:` on a native element — `<dialog data-wcs="command.showModal: $command.open">`, `focus` on an `<input>`, `play` on a `<video>` — from a fixed table of methods. 3.x refused a native element (`command binding requires a wc-bindable custom element`). See the [README](../packages/state/README.md#native-element-commands).
 
 ### 3.9 Other packages
 

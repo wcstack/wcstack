@@ -148,6 +148,8 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | フィルタ引数不足 | `count\|mul` | ❌ error |
 | フィルタ引数型不一致 | `count\|gt(abc)` | ⚠ warning |
 | イベント+フィルタ | `onclick: fn\|gt(10)` | ⚠ warning |
+| ネイティブ要素の `command.<method>:` で、メソッドが manifest の `nativeCommands`（`native-commands` 機能の表。`<dialog>` の `showModal`、全要素の `focus` など）に無い（`wcs/token-misconfigured`。「もしかして」付き。ランタイムは初期化で #1205 を投げる） | `<div data-wcs="command.showModal: $command.open">` | ❌ error |
+| `command.<method>:` の右辺が `$command.<name>` でない（`wcs/token-misconfigured`） | `command.play: count` | ⚠ warning |
 | `<template for>` 外のパターンパス・省略パス・ループの添字（`wcs/wildcard-rank`。4.0 は初期化で #1401 / #1402 を投げる — code はランタイムと同じ） | `textContent: items.*.name`・`.name`・`$1` | ⚠ warning |
 | 行の中で別のリストの `*` を読む（4.0 の #1403） | `for: a` の中の `textContent: b.*.y` | ⚠ warning |
 | `for` / `if` テンプレートの中の `outerHTML:` / `outerText:`（4.0 は初期化で throw — #203。route・レイアウトの雛形の中も対象、アプリの JS が複製するだけの最上位の `<template>` の中は対象外） | `<template data-wcs="for: items"><div data-wcs="outerHTML: h">` | ❌ error |
