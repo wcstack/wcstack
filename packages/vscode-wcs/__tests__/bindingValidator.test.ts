@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { validateBindings, findAllBindAttributes } from '../src/service/bindingValidator';
 import { validateDocument } from '../src/core/validateDocument';
 import { WcsDiagnosticCode } from '../src/core/diagnostics';
+import { NATIVE_COMMANDS, nativeCommandsOf } from '../src/service/wcsManifest';
 
 const SAMPLE_HTML = `
 <wcs-state>
@@ -675,6 +676,55 @@ export default {
     const diags = validateBindings(html, 'data-wcs');
     expect(diags).toHaveLength(1);
     expect(diags[0].message).toContain('$command.<name>');
+  });
+
+  describe('ネイティブ要素の command.<method>:（manifest の nativeCommands）', () => {
+    it('manifest が native-commands の後付けの表を持つ（state の dist を src からビルドしてあること）', () => {
+      expect(NATIVE_COMMANDS?.['*']).toContain('focus');
+      expect(nativeCommandsOf('dialog')).toEqual([...NATIVE_COMMANDS!['*'], ...NATIVE_COMMANDS!.dialog]);
+      // the table's own rows only
+      expect(nativeCommandsOf('constructor')).toEqual(NATIVE_COMMANDS!['*']);
+    });
+
+    it('表にあるメソッド（全要素の行と要素の行）には何も出さない', () => {
+      const html = `${TOKEN_STATE}
+<dialog data-wcs="command.showModal: $command.play; command.close: $command.pause"></dialog>
+<input data-wcs="command.focus: $command.play; command.select: $command.pause">
+<video data-wcs="command.play: $command.play"></video>`;
+      expect(validateBindings(html, 'data-wcs')).toEqual([]);
+    });
+
+    it('表に無いメソッドは error で、メソッド名の範囲に「呼べるもの」を添えて出す', () => {
+      const html = `${TOKEN_STATE}\n<div data-wcs="command.showModal: $command.play"></div>`;
+      const diags = validateBindings(html, 'data-wcs');
+      expect(diags).toHaveLength(1);
+      expect(diags[0]).toMatchObject({ code: WcsDiagnosticCode.TokenMisconfigured, severity: 'error' });
+      expect(html.slice(diags[0].start, diags[0].end)).toBe('showModal');
+      expect(diags[0].message).toBe(`"showModal" はネイティブの <div> に command で呼べるメソッドではありません（呼べるのは ${NATIVE_COMMANDS!['*'].join(', ')}。ランタイムは初期化で wcs/token-misconfigured を投げます）`);
+    });
+
+    it('近い名前があれば「もしかして」を添える（英語でも）', () => {
+      const html = `${TOKEN_STATE}\n<form data-wcs="command.requestSubmt: $command.play"></form>`;
+      const [diag] = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+      expect(diag.message).toMatch(/^"requestSubmt" is not a command of a native <form> \(its commands: .*requestSubmit.*; the runtime throws wcs\/token-misconfigured at initialization\)\. Did you mean "requestSubmit"\?$/);
+    });
+
+    it('値を input イベント無しで変える・HTML や属性を書くメソッドは表に無い', () => {
+      for (const [tag, method] of [['form', 'reset'], ['form', 'submit'], ['input', 'stepUp'], ['div', 'insertAdjacentHTML'], ['div', 'setAttribute'], ['div', 'remove']]) {
+        const html = `${TOKEN_STATE}\n<${tag} data-wcs="command.${method}: $command.play"></${tag}>`;
+        expect(validateBindings(html, 'data-wcs').map((d) => d.code)).toEqual([WcsDiagnosticCode.TokenMisconfigured]);
+      }
+    });
+
+    it('カスタム要素（名前にハイフン）は表で見ない — 自分の wcBindable で宣言する', () => {
+      const html = `${TOKEN_STATE}\n<my-player data-wcs="command.showModal: $command.play"></my-player>`;
+      expect(validateBindings(html, 'data-wcs')).toEqual([]);
+    });
+
+    it('右辺の誤りとメソッドの誤りは、それぞれ出す', () => {
+      const html = `${TOKEN_STATE}\n<div data-wcs="command.showModal: count"></div>`;
+      expect(validateBindings(html, 'data-wcs').map((d) => d.severity)).toEqual(['error', 'warning']);
+    });
   });
 
   it('eventToken.<prop>: <宣言済みトークン> に警告を出さない', () => {

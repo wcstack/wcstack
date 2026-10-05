@@ -26,7 +26,7 @@ import { createTemplateTester, parseLoadedScriptBlocks, parseWcsStateElements, t
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { analyzeDeclarationEntries, findTopLevelDeclaration, maskCommentsAndStrings } from './stateAnalyzer.js';
-import { suggestion } from './ioNodeValidator.js';
+import { suggestion } from './suggestion.js';
 import { blankComments } from './scriptCallArgs.js';
 import { getWcsManifest } from './wcsManifest.js';
 
