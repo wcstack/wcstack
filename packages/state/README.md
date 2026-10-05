@@ -192,9 +192,9 @@ leaves features out, it can compose them instead:
 <script type="importmap">
 {
   "imports": {
-    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.2/dist/split/core.js",
-    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.2/dist/split/features/temporal.js",
-    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.2/dist/split/features/scopes.js"
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.3/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.3/dist/split/features/temporal.js",
+    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.3/dist/split/features/scopes.js"
   }
 }
 </script>
@@ -253,7 +253,7 @@ receptacle the owning add-on fills on install).
 core, and the add-ons the page names from the same build.
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.2/dist/split/auto.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.3/dist/split/auto.js"></script>
 <wcs-state features="scopes diagnostics">
   <script type="module">
     export default {
