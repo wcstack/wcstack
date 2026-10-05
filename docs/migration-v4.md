@@ -174,9 +174,9 @@ In 4.0 the common bubbling events are delegated, and `event.currentTarget` is th
 
 ## 2. Upgrading to 4.0
 
-- Move every `@wcstack/*` package to the same 4.0 version. While 4.0 is a release candidate, take it from the `next` tag (`npm i @wcstack/state@next @wcstack/router@next …`), or name the version (`4.0.0-rc.4`).
+- Move every `@wcstack/*` package to the same 4.0 version. While 4.0 is a release candidate, take it from the `next` tag (`npm i @wcstack/state@next @wcstack/router@next …`), or name the version (`4.0.0-rc.5`).
 - Deploy `@wcstack/server` 4.0 and the 4.0 client together (§3.6).
-- Update CDN URLs to the new major version (`https://esm.run/@wcstack/state@4/auto`). `@4` resolves once 4.0.0 is published; a range does not pick a release candidate, so name it while trying one (`https://esm.run/@wcstack/state@4.0.0-rc.4/auto`).
+- Update CDN URLs to the new major version (`https://esm.run/@wcstack/state@4/auto`). `@4` resolves once 4.0.0 is published; a range does not pick a release candidate, so name it while trying one (`https://esm.run/@wcstack/state@4.0.0-rc.5/auto`).
 - `@wcstack/lint` and `@wcstack/typescript` move with every `@wcstack/*` release, so they carry the 4.0 rules from the release candidate on (`npx @wcstack/lint@next <files>`); the VS Code extension ships them as 2.0.0, together with 4.0.0. Keep the 3.5 ones (extension 1.21.x) for 3.x projects: the 4.0 rules report forms that 3.x still accepts.
 
 **How 4.0 reports errors.** With the `diagnostics` feature, messages carry the same `[wcs/<code>]` codes as the lint and a sentence; without it, a number and the values:
