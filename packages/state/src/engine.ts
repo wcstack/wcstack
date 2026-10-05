@@ -1,4 +1,4 @@
-import { Pattern, PatternTable, parsePath, WILDCARD, type EqSub } from "./pattern";
+import { DIRTY, Pattern, PatternTable, parsePath, WILDCARD, type EqSub } from "./pattern";
 import { StateList, StateRow, reconcile, type ReconcileHooks } from "./list";
 import type { Strategy } from "./strategy/types";
 import type { Binding } from "./dom/view";
@@ -750,14 +750,18 @@ export class Engine implements ReconcileHooks {
     // (a leaf write: the row's item is an object. The lists over its own array were reached above)
     const seen = new Set<unknown>([l.arr]);
     const has = (a: unknown): a is unknown[] => Array.isArray(a) && a.includes(o);
-    const down = (arr: unknown[], deps: Pattern[]): void => {
-      if (!seen.has(arr) && seen.add(arr)) for (const m of this.listsByArray.get(arr) ?? []) for (const r of m.rows) if (r.item === o) land(m, r);
-      // a getter passing the array on (`get shown() { return this.todos }`) is not evaluated again:
-      // the lists over it were reached already (each getter once: a cycle across evaluations ends)
+    const down = (arr: unknown, deps: Pattern[]): void => {
+      if (!seen.has(arr) && seen.add(arr)) for (const m of this.listsByArray.get(arr as unknown[]) ?? []) for (const r of m.rows) if (r.item === o) land(m, r);
+      // each getter once (a cycle across evaluations ends). One passing the array on (`get shown()
+      // { return this.todos }`) is not evaluated again: the lists over it were reached already. One
+      // reached before (earlier in the batch, or just now through a getter it reads) is evaluated again
+      // in the drain, its list synced then: the rows it keeps are those its list shows now
       for (const g of deps) {
-        const v = g.rootValue;
-        if (has(v) && !seen.has(g.dependents) && seen.add(g.dependents)) {
-          if (v !== arr) this.strategy.invalidate(this, g, null);
+        let v = g.rootValue;
+        const stale = v === DIRTY;
+        if (stale) v = this.rootLists.get(g)?.arr;
+        if ((stale || has(v)) && !seen.has(g.dependents) && seen.add(g.dependents)) {
+          if (!stale && v !== arr) this.strategy.invalidate(this, g, null);
           down(v, g.dependents);
         }
       }

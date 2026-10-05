@@ -1040,6 +1040,27 @@ describe("F26 getter が 2 つの配列に置いたオブジェクトは、ど�
     expect(rowsOf(root, "shown")).toBe("A:false,b:true,c:true");
   });
 
+  describe("1 つの更新で 2 つの行に書く（先の書き込みで評価し直しを待つ getter の、引き継ぐ行にも届く）", () => {
+    const chain = () => ({
+      filter: "active",
+      todos: todos(),
+      get active() { return (this as any).todos.filter((t: any) => !t.done); },
+      get shown() { const s = this as any; return s.filter === "all" ? s.todos : s.todos.filter((t: any) => !t.done); },
+      // a copy of a getter's copy: reached through `active`, which the walk evaluates again first
+      get firstOfActive() { return (this as any).active.slice(0, 2); },
+    });
+    const html = `${SHOWN}<ol><template data-wcs="for: firstOfActive"><li>{{ .title }}</li></template></ol>`;
+
+    it.each<[string, (s: any) => void]>([
+      ["元のパスから", (s) => { s["todos.0.title"] = "A"; s["todos.1.title"] = "B"; }],
+      ["写しの行のパスから", (s) => { s["shown.0.title"] = "A"; s["shown.1.title"] = "B"; }],
+    ])("%s", async (_name, fn) => {
+      const { root, write } = await page(html, chain());
+      await write(fn);
+      expect([rowsOf(root, "shown"), texts(root, "ol li").join(",")]).toEqual(["A:false,B:false", "A,B"]);
+    });
+  });
+
   it("同じ配列の別の写し（for: shown と for: firstTwo）: 片方の行への書き込みがもう片方の行に届く", async () => {
     const { root } = await page(`${SHOWN}<ol><template data-wcs="for: firstTwo"><li>{{ .title }}:{{ .done }}</li></template></ol>`, filtered({
       filter: "all",
