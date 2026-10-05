@@ -7,7 +7,9 @@ state 側で**追記（append）**していくため、リストはちらつき�
 `<wcs-infinite-scroll>` は **`@wcstack/fetch` に同梱**されており、追加パッケージは不要です。
 こちらは高レベル・全部入りの選択肢。手配線する低レベル版は姉妹デモ
 `@wcstack/state` の `$stream` と低レベル intersection primitive を使う
-[`state-intersect-scroll`](../../../../examples/state-intersect-scroll) を参照してください。
+[`state-intersect-scroll`](../../../../examples/state-intersect-scroll) を参照してください。その中間の
+[`state-intersect-fetch`](../../../../examples/state-intersect-fetch) は `<wcs-fetch>` をそのまま使い、
+`<wcs-intersect>` のセンチネルと state でつなぎます（event token で受け、command token で動かす）。
 
 ## はじめに
 
