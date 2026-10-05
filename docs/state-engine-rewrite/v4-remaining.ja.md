@@ -862,3 +862,28 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - サイズと結合のゲートの基準値を rc.3 の dist で取り直した。
   - core.min.js 19,930B（上限 20,000B まで 70B。core に足すものは、どこかで削って払う必要がある）
   - split core 24,121B、`index.esm.js` 49,916B、`auto.min.js` 46,849B（gzip）
+
+### core の縮小（2026-10-06）
+
+- rc.3 の後、`core.min.js` は上限 20,000B まで 70B しか残っていなかった。ユーザーが承認した 3 つの移動で、19,930 → 19,500B（−430B、余白 500B）にした（research/core-slim）。
+- **算術・変換・欠損値のフィルタ 14 本**（`add sub mul div mod abs clamp int float number string defaults coalesce nullIfEmpty`）を、core から formats へ移した。−178B。
+  - core に残るのは条件の 10 本（`eq ne not lt le gt ge truthy falsy boolean`）。`else:` の `not` もここにある。
+  - `/core` で formats が無いとき、移した 14 本は、表示フィルタと同じ「formats を入れよ」の壁で落ちる。`FORMATS_FILTER_NAMES` に名前を足す費用は 56B。
+  - did-you-mean の同じ距離の候補の順を rc.3 と同じに保つため、`installFormats` は core の 10 本も rc.3 の位置に登録する。formats 側に +67B かかる。
+  - 後から読み込む split のページだけは、この順が rc.3 と変わり得る。
+- **`[wcs/<code>]` のコード名**（`CODES` / `codeOf`）を diagnostics へ移した。−167B。
+  - diagnostics が無いときのメッセージは `#<番号> <値>` になる。diagnostics があるときは変わらない。
+  - 全文で残す 2 つの壁（feature-not-installed と formats の壁）は、コード付きのまま。
+- **3.x の旧名の検出**を diagnostics の `hooks.declare`（ほかの後付けより先に走る）と `hooks.dollar` へ移した。−85B。
+  - 対象は `$scan`（#1）、`$streams` / `$updatedCallback`（#1601）、`$trackDependency` / `$untrackDependency`（#1701）。
+  - diagnostics があれば同じエラーが出る。無ければ、知らない `$` 名と同じく何もしない。
+- 全部入りの `.` と `/auto` は動きが変わらない。変わるのは `/core` だけを使うページ。
+- formats と diagnostics が意図して大きくなったので、サイズと結合の基準値を取り直した。
+  - formats 1,084 → 1,387B、diagnostics 6,928 → 7,189B
+  - `index.esm.js` 49,971B、`auto.min.js` 46,927B、split core 23,655B
+- テスト: すべて通過。
+  - state 2,979 件（カバレッジ 99.78 / 99.28 / 100 / 99.95）
+  - router 822 件、server 100 件と e2e 18 件、vscode-wcs 1,160 件
+  - lint のスモーク 26 件、e2e（Chromium）142 件
+- 文書も合わせた: CHANGELOG・移行ガイド §2 / §3.1 / §3.8 / §4.2・state-errors・state README・streams / define-state・wcstack の AI ガイド・vscode-wcs README。
+- スキル（wcstack-skill）の 4.0 版で、`/core` のフィルタの数と、`/core` のメッセージの形を直すこと。
