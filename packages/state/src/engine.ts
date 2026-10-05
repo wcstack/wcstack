@@ -278,8 +278,15 @@ export class Engine implements ReconcileHooks {
     this.patterns = new PatternTable((p) => this.onPatternCreated(p));
     this.loadTarget(target);
     const engine = this;
-    // the handler reads engine.target, not the proxy's target: a re-set swaps the state
-    this.proxy = new Proxy(target, {
+    // the handler reads engine.target, not the proxy's target (a stand-in): a re-set swaps the state.
+    // So do `in`, `delete`, `Object.keys(this)`, `instanceof` (the forwarded traps below); a descriptor
+    // is reported configurable, as the stand-in has none (a frozen state's would break the invariants)
+    const handler: ProxyHandler<object> = {
+      getOwnPropertyDescriptor(_t, key) {
+        const d = Reflect.getOwnPropertyDescriptor(engine.target, key);
+        if (d) d.configurable = true;
+        return d;
+      },
       get(_t, key, receiver) {
         const t = engine.target;
         if (typeof key === "symbol") return Reflect.get(t, key);
@@ -303,7 +310,11 @@ export class Engine implements ReconcileHooks {
         engine.write(engine.rp!, engine.rr, value);
         return true;
       },
-    });
+    };
+    for (const trap of ["has", "ownKeys", "deleteProperty", "defineProperty", "getPrototypeOf"]) {
+      (handler as any)[trap] = (_t: object, ...a: unknown[]) => (Reflect as any)[trap](engine.target, ...a);
+    }
+    this.proxy = new Proxy({}, handler);
   }
 
   // ---------------------------------------------------------------- patterns

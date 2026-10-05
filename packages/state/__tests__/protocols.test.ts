@@ -258,6 +258,48 @@ describe("初期化済みの要素への setInitialState（再セット）", () 
     }
   });
 
+  it("再セットの後の列挙（Object.keys・in・for…in・スプレッド・JSON.stringify・delete）は、いまの状態のキーを使う", async () => {
+    const { el } = await host(`<wcs-state></wcs-state><p>{{ a }}</p>`, { a: 1, b: 2 });
+    const next: Record<string, any> = { a: 3, c: 4 };
+    el.setInitialState(next);
+    el.createState("writable", (s: any) => {
+      const forIn: string[] = [];
+      for (const k in s) forIn.push(k);
+      expect(Object.keys(s)).toEqual(["a", "c"]);
+      expect(forIn).toEqual(["a", "c"]);
+      expect(["a" in s, "b" in s, "c" in s]).toEqual([true, false, true]);
+      expect({ ...s }).toEqual({ a: 3, c: 4 });
+      expect(JSON.parse(JSON.stringify(s))).toEqual({ a: 3, c: 4 });
+      expect(Object.prototype.hasOwnProperty.call(s, "c")).toBe(true);
+      expect(delete s.c).toBe(true);
+      Object.defineProperty(s, "d", { value: 5, enumerable: true, writable: true, configurable: true });
+    });
+    // delete and defineProperty change the current state
+    expect(next).toEqual({ a: 3, d: 5 });
+  });
+
+  it.each([
+    ["凍結した最初の状態", () => Object.freeze({ a: 1, b: 2 }), () => ({ a: 3, c: 4 })],
+    ["凍結した新しい状態", () => ({ a: 1, b: 2 }), () => Object.freeze({ a: 3, c: 4 })],
+  ])("%s でも、再セットの後の列挙はいまの状態のキーを使う", async (_name, first, second) => {
+    const { el } = await host(`<wcs-state></wcs-state><p>{{ a }}</p>`, first());
+    el.setInitialState(second());
+    el.createState("readonly", (s: any) => {
+      expect(Object.keys(s)).toEqual(["a", "c"]);
+      expect({ ...s }).toEqual({ a: 3, c: 4 });
+      expect("b" in s).toBe(false);
+    });
+  });
+
+  it("クラスの状態の instanceof は、いまの状態のクラスを答える", async () => {
+    class A { n = 1; }
+    class B { n = 2; }
+    const { el } = await host(`<wcs-state></wcs-state><p>{{ n }}</p>`, new A());
+    el.createState("readonly", (s: any) => { expect(s instanceof A).toBe(true); });
+    el.setInitialState(new B());
+    el.createState("readonly", (s: any) => { expect([s instanceof A, s instanceof B]).toEqual([false, true]); });
+  });
+
   it("書き込みではない: $renderedCallback を呼ばない（その後の書き込みでは呼ぶ）", async () => {
     const { el } = await host(`<wcs-state></wcs-state><p>{{ n }}</p>`, { n: 1 });
     const rendered = vi.fn();
