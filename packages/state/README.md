@@ -401,7 +401,7 @@ There is **one state tree per root**. To split state across modules, mount a vol
 <div data-wcs="textContent: cart.total"></div>
 ```
 
-A volume holds data, getters, setters and methods, and may declare `$connectedCallback` / `$disconnectedCallback`. Inside all of them `this` is rooted at the mount path: `this.items` is the tree's `cart.items`, and the `$` APIs that take a path (`$getAll`, `$setAll`, `$resolve`, `$postUpdate`, `$dependOn`, `$eq`, `$eqPath`, `$eqIndex`) take it relative to the mount. Its getters and setters become accessors of the tree at `cart.<key>`, and its methods are reachable by path — `onclick: cart.checkout`, `this["cart.checkout"]()` from the root. Load order does not matter: a volume connected before the root is grafted when the root's engine is created, before the page is bound.
+A volume holds data, getters, setters and methods, and may declare `$connectedCallback` / `$disconnectedCallback`. Inside all of them `this` is rooted at the mount path: `this.items` is the tree's `cart.items`, and the `$` APIs that take a path (`$getAll`, `$setAll`, `$resolve`, `$postUpdate`, `$dependOn`, `$eq`, `$eqPath`, `$eqIndex`) take it relative to the mount. Its getters and setters become accessors of the tree at `cart.<key>`, and its methods are reachable by path — `onclick: cart.checkout`, `this["cart.checkout"]()` from the root. Load order does not matter: a volume connected before the root is grafted when the root's engine is created, before the page is bound, and one connected while the root `<wcs-state>` is out of the page is grafted when it is put back.
 
 A volume does not run the declarations that react to the whole tree. `$watch`, `$stream`, `$listKeys`, `$renderedCallback`, `$recursion`, `$behavior` and `$features` — and the removed `$scan`, `$streams` and `$updatedCallback` — refuse the volume: it is not grafted, and `console.error` names the element and says `$watch is not run in a volume — declare it on the root state.` Declare them on the root state with full paths — inside the root's handlers `this` is the root (`$watch: { "cart.total"(cur) { … } }`), and the root's `$renderedCallback(paths)` receives paths written from the root (`cart.items.*.name`), so filter them by the prefix. `$commandTokens`, `$eventTokens`, `$on` and `$errorCallback` are not run, with a `console.warn`. A volume takes no injections either: a `data-wcs` on the volume element (`state.taxRate: settings.taxRate`) refuses it — read the root path in a root getter (`get cartTotalWithTax() { return this["cart.subtotal"] * (1 + this["settings.taxRate"]); }`).
 
@@ -900,7 +900,7 @@ Content another package inserts after the page was bound — a route body that `
 </wcs-route>
 ```
 
-The binder never throws for markup reasons: an error in a handed-over subtree is reported with `console.error`, what comes before it stays bound, and the navigation goes on. A subtree handed over again (the router hands its content over on every insertion) is bound once. Only elements are handed over, so a `{{ }}` written directly in a route body, outside any element, is not bound when the route is entered by navigation — wrap it in an element. This matters only if you call the binder yourself, or write `for:` / `if:` directly under `<wcs-route>`.
+The binder never throws for markup reasons: an error in a handed-over subtree is reported with `console.error`, what comes before it stays bound, and the navigation goes on. A subtree handed over again (the router hands its content over on every insertion) is bound once, and one handed over while the root `<wcs-state>` is out of the page is bound — with the range it was handed over with — when that element is put back. Only elements are handed over, so a `{{ }}` written directly in a route body, outside any element, is not bound when the route is entered by navigation — wrap it in an element. This matters only if you call the binder yourself, or write `for:` / `if:` directly under `<wcs-route>`.
 
 ## Path Getters (Computed Properties)
 
@@ -1984,7 +1984,8 @@ customElements.define("my-component", MyComponent);
 - A **mounted** scope runs `$listKeys`, `$commandTokens` / `$eventTokens` / `$on` and `$errorCallback` on its own bindings and lists, and its own `$behavior` / `$features`. It does not run `$watch`, `$stream` and `$renderedCallback` (one `wcs/mount-dollar-declaration` warning), and `$recursion` / `**` getters throw `[wcs/mount-dollar-declaration]`. Declare those on the root state. An unwired Shadow DOM child owns an independent tree and can declare all of them
 - A host wiring added after the component loaded its state (`state.a: x` bound later) cannot reach it, and throws — bind the host's wiring before the component loads
 - A component whose mount fails rejects its `connectedCallbackPromise` — including a component wired to a root that failed to initialize (`<tag>.state will not mount: the root state failed to initialize.`) — see [Initialization failures](#initialization-failures)
-- When a component replaces its `<wcs-state bind-component>` with a new one while nodes the old one bound or rendered are still there, the new element takes the scope over: those bindings, rows and `{{ }}` text stay as they are, and nodes with bindings added beside them are not bound (a `console.warn` says so). When the content is rendered again with it, the new element binds it afresh
+- When a component replaces its `<wcs-state bind-component>` with a new one while nodes the old one bound or rendered are still there, the new element takes the scope over: those bindings, rows and `{{ }}` text stay as they are, and nodes with bindings added beside them are not bound (a `console.warn` says so). When the content is rendered again with it, the new element binds it afresh. Taking the new element out and putting the old one back where it was makes the old one take the scope over again the same way
+- A host the page did not bind — taken out of the page before the page's state loaded, or inserted by code afterwards rather than by `for:` / `if:` or the router — is wired when its `<wcs-state bind-component>` connects: the host's `data-wcs` is bound then, or once the page's `<wcs-state>` is in the page (inside a Light DOM component, by that component once it is mounted)
 
 ### Loop with Components
 
@@ -2911,6 +2912,7 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | 48 | | `the locale "<locale>" (<html lang> or bootstrapState's locale) is not a language tag Intl takes (en-US, not en_US): the locale filters use "en".` |
 | 49 | | `<wcs-state src="…"> failed to initialize.` |
 | 50 | | `<wcs-state src="…"> $connectedCallback failed.` |
+| 51 | | `<wcs-state src="…"> $disconnectedCallback failed.` |
 | 101 | `binding-syntax` | `Invalid bindText: "<text>". Missing ':' separator between propPart and statePart.` |
 | 102 | `binding-syntax` | `"<text>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` |
 | 103 | `binding-syntax` | `"<text>": "else" takes no value — write "else:".` |
@@ -3043,7 +3045,7 @@ What fails initialization:
 
 Inside a `for:` / `if:` row, an error found while a binding is attached (an undeclared token, a member the element does not declare) is that binding's failure instead: it goes to `$errorCallback`, and the row is still built. A binding to a top-level key the state does not have is a failed apply, not an initialization failure. An element that failed to initialize cannot be re-armed — `setInitialState()` throws (`#14`); remove it and create a new one.
 
-**A failing `$connectedCallback` is not an initialization failure.** `$connectedCallback` runs once the bindings are built; one that throws or rejects is reported as `<wcs-state …> $connectedCallback failed.` (`#50`) followed by the error, and `connectedCallbackPromise` rejects with it — but the page is bound: `getBindingsReady()` resolves, and the element can still be re-set. On a reconnect, a failing `$connectedCallback` is reported with `console.error`.
+**A failing `$connectedCallback` is not an initialization failure.** `$connectedCallback` runs once the bindings are built; one that throws or rejects is reported as `<wcs-state …> $connectedCallback failed.` (`#50`) followed by the error, and `connectedCallbackPromise` rejects with it — but the page is bound: `getBindingsReady()` resolves, and the element can still be re-set. On a reconnect, a root's `$connectedCallback` that throws or rejects is reported the same way, and a root's `$disconnectedCallback` that throws or rejects as `<wcs-state …> $disconnectedCallback failed.` (`#51`) followed by the error — neither escapes the element's callback. A mounted component's failing `$connectedCallback` on a reconnect is reported with `console.error`.
 
 **What the promises promise:**
 
