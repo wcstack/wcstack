@@ -2,7 +2,8 @@
  * issues2-lists.test.ts — 現行 @wcstack/state 3.3 の Issue #376〜#381（リスト・行・配列の書き込み・
  * `$watch`・`$eqIndex`）を state-next で流す。各 Issue の「再現」「期待」の表の形を、期待を書いたテストとして置く。
  * 確かめる途中で見つけた F31（<select> の値）・F32（別のリストの *）・F35・F36（$postUpdate）も置く。F26 の系統（別の配列の 2 つの
- * 一覧に同じオブジェクトがある形）は 4.0 の既知の制限として it.fails で症状を残す。
+ * 一覧に同じオブジェクトがある形）のうち、getter が関わる形（写しを返す絞り込み）は直した。getter が関わらない形（普通のキーの
+ * 2 本の配列、#378 の backup）は 4.0 の既知の制限として it.fails で症状を残す。
  */
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { bootstrapState, getBindingsReady, installFeatures, scopes, ssr, temporal } from "../src/index";
@@ -547,8 +548,8 @@ describe("#377 元の配列を返す getter のパスを通した書き込みが
     });
   });
 
-  // Issue が #365 の系統として扱う形（絞り込みが写しを返すとき、写しの行の checkbox を入れる）
-  it.fails("参考（#365 の系統）: filter = active（写し）で 1 行目の checkbox を入れると left と todos.0.done が新しくなる", async () => {
+  // Issue が #365 の系統として扱う形（絞り込みが写しを返すとき、写しの行の checkbox を入れる）。F26 の修正で直した
+  it("参考（#365 の系統）: filter = active（写し）で 1 行目の checkbox を入れると left と todos.0.done が新しくなる", async () => {
     const { root, write, read } = await page(htmlBoth, todoState());
     await write((s) => { s.filter = "active"; });
     const box = root.querySelector("ul.shown input") as HTMLInputElement;
