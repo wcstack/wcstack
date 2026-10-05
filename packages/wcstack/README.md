@@ -418,9 +418,8 @@ An old filter name or `substr` fails initialization with `[wcs/filter-unknown]` 
 ## Known limitations
 
 - **One object reachable from two rows** — the same object at two positions of a list, or in two lists (a getter returning a filtered copy of `todos`, rendered with `for:`, while a row writes into it): a write below one row does not reach the other row's bindings and row getters. Do not write below such a row; replace the object in the top-level list instead, as the app above does (`toggle()` reassigns `todos` with a new object for the changed item, and the checkbox is `checked#ro:`).
-- **Numeric keys under a plain object** (`sales.2024.total`, `usersById.42.name`): markup renders them, but a script read gives `undefined` and a write throws. Read `this.sales[2024].total`, write by assigning a new object to the top-level key, or use keys that are not numbers.
 
-Details, and the other known limitations (enumerating the state after a re-set, an endless `$watch` → `$stream` loop, elements removed and put back, comments between chained `if:` templates under SSR): the migration guide, [§5](https://github.com/wcstack/wcstack/blob/main/docs/migration-v4.md#5-known-limitations).
+Details: the migration guide, [§5](https://github.com/wcstack/wcstack/blob/main/docs/migration-v4.md#5-known-limitations).
 
 ---
 

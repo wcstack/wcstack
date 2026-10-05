@@ -21,11 +21,11 @@
 | どこで | `@wcstack/state`（`bootstrapState()` がすべての後付けを入れる）、`/auto`、`/parser`。`installFeatures([diagnostics])` の後の `/core`。`features="diagnostics"` の分割 auto | `/core` だけ |
 | 文面 | `[@wcstack/state] [wcs/<コード>] <文>` | `[@wcstack/state] [wcs/<コード>] #<番号> <値>` |
 
-- **コード**は番号の百の位から決まる: 1xx は `binding-syntax`、2xx は `template-syntax`、3xx は `binding-path-missing`、…（表の「Code」の列）。1〜50 にはコードが無いので、文か `#<番号>` から始まる。コードは `@wcstack/lint` と VS Code 拡張が報告するものと同じ。
+- **コード**は番号の百の位から決まる: 1xx は `binding-syntax`、2xx は `template-syntax`、3xx は `binding-path-missing`、…（表の「Code」の列）。1〜51 にはコードが無いので、文か `#<番号>` から始まる。コードは `@wcstack/lint` と VS Code 拡張が報告するものと同じ。
 - **値**は、後付けが無いとき、番号の後に表の「Values」の列の順で並ぶ。文字列は JSON（`"uc"`）、それ以外は `String(値)`。
-- **案内**: 後付けがあると、エンジンがエラーの経路で投げるメッセージの後に、直し方が続くことがある — 「Did you mean」（編集距離 2 まで）、4.0 で外れたフィルタ名にはその書き換え先（「Did you mean」の代わり）、その場合の直し方、lint が検出するコードには `Validate statically: npx @wcstack/lint <file>.`。コンソールに書くメッセージ（#11・#12・#17・#25・#41・#48・#49・#50）は文だけ。
+- **案内**: 後付けがあると、エンジンがエラーの経路で投げるメッセージの後に、直し方が続くことがある — 「Did you mean」（編集距離 2 まで）、4.0 で外れたフィルタ名にはその書き換え先（「Did you mean」の代わり）、その場合の直し方、lint が検出するコードには `Validate statically: npx @wcstack/lint <file>.`。コンソールに書くメッセージ（#11・#12・#17・#25・#41・#48・#49・#50・#51）は文だけ。
 - **#44** はオプションを渡した場所を名指す（`bootstrapState`、`$behavior`、`$behavior` がオブジェクトでないときは `state`）。`bootstrapState` に 4.0 で移ったオプションを渡したときは、文の後に ` 4.0 moved it to the state's $behavior.` が付く。
-- **#49 / #50** は要素のタグ名と、要素が持つ `mount`・`bind-component`・`state`・`src` の名前と値を受け取り、文では要素の形（`<wcs-state src="./state.js">`）に描く。
+- **#49 / #50 / #51** は要素のタグ名と、要素が持つ `mount`・`bind-component`・`state`・`src` の名前と値を受け取り、文では要素の形（`<wcs-state src="./state.js">`）に描く。
 - **番号の無いメッセージ**は、何を入れていても全文で出る: ページが意図して出会う関門（`[wcs/feature-not-installed] … needs the add-on @wcstack/state/features/<name>`、formats の後付けの無いページの書式のフィルタ）、`[wcs/feature-unknown]`、後付けそのもののメッセージ（ボリューム・コンポーネント・SSR・`$watch` / `$stream`・devtools）。
 
 ## 2. 番号の一覧
@@ -84,6 +84,7 @@
 | 48 | — | `LocaleInvalid` | `the locale "<locale>" (<html lang> or bootstrapState's locale) is not a language tag Intl takes (en-US, not en_US): the locale filters use "en".` | `<locale>` |
 | 49 | — | `InitFailed` | `<wcs-state …> failed to initialize.` | `<tag>` `<attribute>` `<value>` `…` |
 | 50 | — | `ConnectedFailed` | `<wcs-state …> $connectedCallback failed.` | `<tag>` `<attribute>` `<value>` `…` |
+| 51 | — | `DisconnectedFailed` | `<wcs-state …> $disconnectedCallback failed.` | `<tag>` `<attribute>` `<value>` `…` |
 | 101 | `wcs/binding-syntax` | `BindTextNoColon` | `Invalid bindText: "<binding>". Missing ':' separator between propPart and statePart.` | `<binding>` |
 | 102 | `wcs/binding-syntax` | `StructuralTakesNoModifiers` | `"<binding>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` | `<binding>` `<keyword>` |
 | 103 | `wcs/binding-syntax` | `ElseTakesNoValue` | `"<binding>": "else" takes no value — write "else:".` | `<binding>` |

@@ -377,7 +377,7 @@ this.items = items;
 
 #### マークアップの誤りで初期化が止まる
 
-読めないバインディング（構文の誤り、知らないフィルタや引数の数の誤り、wildcard-rank の誤り、フィルタ付きの `for:`、テンプレートの中の `outerHTML:`）があると、走査はそこで止まります。ページの直下なら `<wcs-state>` の初期化が失敗し（`connectedCallbackPromise` が reject）、文書の順で誤りより前のバインディングは付いて書き込みに追従し、後ろのバインディングは付きません。初期化に失敗した要素は組み直せず、`setInitialState()` は throw します（#14）。外して新しい要素を作ってください。`for:` / `if:` の行の中でバインディングを付けるときに見つかった誤り（宣言の無いトークンや wcBindable のメンバーなど）は、そのバインディングの失敗として `$errorCallback` に届き、行は組み上がります。同じ誤りでも、ページの直下では初期化が失敗します。3.x は、ページの直下の誤りを報告して、そのバインディングだけを失敗させていました。デプロイの前に 4.0 の lint を流してください。これらの書き方を報告します（§4.1）。初期化の失敗は、3.5 と同じく `console.error` に 1 回、まず要素と状態の読み込み元（`<wcs-state src="./state.js"> failed to initialize.`）、続けてエラーの順に出ます。バインディングを組み上げた後に `$connectedCallback` が throw・reject するのは、初期化の失敗ではありません: `<wcs-state …> $connectedCallback failed.` に続けてエラーが出て、`connectedCallbackPromise` はそのエラーで reject し、ページは組み上がっているので `getBindingsReady()` は resolve します。
+読めないバインディング（構文の誤り、知らないフィルタや引数の数の誤り、wildcard-rank の誤り、フィルタ付きの `for:`、テンプレートの中の `outerHTML:`）があると、走査はそこで止まります。ページの直下なら `<wcs-state>` の初期化が失敗し（`connectedCallbackPromise` が reject）、文書の順で誤りより前のバインディングは付いて書き込みに追従し、後ろのバインディングは付きません。初期化に失敗した要素は組み直せず、`setInitialState()` は throw します（#14）。外して新しい要素を作ってください。`for:` / `if:` の行の中でバインディングを付けるときに見つかった誤り（宣言の無いトークンや wcBindable のメンバーなど）は、そのバインディングの失敗として `$errorCallback` に届き、行は組み上がります。同じ誤りでも、ページの直下では初期化が失敗します。3.x は、ページの直下の誤りを報告して、そのバインディングだけを失敗させていました。デプロイの前に 4.0 の lint を流してください。これらの書き方を報告します（§4.1）。初期化の失敗は、3.5 と同じく `console.error` に 1 回、まず要素と状態の読み込み元（`<wcs-state src="./state.js"> failed to initialize.`）、続けてエラーの順に出ます。バインディングを組み上げた後に `$connectedCallback` が throw・reject するのは、初期化の失敗ではありません: `<wcs-state …> $connectedCallback failed.` に続けてエラーが出て、`connectedCallbackPromise` はそのエラーで reject し、ページは組み上がっているので `getBindingsReady()` は resolve します。ルートの `<wcs-state>` を入れ直したときの `$connectedCallback` の失敗も同じ形で報告し、ルートの `$disconnectedCallback` が throw・reject したときは `<wcs-state …> $disconnectedCallback failed.`（#51）に続けてエラーが出ます。どちらも要素のコールバックの外へは漏れません。
 
 #### コメントバインディング
 
@@ -411,11 +411,11 @@ this.items = items;
 #### 小さな違い
 
 - 状態に無いトップレベルのキーに書き込むと、そのキーが作られます（3.x は書き込みが失敗しました）。読むのはこれまでどおり `[wcs/binding-path-missing]` で throw します。
-- 再設定（初期化済みの要素への `setInitialState()`）の新しい状態に、古い状態にあったトップレベルのキーが無いと、そのキーが書き込まれるまで、そこへのバインディングは空になり、その下のリストは行を描かず、それを読む getter は `undefined` を得ます。新しい状態に無い深いパスは、もともとこうでした。3.x はそのバインディングとリストを失敗として報告し、古いテキストと行をページに残しました。新しい状態のオブジェクトには書き込みません（凍結した状態でも再設定できます）。例外はクラスの状態のプロトタイプにある getter で、新しい状態にそれが無いと、3.x と同じくそこへのバインディングは失敗します（§5）。
+- 再設定（初期化済みの要素への `setInitialState()`）の新しい状態に、古い状態にあったトップレベルのキーが無いと、そのキーが書き込まれるまで、そこへのバインディングは空になり、その下のリストは行を描かず、それを読む getter は `undefined` を得ます。新しい状態に無い深いパスは、もともとこうでした。3.x はそのバインディングとリストを失敗として報告し、古いテキストと行をページに残しました。新しい状態のオブジェクトには書き込みません（凍結した状態でも再設定できます）。クラスの状態のプロトタイプにある getter も、新しい状態に無ければ同じく空になります。
 - `__proto__` か `prototype` を通るパスは `[wcs/binding-syntax] #120` で throw します。バインディング、書き込み、`$resolve`、`$setAll`、`this.__proto__` のような読みが対象です。
 - `state="id"` は、その id の `<script type="application/json">` だけを読みます。
 - `$watch` のハンドラと `$stream` の再開の連鎖が上限を超えると（3.x と同じく、深さ 32 を超えた書き込み）、その書き込みが起こしたハンドラと再開だけを飛ばし、同じバッチのほかのハンドラは動きます。3.x はバッチごと飛ばしていました。再開の書き込みは描画の連鎖（100 回の drain）にも数えます。microtask ごとに続く要素の書き戻しが stream を再開させると、50 回ほどで打ち切られます（stream が無ければ 100 回）。
-- `$stream` の source が実行の開始（再開）と同じタスクの中で（同期に、または microtask で）出した値は、それが起こす再開の連鎖に数えます。値が別の stream の `args` に届くと、その stream は 1 段深く再開します。そのため、すぐに値を出す source で互いの値を読む 2 本の stream は、ページを固めずに打ち切られます。後のタスクで届いた値と、値が起こす `$watch` のハンドラは、数え直しです。
+- `$stream` の実行が開始（再開）と同じタスクの中で（同期に、または microtask で）書くもの —— source が出した値、status の `done` / `error` —— は、その実行の連鎖の続きです。別の stream の `args` に届けばその stream は 1 段深く再開し、起こした `$watch` のハンドラも 1 段深く実行されます。そのため source がすぐに値を出すと、互いの値を読む 2 本の stream も、stream の値の `$watch` がその `args` の読むものを進める形も、ページを固めずに打ち切られます。後者は 1 周（ハンドラと再開）が 2 段なので、終わる循環かどうかに関わらず 16 周ほどで止まり、そうした source で回す自動ページ送りもそこで止まります（3.x は終わりの無い循環で報告なしに固まり、終わる循環は最後まで回しました）。後のタスクで届いた値と、それが起こす `$watch` のハンドラは、数え直しです。
 - リストの末尾より先の添字: 書き込み（`this["items.5.v"] = 1`、`$resolve("items.*.v", [5], 1)`）は `no row for "items.*.v"` で throw して何も変えず、読みは `undefined` を返します。3.x は、どちらも `ListIndex not found` で throw していました。
 
 ### 3.5 ボリュームとマウントしたコンポーネント
@@ -611,7 +611,8 @@ lint に見えないもの: `bootstrapXxx()` のオプション、委譲され�
 | `[wcs/wildcard-rank] "b.*.y" ranges over the rows of "b", but the enclosing "for" template at that level renders "a".` | #1403 | 3.4 |
 | `[wcs/binding-syntax] "<path>": a state path cannot go through "__proto__" or "prototype" …` | #120 | 3.4 |
 | `<wcs-state src="./state.js"> failed to initialize.`（`console.error`。続けてエラー。`state=`・`src=`・`mount=`・`bind-component=` があれば示す） | #49 | 3.4 |
-| `<wcs-state> $connectedCallback failed.`（`console.error`。続けてエラー。バインディングを組み上げた後） | #50 | 3.4 |
+| `<wcs-state> $connectedCallback failed.`（`console.error`。続けてエラー。バインディングを組み上げた後と、入れ直したとき） | #50 | 3.4 |
+| `<wcs-state> $disconnectedCallback failed.`（`console.error`。続けてエラー。ルートの `$disconnectedCallback` が throw・reject したとき） | #51 | 3.4 |
 | `<wcs-state mount="p">`: `$watch is not run in a volume — declare it on the root state.`（`console.error`） | — | 3.5 |
 | `<wcs-state mount="p">`: `injections (data-wcs="state.<key>: …") are not supported — read the root path in a root getter.`（`console.error`） | — | 3.5 |
 | `<wcs-state mount="p"> will not graft: its component is wired to its host.`（`console.error`） | — | 3.5 |
@@ -627,13 +628,3 @@ lint に見えないもの: `bootstrapXxx()` のオプション、委譲され�
 次の場合は 4.0 で分かっている制限で、4.0.x で直す予定です。どれにも回避の方法があります。
 
 - **1 つのオブジェクトが 2 つの行から届く。** 同じオブジェクトを 1 つのリストの 2 つの位置に置くと、片方の行の下への書き込み（`this["items.0.name"] = "z"`）は、もう片方の行のバインディングと行 getter に届きません。素の読み、ルートの getter、`$getAll` は新しい値を返します。1 つのオブジェクトが 2 つの配列から届く場合 — TodoMVC 風の絞り込み（`todos` を絞り込んだ写しを返す `get shown()` を `for: shown` で描き、行の checkbox が `done` に書き込む形）— では、書き込みは `for: todos`、`todos.*` のパスを読む getter（`$getAll("todos.*.done")`）、絞り込みそのものにも届きません。チェックした行は「未完了」の表示に残ります。getter が `todos` そのものを返すのに戻ると、引き継いだ行は描き直されます — ほかのリストが前の更新でその配列に移っていた場合を除きます。3.x にも同じ問題があります（#365）。行の下に書き込む代わりに、変わった要素を差し替えるか（`this.todos = this.todos.map((x) => x === t ? { ...x, done: !x.done } : x)`）、書き込みの後に `this.$postUpdate("todos")` を呼んでください。
-- **プレーンなオブジェクトの下の数値のキー**（`sales.2024.total`・`usersById.42.name`）。マークアップでは描かれますが、4.0 ではスクリプトの読み（`this["sales.2024.total"]`、getter の中も）が `undefined` になり、そのパスへの `$eq` は常に偽になり、書き込みは `no row for "sales.*.total"` で throw し、双方向の書き戻しも失敗します。3.x（3.4 以降）は、これまでどおり素のキーとして読み、`$resolve` / `$setAll` では素のキーとして書きます。読みは `this.sales[2024].total` と書き、書き込みはトップレベルのキーに新しいオブジェクトを代入するか（`this.sales = { ...this.sales, 2024: { ...this.sales[2024], total: 10 } }`）、数値でないキーを使ってください。
-- **再セットの後の状態の列挙。** 初期化済みの要素に `setInitialState()` をした後も、`Object.keys(this)`・`in`・`delete`・`for…in`・スプレッド（`{ ...this }`）・`JSON.stringify(this)` は、要素が最初に持った状態のキーで動きます。新しい状態にだけあるキーは出ず、落としたキーは出たままです。名前を指した読み書きには影響しません。列挙や直列化をするデータは、1 つのキーの下にまとめてください（`JSON.stringify(this.form)`）。
-- **クラスの状態を、その getter を持たないオブジェクトで再セットする。** クラスに定義した getter で新しい状態に無いものは、再セットで落としたほかのキーのように空になりません（§3.4）。そのバインディングは古い値のまま `[wcs/binding-path-missing]` を報告し、コードから読むと throw します。同じクラスのインスタンスで再セットするか、新しい状態にもそのキーを持たせてください。
-- **すぐに値を出す source の `$watch` → `$stream` の終わりの無い循環で、ページが固まる。** stream の値の `$watch` が、その stream の `args` が読むものを変え、source が何も待たずに値を出すと（メモリから yield する async generator、`start` で enqueue する `ReadableStream`）、循環は microtask だけで回ります。連鎖の上限は 1 回報告されますが（`… the chain is cut`）、循環は止まりません。こうした循環には終わりの条件を付けてください（`if (cur.length > 0 && this.page < this.lastPage) this.page++`）。ネットワークやタイマーを待つ source なら、ページは応答し続けます。
-- **ページをバインドするときにページに無かったコンポーネントのホストは、待ち続ける。** ページがバインドするのは、`<wcs-state>` が読み込まれた時点にある `data-wcs` と、`for:` / `if:` が描くもの、router が渡すものです。`<my-card data-wcs="state: user">` のようなホストを、それより前に自分のコードが外して後で戻したり、後から初めて差し込んだりすると、配線されません。中身は生の `{{ }}` のまま、`<wcs-state bind-component>` は決着せず、何も報告されません。ホストを `for:` / `if:` のテンプレートから描くか、差し込んだ直後に渡してください: `globalThis[Symbol.for("wcstack.binder")]?.bind(host)`（binder プロトコル。[@wcstack/state の README](../packages/state/README.ja.md#挿入された内容の中の構造テンプレート)）。
-- **差し替えた `<wcs-state bind-component>` を戻す。** コンポーネントの `<wcs-state bind-component>` を新しいものに差し替え、その新しい方を外して古い要素を入れ直すと、コンポーネントは止まったままになります。ページのデータに追従せず、`$connectedCallback` も走りません。古い要素ではなく、新しい `<wcs-state bind-component>` 要素を入れてください。
-- **ページから外して戻したルートの `<wcs-state>`。** バインディングは動き続けますが、ルートが外れているあいだに接続した `<wcs-state mount>` は待ち続け（データは接ぎ木されず、`connectedCallbackPromise` は決着しません）、そのあいだに表示したルートの内容は、router がもう一度渡すまでバインドされません。ルートの `<wcs-state>` はページに置いたままにしてください。ボリュームが止まったら、ルートが戻った後で、それを外して新しい `<wcs-state mount>` 要素を入れてください。
-- **`<wcs-state>` を入れ直したときに、ルートの `$connectedCallback` が同期で投げると、** 捕まりません。最初の接続のときの `console.error` の報告ではなく、捕まらない例外として出ます。ルートの `$disconnectedCallback` が同期で投げたときも、毎回同じように外へ漏れます。これらのコールバックを `async` にするか（reject は `console.error` に報告されます）、中で捕まえてください。
-- **SSR: 1 つの `if:` / `elseif:` / `else:` の連鎖のテンプレートの間のコメント。** ハイドレーションはサーバの枝を捨てて描き直します。その中のカスタム要素は作り直され、ハイドレーションの前に打った文字は失われます。それ以外の結果は正しくなります。連鎖のテンプレートの間からコメントを外してください。空白、`if:` のテンプレートの前のコメント、枝の中のコメントは問題ありません。
-- **ページのルートを置き換えた後のメモリ。** ルートの `<wcs-state>` を、それがバインドした内容（とボリューム）ごと外すと、その状態と DOM は、別の `<wcs-state>` が同じ document か shadow root をバインドするまで — ボリュームのマウントパスについては、そのパスのボリュームがそこに接続するまで — メモリに残ります。ほかへの影響はありません。ルートの `<wcs-state>` を置いたままにするページには関係ありません。

@@ -21,11 +21,11 @@ The same message reads differently depending on whether the diagnostics feature 
 | Where | `@wcstack/state` (`bootstrapState()` installs every feature), `/auto`, `/parser`; `/core` after `installFeatures([diagnostics])`; the split auto entry with `features="diagnostics"` | `/core` alone |
 | Text | `[@wcstack/state] [wcs/<code>] <sentence>` | `[@wcstack/state] [wcs/<code>] #<number> <values>` |
 
-- **The code** comes from the hundreds of the number: 1xx `binding-syntax`, 2xx `template-syntax`, 3xx `binding-path-missing`, and so on (the "Code" column). Numbers 1–50 have no code, so their messages start with the sentence, or with `#<number>`. The codes are the ones `@wcstack/lint` and the VS Code extension report.
+- **The code** comes from the hundreds of the number: 1xx `binding-syntax`, 2xx `template-syntax`, 3xx `binding-path-missing`, and so on (the "Code" column). Numbers 1–51 have no code, so their messages start with the sentence, or with `#<number>`. The codes are the ones `@wcstack/lint` and the VS Code extension report.
 - **The values**, without the feature, follow the number in the order of the "Values" column: a string is written as JSON (`"uc"`), anything else as `String(value)`.
-- **Guidance.** With the feature, a message the engine throws through its error path can be followed by how to fix it: a "Did you mean" (edit distance 2 at most), the replacement of a filter name 4.0 removed (instead of a "Did you mean"), a fix for the case, and `Validate statically: npx @wcstack/lint <file>.` for the codes the lint detects. Messages written to the console (#11, #12, #17, #25, #41, #48, #49, #50) carry the sentence only.
+- **Guidance.** With the feature, a message the engine throws through its error path can be followed by how to fix it: a "Did you mean" (edit distance 2 at most), the replacement of a filter name 4.0 removed (instead of a "Did you mean"), a fix for the case, and `Validate statically: npx @wcstack/lint <file>.` for the codes the lint detects. Messages written to the console (#11, #12, #17, #25, #41, #48, #49, #50, #51) carry the sentence only.
 - **#44** names where the option was given (`bootstrapState`, `$behavior`, or `state` when `$behavior` is not an object). For `bootstrapState` and one of the options 4.0 moved, the sentence adds ` 4.0 moved it to the state's $behavior.`
-- **#49 / #50** take the element's tag and then the name and value of each of `mount`, `bind-component`, `state` and `src` it has; the sentence renders them as the element (`<wcs-state src="./state.js">`).
+- **#49 / #50 / #51** take the element's tag and then the name and value of each of `mount`, `bind-component`, `state` and `src` it has; the sentence renders them as the element (`<wcs-state src="./state.js">`).
 - **Messages without a number** are printed in full whatever is installed: the barriers a page meets on purpose (`[wcs/feature-not-installed] … needs the add-on @wcstack/state/features/<name>`, a formatting filter without the formats feature), `[wcs/feature-unknown]`, and the messages of the features themselves (volumes, components, SSR, `$watch` / `$stream`, devtools).
 
 ## 2. The numbers
@@ -84,6 +84,7 @@ The same message reads differently depending on whether the diagnostics feature 
 | 48 | — | `LocaleInvalid` | `the locale "<locale>" (<html lang> or bootstrapState's locale) is not a language tag Intl takes (en-US, not en_US): the locale filters use "en".` | `<locale>` |
 | 49 | — | `InitFailed` | `<wcs-state …> failed to initialize.` | `<tag>` `<attribute>` `<value>` `…` |
 | 50 | — | `ConnectedFailed` | `<wcs-state …> $connectedCallback failed.` | `<tag>` `<attribute>` `<value>` `…` |
+| 51 | — | `DisconnectedFailed` | `<wcs-state …> $disconnectedCallback failed.` | `<tag>` `<attribute>` `<value>` `…` |
 | 101 | `wcs/binding-syntax` | `BindTextNoColon` | `Invalid bindText: "<binding>". Missing ':' separator between propPart and statePart.` | `<binding>` |
 | 102 | `wcs/binding-syntax` | `StructuralTakesNoModifiers` | `"<binding>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` | `<binding>` `<keyword>` |
 | 103 | `wcs/binding-syntax` | `ElseTakesNoValue` | `"<binding>": "else" takes no value — write "else:".` | `<binding>` |
