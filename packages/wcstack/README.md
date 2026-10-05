@@ -417,7 +417,7 @@ An old filter name or `substr` fails initialization with `[wcs/filter-unknown]` 
 
 ## Known limitations
 
-- **One object reachable from two rows** — the same object at two positions of a list, or in two lists (a getter returning a filtered copy of `todos`, rendered with `for:`, while a row writes into it): a write below one row does not reach the other row's bindings and row getters. Do not write below such a row; replace the object in the top-level list instead, as the app above does (`toggle()` reassigns `todos` with a new object for the changed item, and the checkbox is `checked#ro:`).
+- **One object at two positions of one list, or in two arrays no getter relates** (`backup = items; items = items.filter(…)`, both rendered): a write below one row does not reach the other row's bindings and row getters. Do not write below such a row; replace the object in the top-level list instead, as the app above does (`toggle()` reassigns `todos` with a new object for the changed item, and the checkbox is `checked#ro:`). Arrays a getter relates are fine: with `get shown()` returning a filtered copy of `todos`, a write below a row of either list reaches the other's row, `todos.*` readers and the filter.
 
 Details: the migration guide, [§5](https://github.com/wcstack/wcstack/blob/main/docs/migration-v4.md#5-known-limitations).
 

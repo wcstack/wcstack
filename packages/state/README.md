@@ -804,7 +804,7 @@ The exception is data that arrives as **freshly created objects** — `fetch(...
 </template>
 ```
 
-The getter returns a copy, so a write through the original path (`this["items.1.name"] = "z"`) does not reach the copy's row; write through the row instead (`firstTwo.1.name`, or a binding inside the row). The same holds when one object is reachable from two lists (a `get shown()` that filters `todos`, rendered with `for: shown`): see [One object at two positions](#resolve--access-by-explicit-index).
+The getter returns a copy, and a write reaches both sides: a write through the original path (`this["items.1.name"] = "z"`) reaches the copy's row, and a write through the row (`firstTwo.1.name`, or a binding inside the row) reaches the original list's row. The getter is evaluated again, because its array holds the written object — with a filter (`get shown()` returning the undone items of `todos`, rendered with `for: shown`), a row whose checkbox writes `.done` leaves the view. A getter that returns new objects (`map`) is not evaluated again by such a write. See [One object at two positions](#resolve--access-by-explicit-index) for what is not reached.
 
 #### `$listKeys` — identity for refetched rows
 
@@ -1413,7 +1413,7 @@ export default {
 };
 ```
 
-**One object at two positions.** When the same object sits at two positions of a list (`items: [o, o, …]`), a write to a key below one of those rows (`this["items.0.name"] = "z"`) changes the object, but the other row's bindings and row getters keep showing the old value: a write reaches only the row it was made through. Plain reads, root getters and `$getAll` see the new value. The same happens when one object is reachable from two lists, as in a TodoMVC-style filter — `get shown()` returning a filtered copy of `todos`, rendered with `for: shown`, while a checkbox writes the row. Call `$postUpdate("items")` after such a write, and every row of that list shows the object again. This is a known limitation of this version.
+**One object at two positions.** When the same object sits at two positions of one list (`items: [o, o, …]`), a write to a key below one of those rows (`this["items.0.name"] = "z"`) changes the object, but the other row's bindings and row getters keep showing the old value: within one list, a write reaches only the row it was made through. Plain reads, root getters and `$getAll` see the new value. The same holds for two arrays at plain keys that share an object (`backup = items; items = items.filter(…)`, both rendered). Call `$postUpdate("items")` after such a write, and every row of that list shows the object again. This is a known limitation of this version. When a getter relates the arrays — a TodoMVC-style filter (`get shown()` returning a filtered copy of `todos`, rendered with `for: shown`), a sort, a slice — a write from either side reaches every row holding the object and the `todos.*` readers, and the getters whose array holds it are evaluated again (a checked row leaves an "active" filter, a renamed row moves in a sorted view). A getter whose array does not hold the written object is not evaluated again: it read the array, not the object — read `$getAll("todos.*.done")` in it to follow every row.
 
 ## Recursive Paths (`$recursion`)
 
@@ -1568,7 +1568,7 @@ The walk descends by depth and checks the shape it needs as it goes: reaching th
 
 Replacing a row object while keeping its `children` array — `this.nodes = this.nodes.map(n => ({ ...n }))` — is an ordinary update, and the aggregates follow it.
 
-Outside a recursive walk, rows may share one array (the walk refuses it, as above). Every list over the same array instance shows a write made through any one of them — a write below `groups.0.items.1` also reaches `groups.2.items.1` when both hold that array, under the same key or another. One object reached through two *different* arrays (a copy of a shared array, a getter returning a filtered copy) is the known limitation described under [One object at two positions](#resolve--access-by-explicit-index).
+Outside a recursive walk, rows may share one array (the walk refuses it, as above). Every list over the same array instance shows a write made through any one of them — a write below `groups.0.items.1` also reaches `groups.2.items.1` when both hold that array, under the same key or another. One object reached through two *different* arrays follows writes when a getter relates them (a getter returning a filtered copy, a sort); through two copies at plain keys it is the known limitation described under [One object at two positions](#resolve--access-by-explicit-index).
 
 The ceiling is **128 wildcard levels** on the expanded path. The aggregate above reads one level below the node it is evaluating, so it folds a chain 127 deep and stops at 128 with `wcs/recursion-depth-exceeded`, naming the anchor, the depth reached, the path it was building, and the limit. That check trips before the getter stack's own 128-frame limit (`wcs/getter-depth-exceeded`), so a deep tree is reported as deep instead of being accused of a cycle. Nothing is truncated on the way: a partial aggregate would be a wrong number reported as a right one.
 
