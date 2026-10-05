@@ -465,7 +465,7 @@ function cleanupTimeout(timeoutMs, startedAt) {
     return Math.max(CLEANUP_MIN_TIMEOUT_MS, timeoutMs - (Date.now() - startedAt));
 }
 
-var version = "4.0.0-rc.2";
+var version = "4.0.0-rc.3";
 var pkg = {
 	version: version};
 

@@ -363,6 +363,7 @@ var SENTENCES = {
   [46 /* FeaturesNotArray */]: () => '$features must be an array of add-on names (["temporal", "formats"]).',
   [49 /* InitFailed */]: (tag, ...at) => `${element(tag, at)} failed to initialize.`,
   [50 /* ConnectedFailed */]: (tag, ...at) => `${element(tag, at)} $connectedCallback failed.`,
+  [51 /* DisconnectedFailed */]: (tag, ...at) => `${element(tag, at)} $disconnectedCallback failed.`,
   [101 /* BindTextNoColon */]: (t) => `Invalid bindText: "${t}". Missing ':' separator between propPart and statePart.`,
   [102 /* StructuralTakesNoModifiers */]: (t, keyword) => `"${t}": "${keyword}" takes no modifiers or filters on its left side \u2014 write "${keyword}:".`,
   [103 /* ElseTakesNoValue */]: (t) => `"${t}": "else" takes no value \u2014 write "else:".`,

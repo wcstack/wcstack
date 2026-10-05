@@ -785,6 +785,10 @@ var SENTENCES = {
     /* ConnectedFailed */
   ]: (tag, ...at2) => `${element(tag, at2)} $connectedCallback failed.`,
   [
+    51
+    /* DisconnectedFailed */
+  ]: (tag, ...at2) => `${element(tag, at2)} $disconnectedCallback failed.`,
+  [
     101
     /* BindTextNoColon */
   ]: (t) => `Invalid bindText: "${t}". Missing ':' separator between propPart and statePart.`,
