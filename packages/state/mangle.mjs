@@ -39,7 +39,7 @@ const NAMES = `
   dropWork fedBack codeWrote feeding unchainFn renderedFn markupAccessor cutLoop chainCut cutTask reported fed carried unsettled
   listsByArray mirror shared landed loadTarget forListsUnder forAllLists api callAt rowOf
   explain render beforeWrite written getterReached listSynced drained declare claim dollar failed hostBinding
-  componentScope ssrMark adopt adoptScope declared tags mustache guard directional load noticed unfile epoch failAt trySync
+  componentScope ssrMark adopt adoptScope nativeCommand declared tags mustache guard directional load noticed unfile epoch failAt trySync
   index component exports bindings arr sources drain register setAll fragment controller connected disconnected prop registered fold
   activate deactivate startAll abortAll stopAll consume watch stream hit expr pos started level headAt dispatch fail invoke
   head lead tail touched sharing track drop single nested peek inner outer hits synth watches eachRow settle restart skip direct

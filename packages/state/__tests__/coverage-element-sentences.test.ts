@@ -114,6 +114,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.NoBindable, ["x-el", "command.go"], "[wcs/token-misconfigured] <x-el> declares no static wcBindable (command.go)."],
   [M.NoCommand, ["x-el", "go"], '[wcs/token-misconfigured] <x-el> declares no command "go".'],
   [M.NoProperty, ["x-el", "nope"], '[wcs/token-misconfigured] <x-el> declares no property "nope".'],
+  [M.NativeNoCommand, ["div", "showModal", "focus, blur"], '[wcs/token-misconfigured] <div> has no command "showModal" (a native <div>\'s commands: focus, blur).'],
   [M.EventTokenUndeclared, ["made"], '[wcs/token-undeclared] eventToken "made" is not declared in $eventTokens.'],
   [M.CommandTokenUndeclared, ["sav"], '[wcs/token-undeclared] "$command.sav" is not declared in $commandTokens.'],
   [M.WildcardNoLoop, ["items.*.name", 1], '[wcs/wildcard-rank] "items.*.name" needs 1 enclosing loop level(s); the scope provides 0.'],
@@ -138,6 +139,14 @@ describe("番号付きのメッセージの文面（診断の後付け）", () =
   it("初期化の失敗の行は、要素と、あれば読み込み元などの属性を、書かれた順でなく決まった順に並べる", () => {
     expect(text(M.InitFailed, ["wcs-state"])).toBe("<wcs-state> failed to initialize.");
     expect(text(M.InitFailed, ["my-state", "mount", "cart", "src", "./cart.js"])).toBe('<my-state mount="cart" src="./cart.js"> failed to initialize.');
+  });
+
+  it("ネイティブ要素の command. の #1202 だけが native-commands の後付けを案内する", () => {
+    const hint = " A native element's command needs the add-on @wcstack/state/features/native-commands.";
+    expect(text(M.NoBindable, ["dialog", "command.showModal"])).toBe(`[wcs/token-misconfigured] <dialog> declares no static wcBindable (command.showModal).${hint}`);
+    // a custom element declares its commands; an event token is not a command
+    expect(text(M.NoBindable, ["x-el", "command.go"])).not.toContain(hint);
+    expect(text(M.NoBindable, ["input", "eventToken.value"])).not.toContain(hint);
   });
 
   it("add-on の知らない番号は、コード・番号・値のまま出す", () => {

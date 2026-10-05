@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>fixture: native element commands</title>
+  <!-- Covers docs/state-engine-rewrite/native-commands.ja.md: `command.<method>:` on native
+       elements (the native-commands feature, which /auto includes) where the methods have their
+       real effects — a dialog opened modally (top layer, :modal) and closed with a returnValue
+       from the state, an input focused once its if: branch is drawn ($renderedCallback), and a
+       popover toggled from a click whose event is not passed to togglePopover. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+export default {
+  editing: false,
+  title: "draft",
+  $commandTokens: ["openEditor", "closeEditor", "focusTitle", "togglePop"],
+  save() { this.$command.closeEditor.emit("saved"); },
+  edit() { this.editing = true; },
+  $connectedCallback() { document.documentElement.dataset.ready = "true"; },
+  $renderedCallback(paths) {
+    if (paths.includes("editing") && this.editing) this.$command.focusTitle.emit();
+  },
+};
+    </script>
+  </wcs-state>
+
+  <button id="open" data-wcs="onclick: $command.openEditor">open</button>
+  <dialog id="dlg" data-wcs="command.showModal: $command.openEditor; command.close: $command.closeEditor">
+    <button id="save" data-wcs="onclick: save">save</button>
+  </dialog>
+
+  <button id="edit" data-wcs="onclick: edit">edit</button>
+  <template data-wcs="if: editing">
+    <input id="title" data-wcs="value: title; command.focus: $command.focusTitle">
+  </template>
+
+  <button id="pop" data-wcs="onclick: $command.togglePop">pop</button>
+  <div id="tip" popover="manual" data-wcs="command.togglePopover: $command.togglePop">tip</div>
+</body>
+</html>

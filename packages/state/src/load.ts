@@ -7,7 +7,7 @@
 import type { Feature } from "./hooks";
 
 /** The add-on names (`$features`, the root `<wcs-state features>`): the tooling manifest publishes them as `features`. */
-export const FEATURE_NAMES: readonly string[] = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools"];
+export const FEATURE_NAMES: readonly string[] = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands"];
 
 export function loader(base: string): (names: string[]) => Promise<Feature[]> {
   return (names) => Promise.all(names.map(async (name) => {

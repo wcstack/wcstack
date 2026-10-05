@@ -900,3 +900,11 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - server の依存が厳密な `4.0.0-rc.4`
   - state README の CDN のピンと、`esm.run` の `/auto`（state・router・wcstack）がどれも 200
 - ゲートの基準値を rc.4 の dist で取り直した（gzip は縮小の後の値と同じ）。core.min.js は 19,500B で、上限まで 500B。
+
+### ネイティブ要素のコマンド（2026-10-06）
+
+- `research/primitive-dom-commands`（`research/state-engine` の b135c762 から）。設計・調査・実装の記録は [native-commands.ja.md](./native-commands.ja.md)。
+- 新しい後付け `native-commands`: ネイティブ要素の `command.<method>:` を、決まった表のメソッド（`<dialog>` の `showModal` / `close`、全要素の `focus`、`<video>` の `play` など）で呼ぶ。コアにはフック 1 本（`hooks.nativeCommand`）。第 1 引数が `Event` の emit（`onclick: $command.x`）は引数なしで呼ぶ。表に無いメソッドは `#1205`。完全版の入口は全部入りで、`/core` は後付けを入れなければ従来どおり `#1202`。
+- core.min.js は 19,525B（+25B、上限まで 475B）、後付けは 499B。`split/auto.js` は 610B で上限 620B まで 10B。
+- manifest に `nativeCommands`。vscode-wcs（`wcs-validate`）が表に無いメソッドを error にする。
+- 残り: wcstack-skill の command-token の参照、VS Code 拡張の補完。

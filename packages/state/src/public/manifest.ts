@@ -9,9 +9,12 @@
  * 4.0 adds the state's `$behavior` options (`behaviorOptions`) and the add-on names `$features` and the
  * root `<wcs-state features>` take (`features` — the split loader's allow-list, load.ts). The `$behavior`
  * options are a copy of the engine's list, so this bundle stays without the engine; public-surface.test.ts pins both.
+ * It also publishes what a native element's `command.<method>:` may call (`nativeCommands`, the
+ * native-commands add-on's table, copied: a consumer's edit does not reach the runtime's).
  */
 import { config } from "../config";
 import { FEATURE_NAMES } from "../load";
+import { NATIVE_COMMANDS } from "../native/commands";
 import { WILDCARD } from "../pattern";
 import { coreFilters } from "../filters/core";
 import { formatFilters } from "../filters/formats";
@@ -83,6 +86,8 @@ export interface IWcsManifest {
   behaviorOptions: Readonly<Record<string, { type: "boolean"; default: boolean }>>;
   /** The add-on names `$features` and the root `<wcs-state features>` take (4.0). */
   features: readonly string[];
+  /** What a native element's `command.<method>:` may call, by tag; `*` is every element's (4.0, the native-commands add-on). */
+  nativeCommands: Readonly<Record<string, readonly string[]>>;
 }
 
 export function getWcsManifest(): IWcsManifest {
@@ -119,5 +124,6 @@ export function getWcsManifest(): IWcsManifest {
     // every option is a boolean, true when left out (engine.ts `loadTarget`: `typeof … === "boolean"`, `?? true`)
     behaviorOptions: Object.fromEntries(BEHAVIOR_OPTION_KEYS.map((key) => [key, { type: "boolean" as const, default: true }])),
     features: [...FEATURE_NAMES],
+    nativeCommands: Object.fromEntries(Object.entries(NATIVE_COMMANDS).map(([tag, methods]) => [tag, [...methods]])),
   };
 }

@@ -18,7 +18,7 @@
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { getMessages } from '../core/messages.js';
 import { findAllBindAttributes, splitBindingExpressions, parseBindingExpression } from './bindingValidator.js';
-import { suggestion } from './ioNodeValidator.js';
+import { suggestion } from './suggestion.js';
 
 /**
  * WAI-ARIA の states & properties 全名の静的リスト。

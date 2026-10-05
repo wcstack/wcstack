@@ -77,7 +77,7 @@ Playwright の `page.route()` で `/api/items` を隔離して横取りします
 | `calendar` (packages/state/examples) | state 単体。算出 getter を `for:` のイテレーション対象にしたグリッドが、週数変化・年跨ぎを含む月移動に追随すること |
 | `router-i18n` | router + state + i18n パターン。ロケール交渉（URL > storage > navigator > fallback）、head 同期スクリプトの URL 修復、言語切替のハードナビゲーション、後から差し込まれたルート内容の binder 経由バインド。デモ自身のサーバーをルートで立てる（basename 前提のため serve.mjs 非経由） |
 
-### fixture プロトコル回帰テスト (18 spec)
+### fixture プロトコル回帰テスト (19 spec)
 
 `e2e/fixtures/` の最小 HTML に対して実行します。デモではなく**プロトコルの不変条件**を固定するもので、
 happy-dom では再現しない挙動を対象にしています。
@@ -99,6 +99,7 @@ happy-dom では再現しない挙動を対象にしています。
 | `monitor-initial-snapshot` | devtools hook protocol の初期スナップショット |
 | `router-a11y` | router のスクロール/フォーカス契約 (docs/a11y-design.md §3-1)。Navigation API 経路の仕様既定 (push でトップへ・traverse で復元・フォーカスは body へ) と、`window.navigation` を undefined に潰す fallback 強制で pushState / popstate 経路の SPA 遷移が成立すること (T0-4) |
 | `router-a11y-optin` | オプトインの `focus="heading"` / `announce="title"` (docs/a11y-design.md §3-4)。commit 後にリーフ route の見出しへフォーカスし、live region へ commit 時 title が入ること。初回描画では両方とも動かないこと |
+| `native-commands` | ネイティブ要素の `command.<method>:`（native-commands 機能）。`onclick: $command` で `<dialog>` が `:modal` で開き、state の `emit("saved")` で閉じて `returnValue` が入ること、`if:` で表示した `<input>` に `$renderedCallback` からの emit でフォーカスが移ること、popover の開閉（クリックのイベントを引数にしない）。happy-dom では top layer・フォーカス・popover の状態を見られない |
 | `state-move-before` | keyed swap 中の行内 `<input>` のフォーカス・入力値の保存 (docs/a11y-design.md §4)。mountAfter の moveBefore 分岐は happy-dom に moveBefore が無く実ブラウザでしか走らない |
 | `view-transition-route` / `view-transition-list` | 実 `document.startViewTransition` に対する遷移の開始回数と DOM の一回適用（router ルート差し替え / state リスト更新・auto naming） |
 | `audio-graph-poc` / `audio-offline` | Web Audio のグラフ配線とレンダリング (OfflineAudioContext) |

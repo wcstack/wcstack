@@ -136,9 +136,12 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.RecursionUnsupported]: (p) => `"${p}" uses "${RECURSION_WILDCARD}", which is not accepted here.`,
 
   [M.CommandRightSide]: (prop, p) => `"${prop}: ${p}": the right-hand side must be $command.<name>`,
-  [M.NoBindable]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).`,
+  // a native element's command (no hyphen: never a custom element) is the native-commands add-on's
+  [M.NoBindable]: (tag, what) => `<${tag}> declares no static wcBindable (${what}).${
+    !tag.includes("-") && what.startsWith("command.") ? " A native element's command needs the add-on @wcstack/state/features/native-commands." : ""}`,
   [M.NoCommand]: (tag, method) => `<${tag}> declares no command "${method}".`,
   [M.NoProperty]: (tag, prop) => `<${tag}> declares no property "${prop}".`,
+  [M.NativeNoCommand]: (tag, method, allowed) => `<${tag}> has no command "${method}" (a native <${tag}>'s commands: ${allowed}).`,
 
   [M.EventTokenUndeclared]: (name) => `eventToken "${name}" is not declared in $eventTokens.`,
   [M.CommandTokenUndeclared]: (name) => `"$command.${name}" is not declared in $commandTokens.`,

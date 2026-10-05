@@ -230,6 +230,7 @@ The file names under `dist/split/chunks/` carry a content hash: if you list chun
 | `@wcstack/state/core` | The binding engine: `data-wcs`, `{{ }}` and comment bindings, `for` / `if`, path getters, events, `$command` / `$on`, the 10 condition filters (`eq` `ne` `not` `lt` `le` `gt` `ge` `truthy` `falsy` `boolean`), `bootstrapState`, `installFeatures` |
 | `@wcstack/state/features/temporal` | `$watch`, `$stream` |
 | `@wcstack/state/features/list-keys` | `$listKeys` |
+| `@wcstack/state/features/native-commands` | `command.<method>:` on native elements (`<dialog>`.`showModal()`, `<input>`.`focus()`, `<video>`.`play()`, …) — [Native Element Commands](#native-element-commands) |
 | `@wcstack/state/features/scopes` | `bind-component`, `mount=` volumes, overlay exports, DCC (`data-wc-definition`) |
 | `@wcstack/state/features/recursion` | `$recursion` and `**` paths |
 | `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
@@ -275,8 +276,8 @@ The add-ons are named in two places, for two different reasons:
 | What it is for | What must be there before any `<wcs-state>` starts — `scopes`, which decides what a `mount=` / `bind-component` / DCC element is — and the page's development aids (`diagnostics`, `devtools`) | The add-ons that state needs (`temporal` for its `$watch`, `formats` for its filters) |
 | Who reads it | Only the split auto entry | Every entry: the split auto entry loads the missing add-ons; the other entries check that they are installed and fail the state with `[wcs/feature-not-installed]` otherwise |
 
-The names are `formats`, `diagnostics`, `temporal`, `list-keys`, `scopes`, `recursion`, `ssr` and
-`devtools`. Any other name in `features=` makes the split auto entry fail with `[wcs/feature-unknown]`
+The names are `formats`, `diagnostics`, `temporal`, `list-keys`, `scopes`, `recursion`, `ssr`,
+`devtools` and `native-commands`. Any other name in `features=` makes the split auto entry fail with `[wcs/feature-unknown]`
 before it defines `<wcs-state>`; in `$features` it fails that state (`[wcs/feature-unknown]` on the
 split auto entry, `[wcs/feature-not-installed]` elsewhere). A `$features` that is not an array throws
 `#46`, and a volume may not declare one.
@@ -2114,7 +2115,7 @@ export default {
 | Part | Description |
 |---|---|
 | `command.` | Fixed prefix |
-| `<methodName>` | The element's method to invoke. The name must appear as `{ name: "<methodName>" }` in `static wcBindable.commands` |
+| `<methodName>` | The element's method to invoke. The name must appear as `{ name: "<methodName>" }` in `static wcBindable.commands` — on a native element, in the table of [Native Element Commands](#native-element-commands) |
 | `$command.<tokenName>` | Explicit namespace path that resolves to a `CommandToken`. `<tokenName>` must be a name declared in `$commandTokens` |
 
 The right-hand side must be written as `$command.<tokenName>` — the bare-name shorthand (`fetchUsers`) is not supported. Going through the `$command.` namespace makes the binding's intent explicit in the HTML and keeps the top-level state namespace free of token names.
@@ -2140,11 +2141,11 @@ class MyFetcher extends HTMLElement {
 
 Validation rules (enforced at binding time):
 
-- The element must be a custom element exposing `static wcBindable` with `protocol: "wc-bindable"` and an integer `version` of `1` or later (the current protocol version is `1`; all versions ≥ 1 are core-compatible)
-- `methodName` must appear (by `name`) in `wcBindable.commands`
+- The element must be a custom element exposing `static wcBindable` with `protocol: "wc-bindable"` and an integer `version` of `1` or later (the current protocol version is `1`; all versions ≥ 1 are core-compatible) — or a native element, with the `native-commands` add-on ([Native Element Commands](#native-element-commands))
+- `methodName` must appear (by `name`) in `wcBindable.commands` (on a native element: in the table of [Native Element Commands](#native-element-commands))
 - `<tokenName>` must be declared in `$commandTokens` (`$command.typo` throws `[wcs/token-undeclared]`)
 
-A custom element is checked once its class is defined; a native element is refused at once (`[wcs/token-misconfigured]`). A violation found while the page is bound fails the `<wcs-state>`'s initialization; one found inside a `for:` / `if:` row, or when a class is defined after the page was bound, fails that one binding, which goes to `$errorCallback`, and the row is still built ([Initialization failures](#initialization-failures)).
+A custom element is checked once its class is defined; a native element at once — against the [native-commands](#native-element-commands) table where the add-on is installed (`@wcstack/state` and `/auto` include it), and refused otherwise (`[wcs/token-misconfigured]` `#1202`). A violation found while the page is bound fails the `<wcs-state>`'s initialization; one found inside a `for:` / `if:` row, or when a class is defined after the page was bound, fails that one binding, which goes to `$errorCallback`, and the row is still built ([Initialization failures](#initialization-failures)).
 
 ### Token API
 
@@ -2201,6 +2202,64 @@ This is pure wiring: the event endpoint is connected to a command-token endpoint
 <my-field data-wcs="command.clear: $command.reset"></my-field>
 <my-list  data-wcs="command.reset: $command.reset"></my-list>
 ```
+
+### Native Element Commands
+
+With the `native-commands` add-on (`@wcstack/state` and `/auto` include it; a `/core` page installs `@wcstack/state/features/native-commands`), `command.<method>:` also subscribes a **native** element's method. Opening a dialog, focusing an input or playing a video becomes a token the state emits — the state code never reaches for the element:
+
+```html
+<button data-wcs="onclick: $command.openEditor">Edit</button>
+<dialog data-wcs="command.showModal: $command.openEditor; command.close: $command.closeEditor">
+  <input data-wcs="value: title">
+  <button data-wcs="onclick: save">Save</button>
+</dialog>
+```
+
+```javascript
+export default {
+  title: "",
+  $commandTokens: ["openEditor", "closeEditor"],
+  async save() {
+    await saveTitle(this.title);
+    this.$command.closeEditor.emit("saved");   // → dialog.close("saved")
+  },
+};
+```
+
+A native element may run only the methods of this table. Any other method throws `[wcs/token-misconfigured]` (`#1205`, naming the methods that element may run) when the binding is attached — like an undeclared command of a custom element:
+
+| Element | Methods |
+|---|---|
+| any element | `focus` `blur` `click` `scrollIntoView` `showPopover` `hidePopover` `togglePopover` |
+| `<dialog>` | `show` `showModal` `close` `requestClose` |
+| `<form>` | `requestSubmit` `checkValidity` `reportValidity` |
+| `<input>` | `select` `setSelectionRange` `showPicker` `setCustomValidity` `checkValidity` `reportValidity` |
+| `<textarea>` | `select` `setSelectionRange` `setCustomValidity` `checkValidity` `reportValidity` |
+| `<select>` | `showPicker` `setCustomValidity` `checkValidity` `reportValidity` |
+| `<audio>` `<video>` | `play` `pause` `load` |
+
+Left out on purpose: the methods that write HTML, an attribute or the tree (`insertAdjacentHTML`, `setAttribute`, `remove`, … — bind `html:` / `attr.` instead); those that change a control's value without an `input` event, so the state would not see it (`form.reset()`, `stepUp()`, `stepDown()`, `setRangeText()` — write the state instead); `form.submit()`, which skips validation and the `submit` event (`requestSubmit` does neither); and the fullscreen / pointer-lock / picture-in-picture requests, which `@wcstack/fullscreen`, `@wcstack/pointer-lock` and `@wcstack/picture-in-picture` cover along with their state.
+
+- **Arguments.** A native method receives the `emit` arguments unless the first one is an `Event`. An `on…: $command.x` binding emits `(event, ...listIndexes)`, which no native method takes — `close(event)` would set the dialog's `returnValue` to `"[object PointerEvent]"`, `requestSubmit(event)` would throw — so it is called with none. From the state, `emit("saved")`, `emit({ preventScroll: true })` or `emit({ block: "center" })` pass through. A custom element's method still receives everything.
+- **The table decides, not the browser.** A method in the table binds in every browser (and on the server). Where a browser lacks it (`requestClose` in an older one), the call fails when the token is emitted and is reported like any subscriber that throws.
+- **Return values and errors** follow the custom elements': `emit` returns `checkValidity()`'s boolean or `play()`'s `Promise`. A method that throws (`showModal()` on a dialog already open non-modally, `showPopover()` on an element without `popover`) is reported with `console.error`, and the other subscribers still run. A rejected `Promise` is not caught: `await Promise.all(this.$command.play.emit())` from the state to handle an autoplay refusal.
+- **Rendering comes later.** Writes render in a microtask, so `this.editing = true; this.$command.focusTitle.emit();` reaches an input that is still hidden — or, inside `if:`, not built yet. Emit once it is drawn, from `$renderedCallback`:
+
+  ```html
+  <template data-wcs="if: editing">
+    <input data-wcs="value: title; command.focus: $command.focusTitle">
+  </template>
+  ```
+
+  ```javascript
+  $renderedCallback(paths) {
+    if (paths.includes("editing") && this.editing) this.$command.focusTitle.emit();
+  },
+  ```
+
+- **User activation.** `showPicker()` and `play()` with sound need a recent user gesture. `on…: $command.x` calls the method inside the event; an `emit` after an `await` may come too late.
+- **Custom elements are unchanged**: they declare their commands in `wcBindable`, and one without a declaration still throws `#1202`. A customized built-in (`<button is="…">`) is a native element.
+- **When a button alone opens or closes it**, the platform's invoker commands need no state at all: `<button commandfor="dlg" command="show-modal">`. Use `command.` when the state decides (after a fetch, after validation), or for what invoker commands do not cover (`focus`, `play`, `scrollIntoView`).
 
 ## Event Token (Event Binding)
 

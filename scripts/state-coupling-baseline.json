@@ -6,6 +6,7 @@
     "exports.ts -> ssr/element.ts",
     "public/contract.ts -> devtools/devtools.ts",
     "public/manifest.ts -> filters/formats.ts",
+    "public/manifest.ts -> native/commands.ts",
     "public/parser.ts -> diagnostics/explain.ts"
   ],
   "featureToCore": {
@@ -37,6 +38,10 @@
     "list-keys": [
       "hooks.ts",
       "parser/raiseError.ts"
+    ],
+    "native-commands": [
+      "hooks.ts",
+      "messages.ts"
     ],
     "recursion": [
       "hooks.ts",

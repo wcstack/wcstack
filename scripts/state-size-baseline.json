@@ -35,6 +35,11 @@
     "bytes": 1776,
     "gzip": 931
   },
+  "split/features/native-commands.js (beyond the core)": {
+    "files": 1,
+    "bytes": 942,
+    "gzip": 499
+  },
   "split/features/recursion.js (beyond the core)": {
     "files": 1,
     "bytes": 5912,

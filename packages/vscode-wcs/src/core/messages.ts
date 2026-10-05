@@ -158,6 +158,8 @@ export interface WcsMessageCatalog {
   /** 文書の root 以外の `<wcs-state>` の `features=`（ランタイムは読まない）。 */
   featuresAttrNotRoot(): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
+  /** ネイティブ要素の `command.<method>:` のメソッドが native-commands 後付けの表に無い（`allowed` はその要素に呼べるもの。ランタイムは #1205 で初期化に失敗する）。 */
+  nativeCommandUnknown(method: string, tag: string, allowed: string): string;
   spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
   /** `attr.aria-*` の属性名が WAI-ARIA に存在しない（ariaValidator）。 */
@@ -348,6 +350,8 @@ const ja: WcsMessageCatalog = {
     `"${member}" は <${tag}> のメンバーですが、"on" で始まる名前はイベント束縛になり（"${member.slice(2)}" イベントを待つ）、値は届きません。プロパティとして束縛するには ".${member}${modifiers ? `#${modifiers}` : ''}:" と書いてください（@wcstack/state 3.1）`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" は <${tag}> の command ではありません（宣言済み: ${declared}）`,
+  nativeCommandUnknown: (method, tag, allowed) =>
+    `"${method}" はネイティブの <${tag}> に command で呼べるメソッドではありません（呼べるのは ${allowed}。ランタイムは初期化で wcs/token-misconfigured を投げます）`,
   spreadNoBindable: (tag) =>
     `'...'（spread）は <${tag}> に有効な wcBindable 宣言が必要です — このタグは宣言を持たないため、ランタイムはエラーを送出します`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
@@ -581,6 +585,8 @@ const en: WcsMessageCatalog = {
     `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}${modifiers ? `#${modifiers}` : ''}:" to bind the property (@wcstack/state 3.1)`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" is not a command of <${tag}> (declared: ${declared})`,
+  nativeCommandUnknown: (method, tag, allowed) =>
+    `"${method}" is not a command of a native <${tag}> (its commands: ${allowed}; the runtime throws wcs/token-misconfigured at initialization)`,
   spreadNoBindable: (tag) =>
     `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration — this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>

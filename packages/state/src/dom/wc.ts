@@ -184,13 +184,19 @@ function noBindable(id: M, el: Element, what: string): never {
   raise(id, [el.localName, what]);
 }
 
-/** `command.<method>: $command.<token>` — the element's method subscribes to the token. */
+/**
+ * `command.<method>: $command.<token>` — the element's method subscribes to the token. A native
+ * element (no declaration) is called the way the native-commands add-on says, when installed.
+ */
 export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Block | null, bd: Bindable | null): void {
   const method = spec.name;
   // (the path, "$command.<token>")
   const token = engine.command(spec.token!.slice(9));
-  if (bd === null) noBindable(M.NoBindable, el, `command.${method}`);
-  if (!bd.commands.has(method)) raise(M.NoCommand, [el.localName, method]);
+  const call = bd === null ? hooks.nativeCommand?.(el, method) : null;
+  if (!call) {
+    if (bd === null) noBindable(M.NoBindable, el, `command.${method}`);
+    if (!bd.commands.has(method)) raise(M.NoCommand, [el.localName, method]);
+  }
   const ref = new WeakRef(el);
   const fn = (...args: unknown[]): unknown => {
     const target = ref.deref() as any;
@@ -199,7 +205,7 @@ export function attachCommand(engine: Engine, spec: Spec, el: Element, owner: Bl
       return undefined;
     }
     // detached for now (a route hidden with its nodes kept): not called, still subscribed
-    return target.isConnected ? target[method](...args) : undefined;
+    return target.isConnected ? (call ? call(target, args) : target[method](...args)) : undefined;
   };
   const unsubscribe = token.subscribe(fn);
   if (owner !== null) (owner.cleanups ??= []).push(unsubscribe);

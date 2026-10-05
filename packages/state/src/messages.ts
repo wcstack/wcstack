@@ -120,6 +120,7 @@ export const enum M {
   NoBindable = 1202,
   NoCommand = 1203,
   NoProperty = 1204,
+  NativeNoCommand = 1205,
   // [wcs/token-undeclared]
   EventTokenUndeclared = 1301,
   CommandTokenUndeclared = 1302,

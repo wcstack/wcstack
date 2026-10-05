@@ -27,6 +27,7 @@
 - **案内**: 後付けがあると、エンジンがエラーの経路で投げるメッセージの後に、直し方が続くことがある — 「Did you mean」（編集距離 2 まで）、4.0 で外れたフィルタ名にはその書き換え先（「Did you mean」の代わり）、その場合の直し方、lint が検出するコードには `Validate statically: npx @wcstack/lint <file>.`。コンソールに書くメッセージ（#11・#12・#17・#25・#41・#48・#49・#50・#51）は文だけ。
 - **#44** はオプションを渡した場所を名指す（`bootstrapState`、`$behavior`、`$behavior` がオブジェクトでないときは `state`）。`bootstrapState` に 4.0 で移ったオプションを渡したときは、文の後に ` 4.0 moved it to the state's $behavior.` が付く。
 - **#49 / #50 / #51** は要素のタグ名と、要素が持つ `mount`・`bind-component`・`state`・`src` の名前と値を受け取り、文では要素の形（`<wcs-state src="./state.js">`）に描く。
+- **#1202** は、ネイティブ要素の `command.<method>:`（タグにハイフンが無く、`what` が `command.` で始まる）なら文の後に ` A native element's command needs the add-on @wcstack/state/features/native-commands.` が付く。その機能が入っていれば（`@wcstack/state`・`/auto`）ネイティブ要素のコマンドは機能の表と照合され、表に無いメソッドは **#1205** になる。
 - **番号の無いメッセージ**は、何を入れていても全文で出る: ページが意図して出会う関門（`[wcs/feature-not-installed] … needs the add-on @wcstack/state/features/<name>`、formats の後付けの無いページでのそのフィルタ — 書式・算術・変換・既定値）、`[wcs/feature-unknown]`、後付けそのもののメッセージ（ボリューム・コンポーネント・SSR・`$watch` / `$stream`・devtools）。
 
 ## 2. 番号の一覧
@@ -125,6 +126,7 @@
 | 1202 | `wcs/token-misconfigured` | `NoBindable` | `<tag> declares no static wcBindable (<what>).` | `<tag>` `<what>` |
 | 1203 | `wcs/token-misconfigured` | `NoCommand` | `<tag> declares no command "<method>".` | `<tag>` `<method>` |
 | 1204 | `wcs/token-misconfigured` | `NoProperty` | `<tag> declares no property "<property>".` | `<tag>` `<property>` |
+| 1205 | `wcs/token-misconfigured` | `NativeNoCommand` | `<tag> has no command "<method>" (a native <tag>'s commands: <methods>).` | `<tag>` `<method>` `<methods>` |
 | 1301 | `wcs/token-undeclared` | `EventTokenUndeclared` | `eventToken "<name>" is not declared in $eventTokens.` | `<name>` |
 | 1302 | `wcs/token-undeclared` | `CommandTokenUndeclared` | `"$command.<name>" is not declared in $commandTokens.` | `<name>` |
 | 1401 | `wcs/wildcard-rank` | `WildcardNoLoop` | `"<path>" needs <depth> enclosing loop level(s); the scope provides <n>.` | `<path>` `<depth>` `<n>` |

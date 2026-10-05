@@ -12,7 +12,8 @@ import { splitBindTexts } from '@wcstack/state/parser';
 import { createTemplateTester, findStartTagRegions, type WcsStateInfo } from '../language/htmlParse.js';
 import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
-import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
+import { nativeCommandsOf, STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
+import { suggestion } from './suggestion.js';
 import { analyzeCallableBodies, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
 import { getStatePathIndex, isUnresolvedPath, readStateScript, type FileReader } from './statePathResolver.js';
 import {
@@ -341,12 +342,27 @@ export function validateBindings(
         continue;
       }
 
-      // command-token バインディング `command.<method>: $command.<name>`（applyChangeToCommand.ts）。
-      // 右辺の検証のみ行い、以降はスキップ。
+      // command-token バインディング `command.<method>: $command.<name>`（dom/wc.ts の attachCommand）。
+      // 右辺と、ネイティブ要素のメソッドを検証し、以降はスキップ。
       const commandNames = new Set(
         scopedPaths.filter(p => p.kind === 'command').map(p => p.path),
       );
       if (propNoMod.startsWith('command.')) {
+        // ネイティブ要素（名前にハイフンが無い）が呼べるのは native-commands 後付けの表（manifest の
+        // nativeCommands）のメソッドだけ — 表に無ければランタイムは #1205 で初期化に失敗する。
+        // カスタム要素は自分の wcBindable で宣言する（組み込みの wcs-* は ioNodeValidator が見る）
+        const allowed = attr.tagName !== undefined && !attr.tagName.includes('-') ? nativeCommandsOf(attr.tagName) : null;
+        const method = propNoMod.slice('command.'.length);
+        if (allowed !== null && !allowed.includes(method)) {
+          const methodStart = bindingStart + binding.indexOf('command.') + 'command.'.length;
+          diagnostics.push({
+            code: WcsDiagnosticCode.TokenMisconfigured,
+            start: methodStart,
+            end: methodStart + method.length,
+            message: msgs.nativeCommandUnknown(method, attr.tagName!, allowed.join(', ')) + suggestion(method, allowed, msgs),
+            severity: 'error',
+          });
+        }
         const tokenPath = parsed.path?.trim() ?? '';
         if (tokenPath) {
           const pathOffset = binding.indexOf(parsed.path!);

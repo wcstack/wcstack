@@ -229,6 +229,7 @@
 | `@wcstack/state/core` | バインディングの本体: `data-wcs`・`{{ }}` とコメントバインディング・`for` / `if`・パス getter・イベント・`$command` / `$on`・条件の 10 個のフィルタ（`eq` `ne` `not` `lt` `le` `gt` `ge` `truthy` `falsy` `boolean`）・`bootstrapState`・`installFeatures` |
 | `@wcstack/state/features/temporal` | `$watch`・`$stream` |
 | `@wcstack/state/features/list-keys` | `$listKeys` |
+| `@wcstack/state/features/native-commands` | ネイティブ要素の `command.<method>:`（`<dialog>` の `showModal()`・`<input>` の `focus()`・`<video>` の `play()` など）—— [ネイティブ要素のコマンド](#ネイティブ要素のコマンド) |
 | `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
 | `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
@@ -274,7 +275,7 @@
 | 何のためか | どの `<wcs-state>` が動き出すよりも前に揃っているべきもの — `mount=` / `bind-component` / DCC の要素が何であるかを決める `scopes` — と、ページの開発補助（`diagnostics`・`devtools`） | その state が必要とするアドオン（`$watch` のための `temporal`、フィルタのための `formats`） |
 | 誰が読むか | 分割版の auto エントリだけ | すべてのエントリ: 分割版の auto エントリは足りないアドオンを読み込み、それ以外のエントリは入っているかを確かめ、入っていなければその state を `[wcs/feature-not-installed]` で失敗させる |
 
-名前は `formats`・`diagnostics`・`temporal`・`list-keys`・`scopes`・`recursion`・`ssr`・`devtools` です。
+名前は `formats`・`diagnostics`・`temporal`・`list-keys`・`scopes`・`recursion`・`ssr`・`devtools`・`native-commands` です。
 `features=` にそれ以外の名前があると、分割版の auto エントリは `<wcs-state>` を定義する前に
 `[wcs/feature-unknown]` で失敗します。`$features` にあれば、その state が失敗します（分割版の auto
 エントリでは `[wcs/feature-unknown]`、それ以外では `[wcs/feature-not-installed]`）。配列でない
@@ -2104,7 +2105,7 @@ export default {
 | 部位 | 説明 |
 |---|---|
 | `command.` | 固定の prefix |
-| `<methodName>` | 起動する要素のメソッド。名前は `static wcBindable.commands` に `{ name: "<methodName>" }` として現れること |
+| `<methodName>` | 起動する要素のメソッド。名前は `static wcBindable.commands` に `{ name: "<methodName>" }` として現れること —— ネイティブ要素では [ネイティブ要素のコマンド](#ネイティブ要素のコマンド) の表にあること |
 | `$command.<tokenName>` | `CommandToken` に解決される明示的な名前空間パス。`<tokenName>` は `$commandTokens` で宣言された名前であること |
 
 右辺は `$command.<tokenName>` と書く必要があります —— ベア名の省略形（`fetchUsers`）は非対応です。`$command.` 名前空間を経由することでバインディングの意図が HTML 上で明示され、トップレベルの state 名前空間を token 名で汚さずに済みます。
@@ -2130,11 +2131,11 @@ class MyFetcher extends HTMLElement {
 
 検証ルール（バインディング時に強制）：
 
-- 要素は `protocol: "wc-bindable"` かつ整数 `version` が `1` 以上（現行プロトコルは `1`。1 以上のすべてのバージョンが core 互換）の `static wcBindable` を公開するカスタム要素であること
-- `methodName` は `wcBindable.commands` に（`name` で）現れること
+- 要素は `protocol: "wc-bindable"` かつ整数 `version` が `1` 以上（現行プロトコルは `1`。1 以上のすべてのバージョンが core 互換）の `static wcBindable` を公開するカスタム要素であること —— または、`native-commands` アドオンがあればネイティブ要素（[ネイティブ要素のコマンド](#ネイティブ要素のコマンド)）
+- `methodName` は `wcBindable.commands` に（`name` で）現れること（ネイティブ要素では [ネイティブ要素のコマンド](#ネイティブ要素のコマンド) の表にあること）
 - `<tokenName>` は `$commandTokens` で宣言されていること（`$command.typo` は `[wcs/token-undeclared]` を throw する）
 
-カスタム要素はクラスが定義された時点で検査され、ネイティブ要素はその場で拒否されます（`[wcs/token-misconfigured]`）。ページのバインド中に見つかった違反は `<wcs-state>` の初期化を失敗させます。`for:` / `if:` の行の中で見つかった違反や、ページのバインド後にクラスが定義されて見つかった違反は、そのバインディング 1 本の失敗として `$errorCallback` に届き、行はそのまま構築されます（[初期化の失敗](#初期化の失敗)）。
+カスタム要素はクラスが定義された時点で検査され、ネイティブ要素はその場で検査されます —— アドオンが入っていれば（`@wcstack/state` と `/auto` には含まれています）[native-commands](#ネイティブ要素のコマンド) の表と照合し、入っていなければ拒否します（`[wcs/token-misconfigured]` `#1202`）。ページのバインド中に見つかった違反は `<wcs-state>` の初期化を失敗させます。`for:` / `if:` の行の中で見つかった違反や、ページのバインド後にクラスが定義されて見つかった違反は、そのバインディング 1 本の失敗として `$errorCallback` に届き、行はそのまま構築されます（[初期化の失敗](#初期化の失敗)）。
 
 ### Token API
 
@@ -2191,6 +2192,64 @@ command token は state コードから emit する必要はありません。DO
 <my-field data-wcs="command.clear: $command.reset"></my-field>
 <my-list  data-wcs="command.reset: $command.reset"></my-list>
 ```
+
+### ネイティブ要素のコマンド
+
+`native-commands` アドオン（`@wcstack/state` と `/auto` には含まれています。`/core` のページは `@wcstack/state/features/native-commands` を入れます）があると、`command.<method>:` は**ネイティブ**要素のメソッドも購読します。ダイアログを開く・入力欄にフォーカスする・動画を再生するといった操作が「state が emit する token」になり、state のコードは要素に手を伸ばしません：
+
+```html
+<button data-wcs="onclick: $command.openEditor">編集</button>
+<dialog data-wcs="command.showModal: $command.openEditor; command.close: $command.closeEditor">
+  <input data-wcs="value: title">
+  <button data-wcs="onclick: save">保存</button>
+</dialog>
+```
+
+```javascript
+export default {
+  title: "",
+  $commandTokens: ["openEditor", "closeEditor"],
+  async save() {
+    await saveTitle(this.title);
+    this.$command.closeEditor.emit("saved");   // → dialog.close("saved")
+  },
+};
+```
+
+ネイティブ要素が呼べるのは次の表のメソッドだけです。それ以外のメソッドは、カスタム要素の宣言に無いコマンドと同じく、バインディングの取り付け時に `[wcs/token-misconfigured]`（`#1205`。その要素が呼べるメソッドを列挙する）を throw します：
+
+| 要素 | メソッド |
+|---|---|
+| すべての要素 | `focus` `blur` `click` `scrollIntoView` `showPopover` `hidePopover` `togglePopover` |
+| `<dialog>` | `show` `showModal` `close` `requestClose` |
+| `<form>` | `requestSubmit` `checkValidity` `reportValidity` |
+| `<input>` | `select` `setSelectionRange` `showPicker` `setCustomValidity` `checkValidity` `reportValidity` |
+| `<textarea>` | `select` `setSelectionRange` `setCustomValidity` `checkValidity` `reportValidity` |
+| `<select>` | `showPicker` `setCustomValidity` `checkValidity` `reportValidity` |
+| `<audio>` `<video>` | `play` `pause` `load` |
+
+意図して入れていないもの: HTML・属性・木を書き換えるメソッド（`insertAdjacentHTML`・`setAttribute`・`remove` など —— `html:` / `attr.` で束縛してください）、`input` イベント無しでコントロールの値を変えるため state が変化を知らないもの（`form.reset()`・`stepUp()`・`stepDown()`・`setRangeText()` —— state を書き換えてください）、入力検証と `submit` イベントを飛ばす `form.submit()`（`requestSubmit` はどちらも飛ばしません）、そして状態の出力も持つ `@wcstack/fullscreen`・`@wcstack/pointer-lock`・`@wcstack/picture-in-picture` が扱うフルスクリーン / ポインタロック / ピクチャーインピクチャーの要求です。
+
+- **引数。** ネイティブのメソッドは `emit` の引数を受け取ります。ただし第 1 引数が `Event` なら引数なしで呼びます。`on…: $command.x` のバインディングは `(event, ...listIndexes)` を emit しますが、これを受け取るネイティブメソッドはありません —— `close(event)` は dialog の `returnValue` を `"[object PointerEvent]"` にし、`requestSubmit(event)` は throw します。state からの `emit("saved")`・`emit({ preventScroll: true })`・`emit({ block: "center" })` はそのまま渡ります。カスタム要素のメソッドは従来どおりすべてを受け取ります。
+- **決めるのは表で、ブラウザではありません。** 表にあるメソッドはどのブラウザでも（サーバーでも）束縛できます。そのメソッドを持たないブラウザ（古いブラウザの `requestClose` など）では、token が emit されたときに呼び出しが失敗し、throw した購読者と同じく報告されます。
+- **戻り値と例外**はカスタム要素と同じです: `emit` は `checkValidity()` の真偽値や `play()` の `Promise` を返します。throw したメソッド（非モーダルで開いている dialog への `showModal()`、`popover` の無い要素への `showPopover()`）は `console.error` で報告され、ほかの購読者には届きます。reject した `Promise` は捕捉しません: 自動再生の拒否を扱うには、state から `await Promise.all(this.$command.play.emit())` してください。
+- **描画は後から走ります。** 書き込みはマイクロタスクで描画されるので、`this.editing = true; this.$command.focusTitle.emit();` の emit は、まだ表示されていない入力欄に —— `if:` の中なら、まだ作られていない入力欄に —— 届きます。描かれてから `$renderedCallback` で emit してください：
+
+  ```html
+  <template data-wcs="if: editing">
+    <input data-wcs="value: title; command.focus: $command.focusTitle">
+  </template>
+  ```
+
+  ```javascript
+  $renderedCallback(paths) {
+    if (paths.includes("editing") && this.editing) this.$command.focusTitle.emit();
+  },
+  ```
+
+- **ユーザー操作。** `showPicker()` と音声つきの `play()` は直前のユーザー操作を必要とします。`on…: $command.x` はイベントの処理の中でメソッドを呼びますが、`await` の後の `emit` では間に合わないことがあります。
+- **カスタム要素は変わりません**: コマンドは `wcBindable` で宣言し、宣言の無いものは従来どおり `#1202` を throw します。カスタマイズ済み組み込み要素（`<button is="…">`）はネイティブ要素です。
+- **ボタンだけで開閉が済むなら**、プラットフォームの invoker commands は state を必要としません: `<button commandfor="dlg" command="show-modal">`。state が決めるとき（fetch の後、検証の後）や、invoker commands に無い操作（`focus`・`play`・`scrollIntoView`）に `command.` を使ってください。
 
 ## Event Token（イベントバインディング）
 

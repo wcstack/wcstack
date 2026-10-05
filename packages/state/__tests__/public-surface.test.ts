@@ -69,6 +69,11 @@ describe("入口ごとの export が 3.3 と同じ", () => {
     expect([...v4.keys()].sort()).toEqual(["default", "listKeys"]);
   }, TS_TIMEOUT);
 
+  it("4.0 は後付けの入口 features/native-commands を足す（3.x はネイティブ要素の command. を拒否した）", () => {
+    const v4 = exportsOf(join(ROOT, "src/features/native-commands.ts"));
+    expect([...v4.keys()].sort()).toEqual(["default", "nativeCommands"]);
+  }, TS_TIMEOUT);
+
   it("package.json の exports の入口と、指す先のファイルの配置が 3.3 と同じ", () => {
     const v3 = JSON.parse(readFileSync(join(V3, "package.exports.json"), "utf8"));
     const v4 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
@@ -95,8 +100,19 @@ describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () =
     expect(v4.filterAliases).toEqual({});
     expect(v4.declarationAliases).toEqual({});
     expect(v4.apiAliases).toEqual({});
-    // 4.0 adds the $behavior options and the add-on names (lint and the VS Code extension read them)
-    expect(Object.keys(v4).filter((k) => !(k in v3)).sort()).toEqual(["behaviorOptions", "features"]);
+    // 4.0 adds the $behavior options, the add-on names and the native elements' commands (lint and the VS Code extension read them)
+    expect(Object.keys(v4).filter((k) => !(k in v3)).sort()).toEqual(["behaviorOptions", "features", "nativeCommands"]);
+  });
+
+  it("4.0 の nativeCommands は native-commands の後付けが読む表の写しで、書き換えてもランタイムに届かない", async () => {
+    const { getWcsManifest } = await import("../src/public/manifest");
+    const { NATIVE_COMMANDS } = await import("../src/native/commands");
+    const m = getWcsManifest();
+    expect(m.nativeCommands).toEqual(NATIVE_COMMANDS);
+    (m.nativeCommands["*"] as string[]).push("remove");
+    (m.nativeCommands as Record<string, string[]>).div = ["remove"];
+    expect(NATIVE_COMMANDS["*"]).not.toContain("remove");
+    expect(Object.hasOwn(NATIVE_COMMANDS, "div")).toBe(false);
   });
 
   it("4.0 の behaviorOptions と features は、ランタイムが読む表から作られている", async () => {

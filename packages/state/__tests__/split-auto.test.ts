@@ -15,7 +15,7 @@ import { MANGLE_PROPS } from "../mangle.mjs";
 // @ts-ignore — the second minifier pass build.mjs runs
 import { terse } from "../minify.mjs";
 
-const FEATURES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools"];
+const FEATURES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands"];
 const outdir = resolve(__dirname, "../node_modules/.cache/state-next/split-auto");
 const autoUrl = pathToFileURL(resolve(outdir, "auto.js")).href;
 const flush = () => new Promise((r) => setTimeout(r, 0));

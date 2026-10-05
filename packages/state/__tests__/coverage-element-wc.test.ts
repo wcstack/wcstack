@@ -388,6 +388,11 @@ describe("コマンドトークン（command.<method>:）", () => {
     expect(message).toBe(`[@wcstack/state] #1202 "${tag}" "command.go"`);
   });
 
+  it("native-commands の後付けが無ければ、ネイティブ要素の command. もその場で #1202", async () => {
+    const message = await failure(`<dialog data-wcs="command.showModal: $command.t"></dialog>`, { $commandTokens: ["t"] });
+    expect(message).toBe(`[@wcstack/state] #1202 "dialog" "command.showModal"`);
+  });
+
   it("文書から外れている間の emit は要素を呼ばずに購読を保ち、同じ要素が戻ればまた呼ぶ", async () => {
     const tag = nextTag();
     defineCommands(tag);
