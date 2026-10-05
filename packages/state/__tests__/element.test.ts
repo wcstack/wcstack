@@ -93,10 +93,10 @@ describe("<wcs-state> の状態の読み込みと公開 API", () => {
     const badRoot = bad.attachShadow({ mode: "open" });
     badRoot.innerHTML = `<wcs-state></wcs-state>`;
     const badEl = badRoot.querySelector("wcs-state") as any;
-    badEl.setInitialState({ $scan: {} });
+    badEl.setInitialState({ $behavior: true });
     document.body.appendChild(bad);
     await expect(badEl.initializePromise).resolves.toBeUndefined();
-    await expect(badEl.connectedCallbackPromise).rejects.toThrow(core(M.ScanRemoved));
+    await expect(badEl.connectedCallbackPromise).rejects.toThrow(core(M.OptionInvalid));
     error.mockRestore();
   });
 

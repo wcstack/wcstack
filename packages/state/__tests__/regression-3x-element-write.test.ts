@@ -801,7 +801,7 @@ describe("#364 要素の書き戻し・$postUpdate・差し替えが、キャッ
       expect(texts(root, ".u")).toEqual(["A", "B"]);
       const error = vi.spyOn(console, "error").mockImplementation(() => {});
       try {
-        expect(() => el.setInitialState(Object.assign(rowGetterState(["x", "y"]), { $streams: { s: { source: 1 } } }))).toThrow();
+        expect(() => el.setInitialState(Object.assign(rowGetterState(["x", "y"]), { $behavior: true }))).toThrow();
         let thrown: unknown;
         try {
           el.createState("writable", (s: any) => { s.items = [{ name: "p" }, { name: "q" }]; });

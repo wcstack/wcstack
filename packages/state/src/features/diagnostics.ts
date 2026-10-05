@@ -6,7 +6,7 @@
  * nearest name (did-you-mean, the same rule as lint), how to fix it, and a pointer to lint where
  * lint really detects the case. The full `auto` bundle installs it.
  */
-import { chain, hooks, type Feature } from "../hooks";
+import { chain, first, hooks, known, type Feature } from "../hooks";
 import type { Engine } from "../engine";
 import { parsePath, type Pattern } from "../pattern";
 import { raiseError } from "../parser/raiseError";
@@ -16,6 +16,7 @@ import type { Binding } from "../dom/view";
 import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
 import { didYouMean, LINT_HINT } from "../diagnostics/guidance";
 import { explain, render } from "../diagnostics/explain";
+import { raise, M } from "../messages";
 
 // ---------------------------------------------------------------- paths that do not resolve
 
@@ -246,6 +247,23 @@ function detail(el: Element, name: string, v: unknown): void {
   );
 }
 
+// ---------------------------------------------------------------- 3.x names 4.0 removed
+
+/**
+ * Declarations 3.2 renamed, whose old names 4.0 removed: a declaration under one would do nothing.
+ * (The core detected these and the two APIs below up to 4.0.0-rc.3; without this add-on they are
+ * ignored like any other unknown `$` key.)
+ */
+const REMOVED_DECLARATIONS: [string, string][] = [["$streams", "$stream"], ["$updatedCallback", "$renderedCallback"]];
+/** APIs 3.2 renamed, whose old names 4.0 removed: reading one fails with the name to write. */
+const REMOVED_APIS: Readonly<Record<string, string>> = { "$trackDependency": "$dependOn", "$untrackDependency": "$untracked" };
+
+/** A state that declares a 3.x name 4.0 removed (`$scan` has no successor: $watch or $on). */
+function removedDeclarations(target: Record<string, any>): void {
+  if (target.$scan !== undefined) raise(M.ScanRemoved);
+  for (const [old, name] of REMOVED_DECLARATIONS) if (target[old] !== undefined) raise(M.DeclarationRemoved, [old, name]);
+}
+
 export const diagnostics: Feature = {
   name: "diagnostics",
   install(): void {
@@ -254,10 +272,16 @@ export const diagnostics: Feature = {
     hooks.declared = declared;
     hooks.detail = detail;
     hooks.failed = chain(hooks.failed, failed);
-    hooks.declare = chain(hooks.declare, (engine, target) => {
+    // the removed names first, before what is installed (the core checked them before it took the
+    // state in): a refused state never reaches the other add-ons' runtimes
+    const prev = hooks.declare;
+    hooks.declare = (engine, target) => {
+      removedDeclarations(target);
+      prev?.(engine, target);
       checkRecursion(target);
       recheck(engine);
-    });
+    };
+    hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
   },
 };
 export default diagnostics;

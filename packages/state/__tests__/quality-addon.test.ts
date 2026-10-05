@@ -155,7 +155,7 @@ describe("根の初期化に失敗したときの volume（B4）", () => {
       const root = h.attachShadow({ mode: "open" });
       root.innerHTML = html;
       const els = Array.from(root.querySelectorAll("wcs-state")) as any[];
-      els[rootIndex].setInitialState({ $scan: {} });
+      els[rootIndex].setInitialState({ $behavior: true });
       els[1 - rootIndex].setInitialState({ n: 1 });
       document.body.appendChild(h);
       await expect(els[rootIndex].connectedCallbackPromise).rejects.toThrow();
@@ -197,7 +197,7 @@ describe("根の初期化に失敗したときの volume（B4）", () => {
       const root = h.attachShadow({ mode: "open" });
       root.innerHTML = `<wcs-state></wcs-state><p>{{ cart.n }}</p>`;
       const broken = root.querySelector("wcs-state") as any;
-      broken.setInitialState({ $scan: {} });
+      broken.setInitialState({ $behavior: true });
       document.body.appendChild(h);
       await expect(broken.connectedCallbackPromise).rejects.toThrow();
       broken.remove();
@@ -971,7 +971,7 @@ describe("根の失敗とマークアップで結線するコンポーネント�
       const root = h.attachShadow({ mode: "open" });
       root.innerHTML = `<wcs-state></wcs-state><${tag} data-wcs="state: user"></${tag}>`;
       const rootEl = root.querySelector("wcs-state") as any;
-      rootEl.setInitialState({ user: { name: "a" }, $scan: {} });
+      rootEl.setInitialState({ user: { name: "a" }, $behavior: true });
       document.body.appendChild(h);
       await expect(rootEl.connectedCallbackPromise).rejects.toThrow();
       const inner = root.querySelector(tag)!.shadowRoot!.querySelector("wcs-state") as any;
@@ -1409,8 +1409,8 @@ describe("サイクル 4 の再検証（R4C-3・R4C-4）", () => {
       const root = h.attachShadow({ mode: "open" });
       root.innerHTML = `<wcs-state></wcs-state><${tag} data-wcs="state: user"></${tag}>`;
       const el = root.querySelector("wcs-state") as any;
-      // ($scan: removed in 4.0, the root fails)
-      el.setInitialState(bad ? { user: { name: "a" } } : { user: { name: "a" }, $scan: {} });
+      // ($behavior must be an options object: the root fails)
+      el.setInitialState(bad ? { user: { name: "a" } } : { user: { name: "a" }, $behavior: true });
       document.body.appendChild(h);
       await el.connectedCallbackPromise.catch(() => {});
       const [inner, vol] = Array.from(root.querySelector(tag)!.shadowRoot!.querySelectorAll("wcs-state")) as any[];

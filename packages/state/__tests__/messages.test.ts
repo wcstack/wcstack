@@ -59,43 +59,62 @@ describe("コアだけのメッセージ（診断の後付けなし）", () => {
   });
 });
 
-describe("4.0 で外した旧名", () => {
-  async function load(state: Record<string, any>) {
-    bootstrapState();
-    const h = document.createElement("div");
-    const root = h.attachShadow({ mode: "open" });
-    root.innerHTML = `<wcs-state></wcs-state><button data-wcs="onclick: go">go</button>`;
-    const el = root.querySelector("wcs-state") as any;
-    el.setInitialState(state);
-    document.body.appendChild(h);
-    return { root, el };
-  }
+/** A root `<wcs-state>` over `state`, with a button that calls its `go`. */
+async function load(state: Record<string, any>) {
+  bootstrapState();
+  const h = document.createElement("div");
+  const root = h.attachShadow({ mode: "open" });
+  root.innerHTML = `<wcs-state></wcs-state><button data-wcs="onclick: go">go</button>`;
+  const el = root.querySelector("wcs-state") as any;
+  el.setInitialState(state);
+  document.body.appendChild(h);
+  return { root, el };
+}
 
-  it("旧名の宣言キー（$updatedCallback・$streams）は、正式名を示して投げる", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    for (const [old, name] of [["$updatedCallback", "$renderedCallback"], ["$streams", "$stream"]]) {
-      const { el } = await load({ [old]: old === "$streams" ? {} : () => {} });
-      await expect(el.connectedCallbackPromise).rejects.toThrow(`[@wcstack/state] #1601 "${old}" "${name}"`);
-    }
+/** How a root over `state` initializes: "ok", or the failure's message. */
+async function init(state: Record<string, any>): Promise<string> {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const { el } = await load(state);
+    await el.connectedCallbackPromise;
+    return "ok";
+  } catch (e) {
+    return (e as Error).message;
+  } finally {
     error.mockRestore();
+  }
+}
+
+/** What reading each `$` name in a handler gives: its type, or the message it throws. */
+async function readNames(names: string[]): Promise<string[]> {
+  const seen: string[] = [];
+  const { root, el } = await load({
+    go(this: any) {
+      for (const key of names) {
+        try { seen.push(typeof this[key]); } catch (e) { seen.push((e as Error).message); }
+      }
+    },
+  });
+  await el.connectedCallbackPromise;
+  await getBindingsReady(root);
+  (root.querySelector("button") as HTMLElement).click();
+  return seen;
+}
+
+const REMOVED_DECLARATIONS: [string, Record<string, any>][] = [
+  ["$scan", { $scan: {} }],
+  ["$updatedCallback", { $updatedCallback() {} }],
+  ["$streams", { $streams: {} }],
+];
+
+// 4.0.0-rc.3 まではコアが検出していた。以後は診断の後付けの仕事（最後の describe で確かめる）
+describe("4.0 で外した 3.x の旧名（診断の後付けなし: 他の知らない $ キーと同じく何もしない）", () => {
+  it.each(REMOVED_DECLARATIONS)("宣言キー %s は無視され、状態は読み込める", async (_name, decl) => {
+    expect(await init({ v: 1, ...decl })).toBe("ok");
   });
 
-  it("旧名の API（$trackDependency・$untrackDependency）は、読むと正式名を示して投げる", async () => {
-    const seen: string[] = [];
-    const { root, el } = await load({
-      go(this: any) {
-        for (const key of ["$trackDependency", "$untrackDependency"]) {
-          try { void this[key]; seen.push("no error"); } catch (e) { seen.push((e as Error).message); }
-        }
-      },
-    });
-    await el.connectedCallbackPromise;
-    await getBindingsReady(root);
-    (root.querySelector("button") as HTMLElement).click();
-    expect(seen).toEqual([
-      '[@wcstack/state] #1701 "$trackDependency" "$dependOn"',
-      '[@wcstack/state] #1701 "$untrackDependency" "$untracked"',
-    ]);
+  it("API $trackDependency・$untrackDependency は、知らない $ の名前（$nosuch）と同じく undefined を読む", async () => {
+    expect(await readNames(["$trackDependency", "$untrackDependency", "$nosuch"])).toEqual(["undefined", "undefined", "undefined"]);
   });
 });
 
@@ -128,5 +147,19 @@ describe("診断の後付けを入れると、同じ番号のメッセージに�
     expect(syntax).toThrow(/^\[@wcstack\/state\] \[wcs\/binding-syntax\] Invalid filter format: missing closing parenthesis in "b\("\./);
     expect(() => raise(M.Readonly)).toThrow(/^\[@wcstack\/state\] This state is readonly\.$/);
     expect(text(M.IndexArityAtMost, ["$getAll", "m.*", 1, 2])).toBe('[wcs/index-arity] $getAll("m.*") takes at most 1 index(es), got 2.');
+  });
+
+  it("4.0 で外した 3.x の旧名は、4.0.0-rc.3 と同じ文面で投げる（宣言は読み込みで、API は読んだ時点で）", async () => {
+    // (diagnostics was installed by the previous test of this describe)
+    expect(await init({ v: 1, $scan: {} })).toBe("[@wcstack/state] $scan was removed (use $watch or $on)");
+    expect(await init({ v: 1, $updatedCallback() {} })).toBe("[@wcstack/state] [wcs/declaration-alias] $updatedCallback was removed: write $renderedCallback.");
+    expect(await init({ v: 1, $streams: {} })).toBe("[@wcstack/state] [wcs/declaration-alias] $streams was removed: write $stream.");
+    // (a value of undefined is no declaration, as before)
+    expect(await init({ v: 1, $scan: undefined, $updatedCallback: undefined, $streams: undefined })).toBe("ok");
+    expect(await readNames(["$trackDependency", "$untrackDependency", "$nosuch"])).toEqual([
+      "[@wcstack/state] [wcs/name-alias] $trackDependency was removed: write $dependOn.",
+      "[@wcstack/state] [wcs/name-alias] $untrackDependency was removed: write $untracked.",
+      "undefined",
+    ]);
   });
 });

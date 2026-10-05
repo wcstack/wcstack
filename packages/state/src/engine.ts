@@ -10,7 +10,6 @@ import { hooks, requireFeature } from "./hooks";
 import { INDEX_PARAM, MAX_INDEX_PARAM } from "./parser/define";
 
 /** Declarations an add-on serves: without it installed they fail instead of doing nothing. */
-const REMOVED_DECLARATIONS: [string, string][] = [["$streams", "$stream"], ["$updatedCallback", "$renderedCallback"]];
 const DECLARATIONS: [string, string][] = [["$watch", "temporal"], ["$stream", "temporal"], ["$listKeys", "list-keys"], ["$recursion", "recursion"]];
 
 /**
@@ -610,12 +609,8 @@ export class Engine implements ReconcileHooks {
     }
     const fn = this.api[key];
     if (fn !== undefined) return fn;
+    // (the 3.x names 4.0 removed, $trackDependency and $untrackDependency, are the diagnostics add-on's)
     switch (key) {
-      // 3.2 renamed these; 4.0 removed the old names
-      case "$trackDependency":
-        return raise(M.ApiRemoved, [key, "$dependOn"]);
-      case "$untrackDependency":
-        return raise(M.ApiRemoved, [key, "$untracked"]);
       case "$stateElement":
         return this.element;
       case "$command":
@@ -931,9 +926,7 @@ export class Engine implements ReconcileHooks {
   /** Takes in a state object: at construction, and on a re-set (everything learned from the old one goes). */
   private loadTarget(target: Record<string, any>): void {
     for (const [key, feature] of DECLARATIONS) if (target[key] !== undefined) requireFeature(feature, key);
-    if (target.$scan !== undefined) raise(M.ScanRemoved);
-    // 3.2 renamed these; 4.0 removed the old names (a declaration under one would do nothing)
-    for (const [old, name] of REMOVED_DECLARATIONS) if (target[old] !== undefined) raise(M.DeclarationRemoved, [old, name]);
+    // (the 3.x declarations 4.0 removed — $scan, $streams, $updatedCallback — are the diagnostics add-on's)
     const f = target.$features;
     if (f !== undefined) {
       if (!Array.isArray(f)) raise(M.FeaturesNotArray);
