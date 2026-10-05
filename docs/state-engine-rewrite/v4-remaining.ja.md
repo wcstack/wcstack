@@ -787,3 +787,58 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - 確かめたこと: 全パッケージの dist-tag、server の依存と testing の peer が厳密な `4.0.0-rc.2`、state README の CDN のピン（`@4.0.0-rc.2/dist/split/…`）と `esm.run` の `/auto`（state・router・wcstack）がどれも 200。
 - サイズと結合のゲートの基準値を rc.2 の dist で取り直した。core.min.js 19,530B（上限 20,000B）、split core 23,652B、`index.esm.js` 49,331B、`auto.min.js` 46,249B（gzip）。
 - 残り: rc.1 の 31 パッケージの deprecate（ユーザー）。rc を試してもらった結果で必要なら rc.3。4.0.0 は §6 の手順（main へのマージ → main で `release`。拡張 2.0.0・スキル v4.0.0・CDN のピンを 4.0.0 に）。
+
+### 既知の制限の解消（2026-10-05）
+
+移行ガイド §5 の既知の制限 11 件を、領域ごとに 4 つのブランチで並行して直し、research にマージした。
+
+- **research/kl-core**
+  - 配列でないオブジェクトの下の数値キー（F34、#382 の形 2）: 書いたとおりの綴りのキーとして、読み・書き・`$eq`・双方向の書き戻し・`$watch` に効く。
+  - 再セットの後の列挙: プロキシの target を空の `{}` にし、`has` / `ownKeys` / `deleteProperty` / `defineProperty` / `getPrototypeOf` をいまの state に転送する。記述子は `configurable: true` で返す。副作用として、`Object.isFrozen(this)` などは空の target について答える。
+  - クラスの状態の getter を持たない state への再セット: ほかの落ちたキーと同じく空にする。
+- **research/kl-life**
+  - 後から入れたコンポーネントのホストを、`<wcs-state bind-component>` の接続で配線する（3.x も待ち続けた）。
+  - 差し替えた `<wcs-state bind-component>` を戻すと、スコープを引き取る。
+  - ルートの `<wcs-state>` を戻すと、その間に接続した volume を接ぎ、その間に binder に渡された内容を（range ごと）束ねる。
+  - ルートの `$connectedCallback`（入れ直し）と `$disconnectedCallback` の失敗を `console.error` で報告する（新しいメッセージ #51）。
+  - ルートの `<wcs-state>` が切り離されたら、登録を外す（つなぎ直せば戻す）。内容ごと外したルートの状態と DOM は回収される。
+- **research/kl-temporal-ssr**
+  - `$stream` の実行がそのタスクの中で書くもの（値・`done` / `error`）が、起こす `$watch` にも実行の連鎖を引き継ぐ。すぐに値を出す source の `$watch` → `$stream` の循環は、約 16 周で切れて止まる。
+  - トレードオフ: そうした source で回す、終わる自動ページ送りも 16 ページほどで止まる（3.x と rc.2 は最後まで回した）。ユーザーの決定でこのまま採用した（2026-10-05）。
+  - SSR: 連鎖のテンプレートの間のコメント（とコメントの束縛）を越えて、サーバーの枝を引き取る。
+- **research/kl-lists**（F26）
+  - 行の下への書き込みが、getter が結び付ける配列（写しを返す絞り込み・並べ替え・切り出し・連鎖・volume の中）の、オブジェクトを持つ行に届く。その配列がオブジェクトを持つ getter は評価し直す（`Engine.mirror`）。
+  - 行を作るときの記帳は無い。共有・getter・依存のある一覧だけが辿る。
+  - #362 の「戻ったときの描き直し」（`was`）は外した（−41B）。書き込みの時点で行をそろえるので要らなくなった。ただ、次の狭い場合は rc.2 より後退する。
+    - 絞り込みの間に `$postUpdate("todos")`（一覧のパス）で知らせた変更
+    - 普通のキーの別名の配列を通した書き込み
+    - getter が生で読んだ入れ子の元を通した書き込み
+
+    これらは、元の配列に戻ったときに描き直されない。戻すなら +41B。
+- **残る既知の制限**（§5）: 1 つの一覧の中の同じオブジェクトの重複と、getter が結び付けない普通のキーの 2 本の配列（#378 の `backup`、#401）。どの形でも、共有していない一覧に費用がかかるので見送った（kl-lists の分析）。
+
+**サイズ**（gzip、rc.2 → マージ後）
+
+| | rc.2 | マージ後 |
+|---|---:|---:|
+| core.min.js | 19,530B | 19,930B（上限 20,000B まで 70B） |
+| 分割の core（チャンク込み） | 23,652B | 24,121B（上限 24,362B） |
+| `index.esm.js` | 49,331B | 49,916B |
+| `auto.min.js` | 46,249B | 46,849B |
+| scopes / temporal / ssr | 8,718 / 3,699 / 5,294B | 8,868 / 3,707 / 5,296B |
+
+**テスト**
+- state: 2,973 件が通過（意図した失敗 6、スキップ 1）。カバレッジ 99.78 / 99.28 / 100 / 99.95。
+- router 822 件、server 100 件と e2e 18 件、testing 15 件、devtools 170 件が通過。
+
+**性能**: `bench/inpage-ab.mjs`（CPU 4 倍の減速、ABBA、8 ページ×40 回、n=320）で rc.2 の `auto.min.js` とマージ後を比べた。中央値の比は次のとおり。
+- update10k ×0.998
+- create1k ×1.045（p25 は ×1.008。マージ後の 1 ページだけ 28.0ms に跳ねた）
+- replace1k ×0.988
+- append ×0.991
+- clear10k: 計測中
+
+**残した小さな点**
+- マウントしたコンポーネントの同期の `$disconnectedCallback` の throw は、まだ外へ漏れる（`scopes/component.ts`）。
+- binder プロトコルの `flushPendingBinds` は range を落とす（生成されたコピーなので、正本 `/protocol/binder.ts` で直す）。
+- `mangle.mjs` の `fed` は使われなくなった。
