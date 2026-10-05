@@ -28,7 +28,7 @@ import { pathToFileURL } from 'node:url';
 import { MANGLE_PROPS } from './mangle.mjs';
 import { terse } from './minify.mjs';
 
-export const FEATURES = ['formats', 'diagnostics', 'temporal', 'list-keys', 'scopes', 'recursion', 'ssr', 'devtools'];
+export const FEATURES = ['formats', 'diagnostics', 'temporal', 'list-keys', 'scopes', 'recursion', 'ssr', 'devtools', 'native-commands'];
 const base = { bundle: true, format: 'esm', target: 'es2022', legalComments: 'none' };
 const common = { ...base, minify: true, mangleProps: MANGLE_PROPS };
 const gz = (file) => gzipSync(readFileSync(file), { level: 9 }).length;

@@ -17,7 +17,7 @@ import { MANGLE_PROPS } from "../mangle.mjs";
 import { terse } from "../minify.mjs";
 
 const golden = JSON.parse(readFileSync(resolve(__dirname, "golden/current-3.3.0.json"), "utf8"));
-const FEATURES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools"];
+const FEATURES = ["formats", "diagnostics", "temporal", "list-keys", "scopes", "recursion", "ssr", "devtools", "native-commands"];
 let entry: { getBindingsReady(root: Node): Promise<void> };
 
 beforeAll(async () => {
@@ -60,6 +60,23 @@ describe("分割ビルドの後付けがコアの受け口に届く", () => {
     await entry.getBindingsReady(root);
     await new Promise((r) => setTimeout(r, 0));
     expect(messages).toEqual([expect.stringMatching(/\[wcs\/binding-path-missing\] .* Did you mean "count"\? Validate statically/)]);
+    h.remove();
+  });
+
+  it("features/native-commands.js が埋めた受け口で、core.js がネイティブ要素のメソッドを呼ぶ", async () => {
+    const h = document.createElement("split-test-host");
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><button data-wcs="onclick: $command.open">o</button><dialog data-wcs="command.showModal: $command.open; command.close: $command.close"></dialog>`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState({ $commandTokens: ["open", "close"] });
+    document.body.appendChild(h);
+    await el.connectedCallbackPromise;
+    await entry.getBindingsReady(root);
+    const dialog = root.querySelector("dialog")!;
+    root.querySelector("button")!.click();
+    expect(dialog.open).toBe(true);
+    el.createState("writable", (s: any) => s.$command.close.emit("done"));
+    expect(dialog.returnValue).toBe("done");
     h.remove();
   });
 });

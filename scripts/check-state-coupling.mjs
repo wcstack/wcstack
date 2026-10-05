@@ -63,7 +63,7 @@ if (!featuresMatch) {
 const FEATURES = JSON.parse(featuresMatch[1].replaceAll("'", '"'));
 
 // Source module -> the add-on it belongs to. Everything else under src/ is the core (or an entry).
-const FEATURE_DIRS = { temporal: 'temporal', scopes: 'scopes', recursion: 'recursion', ssr: 'ssr', devtools: 'devtools', diagnostics: 'diagnostics' };
+const FEATURE_DIRS = { temporal: 'temporal', scopes: 'scopes', recursion: 'recursion', ssr: 'ssr', devtools: 'devtools', diagnostics: 'diagnostics', native: 'native-commands' };
 const FEATURE_FILES = { 'filters/formats.ts': 'formats' };
 const ADDON_SET = 'features/all.ts';
 const idOf = (path) => path.replace(/^src\//, '');

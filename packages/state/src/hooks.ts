@@ -84,6 +84,12 @@ export interface Hooks {
   tags?: ((registry: CustomElementRegistry) => void) | null;
   /** A wc-bindable property's event read with the default getter (`e.detail`): diagnostics checks its shape. */
   detail?: ((el: Element, name: string, detail: unknown) => void) | null;
+  /**
+   * `command.<method>:` on an element with no wc-bindable declaration: how a native element's
+   * method is called (native-commands), or null for a custom element. The add-on throws for a
+   * method a native element may not be commanded to run.
+   */
+  nativeCommand?: ((el: Element, method: string) => NativeCall | null) | null;
   /** The split auto entry: loads and installs add-ons of its build by name (a state's `$features`). */
   load?: ((names: string[]) => Promise<void>) | null;
   /**
@@ -94,6 +100,9 @@ export interface Hooks {
    */
   noticed?: ((engine: Engine, event: Record<string, unknown>) => void) | null;
 }
+
+/** Calls a native element's command method with what the token was emitted with. */
+export type NativeCall = (target: Element, args: unknown[]) => unknown;
 
 /** What an add-on does with a `<wcs-state>` it claimed. */
 export interface Claimed {
