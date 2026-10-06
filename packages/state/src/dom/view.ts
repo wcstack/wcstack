@@ -214,8 +214,9 @@ export class Binding {
     const v = pipe(this.filters, this.engine.read(this.pattern, this.row));
     // the same object may have changed in place ($postUpdate, an array assigned again): shown
     // again — but an element input keeps the object it already has, and an HTML sink the markup it
-    // parsed (a TrustedHTML does not change: parsing it again would rebuild the nodes)
-    if (v === this.value && (typeof v !== "object" || v === null || this.kind === K_CUSTOM || this.kind === K_HTML || isHtmlSink(this.name))) return;
+    // parsed (a TrustedHTML does not change: parsing it again would rebuild the nodes). A radio is
+    // set again: checking another one of its group unchecked it.
+    if (v === this.value && this.kind !== K_RADIO && (typeof v !== "object" || v === null || this.kind === K_CUSTOM || this.kind === K_HTML || isHtmlSink(this.name))) return;
     if (this.value === HOLD) {
       this.value = v;
       return;
@@ -266,6 +267,9 @@ export class Binding {
       v = has ? arr.filter((x) => x !== e) : [...arr, e];
     } else {
       v = pipe(this.inFilters, n[this.name]);
+      // the element shows its own value now, not the last applied one: the next apply runs (NaN
+      // equals nothing) — a write in the same drain may put that value back (a reset, a validation)
+      this.value = NaN;
     }
     engine.write(this.pattern, this.row, v, false, true);
   }
@@ -316,7 +320,10 @@ export function applyTo(kind: number, n: any, name: string, v: unknown): void {
       else n.setAttribute(name, String(v));
       return;
     case K_STYLE:
-      if (v == null) n.style.removeProperty(name);
+      // the property as CSS writes it (background-color, --gap), or as the DOM does
+      // (backgroundColor, which setProperty ignores; 3.x wrote style[name])
+      if (!name.includes("-")) n.style[name] = v == null ? "" : String(v);
+      else if (v == null) n.style.removeProperty(name);
       else n.style.setProperty(name, String(v));
       return;
   }

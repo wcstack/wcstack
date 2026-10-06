@@ -170,6 +170,30 @@ describe('DevtoolsCore', () => {
       expect(timeline[1]).toMatchObject({ label: '1 address', detail: 'solo' });
     });
 
+    it('空でないupdate-batchごとにvaluesを通知し、timelineの一時停止中も通知し続けること', () => {
+      const { core, source } = setupConnected();
+      const kinds: string[] = [];
+      core.onChange((kind) => kinds.push(kind));
+
+      source.emit({ type: 'state:update-batch', addresses: new Set([addressOf('main', 'count')]) });
+      // 値の合図は timeline の行より先
+      expect(kinds).toEqual(['values', 'timeline']);
+
+      // 一時停止が止めるのは記録だけ: 値の合図は流れ、timeline は増えない
+      kinds.length = 0;
+      core.paused = true;
+      source.emit({ type: 'state:update-batch', addresses: new Set([addressOf('main', 'count')]) });
+      expect(kinds).toEqual(['values']);
+      expect(core.getTimeline()).toHaveLength(1);
+
+      // 空のバッチ（何も変わっていない）と write 単体は values を流さない
+      kinds.length = 0;
+      core.paused = false;
+      source.emit({ type: 'state:update-batch', addresses: new Set() });
+      source.emit({ type: 'state:write', absoluteAddress: addressOf('main', 'count'), value: 1, oldValue: 0, hasOldValue: true });
+      expect(kinds).toEqual(['timeline']);
+    });
+
     it('watch-errorをphase付きで記録すること（ランタイムが握った失敗の唯一の可視化点）', () => {
       const { core, source } = setupConnected();
       source.emit({ type: 'state:watch-error', phase: 'handler', path: 'items.*.price', error: new TypeError('boom') });

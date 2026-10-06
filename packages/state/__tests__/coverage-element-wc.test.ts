@@ -580,4 +580,25 @@ describe("入力の属性ミラー", () => {
     await write((s) => { s.payload = { id: 2 }; });
     expect(c.getAttribute("data")).toBe('{"id":2}');
   });
+
+  it("boolean は HTML の真偽属性として写す: true は空の属性、false は属性を外す（\"false\" と書くと、属性の有無で読む要素には真になる）", async () => {
+    const tag = nextTag();
+    customElements.define(tag, class extends HTMLElement {
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [], inputs: [{ name: "active", attribute: "active" }, { name: "label", attribute: "label" }] };
+      // reads the attribute by presence, as the I/O nodes do (<wcs-wakelock active>)
+      get active(): boolean { return this.hasAttribute("active"); }
+      set active(_v: boolean) { /* the mirror writes the attribute */ }
+      label: unknown = null;
+    });
+    // false on the first apply: the attribute written in the markup goes
+    const { root, write } = await page(`<${tag} active data-wcs="active: on; label: text"></${tag}>`, { on: false, text: "true" });
+    const c = root.querySelector(tag) as any;
+    expect([c.hasAttribute("active"), c.active]).toEqual([false, false]);
+    // a string is written as it is, "true" and "false" included
+    expect(c.getAttribute("label")).toBe("true");
+    await write((s) => { s.on = true; s.text = "false"; });
+    expect([c.getAttribute("active"), c.active, c.getAttribute("label")]).toEqual(["", true, "false"]);
+    await write((s) => { s.on = false; });
+    expect([c.hasAttribute("active"), c.active]).toEqual([false, false]);
+  });
 });

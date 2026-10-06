@@ -26,7 +26,7 @@ Open http://localhost:3000/streams/ in a browser (`/` is the examples gallery).
 
 - **Cooperative cancellation contract** — `source` MUST honor the AbortSignal it is given. Here that is just handing it to `fetch(url, { signal })`, which tears the HTTP request down on restart or disconnect. server.js also stops emitting on client abort (`close`), so hammering restart does not pile work up on the server.
 - **Bounded fold rule** — accumulating the whole text (`(acc, chunk) => acc + chunk`) is acceptable here **only because the stream is finite**. For infinite / long-lived streams use a bounded fold: latest, last-N, or a windowed aggregate.
-- **Consuming a ReadableStream** — `source` may return an `AsyncIterable` / `ReadableStream` (or a Promise of either). A ReadableStream without `Symbol.asyncIterator` is consumed through the `getReader()` fallback.
+- **Consuming a ReadableStream** — `source` may return an `AsyncIterable` / `ReadableStream` (or a Promise of either). A ReadableStream is always read through its `getReader()`, whether or not it has `Symbol.asyncIterator`; an async iterable through its iterator.
 - **fold returns a new value** — string concatenation produces a new value every time, so it satisfies that rule (no in-place mutation) naturally.
 
-> See `docs/state-streams-design.md` at the repository root for the design, and `packages/state/src/stream/` for the implementation.
+> See `docs/state-streams-design.md` at the repository root for the design, and `packages/state/src/temporal/stream.ts` for the implementation.

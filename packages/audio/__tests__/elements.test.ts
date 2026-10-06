@@ -485,6 +485,16 @@ describe("audio custom elements", () => {
       expect(WcsAudio.hasConnectedCallbackPromise).toBe(true);
     });
 
+    it("on が既定の limiter / resumeOnGesture は写す属性を宣言しない（setter が on / off を自分で書く。真偽属性の写しでは off を書けない）", () => {
+      expect(WcsAudio.wcBindable.inputs?.map((i) => [i.name, i.attribute ?? null])).toEqual([
+        ["volume", "volume"], ["limiter", null], ["resumeOnGesture", null],
+      ]);
+      const root = document.createElement("wcs-audio") as WcsAudio;
+      root.limiter = false;
+      root.resumeOnGesture = false;
+      expect([root.getAttribute("limiter"), root.limiter, root.getAttribute("resume-on-gesture"), root.resumeOnGesture]).toEqual(["off", false, "off", false]);
+    });
+
     it("ノードタグは観測面を持たない純粋な入力ノード", () => {
       expect(WcsOsc.wcBindable.properties).toEqual([]);
       expect(WcsOsc.wcBindable.commands).toEqual([]);

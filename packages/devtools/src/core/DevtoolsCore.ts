@@ -77,7 +77,12 @@ export interface IWiringEntry {
   readonly stateElementRef: WeakRef<object> | null;
 }
 
-export type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage";
+/**
+ * Core の変化の種類。`values` は「状態の値が変わったかもしれない」の合図で、更新バッチ
+ * （`state:update-batch`）ごとに流れる。timeline の一時停止（paused）とは独立 —
+ * 一時停止が止めるのは記録であって観測ではないので、State ペインは追従し続ける。
+ */
+export type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage" | "values";
 export type CoreChangeListener = (kind: CoreChangeKind) => void;
 
 /**
@@ -746,6 +751,9 @@ export class DevtoolsCore {
         if (total === 0) {
           return;
         }
+        // 値の変化の合図（State ペインの丸ごとの再読 — devtools-tag-design.md §10 G-U1）。
+        // timeline の行より先に、一時停止中でも流す
+        this._notify("values");
         const rest = total > labels.length ? `, …(${total})` : "";
         this._appendTimeline({
           sourceId,

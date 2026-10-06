@@ -35,6 +35,16 @@ node examples/router-spa/server.js
 ブラウザで http://localhost:3000 を開いてください。ディープリンクも動きます:
 http://localhost:3000/products/3 、 http://localhost:3000/about 。
 
+CDN ではなくリポジトリのローカルビルドで動かすには:
+
+```bash
+WCS_LOCAL=1 node examples/router-spa/server.js
+```
+
+`WCS_LOCAL=1` は `esm.run` の一行を `/packages/<pkg>/dist/…` に書き換えて
+リポジトリから配ります。`e2e/serve.mjs` と同じ手口です（e2e スイートはこの形で
+デモを動かします）。
+
 ## 機能
 
 - **型付きパラメータの宣言的ルート**: `/products/:productId(int)` は整数にしか
@@ -85,10 +95,13 @@ http://localhost:3000/products/3 、 http://localhost:3000/about 。
 - **state が持つもの**: データバインドされたページすべて。一覧と詳細の DOM は
   常にドキュメント内にある `<template data-wcs="if: ...">` ブロックです。
 
-この分担は意図的なものです。`@wcstack/state` はバインド時点で DOM にある
-`data-wcs` を収集し、router が後からスタンプするノードは監視しません。
-そのため router が出し入れするコンテンツは静的（`data-wcs` なし）に、
-データバインドされるコンテンツは state 管理の構造テンプレート配下に置きます。
+この分担は意図的なものです。router はスタンプした内容を `@wcstack/state` に
+渡してバインドさせる（binder プロトコル）ので、ルートの内容にも `data-wcs` を
+書けます。router 3.5 以降と state 4.0 の組み合わせでは、ルートの先頭の
+`for:` / `if:` のテンプレートも描かれます（state 4.0 の移行ガイド §3.9）。
+それでもこのデモは、データバインドするページを、常にドキュメント内にある
+state 管理の構造テンプレートに置いています。ルートは URL のことだけを受け持ち、
+各ページは router が書き込む state に対する 1 つの `if:` になります。
 それぞれが得意なことをやり、結合は `<wcs-router>` 上の wc-bindable
 バインディングだけです。
 

@@ -192,9 +192,9 @@ leaves features out, it can compose them instead:
 <script type="importmap">
 {
   "imports": {
-    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.6/dist/split/core.js",
-    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.6/dist/split/features/temporal.js",
-    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.6/dist/split/features/scopes.js"
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.7/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.7/dist/split/features/temporal.js",
+    "@wcstack/state/features/scopes": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.7/dist/split/features/scopes.js"
   }
 }
 </script>
@@ -254,7 +254,7 @@ receptacle the owning add-on fills on install).
 core, and the add-ons the page names from the same build.
 
 ```html
-<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.6/dist/split/auto.js"></script>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0-rc.7/dist/split/auto.js"></script>
 <wcs-state features="scopes diagnostics">
   <script type="module">
     export default {
@@ -2646,13 +2646,15 @@ Attribute value encoding:
 
 | Value type | Mirrored attribute |
 |---|---|
-| `string` / `number` / `boolean` / `bigint` | `String(value)` |
-| `null` / `undefined` | attribute removed |
+| `string` / `number` / `bigint` | `String(value)` |
+| `true` | the attribute, empty (`""`) |
+| `false` / `null` / `undefined` | attribute removed |
 | `object` / `array` | `JSON.stringify(value)` (falls back to `String(value)` on circular references) |
 
 Notes:
 
 - `inputs` entries **without** `attribute` are property-only — the value is written to the property but no attribute is touched
+- A boolean is an HTML boolean attribute, read by its presence (`<wcs-wakelock active>`): `false` removes it. (3.x wrote `"false"`, which such an element reads as true.) An input that is on unless an attribute says `"off"` cannot be mirrored this way: leave its `attribute` out and let its setter reflect it, as `<wcs-audio>`'s `limiter` does
 - Mirror is best-effort: a `setAttribute` failure is swallowed and does not block the property write
 - Native HTML elements ignore `inputs` entirely — the mirror only activates for custom elements that expose `static wcBindable`
 

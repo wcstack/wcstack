@@ -502,6 +502,209 @@ describe('WcsDevtools shell', () => {
     });
   });
 
+  // devtools-tag-design.md §10 G-U1: 値が変わったら State ペインを丸ごと読み直す。
+  // 以前は timeline の変化で timeline ペインしか描き直さず、開いたままのパネルの値が
+  // ページの書き込みに追従しなかった。
+  describe('Stateペインの追従', () => {
+    const batchOf = (path: string): DevtoolsEventLike =>
+      ({ type: 'state:update-batch', addresses: new Set([addressOf('main', path)]) });
+    const rowOf = (label: string): HTMLElement =>
+      [...paneBody(devtools, 'state').querySelectorAll<HTMLElement>('.tree-row')].find(
+        (row) => row.querySelector('.key')!.textContent === `${label}:`
+      )!;
+    const valueOf = (label: string): string => rowOf(label).querySelector('.value')!.textContent!;
+
+    it('開いている間は更新バッチごとに読み直し、展開した枝はそのまま残ること', () => {
+      mount({ attrs: { open: '' } });
+      rowOf('items').querySelector<HTMLElement>('.toggle')!.click();
+      devtools.__flushRenderForTest();
+      expect(valueOf('count')).toBe('5');
+      expect(valueOf('[1]')).toBe('20');
+
+      source.data.count = 6;
+      (source.data.items as number[])[1] = 21;
+      source.emit(batchOf('count'));
+      devtools.__flushRenderForTest();
+      expect(valueOf('count')).toBe('6');
+      expect(valueOf('[1]')).toBe('21');
+    });
+
+    it('timelineの一時停止中も読み直すこと（止めるのは記録だけ）', () => {
+      mount({ attrs: { open: '' } });
+      headerButton(devtools, 'pause').click();
+      source.data.count = 7;
+      source.emit(batchOf('count'));
+      devtools.__flushRenderForTest();
+      expect(valueOf('count')).toBe('7');
+      expect(paneBody(devtools, 'timeline').textContent).not.toContain('1 address');
+    });
+
+    it('閉じている間は読まず、開いたときに最新の値を描くこと', () => {
+      mount();
+      const read = source.read as ReturnType<typeof vi.fn>;
+      const before = read.mock.calls.length;
+      source.data.count = 8;
+      source.emit(batchOf('count'));
+      devtools.__flushRenderForTest();
+      expect(read.mock.calls.length).toBe(before);
+
+      devtools.setAttribute('open', '');
+      devtools.__flushRenderForTest();
+      expect(valueOf('count')).toBe('8');
+    });
+
+    it('インライン編集の入力欄にフォーカスがある間は描き直しを待ち、Enterで確定してから描くこと', () => {
+      mount({ attrs: { open: '' } });
+      rowOf('count').querySelector<HTMLElement>('.value')!.click();
+      const input = paneBody(devtools, 'state').querySelector<HTMLInputElement>('input')!;
+      expect(shadowOf(devtools).activeElement).toBe(input);
+      input.value = '42';
+
+      // 編集中にページ側で値が変わっても、打ちかけの入力欄は消えない
+      source.data.msg = 'changed';
+      source.emit(batchOf('msg'));
+      devtools.__flushRenderForTest();
+      expect(input.isConnected).toBe(true);
+      expect(input.value).toBe('42');
+      expect(valueOf('msg')).toBe('"hello"');
+
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+      expect(source.write).toHaveBeenCalledWith(document, 'count', 42, []);
+      source.data.count = 42;
+      devtools.__flushRenderForTest();
+      expect(input.isConnected).toBe(false);
+      expect(valueOf('count')).toBe('42');
+      expect(valueOf('msg')).toBe('"changed"');
+    });
+
+    it('Escapeで取り消すと待たせていた描き直しを流すこと', () => {
+      mount({ attrs: { open: '' } });
+      rowOf('count').querySelector<HTMLElement>('.value')!.click();
+      const input = paneBody(devtools, 'state').querySelector<HTMLInputElement>('input')!;
+      source.data.msg = 'changed';
+      source.emit(batchOf('msg'));
+      devtools.__flushRenderForTest();
+      expect(input.isConnected).toBe(true);
+
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      devtools.__flushRenderForTest();
+      expect(input.isConnected).toBe(false);
+      expect(valueOf('msg')).toBe('"changed"');
+      expect(source.write).not.toHaveBeenCalled();
+    });
+
+    it('フォーカスが外れたら待たせていた描き直しを流し、待たせていなければ入力欄を残すこと', async () => {
+      mount({ attrs: { open: '' } });
+      // 保留が無いときの blur: 入力欄は残る（従来どおり）
+      rowOf('count').querySelector<HTMLElement>('.value')!.click();
+      let input = paneBody(devtools, 'state').querySelector<HTMLInputElement>('input')!;
+      input.blur();
+      devtools.__flushRenderForTest();
+      expect(input.isConnected).toBe(true);
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      devtools.__flushRenderForTest();
+      expect(input.isConnected).toBe(false);
+
+      // 保留があるときの blur: rAF で描き直し、入力欄は消える（取り消し）
+      rowOf('msg').querySelector<HTMLElement>('.value')!.click();
+      input = paneBody(devtools, 'state').querySelector<HTMLInputElement>('input')!;
+      source.data.count = 9;
+      source.emit(batchOf('count'));
+      devtools.__flushRenderForTest();
+      expect(input.isConnected).toBe(true);
+      input.blur();
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+      expect(input.isConnected).toBe(false);
+      expect(valueOf('count')).toBe('9');
+      expect(source.write).not.toHaveBeenCalled();
+    });
+
+    it('フォーカスを失った入力欄は描き直しを止めないこと（blur の来ない抜け方でも待ち続けない）', () => {
+      mount({ attrs: { open: '' } });
+      rowOf('count').querySelector<HTMLElement>('.value')!.click();
+      const input = paneBody(devtools, 'state').querySelector<HTMLInputElement>('input')!;
+      // blur リスナーを通さずにフォーカスだけを外す（パネルを閉じたときなど）
+      const outside = document.createElement('button');
+      document.body.append(outside);
+      input.addEventListener('blur', (event) => event.stopImmediatePropagation(), { capture: true, once: true });
+      outside.focus();
+      source.data.count = 10;
+      source.emit(batchOf('count'));
+      devtools.__flushRenderForTest();
+      expect(input.isConnected).toBe(false);
+      expect(valueOf('count')).toBe('10');
+    });
+
+    it('Stateペインでポインタを押している間は描き直しを待ち、離す（またはキャンセルする）と描くこと', () => {
+      mount({ attrs: { open: '' } });
+      const pane = paneBody(devtools, 'state').parentElement!;
+      for (const releaseType of ['pointerup', 'pointercancel']) {
+        const pressedRow = rowOf('count');
+        pane.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+        source.data.count = (source.data.count as number) + 1;
+        source.emit(batchOf('count'));
+        devtools.__flushRenderForTest();
+        // 押した行は残る（ここで差し替えるとクリックが成立しない）
+        expect(pressedRow.isConnected).toBe(true);
+
+        // 離した場所はペインの外でもよい
+        window.dispatchEvent(new Event(releaseType));
+        devtools.__flushRenderForTest();
+        expect(pressedRow.isConnected).toBe(false);
+        expect(valueOf('count')).toBe(String(source.data.count));
+      }
+
+      // 保留が無ければ離しても描き直さない
+      const row = rowOf('count');
+      pane.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      window.dispatchEvent(new Event('pointerup'));
+      devtools.__flushRenderForTest();
+      expect(row.isConnected).toBe(true);
+    });
+
+    it('描き直しの途中でスクロールが詰められても、前の位置に戻すこと', () => {
+      mount({ attrs: { open: '' } });
+      const scroller = paneBody(devtools, 'state').parentElement!;
+      scroller.scrollTop = 40;
+      // 値の読み出し（ページの getter）がレイアウトを走らせ、空のペインでスクロールが 0 に詰まる
+      const read = source.read as ReturnType<typeof vi.fn>;
+      const original = read.getMockImplementation()!;
+      read.mockImplementation((...args: unknown[]) => {
+        scroller.scrollTop = 0;
+        return (original as (...a: unknown[]) => unknown)(...args);
+      });
+      source.emit(batchOf('count'));
+      devtools.__flushRenderForTest();
+      expect(scroller.scrollTop).toBe(40);
+    });
+  });
+
+  // 右ドック（幅 420px）でヘッダーの中身が幅を超え、× がパネルの外へ押し出されていた。
+  // レイアウトは happy-dom では測れないので、ここでは構造と、縮む／縮まないの指定を固定する
+  // （実ブラウザの幅は e2e/tests/state-devtools-playground.spec.ts）。
+  describe('ヘッダーの幅', () => {
+    it('中間の操作はtoolsにまとまって縮み、dockと×はその外で縮まないこと', () => {
+      mount();
+      const header = shadowOf(devtools).querySelector<HTMLElement>('header')!;
+      const tools = header.querySelector<HTMLElement>(':scope > .tools')!;
+      expect([...tools.children].map((el) => (el as HTMLElement).dataset['role'] ?? el.localName))
+        .toEqual(['select', 'pick', 'pause', 'clear']);
+      expect([...header.children].map((el) => (el as HTMLElement).dataset['role'] ?? el.className))
+        .toEqual(['title', 'tools', 'dock', 'close']);
+
+      const style = (el: Element) => getComputedStyle(el);
+      // title と tools は 0 まで縮める。tools は足りなければ横にスクロールする
+      expect(style(header.querySelector('.title')!).minWidth).toMatch(/^0(px)?$/);
+      expect(style(tools).minWidth).toMatch(/^0(px)?$/);
+      expect(style(tools).overflowX).toBe('auto');
+      // dock と × は縮まず、折り返さない
+      for (const role of ['dock', 'close']) {
+        expect(style(headerButton(devtools, role)).flexShrink).toBe('0');
+        expect(style(headerButton(devtools, role)).whiteSpace).toBe('nowrap');
+      }
+    });
+  });
+
   describe('Wiringペイン', () => {
     it('ライブ配線が無ければdeclaredスキャンへフォールバックすること', () => {
       document.body.innerHTML = '<span data-wcs="textContent: count"></span>';

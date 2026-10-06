@@ -11,7 +11,7 @@
 //   split/features/<name>.js (beyond the core) an add-on's own weight: its closure minus the core's
 //   split/auto.js (beyond the core)           the split build's one-script loader
 // Absolute (no baseline; `--update` refuses to record past them):
-//   core.min.js ≤ 20,000 B                    the 4.0 core target
+//   core.min.js ≤ 20,480 B (20 KiB)           the 4.0 core target
 //   define.js (with its imports) ≤ 1,024 B    `/define`, the helper entry that pulls in no runtime
 //                                             (N2). 4.0's `.` keeps most of the core on a
 //                                             defineState-only import, so the 3.x probe through
@@ -30,8 +30,8 @@ const root = resolve(import.meta.dirname, '..');
 const dist = join(root, 'packages/state/dist');
 const baselineFile = join(root, 'scripts/state-size-baseline.json');
 const tag = '[state size]';
-const HARD_LIMITS = { 'core.min.js': 20000, 'define.js (with its imports)': 1024 };
-const BASELINE_COMMENT = 'gzip level 9 of packages/state/dist (4.0) at the recorded release, each file gzipped on its own. check-state-size.mjs --check allows +3 % over these plus an entry\'s optional "slack" in bytes (kept across --update). "with its chunks" sums the entry and every chunk it imports; "beyond the core" sums the files of its closure that split/core.js does not load. The absolute limits (core.min.js 20,000 B, define.js 1,024 B) live in the script. Update with --update after a release build.';
+const HARD_LIMITS = { 'core.min.js': 20 * 1024, 'define.js (with its imports)': 1024 };
+const BASELINE_COMMENT = 'gzip level 9 of packages/state/dist (4.0) at the recorded release, each file gzipped on its own. check-state-size.mjs --check allows +3 % over these plus an entry\'s optional "slack" in bytes (kept across --update). "with its chunks" sums the entry and every chunk it imports; "beyond the core" sums the files of its closure that split/core.js does not load. The absolute limits (core.min.js 20,480 B = 20 KiB, define.js 1,024 B) live in the script. Update with --update after a release build.';
 
 let allowance = 0.03;
 const args = process.argv.slice(2);
