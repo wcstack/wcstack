@@ -870,6 +870,112 @@ describe("F20・F21 行のブロックの直下の構造のテンプレート", 
   });
 });
 
+describe("examples の e2e で見つけた: 消えた行のコンポーネントの中のコンポーネント", () => {
+  it("外側のコンポーネントの行を外すと、その中にマウントしたコンポーネント（行・行でない部分マウント）も描くのをやめ、エラーを報告しない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const inner = component(`<span>{{ v }}/{{ double }}</span>`, () => ({}));
+      const label = component(`<em>{{ label }}</em>`, () => ({}));
+      const outer = component(
+        `<${label} data-wcs="state.label: name"></${label}><template data-wcs="for: items"><${inner} data-wcs="state: ."></${inner}></template>`,
+        () => ({}),
+      );
+      const { root, write } = await page(`<template data-wcs="for: groups"><${outer} data-wcs="state: ."></${outer}></template>`, {
+        groups: [{ name: "g1", items: [{ v: 1 }, { v: 2 }] }, { name: "g2", items: [{ v: 3 }, { v: 4 }] }],
+        get "groups.*.items.*.double"() { return (this as any)["groups.*.items.*.v"] * 2; },
+      });
+      const shown = () => Array.from(root.querySelectorAll(outer)).map((o) => [
+        o.shadowRoot!.querySelector(label)!.shadowRoot!.textContent,
+        ...Array.from(o.shadowRoot!.querySelectorAll(inner)).map((i) => i.shadowRoot!.textContent),
+      ]);
+      await flush();
+      expect(shown()).toEqual([["g1", "1/2", "2/4"], ["g2", "3/6", "4/8"]]);
+      await write((s) => { s.groups = s.groups.slice(0, 1); });
+      await flush();
+      expect(error).not.toHaveBeenCalled();
+      expect(shown()).toEqual([["g1", "1/2", "2/4"]]);
+      // the group that stays still follows its data
+      await write((s) => { s["groups.0.items.1.v"] = 5; s["groups.0.name"] = "G1"; });
+      await flush();
+      expect(shown()).toEqual([["G1", "1/2", "5/10"]]);
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
+describe("examples の e2e で見つけた: style. のプロパティ名", () => {
+  it("DOM の名前（backgroundColor）も CSS の名前（background-color）・カスタムプロパティ（--gap）も当たり、null で外れる（3.x と同じ）", async () => {
+    const { root, write } = await page(
+      `<p class="camel" data-wcs="style.backgroundColor: c; style.width: w"></p><p class="kebab" data-wcs="style.background-color: c; style.--gap: g"></p>`,
+      { c: "red", w: "40px", g: "4px" },
+    );
+    const camel = root.querySelector("p.camel") as HTMLElement;
+    const kebab = root.querySelector("p.kebab") as HTMLElement;
+    expect([camel.style.backgroundColor, camel.style.width]).toEqual(["red", "40px"]);
+    expect([kebab.style.backgroundColor, kebab.style.getPropertyValue("--gap")]).toEqual(["red", "4px"]);
+    await write((s) => { s.c = "blue"; });
+    expect([camel.style.backgroundColor, kebab.style.backgroundColor]).toEqual(["blue", "blue"]);
+    await write((s) => { s.c = null; s.w = undefined; s.g = null; });
+    expect([camel.style.backgroundColor, camel.style.width, kebab.style.backgroundColor, kebab.style.getPropertyValue("--gap")]).toEqual(["", "", "", ""]);
+  });
+});
+
+describe("examples の e2e で見つけた: 要素の書き戻しと同じ drain で、最後に当てた値へ戻す", () => {
+  it("双方向の value: — 入力と、それを空に戻すクリックが同じタスクでも、入力欄は状態の値（空）を映す", async () => {
+    const { root, read } = await page(
+      `<input data-wcs="value: draft"><button data-wcs="onclick: add"></button>`,
+      { draft: "", added: "", add(this: any) { this.added = this.draft; this.draft = ""; } },
+    );
+    const input = root.querySelector("input")!;
+    input.value = "B";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    root.querySelector("button")!.click();
+    await flush();
+    expect(read("added")).toBe("B");
+    expect(input.value).toBe("");
+  });
+
+  it("双方向の value: — 入力を検証で前の値に戻すと、入力欄も前の値に戻る（フィルタ付きでも）", async () => {
+    const { root, read } = await page(
+      `<input class="a" data-wcs="value: code; oninput: keepDigits"><input class="b" data-wcs="value: n|toFixed(1); oninput: keepPositive">`,
+      {
+        code: "12",
+        n: 3,
+        keepDigits(this: any) { if (!/^\d*$/.test(this.code)) this.code = this.code.replace(/\D/g, ""); },
+        keepPositive(this: any, e: Event) { const v = Number((e.target as HTMLInputElement).value); this.n = v > 0 ? v : 3; },
+      },
+    );
+    const a = root.querySelector("input.a") as HTMLInputElement;
+    const b = root.querySelector("input.b") as HTMLInputElement;
+    expect([a.value, b.value]).toEqual(["12", "3.0"]);
+    a.value = "12x";
+    a.dispatchEvent(new Event("input", { bubbles: true }));
+    b.value = "-1";
+    b.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    expect([read("code"), read("n")]).toEqual(["12", 3]);
+    expect([a.value, b.value]).toEqual(["12", "3.0"]);
+  });
+
+  it("radio — 選び直しを同じタスクで元の値へ戻すと、元の radio が選ばれ直す", async () => {
+    const { root, read } = await page(
+      `<input type="radio" name="c" value="a" data-wcs="radio: choice"><input type="radio" name="c" value="b" data-wcs="radio: choice; onchange: keep">`,
+      { choice: "a", keep(this: any) { this.choice = "a"; } },
+    );
+    const [a, b] = Array.from(root.querySelectorAll("input")) as HTMLInputElement[];
+    expect([a.checked, b.checked]).toEqual([true, false]);
+    // what a click does: check it, then input and change in the same task
+    b.checked = true;
+    b.dispatchEvent(new Event("input", { bubbles: true }));
+    b.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(read("choice")).toBe("a");
+    expect([a.checked, b.checked]).toEqual([true, false]);
+  });
+});
+
 describe("F30・async のイベントハンドラ", () => {
   it("ホストの行が消えた後のコンポーネントの書き込みは The host row of <tag> was removed. で拒み、消えた行のデータは変えない", async () => {
     let release!: () => void;

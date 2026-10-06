@@ -310,14 +310,20 @@ function wire(m: Mount): void {
   for (const p of made) mountKey(m, whole, p);
   for (const p of made) base.call(C, p);
   // a mount in a host row goes with the row (4.0 discards a removed row's element): it renders no
-  // more — what it would read of the row throws (live), its own keys stay readable and writable
-  const rows = h.entries.filter((e) => e.row !== null);
-  if (rows.length > 0) {
-    const drain = C.drain;
-    C.drain = () => {
-      if (rows.every((e) => e.row!.alive)) drain.call(C);
-    };
+  // more — what it would read of the row throws (live), its own keys stay readable and writable.
+  // So does a mount inside a component that went with its row: it reads the tree through that one.
+  const drain = C.drain;
+  C.drain = () => {
+    if (inPlace(m)) drain.call(C);
+  };
+}
+
+/** Every host row a mount reads through is still there: its own, and those of the components it is in. */
+function inPlace(m: Mount | undefined): boolean {
+  for (; m !== undefined; m = mounts.get(m.host.engine!)) {
+    if (m.host.entries.some((e) => e.row !== null && !e.row.alive)) return false;
   }
+  return true;
 }
 
 /**
