@@ -814,7 +814,23 @@ export class ForView {
 
     if (n === 0) {
       if (o > 0) {
-        removeContiguous(old[0].head(), old[o - 1].last);
+        const first = old[0].head();
+        const last = old[o - 1].last;
+        // the rows are all the parent holds but the anchor and text (a <tbody> of rows, its whitespace):
+        // one call empties it and puts those back — faster than a Range in Chromium (10,000 rows: 14 %; node
+        // by node is 5 % slower than one) and linear in happy-dom. An element beside them would be put back
+        // too (a custom element reconnected, an iframe reloaded): then node by node
+        let keep: Node[] | null = [];
+        for (let x = parent.firstChild; x !== null; x = x === first ? last.nextSibling : x.nextSibling) {
+          if (x === first) continue;
+          if (x !== anchor && x.nodeType !== 3) {
+            keep = null;
+            break;
+          }
+          keep.push(x);
+        }
+        if (keep !== null) parent.replaceChildren(...keep);
+        else removeContiguous(first, last);
         for (let i = 0; i < o; i++) this.drop(old[i]);
       }
       this.rowViews = [];
@@ -912,10 +928,13 @@ function nodeAt(n: Node, path: number[], j: number): Node {
 }
 
 function removeContiguous(first: ChildNode, last: ChildNode): void {
-  const range = document.createRange();
-  range.setStartBefore(first);
-  range.setEndAfter(last);
-  range.deleteContents();
+  // node by node, not a Range's deleteContents(): happy-dom's (the DOM of @wcstack/testing and of SSR)
+  // is quadratic — a list of 1,000 rows took 13 s to empty
+  for (let n = first, next; n !== last; n = next) {
+    next = n.nextSibling!;
+    n.remove();
+  }
+  last.remove();
 }
 
 /** Marks the entries (>= 0) that form a longest increasing subsequence of `src`. */

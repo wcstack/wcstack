@@ -99,7 +99,7 @@ describe("同じ値が並ぶリストの差分（行の再利用）", () => {
   const html = `<ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul>`;
   const lis = () => Array.from(document.querySelectorAll("li"));
 
-  it("重複した値の行は前から順に再利用され、余った重複行だけが消える", async () => {
+  it("同じ位置に同じ値がある行はその場に残り、残りの重複した値の行は前から順に再利用され、余った重複行だけが消える", async () => {
     const e = setup(html, { items: [1, 1, 1, 2] });
     const before = lis();
     e.proxy.items = [2, 1, 1, 3];
@@ -107,10 +107,82 @@ describe("同じ値が並ぶリストの差分（行の再利用）", () => {
     const after = lis();
     expect(after.map((l) => l.textContent)).toEqual(["2", "1", "1", "3"]);
     expect(after[0]).toBe(before[3]);
-    expect(after[1]).toBe(before[0]);
-    expect(after[2]).toBe(before[1]);
+    expect(after[1]).toBe(before[1]);
+    expect(after[2]).toBe(before[2]);
     expect(before.includes(after[3])).toBe(false);
-    expect(before[2].isConnected).toBe(false);
+    expect(before[0].isConnected).toBe(false);
+  });
+
+  it("3,000 行の一覧を空にしても、happy-dom で秒単位にならない（Range の deleteContents を使わない）", async () => {
+    const e = setup(`<ul><template data-wcs="for: items"><li><span>{{ .id }}</span> <b>{{ .label }}</b></li></template></ul>`, {
+      items: Array.from({ length: 3000 }, (_, i) => ({ id: i, label: `row ${i}` })),
+    });
+    await flush();
+    expect(lis()).toHaveLength(3000);
+    const t = performance.now();
+    e.proxy.items = [];
+    e.drain();
+    // 以前は 1,000 行で 13 秒かかっていた（行数の 2 乗）。いまは数十 ms
+    expect(performance.now() - t).toBeLessThan(2000);
+    expect(lis()).toHaveLength(0);
+    expect(document.querySelector("ul")!.childNodes.length).toBe(1);
+  });
+
+  it("一覧の外が空白のテキストだけなら、空にした後もそのテキストは同じノードのまま残る", async () => {
+    const e = setup(`<ul>\n  <template data-wcs="for: items"><li>{{ . }}</li></template>\n</ul>`, { items: ["a", "b"] });
+    await flush();
+    const ul = document.querySelector("ul")!;
+    const texts = Array.from(ul.childNodes).filter((n) => n.nodeType === 3);
+    expect(texts.length).toBeGreaterThan(0);
+    e.proxy.items = [];
+    await flush();
+    expect(lis()).toHaveLength(0);
+    expect(Array.from(ul.childNodes).filter((n) => n.nodeType === 3)).toEqual(texts);
+    e.proxy.items = ["x", "y"];
+    await flush();
+    expect(lis().map((l) => l.textContent)).toEqual(["x", "y"]);
+  });
+
+  it("親にほかのノードもある一覧を空にしても、ほかのノードは残る（1 つずつ消す）", async () => {
+    const e = setup(`<ul><li class="head">h</li><template data-wcs="for: items"><li>{{ . }}</li></template><li class="tail">t</li></ul>`, {
+      items: ["a", "b", "c"],
+    });
+    await flush();
+    expect(lis().map((l) => l.textContent)).toEqual(["h", "a", "b", "c", "t"]);
+    e.proxy.items = [];
+    await flush();
+    expect(lis().map((l) => l.textContent)).toEqual(["h", "t"]);
+    e.proxy.items = ["x"];
+    await flush();
+    expect(lis().map((l) => l.textContent)).toEqual(["h", "x", "t"]);
+  });
+
+  it("同じ位置に無い重複した値の行は前から順に再利用される", async () => {
+    const e = setup(html, { items: [1, 2, 1, 2] });
+    const before = lis();
+    e.proxy.items = [2, 1, 2, 1];
+    await flush();
+    const after = lis();
+    expect(after.map((l) => l.textContent)).toEqual(["2", "1", "2", "1"]);
+    expect(after).toEqual([before[1], before[0], before[3], before[2]]);
+  });
+
+  it("0 / 1 が並ぶ盤面の先頭と末尾近くのセルの変更は、その 2 セルの行だけを作り直す（ほかの行は動かない）", async () => {
+    const board = Array.from({ length: 50 }, (_, i) => (i % 3 === 0 ? 1 : 0));
+    const e = setup(html, { items: board });
+    const before = lis();
+    const next = board.slice();
+    next[0] = 0;
+    next[48] = 0;
+    e.proxy.items = next;
+    await flush();
+    const after = lis();
+    expect(after.map((l) => l.textContent)).toEqual(next.map(String));
+    for (let i = 1; i < 50; i++) if (i !== 48) expect(after[i]).toBe(before[i]);
+    expect(before.includes(after[0])).toBe(false);
+    expect(before.includes(after[48])).toBe(false);
+    expect(before[0].isConnected).toBe(false);
+    expect(before[48].isConnected).toBe(false);
   });
 
   it("重複した値の行をすべて使い切る並べ替えでは、どの行も作り直されない", async () => {
