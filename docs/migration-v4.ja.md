@@ -174,9 +174,9 @@ export default {
 
 ## 2. 4.0 に上げる
 
-- すべての `@wcstack/*` パッケージを同じ 4.0 の版にします。4.0 がリリース候補のあいだは `next` タグから取るか（`npm i @wcstack/state@next @wcstack/router@next …`）、版を名指しします（`4.0.0-rc.6`）。
+- すべての `@wcstack/*` パッケージを同じ 4.0 の版にします。4.0 がリリース候補のあいだは `next` タグから取るか（`npm i @wcstack/state@next @wcstack/router@next …`）、版を名指しします（`4.0.0-rc.7`）。
 - `@wcstack/server` 4.0 と 4.0 のクライアントを一緒にデプロイします（§3.6）。
-- CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。`@4` が解決するのは 4.0.0 の公開後です。範囲の指定はリリース候補を選ばないので、試すときは版を名指しします（`https://esm.run/@wcstack/state@4.0.0-rc.6/auto`）。
+- CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。`@4` が解決するのは 4.0.0 の公開後です。範囲の指定はリリース候補を選ばないので、試すときは版を名指しします（`https://esm.run/@wcstack/state@4.0.0-rc.7/auto`）。
 - `@wcstack/lint` と `@wcstack/typescript` はどの `@wcstack/*` のリリースでも一緒に上がるので、リリース候補から 4.0 の規則を持ちます（`npx @wcstack/lint@next <files>`）。VS Code 拡張は 2.0.0 として 4.0.0 と同時に出します。3.x のプロジェクトでは 3.5 のもの（拡張は 1.21.x）を使い続けてください。4.0 の規則は、3.x が受け付ける書き方も報告します。
 
 **4.0 のエラーの出方。** `diagnostics` 機能があると、メッセージには lint と同じ `[wcs/<code>]` と文が付きます。無いと、番号と値が出ます。
