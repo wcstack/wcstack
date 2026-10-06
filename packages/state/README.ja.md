@@ -2636,13 +2636,15 @@ chip.payload = null          → element.data = null かつ removeAttribute("dat
 
 | 値の型 | ミラーされる属性 |
 |---|---|
-| `string` / `number` / `boolean` / `bigint` | `String(value)` |
-| `null` / `undefined` | 属性を削除 |
+| `string` / `number` / `bigint` | `String(value)` |
+| `true` | 空の属性（`""`） |
+| `false` / `null` / `undefined` | 属性を削除 |
 | `object` / `array` | `JSON.stringify(value)`（循環参照時は `String(value)` にフォールバック） |
 
 補足：
 
 - `attribute` を**持たない** `inputs` エントリはプロパティのみ —— 値はプロパティに書き込まれるが属性には触れない
+- boolean は、有無で読む HTML の真偽属性として写す（`<wcs-wakelock active>`）。`false` は属性を外す（3.x は `"false"` と書き、そうした要素はそれを真と読んでいた）。属性が `"off"` でない限り on の入力は、この形では写せない: `attribute` を宣言せず、setter に自分で属性を書かせる（`<wcs-audio>` の `limiter` がそう）
 - ミラーはベストエフォート: `setAttribute` の失敗は握りつぶされ、プロパティ書き込みをブロックしない
 - ネイティブ HTML 要素は `inputs` を完全に無視する —— ミラーは `static wcBindable` を公開するカスタム要素でのみ有効になる
 

@@ -100,10 +100,15 @@ function pending(p: Promise<unknown>, owner: Block | null, fn: () => void): void
   void p.then(() => f?.());
 }
 
-/** Mirrors an input's value to its declared attribute (best effort, never blocks the write). */
+/**
+ * Mirrors an input's value to its declared attribute (best effort, never blocks the write). A
+ * boolean is an HTML boolean attribute: present (`""`) for true, removed for false — an element
+ * reads such an attribute by its presence, so `"false"` would read as true.
+ */
 export function mirrorAttribute(el: Element, attribute: string, v: unknown): void {
   try {
-    if (v == null) el.removeAttribute(attribute);
+    if (v == null || v === false) el.removeAttribute(attribute);
+    else if (v === true) el.setAttribute(attribute, "");
     else {
       // an object as JSON (what JSON cannot write, as its string)
       let s = v;

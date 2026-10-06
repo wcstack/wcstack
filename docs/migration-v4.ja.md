@@ -51,7 +51,7 @@
 - [ ] `defineState` を `@wcstack/state` ではなく `@wcstack/state/define` から import する（§3.7）。
 - [ ] `/core` のページ: `$listKeys` を使うなら `features/list-keys` を入れる（§3.8）。
 - [ ] `/core` のページ: 開発中は `features/diagnostics` を入れる（§3.8）。
-- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、リストの末尾より先の読み（§3.4）。`$watch` のハンドラが呼ばれる場面 — `for:` の無い行の watch、行 getter の watch、配列の丸ごとの代入、数値の添字を持つキー、複数の行が持つ配列（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。
+- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、リストの末尾より先の読み（§3.4）。`$watch` のハンドラが呼ばれる場面 — `for:` の無い行の watch、行 getter の watch、配列の丸ごとの代入、数値の添字を持つキー、複数の行が持つ配列（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。カスタム要素の属性に写す boolean（§3.4）。
 - [ ] `@wcstack/lint` 4.0 を流し、報告を直す（§4）。
 
 > **コメントバインディングは残ります。** `<!--@@: path-->` と `<!--@@wcs-text: path-->` は 4.0 でも使えます。lint が、描画前の表示のちらつき（FOUC）を避けるために `<template>` の外の `{{ }}` の代わりに勧めている書き方で、4.0 は `enableMustache` を切っていてもバインドします。なくなるのは、キーワードを変える `commentTextPrefix` オプションだけです。詳しくは §3.4。
@@ -418,6 +418,7 @@ this.items = items;
 - `$stream` の実行が開始（再開）と同じタスクの中で（同期に、または microtask で）書くもの —— source が出した値、status の `done` / `error` —— は、その実行の連鎖の続きです。別の stream の `args` に届けばその stream は 1 段深く再開し、起こした `$watch` のハンドラも 1 段深く実行されます。そのため source がすぐに値を出すと、互いの値を読む 2 本の stream も、stream の値の `$watch` がその `args` の読むものを進める形も、ページを固めずに打ち切られます。後者は 1 周（ハンドラと再開）が 2 段なので、終わる循環かどうかに関わらず 16 周ほどで止まり、そうした source で回す自動ページ送りもそこで止まります（3.x は終わりの無い循環で報告なしに固まり、終わる循環は最後まで回しました）。後のタスクで届いた値と、それが起こす `$watch` のハンドラは、数え直しです。
 - 行の下への書き込みは、そのオブジェクトを配列に持つ getter（絞り込み・並べ替え）を評価し直します。チェックした行は未完了の絞り込みから抜け、名前を変えた行は並べ替えた表示で動きます。書いたオブジェクトを配列に持たない getter は評価し直しません（配列を読んだのであって、オブジェクトは読んでいない）。どの行にも追従させるには、getter の中で `$getAll("todos.*.done")` を読んでください。3.x はどちらも評価し直さず、書き込みはもう一方の配列の行に届きませんでした（§5）。
 - リストの末尾より先の添字: 書き込み（`this["items.5.v"] = 1`、`$resolve("items.*.v", [5], 1)`）は `no row for "items.*.v"` で throw して何も変えず、読みは `undefined` を返します。3.x は、どちらも `ListIndex not found` で throw していました。
+- `attribute` を宣言したカスタム要素の入力（wc-bindable の `inputs`）に boolean を書くと、HTML の真偽属性として写します: `true` は空の属性（`""`）、`false` は属性を外します。3.x は `"true"` / `"false"` と書き、属性の有無で読む要素（`<wcs-wakelock active>`・`<wcs-camera keep-alive>`・`<wcs-geo watch>`、I/O ノードの `manual`）は `"false"` を真と読んでいました。`[active="false"]` に当てたスタイルや `getAttribute(…) === "false"` を読むコードは、`:not([active])` / `hasAttribute(…)` に直してください。`<wcs-audio>` の `limiter` と `resume-on-gesture`（`"off"` でない限り on）は写さなくなりました。setter が `"on"` / `"off"` を書きます。
 
 ### 3.5 ボリュームとマウントしたコンポーネント
 
@@ -593,7 +594,7 @@ import { defineState } from "@wcstack/state/define";
 | `wcs/second-root` | 文書の 2 つ目のルートの `<wcs-state>`（3.x の実行時も拒否していたもの） | error |
 | `wcs/bind-component-source` | `state` / `src` / `json` やインラインのスクリプトを持つ `<wcs-state bind-component>`（3.x の実行時も拒否していたもの） | error |
 
-lint に見えないもの: `bootstrapXxx()` のオプション、委譲されたハンドラのまわりの `#stop` と `stopPropagation()`、移した要素、行を並べ替えるための要素への書き込み、`[data-wcs]` のセレクタ、SSR の出力の後処理、削除された `IStateElement` のメンバーの使用。
+lint に見えないもの: `bootstrapXxx()` のオプション、委譲されたハンドラのまわりの `#stop` と `stopPropagation()`、移した要素、行を並べ替えるための要素への書き込み、`[data-wcs]` のセレクタ、SSR の出力の後処理、写した真偽属性を `"true"` / `"false"` で読むセレクタやコード、削除された `IStateElement` のメンバーの使用。
 
 ### 4.2 実行時のメッセージ
 
