@@ -936,3 +936,21 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - core.min.js 19,525 → 19,921B（+396B、上限まで 79B）。テスト 3,020 件、カバレッジ 99.79 / 99.29 / 100 / 99.95。
 - 検証のスイートは `packages/state/bench/scale/`（happy-dom の `npx vitest run --config bench/vitest.scale.config.ts`、Chromium の `node bench/scale/browser.mjs`、表の `node bench/scale/report.mjs`）。
 - 結果（2026-10-07、[docs/research/state-engine/scale/2026-10-07/](../research/state-engine/scale/2026-10-07/README.md)）: happy-dom・Chromium とも 33 軸すべてが PASS。局所性（無関係な規模を 100 倍にしても書き込みの仕事は同じ）、線形性（一覧の操作は 16,000 行まで k 0.91〜1.04、Chromium）、有界性（表の大きさが一定、ヒープの増分は 1 周 260B 以下）、限界（getter 128 段で番号付きのエラー、入れ子 100 段・自己再帰 150 段で `RangeError` なし）、正しさ（ランダムな操作 2,500 回で食い違い 0）。
+
+### 4.0.0-rc.6 の公開（2026-10-07）
+
+- `research/scale-verification`（規模の検証と、規模で破綻する 3 箇所の修正）を PR #430 で research に取り込み（d14cf495）、`prerelease-rc`（run 37525045114、36 分）で公開した。
+- 全 49 パッケージが npm の `next` で 4.0.0-rc.6（`latest` は 3.5.4 のまま）。タグ `v4.0.0-rc.6` と GitHub のプレリリース。bump の commit は 83c95d35。
+- 取り込みの前に確かめたこと（research への PR では CI が走らないので手元で）:
+  - state 3,020 件（カバレッジ 99.79 / 99.29 / 100 / 99.95、lint・型検査、サイズとカップリングの検査）、router 822 件
+  - 規模の検証のスイート: happy-dom 33 / 33、Chromium 33 / 33
+  - 公式のベンチマークのページの A/B（CPU 4 倍の減速）: clear10k 0.861 倍、ほかは差がばらつきの範囲
+  - src から作った state の dist の上で: e2e 145 件、server 100 件と e2e 18 件、testing 15 件、devtools 170 件、wcstack のスモーク 3 件（バンドルを作り直して）、vscode-wcs 1,167 件（manifest とパーサーの出力は変わらない）。確かめた後で dist は戻した。
+- 公開の後に確かめたこと:
+  - 全パッケージの dist-tag（2 つが約 1 分遅れて見えた。公開のログには 49 件すべての `+ name@4.0.0-rc.6` がある）
+  - server の依存が厳密な `4.0.0-rc.6`
+  - CDN（split の core・auto・features の 3 本と `native-commands`）と `esm.run` の `/auto`（state・router・wcstack）が 200
+  - jsDelivr の `index.esm.js` がコミットされた rc.6 の dist と同一で、修正（`replaceChildren`、`literalCache` の上限）を含む
+- ゲートの基準値を rc.6 の dist で取り直した（カップリングは基準値どおり）。
+  - core.min.js 19,921B（上限まで 79B）
+  - `index.esm.js` 50,689B、`auto.min.js` 47,744B、split の core 24,119B
