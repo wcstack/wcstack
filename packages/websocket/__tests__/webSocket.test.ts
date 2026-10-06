@@ -259,6 +259,165 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(MockWebSocket.instances).toHaveLength(0);
       el.remove();
     });
+
+    it("url以外の属性名では何もしない", () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      el.attributeChangedCallback("protocols", null, "graphql-ws");
+      expect(MockWebSocket.instances).toHaveLength(1);
+      el.remove();
+    });
+  });
+
+  // 二重接続の回帰: url 属性の同じ値の書き込みや、upgrade 時の attributeChangedCallback で
+  // 接続し直すと、ソケットを 2 本張って 1 本目を CONNECTING のまま閉じていた
+  describe("接続は1本だけ", () => {
+    /**
+     * 文書の中にある要素の upgrade を、ブラウザと同じ順で再現する。happy-dom は define 時に
+     * 要素を差し替えて connectedCallback だけを呼ぶ（その場の upgrade も、既存の属性の
+     * attributeChangedCallback も無い）ので、仕様の手順を直接たどる:
+     * 文書に接続されたまま、観測する属性ごとに attributeChangedCallback(name, null, value)、
+     * 続けて connectedCallback。upgrade 前の代入は、accessor を隠す own データプロパティになる。
+     */
+    function simulateUpgrade(attrs: Record<string, string>, ownProps: Record<string, unknown> = {}): WcsWebSocket {
+      const el = createElement(attrs);
+      for (const [name, value] of Object.entries(ownProps)) {
+        Object.defineProperty(el, name, { value, writable: true, configurable: true, enumerable: true });
+      }
+      Object.defineProperty(el, "isConnected", { configurable: true, get: () => true });
+      for (const name of WcsWebSocket.observedAttributes) {
+        if (el.hasAttribute(name)) el.attributeChangedCallback(name, null, el.getAttribute(name));
+      }
+      el.connectedCallback();
+      return el;
+    }
+
+    /** simulateUpgrade した要素を切り離したことにする */
+    function detach(el: WcsWebSocket): void {
+      delete (el as unknown as { isConnected?: boolean }).isConnected;
+      el.disconnectedCallback();
+    }
+
+    it("同じ値のurl属性の書き込みでは再接続しない", () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      el.setAttribute("url", "ws://localhost:8080");
+      el.url = "ws://localhost:8080";
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
+      el.remove();
+    });
+
+    it("urlのsetterに続く同じ値の属性ミラー（@wcstack/state の inputs[].attribute）でも1本", () => {
+      const el = createElement();
+      document.body.appendChild(el);
+      expect(MockWebSocket.instances).toHaveLength(0);
+
+      // state はプロパティを書いてから、宣言された属性へ同じ値を書く
+      el.url = "ws://localhost:8080";
+      el.setAttribute("url", "ws://localhost:8080");
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
+      el.remove();
+    });
+
+    it("urlが変わったときは1回だけ再接続し、続く同じ値の書き込みでは再接続しない", () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+
+      el.url = "ws://localhost:9090";
+      el.setAttribute("url", "ws://localhost:9090");
+      expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:9090"]);
+      expect(MockWebSocket.instances[0].close).toHaveBeenCalledTimes(1);
+      expect(MockWebSocket.instances[1].close).not.toHaveBeenCalled();
+      el.remove();
+    });
+
+    it("url属性を持つ要素がupgradeされると1本だけ張る", () => {
+      const el = simulateUpgrade({ url: "ws://localhost:8080" });
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(MockWebSocket.instances[0].url).toBe("ws://localhost:8080");
+      expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
+      detach(el);
+    });
+
+    it("upgrade前に代入されたurlプロパティも、取り込んで1本だけ張る", () => {
+      const el = simulateUpgrade({}, { url: "ws://localhost:7070" });
+      expect(Object.prototype.hasOwnProperty.call(el, "url")).toBe(false);
+      expect(el.getAttribute("url")).toBe("ws://localhost:7070");
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(MockWebSocket.instances[0].url).toBe("ws://localhost:7070");
+      detach(el);
+    });
+
+    it("upgrade前に代入されたmanualも、接続の判断より先に取り込む", () => {
+      const el = simulateUpgrade({}, { url: "ws://localhost:7070", manual: true });
+      expect(el.manual).toBe(true);
+      expect(MockWebSocket.instances).toHaveLength(0);
+      detach(el);
+    });
+
+    it("upgradeの後のurl変更は従来どおり再接続する", () => {
+      const el = simulateUpgrade({ url: "ws://localhost:8080" });
+      el.setAttribute("url", "ws://localhost:9090");
+      expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:9090"]);
+      detach(el);
+      expect(MockWebSocket.instances[1].close).toHaveBeenCalled();
+    });
+
+    it("DOMの外でのurl変更は接続せず、戻したときにそのurlで1本張る", () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      el.remove();
+      expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
+
+      el.setAttribute("url", "ws://localhost:9090");
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      document.body.appendChild(el);
+      expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:9090"]);
+      el.remove();
+    });
+
+    it("manual と auto-reconnect の真偽属性のミラーは接続に触れない", () => {
+      vi.useFakeTimers();
+      const el = createElement({ url: "ws://localhost:8080", "reconnect-interval": "500" });
+      document.body.appendChild(el);
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      // state は真偽値を HTML の真偽属性として写す（true → ""、false → 削除）
+      el.autoReconnect = true;
+      el.setAttribute("auto-reconnect", "");
+      el.manual = true;
+      el.setAttribute("manual", "");
+      el.manual = false;
+      el.removeAttribute("manual");
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      // auto-reconnect はこれまでどおり次の connect() から効く
+      el.setAttribute("url", "ws://localhost:9090");
+      expect(MockWebSocket.instances).toHaveLength(2);
+      MockWebSocket.instances[1].simulateOpen();
+      MockWebSocket.instances[1].simulateClose(1006);
+      vi.advanceTimersByTime(500);
+      expect(MockWebSocket.instances).toHaveLength(3);
+      expect(MockWebSocket.instances[2].url).toBe("ws://localhost:9090");
+
+      el.remove();
+      vi.useRealTimers();
+    });
+
+    it("trigger と connect() は同じurlでも従来どおり接続し直す", () => {
+      const el = createElement({ url: "ws://localhost:8080", manual: "" });
+      document.body.appendChild(el);
+      el.trigger = true;
+      el.connect();
+      expect(MockWebSocket.instances).toHaveLength(2);
+      expect(MockWebSocket.instances[0].close).toHaveBeenCalledTimes(1);
+      el.remove();
+    });
   });
 
   describe("コア委��", () => {

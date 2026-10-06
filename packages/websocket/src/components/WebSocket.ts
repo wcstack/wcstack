@@ -37,6 +37,11 @@ export class WcsWebSocket extends HTMLElement {
   private _trigger: boolean = false;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
+  // connectedCallback が接続の判断を終えてから disconnectedCallback までの間だけ true。
+  // url 属性の変化による再接続はこの間に限る — upgrade 時は attributeChangedCallback が
+  // connectedCallback より先に（isConnected のまま）呼ばれるので、そこで接続すると
+  // connectedCallback の接続と合わせて 2 本になる。初回の接続は connectedCallback が持つ。
+  private _attached = false;
 
   constructor() {
     super();
@@ -258,14 +263,20 @@ export class WcsWebSocket extends HTMLElement {
 
   // --- Lifecycle ---
 
-  attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void {
-    if (name === "url" && this.isConnected && !this.manual && newValue) {
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
+    // 再接続するのは url が「変わった」ときだけ。同じ値の書き込み（url の setter 自身の
+    // setAttribute の後に @wcstack/state の inputs[].attribute ミラーが同じ値を書く、など）
+    // は何もしない。connectedCallback より前（upgrade 中・DOM の外）の変化は、
+    // connectedCallback がそのときの url で 1 回だけ接続する。
+    if (name === "url" && oldValue !== newValue && this._attached && !this.manual && newValue) {
       this.connect();
     }
   }
 
   connectedCallback(): void {
-    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
+    // ここで url の setter が走っても _attached はまだ false なので接続しない —
+    // 接続は下で、取り込み後の url / manual を見て 1 回だけ行う。
     upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
@@ -277,9 +288,11 @@ export class WcsWebSocket extends HTMLElement {
     if (!this.manual && this.url) {
       this.connect();
     }
+    this._attached = true;
   }
 
   disconnectedCallback(): void {
+    this._attached = false;
     // dispose() が _gen を bump して進行中のソケット/再接続を無効化し、close() する。
     this._core.dispose();
   }
