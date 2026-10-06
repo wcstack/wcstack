@@ -19,7 +19,7 @@ export class Pattern {
   readonly tail: readonly string[];
   /** `lists[k]` is the list pattern whose rows the k-th wildcard (1-based) ranges over. */
   readonly lists: readonly (Pattern | null)[];
-  readonly children: Pattern[] = [];
+  children: Pattern[] = [];
 
   // --- filled in by the engine ---
   getter: (() => unknown) | null = null;
@@ -29,7 +29,7 @@ export class Pattern {
   /** Getter patterns whose evaluation read this pattern. */
   readonly dependents: Pattern[] = [];
   /** Patterns this getter read (union over its evaluations). */
-  readonly sources: Pattern[] = [];
+  sources: Pattern[] = [];
   /** Sources read from a row other than the evaluating row's own chain (fan out on change). */
   crossSources: Set<Pattern> | null = null;
   /** Cache slot of a row-level getter on its rows. -1 when not a row-level getter. */
@@ -44,6 +44,17 @@ export class Pattern {
   indexWatchers: Pattern[] | null = null;
   /** `$eq(this path, key)` subscriptions: getter occurrences keyed by the value they wait for. */
   eqSubs: Map<unknown, Set<EqSub>> | null = null;
+  /**
+   * Something outside a path's read or write holds it (a binding, a list, an add-on: Engine.pattern):
+   * never swept. A pattern only a path made (`this["users." + id]`) goes when it holds nothing (Engine.sweep).
+   */
+  pinned = false;
+  /** Swept: out of the table (a later use of its path makes a new one). */
+  dead = false;
+  /** Its accessor is the engine's own for an index path (Engine.markupAccessor), not the author's or an add-on's. */
+  markup = false;
+  /** Scratch of Engine.prune: the evaluation that read it. */
+  mark = 0;
 
   private readonly dependentSet = new Set<Pattern>();
 
@@ -65,6 +76,13 @@ export class Pattern {
     this.dependentSet.add(getter);
     this.dependents.push(getter);
     getter.sources.push(this);
+  }
+
+  /** `getter` reads this no more (its side, `sources`, is the caller's). */
+  dropDependent(getter: Pattern): void {
+    this.dependentSet.delete(getter);
+    const d = this.dependents;
+    d.splice(d.indexOf(getter), 1);
   }
 
   /** A re-set replaced the state: forget its accessors and everything learned from them. */
@@ -137,6 +155,10 @@ export class PatternTable {
   all(): IterableIterator<Pattern> {
     return this.byPath.values();
   }
+
+  drop(p: Pattern): void {
+    this.byPath.delete(p.path);
+  }
 }
 
 /**
@@ -169,7 +191,9 @@ export function parsePath(path: string): ParsedPath {
   }
   if (!literal) return { pattern: segs.join("."), indexes };
   const parsed: ParsedPath = { pattern: path, indexes: null };
-  // literal paths (no explicit index) are few and reused: keep them
+  // literal paths (no explicit index) are few and reused: keep them — up to a bound, as a key built
+  // from data (`this["users." + id]`) makes a new one each time
+  if (literalCache.size > 4095) literalCache.clear();
   literalCache.set(path, parsed);
   return parsed;
 }

@@ -99,21 +99,29 @@ export function reconcile(list: StateList, next: unknown, hooks: ReconcileHooks)
   } else if (start > ne) {
     for (let i = start; i <= oe; i++) hooks.rowRemoved(old[i]);
   } else {
+    // a row whose item is where it was keeps its place: among equal items (a board of 0 / 1), handing
+    // the rows out in order would move every one after the first change
+    const end = oe < ne ? oe : ne;
+    for (let i = start; i <= end; i++) if (old[i].item === arr[i]) rows[i] = old[i];
     const byItem = new Map<unknown, Bucket>();
-    for (let i = start; i <= oe; i++) {
+    // filled from the end, so a bucket hands out its first row with pop(): shift() moves the whole
+    // array, and over a long run of equal items the reconcile went quadratic
+    for (let i = oe; i >= start; i--) {
       const row = old[i];
+      if (i <= end && rows[i] === row) continue;
       const b = byItem.get(row.item);
       if (b === undefined) byItem.set(row.item, row);
       else if (Array.isArray(b)) b.push(row);
       else byItem.set(row.item, [b, row]);
     }
     for (let i = start; i <= ne; i++) {
+      if (rows[i] !== undefined) continue;
       const item = arr[i];
       const b = byItem.get(item);
       let row: StateRow | undefined;
       if (b !== undefined) {
         if (Array.isArray(b)) {
-          row = b.shift();
+          row = b.pop();
           if (b.length === 0) byItem.delete(item);
         } else {
           row = b;

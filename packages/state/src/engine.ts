@@ -34,6 +34,8 @@ interface Frame {
   untracked: number;
   /** The evaluation this frame runs (`$eq` tells its keys from an earlier evaluation's). */
   epoch: number;
+  /** What a root getter's evaluation read (Engine.prune). */
+  reads: Pattern[];
 }
 
 /** Getter evaluations so far (each frame takes the next: an evaluation's identity). */
@@ -199,6 +201,8 @@ export class Engine implements ReconcileHooks {
   private readonly deliverFn = (handler: (...a: unknown[]) => unknown, args: unknown[]) => handler(this.proxy, ...args);
   /** `$eq` subscriptions of root-level getters. */
   private readonly rootEqSubs: EqEntry[] = [];
+  /** Patterns made, or no longer read by a root getter, since the last sweep: what it looks at. */
+  private loose: Pattern[] = [];
   /** The `$` functions of the state (`this.$eq`, …), by name. */
   private readonly api: Record<string, unknown> = {
     $untracked: (fn: () => unknown) => {
@@ -249,7 +253,7 @@ export class Engine implements ReconcileHooks {
     $resolve: (...args: unknown[]) => {
       const path = unbound(args[0] as string);
       const indexes = (args[1] ?? []) as number[];
-      const p = this.pattern(path);
+      const p = this.pattern(path, true);
       this.checkArity("$resolve", path, p, indexes, true);
       const row = this.rowOf(p, indexes, null);
       if (args.length < 3) return this.read(p, row);
@@ -274,7 +278,10 @@ export class Engine implements ReconcileHooks {
 
   constructor(target: Record<string, any>, strategy: Strategy) {
     this.strategy = strategy;
-    this.patterns = new PatternTable((p) => this.onPatternCreated(p));
+    this.patterns = new PatternTable((p) => {
+      this.loose.push(p);
+      this.onPatternCreated(p);
+    });
     this.loadTarget(target);
     const engine = this;
     // the handler reads engine.target, not the proxy's target (a stand-in): a re-set swaps the state.
@@ -318,8 +325,14 @@ export class Engine implements ReconcileHooks {
 
   // ---------------------------------------------------------------- patterns
 
-  pattern(path: string): Pattern {
-    return this.patterns.get(path);
+  /**
+   * The pattern of `path`, pinned: whoever asks keeps it (a binding, a list, an add-on). `loose`: a
+   * path read or written (the proxy, `$resolve`, `$getAll`), swept once it holds nothing.
+   */
+  pattern(path: string, loose?: boolean): Pattern {
+    const p = this.patterns.get(path);
+    if (!loose) p.pinned = true;
+    return p;
   }
 
   private registerAccessors(target: object): void {
@@ -387,6 +400,7 @@ export class Engine implements ReconcileHooks {
         o[last] = v;
       };
     }
+    p.markup = true;
     if (p.depth > 0) p.slot = this.slotCount++;
   }
 
@@ -397,6 +411,8 @@ export class Engine implements ReconcileHooks {
     const m = row === null ? this.rootLists : (row.children ??= new Map());
     let l = m.get(p);
     if (l === undefined) m.set(p, (l = new StateList(p, row)));
+    // (the list holds it: a path's read made it loose, `users.3.name` through `users`)
+    p.pinned = true;
     this.sync(l);
     return l;
   }
@@ -480,7 +496,7 @@ export class Engine implements ReconcileHooks {
   /** Splits a concrete path into (pattern, row) — written to this.rp / this.rr. */
   resolve(path: string, ctx: StateRow | null): void {
     const parsed = parsePath(path);
-    const p = (this.rp = this.pattern(parsed.pattern));
+    const p = (this.rp = this.pattern(parsed.pattern, true));
     const idx = parsed.indexes;
     this.rr = p.depth === 0 ? null : idx === null ? ctxRow(ctx, p, p.depth) : this.rowOf(p, idx, ctx, path);
   }
@@ -503,7 +519,7 @@ export class Engine implements ReconcileHooks {
         const segs = p.path.split(".");
         const n = listP.path.split(".").length;
         segs[n] = path.split(".")[n];
-        p = this.pattern(segs.join("."));
+        p = this.pattern(segs.join("."), true);
         k--;
         continue;
       }
@@ -549,7 +565,13 @@ export class Engine implements ReconcileHooks {
   private track(p: Pattern, row: StateRow | null, f: Frame): void {
     const g = f.getter;
     p.addDependent(g);
-    if (p.depth > 0 && g.depth > 0 && rowAt(row, Math.min(p.depth, g.depth)) !== rowAt(f.row, Math.min(p.depth, g.depth))) {
+    // a root getter's reads (once each, but around a nested one): what it no longer reads goes (prune)
+    if (g.depth === 0) {
+      if (p.mark !== f.epoch) {
+        p.mark = f.epoch;
+        f.reads.push(p);
+      }
+    } else if (p.depth > 0 && rowAt(row, Math.min(p.depth, g.depth)) !== rowAt(f.row, Math.min(p.depth, g.depth))) {
       (g.crossSources ?? (g.crossSources = new Set())).add(p);
     }
   }
@@ -564,23 +586,72 @@ export class Engine implements ReconcileHooks {
     if (this.depthNow >= MAX_GETTER_DEPTH) raise(M.GetterDepth, [g.path]);
     const depth = this.depthNow++;
     this.readonlyDepth++;
-    const frame = (this.frames[depth] ??= { getter: g, row, untracked: 0, epoch: 0 });
+    const frame = (this.frames[depth] ??= { getter: g, row, untracked: 0, epoch: 0, reads: [] });
     frame.getter = g;
     frame.row = row;
     frame.untracked = 0;
     frame.epoch = ++evals;
+    frame.reads.length = 0;
     const outer = this.top;
     this.top = frame;
     const prev = this.ctx;
     this.ctx = row;
     try {
-      return g.getter!.call(this.proxy);
+      const v = g.getter!.call(this.proxy);
+      if (g.depth === 0) this.prune(g, frame);
+      return v;
     } finally {
       this.readonlyDepth--;
       this.depthNow--;
       this.top = outer;
       this.ctx = prev;
       frame.row = null;
+    }
+  }
+
+  /**
+   * A root getter evaluated (without throwing): the top-level sources it did not read this time are no
+   * longer its sources. Its one occurrence is the whole getter, so what it reads is what it depends on
+   * (a row getter's sources stay the union over its rows). A key built from data it read before
+   * (`this["users." + this.selectedId]`) then holds nothing, and is swept. One holding an array stays:
+   * a write into an object that array shares with the one the getter returns reaches the rows of the
+   * list over the getter through it (mirror — F26, 3.x #362).
+   */
+  private prune(g: Pattern, f: Frame): void {
+    const e = f.epoch;
+    for (const s of f.reads) s.mark = e;
+    g.sources = g.sources.filter((s) => s.mark === e || s.depth > 0 ||
+      (!s.underGetter && Array.isArray(s.getter !== null ? s.rootValue : this.readData(s, null))) || this.unlink(s, g));
+  }
+
+  /** `getter` reads `s` no more (its side is the caller's): `s` may hold nothing now. False (filtered out). */
+  private unlink(s: Pattern, getter: Pattern): false {
+    s.dropDependent(getter);
+    this.loose.push(s);
+    return false;
+  }
+
+  /**
+   * After a drain: the patterns only a path made that hold nothing now leave the table, so it grows
+   * with the state's shape, not with every key a path was ever built with. A pattern stays while it
+   * is pinned (Engine.pattern: `$eqIndex`'s source among them), at the top level (the state's own
+   * keys), has children, is read by a getter, is `$eq`'s source, or has an accessor that is not the
+   * engine's own for an index path at the top level (one in a row has a cache slot).
+   */
+  private sweep(): void {
+    for (let c = this.loose; c.length > 0; c = this.loose) {
+      this.loose = [];
+      const parents = new Set<Pattern>();
+      for (const p of c) {
+        if (p.pinned || p.dead || p.parent === null || p.children.length > 0 || p.dependents.length > 0 ||
+          (p.getter !== null && !(p.markup && p.slot < 0)) || p.eqSubs !== null) continue;
+        p.dead = true;
+        this.patterns.drop(p);
+        parents.add(p.parent);
+        // an index path's accessor read its parent
+        for (const s of p.sources) this.unlink(s, p);
+      }
+      for (const q of parents) if (!(q.children = q.children.filter((x) => !x.dead)).length) this.loose.push(q);
     }
   }
 
@@ -759,7 +830,7 @@ export class Engine implements ReconcileHooks {
     const suffix = p.path.slice(l.pattern.path.length + 2);
     const land = (m: StateList, r: StateRow | undefined): void => {
       if (r === undefined || r === row) return;
-      const mp = this.pattern(`${m.pattern.path}.*${suffix}`);
+      const mp = this.pattern(`${m.pattern.path}.*${suffix}`, true);
       if (suffix === "") {
         r.item = value;
         this.strategy.resetRow(r);
@@ -1247,6 +1318,7 @@ export class Engine implements ReconcileHooks {
     this.fedBack = this.codeWrote = false;
     this.report();
     hooks.drained?.(this);
+    this.sweep();
     // (as is the one a carried drain's reactions start)
     if (carried > 0 && this.scheduled) this.carried = chain + 1;
   }
@@ -1365,7 +1437,7 @@ export class Engine implements ReconcileHooks {
   }
 
   private getAll(path: string, indexes?: number[]): unknown[] {
-    const p = this.pattern(path);
+    const p = this.pattern(path, true);
     if (indexes !== undefined) this.checkArity("$getAll", path, p, indexes, false);
     // by default the loop context, on the wildcard levels the path shares with it
     let idx = indexes;
@@ -1389,7 +1461,7 @@ export class Engine implements ReconcileHooks {
   private setAll(path: string, indexes: number[], value: unknown, options?: { spread?: boolean }): number {
     if (!Array.isArray(indexes)) raise(M.SetAllNeedsIndexes, [path]);
     if (this.readonlyDepth > 0) raise(M.Readonly);
-    const p = this.pattern(path);
+    const p = this.pattern(path, true);
     this.checkArity("$setAll", path, p, indexes, false);
     const targets: [StateRow | null, number[]][] = [];
     this.forMatches(p, indexes, (row, idx) => targets.push([row, idx.slice()]));

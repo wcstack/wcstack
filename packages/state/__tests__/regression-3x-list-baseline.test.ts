@@ -739,10 +739,11 @@ describe("#359 要素の書き込みで値が替わった行のあとで前の�
 
     await p.write((s) => { s.items = unsettled; });
     expect(view(p)).toEqual(expected(3, 2, 3, 4));
-    // 3.x は [[3, 0], [4, 3]]（行は配列ごとの台帳に属し、書き込み後の配列の行 0 が「その場で 3 を映す行」として戻る）。
-    // 4.0 は行を値の同一性で前から順に突き合わせ（src/list.ts reconcile）、全体の代入では「一覧に入った行」だけが
-    // 着地する（src/temporal/watch.ts の冒頭）: 位置 0 の 3 は 1, 2, 3 の行 3 を引き継ぎ、位置 2 の 3 が新しい行になる
-    expect(watched).toEqual([[3, 2], [4, 3]]);
+    // 3.x と同じ [[3, 0], [4, 3]]（3.x は行が配列ごとの台帳に属し、書き込み後の配列の行 0 が「その場で 3 を映す行」として戻る）。
+    // 4.0 は行を値の同一性で突き合わせ、同じ位置に同じ値がある行をまずその場に残す（src/list.ts reconcile）。全体の代入では
+    // 「一覧に入った行」だけが着地する（src/temporal/watch.ts の冒頭）: 位置 2 の 3 は 1, 2, 3 の行 3 がその場に残り、
+    // 位置 0 の 3 が新しい行になる
+    expect(watched).toEqual([[3, 0], [4, 3]]);
     watched.length = 0;
 
     await p.write((s) => { s["items.2"] = first; });
