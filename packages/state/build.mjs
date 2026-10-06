@@ -12,7 +12,7 @@
 // dist/manifest.esm.js   `./manifest` (+ dist/wcs-manifest.json): tooling, DOM-free
 // dist/parser.esm.js     `./parser`: tooling, DOM-free
 // dist/*.d.ts, dist/split/**/*.d.ts: the types (rollup-plugin-dts)
-// dist/core.min.js       not exported: the core alone, what the core <= 20 KB gzip target measures
+// dist/core.min.js       not exported: the core alone, what the core <= 20 KiB gzip target measures
 //
 // The runtime bundles and the split build's files then go through terser (minify.mjs).
 //

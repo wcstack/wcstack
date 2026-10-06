@@ -310,7 +310,7 @@ jobs:
       # full entries, the split core with its chunks, each add-on and split/auto.js beyond the core
       # may not grow more than 3 % gzip (plus an entry's optional slack) over
       # scripts/state-size-baseline.json, re-recorded with --update at each release; and two
-      # absolute limits — dist/core.min.js <= 20,000 B gzip (the 4.0 core target) and the
+      # absolute limits — dist/core.min.js <= 20,480 B (20 KiB) gzip (the 4.0 core target) and the
       # `/define` helper entry <= 1,024 B. Reads dist only, so it runs after the build.
       - name: Check the shipped sizes of @wcstack/state against the release baseline and the core target
         if: ${{ matrix.package == 'state' }}
