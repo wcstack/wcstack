@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/autoloader",
-  "version": "4.0.0-rc.6",
+  "version": "4.0.0-rc.7",
   "description": "Auto-detect and dynamically import undefined custom elements via Import Maps. Zero dependencies, buildless.",
   "type": "module",
   "main": "./dist/index.esm.js",

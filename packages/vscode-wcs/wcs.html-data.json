@@ -111,14 +111,14 @@
           "name": "limiter",
           "description": {
             "kind": "markdown",
-            "value": "Attribute mirror of the `limiter` input."
+            "value": "Configures the `limiter` input."
           }
         },
         {
           "name": "resume-on-gesture",
           "description": {
             "kind": "markdown",
-            "value": "Attribute mirror of the `resumeOnGesture` input."
+            "value": "Observed attribute."
           }
         },
         {

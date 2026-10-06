@@ -72,8 +72,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     ],
     "inputs": {
       "volume": "volume",
-      "limiter": "limiter",
-      "resumeOnGesture": "resume-on-gesture"
+      "limiter": null,
+      "resumeOnGesture": null
     },
     "properties": [
       "state",

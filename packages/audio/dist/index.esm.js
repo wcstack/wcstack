@@ -1370,10 +1370,13 @@ class WcsAudio extends HTMLElement {
     static observedAttributes = ["volume", "limiter", "resume-on-gesture"];
     static wcBindable = {
         ...AudioGraphCore.wcBindable,
+        // limiter / resumeOnGesture name no attribute to mirror: they are on unless "off", and
+        // their setters write "on" / "off" themselves. A binder's boolean mirror (true: present,
+        // false: removed) cannot say "off", and would turn a false back on.
         inputs: [
             { name: "volume", attribute: "volume" },
-            { name: "limiter", attribute: "limiter" },
-            { name: "resumeOnGesture", attribute: "resume-on-gesture" },
+            { name: "limiter" },
+            { name: "resumeOnGesture" },
         ],
     };
     /** Marks this element for `findAudioRoot()` (tag names are configurable). */

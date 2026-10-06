@@ -197,6 +197,7 @@ declare class WcsWebSocket extends HTMLElement {
     private _trigger;
     private _connectedCallbackPromise;
     private _internals;
+    private _attached;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
     get debugStates(): string[];
@@ -229,7 +230,7 @@ declare class WcsWebSocket extends HTMLElement {
     connect(): void;
     sendMessage(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
     close(code?: number, reason?: string): void;
-    attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }
