@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Scale probes</title>
+</head>
+<body>
+<!-- bench/scale/browser.mjs opens this page once per probe and calls runScale(id) -->
+<script type="module">
+  import { env } from "./env-browser.mjs";
+  import { probes } from "./probes.mjs";
+  import { runProbe } from "./run.mjs";
+  window.scaleIds = probes.map((p) => p.id);
+  window.runScale = (id) => runProbe(probes.find((p) => p.id === id), env);
+  window.scaleReady = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,2536 @@
+{
+  "env": "happy-dom",
+  "date": "2026-10-06T16:02:03.813Z",
+  "results": [
+    {
+      "id": "L1",
+      "property": "locality",
+      "title": "root のキーとバインディングが N 個: 1 個への書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.019076999999995223,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 9.654800000000023
+        },
+        {
+          "n": 1000,
+          "ms": 0.017905999999991307,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 15.63539999999989
+        },
+        {
+          "n": 10000,
+          "ms": 0.012485999999989872,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 103.81409999999983
+        }
+      ],
+      "k": -0.09204337455412445,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = -0.09 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L2",
+      "property": "locality",
+      "title": "root の一覧が L 個: 一覧と無関係なスカラーへの書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.016524999999985537,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 5.6771000000001095
+        },
+        {
+          "n": 100,
+          "ms": 0.016378999999997177,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 6.196300000000065
+        },
+        {
+          "n": 1000,
+          "ms": 0.008949000000013712,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 54.29410000000007
+        }
+      ],
+      "k": -0.1331834800374535,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = -0.13 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L3a",
+      "property": "locality",
+      "title": "N 行の一覧: 行と無関係な書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.008261000000004515,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 2.4710999999999785
+        },
+        {
+          "n": 1000,
+          "ms": 0.009457999999999628,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 35.822200000000066
+        },
+        {
+          "n": 10000,
+          "ms": 0.005296000000039385,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 299.94859999999994
+        }
+      ],
+      "k": -0.09654232286387879,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = -0.10 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L3b",
+      "property": "locality",
+      "title": "N 行の一覧: 1 行の 1 フィールドへの書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.006493000000009488,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 1,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 2.07529999999997
+        },
+        {
+          "n": 1000,
+          "ms": 0.0077270000000225995,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 1,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 25.871799999999894
+        },
+        {
+          "n": 10000,
+          "ms": 0.0039009999999507273,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 1,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 273.47929999999997
+        }
+      ],
+      "k": -0.11063472628354235,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 1,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = -0.11 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L4",
+      "property": "locality",
+      "title": "無関係な root の getter が G 個: 1 個の getter が読む値への書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.0065710000000035506,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 1,
+            "visitGetter": 1,
+            "forSubtree": 5,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 0.7190000000000509
+        },
+        {
+          "n": 100,
+          "ms": 0.008362000000015541,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 1,
+            "visitGetter": 1,
+            "forSubtree": 5,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 1.2935999999999694
+        },
+        {
+          "n": 1000,
+          "ms": 0.006710999999995693,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 1,
+            "visitGetter": 1,
+            "forSubtree": 5,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 23.956700000000183
+        }
+      ],
+      "k": 0.004577885812631747,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 1,
+            "visitGetter": 1,
+            "forSubtree": 5,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 0.00 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L5",
+      "property": "locality",
+      "title": "入れ子の一覧（外 √N × 内 √N 行）: 葉の 1 フィールドへの書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.005253000000006978,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 1,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 1.9259999999999309
+        },
+        {
+          "n": 2500,
+          "ms": 0.005108000000013817,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 1,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 40.58590000000004
+        },
+        {
+          "n": 10000,
+          "ms": 0.0044170000000076474,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 1,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 130.29909999999973
+        }
+      ],
+      "k": -0.032541959964607334,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 1,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = -0.03 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L6",
+      "property": "locality",
+      "title": "ボリューム（<wcs-state mount>）が V 個: 1 つのボリュームの値への書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 5,
+          "ms": 0.00848499999996875,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 1.3162999999999556
+        },
+        {
+          "n": 50,
+          "ms": 0.00860499999997046,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 2.451299999999719
+        },
+        {
+          "n": 200,
+          "ms": 0.006366000000002714,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 10.543800000000374
+        }
+      ],
+      "k": -0.06938394147709658,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = -0.07 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L7",
+      "property": "locality",
+      "title": "bind-component の部品が C 個: 1 つの部品の値への書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.0027230000000236032,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 49.9045000000001
+        },
+        {
+          "n": 100,
+          "ms": 0.004333000000060565,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 954.4666000000002
+        },
+        {
+          "n": 500,
+          "ms": 0.004205999999994674,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 5155.666799999999
+        }
+      ],
+      "k": 0.11737284942894398,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 0.12 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L8",
+      "property": "locality",
+      "title": "選択の $eq を読む N 行: 選択の書き込み（前と今の行だけ）",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.021303999999963706,
+          "counts": {
+            "enqueue": 2,
+            "applyBinding": 2,
+            "evalGetter": 2,
+            "visitGetter": 0,
+            "forSubtree": 5,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 2.928200000000288
+        },
+        {
+          "n": 1000,
+          "ms": 0.018326000000051863,
+          "counts": {
+            "enqueue": 2,
+            "applyBinding": 2,
+            "evalGetter": 2,
+            "visitGetter": 0,
+            "forSubtree": 5,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 17.934299999998984
+        },
+        {
+          "n": 10000,
+          "ms": 0.009310999999943306,
+          "counts": {
+            "enqueue": 2,
+            "applyBinding": 2,
+            "evalGetter": 2,
+            "visitGetter": 0,
+            "forSubtree": 5,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 249.17590000000018
+        }
+      ],
+      "k": -0.17973241339223847,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 2,
+            "applyBinding": 2,
+            "evalGetter": 2,
+            "visitGetter": 0,
+            "forSubtree": 5,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = -0.18 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N1",
+      "property": "linearity",
+      "title": "root のバインディングが N 個: 初回のマウント",
+      "env": "happy-dom",
+      "kind": "mount",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 7.238500000001295
+        },
+        {
+          "n": 4000,
+          "ms": 30.401599999999235
+        },
+        {
+          "n": 16000,
+          "ms": 121.08289999999943
+        }
+      ],
+      "k": 1.016040139586786,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 1.02 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2a",
+      "property": "linearity",
+      "title": "N 行の一覧: 作成（空から N 行）",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 18.89633333333283,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1000,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 18.669299999999566
+        },
+        {
+          "n": 4000,
+          "ms": 88.72356666666747,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 4000,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 100.66349999999875
+        },
+        {
+          "n": 16000,
+          "ms": 492.04070000000075,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 16000,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 446.91589999999997
+        }
+      ],
+      "k": 1.1756498577610262,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 1.18 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2b",
+      "property": "linearity",
+      "title": "N 行の一覧: 全行の置き換え（新しいオブジェクト）",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 22.742766666666284,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 1000,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1000,
+            "removed": 1000,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 18.286300000003394
+        },
+        {
+          "n": 4000,
+          "ms": 124.36383333333288,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 4000,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 4000,
+            "removed": 4000,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 96.7977000000028
+        },
+        {
+          "n": 16000,
+          "ms": 760.6741000000014,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 16000,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 16000,
+            "removed": 16000,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 508.2530999999981
+        }
+      ],
+      "k": 1.2659497023697919,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": false,
+          "soft": true,
+          "detail": "k = 1.27 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2c",
+      "property": "linearity",
+      "title": "N 行の一覧: 全削除",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 3.7808999999991406,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 1000,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1001,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 19.478799999997136
+        },
+        {
+          "n": 4000,
+          "ms": 42.96950000000046,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 4000,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 4001,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 100.8135000000002
+        },
+        {
+          "n": 16000,
+          "ms": 414.40810000000056,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 16000,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 16001,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 466.5144
+        }
+      ],
+      "k": 1.6940446748852143,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": false,
+          "soft": true,
+          "detail": "k = 1.69 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2d",
+      "property": "linearity",
+      "title": "N 行の一覧: 末尾への N/10 行の追加",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 3.8616333333363095,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 100,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 18.935399999994843
+        },
+        {
+          "n": 4000,
+          "ms": 12.834066666665118,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 400,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 158.70799999999872
+        },
+        {
+          "n": 16000,
+          "ms": 80.23419999999653,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1600,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 807.6348999999973
+        }
+      ],
+      "k": 1.0942335573346336,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 1.09 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2e",
+      "property": "linearity",
+      "title": "N 行の一覧: 逆順",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 18.40736666666635,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 1000
+          },
+          "dom": {
+            "added": 999,
+            "removed": 999,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 31.12399999999616
+        },
+        {
+          "n": 4000,
+          "ms": 118.36250000000048,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 4000
+          },
+          "dom": {
+            "added": 3999,
+            "removed": 3999,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 119.76209999999992
+        },
+        {
+          "n": 16000,
+          "ms": 584.7866333333319,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 16000
+          },
+          "dom": {
+            "added": 15999,
+            "removed": 15999,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 561.6489000000001
+        }
+      ],
+      "k": 1.2473887947409545,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 1.25 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2f",
+      "property": "linearity",
+      "title": "N 行の一覧: 2 行の入れ替え（2 番目と最後から 2 番目）",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 0.2654333333290803,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 2
+          },
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 17.946899999995367
+        },
+        {
+          "n": 4000,
+          "ms": 0.36920000001070247,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 2
+          },
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 99.67250000000058
+        },
+        {
+          "n": 16000,
+          "ms": 1.321733333330485,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 2
+          },
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 447.45389999999315
+        }
+      ],
+      "k": 0.5790024182210379,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 0,
+            "indexChanged": 2
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 0.58 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2g",
+      "property": "linearity",
+      "title": "N 行の一覧: 中ほどの 1 行の削除",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 0.10996666667051613,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 1,
+            "indexChanged": 499
+          },
+          "dom": {
+            "added": 0,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 17.61239999999816
+        },
+        {
+          "n": 4000,
+          "ms": 0.22810000000269307,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 1,
+            "indexChanged": 1999
+          },
+          "dom": {
+            "added": 0,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 101.11840000000666
+        },
+        {
+          "n": 16000,
+          "ms": 0.6372666666672254,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 12,
+            "rowRemoved": 1,
+            "indexChanged": 7999
+          },
+          "dom": {
+            "added": 0,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 518.0190000000002
+        }
+      ],
+      "k": 0.633707730709382,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 0.63 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N3",
+      "property": "linearity",
+      "title": "0/1 の盤面（平らな一覧、N セル）: 先頭と末尾近くの 2 セルの変更",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10000,
+          "ms": 1.0014166666660458,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 6,
+            "rowRemoved": 2,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 170.0567999999912
+        },
+        {
+          "n": 40000,
+          "ms": 2.3404666666683624,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 6,
+            "rowRemoved": 2,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 1310.2005999999965
+        },
+        {
+          "n": 90000,
+          "ms": 5.847316666663876,
+          "counts": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 6,
+            "rowRemoved": 2,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 5664.160600000003
+        }
+      ],
+      "k": 0.7825528627197225,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": {
+            "enqueue": 0,
+            "applyBinding": 0,
+            "evalGetter": 0,
+            "visitGetter": 0,
+            "forSubtree": 6,
+            "rowRemoved": 2,
+            "indexChanged": 0
+          }
+        },
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 0.78 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N4",
+      "property": "linearity",
+      "title": "1 つの値を読む root の getter が F 個: その値への書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.024792307690614298,
+          "counts": {
+            "enqueue": 10,
+            "applyBinding": 10,
+            "evalGetter": 10,
+            "visitGetter": 10,
+            "forSubtree": 23,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 10,
+            "removed": 10,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 0.27459999998973217
+        },
+        {
+          "n": 100,
+          "ms": 0.20758846153666338,
+          "counts": {
+            "enqueue": 100,
+            "applyBinding": 100,
+            "evalGetter": 100,
+            "visitGetter": 100,
+            "forSubtree": 203,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 100,
+            "removed": 100,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 0.7317999999941094
+        },
+        {
+          "n": 1000,
+          "ms": 3.902749999999427,
+          "counts": {
+            "enqueue": 1000,
+            "applyBinding": 1000,
+            "evalGetter": 1000,
+            "visitGetter": 1000,
+            "forSubtree": 2003,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1000,
+            "removed": 1000,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 10.133900000000722
+        }
+      ],
+      "k": 1.0985268896114926,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 1.10 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N5",
+      "property": "linearity",
+      "title": "getter の連鎖が D 段: 根元への書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.014079999998793937,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 11,
+            "visitGetter": 11,
+            "forSubtree": 25,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 0.39230000000679865
+        },
+        {
+          "n": 40,
+          "ms": 0.0457800000012503,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 41,
+            "visitGetter": 41,
+            "forSubtree": 85,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 0.24539999999979045
+        },
+        {
+          "n": 120,
+          "ms": 0.07402400000020862,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 121,
+            "visitGetter": 121,
+            "forSubtree": 245,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 0.3944999999948777
+        }
+      ],
+      "k": 0.6757154430889399,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 0.68 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N6",
+      "property": "linearity",
+      "title": "全行の getter が読む root の値（$eq なし、N 行）: その値への書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.06233999999967636,
+          "counts": {
+            "enqueue": 100,
+            "applyBinding": 100,
+            "evalGetter": 100,
+            "visitGetter": 100,
+            "forSubtree": 103,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 1.65230000000156
+        },
+        {
+          "n": 1000,
+          "ms": 0.39760999999853086,
+          "counts": {
+            "enqueue": 1000,
+            "applyBinding": 1000,
+            "evalGetter": 1000,
+            "visitGetter": 1000,
+            "forSubtree": 1003,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 13.8125
+        },
+        {
+          "n": 10000,
+          "ms": 2.046199999997043,
+          "counts": {
+            "enqueue": 10000,
+            "applyBinding": 10000,
+            "evalGetter": 10000,
+            "visitGetter": 10000,
+            "forSubtree": 10003,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 213.8237999999983
+        }
+      ],
+      "k": 0.7580906411953441,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 0.76 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N8",
+      "property": "linearity",
+      "title": "$getAll で N 行を集める getter: 1 行の値への書き込み",
+      "env": "happy-dom",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.014026923077695895,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 1,
+            "visitGetter": 1,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 1.650500000003376
+        },
+        {
+          "n": 1000,
+          "ms": 0.0374153846155073,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 1,
+            "visitGetter": 1,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 21.93970000000263
+        },
+        {
+          "n": 10000,
+          "ms": 0.1759192307687884,
+          "counts": {
+            "enqueue": 1,
+            "applyBinding": 1,
+            "evalGetter": 1,
+            "visitGetter": 1,
+            "forSubtree": 3,
+            "rowRemoved": 0,
+            "indexChanged": 0
+          },
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 353.69669999998587
+        }
+      ],
+      "k": 0.5491754509885988,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "counts",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": true,
+          "detail": "k = 0.55 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "B1",
+      "property": "boundedness",
+      "title": "root の getter が読む動的なキー（dict.<id>）: id を替え続ける",
+      "env": "happy-dom",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 1000,
+          "stats": {
+            "patterns": 4,
+            "sources": 2,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 33588912,
+          "ms": 0.07923720000000321
+        },
+        {
+          "n": 2000,
+          "stats": {
+            "patterns": 4,
+            "sources": 2,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 33706992,
+          "ms": 0.08721564999999827
+        },
+        {
+          "n": 4000,
+          "stats": {
+            "patterns": 4,
+            "sources": 2,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 33509192,
+          "ms": 0.07168890000000101
+        }
+      ],
+      "k": null,
+      "heapPerUnit": -26.573333333333334,
+      "checks": [
+        {
+          "name": "stats",
+          "pass": true,
+          "detail": {
+            "patterns": 4,
+            "sources": 2,
+            "rootBindings": 1,
+            "rows": 0
+          }
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "B2",
+      "property": "boundedness",
+      "title": "コードから書く動的なキー（log.<id>）: 書き続ける（100 件ごとに空にする）",
+      "env": "happy-dom",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 1000,
+          "stats": {
+            "patterns": 2,
+            "sources": 0,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 33419320,
+          "ms": 0.07227959999999439
+        },
+        {
+          "n": 2000,
+          "stats": {
+            "patterns": 2,
+            "sources": 0,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 33526032,
+          "ms": 0.07298809999999503
+        },
+        {
+          "n": 4000,
+          "stats": {
+            "patterns": 2,
+            "sources": 0,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 33306040,
+          "ms": 0.05630737500000032
+        }
+      ],
+      "k": null,
+      "heapPerUnit": -37.76,
+      "checks": [
+        {
+          "name": "stats",
+          "pass": true,
+          "detail": {
+            "patterns": 2,
+            "sources": 0,
+            "rootBindings": 1,
+            "rows": 0
+          }
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "B3",
+      "property": "boundedness",
+      "title": "1,000 行の一覧: 新しいオブジェクトで置き換え続ける",
+      "env": "happy-dom",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 50,
+          "stats": {
+            "patterns": 4,
+            "sources": 0,
+            "rootBindings": 0,
+            "rows": 1000
+          },
+          "heap": 54086736,
+          "ms": 23.026094000000157
+        },
+        {
+          "n": 100,
+          "stats": {
+            "patterns": 4,
+            "sources": 0,
+            "rootBindings": 0,
+            "rows": 1000
+          },
+          "heap": 54089808,
+          "ms": 23.194793999999966
+        },
+        {
+          "n": 200,
+          "stats": {
+            "patterns": 4,
+            "sources": 0,
+            "rootBindings": 0,
+            "rows": 1000
+          },
+          "heap": 54093288,
+          "ms": 22.785743500000027
+        }
+      ],
+      "k": null,
+      "heapPerUnit": 43.68,
+      "checks": [
+        {
+          "name": "stats",
+          "pass": true,
+          "detail": {
+            "patterns": 4,
+            "sources": 0,
+            "rootBindings": 0,
+            "rows": 1000
+          }
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "B4",
+      "property": "boundedness",
+      "title": "if: の出し入れ（100 行の一覧を含む部分木）: 出し入れし続ける",
+      "env": "happy-dom",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 100,
+          "stats": {
+            "patterns": 6,
+            "sources": 0,
+            "rootBindings": 2,
+            "rows": 100
+          },
+          "heap": 35463520,
+          "ms": 1.9206639999999606
+        },
+        {
+          "n": 200,
+          "stats": {
+            "patterns": 6,
+            "sources": 0,
+            "rootBindings": 2,
+            "rows": 100
+          },
+          "heap": 35489648,
+          "ms": 1.8386045000000013
+        },
+        {
+          "n": 400,
+          "stats": {
+            "patterns": 6,
+            "sources": 0,
+            "rootBindings": 2,
+            "rows": 100
+          },
+          "heap": 35503672,
+          "ms": 1.6005839999999807
+        }
+      ],
+      "k": null,
+      "heapPerUnit": 133.84,
+      "checks": [
+        {
+          "name": "stats",
+          "pass": true,
+          "detail": {
+            "patterns": 6,
+            "sources": 0,
+            "rootBindings": 2,
+            "rows": 100
+          }
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "B5",
+      "property": "boundedness",
+      "title": "bind-component の部品を if: で出し入れし続ける",
+      "env": "happy-dom",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 100,
+          "stats": {
+            "patterns": 1,
+            "sources": 0,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 33793824,
+          "ms": 0.9556230000000505
+        },
+        {
+          "n": 200,
+          "stats": {
+            "patterns": 1,
+            "sources": 0,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 33846944,
+          "ms": 1.0257484999999724
+        },
+        {
+          "n": 400,
+          "stats": {
+            "patterns": 1,
+            "sources": 0,
+            "rootBindings": 1,
+            "rows": 0
+          },
+          "heap": 34010736,
+          "ms": 0.9164037499999904
+        }
+      ],
+      "k": null,
+      "heapPerUnit": 723.04,
+      "checks": [
+        {
+          "name": "stats",
+          "pass": true,
+          "detail": {
+            "patterns": 1,
+            "sources": 0,
+            "rootBindings": 1,
+            "rows": 0
+          }
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "B6",
+      "property": "boundedness",
+      "title": "ページの差し替え（<wcs-state> ごと 200 行のページを作り直す）",
+      "env": "happy-dom",
+      "kind": "pages",
+      "points": [
+        {
+          "n": 20,
+          "heap": 37424360
+        },
+        {
+          "n": 40,
+          "heap": 37351952
+        },
+        {
+          "n": 80,
+          "heap": 37409424
+        }
+      ],
+      "k": null,
+      "heapPerUnit": -248.93333333333334,
+      "checks": [],
+      "pass": true
+    },
+    {
+      "id": "X1",
+      "property": "limits",
+      "title": "getter の連鎖の上限（128 段の入れ子）",
+      "env": "happy-dom",
+      "kind": "custom",
+      "rows": [
+        {
+          "d": 126,
+          "text": "126",
+          "errors": 0,
+          "first": "",
+          "overflow": false
+        },
+        {
+          "d": 127,
+          "text": "127",
+          "errors": 0,
+          "first": "",
+          "overflow": false
+        },
+        {
+          "d": 128,
+          "text": "",
+          "errors": 1,
+          "first": "[@wcstack/state] binding \"prop: g128\" failed to apply. Error: [@wcstack/state] [wcs/getter-depth-exceeded] \"g0\"",
+          "overflow": false
+        },
+        {
+          "d": 200,
+          "text": "",
+          "errors": 1,
+          "first": "[@wcstack/state] binding \"prop: g200\" failed to apply. Error: [@wcstack/state] [wcs/getter-depth-exceeded] \"g72\"",
+          "overflow": false
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "id": "X2",
+      "property": "limits",
+      "title": "一覧の入れ子の深さ（1 段 1 行）: 描画と葉への書き込み",
+      "env": "happy-dom",
+      "kind": "custom",
+      "rows": [
+        {
+          "d": 8,
+          "ok": true,
+          "ms": 0.15629999998782296,
+          "errors": 0,
+          "overflow": false
+        },
+        {
+          "d": 32,
+          "ok": true,
+          "ms": 0.07639999999082647,
+          "errors": 0,
+          "overflow": false
+        },
+        {
+          "d": 100,
+          "ok": true,
+          "ms": 0.14900000000488944,
+          "errors": 0,
+          "overflow": false
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "id": "X3",
+      "property": "limits",
+      "title": "自己再帰の部品の細長い木（state: . の連鎖）: 描画と葉への書き込み",
+      "env": "happy-dom",
+      "kind": "custom",
+      "rows": [
+        {
+          "d": 10,
+          "ok": true,
+          "mountMs": 144.4701999999961,
+          "ms": 1.4043999999994412,
+          "errors": 0,
+          "overflow": false
+        },
+        {
+          "d": 50,
+          "ok": true,
+          "mountMs": 815.3631999999925,
+          "ms": 4.3972000000067055,
+          "errors": 0,
+          "overflow": false
+        },
+        {
+          "d": 150,
+          "ok": true,
+          "mountMs": 2607.5315999999875,
+          "ms": 21.653100000010454,
+          "errors": 0,
+          "overflow": false
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "id": "C1a",
+      "property": "correctness",
+      "title": "種を固定したランダムな操作 2000 回（100 行）: DOM が参照モデルと一致",
+      "env": "happy-dom",
+      "kind": "custom",
+      "rows": [
+        {
+          "n": 100,
+          "ops": 2000,
+          "mismatches": 0,
+          "rowsAtEnd": 165
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "id": "C1b",
+      "property": "correctness",
+      "title": "種を固定したランダムな操作 500 回（1000 行）: DOM が参照モデルと一致",
+      "env": "happy-dom",
+      "kind": "custom",
+      "rows": [
+        {
+          "n": 1000,
+          "ops": 500,
+          "mismatches": 0,
+          "rowsAtEnd": 1034
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    }
+  ]
+}
