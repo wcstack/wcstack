@@ -20,7 +20,7 @@
 ## クイックスタート
 
 ```html
-<!-- @wcstack/state より前に読む: 配線台帳がライブで captured される -->
+<!-- @wcstack/state より前に読む: 配線台帳が最初からライブになる（遅延アタッチを参照） -->
 <script type="module" src="https://esm.run/@wcstack/devtools/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 ```
@@ -38,7 +38,7 @@ auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<
 
 | ペイン | 内容 |
 |---|---|
-| **State** | 各ルート state ツリー（root node ごとに 1 本・ラベルはルート由来 — v2 に名前次元は無い）のトップレベルキー、配列/オブジェクトの展開、computed getter。値クリックでインライン編集 — 書き込みは通常のリアクティブパイプライン（set トラップ → 更新バッチ → DOM）を通るため、アプリコードが書いたのと同じようにページが反応する。**パス**クリックで束縛ノードをハイライト。ツリーの下には、マウント記録の **Overlays** と、`$eq` / `$eqPath` / `$eqIndex` の購読を path ごとに数えた **Keyed selection**（行・鍵・リスト単位の監視の数と最後の値）が出る。path が getter で、読む getter が全部再評価される形には `tracked` バッジが付く（`@wcstack/state` 3.0 以降）。 |
+| **State** | 各ルート state ツリー（root node ごとに 1 本・ラベルはルート由来 — v2 に名前次元は無い）のトップレベルキー、配列/オブジェクトの展開、computed getter。値クリックでインライン編集 — 書き込みは通常のリアクティブパイプライン（set トラップ → 更新バッチ → DOM）を通るため、アプリコードが書いたのと同じようにページが反応する。**パス**クリックで束縛ノードをハイライト。ツリーの下には、マウント記録の **Overlays** と、`$eq` / `$eqPath` / `$eqIndex` の購読を path ごとに数えた **Keyed selection**（行・鍵・リスト単位の監視の数と最後の値）が出る。path が getter で、読む getter が全部再評価される形には `tracked` バッジが付く（`@wcstack/state` 3.0 以降）。パネルを開いている間は、更新バッチのたびにペインを読み直す（多くて 1 フレームに 1 回。タイムラインの一時停止中も読み直す）。インライン編集の入力欄にフォーカスがある間と、ペインの中でポインタを押している間は描き直しを待ち、終わってから追いつく。 |
 | **Wiring** | ライブ binding 台帳: binding ごとの `property ← path` 行と型バッジ（`text` / `prop` / `for` / …）。**⌖ pick** でページ要素をクリックするとその要素の配線だけに絞れる。行クリックで束縛ノードをハイライト。**coverage** の切り替えは、state が宣言したものと、パネルが観測を始めてから起きたことを突き合わせる: `$watch` のキーごと（`fired` ×n / `never`）、command・event トークンごと（`emitted` ×n / `never` / `emitted-unheard` — どの発火も購読者ゼロ）、宣言したバインディングごと（`attached` / `never-attached`）。`@wcstack/state` 3.x では、リストに `for` のバインドも `$listKeys` の宣言も無いワイルドカードの行 watch は、`never` ではなく `prerequisite-missing` と出る（3.x ではリストへの書き込みがその watch に届かない）。4.0 の行 watch はどちらも要らないので、4.0 のページでは出ない。 |
 | **Timeline** | ring buffer（既定 500 件）: `write`（旧値が取れた場合は併記）、`batch`（drain ごとの dedup 済み更新アドレス）、`command` / `event` トークン発火（引数要約 + 購読者数 — **購読者ゼロの空撃ちには警告バッジ**。whenDefined 前配線レースの検出に効く）、state 要素の登録/解除。⏸ で一時停止、🗑 でクリア。 |
 
@@ -53,11 +53,19 @@ auto エントリは `<wcs-devtools>` を定義し、ページに無ければ `<
 
 ## 遅延アタッチ
 
-バインディング構築**後**に devtools がロード（または注入）された場合、過去の
-`binding-added` は復元できない。Wiring ペインは **declared** ビュー
-（`data-wcs` 属性と `wcs-*` コメントの再スキャン）にフォールバックし、リロード
-導線を出す。それ以外（state ツリー・編集・以降のタイムライン）は全機能動く。
-プロトコル §6 参照。
+バインディング構築**後**に devtools がロード（または注入）されたときに見えるものは、
+フックのプロトコルで話す相手のランタイムによって違う:
+
+- **`@wcstack/state` 4.0** はバインディングを列挙できる。devtools がアタッチすると、
+  ランタイムがその時点のバインディングをすべて `state:binding-added` として送るので、
+  Wiring ペインには、先に読み込んだときと同じライブ台帳が出る。
+- **`@wcstack/state` 3.x** は列挙できる台帳を持たないので、アタッチ前の
+  `binding-added` は復元できない。Wiring ペインは **declared** ビュー
+  （`data-wcs` 属性と `wcs-*` コメントの再スキャン）にフォールバックし、リロード
+  導線を出す。
+
+どちらのランタイムでも、それ以外（state ツリー・編集・アタッチ以降のタイムライン）は
+全機能動く（アタッチ前のイベントは再生しない）。プロトコル §6 参照。
 
 ## 注意・制限
 
@@ -78,7 +86,7 @@ import { DevtoolsCore, getOrCreateHookRegistry, formatValue, scanDeclaredBinding
 
 const core = new DevtoolsCore({ timelineCapacity: 200 });
 core.connect();
-core.onChange((kind) => { /* "sources" | "roster" | "wiring" | "timeline" | "coverage" */ });
+core.onChange((kind) => { /* "sources" | "roster" | "wiring" | "timeline" | "coverage" | "values" */ });
 core.getRoster();      // 観測中の <wcs-state> 要素
 core.getCoverageReport(); // 宣言 × 実測（coverage ビュー）
 core.getTimeline();    // ring buffer スナップショット

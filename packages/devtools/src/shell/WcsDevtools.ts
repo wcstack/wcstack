@@ -61,7 +61,29 @@ header {
   border-bottom: 1px solid #2b4f78;
   background: #10263f;
 }
-header .title { font-weight: 700; color: #9fd0ff; margin-right: 4px; }
+/* The header never grows wider than the panel: the title and the middle group shrink (the
+   group scrolls sideways when even that is not enough), so dock and × always stay in view —
+   the right dock is only 420px wide. */
+header .title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  color: #9fd0ff;
+  margin-right: 4px;
+}
+header .tools {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  overflow-x: auto;
+}
+header .tools select { flex: 0 1 auto; min-width: 6em; text-overflow: ellipsis; }
+header .tools button, header > button { flex: none; white-space: nowrap; }
 header select, header button {
   font: inherit;
   background: #16324f;
@@ -72,7 +94,6 @@ header select, header button {
   cursor: pointer;
 }
 header button[aria-pressed="true"] { background: #2b5d8f; }
-header .spacer { flex: 1; }
 .panes { display: flex; flex: 1; min-height: 0; }
 .pane { flex: 1; min-width: 0; overflow: auto; padding: 6px 8px; border-right: 1px solid #1d3a5c; }
 .pane:last-child { border-right: none; }
@@ -188,6 +209,10 @@ export class WcsDevtools extends HTMLElement {
   private _expanded: Set<string> = new Set();
   private _hotkeyHandler: ((event: KeyboardEvent) => void) | null = null;
   private _pickHandler: ((event: MouseEvent) => void) | null = null;
+  /** State ペインで開いているインライン編集の入力欄（無ければ null）。 */
+  private _editInput: HTMLInputElement | null = null;
+  /** State ペインの中でポインタが押されている間 true（離すまで再描画を待つ）。 */
+  private _statePointerDown: boolean = false;
 
   get core(): DevtoolsCore | null {
     return this._core;
@@ -215,6 +240,12 @@ export class WcsDevtools extends HTMLElement {
         // カバレッジは Wiring ペインのタブとして描画される
         if (this._wiringView === "coverage") {
           this._markDirty("wiring");
+        }
+      } else if (kind === "values") {
+        // 値が変わった: State ペインを丸ごと読み直す（devtools-tag-design.md §10 G-U1）。
+        // 閉じている間は読まない — 開いたときに _applyOpen が描き直す
+        if (this.open) {
+          this._markDirty("state");
         }
       } else {
         this._markDirty("timeline");
@@ -283,6 +314,12 @@ export class WcsDevtools extends HTMLElement {
     title.textContent = "wcstack devtools";
     header.append(title);
 
+    // 中間のグループ（ツリー選択・pick・⏸・🗑）。幅が足りないときはここが縮んで横に
+    // スクロールし、dock と × はヘッダーの右端に残る
+    const tools = document.createElement("div");
+    tools.className = "tools";
+    header.append(tools);
+
     const stateSelect = document.createElement("select");
     stateSelect.title = "state element";
     stateSelect.addEventListener("change", () => {
@@ -292,10 +329,10 @@ export class WcsDevtools extends HTMLElement {
       this._markDirty("state");
       this._markDirty("wiring");
     });
-    header.append(stateSelect);
+    tools.append(stateSelect);
     this._stateSelect = stateSelect;
 
-    const pickButton = this._headerButton(header, "⌖ pick", "pick a page element");
+    const pickButton = this._headerButton(tools, "⌖ pick", "pick a page element");
     pickButton.addEventListener("click", () => {
       if (this._pickMode) {
         this._exitPickMode();
@@ -306,7 +343,7 @@ export class WcsDevtools extends HTMLElement {
     });
     pickButton.dataset["role"] = "pick";
 
-    const pauseButton = this._headerButton(header, "⏸", "pause timeline");
+    const pauseButton = this._headerButton(tools, "⏸", "pause timeline");
     pauseButton.addEventListener("click", () => {
       const core = this._core;
       if (core === null) {
@@ -317,15 +354,11 @@ export class WcsDevtools extends HTMLElement {
     });
     pauseButton.dataset["role"] = "pause";
 
-    const clearButton = this._headerButton(header, "🗑", "clear timeline");
+    const clearButton = this._headerButton(tools, "🗑", "clear timeline");
     clearButton.addEventListener("click", () => {
       this._core?.clearTimeline();
     });
     clearButton.dataset["role"] = "clear";
-
-    const spacer = document.createElement("span");
-    spacer.className = "spacer";
-    header.append(spacer);
 
     const dockButton = this._headerButton(header, "dock", "toggle dock position");
     dockButton.addEventListener("click", () => {
@@ -357,6 +390,11 @@ export class WcsDevtools extends HTMLElement {
       panes.append(pane);
       this._paneElements[name] = body;
     }
+    // 押している間に State ペインを描き直すと、押した行が消えてクリックが成立しない
+    // （値が毎フレーム変わるページ）。離すまで待つ
+    this._paneElements["state"]!.parentElement!.addEventListener("pointerdown", () => {
+      this._holdStateWhilePressed();
+    });
     panel.append(panes);
     shadow.append(panel);
     this._panel = panel;
@@ -367,12 +405,12 @@ export class WcsDevtools extends HTMLElement {
     this._highlightLayer = highlightLayer;
   }
 
-  private _headerButton(header: HTMLElement, label: string, title: string): HTMLButtonElement {
+  private _headerButton(container: HTMLElement, label: string, title: string): HTMLButtonElement {
     const button = document.createElement("button");
     button.textContent = label;
     button.title = title;
     button.setAttribute("aria-pressed", "false");
-    header.append(button);
+    container.append(button);
     return button;
   }
 
@@ -497,7 +535,12 @@ export class WcsDevtools extends HTMLElement {
     const dirty = this._dirtyPanes;
     this._dirtyPanes = new Set();
     if (dirty.has("state")) {
-      this._renderStatePane();
+      if (this._stateHeld()) {
+        // 編集中・押下中は今の DOM のまま。印だけ残し、終わったときに描く（_releaseState）
+        this._dirtyPanes.add("state");
+      } else {
+        this._renderStatePane();
+      }
     }
     if (dirty.has("wiring")) {
       this._renderWiringPane();
@@ -505,6 +548,40 @@ export class WcsDevtools extends HTMLElement {
     if (dirty.has("timeline")) {
       this._renderTimelinePane();
     }
+  }
+
+  /**
+   * State ペインの描き直しを待つべきか: インライン編集の入力欄にフォーカスがあるか、
+   * ペインの中でポインタが押されている。描き直すと入力欄（打ちかけの値）や押した行が消える。
+   * フォーカスで見るのは、パネルを閉じる・ノードを外すなど blur の来ない抜け方でも
+   * 待ち続けないため。
+   */
+  private _stateHeld(): boolean {
+    if (this._statePointerDown) {
+      return true;
+    }
+    // 外れた（描き直しで消えた）入力欄はフォーカスを持てないので、これだけで足りる
+    return this._editInput !== null && this.shadowRoot!.activeElement === this._editInput;
+  }
+
+  /** 待たせていた State ペインの描き直しを流す（保留が無ければ何もしない）。 */
+  private _releaseState(): void {
+    if (this._dirtyPanes.has("state")) {
+      this._markDirty("state");
+    }
+  }
+
+  private _holdStateWhilePressed(): void {
+    this._statePointerDown = true;
+    // 離した場所はペインの外かもしれない（ドラッグ）。window で受けて、受けたら外す
+    const release = (): void => {
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+      this._statePointerDown = false;
+      this._releaseState();
+    };
+    window.addEventListener("pointerup", release, true);
+    window.addEventListener("pointercancel", release, true);
   }
 
   private _rosterKey(entry: IRosterEntry): string {
@@ -522,8 +599,19 @@ export class WcsDevtools extends HTMLElement {
   }
 
   private _renderStatePane(): void {
-    const core = this._core!;
+    // 描き直しで今の入力欄は消える（編集中ならここへは来ない — _stateHeld）
+    this._editInput = null;
     const body = this._paneElements["state"]!;
+    // スクロール位置は描き直しの前後で保つ。中身を空にした瞬間にレイアウトが走ると
+    // （値の読み出しがページの getter を通る）スクロールが 0 に詰められうる
+    const scroller = body.parentElement!;
+    const scrollTop = scroller.scrollTop;
+    this._renderStateBody(body);
+    scroller.scrollTop = scrollTop;
+  }
+
+  private _renderStateBody(body: HTMLElement): void {
+    const core = this._core!;
     const select = this._stateSelect!;
     const roster = core.getRoster();
     const selected = this._selectedRoster();
@@ -791,6 +879,7 @@ export class WcsDevtools extends HTMLElement {
     const input = document.createElement("input");
     input.value = typeof current === "string" ? current : String(current);
     const commit = (): void => {
+      this._editInput = null;
       // 編集は通常のリアクティブパイプラインを通る（devtools-tag-design.md §3.1）
       this._core?.writeValue(entry, ref.path, coerceInput(input.value), ref.indexes);
       this._markDirty("state");
@@ -799,10 +888,17 @@ export class WcsDevtools extends HTMLElement {
       if (event.key === "Enter") {
         commit();
       } else if (event.key === "Escape") {
+        this._editInput = null;
         this._markDirty("state");
       }
     });
+    // フォーカスが外れたら、待たせていた描き直しを流す（入力欄はそれで消える = 取り消し）。
+    // 待たせていなければ入力欄はそのまま残る（従来どおり）
+    input.addEventListener("blur", () => {
+      this._releaseState();
+    });
     row.replaceChild(input, valueSpan);
+    this._editInput = input;
     input.focus();
   }
 
