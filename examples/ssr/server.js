@@ -1,10 +1,23 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { renderToString } from "@wcstack/server";
+import { join, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const REPO_ROOT = resolve(__dirname, "..", "..");
+
+// Opt-in: WCS_LOCAL=1 renders with the repository's own builds instead of the
+// npm install — packages/server/dist (which resolves @wcstack/state to
+// packages/state through packages/server/node_modules) — serves /packages/<pkg>/dist
+// from the repo, and points the client at /packages/state/dist/auto.min.js
+// instead of the pinned esm.run URL. Server and client then come from the same
+// working tree, so a change can be verified before it is published. The default
+// (npm + CDN) is the documented way to run this demo; nothing changes without it.
+const LOCAL = process.env.WCS_LOCAL === "1";
+
+const { renderToString } = LOCAL
+  ? await import(pathToFileURL(join(REPO_ROOT, "packages", "server", "dist", "index.esm.js")).href)
+  : await import("@wcstack/server");
 
 // Mock data
 const users = [
@@ -33,6 +46,7 @@ let cachedHtml = null;
 // which is why the pin is read back from the output instead of imported —
 // importing @wcstack/state in Node fails (it touches HTMLElement at load).
 function stateScriptUrl(ssrBody) {
+  if (LOCAL) return "/packages/state/dist/auto.min.js";
   const version = ssrBody.match(/<wcs-ssr\b[^>]*\sversion="([^"]+)"/)?.[1];
   return version
     ? `https://esm.run/@wcstack/state@${version}/auto`
@@ -82,11 +96,34 @@ async function loadTemplate() {
   return readFile(join(__dirname, "template.html"), "utf-8");
 }
 
-const PORT = 3001;
+const PORT = Number(process.env.PORT || 3001);
+
+// WCS_LOCAL=1 only: the client bundles (/packages/<pkg>/dist/…) from the repo.
+async function serveLocalPackage(res, path) {
+  const file = resolve(REPO_ROOT, "." + decodeURIComponent(path));
+  // Path traversal guard: the resolved path must stay inside packages/.
+  if (!file.startsWith(join(REPO_ROOT, "packages") + sep)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+  try {
+    const body = await readFile(file);
+    res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+    res.end(body);
+  } catch {
+    res.writeHead(404);
+    res.end("Not Found");
+  }
+}
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
+
+  if (LOCAL && path.startsWith("/packages/")) {
+    return serveLocalPackage(res, path);
+  }
 
   // API
   if (path === "/api/users") {
@@ -136,6 +173,6 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`SSR Demo: http://localhost:${PORT}`);
+  console.log(`SSR Demo: http://localhost:${PORT}${LOCAL ? " (WCS_LOCAL: repository builds)" : ""}`);
   console.log(`No cache:  http://localhost:${PORT}/nocache`);
 });

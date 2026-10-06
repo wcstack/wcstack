@@ -26,6 +26,8 @@ npx serve examples/state-devtools-playground
 ## メモ
 
 - devtools のスクリプトを**最初**に読むことでバインディング構築前にフックが
-  繋がり、Wiring ペインがライブ台帳になる。`@wcstack/state` より後ろに移す
-  （または後から注入する）と "declared" フォールバックとリロード導線が見られる。
+  繋がる。`@wcstack/state` 3.x ではこれが Wiring ペインをライブ台帳にする条件で、
+  `@wcstack/state` より後ろに移す（または後から注入する）と "declared"
+  フォールバックとリロード導線が見られる。4.0 のエンジンは devtools がアタッチした
+  時点のバインディングをすべて送るので、後から読んだ devtools でもライブ台帳になる。
 - パネルを開いている間はページの一部が覆われる（右ドックにするか閉じれば操作可）。

@@ -28,8 +28,10 @@ npx serve examples/state-devtools-playground
 ## Notes
 
 - The devtools script is loaded **first** so the hook attaches before bindings
-  are built — that is why the Wiring pane shows live bindings. Move the script
-  below `@wcstack/state` (or inject it later) to see the "declared" fallback
-  and its reload hint instead.
+  are built. With `@wcstack/state` 3.x that is what makes the Wiring pane show
+  live bindings — moving the script below `@wcstack/state` (or injecting it
+  later) shows the "declared" fallback and its reload hint instead. The 4.0
+  engine sends every current binding when devtools attaches, so a devtools
+  loaded late shows the live ledger too.
 - The overlay panel covers part of the page while open (dock it right, or
   close it, to interact with covered controls).

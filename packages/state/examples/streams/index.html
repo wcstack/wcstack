@@ -92,8 +92,7 @@ export default {
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);
         }
-        // ReadableStream<string>. Where ReadableStream has no
-        // Symbol.asyncIterator, the runtime consumes it via getReader().
+        // ReadableStream<string>: the runtime reads it through getReader().
         return response.body.pipeThrough(new TextDecoderStream());
       },
 

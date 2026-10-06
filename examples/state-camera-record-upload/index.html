@@ -24,6 +24,8 @@
     .pill.denied { background: #fee2e2; color: #991b1b; }
     .pill.unsupported { background: #e2e8f0; color: #475569; }
     .rec { display: inline-flex; align-items: center; gap: 0.4rem; color: #b91c1c; font-weight: 600; font-size: 0.85rem; }
+    /* `display` above would override the [hidden] the binding toggles. */
+    .rec[hidden] { display: none; }
     .rec::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: #b91c1c; animation: blink 1s steps(2) infinite; }
     @keyframes blink { 50% { opacity: 0.2; } }
     .status { font-size: 0.8rem; color: #888; margin-top: 0.6rem; }
