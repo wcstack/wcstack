@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -24,16 +25,33 @@ const MIME_TYPES = {
 // the current working tree rather than whatever esm.run last published. Covers
 // both <script src="https://esm.run/..."> and import-map entries (the regex runs
 // over the whole HTML text, inline import maps included). An optional @version
-// pin is dropped; deeper subpaths than /auto are left untouched.
+// pin is dropped.
 //
-// The bare entry maps to index.esm.js, which is what `exports["."]` resolves to;
-// there is no index.esm.min.js any more, because the bootstrap is now a
-// self-contained bundle and nothing else imported the minified named-export one.
+// The entry and any subpath (`/auto`, signals' `/dom`) resolve through the
+// package's own `exports` map, so the page gets the file a bundler or the CDN
+// would: `.` is index.esm.js, `./auto` is auto.min.js. A subpath the map does
+// not name is left untouched.
+const exportsCache = new Map();
+
+function localEntry(pkg, subpath) {
+  if (!exportsCache.has(pkg)) {
+    let map = null;
+    try {
+      map = JSON.parse(readFileSync(join(ROOT, "packages", pkg, "package.json"), "utf-8")).exports ?? null;
+    } catch {
+      // not a package of this repository: leave its URLs alone
+    }
+    exportsCache.set(pkg, map);
+  }
+  const target = exportsCache.get(pkg)?.["." + subpath];
+  const file = typeof target === "string" ? target : target?.import ?? target?.default;
+  return typeof file === "string" ? `/packages/${pkg}/${file.replace(/^\.\//, "")}` : null;
+}
+
 function rewriteCdn(html) {
   return html.replace(
-    /https:\/\/esm\.run\/@wcstack\/([\w-]+)(?:@[^/"'\s]+)?(\/auto)?(?=["'\s])/g,
-    (_m, pkg, auto) =>
-      auto ? `/packages/${pkg}/dist/auto.min.js` : `/packages/${pkg}/dist/index.esm.js`,
+    /https:\/\/esm\.run\/@wcstack\/([\w-]+)(?:@[^/"'\s]+)?((?:\/[\w-]+)*)(?=["'\s])/g,
+    (match, pkg, subpath) => localEntry(pkg, subpath) ?? match,
   );
 }
 
