@@ -1,6 +1,6 @@
 {
   "name": "@wcstack/state",
-  "version": "4.0.0-rc.5",
+  "version": "4.0.0-rc.6",
   "description": "Reactive state management with declarative data binding for Web Components. Zero dependencies, buildless.",
   "type": "module",
   "main": "./dist/index.esm.js",
