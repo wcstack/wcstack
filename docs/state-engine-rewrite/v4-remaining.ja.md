@@ -954,3 +954,33 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - ゲートの基準値を rc.6 の dist で取り直した（カップリングは基準値どおり）。
   - core.min.js 19,921B（上限まで 79B）
   - `index.esm.js` 50,689B、`auto.min.js` 47,744B、split の core 24,119B
+
+### core の上限を 20 KiB に（2026-10-07）
+
+- ユーザーの判断で、`dist/core.min.js` の絶対の上限を 20,000B から 20 KiB（20,480B）にした（`scripts/check-state-size.mjs` の `HARD_LIMITS`）。rc.6 の 19,921B で、残りは 79B から 559B になった。
+
+### examples での rc の評価（2026-10-07）
+
+利用者のアプリが少なく rc を評価できないので、リポジトリの examples（`examples/` と `packages/state/examples/`）を 4.0 の書き方で書けているか確かめ、実ブラウザの e2e で動きを確かめた。
+
+- **4.0 の書き方**: rc.6 の dist から組み直した vscode-wcs の validator で、両方のディレクトリの HTML はどれも error 0。warning 53 件は、空の配列で始まる一覧・モジュールの const を指すキー・Map を返す getter の下のパスを lint が推論できないものと、router-i18n の `wcs/base-href-missing` だけ。lint が見ない書き方（`event.currentTarget`、`#stop` と `stopPropagation()`、`[data-wcs]` のセレクタ、`bootstrapXxx()` のオプション、並べ替えのための要素への書き込み）にも 3.x の形は無い。`currentTarget` を読む state-tilt-maze のドラッグは `#direct` 済み。
+- **e2e**: 未対象だった examples 25 本の spec を足した（142 件）。対象外は `websocket-chat/react`・`/vue`（state を使わない Vite のアプリ）だけ。`e2e/serve.mjs` は esm.run の URL を各パッケージの `exports` で書き換えるようにした（`@wcstack/signals/dom` も届く）。オリジンのルートに置く SPA・チャンクの応答・SSR は、spec がデモのサーバーを `WCS_LOCAL=1` で立てる（router-i18n に加えて router-spa・ssr・streams）。足りないプラットフォームの API は `addInitScript` の差し替えか Chromium の機能（偽のカメラ、コンテキストの権限）で与える。全 287 件（既存 145 件＋新規 142 件）。4 つの修正の後の dist で `--repeat-each=3` の 861 件がすべて通る（検証の後、state と audio の dist はコミット済みの rc.6 に戻した）。
+- **見つけた不具合と修正**（1〜3 は 3.x では起きず rc で入ったもの。4 は 3.x からあり、4.0 では読み込み直後から起きるようになったもの）:
+  1. 消えた行のコンポーネントの中にマウントしたコンポーネント（行の `state: .`・行でない部分マウント）が描き続け、ホストの getter を読みに行って `The host row of <x> was removed.` を `console.error` に出す（recursive-tree で子を持つ節点を外したとき）。描画の結果は正しい。`scopes/component.ts` の drain の止め方が、自分の行しか見ていなかった。マウントの連鎖をルートまでたどって止める（`inPlace`）。
+  2. 双方向の `value:`・`radio:` で、要素の書き戻しと、最後に当てた値へ戻す書き込み（送信の後のクリア、入力の検証）が同じ drain に入ると、要素が状態を映さない（state-testing-todo。デモ自身のヘッドレスの vitest も 5 件中 1 件落ちていた）。`Binding.writeBack()` が最後に当てた値を残し、apply が「変わっていない」と判断していた。書き戻した後の apply は必ず走らせる。radio は同じグループのほかの radio のチェックをブラウザが外すので、毎回当て直す。
+  3. `style.<camelCase>:`（`style.backgroundColor:`）が黙って効かない（state-color-palette。eyedropper の README も同じ書き方）。4.0 は `style.setProperty()` だけで書いていた。`-` を含まない名前は 3.x と同じく `style[name]` に書く（ケバブケースとカスタムプロパティは `setProperty`）。
+  4. boolean の属性ミラー。state は wc-bindable の `inputs[].attribute` に boolean を `String(value)` で写していた（README の表。3.x も同じ）。`false` が `active="false"` になり、属性の有無で真偽を決める I/O ノード（wakelock の `active`、camera の `keep-alive`、geolocation の `watch`、各 `manual` など 40 の入力）は真と読む。3.x では true → false に戻したときだけ起き、4.0 は初期の適用でも写すので読み込み直後から起きた（pomodoro・tilt-maze が読み込み直後から wake lock を取り、camera の `keepAlive: recording` が効かない）。**決定（2026-10-07、ユーザー）: state の写し方を変える** — HTML の真偽属性として写す（true は `""`、false は外す。`dom/wc.ts` の `mirrorAttribute`）。`"off"` でない限り on の `<wcs-audio>` の `limiter` / `resumeOnGesture` は、どちらの写し方でも false を書けないので、宣言から `attribute` を外した（setter が `"on"` / `"off"` を書く）。ほかの I/O ノードの入力は、属性の有無で読むもの（40）か文字列・数値で、`[x="false"]` を当てるスタイルも無い。README の表、移行ガイド §3.4・§4.1、CHANGELOG に書いた。
+  - `packages/state/__tests__/fixes.test.ts` に 5 件、`coverage-element-wc.test.ts` に 1 件、audio に 1 件。state のテスト 3,026 件、カバレッジ 99.79 / 99.29 / 100 / 99.95。core.min.js 19,921 → 19,954B（+33B）、scopes +9B。audio 197 件。router 822 件、server 100 件と e2e 18 件、state-testing-todo の vitest 5 件。
+- **examples の直し**: ssr（`@wcstack/server` の依存が `^1.15.0` のままで 4.0 を一度も通らなかった → `^4.0.0-rc.6`。`WCS_LOCAL=1`。README の SSR 出力の記述が 3.x の印のままだった）、router-spa（`WCS_LOCAL=1`。README の「router が後から刻むノードはバインドされない」は 3.x の制約）、state-devtools-playground の README（state の後に devtools を読むと declared の台帳に落ちる、は 3.x だけ）、state-camera-record-upload（`.rec { display: inline-flex }` が `[hidden]` に勝ち、REC が常に見えていた）、streams の README（実装の場所、ReadableStream の読み方）。
+- **ほかのパッケージの直し**（examples の e2e で見つけたもの。ユーザーの指示で 2026-10-07 に直した）:
+  - `@wcstack/devtools`: 開いたままの State ペインがページからの書き込みに追従しなかった（timeline の変化で timeline ペインしか描き直していなかった。devtools-tag-design §10 G-U1 と食い違い、2026-07 から）。空でない update-batch ごと（⏸ の間も）に読み直す。Core の変化の種類に `values` を足した。インライン編集の入力欄にフォーカスがある間とペインでポインタを押している間は待ち、展開した枝とスクロール位置は保つ。G-U1 の記述も訂正した。右ドック（420px）でヘッダーがはみ出し × が画面の外に出ていた: 選択と操作のボタンを縮んで横にスクロールするまとまりにし、ドックと × は常に右端に残す。README の「Late attach」を 3.x と 4.0 で書き分けた。テスト 181 件（+11）、カバレッジ 100 / 98.55 / 100 / 100。
+  - `@wcstack/websocket`: `<wcs-ws>` が 1 回の接続で 2 本張っていた（3.x から）。`attributeChangedCallback` が同じ値でも繋ぎ直し（setter 自身の属性の書き込みに state の属性ミラーが続く）、upgrade では `attributeChangedCallback` と `connectedCallback` の両方が繋いでいた。url が変わったときだけ、`connectedCallback` が接続を判断した後に限って繋ぎ直す。テスト 162 件（+11）、カバレッジ 100%。
+  - `examples/websocket-chat/react`・`/vue`: 依存を `@wcstack/websocket ^4.0.0-rc.6`、`@wc-bindable/react` / `vue ^0.9.0` にした（`^1.8.1` / `^0.8.0` のままで、lockfile は websocket 1.22.6 だった）。インストール・型検査・ビルドを通し、本物の WebSocket サーバーに対して接続・echo・broadcast を Playwright で確かめた。
+  - wcstack-skill の `release/v4.0.0`（未コミット）: 真偽属性の写し方、`<wcs-audio>` の `limiter` を写さないこと、`style.PROP` の名前の書き方。
+  - 4 つの修正の後の dist（state・audio・websocket・devtools）で e2e 289 件 × 3 回がすべて通り、`test.fail` は残っていない。検証の後、dist はコミット済みの rc.6 に戻した。
+- **残したもの（ほかのパッケージ。直していない）**:
+  - `<wcs-ws>` の書く順番: state が `url` を `manual` / `autoReconnect` より先に書くと、最初の接続は自動再接続なしで張られ、`manual: true` も効かない（修正前からの挙動）。`<wcs-fetch>` のようにマイクロタスクへ遅らせれば解消するが、接続が同期でなくなる。
+  - `<wcs-storage>`: `key` の `attributeChangedCallback` に同値ガードが無く、upgrade で 2 回、同じ `key` の書き込みとミラーでも読み込み直し、loading と value を出し直す（読み込みは同期で結果は同じ）。
+  - `<wcs-infinite-scroll>`: 監視する属性のどれでも、同じ値で IntersectionObserver を作り直す。番兵が見えていて fetch が止まっているときに同じ値の書き込みがあると、余分にページを取得しうる。
+  - sse・worker・broadcast・media-query は同値ガードを持たないが、Core が同じ値の 2 回目を無視するので問題ない。
+  - examples の CDN の URL は版を固定していない（R8 のとおり、rc の間は npm の `latest` の 3.5.x を読む）。4.0 の評価は e2e がローカルの dist に書き換えて行う。
