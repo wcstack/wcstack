@@ -984,3 +984,19 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - `<wcs-infinite-scroll>`: 監視する属性のどれでも、同じ値で IntersectionObserver を作り直す。番兵が見えていて fetch が止まっているときに同じ値の書き込みがあると、余分にページを取得しうる。
   - sse・worker・broadcast・media-query は同値ガードを持たないが、Core が同じ値の 2 回目を無視するので問題ない。
   - examples の CDN の URL は版を固定していない（R8 のとおり、rc の間は npm の `latest` の 3.5.x を読む）。4.0 の評価は e2e がローカルの dist に書き換えて行う。
+
+### 4.0.0-rc.7 の公開（2026-10-07）
+
+- `research/examples-eval`（examples での評価と、そこで見つけたものの修正）を PR #431 で research に取り込み（7ad8f932）、`prerelease-rc`（run 37543829812、33 分）で公開した。
+- 全 49 パッケージが npm の `next` で 4.0.0-rc.7（`latest` は 3.5.4 のまま）。タグ `v4.0.0-rc.7` と GitHub のプレリリース。bump の commit は 23114db6。
+- 取り込みの前に確かめたこと（research への PR では CI が走らないので手元で）: state 3,026 件（カバレッジ 99.79 / 99.29 / 100 / 99.95、lint・型検査、サイズとカップリングの検査）、router 822 件、audio 197 件、websocket 162 件、devtools 181 件。src から作った dist の上で e2e 289 件 × 3 回、server 100 件と e2e 18 件、testing 15 件、wcstack のスモーク 3 件、vscode-wcs 1,167 件、state-testing-todo の vitest 5 件。確かめた後で dist は戻した。
+- 公開の後に確かめたこと:
+  - 全パッケージの dist-tag（3 つ — screen-orientation・websocket・wcstack — がレジストリに約 2 分遅れて見えた。公開のログには 49 件すべての `+ name@4.0.0-rc.7` がある）
+  - server の依存が厳密な `4.0.0-rc.7`
+  - CDN（split の core・auto・features の `scopes` と `native-commands`）と `esm.run` の `/auto`（state・router・wcstack）が 200
+  - jsDelivr の `index.esm.js` がコミットされた rc.7 の dist と同一
+  - コミットされた rc.7 の dist のまま（手元でビルドせずに）e2e 289 件がすべて通る
+- ゲートの基準値を rc.7 の dist で取り直した（カップリングは基準値どおり）。
+  - core.min.js 19,954B（上限 20,480B まで 526B）
+  - `index.esm.js` 50,740B、`auto.min.js` 47,792B、split の core 24,156B、scopes 8,878B
+- wcstack-skill の `release/v4.0.0` に、真偽属性の写し方などを入れた（f8dd5f4、push 済み）。main へのマージは 4.0.0 のとき。
