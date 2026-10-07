@@ -146,7 +146,8 @@ export function defineParamAccessors(ctor: typeof AudioNodeShell): void {
       configurable: true,
       enumerable: true,
       get(this: Accessors) { return this._num(name, dflt); },
-      set(this: Accessors, value: number) { this._setParam(name, value); },
+      // a string is read as the attribute is (a binding hands over a range input's value as it is)
+      set(this: Accessors, value: number | string) { this._setParam(name, typeof value === "string" ? parseFloat(value) : value); },
     });
   }
   for (const name of ctor.props) {
