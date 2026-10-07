@@ -107,7 +107,7 @@ WCS_LOCAL=1 node examples/ssr/server.js
 
 ```html
 <!-- ハイドレーション用 SSR メタデータ: 描画した @wcstack/state の版・状態・ページ直下のテンプレート -->
-<wcs-ssr version="4.0.0-rc.7">
+<wcs-ssr version="4.0.0-rc.8">
   <script type="application/json">{"users":[...],"show":true,"counter":0}</script>
   <template id="wcs-t0" data-wcs="for: users">...</template>
   <template id="wcs-t1" data-wcs="if: show">...</template>
