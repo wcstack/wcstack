@@ -379,8 +379,8 @@ test.describe("examples/state-pomodoro", () => {
     // 4.0.0-rc.6 の不具合の回帰: state は inputs[].attribute のミラーで boolean の false を
     // active="false" と書き、<wcs-wakelock> の active は属性の有無で真偽を決めるので、
     // 読み込み直後と false に戻した直後に要求が出て保持され続けていた(3.x も false に
-    // 戻したときは同じ。4.0 は初期適用でもミラーするので読み込み直後から)。今は
-    // 真偽属性として写す(false は属性を外す)。
+    // 戻したときは同じ。4.0 は初期適用でもミラーするので読み込み直後から)。今の state は
+    // プロパティだけを書き、属性は <wcs-wakelock> の setter が反映する。
     test("wake lock は focus が走っている間だけ保持する(読み込み直後・pause・reset・break では保持しない)", async ({ page, context }) => {
       const errors = collectErrors(page);
       const u = await open(page, context);

@@ -126,9 +126,9 @@ MIDI)、Chromium の機能で与えます (カメラは `--use-fake-device-for-m
 | `state-tilt-maze` | tilt + accelerometer + raf + wakelock + defined。傾き・ドラッグ（`#direct` のハンドラの `currentTarget` がボード）・キーでの操作、穴・ゴール、読み込み失敗時の `<wcs-defined>`。wake lock をプレイ中だけ取ること（同） |
 | `signals-tilt-maze` / `signals-live-search` | 同じデモの signals 版と、signals + fetch の検索（`@wcstack/signals/dom`） |
 
-属性ミラーの回帰（pomodoro・tilt-maze・camera）: state は wc-bindable の `inputs[].attribute` に値を写す。
-4.0.0-rc.6 まで（3.x も）boolean を `String(value)` で写していたので `false` が `active="false"` になり、
-属性の有無で真偽を決める I/O ノードは真と読んでいた。今は HTML の真偽属性として写す（`true` は空、`false` は外す）。
+属性ミラーの回帰（pomodoro・tilt-maze・camera）: 4.0.0-rc.6 まで（3.x も）state は wc-bindable の入力を、プロパティに続けて
+`inputs[].attribute` の属性にも `String(value)` で書いていたので `false` が `active="false"` になり、属性の有無で
+真偽を決める I/O ノードは真と読んでいた。今の state はプロパティだけを書き、属性は要素の setter が反映する。
 
 ### fixture プロトコル回帰テスト (19 spec)
 

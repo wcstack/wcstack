@@ -287,6 +287,14 @@ describe("audio custom elements", () => {
       expect(osc.frequency).toBe(500);
     });
 
+    it("数値のパラメータに文字列を代入すると、属性と同じく数値に読む（range の input の値をそのまま束ねた場合）", async () => {
+      await mount(`<wcs-audio><wcs-osc frequency="440"></wcs-osc></wcs-audio>`);
+      const osc = document.querySelector("wcs-osc") as WcsOsc & { frequency: unknown };
+      osc.frequency = "3000";
+      expect(osc.frequency).toBe(3000);
+      expect((ctx.nodesOf("osc")[0] as any).frequency.value).toBe(3000);
+    });
+
     it("非数値プロパティのアクセサは属性を書く", () => {
       const osc = document.createElement("wcs-osc") as WcsOsc & { type: string };
       osc.type = "square";
@@ -485,9 +493,9 @@ describe("audio custom elements", () => {
       expect(WcsAudio.hasConnectedCallbackPromise).toBe(true);
     });
 
-    it("on が既定の limiter / resumeOnGesture は写す属性を宣言しない（setter が on / off を自分で書く。真偽属性の写しでは off を書けない）", () => {
+    it("入力の attribute ヒントはマークアップの属性名を示し、on が既定の limiter / resumeOnGesture は setter が on / off を自分で書く", () => {
       expect(WcsAudio.wcBindable.inputs?.map((i) => [i.name, i.attribute ?? null])).toEqual([
-        ["volume", "volume"], ["limiter", null], ["resumeOnGesture", null],
+        ["volume", "volume"], ["limiter", "limiter"], ["resumeOnGesture", "resume-on-gesture"],
       ]);
       const root = document.createElement("wcs-audio") as WcsAudio;
       root.limiter = false;

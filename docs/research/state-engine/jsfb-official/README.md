@@ -172,3 +172,51 @@ vanillajs・Alpine・4.0.0-rc.2 を 1 回のセッションで測った（`resul
 | first paint（ms、1 回） | 161.5 | 156.0 | 222.1 |
 
 - 配る量は 4.0（全部入りの `auto.min.js`）が Alpine の約 2.9 倍。first paint は 1 回ずつの値で、差は読めない。
+
+## 4.0.0-rc.7 の計測（2026-10-08）
+
+rc.2 と同じハーネス（`f2df01a`、`jsfb40` の clone）で、4.0.0-rc.7・3.5.4・signals・vanillajs を 1 回のセッションで測った（`results-rc7/`、`summary-rc7.json`）。
+
+- Windows 11、Chrome 154.0.8037.97（`--headless=new`）、puppeteer ランナー、既定の回数と CPU スロットル。4 つとも公式の `isKeyed` を通過し、ハーネスの妥当性検査も通過した。
+- `wcstack-state-4` は rc.2 と同じページ（`pages/wcstack-state-4/`）で、4.0.0-rc.7 の `dist/auto.min.js`（全部入り。npm の rc.7 と同一）を読む。`wcstack-state-3`（3.5.4）と vanillajs は rc.2 のときのまま。`wcstack-signals` のバンドルは rc.2 と rc.7 で同一（版の表示だけ違う）。
+- このセッションは全体に速く、vanillajs の create rows が 57.8 → 40.1ms と、どの実装も rc.2 の約 7 割の時間だった（機械の状態）。セッションをまたいで比べられるのは、同じセッションの vanillajs との比だけ。
+
+**CPU の加重幾何平均**（小さいほど速い）: vanillajs 1.02、signals 1.22、**4.0.0-rc.7 1.07**、3.5.4 1.44（rc.2: 1.02 / 1.20 / 1.06 / 1.44）。script（JS の時間）だけの幾何平均（vanillajs を 1）: signals 2.99、4.0 2.03、3.5.4 6.28（rc.2: 2.97 / 2.02 / 6.25）。paint は 4 つとも 1.06〜1.10。
+
+| 項目（ms、中央値） | vanillajs | signals | 3.5.4 | 4.0.0-rc.7 | 4.0 ÷ vanillajs（rc.2） |
+|---|---:|---:|---:|---:|---:|
+| create rows（1k） | 40.1 | 47.4 | 49.5 | 41.7 | 1.04（1.06） |
+| replace all rows（1k） | 47.1 | 51.8 | 57.3 | 53.8 | 1.14（0.99） |
+| partial update（4x） | 26.0 | 30.5 | 32.6 | 29.0 | 1.12（1.06） |
+| select row（4x） | 11.5 | 12.5 | 10.9 | 10.9 | 0.95（0.92） |
+| swap rows（4x） | 30.2 | 35.3 | 34.8 | 30.7 | 1.02（1.05） |
+| remove row（2x） | 20.3 | 21.9 | 34.1 | 21.5 | 1.06（0.92） |
+| create many rows（10k） | 435.3 | 537.1 | 703.6 | 499.2 | 1.15（1.04） |
+| append 1k to 1k（2x） | 51.1 | 60.6 | 73.8 | 43.6 | 0.85（1.09） |
+| clear 1k rows（4x） | 18.5 | 28.0 | 38.0 | 19.6 | 1.06（1.25） |
+
+- **clear が縮んだ**: vanillajs との比が 1.25 → 1.06、script だけでも 1.26 → 1.08（15.4 対 14.3ms）。rc.6 の規模の修正（`Range` を使わない取り外し。`scale-verification.ja.md`）の効果で、rc.2 で 4.0 が vanillajs から最も離れていた項目。
+- create many rows（1.04 → 1.15）と replace all rows（0.99 → 1.14）は比が大きくなったが、vanillajs を超える script の時間はほぼ同じ（create 10k は 19.5 → 17.8ms、replace は 2.7 → 3.7ms）。差の大半は paint（create 10k は 443.9 対 396.2ms）と、速いセッションで vanillajs の分母が縮んだこと。append（1.09 → 0.85）も paint の揺れ。
+- script だけで vanillajs から離れているのは、9 月から同じく partial update（3.0 対 1.0ms。`this[\`data.${i}.label\`]` の書き込みがパス文字列の解決を通る）と、絶対値の小さい swap・remove・select。
+
+**メモリ（MB、中央値）**
+
+| 項目 | vanillajs | signals | 3.5.4 | 4.0.0-rc.7 |
+|---|---:|---:|---:|---:|
+| ready memory | 0.57 | 0.62 | 1.72 | 1.16 |
+| run memory（1k 行） | 2.03 | 3.72 | 6.35 | 2.97 |
+| create/clear 1k ×5 | 0.65 | 0.91 | 5.81 | 1.60 |
+| 幾何平均 | 1.00 | 1.41 | 4.40 | 1.95 |
+
+- rc.2（1.19 / 2.95 / 1.65、幾何平均 2.00）と揺れの範囲で同じ。1,000 行を持ったときは 4.0 が signals より軽く、3.5.4 の半分以下。
+
+**サイズと first paint**
+
+| 項目 | vanillajs | signals | 3.5.4 | 4.0.0-rc.7 |
+|---|---:|---:|---:|---:|
+| 非圧縮（KB） | 11.7 | 21.2 | 290.9 | 138.0 |
+| 圧縮（brotli、KB） | 2.5 | 7.9 | 75.2 | 44.0 |
+| first paint（ms、1 回） | 178.9 | 404.6 | 374.4 | 260.9 |
+
+- 4.0 の値は全部入りの `auto.min.js`。rc.2 の 133.7 / 42.6KB から、rc.3〜rc.7 の修正と追加（既知の制限の解消、ネイティブ要素のコマンド、規模の修正、examples の e2e で見つけたものの修正）の分だけ増えた。
+- first paint は 1 回ずつの値で、同じ signals が 174.6（rc.2）と 404.6ms（rc.7）に散らばる。差は読めない。

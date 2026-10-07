@@ -2,67 +2,67 @@
   "$comment": "gzip level 9 of packages/state/dist (4.0) at the recorded release, each file gzipped on its own. check-state-size.mjs --check allows +3 % over these plus an entry's optional \"slack\" in bytes (kept across --update). \"with its chunks\" sums the entry and every chunk it imports; \"beyond the core\" sums the files of its closure that split/core.js does not load. The absolute limits (core.min.js 20,480 B = 20 KiB, define.js 1,024 B) live in the script. Update with --update after a release build.",
   "index.esm.js": {
     "files": 1,
-    "bytes": 145387,
-    "gzip": 50740
+    "bytes": 145425,
+    "gzip": 50769
   },
   "auto.min.js": {
     "files": 1,
-    "bytes": 134711,
-    "gzip": 47792
+    "bytes": 134748,
+    "gzip": 47821
   },
   "split/core.js (with its chunks)": {
     "files": 12,
-    "bytes": 57652,
-    "gzip": 24156
+    "bytes": 58158,
+    "gzip": 24611
   },
   "split/features/devtools.js (beyond the core)": {
     "files": 1,
-    "bytes": 5655,
-    "gzip": 2506
+    "bytes": 5692,
+    "gzip": 2526
   },
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
-    "bytes": 17692,
-    "gzip": 7263
+    "bytes": 17732,
+    "gzip": 7290
   },
   "split/features/formats.js (beyond the core)": {
     "files": 1,
-    "bytes": 4253,
-    "gzip": 1388
+    "bytes": 4289,
+    "gzip": 1415
   },
   "split/features/list-keys.js (beyond the core)": {
     "files": 1,
-    "bytes": 1776,
-    "gzip": 933
+    "bytes": 1814,
+    "gzip": 958
   },
   "split/features/native-commands.js (beyond the core)": {
     "files": 1,
-    "bytes": 942,
-    "gzip": 498
+    "bytes": 986,
+    "gzip": 526
   },
   "split/features/recursion.js (beyond the core)": {
     "files": 1,
-    "bytes": 5912,
-    "gzip": 2600
+    "bytes": 5950,
+    "gzip": 2626
   },
   "split/features/scopes.js (beyond the core)": {
     "files": 1,
-    "bytes": 23656,
-    "gzip": 8878
+    "bytes": 23691,
+    "gzip": 8904
   },
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
-    "bytes": 13256,
-    "gzip": 5300
+    "bytes": 13288,
+    "gzip": 5326
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,
-    "bytes": 9034,
-    "gzip": 3712
+    "bytes": 9071,
+    "gzip": 3736
   },
   "split/auto.js (beyond the core)": {
     "files": 1,
-    "bytes": 1048,
-    "gzip": 613
+    "bytes": 1081,
+    "gzip": 636
   }
 }

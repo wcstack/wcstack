@@ -122,7 +122,7 @@ describe("state が自前で持つプロトコルの定数は、正本と一致�
       expect(text).toMatch(/type WcBindableSemantics = [^;]*"event"/);
     });
 
-    it("同じ宣言から、同じプロパティ（イベント・getter・event の意味）・入力（属性）・コマンドを読む", async () => {
+    it("同じ宣言から、同じプロパティ（イベント・getter・event の意味）・入力・コマンドを読む（入力の attribute ヒントは使わない）", async () => {
       const { readBindableDeclaration } = await wcBindableReader();
       const Fixture = declare(full);
       const ref = readBindableDeclaration(new Fixture());
@@ -136,7 +136,8 @@ describe("state が自前で持つプロトコルの定数は、正本と一致�
         expect(mine.getter, name).toBe(p.getter ?? null);
         expect(mine.occurrence, name).toBe(p.semantics === "event");
       }
-      expect([...own.inputs]).toEqual([...ref.declaredInputs].map(([name, i]: [string, any]) => [name, { attribute: i.attribute ?? null }]));
+      // state writes an input's property only: the `attribute` hint describes the markup (the element reflects it)
+      expect([...own.inputs]).toEqual([...ref.declaredInputs.keys()]);
       expect([...own.commands]).toEqual([...ref.declaredCommands.keys()]);
     });
 

@@ -359,11 +359,11 @@ test.describe("examples/state-tilt-maze", () => {
 
   test("wake lock はプレイ中だけ取り、アイドルと落下では取らない", async ({ page }) => {
     // <wcs-wakelock> の README: `active` は「true の間だけ画面を点けたままにする」入力で、
-    // 見出しの書き方が `active: isPlaying`。@wcstack/state は wc-bindable の inputs の
-    // `attribute` ヒント（{ name: "active", attribute: "active" }）に値を写す。
-    // 4.0.0-rc.6 まで（3.x も）boolean を String(value) で写していたので、false が
-    // active="false" になり、属性の有無で判定する <wcs-wakelock> は true と読んで
-    // wake lock を取っていた。今は真偽属性として写す（false は属性を外す）。
+    // 見出しの書き方が `active: isPlaying`。4.0.0-rc.6 まで（3.x も）@wcstack/state は
+    // wc-bindable の inputs の `attribute` ヒント（{ name: "active", attribute: "active" }）の
+    // 属性にも String(value) で書いていたので、false が active="false" になり、属性の有無で
+    // 判定する <wcs-wakelock> は true と読んで wake lock を取っていた。今の state は
+    // プロパティだけを書き、属性は <wcs-wakelock> の setter が反映する。
     const errors = collectErrors(page);
     await openMaze(page);
     const wakeLog = async () => (await sensorLog(page)).filter((e) => e.startsWith("wakelock"));

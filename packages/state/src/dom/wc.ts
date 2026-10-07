@@ -26,7 +26,8 @@ interface PropertyDecl {
 
 export interface Bindable {
   properties: Map<string, PropertyDecl>;
-  inputs: Map<string, { attribute: string | null }>;
+  /** The settable members. Their `attribute` hint is not used: the element reflects its own attributes. */
+  inputs: Set<string>;
   commands: Set<string>;
 }
 
@@ -38,11 +39,11 @@ export function readBindable(cls: CustomElementConstructor): Bindable | null {
   const decl = (cls as any).wcBindable;
   let out: Bindable | null = null;
   if (decl !== null && typeof decl === "object" && decl.protocol === "wc-bindable" && Number.isInteger(decl.version) && decl.version >= 1) {
-    out = { properties: new Map(), inputs: new Map(), commands: new Set() };
+    out = { properties: new Map(), inputs: new Set(), commands: new Set() };
     for (const p of decl.properties ?? []) {
       out.properties.set(p.name, { event: p.event, getter: typeof p.getter === "function" ? p.getter : null, occurrence: p.semantics === "event" });
     }
-    for (const i of decl.inputs ?? []) out.inputs.set(i.name, { attribute: typeof i.attribute === "string" ? i.attribute : null });
+    for (const i of decl.inputs ?? []) out.inputs.add(i.name);
     for (const c of decl.commands ?? []) if (c !== null && typeof c === "object" && typeof c.name === "string") out.commands.add(c.name);
   }
   bindableByClass.set(cls, out);
@@ -100,50 +101,23 @@ function pending(p: Promise<unknown>, owner: Block | null, fn: () => void): void
   void p.then(() => f?.());
 }
 
-/**
- * Mirrors an input's value to its declared attribute (best effort, never blocks the write). A
- * boolean is an HTML boolean attribute: present (`""`) for true, removed for false — an element
- * reads such an attribute by its presence, so `"false"` would read as true.
- */
-export function mirrorAttribute(el: Element, attribute: string, v: unknown): void {
-  try {
-    if (v == null || v === false) el.removeAttribute(attribute);
-    else if (v === true) el.setAttribute(attribute, "");
-    else {
-      // an object as JSON (what JSON cannot write, as its string)
-      let s = v;
-      if (typeof v === "object") {
-        try {
-          s = JSON.stringify(v);
-        } catch {
-          // String(v)
-        }
-      }
-      el.setAttribute(attribute, String(s));
-    }
-  } catch {
-    // mirroring is best effort
-  }
-}
-
 /** A property binding on a member of a custom element's wc-bindable declaration. */
 export function attachProperty(engine: Engine, spec: Spec, el: Element, name: string, pattern = spec.pattern!,
   row: StateRow | null, owner: Block | null, bd: Bindable): Binding {
   const out = bd.properties.get(name) ?? null;
-  const input = bd.inputs.get(name);
+  const input = bd.inputs.has(name);
   // enableDirectionalInitialSync off (3.x opt-out): no member checks (and no init= / sync=, see
   // plan.ts); state wins every initial sync, output-only included
   const directional = engine.directional;
-  if (directional && out === null && input === undefined) raise(M.MemberUndeclared, [name]);
+  if (directional && out === null && !input) raise(M.MemberUndeclared, [name]);
   // what the member's shape allows: output-only takes element / none, input-only state / none, two-way any
   const init = spec.init;
-  const refused = out === null ? init === "element" || init === "auto" : input === undefined && (init === "state" || init === "auto");
+  const refused = out === null ? init === "element" || init === "auto" : !input && (init === "state" || init === "auto");
   if (refused) raise(M.InitIncompatible, [init, name]);
   if (spec.sync === "connect" && out === null) raise(M.SyncConnectNeedsOutput, [name]);
-  const outputOnly = directional && out !== null && input === undefined;
+  const outputOnly = directional && out !== null && !input;
   const b = new Binding(engine, K_CUSTOM, el, name, pattern, row, owner, spec.filters, undefined);
   b.inFilters = spec.inFilters;
-  b.attribute = input?.attribute ?? null;
   // state → element (every member but an output-only one)
   adopt(engine, b, !outputOnly);
   // element → state (a declared property)
@@ -159,7 +133,7 @@ export function attachProperty(engine: Engine, spec: Spec, el: Element, name: st
       if (b.applying && Object.is(v, b.value)) return; // our own write echoing back
       v = pipe(b.inFilters, v);
       // the element already shows this value: the apply this write causes must not echo it
-      // back (or re-mirror the attribute) to the element it came from
+      // back to the element it came from
       if (b.filters === null) b.value = v;
       engine.write(b.pattern, b.row, v, out.occurrence, true);
     });
@@ -237,7 +211,7 @@ export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: S
 /** `...: path` — one property binding per declared property and input (explicit bindings win). */
 export function attachSpread(engine: Engine, spec: Spec, el: Element, row: StateRow | null, owner: Block | null, bd: Bindable | null): void {
   if (bd === null) noBindable(M.SpreadNoBindable, el, `"...: ${spec.pattern!.path}"`);
-  const names = new Set([...bd.properties.keys(), ...bd.inputs.keys()]);
+  const names = new Set([...bd.properties.keys(), ...bd.inputs]);
   for (const name of names) {
     if (spec.exclude?.includes(name)) continue;
     const p = engine.pattern(`${spec.pattern!.path}.${name}`);

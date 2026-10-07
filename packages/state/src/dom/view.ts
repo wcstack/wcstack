@@ -46,7 +46,7 @@ export function attachEvent(engine: Engine, node: Node, s: Spec, row: StateRow |
 /** Events that bubble: the only ones a delegated listener can see. */
 export const BUBBLING = new Set(["click", "dblclick", "input", "change", "submit", "keydown", "keyup", "mousedown", "mouseup", "pointerdown", "pointerup"]);
 
-import { attachCommand, attachEventToken, attachProperty, attachSpread, mirrorAttribute, whenDefined, type Bindable } from "./wc";
+import { attachCommand, attachEventToken, attachProperty, attachSpread, whenDefined, type Bindable } from "./wc";
 
 export const K_TEXT = 0;
 export const K_PROP = 1;
@@ -183,8 +183,6 @@ export class Binding {
   /** The `if` chain an `if`/`elseif` condition drives. */
   declare readonly chain: IfView | null;
   declare value: unknown;
-  /** Custom element input: the attribute its value is mirrored to. */
-  attribute: string | null = null;
   /** Set while state writes the element (an event it fires synchronously is our own echo). */
   applying = false;
 
@@ -235,7 +233,6 @@ export class Binding {
       } finally {
         this.applying = false;
       }
-      if (this.attribute !== null) mirrorAttribute(n, this.attribute, v);
       return;
     }
     if (this.kind === K_RADIO) n.checked = v !== undefined && this.elementValue() === v;

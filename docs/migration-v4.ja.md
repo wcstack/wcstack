@@ -51,7 +51,7 @@
 - [ ] `defineState` を `@wcstack/state` ではなく `@wcstack/state/define` から import する（§3.7）。
 - [ ] `/core` のページ: `$listKeys` を使うなら `features/list-keys` を入れる（§3.8）。
 - [ ] `/core` のページ: 開発中は `features/diagnostics` を入れる（§3.8）。
-- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、リストの末尾より先の読み（§3.4）。`$watch` のハンドラが呼ばれる場面 — `for:` の無い行の watch、行 getter の watch、配列の丸ごとの代入、数値の添字を持つキー、複数の行が持つ配列（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。カスタム要素の属性に写す boolean（§3.4）。
+- [ ] どこにも報告されない変更を読む: 中身をバインドする要素の子、`<noscript>` / `<iframe>`、`<textarea>` / `<title>` の中のコメント、リストの末尾より先の読み（§3.4）。`$watch` のハンドラが呼ばれる場面 — `for:` の無い行の watch、行 getter の watch、配列の丸ごとの代入、数値の添字を持つキー、複数の行が持つ配列（§3.4）。SSR の出力の後処理（§3.6）。router の outlet に増える子ノード（§3.9）。3.x がカスタム要素の入力に書いていた属性（§3.4）。
 - [ ] `@wcstack/lint` 4.0 を流し、報告を直す（§4）。
 
 > **コメントバインディングは残ります。** `<!--@@: path-->` と `<!--@@wcs-text: path-->` は 4.0 でも使えます。lint が、描画前の表示のちらつき（FOUC）を避けるために `<template>` の外の `{{ }}` の代わりに勧めている書き方で、4.0 は `enableMustache` を切っていてもバインドします。なくなるのは、キーワードを変える `commentTextPrefix` オプションだけです。詳しくは §3.4。
@@ -174,9 +174,9 @@ export default {
 
 ## 2. 4.0 に上げる
 
-- すべての `@wcstack/*` パッケージを同じ 4.0 の版にします。4.0 がリリース候補のあいだは `next` タグから取るか（`npm i @wcstack/state@next @wcstack/router@next …`）、版を名指しします（`4.0.0-rc.7`）。
+- すべての `@wcstack/*` パッケージを同じ 4.0 の版にします。4.0 がリリース候補のあいだは `next` タグから取るか（`npm i @wcstack/state@next @wcstack/router@next …`）、版を名指しします（`4.0.0-rc.8`）。
 - `@wcstack/server` 4.0 と 4.0 のクライアントを一緒にデプロイします（§3.6）。
-- CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。`@4` が解決するのは 4.0.0 の公開後です。範囲の指定はリリース候補を選ばないので、試すときは版を名指しします（`https://esm.run/@wcstack/state@4.0.0-rc.7/auto`）。
+- CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。`@4` が解決するのは 4.0.0 の公開後です。範囲の指定はリリース候補を選ばないので、試すときは版を名指しします（`https://esm.run/@wcstack/state@4.0.0-rc.8/auto`）。
 - `@wcstack/lint` と `@wcstack/typescript` はどの `@wcstack/*` のリリースでも一緒に上がるので、リリース候補から 4.0 の規則を持ちます（`npx @wcstack/lint@next <files>`）。VS Code 拡張は 2.0.0 として 4.0.0 と同時に出します。3.x のプロジェクトでは 3.5 のもの（拡張は 1.21.x）を使い続けてください。4.0 の規則は、3.x が受け付ける書き方も報告します。
 
 **4.0 のエラーの出方。** `diagnostics` 機能があると、メッセージには lint と同じ `[wcs/<code>]` と文が付きます。無いと、番号と値が出ます。
@@ -418,7 +418,7 @@ this.items = items;
 - `$stream` の実行が開始（再開）と同じタスクの中で（同期に、または microtask で）書くもの —— source が出した値、status の `done` / `error` —— は、その実行の連鎖の続きです。別の stream の `args` に届けばその stream は 1 段深く再開し、起こした `$watch` のハンドラも 1 段深く実行されます。そのため source がすぐに値を出すと、互いの値を読む 2 本の stream も、stream の値の `$watch` がその `args` の読むものを進める形も、ページを固めずに打ち切られます。後者は 1 周（ハンドラと再開）が 2 段なので、終わる循環かどうかに関わらず 16 周ほどで止まり、そうした source で回す自動ページ送りもそこで止まります（3.x は終わりの無い循環で報告なしに固まり、終わる循環は最後まで回しました）。後のタスクで届いた値と、それが起こす `$watch` のハンドラは、数え直しです。
 - 行の下への書き込みは、そのオブジェクトを配列に持つ getter（絞り込み・並べ替え）を評価し直します。チェックした行は未完了の絞り込みから抜け、名前を変えた行は並べ替えた表示で動きます。書いたオブジェクトを配列に持たない getter は評価し直しません（配列を読んだのであって、オブジェクトは読んでいない）。どの行にも追従させるには、getter の中で `$getAll("todos.*.done")` を読んでください。3.x はどちらも評価し直さず、書き込みはもう一方の配列の行に届きませんでした（§5）。
 - リストの末尾より先の添字: 書き込み（`this["items.5.v"] = 1`、`$resolve("items.*.v", [5], 1)`）は `no row for "items.*.v"` で throw して何も変えず、読みは `undefined` を返します。3.x は、どちらも `ListIndex not found` で throw していました。
-- `attribute` を宣言したカスタム要素の入力（wc-bindable の `inputs`）に boolean を書くと、HTML の真偽属性として写します: `true` は空の属性（`""`）、`false` は属性を外します。3.x は `"true"` / `"false"` と書き、属性の有無で読む要素（`<wcs-wakelock active>`・`<wcs-camera keep-alive>`・`<wcs-geo watch>`、I/O ノードの `manual`）は `"false"` を真と読んでいました。`[active="false"]` に当てたスタイルや `getAttribute(…) === "false"` を読むコードは、`:not([active])` / `hasAttribute(…)` に直してください。`<wcs-audio>` の `limiter` と `resume-on-gesture`（`"off"` でない限り on）は写さなくなりました。setter が `"on"` / `"off"` を書きます。
+- 状態は、カスタム要素の wc-bindable の入力を**プロパティにだけ**書きます。3.x はその後、入力の `attribute` ヒントが名指す属性にも値を書いていました（`String(value)`、オブジェクトは JSON、`null` は属性を外す）。プロトコルはこのヒントをツールのための宣言と定めていて、プロパティを属性に反映するのは要素の仕事（setter の中）です。binder の書き込みは要素自身の反映とぶつかり、`"false"` と書いた `false` が、属性の有無で読む I/O ノード（`<wcs-wakelock active>`・`<wcs-camera keep-alive>`、I/O ノードの `manual`）を真にし、要素が自分で変えた属性は古いまま残っていました。wcstack の要素はどれも setter で反映するので、変わりません。自分の要素で、setter を持たない、または入力を属性からだけ読む（`attributeChangedCallback`）ものは、反映する setter が要ります。状態が書いた属性の値に当てていた CSS やコード（`[active="false"]`）は、要素自身の書き方を見ることになります。
 
 ### 3.5 ボリュームとマウントしたコンポーネント
 
@@ -537,7 +537,6 @@ import { defineState } from "@wcstack/state/define";
 - `features/diagnostics` を入れない `/core` では、メッセージが番号と値になり（§2）、4.0 で外した 3.x の名前も見つかりません（§3.1）。開発中は `diagnostics` を入れてください。
 - 3.x と同じく、`installFeatures([...])` は `bootstrapState()` の前に呼びます。機能を入れる前に、その機能のキーを宣言した状態が定義されると、`[wcs/feature-not-installed]` で失敗します。
 - `dist/split/chunks/` の下のファイル名に、中身のハッシュが付くようになりました。チャンクのファイルを自分で並べている場合（preload のリンク、import map の `integrity`）は、4.0 のビルドから名前を取り直してください。
-- パッケージにソースマップ（`.map`）は入りません（3.5.4 は各バンドルの隣にありました）。スタックトレースは最小化したバンドルを指します。エンジンの中を追うときは、リポジトリのソース（`packages/state/src`）を使ってください。
 
 4.0 で増えたもの（使わなくてもかまいません）:
 
@@ -594,7 +593,7 @@ import { defineState } from "@wcstack/state/define";
 | `wcs/second-root` | 文書の 2 つ目のルートの `<wcs-state>`（3.x の実行時も拒否していたもの） | error |
 | `wcs/bind-component-source` | `state` / `src` / `json` やインラインのスクリプトを持つ `<wcs-state bind-component>`（3.x の実行時も拒否していたもの） | error |
 
-lint に見えないもの: `bootstrapXxx()` のオプション、委譲されたハンドラのまわりの `#stop` と `stopPropagation()`、移した要素、行を並べ替えるための要素への書き込み、`[data-wcs]` のセレクタ、SSR の出力の後処理、写した真偽属性を `"true"` / `"false"` で読むセレクタやコード、削除された `IStateElement` のメンバーの使用。
+lint に見えないもの: `bootstrapXxx()` のオプション、委譲されたハンドラのまわりの `#stop` と `stopPropagation()`、移した要素、行を並べ替えるための要素への書き込み、`[data-wcs]` のセレクタ、SSR の出力の後処理、状態が入力の属性を書くことに頼っていたカスタム要素、削除された `IStateElement` のメンバーの使用。
 
 ### 4.2 実行時のメッセージ
 
