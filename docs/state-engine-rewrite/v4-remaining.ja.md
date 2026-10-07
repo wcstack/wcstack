@@ -1000,3 +1000,30 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - core.min.js 19,954B（上限 20,480B まで 526B）
   - `index.esm.js` 50,740B、`auto.min.js` 47,792B、split の core 24,156B、scopes 8,878B
 - wcstack-skill の `release/v4.0.0` に、真偽属性の写し方などを入れた（f8dd5f4、push 済み）。main へのマージは 4.0.0 のとき。
+
+### ソースマップを戻す（2026-10-08）
+
+- 4.0 は `.map` を公開しないと決めていた（3.5.4 は 24 個で、展開後の 8.4 MB のうち 6.7 MB）。**決定（2026-10-08、ユーザー）: 戻す。TypeScript のソースをマップに埋め込む形（A）**。比べた形 B（ソースを入れずに `src/` をパッケージに含める）は 1.8 MB で済むが、マップ単体で完結しない。
+- `build.mjs` が esbuild に `sourcemap: 'external'`（`sourcesContent: true`）を渡し、`minify.mjs` の terser が esbuild のマップを読んでつないだマップに置き換え、`//# sourceMappingURL=` を足す。対象は `index.esm.js`・`auto.min.js`・`dist/split` のすべてのファイル（24 個）。`core.min.js`（計測用で公開しない）とツールの入口（`define`・`manifest`・`parser`）には付けない。`package.json` の `files` は変えない（`dist` の下は全部入る）。
+- マップは 2.25 MB、公開する dist は 0.58 → 2.83 MB。ビルドは決定的なまま（2 回の出力が同一）、`sources` は相対パス。
+- 確かめたこと: Node の `--enable-source-maps` でスタックトレースが `src/config.ts:49:7`・`src/messages.ts`・`src/parser/raiseError.ts` と元の関数名で出る（マップが無いと `index.esm.js:1:2238` の `v`）。Chromium が `auto.min.js.map` を読む（`Debugger.scriptParsed` の `sourceMapURL`）。`wcstack/auto` は rollup が state の中のコメントを落とし、自分のマップの行だけを持つ。
+- 各ファイルが `//# sourceMappingURL=` の 1 行（gzip で約 25B）ぶん大きくなり、小さな後付け（`native-commands` 498 → 526B、`split/auto.js` 613 → 636B）が 3% を超えたので、サイズの基準値を取り直した。core.min.js は変わらない（19,954B）。
+- state 3,026 件（カバレッジ 99.79 / 99.29 / 100 / 99.95）、lint・型検査、カップリングの検査、server 100 件、wcstack のスモーク 3 件、vscode-wcs 1,167 件、e2e 289 件。確かめた後で dist は戻した（rc.8 の公開で作り直す）。
+- CHANGELOG の Removed の「source maps」と、移行ガイド §3.8 の「ソースマップは入らない」を外した（3.x と同じく入る）。
+
+### js-framework-benchmark を rc.7 で取り直す（2026-10-08）
+
+- 公式のハーネス（`f2df01a`）で、4.0.0-rc.7・3.5.4・signals・vanillajs を 1 回のセッションで測った。Chrome 154、既定の回数と CPU スロットル。記録と表は [jsfb-official/README.md](../research/state-engine/jsfb-official/README.md) の「4.0.0-rc.7 の計測」、生の値は `results-rc7/`。
+- CPU の加重幾何平均: vanillajs 1.02、**4.0 1.07**、signals 1.22、3.5.4 1.44（rc.2 は 1.02 / 1.06 / 1.20 / 1.44。揺れの範囲で同じ）。script だけの幾何平均は 4.0 2.03、signals 2.99、3.5.4 6.28。メモリの幾何平均は 4.0 1.95、signals 1.41、3.5.4 4.40。
+- rc.2 からはっきり変わったのは clear（vanillajs との比 1.25 → 1.06）で、rc.6 の `Range` を使わない取り外しの効果。create 10k と replace は比が上がったが、vanillajs を超える script の時間はほぼ同じで、差は paint とセッションの速さ。
+- state の README（英日）の Performance、CHANGELOG の Speed を、開発中の値（1.08〜1.11 など、2026-09）からこの値に替えた。§0 の値は作成時の記録として残す。
+
+### 入力の属性ミラーをやめる（2026-10-08）
+
+- rc.7 で、wc-bindable の入力の属性ミラーの boolean を真偽属性として写すようにした（「examples での rc の評価」の 4）。これに対し、書き方は state だけの約束で、プロトコルは値の書き方を定めていない、という評価が出た: `getAttribute(x) === "true"` で読む外部の要素が 4.0 で壊れ、ほかの binder は別の書き方をしうるし、`<wcs-audio>` の既定 on の入力は表せない。
+- 確かめたこと: 公式の SPEC.md / SPEC-extensions.md は、`attribute` ヒントを「マークアップの属性がどの入力プロパティに対応するか」の宣言とし、core は解釈せず、属性の反映はコンポーネントの責任としている。consumer が属性を書くことは書かれていない — ミラーそのものが state 独自の振る舞いだった。ほかの consumer（signals の `bindNode`、`@wc-bindable/*` のアダプタ）はプロパティしか書かない。このリポジトリの I/O ノードの、ヒントを持つ 113 の入力のうち 103 は、setter が自分の書き方で属性を反映しており、ミラーはそれを上書きしていた（rc.6 の wake lock の不具合の原因）。
+- **決定（2026-10-08、ユーザー）: ミラーをやめる**。状態は入力のプロパティだけを書く（`dom/wc.ts` の `mirrorAttribute` と `Binding.attribute` を外し、`Bindable.inputs` は名前の集合にした）。上流の仕様には「consumer はヒントの属性を書かない（SHOULD NOT）、反映はコンポーネントの責任」を足す提案を用意した（[spec-proposal-input-attribute-reflection.md](../spec-proposal-input-attribute-reflection.md)）。4.0.0 の前に提案を出す。
+- `<wcs-audio>` の `limiter` / `resumeOnGesture` のヒントを戻した（rc.7 で外したもの）。setter が `"on"` / `"off"` を反映する。
+- ミラーに隠れていた要素の側の不具合を 1 つ直した: audio のノードのタグの数値のパラメータ（`frequency` など）の setter は、渡された値をそのまま持っていたので、range の input の値（文字列）を束ねると文字列のまま読めた（3.x はミラーが属性を書き、`attributeChangedCallback` が数値にしていた）。文字列は属性と同じく `parseFloat` で読む（synth-playground の e2e で見つけた）。audio 198 件。e2e 289 件 × 3 回、testing 15 件、vscode-wcs 1,167 件、router 822 件、server 100 件と e2e 18 件。core.min.js 19,954 → 19,846B（−108B）。
+- テスト: 3.x の出力と食い違う 6 つの場面（双方向・入力専用・`#init=`・command token・行の中・re-set）を意図した差（`differs`）にした。`coverage-element-wc.test.ts` は「ヒントの属性を書かない」「要素の setter の反映を上書きしない」の 2 件に替えた。state 3,026 件、カバレッジ 99.79 / 99.29 / 100 / 99.95。
+- 文書: state の README（英日）の節を「Inputs and the `attribute` Hint」に書き直し、移行ガイド §3.4・§4.1、CHANGELOG、CLAUDE.md、wcstack-skill を合わせた。

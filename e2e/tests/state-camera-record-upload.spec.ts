@@ -312,11 +312,11 @@ test.describe("examples/state-camera-record-upload（タブの可視性）", () 
   // visibilitychange を自分で dispatch する（headless ではタブを実際に隠せない）。
   test("録画していない間はタブが隠れるとカメラを止め、録画中は止めない（keepAlive: recording）", async ({ page }) => {
     // README の Key Points: `keepAlive: recording` は録画中だけカメラを生かし、それ以外は
-    // 非表示で suspend・復帰で再取得する。@wcstack/state は wc-bindable の inputs の
-    // `attribute` ヒント（{ name: "keepAlive", attribute: "keep-alive" }）に値を写す。
-    // 4.0.0-rc.6 まで（3.x も）boolean を String(value) で写していたので、false が
-    // keep-alive="false" になり、属性の有無で判定する <wcs-camera> は常に true と読んでいた。
-    // 今は真偽属性として写す（false は属性を外す）。
+    // 非表示で suspend・復帰で再取得する。4.0.0-rc.6 まで（3.x も）@wcstack/state は
+    // wc-bindable の inputs の `attribute` ヒント（{ name: "keepAlive", attribute: "keep-alive" }）の
+    // 属性にも String(value) で書いていたので、false が keep-alive="false" になり、属性の
+    // 有無で判定する <wcs-camera> は常に true と読んでいた。今の state はプロパティだけを書き、
+    // 属性は <wcs-camera> の setter が反映する。
     const errors = collectErrors(page);
     await page.addInitScript(() => {
       let state: DocumentVisibilityState = "visible";

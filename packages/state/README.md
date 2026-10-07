@@ -138,7 +138,7 @@ Every row is a section of this README. Unless it appears under [Where the neighb
 | **What makes a getter run** | Getters are lazy. Demand comes from a live binding, a `$watch` or a `$stream` `args` — and from nowhere else | [Demand roots](#demand-roots--what-makes-a-getter-run) |
 | **Modularity** | `mount=` grafts a module onto the one tree; `state: path` mounts a subtree onto a component; the per-property form maps single keys, and a mounted component's getters are exported at its mount point | [Volumes](#mounting-additional-state-mount) · [Whole-object mount](#whole-object-mount-state-path) |
 | **Components** | Two mutually exclusive mechanisms: a JavaScript class with `bind-component`, or HTML-only DCC | [Choosing a mechanism](#choosing-a-component-mechanism) |
-| **Wiring to other elements** | The wc-bindable protocol, spread (`...: obj`), `#init=` / `#sync=` authority, property-to-attribute mirroring | [Binding authority](#binding-authority-init--sync) · [Spread](#spread-binding-) · [Inputs](#inputs-and-attribute-mirror) |
+| **Wiring to other elements** | The wc-bindable protocol, spread (`...: obj`), `#init=` / `#sync=` authority, settable inputs | [Binding authority](#binding-authority-init--sync) · [Spread](#spread-binding-) · [Inputs](#inputs-and-the-attribute-hint) |
 | **Tokens** | Command tokens call an element's methods from state; event tokens carry the element's events back | [Command token](#command-token-method-binding) · [Event token](#event-token-event-binding) |
 | **Time** | `$stream` folds an async source, `$watch` reacts headlessly | [Choosing a time mechanism](#choosing-a-time-mechanism) |
 | **Initialization and lifecycle** | Six ways to supply the state; `$connectedCallback` … `$stateReadyCallback`; `bootstrapState()` / `createState()` | [State initialization](#state-initialization) · [Lifecycle hooks](#lifecycle-hooks) · [API reference](#api-reference) |
@@ -2610,11 +2610,11 @@ Key rules:
 - **Not run on a mounted `bind-component` scope** — the `$watch` declaration of a mounted component is ignored with a one-time `wcs/mount-dollar-declaration` warning that points to the root state; this applies to `$stream` and `$renderedCallback` too. A volume refuses `$watch` ([`mount=`](#mounting-additional-state-mount)): declare it on the root with the full path (`"cart.total"`). A plain (unwired Shadow) child owns an independent tree and can declare it.
 - **SSR does not run watches** — handler side effects would otherwise execute on both server and client.
 
-## Inputs and Attribute Mirror
+## Inputs and the `attribute` Hint
 
-`wcBindable.inputs` declares one-way property inputs (state → element). When an entry sets `attribute`, the framework writes the value to that HTML attribute every time it writes the property, so `attributeChangedCallback`, CSS attribute selectors, and DevTools all stay in sync with the property value.
+`wcBindable.inputs` declares the members state may set (state → element). Under directional initial sync (default on), it is what marks a member as **settable from state**: a member declared only in `properties` becomes output-only and state writes to it are suppressed — see [Binding Authority](#binding-authority-init--sync).
 
-`inputs` is not just attribute-mirroring metadata: under directional initial sync (default on), it is what marks a member as **settable from state**. A settable member declared only in `properties` becomes output-only and state writes to it are suppressed — see [Binding Authority](#binding-authority-init--sync).
+State writes an input's **property**, and only the property. An entry's optional `attribute` names the HTML attribute that corresponds to the property in markup (`<my-chip label-text="…">`); it is a declaration for tooling, as the wc-bindable protocol defines it, and state does not write it. Reflecting a property to its attribute — for `attributeChangedCallback`, CSS attribute selectors or DevTools — is the element's job, in its setter, with the encoding only the element knows (a boolean as a present / absent attribute, `"on"` / `"off"`, JSON …):
 
 ```javascript
 class MyChip extends HTMLElement {
@@ -2622,41 +2622,28 @@ class MyChip extends HTMLElement {
     protocol: "wc-bindable", version: 1,
     properties: [],
     inputs: [
-      { name: "data", attribute: "data" },        // property name === attribute name
-      { name: "labelText", attribute: "label-text" }, // kebab-case mirror
-      { name: "internal" },                       // no mirror, property-only
+      { name: "labelText", attribute: "label-text" }, // markup: <my-chip label-text="…">
+      { name: "selected", attribute: "selected" },    // markup: <my-chip selected>
+      { name: "data" },                               // property only
     ],
   };
+  get labelText() { return this.getAttribute("label-text") ?? ""; }
+  set labelText(v) { v == null ? this.removeAttribute("label-text") : this.setAttribute("label-text", v); }
+  get selected() { return this.hasAttribute("selected"); }
+  set selected(v) { this.toggleAttribute("selected", Boolean(v)); }
 }
 ```
 
 ```html
-<my-chip data-wcs="data: chip.payload; labelText: chip.title"></my-chip>
+<my-chip data-wcs="labelText: chip.title; selected: chip.on; data: chip.payload"></my-chip>
 ```
 
-When state updates the value, both the property and the attribute are written:
-
-```text
-chip.payload = { id: 1 }    → element.data = { id: 1 } and setAttribute("data", '{"id":1}')
-chip.title   = "新着"        → element.labelText = "新着" and setAttribute("label-text", "新着")
-chip.payload = null          → element.data = null and removeAttribute("data")
-```
-
-Attribute value encoding:
-
-| Value type | Mirrored attribute |
-|---|---|
-| `string` / `number` / `bigint` | `String(value)` |
-| `true` | the attribute, empty (`""`) |
-| `false` / `null` / `undefined` | attribute removed |
-| `object` / `array` | `JSON.stringify(value)` (falls back to `String(value)` on circular references) |
+`chip.title = "新着"` writes `element.labelText = "新着"`; the setter puts it on `label-text`. `chip.on = false` writes `element.selected = false`; the setter removes `selected`.
 
 Notes:
 
-- `inputs` entries **without** `attribute` are property-only — the value is written to the property but no attribute is touched
-- A boolean is an HTML boolean attribute, read by its presence (`<wcs-wakelock active>`): `false` removes it. (3.x wrote `"false"`, which such an element reads as true.) An input that is on unless an attribute says `"off"` cannot be mirrored this way: leave its `attribute` out and let its setter reflect it, as `<wcs-audio>`'s `limiter` does
-- Mirror is best-effort: a `setAttribute` failure is swallowed and does not block the property write
-- Native HTML elements ignore `inputs` entirely — the mirror only activates for custom elements that expose `static wcBindable`
+- 3.x also wrote the attribute after the property (`String(value)`, JSON for an object). An element that reflects in its setter is unaffected; one that has no setter and relied on the binder to write its attribute needs a setter now (Migration guide, §3.4).
+- Native HTML elements ignore `inputs` entirely — the declaration only applies to custom elements that expose `static wcBindable`.
 
 ## Choosing a Component Mechanism
 
@@ -3552,7 +3539,15 @@ A mounted component runs an engine of its own, whose mounted keys read and write
 
 ## Performance
 
-The 4.0 engine is a rewrite, and its per-operation numbers have not yet been recorded with the repository's drivers: they are taken with the 4.0 build as part of the release. During development, the official [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) measured the 4.0 engine's CPU-weighted geometric mean at 1.08–1.11, against 1.21–1.25 for [`@wcstack/signals`](../signals/) and 1.51 for `@wcstack/state` 3.3.0 (lower is faster).
+On the official [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark), measured with 4.0.0-rc.7 (Chrome 154, all four in one session, the full `auto.min.js`):
+
+| | vanillajs | 4.0 | [`@wcstack/signals`](../signals/) | 3.5.4 |
+|---|---:|---:|---:|---:|
+| CPU (weighted geometric mean) | 1.02 | **1.07** | 1.22 | 1.44 |
+| Memory (geometric mean) | 1.00 | **1.95** | 1.41 | 4.40 |
+| Run memory, 1,000 rows (MB) | 2.03 | **2.97** | 3.72 | 6.35 |
+
+Lower is better. The first two rows are geometric means of each operation's factor against the fastest of the four, as in the official results table. 4.0's JavaScript time is about a third of 3.5.4's (script-only geometric mean 2.03 against 6.28, vanillajs = 1). The per-operation numbers with the repository's own drivers are taken with the 4.0.0 build as part of the release.
 
 To compare on your own hardware, run the drivers in `e2e/bench/` (`jsfb-verify.mjs`, `memory-profile.mjs`): they measure the standard 1,000 / 10,000-row table page in headless Chromium, both implementations back-to-back in the same session, as medians. Absolute values swing by ±20% with machine state.
 

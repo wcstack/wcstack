@@ -332,7 +332,7 @@ By default, `<wcs-ws>` automatically opens a connection when:
 1. it is connected to the DOM and `url` is set
 2. the `url` attribute changes while connected to the DOM
 
-Each of these opens exactly one connection. Writing the same `url` again (as an attribute or a property — `@wcstack/state` writes the property and then mirrors it onto the attribute) is not a change and does not reconnect; call `connect()` to reconnect to the same URL. When the element is upgraded with a `url` already in the markup, the connection is opened once, when it is connected.
+Each of these opens exactly one connection. Writing the same `url` again (as an attribute or a property) is not a change and does not reconnect; call `connect()` to reconnect to the same URL. When the element is upgraded with a `url` already in the markup, the connection is opened once, when it is connected.
 
 Set the `manual` attribute to disable auto-connect and control the connection explicitly via `connect()` or `trigger`.
 

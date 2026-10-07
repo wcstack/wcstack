@@ -51,7 +51,7 @@ When upgrading to 4.0 (§2, §3):
 - [ ] Import `defineState` from `@wcstack/state/define`, not from `@wcstack/state` (§3.7).
 - [ ] Pages on `/core`: install `features/list-keys` if they use `$listKeys` (§3.8).
 - [ ] Pages on `/core`: install `features/diagnostics` while developing (§3.8).
-- [ ] Read the changes nothing reports: children of content-binding elements, `<noscript>` / `<iframe>`, comments in `<textarea>` / `<title>`, reads past the end of a list (§3.4); when `$watch` handlers fire — row watches without a `for:`, row getter watches, whole-array assignments, numeric-index keys, arrays several rows share (§3.4); post-processing of SSR output (§3.6); the extra child node in the router outlet (§3.9); booleans mirrored to a custom element's attribute (§3.4).
+- [ ] Read the changes nothing reports: children of content-binding elements, `<noscript>` / `<iframe>`, comments in `<textarea>` / `<title>`, reads past the end of a list (§3.4); when `$watch` handlers fire — row watches without a `for:`, row getter watches, whole-array assignments, numeric-index keys, arrays several rows share (§3.4); post-processing of SSR output (§3.6); the extra child node in the router outlet (§3.9); the attributes 3.x wrote for a custom element's inputs (§3.4).
 - [ ] Run `@wcstack/lint` 4.0 and fix what it reports (§4).
 
 > **Comment bindings stay.** `<!--@@: path-->` and `<!--@@wcs-text: path-->` are still supported in 4.0. This is the form the lint recommends instead of `{{ }}` outside a `<template>`, to avoid a flash of unrendered text, and 4.0 binds it even when `enableMustache` is off. Only the `commentTextPrefix` option, which renamed the keyword, is gone. Details in §3.4.
@@ -418,7 +418,7 @@ At page level, an element's children are bound before the element's own bindings
 - What a `$stream` run writes in the same task as its (re)start (synchronously or in a microtask) — a value its source yields, its status `done` / `error` — continues that run's chain: when it reaches another stream's `args`, that stream restarts one link deeper, and a `$watch` handler it fires runs one link deeper. Two streams that read each other's values, and a `$watch` on a stream's value that moves what the stream's `args` reads, are therefore cut instead of freezing the page when the source yields at once — the latter after about 16 laps (the handler and the restart are two links), whether the loop would end or not: auto-paging driven by such a source stops there too (3.x froze on the endless loop, without a report, and completed a finite one). A value from a later task, and the `$watch` handlers it fires, start afresh.
 - A write below a row re-evaluates the getters whose array holds that object (a filter, a sort): a checked row leaves an "active" filter, a renamed row moves in a sorted view. A getter whose array does not hold the object is not re-evaluated — it read the array, not the object; read `$getAll("todos.*.done")` in it to follow every row. 3.x re-evaluated neither, and the write did not reach the other array's rows (§5).
 - An index past the end of a list: a write (`this["items.5.v"] = 1`, `$resolve("items.*.v", [5], 1)`) throws `no row for "items.*.v"` and changes nothing, and a read returns `undefined`. 3.x threw `ListIndex not found` on both.
-- A boolean written to a custom element's input that declares an `attribute` (wc-bindable `inputs`) is mirrored as an HTML boolean attribute: `true` sets it empty (`""`), `false` removes it. 3.x wrote `"true"` / `"false"`, and an element that reads the attribute by its presence (`<wcs-wakelock active>`, `<wcs-camera keep-alive>`, `<wcs-geo watch>`, the `manual` of the I/O nodes) read `"false"` as true. A stylesheet or code that matched `[active="false"]` or read `getAttribute(…) === "false"` needs `:not([active])` / `hasAttribute(…)`. `<wcs-audio>`'s `limiter` and `resume-on-gesture` (on unless `"off"`) are no longer mirrored: their setters write `"on"` / `"off"`.
+- State writes a custom element's wc-bindable input to its **property only**. 3.x then also wrote the value to the attribute the input's `attribute` hint names (`String(value)`, JSON for an object, `null` removed it). The protocol defines that hint as a declaration for tooling — reflecting a property to its attribute is the element's job, in its setter — and the binder's copy fought the element's own: a `false` written as `"false"` turned on the I/O nodes that read the attribute by its presence (`<wcs-wakelock active>`, `<wcs-camera keep-alive>`, the `manual` of the I/O nodes), and an attribute the element changed itself stayed stale. Every wcstack element reflects in its setter, so nothing changes for them. An element of your own that has no setter, or reads the input only from the attribute (`attributeChangedCallback`), needs a setter that reflects it; CSS and code that matched an attribute value state wrote (`[active="false"]`) now see the element's own encoding.
 
 ### 3.5 Volumes and mounted components
 
@@ -537,7 +537,6 @@ A bundler cannot drop the 4.0 engine's modules from the `@wcstack/state` entry, 
 - On `/core` without `features/diagnostics`, a message is a number and the values (§2), and the 3.x names 4.0 removed are not detected (§3.1). Install `diagnostics` while developing.
 - Call `installFeatures([...])` before `bootstrapState()`, as in 3.x. A state that declares a feature's key before that feature is installed fails with `[wcs/feature-not-installed]`.
 - The file names under `dist/split/chunks/` now carry a content hash. If you list chunk files yourself (preload links, `integrity` in an import map), take the names from the 4.0 build.
-- The package ships no source maps (3.5.4 had a `.map` file beside each bundle). A stack trace points into the minified bundles; to step through the engine, use the source in the repository (`packages/state/src`).
 
 New in 4.0, and optional:
 
@@ -594,7 +593,7 @@ Run `npx @wcstack/lint@4 <files>` — `@next` while 4.0 is a release candidate (
 | `wcs/second-root` | a second root `<wcs-state>` in the document (the runtime refused it in 3.x too) | error |
 | `wcs/bind-component-source` | `<wcs-state bind-component>` with `state` / `src` / `json` or an inline script (the runtime refused it in 3.x too) | error |
 
-The lint does not see: `bootstrapXxx()` options, `#stop` and `stopPropagation()` around delegated handlers, moved elements, element writes used to reorder rows, `[data-wcs]` selectors, SSR post-processing, selectors and code that read a mirrored boolean attribute as `"true"` / `"false"`, and uses of the removed `IStateElement` members.
+The lint does not see: `bootstrapXxx()` options, `#stop` and `stopPropagation()` around delegated handlers, moved elements, element writes used to reorder rows, `[data-wcs]` selectors, SSR post-processing, custom elements that relied on state writing their input attributes, and uses of the removed `IStateElement` members.
 
 ### 4.2 Runtime messages
 

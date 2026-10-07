@@ -138,7 +138,7 @@
 | **getter が動く条件** | getter は遅延評価。評価需要は live binding・`$watch`・`$stream` の `args` の 3 箇所からしか生まれない | [評価のきっかけ](#評価のきっかけdemand-root) |
 | **モジュール化** | `mount=` がモジュールを 1 本のツリーに接ぎ木し、`state: path` が部分木をコンポーネントにマウントする。個別対応付けは単一キーを繋ぎ、マウントされたコンポーネントの getter はマウント点で公開される | [ボリューム](#追加の状態をマウントするmount) · [丸ごとマウント](#丸ごとマウントstate-path) |
 | **コンポーネント** | 排他的な 2 方式 — JavaScript クラス＋`bind-component` か、HTML だけの DCC か | [機構の選び方](#コンポーネント機構の選び方) |
-| **他要素との配線** | wc-bindable プロトコル、spread（`...: obj`）、`#init=` / `#sync=` の authority、プロパティ→属性ミラー | [バインディング authority](#バインディング-authority-init--sync) · [Spread](#spread-バインディング-) · [Inputs](#inputs-と属性ミラー) |
+| **他要素との配線** | wc-bindable プロトコル、spread（`...: obj`）、`#init=` / `#sync=` の authority、settable な入力 | [バインディング authority](#バインディング-authority-init--sync) · [Spread](#spread-バインディング-) · [Inputs](#inputs-と-attribute-ヒント) |
 | **トークン** | command token が state から要素のメソッドを呼び、event token が要素のイベントを state へ戻す | [Command token](#command-tokenメソッドバインディング) · [Event token](#event-tokenイベントバインディング) |
 | **時間** | `$stream` が非同期ソースを fold し、`$watch` が headless に反応する | [時間を扱う機構の選び方](#時間を扱う機構の選び方) |
 | **初期化とライフサイクル** | state の供給は 6 通り。`$connectedCallback` 〜 `$stateReadyCallback`、`bootstrapState()` / `createState()` | [状態の初期化](#状態の初期化) · [ライフサイクルフック](#ライフサイクルフック) · [API リファレンス](#api-リファレンス) |
@@ -2600,11 +2600,11 @@ $renderedCallback(paths) {
 - **マウントされた `bind-component` スコープでは実行されません** —— マウントされたコンポーネントの `$watch` 宣言は、ルート state へ誘導する `wcs/mount-dollar-declaration` の警告を 1 回出して無視されます。`$stream` と `$renderedCallback` も同様です。ボリュームは `$watch` を拒否します（[`mount=`](#追加の状態をマウントするmount)）: ルートにフルパス（`"cart.total"`）で宣言してください。plain な（配線なし Shadow の）子は独立ツリーを持つので宣言できます。
 - **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
 
-## Inputs と属性ミラー
+## Inputs と attribute ヒント
 
-`wcBindable.inputs` は一方向のプロパティ入力（state → 要素）を宣言します。エントリに `attribute` を設定すると、フレームワークはプロパティを書き込むたびにその値を当該 HTML 属性へも書き込むため、`attributeChangedCallback`・CSS の属性セレクタ・DevTools がすべてプロパティ値と同期し続けます。
+`wcBindable.inputs` は、状態が書いてよいメンバー（state → 要素）を宣言します。方向認識初期同期（既定 ON）の下では、メンバが **state から settable であること**を示すのが `inputs` です。settable なのに `properties` にしか宣言されていないメンバは output-only 扱いになり、state からの書き込みが抑止されます — [バインディング authority](#バインディング-authority-init--sync) を参照してください。
 
-`inputs` は属性ミラーのためだけのメタデータではありません。方向認識初期同期（既定 ON）の下では、メンバが **state から settable であること**を示すのが `inputs` です。settable なのに `properties` にしか宣言されていないメンバは output-only 扱いになり、state からの書き込みが抑止されます — [バインディング authority](#バインディング-authority-init--sync) を参照してください。
+状態が書くのは入力の**プロパティ**だけです。エントリの省略できる `attribute` は、マークアップでそのプロパティに対応する HTML 属性の名前（`<my-chip label-text="…">`）です。wc-bindable プロトコルの定めるとおりツールのための宣言で、状態はこの属性を書きません。プロパティを属性に反映する（`attributeChangedCallback`・CSS の属性セレクタ・DevTools のため）のは要素の仕事で、setter の中で、要素だけが知っている書き方で行います（boolean は属性の有無、`"on"` / `"off"`、JSON など）:
 
 ```javascript
 class MyChip extends HTMLElement {
@@ -2612,41 +2612,28 @@ class MyChip extends HTMLElement {
     protocol: "wc-bindable", version: 1,
     properties: [],
     inputs: [
-      { name: "data", attribute: "data" },        // プロパティ名 === 属性名
-      { name: "labelText", attribute: "label-text" }, // kebab-case ミラー
-      { name: "internal" },                       // ミラーなし、プロパティのみ
+      { name: "labelText", attribute: "label-text" }, // マークアップ: <my-chip label-text="…">
+      { name: "selected", attribute: "selected" },    // マークアップ: <my-chip selected>
+      { name: "data" },                               // プロパティだけ
     ],
   };
+  get labelText() { return this.getAttribute("label-text") ?? ""; }
+  set labelText(v) { v == null ? this.removeAttribute("label-text") : this.setAttribute("label-text", v); }
+  get selected() { return this.hasAttribute("selected"); }
+  set selected(v) { this.toggleAttribute("selected", Boolean(v)); }
 }
 ```
 
 ```html
-<my-chip data-wcs="data: chip.payload; labelText: chip.title"></my-chip>
+<my-chip data-wcs="labelText: chip.title; selected: chip.on; data: chip.payload"></my-chip>
 ```
 
-state が値を更新すると、プロパティと属性の両方が書き込まれます：
-
-```text
-chip.payload = { id: 1 }    → element.data = { id: 1 } かつ setAttribute("data", '{"id":1}')
-chip.title   = "新着"        → element.labelText = "新着" かつ setAttribute("label-text", "新着")
-chip.payload = null          → element.data = null かつ removeAttribute("data")
-```
-
-属性値のエンコード：
-
-| 値の型 | ミラーされる属性 |
-|---|---|
-| `string` / `number` / `bigint` | `String(value)` |
-| `true` | 空の属性（`""`） |
-| `false` / `null` / `undefined` | 属性を削除 |
-| `object` / `array` | `JSON.stringify(value)`（循環参照時は `String(value)` にフォールバック） |
+`chip.title = "新着"` は `element.labelText = "新着"` を書き、setter が `label-text` に反映します。`chip.on = false` は `element.selected = false` を書き、setter が `selected` を外します。
 
 補足：
 
-- `attribute` を**持たない** `inputs` エントリはプロパティのみ —— 値はプロパティに書き込まれるが属性には触れない
-- boolean は、有無で読む HTML の真偽属性として写す（`<wcs-wakelock active>`）。`false` は属性を外す（3.x は `"false"` と書き、そうした要素はそれを真と読んでいた）。属性が `"off"` でない限り on の入力は、この形では写せない: `attribute` を宣言せず、setter に自分で属性を書かせる（`<wcs-audio>` の `limiter` がそう）
-- ミラーはベストエフォート: `setAttribute` の失敗は握りつぶされ、プロパティ書き込みをブロックしない
-- ネイティブ HTML 要素は `inputs` を完全に無視する —— ミラーは `static wcBindable` を公開するカスタム要素でのみ有効になる
+- 3.x はプロパティの後に属性にも書いていました（`String(value)`、オブジェクトは JSON）。setter で反映する要素は影響を受けません。setter を持たず、binder が属性を書くことに頼っていた要素には、setter が要ります（移行ガイド §3.4）。
+- ネイティブ HTML 要素は `inputs` を完全に無視します —— 宣言が効くのは `static wcBindable` を公開するカスタム要素だけです。
 
 ## コンポーネント機構の選び方
 
@@ -3538,7 +3525,15 @@ bootstrapState(config?, registry?)
 
 ## パフォーマンス
 
-4.0 のエンジンは書き直しで、操作ごとの数値はまだリポジトリのドライバで記録していません: リリースの一部として 4.0 のビルドで計測します。開発中、公式の [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) で計測した 4.0 エンジンの CPU 加重幾何平均は 1.08〜1.11 で、[`@wcstack/signals`](../signals/) は 1.21〜1.25、`@wcstack/state` 3.3.0 は 1.51 でした（小さいほど速い）。
+公式の [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) で、4.0.0-rc.7 を測った値です（Chrome 154、4 つを 1 回のセッションで。4.0 は全部入りの `auto.min.js`）:
+
+| | vanillajs | 4.0 | [`@wcstack/signals`](../signals/) | 3.5.4 |
+|---|---:|---:|---:|---:|
+| CPU（加重幾何平均） | 1.02 | **1.07** | 1.22 | 1.44 |
+| メモリ（幾何平均） | 1.00 | **1.95** | 1.41 | 4.40 |
+| 1,000 行を持ったときのメモリ（MB） | 2.03 | **2.97** | 3.72 | 6.35 |
+
+小さいほど良い値です。上の 2 行は、公式の結果表と同じく、各操作の 4 つの中の最速に対する比の幾何平均です。4.0 の JavaScript の時間は 3.5.4 の約 3 分の 1 です（script だけの幾何平均 2.03 対 6.28、vanillajs を 1）。リポジトリのドライバでの操作ごとの数値は、リリースの一部として 4.0.0 のビルドで計測します。
 
 手元のハードウェアで比べるには、`e2e/bench/` のドライバ（`jsfb-verify.mjs`・`memory-profile.mjs`）を実行してください: 標準の 1,000 / 10,000 行テーブルページを headless Chromium で、両実装を同一セッションで連続して、中央値で計測します。絶対値はマシン状態で ±20% 揺れます。
 
