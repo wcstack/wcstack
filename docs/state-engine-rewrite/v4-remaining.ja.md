@@ -1027,3 +1027,20 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - ミラーに隠れていた要素の側の不具合を 1 つ直した: audio のノードのタグの数値のパラメータ（`frequency` など）の setter は、渡された値をそのまま持っていたので、range の input の値（文字列）を束ねると文字列のまま読めた（3.x はミラーが属性を書き、`attributeChangedCallback` が数値にしていた）。文字列は属性と同じく `parseFloat` で読む（synth-playground の e2e で見つけた）。audio 198 件。e2e 289 件 × 3 回、testing 15 件、vscode-wcs 1,167 件、router 822 件、server 100 件と e2e 18 件。core.min.js 19,954 → 19,846B（−108B）。
 - テスト: 3.x の出力と食い違う 6 つの場面（双方向・入力専用・`#init=`・command token・行の中・re-set）を意図した差（`differs`）にした。`coverage-element-wc.test.ts` は「ヒントの属性を書かない」「要素の setter の反映を上書きしない」の 2 件に替えた。state 3,026 件、カバレッジ 99.79 / 99.29 / 100 / 99.95。
 - 文書: state の README（英日）の節を「Inputs and the `attribute` Hint」に書き直し、移行ガイド §3.4・§4.1、CHANGELOG、CLAUDE.md、wcstack-skill を合わせた。
+
+### 4.0.0-rc.8 の公開（2026-10-08）
+
+- `research/rc8-prep`（ソースマップ、入力の属性ミラーの廃止、rc.7 の js-framework-benchmark）を PR #432 で research に取り込み（5212e0ec）、`prerelease-rc`（run 37694886121、21 分）で公開した。
+- 全 49 パッケージが npm の `next` で 4.0.0-rc.8（`latest` は 3.5.4 のまま）。タグ `v4.0.0-rc.8` と GitHub のプレリリース。bump の commit は 61ebc46a。
+- 取り込みの前に確かめたこと（research への PR では CI が走らないので手元で）: state 3,026 件（カバレッジ 99.79 / 99.29 / 100 / 99.95、lint・型検査、サイズとカップリングの検査）、audio 198 件、router 822 件。src から作った dist の上で e2e 289 件 × 3 回、server 100 件と e2e 18 件、testing 15 件、wcstack のスモーク 3 件、vscode-wcs 1,167 件。ソースマップは 2 回のビルドで同一、Node の `--enable-source-maps` と Chromium で src を指すこと。確かめた後で dist は戻した。
+- 公開の後に確かめたこと:
+  - 全パッケージの dist-tag（公開のログには 49 件すべての `+ name@4.0.0-rc.8` がある。名前順の後ろの 11 件がレジストリに数分遅れて見えた）
+  - server の依存が厳密な `4.0.0-rc.8`
+  - CDN（split の core・auto・features の `scopes` と `native-commands`、`auto.min.js.map`・`index.esm.js.map`・`split/core.js.map`）と `esm.run` の `/auto`（state・router）が 200
+  - jsDelivr の `index.esm.js` がコミットされた rc.8 の dist と同一。`auto.min.js` は `//# sourceMappingURL=auto.min.js.map` で終わる
+  - コミットされた rc.8 の dist のまま（手元でビルドせずに）e2e 289 件がすべて通る
+- ゲートの基準値を rc.8 の dist で取り直した（カップリングは基準値どおり）。
+  - core.min.js 19,846B（上限 20,480B まで 634B）
+  - `index.esm.js` 50,654B、`auto.min.js` 47,715B、split の core 24,502B、scopes 8,909B
+- wcstack-skill の `release/v4.0.0` に、入力をプロパティにだけ書くことを入れた（0cc3464、push 済み）。
+- 残り: 上流の wc-bindable-protocol への提案（[spec-proposal-input-attribute-reflection.md](../spec-proposal-input-attribute-reflection.md)）を 4.0.0 の前に出す。
