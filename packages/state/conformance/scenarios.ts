@@ -623,6 +623,14 @@ export const scenarios: Scenario[] = [
       { label: "状態から書く", run: (a) => a.write((s) => { s.count = 12; }) },
       { label: "null", run: (a) => a.write((s) => { s.count = null; }) },
     ],
+    differs: {
+      reason: "4.0 は wc-bindable の入力を要素のプロパティにだけ書き、`inputs[].attribute` の属性へは写さない（属性の反映は要素の setter の責任で、プロトコルの attribute ヒントはマークアップとツールのための記述。2026-10-08 の決定）。3.3.0 は属性にも写していた（要素の側で値が変わっても、属性は古い値のまま残った）",
+      dom: {
+        initial: '<conf-counter :value="5" id="c"></conf-counter><p>5|</p>',
+        "要素側で値が変わる": '<conf-counter :value="9" id="c"></conf-counter><p>9|</p>',
+        "状態から書く": '<conf-counter :value="12" id="c"></conf-counter><p>12|</p>',
+      },
+    },
   },
   {
     name: "wc-bindable: 出力専用（要素の値が初期値になり、状態からは書かない）",
@@ -641,6 +649,13 @@ export const scenarios: Scenario[] = [
       { label: "書き換え", run: (a) => a.write((s) => { s.title = "bye"; s.payload = [1, 2]; }) },
       { label: "null で属性を外す", run: (a) => a.write((s) => { s.title = null; s.payload = null; }) },
     ],
+    differs: {
+      reason: "4.0 は wc-bindable の入力を要素のプロパティにだけ書き、`inputs[].attribute` の属性へは写さない（属性の反映は要素の setter の責任で、プロトコルの attribute ヒントはマークアップとツールのための記述。2026-10-08 の決定）。3.3.0 は属性にも写していた（要素の側で値が変わっても、属性は古い値のまま残った）",
+      dom: {
+        initial: '<conf-label :data="{&quot;id&quot;:1}" :labelText="hello" id="l"></conf-label>',
+        "書き換え": '<conf-label :data="[1,2]" :labelText="bye" id="l"></conf-label>',
+      },
+    },
   },
   {
     name: "wc-bindable: #init=element と #init=none",
@@ -650,6 +665,12 @@ export const scenarios: Scenario[] = [
       { label: "両方の要素がイベントを出す", run: (a) => { a.call("#o", "emitStatus", "x"); a.call("#c", "userSet", 3); } },
       { label: "状態から count", run: (a) => a.write((s) => { s.count = 40; }) },
     ],
+    differs: {
+      reason: "4.0 は wc-bindable の入力を要素のプロパティにだけ書き、`inputs[].attribute` の属性へは写さない（属性の反映は要素の setter の責任で、プロトコルの attribute ヒントはマークアップとツールのための記述。2026-10-08 の決定）。3.3.0 は属性にも写していた（要素の側で値が変わっても、属性は古い値のまま残った）",
+      dom: {
+        "状態から count": '<conf-output :status="x" id="o"></conf-output><conf-counter :value="40" id="c"></conf-counter><p>x|||40|</p>',
+      },
+    },
   },
   {
     name: "command token: 状態から emit・DOM イベントから emit・複数の要素へ配る",
@@ -663,6 +684,14 @@ export const scenarios: Scenario[] = [
       { label: "状態から inc(2)", run: (a) => a.write((s) => { s.bump(); }) },
       { label: "ボタンから clear", run: (a) => a.click("#btn") },
     ],
+    differs: {
+      reason: "4.0 は wc-bindable の入力を要素のプロパティにだけ書き、`inputs[].attribute` の属性へは写さない（属性の反映は要素の setter の責任で、プロトコルの attribute ヒントはマークアップとツールのための記述。2026-10-08 の決定）。3.3.0 は属性にも写していた（要素の側で値が変わっても、属性は古い値のまま残った）",
+      dom: {
+        initial: '<conf-counter :value="1" id="a"></conf-counter><conf-counter :value="10" id="b"></conf-counter><button id="btn">clear|</button><p>1|||10|</p>',
+        "状態から inc(2)": '<conf-counter :value="3" id="a"></conf-counter><conf-counter :value="12" id="b"></conf-counter><button id="btn">clear|</button><p>3|||12|</p>',
+        "ボタンから clear": '<conf-counter :value="3" id="a"></conf-counter><conf-counter :value="0" id="b"></conf-counter><button id="btn">clear|</button><p>3|||0|</p>',
+      },
+    },
   },
   {
     name: "event token: $on で受ける（行の中は添字付き）",
@@ -780,6 +809,16 @@ export const scenarios: Scenario[] = [
       { label: "1 行目を削除", run: (a) => a.write((s) => { s.rows = s.rows.toSpliced(0, 1); }) },
       { label: "残った行に状態から書く", run: (a) => a.write((s) => { s["rows.0.n"] = 7; }) },
     ],
+    differs: {
+      reason: "4.0 は wc-bindable の入力を要素のプロパティにだけ書き、`inputs[].attribute` の属性へは写さない（属性の反映は要素の setter の責任で、プロトコルの attribute ヒントはマークアップとツールのための記述。2026-10-08 の決定）。3.3.0 は属性にも写していた（要素の側で値が変わっても、属性は古い値のまま残った）",
+      dom: {
+        initial: '<ul><li><conf-counter :value="1"></conf-counter>1|</li><li><conf-counter :value="2"></conf-counter>2|</li></ul>',
+        "状態から rows.1.n": '<ul><li><conf-counter :value="1"></conf-counter>1|</li><li><conf-counter :value="20"></conf-counter>20|</li></ul>',
+        "1 行目の要素側で値が変わる": '<ul><li><conf-counter :value="9"></conf-counter>9|</li><li><conf-counter :value="20"></conf-counter>20|</li></ul>',
+        "1 行目を削除": '<ul><li><conf-counter :value="20"></conf-counter>20|</li></ul>',
+        "残った行に状態から書く": '<ul><li><conf-counter :value="7"></conf-counter>7|</li></ul>',
+      },
+    },
   },
   {
     name: "wc-bindable: 行の中の出力専用メンバー",
@@ -886,6 +925,15 @@ export const scenarios: Scenario[] = [
       { label: "差し替え後に状態から command を出す", run: (a) => a.write((s) => { s.bump(); }) },
       { label: "差し替え後に要素が event token を出す", run: (a) => { a.call("#e", "fire", "z"); } },
     ],
+    differs: {
+      reason: "4.0 は wc-bindable の入力を要素のプロパティにだけ書き、`inputs[].attribute` の属性へは写さない（属性の反映は要素の setter の責任で、プロトコルの attribute ヒントはマークアップとツールのための記述。2026-10-08 の決定）。3.3.0 は属性にも写していた（要素の側で値が変わっても、属性は古い値のまま残った）",
+      dom: {
+        initial: '<conf-counter :value="1" id="c"></conf-counter><conf-notifier :created="null" id="e"></conf-notifier><p>1|||</p>',
+        "差し替え": '<conf-counter :value="10" id="c"></conf-counter><conf-notifier :created="null" id="e"></conf-notifier><p>10|||</p>',
+        "差し替え後に状態から command を出す": '<conf-counter :value="15" id="c"></conf-counter><conf-notifier :created="null" id="e"></conf-notifier><p>15|||</p>',
+        "差し替え後に要素が event token を出す": '<conf-counter :value="15" id="c"></conf-counter><conf-notifier :created="z" id="e"></conf-notifier><p>15|||new:z|</p>',
+      },
+    },
   },
   {
     name: "re-set: 新しい状態に無いパス",

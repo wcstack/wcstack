@@ -91,7 +91,7 @@ function defineCommands(tag: string): void {
 }
 
 describe("wc-bindable の宣言の読み取り", () => {
-  it("properties の無い宣言は入力だけのメンバーとして扱い、状態の値を要素（と属性）に書く", async () => {
+  it("properties の無い宣言は入力だけのメンバーとして扱い、状態の値を要素のプロパティに書く（属性には書かない）", async () => {
     const tag = nextTag();
     customElements.define(tag, class extends HTMLElement {
       static wcBindable = { protocol: "wc-bindable", version: 1, inputs: [{ name: "label", attribute: "label" }] };
@@ -100,10 +100,9 @@ describe("wc-bindable の宣言の読み取り", () => {
     const { root, write } = await page(`<${tag} data-wcs="label: title"></${tag}>`, { title: "hello" });
     const c = root.querySelector(tag) as any;
     expect(c.label).toBe("hello");
-    expect(c.getAttribute("label")).toBe("hello");
     await write((s) => { s.title = "bye"; });
     expect(c.label).toBe("bye");
-    expect(c.getAttribute("label")).toBe("bye");
+    expect(c.hasAttribute("label")).toBe(false);
   });
 
   it("commands の要素のうち name が文字列のものだけがコマンドになる（null・文字列・数値の name は無視）", async () => {
@@ -564,41 +563,44 @@ describe("スプレッド（...:）", () => {
   });
 });
 
-describe("入力の属性ミラー", () => {
-  it("JSON にできないオブジェクト（循環参照）は String(value) で属性に写す", async () => {
+describe("入力の attribute ヒント（属性は要素が反映する）", () => {
+  it("状態は入力のプロパティだけを書き、attribute ヒントの属性には書かない（オブジェクト・文字列・boolean・null）", async () => {
     const tag = nextTag();
     customElements.define(tag, class extends HTMLElement {
-      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [], inputs: [{ name: "data", attribute: "data" }] };
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [], inputs: [{ name: "data", attribute: "data" }, { name: "label", attribute: "label" }, { name: "enabled", attribute: "enabled" }] };
       data: unknown = null;
+      label: unknown = null;
+      enabled: unknown = null;
     });
     const payload: Record<string, unknown> = { id: 1 };
     payload.self = payload;
-    const { root, write } = await page(`<${tag} data-wcs="data: payload"></${tag}>`, { payload });
+    const { root, write } = await page(`<${tag} data-wcs="data: payload; label: text; enabled: flag"></${tag}>`, { payload, text: "true", flag: false });
     const c = root.querySelector(tag) as any;
-    expect(c.data).toBe(payload);
-    expect(c.getAttribute("data")).toBe("[object Object]");
-    await write((s) => { s.payload = { id: 2 }; });
-    expect(c.getAttribute("data")).toBe('{"id":2}');
+    expect([c.data, c.label, c.enabled]).toEqual([payload, "true", false]);
+    expect(["data", "label", "enabled"].map((a) => c.hasAttribute(a))).toEqual([false, false, false]);
+    await write((s) => { s.payload = { id: 2 }; s.text = null; s.flag = true; });
+    expect([c.data, c.label, c.enabled]).toEqual([{ id: 2 }, null, true]);
+    expect(["data", "label", "enabled"].map((a) => c.hasAttribute(a))).toEqual([false, false, false]);
   });
 
-  it("boolean は HTML の真偽属性として写す: true は空の属性、false は属性を外す（\"false\" と書くと、属性の有無で読む要素には真になる）", async () => {
+  it("要素の setter が自分の書き方で反映した属性を、状態は上書きしない（属性の有無で読む boolean・\"on\" / \"off\" で読む既定 on の入力）", async () => {
     const tag = nextTag();
     customElements.define(tag, class extends HTMLElement {
-      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [], inputs: [{ name: "active", attribute: "active" }, { name: "label", attribute: "label" }] };
-      // reads the attribute by presence, as the I/O nodes do (<wcs-wakelock active>)
+      static wcBindable = { protocol: "wc-bindable", version: 1, properties: [], inputs: [{ name: "active", attribute: "active" }, { name: "limiter", attribute: "limiter" }] };
+      // reads the attribute by its presence, as the I/O nodes do (<wcs-wakelock active>)
       get active(): boolean { return this.hasAttribute("active"); }
-      set active(_v: boolean) { /* the mirror writes the attribute */ }
-      label: unknown = null;
+      set active(v: boolean) { this.toggleAttribute("active", v); }
+      // on unless "off", as <wcs-audio limiter> is
+      get limiter(): boolean { return this.getAttribute("limiter") !== "off"; }
+      set limiter(v: boolean) { this.setAttribute("limiter", v ? "on" : "off"); }
     });
     // false on the first apply: the attribute written in the markup goes
-    const { root, write } = await page(`<${tag} active data-wcs="active: on; label: text"></${tag}>`, { on: false, text: "true" });
+    const { root, write } = await page(`<${tag} active data-wcs="active: on; limiter: lim"></${tag}>`, { on: false, lim: false });
     const c = root.querySelector(tag) as any;
-    expect([c.hasAttribute("active"), c.active]).toEqual([false, false]);
-    // a string is written as it is, "true" and "false" included
-    expect(c.getAttribute("label")).toBe("true");
-    await write((s) => { s.on = true; s.text = "false"; });
-    expect([c.getAttribute("active"), c.active, c.getAttribute("label")]).toEqual(["", true, "false"]);
-    await write((s) => { s.on = false; });
-    expect([c.hasAttribute("active"), c.active]).toEqual([false, false]);
+    expect([c.hasAttribute("active"), c.active, c.getAttribute("limiter"), c.limiter]).toEqual([false, false, "off", false]);
+    await write((s) => { s.on = true; s.lim = true; });
+    expect([c.getAttribute("active"), c.active, c.getAttribute("limiter"), c.limiter]).toEqual(["", true, "on", true]);
+    await write((s) => { s.on = false; s.lim = false; });
+    expect([c.hasAttribute("active"), c.active, c.getAttribute("limiter"), c.limiter]).toEqual([false, false, "off", false]);
   });
 });
