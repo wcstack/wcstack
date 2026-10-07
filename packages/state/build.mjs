@@ -16,6 +16,11 @@
 //
 // The runtime bundles and the split build's files then go through terser (minify.mjs).
 //
+// The published runtime files (index.esm.js, auto.min.js, every file of dist/split) carry a source
+// map beside them (`<file>.map`) with the TypeScript sources embedded, so a stack trace and the
+// debugger show src despite the shortened names; 3.x shipped maps too. core.min.js (a measurement,
+// not published) and the tooling entries have none.
+//
 // The tooling entries are built without shortened names: their results (a parsed binding's
 // `statePathName`, the manifest) are read by name outside the bundle.
 import { build } from 'esbuild';
@@ -31,21 +36,23 @@ import { terse } from './minify.mjs';
 export const FEATURES = ['formats', 'diagnostics', 'temporal', 'list-keys', 'scopes', 'recursion', 'ssr', 'devtools', 'native-commands'];
 const base = { bundle: true, format: 'esm', target: 'es2022', legalComments: 'none' };
 const common = { ...base, minify: true, mangleProps: MANGLE_PROPS };
+// esbuild writes the map without the comment; terser chains it and adds `//# sourceMappingURL=`
+const mapped = { ...common, sourcemap: 'external', sourcesContent: true };
 const gz = (file) => gzipSync(readFileSync(file), { level: 9 }).length;
 const report = (file) => console.log(`${file}: ${readFileSync(file).length} B, gzip ${gz(file)} B`);
 
 rmSync('dist', { recursive: true, force: true });
 
 // the runtime entries
-for (const [entry, outfile] of [['src/exports.ts', 'dist/index.esm.js'], ['src/auto.ts', 'dist/auto.min.js'], ['src/core-entry.ts', 'dist/core.min.js']]) {
-  await build({ ...common, entryPoints: [entry], outfile });
+for (const [entry, outfile, options] of [['src/exports.ts', 'dist/index.esm.js', mapped], ['src/auto.ts', 'dist/auto.min.js', mapped], ['src/core-entry.ts', 'dist/core.min.js', common]]) {
+  await build({ ...options, entryPoints: [entry], outfile });
   await terse(outfile);
   report(outfile);
 }
 
 // the split build
 await build({
-  ...common,
+  ...mapped,
   entryPoints: { core: 'src/core.ts', auto: 'src/split-auto.ts', ...Object.fromEntries(FEATURES.map((f) => [`features/${f}`, `src/features/${f}.ts`])) },
   outdir: 'dist/split', splitting: true, chunkNames: 'chunks/[name]-[hash]',
 });
