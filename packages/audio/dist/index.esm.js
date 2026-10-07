@@ -1370,13 +1370,10 @@ class WcsAudio extends HTMLElement {
     static observedAttributes = ["volume", "limiter", "resume-on-gesture"];
     static wcBindable = {
         ...AudioGraphCore.wcBindable,
-        // limiter / resumeOnGesture name no attribute to mirror: they are on unless "off", and
-        // their setters write "on" / "off" themselves. A binder's boolean mirror (true: present,
-        // false: removed) cannot say "off", and would turn a false back on.
         inputs: [
             { name: "volume", attribute: "volume" },
-            { name: "limiter" },
-            { name: "resumeOnGesture" },
+            { name: "limiter", attribute: "limiter" },
+            { name: "resumeOnGesture", attribute: "resume-on-gesture" },
         ],
     };
     /** Marks this element for `findAudioRoot()` (tag names are configurable). */
@@ -1688,7 +1685,8 @@ function defineParamAccessors(ctor) {
             configurable: true,
             enumerable: true,
             get() { return this._num(name, dflt); },
-            set(value) { this._setParam(name, value); },
+            // a string is read as the attribute is (a binding hands over a range input's value as it is)
+            set(value) { this._setParam(name, typeof value === "string" ? parseFloat(value) : value); },
         });
     }
     for (const name of ctor.props) {
