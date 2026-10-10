@@ -184,7 +184,7 @@ router は、スタンプしたルート本文の終わりにコメントの印 
 | `data` | output のみ | 現在のナビゲーションの guard 関数がロードしたデータ — `true` の代わりにオブジェクトを返した guard の返り値（[ルート commit 前のデータロード](#ルート-commit-前のデータロード) 参照）。どの guard もオブジェクトを返さなければ `null`（初期化前も `null`）。クエリのみの遷移（same-match）では前の値を保つ。上の各メンバーと違い **frozen にしない** — guard が返したオブジェクトをそのまま露出する。`wcs-router:data-changed` を発火 |
 | `navigateUrl` | 書き込み面（null-idle transient） | ターゲットを書くと push 遷移。null は待機、文字列の書き込みで `navigate()` が起動し、完了後に自分で null へ戻る。null / `""` の書き込みは no-op |
 | `replaceUrl` | 書き込み面（null-idle transient） | `navigateUrl` と完全同型の契約。ただし現在の履歴エントリを**置き換える** |
-| `basename` | input | `basename` 属性のミラー |
+| `basename` | input | `basename` 属性に書く。Router はこの属性を初期化のときに一度だけ読むので、それより前に書く（後から書いてもルーティングの基準は変わらない。属性を書き換えたときと同じ）。読むと使われている basename を返す（初期化前は `""`）。`null` は属性を外し、`undefined` は最初の属性へ戻す |
 
 コマンド `navigate(path)` / `replace(path)`（いずれも async）も宣言され、command-token プロトコルから起動できる。
 

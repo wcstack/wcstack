@@ -36,6 +36,20 @@ describe("<wcs-wakelock>", () => {
     return el;
   }
 
+  it("active と manual を upgrade 前に代入しても、取り込み直しの途中でロックを取らない", async () => {
+    const el = make();
+    // upgrade 前の代入を再現（accessor を own データプロパティが隠している状態）。
+    // upgradeProperties は宣言順（active → manual）に通し直す
+    Object.defineProperty(el, "active", { value: true, writable: true, configurable: true, enumerable: true });
+    Object.defineProperty(el, "manual", { value: true, writable: true, configurable: true, enumerable: true });
+    document.body.append(el);
+    await flush();
+    expect(el.active).toBe(true);
+    expect(el.manual).toBe(true);
+    expect(wl.request).not.toHaveBeenCalled();
+    expect(el.held).toBe(false);
+  });
+
   it("active 付きで接続するとロックを取得し display:none になる", async () => {
     const el = make({ active: "" });
     document.body.append(el);

@@ -30,6 +30,15 @@ export class WcsDefined extends HTMLElement {
   private _core: DefinedCore;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
+  // True between connectedCallback and disconnectedCallback: an attribute change
+  // then re-watches. Before that (attributes set at upgrade, and the inputs
+  // upgradeProperties replays) the connect-time observe() reads them anyway.
+  private _watching: boolean = false;
+
+  // tags / mode / timeout are live: binders write the property, which the setter
+  // reflects, and a wc-bindable binder (@wcstack/state included) writes it after
+  // the element has upgraded and connected.
+  static get observedAttributes(): string[] { return ["tags", "mode", "timeout"]; }
 
   constructor() {
     super();
@@ -171,15 +180,29 @@ export class WcsDefined extends HTMLElement {
     // Gate on the registry this element's own subtree resolves against: with a
     // scoped registry the same tag name means a different definition per tree,
     // so watching the global one would report readiness this tree cannot use.
+    this._observe();
+    this._watching = true;
+  }
+
+  disconnectedCallback(): void {
+    this._watching = false;
+    this._core.dispose();
+  }
+
+  // A changed tags / mode / timeout on a connected element restarts the watch with
+  // the new configuration (the Core re-watches only after a dispose()).
+  attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {
+    if (!this._watching || oldValue === newValue) return;
+    this._core.dispose();
+    this._observe();
+  }
+
+  private _observe(): void {
     this._connectedCallbackPromise = this._core.observe(
       this._parseTags(),
       this.mode,
       this.timeout,
       getCustomElementRegistry(this),
     );
-  }
-
-  disconnectedCallback(): void {
-    this._core.dispose();
   }
 }

@@ -368,7 +368,7 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
-    it("urlのsetterに続く同じ値の属性ミラー（@wcstack/state の inputs[].attribute）でも1本", () => {
+    it("urlのsetterに続く同じ値の属性ミラー（@wcstack/state 3.x の inputs[].attribute）でも1本", () => {
       const el = createElement();
       document.body.appendChild(el);
       expect(MockWebSocket.instances).toHaveLength(0);

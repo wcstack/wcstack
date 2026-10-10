@@ -147,9 +147,8 @@ export class DefinedCore extends EventTarget {
   /**
    * Start watching `tags` under `mode` with an optional `timeoutMs`. Idempotent
    * while already subscribed — a second call is a no-op that just returns the live
-   * `ready` (the Shell binds at a fixed connect-time config and does not re-watch
-   * on attribute changes in v1). To switch config mid-life, dispose() first, then
-   * observe() again. Returns a promise that resolves once the watch settles, for SSR.
+   * `ready`. To switch config mid-life, dispose() first, then observe() again (the
+   * Shell does so when tags / mode / timeout change on a connected element). Returns a promise that resolves once the watch settles, for SSR.
    */
   observe(
     tags: string[],

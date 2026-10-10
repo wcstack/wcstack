@@ -1,6 +1,7 @@
 import { IWcBindable } from "../types.js";
 import { Debounce } from "./Debounce.js";
 import { makeDebounceProperties } from "../wcBindableFactory.js";
+import { reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-throttle>` — the same {@link DebounceCore} engine biased to throttle:
@@ -17,9 +18,17 @@ export class Throttle extends Debounce {
   };
 
   // leading defaults on for throttle; `no-leading` opts out (symmetric with the
-  // inherited `no-trailing`).
-  protected _resolveLeading(): boolean {
+  // inherited `no-trailing`). Both accessors are overridden: the inherited ones
+  // read and write `leading`, which a throttle does not read, so `leading = false`
+  // through the property (a binding) did nothing and the getter answered false
+  // while leading was on. `null` removes `no-leading` (on, the default) and
+  // `undefined` restores the attribute the element started with.
+  get leading(): boolean {
     return !this.hasAttribute("no-leading");
+  }
+
+  set leading(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "no-leading", value == null ? value : !value);
   }
 
   // Pin maxWait to wait so throttle fires on a steady cadence; an explicit

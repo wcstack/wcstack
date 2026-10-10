@@ -140,6 +140,50 @@ describe("<wcs-defined> Shell", () => {
       el.remove();
     });
 
+    it("接続中に tags / mode / timeout を変えると、その設定で見張り直す", async () => {
+      const a = uniqueTag();
+      const b = uniqueTag();
+      defineTag(a);
+      const el = makeEl({ tags: a });
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(el.defined).toBe(true);
+
+      // state などの binder は upgrade・接続の後にプロパティを書く
+      el.tags = `${a},${b}`;
+      expect(el.total).toBe(2);
+      expect(el.pending).toEqual([b]);
+      expect(el.defined).toBe(false);
+
+      el.mode = "any";
+      await flush();
+      expect(el.defined).toBe(true);
+
+      defineTag(b);
+      await el.connectedCallbackPromise;
+      expect(el.count).toBe(2);
+      el.remove();
+    });
+
+    it("同じ値の書き込みと切断中の変更では見張り直さない", async () => {
+      const a = uniqueTag();
+      const el = makeEl({ tags: a });
+      document.body.appendChild(el);
+      const first = el.connectedCallbackPromise;
+      el.tags = a;
+      expect(el.connectedCallbackPromise).toBe(first);
+      el.remove();
+      const b = uniqueTag();
+      defineTag(b);
+      el.tags = b;
+      expect(el.total).toBe(1);
+      expect(el.pending).toEqual([a]);
+      document.body.appendChild(el); // 再接続で新しい tags を読む
+      await el.connectedCallbackPromise;
+      expect(el.defined).toBe(true);
+      el.remove();
+    });
+
     it("timeout 属性で失敗検出が働く", async () => {
       vi.useFakeTimers();
       const t = uniqueTag();

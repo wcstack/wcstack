@@ -11,6 +11,7 @@ import { normalizeBasename, normalizePathname, sliceBasename } from "../normaliz
 import { parseSearchParams, shallowEqualRecords } from "../searchParams.js";
 import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 import { bindSubtree, getBinder } from "../protocol/binder.js";
 import { inSsr } from "../inSsr.js";
 import { runGuardPhase } from "../showRouteContent.js";
@@ -223,8 +224,18 @@ export class Router extends HTMLElement implements IRouter {
     return this._normalizeBasename(path);
   }
 
+  // 使われている basename（初期化で確定。初期化前は ""）。
   get basename(): string {
     return this._basename;
+  }
+
+  // `basename` は input（wcBindable.inputs）。値は basename 属性に書き、初期化（_initialize）が一度だけ
+  // 読む — 初期化の後に書いても、ルーティングの基準は変わらない（属性を直接書き換えたときと同じ）。
+  // undefined は最初の属性へ戻し、null は属性を外す（wc-bindable の producer ガイダンス P1 / P2）。
+  // setter が無いと、プロパティへの代入（state 4.0 の書き込み、upgrade 前の代入の取り込み直し）が
+  // TypeError になり、後者では connectedCallbackPromise が決着しなくなる。
+  set basename(value: string | null | undefined) {
+    reflectAttribute(this, "basename", value);
   }
 
   private _getOutlet(): IOutlet {

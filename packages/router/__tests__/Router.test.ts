@@ -4,6 +4,7 @@ import { createOutlet } from '../src/components/Outlet';
 import { config, setConfig } from '../src/config';
 import * as applyRouteModule from '../src/applyRoute';
 import * as parseModule from '../src/parse';
+import { upgradeProperties } from '../src/protocol/upgradeProperties';
 import './setup';
 
 describe('Router', () => {
@@ -633,6 +634,46 @@ describe('Router', () => {
       expect(router.outlet).toBeDefined();
       expect(router.template).toBe(template);
       expect(applySpy).toHaveBeenCalled();
+    });
+
+    it('basename プロパティへの代入は属性に書かれ、初期化がそれを読むこと', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.basename = '/app/';
+      expect(router.getAttribute('basename')).toBe('/app/');
+      // 使われている basename は初期化で確定する
+      expect(router.basename).toBe('');
+
+      const template = document.createElement('template');
+      template.innerHTML = '<div>content</div>';
+      router.appendChild(template);
+      vi.spyOn(parseModule, 'parse').mockImplementation(async (r) => {
+        (r as any).routeChildNodes.push({ path: '/' });
+        return document.createDocumentFragment();
+      });
+      vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+
+      await (router as any)._initialize();
+      expect(router.basename).toBe('/app');
+    });
+
+    it('basename の undefined は最初の属性へ戻し、null は属性を外すこと', () => {
+      const host = document.createElement('div');
+      host.innerHTML = '<wcs-router basename="/authored"></wcs-router>';
+      const router = host.firstElementChild as Router;
+      router.basename = '/bound';
+      expect(router.getAttribute('basename')).toBe('/bound');
+      router.basename = undefined;
+      expect(router.getAttribute('basename')).toBe('/authored');
+      router.basename = null;
+      expect(router.hasAttribute('basename')).toBe(false);
+    });
+
+    it('upgrade 前に代入された basename を取り込み直しても TypeError にならないこと', () => {
+      const router = document.createElement('wcs-router') as Router;
+      // upgrade 前の代入を再現（accessor を own データプロパティが隠している状態）
+      Object.defineProperty(router, 'basename', { value: '/early', writable: true, configurable: true, enumerable: true });
+      expect(() => upgradeProperties(router)).not.toThrow();
+      expect(router.getAttribute('basename')).toBe('/early');
     });
 
     it('templateがない場合にエラーになること', async () => {

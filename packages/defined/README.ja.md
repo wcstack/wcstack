@@ -114,7 +114,7 @@ npm install @wcstack/defined
 | `mode`    | string | `"all"`        | `"all"` → 全タグ登録で `defined` が true。`"any"` → 最初の 1 つで true。                      |
 | `timeout` | number | `0`（無制限）  | ミリ秒。経過後、未解決タグは `missing`（ロード失敗）へ移る。`0`/未指定なら無限に待つ。         |
 
-属性は接続時に読み取られ、監視はされません（後述）。
+接続中に属性（またはプロパティ）を変えると、新しい設定で見張り直します（後述）。
 
 **`null` と `undefined`。** 入力（`tags`・`mode`・`timeout`）はどれも属性に対応し、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。
 
@@ -193,7 +193,7 @@ form:has(wcs-defined:state(error)) .banner { display: block; }
 
 - **単調かつ終端的。** `whenDefined()` は揺れ戻りません。一度定義されたタグは定義済みのままです。state は全タグ解決か `timeout` 発火で確定します。timeout 後に *遅れて* 登録されたタグは `missing` から `count` へ昇格します（よって `defined` は後から true に転じうる）。
 - **不正名はソフトに失敗する。** 有効なカスタム要素名でないタグ名（ハイフン無し等）は `whenDefined()` が reject され、`error` に記録され `missing` に入りますが、throw はされません。他の有効タグの監視は継続します（never-throw）。
-- **属性は接続時に読み取られ、監視されない。** `<wcs-defined>` は `observedAttributes` / `attributeChangedCallback` を実装しません。`tags` / `mode` / `timeout` は接続時に固定されます。別のセットを監視するには別の要素を使う（または再接続する）。
+- **`tags` / `mode` / `timeout` を変えると見張り直す。** 接続中の要素で属性 — またはそれを書くプロパティ。バインディングは要素の upgrade と接続の後にプロパティを書く — が変わると、今の見張りを破棄して新しい設定で始め直します。`pending` / `missing` / `count` / `total` / `defined` はやり直しになります（定義済みのタグはすぐに解決する）。同じ値の書き込みでは何もせず、切断中の変更は次の接続で読みます。（4.0.0-rc.8 までは接続時にしか読まなかったので、バインドした `tags` は効きませんでした。）
 - **再接続で再監視。** 要素を取り外して再挿入すると `connectedCallback` が再実行されます。切断時に実行中だった監視は無効化されるため、高速な切断→再接続で stale なコールバックが漏れることはありません。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開するため、サーバレンダラはスナップショット前に readiness を待ちます。**SSR では `timeout` を指定すること** — 指定しないと未解決タグで promise が永久に未解決になります。永久未解決のリスクが最も顕在化するのは「SSR + autoloader 由来タグ + `timeout="0"`（または未指定）」の組合せです。この場合、起こらないかもしれない登録を待ってレンダーがハングします。SSR と autoloader タグを併用するときは必ず有限の `timeout` を付けてください。
 - **配列ゲッターは毎回コピーを返す。** `pending` / `missing`（およびイベント `detail` の配列）は読み取り・dispatch のたびに新しい配列です。外部からの変更で内部状態が壊れない一方、読み取り間で参照が同一であることに依存しないでください（同一性ではなく内容で比較すること）。

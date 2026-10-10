@@ -184,7 +184,7 @@ Define routes and layout slots inside a child template tag. A direct child templ
 | `data` | output only | Data the current navigation's guard functions loaded — a guard that returns an object instead of `true` (see [Loading data before a route commits](#loading-data-before-a-route-commits)). `null` when no guard returned data, including before initialization; a query-only (same-match) navigation keeps the previous value. Unlike the members above it is **not** frozen: it is the object your guard returned, passed through as-is. Fires `wcs-router:data-changed`. |
 | `navigateUrl` | write surface (null-idle transient) | Write a target to push-navigate. `null` means idle; writing a string starts `navigate()`, and the property resets itself to `null` when the navigation finishes. `null` / `""` writes are no-ops. |
 | `replaceUrl` | write surface (null-idle transient) | Identical contract to `navigateUrl`, but the navigation **replaces** the current history entry. |
-| `basename` | input | Mirrors the `basename` attribute. |
+| `basename` | input | Writes the `basename` attribute, which the router reads once, when it initializes: set it before then (a later write does not move the routing base, as with the attribute). Reading it returns the basename in effect (`""` before initialization). `null` removes the attribute; `undefined` restores the attribute the element started with. |
 
 Commands `navigate(path)` and `replace(path)` (both async) are also declared, so they can be invoked through the command-token protocol.
 

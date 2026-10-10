@@ -48,6 +48,13 @@ export class WcsWakeLock extends HTMLElement {
 
   private _core: WakeLockCore;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // True from the end of connectedCallback until disconnectedCallback. On upgrade,
+  // attributeChangedCallback runs for the markup's attributes before
+  // connectedCallback (with isConnected already true), and connectedCallback's
+  // upgradeProperties() replays early inputs in declaration order, so gating on
+  // isConnected started work before `manual` was applied. connectedCallback does
+  // the first run itself, from the values after the replay (as <wcs-ws> does).
+  private _attached = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -191,18 +198,21 @@ export class WcsWakeLock extends HTMLElement {
     if (!this.manual && this.active) {
       void this._core.request();
     }
+    this._attached = true;
   }
 
   disconnectedCallback(): void {
+    this._attached = false;
     this._core.dispose();
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     if (oldValue === newValue) return;
-    // Ignore changes applied before connect (e.g. createElement + setAttribute);
-    // connectedCallback applies the initial state. Acquiring a lock for a detached
-    // element would be wrong.
-    if (!this.isConnected) return;
+    // Ignore changes applied before connectedCallback has run (createElement +
+    // setAttribute, the markup attributes on upgrade, upgradeProperties replaying an
+    // early `active` before `manual`): connectedCallback applies the initial state.
+    // Acquiring a lock for a detached element would be wrong.
+    if (!this._attached) return;
     if (name === "type") {
       this._core.type = this.type;
       return;

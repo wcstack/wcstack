@@ -212,10 +212,8 @@ export class Debounce extends HTMLElement {
     return DEFAULT_WAIT;
   }
 
-  // Resolves the effective `leading` value (not a static default). It is a method
-  // rather than reading `this.leading` directly because <wcs-throttle> inverts the
-  // default (on, opt out via `no-leading`) while sharing the inherited `leading`
-  // attribute setter — overriding the getter alone would desync getter and setter.
+  // The effective `leading` value. <wcs-throttle> overrides the `leading` accessors
+  // (default on, opt out via `no-leading`), so this reads whichever applies.
   protected _resolveLeading(): boolean {
     return this.leading;
   }

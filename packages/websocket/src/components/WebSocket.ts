@@ -261,7 +261,8 @@ export class WcsWebSocket extends HTMLElement {
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     // 再接続するのは url が「変わった」ときだけ。同じ値の書き込み（url の setter 自身の
-    // setAttribute の後に @wcstack/state の inputs[].attribute ミラーが同じ値を書く、など）
+    // setAttribute の後に、属性も書く binder — @wcstack/state 3.x の inputs[].attribute ミラー —
+    // が同じ値を書く、など）
     // は何もしない。connectedCallback より前（upgrade 中・DOM の外）の変化は、
     // connectedCallback がそのときの url で 1 回だけ接続する。
     if (name === "url" && oldValue !== newValue && this._attached && !this.manual && newValue) {
