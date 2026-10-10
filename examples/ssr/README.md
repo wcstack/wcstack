@@ -115,7 +115,7 @@ The server generates HTML like this (4.0; trimmed):
 
 ```html
 <!-- SSR metadata for hydration: the rendering @wcstack/state version, the state, the page-level templates -->
-<wcs-ssr version="4.0.0-rc.8">
+<wcs-ssr version="4.0.0-rc.9">
   <script type="application/json">{"users":[...],"show":true,"counter":0}</script>
   <template id="wcs-t0" data-wcs="for: users">...</template>
   <template id="wcs-t1" data-wcs="if: show">...</template>
