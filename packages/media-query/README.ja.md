@@ -112,6 +112,8 @@ CDN（バージョン固定）: `https://esm.run/@wcstack/media-query@3.5.4/auto
 
 `query` は唯一の入力で、`wcBindable.inputs` に `attribute: "query"` で宣言されています。upgrade 前のプロパティ代入は接続時に取り込まれます（property upgrade）。
 
+**`null` と `undefined`。** 属性に対応する入力（`query`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値 — クエリなし、「何も監視しない」— に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。接続中はどちらも、属性の変更と同じく購読し直します。
+
 ## 観測可能プロパティ（出力）
 
 | プロパティ   | イベント                  | semantics | 説明 |

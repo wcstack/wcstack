@@ -180,6 +180,43 @@ describe("属性アクセサが HTML と相互に反映する", () => {
     el.manual = true; expect(el.manual).toBe(true);
     el.manual = false; expect(el.manual).toBe(false);
   });
+
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML =
+      '<wcs-notify mode="sw" body="b" icon="i" badge="g" tag="t" lang="ja" dir="rtl"' +
+      " require-interaction silent renotify manual></wcs-notify>";
+    const n = host.firstElementChild as WcsNotify;
+    const values = ["mode", "body", "icon", "badge", "tag", "lang", "dir"] as const;
+    const flags = ["requireInteraction", "silent", "renotify", "manual"] as const;
+    n.mode = "constructor";
+    for (const k of values.slice(1)) n[k] = "x";
+    for (const k of flags) n[k] = false;
+    for (const k of [...values, ...flags]) n[k] = undefined;
+    expect(n.mode).toBe("sw");
+    expect([n.body, n.icon, n.badge, n.tag, n.lang, n.dir]).toEqual(["b", "i", "g", "t", "ja", "rtl"]);
+    for (const k of flags) expect(n[k]).toBe(true);
+    for (const k of [...values, ...flags]) n[k] = null;
+    for (const name of [
+      "mode", "body", "icon", "badge", "tag", "lang", "dir",
+      "require-interaction", "silent", "renotify", "manual",
+    ]) {
+      expect(n.hasAttribute(name)).toBe(false);
+    }
+    expect(n.mode).toBe("auto");
+    expect(n.lang).toBe("");
+  });
+
+  it("マークアップに属性が無ければ undefined は属性なしに戻す（文字列 \"undefined\" を書かない）", async () => {
+    await mount();
+    el.mode = "sw";
+    el.lang = "en";
+    el.mode = undefined;
+    el.lang = undefined;
+    expect(el.hasAttribute("mode")).toBe(false);
+    expect(el.mode).toBe("auto");
+    expect(el.hasAttribute("lang")).toBe(false);
+  });
 });
 
 describe("委譲された event-token getter", () => {

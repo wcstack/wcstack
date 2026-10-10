@@ -413,6 +413,21 @@ describe("<wcs-pip>", () => {
       const el = makeEl();
       expect(el.target).toBe("");
     });
+
+    it("undefined はマークアップに書かれた target へ戻し、null は属性を外して既定（最初の子）へ戻す（P1 / P2）", () => {
+      document.body.innerHTML = '<wcs-pip target="#authored"><video></video></wcs-pip>';
+      const el = document.body.firstElementChild as WcsPip;
+      expect(el.style.display).toBe("none");
+      el.target = "self";
+      expect(el.style.display).toBe("block");
+      el.target = undefined;
+      expect(el.getAttribute("target")).toBe("#authored");
+      expect(el.style.display).toBe("none");
+      el.target = null;
+      expect(el.hasAttribute("target")).toBe(false);
+      expect(el.target).toBe("");
+      expect(el.style.display).toBe("contents");
+    });
   });
 
   describe("Core delegated getters", () => {

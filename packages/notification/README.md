@@ -138,6 +138,8 @@ It relays each click over `BroadcastChannel("wcs-notify")` (primary) and `client
 
 `notice` is a reactive input (no attribute): writing a changed value shows a notification. Per-call `notify(title, options)` options win per-key over these attribute defaults.
 
+**`null` and `undefined`.** The inputs backed by an attribute (`mode`, `body`, `icon`, `badge`, `tag`, `lang`, `dir`, `requireInteraction`, `silent`, `renotify`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `notice` ignores both — no value is not a notification.
+
 ## Observable Properties (outputs)
 
 | Property      | Event                          | Description                                                       |

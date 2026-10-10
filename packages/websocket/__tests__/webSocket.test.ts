@@ -153,6 +153,64 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(el.hasAttribute("binary-type")).toBe(false);
       expect(el.binaryType).toBe("blob");
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-ws url="ws://authored" protocols="graphql-ws" auto-reconnect reconnect-interval="500" max-reconnects="2" binary-type="arraybuffer" manual></wcs-ws>';
+      const el = host.firstElementChild as WcsWebSocket;
+      el.url = "ws://bound";
+      el.protocols = "a,b";
+      el.autoReconnect = false;
+      el.reconnectInterval = 100;
+      el.maxReconnects = 9;
+      el.binaryType = "blob";
+      el.manual = false;
+      el.url = undefined;
+      el.protocols = undefined;
+      el.autoReconnect = undefined;
+      el.reconnectInterval = undefined;
+      el.maxReconnects = undefined;
+      el.binaryType = undefined;
+      el.manual = undefined;
+      expect(el.url).toBe("ws://authored");
+      expect(el.protocols).toBe("graphql-ws");
+      expect(el.autoReconnect).toBe(true);
+      expect(el.reconnectInterval).toBe(500);
+      expect(el.maxReconnects).toBe(2);
+      expect(el.binaryType).toBe("arraybuffer");
+      expect(el.manual).toBe(true);
+      el.url = null;
+      el.protocols = null;
+      el.autoReconnect = null;
+      el.reconnectInterval = null;
+      el.maxReconnects = null;
+      el.binaryType = null;
+      el.manual = null;
+      expect(el.hasAttribute("url")).toBe(false);
+      expect(el.hasAttribute("protocols")).toBe(false);
+      expect(el.autoReconnect).toBe(false);
+      expect(el.hasAttribute("reconnect-interval")).toBe(false);
+      expect(el.reconnectInterval).toBe(3000);
+      expect(el.hasAttribute("max-reconnects")).toBe(false);
+      expect(el.maxReconnects).toBe(Infinity);
+      expect(el.binaryType).toBe("blob");
+      expect(el.manual).toBe(false);
+    });
+
+    it("接続中の url に undefined を書くとマークアップの url で張り直し、null では接続しない", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-ws url="ws://localhost:8080"></wcs-ws>';
+      const el = host.firstElementChild as WcsWebSocket;
+      document.body.appendChild(host);
+      el.url = "ws://localhost:9090";
+      el.url = undefined;
+      expect(MockWebSocket.instances.map((ws) => ws.url))
+        .toEqual(["ws://localhost:8080", "ws://localhost:9090", "ws://localhost:8080"]);
+      el.url = null;
+      expect(el.hasAttribute("url")).toBe(false);
+      expect(MockWebSocket.instances).toHaveLength(3);
+      host.remove();
+    });
   });
 
   describe("connectedCallback", () => {

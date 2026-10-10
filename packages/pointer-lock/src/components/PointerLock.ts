@@ -2,6 +2,7 @@ import { IWcBindable } from "../types.js";
 import { PointerLockCore } from "../core/PointerLockCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-pointer-lock target="...">` — declarative Pointer Lock API control.
@@ -108,8 +109,13 @@ export class WcsPointerLock extends HTMLElement {
     return this.getAttribute("target") ?? "";
   }
 
-  set target(value: string) {
-    this.setAttribute("target", value);
+  // Never lets setAttribute stringify null / undefined (an "undefined" selector
+  // resolves nothing): `null` removes the attribute (the first-child default),
+  // `undefined` restores the attribute the element started with (wc-bindable
+  // producer guidance P1; React 19 and a direct assignment deliver it,
+  // @wcstack/state does not).
+  set target(value: string | null | undefined) {
+    reflectAttribute(this, "target", value);
   }
 
   // --- Core delegated getters ---

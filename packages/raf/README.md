@@ -85,6 +85,8 @@ Note: the auto-started `once` frame fires about one frame after connect, exactly
 | `manual`  | boolean | `false` | Do not auto-start on connect; start via command / trigger. |
 | `reduced-motion` | `"run"` \| `"pause"` | `"run"` | Opt-in `prefers-reduced-motion` gate. With `"pause"`, frame delivery stops while the user's OS/browser preference requests reduced motion (surfaced via `suspended`), and resumes with a `dt = 0` boundary when it clears. Unknown values normalize to `"run"`. |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`once`, `repeat`, `manual`, `reducedMotion`) take `null` as "clear": the attribute is removed and the input falls back to its default (`reducedMotion` back to `"run"`). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) The `trigger` property ignores both.
+
 Deliberately absent vs `<wcs-timer>`: `interval` (rAF has no period) and `immediate` (the first frame already **is** the next rendering opportunity — no earlier meaningful moment exists).
 
 ### Why `reduced-motion` defaults to `run`

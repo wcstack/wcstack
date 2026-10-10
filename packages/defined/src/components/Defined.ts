@@ -1,6 +1,7 @@
 import { DefinedMode, IWcBindable } from "../types.js";
 import { DefinedCore } from "../core/DefinedCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 
 // Named WcsDefined (not `Defined`) to match the <wcs-permission> / <wcs-geo>
@@ -86,22 +87,23 @@ export class WcsDefined extends HTMLElement {
     return this.getAttribute("tags") ?? "";
   }
 
-  // `tags` / `mode` setters pass the value straight to setAttribute: their value
-  // type is already `string` / `DefinedMode`, and the matching getter normalizes on
-  // read (mode: anything but "any" → "all"; tags: parsed/trimmed in _parseTags).
-  // Only `timeout` setter coerces (String(value)) because its value type is number,
-  // which setAttribute would otherwise stringify implicitly anyway — the explicit
-  // String() just makes the number→attribute boundary obvious.
-  set tags(value: string) {
-    this.setAttribute("tags", value);
+  // The setters write the attribute through reflectAttribute (String(value)), and
+  // the matching getter normalizes on read (mode: anything but "any" → "all";
+  // tags: parsed/trimmed in _parseTags; timeout: non-negative finite or 0). They
+  // never let setAttribute stringify null / undefined ("undefined" would be watched
+  // as a tag name): `null` removes the attribute (the default), `undefined` restores
+  // the attribute the element started with (wc-bindable producer guidance P1;
+  // React 19 and a direct assignment deliver it, @wcstack/state does not).
+  set tags(value: string | null | undefined) {
+    reflectAttribute(this, "tags", value);
   }
 
   get mode(): DefinedMode {
     return this.getAttribute("mode") === "any" ? "any" : "all";
   }
 
-  set mode(value: DefinedMode) {
-    this.setAttribute("mode", value);
+  set mode(value: DefinedMode | null | undefined) {
+    reflectAttribute(this, "mode", value);
   }
 
   get timeout(): number {
@@ -113,8 +115,8 @@ export class WcsDefined extends HTMLElement {
     return Number.isFinite(ms) && ms > 0 ? ms : 0;
   }
 
-  set timeout(value: number) {
-    this.setAttribute("timeout", String(value));
+  set timeout(value: number | null | undefined) {
+    reflectAttribute(this, "timeout", value);
   }
 
   // --- Core delegated getters ---

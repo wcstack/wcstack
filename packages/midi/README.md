@@ -128,6 +128,8 @@ Subscribing to everything by default matches the expectation for MIDI: a control
 
 Changing `input` / `output` / `channel` on a live element **re-hooks the existing access** — it never re-requests, so there is no second permission prompt.
 
+**`null` and `undefined`.** The inputs backed by an attribute (`input`, `output`, `channel`, `sysex`, `auto`) take `null` as "clear": the attribute is removed and the input falls back to its default — every input port, the first output port, every channel, no SysEx, no request on connect. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`, and `undefined` never flips `sysex` / `auto`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 `devices` publishes every port as `{ id, name, manufacturer, direction, state }`, refreshed on every plug and unplug. Device names are not unique (plug in two of the same model and both report the same name), so prefer ids when a page must target a specific unit.
 
 ## Permission

@@ -117,6 +117,23 @@ describe("Clipboard (Shell)", () => {
     expect(el.hasAttribute("monitor")).toBe(false);
   });
 
+  it("monitor の undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-clipboard monitor></wcs-clipboard>';
+    const el = host.firstElementChild as WcsClipboard;
+    el.monitor = false;
+    el.monitor = undefined;
+    expect(el.monitor).toBe(true);
+    el.monitor = null;
+    expect(el.hasAttribute("monitor")).toBe(false);
+
+    // マークアップに無ければ undefined は属性なしのまま
+    const plain = createClipboard();
+    plain.monitor = true;
+    plain.monitor = undefined;
+    expect(plain.hasAttribute("monitor")).toBe(false);
+  });
+
   it("Core 委譲 getter が初期状態を返す", () => {
     const el = createClipboard();
     document.body.appendChild(el);

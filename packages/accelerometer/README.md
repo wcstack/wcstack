@@ -97,6 +97,8 @@ Every bound state path must be declared up front — binding an undeclared path 
 | ----------- | ------ | ------- | ------------ |
 | `frequency` | number | —       | Sampling rate in Hz, forwarded to the `Accelerometer` constructor. |
 
+**`null` and `undefined`.** The input backed by an attribute (`frequency`) takes `null` as "clear": the attribute is removed and the input falls back to its default (the platform's sampling rate). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 ## Observable Properties (outputs)
 
 | Property | Event                     | Description |

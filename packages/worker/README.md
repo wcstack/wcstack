@@ -115,6 +115,8 @@ The duality in one element: `post` is wired from a command-token, and an incomin
 | `max-restarts`     | number  | `Infinity` | Upper bound on the **cumulative** number of automatic restarts over the worker's lifetime (not consecutive crashes — the counter is not reset by a stable run). Reset only by a fresh `start()` / `src` change. |
 | `restart-interval` | number  | `0`        | Delay in ms before an automatic restart.                                     |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`src`, `type`, `name`, `manual`, `keepAlive`, `restartOnError`, `maxRestarts`, `restartInterval`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A `src` restored this way spawns the restored script like any other `src` change; a cleared `src` spawns nothing (the running worker is left as it is).
+
 ### DOM trigger attributes (autoTrigger, post-on-click)
 
 | Attribute            | On             | Description                                                            |

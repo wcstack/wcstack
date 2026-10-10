@@ -103,6 +103,8 @@ npm install @wcstack/wakelock
 | `type`    | string  | `screen` | ロックの種類。標準化されているのは `screen` のみ。属性は将来互換のために存在。 |
 | `manual`  | boolean | `false`  | `active` が付いていても接続時に自動取得しない。代わりに `request()` / `release()` で駆動する。 |
 
+**`null` と `undefined`。** 属性に対応する入力（`active`・`type`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。接続中の要素では、こうして変わった `active` もほかのトグルと同じく request / release を駆動します。
+
 > **`manual` は接続時のポリシーであり、ライブなスイッチではありません。** 接続 *後* に `manual` 属性を外しても自動取得はしません — `active` をトグルするか `request()` を呼んでください。（ライブな `active` のトグルは `manual` に関係なく常に request/release を駆動します。）
 
 ## 出力ステート

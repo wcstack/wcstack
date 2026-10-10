@@ -4,6 +4,7 @@ import {
 } from "../types.js";
 import { MidiCore } from "../core/MidiCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-midi>` — declarative Web MIDI input/output.
@@ -84,12 +85,19 @@ export class WcsMidi extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  // Input setters never let setAttribute stringify null / undefined (an
+  // "undefined" input / output would select a port named "undefined", i.e. none),
+  // and the booleans do not use toggleAttribute (an `undefined` force flips the
+  // attribute): `null` removes the attribute (the default — every port, every
+  // channel, off), `undefined` restores the attribute the element started with
+  // (wc-bindable producer guidance P1; React 19 and a direct assignment deliver
+  // it, @wcstack/state does not).
 
   get input(): string { return this.getAttribute("input") ?? ""; }
-  set input(value: string) { this.setAttribute("input", value); }
+  set input(value: string | null | undefined) { reflectAttribute(this, "input", value); }
 
   get output(): string { return this.getAttribute("output") ?? ""; }
-  set output(value: string) { this.setAttribute("output", value); }
+  set output(value: string | null | undefined) { reflectAttribute(this, "output", value); }
 
   get channel(): number | null {
     const raw = this.getAttribute("channel");
@@ -98,19 +106,15 @@ export class WcsMidi extends HTMLElement {
     return Number.isFinite(n) ? n : null;
   }
 
-  set channel(value: number | null) {
-    if (value === null) {
-      this.removeAttribute("channel");
-    } else {
-      this.setAttribute("channel", String(value));
-    }
+  set channel(value: number | null | undefined) {
+    reflectAttribute(this, "channel", value);
   }
 
   get sysex(): boolean { return this.hasAttribute("sysex"); }
-  set sysex(value: boolean) { this.toggleAttribute("sysex", value); }
+  set sysex(value: boolean | null | undefined) { reflectBooleanAttribute(this, "sysex", value); }
 
   get auto(): boolean { return this.hasAttribute("auto"); }
-  set auto(value: boolean) { this.toggleAttribute("auto", value); }
+  set auto(value: boolean | null | undefined) { reflectBooleanAttribute(this, "auto", value); }
 
   // --- Core delegated getters ---
 

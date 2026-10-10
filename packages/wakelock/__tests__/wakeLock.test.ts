@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { WcsWakeLock } from "../src/components/WakeLock.js";
+import type { WakeLockKind } from "../src/types.js";
 import {
   installWakeLock,
   installVisibility,
@@ -108,6 +109,43 @@ describe("<wcs-wakelock>", () => {
     expect(el.manual).toBe(true);
     el.manual = false;
     expect(el.manual).toBe(false);
+  });
+
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-wakelock active type="screen" manual></wcs-wakelock>';
+    const el = host.firstElementChild as WcsWakeLock;
+    el.active = false;
+    el.type = "other" as WakeLockKind;
+    el.manual = false;
+    el.active = undefined;
+    el.type = undefined;
+    el.manual = undefined;
+    expect(el.active).toBe(true);
+    expect(el.getAttribute("type")).toBe("screen");
+    expect(el.manual).toBe(true);
+    el.active = null;
+    el.type = null;
+    el.manual = null;
+    expect(el.active).toBe(false);
+    expect(el.hasAttribute("type")).toBe(false);
+    expect(el.type).toBe("screen");
+    expect(el.manual).toBe(false);
+  });
+
+  it("接続中の undefined は文字列 \"undefined\" を書かず、active を戻して再取得する", async () => {
+    const el = make({ active: "" });
+    document.body.append(el);
+    await flush();
+    el.type = undefined;
+    el.active = false;
+    await flush();
+    expect(el.held).toBe(false);
+    el.active = undefined;
+    await flush();
+    expect(el.hasAttribute("type")).toBe(false);
+    expect(el.held).toBe(true);
+    expect(wl.request).toHaveBeenLastCalledWith("screen");
   });
 
   it("接続前の属性変更は無視される（detached でロックを取らない）", async () => {

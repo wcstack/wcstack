@@ -1,7 +1,18 @@
 import { ViewTransitionCore } from "../core/ViewTransitionCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 import { TransitionNaming } from "../protocol/transitionRunner.js";
 import { IWcBindable, ReducedMotionPolicy, TransitionMode } from "../types.js";
+
+/**
+ * A token-list input (`types`, `participants`) as its attribute value: the array
+ * form joins with spaces, which is exactly what the Core splits a string on.
+ * `null` / `undefined` pass through for the reflect helper to interpret.
+ */
+function tokenListAttribute(value: readonly string[] | string | null | undefined): string | null | undefined {
+  if (value == null || typeof value === "string") return value;
+  return [...value].join(" ");
+}
 
 /**
  * `<wcs-view-transition>` — the page's view-transition policy node.
@@ -96,62 +107,79 @@ export class WcsViewTransition extends HTMLElement {
   }
 
   // --- inputs ---
+  //
+  // Every input setter writes its attribute, and the attribute is what reaches
+  // the Core (`_applyAttribute`), so the attribute and the Core never disagree:
+  // a property write survives a reconnect (`_syncAllAttributes` re-applies the
+  // attribute, which now holds it) and outlives an authored attribute when it was
+  // assigned before upgrade. `null` removes the attribute (the documented default)
+  // and `undefined` restores the attribute the element started with (wc-bindable
+  // producer guidance P1; React 19 and a direct assignment deliver it,
+  // @wcstack/state does not). Neither is ever written as "null" / "undefined".
+  // The getters keep returning the Core's parsed value.
 
   get disabled(): boolean {
     return this._core.disabled;
   }
 
-  set disabled(value: boolean) {
-    this._core.disabled = value === true;
-    this.toggleAttribute("disabled", value === true);
+  set disabled(value: boolean | null | undefined) {
+    // Only `true` disables, as before; any other value (null included) enables.
+    reflectBooleanAttribute(this, "disabled", value === undefined ? undefined : value === true);
+    this._applyFromAttribute("disabled");
   }
 
   get mode(): TransitionMode {
     return this._core.mode;
   }
 
-  set mode(value: TransitionMode) {
-    this._core.mode = value;
+  set mode(value: TransitionMode | null | undefined) {
+    reflectAttribute(this, "mode", value);
+    this._applyFromAttribute("mode");
   }
 
   get naming(): TransitionNaming {
     return this._core.naming;
   }
 
-  set naming(value: TransitionNaming) {
-    this._core.naming = value;
+  set naming(value: TransitionNaming | null | undefined) {
+    reflectAttribute(this, "naming", value);
+    this._applyFromAttribute("naming");
   }
 
   get namingLimit(): number {
     return this._core.namingLimit;
   }
 
-  set namingLimit(value: number) {
-    this._core.namingLimit = Number(value);
+  set namingLimit(value: number | null | undefined) {
+    reflectAttribute(this, "naming-limit", value);
+    this._applyFromAttribute("naming-limit");
   }
 
   get reducedMotion(): ReducedMotionPolicy {
     return this._core.reducedMotion;
   }
 
-  set reducedMotion(value: ReducedMotionPolicy) {
-    this._core.reducedMotion = value;
+  set reducedMotion(value: ReducedMotionPolicy | null | undefined) {
+    reflectAttribute(this, "reduced-motion", value);
+    this._applyFromAttribute("reduced-motion");
   }
 
   get types(): readonly string[] {
     return this._core.types;
   }
 
-  set types(value: readonly string[] | string) {
-    this._core.types = value;
+  set types(value: readonly string[] | string | null | undefined) {
+    reflectAttribute(this, "types", tokenListAttribute(value));
+    this._applyFromAttribute("types");
   }
 
   get participants(): readonly string[] {
     return this._core.participants;
   }
 
-  set participants(value: readonly string[] | string) {
-    this._core.participants = value;
+  set participants(value: readonly string[] | string | null | undefined) {
+    reflectAttribute(this, "for", tokenListAttribute(value));
+    this._applyFromAttribute("for");
   }
 
   // --- observable outputs ---
@@ -193,12 +221,13 @@ export class WcsViewTransition extends HTMLElement {
   }
 
   /**
-   * Apply the attributes present at connect time. Absent ones are deliberately
-   * skipped rather than applied as null: a property assigned before upgrade
-   * (Angular's `[prop]`, Lit's `.prop=`, or plain `el.mode = ...`) has just been
-   * replayed through the setter by `upgradeProperties`, and re-applying a missing
-   * attribute would immediately reset it to the default. Removing an attribute
-   * still resets, via `attributeChangedCallback`.
+   * Apply the attributes present at connect time. A property assigned before
+   * upgrade (Angular's `[prop]`, Lit's `.prop=`, or plain `el.mode = ...`) has just
+   * been replayed through the setter by `upgradeProperties`, which wrote it to the
+   * attribute, so what is applied here already includes it. Absent ones are skipped
+   * rather than applied as null, so a value set on the Core directly (`el.core`)
+   * is not reset by a reconnect. Removing an attribute still resets, via
+   * `attributeChangedCallback`.
    */
   private _syncAllAttributes(): void {
     for (const name of WcsViewTransition.observedAttributes) {
@@ -206,6 +235,16 @@ export class WcsViewTransition extends HTMLElement {
       if (value === null) continue;
       this._applyAttribute(name, value);
     }
+  }
+
+  /**
+   * Carry an attribute a setter has just written to the Core. When the write
+   * changed the attribute, `attributeChangedCallback` has already done this;
+   * repeating it is harmless, and it covers a write that left the attribute as it
+   * was while the Core had been set to something else through `el.core`.
+   */
+  private _applyFromAttribute(name: string): void {
+    this._applyAttribute(name, this.getAttribute(name));
   }
 
   private _applyAttribute(name: string, value: string | null): void {

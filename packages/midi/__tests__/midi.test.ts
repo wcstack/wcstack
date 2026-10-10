@@ -116,6 +116,53 @@ describe("<wcs-midi>", () => {
       expect(el.auto).toBe(true);
     });
 
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-midi input="Launchkey" output="Synth" channel="3" sysex auto></wcs-midi>';
+      const el = host.firstElementChild as WcsMidi;
+      el.input = "Other";
+      el.output = "Other";
+      el.channel = 5;
+      el.sysex = false;
+      el.auto = false;
+      el.input = undefined;
+      el.output = undefined;
+      el.channel = undefined;
+      el.sysex = undefined;
+      el.auto = undefined;
+      expect(el.input).toBe("Launchkey");
+      expect(el.output).toBe("Synth");
+      expect(el.channel).toBe(3);
+      expect(el.sysex).toBe(true);
+      expect(el.auto).toBe(true);
+      // toggleAttribute と違い undefined を何度書いても反転しない
+      el.sysex = undefined;
+      el.auto = undefined;
+      expect(el.sysex).toBe(true);
+      expect(el.auto).toBe(true);
+      el.input = null;
+      el.output = null;
+      el.channel = null;
+      el.sysex = null;
+      el.auto = null;
+      for (const name of ["input", "output", "channel", "sysex", "auto"]) {
+        expect(el.hasAttribute(name)).toBe(false);
+      }
+      expect(el.input).toBe("");
+      expect(el.channel).toBeNull();
+    });
+
+    it("属性の無い要素に undefined を書いても属性は付かない（文字列 \"undefined\" にも反転にもならない）", () => {
+      const el = make();
+      el.input = undefined;
+      el.channel = undefined;
+      el.sysex = undefined;
+      el.auto = undefined;
+      for (const name of ["input", "channel", "sysex", "auto"]) {
+        expect(el.hasAttribute(name)).toBe(false);
+      }
+    });
+
     it("sysex 属性は requestMIDIAccess に渡る", async () => {
       const mock = installMidi();
       const el = mount(make({ auto: "", sysex: "" }));

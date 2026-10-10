@@ -494,5 +494,54 @@ describe("<wcs-intersect>", () => {
       expect(el.hasAttribute("once")).toBe(false);
       expect(el.hasAttribute("manual")).toBe(false);
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML =
+        '<wcs-intersect target="self" root="#r" root-margin="10px" threshold="0.5" once manual></wcs-intersect>';
+      const el = host.firstElementChild as WcsIntersect;
+      el.target = "#a";
+      el.root = "#b";
+      el.rootMargin = "20px";
+      el.threshold = "1";
+      el.once = false;
+      el.manual = false;
+      el.target = undefined;
+      el.root = undefined;
+      el.rootMargin = undefined;
+      el.threshold = undefined;
+      el.once = undefined;
+      el.manual = undefined;
+      expect(el.target).toBe("self");
+      expect(el.root).toBe("#r");
+      expect(el.rootMargin).toBe("10px");
+      expect(el.threshold).toBe("0.5");
+      expect(el.once).toBe(true);
+      expect(el.manual).toBe(true);
+      el.target = null;
+      el.root = null;
+      el.rootMargin = null;
+      el.threshold = null;
+      el.once = null;
+      el.manual = null;
+      for (const name of ["target", "root", "root-margin", "threshold", "once", "manual"]) {
+        expect(el.hasAttribute(name)).toBe(false);
+      }
+      expect(el.rootMargin).toBe("0px");
+    });
+
+    it("接続中の target に undefined を書くと文字列 \"undefined\" ではなくマークアップの値へ戻して再 observe する", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-intersect target="self"></wcs-intersect>';
+      document.body.appendChild(host);
+      const el = host.firstElementChild as WcsIntersect;
+      expect(el.observing).toBe(true);
+      el.target = "#missing";
+      expect(el.observing).toBe(false);
+      el.target = undefined;
+      expect(el.getAttribute("target")).toBe("self");
+      expect(el.observing).toBe(true);
+      expect(el.style.display).toBe("block");
+    });
   });
 });

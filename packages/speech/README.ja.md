@@ -82,6 +82,8 @@ export default {
 | `lang` | `lang` | string | — | BCP-47 言語タグ |
 | `manual` | `manual` | boolean | `false` | `say` パスをミュート |
 
+**`null` と `undefined`。** 属性に対応する入力（`rate`・`pitch`・`volume`・`voice`・`lang`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`say` はどちらも無視します（発話するものが無いため）。
+
 ### 観測プロパティ（出力）
 
 | プロパティ | 型 | 意味 |
@@ -140,6 +142,8 @@ export default {
 | `max-restarts` | `maxRestarts` | number | `0` | 自動再開の上限（continuous） |
 | `manual` | `manual` | boolean | `false` | 接続時に自動開始しない |
 | — | `trigger` | boolean | — | モーメンタリ: `false`→`true` で開始 |
+
+**`null` と `undefined`。** `<wcs-speak>` と同じく、属性に対応する入力（`lang`・`continuous`・`interim`・`maxRestarts`・`manual`）は `null` を「クリア」（属性を外し、入力は既定値に戻る）、`undefined` を「値が無い」（属性をマークアップに書かれた値、無ければ属性なしに戻す）として扱い、どちらも文字列 `"null"` / `"undefined"` として書くことはありません。`trigger` はどちらも無視します。
 
 ### 観測プロパティ（出力）
 

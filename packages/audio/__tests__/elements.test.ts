@@ -277,14 +277,54 @@ describe("audio custom elements", () => {
       expect(spy).not.toHaveBeenCalled();
     });
 
-    it("プロパティ代入は属性より優先され、属性書き込みが優先を取り戻す", async () => {
-      await mount(`<wcs-audio><wcs-osc frequency="440"></wcs-osc></wcs-audio>`);
+    it("パラメータのプロパティ代入は属性へ反映され、rebuild せずに Core へ届く（P3）", async () => {
+      const root = await mount(`<wcs-audio><wcs-osc frequency="440"></wcs-osc></wcs-audio>`);
       const osc = document.querySelector("wcs-osc") as WcsOsc & { frequency: number };
+      const rebuild = vi.spyOn(root.audioCore, "setPatch");
+      const before = ctx.created.length;
       osc.frequency = 900;
+      expect(osc.getAttribute("frequency")).toBe("900");
       expect(osc.frequency).toBe(900);
       expect((ctx.nodesOf("osc")[0] as any).frequency.value).toBe(900);
       osc.setAttribute("frequency", "500");
       expect(osc.frequency).toBe(500);
+      await settle();
+      expect(rebuild).not.toHaveBeenCalled();
+      expect(ctx.created.length).toBe(before);
+    });
+
+    it("パラメータ: undefined はマークアップの値へ、null は既定値へ戻し、どちらも音に届く（P1 / P2）", async () => {
+      await mount(`<wcs-audio><wcs-osc frequency="220"></wcs-osc><wcs-gain></wcs-gain></wcs-audio>`);
+      const osc = document.querySelector("wcs-osc") as WcsOsc & { frequency: unknown };
+      const gain = document.querySelector("wcs-gain") as WcsGain & { gain: unknown };
+      const live = ctx.nodesOf("osc")[0] as any;
+      const liveGain = (ctx.nodesOf("gain").at(-1) as any).gain;
+      osc.frequency = 900;
+      gain.gain = 0.2;
+      osc.frequency = undefined;
+      gain.gain = undefined;
+      expect([osc.getAttribute("frequency"), osc.frequency, live.frequency.value]).toEqual(["220", 220, 220]);
+      expect([gain.hasAttribute("gain"), gain.gain, liveGain.value]).toEqual([false, 1, 1]);
+      osc.frequency = 900;
+      osc.frequency = null;
+      expect([osc.hasAttribute("frequency"), osc.frequency, live.frequency.value]).toEqual([false, 440, 440]);
+    });
+
+    it("設定値（type など）: undefined はマークアップの値へ、null は既定値へ戻し、どちらも音に届く（P1 / P2）", async () => {
+      await mount(`<wcs-audio><wcs-osc type="square"></wcs-osc><wcs-biquad></wcs-biquad></wcs-audio>`);
+      const osc = document.querySelector("wcs-osc") as WcsOsc & { type: string | null | undefined };
+      const biquad = document.querySelector("wcs-biquad") as WcsBiquad & { type: string | null | undefined };
+      const live = ctx.nodesOf("osc")[0] as any;
+      const filter = ctx.nodesOf("biquad")[0] as any;
+      osc.type = "sawtooth";
+      biquad.type = "highpass";
+      expect([live.type, filter.type]).toEqual(["sawtooth", "highpass"]);
+      osc.type = undefined;
+      biquad.type = undefined;
+      expect([osc.getAttribute("type"), live.type]).toEqual(["square", "square"]);
+      expect([biquad.hasAttribute("type"), biquad.type, filter.type]).toEqual([false, "", "lowpass"]);
+      osc.type = null;
+      expect([osc.hasAttribute("type"), osc.type, live.type]).toEqual([false, "", "sine"]);
     });
 
     it("数値のパラメータに文字列を代入すると、属性と同じく数値に読む（range の input の値をそのまま束ねた場合）", async () => {
@@ -391,6 +431,42 @@ describe("audio custom elements", () => {
       expect(root.getAttribute("limiter")).toBe("off");
       root.limiter = true;
       expect(root.getAttribute("limiter")).toBe("on");
+    });
+
+    it("undefined はマークアップに書かれた属性へ戻し、Core もそれに従う（P1）", async () => {
+      const root = await mount(`<wcs-audio volume="0.3" limiter="off" resume-on-gesture="off"><wcs-osc></wcs-osc></wcs-audio>`);
+      root.volume = 0.6;
+      root.limiter = true;
+      root.resumeOnGesture = true;
+      root.volume = undefined;
+      root.limiter = undefined;
+      root.resumeOnGesture = undefined;
+      expect([root.getAttribute("volume"), root.getAttribute("limiter"), root.getAttribute("resume-on-gesture")]).toEqual(["0.3", "off", "off"]);
+      expect((ctx.nodesOf("gain")[0] as any).gain.value).toBe(0.3);
+      expect(ctx.snapshot()).toContain("gain#2 -> destination#1");
+      document.dispatchEvent(new Event("pointerdown"));
+      await settle();
+      expect(root.state).toBe("suspended");
+    });
+
+    it("null は属性を外して既定値（volume 0.8・limiter と resume-on-gesture は on）に戻す（P2）", async () => {
+      const root = await mount(`<wcs-audio volume="0.3" limiter="off" resume-on-gesture="off"><wcs-osc></wcs-osc></wcs-audio>`);
+      root.volume = null;
+      root.limiter = null;
+      root.resumeOnGesture = null;
+      expect(["volume", "limiter", "resume-on-gesture"].map((n) => root.hasAttribute(n))).toEqual([false, false, false]);
+      expect([root.volume, root.limiter, root.resumeOnGesture]).toEqual([0.8, true, true]);
+      expect((ctx.nodesOf("gain")[0] as any).gain.value).toBe(0.8);
+      expect(ctx.snapshot()).toContain("gain#2 -> comp#3");
+    });
+
+    it("属性の無いマークアップで undefined を書いてもリミッターは外れない", async () => {
+      const root = await mount(`<wcs-audio><wcs-osc></wcs-osc></wcs-audio>`);
+      root.limiter = false;
+      root.limiter = undefined;
+      expect(root.hasAttribute("limiter")).toBe(false);
+      expect(root.limiter).toBe(true);
+      expect(ctx.snapshot()).toContain("gain#2 -> comp#3");
     });
 
     it("resume-on-gesture の重複バインドは1回で足りる", async () => {

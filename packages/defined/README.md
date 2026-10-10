@@ -116,6 +116,8 @@ See `examples/defined-loader` for the full demo (readiness gate + timeout failur
 
 Attributes are read at connect time, not observed (see Notes).
 
+**`null` and `undefined`.** The inputs (`tags`, `mode`, `timeout`), all backed by an attribute, take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 ## Observable Properties (outputs)
 
 | Property  | Event              | Description                                                                          |

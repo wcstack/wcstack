@@ -89,6 +89,8 @@ npm install @wcstack/idle
 | ----------- | ------ | ------- | ------------ |
 | `threshold` | number | `60000` | Minimum idle time (ms) before `userState` becomes `"idle"`. Not validated — an out-of-range value is left to the browser's own rejection. |
 
+**`null` and `undefined`.** The input backed by an attribute (`threshold`) takes `null` as "clear": the attribute is removed and the input falls back to its default (`60000`). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 ## CSS styling with `:state()`
 
 `<wcs-idle>` reflects two boolean output states onto its

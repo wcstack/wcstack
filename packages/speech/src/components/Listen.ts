@@ -6,6 +6,7 @@ import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { ListenCore } from "../core/ListenCore.js";
 import { registerListenAutoTrigger } from "../listenAutoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-listen>` — declarative speech-to-text. Wraps ListenCore and exposes the
@@ -104,41 +105,34 @@ export class WcsListen extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Setters never let setAttribute stringify null / undefined: `null` removes
+  // the attribute (the default), `undefined` restores the attribute the element
+  // started with (wc-bindable producer guidance P1; React 19 and a direct
+  // assignment deliver it, @wcstack/state does not).
 
   get lang(): string {
     return this.getAttribute("lang") ?? "";
   }
 
-  set lang(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("lang");
-    } else {
-      this.setAttribute("lang", String(value));
-    }
+  set lang(value: string | null | undefined) {
+    reflectAttribute(this, "lang", value);
   }
 
   get continuous(): boolean {
     return this.hasAttribute("continuous");
   }
 
-  set continuous(value: boolean) {
-    if (value) {
-      this.setAttribute("continuous", "");
-    } else {
-      this.removeAttribute("continuous");
-    }
+  set continuous(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "continuous", value);
   }
 
   get interim(): boolean {
     return this.hasAttribute("interim");
   }
 
-  set interim(value: boolean) {
-    if (value) {
-      this.setAttribute("interim", "");
-    } else {
-      this.removeAttribute("interim");
-    }
+  set interim(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "interim", value);
   }
 
   get maxRestarts(): number {
@@ -151,20 +145,16 @@ export class WcsListen extends HTMLElement {
     return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
   }
 
-  set maxRestarts(value: number) {
-    this.setAttribute("max-restarts", String(value));
+  set maxRestarts(value: number | null | undefined) {
+    reflectAttribute(this, "max-restarts", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---

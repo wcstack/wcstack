@@ -6,6 +6,7 @@ import { getConfig } from "../config.js";
 import { compilePatch } from "../patch/compilePatch.js";
 import { applyNodeStyles } from "../patch/nodeStyles.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 /** Tag names of every element whose presence changes the graph's topology. */
 const AUDIO_TAG_RE = /^(WCS-OSC|WCS-NOISE|WCS-BIQUAD|WCS-GAIN|WCS-DELAY|WCS-SHAPER|WCS-ENV|WCS-LFO|WCS-ANALYSER|WCS-VOICE)$/;
@@ -108,6 +109,14 @@ export class WcsAudio extends HTMLElement {
   }
 
   // --- Attributes ---
+  //
+  // The setters write the attribute only; attributeChangedCallback carries the
+  // change to the Core. `null` removes the attribute (the default: volume 0.8,
+  // limiter and resume-on-gesture on), `undefined` restores the attribute the
+  // element started with (wc-bindable producer guidance P1; React 19 and a
+  // direct assignment deliver it, @wcstack/state does not). Neither is ever
+  // written as "null" / "undefined", and neither turns the ear-protection
+  // limiter off.
 
   get volume(): number {
     const raw = this.getAttribute("volume");
@@ -115,15 +124,19 @@ export class WcsAudio extends HTMLElement {
     return Number.isFinite(n) ? n : 0.8;
   }
 
-  set volume(value: number) { this.setAttribute("volume", String(value)); }
+  set volume(value: number | null | undefined) { reflectAttribute(this, "volume", value); }
 
   /** Ear-protection limiter, on unless explicitly turned off. */
   get limiter(): boolean { return this.getAttribute("limiter") !== "off"; }
-  set limiter(value: boolean) { this.setAttribute("limiter", value ? "on" : "off"); }
+  set limiter(value: boolean | null | undefined) {
+    reflectAttribute(this, "limiter", value == null ? value : value ? "on" : "off");
+  }
 
   /** Resume the context on the first user gesture. On unless turned off. */
   get resumeOnGesture(): boolean { return this.getAttribute("resume-on-gesture") !== "off"; }
-  set resumeOnGesture(value: boolean) { this.setAttribute("resume-on-gesture", value ? "on" : "off"); }
+  set resumeOnGesture(value: boolean | null | undefined) {
+    reflectAttribute(this, "resume-on-gesture", value == null ? value : value ? "on" : "off");
+  }
 
   // --- Core delegated getters ---
 

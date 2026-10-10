@@ -112,12 +112,31 @@ describe("Gyroscope (Shell)", () => {
     expect(el.frequency).toBeNull();
   });
 
-  it("frequency に null/undefined を set すると属性が除去される", () => {
+  it("frequency に null を set すると属性が除去される", () => {
     const el = createGyroscope();
     el.frequency = 30;
     expect(el.getAttribute("frequency")).toBe("30");
     el.frequency = null;
     expect(el.hasAttribute("frequency")).toBe(false);
+  });
+
+  it("frequency に undefined を set するとマークアップに書かれた属性へ戻る（P1）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-gyroscope frequency="10"></wcs-gyroscope>';
+    const el = host.firstElementChild as WcsGyroscope;
+    el.frequency = 60;
+    el.frequency = undefined;
+    expect(el.getAttribute("frequency")).toBe("10");
+    expect(el.frequency).toBe(10);
+    el.frequency = null;
+    expect(el.hasAttribute("frequency")).toBe(false);
+    expect(el.frequency).toBeNull();
+
+    // マークアップに属性が無ければ、undefined は属性なし（プラットフォーム既定）に戻す
+    const bare = createGyroscope();
+    bare.frequency = 30;
+    bare.frequency = undefined;
+    expect(bare.hasAttribute("frequency")).toBe(false);
   });
 
   it("reading イベントで x/y/z が要素の値に伝わる", () => {

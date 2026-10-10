@@ -146,6 +146,58 @@ describe("WcsUpload コンポーネント", () => {
       el.manual = false;
       expect(el.manual).toBe(false);
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-upload url="/authored" method="put" field-name="doc" max-size="100" accept=".pdf" multiple manual></wcs-upload>';
+      const el = host.firstElementChild as WcsUpload;
+      el.url = "/bound";
+      el.method = "PATCH";
+      el.fieldName = "other";
+      el.maxSize = 5;
+      el.accept = "image/*";
+      el.multiple = false;
+      el.manual = false;
+      el.url = undefined;
+      el.method = undefined;
+      el.fieldName = undefined;
+      el.maxSize = undefined;
+      el.accept = undefined;
+      el.multiple = undefined;
+      el.manual = undefined;
+      expect(el.url).toBe("/authored");
+      expect(el.method).toBe("PUT");
+      expect(el.fieldName).toBe("doc");
+      expect(el.maxSize).toBe(100);
+      expect(el.accept).toBe(".pdf");
+      expect(el.multiple).toBe(true);
+      expect(el.manual).toBe(true);
+      el.url = null;
+      el.method = null;
+      el.fieldName = null;
+      el.maxSize = null;
+      el.accept = null;
+      el.multiple = null;
+      el.manual = null;
+      // 文字列 "null" ではなく属性なし（既定値）
+      for (const name of ["url", "method", "field-name", "max-size", "accept", "multiple", "manual"]) {
+        expect(el.hasAttribute(name)).toBe(false);
+      }
+      expect(el.url).toBe("");
+      expect(el.method).toBe("POST");
+      expect(el.fieldName).toBe("file");
+      expect(el.maxSize).toBe(Infinity);
+      expect(el.accept).toBe("");
+      expect(el.multiple).toBe(false);
+      expect(el.manual).toBe(false);
+    });
+
+    it("マークアップに無い url の undefined は文字列 \"undefined\" を書かず属性なしにする", () => {
+      const el = createElement();
+      el.url = undefined;
+      expect(el.hasAttribute("url")).toBe(false);
+      expect(el.url).toBe("");
+    });
   });
 
   describe("connectedCallback", () => {
@@ -230,6 +282,23 @@ describe("WcsUpload コンポーネント", () => {
       el.files = files;
       expect(events).toHaveLength(1);
       expect(events[0]).toBe(files);
+      el.remove();
+    });
+
+    it("files に undefined を代入すると null（初期値）として扱い、files-changed も null を載せる", () => {
+      const el = createElement({ url: "/api/upload", manual: "" });
+      document.body.appendChild(el);
+
+      const events: any[] = [];
+      el.addEventListener("wcs-upload:files-changed", (e) => {
+        events.push((e as CustomEvent).detail);
+      });
+
+      el.files = [createMockFile("test.txt", 100, "text/plain")];
+      el.files = undefined;
+      expect(el.files).toBeNull();
+      expect(events).toHaveLength(2);
+      expect(events[1]).toBeNull();
       el.remove();
     });
 

@@ -107,6 +107,8 @@ When `<wcs-timer>` is connected to the DOM, it automatically starts an interval 
 | `immediate` | boolean | `false` | Fire one tick at start instead of waiting the first interval.      |
 | `manual`    | boolean | `false` | Do not auto-start on connect; start via command / trigger.        |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`interval`, `once`, `repeat`, `immediate`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A running timer swaps to the restored or default `interval` in place, like any other `interval` change; `trigger` ignores both.
+
 ## Observable Properties (outputs)
 
 | Property  | Event                       | Description                                            |

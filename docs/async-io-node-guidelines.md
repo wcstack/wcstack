@@ -315,8 +315,8 @@ A composite state (permission's four values, say) fires a single event and expos
 
 ### 4.3 Kinds of input
 
-- **Attribute-linked inputs** (declarative config, e.g. `mode` / `body`): `get` reads via `getAttribute`, `set` reflects the attribute. Idempotent
-- **Reactive command-properties** (a dynamic value causing a side effect, e.g. `notice` / `say`): no attribute; the setter same-value guards and then calls a Core method. `undefined` / `null` are normalized to a no-op (the binder contracts not to write undefined, but a direct assignment is possible). Make it suppressible with the `manual` attribute
+- **Attribute-linked inputs** (declarative config, e.g. `mode` / `body`): `get` reads via `getAttribute`, `set` reflects the attribute in the element's own encoding (no binder writes it: wc-bindable applier profile A1, producer guidance P3). Idempotent. `undefined` means "no value supplied" and restores the attribute the element started with (the authored markup, or no attribute → the documented default); `null` clears it (no attribute → the documented default). Neither reaches the attribute as the string `"undefined"` / `"null"` (P1 / P2; `src/protocol/inputAttribute.ts`)
+- **Reactive command-properties** (a dynamic value causing a side effect, e.g. `notice` / `say`): no attribute; the setter same-value guards and then calls a Core method. `undefined` / `null` are normalized to a no-op: `@wcstack/state` never writes `undefined`, but React 19 (a prop removed after it had a value), `@wcstack/signals`' `bindInput` and a direct assignment do. Make it suppressible with the `manual` attribute
 
 ### 4.4 SSR
 

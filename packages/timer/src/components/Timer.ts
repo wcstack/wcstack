@@ -3,6 +3,7 @@ import { IWcBindable } from "../types.js";
 import { TimerCore } from "../core/TimerCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 export class Timer extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -93,6 +94,13 @@ export class Timer extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Input setters never let setAttribute stringify null / undefined: `null`
+  // removes the attribute (the documented default), `undefined` restores the
+  // attribute the element started with (wc-bindable producer guidance P1;
+  // React 19 and a direct assignment deliver it, @wcstack/state does not).
+  // An `interval` write still goes through attributeChangedCallback, so a
+  // running timer swaps to the restored / default period in place.
 
   get interval(): number {
     const attr = this.getAttribute("interval");
@@ -106,20 +114,16 @@ export class Timer extends HTMLElement {
     return (Number.isFinite(parsed) && parsed > 0) ? parsed : 1000;
   }
 
-  set interval(value: number) {
-    this.setAttribute("interval", String(value));
+  set interval(value: number | null | undefined) {
+    reflectAttribute(this, "interval", value);
   }
 
   get once(): boolean {
     return this.hasAttribute("once");
   }
 
-  set once(value: boolean) {
-    if (value) {
-      this.setAttribute("once", "");
-    } else {
-      this.removeAttribute("once");
-    }
+  set once(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "once", value);
   }
 
   get repeat(): number {
@@ -134,32 +138,24 @@ export class Timer extends HTMLElement {
     return (Number.isFinite(parsed) && parsed > 0) ? parsed : 0;
   }
 
-  set repeat(value: number) {
-    this.setAttribute("repeat", String(value));
+  set repeat(value: number | null | undefined) {
+    reflectAttribute(this, "repeat", value);
   }
 
   get immediate(): boolean {
     return this.hasAttribute("immediate");
   }
 
-  set immediate(value: boolean) {
-    if (value) {
-      this.setAttribute("immediate", "");
-    } else {
-      this.removeAttribute("immediate");
-    }
+  set immediate(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "immediate", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---

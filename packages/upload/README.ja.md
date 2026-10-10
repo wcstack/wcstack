@@ -207,6 +207,8 @@ npm install @wcstack/upload
 | `errorInfo` | `WcsIoErrorInfo \| null` | `null` | serializable な失敗 taxonomy（安定 `code` / `phase` / `recoverable`）。追加的で `error` は不変。`code` は `capability-missing` / `invalid-argument` / `network` / `http-error`。`abort()` は失敗ではない（`errorInfo` を立てない） |
 | `promise` | `Promise<any>` | resolved `null` | 現在のアップロード Promise |
 
+**`null` と `undefined`。** 属性に対応する入力（`url`・`method`・`fieldName`・`multiple`・`maxSize`・`accept`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`files` はどちらも「ファイルなし」（初期値の `null`。`wcs-upload:files-changed` も `null` を載せます）、`trigger` はどちらも無視します。
+
 ### メソッド
 
 #### `upload()`

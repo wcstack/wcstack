@@ -1,6 +1,7 @@
 import { AudioNodeKind } from "../types.js";
 import { STRUCTURAL_ATTRIBUTES } from "../patch/compilePatch.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 let nextKey = 0;
 
@@ -9,7 +10,7 @@ export interface AudioRootLike extends HTMLElement {
   readonly isAudioRoot: true;
   readonly audioCore: {
     setParam(key: string, name: string, value: number): void;
-    setProp(key: string, name: string, value: string): void;
+    setProp(key: string, name: string, value: string | null): void;
     sample(key: string, mode?: "wave" | "fft"): Uint8Array | null;
   } | null;
   requestRebuild(): void;
@@ -33,7 +34,7 @@ export function findAudioRoot(start: Element): AudioRootLike | null {
  * Base for every audio node tag.
  *
  * These elements are **descriptors and nothing else**. They hold a key, expose
- * their attributes as patch values, and forward live numeric changes to the
+ * their attributes as patch values, and forward live attribute changes to the
  * root's Core. They never hold an `AudioNode` — which is what makes ADR-14 G2
  * ("handles do not cross the protocol boundary") a structural property of the
  * package rather than a rule someone has to remember.
@@ -62,9 +63,6 @@ export class AudioNodeShell extends HTMLElement {
   /** Stable identity for this element across rebuilds. */
   readonly patchKey = `n${++nextKey}`;
 
-  /** Values written as properties rather than attributes. */
-  private _values = new Map<string, number>();
-
   patchParams(): Record<string, number> {
     const ctor = this.constructor as typeof AudioNodeShell;
     const params: Record<string, number> = {};
@@ -82,11 +80,9 @@ export class AudioNodeShell extends HTMLElement {
     return props;
   }
 
-  /** Property assignment wins over the attribute, so a binding core writing
-   *  `el.frequency = 900` is not overwritten by a stale attribute on rebuild. */
+  /** The attribute as a number, or the default when it is absent or not one.
+   *  The property setters reflect to the attribute, so it is never stale. */
   protected _num(name: string, dflt: number): number {
-    const own = this._values.get(name);
-    if (own !== undefined) return own;
     const raw = this.getAttribute(name);
     const n = raw === null ? NaN : parseFloat(raw);
     return Number.isFinite(n) ? n : dflt;
@@ -94,12 +90,6 @@ export class AudioNodeShell extends HTMLElement {
 
   protected get root(): AudioRootLike | null {
     return findAudioRoot(this);
-  }
-
-  /** Live numeric update: goes straight to the Core, no rebuild. */
-  protected _setParam(name: string, value: number): void {
-    this._values.set(name, value);
-    this.root?.audioCore?.setParam(this.patchKey, name, value);
   }
 
   connectedCallback(): void {
@@ -115,15 +105,15 @@ export class AudioNodeShell extends HTMLElement {
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     if (oldValue === newValue) return;
     const ctor = this.constructor as typeof AudioNodeShell;
+    // A numeric or setting change is applied live: straight to the Core, no rebuild.
     if (name in ctor.params) {
-      // An attribute write supersedes an earlier property write for that name.
-      this._values.delete(name);
       const value = newValue === null ? ctor.params[name] : parseFloat(newValue);
       if (Number.isFinite(value)) this.root?.audioCore?.setParam(this.patchKey, name, value);
       return;
     }
     if (ctor.props.includes(name)) {
-      if (newValue !== null) this.root?.audioCore?.setProp(this.patchKey, name, newValue);
+      // A removed attribute clears the setting: the Core puts its default back.
+      this.root?.audioCore?.setProp(this.patchKey, name, newValue);
       return;
     }
     // Structural: the topology changed, so the graph has to be rebuilt.
@@ -133,12 +123,18 @@ export class AudioNodeShell extends HTMLElement {
 
 type Accessors = AudioNodeShell & {
   _num(name: string, dflt: number): number;
-  _setParam(name: string, value: number): void;
 };
 
 /**
- * Define numeric accessors mirroring the param attributes, so both
- * `el.frequency = 900` and `frequency="900"` reach the Core.
+ * Define accessors mirroring the node's attributes, so both `el.frequency = 900`
+ * and `frequency="900"` reach the Core.
+ *
+ * A setter only reflects to its attribute (wc-bindable P3); attributeChangedCallback
+ * carries the change to the Core. For an AudioParam that is a live `setParam`,
+ * never a rebuild (the root observes childList only), so a parameter bound to a
+ * slider at 60 fps costs one attribute write per frame on top of the same Core
+ * call. `null` removes the attribute (the default), `undefined` restores the one
+ * the element started with (P1); either way the sound follows.
  */
 export function defineParamAccessors(ctor: typeof AudioNodeShell): void {
   for (const [name, dflt] of Object.entries(ctor.params)) {
@@ -146,8 +142,8 @@ export function defineParamAccessors(ctor: typeof AudioNodeShell): void {
       configurable: true,
       enumerable: true,
       get(this: Accessors) { return this._num(name, dflt); },
-      // a string is read as the attribute is (a binding hands over a range input's value as it is)
-      set(this: Accessors, value: number | string) { this._setParam(name, typeof value === "string" ? parseFloat(value) : value); },
+      // a string is written as it is and read as the attribute is (a binding hands over a range input's value as it is)
+      set(this: AudioNodeShell, value: number | string | null | undefined) { reflectAttribute(this, name, value); },
     });
   }
   for (const name of ctor.props) {
@@ -155,7 +151,7 @@ export function defineParamAccessors(ctor: typeof AudioNodeShell): void {
       configurable: true,
       enumerable: true,
       get(this: AudioNodeShell) { return this.getAttribute(name) ?? ""; },
-      set(this: AudioNodeShell, value: string) { this.setAttribute(name, String(value)); },
+      set(this: AudioNodeShell, value: string | number | null | undefined) { reflectAttribute(this, name, value); },
     });
   }
 }

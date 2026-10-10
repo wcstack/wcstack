@@ -252,6 +252,50 @@ describe("Geolocation (Shell)", () => {
     expect(el.maximumAge).toBe(1500);
   });
 
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-geo high-accuracy timeout="5000" maximum-age="1000" watch manual></wcs-geo>';
+    const el = host.firstElementChild as WcsGeolocation;
+    el.highAccuracy = false;
+    el.timeout = 3000;
+    el.maximumAge = 2000;
+    el.watch = false;
+    el.manual = false;
+    el.highAccuracy = undefined;
+    el.timeout = undefined;
+    el.maximumAge = undefined;
+    el.watch = undefined;
+    el.manual = undefined;
+    expect(el.highAccuracy).toBe(true);
+    expect(el.getAttribute("timeout")).toBe("5000");
+    expect(el.getAttribute("maximum-age")).toBe("1000");
+    expect(el.watch).toBe(true);
+    expect(el.manual).toBe(true);
+    el.highAccuracy = null;
+    el.timeout = null;
+    el.maximumAge = null;
+    el.watch = null;
+    el.manual = null;
+    expect(el.hasAttribute("high-accuracy")).toBe(false);
+    expect(el.hasAttribute("timeout")).toBe(false);
+    expect(el.timeout).toBe(Infinity);
+    expect(el.hasAttribute("maximum-age")).toBe(false);
+    expect(el.maximumAge).toBe(0);
+    expect(el.watch).toBe(false);
+    expect(el.manual).toBe(false);
+  });
+
+  it("マークアップに属性が無ければ undefined は属性なし（既定値）に戻す", () => {
+    const el = createGeo();
+    el.timeout = 3000;
+    el.watch = true;
+    el.timeout = undefined;
+    el.watch = undefined;
+    expect(el.hasAttribute("timeout")).toBe(false);
+    expect(el.timeout).toBe(Infinity);
+    expect(el.hasAttribute("watch")).toBe(false);
+  });
+
   it("Core 委譲 getter が初期状態を返す", () => {
     const el = createGeo({ manual: "" });
     document.body.appendChild(el);

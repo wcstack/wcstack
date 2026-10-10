@@ -168,6 +168,51 @@ describe("Timer (Shell)", () => {
     expect(el.hasAttribute("manual")).toBe(false);
   });
 
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-timer interval="250" repeat="3" once immediate manual></wcs-timer>';
+    const el = host.firstElementChild as Timer;
+    el.interval = 500;
+    el.repeat = 5;
+    el.once = false;
+    el.immediate = false;
+    el.manual = false;
+    el.interval = undefined;
+    el.repeat = undefined;
+    el.once = undefined;
+    el.immediate = undefined;
+    el.manual = undefined;
+    expect(el.getAttribute("interval")).toBe("250");
+    expect(el.repeat).toBe(3);
+    expect(el.once).toBe(true);
+    expect(el.immediate).toBe(true);
+    expect(el.manual).toBe(true);
+    el.interval = null;
+    el.repeat = null;
+    el.once = null;
+    el.immediate = null;
+    el.manual = null;
+    expect(el.hasAttribute("interval")).toBe(false);
+    expect(el.interval).toBe(1000);
+    expect(el.hasAttribute("repeat")).toBe(false);
+    expect(el.repeat).toBe(0);
+    expect(el.once).toBe(false);
+    expect(el.immediate).toBe(false);
+    expect(el.manual).toBe(false);
+  });
+
+  it("稼働中に interval へ undefined を書くとマークアップの周期へ張り直す", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-timer interval="300"></wcs-timer>';
+    const el = host.firstElementChild as Timer;
+    document.body.appendChild(host);
+    el.interval = 1000;
+    const spy = vi.spyOn((el as any)._core, "changeInterval");
+    el.interval = undefined;
+    expect(spy).toHaveBeenCalledWith(300);
+    expect(el.getAttribute("interval")).toBe("300");
+  });
+
   it("trigger=true で開始し trigger-changed をちょうど1回 detail=false で発火する", () => {
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);

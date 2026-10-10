@@ -88,6 +88,10 @@ npm install @wcstack/view-transition
 | `types` | space-separated | — | Passed to `startViewTransition({ types })` where supported, for `:active-view-transition-type()`. |
 | `disabled` | boolean | absent | Inert: every change applies immediately, no transitions. Bindable, so a page can switch animation off from state. |
 
+Each attribute is also a property — `for`, `mode`, `naming`, `naming-limit`, `reduced-motion`, `types` and `disabled` are `participants`, `mode`, `naming`, `namingLimit`, `reducedMotion`, `types` and `disabled` — and writing the property writes the attribute, so the two never disagree and a value set from JS survives moving the element. `types` and `participants` take an array or a space-separated string and are written as space-separated tokens; the getters return the parsed value (an array, a number, a known keyword).
+
+**`null` and `undefined`.** All seven inputs take `null` as "clear": the attribute is removed and the input falls back to its default in the table (`namingLimit = null` is the default 200, not a limit of 0). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `disabled` is on only for `true`.
+
 One `<wcs-view-transition>` per document. A second one warns and stays inert rather than fighting the first over the exclusion it exists to provide.
 
 ## Contract

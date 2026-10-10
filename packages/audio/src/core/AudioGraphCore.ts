@@ -214,9 +214,15 @@ export class AudioGraphCore extends EventTarget {
     }
   }
 
-  /** Live update of a non-AudioParam setting (`type`, `mix`, ADSR times, …). */
-  setProp(key: string, name: string, value: string): void {
-    this._desiredFor(key).props.set(name, value);
+  /**
+   * Live update of a non-AudioParam setting (`type`, `mix`, ADSR times, …).
+   * `null` clears it: sounding instances and the ones built later get the
+   * builder's default back.
+   */
+  setProp(key: string, name: string, value: string | null): void {
+    const desired = this._desiredFor(key).props;
+    if (value === null) desired.delete(name);
+    else desired.set(name, value);
     for (const inst of this._instances.get(key) ?? []) {
       PROPS[inst.kind]?.[name]?.(inst, value);
     }

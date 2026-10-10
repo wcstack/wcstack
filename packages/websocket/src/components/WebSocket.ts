@@ -4,6 +4,7 @@ import { WebSocketCore } from "../core/WebSocketCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 export class WcsWebSocket extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -100,33 +101,36 @@ export class WcsWebSocket extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Input setters never let setAttribute stringify null / undefined (an
+  // "undefined" url would reconnect to "undefined"): `null` removes the
+  // attribute (the documented default; an empty url does not connect),
+  // `undefined` restores the attribute the element started with (wc-bindable
+  // producer guidance P1; React 19 and a direct assignment deliver it,
+  // @wcstack/state does not).
 
   get url(): string {
     return this.getAttribute("url") || "";
   }
 
-  set url(value: string) {
-    this.setAttribute("url", value);
+  set url(value: string | null | undefined) {
+    reflectAttribute(this, "url", value);
   }
 
   get protocols(): string {
     return this.getAttribute("protocols") || "";
   }
 
-  set protocols(value: string) {
-    this.setAttribute("protocols", value);
+  set protocols(value: string | null | undefined) {
+    reflectAttribute(this, "protocols", value);
   }
 
   get autoReconnect(): boolean {
     return this.hasAttribute("auto-reconnect");
   }
 
-  set autoReconnect(value: boolean) {
-    if (value) {
-      this.setAttribute("auto-reconnect", "");
-    } else {
-      this.removeAttribute("auto-reconnect");
-    }
+  set autoReconnect(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "auto-reconnect", value);
   }
 
   get reconnectInterval(): number {
@@ -135,8 +139,8 @@ export class WcsWebSocket extends HTMLElement {
     return Number.isNaN(parsed) ? 3000 : parsed;
   }
 
-  set reconnectInterval(value: number) {
-    this.setAttribute("reconnect-interval", String(value));
+  set reconnectInterval(value: number | null | undefined) {
+    reflectAttribute(this, "reconnect-interval", value);
   }
 
   get maxReconnects(): number {
@@ -145,8 +149,8 @@ export class WcsWebSocket extends HTMLElement {
     return Number.isNaN(parsed) ? Infinity : parsed;
   }
 
-  set maxReconnects(value: number) {
-    this.setAttribute("max-reconnects", String(value));
+  set maxReconnects(value: number | null | undefined) {
+    reflectAttribute(this, "max-reconnects", value);
   }
 
   // Incoming binary frame representation. Backed by the `binary-type` attribute;
@@ -155,24 +159,16 @@ export class WcsWebSocket extends HTMLElement {
     return this.getAttribute("binary-type") === "arraybuffer" ? "arraybuffer" : "blob";
   }
 
-  set binaryType(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("binary-type");
-    } else {
-      this.setAttribute("binary-type", value);
-    }
+  set binaryType(value: string | null | undefined) {
+    reflectAttribute(this, "binary-type", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---

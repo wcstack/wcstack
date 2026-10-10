@@ -4,6 +4,7 @@ import {
 import { RecorderCore } from "../core/RecorderCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-recorder>` — declarative media recording. Wraps RecorderCore and records a
@@ -103,17 +104,23 @@ export class WcsRecorder extends HTMLElement {
   // browser may pick a different type, or fill one in when none was requested, and
   // bindings must read the actual value. The input side is read straight from the
   // attribute in `_options()`. The setter still writes the request attribute.
+  //
+  // The setters never let setAttribute stringify null / undefined (a "undefined"
+  // mime-type would be requested from MediaRecorder): `null` removes the
+  // attribute (no request — the browser's default), `undefined` restores the
+  // attribute the element started with (wc-bindable producer guidance P1;
+  // React 19 and a direct assignment deliver it, @wcstack/state does not).
   get mimeType(): string { return this._core.mimeType; }
-  set mimeType(value: string) { this.setAttribute("mime-type", value); }
+  set mimeType(value: string | null | undefined) { reflectAttribute(this, "mime-type", value); }
 
   get timeslice(): number { return this._numberAttr("timeslice"); }
-  set timeslice(value: number) { this.setAttribute("timeslice", String(value)); }
+  set timeslice(value: number | null | undefined) { reflectAttribute(this, "timeslice", value); }
 
   get audioBitsPerSecond(): number { return this._numberAttr("audio-bits"); }
-  set audioBitsPerSecond(value: number) { this.setAttribute("audio-bits", String(value)); }
+  set audioBitsPerSecond(value: number | null | undefined) { reflectAttribute(this, "audio-bits", value); }
 
   get videoBitsPerSecond(): number { return this._numberAttr("video-bits"); }
-  set videoBitsPerSecond(value: number) { this.setAttribute("video-bits", String(value)); }
+  set videoBitsPerSecond(value: number | null | undefined) { reflectAttribute(this, "video-bits", value); }
 
   // --- Core delegated getters ---
 

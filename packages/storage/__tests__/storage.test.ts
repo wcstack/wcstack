@@ -159,6 +159,70 @@ describe("Storage", () => {
     expect(el.hasAttribute("manual")).toBe(false);
   });
 
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-storage key="authored" type="session" manual></wcs-storage>';
+    const el = host.firstElementChild as Storage;
+    el.key = "bound";
+    el.type = "local";
+    el.manual = false;
+    el.key = undefined;
+    el.type = undefined;
+    el.manual = undefined;
+    expect(el.getAttribute("key")).toBe("authored");
+    expect(el.type).toBe("session");
+    expect(el.manual).toBe(true);
+    el.key = null;
+    el.type = null;
+    el.manual = null;
+    // 文字列 "null" ではなく属性なし（既定値）
+    expect(el.hasAttribute("key")).toBe(false);
+    expect(el.key).toBe("");
+    expect(el.hasAttribute("type")).toBe(false);
+    expect(el.type).toBe("local");
+    expect(el.manual).toBe(false);
+  });
+
+  it("マークアップに無い key の undefined は文字列 \"undefined\" を書かず属性なしにする", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    document.body.appendChild(el);
+    el.key = undefined;
+    expect(el.hasAttribute("key")).toBe(false);
+    expect(localStorage.getItem("undefined")).toBeNull();
+  });
+
+  it("value に undefined を代入しても保存済みのエントリを消さない（null は消す）", () => {
+    localStorage.setItem("keep-key", '{"kept":true}');
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "keep-key");
+    document.body.appendChild(el);
+    expect(el.value).toEqual({ kept: true });
+
+    const events: unknown[] = [];
+    el.addEventListener("wcs-storage:value-changed", (e) => events.push((e as CustomEvent).detail));
+    el.value = undefined;
+    expect(localStorage.getItem("keep-key")).toBe('{"kept":true}');
+    expect(el.value).toEqual({ kept: true });
+    expect(events).toEqual([]);
+
+    el.value = null;
+    expect(localStorage.getItem("keep-key")).toBeNull();
+    expect(el.value).toBeNull();
+  });
+
+  it("manual モードで value に undefined を代入してもステージしない", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "manual-undefined-key");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    el.value = { staged: true };
+    el.value = undefined;
+    expect(el.value).toEqual({ staged: true });
+    el.save();
+    expect(localStorage.getItem("manual-undefined-key")).toBe('{"staged":true}');
+  });
+
   it("config.autoTriggerがfalseのときはconnectedCallbackでregisterAutoTriggerを呼ばない", () => {
     setConfig({ autoTrigger: false });
     try {

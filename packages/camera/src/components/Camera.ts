@@ -5,6 +5,7 @@ import {
 import { CameraCore } from "../core/CameraCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-camera>` — declarative camera capture with a built-in preview.
@@ -126,29 +127,35 @@ export class WcsCamera extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // The setters never let setAttribute stringify null / undefined (a "undefined"
+  // device-id would become an exact constraint no camera matches): `null`
+  // removes the attribute (the default), `undefined` restores the attribute the
+  // element started with (wc-bindable producer guidance P1; React 19 and a
+  // direct assignment deliver it, @wcstack/state does not).
 
   get audio(): boolean { return this.hasAttribute("audio"); }
-  set audio(value: boolean) { this._toggleAttr("audio", value); }
+  set audio(value: boolean | null | undefined) { reflectBooleanAttribute(this, "audio", value); }
 
   get facingMode(): FacingMode {
     return this.getAttribute("facing-mode") === "environment" ? "environment" : "user";
   }
-  set facingMode(value: FacingMode) { this.setAttribute("facing-mode", value); }
+  set facingMode(value: FacingMode | null | undefined) { reflectAttribute(this, "facing-mode", value); }
 
   get deviceId(): string { return this.getAttribute("device-id") ?? ""; }
-  set deviceId(value: string) { this.setAttribute("device-id", value); }
+  set deviceId(value: string | null | undefined) { reflectAttribute(this, "device-id", value); }
 
   get width(): number { return this._numberAttr("width"); }
-  set width(value: number) { this.setAttribute("width", String(value)); }
+  set width(value: number | null | undefined) { reflectAttribute(this, "width", value); }
 
   get height(): number { return this._numberAttr("height"); }
-  set height(value: number) { this.setAttribute("height", String(value)); }
+  set height(value: number | null | undefined) { reflectAttribute(this, "height", value); }
 
   get autostart(): boolean { return this.hasAttribute("autostart"); }
-  set autostart(value: boolean) { this._toggleAttr("autostart", value); }
+  set autostart(value: boolean | null | undefined) { reflectBooleanAttribute(this, "autostart", value); }
 
   get keepAlive(): boolean { return this.hasAttribute("keep-alive"); }
-  set keepAlive(value: boolean) { this._toggleAttr("keep-alive", value); }
+  set keepAlive(value: boolean | null | undefined) { reflectBooleanAttribute(this, "keep-alive", value); }
 
   /** The internal preview `<video>` (for advanced styling/measurement). */
   get videoElement(): HTMLVideoElement { return this._video; }
@@ -199,14 +206,6 @@ export class WcsCamera extends HTMLElement {
   }
 
   // --- Internal ---
-
-  private _toggleAttr(name: string, value: boolean): void {
-    if (value) {
-      this.setAttribute(name, "");
-    } else {
-      this.removeAttribute(name);
-    }
-  }
 
   private _numberAttr(name: string): number {
     const attr = this.getAttribute(name);

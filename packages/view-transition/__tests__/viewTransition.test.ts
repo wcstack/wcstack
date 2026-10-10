@@ -116,7 +116,7 @@ describe("<wcs-view-transition>", () => {
     expect(element.mode).toBe("queue");
   });
 
-  it("プロパティ経由でも設定でき、disabled は属性へ反映する", () => {
+  it("プロパティ経由でも設定でき、すべての入力が属性へ反映する", () => {
     const element = create();
     document.body.appendChild(element);
 
@@ -135,9 +135,107 @@ describe("<wcs-view-transition>", () => {
     expect(element.types).toEqual(["fade"]);
     expect(element.participants).toEqual(["state"]);
     expect(element.hasAttribute("disabled")).toBe(true);
+    expect(element.getAttribute("mode")).toBe("exhaust");
+    expect(element.getAttribute("naming")).toBe("auto");
+    expect(element.getAttribute("naming-limit")).toBe("7");
+    expect(element.getAttribute("reduced-motion")).toBe("animate");
+    expect(element.getAttribute("types")).toBe("fade");
+    expect(element.getAttribute("for")).toBe("state");
+
+    // 配列は空白区切りのトークンとして属性へ書く
+    element.types = ["forward", "slide"];
+    element.participants = ["router", "state"];
+    expect(element.getAttribute("types")).toBe("forward slide");
+    expect(element.getAttribute("for")).toBe("router state");
+    expect(element.types).toEqual(["forward", "slide"]);
 
     element.disabled = false;
     expect(element.hasAttribute("disabled")).toBe(false);
+    expect(element.disabled).toBe(false);
+  });
+
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外して既定へ戻す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-view-transition mode="queue" naming="auto" naming-limit="5" '
+      + 'reduced-motion="animate" types="forward" for="router" disabled></wcs-view-transition>';
+    const element = host.firstElementChild as WcsViewTransition;
+    document.body.appendChild(host);
+
+    element.mode = "exhaust";
+    element.naming = "manual";
+    element.namingLimit = 9;
+    element.reducedMotion = "skip";
+    element.types = ["back"];
+    element.participants = "state";
+    element.disabled = false;
+    element.mode = undefined;
+    element.naming = undefined;
+    element.namingLimit = undefined;
+    element.reducedMotion = undefined;
+    element.types = undefined;
+    element.participants = undefined;
+    element.disabled = undefined;
+    expect(element.getAttribute("mode")).toBe("queue");
+    expect(element.mode).toBe("queue");
+    expect(element.naming).toBe("auto");
+    expect(element.namingLimit).toBe(5);
+    expect(element.reducedMotion).toBe("animate");
+    expect(element.types).toEqual(["forward"]);
+    expect(element.getAttribute("for")).toBe("router");
+    expect(element.participants).toEqual(["router"]);
+    expect(element.disabled).toBe(true);
+
+    element.mode = null;
+    element.naming = null;
+    element.namingLimit = null;
+    element.reducedMotion = null;
+    element.types = null;
+    element.participants = null;
+    element.disabled = null;
+    for (const name of ["mode", "naming", "naming-limit", "reduced-motion", "types", "for", "disabled"]) {
+      expect(element.hasAttribute(name)).toBe(false);
+    }
+    expect(element.mode).toBe("latest");
+    expect(element.naming).toBe("manual");
+    // null は上限 0 ではなく既定の 200
+    expect(element.namingLimit).toBe(200);
+    expect(element.reducedMotion).toBe("skip");
+    expect(element.types).toEqual([]);
+    expect(element.participants).toEqual(["router", "state"]);
+    expect(element.disabled).toBe(false);
+  });
+
+  it("マークアップに無い入力の undefined は属性を外したまま既定にする", () => {
+    const element = create();
+    document.body.appendChild(element);
+    element.mode = "queue";
+    element.types = ["fade"];
+    element.mode = undefined;
+    element.types = undefined;
+    expect(element.hasAttribute("mode")).toBe(false);
+    expect(element.mode).toBe("latest");
+    expect(element.hasAttribute("types")).toBe(false);
+    expect(element.types).toEqual([]);
+  });
+
+  it("プロパティで書いた値は付け替え（reconnect）後も残る", () => {
+    const element = create({ mode: "queue", for: "router" });
+    document.body.appendChild(element);
+    element.mode = "exhaust";
+    element.participants = ["state"];
+
+    element.remove();
+    document.body.appendChild(element);
+    expect(element.mode).toBe("exhaust");
+    expect(element.participants).toEqual(["state"]);
+  });
+
+  it("属性が変わらない書き込みでも、core で直接変えた値を属性の値へ揃える", () => {
+    const element = create({ mode: "queue" });
+    document.body.appendChild(element);
+    element.core.mode = "exhaust";
+    element.mode = "queue";
+    expect(element.core.mode).toBe("queue");
   });
 
   it("upgrade 前のプロパティ代入が connect 時に取り込まれる", () => {
@@ -146,6 +244,18 @@ describe("<wcs-view-transition>", () => {
     Object.defineProperty(element, "mode", { value: "queue", writable: true, configurable: true, enumerable: true });
     document.body.appendChild(element);
     expect(element.mode).toBe("queue");
+    expect(element.getAttribute("mode")).toBe("queue");
+  });
+
+  it("upgrade 前のプロパティ代入はマークアップの属性に勝ち、undefined でその属性へ戻る", () => {
+    const element = create({ mode: "exhaust" });
+    Object.defineProperty(element, "mode", { value: "queue", writable: true, configurable: true, enumerable: true });
+    document.body.appendChild(element);
+    expect(element.mode).toBe("queue");
+
+    element.mode = undefined;
+    expect(element.getAttribute("mode")).toBe("exhaust");
+    expect(element.mode).toBe("exhaust");
   });
 
   it("active / error を :state() へ反映する", async () => {

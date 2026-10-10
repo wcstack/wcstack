@@ -206,6 +206,8 @@ HTML、JS、または `@wcstack/state` バインディングから接続とメ�
 | `send` | `any` | 値を設定するとデータを送信（オブジェクトは自動文字列化） |
 | `manual` | `boolean` | DOM 接続時の自動接続を無効化 |
 
+**`null` と `undefined`。** 属性に対応する入力（`url`・`protocols`・`autoReconnect`・`reconnectInterval`・`maxReconnects`・`binaryType`・`manual` — [要素一覧](#要素一覧)参照）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。こうして戻った `url` はほかの `url` 変更と同じく接続し直し、クリアした `url` では接続しません。`trigger` と `send` はどちらも無視します。
+
 ## `:state()` による CSS スタイリング
 
 `<wcs-ws>` は 3 つの boolean 出力ステートを

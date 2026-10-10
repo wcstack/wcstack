@@ -137,6 +137,8 @@ Unlike `@wcstack/fullscreen` (where `target="self"` is a legitimate way to fulls
 |-----------|--------|-------------|--------------|
 | `target`  | string | *(omitted)* | Which `<video>` to control: omitted → first child, a selector → that element, `self` → this element (always fails — see above). |
 
+**`null` and `undefined`.** The `target` input, backed by its attribute, takes `null` as "clear": the attribute is removed and `target` falls back to its default, the first child. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"` (such a selector would resolve nothing, so every request would fail). (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 ## Output state
 
 | Property    | Type                     | Event                        | Description |

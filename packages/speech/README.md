@@ -83,6 +83,8 @@ export default {
 | `lang` | `lang` | string | — | BCP-47 language tag |
 | `manual` | `manual` | boolean | `false` | mute the `say` path |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`rate`, `pitch`, `volume`, `voice`, `lang`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `say` ignores both — there is nothing to speak.
+
 ### Observable Properties (outputs)
 
 | Property | Type | Meaning |
@@ -141,6 +143,8 @@ Like `<wcs-geo>`, it has two phases: a **one-shot** recognition (default) and a 
 | `max-restarts` | `maxRestarts` | number | `0` | cap on automatic restarts (continuous) |
 | `manual` | `manual` | boolean | `false` | do not auto-start on connect |
 | — | `trigger` | boolean | — | momentary: `false`→`true` starts a session |
+
+**`null` and `undefined`.** As on `<wcs-speak>`, the inputs backed by an attribute (`lang`, `continuous`, `interim`, `maxRestarts`, `manual`) take `null` as "clear" (the attribute is removed, the input falls back to its default) and `undefined` as "no value supplied" (the attribute goes back to the value written in the markup, or none); neither is ever written as the string `"null"` / `"undefined"`. `trigger` ignores both.
 
 ### Observable Properties (outputs)
 

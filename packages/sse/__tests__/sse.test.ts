@@ -128,6 +128,51 @@ describe("WcsSse", () => {
       el.manual = false;
       expect(el.hasAttribute("manual")).toBe(false);
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-sse url="/authored" events="a,b" with-credentials raw manual></wcs-sse>';
+      const el = host.firstElementChild as WcsSse;
+      el.url = "/bound";
+      el.events = "c";
+      el.withCredentials = false;
+      el.raw = false;
+      el.manual = false;
+      el.url = undefined;
+      el.events = undefined;
+      el.withCredentials = undefined;
+      el.raw = undefined;
+      el.manual = undefined;
+      expect(el.url).toBe("/authored");
+      expect(el.events).toBe("a,b");
+      expect(el.withCredentials).toBe(true);
+      expect(el.raw).toBe(true);
+      expect(el.manual).toBe(true);
+      el.url = null;
+      el.events = null;
+      el.withCredentials = null;
+      el.raw = null;
+      el.manual = null;
+      expect(el.hasAttribute("url")).toBe(false);
+      expect(el.hasAttribute("events")).toBe(false);
+      expect(el.withCredentials).toBe(false);
+      expect(el.raw).toBe(false);
+      expect(el.manual).toBe(false);
+    });
+
+    it("接続中の url に undefined / null を書いても /undefined・/null へ接続しない", () => {
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      el.url = "/other";
+      expect(MockEventSource.last.url).toBe("/other");
+      // undefined はマークアップの url へ戻す（= その url へ張り直す）
+      el.url = undefined;
+      expect(MockEventSource.last.url).toBe("/feed");
+      // null は属性を外すだけ（url の除去は既存接続を切らない）
+      el.url = null;
+      expect(MockEventSource.instances.map(es => es.url)).toEqual(["/feed", "/other", "/feed"]);
+      expect(MockEventSource.last.close).not.toHaveBeenCalled();
+    });
   });
 
   describe("wcBindable", () => {

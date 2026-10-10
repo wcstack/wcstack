@@ -65,6 +65,38 @@ describe("<wcs-defined> Shell", () => {
       expect(el.getAttribute("mode")).toBe("any");
       expect(el.getAttribute("timeout")).toBe("500");
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-defined tags="x-a,x-b" mode="any" timeout="3000"></wcs-defined>';
+      const el = host.firstElementChild as WcsDefined;
+      el.tags = "y-a";
+      el.mode = "all";
+      el.timeout = 10;
+      el.tags = undefined;
+      el.mode = undefined;
+      el.timeout = undefined;
+      expect(el.tags).toBe("x-a,x-b");
+      expect(el.mode).toBe("any");
+      expect(el.timeout).toBe(3000);
+      el.tags = null;
+      el.mode = null;
+      el.timeout = null;
+      // 文字列 "null" ではなく属性なし（既定値）
+      expect(el.hasAttribute("tags")).toBe(false);
+      expect(el.tags).toBe("");
+      expect(el.hasAttribute("mode")).toBe(false);
+      expect(el.mode).toBe("all");
+      expect(el.hasAttribute("timeout")).toBe(false);
+      expect(el.timeout).toBe(0);
+    });
+
+    it("マークアップに無い tags の undefined は文字列 \"undefined\" を書かず属性なしにする", () => {
+      const el = makeEl({});
+      el.tags = undefined;
+      expect(el.hasAttribute("tags")).toBe(false);
+      expect(el.tags).toBe("");
+    });
   });
 
   describe("ライフサイクル", () => {

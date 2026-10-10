@@ -115,6 +115,8 @@ npm install @wcstack/worker
 | `max-restarts`     | number  | `Infinity` | worker の生存期間にわたる自動再起動の**累積**回数の上限（連続クラッシュ数ではない — 安定稼働ではカウンタはリセットされない）。新しい `start()` / `src` 変更でのみリセットされる。 |
 | `restart-interval` | number  | `0`        | 自動再起動前の遅延（ミリ秒）。                                              |
 
+**`null` と `undefined`。** 属性に対応する入力（`src`・`type`・`name`・`manual`・`keepAlive`・`restartOnError`・`maxRestarts`・`restartInterval`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。こうして戻った `src` はほかの `src` 変更と同じくそのスクリプトを起動し、クリアした `src` では何も起動しません（動作中の worker はそのまま残ります）。
+
 ### DOM トリガ属性（autoTrigger、クリックで post）
 
 | 属性                 | 付与先         | 説明                                                                  |

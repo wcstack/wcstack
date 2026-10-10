@@ -46,6 +46,8 @@ Acquires a camera stream and renders a preview. Acquisition is **explicit** — 
 
 **Attributes:** `facing-mode` (`user`/`environment`), `device-id`, `audio` (opt the microphone in), `width`, `height`, `autostart`, `keep-alive` (do not suspend on page-hidden — set while recording).
 
+**`null` and `undefined`.** The inputs (`audio`, `facingMode`, `deviceId`, `width`, `height`, `autostart`, `keepAlive`) are all backed by an attribute and take `null` as "clear": the attribute is removed and the input falls back to its default (`facingMode` `user`, no device pinned, no width / height constraint, the booleans off). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`, so neither becomes an exact `deviceId` constraint that no camera matches. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 **Commands:** `start()`, `stop()`, `switchCamera()` (toggle front/back).
 
 **Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`), `deviceId`, `devices`, `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-camera:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
@@ -64,6 +66,8 @@ Acquires a camera stream and renders a preview. Acquisition is **explicit** — 
 Records a **borrowed** stream received via `attachStream` (the direct channel from a camera's `stream-ready`). It never owns or stops the stream — that is the camera's job.
 
 **Attributes:** `mime-type`, `timeslice` (emit `dataavailable` chunks on this interval; omit for one `Blob` on stop), `audio-bits`, `video-bits`.
+
+**`null` and `undefined`** work as on `<wcs-camera>`: on the `mimeType` (the request), `timeslice`, `audioBitsPerSecond` and `videoBitsPerSecond` inputs, `null` removes the attribute — nothing is requested and the browser picks — and `undefined` restores the attribute written in the markup, or none. Neither is written as a string.
 
 **Commands:** `attachStream(stream)`, `start()`, `stop()`, `pause()`, `resume()`.
 

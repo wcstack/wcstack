@@ -4,6 +4,7 @@ import { DebounceCore } from "../core/DebounceCore.js";
 import { makeDebounceProperties } from "../wcBindableFactory.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 const DEFAULT_WAIT = 250;
 
@@ -110,6 +111,12 @@ export class Debounce extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // The setters never let setAttribute stringify null / undefined: `null`
+  // removes the attribute (the default — for `trailing`, which `no-trailing`
+  // carries inverted, that means on), `undefined` restores the attribute the
+  // element started with (wc-bindable producer guidance P1; React 19 and a
+  // direct assignment deliver it, @wcstack/state does not).
 
   get wait(): number {
     const attr = this.getAttribute("wait");
@@ -120,20 +127,16 @@ export class Debounce extends HTMLElement {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : this._defaultWait();
   }
 
-  set wait(value: number) {
-    this.setAttribute("wait", String(value));
+  set wait(value: number | null | undefined) {
+    reflectAttribute(this, "wait", value);
   }
 
   get leading(): boolean {
     return this.hasAttribute("leading");
   }
 
-  set leading(value: boolean) {
-    if (value) {
-      this.setAttribute("leading", "");
-    } else {
-      this.removeAttribute("leading");
-    }
+  set leading(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "leading", value);
   }
 
   // `trailing` defaults to true; the boolean `no-trailing` attribute opts out (a
@@ -143,12 +146,8 @@ export class Debounce extends HTMLElement {
     return !this.hasAttribute("no-trailing");
   }
 
-  set trailing(value: boolean) {
-    if (value) {
-      this.removeAttribute("no-trailing");
-    } else {
-      this.setAttribute("no-trailing", "");
-    }
+  set trailing(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "no-trailing", value == null ? value : !value);
   }
 
   get maxWait(): number | undefined {
@@ -158,8 +157,8 @@ export class Debounce extends HTMLElement {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : this._defaultMaxWait();
   }
 
-  set maxWait(value: number) {
-    this.setAttribute("max-wait", String(value));
+  set maxWait(value: number | null | undefined) {
+    reflectAttribute(this, "max-wait", value);
   }
 
   // --- Value-surface input ---
@@ -168,6 +167,8 @@ export class Debounce extends HTMLElement {
     return this._source;
   }
 
+  // Not attribute-backed, and every write — `undefined` and `null` included — is
+  // a value to debounce: a debouncer carries whatever its source produces.
   set source(value: any) {
     this._source = value;
     this._core.configure(this._options());

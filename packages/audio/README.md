@@ -141,6 +141,8 @@ Pass your own `createContext` to render into an `OfflineAudioContext` — no use
 
 Every tag also takes the routing attributes `id`, `out`, `param`, and `note` where they apply.
 
+**`null` and `undefined`.** Every input is backed by its attribute: a property write is reflected to the attribute, and the attribute carries it to the graph (live, never a rebuild). Each input takes `null` as "clear": the attribute is removed and the input falls back to its default (`volume` 0.8, `limiter` and `resumeOnGesture` on, each node parameter or setting its own default — `frequency` 440 and `type` `sine` on `<wcs-osc>`, for example). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Either way the sound follows. Neither is ever written as the string `"null"` / `"undefined"`, and neither turns the limiter off. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 ## Live values vs. rebuilds
 
 | Change | Effect |

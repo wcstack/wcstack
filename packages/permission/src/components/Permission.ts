@@ -1,6 +1,7 @@
 import { IWcBindable, PermissionStateOrUnsupported, WcsPermissionDescriptor } from "../types.js";
 import { PermissionCore } from "../core/PermissionCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 // Named WcsPermission (not `Permission`) so the class does not shadow any global,
 // and to match the <wcs-geo> / <wcs-ws> convention (WcsGeolocation /
@@ -87,37 +88,34 @@ export class WcsPermission extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  // Input setters never let setAttribute stringify null / undefined (an
+  // "undefined" name would query a permission called "undefined"): `null`
+  // removes the attribute (the default), `undefined` restores the attribute the
+  // element started with (wc-bindable producer guidance P1; React 19 and a
+  // direct assignment deliver it, @wcstack/state does not).
 
   get name(): string {
     return this.getAttribute("name") ?? "";
   }
 
-  set name(value: string) {
-    this.setAttribute("name", value);
+  set name(value: string | null | undefined) {
+    reflectAttribute(this, "name", value);
   }
 
   get userVisibleOnly(): boolean {
     return this.hasAttribute("user-visible-only");
   }
 
-  set userVisibleOnly(value: boolean) {
-    if (value) {
-      this.setAttribute("user-visible-only", "");
-    } else {
-      this.removeAttribute("user-visible-only");
-    }
+  set userVisibleOnly(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "user-visible-only", value);
   }
 
   get sysex(): boolean {
     return this.hasAttribute("sysex");
   }
 
-  set sysex(value: boolean) {
-    if (value) {
-      this.setAttribute("sysex", "");
-    } else {
-      this.removeAttribute("sysex");
-    }
+  set sysex(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "sysex", value);
   }
 
   // --- Core delegated getters ---

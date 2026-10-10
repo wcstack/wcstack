@@ -123,6 +123,8 @@ Point `target` at a section elsewhere in the document; bind `intersecting` to hi
 | `once`         | boolean | `false`    | Disconnect after the first intersecting observation. |
 | `manual`       | boolean | `false`    | Do not auto-observe on connect; drive it via commands instead. |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`target`, `root`, `rootMargin`, `threshold`, `once`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"` — `target="undefined"` would be a selector that matches nothing, and the observation would stop. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `trigger` ignores both.
+
 > **`trigger`** has *no attribute* — it is a momentary command-property meant for `@wcstack/state` wiring only. A `false → true` write re-runs `observe()` and the property auto-resets to `false` (a one-shot acknowledgement; read `observing` for the actual outcome). Prefer the command-token protocol (`command.observe: …`) over this boolean for state-driven observation.
 
 ## Output state

@@ -117,6 +117,8 @@ npm install @wcstack/debounce
 | `max-wait`    | number  | none                       | `wait`                     | Force an emission at least every `max-wait` ms under continuous input. Clamped to `>= wait`. |
 | `source`      | any     | —                          | —                          | Value-surface input; its debounced echo returns on `value`. |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`wait`, `leading`, `trailing`, `maxWait`) take `null` as "clear": the attribute is removed and the input falls back to its default — for `trailing`, whose attribute is the inverted `no-trailing`, that means on again. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `source` is not backed by an attribute: `null` and `undefined` are values like any other, debounced through to `value`.
+
 ## Observable Properties (outputs)
 
 | Property  | Event                          | Description                                          |

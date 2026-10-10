@@ -4,7 +4,7 @@
 //   packages/<pkg>/src/protocol/wcBindable.ts
 //   packages/<pkg>/src/protocol/wcBindableReader.ts (no consumer since the 4.0 state, see below)
 //   packages/<pkg>/src/protocol/transitionRunner.ts
-//   packages/<pkg>/src/protocol/binder.ts, ssrSnapshot.ts, upgradeProperties.ts
+//   packages/<pkg>/src/protocol/binder.ts, ssrSnapshot.ts, upgradeProperties.ts, inputAttribute.ts
 //
 // Each package's own types file re-exports from that copy, so the package stays
 // independently buildable/publishable with zero runtime dependency (the types erase
@@ -27,6 +27,8 @@ const canonicalPath = join(repoRoot, "protocol", "wc-bindable.ts");
 const canonicalReaderPath = join(repoRoot, "protocol", "wc-bindable-reader.ts");
 const canonicalUpgradePath = join(repoRoot, "protocol", "upgrade-properties.ts");
 const canonicalUpgradeTestPath = join(repoRoot, "protocol", "upgrade-properties.test.ts");
+const canonicalInputAttributePath = join(repoRoot, "protocol", "input-attribute.ts");
+const canonicalInputAttributeTestPath = join(repoRoot, "protocol", "input-attribute.test.ts");
 const canonicalTransitionRunnerPath = join(repoRoot, "protocol", "transition-runner.ts");
 const canonicalBinderPath = join(repoRoot, "protocol", "binder.ts");
 const canonicalSsrSnapshotPath = join(repoRoot, "protocol", "ssr-snapshot.ts");
@@ -76,6 +78,13 @@ const SSR_SNAPSHOT_TARGET_PACKAGES = ["server"];
 // state / server は Shell が wcBindable.inputs を宣言しないため対象外。
 const UPGRADE_TARGET_PACKAGES = TARGET_PACKAGES.filter((pkg) => pkg !== "state" && pkg !== "server");
 
+// 入力を属性へ反映する Shell を持つパッケージ（wc-bindable の producer ガイダンス P1〜P3。
+// setter が reflectAttribute / reflectBooleanAttribute で属性を書く）。入力を宣言しないパッケージは対象外。
+const NO_ATTRIBUTE_INPUT_PACKAGES = new Set([
+  "network", "screen-orientation", "share", "tilt", "contacts", "credential", "eyedropper",
+]);
+const INPUT_ATTRIBUTE_TARGET_PACKAGES = UPGRADE_TARGET_PACKAGES.filter((pkg) => !NO_ATTRIBUTE_INPUT_PACKAGES.has(pkg));
+
 // --- Completeness guards ---------------------------------------------------
 // Two failure modes the stale-compare below cannot see:
 //   (1) a new canonical file lands in /protocol/ without being registered here
@@ -91,6 +100,8 @@ const CANONICAL_SOURCES = new Set([
   "wc-bindable-reader.ts",
   "upgrade-properties.ts",
   "upgrade-properties.test.ts",
+  "input-attribute.ts",
+  "input-attribute.test.ts",
   "transition-runner.ts",
   "binder.ts",
   "ssr-snapshot.ts",
@@ -171,6 +182,9 @@ function main() {
     .replace('from "./wc-bindable.js"', 'from "./wcBindable.js"');
   const upgradeTestContent = expectedContent(canonicalUpgradeTestPath, "upgrade-properties.test.ts")
     .replace('from "./upgrade-properties.js"', 'from "../src/protocol/upgradeProperties.js"');
+  const inputAttributeContent = expectedContent(canonicalInputAttributePath, "input-attribute.ts");
+  const inputAttributeTestContent = expectedContent(canonicalInputAttributeTestPath, "input-attribute.test.ts")
+    .replace('from "./input-attribute.js"', 'from "../src/protocol/inputAttribute.js"');
   const transitionRunnerContent = expectedContent(canonicalTransitionRunnerPath, "transition-runner.ts");
   const binderContent = expectedContent(canonicalBinderPath, "binder.ts");
   const ssrSnapshotContent = expectedContent(canonicalSsrSnapshotPath, "ssr-snapshot.ts");
@@ -182,6 +196,13 @@ function main() {
       pkg,
       fileName: "protocol.upgradeProperties.test.ts",
       content: upgradeTestContent,
+      dir: ["__tests__"],
+    })),
+    ...INPUT_ATTRIBUTE_TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "inputAttribute.ts", content: inputAttributeContent })),
+    ...INPUT_ATTRIBUTE_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "protocol.inputAttribute.test.ts",
+      content: inputAttributeTestContent,
       dir: ["__tests__"],
     })),
     ...TRANSITION_RUNNER_TARGET_PACKAGES.map((pkg) => ({

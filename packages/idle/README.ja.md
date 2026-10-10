@@ -87,6 +87,8 @@ npm install @wcstack/idle
 | ----------- | ------ | ------- | ---- |
 | `threshold` | number | `60000` | `userState`が`"idle"`になるまでの最小アイドル時間（ms）。バリデーションなし——範囲外の値はブラウザ自身のrejectに委ねます。 |
 
+**`null` と `undefined`。** 属性に対応する入力（`threshold`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値（`60000`）に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。
+
 ## `:state()` による CSS スタイリング
 
 `<wcs-idle>` は 2 つの boolean 出力ステートを

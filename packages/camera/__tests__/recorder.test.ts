@@ -66,6 +66,30 @@ describe("<wcs-recorder> Shell", () => {
     expect(el.mimeType).toBe("video/webm");
   });
 
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外して request しない（P1 / P2）", () => {
+    FakeMediaRecorder.supportedTypes = ["video/webm;codecs=vp9"];
+    const el = mount(`<wcs-recorder mime-type="video/webm;codecs=vp9" timeslice="500" audio-bits="128000" video-bits="2500000"></wcs-recorder>`);
+    const names = ["mime-type", "timeslice", "audio-bits", "video-bits"];
+    el.mimeType = "video/mp4";
+    el.timeslice = 1000;
+    el.audioBitsPerSecond = 64000;
+    el.videoBitsPerSecond = 1000000;
+    el.mimeType = undefined;
+    el.timeslice = undefined;
+    el.audioBitsPerSecond = undefined;
+    el.videoBitsPerSecond = undefined;
+    expect(names.map((n) => el.getAttribute(n))).toEqual(["video/webm;codecs=vp9", "500", "128000", "2500000"]);
+    el.mimeType = null;
+    el.timeslice = null;
+    el.audioBitsPerSecond = null;
+    el.videoBitsPerSecond = null;
+    expect(names.map((n) => el.hasAttribute(n))).toEqual([false, false, false, false]);
+    el.attachStream(new FakeMediaStream("s") as unknown as MediaStream);
+    el.start();
+    // 何も request しない（"null" / "undefined" を MediaRecorder に渡さない）。
+    expect(FakeMediaRecorder.instances[0].options).toEqual({});
+  });
+
   it("pause/resume を委譲する", () => {
     const el = mount(`<wcs-recorder></wcs-recorder>`);
     el.attachStream(new FakeMediaStream("s") as unknown as MediaStream);
