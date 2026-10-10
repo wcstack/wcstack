@@ -397,13 +397,13 @@ For debugging, add the `debug-states` attribute to a tag to mirror its states as
 
 Every I/O node implements [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol), so a thin adapter (`@wc-bindable/react`, `/vue`, `/svelte`, `/solid`, …) wires an element's outputs into framework state without per-element glue. Three rules make that work:
 
-**1. Import the definition before you render.** Adapters check `isWcBindable(el)` once on mount and never retry, so an element that upgrades later stays silently unbound. A static import at the app entry is the reliable fix:
+**1. Use `@wc-bindable` 0.9 or later, or import the definition before you render.** Since 0.9 the adapters wait for a late definition (`syncOn: "define"`, their default) and bind when it lands. Adapters up to 0.8 check `isWcBindable(el)` once on mount and never retry, so an element that upgrades later stays silently unbound. A static import at the app entry works with every version:
 
 ```ts
 import "@wcstack/websocket/auto";   // main.tsx / main.js — before the app renders
 ```
 
-If the definition genuinely has to arrive late (autoloader, CDN tag, code-split), gate the mount on `customElements.whenDefined("wcs-ws")`. `connectedCallbackPromise` is not a substitute — it covers connection, not definition.
+With a 0.8 adapter and a definition that genuinely has to arrive late (autoloader, CDN tag, code-split), gate the mount on `customElements.whenDefined("wcs-ws")`. `connectedCallbackPromise` is not a substitute — it covers connection, not definition.
 
 **2. Pass object-valued inputs as properties.** DOM attributes only hold strings, and several frameworks fall back to attributes when the property is not on the element yet, which stringifies your payload. Use `.prop` (Vue), `prop:` (Solid), `.prop=` (Lit), or assign through a ref.
 

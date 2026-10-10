@@ -286,8 +286,9 @@ test.describe("examples/state-custom-states — <wcs-ws> の :state()", () => {
 
   // 二重接続の回帰（@wcstack/websocket で修正）: 以前の <wcs-ws> は url 属性が同じ値で
   // 書かれても connect() し直し、state の `url:` は url の setter 自身の setAttribute と
-  // inputs[].attribute ミラー（packages/state/README.md「Inputs and Attribute Mirror」）の
-  // setAttribute とで 2 回書くので、ソケットを 2 本張って 1 本目を CONNECTING のまま閉じていた。
+  // 3.x の inputs[].attribute ミラー（4.0.0-rc.8 で廃止。packages/state/README.md
+  // 「Inputs and the `attribute` Hint」）の setAttribute とで 2 回書くので、ソケットを 2 本張って
+  // 1 本目を CONNECTING のまま閉じていた。
   test("ページを開いたときに張るソケットは 1 本で、閉じられない", async ({ page }) => {
     const errors = collectErrors(page);
     const api = await mockWidgets(page);

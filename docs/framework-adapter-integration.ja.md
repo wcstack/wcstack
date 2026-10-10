@@ -11,33 +11,42 @@
 
 ## 0. 3つの規則
 
-1. **要素の定義が render より後になる構成では、bind の前に定義を待つ。** 待たないと adapter は
-   沈黙したまま何も配送しない（§1）。
+1. **`@wc-bindable` 0.9 以降を使うか、bind の前に定義を待つ。** 0.9 からは adapter が遅れた定義を
+   自分で待つ。それより古い adapter は、render より後に定義された要素について沈黙したまま何も
+   配送しない（§1）。
 2. **object を渡す input は「プロパティとして渡す」構文を明示する。** 既定のままだと framework に
    よっては属性へ文字列化される（§2）。
 3. **reactive store の値は raw にしてから渡す。** Proxy のままだと structured clone 境界で失敗する（§3）。
 
-静的 import（`import "@wcstack/websocket/auto"`）でバンドルする通常構成なら、規則 1 は自動的に満たされる。
-規則 2 と 3 は構成によらず必要になる。
+静的 import（`import "@wcstack/websocket/auto"`）でバンドルする通常構成なら、adapter の版によらず
+規則 1 は自動的に満たされる。規則 2 と 3 は構成によらず必要になる。
 
 ## 1. 定義タイミング
 
 ### 1.1 何が起きるか
 
-`@wc-bindable` の adapter は、いずれも mount 時に一度だけ `isWcBindable(el)` を判定し、偽なら
+**`@wc-bindable` 0.9 以降**（[wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)）:
+どの adapter も既定で `bind()` に `syncOn: "define"` を渡す（命令的な binder の `vanjs` / `mobx` /
+`rxjs` / `signals` は `["define", "connect"]`）。宣言がまだ読めず、タグ名に `-` を含むとき、`bind()` は
+`customElements.whenDefined(tagName)` を待ち、要素を upgrade し、宣言をもう一度読んでからバインドする。
+render より後に定義された要素も、定義が届いた時点でバインドされるので、この節の手当ては要らない。
+自分で `syncOn` を渡すと既定は置き換わるので、`"define"` を残すこと。`@wc-bindable/core` の `bind()` を
+直接呼ぶときの既定は今も `"call"` なので、`syncOn: "define"` を自分で渡す。
+
+**0.8 以前**: adapter は、いずれも mount 時に一度だけ `isWcBindable(el)` を判定し、偽なら
 **再試行せずに諦める**。要素参照は upgrade 後も同一なので、React の依存配列も Qwik の `track()` も
 再発火しない。結果としてエラーもログも出ないまま、その要素からは初期値も後続イベントも永久に届かない。
 
 ```ts
-// 全 adapter に共通する形
+// 0.8 までの全 adapter に共通する形
 if (!isWcBindable(el)) return;   // ← まだ upgrade していないだけでも、ここで終わる
 unbind = bind(el, onUpdate);
 ```
 
-`@wc-bindable/core` の `bind()` 自体も、宣言が読めないときは no-op を返して静かに終わる。
-`syncOn: "connect"` は**接続**の遅延を扱うオプションであって、**定義**の遅延には効かない。
+`@wc-bindable/core` の `bind()` 自体も、宣言が読めず `"define"` も指定されていないときは no-op を返して
+静かに終わる。`syncOn: "connect"` は**接続**の遅延を扱うオプションであって、**定義**の遅延には効かない。
 
-### 1.2 起きる構成・起きない構成
+### 1.2 起きる構成・起きない構成（0.8 以前）
 
 | 構成 | 定義のタイミング | 影響 |
 | --- | --- | --- |
@@ -46,9 +55,11 @@ unbind = bind(el, onUpdate);
 | CDN の `<script type="module">` | ネットワーク次第 | **影響あり** |
 | 動的 import / code-split で遅延ロード | ロード完了時 | **影響あり** |
 
-### 1.3 ゲートの書き方
+0.9 以降では、どの構成も影響を受けない。
 
-最も確実なのは静的 import である。
+### 1.3 ゲートの書き方（0.8 以前）
+
+最も確実なのは静的 import で、どの版でもいちばん簡単である。
 
 ```ts
 // main.tsx / main.js — アプリのエントリで一度だけ
@@ -91,11 +102,12 @@ adapter は既に諦めた後である。
   宣言的に扱うときは有用だが、`<wcs-defined>` 自身の定義が先に必要である。
 - **`setTimeout` での遅延** — 定義完了と無関係なので、速いネットワークでたまたま通るだけになる。
 
-### 1.5 入力側は救済される（次回リリース以降）
+### 1.5 入力側は救済される
 
 upgrade 前に `el.url = "..."` のようにプロパティ代入していた場合、その値は
-`connectedCallback` で取り込み直されるので失われない（`wcBindable.inputs` に宣言された入力のみ）。
-これは**入力**の話であり、§1.1 の**観測**の欠落は救済しない。bind のゲートは依然として必要である。
+`connectedCallback` で取り込み直されるので失われない（`wcBindable.inputs` に宣言された入力のみ。
+wc-bindable 0.10 の producer ガイダンス P4）。これは**入力**の話であり、§1.1 の**観測**の欠落は
+救済しないので、0.8 の adapter では bind のゲートが依然として必要である。
 
 ## 2. object を渡す input
 

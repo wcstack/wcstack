@@ -5,7 +5,8 @@
   A2 / A4 = [the integration guide](../framework-adapter-integration.md);
   A3 = [the proposal document for making `bind()` wait for the definition](../spec-proposal-bind-definition-timing.md) (ja)).
   A0's reproduction test was substituted with a conformance test using synthetic objects; reproduction in a real browser has not been done.
-  A3's proposal has been submitted as [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22).
+  A3's proposal has been submitted as [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22),
+  and shipped in `@wc-bindable` 0.9.0 as `syncOn: "define"` — the default of every adapter (not opt-in as option A proposed).
   What remains is catching up the wcstack-app skill (a separate repository), which happens **after the release**
   ([10-defaulting-rollout-status.md](10-defaulting-rollout-status.md) §D, at the end)
 - **Applies to**: every Shell declaring `static wcBindable`, the `@wc-bindable` framework adapters, and the
@@ -191,7 +192,9 @@ core. It can be submitted independently of the semantics-metadata proposal in
 [inventory §5.6](12-wc-bindable-observable-inventory.md).
 
 Submitted upstream: [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)
-(2026-08-01, in English). An implementation PR waits on their choice of option.
+(2026-08-01, in English). Shipped in `@wc-bindable` 0.9.0: `bind()` takes `syncOn: "define"` (and an array, to
+combine it with `"connect"`), and upstream made it the default of all 17 adapters rather than an opt-in. `bind()` itself
+still defaults to `"call"`. 0.10.0 changes neither the core nor the adapters.
 
 ### Phase A4: an alternative route for the event names — done (2026-08-01)
 
@@ -255,9 +258,8 @@ The recommendation: gate 1 on the `inputs` declaration; gate 2 all at once (the 
 | coupling with the classification of value meanings (docs 11 / 12) | low (it can proceed independently) |
 
 Phase A1 was the only real defect listed here that could be fixed without waiting on upstream or on metadata.
-Implemented. A2 / A4 / A3 have landed as documents. What remains is two things outside this repository —
-submitting [the proposal document](../spec-proposal-bind-definition-timing.md) (ja) upstream, and catching up the
-wcstack-app skill (a separate repository).
+Implemented. A2 / A4 / A3 have landed as documents, and A3 shipped upstream in `@wc-bindable` 0.9.0. What remains
+is catching up the wcstack-app skill (a separate repository).
 
 ## References
 

@@ -5,7 +5,8 @@
   A2 / A4 = [組み込み手順](../framework-adapter-integration.ja.md)、
   A3 = [`bind()` 定義待ちの提案文書](../spec-proposal-bind-definition-timing.md)）。
   A0 の再現テストは合成オブジェクトによる適合テストで代替し、実ブラウザでの再現は未実施。
-  A3 の提案は [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22) として提出済み。
+  A3 の提案は [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22) として提出し、
+  `@wc-bindable` 0.9.0 で `syncOn: "define"` として出荷された。全 adapter の既定になった（案 A のような opt-in ではない）。
   残るのは wcstack-app スキル（別リポジトリ）の追随で、これは**リリース後**に行う
   （[10-defaulting-rollout-status.ja.md](10-defaulting-rollout-status.ja.md) §D 末尾）
 - **対象**: `static wcBindable` を宣言する全 Shell、`@wc-bindable` の framework adapter、
@@ -184,7 +185,9 @@ wcstack-app スキルは別リポジトリ（wcstack/wcstack-skill）なので�
 [棚卸し §5.6](12-wc-bindable-observable-inventory.ja.md) の semantics metadata 提案とは独立に出せる。
 
 upstream への提出済み: [wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)
-（2026-08-01・英文）。実装 PR は先方の案の選択待ち。
+（2026-08-01・英文）。`@wc-bindable` 0.9.0 で出荷された: `bind()` が `syncOn: "define"` を受け（配列で `"connect"` と
+組み合わせられる）、上流はこれを opt-in ではなく 17 個の adapter すべての既定にした。`bind()` 自体の既定は `"call"` のまま。
+0.10.0 は core も adapter も変えていない。
 
 ### Phase A4: イベント名の代替経路 — 実施済み（2026-08-01）
 
@@ -249,8 +252,7 @@ Vue / Svelte / Solid のテンプレート構文でコロン付き名が書け�
 | 値の意味分類（doc 11 / 12）との結合度 | 低い（独立に進行できる） |
 
 Phase A1 は本書で挙げた中で唯一、上流も metadata も待たずに直せる実欠陥だった。実装済み。
-A2 / A3 / A4 も文書として着地した。残るのは本リポジトリ外の 2 件——
-[提案文書](../spec-proposal-bind-definition-timing.md) の upstream への提出と、
+A2 / A3 / A4 も文書として着地し、A3 は `@wc-bindable` 0.9.0 で上流に入った。残るのは本リポジトリ外の
 wcstack-app スキル（別リポジトリ）への追随である。
 
 ## 参照

@@ -8,6 +8,11 @@
   wcstack 側は回避策（利用者に `customElements.whenDefined()` を要求する手順）を
   [framework アプリへの組み込み手順](./framework-adapter-integration.ja.md) に明文化済み。本提案は、
   その回避策を利用者に強いなくても済むよう core 側に語彙を足すもの。
+- **結果**: wc-bindable-protocol **v0.9.0 で出荷**。`bind()` に `syncOn: "define"` が入り（配列で `"connect"` と
+  組み合わせられる）、上流は 17 個の adapter すべての**既定**をこれにした。§2 の案 A は既定値を `"call"` の
+  まま残す案だったので、そこが提案と違う（adapter は自前の `syncOn` で元の挙動に戻せる）。core の `bind()` 自体の
+  既定は `"call"` のまま。v0.10.0 でも core と adapter の挙動は変わっていない。下の「調査時点のスナップ
+  ショット」と adapter の数（18、上流の数え方では 17）は提出時のもの。
 - **調査時点のスナップショット**: `@wc-bindable/core@0.8.0`、および upstream `main` の
   react / vue / svelte / solid / angular / qwik / signals / rxjs adapter 実装。
 - **TL;DR**: `bind()` は「wc-bindable ではない対象」と「まだ upgrade していない custom element」を

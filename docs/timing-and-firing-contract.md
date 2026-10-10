@@ -120,7 +120,7 @@ Note that **no wait is needed to read the initial snapshot of a monitor node**. 
 3.x: the initial application ran in `buildBindings`, a separate microtask after `initializePromise`, so nothing was guaranteed when `$connectedCallback` ran, and poking an element required `await customElements.get("wcs-state").getBindingsReady(document)` first. That wait still works in 4.0 (it is already settled).
 
 ### 4.2 Writing `undefined` is skipped (clear explicitly with `null`)
-The binder does not write `undefined` into properties/inputs (it skips the write itself). For details and the SPEC proposal see [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md) (ja).
+`@wcstack/state` does not write `undefined` into properties/inputs (it skips the write itself), even when the path held a value before. This is state's own rule: wc-bindable 0.10.0's applier profile (A2) writes `undefined` after a value so the element can return to its initial state, and state does not claim that profile. Other writers (React 19, `@wcstack/signals`' `bindInput`, a direct assignment) do deliver `undefined`, so the I/O nodes still handle it (producer guidance P1). For details, the SPEC proposal and upstream's answer see [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md) (ja).
 
 
 ### 4.3 With `<wcs-view-transition>` on the page, the drain lands on a frame, not a microtask

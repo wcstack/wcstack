@@ -12,36 +12,46 @@
 
 ## 0. Three rules
 
-1. **Where an element is defined after render, wait for the definition before binding.** Without
-   the wait, the adapter goes silent and delivers nothing at all (§1).
+1. **Use `@wc-bindable` 0.9 or later, or wait for the definition before binding.** Since 0.9 the
+   adapters wait for a late definition themselves; an older adapter goes silent and delivers nothing
+   at all for an element defined after render (§1).
 2. **For inputs that take an object, spell out "pass this as a property".** Left at the default,
    some frameworks stringify it into an attribute (§2).
 3. **Unwrap reactive store values before passing them.** A Proxy fails at the structured clone
    boundary (§3).
 
 In the ordinary setup — bundling with a static import (`import "@wcstack/websocket/auto"`) — rule 1
-is satisfied automatically. Rules 2 and 3 apply regardless of setup.
+is satisfied automatically, whatever the adapter version. Rules 2 and 3 apply regardless of setup.
 
 ## 1. Definition timing
 
 ### 1.1 What happens
 
-Every `@wc-bindable` adapter evaluates `isWcBindable(el)` exactly once at mount and, if it is false,
-**gives up without retrying**. The element reference is the same object after an upgrade, so neither
-a React dependency array nor Qwik's `track()` fires again. The result is that no error and no log
-appears, while that element delivers neither its initial value nor any later event, ever.
+**`@wc-bindable` 0.9 and later** ([wc-bindable-protocol#22](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/22)):
+every adapter passes `syncOn: "define"` to `bind()` by default (the imperative binders — `vanjs`,
+`mobx`, `rxjs`, `signals` — pass `["define", "connect"]`). When the declaration cannot be read yet
+and the tag name contains a `-`, `bind()` waits for `customElements.whenDefined(tagName)`, upgrades
+the element, reads the declaration once more and binds. An element defined after render therefore
+binds when its definition lands; nothing in this section is needed. A `syncOn` of your own replaces
+the default — leave `"define"` in it. `bind()` called directly from `@wc-bindable/core` still
+defaults to `"call"`: pass `syncOn: "define"` yourself.
+
+**0.8 and earlier**: every adapter evaluates `isWcBindable(el)` exactly once at mount and, if it is
+false, **gives up without retrying**. The element reference is the same object after an upgrade, so
+neither a React dependency array nor Qwik's `track()` fires again. The result is that no error and no
+log appears, while that element delivers neither its initial value nor any later event, ever.
 
 ```ts
-// the shape common to every adapter
+// the shape common to every adapter up to 0.8
 if (!isWcBindable(el)) return;   // ← merely not-yet-upgraded ends it here
 unbind = bind(el, onUpdate);
 ```
 
 `bind()` in `@wc-bindable/core` likewise returns a no-op and finishes quietly when it cannot read a
-declaration. `syncOn: "connect"` is an option for a late **connection**, and does nothing for a late
-**definition**.
+declaration and `"define"` is not asked for. `syncOn: "connect"` is an option for a late
+**connection**, and does nothing for a late **definition**.
 
-### 1.2 Setups where it happens, and where it does not
+### 1.2 Setups where it happens, and where it does not (0.8 and earlier)
 
 | Setup | When the definition lands | Impact |
 | --- | --- | --- |
@@ -50,9 +60,11 @@ declaration. `syncOn: "connect"` is an option for a late **connection**, and doe
 | `<script type="module">` from a CDN | network-dependent | **affected** |
 | lazy-loaded through dynamic import / code splitting | when the load completes | **affected** |
 
-### 1.3 How to write the gate
+With 0.9 and later none of them is affected.
 
-A static import is the surest form.
+### 1.3 How to write the gate (0.8 and earlier)
+
+A static import is the surest form, and still the simplest with any version.
 
 ```ts
 // main.tsx / main.js — once, at the app entry
@@ -97,11 +109,12 @@ late — the adapter has already given up.
 - **A `setTimeout` delay** — unrelated to when the definition completes, so it merely happens to
   work on a fast network.
 
-### 1.5 The input side is rescued (next release onward)
+### 1.5 The input side is rescued
 
 A property assigned before the upgrade, such as `el.url = "..."`, is not lost: it is re-read in
-`connectedCallback` (only for inputs declared in `wcBindable.inputs`). That is about **inputs**; it
-does not rescue the missing **observation** of §1.1. The bind gate is still required.
+`connectedCallback` (only for inputs declared in `wcBindable.inputs`; wc-bindable 0.10's producer
+guidance P4). That is about **inputs**; it does not rescue the missing **observation** of §1.1, so
+with a 0.8 adapter the bind gate is still required.
 
 ## 2. Inputs that take an object
 

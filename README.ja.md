@@ -395,13 +395,13 @@ wcs-permission:state(denied) ~ .help   { display: block; }
 
 すべての I/O ノードは [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol) を実装しているので、薄いアダプター（`@wc-bindable/react` / `/vue` / `/svelte` / `/solid` ほか）を挟むだけで、要素の出力をフレームワークの状態へ配線できます。要素ごとの糊コードは不要です。そのために必要な規則は 3 つです。
 
-**1. render より前に定義を読み込む。** アダプターは mount 時に一度だけ `isWcBindable(el)` を判定し、再試行しません。後から upgrade された要素は、エラーも出さずに永久に無反応のままになります。確実なのはアプリのエントリでの静的 import です。
+**1. `@wc-bindable` 0.9 以降を使うか、render より前に定義を読み込む。** 0.9 からのアダプターは遅れた定義を待ち（既定の `syncOn: "define"`）、定義が届いた時点でバインドします。0.8 までのアダプターは mount 時に一度だけ `isWcBindable(el)` を判定し、再試行しません。後から upgrade された要素は、エラーも出さずに永久に無反応のままになります。どの版でも確実なのはアプリのエントリでの静的 import です。
 
 ```ts
 import "@wcstack/websocket/auto";   // main.tsx / main.js — アプリの描画より前に
 ```
 
-autoloader・CDN タグ・code-split などで定義が遅れるのが避けられない場合は、`customElements.whenDefined("wcs-ws")` を待ってから mount してください。`connectedCallbackPromise` は接続を待つもので、定義の待機には使えません。
+0.8 のアダプターで、autoloader・CDN タグ・code-split などで定義が遅れるのが避けられない場合は、`customElements.whenDefined("wcs-ws")` を待ってから mount してください。`connectedCallbackPromise` は接続を待つもので、定義の待機には使えません。
 
 **2. object を渡す input はプロパティとして渡す。** DOM 属性は文字列しか持てず、要素が未 upgrade だと属性側へフォールバックするフレームワークがあるため、payload が文字列化されます。Vue の `.prop`、Solid の `prop:`、Lit の `.prop=`、または ref 経由の代入を使ってください。
 

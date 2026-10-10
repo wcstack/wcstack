@@ -133,7 +133,7 @@ async $connectedCallback() {
 3.x: 初期適用は `buildBindings`（`initializePromise` の後の別 microtask）で走ったので、`$connectedCallback` の実行時点では何も保証されず、要素を叩く前に `await customElements.get("wcs-state").getBindingsReady(document)` が要った。この待ちは 4.0 でもそのまま動く（すでに決着している）。
 
 ### 4.2 `undefined` 書き込みはスキップ（明示クリアは `null`）
-binder は `undefined` を properties/inputs に書かない（書き込み自体をスキップ）。詳細と SPEC 提案は [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md)。
+`@wcstack/state` は `undefined` を properties/inputs に書かない（書き込み自体をスキップ）。前にそのパスが値を持っていても同じ。これは state 自身の規則で、wc-bindable 0.10.0 の applier プロファイル（A2）は値の後の `undefined` を書いて要素を初期状態に戻させる。state はこのプロファイルを宣言しない。ほかの書き手（React 19、`@wcstack/signals` の `bindInput`、直接の代入）は `undefined` を届けるので、I/O ノードは引き続き `undefined` を扱う（producer ガイダンス P1）。詳細、SPEC 提案と上流の回答は [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md)。
 
 
 ### 4.3 `<wcs-view-transition>` があると drain は microtask ではなくフレームで着地する

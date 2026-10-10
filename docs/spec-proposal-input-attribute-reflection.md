@@ -3,6 +3,7 @@
 - **提案先**: wc-bindable-protocol リポジトリ（SPEC-extensions.md「Extension 1 — Input/Command Invocation」の「The `attribute` hint」、protocol = `"wc-bindable"`, version 1）
 - **提案元の文脈**: wcstack（@wcstack/state の binder と、wc-bindable 準拠の I/O ノード群）
 - **状態**: wcstack 側は 4.0 で実装済み（2026-10-08、4.0.0-rc.8 で公開）。上流には [wc-bindable-protocol#29](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/29) として提案した（2026-10-08、英語）。本文書は、仕様に足す規範文言の提案とその根拠
+- **結果**: wc-bindable-protocol **v0.10.0（2026-10）で採用**。SPEC-extensions「Applier profile」の **A1** になり、提案の SHOULD NOT より強い **MUST NOT**（ヒントの属性を書かない・書き換えない・外さない）として入った。未 upgrade の要素で属性へ逃げることも禁止され、プロパティを代入するか upgrade まで待つ。属性の反映は Producer guidance の **P3** としてコンポーネントの責任になった。「The `attribute` hint」節は「ツール・文書・マークアップを書くための宣言で、属性を書けという指示ではない」と書き直された。@wcstack/state 4.0 は rc.8 から A1 を満たしている
 - **TL;DR**: 入力を書く consumer は、要素の**プロパティ**を書く。`attribute` ヒントが名指す属性は書かない（SHOULD NOT）。プロパティを属性に反映するのはコンポーネントの責任で、書き方（boolean は属性の有無、列挙のキーワード、JSON など）もコンポーネントが決める
 
 ---
@@ -51,7 +52,7 @@ wcstack の I/O ノードで、`attribute` ヒントを持つ入力は 113 あ�
 
 ### 関連箇所への波及
 
-- wcstack の [undefined 書き込みの提案](./spec-proposal-undefined-write-skip.md)の規範文言にある「This rule also applies to the `inputs[].attribute` mirror: a skipped write mirrors nothing.」は、consumer が属性を書かない前提では不要になる。上流に取り込まれていれば、その一文を外す。
+- wcstack の [undefined 書き込みの提案](./spec-proposal-undefined-write-skip.md)の規範文言にある「This rule also applies to the `inputs[].attribute` mirror: a skipped write mirrors nothing.」は、consumer が属性を書かない前提では不要になる。上流に取り込まれていれば、その一文を外す。（v0.10.0: A1 が入り、undefined の提案は A2 として別の規則で回答されたので、この一文は不要になった）
 - `version` は上げない: 宣言の形は変わらず、consumer の振る舞いについての注意の追加（SHOULD NOT）である。
 
 ## 5. 検討した代替案と不採用理由
