@@ -129,6 +129,18 @@ describe("audio custom elements", () => {
       expect(voice.poly).toBe(3);
     });
 
+    it("poly の undefined はマークアップの値へ戻し、null は属性を外す（文字列を書かない）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-voice poly="4"></wcs-voice>';
+      const voice = host.firstElementChild as WcsVoice;
+      voice.poly = 2;
+      voice.poly = undefined;
+      expect(voice.getAttribute("poly")).toBe("4");
+      voice.poly = null;
+      expect(voice.hasAttribute("poly")).toBe(false);
+      expect(voice.poly).toBe(8);
+    });
+
     it("graphChildren は audio 要素で降下を止める", async () => {
       const root = await mount(`
         <wcs-audio><wcs-gain><wcs-osc></wcs-osc></wcs-gain></wcs-audio>`);

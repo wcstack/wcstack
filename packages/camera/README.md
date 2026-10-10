@@ -50,7 +50,7 @@ Acquires a camera stream and renders a preview. Acquisition is **explicit** — 
 
 **Commands:** `start()`, `stop()`, `switchCamera()` (toggle front/back).
 
-**Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`), `deviceId`, `devices`, `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-camera:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
+**Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`), `deviceId` (the device the stream uses, published with `wcs-camera:device-changed`; reading the property gives the same value once one is known, and the requested `device-id` until then — the request itself stays in the attribute), `devices`, `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-camera:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
 
 **Events (event-token):** `streamReady` (`wcs-camera:stream-ready`, detail = the live `MediaStream`), `error`, `ended` (a track was revoked by the OS). The `streamReady` "property" exists for event-token wiring only — never bind it as a value.
 

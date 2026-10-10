@@ -221,6 +221,18 @@ describe("<wcs-camera> Shell", () => {
     expect((last.video as MediaTrackConstraints).deviceId).toBeUndefined();
   });
 
+  it("deviceId は使っているデバイスを返し、決まるまでは要求した device-id を返す", async () => {
+    const el = mount(`<wcs-camera device-id="cam-req"></wcs-camera>`);
+    expect(el.deviceId).toBe("cam-req"); // まだストリームが無い → 要求
+    media.resolveWith(new FakeMediaStream("s", [new FakeMediaStreamTrack("video", { deviceId: "cam-real" })]));
+    await el.connectedCallbackPromise;
+    el.start();
+    await flush();
+    // wcs-camera:device-changed が運ぶ値と同じ（binder の初期同期もこれを読む）
+    expect(el.deviceId).toBe("cam-real");
+    expect(el.getAttribute("device-id")).toBe("cam-req"); // 要求はそのまま
+  });
+
   it("属性変更（device-id）が active 中は再取得を起こす", async () => {
     const el = mount(`<wcs-camera></wcs-camera>`);
     media.resolveWith(new FakeMediaStream("a"));

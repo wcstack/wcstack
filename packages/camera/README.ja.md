@@ -50,7 +50,7 @@ $on: {
 
 **コマンド:** `start()`・`stop()`・`switchCamera()`（前後カメラ切替）。
 
-**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`・`devices`・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
+**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`（ストリームが使っているデバイス。`wcs-camera:device-changed` で publish。プロパティを読むと、決まった後はこの値、それまでは要求した `device-id` を返す。要求そのものは属性に残る）・`devices`・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
 
 **イベント（event-token）:** `streamReady`（`wcs-camera:stream-ready`、detail = 生 `MediaStream`）・`error`・`ended`（OS によるトラック剥奪）。`streamReady` の「プロパティ」は event-token 配線用で、値としてバインドしないでください。
 

@@ -1,5 +1,6 @@
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { findAudioRoot } from "./AudioNodeShell.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-voice poly="N">` — turns its subtree into a patch template.
@@ -35,8 +36,11 @@ export class WcsVoice extends HTMLElement {
     return Number.isFinite(n) && n > 0 ? n : 8;
   }
 
-  set poly(value: number) {
-    this.setAttribute("poly", String(value));
+  // Not a wc-bindable input, but a property all the same: `null` removes the
+  // attribute (8), `undefined` restores the one in the markup, and neither is
+  // written as a string (a stray "undefined" cost a rebuild for nothing).
+  set poly(value: number | null | undefined) {
+    reflectAttribute(this, "poly", value);
   }
 
   connectedCallback(): void {

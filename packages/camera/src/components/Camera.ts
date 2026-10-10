@@ -142,7 +142,12 @@ export class WcsCamera extends HTMLElement {
   }
   set facingMode(value: FacingMode | null | undefined) { reflectAttribute(this, "facing-mode", value); }
 
-  get deviceId(): string { return this.getAttribute("device-id") ?? ""; }
+  // `deviceId` is an input (the `device-id` request) and an output (the device the
+  // stream uses, published with `wcs-camera:device-changed`). Reading it gives the
+  // device in use once one is known — what the event carries, and what a binder's
+  // initial sync reads — and the request until then. The constraints read the
+  // request from the attribute (`_constraints`), as <wcs-recorder>'s mimeType does.
+  get deviceId(): string { return this._core.deviceId ?? this.getAttribute("device-id") ?? ""; }
   set deviceId(value: string | null | undefined) { reflectAttribute(this, "device-id", value); }
 
   get width(): number { return this._numberAttr("width"); }
@@ -216,7 +221,10 @@ export class WcsCamera extends HTMLElement {
 
   private _constraints(): CameraConstraints {
     const c: CameraConstraints = { audio: this.audio, facingMode: this.facingMode };
-    if (this.deviceId) c.deviceId = this.deviceId;
+    // the request, not `get deviceId()` (the device in use): after switchCamera()
+    // removed it, the previous device must not stay pinned
+    const requested = this.getAttribute("device-id");
+    if (requested) c.deviceId = requested;
     if (Number.isFinite(this.width)) c.width = this.width;
     if (Number.isFinite(this.height)) c.height = this.height;
     return c;
