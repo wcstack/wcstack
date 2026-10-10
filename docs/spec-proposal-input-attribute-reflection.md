@@ -2,7 +2,7 @@
 
 - **提案先**: wc-bindable-protocol リポジトリ（SPEC-extensions.md「Extension 1 — Input/Command Invocation」の「The `attribute` hint」、protocol = `"wc-bindable"`, version 1）
 - **提案元の文脈**: wcstack（@wcstack/state の binder と、wc-bindable 準拠の I/O ノード群）
-- **状態**: wcstack 側は 4.0 で実装済み（2026-10-08、`research/state-engine`。4.0.0-rc.8 で公開予定）。本文書は、仕様に足す規範文言の提案とその根拠
+- **状態**: wcstack 側は 4.0 で実装済み（2026-10-08、4.0.0-rc.8 で公開）。上流には [wc-bindable-protocol#29](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/29) として提案した（2026-10-08、英語）。本文書は、仕様に足す規範文言の提案とその根拠
 - **TL;DR**: 入力を書く consumer は、要素の**プロパティ**を書く。`attribute` ヒントが名指す属性は書かない（SHOULD NOT）。プロパティを属性に反映するのはコンポーネントの責任で、書き方（boolean は属性の有無、列挙のキーワード、JSON など）もコンポーネントが決める
 
 ---

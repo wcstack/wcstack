@@ -1043,4 +1043,4 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - core.min.js 19,846B（上限 20,480B まで 634B）
   - `index.esm.js` 50,654B、`auto.min.js` 47,715B、split の core 24,502B、scopes 8,909B
 - wcstack-skill の `release/v4.0.0` に、入力をプロパティにだけ書くことを入れた（0cc3464、push 済み）。
-- 残り: 上流の wc-bindable-protocol への提案（[spec-proposal-input-attribute-reflection.md](../spec-proposal-input-attribute-reflection.md)）を 4.0.0 の前に出す。
+- 上流の wc-bindable-protocol への提案（[spec-proposal-input-attribute-reflection.md](../spec-proposal-input-attribute-reflection.md)）は [#29](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/29) として出した（2026-10-08）。#27（undefined の書き込み）の提案文にあるミラーの一文は、これが通れば不要になる。
