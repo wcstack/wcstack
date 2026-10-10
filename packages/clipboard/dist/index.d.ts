@@ -317,8 +317,12 @@ declare class WcsClipboard extends HTMLElement {
      * connectedCallback); toggling `el.monitor` after connect just flips the
      * attribute. To start/stop monitoring imperatively, call `startMonitor()` /
      * `stopMonitor()`.
+     *
+     * `null` removes the attribute (the default, off); `undefined` restores the
+     * attribute the element started with (wc-bindable producer guidance P1;
+     * React 19 and a direct assignment deliver it, @wcstack/state does not).
      */
-    set monitor(value: boolean);
+    set monitor(value: boolean | null | undefined);
     get text(): string | null;
     get items(): WcsClipboardReadItem[] | null;
     get loading(): boolean;

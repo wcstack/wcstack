@@ -261,13 +261,13 @@ declare class Raf extends HTMLElement {
     private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get once(): boolean;
-    set once(value: boolean);
+    set once(value: boolean | null | undefined);
     get repeat(): number;
-    set repeat(value: number);
+    set repeat(value: number | null | undefined);
     get manual(): boolean;
-    set manual(value: boolean);
+    set manual(value: boolean | null | undefined);
     get reducedMotion(): "run" | "pause";
-    set reducedMotion(value: string);
+    set reducedMotion(value: string | null | undefined);
     attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
     get tick(): number;
     get elapsed(): number;

@@ -347,19 +347,19 @@ declare class WcsCamera extends HTMLElement {
     private _initInternals;
     private _wireStates;
     get audio(): boolean;
-    set audio(value: boolean);
+    set audio(value: boolean | null | undefined);
     get facingMode(): FacingMode;
-    set facingMode(value: FacingMode);
+    set facingMode(value: FacingMode | null | undefined);
     get deviceId(): string;
-    set deviceId(value: string);
+    set deviceId(value: string | null | undefined);
     get width(): number;
-    set width(value: number);
+    set width(value: number | null | undefined);
     get height(): number;
-    set height(value: number);
+    set height(value: number | null | undefined);
     get autostart(): boolean;
-    set autostart(value: boolean);
+    set autostart(value: boolean | null | undefined);
     get keepAlive(): boolean;
-    set keepAlive(value: boolean);
+    set keepAlive(value: boolean | null | undefined);
     /** The internal preview `<video>` (for advanced styling/measurement). */
     get videoElement(): HTMLVideoElement;
     get active(): boolean;
@@ -384,7 +384,6 @@ declare class WcsCamera extends HTMLElement {
      * half-updated state. The DOM and the live camera stay in agreement.
      */
     switchCamera(): void;
-    private _toggleAttr;
     private _numberAttr;
     private _constraints;
     private _onStreamReady;
@@ -515,13 +514,13 @@ declare class WcsRecorder extends HTMLElement {
     private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get mimeType(): string;
-    set mimeType(value: string);
+    set mimeType(value: string | null | undefined);
     get timeslice(): number;
-    set timeslice(value: number);
+    set timeslice(value: number | null | undefined);
     get audioBitsPerSecond(): number;
-    set audioBitsPerSecond(value: number);
+    set audioBitsPerSecond(value: number | null | undefined);
     get videoBitsPerSecond(): number;
-    set videoBitsPerSecond(value: number);
+    set videoBitsPerSecond(value: number | null | undefined);
     get recording(): boolean;
     get paused(): boolean;
     get duration(): number;

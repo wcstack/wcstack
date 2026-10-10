@@ -237,13 +237,13 @@ declare class Debounce extends HTMLElement {
     private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get wait(): number;
-    set wait(value: number);
+    set wait(value: number | null | undefined);
     get leading(): boolean;
-    set leading(value: boolean);
+    set leading(value: boolean | null | undefined);
     get trailing(): boolean;
-    set trailing(value: boolean);
+    set trailing(value: boolean | null | undefined);
     get maxWait(): number | undefined;
-    set maxWait(value: number);
+    set maxWait(value: number | null | undefined);
     get source(): any;
     set source(value: any);
     get value(): any;
@@ -270,7 +270,8 @@ declare class Debounce extends HTMLElement {
 declare class Throttle extends Debounce {
     protected static eventPrefix: string;
     static wcBindable: IWcBindable;
-    protected _resolveLeading(): boolean;
+    get leading(): boolean;
+    set leading(value: boolean | null | undefined);
     protected _defaultMaxWait(): number | undefined;
 }
 

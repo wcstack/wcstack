@@ -153,7 +153,11 @@ interface BoundNode<S extends NodeShape = DefaultNodeShape> {
      * Reactively write a declared input from a signal: an effect mirrors `source` into
      * `node[name]`. A same-value guard (`node[name] !== v`) skips redundant writes, so
      * a property whose write re-dispatches an event cannot feed back into an infinite
-     * loop. Returns a disposer; the effect is also torn down by `dispose()`.
+     * loop. `undefined` follows the wc-bindable applier profile (A2): it is not written
+     * while the source has had no other value (the first evaluation, or after another
+     * `undefined`), so the element keeps its own initial state; after a value it is
+     * written, so the element restores that state. Returns a disposer; the effect is
+     * also torn down by `dispose()` (neither writes anything).
      */
     bindInput<K extends keyof InputsOf<S>>(name: K, source: ReadSignal<InputsOf<S>[K]>): () => void;
     /** Invoke a declared command on the node (imperative); args/return typed from the shape. */

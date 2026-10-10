@@ -11934,8 +11934,8 @@ var BUILTIN_TAGS = {
     ],
     "inputs": {
       "volume": "volume",
-      "limiter": null,
-      "resumeOnGesture": null
+      "limiter": "limiter",
+      "resumeOnGesture": "resume-on-gesture"
     },
     "properties": [
       "state",

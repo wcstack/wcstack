@@ -434,7 +434,7 @@ const BUILDERS = {
 const PROPS = {
     osc: {
         type: (i, v) => { try {
-            i.osc.type = v;
+            i.osc.type = (v ?? "sine");
         }
         catch { /* invalid type */ } },
         glide: (i, v) => { i.glide = Math.max(num(v, 0), 0); },
@@ -443,7 +443,7 @@ const PROPS = {
     noise: {},
     biquad: {
         type: (i, v) => { try {
-            i.filter.type = v;
+            i.filter.type = (v ?? "lowpass");
         }
         catch { /* invalid type */ } },
     },
@@ -467,7 +467,7 @@ const PROPS = {
     },
     lfo: {
         type: (i, v) => { try {
-            i.osc.type = v;
+            i.osc.type = (v ?? "sine");
         }
         catch { /* invalid type */ } },
     },
@@ -672,9 +672,17 @@ class AudioGraphCore extends EventTarget {
                 param.setTargetAtTime(v, this._ctx.currentTime, 0.02);
         }
     }
-    /** Live update of a non-AudioParam setting (`type`, `mix`, ADSR times, …). */
+    /**
+     * Live update of a non-AudioParam setting (`type`, `mix`, ADSR times, …).
+     * `null` clears it: sounding instances and the ones built later get the
+     * builder's default back.
+     */
     setProp(key, name, value) {
-        this._desiredFor(key).props.set(name, value);
+        const desired = this._desiredFor(key).props;
+        if (value === null)
+            desired.delete(name);
+        else
+            desired.set(name, value);
         for (const inst of this._instances.get(key) ?? []) {
             PROPS[inst.kind]?.[name]?.(inst, value);
         }
@@ -1343,6 +1351,53 @@ function upgradeProperties(element) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/input-attribute.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// 属性へ反映する wc-bindable 入力の producer 側（SPEC-extensions § Producer guidance for inputs の P1〜P3）。
+// 入力の setter は属性をこの 2 関数で書く。それで次が揃う:
+//   - `undefined` は「値が無い」（P1）: 属性を、この関数で最初に書く前の状態 — マークアップに書かれた値、
+//     無ければ属性なし（= その入力の文書化した既定値）— へ戻す。applier プロファイルを宣言する binder は
+//     値の後の `undefined` を書き（A2）、React 19 も書き、直接の代入でも届く。
+//   - `null` はクリア（P2）: 属性なし、つまり文書化した既定値。
+//   - どちらも文字列 "undefined" / "null" として属性に入らない。
+//
+// 「最初に書く前」は、その最初の書き込みのときに読む（遅延）。upgrade 前に代入されたプロパティは
+// connectedCallback の upgradeProperties() が通し直すので、そのときにはパーサが書いた属性が揃っている。
+// 要素自身が setter を通さずに書いた属性は、最初の書き込みより前なら「最初の状態」に含まれる。
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/input-attribute.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/inputAttribute.ts). Those copies are generated — do not edit them.
+const initialAttributes = new WeakMap();
+/** The attribute as it stood before the first write through these helpers. */
+function initialAttribute(el, name) {
+    let byName = initialAttributes.get(el);
+    if (byName === undefined) {
+        byName = new Map();
+        initialAttributes.set(el, byName);
+    }
+    if (!byName.has(name))
+        byName.set(name, el.getAttribute(name));
+    return byName.get(name);
+}
+function writeAttribute(el, name, value) {
+    if (value === null)
+        el.removeAttribute(name);
+    else
+        el.setAttribute(name, value);
+}
+/**
+ * A value attribute. `value` is written as `String(value)`; `null` removes the attribute;
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value === null ? null : String(value));
+}
+
 /** Tag names of every element whose presence changes the graph's topology. */
 const AUDIO_TAG_RE = /^(WCS-OSC|WCS-NOISE|WCS-BIQUAD|WCS-GAIN|WCS-DELAY|WCS-SHAPER|WCS-ENV|WCS-LFO|WCS-ANALYSER|WCS-VOICE)$/;
 const isAudioElement = (node) => {
@@ -1444,18 +1499,30 @@ class WcsAudio extends HTMLElement {
         }
     }
     // --- Attributes ---
+    //
+    // The setters write the attribute only; attributeChangedCallback carries the
+    // change to the Core. `null` removes the attribute (the default: volume 0.8,
+    // limiter and resume-on-gesture on), `undefined` restores the attribute the
+    // element started with (wc-bindable producer guidance P1; React 19 and a
+    // direct assignment deliver it, @wcstack/state does not). Neither is ever
+    // written as "null" / "undefined", and neither turns the ear-protection
+    // limiter off.
     get volume() {
         const raw = this.getAttribute("volume");
         const n = raw === null ? NaN : parseFloat(raw);
         return Number.isFinite(n) ? n : 0.8;
     }
-    set volume(value) { this.setAttribute("volume", String(value)); }
+    set volume(value) { reflectAttribute(this, "volume", value); }
     /** Ear-protection limiter, on unless explicitly turned off. */
     get limiter() { return this.getAttribute("limiter") !== "off"; }
-    set limiter(value) { this.setAttribute("limiter", value ? "on" : "off"); }
+    set limiter(value) {
+        reflectAttribute(this, "limiter", value == null ? value : value ? "on" : "off");
+    }
     /** Resume the context on the first user gesture. On unless turned off. */
     get resumeOnGesture() { return this.getAttribute("resume-on-gesture") !== "off"; }
-    set resumeOnGesture(value) { this.setAttribute("resume-on-gesture", value ? "on" : "off"); }
+    set resumeOnGesture(value) {
+        reflectAttribute(this, "resume-on-gesture", value == null ? value : value ? "on" : "off");
+    }
     // --- Core delegated getters ---
     get state() { return this._core.state; }
     get running() { return this._core.running; }
@@ -1585,7 +1652,7 @@ function findAudioRoot(start) {
  * Base for every audio node tag.
  *
  * These elements are **descriptors and nothing else**. They hold a key, expose
- * their attributes as patch values, and forward live numeric changes to the
+ * their attributes as patch values, and forward live attribute changes to the
  * root's Core. They never hold an `AudioNode` — which is what makes ADR-14 G2
  * ("handles do not cross the protocol boundary") a structural property of the
  * package rather than a rule someone has to remember.
@@ -1609,8 +1676,6 @@ class AudioNodeShell extends HTMLElement {
     }
     /** Stable identity for this element across rebuilds. */
     patchKey = `n${++nextKey}`;
-    /** Values written as properties rather than attributes. */
-    _values = new Map();
     patchParams() {
         const ctor = this.constructor;
         const params = {};
@@ -1628,23 +1693,15 @@ class AudioNodeShell extends HTMLElement {
         }
         return props;
     }
-    /** Property assignment wins over the attribute, so a binding core writing
-     *  `el.frequency = 900` is not overwritten by a stale attribute on rebuild. */
+    /** The attribute as a number, or the default when it is absent or not one.
+     *  The property setters reflect to the attribute, so it is never stale. */
     _num(name, dflt) {
-        const own = this._values.get(name);
-        if (own !== undefined)
-            return own;
         const raw = this.getAttribute(name);
         const n = raw === null ? NaN : parseFloat(raw);
         return Number.isFinite(n) ? n : dflt;
     }
     get root() {
         return findAudioRoot(this);
-    }
-    /** Live numeric update: goes straight to the Core, no rebuild. */
-    _setParam(name, value) {
-        this._values.set(name, value);
-        this.root?.audioCore?.setParam(this.patchKey, name, value);
     }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
@@ -1658,17 +1715,16 @@ class AudioNodeShell extends HTMLElement {
         if (oldValue === newValue)
             return;
         const ctor = this.constructor;
+        // A numeric or setting change is applied live: straight to the Core, no rebuild.
         if (name in ctor.params) {
-            // An attribute write supersedes an earlier property write for that name.
-            this._values.delete(name);
             const value = newValue === null ? ctor.params[name] : parseFloat(newValue);
             if (Number.isFinite(value))
                 this.root?.audioCore?.setParam(this.patchKey, name, value);
             return;
         }
         if (ctor.props.includes(name)) {
-            if (newValue !== null)
-                this.root?.audioCore?.setProp(this.patchKey, name, newValue);
+            // A removed attribute clears the setting: the Core puts its default back.
+            this.root?.audioCore?.setProp(this.patchKey, name, newValue);
             return;
         }
         // Structural: the topology changed, so the graph has to be rebuilt.
@@ -1676,8 +1732,15 @@ class AudioNodeShell extends HTMLElement {
     }
 }
 /**
- * Define numeric accessors mirroring the param attributes, so both
- * `el.frequency = 900` and `frequency="900"` reach the Core.
+ * Define accessors mirroring the node's attributes, so both `el.frequency = 900`
+ * and `frequency="900"` reach the Core.
+ *
+ * A setter only reflects to its attribute (wc-bindable P3); attributeChangedCallback
+ * carries the change to the Core. For an AudioParam that is a live `setParam`,
+ * never a rebuild (the root observes childList only), so a parameter bound to a
+ * slider at 60 fps costs one attribute write per frame on top of the same Core
+ * call. `null` removes the attribute (the default), `undefined` restores the one
+ * the element started with (P1); either way the sound follows.
  */
 function defineParamAccessors(ctor) {
     for (const [name, dflt] of Object.entries(ctor.params)) {
@@ -1685,8 +1748,8 @@ function defineParamAccessors(ctor) {
             configurable: true,
             enumerable: true,
             get() { return this._num(name, dflt); },
-            // a string is read as the attribute is (a binding hands over a range input's value as it is)
-            set(value) { this._setParam(name, typeof value === "string" ? parseFloat(value) : value); },
+            // a string is written as it is and read as the attribute is (a binding hands over a range input's value as it is)
+            set(value) { reflectAttribute(this, name, value); },
         });
     }
     for (const name of ctor.props) {
@@ -1694,7 +1757,7 @@ function defineParamAccessors(ctor) {
             configurable: true,
             enumerable: true,
             get() { return this.getAttribute(name) ?? ""; },
-            set(value) { this.setAttribute(name, String(value)); },
+            set(value) { reflectAttribute(this, name, value); },
         });
     }
 }
@@ -1734,8 +1797,11 @@ class WcsVoice extends HTMLElement {
         const n = raw === null ? NaN : parseInt(raw, 10);
         return Number.isFinite(n) && n > 0 ? n : 8;
     }
+    // Not a wc-bindable input, but a property all the same: `null` removes the
+    // attribute (8), `undefined` restores the one in the markup, and neither is
+    // written as a string (a stray "undefined" cost a rebuild for nothing).
     set poly(value) {
-        this.setAttribute("poly", String(value));
+        reflectAttribute(this, "poly", value);
     }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）

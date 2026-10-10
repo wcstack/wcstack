@@ -517,6 +517,61 @@ function upgradeProperties(element) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/input-attribute.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// 属性へ反映する wc-bindable 入力の producer 側（SPEC-extensions § Producer guidance for inputs の P1〜P3）。
+// 入力の setter は属性をこの 2 関数で書く。それで次が揃う:
+//   - `undefined` は「値が無い」（P1）: 属性を、この関数で最初に書く前の状態 — マークアップに書かれた値、
+//     無ければ属性なし（= その入力の文書化した既定値）— へ戻す。applier プロファイルを宣言する binder は
+//     値の後の `undefined` を書き（A2）、React 19 も書き、直接の代入でも届く。
+//   - `null` はクリア（P2）: 属性なし、つまり文書化した既定値。
+//   - どちらも文字列 "undefined" / "null" として属性に入らない。
+//
+// 「最初に書く前」は、その最初の書き込みのときに読む（遅延）。upgrade 前に代入されたプロパティは
+// connectedCallback の upgradeProperties() が通し直すので、そのときにはパーサが書いた属性が揃っている。
+// 要素自身が setter を通さずに書いた属性は、最初の書き込みより前なら「最初の状態」に含まれる。
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/input-attribute.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/inputAttribute.ts). Those copies are generated — do not edit them.
+const initialAttributes = new WeakMap();
+/** The attribute as it stood before the first write through these helpers. */
+function initialAttribute(el, name) {
+    let byName = initialAttributes.get(el);
+    if (byName === undefined) {
+        byName = new Map();
+        initialAttributes.set(el, byName);
+    }
+    if (!byName.has(name))
+        byName.set(name, el.getAttribute(name));
+    return byName.get(name);
+}
+function writeAttribute(el, name, value) {
+    if (value === null)
+        el.removeAttribute(name);
+    else
+        el.setAttribute(name, value);
+}
+/**
+ * A value attribute. `value` is written as `String(value)`; `null` removes the attribute;
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value === null ? null : String(value));
+}
+/**
+ * A boolean attribute, present while `value` is truthy (`null` and `false` remove it);
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectBooleanAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
+}
+
 class WcsWebSocket extends HTMLElement {
     static hasConnectedCallbackPromise = true;
     static wcBindable = {
@@ -615,28 +670,30 @@ class WcsWebSocket extends HTMLElement {
         }
     }
     // --- Attribute accessors ---
+    //
+    // Input setters never let setAttribute stringify null / undefined (an
+    // "undefined" url would reconnect to "undefined"): `null` removes the
+    // attribute (the documented default; an empty url does not connect),
+    // `undefined` restores the attribute the element started with (wc-bindable
+    // producer guidance P1; React 19 and a direct assignment deliver it,
+    // @wcstack/state does not).
     get url() {
         return this.getAttribute("url") || "";
     }
     set url(value) {
-        this.setAttribute("url", value);
+        reflectAttribute(this, "url", value);
     }
     get protocols() {
         return this.getAttribute("protocols") || "";
     }
     set protocols(value) {
-        this.setAttribute("protocols", value);
+        reflectAttribute(this, "protocols", value);
     }
     get autoReconnect() {
         return this.hasAttribute("auto-reconnect");
     }
     set autoReconnect(value) {
-        if (value) {
-            this.setAttribute("auto-reconnect", "");
-        }
-        else {
-            this.removeAttribute("auto-reconnect");
-        }
+        reflectBooleanAttribute(this, "auto-reconnect", value);
     }
     get reconnectInterval() {
         const attr = this.getAttribute("reconnect-interval");
@@ -644,7 +701,7 @@ class WcsWebSocket extends HTMLElement {
         return Number.isNaN(parsed) ? 3000 : parsed;
     }
     set reconnectInterval(value) {
-        this.setAttribute("reconnect-interval", String(value));
+        reflectAttribute(this, "reconnect-interval", value);
     }
     get maxReconnects() {
         const attr = this.getAttribute("max-reconnects");
@@ -652,7 +709,7 @@ class WcsWebSocket extends HTMLElement {
         return Number.isNaN(parsed) ? Infinity : parsed;
     }
     set maxReconnects(value) {
-        this.setAttribute("max-reconnects", String(value));
+        reflectAttribute(this, "max-reconnects", value);
     }
     // Incoming binary frame representation. Backed by the `binary-type` attribute;
     // any value other than "arraybuffer" normalizes to the platform default "blob".
@@ -660,23 +717,13 @@ class WcsWebSocket extends HTMLElement {
         return this.getAttribute("binary-type") === "arraybuffer" ? "arraybuffer" : "blob";
     }
     set binaryType(value) {
-        if (value == null) {
-            this.removeAttribute("binary-type");
-        }
-        else {
-            this.setAttribute("binary-type", value);
-        }
+        reflectAttribute(this, "binary-type", value);
     }
     get manual() {
         return this.hasAttribute("manual");
     }
     set manual(value) {
-        if (value) {
-            this.setAttribute("manual", "");
-        }
-        else {
-            this.removeAttribute("manual");
-        }
+        reflectBooleanAttribute(this, "manual", value);
     }
     // --- Core delegated getters ---
     get message() {
@@ -751,7 +798,8 @@ class WcsWebSocket extends HTMLElement {
     // --- Lifecycle ---
     attributeChangedCallback(name, oldValue, newValue) {
         // 再接続するのは url が「変わった」ときだけ。同じ値の書き込み（url の setter 自身の
-        // setAttribute の後に @wcstack/state の inputs[].attribute ミラーが同じ値を書く、など）
+        // setAttribute の後に、属性も書く binder — @wcstack/state 3.x の inputs[].attribute ミラー —
+        // が同じ値を書く、など）
         // は何もしない。connectedCallback より前（upgrade 中・DOM の外）の変化は、
         // connectedCallback がそのときの url で 1 回だけ接続する。
         if (name === "url" && oldValue !== newValue && this._attached && !this.manual && newValue) {

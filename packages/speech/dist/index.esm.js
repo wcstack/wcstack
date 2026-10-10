@@ -782,6 +782,61 @@ function upgradeProperties(element) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/input-attribute.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// 属性へ反映する wc-bindable 入力の producer 側（SPEC-extensions § Producer guidance for inputs の P1〜P3）。
+// 入力の setter は属性をこの 2 関数で書く。それで次が揃う:
+//   - `undefined` は「値が無い」（P1）: 属性を、この関数で最初に書く前の状態 — マークアップに書かれた値、
+//     無ければ属性なし（= その入力の文書化した既定値）— へ戻す。applier プロファイルを宣言する binder は
+//     値の後の `undefined` を書き（A2）、React 19 も書き、直接の代入でも届く。
+//   - `null` はクリア（P2）: 属性なし、つまり文書化した既定値。
+//   - どちらも文字列 "undefined" / "null" として属性に入らない。
+//
+// 「最初に書く前」は、その最初の書き込みのときに読む（遅延）。upgrade 前に代入されたプロパティは
+// connectedCallback の upgradeProperties() が通し直すので、そのときにはパーサが書いた属性が揃っている。
+// 要素自身が setter を通さずに書いた属性は、最初の書き込みより前なら「最初の状態」に含まれる。
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/input-attribute.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/inputAttribute.ts). Those copies are generated — do not edit them.
+const initialAttributes = new WeakMap();
+/** The attribute as it stood before the first write through these helpers. */
+function initialAttribute(el, name) {
+    let byName = initialAttributes.get(el);
+    if (byName === undefined) {
+        byName = new Map();
+        initialAttributes.set(el, byName);
+    }
+    if (!byName.has(name))
+        byName.set(name, el.getAttribute(name));
+    return byName.get(name);
+}
+function writeAttribute(el, name, value) {
+    if (value === null)
+        el.removeAttribute(name);
+    else
+        el.setAttribute(name, value);
+}
+/**
+ * A value attribute. `value` is written as `String(value)`; `null` removes the attribute;
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value === null ? null : String(value));
+}
+/**
+ * A boolean attribute, present while `value` is truthy (`null` and `false` remove it);
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectBooleanAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
+}
+
 /**
  * `<wcs-speak>` — declarative text-to-speech. Wraps SpeakCore and exposes:
  *
@@ -886,56 +941,46 @@ class WcsSpeak extends HTMLElement {
         }
     }
     // --- Attribute accessors ---
+    //
+    // Setters never let setAttribute stringify null / undefined: `null` removes
+    // the attribute (the default), `undefined` restores the attribute the element
+    // started with (wc-bindable producer guidance P1; React 19 and a direct
+    // assignment deliver it, @wcstack/state does not).
     get rate() {
         return this._numberAttr("rate", 1);
     }
     set rate(value) {
-        this.setAttribute("rate", String(value));
+        reflectAttribute(this, "rate", value);
     }
     get pitch() {
         return this._numberAttr("pitch", 1);
     }
     set pitch(value) {
-        this.setAttribute("pitch", String(value));
+        reflectAttribute(this, "pitch", value);
     }
     get volume() {
         return this._numberAttr("volume", 1);
     }
     set volume(value) {
-        this.setAttribute("volume", String(value));
+        reflectAttribute(this, "volume", value);
     }
     get voice() {
         return this.getAttribute("voice") ?? "";
     }
     set voice(value) {
-        if (value == null) {
-            this.removeAttribute("voice");
-        }
-        else {
-            this.setAttribute("voice", String(value));
-        }
+        reflectAttribute(this, "voice", value);
     }
     get lang() {
         return this.getAttribute("lang") ?? "";
     }
     set lang(value) {
-        if (value == null) {
-            this.removeAttribute("lang");
-        }
-        else {
-            this.setAttribute("lang", String(value));
-        }
+        reflectAttribute(this, "lang", value);
     }
     get manual() {
         return this.hasAttribute("manual");
     }
     set manual(value) {
-        if (value) {
-            this.setAttribute("manual", "");
-        }
-        else {
-            this.removeAttribute("manual");
-        }
+        reflectBooleanAttribute(this, "manual", value);
     }
     // --- Reactive command-property ---
     get say() {
@@ -944,9 +989,10 @@ class WcsSpeak extends HTMLElement {
     set say(value) {
         // Reactive: writing a new value speaks it. `manual` mutes the path entirely
         // (the imperative `speak` command still works) — both an opt-out and the hook
-        // used to avoid a recognition echo loop while listening. A conforming binder
-        // never delivers `undefined` (it skips the write), but a direct assignment
-        // can, so normalize null/undefined to a no-op.
+        // used to avoid a recognition echo loop while listening. @wcstack/state never
+        // writes `undefined`, but a wc-bindable applier writes it after a value
+        // (applier profile A2; React 19 does too), and a direct assignment can:
+        // "no value" is nothing to say, so null/undefined are a no-op.
         //
         // ECHO-LOOP WARNING: when wiring <wcs-listen> → state → `say`, the synthesized
         // audio will be re-recognized unless speech is muted while listening. There is
@@ -1613,38 +1659,28 @@ class WcsListen extends HTMLElement {
         }
     }
     // --- Attribute accessors ---
+    //
+    // Setters never let setAttribute stringify null / undefined: `null` removes
+    // the attribute (the default), `undefined` restores the attribute the element
+    // started with (wc-bindable producer guidance P1; React 19 and a direct
+    // assignment deliver it, @wcstack/state does not).
     get lang() {
         return this.getAttribute("lang") ?? "";
     }
     set lang(value) {
-        if (value == null) {
-            this.removeAttribute("lang");
-        }
-        else {
-            this.setAttribute("lang", String(value));
-        }
+        reflectAttribute(this, "lang", value);
     }
     get continuous() {
         return this.hasAttribute("continuous");
     }
     set continuous(value) {
-        if (value) {
-            this.setAttribute("continuous", "");
-        }
-        else {
-            this.removeAttribute("continuous");
-        }
+        reflectBooleanAttribute(this, "continuous", value);
     }
     get interim() {
         return this.hasAttribute("interim");
     }
     set interim(value) {
-        if (value) {
-            this.setAttribute("interim", "");
-        }
-        else {
-            this.removeAttribute("interim");
-        }
+        reflectBooleanAttribute(this, "interim", value);
     }
     get maxRestarts() {
         const attr = this.getAttribute("max-restarts");
@@ -1657,18 +1693,13 @@ class WcsListen extends HTMLElement {
         return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
     }
     set maxRestarts(value) {
-        this.setAttribute("max-restarts", String(value));
+        reflectAttribute(this, "max-restarts", value);
     }
     get manual() {
         return this.hasAttribute("manual");
     }
     set manual(value) {
-        if (value) {
-            this.setAttribute("manual", "");
-        }
-        else {
-            this.removeAttribute("manual");
-        }
+        reflectBooleanAttribute(this, "manual", value);
     }
     // --- Core delegated getters ---
     get interimTranscript() {

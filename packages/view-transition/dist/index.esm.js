@@ -542,6 +542,71 @@ function upgradeProperties(element) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/input-attribute.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// 属性へ反映する wc-bindable 入力の producer 側（SPEC-extensions § Producer guidance for inputs の P1〜P3）。
+// 入力の setter は属性をこの 2 関数で書く。それで次が揃う:
+//   - `undefined` は「値が無い」（P1）: 属性を、この関数で最初に書く前の状態 — マークアップに書かれた値、
+//     無ければ属性なし（= その入力の文書化した既定値）— へ戻す。applier プロファイルを宣言する binder は
+//     値の後の `undefined` を書き（A2）、React 19 も書き、直接の代入でも届く。
+//   - `null` はクリア（P2）: 属性なし、つまり文書化した既定値。
+//   - どちらも文字列 "undefined" / "null" として属性に入らない。
+//
+// 「最初に書く前」は、その最初の書き込みのときに読む（遅延）。upgrade 前に代入されたプロパティは
+// connectedCallback の upgradeProperties() が通し直すので、そのときにはパーサが書いた属性が揃っている。
+// 要素自身が setter を通さずに書いた属性は、最初の書き込みより前なら「最初の状態」に含まれる。
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/input-attribute.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/inputAttribute.ts). Those copies are generated — do not edit them.
+const initialAttributes = new WeakMap();
+/** The attribute as it stood before the first write through these helpers. */
+function initialAttribute(el, name) {
+    let byName = initialAttributes.get(el);
+    if (byName === undefined) {
+        byName = new Map();
+        initialAttributes.set(el, byName);
+    }
+    if (!byName.has(name))
+        byName.set(name, el.getAttribute(name));
+    return byName.get(name);
+}
+function writeAttribute(el, name, value) {
+    if (value === null)
+        el.removeAttribute(name);
+    else
+        el.setAttribute(name, value);
+}
+/**
+ * A value attribute. `value` is written as `String(value)`; `null` removes the attribute;
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value === null ? null : String(value));
+}
+/**
+ * A boolean attribute, present while `value` is truthy (`null` and `false` remove it);
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectBooleanAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
+}
+
+/**
+ * A token-list input (`types`, `participants`) as its attribute value: the array
+ * form joins with spaces, which is exactly what the Core splits a string on.
+ * `null` / `undefined` pass through for the reflect helper to interpret.
+ */
+function tokenListAttribute(value) {
+    if (value == null || typeof value === "string")
+        return value;
+    return [...value].join(" ");
+}
 /**
  * `<wcs-view-transition>` — the page's view-transition policy node.
  *
@@ -637,48 +702,65 @@ class WcsViewTransition extends HTMLElement {
         }
     }
     // --- inputs ---
+    //
+    // Every input setter writes its attribute, and the attribute is what reaches
+    // the Core (`_applyAttribute`), so the attribute and the Core never disagree:
+    // a property write survives a reconnect (`_syncAllAttributes` re-applies the
+    // attribute, which now holds it) and outlives an authored attribute when it was
+    // assigned before upgrade. `null` removes the attribute (the documented default)
+    // and `undefined` restores the attribute the element started with (wc-bindable
+    // producer guidance P1; React 19 and a direct assignment deliver it,
+    // @wcstack/state does not). Neither is ever written as "null" / "undefined".
+    // The getters keep returning the Core's parsed value.
     get disabled() {
         return this._core.disabled;
     }
     set disabled(value) {
-        this._core.disabled = value === true;
-        this.toggleAttribute("disabled", value === true);
+        // Only `true` disables, as before; any other value (null included) enables.
+        reflectBooleanAttribute(this, "disabled", value === undefined ? undefined : value === true);
+        this._applyFromAttribute("disabled");
     }
     get mode() {
         return this._core.mode;
     }
     set mode(value) {
-        this._core.mode = value;
+        reflectAttribute(this, "mode", value);
+        this._applyFromAttribute("mode");
     }
     get naming() {
         return this._core.naming;
     }
     set naming(value) {
-        this._core.naming = value;
+        reflectAttribute(this, "naming", value);
+        this._applyFromAttribute("naming");
     }
     get namingLimit() {
         return this._core.namingLimit;
     }
     set namingLimit(value) {
-        this._core.namingLimit = Number(value);
+        reflectAttribute(this, "naming-limit", value);
+        this._applyFromAttribute("naming-limit");
     }
     get reducedMotion() {
         return this._core.reducedMotion;
     }
     set reducedMotion(value) {
-        this._core.reducedMotion = value;
+        reflectAttribute(this, "reduced-motion", value);
+        this._applyFromAttribute("reduced-motion");
     }
     get types() {
         return this._core.types;
     }
     set types(value) {
-        this._core.types = value;
+        reflectAttribute(this, "types", tokenListAttribute(value));
+        this._applyFromAttribute("types");
     }
     get participants() {
         return this._core.participants;
     }
     set participants(value) {
-        this._core.participants = value;
+        reflectAttribute(this, "for", tokenListAttribute(value));
+        this._applyFromAttribute("for");
     }
     // --- observable outputs ---
     get active() {
@@ -711,12 +793,13 @@ class WcsViewTransition extends HTMLElement {
         this._applyAttribute(name, newValue);
     }
     /**
-     * Apply the attributes present at connect time. Absent ones are deliberately
-     * skipped rather than applied as null: a property assigned before upgrade
-     * (Angular's `[prop]`, Lit's `.prop=`, or plain `el.mode = ...`) has just been
-     * replayed through the setter by `upgradeProperties`, and re-applying a missing
-     * attribute would immediately reset it to the default. Removing an attribute
-     * still resets, via `attributeChangedCallback`.
+     * Apply the attributes present at connect time. A property assigned before
+     * upgrade (Angular's `[prop]`, Lit's `.prop=`, or plain `el.mode = ...`) has just
+     * been replayed through the setter by `upgradeProperties`, which wrote it to the
+     * attribute, so what is applied here already includes it. Absent ones are skipped
+     * rather than applied as null, so a value set on the Core directly (`el.core`)
+     * is not reset by a reconnect. Removing an attribute still resets, via
+     * `attributeChangedCallback`.
      */
     _syncAllAttributes() {
         for (const name of WcsViewTransition.observedAttributes) {
@@ -725,6 +808,15 @@ class WcsViewTransition extends HTMLElement {
                 continue;
             this._applyAttribute(name, value);
         }
+    }
+    /**
+     * Carry an attribute a setter has just written to the Core. When the write
+     * changed the attribute, `attributeChangedCallback` has already done this;
+     * repeating it is harmless, and it covers a write that left the attribute as it
+     * was while the Core had been set to something else through `el.core`.
+     */
+    _applyFromAttribute(name) {
+        this._applyAttribute(name, this.getAttribute(name));
     }
     _applyAttribute(name, value) {
         switch (name) {

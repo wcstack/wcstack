@@ -187,11 +187,11 @@ declare class WcsPermission extends HTMLElement {
     private _initInternals;
     private _wireStates;
     get name(): string;
-    set name(value: string);
+    set name(value: string | null | undefined);
     get userVisibleOnly(): boolean;
-    set userVisibleOnly(value: boolean);
+    set userVisibleOnly(value: boolean | null | undefined);
     get sysex(): boolean;
-    set sysex(value: boolean);
+    set sysex(value: boolean | null | undefined);
     get state(): PermissionStateOrUnsupported;
     get granted(): boolean;
     get denied(): boolean;

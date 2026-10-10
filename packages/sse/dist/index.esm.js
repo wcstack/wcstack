@@ -541,6 +541,61 @@ function upgradeProperties(element) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/input-attribute.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// 属性へ反映する wc-bindable 入力の producer 側（SPEC-extensions § Producer guidance for inputs の P1〜P3）。
+// 入力の setter は属性をこの 2 関数で書く。それで次が揃う:
+//   - `undefined` は「値が無い」（P1）: 属性を、この関数で最初に書く前の状態 — マークアップに書かれた値、
+//     無ければ属性なし（= その入力の文書化した既定値）— へ戻す。applier プロファイルを宣言する binder は
+//     値の後の `undefined` を書き（A2）、React 19 も書き、直接の代入でも届く。
+//   - `null` はクリア（P2）: 属性なし、つまり文書化した既定値。
+//   - どちらも文字列 "undefined" / "null" として属性に入らない。
+//
+// 「最初に書く前」は、その最初の書き込みのときに読む（遅延）。upgrade 前に代入されたプロパティは
+// connectedCallback の upgradeProperties() が通し直すので、そのときにはパーサが書いた属性が揃っている。
+// 要素自身が setter を通さずに書いた属性は、最初の書き込みより前なら「最初の状態」に含まれる。
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/input-attribute.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/inputAttribute.ts). Those copies are generated — do not edit them.
+const initialAttributes = new WeakMap();
+/** The attribute as it stood before the first write through these helpers. */
+function initialAttribute(el, name) {
+    let byName = initialAttributes.get(el);
+    if (byName === undefined) {
+        byName = new Map();
+        initialAttributes.set(el, byName);
+    }
+    if (!byName.has(name))
+        byName.set(name, el.getAttribute(name));
+    return byName.get(name);
+}
+function writeAttribute(el, name, value) {
+    if (value === null)
+        el.removeAttribute(name);
+    else
+        el.setAttribute(name, value);
+}
+/**
+ * A value attribute. `value` is written as `String(value)`; `null` removes the attribute;
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value === null ? null : String(value));
+}
+/**
+ * A boolean attribute, present while `value` is truthy (`null` and `false` remove it);
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectBooleanAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
+}
+
 class WcsSse extends HTMLElement {
     // SSR (§4.1/§4.4): wc-bindable アダプタはこのフラグを見て connectedCallbackPromise を
     // 待ってからスナップショットを取る。SSE には同期接続しか無いが、骨格を全 IO ノードで
@@ -634,22 +689,22 @@ class WcsSse extends HTMLElement {
         return this._connectedCallbackPromise;
     }
     // --- Attribute accessors ---
+    //
+    // setter は null / undefined を setAttribute に文字列化させない（"undefined" の url は
+    // attributeChangedCallback が EventSource を /undefined へ張ってしまう）。`null` は属性を
+    // 外して既定値へ、`undefined` は要素が最初に持っていた属性へ戻す（wc-bindable producer
+    // guidance P1。React 19 や直接の代入は undefined を書く。@wcstack/state は書かない）。
     get url() {
         return this.getAttribute("url") || "";
     }
     set url(value) {
-        this.setAttribute("url", value);
+        reflectAttribute(this, "url", value);
     }
     get withCredentials() {
         return this.hasAttribute("with-credentials");
     }
     set withCredentials(value) {
-        if (value) {
-            this.setAttribute("with-credentials", "");
-        }
-        else {
-            this.removeAttribute("with-credentials");
-        }
+        reflectBooleanAttribute(this, "with-credentials", value);
     }
     // Shell の events は CSV 文字列（DOM 属性そのまま）。connect() で split して
     // SseCore.connect の string[] options.events に変換する（Core 側は配列）。
@@ -657,29 +712,19 @@ class WcsSse extends HTMLElement {
         return this.getAttribute("events") || "";
     }
     set events(value) {
-        this.setAttribute("events", value);
+        reflectAttribute(this, "events", value);
     }
     get raw() {
         return this.hasAttribute("raw");
     }
     set raw(value) {
-        if (value) {
-            this.setAttribute("raw", "");
-        }
-        else {
-            this.removeAttribute("raw");
-        }
+        reflectBooleanAttribute(this, "raw", value);
     }
     get manual() {
         return this.hasAttribute("manual");
     }
     set manual(value) {
-        if (value) {
-            this.setAttribute("manual", "");
-        }
-        else {
-            this.removeAttribute("manual");
-        }
+        reflectBooleanAttribute(this, "manual", value);
     }
     // --- Core delegated getters ---
     get message() {

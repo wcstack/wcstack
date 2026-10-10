@@ -255,8 +255,12 @@ declare class AudioGraphCore extends EventTarget {
     setPatch(patch: Patch): boolean;
     /** Live parameter update: applies to every instance, sounding voices included. */
     setParam(key: string, name: string, value: number): void;
-    /** Live update of a non-AudioParam setting (`type`, `mix`, ADSR times, …). */
-    setProp(key: string, name: string, value: string): void;
+    /**
+     * Live update of a non-AudioParam setting (`type`, `mix`, ADSR times, …).
+     * `null` clears it: sounding instances and the ones built later get the
+     * builder's default back.
+     */
+    setProp(key: string, name: string, value: string | null): void;
     /** Master output level. Desired only — the effective gain is never read back. */
     setVolume(value: number): void;
     /** Toggle the ear-protection limiter. Rewires the master chain in place. */
@@ -504,13 +508,13 @@ declare class WcsAudio extends HTMLElement {
     private _initInternals;
     private _wireStates;
     get volume(): number;
-    set volume(value: number);
+    set volume(value: number | null | undefined);
     /** Ear-protection limiter, on unless explicitly turned off. */
     get limiter(): boolean;
-    set limiter(value: boolean);
+    set limiter(value: boolean | null | undefined);
     /** Resume the context on the first user gesture. On unless turned off. */
     get resumeOnGesture(): boolean;
-    set resumeOnGesture(value: boolean);
+    set resumeOnGesture(value: boolean | null | undefined);
     get state(): AudioContextState;
     get running(): boolean;
     get suspended(): boolean;
@@ -568,7 +572,7 @@ declare class WcsVoice extends HTMLElement {
     private static _next;
     constructor();
     get poly(): number;
-    set poly(value: number);
+    set poly(value: number | null | undefined);
     connectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
 }
@@ -578,7 +582,7 @@ interface AudioRootLike extends HTMLElement {
     readonly isAudioRoot: true;
     readonly audioCore: {
         setParam(key: string, name: string, value: number): void;
-        setProp(key: string, name: string, value: string): void;
+        setProp(key: string, name: string, value: string | null): void;
         sample(key: string, mode?: "wave" | "fft"): Uint8Array | null;
     } | null;
     requestRebuild(): void;
@@ -593,7 +597,7 @@ declare function findAudioRoot(start: Element): AudioRootLike | null;
  * Base for every audio node tag.
  *
  * These elements are **descriptors and nothing else**. They hold a key, expose
- * their attributes as patch values, and forward live numeric changes to the
+ * their attributes as patch values, and forward live attribute changes to the
  * root's Core. They never hold an `AudioNode` — which is what makes ADR-14 G2
  * ("handles do not cross the protocol boundary") a structural property of the
  * package rather than a rule someone has to remember.
@@ -613,16 +617,12 @@ declare class AudioNodeShell extends HTMLElement {
     static get observedAttributes(): string[];
     /** Stable identity for this element across rebuilds. */
     readonly patchKey: string;
-    /** Values written as properties rather than attributes. */
-    private _values;
     patchParams(): Record<string, number>;
     patchProps(): Record<string, string>;
-    /** Property assignment wins over the attribute, so a binding core writing
-     *  `el.frequency = 900` is not overwritten by a stale attribute on rebuild. */
+    /** The attribute as a number, or the default when it is absent or not one.
+     *  The property setters reflect to the attribute, so it is never stale. */
     protected _num(name: string, dflt: number): number;
     protected get root(): AudioRootLike | null;
-    /** Live numeric update: goes straight to the Core, no rebuild. */
-    protected _setParam(name: string, value: number): void;
     connectedCallback(): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
 }

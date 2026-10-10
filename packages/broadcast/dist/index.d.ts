@@ -228,9 +228,9 @@ declare class WcsBroadcast extends HTMLElement {
     private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get name(): string;
-    set name(value: string);
+    set name(value: string | null | undefined);
     get manual(): boolean;
-    set manual(value: boolean);
+    set manual(value: boolean | null | undefined);
     get message(): any;
     get error(): WcsBroadcastErrorDetail | null;
     get errorInfo(): WcsIoErrorInfo | null;

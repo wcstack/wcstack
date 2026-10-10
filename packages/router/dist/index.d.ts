@@ -357,6 +357,7 @@ declare class Router extends HTMLElement implements IRouter {
     private _notifyLocationChange;
     private _getBasename;
     get basename(): string;
+    set basename(value: string | null | undefined);
     private _getOutlet;
     private _getTemplate;
     get outlet(): IOutlet;

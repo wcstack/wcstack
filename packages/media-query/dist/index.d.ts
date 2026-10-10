@@ -171,7 +171,7 @@ declare class WcsMediaQuery extends HTMLElement {
     private _initInternals;
     private _wireStates;
     get query(): string;
-    set query(value: string);
+    set query(value: string | null | undefined);
     get matched(): boolean;
     get media(): string;
     get supported(): boolean;

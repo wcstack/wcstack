@@ -275,19 +275,19 @@ declare class WcsViewTransition extends HTMLElement {
     private _initInternals;
     private _wireStates;
     get disabled(): boolean;
-    set disabled(value: boolean);
+    set disabled(value: boolean | null | undefined);
     get mode(): TransitionMode;
-    set mode(value: TransitionMode);
+    set mode(value: TransitionMode | null | undefined);
     get naming(): TransitionNaming;
-    set naming(value: TransitionNaming);
+    set naming(value: TransitionNaming | null | undefined);
     get namingLimit(): number;
-    set namingLimit(value: number);
+    set namingLimit(value: number | null | undefined);
     get reducedMotion(): ReducedMotionPolicy;
-    set reducedMotion(value: ReducedMotionPolicy);
+    set reducedMotion(value: ReducedMotionPolicy | null | undefined);
     get types(): readonly string[];
-    set types(value: readonly string[] | string);
+    set types(value: readonly string[] | string | null | undefined);
     get participants(): readonly string[];
-    set participants(value: readonly string[] | string);
+    set participants(value: readonly string[] | string | null | undefined);
     get active(): boolean;
     get error(): Error | null;
     skip(): void;
@@ -295,14 +295,22 @@ declare class WcsViewTransition extends HTMLElement {
     disconnectedCallback(): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
     /**
-     * Apply the attributes present at connect time. Absent ones are deliberately
-     * skipped rather than applied as null: a property assigned before upgrade
-     * (Angular's `[prop]`, Lit's `.prop=`, or plain `el.mode = ...`) has just been
-     * replayed through the setter by `upgradeProperties`, and re-applying a missing
-     * attribute would immediately reset it to the default. Removing an attribute
-     * still resets, via `attributeChangedCallback`.
+     * Apply the attributes present at connect time. A property assigned before
+     * upgrade (Angular's `[prop]`, Lit's `.prop=`, or plain `el.mode = ...`) has just
+     * been replayed through the setter by `upgradeProperties`, which wrote it to the
+     * attribute, so what is applied here already includes it. Absent ones are skipped
+     * rather than applied as null, so a value set on the Core directly (`el.core`)
+     * is not reset by a reconnect. Removing an attribute still resets, via
+     * `attributeChangedCallback`.
      */
     private _syncAllAttributes;
+    /**
+     * Carry an attribute a setter has just written to the Core. When the write
+     * changed the attribute, `attributeChangedCallback` has already done this;
+     * repeating it is harmless, and it covers a write that left the attribute as it
+     * was while the Core had been set to something else through `el.core`.
+     */
+    private _applyFromAttribute;
     private _applyAttribute;
 }
 
