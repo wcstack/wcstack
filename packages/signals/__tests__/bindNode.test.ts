@@ -286,6 +286,35 @@ describe("bindNode.bindInput（signal → property writeback）", () => {
     expect(node.url).toBe("/a");
   });
 
+  it("undefined は値の後だけ書く（wc-bindable の applier プロファイル A2）", () => {
+    const node = new CountingNode();
+    const bound = bindNode(node, CountingNode.wcBindable);
+    node.url = "/authored"; // 要素自身の初期状態（マークアップの値など）
+    node.writes = 0;
+    const url = signal<string | undefined>(undefined);
+    bound.bindInput("url", url);
+    flushSync();
+    expect(node.writes).toBe(0); // 前回の評価が無い undefined は書かない
+    expect(node.url).toBe("/authored");
+
+    url.set("/a");
+    flushSync();
+    expect(node.url).toBe("/a");
+
+    url.set(undefined); // 値の後の undefined は書く（要素は初期状態に戻る）
+    flushSync();
+    expect(node.writes).toBe(2);
+    expect(node.url).toBeUndefined();
+
+    node.url = "/again";
+    node.writes = 0;
+    url.set("/b");
+    url.set(undefined); // 1 回の flush にまとまれば、前回の評価も undefined
+    flushSync();
+    expect(node.writes).toBe(0);
+    expect(node.url).toBe("/again");
+  });
+
   it("書き戻しが無限ループしない（computed を介した echo）", () => {
     const node = new CountingNode();
     const bound = bindNode(node, CountingNode.wcBindable);

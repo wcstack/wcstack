@@ -9,6 +9,10 @@ See [Stability](./README.md#stability) for which APIs are stable vs. evolving / 
 
 ## [Unreleased]
 
+### Changed
+
+- **`bindInput` writes `undefined` only after the source had another value** — the wc-bindable 0.10 applier profile's rule (A2), which React 19 follows for custom elements. An `undefined` on the first evaluation, or after another `undefined`, is not written, so the element keeps its own initial state (its default, or the value in the markup); one after a value is written, and the element restores that state. It used to write `undefined` on the first evaluation too (unless the property already held it), overwriting that initial state.
+
 ## [2.1.1] — 2026-09-06
 
 ### Fixed
