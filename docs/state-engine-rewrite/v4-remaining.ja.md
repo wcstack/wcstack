@@ -1064,3 +1064,19 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - camera の `deviceId` は、決まった後は使っているデバイス（`wcs-camera:device-changed` と同じ値）を返す。要求（`device-id`）を返していたので、binder の初期同期がイベントと違う値を読んでいた。recorder の `mimeType` と同じ形。
   - `<wcs-voice>` の `poly` の setter も helper を通す（wc-bindable の入力ではないが、`"undefined"` で無駄な rebuild が走っていた）。
   - wcstack-skill の main（3.x 向け）にも、0.9 のアダプタの規則を入れた。I/O ノードの `null` / `undefined` と `basename` は 4.0 の変更なので main には入れない。
+
+### 4.0.0-rc.9 の公開（2026-10-10）
+
+- wc-bindable-protocol 0.10.0 への追随（上の節）を `prerelease-rc`（run 38019489462、34 分。publish に 14 分）で公開した。エンジン（`packages/state/src`）は rc.8 から変わっていない。版を名指す例（state README の split の URL、移行ガイド、examples/ssr）は先に rc.9 にした（84e225a9）。
+- 全 49 パッケージが npm の `next` で 4.0.0-rc.9（`latest` は 3.5.4 のまま）。タグ `v4.0.0-rc.9` と GitHub のプレリリース。bump の commit は 3a6e6574。
+- 公開の前に確かめたこと（この branch では CI が走らないので手元で）: release.yml と同じ手順の dry run（rc.9 への bump → 内部依存の範囲合わせ → 49 パッケージの build → 計画のやり直し → 全パッケージの typecheck と test:coverage → bindable の settable-surface → wcstack のスモーク → builtin-tags の再生成）、作り直した dist での e2e 289 件、再生成したカタログでの vscode-wcs のテスト 1,167 件（差分は `<wcs-defined>` の observedAttributes だけ）、wcs-validate（全ページ 0 error）、全パッケージの lint、sync スクリプト 4 本の `--check`、サイズとカップリングの検査。
+- 公開の後に確かめたこと:
+  - 全パッケージの dist-tag（公開のログには 49 件すべての `+ name@4.0.0-rc.9` がある。名前順で最後の `wcstack` がレジストリに数分遅れて見えた）
+  - server の依存が厳密な `4.0.0-rc.9`
+  - CDN（split の core・auto・features の `scopes` と `native-commands`、`auto.min.js.map`・`index.esm.js.map`・`split/core.js.map`、defined の `auto.min.js`）と `esm.run` の `/auto`（state・router）が 200
+  - jsDelivr の state の `index.esm.js`・`auto.min.js`、defined と router の `auto.min.js` がコミットされた rc.9 の dist と同一
+  - コミットされた rc.9 の dist のまま（手元でビルドせずに）e2e 289 件がすべて通る
+- ゲートの基準値を rc.9 の dist で取り直した（カップリングは基準値どおり）。動いたのは 1〜2B だけ。
+  - core.min.js 19,846B（上限 20,480B まで 634B。rc.8 と同じ）
+  - `index.esm.js` 50,653B、`auto.min.js` 47,715B、split の core 24,500B、scopes 8,909B
+- wcstack-skill の `release/v4.0.0` に 0.10.0 への追随を入れた（8409b10）。main（3.x 向け）には 0.9 のアダプタの規則だけを入れた（59835ca）。どちらも push 済み。
