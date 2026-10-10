@@ -1059,3 +1059,8 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 調査で挙がった「`manual` より先に `url` が取り込まれて動き出す」（sse / worker / resize）は起きない: 取り込み直しの途中では、まだ取り込まれていない `manual` が own プロパティとして読める。
 - 文書: 提案文書 4 本に上流の回答、framework-adapter-integration とルート README に 0.9 のアダプタ（`syncOn: "define"` が既定）、`protocol/wc-bindable.ts` のコメント、vscode-wcs の補完の文言（`Markup attribute of …`）、CHANGELOG、移行ガイド §3.9。React / Vue の例は `@wc-bindable/*` 0.10。wcstack-skill の `release/v4.0.0` にも反映した（未コミット）。
 - 確かめたこと: 変更した 42 パッケージで test:coverage・lint・`tsc --noEmit`、vscode-wcs のテスト 1,167 件、`sync-protocol-types.mjs --check`。dist はビルドしていないので、e2e と lint / 補完のツールに I/O ノードの変更が届くのは次の rc のビルドから。
+- 続き（同日）:
+  - signals の `bindInput` を A2 に合わせた（最初の評価の `undefined` を書いて、要素の初期状態を上書きしていた）。binding を外したときに `undefined` を書くこと（SHOULD）は入れていない（取り外し中の要素で副作用を起こしうる）。`bindCommand` は戻り値を捨てるので、signals もプロファイルは宣言しない。
+  - camera の `deviceId` は、決まった後は使っているデバイス（`wcs-camera:device-changed` と同じ値）を返す。要求（`device-id`）を返していたので、binder の初期同期がイベントと違う値を読んでいた。recorder の `mimeType` と同じ形。
+  - `<wcs-voice>` の `poly` の setter も helper を通す（wc-bindable の入力ではないが、`"undefined"` で無駄な rebuild が走っていた）。
+  - wcstack-skill の main（3.x 向け）にも、0.9 のアダプタの規則を入れた。I/O ノードの `null` / `undefined` と `basename` は 4.0 の変更なので main には入れない。
