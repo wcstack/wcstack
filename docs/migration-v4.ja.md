@@ -562,6 +562,7 @@ import { defineState } from "@wcstack/state/define";
   - 変わらない制限: ルートの本文やレイアウトのテンプレートの直下に、要素で包まずに書いたテキストの `{{ }}` は、ナビゲーションで入ったときにはバインドされません。要素で包んでください。
 - **`@wcstack/server`**: §3.6。
 - **`@wcstack/autoloader` と I/O ノードのパッケージ**: `bootstrapXxx()` のオプションの規則と `scanImportmap`（§3.2）。
+- **I/O ノードのパッケージ: 入力に書いた `null` と `undefined`。** `null` は入力の属性を外し（文書化した既定値）、`undefined` は要素が最初に持っていた属性 — マークアップに書かれた値、無ければ属性なし — に戻します（wc-bindable 0.10 の入力についての producer ガイダンス）。3.x の多くの setter は `String(value)` で書いていたので、`null` / `undefined` は属性 `"null"` / `"undefined"` になり（`<wcs-sse>` / `<wcs-ws>` / `<wcs-worker>` は `undefined` を開き、`target` のセレクタは監視を止めた）、真偽値はマークアップに書いた属性を消していました。`@wcstack/state` は `undefined` を書かないので、状態でバインドしたページで差が出るのは `null` を書く場合だけです: 既定で on の真偽値（`<wcs-audio>` の `limiter` と `resumeOnGesture`、`<wcs-debounce>` の `trailing`、`<wcs-throttle>` の `leading`）は off ではなく on に戻ります。`<wcs-storage>` の `value = undefined` は保存したエントリを残します（3.x は消していました）。入力ごとの扱いは各パッケージの README にあります。
 - **`wcstack/auto`** は `@wcstack/state`・router・fetch・storage・autoloader を同梱しているので、ここまでの変更がすべて及びます。
 - **`@wcstack/devtools`**: そのまま動きます（フックのプロトコル v2）。1 回の更新が 32 回のパスで落ち着かないときも `state:render-chain-limit` を送ります（`maxDepth: 32`）。カバレッジのビューは、`for:` も `$listKeys` も無い行の `$watch` を、発火するまで `prerequisite-missing` ではなく `never` と出します。その前提は 3.x のものでした（§3.4）。
 - **binder プロトコル**: `bind(subtree, options?)` に省略できる第 2 引数が加わります。内容を差し込み、後でひとまとまりとして出し入れするコード（3.5 以降の router。ルートの内容とレイアウトの内容）は `{ range: true }` を渡し、そのときだけ差し込んだ内容の先頭の `for:` / `if:` のテンプレートが描かれます。binder を自分で呼ぶ場合だけ関係します。

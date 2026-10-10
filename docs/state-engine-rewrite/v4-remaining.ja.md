@@ -1044,3 +1044,18 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - `index.esm.js` 50,654B、`auto.min.js` 47,715B、split の core 24,502B、scopes 8,909B
 - wcstack-skill の `release/v4.0.0` に、入力をプロパティにだけ書くことを入れた（0cc3464、push 済み）。
 - 上流の wc-bindable-protocol への提案（[spec-proposal-input-attribute-reflection.md](../spec-proposal-input-attribute-reflection.md)）は [#29](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/29) として出した（2026-10-08）。#27（undefined の書き込み）の提案文にあるミラーの一文は、これが通れば不要になる。
+
+### wc-bindable-protocol 0.10.0 への追随（2026-10-10）
+
+上流の 0.10.0 は、core と framework アダプタの挙動を変えていない（破壊的なのは `@wc-bindable/remote` の JsonValue 検証だけで、wcstack は remote も composite も使っていない）。仕様には Extension 1 の applier プロファイル（A1〜A3）と、入力についての producer ガイダンス（P1〜P4）が入った。wcstack が出した #27〜#29 への回答でもある。
+
+- state（binding applier。プロファイルの宣言は任意）:
+  - A1（ヒントの属性を書かない・upgrade 前に属性へ逃げない）は rc.8 から満たしている。
+  - A2 は満たさない。state は前に値があっても `undefined` を書かない（B8）。A2 は値の後の `undefined` を書いて要素を初期状態に戻させる。4.0.0 は今の規則のまま、プロファイルを宣言しない（判断。根拠と差は [spec-proposal-undefined-write-skip.md](../spec-proposal-undefined-write-skip.md) §8）。`examples/router-spa` の詳細 url はこの規則に依存している。A2 に合わせるかは 4.0.0 の後に改めて決める。
+  - A3 は引数の扱いは満たすが、`Token.emit` が購読者の同期 throw を報告して結果を `undefined` にすること、切り離された要素を呼ばないことが違う。
+- I/O ノード（P1 / P2）: 入力の setter は `/protocol/input-attribute.ts`（`reflectAttribute` / `reflectBooleanAttribute`、各パッケージへ `src/protocol/inputAttribute.ts` として同期。33 パッケージ）を通して属性を書く。`null` は属性を外し（既定値）、`undefined` は最初の書き込みの前の属性（マークアップの値）に戻す。文字列 `"null"` / `"undefined"` は書かない。調べた時点では `String(value)` で `"undefined"` を書く setter が大半で、`<wcs-sse>` / `<wcs-ws>` / `<wcs-worker>` は `undefined` を開き、`target` のセレクタは監視を止め、`<wcs-audio>` の `limiter` は切れていた。state は `undefined` を書かないので表に出ていなかったが、React 19、signals の `bindInput`、直接の代入では起きる。各 README に `null` / `undefined` の段落を足した。
+  - view-transition は全入力を属性へ反映するようにした（P3。`disabled` 以外は Core にだけ書き、接続のたびに古い属性で上書きされていた）。audio のノードタグの AudioParam 入力も属性へ反映する。storage の `value = undefined` は保存を消さない。
+- ついでに見つかった不具合: router の `basename` に setter が無かった（4.0 の `basename:` バインディングが TypeError）。defined の `tags` / `mode` / `timeout` は接続時にしか読まず、バインドした値が効かなかった。throttle の `leading` プロパティが効かなかった。wakelock は `active` と `manual` があっても upgrade でロックを取っていた。
+  - 調査で挙がった「`manual` より先に `url` が取り込まれて動き出す」（sse / worker / resize）は起きない: 取り込み直しの途中では、まだ取り込まれていない `manual` が own プロパティとして読める。
+- 文書: 提案文書 4 本に上流の回答、framework-adapter-integration とルート README に 0.9 のアダプタ（`syncOn: "define"` が既定）、`protocol/wc-bindable.ts` のコメント、vscode-wcs の補完の文言（`Markup attribute of …`）、CHANGELOG、移行ガイド §3.9。React / Vue の例は `@wc-bindable/*` 0.10。wcstack-skill の `release/v4.0.0` にも反映した（未コミット）。
+- 確かめたこと: 変更した 42 パッケージで test:coverage・lint・`tsc --noEmit`、vscode-wcs のテスト 1,167 件、`sync-protocol-types.mjs --check`。dist はビルドしていないので、e2e と lint / 補完のツールに I/O ノードの変更が届くのは次の rc のビルドから。
