@@ -1094,5 +1094,11 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 
 - 上の点検の書き換えと 4.0.0 の準備（版の固定・移行ガイドの文面・main 向けの CLAUDE.md / AGENTS.md）、CHANGELOG の `[4.0.0] — 2026-10-11`、拡張の 2.0.0 を research に入れ、main を取り込んで（`release.yml` の 3 か所は research 側）、PR #433 で main にマージした（merge commit、984f909a）。
 - PR の CI の初回は、`ci` の matrix が 49 パッケージのうち 12 しか選ばなかった。`detect-changes` が `set -o pipefail` の下で `echo "$changed" | grep -q` を使っていたため: 変更の一覧（2,705 行）がパイプのバッファを超えると、`grep -q` が最初の一致で抜けた後に `echo` が SIGPIPE で落ち、パイプ全体が「一致なし」になる（一覧の後ろで一致するパッケージだけが残った）。here-string に替えて（db674d94）、49 パッケージすべてと e2e が通った。main の CI も同じ穴を持っていた（大きな PR でだけ表に出る）。
-- main で `release`（run 38104459294）。49 パッケージが npm の `latest` で 4.0.0（`next` は 4.0.0-rc.9 のまま）、タグ `v4.0.0`、GitHub Release（Latest）、版を上げた commit は 614714c3。server の依存は `^4.0.0`。CDN（`esm.run` の state・router・wcstack の `/auto`、jsDelivr の `auto.min.js`・`split/auto.js`・`split/core.js`、`wcstack@4.0.0`）が 200、jsDelivr の state の `auto.min.js` はコミットされた 4.0.0 の dist と同一。
+- main で `release`（run 38104459294）。49 パッケージが npm の `latest` で 4.0.0（`next` は下の公開後の作業で 4.0.0 へ）、タグ `v4.0.0`、GitHub Release（Latest）、版を上げた commit は 614714c3。server の依存は `^4.0.0`。CDN（`esm.run` の state・router・wcstack の `/auto`、jsDelivr の `auto.min.js`・`split/auto.js`・`split/core.js`、`wcstack@4.0.0`）が 200、jsDelivr の state の `auto.min.js` はコミットされた 4.0.0 の dist と同一。
 - ゲートの基準値を 4.0.0 の dist で取り直した（カップリングは基準値どおり）。動いたのは版の文字列の数バイトだけ: `index.esm.js` 50,648B、`auto.min.js` 47,711B、split の core 24,496B、core.min.js 19,846B（上限 20,480B まで 634B）。
+- 公開後の作業（同日）:
+  - examples の依存（`examples/ssr` の `@wcstack/server`、`websocket-chat` の React / Vue の `@wcstack/websocket`）を `^4.0.0` にし、lockfile を 4.0.0 で取り直した（8de910cb。main と research は同じ commit）。
+  - Issue: 21 件を閉じた（#374・#391 は 4.0 で対象外として not planned）。#365・#401 には 4.0.x で扱う既知の制限と回避をコメントした（#401 は 3.4〜3.5 との差も）。
+  - wcstack-skill: `release/v4.0.0` の版の印（plugin・README・SKILL.md・references）と CDN の固定を 4.0.0 にし、PR #33 で main にマージしてタグ `v4.0.0` を付けた。devtools の行の watch についての注記（SKILL.md）は、devtools の変更を待つものなので残した。
+  - npm の `next`: 49 パッケージとも 4.0.0 に付け替えた（ユーザーの端末で。npm のアカウントは書き込みに 2 要素認証を求めるので、セッションからは `EOTP` で通らない）。`latest` と `next` がどちらも 4.0.0 であることを確かめた。
+  - VS Code 拡張 2.0.0: 8de910cb で `npm run package` した vsix（vscode-wcs のテスト 1,167 件）を、ユーザーが Marketplace に公開した（2026-10-11 03:00 UTC。`vsce show` で確認）。3.x のプロジェクトは 1.21.x のまま。
