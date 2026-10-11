@@ -12360,7 +12360,11 @@ var BUILTIN_TAGS = {
   "wcs-defined": {
     "package": "defined",
     "hasWcBindable": true,
-    "observedAttributes": [],
+    "observedAttributes": [
+      "tags",
+      "mode",
+      "timeout"
+    ],
     "inputs": {
       "tags": "tags",
       "mode": "mode",
