@@ -43,13 +43,18 @@ jobs:
           # parents and merge-base exited 1 without output (PR #77's run).
           changed=$(git diff --name-only "${BASE_SHA:?not a pull_request event}" HEAD)
 
+          # Every test below reads "$changed" from a here-string, never `echo "$changed" |
+          # grep -q`: under pipefail, grep -q exits at its first match, echo then dies of
+          # SIGPIPE once the list outgrows the pipe buffer, and the pipeline fails as if
+          # nothing matched — the 4.0 merge (#433) selected 12 of the 49 packages.
+
           # A change to the shared root tsconfig rebuilds every package.
-          if echo "$changed" | grep -qx 'tsconfig.json'; then
+          if grep -qx 'tsconfig.json' <<< "$changed"; then
             selected=("${all[@]}")
           else
             selected=()
             for pkg in "${all[@]}"; do
-              if echo "$changed" | grep -qE "^packages/${pkg}/"; then
+              if grep -qE "^packages/${pkg}/" <<< "$changed"; then
                 selected+=("$pkg")
               fi
             done
@@ -63,9 +68,9 @@ jobs:
             # first appears in release.yml's "Build all packages". Select it here,
             # and the job's member rebuild step (below) is what makes the gate real.
             members=$(node -p "Object.values(require('./packages/wcstack/package.json').devDependencies).filter((v) => v.startsWith('file:../')).map((v) => v.slice(8)).join(' ')")
-            if ! echo "$changed" | grep -qE '^packages/wcstack/'; then
+            if ! grep -qE '^packages/wcstack/' <<< "$changed"; then
               for pkg in $members; do
-                if echo "$changed" | grep -qE "^packages/${pkg}/"; then
+                if grep -qE "^packages/${pkg}/" <<< "$changed"; then
                   selected+=("wcstack")
                   break
                 fi
@@ -75,7 +80,7 @@ jobs:
             # Two suites run packages/state/src directly: devtools' protocol drift test
             # (the 4.0 runtime's event / summary shapes against the consumer's types) and
             # router's routeRange.state test. A state-only change must run them too.
-            if echo "$changed" | grep -qE '^packages/state/'; then
+            if grep -qE '^packages/state/' <<< "$changed"; then
               for pkg in devtools router; do
                 [[ " ${selected[*]} " == *" $pkg "* ]] || selected+=("$pkg")
               done
@@ -83,7 +88,7 @@ jobs:
 
             # The @wcstack/state size / structure gates and their baselines live in scripts/:
             # a PR that changes only them must still run them.
-            if echo "$changed" | grep -qE '^scripts/(check-state-[a-z]+\.mjs|state-[a-z]+-baseline\.json)$' \
+            if grep -qE '^scripts/(check-state-[a-z]+\.mjs|state-[a-z]+-baseline\.json)$' <<< "$changed" \
               && [[ " ${selected[*]} " != *" state "* ]]; then
               selected+=("state")
             fi
