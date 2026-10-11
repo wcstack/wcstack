@@ -230,7 +230,7 @@ One modifier closes both. `#init=element` makes the **element** the authority fo
 - `#init=element` **skips the initial state→element write** (no clobber) and **pulls the element's current `value` into the state slot** (no missed load).
 - Authority governs the *initial sync only*: every later `todos` assignment still flows state→element, so auto-save keeps working.
 - Seed the slot with the element's real initial value (`null` for an empty key) and null-guard reads through a derived getter. A convenient `[]` / `""` seed does not survive the initial pull anyway.
-- Needs `enableDirectionalInitialSync`, on by default since v1.21.0. If you explicitly disable it, `#init=` throws; seed `undefined` and pull once in `$connectedCallback` instead.
+- Needs `enableDirectionalInitialSync`, on by default (since v1.21.0; in 4.0 a key of the root state's `$behavior`, no longer a `bootstrapState()` option). If you turn it off (`$behavior: { enableDirectionalInitialSync: false }`), `#init=` throws; seed `undefined` and pull once in `$connectedCallback` instead.
 - Working examples: `examples/state-cross-tab-todo`, `examples/state-color-palette`.
 
 ## State Surface vs Command Surface

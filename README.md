@@ -364,7 +364,7 @@ For production, pin the version and add an `integrity` attribute. `dist/auto.min
 
 Digests for every package ship in each GitHub Release (and as an attached `sri.json`), computed from the published tree rather than read back from the CDN. Details, and what the hash deliberately does not cover: [docs/sri.md](docs/sri.md).
 
-Using several packages? The **`wcstack` entry bundle** packs the SPA core — state, router, fetch, storage, autoloader — into a single self-contained tag: one request, and one hash covering the whole core (373 KB min / 109 KB gzip as of 3.5.0). Single packages stay the default for pages that need less; do not concatenate the files yourself via jsDelivr `/combine/` (minified ESM does not survive concatenation — [docs/sri.md §3.1](docs/sri.md)):
+Using several packages? The **`wcstack` entry bundle** packs the SPA core — state, router, fetch, storage, autoloader — into a single self-contained tag: one request, and one hash covering the whole core (218 KB min / 70 KB gzip as of 4.0). Single packages stay the default for pages that need less; do not concatenate the files yourself via jsDelivr `/combine/` (minified ESM does not survive concatenation — [docs/sri.md §3.1](docs/sri.md)):
 
 ```html
 <script type="module"
@@ -506,7 +506,7 @@ All published packages share one version and are released in lockstep — a rele
 
 **Deprecation practice**: where feasible, a surface is flagged for at least one minor release (a lint rule and/or a runtime notice pointing at the replacement) before the next major removes it — v1.x flagged named state with `wcs/named-state-deprecated` before v2.0 removed `name=` / `@name`.
 
-Release history: [CHANGELOG.md](./CHANGELOG.md). Upgrading from 2.x: [docs/migration-v3.md](./docs/migration-v3.md). Upgrading from 1.x: [docs/migration-v2.md](./docs/migration-v2.md).
+Release history: [CHANGELOG.md](./CHANGELOG.md). Upgrading from 3.x: [docs/migration-v4.md](./docs/migration-v4.md). Upgrading from 2.x: [docs/migration-v3.md](./docs/migration-v3.md). Upgrading from 1.x: [docs/migration-v2.md](./docs/migration-v2.md).
 
 ## License
 

@@ -1287,6 +1287,8 @@ export default {
 
 For nested loops, `$1` is the outer index and `$2` is the inner index.
 
+The levels follow the paths, not the template nesting. A `for:` inside a row that loops over a top-level list (`for: tags` inside `for: groups`, each row showing the same tags) renders rows of `tags`, a list of depth 1: there `$1` is the tag's index, `$2` is empty (no error), and event handlers receive the tag's index only. When the inner rows need the outer row, give each outer row the list through a row getter and loop over that — `get "groups.*.tagsHere"() { return this.tags; }` with `for: .tagsHere` — so that `$1` is the group and `$2` the tag.
+
 You can also display the loop index directly in templates:
 
 ```html
@@ -1414,7 +1416,7 @@ export default {
 };
 ```
 
-**One object at two positions.** When the same object sits at two positions of one list (`items: [o, o, …]`), a write to a key below one of those rows (`this["items.0.name"] = "z"`) changes the object, but the other row's bindings and row getters keep showing the old value: within one list, a write reaches only the row it was made through. Plain reads, root getters and `$getAll` see the new value. The same holds for two arrays at plain keys that share an object (`backup = items; items = items.filter(…)`, both rendered). Call `$postUpdate("items")` after such a write, and every row of that list shows the object again. This is a known limitation of this version. When a getter relates the arrays — a TodoMVC-style filter (`get shown()` returning a filtered copy of `todos`, rendered with `for: shown`), a sort, a slice — a write from either side reaches every row holding the object and the `todos.*` readers, and the getters whose array holds it are evaluated again (a checked row leaves an "active" filter, a renamed row moves in a sorted view). A getter whose array does not hold the written object is not evaluated again: it read the array, not the object — read `$getAll("todos.*.done")` in it to follow every row.
+**One object at two positions.** When the same object sits at two positions of one list (`items: [o, o, …]`), a write to a key below one of those rows (`this["items.0.name"] = "z"`) changes the object, but the other row's bindings and row getters keep showing the old value: within one list, a write reaches only the row it was made through. Plain reads, root getters and `$getAll` see the new value. The same holds for two arrays at plain keys that share an object (`backup = items; items = items.filter(…)`, both rendered). Call `$postUpdate("items")` after such a write, and every row of that list shows the object again. So do two outer rows holding different arrays that share an object (`groups: [{ items: a }, { items: [...a] }]`): call `$postUpdate` on the other list (`"groups.1.items"`) or on the outer one (`"groups"`). This is a known limitation of this version. When a getter relates the arrays — a TodoMVC-style filter (`get shown()` returning a filtered copy of `todos`, rendered with `for: shown`), a sort, a slice — a write from either side reaches every row holding the object and the `todos.*` readers, and the getters whose array holds it are evaluated again (a checked row leaves an "active" filter, a renamed row moves in a sorted view). A getter whose array does not hold the written object is not evaluated again: it read the array, not the object — read `$getAll("todos.*.done")` in it to follow every row.
 
 ## Recursive Paths (`$recursion`)
 

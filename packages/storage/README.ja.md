@@ -231,7 +231,7 @@ localStorage の変更は、別のタブからの更新も自動的に検知さ�
 - `#init=element` は**初期の state→element 書き込みを行わず**（clobber しない）、**要素の現在の `value` を state スロットへ pull します**（取り逃さない）。
 - authority が支配するのは*初期同期のみ*です。以後の `todos` 代入は通常どおり state→element に流れるので、自動保存は生きたままです。
 - シードは要素の実初期値（空キーなら `null`）に合わせ、読み出しは派生 getter で null ガードしてください。`[]` や `""` のような都合のよいシードは、どのみち初期 pull で置き換えられます。
-- `enableDirectionalInitialSync`（v1.21.0 以降は既定 ON）が前提です。明示的に無効化した場合 `#init=` は throw するので、その構成では `undefined` シード + `$connectedCallback` での一度きり pull に倒してください。
+- `enableDirectionalInitialSync`（v1.21.0 以降は既定 ON。4.0 では `bootstrapState()` のオプションではなく、ルートの state の `$behavior` のキー）が前提です。無効化した場合（`$behavior: { enableDirectionalInitialSync: false }`）`#init=` は throw するので、その構成では `undefined` シード + `$connectedCallback` での一度きり pull に倒してください。
 - 動作する実例: `examples/state-cross-tab-todo`、`examples/state-color-palette`。
 
 ## ステートサーフェス vs コマンドサーフェス

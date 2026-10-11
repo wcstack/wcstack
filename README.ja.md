@@ -362,7 +362,7 @@ const html = await renderToString(`
 
 全パッケージのダイジェストは各 GitHub Release の本文（と添付の `sri.json`）に載ります。CDN から取得したものではなく、公開する tree から算出しています。詳細と「意図的にカバーしない範囲」は [docs/sri.ja.md](docs/sri.ja.md)。
 
-複数パッケージを使うページには **`wcstack` エントリバンドル**があります。SPA コア（state / router / fetch / storage / autoloader）を自己完結の 1 タグに束ねたもので、1 リクエスト・ハッシュ 1 個がコア全体をカバーします（3.5.0 時点で 373 KB min / 109 KB gzip）。少なくて済むページでは従来どおり個別パッケージが既定です。jsDelivr の `/combine/` で自分で連結してはいけません（minify 済み ESM は連結に耐えません — [docs/sri.ja.md §3.1](docs/sri.ja.md)）:
+複数パッケージを使うページには **`wcstack` エントリバンドル**があります。SPA コア（state / router / fetch / storage / autoloader）を自己完結の 1 タグに束ねたもので、1 リクエスト・ハッシュ 1 個がコア全体をカバーします（4.0 時点で 218 KB min / 70 KB gzip）。少なくて済むページでは従来どおり個別パッケージが既定です。jsDelivr の `/combine/` で自分で連結してはいけません（minify 済み ESM は連結に耐えません — [docs/sri.ja.md §3.1](docs/sri.ja.md)）:
 
 ```html
 <script type="module"
@@ -504,7 +504,7 @@ npm run lint             # ESLint
 
 **deprecation の運用**: 可能な限り、削除の前に最低 1 つの minor リリースで予告します（移行先を指す lint ルールおよび/または実行時の告知）— v1.x は `wcs/named-state-deprecated` で名前付き State を予告し、v2.0 が `name=` / `@name` を削除しました。
 
-リリース履歴: [CHANGELOG.md](./CHANGELOG.md)（英語）。2.x からの移行: [docs/migration-v3.ja.md](./docs/migration-v3.ja.md)。1.x からの移行: [docs/migration-v2.ja.md](./docs/migration-v2.ja.md)。
+リリース履歴: [CHANGELOG.md](./CHANGELOG.md)（英語）。3.x からの移行: [docs/migration-v4.ja.md](./docs/migration-v4.ja.md)。2.x からの移行: [docs/migration-v3.ja.md](./docs/migration-v3.ja.md)。1.x からの移行: [docs/migration-v2.ja.md](./docs/migration-v2.ja.md)。
 
 ## License
 

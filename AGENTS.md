@@ -21,7 +21,7 @@ If your task is to generate an application that *uses* wcstack (rather than modi
 
 ## Working ON this monorepo?
 
-**This checkout is the `research/state-engine` branch — the `@wcstack/state` 4.0 rewrite.** Since the R1 swap `packages/state` holds the 4.0 engine (developed as `packages/state-next`, which is gone); it keeps version 3.5.4 until the 4.0 release bumps it. CLAUDE.md → "research/state-engine (4.0 engine)" has the details; the plan is in `docs/state-engine-rewrite/` (start with `v4-remaining.ja.md`).
+**This checkout is the `research/state-engine` branch — the `@wcstack/state` 4.0 rewrite.** Since the R1 swap `packages/state` holds the 4.0 engine (developed as `packages/state-next`, which is gone). Every package is at a 4.0.0 release candidate (npm `next`) until 4.0.0 ships; npm `latest` is still 3.5.4. CLAUDE.md → "research/state-engine (4.0 engine)" has the details; the plan is in `docs/state-engine-rewrite/` (start with `v4-remaining.ja.md`).
 
 ### Layout & commands
 

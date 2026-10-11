@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **wcstack** (Web Components Stack) is a monorepo of focused TypeScript packages for building Web Components-based SPAs. The design philosophy is standards-first (Custom Elements, Shadow DOM, ES Modules, Import Maps), zero-config, buildless, with zero runtime dependencies (the exception is `@wcstack/server`, which depends on `@wcstack/state` and `happy-dom`). Each package is a self-contained custom element (or core utility) that can be dropped onto a page via CDN/Import Map and composed like LEGO bricks.
 
-**This is the `research/state-engine` branch — the `@wcstack/state` 4.0 rewrite.** Since the R1 swap `packages/state` holds the 4.0 engine (developed as `packages/state-next`, which is gone). Everything specific to it is in [research/state-engine (4.0 engine)](#researchstate-engine-40-engine); a few sections elsewhere in this file still describe 3.x and are rewritten in the documentation pass.
+**This is the `research/state-engine` branch — the `@wcstack/state` 4.0 rewrite.** Since the R1 swap `packages/state` holds the 4.0 engine (developed as `packages/state-next`, which is gone). Everything specific to it is in [research/state-engine (4.0 engine)](#researchstate-engine-40-engine).
 
 ## Repository Layout
 

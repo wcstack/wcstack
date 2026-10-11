@@ -30,8 +30,11 @@
 - **同じ root の 2 つ目の `<wcs-state>`（新設 `wcs/second-root`、error）** — 文書（`<template>` の外）で `mount` も `bind-component` も持たない `<wcs-state>` が 2 つ以上あると、ランタイムは後から読み込んだ方を拒む（4.0 の #47。v2 から同じ規則）。部分木は `<wcs-state mount="path">` で接ぎ木する。
 - **修飾子 `#direct`** — 補完の候補・hover の説明に足した。イベント束縛（`on*:`）以外に付けると無視されるので `wcs/template-syntax`（warning）。
 - **コメント束縛** — 4.0 も束ねる（`enableMustache: false` のページでも）。式が複数行にまたがる `<!--@@: … -->` と `{{ … }}` を拾うようにした（これまでは 1 行だけで、複数行の式は検証されなかった）。`<textarea>` / `<title>` の中のコメントは束縛として扱わない（ブラウザが文字にする）。`<script>` / `<style>` の中のコメントも拾わない。式の位置を区切りの文字列と取り違える癖（`<!--@@wcs-text: wcs-text-->`）も直した。4.0 に無い設定 `commentTextPrefix` の引数は外した。
+- **ネイティブ要素の `command.<method>:`（`wcs/token-misconfigured`、error）** — 4.0 の `native-commands` 後付けが呼ぶのは、manifest の `nativeCommands`（要素ごとのメソッドの表）にあるメソッドだけ。表に無いメソッドは、ランタイムが初期化を #1205 で失敗させるので、メソッド名の位置に error で報告する（その要素のメソッドの一覧と did-you-mean 付き）。表を持たない manifest（後付けより古い state の dist）では検査しない。
 
 ### そのほか
+
+- HTML の属性の hover: wc-bindable の入力の `attribute` ヒントの属性は「`Markup attribute of the <input> input.`」と説明する（これまでは「Attribute mirror of …」）。4.0 の state は入力のプロパティだけを書き、属性は要素自身が反映するため（wc-bindable-protocol 0.10.0 の applier プロファイル A1）。
 
 - `__tests__/nameAliases.drift.test.ts` は、凍結した 3.x の旧名の表が 4.0 の manifest（旧名の表は空・旧名は組み込みに無い）とランタイムの src（拒む宣言キーと API）に矛盾しないことを確かめる。`$behavior` のキーと後付けの名前は manifest から読む（manifest がランタイムの表 — engine.ts の `BEHAVIOR_KEYS`・`load.ts` の `FEATURE_NAMES` — と一致することは、`@wcstack/state` の `public-surface.test.ts` が固定する）。ボリュームの表（`REJECTED` / `NOT_RUN`）と bind-component と併記できない読み込みは、ランタイムの src とテストで突き合わせる。
 - ボリューム（`mount=`）の文面: 4.0 のボリュームは読み込み（#1601 などの throw）を通らず、接ぎ木を拒んで `console.error` で報告する。`wcs/declaration-alias`（旧名の宣言キー）・`$scan`・`$behavior` / `$features`・`$recursion` のボリュームの文面をそれに合わせた（重大度は error のまま — その state は木に載らない）。
