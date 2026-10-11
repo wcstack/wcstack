@@ -66,6 +66,16 @@ describe('provideCompletionItems: プロパティ / パス / フィルタの文�
     expect(result!.items.map(i => i.label)).toContain('name');
   });
 
+  it('イベント束縛のハンドラの候補に、ボリュームのメソッド（マウントパスの下 — 4.0 は接ぎ木する）を含めること', () => {
+    const html = `${STATE}<wcs-state mount="cart"><script type="module">export default { total: 0, add() {} };</script></wcs-state>
+<button data-wcs="onclick: "></button>`;
+    const result = completeAt(html, html.indexOf('onclick: ') + 'onclick: '.length);
+    const labels = result!.items.map(i => i.label);
+    expect(labels).toContain('cart.add');
+    // data paths are not handler candidates (as for the root)
+    expect(labels).not.toContain('cart.total');
+  });
+
   it('`|` の後ろではフィルタ候補を返すこと', () => {
     const html = `${STATE}<p data-wcs="textContent: label|"></p>`;
     const result = completeAt(html, html.indexOf('label|') + 'label|'.length);
@@ -83,13 +93,11 @@ describe('provideCompletionItems: 修飾子の textEdit（拡張が書き換え�
     expect(replacedText(html, ro)).toBe('');
   });
 
-  it('修飾子の候補に 4.0 の direct（委譲しないイベント束縛）を含み、4.0 で効くことを説明すること', () => {
+  it('修飾子の候補に 4.0 の direct（委譲しないイベント束縛）を含むこと', () => {
     const html = `${STATE}<button data-wcs="onclick#prevent,: save"></button>`;
     const offset = html.indexOf('onclick#prevent,') + 'onclick#prevent,'.length;
     const result = completeAt(html, offset)!;
     expect(result.items.map(i => i.label)).toEqual(['prevent', 'stop', 'ro', 'direct']);
-    const direct = result.items.find(i => i.label === 'direct')! as { detail?: string };
-    expect(direct.detail).toContain('4.0');
     expect(replacedText(html, result.items.find(i => i.label === 'direct')!)).toBe('');
   });
 

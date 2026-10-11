@@ -277,13 +277,13 @@ declare class Fetch extends HTMLElement {
     private _initInternals;
     private _wireStates;
     get url(): string;
-    set url(value: string | null);
+    set url(value: string | null | undefined);
     get method(): string;
-    set method(value: string | null);
+    set method(value: string | null | undefined);
     get target(): string | null;
-    set target(value: string | null);
+    set target(value: string | null | undefined);
     get responseType(): FetchResponseType;
-    set responseType(value: string | null);
+    set responseType(value: string | null | undefined);
     get value(): any;
     get loading(): boolean;
     get error(): any;
@@ -293,7 +293,7 @@ declare class Fetch extends HTMLElement {
     get promise(): Promise<any>;
     get connectedCallbackPromise(): Promise<void>;
     get manual(): boolean;
-    set manual(value: boolean);
+    set manual(value: boolean | null | undefined);
     get body(): any;
     set body(value: any);
     get trigger(): boolean;

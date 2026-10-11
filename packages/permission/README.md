@@ -98,6 +98,8 @@ See `examples/state-permission-banner` for the full demo.
 | `user-visible-only` | boolean | `false` | Adds `userVisibleOnly: true` to the descriptor (for the `push` permission). |
 | `sysex`             | boolean | `false` | Adds `sysex: true` to the descriptor (for the `midi` permission).           |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`name`, `userVisibleOnly`, `sysex`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 ## Observable Properties (outputs)
 
 | Property      | Event                  | Description                                                              |

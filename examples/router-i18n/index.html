@@ -188,7 +188,8 @@
      Route content is bound when the router stamps it, so plain bindings inside a
      route work (the About page below is translated in place), and so does a
      <template data-wcs="for:"> inside an element of the route body. One placed
-     directly under <wcs-route> renders only on the landing route (README §5).
+     directly under <wcs-route> renders only on the landing route with
+     @wcstack/state 3.x, and on a navigation too with 4.0 (README §5).
      Keeping the list outside the router avoids the question. Same split as
      examples/router-spa. -->
 <!-- The <title> is translated per route. That works because the router hands the

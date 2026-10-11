@@ -1,0 +1,1 @@
+{"framework":"wcstack-state-next-v0.0.0-next.4955ab52-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"values":[231.7,146.1,201.1,150.3,186.4],"median":186.4,"min":146.1,"max":231.7,"mean":183.11999999999998,"stddev":35.85278231881034}}}

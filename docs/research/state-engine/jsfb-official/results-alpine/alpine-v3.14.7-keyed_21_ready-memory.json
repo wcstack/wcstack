@@ -1,0 +1,1 @@
+{"framework":"alpine-v3.14.7-keyed","keyed":true,"benchmark":"21_ready-memory","type":"memory","values":{"DEFAULT":{"min":0.7942333221435547,"max":0.7942333221435547,"median":0.7942333221435547,"mean":0.7942333221435547,"stddev":null,"values":[0.7942333221435547]}}}

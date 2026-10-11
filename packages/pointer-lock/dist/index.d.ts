@@ -218,7 +218,7 @@ declare class WcsPointerLock extends HTMLElement {
     private _initInternals;
     private _wireStates;
     get target(): string;
-    set target(value: string);
+    set target(value: string | null | undefined);
     get active(): boolean;
     get error(): any;
     get errorInfo(): WcsIoErrorInfo | null;

@@ -46,9 +46,11 @@ $on: {
 
 **属性:** `facing-mode`（`user`/`environment`）・`device-id`・`audio`（マイクを有効化）・`width`・`height`・`autostart`・`keep-alive`（ページ非表示時に停止しない・録画中に立てる）。
 
+**`null` と `undefined`。** 入力（`audio`・`facingMode`・`deviceId`・`width`・`height`・`autostart`・`keepAlive`）はすべて属性に対応し、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります（`facingMode` は `user`、デバイス指定なし、幅・高さの制約なし、boolean は off）。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、どのカメラにも一致しない `deviceId` の exact 制約になることもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。
+
 **コマンド:** `start()`・`stop()`・`switchCamera()`（前後カメラ切替）。
 
-**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`・`devices`・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
+**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`（ストリームが使っているデバイス。`wcs-camera:device-changed` で publish。プロパティを読むと、決まった後はこの値、それまでは要求した `device-id` を返す。要求そのものは属性に残る）・`devices`・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
 
 **イベント（event-token）:** `streamReady`（`wcs-camera:stream-ready`、detail = 生 `MediaStream`）・`error`・`ended`（OS によるトラック剥奪）。`streamReady` の「プロパティ」は event-token 配線用で、値としてバインドしないでください。
 
@@ -64,6 +66,8 @@ $on: {
 `attachStream`（カメラの `stream-ready` からの直結チャネル）で受け取った**借用**ストリームを録画します。ストリームを所有・停止することはありません——それはカメラの責務です。
 
 **属性:** `mime-type`・`timeslice`（この間隔で `dataavailable` を出す。省略時は stop で 1 つの `Blob`）・`audio-bits`・`video-bits`。
+
+**`null` と `undefined`** は `<wcs-camera>` と同じです。入力 `mimeType`（要求）・`timeslice`・`audioBitsPerSecond`・`videoBitsPerSecond` では、`null` は属性を外し（何も要求せず、ブラウザが選びます）、`undefined` はマークアップに書かれた属性、無ければ属性なしに戻します。どちらも文字列として書くことはありません。
 
 **コマンド:** `attachStream(stream)`・`start()`・`stop()`・`pause()`・`resume()`。
 

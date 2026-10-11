@@ -1,0 +1,153 @@
+import type { Pattern } from "./pattern";
+import type { Binding, ForView, RowView } from "./dom/view";
+
+/**
+ * One element of a list, owned by its StateList. The row is the whole address of
+ * everything under `list.*`: the value (`item`), the position (`index`), the getter
+ * cache and the bindings that render it hang off this object — no ledger keyed by an
+ * address. Dropping the row drops all of it.
+ */
+export class StateRow {
+  readonly list: StateList;
+  index: number;
+  item: unknown;
+  /** Getter cache by slot (row-level getters of this engine). */
+  cache: unknown[] | null = null;
+  /** The rendering of this row by its list's first for view (see StateList.extra for the others). */
+  view: RowView | null = null;
+  /**
+   * Binding objects whose location is in this row (pattern depth = this row's depth), wherever
+   * they render. Row views' slot bindings are not here: they are reached through the views.
+   */
+  bindings: Binding[] | null = null;
+  /** `$eq` subscriptions of getters evaluated at this row (dropped with the row). */
+  eqSubs: import("./engine").EqEntry[] | null = null;
+  /** Nested lists under this row, by list pattern. */
+  children: Map<Pattern, StateList> | null = null;
+  alive = true;
+
+  constructor(list: StateList, index: number, item: unknown) {
+    this.list = list;
+    this.index = index;
+    this.item = item;
+  }
+}
+
+export class StateList {
+  readonly pattern: Pattern;
+  readonly parentRow: StateRow | null;
+  /** Depth of this list's rows (1 for a root list). */
+  readonly depth: number;
+  /** The array the rows were last reconciled against. */
+  arr: unknown[] | null = null;
+  rows: StateRow[] = [];
+  /** The first for view that renders this list, if any (its row views are on row.view). */
+  view: ForView | null = null;
+  /** Further for views rendering the same list (each keeps its row views by row). */
+  extra: ForView[] | null = null;
+  /** Queued for a view update in the current drain. */
+  queued = false;
+  /** Its pattern reads through a getter that changed: re-synced at the next drain pass. */
+  stale = false;
+  /** Another list has the same array (a getter returning it, an index path): writes reach both. */
+  shared = false;
+
+  constructor(pattern: Pattern, parentRow: StateRow | null) {
+    this.pattern = pattern;
+    this.parentRow = parentRow;
+    this.depth = pattern.depth + 1;
+  }
+}
+
+export interface ReconcileHooks {
+  /** A kept row changed position. */
+  indexChanged(row: StateRow): void;
+  /** A row left the list (it marks it dead). */
+  rowRemoved(row: StateRow): void;
+}
+
+type Bucket = StateRow | StateRow[];
+
+/**
+ * Brings `list.rows` in line with `next`, reusing rows by item identity.
+ * Returns the previous rows (for $eqIndex re-keying) or null when nothing changed.
+ * DOM is not touched here; the list's view catches up in the drain.
+ */
+export function reconcile(list: StateList, next: unknown, hooks: ReconcileHooks): StateRow[] | null {
+  const arr = Array.isArray(next) ? next : EMPTY;
+  if (arr === list.arr) return null;
+  const old = list.rows;
+  const n = arr.length;
+  const o = old.length;
+  const rows: StateRow[] = new Array(n);
+
+  let start = 0;
+  while (start < n && start < o && old[start].item === arr[start]) {
+    rows[start] = old[start];
+    start++;
+  }
+  let oe = o - 1;
+  let ne = n - 1;
+  while (oe >= start && ne >= start && old[oe].item === arr[ne]) {
+    rows[ne] = old[oe];
+    oe--;
+    ne--;
+  }
+
+  if (start > oe) {
+    for (let i = start; i <= ne; i++) rows[i] = new StateRow(list, i, arr[i]);
+  } else if (start > ne) {
+    for (let i = start; i <= oe; i++) hooks.rowRemoved(old[i]);
+  } else {
+    // a row whose item is where it was keeps its place: among equal items (a board of 0 / 1), handing
+    // the rows out in order would move every one after the first change
+    const end = oe < ne ? oe : ne;
+    for (let i = start; i <= end; i++) if (old[i].item === arr[i]) rows[i] = old[i];
+    const byItem = new Map<unknown, Bucket>();
+    // filled from the end, so a bucket hands out its first row with pop(): shift() moves the whole
+    // array, and over a long run of equal items the reconcile went quadratic
+    for (let i = oe; i >= start; i--) {
+      const row = old[i];
+      if (i <= end && rows[i] === row) continue;
+      const b = byItem.get(row.item);
+      if (b === undefined) byItem.set(row.item, row);
+      else if (Array.isArray(b)) b.push(row);
+      else byItem.set(row.item, [b, row]);
+    }
+    for (let i = start; i <= ne; i++) {
+      if (rows[i] !== undefined) continue;
+      const item = arr[i];
+      const b = byItem.get(item);
+      let row: StateRow | undefined;
+      if (b !== undefined) {
+        if (Array.isArray(b)) {
+          row = b.pop();
+          if (b.length === 0) byItem.delete(item);
+        } else {
+          row = b;
+          byItem.delete(item);
+        }
+      }
+      rows[i] = row ?? new StateRow(list, i, item);
+    }
+    for (const b of byItem.values()) {
+      if (Array.isArray(b)) for (const r of b) hooks.rowRemoved(r);
+      else hooks.rowRemoved(b);
+    }
+  }
+
+  // positions: only rows from `start` on can have moved
+  for (let i = start; i < n; i++) {
+    const row = rows[i];
+    if (row.index !== i) {
+      row.index = i;
+      hooks.indexChanged(row);
+    }
+  }
+  list.rows = rows;
+  list.arr = arr;
+  return old;
+}
+
+/** What a list whose value is not an array reconciles against (engine: an index there is a key). */
+export const EMPTY: unknown[] = [];

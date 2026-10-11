@@ -50,53 +50,38 @@ export interface WcsMessageCatalog {
   patternPathOutsideFor(path: string): string;
   omittedPathOutsideFor(path: string): string;
   loopIndexOutsideFor(path: string): string;
-  /**
-   * 行として読まれない数値添字のパス（添字が 2 つ以上・`*` と混ざる）。添字を通した書き込みが届かない。
-   * 添字が 1 つのパス（`items.0.v`）は行を読むので対象外（#355）。
-   */
-  resolvedPathInUi(path: string): string;
-  /**
-   * `for:` の対象が数値の添字を持つリスト（`for: groups.0.items`）。行への双方向束縛と添字のパスの読み書きが
-   * 実行時に投げる（state の #363）。
-   */
-  indexPathInFor(path: string): string;
   /** `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。 */
   indexArity(api: string, path: string, requirement: IndexArityRequirement, wildcardCount: number, actual: number): string;
   /** ワイルドカードの階数がスコープの段数を超える（`$N` を含む）。 */
   wildcardRank(subject: string, needed: number, available: number): string;
   /**
-   * 段数は足りているが、パスの `*` がその段で囲む for のリストの行でない（`for: a` の行の中の `b.*.y`）。
-   * `over` はパスの `*` が回るリスト、`loop` はその段の for が描くリスト。
+   * 行の中の `*` が、その段で囲む `for:` とは別のリストを指す（4.0 の `[wcs/wildcard-rank]` #1403・F32）。
+   * `over` はパスの `*` が回るリスト、`loop` はその段で囲む `for:` が描くリスト。
    */
   wildcardOtherList(path: string, over: string, loop: string): string;
-  /** マークアップの `$0` / `$01` / `$129` / `$1000`（ループの添字でない `$` ＋数字。ランタイムは状態のパスとして読んで失敗する）。 */
-  indexParamNotIndex(path: string, max: number): string;
-  /** スクリプトの `this.$0` / `this.$129`（ランタイムは読んだ時点で wcs/index-param-range を投げる）。 */
-  indexParamRange(name: string, max: number): string;
-  /** for / if / elseif / else テンプレートの中の `outerHTML:` / `outerText:`（3.x は置き換えた中身を取り残す・4.0 は初期化で拒む）。 */
+  /** `for:` / `if:` テンプレートの中の `outerHTML:` / `outerText:`（4.0 は初期化で拒む。#203）。 */
   outerInTemplate(property: string): string;
-  /** 文書に 2 つ目の root の `<wcs-state>`（ランタイムは後から登録しに来た方を拒む）。 */
-  secondRoot(): string;
-  // --- wcs/v4-migration（3.x では動き、4.0 で外れる・読み方が変わる書き方。info） ---
-  /** `$scan` 宣言（4.0 で外れる）。 */
-  v4ScanRemoved(): string;
-  /** `substr` フィルタ（4.0 で外れる）。`rewrite` は引数が 0 以上のリテラルのときの具体形（`slice(2, 5)`）。 */
-  v4SubstrRemoved(rewrite: string | null): string;
+  /** `#direct` をイベント束縛（`on*:`）以外に付けた（ランタイムは黙って無視する）。 */
+  directNotEvent(property: string): string;
   /**
    * 4.0 が root へ委譲するイベントの束縛（`onclick: select`）で、ハンドラのメソッドがイベント引数の
-   * `currentTarget` を読む（4.0 では要素ではなく root になる）。`suggestedProperty` は書き換え先の左辺
+   * `currentTarget` を読む（要素ではなく root になる）。`suggestedProperty` は書き換え先の左辺
    * （書かれた修飾子に `direct` を足した形 — `onclick#prevent,direct`）。
    */
-  v4DelegatedCurrentTarget(suggestedProperty: string, eventName: string, handler: string): string;
+  delegatedCurrentTarget(suggestedProperty: string, eventName: string, handler: string): string;
   /** パス getter どうしの循環参照。 */
   getterCycle(cycle: string): string;
-  /** `$updatedCallback` が未バインドのパスを判定に使っている（その分岐は走らない）。 */
+  /** `$renderedCallback` が未バインドのパスを判定に使っている（その分岐は走らない）。 */
   updatedCallbackUnbound(path: string): string;
   /** getter の中でパス読み取りの先の素のプロパティアクセス（追跡されるのは root だけ）。 */
   getterUntrackedRead(root: string, suggestedPath: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
   filterUnknown(name: string): string;
+  /** 4.0 で外れたフィルタの旧名（`uc` → `upper`。ランタイムは `[wcs/filter-unknown]`）。 */
+  filterRemoved(name: string, canonical: string): string;
+  /** 4.0 で外れた `substr`。`rewrite` は引数から計算した `slice(…)`（計算できなければ null）。 */
+  substrRemoved(rewrite: string | null): string;
   filterMinArgs(name: string, minArgs: number, argCount: number): string;
   filterMaxArgs(name: string, maxArgs: number, argCount: number): string;
   filterArgType(name: string, argPosition: number, expectedType: string, argText: string, actualType: string): string;
@@ -114,39 +99,12 @@ export interface WcsMessageCatalog {
   watchKeyEmptySegment(key: string): string;
   watchHandlerNotFunction(key: string): string;
   watchPathMissing(key: string): string;
-  /** 数値添字が 1 つの `$watch` のキー（`items.0.v`）。添字を通した書き込みでは発火しない（#355 で実測）。 */
-  watchIndexKey(key: string): string;
   // --- scanDeclarationValidator ---
-  /** `$scan` の値がオブジェクトでないと静的に断定できる（ランタイムは読み込み時に throw）。 */
-  scanNotObject(): string;
-  scanOutputInvalid(name: string): string;
-  scanOutputReserved(name: string): string;
-  scanOutputEmpty(): string;
-  /** ボリューム（`mount=`）の `$scan`（runtime は接ぎ木の前に raise）。 */
-  scanInVolume(mountPath: string): string;
-  /** マウントされたコンポーネント（`bind-component`）の `$scan`（runtime は warn して捨てる）。 */
-  scanInMountedComponent(): string;
-  scanOutputConflict(name: string, other: 'getter' | 'stream' | 'method'): string;
-  scanEntryNotObject(name: string): string;
-  scanSourceCount(name: string): string;
-  scanFromNotString(name: string): string;
-  scanOnNotString(name: string): string;
-  scanResetNotString(name: string): string;
-  scanOutputCycle(chain: readonly string[]): string;
-  scanInitialMissing(name: string): string;
-  scanFoldNotFunction(name: string): string;
-  scanOnUndeclared(name: string, token: string): string;
-  scanPathInvalid(name: string, field: 'from' | 'resetOn', path: string): string;
-  scanPathReserved(name: string, field: 'from' | 'resetOn', path: string): string;
-  scanFromSelf(name: string, path: string): string;
-  scanResetNotArray(name: string): string;
-  scanResetWildcard(name: string, path: string): string;
-  scanResetIsFrom(name: string, path: string): string;
-  scanResetUnderFrom(name: string, path: string, from: string): string;
-  scanResetReadsOutput(name: string, path: string, output: string): string;
-  scanSourceComputed(name: string, field: 'from' | 'resetOn', path: string, getter: string): string;
-  scanFromWriteOnly(name: string, path: string, setter: string): string;
-  scanPathMissing(name: string, field: 'from' | 'resetOn', path: string): string;
+  /**
+   * 4.0 で外れた `$scan` を宣言した。ランタイムは読み込み時に throw する。ボリューム（`mountPath` が非 null）は
+   * 読み込みを通らず、接ぎ木を拒んで console.error で報告する（その state は木に載らない）。
+   */
+  scanRemoved(mountPath: string | null): string;
   // --- arrayMutationValidator ---
   arrayMutation(method: string, alternative: string): string;
   arrayIndexAssign(suggestedPath: string): string;
@@ -157,23 +115,51 @@ export interface WcsMessageCatalog {
    * そのまま残す（`once#ro:` には `.once#ro:` と言う — 修飾子を落とすと直しの手が 1 つ増える）。
    */
   onPrefixedMember(member: string, tag: string, modifiers?: string): string;
+  /** 4.0 で外れた API の旧名（`$trackDependency` → `$dependOn`。ランタイムは読んだ時点で `[wcs/name-alias]`）。 */
   nameAlias(written: string, canonical: string): string;
   /**
-   * 旧名の宣言キーを `this.` 越しに**読んだ**。宣言と違って旧名のままでは動かない —
-   * 正規化（`normalizeDeclarationAliases`）が**自前プロパティ**の旧名を `delete` するので、
-   * 読み出しは黙って `undefined` になる。オブジェクトリテラルの state（AST で読めた形）
-   * は必ずこちら。
+   * 4.0 で外れた宣言キーの旧名を `this.` 越しに**読んだ**（`this.$streams`）。4.0 の state に
+   * そのキーは無いので、読み出しは黙って `undefined` になる（宣言していれば読み込み時に throw）。
    */
   declarationAliasRead(alias: string, canonical: string): string;
-  /**
-   * 同上だが、state の形が静的に読めず（class 構文など）**自前プロパティかプロトタイプか
-   * 断定できない**場合。ランタイムの `delete` は `owner === state` のときだけなので、
-   * class のプロトタイプに置いたメソッド / アクセサの旧名は今は読める（4.0 で外れる）。
-   */
-  declarationAliasReadUncertain(alias: string, canonical: string): string;
-  /** 旧名と正式名の宣言キーを両方書いた（ランタイムは読み込み時に raiseError）。 */
+  /** 4.0 で外れた宣言キーの旧名を宣言した（`$streams` → `$stream`。ランタイムは読み込み時に `[wcs/declaration-alias]`）。 */
   declarationAlias(alias: string, canonical: string): string;
+  /**
+   * 同上をボリューム（`mount=`）で宣言した。ボリュームは読み込み（#1601）を通らず、ランタイムは接ぎ木を拒んで
+   * console.error で報告する。正式名（`$stream` / `$renderedCallback`）もボリュームでは宣言できないので root を案内する。
+   */
+  declarationAliasInVolume(alias: string, canonical: string, mountPath: string): string;
+  // --- configDeclarationValidator（`$behavior` / `$features` / `features=`。4.0） ---
+  /** `$behavior` の値がオブジェクトでない（ランタイムは読み込み時に throw）。`keys` は manifest の `behaviorOptions` のキー。 */
+  behaviorNotObject(keys: readonly string[]): string;
+  /** `$behavior` の知らないキー（`keys` は受け付けるキー、`suggestion` は「もしかして」の suffix）。 */
+  behaviorKeyUnknown(key: string, keys: readonly string[], suggestion: string): string;
+  /** `$behavior` の値の型が違う（`type` は manifest の `behaviorOptions[key].type`）。 */
+  behaviorValueType(key: string, type: string): string;
+  /** ボリューム（`mount=`）の `$behavior` / `$features`（ランタイムは接ぎ木を拒み、console.error で報告する）。 */
+  configInVolume(key: string, mountPath: string): string;
+  /** `$features` の値が配列でない（ランタイムは読み込み時に throw）。 */
+  featuresNotArray(): string;
+  /** `$features` / `features=` の知らない後付けの名前（`names` は manifest の `features`、`suggestion` は「もしかして」の suffix）。 */
+  featureUnknown(name: string, names: readonly string[], suggestion: string): string;
+  // --- scopeDeclarationValidator（ボリューム・マウントしたコンポーネントの宣言。4.0） ---
+  /** ボリュームが拒む宣言（scopes/volume.ts の REJECTED。ランタイムは接ぎ木を拒んで console.error）。 */
+  volumeDeclarationRejected(key: string, mountPath: string): string;
+  /** ボリュームでは実行されない宣言（scopes/volume.ts の NOT_RUN。ランタイムは console.warn で知らせ、その宣言を無視する）。 */
+  volumeDeclarationNotRun(key: string, mountPath: string): string;
+  /** `<wcs-state bind-component>` と併記した読み込み（`sources` は属性名か `<script type="module">`。ランタイムは読み込みを拒んで console.error）。 */
+  bindComponentSource(prop: string, sources: readonly string[]): string;
+  /** 同じ root の 2 つ目の `<wcs-state>`（ランタイムの #47。後から読み込んだ方を拒んで console.error）。 */
+  secondRoot(): string;
+  /** `$1`〜`$128` の範囲の外の添字（ランタイムの `[wcs/index-param-range]`。`max` は manifest の `syntax.indexParam.maxDepth`）。 */
+  indexParamRange(key: string, max: number): string;
+  /** マークアップの `$0` / `$01` / `$1000`（添字の形でなく、`$` の名前空間にパスも無い。ランタイムは `[wcs/binding-path-missing]` でバインディングを失敗させる）。 */
+  indexParamNotPath(key: string, max: number): string;
+  /** 文書の root 以外の `<wcs-state>` の `features=`（ランタイムは読まない）。 */
+  featuresAttrNotRoot(): string;
   tagCommandUnknown(name: string, tag: string, declared: string): string;
+  /** ネイティブ要素の `command.<method>:` のメソッドが native-commands 後付けの表に無い（`allowed` はその要素に呼べるもの。ランタイムは #1205 で初期化に失敗する）。 */
+  nativeCommandUnknown(method: string, tag: string, allowed: string): string;
   spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
   /** `attr.aria-*` の属性名が WAI-ARIA に存在しない（ariaValidator）。 */
@@ -216,7 +202,7 @@ export interface WcsMessageCatalog {
    * （`$setAll("nodes.**.total")` / `this["nodes.*.total"] = …` / `$resolve("nodes.*.total")`）。
    */
   recursionReadonly(subject: string, getterPath: string): string;
-  /** ボリューム（`mount=`）の state が `$recursion` / `**` getter を宣言している（runtime は接ぎ木前に raise）。 */
+  /** ボリューム（`mount=`）の state が `$recursion` / `**` getter を宣言している（`$recursion` は接ぎ木を拒んで console.error）。 */
   recursionInVolume(subject: string, mountPath: string): string;
   /** `$recursion` の値がオブジェクトでない。 */
   recursionNotObject(): string;
@@ -232,8 +218,6 @@ export interface WcsMessageCatalog {
   recursionGetterCollision(a: string, b: string, repeat: string): string;
   /** 作者が手で書いた具体パス（`get "nodes.*.total"()`）が `**` getter の展開形と同名。 */
   recursionConcreteCollision(concreteKey: string, recursiveKey: string): string;
-  /** マウントされたコンポーネント（`bind-component`）の `$recursion` / `**` getter（runtime は warn して実行しない）。 */
-  recursionInMountedComponent(subject: string): string;
 }
 
 /** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
@@ -242,7 +226,7 @@ export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved
 /** `**` が現れた場所（`**` を解釈しない消費者）。 */
 export type RecursionWildcardSite =
   | 'binding' | 'watch' | 'resolve' | 'undeclared'
-  | 'assignment' | 'postUpdate' | 'dependOn' | 'trackDependency' | 'listKeys' | 'scan';
+  | 'assignment' | 'postUpdate' | 'dependOn' | 'trackDependency' | 'listKeys';
 /** `$getAll` が `**` に対して拒否する添字の形。 */
 export type RecursionGetAllProblem = 'prefix' | 'notArray';
 /** `$setAll` が `**` に対して拒否する形。 */
@@ -270,48 +254,39 @@ const ja: WcsMessageCatalog = {
   eventTokenUndeclared: (t) => `イベントトークン "${t}" は $eventTokens に宣言されていません`,
   commandRhsFormat: () => `command バインディングの右辺には $command.<name>（$commandTokens で宣言）を指定してください`,
   commandTokenUndeclared: (t) => `コマンドトークン "${t}" は $commandTokens に宣言されていません`,
-  streamPathMissing: (p) => `パス "${p}" は $streams 宣言に存在しません`,
+  streamPathMissing: (p) => `パス "${p}" は $stream 宣言に存在しません`,
   pathMissing: (p) => `パス "${p}" は状態定義に存在しません`,
   pathNonexistent: (p) => `パス "${p}" は宣言された stateSchema に存在しません`,
   pathTypeMismatch: (p, label, expected, actual) =>
     `パス "${p}" は stateSchema 上で ${actual} 型ですが、${label} には${JA_EXPECTED_LABEL[expected]}が必要です`,
   expansionSuffix: (x) => `（展開: ${x}）`,
-  patternPathOutsideFor: (p) => `パターンパス "${p}" は <template for> の外側では使用できません`,
-  omittedPathOutsideFor: (p) => `省略パス "${p}" は <template for> の外側では使用できません`,
-  loopIndexOutsideFor: (p) => `ループインデックス "${p}" は <template for> の外側では使用できません`,
-  resolvedPathInUi: (p) =>
-    `パス "${p}" は行ではなく素のパスとして読まれるため、添字を通した書き込みがこのバインディングに届きません（最初の値のまま止まることがあります）。指す行に追従するのは、数値の添字がちょうど 1 つで "*" を含まないパス（items.0.name）だけです。<template for> の中でパターンパスを使用してください`,
-  indexPathInFor: (p) =>
-    `for: "${p}" は数値の添字を含むリストです。行は "${p}.*.…" として解決され、行への双方向束縛（value: .v）や添字のパスの読み書きは実行時に例外になります（@wcstack/state #363）。リストの段ごとに for: を入れ子にしてください（例: for: groups の中に for: .items）`,
+  patternPathOutsideFor: (p) => `パターンパス "${p}" は <template for> の外側では使用できません（4.0 は初期化で #1401 を投げます）`,
+  omittedPathOutsideFor: (p) => `省略パス "${p}" は <template for> の外側では使用できません（4.0 は初期化で #1402 を投げます）`,
+  loopIndexOutsideFor: (p) => `ループインデックス "${p}" は <template for> の外側では使用できません（4.0 は初期化で #1401 を投げます）`,
   indexArity: (api, p, req, wc, actual) =>
     `${api}("${p}") の添字は${req === "exact" ? `ちょうど ${wc} 個` : `${wc} 個以下`}である必要があります（パス中の "*" は ${wc} 個）。${actual} 個指定されています`,
   wildcardRank: (subject, needed, available) =>
     `${subject} は ${needed} 段のループが必要ですが、現在のスコープは ${available} 段です`,
   wildcardOtherList: (p, over, loop) =>
-    `"${p}" の "*" は "${over}" の行を指しますが、その段で囲む for テンプレートが描くのは "${loop}" です。束縛の "*" は囲むループの行なので、ランタイムはこの "*" を解決できず、囲む for ごと描けません（4.0 も同じ形をバインド確立時に拒みます）。別のリストの行は getter の中で $resolve(path, indexes) で読んでください`,
-  indexParamNotIndex: (p, max) =>
-    `"${p}" はループの添字ではありません（添字は $1 から $${max} まで、先頭に 0 を付けない形）。ランタイムは状態のパスとして読み、このバインディングを wcs/binding-path-missing で失敗させます（for の中では囲む for ごと描けません）`,
-  indexParamRange: (name, max) =>
-    `"${name}" はループの添字ではありません（添字は $1 から $${max} まで、先頭に 0 を付けない形）。ランタイムは読んだ時点で wcs/index-param-range を投げます`,
+    `"${p}" の "*" は "${over}" の行を指しますが、その段で囲む for テンプレートが描くのは "${loop}" です（4.0 はバインド確立時に throw します）。束縛の "*" は囲むループの行です — 別のリストの行は getter の中で $resolve(path, indexes) で読んでください`,
   outerInTemplate: (prop) =>
-    `"${prop}:" は要素そのものを置き換えますが、for / if テンプレートの行や枝は元のノードを持ち続けるので、行や枝が外れたり描き直されたりしても置き換えた中身がページに残ります（4.0 はこの形を初期化で拒みます）。包む要素に innerHTML: を束縛してください`,
-  secondRoot: () =>
-    '同じ root に 2 つ目の <wcs-state> があります。state の木は root ごとに 1 つで、ランタイムは後から登録しに来た方を拒みます（"A state tree is already registered on this root"）。部分木は <wcs-state mount="path"> で接ぎ木してください',
-  v4ScanRemoved: () =>
-    `4.0 への準備（3.x ではこのまま動きます）: $scan は 4.0 で削除されます（読み込み時に throw します）。パスの変化を畳むなら $watch のハンドラ、イベントを畳むなら $on のハンドラで、出力のプロパティへ書いてください（どちらも 3.x で書けます）`,
-  v4SubstrRemoved: (rewrite) =>
-    `4.0 への準備（3.x ではこのまま動きます）: フィルタ "substr" は 4.0 で削除されます。slice(start, start + length) と書いてください — slice の第 2 引数は長さではなく終わりの位置です${rewrite === null ? '' : `（ここでは ${rewrite}）`}`,
-  v4DelegatedCurrentTarget: (suggested, eventName, handler) =>
-    `4.0 への準備（3.x ではこのまま動きます）: 4.0 は "${eventName}" イベントを root へ委譲するので、"${handler}" の中の event.currentTarget はこの要素ではなく root になります。要素にリスナーを残すには "${suggested}:" と書くか（3.x は修飾子 #direct を無視し、もともと要素にリスナーを付けます）、event.target.closest(...) で要素を探してください`,
+    `"${prop}:" は要素そのものを置き換えるので、for / if テンプレートの中では使えません（行や枝はノードを位置で持つため。4.0 は初期化で throw します）。包む要素に innerHTML: を束縛してください`,
+  directNotEvent: (prop) =>
+    `修飾子 #direct はイベント束縛（on*:）だけに効きます。"${prop}" では無視されます`,
+  delegatedCurrentTarget: (suggested, eventName, handler) =>
+    `"${eventName}" イベントの束縛は root へ委譲されるので、"${handler}" の中の event.currentTarget はこの要素ではなく root になります。要素にリスナーを付けるには "${suggested}:" と書くか、event.target.closest(...) で要素を探してください`,
   getterCycle: (cycle) => `パス getter が循環参照しています: ${cycle}`,
   updatedCallbackUnbound: (p) =>
-    `$updatedCallback は binding 駆動です。"${p}" はこのドキュメントのどのバインディングにも現れないため、この分岐は一度も実行されません。描画に依存せず反応するなら $watch を使ってください`,
+    `$renderedCallback は binding 駆動です。"${p}" はこのドキュメントのどのバインディングにも現れないため、この分岐は一度も実行されません。描画に依存せず反応するなら $watch を使ってください`,
   getterUntrackedRead: (root, sp) =>
     `ここで追跡されるのは "${root}" だけです。"${sp}" が変わってもこの getter は再評価されません（パス読み取りの先の素のプロパティアクセスは追跡されない）。this["${sp}"] で読んでください`,
   handlerFilterNotAllowed: (prop) => `イベントハンドラ "${prop}" にフィルタは使用できません`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" には${JA_EXPECTED_LABEL[expected]}が必要です（現在の型: ${resultType}）`,
   filterUnknown: (n) => `フィルタ "${n}" は組み込みフィルタに存在しません`,
+  filterRemoved: (n, c) => `フィルタ "${n}" は 4.0 で外れました（"${c}" の 3.x の旧名）。"${c}" と書いてください`,
+  substrRemoved: (rewrite) =>
+    `フィルタ "substr" は 4.0 で外れました。slice(start, start + length) と書いてください — slice の第 2 引数は長さではなく終わりの位置です${rewrite === null ? '' : `（ここでは ${rewrite}）`}`,
   filterMinArgs: (n, min, c) => `フィルタ "${n}" には最低 ${min} 個の引数が必要です（${c} 個指定）`,
   filterMaxArgs: (n, max, c) => `フィルタ "${n}" の引数は最大 ${max} 個です（${c} 個指定）`,
   filterArgType: (n, i, exp, arg, act) => `フィルタ "${n}" の第${i}引数は ${exp} 型が必要です（"${arg}" は ${act} 型）`,
@@ -326,39 +301,10 @@ const ja: WcsMessageCatalog = {
   watchKeyEmptySegment: (k) => `$watch のキー "${k}" に空のパスセグメントがあります`,
   watchHandlerNotFunction: (k) => `$watch のエントリ "${k}" の値は関数である必要があります`,
   watchPathMissing: (k) => `$watch のキー "${k}" は状態定義に存在しません（一度も発火しません）`,
-  watchIndexKey: (k) =>
-    `$watch のキー "${k}" は数値の添字を含みます。リストが丸ごと置き換わると発火しますが、添字を通した書き込み（this["${k}"] = …）では発火しません（同じパスをマークアップで束縛していれば発火します）`,
-  scanNotObject: () => `$scan は「出力名 → { from | on, initial, fold, resetOn? }」のオブジェクトである必要があります（この形はランタイムが読み込み時に throw します）`,
-  scanOutputInvalid: (n) => `$scan の出力名 "${n}" は平坦なプロパティ名である必要があります（"."・"*"・先頭の "$" は使えません）`,
-  scanOutputReserved: (n) => `$scan の出力名 "${n}" は Object.prototype から継承される名前です（"constructor" など）`,
-  scanOutputEmpty: () => `$scan の出力名は空でない文字列である必要があります`,
-  scanInVolume: (mountPath) => `$scan はボリューム（mount="${mountPath}"）では宣言できません（ランタイムは接ぎ木の前に throw します）。scan はルートの state に宣言してください`,
-  scanInMountedComponent: () => `$scan はマウントされたコンポーネント（bind-component）では実行されません（ランタイムは wcs/mount-dollar-declaration で警告し、黙って捨てます）。scan はルートの state に宣言してください`,
-  scanOutputConflict: (n, other) => other === 'getter'
-    ? `$scan の出力名 "${n}" は同名の getter / setter と衝突しています（出力はランタイムが所有するプロパティです）`
-    : other === 'method'
-      ? `$scan の出力名 "${n}" は同名のメソッドと衝突しています（出力はランタイムが所有するプロパティで、畳んだ値がメソッドを上書きします）`
-      : `$scan の出力名 "${n}" は同名の $streams エントリと衝突しています（出力の持ち主は 1 つだけです）`,
-  scanEntryNotObject: (n) => `$scan のエントリ "${n}" は { from | on, initial, fold, resetOn? } のオブジェクトである必要があります`,
-  scanSourceCount: (n) => `$scan のエントリ "${n}" には "from"（state パス）か "on"（イベントトークン名）のどちらか 1 つだけを書きます`,
-  scanFromNotString: (n) => `$scan のエントリ "${n}" の "from" は空でない state パスの文字列である必要があります`,
-  scanOnNotString: (n) => `$scan のエントリ "${n}" の "on" は空でないイベントトークン名である必要があります`,
-  scanResetNotString: (n) => `$scan のエントリ "${n}" の "resetOn" には state パスの文字列だけを書きます`,
-  scanOutputCycle: (chain) => `$scan のエントリ ${chain.map(c => `"${c}"`).join(' → ')} は from を通じて互いを畳み合っています（互いの書き込みで永久に畳み続けます）`,
-  scanInitialMissing: (n) => `$scan のエントリ "${n}" に "initial" がありません（累積の種であり、resetOn の戻り先です）`,
-  scanFoldNotFunction: (n) => `$scan のエントリ "${n}" の "fold" は関数である必要があります`,
-  scanOnUndeclared: (n, t) => `$scan のエントリ "${n}" の on "${t}" は $eventTokens に宣言されていません`,
-  scanPathInvalid: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は state パスとして成立しません（先頭の "$"・"@"・空のセグメントは使えません）`,
-  scanPathReserved: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は Object.prototype から継承される名前です（"constructor" など）`,
-  scanFromSelf: (n, p) => `$scan のエントリ "${n}" の from "${p}" は自分の出力を読んでいます（自分の書き込みを永久に畳み続けます）`,
-  scanResetNotArray: (n) => `$scan のエントリ "${n}" の "resetOn" は state パスの配列である必要があります`,
-  scanResetWildcard: (n, p) => `$scan のエントリ "${n}" の resetOn "${p}" に "*" は使えません（reset は出力全体を initial に戻します）`,
-  scanResetIsFrom: (n, p) => `$scan のエントリ "${n}" の resetOn "${p}" は自分の from と同じです（変化のたびに畳まずに reset します）`,
-  scanResetUnderFrom: (n, p, from) => `$scan のエントリ "${n}" の resetOn "${p}" は自分の from "${from}" の配下です（from を書くたびに同じバッチに載り、reset が毎回勝って一度も畳まれません）`,
-  scanResetReadsOutput: (n, p, o) => `$scan のエントリ "${n}" の resetOn "${p}" は $scan の出力 "${o}" を読んでいます（累積で累積を消すフィードバックになります）。素の入力で reset してください`,
-  scanSourceComputed: (n, f, p, g) => `$scan のエントリ "${n}" の ${f} "${p}" は${g === p ? ' getter' : g.includes('**') ? `再帰 getter "${g}" が計算するパス` : ` getter "${g}" の配下`}です。getter は入力が変わるたびに再評価されるので、畳むと出来事ではなく再評価の回数を数えます。getter が読む素の値を指すか、on でイベントを受けてください`,
-  scanFromWriteOnly: (n, p, s) => `$scan のエントリ "${n}" の from "${p}" は${s === p ? ' getter の無い setter' : ` getter の無い setter "${s}" の配下`}です。読むと常に undefined なので、fold は毎回 undefined を受け取ります。setter が書く素の値を指すか、on でイベントを受けてください`,
-  scanPathMissing: (n, f, p) => `$scan のエントリ "${n}" の ${f} "${p}" は状態定義に存在しません（${f === 'from' ? '一度も畳まれません' : '一度も reset されません'}）`,
+  scanRemoved: (mountPath) =>
+    mountPath === null
+      ? `$scan は 4.0 で外れました（ランタイムは読み込み時に throw します）。パスの変化を畳むなら $watch、イベントを畳むなら $on のハンドラで、出力のプロパティへ書いてください`
+      : `$scan は 4.0 で外れました。ボリューム（mount="${mountPath}"）では、ランタイムは接ぎ木を拒んで console.error で報告します（この state は木に載りません）。root の state の $watch か $on のハンドラで畳んでください`,
   typeAnnotationIncompatible: (vt, rt) => `型 "${vt}" は @type {${rt}} と互換性がありません`,
   arrayMutation: (m, alt) =>
     `配列の破壊的メソッド "${m}" はリアクティブ更新をトリガーしません（同一参照の自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: ${alt}）。`,
@@ -367,17 +313,45 @@ const ja: WcsMessageCatalog = {
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
   nameAlias: (written, canonical) =>
-    `"${written}" は "${canonical}" の旧名です。3.x の間は動きますが 4.0 で削除されるので、"${canonical}" と書いてください（@wcstack/state 3.2）`,
+    `"${written}" は 4.0 で外れました（"${canonical}" の 3.x の旧名で、ランタイムは読んだ時点で throw します）。"${canonical}" と書いてください`,
   declarationAliasRead: (alias, canonical) =>
-    `"${alias}" の読み出しは 3.x でも動きません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写し、旧名の自前プロパティを削除するため、this["${alias}"] は undefined になります。"${canonical}" を読んでください（@wcstack/state 3.2）`,
-  declarationAliasReadUncertain: (alias, canonical) =>
-    `"${alias}" の読み出しは旧名のままにできません。"${alias}" は "${canonical}" の旧名で、ランタイムは読み込み時に "${canonical}" へ写します。旧名が自前プロパティなら削除されるので this["${alias}"] は undefined になり、class のプロトタイプに置いたメソッド / アクセサなら今は読めますが 4.0 で削除されます。どちらの形でも "${canonical}" を読んでください（@wcstack/state 3.2）`,
+    `"${alias}" は 4.0 で外れた宣言キー（"${canonical}" の 3.x の旧名）なので、this["${alias}"] は undefined になります。"${canonical}" を読んでください`,
   declarationAlias: (alias, canonical) =>
-    `この state は "${alias}" と "${canonical}" を両方宣言しています。"${alias}" は "${canonical}" の旧名（3.x の間は動きます）なので、"${canonical}" だけを残してください（ランタイムは読み込み時に throw します）`,
+    `宣言キー "${alias}" は 4.0 で外れました（"${canonical}" の 3.x の旧名で、ランタイムは読み込み時に throw します）。"${canonical}" と書いてください`,
+  declarationAliasInVolume: (alias, canonical, mountPath) =>
+    `宣言キー "${alias}" は 4.0 で外れました（"${canonical}" の 3.x の旧名）。ボリューム（mount="${mountPath}"）では、ランタイムは接ぎ木を拒んで console.error で報告します（この state は木に載りません）。"${canonical}" もボリュームでは宣言できないので、root の state に宣言してください`,
+  behaviorNotObject: (keys) =>
+    `$behavior は { ${keys.map((k) => `${k}?`).join(', ')} } のオブジェクトである必要があります（ランタイムは読み込み時に throw します）`,
+  behaviorKeyUnknown: (key, keys, suggestion) =>
+    `"${key}" は $behavior のキーではありません（${keys.join('・')} の ${keys.length} つだけ。ランタイムは読み込み時に throw します）${suggestion}`,
+  behaviorValueType: (key, type) =>
+    `$behavior の "${key}" は ${type === 'boolean' ? 'true か false' : type} である必要があります（ランタイムは読み込み時に throw します）`,
+  configInVolume: (key, mountPath) =>
+    `${key} はボリューム（mount="${mountPath}"）では宣言できません（ランタイムは接ぎ木を拒み、console.error で報告します — この state は木に載りません）。root の state に宣言してください — ボリュームは root のエンジンに接ぎ木されます`,
+  featuresNotArray: () =>
+    `$features は後付けの名前の配列である必要があります（例: ["temporal", "formats"]。ランタイムは読み込み時に throw します）`,
+  featureUnknown: (name, names, suggestion) =>
+    `"${name}" は後付けの名前ではありません（${names.join('・')}）${suggestion}`,
+  volumeDeclarationRejected: (key, mountPath) =>
+    `${key} はボリューム（mount="${mountPath}"）では実行されません。ランタイムは接ぎ木を拒んで console.error で報告します（この state は木に載りません）。root の state に宣言してください`,
+  volumeDeclarationNotRun: (key, mountPath) =>
+    `${key} はボリューム（mount="${mountPath}"）では実行されません（ランタイムは console.warn で知らせ、この宣言を無視します — root の state のものです）。root の state に宣言してください`,
+  secondRoot: () =>
+    '同じ root に 2 つ目の <wcs-state> があります。state の木は root ごとに 1 つです（ランタイムは後から読み込んだ方を拒んで console.error で報告します）。部分木は <wcs-state mount="path"> で接ぎ木してください',
+  bindComponentSource: (prop, sources) =>
+    `bind-component の state はホスト要素のプロパティ（<ホスト>.${prop || '…'}）だけから来ます。${sources.join('・')} と併記すると、ランタイムは読み込みを拒んで console.error で報告します（コンポーネントはマウントされません）。state はコンポーネントのプロパティに書いてください`,
+  indexParamRange: (key, max) =>
+    `"${key}" はループの添字ではありません — 添字は $1 から $${max} までです（ランタイムは読んだ時点で wcs/index-param-range を投げます）`,
+  indexParamNotPath: (key, max) =>
+    `"${key}" はループの添字ではなく（添字は $1 から $${max} まで）、"$" の名前空間に状態のパスもありません — ランタイムはこのバインディングを wcs/binding-path-missing で失敗させます`,
+  featuresAttrNotRoot: () =>
+    `features 属性を読むのは文書の root の <wcs-state>（mount と bind-component を持たない最初のもの）だけです。この要素の features は無視されます — root の <wcs-state> に書いてください`,
   onPrefixedMember: (member, tag, modifiers) =>
     `"${member}" は <${tag}> のメンバーですが、"on" で始まる名前はイベント束縛になり（"${member.slice(2)}" イベントを待つ）、値は届きません。プロパティとして束縛するには ".${member}${modifiers ? `#${modifiers}` : ''}:" と書いてください（@wcstack/state 3.1）`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" は <${tag}> の command ではありません（宣言済み: ${declared}）`,
+  nativeCommandUnknown: (method, tag, allowed) =>
+    `"${method}" はネイティブの <${tag}> に command で呼べるメソッドではありません（呼べるのは ${allowed}。ランタイムは初期化で wcs/token-misconfigured を投げます）`,
   spreadNoBindable: (tag) =>
     `'...'（spread）は <${tag}> に有効な wcBindable 宣言が必要です — このタグは宣言を持たないため、ランタイムはエラーを送出します`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
@@ -428,8 +402,6 @@ const ja: WcsMessageCatalog = {
         return `$trackDependency("${p}") に "**" は渡せません。依存の登録は展開後の具体パス（固定本数の "*"）に対してのみ成立します`;
       case 'listKeys':
         return `$listKeys のキー "${p}" に "**" は使えません。キー付きリストは 1 本の具体リストパスです — 深さごとに宣言してください（例: "nodes.*.children"）`;
-      case 'scan':
-        return `$scan のパス "${p}" に "**" は使えません。from / resetOn は具体パス（固定本数の "*"）を指します`;
       default:
         return `"${p}" は "**" を含みますが、この state には $recursion 宣言がありません。$recursion = { "<anchor>": "<repeat>" }（例: { "nodes.*": "children.*" }）を宣言してください（宣言が無いと "**" のキーは黙って無視されます）`;
     }
@@ -467,7 +439,7 @@ const ja: WcsMessageCatalog = {
   recursionReadonly: (subject, getterPath) =>
     `${subject} は再帰 getter "${getterPath}" に書き込みます（setter は初版では持てません。この綴りはその getter のある深さの展開形か、導出値の内側です）。この getter が導出元にしている値の側を書いてください`,
   recursionInVolume: (subject, mountPath) =>
-    `${subject} はボリューム（mount="${mountPath}"）では宣言できません（ランタイムは接ぎ木の前に throw します）。再帰の宣言と "**" getter はルートの state に置いてください — アンカーのパスはルートの木に対して解決されます`,
+    `${subject} はボリューム（mount="${mountPath}"）では宣言できません（$recursion はランタイムが接ぎ木を拒み、console.error で報告します）。再帰の宣言と "**" getter はルートの state に置いてください — アンカーのパスはルートの木に対して解決されます`,
   recursionNotObject: () =>
     `$recursion は「アンカー → 反復サブパス」のオブジェクトである必要があります（例: { "nodes.*": "children.*" }。この形はランタイムが読み込み時に throw します）`,
   recursionAnchorCount: (count) =>
@@ -501,8 +473,6 @@ const ja: WcsMessageCatalog = {
     `"${a}" と "${b}" は異なる深さで同じ具体パスへ展開します（差が "${repeat}" の整数回ぶんです）。どちらかの名前を変えてください`,
   recursionConcreteCollision: (concreteKey, recursiveKey) =>
     `"${concreteKey}" は state に定義済みなので、再帰 getter "${recursiveKey}" はそこへ展開できません（ランタイムは宣言を読んだ時点で throw します）。どちらかの名前を変えてください`,
-  recursionInMountedComponent: (subject) =>
-    `${subject} はマウントされたコンポーネント（bind-component）では実行されません（ランタイムは wcs/mount-dollar-declaration で警告し、黙って捨てます）。$recursion と "**" getter はルートの state に置いてください — アンカーのパスはルートの木に対して解決されます`,
 };
 
 const EN_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
@@ -519,48 +489,39 @@ const en: WcsMessageCatalog = {
   eventTokenUndeclared: (t) => `Event token "${t}" is not declared in $eventTokens`,
   commandRhsFormat: () => `The right side of a command binding must be $command.<name> (declared in $commandTokens)`,
   commandTokenUndeclared: (t) => `Command token "${t}" is not declared in $commandTokens`,
-  streamPathMissing: (p) => `Path "${p}" does not exist in the $streams declaration`,
+  streamPathMissing: (p) => `Path "${p}" does not exist in the $stream declaration`,
   pathMissing: (p) => `Path "${p}" does not exist in the state definition`,
   pathNonexistent: (p) => `Path "${p}" does not exist in the declared stateSchema`,
   pathTypeMismatch: (p, label, expected, actual) =>
     `Path "${p}" is ${actual} in the stateSchema, but ${label} requires ${expected === 'array' ? 'an array' : expected === 'boolean' ? 'a boolean' : 'a string'}`,
   expansionSuffix: (x) => ` (expanded: ${x})`,
-  patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for>`,
-  omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for>`,
-  loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for>`,
-  resolvedPathInUi: (p) =>
-    `Path "${p}" is read as a plain path, not as a row, so a write through its index does not reach this binding (it can keep its first value). Only a path with exactly one numeric index and no "*" (items.0.name) follows the row it points at. Use a pattern path inside a <template for> instead`,
-  indexPathInFor: (p) =>
-    `for: "${p}" is a list reached through a numeric index. Its rows resolve as "${p}.*.…", and a two-way binding in a row (value: .v) or a read or write through an index path throws at runtime (@wcstack/state #363). Nest one for: per list level instead (e.g. for: groups, with for: .items inside)`,
+  patternPathOutsideFor: (p) => `Pattern path "${p}" cannot be used outside a <template for> (4.0 throws #1401 at init)`,
+  omittedPathOutsideFor: (p) => `Shorthand path "${p}" cannot be used outside a <template for> (4.0 throws #1402 at init)`,
+  loopIndexOutsideFor: (p) => `Loop index "${p}" cannot be used outside a <template for> (4.0 throws #1401 at init)`,
   indexArity: (api, p, req, wc, actual) =>
     `${api}("${p}") requires ${req === "exact" ? "exactly" : "at most"} ${wc} index(es) ("*" appears ${wc} time(s) in the path) but got ${actual}`,
   wildcardRank: (subject, needed, available) =>
     `${subject} needs ${needed} enclosing loop level(s) but the current scope provides ${available}`,
   wildcardOtherList: (p, over, loop) =>
-    `"${p}" ranges over the rows of "${over}", but the enclosing "for" template at that level renders "${loop}". A "*" in a binding is the row of the loop around it, so the runtime cannot resolve this one and the enclosing "for" fails to render (4.0 refuses the same form when the binding is established). Read a row of another list in a getter, with $resolve(path, indexes)`,
-  indexParamNotIndex: (p, max) =>
-    `"${p}" is not a loop index (they run from $1 to $${max}, with no leading zeros). The runtime reads it as a state path and fails this binding with wcs/binding-path-missing (inside a "for", the whole "for" fails to render)`,
-  indexParamRange: (name, max) =>
-    `"${name}" is not a loop index (they run from $1 to $${max}, with no leading zeros): the runtime throws wcs/index-param-range when it is read`,
+    `"${p}" ranges over the rows of "${over}", but the enclosing "for" template at that level renders "${loop}" (4.0 throws when the binding is established). A "*" in a binding is the row of the loop around it — read a row of another list in a getter, with $resolve(path, indexes)`,
   outerInTemplate: (prop) =>
-    `"${prop}:" replaces its element, but a row or branch of a "for" / "if" template keeps holding the original node, so the replacement is left on the page when the row or branch is removed or re-rendered (4.0 refuses this form at initialization). Bind innerHTML: on a wrapper element instead`,
-  secondRoot: () =>
-    'A second <wcs-state> on the same root: there is one state tree per root, and the runtime rejects the one that registers second ("A state tree is already registered on this root"). Graft a subtree with <wcs-state mount="path">',
-  v4ScanRemoved: () =>
-    `Preparing for 4.0 (this still runs on 3.x): $scan is removed in 4.0 (it throws at load time). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there (both work on 3.x)`,
-  v4SubstrRemoved: (rewrite) =>
-    `Preparing for 4.0 (this still runs on 3.x): the "substr" filter is removed in 4.0. Write slice(start, start + length) — slice takes the end index, not a length${rewrite === null ? '' : ` (here: ${rewrite})`}`,
-  v4DelegatedCurrentTarget: (suggested, eventName, handler) =>
-    `Preparing for 4.0 (this still runs on 3.x): 4.0 delegates "${eventName}" events to the root, so event.currentTarget in "${handler}" will be the root, not this element. Write "${suggested}:" to keep the listener on the element (3.x ignores the #direct modifier and already listens on the element), or find the element with event.target.closest(...)`,
+    `"${prop}:" replaces its element, so it cannot be used inside a "for" / "if" template (a row or branch keeps its nodes by position; 4.0 throws at init). Bind innerHTML: on a wrapper element instead`,
+  directNotEvent: (prop) =>
+    `The #direct modifier applies only to event bindings (on*:); it is ignored on "${prop}"`,
+  delegatedCurrentTarget: (suggested, eventName, handler) =>
+    `"${eventName}" bindings are delegated to the root, so event.currentTarget in "${handler}" is the root, not this element. Write "${suggested}:" to keep the listener on the element, or find the element with event.target.closest(...)`,
   getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
   updatedCallbackUnbound: (p) =>
-    `$updatedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
+    `$renderedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
   getterUntrackedRead: (root, sp) =>
     `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
+  filterRemoved: (n, c) => `Filter "${n}" was removed in 4.0 (it was the 3.x old name of "${c}") — write "${c}"`,
+  substrRemoved: (rewrite) =>
+    `Filter "substr" was removed in 4.0 — write slice(start, start + length): slice takes the end index, not a length${rewrite === null ? '' : ` (here: ${rewrite})`}`,
   filterMinArgs: (n, min, c) => `Filter "${n}" requires at least ${min} argument(s) (${c} given)`,
   filterMaxArgs: (n, max, c) => `Filter "${n}" accepts at most ${max} argument(s) (${c} given)`,
   filterArgType: (n, i, exp, arg, act) => `Argument ${i} of filter "${n}" must be of type ${exp} ("${arg}" is ${act})`,
@@ -575,39 +536,10 @@ const en: WcsMessageCatalog = {
   watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
   watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
   watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
-  watchIndexKey: (k) =>
-    `$watch key "${k}" has a numeric index: it fires when the list is replaced, but not on a write through the index (this["${k}"] = …) unless the same path is also bound in the markup`,
-  scanNotObject: () => `$scan must be an object mapping output names to { from | on, initial, fold, resetOn? } (the runtime throws on this shape at load time)`,
-  scanOutputInvalid: (n) => `$scan output name "${n}" must be a flat property name ("." and "*" and a leading "$" are not allowed)`,
-  scanOutputReserved: (n) => `$scan output name "${n}" is a property name inherited from Object.prototype (e.g. "constructor")`,
-  scanOutputEmpty: () => `$scan output name must be a non-empty string`,
-  scanInVolume: (mountPath) => `$scan cannot be declared in a volume (mount="${mountPath}"); the runtime throws before grafting. Declare the scan on the root state`,
-  scanInMountedComponent: () => `$scan is not run by a mounted component (bind-component); the runtime warns with wcs/mount-dollar-declaration and drops it. Declare the scan on the root state`,
-  scanOutputConflict: (n, other) => other === 'getter'
-    ? `$scan output "${n}" conflicts with a getter or setter of the same name (the output is a property the runtime owns)`
-    : other === 'method'
-      ? `$scan output "${n}" conflicts with a method of the same name (the output is a property the runtime owns, so the folded value would overwrite the method)`
-      : `$scan output "${n}" conflicts with the $streams entry of the same name (each output has exactly one owner)`,
-  scanEntryNotObject: (n) => `$scan entry "${n}" must be an object { from | on, initial, fold, resetOn? }`,
-  scanSourceCount: (n) => `$scan entry "${n}" must declare exactly one of "from" (a state path) or "on" (an event-token name)`,
-  scanFromNotString: (n) => `$scan entry "${n}" "from" must be a non-empty state path string`,
-  scanOnNotString: (n) => `$scan entry "${n}" "on" must be a non-empty event-token name`,
-  scanResetNotString: (n) => `$scan entry "${n}" "resetOn" must contain only state path strings`,
-  scanOutputCycle: (chain) => `$scan entries ${chain.map(c => `"${c}"`).join(' → ')} feed each other through "from" (each fold would re-trigger the next forever)`,
-  scanInitialMissing: (n) => `$scan entry "${n}" requires "initial" (the seed of the accumulator and the value resetOn returns to)`,
-  scanFoldNotFunction: (n) => `$scan entry "${n}" fold must be a function`,
-  scanOnUndeclared: (n, t) => `$scan entry "${n}" on "${t}" is not declared in $eventTokens`,
-  scanPathInvalid: (n, f, p) => `$scan entry "${n}" ${f} "${p}" is not a valid state path (a leading "$", "@" and empty segments are not allowed)`,
-  scanPathReserved: (n, f, p) => `$scan entry "${n}" ${f} "${p}" is a property name inherited from Object.prototype (e.g. "constructor")`,
-  scanFromSelf: (n, p) => `$scan entry "${n}" from "${p}" reads the entry's own output (it would fold its own writes forever)`,
-  scanResetNotArray: (n) => `$scan entry "${n}" "resetOn" must be an array of state paths`,
-  scanResetWildcard: (n, p) => `$scan entry "${n}" resetOn "${p}" must not contain "*" (a reset returns the whole output to initial)`,
-  scanResetIsFrom: (n, p) => `$scan entry "${n}" resetOn "${p}" is the entry's own from (every change would reset instead of fold)`,
-  scanResetUnderFrom: (n, p, from) => `$scan entry "${n}" resetOn "${p}" sits under the entry's own from "${from}" (every write of from also lands it, so the reset would win every time and nothing would fold)`,
-  scanResetReadsOutput: (n, p, o) => `$scan entry "${n}" resetOn "${p}" reads the $scan output "${o}" (a reset driven by an accumulator is a feedback loop). Reset on the plain inputs instead`,
-  scanSourceComputed: (n, f, p, g) => `$scan entry "${n}" ${f} "${p}" ${g === p ? 'is a getter' : g.includes('**') ? `is computed by the recursive getter "${g}"` : `is under the getter "${g}"`}. A getter re-evaluates whenever its inputs change, so folding it counts re-evaluations, not events. Point at the plain value the getter reads, or use "on" with an event token`,
-  scanFromWriteOnly: (n, p, s) => `$scan entry "${n}" from "${p}" ${s === p ? 'is a setter without a getter' : `is under the setter without a getter "${s}"`}, so it always reads undefined and every fold would receive undefined. Point at the plain value the setter writes, or use "on" with an event token`,
-  scanPathMissing: (n, f, p) => `$scan entry "${n}" ${f} "${p}" does not exist in the state definition (${f === 'from' ? 'it will never fold' : 'it will never reset'})`,
+  scanRemoved: (mountPath) =>
+    mountPath === null
+      ? `$scan was removed in 4.0 (the runtime throws at load time). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there`
+      : `$scan was removed in 4.0. In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). Fold in a $watch or $on handler on the root state`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) =>
     `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
@@ -616,17 +548,45 @@ const en: WcsMessageCatalog = {
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   nameAlias: (written, canonical) =>
-    `"${written}" is the old name of "${canonical}". It works through 3.x and is removed in 4.0 — write "${canonical}" (@wcstack/state 3.2)`,
+    `"${written}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws when it is read) — write "${canonical}"`,
   declarationAliasRead: (alias, canonical) =>
-    `Reading "${alias}" does not work, not even in 3.x. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time and deletes the old own property, so this["${alias}"] is undefined. Read "${canonical}" instead (@wcstack/state 3.2)`,
-  declarationAliasReadUncertain: (alias, canonical) =>
-    `Reading "${alias}" cannot stay on the old name. "${alias}" is the old name of "${canonical}": the runtime maps it to "${canonical}" at load time. If the old name is an own property it is deleted, so this["${alias}"] is undefined; if it sits on a class prototype (a method or accessor) it still reads today but is removed in 4.0. Either way, read "${canonical}" (@wcstack/state 3.2)`,
+    `"${alias}" is a declaration key 4.0 removed (the 3.x old name of "${canonical}"), so this["${alias}"] is undefined. Read "${canonical}" instead`,
   declarationAlias: (alias, canonical) =>
-    `The state declares both "${alias}" and "${canonical}". "${alias}" is the old name of "${canonical}" (it works through 3.x) — keep "${canonical}" (the runtime throws at load time)`,
+    `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws at load time) — write "${canonical}"`,
+  declarationAliasInVolume: (alias, canonical, mountPath) =>
+    `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"). In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). "${canonical}" cannot be declared in a volume either — declare it on the root state`,
+  behaviorNotObject: (keys) =>
+    `$behavior must be an object { ${keys.map((k) => `${k}?`).join(', ')} } (the runtime throws at load time)`,
+  behaviorKeyUnknown: (key, keys, suggestion) =>
+    `"${key}" is not a $behavior key (only ${keys.join(', ')}; the runtime throws at load time)${suggestion}`,
+  behaviorValueType: (key, type) =>
+    `$behavior "${key}" must be ${type === 'boolean' ? 'true or false' : type} (the runtime throws at load time)`,
+  configInVolume: (key, mountPath) =>
+    `${key} cannot be declared in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state — a volume is grafted onto the root's engine`,
+  featuresNotArray: () =>
+    `$features must be an array of add-on names (for example ["temporal", "formats"]; the runtime throws at load time)`,
+  featureUnknown: (name, names, suggestion) =>
+    `"${name}" is not an add-on (${names.join(', ')})${suggestion}`,
+  volumeDeclarationRejected: (key, mountPath) =>
+    `${key} is not run in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state`,
+  volumeDeclarationNotRun: (key, mountPath) =>
+    `${key} is not run in a volume (mount="${mountPath}"): the runtime says so with console.warn and ignores this declaration — it belongs to the root state. Declare it there`,
+  secondRoot: () =>
+    'A second <wcs-state> on the same root: there is one state tree per root (the runtime refuses the one that loads second and reports it with console.error). Graft a subtree with <wcs-state mount="path">',
+  bindComponentSource: (prop, sources) =>
+    `A bind-component state comes only from the host element's property (<host>.${prop || '…'}): combined with ${sources.join(', ')}, the runtime refuses to load it and reports that with console.error (the component does not mount). Write the state on the component's property`,
+  indexParamRange: (key, max) =>
+    `"${key}" is not a loop index: list index parameters run from $1 to $${max} (the runtime throws wcs/index-param-range when it is read)`,
+  indexParamNotPath: (key, max) =>
+    `"${key}" is not a loop index (they run from $1 to $${max}) and the "$" namespace holds no state path: the runtime fails this binding with wcs/binding-path-missing`,
+  featuresAttrNotRoot: () =>
+    `The features attribute is read only on the document's root <wcs-state> (the first one without mount and bind-component); it is ignored here — put it on the root <wcs-state>`,
   onPrefixedMember: (member, tag, modifiers) =>
     `"${member}" is a member of <${tag}>, but a name starting with "on" makes an event binding (it listens for a "${member.slice(2)}" event) and the value never arrives. Write ".${member}${modifiers ? `#${modifiers}` : ''}:" to bind the property (@wcstack/state 3.1)`,
   tagCommandUnknown: (name, tag, declared) =>
     `"${name}" is not a command of <${tag}> (declared: ${declared})`,
+  nativeCommandUnknown: (method, tag, allowed) =>
+    `"${method}" is not a command of a native <${tag}> (its commands: ${allowed}; the runtime throws wcs/token-misconfigured at initialization)`,
   spreadNoBindable: (tag) =>
     `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration — this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
@@ -678,8 +638,6 @@ const en: WcsMessageCatalog = {
         return `$trackDependency("${p}") cannot take "**" — a dependency is registered against a concrete path (a fixed number of "*")`;
       case 'listKeys':
         return `$listKeys key "${p}" cannot contain "**" — a keyed list is one concrete list path. Declare the key per depth instead (for example "nodes.*.children")`;
-      case 'scan':
-        return `$scan path "${p}" cannot contain "**" — "from" and "resetOn" name a concrete path (a fixed number of "*")`;
       default:
         return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) — without it a "**" key is silently ignored`;
     }
@@ -717,7 +675,7 @@ const en: WcsMessageCatalog = {
   recursionReadonly: (subject, getterPath) =>
     `${subject} writes into the recursive getter "${getterPath}", which has no setter in this version (this spelling is that getter at one depth, or a path inside the value it derives). Write the values it derives from instead`,
   recursionInVolume: (subject, mountPath) =>
-    `${subject} cannot be declared in a volume (mount="${mountPath}"); the runtime throws before grafting. Declare the recursion and its "**" getters on the root state — the anchor path is resolved against the root tree`,
+    `${subject} cannot be declared in a volume (mount="${mountPath}"); for $recursion the runtime refuses to graft the volume and reports that with console.error. Declare the recursion and its "**" getters on the root state — the anchor path is resolved against the root tree`,
   recursionNotObject: () =>
     `$recursion must be an object mapping one anchor path to its repeating sub-path (for example { "nodes.*": "children.*" }; the runtime throws at load time for this shape)`,
   recursionAnchorCount: (count) =>
@@ -751,8 +709,6 @@ const en: WcsMessageCatalog = {
     `"${a}" and "${b}" expand to the same concrete path at different depths (they differ by whole repetitions of "${repeat}"). Rename one of them`,
   recursionConcreteCollision: (concreteKey, recursiveKey) =>
     `"${concreteKey}" is already defined on the state, so the recursive getter "${recursiveKey}" cannot expand to it (the runtime throws when the declaration is read). Rename one of them`,
-  recursionInMountedComponent: (subject) =>
-    `${subject} is not run by a mounted component (bind-component); the runtime warns with wcs/mount-dollar-declaration and drops it. Declare $recursion and "**" getters on the root state — the anchor path is resolved against the root tree`,
 };
 
 const CATALOGS: Record<WcsLocale, WcsMessageCatalog> = { ja, en };

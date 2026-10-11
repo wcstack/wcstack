@@ -1,0 +1,222 @@
+# js-framework-benchmark（公式ハーネス）: state-next と signals
+
+計測 2026-09-26。公式リポジトリ krausest/js-framework-benchmark（`f2df01a`、2026-09-20）の `webdriver-ts` を、手元の機械でそのまま使った。
+
+## 条件
+
+- Windows 11、Chrome 153（`--headless=new`）、puppeteer ランナー。CPU の項目は既定の 15 回（select row は 25 回）、公式の CPU スロットル。
+- 比べた実装（すべて公式の `isKeyed` 判定を通過）:
+
+| 名前 | 中身 |
+|---|---|
+| `vanillajs` | 公式の参照実装（そのまま） |
+| `wcstack-signals` | `packages/signals/__e2e__/benchmark/index.html`（`dom.esm.min.js`＋core チャンク） |
+| `wcstack-state-next` | `packages/state/__e2e__/benchmark/index.html` を `packages/state-next/dist/auto.min.js`（core＋後付け 8 つ）で。`4955ab52` からビルド |
+| `wcstack-state-next-compact` | 上と同じで、行の `<template>` の空白だけを除いたもの |
+| `wcstack-state-next-core` | 上と同じページを `dist/core.min.js`（core だけ）で |
+| `wcstack-state` | 同じページを現行 3.3.0 の `packages/state/dist/auto.min.js` で |
+
+- ページは CSS とスクリプトのパスだけを書き換えた（`pages/`）。選択は、state が `selectedIndex`＋`$untrackDependency` の getter、signals が行ごとの class の effect で、どちらもリポジトリの参照ページのとおり。
+- 起動（Lighthouse の 31〜34）は、ハーネスの既定の集合にも公式の結果表にも入っていないので測っていない。
+
+## 結果
+
+値は中央値、括弧はその表の中で最速との比、幾何平均の重みは公式の結果表（`webdriver-ts-results/src/Common.ts`）と同じ。
+
+**CPU の加重幾何平均**（小さいほど速い）
+
+| | vanillajs | signals | state-next | state-next-compact | state 3.3.0 |
+|---|---:|---:|---:|---:|---:|
+| 1 回目（`results-pass1/`） | 1.02 | 1.25 | **1.11** | — | 1.51 |
+| 2 回目（`results-pass2-cpu/`） | 1.03 | 1.21 | **1.08** | 1.08 | — |
+
+**CPU の項目ごと（2 回目、ms）**
+
+| 項目 | vanillajs | signals | state-next | うち script（signals / state-next） |
+|---|---:|---:|---:|---:|
+| create rows（1k） | 60.9 | 74.5 | **61.6** | 17.0 / 6.7 |
+| replace all rows（1k） | 62.5 | 77.7 | **66.8** | 22.8 / 12.5 |
+| partial update（4x） | 44.3 | **44.4** | 46.4 | 2.6 / 4.8 |
+| select row（4x） | 14.8 | 18.8 | **16.0** | 4.2 / 2.4 |
+| swap rows（4x） | 46.1 | 52.4 | **48.8** | 6.1 / 4.7 |
+| remove row（2x） | 34.3 | **26.8** | 32.9 | 2.2 / 2.6 |
+| create many rows（10k） | 612.6 | 746.3 | **649.0** | 130.7 / 67.9 |
+| append 1k to 1k（2x） | 65.2 | 81.0 | **67.6** | 17.0 / 7.1 |
+| clear 1k rows（4x） | 20.2 | 34.4 | **22.6** | 29.4 / 18.9 |
+
+- script（JS の時間）だけの幾何平均は signals 3.13、state-next 2.11（vanillajs を 1 とする）。paint（style・layout・paint）は 4 つとも 1.04〜1.08 でそろっていて、差はほぼすべて JS の時間から来ている。
+- state-next の JS が signals より明確に遅いのは partial update だけ（2 回とも約 1.8 倍。`this[\`data.${i}.label\`] += …` の 100 回の書き込みが、パス文字列の解決を通るため）。remove row の合計の差は paint の揺れで、script は 2.6 対 2.2。
+- 行の `<template>` の空白を除いても（compact）変わらない。試運転の 1 回で paint が大きく見えたのは揺れだった。
+
+**メモリ（2 回目、3 回の中央値、MB）**
+
+| 項目 | vanillajs | signals | state-next（全部入り） | state-next-core | state 3.3.0（1 回目） |
+|---|---:|---:|---:|---:|---:|
+| ready memory | 0.57 | 0.63 | 1.06 | 0.85 | 1.57 |
+| run memory（1k 行） | 2.03 | 3.72 | 2.87 | **2.61** | 6.23 |
+| create/clear 1k ×5 | 0.65 | 0.90 | 1.48 | 1.18 | 5.65 |
+| 幾何平均 | 1.00 | **1.40** | 1.81 | 1.51 | 4.17 |
+
+- 1,000 行を持ったときは state-next の方が軽い（signals は行ごとに signal と effect を持つ）。読み込み直後と、作成と消去を 5 回くり返した後は signals の方が軽い。
+
+**サイズと first paint（2 回目。first paint は 5 回の中央値）**
+
+| 項目 | vanillajs | signals | state-next（全部入り） | state-next-core |
+|---|---:|---:|---:|---:|
+| 非圧縮（KB） | 11.7 | 21.2 | 111.9 | 59.6 |
+| 圧縮（brotli、KB） | 2.5 | 7.9 | 35.4 | 20.3 |
+| first paint（ms） | 157.9 | 175.0 | 186.4 | 148.7 |
+
+- first paint は同じ実装でも 133〜232ms に散らばり、差を読めない。1 回目の state-next 301ms・state 3.3.0 502ms は各 1 回だけの値。
+
+## 再現
+
+```
+git clone --depth 1 --filter=blob:none --sparse https://github.com/krausest/js-framework-benchmark.git jsfb
+cd jsfb && git sparse-checkout set server webdriver-ts webdriver-ts-results css frameworks/keyed/vanillajs
+mkdir -p frameworks/non-keyed   # サーバの一覧が要求する
+(cd server && npm ci) && (cd webdriver-ts && npm ci && npm run compile)
+# pages/<名前>/ を frameworks/keyed/<名前>/ に置き、dist/ にバンドルを写し、空の package-lock.json を足す
+(cd server && npm start) &
+cd webdriver-ts && node dist/benchmarkRunner.js --headless --framework keyed/vanillajs keyed/wcstack-signals keyed/wcstack-state-next
+node ../summarize.mjs results
+```
+
+## 4.0.0-rc.2 の計測（2026-10-04）
+
+同じハーネス（`f2df01a`）を新しく clone して、4.0.0-rc.2・3.5.4・signals・vanillajs を 1 回のセッションで測った（`results-rc2/`、`summary-rc2.json`）。
+
+- Windows 11、Chrome 154（`--headless=new`）、puppeteer ランナー、既定の回数と CPU スロットル。4 つとも公式の `isKeyed` を通過。ハーネスの妥当性検査も通過。
+- `wcstack-state-4`（`pages/wcstack-state-4/`）と `wcstack-state-3`（`pages/wcstack-state-3/`）は、同じページ（`packages/state/__e2e__/benchmark/index.html`。getter は正式名の `$untracked`。旧名 `$untrackDependency` は 4.0 で外れた）を、それぞれ 4.0.0-rc.2 の `dist/auto.min.js`（全部入り）と v3.5.4 の `dist/auto.min.js`（タグ `v3.5.4` から）で読む。
+- `wcstack-signals` は 9 月と同じページで、rc.2 のビルド（`dom.esm.min.js`＋core チャンク）。signals の src は 3.5.4 から変わっていない（版だけ）。
+
+**CPU の加重幾何平均**（小さいほど速い）: vanillajs 1.02、signals 1.20、**4.0.0-rc.2 1.06**、3.5.4 1.44。script（JS の時間）だけの幾何平均（vanillajs を 1）: signals 2.97、4.0 2.02、3.5.4 6.25。paint は 4 つとも 1.03〜1.07。
+
+| 項目（ms、中央値） | vanillajs | signals | 3.5.4 | 4.0.0-rc.2 |
+|---|---:|---:|---:|---:|
+| create rows（1k） | 57.8 | 72.7 | 82.2 | 61.0 |
+| replace all rows（1k） | 62.7 | 77.2 | 93.3 | 62.1 |
+| partial update（4x） | 36.9 | 40.2 | 38.6 | 39.2 |
+| select row（4x） | 13.3 | 13.7 | 12.5 | 12.3 |
+| swap rows（4x） | 35.6 | 39.4 | 41.1 | 37.4 |
+| remove row（2x） | 28.4 | 27.0 | 35.4 | 26.2 |
+| create many rows（10k） | 646.6 | 772.2 | 1048.9 | 672.9 |
+| append 1k to 1k（2x） | 63.6 | 82.3 | 111.0 | 69.1 |
+| clear 1k rows（4x） | 22.7 | 32.4 | 42.3 | 28.3 |
+
+- 3.5.4 との差が大きいのは、行を作る・消す項目（create 10k は 1048.9 → 672.9ms、append は 1.75 → 1.09 倍、clear は 1.86 → 1.25 倍、remove は 1.35 → 1.00 倍）。3.5.4 の script は create 10k で 413.5ms、4.0 は 65.1ms。
+- 4.0 が vanillajs から離れているのは clear（1.25 倍。script 23.2 対 18.4ms）と、script だけで見た partial update（4.0 対 signals 2.5ms。9 月と同じく、`this[\`data.${i}.label\`]` の書き込みがパス文字列の解決を通るため）。
+- 9 月の 2 回目（vanillajs 1.03、signals 1.21、state-next 1.08）と比べて、CPU は揺れの範囲で変わっていない。
+
+**メモリ（MB、中央値）**
+
+| 項目 | vanillajs | signals | 3.5.4 | 4.0.0-rc.2 |
+|---|---:|---:|---:|---:|
+| ready memory | 0.55 | 0.61 | 1.73 | 1.19 |
+| run memory（1k 行） | 2.03 | 3.72 | 6.32 | 2.95 |
+| create/clear 1k ×5 | 0.65 | 0.91 | 5.77 | 1.65 |
+| 幾何平均 | 1.00 | 1.42 | 4.42 | 2.00 |
+
+- 1,000 行を持ったときは 4.0 が signals より軽く、3.5.4 の半分以下。読み込み直後と、作成と消去のくり返しの後は signals の方が軽い。9 月の state-next（1.06 / 2.87 / 1.48）より少し重い。
+
+**サイズと first paint**
+
+| 項目 | vanillajs | signals | 3.5.4 | 4.0.0-rc.2 |
+|---|---:|---:|---:|---:|
+| 非圧縮（KB） | 11.7 | 21.2 | 290.9 | 133.7 |
+| 圧縮（brotli、KB） | 2.5 | 7.9 | 75.2 | 42.6 |
+| first paint（ms、1 回） | 112.3 | 174.6 | 499.7 | 244.9 |
+
+- 4.0 の値は全部入りの `auto.min.js`（後付けの機能をすべて含む）。9 月の state-next（`4955ab52`）の 111.9 / 35.4KB から増えた。core だけ（`/core`）のページは今回は測っていない。
+- first paint は 1 回ずつの値で、9 月に同じ実装で 133〜232ms に散らばったので、差は読めない。
+
+## Alpine との比較（2026-10-04）
+
+vanillajs・Alpine・4.0.0-rc.2 を 1 回のセッションで測った（`results-alpine/`、`summary-alpine.json`）。ハーネスと条件は上の rc.2 の計測と同じ。Alpine は公式の実装（`frameworks/keyed/alpine`、Alpine 3.14.7 を rollup で 1 本にしたもの。公式の結果表と同じ版）をそのままビルドした。3 つとも `isKeyed` を通過。
+
+- 先に vanillajs と Alpine だけを測ったセッションでは、vanillajs の 4x スロットルの項目（partial update・swap・remove）の paint が上の rc.2 のセッションより 10ms 前後大きく、セッションをまたいだ比較はできなかった。そのため 4.0 も同じセッションで測り直した。このセッションの 4.0 のサイズの段は、ハーネスが first paint のイベントを拾えずに 1 度落ちた（`startTime` of undefined）ので、その段だけを単独で再実行した（サイズのバイト数は rc.2 の計測と同じ）。
+
+**CPU の加重幾何平均**: vanillajs 1.02、**4.0.0-rc.2 1.05**、Alpine 2.35（Alpine は 4.0 の約 2.2 倍）。script（JS の時間）だけの幾何平均（vanillajs を 1）: 4.0 2.05、Alpine 17.11。paint は 3 つとも 1.07〜1.09。
+
+| 項目（ms、中央値） | vanillajs | Alpine | 4.0.0-rc.2 | Alpine ÷ 4.0 |
+|---|---:|---:|---:|---:|
+| create rows（1k） | 58.3 | 167.8 | 62.3 | 2.7 |
+| replace all rows（1k） | 61.8 | 179.5 | 66.9 | 2.7 |
+| partial update（4x） | 45.0 | 45.5 | 46.6 | 1.0 |
+| select row（4x） | 14.8 | 73.6 | 14.7 | 5.0 |
+| swap rows（4x） | 33.5 | 54.6 | 38.4 | 1.4 |
+| remove row（2x） | 36.0 | 35.0 | 32.9 | 1.1 |
+| create many rows（10k） | 625.6 | 1671.6 | 661.6 | 2.5 |
+| append 1k to 1k（2x） | 68.2 | 173.9 | 65.0 | 2.7 |
+| clear 1k rows（4x） | 21.1 | 130.4 | 24.0 | 5.4 |
+
+- 差は行を作る・置き換える・消す項目と select row に出る。Alpine の script は create 10k で 996ms（4.0 は 64ms）、select row で 59ms（4.0 は 2.6ms）。partial update と remove row はほぼ同じ。
+- 4.0 の値は上の rc.2 のセッション（加重幾何平均 1.06、vanillajs 1.02）と揺れの範囲で一致する。公式の結果表の Alpine は vanillajs の 2.93 倍で、このセッション（2.35 ÷ 1.02 ≈ 2.3 倍）より大きい（機械が違う）。
+
+**メモリ（MB、中央値）**
+
+| 項目 | vanillajs | Alpine | 4.0.0-rc.2 |
+|---|---:|---:|---:|
+| ready memory | 0.57 | 0.79 | 1.18 |
+| run memory（1k 行） | 2.03 | 16.92 | 2.95 |
+| create/clear 1k ×5 | 0.63 | 1.58 | 1.65 |
+
+- 1,000 行を持ったときは Alpine が 4.0 の約 5.7 倍。読み込み直後は 4.0 の方が重く、作成と消去のくり返しの後はほぼ同じ。
+
+**サイズと first paint**
+
+| 項目 | vanillajs | Alpine | 4.0.0-rc.2 |
+|---|---:|---:|---:|
+| 非圧縮（KB） | 11.7 | 47.4 | 133.7 |
+| 圧縮（brotli、KB） | 2.5 | 14.7 | 42.6 |
+| first paint（ms、1 回） | 161.5 | 156.0 | 222.1 |
+
+- 配る量は 4.0（全部入りの `auto.min.js`）が Alpine の約 2.9 倍。first paint は 1 回ずつの値で、差は読めない。
+
+## 4.0.0-rc.7 の計測（2026-10-08）
+
+rc.2 と同じハーネス（`f2df01a`、`jsfb40` の clone）で、4.0.0-rc.7・3.5.4・signals・vanillajs を 1 回のセッションで測った（`results-rc7/`、`summary-rc7.json`）。
+
+- Windows 11、Chrome 154.0.8037.97（`--headless=new`）、puppeteer ランナー、既定の回数と CPU スロットル。4 つとも公式の `isKeyed` を通過し、ハーネスの妥当性検査も通過した。
+- `wcstack-state-4` は rc.2 と同じページ（`pages/wcstack-state-4/`）で、4.0.0-rc.7 の `dist/auto.min.js`（全部入り。npm の rc.7 と同一）を読む。`wcstack-state-3`（3.5.4）と vanillajs は rc.2 のときのまま。`wcstack-signals` のバンドルは rc.2 と rc.7 で同一（版の表示だけ違う）。
+- このセッションは全体に速く、vanillajs の create rows が 57.8 → 40.1ms と、どの実装も rc.2 の約 7 割の時間だった（機械の状態）。セッションをまたいで比べられるのは、同じセッションの vanillajs との比だけ。
+
+**CPU の加重幾何平均**（小さいほど速い）: vanillajs 1.02、signals 1.22、**4.0.0-rc.7 1.07**、3.5.4 1.44（rc.2: 1.02 / 1.20 / 1.06 / 1.44）。script（JS の時間）だけの幾何平均（vanillajs を 1）: signals 2.99、4.0 2.03、3.5.4 6.28（rc.2: 2.97 / 2.02 / 6.25）。paint は 4 つとも 1.06〜1.10。
+
+| 項目（ms、中央値） | vanillajs | signals | 3.5.4 | 4.0.0-rc.7 | 4.0 ÷ vanillajs（rc.2） |
+|---|---:|---:|---:|---:|---:|
+| create rows（1k） | 40.1 | 47.4 | 49.5 | 41.7 | 1.04（1.06） |
+| replace all rows（1k） | 47.1 | 51.8 | 57.3 | 53.8 | 1.14（0.99） |
+| partial update（4x） | 26.0 | 30.5 | 32.6 | 29.0 | 1.12（1.06） |
+| select row（4x） | 11.5 | 12.5 | 10.9 | 10.9 | 0.95（0.92） |
+| swap rows（4x） | 30.2 | 35.3 | 34.8 | 30.7 | 1.02（1.05） |
+| remove row（2x） | 20.3 | 21.9 | 34.1 | 21.5 | 1.06（0.92） |
+| create many rows（10k） | 435.3 | 537.1 | 703.6 | 499.2 | 1.15（1.04） |
+| append 1k to 1k（2x） | 51.1 | 60.6 | 73.8 | 43.6 | 0.85（1.09） |
+| clear 1k rows（4x） | 18.5 | 28.0 | 38.0 | 19.6 | 1.06（1.25） |
+
+- **clear が縮んだ**: vanillajs との比が 1.25 → 1.06、script だけでも 1.26 → 1.08（15.4 対 14.3ms）。rc.6 の規模の修正（`Range` を使わない取り外し。`scale-verification.ja.md`）の効果で、rc.2 で 4.0 が vanillajs から最も離れていた項目。
+- create many rows（1.04 → 1.15）と replace all rows（0.99 → 1.14）は比が大きくなったが、vanillajs を超える script の時間はほぼ同じ（create 10k は 19.5 → 17.8ms、replace は 2.7 → 3.7ms）。差の大半は paint（create 10k は 443.9 対 396.2ms）と、速いセッションで vanillajs の分母が縮んだこと。append（1.09 → 0.85）も paint の揺れ。
+- script だけで vanillajs から離れているのは、9 月から同じく partial update（3.0 対 1.0ms。`this[\`data.${i}.label\`]` の書き込みがパス文字列の解決を通る）と、絶対値の小さい swap・remove・select。
+
+**メモリ（MB、中央値）**
+
+| 項目 | vanillajs | signals | 3.5.4 | 4.0.0-rc.7 |
+|---|---:|---:|---:|---:|
+| ready memory | 0.57 | 0.62 | 1.72 | 1.16 |
+| run memory（1k 行） | 2.03 | 3.72 | 6.35 | 2.97 |
+| create/clear 1k ×5 | 0.65 | 0.91 | 5.81 | 1.60 |
+| 幾何平均 | 1.00 | 1.41 | 4.40 | 1.95 |
+
+- rc.2（1.19 / 2.95 / 1.65、幾何平均 2.00）と揺れの範囲で同じ。1,000 行を持ったときは 4.0 が signals より軽く、3.5.4 の半分以下。
+
+**サイズと first paint**
+
+| 項目 | vanillajs | signals | 3.5.4 | 4.0.0-rc.7 |
+|---|---:|---:|---:|---:|
+| 非圧縮（KB） | 11.7 | 21.2 | 290.9 | 138.0 |
+| 圧縮（brotli、KB） | 2.5 | 7.9 | 75.2 | 44.0 |
+| first paint（ms、1 回） | 178.9 | 404.6 | 374.4 | 260.9 |
+
+- 4.0 の値は全部入りの `auto.min.js`。rc.2 の 133.7 / 42.6KB から、rc.3〜rc.7 の修正と追加（既知の制限の解消、ネイティブ要素のコマンド、規模の修正、examples の e2e で見つけたものの修正）の分だけ増えた。
+- first paint は 1 回ずつの値で、同じ signals が 174.6（rc.2）と 404.6ms（rc.7）に散らばる。差は読めない。

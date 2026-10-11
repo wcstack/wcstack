@@ -1,6 +1,7 @@
 # state + intersection + `$stream` + `$watch` デモ（`<wcs-intersect>` による無限スクロール）
 
-[`infinite-scroll`](../../packages/fetch/examples/infinite-scroll) の低レベル版です。
+[`infinite-scroll`](../../packages/fetch/examples/infinite-scroll) の低レベル版です
+（中間の [`state-intersect-fetch`](../state-intersect-fetch) は、`<wcs-intersect>` と `<wcs-fetch>` を state でつなぎます）。
 `<wcs-intersect>` は可視性だけを報告し、`@wcstack/state` の `$stream` がページ取得、
 switchMap 型キャンセル、有界リトライを所有します。着地したページを、page の run を跨いで残る feed へ
 畳むのは stream の値に付けた `$watch` で、**何かが描画されていることに依存しません**。

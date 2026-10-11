@@ -1,0 +1,341 @@
+{
+  "timestamp": "2026-09-23T23:06:19.087Z",
+  "rows": [
+    {
+      "measure": "append1k cold",
+      "n": {
+        "current": 18,
+        "currentB": 18,
+        "dirty": 18,
+        "version": 18
+      },
+      "current": 45.1,
+      "currentB": 38.45,
+      "aaFloorPct": 16.9,
+      "dirty": 10.3,
+      "version": 10.5,
+      "dirtyVsCurrentPct": -73.8,
+      "versionVsDirtyPct": 1.9
+    },
+    {
+      "measure": "append1k warm",
+      "n": {
+        "current": 18,
+        "currentB": 18,
+        "dirty": 18,
+        "version": 18
+      },
+      "current": 79,
+      "currentB": 53.1,
+      "aaFloorPct": 48.8,
+      "dirty": 10.45,
+      "version": 10.5,
+      "dirtyVsCurrentPct": -80.3,
+      "versionVsDirtyPct": 0.5
+    },
+    {
+      "measure": "clear10k cold",
+      "n": {
+        "current": 18,
+        "currentB": 18,
+        "dirty": 18,
+        "version": 18
+      },
+      "current": 49.45,
+      "currentB": 46.45,
+      "aaFloorPct": 6.4,
+      "dirty": 41.95,
+      "version": 40.2,
+      "dirtyVsCurrentPct": -11,
+      "versionVsDirtyPct": -4.2
+    },
+    {
+      "measure": "clear10k warm",
+      "n": {
+        "current": 18,
+        "currentB": 18,
+        "dirty": 18,
+        "version": 18
+      },
+      "current": 51.2,
+      "currentB": 55.85,
+      "aaFloorPct": 8.7,
+      "dirty": 46.45,
+      "version": 41.1,
+      "dirtyVsCurrentPct": -13.5,
+      "versionVsDirtyPct": -11.5
+    },
+    {
+      "measure": "create10k cold",
+      "n": {
+        "current": 18,
+        "currentB": 18,
+        "dirty": 18,
+        "version": 18
+      },
+      "current": 361.1,
+      "currentB": 346.8,
+      "aaFloorPct": 4.1,
+      "dirty": 105.65,
+      "version": 109.45,
+      "dirtyVsCurrentPct": -70.1,
+      "versionVsDirtyPct": 3.6
+    },
+    {
+      "measure": "create10k warm",
+      "n": {
+        "current": 18,
+        "currentB": 18,
+        "dirty": 18,
+        "version": 18
+      },
+      "current": 293.95,
+      "currentB": 314.1,
+      "aaFloorPct": 6.6,
+      "dirty": 63.2,
+      "version": 76.95,
+      "dirtyVsCurrentPct": -79.2,
+      "versionVsDirtyPct": 21.8
+    },
+    {
+      "measure": "create1k cold",
+      "n": {
+        "current": 18,
+        "currentB": 18,
+        "dirty": 18,
+        "version": 18
+      },
+      "current": 37.9,
+      "currentB": 41.5,
+      "aaFloorPct": 8.8,
+      "dirty": 11.7,
+      "version": 14.3,
+      "dirtyVsCurrentPct": -71.5,
+      "versionVsDirtyPct": 22.2
+    },
+    {
+      "measure": "create1k warm",
+      "n": {
+        "current": 18,
+        "currentB": 18,
+        "dirty": 18,
+        "version": 18
+      },
+      "current": 16.5,
+      "currentB": 16.95,
+      "aaFloorPct": 2.7,
+      "dirty": 9,
+      "version": 9.4,
+      "dirtyVsCurrentPct": -46.4,
+      "versionVsDirtyPct": 4.4
+    },
+    {
+      "measure": "jsfb append1kTo10k (cold page)",
+      "n": {
+        "current": 24,
+        "currentB": 24,
+        "dirty": 24,
+        "version": 24
+      },
+      "current": 48.05,
+      "currentB": 45.95,
+      "aaFloorPct": 4.6,
+      "dirty": 11.35,
+      "version": 12.3,
+      "dirtyVsCurrentPct": -75.4,
+      "versionVsDirtyPct": 8.4
+    },
+    {
+      "measure": "jsfb clear10k (cold page)",
+      "n": {
+        "current": 24,
+        "currentB": 24,
+        "dirty": 24,
+        "version": 24
+      },
+      "current": 47.2,
+      "currentB": 51.55,
+      "aaFloorPct": 8.9,
+      "dirty": 50.9,
+      "version": 47.95,
+      "dirtyVsCurrentPct": 4.5,
+      "versionVsDirtyPct": -5.8
+    },
+    {
+      "measure": "jsfb create1k (cold page)",
+      "n": {
+        "current": 24,
+        "currentB": 24,
+        "dirty": 24,
+        "version": 24
+      },
+      "current": 32.4,
+      "currentB": 35.3,
+      "aaFloorPct": 8.9,
+      "dirty": 10.9,
+      "version": 10.65,
+      "dirtyVsCurrentPct": -66.6,
+      "versionVsDirtyPct": -2.3
+    },
+    {
+      "measure": "jsfb remove1k (cold page)",
+      "n": {
+        "current": 30,
+        "currentB": 30,
+        "dirty": 30,
+        "version": 30
+      },
+      "current": 2.75,
+      "currentB": 2.8,
+      "aaFloorPct": 1.8,
+      "dirty": 0.65,
+      "version": 0.6,
+      "dirtyVsCurrentPct": -76.8,
+      "versionVsDirtyPct": -7.7
+    },
+    {
+      "measure": "jsfb replace1k (cold page)",
+      "n": {
+        "current": 30,
+        "currentB": 30,
+        "dirty": 30,
+        "version": 30
+      },
+      "current": 13.95,
+      "currentB": 13.9,
+      "aaFloorPct": 0.4,
+      "dirty": 7.2,
+      "version": 8.2,
+      "dirtyVsCurrentPct": -48.2,
+      "versionVsDirtyPct": 13.9
+    },
+    {
+      "measure": "jsfb select1k (cold page)",
+      "n": {
+        "current": 30,
+        "currentB": 30,
+        "dirty": 30,
+        "version": 30
+      },
+      "current": 0.1,
+      "currentB": 0.1,
+      "aaFloorPct": 0,
+      "dirty": 0.1,
+      "version": 0.1,
+      "dirtyVsCurrentPct": 0,
+      "versionVsDirtyPct": 0
+    },
+    {
+      "measure": "jsfb swap1k (cold page)",
+      "n": {
+        "current": 63,
+        "currentB": 63,
+        "dirty": 63,
+        "version": 63
+      },
+      "current": 0.9,
+      "currentB": 1,
+      "aaFloorPct": 10,
+      "dirty": 0.4,
+      "version": 0.5,
+      "dirtyVsCurrentPct": -60,
+      "versionVsDirtyPct": 25
+    },
+    {
+      "measure": "jsfb update10k (cold page)",
+      "n": {
+        "current": 30,
+        "currentB": 30,
+        "dirty": 30,
+        "version": 30
+      },
+      "current": 12.55,
+      "currentB": 13.3,
+      "aaFloorPct": 5.8,
+      "dirty": 8.2,
+      "version": 7.9,
+      "dirtyVsCurrentPct": -36.9,
+      "versionVsDirtyPct": -3.7
+    },
+    {
+      "measure": "keyed",
+      "n": {
+        "current": 3,
+        "currentB": 3,
+        "dirty": 3,
+        "version": 3
+      },
+      "current": 1,
+      "currentB": 1,
+      "aaFloorPct": 0,
+      "dirty": 1,
+      "version": 1,
+      "dirtyVsCurrentPct": 0,
+      "versionVsDirtyPct": 0
+    },
+    {
+      "measure": "remove1of10k eqIndex",
+      "n": {
+        "current": 45,
+        "currentB": 45,
+        "dirty": 45,
+        "version": 45
+      },
+      "current": 11.1,
+      "currentB": 10.8,
+      "aaFloorPct": 2.7,
+      "dirty": 4.8,
+      "version": 4.7,
+      "dirtyVsCurrentPct": -56.4,
+      "versionVsDirtyPct": -2.1
+    },
+    {
+      "measure": "remove1of10k tracked",
+      "n": {
+        "current": 45,
+        "currentB": 45,
+        "dirty": 45,
+        "version": 45
+      },
+      "current": 30,
+      "currentB": 28.5,
+      "aaFloorPct": 5.2,
+      "dirty": 6.9,
+      "version": 6.9,
+      "dirtyVsCurrentPct": -76.2,
+      "versionVsDirtyPct": 0
+    },
+    {
+      "measure": "select10k eqIndex",
+      "n": {
+        "current": 45,
+        "currentB": 45,
+        "dirty": 45,
+        "version": 45
+      },
+      "current": 6.6,
+      "currentB": 7.5,
+      "aaFloorPct": 12.3,
+      "dirty": 6.9,
+      "version": 7.1,
+      "dirtyVsCurrentPct": -5.5,
+      "versionVsDirtyPct": 2.9
+    },
+    {
+      "measure": "select10k tracked",
+      "n": {
+        "current": 45,
+        "currentB": 45,
+        "dirty": 45,
+        "version": 45
+      },
+      "current": 28.5,
+      "currentB": 21.8,
+      "aaFloorPct": 28.5,
+      "dirty": 8.7,
+      "version": 9.1,
+      "dirtyVsCurrentPct": -63.1,
+      "versionVsDirtyPct": 4.6
+    }
+  ]
+}

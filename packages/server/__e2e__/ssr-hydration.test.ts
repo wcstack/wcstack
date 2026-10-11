@@ -128,6 +128,42 @@ describe('SSR → ハイドレーション結合テスト', () => {
     expect(document.querySelector('p.content')).not.toBeNull();
   });
 
+  it('if / elseif / else の連鎖のテンプレートの間にコメントがあっても、サーバーの枝の要素をそのまま引き取る → 表示切替', async () => {
+    // --- サーバー ---
+    const ssrHtml = await renderToString(`
+      <wcs-state enable-ssr json='{"mode":"b"}'></wcs-state>
+      <template data-wcs="if: mode|eq(a)"><p class="a">A</p></template>
+      <!-- the second branch -->
+      <template data-wcs="elseif: mode|eq(b)"><p class="b">B</p></template>
+      <!-- otherwise --><!-- none -->
+      <template data-wcs="else:"><p class="none">none</p></template>
+    `);
+
+    expect(ssrHtml).toContain('<p class="b">B</p>');
+    expect(ssrHtml).toContain('<!-- the second branch -->');
+
+    // --- クライアント ---
+    document.body.innerHTML = ssrHtml;
+    // サーバーが描いた枝の要素（パースしたもの）
+    const serverP = document.querySelector('p.b');
+    expect(serverP).not.toBeNull();
+    const stateEl = document.querySelector('wcs-state') as any;
+    await stateEl.connectedCallbackPromise;
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // 捨てて描き直さず、同じ要素が残る
+    expect(document.querySelector('p.b')).toBe(serverP);
+    expect(document.querySelectorAll('p').length).toBe(1);
+
+    stateEl.createState('writable', (state: any) => { state.mode = 'a'; });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(Array.from(document.querySelectorAll('p')).map(p => p.className)).toEqual(['a']);
+
+    stateEl.createState('writable', (state: any) => { state.mode = 'z'; });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    expect(Array.from(document.querySelectorAll('p')).map(p => p.className)).toEqual(['none']);
+  });
+
   it('Mustache テキスト: SSR → ハイドレーション → 状態変化', async () => {
     // --- サーバー ---
     const ssrHtml = await renderToString(`
@@ -167,6 +203,49 @@ describe('SSR → ハイドレーション結合テスト', () => {
 
     const input = document.querySelector('input') as HTMLInputElement;
     expect(input.value).toBe('Alice');
+  });
+
+  it('checked / selectedIndex / textarea / innerHTML: SSR の HTML に入り、ハイドレーション後の書き込みに従う', async () => {
+    // --- サーバー ---
+    const ssrHtml = await renderToString(`
+      <wcs-state enable-ssr json='{"agreed":true,"idx":2,"memo":"Hello","html":"<b>bold</b>"}'></wcs-state>
+      <input type="checkbox" data-wcs="checked: agreed" />
+      <select data-wcs="selectedIndex: idx"><option>A</option><option>B</option><option>C</option></select>
+      <textarea data-wcs="value: memo"></textarea>
+      <div data-wcs="innerHTML: html"></div>
+    `);
+
+    expect(ssrHtml).toMatch(/<input type="checkbox" data-wcs="checked: agreed" checked="">/);
+    expect(ssrHtml).toContain('<option>A</option><option>B</option><option selected="">C</option>');
+    expect(ssrHtml).toContain('<textarea data-wcs="value: memo">Hello</textarea>');
+    expect(ssrHtml).toContain('<div data-wcs="innerHTML: html"><b>bold</b></div>');
+
+    // --- クライアント ---
+    await hydrate(ssrHtml);
+
+    const checkbox = document.querySelector('input') as HTMLInputElement;
+    const select = document.querySelector('select') as HTMLSelectElement;
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    const div = document.querySelector('div') as HTMLDivElement;
+    expect(checkbox.checked).toBe(true);
+    expect(select.selectedIndex).toBe(2);
+    expect(textarea.value).toBe('Hello');
+    expect(div.innerHTML).toBe('<b>bold</b>');
+
+    const stateEl = document.querySelector('wcs-state') as any;
+    stateEl.createState('writable', (state: any) => {
+      state.agreed = false;
+      state.idx = 0;
+      state.memo = 'Updated';
+      state.html = '<i>italic</i>';
+    });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    // 引き取った同じ要素が更新される
+    expect(document.querySelector('input')).toBe(checkbox);
+    expect(checkbox.checked).toBe(false);
+    expect(select.selectedIndex).toBe(0);
+    expect(textarea.value).toBe('Updated');
+    expect(div.innerHTML).toBe('<i>italic</i>');
   });
 
   it('ハイドレーション後に data-wcs-completed が残らず、バインディングが機能する', async () => {

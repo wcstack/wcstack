@@ -231,7 +231,7 @@ localStorage の変更は、別のタブからの更新も自動的に検知さ�
 - `#init=element` は**初期の state→element 書き込みを行わず**（clobber しない）、**要素の現在の `value` を state スロットへ pull します**（取り逃さない）。
 - authority が支配するのは*初期同期のみ*です。以後の `todos` 代入は通常どおり state→element に流れるので、自動保存は生きたままです。
 - シードは要素の実初期値（空キーなら `null`）に合わせ、読み出しは派生 getter で null ガードしてください。`[]` や `""` のような都合のよいシードは、どのみち初期 pull で置き換えられます。
-- `enableDirectionalInitialSync`（v1.21.0 以降は既定 ON）が前提です。明示的に無効化した場合 `#init=` は throw するので、その構成では `undefined` シード + `$connectedCallback` での一度きり pull に倒してください。
+- `enableDirectionalInitialSync`（v1.21.0 以降は既定 ON。4.0 では `bootstrapState()` のオプションではなく、ルートの state の `$behavior` のキー）が前提です。無効化した場合（`$behavior: { enableDirectionalInitialSync: false }`）`#init=` は throw するので、その構成では `undefined` シード + `$connectedCallback` での一度きり pull に倒してください。
 - 動作する実例: `examples/state-cross-tab-todo`、`examples/state-color-palette`。
 
 ## ステートサーフェス vs コマンドサーフェス
@@ -259,6 +259,8 @@ HTML、JS、または `@wcstack/state` バインディングからストレー�
 | `value` | `any` | 設定すると自動保存（`manual` でない場合） |
 | `trigger` | `boolean` | 単方向の保存トリガー |
 | `manual` | `boolean` | 自動読み込み・自動保存を無効化 |
+
+**`null` と `undefined`。** 属性に対応する入力（`key`・`type`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値（key なし・`local`・manual でない）に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`value = null` はストレージからキーを削除します（`manual` モードでは次の保存用に `null` をステージします）。`value = undefined` は何もしません — 保存済みのエントリは残り、何もステージしません。`trigger` はどちらも無視します。
 
 ## `:state()` による CSS スタイリング
 
@@ -373,6 +375,8 @@ unbind();
 | 文字列 | そのまま | JSON パース成功時はパース結果、失敗時はそのまま文字列 |
 | 数値 / boolean | `JSON.stringify()` 結果 | `JSON.parse()` 結果 |
 | `null` / `undefined` | キーを削除 | `null` |
+
+これは Core の `save(value)` の挙動です。要素の `value` セッターは `null` でキーを削除しますが、`undefined` は無視します（[入力 / コマンドサーフェス](#入力--コマンドサーフェス)参照）。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 
@@ -632,7 +636,7 @@ bootstrapStorage({
 });
 ```
 
-知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
+`bootstrapStorage()` は、持っていないオプション、既定値と型の違う値（`null` や、オブジェクトの所の配列を含む）、定義していない `tagNames` のキー、文字列でないタグ名で例外を投げます。当てる前にすべてのオプションを確かめるので、投げたときは何も当てません。値が `undefined` のオプションは飛ばします。
 
 ## 設計メモ
 
@@ -648,7 +652,7 @@ bootstrapStorage({
 - **実行時の `type` 変更**: 接続後に `type` 属性を変更すると以降の操作で使うストレージ領域は切り替わるが、新しい領域から**自動で再ロードはしない**（非 manual で自動再ロードするのは `key` 変更時のみ）。新領域の値が必要なら明示的に `load()` を呼ぶこと。
 - **`error` の形状**: ストレージ失敗時、`error` には失敗した呼び出し（`load` / `save` / `remove`、あるいはヘッドレスで不正な `type` を代入した場合の `type`）を示す `WcsStorageError`（`{ operation, message }`）が設定される。操作は **never-throw**: key 未設定での操作呼び出しは throw せず `error` に `{ operation, message: "key is required." }` として流れる（`wcs-storage:error` も発火）。したがって実際には `error` は常に `WcsStorageError` か `null` のいずれかになる。より広い `WcsStorageError | Error | null` 型は前方互換性と兄弟パッケージとの一貫性のために維持している。
 - JSON 自動シリアライズにより、オブジェクト / 配列 / プリミティブを透過的に扱える
-- `null` / `undefined` の保存はストレージからのキー削除として扱われる
+- `null` の保存はストレージからのキー削除として扱われる（Core の `save(undefined)` も同じ）。要素の `value` への `undefined` の代入は何もせず、保存済みのエントリを残す
 - `storage` イベントによるクロスタブ同期は localStorage でのみ動作。Shell は接続時（および再 attach 時）に監視を現在の `key` / `type` へ結びつけるため、自動ロードが走らない `manual` モードでもクロスタブ同期が機能する。接続後に `key` 属性を変更した場合も常に Core の key を再同期するため、`manual` モードや key を空にした場合でもクロスタブ同期は新しい key を追従する。クロスタブ更新が成功すると残存していた `error` もクリアされる（`load()` / `save()` / `remove()` が成功時に冒頭で error を null にするのと同様）。これにより、過去の失敗で残った error と新鮮な value が共存しない。
 - `manual` は保存タイミングを明示的に制御したい場合に有用
 

@@ -114,7 +114,9 @@ See `examples/defined-loader` for the full demo (readiness gate + timeout failur
 | `mode`    | string | `"all"`        | `"all"` → `defined` is true once every tag is registered. `"any"` → true once the first one is.       |
 | `timeout` | number | `0` (no limit) | Milliseconds. After it elapses, still-pending tags move to `missing` (a load failure). `0`/unset waits forever. |
 
-Attributes are read at connect time, not observed (see Notes).
+Changing an attribute (or its property) on a connected element restarts the watch with the new configuration (see Notes).
+
+**`null` and `undefined`.** The inputs (`tags`, `mode`, `timeout`), all backed by an attribute, take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
 
 ## Observable Properties (outputs)
 
@@ -194,7 +196,7 @@ DevTools open; they are not a supported styling hook.
 
 - **Monotonic and terminal.** `whenDefined()` never reverts: once a tag is defined it stays defined. The state settles once every tag resolves or the `timeout` fires. After a timeout, a tag that registers *late* is promoted out of `missing` back into the `count` (so `defined` can still flip true afterwards).
 - **Invalid names fail softly.** A tag name that is not a valid custom element name (no hyphen, etc.) yields a rejected `whenDefined()`; it is recorded in `error` and placed in `missing`, never thrown. Other valid tags keep being watched (never-throw).
-- **Attributes are read at connect time, not observed.** `<wcs-defined>` does not implement `observedAttributes` / `attributeChangedCallback`. `tags` / `mode` / `timeout` are fixed when the element connects; to watch a different set, use a separate element (or re-connect).
+- **Changing `tags` / `mode` / `timeout` restarts the watch.** On a connected element, a changed attribute — or the property, which writes it; a binding writes the property after the element has upgraded and connected — disposes the current watch and starts one with the new configuration, so `pending` / `missing` / `count` / `total` / `defined` start over (a tag already defined resolves at once). A write of the same value does nothing; a change made while disconnected is read on the next connect. (3.x read the attributes at connect time only, so a bound `tags` never took effect.)
 - **Reconnect re-watches.** Removing and re-inserting the element runs `connectedCallback` again. A watch in flight when the element disconnects is invalidated, so a rapid disconnect→reconnect cannot leak a stale callback.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`, so the server renderer waits for readiness before snapshotting. **Specify a `timeout` for SSR** — without one, an unresolved tag leaves the promise pending forever. The pending-forever risk is sharpest under SSR with `timeout="0"` (or unset) on an autoloaded tag: the render hangs awaiting a registration that may never happen. Always pair SSR + autoloaded tags with a finite `timeout`.
 - **Array getters return fresh copies.** `pending` and `missing` (and the event `detail` arrays) are new arrays on every read/dispatch, so external mutation cannot corrupt internal state. The flip side: do not rely on referential equality between reads — compare contents, not identity.

@@ -1,0 +1,194 @@
+{
+  "timestamp": "2026-09-24T14:04:51.345Z",
+  "rows": [
+    {
+      "measure": "append1k cold",
+      "current": 37.45,
+      "currentB": 38,
+      "aaPct": 1.46,
+      "next": 7.3,
+      "nextVsCurrentPct": -80.61
+    },
+    {
+      "measure": "append1k warm",
+      "current": 37.95,
+      "currentB": 87.9,
+      "aaPct": 100.3,
+      "next": 7.75,
+      "nextVsCurrentPct": -84.44
+    },
+    {
+      "measure": "clear10k cold",
+      "current": 49.4,
+      "currentB": 43.1,
+      "aaPct": 13.45,
+      "next": 44.7,
+      "nextVsCurrentPct": -4.59
+    },
+    {
+      "measure": "clear10k warm",
+      "current": 44.3,
+      "currentB": 47.2,
+      "aaPct": 6.42,
+      "next": 39.55,
+      "nextVsCurrentPct": -12.4
+    },
+    {
+      "measure": "create10k cold",
+      "current": 298.45,
+      "currentB": 306.2,
+      "aaPct": 2.56,
+      "next": 89,
+      "nextVsCurrentPct": -70.58
+    },
+    {
+      "measure": "create10k warm",
+      "current": 301.8,
+      "currentB": 281,
+      "aaPct": 7.23,
+      "next": 49.05,
+      "nextVsCurrentPct": -82.95
+    },
+    {
+      "measure": "create1k cold",
+      "current": 39,
+      "currentB": 34.2,
+      "aaPct": 13.6,
+      "next": 9.95,
+      "nextVsCurrentPct": -71.81
+    },
+    {
+      "measure": "create1k warm",
+      "current": 14.25,
+      "currentB": 17,
+      "aaPct": 16.52,
+      "next": 6.55,
+      "nextVsCurrentPct": -60.66
+    },
+    {
+      "measure": "jsfb append1kTo10k (cold page)",
+      "current": 41,
+      "currentB": 39.2,
+      "aaPct": 4.51,
+      "next": 7.2,
+      "nextVsCurrentPct": -81.95
+    },
+    {
+      "measure": "jsfb clear10k (cold page)",
+      "current": 43.9,
+      "currentB": 50.95,
+      "aaPct": 15.68,
+      "next": 38.8,
+      "nextVsCurrentPct": -13.68
+    },
+    {
+      "measure": "jsfb create1k (cold page)",
+      "current": 31.55,
+      "currentB": 27.7,
+      "aaPct": 12.52,
+      "next": 7.95,
+      "nextVsCurrentPct": -74.15
+    },
+    {
+      "measure": "jsfb remove1k (cold page)",
+      "current": 1.85,
+      "currentB": 2.35,
+      "aaPct": 23.81,
+      "next": 0.6,
+      "nextVsCurrentPct": -71.43
+    },
+    {
+      "measure": "jsfb replace1k (cold page)",
+      "current": 16,
+      "currentB": 14.5,
+      "aaPct": 10,
+      "next": 7.25,
+      "nextVsCurrentPct": -51.67
+    },
+    {
+      "measure": "jsfb select1k (cold page)",
+      "current": 0.1,
+      "currentB": 0.1,
+      "aaPct": 0,
+      "next": 0.1,
+      "nextVsCurrentPct": 0
+    },
+    {
+      "measure": "jsfb swap1k (cold page)",
+      "current": 0.95,
+      "currentB": 1,
+      "aaPct": 5,
+      "next": 0.4,
+      "nextVsCurrentPct": -60
+    },
+    {
+      "measure": "jsfb update10k (cold page)",
+      "current": 12.75,
+      "currentB": 13.4,
+      "aaPct": 4.98,
+      "next": 5.9,
+      "nextVsCurrentPct": -54.79
+    },
+    {
+      "measure": "keyed (1 = passed)",
+      "current": 1,
+      "currentB": 1,
+      "aaPct": 0,
+      "next": 1,
+      "nextVsCurrentPct": 0
+    },
+    {
+      "measure": "remove1of10k eqIndex",
+      "current": 10.45,
+      "currentB": 9.5,
+      "aaPct": 9.5,
+      "next": 2.9,
+      "nextVsCurrentPct": -71
+    },
+    {
+      "measure": "remove1of10k tracked",
+      "current": 28.15,
+      "currentB": 25.45,
+      "aaPct": 10.27,
+      "next": 4.8,
+      "nextVsCurrentPct": -81.75
+    },
+    {
+      "measure": "select10k eqIndex",
+      "current": 3.75,
+      "currentB": 6.3,
+      "aaPct": 56.04,
+      "next": 1.8,
+      "nextVsCurrentPct": -60.44
+    },
+    {
+      "measure": "select10k tracked",
+      "current": 23.9,
+      "currentB": 23.75,
+      "aaPct": 0.63,
+      "next": 3.85,
+      "nextVsCurrentPct": -83.82
+    }
+  ],
+  "targets": {
+    "next": {
+      "create1k warm": {
+        "engine": 6.55,
+        "dom": 3.95,
+        "ratio": 1.66,
+        "pass": true
+      },
+      "create10k cold": {
+        "engine": 89,
+        "dom": 38.85,
+        "ratio": 2.29,
+        "pass": false
+      }
+    }
+  },
+  "size": {
+    "file": "packages/state-next/dist/auto.min.js",
+    "bytes": 57162,
+    "gzip": 19076
+  }
+}

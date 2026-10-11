@@ -4,6 +4,7 @@ import { WorkerCore } from "../core/WorkerCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 // Named WcsWorker (not `Worker`) to avoid shadowing the global `Worker`
 // constructor and to match the <wcs-broadcast> WcsBroadcast / <wcs-ws>
@@ -99,65 +100,60 @@ export class WcsWorker extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Input setters never let setAttribute stringify null / undefined (an
+  // "undefined" src would spawn a Worker from "undefined"): `null` removes the
+  // attribute (the documented default; an empty src does not spawn),
+  // `undefined` restores the attribute the element started with (wc-bindable
+  // producer guidance P1; React 19 and a direct assignment deliver it,
+  // @wcstack/state does not).
 
   get src(): string {
     return this.getAttribute("src") || "";
   }
 
-  set src(value: string) {
-    this.setAttribute("src", value);
+  set src(value: string | null | undefined) {
+    reflectAttribute(this, "src", value);
   }
 
   get type(): WorkerType {
     return this.getAttribute("type") === "classic" ? "classic" : "module";
   }
 
-  set type(value: WorkerType) {
-    this.setAttribute("type", value);
+  set type(value: WorkerType | null | undefined) {
+    reflectAttribute(this, "type", value);
   }
 
   get name(): string {
     return this.getAttribute("name") || "";
   }
 
-  set name(value: string) {
-    this.setAttribute("name", value);
+  set name(value: string | null | undefined) {
+    reflectAttribute(this, "name", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   get keepAlive(): boolean {
     return this.hasAttribute("keep-alive");
   }
 
-  set keepAlive(value: boolean) {
-    if (value) {
-      this.setAttribute("keep-alive", "");
-    } else {
-      this.removeAttribute("keep-alive");
-    }
+  set keepAlive(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "keep-alive", value);
   }
 
   get restartOnError(): boolean {
     return this.hasAttribute("restart-on-error");
   }
 
-  set restartOnError(value: boolean) {
-    if (value) {
-      this.setAttribute("restart-on-error", "");
-    } else {
-      this.removeAttribute("restart-on-error");
-    }
+  set restartOnError(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "restart-on-error", value);
   }
 
   get maxRestarts(): number {
@@ -172,8 +168,8 @@ export class WcsWorker extends HTMLElement {
     return Number.isNaN(parsed) ? Infinity : parsed;
   }
 
-  set maxRestarts(value: number) {
-    this.setAttribute("max-restarts", String(value));
+  set maxRestarts(value: number | null | undefined) {
+    reflectAttribute(this, "max-restarts", value);
   }
 
   get restartInterval(): number {
@@ -182,8 +178,8 @@ export class WcsWorker extends HTMLElement {
     return Number.isNaN(parsed) ? 0 : parsed;
   }
 
-  set restartInterval(value: number) {
-    this.setAttribute("restart-interval", String(value));
+  set restartInterval(value: number | null | undefined) {
+    reflectAttribute(this, "restart-interval", value);
   }
 
   // --- Core delegated getters ---

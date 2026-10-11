@@ -2,7 +2,7 @@
 
 - **状態**: **Phase A（成立条件の実測）完了**（2026-09-09）。ゲートは全て推奨で採択済み。実装は [state-recursive-path-impl-plan.md](./state-recursive-path-impl-plan.md) が進行の正本で、本書は設計判断と実測の記録。
 - **Phase A で本書に入った訂正**: §7-2 の cold start（`$setAll` は throw しない）／描画なしでの台帳世代分裂（読みは成立・**書きは成立しない**）／共有配列の別名化（D12 新設）／停止の実効上限は 128（§6-3）。
-- **対象**: `@wcstack/state` のパス語彙と、その 3 つの消費者（getter / [`$getAll`](../packages/state/src/proxy/apis/getAll.ts) / [`$setAll`](../packages/state/src/proxy/apis/setAll.ts)）。
+- **対象**: `@wcstack/state` のパス語彙と、その 3 つの消費者（getter / [`$getAll`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts) / [`$setAll`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/setAll.ts)）。
 - **一言で**: 再帰は**依存グラフの問題ではなく記法の問題**。深さ方向の縮約エッジは既に実装済みで、手で展開した再帰形は今日そのまま動く（§3 の実測）。足りないのは「無限個の静的パスの族」を 1 つの宣言で表す語彙だけ。
 - **問い（依頼の原文）**: 再帰のパス表現は可能か。可能なら `$getAll` / `$setAll` / getter で利用できるか。
 
@@ -42,20 +42,20 @@
 
 ### 2-1. 静的 arity に全機構が依存している
 
-パスは `a.b.*.c` の静的文字列で、[`PathInfo`](../packages/state/src/address/PathInfo.ts) が文字列 intern してインスタンス同一性を依存グラフ・アドレス比較・キャッシュのキーにしている。ここで `wildcardCount` が**静的に確定していること**が、次の 4 つを同時に決めている。
+パスは `a.b.*.c` の静的文字列で、[`PathInfo`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/PathInfo.ts) が文字列 intern してインスタンス同一性を依存グラフ・アドレス比較・キャッシュのキーにしている。ここで `wildcardCount` が**静的に確定していること**が、次の 4 つを同時に決めている。
 
 | 依存箇所 | 何を `wildcardCount` から決めているか |
 |---|---|
-| [`wildcardLevel.ts`](../packages/state/src/list/wildcardLevel.ts) | ListIndex チェーンの長さ（`Δ + W`）と、位置→段の変換 |
-| [`define.ts`](../packages/state/src/define.ts) | `$1..$n` の本数（`MAX_WILDCARD_DEPTH = 128` で先に全部作ってある） |
-| [`resolve.ts`](../packages/state/src/proxy/apis/resolve.ts) | 添字本数の**厳密一致**検査 |
-| [`wildcardIndexes.ts`](../packages/state/src/proxy/apis/wildcardIndexes.ts) | 走査の段数（`wildcardParentPathInfos` 配列の長さ） |
+| [`wildcardLevel.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/wildcardLevel.ts) | ListIndex チェーンの長さ（`Δ + W`）と、位置→段の変換 |
+| [`define.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/define.ts) | `$1..$n` の本数（`MAX_WILDCARD_DEPTH = 128` で先に全部作ってある） |
+| [`resolve.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/resolve.ts) | 添字本数の**厳密一致**検査 |
+| [`wildcardIndexes.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/wildcardIndexes.ts) | 走査の段数（`wildcardParentPathInfos` 配列の長さ） |
 
 深さ不定の `**` を `PathInfo` に持ち込むと、この 4 つが同時に壊れる。**`**` を `wildcardCount` に混ぜる実装は取り得ない**、というのが最初の制約。
 
 ### 2-2. テンプレートの相対記法は parse 時に静的展開される
 
-`for` の中の `.field` 記法は、[`expandShorthandPaths.ts`](../packages/state/src/structural/expandShorthandPaths.ts) が**バインド解析の時点で絶対パスへ書き換える**。実行時に「今いる深さ」で解決しているわけではない。したがって「同じテンプレートを深さ違いで使い回す」ことも現行経路では起きない。再帰テンプレートを入れるなら、深さごとのプレフィックス書き換えが新たに要る。
+`for` の中の `.field` 記法は、[`expandShorthandPaths.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/structural/expandShorthandPaths.ts) が**バインド解析の時点で絶対パスへ書き換える**。実行時に「今いる深さ」で解決しているわけではない。したがって「同じテンプレートを深さ違いで使い回す」ことも現行経路では起きない。再帰テンプレートを入れるなら、深さごとのプレフィックス書き換えが新たに要る。
 
 ### 2-3. 区別すべき 2 つの「再帰」
 
@@ -84,11 +84,11 @@
 
 ### 3-2. なぜ動くか — 深い側→浅い側の縮約エッジは実装済み
 
-集計 getter の依存は「深いパス → 浅いパス」という**縮約方向**のエッジになる。これは [`walkDependency.ts`](../packages/state/src/dependency/walkDependency.ts) の動的依存展開が既に扱っている。
+集計 getter の依存は「深いパス → 浅いパス」という**縮約方向**のエッジになる。これは [`walkDependency.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) の動的依存展開が既に扱っている。
 
 `nodes.*.children.*.total → nodes.*.total` の場合:
 
-1. [`calcWildcardLen`](../packages/state/src/address/calcWildcardLen.ts) が `wildcardPathSet` の積を取る → 共有は `nodes.*` の 1 段
+1. [`calcWildcardLen`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/calcWildcardLen.ts) が `wildcardPathSet` の積を取る → 共有は `nodes.*` の 1 段
 2. `depPathInfo.wildcardCount - wildcardLen = 1 - 1 = 0` なので `expandable = false`
 3. 非展開分岐で `listIndexAtWildcard(chain, 0, 2)` → **親行の ListIndex に縮む**
 
@@ -136,7 +136,7 @@
 </template>
 ```
 
-深さ 3 のツリーが `root / a / a1 / b` と正しく描画された。各段のスコープ内では `node.children.*` の 1 段しか使わないので、**パスが深さに依存しない**のが要点。`bind-component` の多段接ぎ木が成立することは [`integration.bindComponentDepthN.test.ts`](../packages/state/__tests__/integration.bindComponentDepthN.test.ts) が別途担保している（あちらは深さごとに別タグ、こちらは同一タグ）。
+深さ 3 のツリーが `root / a / a1 / b` と正しく描画された。各段のスコープ内では `node.children.*` の 1 段しか使わないので、**パスが深さに依存しない**のが要点。`bind-component` の多段接ぎ木が成立することは [`integration.bindComponentDepthN.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.bindComponentDepthN.test.ts) が別途担保している（あちらは深さごとに別タグ、こちらは同一タグ）。
 
 ### 5-2. 2 つの前提条件
 
@@ -191,7 +191,7 @@ nodes.**.total    各深さの同名 getter
 | `$getAll(path, [])`（**明示**） | マッチする全アドレスの**合併** | 全深さの**合併** |
 | `$getAll(path, [i, …])`（部分接頭辞） | 前方一致で絞り込む | **定義できない** → throw（§7-2） |
 
-この書き分けは机上の案ではなく、実装済みの挙動そのものである。[`getAll.ts`](../packages/state/src/proxy/apis/getAll.ts) の省略時既定は「path と文脈が共有するワイルドカード連鎖のぶんだけ文脈の添字を接頭辞に敷く」で、`[]` を明示したときだけ全展開になる。§3 のプローブでも、行 getter の中の `$getAll("nodes.*.children.*.total")`（省略）は現在行に束縛され、ルート集計の `$getAll("nodes.*.total", [])`（明示）は全行合併になっていた。
+この書き分けは机上の案ではなく、実装済みの挙動そのものである。[`getAll.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/getAll.ts) の省略時既定は「path と文脈が共有するワイルドカード連鎖のぶんだけ文脈の添字を接頭辞に敷く」で、`[]` を明示したときだけ全展開になる。§3 のプローブでも、行 getter の中の `$getAll("nodes.*.children.*.total")`（省略）は現在行に束縛され、ルート集計の `$getAll("nodes.*.total", [])`（明示）は全行合併になっていた。
 
 **この書き分けを落とすと集計が二重計上になる。** `$getAll("nodes.**.children.*.total")` を無条件に「全深さの合併」と読むと、孫の total が「子の total の内訳」としても「合併の要素」としても数えられる。**省略形が評価深さに束縛されることが、再帰集計が正しく畳まれる条件そのもの**であり、`**` の意味論をここで曖昧にしてはならない。
 
@@ -199,7 +199,7 @@ nodes.**.total    各深さの同名 getter
 
 | 必要なもの | 既存フック |
 |---|---|
-| 深さ k のアクセサ実体化 | [`State.defineTreeAccessor`](../packages/state/src/components/State.ts)（quoted-path アクセサ用。`getterPaths` / `setterPaths` / `setPathInfo` まで面倒を見る） |
+| 深さ k のアクセサ実体化 | [`State.defineTreeAccessor`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts)（quoted-path アクセサ用。`getterPaths` / `setterPaths` / `setPathInfo` まで面倒を見る） |
 | 依存エッジの登録 | getter 実行時の `addDynamicDependency`。深さごとに自然に生える |
 | 循環しないこと | 深さ k と k−1 は**別のパス文字列**なので自己ループにならない。`topologicalRank` も lint の `wcs/getter-cycle` も無傷 |
 | 展開のトリガ | ①`for` が深さ k+1 のコンテンツを実体化するとき ②`$getAll` がデータを降りるとき。どちらも既にリスト実体を読んでいる経路 |
@@ -212,9 +212,9 @@ nodes.**.total    各深さの同名 getter
 
 | 上限 | 実効値 | 何が止めるか |
 |---|---|---|
-| ワイルドカード段数 | **無し** | `MAX_WILDCARD_DEPTH = 128` は [`define.ts`](../packages/state/src/define.ts) が `$1..$n` の名前表を作るための定数にすぎず、`PathInfo` も走査も止めない（`"a" + ".*".repeat(129)` は受理され `wildcardCount = 129`）。1000 段の `PathInfo` も 3000 段の走査も通り、壊れ方は V8 の素の `RangeError`（3000〜4000 段） |
-| getter の評価スタック | **ちょうど 128 段** | [`StateHandler`](../packages/state/src/proxy/StateHandler.ts) の `pushAddress`（`MAX_LOOP_DEPTH`）。129 段目で throw する |
-| 依存グラフの深さ | 1000 | [`topologicalRank.ts`](../packages/state/src/dependency/topologicalRank.ts) の `MAX_DEPENDENCY_DEPTH`。木の深さと 1:1 なので 128 より先に踏むことはない |
+| ワイルドカード段数 | **無し** | `MAX_WILDCARD_DEPTH = 128` は [`define.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/define.ts) が `$1..$n` の名前表を作るための定数にすぎず、`PathInfo` も走査も止めない（`"a" + ".*".repeat(129)` は受理され `wildcardCount = 129`）。1000 段の `PathInfo` も 3000 段の走査も通り、壊れ方は V8 の素の `RangeError`（3000〜4000 段） |
+| getter の評価スタック | **ちょうど 128 段** | [`StateHandler`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/StateHandler.ts) の `pushAddress`（`MAX_LOOP_DEPTH`）。129 段目で throw する |
+| 依存グラフの深さ | 1000 | [`topologicalRank.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/topologicalRank.ts) の `MAX_DEPENDENCY_DEPTH`。木の深さと 1:1 なので 128 より先に踏むことはない |
 
 したがって **cold な top-down 評価はちょうど 128 段まで成立し、129 段で throw する** — これが再帰集計の実効上限。ただし 2 つの落とし穴がある。
 
@@ -224,7 +224,7 @@ nodes.**.total    各深さの同名 getter
 （余談だが実測で分かったこと: 最深から浅い順に温める bottom-up 評価は 128 の壁を越える — キャッシュヒットが `pushAddress` を通らないため深さ 400 まで通った。ただし葉を 1 つ書き換えると次の読みで再び 128 で落ちるので、逃げ道にはならない。）
 
 
-超過時の扱いは **throw** が妥当。集計を途中で打ち切ると**誤った合計を黙って返す**ことになり、§4 の 2 つのワナと同じ失敗の形になる。既存の作法とも一致していて、依存グラフ側の上限 `MAX_DEPENDENCY_DEPTH = 1000` は [`topologicalRank.ts`](../packages/state/src/dependency/topologicalRank.ts) で超過時に「循環参照の可能性」として throw する。展開器の上限もこれに倣い、**アンカーと深さを名指しする診断**にする。実装で使うコードは `wcs/getter-depth-exceeded`（Phase A' で新設）— 再帰専用ではなく「深い getter 連鎖」一般に出る診断なので、`recursion-` を冠さない。循環側は `wcs/getter-cycle` で、判定はスタック全体のアドレス同一性による（末尾のパス文字列の重複では、周期の長い輪を取り逃がし、同じパスを別の行で読む正当な再帰を誤告発する）。
+超過時の扱いは **throw** が妥当。集計を途中で打ち切ると**誤った合計を黙って返す**ことになり、§4 の 2 つのワナと同じ失敗の形になる。既存の作法とも一致していて、依存グラフ側の上限 `MAX_DEPENDENCY_DEPTH = 1000` は [`topologicalRank.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/topologicalRank.ts) で超過時に「循環参照の可能性」として throw する。展開器の上限もこれに倣い、**アンカーと深さを名指しする診断**にする。実装で使うコードは `wcs/getter-depth-exceeded`（Phase A' で新設）— 再帰専用ではなく「深い getter 連鎖」一般に出る診断なので、`recursion-` を冠さない。循環側は `wcs/getter-cycle` で、判定はスタック全体のアドレス同一性による（末尾のパス文字列の重複では、周期の長い輪を取り逃がし、同じパスを別の行で読む正当な再帰を誤告発する）。
 
 ---
 
@@ -257,7 +257,7 @@ get treeTotal() {
 
 ### 7-2. `$getAll` — **条件付きで可**
 
-走査は一般化できる。[`collectWildcardIndexes`](../packages/state/src/proxy/apis/wildcardIndexes.ts) は `wildcardParentPathInfos` 配列を深さ優先で降りるだけなので、「固定長の配列」を「データが尽きるまで伸びる不動点走査」に置き換えられる。順序（深さ優先・添字昇順）も保てる。
+走査は一般化できる。[`collectWildcardIndexes`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/wildcardIndexes.ts) は `wildcardParentPathInfos` 配列を深さ優先で降りるだけなので、「固定長の配列」を「データが尽きるまで伸びる不動点走査」に置き換えられる。順序（深さ優先・添字昇順）も保てる。
 
 壊れるのは**合併形（`[]` 明示）だけ**で、2 つある。
 
@@ -268,7 +268,7 @@ get treeTotal() {
 
 → 許すのは **省略形（文脈束縛）と `[]`（全深さ合併）の 2 形だけ**。部分接頭辞は `indexArityMessage` と同じ形の診断で throw する。合併形に上限を与えたい場合は `{ maxDepth }` のようなオプションを足す（D11 の上限とは別物 — こちらは意図的な絞り込み）。
 
-**ListIndex 台帳は `for` に依存しない（実測）。** [`collectWildcardIndexes`](../packages/state/src/proxy/apis/wildcardIndexes.ts) はワイルドカード階層ごとに `createListDiff` を呼び、[`createListDiff.ts`](../packages/state/src/list/createListDiff.ts) が `setListIndexesByList` で台帳（リスト値を弱参照キーにした `WeakMap`）へ登録する。したがって `for` バインドがまったく無いページでも、`$getAll` を撃てば台帳ができ、続く `$resolve` / `$setAll` も成功する。
+**ListIndex 台帳は `for` に依存しない（実測）。** [`collectWildcardIndexes`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/apis/wildcardIndexes.ts) はワイルドカード階層ごとに `createListDiff` を呼び、[`createListDiff.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/createListDiff.ts) が `setListIndexesByList` で台帳（リスト値を弱参照キーにした `WeakMap`）へ登録する。したがって `for` バインドがまったく無いページでも、`$getAll` を撃てば台帳ができ、続く `$resolve` / `$setAll` も成功する。
 
 ```
 for バインドなし・初期状態から:
@@ -277,15 +277,15 @@ for バインドなし・初期状態から:
   $setAll("nodes.*.children.*.value", [], 99) = 3 件書き込み ← 成功
 ```
 
-throw するのは**走査を一度も経ていないリストにいきなり `$resolve` を撃った場合**だけ。[`getListIndexByIndexes`](../packages/state/src/proxy/methods/getListIndexByIndexes.ts) は台帳を**引くだけで作らない**ためで、`$resolve` は第 1 相（走査）を持たない唯一の API である。この cold start は `**` とは無関係の既存の性質。
+throw するのは**走査を一度も経ていないリストにいきなり `$resolve` を撃った場合**だけ。[`getListIndexByIndexes`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getListIndexByIndexes.ts) は台帳を**引くだけで作らない**ためで、`$resolve` は第 1 相（走査）を持たない唯一の API である。この cold start は `**` とは無関係の既存の性質。
 
-> **追記（#324 で解消）**: 同じ原因で、`for` で描いていないリストの行を添字のパス（`this["items.0.v"]`）で読み書きしても `ListIndex not found: items` で投げていた（直接添字は `getListIndex` の `"all"` 分岐で同じ台帳を引く。README の「Direct index access」が v1.2.0 から成立していなかった）。いまは両方とも、台帳の無い段で**その場で台帳を生やす**（[`getListIndexesByAddress`](../packages/state/src/proxy/methods/getListIndexesByAddress.ts)）。旧リストには `$getAll` の第 1 相と同じ state 側の基準（`stateListBaseline`）を渡すので、行の再利用は `$getAll` と同じ規則になる。基準は読むだけで確定しない（観測の確定は走査・描画・依存ウォークのまま）。したがって「`$resolve` だけが throw する」は過去の性質で、cold でも `$getAll` / `$setAll` / `$resolve` / `$postUpdate` / 直接添字のどれもが通る。行が無い添字（範囲外・値が配列でない）は、描いたかどうかに関わらず `ListIndex not found at index <i> of <path>` で投げる。回帰テストは `packages/state/__tests__/integration.directIndexUnrenderedList.test.ts`。
+> **追記（#324 で解消）**: 同じ原因で、`for` で描いていないリストの行を添字のパス（`this["items.0.v"]`）で読み書きしても `ListIndex not found: items` で投げていた（直接添字は `getListIndex` の `"all"` 分岐で同じ台帳を引く。README の「Direct index access」が v1.2.0 から成立していなかった）。いまは両方とも、台帳の無い段で**その場で台帳を生やす**（[`getListIndexesByAddress`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getListIndexesByAddress.ts)）。旧リストには `$getAll` の第 1 相と同じ state 側の基準（`stateListBaseline`）を渡すので、行の再利用は `$getAll` と同じ規則になる。基準は読むだけで確定しない（観測の確定は走査・描画・依存ウォークのまま）。したがって「`$resolve` だけが throw する」は過去の性質で、cold でも `$getAll` / `$setAll` / `$resolve` / `$postUpdate` / 直接添字のどれもが通る。行が無い添字（範囲外・値が配列でない）は、描いたかどうかに関わらず `ListIndex not found at index <i> of <path>` で投げる。回帰テストは `packages/state/__tests__/integration.directIndexUnrenderedList.test.ts`。
 
 > **訂正（Phase A 実測・2026-09-09）**: 本節は以前 `$setAll` も throw 側に数えていたが誤りだった。`$setAll` は第 1 相で `collectWildcardIndexes` を回すので cold でも成功する（上のコード片が正しく、本文が間違っていた）。ただし**接頭辞で絞った `$setAll(path, [0], v)` は降りなかった枝を cold のまま残す** — 直後に `$resolve(path, [1, 0])` を撃つと `ListIndexes not found: nodes.*.children` で落ちる。温度は state 単位ではなく**ワイルドカード段単位**である。（#324 以降、この `$resolve` は降りなかった枝の台帳をその場で生やして通る。台帳の温度が段単位であることは変わらない）
 
 **ただし「読み」に限る（Phase A 実測）。** 走査 API が台帳を作るのは事実だが、それは**読みが台帳を作る**という話でしかない。`for` バインドの無いリストに**構造書き込み**（並べ替え・先頭追加・末尾以外の削除・親リスト再代入）を加えると、集計は恒久的に stale になるか `ListIndexes not found` で恒久的に throw する。
 
-原因は差分基準の持ち主にある。[`walkDependency`](../packages/state/src/dependency/walkDependency.ts) が読む基準 `lastListValueByAbsoluteStateAddress` を**書き込むのは描画経路だけ**（`applyChangeFromBindings` / `BindingSession` / `hydrateBindings` の 3 箇所）。`for` が無いと基準が永久に空のまま残り、[`createListDiff`](../packages/state/src/list/createListDiff.ts) の `oldList.length === 0` 分岐に落ちて**新しい配列に新しい ListIndex を鋳造**する。子リストの台帳は古い親 ListIndex を指したまま残るので、親子の連鎖が切れる。
+原因は差分基準の持ち主にある。[`walkDependency`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) が読む基準 `lastListValueByAbsoluteStateAddress` を**書き込むのは描画経路だけ**（`applyChangeFromBindings` / `BindingSession` / `hydrateBindings` の 3 箇所）。`for` が無いと基準が永久に空のまま残り、[`createListDiff`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/createListDiff.ts) の `oldList.length === 0` 分岐に落ちて**新しい配列に新しい ListIndex を鋳造**する。子リストの台帳は古い親 ListIndex を指したまま残るので、親子の連鎖が切れる。
 
 | 観測 | 実測値 |
 |---|---|
@@ -297,7 +297,7 @@ throw するのは**走査を一度も経ていないリストにいきなり `$
 
 つまり **§7-2 の「描画していない深さに `$getAll` が届く」は読みについては正しく、書きを含めた運用については成立しない**。実装計画が到達点に掲げる「描画していない木でも動く」は、差分基準を描画経路から切り離す既存機構の修正を前提にする（実装計画 §3-1 の E1）。
 
-**同じ配列インスタンスの共有は無言で誤る（Phase A 実測）。** 台帳 [`listIndexesByList`](../packages/state/src/list/listIndexesByList.ts) はリスト**配列の identity** だけをキーにしていて親を持たない。同じ `children` 配列に 2 つの親から到達できると、`createListDiff` の `oldList.length === 0` 分岐が既存台帳を無条件に再利用するため、ListIndex の親が**先に走査した親に固定**される。行 getter が親の値を読むと別名化した値を返し（実測 `[109,109]`、正しくは `[109,209]`）、`$setAll` の mapper 形は**二重適用**される。循環データはその特殊ケースで、`wcs/wildcard-rank` という無関係な文面で落ちる。**追記（#256）**: この別名化は「1 本の配列に 1 組の行」という設計の帰結なので残している —— 親ごとに私有の行集合にすると、同じスロットに 2 本の絶対アドレスができ、片方へ書いた値がもう片方から永久に見えなくなる（実測で却下）。#256 が直したのは**陳腐化**の側（行オブジェクトを作り直す置換で、行がぶら下がる親が退役する形）だけで、そこは行の identity を保ったまま生きた親へ付け替える（外した行が戻ってきたら持ち主を返す —— 判定は行オブジェクトの identity で、配列インスタンスでも添字でもない）。
+**同じ配列インスタンスの共有は無言で誤る（Phase A 実測）。** 台帳 [`listIndexesByList`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/listIndexesByList.ts) はリスト**配列の identity** だけをキーにしていて親を持たない。同じ `children` 配列に 2 つの親から到達できると、`createListDiff` の `oldList.length === 0` 分岐が既存台帳を無条件に再利用するため、ListIndex の親が**先に走査した親に固定**される。行 getter が親の値を読むと別名化した値を返し（実測 `[109,109]`、正しくは `[109,209]`）、`$setAll` の mapper 形は**二重適用**される。循環データはその特殊ケースで、`wcs/wildcard-rank` という無関係な文面で落ちる。**追記（#256）**: この別名化は「1 本の配列に 1 組の行」という設計の帰結なので残している —— 親ごとに私有の行集合にすると、同じスロットに 2 本の絶対アドレスができ、片方へ書いた値がもう片方から永久に見えなくなる（実測で却下）。#256 が直したのは**陳腐化**の側（行オブジェクトを作り直す置換で、行がぶら下がる親が退役する形）だけで、そこは行の identity を保ったまま生きた親へ付け替える（外した行が戻ってきたら持ち主を返す —— 判定は行オブジェクトの identity で、配列インスタンスでも添字でもない）。
 
 拒否すべき最小条件は「DAG」ではなく **「同じ配列インスタンスが 2 つ以上の (親 ListIndex, 深さ) から到達可能であること」**。検出は `createListDiff` の戻り値に対する参照比較 1 回で足りる（`diff.newIndexes[0].parentListIndex !== listIndex` なら共有）。ノードオブジェクトの共有は、その `children` が空なら完全に正しく動くので拒否不要。
 
@@ -307,7 +307,7 @@ throw するのは**走査を一度も経ていないリストにいきなり `$
 
 | 展開物 | 寿命 |
 |---|---|
-| intern した `PathInfo` | [`PathInfo.ts`](../packages/state/src/address/PathInfo.ts) の `_cache` は素の `Map` で、tooling 用の口以外からはクリアされない（インスタンス同一性が依存グラフの前提なので、ランタイムでのクリアは禁止されている） |
+| intern した `PathInfo` | [`PathInfo.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/PathInfo.ts) の `_cache` は素の `Map` で、tooling 用の口以外からはクリアされない（インスタンス同一性が依存グラフの前提なので、ランタイムでのクリアは禁止されている） |
 | `defineTreeAccessor` で生やしたアクセサ | state オブジェクト上のプロパティとして残り、`getterPaths` にも残る |
 
 つまり**一度深くなった木が浅く戻っても、その深さのパスとアクセサは残り続ける**。実用上は「一度でも到達した最大深さ」ぶんのメモリで頭打ちになるので致命的ではない見込みだが、上限（D11）を持たない実装だと単調増加になる。ここが実装上いちばん詰めるべき点。
@@ -386,7 +386,7 @@ throw するのは**走査を一度も経ていないリストにいきなり `$
 
 本検討の初期の実測は使い捨てのテストで取った（コミットしていない）。再現する場合は `packages/state/__tests__/` に置いて `npx vitest run <file>` で走る。
 
-**共通のマウントヘルパ**（既存の統合テストと同じ形。[`integration.diamondListStale.test.ts`](../packages/state/__tests__/integration.diamondListStale.test.ts) を参照）:
+**共通のマウントヘルパ**（既存の統合テストと同じ形。[`integration.diamondListStale.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.diamondListStale.test.ts) を参照）:
 
 ```ts
 async function mount(initial: any, innerHTML: string) {

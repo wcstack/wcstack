@@ -8,8 +8,8 @@
  *   wcs/index-arity              — `$getAll` / `$setAll` / `$resolve` の添字の本数 vs パス中の `*` の本数
  *   wcs/getter-cycle             — パス getter どうしの循環参照
  *   wcs/getter-untracked-read    — getter の中の `this.form.name`（追跡されるのは `form` だけ）
- *   wcs/updated-callback-unbound — `$updatedCallback` が未バインドのパスを判定に使っている
- *   wcs/index-param-range        — `this.$0` / `this.$129`（ループの添字の表の外。読んだ時点で throw）
+ *   wcs/updated-callback-unbound — `$renderedCallback` が未バインドのパスを判定に使っている
+ *   wcs/index-param-range        — `this.$0` / `this.$129`（ループの添字の範囲の外。読んだ時点で throw）
  *
  * （もう 1 つの意味論検査 `wcs/wildcard-rank` は HTML 側の for スコープが要るため
  *   bindingValidator / templateSyntaxValidator に同居している。）
@@ -24,12 +24,12 @@
  * 添字がリテラル配列でない・パスが文字列リテラルでない場合は黙る（偽陽性ゼロ優先）。
  */
 
-import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
 import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
-import { isOutOfRangeIndexName, MAX_INDEX_PARAM } from './v4Migration.js';
+import { isOutOfRangeIndexRead, MAX_INDEX_PARAM } from './indexPath.js';
 import { countWildcardSegments, getInnermostForPath } from './forContext.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 import { findBuiltinTagOccurrences } from './ioNodeValidator.js';
@@ -37,33 +37,20 @@ import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
 import { ASSIGN_TAIL, PRE_INCDEC, ROOT_BRACKET } from './scriptPatterns.js';
 import { blankComments, literalArrayLength, literalString, splitCallArgs } from './scriptCallArgs.js';
 import { hasRecursionWildcard } from './recursionPaths.js';
+import { REMOVED_DECLARATION_KEYS, removedApiReplacement, removedDeclarationReplacement } from './removedNames.js';
 
-/** ランタイム予約キー（@wcstack/state の define.ts が正本）。`$renderedCallback` が正式名、`$updatedCallback` は 3.x の間の旧名（3.2） */
-const STATE_UPDATED_CALLBACKS: ReadonlySet<string> = new Set(['$renderedCallback', '$updatedCallback']);
+/** ランタイム予約キー（@wcstack/state の manifest の reservedLifecycle）。4.0 は旧名 `$updatedCallback` を外した */
+const STATE_UPDATED_CALLBACKS: ReadonlySet<string> = new Set(['$renderedCallback']);
 
 /**
- * 3.x の間だけ残る旧名 → 正式名（@wcstack/state 3.2・要件 B12）。API はメソッド呼び出し、
- * 宣言は state のキー。
- *
- * TODO（**次のリリースビルドで dist に載ったら**）: 正本（`packages/state/src/manifest.ts` の
- * `STATE_API_ALIASES` と `src/declarationAliases.ts` の `DECLARATION_ALIASES`）から導出して
- * この手書きを消す。フィルタの別名（`wcsManifest.ts` の `builtinFilterAliases`）と同じ形。
- *
- * 現況: **src には両方あるが、コミット済みの dist の `@wcstack/state/manifest` はまだ
- * export していない**（`STRUCTURAL_BINDING_TYPE_SET / WCS_MANIFEST_VERSION /
- * builtinFilterAliases / builtinFilterMeta / getWcsManifest` の 5 つだけ）。ESM の名前付き
- * import は export の無い dist で即死するので、`core/parser/quoteAware.ts` の TODO と同じく
- * dist が追いつくまで手書きのまま。ずれは `__tests__/nameAliases.drift.test.ts` が
- * state の src を読んで固定する（export はそのテスト用）。
+ * 4.0 で外れた旧名 → 正式名（@wcstack/state 3.2 で改名・4.0 で外した。要件 D4・B12）。API はメソッド呼び出し、
+ * 宣言は state のキー。表は removedNames.ts（4.0 の正本との整合は `__tests__/nameAliases.drift.test.ts`）。
  */
-export const OLD_API_NAMES: Readonly<Record<string, string>> = { $trackDependency: '$dependOn', $untrackDependency: '$untracked' };
-export const OLD_DECLARATION_KEYS: Readonly<Record<string, string>> = { $streams: '$stream', $updatedCallback: '$renderedCallback' };
 const OLD_API_CALL = /\.\s*(\$trackDependency|\$untrackDependency)\b/g;
 /**
- * 旧名の宣言キーを `this.` 越しに**読む**。宣言（動く）と違い、読み出しは 3.x でも動かない —
- * `normalizeDeclarationAliases` が正式名へ写したあと自前プロパティの旧名を `delete` するので、
- * `this.$streams` は例外も出さずに `undefined` になる。code（`wcs/declaration-alias-read`）を
- * 宣言側と分ける理由。
+ * 4.0 で外れた宣言キーを `this.` 越しに**読む**。4.0 の state にそのキーは無いので、`this.$streams` は
+ * 例外も出さずに `undefined` になる（宣言していれば、読み込み時に `wcs/declaration-alias` で止まる）。
+ * code（`wcs/declaration-alias-read`）を宣言側と分ける理由。
  *
  * これは AST（`collectThisMemberRefs`）が読めないときのフォールバック。走査は
  * `maskCommentsAndStrings` の鏡像に対して行うのでコメント・文字列リテラルの中には
@@ -71,21 +58,20 @@ const OLD_API_CALL = /\.\s*(\$trackDependency|\$untrackDependency)\b/g;
  * だからフォールバック経路は info に留め、warning へは上げない。
  */
 const OLD_DECLARATION_MEMBER = /\.\s*(\$streams|\$updatedCallback)\b/g;
-/** メンバー参照を探す旧名の集合（AST 経路。値は `OLD_DECLARATION_KEYS` の正式名）。 */
-const OLD_DECLARATION_MEMBER_NAMES: ReadonlySet<string> = new Set(Object.keys(OLD_DECLARATION_KEYS));
+/** メンバー参照を探す旧名の集合（AST 経路。値は `REMOVED_DECLARATION_KEYS` の正式名）。 */
+const OLD_DECLARATION_MEMBER_NAMES: ReadonlySet<string> = new Set(Object.keys(REMOVED_DECLARATION_KEYS));
 /**
  * 宣言オブジェクトが静的に読めないとき（class 構文の state — ボリューム（`mount=`）の通常形）の
  * フォールバック。オブジェクトリテラルのキー（`$streams:`）・メソッド（`$updatedCallback(…) {}`）に
  * 加えて class フィールド（`$streams = …`。`==` / `===` は除く）も見る。
  * 走査は鏡像（コメント・文字列リテラルの中身を空白化）に対して行うので例示には当たらないが、
- * 構造は見えないので severity は info のまま —「読めないから黙る」より
- * 「移行漏れを取りこぼさない」側に倒す（この診断の目的）。
+ * 構造は見えない（state 以外のオブジェクトのキーにも当たりうる）ので severity は warning に留める —
+ * 「読めないから黙る」より「移行漏れを取りこぼさない」側に倒す（この診断の目的）。
  */
 const OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:(]|=(?!=)))/g;
 
 /**
- * `names` に当たる**メンバー参照**（旧名の宣言キー `this.$streams`・添字の表の外の `this.$129`）を AST で
- * 集める。script 相対オフセット。
+ * 旧名の宣言キーの**メンバー参照**（`this.$streams`）を AST で集める。script 相対オフセット。
  *
  * 断定できないときは null を返し、呼び出し側が正規表現へ落とす:
  *   - `export default { … }` が読めない（class 構文の state など）
@@ -120,12 +106,22 @@ const OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:
  * どれも「断定できないときは黙る」側の割り切りで、正規表現フォールバックは走らない
  * （`astReads` は非 null で返る）。
  */
-function collectStateThisReads(script: string, names: MemberNameFilter): StateThisRead[] | null {
+function collectDeclarationAliasReads(script: string): { name: string; start: number }[] | null {
+  return collectStateThisReads(script, OLD_DECLARATION_MEMBER_NAMES);
+}
+
+/**
+ * ランタイムが `this` を state に束縛して呼ぶ関数（トップレベルの getter / メソッドと `$watch` のハンドラ）から、
+ * `names` に当たる `this.<name>` を集める（script 相対オフセット・出現順）。範囲と既知の限界は
+ * `collectDeclarationAliasReads` に書いたとおり。断定できないとき（`export default { … }` が読めない・
+ * 本体のどれかがパースできない）は null。
+ */
+function collectStateThisReads(script: string, names: MemberNameFilter): { name: string; start: number }[] | null {
   if (!hasDefaultExportObject(script)) return null;
-  const out: StateThisRead[] = [];
+  const out: { name: string; start: number }[] = [];
   const take = (refs: ThisMemberRef[] | null, base: number): boolean => {
     if (refs === null) return false;
-    for (const ref of refs) out.push({ name: ref.name, start: base + ref.start, end: base + ref.end, written: ref.written === true });
+    for (const ref of refs) out.push({ name: ref.name, start: base + ref.start });
     return true;
   };
   for (const callable of analyzeCallableBodies(script)) {
@@ -141,102 +137,53 @@ function collectStateThisReads(script: string, names: MemberNameFilter): StateTh
   return out;
 }
 
-/** `this.<name>` の読み 1 件（script 相対オフセット。名前の範囲 — 引用符は含まない）。 */
-interface StateThisRead {
-  readonly name: string;
-  readonly start: number;
-  readonly end: number;
-  /** 読まずに書くだけ（`this.x = v`・分割代入の左辺）。set トラップは添字の範囲を見ない */
-  readonly written: boolean;
-}
-
 /**
- * 1 回の AST 走査で集める `this.<name>`: 旧名の宣言キー（`wcs/declaration-alias-read`）と、
- * ループの添字の表の外の `$` ＋数字（`wcs/index-param-range`）。本体ごとのパースを検査ごとに重ねない。
- */
-const STATE_THIS_READ_FILTER = (name: string): boolean =>
-  OLD_DECLARATION_MEMBER_NAMES.has(name) || isOutOfRangeIndexName(name);
-
-/**
- * スクリプトの `this.$0` / `this.$129` / `this["$01"]`（`$` ＋数字だけで、ループの添字 `$1`〜`$128` でない名前）。
- * ランタイム（proxy/traps/get.ts）は読んだ時点で `[wcs/index-param-range]` を投げる。AST で読めたときだけ
- * 報告する（class 構文の state など、読めない形は黙る）。severity は warning — 3.x で既に投げる形だが、
- * 分岐の中の読みは実行されないこともある。
- */
-function validateIndexParamReads(reads: readonly StateThisRead[] | null, scriptStart: number, locale?: string): WcsDiagnostic[] {
-  if (reads === null) return [];
-  const msgs = getMessages(locale);
-  // 単純代入の左辺（`this.$0 = 1`）は set トラップだけを通り、3.x は範囲を見ない — 読みだけを報告する
-  return reads.filter((read) => !read.written && isOutOfRangeIndexName(read.name)).map((read) => ({
-    code: WcsDiagnosticCode.IndexParamRange,
-    start: scriptStart + read.start,
-    end: scriptStart + read.end,
-    message: msgs.indexParamRange(read.name, MAX_INDEX_PARAM),
-    severity: 'warning' as const,
-  }));
-}
-
-/**
- * 旧名（@wcstack/state 3.2・要件 B12）を 3 つの経路で報告する。
+ * 4.0 で外れた旧名（@wcstack/state 3.2 で改名・4.0 で外した）を 3 つの経路で報告する。
+ * どれもランタイムが受け付けない形なので、正式名を提案する。
  *
- *   - **API 呼び出し**（`this.$trackDependency(`）→ `wcs/name-alias`（info）。旧名でも動くので
- *     「4.0 で外れる」ことだけを伝える。
- *   - **宣言キーの読み出し**（`this.$streams`）→ `wcs/declaration-alias-read`。宣言と違い
- *     旧名のままにはできないので code を分ける。AST（`collectThisMemberRefs`）で断定できたら
- *     warning、読めない形は正規表現へ落として info。文言も経路で分ける — オブジェクト
- *     リテラルなら旧名は自前プロパティなので必ず `delete` されて `undefined`、class 構文は
- *     プロトタイプのメソッド / アクセサなら `delete` されず今は読める（`pushRead` を参照）。
- *   - **宣言キーそのもの**（`$streams: …`）→ `wcs/name-alias`（info）。旧名と正式名を**両方**
- *     宣言していたら `wcs/declaration-alias`（error）— ランタイムが正規化の時点で raiseError
- *     するので、ページごと止まる側の報告にする。
+ *   - **API の読み・呼び出し**（`this.$trackDependency(`）→ `wcs/name-alias`（error）。4.0 は読んだ
+ *     時点で同じ code（#1701）で throw する。
+ *   - **宣言キーの読み出し**（`this.$streams`）→ `wcs/declaration-alias-read`。4.0 の state にその
+ *     キーは無いので黙って `undefined` になる。AST（`collectThisMemberRefs`）で断定できたら warning、
+ *     読めない形は正規表現へ落として info。
+ *   - **宣言キーそのもの**（`$streams: …`）→ `wcs/declaration-alias`。4.0 は読み込み時に同じ code
+ *     （#1601）で throw する（正式名と両方書いても同じ）。ボリューム（`mount=`）は読み込みを通らず、
+ *     接ぎ木を拒んで console.error で報告する（文面を分ける。どちらも state は動かないので error）。
  *
  * 宣言キーの走査は 2 経路のハイブリッド:
  *
  *   1. 宣言側の正本（`analyzeDeclarationSpans`）が読めたとき — 正確なスパン・文字列リテラルの
- *      誤検出なし・引用符付きキー（`"$streams": { … }`）も拾える。`wcs/declaration-alias`
- *      （error）への昇格はこの経路だけ（断定できる形なので）。
+ *      誤検出なし・引用符付きキー（`"$streams": { … }`）も拾える。error で報告する。
  *   2. 読めなかったとき（class 構文の state — ボリュームの通常形） — `OLD_DECLARATION_KEY` で
- *      拾って info だけ出す。正規表現は誤検出しうるので、ここでは error に昇格させない
- *      （ランタイムが止める形なので、error を出さないのは安全側）。読み出し側の warning /
- *      info の切り替えも同じ方針（誤検出しうる経路を warning にしない）。
+ *      拾って warning に留める。正規表現は誤検出しうるので error にしない（読み出し側の warning /
+ *      info の切り替えも同じ方針 — 誤検出しうる経路の severity を 1 段下げる）。
  */
-function validateNameAliases(
-  script: string,
-  scriptStart: number,
-  locale: string | undefined,
-  reads: readonly StateThisRead[] | null,
-): WcsDiagnostic[] {
+function validateNameAliases(script: string, scriptStart: number, locale?: string, mountPath: string | null = null): WcsDiagnostic[] {
   const msgs = getMessages(locale);
   const scan = maskCommentsAndStrings(script);
   const out: WcsDiagnostic[] = [];
-  const push = (name: string, canonical: string, offset: number): void => {
+  const pushDeclaration = (name: string, start: number, end: number, severity: 'error' | 'warning'): void => {
+    const canonical = removedDeclarationReplacement(name);
+    if (canonical === null) return;
     out.push({
-      code: WcsDiagnosticCode.NameAlias,
-      start: scriptStart + offset,
-      end: scriptStart + offset + name.length,
-      message: msgs.nameAlias(name, canonical),
-      severity: 'info',
+      code: WcsDiagnosticCode.DeclarationAlias,
+      start: scriptStart + start,
+      end: scriptStart + end,
+      // ボリュームは読み込み（#1601）を通らない — ランタイムは接ぎ木を拒んで console.error で報告する
+      message: mountPath === null ? msgs.declarationAlias(name, canonical) : msgs.declarationAliasInVolume(name, canonical, mountPath),
+      severity,
     });
   };
-  /**
-   * 旧名の宣言キーの読み出し（`wcs/declaration-alias-read`）。severity も文言も検出経路で決まる。
-   *
-   * AST 経路 ＝ `export default { … }` のオブジェクトリテラル ＝ 旧名は必ず**自前プロパティ**
-   * なので、正規化の `delete`（`declarationAliases.ts` の `owner === state` のときだけ）が必ず効き、
-   * 読み出しは `undefined` と断定できる。フォールバック経路（class 構文など）は自前プロパティか
-   * プロトタイプか分からない — プロトタイプのメソッド / アクセサは `delete` されず今は読めるので、
-   * 「undefined になる」と断定せず両方の形を説明する文言に分ける。
-   */
-  const pushRead = (name: string, offset: number, shape: 'own' | 'unknown'): void => {
-    const canonical = OLD_DECLARATION_KEYS[name];
+  /** 旧名の宣言キーの読み出し（`wcs/declaration-alias-read`）。severity は検出経路で決まる。 */
+  const pushRead = (name: string, offset: number, severity: 'warning' | 'info'): void => {
+    const canonical = removedDeclarationReplacement(name);
+    if (canonical === null) return;
     out.push({
       code: WcsDiagnosticCode.DeclarationAliasRead,
       start: scriptStart + offset,
       end: scriptStart + offset + name.length,
-      message: shape === 'own'
-        ? msgs.declarationAliasRead(name, canonical)
-        : msgs.declarationAliasReadUncertain(name, canonical),
-      severity: shape === 'own' ? 'warning' : 'info',
+      message: msgs.declarationAliasRead(name, canonical),
+      severity,
     });
   };
 
@@ -244,50 +191,45 @@ function validateNameAliases(
   let match: RegExpExecArray | null;
   while ((match = OLD_API_CALL.exec(scan)) !== null) {
     const written = match[1];
-    push(written, OLD_API_NAMES[written], match.index + match[0].length - written.length);
+    const canonical = removedApiReplacement(written);
+    if (canonical === null) continue;
+    const offset = match.index + match[0].length - written.length;
+    out.push({
+      code: WcsDiagnosticCode.NameAlias,
+      start: scriptStart + offset,
+      end: scriptStart + offset + written.length,
+      message: msgs.nameAlias(written, canonical),
+      severity: 'error',
+    });
   }
 
   // 旧名の宣言キーの**読み出し**。AST で `this.<name>` を断定できたら warning
   // （黙って undefined になる ＝ `wcs/on-prefixed-member` などと同じ層）。
   // 読めない形（class 構文など）だけ正規表現へ落として info に留める。
-  const astReads = reads === null ? null : reads.filter((read) => OLD_DECLARATION_MEMBER_NAMES.has(read.name));
+  const astReads = collectDeclarationAliasReads(script);
   if (astReads !== null) {
-    for (const read of astReads) pushRead(read.name, read.start, 'own');
+    for (const read of astReads) pushRead(read.name, read.start, 'warning');
   } else {
     OLD_DECLARATION_MEMBER.lastIndex = 0;
     while ((match = OLD_DECLARATION_MEMBER.exec(scan)) !== null) {
       const written = match[1];
-      pushRead(written, match.index + match[0].length - written.length, 'unknown');
+      pushRead(written, match.index + match[0].length - written.length, 'info');
     }
   }
 
   const spans = analyzeDeclarationSpans(script);
   if (spans.length === 0) {
-    // 経路 2: 宣言が静的に読めない（class 構文など）。info だけを出す
+    // 経路 2: 宣言が静的に読めない（class 構文など）。warning に留める
     OLD_DECLARATION_KEY.lastIndex = 0;
     while ((match = OLD_DECLARATION_KEY.exec(scan)) !== null) {
-      push(match[2], OLD_DECLARATION_KEYS[match[2]], match.index + match[1].length);
+      const at = match.index + match[1].length;
+      pushDeclaration(match[2], at, at + match[2].length, 'warning');
     }
     return out;
   }
 
   // 経路 1: 宣言側の正本が読めた
-  const declared = new Set(spans.map(span => span.name));
-  for (const span of spans) {
-    const canonical = OLD_DECLARATION_KEYS[span.name];
-    if (canonical === undefined) continue;
-    if (declared.has(canonical)) {
-      out.push({
-        code: WcsDiagnosticCode.DeclarationAlias,
-        start: scriptStart + span.start,
-        end: scriptStart + span.end,
-        message: msgs.declarationAlias(span.name, canonical),
-        severity: 'error',
-      });
-      continue;
-    }
-    push(span.name, canonical, span.start);
-  }
+  for (const span of spans) pushDeclaration(span.name, span.start, span.end, 'error');
   return out;
 }
 
@@ -573,7 +515,7 @@ function collectNestedWriteRoots(
 }
 
 /**
- * `$updatedCallback` の本体で、**パス判定に使われている**文字列リテラルを位置付きで返す。
+ * `$renderedCallback` の本体で、**パス判定に使われている**文字列リテラルを位置付きで返す。
  *
  * 対象の形（実測された事故の形 `if (!paths.includes("…")) return;` を含む）:
  *   `.includes("X")` / `.indexOf("X")` / `=== "X"` / `!== "X"`
@@ -583,9 +525,9 @@ function collectNestedWriteRoots(
 const PATH_TEST_LITERAL = /(?:\.\s*(?:includes|indexOf)\s*\(\s*|[!=]==\s*)(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
 
 /**
- * `$updatedCallback` が「どのバインディングにも現れないパス」を判定に使っていないか。
+ * `$renderedCallback` が「どのバインディングにも現れないパス」を判定に使っていないか。
  *
- * `$updatedCallback` は **binding 駆動**で、live binding が適用された path しか報告しない。
+ * `$renderedCallback` は **binding 駆動**で、live binding が適用された path しか報告しない。
  * したがって「表示用の要素が購読の実体になる」＝ その要素を消すとプログラムの意味論が
  * 変わる、という事故が起きる（`examples/state-intersect-scroll` の README に記録された
  * 実例: 表示専用の `<b data-wcs="textContent: $streamStatus.pageResult">` を消したら
@@ -600,7 +542,8 @@ function validateUpdatedCallbackDemand(
   bindAttrName: string,
   locale?: string,
 ): WcsDiagnostic[] {
-  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  // bind-component の中のスクリプトはランタイムが読まない（wcs/bind-component-source）
+  const blocks = parseLoadedScriptBlocks(html, stateTagName);
   if (blocks.length === 0) return [];
   const hasCallback = blocks.some((block) => [...STATE_UPDATED_CALLBACKS].some((name) => block.content.includes(name)));
   if (!hasCallback) return [];
@@ -613,9 +556,8 @@ function validateUpdatedCallbackDemand(
     const callback = analyzeCallableBodies(block.content)
       .find((entry) => STATE_UPDATED_CALLBACKS.has(entry.name) && entry.kind === 'method');
     if (callback === undefined) continue;
-    // ボリューム（mount=）の $updatedCallback は runtime が**相対配送**で実行する
-    //（自分の接頭辞配下の更新が相対パスで届く）。バインド側は接頭辞付き絶対パスなので
-    // この突合には接頭辞補正が要る — 未対応のため誤報しない側に倒してスキップ
+    // ボリューム（mount=）の $renderedCallback は 4.0 では接ぎ木を拒まれる（console.error。3.x は自分の接頭辞配下の
+    // 更新を相対パスで届けて実行した）ので、この「走らない分岐」の検査の対象外
     if (block.mountPath !== null) continue;
     const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
     const bound = boundPaths;
@@ -671,6 +613,60 @@ function collectBoundPaths(
   return bound;
 }
 
+/** `$` の次が数字の名前（`$1`・`$0`・`$129`・`$1x`）。 */
+const DOLLAR_DIGIT_NAME = /\$\d[\w$]*/g;
+/** フォールバック: 鏡像（コメント・文字列を空白化）の `this.$<数字>…`。 */
+const THIS_DOLLAR_DIGIT = /\bthis\s*\.\s*(\$\d[\w$]*)/g;
+const INDEX_READ_FILTER: MemberNameFilter = { has: isOutOfRangeIndexRead };
+
+/**
+ * スクリプトの `this.$0` / `this.$129` / `this.$1000`（`wcs/index-param-range`）。4.0 の `engine.ts` の `dollar` は、
+ * `$` の次が数字の名前を読んだ時点で、`$1`〜`$128`（上限は manifest の `syntax.indexParam.maxDepth`）のほかは
+ * すべて `[wcs/index-param-range]` で投げる（その getter に結ばれたバインディングは失敗する）。
+ *
+ * 走査対象は旧名の宣言キーの読み出しと同じ（`collectStateThisReads` — ランタイムが `this` を state に束縛して呼ぶ
+ * 関数）。AST で断定できたら error。読めない形（class 構文など）は鏡像への正規表現へ落として warning に留める
+ * （構造が見えず、state でない `this` にも当たりうる — 誤検出しうる経路の severity を 1 段下げる）。
+ * 範囲の外の名前がスクリプトのどこにも無ければ、1 回の走査で抜ける（解析しない）。
+ */
+function validateIndexParamReads(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
+  if (!hasOutOfRangeIndexName(script)) return [];
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  const push = (name: string, start: number, severity: 'error' | 'warning'): void => {
+    out.push({
+      code: WcsDiagnosticCode.IndexParamRange,
+      start: scriptStart + start,
+      end: scriptStart + start + name.length,
+      message: msgs.indexParamRange(name, MAX_INDEX_PARAM),
+      severity,
+    });
+  };
+  const reads = collectStateThisReads(script, INDEX_READ_FILTER);
+  if (reads !== null) {
+    for (const read of reads) push(read.name, read.start, 'error');
+    return out;
+  }
+  const scan = maskCommentsAndStrings(script);
+  THIS_DOLLAR_DIGIT.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = THIS_DOLLAR_DIGIT.exec(scan)) !== null) {
+    const name = match[1];
+    if (isOutOfRangeIndexRead(name)) push(name, match.index + match[0].length - name.length, 'warning');
+  }
+  return out;
+}
+
+/** 範囲の外の添字の名前（`isOutOfRangeIndexRead`）がスクリプトのどこかにあるか（解析の前の安いゲート）。 */
+function hasOutOfRangeIndexName(script: string): boolean {
+  DOLLAR_DIGIT_NAME.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = DOLLAR_DIGIT_NAME.exec(script)) !== null) {
+    if (isOutOfRangeIndexRead(match[0])) return true;
+  }
+  return false;
+}
+
 /**
  * HTML 内の `<wcs-state>` スクリプトから意味論的な取り違えを検出する。
  */
@@ -681,17 +677,15 @@ export function validateSemantics(
   bindAttrName: string = 'data-wcs',
 ): WcsDiagnostic[] {
   const out: WcsDiagnostic[] = [];
-  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  const blocks = parseLoadedScriptBlocks(html, stateTagName);
   // 入れ子書き込みの証拠はドキュメント単位で 1 回だけ集める（必要になるまで作らない）
   let nestedWriteRoots: Set<string> | null = null;
   const getNestedWriteRoots = (): ReadonlySet<string> =>
     (nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks));
   for (const block of blocks) {
     out.push(...validateIndexArity(block.content, block.contentStart, locale));
-    // `this.<name>` の読みは 1 回の AST 走査で集め、旧名の検査と添字の範囲の検査で分ける
-    const reads = collectStateThisReads(block.content, STATE_THIS_READ_FILTER);
-    out.push(...validateNameAliases(block.content, block.contentStart, locale, reads));
-    out.push(...validateIndexParamReads(reads, block.contentStart, locale));
+    out.push(...validateNameAliases(block.content, block.contentStart, locale, block.mountPath));
+    out.push(...validateIndexParamReads(block.content, block.contentStart, locale));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
   }

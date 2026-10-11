@@ -1,6 +1,7 @@
 import { IWcBindable, IntersectOptions, WcsIntersectEntry } from "../types.js";
 import { IntersectionCore } from "../core/IntersectionCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-intersect>` — declarative IntersectionObserver.
@@ -117,21 +118,28 @@ export class WcsIntersect extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  // Input setters never let setAttribute stringify null / undefined (an
+  // "undefined" target is a selector that matches nothing, which would tear the
+  // observation down): `null` removes the attribute (the default), `undefined`
+  // restores the attribute the element started with (wc-bindable producer
+  // guidance P1; React 19 and a direct assignment deliver it, @wcstack/state
+  // does not). A change of target / root / root-margin / threshold re-observes
+  // through attributeChangedCallback as before.
 
   get target(): string {
     return this.getAttribute("target") ?? "";
   }
 
-  set target(value: string) {
-    this.setAttribute("target", value);
+  set target(value: string | null | undefined) {
+    reflectAttribute(this, "target", value);
   }
 
   get root(): string {
     return this.getAttribute("root") ?? "";
   }
 
-  set root(value: string) {
-    this.setAttribute("root", value);
+  set root(value: string | null | undefined) {
+    reflectAttribute(this, "root", value);
   }
 
   get rootMargin(): string {
@@ -139,40 +147,32 @@ export class WcsIntersect extends HTMLElement {
     return attr === null || attr.trim() === "" ? "0px" : attr;
   }
 
-  set rootMargin(value: string) {
-    this.setAttribute("root-margin", value);
+  set rootMargin(value: string | null | undefined) {
+    reflectAttribute(this, "root-margin", value);
   }
 
   get threshold(): string {
     return this.getAttribute("threshold") ?? "";
   }
 
-  set threshold(value: string) {
-    this.setAttribute("threshold", value);
+  set threshold(value: string | null | undefined) {
+    reflectAttribute(this, "threshold", value);
   }
 
   get once(): boolean {
     return this.hasAttribute("once");
   }
 
-  set once(value: boolean) {
-    if (value) {
-      this.setAttribute("once", "");
-    } else {
-      this.removeAttribute("once");
-    }
+  set once(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "once", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---

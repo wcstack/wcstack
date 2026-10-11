@@ -1376,8 +1376,10 @@ describe('$recursion の値に計算キー・spread があれば「空」と断�
   });
 });
 
-describe('マウントされたコンポーネント（bind-component）の $recursion と `**` getter', () => {
-  // Fixed by cycle-3 review — runtime は `wcs/mount-dollar-declaration` で warn して捨てる。静的側は沈黙していた。
+describe('マウントされたコンポーネント（bind-component）の中のスクリプト', () => {
+  // 4.0 のコンポーネントの state はホスト要素のプロパティだけで、`<wcs-state bind-component>` の中の
+  // `<script type="module">` はランタイムが読み込みごと拒む（scopes/component.ts の load。3.x も同じ）。
+  // `wcs/bind-component-source` が 1 件報告するので、`$recursion` / `**` の検査は重ねない。
   const component = `<wcs-state bind-component="state"><script type="module">
 export default {
   $recursion: { "node.*": "children.*" },
@@ -1386,13 +1388,11 @@ export default {
 };
 </script></wcs-state>`;
 
-  it('宣言と `**` getter を recursion-declaration-invalid（warning）で報告する', () => {
-    const diags = validateRecursion(component, 'wcs-state', 'en');
-    expect(codes(diags)).toEqual([WcsDiagnosticCode.RecursionDeclarationInvalid, WcsDiagnosticCode.RecursionDeclarationInvalid]);
-    expect(diags.every(d => d.severity === 'warning')).toBe(true);
-    expect(component.slice(diags[0].start, diags[0].end)).toBe('$recursion');
-    expect(component.slice(diags[1].start, diags[1].end)).toBe('node.**.total');
-    expect(diags[0].message).toContain('wcs/mount-dollar-declaration');
+  it('$recursion と `**` getter を報告しない（validateDocument は bind-component-source を 1 件だけ出す）', () => {
+    expect(validateRecursion(component, 'wcs-state', 'en')).toEqual([]);
+    const all = validateDocument(component, { locale: 'en' });
+    expect(all.filter(d => d.severity === 'error').map(d => d.code)).toEqual([WcsDiagnosticCode.BindComponentSource]);
+    expect(all.some(d => d.code === WcsDiagnosticCode.RecursionDeclarationInvalid)).toBe(false);
   });
 
   it('属性値の中の "bind-component" はマウントとみなさず、ルートとして検証する', () => {
@@ -1401,21 +1401,14 @@ export default {
   $recursion: { "nodes.*": "children.*" },
   nodes: [],
   get "nodes.**.total"() { return 0; },
+  poke() { this["nodes.**.x"] = 1; },
 };
 </script></wcs-state>`;
-    const mountedMessage = (html: string) =>
-      validateRecursion(html, 'wcs-state', 'en').some(d => d.message.includes('wcs/mount-dollar-declaration'));
-    expect(mountedMessage(`<wcs-state data-note="no bind-component here">${body}`)).toBe(false);
-    expect(mountedMessage(`<wcs-state bind-component="state">${body}`), '対照: 属性として書けばマウント扱い').toBe(true);
+    expect(codes(validateRecursion(`<wcs-state data-note="no bind-component here">${body}`))).toEqual([WcsDiagnosticCode.RecursionUnsupported]);
+    expect(validateRecursion(`<wcs-state bind-component="state">${body}`), '対照: 属性として書けば検査しない').toEqual([]);
   });
 
-  it('`**` を含まないコンポーネント state は従来どおり素通り', () => {
-    expect(validateRecursion(`<wcs-state bind-component="state"><script type="module">
-export default { node: {}, get label() { return this.node.value; } };
-</script></wcs-state>`)).toEqual([]);
-  });
-
-  it('宣言に依存しない検査（`**` の代入・$resolve / $postUpdate・$listKeys キー）はマウント／ボリュームのブロックでも走る', () => {
+  it('宣言に依存しない検査（`**` の代入・$resolve / $postUpdate・$listKeys キー）はボリュームのブロックでも走る', () => {
     // Fixed by cycle-3 re-verification — warning の後に `continue` していたので、runtime が宣言の
     // 有無に関わらず throw する形まで沈黙していた。宣言に依存する `$getAll` / `$setAll` の形は
     // spec が組めないので黙る（ルートに置いたときだけ報告される）。
@@ -1430,17 +1423,6 @@ export default {
     return this.$getAll("node.**.value", [1]);
   },
 };`;
-    const mountedDiags = validateRecursion(`<wcs-state bind-component="state"><script type="module">${body}</script></wcs-state>`);
-    expect(codes(mountedDiags)).toEqual([
-      WcsDiagnosticCode.RecursionDeclarationInvalid,   // `**` getter（warning）
-      WcsDiagnosticCode.RecursionUnsupported,          // $listKeys キー
-      WcsDiagnosticCode.RecursionUnsupported,          // $resolve
-      WcsDiagnosticCode.RecursionUnsupported,          // $postUpdate
-      WcsDiagnosticCode.RecursionUnsupported,          // 代入
-    ]);
-    expect(mountedDiags.map(d => d.severity)).toEqual(['warning', 'error', 'error', 'error', 'error']);
-    expect(mountedDiags.some(d => d.code === WcsDiagnosticCode.RecursionGetAllForm)).toBe(false);
-
     const volumeDiags = validateRecursion(`<wcs-state mount="tree"><script type="module">${body}</script></wcs-state>`);
     expect(codes(volumeDiags)).toEqual([
       WcsDiagnosticCode.RecursionDeclarationInvalid,
@@ -1450,6 +1432,7 @@ export default {
       WcsDiagnosticCode.RecursionUnsupported,
     ]);
     expect(volumeDiags[0].severity).toBe('error');
+    expect(volumeDiags.some(d => d.code === WcsDiagnosticCode.RecursionGetAllForm)).toBe(false);
   });
 });
 

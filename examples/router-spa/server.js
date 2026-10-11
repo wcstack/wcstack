@@ -1,9 +1,25 @@
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { createDemoServer, jsonResponse, delay } from "../shared/server.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const REPO_ROOT = resolve(__dirname, "..", "..");
+
+// Opt-in: WCS_LOCAL=1 swaps the esm.run one-liners for the locally built
+// bundles and serves /packages/<pkg>/dist from the repo, the same trick
+// e2e/serve.mjs uses. The demo is CDN-first by default (that is the documented
+// way to run these examples); this switch exists so a change in the working
+// tree can be verified before it is published.
+const LOCAL = process.env.WCS_LOCAL === "1";
+
+function rewriteCdn(html) {
+  return html.replace(
+    /https:\/\/esm\.run\/@wcstack\/([\w-]+)(?:@[^/"'\s]+)?(\/auto)?(?=["'\s])/g,
+    (_m, pkg, auto) =>
+      auto ? `/packages/${pkg}/dist/auto.min.js` : `/packages/${pkg}/dist/index.esm.js`,
+  );
+}
 
 // Mock product catalog (detail pages need description/stock, so the list
 // endpoint ships the full objects — a real API would split them).
@@ -23,6 +39,24 @@ createDemoServer({
   root: __dirname,
   api: async (req, res, url) => {
     if (req.method !== "GET") return false;
+
+    if (LOCAL && url.pathname.startsWith("/packages/")) {
+      const file = resolve(REPO_ROOT, "." + url.pathname);
+      if (!file.startsWith(REPO_ROOT)) {
+        res.writeHead(403);
+        res.end("Forbidden");
+        return true;
+      }
+      try {
+        const body = await readFile(file);
+        res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+        res.end(body);
+      } catch {
+        res.writeHead(404);
+        res.end("Not found");
+      }
+      return true;
+    }
 
     // List API
     if (url.pathname === "/api/products") {
@@ -48,9 +82,9 @@ createDemoServer({
     // page reload or deep link must serve index.html for any extension-less,
     // non-API path and let <wcs-router> resolve it client-side.
     if (!url.pathname.startsWith("/api/") && extname(url.pathname) === "") {
-      const html = await readFile(join(__dirname, "index.html"));
+      const html = await readFile(join(__dirname, "index.html"), "utf8");
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(html);
+      res.end(LOCAL ? rewriteCdn(html) : html);
       return true;
     }
 

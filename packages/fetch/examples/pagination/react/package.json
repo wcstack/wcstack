@@ -8,7 +8,7 @@
     "start": "npm run build && node server.js"
   },
   "dependencies": {
-    "@wc-bindable/react": "^0.8.0",
+    "@wc-bindable/react": "^0.10.0",
     "@wcstack/fetch": "^1.14.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

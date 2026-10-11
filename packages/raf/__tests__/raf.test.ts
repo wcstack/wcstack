@@ -253,6 +253,38 @@ describe("Raf: reduced-motion 属性", () => {
   });
 });
 
+describe("Raf: null / undefined の書き込み（P1 / P2）", () => {
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外して既定へ戻す", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-raf once repeat="3" manual reduced-motion="pause"></wcs-raf>';
+    const el = host.firstElementChild as Raf;
+    el.once = false;
+    el.repeat = 7;
+    el.manual = false;
+    el.reducedMotion = "run";
+    expect(el.reducedMotion).toBe("run");
+    el.once = undefined;
+    el.repeat = undefined;
+    el.manual = undefined;
+    el.reducedMotion = undefined;
+    expect(el.once).toBe(true);
+    expect(el.repeat).toBe(3);
+    expect(el.manual).toBe(true);
+    expect(el.getAttribute("reduced-motion")).toBe("pause");
+    expect(el.reducedMotion).toBe("pause");
+    el.once = null;
+    el.repeat = null;
+    el.manual = null;
+    el.reducedMotion = null;
+    expect(el.once).toBe(false);
+    expect(el.hasAttribute("repeat")).toBe(false);
+    expect(el.repeat).toBe(0);
+    expect(el.manual).toBe(false);
+    expect(el.hasAttribute("reduced-motion")).toBe(false);
+    expect(el.reducedMotion).toBe("run");
+  });
+});
+
 describe("Raf: wcBindable 宣言面", () => {
   it("properties は Core の 5 面 + trigger", () => {
     const names = Raf.wcBindable.properties.map((p) => p.name);

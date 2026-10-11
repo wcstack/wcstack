@@ -100,6 +100,8 @@ npm install @wcstack/timer
 | `immediate` | boolean | `false` | 最初の tick を開始時点で発火（1インターバル待たない）。         |
 | `manual`    | boolean | `false` | 接続時に自動開始しない。コマンド / trigger で開始します。       |
 
+**`null` と `undefined`。** 属性に対応する入力（`interval`・`once`・`repeat`・`immediate`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。動作中のタイマーは、ほかの `interval` 変更と同じく、戻った値または既定値の周期にその場で張り直します。`trigger` はどちらも無視します。
+
 ## 観測プロパティ（出力）
 
 | プロパティ | イベント                    | 説明                                                          |
@@ -216,7 +218,7 @@ const { autoTrigger, triggerAttribute, tagNames } = getConfig();
 | `triggerAttribute` | string  | `data-timertarget` | DOM クリックトリガで走査する属性。            |
 | `tagNames.timer`   | string  | `wcs-timer`        | 登録するカスタム要素のタグ名。                |
 
-知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
+`bootstrapTimer()` は、持っていないオプション、既定値と型の違う値（`null` や、オブジェクトの所の配列を含む）、定義していない `tagNames` のキー、文字列でないタグ名で例外を投げます。当てる前にすべてのオプションを確かめるので、投げたときは何も当てません。値が `undefined` のオプションは飛ばします。
 
 ## ヘッドレス利用（`TimerCore`）
 

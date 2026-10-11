@@ -33,9 +33,11 @@ const recursionOkHtml = join(workDir, "recursion-ok.html");
 const recursionBadHtml = join(workDir, "recursion-bad.html");
 const recursionSpreadHtml = join(workDir, "recursion-spread.html");
 const indexPathHtml = join(workDir, "index-path.html");
-const scanOkHtml = join(workDir, "scan-ok.html");
-const scanBadHtml = join(workDir, "scan-bad.html");
-const v4MigrationHtml = join(workDir, "v4-migration.html");
+const currentTargetHtml = join(workDir, "current-target.html");
+const scanHtml = join(workDir, "scan.html");
+const removedNamesHtml = join(workDir, "removed-names.html");
+const v4CleanHtml = join(workDir, "v4-clean.html");
+const v4ScopesHtml = join(workDir, "v4-scopes.html");
 // stateSchema 発見（D8）: HTML と同じディレクトリの wcstack.manifest.json を自動で読み、
 // 宣言済み state の未存在パスは error に上がる（D6）。tmp 下なので repo の CI gate は走査しない。
 const schemaDir = join(workDir, "schema");
@@ -125,11 +127,10 @@ export default {
 };
 </script></wcs-state>
 `);
-// 数値添字が 1 つのパスの束縛（#355）。runtime は「いまその位置にある行」を読み、行 getter も
+// 数値添字のパスの束縛（#355・#383）。runtime は「いまその位置にある行」を読み、行 getter も
 // 読める（@wcstack/state の #332）ので、添字を `*` に読み替えて存在を判定する。数値の for の行の
 // 省略パス（`.v` → `groups.0.items.*.v`）は素のパスで、runtime は要素を辿って読む（存在する）。
-// ただし `for: groups.0.items` そのものは、行への双方向束縛・添字の書き込みが runtime で投げる
-// （@wcstack/state #363）ので wcs/template-syntax の warning を 1 件だけ出す。
+// 4.0 は `for: groups.0.items` も描くので無診断（3.x の lint は #363 の warning を 1 件出す）。
 writeFileSync(indexPathHtml, `<!doctype html>
 <wcs-state><script type="module">
 export default {
@@ -150,46 +151,86 @@ export default { message: "hi" };
 <div data-wcs="textContent: missingPath"></div>
 `);
 
-// $scan（時間軸の累積）。宣言の形と getter source は runtime（scan/processScanDeclaration.ts）と
-// 同じ code の error。正しい宣言（from / on / resetOn）は出力が候補パスとして実体化され無診断。
-writeFileSync(scanOkHtml, `<!doctype html>
+// @wcstack/state 4.0 は $scan を外した（読み込み時に throw）。宣言のキーに error を 1 件だけ出す。
+writeFileSync(scanHtml, `<!doctype html>
 <wcs-state><script type="module">
 export default {
   page: 1,
-  $eventTokens: ["pageArrived"],
-  $streams: { pageResult: { args: (s) => s.page, source: (page, signal) => load(page, signal) } },
-  $scan: {
-    feed: { from: "pageResult", initial: { items: [] }, fold: (acc, chunk) => acc },
-    log: { on: "pageArrived", initial: [], fold: (acc, event) => [...acc, event.detail], resetOn: ["page"] },
-  },
+  $scan: { total: { from: "page", initial: 0, fold: (acc, cur) => acc + cur } },
 };
 </script></wcs-state>
-<p data-wcs="textContent: feed.items.length"></p>
 `);
-writeFileSync(scanBadHtml, `<!doctype html>
+// 4.0 で外れた API の旧名（ランタイムは読んだ時点で [wcs/name-alias] で throw）と、4.0 の $behavior の知らないキー。
+writeFileSync(removedNamesHtml, `<!doctype html>
 <wcs-state><script type="module">
 export default {
-  get total() { return 1; },
-  $eventTokens: ["tick"],
-  $scan: {
-    count: { on: "tikc", initial: 0, fold: (acc) => acc + 1 },
-    sum: { from: "total", initial: 0, fold: (acc, cur) => acc + cur },
-  },
+  a: 1,
+  $behavior: { enableMustach: false },
+  get x() { this.$trackDependency("a"); return this.a; },
 };
 </script></wcs-state>
+`);
+// 4.0 の書き方は無診断: 数値の添字のパス（#355）・$behavior・$features・#direct・複数行のコメント束縛。
+writeFileSync(v4CleanHtml, `<!doctype html>
+<wcs-state features="formats"><script type="module">
+export default {
+  $behavior: { enableMustache: false },
+  $features: ["formats"],
+  groups: [{ items: [{ v: 1 }] }],
+  save() {},
+};
+</script></wcs-state>
+<p data-wcs="textContent: groups.0.items.0.v"></p>
+<button data-wcs="onclick#direct: save"></button>
+<p><!--@@:
+  groups.0.items.0.v
+--></p>
+`);
+// 4.0 のスコープと添字: ボリュームが拒む $watch（接ぎ木ごと拒まれる）・for の中の $129（添字は $1〜$128）・
+// 同じ root の 2 つ目の <wcs-state>（state の木は root ごとに 1 つ）。
+// 4.0 は click などを root へ委譲するので、ハンドラが読む event.currentTarget は要素ではなく root になる。
+// warning（wcs/delegated-current-target）— 既定では exit 0、--strict で exit 1。#direct なら黙る。
+writeFileSync(currentTargetHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default {
+  picked: "",
+  pick(e) { this.picked = e.currentTarget.dataset.id; },
+};
+</script></wcs-state>
+<button data-id="a" data-wcs="onclick: pick"></button>
+<button data-id="b" data-wcs="onclick#direct: pick"></button>
+`);
+writeFileSync(v4ScopesHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default { items: [1, 2] };
+</script></wcs-state>
+<wcs-state mount="cart"><script type="module">
+export default { total: 0, $watch: { total() {} } };
+</script></wcs-state>
+<template data-wcs="for: items"><p data-wcs="textContent: $129"></p></template>
+<wcs-state json="{}"></wcs-state>
 `);
 
-// 4.0 で外れる形（3.x では動く）: $scan と substr。どちらも wcs/v4-migration の info だけ
-writeFileSync(v4MigrationHtml, `<!doctype html>
+// Paths under a volume loaded with src= (<wcs-state mount="cart" src="./cart.js">): the root's $watch and the
+// bindings read cart.total. The CLI reads src= relative to the HTML (.js tries the same-named .ts first) and stays
+// silent under a volume it cannot read (missing.js) — a correct page passes --strict. A typo under a volume it read
+// is still a warning.
+const volumeDir = join(workDir, "volume");
+mkdirSync(volumeDir);
+const volumeHtml = join(volumeDir, "index.html");
+const volumeTypoHtml = join(volumeDir, "typo.html");
+writeFileSync(join(volumeDir, "cart.js"), "export default { items: [], total: 0 };\n");
+const volumePage = (key) => `<!doctype html>
+<wcs-state mount="cart" src="./cart.js"></wcs-state>
+<wcs-state mount="ext" src="./missing.js"></wcs-state>
 <wcs-state><script type="module">
-export default {
-  name: "hello",
-  $scan: { count: { from: "name", initial: 0, fold: (acc) => acc + 1 } },
-};
+export default { count: 0, $watch: { "${key}"() {}, "ext.total"() {} } };
 </script></wcs-state>
-<p data-wcs="textContent: name|substr(2, 3)"></p>
-<p data-wcs="textContent: count"></p>
-`);
+<p data-wcs="textContent: ${key}"></p>
+<p data-wcs="textContent: ext.total"></p>
+`;
+writeFileSync(volumeHtml, volumePage("cart.total"));
+writeFileSync(volumeTypoHtml, volumePage("cart.totl"));
 
 const failures = [];
 let caseCount = 0;
@@ -288,10 +329,10 @@ check("recursive tree: expanded concrete paths are clean, exit 0", ["--lang=en",
 });
 
 // 数値添字のパスを実行時と同じに読む規則がバンドルに載っていないと、binding-path-missing と
-// template-syntax の warning に化ける（#355）。残るのは for: groups.0.items の 1 件だけ（#363）。
-check("numeric-index bindings (items.0.v, row getter items.0.double, .v in for: groups.0.items) resolve; only the numeric for: warns, exit 0", ["--lang=en", indexPathHtml], {
+// template-syntax の warning に化ける（#355）。
+check("numeric-index bindings (items.0.v, row getter items.0.double, .v in for: groups.0.items) resolve, exit 0", ["--lang=en", indexPathHtml], {
   exit: 0,
-  stdout: [/warning wcs\/template-syntax for: "groups\.0\.items" is a list reached through a numeric index/, "0 error(s), 1 warning(s)"],
+  stdout: ["0 error(s), 0 warning(s)"],
 });
 
 // `**` はオーサリング層だけの記号。data-wcs に書くと runtime は PathInfo の不変条件で
@@ -335,22 +376,39 @@ check("nearest wcstack.manifest.json declares stateSchema → typo is error wcs/
   stdout: [/index\.html:\d+:\d+ error wcs\/path-nonexistent .*"mesage"/, "1 error(s), 0 warning(s)"],
 });
 
-check("$scan declarations with from / on / resetOn are clean, exit 0", ["--lang=en", scanOkHtml], {
+check("$scan (removed in 4.0) → error wcs/scan-declaration-invalid, exit 1", ["--lang=en", scanHtml], {
+  exit: 1,
+  stdout: [/error wcs\/scan-declaration-invalid .*removed in 4\.0/, "1 error(s), 0 warning(s)"],
+});
+
+check("4.0 removed API name + unknown $behavior key → errors wcs/name-alias and wcs/behavior-invalid, exit 1", ["--lang=en", removedNamesHtml], {
+  exit: 1,
+  stdout: [/error wcs\/name-alias /, /error wcs\/behavior-invalid /, "2 error(s), 0 warning(s)"],
+});
+
+check("4.0 forms (numeric index paths, $behavior, $features, #direct, multi-line comment binding) are clean, exit 0", ["--lang=en", v4CleanHtml], {
   exit: 0,
   stdout: ["0 error(s), 0 warning(s)"],
 });
 
-// 4.0 への予告（wcs/v4-migration）は info — 3.x では動く形なので、--strict でも CI を落とさない
-// （2.6 の wcs/v3-migration と同じ契約）。severity を warning へ上げると、このケースが落ちる。
-check("--strict: wcs/v4-migration ($scan / substr) is info and does not fail, exit 0", ["--lang=en", "--strict", v4MigrationHtml], {
-  exit: 0,
-  stdout: [/info wcs\/v4-migration Preparing for 4\.0 .*\$scan/, /info wcs\/v4-migration Preparing for 4\.0 .*slice\(2, 5\)/, "0 error(s), 0 warning(s), 2 info (strict)"],
+check("4.0 scopes and loop indexes → errors wcs/volume-declaration, wcs/index-param-range and wcs/second-root, exit 1", ["--lang=en", v4ScopesHtml], {
+  exit: 1,
+  stdout: [/error wcs\/volume-declaration .*mount="cart"/, /error wcs\/index-param-range .*\$129/, /error wcs\/second-root /, "3 error(s), 0 warning(s)"],
 });
 
-// 未宣言トークンと getter source は runtime が読み込み時に raise する形 ＝ error（exit 1）。
-check("$scan: undeclared token + getter source → errors wcs/scan-declaration-invalid and wcs/scan-source-computed, exit 1", ["--lang=en", scanBadHtml], {
+check("delegated event handler reading event.currentTarget → warning wcs/delegated-current-target (not on #direct), exit 0", ["--lang=en", currentTargetHtml], {
+  exit: 0,
+  stdout: [/warning wcs\/delegated-current-target .*"onclick#direct:"/, "0 error(s), 1 warning(s)"],
+});
+
+check("paths under a volume loaded with src= (readable or not) are clean under --strict, exit 0", ["--lang=en", "--strict", volumeHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s), 0 info (strict)"],
+});
+
+check("a typo under a readable src= volume → warnings wcs/watch-path-missing and wcs/binding-path-missing, --strict exit 1", ["--lang=en", "--strict", volumeTypoHtml], {
   exit: 1,
-  stdout: [/error wcs\/scan-declaration-invalid /, /error wcs\/scan-source-computed /, "2 error(s), 0 warning(s)"],
+  stdout: [/warning wcs\/watch-path-missing .*"cart\.totl"/, /warning wcs\/binding-path-missing .*"cart\.totl"/, "0 error(s), 2 warning(s), 0 info (strict)"],
 });
 
 rmSync(workDir, { recursive: true, force: true });

@@ -2,6 +2,7 @@ import { IWcBindable, WcsSseMessage } from "../types.js";
 import { SseCore } from "../core/SseCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 export class WcsSse extends HTMLElement {
   // SSR (§4.1/§4.4): wc-bindable アダプタはこのフラグを見て connectedCallbackPromise を
@@ -93,25 +94,26 @@ export class WcsSse extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // setter は null / undefined を setAttribute に文字列化させない（"undefined" の url は
+  // attributeChangedCallback が EventSource を /undefined へ張ってしまう）。`null` は属性を
+  // 外して既定値へ、`undefined` は要素が最初に持っていた属性へ戻す（wc-bindable producer
+  // guidance P1。React 19 や直接の代入は undefined を書く。@wcstack/state は書かない）。
 
   get url(): string {
     return this.getAttribute("url") || "";
   }
 
-  set url(value: string) {
-    this.setAttribute("url", value);
+  set url(value: string | null | undefined) {
+    reflectAttribute(this, "url", value);
   }
 
   get withCredentials(): boolean {
     return this.hasAttribute("with-credentials");
   }
 
-  set withCredentials(value: boolean) {
-    if (value) {
-      this.setAttribute("with-credentials", "");
-    } else {
-      this.removeAttribute("with-credentials");
-    }
+  set withCredentials(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "with-credentials", value);
   }
 
   // Shell の events は CSV 文字列（DOM 属性そのまま）。connect() で split して
@@ -120,32 +122,24 @@ export class WcsSse extends HTMLElement {
     return this.getAttribute("events") || "";
   }
 
-  set events(value: string) {
-    this.setAttribute("events", value);
+  set events(value: string | null | undefined) {
+    reflectAttribute(this, "events", value);
   }
 
   get raw(): boolean {
     return this.hasAttribute("raw");
   }
 
-  set raw(value: boolean) {
-    if (value) {
-      this.setAttribute("raw", "");
-    } else {
-      this.removeAttribute("raw");
-    }
+  set raw(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "raw", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---

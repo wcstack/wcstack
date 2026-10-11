@@ -1,28 +1,35 @@
 name: Release
 
-# scripts/compute-next-version.mjs computes the version and holds the guards;
-# "Plan the release" below refuses any other run. On main this workflow makes
-# stable releases only: patch / minor, from main, npm dist-tag `latest`, pushed
-# to main. `major` is refused: on this tree (the 3.x engine) it would publish
-# the 3.x code as 4.0.0, and a new major reaches `latest` only through
-# `release` at the end of an rc series. The 4.0 rc series runs from
-# research/state-engine with that branch's copy of this workflow (it adds
-# premajor-rc / prerelease-rc / release); the script is the same file there.
+# Two kinds of run (scripts/compute-next-version.mjs computes the version and
+# holds the guards; "Plan the release" below refuses any other combination):
+#
+#   stable      patch / minor from X.Y.Z, or release (X.Y.Z-rc.N → X.Y.Z).
+#               Runs from main only; npm dist-tag `latest`; pushes to main. A
+#               new major reaches `latest` only through `release`, at the end of
+#               an rc series, so `major` is always refused.
+#   prerelease  premajor-rc (X.Y.Z → (X+1).0.0-rc.1) or prerelease-rc
+#               (X.Y.Z-rc.N → X.Y.Z-rc.(N+1)). Runs only from
+#               research/state-engine or a release/* branch; npm dist-tag
+#               `next`; a GitHub prerelease; pushes back to the branch it ran on.
 #
 # The branch is frozen while a release runs: the run refuses to publish when the
 # branch moved after it was dispatched, since the bump commit could no longer be
-# pushed.
+# pushed. Dispatch an rc with:
+#   gh workflow run release.yml --ref research/state-engine -f version_type=premajor-rc
 on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: "patch / minor (npm latest, from main). major is refused: a new major goes through an rc series."
+        description: "patch / minor / release (rc.N → final): npm latest, from main. premajor-rc (→ X+1.0.0-rc.1) / prerelease-rc (rc.N → rc.N+1): npm next, from research/state-engine or release/*. major is refused (a new major goes through an rc series)."
         required: true
         type: choice
         options:
           - patch
           - minor
           - major
+          - premajor-rc
+          - prerelease-rc
+          - release
 
 permissions:
   contents: write
@@ -89,6 +96,11 @@ jobs:
       # this release failed the build (the first 2.6.0 attempt:
       # findV3MigrationIssues). ci.yml's wcs-validate job already builds state
       # first; this keeps the release in the same order.
+      #
+      # A `private: true` package is never published, so it is neither built,
+      # tested, version-bumped, committed nor published here (its dist may be
+      # gitignored, so `git add packages/<pkg>/dist` would fail, and its
+      # test:coverage is not a release gate).
       - name: Discover packages
         id: discover
         run: |
@@ -97,6 +109,8 @@ jobs:
             for dir in packages/*/; do
               [ -f "${dir}package.json" ] || continue
               name=$(node -p "require('./${dir}package.json').name")
+              private=$(node -p "require('./${dir}package.json').private === true")
+              [ "$private" = "true" ] && continue
               case "$name" in
                 @wcstack/state) ;;
                 @wcstack/*) basename "$dir" ;;
@@ -219,14 +233,6 @@ jobs:
           mkdir -p packages/server/node_modules/@wcstack
           ln -s ../../../state packages/server/node_modules/@wcstack/state
 
-      - name: Test all packages
-        run: |
-          for pkg in ${{ steps.discover.outputs.list }}; do
-            echo "::group::test — $pkg"
-            (cd "packages/$pkg" && npm run typecheck --if-present && npm run test:coverage)
-            echo "::endgroup::"
-          done
-
       # Pin every package to the target version "Plan the release" computed,
       # pulling any lagging packages (e.g. a freshly added 1.0.0) onto the
       # shared line. (The bump used to be computed here with `sort -V` and
@@ -278,6 +284,21 @@ jobs:
           for pkg in ${{ steps.discover.outputs.list }}; do
             echo "::group::rebuild — $pkg"
             (cd "packages/$pkg" && npm run build)
+            echo "::endgroup::"
+          done
+
+      # The tests run here, at the target version, and not before the bump: each
+      # package's prepublishOnly runs them again inside "Publish to npm", one
+      # package at a time, so a test that only fails at the new version (router's
+      # VERSION check could not read "4.0.0-rc.1") used to stop the publish loop
+      # midway, after the earlier packages were on npm (4.0.0-rc.1 went out
+      # partial). Every test passing at the target version before the first
+      # publish keeps prepublishOnly from failing on that account.
+      - name: Test all packages (at the target version)
+        run: |
+          for pkg in ${{ steps.discover.outputs.list }}; do
+            echo "::group::test — $pkg"
+            (cd "packages/$pkg" && npm run typecheck --if-present && npm run test:coverage)
             echo "::endgroup::"
           done
 

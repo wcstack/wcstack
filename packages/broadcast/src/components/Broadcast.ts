@@ -4,6 +4,7 @@ import { BroadcastCore } from "../core/BroadcastCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 // Named WcsBroadcast (not `Broadcast`) to match the <wcs-clipboard> WcsClipboard
 // / <wcs-ws> WcsWebSocket convention and avoid shadowing any global.
@@ -89,25 +90,27 @@ export class WcsBroadcast extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Input setters never let setAttribute stringify null / undefined (a "null" /
+  // "undefined" name would open a channel by that literal name): `null` removes
+  // the attribute (the default), `undefined` restores the attribute the element
+  // started with (wc-bindable producer guidance P1; React 19 and a direct
+  // assignment deliver it, @wcstack/state does not).
 
   get name(): string {
     return this.getAttribute("name") || "";
   }
 
-  set name(value: string) {
-    this.setAttribute("name", value);
+  set name(value: string | null | undefined) {
+    reflectAttribute(this, "name", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---

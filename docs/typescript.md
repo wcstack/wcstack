@@ -14,10 +14,10 @@ wcstack's contract between UI and state is a **path string**, and TypeScript doe
 
 ## 1. Typing the state: `defineState`
 
-`@wcstack/state` exports `defineState`, an identity function whose only job is to give `this` the right type inside methods and getters, including dot-path access:
+`@wcstack/state/define` exports `defineState`, an identity function whose only job is to give `this` the right type inside methods and getters, including dot-path access. Import it from `/define`, which has no runtime: in 4.0, importing it from `@wcstack/state` keeps the whole engine (about 21 KB gzip) in a bundle.
 
 ```ts
-import { defineState } from "@wcstack/state";
+import { defineState } from "@wcstack/state/define";
 
 export default defineState({
   count: 0,

@@ -356,17 +356,17 @@ const html = await renderToString(`
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.1/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
 全パッケージのダイジェストは各 GitHub Release の本文（と添付の `sri.json`）に載ります。CDN から取得したものではなく、公開する tree から算出しています。詳細と「意図的にカバーしない範囲」は [docs/sri.ja.md](docs/sri.ja.md)。
 
-複数パッケージを使うページには **`wcstack` エントリバンドル**があります。SPA コア（state / router / fetch / storage / autoloader）を自己完結の 1 タグに束ねたもので、1 リクエスト・ハッシュ 1 個がコア全体をカバーします（3.5.0 時点で 373 KB min / 109 KB gzip）。少なくて済むページでは従来どおり個別パッケージが既定です。jsDelivr の `/combine/` で自分で連結してはいけません（minify 済み ESM は連結に耐えません — [docs/sri.ja.md §3.1](docs/sri.ja.md)）:
+複数パッケージを使うページには **`wcstack` エントリバンドル**があります。SPA コア（state / router / fetch / storage / autoloader）を自己完結の 1 タグに束ねたもので、1 リクエスト・ハッシュ 1 個がコア全体をカバーします（4.0 時点で 218 KB min / 70 KB gzip）。少なくて済むページでは従来どおり個別パッケージが既定です。jsDelivr の `/combine/` で自分で連結してはいけません（minify 済み ESM は連結に耐えません — [docs/sri.ja.md §3.1](docs/sri.ja.md)）:
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@3.5.4/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@4.0.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
@@ -395,13 +395,13 @@ wcs-permission:state(denied) ~ .help   { display: block; }
 
 すべての I/O ノードは [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol) を実装しているので、薄いアダプター（`@wc-bindable/react` / `/vue` / `/svelte` / `/solid` ほか）を挟むだけで、要素の出力をフレームワークの状態へ配線できます。要素ごとの糊コードは不要です。そのために必要な規則は 3 つです。
 
-**1. render より前に定義を読み込む。** アダプターは mount 時に一度だけ `isWcBindable(el)` を判定し、再試行しません。後から upgrade された要素は、エラーも出さずに永久に無反応のままになります。確実なのはアプリのエントリでの静的 import です。
+**1. `@wc-bindable` 0.9 以降を使うか、render より前に定義を読み込む。** 0.9 からのアダプターは遅れた定義を待ち（既定の `syncOn: "define"`）、定義が届いた時点でバインドします。0.8 までのアダプターは mount 時に一度だけ `isWcBindable(el)` を判定し、再試行しません。後から upgrade された要素は、エラーも出さずに永久に無反応のままになります。どの版でも確実なのはアプリのエントリでの静的 import です。
 
 ```ts
 import "@wcstack/websocket/auto";   // main.tsx / main.js — アプリの描画より前に
 ```
 
-autoloader・CDN タグ・code-split などで定義が遅れるのが避けられない場合は、`customElements.whenDefined("wcs-ws")` を待ってから mount してください。`connectedCallbackPromise` は接続を待つもので、定義の待機には使えません。
+0.8 のアダプターで、autoloader・CDN タグ・code-split などで定義が遅れるのが避けられない場合は、`customElements.whenDefined("wcs-ws")` を待ってから mount してください。`connectedCallbackPromise` は接続を待つもので、定義の待機には使えません。
 
 **2. object を渡す input はプロパティとして渡す。** DOM 属性は文字列しか持てず、要素が未 upgrade だと属性側へフォールバックするフレームワークがあるため、payload が文字列化されます。Vue の `.prop`、Solid の `prop:`、Lit の `.prop=`、または ref 経由の代入を使ってください。
 
@@ -504,7 +504,7 @@ npm run lint             # ESLint
 
 **deprecation の運用**: 可能な限り、削除の前に最低 1 つの minor リリースで予告します（移行先を指す lint ルールおよび/または実行時の告知）— v1.x は `wcs/named-state-deprecated` で名前付き State を予告し、v2.0 が `name=` / `@name` を削除しました。
 
-リリース履歴: [CHANGELOG.md](./CHANGELOG.md)（英語）。2.x からの移行: [docs/migration-v3.ja.md](./docs/migration-v3.ja.md)。1.x からの移行: [docs/migration-v2.ja.md](./docs/migration-v2.ja.md)。
+リリース履歴: [CHANGELOG.md](./CHANGELOG.md)（英語）。3.x からの移行: [docs/migration-v4.ja.md](./docs/migration-v4.ja.md)。2.x からの移行: [docs/migration-v3.ja.md](./docs/migration-v3.ja.md)。1.x からの移行: [docs/migration-v2.ja.md](./docs/migration-v2.ja.md)。
 
 ## License
 

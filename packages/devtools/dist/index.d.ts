@@ -69,6 +69,8 @@ interface IStateElementSummaryLike {
      * $listKeys 宣言」なので、前提判定の正確化に paths.list と対で使う
      *（明示 index 書き込みは前提に依らず発火し得る）。旧ランタイムにはフィールド自体が
      * 無いため optional（undefined = $listKeys 側が観測不能）。宣言なしは null。
+     * The prerequisite is @wcstack/state 3.x's: a 4.0 runtime fires row watches without a `for`
+     * or `$listKeys`, so the coverage report does not judge it there (DevtoolsCore).
      */
     readonly keyedListPaths?: ReadonlySet<string> | null;
 }
@@ -339,13 +341,20 @@ interface IWiringEntry {
      */
     readonly stateElementRef: WeakRef<object> | null;
 }
-type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage";
+/**
+ * Core の変化の種類。`values` は「状態の値が変わったかもしれない」の合図で、更新バッチ
+ * （`state:update-batch`）ごとに流れる。timeline の一時停止（paused）とは独立 —
+ * 一時停止が止めるのは記録であって観測ではないので、State ペインは追従し続ける。
+ */
+type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage" | "values";
 type CoreChangeListener = (kind: CoreChangeKind) => void;
 /**
  * 配線カバレッジ 1 行（static-wiring-dx-design.md §4 — 宣言 × 実測の突合）。
  * - watch: `fired`（count 回）/ `never` / `prerequisite-missing`
  *   （ワイルドカード行 watch は「for バインド or $listKeys 宣言」が無いと
- *   リスト書き込みが行へ届かない — 「未発火」と区別しないと誤警告になる）
+ *   リスト書き込みが行へ届かない — 「未発火」と区別しないと誤警告になる）.
+ *   `prerequisite-missing` is reported for a @wcstack/state 3.x runtime only: 4.0 row watches
+ *   need neither (see rowWatchNeedsListBinding).
  * - command / eventToken: `emitted`（count 回）/ `never` /
  *   `emitted-unheard`（全 emit が subscriberCount 0 = 空撃ち。§4 の突合対象）
  * - binding: canonical declared がある場合のみ。`attached` / `never-attached`
@@ -508,6 +517,10 @@ declare class WcsDevtools extends HTMLElement {
     private _expanded;
     private _hotkeyHandler;
     private _pickHandler;
+    /** State ペインで開いているインライン編集の入力欄（無ければ null）。 */
+    private _editInput;
+    /** State ペインの中でポインタが押されている間 true（離すまで再描画を待つ）。 */
+    private _statePointerDown;
     get core(): DevtoolsCore | null;
     connectedCallback(): void;
     disconnectedCallback(): void;
@@ -526,9 +539,20 @@ declare class WcsDevtools extends HTMLElement {
     private _exitPickMode;
     private _markDirty;
     private _renderDirty;
+    /**
+     * State ペインの描き直しを待つべきか: インライン編集の入力欄にフォーカスがあるか、
+     * ペインの中でポインタが押されている。描き直すと入力欄（打ちかけの値）や押した行が消える。
+     * フォーカスで見るのは、パネルを閉じる・ノードを外すなど blur の来ない抜け方でも
+     * 待ち続けないため。
+     */
+    private _stateHeld;
+    /** 待たせていた State ペインの描き直しを流す（保留が無ければ何もしない）。 */
+    private _releaseState;
+    private _holdStateWhilePressed;
     private _rosterKey;
     private _selectedRoster;
     private _renderStatePane;
+    private _renderStateBody;
     /**
      * 選択ツリーの鍵付き購読セクション（keyedSubscriptions — protocol v2 追補・要件 D17）。
      * `$eq` / `$eqPath` / `$eqIndex` の購読は依存グラフの動的な変化で、上の状態ツリーにも

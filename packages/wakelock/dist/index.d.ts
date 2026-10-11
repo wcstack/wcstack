@@ -274,6 +274,7 @@ declare class WcsWakeLock extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _attached;
     private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
@@ -281,11 +282,11 @@ declare class WcsWakeLock extends HTMLElement {
     private _initInternals;
     private _wireStates;
     get active(): boolean;
-    set active(value: boolean);
+    set active(value: boolean | null | undefined);
     get type(): WakeLockKind;
-    set type(value: WakeLockKind);
+    set type(value: WakeLockKind | null | undefined);
     get manual(): boolean;
-    set manual(value: boolean);
+    set manual(value: boolean | null | undefined);
     get held(): boolean;
     get error(): Error | null;
     get errorInfo(): WcsIoErrorInfo | null;

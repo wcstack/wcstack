@@ -230,7 +230,7 @@ One modifier closes both. `#init=element` makes the **element** the authority fo
 - `#init=element` **skips the initial state→element write** (no clobber) and **pulls the element's current `value` into the state slot** (no missed load).
 - Authority governs the *initial sync only*: every later `todos` assignment still flows state→element, so auto-save keeps working.
 - Seed the slot with the element's real initial value (`null` for an empty key) and null-guard reads through a derived getter. A convenient `[]` / `""` seed does not survive the initial pull anyway.
-- Needs `enableDirectionalInitialSync`, on by default since v1.21.0. If you explicitly disable it, `#init=` throws; seed `undefined` and pull once in `$connectedCallback` instead.
+- Needs `enableDirectionalInitialSync`, on by default (since v1.21.0; in 4.0 a key of the root state's `$behavior`, no longer a `bootstrapState()` option). If you turn it off (`$behavior: { enableDirectionalInitialSync: false }`), `#init=` throws; seed `undefined` and pull once in `$connectedCallback` instead.
 - Working examples: `examples/state-cross-tab-todo`, `examples/state-color-palette`.
 
 ## State Surface vs Command Surface
@@ -259,6 +259,8 @@ Controls storage operations from HTML, JS, or `@wcstack/state` bindings:
 | `value` | `any` | Setting this auto-saves (when not `manual`) |
 | `trigger` | `boolean` | One-way save trigger |
 | `manual` | `boolean` | Disables auto-load and auto-save |
+
+**`null` and `undefined`.** The inputs backed by an attribute (`key`, `type`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default (no key, `local`, not manual). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `value = null` removes the key from storage (in `manual` mode it stages `null` for the next save); `value = undefined` does nothing — the stored entry is kept and nothing is staged. `trigger` ignores both.
 
 ## CSS styling with `:state()`
 
@@ -373,6 +375,8 @@ unbind();
 | String | As-is | Parsed if valid JSON, otherwise the raw string |
 | Number / boolean | `JSON.stringify()` result | `JSON.parse()` result |
 | `null` / `undefined` | Key removed | `null` |
+
+This is the Core's `save(value)`. The element's `value` setter removes the key on `null` but ignores `undefined` (see [Input / Command Surface](#input--command-surface)).
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 
@@ -634,7 +638,7 @@ bootstrapStorage({
 });
 ```
 
-Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+`bootstrapStorage()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.
 
 ## Design Notes
 
@@ -651,7 +655,7 @@ Unknown or wrongly typed options (unknown `tagNames` keys included) log a consol
 - **`error` shape**: on a storage failure, `error` is set to a `WcsStorageError` (`{ operation, message }`) identifying which call failed (`load` / `save` / `remove`, or `type` for an invalid headless `type` assignment). Operations are **never-throw**: calling one with no key does **not** throw — it is surfaced on `error` as `{ operation, message: "key is required." }` (and dispatched as `wcs-storage:error`). In practice `error` is therefore always either a `WcsStorageError` or `null`; the wider `WcsStorageError | Error | null` type is kept for forward compatibility and consistency with sibling packages.
 - **`errorInfo` taxonomy**: an **additive** bindable output (`wcs-storage:error-info-changed`) that classifies the same failure into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. Validation failures (invalid `type` / missing `key`) are `invalid-argument` (phase `start`, not recoverable). A caught storage exception is phase `execute` and classified by its `Error.name`: `QuotaExceededError` → `quota-exceeded` (recoverable — succeeds once space is freed), `SecurityError` → `not-allowed` (storage access denied, not recoverable), anything else → `storage-error`. `errorInfo` transitions exactly when `error` does (cleared to `null` on any successful operation); the shared `WcsIoErrorInfo` type and the `WCS_STORAGE_ERROR_CODE` constants are exported.
 - JSON auto-serialization handles objects, arrays, and primitives transparently
-- Saving `null` / `undefined` removes the key from storage
+- Saving `null` removes the key from storage (so does the Core's `save(undefined)`); assigning `undefined` to the element's `value` is a no-op that keeps the stored entry
 - Cross-tab sync via `storage` event works only with localStorage. The Shell binds the watcher to its current `key` / `type` on connect (and re-binds on re-attach), so cross-tab sync works even in `manual` mode where no auto-load runs. Changing the `key` attribute after connection always re-syncs the Core key, so cross-tab sync follows the new key even in `manual` mode or when the key is cleared. A successful cross-tab update also clears any stale `error` (just like `load()` / `save()` / `remove()` do at the start of a successful operation), so a fresh value never coexists with a leftover error from an earlier failure.
 - `manual` is useful when you want explicit control over save timing
 

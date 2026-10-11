@@ -21,7 +21,8 @@
       "flags": [
         "prevent",
         "stop",
-        "ro"
+        "ro",
+        "direct"
       ],
       "keyValue": [
         "init",
@@ -55,13 +56,9 @@
     "le",
     "gt",
     "ge",
-    "add",
-    "sub",
-    "mul",
-    "div",
-    "mod",
-    "abs",
-    "clamp",
+    "falsy",
+    "truthy",
+    "boolean",
     "toFixed",
     "locale",
     "upper",
@@ -69,15 +66,12 @@
     "capitalize",
     "trim",
     "slice",
-    "substr",
     "padStart",
     "padEnd",
     "repeat",
     "reverse",
     "truncate",
     "join",
-    "int",
-    "float",
     "round",
     "floor",
     "ceil",
@@ -88,11 +82,17 @@
     "datetime",
     "ymd",
     "hms",
-    "falsy",
-    "truthy",
+    "add",
+    "sub",
+    "mul",
+    "div",
+    "mod",
+    "abs",
+    "clamp",
+    "int",
+    "float",
     "defaults",
     "coalesce",
-    "boolean",
     "number",
     "string",
     "nullIfEmpty"
@@ -347,20 +347,6 @@
         "string"
       ],
       "minArgs": 1,
-      "maxArgs": 2,
-      "argTypes": [
-        "number",
-        "number"
-      ]
-    },
-    "substr": {
-      "description": "部分文字列 (pos,len)",
-      "hasArgs": true,
-      "resultType": "string",
-      "acceptTypes": [
-        "string"
-      ],
-      "minArgs": 2,
       "maxArgs": 2,
       "argTypes": [
         "number",
@@ -661,26 +647,9 @@
       "maxArgs": 0
     }
   },
-  "filterAliases": {
-    "inc": "add",
-    "dec": "sub",
-    "fix": "toFixed",
-    "uc": "upper",
-    "lc": "lower",
-    "cap": "capitalize",
-    "rep": "repeat",
-    "rev": "reverse",
-    "pad": "padStart",
-    "null": "nullIfEmpty"
-  },
-  "declarationAliases": {
-    "$updatedCallback": "$renderedCallback",
-    "$streams": "$stream"
-  },
-  "apiAliases": {
-    "$trackDependency": "$dependOn",
-    "$untrackDependency": "$untracked"
-  },
+  "filterAliases": {},
+  "declarationAliases": {},
+  "apiAliases": {},
   "reservedLifecycle": [
     "$connectedCallback",
     "$disconnectedCallback",
@@ -697,10 +666,89 @@
     "$on",
     "$stream",
     "$watch",
-    "$scan",
     "$listKeys",
     "$recursion",
     "$streamStatus",
-    "$streamError"
-  ]
+    "$streamError",
+    "$behavior",
+    "$features"
+  ],
+  "behaviorOptions": {
+    "enableMustache": {
+      "type": "boolean",
+      "default": true
+    },
+    "sameValueGuard": {
+      "type": "boolean",
+      "default": true
+    },
+    "enableDirectionalInitialSync": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "features": [
+    "formats",
+    "diagnostics",
+    "temporal",
+    "list-keys",
+    "scopes",
+    "recursion",
+    "ssr",
+    "devtools",
+    "native-commands"
+  ],
+  "nativeCommands": {
+    "*": [
+      "focus",
+      "blur",
+      "click",
+      "scrollIntoView",
+      "showPopover",
+      "hidePopover",
+      "togglePopover"
+    ],
+    "dialog": [
+      "show",
+      "showModal",
+      "close",
+      "requestClose"
+    ],
+    "form": [
+      "requestSubmit",
+      "checkValidity",
+      "reportValidity"
+    ],
+    "input": [
+      "select",
+      "setSelectionRange",
+      "showPicker",
+      "setCustomValidity",
+      "checkValidity",
+      "reportValidity"
+    ],
+    "textarea": [
+      "select",
+      "setSelectionRange",
+      "setCustomValidity",
+      "checkValidity",
+      "reportValidity"
+    ],
+    "select": [
+      "showPicker",
+      "setCustomValidity",
+      "checkValidity",
+      "reportValidity"
+    ],
+    "audio": [
+      "play",
+      "pause",
+      "load"
+    ],
+    "video": [
+      "play",
+      "pause",
+      "load"
+    ]
+  }
 }

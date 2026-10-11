@@ -65,6 +65,112 @@ describe("wcs/binding-syntax（正本パーサと同じ判定 — @wcstack/state
     expect(codes(`<p><!--@@:count|gt(0)--></p>`)).toEqual([]);
   });
 
+  // 4.0 の正本パーサはパスを指す右辺の `__proto__` / `prototype` の段を #120 で拒む（実行時と同じ範囲）
+  it("パスの __proto__ / prototype の段を報告すること（4.0 の #120 — 属性・mustache・コメント束縛）", () => {
+    const cases: [string, string][] = [
+      [`<p data-wcs="textContent: a.__proto__.x"></p>`, "textContent: a.__proto__.x"],
+      [`<p data-wcs="title: items.*.prototype"></p>`, "title: items.*.prototype"],
+      [`<button data-wcs="onclick: handlers.__proto__"></button>`, "onclick: handlers.__proto__"],
+      [`<p>{{ a.__proto__ }}</p>`, "a.__proto__"],
+      [`<p><!--@@: Foo.prototype.bar--></p>`, "Foo.prototype.bar"],
+    ];
+    for (const [html, range] of cases) {
+      const d = codes(html);
+      expect(d, html).toHaveLength(1);
+      expect(d[0].code).toBe("wcs/binding-syntax");
+      expect(d[0].severity).toBe("error");
+      expect(html.slice(d[0].start, d[0].end)).toBe(range);
+      expect(d[0].message).toContain('cannot go through "__proto__" or "prototype"');
+    }
+  });
+
+  it("#120 で拒まれたパスには存在の検査（wcs/binding-path-missing）を重ねないこと（属性・for の短縮パス・mustache）", () => {
+    const html = `<wcs-state><script type="module">export default { obj: {}, items: [] };</script></wcs-state>
+<p data-wcs="textContent: obj.__proto__.x"></p>
+<template data-wcs="for: items"><b data-wcs="textContent: .__proto__"></b></template>
+<p>{{ obj.prototype }}</p>
+<p data-wcs="textContent: obj.missing"></p>`;
+    const d = validateDocument(html, { locale: "en" });
+    expect(d.filter((x) => x.code === "wcs/binding-syntax").map((x) => html.slice(x.start, x.end)))
+      .toEqual(["textContent: obj.__proto__.x", "textContent: .__proto__", "obj.prototype"]);
+    // 存在の検査は、拒まれていないパスだけに出る
+    expect(d.filter((x) => x.code === "wcs/binding-path-missing").map((x) => html.slice(x.start, x.end))).toEqual(["obj.missing"]);
+  });
+
+  it("パスを指さない右辺（コマンドトークン・イベントトークン・単独のメソッド名）の __proto__ は報告しないこと（実行時と同じ）", () => {
+    expect(codes(`<button data-wcs="onclick: $command.__proto__"></button>`)).toEqual([]);
+    expect(codes(`<x-el data-wcs="eventToken.value: __proto__"></x-el>`)).toEqual([]);
+    expect(codes(`<button data-wcs="onclick: __proto__"></button>`)).toEqual([]);
+    // 段の名前に含まれるだけ（`__proto__x` / `prototypes`）は対象外
+    expect(codes(`<p data-wcs="textContent: a.__proto__x; title: b.prototypes"></p>`)).toEqual([]);
+  });
+
+  // 4.0 の正本パーサは for: の出力フィルタを #121 で拒む（ランタイムは初期化で失敗する。#370 の判断 — spread の #105 と同じ形）
+  it("for: の出力フィルタを error で報告し、位置は for の式を指すこと（4.0 の #121）", () => {
+    for (const expr of ["for: items|take(2)", "for: .items|nosuch", "for: items | slice(0, 2)"]) {
+      const html = `<ul><template data-wcs="${expr}"><li></li></template></ul>`;
+      const d = codes(html);
+      expect(d, expr).toHaveLength(1);
+      expect(d[0].code).toBe("wcs/binding-syntax");
+      expect(d[0].severity).toBe("error");
+      expect(html.slice(d[0].start, d[0].end)).toBe(expr);
+      expect(d[0].message).toContain('"for:" takes no filters');
+      expect(d[0].message).not.toContain("Validate statically");
+    }
+    // フィルタの無い for: と、if: のフィルタは報告しない
+    expect(codes(`<template data-wcs="for: items"></template><template data-wcs="if: items|not"></template>`)).toEqual([]);
+    // validateDocument からも同じ 1 件が wcs/binding-syntax で届く
+    const doc = validateDocument(`<wcs-state><script type="module">export default { items: [1, 2, 3] };</script></wcs-state>`
+      + `<ul><template data-wcs="for: items|take(2)"><li></li></template></ul>`, { locale: "en" });
+    expect(doc.filter((x) => x.code === "wcs/binding-syntax").map((x) => x.severity)).toEqual(["error"]);
+  });
+
+  // #121 で拒まれた for: はテンプレートごと拒まれる（行は存在しない）。報告は wcs/binding-syntax の 1 件だけで、
+  // その for 自身のフィルタ・型の検査（filter-unknown / filter-input-type / binding-type-expectation）も、
+  // 行の短縮パスの存在の検査（`expanded: items|take(2).*.n`）も重ねない（#120 と同じ方針）
+  it("#121 で拒まれた for: には wcs/binding-syntax だけを出し、for 自身と行の短縮パスの検査を重ねないこと", () => {
+    const html = `<wcs-state><script type="module">export default { items: [{ n: 1 }, { n: 2 }, { n: 3 }] };</script></wcs-state>
+<ul><template data-wcs="for: items|take(2)"><li data-wcs="textContent: .n">{{ .n }}</li></template></ul>
+<ul><template data-wcs="for: items|slice(0,2)"><li data-wcs="textContent: .n">{{ .n }}</li></template></ul>`;
+    const d = validateDocument(html, { locale: "en" });
+    expect(d.map((x) => [x.code, x.severity, html.slice(x.start, x.end)])).toEqual([
+      ["wcs/binding-syntax", "error", "for: items|take(2)"],
+      ["wcs/binding-syntax", "error", "for: items|slice(0,2)"],
+    ]);
+  });
+
+  it("拒まれた for: の中では行の短縮パスの綴り違いも・入れ子の for の行も検査せず、短縮パスに依らない束縛は従来どおり検査すること", () => {
+    const html = `<wcs-state><script type="module">export default { items: [{ n: 1 }], groups: [{ n: 1 }], count: 1 };</script></wcs-state>
+<ul><template data-wcs="for: items|take(2)"><li data-wcs="textContent: .nmae">{{ .nmae }}<template data-wcs="for: groups"><b data-wcs="textContent: .nmae">{{ .nmae }}</b></template><i data-wcs="title: count|nosuch">{{ missing }}</i></li></template></ul>`;
+    const d = validateDocument(html, { locale: "en" });
+    expect(d.map((x) => [x.code, html.slice(x.start, x.end)])).toEqual([
+      ["wcs/binding-syntax", "for: items|take(2)"],
+      ["wcs/filter-unknown", "nosuch"],
+      ["wcs/binding-path-missing", "missing"],
+    ]);
+  });
+
+  it("正しい for: の行の短縮パスは従来どおり検査し、if: のフィルタの検査も残ること（対照）", () => {
+    const html = `<wcs-state><script type="module">export default { items: [{ n: 1 }], groups: [{ items: [{ n: 1 }] }], "2024": [{ n: 1 }], count: 1 };</script></wcs-state>
+<ul><template data-wcs="for: items"><li data-wcs="textContent: .nmae">{{ .nmae }}</li></template></ul>
+<ul><template data-wcs="for: items;"><li data-wcs="textContent: .nmae">{{ .nmae }}</li></template></ul>
+<ul><template data-wcs="for: groups.0.items"><li data-wcs="textContent: .nmae">{{ .nmae }}</li></template></ul>
+<ul><template data-wcs="for: 2024"><li data-wcs="textContent: .nmae">{{ .nmae }}</li></template></ul>
+<ul><template data-wcs="for: items"><li data-wcs="textContent: .n">{{ .n }}</li></template></ul>
+<template data-wcs="if: count|nosuch"></template>
+<template data-wcs="elseif: count|slice(0,2)"></template>`;
+    const d = validateDocument(html, { locale: "en" });
+    const missing = d.filter((x) => x.code === "wcs/binding-path-missing");
+    expect(missing.map((x) => html.slice(x.start, x.end))).toEqual(Array(8).fill(".nmae"));
+    expect(missing.map((x) => /\(expanded: ([^)]+)\)/.exec(x.message)?.[1])).toEqual([
+      "items.*.nmae", "items.*.nmae", "items.*.nmae", "items.*.nmae",
+      "groups.0.items.*.nmae", "groups.0.items.*.nmae", "2024.*.nmae", "2024.*.nmae",
+    ]);
+    expect(d.filter((x) => x.code === "wcs/filter-unknown").map((x) => html.slice(x.start, x.end))).toEqual(["nosuch"]);
+    expect(d.filter((x) => x.code === "wcs/filter-input-type").map((x) => html.slice(x.start, x.end))).toEqual(["slice"]);
+    expect(d.filter((x) => x.code === "wcs/binding-syntax")).toEqual([]);
+  });
+
   it("日本語のメッセージを返すこと", () => {
     const d = validateBindingSyntax(`<input data-wcs="value#ro#wo: x">`, "data-wcs", "ja");
     expect(d[0].message).toMatch(/^バインディングの構文エラー（ランタイムは読み込み時に throw します）: /);

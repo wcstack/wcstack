@@ -66,7 +66,7 @@ const SUFFIX = '\n})';
 
 /** ランタイム API のうち、第 1 引数の文字列リテラルがそのまま依存パスになるもの。 */
 const PATH_ARG_APIS = new Set(['$getAll', '$resolve', '$dependOn', '$trackDependency']);
-/** 明示の依存登録（`$dependOn` が正式名、`$trackDependency` は 3.x の間の旧名 — @wcstack/state 3.2） */
+/** 明示の依存登録（`$dependOn` が正式名。`$trackDependency` は 3.x の旧名で、4.0 は読んだ時点で throw する — wcs/name-alias。辺としては同じに数える） */
 const TRACK_APIS = new Set(['$dependOn', '$trackDependency']);
 /** この呼び出しの引数の中は依存追跡が抑止される（`$untracked` が正式名、`$untrackDependency` は旧名）。 */
 const UNTRACK_APIS = new Set(['$untracked', '$untrackDependency']);
@@ -438,25 +438,20 @@ function visitDestructure(pattern: ObjectPattern, prefix: readonly Segment[], sc
 // `this.<name>` のメンバー参照（旧名の宣言キーの読み出し検出）
 // ============================================================
 
-/** 集めるメンバー名（名前の集合、または名前を受けるかの判定）。 */
-export type MemberNameFilter = ReadonlySet<string> | ((name: string) => boolean);
-
 /** `this.<name>` / `this["<name>"]` のメンバー参照 1 件（本体テキスト相対オフセット）。 */
 export interface ThisMemberRef {
   /** 参照されたメンバー名（引用符は含まない） */
   readonly name: string;
   readonly start: number;
   readonly end: number;
-  /**
-   * 読まずに書くだけの参照（単純代入 `this.x = v`・分割代入・for-in / for-of の左辺）なら true。
-   * 複合代入（`+=`）・増減（`++`）は先に読むので含まない。
-   */
-  readonly written?: boolean;
 }
+
+/** 集めるメンバー名（`Set` か、`has` だけを持つ判定 — `$0` / `$129` のように名前を列挙できないとき）。 */
+export type MemberNameFilter = Pick<ReadonlySet<string>, 'has'>;
 
 /**
  * getter / メソッド本体から `this.<name>` / `this["<name>"]` のメンバー参照を集める。
- * 名前は `names` に含まれるものだけ。パースできなければ null（呼び出し側は断定しない側に倒す）。
+ * 名前は `names` に含まれるもの（`names.has(name)` が true のもの）だけ。パースできなければ null（呼び出し側は断定しない側に倒す）。
  *
  * 依存解析（`collectGetterReads`）とは別物なので、エイリアス（`const self = this`）は追わず
  * 素の `this` だけを見る — 取りこぼしても誤検出を出さない側に倒す。`this` の束縛だけは
@@ -509,17 +504,7 @@ export function collectThisMemberRefsInValue(value: string, names: MemberNameFil
  * `offsetShift` はラッパー接頭辞の長さ（返すオフセットは入力テキスト相対になる）。
  */
 function walkThisMembers(root: AnyNode, names: MemberNameFilter, offsetShift: number): ThisMemberRef[] {
-  const accepts = typeof names === 'function' ? names : (name: string): boolean => names.has(name);
   const out: ThisMemberRef[] = [];
-  // 単純代入（`=`）・分割代入・for-in / for-of の左辺のメンバー: 読まずに書くだけ（set トラップだけを通る）
-  const writeTargets = new WeakSet<AnyNode>();
-  const markWriteTargets = (target: AnyNode): void => {
-    if (target.type === 'MemberExpression') writeTargets.add(target);
-    else if (target.type === 'ArrayPattern') for (const e of target.elements) { if (e !== null) markWriteTargets(e); }
-    else if (target.type === 'ObjectPattern') for (const p of target.properties) markWriteTargets(p.type === 'RestElement' ? p.argument : p.value);
-    else if (target.type === 'RestElement') markWriteTargets(target.argument);
-    else if (target.type === 'AssignmentPattern') markWriteTargets(target.left);
-  };
   const walk = (node: AnyNode, thisIsState: boolean): void => {
     // class 本体の `this` は state ではない（中身ごと見ない）
     if (isClassNode(node)) return;
@@ -529,17 +514,10 @@ function walkThisMembers(root: AnyNode, names: MemberNameFilter, offsetShift: nu
       forEachChild(node, (child) => walk(child, inner));
       return;
     }
-    if (node.type === 'AssignmentExpression' && node.operator === '=') markWriteTargets(node.left);
-    else if ((node.type === 'ForOfStatement' || node.type === 'ForInStatement') && node.left.type !== 'VariableDeclaration') markWriteTargets(node.left);
     if (thisIsState && node.type === 'MemberExpression' && node.object.type === 'ThisExpression') {
       const hit = thisMemberName(node);
-      if (hit !== null && accepts(hit.name)) {
-        out.push({
-          name: hit.name,
-          start: hit.start - offsetShift,
-          end: hit.end - offsetShift,
-          ...(writeTargets.has(node) ? { written: true } : {}),
-        });
+      if (hit !== null && names.has(hit.name)) {
+        out.push({ name: hit.name, start: hit.start - offsetShift, end: hit.end - offsetShift });
       }
     }
     forEachChild(node, (child) => walk(child, thisIsState));
@@ -561,22 +539,22 @@ function thisMemberName(node: MemberExpression): { name: string; start: number; 
 }
 
 // ============================================================
-// イベントハンドラが読む `event.currentTarget`（4.0 のイベント委譲の予告）
+// イベントハンドラが読む `event.currentTarget`（4.0 のイベント委譲）
 // ============================================================
 
 /**
  * メソッド（引数リストのテキスト `params` と本体 `body`）が、第 1 引数（イベント）の `currentTarget` を
  * **同期的に**読むか。4.0 は委譲されるイベントを root で聞くので、そこでの `currentTarget` は要素ではなく
- * root になる（`wcs/v4-migration` の判定。3.x は要素にリスナーを付けるので要素）。
+ * root になる（`wcs/delegated-current-target` の判定）。
  *
  * 拾う形: `e.currentTarget` / `e["currentTarget"]` / `const { currentTarget } = e` / 引数の分割代入
  * `({ currentTarget })`。断定できないときは false（黙る側）:
  *   - パースできない・第 1 引数が無い・識別子でも分割代入でもない
  *   - 本体のどこかで同じ名前を束縛し直している（`let e = …`・入れ子の関数の引数・catch の引数・再代入）
- *   - 入れ子の関数の中の読み（いつ呼ばれるか分からない。非同期なら 3.x でも `currentTarget` は null）
- *   - 最初に中断する `await` より後ろの読み（dispatch が終わっているので 3.x でも null）。境界は `await` の
- *     **被演算子の終わり** — 被演算子は中断の前に同期的に評価される（`await fetch(url, { body: new FormData(
- *     e.currentTarget) })` は読む側）。`for await` は反復対象の式の終わり
+ *   - 入れ子の関数の中の読み（いつ呼ばれるか分からない。非同期なら dispatch の後で `currentTarget` は null）
+ *   - 最初に中断する `await` より後ろの読み（dispatch が終わっているので `currentTarget` は null）。境界は
+ *     `await` の**被演算子の終わり** — 被演算子は中断の前に同期的に評価される（`await fetch(url, { body:
+ *     new FormData(e.currentTarget) })` は読む側）。`for await` は反復対象の式の終わり
  */
 export function readsEventCurrentTarget(params: string, body: string): boolean {
   let program: AnyNode;

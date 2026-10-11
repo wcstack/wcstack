@@ -107,6 +107,8 @@ When `<wcs-timer>` is connected to the DOM, it automatically starts an interval 
 | `immediate` | boolean | `false` | Fire one tick at start instead of waiting the first interval.      |
 | `manual`    | boolean | `false` | Do not auto-start on connect; start via command / trigger.        |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`interval`, `once`, `repeat`, `immediate`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A running timer swaps to the restored or default `interval` in place, like any other `interval` change; `trigger` ignores both.
+
 ## Observable Properties (outputs)
 
 | Property  | Event                       | Description                                            |
@@ -225,7 +227,7 @@ const { autoTrigger, triggerAttribute, tagNames } = getConfig();
 | `triggerAttribute` | string               | `data-timertarget` | Attribute scanned for DOM click triggering.         |
 | `tagNames.timer`   | string               | `wcs-timer`        | Custom element tag name to register.                |
 
-Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+`bootstrapTimer()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.
 
 ## Headless usage (`TimerCore`)
 

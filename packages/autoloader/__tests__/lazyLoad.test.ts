@@ -36,7 +36,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -64,7 +63,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -94,7 +92,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -122,7 +119,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: true,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -154,7 +150,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -181,7 +176,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -207,7 +201,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -237,7 +230,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: { postfix: '.js', loader: async () => null } },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -262,7 +254,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: { postfix: '.js', loader: async () => null } },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -291,7 +282,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -321,7 +311,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -367,7 +356,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -410,7 +398,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -448,7 +435,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: true,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -483,7 +469,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -527,7 +512,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -558,7 +542,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: {},
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': { key: '', prefix: 'ui', loaderKey: null, isNameSpaced: true }
@@ -573,7 +556,7 @@ describe('lazyLoad', () => {
   });
 
   it('prefixMapが空の場合、早期リターンすること', async () => {
-    const config = { loaders: {}, observable: false, scanImportmap: false };
+    const config = { loaders: {}, observable: false };
     const prefixMap = {};
     // Should not throw, should not call lazyLoads (which we can't spy on easily, but we can spy on createTreeWalker)
     const spy = vi.spyOn(document, 'createTreeWalker');
@@ -592,7 +575,7 @@ describe('lazyLoad', () => {
     };
     customElements.define('ui-shadow', mockConstructor);
     
-    const config = { loaders: {}, observable: false, scanImportmap: false };
+    const config = { loaders: {}, observable: false };
     const prefixMap = { 'ui': { key: '', prefix: 'ui', loaderKey: null, isNameSpaced: true } };
     
     const el = document.createElement('ui-shadow');
@@ -614,7 +597,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: true,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -657,7 +639,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: {},
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'ui': {
@@ -703,7 +684,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false
     };
     const prefixMap = {
       'shadow': {
@@ -729,7 +709,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: {},
       observable: true,
-      scanImportmap: false
     };
     const prefixMap = {
       'err': {
@@ -780,7 +759,6 @@ describe('lazyLoad', () => {
     const config = {
       loaders: {},
       observable: true,
-      scanImportmap: false,
     };
     const prefixMap = {
       'ui': {

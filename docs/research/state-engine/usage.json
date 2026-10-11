@@ -1,0 +1,4238 @@
+{
+ "meta": {
+  "generated": "2026-09-23T20:19:02.738Z",
+  "repo": "wcstack-state-engine (branch research/state-engine @ a796d712, v3.3.0)",
+  "skillRepo": "wcstack-skill (main @ f14639f, v3.3.0)",
+  "method": "Static scan (scratchpad/scan/*.mjs): data-wcs attributes parsed per binding (lhs/modifiers/path/filters), mustache + comment bindings, JS with comments stripped, markup inside template literals. Demo unit = directory with index.html (examples/ssr uses template.html); hub pages and non-state demos (signals/React/Vue/vanilla) excluded. e2e unit = __e2e__ dir or e2e/fixtures/*.html (+ companion .js). skill.count / guide.codeBlocks = fenced code blocks using the feature; mentions = regex hits over the whole text including prose.",
+  "notes": [
+   "C.update is inferred (any event handler / two-way binding / state assignment); it is an engine mechanism every writing page relies on, not an opt-in feature.",
+   "C.grammar / C.state / C.bind / C.init are hit by every page that uses <wcs-state>; see detailApps for the sub-features (modifiers, mustache, dot shorthand, loading forms, $getAll/$setAll/$resolve, wildcard paths).",
+   "X.wcbindable = any data-wcs binding on a wcs-* I/O element or a user element whose class declares static wcBindable (property, spread, #init=, command./eventToken. bindings on it). `state:` on <wcs-permission> is its own wcBindable output, not a component mount.",
+   "X.component = <wcs-state bind-component> plus `state:` / `state.x:` bindings on the host element (e2e fixtures named mount-root/mount-light/mount-row are component whole-object mounts, not <wcs-state mount> volumes).",
+   "X.elemwrite counts only writes whose target is the element itself (path ending in .* / .N / .$1, $resolve(list.*,i,v), $setAll(list.*), set \"list.*\", two-way binding to `.` on a primitive row). Row-field writes like this[`todos.${i}.done`] are C.state (numeric-index path write).",
+   "X.i18n in demos is implicit only: locale-dependent filters (locale/date) reading config.locale, which defaults to <html lang>. No demo sets config.locale explicitly.",
+   "Filter formatting set (C.filter-format) = toFixed, locale, percent, unit, date, time, datetime, ymd, hms. In the current engine ALL built-in filters (formatting or not) ship via features/formats.",
+   "skill.count = fenced code blocks (72 total across the 4 skill files) whose code uses the feature; skill.mentions = regex hits over the whole text incl. prose and tables (the skill references document nearly every feature). inSkillMd = appears in a code block of the always-loaded SKILL.md (cheat sheet / template).",
+   "guide.codeBlocks counts BAD/GOOD snippets in 'What does not work' too."
+  ],
+  "demosAlsoDrivenByE2eTests": [
+   "examples/router-i18n",
+   "examples/state-cross-tab-todo",
+   "examples/state-intersect-scroll",
+   "examples/state-search",
+   "examples/state-sse-dashboard",
+   "examples/synth-playground",
+   "packages/fetch/examples/users-crud",
+   "packages/midi/examples/midi-fader",
+   "packages/state/examples/calendar"
+  ]
+ },
+ "corpora": {
+  "demos": {
+   "apps": 37,
+   "list": [
+    "examples/router-i18n",
+    "examples/router-spa",
+    "examples/ssr",
+    "examples/state-camera-record-upload",
+    "examples/state-color-palette",
+    "examples/state-cross-tab-todo",
+    "examples/state-custom-states",
+    "examples/state-devtools-playground",
+    "examples/state-intersect-scroll",
+    "examples/state-notification-chat",
+    "examples/state-permission-banner",
+    "examples/state-pomodoro",
+    "examples/state-search",
+    "examples/state-sse-dashboard",
+    "examples/state-testing-todo",
+    "examples/state-tilt-maze",
+    "examples/synth-playground",
+    "examples/websocket-chat/state",
+    "packages/defined/examples/defined-loader",
+    "packages/fetch/examples/infinite-scroll",
+    "packages/fetch/examples/pagination/state",
+    "packages/fetch/examples/users-crud",
+    "packages/midi/examples/midi-fader",
+    "packages/speech/examples/speak-highlight",
+    "packages/speech/examples/speech-echo",
+    "packages/state/examples/async-fetch",
+    "packages/state/examples/calendar",
+    "packages/state/examples/cart",
+    "packages/state/examples/hello-world",
+    "packages/state/examples/recursive-tree",
+    "packages/state/examples/simple-counter",
+    "packages/state/examples/simple-list",
+    "packages/state/examples/spread",
+    "packages/state/examples/state-population",
+    "packages/state/examples/streams",
+    "packages/state/examples/watch",
+    "packages/view-transition/examples/list-transitions"
+   ]
+  },
+  "e2e": {
+   "apps": 38,
+   "list": [
+    "e2e/fixtures/bind-component-depth2-nested.html",
+    "e2e/fixtures/bind-component-depth2.html",
+    "e2e/fixtures/bind-component-light-dom-plain-removed.html",
+    "e2e/fixtures/bind-component-light-dom.html",
+    "e2e/fixtures/bind-component-list.html",
+    "e2e/fixtures/bind-component-nested-for.html",
+    "e2e/fixtures/bind-component-parent-write.html",
+    "e2e/fixtures/bind-component-row-replace.html",
+    "e2e/fixtures/bind-component-write.html",
+    "e2e/fixtures/dcc-command.html",
+    "e2e/fixtures/dcc-in-list.html",
+    "e2e/fixtures/dcc-subpath-change.html",
+    "e2e/fixtures/deferred-apply.html",
+    "e2e/fixtures/monitor-initial-snapshot.html",
+    "e2e/fixtures/mount-light.html",
+    "e2e/fixtures/mount-root.html",
+    "e2e/fixtures/mount-row.html",
+    "e2e/fixtures/mount-volume.html",
+    "e2e/fixtures/router-state-params.html",
+    "e2e/fixtures/ssr-router-body.html",
+    "e2e/fixtures/state-address-gc.html",
+    "e2e/fixtures/state-move-before.html",
+    "e2e/fixtures/trusted-types-state.html",
+    "e2e/fixtures/trusted-types-worker.html",
+    "e2e/fixtures/view-transition-list.html",
+    "packages/state/__e2e__/benchmark",
+    "packages/state/__e2e__/benchmark-component",
+    "packages/state/__e2e__/benchmark-read",
+    "packages/state/__e2e__/cart",
+    "packages/state/__e2e__/component",
+    "packages/state/__e2e__/data-fetch",
+    "packages/state/__e2e__/dcc",
+    "packages/state/__e2e__/dsd",
+    "packages/state/__e2e__/list-component",
+    "packages/state/__e2e__/radar-chart",
+    "packages/state/__e2e__/simple",
+    "packages/state/__e2e__/single-component",
+    "packages/state/__e2e__/states-population"
+   ]
+  },
+  "skill": {
+   "files": [
+    {
+     "file": "skills/wcstack-app/SKILL.md",
+     "codeBlocks": 7
+    },
+    {
+     "file": "skills/wcstack-app/references/state-binding.md",
+     "codeBlocks": 40
+    },
+    {
+     "file": "skills/wcstack-app/references/io-node-catalog.md",
+     "codeBlocks": 21
+    },
+    {
+     "file": "skills/wcstack-app/references/router-and-scaffold.md",
+     "codeBlocks": 14
+    }
+   ]
+  },
+  "guide": {
+   "file": "packages/wcstack/README.md",
+   "codeBlocks": 14
+  }
+ },
+ "features": {
+  "C.grammar": {
+   "demos": {
+    "count": 37,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/ssr",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-testing-todo",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/calendar",
+     "packages/state/examples/cart",
+     "packages/state/examples/hello-world",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/simple-list",
+     "packages/state/examples/spread",
+     "packages/state/examples/state-population",
+     "packages/state/examples/streams",
+     "packages/state/examples/watch",
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "data-wcs binding": 37,
+     "spread ...:": 6,
+     "dot shorthand path": 22,
+     "mustache {{ }}": 13,
+     "#init=": 2,
+     "#prevent": 2,
+     "#ro": 1,
+     "left-side (input) filter": 1
+    }
+   },
+   "e2e": {
+    "count": 38,
+    "where": [
+     "e2e/fixtures/bind-component-depth2-nested.html",
+     "e2e/fixtures/bind-component-depth2.html",
+     "e2e/fixtures/bind-component-light-dom-plain-removed.html",
+     "e2e/fixtures/bind-component-light-dom.html",
+     "e2e/fixtures/bind-component-list.html",
+     "e2e/fixtures/bind-component-nested-for.html",
+     "e2e/fixtures/bind-component-parent-write.html",
+     "e2e/fixtures/bind-component-row-replace.html",
+     "e2e/fixtures/bind-component-write.html",
+     "e2e/fixtures/dcc-command.html",
+     "e2e/fixtures/dcc-in-list.html",
+     "e2e/fixtures/dcc-subpath-change.html",
+     "e2e/fixtures/deferred-apply.html",
+     "e2e/fixtures/monitor-initial-snapshot.html",
+     "e2e/fixtures/mount-light.html",
+     "e2e/fixtures/mount-root.html",
+     "e2e/fixtures/mount-row.html",
+     "e2e/fixtures/mount-volume.html",
+     "e2e/fixtures/router-state-params.html",
+     "e2e/fixtures/ssr-router-body.html",
+     "e2e/fixtures/state-address-gc.html",
+     "e2e/fixtures/state-move-before.html",
+     "e2e/fixtures/trusted-types-state.html",
+     "e2e/fixtures/trusted-types-worker.html",
+     "e2e/fixtures/view-transition-list.html",
+     "packages/state/__e2e__/benchmark",
+     "packages/state/__e2e__/benchmark-component",
+     "packages/state/__e2e__/benchmark-read",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/component",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/dcc",
+     "packages/state/__e2e__/dsd",
+     "packages/state/__e2e__/list-component",
+     "packages/state/__e2e__/radar-chart",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/single-component",
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "data-wcs binding": 37,
+     "dot shorthand path": 20,
+     "mustache {{ }}": 19,
+     "left-side (input) filter": 1,
+     "#prevent": 1
+    }
+   },
+   "skill": {
+    "count": 37,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 171
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 25,
+    "codeBlocks": 6
+   }
+  },
+  "C.state": {
+   "demos": {
+    "count": 37,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/ssr",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-testing-todo",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/calendar",
+     "packages/state/examples/cart",
+     "packages/state/examples/hello-world",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/simple-list",
+     "packages/state/examples/spread",
+     "packages/state/examples/state-population",
+     "packages/state/examples/streams",
+     "packages/state/examples/watch",
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "wildcard path in binding": 7,
+     "state declaration": 37,
+     "wildcard path string in code": 15,
+     "$getAll": 6,
+     "this.$n in code": 3,
+     "numeric-index path write this[\"list.N.field\"]": 1,
+     "$n loop index in binding": 1,
+     "$setAll": 1,
+     "$resolve": 1
+    }
+   },
+   "e2e": {
+    "count": 38,
+    "where": [
+     "e2e/fixtures/bind-component-depth2-nested.html",
+     "e2e/fixtures/bind-component-depth2.html",
+     "e2e/fixtures/bind-component-light-dom-plain-removed.html",
+     "e2e/fixtures/bind-component-light-dom.html",
+     "e2e/fixtures/bind-component-list.html",
+     "e2e/fixtures/bind-component-nested-for.html",
+     "e2e/fixtures/bind-component-parent-write.html",
+     "e2e/fixtures/bind-component-row-replace.html",
+     "e2e/fixtures/bind-component-write.html",
+     "e2e/fixtures/dcc-command.html",
+     "e2e/fixtures/dcc-in-list.html",
+     "e2e/fixtures/dcc-subpath-change.html",
+     "e2e/fixtures/deferred-apply.html",
+     "e2e/fixtures/monitor-initial-snapshot.html",
+     "e2e/fixtures/mount-light.html",
+     "e2e/fixtures/mount-root.html",
+     "e2e/fixtures/mount-row.html",
+     "e2e/fixtures/mount-volume.html",
+     "e2e/fixtures/router-state-params.html",
+     "e2e/fixtures/ssr-router-body.html",
+     "e2e/fixtures/state-address-gc.html",
+     "e2e/fixtures/state-move-before.html",
+     "e2e/fixtures/trusted-types-state.html",
+     "e2e/fixtures/trusted-types-worker.html",
+     "e2e/fixtures/view-transition-list.html",
+     "packages/state/__e2e__/benchmark",
+     "packages/state/__e2e__/benchmark-component",
+     "packages/state/__e2e__/benchmark-read",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/component",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/dcc",
+     "packages/state/__e2e__/dsd",
+     "packages/state/__e2e__/list-component",
+     "packages/state/__e2e__/radar-chart",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/single-component",
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "wildcard path in binding": 6,
+     "state declaration": 38,
+     "numeric-index path write this[\"list.N.field\"]": 10,
+     "wildcard path string in code": 8,
+     "this.$n in code": 3,
+     "$n loop index in binding": 1,
+     "$getAll": 3
+    }
+   },
+   "skill": {
+    "count": 55,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 106
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 2,
+    "codeBlocks": 9
+   }
+  },
+  "C.getter": {
+   "demos": {
+    "count": 31,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-testing-todo",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/calendar",
+     "packages/state/examples/cart",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-list",
+     "packages/state/examples/state-population",
+     "packages/state/examples/streams",
+     "packages/state/examples/watch"
+    ],
+    "detailApps": {
+     "top-level getter": 30,
+     "wildcard path getter": 11,
+     "nested path getter": 7,
+     "path setter": 1
+    }
+   },
+   "e2e": {
+    "count": 14,
+    "where": [
+     "e2e/fixtures/mount-root.html",
+     "e2e/fixtures/mount-volume.html",
+     "e2e/fixtures/router-state-params.html",
+     "e2e/fixtures/ssr-router-body.html",
+     "e2e/fixtures/state-address-gc.html",
+     "packages/state/__e2e__/benchmark",
+     "packages/state/__e2e__/benchmark-read",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/dcc",
+     "packages/state/__e2e__/list-component",
+     "packages/state/__e2e__/radar-chart",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "top-level getter": 10,
+     "wildcard path getter": 8,
+     "path setter": 1,
+     "$untracked/$untrackDependency": 1,
+     "old name $trackDependency/$untrackDependency (compat)": 1,
+     "nested path getter": 2,
+     "$dependOn/$trackDependency": 1
+    }
+   },
+   "skill": {
+    "count": 9,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 261
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 8,
+    "codeBlocks": 2
+   }
+  },
+  "C.list": {
+   "demos": {
+    "count": 26,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/ssr",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-testing-todo",
+     "examples/state-tilt-maze",
+     "examples/websocket-chat/state",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/calendar",
+     "packages/state/examples/cart",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-list",
+     "packages/state/examples/spread",
+     "packages/state/examples/state-population",
+     "packages/state/examples/watch",
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "for:": 26,
+     "nested for": 2
+    }
+   },
+   "e2e": {
+    "count": 23,
+    "where": [
+     "e2e/fixtures/bind-component-depth2-nested.html",
+     "e2e/fixtures/bind-component-depth2.html",
+     "e2e/fixtures/bind-component-light-dom.html",
+     "e2e/fixtures/bind-component-list.html",
+     "e2e/fixtures/bind-component-nested-for.html",
+     "e2e/fixtures/bind-component-row-replace.html",
+     "e2e/fixtures/dcc-in-list.html",
+     "e2e/fixtures/mount-light.html",
+     "e2e/fixtures/mount-row.html",
+     "e2e/fixtures/ssr-router-body.html",
+     "e2e/fixtures/state-address-gc.html",
+     "e2e/fixtures/state-move-before.html",
+     "e2e/fixtures/view-transition-list.html",
+     "packages/state/__e2e__/benchmark",
+     "packages/state/__e2e__/benchmark-component",
+     "packages/state/__e2e__/benchmark-read",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/component",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/list-component",
+     "packages/state/__e2e__/radar-chart",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "for:": 23,
+     "nested for": 3
+    }
+   },
+   "skill": {
+    "count": 12,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 33
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 6,
+    "codeBlocks": 3
+   }
+  },
+  "C.if": {
+   "demos": {
+    "count": 19,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/ssr",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-intersect-scroll",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-tilt-maze",
+     "examples/websocket-chat/state",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/cart",
+     "packages/state/examples/streams",
+     "packages/state/examples/watch"
+    ],
+    "detailApps": {
+     "if:": 19,
+     "else:": 3
+    }
+   },
+   "e2e": {
+    "count": 5,
+    "where": [
+     "e2e/fixtures/dcc-in-list.html",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/component",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/simple"
+    ],
+    "detailApps": {
+     "if:": 5,
+     "else:": 3,
+     "elseif:": 1
+    }
+   },
+   "skill": {
+    "count": 4,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 50
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 4,
+    "codeBlocks": 2
+   }
+  },
+  "C.bind": {
+   "demos": {
+    "count": 37,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/ssr",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-testing-todo",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/calendar",
+     "packages/state/examples/cart",
+     "packages/state/examples/hello-world",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/simple-list",
+     "packages/state/examples/spread",
+     "packages/state/examples/state-population",
+     "packages/state/examples/streams",
+     "packages/state/examples/watch",
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "textContent": 36,
+     "property": 29,
+     "spread application": 6,
+     "class.": 20,
+     "attr.": 8,
+     "style.": 5,
+     "two-way input": 14,
+     "select": 3
+    }
+   },
+   "e2e": {
+    "count": 38,
+    "where": [
+     "e2e/fixtures/bind-component-depth2-nested.html",
+     "e2e/fixtures/bind-component-depth2.html",
+     "e2e/fixtures/bind-component-light-dom-plain-removed.html",
+     "e2e/fixtures/bind-component-light-dom.html",
+     "e2e/fixtures/bind-component-list.html",
+     "e2e/fixtures/bind-component-nested-for.html",
+     "e2e/fixtures/bind-component-parent-write.html",
+     "e2e/fixtures/bind-component-row-replace.html",
+     "e2e/fixtures/bind-component-write.html",
+     "e2e/fixtures/dcc-command.html",
+     "e2e/fixtures/dcc-in-list.html",
+     "e2e/fixtures/dcc-subpath-change.html",
+     "e2e/fixtures/deferred-apply.html",
+     "e2e/fixtures/monitor-initial-snapshot.html",
+     "e2e/fixtures/mount-light.html",
+     "e2e/fixtures/mount-root.html",
+     "e2e/fixtures/mount-row.html",
+     "e2e/fixtures/mount-volume.html",
+     "e2e/fixtures/router-state-params.html",
+     "e2e/fixtures/ssr-router-body.html",
+     "e2e/fixtures/state-address-gc.html",
+     "e2e/fixtures/state-move-before.html",
+     "e2e/fixtures/trusted-types-state.html",
+     "e2e/fixtures/trusted-types-worker.html",
+     "e2e/fixtures/view-transition-list.html",
+     "packages/state/__e2e__/benchmark",
+     "packages/state/__e2e__/benchmark-component",
+     "packages/state/__e2e__/benchmark-read",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/component",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/dcc",
+     "packages/state/__e2e__/dsd",
+     "packages/state/__e2e__/list-component",
+     "packages/state/__e2e__/radar-chart",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/single-component",
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "textContent": 37,
+     "attr.": 12,
+     "property": 16,
+     "two-way input": 7,
+     "html/innerHTML": 1,
+     "class.": 4,
+     "select": 1,
+     "svg element": 2,
+     "radio:": 1
+    }
+   },
+   "skill": {
+    "count": 25,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 63
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 6,
+    "codeBlocks": 4
+   }
+  },
+  "C.event": {
+   "demos": {
+    "count": 29,
+    "where": [
+     "examples/router-spa",
+     "examples/ssr",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-sse-dashboard",
+     "examples/state-testing-todo",
+     "examples/state-tilt-maze",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/calendar",
+     "packages/state/examples/cart",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/streams",
+     "packages/state/examples/watch",
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "on*: handler": 29,
+     "#prevent": 2
+    }
+   },
+   "e2e": {
+    "count": 24,
+    "where": [
+     "e2e/fixtures/bind-component-depth2-nested.html",
+     "e2e/fixtures/bind-component-depth2.html",
+     "e2e/fixtures/bind-component-light-dom.html",
+     "e2e/fixtures/bind-component-list.html",
+     "e2e/fixtures/bind-component-nested-for.html",
+     "e2e/fixtures/bind-component-parent-write.html",
+     "e2e/fixtures/bind-component-row-replace.html",
+     "e2e/fixtures/dcc-command.html",
+     "e2e/fixtures/dcc-in-list.html",
+     "e2e/fixtures/dcc-subpath-change.html",
+     "e2e/fixtures/mount-light.html",
+     "e2e/fixtures/mount-root.html",
+     "e2e/fixtures/mount-row.html",
+     "e2e/fixtures/mount-volume.html",
+     "e2e/fixtures/router-state-params.html",
+     "e2e/fixtures/state-move-before.html",
+     "e2e/fixtures/view-transition-list.html",
+     "packages/state/__e2e__/benchmark",
+     "packages/state/__e2e__/benchmark-component",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/dcc",
+     "packages/state/__e2e__/radar-chart",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/single-component"
+    ],
+    "detailApps": {
+     "on*: handler": 24,
+     "#prevent": 1
+    }
+   },
+   "skill": {
+    "count": 11,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 51
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 11,
+    "codeBlocks": 3
+   }
+  },
+  "C.filter": {
+   "demos": {
+    "count": 14,
+    "where": [
+     "examples/state-camera-record-upload",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/cart",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/state-population",
+     "packages/state/examples/watch"
+    ],
+    "detailApps": {
+     "not": 7,
+     "truthy": 1,
+     "eq": 5,
+     "gt": 4,
+     "slice": 1,
+     "number": 1,
+     "add": 1,
+     "lt": 2,
+     "ge": 1
+    }
+   },
+   "e2e": {
+    "count": 4,
+    "where": [
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "number": 1,
+     "gt": 3,
+     "add": 1,
+     "slice": 1,
+     "ge": 1,
+     "lt": 1
+    }
+   },
+   "skill": {
+    "count": 3,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 62
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 1,
+    "codeBlocks": 1
+   }
+  },
+  "C.filter-format": {
+   "demos": {
+    "count": 8,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/state-intersect-scroll",
+     "examples/state-search",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/state/examples/cart",
+     "packages/state/examples/state-population",
+     "packages/state/examples/watch"
+    ],
+    "detailApps": {
+     "date": 1,
+     "locale": 6,
+     "toFixed": 1,
+     "percent": 2
+    }
+   },
+   "e2e": {
+    "count": 2,
+    "where": [
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "toFixed": 1,
+     "percent": 2,
+     "locale": 1
+    }
+   },
+   "skill": {
+    "count": 3,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 18
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "C.update": {
+   "demos": {
+    "count": 35,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/ssr",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-testing-todo",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/calendar",
+     "packages/state/examples/cart",
+     "packages/state/examples/hello-world",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/spread",
+     "packages/state/examples/streams",
+     "packages/state/examples/watch",
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "state writes": 35
+    }
+   },
+   "e2e": {
+    "count": 32,
+    "where": [
+     "e2e/fixtures/bind-component-depth2-nested.html",
+     "e2e/fixtures/bind-component-depth2.html",
+     "e2e/fixtures/bind-component-light-dom-plain-removed.html",
+     "e2e/fixtures/bind-component-light-dom.html",
+     "e2e/fixtures/bind-component-list.html",
+     "e2e/fixtures/bind-component-nested-for.html",
+     "e2e/fixtures/bind-component-parent-write.html",
+     "e2e/fixtures/bind-component-row-replace.html",
+     "e2e/fixtures/dcc-command.html",
+     "e2e/fixtures/dcc-in-list.html",
+     "e2e/fixtures/dcc-subpath-change.html",
+     "e2e/fixtures/deferred-apply.html",
+     "e2e/fixtures/monitor-initial-snapshot.html",
+     "e2e/fixtures/mount-light.html",
+     "e2e/fixtures/mount-root.html",
+     "e2e/fixtures/mount-row.html",
+     "e2e/fixtures/mount-volume.html",
+     "e2e/fixtures/router-state-params.html",
+     "e2e/fixtures/ssr-router-body.html",
+     "e2e/fixtures/state-move-before.html",
+     "e2e/fixtures/trusted-types-worker.html",
+     "e2e/fixtures/view-transition-list.html",
+     "packages/state/__e2e__/benchmark",
+     "packages/state/__e2e__/benchmark-component",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/component",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/dcc",
+     "packages/state/__e2e__/list-component",
+     "packages/state/__e2e__/radar-chart",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/single-component"
+    ],
+    "detailApps": {
+     "state writes": 32
+    }
+   },
+   "skill": {
+    "count": 30,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 46
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 0,
+    "codeBlocks": 5
+   }
+  },
+  "C.init": {
+   "demos": {
+    "count": 37,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/ssr",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-testing-todo",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/calendar",
+     "packages/state/examples/cart",
+     "packages/state/examples/hello-world",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/simple-list",
+     "packages/state/examples/spread",
+     "packages/state/examples/state-population",
+     "packages/state/examples/streams",
+     "packages/state/examples/watch",
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "wcs-state element": 37,
+     "src=js": 1,
+     "inline <script type=module>": 36
+    }
+   },
+   "e2e": {
+    "count": 38,
+    "where": [
+     "e2e/fixtures/bind-component-depth2-nested.html",
+     "e2e/fixtures/bind-component-depth2.html",
+     "e2e/fixtures/bind-component-light-dom-plain-removed.html",
+     "e2e/fixtures/bind-component-light-dom.html",
+     "e2e/fixtures/bind-component-list.html",
+     "e2e/fixtures/bind-component-nested-for.html",
+     "e2e/fixtures/bind-component-parent-write.html",
+     "e2e/fixtures/bind-component-row-replace.html",
+     "e2e/fixtures/bind-component-write.html",
+     "e2e/fixtures/dcc-command.html",
+     "e2e/fixtures/dcc-in-list.html",
+     "e2e/fixtures/dcc-subpath-change.html",
+     "e2e/fixtures/deferred-apply.html",
+     "e2e/fixtures/monitor-initial-snapshot.html",
+     "e2e/fixtures/mount-light.html",
+     "e2e/fixtures/mount-root.html",
+     "e2e/fixtures/mount-row.html",
+     "e2e/fixtures/mount-volume.html",
+     "e2e/fixtures/router-state-params.html",
+     "e2e/fixtures/ssr-router-body.html",
+     "e2e/fixtures/state-address-gc.html",
+     "e2e/fixtures/state-move-before.html",
+     "e2e/fixtures/trusted-types-state.html",
+     "e2e/fixtures/trusted-types-worker.html",
+     "e2e/fixtures/view-transition-list.html",
+     "packages/state/__e2e__/benchmark",
+     "packages/state/__e2e__/benchmark-component",
+     "packages/state/__e2e__/benchmark-read",
+     "packages/state/__e2e__/cart",
+     "packages/state/__e2e__/component",
+     "packages/state/__e2e__/data-fetch",
+     "packages/state/__e2e__/dcc",
+     "packages/state/__e2e__/dsd",
+     "packages/state/__e2e__/list-component",
+     "packages/state/__e2e__/radar-chart",
+     "packages/state/__e2e__/simple",
+     "packages/state/__e2e__/single-component",
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "wcs-state element": 38,
+     "inline <script type=module>": 36,
+     "json=": 1,
+     "src=js": 1,
+     "setInitialState()": 1,
+     "readiness promise": 2
+    }
+   },
+   "skill": {
+    "count": 10,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 115
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 8,
+    "codeBlocks": 2
+   }
+  },
+  "C.lifecycle": {
+   "demos": {
+    "count": 2,
+    "where": [
+     "examples/ssr",
+     "packages/state/examples/async-fetch"
+    ],
+    "detailApps": {
+     "$connectedCallback": 2
+    }
+   },
+   "e2e": {
+    "count": 2,
+    "where": [
+     "e2e/fixtures/mount-volume.html",
+     "packages/state/__e2e__/data-fetch"
+    ],
+    "detailApps": {
+     "$connectedCallback": 2,
+     "$renderedCallback": 1
+    }
+   },
+   "skill": {
+    "count": 1,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 77
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 3,
+    "codeBlocks": 0
+   }
+  },
+  "C.mount": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "examples/router-i18n"
+    ],
+    "detailApps": {
+     "<wcs-state mount>": 1
+    }
+   },
+   "e2e": {
+    "count": 1,
+    "where": [
+     "e2e/fixtures/mount-volume.html"
+    ],
+    "detailApps": {
+     "<wcs-state mount>": 1
+    }
+   },
+   "skill": {
+    "count": 1,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": false,
+    "mentions": 135
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 8,
+    "codeBlocks": 1
+   }
+  },
+  "C.eq": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "examples/state-devtools-playground"
+    ],
+    "detailApps": {
+     "$eqIndex": 1
+    }
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 2,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 52
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "X.wcbindable": {
+   "demos": {
+    "count": 25,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/spread",
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "bind wcs-router": 2,
+     "property binding on I/O node": 20,
+     "bind wcs-fetch": 6,
+     "spread onto custom element": 6,
+     "bind wcs-permission": 3,
+     "bind wcs-camera": 1,
+     "token binding on I/O node": 20,
+     "bind wcs-recorder": 1,
+     "bind wcs-upload": 1,
+     "bind wcs-eyedropper": 1,
+     "bind wcs-clipboard": 1,
+     "#init=element": 2,
+     "bind wcs-storage": 2,
+     "bind wcs-broadcast": 1,
+     "bind wcs-ws": 2,
+     "bind wcs-timer": 3,
+     "bind wcs-intersect": 1,
+     "bind wcs-notify": 2,
+     "bind wcs-geo": 1,
+     "bind wcs-wakelock": 2,
+     "bind wcs-debounce": 1,
+     "bind wcs-sse": 1,
+     "bind wcs-network": 1,
+     "bind wcs-tilt": 1,
+     "bind wcs-accelerometer": 1,
+     "bind wcs-raf": 1,
+     "bind wcs-defined": 2,
+     "bind wcs-audio": 1,
+     "bind wcs-biquad": 1,
+     "bind wcs-lfo": 1,
+     "bind wcs-env": 1,
+     "bind wcs-delay": 1,
+     "bind wcs-midi": 2,
+     "bind wcs-infinite-scroll": 1,
+     "bind wcs-speak": 2,
+     "bind wcs-listen": 1,
+     "user class declares static wcBindable": 1,
+     "wcBindable.inputs declared": 1,
+     "bind fake-fetch": 1,
+     "bind wcs-view-transition": 1
+    }
+   },
+   "e2e": {
+    "count": 5,
+    "where": [
+     "e2e/fixtures/deferred-apply.html",
+     "e2e/fixtures/monitor-initial-snapshot.html",
+     "e2e/fixtures/router-state-params.html",
+     "e2e/fixtures/ssr-router-body.html",
+     "e2e/fixtures/trusted-types-worker.html"
+    ],
+    "detailApps": {
+     "bind wcs-sse": 1,
+     "property binding on I/O node": 5,
+     "bind wcs-network": 1,
+     "bind wcs-screen-orientation": 1,
+     "bind wcs-router": 2,
+     "bind wcs-worker": 1
+    }
+   },
+   "skill": {
+    "count": 22,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 61
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 4,
+    "codeBlocks": 0
+   }
+  },
+  "X.cmdtoken": {
+   "demos": {
+    "count": 17,
+    "where": [
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-custom-states",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-permission-banner",
+     "examples/state-pomodoro",
+     "examples/state-sse-dashboard",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "examples/websocket-chat/state",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader",
+     "packages/speech/examples/speak-highlight",
+     "packages/speech/examples/speech-echo"
+    ],
+    "detailApps": {
+     "$command.<name> rhs": 17,
+     "command.<m>: binding": 17,
+     "$commandTokens": 17,
+     "$command.<name> in code": 17
+    }
+   },
+   "e2e": {
+    "count": 1,
+    "where": [
+     "e2e/fixtures/dcc-command.html"
+    ],
+    "detailApps": {
+     "$command.<name> rhs": 1,
+     "command.<m>: binding": 1,
+     "$commandTokens": 1,
+     "$command.<name> in code": 1
+    }
+   },
+   "skill": {
+    "count": 10,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 87
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "X.evttoken": {
+   "demos": {
+    "count": 15,
+    "where": [
+     "examples/state-camera-record-upload",
+     "examples/state-color-palette",
+     "examples/state-cross-tab-todo",
+     "examples/state-devtools-playground",
+     "examples/state-intersect-scroll",
+     "examples/state-notification-chat",
+     "examples/state-pomodoro",
+     "examples/state-search",
+     "examples/state-sse-dashboard",
+     "examples/state-tilt-maze",
+     "examples/synth-playground",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/fetch/examples/users-crud",
+     "packages/midi/examples/midi-fader"
+    ],
+    "detailApps": {
+     "eventToken.<p>: binding": 15,
+     "$eventTokens": 15,
+     "$on": 15
+    }
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 11,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 78
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "X.component": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "packages/state/examples/recursive-tree"
+    ],
+    "detailApps": {
+     "<wcs-state bind-component>": 1,
+     "state: whole-object mount": 1
+    }
+   },
+   "e2e": {
+    "count": 16,
+    "where": [
+     "e2e/fixtures/bind-component-depth2-nested.html",
+     "e2e/fixtures/bind-component-depth2.html",
+     "e2e/fixtures/bind-component-light-dom-plain-removed.html",
+     "e2e/fixtures/bind-component-light-dom.html",
+     "e2e/fixtures/bind-component-list.html",
+     "e2e/fixtures/bind-component-nested-for.html",
+     "e2e/fixtures/bind-component-parent-write.html",
+     "e2e/fixtures/bind-component-row-replace.html",
+     "e2e/fixtures/bind-component-write.html",
+     "e2e/fixtures/mount-light.html",
+     "e2e/fixtures/mount-root.html",
+     "e2e/fixtures/mount-row.html",
+     "packages/state/__e2e__/benchmark-component",
+     "packages/state/__e2e__/component",
+     "packages/state/__e2e__/list-component",
+     "packages/state/__e2e__/single-component"
+    ],
+    "detailApps": {
+     "<wcs-state bind-component>": 16,
+     "state.<x>: injection": 12,
+     "state: whole-object mount": 4
+    }
+   },
+   "skill": {
+    "count": 6,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 46
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 1,
+    "codeBlocks": 0
+   }
+  },
+  "X.dcc": {
+   "demos": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "e2e": {
+    "count": 4,
+    "where": [
+     "e2e/fixtures/dcc-command.html",
+     "e2e/fixtures/dcc-in-list.html",
+     "e2e/fixtures/dcc-subpath-change.html",
+     "packages/state/__e2e__/dcc"
+    ],
+    "detailApps": {
+     "data-wc-definition": 4,
+     "binding to DCC element": 4,
+     "$bindables": 4,
+     "$commands": 1
+    }
+   },
+   "skill": {
+    "count": 1,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": false,
+    "mentions": 47
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 1,
+    "codeBlocks": 0
+   }
+  },
+  "X.ssr": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "examples/ssr"
+    ],
+    "detailApps": {
+     "enable-ssr": 1
+    }
+   },
+   "e2e": {
+    "count": 1,
+    "where": [
+     "e2e/fixtures/ssr-router-body.html"
+    ],
+    "detailApps": {
+     "enable-ssr": 1
+    }
+   },
+   "skill": {
+    "count": 0,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [],
+    "inSkillMd": false,
+    "mentions": 49
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 1,
+    "codeBlocks": 0
+   }
+  },
+  "X.stream": {
+   "demos": {
+    "count": 3,
+    "where": [
+     "examples/state-intersect-scroll",
+     "examples/state-sse-dashboard",
+     "packages/state/examples/streams"
+    ],
+    "detailApps": {
+     "$streamStatus/$streamError in binding": 2,
+     "$stream": 3,
+     "$streamStatus/$streamError": 3
+    }
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 1,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": false,
+    "mentions": 83
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 3,
+    "codeBlocks": 0
+   }
+  },
+  "X.watch": {
+   "demos": {
+    "count": 2,
+    "where": [
+     "examples/state-intersect-scroll",
+     "packages/state/examples/watch"
+    ],
+    "detailApps": {
+     "$watch": 2
+    }
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 2,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 100
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 2,
+    "codeBlocks": 0
+   }
+  },
+  "X.scan": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "examples/state-intersect-scroll"
+    ],
+    "detailApps": {
+     "$scan": 1
+    }
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 3,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/io-node-catalog.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 54
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 1,
+    "codeBlocks": 0
+   }
+  },
+  "X.recursion": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "packages/state/examples/recursive-tree"
+    ],
+    "detailApps": {
+     "** getter": 1,
+     "$recursion": 1,
+     "** path string in code": 1
+    }
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 4,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 93
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "X.listkeys": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "packages/state/examples/watch"
+    ],
+    "detailApps": {
+     "$listKeys": 1
+    }
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 3,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 33
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "X.elemwrite": {
+   "demos": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 1,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": false,
+    "mentions": 24
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 0,
+    "codeBlocks": 1
+   }
+  },
+  "X.propagation": {
+   "demos": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 0,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [],
+    "inSkillMd": false,
+    "mentions": 3
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 1,
+    "codeBlocks": 0
+   }
+  },
+  "X.devtools": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "examples/state-devtools-playground"
+    ],
+    "detailApps": {
+     "@wcstack/devtools loaded": 1
+    }
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 0,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [],
+    "inSkillMd": false,
+    "mentions": 27
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 2,
+    "codeBlocks": 0
+   }
+  },
+  "X.viewtransition": {
+   "demos": {
+    "count": 1,
+    "where": [
+     "packages/view-transition/examples/list-transitions"
+    ],
+    "detailApps": {
+     "<wcs-view-transition>": 1
+    }
+   },
+   "e2e": {
+    "count": 1,
+    "where": [
+     "e2e/fixtures/view-transition-list.html"
+    ],
+    "detailApps": {
+     "<wcs-view-transition>": 1
+    }
+   },
+   "skill": {
+    "count": 0,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [],
+    "inSkillMd": false,
+    "mentions": 16
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "X.diagnostics": {
+   "demos": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 0,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [],
+    "inSkillMd": false,
+    "mentions": 70
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 7,
+    "codeBlocks": 0
+   }
+  },
+  "X.i18n": {
+   "demos": {
+    "count": 7,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa",
+     "examples/state-intersect-scroll",
+     "examples/state-search",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/state/examples/state-population",
+     "packages/state/examples/watch"
+    ],
+    "detailApps": {
+     "locale-dependent filter date": 1,
+     "sets <html lang> read by locale filters": 1,
+     "locale-dependent filter locale": 6
+    }
+   },
+   "e2e": {
+    "count": 1,
+    "where": [
+     "packages/state/__e2e__/states-population"
+    ],
+    "detailApps": {
+     "locale-dependent filter locale": 1
+    }
+   },
+   "skill": {
+    "count": 3,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/SKILL.md",
+     "skills/wcstack-app/references/state-binding.md",
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": true,
+    "mentions": 45
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 1,
+    "codeBlocks": 0
+   }
+  },
+  "X.trustedtypes": {
+   "demos": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "e2e": {
+    "count": 2,
+    "where": [
+     "e2e/fixtures/trusted-types-state.html",
+     "e2e/fixtures/trusted-types-worker.html"
+    ],
+    "detailApps": {
+     "Trusted Types CSP/policy": 2
+    }
+   },
+   "skill": {
+    "count": 0,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [],
+    "inSkillMd": false,
+    "mentions": 17
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "X.binder": {
+   "demos": {
+    "count": 2,
+    "where": [
+     "examples/router-i18n",
+     "examples/router-spa"
+    ],
+    "detailApps": {
+     "data-wcs inside <wcs-route>/<wcs-head> (router inserts, state binds)": 2
+    }
+   },
+   "e2e": {
+    "count": 1,
+    "where": [
+     "e2e/fixtures/ssr-router-body.html"
+    ],
+    "detailApps": {
+     "data-wcs inside <wcs-route>/<wcs-head> (router inserts, state binds)": 1
+    }
+   },
+   "skill": {
+    "count": 1,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/references/router-and-scaffold.md"
+    ],
+    "inSkillMd": false,
+    "mentions": 3
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": 0,
+    "codeBlocks": 0
+   }
+  },
+  "X.split": {
+   "demos": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 1,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [
+     "skills/wcstack-app/references/state-binding.md"
+    ],
+    "inSkillMd": false,
+    "mentions": 28
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 4,
+    "codeBlocks": 0
+   }
+  },
+  "T.tooling": {
+   "demos": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 0,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [],
+    "inSkillMd": false,
+    "mentions": 96
+   },
+   "guide": {
+    "mentioned": true,
+    "mentions": 5,
+    "codeBlocks": 0
+   }
+  },
+  "I.internal": {
+   "demos": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "e2e": {
+    "count": 0,
+    "where": [],
+    "detailApps": {}
+   },
+   "skill": {
+    "count": 0,
+    "unit": "fenced code blocks whose code uses the feature",
+    "files": [],
+    "inSkillMd": false,
+    "mentions": null
+   },
+   "guide": {
+    "mentioned": false,
+    "mentions": null,
+    "codeBlocks": 0
+   }
+  }
+ },
+ "filters": {
+  "used": {
+   "eq": 15,
+   "ne": 0,
+   "not": 13,
+   "lt": 2,
+   "le": 0,
+   "gt": 4,
+   "ge": 1,
+   "add": 1,
+   "sub": 0,
+   "mul": 0,
+   "div": 0,
+   "mod": 0,
+   "abs": 0,
+   "clamp": 0,
+   "toFixed": 6,
+   "locale": 10,
+   "upper": 0,
+   "lower": 0,
+   "capitalize": 0,
+   "trim": 0,
+   "slice": 1,
+   "substr": 0,
+   "padStart": 0,
+   "padEnd": 0,
+   "repeat": 0,
+   "reverse": 0,
+   "truncate": 0,
+   "join": 0,
+   "int": 0,
+   "float": 0,
+   "round": 0,
+   "floor": 0,
+   "ceil": 0,
+   "percent": 4,
+   "unit": 0,
+   "date": 1,
+   "time": 0,
+   "datetime": 0,
+   "ymd": 0,
+   "hms": 0,
+   "falsy": 0,
+   "truthy": 2,
+   "defaults": 0,
+   "coalesce": 0,
+   "boolean": 0,
+   "number": 1,
+   "string": 0,
+   "nullIfEmpty": 0
+  },
+  "byCorpus": {
+   "eq": {
+    "format": false,
+    "demosOccurrences": 15,
+    "demosApps": 5,
+    "demosWhere": [
+     "examples/websocket-chat/state",
+     "packages/fetch/examples/pagination/state",
+     "packages/fetch/examples/users-crud",
+     "packages/state/examples/recursive-tree",
+     "packages/state/examples/watch"
+    ],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "ne": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "not": {
+    "format": false,
+    "demosOccurrences": 13,
+    "demosApps": 7,
+    "demosWhere": [
+     "examples/state-camera-record-upload",
+     "examples/state-custom-states",
+     "examples/websocket-chat/state",
+     "packages/defined/examples/defined-loader",
+     "packages/fetch/examples/pagination/state",
+     "packages/speech/examples/speech-echo",
+     "packages/state/examples/watch"
+    ],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 1,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "lt": {
+    "format": false,
+    "demosOccurrences": 2,
+    "demosApps": 2,
+    "demosWhere": [
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/state-population"
+    ],
+    "e2eOccurrences": 1,
+    "e2eUnits": 1,
+    "skillCodeOccurrences": 1,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "le": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "gt": {
+    "format": false,
+    "demosOccurrences": 4,
+    "demosApps": 4,
+    "demosWhere": [
+     "packages/state/examples/async-fetch",
+     "packages/state/examples/cart",
+     "packages/state/examples/simple-counter",
+     "packages/state/examples/watch"
+    ],
+    "e2eOccurrences": 3,
+    "e2eUnits": 3,
+    "skillCodeOccurrences": 2,
+    "guideCodeOccurrences": 1,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "ge": {
+    "format": false,
+    "demosOccurrences": 1,
+    "demosApps": 1,
+    "demosWhere": [
+     "packages/state/examples/state-population"
+    ],
+    "e2eOccurrences": 1,
+    "e2eUnits": 1,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "add": {
+    "format": false,
+    "demosOccurrences": 1,
+    "demosApps": 1,
+    "demosWhere": [
+     "packages/state/examples/cart"
+    ],
+    "e2eOccurrences": 1,
+    "e2eUnits": 1,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "sub": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "mul": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "div": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "mod": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "abs": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "clamp": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "toFixed": {
+    "format": true,
+    "demosOccurrences": 6,
+    "demosApps": 1,
+    "demosWhere": [
+     "packages/state/examples/cart"
+    ],
+    "e2eOccurrences": 6,
+    "e2eUnits": 1,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "locale": {
+    "format": true,
+    "demosOccurrences": 10,
+    "demosApps": 6,
+    "demosWhere": [
+     "examples/router-spa",
+     "examples/state-intersect-scroll",
+     "examples/state-search",
+     "packages/fetch/examples/infinite-scroll",
+     "packages/state/examples/state-population",
+     "packages/state/examples/watch"
+    ],
+    "e2eOccurrences": 3,
+    "e2eUnits": 1,
+    "skillCodeOccurrences": 3,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "upper": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "lower": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "capitalize": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "trim": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "slice": {
+    "format": false,
+    "demosOccurrences": 1,
+    "demosApps": 1,
+    "demosWhere": [
+     "packages/state/examples/async-fetch"
+    ],
+    "e2eOccurrences": 1,
+    "e2eUnits": 1,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "substr": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "padStart": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "padEnd": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "repeat": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "reverse": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   },
+   "truncate": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "join": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "int": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "float": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "round": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "floor": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "ceil": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "percent": {
+    "format": true,
+    "demosOccurrences": 4,
+    "demosApps": 2,
+    "demosWhere": [
+     "packages/state/examples/cart",
+     "packages/state/examples/state-population"
+    ],
+    "e2eOccurrences": 4,
+    "e2eUnits": 2,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "unit": {
+    "format": true,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "date": {
+    "format": true,
+    "demosOccurrences": 1,
+    "demosApps": 1,
+    "demosWhere": [
+     "examples/router-i18n"
+    ],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "time": {
+    "format": true,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "datetime": {
+    "format": true,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "ymd": {
+    "format": true,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "hms": {
+    "format": true,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "falsy": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "truthy": {
+    "format": false,
+    "demosOccurrences": 2,
+    "demosApps": 1,
+    "demosWhere": [
+     "examples/state-cross-tab-todo"
+    ],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "defaults": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "coalesce": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "boolean": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "number": {
+    "format": false,
+    "demosOccurrences": 1,
+    "demosApps": 1,
+    "demosWhere": [
+     "packages/state/examples/cart"
+    ],
+    "e2eOccurrences": 1,
+    "e2eUnits": 1,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "string": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": false
+   },
+   "nullIfEmpty": {
+    "format": false,
+    "demosOccurrences": 0,
+    "demosApps": 0,
+    "demosWhere": [],
+    "e2eOccurrences": 0,
+    "e2eUnits": 0,
+    "skillCodeOccurrences": 0,
+    "guideCodeOccurrences": 0,
+    "skillTaught": true,
+    "guideMentioned": true
+   }
+  },
+  "aliasUse": {},
+  "unknownFilterNames": {},
+  "neverUsed": [
+   "ne",
+   "le",
+   "sub",
+   "mul",
+   "div",
+   "mod",
+   "abs",
+   "clamp",
+   "upper",
+   "lower",
+   "capitalize",
+   "trim",
+   "substr",
+   "padStart",
+   "padEnd",
+   "repeat",
+   "reverse",
+   "truncate",
+   "join",
+   "int",
+   "float",
+   "round",
+   "floor",
+   "ceil",
+   "unit",
+   "time",
+   "datetime",
+   "ymd",
+   "hms",
+   "falsy",
+   "defaults",
+   "coalesce",
+   "boolean",
+   "string",
+   "nullIfEmpty"
+  ],
+  "neverUsedAnywhere": [
+   "ne",
+   "le",
+   "sub",
+   "mul",
+   "div",
+   "mod",
+   "abs",
+   "clamp",
+   "upper",
+   "lower",
+   "capitalize",
+   "trim",
+   "substr",
+   "padStart",
+   "padEnd",
+   "repeat",
+   "reverse",
+   "truncate",
+   "join",
+   "int",
+   "float",
+   "round",
+   "floor",
+   "ceil",
+   "unit",
+   "time",
+   "datetime",
+   "ymd",
+   "hms",
+   "falsy",
+   "defaults",
+   "coalesce",
+   "boolean",
+   "string",
+   "nullIfEmpty"
+  ],
+  "neverInDemos": [
+   "ne",
+   "le",
+   "sub",
+   "mul",
+   "div",
+   "mod",
+   "abs",
+   "clamp",
+   "upper",
+   "lower",
+   "capitalize",
+   "trim",
+   "substr",
+   "padStart",
+   "padEnd",
+   "repeat",
+   "reverse",
+   "truncate",
+   "join",
+   "int",
+   "float",
+   "round",
+   "floor",
+   "ceil",
+   "unit",
+   "time",
+   "datetime",
+   "ymd",
+   "hms",
+   "falsy",
+   "defaults",
+   "coalesce",
+   "boolean",
+   "string",
+   "nullIfEmpty"
+  ]
+ },
+ "perApp": {
+  "demos": {
+   "examples/router-i18n": {
+    "tags": [
+     "C.bind",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.mount",
+     "C.state",
+     "C.update",
+     "X.binder",
+     "X.i18n",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-head",
+     "wcs-link",
+     "wcs-outlet",
+     "wcs-route",
+     "wcs-router",
+     "wcs-state"
+    ],
+    "bindings": 24,
+    "mustache": 0
+   },
+   "examples/router-spa": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.binder",
+     "X.i18n",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-fetch",
+     "wcs-head",
+     "wcs-link",
+     "wcs-outlet",
+     "wcs-route",
+     "wcs-router",
+     "wcs-state"
+    ],
+    "bindings": 36,
+    "mustache": 0
+   },
+   "examples/ssr": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.lifecycle",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.ssr"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 9,
+    "mustache": 2
+   },
+   "examples/state-camera-record-upload": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-camera",
+     "wcs-permission",
+     "wcs-recorder",
+     "wcs-state",
+     "wcs-upload"
+    ],
+    "bindings": 45,
+    "mustache": 0
+   },
+   "examples/state-color-palette": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-clipboard",
+     "wcs-eyedropper",
+     "wcs-state",
+     "wcs-storage"
+    ],
+    "bindings": 24,
+    "mustache": 0
+   },
+   "examples/state-cross-tab-todo": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-broadcast",
+     "wcs-state",
+     "wcs-storage"
+    ],
+    "bindings": 26,
+    "mustache": 0
+   },
+   "examples/state-custom-states": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-fetch",
+     "wcs-state",
+     "wcs-ws"
+    ],
+    "bindings": 15,
+    "mustache": 0
+   },
+   "examples/state-devtools-playground": {
+    "tags": [
+     "C.bind",
+     "C.eq",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.devtools",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-state",
+     "wcs-timer"
+    ],
+    "bindings": 14,
+    "mustache": 6
+   },
+   "examples/state-intersect-scroll": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.i18n",
+     "X.scan",
+     "X.stream",
+     "X.watch",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-intersect",
+     "wcs-state"
+    ],
+    "bindings": 17,
+    "mustache": 0
+   },
+   "examples/state-notification-chat": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-notify",
+     "wcs-permission",
+     "wcs-state"
+    ],
+    "bindings": 23,
+    "mustache": 0
+   },
+   "examples/state-permission-banner": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-geo",
+     "wcs-permission",
+     "wcs-state"
+    ],
+    "bindings": 23,
+    "mustache": 0
+   },
+   "examples/state-pomodoro": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-notify",
+     "wcs-state",
+     "wcs-timer",
+     "wcs-wakelock"
+    ],
+    "bindings": 45,
+    "mustache": 0
+   },
+   "examples/state-search": {
+    "tags": [
+     "C.bind",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.evttoken",
+     "X.i18n",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-debounce",
+     "wcs-fetch",
+     "wcs-state"
+    ],
+    "bindings": 21,
+    "mustache": 0
+   },
+   "examples/state-sse-dashboard": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.stream",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-network",
+     "wcs-sse",
+     "wcs-state"
+    ],
+    "bindings": 40,
+    "mustache": 0
+   },
+   "examples/state-testing-todo": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 8,
+    "mustache": 0
+   },
+   "examples/state-tilt-maze": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-accelerometer",
+     "wcs-defined",
+     "wcs-raf",
+     "wcs-state",
+     "wcs-tilt",
+     "wcs-wakelock"
+    ],
+    "bindings": 42,
+    "mustache": 0
+   },
+   "examples/synth-playground": {
+    "tags": [
+     "C.bind",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-analyser",
+     "wcs-audio",
+     "wcs-biquad",
+     "wcs-delay",
+     "wcs-env",
+     "wcs-gain",
+     "wcs-lfo",
+     "wcs-midi",
+     "wcs-osc",
+     "wcs-state",
+     "wcs-voice"
+    ],
+    "bindings": 25,
+    "mustache": 0
+   },
+   "examples/websocket-chat/state": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-state",
+     "wcs-ws"
+    ],
+    "bindings": 26,
+    "mustache": 0
+   },
+   "packages/defined/examples/defined-loader": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-defined",
+     "wcs-state",
+     "wcs-timer"
+    ],
+    "bindings": 15,
+    "mustache": 0
+   },
+   "packages/fetch/examples/infinite-scroll": {
+    "tags": [
+     "C.bind",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.evttoken",
+     "X.i18n",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-fetch",
+     "wcs-infinite-scroll",
+     "wcs-state"
+    ],
+    "bindings": 17,
+    "mustache": 0
+   },
+   "packages/fetch/examples/pagination/state": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-fetch",
+     "wcs-state"
+    ],
+    "bindings": 34,
+    "mustache": 0
+   },
+   "packages/fetch/examples/users-crud": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-fetch",
+     "wcs-fetch-header",
+     "wcs-state"
+    ],
+    "bindings": 37,
+    "mustache": 0
+   },
+   "packages/midi/examples/midi-fader": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.evttoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-midi",
+     "wcs-state"
+    ],
+    "bindings": 17,
+    "mustache": 0
+   },
+   "packages/speech/examples/speak-highlight": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-speak",
+     "wcs-state"
+    ],
+    "bindings": 13,
+    "mustache": 0
+   },
+   "packages/speech/examples/speech-echo": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-listen",
+     "wcs-speak",
+     "wcs-state"
+    ],
+    "bindings": 15,
+    "mustache": 0
+   },
+   "packages/state/examples/async-fetch": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.lifecycle",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 6,
+    "mustache": 3
+   },
+   "packages/state/examples/calendar": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 10,
+    "mustache": 3
+   },
+   "packages/state/examples/cart": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 10,
+    "mustache": 10
+   },
+   "packages/state/examples/hello-world": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 1,
+    "mustache": 1
+   },
+   "packages/state/examples/recursive-tree": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component",
+     "X.recursion"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 13,
+    "mustache": 7
+   },
+   "packages/state/examples/simple-counter": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 4,
+    "mustache": 1
+   },
+   "packages/state/examples/simple-list": {
+    "tags": [
+     "C.bind",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 1,
+    "mustache": 3
+   },
+   "packages/state/examples/spread": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 5,
+    "mustache": 0
+   },
+   "packages/state/examples/state-population": {
+    "tags": [
+     "C.bind",
+     "C.filter",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "X.i18n"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 4,
+    "mustache": 9
+   },
+   "packages/state/examples/streams": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.stream"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 9,
+    "mustache": 2
+   },
+   "packages/state/examples/watch": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.i18n",
+     "X.listkeys",
+     "X.watch"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ],
+    "bindings": 11,
+    "mustache": 5
+   },
+   "packages/view-transition/examples/list-transitions": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.viewtransition",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-state",
+     "wcs-view-transition"
+    ],
+    "bindings": 7,
+    "mustache": 2
+   }
+  },
+  "e2e": {
+   "e2e/fixtures/bind-component-depth2-nested.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/bind-component-depth2.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/bind-component-light-dom-plain-removed.html": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/bind-component-light-dom.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/bind-component-list.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/bind-component-nested-for.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/bind-component-parent-write.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/bind-component-row-replace.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/bind-component-write.html": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/dcc-command.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.cmdtoken",
+     "X.dcc"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/dcc-in-list.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.dcc"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/dcc-subpath-change.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.dcc"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/deferred-apply.html": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-sse",
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/monitor-initial-snapshot.html": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-network",
+     "wcs-screen-orientation",
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/mount-light.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/mount-root.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/mount-row.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/mount-volume.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.lifecycle",
+     "C.mount",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/router-state-params.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-link",
+     "wcs-route",
+     "wcs-router",
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/ssr-router-body.html": {
+    "tags": [
+     "C.bind",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.binder",
+     "X.ssr",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-link",
+     "wcs-route",
+     "wcs-router",
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/state-address-gc.html": {
+    "tags": [
+     "C.bind",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/state-move-before.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/trusted-types-state.html": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "X.trustedtypes"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "e2e/fixtures/trusted-types-worker.html": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.trustedtypes",
+     "X.wcbindable"
+    ],
+    "wcsTags": [
+     "wcs-state",
+     "wcs-worker"
+    ]
+   },
+   "e2e/fixtures/view-transition-list.html": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.viewtransition"
+    ],
+    "wcsTags": [
+     "wcs-state",
+     "wcs-view-transition"
+    ]
+   },
+   "packages/state/__e2e__/benchmark": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/benchmark-component": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/benchmark-read": {
+    "tags": [
+     "C.bind",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/cart": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/component": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/data-fetch": {
+    "tags": [
+     "C.bind",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.lifecycle",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/dcc": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.dcc"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/dsd": {
+    "tags": [
+     "C.bind",
+     "C.grammar",
+     "C.init",
+     "C.state"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/list-component": {
+    "tags": [
+     "C.bind",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/radar-chart": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/simple": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.filter",
+     "C.getter",
+     "C.grammar",
+     "C.if",
+     "C.init",
+     "C.list",
+     "C.state",
+     "C.update"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/single-component": {
+    "tags": [
+     "C.bind",
+     "C.event",
+     "C.grammar",
+     "C.init",
+     "C.state",
+     "C.update",
+     "X.component"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   },
+   "packages/state/__e2e__/states-population": {
+    "tags": [
+     "C.bind",
+     "C.filter",
+     "C.filter-format",
+     "C.getter",
+     "C.grammar",
+     "C.init",
+     "C.list",
+     "C.state",
+     "X.i18n"
+    ],
+    "wcsTags": [
+     "wcs-state"
+    ]
+   }
+  }
+ }
+}

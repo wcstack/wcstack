@@ -48,7 +48,7 @@
 | V7 | `pad(n, c)` | `padStart(n, c)` と、新しい `padEnd(n, c)` | `pad` は `padStart` のエイリアス | **採る**。JavaScript の対そのまま |
 | V8 | `defaults(v)` | 名前は変えない。nullish だけを置き換える `coalesce(v)` を足す | — | **採る**。`defaults` の falsy の意味は正しく使われているので残す。`coalesce` は SQL の COALESCE と同じ読み方 |
 | V9 | `null` | `nullIfEmpty` | エイリアス | **採る**。SQL の NULLIF と同じ読み方 |
-| V10 | `substr(start, length)` / `slice(start, end)` | 変えない | — | **変えない**。`substr` は JavaScript では非推奨だが、ここで名前を変えても引数の意味の違いは消えない。扱いは 4.0 で考える |
+| V10 | `substr(start, length)` / `slice(start, end)` | 変えない | — | **変えない**。`substr` は JavaScript では非推奨だが、ここで名前を変えても引数の意味の違いは消えない。扱いは 4.0 で考える。**4.0 の決定（2026-09-27）: `substr` を外して `slice` に一本化する**（`substr(a, n)` は `slice(a, a + n)`。[v4-remaining.ja.md](./state-engine-rewrite/v4-remaining.ja.md) R4） |
 | V11 | `$trackDependency(path)` | `$dependOn(path)` | エイリアス | **採る** |
 | V12 | `$untrackDependency(fn)` | `$untracked(fn)` | エイリアス | **採る**。V11 と並べても逆操作に見えない |
 | V13 | `$updatedCallback` | `$renderedCallback` | エイリアス（宣言キーの正規化） | **採る**。`$connectedCallback` / `$errorCallback` と同じ `…Callback` の形で、「描画が済んだ」ことを名前で言う |

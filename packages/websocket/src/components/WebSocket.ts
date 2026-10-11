@@ -4,6 +4,7 @@ import { WebSocketCore } from "../core/WebSocketCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 export class WcsWebSocket extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -37,6 +38,11 @@ export class WcsWebSocket extends HTMLElement {
   private _trigger: boolean = false;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
+  // connectedCallback が接続の判断を終えてから disconnectedCallback までの間だけ true。
+  // url 属性の変化による再接続はこの間に限る — upgrade 時は attributeChangedCallback が
+  // connectedCallback より先に（isConnected のまま）呼ばれるので、そこで接続すると
+  // connectedCallback の接続と合わせて 2 本になる。初回の接続は connectedCallback が持つ。
+  private _attached = false;
 
   constructor() {
     super();
@@ -95,33 +101,36 @@ export class WcsWebSocket extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Input setters never let setAttribute stringify null / undefined (an
+  // "undefined" url would reconnect to "undefined"): `null` removes the
+  // attribute (the documented default; an empty url does not connect),
+  // `undefined` restores the attribute the element started with (wc-bindable
+  // producer guidance P1; React 19 and a direct assignment deliver it,
+  // @wcstack/state does not).
 
   get url(): string {
     return this.getAttribute("url") || "";
   }
 
-  set url(value: string) {
-    this.setAttribute("url", value);
+  set url(value: string | null | undefined) {
+    reflectAttribute(this, "url", value);
   }
 
   get protocols(): string {
     return this.getAttribute("protocols") || "";
   }
 
-  set protocols(value: string) {
-    this.setAttribute("protocols", value);
+  set protocols(value: string | null | undefined) {
+    reflectAttribute(this, "protocols", value);
   }
 
   get autoReconnect(): boolean {
     return this.hasAttribute("auto-reconnect");
   }
 
-  set autoReconnect(value: boolean) {
-    if (value) {
-      this.setAttribute("auto-reconnect", "");
-    } else {
-      this.removeAttribute("auto-reconnect");
-    }
+  set autoReconnect(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "auto-reconnect", value);
   }
 
   get reconnectInterval(): number {
@@ -130,8 +139,8 @@ export class WcsWebSocket extends HTMLElement {
     return Number.isNaN(parsed) ? 3000 : parsed;
   }
 
-  set reconnectInterval(value: number) {
-    this.setAttribute("reconnect-interval", String(value));
+  set reconnectInterval(value: number | null | undefined) {
+    reflectAttribute(this, "reconnect-interval", value);
   }
 
   get maxReconnects(): number {
@@ -140,8 +149,8 @@ export class WcsWebSocket extends HTMLElement {
     return Number.isNaN(parsed) ? Infinity : parsed;
   }
 
-  set maxReconnects(value: number) {
-    this.setAttribute("max-reconnects", String(value));
+  set maxReconnects(value: number | null | undefined) {
+    reflectAttribute(this, "max-reconnects", value);
   }
 
   // Incoming binary frame representation. Backed by the `binary-type` attribute;
@@ -150,24 +159,16 @@ export class WcsWebSocket extends HTMLElement {
     return this.getAttribute("binary-type") === "arraybuffer" ? "arraybuffer" : "blob";
   }
 
-  set binaryType(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("binary-type");
-    } else {
-      this.setAttribute("binary-type", value);
-    }
+  set binaryType(value: string | null | undefined) {
+    reflectAttribute(this, "binary-type", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---
@@ -258,14 +259,21 @@ export class WcsWebSocket extends HTMLElement {
 
   // --- Lifecycle ---
 
-  attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void {
-    if (name === "url" && this.isConnected && !this.manual && newValue) {
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
+    // 再接続するのは url が「変わった」ときだけ。同じ値の書き込み（url の setter 自身の
+    // setAttribute の後に、属性も書く binder — @wcstack/state 3.x の inputs[].attribute ミラー —
+    // が同じ値を書く、など）
+    // は何もしない。connectedCallback より前（upgrade 中・DOM の外）の変化は、
+    // connectedCallback がそのときの url で 1 回だけ接続する。
+    if (name === "url" && oldValue !== newValue && this._attached && !this.manual && newValue) {
       this.connect();
     }
   }
 
   connectedCallback(): void {
-    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
+    // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
+    // ここで url の setter が走っても _attached はまだ false なので接続しない —
+    // 接続は下で、取り込み後の url / manual を見て 1 回だけ行う。
     upgradeProperties(this);
     this.style.display = "none";
     if (config.autoTrigger) {
@@ -277,9 +285,11 @@ export class WcsWebSocket extends HTMLElement {
     if (!this.manual && this.url) {
       this.connect();
     }
+    this._attached = true;
   }
 
   disconnectedCallback(): void {
+    this._attached = false;
     // dispose() が _gen を bump して進行中のソケット/再接続を無効化し、close() する。
     this._core.dispose();
   }

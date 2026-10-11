@@ -1,6 +1,7 @@
 import { IWcBindable } from "../types.js";
 import { MediaQueryCore } from "../core/MediaQueryCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-media-query query="(prefers-color-scheme: dark)">` — declarative
@@ -95,8 +96,14 @@ export class WcsMediaQuery extends HTMLElement {
     return this.getAttribute("query") ?? "";
   }
 
-  set query(value: string) {
-    this.setAttribute("query", value);
+  // Never lets setAttribute stringify null / undefined (matchMedia("undefined")
+  // is a valid, never-matching query): `null` removes the attribute ("watch
+  // nothing"), `undefined` restores the attribute the element started with
+  // (wc-bindable producer guidance P1; React 19 and a direct assignment deliver
+  // it, @wcstack/state does not). Either way attributeChangedCallback
+  // re-subscribes.
+  set query(value: string | null | undefined) {
+    reflectAttribute(this, "query", value);
   }
 
   // --- Core delegated getters ---

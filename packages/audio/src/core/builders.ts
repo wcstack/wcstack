@@ -227,18 +227,19 @@ export const BUILDERS: Record<AudioNodeKind, Builder> = {
   },
 };
 
-export type PropSetter = (inst: NodeInstance, value: string) => void;
+/** `null` clears the setting: each setter then applies the builder's default. */
+export type PropSetter = (inst: NodeInstance, value: string | null) => void;
 
 /** Non-AudioParam settings, applied at build time and on every live update. */
 export const PROPS: Record<AudioNodeKind, Record<string, PropSetter>> = {
   osc: {
-    type: (i, v) => { try { i.osc!.type = v as OscillatorType; } catch { /* invalid type */ } },
+    type: (i, v) => { try { i.osc!.type = (v ?? "sine") as OscillatorType; } catch { /* invalid type */ } },
     glide: (i, v) => { i.glide = Math.max(num(v, 0), 0); },
     transpose: (i, v) => { i.transpose = num(v, 0); },
   },
   noise: {},
   biquad: {
-    type: (i, v) => { try { i.filter!.type = v as BiquadFilterType; } catch { /* invalid type */ } },
+    type: (i, v) => { try { i.filter!.type = (v ?? "lowpass") as BiquadFilterType; } catch { /* invalid type */ } },
   },
   gain: {},
   delay: {
@@ -259,7 +260,7 @@ export const PROPS: Record<AudioNodeKind, Record<string, PropSetter>> = {
     depth: (i, v) => { i.adsr!.depth = num(v, 1); },
   },
   lfo: {
-    type: (i, v) => { try { i.osc!.type = v as OscillatorType; } catch { /* invalid type */ } },
+    type: (i, v) => { try { i.osc!.type = (v ?? "sine") as OscillatorType; } catch { /* invalid type */ } },
   },
   analyser: {
     fft: (i, v) => { try { i.analyser!.fftSize = num(v, 2048); } catch { /* not a power of two */ } },

@@ -2,6 +2,7 @@ import { IWcBindable, WcsMagnetometerErrorDetail } from "../types.js";
 import { MagnetometerCore } from "../core/MagnetometerCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-magnetometer>` — declarative Generic Sensor API (`Magnetometer`)
@@ -116,11 +117,11 @@ export class WcsMagnetometer extends HTMLElement {
   }
 
   set frequency(value: number | null | undefined) {
-    if (value === null || value === undefined) {
-      this.removeAttribute("frequency");
-    } else {
-      this.setAttribute("frequency", String(value));
-    }
+    // `null` removes the attribute (the platform default); `undefined` restores
+    // the attribute the element started with — the authored frequency, or none
+    // (wc-bindable producer guidance P1; React 19 and a direct assignment
+    // deliver it, @wcstack/state does not).
+    reflectAttribute(this, "frequency", value);
   }
 
   // --- Core delegated getters ---

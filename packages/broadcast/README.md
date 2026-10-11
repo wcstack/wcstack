@@ -117,6 +117,8 @@ You do not need the event-token to *read* the latest message — bind `message` 
 | `name`    | string  | `""`    | The channel name to join. Changing it re-opens on the new channel.           |
 | `manual`  | boolean | `false` | Do not open the channel automatically on connect or on `name` change. Call `open()` instead. Evaluated at connect time and on each `name` change; it is **not** in `observedAttributes`, so toggling `manual` on an already-connected element has no immediate effect (it only changes how the *next* connect or `name` change behaves). |
 
+**`null` and `undefined`.** Both inputs (`name`, `manual`), backed by an attribute, take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`, so neither opens a channel by that name. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) Clearing `name` does not close a channel that is already open — call `close()` for that.
+
 ### DOM trigger attributes (autoTrigger, post-on-click)
 
 | Attribute               | On             | Description                                                              |

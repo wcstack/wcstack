@@ -1,0 +1,167 @@
+{
+  "revision": "a796d7125c3d98e04c8120c3983d5400ce396e97",
+  "timestamp": "2026-09-24T14:05:19.603Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "bundle": "state-next.stage5.unmin.js",
+  "op": "create10k",
+  "fixture": "manual",
+  "samples": 3,
+  "samplingIntervalUs": 100,
+  "results": {
+    "windowMsPerRun": 75,
+    "profiledMsPerRun": 81.3,
+    "top": [
+      {
+        "fn": "cloneNode :0",
+        "msPerRun": 18.91,
+        "usPerRow": 1.89
+      },
+      {
+        "fn": "insertBefore :0",
+        "msPerRun": 9.77,
+        "usPerRow": 0.98
+      },
+      {
+        "fn": "buildBlock auto.min.js:2295",
+        "msPerRun": 8.43,
+        "usPerRow": 0.84
+      },
+      {
+        "fn": "(garbage collector) :0",
+        "msPerRun": 7.01,
+        "usPerRow": 0.7
+      },
+      {
+        "fn": "addEventListener :0",
+        "msPerRun": 6.15,
+        "usPerRow": 0.61
+      },
+      {
+        "fn": "apply auto.min.js:2139",
+        "msPerRun": 5.56,
+        "usPerRow": 0.56
+      },
+      {
+        "fn": "(idle) :0",
+        "msPerRun": 3.46,
+        "usPerRow": 0.35
+      },
+      {
+        "fn": "appendChild :0",
+        "msPerRun": 2.85,
+        "usPerRow": 0.29
+      },
+      {
+        "fn": "(program) :0",
+        "msPerRun": 2.67,
+        "usPerRow": 0.27
+      },
+      {
+        "fn": "querySelectorAll :0",
+        "msPerRun": 1.91,
+        "usPerRow": 0.19
+      },
+      {
+        "fn": "readGetter auto.min.js:2997",
+        "msPerRun": 1.71,
+        "usPerRow": 0.17
+      },
+      {
+        "fn": "create auto.min.js:2476",
+        "msPerRun": 1.6,
+        "usPerRow": 0.16
+      },
+      {
+        "fn": "applyBinding auto.min.js:994",
+        "msPerRun": 1.56,
+        "usPerRow": 0.16
+      },
+      {
+        "fn": "Block auto.min.js:2249",
+        "msPerRun": 0.98,
+        "usPerRow": 0.1
+      },
+      {
+        "fn": "RowView auto.min.js:2283",
+        "msPerRun": 0.92,
+        "usPerRow": 0.09
+      },
+      {
+        "fn": "buildData buildData.js:22",
+        "msPerRun": 0.67,
+        "usPerRow": 0.07
+      },
+      {
+        "fn": "update auto.min.js:2480",
+        "msPerRun": 0.67,
+        "usPerRow": 0.07
+      },
+      {
+        "fn": "random buildData.js:1",
+        "msPerRun": 0.66,
+        "usPerRow": 0.07
+      },
+      {
+        "fn": "reconcile auto.min.js:204",
+        "msPerRun": 0.64,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "readData auto.min.js:552",
+        "msPerRun": 0.6,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "onRunLots ed05414e-fdbf-4f99-aeae-6d7e1e47ab18:43",
+        "msPerRun": 0.41,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "parsePath auto.min.js:119",
+        "msPerRun": 0.41,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "click :0",
+        "msPerRun": 0.41,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "forSubtree auto.min.js:894",
+        "msPerRun": 0.4,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "get auto.min.js:99",
+        "msPerRun": 0.4,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "evalGetter auto.min.js:593",
+        "msPerRun": 0.37,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "read auto.min.js:565",
+        "msPerRun": 0.35,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "dollar auto.min.js:632",
+        "msPerRun": 0.3,
+        "usPerRow": 0.03
+      },
+      {
+        "fn": "resolve auto.min.js:527",
+        "msPerRun": 0.19,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "hasNested auto.min.js:2388",
+        "msPerRun": 0.19,
+        "usPerRow": 0.02
+      }
+    ]
+  },
+  "browser": "149.0.7827.55"
+}

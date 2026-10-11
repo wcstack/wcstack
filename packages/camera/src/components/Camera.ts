@@ -5,6 +5,7 @@ import {
 import { CameraCore } from "../core/CameraCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-camera>` — declarative camera capture with a built-in preview.
@@ -126,29 +127,40 @@ export class WcsCamera extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // The setters never let setAttribute stringify null / undefined (a "undefined"
+  // device-id would become an exact constraint no camera matches): `null`
+  // removes the attribute (the default), `undefined` restores the attribute the
+  // element started with (wc-bindable producer guidance P1; React 19 and a
+  // direct assignment deliver it, @wcstack/state does not).
 
   get audio(): boolean { return this.hasAttribute("audio"); }
-  set audio(value: boolean) { this._toggleAttr("audio", value); }
+  set audio(value: boolean | null | undefined) { reflectBooleanAttribute(this, "audio", value); }
 
   get facingMode(): FacingMode {
     return this.getAttribute("facing-mode") === "environment" ? "environment" : "user";
   }
-  set facingMode(value: FacingMode) { this.setAttribute("facing-mode", value); }
+  set facingMode(value: FacingMode | null | undefined) { reflectAttribute(this, "facing-mode", value); }
 
-  get deviceId(): string { return this.getAttribute("device-id") ?? ""; }
-  set deviceId(value: string) { this.setAttribute("device-id", value); }
+  // `deviceId` is an input (the `device-id` request) and an output (the device the
+  // stream uses, published with `wcs-camera:device-changed`). Reading it gives the
+  // device in use once one is known — what the event carries, and what a binder's
+  // initial sync reads — and the request until then. The constraints read the
+  // request from the attribute (`_constraints`), as <wcs-recorder>'s mimeType does.
+  get deviceId(): string { return this._core.deviceId ?? this.getAttribute("device-id") ?? ""; }
+  set deviceId(value: string | null | undefined) { reflectAttribute(this, "device-id", value); }
 
   get width(): number { return this._numberAttr("width"); }
-  set width(value: number) { this.setAttribute("width", String(value)); }
+  set width(value: number | null | undefined) { reflectAttribute(this, "width", value); }
 
   get height(): number { return this._numberAttr("height"); }
-  set height(value: number) { this.setAttribute("height", String(value)); }
+  set height(value: number | null | undefined) { reflectAttribute(this, "height", value); }
 
   get autostart(): boolean { return this.hasAttribute("autostart"); }
-  set autostart(value: boolean) { this._toggleAttr("autostart", value); }
+  set autostart(value: boolean | null | undefined) { reflectBooleanAttribute(this, "autostart", value); }
 
   get keepAlive(): boolean { return this.hasAttribute("keep-alive"); }
-  set keepAlive(value: boolean) { this._toggleAttr("keep-alive", value); }
+  set keepAlive(value: boolean | null | undefined) { reflectBooleanAttribute(this, "keep-alive", value); }
 
   /** The internal preview `<video>` (for advanced styling/measurement). */
   get videoElement(): HTMLVideoElement { return this._video; }
@@ -200,14 +212,6 @@ export class WcsCamera extends HTMLElement {
 
   // --- Internal ---
 
-  private _toggleAttr(name: string, value: boolean): void {
-    if (value) {
-      this.setAttribute(name, "");
-    } else {
-      this.removeAttribute(name);
-    }
-  }
-
   private _numberAttr(name: string): number {
     const attr = this.getAttribute(name);
     if (attr === null || attr.trim() === "") return NaN;
@@ -217,7 +221,10 @@ export class WcsCamera extends HTMLElement {
 
   private _constraints(): CameraConstraints {
     const c: CameraConstraints = { audio: this.audio, facingMode: this.facingMode };
-    if (this.deviceId) c.deviceId = this.deviceId;
+    // the request, not `get deviceId()` (the device in use): after switchCamera()
+    // removed it, the previous device must not stay pinned
+    const requested = this.getAttribute("device-id");
+    if (requested) c.deviceId = requested;
     if (Number.isFinite(this.width)) c.width = this.width;
     if (Number.isFinite(this.height)) c.height = this.height;
     return c;

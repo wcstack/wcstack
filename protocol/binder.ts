@@ -37,9 +37,9 @@ export interface IWcsBindOptions {
    * start mark up to its end mark along — what the binder rendered beside the subtree included, as
    * the rows a structural template handed over at the top of the content renders before its anchor —
    * and puts it all back on reinsertion. Only with this may a binder render such a template: without
-   * it, what the binder rendered beside the subtree would be left behind. @wcstack/state 3.x ignores
-   * the option and renders no structural template handed over itself, with or without it
-   * (docs/binder-protocol-design.md §2, §9-5).
+   * it, what the binder rendered beside the subtree would be left behind, so @wcstack/state 4.0
+   * refuses one (#204). @wcstack/state 3.x ignores the option and renders no structural template
+   * handed over itself, with or without it (docs/binder-protocol-design.md §2, §9-5, §9-6).
    */
   readonly range?: boolean;
 }

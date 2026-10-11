@@ -1,0 +1,1 @@
+{"framework":"wcstack-state-next-v0.0.0-next.4955ab52-keyed","keyed":true,"benchmark":"25_run-clear-memory","type":"memory","values":{"DEFAULT":{"min":1.4833917617797852,"max":1.4840211868286133,"median":1.4838571548461914,"mean":1.48375670115153,"stddev":0.000326515208836319,"values":[1.4833917617797852,1.4840211868286133,1.4838571548461914]}}}

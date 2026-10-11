@@ -1,10 +1,16 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "./.tsc-out",
-    "rootDir": ".",
-    "resolveJsonModule": true
+    "noEmit": true,
+    "useDefineForClassFields": false,
+    "rootDir": "."
   },
-  "include": ["src/**/*", "package.json"],
-  "exclude": ["node_modules", "dist", ".tsc-out", "**/*.test.ts", "src/auto/**"]
+  "include": [
+    "src/**/*",
+    "__tests__/**/*",
+    "conformance/**/*"
+  ],
+  "exclude": [
+    "__tests__/fixtures/**"
+  ]
 }

@@ -7,12 +7,9 @@ describe('VERSION', () => {
     expect(VERSION).toBe(pkg.version);
   });
 
-  it('semver形式（major.minor.patch）の文字列であること', () => {
+  it('semver形式（major.minor.patch、プレリリースの後置を許す）の文字列であること', () => {
     expect(typeof VERSION).toBe('string');
-    const parts = VERSION.split('.');
-    expect(parts.length).toBeGreaterThanOrEqual(3);
-    parts.slice(0, 3).forEach(p => {
-      expect(Number.isFinite(Number(p))).toBe(true);
-    });
+    // an rc release bumps every package to X.Y.Z-rc.N before publishing
+    expect(VERSION).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/);
   });
 });

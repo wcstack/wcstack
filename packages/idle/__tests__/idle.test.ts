@@ -60,6 +60,25 @@ describe("Idle (Shell)", () => {
     expect(el.threshold).toBe(120000);
   });
 
+  it("threshold: undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-idle threshold="90000"></wcs-idle>';
+    const el = host.firstElementChild as WcsIdle;
+    el.threshold = 120000;
+    el.threshold = undefined;
+    expect(el.getAttribute("threshold")).toBe("90000");
+    expect(el.threshold).toBe(90000);
+    el.threshold = null;
+    expect(el.hasAttribute("threshold")).toBe(false);
+    expect(el.threshold).toBe(60000);
+
+    const bare = createIdle();
+    bare.threshold = 120000;
+    bare.threshold = undefined;
+    expect(bare.hasAttribute("threshold")).toBe(false);
+    expect(bare.threshold).toBe(60000);
+  });
+
   it("threshold 属性が不正な値のときは既定値にフォールバックする", () => {
     const el = createIdle({ threshold: "not-a-number" });
     expect(el.threshold).toBe(60000);

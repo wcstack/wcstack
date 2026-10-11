@@ -1,0 +1,182 @@
+{
+  "label": "current-r1",
+  "timestamp": "2026-09-24T22:16:12.699Z",
+  "url": "http://127.0.0.1:4199/packages/state/__e2e__/benchmark/index.html",
+  "throttle": 1,
+  "keyed": {
+    "keyed": true,
+    "keyedSwap": true,
+    "keyedRun": true,
+    "keyedRemove": true,
+    "swapTrAdded": 2,
+    "swapTrRemoved": 2,
+    "swapNewNodes": 0,
+    "runTrAdded": 1000,
+    "runTrRemoved": 1000,
+    "runNewNodes": 0,
+    "recycledOnRun": 1000,
+    "raw": {
+      "swapRes": {
+        "tradded": 2,
+        "trremoved": 2,
+        "removedStoredTr": true,
+        "newNodes": 0
+      },
+      "runRes": {
+        "tradded": 1000,
+        "trremoved": 1000,
+        "removedStoredTr": true,
+        "newNodes": 0
+      },
+      "removeRes": {
+        "tradded": 0,
+        "trremoved": 1,
+        "removedStoredTr": true,
+        "newNodes": 0
+      }
+    }
+  },
+  "timings": {
+    "create1k": {
+      "median": 36.55,
+      "min": 32.3,
+      "max": 52.7,
+      "samples": [
+        35.7,
+        43,
+        33.6,
+        37.9,
+        37.4,
+        52.7,
+        35.4,
+        32.3
+      ]
+    },
+    "replace1k": {
+      "median": 14.65,
+      "min": 11.8,
+      "max": 22.6,
+      "samples": [
+        13.4,
+        14.3,
+        11.8,
+        14.8,
+        14.5,
+        14,
+        16.4,
+        20.1,
+        15.5,
+        22.6
+      ]
+    },
+    "update10k": {
+      "median": 13,
+      "min": 9.4,
+      "max": 16.7,
+      "samples": [
+        9.4,
+        13,
+        12.4,
+        16.7,
+        11.4,
+        12.8,
+        14,
+        13.4,
+        13,
+        13.6
+      ]
+    },
+    "select1k": {
+      "median": 0.2,
+      "min": 0.1,
+      "max": 0.2,
+      "samples": [
+        0.2,
+        0.1,
+        0.1,
+        0.2,
+        0.2,
+        0.1,
+        0.2,
+        0.2,
+        0.2,
+        0.1
+      ]
+    },
+    "swap1k": {
+      "median": 1.4,
+      "min": 0.9,
+      "max": 1.8,
+      "samples": [
+        0.9,
+        1.5,
+        1.4,
+        1.8,
+        1.8,
+        1.7,
+        1.7,
+        1.6,
+        1.6,
+        1.3,
+        1.2,
+        1.3,
+        1.2,
+        1.6,
+        1.5,
+        1.4,
+        1.2,
+        1.3,
+        1.1,
+        1.2,
+        1
+      ]
+    },
+    "remove1k": {
+      "median": 2.9,
+      "min": 2.3,
+      "max": 3.2,
+      "samples": [
+        3,
+        2.5,
+        2.3,
+        2.9,
+        2.7,
+        2.4,
+        3,
+        2.9,
+        3.2,
+        3
+      ]
+    },
+    "append1kTo10k": {
+      "median": 56.25,
+      "min": 34.1,
+      "max": 57.6,
+      "samples": [
+        34.1,
+        56.1,
+        56.7,
+        57.6,
+        43.8,
+        53.4,
+        56.5,
+        56.4
+      ]
+    },
+    "clear10k": {
+      "median": 61.6,
+      "min": 57.5,
+      "max": 69,
+      "samples": [
+        58.1,
+        69,
+        67,
+        60.4,
+        68,
+        59.7,
+        62.8,
+        57.5
+      ]
+    }
+  }
+}

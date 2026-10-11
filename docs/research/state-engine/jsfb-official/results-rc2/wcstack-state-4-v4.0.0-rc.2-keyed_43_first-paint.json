@@ -1,0 +1,1 @@
+{"framework":"wcstack-state-4-v4.0.0-rc.2-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"min":244.9,"max":244.9,"median":244.9,"mean":244.9,"stddev":null,"values":[244.9]}}}

@@ -9,30 +9,122 @@
  */
 
 import { splitBindTexts } from '@wcstack/state/parser';
-import { createTemplateTester, findStartTagRegions, parseWcsStateElements } from '../language/htmlParse.js';
+import { createTemplateTester, findStartTagRegions, type WcsStateInfo } from '../language/htmlParse.js';
 import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
-import { BUILTIN_FILTERS, canonicalFilterName, type FilterInfo } from './completionData.js';
-import { STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
+import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
+import { nativeCommandsOf, STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
+import { suggestion } from './suggestion.js';
 import { analyzeCallableBodies, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
-import { getStatePathsFromHtml, type FileReader } from './statePathResolver.js';
+import { getStatePathIndex, isUnresolvedPath, readStateScript, type FileReader } from './statePathResolver.js';
 import {
-  isInsideForTemplate, getInnermostForPath, countWildcardSegments, getResolvedForListPath, rankOfForList,
-  findOtherListWildcard, analyzeElementContexts,
+  isInsideForTemplate, getRowShorthandForPath, countWildcardSegments, getResolvedForListPath, rankOfForList,
+  findOtherListWildcard, analyzeElementContexts, isForBindingRefused,
 } from './forContext.js';
 import { readsEventCurrentTarget } from './scriptAst.js';
-import {
-  classifyIndexParam, createDeclaredKeyTester, DIRECT_MODIFIER, MAX_INDEX_PARAM, modifiersOf, SUBSTR_FILTER, substrRewrite,
-  V4_DELEGATED_EVENTS,
-} from './v4Migration.js';
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from '../core/diagnostics.js';
 import { getMessages, type WcsMessageCatalog, type ExpectedTypeKind } from '../core/messages.js';
 import { resolveSchemaPath } from '../core/sidecar/schemaSubset.js';
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
-import { hasIndexSegment, isPlainElementPath, isPlainIndexPath, toPlainPatternPath, toRowPatternPath } from './indexPath.js';
+import { candidateKeyOf, classifyIndexParam, hasIndexSegment, hasUnsafeSegment, isIndexSegment, MAX_INDEX_PARAM, toWildcardForm } from './indexPath.js';
+import { removedFilterMessage } from './removedNames.js';
 
 /** フィルタ名 → FilterInfo のマップ */
 const filterMap = new Map<string, FilterInfo>(BUILTIN_FILTERS.map(f => [f.name, f]));
+
+/** 委譲しないイベント束縛の修飾子（4.0。manifest の `syntax.modifiers.flags` にある）。 */
+const DIRECT_MODIFIER = 'direct';
+
+/**
+ * 左辺（`onclick#prevent,direct`）の修飾子リストにある `direct` の、左辺の中での位置。無ければ -1。
+ * 修飾子は `#` の後ろのカンマ区切り（正本パーサの propModifiers と同じ切り方）。
+ */
+function directModifierOffset(property: string): number {
+  const hash = property.indexOf('#');
+  if (hash === -1) return -1;
+  let offset = hash + 1;
+  for (const raw of property.slice(hash + 1).split(',')) {
+    if (raw.trim() === DIRECT_MODIFIER) return offset + raw.indexOf(DIRECT_MODIFIER);
+    offset += raw.length + 1;
+  }
+  return -1;
+}
+
+/** 束縛の左辺（`onclick#prevent,direct`）の修飾子（`#` の後ろのカンマ区切り、trim 済み）。 */
+function modifiersOf(property: string): string[] {
+  const hash = property.indexOf('#');
+  if (hash === -1) return [];
+  return property.slice(hash + 1).split(',').map((m) => m.trim()).filter((m) => m.length > 0);
+}
+
+/**
+ * 4.0 が `on*:` を root へ委譲するイベント（`dom/view.ts` の `BUBBLING` の写し。manifest には無いので、
+ * `__tests__/delegatedCurrentTarget.test.ts` が src と突き合わせる）。これ以外のイベントは 4.0 でも要素に
+ * リスナーを付けるので、`currentTarget` は要素のまま。
+ */
+export const DELEGATED_EVENTS: ReadonlySet<string> = new Set([
+  'click', 'dblclick', 'input', 'change', 'submit', 'keydown', 'keyup', 'mousedown', 'mouseup', 'pointerdown', 'pointerup',
+]);
+
+/**
+ * カスタム要素が自分で dispatch しうるイベント。bubbles しない dispatch は 4.0 も要素で聞く
+ * （`dom/view.ts` の attachEvent）ので、`currentTarget` がどちらになるか静的に決まらない。
+ */
+const CUSTOM_ELEMENT_OWN_EVENTS: ReadonlySet<string> = new Set(['input', 'change', 'submit']);
+
+/** 要素の置かれた文脈で決まる検査の候補（offset は束縛属性の値の開始 — analyzeElementContexts に渡す）。 */
+interface ElementSiteCandidate {
+  readonly offset: number;
+  readonly start: number;
+  readonly end: number;
+  /**
+   * 文面に出す左辺。outerHTML / outerText は名前（明示のプロパティ形の `.` を外す）、委譲されるイベントは
+   * 書き換え先（書かれた修飾子に `direct` を足した形）
+   */
+  readonly property: string;
+}
+
+/**
+ * The methods of the page's states that read `currentTarget` from their event parameter (the first) synchronously
+ * (scriptAst.ts's readsEventCurrentTarget), as handler names: the root state's (`pick`) and the volumes' under
+ * their mount path (`cart.pick` — 4.0 grafts a volume's methods there and invokes `onclick: cart.pick` like a root
+ * method, so under delegation `currentTarget` is the root too). States inside a `<template>` (a declarative shadow
+ * root, a DCC) are another root's — the document's bindings do not call them. A script without the spelling
+ * `currentTarget` is not analyzed. Only method shorthands are read (a function in a data property is not). The root's
+ * `src=` is not read; a volume's is, through the reader the path checks use (`.js` tries the same-named `.ts`).
+ */
+function collectCurrentTargetHandlers(
+  elements: readonly WcsStateInfo[],
+  html: string,
+  fileReader: FileReader | undefined,
+): ReadonlySet<string> {
+  const names = new Set<string>();
+  let insideTemplate: ((offset: number) => boolean) | null = null;
+  for (const element of elements) {
+    if (element.bindComponent) continue;
+    const volume = element.mountPath;
+    // the scripts that can declare the methods: the inline ones, or a volume's `src=` (the runtime reads one source)
+    let scripts = element.scriptBlocks.map((block) => block.content);
+    if (scripts.length === 0 && volume !== null && element.srcAttr !== undefined && fileReader !== undefined) {
+      const script = readStateScript(element.srcAttr, fileReader);
+      if (script !== undefined) scripts = [script];
+    }
+    scripts = scripts.filter((script) => script.includes('currentTarget'));
+    if (scripts.length === 0) continue;
+    if ((insideTemplate ??= createTemplateTester(html))(element.tagStart)) continue;
+    for (const script of scripts) {
+      for (const callable of analyzeCallableBodies(script)) {
+        if (callable.kind !== 'method' || !callable.body.includes('currentTarget')) continue;
+        // 名前の後ろから本体の `{` の手前まで: `(e) ` / 引用符付きの名前なら `"(e) `
+        const head = script.slice(callable.end, callable.bodyStart - 1);
+        const params = /\(([^)]*)\)\s*$/.exec(head);
+        if (params === null) continue;
+        if (readsEventCurrentTarget(params[1], callable.body)) names.add(volume === null ? callable.name : `${volume}.${callable.name}`);
+      }
+    }
+  }
+  return names;
+}
 
 /** 診断情報 */
 export interface BindingDiagnostic {
@@ -70,7 +162,9 @@ export function validateBindings(
 
   // 状態パスを収集（state 名ごとに分類）。schema 由来の候補は補完・型期待用に合流させる
   // （同一パスは schema 優先）。存在判定は候補集合ではなく resolveSchemaPath で行う（下記）。
-  const statePaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
+  // The parts in a state the validator could not read (an unreadable volume's subtree, …) — see the verdict below
+  const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
+  const statePaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
 
   // バインド属性を全て検出
   const attrs = findAllBindAttributes(html, attrName);
@@ -82,17 +176,14 @@ export function validateBindings(
     return structuralTemplates;
   };
 
-  // 要素の置かれた文脈（行・枝の中か・inert な template の中か）で決まる検査は、候補を集めてから
+  // 要素の置かれた文脈（行・枝の中か・自前の state を持つ template の中か）で決まる検査は、候補を集めてから
   // ループの後で 1 回の走査（analyzeElementContexts）にまとめて判定する — 束縛ごとに文書を数え直さない
   const outerCandidates: ElementSiteCandidate[] = [];
   const currentTargetCandidates: (ElementSiteCandidate & { eventName: string; handler: string })[] = [];
   // 委譲されるイベントのハンドラのうち、イベント引数の `currentTarget` を読むメソッド（遅延収集）
   let currentTargetHandlers: ReadonlySet<string> | null = null;
-  // root の state が宣言しているトップレベルのキー（`$0` のようなキーの判定にだけ使う。遅延収集）
-  let declaredKey: ((key: string) => boolean) | null = null;
-  const isDeclaredKey = (key: string): boolean => (declaredKey ??= createDeclaredKeyTester(html, stateTagName, fileReader))(key);
   const getCurrentTargetHandlers = (): ReadonlySet<string> => {
-    currentTargetHandlers ??= collectCurrentTargetHandlers(html, stateTagName);
+    currentTargetHandlers ??= collectCurrentTargetHandlers(pathIndex.elements, html, fileReader);
     return currentTargetHandlers;
   };
 
@@ -136,10 +227,37 @@ export function validateBindings(
       const scopedPaths = statePaths;
       const scopedPathSet = new Set(scopedPaths.map(p => p.path));
       const propNoMod = parsed.property.replace(/#.*$/, '').trim();
+
+      // A `for:` the canonical parser refuses with `[wcs/binding-syntax]` (`for: items|take(2)` — #121) is reported by
+      // bindingSyntaxValidator alone: it is refused as a whole, so no path, filter or type check is stacked on it
+      // (as on a path refused with #120). `if:` / `elseif:` keep their checks
+      if (propNoMod === 'for' && isForBindingRefused(binding)) {
+        pos += binding.length + 1;
+        continue;
+      }
+
+      // `#direct`（4.0）はイベント束縛（`on*:`）だけが読む。それ以外（プロパティ・`eventToken.*`・
+      // 明示のプロパティ形 `.onclick:`）ではランタイムが黙って無視する。
+      if (!propNoMod.startsWith('on')) {
+        const at = directModifierOffset(parsed.property);
+        if (at !== -1) {
+          const leading = binding.length - binding.trimStart().length;
+          diagnostics.push({
+            code: WcsDiagnosticCode.TemplateSyntax,
+            start: bindingStart + leading + at,
+            end: bindingStart + leading + at + DIRECT_MODIFIER.length,
+            message: msgs.directNotEvent(propNoMod),
+            severity: 'warning',
+          });
+        }
+      }
+
       const leadingSpace = binding.length - binding.trimStart().length;
 
-      // 要素そのものを置き換える束縛（`outerHTML:` / `outerText:`。明示のプロパティ形 `.outerHTML:` も）。
-      // for / if テンプレートの行や枝の中にあるかは、ループの後でまとめて判定する（`class.outerHTML:` は対象外）
+      // 要素そのものを置き換える束縛（`outerHTML:` / `outerText:`）は、for / if テンプレートの中に
+      // 置けない — 行や枝はノードを位置で持つ（4.0 は初期化で `[wcs/template-syntax]` #203 を投げる）。
+      // 明示のプロパティ形（`.outerHTML:`）も同じ（ランタイムはドットを外した名前で判定する）。行や枝の中に
+      // あるかは、ループの後でまとめて判定する（`class.outerHTML:` は対象外）
       {
         const outerName = propNoMod.startsWith('.') ? propNoMod.slice(1) : propNoMod;
         if (outerName === 'outerHTML' || outerName === 'outerText') {
@@ -153,20 +271,19 @@ export function validateBindings(
       }
 
       // 4.0 が root へ委譲するイベントの束縛（`onclick: select`。`#direct` 無し）で、ハンドラのメソッドが
-      // イベント引数の `currentTarget` を読む（4.0 では要素ではなく root になる）。カスタム要素の
-      // `input` / `change` / `submit` は対象外 — コンポーネントが自分で bubbles しない dispatch をすると、4.0 は
-      // それを要素で聞くので、どちらになるかが静的に決まらない（ネイティブの bubbling は 4.0 も root で聞く）。
-      // ハンドラは単独のメソッド名だけ（`$command.<名前>`・パスは対象外）。自前の state を持つ template の中かは
-      // 後で判定する
+      // イベント引数の `currentTarget` を読む（要素ではなく root になる）。カスタム要素の `input` / `change` /
+      // `submit` は対象外 — コンポーネントが自分で bubbles しない dispatch をすると、4.0 はそれを要素で聞くので、
+      // どちらになるかが静的に決まらない（ネイティブの bubbling は root で聞く）。自前の state を持つ template の中かは後で判定する。
+      // The handler is a method name: the root's (`pick`) or a volume's (`cart.pick`); `$command.<name>` is not a method
       if (propNoMod.startsWith('on') && parsed.path !== null) {
         const eventName = propNoMod.slice(2);
         const handler = parsed.path.trim();
         const modifiers = modifiersOf(parsed.property);
-        if (V4_DELEGATED_EVENTS.has(eventName)
+        if (DELEGATED_EVENTS.has(eventName)
           && !modifiers.includes(DIRECT_MODIFIER)
           && attr.tagName !== undefined
           && !(attr.tagName.includes('-') && CUSTOM_ELEMENT_OWN_EVENTS.has(eventName))
-          && /^[A-Za-z_][\w$]*$/.test(handler)
+          && /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*$/.test(handler)
           && getCurrentTargetHandlers().has(handler)) {
           currentTargetCandidates.push({
             offset: attr.valueStart,
@@ -225,12 +342,27 @@ export function validateBindings(
         continue;
       }
 
-      // command-token バインディング `command.<method>: $command.<name>`（applyChangeToCommand.ts）。
-      // 右辺の検証のみ行い、以降はスキップ。
+      // command-token バインディング `command.<method>: $command.<name>`（dom/wc.ts の attachCommand）。
+      // 右辺と、ネイティブ要素のメソッドを検証し、以降はスキップ。
       const commandNames = new Set(
         scopedPaths.filter(p => p.kind === 'command').map(p => p.path),
       );
       if (propNoMod.startsWith('command.')) {
+        // ネイティブ要素（名前にハイフンが無い）が呼べるのは native-commands 後付けの表（manifest の
+        // nativeCommands）のメソッドだけ — 表に無ければランタイムは #1205 で初期化に失敗する。
+        // カスタム要素は自分の wcBindable で宣言する（組み込みの wcs-* は ioNodeValidator が見る）
+        const allowed = attr.tagName !== undefined && !attr.tagName.includes('-') ? nativeCommandsOf(attr.tagName) : null;
+        const method = propNoMod.slice('command.'.length);
+        if (allowed !== null && !allowed.includes(method)) {
+          const methodStart = bindingStart + binding.indexOf('command.') + 'command.'.length;
+          diagnostics.push({
+            code: WcsDiagnosticCode.TokenMisconfigured,
+            start: methodStart,
+            end: methodStart + method.length,
+            message: msgs.nativeCommandUnknown(method, attr.tagName!, allowed.join(', ')) + suggestion(method, allowed, msgs),
+            severity: 'error',
+          });
+        }
         const tokenPath = parsed.path?.trim() ?? '';
         if (tokenPath) {
           const pathOffset = binding.indexOf(parsed.path!);
@@ -261,9 +393,10 @@ export function validateBindings(
         const pathTrimmed = parsed.path.trim();
         if (pathTrimmed && !isLiteral(pathTrimmed)) {
           // 省略パスの場合は展開してから検証
+          // (not under a for the parser refuses — getRowShorthandForPath: those rows never exist)
           let checkPath = pathTrimmed;
           if (pathTrimmed.startsWith('.')) {
-            const forPath = getInnermostForPath(html, attr.valueStart, attrName);
+            const forPath = getRowShorthandForPath(html, attr.valueStart, attrName);
             if (forPath && !forPath.startsWith('.')) {
               // 単独の `.` は行そのもの＝`<forPath>.*`（末尾に区切りは付かない）。
               // ランタイム: state/src/structural/expandShorthandPaths.ts
@@ -274,20 +407,31 @@ export function validateBindings(
               checkPath = ''; // 展開できない場合はスキップ
             }
           }
-          if (checkPath) {
+          // 正本パーサが #120 で拒むパス（`a.__proto__.x`）は bindingSyntaxValidator が `wcs/binding-syntax` で
+          // 報告する — 存在の検査を重ねない。パスを指さない右辺（`$command.<名前>`・単独のメソッド名）は対象外
+          const refusedByParser = hasUnsafeSegment(pathTrimmed)
+            && !pathTrimmed.startsWith('$command.')
+            && !(propNoMod.startsWith('on') && !pathTrimmed.includes('.'));
+          if (checkPath && !refusedByParser) {
             const schema = applicationSchema;
             // `**` はオーサリング層だけの記号（$recursion 宣言・再帰 getter のキー・
             // $getAll / $setAll のパス引数）。data-wcs に書くとランタイムは PathInfo の
             // 不変条件として throw する（`**` を持つ再帰 getter のキーは候補集合に
             // 載っているので、存在検査の**前**に弾かないと素通りしてしまう）。
+            // In a state the validator could not read (isUnresolvedPath) nothing is said about a path without a
+            // stateSchema. With one, the schema is the contract of the whole tree (volumes' subtrees too) and decides —
+            // except for an event handler: the schema carries data only, so it cannot speak to a method there
+            const unresolved = isUnresolvedPath(checkPath, pathIndex.scopes);
             const verdict = hasRecursionWildcard(checkPath)
               ? {
                 code: WcsDiagnosticCode.RecursionUnsupported,
                 message: msgs.recursionUnsupported(checkPath, 'binding'),
                 severity: 'error' as const,
               }
-              : schema !== undefined
+              : schema !== undefined && !(unresolved && propNoMod.startsWith('on'))
               ? validateSchemaPathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, schema, msgs)
+              : unresolved
+              ? null
               : toMissingVerdict(validatePathExistence(checkPath, pathTrimmed, scopedPaths, scopedPathSet, commandNames, msgs));
             if (verdict) {
               const pathOffset = binding.indexOf(parsed.path);
@@ -313,12 +457,15 @@ export function validateBindings(
         // `**` は既に `wcs/recursion-unsupported`（error）で報告済み。`*` を含むので
         // 下のパターンパス検査・階数検査に二重で掛かるが、直す場所は 1 つなので重ねない。
         if (pathTrimmed && !prop.startsWith('on') && !hasRecursionWildcard(pathTrimmed)) {
+          // for の外のパターンパス（* を含む）・省略パス・ループの添字は、ランタイムと同じ `wcs/wildcard-rank`
+          // （4.0 は初期化で #1401 / #1402 を投げる）。重大度は段数の検査と同じく warning（README の例外 —
+          // for のスコープはマークアップから組み立て直すので、どの形でも厳密とは限らない）
           // for 外でパターンパス（* を含む）を使用
           if (!insideFor && pathTrimmed.includes('*')) {
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
-              code: WcsDiagnosticCode.TemplateSyntax,
+              code: WcsDiagnosticCode.WildcardRank,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
               message: msgs.patternPathOutsideFor(pathTrimmed),
@@ -331,7 +478,7 @@ export function validateBindings(
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
-              code: WcsDiagnosticCode.TemplateSyntax,
+              code: WcsDiagnosticCode.WildcardRank,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
               message: msgs.omittedPathOutsideFor(pathTrimmed),
@@ -339,29 +486,28 @@ export function validateBindings(
             });
           }
 
-          // `$` ＋数字だけのパス: `$1`〜`$128` はループの添字。表の外（`$0`・`$01`・`$129`）は添字ではなく、
-          // ランタイムは状態のパスとして読んで `[wcs/binding-path-missing]` で失敗させる（for の中では囲む
-          // for ごと）。root の state がそのキーを宣言していると確かめられたとき（3.x はそのキーを読む）だけ
-          // 黙る — 候補が読めない state（class 構文・読めない src=）でも報告する（これまでの「for の外の
-          // ループ添字」「129 段のループが要る」も候補によらず出ていた）
+          // `$` ＋数字だけのパス: `$1`〜`$128` はループの添字、`$129`〜`$999` は添字の形だが範囲の外、
+          // `$0` / `$01` / `$1000` は添字でもパスでもない（indexPath.ts の classifyIndexParam）
           const indexParam = classifyIndexParam(pathTrimmed);
-          if (indexParam === 'notIndex' && !scopedPathSet.has(pathTrimmed) && !isDeclaredKey(pathTrimmed)) {
+          if (indexParam !== null && indexParam.kind === 'notIndex') {
+            // ランタイムはこのバインディングを `[wcs/binding-path-missing]` で失敗させる（for の中でも外でも）。
+            // `$` の名前空間に状態のパスは無いので候補集合によらず断定できる ＝ error
             const pathStart = bindingStart + binding.indexOf(parsed.path);
             diagnostics.push({
               code: WcsDiagnosticCode.BindingPathMissing,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
-              message: msgs.indexParamNotIndex(pathTrimmed, MAX_INDEX_PARAM),
-              severity: 'warning',
+              message: msgs.indexParamNotPath(pathTrimmed, MAX_INDEX_PARAM),
+              severity: 'error',
             });
           }
 
-          // for 外でループインデックス（$1〜$128）を使用
-          if (!insideFor && indexParam === 'index') {
+          // for 外でループインデックス（$1〜）を使用（`$129` も — ランタイムは範囲より先に「for の外」で投げる、#1401）
+          if (!insideFor && indexParam !== null && indexParam.kind !== 'notIndex') {
             const pathOffset = binding.indexOf(parsed.path);
             const pathStart = bindingStart + pathOffset;
             diagnostics.push({
-              code: WcsDiagnosticCode.TemplateSyntax,
+              code: WcsDiagnosticCode.WildcardRank,
               start: pathStart,
               end: pathStart + pathTrimmed.length,
               message: msgs.loopIndexOutsideFor(pathTrimmed),
@@ -377,12 +523,21 @@ export function validateBindings(
           // `@state` セレクタは v2 で撤去（runtime では parse error）— namedStateValidator が
           // error を出すので、その式には段数検査を重ねない（binding 生テキストで見る
           // ── parsed.path は `@state` を落としたあとの値なので、そこでは判別できない）
-          // 表の外の `$N`（上で報告済み）は段数の検査に掛けない
-          if (insideFor && !pathTrimmed.startsWith('.') && !binding.includes('@') && indexParam !== 'notIndex') {
-            const indexN = indexParam === 'index' ? Number(pathTrimmed.slice(1)) : null;
-            const needed = indexN !== null
-              ? indexN
-              : (pathTrimmed.includes('*') ? countWildcardSegments(pathTrimmed) : 0);
+          if (insideFor && indexParam !== null && indexParam.kind === 'range' && !binding.includes('@')) {
+            // for の中の `$129`: ランタイムはバインディングを `[wcs/index-param-range]` で失敗させる（段数の検査は重ねない）
+            const pathStart = bindingStart + binding.indexOf(parsed.path);
+            diagnostics.push({
+              code: WcsDiagnosticCode.IndexParamRange,
+              start: pathStart,
+              end: pathStart + pathTrimmed.length,
+              message: msgs.indexParamRange(pathTrimmed, MAX_INDEX_PARAM),
+              severity: 'error',
+            });
+          } else if (insideFor && !pathTrimmed.startsWith('.') && !binding.includes('@')) {
+            const indexMatch = indexParam !== null && indexParam.kind === 'index' ? indexParam : null;
+            const needed = indexMatch !== null
+              ? indexMatch.n
+              : (indexParam === null && pathTrimmed.includes('*') ? countWildcardSegments(pathTrimmed) : 0);
             if (needed > 0) {
               const resolvedList = getResolvedForListPath(html, attr.valueStart, attrName);
               const available = resolvedList === null ? 0 : rankOfForList(resolvedList);
@@ -396,9 +551,9 @@ export function validateBindings(
                   message: msgs.wildcardRank(`"${pathTrimmed}"`, needed, available),
                   severity: 'warning',
                 });
-              } else if (indexN === null && resolvedList !== null) {
+              } else if (indexMatch === null && resolvedList !== null) {
                 // 段数が足りていても、各段の `*` は**その段で囲む for のリスト**の行でなければならない
-                // （`for: a` の行の中の `b.*.y` — ランタイムは添字を渡せず、囲む for ごと描けない）
+                // （4.0 の F32 — `for: a` の行の中の `b.*.y` は #1403 で投げる）。囲む for の一覧と段ごとに比べる
                 const other = findOtherListWildcard(pathTrimmed, resolvedList);
                 if (other !== null) {
                   diagnostics.push({
@@ -412,23 +567,8 @@ export function validateBindings(
               }
             }
           }
-
-          // 行として読まれない数値添字のパス（添字が 2 つ以上・`*` と混ざる）。添字が 1 つのパス
-          // （`items.0.v`）は、いまその位置にある行を読んで書き込みに追従するので対象外（#355）。
-          // `for:` の対象は添字が 1 つでも対象: 行が `groups.0.items.*.…` として解決され、行への双方向束縛と
-          // 添字のパスの読み書きが実行時に投げる（state の #363）
-          const isFor = propNoMod === 'for';
-          if (isFor ? hasIndexSegment(pathTrimmed) : isPlainIndexPath(pathTrimmed)) {
-            const pathOffset = binding.indexOf(parsed.path);
-            const pathStart = bindingStart + pathOffset;
-            diagnostics.push({
-              code: WcsDiagnosticCode.TemplateSyntax,
-              start: pathStart,
-              end: pathStart + pathTrimmed.length,
-              message: isFor ? msgs.indexPathInFor(pathTrimmed) : msgs.resolvedPathInUi(pathTrimmed),
-              severity: 'warning',
-            });
-          }
+          // 数値の添字のパス（`items.0.name`・`groups.0.items.1.v`・`groups.*.sel.0.id`）は警告しない。
+          // 4.0 は添字の数によらず、いまその位置にある行を読んで書き込みに追従する（F17・#355・#383）。
         }
       }
 
@@ -455,9 +595,9 @@ export function validateBindings(
         if (parsed.path && statePaths.length > 0) {
           const pathTrimmed = parsed.path.trim();
           if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
-            // 型は行として読んだ形の候補から引く（`items.0.tags` → `items.*.tags`・#355）
+            // 型は候補で引く形から取る（数値の添字のパス `items.0.name` は `items.*.name` の型 — #355）
             const chainDiags = validateFilterChainTypes(
-              toRowPatternPath(pathTrimmed, scopedPathSet), parsed.filters, scopedPaths, bindingStart, msgs,
+              candidateKeyOf(pathTrimmed, (c) => scopedPathSet.has(c)), parsed.filters, scopedPaths, bindingStart, msgs,
             );
             diagnostics.push(...chainDiags);
           }
@@ -474,8 +614,8 @@ export function validateBindings(
       if (parsed.path && scopedPaths.length > 0) {
         const pathTrimmed = parsed.path.trim();
         if (pathTrimmed && !pathTrimmed.startsWith('.') && !isLiteral(pathTrimmed)) {
-          // 型は行として読んだ形の候補から引く（`class.on: items.0.name` は `items.*.name` の型・#355）
-          const typePath = toRowPatternPath(pathTrimmed, scopedPathSet);
+          // 型は候補で引く形から取る（`class.on: items.0.done` は `items.*.done` の型 — #355）
+          const typePath = candidateKeyOf(pathTrimmed, (c) => scopedPathSet.has(c));
           const resultType = resolveResultType(typePath, parsed.filters, scopedPaths);
           if (resultType !== null) {
             const typeReq = getExpectedType(
@@ -517,8 +657,7 @@ export function validateBindings(
       attrName,
       stateTagName,
     );
-    // for / if テンプレートの行や枝が持つノードを、要素ごと置き換える束縛。3.x は置き換えた中身を
-    // 行や枝が外れても取り残し、4.0 は初期化で拒む（#203）。3.x で既に壊れる形なので warning
+    // for / if テンプレートの行や枝が持つノードを、要素ごと置き換える束縛（#203）
     for (const c of outerCandidates) {
       if (contexts.get(c.offset)?.rowOrBranch !== true) continue;
       diagnostics.push({
@@ -526,7 +665,7 @@ export function validateBindings(
         start: c.start,
         end: c.end,
         message: msgs.outerInTemplate(c.property),
-        severity: 'warning',
+        severity: 'error',
       });
     }
     // 自前の `<wcs-state>` を持つ template（宣言的 shadow root・DCC・コンポーネントの雛形）の中の束縛は、
@@ -536,65 +675,16 @@ export function validateBindings(
       const context = contexts.get(c.offset);
       if (context === undefined || !context.bound || context.ownStateTemplate) continue;
       diagnostics.push({
-        code: WcsDiagnosticCode.V4Migration,
+        code: WcsDiagnosticCode.DelegatedCurrentTarget,
         start: c.start,
         end: c.end,
-        message: msgs.v4DelegatedCurrentTarget(c.property, c.eventName, c.handler),
-        severity: 'info',
+        message: msgs.delegatedCurrentTarget(c.property, c.eventName, c.handler),
+        severity: 'warning',
       });
     }
   }
 
   return diagnostics;
-}
-
-/** 要素の置かれた文脈で決まる検査の候補（offset は束縛属性の値の開始 — analyzeElementContexts に渡す）。 */
-interface ElementSiteCandidate {
-  readonly offset: number;
-  readonly start: number;
-  readonly end: number;
-  /**
-   * 文面に出す左辺。outerHTML / outerText は名前（明示のプロパティ形の `.` を外す）、委譲されるイベントは
-   * 書き換え先（書かれた修飾子に `direct` を足した形）
-   */
-  readonly property: string;
-}
-
-/**
- * カスタム要素が自分で dispatch しうるイベント。bubbles しない dispatch は 4.0 も要素で聞く
- * （state-next の `dom/view.ts` の attachEvent）ので、`currentTarget` がどちらになるか静的に決まらない。
- */
-const CUSTOM_ELEMENT_OWN_EVENTS: ReadonlySet<string> = new Set(['input', 'change', 'submit']);
-
-/**
- * 文書の root の state（`mount` も `bind-component` も持たない `<wcs-state>`）のメソッドのうち、
- * イベント引数（第 1 引数）の `currentTarget` を同期的に読むもの（scriptAst.ts の readsEventCurrentTarget）。
- * `currentTarget` の綴りが無いスクリプトは解析しない。メソッド短縮記法だけを見る（データプロパティに
- * 置いた関数・外部ファイルの state は読まない — 黙る側）。
- */
-function collectCurrentTargetHandlers(html: string, stateTagName: string): ReadonlySet<string> {
-  const names = new Set<string>();
-  // `currentTarget` の綴りが文書に無ければ `<wcs-state>` を読まない（イベント束縛のある文書の大半）
-  if (!html.includes('currentTarget')) return names;
-  // `<template>` の中の `<wcs-state>`（宣言的 shadow root・DCC）は別の root の state — 文書の束縛は呼ばない
-  let insideTemplate: ((offset: number) => boolean) | null = null;
-  for (const element of parseWcsStateElements(html, stateTagName)) {
-    if (element.mountPath !== null || element.bindComponent) continue;
-    if (!element.scriptBlocks.some((block) => block.content.includes('currentTarget'))) continue;
-    if ((insideTemplate ??= createTemplateTester(html))(element.tagStart)) continue;
-    for (const block of element.scriptBlocks) {
-      if (!block.content.includes('currentTarget')) continue;
-      for (const callable of analyzeCallableBodies(block.content)) {
-        if (callable.kind !== 'method' || !callable.body.includes('currentTarget')) continue;
-        // 名前の後ろから本体の `{` の手前まで: `(e) ` / 引用符付きの名前なら `"(e) `
-        const head = block.content.slice(callable.end, callable.bodyStart - 1);
-        const params = /\(([^)]*)\)\s*$/.exec(head);
-        if (params === null) continue;
-        if (readsEventCurrentTarget(params[1], callable.body)) names.add(callable.name);
-      }
-    }
-  }
-  return names;
 }
 
 // ============================================================
@@ -783,37 +873,18 @@ function parseFilterArgsText(argsText: string): string[] {
  */
 function validateFilterUsage(filter: ParsedFilter, bindingStart: number, msgs: WcsMessageCatalog): BindingDiagnostic[] {
   const diagnostics: BindingDiagnostic[] = [];
-  const canonical = canonicalFilterName(filter.name);
-  const info = filterMap.get(canonical);
-  if (info && canonical !== filter.name) {
-    // 旧名（3.x のエイリアス）: 動くので info で正式名を提案するだけ（要件 B12）
-    diagnostics.push({
-      code: WcsDiagnosticCode.NameAlias,
-      start: bindingStart + filter.offset,
-      end: bindingStart + filter.offset + filter.name.length,
-      message: msgs.nameAlias(filter.name, canonical),
-      severity: 'info',
-    });
-  }
+  const info = filterMap.get(filter.name);
   if (!info) {
+    // 4.0 で外れた名前（3.x の旧名 `uc` / `fix` …・`substr`）も、ランタイムと同じく未知のフィルタ。
+    // 文面だけ書き換え先を案内する（`substr(2, 3)` には `slice(2, 5)` と言う）
     diagnostics.push({
       code: WcsDiagnosticCode.FilterUnknown,
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
-      message: msgs.filterUnknown(filter.name),
+      message: removedFilterMessage(filter.name, filter.args, msgs) ?? msgs.filterUnknown(filter.name),
       severity: 'warning',
     });
     return diagnostics;
-  }
-  if (filter.name === SUBSTR_FILTER) {
-    // 3.x では動き、4.0 で削除される（`slice` に一本化）。info で書き換え先を案内する
-    diagnostics.push({
-      code: WcsDiagnosticCode.V4Migration,
-      start: bindingStart + filter.offset,
-      end: bindingStart + filter.offset + filter.name.length,
-      message: msgs.v4SubstrRemoved(substrRewrite(filter.args)),
-      severity: 'info',
-    });
   }
 
   // 引数の個数チェック
@@ -875,11 +946,9 @@ function splitByPipe(value: string): string[] {
  * `$` 名前空間はランタイム（proxy/traps/get.ts・event/handler.ts）の解決規則に合わせる:
  * - `$1`〜`$128`: ループインデックス。状態定義に依存しないためスキップ。
  * - `$command.<name>`: $commandTokens 宣言と照合（宣言が解析できている場合のみ）。
- * - `$streamStatus.<name>` / `$streamError.<name>`: $streams 宣言と照合（同上）。
- * - それ以外は状態パスセットとの完全一致 ＋ `$recursion` の深さ畳み込み。数値添字が 1 つのパス
- *   （`items.0.double`）は行として読まれるので、完全一致しなければ添字を `*` に読み替えて照合する。
- *   行として読まれない素のパス（`groups.0.items.*.v`）は、配列の上の添字を要素として辿ってデータの候補と
- *   照合する（indexPath.ts・#355）。
+ * - `$streamStatus.<name>` / `$streamError.<name>`: $stream 宣言と照合（同上）。
+ * - それ以外は状態パスセットとの完全一致 ＋ `$recursion` の深さ畳み込み。数値の添字のパスは
+ *   添字を `*` に読み替えた形でも照合する（pathExistsInCandidates）。
  */
 function validatePathExistence(
   checkPath: string,
@@ -908,16 +977,46 @@ function validatePathExistence(
     return null;
   }
 
-  if (scopedPathSet.has(checkPath)) return null;
-  const rowPath = toRowPatternPath(checkPath, scopedPathSet);
-  if (
-    !scopedPathSet.has(rowPath)
-    && !matchesRecursionCandidates(scopedPaths, rowPath, scopedPathSet)
-    && !isPlainElementPath(checkPath, scopedPaths, scopedPathSet)
-  ) {
+  if (!pathExistsInCandidates(checkPath, scopedPaths, scopedPathSet)) {
     return msgs.pathMissing(displayPath);
   }
   return null;
+}
+
+/**
+ * 候補集合でのパスの存在（完全一致 ＋ `$recursion` の深さ畳み込み）。数値の添字のパス
+ * （`items.0.name`・`groups.0.items.1.v`・`groups.*.sel.0.id`）は、書いたままの形が無ければ添字を
+ * `*` に読み替えた形で照合する — 4.0 のランタイム（parsePath）が添字をそう読むため（#355・#383）。
+ * 数値のキーを持つオブジェクト（`sales.2024.total`）は書いたままの形が先に当たる。
+ */
+export function pathExistsInCandidates(
+  checkPath: string,
+  scopedPaths: readonly PathCandidate[],
+  scopedPathSet: ReadonlySet<string>,
+): boolean {
+  if (scopedPathSet.has(checkPath) || matchesRecursionCandidates(scopedPaths, checkPath, scopedPathSet)) return true;
+  if (!hasIndexSegment(checkPath)) return false;
+  const wildcard = toWildcardForm(checkPath);
+  return scopedPathSet.has(wildcard) || matchesRecursionCandidates(scopedPaths, wildcard, scopedPathSet);
+}
+
+/**
+ * The three-valued existence of a path against a stateSchema (`resolveSchemaPath`). A numeric segment descends into
+ * the items, like `*`, where the schema has an array there (looked up as `0` on an array, `items.0.nmae` would look
+ * for a property, fall to unknown and let the typo through), and is a plain key otherwise — as the 4.0 runtime reads
+ * a numeric key under a parent that is not a list (an object keyed by number, `sales.2024`; engine.ts's
+ * markupAccessor). Looking `sales.2024.totl` up as `sales.*.totl` fell to unknown on the object and let the typo
+ * through. For a union of an array and an object, a path that is nonexistent through the items still exists when the
+ * written form resolves (the runtime, too, reads the plain path when the row has no value).
+ */
+export function resolveIndexedSchemaPath(schema: JsonSchemaNode, path: string): ReturnType<typeof resolveSchemaPath> {
+  const defs = schema.$defs ?? {};
+  const segments = path.split('.');
+  if (!hasIndexSegment(path)) return resolveSchemaPath(schema, defs, segments);
+  const resolution = resolveSchemaPath(schema, defs, segments, isIndexSegment);
+  if (resolution.kind !== 'nonexistent') return resolution;
+  const literal = resolveSchemaPath(schema, defs, segments);
+  return literal.kind === 'resolved' ? literal : resolution;
 }
 
 /**
@@ -971,20 +1070,12 @@ function validateSchemaPathExistence(
   if (checkPath.startsWith('$')) {
     return toMissingVerdict(validatePathExistence(checkPath, displayPath, scopedPaths, scopedPathSet, commandNames, msgs));
   }
-  if (scopedPathSet.has(checkPath)) return null;
-  // 数値添字が 1 つのパスは行として読む（`items.0.v` → `items.*.v`・#355）。schema の解決も読み替えた
-  // 形で行う（`0` のままだと配列の上で property を探して unknown に倒れ、`items.0.nmae` が素通りする）
-  const rowPath = toRowPatternPath(checkPath, scopedPathSet);
-  if (scopedPathSet.has(rowPath)) return null;
   // 再帰の展開形は schema にも「深さの族」としては現れない（`$ref` の再帰は
   // resolveSchemaPath が辿れるが、`$recursion` は script 側の宣言なので schema を
   // 持たない state でも成立する）。候補側の宣言で説明が付くなら error にしない。
-  if (matchesRecursionCandidates(scopedPaths, rowPath, scopedPathSet)) return null;
-  // 素のパスは要素を辿ったデータの候補に当たれば存在（validatePathExistence と同じ。候補集合が先）
-  if (isPlainElementPath(checkPath, scopedPaths, scopedPathSet)) return null;
-  // 素のパス（`groups.0.items.0.nmae`・数値の for の行の `groups.0.items.*.nmae`）も、配列の上の添字を
-  // 要素の形（`*`）にしてから引く。`0` のままだと同じく unknown に倒れて素通りする
-  const resolution = resolveSchemaPath(schema, schema.$defs ?? {}, toPlainPatternPath(rowPath, scopedPathSet).split('.'));
+  // 数値の添字のパスは添字を `*` に読み替えて候補・schema の両方で引く（#355）。
+  if (pathExistsInCandidates(checkPath, scopedPaths, scopedPathSet)) return null;
+  const resolution = resolveIndexedSchemaPath(schema, checkPath);
   if (resolution.kind === 'nonexistent') {
     return { code: WcsDiagnosticCode.PathNonexistent, message: msgs.pathNonexistent(displayPath), severity: 'error' };
   }
@@ -1102,11 +1193,7 @@ function getExpectedType(property: string, isNegatedIf: () => boolean): TypeRequ
 
 /**
  * フィルタチェーン内の各フィルタの入力型と前のフィルタの出力型の整合性を検証する。
- *
- * 引くキーは必ず正式名（`canonicalFilterName`）— `filterMap` は正式名しか持たないので、
- * 旧名（`uc` / `fix` …）を書かれた分をそのまま引くと `!info` で黙って中断し、型検査だけが
- * 消える（`wcs/name-alias` だけが出て型警告が出ない、という退行）。文言に出す名前は
- * **書かれた名前**のまま（書き手が直す対象を指す）。
+ * 4.0 の組み込みに無いフィルタ（3.x の旧名を含む — `wcs/filter-unknown` で報告済み）で中断する。
  */
 function validateFilterChainTypes(
   path: string,
@@ -1124,7 +1211,7 @@ function validateFilterChainTypes(
   let currentType = pathInfo.typeHint;
 
   for (const filter of filters) {
-    const info = filterMap.get(canonicalFilterName(filter.name));
+    const info = filterMap.get(filter.name);
     if (!info) break; // 不明なフィルタ → チェーン中断
 
     // 入力型チェック
@@ -1154,11 +1241,7 @@ function validateFilterChainTypes(
 
 /**
  * パスの型をフィルタチェーンを通して解決する。
- * 型が不明な場合は null を返す（検証をスキップ）。
- *
- * `validateFilterChainTypes` と同じく、引くキーは正式名に正規化する
- * （旧名で書かれたチェーンだけ型追跡が止まり `wcs/binding-type-expectation` /
- *  `wcs/path-type-mismatch` が消えるのを防ぐ）。
+ * 型が不明な場合・4.0 の組み込みに無いフィルタを通る場合は null を返す（検証をスキップ）。
  */
 function resolveResultType(
   path: string,
@@ -1173,7 +1256,7 @@ function resolveResultType(
 
   // フィルタチェーンを通して型を更新
   for (const filter of filters) {
-    const info = filterMap.get(canonicalFilterName(filter.name));
+    const info = filterMap.get(filter.name);
     if (!info) return null; // 不明なフィルタ → 型追跡を中止
     if (info.resultType === 'passthrough') continue;
     currentType = info.resultType;

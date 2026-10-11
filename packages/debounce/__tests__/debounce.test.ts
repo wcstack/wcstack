@@ -58,6 +58,39 @@ describe("<wcs-debounce> 属性アクセサ", () => {
     el.maxWait = 400;
     expect(el.getAttribute("max-wait")).toBe("400");
   });
+
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外して既定値にする（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-debounce wait="100" max-wait="500" leading no-trailing></wcs-debounce>';
+    const el = host.firstElementChild as Debounce;
+    el.wait = 300;
+    el.maxWait = 900;
+    el.leading = false;
+    el.trailing = true;
+    el.wait = undefined;
+    el.maxWait = undefined;
+    el.leading = undefined;
+    el.trailing = undefined;
+    expect([el.getAttribute("wait"), el.getAttribute("max-wait")]).toEqual(["100", "500"]);
+    expect([el.wait, el.maxWait, el.leading, el.trailing]).toEqual([100, 500, true, false]);
+    el.wait = null;
+    el.maxWait = null;
+    el.leading = null;
+    el.trailing = null;
+    expect(["wait", "max-wait", "leading", "no-trailing"].map((n) => el.hasAttribute(n))).toEqual([false, false, false, false]);
+    // trailing は既定 on なので、null は no-trailing を外して on に戻す。
+    expect([el.wait, el.maxWait, el.leading, el.trailing]).toEqual([250, undefined, false, true]);
+  });
+
+  it("属性の無いマークアップで undefined を書くと属性なし（既定値）に戻る", () => {
+    const el = create();
+    el.wait = 300;
+    el.trailing = false;
+    el.wait = undefined;
+    el.trailing = undefined;
+    expect([el.hasAttribute("wait"), el.hasAttribute("no-trailing")]).toEqual([false, false]);
+    expect([el.wait, el.trailing]).toEqual([250, true]);
+  });
 });
 
 describe("<wcs-debounce> 振る舞い", () => {

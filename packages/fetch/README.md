@@ -296,6 +296,8 @@ These properties control request execution from HTML, JS, or `@wcstack/state` bi
 | `trigger` | `boolean` | One-way execution trigger |
 | `manual` | `boolean` | Disables auto-fetch on connect / URL change |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`url`, `method`, `target`, `manual`, `responseType`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `body` takes both as "no JS body"; `trigger` ignores both.
+
 ## CSS styling with `:state()`
 
 `<wcs-fetch>` reflects two boolean output states onto its
@@ -840,7 +842,7 @@ bootstrapFetch({
 });
 ```
 
-Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+`bootstrapFetch()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.
 
 ## Design Notes
 

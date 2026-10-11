@@ -61,18 +61,27 @@ describe('validateTemplateSyntax — 入れ子 <template>', () => {
   });
 });
 
-describe('validateTemplateSyntax — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
-  it('旧名は未知扱いせず、wcs/name-alias（info）で正式名を提案する', () => {
+describe('validateTemplateSyntax — 4.0 で外れたフィルタ名（3.x の旧名・substr）', () => {
+  it('旧名は wcs/filter-unknown で正式名を案内し、正式名は何も出さない', () => {
     const html = `${STATE}
 <p>{{ total | fix(1) }}</p><p>{{ total | toFixed(1) }}</p><p>{{ total | fxi }}</p>`;
     const diags = validateTemplateSyntax(html, 'wcs-state');
-    const alias = diags.filter(d => d.code === WcsDiagnosticCode.NameAlias);
-    expect(alias).toHaveLength(1);
-    expect(alias[0].severity).toBe('info');
-    expect(alias[0].message).toContain('"toFixed"');
-    expect(html.slice(alias[0].start, alias[0].end)).toBe('fix');
-    // 正式名は何も出さず、本当に未知の名前は従来どおり filter-unknown
-    expect(diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown).map(d => html.slice(d.start, d.end))).toEqual(['fxi']);
+    const unknown = diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['fix', 'fxi']);
+    expect(unknown[0].message).toContain('4.0 で外れました');
+    expect(unknown[0].message).toContain('"toFixed"');
+    expect(unknown[1].message).toBe('フィルタ "fxi" は組み込みフィルタに存在しません');
+    expect(diags.some(d => d.code === WcsDiagnosticCode.NameAlias)).toBe(false);
+  });
+
+  it('substr は書き換え先 slice(start, start + length) を案内する（数値リテラルなら具体形も）', () => {
+    const html = `${STATE}
+<p>{{ total | substr(1, 4) }}</p>`;
+    const unknown = validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en')
+      .filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['substr']);
+    expect(unknown[0].message).toContain('slice(start, start + length)');
+    expect(unknown[0].message).toContain('(here: slice(1, 5))');
   });
 
   // Fixed by review — 区間の開始を `indexOf` で求めていたため、同じフィルタを 2 回書くと
@@ -80,12 +89,12 @@ describe('validateTemplateSyntax — フィルタの旧名（@wcstack/state 3.2�
   it('同じフィルタを 2 回書いても、それぞれのレンジが自分の出現を指すこと', () => {
     const html = `${STATE}
 <p>{{ label | uc | uc }}</p>`;
-    const alias = validateTemplateSyntax(html, 'wcs-state')
-      .filter(d => d.code === WcsDiagnosticCode.NameAlias);
-    expect(alias).toHaveLength(2);
-    expect(alias.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'uc']);
-    expect(alias[0].start).not.toBe(alias[1].start);
-    expect(alias[1].start).toBe(html.indexOf('uc', alias[0].start + 1));
+    const unknown = validateTemplateSyntax(html, 'wcs-state')
+      .filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown).toHaveLength(2);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'uc']);
+    expect(unknown[0].start).not.toBe(unknown[1].start);
+    expect(unknown[1].start).toBe(html.indexOf('uc', unknown[0].start + 1));
   });
 
   // Fixed by review（サイクル 2）— 式を素の `split("|")` で切っていたため、
@@ -116,89 +125,69 @@ describe('validateTemplateSyntax — フィルタの旧名（@wcstack/state 3.2�
   });
 });
 
-// #355: `{{ }}` / `<!--@@:-->` も属性の束縛と同じ規則（bindingValidator の同名の describe を参照）。
-// 数値添字が 1 つのパスは実行時に行として読まれ、行 getter も読める。修正前は binding-path-missing と
-// template-syntax（「解決済みパスは使用できません」）が 2 件ずつ出ていた。素のパス（添字が 2 つ以上・
-// `*` と混ざる）は要素を辿ってデータの候補と照合する。
-describe('validateTemplateSyntax — 数値添字のパス（#355）', () => {
-  const ISSUE_STATE = `
-<wcs-state><script type="module">
-export default {
-  items: [{ v: 1 }, { v: 2 }],
-  groups: [{ items: [{ v: 1 }] }],
-  show: true,
-  get "items.*.double"() { return this["items.*.v"] * 2; },
-};
-</script></wcs-state>`;
-  const pathDiags = (html: string) => validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en')
-    .filter(d => d.severity !== 'info')
-    .map(d => [html.slice(d.start, d.end), d.code]);
-
-  it('Issue の再現: {{ items.1.v }} / {{ items.1.double }} は 0 件、{{ groups.0.items.0.v }} は素のパスとして template-syntax の 1 件だけ', () => {
-    const html = `${ISSUE_STATE}
-<template data-wcs="if: show"><p>{{ items.1.v }}</p><p>{{ items.1.double }}</p><p>{{ groups.0.items.0.v }}</p></template>`;
-    // 修正前: 6 件。groups.0.items.0.v は実行時も要素を辿って存在するので binding-path-missing は出さない
-    expect(pathDiags(html)).toEqual([
-      ['groups.0.items.0.v', WcsDiagnosticCode.TemplateSyntax],
-    ]);
+describe('validateTemplateSyntax — 数値の添字のパス（4.0 は添字の数によらず追従する — #355・#383）', () => {
+  it('{{ }} とコメント束縛の数値の添字のパスは警告せず、打ち間違いだけを報告する', () => {
+    const html = `${STATE}
+<template data-wcs="for: regions"><p>{{ regions.*.states.0.name }}</p></template>
+<p><!--@@: regions.0.states.1.name--></p>
+<p><!--@@: regions.0.nmae--></p>`;
+    const diags = validateTemplateSyntax(html, 'wcs-state');
+    expect(diags.some(d => d.code === WcsDiagnosticCode.TemplateSyntax && d.severity === 'warning')).toBe(false);
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.BindingPathMissing).map(d => html.slice(d.start, d.end)))
+      .toEqual(['regions.0.nmae']);
   });
 
-  it('数値の for（for: groups.0.items）の行の {{ .v }} は要素を辿って存在扱い、{{ .nope }} は binding-path-missing', () => {
-    const html = `${ISSUE_STATE}
-<template data-wcs="for: groups.0.items"><p>{{ .v }}</p><p>{{ .nope }}</p></template>`;
-    expect(pathDiags(html)).toEqual([['.nope', WcsDiagnosticCode.BindingPathMissing]]);
-  });
-
-  it('コメントバインディング <!--@@:items.0.double--> も行として読む', () => {
-    const html = `${ISSUE_STATE}
-<p><!--@@:items.0.double--></p>`;
-    expect(pathDiags(html)).toEqual([]);
-  });
-
-  it('存在しない行のメンバー（{{ items.0.nope }}）は binding-path-missing だけ', () => {
-    const html = `${ISSUE_STATE}
-<template data-wcs="if: show"><p>{{ items.0.nope }}</p></template>`;
-    expect(pathDiags(html)).toEqual([['items.0.nope', WcsDiagnosticCode.BindingPathMissing]]);
-  });
-
-  it('stateSchema 宣言時: 読み替えた形で解決し、行の下の未宣言メンバーは wcs/path-nonexistent（error）', () => {
+  it('stateSchema の state でも、配列でない親の数値キー（sales.2024）は素のキーのまま引いて打ち間違いを error にする', () => {
     const schema = {
       type: 'object',
       properties: {
         items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
+        sales: { type: 'object', properties: { 2024: { type: 'object', properties: { total: { type: 'number' } } } } },
       },
     };
     const html = `
 <wcs-state src="./state.ts"></wcs-state>
-<template data-wcs="if: ok"><p>{{ items.0.v }}</p><p>{{ items.0.nmae }}</p></template>`;
-    const diags = validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en', undefined, schema)
-      .filter(d => d.severity !== 'info');
-    // 修正前: items.0.nmae は `0` のまま配列の上で property を探して unknown に倒れ、沈黙していた
-    expect(diags.map(d => [html.slice(d.start, d.end), d.code, d.severity])).toEqual([
-      ['items.0.nmae', WcsDiagnosticCode.PathNonexistent, 'error'],
-    ]);
+<p><!--@@: items.0.v--></p><p><!--@@: items.0.nmae--></p>
+<p><!--@@: sales.2024.total--></p><p><!--@@: sales.2024.totl--></p><p><!--@@: sales.2025.total--></p>`;
+    const diags = validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en', undefined, schema);
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent).map(d => html.slice(d.start, d.end)))
+      .toEqual(['items.0.nmae', 'sales.2024.totl', 'sales.2025.total']);
+  });
+});
+
+describe('validateTemplateSyntax — 行の中の別のリストの *（4.0 の #1403）', () => {
+  it('for: tags の行の中の {{ regions.*.name }} は warning、自分のリストは通す', () => {
+    const html = `${STATE}
+<template data-wcs="for: tags"><p>{{ regions.*.name }}</p><p>{{ tags.* }}</p></template>`;
+    const rank = validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en')
+      .filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank.map(d => html.slice(d.start, d.end))).toEqual(['regions.*.name']);
+    expect(rank[0].message).toContain('ranges over the rows of "regions"');
+  });
+});
+
+describe('validateTemplateSyntax — コメント束縛（4.0 も束ねる）', () => {
+  it('複数行の式も検証し、FOUC の勧めは <template> の外の {{ }} にだけ出す', () => {
+    const html = `${STATE}
+<p><!--@@:
+  total
+  | zzz
+--></p>
+<p>{{
+  total
+}}</p>`;
+    const diags = validateTemplateSyntax(html, 'wcs-state');
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown).map(d => html.slice(d.start, d.end))).toEqual(['zzz']);
+    expect(diags.filter(d => d.message.includes('FOUC'))).toHaveLength(1);
   });
 
-  it('stateSchema 宣言時: 素のパス（数値の for の行・添字 2 つ）も配列の上の添字を要素の形にして schema を引く', () => {
-    const schema = {
-      type: 'object',
-      properties: {
-        groups: { type: 'array', items: { type: 'object', properties: {
-          items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
-        } } },
-      },
-    };
-    const html = `
-<wcs-state src="./state.ts"></wcs-state>
-<template data-wcs="for: groups.0.items"><p>{{ .v }}</p><p>{{ .nmae }}</p></template>
-<template data-wcs="if: ok"><p>{{ groups.0.items.0.nmae }}</p></template>`;
-    const diags = validateTemplateSyntax(html, 'wcs-state', 'data-wcs', 'en', undefined, schema)
-      .filter(d => d.severity !== 'info');
-    // 修正前: どちらも `0` のまま配列の上で property を探して unknown に倒れ、打ち間違いが無言だった
-    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([
-      ['.nmae', WcsDiagnosticCode.PathNonexistent],
-      ['groups.0.items.0.nmae', WcsDiagnosticCode.TemplateSyntax],
-      ['groups.0.items.0.nmae', WcsDiagnosticCode.PathNonexistent],
-    ]);
+  it('<textarea> / <title> の中のコメントは束縛として扱わない（ブラウザは文字にする）', () => {
+    const html = `${STATE}
+<textarea><!--@@: missing1--></textarea>
+<title><!--@@: missing2--></title>
+<p><!--@@: missing3--></p>`;
+    const missing = validateTemplateSyntax(html, 'wcs-state')
+      .filter(d => d.code === WcsDiagnosticCode.BindingPathMissing);
+    expect(missing.map(d => html.slice(d.start, d.end))).toEqual(['missing3']);
   });
 });

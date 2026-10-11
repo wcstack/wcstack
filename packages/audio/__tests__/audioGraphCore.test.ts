@@ -445,6 +445,30 @@ describe("AudioGraphCore", () => {
       expect((ctx.nodesOf("osc")[0] as any).type).toBe("sawtooth");
     });
 
+    it("setProp に null を渡すと既定値へ戻り、後から作るインスタンスにも古い値が乗らない", () => {
+      const core = make();
+      core.setPatch(VOICE);
+      core.setProp("vo", "type", "square");
+      core.noteOn(60);
+      expect((ctx.nodesOf("osc")[0] as any).type).toBe("square");
+      core.setProp("vo", "type", null);
+      expect((ctx.nodesOf("osc")[0] as any).type).toBe("sine");
+      core.noteOn(62);
+      expect((ctx.nodesOf("osc")[1] as any).type).toBe("sine");
+    });
+
+    it("biquad / lfo の type も null で既定値へ戻る", () => {
+      const core = make();
+      core.setPatch({ nodes: [{ kind: "biquad", key: "f1", children: [{ kind: "lfo", key: "l1", param: "frequency" }] }], voices: [] });
+      core.setProp("f1", "type", "highpass");
+      core.setProp("l1", "type", "square");
+      expect(ctx.nodesOf("osc").map((n) => (n as any).type)).toEqual(["square"]);
+      core.setProp("f1", "type", null);
+      core.setProp("l1", "type", null);
+      expect((ctx.nodesOf("biquad")[0] as any).type).toBe("lowpass");
+      expect(ctx.nodesOf("osc").map((n) => (n as any).type)).toEqual(["sine"]);
+    });
+
     it("不正な type は無視される（never-throw）", () => {
       const core = make();
       core.setPatch(SIMPLE);

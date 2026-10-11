@@ -7,7 +7,9 @@ each page is **appended** in state so the list grows without ever flashing or re
 `<wcs-infinite-scroll>` ships **inside `@wcstack/fetch`** — no extra package is needed.
 It is the high-level, batteries-included option. For the lower-level version wired by
 hand, see [`state-intersect-scroll`](../../../../examples/state-intersect-scroll), which uses
-`@wcstack/state` `$stream` plus the lower-level intersection primitive.
+`@wcstack/state` `$stream` plus the lower-level intersection primitive. In between,
+[`state-intersect-fetch`](../../../../examples/state-intersect-fetch) keeps `<wcs-fetch>` but wires it to a
+`<wcs-intersect>` sentinel through state (an event token in, a command token out).
 
 ## Getting Started
 

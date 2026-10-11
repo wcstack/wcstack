@@ -22,8 +22,8 @@ jobs:
           # Discover CI-target packages: any packages/* whose package.json is
           # scoped under @wcstack/, plus the unscoped `wcstack` entry bundle
           # (a buildable package since docs/distribution-robustness-impl-plan.md
-          # Phase 4). Auto-includes new scoped packages; still excludes
-          # non-published ones (e.g. the vscode-wcs extension).
+          # Phase 4). Auto-includes new scoped packages, private ones too;
+          # still excludes the unscoped ones (e.g. the vscode-wcs extension).
           all=()
           for dir in packages/*/; do
             [ -f "${dir}package.json" ] || continue
@@ -43,13 +43,18 @@ jobs:
           # parents and merge-base exited 1 without output (PR #77's run).
           changed=$(git diff --name-only "${BASE_SHA:?not a pull_request event}" HEAD)
 
+          # Every test below reads "$changed" from a here-string, never `echo "$changed" |
+          # grep -q`: under pipefail, grep -q exits at its first match, echo then dies of
+          # SIGPIPE once the list outgrows the pipe buffer, and the pipeline fails as if
+          # nothing matched — the 4.0 merge (#433) selected 12 of the 49 packages.
+
           # A change to the shared root tsconfig rebuilds every package.
-          if echo "$changed" | grep -qx 'tsconfig.json'; then
+          if grep -qx 'tsconfig.json' <<< "$changed"; then
             selected=("${all[@]}")
           else
             selected=()
             for pkg in "${all[@]}"; do
-              if echo "$changed" | grep -qE "^packages/${pkg}/"; then
+              if grep -qE "^packages/${pkg}/" <<< "$changed"; then
                 selected+=("$pkg")
               fi
             done
@@ -63,13 +68,29 @@ jobs:
             # first appears in release.yml's "Build all packages". Select it here,
             # and the job's member rebuild step (below) is what makes the gate real.
             members=$(node -p "Object.values(require('./packages/wcstack/package.json').devDependencies).filter((v) => v.startsWith('file:../')).map((v) => v.slice(8)).join(' ')")
-            if ! echo "$changed" | grep -qE '^packages/wcstack/'; then
+            if ! grep -qE '^packages/wcstack/' <<< "$changed"; then
               for pkg in $members; do
-                if echo "$changed" | grep -qE "^packages/${pkg}/"; then
+                if grep -qE "^packages/${pkg}/" <<< "$changed"; then
                   selected+=("wcstack")
                   break
                 fi
               done
+            fi
+
+            # Two suites run packages/state/src directly: devtools' protocol drift test
+            # (the 4.0 runtime's event / summary shapes against the consumer's types) and
+            # router's routeRange.state test. A state-only change must run them too.
+            if grep -qE '^packages/state/' <<< "$changed"; then
+              for pkg in devtools router; do
+                [[ " ${selected[*]} " == *" $pkg "* ]] || selected+=("$pkg")
+              done
+            fi
+
+            # The @wcstack/state size / structure gates and their baselines live in scripts/:
+            # a PR that changes only them must still run them.
+            if grep -qE '^scripts/(check-state-[a-z]+\.mjs|state-[a-z]+-baseline\.json)$' <<< "$changed" \
+              && [[ " ${selected[*]} " != *" state "* ]]; then
+              selected+=("state")
             fi
           fi
 
@@ -143,7 +164,7 @@ jobs:
     # それでも解決できないパスは warning に留まり build を落とさない（--errors-only で表示も抑制）。
     # vscode-wcs は @wcstack/* でなく detect-changes matrix 対象外なので独立 job にする。
     #
-    # vscode-wcs / lint は @wcstack/state の dist を file:../state（symlink）経由で
+    # vscode-wcs / lint は @wcstack/state の dist（parser / manifest）を file:../state（symlink）経由で
     # inline して消費する。コミット済み dist はリリース間で src に遅行するため、最初に
     # state を src から再ビルドし、「新鮮な state × vscode-wcs / lint」を PR 時点で
     # ゲートする（#183 の残り半分 — stale dist に対して緑のまま release で初めて落ちる
@@ -191,8 +212,8 @@ jobs:
         working-directory: packages/lint
       # @wcstack/typescript は lint と同型: wcs-schema の自己検査と end-to-end テストが
       # vscode-wcs から bundle した validator core（dist/schema-core.cjs）を使う。matrix の
-      # typescript job は state の committed dist しか見ないので、vscode-wcs の変更・state の
-      # src 変更に対しては「新鮮な state × vscode-wcs × typescript」をここでゲートする。
+      # typescript job は packages/typescript/ を触る PR でしか動かないので、vscode-wcs の変更・
+      # state の src 変更に対しては「新鮮な state × vscode-wcs × typescript」をここでゲートする。
       - name: Build and test @wcstack/typescript against the freshly built validator core
         run: |
           set -euo pipefail
@@ -288,39 +309,26 @@ jobs:
           for member in $members; do
             ( cd "../$member" && npm ci && npm run build )
           done
-      # T1 static coupling gate for @wcstack/state (docs/state-next-major-wiring-design.md
-      # §7-1). Compiles src with tsc into a temporary directory and checks the value-import
-      # graph against scripts/state-coupling-baseline.json: no module outside the baseline may
-      # run registration code at module evaluation (the "stays after a mere import" class that
-      # S2 removed), the number of core → feature value edges may not grow, and defineState
-      # must keep reaching only itself. Needs this package's node_modules (typescript).
-      - name: Check the core / feature coupling of @wcstack/state against its baseline
-        if: ${{ matrix.package == 'state' }}
-        run: node ../../scripts/audit-state-tech-coupling.mjs --check
-      # Size gate for the side-effect-free helper entry (requirements N2 / N3): re-exporting
-      # only defineState from the bundle must stay tiny after tree-shaking (309 bytes gzip at
-      # the time of writing; limit 1 KB). Builds src/exports.ts in memory with this package's
-      # Rollup config, so it needs node_modules and precedes the dist build.
-      - name: Check the helper-only import size of @wcstack/state
-        if: ${{ matrix.package == 'state' }}
-        run: node ../../scripts/audit-state-tech-helper-import.mjs --check --max-gzip 1024
       - run: npm run lint
       - run: npm run build
-      # Size gate for the shipped bundles of @wcstack/state (requirements N3 / D18): auto.min.js,
-      # index.esm.js and the `core` entry with its chunks may not grow more than 3 % gzip over
-      # scripts/state-size-baseline.json (the last recorded release build); an intended increase is
-      # recorded with --update.
-      - name: Check the shipped bundle sizes of @wcstack/state against the release baseline
+      # Size gate for the shipped files of @wcstack/state 4.0 (requirements N2 / N3, D18): the
+      # full entries, the split core with its chunks, each add-on and split/auto.js beyond the core
+      # may not grow more than 3 % gzip (plus an entry's optional slack) over
+      # scripts/state-size-baseline.json, re-recorded with --update at each release; and two
+      # absolute limits — dist/core.min.js <= 20,480 B (20 KiB) gzip (the 4.0 core target) and the
+      # `/define` helper entry <= 1,024 B. Reads dist only, so it runs after the build.
+      - name: Check the shipped sizes of @wcstack/state against the release baseline and the core target
         if: ${{ matrix.package == 'state' }}
         run: node ../../scripts/check-state-size.mjs --check
-      # One core chunk (requirement B13, wiring design §7-1): every `@wcstack/state/features/*`
-      # entry must import the core's chunk instead of carrying a copy, must not carry another
-      # feature's code (cross-feature calls go through src/bridge/*), and its own gzip may not grow
-      # more than 3 % over scripts/state-split-baseline.json. Reads the source maps of the split
-      # build, so it runs after the build.
-      - name: Check that no feature entry of @wcstack/state re-bundles the core or another feature
+      # Structure gate (requirement B13, wiring design §7-1): bundles src with esbuild in memory
+      # and checks that each add-on carries only its own code beyond the core chunk, that the core
+      # entries reach no add-on, that `/define` imports nothing, and that the core <-> add-on
+      # imports and the modules that run code on evaluation match
+      # scripts/state-coupling-baseline.json. Needs this package's node_modules (esbuild,
+      # typescript); compares the split entries with the freshly built dist/split.
+      - name: Check the core / add-on structure of @wcstack/state against its baseline
         if: ${{ matrix.package == 'state' }}
-        run: node ../../scripts/check-state-split.mjs --check
+        run: node ../../scripts/check-state-coupling.mjs --check
       - run: npm run typecheck --if-present
       - run: npm run size --if-present
       - run: npm run test:coverage

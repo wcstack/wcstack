@@ -99,6 +99,8 @@ npm install @wcstack/fullscreen
 | ---------- | ---- |
 | `target`   | `@wcstack/intersection` の `target` と同じ3モード解決: `"self"`、CSSセレクタ、または省略（最初の子要素）。 |
 
+**`null` と `undefined`。** 属性に対応する入力 `target` は、`null` を「クリア」として扱います。属性を外し、`target` は既定値（最初の子要素）に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、何にも一致しないセレクタになってすべての要求が失敗することもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。
+
 ## `:state()` による CSS スタイリング
 
 `<wcs-fullscreen>` は 1 つの boolean 出力ステートを

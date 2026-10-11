@@ -35,6 +35,16 @@ node examples/router-spa/server.js
 Open http://localhost:3000 in your browser. Deep links work too:
 http://localhost:3000/products/3, http://localhost:3000/about.
 
+To run it against the repository's local build instead of the CDN:
+
+```bash
+WCS_LOCAL=1 node examples/router-spa/server.js
+```
+
+`WCS_LOCAL=1` rewrites the `esm.run` one-liners to `/packages/<pkg>/dist/…` and
+serves them from the repo, the same trick `e2e/serve.mjs` uses (the e2e suite
+runs the demo this way).
+
 ## Features
 
 - **Declarative routes with typed parameters**: `/products/:productId(int)` only
@@ -85,12 +95,14 @@ address bar / <wcs-link> / history        this.navigateUrl = "/products/3"
 - **State owns** every data-bound page: the list and detail DOM live in
   `<template data-wcs="if: ...">` blocks that are always in the document.
 
-This split is deliberate. `@wcstack/state` collects `data-wcs` bindings from the
-DOM present at bind time — it does not watch for nodes the router stamps later.
-Content the router swaps in must therefore be static (no `data-wcs`), and
-data-bound content must live under state-managed structural templates. Each
-side does what it is best at, and the wc-bindable binding on `<wcs-router>` is
-the only coupling.
+This split is deliberate. The router hands what it stamps to `@wcstack/state`
+for binding (the binder protocol), so route content may carry `data-wcs` too —
+with router 3.5+ and state 4.0 even a `for:` / `if:` template at the top of a
+route renders (see the state 4.0 migration guide, §3.9). This demo still keeps
+the data-bound pages in state-managed structural templates that are always in
+the document, so the routes stay purely about the URL and each page is one
+`if:` on state the router writes. Each side does what it is best at, and the
+wc-bindable binding on `<wcs-router>` is the only coupling.
 
 ## Key Points
 

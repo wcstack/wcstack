@@ -209,6 +209,8 @@ To stop reconnection, call `close()` (or remove the element from the DOM).
 | `trigger` | `boolean` | One-way connection trigger |
 | `manual` | `boolean` | Disables auto-connect on DOM attach |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`url`, `withCredentials`, `events`, `raw`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`, so the element never connects to `/null` or `/undefined`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) Clearing `url` leaves an open stream as it is — call `close()` to disconnect — while restoring a markup `url` that differs reconnects to it. `trigger` ignores both.
+
 ## CSS styling with `:state()`
 
 `<wcs-sse>` reflects three boolean output states onto its
@@ -486,7 +488,7 @@ bootstrapSse({
 });
 ```
 
-Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+`bootstrapSse()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.
 
 ## Design Notes
 

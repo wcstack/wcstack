@@ -188,9 +188,8 @@ declare class DefinedCore extends EventTarget {
     /**
      * Start watching `tags` under `mode` with an optional `timeoutMs`. Idempotent
      * while already subscribed — a second call is a no-op that just returns the live
-     * `ready` (the Shell binds at a fixed connect-time config and does not re-watch
-     * on attribute changes in v1). To switch config mid-life, dispose() first, then
-     * observe() again. Returns a promise that resolves once the watch settles, for SSR.
+     * `ready`. To switch config mid-life, dispose() first, then observe() again (the
+     * Shell does so when tags / mode / timeout change on a connected element). Returns a promise that resolves once the watch settles, for SSR.
      */
     observe(tags: string[], mode: DefinedMode, timeoutMs: number, registry?: ICustomElementRegistryAdapter | null): Promise<void>;
     /**
@@ -215,16 +214,18 @@ declare class WcsDefined extends HTMLElement {
     private _core;
     private _connectedCallbackPromise;
     private _internals;
+    private _watching;
+    static get observedAttributes(): string[];
     constructor();
     get debugStates(): string[];
     private _initInternals;
     private _wireStates;
     get tags(): string;
-    set tags(value: string);
+    set tags(value: string | null | undefined);
     get mode(): DefinedMode;
-    set mode(value: DefinedMode);
+    set mode(value: DefinedMode | null | undefined);
     get timeout(): number;
-    set timeout(value: number);
+    set timeout(value: number | null | undefined);
     get defined(): boolean;
     get pending(): string[];
     get missing(): string[];
@@ -235,6 +236,8 @@ declare class WcsDefined extends HTMLElement {
     private _parseTags;
     connectedCallback(): void;
     disconnectedCallback(): void;
+    attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
+    private _observe;
 }
 
 declare global {

@@ -3,6 +3,7 @@
 - **提案先**: wc-bindable-protocol リポジトリ（SPEC.md, protocol = `"wc-bindable"`, version 1）
 - **提案元の文脈**: wcstack（@wcstack/state の binder ＋ @wcstack/fetch ほか wc-bindable 準拠タグ群）
 - **状態**: wcstack 側は参照実装まで完了（2026-06-11、未リリース）。本文書は SPEC への規範文言追加の提案とその根拠をまとめたもの
+- **結果**: 上流は wc-bindable-protocol **v0.10.0（2026-10、[#27](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/27)）で、この提案とは違う規則で回答した**（SPEC-extensions「Applier profile」の **A2**）。「常にスキップ」は採られず、前回の評価で決まる。wcstack の扱いは [§8](#8-上流の回答v0100) を参照
 - **TL;DR**: binder は `undefined` を properties / inputs に書いては**ならない**（MUST NOT — 書き込み自体をスキップ）。明示クリアは `null` で表現する。要素は `undefined` への防御を**推奨**（SHOULD）
 
 ---
@@ -104,3 +105,22 @@ element holding the last written value. To clear, write `null`.
 - **state/データソース著者**: 宣言された全 input の防御的初期化が不要になる。使う端子だけ初期化し、クリアは `null` で書く。
 - **要素著者**: setter の undefined 防御は「必須の自衛」から「推奨の保険」に格下げされる。属性反映 setter を素朴に書いても準拠 binder 経由では壊れない。
 - **binder 実装者**: undefined スキップという1行相当の規則を負う。複数 binder 間での挙動互換が保証される。
+
+## 8. 上流の回答（v0.10.0）
+
+wc-bindable-protocol v0.10.0 は、入力と command を生きた要素に適用するコードを **applier** と呼び、その規則を SPEC-extensions「Extension 1 § Applier profile」（A1〜A3）にまとめた。`undefined` は **A2** で、この提案の「常にスキップ」とは違う。
+
+- 渡された値をそのまま適用する **relaying applier**（remote の producer 側 shell など）は、`undefined` も変えずに適用する（MUST）。
+- バインディングを持って値の変化を適用する **binding applier**（binder・テンプレート・framework 統合）は、評価が `undefined` になったとき:
+  - 前回の評価が無い、または前回も `undefined` なら**適用しない**（入力は今の状態を保つ）
+  - 前回の評価が別の値なら、`undefined` を**そのまま適用する**（値が取り除かれたので、要素は初期状態に戻る）
+  - 自分で値を作って代わりに書かない（`null`・`""`・`false`・既定値・文字列 `"undefined"`）
+- 前回の評価は、実際に代入したかどうかを問わない（hydration で引き継いだ値、要素がすでに持っていたので書かなかった値も含む）。存在しないキーは `undefined`。生きた要素からバインディングを外すのは `undefined` の評価として扱う（SHOULD）。`null` は普通の値。
+- 上流の根拠: 前回が無い・前回も `undefined` の `undefined` は「まだ値が無い」で、書くと要素自身の初期状態（既定値やマークアップの値）を壊す。値の後の `undefined` は「値が取り除かれた」で、書けば要素が初期状態に戻れる。React 19 が custom element に対してこの判断をしている（Lit の `nothing` も同じ結果）。
+- binding applier にとってプロファイルは任意（MAY claim）。宣言しなければ A2 には縛られない。
+
+要素の側には **Producer guidance**（SHOULD）が入った。P1: `undefined` の代入を「値が無い」として入力の初期状態（マークアップから初期化したならその値、でなければ文書化した既定値）に戻し、属性に文字列 `"undefined"` を書かない。P2: 入力ごとに `null` の意味を文書化する（remote 越しに設定される要素は `null` を reset として受ける）。P3: 公開面の属性は要素が自分で反映する。P4: upgrade 前に代入されたプロパティを取り込み直す。
+
+**wcstack の扱い（2026-10-10）**: @wcstack/state 4.0.0 は「常にスキップ」（4.0 の B8、`src/dom/wc.ts` / `src/dom/view.ts`）を変えず、applier プロファイルを宣言しない（A1 は満たす）。A2 に合わせると、3.x からの挙動が変わり（値 → `undefined` で要素の値が初期状態に戻る。`examples/router-spa` の詳細 url はこれに依存している）、その前に I/O ノードが P1 を満たしている必要があるため。差は §4 の注の場合だけ: 値から `undefined` に変わったパスについて、state は最後の値を要素に残し、A2 は要素を初期状態に戻す。クリアしたいときは今までどおり `null` を書く。A2 に合わせるかは 4.0.0 の後に改めて判断する。
+
+I/O ノードは、state の方針とは別に P1 に合わせる。React 19（値のあった prop を外すと `undefined` を代入する）、@wcstack/signals の `bindInput`、直接の代入は `undefined` を届けるので、「準拠 binder は `undefined` を届けない」を前提にした防御は成り立たない。

@@ -2,7 +2,9 @@
 // letting a binding core (e.g. @wcstack/state) discover and wire it generically.
 //
 //   properties: observable outputs — the element dispatches `event` on change; observers subscribe.
-//   inputs:     settable surface — declarative metadata; optional `attribute` hints the mirrored HTML attribute.
+//   inputs:     settable surface — declarative metadata; optional `attribute` names the input's HTML
+//               attribute for tooling and markup authoring. Appliers write the property, never that
+//               attribute; reflecting it is the element's job (SPEC-extensions § Applier profile A1, P3).
 //   commands:   invocable methods — declarative metadata; binding cores call the method by name.
 //
 // Cores interpret `properties`; `inputs` / `commands` and the `attribute` / `async` hints are

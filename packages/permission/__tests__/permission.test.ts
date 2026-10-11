@@ -93,6 +93,33 @@ describe("Permission (Shell)", () => {
     expect(bare.name).toBe("");
   });
 
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-permission name="push" user-visible-only sysex></wcs-permission>';
+    const el = host.firstElementChild as WcsPermission;
+    el.name = "camera";
+    el.userVisibleOnly = false;
+    el.sysex = false;
+    el.name = undefined;
+    el.userVisibleOnly = undefined;
+    el.sysex = undefined;
+    expect(el.name).toBe("push");
+    expect(el.userVisibleOnly).toBe(true);
+    expect(el.sysex).toBe(true);
+    el.name = null;
+    el.userVisibleOnly = null;
+    el.sysex = null;
+    expect(el.hasAttribute("name")).toBe(false);
+    expect(el.name).toBe("");
+    expect(el.userVisibleOnly).toBe(false);
+    expect(el.sysex).toBe(false);
+
+    const bare = createPermission();
+    bare.name = "camera";
+    bare.name = undefined;
+    expect(bare.hasAttribute("name")).toBe(false);
+  });
+
   it("live change が要素の state に伝わる（event-token の純プロデューサ）", async () => {
     const mock = installPermissions({ state: "prompt" });
     const el = createPermission({ name: "geolocation" });

@@ -85,6 +85,8 @@ npm install @wcstack/raf
 | `manual`  | boolean | `false` | 接続時に自動 start しない。コマンド / trigger で開始。 |
 | `reduced-motion` | `"run"` \| `"pause"` | `"run"` | オプトインの `prefers-reduced-motion` ゲート。`"pause"` にすると、ユーザーの OS/ブラウザ設定が「動きを減らす」を要求している間はフレーム配送が止まり（`suspended` で観測可能）、解除されると `dt = 0` 境界で再開する。未知値は `"run"` に正規化。 |
 
+**`null` と `undefined`。** 属性に対応する入力（`once`・`repeat`・`manual`・`reducedMotion`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値（`reducedMotion` なら `"run"`）に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`trigger` プロパティはどちらも無視します。
+
 `<wcs-timer>` から意図的に削除したもの: `interval`（rAF に周期は無い）と `immediate`（初回フレームがすでに「次の描画機会」であり、それより早い意味のある時点が存在しない）。
 
 ### `reduced-motion` の既定が `run` である理由
@@ -184,7 +186,7 @@ bootstrapRaf({
 });
 ```
 
-知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
+`bootstrapRaf()` は、持っていないオプション、既定値と型の違う値（`null` や、オブジェクトの所の配列を含む）、定義していない `tagNames` のキー、文字列でないタグ名で例外を投げます。当てる前にすべてのオプションを確かめるので、投げたときは何も当てません。値が `undefined` のオプションは飛ばします。
 
 ## アクセシビリティ
 

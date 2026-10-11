@@ -77,19 +77,20 @@ export default {
          / this["regions.*.prefectures.*.cities.*.area"];
   },
 
-  // 都道府県レベル — 市区町村から集約
+  // 都道府県レベル — この都道府県の市区町村から集約
+  // （indexes 省略: ループ文脈 [$1, $2] が既定になる）
   get "regions.*.prefectures.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.cities.*.population", [])
+    return this.$getAll("regions.*.prefectures.*.cities.*.population")
       .reduce((a, b) => a + b, 0);
   },
 
-  // 地域レベル — 都道府県から集約
+  // 地域レベル — この地域の都道府県から集約（文脈 [$1]）
   get "regions.*.totalPopulation"() {
-    return this.$getAll("regions.*.prefectures.*.totalPopulation", [])
+    return this.$getAll("regions.*.prefectures.*.totalPopulation")
       .reduce((a, b) => a + b, 0);
   },
 
-  // トップレベル — 地域から集約
+  // トップレベル — ループ文脈なし。[] は「一致するすべて」
   get totalPopulation() {
     return this.$getAll("regions.*.totalPopulation", [])
       .reduce((a, b) => a + b, 0);
@@ -97,7 +98,7 @@ export default {
 };
 ```
 
-5つの計算プロパティ、3階層のネスト、追加コンポーネントはゼロ。`$getAll` がワイルドカードに一致するすべての値を収集し、ボトムアップの集約が自然に流れます。
+4つの計算プロパティ、3階層のネスト、追加コンポーネントはゼロ。`$getAll` がワイルドカードに一致する値を収集し、ボトムアップの集約が自然に流れます。第 2 引数はインデックスの接頭辞です: 省略すると getter が評価されている行から取られるので、都道府県は自分の市区町村だけを合計します。`[]` は一致するすべてを意味します。都道府県の getter の中で `[]` を渡すと、全都道府県の市区町村を合計してしまいます — README の [`$getAll`](../README.ja.md#getall--配列要素全体の集計) を参照してください。
 
 ---
 
@@ -205,7 +206,7 @@ get totalPopulation() { ... }
 
 ```
 テンプレート:
-  <template data-wcs="for: users">     ← インデックスをスタックにプッシュ
+  <template data-wcs="for: users">     ← 各行が自分のインデックスを与える
     {{ .fullName }}                      ← users.*.fullName を読み取り
 
 インデックス0:  this["users.*.firstName"]  →  users[0].firstName  →  "Alice"
@@ -361,6 +362,12 @@ this.items.splice(index, 1);
 
 ES2023の非破壊配列メソッド（`toSpliced`, `toSorted`, `toReversed`, `with`）との相性が良い設計です。
 
+オブジェクトや配列をどうしても in-place で変更するときは、その後で `this.$postUpdate(path)` で知らせてください。
+
+### getter は純粋に
+
+getter のキャッシュが無効化されるのは、**`this` 経由で**読んだものを通してだけです。getter の中で読んだ `Date.now()`・DOM・モジュール変数は依存グラフから見えないので、最初に計算した値が残り続けます — そうした入力は state に置いてください。同様に、`this.form.name` が追跡するのは `form` だけです。フィールドに依存するには `this["form.name"]` と読んでください。規則と逃げ道（`$dependOn`・`$untracked`）は README の [getter は state に対して純粋であること](../README.ja.md#getter-は-state-に対して純粋であること) 節にあります。
+
 ---
 
 ## まとめ
@@ -373,7 +380,9 @@ ES2023の非破壊配列メソッド（`toSpliced`, `toSorted`, `toReversed`, `w
 | 自動依存追跡 | アクセスが依存を登録。手動の依存配列は不要 |
 | 要素ごとのキャッシュ | 影響を受けた要素のみ無効化 |
 | getterチェーン | getter同士の参照で計算が連鎖 |
-| `$getAll` | ワイルドカードに一致する全値を収集して集約 |
+| `$getAll` | ワイルドカードに一致する値を収集して集約 — 現在の行の範囲で（indexes 省略）、または一致するすべてで（`[]`） |
 | パスsetter | `set "a.*.b"(v)` — カスタムの書き込みロジック |
 
 パスgetterの考え方はシンプルです — 計算プロパティは、**コンポーネントの場所ではなくデータのある場所に定義する**。この一つの判断がコンポーネント分割の強制を取り除き、ネストされたデータの扱いを根本的に変えます。
+
+解決・キャッシュ・無効化の仕組みのリファレンスは README の [パス getter](../README.ja.md#パス-getter算出プロパティ) 節です。

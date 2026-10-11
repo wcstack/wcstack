@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: a select whose options a for renders</title>
+  <!-- The select's value binding comes before the options its for renders (bindings apply in
+       document order): the value must still be selected once the options are there — on the first
+       render, in every row, and when the options arrive later. happy-dom's <select> is not the
+       platform's, so this spec checks what a browser selects. -->
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+</head>
+<body>
+  <wcs-state>
+    <script type="module">
+      export default {
+        choice: "b",
+        idx: 2,
+        options: [{ v: "a" }, { v: "b" }, { v: "c" }],
+        late: [],
+        rows: [
+          { choice: "b", opts: [{ v: "a" }, { v: "b" }, { v: "c" }] },
+          { choice: "c", opts: [{ v: "a" }, { v: "b" }, { v: "c" }] },
+        ],
+      };
+    </script>
+
+    <select id="root" data-wcs="value: choice">
+      <template data-wcs="for: options"><option data-wcs="value: .v">{{ .v }}</option></template>
+    </select>
+    <select id="index" data-wcs="selectedIndex: idx">
+      <template data-wcs="for: options"><option data-wcs="value: .v">{{ .v }}</option></template>
+    </select>
+    <select id="group" data-wcs="value: choice">
+      <optgroup label="g"><template data-wcs="for: options"><option data-wcs="value: .v">{{ .v }}</option></template></optgroup>
+    </select>
+    <select id="late" data-wcs="value: choice">
+      <template data-wcs="for: late"><option data-wcs="value: .v">{{ .v }}</option></template>
+    </select>
+    <div id="rows">
+      <template data-wcs="for: rows">
+        <select data-wcs="value: .choice">
+          <template data-wcs="for: .opts"><option data-wcs="value: .v">{{ .v }}</option></template>
+        </select>
+      </template>
+    </div>
+  </wcs-state>
+  <script type="module">
+    window.__write = (fn) => document.querySelector("wcs-state").createState("writable", fn);
+  </script>
+</body>
+</html>

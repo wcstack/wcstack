@@ -40,43 +40,32 @@ function getConfig() {
     }
     return frozenConfig;
 }
-// The defaults as shipped, for warnInvalid: a value 3.x lets through unchecked must not change
-// what a later call is compared against.
-const defaults = { ..._config, tagNames: { ..._config.tagNames } };
-const warned = new Set();
-/**
- * 3.5 forward-compat check. Warns, once per key per page, about an option that 4.0's
- * bootstrapDefined throws on: one this package does not have, a value of another type than its
- * default (null, or an array for an object, included), or a tag name it does not define or that is
- * not a string. An undefined value is left out, as in 4.0. It only warns: setConfig then goes on
- * exactly as in 3.x. Bootstrap-time only, never on a hot path.
- */
-function warnInvalid(given, known, path = "") {
-    for (const [key, value] of Object.entries(given)) {
-        const name = path + key;
-        const current = known[key];
-        if (value === undefined) {
-            continue;
-        }
-        if (!Object.prototype.hasOwnProperty.call(known, key) ||
-            value === null ||
-            typeof value !== typeof current ||
-            Array.isArray(value) !== Array.isArray(current)) {
-            if (!warned.has(name)) {
-                warned.add(name);
-                console.warn(`[@wcstack/defined] bootstrapDefined: "${name}" is not one of its options, or not of the option's type. 3.x ignores it or applies it unchecked; 4.0 throws on it.`);
-            }
-        }
-        else if (name === "tagNames") {
-            warnInvalid(value, current, "tagNames.");
-        }
-    }
+/** A misspelt option would otherwise do nothing: `bootstrapDefined` refuses it. */
+function invalid(key) {
+    throw new Error(`[@wcstack/defined] bootstrapDefined: "${key}" is not one of its options, or not of the option's type.`);
 }
+/**
+ * Applies the options given; an undefined value is left out. An option this package does not
+ * have, a value of another type than its default (null, or an array for an object, included) or
+ * a tag name it does not define throws, and then nothing is applied.
+ */
 function setConfig(partialConfig) {
-    warnInvalid(partialConfig, defaults);
-    if (partialConfig.tagNames) {
-        Object.assign(_config.tagNames, partialConfig.tagNames);
+    const options = _config;
+    const tags = _config.tagNames;
+    const given = Object.entries(partialConfig).filter(([, value]) => value !== undefined);
+    const givenTags = Object.entries(partialConfig.tagNames ?? {}).filter(([, tag]) => tag !== undefined);
+    for (const [key, value] of given) {
+        const current = options[key];
+        if (!Object.hasOwn(options, key) || value === null || typeof value !== typeof current || Array.isArray(value) !== Array.isArray(current)) {
+            invalid(key);
+        }
     }
+    for (const [name, tag] of givenTags) {
+        if (!Object.hasOwn(tags, name) || typeof tag !== "string")
+            invalid(`tagNames.${name}`);
+    }
+    for (const [name, tag] of givenTags)
+        tags[name] = tag;
     frozenConfig = null;
 }
 
@@ -229,9 +218,8 @@ class DefinedCore extends EventTarget {
     /**
      * Start watching `tags` under `mode` with an optional `timeoutMs`. Idempotent
      * while already subscribed — a second call is a no-op that just returns the live
-     * `ready` (the Shell binds at a fixed connect-time config and does not re-watch
-     * on attribute changes in v1). To switch config mid-life, dispose() first, then
-     * observe() again. Returns a promise that resolves once the watch settles, for SSR.
+     * `ready`. To switch config mid-life, dispose() first, then observe() again (the
+     * Shell does so when tags / mode / timeout change on a connected element). Returns a promise that resolves once the watch settles, for SSR.
      */
     observe(tags, mode, timeoutMs, registry) {
         if (!this._subscribed) {
@@ -485,6 +473,53 @@ function upgradeProperties(element) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/input-attribute.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// 属性へ反映する wc-bindable 入力の producer 側（SPEC-extensions § Producer guidance for inputs の P1〜P3）。
+// 入力の setter は属性をこの 2 関数で書く。それで次が揃う:
+//   - `undefined` は「値が無い」（P1）: 属性を、この関数で最初に書く前の状態 — マークアップに書かれた値、
+//     無ければ属性なし（= その入力の文書化した既定値）— へ戻す。applier プロファイルを宣言する binder は
+//     値の後の `undefined` を書き（A2）、React 19 も書き、直接の代入でも届く。
+//   - `null` はクリア（P2）: 属性なし、つまり文書化した既定値。
+//   - どちらも文字列 "undefined" / "null" として属性に入らない。
+//
+// 「最初に書く前」は、その最初の書き込みのときに読む（遅延）。upgrade 前に代入されたプロパティは
+// connectedCallback の upgradeProperties() が通し直すので、そのときにはパーサが書いた属性が揃っている。
+// 要素自身が setter を通さずに書いた属性は、最初の書き込みより前なら「最初の状態」に含まれる。
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/input-attribute.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/inputAttribute.ts). Those copies are generated — do not edit them.
+const initialAttributes = new WeakMap();
+/** The attribute as it stood before the first write through these helpers. */
+function initialAttribute(el, name) {
+    let byName = initialAttributes.get(el);
+    if (byName === undefined) {
+        byName = new Map();
+        initialAttributes.set(el, byName);
+    }
+    if (!byName.has(name))
+        byName.set(name, el.getAttribute(name));
+    return byName.get(name);
+}
+function writeAttribute(el, name, value) {
+    if (value === null)
+        el.removeAttribute(name);
+    else
+        el.setAttribute(name, value);
+}
+/**
+ * A value attribute. `value` is written as `String(value)`; `null` removes the attribute;
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value === null ? null : String(value));
+}
+
 // Named WcsDefined (not `Defined`) to match the <wcs-permission> / <wcs-geo>
 // convention (WcsPermission / WcsGeolocation) and avoid shadowing any global.
 class WcsDefined extends HTMLElement {
@@ -510,6 +545,14 @@ class WcsDefined extends HTMLElement {
     _core;
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
+    // True between connectedCallback and disconnectedCallback: an attribute change
+    // then re-watches. Before that (attributes set at upgrade, and the inputs
+    // upgradeProperties replays) the connect-time observe() reads them anyway.
+    _watching = false;
+    // tags / mode / timeout are live: binders write the property, which the setter
+    // reflects, and a wc-bindable binder (@wcstack/state included) writes it after
+    // the element has upgraded and connected.
+    static get observedAttributes() { return ["tags", "mode", "timeout"]; }
     constructor() {
         super();
         this._core = new DefinedCore(undefined, "all", 0, this);
@@ -570,20 +613,21 @@ class WcsDefined extends HTMLElement {
     get tags() {
         return this.getAttribute("tags") ?? "";
     }
-    // `tags` / `mode` setters pass the value straight to setAttribute: their value
-    // type is already `string` / `DefinedMode`, and the matching getter normalizes on
-    // read (mode: anything but "any" → "all"; tags: parsed/trimmed in _parseTags).
-    // Only `timeout` setter coerces (String(value)) because its value type is number,
-    // which setAttribute would otherwise stringify implicitly anyway — the explicit
-    // String() just makes the number→attribute boundary obvious.
+    // The setters write the attribute through reflectAttribute (String(value)), and
+    // the matching getter normalizes on read (mode: anything but "any" → "all";
+    // tags: parsed/trimmed in _parseTags; timeout: non-negative finite or 0). They
+    // never let setAttribute stringify null / undefined ("undefined" would be watched
+    // as a tag name): `null` removes the attribute (the default), `undefined` restores
+    // the attribute the element started with (wc-bindable producer guidance P1;
+    // React 19 and a direct assignment deliver it, @wcstack/state does not).
     set tags(value) {
-        this.setAttribute("tags", value);
+        reflectAttribute(this, "tags", value);
     }
     get mode() {
         return this.getAttribute("mode") === "any" ? "any" : "all";
     }
     set mode(value) {
-        this.setAttribute("mode", value);
+        reflectAttribute(this, "mode", value);
     }
     get timeout() {
         // Normalize to a non-negative finite count of ms. `Number("abc")` → NaN and a
@@ -594,7 +638,7 @@ class WcsDefined extends HTMLElement {
         return Number.isFinite(ms) && ms > 0 ? ms : 0;
     }
     set timeout(value) {
-        this.setAttribute("timeout", String(value));
+        reflectAttribute(this, "timeout", value);
     }
     // --- Core delegated getters ---
     get defined() {
@@ -637,10 +681,23 @@ class WcsDefined extends HTMLElement {
         // Gate on the registry this element's own subtree resolves against: with a
         // scoped registry the same tag name means a different definition per tree,
         // so watching the global one would report readiness this tree cannot use.
-        this._connectedCallbackPromise = this._core.observe(this._parseTags(), this.mode, this.timeout, getCustomElementRegistry(this));
+        this._observe();
+        this._watching = true;
     }
     disconnectedCallback() {
+        this._watching = false;
         this._core.dispose();
+    }
+    // A changed tags / mode / timeout on a connected element restarts the watch with
+    // the new configuration (the Core re-watches only after a dispose()).
+    attributeChangedCallback(_name, oldValue, newValue) {
+        if (!this._watching || oldValue === newValue)
+            return;
+        this._core.dispose();
+        this._observe();
+    }
+    _observe() {
+        this._connectedCallbackPromise = this._core.observe(this._parseTags(), this.mode, this.timeout, getCustomElementRegistry(this));
     }
 }
 

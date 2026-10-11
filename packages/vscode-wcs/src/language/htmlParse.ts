@@ -7,6 +7,16 @@
  * 外部依存なし。正規表現ベースのステートマシンで実装。
  */
 
+/**
+ * ASCII の英大文字だけを小文字にする（HTML のタグ名・属性名の比較は ASCII case-insensitive）。
+ * **文字数を変えない**ので、結果の上で探した位置をそのまま元の文字列の位置に使える。`String#toLowerCase` は
+ * `'İ'`（U+0130）などを 2 文字にするので、それより後ろの位置がずれる（本文に `İSTANBUL` があるだけで、
+ * スクリプトの終わりを取り違えていた）。
+ */
+export function asciiLowerCase(text: string): string {
+  return text.replace(/[A-Z]+/g, (upper) => upper.toLowerCase());
+}
+
 /** 開始タグ 1 個の**属性領域**（`<` の次から `>` の手前まで）。 */
 export interface StartTagRegion {
   /** タグ名（小文字）。 */
@@ -33,6 +43,7 @@ export interface StartTagRegion {
  */
 export function findStartTagRegions(html: string): StartTagRegion[] {
   const out: StartTagRegion[] = [];
+  let lower: string | null = null;
   let i = 0;
   while (i < html.length) {
     const lt = html.indexOf('<', i);
@@ -57,7 +68,7 @@ export function findStartTagRegions(html: string): StartTagRegion[] {
     // タグ名
     let n = lt + 1;
     while (n < html.length && /[^\s/>]/.test(html[n])) n++;
-    const tagName = html.slice(lt + 1, n).toLowerCase();
+    const tagName = asciiLowerCase(html.slice(lt + 1, n));
 
     // 属性領域の終端（引用符の中の `>` は終端ではない）
     let j = n;
@@ -80,57 +91,11 @@ export function findStartTagRegions(html: string): StartTagRegion[] {
 
     // raw text 要素は本体ごと飛ばす（中の文字列を属性と読まない）
     if (tagName === 'script' || tagName === 'style') {
-      const close = html.toLowerCase().indexOf(`</${tagName}`, i);
+      const close = (lower ??= asciiLowerCase(html)).indexOf(`</${tagName}`, i);
       i = close === -1 ? html.length : close;
     }
   }
   return out;
-}
-
-/**
- * 中身が要素にならない要素（スクリプトが有効なページの HTML パーサが raw text / RCDATA として読むもの）。
- * 中に書かれた `<wcs-state>` や `data-wcs="…"` は文字であって、要素でも束縛でもない。
- */
-export const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set([
-  'script', 'style', 'textarea', 'title', 'xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext',
-]);
-
-/**
- * ASCII の英大文字だけを小文字にする。`toLowerCase` は `İ` のように小文字が長くなる文字で長さが変わり、
- * 小文字化した写しで探した位置が原文とずれる — タグ名の照合（HTML は ASCII で大小を区別しない）はこれで行う。
- */
-export function asciiLowerCase(text: string): string {
-  return text.replace(/[A-Z]+/g, (s) => s.toLowerCase());
-}
-
-/**
- * offset が `<template>` の中（の文字列位置）かを答える関数を返す。文書を 1 回だけ走査して
- * `<template>` / `</template>` のタグ位置を集める（コメントと raw text 要素の中身は飛ばす）。
- */
-export function createTemplateTester(html: string): (offset: number) => boolean {
-  const lower = asciiLowerCase(html);
-  const tags: { at: number; close: boolean }[] = [];
-  const tag = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][^\s/>]*)/g;
-  let match: RegExpExecArray | null;
-  while ((match = tag.exec(html)) !== null) {
-    if (match[2] === undefined) continue; // コメント
-    const name = lower.slice(match.index + 1 + match[1].length, match.index + match[0].length);
-    if (name === 'template') {
-      tags.push({ at: match.index, close: match[1] === '/' });
-    } else if (match[1] === '' && RAW_TEXT_ELEMENTS.has(name)) {
-      const close = lower.indexOf(`</${name}`, tag.lastIndex);
-      if (close === -1) break;
-      tag.lastIndex = close + 2 + name.length;
-    }
-  }
-  return (offset) => {
-    let depth = 0;
-    for (const t of tags) {
-      if (t.at >= offset) break;
-      depth = t.close ? Math.max(0, depth - 1) : depth + 1;
-    }
-    return depth > 0;
-  };
 }
 
 /**
@@ -165,6 +130,12 @@ export interface WcsScriptBlock {
   content: string;
   /** 所属する <wcs-state> の mount 属性（ボリューム）。無ければ null */
   mountPath: string | null;
+  /**
+   * 所属する <wcs-state> が `bind-component` を持つか。そのスクリプトはランタイムが読まない（マウントした
+   * コンポーネントの state はホスト要素のプロパティだけで、中の `<script type="module">` は読み込みごと拒まれる —
+   * `wcs/bind-component-source`）。
+   */
+  bindComponent: boolean;
 }
 
 /**
@@ -173,98 +144,80 @@ export interface WcsScriptBlock {
  * 仕様:
  * - <wcs-state> のネストは不可（仕様上）
  * - <!-- --> コメント内の <wcs-state> は無視
+ * - raw text 要素（`<script>` / `<style>` / `<textarea>` / `<title>`）の中身の <wcs-state> は無視
+ *   （`parseWcsStateElements` と同じ走査）
  * - <script type="module"> のみ対象
  * - 大文字小文字を区別しない（HTML仕様に準拠）
  * - 複数の <wcs-state> に対応
  */
 export function parseWcsScriptBlocks(html: string, stateTagName: string = 'wcs-state'): WcsScriptBlock[] {
-  const blocks: WcsScriptBlock[] = [];
+  return parseWcsStateElements(html, stateTagName).flatMap((element) => element.scriptBlocks);
+}
 
-  let pos = 0;
-  const len = html.length;
+/**
+ * ランタイムが読み込む <wcs-state> のスクリプトだけ（`bind-component` を持つ要素の中のスクリプトを除く）。
+ * 宣言とスクリプトの検査はこちらを使う: `<wcs-state bind-component>` の中のスクリプトはランタイムが読み込みごと
+ * 拒む（`wcs/bind-component-source` で 1 件報告する）ので、中身の検査を重ねない。
+ * 補完・型・参照などの編集の支援は `parseWcsScriptBlocks` を使う（書いている途中のスクリプトにも効かせる）。
+ */
+export function parseLoadedScriptBlocks(html: string, stateTagName: string = 'wcs-state'): WcsScriptBlock[] {
+  return parseWcsScriptBlocks(html, stateTagName).filter((block) => !block.bindComponent);
+}
 
-  while (pos < len) {
-    // HTML コメントをスキップ
-    if (html.startsWith('<!--', pos)) {
-      const commentEnd = html.indexOf('-->', pos + 4);
-      if (commentEnd === -1) break;
-      pos = commentEnd + 3;
-      continue;
-    }
+/**
+ * 中身が要素にならない要素（スクリプトが有効なページの HTML パーサは中の `<…>` をタグとして読まない）。
+ * `<script>` / `<style>` / `<xmp>` / `<iframe>` / `<noembed>` / `<noframes>` / `<noscript>` は raw text、
+ * `<textarea>` / `<title>` は RCDATA、`<plaintext>` は文書の終わりまで文字。JS で作る shadow DOM
+ * （`innerHTML = \`<wcs-state …>\``）・文字列・入力欄の中の `<wcs-state>` / `<template>` / `data-wcs="…"` は
+ * 文書の要素でも束縛でもない。`<wcs-state>` の走査・`createTemplateTester`・forContext の要素の文脈
+ * （analyzeElementContexts）がこの 1 つの集合を使う。mustache・コメント束縛の走査（templateSyntax.ts）は
+ * テキストノードを読むランタイムに合わせた別の規則。
+ */
+export const RAW_TEXT_ELEMENTS: ReadonlySet<string> = new Set([
+  'script', 'style', 'textarea', 'title', 'xmp', 'iframe', 'noembed', 'noframes', 'noscript', 'plaintext',
+]);
 
-    // <wcs-state を検出
-    const wcsMatch = matchOpenTag(html, pos, stateTagName);
-    if (wcsMatch === null) {
-      pos++;
-      continue;
-    }
-
-    const mountPath = extractAttribute(wcsMatch.tagContent, 'mount');
-    pos = wcsMatch.end;
-
-    // </wcs-state> の閉じタグまでの範囲内で <script type="module"> を探す
-    const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
-    const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
-
-    while (pos < wcsEnd) {
-      // コメントスキップ
-      if (html.startsWith('<!--', pos)) {
-        const commentEnd = html.indexOf('-->', pos + 4);
-        if (commentEnd === -1) break;
-        pos = commentEnd + 3;
-        continue;
-      }
-
-      const scriptMatch = matchOpenTag(html, pos, 'script');
-      if (scriptMatch === null) {
-        pos++;
-        continue;
-      }
-
-      // type="module" であるか確認（HTML 仕様どおり ASCII case-insensitive）
-      const typeAttr = extractAttribute(scriptMatch.tagContent, 'type');
-      if (typeAttr?.toLowerCase() !== 'module') {
-        pos = scriptMatch.end;
-        continue;
-      }
-
-      const contentStart = scriptMatch.end;
-      const scriptCloseIdx = findCloseTag(html, contentStart, 'script');
-      if (scriptCloseIdx === -1) {
-        pos = contentStart;
-        break;
-      }
-
-      const contentEnd = scriptCloseIdx;
-      blocks.push({
-        contentStart,
-        contentEnd,
-        content: html.slice(contentStart, contentEnd),
-        mountPath,
-      });
-
-      // </script> タグの末尾まで進める
-      pos = html.indexOf('>', scriptCloseIdx) + 1;
-      if (pos === 0) break; // '>' が見つからない場合
-    }
-
-    pos = wcsEnd;
-    // </wcs-state> タグの末尾まで進める
-    if (wcsCloseIdx !== -1) {
-      const closeEnd = html.indexOf('>', wcsCloseIdx);
-      if (closeEnd !== -1) pos = closeEnd + 1;
+/**
+ * `pos` から raw text 要素が始まるなら、その開始タグと中身の終わり（終了タグ `</tag` の位置。無ければ文書の終わり —
+ * HTML のパーサと同じく残りがすべて中身になる）を返す。始まらなければ null。
+ * 終了タグは `</tag` の直後が空白・`/`・`>`・文書の終わりのもの（`</scripts` は終了タグではない）。
+ */
+function matchRawTextElement(html: string, lower: string, pos: number): { tag: string; open: TagMatch; contentEnd: number; closed: boolean } | null {
+  if (html[pos] !== '<') return null;
+  for (const tag of RAW_TEXT_ELEMENTS) {
+    const open = matchOpenTag(html, pos, tag);
+    if (open === null) continue;
+    // `<plaintext>` は終了タグを持たない（`</plaintext>` も文字）
+    if (tag === 'plaintext') return { tag, open, contentEnd: html.length, closed: false };
+    let from = open.end;
+    for (;;) {
+      const idx = lower.indexOf(`</${tag}`, from);
+      if (idx === -1) return { tag, open, contentEnd: html.length, closed: false };
+      const after = html[idx + tag.length + 2];
+      if (after === undefined || after === '>' || after === '/' || /\s/.test(after)) return { tag, open, contentEnd: idx, closed: true };
+      from = idx + 1;
     }
   }
+  return null;
+}
 
-  return blocks;
+/** 終了タグ（`</tag …>`）の `>` の直後。`>` が無ければ文書の終わり。 */
+function afterCloseTag(html: string, closeStart: number): number {
+  const gt = html.indexOf('>', closeStart);
+  return gt === -1 ? html.length : gt + 1;
 }
 
 /**
  * HTML テキストから <wcs-state> 要素を全て抽出し、
  * 各要素の属性（json, state, src）と内部スクリプトブロックを返す。
+ *
+ * 文書の要素だけを数える: コメントの中と、raw text 要素（`<script>` / `<style>` / `<textarea>` / `<title>`）の
+ * 中身は飛ばす。`<wcs-state>` の中でも同じで、中のスクリプトの文字列に `</wcs-state>` があっても要素の終わりと
+ * 読まない（終了タグは raw text の外で探し直す）。
  */
 export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-state'): WcsStateInfo[] {
   const elements: WcsStateInfo[] = [];
+  const lower = asciiLowerCase(html);
 
   let pos = 0;
   const len = html.length;
@@ -275,6 +228,13 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
       const commentEnd = html.indexOf('-->', pos + 4);
       if (commentEnd === -1) break;
       pos = commentEnd + 3;
+      continue;
+    }
+
+    // raw text 要素は中身ごと飛ばす（中の `<wcs-state` は文字）
+    const raw = matchRawTextElement(html, lower, pos);
+    if (raw !== null) {
+      pos = raw.closed ? afterCloseTag(html, raw.contentEnd) : len;
       continue;
     }
 
@@ -296,8 +256,8 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
 
     // 内部の <script type="module"> ブロックを収集
     const scriptBlocks: WcsScriptBlock[] = [];
-    const wcsCloseIdx = findCloseTag(html, pos, stateTagName);
-    const wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
+    let wcsCloseIdx = findCloseTag(html, pos, stateTagName, lower);
+    let wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
 
     while (pos < wcsEnd) {
       if (html.startsWith('<!--', pos)) {
@@ -307,46 +267,107 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
         continue;
       }
 
-      const scriptMatch = matchOpenTag(html, pos, 'script');
-      if (scriptMatch === null) {
+      const inner = matchRawTextElement(html, lower, pos);
+      if (inner === null) {
         pos++;
         continue;
       }
 
-      const typeAttr = extractAttribute(scriptMatch.tagContent, 'type');
-      if (typeAttr?.toLowerCase() !== 'module') {
-        pos = scriptMatch.end;
-        continue;
+      if (inner.tag === 'script') {
+        // type="module" であるか確認（HTML 仕様どおり ASCII case-insensitive）。閉じていないスクリプトは読まない
+        const typeAttr = extractAttribute(inner.open.tagContent, 'type');
+        if (typeAttr?.toLowerCase() === 'module' && inner.closed) {
+          const contentStart = inner.open.end;
+          scriptBlocks.push({
+            contentStart,
+            contentEnd: inner.contentEnd,
+            content: html.slice(contentStart, inner.contentEnd),
+            mountPath,
+            bindComponent,
+          });
+        }
       }
-
-      const contentStart = scriptMatch.end;
-      const scriptCloseIdx = findCloseTag(html, contentStart, 'script');
-      if (scriptCloseIdx === -1) {
-        pos = contentStart;
+      if (!inner.closed) {
+        pos = len;
+        wcsCloseIdx = -1;
+        wcsEnd = len;
         break;
       }
-
-      scriptBlocks.push({
-        contentStart,
-        contentEnd: scriptCloseIdx,
-        content: html.slice(contentStart, scriptCloseIdx),
-        mountPath,
-      });
-
-      pos = html.indexOf('>', scriptCloseIdx) + 1;
-      if (pos === 0) break;
+      pos = afterCloseTag(html, inner.contentEnd);
+      // 中身の中にあった `</wcs-state>`（スクリプトの文字列など）は終了タグではない — 中身の後ろで探し直す
+      if (pos > wcsEnd) {
+        wcsCloseIdx = findCloseTag(html, pos, stateTagName, lower);
+        wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
+      }
     }
 
     elements.push({ mountPath, bindComponent, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
 
     pos = wcsEnd;
-    if (wcsCloseIdx !== -1) {
-      const closeEnd = html.indexOf('>', wcsCloseIdx);
-      if (closeEnd !== -1) pos = closeEnd + 1;
-    }
+    if (wcsCloseIdx !== -1) pos = afterCloseTag(html, wcsCloseIdx);
   }
 
   return elements;
+}
+
+/**
+ * 位置が文書の `<template>` の中か（`<template>` の中身は文書に無い — querySelector は見ない）を答える関数を返す。
+ * root の `<wcs-state>` の判定に使う。`<template>` の開始・終了タグを文書の頭から 1 回だけ集め、深さで判定する。
+ * コメントの中と raw text 要素（`parseWcsStateElements` と同じ — JS の文字列の `<template>` など）は数えない。
+ */
+export function createTemplateTester(html: string): (offset: number) => boolean {
+  const tags = collectTemplateTags(html);
+  return (offset) => {
+    let depth = 0;
+    for (const tag of tags) {
+      if (tag.at >= offset) break;
+      depth = tag.close ? Math.max(0, depth - 1) : depth + 1;
+    }
+    return depth > 0;
+  };
+}
+
+/**
+ * Returns a function giving the `<template>` elements that enclose an offset, as the offsets of their start tags from
+ * the outermost to the innermost (empty: in the document). The tags are collected once, as by createTemplateTester.
+ */
+export function createTemplateChain(html: string): (offset: number) => readonly number[] {
+  const tags = collectTemplateTags(html);
+  return (offset) => {
+    const open: number[] = [];
+    for (const tag of tags) {
+      if (tag.at >= offset) break;
+      if (!tag.close) open.push(tag.at);
+      else if (open.length > 0) open.pop();
+    }
+    return open;
+  };
+}
+
+/** The `<template>` start and end tags of the document, in order (not in comments or raw text elements). */
+function collectTemplateTags(html: string): { at: number; close: boolean }[] {
+  const lower = asciiLowerCase(html);
+  const tags: { at: number; close: boolean }[] = [];
+  let pos = 0;
+  while (pos < html.length) {
+    const lt = html.indexOf('<', pos);
+    if (lt === -1) break;
+    if (html.startsWith('<!--', lt)) {
+      const commentEnd = html.indexOf('-->', lt + 4);
+      if (commentEnd === -1) break;
+      pos = commentEnd + 3;
+      continue;
+    }
+    const raw = matchRawTextElement(html, lower, lt);
+    if (raw !== null) {
+      pos = raw.closed ? afterCloseTag(html, raw.contentEnd) : html.length;
+      continue;
+    }
+    const tag = /^<(\/?)template(?=[\s/>])/i.exec(html.slice(lt, lt + 11));
+    if (tag !== null) tags.push({ at: lt, close: tag[1] === '/' });
+    pos = lt + 1;
+  }
+  return tags;
 }
 
 /**
@@ -414,7 +435,7 @@ function matchOpenTag(html: string, pos: number, tagName: string): TagMatch | nu
   if (nameEnd > html.length) return null;
 
   const slice = html.slice(nameStart, nameEnd);
-  if (slice.toLowerCase() !== tagName.toLowerCase()) return null;
+  if (asciiLowerCase(slice) !== asciiLowerCase(tagName)) return null;
 
   // タグ名の直後がスペースまたは '>' であることを確認
   const charAfter = html[nameEnd];
@@ -451,11 +472,12 @@ function matchOpenTag(html: string, pos: number, tagName: string): TagMatch | nu
 
 /**
  * 指定位置以降で </tagName> の開始位置（'<' の位置）を返す。
+ * `lower` は `asciiLowerCase(html)`（文字数が同じなので位置をそのまま使える）。呼び出し側が持っていれば渡す。
  */
-function findCloseTag(html: string, startPos: number, tagName: string): number {
+function findCloseTag(html: string, startPos: number, tagName: string, lower: string = asciiLowerCase(html)): number {
   const pattern = '</' + tagName;
-  const patternLower = pattern.toLowerCase();
-  const htmlLower = html.toLowerCase();
+  const patternLower = asciiLowerCase(pattern);
+  const htmlLower = lower;
   let pos = startPos;
 
   while (pos < html.length) {
@@ -494,7 +516,7 @@ export function parseAttributeNames(tagContent: string): Set<string> {
  * タグ属性テキストから指定属性の値を抽出する。
  * 引用符なし・シングル・ダブルいずれにも対応。
  */
-function extractAttribute(tagContent: string, attrName: string): string | null {
+export function extractAttribute(tagContent: string, attrName: string): string | null {
   // name="value" or name='value' or name=value
   const regex = new RegExp(
     `(?:^|\\s)${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|(\\S+))`,

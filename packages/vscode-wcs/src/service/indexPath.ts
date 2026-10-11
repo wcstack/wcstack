@@ -1,114 +1,105 @@
 /**
- * indexPath.ts — 束縛に書いた数値添字のパス（`items.0.v`）をランタイムがどう読むか（#355）。
+ * indexPath.ts — 数値の添字を持つパス（`items.0.v`・`groups.0.items.1.v`・`groups.*.sel.0.id`）を
+ * 4.0 のランタイムがどう読むか（#355・#383）。
  *
- * 正本は @wcstack/state の `address/indexPathAccessor.ts` の `isIndexPath`（#332）と、実行時の存在の
- * 診断 `diagnostics/pathChecks.ts` の `resolvePathExistence`:
- * - 数値の区切り（`Number()` が NaN にならないセグメント。`01` も `1e0` も `1` と同じ行 1 を指す）が
- *   ちょうど 1 つで、`*` を持たず、先頭が数値でないパスは「いまその位置にある行」を読む。
- *   添字のパスへの書き込み・要素の差し替え・並べ替えに追従し、行 getter（`get "items.*.double"()`）も
- *   `items.0.double` で読める。存在は、数値の区切りを `*` に読み替えたパスで検査する — ただし親が
- *   リストで、添字が負でないときだけ（負の添字・配列でない親は素のキーとして探す）。
- * - 数値の区切りを持つそれ以外のパス（区切りが 2 つ以上・`*` と混ざる・省略パスの `.tags.0`・数値の
- *   `for` の行の `.v` → `groups.0.items.*.v`）は素のパスのまま。添字を通した書き込みは届かず、最初の値で
- *   止まることがある。存在は、実行時と同じく配列の上の添字（`"0"` のような配列のキーの綴り）を要素として
- *   辿って、データの候補と照合する（isPlainElementPath）。
- * - `for:` の対象が数値の区切りを持つリスト（`for: groups.0.items`）は、行が `groups.0.items.*.…` として
- *   解決される。初期表示とリストの置き換えには追従するが、行への双方向束縛（`value: .v`）と添字のパスの
- *   読み書き（`this["groups.0.items.0.v"]`）は実行時に投げる（state の #363）。bindingValidator が
- *   `for:` そのものに `wcs/template-syntax` を出す（hasIndexSegment）。
- * - 数値のキーを持つオブジェクト（`sales.2024.total`）は素のキー。実行時も作者の同名のキーが先なので、
- *   呼び手は読み替えより先に候補集合の完全一致を見る。
+ * 正本は `@wcstack/state` 4.0 の `pattern.ts` の `parsePath`: 先頭が数字のセグメントは位置によらず
+ * 添字で、`*` に読み替えた**パターン**と添字の組になる。マークアップに書いた数値添字のパスは、
+ * 添字の数によらず「いまその位置にある行」を読み、添字のパスへの書き込み・要素の差し替え・
+ * 並べ替えに追従する（F17。行 getter `items.*.double` も `items.0.double` で読める）。`*` と数値の
+ * 添字が混ざるパス（行 getter の中の `this["groups.*.sel.0.id"]`・`$eq`）も、`*` は文脈の行、数字は
+ * 添字として段ごとに解く（#383）。`for: groups.0.items` の行も追従する（F25）。
  *
- * 実行時にしか分からない条件（拡張できない state — `Object.freeze` など — では素のパスになる・素のパスの
- * 添字の位置に要素があるか）は見ない。警告を出さない側に倒す。
+ * したがって静的側は「数値の添字のパスは警告しない」。存在は、書いたままのパスが候補に無ければ
+ * 添字を `*` に読み替えた形で照合する。数値のキーを持つオブジェクト（`sales.2024.total`）は
+ * 書いたままの形が候補に当たるので、読み替えより先に完全一致を見る。
  */
 
-import type { PathCandidate } from './stateAnalyzer.js';
+import { getWcsManifest } from './wcsManifest.js';
 
-/** 配列の要素のキーになる綴り（`"0"`・`"12"`）。`01` / `1e0` / `-1` は配列の上で素のキーとして見つからない */
-const ARRAY_INDEX_KEY = /^(?:0|[1-9]\d*)$/;
+/** 先頭が数字のセグメント（ランタイムの parsePath と同じ判定: `0`・`12`・`01`）。 */
+const INDEX_SEGMENT = /^\d/;
 
 /**
- * 数値の区切りか（実行時の ResolvedAddress と同じ `Number()` の判定）。空のセグメントは数えない —
- * 省略パスの先頭（`.tags.0` の `""`）を数値と取り違えないため（空の区切りは正本パーサが
- * `wcs/binding-syntax` で拒否する）。
+ * Whether a segment is a numeric index (starts with a digit). The runtime reads it as the row at that position when
+ * the parent is a list, and as a plain key otherwise (an object keyed by number — `sales.2024`; engine.ts's
+ * markupAccessor).
  */
-function isNumericSegment(segment: string): boolean {
-  return segment !== '' && !Number.isNaN(Number(segment));
+export function isIndexSegment(segment: string): boolean {
+  return INDEX_SEGMENT.test(segment);
 }
 
-/** 行として読まれるパスなら、その数値の区切りの位置。行として読まれないパスは -1。 */
-function rowIndexPosition(segments: readonly string[]): number {
-  // `*` を持つパスと省略パス（`items.*.…` に展開される）は、数値の区切りが 1 つでも行にならない
-  if (segments[0] === '' || segments.includes('*')) return -1;
-  let position = -1;
-  for (let i = 0; i < segments.length; i++) {
-    if (!isNumericSegment(segments[i])) continue;
-    // 先頭の数値はルートのキー（`2024.total`）。2 つ目の数値の区切りは素のパス
-    if (i === 0 || position !== -1) return -1;
-    position = i;
-  }
-  return position;
-}
-
-/**
- * 添字の位置に数値の区切りを持つのに、行としては読まれないパスか（`groups.0.items.0.v`・`.tags.0`）。
- * `wcs/template-syntax` の警告の対象。先頭の数値はルートのキーなので添字に数えない。
- */
-export function isPlainIndexPath(path: string): boolean {
-  return hasIndexSegment(path) && rowIndexPosition(path.split('.')) === -1;
-}
-
-/** 添字の位置（先頭以外）に数値の区切りを持つか。先頭の数値はルートのキーなので数えない。 */
+/** 数値の添字（先頭が数字のセグメント）を 1 つでも持つか。 */
 export function hasIndexSegment(path: string): boolean {
-  return path.split('.').some((segment, i) => i > 0 && isNumericSegment(segment));
+  return path.split('.').some((segment) => INDEX_SEGMENT.test(segment));
 }
 
 /**
- * 候補集合と照合する形。行として読まれるパスは、数値の区切りを `*` に読み替える
- * （`items.0.double` → `items.*.double`）。読み替えないパスはそのまま返す。
- *
- * 親がリストか（`<親>.*` が候補にあるか）で読み替えを決める。実行時も親が配列のときだけ行として探し、
- * 配列でない親（`sales.2025.total`）は素のキーとして探して、無ければ報告する。
+ * 添字を `*` に読み替えたパターンの形（`groups.0.items.1.v` → `groups.*.items.*.v`）。
+ * 数値の添字を持たないパスはそのまま返す。
  */
-export function toRowPatternPath(path: string, pathSet: ReadonlySet<string>): string {
-  const segments = path.split('.');
-  const position = rowIndexPosition(segments);
-  if (position === -1 || Number(segments[position]) < 0) return path;
-  if (!pathSet.has(`${segments.slice(0, position).join('.')}.*`)) return path;
-  segments[position] = '*';
-  return segments.join('.');
+export function toWildcardForm(path: string): string {
+  if (!hasIndexSegment(path)) return path;
+  return path.split('.').map((segment) => (INDEX_SEGMENT.test(segment) ? '*' : segment)).join('.');
 }
 
 /**
- * 素のパス（行として読まれないパス）を、要素の形（`*`）へ読み替える。
- *
- * 実行時の存在の診断（resolvePathExistence）は素のパスを 1 段ずつ辿り、配列の上の数値の区切りは
- * その位置の要素として降りる（`groups.0.items.*.v`・`groups.0.items.0.v` は、要素があれば存在する）。
- * 要素の形は `*` の候補と同じなので、親がリスト（`<親>.*` が候補にある）で配列のキーの綴りの添字を
- * `*` に読み替える。親は読み替え済みの形で見る（`groups.0.items.0` の 2 つ目の添字の親は `groups.*.items`）。
- * 行として読まれるパスに掛けても、`toRowPatternPath` の結果は変わらない（そちらで読み替え済みか、
- * 負の添字・親がリストでないので読み替えない）。
+ * 候補集合で引くキー: 書いたままのパスが候補にあればそれ、無ければ添字を `*` に読み替えた形
+ * （型ヒント・存在の照合に使う）。
  */
-export function toPlainPatternPath(path: string, pathSet: ReadonlySet<string>): string {
-  const segments = path.split('.');
-  for (let i = 1; i < segments.length; i++) {
-    if (ARRAY_INDEX_KEY.test(segments[i]) && pathSet.has(`${segments.slice(0, i).join('.')}.*`)) {
-      segments[i] = '*';
-    }
-  }
-  return segments.join('.');
+export function candidateKeyOf(path: string, has: (candidate: string) => boolean): string {
+  return has(path) ? path : toWildcardForm(path);
+}
+
+/** 正本パーサが #120（`[wcs/binding-syntax]`）で拒む段（4.0 の `public/parser.ts` の `withInfo`）。 */
+const UNSAFE_SEGMENTS: ReadonlySet<string> = new Set(['__proto__', 'prototype']);
+
+/**
+ * パスが `__proto__` / `prototype` の段を通るか。正本パーサはパスを指す右辺でこれを #120 として拒む
+ * （bindingSyntaxValidator が `wcs/binding-syntax` で報告する）ので、存在の検査はそのパスに重ねない。
+ * パスを指さない右辺（`$command.<名前>`・イベントトークン・単独のメソッド名）の判定は呼び手が行う。
+ */
+export function hasUnsafeSegment(path: string): boolean {
+  return path.split('.').some((segment) => UNSAFE_SEGMENTS.has(segment));
+}
+
+// ------------------------------------------------------------------ loop index parameters ($1 … $128)
+
+const { maxDepth } = getWcsManifest().syntax.indexParam;
+
+/** ループの添字の上限（manifest の `syntax.indexParam.maxDepth` — ランタイムの `MAX_INDEX_PARAM`）。 */
+export const MAX_INDEX_PARAM: number = maxDepth;
+
+/**
+ * ランタイムがループの添字と読む名前（4.0 の `parser/define.ts` の `INDEX_PARAM`: `$` の後に先頭が 0 でない
+ * 数字を上限の桁数まで）。上限の桁数は manifest の上限から作る（`__tests__/indexParam.test.ts` が正本の正規表現と
+ * 突き合わせる）。この形でも上限を超える添字（`$129`）は、読んだ時点で `[wcs/index-param-range]` になる。
+ */
+const INDEX_PARAM = new RegExp(`^\\$[1-9]\\d{0,${String(maxDepth).length - 1}}$`);
+
+/** マークアップの右辺 `$` ＋数字だけのパス（`$1`・`$0`・`$129`・`$1000`）がランタイムで何になるか。 */
+export type IndexParamKind =
+  /** `$1`〜`$128`: ループの添字 */
+  | { kind: 'index'; n: number }
+  /** `$129`〜`$999`: 添字の形だが上限を超える（for の中ではバインディングが `[wcs/index-param-range]` で失敗する） */
+  | { kind: 'range'; n: number }
+  /** `$0`・`$01`・`$1000`: 添字ではなく、`$` の名前空間に状態のパスも無い（`[wcs/binding-path-missing]` で失敗する） */
+  | { kind: 'notIndex' };
+
+/** `$` ＋数字だけのパスを分類する。それ以外の形は null。 */
+export function classifyIndexParam(path: string): IndexParamKind | null {
+  if (!/^\$\d+$/.test(path)) return null;
+  if (!INDEX_PARAM.test(path)) return { kind: 'notIndex' };
+  const n = Number(path.slice(1));
+  return n <= MAX_INDEX_PARAM ? { kind: 'index', n } : { kind: 'range', n };
 }
 
 /**
- * 素のパスが、リストの要素を添字で辿って届くデータか（読み替えた形がデータの候補 — kind: data / list）。
- *
- * 行 getter（`get "groups.*.items.*.double"()`）は数えない — 素のパスは行を持たないので、実行時は
- * getter を呼ばずに空で描く（`for: groups.0.items` の中の `.double` は、#332 の暗黙のアクセサが接頭辞の
- * 記述子になって存在の検査が判定不能に倒れ、実行時の警告も出ない — state 側の別件）。要素の個数は静的に
- * 分からないので、その位置に要素があるものとして扱う。
+ * スクリプトの `this.<name>` が `[wcs/index-param-range]` で throw する名前か（4.0 の `engine.ts` の `dollar`:
+ * `$` の次が数字なら、`$1`〜`$128` のほかはすべて投げる — `$0`・`$01`・`$129`・`$1000`・`$1x`）。
  */
-export function isPlainElementPath(path: string, candidates: readonly PathCandidate[], pathSet: ReadonlySet<string>): boolean {
-  const pattern = toPlainPatternPath(path, pathSet);
-  return candidates.some(c => c.path === pattern && (c.kind === 'data' || c.kind === 'list'));
+export function isOutOfRangeIndexRead(name: string): boolean {
+  if (name.length < 2 || name.charCodeAt(0) !== 36) return false;
+  const c = name.charCodeAt(1);
+  if (c < 48 || c > 57) return false;
+  return !INDEX_PARAM.test(name) || Number(name.slice(1)) > MAX_INDEX_PARAM;
 }

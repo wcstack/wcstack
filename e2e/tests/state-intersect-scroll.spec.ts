@@ -183,11 +183,14 @@ test.describe("examples/state-intersect-scroll", () => {
     await expect(page.locator(".item")).toHaveCount(PAGE_SIZE);
 
     // 5ページ(20*4 + 7)。短いページが来ると noMore が立ちセンチネルが停止する。
-    for (let i = 0; i < 6; i++) {
+    // ホイールの回数は決め打ちしない: 1 回のホイールは回し始めた時点のページの末尾までしか
+    // 進まず(Firefox は滑らかにスクロールして、その時点の範囲で止める)、ページは着地の後で伸びる。
+    // 終端に届くまで回し続ける。
+    await expect.poll(async () => {
       await page.mouse.wheel(0, 20_000);
       await page.waitForTimeout(400);
-    }
-    await expect(page.locator(".item")).toHaveCount(catalog.length, { timeout: 15_000 });
+      return page.locator(".item").count();
+    }, { timeout: 15_000 }).toBe(catalog.length);
     await expect(page.locator(".end-msg", { hasText: "End of list" })).toBeVisible();
 
     // loading/error guard を外しても、commit 済み件数から page を導出するため

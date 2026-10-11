@@ -1,13 +1,18 @@
 /**
- * features/devtools.ts — DevTools Hook Protocol への source 登録（@wcstack/state/features/devtools）。
+ * The DevTools add-on (@wcstack/state/features/devtools): `@wcstack/devtools` over the hook
+ * protocol v2 — see src/devtools/devtools.ts.
  */
-import type { IStateFeature } from "../core/features";
-import { registerDevtoolsSource } from "../devtools/bridge";
+import { chain, hooks, type Feature } from "../hooks";
+import { devtoolsDrained, devtoolsElement, devtoolsFailed, devtoolsWritten, registerSource } from "../devtools/devtools";
 
-export const devtools: IStateFeature = {
+export const devtools: Feature = {
   name: "devtools",
   install(): void {
-    registerDevtoolsSource();
+    hooks.element = chain(hooks.element, devtoolsElement);
+    hooks.written = chain(hooks.written, devtoolsWritten);
+    hooks.drained = chain(hooks.drained, devtoolsDrained);
+    hooks.failed = chain(hooks.failed, devtoolsFailed);
+    registerSource();
   },
 };
 export default devtools;

@@ -26,7 +26,7 @@ node examples/streams/server.js    # ポート 3000（PORT 環境変数で変更
 
 - **協調キャンセル契約** — `source` は渡された AbortSignal を必ず尊重すること（MUST）。この例では `fetch(url, { signal })` に渡すだけで、restart / 切断時に HTTP リクエストごと中断されます。server.js 側もクライアント abort（`close`）で送出を止めるので、restart を連打してもサーバーの仕事は積み上がりません。
 - **有界 fold 規範** — この例の全文累積（`(acc, chunk) => acc + chunk`）は**有限ストリームだから**許されます。無限 / 長寿命ストリームでは latest・last-N・ウィンドウ集計など有界な fold を使ってください。
-- **ReadableStream の消費** — `source` は `AsyncIterable` / `ReadableStream`（またはその Promise）を返せます。`Symbol.asyncIterator` を持たない ReadableStream は `getReader()` フォールバックで消費されます。
+- **ReadableStream の消費** — `source` は `AsyncIterable` / `ReadableStream`（またはその Promise）を返せます。ReadableStream は `Symbol.asyncIterator` の有無にかかわらず `getReader()` で読み、AsyncIterable はそのイテレータで読みます。
 - **fold は新しい値を返す** — 文字列連結は毎回新しい値になるのでこの規範（in-place 変異の禁止）を自然に満たします。
 
-> 設計はリポジトリルートの `docs/state-streams-design.md`、実装は `packages/state/src/stream/` を参照してください。
+> 設計はリポジトリルートの `docs/state-streams-design.md`、実装は `packages/state/src/temporal/stream.ts` を参照してください。

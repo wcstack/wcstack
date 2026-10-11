@@ -4,7 +4,8 @@ import type { Router } from '../src/components/Router';
 /**
  * `<wcs-route>` の直下の構造テンプレートを、state がページの走査で描く形（router が着地の
  * ルートを先に挿入し、state が後からマウントする — CDN の auto でふつうの順序）。
- * 3.x の state（packages/state/dist）で流す（routeRange.state3x.test.ts）。
+ * @wcstack/state（4.0。packages/state/src）で流す（routeRange.state.test.ts）。4.0 の差し替えまでは 3.x の
+ * dist（routeRange.state3x.test.ts）でも流していた。
  */
 export const ROUTES = `<wcs-state></wcs-state>
 <wcs-router><template>

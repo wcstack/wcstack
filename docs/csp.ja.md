@@ -81,12 +81,14 @@ nonce を発行できない配信形態ではハッシュに置き換えられ�
 | `dist/auto.min.js`（全部入り） | 無し | 配信元ホスト |
 | README の例（import map と、`installFeatures` を呼ぶインラインの module script） | 2 つ | 配信元ホストと、2 つそれぞれに nonce かハッシュ（§3.1） |
 | 起動を外部ファイル（`/boot.js`）に置き、CDN の完全な URL で import する | 無し | 配信元ホストと `'self'` |
+| 分割 auto `dist/split/auto.js`（4.0。[移行ガイド §3.8](./migration-v4.ja.md#38-分割エントリと機能)） | 無し | 配信元ホスト |
 
 - 分割のファイル（core・`features/*`・`dist/split/chunks/`）は、静的 import で互いを読む。ホストの許可 1 行で全部を覆える。
+- 分割 auto はインラインのスクリプトを持たない。チャンクは静的に、機能（`./features/<名前>.js`）は動的に、自身の URL からの相対で import するので、どれも自身を配るホストから来て、許可の範囲は広がらない。それを読み込む `<script>` に nonce を付ければ、`'strict-dynamic'` の nonce だけのポリシー（`script-src 'nonce-…' 'strict-dynamic'`）でも機能まで通る（Playwright の Chromium・Firefox・WebKit で確認、2026-09-30: `features="scopes"`、`$features: ["formats", "list-keys"]`、違反なし）。[root-attributes.ja.md §4](./state-engine-rewrite/root-attributes.ja.md#4-分割エントリfeatures)。
 - 起動のスクリプトに nonce を付けると、その先の静的 import と動的 import も nonce を引き継ぐ。ホストの許可が無い nonce だけのポリシーや `'strict-dynamic'` でも通る（最小構成でだけ Chromium・Firefox・WebKit を確認、2026-09-28。wcstack の各経路での `'strict-dynamic'` は §3.3）。
 - ハッシュで 1 ファイルずつ絞ること（§3.2）はできない。chunk や `features/*` は `<script>` タグを持たないので、ハッシュ式を当てる先が無い。
 - 分割エントリは `esm.run` からは読まない（state の README）ので、§1 の 2 ホストの問題は起きない。
-- integrity は [sri.ja.md §5.1](./sri.ja.md#51-wcstackstate-の分割エントリ)。import map の `integrity` も同じインラインの import map に書くので、CSP の要求は上の表から変わらない。
+- integrity は [sri.ja.md §5.1](./sri.ja.md#51-wcstackstate-の分割エントリ)、分割 auto は [§5.2](./sri.ja.md#52-wcstackstate-の分割-auto40)。import map の `integrity` も同じインラインの import map に書くので、CSP の要求は上の表から変わらない —— ただし分割 auto のページでは、`integrity` のためだけに足した import map が新しいインラインのスクリプトになり、nonce かハッシュが要る（§2）。
 
 ## 3. nonce が使えないとき — ハッシュで代替できる範囲
 
@@ -159,7 +161,7 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 | `setInitialState()` API | なし | **追加不要** |
 | `<wcs-state><script type="module">…</script></wcs-state>` | **blob: URL 経由で `import()`** | **state を読み込む `<script>` に nonce**、または **`script-src blob:`** |
 
-state はインライン `<script>` のテキストを取り出し、blob: URL を作って動的 `import()` する（[loadFromInnerScript.ts](../packages/state/src/stateLoader/loadFromInnerScript.ts)）。ここが CSP に当たる。
+state はインライン `<script>` のテキストを取り出し、blob: URL を作って動的 `import()` する（[element.ts](../packages/state/src/element.ts) の `loadInnerScript`。3.x も `stateLoader/loadFromInnerScript.ts` で同じことをしていた。分割の `/core` も同じ経路）。ここが CSP に当たる。
 
 **state を読み込む `<script>` に nonce を付ければ通る。** `import()` は、それを書いたモジュール（ここでは state のバンドル）を読み込んだ `<script>` の nonce を引き継ぐ（§3）。nonce の無いタグ（ホストの許可だけ）で state を読んでいると、blob: の import は止められる。ハッシュでは救えない（§3）。
 
@@ -209,11 +211,11 @@ Blob をバインドする経路（`@wcstack/fetch` の Blob → object URL、`@
 | `<wcs-layout>` のテンプレート展開（[Layout.ts](../packages/router/src/components/Layout.ts)） | 作者が書いたマークアップ（文書内の `<template>`、または `src` で取得するアプリの資産） | 共有 `wcstack` identity policy で署名 |
 | `new Worker(src)`（[WorkerCore.ts](../packages/worker/src/core/WorkerCore.ts)） | 作者が書いた `src` 属性 | 共有 `wcstack` identity policy で署名 |
 | `<wcs-fetch target>` の HTML 置換モード（[Fetch.ts](../packages/fetch/src/components/Fetch.ts)） | レスポンス本文 | **利用側の sanitizer 付き policy が必須**。wcstack は署名しない |
-| `innerHTML:` / `outerHTML:` / `srcdoc:` プロパティバインド（[applyChangeToProperty.ts](../packages/state/src/apply/applyChangeToProperty.ts)） | 状態の値 | **利用側の sanitizer 付き policy が必須**。wcstack は署名しない |
+| `innerHTML:` / `outerHTML:` / `srcdoc:` プロパティバインド（[trustedTypes.ts](../packages/state/src/trustedTypes.ts)。`html:` と `<iframe>` の `attr.srcdoc:` も対象。3.x は `apply/applyChangeToProperty.ts`） | 状態の値 | **利用側の sanitizer 付き policy が必須**。wcstack は署名しない |
 
 この線引きが本体。上 2 つはページの作者が書いた文字列で、Lit がテンプレートリテラルに署名しているのと同じ地面に立つ。下 2 つはリモートのデータとユーザー入力が混ざり得る状態で、そこに identity policy を噛ませるのは「Trusted Types 対応」ではなく policy を切ることであり、セキュリティレビューで落ちるのが正しい。
 
-**DCC 定義は sink 自体が無くなった。** [defineDCC.ts](../packages/state/src/dcc/defineDCC.ts) は定義要素の shadow tree を innerHTML で往復させず、ノード単位でクローンする。したがって `@wcstack/state` 単体なら `trusted-types` の allowlist は要らない。
+**DCC 定義は sink 自体が無くなった。** [scopes/dcc.ts](../packages/state/src/scopes/dcc.ts)（3.x は `dcc/defineDCC.ts`）は定義要素の shadow tree を innerHTML で往復させず、ノード単位でクローンする。したがって `@wcstack/state` 単体なら `trusted-types` の allowlist は要らない。
 
 ### 許可すべきポリシー
 
@@ -254,6 +256,8 @@ sanitize する policy なら、**`TrustedHTML` を返すこと**を確認する
 
 state のプロパティ書き込み経路は setter の例外を意図的に握り潰す設計（要素が値を拒否してよい）ため、以前はここが**無言で壊れていた**。強制されているかどうかはエラーメッセージの文言ではなく使い捨て要素への実書き込みで判定するので、`default` policy を置いているページは正しく「ブロックされていない」と判断される。
 
+`@wcstack/state` 4.0 では、state の行は診断の後付け（`@wcstack/state` と `/auto` は入れている）が出す。探りは入れない: Trusted Types のあるブラウザで HTML の sink への書き込みが `TypeError` で失敗したとき、ページにつき 1 回出し、その失敗はほかの当てられなかったバインディングと同じく報告される —— `$errorCallback` へ、無ければコンソールに `binding "<type>: <path>" failed to apply.`。診断の後付けの無い `/core` では、バインディングの失敗だけが報告される（コンソールに `#12` と、ブラウザのエラー）。
+
 ### 補足
 
 - **共有 policy オブジェクトはページのスクリプトから読める。** `wcstack` をパッケージ横断で 1 度だけ生成するために、生成結果をグローバルスロット（`Symbol.for("wcstack.trustedTypes.internal")`）に置いている。したがってページ上の任意のスクリプトがそれを読み、`createHTML` を Trusted Types のバイパスガジェットとして使える。Trusted Types が本来狙う DOM XSS の防御を弱めるものではない（スロットに到達するには既にスクリプト実行が要る＝その時点で勝負はついている）が、単一 policy 名を選んだ代償であり、ポリシーレビューで必ず訊かれるのでここに書いておく。パッケージごとに policy 名を分ければグローバルスロットは不要になるが、CSP の記載がパッケージ数だけ増える。
@@ -274,10 +278,12 @@ CSP にブロックされた動的 `import()` の rejection は `Failed to fetch
 | 出力 | 意味 |
 |---|---|
 | `... was blocked by Content-Security-Policy` | **CSP 確定**。state／router を読み込む `<script>` にページの nonce を付けるか、`script-src blob:` を足すか、（state のみ）`src=` に逃がす |
-| `Failed to evaluate the inline <script> of state "…"`（state）／`loadGuardHandler: failed to import guard script …`（router） | CSP は観測されなかった。多くは state 定義やガードの構文エラー。元のエラーは、state ではその文面がメッセージに埋め込まれ（3.5 からは `cause` にも入る）、router では `cause` に入っている |
+| `Failed to evaluate the inline <script> of state "…"`（state 3.x。4.0 は `… of <wcs-state>: …`）／`loadGuardHandler: failed to import guard script …`（router） | CSP は観測されなかった。多くは state 定義やガードの構文エラー。元のエラーは、state ではその文面がメッセージに埋め込まれ（3.5 からは `cause` にも入る）、router では `cause` に入っている |
 
 違反が観測できなかった場合に CSP を断定しないのは意図的で、構文エラーを CSP のせいだと誤誘導しないため。
 
 3.4.0 までの state と router の CSP 確定メッセージは、対処として `script-src blob:`（state は `src=` も）しか挙げない。バンドルを読み込む `<script>` に nonce を付ける方法（§4・§5）でも通る。3.5 からは、CSP 確定メッセージも nonce を挙げる。
 
 **Firefox は違反イベントを import の失敗より後に出す**（次のタスク。Chromium と WebKit は失敗より先。2026-09-28 確認）。3.4.0 までの state と router は、import が失敗した時点で判定するので、Firefox では CSP で止められても非断定の文面（2 行目）になる。Firefox では 2 行目を「CSP も疑う」と読むこと。3.5 からは、state と router がその 1 タスクを待ってから判定するので、Firefox でも CSP 確定メッセージになる。
+
+@wcstack/state 4.0 も同じく 1 タスク待つ。診断の後付けを入れていないページでは、文面の代わりに番号で出る（`[@wcstack/state] #42` が CSP 確定、`#43 "…"` が非断定）。

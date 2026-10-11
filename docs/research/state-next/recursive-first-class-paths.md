@@ -41,11 +41,11 @@
 
 根拠:
 
-- [PathInfo.ts](../../../packages/state/src/address/PathInfo.ts): `**` を intern 前に拒否。
-- [recursion/addressHooks.ts](../../../packages/state/src/recursion/addressHooks.ts): get と二つの一括 API の入口だけを拡張。
-- [recursion/bind.ts](../../../packages/state/src/recursion/bind.ts): 最内側の評価フレームから深さを取る。
-- [recursion/registry.ts](../../../packages/state/src/recursion/registry.ts): 深さ別 getter 生成と衝突・書き込み禁止の管理。
-- [parseStatePart.ts](../../../packages/state/src/bindTextParser/parseStatePart.ts): HTML 解析時点で固定長 `PathInfo` を要求。
+- [PathInfo.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/PathInfo.ts): `**` を intern 前に拒否。
+- [recursion/addressHooks.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/recursion/addressHooks.ts): get と二つの一括 API の入口だけを拡張。
+- [recursion/bind.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/recursion/bind.ts): 最内側の評価フレームから深さを取る。
+- [recursion/registry.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/recursion/registry.ts): 深さ別 getter 生成と衝突・書き込み禁止の管理。
+- [parseStatePart.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindTextParser/parseStatePart.ts): HTML 解析時点で固定長 `PathInfo` を要求。
 
 ## 3. 制限のうち、解除できるもの
 
@@ -71,11 +71,11 @@ this.$resolve("nodes.**.tags.*.name", [0, 2, 1]); // depth 1
 
 したがって「行ごとに添字の本数が違う」こと自体は `$resolve` 対応を不可能にしない。これは旧 D9 の再検討に値する。対象は現行の単一再帰宣言・単一 `**` であり、複数 `**` の場合は本数だけでは深さの配分が決まらない。
 
-ただし、既存の [getListIndexByIndexes.ts](../../../packages/state/src/proxy/methods/getListIndexByIndexes.ts) は既に存在する台帳を必要とする。**初回の読み書きでも使える完成形には、対象経路上のリスト台帳の準備と差分基準の整合が必要**。毎回全木を `$getAll` して準備する実装は避ける。
+ただし、既存の [getListIndexByIndexes.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/getListIndexByIndexes.ts) は既に存在する台帳を必要とする。**初回の読み書きでも使える完成形には、対象経路上のリスト台帳の準備と差分基準の整合が必要**。毎回全木を `$getAll` して準備する実装は避ける。
 
 ### 3.2 `$setAll` mapper / spread は実装不可能ではない
 
-[setAllRecursive.ts](../../../packages/state/src/recursion/setAllRecursive.ts) の禁止理由は API 契約と使いやすさの判断。
+[setAllRecursive.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/recursion/setAllRecursive.ts) の禁止理由は API 契約と使いやすさの判断。
 
 - JavaScript の `(current, ...indexes)` 自体は可変長添字を受け取れる。単一 `**` なら上の式で深さも復元できる。
 - 明示的な `{ depth, indexes, path }` のようなコンテキストを渡す API も選べるが、新しいシグネチャは必須条件ではない。
@@ -135,7 +135,7 @@ HTML の通常バインドは、一つの行に束縛されるなら定義しや
 
 ## 6. 内部アドレスまで直接第一級化する場合の障害
 
-現在は [wildcardLevel.ts](../../../packages/state/src/list/wildcardLevel.ts) が `ListIndex` の長さを「スコープ基底 + 固定の wildcardCount」として扱う。[calcWildcardLen.ts](../../../packages/state/src/address/calcWildcardLen.ts) と [walkDependency.ts](../../../packages/state/src/dependency/walkDependency.ts) は固定パスの共有ワイルドカードから展開・親への縮約を決める。
+現在は [wildcardLevel.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/list/wildcardLevel.ts) が `ListIndex` の長さを「スコープ基底 + 固定の wildcardCount」として扱う。[calcWildcardLen.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/address/calcWildcardLen.ts) と [walkDependency.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts) は固定パスの共有ワイルドカードから展開・親への縮約を決める。
 
 また、親の total と子の total は現在は**異なる具体パス**で、依存辺を張れる。これを一つの `nodes.**.total` にまとめると、パスレベルでは自己辺になる。現在の自己依存除外・トポロジカル順序・循環検出をそのまま使えない。再帰の深さの変化と行の祖先関係を持つ依存辺が必要になる。
 

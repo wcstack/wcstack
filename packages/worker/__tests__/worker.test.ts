@@ -115,6 +115,50 @@ describe("WcsWorker - 属性アクセサ", () => {
     el.setAttribute("restart-interval", "");
     expect(el.restartInterval).toBe(0);
   });
+
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-worker src="a.js" type="classic" name="job" manual keep-alive restart-on-error max-restarts="3" restart-interval="100"></wcs-worker>';
+    const el = host.firstElementChild as WcsWorker;
+    el.src = "b.js";
+    el.type = "module";
+    el.name = "other";
+    el.manual = false;
+    el.keepAlive = false;
+    el.restartOnError = false;
+    el.maxRestarts = 9;
+    el.restartInterval = 900;
+    el.src = undefined;
+    el.type = undefined;
+    el.name = undefined;
+    el.manual = undefined;
+    el.keepAlive = undefined;
+    el.restartOnError = undefined;
+    el.maxRestarts = undefined;
+    el.restartInterval = undefined;
+    expect(el.src).toBe("a.js");
+    expect(el.type).toBe("classic");
+    expect(el.name).toBe("job");
+    expect(el.manual).toBe(true);
+    expect(el.keepAlive).toBe(true);
+    expect(el.restartOnError).toBe(true);
+    expect(el.maxRestarts).toBe(3);
+    expect(el.restartInterval).toBe(100);
+    el.src = null;
+    el.type = null;
+    el.name = null;
+    el.manual = null;
+    el.keepAlive = null;
+    el.restartOnError = null;
+    el.maxRestarts = null;
+    el.restartInterval = null;
+    for (const attr of ["src", "type", "name", "manual", "keep-alive", "restart-on-error", "max-restarts", "restart-interval"]) {
+      expect(el.hasAttribute(attr)).toBe(false);
+    }
+    expect(el.type).toBe("module");
+    expect(el.maxRestarts).toBe(Infinity);
+    expect(el.restartInterval).toBe(0);
+  });
 });
 
 describe("WcsWorker - 自動起動とライフサイクル", () => {
@@ -169,6 +213,19 @@ describe("WcsWorker - 自動起動とライフサイクル", () => {
     expect(FakeWorker.created).toHaveLength(1);
     el.removeAttribute("src");
     expect(FakeWorker.created).toHaveLength(1);
+  });
+
+  it("接続中の src に undefined を書くとマークアップの src で再 spawn し、null では spawn しない", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-worker src="a.js"></wcs-worker>';
+    const el = host.firstElementChild as WcsWorker;
+    document.body.appendChild(host);
+    el.src = "b.js";
+    el.src = undefined;
+    expect(FakeWorker.created.map((w) => w.src)).toEqual(["a.js", "b.js", "a.js"]);
+    el.src = null;
+    expect(el.hasAttribute("src")).toBe(false);
+    expect(FakeWorker.created).toHaveLength(3);
   });
 
   it("disconnect で Worker を terminate する（既定）", () => {

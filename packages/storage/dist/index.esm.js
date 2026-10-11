@@ -31,57 +31,37 @@ function getConfig() {
     }
     return frozenConfig;
 }
-// The defaults as shipped, for warnInvalid: a value 3.x lets through unchecked must not change
-// what a later call is compared against.
-const defaults = { ..._config, tagNames: { ..._config.tagNames } };
-const warned = new Set();
-/**
- * 3.5 forward-compat check. Warns, once per key per page, about an option that 4.0's
- * bootstrapStorage throws on: one this package does not have, a value of another type than its
- * default (null, or an array for an object, included), or a tag name it does not define or that is
- * not a string. An undefined value is left out, as in 4.0. It only warns: setConfig then goes on
- * exactly as in 3.x. Bootstrap-time only, never on a hot path.
- */
-function warnInvalid(given, known, path = "") {
-    for (const [key, value] of Object.entries(given)) {
-        const name = path + key;
-        const current = known[key];
-        if (value === undefined) {
-            continue;
-        }
-        if (!Object.prototype.hasOwnProperty.call(known, key) ||
-            value === null ||
-            typeof value !== typeof current ||
-            Array.isArray(value) !== Array.isArray(current)) {
-            if (!warned.has(name)) {
-                warned.add(name);
-                console.warn(`[@wcstack/storage] bootstrapStorage: "${name}" is not one of its options, or not of the option's type. 3.x ignores it or applies it unchecked; 4.0 throws on it.`);
-            }
-        }
-        else if (name === "tagNames") {
-            warnInvalid(value, current, "tagNames.");
-        }
-    }
+/** A misspelt option would otherwise do nothing: `bootstrapStorage` refuses it. */
+function invalid(key) {
+    throw new Error(`[@wcstack/storage] bootstrapStorage: "${key}" is not one of its options, or not of the option's type.`);
 }
+/**
+ * Applies the options given; an undefined value is left out. An option this package does not
+ * have, a value of another type than its default (null, or an array for an object, included) or
+ * a tag name it does not define throws, and then nothing is applied.
+ */
 function setConfig(partialConfig) {
-    warnInvalid(partialConfig, defaults);
-    if (typeof partialConfig.autoTrigger === "boolean") {
-        _config.autoTrigger = partialConfig.autoTrigger;
-    }
-    if (typeof partialConfig.triggerAttribute === "string") {
-        _config.triggerAttribute = partialConfig.triggerAttribute;
-    }
-    if (partialConfig.tagNames) {
-        // Validate each tagNames entry individually instead of a blanket
-        // Object.assign: a non-string (e.g. { storage: undefined }) would otherwise
-        // poison the config and make customElements.define(undefined, …) throw at
-        // registration time. Mirrors the typeof guards on autoTrigger / triggerAttribute.
-        for (const [key, value] of Object.entries(partialConfig.tagNames)) {
-            if (typeof value === "string") {
-                _config.tagNames[key] = value;
-            }
+    const options = _config;
+    const tags = _config.tagNames;
+    const given = Object.entries(partialConfig).filter(([, value]) => value !== undefined);
+    const givenTags = Object.entries(partialConfig.tagNames ?? {}).filter(([, tag]) => tag !== undefined);
+    for (const [key, value] of given) {
+        const current = options[key];
+        if (!Object.hasOwn(options, key) || value === null || typeof value !== typeof current || Array.isArray(value) !== Array.isArray(current)) {
+            invalid(key);
         }
     }
+    for (const [name, tag] of givenTags) {
+        if (!Object.hasOwn(tags, name) || typeof tag !== "string")
+            invalid(`tagNames.${name}`);
+    }
+    for (const [key, value] of given) {
+        if (key !== "tagNames") {
+            options[key] = value;
+        }
+    }
+    for (const [name, tag] of givenTags)
+        tags[name] = tag;
     frozenConfig = null;
 }
 
@@ -528,6 +508,61 @@ function upgradeProperties(element) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/input-attribute.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// 属性へ反映する wc-bindable 入力の producer 側（SPEC-extensions § Producer guidance for inputs の P1〜P3）。
+// 入力の setter は属性をこの 2 関数で書く。それで次が揃う:
+//   - `undefined` は「値が無い」（P1）: 属性を、この関数で最初に書く前の状態 — マークアップに書かれた値、
+//     無ければ属性なし（= その入力の文書化した既定値）— へ戻す。applier プロファイルを宣言する binder は
+//     値の後の `undefined` を書き（A2）、React 19 も書き、直接の代入でも届く。
+//   - `null` はクリア（P2）: 属性なし、つまり文書化した既定値。
+//   - どちらも文字列 "undefined" / "null" として属性に入らない。
+//
+// 「最初に書く前」は、その最初の書き込みのときに読む（遅延）。upgrade 前に代入されたプロパティは
+// connectedCallback の upgradeProperties() が通し直すので、そのときにはパーサが書いた属性が揃っている。
+// 要素自身が setter を通さずに書いた属性は、最初の書き込みより前なら「最初の状態」に含まれる。
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/input-attribute.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/inputAttribute.ts). Those copies are generated — do not edit them.
+const initialAttributes = new WeakMap();
+/** The attribute as it stood before the first write through these helpers. */
+function initialAttribute(el, name) {
+    let byName = initialAttributes.get(el);
+    if (byName === undefined) {
+        byName = new Map();
+        initialAttributes.set(el, byName);
+    }
+    if (!byName.has(name))
+        byName.set(name, el.getAttribute(name));
+    return byName.get(name);
+}
+function writeAttribute(el, name, value) {
+    if (value === null)
+        el.removeAttribute(name);
+    else
+        el.setAttribute(name, value);
+}
+/**
+ * A value attribute. `value` is written as `String(value)`; `null` removes the attribute;
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value === null ? null : String(value));
+}
+/**
+ * A boolean attribute, present while `value` is truthy (`null` and `false` remove it);
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectBooleanAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
+}
+
 class Storage extends HTMLElement {
     static hasConnectedCallbackPromise = true;
     static wcBindable = {
@@ -538,9 +573,9 @@ class Storage extends HTMLElement {
         ],
         // Shell-level input surface. The Core declares only the portable `key` / `type`;
         // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:
-        // the `key` / `type` / `manual` setters already reflect to their attributes, so a
-        // binding system that mirrors inputs[].attribute would set the attribute twice
-        // (`value` / `trigger` are not attribute-backed). `commands` (load / save / remove)
+        // the `key` / `type` / `manual` setters reflect to their attributes themselves, and a
+        // binding system that mirrored inputs[].attribute (@wcstack/state 3.x) would set the
+        // attribute twice (`value` / `trigger` are not attribute-backed). `commands` (load / save / remove)
         // are inherited unchanged from the Core via the spread above.
         inputs: [
             { name: "key" },
@@ -627,11 +662,16 @@ class Storage extends HTMLElement {
         this._core.key = this.key;
         this._core.type = this.type;
     }
+    // Input setters never let setAttribute stringify null / undefined (a "null" /
+    // "undefined" key would load and save under that literal key): `null` removes
+    // the attribute (the default), `undefined` restores the attribute the element
+    // started with (wc-bindable producer guidance P1; React 19 and a direct
+    // assignment deliver it, @wcstack/state does not).
     get key() {
         return this.getAttribute("key") || "";
     }
     set key(value) {
-        this.setAttribute("key", value);
+        reflectAttribute(this, "key", value);
     }
     get type() {
         // Normalize at the Shell boundary: any attribute value other than the
@@ -641,12 +681,18 @@ class Storage extends HTMLElement {
         return this.getAttribute("type") === "session" ? "session" : "local";
     }
     set type(value) {
-        this.setAttribute("type", value);
+        reflectAttribute(this, "type", value);
     }
     get value() {
         return this._core.value;
     }
     set value(v) {
+        // `undefined` is "no value supplied" (wc-bindable producer guidance P1; React 19
+        // and a direct assignment deliver it, @wcstack/state does not): a no-op in both
+        // modes, so the stored entry is kept and nothing is staged. `null` still clears —
+        // it removes the key (non-manual) or stages null (manual).
+        if (v === undefined)
+            return;
         // Non-manual mode: assigning `value` auto-saves the *assigned* argument `v`
         // (write-through). Note this differs from save()/trigger, which persist the
         // *current* `_core.value` (which load() or a cross-tab `storage` event may
@@ -681,12 +727,7 @@ class Storage extends HTMLElement {
         return this.hasAttribute("manual");
     }
     set manual(value) {
-        if (value) {
-            this.setAttribute("manual", "");
-        }
-        else {
-            this.removeAttribute("manual");
-        }
+        reflectBooleanAttribute(this, "manual", value);
     }
     get trigger() {
         return this._trigger;

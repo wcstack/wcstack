@@ -79,7 +79,6 @@ describe('lazyLoad: 失敗したロードの後始末', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false,
     };
     const registry = createFakeRegistry();
     const root = mountScopedRoot('<ui-button></ui-button>', registry);
@@ -110,7 +109,6 @@ describe('lazyLoad: 失敗したロードの後始末', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false,
     };
     const registry = createFakeRegistry();
     const root = mountScopedRoot('<ui-button></ui-button>', registry);
@@ -129,7 +127,6 @@ describe('lazyLoad: 失敗したロードの後始末', () => {
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
       observable: false,
-      scanImportmap: false,
     };
     const registry = createFakeRegistry();
     const root = mountScopedRoot('<ui-button></ui-button>', registry);

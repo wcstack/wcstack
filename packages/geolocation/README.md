@@ -99,6 +99,8 @@ Add the `watch` attribute to stream fixes via `watchPosition` until the element 
 | `watch`         | boolean | `false`    | Continuously watch the position on connect instead of a single fix.     |
 | `manual`        | boolean | `false`    | Do not auto-acquire on connect; acquire via command / trigger.          |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`highAccuracy`, `timeout`, `maximumAge`, `watch`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `trigger` ignores both.
+
 ## Observable Properties (outputs)
 
 | Property     | Event                          | Description                                                            |

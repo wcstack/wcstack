@@ -7,6 +7,7 @@ import { ClipboardCore } from "../core/ClipboardCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 // Named WcsClipboard (not `Clipboard`) so the class does not shadow the global
 // DOM `Clipboard` interface (the type of `navigator.clipboard`), matching the
@@ -105,13 +106,13 @@ export class WcsClipboard extends HTMLElement {
    * connectedCallback); toggling `el.monitor` after connect just flips the
    * attribute. To start/stop monitoring imperatively, call `startMonitor()` /
    * `stopMonitor()`.
+   *
+   * `null` removes the attribute (the default, off); `undefined` restores the
+   * attribute the element started with (wc-bindable producer guidance P1;
+   * React 19 and a direct assignment deliver it, @wcstack/state does not).
    */
-  set monitor(value: boolean) {
-    if (value) {
-      this.setAttribute("monitor", "");
-    } else {
-      this.removeAttribute("monitor");
-    }
+  set monitor(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "monitor", value);
   }
 
   // --- Core delegated getters ---

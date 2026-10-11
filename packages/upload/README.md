@@ -207,6 +207,8 @@ In this setup, upload becomes a bindable async node:
 | `errorInfo` | `WcsIoErrorInfo \| null` | `null` | Serializable failure taxonomy (stable `code` / `phase` / `recoverable`). Additive — `error` is unchanged; `code` is `capability-missing`, `invalid-argument`, `network`, or `http-error`. An `abort()` is not a failure (no `errorInfo`) |
 | `promise` | `Promise<any>` | resolved `null` | Current upload promise |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`url`, `method`, `fieldName`, `multiple`, `maxSize`, `accept`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) `files` takes both as "no files" (`null`, its initial value; `wcs-upload:files-changed` carries `null`); `trigger` ignores both.
+
 ### Methods
 
 #### `upload()`
@@ -427,4 +429,4 @@ bootstrapUpload({
 
 Use this when you want to customize the tag name or trigger attribute instead of relying on `@wcstack/upload/auto`.
 
-Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+`bootstrapUpload()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.

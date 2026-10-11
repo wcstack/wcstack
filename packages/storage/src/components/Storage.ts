@@ -5,6 +5,7 @@ import { StorageCore } from "../core/StorageCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 export class Storage extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -16,9 +17,9 @@ export class Storage extends HTMLElement {
     ],
     // Shell-level input surface. The Core declares only the portable `key` / `type`;
     // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:
-    // the `key` / `type` / `manual` setters already reflect to their attributes, so a
-    // binding system that mirrors inputs[].attribute would set the attribute twice
-    // (`value` / `trigger` are not attribute-backed). `commands` (load / save / remove)
+    // the `key` / `type` / `manual` setters reflect to their attributes themselves, and a
+    // binding system that mirrored inputs[].attribute (@wcstack/state 3.x) would set the
+    // attribute twice (`value` / `trigger` are not attribute-backed). `commands` (load / save / remove)
     // are inherited unchanged from the Core via the spread above.
     inputs: [
       { name: "key" },
@@ -102,12 +103,17 @@ export class Storage extends HTMLElement {
     this._core.type = this.type;
   }
 
+  // Input setters never let setAttribute stringify null / undefined (a "null" /
+  // "undefined" key would load and save under that literal key): `null` removes
+  // the attribute (the default), `undefined` restores the attribute the element
+  // started with (wc-bindable producer guidance P1; React 19 and a direct
+  // assignment deliver it, @wcstack/state does not).
   get key(): string {
     return this.getAttribute("key") || "";
   }
 
-  set key(value: string) {
-    this.setAttribute("key", value);
+  set key(value: string | null | undefined) {
+    reflectAttribute(this, "key", value);
   }
 
   get type(): StorageType {
@@ -118,8 +124,8 @@ export class Storage extends HTMLElement {
     return this.getAttribute("type") === "session" ? "session" : "local";
   }
 
-  set type(value: StorageType) {
-    this.setAttribute("type", value);
+  set type(value: StorageType | null | undefined) {
+    reflectAttribute(this, "type", value);
   }
 
   get value(): any {
@@ -127,6 +133,11 @@ export class Storage extends HTMLElement {
   }
 
   set value(v: any) {
+    // `undefined` is "no value supplied" (wc-bindable producer guidance P1; React 19
+    // and a direct assignment deliver it, @wcstack/state does not): a no-op in both
+    // modes, so the stored entry is kept and nothing is staged. `null` still clears —
+    // it removes the key (non-manual) or stages null (manual).
+    if (v === undefined) return;
     // Non-manual mode: assigning `value` auto-saves the *assigned* argument `v`
     // (write-through). Note this differs from save()/trigger, which persist the
     // *current* `_core.value` (which load() or a cross-tab `storage` event may
@@ -165,12 +176,8 @@ export class Storage extends HTMLElement {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   get trigger(): boolean {

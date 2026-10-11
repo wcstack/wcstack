@@ -14,10 +14,10 @@ wcstack の UI と state の契約は**パス文字列**であり、TypeScript �
 
 ## 1. state に型を付ける: `defineState`
 
-`@wcstack/state` が export する `defineState` は identity 関数で、メソッドと getter の中の `this` にドットパス参照込みで正しい型を与えることだけが仕事:
+`@wcstack/state/define` が export する `defineState` は identity 関数で、メソッドと getter の中の `this` にドットパス参照込みで正しい型を与えることだけが仕事。ランタイムを持たない `/define` から import する — 4.0 では `@wcstack/state` から import すると、バンドルにエンジン全体（gzip で約 21 KB）が残る:
 
 ```ts
-import { defineState } from "@wcstack/state";
+import { defineState } from "@wcstack/state/define";
 
 export default defineState({
   count: 0,

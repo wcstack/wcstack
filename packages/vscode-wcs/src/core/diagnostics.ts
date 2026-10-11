@@ -59,16 +59,19 @@ export const WcsDiagnosticCode = {
   // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
   IndexArity: "wcs/index-arity",
   // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
-  // `$2` を 1 段のループで読む）。既存の「for の外」検査の深さ方向の一般化。
-  // 段数が足りていても、`*` がその段で囲む for のリストの行でない（`for: a` の行の中の `b.*.y`）
-  // ときも同じ code（ランタイムは囲む `for` ごと描けない — 4.0 は #1403 で同じ code を投げる）。
+  // `$2` を 1 段のループで読む。ランタイムの #1401）。既存の「for の外」検査の深さ方向の一般化。
+  // 4.0 は各段の `*` が**その段で囲む for のリスト**の行であることも確かめる（#1403・F32 — `for: a`
+  // の行の中の `b.*.y` は投げる）。静的側も囲む for の一覧と段ごとに比べて同じ code で報告する。
   WildcardRank: "wcs/wildcard-rank",
-  // スクリプトの `this.$0` / `this.$129` / `this["$01"]`（`$` ＋数字だけで、`$1`〜`$128` でない名前）。
-  // ランタイム（proxy/traps/get.ts）は読んだ時点で同じ code で raiseError する。
+  // ループの添字の範囲（`$1`〜`$128`。上限は manifest の `syntax.indexParam.maxDepth`）の外。ランタイムと同じ code:
+  // for の中のマークアップの `$129`（バインディングが失敗する）と、スクリプトの `this.$0` / `this.$129` / `this.$1000`
+  // （読んだ時点で throw）。error。マークアップの `$0` / `$1000` は添字の形でないので、ランタイムと同じく
+  // `wcs/binding-path-missing`（ただしけっして動かないので error）。for の外の `$129` はランタイムでは #1401 なので
+  // 従来どおり「for の外のループ添字」（`wcs/template-syntax`）で報告する。
   IndexParamRange: "wcs/index-param-range",
   // パス getter どうしの循環参照。ランタイムはアドレススタック上限まで再帰してから落ちる。
   GetterCycle: "wcs/getter-cycle",
-  // `$updatedCallback` が、どのバインディングにも現れないパスを判定に使っている。
+  // `$renderedCallback`（3.x の旧名 `$updatedCallback`）が、どのバインディングにも現れないパスを判定に使っている。
   // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
   // なので、その分岐は一度も実行されない。表示要素が購読の実体になる事故
   // （examples/state-intersect-scroll の README に記録）の静的検出。
@@ -87,13 +90,10 @@ export const WcsDiagnosticCode = {
   // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
   WatchPathMissing: "wcs/watch-path-missing",
   // --- <wcs-state> script: $scan declaration ---
-  // ランタイム（scan/processScanDeclaration.ts）が raiseError で落とす宣言の形。出力名・source の本数・
-  // initial / fold の欠落・from / resetOn のパスの形・未宣言トークン・自出力の読み。
+  // 4.0 は `$scan` を外した（読み込み時に throw — ランタイムの文面は番号 #1 だけでコードを持たない）。
+  // 宣言のキーに 1 件だけ出す。3.x で宣言の形・パスを検査していた `wcs/scan-source-computed` /
+  // `wcs/scan-path-missing` は 4.0 では出さない（宣言そのものが動かないため）。
   ScanDeclarationInvalid: "wcs/scan-declaration-invalid",
-  // from / resetOn が getter（またはその配下）。畳むと出来事ではなく再評価の回数を数える。ランタイムも raise。
-  ScanSourceComputed: "wcs/scan-source-computed",
-  // from / resetOn のパスが状態定義に存在しない。黙って一度も畳まれない。severity は watch-path-missing に揃える。
-  ScanPathMissing: "wcs/scan-path-missing",
   // --- <wcs-state> script: $recursion declaration / `**` paths ---
   // ランタイムと同じ code 語彙(@wcstack/state src/recursion/ が正本。
   // docs/state-recursive-path-impl-plan.md §7)。静的に出すのは**パス文字列と宣言だけで
@@ -125,9 +125,13 @@ export const WcsDiagnosticCode = {
   //(ランタイムは初期化時に raiseError)。wcs/watch-declaration-invalid の再帰版。
   RecursionDeclarationInvalid: "wcs/recursion-declaration-invalid",
   TypeAnnotation: "wcs/type-annotation",
+  // テンプレート・構造の書き方。ランタイムと同じ code: for / if テンプレートの中の `outerHTML:` /
+  // `outerText:`（4.0 の #203、初期化で throw）・構造ディレクティブの併記（#201）など。挿入された内容の
+  // 先頭に置かれた構造テンプレート（#204）は実行時にしか分からないので静的には出さない。
   TemplateSyntax: "wcs/template-syntax",
   // ランタイムの正本パーサが [wcs/binding-syntax] で拒否する書き方(@wcstack/state 3.0 の文法の
-  // 厳格化: 閉じていない引用符・2 つ目の '#'・else: の値・構造ディレクティブの修飾子・空のフィルタ)。
+  // 厳格化: 閉じていない引用符・2 つ目の '#'・else: の値・構造ディレクティブの修飾子・空のフィルタ。
+  // 4.0 はパスの右辺の `__proto__` / `prototype` の段も拒む — #120)。
   // 判定は正本パーサに委ねる(service/bindingSyntaxValidator.ts)。
   BindingSyntax: "wcs/binding-syntax",
   // --- <wcs-state> script: array reactivity hazards ---
@@ -143,22 +147,39 @@ export const WcsDiagnosticCode = {
   // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
   // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
   OnPrefixedMember: "wcs/on-prefixed-member",
-  // 3.x の間だけ残る旧名（フィルタ `uc` → `upper`、`$trackDependency` → `$dependOn` …）を書いた（info）。
-  // 動くが 4.0 で外れるので正式名を提案する（@wcstack/state 3.2・要件 B12 / 3.x 計画 D39）
+  // 4.0 が root へ委譲するイベント（`dom/view.ts` の `BUBBLING`）の `on*:` で、ハンドラのメソッドがイベント引数の
+  // `currentTarget` を同期的に読む。委譲されたイベントの `currentTarget` は要素ではなく root なので、要素を
+  // 使う処理（`setPointerCapture`・`getBoundingClientRect`・`new FormData(e.currentTarget)`）が壊れる。
+  // ランタイムは何も報告しない（root は正しい値）ので lint の code。`#direct` か `event.target.closest(...)` を
+  // 案内する。読みが実行されない分岐にあることもあるので warning。
+  DelegatedCurrentTarget: "wcs/delegated-current-target",
+  // 4.0 で外れた API の旧名（`this.$trackDependency` → `$dependOn`、`$untrackDependency` → `$untracked`）。
+  // ランタイムは読んだ時点で同じ code（#1701）で throw するので error。3.x（3.2〜3.3）では「動くが 4.0 で
+  // 外れる」info だった。フィルタの旧名（`uc` など）は 4.0 のランタイムと同じく `wcs/filter-unknown` で、
+  // 宣言キーの旧名は `wcs/declaration-alias` で報告する（どれも正式名を提案する）
   NameAlias: "wcs/name-alias",
-  // 旧名の宣言キーを `this.` 越しに**読んだ**（`this.$streams`）。宣言と違い旧名のままでは
-  // 3.x でも動かない — 正規化（@wcstack/state declarationAliases.ts）が正式名へ写したあと
-  // 旧名の自前プロパティを delete するので、読み出しは例外も出さずに undefined になる。
-  // `wcs/name-alias`（「動くが 4.0 で外れる」）とは別の事実なので code を分ける: 移行中に
-  // name-alias を抑制したチームが、この「今日すでに壊れている」まで一緒に消さないため。
-  // severity は検出経路で変わる — AST で断定できたら warning、読めない形（class 構文など）の
-  // 正規表現フォールバックは info（誤検出しうる経路を warning にしない）。
+  // 4.0 で外れた宣言キーの旧名を `this.` 越しに**読んだ**（`this.$streams`）。4.0 の state にその
+  // キーは無いので、読み出しは例外も出さずに undefined になる（lint 専用の code — ランタイムは
+  // 読みを止めない）。severity は検出経路で変わる — AST で断定できたら warning、読めない形
+  //（class 構文など）の正規表現フォールバックは info（誤検出しうる経路を warning にしない）。
   DeclarationAliasRead: "wcs/declaration-alias-read",
-  // 旧名と正式名の宣言キーを**両方**書いた（`$streams` と `$stream` 等）。どちらが効くのか
-  // 書き手に見えないので、ランタイム（@wcstack/state declarationAliases.ts）は正規化の時点で
-  // 名指しで raiseError する ＝ ページ初期化ごと止まるので error。3.2 への移行中
-  //（新名を足して旧名を消し忘れる）にちょうど起きる形。
+  // 4.0 で外れた宣言キーの旧名（`$streams` → `$stream`、`$updatedCallback` → `$renderedCallback`）を
+  // 宣言した。ランタイムは読み込み時に同じ code（#1601）で throw する（ボリュームは読み込みを通らず、接ぎ木を
+  // 拒んで console.error で報告する）＝ その state は動かないので
+  // error（宣言が静的に読めない class 構文の正規表現フォールバックだけ warning）。3.x では「旧名と正式名を
+  // 両方書いた」形だけが error だった
   DeclarationAlias: "wcs/declaration-alias",
+  // --- 4.0 の設定（`$behavior` / `$features` / root の `features=`。config-impl-plan.ja.md §4 段 4） ---
+  // `$behavior` の値・キー・型、ボリュームの `$behavior`。ランタイムは読み込み時に throw する
+  //（#44。ボリュームは接ぎ木を拒んで console.error で報告する。ランタイムの文面は番号だけでコードを持たないので、lint の code）。
+  BehaviorInvalid: "wcs/behavior-invalid",
+  // `$features` の要素・root の `features=` の名前が後付けの名前（8 つ）でない。分割 auto の
+  // ランタイムと同じ code（読み込み関数の許可リスト）。全部入り・バンドラのページでは
+  // `[wcs/feature-not-installed]` になる（どの入口を読んだかは静的に分からないので、lint はこちらで報告する）。
+  FeatureUnknown: "wcs/feature-unknown",
+  // `$features` が配列でない・ボリュームの `$features`（error。ランタイムは読み込み時に throw）、
+  // 文書の root 以外の `<wcs-state>` の `features=`（warning。ランタイムは読まない — 設計 A3 で lint だけ）。
+  FeaturesInvalid: "wcs/features-invalid",
   // wcBindable 無宣言タグ(wcs-fetch-header 等のヘルパー)への spread。
   // ランタイム(expandSpread)は raiseError で落とす。
   SpreadNoBindable: "wcs/spread-no-bindable",
@@ -178,21 +199,28 @@ export const WcsDiagnosticCode = {
   BaseHrefMissing: "wcs/base-href-missing",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
-  // 文書（`<template>` の外）に、`mount` も `bind-component` も持たない `<wcs-state>` が 2 つ以上ある。
-  // ランタイム（stateElementByName.ts の setStateElement）は後から登録しに来た方を raiseError で拒む
-  // （v2 から 1 root 1 ツリー）。4.0 も同じ code（#47）。
-  SecondRoot: "wcs/second-root",
-  // --- @wcstack/state 4.0 への予告（3.x 系だけの code — 2.6 の wcs/v3-migration と同じ運用） ---
-  // 3.x では正しく動くが 4.0 で外れる・読み方が変わる書き方（`$scan`・`substr`・委譲される
-  // イベントのハンドラが読む `event.currentTarget`）。severity は常に info — 3.x の CI を
-  // （`--strict` でも）落とさない。3.x で既に壊れている形は
-  // ここに入れず、その形の code（wcs/wildcard-rank など）で warning にする。
-  V4Migration: "wcs/v4-migration",
   // --- deprecations ---
   // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
   // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。
   NamedStateDeprecated: "wcs/named-state-deprecated",
   // --- volume mount ---
+  // ボリューム（`<wcs-state mount>`）が受け付けない宣言（@wcstack/state 4.0 の scopes/volume.ts の `REJECTED` /
+  // `NOT_RUN`）。ランタイムの文面はコードを持たないので lint の code。REJECTED は接ぎ木を拒んで console.error
+  // （その state は木に載らない）＝ error、NOT_RUN は console.warn で知らせてその宣言を無視する ＝ warning。
+  // 宣言が静的に読めない形（class 構文）の正規表現フォールバックは 1 段下げる。REJECTED のうち、ほかの検査が
+  // 自分の code で報告するもの（`$scan`・`$recursion`・`$behavior`・`$features`・旧名の `$streams` /
+  // `$updatedCallback`）はここでは出さない。
+  VolumeDeclaration: "wcs/volume-declaration",
+  // `<wcs-state bind-component>` に `state` / `src` / `json` 属性か中の `<script type="module">` がある。マウントした
+  // コンポーネントの state はホスト要素のプロパティだけで、ランタイム（scopes/component.ts の `load`）は読み込みを
+  // 拒んで console.error で報告する（コンポーネントはマウントされない）＝ error。ランタイムの文面はコードを持たないので
+  // lint の code。そのスクリプトはランタイムが読まないので、マウントしたコンポーネントが実行しない宣言
+  // （`INERT` — `[wcs/mount-dollar-declaration]`）は HTML からは見えず、静的には出さない。
+  BindComponentSource: "wcs/bind-component-source",
+  // 文書（`<template>` の外）に、`mount` も `bind-component` も持たない `<wcs-state>` が 2 つ以上ある。state の木は
+  // root ごとに 1 つで、ランタイムは後から読み込んだ方を拒んで console.error で報告する（v2 から。4.0 の #47 —
+  // ランタイムの文面は番号だけでコードを持たないので lint の code）＝ error。2 つ目以降の開始タグに出す。
+  SecondRoot: "wcs/second-root",
   // `<wcs-state mount="...">` の値が runtime の validateVolumeMountPath で raise する形
   // （空・空セグメント・ワイルドカード・予約文字 $ # @）。runtime と同条件・同文言（v2）。
   MountPathInvalid: "wcs/mount-path-invalid",

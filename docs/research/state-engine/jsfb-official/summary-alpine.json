@@ -1,0 +1,750 @@
+{
+  "frameworks": [
+    "vanillajs",
+    "alpine",
+    "wcstack-state-4"
+  ],
+  "cpu": {
+    "md": "### CPU (ms, median; factor vs fastest)\n\n| benchmark | vanillajs | alpine | wcstack-state-4 |\n|---|---:|---:|---:|\n| create rows (1k) | 58.3 ±1.1 (1.00) | 167.8 ±8.3 (2.88) | 62.3 ±3.4 (1.07) |\n| replace all rows (1k) | 61.8 ±3.3 (1.00) | 179.5 ±11.5 (2.90) | 66.9 ±1.0 (1.08) |\n| partial update (every 10th of 1k, 4x) | 45.0 ±3.0 (1.00) | 45.5 ±3.9 (1.01) | 46.6 ±4.1 (1.04) |\n| select row (4x) | 14.8 ±1.5 (1.01) | 73.6 ±9.5 (5.01) | 14.7 ±1.6 (1.00) |\n| swap rows (4x) | 33.5 ±4.0 (1.00) | 54.6 ±4.5 (1.63) | 38.4 ±1.8 (1.15) |\n| remove row (2x) | 36.0 ±2.1 (1.09) | 35.0 ±2.5 (1.06) | 32.9 ±2.8 (1.00) |\n| create many rows (10k) | 625.6 ±4.2 (1.00) | 1671.6 ±31.6 (2.67) | 661.6 ±4.2 (1.06) |\n| append 1k to 1k (2x) | 68.2 ±5.9 (1.05) | 173.9 ±12.1 (2.68) | 65.0 ±3.6 (1.00) |\n| clear 1k rows (4x) | 21.1 ±1.7 (1.00) | 130.4 ±17.2 (6.18) | 24.0 ±1.2 (1.14) |\n| **geometric mean (weighted)** | **1.02** | **2.35** | **1.05** |\n",
+    "data": [
+      {
+        "id": "01_run1k",
+        "label": "create rows (1k)",
+        "values": {
+          "vanillajs": {
+            "median": 58.3,
+            "factor": 1,
+            "ci95": 1.137143805761624
+          },
+          "alpine": {
+            "median": 167.8,
+            "factor": 2.8782161234991426,
+            "ci95": 8.336007171086171
+          },
+          "wcstack-state-4": {
+            "median": 62.3,
+            "factor": 1.0686106346483706,
+            "ci95": 3.428305530839251
+          }
+        }
+      },
+      {
+        "id": "02_replace1k",
+        "label": "replace all rows (1k)",
+        "values": {
+          "vanillajs": {
+            "median": 61.8,
+            "factor": 1,
+            "ci95": 3.2557135036837126
+          },
+          "alpine": {
+            "median": 179.5,
+            "factor": 2.9045307443365695,
+            "ci95": 11.500825633392948
+          },
+          "wcstack-state-4": {
+            "median": 66.9,
+            "factor": 1.0825242718446604,
+            "ci95": 0.9611344326601724
+          }
+        }
+      },
+      {
+        "id": "03_update10th1k_x16",
+        "label": "partial update (every 10th of 1k, 4x)",
+        "values": {
+          "vanillajs": {
+            "median": 45,
+            "factor": 1,
+            "ci95": 3.0382422444213115
+          },
+          "alpine": {
+            "median": 45.5,
+            "factor": 1.011111111111111,
+            "ci95": 3.856455722786653
+          },
+          "wcstack-state-4": {
+            "median": 46.6,
+            "factor": 1.0355555555555556,
+            "ci95": 4.124575889144142
+          }
+        }
+      },
+      {
+        "id": "04_select1k",
+        "label": "select row (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 14.8,
+            "factor": 1.0068027210884354,
+            "ci95": 1.5264886157623492
+          },
+          "alpine": {
+            "median": 73.6,
+            "factor": 5.006802721088436,
+            "ci95": 9.460855926336603
+          },
+          "wcstack-state-4": {
+            "median": 14.7,
+            "factor": 1,
+            "ci95": 1.5533470020022229
+          }
+        }
+      },
+      {
+        "id": "05_swap1k",
+        "label": "swap rows (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 33.5,
+            "factor": 1,
+            "ci95": 4.031196075386039
+          },
+          "alpine": {
+            "median": 54.6,
+            "factor": 1.6298507462686567,
+            "ci95": 4.503559618314574
+          },
+          "wcstack-state-4": {
+            "median": 38.4,
+            "factor": 1.146268656716418,
+            "ci95": 1.799660152833617
+          }
+        }
+      },
+      {
+        "id": "06_remove-one-1k",
+        "label": "remove row (2x)",
+        "values": {
+          "vanillajs": {
+            "median": 36,
+            "factor": 1.0942249240121582,
+            "ci95": 2.1184542389177867
+          },
+          "alpine": {
+            "median": 35,
+            "factor": 1.0638297872340425,
+            "ci95": 2.4694558744069797
+          },
+          "wcstack-state-4": {
+            "median": 32.9,
+            "factor": 1,
+            "ci95": 2.8489048272305113
+          }
+        }
+      },
+      {
+        "id": "07_create10k",
+        "label": "create many rows (10k)",
+        "values": {
+          "vanillajs": {
+            "median": 625.6,
+            "factor": 1,
+            "ci95": 4.167110362821562
+          },
+          "alpine": {
+            "median": 1671.6,
+            "factor": 2.6719948849104855,
+            "ci95": 31.63281315221284
+          },
+          "wcstack-state-4": {
+            "median": 661.6,
+            "factor": 1.0575447570332481,
+            "ci95": 4.1577496363572175
+          }
+        }
+      },
+      {
+        "id": "08_create1k-after1k_x2",
+        "label": "append 1k to 1k (2x)",
+        "values": {
+          "vanillajs": {
+            "median": 68.2,
+            "factor": 1.0492307692307692,
+            "ci95": 5.884366067461432
+          },
+          "alpine": {
+            "median": 173.9,
+            "factor": 2.6753846153846155,
+            "ci95": 12.05220855368453
+          },
+          "wcstack-state-4": {
+            "median": 65,
+            "factor": 1,
+            "ci95": 3.6016844715968332
+          }
+        }
+      },
+      {
+        "id": "09_clear1k_x8",
+        "label": "clear 1k rows (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 21.1,
+            "factor": 1,
+            "ci95": 1.6532072875558728
+          },
+          "alpine": {
+            "median": 130.4,
+            "factor": 6.180094786729858,
+            "ci95": 17.152937431843405
+          },
+          "wcstack-state-4": {
+            "median": 24,
+            "factor": 1.1374407582938388,
+            "ci95": 1.1501000592783346
+          }
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": 1.0182733343796482,
+      "alpine": 2.3527011947271177,
+      "wcstack-state-4": 1.0520187986970844
+    }
+  },
+  "script": {
+    "md": "### CPU — script only (ms, median)\n\n| benchmark | vanillajs | alpine | wcstack-state-4 |\n|---|---:|---:|---:|\n| create rows (1k) | 4.3 (1.00) | 110.3 (25.65) | 6.5 (1.51) |\n| replace all rows (1k) | 9.0 (1.00) | 128.9 (14.32) | 12.6 (1.40) |\n| partial update (every 10th of 1k, 4x) | 1.4 (1.00) | 9.0 (6.43) | 5.3 (3.79) |\n| select row (4x) | 1.2 (1.00) | 59.2 (49.33) | 2.6 (2.17) |\n| swap rows (4x) | 0.6 (1.00) | 16.9 (28.17) | 3.8 (6.33) |\n| remove row (2x) | 1.0 (1.00) | 9.7 (9.70) | 2.5 (2.50) |\n| create many rows (10k) | 45.0 (1.00) | 996.2 (22.14) | 64.0 (1.42) |\n| append 1k to 1k (2x) | 4.5 (1.00) | 106.7 (23.71) | 6.0 (1.33) |\n| clear 1k rows (4x) | 16.7 (1.00) | 125.8 (7.53) | 20.3 (1.22) |\n| **geometric mean** | **1.00** | **17.11** | **2.05** |\n",
+    "data": [
+      {
+        "id": "01_run1k",
+        "label": "create rows (1k)",
+        "values": {
+          "vanillajs": {
+            "median": 4.3,
+            "factor": 1,
+            "ci95": 0.11455101804089196
+          },
+          "alpine": {
+            "median": 110.3,
+            "factor": 25.651162790697676,
+            "ci95": 6.354775515757592
+          },
+          "wcstack-state-4": {
+            "median": 6.5,
+            "factor": 1.5116279069767442,
+            "ci95": 0.5103319674920521
+          }
+        }
+      },
+      {
+        "id": "02_replace1k",
+        "label": "replace all rows (1k)",
+        "values": {
+          "vanillajs": {
+            "median": 9,
+            "factor": 1,
+            "ci95": 0.7044627080500461
+          },
+          "alpine": {
+            "median": 128.9,
+            "factor": 14.322222222222223,
+            "ci95": 9.247608606165713
+          },
+          "wcstack-state-4": {
+            "median": 12.6,
+            "factor": 1.4,
+            "ci95": 0.12076981676464177
+          }
+        }
+      },
+      {
+        "id": "03_update10th1k_x16",
+        "label": "partial update (every 10th of 1k, 4x)",
+        "values": {
+          "vanillajs": {
+            "median": 1.4,
+            "factor": 1,
+            "ci95": 0.12754714220475333
+          },
+          "alpine": {
+            "median": 9,
+            "factor": 6.428571428571429,
+            "ci95": 1.3335256219327234
+          },
+          "wcstack-state-4": {
+            "median": 5.3,
+            "factor": 3.785714285714286,
+            "ci95": 0.7255439427909989
+          }
+        }
+      },
+      {
+        "id": "04_select1k",
+        "label": "select row (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 1.2,
+            "factor": 1,
+            "ci95": 0.10882066552241723
+          },
+          "alpine": {
+            "median": 59.2,
+            "factor": 49.333333333333336,
+            "ci95": 5.939386461652232
+          },
+          "wcstack-state-4": {
+            "median": 2.6,
+            "factor": 2.166666666666667,
+            "ci95": 0.23190606792006113
+          }
+        }
+      },
+      {
+        "id": "05_swap1k",
+        "label": "swap rows (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 0.6,
+            "factor": 1,
+            "ci95": 0.05674071197784566
+          },
+          "alpine": {
+            "median": 16.9,
+            "factor": 28.166666666666664,
+            "ci95": 1.984837705385784
+          },
+          "wcstack-state-4": {
+            "median": 3.8,
+            "factor": 6.333333333333333,
+            "ci95": 0.2536560416879875
+          }
+        }
+      },
+      {
+        "id": "06_remove-one-1k",
+        "label": "remove row (2x)",
+        "values": {
+          "vanillajs": {
+            "median": 1,
+            "factor": 1,
+            "ci95": 0.06949289599397376
+          },
+          "alpine": {
+            "median": 9.7,
+            "factor": 9.7,
+            "ci95": 0.6807989849528361
+          },
+          "wcstack-state-4": {
+            "median": 2.5,
+            "factor": 2.5,
+            "ci95": 0.17717281636467308
+          }
+        }
+      },
+      {
+        "id": "07_create10k",
+        "label": "create many rows (10k)",
+        "values": {
+          "vanillajs": {
+            "median": 45,
+            "factor": 1,
+            "ci95": 0.7830205793400073
+          },
+          "alpine": {
+            "median": 996.2,
+            "factor": 22.137777777777778,
+            "ci95": 27.839448454536846
+          },
+          "wcstack-state-4": {
+            "median": 64,
+            "factor": 1.4222222222222223,
+            "ci95": 0.9096362173548279
+          }
+        }
+      },
+      {
+        "id": "08_create1k-after1k_x2",
+        "label": "append 1k to 1k (2x)",
+        "values": {
+          "vanillajs": {
+            "median": 4.5,
+            "factor": 1,
+            "ci95": 0.4254980221233214
+          },
+          "alpine": {
+            "median": 106.7,
+            "factor": 23.711111111111112,
+            "ci95": 7.40274232064987
+          },
+          "wcstack-state-4": {
+            "median": 6,
+            "factor": 1.3333333333333333,
+            "ci95": 0.6131084695380281
+          }
+        }
+      },
+      {
+        "id": "09_clear1k_x8",
+        "label": "clear 1k rows (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 16.7,
+            "factor": 1,
+            "ci95": 1.3886289667636187
+          },
+          "alpine": {
+            "median": 125.8,
+            "factor": 7.5329341317365275,
+            "ci95": 16.821964668937294
+          },
+          "wcstack-state-4": {
+            "median": 20.3,
+            "factor": 1.2155688622754492,
+            "ci95": 1.0570315769251888
+          }
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": 1,
+      "alpine": 17.11297519200604,
+      "wcstack-state-4": 2.0478959536473837
+    }
+  },
+  "paint": {
+    "md": "### CPU — paint only (ms, median)\n\n| benchmark | vanillajs | alpine | wcstack-state-4 |\n|---|---:|---:|---:|\n| create rows (1k) | 53.1 (1.00) | 57.6 (1.08) | 54.9 (1.03) |\n| replace all rows (1k) | 51.8 (1.00) | 56.3 (1.09) | 53.3 (1.03) |\n| partial update (every 10th of 1k, 4x) | 39.8 (1.21) | 32.8 (1.00) | 37.9 (1.16) |\n| select row (4x) | 11.6 (1.13) | 10.3 (1.00) | 10.9 (1.06) |\n| swap rows (4x) | 30.4 (1.00) | 34.1 (1.12) | 31.5 (1.04) |\n| remove row (2x) | 32.7 (1.37) | 23.9 (1.00) | 28.4 (1.19) |\n| create many rows (10k) | 570.5 (1.00) | 664.5 (1.16) | 587.8 (1.03) |\n| append 1k to 1k (2x) | 62.7 (1.11) | 65.1 (1.15) | 56.5 (1.00) |\n| clear 1k rows (4x) | 2.8 (1.00) | 3.3 (1.18) | 3.0 (1.07) |\n| **geometric mean** | **1.08** | **1.09** | **1.07** |\n",
+    "data": [
+      {
+        "id": "01_run1k",
+        "label": "create rows (1k)",
+        "values": {
+          "vanillajs": {
+            "median": 53.1,
+            "factor": 1,
+            "ci95": 1.111008553864255
+          },
+          "alpine": {
+            "median": 57.6,
+            "factor": 1.0847457627118644,
+            "ci95": 2.526395731982621
+          },
+          "wcstack-state-4": {
+            "median": 54.9,
+            "factor": 1.0338983050847457,
+            "ci95": 2.908417517588181
+          }
+        }
+      },
+      {
+        "id": "02_replace1k",
+        "label": "replace all rows (1k)",
+        "values": {
+          "vanillajs": {
+            "median": 51.8,
+            "factor": 1,
+            "ci95": 2.6335159862082618
+          },
+          "alpine": {
+            "median": 56.3,
+            "factor": 1.0868725868725868,
+            "ci95": 3.2596105031134783
+          },
+          "wcstack-state-4": {
+            "median": 53.3,
+            "factor": 1.028957528957529,
+            "ci95": 0.9306692856853019
+          }
+        }
+      },
+      {
+        "id": "03_update10th1k_x16",
+        "label": "partial update (every 10th of 1k, 4x)",
+        "values": {
+          "vanillajs": {
+            "median": 39.8,
+            "factor": 1.2134146341463414,
+            "ci95": 2.700892567210526
+          },
+          "alpine": {
+            "median": 32.8,
+            "factor": 1,
+            "ci95": 2.501427383987142
+          },
+          "wcstack-state-4": {
+            "median": 37.9,
+            "factor": 1.1554878048780488,
+            "ci95": 3.072325500771409
+          }
+        }
+      },
+      {
+        "id": "04_select1k",
+        "label": "select row (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 11.6,
+            "factor": 1.1262135922330097,
+            "ci95": 1.247781491457857
+          },
+          "alpine": {
+            "median": 10.3,
+            "factor": 1,
+            "ci95": 7.788288965042419
+          },
+          "wcstack-state-4": {
+            "median": 10.9,
+            "factor": 1.058252427184466,
+            "ci95": 1.2036540899807964
+          }
+        }
+      },
+      {
+        "id": "05_swap1k",
+        "label": "swap rows (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 30.4,
+            "factor": 1,
+            "ci95": 3.7025447304011623
+          },
+          "alpine": {
+            "median": 34.1,
+            "factor": 1.1217105263157896,
+            "ci95": 2.7502001436674006
+          },
+          "wcstack-state-4": {
+            "median": 31.5,
+            "factor": 1.036184210526316,
+            "ci95": 1.6053787282181315
+          }
+        }
+      },
+      {
+        "id": "06_remove-one-1k",
+        "label": "remove row (2x)",
+        "values": {
+          "vanillajs": {
+            "median": 32.7,
+            "factor": 1.368200836820084,
+            "ci95": 1.944453130614024
+          },
+          "alpine": {
+            "median": 23.9,
+            "factor": 1,
+            "ci95": 1.8547028791119915
+          },
+          "wcstack-state-4": {
+            "median": 28.4,
+            "factor": 1.1882845188284519,
+            "ci95": 2.5280026376993243
+          }
+        }
+      },
+      {
+        "id": "07_create10k",
+        "label": "create many rows (10k)",
+        "values": {
+          "vanillajs": {
+            "median": 570.5,
+            "factor": 1,
+            "ci95": 4.048312527206178
+          },
+          "alpine": {
+            "median": 664.5,
+            "factor": 1.1647677475898335,
+            "ci95": 5.293142467417821
+          },
+          "wcstack-state-4": {
+            "median": 587.8,
+            "factor": 1.0303242769500438,
+            "ci95": 4.115322885612518
+          }
+        }
+      },
+      {
+        "id": "08_create1k-after1k_x2",
+        "label": "append 1k to 1k (2x)",
+        "values": {
+          "vanillajs": {
+            "median": 62.7,
+            "factor": 1.1097345132743364,
+            "ci95": 5.351650336434022
+          },
+          "alpine": {
+            "median": 65.1,
+            "factor": 1.152212389380531,
+            "ci95": 4.96086098263908
+          },
+          "wcstack-state-4": {
+            "median": 56.5,
+            "factor": 1,
+            "ci95": 3.03647562827923
+          }
+        }
+      },
+      {
+        "id": "09_clear1k_x8",
+        "label": "clear 1k rows (4x)",
+        "values": {
+          "vanillajs": {
+            "median": 2.8,
+            "factor": 1,
+            "ci95": 0.22523686964666007
+          },
+          "alpine": {
+            "median": 3.3,
+            "factor": 1.1785714285714286,
+            "ci95": 0.1959964
+          },
+          "wcstack-state-4": {
+            "median": 3,
+            "factor": 1.0714285714285714,
+            "ci95": 0.1985924919224598
+          }
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": 1.0844813909429265,
+      "alpine": 1.085457434687682,
+      "wcstack-state-4": 1.065375535522428
+    }
+  },
+  "mem": {
+    "md": "### Memory (MB, median)\n\n| benchmark | vanillajs | alpine | wcstack-state-4 |\n|---|---:|---:|---:|\n| ready memory | 0.57 (1.00) | 0.79 (1.38) | 1.18 (2.06) |\n| run memory (1k rows) | 2.03 (1.00) | 16.92 (8.35) | 2.95 (1.45) |\n| create/clear 1k x5 | 0.63 (1.00) | 1.58 (2.51) | 1.65 (2.61) |\n| **geometric mean** | **1.00** | **3.07** | **1.99** |\n",
+    "data": [
+      {
+        "id": "21_ready-memory",
+        "label": "ready memory",
+        "values": {
+          "vanillajs": {
+            "median": 0.5735988616943359,
+            "factor": 1,
+            "ci95": 0
+          },
+          "alpine": {
+            "median": 0.7942333221435547,
+            "factor": 1.3846494042848925,
+            "ci95": 0
+          },
+          "wcstack-state-4": {
+            "median": 1.1835317611694336,
+            "factor": 2.0633439851561697,
+            "ci95": 0
+          }
+        }
+      },
+      {
+        "id": "22_run-memory",
+        "label": "run memory (1k rows)",
+        "values": {
+          "vanillajs": {
+            "median": 2.0276412963867188,
+            "factor": 1,
+            "ci95": 0
+          },
+          "alpine": {
+            "median": 16.9246244430542,
+            "factor": 8.34695193534186,
+            "ci95": 0
+          },
+          "wcstack-state-4": {
+            "median": 2.946211814880371,
+            "factor": 1.4530241715487626,
+            "ci95": 0
+          }
+        }
+      },
+      {
+        "id": "25_run-clear-memory",
+        "label": "create/clear 1k x5",
+        "values": {
+          "vanillajs": {
+            "median": 0.6317033767700195,
+            "factor": 1,
+            "ci95": 0
+          },
+          "alpine": {
+            "median": 1.5843009948730469,
+            "factor": 2.507982469515647,
+            "ci95": 0
+          },
+          "wcstack-state-4": {
+            "median": 1.6504926681518555,
+            "factor": 2.6127653086026488,
+            "ci95": 0
+          }
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": 1,
+      "alpine": 3.071831650303389,
+      "wcstack-state-4": 1.9860108894745188
+    }
+  },
+  "size": {
+    "md": "### Size and first paint\n\n| benchmark | vanillajs | alpine | wcstack-state-4 |\n|---|---:|---:|---:|\n| uncompressed size | 11.7 (1.00) | 47.4 (4.05) | 133.7 (11.43) |\n| compressed size | 2.5 (1.00) | 14.7 (5.88) | 42.6 (17.04) |\n| first paint | 161.5 (1.04) | 156.0 (1.00) | 222.1 (1.42) |\n| **geometric mean** | **1.01** | **2.88** | **6.52** |\n",
+    "data": [
+      {
+        "id": "41_size-uncompressed",
+        "label": "uncompressed size",
+        "values": {
+          "vanillajs": {
+            "median": 11.7,
+            "factor": 1,
+            "ci95": 0
+          },
+          "alpine": {
+            "median": 47.4,
+            "factor": 4.051282051282051,
+            "ci95": 0
+          },
+          "wcstack-state-4": {
+            "median": 133.7,
+            "factor": 11.427350427350428,
+            "ci95": 0
+          }
+        }
+      },
+      {
+        "id": "42_size-compressed",
+        "label": "compressed size",
+        "values": {
+          "vanillajs": {
+            "median": 2.5,
+            "factor": 1,
+            "ci95": 0
+          },
+          "alpine": {
+            "median": 14.7,
+            "factor": 5.88,
+            "ci95": 0
+          },
+          "wcstack-state-4": {
+            "median": 42.6,
+            "factor": 17.04,
+            "ci95": 0
+          }
+        }
+      },
+      {
+        "id": "43_first-paint",
+        "label": "first paint",
+        "values": {
+          "vanillajs": {
+            "median": 161.5,
+            "factor": 1.0352564102564104,
+            "ci95": 0
+          },
+          "alpine": {
+            "median": 156,
+            "factor": 1,
+            "ci95": 0
+          },
+          "wcstack-state-4": {
+            "median": 222.1,
+            "factor": 1.4237179487179488,
+            "ci95": 0
+          }
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": 1.011616667249515,
+      "alpine": 2.87733173252428,
+      "wcstack-state-4": 6.5204819752149366
+    }
+  }
+}

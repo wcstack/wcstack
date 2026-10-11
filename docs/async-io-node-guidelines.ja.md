@@ -348,8 +348,8 @@ upgrade 後もそれが prototype の accessor を隠し続けるため、setter
 
 ### 4.3 入力の種類
 
-- **属性連動入力**（宣言的 config。例: `mode` / `body`）: `get` は `getAttribute`、`set` は属性 reflect。冪等
-- **reactive command-property**（動的な値で副作用を起こす。例: `notice` / `say`）: 属性を持たず、setter が同値ガードした上で Core メソッドを呼ぶ。`undefined`/`null` は no-op に正規化する（binder は undefined を書かない契約だが直接代入はありうる）。`manual` 属性で抑止できるようにする
+- **属性連動入力**（宣言的 config。例: `mode` / `body`）: `get` は `getAttribute`、`set` は要素自身の書き方で属性 reflect（binder は属性を書かない: wc-bindable の applier プロファイル A1、producer ガイダンス P3）。冪等。`undefined` は「値が無い」で、要素が最初に持っていた属性（マークアップに書かれた値、無ければ属性なし → 文書化した既定値）に戻す。`null` はクリア（属性なし → 文書化した既定値）。どちらも文字列 `"undefined"` / `"null"` として属性に書かない（P1 / P2、`src/protocol/inputAttribute.ts`）
+- **reactive command-property**（動的な値で副作用を起こす。例: `notice` / `say`）: 属性を持たず、setter が同値ガードした上で Core メソッドを呼ぶ。`undefined`/`null` は no-op に正規化する（`@wcstack/state` は undefined を書かないが、React 19（値のあった prop を外したとき）、`@wcstack/signals` の `bindInput`、直接の代入は書く）。`manual` 属性で抑止できるようにする
 
 ### 4.4 SSR
 

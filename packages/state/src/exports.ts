@@ -1,50 +1,44 @@
+/**
+ * `@wcstack/state` — the full engine: `bootstrapState()` installs every add-on, then registers
+ * `<wcs-state>`. The same exports as 3.x; `@wcstack/state/core` + `features/*` is the composable
+ * form, and `/define`, `/manifest`, `/parser` the authoring and tooling entries.
+ */
+import { installFeatures } from "./hooks";
+import { bootstrapState as bootstrapCore } from "./element";
+import { ALL_FEATURES } from "./features/all";
+import type { IStateElement, IWritableConfig } from "./public/types";
+import type { Ssr } from "./ssr/element";
 
-export { bootstrapState } from "./bootstrapState.js";
-export { getConfig } from "./config.js";
-export { getTrustedTypesPolicy, setTrustedTypesPolicy, TRUSTED_TYPES_POLICY_SLOT } from "./trustedTypes.js";
-export type { IWcsTrustedTypesPolicy } from "./trustedTypes.js";
-export { getBindingsReady } from "./stateElementByName.js";
+/** Installs every add-on, applies `config` and registers `<wcs-state>` (in `registry`, the global one by default). */
+export function bootstrapState(config?: IWritableConfig, registry?: CustomElementRegistry): void {
+  installFeatures(ALL_FEATURES);
+  bootstrapCore(config, registry);
+}
 
-export { Ssr } from "./ssr/Ssr.js";
-export type { ISsrElement } from "./ssr/Ssr.js";
+export { getConfig } from "./config";
+export { getTrustedTypesPolicy, setTrustedTypesPolicy, TRUSTED_TYPES_POLICY_SLOT } from "./trustedTypes";
+export type { TrustedTypesPolicy as IWcsTrustedTypesPolicy } from "./trustedTypes";
+export { getBindingsReady, buildBindings } from "./element";
 
-export { buildBindings } from "./buildBindings.js";
+export { Ssr } from "./ssr/element";
+export type { ISsrElement } from "./ssr/element";
 
-export { defineState } from "./defineState.js";
+export { defineState } from "./public/defineState";
+export type { WcsStateApi, WcsThis, WcsPaths, WcsPathValue } from "./public/defineState";
+export type { IWritableConfig, IWritableTagNames, IBindingErrorInfo, IStateElement } from "./public/types";
 
-export type {
-  WcsStateApi, WcsThis,
-  WcsPaths, WcsPathValue,
-} from "./defineState.js";
+export { VERSION } from "./version";
 
-export type {
-  IWritableConfig, IWritableTagNames, IBindingErrorInfo
-} from "./types.js";
+export { getWcsManifest, WCS_MANIFEST_VERSION, builtinFilterMeta, builtinFilterAliases } from "./public/manifest";
+export type { IWcsManifest, IFilterMeta, FilterResultType, FilterArgType } from "./public/manifest";
 
-export { VERSION } from "./version.js";
+export { analyzeContract } from "./public/contract";
+export type { IContractManifest, ContractEvent } from "./public/contract";
 
-export { getWcsManifest, WCS_MANIFEST_VERSION } from "./manifest.js";
-export type { IWcsManifest } from "./manifest.js";
-
-// Phase 5b: opt-in dev-time contract analyzer(既定 off・無効時ゼロコスト)。
-export { analyzeContract } from "./contract/contractAnalyzer.js";
-export type { IContractManifest } from "./contract/types.js";
-export type { ContractEvent } from "./devtools/types.js";
-export { builtinFilterMeta } from "./filters/filterMeta.js";
-// `manifest.ts` は両方を公開するので、こちらも対にしておく（要件 B12 のエイリアス表）
-export { builtinFilterAliases } from "./filters/filterAliases.js";
-export type { IFilterMeta, FilterResultType, FilterArgType } from "./filters/filterMeta.js";
-
-// Typed element lookups (docs/typescript.md §3): `document.querySelector("wcs-state")`
-// resolves to the element class. Default tag names only — a page that renames tags via
-// `IWritableTagNames` is outside this map. Declared here so the augmentation ships in
-// dist/index.d.ts; it applies once this package's types are in the consuming program
-// (`import "@wcstack/state"` or a tsconfig `types` entry).
-import type { State } from "./components/State.js";
-import type { Ssr } from "./ssr/Ssr.js";
+// typed element lookups: `document.querySelector("wcs-state")` (default tag names only)
 declare global {
   interface HTMLElementTagNameMap {
-    "wcs-state": State;
+    "wcs-state": IStateElement;
     "wcs-ssr": Ssr;
   }
 }

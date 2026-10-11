@@ -40,7 +40,7 @@ function tagDescription(contract) {
 
 /**
  * カタログから custom data オブジェクトを構築する(決定的: タグ名・属性名で整列)。
- * 属性面は「input のミラー属性 ∪ Shell の observedAttributes」— fetch のように
+ * 属性面は「input の attribute ヒントの属性 ∪ Shell の observedAttributes」— fetch のように
  * wcBindable へ attribute ヒントを持たせない設計(setter 自身が reflect)のタグでも
  * observedAttributes 側に HTML 属性面が現れる。
  * @param {Readonly<Record<string, {package: string, observedAttributes?: readonly string[], inputs: Readonly<Record<string, string | null>>, properties: readonly string[], commands: readonly string[]}>>} tags
@@ -48,11 +48,11 @@ function tagDescription(contract) {
 export function buildHtmlCustomData(tags) {
   const tagEntries = Object.keys(tags).sort().map((tagName) => {
     const contract = tags[tagName];
-    // ミラー属性を持つ input だけが HTML 属性として現れる(null は property 専用)。
+    // attribute ヒントを持つ input だけが HTML 属性として現れる(null は property 専用)。
     const byName = new Map();
     for (const [input, attribute] of Object.entries(contract.inputs)) {
       if (attribute !== null) {
-        byName.set(attribute, markdown(`Attribute mirror of the \`${input}\` input.`));
+        byName.set(attribute, markdown(`Markup attribute of the \`${input}\` input.`));
       }
     }
     const inputNameSet = new Set(Object.keys(contract.inputs));

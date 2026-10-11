@@ -69,7 +69,7 @@ branch `feat/scoped-custom-element-registry` で実装済み。
 
 | パッケージ | 変更 |
 |---|---|
-| `state` | [`platform/customElementRegistry.ts`](../packages/state/src/platform/customElementRegistry.ts) が `Node.customElementRegistry` を解決し、全呼び出し元が自分のノードを渡す。DCC は自分のホストを支配するレジストリへ define する — global への define は自分の兄弟にすら適用されなかった。 |
+| `state` | [`platform/customElementRegistry.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/platform/customElementRegistry.ts) が `Node.customElementRegistry` を解決し、全呼び出し元が自分のノードを渡す。DCC は自分のホストを支配するレジストリへ define する — global への define は自分の兄弟にすら適用されなかった。 |
 | `defined` | `DefinedCore` が監視するレジストリを受け取り、`<wcs-defined>` は自分のサブツリーが解決するものを渡す。 |
 | `autoloader` | 遅延ロードは走査 root のレジストリへ define し、ロード中台帳をレジストリ別に持つ。 |
 
@@ -119,7 +119,7 @@ ADR-15 §3.4 の DCC タグ名重複 fail-fast は性質として不変。一意
 著者がスコープ化を得るには、誰かが `new CustomElementRegistry()` を呼んで関連付ける必要があり、レジストリの
 関連付けが不変（§1.2）である以上、それは `attachShadow()` の時点でなければならない。
 
-wcstack が制御している `attachShadow` 呼び出しが 1 つある。[`defineDCC.ts`](../packages/state/src/dcc/defineDCC.ts)
+wcstack が制御している `attachShadow` 呼び出しが 1 つある。[`defineDCC.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts)
 の `_ensureShadow()` が DCC *インスタンス* のシャドウを attach している。ここでレジストリを渡せば DCC の内部を
 本当の意味で private にできる。しかし継承が無いので、新しいレジストリは空から始まる — そのインスタンス自身の
 `<wcs-state>` も、テンプレートが使う全 I/O タグも、何にも解決しなくなる。種を蒔けるようにするために Phase 1 が
@@ -171,7 +171,7 @@ const shadow = host.attachShadow({ mode: "open", customElementRegistry: registry
    挿入されても」要素をスコープ化する。よって **クローンは挿入先ではなくテンプレート側のレジストリを担う** と
    強く予想され、`initialize()` は `null` レジストリしか埋めないので、そうなると回復不能である。出荷済み MVP に
    これを是正する `ShadowRoot.importNode()` は無い（§1）。Phase 3 の設計に入る前に実ブラウザで計測すること。
-   その答えが [`structural/createContent.ts`](../packages/state/src/structural/createContent.ts) を変更する
+   その答えが [`structural/createContent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/structural/createContent.ts) を変更する
    必要があるか否かを決める。
    **Chromium 149 で計測した（2026-09-27、#357 の修正時）— そこでは予想が外れた。**
    `document.importNode(template.content, true)` で作ったクローンは、fragment の中では global レジストリを返し

@@ -2,6 +2,7 @@ import { IdleScreenState, IdleUserState, IWcBindable } from "../types.js";
 import { IdleCore } from "../core/IdleCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-idle>` — declarative Idle Detection API primitive.
@@ -104,8 +105,12 @@ export class WcsIdle extends HTMLElement {
     return Number.isFinite(n) ? n : 60000;
   }
 
-  set threshold(value: number) {
-    this.setAttribute("threshold", String(value));
+  // Never lets setAttribute stringify null / undefined: `null` removes the
+  // attribute (the 60000ms default), `undefined` restores the attribute the
+  // element started with (wc-bindable producer guidance P1; React 19 and a
+  // direct assignment deliver it, @wcstack/state does not).
+  set threshold(value: number | null | undefined) {
+    reflectAttribute(this, "threshold", value);
   }
 
   // --- Core delegated getters ---

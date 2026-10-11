@@ -81,15 +81,15 @@
 
 | 機構 | キー | 越境 | 実装 |
 |---|---|---|---|
-| binding 台帳 | `AbsoluteStateAddress`（state 要素を内包） | ✅ | [getBindingSetByAbsoluteStateAddress.ts](../packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts) |
-| updater の queue / drain | 同上・**モジュール単一インスタンス** | ✅ | [updater.ts:170](../packages/state/src/updater/updater.ts#L170) |
-| getter キャッシュ | `AbsoluteStateAddress` の WeakMap | ✅ | [cacheEntryByAbsoluteStateAddress.ts](../packages/state/src/cache/cacheEntryByAbsoluteStateAddress.ts) |
-| DOM 適用 | `binding.stateName` で state を引き直す | ✅ | [applyChange.ts:188](../packages/state/src/apply/applyChange.ts#L188) |
-| 依存グラフ | state 要素ごとの `Map<string, string[]>` | ❌ | [State.ts:718](../packages/state/src/components/State.ts#L718) |
-| 依存 walk | `Context` が単一 state 前提 | ❌ | [walkDependency.ts:95](../packages/state/src/dependency/walkDependency.ts#L95) |
-| 依存の記録 | `handler.stateElement` と `handler.lastAddressStack` | ❌ | [checkDependency.ts:16](../packages/state/src/proxy/methods/checkDependency.ts#L16) |
-| 評価フレーム | `StateHandler` インスタンスごとの `_addressStack` | ❌ | [StateHandler.ts:18](../packages/state/src/proxy/StateHandler.ts#L18) |
-| 名前解決 | rootNode（Document / ShadowRoot）スコープ | ❌ | [stateElementByName.ts:20](../packages/state/src/stateElementByName.ts#L20) |
+| binding 台帳 | `AbsoluteStateAddress`（state 要素を内包） | ✅ | [getBindingSetByAbsoluteStateAddress.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/getBindingSetByAbsoluteStateAddress.ts) |
+| updater の queue / drain | 同上・**モジュール単一インスタンス** | ✅ | [updater.ts:170](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/updater/updater.ts#L170) |
+| getter キャッシュ | `AbsoluteStateAddress` の WeakMap | ✅ | [cacheEntryByAbsoluteStateAddress.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/cache/cacheEntryByAbsoluteStateAddress.ts) |
+| DOM 適用 | `binding.stateName` で state を引き直す | ✅ | [applyChange.ts:188](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChange.ts#L188) |
+| 依存グラフ | state 要素ごとの `Map<string, string[]>` | ❌ | [State.ts:718](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L718) |
+| 依存 walk | `Context` が単一 state 前提 | ❌ | [walkDependency.ts:95](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dependency/walkDependency.ts#L95) |
+| 依存の記録 | `handler.stateElement` と `handler.lastAddressStack` | ❌ | [checkDependency.ts:16](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/methods/checkDependency.ts#L16) |
+| 評価フレーム | `StateHandler` インスタンスごとの `_addressStack` | ❌ | [StateHandler.ts:18](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/proxy/StateHandler.ts#L18) |
+| 名前解決 | rootNode（Document / ShadowRoot）スコープ | ❌ | [stateElementByName.ts:20](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/stateElementByName.ts#L20) |
 
 **帰結**: 値が変わってから DOM に届くまでの後半（enqueue → drain → binding 探索 → 適用）は、書き込み元と binding の所属 state が違っても既に正しく動く。足りないのは前半、すなわち「**A の getter が B の値に依存している**」という事実をグラフに記録し、B への書き込みからそれを辿ることだけである。
 
@@ -161,7 +161,7 @@ state 名は rootNode（Document または ShadowRoot）ごとに登録される
 ### 未決の論点
 
 - 遡上の途中に同名 state が複数ある場合、**最も近いものが勝つ**（レキシカルスコープの通常の意味論）。ただしこれは shadow root ごとにテーマを差し替える機能にもなる。意図した機能とするか、曖昧さとして禁止するか未決
-- `bind-component` の mapped 子スコープ、および light DOM コンポーネントスコープ（[lightDomComponentScope.ts](../packages/state/src/bindings/lightDomComponentScope.ts)）での遡上の定義が未検証
+- `bind-component` の mapped 子スコープ、および light DOM コンポーネントスコープ（[lightDomComponentScope.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/bindings/lightDomComponentScope.ts)）での遡上の定義が未検証
 
 ---
 

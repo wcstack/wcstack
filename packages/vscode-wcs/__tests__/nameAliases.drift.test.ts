@@ -1,66 +1,66 @@
 /**
  * nameAliases.drift.test.ts
  *
- * 旧名 → 正式名の表（@wcstack/state 3.2・要件 B12）が正本とずれていないことを固定する。
+ * 4.0 で外れた旧名の表（`src/service/removedNames.ts`）が、4.0 の正本と矛盾しないことを固定する。
  *
- * フィルタの別名は manifest から導出済み（`wcsManifest.ts` の `builtinFilterAliases`・番人は
- * `filterMeta.manifest.test.ts`）でドリフトしない。一方 **API と宣言キーの別名は拡張側に
- * 手書き**で、テストが 1 件も無かった — state が 3 つ目の別名を足しても拡張は黙って
- * 取りこぼす。ここがその番人。
+ * 4.0 の manifest は旧名の表（`filterAliases` / `declarationAliases` / `apiAliases`）を空にした —
+ * ランタイムが受け付けない名前を配る理由が無いため。拡張は移行の案内のために 3.x の表を凍結して
+ * 持つので、ここでは次を確かめる:
+ *   - manifest の旧名の表が空のまま（4.0 が旧名を受け付け直したら、拡張の「外れた」という案内は嘘になる）
+ *   - フィルタの旧名と `substr` が 4.0 の組み込みに無く、書き換え先（正式名・`slice`）は組み込みにある
+ *   - ランタイム（`@wcstack/state` の src — `node_modules/@wcstack/state` の実体）が拒む宣言キー・API の
+ *     旧名が、拡張の表と同じ（4.0.0-rc.3 の後で検出はコアから診断の後付けへ移った: 宣言キーは
+ *     `features/diagnostics.ts` の `REMOVED_DECLARATIONS`、API は同じファイルの `REMOVED_APIS` — `#1701` で投げる名前）
  *
- * **なぜ導出でなく突き合わせなのか**: 正本（`packages/state/src/manifest.ts` の
- * `STATE_API_ALIASES` と `src/declarationAliases.ts` の `DECLARATION_ALIASES`）は
- * **コミット済みの dist にまだ載っていない**（`@wcstack/state/manifest` が export するのは
- * `STRUCTURAL_BINDING_TYPE_SET / WCS_MANIFEST_VERSION / builtinFilterAliases /
- * builtinFilterMeta / getWcsManifest` の 5 つだけ）。ESM の名前付き import は export が
- * 無い dist で即死するので、`core/parser/quoteAware.ts` の TODO と同じ扱い —
- * **次のリリースビルドで dist に載ったら導出へ切り替える**。それまでは state の src を
- * 読んで突き合わせる。
+ * src は依存の実体（`packages/state`）から読む。
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { OLD_API_NAMES, OLD_DECLARATION_KEYS } from '../src/service/semanticValidator';
+import { getWcsManifest } from '../src/service/wcsManifest';
+import { REMOVED_API_NAMES, REMOVED_DECLARATION_KEYS, REMOVED_FILTER_NAMES, SUBSTR_FILTER } from '../src/service/removedNames';
 
-const STATE_SRC = join(__dirname, '..', '..', 'state', 'src');
+const STATE_SRC = join(realpathSync(join(__dirname, '..', 'node_modules', '@wcstack', 'state')), 'src');
 
-/** `export const NAME = 'value';` の値を読む（定数名の参照を実値へ解決するため）。 */
-function constValue(source: string, name: string): string {
-  const match = new RegExp(String.raw`export const ${name}\s*=\s*["']([^"']+)["']`).exec(source);
-  expect(match, `${name} が define.ts に見つからない`).not.toBeNull();
-  return match![1];
-}
+describe('4.0 で外れた旧名の表が @wcstack/state 4.0 の正本と矛盾しないこと', () => {
+  const manifest = getWcsManifest();
 
-/** `{ key: value, key: CONST }` 形のリテラルを読み、定数名は define.ts で解決する。 */
-function readAliasTable(body: string, define: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  const entry = /([$\w]+)\s*:\s*(?:["']([^"']+)["']|([A-Z_][A-Z0-9_]*))/g;
-  let match: RegExpExecArray | null;
-  while ((match = entry.exec(body)) !== null) {
-    out[match[1]] = match[2] !== undefined ? match[2] : constValue(define, match[3]);
-  }
-  return out;
-}
-
-describe('旧名テーブルが @wcstack/state の正本とずれていないこと', () => {
-  const define = readFileSync(join(STATE_SRC, 'define.ts'), 'utf8');
-
-  it('API の別名が STATE_API_ALIASES（manifest.ts）と一致すること', () => {
-    const manifest = readFileSync(join(STATE_SRC, 'manifest.ts'), 'utf8');
-    const body = /export const STATE_API_ALIASES[^=]*=\s*Object\.freeze\(\{([\s\S]*?)\}\)/.exec(manifest);
-    expect(body, '正本の宣言が見つからない（形が変わった？）').not.toBeNull();
-    expect(OLD_API_NAMES).toEqual(readAliasTable(body![1], define));
+  it('manifest の旧名の表は空（4.0 は旧名を受け付けない）', () => {
+    expect(manifest.filterAliases).toEqual({});
+    expect(manifest.declarationAliases).toEqual({});
+    expect(manifest.apiAliases).toEqual({});
   });
 
-  it('宣言キーの別名が DECLARATION_ALIASES（declarationAliases.ts）と一致すること', () => {
-    const source = readFileSync(join(STATE_SRC, 'declarationAliases.ts'), 'utf8');
-    const body = /export const DECLARATION_ALIASES[^=]*=\s*\{([\s\S]*?)\};/.exec(source);
-    expect(body, '正本の宣言が見つからない（形が変わった？）').not.toBeNull();
-    expect(OLD_DECLARATION_KEYS).toEqual(readAliasTable(body![1], define));
+  it('フィルタの旧名と substr は 4.0 の組み込みに無く、書き換え先は組み込みにある', () => {
+    const filters = new Set(manifest.filters);
+    for (const [old, canonical] of Object.entries(REMOVED_FILTER_NAMES)) {
+      expect(filters.has(old), old).toBe(false);
+      expect(filters.has(canonical), canonical).toBe(true);
+    }
+    expect(filters.has(SUBSTR_FILTER)).toBe(false);
+    expect(filters.has('slice')).toBe(true);
   });
 
-  it('正本の表が空でないこと（読み取りが壊れて「一致」に見えるのを防ぐ）', () => {
-    expect(Object.keys(OLD_API_NAMES).length).toBeGreaterThan(0);
-    expect(Object.keys(OLD_DECLARATION_KEYS).length).toBeGreaterThan(0);
+  it('宣言キーの旧名がランタイムの REMOVED_DECLARATIONS（診断の後付け features/diagnostics.ts）と一致する', () => {
+    const diagnostics = readFileSync(join(STATE_SRC, 'features', 'diagnostics.ts'), 'utf8');
+    const body = /const REMOVED_DECLARATIONS[^=]*=\s*\[([\s\S]*?)\];/.exec(diagnostics);
+    expect(body, '正本の宣言が見つからない（形が変わった？）').not.toBeNull();
+    const pairs = Object.fromEntries([...body![1].matchAll(/\["(\$\w+)",\s*"(\$\w+)"\]/g)].map((m) => [m[1], m[2]]));
+    expect(pairs).toEqual(REMOVED_DECLARATION_KEYS);
+  });
+
+  it('API の旧名がランタイムの [wcs/name-alias]（#1701）で拒む名前（診断の後付けの REMOVED_APIS）と一致する', () => {
+    const diagnostics = readFileSync(join(STATE_SRC, 'features', 'diagnostics.ts'), 'utf8');
+    const body = /const REMOVED_APIS[^=]*=\s*\{([\s\S]*?)\};/.exec(diagnostics);
+    expect(body, '正本の宣言が見つからない（形が変わった？）').not.toBeNull();
+    const pairs = Object.fromEntries([...body![1].matchAll(/"(\$\w+)":\s*"(\$\w+)"/g)].map((m) => [m[1], m[2]]));
+    expect(pairs).toEqual(REMOVED_API_NAMES);
+    expect(diagnostics).toMatch(/raise\(M\.ApiRemoved, \[key, REMOVED_APIS\[key\]\]\)/);
+  });
+
+  it('表が空でないこと（読み取りが壊れて「一致」に見えるのを防ぐ）', () => {
+    expect(Object.keys(REMOVED_FILTER_NAMES).length).toBeGreaterThan(0);
+    expect(Object.keys(REMOVED_API_NAMES).length).toBeGreaterThan(0);
+    expect(Object.keys(REMOVED_DECLARATION_KEYS).length).toBeGreaterThan(0);
   });
 });

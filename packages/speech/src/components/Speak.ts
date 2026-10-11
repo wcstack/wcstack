@@ -4,6 +4,7 @@ import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { SpeakCore } from "../core/SpeakCore.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-speak>` — declarative text-to-speech. Wraps SpeakCore and exposes:
@@ -106,65 +107,58 @@ export class WcsSpeak extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Setters never let setAttribute stringify null / undefined: `null` removes
+  // the attribute (the default), `undefined` restores the attribute the element
+  // started with (wc-bindable producer guidance P1; React 19 and a direct
+  // assignment deliver it, @wcstack/state does not).
 
   get rate(): number {
     return this._numberAttr("rate", 1);
   }
 
-  set rate(value: number) {
-    this.setAttribute("rate", String(value));
+  set rate(value: number | null | undefined) {
+    reflectAttribute(this, "rate", value);
   }
 
   get pitch(): number {
     return this._numberAttr("pitch", 1);
   }
 
-  set pitch(value: number) {
-    this.setAttribute("pitch", String(value));
+  set pitch(value: number | null | undefined) {
+    reflectAttribute(this, "pitch", value);
   }
 
   get volume(): number {
     return this._numberAttr("volume", 1);
   }
 
-  set volume(value: number) {
-    this.setAttribute("volume", String(value));
+  set volume(value: number | null | undefined) {
+    reflectAttribute(this, "volume", value);
   }
 
   get voice(): string {
     return this.getAttribute("voice") ?? "";
   }
 
-  set voice(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("voice");
-    } else {
-      this.setAttribute("voice", String(value));
-    }
+  set voice(value: string | null | undefined) {
+    reflectAttribute(this, "voice", value);
   }
 
   get lang(): string {
     return this.getAttribute("lang") ?? "";
   }
 
-  set lang(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("lang");
-    } else {
-      this.setAttribute("lang", String(value));
-    }
+  set lang(value: string | null | undefined) {
+    reflectAttribute(this, "lang", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Reactive command-property ---
@@ -176,9 +170,10 @@ export class WcsSpeak extends HTMLElement {
   set say(value: string | null) {
     // Reactive: writing a new value speaks it. `manual` mutes the path entirely
     // (the imperative `speak` command still works) — both an opt-out and the hook
-    // used to avoid a recognition echo loop while listening. A conforming binder
-    // never delivers `undefined` (it skips the write), but a direct assignment
-    // can, so normalize null/undefined to a no-op.
+    // used to avoid a recognition echo loop while listening. @wcstack/state never
+    // writes `undefined`, but a wc-bindable applier writes it after a value
+    // (applier profile A2; React 19 does too), and a direct assignment can:
+    // "no value" is nothing to say, so null/undefined are a no-op.
     //
     // ECHO-LOOP WARNING: when wiring <wcs-listen> → state → `say`, the synthesized
     // audio will be re-recognized unless speech is muted while listening. There is

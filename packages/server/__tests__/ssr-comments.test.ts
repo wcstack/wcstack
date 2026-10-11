@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { renderToString } from '../src/render';
 
+// 4.0 のブロックのマーク: ページ直下の構造テンプレートはアンカー `<!--wcs-p:ID-->` になり
+// （テンプレートは <wcs-ssr> に `<template id=ID>` で残る）、その直後に描画内容の領域が続く。
+// for の領域は `<!--wcs-[-->` 〜 `<!--wcs-]-->` で、各行の前に `<!--wcs-|-->`。if / elseif / else の
+// 領域は描いた枝の番号を持つ `<!--wcs-[:i-->` 〜 `<!--wcs-]-->`。
+// 3.x は行・枝ごとに `<!--@@wcs-for-start:ID:items:0-->` 〜 `-end` を書いていた。
 describe('SSR ブロックコメント', () => {
   it('for ブロックに開始・終了コメントが入る', async () => {
     const result = await renderToString(`
@@ -9,18 +14,16 @@ describe('SSR ブロックコメント', () => {
         <li data-wcs="textContent: .name"></li>
       </template>
     `);
-    console.log(result);
 
-    // 各アイテムに開始・終了コメントがある
-    expect(result).toMatch(/<!--@@wcs-for-start:\w+:items:0-->/);
-    expect(result).toMatch(/<!--@@wcs-for-end:\w+:items:0-->/);
-    expect(result).toMatch(/<!--@@wcs-for-start:\w+:items:1-->/);
-    expect(result).toMatch(/<!--@@wcs-for-end:\w+:items:1-->/);
+    // アンカーの直後に領域、各アイテムの前に行のマーク
+    const match = result.match(/<!--wcs-p:([\w-]+)--><!--wcs-\[-->([\s\S]*?)<!--wcs-\]-->/);
+    expect(match).not.toBeNull();
+    expect(match![2]).toBe('<!--wcs-|--><li>Alice</li><!--wcs-|--><li>Bob</li>');
 
-    // コメントの id がテンプレート UUID と一致
-    const startMatch = result.match(/<!--@@wcs-for-start:(\w+):items:0-->/);
-    const endMatch = result.match(/<!--@@wcs-for-end:(\w+):items:0-->/);
-    expect(startMatch![1]).toBe(endMatch![1]);
+    // アンカーの id が <wcs-ssr> のテンプレートの id と一致
+    const tpl = result.match(/<wcs-ssr[^>]*>[\s\S]*<template id="([\w-]+)" data-wcs="for: items">[\s\S]*<\/wcs-ssr>/);
+    expect(tpl).not.toBeNull();
+    expect(tpl![1]).toBe(match![1]);
   });
 
   it('if ブロック（true）に開始・終了コメントが入る', async () => {
@@ -30,10 +33,9 @@ describe('SSR ブロックコメント', () => {
         <p>visible</p>
       </template>
     `);
-    console.log(result);
 
-    expect(result).toMatch(/<!--@@wcs-if-start:\w+:show-->/);
-    expect(result).toMatch(/<!--@@wcs-if-end:\w+:show-->/);
+    // 描いた枝（0 番目）の領域
+    expect(result).toMatch(/<!--wcs-p:[\w-]+--><!--wcs-\[:0--><p>visible<\/p><!--wcs-\]-->/);
   });
 
   it('if ブロック（false）にはコメントが入らない', async () => {
@@ -44,8 +46,11 @@ describe('SSR ブロックコメント', () => {
       </template>
     `);
 
-    expect(result).not.toMatch(/@@wcs-if-start/);
-    expect(result).not.toMatch(/@@wcs-if-end/);
+    // アンカーだけで、領域は無い
+    expect(result).toMatch(/<!--wcs-p:[\w-]+-->/);
+    expect(result).not.toMatch(/<!--wcs-\[/);
+    // （テンプレートの中身は <wcs-ssr> にだけある）
+    expect(result.slice(result.indexOf('</wcs-ssr>'))).not.toContain('<p>hidden</p>');
   });
 
   it('if/else ブロックの else 側に開始・終了コメントが入る', async () => {
@@ -58,13 +63,11 @@ describe('SSR ブロックコメント', () => {
         <p>please login</p>
       </template>
     `);
-    console.log(result);
 
-    // if 側は false なのでコメントなし
-    expect(result).not.toMatch(/@@wcs-if-start/);
-    // else 側にコメントがある
-    expect(result).toMatch(/<!--@@wcs-else-start:\w+:/);
-    expect(result).toMatch(/<!--@@wcs-else-end:\w+:/);
+    // if 側（0 番目）は false なので領域なし
+    expect(result).not.toMatch(/<!--wcs-\[:0-->/);
+    // else 側（1 番目）の領域が、連なりの最後のアンカーの後にある
+    expect(result).toMatch(/<!--wcs-p:[\w-]+-->\s*<!--wcs-p:[\w-]+--><!--wcs-\[:1--><p>please login<\/p><!--wcs-\]-->/);
   });
 
   it('for コメントの中にレンダリング内容が挟まれている', async () => {
@@ -76,8 +79,7 @@ describe('SSR ブロックコメント', () => {
     `);
 
     // start → 内容 → end の順序
-    const pattern = /<!--@@wcs-for-start:\w+:items:0-->([\s\S]*?)<!--@@wcs-for-end:\w+:items:0-->/;
-    const match = result.match(pattern);
+    const match = result.match(/<!--wcs-\[-->([\s\S]*?)<!--wcs-\]-->/);
     expect(match).not.toBeNull();
     expect(match![1]).toContain('>X<');
   });

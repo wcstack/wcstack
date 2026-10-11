@@ -12,9 +12,11 @@ wcstack が DOM を変更する箇所はちょうど 3 つ。
 
 | 箇所 | コード | 現在の削除のされ方 |
 |---|---|---|
-| リスト行 | [`applyChangeToFor`](../packages/state/src/apply/applyChangeToFor.ts) | `deactivateContent` → `content.unmount()` を**同期**実行。ノードはその場で detach され、content はアンカーごとのプールへ |
-| 条件分岐 | [`applyChangeToIf`](../packages/state/src/apply/applyChangeToIf.ts) | 同じ — 条件が false になった瞬間に detach |
+| リスト行 | [`applyChangeToFor`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToFor.ts) | `deactivateContent` → `content.unmount()` を**同期**実行。ノードはその場で detach され、content はアンカーごとのプールへ |
+| 条件分岐 | [`applyChangeToIf`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToIf.ts) | 同じ — 条件が false になった瞬間に detach |
 | ルートコンテンツ | [`hideRoute`](../packages/router/src/hideRoute.ts) / [`showRoute`](../packages/router/src/showRoute.ts) | `removeChild` → `insertBefore` を同期実行 |
+
+上の 2 行は、この設計が書かれた時点の `@wcstack/state` 3.x のコード。4.0 では同じ箇所は `dom/view.ts` の `ForView` / `IfView` で、削除はやはり同期（4.0 は content のプールを持たない）。
 
 一方、フレームワークを一切変えずに**すでにできていた**ことが 2 つある。単に
 ドキュメント化されていなかっただけだった。
@@ -57,7 +59,7 @@ View Transition API はそれを全部迂回する。ブラウザが変更**前*
 | G2 | 排他（同時に 1 つ）はどう行うか | **`<wcs-view-transition>` タグが行う**。唯一の調停者として、同一 microtask 中の全リクエストを 1 つの遷移へ合流させ、実行中に来たリクエストには宣言された `mode`（`latest` / `queue` / `exhaust`）を適用する。 |
 | G3 | `view-transition-name` は自動か手動か | **両方。タグの `naming="manual" \| "auto"` で選ぶ**（既定 `manual`）。 |
 | G4 | `prefers-reduced-motion` | **既定でスキップ**。そのとき変更は同期実行され、現行と完全に同じ挙動になる。`reduced-motion="animate"` で上書き。 |
-| G5 | SSR / ハイドレーション | **無効**。ドキュメントが `data-wcs-server` を持つ間は arbiter 自身が遷移の開始を拒む。`document.startViewTransition` が無い環境ではタグ自体が不活性。ゲートは参加者ごとではなく arbiter に置く —— プロトコルは公開されており、第三者の参加者が wcstack の SSR マーカーを知っている理由は無いため。`@wcstack/state` は自前の `inSsr()` 短絡を fast path として残し、`@wcstack/router` には不要。 |
+| G5 | SSR / ハイドレーション | **無効**。ドキュメントが `data-wcs-server` を持つ間は arbiter 自身が遷移の開始を拒む。`document.startViewTransition` が無い環境ではタグ自体が不活性。ゲートは参加者ごとではなく arbiter に置く —— プロトコルは公開されており、第三者の参加者が wcstack の SSR マーカーを知っている理由は無いため。`@wcstack/state` 3.x は自前の `inSsr()` 短絡を fast path として残す。`@wcstack/state` 4.0 と `@wcstack/router` は arbiter のゲートだけに頼る。 |
 
 ## 4. transition-runner プロトコル
 
@@ -134,7 +136,8 @@ input は `disabled` / `mode` / `naming` / `types`、command は `skip` / `start
   mount 時に一意で安定した `view-transition-name` を付ける。加えて
   `view-transition-class`（`wcs-row` / `wcs-branch`）も付けるので、CSS からグループを
   まとめて指せる。名前は **content に付いて回る**ので、プール再利用も並べ替えも
-  DOM の挙動どおりになる。
+  DOM の挙動どおりになる（4.0 はプールを持たず、ブロックを作るときに命名する。残した行は
+  要素ごと、名前ごと残る）。
 
 自動命名には上限がある（`naming-limit`、既定 200）。命名された要素は 1 つずつ
 スナップショットグループになり、数百個あると遷移は目に見えて重くなる。上限を超えると
@@ -173,36 +176,56 @@ router は `_initialize` の中で最初のルート適用を await するが、
 
 ### 7.2 `@wcstack/state`
 
-包む点は [`Updater._applyChange`](../packages/state/src/updater/updater.ts) の drain
-— `applyChangeFromBindings(processBindings)` の 1 点のみ。規範的な帰結:
+包む点は `Engine.drain`（`engine.ts`）の drain のパスごと。パスの DOM の変更 —— 先に
+リストのビュー、次にキューのバインディング —— を `runTransition("state", …)` へ渡す。
+規範的な帰結:
 
 - drain は既に microtask だが、遷移を挟むと**フレーム**になる。state に書いてから
   `await Promise.resolve()` で DOM を読むコードは、遷移を待つ（あるいは
-  `$updatedCallback` を使う。これはバインディング適用後、コールバック内で発火する）
-  必要がある。
-- **機構間の順序が反転する**。`notifyUpdateBatchListeners` は drain の `finally` に
-  あり、元の microtask で走る —— `$scan`・`$watch`・`$streams` restart は state アドレスを
-  消費し DOM を見ないため。一方 `$updatedCallback` はバインディングと一緒に更新
-  コールバックへ乗る。したがって state の README が「固定」と宣言する
-  `$updatedCallback` → `$scan` → `$watch` → `$streams` restart は、arbiter が `state` を
-  受け付けている間だけ `$scan` → `$watch` → `$streams` restart → `$updatedCallback` になる。
-  これは意図的な選択であり（`$watch` を 1 フレーム待たせる方が悪い）、あの層が固定で
-  あることの唯一の明文化された例外である。
-- **適用すべきバインディングが 0 本のバッチは arbiter へ渡さない**。書き込みはパスが
-  バインドされているかに関わらず enqueue されるので、drain は
-  `processBindings.length === 0` で日常的に走る —— `$watch` 専用パス、`$streams` の
-  内部値、リスト置換の中間アドレス。そこで遷移を要求すると、何も変わらない変更の
-  ためにページ全体をスナップショットすることになり、`latest` では*本当に*アニメー
-  ションしているルート遷移を途中で切ってしまう。
-- 参加は**要素単位ではなくドキュメント単位**。updater は全 `<wcs-state>` をまとめて
-  drain するので、`for="state"` は全部に効く。
-- 初期レンダリングは決して包まない。包むのは drain だけ。
-- `inSsr()` は同期パスへ短絡する（G5）。
+  `$renderedCallback` を使う。これは預けたバインディングの適用直後、コールバック内で
+  発火する。その適用のバインディングの失敗も、そこで `$errorCallback` に届く）必要がある。
+- **機構間の順序が反転する**。drain の終わりにエンジンは報告し —— `$renderedCallback`、
+  次にバインディングの失敗（`$errorCallback`、無ければコンソール）—— それから
+  `drained` フックを走らせ、temporal の後付けがそこで `$watch` ハンドラ、次に
+  `$stream` の再開を走らせる。`$watch` と再開は state を消費し DOM を見ないので元の
+  microtask に留まり、`$renderedCallback` は預けたバインディングと一緒に更新
+  コールバックへ乗る。したがって宣言どおりの順序 `$renderedCallback` → `$watch` →
+  `$stream` restart は、arbiter が state の変更を預かっている間だけ `$watch` →
+  `$stream` restart → `$renderedCallback` になる。これは意図的な選択であり
+  （`$watch` を 1 フレーム待たせる方が悪い）、あの層が固定であることの唯一の明文化
+  された例外である。arbiter が `run()` の中で同期的に適用するとき —— §4 の規則 3 と、
+  `exhaust` で走行中の遷移がすでに更新コールバックを過ぎているとき —— は、宣言どおりの
+  順序のまま。
+- **描画の連鎖は預けた先へ引き継がれる**。預けた適用が同期的に書いたもの（要素の
+  書き戻し、同期の `$renderedCallback`）は、変更を預けた drain の連鎖の次の drain と
+  して数えるので、描画の連鎖の上限（100 回の drain）は arbiter を挟む更新のループも
+  打ち切る。async の `$renderedCallback` が `await` の後で書いたものは新しい連鎖を
+  始めるので、そのループは遷移 1 回につき 1 周ずつ進み、打ち切られない。
+- **描くもののないパスは arbiter へ渡さない**。書き込みがキューに入れるのは、その
+  パスを描くバインディングとリストだけ。何も描かないパス —— `$watch` 専用のパス、
+  `$stream` の内部値 —— への書き込みも、`$watch` / `$stream` の反応のために drain を
+  予約するが、その drain はパスを 1 つも走らせず、`run()` も呼ばない。そこで遷移を
+  要求すると、何も変わらない変更のためにページ全体をスナップショットすることになり、
+  `latest` では*本当に*アニメーションしているルート遷移を途中で切ってしまう。
+- 参加は**要素単位ではなくドキュメント単位**。`<wcs-state>` のエンジンはそれぞれ自分の
+  microtask で drain し、パスを同じ arbiter へ渡すので、`for="state"` は全部に効く。
+  同じ microtask の中のリクエストは 1 つの遷移へ合流する（§4 の規則 4）。
+- 初期レンダリングは決して包まない。ページは state を読み込んだ時点で、drain の外で
+  束ねる。包むのは drain だけ。
+- SSR では arbiter の `data-wcs-server` のゲートが変更を同期的に適用する（G5）。4.0 の
+  state は自前の SSR の短絡を持たない。
+
+`@wcstack/state` 3.x は `Updater._applyChange`（`applyChangeFromBindings(processBindings)`）
+を drain ごとに 1 回包み、1 つの updater がすべての `<wcs-state>` を drain した。書き込みは
+バインドの有無に関わらず enqueue し、`processBindings.length === 0` のバッチを飛ばした。
+`inSsr()` で短絡した。順序 `$updatedCallback` → `$scan` → `$watch` → `$streams` restart
+は、arbiter の下で `$scan` → `$watch` → `$streams` restart → `$updatedCallback` になった。
 
 ## 8. 不変条件
 
 1. `<wcs-view-transition>` の無いページは従来と完全に同じ挙動になる。同じコードパス、
-   同じタイミング、追加コストは drain あたり Symbol 参照 1 回のみ。
+   同じタイミング、追加コストは drain のパスあたり Symbol 参照 1 回のみ（`@wcstack/state`
+   4.0 では、自動命名のためにリスト・分岐の更新あたりにも 1 回）。
 2. `run()` へ渡された DOM 変更は、runner がアニメーションについて何を決めようと、
    ちょうど 1 回適用される。
 3. runner は自分の都合では決して reject しない。reject するのは `mutate` が throw した

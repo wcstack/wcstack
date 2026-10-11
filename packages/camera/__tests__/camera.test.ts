@@ -221,6 +221,18 @@ describe("<wcs-camera> Shell", () => {
     expect((last.video as MediaTrackConstraints).deviceId).toBeUndefined();
   });
 
+  it("deviceId は使っているデバイスを返し、決まるまでは要求した device-id を返す", async () => {
+    const el = mount(`<wcs-camera device-id="cam-req"></wcs-camera>`);
+    expect(el.deviceId).toBe("cam-req"); // まだストリームが無い → 要求
+    media.resolveWith(new FakeMediaStream("s", [new FakeMediaStreamTrack("video", { deviceId: "cam-real" })]));
+    await el.connectedCallbackPromise;
+    el.start();
+    await flush();
+    // wcs-camera:device-changed が運ぶ値と同じ（binder の初期同期もこれを読む）
+    expect(el.deviceId).toBe("cam-real");
+    expect(el.getAttribute("device-id")).toBe("cam-req"); // 要求はそのまま
+  });
+
   it("属性変更（device-id）が active 中は再取得を起こす", async () => {
     const el = mount(`<wcs-camera></wcs-camera>`);
     media.resolveWith(new FakeMediaStream("a"));
@@ -256,6 +268,57 @@ describe("<wcs-camera> Shell", () => {
     const last = media.control.calls[media.control.calls.length - 1];
     expect(last.audio).toBe(true);
     expect(el.audioPermission).toBe("granted");
+  });
+
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外して既定値にする（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = `<wcs-camera audio facing-mode="environment" device-id="cam-9" width="640" height="480" autostart keep-alive></wcs-camera>`;
+    const el = host.firstElementChild as WcsCamera;
+    const names = ["audio", "facing-mode", "device-id", "width", "height", "autostart", "keep-alive"];
+    el.audio = false;
+    el.facingMode = "user";
+    el.deviceId = "cam-1";
+    el.width = 1280;
+    el.height = 720;
+    el.autostart = false;
+    el.keepAlive = false;
+    el.audio = undefined;
+    el.facingMode = undefined;
+    el.deviceId = undefined;
+    el.width = undefined;
+    el.height = undefined;
+    el.autostart = undefined;
+    el.keepAlive = undefined;
+    expect(names.map((n) => el.getAttribute(n))).toEqual(["", "environment", "cam-9", "640", "480", "", ""]);
+    el.audio = null;
+    el.facingMode = null;
+    el.deviceId = null;
+    el.width = null;
+    el.height = null;
+    el.autostart = null;
+    el.keepAlive = null;
+    expect(names.map((n) => el.hasAttribute(n))).toEqual(names.map(() => false));
+    expect([el.audio, el.facingMode, el.deviceId, el.width, el.height, el.autostart, el.keepAlive])
+      .toEqual([false, "user", "", NaN, NaN, false, false]);
+  });
+
+  it("device-id に undefined を書いても \"undefined\" を exact 制約にせず、指定なしで取り直す", async () => {
+    const el = mount(`<wcs-camera></wcs-camera>`);
+    media.resolveWith(new FakeMediaStream("a"));
+    await el.connectedCallbackPromise;
+    el.start();
+    await flush();
+    media.resolveWith(new FakeMediaStream("b"));
+    el.deviceId = "cam-x";
+    await flush();
+    media.control.calls.length = 0;
+
+    media.resolveWith(new FakeMediaStream("c"));
+    el.deviceId = undefined;
+    await flush();
+    const last = media.control.calls[media.control.calls.length - 1];
+    expect(el.hasAttribute("device-id")).toBe(false);
+    expect((last.video as MediaTrackConstraints).deviceId).toBeUndefined();
   });
 });
 

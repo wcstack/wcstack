@@ -116,11 +116,13 @@ state "i18n": "subtotal" is not declared. … npx @wcstack/lint <file>
 ルートの内容は router がスタンプしたときに束ねられる（binder プロトコル）ので、
 ルート内の素のバインドは動き（About ページはその場で翻訳されている）、ルート本文の
 要素の中に置いた `<template data-wcs="for: …">`
-（`<ul><template data-wcs="for: …">…</template></ul>`）も描画される。
-`<wcs-route>` の**直下**に置いたものが描画されるのは着地のルートだけである。
-@wcstack/state 3.x がそれを描くのは、ページの最初の走査ですでにスタンプされていた
-ときだけで、ナビゲーションで router から渡されたときは束縛の適用の失敗として報告する。
-詳しくは router の README
+（`<ul><template data-wcs="for: …">…</template></ul>`）も、@wcstack/state のどの版でも
+描画される。`<wcs-route>` の**直下**に置いたものは版による。@wcstack/state 3.x が
+描画するのは着地のルートだけで、ページの最初の走査ですでにスタンプされていたときにだけ
+描き、ナビゲーションで router から渡されたときは束縛の適用の失敗として報告する。
+@wcstack/state 4.0 は、この router が binder に「ルートの範囲を持ち運ぶ」と宣言するので、
+着地のルートでも遷移で入ったルートでも描画する（宣言が無ければ `[wcs/template-syntax]`
+#204 として拒む）。詳しくは router の README
 （[ルートの本文はどこに置くか](../../packages/router/README.ja.md#ルートの本文はどこに置くか)）にある。
 
 この例では、それでもリストを router の外に置いている。router は `path` を publish し、

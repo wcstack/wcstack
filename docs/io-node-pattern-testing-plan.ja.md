@@ -26,7 +26,7 @@
 | [fetch.test.ts](../packages/fetch/__tests__/fetch.test.ts) | `url` / `manual` の同一ターン更新、URL の同値抑制、再接続、trigger、body のリセット | フラグ遷移・更新順・実行経路の対応表と不足ケース |
 | [fetchCore.phase4.test.ts](../packages/fetch/__tests__/fetchCore.phase4.test.ts)、[operationLane.test.ts](../packages/fetch/__tests__/operationLane.test.ts) | 非同期レーン関連の既存検証 | 成功・失敗・キャンセル・遅着を入力列と照合 |
 | [debounceCore.test.ts](../packages/debounce/__tests__/debounceCore.test.ts) | leading/trailing、pending、cancel/flush、dispose 後のタイマー | 4 通りの設定と入力回数・境界時刻の対応表 |
-| [integration.commandBinding.test.ts](../packages/state/__tests__/integration.commandBinding.test.ts) | 合成要素への command binding | 実際の I/O タグを使った連動の追加 |
+| [integration.commandBinding.test.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.commandBinding.test.ts) | 合成要素への command binding | 実際の I/O タグを使った連動の追加 |
 | [共有 upgrade テスト](../protocol/upgrade-properties.test.ts) | 合成オブジェクトによる upgradeProperties の検証 | 実タグの upgrade 前代入と実行回数の確認 |
 | [構造検査](../scripts/conformance-io-nodes.mjs)、[入力宣言検査](../scripts/conformance-bindable-inputs.mjs) | 実装構造・宣言の検査 | 時系列の実行検証は別 suite で扱う |
 

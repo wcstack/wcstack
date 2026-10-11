@@ -44,6 +44,7 @@ function integrityOf(filePath) {
 // its build order). Packages with no bootstrap (server, signals, lint) are
 // reported as skipped rather than silently dropped — a missing row must be a
 // stated decision, not something the reader has to notice on their own.
+// A `private: true` package is never published, so it gets no row at all.
 function collect(version) {
   const entries = [];
   const skipped = [];
@@ -52,8 +53,11 @@ function collect(version) {
     if (!entry.isDirectory()) continue;
     const pkgJsonPath = join(pkgsDir, entry.name, "package.json");
     if (!existsSync(pkgJsonPath)) continue;
-    const name = JSON.parse(readFileSync(pkgJsonPath, "utf8")).name ?? "";
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+    const name = pkgJson.name ?? "";
     if (!(name.startsWith("@wcstack/") || name === "wcstack")) continue;
+    // 公開しないパッケージ（`private: true`）は CDN に載らない
+    if (pkgJson.private === true) continue;
 
     const bootstrap = join(pkgsDir, entry.name, BOOTSTRAP);
     if (!existsSync(bootstrap)) {

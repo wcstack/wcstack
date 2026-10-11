@@ -24,7 +24,7 @@
 
 ## 1. 生ハンドルの所在 — state を通すか通さないか【最重要・決定済】
 
-`applyChangeToProperty` は undefined 以外の生オブジェクトを `element[prop] = value` で素通しする（[applyChangeToProperty.ts](../packages/state/src/apply/applyChangeToProperty.ts)）。つまり **機械的には state 経由で `video.srcObject` に `MediaStream` を書けてしまう**。動く。が、それは禁じる。
+`applyChangeToProperty` は undefined 以外の生オブジェクトを `element[prop] = value` で素通しする（[applyChangeToProperty.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/apply/applyChangeToProperty.ts)）。つまり **機械的には state 経由で `video.srcObject` に `MediaStream` を書けてしまう**。動く。が、それは禁じる。
 
 | 案 | 生ハンドルの流れ | トレードオフ |
 |---|---|---|
@@ -45,7 +45,7 @@
 
 | 案 | conduit | トレードオフ |
 |---|---|---|
-| **2-1 command-token 引数素通し** | camera が `stream-ready` を event-token 発火（`event.detail`=stream）→ `$on` ハンドラが `$command.attachStream(stream)` を呼ぶ → recorder の `attachStream(stream)` へ | `Token.emit(...args) → Reflect.apply` が引数を**素通し**（[Token.ts](../packages/state/src/token/Token.ts)）。stream は**トークンバスを transient に通過するだけで reactive state に格納されない**。新規プリミティブ不要 |
+| **2-1 command-token 引数素通し** | camera が `stream-ready` を event-token 発火（`event.detail`=stream）→ `$on` ハンドラが `$command.attachStream(stream)` を呼ぶ → recorder の `attachStream(stream)` へ | `Token.emit(...args) → Reflect.apply` が引数を**素通し**（[Token.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/token/Token.ts)）。stream は**トークンバスを transient に通過するだけで reactive state に格納されない**。新規プリミティブ不要 |
 | 2-2 新 ref/property-wire | 要素↔要素を直結する宣言記法を新設 | 表現は綺麗だが体系に新概念が増える |
 
 → **決定: 案2-1（command-token 引数素通し）**（2026-06-17・承認済）。配線例:

@@ -1,0 +1,217 @@
+{
+  "revision": "090a0d01d59492620509aa99e75306f679ee2e65",
+  "timestamp": "2026-09-24T18:08:10.480Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "bundle": "state-next.s6a.unmin.js",
+  "op": "create10k",
+  "fixture": "manual",
+  "samples": 5,
+  "samplingIntervalUs": 100,
+  "results": {
+    "windowMsPerRun": 91,
+    "profiledMsPerRun": 549.6,
+    "top": [
+      {
+        "fn": "(program) :0",
+        "msPerRun": 451.55,
+        "usPerRow": 45.16
+      },
+      {
+        "fn": "cloneNode :0",
+        "msPerRun": 28.46,
+        "usPerRow": 2.85
+      },
+      {
+        "fn": "buildBlock auto.min.js:2321",
+        "msPerRun": 13.01,
+        "usPerRow": 1.3
+      },
+      {
+        "fn": "(garbage collector) :0",
+        "msPerRun": 11.57,
+        "usPerRow": 1.16
+      },
+      {
+        "fn": "insertBefore :0",
+        "msPerRun": 9.94,
+        "usPerRow": 0.99
+      },
+      {
+        "fn": "apply auto.min.js:2162",
+        "msPerRun": 7.34,
+        "usPerRow": 0.73
+      },
+      {
+        "fn": "(idle) :0",
+        "msPerRun": 3.47,
+        "usPerRow": 0.35
+      },
+      {
+        "fn": "appendChild :0",
+        "msPerRun": 3.26,
+        "usPerRow": 0.33
+      },
+      {
+        "fn": "update auto.min.js:2511",
+        "msPerRun": 1.97,
+        "usPerRow": 0.2
+      },
+      {
+        "fn": "querySelectorAll :0",
+        "msPerRun": 1.78,
+        "usPerRow": 0.18
+      },
+      {
+        "fn": "RowView auto.min.js:2306",
+        "msPerRun": 1.63,
+        "usPerRow": 0.16
+      },
+      {
+        "fn": "buildData buildData.js:22",
+        "msPerRun": 1.38,
+        "usPerRow": 0.14
+      },
+      {
+        "fn": "evalGetter auto.min.js:582",
+        "msPerRun": 1.26,
+        "usPerRow": 0.13
+      },
+      {
+        "fn": "Block auto.min.js:2272",
+        "msPerRun": 0.92,
+        "usPerRow": 0.09
+      },
+      {
+        "fn": "get auto.min.js:415",
+        "msPerRun": 0.92,
+        "usPerRow": 0.09
+      },
+      {
+        "fn": "random buildData.js:1",
+        "msPerRun": 0.88,
+        "usPerRow": 0.09
+      },
+      {
+        "fn": "readGetter auto.min.js:3029",
+        "msPerRun": 0.83,
+        "usPerRow": 0.08
+      },
+      {
+        "fn": "readData auto.min.js:541",
+        "msPerRun": 0.69,
+        "usPerRow": 0.07
+      },
+      {
+        "fn": "get data.*.selected 8941f107-6ef9-49d7-8a1f-24e794706473:25",
+        "msPerRun": 0.55,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "attachEvent auto.min.js:2099",
+        "msPerRun": 0.47,
+        "usPerRow": 0.05
+      },
+      {
+        "fn": "reconcile auto.min.js:192",
+        "msPerRun": 0.46,
+        "usPerRow": 0.05
+      },
+      {
+        "fn": "evaluate :297",
+        "msPerRun": 0.37,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "get auto.min.js:93",
+        "msPerRun": 0.36,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "read auto.min.js:554",
+        "msPerRun": 0.36,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "dollar auto.min.js:621",
+        "msPerRun": 0.34,
+        "usPerRow": 0.03
+      },
+      {
+        "fn": "serialize :169",
+        "msPerRun": 0.34,
+        "usPerRow": 0.03
+      },
+      {
+        "fn": "(anonymous) auto.min.js:811",
+        "msPerRun": 0.31,
+        "usPerRow": 0.03
+      },
+      {
+        "fn": "set auto.min.js:428",
+        "msPerRun": 0.3,
+        "usPerRow": 0.03
+      },
+      {
+        "fn": "(anonymous) :1",
+        "msPerRun": 0.23,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "write auto.min.js:744",
+        "msPerRun": 0.23,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "delegate auto.min.js:805",
+        "msPerRun": 0.23,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "onRunLots 8941f107-6ef9-49d7-8a1f-24e794706473:43",
+        "msPerRun": 0.23,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "get data.*.selected b62273fe-abca-469a-a345-d5ac809dfbbd:25",
+        "msPerRun": 0.22,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "Binding auto.min.js:2147",
+        "msPerRun": 0.22,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "drain auto.min.js:970",
+        "msPerRun": 0.22,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "resolve auto.min.js:516",
+        "msPerRun": 0.22,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "(anonymous) 8941f107-6ef9-49d7-8a1f-24e794706473:26",
+        "msPerRun": 0.22,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "onRunLots 018259c4-a806-42c4-93be-59c96c4f6a32:43",
+        "msPerRun": 0.22,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "(anonymous) 018259c4-a806-42c4-93be-59c96c4f6a32:26",
+        "msPerRun": 0.22,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "click :0",
+        "msPerRun": 0.19,
+        "usPerRow": 0.02
+      }
+    ]
+  },
+  "browser": "149.0.7827.55"
+}

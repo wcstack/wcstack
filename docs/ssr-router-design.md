@@ -238,7 +238,8 @@ inSsr() かつ enable-ssr あり → SSR 初期化（下記）→ resolve して
    終了マーカーまでの範囲（state がその間に描いた行・枝を含む）を持ち出して、次の
    `showRoute` で戻す。サーバーの `_renderForSsr` は、`showRoute` が置いた終了マーカーを
    そのまま使い（二重に置かない）、開始マーカーだけを placeholder の直後に置く
-   （docs/binder-protocol-design.md §9-5）。
+   （docs/binder-protocol-design.md §9-5。4.0 側の経緯は docs/state-engine-rewrite/v4-remaining.ja.md §3 の
+   `@wcstack/router` の行）。
 4. 検証失敗（マーカー欠損・集合不一致・マーカー無し）: **outlet の中身を捨てて
    従来経路**（fragment append + `applyRoute`）。安全側は常に CSR。
 

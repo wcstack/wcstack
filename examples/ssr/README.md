@@ -10,7 +10,24 @@ npm install
 npm start
 ```
 
-Open http://localhost:3001
+Open http://localhost:3001 (`PORT` overrides the port).
+
+### Against the repository's builds (`WCS_LOCAL=1`)
+
+To try a change in the working tree before it is published, run the demo on
+the repository's own builds instead of the npm install and the CDN (no
+`npm install` needed):
+
+```bash
+WCS_LOCAL=1 node examples/ssr/server.js
+```
+
+`WCS_LOCAL=1` renders with `packages/server/dist` (which resolves
+`@wcstack/state` to `packages/state` through `packages/server/node_modules`),
+serves `/packages/<pkg>/dist/…` from the repo, and loads the client from
+`/packages/state/dist/auto.min.js` instead of the pinned `esm.run` URL — the
+server and the client then run the same engine. Without it nothing changes.
+The e2e suite (`e2e/tests/ssr-example.spec.ts`) runs the demo this way.
 
 ## What This Demo Shows
 
@@ -67,10 +84,10 @@ Browser Request
 │  3. <wcs-state enable-ssr>       │
 │     → reads <wcs-ssr> data       │
 │     → skips $connectedCallback   │
-│  4. hydrateBindings()            │
-│     → restores templates         │
-│     → Content-izes for/if blocks │
-│     → registers bindings         │
+│  4. Adopts the server DOM        │
+│     → templates back at anchors  │
+│     → rows/branches kept in place│
+│     → bindings applied to them   │
 │  5. Page is now interactive      │
 │     → buttons, state changes     │
 └──────────────────────────────────┘
@@ -94,15 +111,15 @@ Browser Request
 
 ## SSR Output Structure
 
-The server generates HTML like this:
+The server generates HTML like this (4.0; trimmed):
 
 ```html
-<!-- SSR metadata for hydration -->
-<wcs-ssr version="1.5.3">
+<!-- SSR metadata for hydration: the rendering @wcstack/state version, the state, the page-level templates -->
+<wcs-ssr version="4.0.0">
   <script type="application/json">{"users":[...],"show":true,"counter":0}</script>
-  <template id="u0" data-wcs="for: users">...</template>
-  <template id="u1" data-wcs="if: show">...</template>
-  <template id="u2" data-wcs="else:">...</template>
+  <template id="wcs-t0" data-wcs="for: users">...</template>
+  <template id="wcs-t1" data-wcs="if: show">...</template>
+  <template id="wcs-t2" data-wcs="else:">...</template>
 </wcs-ssr>
 
 <!-- State element (skips $connectedCallback on client) -->
@@ -110,20 +127,15 @@ The server generates HTML like this:
   <script type="module">export default { ... };</script>
 </wcs-state>
 
-<!-- Pre-rendered content -->
-<h2>Counter: <!--@@wcs-text-start:counter-->0<!--@@wcs-text-end:counter--></h2>
+<!-- Pre-rendered text binding -->
+<h2>Counter: <!--wcs-t:counter-->0<!--wcs-/t--></h2>
 
-<!-- Pre-rendered for block -->
-<!--@@wcs-for:u0-->
-<!--@@wcs-for-start:u0:users:0-->
-<li class="user-item">...</li>
-<!--@@wcs-for-end:u0:users:0-->
+<!-- Pre-rendered for block: the anchor, then the rows -->
+<!--wcs-p:wcs-t0--><!--wcs-[--><!--wcs-|--><li class="user-item">...</li><!--wcs-|-->...<!--wcs-]-->
 
-<!-- Pre-rendered if/else block -->
-<!--@@wcs-if:u1-->
-<!--@@wcs-if-start:u1:show-->
-<div class="info-box">This block is visible...</div>
-<!--@@wcs-if-end:u1:show-->
+<!-- Pre-rendered if/else chain: one anchor per template, then the branch it rendered (0 = the if:) -->
+<!--wcs-p:wcs-t1-->
+<!--wcs-p:wcs-t2--><!--wcs-[:0--><div class="info-box">This block is visible...</div><!--wcs-]-->
 ```
 
-A text marker carries the binding's expression, output filters included, so hydration restores the same binding: `{{ price|toFixed(2) }}` renders as `<!--@@wcs-text-start:price|toFixed(2)-->3.14<!--@@wcs-text-end:price|toFixed(2)-->`, and `{{ .price|toFixed(2) }}` in a `for:` row as `<!--@@wcs-text-start:users.*.price|toFixed(2)-->…`. An expression a comment cannot hold (one containing `--`) is written as its path alone.
+A page-level text marker carries the binding's whole expression, output filters included and URI-encoded, so hydration restores the same binding: `{{ price|toFixed(2) }}` renders as `<!--wcs-t:price%7CtoFixed(2)-->3.14<!--wcs-/t-->`. Rows and branches carry no text markers: their templates in `<wcs-ssr>` hold the expressions, and the client applies them to the nodes it adopts. The markers are described in the [`@wcstack/server` README](../../packages/server/README.md#ssr-output-structure); their format is not an API, so do not post-process the output based on it, and keep the comments (an HTML minifier's `removeComments` breaks hydration).

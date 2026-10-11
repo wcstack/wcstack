@@ -1,6 +1,7 @@
 import { DefinedMode, IWcBindable } from "../types.js";
 import { DefinedCore } from "../core/DefinedCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute } from "../protocol/inputAttribute.js";
 import { getCustomElementRegistry } from "../platform/customElementRegistry.js";
 
 // Named WcsDefined (not `Defined`) to match the <wcs-permission> / <wcs-geo>
@@ -29,6 +30,15 @@ export class WcsDefined extends HTMLElement {
   private _core: DefinedCore;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
+  // True between connectedCallback and disconnectedCallback: an attribute change
+  // then re-watches. Before that (attributes set at upgrade, and the inputs
+  // upgradeProperties replays) the connect-time observe() reads them anyway.
+  private _watching: boolean = false;
+
+  // tags / mode / timeout are live: binders write the property, which the setter
+  // reflects, and a wc-bindable binder (@wcstack/state included) writes it after
+  // the element has upgraded and connected.
+  static get observedAttributes(): string[] { return ["tags", "mode", "timeout"]; }
 
   constructor() {
     super();
@@ -86,22 +96,23 @@ export class WcsDefined extends HTMLElement {
     return this.getAttribute("tags") ?? "";
   }
 
-  // `tags` / `mode` setters pass the value straight to setAttribute: their value
-  // type is already `string` / `DefinedMode`, and the matching getter normalizes on
-  // read (mode: anything but "any" → "all"; tags: parsed/trimmed in _parseTags).
-  // Only `timeout` setter coerces (String(value)) because its value type is number,
-  // which setAttribute would otherwise stringify implicitly anyway — the explicit
-  // String() just makes the number→attribute boundary obvious.
-  set tags(value: string) {
-    this.setAttribute("tags", value);
+  // The setters write the attribute through reflectAttribute (String(value)), and
+  // the matching getter normalizes on read (mode: anything but "any" → "all";
+  // tags: parsed/trimmed in _parseTags; timeout: non-negative finite or 0). They
+  // never let setAttribute stringify null / undefined ("undefined" would be watched
+  // as a tag name): `null` removes the attribute (the default), `undefined` restores
+  // the attribute the element started with (wc-bindable producer guidance P1;
+  // React 19 and a direct assignment deliver it, @wcstack/state does not).
+  set tags(value: string | null | undefined) {
+    reflectAttribute(this, "tags", value);
   }
 
   get mode(): DefinedMode {
     return this.getAttribute("mode") === "any" ? "any" : "all";
   }
 
-  set mode(value: DefinedMode) {
-    this.setAttribute("mode", value);
+  set mode(value: DefinedMode | null | undefined) {
+    reflectAttribute(this, "mode", value);
   }
 
   get timeout(): number {
@@ -113,8 +124,8 @@ export class WcsDefined extends HTMLElement {
     return Number.isFinite(ms) && ms > 0 ? ms : 0;
   }
 
-  set timeout(value: number) {
-    this.setAttribute("timeout", String(value));
+  set timeout(value: number | null | undefined) {
+    reflectAttribute(this, "timeout", value);
   }
 
   // --- Core delegated getters ---
@@ -169,15 +180,29 @@ export class WcsDefined extends HTMLElement {
     // Gate on the registry this element's own subtree resolves against: with a
     // scoped registry the same tag name means a different definition per tree,
     // so watching the global one would report readiness this tree cannot use.
+    this._observe();
+    this._watching = true;
+  }
+
+  disconnectedCallback(): void {
+    this._watching = false;
+    this._core.dispose();
+  }
+
+  // A changed tags / mode / timeout on a connected element restarts the watch with
+  // the new configuration (the Core re-watches only after a dispose()).
+  attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {
+    if (!this._watching || oldValue === newValue) return;
+    this._core.dispose();
+    this._observe();
+  }
+
+  private _observe(): void {
     this._connectedCallbackPromise = this._core.observe(
       this._parseTags(),
       this.mode,
       this.timeout,
       getCustomElementRegistry(this),
     );
-  }
-
-  disconnectedCallback(): void {
-    this._core.dispose();
   }
 }

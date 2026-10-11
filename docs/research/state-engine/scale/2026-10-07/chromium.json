@@ -1,0 +1,1711 @@
+{
+  "env": "chromium",
+  "date": "2026-10-06T16:02:22.416Z",
+  "bundle": "index.esm.js（packages/state の src から build。4.0.0-rc.5 + 規模の修正）",
+  "throttle": 1,
+  "results": [
+    {
+      "id": "L1",
+      "property": "locality",
+      "title": "root のキーとバインディングが N 個: 1 個への書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.005750000476837158,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.235000014305115
+        },
+        {
+          "n": 1000,
+          "ms": 0.004999995827674865,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 7.580000042915344
+        },
+        {
+          "n": 10000,
+          "ms": 0.003849996328353882,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 40
+        }
+      ],
+      "k": -0.0871037826860395,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = -0.09 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L2",
+      "property": "locality",
+      "title": "root の一覧が L 個: 一覧と無関係なスカラーへの書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.004999995231628418,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 3.409999966621399
+        },
+        {
+          "n": 100,
+          "ms": 0.004999995231628418,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 2.3299999833106995
+        },
+        {
+          "n": 1000,
+          "ms": 0.013050000071525574,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 20.180000007152557
+        }
+      ],
+      "k": 0.20832046194714524,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.21 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L3a",
+      "property": "locality",
+      "title": "N 行の一覧: 行と無関係な書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.008099996447563172,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 5.860000014305115
+        },
+        {
+          "n": 1000,
+          "ms": 0.006749997138977051,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.290000021457672
+        },
+        {
+          "n": 10000,
+          "ms": 0.005600000023841858,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 29.410000026226044
+        }
+      ],
+      "k": -0.08014839977690782,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = -0.08 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L3b",
+      "property": "locality",
+      "title": "N 行の一覧: 1 行の 1 フィールドへの書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.004399995803833007,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 2.9550000429153442
+        },
+        {
+          "n": 1000,
+          "ms": 0.0037999963760375977,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 2.6450000405311584
+        },
+        {
+          "n": 10000,
+          "ms": 0.004199995994567871,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 16.780000030994415
+        }
+      ],
+      "k": -0.010101693044143613,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = -0.01 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L4",
+      "property": "locality",
+      "title": "無関係な root の getter が G 個: 1 個の getter が読む値への書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.004999998211860657,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 2.7049999833106995
+        },
+        {
+          "n": 100,
+          "ms": 0.004999996423721314,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 1.4449999928474426
+        },
+        {
+          "n": 1000,
+          "ms": 0.004499995708465576,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 6.745000004768372
+        }
+      ],
+      "k": -0.022878874710264136,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = -0.02 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L5",
+      "property": "locality",
+      "title": "入れ子の一覧（外 √N × 内 √N 行）: 葉の 1 フィールドへの書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.004999995231628418,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 2.8450000286102295
+        },
+        {
+          "n": 2500,
+          "ms": 0.0039999961853027345,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 2.949999988079071
+        },
+        {
+          "n": 10000,
+          "ms": 0.00334999680519104,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          },
+          "mountMs": 8.245000004768372
+        }
+      ],
+      "k": -0.08385573035427754,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 1
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = -0.08 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L6",
+      "property": "locality",
+      "title": "ボリューム（<wcs-state mount>）が V 個: 1 つのボリュームの値への書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 5,
+          "ms": 0.0050500047206878665,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 3.024999976158142
+        },
+        {
+          "n": 50,
+          "ms": 0.004999995231628418,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 1.7350000143051147
+        },
+        {
+          "n": 200,
+          "ms": 0.0057999974489212035,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 5.380000054836273
+        }
+      ],
+      "k": 0.03329717834193759,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.03 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L7",
+      "property": "locality",
+      "title": "bind-component の部品が C 個: 1 つの部品の値への書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.003649996519088745,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 21.37000000476837
+        },
+        {
+          "n": 100,
+          "ms": 0.005199999213218689,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 429.6100000143051
+        },
+        {
+          "n": 500,
+          "ms": 0.004499995708465576,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 2260.824999988079
+        }
+      ],
+      "k": 0.06040866791736115,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.06 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "L8",
+      "property": "locality",
+      "title": "選択の $eq を読む N 行: 選択の書き込み（前と今の行だけ）",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.011149999499320985,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 5.2950000166893005
+        },
+        {
+          "n": 1000,
+          "ms": 0.007799996137619019,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 3.1600000262260437
+        },
+        {
+          "n": 10000,
+          "ms": 0.004999995231628418,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 18.80000001192093
+        }
+      ],
+      "k": -0.1741526288611569,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = -0.17 (≤ 0.3)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N1",
+      "property": "linearity",
+      "title": "root のバインディングが N 個: 初回のマウント",
+      "env": "chromium",
+      "kind": "mount",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 3.3299999833106995
+        },
+        {
+          "n": 4000,
+          "ms": 12.665000021457672
+        },
+        {
+          "n": 16000,
+          "ms": 48.58499997854233
+        }
+      ],
+      "k": 0.9667292232596033,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.97 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2a",
+      "property": "linearity",
+      "title": "N 行の一覧: 作成（空から N 行）",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 1.4116666515668232,
+          "counts": null,
+          "dom": {
+            "added": 1000,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.745000004768372
+        },
+        {
+          "n": 4000,
+          "ms": 5.606666664282481,
+          "counts": null,
+          "dom": {
+            "added": 4000,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 6.724999964237213
+        },
+        {
+          "n": 16000,
+          "ms": 22.79833334684372,
+          "counts": null,
+          "dom": {
+            "added": 16000,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 25.350000023841858
+        }
+      ],
+      "k": 1.0033642506773028,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 1.00 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2b",
+      "property": "linearity",
+      "title": "N 行の一覧: 全行の置き換え（新しいオブジェクト）",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 2.091666658719381,
+          "counts": null,
+          "dom": {
+            "added": 1000,
+            "removed": 1000,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.774999976158142
+        },
+        {
+          "n": 4000,
+          "ms": 8.365000009536743,
+          "counts": null,
+          "dom": {
+            "added": 4000,
+            "removed": 4000,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 6.360000014305115
+        },
+        {
+          "n": 16000,
+          "ms": 35.09666665395101,
+          "counts": null,
+          "dom": {
+            "added": 16000,
+            "removed": 16000,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 21.82499998807907
+        }
+      ],
+      "k": 1.0171522893629232,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 1.02 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2c",
+      "property": "linearity",
+      "title": "N 行の一覧: 全削除",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 0.2816666563351949,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1001,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.985000014305115
+        },
+        {
+          "n": 4000,
+          "ms": 0.9816666841506958,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 4001,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 6.284999966621399
+        },
+        {
+          "n": 16000,
+          "ms": 4.393333335717519,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 16001,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 19.740000009536743
+        }
+      ],
+      "k": 0.990813818106633,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.99 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2d",
+      "property": "linearity",
+      "title": "N 行の一覧: 末尾への N/10 行の追加",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 0.19500001271565756,
+          "counts": null,
+          "dom": {
+            "added": 100,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.855000019073486
+        },
+        {
+          "n": 4000,
+          "ms": 0.6116666595141093,
+          "counts": null,
+          "dom": {
+            "added": 400,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 6.694999992847443
+        },
+        {
+          "n": 16000,
+          "ms": 2.4583333134651184,
+          "counts": null,
+          "dom": {
+            "added": 1600,
+            "removed": 0,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 25.314999997615814
+        }
+      ],
+      "k": 0.9140336034543359,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.91 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2e",
+      "property": "linearity",
+      "title": "N 行の一覧: 逆順",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 0.8883333404858907,
+          "counts": null,
+          "dom": {
+            "added": 999,
+            "removed": 999,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.824999988079071
+        },
+        {
+          "n": 4000,
+          "ms": 3.9550000031789145,
+          "counts": null,
+          "dom": {
+            "added": 3999,
+            "removed": 3999,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 6.555000007152557
+        },
+        {
+          "n": 16000,
+          "ms": 15.8900000055631,
+          "counts": null,
+          "dom": {
+            "added": 15999,
+            "removed": 15999,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 22.0450000166893
+        }
+      ],
+      "k": 1.0402185440498746,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": "as expected"
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 1.04 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2f",
+      "property": "linearity",
+      "title": "N 行の一覧: 2 行の入れ替え（2 番目と最後から 2 番目）",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 0.09666665395100911,
+          "counts": null,
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.7950000166893005
+        },
+        {
+          "n": 4000,
+          "ms": 0.23333334922790527,
+          "counts": null,
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 5.900000035762787
+        },
+        {
+          "n": 16000,
+          "ms": 1.024999996026357,
+          "counts": null,
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 21.365000009536743
+        }
+      ],
+      "k": 0.8516154473200175,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.85 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N2g",
+      "property": "linearity",
+      "title": "N 行の一覧: 中ほどの 1 行の削除",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 1000,
+          "ms": 0.06666666269302368,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 4.629999995231628
+        },
+        {
+          "n": 4000,
+          "ms": 0.1333333452542623,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 6.074999988079071
+        },
+        {
+          "n": 16000,
+          "ms": 0.3933333357175191,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 20.334999978542328
+        }
+      ],
+      "k": 0.6401787623026717,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 0,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.64 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N3",
+      "property": "linearity",
+      "title": "0/1 の盤面（平らな一覧、N セル）: 先頭と末尾近くの 2 セルの変更",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10000,
+          "ms": 0.4150000015894572,
+          "counts": null,
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 10.7950000166893
+        },
+        {
+          "n": 40000,
+          "ms": 1.5508333345254262,
+          "counts": null,
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 25.339999973773956
+        },
+        {
+          "n": 90000,
+          "ms": 3.7024999956289926,
+          "counts": null,
+          "dom": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 55.860000014305115
+        }
+      ],
+      "k": 0.9911668306614324,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "dom",
+          "pass": true,
+          "detail": {
+            "added": 2,
+            "removed": 2,
+            "attributes": 0,
+            "text": 0
+          }
+        },
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.99 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N4",
+      "property": "linearity",
+      "title": "1 つの値を読む root の getter が F 個: その値への書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.025961538920035727,
+          "counts": null,
+          "dom": {
+            "added": 10,
+            "removed": 10,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 2.525000035762787
+        },
+        {
+          "n": 100,
+          "ms": 0.08538461648500882,
+          "counts": null,
+          "dom": {
+            "added": 100,
+            "removed": 100,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 1.3100000023841858
+        },
+        {
+          "n": 1000,
+          "ms": 0.6990384619969588,
+          "counts": null,
+          "dom": {
+            "added": 1000,
+            "removed": 1000,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 5.650000035762787
+        }
+      ],
+      "k": 0.7150853196574932,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.72 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N5",
+      "property": "linearity",
+      "title": "getter の連鎖が D 段: 根元への書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 10,
+          "ms": 0.012999995946884155,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 2.209999978542328
+        },
+        {
+          "n": 40,
+          "ms": 0.014500007629394532,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 0.2250000238418579
+        },
+        {
+          "n": 120,
+          "ms": 0.030600006580352782,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 0.2250000238418579
+        }
+      ],
+      "k": 0.3331093863821822,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.33 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N6",
+      "property": "linearity",
+      "title": "全行の getter が読む root の値（$eq なし、N 行）: その値への書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.04599999785423279,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 3.435000002384186
+        },
+        {
+          "n": 1000,
+          "ms": 0.1774999976158142,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 1.6550000309944153
+        },
+        {
+          "n": 10000,
+          "ms": 1.3945000052452088,
+          "counts": null,
+          "dom": {
+            "added": 0,
+            "removed": 0,
+            "attributes": 2,
+            "text": 0
+          },
+          "mountMs": 9.625
+        }
+      ],
+      "k": 0.7408303544063072,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.74 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "N8",
+      "property": "linearity",
+      "title": "$getAll で N 行を集める getter: 1 行の値への書き込み",
+      "env": "chromium",
+      "kind": "write",
+      "points": [
+        {
+          "n": 100,
+          "ms": 0.011153846979141235,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 3.51500004529953
+        },
+        {
+          "n": 1000,
+          "ms": 0.03326922425856957,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 8.355000019073486
+        },
+        {
+          "n": 10000,
+          "ms": 0.17961539213473982,
+          "counts": null,
+          "dom": {
+            "added": 1,
+            "removed": 1,
+            "attributes": 0,
+            "text": 0
+          },
+          "mountMs": 17.724999964237213
+        }
+      ],
+      "k": 0.6034594343570011,
+      "heapPerUnit": null,
+      "checks": [
+        {
+          "name": "k",
+          "pass": true,
+          "soft": false,
+          "detail": "k = 0.60 (≤ 1.25)"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "id": "B1",
+      "property": "boundedness",
+      "title": "root の getter が読む動的なキー（dict.<id>）: id を替え続ける",
+      "env": "chromium",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 1000,
+          "stats": null,
+          "heap": 2146903,
+          "ms": 0.021245000004768373
+        },
+        {
+          "n": 2000,
+          "stats": null,
+          "heap": 2243675,
+          "ms": 0.02645500001311302
+        },
+        {
+          "n": 4000,
+          "stats": null,
+          "heap": 2433379,
+          "ms": 0.023586250007152556
+        }
+      ],
+      "k": null,
+      "heapPerUnit": 95.492,
+      "checks": [],
+      "pass": true
+    },
+    {
+      "id": "B2",
+      "property": "boundedness",
+      "title": "コードから書く動的なキー（log.<id>）: 書き続ける（100 件ごとに空にする）",
+      "env": "chromium",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 1000,
+          "stats": null,
+          "heap": 2026459,
+          "ms": 0.0165799999833107
+        },
+        {
+          "n": 2000,
+          "stats": null,
+          "heap": 2086587,
+          "ms": 0.024269999980926514
+        },
+        {
+          "n": 4000,
+          "stats": null,
+          "heap": 2204419,
+          "ms": 0.02080749998986721
+        }
+      ],
+      "k": null,
+      "heapPerUnit": 59.32,
+      "checks": [],
+      "pass": true
+    },
+    {
+      "id": "B3",
+      "property": "boundedness",
+      "title": "1,000 行の一覧: 新しいオブジェクトで置き換え続ける",
+      "env": "chromium",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 50,
+          "stats": null,
+          "heap": 2350654,
+          "ms": 3.1926999998092653
+        },
+        {
+          "n": 100,
+          "stats": null,
+          "heap": 2375478,
+          "ms": 3.0942500001192093
+        },
+        {
+          "n": 200,
+          "stats": null,
+          "heap": 2379882,
+          "ms": 2.944025000035763
+        }
+      ],
+      "k": null,
+      "heapPerUnit": 194.85333333333332,
+      "checks": [],
+      "pass": true
+    },
+    {
+      "id": "B4",
+      "property": "boundedness",
+      "title": "if: の出し入れ（100 行の一覧を含む部分木）: 出し入れし続ける",
+      "env": "chromium",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 100,
+          "stats": null,
+          "heap": 2038148,
+          "ms": 0.2905500000715256
+        },
+        {
+          "n": 200,
+          "stats": null,
+          "heap": 2046730,
+          "ms": 0.3310250002145767
+        },
+        {
+          "n": 400,
+          "stats": null,
+          "heap": 2060774,
+          "ms": 0.28087500005960464
+        }
+      ],
+      "k": null,
+      "heapPerUnit": 75.42,
+      "checks": [],
+      "pass": true
+    },
+    {
+      "id": "B5",
+      "property": "boundedness",
+      "title": "bind-component の部品を if: で出し入れし続ける",
+      "env": "chromium",
+      "kind": "cycles",
+      "points": [
+        {
+          "n": 100,
+          "stats": null,
+          "heap": 2294738,
+          "ms": 0.2539000004529953
+        },
+        {
+          "n": 200,
+          "stats": null,
+          "heap": 2312566,
+          "ms": 0.2931749999523163
+        },
+        {
+          "n": 400,
+          "stats": null,
+          "heap": 2372114,
+          "ms": 0.24971249997615813
+        }
+      ],
+      "k": null,
+      "heapPerUnit": 257.92,
+      "checks": [],
+      "pass": true
+    },
+    {
+      "id": "B6",
+      "property": "boundedness",
+      "title": "ページの差し替え（<wcs-state> ごと 200 行のページを作り直す）",
+      "env": "chromium",
+      "kind": "pages",
+      "points": [
+        {
+          "n": 20,
+          "heap": 2239838
+        },
+        {
+          "n": 40,
+          "heap": 2252094
+        },
+        {
+          "n": 80,
+          "heap": 2202465
+        }
+      ],
+      "k": null,
+      "heapPerUnit": -622.8833333333333,
+      "checks": [],
+      "pass": true
+    },
+    {
+      "id": "X1",
+      "property": "limits",
+      "title": "getter の連鎖の上限（128 段の入れ子）",
+      "env": "chromium",
+      "kind": "custom",
+      "rows": [
+        {
+          "d": 126,
+          "text": "126",
+          "errors": 0,
+          "first": "",
+          "overflow": false
+        },
+        {
+          "d": 127,
+          "text": "127",
+          "errors": 0,
+          "first": "",
+          "overflow": false
+        },
+        {
+          "d": 128,
+          "text": "",
+          "errors": 1,
+          "first": "[@wcstack/state] binding \"prop: g128\" failed to apply. Error: [@wcstack/state] [wcs/getter-depth-exceeded] \"g0\"",
+          "overflow": false
+        },
+        {
+          "d": 200,
+          "text": "",
+          "errors": 1,
+          "first": "[@wcstack/state] binding \"prop: g200\" failed to apply. Error: [@wcstack/state] [wcs/getter-depth-exceeded] \"g72\"",
+          "overflow": false
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "id": "X2",
+      "property": "limits",
+      "title": "一覧の入れ子の深さ（1 段 1 行）: 描画と葉への書き込み",
+      "env": "chromium",
+      "kind": "custom",
+      "rows": [
+        {
+          "d": 8,
+          "ok": true,
+          "ms": 1.2300000190734863,
+          "errors": 0,
+          "overflow": false
+        },
+        {
+          "d": 32,
+          "ok": true,
+          "ms": 0.07999998331069946,
+          "errors": 0,
+          "overflow": false
+        },
+        {
+          "d": 100,
+          "ok": true,
+          "ms": 0.10500001907348633,
+          "errors": 0,
+          "overflow": false
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "id": "X3",
+      "property": "limits",
+      "title": "自己再帰の部品の細長い木（state: . の連鎖）: 描画と葉への書き込み",
+      "env": "chromium",
+      "kind": "custom",
+      "rows": [
+        {
+          "d": 10,
+          "ok": true,
+          "mountMs": 31.50499999523163,
+          "ms": 1.6349999904632568,
+          "errors": 0,
+          "overflow": false
+        },
+        {
+          "d": 50,
+          "ok": true,
+          "mountMs": 240.72000002861023,
+          "ms": 3.6550000309944153,
+          "errors": 0,
+          "overflow": false
+        },
+        {
+          "d": 150,
+          "ok": true,
+          "mountMs": 906.6299999952316,
+          "ms": 13.649999976158142,
+          "errors": 0,
+          "overflow": false
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "id": "C1a",
+      "property": "correctness",
+      "title": "種を固定したランダムな操作 2000 回（100 行）: DOM が参照モデルと一致",
+      "env": "chromium",
+      "kind": "custom",
+      "rows": [
+        {
+          "n": 100,
+          "ops": 2000,
+          "mismatches": 0,
+          "rowsAtEnd": 165
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    },
+    {
+      "id": "C1b",
+      "property": "correctness",
+      "title": "種を固定したランダムな操作 500 回（1000 行）: DOM が参照モデルと一致",
+      "env": "chromium",
+      "kind": "custom",
+      "rows": [
+        {
+          "n": 1000,
+          "ops": 500,
+          "mismatches": 0,
+          "rowsAtEnd": 1034
+        }
+      ],
+      "pass": true,
+      "firstMismatch": null,
+      "checks": [
+        {
+          "name": "custom",
+          "pass": true
+        }
+      ]
+    }
+  ]
+}

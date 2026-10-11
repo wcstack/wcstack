@@ -1,7 +1,7 @@
 // Measures the `$eq(path, key)` keyed-subscription prototype (scripts/research/
 // keyedPrototypePatch.mjs applied to a sandbox copy of packages/state, built there) against
 // the shipped bundle on the benchmark fixture, with the benchmark's own timing (click →
-// MutationObserver). Fixture variants: manual (checked in: $untrackDependency + two row
+// MutationObserver). Fixture variants: manual (checked in: $untracked + two row
 // writes), tracked (the audit's ordinary tracked getter), keyed ($eq on the row index),
 // keyedId ($eq on the row id, so removal does not re-evaluate every row). Selection is
 // warm (3 warm-ups, then 10 samples alternating rows 5 and 10, each checked for exactly one
@@ -26,7 +26,7 @@ const protoRuntime = (await readFile(protoPath, 'utf8')) + '\nbootstrapState();\
 const port = 4303;
 const url = `http://127.0.0.1:${port}/packages/state/__e2e__/benchmark/index.html`;
 const original = await readFile(join(root, 'packages/state/__e2e__/benchmark/index.html'), 'utf8');
-const GETTER = 'return this.$1 === this.$untrackDependency(() => this.selectedIndex);';
+const GETTER = 'return this.$1 === this.$untracked(() => this.selectedIndex);';
 const ON_SELECT = /onSelect\(e, \$1\) \{[\s\S]*?\n  \},/;
 function fixture(variant) {
   let html = original;
@@ -45,7 +45,7 @@ function fixture(variant) {
   // The same thing a runtime-level `$eq(path, keyPath)` would do internally.
   if (variant === 'keyedIdUntracked') {
     must('  selectedIndex: null,', '  selectedIndex: null,\n  selectedId: null,');
-    must(GETTER, 'return this.$eq("selectedId", this.$untrackDependency(() => this["data.*.id"]));');
+    must(GETTER, 'return this.$eq("selectedId", this.$untracked(() => this["data.*.id"]));');
     must(ON_SELECT, 'onSelect(e, $1) { this.selectedId = this["data." + $1 + ".id"]; },');
     return html;
   }

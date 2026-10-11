@@ -88,6 +88,10 @@ npm install @wcstack/view-transition
 | `types` | 空白区切り | — | 対応環境で `startViewTransition({ types })` へ渡す（`:active-view-transition-type()` 用）。 |
 | `disabled` | boolean | 無し | 不活性。全変更が即時適用される。バインド可能なので state からアニメーションを切れる。 |
 
+どの属性もプロパティでもある — `for` / `mode` / `naming` / `naming-limit` / `reduced-motion` / `types` / `disabled` は `participants` / `mode` / `naming` / `namingLimit` / `reducedMotion` / `types` / `disabled`。プロパティへの書き込みは属性へ書かれるので両者が食い違うことはなく、JS から設定した値は要素を移動しても残る。`types` と `participants` は配列または空白区切りの文字列を受け取り、空白区切りのトークンとして属性へ書く。getter は解釈後の値（配列・数値・既知のキーワード）を返す。
+
+**`null` と `undefined`。** 7 つの入力はどれも `null` を「クリア」として扱います。属性を外し、入力は表の既定値に戻ります（`namingLimit = null` は上限 0 ではなく既定の 200）。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`disabled` が有効になるのは `true` のときだけです。
+
 1 ドキュメントに `<wcs-view-transition>` は 1 つ。2 つ目は警告して不活性になる（排他を提供するために存在するものが排他を奪い合っては本末転倒なので）。
 
 ## 契約

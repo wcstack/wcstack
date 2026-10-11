@@ -78,6 +78,43 @@ describe("<wcs-speak>", () => {
       el.manual = false;
       expect(el.hasAttribute("manual")).toBe(false);
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外して既定へ戻す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-speak rate="1.5" pitch="0.8" volume="0.5" voice="Alice" lang="en-US" manual></wcs-speak>';
+      const el = host.firstElementChild as WcsSpeak;
+      el.rate = 2;
+      el.pitch = 2;
+      el.volume = 1;
+      el.voice = "Bob";
+      el.lang = "ja-JP";
+      el.manual = false;
+      el.rate = undefined;
+      el.pitch = undefined;
+      el.volume = undefined;
+      el.voice = undefined;
+      el.lang = undefined;
+      el.manual = undefined;
+      expect(el.rate).toBe(1.5);
+      expect(el.pitch).toBe(0.8);
+      expect(el.volume).toBe(0.5);
+      expect(el.voice).toBe("Alice");
+      expect(el.lang).toBe("en-US");
+      expect(el.manual).toBe(true);
+      el.rate = null;
+      el.pitch = null;
+      el.volume = null;
+      el.voice = null;
+      el.lang = null;
+      el.manual = null;
+      for (const name of ["rate", "pitch", "volume", "voice", "lang", "manual"]) {
+        expect(el.hasAttribute(name)).toBe(false);
+      }
+      expect(el.rate).toBe(1);
+      expect(el.pitch).toBe(1);
+      expect(el.volume).toBe(1);
+      expect(el.manual).toBe(false);
+    });
   });
 
   describe("say（reactive input）", () => {

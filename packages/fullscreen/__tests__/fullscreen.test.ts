@@ -276,6 +276,21 @@ describe("<wcs-fullscreen>", () => {
       expect(el.getAttribute("target")).toBe("#foo");
       expect(el.target).toBe("#foo");
     });
+
+    it("undefined はマークアップに書かれた target へ戻し、null は属性を外して既定（最初の子）へ戻す（P1 / P2）", () => {
+      document.body.innerHTML = '<wcs-fullscreen target="#authored"><img></wcs-fullscreen>';
+      const el = document.body.firstElementChild as WcsFullscreen;
+      expect(el.style.display).toBe("none");
+      el.target = "self";
+      expect(el.style.display).toBe("block");
+      el.target = undefined;
+      expect(el.getAttribute("target")).toBe("#authored");
+      expect(el.style.display).toBe("none");
+      el.target = null;
+      expect(el.hasAttribute("target")).toBe(false);
+      expect(el.target).toBe("");
+      expect(el.style.display).toBe("contents");
+    });
   });
 
   describe("wcBindable 継承", () => {

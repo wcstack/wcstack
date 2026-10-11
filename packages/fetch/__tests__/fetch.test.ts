@@ -272,6 +272,32 @@ describe("Fetch", () => {
       expect(el.hasAttribute("target")).toBe(false);
     });
 
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-fetch url="/authored" method="post" target="area" response-type="text" manual></wcs-fetch>';
+      const el = host.firstElementChild as Fetch;
+      el.url = "/bound";
+      el.method = "PUT";
+      el.target = "other";
+      el.responseType = "json";
+      el.manual = false;
+      el.url = undefined;
+      el.method = undefined;
+      el.target = undefined;
+      el.responseType = undefined;
+      el.manual = undefined;
+      expect(el.getAttribute("url")).toBe("/authored");
+      expect(el.method).toBe("POST");
+      expect(el.target).toBe("area");
+      expect(el.responseType).toBe("text");
+      expect(el.manual).toBe(true);
+      el.responseType = null;
+      el.manual = null;
+      expect(el.hasAttribute("response-type")).toBe(false);
+      expect(el.responseType).toBe("auto");
+      expect(el.manual).toBe(false);
+    });
+
     it("body に undefined を代入すると null に正規化される（JSON body 化しない）", () => {
       const el = document.createElement("wcs-fetch") as Fetch;
       el.body = { name: "x" };

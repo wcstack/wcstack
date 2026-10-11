@@ -1,0 +1,29 @@
+{
+  "$comment": "targets.json with the DOM floor measured 4 times (a, b before/after the rounds; c, d right after): floor b warm 1k with data (2.35 ms, below its own no-data 4.05 ms) was an outlier that put the 2-floor ratio at 2.00.",
+  "floor": {
+    "w1k": 4.049999952316284,
+    "c10k": 49.64999997615814
+  },
+  "floorExcl": {
+    "w1k": 4,
+    "c10k": 44.800000071525574
+  },
+  "prev": {
+    "w1k": 6.25,
+    "c10k": 77.69999999999999,
+    "ratioW1k": 1.54,
+    "ratioC10k": 1.56,
+    "ratioW1kExcl": 1.56,
+    "ratioC10kExcl": 1.73,
+    "n": 24
+  },
+  "next": {
+    "w1k": 6.2,
+    "c10k": 77.19999999999999,
+    "ratioW1k": 1.53,
+    "ratioC10k": 1.55,
+    "ratioW1kExcl": 1.55,
+    "ratioC10kExcl": 1.72,
+    "n": 24
+  }
+}

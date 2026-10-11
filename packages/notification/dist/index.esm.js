@@ -37,49 +37,37 @@ function getConfig() {
     }
     return frozenConfig;
 }
-// The defaults as shipped, for warnInvalid: a value 3.x lets through unchecked must not change
-// what a later call is compared against.
-const defaults = { ..._config, tagNames: { ..._config.tagNames } };
-const warned = new Set();
-/**
- * 3.5 forward-compat check. Warns, once per key per page, about an option that 4.0's
- * bootstrapNotification throws on: one this package does not have, a value of another type than its
- * default (null, or an array for an object, included), or a tag name it does not define or that is
- * not a string. An undefined value is left out, as in 4.0. It only warns: setConfig then goes on
- * exactly as in 3.x. Bootstrap-time only, never on a hot path.
- */
-function warnInvalid(given, known, path = "") {
-    for (const [key, value] of Object.entries(given)) {
-        const name = path + key;
-        const current = known[key];
-        if (value === undefined) {
-            continue;
-        }
-        if (!Object.prototype.hasOwnProperty.call(known, key) ||
-            value === null ||
-            typeof value !== typeof current ||
-            Array.isArray(value) !== Array.isArray(current)) {
-            if (!warned.has(name)) {
-                warned.add(name);
-                console.warn(`[@wcstack/notification] bootstrapNotification: "${name}" is not one of its options, or not of the option's type. 3.x ignores it or applies it unchecked; 4.0 throws on it.`);
-            }
-        }
-        else if (name === "tagNames") {
-            warnInvalid(value, current, "tagNames.");
-        }
-    }
+/** A misspelt option would otherwise do nothing: `bootstrapNotification` refuses it. */
+function invalid(key) {
+    throw new Error(`[@wcstack/notification] bootstrapNotification: "${key}" is not one of its options, or not of the option's type.`);
 }
+/**
+ * Applies the options given; an undefined value is left out. An option this package does not
+ * have, a value of another type than its default (null, or an array for an object, included) or
+ * a tag name it does not define throws, and then nothing is applied.
+ */
 function setConfig(partialConfig) {
-    warnInvalid(partialConfig, defaults);
-    if (typeof partialConfig.autoTrigger === "boolean") {
-        _config.autoTrigger = partialConfig.autoTrigger;
+    const options = _config;
+    const tags = _config.tagNames;
+    const given = Object.entries(partialConfig).filter(([, value]) => value !== undefined);
+    const givenTags = Object.entries(partialConfig.tagNames ?? {}).filter(([, tag]) => tag !== undefined);
+    for (const [key, value] of given) {
+        const current = options[key];
+        if (!Object.hasOwn(options, key) || value === null || typeof value !== typeof current || Array.isArray(value) !== Array.isArray(current)) {
+            invalid(key);
+        }
     }
-    if (typeof partialConfig.triggerAttribute === "string") {
-        _config.triggerAttribute = partialConfig.triggerAttribute;
+    for (const [name, tag] of givenTags) {
+        if (!Object.hasOwn(tags, name) || typeof tag !== "string")
+            invalid(`tagNames.${name}`);
     }
-    if (partialConfig.tagNames) {
-        Object.assign(_config.tagNames, partialConfig.tagNames);
+    for (const [key, value] of given) {
+        if (key !== "tagNames") {
+            options[key] = value;
+        }
     }
+    for (const [name, tag] of givenTags)
+        tags[name] = tag;
     frozenConfig = null;
 }
 
@@ -736,6 +724,61 @@ function upgradeProperties(element) {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/input-attribute.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+// 属性へ反映する wc-bindable 入力の producer 側（SPEC-extensions § Producer guidance for inputs の P1〜P3）。
+// 入力の setter は属性をこの 2 関数で書く。それで次が揃う:
+//   - `undefined` は「値が無い」（P1）: 属性を、この関数で最初に書く前の状態 — マークアップに書かれた値、
+//     無ければ属性なし（= その入力の文書化した既定値）— へ戻す。applier プロファイルを宣言する binder は
+//     値の後の `undefined` を書き（A2）、React 19 も書き、直接の代入でも届く。
+//   - `null` はクリア（P2）: 属性なし、つまり文書化した既定値。
+//   - どちらも文字列 "undefined" / "null" として属性に入らない。
+//
+// 「最初に書く前」は、その最初の書き込みのときに読む（遅延）。upgrade 前に代入されたプロパティは
+// connectedCallback の upgradeProperties() が通し直すので、そのときにはパーサが書いた属性が揃っている。
+// 要素自身が setter を通さずに書いた属性は、最初の書き込みより前なら「最初の状態」に含まれる。
+//
+// SINGLE SOURCE OF TRUTH: edit only this file (/protocol/input-attribute.ts), then run
+// `node scripts/sync-protocol-types.mjs` to regenerate the per-package copies
+// (packages/<pkg>/src/protocol/inputAttribute.ts). Those copies are generated — do not edit them.
+const initialAttributes = new WeakMap();
+/** The attribute as it stood before the first write through these helpers. */
+function initialAttribute(el, name) {
+    let byName = initialAttributes.get(el);
+    if (byName === undefined) {
+        byName = new Map();
+        initialAttributes.set(el, byName);
+    }
+    if (!byName.has(name))
+        byName.set(name, el.getAttribute(name));
+    return byName.get(name);
+}
+function writeAttribute(el, name, value) {
+    if (value === null)
+        el.removeAttribute(name);
+    else
+        el.setAttribute(name, value);
+}
+/**
+ * A value attribute. `value` is written as `String(value)`; `null` removes the attribute;
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value === null ? null : String(value));
+}
+/**
+ * A boolean attribute, present while `value` is truthy (`null` and `false` remove it);
+ * `undefined` restores the attribute the element started with.
+ */
+function reflectBooleanAttribute(el, name, value) {
+    const initial = initialAttribute(el, name);
+    writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
+}
+
 /**
  * `<wcs-notify>` — declarative desktop notifications. Wraps NotificationCore and
  * exposes both directions in one tag:
@@ -840,36 +883,41 @@ class WcsNotify extends HTMLElement {
         }
     }
     // --- Attribute accessors ---
+    // Input setters never let setAttribute stringify null / undefined: `null`
+    // removes the attribute (the default — no option, `mode` "auto"), `undefined`
+    // restores the attribute the element started with (wc-bindable producer
+    // guidance P1; React 19 and a direct assignment deliver it, @wcstack/state
+    // does not).
     get mode() {
         const m = this.getAttribute("mode");
         return (m === "sw" || m === "constructor") ? m : "auto";
     }
     set mode(value) {
-        this.setAttribute("mode", value);
+        reflectAttribute(this, "mode", value);
     }
     get body() {
         return this.getAttribute("body") ?? "";
     }
     set body(value) {
-        this._reflect("body", value);
+        reflectAttribute(this, "body", value);
     }
     get icon() {
         return this.getAttribute("icon") ?? "";
     }
     set icon(value) {
-        this._reflect("icon", value);
+        reflectAttribute(this, "icon", value);
     }
     get badge() {
         return this.getAttribute("badge") ?? "";
     }
     set badge(value) {
-        this._reflect("badge", value);
+        reflectAttribute(this, "badge", value);
     }
     get tag() {
         return this.getAttribute("tag") ?? "";
     }
     set tag(value) {
-        this._reflect("tag", value);
+        reflectAttribute(this, "tag", value);
     }
     // NOTE: `lang` and `dir` intentionally repurpose the standard HTMLElement IDL
     // attributes as per-notification options (forwarded to NotificationOptions).
@@ -880,37 +928,37 @@ class WcsNotify extends HTMLElement {
         return this.getAttribute("lang") ?? "";
     }
     set lang(value) {
-        this._reflect("lang", value);
+        reflectAttribute(this, "lang", value);
     }
     get dir() {
         return this.getAttribute("dir") ?? "";
     }
     set dir(value) {
-        this._reflect("dir", value);
+        reflectAttribute(this, "dir", value);
     }
     get requireInteraction() {
         return this.hasAttribute("require-interaction");
     }
     set requireInteraction(value) {
-        this._reflectBool("require-interaction", value);
+        reflectBooleanAttribute(this, "require-interaction", value);
     }
     get silent() {
         return this.hasAttribute("silent");
     }
     set silent(value) {
-        this._reflectBool("silent", value);
+        reflectBooleanAttribute(this, "silent", value);
     }
     get renotify() {
         return this.hasAttribute("renotify");
     }
     set renotify(value) {
-        this._reflectBool("renotify", value);
+        reflectBooleanAttribute(this, "renotify", value);
     }
     get manual() {
         return this.hasAttribute("manual");
     }
     set manual(value) {
-        this._reflectBool("manual", value);
+        reflectBooleanAttribute(this, "manual", value);
     }
     // --- Reactive command-property ---
     get notice() {
@@ -918,9 +966,10 @@ class WcsNotify extends HTMLElement {
     }
     set notice(value) {
         // Reactive: writing a new value shows it. `manual` mutes the path entirely
-        // (the imperative `notify` command still works). A conforming binder never
-        // delivers `undefined` (it skips the write), but a direct assignment can, so
-        // normalize null/undefined to a no-op.
+        // (the imperative `notify` command still works). @wcstack/state never writes
+        // `undefined`, but a wc-bindable applier writes it after a value (applier
+        // profile A2; React 19 does too), and a direct assignment can: "no value" is
+        // not a notice, so null/undefined are a no-op.
         if (value == null)
             return;
         if (this.manual)
@@ -985,22 +1034,6 @@ class WcsNotify extends HTMLElement {
         this._core.closeAll();
     }
     // --- Internal ---
-    _reflect(name, value) {
-        if (value == null) {
-            this.removeAttribute(name);
-        }
-        else {
-            this.setAttribute(name, String(value));
-        }
-    }
-    _reflectBool(name, value) {
-        if (value) {
-            this.setAttribute(name, "");
-        }
-        else {
-            this.removeAttribute(name);
-        }
-    }
     _options() {
         const o = {};
         if (this.body !== "")

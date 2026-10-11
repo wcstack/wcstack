@@ -1,6 +1,7 @@
 # state + intersection + `$stream` + `$watch` demo (infinite scroll via `<wcs-intersect>`)
 
-This is the lower-level counterpart to [`infinite-scroll`](../../packages/fetch/examples/infinite-scroll).
+This is the lower-level counterpart to [`infinite-scroll`](../../packages/fetch/examples/infinite-scroll)
+(the middle step, [`state-intersect-fetch`](../state-intersect-fetch), wires `<wcs-intersect>` to a `<wcs-fetch>` through state).
 `<wcs-intersect>` reports visibility, an `@wcstack/state` `$stream` entry owns page fetching,
 switchMap-style cancellation, and bounded retry, and a `$watch` on the stream's value folds each landed
 page into a feed that outlives every page run — without depending on anything being rendered.

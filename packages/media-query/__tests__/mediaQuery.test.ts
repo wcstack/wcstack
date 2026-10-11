@@ -54,6 +54,29 @@ describe("MediaQuery (Shell)", () => {
     expect(el.query).toBe(REDUCE);
   });
 
+  it("query: undefined はマークアップに書かれた属性へ戻して再購読し、null は属性を外して監視を止める（P1 / P2）", () => {
+    const mm = installMatchMedia({ matches: true });
+    const host = document.createElement("div");
+    host.innerHTML = `<wcs-media-query query="${DARK}"></wcs-media-query>`;
+    document.body.appendChild(host);
+    const el = host.firstElementChild as WcsMediaQuery;
+    el.query = REDUCE;
+    el.query = undefined;
+    expect(el.getAttribute("query")).toBe(DARK);
+    expect(mm.queries).toEqual([DARK, REDUCE, DARK]);
+    expect(el.media).toBe(DARK);
+    el.query = null;
+    expect(el.hasAttribute("query")).toBe(false);
+    expect(el.query).toBe("");
+    expect(el.matched).toBe(false);
+    expect(el.media).toBe("");
+
+    const bare = createMediaQuery();
+    bare.query = REDUCE;
+    bare.query = undefined;
+    expect(bare.hasAttribute("query")).toBe(false);
+  });
+
   it("hasConnectedCallbackPromise が true で connectedCallbackPromise が即 settle する（SSR）", async () => {
     installMatchMedia({ matches: true });
     expect(WcsMediaQuery.hasConnectedCallbackPromise).toBe(true);

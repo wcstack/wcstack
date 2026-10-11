@@ -4,6 +4,7 @@ import { UploadCore } from "../core/UploadCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 export class WcsUpload extends HTMLElement {
   static hasConnectedCallbackPromise = true;
@@ -17,9 +18,9 @@ export class WcsUpload extends HTMLElement {
     // Shell-level input surface. The Core declares only the portable `url` / `method` /
     // `fieldName`; the Shell adds the DOM-driven settable surface. No `attribute` hints
     // are given: the `url` / `method` / `fieldName` / `multiple` / `maxSize` / `accept` /
-    // `manual` setters already reflect to their attributes, so a binding system that
-    // mirrors inputs[].attribute would set the attribute twice (`files` / `trigger` are
-    // not attribute-backed). `commands` (upload / abort) are inherited unchanged from the
+    // `manual` setters reflect to their attributes themselves, and a binding system that
+    // mirrored inputs[].attribute (@wcstack/state 3.x) would set the attribute twice
+    // (`files` / `trigger` are not attribute-backed). `commands` (upload / abort) are inherited unchanged from the
     // Core via the spread above.
     inputs: [
       { name: "url" },
@@ -100,41 +101,42 @@ export class WcsUpload extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // setter は null / undefined を setAttribute に文字列化させない（"undefined" の url へ
+  // 送信したり、"null" の method を使ったりしないため）。`null` は属性を外して既定値に戻し、
+  // `undefined` は要素が最初に持っていた属性へ戻す（wc-bindable producer guidance P1。
+  // React 19 や直接の代入は undefined を書く。@wcstack/state は書かない）。
 
   get url(): string {
     return this.getAttribute("url") || "";
   }
 
-  set url(value: string) {
-    this.setAttribute("url", value);
+  set url(value: string | null | undefined) {
+    reflectAttribute(this, "url", value);
   }
 
   get method(): string {
     return (this.getAttribute("method") || "POST").toUpperCase();
   }
 
-  set method(value: string) {
-    this.setAttribute("method", value);
+  set method(value: string | null | undefined) {
+    reflectAttribute(this, "method", value);
   }
 
   get fieldName(): string {
     return this.getAttribute("field-name") || "file";
   }
 
-  set fieldName(value: string) {
-    this.setAttribute("field-name", value);
+  set fieldName(value: string | null | undefined) {
+    reflectAttribute(this, "field-name", value);
   }
 
   get multiple(): boolean {
     return this.hasAttribute("multiple");
   }
 
-  set multiple(value: boolean) {
-    if (value) {
-      this.setAttribute("multiple", "");
-    } else {
-      this.removeAttribute("multiple");
-    }
+  set multiple(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "multiple", value);
   }
 
   get maxSize(): number {
@@ -149,28 +151,24 @@ export class WcsUpload extends HTMLElement {
     return Number.isFinite(n) && n >= 0 ? n : Infinity;
   }
 
-  set maxSize(value: number) {
-    this.setAttribute("max-size", String(value));
+  set maxSize(value: number | null | undefined) {
+    reflectAttribute(this, "max-size", value);
   }
 
   get accept(): string {
     return this.getAttribute("accept") || "";
   }
 
-  set accept(value: string) {
-    this.setAttribute("accept", value);
+  set accept(value: string | null | undefined) {
+    reflectAttribute(this, "accept", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---
@@ -231,13 +229,16 @@ export class WcsUpload extends HTMLElement {
     return this._files;
   }
 
-  set files(value: FileList | File[] | null) {
-    this._files = value;
+  set files(value: FileList | File[] | null | undefined) {
+    // undefined は「値が無い」= 初期状態（null）。null と同じく files をクリアし、
+    // files-changed にも undefined ではなく null を載せる。
+    const files = value ?? null;
+    this._files = files;
     this.dispatchEvent(new CustomEvent("wcs-upload:files-changed", {
-      detail: value,
+      detail: files,
       bubbles: true,
     }));
-    if (!this.manual && this.url && value && value.length > 0) {
+    if (!this.manual && this.url && files && files.length > 0) {
       this.upload();
     }
   }

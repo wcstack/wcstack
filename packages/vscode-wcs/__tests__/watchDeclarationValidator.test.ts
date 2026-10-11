@@ -58,6 +58,19 @@ describe('validateWatchDeclarations', () => {
       expect(validateWatchDeclarations(html)).toEqual([]);
     });
 
+    it('数値の添字のキー（items.0.price・groups.0.items.1.v）は添字を * に読み替えて照合する（4.0 — #355）', () => {
+      const html = makeHtml(`
+  items: [{ price: 1 }],
+  groups: [{ items: [{ v: 1 }] }],
+  $watch: {
+    "items.0.price"(cur, prev) { void cur; void prev; },
+    "groups.0.items.1.v"(cur, prev) { void cur; void prev; },
+    "items.0.prce"(cur, prev) { void cur; void prev; },
+  }`);
+      const diags = validateWatchDeclarations(html);
+      expect(diags.map(d => [d.code, html.slice(d.start, d.end)])).toEqual([[WcsDiagnosticCode.WatchPathMissing, 'items.0.prce']]);
+    });
+
     it('$listKeys が実体化したパスも既知として扱う', () => {
       // items が空配列でも $listKeys の宣言から行のキーフィールドが確定する
       const html = makeHtml(`
@@ -263,11 +276,10 @@ describe('非オブジェクト $watch（error・ランタイムは読み込み�
   });
 });
 
-// #355: 数値添字が 1 つのキー（`items.0.v`）は行として実在する。@wcstack/state の実行時（main で実測）は、
-// 同じパスをマークアップで束縛していないページでも、リストの丸ごと置換（s.items = [...]）では発火するが、
-// 添字の書き込み（s["items.0.v"] = 5）では発火しない。束縛していれば添字の書き込みでも発火する。
-// 修正前の文面「一度も発火しません」は事実に反するので、文面だけ分ける（code・severity は同じ）。
-describe('validateWatchDeclarations — 数値添字のキー（#355）', () => {
+// #355（main の 3.4 から移した入力）: 4.0 は数値添字のキー（`items.0.v`）を、いまその位置にある行として読み、
+// その行への書き込みで発火する（行 getter も同じ形で読む）。3.x の lint は「添字を通した書き込みでは発火しない」と
+// 文面を分けていたが、4.0 では実在するキーは黙り、打ち間違い（行の下・リストの名前）だけが従来の文面で残る。
+describe('validateWatchDeclarations — 数値添字のキー（#355、4.0）', () => {
   const html = makeHtml(`
   items: [{ v: 1 }],
   get "items.*.double"() { return this["items.*.v"] * 2; },
@@ -279,18 +291,12 @@ describe('validateWatchDeclarations — 数値添字のキー（#355）', () => 
   }`);
   const diags = validateWatchDeclarations(html, 'wcs-state', 'en');
 
-  it('行として実在するキー（行 getter も含む）は「添字の書き込みでは発火しない」文面、実在しないキーは従来の文面', () => {
+  it('行として実在するキー（行 getter も含む）は黙り、実在しないキーは「一度も発火しない」と言う', () => {
     expect(diags.map(d => [html.slice(d.start, d.end), d.code, d.severity])).toEqual([
-      ['items.0.v', WcsDiagnosticCode.WatchPathMissing, 'warning'],
-      ['items.0.double', WcsDiagnosticCode.WatchPathMissing, 'warning'],
       ['items.0.nmae', WcsDiagnosticCode.WatchPathMissing, 'warning'],
       ['itms.0.v', WcsDiagnosticCode.WatchPathMissing, 'warning'],
     ]);
-    expect(diags[0].message).toBe(
-      '$watch key "items.0.v" has a numeric index: it fires when the list is replaced, but not on a write through the index (this["items.0.v"] = …) unless the same path is also bound in the markup',
-    );
-    expect(diags[1].message).toContain('has a numeric index');
-    expect(diags[2].message).toBe('$watch key "items.0.nmae" does not exist in the state definition (it will never fire)');
-    expect(diags[3].message).toContain('will never fire');
+    expect(diags[0].message).toBe('$watch key "items.0.nmae" does not exist in the state definition (it will never fire)');
+    expect(diags[1].message).toContain('will never fire');
   });
 });

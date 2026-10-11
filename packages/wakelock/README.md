@@ -104,6 +104,8 @@ npm install @wcstack/wakelock
 | `type`    | string  | `screen` | Lock type. Only `screen` is standardized; the attribute exists for forward compatibility. |
 | `manual`  | boolean | `false`  | Do not auto-acquire on connect even if `active` is present; drive via `request()` / `release()` instead. |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`active`, `type`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) On a connected element, an `active` that changes this way drives request / release like any other toggle.
+
 > **`manual` is a connect-time policy, not a live switch.** Removing the `manual` attribute *after* connect does not auto-acquire — toggle `active` or call `request()`. (A live `active` toggle always drives request/release regardless of `manual`.)
 
 ## Output state

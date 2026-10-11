@@ -358,17 +358,17 @@ For production, pin the version and add an `integrity` attribute. `dist/auto.min
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/@wcstack/state@2.1.1/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
 Digests for every package ship in each GitHub Release (and as an attached `sri.json`), computed from the published tree rather than read back from the CDN. Details, and what the hash deliberately does not cover: [docs/sri.md](docs/sri.md).
 
-Using several packages? The **`wcstack` entry bundle** packs the SPA core — state, router, fetch, storage, autoloader — into a single self-contained tag: one request, and one hash covering the whole core (373 KB min / 109 KB gzip as of 3.5.0). Single packages stay the default for pages that need less; do not concatenate the files yourself via jsDelivr `/combine/` (minified ESM does not survive concatenation — [docs/sri.md §3.1](docs/sri.md)):
+Using several packages? The **`wcstack` entry bundle** packs the SPA core — state, router, fetch, storage, autoloader — into a single self-contained tag: one request, and one hash covering the whole core (218 KB min / 70 KB gzip as of 4.0). Single packages stay the default for pages that need less; do not concatenate the files yourself via jsDelivr `/combine/` (minified ESM does not survive concatenation — [docs/sri.md §3.1](docs/sri.md)):
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@3.5.4/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@4.0.0/dist/auto.min.js"
         integrity="sha384-..."></script>
 ```
 
@@ -397,13 +397,13 @@ For debugging, add the `debug-states` attribute to a tag to mirror its states as
 
 Every I/O node implements [wc-bindable-protocol](https://github.com/wc-bindable-protocol/wc-bindable-protocol), so a thin adapter (`@wc-bindable/react`, `/vue`, `/svelte`, `/solid`, …) wires an element's outputs into framework state without per-element glue. Three rules make that work:
 
-**1. Import the definition before you render.** Adapters check `isWcBindable(el)` once on mount and never retry, so an element that upgrades later stays silently unbound. A static import at the app entry is the reliable fix:
+**1. Use `@wc-bindable` 0.9 or later, or import the definition before you render.** Since 0.9 the adapters wait for a late definition (`syncOn: "define"`, their default) and bind when it lands. Adapters up to 0.8 check `isWcBindable(el)` once on mount and never retry, so an element that upgrades later stays silently unbound. A static import at the app entry works with every version:
 
 ```ts
 import "@wcstack/websocket/auto";   // main.tsx / main.js — before the app renders
 ```
 
-If the definition genuinely has to arrive late (autoloader, CDN tag, code-split), gate the mount on `customElements.whenDefined("wcs-ws")`. `connectedCallbackPromise` is not a substitute — it covers connection, not definition.
+With a 0.8 adapter and a definition that genuinely has to arrive late (autoloader, CDN tag, code-split), gate the mount on `customElements.whenDefined("wcs-ws")`. `connectedCallbackPromise` is not a substitute — it covers connection, not definition.
 
 **2. Pass object-valued inputs as properties.** DOM attributes only hold strings, and several frameworks fall back to attributes when the property is not on the element yet, which stringifies your payload. Use `.prop` (Vue), `prop:` (Solid), `.prop=` (Lit), or assign through a ref.
 
@@ -506,7 +506,7 @@ All published packages share one version and are released in lockstep — a rele
 
 **Deprecation practice**: where feasible, a surface is flagged for at least one minor release (a lint rule and/or a runtime notice pointing at the replacement) before the next major removes it — v1.x flagged named state with `wcs/named-state-deprecated` before v2.0 removed `name=` / `@name`.
 
-Release history: [CHANGELOG.md](./CHANGELOG.md). Upgrading from 2.x: [docs/migration-v3.md](./docs/migration-v3.md). Upgrading from 1.x: [docs/migration-v2.md](./docs/migration-v2.md).
+Release history: [CHANGELOG.md](./CHANGELOG.md). Upgrading from 3.x: [docs/migration-v4.md](./docs/migration-v4.md). Upgrading from 2.x: [docs/migration-v3.md](./docs/migration-v3.md). Upgrading from 1.x: [docs/migration-v2.md](./docs/migration-v2.md).
 
 ## License
 

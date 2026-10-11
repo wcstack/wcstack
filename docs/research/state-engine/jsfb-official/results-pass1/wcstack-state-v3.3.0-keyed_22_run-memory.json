@@ -1,0 +1,1 @@
+{"framework":"wcstack-state-v3.3.0-keyed","keyed":true,"benchmark":"22_run-memory","type":"memory","values":{"DEFAULT":{"min":6.232387542724609,"max":6.232387542724609,"median":6.232387542724609,"mean":6.232387542724609,"stddev":null,"values":[6.232387542724609]}}}

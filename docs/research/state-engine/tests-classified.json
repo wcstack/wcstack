@@ -1,0 +1,4197 @@
+[
+ {
+  "file": "AbsoluteStateAddress.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none — internal mechanism (absolute-address interning cache keyed by stateName/absolutePathInfo/listIndex)",
+  "signals": []
+ },
+ {
+  "file": "StateAddress.test.ts",
+  "tests": 17,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 17
+  },
+  "contract": "none — internal mechanism (StateAddress construction/caching; parentAddress listIndex inheritance for wildcard vs non-wildcard parents)",
+  "signals": []
+ },
+ {
+  "file": "applyChange.coverage.test.ts",
+  "tests": 24,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 5,
+   "C.filter": 1,
+   "C.list": 1,
+   "C.if": 3,
+   "C.event": 1,
+   "C.update": 1,
+   "I.internal": 8,
+   "X.wcbindable": 2,
+   "X.component": 2
+  },
+  "contract": "mostly internal dispatch (binding kind -> applier, per-binding fn caches, fragment rootNode resolution); user-visible bits: filters applied in order, a binding applied once per batch, bindings on not-yet-defined custom elements are skipped until definition, select value deferred",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "applyChange.test.ts",
+  "tests": 19,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 8,
+   "C.list": 1,
+   "C.if": 3,
+   "C.update": 1,
+   "C.event": 1,
+   "I.internal": 4,
+   "X.cmdtoken": 1
+  },
+  "contract": "internal dispatch; user-visible bits: text/prop/class/attr/style applied, select value/selectedIndex applied after options (deferred), event bindings not applied as values, command.<m>: binding subscribes",
+  "signals": []
+ },
+ {
+  "file": "applyChangeFromBindings.test.ts",
+  "tests": 23,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 9,
+   "X.diagnostics": 1,
+   "C.lifecycle": 6,
+   "C.bind": 2,
+   "C.update": 3,
+   "X.devtools": 2
+  },
+  "contract": "a throwing binding is isolated: the rest of the batch (incl. phase-2 deferred select) still applies, $updatedCallback still fires, each failure reaches $errorCallback(error, info) at batch end (console.error if undeclared), failures also go to the devtools sink",
+  "signals": [
+   "flag:debug"
+  ]
+ },
+ {
+  "file": "applyChangeToClass.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 5
+  },
+  "contract": "class.x: true adds, false removes, null/undefined removes without throwing (B8), any other non-boolean throws",
+  "signals": [
+   "B-item:B8"
+  ]
+ },
+ {
+  "file": "bridge.featureBridge.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "X.split": 5
+  },
+  "contract": "none — internal delivery mechanism (feature-not-installed barrier for volume $watch; frozen empty overlay list when the scopes feature is absent)",
+  "signals": [
+   "B-item:B13"
+  ]
+ },
+ {
+  "file": "defineState.test.ts",
+  "tests": 5,
+  "portability": "BB",
+  "tags": {
+   "C.init": 1,
+   "X.recursion": 2,
+   "T.tooling": 2
+  },
+  "contract": "defineState is an identity function; its TS types accept `**` recursion paths (incl. bare `nodes.**`) without weakening normal dotted-path typing (checked with real tsc)",
+  "signals": []
+ },
+ {
+  "file": "dsd.test.ts",
+  "tests": 15,
+  "portability": "BB",
+  "tags": {
+   "C.grammar": 1,
+   "C.bind": 6,
+   "C.init": 3,
+   "C.if": 1,
+   "C.list": 2,
+   "C.filter": 1,
+   "C.state": 1
+  },
+  "contract": "a <wcs-state> inside the Declarative Shadow DOM of an undefined custom element runs its own isolated scope (mustache, textContent, class/style/attr, if, for + reactive updates, filters, nested paths); the removed `name` attribute fails fast in v2",
+  "signals": [
+   "compat"
+  ]
+ },
+ {
+  "file": "entries.core.test.ts",
+  "tests": 10,
+  "portability": "BB",
+  "tags": {
+   "X.split": 8,
+   "X.diagnostics": 2
+  },
+  "contract": "the ./core split entry alone binds/updates/renders lists; path diagnostics warn only after installFeatures([diagnostics]); declaring $watch/$scan/$stream/$recursion (or legacy $streams) without the feature fails with [wcs/feature-not-installed]; installFeatures after bootstrap still defines tags",
+  "signals": [
+   "B-item:B13",
+   "compat"
+  ]
+ },
+ {
+  "file": "filters.builtinFilters.test.ts",
+  "tests": 115,
+  "portability": "WB",
+  "tags": {
+   "C.filter": 83,
+   "C.filter-format": 25,
+   "T.tooling": 3,
+   "X.i18n": 4
+  },
+  "contract": "semantics and validation errors of every built-in output filter (eq/ne/not/compare/arith/string/type/truthy/defaults/abs/clamp/join/truncate; fix/round/percent/locale/date/time/ymd/hms/unit), arity rejected at binding-plan time (B3), typed literals for eq/ne (B9), null/undefined pass-through for display filters (B8), default locale read from config.locale at apply time; re-expressible BB as data-wcs \"textContent: x|f(args)\" tables",
+  "signals": [
+   "B-item:B3",
+   "B-item:B8",
+   "B-item:B9",
+   "flag:locale",
+   "compat"
+  ]
+ },
+ {
+  "file": "filters.canonicalNames.test.ts",
+  "tests": 16,
+  "portability": "WB",
+  "tags": {
+   "C.filter": 14,
+   "X.diagnostics": 1,
+   "T.tooling": 1
+  },
+  "contract": "canonical filter names (add/sub/toFixed/upper/lower/capitalize/repeat/reverse/padStart/nullIfEmpty) and legacy aliases give identical results; arity checked under the canonical name but errors quote the written name; did-you-mean proposes canonical names; padEnd and coalesce (only null/undefined) semantics",
+  "signals": [
+   "B-item:B12",
+   "compat",
+   "deprecate?:legacy aliases inc/dec/fix/uc/lc/cap/rep/rev/pad/null are slated for removal in 4.0 (requirements B12 decision / D4)"
+  ]
+ },
+ {
+  "file": "filters.errorMessages.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.filter": 5
+  },
+  "contract": "filter validation error messages (options required / must be number / value must be number|Date|array) name the offending filter",
+  "signals": []
+ },
+ {
+  "file": "integration.recursionGetter.test.ts",
+  "tests": 106,
+  "portability": "GB",
+  "adapter": "bootstrapState + State.createState/setInitialState (public); peeks stateEl.recursionRegistry / getterPaths / listPaths / __state / hasRecursion (~25 tests); ~9 tests are WB (new RecursionRegistry, StateHandler __private__, currentRecursionDepth, setLoopContextSymbol)",
+  "tags": {
+   "X.recursion": 80,
+   "X.diagnostics": 4,
+   "I.internal": 19,
+   "C.getter": 1,
+   "C.state": 1,
+   "C.list": 1
+  },
+  "contract": "$recursion + `**` getters: per-depth aggregation without double counting, writes ($setAll/$resolve) and tree-shape changes propagate to all depths, for-rendered trees, [wcs/recursion-*] diagnostics outside a recursion context, declaration/getter validation at construction, 128-depth limit, setInitialState re-set rebuilds the generation; control group shows states without $recursion unchanged",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "integration.recursionIntegration.test.ts",
+  "tests": 34,
+  "portability": "GB",
+  "adapter": "public State API + internal buildSsrDocument (swap for <wcs-ssr>/renderToString) + recursionRegistry.materializedPaths / registration-count peeks (~5 tests)",
+  "tags": {
+   "X.recursion": 14,
+   "X.component": 5,
+   "C.mount": 2,
+   "X.stream": 1,
+   "I.internal": 3,
+   "X.ssr": 9
+  },
+  "contract": "$recursion declared on a host works across bind-component child scopes and volume-supplied data; volumes/mounted children reject their own $recursion/`**`/$streams by name; re-set/reconnect/tree resize do not grow the registry; SSR snapshot carries data only and hydrated row getter bindings follow leaf updates (#258 X6)",
+  "signals": [
+   "defect:#258",
+   "B-item:B11",
+   "workaround",
+   "characterization:1 test asserts a known-wrong diagnostic (translated path instead of author spelling)"
+  ]
+ },
+ {
+  "file": "integration.recursionKnownDefects.test.ts",
+  "tests": 66,
+  "portability": "GB",
+  "adapter": "public State API; getListIndexesByList ledger peek (defect-2 block); internal State.defineTreeAccessor + getterPaths/listPaths mutation (defect-5 block, 10 tests — no BB equivalent)",
+  "tags": {
+   "C.getter": 27,
+   "C.state": 18,
+   "C.list": 7,
+   "I.internal": 10,
+   "X.recursion": 4
+  },
+  "contract": "hand-unrolled nested wildcard aggregate getters stay correct after structural list writes with no for rendering (E1), row-object replacement (#256) and setInitialState re-set (#258); depth-exceeded vs real cycle diagnosed separately and $129 out of range throws (E2/E3); readonly session rejects $setAll/$resolve writes (B6); plus characterization of UNFIXED defects (shared-array DAG/cycle aliasing, in-place deep mutation mixed with structural change, in-place push, defineTreeAccessor cache pin)",
+  "signals": [
+   "defect:#256",
+   "defect:#257",
+   "defect:#258",
+   "defect:#274",
+   "B-item:B6",
+   "characterization:~22 tests assert current WRONG values (defects 2/5/6 + in-place push) and must flip when fixed",
+   "workaround"
+  ]
+ },
+ {
+  "file": "integration.recursionPrerequisites.test.ts",
+  "tests": 37,
+  "portability": "GB",
+  "adapter": "public State API; getListIndexesByList ledger peek (cold-start block); internal defineTreeAccessor/getterPaths/listPaths (8 tests, no BB equivalent); getPathInfo via ./parser entry",
+  "tags": {
+   "C.state": 12,
+   "I.internal": 10,
+   "C.getter": 13,
+   "C.list": 2
+  },
+  "contract": "with no for binding, $getAll/$setAll (incl. mapper and prefix forms) work cold while cold $resolve throws until a traversal warms the ledger; hand-unrolled recursive aggregates follow leaf/add/delete/reorder/reassign with at most one for; cold top-down evaluation limit = 128 stacked getter frames; $getAll(path) = direct children vs $getAll(path, []) = all depths",
+  "signals": [
+   "workaround"
+  ]
+ },
+ {
+  "file": "protocol.ssrSnapshot.reader.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "X.ssr": 5
+  },
+  "contract": "the SSR snapshot builder is taken from the global protocol slot only when well-formed (protocol id, integer version >= 1, build function), else null",
+  "signals": []
+ },
+ {
+  "file": "protocol.wcBindableReader.test.ts",
+  "tests": 44,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 44
+  },
+  "contract": "static wcBindable declaration reader accepts exactly what the upstream protocol helper accepts (version, properties/inputs/commands schema, per-list duplicate names), discovers only via constructor.wcBindable, never throws on arbitrary targets or throwing accessors",
+  "signals": []
+ },
+ {
+  "file": "scan.from.test.ts",
+  "tests": 63,
+  "portability": "GB",
+  "adapter": "public State API + setDevtoolsSink (failure-phase asserts), getUpdater().enqueue of raw absolute addresses, getListIndexesByList, startStreams, getActiveWatchStateElements",
+  "tags": {
+   "X.scan": 49,
+   "X.watch": 6,
+   "X.elemwrite": 2,
+   "X.listkeys": 1,
+   "X.stream": 5
+  },
+  "contract": "$scan from: one fold per landed source write per batch with (acc, cur, prev) and this=undefined; runs before $watch in the same batch; chained scans fold landed values once; per-row folds in index order skipping retired rows (#274); resetOn restores a deep-copied declared initial; fold/read/write failures isolated and reported; $streams restart wins and scan-derived args are refused (D9/D10)",
+  "signals": [
+   "defect:#274"
+  ]
+ },
+ {
+  "file": "scan.initialValue.test.ts",
+  "tests": 11,
+  "portability": "WB",
+  "tags": {
+   "X.scan": 11
+  },
+  "contract": "$scan initial values: plain data deep-cloned (holes, cycles, shared refs preserved), non-plain values kept by reference without running getters; 'output is at initial' compares plain data by content and others by identity",
+  "signals": []
+ },
+ {
+  "file": "scan.lifecycle.test.ts",
+  "tests": 15,
+  "portability": "GB",
+  "adapter": "public State API + getScanRegistry / getActiveWatchStateElements peeks and raw getUpdater enqueue",
+  "tags": {
+   "X.scan": 10,
+   "X.recursion": 1,
+   "X.ssr": 1,
+   "C.mount": 1,
+   "X.component": 2
+  },
+  "contract": "$scan pauses while disconnected and resumes with output kept; setInitialState re-set rebuilds declarations atomically (a failing re-set keeps the old generation) and keeps accumulations without method-collision false positives; no folds under SSR; volumes reject $scan, mounted components ignore it with a warning (B11)",
+  "signals": [
+   "B-item:B11"
+  ]
+ },
+ {
+  "file": "scan.on.test.ts",
+  "tests": 35,
+  "portability": "GB",
+  "adapter": "public State API + event-token dispatch; asserts pending-reset ledger via hasPendingScanReset (24 uses) / getPendingScanResetCount / getScanRegistry — many tests observable only through these peeks",
+  "tags": {
+   "X.scan": 28,
+   "X.evttoken": 4,
+   "X.watch": 3
+  },
+  "contract": "$scan on: <eventToken>: one fold per event, before that token's $on subscribers, (acc, event, ...indexes); fold/write/read failures isolated from $on; resetOn pending-reset semantics across drains, chain-depth cutoffs, disconnect and re-set; subscription survives root reconnect (#273)",
+  "signals": [
+   "defect:#273"
+  ]
+ },
+ {
+  "file": "scan.processScanDeclaration.test.ts",
+  "tests": 50,
+  "portability": "WB",
+  "tags": {
+   "X.scan": 48,
+   "X.recursion": 1,
+   "X.diagnostics": 1
+  },
+  "contract": "$scan declaration validation raises by name: output names, from/on (must be data, not getter/computed/`**`/self/cycle; on must be a declared event token), initial required, fold a function, resetOn paths; returns declaration order; re-expressible BB via setInitialState throwing",
+  "signals": []
+ },
+ {
+  "file": "scan.runtimeEdges.test.ts",
+  "tests": 16,
+  "portability": "GB",
+  "adapter": "setDevtoolsSink, raw getUpdater enqueue, rowLanding spy; 6 tests assert only internal drain/enqueue gate counters (getScanDrainGateCount / getScanEventResetGateCount) and have no BB equivalent",
+  "tags": {
+   "X.scan": 10,
+   "I.internal": 6
+  },
+  "contract": "$scan drain edge cases: two-level wildcard fold order, synchronous disconnect/re-set inside a fold cancels later scans, output-read vs row-lookup failures reported distinctly, phase 2 skips no-op rewrites; plus internal gate counting",
+  "signals": []
+ },
+ {
+  "file": "scan.streamCommit.test.ts",
+  "tests": 5,
+  "portability": "BB",
+  "tags": {
+   "X.scan": 3,
+   "X.stream": 2
+  },
+  "contract": "intersect-scroll feed: $scan folds $streams page landings into a feed with no bindings, progress chunks do not write, retry/reconnect re-landings are not double-appended, same-page reassignment triggers neither restart nor fold",
+  "signals": [
+   "flag:sameValueGuard"
+  ]
+ },
+ {
+  "file": "semantics.majorCandidates.test.ts",
+  "tests": 28,
+  "portability": "GB",
+  "adapter": "bootstrapState + State (public); parser via @wcstack/state/parser output shape (parseBindTextsForElement / parseBindTextForEmbeddedNode, ~13 tests); internal resolveFilterFn / builtinFilterArity (3 tests)",
+  "tags": {
+   "C.grammar": 10,
+   "C.filter": 6,
+   "T.tooling": 1,
+   "C.bind": 5,
+   "C.filter-format": 1,
+   "C.state": 2,
+   "C.mount": 3
+  },
+  "contract": "3.0 decisions as behaviour: quotes protect ; and | (B1), malformed syntax rejected with [wcs/binding-syntax] (B2), structural filter cache key + [wcs/filter-arity] (B3), modifiers keep binding kind (B4), on* prefix still = event (B5 status quo), readonly on every write API (B6), $resolve arity (B7), empty-value contract per surface (B8), typed literals (B9), JS truthiness (B10), defaults/pad legacy meaning (B12), mount #ro and explicit entry beats own key (B14)",
+  "signals": [
+   "B-item:B1",
+   "B-item:B2",
+   "B-item:B3",
+   "B-item:B4",
+   "B-item:B5",
+   "B-item:B6",
+   "B-item:B7",
+   "B-item:B8",
+   "B-item:B9",
+   "B-item:B10",
+   "B-item:B12",
+   "B-item:B14",
+   "compat"
+  ]
+ },
+ {
+  "file": "tagNameMap.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "T.tooling": 1
+  },
+  "contract": "the HTMLElementTagNameMap augmentation in exports.ts declares exactly config.tagNames defaults (wcs-state, wcs-ssr) — source scan",
+  "signals": []
+ },
+ {
+  "file": "viewTransitionNaming.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "X.viewtransition": 10
+  },
+  "contract": "with an arbiter in naming=auto, the first element of each rendered block gets one unique view-transition-name + group class (capped, idempotent, never throws, ledger in a Symbol.for slot); naming=manual or no arbiter does nothing",
+  "signals": []
+ },
+ {
+  "file": "webComponent.bindWebComponent.semantics.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "X.component": 3
+  },
+  "contract": "bind-component without <stateProp>.* bindings passes reads/writes straight through to the inner state and hands the melted raw state to setInitialState",
+  "signals": []
+ },
+ {
+  "file": "webComponent.bindWebComponent.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "X.component": 8
+  },
+  "contract": "plain bind-component (Shadow or Light DOM): melted state becomes the component state, the public property is replaced by an outer proxy (configurable, enumerable), $stateReadyCallback is called with stateProp, non-function throws, rejections are reported",
+  "signals": []
+ },
+ {
+  "file": "webComponent.completeWebComponent.declared.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — internal ledger of X.component (whole-object mount 'declared' flag, per element/stateProp, idempotent)",
+  "signals": []
+ },
+ {
+  "file": "webComponent.completeWebComponent.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none — internal ledger of X.component (completed component/stateProp pairs)",
+  "signals": []
+ },
+ {
+  "file": "webComponent.dollarPathApis.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 5,
+   "C.mount": 2
+  },
+  "contract": "source-scan guard: every path-taking $ API in the proxy get trap is classified so volume and component chroots translate its path (added after $eq/$eqPath/$eqIndex/$dependOn read root paths inside scopes); unknown APIs fall through untranslated",
+  "signals": [
+   "compat"
+  ]
+ },
+ {
+  "file": "webComponent.exportIndex.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "X.component": 11,
+   "I.internal": 2,
+   "X.diagnostics": 1
+  },
+  "contract": "getters/setters of mounted components are published under their outer path (incl. class prototype accessors and row mounts), resolved per row context, notified via $postUpdate, shadowing by a same-named tree key warned once, and path diagnostics stay silent for published paths",
+  "signals": []
+ },
+ {
+  "file": "webComponent.meltFrozenObject.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 8
+  },
+  "contract": "none — internal utility of X.component (clone a possibly frozen state object keeping getters/setters, dotted-path accessors and prototype)",
+  "signals": []
+ },
+ {
+  "file": "webComponent.mount.test.ts",
+  "tests": 59,
+  "portability": "WB",
+  "tags": {
+   "X.component": 28,
+   "C.mount": 14,
+   "I.internal": 17
+  },
+  "contract": "bind-component mount record: inner->tree path translation (accessor > own data key > tree; explicit partial entry beats own key — B14 ②; methods stay the author's), #ro entries reject writes and add ro to bindings (B14 ①), $n index shift for row mounts, for-ledger shifts, registry lookup and WeakRef lifetime; re-expressible BB via <x data-wcs=\"state: user; state.name#ro: …\"> fixtures",
+  "signals": [
+   "B-item:B14"
+  ]
+ },
+ {
+  "file": "webComponent.outerState.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "X.component": 6
+  },
+  "contract": "the component's public state property proxies string-key reads/writes to the host via createState and uses Reflect for symbols; missing host state element throws",
+  "signals": []
+ },
+ {
+  "file": "webComponent.ownKeyShadow.test.ts",
+  "tests": 15,
+  "portability": "WB",
+  "tags": {
+   "C.mount": 4,
+   "X.diagnostics": 11
+  },
+  "contract": "dev warning when a component's own data key / getter / method shadows the host's mounted tree entry (once per tag/prop/key, reads mount target once; explicit partial entries not reported — B14 ②)",
+  "signals": [
+   "B-item:B14"
+  ]
+ },
+ {
+  "file": "webComponent.preCompletionWrites.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — internal ledger of X.component (parent->child writes made before component completion)",
+  "signals": []
+ },
+ {
+  "file": "webComponent.rootMountBinding.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — internal predicate of X.component (does the host bind the whole state with `state: path`)",
+  "signals": []
+ },
+ {
+  "file": "webComponent.rowReused.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 1
+  },
+  "contract": "none — internal short-circuit: row-reuse rewiring scan skipped when the state has no mounts",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "webComponent.stateElementByWebComponent.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none — internal WeakMap ledger component -> state element per stateName",
+  "signals": []
+ },
+ {
+  "file": "addressLedgerKeyGuard.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 14
+  },
+  "contract": "none — source-scan guard (helpers/sourceScan) forbidding module-lifetime ledgers keyed by tree-agnostic IStateAddress/ILoopContext in src; the user contract it indirectly protects (two <wcs-state> trees with the same path shape never share ledger entries) should be re-expressed as a BB cross-tree test",
+  "signals": [
+   "workaround",
+   "source-scan: permanent guard adopted after address-unification plan A was closed (2026-09-20)"
+  ]
+ },
+ {
+  "file": "applyChangeToAttribute.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 6
+  },
+  "contract": "attr binding skips the DOM write when the stringified value equals the current attribute (1≡'1', true≡'true', 0≡'0') and writes String(value) when it differs",
+  "signals": []
+ },
+ {
+  "file": "applyChangeToCheckbox.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 6
+  },
+  "contract": "checkbox bound to an array: checked iff the (input-filtered) checkbox value is included; non-array / null / empty array → unchecked",
+  "signals": []
+ },
+ {
+  "file": "applyChangeToCommand.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "X.cmdtoken": 14
+  },
+  "contract": "`command.<m>:` fail-fast validation (value must be a CommandToken; target must be a defined wc-bindable element whose wcBindable.commands lists the method and the method is a function), subscribe/emit passes args, same token not re-subscribed, token swap unsubscribes old, failed re-validation keeps old subscription, auto-unsubscribe once element disconnected",
+  "signals": []
+ },
+ {
+  "file": "binding.bindingSetPeek.test.ts",
+  "tests": 9,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 9
+  },
+  "contract": "none — single-value→Set promotion ledger of bindings by absolute address (peek/remove never allocate entries)",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "binding.explicitProperty.test.ts",
+  "tests": 16,
+  "portability": "WB",
+  "adapter": "12 tests call internal parseBindTextsForElement and assert parsed binding objects; 4 tests are DOM-driven (bootstrapState + getStateElement + addEventListener spy) and would port as GB",
+  "tags": {
+   "C.grammar": 12,
+   "C.bind": 3,
+   "C.event": 1
+  },
+  "contract": "explicit property form `.name:` binds on*-named members as properties (no listener, also in for rows and via spread), bare `online:` stays an event binding; `.`/`..x`/`.x.`/namespace words (.class/.attr/.style/.command/.eventToken/.state) are rejected with [wcs/binding-syntax]",
+  "signals": [
+   "B-item:B5",
+   "B-item:B14"
+  ]
+ },
+ {
+  "file": "binding.filterKey.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "adapter": "8 tests assert internal planFilters/filterArgsKey/filterListKey outputs; 2 DOM tests (radio / two-way handler sharing) are GB (bootstrapState + getStateElement)",
+  "tags": {
+   "C.filter": 8,
+   "C.bind": 2
+  },
+  "contract": "filters differing only in literal type (defaults(0) vs defaults('0')) or only in raw text are distinct: typed literals survive planning, and two radio / two-way bindings that differ only there never share an input handler",
+  "signals": [
+   "B-item:B9",
+   "B-item:B3"
+  ]
+ },
+ {
+  "file": "binding.getAbsoluteStateAddressByBinding.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none — per-binding absolute-address cache, its clearing, and errors for detached nodes / unknown state element",
+  "signals": []
+ },
+ {
+  "file": "binding.getBindingInfosByAbsoluteStateAddress.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — add/remove/clear of the bindings-by-absolute-address ledger",
+  "signals": []
+ },
+ {
+  "file": "binding.getStateAddressByBindingInfo.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none — binding→state-address cache; wildcard binding without loop context throws",
+  "signals": []
+ },
+ {
+  "file": "binding.patternLedger.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 5,
+   "X.devtools": 1
+  },
+  "contract": "none — pattern-index binding ledger (Set promotion, defensive removes, peek precedence); devtools binding-added/removed events carry interned addresses",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "cache.cacheEntryByAbsoluteStateAddress.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 5
+  },
+  "contract": "none — getter cache entry storage and dirty flag keyed by absolute address",
+  "signals": []
+ },
+ {
+  "file": "components.State.test.ts",
+  "tests": 54,
+  "portability": "WB",
+  "adapter": "vi.mock of stateLoader/*, proxy/StateHandler, webComponent/bindWebComponent, initializeBindingPromiseByNode; asserts private members (getterPaths, setterPaths, listPaths, setBindingInfo, addStaticDependency, nextVersion, boundComponent)",
+  "tags": {
+   "C.init": 21,
+   "I.internal": 10,
+   "X.component": 17,
+   "C.lifecycle": 2,
+   "C.mount": 2,
+   "X.cmdtoken": 1,
+   "X.evttoken": 1
+  },
+  "contract": "<wcs-state> source precedence (state attr / src .json|.js / json attr / inner script / setInitialState), bad src extension and load failures reject connectedCallbackPromise (#257), connectedCallback idempotent, setInitialState before/after init, missing-setInitialState timeout warning, $connected/$disconnectedCallback, bind-component misconfiguration errors, v2 removals (name=, plain Light DOM bind-component) fail fast, post-init mount= change warns",
+  "signals": [
+   "defect:#257",
+   "compat",
+   "deprecate?:tests 9, 37, 50-52 only pin v1→v2 migration fail-fasts (name= attribute removed in v2, plain Light DOM bind-component retired); the package is at 3.3.0"
+  ]
+ },
+ {
+  "file": "components.getCustomElement.test.ts",
+  "tests": 12,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 7,
+   "I.internal": 5
+  },
+  "contract": "custom-element detection used by wc-bindable/two-way/spread/command paths: hyphenated tag or hyphenated is= (customized built-in) counts, tag name wins over is=, non-elements/plain tags → null; 5 tests pin the lookup cache",
+  "signals": []
+ },
+ {
+  "file": "contract.contractAnalyzer.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "adapter": "9 tests call non-exported analyzeManifestContract; 5 use public analyzeContract but toggle via setConfig and read internal platform/devtoolsSink",
+  "tags": {
+   "T.tooling": 14
+  },
+  "contract": "opt-in analyzeContract(): manifest sidecar vs live wcBindable drift (component-not-loaded, missing-member, event-mismatch, unsupported-extension), tolerant of broken manifests/declarations, emits to devtools sink; frozen empty result and zero work when disabled",
+  "signals": [
+   "flag:enableContractAnalyzer"
+  ]
+ },
+ {
+  "file": "core.addressHooks.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "X.split": 3,
+   "C.mount": 2,
+   "X.recursion": 1,
+   "X.component": 1,
+   "X.dcc": 1
+  },
+  "contract": "none directly — feature hook registry: an undeclared-but-required feature raises [wcs/feature-not-installed] by name, installs are idempotent, hooks stay attached and pass through for states without the declaration (recursion write hook, scopes readMissing, volume index/relative delivery), $postUpdate reaches the DCC written hook. Shows volumes (C.mount) and component scopes share the 'scopes' feature",
+  "signals": []
+ },
+ {
+  "file": "core.componentApplyHooks.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "X.split": 4
+  },
+  "contract": "without the bind-component feature installed, applying to a custom element is a plain property write (no injection-key ledger lookups)",
+  "signals": []
+ },
+ {
+  "file": "core.features.test.ts",
+  "tests": 12,
+  "portability": "WB",
+  "tags": {
+   "X.split": 12
+  },
+  "contract": "installFeatures runs descriptors in order; feature-not-installed messages name both the internal feature and the entry to import (watch/scan/streams→temporal, recursion, scopes/dcc→scopes, ssr); stale names stream/bindComponent absent",
+  "signals": []
+ },
+ {
+  "file": "core.filterRegistry.test.ts",
+  "tests": 18,
+  "portability": "WB",
+  "tags": {
+   "C.filter": 13,
+   "X.split": 5
+  },
+  "contract": "filter registry: engine-inserted `not` answered by core with arity check; formatting filters missing without the formats entry fail at binding-plan time (not parse) with did-you-mean + entry guidance; resolved closures keyed by raw text AND typed literals; alias and canonical name share one closure and stale aliases are cleaned; Object.prototype names are never filters",
+  "signals": [
+   "B-item:B3",
+   "B-item:B9",
+   "B-item:B12"
+  ]
+ },
+ {
+  "file": "core.lifecycleHooks.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "X.split": 6
+  },
+  "contract": "connecting a <wcs-state> inside a DCC host / with mount= / with bind-component while dcc or scopes is not installed fails by name and lands as an init failure (a volume lands without dragging the root); hooks consulted by order, re-registration replaces. Evidence that mount= (C.mount) is gated by the same 'scopes' feature as bind-component",
+  "signals": []
+ },
+ {
+  "file": "core.ssrHooks.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "X.split": 3
+  },
+  "contract": "without the ssr feature <wcs-ssr> is not defined and enable-ssr states fail by name; states without enable-ssr never consult the receptacle",
+  "signals": []
+ },
+ {
+  "file": "errorGuidance.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "X.diagnostics": 7,
+   "X.dcc": 2,
+   "X.watch": 1
+  },
+  "contract": "error message contract: did-you-mean (edit distance ≤2, case-folded, first wins, same rule as lint) for unknown filters, [wcs/template-syntax] with correct form for lone structural bindings, DCC suggestions from same declaration kind (no $ names), lint hints only on watch shapes lint detects",
+  "signals": []
+ },
+ {
+  "file": "integration.forNestedStructuralOrder.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "bootstrapState (public export) + getStateElement(root) → createState writer; replaceable by root.querySelector('wcs-state').createState",
+  "tags": {
+   "C.list": 4,
+   "C.if": 1
+  },
+  "contract": "for rows whose top level ends in a structural anchor stay in correct DOM order under sequential append, reorder, delete/prepend mixed with if toggles, and nested for without wrapper elements",
+  "signals": []
+ },
+ {
+  "file": "integration.getAllContext.test.ts",
+  "tests": 6,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "C.state": 6
+  },
+  "contract": "$getAll with indexes omitted defaults to the current loop context (truncated to the shared prefix), explicit [] expands all, zero-shared-prefix context with indexes throws, top-level omission expands all",
+  "signals": []
+ },
+ {
+  "file": "integration.hydrationBlockBindings.test.ts",
+  "tests": 3,
+  "portability": "GB",
+  "adapter": "bootstrapState + internal ssr/buildSsrDocument to produce server markup (needs a public SSR renderer such as @wcstack/server renderToString)",
+  "tags": {
+   "X.ssr": 3
+  },
+  "contract": "after hydration, getter bindings in for rows and if blocks follow dependency writes without rewriting server text; inner rows of nested for with insufficient depth are skipped silently (known limitation)",
+  "signals": [
+   "defect:#258",
+   "workaround"
+  ]
+ },
+ {
+  "file": "integration.ifElseTruthiness.test.ts",
+  "tests": 9,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "C.if": 9
+  },
+  "contract": "if/else use JavaScript truthiness for non-boolean conditions (0, '', undefined, null, false → else; 1, non-empty string, true → if) and switch when rewritten to a falsy non-boolean",
+  "signals": []
+ },
+ {
+  "file": "integration.ifRemountOrder.test.ts",
+  "tests": 3,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "C.if": 3
+  },
+  "contract": "re-applying if/else content (dependencies change while the condition holds, repeated toggles) keeps top-level node order and mounts/unmounts correctly",
+  "signals": []
+ },
+ {
+  "file": "integration.ifRemountRowBindings.test.ts",
+  "tests": 4,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "C.if": 2,
+   "C.list": 2
+  },
+  "contract": "for rows inside an if hidden and re-shown keep identity, show values written while hidden, keep receiving row updates and unbound DOM state (also nested rows)",
+  "signals": []
+ },
+ {
+  "file": "integration.initFailureDiagnostics.test.ts",
+  "tests": 29,
+  "portability": "GB",
+  "adapter": "bootstrapState + State type; documented element API (connectedCallbackPromise, initializePromise, initialized, setInitialState, getBindingsReady); one peek at private __state (zombie second root)",
+  "tags": {
+   "C.init": 15,
+   "C.mount": 3,
+   "X.component": 2,
+   "X.dcc": 1,
+   "X.ssr": 1,
+   "X.recursion": 1,
+   "X.cmdtoken": 1,
+   "X.evttoken": 2,
+   "X.stream": 1,
+   "X.listkeys": 1,
+   "X.watch": 1
+  },
+  "contract": "root init failures (invalid $recursion/$commandTokens/$eventTokens/$on/$streams/$listKeys/$watch declarations, broken json, SSR merge, second root, bind-component/DCC setup) reject connectedCallbackPromise with the original error + exactly one console.error, getBindingsReady rejects, setInitialState on a failed element throws, co-located pending volumes land; detach during load is an interruption (no diagnosis), healthy DOM moves/row pooling are never refused",
+  "signals": [
+   "defect:#257",
+   "defect:#265",
+   "compat"
+  ]
+ },
+ {
+  "file": "integration.initialAuthority.test.ts",
+  "tests": 2,
+  "portability": "GB",
+  "adapter": "bootstrapState + State type; custom element with static wcBindable",
+  "tags": {
+   "X.wcbindable": 2
+  },
+  "contract": "#init=element governs only the initial sync: afterwards state→element still flows for a two-way member; an output-only member never receives state→element",
+  "signals": []
+ },
+ {
+  "file": "integration.keyedDerived.test.ts",
+  "tests": 13,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement; tests 11-13 count keyed-subscription ledger rows via devtools/keyedSubscriptions.collectKeyedSubscriptions (needs a devtools/inspection hook on the new engine)",
+  "tags": {
+   "C.eq": 11,
+   "X.component": 2
+  },
+  "contract": "$eq/$eqIndex keyed subscriptions propagate to derived getters (incl. $postUpdate in-place mutation, list-diff-driven moves/rekeys, keyed list getters, mounted-component exported getters), re-evaluate only the two swapped rows, and retire with parent rows (ledger does not grow)",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "integration.listKeys.test.ts",
+  "tests": 20,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "X.listkeys": 17,
+   "C.list": 3
+  },
+  "contract": "$listKeys: whole-list replacement updates key-matched rows in place (row DOM, unbound state, focus kept), mixed in-place+structural changes not dropped, no-op refresh reapplies nothing, added/removed fields, composite key fn, declared nested paths, unrendered lists, hidden-then-shown; duplicate/missing keys and non-plain rows throw. Without $listKeys rows are matched by reference",
+  "signals": [
+   "workaround",
+   "pins-defect: Phase 0 tests 1-3 freeze the undeclared behaviour as an invariant, including test 3 'mixing in-place mutation and structural change in one assignment drops the update' (list-key design §7.0 hole)"
+  ]
+ },
+ {
+  "file": "integration.listLedgerParentKey.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "adapter": "4 of 6 tests assert the internal list-index ledger via getListIndexesByList(stateEl.__state.items); tests 2 and 6 assert DOM node identity and would port as GB",
+  "tags": {
+   "X.ssr": 2,
+   "X.listkeys": 2,
+   "I.internal": 1,
+   "X.component": 1
+  },
+  "contract": "mostly internal: rows minted by hydration or by $listKeys join the right ledger (parent null or parent row); observable: hydrated rows are reused for updates, keyed child list under bind-component keeps row DOM; test 5 pins a pre-#256 limitation ($resolve into a child scope inside a hydrated host for throws 'ListIndexes not found')",
+  "signals": [
+   "defect:#256",
+   "workaround"
+  ]
+ },
+ {
+  "file": "integration.listReplacementRaces.test.ts",
+  "tests": 6,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "C.list": 3,
+   "C.state": 3
+  },
+  "contract": "several list replacements in one microtask: the last wins and $1 bindings follow final positions (also when returning to the original array); $resolve replacing a nested list from outside the loop does not throw and $2 resolves in the new rows",
+  "signals": []
+ },
+ {
+  "file": "integration.mountExport.test.ts",
+  "tests": 23,
+  "portability": "GB",
+  "adapter": "bootstrapState + State type (createState, connectedCallbackPromise, State.getBindingsReady); one getterPaths peek",
+  "tags": {
+   "X.component": 17,
+   "C.eq": 3,
+   "C.state": 1,
+   "X.diagnostics": 1,
+   "X.devtools": 1
+  },
+  "contract": "bind-component exported getters (D10): parent reads of keys absent from the tree are answered by the mounted component's getter (tree wins with one warn, duplicate exporters raise, private keys/methods hidden, getter-only write raises, setter normalizes), $eq/$eqPath/$eqIndex resolve scope-relative, row mounts and self-recursive component trees converge with re-evaluation limited to the ancestor path, deferred [wcs/binding-path-missing], devtools overlays() lists exports",
+  "signals": [
+   "perf",
+   "fix: test 11 pins the D10 blocking defect fix (write through an exported row setter must not pin the parent-side cache)"
+  ]
+ },
+ {
+  "file": "integration.mountOverlay.test.ts",
+  "tests": 19,
+  "portability": "WB",
+  "adapter": "hand-assembles mount records via internal buildMountRecord / initializeMountScope / createPublicMountState / getBindingsByNode instead of connecting a real bind-component",
+  "tags": {
+   "X.component": 16,
+   "C.lifecycle": 2,
+   "X.devtools": 1
+  },
+  "contract": "bind-component overlay/chroot: private keys per instance (move with swapped rows), getters/methods run with chroot this and track tree+private deps, $n and $getAll/$resolve/$setAll translated to component scope, symbol/then/unknown keys safe, $watch/$commandTokens/$eventTokens declarations ignored with one warn, $connected/$disconnectedCallback on chroot, async reject isolated, getter-only write throws",
+  "signals": [
+   "B-item:B11",
+   "workaround: stale probe harness — header says 'not yet wired into State.ts' but webComponent/bindComponentLifecycle now calls buildMountRecord/initializeMountScope; re-express through a real bind-component"
+  ]
+ },
+ {
+  "file": "integration.mountScope.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "adapter": "hand-assembles mount records via internal buildMountRecord / initializeMountScope / getBindingsByNode",
+  "tags": {
+   "X.component": 5
+  },
+  "contract": "whole-object mount `state: path` / row mount `state: .`: translated bindings read the parent tree and receive partial/whole writes, inner for iterates parent lists across the boundary hop, one mount per scope root, setInitialState on a parent holding mounts throws, $n carry for if inside a partial-mount for",
+  "signals": [
+   "workaround: same stale probe harness as integration.mountOverlay"
+  ]
+ },
+ {
+  "file": "integration.occurrenceWrite.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement; custom element declaring wcBindable semantics:'event'",
+  "tags": {
+   "X.wcbindable": 3,
+   "C.state": 2
+  },
+  "contract": "wcBindable properties declaring semantics:'event' bypass the same-value guard for that single element→state write (identical payload re-fires still update, also nested paths); undeclared properties keep the guard; the bypass does not leak to same-value sets inside $updatedCallback",
+  "signals": [
+   "flag:sameValueGuard"
+  ]
+ },
+ {
+  "file": "integration.pathDiagnostics.test.ts",
+  "tests": 7,
+  "portability": "GB",
+  "adapter": "bootstrapState + State type; console.warn spy",
+  "tags": {
+   "X.diagnostics": 6,
+   "X.watch": 1
+  },
+  "contract": "binding a nonexistent (nested) path warns with the expanded absolute path, $watch key typos use the watch code; silent for existing paths, empty-array row fields, null-initialized parents and dotted-path getters",
+  "signals": []
+ },
+ {
+  "file": "integration.rankArity.test.ts",
+  "tests": 8,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "C.state": 7,
+   "C.getter": 1
+  },
+  "contract": "$resolve needs exactly one index per wildcard (excess used to be silently ignored), $getAll rejects excess but accepts fewer (prefix expansion); wildcard rank / $N beyond loop depth fails naming the required depth; getter cycles are reported by name",
+  "signals": []
+ },
+ {
+  "file": "integration.recursionGetAll.test.ts",
+  "tests": 79,
+  "portability": "GB",
+  "adapter": "bootstrapState + State.createState via helpers/recursionTestUtils",
+  "tags": {
+   "X.recursion": 79
+  },
+  "contract": "union form $getAll('nodes.**.x', []): depth-first pre-order, sibling ascending; distinct from the bound form; tracks structural changes with and without for rendering; registers concrete touched paths as getter deps; rejects shared/cyclic child arrays ([wcs/recursion-shared-list] / [wcs/recursion-cycle]) and malformed forms ([wcs/recursion-anchor] / [wcs/recursion-getall-form]); readable from handlers inside/outside for",
+  "signals": [
+   "workaround: test 22 pins that a deep $resolve on a cold state throws because the list-index ledger does not exist yet",
+   "tests 12-13 pin the documented double-counting footgun of union form in aggregate getters"
+  ]
+ },
+ {
+  "file": "mustache.convertMustacheToComments.test.ts",
+  "tests": 15,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 15
+  },
+  "contract": "{{ path|filters }} in text nodes (incl. nested and SVG-namespace templates, excluding script/style) becomes comment bindings only when enableMustache; whitespace trimmed; `{{ x@y }}` is a parse error with a v2 migration hint",
+  "signals": [
+   "flag:enableMustache",
+   "compat"
+  ]
+ },
+ {
+  "file": "structural.activateContent.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 7
+  },
+  "contract": "none — content activation registers bindings and applies them (session-rejected bindings skipped); deactivation unregisters",
+  "signals": []
+ },
+ {
+  "file": "structural.collectStructuralFragments.test.ts",
+  "tests": 22,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 7,
+   "C.if": 6,
+   "C.list": 1,
+   "C.grammar": 7,
+   "X.component": 1
+  },
+  "contract": "for/if/elseif/else templates become comment anchors with chained else; else/elseif without a preceding if throw; whitespace-only text stripped from for/if templates; templates inside SVG handled; dot shorthand expanded with inherited forPath; if $n carry inside a partial mount",
+  "signals": []
+ },
+ {
+  "file": "structural.contentByNode.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 7
+  },
+  "contract": "none — node→content ledger",
+  "signals": []
+ },
+ {
+  "file": "structural.createContent.test.ts",
+  "tests": 21,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 15,
+   "C.list": 5,
+   "C.if": 1
+  },
+  "contract": "none directly — content fragment mount/unmount/appendTo; range mode with a terminal marker moves nested structural nodes together (mechanism behind integration.forNestedStructuralOrder); unmount cascades to if/elseif/else children",
+  "signals": []
+ },
+ {
+  "file": "structural.createContent.unmountBranches.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.if": 2,
+   "I.internal": 3
+  },
+  "contract": "none directly — unmount cascades to if/elseif/else child contents and clears state-address caches",
+  "signals": []
+ },
+ {
+  "file": "structural.createNotFilter.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "C.if": 2,
+   "X.split": 1
+  },
+  "contract": "internal `not` filter used for else branches resolves in core without the formats entry and is cached",
+  "signals": []
+ },
+ {
+  "file": "structural.expandShorthandPaths.test.ts",
+  "tests": 32,
+  "portability": "WB",
+  "adapter": "31 tests call internal expandShorthandPaths/expandShorthandInBindAttribute; test 32 is DOM-driven",
+  "tags": {
+   "C.grammar": 32
+  },
+  "contract": "dot shorthand `.name` / `.` inside for templates expands to forPath.*.name in comment and data-wcs bindings; quote-aware so `:` `;` `|` inside quoted filter args are not delimiters (for with defaults('00:00') renders rows); `@` paths hit the v2 migration parse error",
+  "signals": [
+   "B-item:B1",
+   "compat"
+  ]
+ },
+ {
+  "file": "structural.fragmentInfoByUUID.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — fragment info registry by UUID",
+  "signals": []
+ },
+ {
+  "file": "structural.getFragmentNodeInfos.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 1
+  },
+  "contract": "none — collects subscribed nodes in a fragment",
+  "signals": []
+ },
+ {
+  "file": "structural.nodePath.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — child-index node paths",
+  "signals": []
+ },
+ {
+  "file": "structural.optimizeFragment.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 7
+  },
+  "contract": "none directly — strips whitespace-only text nodes from template fragments (the observable effect is covered by collectStructuralFragments tests 13-14)",
+  "signals": []
+ },
+ {
+  "file": "structural.planRender.test.ts",
+  "tests": 8,
+  "portability": "GB",
+  "adapter": "bootstrapState + State type (setInitialState/createState, State.getBindingsReady); peeks getterPaths",
+  "tags": {
+   "C.list": 5,
+   "X.recursion": 1,
+   "C.lifecycle": 1,
+   "C.init": 1
+  },
+  "contract": "plan-based initial row render: plain leaves from raw row values, getters via getter, nested lists per row, missing intermediate object renders empty, no double apply when row creation and a row write share a drain, state re-set renders the new generation",
+  "signals": [
+   "perf",
+   "workaround: tests 6 and 8 pin the plan optimization's fallback conditions (`**` states and $updatedCallback states take the classic path)"
+  ]
+ },
+ {
+  "file": "structural.rowPlan.test.ts",
+  "tests": 21,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 21
+  },
+  "contract": "none — row-plan eligibility (only text/prop/event slots; excludes structural, radio/checkbox/spread, custom elements, command/eventToken, two-way props, auto authority) and plan-path clone/attach failure handling",
+  "signals": [
+   "perf",
+   "flag:enableDirectionalInitialSync"
+  ]
+ },
+ {
+  "file": "token.Token.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "X.cmdtoken": 4,
+   "X.evttoken": 3
+  },
+  "contract": "Token pub/sub primitive (README Token API, shared by command and event tokens): name/size, subscribe order, emit returns results array, unsubscribe by returned fn or method; a throwing subscriber is logged via console.error without stopping others or throwing from emit",
+  "signals": []
+ },
+ {
+  "file": "updater.enqueueListener.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 1
+  },
+  "contract": "none — enqueue-listener seam (consumed by $watch and $scan runtimes)",
+  "signals": []
+ },
+ {
+  "file": "updater.updater.coverage.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 1
+  },
+  "contract": "none — coverage filler for an empty-bindings branch",
+  "signals": [
+   "deprecate?:coverage-only test, no behaviour of its own (duplicated by updater.updater test 4)"
+  ]
+ },
+ {
+  "file": "updater.updater.test.ts",
+  "tests": 16,
+  "portability": "WB",
+  "tags": {
+   "C.update": 8,
+   "I.internal": 6,
+   "X.elemwrite": 2
+  },
+  "contract": "writes enqueued in one frame drain once per microtask across roots, disconnected bindings skipped; drain-end UpdateBatchListener seam (consumed by $streams/$watch/devtools) gets deduped write addresses, fires even if apply throws; render-only addresses are applied but excluded from the listener batch (#4)",
+  "signals": [
+   "defect:#4"
+  ]
+ },
+ {
+  "file": "watch.bindComponent.test.ts",
+  "tests": 3,
+  "portability": "GB",
+  "adapter": "bootstrapState + State type; watchRegistry.getWatchEntries and stateEl.watchPaths peeks",
+  "tags": {
+   "X.watch": 2,
+   "X.component": 1
+  },
+  "contract": "$watch declarations are not executed in mapped bind-component child scopes; in plain child scopes handler indexes are scope-relative whichever parent row hosts the component",
+  "signals": []
+ },
+ {
+  "file": "watch.computed.test.ts",
+  "tests": 11,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement; watch/computedSnapshots __private__ ledger peek (3 tests)",
+  "tags": {
+   "X.watch": 11
+  },
+  "contract": "$watch on getters: unbound non-wildcard getters are evaluated eagerly and fire on dependency writes even when the value is unchanged (cur===prev), prev kept across batches, getter throws isolated and reported, bound getters fire once, state re-set resets prev; wildcard getters fire only when bound (prev undefined)",
+  "signals": [
+   "workaround: test 5 pins that wildcard getters are not eager and need a DOM binding to fire"
+  ]
+ },
+ {
+  "file": "watch.example.test.ts",
+  "tests": 4,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "X.watch": 3,
+   "X.listkeys": 1
+  },
+  "contract": "examples/watch claims: unbound getter evaluated at connect, banner changes only when crossing the threshold, row watch receives (cur, prev, index) and can $resolve, $listKeys whole-list replacement fires only changed rows",
+  "signals": []
+ },
+ {
+  "file": "watch.lifecycle.test.ts",
+  "tests": 9,
+  "portability": "GB",
+  "adapter": "bootstrapState; watchRegistry peeks (getActiveWatchStateElements/getWatchEntries) and stateEl.watchPaths",
+  "tags": {
+   "X.watch": 8,
+   "X.ssr": 1
+  },
+  "contract": "$watch activates on connect (writes inside $connectedCallback do not fire), zero cost when undeclared or empty, state re-set replaces/removes declarations, disconnect stops firing and reconnect resumes, enable-ssr client side still fires",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "watch.prevValues.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "X.watch": 5
+  },
+  "contract": "prev-value ledger: first write in a batch wins, undefined recorded as a value, per-address, cleared between batches",
+  "signals": []
+ },
+ {
+  "file": "watch.processWatchDeclaration.test.ts",
+  "tests": 15,
+  "portability": "WB",
+  "tags": {
+   "X.watch": 15
+  },
+  "contract": "$watch declaration validation (object, function handlers, non-empty non-$ non-@ non-prototype paths, no empty segments, wildcard depth limit); entries keep declaration order, paths registered in the dependency graph, re-declaration replaces the registry",
+  "signals": []
+ },
+ {
+  "file": "watch.rowLanding.test.ts",
+  "tests": 9,
+  "portability": "GB",
+  "adapter": "bootstrapState + makeConnectHost; vi.spyOn on internal watch/rowLanding.selectLandedRows (test 9)",
+  "tags": {
+   "X.watch": 7,
+   "X.elemwrite": 2
+  },
+  "contract": "row watches fire only on rows that landed: rows removed/shortened in the same job are neither read nor fired, replacements fire once per new row, list.* element writes fire once with the current value, a throwing position read is reported once without blocking other watches",
+  "signals": [
+   "defect:#274"
+  ]
+ },
+ {
+  "file": "watch.streamCommit.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "bootstrapState + makeConnectHost + fake stream sources (helpers)",
+  "tags": {
+   "X.watch": 3,
+   "X.stream": 1,
+   "C.lifecycle": 1
+  },
+  "contract": "examples/state-intersect-scroll: $watch on stream status commits exactly once per run on done even with zero bindings, connect-time evaluation does not fire, same-value page reassign neither restarts nor commits; contrast: $updatedCallback never fires without bindings",
+  "signals": [
+   "B-item:B12"
+  ]
+ },
+ {
+  "file": "watch.watchRegistry.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "X.watch": 6
+  },
+  "contract": "none directly — watch registry: deactivate keeps entries for reconnect, clear drops them",
+  "signals": []
+ },
+ {
+  "file": "watch.watchRuntime.test.ts",
+  "tests": 23,
+  "portability": "GB",
+  "adapter": "bootstrapState + makeConnectHost; internal setDevtoolsSink (6 tests); tests 21-23 call __private__ compareHits (WB)",
+  "tags": {
+   "X.watch": 17,
+   "X.devtools": 6
+  },
+  "contract": "$watch fires headless with cur/prev, coalesces per batch (prev = batch start), skips same-value primitive writes, prev undefined for $postUpdate/reference writes, no cross-root firing, declaration order, $updatedCallback before $watch, throw isolation, chain depth limit (MAX_WATCH_CHAIN_DEPTH), wildcard rows ascending; devtools watch-fired/watch-error/watch-chain-limit only when a sink is attached",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "watch.wildcard.test.ts",
+  "tests": 8,
+  "portability": "GB",
+  "adapter": "bootstrapState + getStateElement → createState",
+  "tags": {
+   "X.watch": 5,
+   "X.listkeys": 3
+  },
+  "contract": "multi-level wildcard watches pass indexes in lexicographic order; a parent-path watch is not fired by row-field writes; with $listKeys only changed rows fire with scalar prev and row watches fire without a for binding; the list watch itself fires on replacement",
+  "signals": [
+   "workaround: tests 5-6 pin that without $listKeys row watches fire for unchanged rows, and without a for binding or $listKeys they do not fire at all (the list-index ledger is created by rendering)"
+  ]
+ },
+ {
+  "file": "ResolvedAddress.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none — internal mechanism (ResolvedAddress interning/caching and wildcard classification none/context/all/partial of API path strings)",
+  "signals": []
+ },
+ {
+  "file": "addressImportBoundary.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 8
+  },
+  "contract": "none — source-layout guard: TreePath/AbsoluteStateAddress intern entry points may only be imported from src/address/ (plus the import scanner's own self-tests)",
+  "signals": [
+   "workaround"
+  ]
+ },
+ {
+  "file": "applyChangeToFor.indexBindings.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "C.list": 3
+  },
+  "contract": "after a reorder only index-dependent bindings ($1/$index) are re-applied; lists without $1 skip re-application (optimisation; user-visible part = index text stays correct)",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "applyChangeToFor.nested.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.list": 5
+  },
+  "contract": "nested for (wrapped/unwrapped, batch-connected, outer append, single outer row) places inner rows at the correct DOM position",
+  "signals": []
+ },
+ {
+  "file": "applyChangeToFor.poolCap.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.list": 5
+  },
+  "contract": "row-content pool is capped (internal MAX_POOLED_CONTENTS=1000, test setter); excess released, re-add reuses only pooled nodes, cap 0 disables pooling",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "applyChangeToFor.test.ts",
+  "tests": 32,
+  "portability": "WB",
+  "tags": {
+   "C.list": 25,
+   "I.internal": 7
+  },
+  "contract": "for renders one row per element, non-array => empty list, reuses pooled rows, keeps existing rows on append; 13 tests pin fast paths (batch insert when all-new & connected, textContent bulk clear when the list is the only child); 7 pin internal ledger errors/__test_ hooks",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "applyChangeToIf.test.ts",
+  "tests": 13,
+  "portability": "WB",
+  "tags": {
+   "C.if": 8,
+   "X.diagnostics": 3,
+   "X.ssr": 2
+  },
+  "contract": "if mounts on truthy/unmounts on falsy, re-applies bindings on remount, remounts when connection state changed even if value unchanged; debug=false emits no logs; SSR placeholder fallbacks",
+  "signals": [
+   "flag:debug"
+  ]
+ },
+ {
+  "file": "applyChangeToText.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 6,
+   "X.ssr": 1
+  },
+  "contract": "text binding writes String(value) only when changed; null and undefined render as empty string",
+  "signals": [
+   "B-item:B8",
+   "perf"
+  ]
+ },
+ {
+  "file": "command.CommandToken.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "X.cmdtoken": 7
+  },
+  "contract": "Token pub/sub primitive (name/size/subscribe/unsubscribe/emit returning subscriber results array) as documented in README Token API",
+  "signals": []
+ },
+ {
+  "file": "command.commandNamespace.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "X.cmdtoken": 4,
+   "I.internal": 2
+  },
+  "contract": "$command namespace is one stable proxy per state element; symbol access/in are inert (safe to await/inspect); clear helpers are internal",
+  "signals": []
+ },
+ {
+  "file": "command.commandTokenRegistry.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "X.cmdtoken": 4
+  },
+  "contract": "command tokens are memoized per (state element, name) and survive disconnect",
+  "signals": [
+   "defect:#273"
+  ]
+ },
+ {
+  "file": "command.processCommandTokensDeclaration.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "X.cmdtoken": 8
+  },
+  "contract": "$commandTokens validation (array of non-empty unique strings, not '$command'); names go to the namespace, not injected into state",
+  "signals": []
+ },
+ {
+  "file": "dcc.State.test.ts",
+  "tests": 9,
+  "portability": "WB",
+  "tags": {
+   "X.dcc": 8,
+   "X.component": 1
+  },
+  "contract": "<wcs-state> inside a ShadowRoot with data-wc-definition triggers DCC definition; src must be .js; bind-component inside a DCC definition is an error; readiness promises resolve",
+  "signals": []
+ },
+ {
+  "file": "dcc.dccPropertyFactories.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "X.dcc": 14
+  },
+  "contract": "DCC element accessors read/write the inner state (writes queued until initialised), methods return Promises, $-prefixed members are not exposed",
+  "signals": []
+ },
+ {
+  "file": "dcc.defineDCC.noRegistry.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "X.dcc": 2
+  },
+  "contract": "DCC shadow still builds when upgrade is unavailable; defining fails loudly when no target registry is resolvable",
+  "signals": []
+ },
+ {
+  "file": "dcc.defineDCC.test.ts",
+  "tests": 26,
+  "portability": "WB",
+  "tags": {
+   "X.dcc": 25,
+   "X.stream": 1
+  },
+  "contract": "defineDCC registers a custom element whose prototype exposes state accessors/methods, static wcBindable from $bindables/$commands, one shadow per instance across reconnects, stateElement getter",
+  "signals": []
+ },
+ {
+  "file": "dcc.dispatchBindableEvent.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "X.dcc": 7
+  },
+  "contract": "writes to a $bindables member (exact, sub-path, list element, $postUpdate) dispatch the bindable change event from the DCC host",
+  "signals": []
+ },
+ {
+  "file": "dcc.processDccDeclarations.test.ts",
+  "tests": 23,
+  "portability": "WB",
+  "tags": {
+   "X.dcc": 20,
+   "X.stream": 3
+  },
+  "contract": "$bindables/$commands declaration validation (shape, $-prefix, duplicates, existence, method vs value); $streams-backed bindables allowed; generated commands are async",
+  "signals": []
+ },
+ {
+  "file": "dcc.wcBindable.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "X.dcc": 6
+  },
+  "contract": "DCC wcBindable descriptor lists $bindables as both properties and inputs; bindable event map by property name",
+  "signals": []
+ },
+ {
+  "file": "indexBindingsByContent.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — internal WeakMap ledger content -> index bindings",
+  "signals": []
+ },
+ {
+  "file": "integration.recursionSetAll.test.ts",
+  "tests": 71,
+  "portability": "BB",
+  "tags": {
+   "X.recursion": 61,
+   "C.state": 6,
+   "C.list": 4
+  },
+  "contract": "$setAll('a.**.x', [], v) broadcasts to every depth in read order, rejects structural/readonly/malformed forms with named [wcs/recursion-*] codes before any write, rendered trees follow; plain $setAll (mapper/spread/prefix) unchanged",
+  "signals": [
+   "B-item:B6",
+   "workaround"
+  ]
+ },
+ {
+  "file": "integration.recursionShape.test.ts",
+  "tests": 9,
+  "portability": "BB",
+  "tags": {
+   "X.recursion": 9
+  },
+  "contract": "$recursion accepts immutable updates/reorders/shared empty arrays, diagnoses cycles and shared child lists, supports depth 128; cold union writes leave a usable diff baseline",
+  "signals": []
+ },
+ {
+  "file": "integration.resolveIndexesContract.test.ts",
+  "tests": 2,
+  "portability": "BB",
+  "tags": {
+   "C.state": 1,
+   "X.component": 1
+  },
+  "contract": "$resolve without indexes (or null) raises on root and volume chroots but is accepted on bind-component chroots (documented asymmetry)",
+  "signals": [
+   "B-item:B7",
+   "deprecate?:component-chroot leniency for omitted/null $resolve indexes — header says 3.x keeps it and a 4.0 alignment with root would flip these expectations"
+  ]
+ },
+ {
+  "file": "integration.sharedListRowRevival.test.ts",
+  "tests": 15,
+  "portability": "BB",
+  "tags": {
+   "C.list": 8,
+   "C.getter": 6,
+   "C.state": 1
+  },
+  "contract": "when two rows share one children array, removing/restoring rows keeps row getters, aggregates ($getAll/$setAll) and DOM consistent; owner returns by row-object identity",
+  "signals": [
+   "defect:#256",
+   "workaround"
+  ]
+ },
+ {
+  "file": "integration.spread.test.ts",
+  "tests": 7,
+  "portability": "GB",
+  "adapter": "toggle enableDirectionalInitialSync at runtime (setConfig from src) — or bootstrap a second page with that config",
+  "tags": {
+   "X.wcbindable": 4,
+   "C.bind": 3
+  },
+  "contract": "'...: path' spread wires all wcBindable properties/inputs, honours two-way events, expands per row incl. dot shorthand, does not write back undefined, explicit binding wins; directional mode skips output-only members",
+  "signals": [
+   "flag:enableDirectionalInitialSync"
+  ]
+ },
+ {
+  "file": "integration.spreadComposite.test.ts",
+  "tests": 2,
+  "portability": "BB",
+  "tags": {
+   "X.wcbindable": 2
+  },
+  "contract": "spread expands composite-shell synthesized properties and writes back via '@wc-bindable/composite:' event names",
+  "signals": []
+ },
+ {
+  "file": "integration.spreadDeferred.test.ts",
+  "tests": 2,
+  "portability": "BB",
+  "tags": {
+   "X.wcbindable": 2
+  },
+  "contract": "spread onto an undefined custom element waits for whenDefined; node removed meanwhile => no-op; invalid wcBindable on late definition => console.error",
+  "signals": []
+ },
+ {
+  "file": "integration.stateGenerationReset.test.ts",
+  "tests": 43,
+  "portability": "GB",
+  "adapter": "public setInitialState/createState + DOM for ~28 tests; ~15 tests peek internal ledgers (staticDependency edges, recursionRegistry.materializedPaths, stateListBaseline, lastListValueByAbsoluteStateAddress, scanRegistry, watchRegistry, _listPaths/_pathSet) and need re-expression",
+  "tags": {
+   "C.getter": 5,
+   "C.init": 2,
+   "X.recursion": 4,
+   "X.cmdtoken": 1,
+   "X.evttoken": 4,
+   "X.listkeys": 2,
+   "X.stream": 3,
+   "X.watch": 5,
+   "X.scan": 3,
+   "I.internal": 2,
+   "X.elemwrite": 1,
+   "C.list": 3,
+   "C.mount": 2,
+   "X.diagnostics": 6
+  },
+  "contract": "setInitialState re-set: getters re-evaluate in the new generation (no stale cache), list writes/$watch keep working, loaded volumes refuse re-set, vanished bound paths are diagnosed once per generation; also pins which declarations fail before vs after the generation advances",
+  "signals": [
+   "defect:#258",
+   "defect:#267",
+   "defect:#268",
+   "defect:#270",
+   "defect:#4",
+   "workaround"
+  ]
+ },
+ {
+  "file": "integration.stateResetReapply.test.ts",
+  "tests": 16,
+  "portability": "GB",
+  "adapter": "install a fake arbiter on the transition-runner global symbol (TRANSITION_RUNNER_KEY); test 16 calls internal collectReapplyPaths (WB)",
+  "tags": {
+   "C.list": 3,
+   "C.if": 2,
+   "C.bind": 1,
+   "C.getter": 1,
+   "C.init": 2,
+   "X.recursion": 2,
+   "C.lifecycle": 2,
+   "X.viewtransition": 1,
+   "X.ssr": 1,
+   "I.internal": 1
+  },
+  "contract": "setInitialState on a live element synchronously re-applies every established binding (rows, if, inputs, getters), is not a write (no $watch/$updatedCallback), reports vanished keys as apply failures via $errorCallback, defers while disconnected, goes through the arbiter",
+  "signals": [
+   "defect:#267"
+  ]
+ },
+ {
+  "file": "integration.tokenReconnect.test.ts",
+  "tests": 7,
+  "portability": "GB",
+  "adapter": "peek token identity/subscriber count by name (getOrCreateEventToken/getOrCreateCommandToken) — re-express by counting handler calls",
+  "tags": {
+   "X.evttoken": 4,
+   "X.cmdtoken": 3
+  },
+  "contract": "after a root <wcs-state> is detached and re-attached, $on handlers and command.<m>: subscriptions still fire exactly once; nothing is delivered while detached; re-set swaps handlers",
+  "signals": [
+   "defect:#273"
+  ]
+ },
+ {
+  "file": "integration.viewTransition.test.ts",
+  "tests": 11,
+  "portability": "GB",
+  "adapter": "fake arbiter on the transition-runner global symbol (public protocol) + internal drain-end listener hook (registerUpdateBatchListener) + __test_resetTransitionNaming + stateElementByName",
+  "tags": {
+   "X.viewtransition": 10,
+   "C.update": 1
+  },
+  "contract": "with an arbiter, drain DOM mutation is handed to run() and applied on mutate; no hand-off for unbound paths; naming='auto' names rows/if branches with limit+single warning; ordering $updatedCallback vs drain listeners; failures rethrown in a microtask",
+  "signals": []
+ },
+ {
+  "file": "integration.volumeInjection.test.ts",
+  "tests": 36,
+  "portability": "GB",
+  "adapter": "public element APIs for ~26 tests; ~10 call internal volume helpers directly (findMountEntry, translateVolumePath/relativeVolumePath, createVolumeChroot, readVolumeInjections, getParseBindTextResults) and need BB re-expression",
+  "tags": {
+   "C.mount": 29,
+   "X.watch": 1,
+   "C.lifecycle": 1,
+   "C.eq": 2,
+   "C.getter": 2,
+   "C.grammar": 1
+  },
+  "contract": "volume injection 'state.<key>: rootPath' on <wcs-state mount>: reads/writes/$ APIs translate to the root path, #ro is enforced, explicit injection beats own default, strict declaration validation [wcs/mount-path-invalid], $eq/$dependOn scoped to the volume",
+  "signals": [
+   "B-item:B14"
+  ]
+ },
+ {
+  "file": "integration.volumeInlineScript.test.ts",
+  "tests": 2,
+  "portability": "BB",
+  "tags": {
+   "C.mount": 1,
+   "C.init": 1
+  },
+  "contract": "a volume whose inline <script> is attached after connection still loads it; json= volume resolves synchronously",
+  "signals": []
+ },
+ {
+  "file": "integration.volumeMount.test.ts",
+  "tests": 42,
+  "portability": "GB",
+  "adapter": "public createState/setInitialState/connectedCallbackPromise for ~30 tests; ~12 'coverage' tests reach internals via dynamic import (volume.ts graft/reserve/drain, volumeLifecycle, volumeShared.findGraftedSlotUnder, watchRegistry) and private fields (_rootNode, _initialized, _initializeVolume, mergeVolumeListKeys)",
+  "tags": {
+   "C.mount": 22,
+   "C.lifecycle": 8,
+   "X.stream": 2,
+   "X.component": 1,
+   "X.watch": 4,
+   "X.listkeys": 1,
+   "I.internal": 2,
+   "X.cmdtoken": 1,
+   "C.init": 1
+  },
+  "contract": "<wcs-state mount=path> grafts its data/getters into the root tree regardless of load order, runs lifecycle callbacks in a chroot, rejects collisions/invalid mount paths/whole-parent writes, supports relative $watch/$listKeys/$updatedCallback, loudly rejects $streams and warns on tokens, isolates load failures",
+  "signals": [
+   "B-item:B11"
+  ]
+ },
+ {
+  "file": "parser.test.ts",
+  "tests": 16,
+  "portability": "BB",
+  "tags": {
+   "T.tooling": 10,
+   "C.grammar": 6
+  },
+  "contract": "public ./parser entry: parseBindTextsForElement/splitBindTexts/indexOfOutsideQuotes/parseBindTextForEmbeddedNode/getPathInfo/clearParserCaches shapes; quote-aware ';' splitting; @state is a v2 parse error; errors carry no position (D3)",
+  "signals": [
+   "B-item:B1"
+  ]
+ },
+ {
+  "file": "pathDiagnostics.test.ts",
+  "tests": 28,
+  "portability": "WB",
+  "tags": {
+   "X.diagnostics": 26,
+   "X.devtools": 1,
+   "X.watch": 1
+  },
+  "contract": "dev diagnostics for bound/declared paths that do not exist: exists/missing/unknown resolution, did-you-mean candidates, lint-aligned codes, reported once, forwarded to devtools sink",
+  "signals": []
+ },
+ {
+  "file": "platform.HTMLElementBase.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 1,
+   "T.tooling": 1
+  },
+  "contract": "the package can be imported in a headless (no HTMLElement) environment such as Node tooling",
+  "signals": []
+ },
+ {
+  "file": "platform.customElementRegistry.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 5,
+   "C.init": 3
+  },
+  "contract": "scoped custom-element registry support: node/owner registry preferred over global, null registry does not fall back, headless => null, upgrade only if available",
+  "signals": []
+ },
+ {
+  "file": "poc.asyncOnLoopContext.test.ts",
+  "tests": 9,
+  "portability": "GB",
+  "adapter": "one test wraps the event token's emit via getOrCreateEventToken; rest is DOM + public API",
+  "tags": {
+   "X.evttoken": 7,
+   "C.state": 2
+  },
+  "contract": "async $on handlers fired from a for row: $1/wildcard paths work before the first await and raise loudly after it; $resolve with explicit indexes and absolute paths work across await; rejections are reported",
+  "signals": [
+   "workaround"
+  ]
+ },
+ {
+  "file": "recursion.declaration.test.ts",
+  "tests": 34,
+  "portability": "WB",
+  "tags": {
+   "X.recursion": 34
+  },
+  "contract": "$recursion declaration validation (exactly one 'list.*' anchor -> 'sub.*' repeat path, no $, #, **, indexes, mid wildcards) with named errors; re-expressible via setInitialState throwing",
+  "signals": []
+ },
+ {
+  "file": "recursion.expand.test.ts",
+  "tests": 37,
+  "portability": "WB",
+  "tags": {
+   "X.recursion": 37
+  },
+  "contract": "mostly internal path helpers of $recursion (split/concrete/depth round-trip/listPathsUpTo); user-visible part is the 128-level depth limit -> [wcs/recursion-depth-exceeded]",
+  "signals": []
+ },
+ {
+  "file": "rootNodeByFragment.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — internal WeakMap fragment -> rootNode",
+  "signals": []
+ },
+ {
+  "file": "src.bootstrapState.test.ts",
+  "tests": 9,
+  "portability": "WB",
+  "tags": {
+   "C.init": 3,
+   "X.devtools": 1,
+   "X.i18n": 5
+  },
+  "contract": "bootstrapState registers components and applies config; <html lang> becomes the default locale unless config.locale is given; invalid BCP-47 warns and falls back",
+  "signals": []
+ },
+ {
+  "file": "src.config.define.test.ts",
+  "tests": 14,
+  "portability": "GB",
+  "adapter": "set config via bootstrapState(config) and read via public getConfig; define.ts constants are internal",
+  "tags": {
+   "C.init": 3,
+   "C.grammar": 7,
+   "X.i18n": 1,
+   "X.diagnostics": 1,
+   "C.state": 1,
+   "I.internal": 1
+  },
+  "contract": "config keys (tagNames, bindAttributeName, comment prefixes, locale, debug, enableMustache, sameValueGuard default true) are settable and partial updates leave others intact",
+  "signals": [
+   "flag:sameValueGuard",
+   "flag:enableMustache",
+   "flag:debug"
+  ]
+ },
+ {
+  "file": "src.exports.test.ts",
+  "tests": 1,
+  "portability": "BB",
+  "tags": {
+   "T.tooling": 1
+  },
+  "contract": "package entry exports bootstrapState",
+  "signals": []
+ },
+ {
+  "file": "src.getAllPropertyDescriptors.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.getter": 5
+  },
+  "contract": "class-based state: getters/methods on the prototype chain are recognised, nearest wins, Object.prototype excluded",
+  "signals": []
+ },
+ {
+  "file": "src.getUUID.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 1
+  },
+  "contract": "none — internal id generator",
+  "signals": []
+ },
+ {
+  "file": "src.raiseError.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 1
+  },
+  "contract": "none — internal error helper",
+  "signals": []
+ },
+ {
+  "file": "src.registerComponents.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "C.init": 4,
+   "X.split": 6
+  },
+  "contract": "<wcs-state>/<wcs-ssr> are defined once, into a passed (scoped) registry when given; feature definers install idempotently and catch up on already-bootstrapped registries (WeakRef ledger)",
+  "signals": [
+   "B-item:B13"
+  ]
+ },
+ {
+  "file": "src.stateElementByName.test.ts",
+  "tests": 15,
+  "portability": "WB",
+  "tags": {
+   "C.init": 13,
+   "X.diagnostics": 2
+  },
+  "contract": "one root <wcs-state> per root node (second registration throws, same element idempotent); first registration on Document/ShadowRoot triggers buildBindings; getBindingsReady resolves/rejects with binding init",
+  "signals": [
+   "flag:debug"
+  ]
+ },
+ {
+  "file": "src.trustedTypes.test.ts",
+  "tests": 21,
+  "portability": "WB",
+  "tags": {
+   "X.trustedtypes": 19,
+   "X.dcc": 2
+  },
+  "contract": "HTML sinks (innerHTML) go through the configured Trusted Types policy (setTrustedTypesPolicy or global slot), enforcement detection, one-time block diagnostics; DCC definition avoids HTML sinks",
+  "signals": []
+ },
+ {
+  "file": "ssr.component.test.ts",
+  "tests": 36,
+  "portability": "GB",
+  "adapter": "Ssr class is a public export, but tests 24-36 exercise parse caches and static DOM-cleanup utilities (removeBlockBoundaryComments/restoreTextBindings/cleanupDom) that are implementation methods",
+  "tags": {
+   "X.ssr": 33,
+   "I.internal": 3
+  },
+  "contract": "<wcs-ssr> exposes stateData/templates/hydrateProps (tolerant of missing/invalid JSON), Ssr.find, version + verifyVersion (major.minor match), and cleans SSR markers back to client templates",
+  "signals": []
+ },
+ {
+  "file": "ssr.connectedCallbackReject.test.ts",
+  "tests": 1,
+  "portability": "GB",
+  "adapter": "vi.mock of internal buildBindings to force a binding-init failure",
+  "tags": {
+   "X.ssr": 1
+  },
+  "contract": "in server mode with enable-ssr, a binding initialisation failure rejects connectedCallbackPromise instead of hanging",
+  "signals": []
+ },
+ {
+  "file": "ssr.hydrate.bindings.test.ts",
+  "tests": 20,
+  "portability": "GB",
+  "adapter": "reads raw state via el.__state (swap to createState('readonly')); test 8 peeks structural/fragmentInfoByUUID",
+  "tags": {
+   "X.ssr": 20
+  },
+  "contract": "hydration adopts server-rendered DOM for text/value/for/if/elseif/else/$index, restores non-attribute props, removes data-wcs-completed, skips $connectedCallback; works with nameless <wcs-ssr>",
+  "signals": []
+ },
+ {
+  "file": "ssr.hydrate.events.test.ts",
+  "tests": 4,
+  "portability": "GB",
+  "adapter": "reads raw state via el.__state",
+  "tags": {
+   "X.ssr": 3,
+   "X.evttoken": 1
+  },
+  "contract": "after hydration, on*: handlers work on plain, for and if elements and eventToken dispatch inside for reaches $on",
+  "signals": []
+ },
+ {
+  "file": "ssr.hydrate.fallback.nested.test.ts",
+  "tests": 6,
+  "portability": "BB",
+  "tags": {
+   "X.ssr": 6
+  },
+  "contract": "on SSR version mismatch, the fallback rebuild handles nested for/if/elseif/else structures (up to 3 levels) correctly",
+  "signals": []
+ },
+ {
+  "file": "ssr.hydrate.fallback.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "reads raw state via el.__state",
+  "tags": {
+   "X.ssr": 5
+  },
+  "contract": "on SSR version mismatch the client discards SSR DOM (for/if/mustache, data-wcs-ssr-id) and falls back to a normal buildBindings",
+  "signals": []
+ },
+ {
+  "file": "ssr.hydrate.rerender.test.ts",
+  "tests": 4,
+  "portability": "BB",
+  "tags": {
+   "X.ssr": 4
+  },
+  "contract": "after hydration, list add/remove and if toggles re-render the DOM",
+  "signals": []
+ },
+ {
+  "file": "ssr.hydrate.text.test.ts",
+  "tests": 4,
+  "portability": "BB",
+  "tags": {
+   "X.ssr": 4
+  },
+  "contract": "hydrated mustache/text bindings are restored and react to state changes",
+  "signals": []
+ },
+ {
+  "file": "ssr.hydration.test.ts",
+  "tests": 9,
+  "portability": "GB",
+  "adapter": "reads raw state via el.__state; one test calls private _loadFromSsrElement",
+  "tags": {
+   "X.ssr": 9
+  },
+  "contract": "enable-ssr loads initial data from <wcs-ssr> JSON, skips $connectedCallback, merges SSR data over state definition (skipping getters/functions, keeping extra keys), falls back when <wcs-ssr> absent",
+  "signals": []
+ },
+ {
+  "file": "ssr.orchestrated.test.ts",
+  "tests": 16,
+  "portability": "GB",
+  "adapter": "data-wcs-server attribute toggles + internal buildSsrDocument/ssrSnapshot builder registration on a global symbol + stateElementByName",
+  "tags": {
+   "X.ssr": 16
+  },
+  "contract": "orchestrated server mode: <wcs-ssr> is produced once by the final buildSsrDocument pass (templates included, idempotent, root only, not for volumes); legacy inline generation still works",
+  "signals": [
+   "compat"
+  ]
+ },
+ {
+  "file": "ssr.renderIsolation.test.ts",
+  "tests": 16,
+  "portability": "GB",
+  "adapter": "inspects module-global SSR ledgers (fragmentInfoByUUID, ssrPropertyStore, BindingSession) and calls buildSsrDocument/resetSsrRenderState",
+  "tags": {
+   "X.ssr": 15,
+   "X.wcbindable": 1
+  },
+  "contract": "consecutive server renders do not leak templates/props between pages; {{ }} inside for/if templates survives snapshot + hydration; data-wcs-ssr-id cleaned; spread onto undefined elements deferred",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "ssr.server-mode.test.ts",
+  "tests": 42,
+  "portability": "GB",
+  "adapter": "toggle data-wcs-server on <html>; tests 6-19 are WB on ssrPropertyStore and Ssr.extractStateData/buildContent",
+  "tags": {
+   "X.ssr": 40,
+   "C.init": 2
+  },
+  "contract": "server mode renders bindings as attributes/markers (checked/selected/disabled/value/textarea, for/if comment markers), escapes </script> in JSON, emits <wcs-ssr> only with enable-ssr, collects non-attribute props",
+  "signals": []
+ },
+ {
+  "file": "ssr.volume.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "reads raw root state via el.__state",
+  "tags": {
+   "X.ssr": 3,
+   "C.mount": 2
+  },
+  "contract": "a hydrated root adopts the snapshot's volume subtree instead of grafting; otherwise normal graft/collision rules apply; enable-ssr on a volume is ignored with a warning",
+  "signals": []
+ },
+ {
+  "file": "PathInfo.test.ts",
+  "tests": 37,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 33,
+   "C.grammar": 3,
+   "X.recursion": 1
+  },
+  "contract": "33 tests pin PathInfo interning/parent/wildcard derivations (none, internal); 4 pin a user-visible limit: a data-wcs path of >512 segments is rejected with [wcs/binding-syntax] before O(N^2) prefix interning, while $recursion's documented 128-level wildcard depth still fits",
+  "signals": [
+   "workaround",
+   "note:limit exists because PathInfo interns every prefix (O(N^2)); tagged 'requirement B1/D2' of a hardening doc, not next-major B1"
+  ]
+ },
+ {
+  "file": "a3.characterization.test.ts",
+  "tests": 6,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "C.getter": 2,
+   "C.update": 2,
+   "C.state": 1,
+   "C.lifecycle": 1
+  },
+  "contract": "reactivity oracle: computed chain final DOM value, microtask coalescing (100 sets -> 1 flush -> 1 $updatedCallback), same-value set is a no-op, items.*.price -> items.*.tax wildcard propagation, read-after-write inside a sync block, $updatedCallback aggregates bound paths once per batch",
+  "signals": [
+   "flag:sameValueGuard"
+  ]
+ },
+ {
+  "file": "address.calcWildcardLen.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 10
+  },
+  "contract": "none — internal mechanism (common-wildcard length between two PathInfos and its cache)",
+  "signals": []
+ },
+ {
+  "file": "applyChangeToProperty.preCompletion.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "X.component": 6
+  },
+  "contract": "bind-component: parent->child writes that land before the component completes are stashed (overwritten object / injected 2-segment key on a custom element) so completion can restore the author's state; re-expressible only as a bind-component integration test",
+  "signals": [
+   "note:setup installs componentApplyHooks receptacle by hand (X.split delivery)"
+  ]
+ },
+ {
+  "file": "applyChangeToProperty.test.ts",
+  "tests": 33,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 14,
+   "X.wcbindable": 11,
+   "X.diagnostics": 5,
+   "X.ssr": 2,
+   "X.trustedtypes": 1
+  },
+  "contract": "property binding application: same-value skip, nested prop write, null intermediate / frozen parent tolerated; undefined skips the write (keeps element value) while null clears; textContent/innerText stringify like IDL (falsy kept, null/undefined -> ''); innerHTML not stringified (TrustedHTML); wc-bindable inputs[].attribute mirror (kebab names, null removes, objects JSON-stringified, no mirror when setter rejects); debug-only warnings",
+  "signals": [
+   "B-item:B8",
+   "flag:debug"
+  ]
+ },
+ {
+  "file": "applyChangeToWebComponent.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "X.component": 1
+  },
+  "contract": "a parent apply to a completed component's `state[.sub]` binding never replaces or mutates element.state (v2 delivery goes through mounts)",
+  "signals": [
+   "deprecate?:pins an empty-bodied v2 no-op kept only as an identity-compared routing sentinel in apply/applyChange.ts"
+  ]
+ },
+ {
+  "file": "bindings.BindingSession.branches.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 8,
+   "X.wcbindable": 2
+  },
+  "contract": "none — internal mechanism (BindingSession defensive branches: cleanup ownership, definition-wait callbacks/cancel, per-node delivery, record rebinding)",
+  "signals": [
+   "flag:enableDirectionalInitialSync"
+  ]
+ },
+ {
+  "file": "bindings.BindingSession.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 2,
+   "X.wcbindable": 1
+  },
+  "contract": "no double listener/address registration on re-activation; an undefined custom element removed before definition is never attached; reconnect after external DOM removal re-registers once",
+  "signals": [
+   "flag:enableDirectionalInitialSync"
+  ]
+ },
+ {
+  "file": "bindings.DefinitionCoordinator.branches.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 1,
+   "I.internal": 1
+  },
+  "contract": "none — internal mechanism (whenDefined rejection fan-out, cancel safety, registry cache reuse)",
+  "signals": []
+ },
+ {
+  "file": "bindings.DefinitionCoordinator.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 1
+  },
+  "contract": "none — internal mechanism (one whenDefined per registry/tag, cancelled waiters dropped)",
+  "signals": []
+ },
+ {
+  "file": "bindings.binder.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "X.binder": 14
+  },
+  "contract": "binder protocol: discovery (protocol name, version>=1, bind fn, idempotent first-wins registration), pending queue handed over once when a binder appears, bind entry ignores non-elements / already-bound subtrees / declaration-free subtrees",
+  "signals": []
+ },
+ {
+  "file": "bindings.collectNodesAndBindingInfos.spread.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 2,
+   "X.wcbindable": 2
+  },
+  "contract": "a spread binding on a not-yet-defined custom element is deferred and expanded exactly once from the element's wcBindable after definition",
+  "signals": [
+   "note:spread expansion depends on wcBindable (C.bind spread entangled with X.wcbindable)"
+  ]
+ },
+ {
+  "file": "bindings.collectNodesAndBindingInfos.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — internal mechanism (collecting subscriber nodes + binding infos from a root / fragment)",
+  "signals": []
+ },
+ {
+  "file": "bindings.getBindingInfos.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 2
+  },
+  "contract": "none — internal mechanism (replaceNode is a Text for mustache text bindings, the element for props)",
+  "signals": []
+ },
+ {
+  "file": "bindings.getBindingsByNode.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 5
+  },
+  "contract": "none — internal mechanism (node -> bindings WeakMap)",
+  "signals": []
+ },
+ {
+  "file": "bindings.getParseBindTextResults.fragment.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3,
+   "C.grammar": 1
+  },
+  "contract": "none — internal mechanism (structural-fragment UUID lookup for comment nodes; missing comment bind text raises)",
+  "signals": []
+ },
+ {
+  "file": "bindings.getParseBindTextResults.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 2,
+   "I.internal": 2
+  },
+  "contract": "element data-wcs and embedded comment bindings are parsed; elements without the attribute yield nothing (UUID plumbing internal)",
+  "signals": []
+ },
+ {
+  "file": "bindings.getSubscriberNodes.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 1,
+   "I.internal": 1
+  },
+  "contract": "the scan picks up data-wcs elements and binding comments and skips everything else",
+  "signals": []
+ },
+ {
+  "file": "bindings.initialSync.namespaces.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); setConfig({enableDirectionalInitialSync}); 1 drift test compares resolveInitialSyncPolicy with apply/applyChange dispatch table (WB, drop or re-express via manifest)",
+  "tags": {
+   "X.wcbindable": 3,
+   "X.cmdtoken": 1,
+   "I.internal": 1
+  },
+  "contract": "adding class./attr./style./command. bindings to a wc-bindable element does not throw 'not declared by wcBindable' and does not take down the root's other bindings",
+  "signals": [
+   "flag:enableDirectionalInitialSync"
+  ]
+ },
+ {
+  "file": "bindings.initialSync.unit.test.ts",
+  "tests": 12,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 12
+  },
+  "contract": "binding authority #init=/#sync= resolution: defaults with the flag off, key=value only, diagnostics for unknown/duplicate/invalid, event bindings only init=none, input-only members state-authority, commitProducerValue applies in-filters",
+  "signals": [
+   "flag:enableDirectionalInitialSync"
+  ]
+ },
+ {
+  "file": "bindings.initialSyncPolicy.test.ts",
+  "tests": 21,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 18,
+   "X.dcc": 2,
+   "X.cmdtoken": 1
+  },
+  "contract": "directional initial sync: output-only members snapshot element->state and block state->element forever; two-way members state-authority by default, init=auto/element/none semantics; sync=connect/call ordering vs pre-connect events; DCC $bindables default to state authority",
+  "signals": [
+   "flag:enableDirectionalInitialSync"
+  ]
+ },
+ {
+  "file": "bindings.initializeBindingPromiseByNode.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — internal mechanism (per-node binding-initialized promise ledger)",
+  "signals": []
+ },
+ {
+  "file": "bindings.initializeBindings.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 5,
+   "C.init": 1
+  },
+  "contract": "mostly internal; the observable part: binding initialization raises when the owning <wcs-state> is missing or removed mid-initialization",
+  "signals": []
+ },
+ {
+  "file": "bindings.isCommentNode.test.ts",
+  "tests": 12,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 12
+  },
+  "contract": "comment binding grammar: `@@:path` shorthand (spaces, nested path, filters), wcs-for / wcs-if / wcs-elseif / wcs-else keywords, unknown keyword or malformed comment ignored; re-expressible as BB DOM tests",
+  "signals": [
+   "note:file name says isCommentNode, tests parseCommentNode"
+  ]
+ },
+ {
+  "file": "bindings.isPossibleTwoWay.test.ts",
+  "tests": 17,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 10,
+   "X.wcbindable": 7
+  },
+  "contract": "which element/property pairs are two-way (input value/checked/valueAsNumber/valueAsDate, select/textarea value; not input:button); custom elements two-way only for wcBindable properties (protocol check, version 2 accepted, undefined element raises)",
+  "signals": []
+ },
+ {
+  "file": "bindings.nodesByContent.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 2
+  },
+  "contract": "none — internal mechanism (content -> nodes map)",
+  "signals": []
+ },
+ {
+  "file": "bindings.observerSkipOnAdd.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3,
+   "X.wcbindable": 1
+  },
+  "contract": "none — internal MutationObserver optimisation (subtrees added by state's own structural rendering are not rescanned unless a sync=connect snapshot is pending)",
+  "signals": [
+   "perf",
+   "flag:enableDirectionalInitialSync"
+  ]
+ },
+ {
+  "file": "bindings.observerSkipRemovedChildren.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — internal MutationObserver optimisation (per-parent removed-children skip counter)",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "bindings.replaceToComment.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — internal mechanism (replaceToReplaceNode)",
+  "signals": [
+   "deprecate?:byte-identical duplicate of bindings.replaceToReplaceNode.test.ts"
+  ]
+ },
+ {
+  "file": "bindings.replaceToReplaceNode.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — internal mechanism (swap a node for its replaceNode)",
+  "signals": []
+ },
+ {
+  "file": "bindings.rowSession.branches.test.ts",
+  "tests": 12,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 10,
+   "X.wcbindable": 2
+  },
+  "contract": "none — internal mechanism (row record / slot authority, rebinding, destroyRow branches of the R3 row runtime)",
+  "signals": [
+   "flag:enableDirectionalInitialSync",
+   "perf"
+  ]
+ },
+ {
+  "file": "bindings.rowSession.test.ts",
+  "tests": 12,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); ~4 tests peek getBindingSessionByContent / getBindingsByContent / getContentSetByNode (row-session sharing) — drop those asserts, keep DOM text asserts",
+  "tags": {
+   "C.list": 6,
+   "C.init": 2,
+   "I.internal": 2,
+   "C.bind": 1,
+   "C.event": 1
+  },
+  "contract": "rows of a for are created, reused on reorder, partially removed, cleared and pool-revived without disturbing live rows or a sibling list; row event bindings detach with the row; disconnect keeps rows, dispose tears down; select deferred apply works; re-set via setInitialState re-renders rows as a new generation (also for plan-ineligible rows)",
+  "signals": [
+   "perf",
+   "note:session-sharing asserts pin the R3 row runtime (D11)"
+  ]
+ },
+ {
+  "file": "bindings.wholesaleDestroy.test.ts",
+  "tests": 9,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 9
+  },
+  "contract": "none — internal clear fast-path (canWholesaleDestroy / destroyRecords / activate on pool reuse)",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "createListDiff.test.ts",
+  "tests": 11,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 7,
+   "C.list": 4
+  },
+  "contract": "list diff: moved rows land in changeIndexSet, consecutive un-applied diffs in one batch compute against the old list, and (#256) rows of a retired parent are re-homed so DOM rows survive an immutable parent update",
+  "signals": [
+   "defect:#256",
+   "workaround"
+  ]
+ },
+ {
+  "file": "devtools.bridge.test.ts",
+  "tests": 19,
+  "portability": "WB",
+  "tags": {
+   "X.devtools": 17,
+   "X.watch": 1,
+   "X.listkeys": 1
+  },
+  "contract": "DevTools hook registry (global, version-mismatch first-wins, SSR no-op), sink wiring/replay, drain batches forwarded as state:update-batch, pull API (summaries incl. watchPaths / keyedListPaths, declared bindings, keys, read/write via $resolve)",
+  "signals": []
+ },
+ {
+  "file": "devtools.declaredBindings.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "X.devtools": 10
+  },
+  "contract": "DevTools declared-binding list: canonical-parser interpretation, no duplicates from rendered row clones, nested structural directives once, spread expanded from live wcBindable, SSR pre-hydration UUIDs ignored, dedupe identity includes typed literal args and in/out filters",
+  "signals": [
+   "B-item:B9"
+  ]
+ },
+ {
+  "file": "devtools.instrumentation.test.ts",
+  "tests": 17,
+  "portability": "WB",
+  "tags": {
+   "X.devtools": 17
+  },
+  "contract": "DevTools instrumentation events: state-element registry, binding-ledger add/remove/clear, token-emit for CommandToken/EventToken/registry emits, setByAddress write events (oldValue only with the guard on, guarded same-value writes silent); nothing emitted without a sink",
+  "signals": [
+   "flag:sameValueGuard"
+  ]
+ },
+ {
+  "file": "devtools.keyedSubscriptions.test.ts",
+  "tests": 6,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); registerDevtoolsSource + __getRegisteredSourceForTest().keyedSubscriptions(root)",
+  "tags": {
+   "C.eq": 3,
+   "X.devtools": 3
+  },
+  "contract": "DevTools summary of keyed subscriptions: $eq per-row subscriptions follow writes/row removal, $eqPath counts rows sharing a key once, $eqIndex innermost level is list-level watching, calls from getters report 'tracked', calls outside a getter leave nothing",
+  "signals": [
+   "note:D17 (DevTools exposure of $eq)"
+  ]
+ },
+ {
+  "file": "event.EventToken.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "X.evttoken": 2
+  },
+  "contract": "EventToken is a Token pub/sub; isEventToken distinguishes it from CommandToken",
+  "signals": []
+ },
+ {
+  "file": "event.captureHandlerRejection.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "C.event": 4,
+   "X.cmdtoken": 3
+  },
+  "contract": "a rejected promise / thenable returned by an event handler or mixed into a token emit's result array is reported (with a description) instead of becoming an unhandled rejection; resolved values are silent",
+  "signals": []
+ },
+ {
+  "file": "event.checkboxHandler.test.ts",
+  "tests": 25,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 7,
+   "I.internal": 9,
+   "C.grammar": 5,
+   "X.diagnostics": 3,
+   "C.filter": 1
+  },
+  "contract": "checkbox-group binding: checking adds the value to the bound array (no duplicates), unchecking removes it, non-array state becomes a new array; #ro disables write-back; #onchange switches the event from input to change; in-filters applied; handler sharing/keys are internal",
+  "signals": []
+ },
+ {
+  "file": "event.eventTokenHandler.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "X.evttoken": 10,
+   "X.wcbindable": 4
+  },
+  "contract": "eventToken.<prop>: listens on the wcBindable property's event and emits the declared token; errors for non-wc-bindable elements, undeclared properties/tokens; #prevent/#stop; attach survives a missing state element until fire; no double listen",
+  "signals": []
+ },
+ {
+  "file": "event.eventTokenRegistry.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "X.evttoken": 3,
+   "I.internal": 2
+  },
+  "contract": "one EventToken per (state element, name); clearing the registry yields fresh tokens",
+  "signals": []
+ },
+ {
+  "file": "event.getInputAttributeMirror.test.ts",
+  "tests": 16,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 16
+  },
+  "contract": "wc-bindable inputs[].attribute mirror: which names mirror (native/undefined/invalid-protocol/empty attribute -> none) and how values serialise (string/number/boolean, null/undefined remove, objects/arrays JSON, circular falls back to String())",
+  "signals": []
+ },
+ {
+  "file": "event.handler.test.ts",
+  "tests": 15,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 7,
+   "C.event": 6,
+   "X.cmdtoken": 2
+  },
+  "contract": "on*: handlers call the state method (error if missing / not a function), #prevent/#stop call preventDefault/stopPropagation; onclick: $command.<name> emits the command token with (event, ...indexes), unresolved token errors; handler sharing by key is internal",
+  "signals": []
+ },
+ {
+  "file": "event.handlerBindingRegistry.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — internal mechanism (handler key -> bindings refcount)",
+  "signals": []
+ },
+ {
+  "file": "event.processEventTokensDeclaration.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "X.evttoken": 6
+  },
+  "contract": "$eventTokens must be an array of unique non-empty strings; absent -> empty set",
+  "signals": []
+ },
+ {
+  "file": "event.processOnDeclaration.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "X.evttoken": 6
+  },
+  "contract": "$on must be an object whose keys are declared $eventTokens and whose values are functions; handlers are subscribed to the tokens",
+  "signals": []
+ },
+ {
+  "file": "event.radioHandler.test.ts",
+  "tests": 21,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 9,
+   "C.grammar": 5,
+   "C.bind": 3,
+   "X.diagnostics": 3,
+   "C.filter": 1
+  },
+  "contract": "radio binding: the checked radio writes its value to state (unchecked does nothing); #ro disables write-back; #onchange switches event; in-filters applied; handler sharing/keys internal",
+  "signals": []
+ },
+ {
+  "file": "event.twowayHandler.test.ts",
+  "tests": 52,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 23,
+   "X.diagnostics": 11,
+   "I.internal": 10,
+   "C.bind": 4,
+   "C.grammar": 3,
+   "C.filter": 1
+  },
+  "contract": "two-way write-back: input/select(change) event writes the element value to state through in-filters, #ro disables, #onXxx overrides the event; custom elements use wcBindable property events and getters (default e.detail, custom getter, protocol/version checks); undefined elements are not touched until defined; wcs/default-getter-mismatch warns once per element+property",
+  "signals": []
+ },
+ {
+  "file": "integration.applyDeferred.test.ts",
+  "tests": 2,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.wcbindable": 2
+  },
+  "contract": "a property binding on a not-yet-defined custom element writes no own property before definition, is applied exactly once after whenDefined (not to removed nodes), and a failing re-apply is reported via console.error",
+  "signals": []
+ },
+ {
+  "file": "integration.bindComponentDelivery.test.ts",
+  "tests": 3,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.component": 3
+  },
+  "contract": "bind-component: a parent write to the mapped path or a deeper sub-path reaches the child's view; a 1-segment binding named like stateProp becomes a whole mount without stalling the batch",
+  "signals": []
+ },
+ {
+  "file": "integration.bindComponentDepthN.test.ts",
+  "tests": 50,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.component": 38,
+   "C.list": 12
+  },
+  "contract": "bind-component grafts stacked 1-4 boundaries deep (shadow built in constructor or connectedCallback): initial delivery, top->bottom writes, bottom->top write-back, middle writes both ways; lists crossing 1-3 boundaries render, follow row-field writes and replacement, write back; parent-loop groups (delta>0) isolate per group",
+  "signals": []
+ },
+ {
+  "file": "integration.bindComponentLightDom.test.ts",
+  "tests": 10,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); 1 test calls bindComponentLifecycleHooks.preparing directly",
+  "tags": {
+   "X.component": 7,
+   "C.event": 2,
+   "C.list": 1
+  },
+  "contract": "Light DOM bind-component: the unwired plain form throws with migration guidance (v2) without wedging initialization; the mapped form delivers initial values, parent writes and child write-back, iterates parent lists (also inside host for); event handler indexes are scope-relative",
+  "signals": [
+   "compat",
+   "note:whole-object Light DOM mount still runs the v1 path; header comment still says to remove a .skip that is gone"
+  ]
+ },
+ {
+  "file": "integration.bindComponentListRow.test.ts",
+  "tests": 12,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.component": 9,
+   "C.list": 2,
+   "C.state": 1
+  },
+  "contract": "a child scope's for iterates the parent's mapped list: renders, follows replacement and row-field writes both ways, reuses row nodes on identity-preserving reorder, survives add/remove, multiple instances independent, $getAll works through the prefix translation",
+  "signals": []
+ },
+ {
+  "file": "integration.bindComponentNestedFor.test.ts",
+  "tests": 25,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.component": 16,
+   "C.list": 6,
+   "C.state": 2,
+   "C.event": 1
+  },
+  "contract": "components inside a parent for that run their own for: per-row rendering, targeted row-field writes, write-back via $resolve prefix translation, list replace/reorder keeps row<->component mapping, shrinking is exception-free; $1 / event indexes / $resolve are scope-relative; immutable parent update keeps row DOM (#256)",
+  "signals": [
+   "defect:#256"
+  ]
+ },
+ {
+  "file": "integration.bindComponentRootMount.test.ts",
+  "tests": 16,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); clearOwnKeyShadowReportsForTesting between tests; 2 tests call bindComponentLifecycleHooks.preparing directly",
+  "tags": {
+   "X.component": 11,
+   "C.mount": 3,
+   "C.event": 2
+  },
+  "contract": "whole-object mount `state: path` and row mount `state: .`: reads/getters follow the mount target, element.state writes reach the tree, whole replacement and swap re-bind, partial mounts win by longest prefix; own data keys stay private, shadowing warns once, and an explicit partial mount beats an own key (B14-2); config errors fail fast without wedging initialization",
+  "signals": [
+   "B-item:B14",
+   "note:own-key shadowing (listed under decided-core C.mount) is only reachable through bind-component here"
+  ]
+ },
+ {
+  "file": "integration.bindComponentRowReplace.test.ts",
+  "tests": 6,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.component": 4,
+   "C.list": 2
+  },
+  "contract": "replacing a list whose rows contain components re-renders rows and child components, later updates in the same batch are not lost, identity-preserving reorder keeps rows and components, emptying and refilling works",
+  "signals": []
+ },
+ {
+  "file": "integration.binder.test.ts",
+  "tests": 6,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); getBinder() from src/protocol/binder (global-symbol protocol lookup)",
+  "tags": {
+   "X.binder": 6
+  },
+  "contract": "a subtree inserted after construction and handed to the binder gets its bindings (including on the root element itself), follows later state changes, and is never double-bound",
+  "signals": []
+ },
+ {
+  "file": "integration.commandBinding.test.ts",
+  "tests": 1,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.cmdtoken": 1
+  },
+  "contract": "`command.fetch: $command.fetchUsers` wires a state command token to the element method",
+  "signals": []
+ },
+ {
+  "file": "integration.crossTreeAddress.test.ts",
+  "tests": 6,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); peeks getter cache entries, binding ledger and list baseline via constructed absolute addresses (drop the peeks, keep DOM/$updatedCallback asserts)",
+  "tags": {
+   "C.state": 2,
+   "C.list": 2,
+   "I.internal": 2
+  },
+  "contract": "two <wcs-state> roots with same-shaped paths or even the same array instance never cross-talk: row writes and list changes in one tree do not touch the other's DOM, cache or $updatedCallback; removing one tree leaves the other working",
+  "signals": [
+   "note:1 test pins that ListIndex is shared across trees (marked FLIP for address unification)"
+  ]
+ },
+ {
+  "file": "integration.dependencyOrderFuzz.test.ts",
+  "tests": 1,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "C.getter": 1
+  },
+  "contract": "50 random getter dependency graphs x 12 updates always render the expected values (topological correctness)",
+  "signals": []
+ },
+ {
+  "file": "integration.diamondDiscriminator.test.ts",
+  "tests": 3,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "C.getter": 2,
+   "C.list": 1
+  },
+  "contract": "uneven-arm diamond getter graphs (1 vs 4 hops, row getters, aggregates across expansion) settle list length and row values with no stale reads",
+  "signals": []
+ },
+ {
+  "file": "integration.diamondListStale.test.ts",
+  "tests": 7,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "C.getter": 4,
+   "C.list": 2,
+   "C.update": 1
+  },
+  "contract": "a computed list with diamond dependencies (calendar month) keeps row count and cells fresh through navigation, reorder, shrink/grow and multi-set batches; the list getter is not re-evaluated per row",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "integration.diffExpansion.test.ts",
+  "tests": 6,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "C.list": 3,
+   "C.getter": 2,
+   "C.state": 1
+  },
+  "contract": "list replacement re-evaluates only affected rows (append does not touch unchanged rows), adjacent-item getters are auto-detected, $getAll aggregates follow removal/clear, same-reference reassignment refreshes all rows, $1-dependent getters update after middle deletion",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "integration.divergentLedgerReplacement.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); registerUpdateBatchListener (updater) + listIndexesByList ledger to count dirty addresses",
+  "tags": {
+   "I.internal": 3,
+   "C.list": 2
+  },
+  "contract": "assigning an array already rendered under another path renders correctly in both lists and keeps them independent; the exact dirty-address counts (3 for map-spread incl. a retired row, 2 for [...nodes]) are engine internals",
+  "signals": [
+   "defect:#256",
+   "workaround"
+  ]
+ },
+ {
+  "file": "integration.elementSwapIdentity.test.ts",
+  "tests": 26,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src + helpers/recursionTestUtils (mount/read/write via public element API); 2 tests count Content ledger via getContentSetByNode",
+  "tags": {
+   "X.elemwrite": 19,
+   "X.watch": 5,
+   "X.recursion": 1,
+   "X.component": 1
+  },
+  "contract": "element writes that swap/replace list items (`items.0 = …`, $resolve('items.*',[i],v)): row blocks move with values, paths/$1/display match the real array, focused inputs survive primitive-row edits, nested for/if rows re-render without duplicates, $watch sees pre-batch prev and does not fire for a swap",
+  "signals": [
+   "defect:#4",
+   "defect:#274",
+   "workaround",
+   "note:test '【現状の記録】' pins that $watch does NOT land on a replaced row's nested list (main did) — a known gap, not a contract"
+  ]
+ },
+ {
+  "file": "integration.errorCallback.test.ts",
+  "tests": 3,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "C.lifecycle": 3
+  },
+  "contract": "a throwing bound getter calls $errorCallback(error, info) instead of console.error (this can write state); without it console.error; a throwing $errorCallback is isolated and later updates still land",
+  "signals": []
+ },
+ {
+  "file": "integration.eventCommandBinding.test.ts",
+  "tests": 2,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.cmdtoken": 2
+  },
+  "contract": "onclick: $command.<name> emits to subscribers passing the event through; #prevent still applies",
+  "signals": []
+ },
+ {
+  "file": "integration.eventHandlerErrors.test.ts",
+  "tests": 2,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "C.event": 1,
+   "X.cmdtoken": 1
+  },
+  "contract": "a state method that throws synchronously from a DOM event, and a misspelled $command, are reported rather than surfacing as unhandled rejections",
+  "signals": []
+ },
+ {
+  "file": "integration.eventTokenBinding.test.ts",
+  "tests": 4,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable')",
+  "tags": {
+   "X.evttoken": 3,
+   "X.cmdtoken": 1
+  },
+  "contract": "element dispatch reaches $on handlers as (state, event); event-token -> command-token chains; eventToken bindings inside for (with listIndex) and if blocks are wired (detached-fragment regression)",
+  "signals": []
+ },
+ {
+  "file": "integration.filterUnit.test.ts",
+  "tests": 11,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); 1 test calls parseBindTextsForElement directly",
+  "tags": {
+   "C.filter": 8,
+   "C.grammar": 3
+  },
+  "contract": "filters through data-wcs: unit (incl. %), clamp|fix|unit on row values, join, abs/truncate with/without args, whitespace args, undefined skips the style write; quoting rules — , ; | : inside quotes are not delimiters, trimming only outside quotes, `:` inside input-filter args",
+  "signals": [
+   "B-item:B1"
+  ]
+ },
+ {
+  "file": "manifest.test.ts",
+  "tests": 11,
+  "portability": "WB",
+  "tags": {
+   "T.tooling": 11
+  },
+  "contract": "wcs-manifest is derived from the implementation: filter list golden (sync with vscode-wcs), filterMeta coverage/validity, filter/declaration/API alias tables point at real canonical names, reserved names and modifiers derived from define.ts, propNamespaces match the apply dispatch",
+  "signals": [
+   "B-item:B12",
+   "compat"
+  ]
+ },
+ {
+  "file": "polyfills.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 1
+  },
+  "contract": "none — the engine's Set.prototype.difference/intersection polyfill (runtime prerequisite of the current engine)",
+  "signals": []
+ },
+ {
+  "file": "propagation.core.test.ts",
+  "tests": 9,
+  "portability": "WB",
+  "tags": {
+   "X.propagation": 9
+  },
+  "contract": "causal propagation: stable wire/edge IDs, immutable transaction records, scoped context/WriteReceipt restored on throw, same-edge re-entry suppressed (diamond invariant), last-write-wins keeps the winner's context, hop-limit quarantine without throwing",
+  "signals": [
+   "flag:enablePropagationContext"
+  ]
+ },
+ {
+  "file": "propagation.integration.test.ts",
+  "tests": 4,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); setConfig({enablePropagationContext:true})",
+  "tags": {
+   "X.propagation": 4
+  },
+  "contract": "with propagation context on: a setter's same-value echo event does not re-propagate, API writes start new transactions, element normalisation converges in one round trip, growing normalisation converges by provenance with the last applied value",
+  "signals": [
+   "flag:enablePropagationContext"
+  ]
+ },
+ {
+  "file": "propagation.twoway.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "X.propagation": 8
+  },
+  "contract": "two-way handler under propagation context: Object.is and non-primitive echoes inside the setter scope are confirmations, different values continue as normalisation edges, stale receipts after scope end are not confirmations, occurrences are not deduped; flag off = legacy path",
+  "signals": [
+   "flag:enablePropagationContext",
+   "flag:sameValueGuard"
+  ]
+ },
+ {
+  "file": "r3.characterization.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "bootstrapState() from src (also a public export) + State element type; getStateElement(root) -> querySelector('wcs-state'); writes via the element's public createState('writable'); observes devtools sink ledger events + UpdateBatchListener, __test_setMaxPooledContents; 3/5 tests assert ledger events only",
+  "tags": {
+   "C.list": 2,
+   "C.update": 1,
+   "I.internal": 2
+  },
+  "contract": "swap reorder touches no binding ledger and later writes to moved rows reach the right DOM row; N sets to one address fold into one batch entry; clear/pool reuse ledger behaviour (internal)",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "readme.testingRecipe.test.ts",
+  "tests": 2,
+  "portability": "BB",
+  "tags": {
+   "C.init": 2
+  },
+  "contract": "README 'Testing Your Page' recipe works: mount -> initial render -> write -> re-render; inline <script type=module> state with methods loads (createObjectURL disabled) and a click runs the method",
+  "signals": []
+ },
+ {
+  "file": "waitForStateInitialize.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "C.init": 3
+  },
+  "contract": "waiting for state initialization resolves immediately with no <wcs-state>, errors on a root with a null registry, and waits for every element's initializePromise",
+  "signals": []
+ },
+ {
+  "file": "apply.applyChange.gates.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none — internal gates/fast paths of applyChange (skip collecting updated addresses when no $updatedCallback/$renderedCallback; skip getRootNode re-resolution when sameRootVerified; honour a BindingSession veto)",
+  "signals": [
+   "perf",
+   "workaround:hasUpdatedCallback===undefined kept for mock compatibility",
+   "deprecate?:mock-compat branch (hasUpdatedCallback undefined) exists only for test mocks per title"
+  ]
+ },
+ {
+  "file": "apply.applyChange.rootMount.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "X.component": 4
+  },
+  "contract": "Whole-object component mount (`state: path`): while a declared mount is incomplete — and after it completes — applyChange must not write the host's `state` property (partial `state.name` too); undeclared bindings still write it",
+  "signals": [
+   "workaround",
+   "entangled:X.component via core/componentApplyHooks receptacle inside core applyChange"
+  ]
+ },
+ {
+  "file": "apply.getValue.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "C.state": 3,
+   "I.internal": 1
+  },
+  "contract": "$1/$2 in a binding resolve to the enclosing (nested) loop indexes; $1 with no loop context throws",
+  "signals": []
+ },
+ {
+  "file": "apply.scheduleDeferredApply.session.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "X.wcbindable": 4
+  },
+  "contract": "A binding targeting a not-yet-defined custom element is applied once after definition (deduped), dropped on teardown/disconnect or session veto, and a definition failure is reported via console.error",
+  "signals": []
+ },
+ {
+  "file": "applyChangeToRadio.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 4
+  },
+  "contract": "radio: binding sets checked iff the element value equals the state value (after input filters); null unchecks",
+  "signals": []
+ },
+ {
+  "file": "applyChangeToStyle.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "C.bind": 2
+  },
+  "contract": "style.* binding writes the style only when the value changed",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "bindTextParser.expandSpread.test.ts",
+  "tests": 18,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 6,
+   "X.wcbindable": 9,
+   "X.diagnostics": 2,
+   "I.internal": 1
+  },
+  "contract": "`...: path` expands to one binding per wcBindable property/input of the target custom element (order decides explicit-vs-spread winner); non-custom / undeclared / non-element targets and missing CustomElementRegistry fail; undefined elements defer when allowDeferred; @name is a v2 parse error",
+  "signals": [
+   "flag:debug",
+   "flag:allowDeferred",
+   "entangled:spread syntax (C.grammar) cannot expand without X.wcbindable metadata"
+  ]
+ },
+ {
+  "file": "bindTextParser.parseBindTextForEmbeddedNode.test.ts",
+  "tests": 1,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 1
+  },
+  "contract": "mustache/comment text parses as a textContent binding",
+  "signals": []
+ },
+ {
+  "file": "bindTextParser.parseBindTextsForElement.test.ts",
+  "tests": 15,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 11,
+   "X.evttoken": 2,
+   "X.diagnostics": 2
+  },
+  "contract": "data-wcs splits into prop/event/if/elseif/else/for bindings; at most one structural binding per element; ':' inside quoted filter args is not a separator; syntax errors carry [wcs/binding-syntax] plus a lint hint",
+  "signals": [
+   "B-item:B1",
+   "B-item:B2",
+   "entangled:X.evttoken classified by the core parser"
+  ]
+ },
+ {
+  "file": "bindTextParser.parseFilterArgs.test.ts",
+  "tests": 38,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 23,
+   "C.filter": 15
+  },
+  "contract": "Filter-argument lexing: split on commas outside quotes, keep quoted commas/spaces, trim outside quotes, empty args; unquoted numbers/true/false/null are typed, quoted stay strings, positions preserved",
+  "signals": [
+   "B-item:B1",
+   "B-item:B9"
+  ]
+ },
+ {
+  "file": "bindTextParser.parseFilters.test.ts",
+  "tests": 28,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 17,
+   "C.filter": 3,
+   "X.diagnostics": 8
+  },
+  "contract": "`|name(args)` pipeline parsing; unknown filters fail at plan time by name; unbalanced parens, residue after ')', ')' before '(' and unterminated quotes are rejected; error messages quote the source and do not suggest invalid fixes",
+  "signals": [
+   "B-item:B1",
+   "B-item:B2"
+  ]
+ },
+ {
+  "file": "bindTextParser.parsePropPart.test.ts",
+  "tests": 18,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 17,
+   "I.internal": 1
+  },
+  "contract": "LHS parsing: property path, #modifiers, input filters; empty LHS / empty segments rejected with [wcs/binding-syntax]; leading-dot explicit property form still accepted",
+  "signals": [
+   "B-item:B2"
+  ]
+ },
+ {
+  "file": "bindTextParser.parseSpread.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 7
+  },
+  "contract": "`...: path` parses (wildcards allowed, mixes with normal bindings); filters on the RHS, empty RHS, @name, and coexistence with structural bindings are errors",
+  "signals": []
+ },
+ {
+  "file": "bindTextParser.parseStatePart.test.ts",
+  "tests": 32,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 31,
+   "I.internal": 1
+  },
+  "contract": "RHS parsing: path + filters; `@name` removed with a migration hint; empty segments rejected; loop-relative dot shorthand (`.`, `.name`, `.a.b`, with filters) accepted incl. real-page corpus forms (`state: .`, `...: .`)",
+  "signals": [
+   "B-item:B1"
+  ]
+ },
+ {
+  "file": "bindTextParser.utils.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "C.grammar": 3
+  },
+  "contract": "Delimiters are recognised only outside quotes; an unterminated quote runs to the end",
+  "signals": [
+   "B-item:B1"
+  ]
+ },
+ {
+  "file": "bindingsByContent.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — internal content→bindings WeakMap",
+  "signals": []
+ },
+ {
+  "file": "buildBindings.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "C.init": 2,
+   "X.component": 4
+  },
+  "contract": "Bootstrap order (mustache→comments, structural fragments, binding init); a ShadowRoot whose host carries data-wcs waits for the parent's binding initialization first (asserted via mocks/call order)",
+  "signals": [
+   "entangled:X.component wait inside core buildBindings"
+  ]
+ },
+ {
+  "file": "createContent.indexBindings.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none directly — internal classification of $N bindings so reordered rows refresh $1/$2 (C.list)",
+  "signals": []
+ },
+ {
+  "file": "declarationAliases.test.ts",
+  "tests": 19,
+  "portability": "WB",
+  "tags": {
+   "C.init": 15,
+   "C.lifecycle": 2,
+   "X.stream": 2
+  },
+  "contract": "Legacy declaration names ($updatedCallback→$renderedCallback, $streams→$stream) keep working through 3.x (own props moved, class methods mirrored); both spellings rejected [wcs/declaration-alias]; frozen state with legacy names gets a named error; non-object state rejected by shape (15 tests call normalizeDeclarationAliases directly, 4 are GB page tests)",
+  "signals": [
+   "B-item:B12",
+   "compat",
+   "deprecate?:legacy aliases $updatedCallback/$streams are 3.x-only, removal planned in 4.0 (B12/D4)"
+  ]
+ },
+ {
+  "file": "dependency.keyedAncestorIndex.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none directly — invariants of the $eq keyed-subscription ancestor reverse index (C.eq): no dead rows retained, consistent under parent retirement/#256 re-parenting, no stranded pending buffer; guards a leak invisible from DOM",
+  "signals": [
+   "workaround:relies on a vite transform probe (wcs-keyed-dependency-probe) instrumenting src"
+  ]
+ },
+ {
+  "file": "dependency.topologicalRank.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 10
+  },
+  "contract": "none directly — internal ranks ordering getter re-evaluation (diamond joins after the longest arm, cycles grouped, max depth throws); supports glitch-free computed chains",
+  "signals": []
+ },
+ {
+  "file": "dependency.walkDependency.diffExpansion.test.ts",
+  "tests": 15,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 13,
+   "C.list": 2
+  },
+  "contract": "List writes expand dependents only for added/replaced rows and index-dependent getters of moved rows; reassigning the same array or an identical copy refreshes every row (in-place mutation refresh idiom)",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "dependency.walkDependency.test.ts",
+  "tests": 22,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 22
+  },
+  "contract": "none — internal dependency walk (static/dynamic edges, wildcard expansion, visit dedupe, max depth)",
+  "signals": [
+   "flag:debug"
+  ]
+ },
+ {
+  "file": "hydrateBindings.internal.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "X.ssr": 8
+  },
+  "contract": "SSR hydration helpers tolerate missing placeholders / fragment info by skipping or falling back",
+  "signals": []
+ },
+ {
+  "file": "integration.volumeSlotRelease.test.ts",
+  "tests": 13,
+  "portability": "GB",
+  "adapter": "bootstrapState + <wcs-state> element API (setInitialState/connectedCallbackPromise); test 1 calls reserveVolumeSlot/releaseVolumeSlot directly (WB)",
+  "tags": {
+   "C.mount": 13
+  },
+  "contract": "A `<wcs-state mount=…>` volume that ends without grafting (detached while loading or awaiting the root, orphaned, load failure, key collision) releases its mount-path slot so a new element can mount the same path; grafted volumes keep the slot; release is owner-checked",
+  "signals": [
+   "defect:#265"
+  ]
+ },
+ {
+  "file": "integration.wholesaleDestroy.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "bootstrapState + stateElementByName; pool-cap test hook __test_setMaxPooledContents; content/binding/address-ledger peeks for the leak and fallback checks",
+  "tags": {
+   "C.list": 5
+  },
+  "contract": "Clearing a list beyond the row pool (incl. nested lists and rows with deferred tasks) then re-rendering works and events still fire; destroyed rows leave no event bindings in the address ledger",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "lastListValueByAbsoluteStateAddress.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — internal last-list-value WeakMap",
+  "signals": []
+ },
+ {
+  "file": "list.createListIndex.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 6
+  },
+  "contract": "none — ListIndex object structure (parent chain, indexes cache, at())",
+  "signals": []
+ },
+ {
+  "file": "list.createListIndexes.duplicate.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "C.list": 2
+  },
+  "contract": "Lists with duplicate values get one row per element, also when duplicates grow",
+  "signals": []
+ },
+ {
+  "file": "list.createListIndexes.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "C.list": 5,
+   "I.internal": 5
+  },
+  "contract": "List diff reuses rows by value identity on reorder (duplicates in order); empty or non-array → no rows",
+  "signals": [
+   "perf"
+  ]
+ },
+ {
+  "file": "list.getIndexValueByLoopContext.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "C.state": 6
+  },
+  "contract": "$1/$2 resolve to outer/inner loop indexes; no list index, invalid name or missing level throws",
+  "signals": []
+ },
+ {
+  "file": "list.getListIndexByBindingInfo.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — binding→ListIndex lookup via loop context",
+  "signals": []
+ },
+ {
+  "file": "list.listIndexByNode.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 2
+  },
+  "contract": "none — node→loopContext WeakMap",
+  "signals": []
+ },
+ {
+  "file": "list.listIndexesByList.test.ts",
+  "tests": 16,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 16
+  },
+  "contract": "none directly — row-set ledger re-parenting when a parent row retires/returns (#256: inner rows under a replaced parent stay attached)",
+  "signals": [
+   "defect:#256"
+  ]
+ },
+ {
+  "file": "list.loopContext.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 8
+  },
+  "contract": "none — loop-context stack nesting rules, async cleanup, MAX_LOOP_DEPTH",
+  "signals": []
+ },
+ {
+  "file": "list.stableListOrder.test.ts",
+  "tests": 23,
+  "portability": "WB",
+  "tags": {
+   "C.list": 22,
+   "X.elemwrite": 1
+  },
+  "contract": "Reordering a for-list keeps DOM order and node identity for any permutation with minimal moves (LIS; moveBefore when available, never on new/pooled nodes); detached (if-hidden) content remounts; physical order self-heals after element-write swaps",
+  "signals": [
+   "perf",
+   "workaround:self-heal when listIndexes ledger and DOM order drift after element-write swap"
+  ]
+ },
+ {
+  "file": "listKeys.test.ts",
+  "tests": 24,
+  "portability": "WB",
+  "tags": {
+   "X.listkeys": 23,
+   "X.recursion": 1
+  },
+  "contract": "$listKeys declaration validation; keyed merge keeps old row objects by key (hybrid array), rejects duplicate/missing keys and non-plain rows; only changed fields are written, removed fields cleared with null",
+  "signals": []
+ },
+ {
+  "file": "proxy.Proxy.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "C.state": 5,
+   "C.update": 1
+  },
+  "contract": "State proxy reads nested/wildcard paths, throws on unknown properties; a set on a bound path triggers apply",
+  "signals": []
+ },
+ {
+  "file": "proxy.StateHandler.coverage.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 10,
+   "C.state": 4
+  },
+  "contract": "Readonly state proxy throws on set/delete/defineProperty; writable proxy allows them (rest: address-stack internals)",
+  "signals": []
+ },
+ {
+  "file": "proxy.accessorPairCache.test.ts",
+  "tests": 4,
+  "portability": "GB",
+  "adapter": "bootstrapState + stateElementByName (createState) to write/read state",
+  "tags": {
+   "C.getter": 4
+  },
+  "contract": "Assigning to a getter/setter pair re-evaluates the getter (the next read returns the getter result, not the assigned value) and DOM follows later dependency changes; plain wildcard data paths cache the written value",
+  "signals": [
+   "defect:#234"
+  ]
+ },
+ {
+  "file": "proxy.apiAliases.test.ts",
+  "tests": 5,
+  "portability": "GB",
+  "adapter": "bootstrapState + stateElementByName (createState) to write state",
+  "tags": {
+   "C.getter": 4,
+   "X.recursion": 1
+  },
+  "contract": "$dependOn/$trackDependency add explicit getter deps; $untracked/$untrackDependency reads create no deps and return the value; `**` rejection names the API actually called",
+  "signals": [
+   "B-item:B12",
+   "compat",
+   "deprecate?:$trackDependency/$untrackDependency are 3.x aliases, removal planned in 4.0 (comment in proxy/traps/get.ts)"
+  ]
+ },
+ {
+  "file": "proxy.apis.connectedCallback.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "C.lifecycle": 6
+  },
+  "contract": "$connectedCallback is called with the state proxy as this and awaited when async; missing/non-function is ignored; a throw rejects",
+  "signals": []
+ },
+ {
+  "file": "proxy.apis.disconnectedCallback.test.ts",
+  "tests": 6,
+  "portability": "WB",
+  "tags": {
+   "C.lifecycle": 6
+  },
+  "contract": "$disconnectedCallback runs synchronously (async is not awaited); missing/non-function ignored; throws propagate",
+  "signals": []
+ },
+ {
+  "file": "proxy.apis.errorCallback.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "C.lifecycle": 2
+  },
+  "contract": "$errorCallback(error, info) is called with the state as this when it is a function",
+  "signals": []
+ },
+ {
+  "file": "proxy.apis.getAll.test.ts",
+  "tests": 17,
+  "portability": "WB",
+  "tags": {
+   "C.state": 14,
+   "C.getter": 3
+  },
+  "contract": "$getAll(path, indexes?) returns all wildcard matches (indexes default to the loop context, truncated to shared depth; out-of-range and non-array indexes give shape diagnostics); registers a dynamic dependency when called in a getter",
+  "signals": []
+ },
+ {
+  "file": "proxy.apis.postUpdate.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "C.state": 3
+  },
+  "contract": "$postUpdate(path) resolves the address, enqueues it and invalidates dependent getter caches",
+  "signals": []
+ },
+ {
+  "file": "proxy.apis.resolve.test.ts",
+  "tests": 18,
+  "portability": "WB",
+  "tags": {
+   "C.state": 13,
+   "C.getter": 5
+  },
+  "contract": "$resolve(path, indexes, value?) reads/writes a wildcard path at explicit indexes; missing/invalid indexes throw with shape diagnostics; 4+ arguments rejected; registers deps inside getters",
+  "signals": [
+   "B-item:B7"
+  ]
+ },
+ {
+  "file": "proxy.apis.setAll.test.ts",
+  "tests": 20,
+  "portability": "WB",
+  "tags": {
+   "C.state": 19,
+   "C.getter": 1
+  },
+  "contract": "$setAll broadcast / mapper / spread writes over wildcard matches in $getAll order, two-phase (resolve all then write), in place, undefined skipped; validation errors write nothing; no dependency registered",
+  "signals": []
+ },
+ {
+  "file": "proxy.apis.trackDependency.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.getter": 5
+  },
+  "contract": "$trackDependency outside a getter throws; inside one it adds an edge to another getter path (never self)",
+  "signals": []
+ },
+ {
+  "file": "proxy.apis.updatedCallback.test.ts",
+  "tests": 19,
+  "portability": "WB",
+  "tags": {
+   "C.lifecycle": 17,
+   "C.mount": 2
+  },
+  "contract": "$updatedCallback receives the unique updated paths plus indexesListByPath (full multi-level indexes) and returns the callback result; other state elements' refs and internal mount-marker (#m…) paths are never delivered, incl. volume-relative callbacks",
+  "signals": [
+   "B-item:B12"
+  ]
+ },
+ {
+  "file": "proxy.checkDependency.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "C.getter": 5,
+   "I.internal": 5
+  },
+  "contract": "Reads inside a getter register dynamic deps to getter paths only (not self); cross-row reads mark the shared list for full expansion",
+  "signals": [
+   "workaround:tolerates mocks without addCrossRowListPath"
+  ]
+ },
+ {
+  "file": "proxy.getByAddress.test.ts",
+  "tests": 13,
+  "portability": "WB",
+  "tags": {
+   "C.state": 4,
+   "I.internal": 3,
+   "X.diagnostics": 2,
+   "X.cmdtoken": 4
+  },
+  "contract": "Path reads through getters/plain/wildcard paths; an unknown top-level path throws a typo error with did-you-mean; `$command.<name>` resolves to the declared command token (undeclared → undefined)",
+  "signals": [
+   "entangled:X.cmdtoken resolved inside core getByAddress"
+  ]
+ },
+ {
+  "file": "proxy.getContextListIndex.test.ts",
+  "tests": 4,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 4
+  },
+  "contract": "none — context ListIndex lookup",
+  "signals": []
+ },
+ {
+  "file": "proxy.getListIndex.test.ts",
+  "tests": 10,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 10
+  },
+  "contract": "none — ListIndex resolution modes (none/context/all; partial unsupported)",
+  "signals": []
+ },
+ {
+  "file": "proxy.hasByAddress.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none directly — missing vs explicit-undefined detection used by the same-value guard",
+  "signals": []
+ },
+ {
+  "file": "proxy.keyed.test.ts",
+  "tests": 24,
+  "portability": "GB",
+  "adapter": "bootstrapState + stateElementByName (createState); countKeyedSubscriptions/hasKeyedDescendants ledger peeks (re-expressible as getter-evaluation counts); setConfig; buildSsrDocument for the hydration case",
+  "tags": {
+   "C.eq": 22,
+   "X.ssr": 1,
+   "I.internal": 1
+  },
+  "contract": "$eq/$eqPath/$eqIndex keyed selection re-evaluates only the old and new rows, follows rows across delete/swap/ancestor replacement/nested lists, drops subscriptions with removed rows, reacts to $postUpdate and after SSR hydration; outside getters it only compares",
+  "signals": [
+   "flag:sameValueGuard",
+   "perf"
+  ]
+ },
+ {
+  "file": "proxy.setByAddress.test.ts",
+  "tests": 27,
+  "portability": "WB",
+  "tags": {
+   "C.state": 9,
+   "C.getter": 3,
+   "X.elemwrite": 8,
+   "X.dcc": 5,
+   "X.devtools": 1,
+   "X.propagation": 1
+  },
+  "contract": "State writes run setters, invalidate and notify dependents, leave getter caches dirty (#234); list-element swaps keep row identity; DCC $bindables writes dispatch CustomEvents from the ShadowRoot host; the undeclared-leaf fast path honours the same-value guard",
+  "signals": [
+   "defect:#234",
+   "flag:sameValueGuard",
+   "flag:enablePropagationContext",
+   "perf",
+   "workaround:?? [] fallbacks in swap finally",
+   "entangled:X.dcc, X.devtools, X.propagation and X.elemwrite branches in the core write path"
+  ]
+ },
+ {
+  "file": "proxy.setLoopContext.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 3
+  },
+  "contract": "none — loop-context push/pop",
+  "signals": []
+ },
+ {
+  "file": "proxy.traps.get.test.ts",
+  "tests": 31,
+  "portability": "WB",
+  "tags": {
+   "C.state": 12,
+   "C.getter": 1,
+   "C.lifecycle": 5,
+   "X.cmdtoken": 7,
+   "C.mount": 1,
+   "I.internal": 5
+  },
+  "contract": "Proxy get dispatch: $1…$n from loop context (errors outside loops), $getAll/$setAll/$postUpdate/$resolve/$trackDependency, lifecycle hooks; `$command` is memoised per state element, read-only and enumerates declared names",
+  "signals": [
+   "entangled:X.cmdtoken in the core get trap"
+  ]
+ },
+ {
+  "file": "proxy.traps.set.test.ts",
+  "tests": 2,
+  "portability": "WB",
+  "tags": {
+   "C.state": 2
+  },
+  "contract": "String keys write through setByAddress; symbol keys use Reflect.set",
+  "signals": []
+ },
+ {
+  "file": "proxy.untrackDependency.test.ts",
+  "tests": 7,
+  "portability": "GB",
+  "adapter": "bootstrapState + stateElementByName (createState, dynamicDependency map peek) + updater batch listener",
+  "tags": {
+   "C.getter": 7
+  },
+  "contract": "Reads inside $untrackDependency return values without creating deps (nested scopes, $1 too, counter restored on throw); reads/writes inside an accessor setter are not tracked; selection pattern updates only old/new rows and selectedIndex; $1-dependent getter still re-evaluates after swap",
+  "signals": [
+   "perf",
+   "B-item:B12"
+  ]
+ },
+ {
+  "file": "stateLoader.innerScriptIsolation.test.ts",
+  "tests": 1,
+  "portability": "BB",
+  "tags": {
+   "C.init": 1
+  },
+  "contract": "Each load of the same inline module-script state body yields an independent state object (writes do not leak between loads)",
+  "signals": []
+ },
+ {
+  "file": "stateLoader.loadFromInnerScript.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.init": 4,
+   "X.diagnostics": 1
+  },
+  "contract": "Inline module-script state loads via a blob URL (revoked afterwards); non-object default → {}; a CSP violation fails with blob:/src= guidance while other failures keep the original error",
+  "signals": []
+ },
+ {
+  "file": "stateLoader.loadFromJsonFile.test.ts",
+  "tests": 3,
+  "portability": "WB",
+  "tags": {
+   "C.init": 3
+  },
+  "contract": "json= file fetch returns the data; non-ok response or network failure silently yields {}",
+  "signals": []
+ },
+ {
+  "file": "stateLoader.loadFromScriptFile.test.ts",
+  "tests": 7,
+  "portability": "WB",
+  "tags": {
+   "C.init": 7
+  },
+  "contract": "src= module default export is the state (falsy → {}), missing URL throws; relative/root-relative URLs resolve against the document base / <base>",
+  "signals": []
+ },
+ {
+  "file": "stateLoader.loadFromScriptJson.test.ts",
+  "tests": 5,
+  "portability": "WB",
+  "tags": {
+   "C.init": 5
+  },
+  "contract": "Inline application/json script parses; missing / other type / empty → {}; invalid JSON throws",
+  "signals": []
+ },
+ {
+  "file": "stream.argsTrace.test.ts",
+  "tests": 20,
+  "portability": "WB",
+  "tags": {
+   "X.stream": 20
+  },
+  "contract": "$stream args dependency capture: paths read (incl. getters, other streams, $streamStatus) become restart deps; self-reads, wildcard reads and Promise-returning args throw; a failed trace keeps the previous deps",
+  "signals": [
+   "compat:declares via legacy $streams"
+  ]
+ },
+ {
+  "file": "stream.companion.test.ts",
+  "tests": 14,
+  "portability": "GB",
+  "adapter": "bootstrapState + <wcs-state> element; getStreamEntries registry peek and binding-ledger count; one test calls updateStreamStatus directly",
+  "tags": {
+   "X.stream": 14
+  },
+  "contract": "$streamStatus.<name>/$streamError.<name> bindings and computeds follow active/done/error, reset on restart/re-set/reconnect, coalesce into one drain, appear in $updatedCallback paths, and unchanged fields are not notified",
+  "signals": [
+   "compat:declares via legacy $streams/$updatedCallback",
+   "workaround:§4-4 known-edge characterization (stale companion display after the declaration disappears)"
+  ]
+ },
+ {
+  "file": "stream.consumeSource.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "X.stream": 14
+  },
+  "contract": "Stream sources (AsyncIterable or ReadableStream) fold chunk by chunk; errors → fail; abort cancels readers / calls iterator return() without reporting failure",
+  "signals": []
+ },
+ {
+  "file": "stream.dcc.test.ts",
+  "tests": 2,
+  "portability": "GB",
+  "adapter": "bootstrapState + State; vi.mock of stateLoader/loadFromInnerScript; stream registry/active-set peeks",
+  "tags": {
+   "X.stream": 1,
+   "X.dcc": 1
+  },
+  "contract": "$streams are ignored on a DCC definition's <wcs-state> but start inside DCC instances and stop on instance disconnect",
+  "signals": [
+   "compat:declares via legacy $streams"
+  ]
+ },
+ {
+  "file": "stream.lastNotified.test.ts",
+  "tests": 12,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 12
+  },
+  "contract": "none — X.stream's last-notified dedup ledger (invalidate/prune rules)",
+  "signals": []
+ },
+ {
+  "file": "stream.lifecycle.test.ts",
+  "tests": 19,
+  "portability": "GB",
+  "adapter": "bootstrapState + <wcs-state> element; getStreamEntries/getActiveStateElements peeks",
+  "tags": {
+   "X.stream": 17,
+   "X.ssr": 2
+  },
+  "contract": "$streams start after $connectedCallback (active), not under SSR, fold every chunk, abort and reset to initial on disconnect, restart once per reconnect / setInitialState, recompute dependent getters in the same drain, and check name collisions with methods before starting",
+  "signals": [
+   "flag:sameValueGuard",
+   "compat:declares via legacy $streams/$updatedCallback",
+   "workaround:connect-generation guard and re-set collision false-positive fixes"
+  ]
+ },
+ {
+  "file": "stream.namespaceResolution.test.ts",
+  "tests": 13,
+  "portability": "GB",
+  "adapter": "bootstrapState + <wcs-state> element (setInitialState/connectedCallbackPromise)",
+  "tags": {
+   "X.stream": 12,
+   "C.state": 1
+  },
+  "contract": "$streamStatus/$streamError are readable via JS, dotted paths and bindings; writes throw; unknown names → undefined; reads past primitive leaves resolve to undefined without breaking the drain",
+  "signals": [
+   "compat:declares via legacy $streams",
+   "flag:sameValueGuard",
+   "workaround:§4-2 known allowance — same-value dotted write silently no-ops instead of throwing (characterization)"
+  ]
+ },
+ {
+  "file": "stream.processStreamsDeclaration.test.ts",
+  "tests": 27,
+  "portability": "WB",
+  "tags": {
+   "X.stream": 27
+  },
+  "contract": "$stream(s) declaration validation (names, collisions with getters/setters/methods, source/fold/initial/args types); latest-fold default; value properties materialised without overwriting user props; dedup ledger pruned on re-set",
+  "signals": [
+   "compat:legacy $streams key"
+  ]
+ },
+ {
+  "file": "stream.restart.test.ts",
+  "tests": 16,
+  "portability": "GB",
+  "adapter": "bootstrapState + <wcs-state> element; getStreamEntries peek (status/controller)",
+  "tags": {
+   "X.stream": 16
+  },
+  "contract": "Writing a path read by args aborts the run, resets to initial and restarts once per tick; unrelated writes do not; chains through getters/other streams/$streamStatus; args errors stay per entry and recover; disconnected hosts do not restart",
+  "signals": [
+   "compat:declares via legacy $streams"
+  ]
+ },
+ {
+  "file": "stream.streamNamespace.test.ts",
+  "tests": 14,
+  "portability": "WB",
+  "tags": {
+   "X.stream": 14
+  },
+  "contract": "$streamStatus/$streamError namespace proxies: memoised per element, live thin view, read-only, enumerate declared names, tolerant of then/constructor/symbol keys",
+  "signals": []
+ },
+ {
+  "file": "stream.streamRegistry.test.ts",
+  "tests": 8,
+  "portability": "WB",
+  "tags": {
+   "I.internal": 8
+  },
+  "contract": "none — X.stream per-element registry (replace on re-set, abortAll resets to idle, clear)",
+  "signals": []
+ },
+ {
+  "file": "stream.streamRuntime.test.ts",
+  "tests": 15,
+  "portability": "WB",
+  "tags": {
+   "X.stream": 15
+  },
+  "contract": "startStream: latest/accumulating fold, reset to initial, errors normalised to status=error keeping the last value, stale-drop on restart, args evaluated on a readonly proxy (sync only); updateStreamStatus notifies only changed fields",
+  "signals": [
+   "compat:declares via legacy $streams"
+  ]
+ },
+ {
+  "file": "stream.structural.test.ts",
+  "tests": 2,
+  "portability": "GB",
+  "adapter": "bootstrapState + <wcs-state> element",
+  "tags": {
+   "X.stream": 2
+  },
+  "contract": "for: renders a stream-valued list that grows per chunk and resets on restart; if: switches on $streamStatus.<name>|eq(active)",
+  "signals": [
+   "compat:declares via legacy $streams"
+  ]
+ }
+]

@@ -65,6 +65,38 @@ describe("<wcs-defined> Shell", () => {
       expect(el.getAttribute("mode")).toBe("any");
       expect(el.getAttribute("timeout")).toBe("500");
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-defined tags="x-a,x-b" mode="any" timeout="3000"></wcs-defined>';
+      const el = host.firstElementChild as WcsDefined;
+      el.tags = "y-a";
+      el.mode = "all";
+      el.timeout = 10;
+      el.tags = undefined;
+      el.mode = undefined;
+      el.timeout = undefined;
+      expect(el.tags).toBe("x-a,x-b");
+      expect(el.mode).toBe("any");
+      expect(el.timeout).toBe(3000);
+      el.tags = null;
+      el.mode = null;
+      el.timeout = null;
+      // 文字列 "null" ではなく属性なし（既定値）
+      expect(el.hasAttribute("tags")).toBe(false);
+      expect(el.tags).toBe("");
+      expect(el.hasAttribute("mode")).toBe(false);
+      expect(el.mode).toBe("all");
+      expect(el.hasAttribute("timeout")).toBe(false);
+      expect(el.timeout).toBe(0);
+    });
+
+    it("マークアップに無い tags の undefined は文字列 \"undefined\" を書かず属性なしにする", () => {
+      const el = makeEl({});
+      el.tags = undefined;
+      expect(el.hasAttribute("tags")).toBe(false);
+      expect(el.tags).toBe("");
+    });
   });
 
   describe("ライフサイクル", () => {
@@ -104,6 +136,50 @@ describe("<wcs-defined> Shell", () => {
       document.body.appendChild(el); // reconnect → 再 observe
       defineTag(t);
       await flush();
+      expect(el.defined).toBe(true);
+      el.remove();
+    });
+
+    it("接続中に tags / mode / timeout を変えると、その設定で見張り直す", async () => {
+      const a = uniqueTag();
+      const b = uniqueTag();
+      defineTag(a);
+      const el = makeEl({ tags: a });
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(el.defined).toBe(true);
+
+      // state などの binder は upgrade・接続の後にプロパティを書く
+      el.tags = `${a},${b}`;
+      expect(el.total).toBe(2);
+      expect(el.pending).toEqual([b]);
+      expect(el.defined).toBe(false);
+
+      el.mode = "any";
+      await flush();
+      expect(el.defined).toBe(true);
+
+      defineTag(b);
+      await el.connectedCallbackPromise;
+      expect(el.count).toBe(2);
+      el.remove();
+    });
+
+    it("同じ値の書き込みと切断中の変更では見張り直さない", async () => {
+      const a = uniqueTag();
+      const el = makeEl({ tags: a });
+      document.body.appendChild(el);
+      const first = el.connectedCallbackPromise;
+      el.tags = a;
+      expect(el.connectedCallbackPromise).toBe(first);
+      el.remove();
+      const b = uniqueTag();
+      defineTag(b);
+      el.tags = b;
+      expect(el.total).toBe(1);
+      expect(el.pending).toEqual([a]);
+      document.body.appendChild(el); // 再接続で新しい tags を読む
+      await el.connectedCallbackPromise;
       expect(el.defined).toBe(true);
       el.remove();
     });

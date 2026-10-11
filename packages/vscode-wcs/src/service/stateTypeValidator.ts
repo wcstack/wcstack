@@ -5,7 +5,7 @@
  * プロパティ初期値の整合性を検証する。
  */
 
-import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 
 /** 診断情報 */
@@ -21,7 +21,7 @@ export interface StateTypeDiagnostic {
  */
 export function validateStateTypes(html: string, stateTagName: string = 'wcs-state', locale?: string): StateTypeDiagnostic[] {
   const msgs = getMessages(locale);
-  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  const blocks = parseLoadedScriptBlocks(html, stateTagName);
   const diagnostics: StateTypeDiagnostic[] = [];
 
   for (const block of blocks) {

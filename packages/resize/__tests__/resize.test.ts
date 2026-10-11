@@ -448,5 +448,51 @@ describe("<wcs-resize>", () => {
       expect(el.hasAttribute("once")).toBe(false);
       expect(el.hasAttribute("manual")).toBe(false);
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-resize target="#authored" box="border-box" round once manual></wcs-resize>';
+      const el = host.firstElementChild as WcsResize;
+      el.target = "self";
+      el.box = "content-box";
+      el.round = false;
+      el.once = false;
+      el.manual = false;
+      el.target = undefined;
+      el.box = undefined;
+      el.round = undefined;
+      el.once = undefined;
+      el.manual = undefined;
+      expect(el.target).toBe("#authored");
+      expect(el.box).toBe("border-box");
+      expect(el.round).toBe(true);
+      expect(el.once).toBe(true);
+      expect(el.manual).toBe(true);
+      el.target = null;
+      el.box = null;
+      el.round = null;
+      el.once = null;
+      el.manual = null;
+      expect(el.hasAttribute("target")).toBe(false);
+      expect(el.hasAttribute("box")).toBe(false);
+      expect(el.round).toBe(false);
+      expect(el.once).toBe(false);
+      expect(el.manual).toBe(false);
+    });
+
+    it("接続中の target に null を書くと既定（最初の子）を監視し、undefined はマークアップの target へ戻す", () => {
+      const panel = document.createElement("section");
+      panel.id = "panel";
+      document.body.appendChild(panel);
+      const el = makeEl({ target: "#panel" }, "<div></div>");
+      document.body.appendChild(el);
+      expect(ctrl.last.observed).toContain(panel);
+      el.target = null;
+      expect(el.style.display).toBe("contents");
+      expect(ctrl.last.observed).toEqual([el.firstElementChild]);
+      el.target = undefined;
+      expect(el.style.display).toBe("none");
+      expect(ctrl.last.observed).toEqual([panel]);
+    });
   });
 });

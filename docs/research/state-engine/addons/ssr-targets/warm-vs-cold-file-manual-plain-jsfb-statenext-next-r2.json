@@ -1,0 +1,73 @@
+{
+  "revision": "db63d80b5f8019a123ffc2f319f41e7fcf8e4013",
+  "timestamp": "2026-09-25T22:14:13.184Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "samples": 6,
+  "bundle": "auto.min.js",
+  "fixture": "manual",
+  "sequence": "plain",
+  "method": "jsfb",
+  "setup": "input",
+  "gcBefore": false,
+  "results": [
+    {
+      "op": "create1k",
+      "cold": {
+        "median": 11.75,
+        "min": 6.2,
+        "max": 15,
+        "samples": [
+          6.5,
+          6.2,
+          15,
+          12.1,
+          14.2,
+          11.4
+        ]
+      },
+      "warm": {
+        "median": 5.65,
+        "min": 5.3,
+        "max": 14.2,
+        "samples": [
+          14.2,
+          7,
+          5.8,
+          5.3,
+          5.5,
+          5.4
+        ]
+      }
+    },
+    {
+      "op": "create10k",
+      "cold": {
+        "median": 78.05,
+        "min": 75.5,
+        "max": 81.5,
+        "samples": [
+          80.1,
+          81.5,
+          80.7,
+          76,
+          75.6,
+          75.5
+        ]
+      },
+      "warm": {
+        "median": 58.4,
+        "min": 48.4,
+        "max": 79.4,
+        "samples": [
+          79.4,
+          74.1,
+          67.8,
+          48.7,
+          48.4,
+          49
+        ]
+      }
+    }
+  ],
+  "browser": "149.0.7827.55"
+}

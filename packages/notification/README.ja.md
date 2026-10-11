@@ -138,6 +138,8 @@ wireNotificationClicks();
 
 `notice` は reactive な入力（属性なし）: 変化した値を書くと通知を表示します。`notify(title, options)` の per-call オプションはこれら属性既定値にキー単位で優先します。
 
+**`null` と `undefined`。** 属性に対応する入力（`mode`・`body`・`icon`・`badge`・`tag`・`lang`・`dir`・`requireInteraction`・`silent`・`renotify`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`notice` はどちらも無視します（値が無いことは通知ではありません）。
+
 ## Observable プロパティ（出力）
 
 | プロパティ    | イベント                       | 説明                                                              |
@@ -262,7 +264,7 @@ getConfig(); // deep-frozen の実効設定を読む
 
 `bootstrapNotification()` は要素が接続される**前に**呼ぶと変更が反映されます。
 
-知らないオプションや型の違う値（`tagNames` の知らないキーを含む）は、3.5 ではコンソールに警告を出し、4.0 では例外を投げます。
+`bootstrapNotification()` は、持っていないオプション、既定値と型の違う値（`null` や、オブジェクトの所の配列を含む）、定義していない `tagNames` のキー、文字列でないタグ名で例外を投げます。当てる前にすべてのオプションを確かめるので、投げたときは何も当てません。値が `undefined` のオプションは飛ばします。
 
 ## ヘッドレス利用（`NotificationCore`）
 

@@ -54,7 +54,7 @@ const runtime = bundle === 'auto' ? null
   : await readFile(bundle, 'utf8').then(s => raw || s.includes('\nbootstrapState();') ? s : s + '\nbootstrapState();\n');
 // フィクスチャの getter 本文の目印。**この綴りはフィクスチャ内で 1 度しか現れてはならない**
 // （String.replace は先頭 1 件しか置換しない — packages/state/__e2e__/benchmark/index.html の NOTE）
-const MARKER = 'this.$untrackDependency(() => this.selectedIndex)';
+const MARKER = 'this.$untracked(() => this.selectedIndex)';
 let html = null;
 if (fixture === 'tracked') {
   const original = await readFile(join(root, 'packages/state/__e2e__/benchmark/index.html'), 'utf8');

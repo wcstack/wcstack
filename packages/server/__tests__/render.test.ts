@@ -32,6 +32,21 @@ describe('renderToString', () => {
   });
 });
 
+describe('入れ子のテンプレート（素の Node）', () => {
+  // 4.0 の state はテンプレートの中の入れ子のテンプレートを名前空間で見分ける。SVGElement のグローバルは
+  // サーバのウィンドウ（GLOBALS_KEYS）に無いので、instanceof で見ると素の Node で ReferenceError になっていた
+  it('for の中の for と、if の中の for を、投げずに描く', async () => {
+    const result = await renderToString(`
+      <wcs-state enable-ssr json='{"show":true,"groups":[{"items":[{"n":"a"},{"n":"b"}]}],"tags":["x","y"]}'></wcs-state>
+      <ul><template data-wcs="for: groups"><li><ol><template data-wcs="for: .items"><li data-wcs="textContent: .n"></li></template></ol></li></template></ul>
+      <div><template data-wcs="if: show"><p><template data-wcs="for: tags"><span data-wcs="textContent: ."></span></template></p></template></div>
+    `);
+    const doc = parseResult(result);
+    expect(Array.from(doc.querySelectorAll('ol li'), (el) => el.textContent)).toEqual(['a', 'b']);
+    expect(Array.from(doc.querySelectorAll('p span'), (el) => el.textContent)).toEqual(['x', 'y']);
+  });
+});
+
 describe('enable-ssr 属性', () => {
   it('enable-ssr がある場合 <wcs-ssr> が生成される', async () => {
     const result = await renderToString(`
@@ -254,7 +269,7 @@ describe('renderToString の上限（timeoutMs）', () => {
 });
 
 describe('wcs-ssr テンプレートコピー', () => {
-  it('for テンプレートが UUID id 付きで <wcs-ssr> 内にコピーされる', async () => {
+  it('for テンプレートが id 付きで <wcs-ssr> 内にコピーされる', async () => {
     const result = await renderToString(`
       <wcs-state enable-ssr json='{"items":[{"name":"Alice"}]}'></wcs-state>
       <template data-wcs="for: items">
@@ -269,7 +284,7 @@ describe('wcs-ssr テンプレートコピー', () => {
     expect(tpl?.getAttribute('id')).toBeTruthy();
   });
 
-  it('テンプレートの id がコメントノードの UUID と一致する', async () => {
+  it('テンプレートの id がアンカーのコメント（<!--wcs-p:ID-->）の id と一致する', async () => {
     const result = await renderToString(`
       <wcs-state enable-ssr json='{"items":[{"name":"Alice"}]}'></wcs-state>
       <template data-wcs="for: items">
@@ -277,19 +292,18 @@ describe('wcs-ssr テンプレートコピー', () => {
       </template>
     `);
     const doc = parseResult(result);
-    // コメントノードから UUID を取得
-    const commentPattern = /<!--@@wcs-for:(\w+)-->/;
-    const match = result.match(commentPattern);
+    // アンカーのコメントから id を取得（4.0: 文書ごとの連番 wcs-t0, …。3.x は UUID の <!--@@wcs-for:ID-->）
+    const match = result.match(/<!--wcs-p:([\w-]+)-->/);
     expect(match).not.toBeNull();
-    const commentUUID = match![1];
+    const commentId = match![1];
 
     // <wcs-ssr> 内のテンプレートの id と一致
     const ssrEl = doc.querySelector('wcs-ssr');
-    const tpl = ssrEl?.querySelector(`template#${commentUUID}`);
-    expect(tpl).not.toBeNull();
+    const tpl = ssrEl?.querySelector(`template[id="${commentId}"]`);
+    expect(tpl?.getAttribute('data-wcs')).toBe('for: items');
   });
 
-  it('if/else テンプレートが UUID id 付きでコピーされる', async () => {
+  it('if/else テンプレートが id 付きでコピーされる', async () => {
     const result = await renderToString(`
       <wcs-state enable-ssr json='{"show":true}'></wcs-state>
       <template data-wcs="if: show">
@@ -304,15 +318,11 @@ describe('wcs-ssr テンプレートコピー', () => {
     const templates = ssrEl?.querySelectorAll('template[id]');
     expect(templates!.length).toBeGreaterThanOrEqual(2);
 
-    // 各コメントの UUID が <wcs-ssr> 内テンプレートの id にある
-    const commentPattern = /<!--@@wcs-(?:if|else|elseif):(\w+)-->/g;
-    const uuids: string[] = [];
-    let m;
-    while ((m = commentPattern.exec(result)) !== null) {
-      uuids.push(m[1]);
-    }
-    for (const uuid of uuids) {
-      expect(ssrEl?.querySelector(`template#${uuid}`)).not.toBeNull();
+    // 各アンカーのコメントの id が <wcs-ssr> 内テンプレートの id にある（if と else の 2 つ）
+    const ids = [...result.matchAll(/<!--wcs-p:([\w-]+)-->/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    for (const id of ids) {
+      expect(ssrEl?.querySelector(`template[id="${id}"]`)).not.toBeNull();
     }
   });
 

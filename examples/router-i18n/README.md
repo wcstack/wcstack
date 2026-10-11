@@ -121,11 +121,15 @@ second reason the catalog is deep-frozen.
 A route's content is bound when the router stamps it (the binder protocol), so
 plain bindings inside a route work — the About page is translated in place —
 and so does a `<template data-wcs="for: …">` inside an element of the route
-body (`<ul><template data-wcs="for: …">…</template></ul>`). One placed
-**directly** under `<wcs-route>` renders only on the landing route:
-@wcstack/state 3.x draws it only when its first scan of the page finds it
-already stamped, and reports that the binding failed to apply when the router
-hands it over on a navigation. The details are in the router README
+body (`<ul><template data-wcs="for: …">…</template></ul>`), with every version
+of @wcstack/state. One placed **directly** under `<wcs-route>` depends on the
+version. @wcstack/state 3.x renders it only on the landing route: it draws it
+only when its first scan of the page finds it already stamped, and reports that
+the binding failed to apply when the router hands it over on a navigation.
+@wcstack/state 4.0 renders it on the landing route and on a navigation alike,
+because this router declares to its binder that it carries the route's range
+(without that declaration 4.0 refuses it as `[wcs/template-syntax]` #204). The
+details are in the router README
 ([Where route content lives](../../packages/router/README.md#where-route-content-lives)).
 
 This example keeps the list outside the router anyway: the router publishes

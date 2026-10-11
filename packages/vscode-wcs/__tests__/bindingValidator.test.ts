@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { validateBindings, findAllBindAttributes } from '../src/service/bindingValidator';
 import { validateDocument } from '../src/core/validateDocument';
 import { WcsDiagnosticCode } from '../src/core/diagnostics';
+import { NATIVE_COMMANDS, nativeCommandsOf } from '../src/service/wcsManifest';
 
 const SAMPLE_HTML = `
 <wcs-state>
@@ -611,10 +612,7 @@ export default { users: [{ name: "A" }] };
     expect(diags.some(d => d.message.includes('省略パス'))).toBe(true);
   });
 
-  // #355: 数値添字が 1 つのパスは、実行時に「いまその位置にある行」を読んで書き込みに追従する
-  // （@wcstack/state README「Direct index access」・#332）。修正前は template-syntax の
-  // 「解決済みパスは使用できません」と binding-path-missing の 2 件が出ていた
-  it('数値添字が 1 つのパス（users.0.name）は行として読まれるので、診断を出さない', () => {
+  it('数値の添字のパス（users.0.name）は警告しない（4.0 は行として読んで追従する — #355）', () => {
     const html = `
 <wcs-state>
   <script type="module">
@@ -622,24 +620,7 @@ export default { users: [{ name: "A" }] };
   </script>
 </wcs-state>
 <div data-wcs="textContent: users.0.name"></div>`;
-    const diags = validateBindings(html, 'data-wcs');
-    expect(diags).toEqual([]);
-  });
-
-  it('数値添字が 2 つ以上のパス（groups.0.users.0.name）は素のパスとして読まれるので warning', () => {
-    const html = `
-<wcs-state>
-  <script type="module">
-export default { groups: [{ users: [{ name: "A" }] }] };
-  </script>
-</wcs-state>
-<div data-wcs="textContent: groups.0.users.0.name"></div>`;
-    const diags = validateBindings(html, 'data-wcs');
-    const syntax = diags.filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
-    expect(syntax).toHaveLength(1);
-    expect(syntax[0].severity).toBe('warning');
-    expect(html.slice(syntax[0].start, syntax[0].end)).toBe('groups.0.users.0.name');
-    expect(syntax[0].message).toContain('素のパス');
+    expect(validateBindings(html, 'data-wcs')).toEqual([]);
   });
 
   it('カスタム属性名で動作する', () => {
@@ -664,7 +645,7 @@ export default {
   items: [],
   $commandTokens: ["play", "pause"],
   $eventTokens: ["userChanged"],
-  $streams: {
+  $stream: {
     metrics: { source(a, s) { return x; }, initial: [] },
   },
 };
@@ -695,6 +676,55 @@ export default {
     const diags = validateBindings(html, 'data-wcs');
     expect(diags).toHaveLength(1);
     expect(diags[0].message).toContain('$command.<name>');
+  });
+
+  describe('ネイティブ要素の command.<method>:（manifest の nativeCommands）', () => {
+    it('manifest が native-commands の後付けの表を持つ（state の dist を src からビルドしてあること）', () => {
+      expect(NATIVE_COMMANDS?.['*']).toContain('focus');
+      expect(nativeCommandsOf('dialog')).toEqual([...NATIVE_COMMANDS!['*'], ...NATIVE_COMMANDS!.dialog]);
+      // the table's own rows only
+      expect(nativeCommandsOf('constructor')).toEqual(NATIVE_COMMANDS!['*']);
+    });
+
+    it('表にあるメソッド（全要素の行と要素の行）には何も出さない', () => {
+      const html = `${TOKEN_STATE}
+<dialog data-wcs="command.showModal: $command.play; command.close: $command.pause"></dialog>
+<input data-wcs="command.focus: $command.play; command.select: $command.pause">
+<video data-wcs="command.play: $command.play"></video>`;
+      expect(validateBindings(html, 'data-wcs')).toEqual([]);
+    });
+
+    it('表に無いメソッドは error で、メソッド名の範囲に「呼べるもの」を添えて出す', () => {
+      const html = `${TOKEN_STATE}\n<div data-wcs="command.showModal: $command.play"></div>`;
+      const diags = validateBindings(html, 'data-wcs');
+      expect(diags).toHaveLength(1);
+      expect(diags[0]).toMatchObject({ code: WcsDiagnosticCode.TokenMisconfigured, severity: 'error' });
+      expect(html.slice(diags[0].start, diags[0].end)).toBe('showModal');
+      expect(diags[0].message).toBe(`"showModal" はネイティブの <div> に command で呼べるメソッドではありません（呼べるのは ${NATIVE_COMMANDS!['*'].join(', ')}。ランタイムは初期化で wcs/token-misconfigured を投げます）`);
+    });
+
+    it('近い名前があれば「もしかして」を添える（英語でも）', () => {
+      const html = `${TOKEN_STATE}\n<form data-wcs="command.requestSubmt: $command.play"></form>`;
+      const [diag] = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+      expect(diag.message).toMatch(/^"requestSubmt" is not a command of a native <form> \(its commands: .*requestSubmit.*; the runtime throws wcs\/token-misconfigured at initialization\)\. Did you mean "requestSubmit"\?$/);
+    });
+
+    it('値を input イベント無しで変える・HTML や属性を書くメソッドは表に無い', () => {
+      for (const [tag, method] of [['form', 'reset'], ['form', 'submit'], ['input', 'stepUp'], ['div', 'insertAdjacentHTML'], ['div', 'setAttribute'], ['div', 'remove']]) {
+        const html = `${TOKEN_STATE}\n<${tag} data-wcs="command.${method}: $command.play"></${tag}>`;
+        expect(validateBindings(html, 'data-wcs').map((d) => d.code)).toEqual([WcsDiagnosticCode.TokenMisconfigured]);
+      }
+    });
+
+    it('カスタム要素（名前にハイフン）は表で見ない — 自分の wcBindable で宣言する', () => {
+      const html = `${TOKEN_STATE}\n<my-player data-wcs="command.showModal: $command.play"></my-player>`;
+      expect(validateBindings(html, 'data-wcs')).toEqual([]);
+    });
+
+    it('右辺の誤りとメソッドの誤りは、それぞれ出す', () => {
+      const html = `${TOKEN_STATE}\n<div data-wcs="command.showModal: count"></div>`;
+      expect(validateBindings(html, 'data-wcs').map((d) => d.severity)).toEqual(['error', 'warning']);
+    });
   });
 
   it('eventToken.<prop>: <宣言済みトークン> に警告を出さない', () => {
@@ -732,7 +762,7 @@ export default { count: 0 };
     const html = `${TOKEN_STATE}\n<span data-wcs="textContent: $streamStatus.typo"></span>`;
     const diags = validateBindings(html, 'data-wcs');
     expect(diags).toHaveLength(1);
-    expect(diags[0].message).toContain('$streams 宣言に存在しません');
+    expect(diags[0].message).toContain('$stream 宣言に存在しません');
   });
 
   it('$streams 宣言がない場合は $streamStatus.* を検証しない（誤警告回避）', () => {
@@ -1192,234 +1222,189 @@ describe('validateBindings — ボリューム（mount=）のマウントパス�
   });
 });
 
-describe('validateBindings — フィルタの旧名（@wcstack/state 3.2・要件 B12）', () => {
-  it('旧名は正式名と同じ検査を受け、wcs/name-alias（info）で正式名を提案する', () => {
-    const html = `
+// 4.0 grafts a volume's methods as accessors under the mount path (`cart.add`, `this` chrooted at the mount path —
+// @wcstack/state's src/scopes/volume.ts graft, scopes.test.ts's `onclick: i18n.toJa`). 3.x did not, so the candidates dropped
+// them and `onclick: cart.add` was a false wcs/binding-path-missing
+describe('validateBindings — ボリューム（mount=）のメソッド（4.0 は接ぎ木する）', () => {
+  const ROOT = `<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>`;
+
+  it('中のスクリプトのボリュームのメソッドは、マウントパスの下のイベント束縛のハンドラとして存在すること', () => {
+    const html = `${ROOT}
+<wcs-state mount="cart"><script type="module">export default { total: 0, add() { this.total++; }, async save() {} };</script></wcs-state>
+<button data-wcs="onclick: cart.add"></button>
+<form data-wcs="onsubmit#prevent: cart.save"></form>
+<button data-wcs="onclick: cart.ad"></button>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    expect(diags.map(d => [d.code, html.slice(d.start, d.end)])).toEqual([[WcsDiagnosticCode.BindingPathMissing, 'cart.ad']]);
+  });
+
+  it('メソッドだけのボリュームも読めたボリュームとして照合し、マウントパスを足すこと', () => {
+    const html = `${ROOT}
+<wcs-state mount="ui"><script type="module">export default { open() {} };</script></wcs-state>
+<button data-wcs="onclick: ui.open; title: ui"></button>
+<button data-wcs="onclick: ui.close"></button>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['ui.close']);
+  });
+
+  it('読める src= のボリュームのメソッドも同じく存在すること', () => {
+    const html = `${ROOT}
+<wcs-state mount="cart" src="./cart.js"></wcs-state>
+<button data-wcs="onclick: cart.add"></button>
+<button data-wcs="onclick: cart.remove"></button>`;
+    const reader = (path: string) => (path === './cart.js' ? 'export default { total: 0, add() { this.total++; } };' : undefined);
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', reader);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['cart.remove']);
+  });
+});
+
+describe('validateBindings — 4.0 で外れたフィルタ名（3.x の旧名・substr）', () => {
+  const page = (chain: string): string => `
 <wcs-state>
   <script type="module">
 export default { name: "a", count: 1 };
   </script>
 </wcs-state>
-<div data-wcs="textContent: name|uc; title: count|rep(1,2)"></div>`;
-    const diags = validateBindings(html, 'data-wcs');
-    const alias = diags.filter(d => d.code === WcsDiagnosticCode.NameAlias);
-    expect(alias.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'rep']);
-    expect(alias.every(d => d.severity === 'info')).toBe(true);
-    expect(alias[0].message).toContain('"upper"');
-    // 引数の個数は正式名（repeat は 1 個）の範囲で検査する
-    expect(diags.some(d => d.code === WcsDiagnosticCode.FilterArity)).toBe(true);
-  });
-
-  // Fixed by review — エイリアス正規化が validateFilterUsage にしか入っておらず、
-  // フィルタ鎖の型検査 2 か所（validateFilterChainTypes / resolveResultType）が
-  // 正式名キーだけの Map を旧名で引いて黙って中断していた（旧名を書くと型警告が消える）。
-  it('旧名でもフィルタ鎖の入力型検査（wcs/filter-input-type）が正式名と同じに出ること', () => {
-    const page = (chain: string): string => `
-<wcs-state>
-  <script type="module">
-export default { count: 1 };
-  </script>
-</wcs-state>
 <div data-wcs="textContent: ${chain}"></div>`;
-    const canonicalDiags = validateBindings(page('count|upper'), 'data-wcs');
-    const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
-    expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.FilterInputType)).toBe(true);
-    expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.FilterInputType)).toHaveLength(1);
-    // 文言・範囲は**書かれた名前**のまま（直す対象を指す）
-    const inputType = aliasDiags.find(d => d.code === WcsDiagnosticCode.FilterInputType)!;
-    expect(page('count|uc').slice(inputType.start, inputType.end)).toBe('uc');
-    // 旧名の案内（info）は従来どおり併記される
-    expect(aliasDiags.some(d => d.code === WcsDiagnosticCode.NameAlias)).toBe(true);
+
+  it('旧名は wcs/filter-unknown（ランタイムと同じ）で、正式名を案内する', () => {
+    const html = page('name|uc; title: count|rep(1,2)');
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'ja');
+    const unknown = diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'rep']);
+    expect(unknown.every(d => d.severity === 'warning')).toBe(true);
+    expect(unknown[0].message).toContain('4.0 で外れました');
+    expect(unknown[0].message).toContain('"upper"');
+    expect(unknown[1].message).toContain('"repeat"');
+    // 旧名の wcs/name-alias（3.x の info）はもう出さない
+    expect(diags.some(d => d.code === WcsDiagnosticCode.NameAlias)).toBe(false);
+    // 未知のフィルタなので引数の検査はしない（正式名の検査に読み替えない）
+    expect(diags.some(d => d.code === WcsDiagnosticCode.FilterArity)).toBe(false);
   });
 
-  it('旧名でもフィルタ鎖を通した結果型でのバインド型期待（wcs/binding-type-expectation）が出ること', () => {
-    const page = (chain: string): string => `
-<wcs-state>
-  <script type="module">
-export default { count: 1 };
-  </script>
-</wcs-state>
-<div data-wcs="class.on: ${chain}"></div>`;
-    const canonicalDiags = validateBindings(page('count|upper'), 'data-wcs');
-    const aliasDiags = validateBindings(page('count|uc'), 'data-wcs');
-    expect(canonicalDiags.some(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toBe(true);
-    expect(aliasDiags.filter(d => d.code === WcsDiagnosticCode.BindingTypeExpectation)).toHaveLength(1);
+  it('英語の文面も正式名を言う', () => {
+    const diags = validateBindings(page('name|lc'), 'data-wcs', 'wcs-state', 'en');
+    const unknown = diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!;
+    expect(unknown.message).toContain('removed in 4.0');
+    expect(unknown.message).toContain('"lower"');
+  });
+
+  it('旧名を通るフィルタ鎖は型検査を中断する（正式名の型に読み替えない）', () => {
+    const diags = validateBindings(page('count|uc'), 'data-wcs');
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.FilterInputType)).toHaveLength(0);
+    const typed = validateBindings(page('count|upper'), 'data-wcs');
+    expect(typed.some(d => d.code === WcsDiagnosticCode.FilterInputType)).toBe(true);
+  });
+
+  it('substr は slice(start, start + length) への書き換えを案内し、数値リテラルなら具体形も示す', () => {
+    const html = page('name|substr(2,3)');
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    const unknown = diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!;
+    expect(html.slice(unknown.start, unknown.end)).toBe('substr');
+    expect(unknown.message).toContain('slice(start, start + length)');
+    expect(unknown.message).toContain('(here: slice(2, 5))');
+  });
+
+  it('substr の start・length が負・数値でないときは一般形だけを案内する', () => {
+    // 負の length は substr では空文字列。slice(2, -1) と案内すると意味が変わる
+    for (const args of ['-3,2', '2,-3', '2, -1', 'a,2', '1', '1.5,2']) {
+      const diags = validateBindings(page(`name|substr(${args})`), 'data-wcs', 'wcs-state', 'ja');
+      const unknown = diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!;
+      expect(unknown.message).toContain('slice(start, start + length)');
+      expect(unknown.message).not.toContain('ここでは');
+    }
+  });
+
+  it('入力フィルタ（左辺）の旧名も同じに報告する', () => {
+    const html = `
+<wcs-state><script type="module">export default { name: "a" };</script></wcs-state>
+<input data-wcs="value|uc: name">`;
+    const unknown = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
+    expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['uc']);
+  });
+
+  it('Object.prototype の名前（constructor）を旧名と取り違えない', () => {
+    const diags = validateBindings(page('name|constructor'), 'data-wcs', 'wcs-state', 'en');
+    expect(diags.find(d => d.code === WcsDiagnosticCode.FilterUnknown)!.message).toBe('Filter "constructor" is not a built-in filter');
   });
 });
 
-// #355: 数値添字が 1 つのパス（`items.0.v`）は、実行時に「いまその位置にある行」を読む暗黙の getter になる
-// （@wcstack/state の address/indexPathAccessor.ts の isIndexPath・#332）。行 getter も `items.0.double` で
-// 読める。修正前は存在判定が候補集合との完全一致で、`wcs/binding-path-missing` と `wcs/template-syntax`
-// が 2 件ずつ出ていた。添字が 2 つ以上のパス・`*` と混ざるパスは実行時も素のパスで、配列の上の添字を
-// 要素として辿る（diagnostics/pathChecks.ts）— 存在はするが添字の書き込みは届かないので template-syntax だけ。
-describe('validateBindings — 数値添字のパス（#355）', () => {
-  const ISSUE_STATE = `
-<wcs-state><script type="module">
+describe('validateBindings — 数値の添字のパス（4.0 は添字の数によらず追従する — #355・#383）', () => {
+  const STATE = `
+<wcs-state>
+  <script type="module">
 export default {
-  items: [{ v: 1 }, { v: 2 }],
-  groups: [{ items: [{ v: 1 }] }],
-  sales: { 2024: { total: 1 } },
-  show: true,
-  get "items.*.double"() { return this["items.*.v"] * 2; },
+  users: [{ name: "A", done: false }],
+  groups: [{ items: [{ v: 1 }], sel: [{ id: 1 }] }],
+  sales: { 2024: { total: 10 } },
+  get "users.*.label"() { return this["users.*.name"]; },
 };
-</script></wcs-state>`;
-  const at = (path: string) => validateBindings(`${ISSUE_STATE}\n<p data-wcs="textContent: ${path}"></p>`, 'data-wcs', 'wcs-state', 'en');
-  const codesAt = (path: string) => at(path).map(d => d.code);
+  </script>
+</wcs-state>`;
 
-  it.each([
-    ['items.0.v'],
-    ['items.1.v'],
-    // 行 getter（items.*.double）も数値添字で読める
-    ['items.0.double'],
-    // 行そのもの
-    ['items.0'],
-    // 実行時の数値の判定は Number() — 01 / 1e0 も行 1
-    ['items.01.v'],
-    ['items.1e0.v'],
-    // 数値のキーを持つオブジェクトは素のキー（候補の完全一致）
-    ['sales.2024.total'],
-  ])('%s には診断を出さない', (path) => {
-    expect(at(path)).toEqual([]);
+  it('添字が 2 つ以上・`*` と混ざるパス・数値キーのオブジェクトも、警告せず存在を確かめる', () => {
+    const html = `${STATE}
+<div data-wcs="textContent: groups.0.items.0.v"></div>
+<div data-wcs="textContent: users.0.label"></div>
+<div data-wcs="textContent: sales.2024.total"></div>
+<template data-wcs="for: groups">
+  <span data-wcs="textContent: groups.*.sel.0.id"></span>
+</template>
+<template data-wcs="for: groups.0.items">
+  <input data-wcs="value: .v">
+</template>`;
+    expect(validateBindings(html, 'data-wcs')).toEqual([]);
   });
 
-  it('Issue の再現: 数値添字が 1 つの束縛は 0 件、2 つの束縛（groups.0.items.0.v）は素のパスとして template-syntax の 1 件だけ', () => {
-    const html = `${ISSUE_STATE}
-<p data-wcs="textContent: items.0.v"></p>
-<p data-wcs="textContent: items.0.double"></p>
-<p data-wcs="textContent: groups.0.items.0.v"></p>
-<ul><template data-wcs="for: items"><li data-wcs="textContent: .double"></li></template></ul>`;
-    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
-    // 修正前: 6 件（3 つの束縛に binding-path-missing と template-syntax が 1 件ずつ）。groups.0.items.0.v は
-    // 実行時も要素を辿って存在する（警告は出ない）ので、binding-path-missing は出さない
-    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([
-      ['groups.0.items.0.v', WcsDiagnosticCode.TemplateSyntax],
-    ]);
-    const syntax = diags.find(d => d.code === WcsDiagnosticCode.TemplateSyntax)!;
-    expect(syntax.message).toBe(
-      'Path "groups.0.items.0.v" is read as a plain path, not as a row, so a write through its index does not reach this binding (it can keep its first value). Only a path with exactly one numeric index and no "*" (items.0.name) follows the row it points at. Use a pattern path inside a <template for> instead',
-    );
+  it('添字を * に読み替えても無いパス（打ち間違い）は wcs/binding-path-missing', () => {
+    const html = `${STATE}
+<div data-wcs="textContent: users.0.nmae"></div>
+<div data-wcs="textContent: groups.0.items.1.w"></div>`;
+    const diags = validateBindings(html, 'data-wcs');
+    const missing = diags.filter(d => d.code === WcsDiagnosticCode.BindingPathMissing);
+    expect(missing.map(d => html.slice(d.start, d.end))).toEqual(['users.0.nmae', 'groups.0.items.1.w']);
+    // 3.x の「解決済みパス」の wcs/template-syntax は出さない
+    expect(diags.some(d => d.code === WcsDiagnosticCode.TemplateSyntax)).toBe(false);
   });
 
-  it.each([
-    // 行の下に無いメンバー（実行時の存在の検査も "nope" が見つからないと判定する）
-    ['items.0.nope'],
-    // 負の添字は行になりえない（実行時も素のキー "-1" として探して見つからない）
-    ['items.-1.v'],
-    // 配列でない親の数値キーは素のキー（sales.*.total には読み替えない）
-    ['sales.2025.total'],
-    // 未宣言のルート
-    ['missing.0.v'],
-  ])('存在しない行のメンバー %s は binding-path-missing だけ（template-syntax は出さない）', (path) => {
-    expect(codesAt(path)).toEqual([WcsDiagnosticCode.BindingPathMissing]);
+  it('型は添字を * に読み替えた候補から引く（class.x: users.0.name は文字列 — wcs/binding-type-expectation）', () => {
+    const html = `${STATE}
+<div data-wcs="class.on: users.0.name; class.done: users.0.done"></div>`;
+    const typed = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.BindingTypeExpectation);
+    expect(typed.map(d => html.slice(d.start, d.end))).toEqual(['users.0.name']);
   });
 
-  it('for の行の中で数値添字と * が混ざるパス（.tags.0 → items.*.tags.0）は素のパスなので template-syntax だけが残る', () => {
-    // 修正前は binding-path-missing も出ていた（実行時は要素を辿って存在する）
+  it('stateSchema の state でも、添字を * に読み替えて打ち間違いを error にする（数値キーのオブジェクトは通す）', () => {
+    const schema = {
+      type: 'object',
+      properties: {
+        users: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } } } },
+        sales: { type: 'object', properties: { '2024': { type: 'object', properties: { total: { type: 'number' } } } } },
+      },
+    };
     const html = `
-<wcs-state><script type="module">
-export default { items: [{ tags: ["a"] }] };
-</script></wcs-state>
-<template data-wcs="for: items"><li data-wcs="textContent: .tags.0"></li></template>`;
-    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
-    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([['.tags.0', WcsDiagnosticCode.TemplateSyntax]]);
+<wcs-state src="./state.ts"></wcs-state>
+<div data-wcs="textContent: users.0.name"></div>
+<div data-wcs="textContent: users.1.nmae"></div>
+<div data-wcs="textContent: sales.2024.total"></div>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en', undefined, schema);
+    expect(diags.filter(d => d.code === WcsDiagnosticCode.PathNonexistent).map(d => html.slice(d.start, d.end)))
+      .toEqual(['users.1.nmae']);
   });
 
-  it.each([
-    ['groups.0.items', 'textContent: .v'],
-    ['items.0.tags', 'value: .'],
-    // 添字が 2 つ以上でも for: 専用の文面 1 件（素のパスの文面と重ねない）
-    ['groups.0.items.0.tags', 'textContent: .'],
-  ])('for: の対象に数値の添字（for: %s）は template-syntax（行への双方向束縛・添字の書き込みが投げる — #363）、行の省略パスは要素を辿って存在扱い', (list, rowBinding) => {
-    // 実行時: 初期表示・リストの置き換えには追従するが、行への双方向束縛（value: .v）は
-    // `Partial wildcard type is not supported yet`、添字の書き込み（s["groups.0.items.0.v"] = 5）は
-    // `[wcs/wildcard-rank]` で投げる。修正前: for に binding-path-missing と template-syntax、行に binding-path-missing
-    const html = `
-<wcs-state><script type="module">
-export default { items: [{ tags: ["x"] }], groups: [{ items: [{ v: 1, tags: ["y"] }] }] };
-</script></wcs-state>
-<template data-wcs="for: ${list}"><li data-wcs="${rowBinding}"></li></template>`;
-    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
-    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([[list, WcsDiagnosticCode.TemplateSyntax]]);
-    expect(diags[0].message).toBe(
-      `for: "${list}" is a list reached through a numeric index. Its rows resolve as "${list}.*.…", and a two-way binding in a row (value: .v) or a read or write through an index path throws at runtime (@wcstack/state #363). Nest one for: per list level instead (e.g. for: groups, with for: .items inside)`,
-    );
-  });
-
-  it('入れ子の for（for: groups の中の for: .items）には警告しない（対照）', () => {
-    const html = `${ISSUE_STATE}
-<template data-wcs="for: groups"><template data-wcs="for: .items"><li data-wcs="value: .v"></li></template></template>`;
-    expect(validateBindings(html, 'data-wcs', 'wcs-state', 'en')).toEqual([]);
-  });
-
-  it('数値の for の行でも、行 getter・未宣言のメンバーは binding-path-missing（素のパスは行を持たない）', () => {
-    // 実行時: groups.0.items.*.double は getter（groups.*.items.*.double）を読まず空で描く。実行時の警告は
-    // 出ない（#332 の暗黙のアクセサ groups.0.items が接頭辞の記述子になり、存在の検査が判定不能に倒れる —
-    // state 側の別件）。lint が報告するのは正しい
-    const html = `
-<wcs-state><script type="module">
-export default {
-  groups: [{ items: [{ v: 1 }] }],
-  get "groups.*.items.*.double"() { return this["groups.*.items.*.v"] * 2; },
-};
-</script></wcs-state>
-<template data-wcs="for: groups.0.items"><li data-wcs="textContent: .double"></li><li data-wcs="textContent: .nope"></li></template>`;
-    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
-    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([
-      ['groups.0.items', WcsDiagnosticCode.TemplateSyntax],
-      ['.double', WcsDiagnosticCode.BindingPathMissing],
-      ['.nope', WcsDiagnosticCode.BindingPathMissing],
-    ]);
-  });
-
-  // 型の検査も行として読んだ形（items.*.name）の型で行う。修正前（読み替えを入れた直後）は候補が引けず無言だった。
-  // 実行時: class.on: items.0.name は `binding "prop: items.0.name" failed to apply`
-  it.each([
-    ['class.on: items.0.name', 'class.on: items.*.name', WcsDiagnosticCode.BindingTypeExpectation],
-    ['textContent: items.0.tags|upper', 'textContent: items.*.tags|upper', WcsDiagnosticCode.FilterInputType],
-    ['for: items.0.name', 'for: items.*.name', WcsDiagnosticCode.BindingTypeExpectation],
-  ])('型の検査（%s）はパターンパス（%s）と同じ診断を出す', (binding, patternBinding, code) => {
-    const page = (b: string) => `
-<wcs-state><script type="module">
-export default { items: [{ name: "a", tags: ["x"] }] };
-</script></wcs-state>
-<template data-wcs="for: items"><p data-wcs="${b}"></p></template>`;
-    const codes = (b: string) => validateBindings(page(b), 'data-wcs', 'wcs-state', 'en').map(d => d.code).filter(c => c !== WcsDiagnosticCode.TemplateSyntax);
-    expect(codes(binding)).toEqual([code]);
-    expect(codes(patternBinding)).toEqual([code]);
-  });
-
-  it.each([
-    // 配列の上の添字の綴りでない（実行時も素のキー "01" として探して見つからない）
-    ['groups.01.items.0.v'],
-    // 要素の下に無いメンバー
-    ['groups.0.items.0.nope'],
-  ])('素のパス %s は binding-path-missing と template-syntax', (path) => {
-    expect(codesAt(path)).toEqual([WcsDiagnosticCode.BindingPathMissing, WcsDiagnosticCode.TemplateSyntax]);
-  });
-
-  it('$recursion の再帰 getter も数値添字で読める（nodes.0.total）', () => {
-    const html = `
-<wcs-state><script type="module">
-export default {
-  $recursion: { "nodes.*": "children.*" },
-  nodes: [{ value: 1, children: [] }],
-  get "nodes.**.total"() { return this["nodes.**.value"]; },
-};
-</script></wcs-state>
-<p data-wcs="textContent: nodes.0.total"></p>
-<p data-wcs="textContent: nodes.0.nope"></p>`;
-    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
-    expect(diags.map(d => [html.slice(d.start, d.end), d.code])).toEqual([
-      ['nodes.0.nope', WcsDiagnosticCode.BindingPathMissing],
-    ]);
-  });
-
-  describe('stateSchema 宣言時', () => {
+  // The 4.0 runtime reads a numeric segment under a parent that is not a list (an object keyed by number) as a plain
+  // key (engine.ts's markupAccessor). With a schema it is read as `*` only where the parent is an array — before the
+  // fix `sales.2024.totl` was looked up as `sales.*.totl`, fell to unknown on the object and stayed silent. Inputs from
+  // main's (1.20.0) bindingValidator.test.ts
+  describe('stateSchema 宣言時 — 配列でない親の数値キーは素のキー', () => {
     const schema = {
       type: 'object',
       properties: {
         items: { type: 'array', items: { type: 'object', properties: { v: { type: 'number' } } } },
         sales: { type: 'object', properties: { 2024: { type: 'object', properties: { total: { type: 'number' } } } } },
+        stats: { type: 'array', items: { type: 'object', properties: {
+          byYear: { type: 'object', properties: { 2024: { type: 'object', properties: { n: { type: 'number' } } } } },
+        } } },
       },
     };
     const page = (path: string) => `
@@ -1427,25 +1412,32 @@ export default {
 <p data-wcs="textContent: ${path}"></p>`;
     const schemaDiags = (path: string) => validateBindings(page(path), 'data-wcs', 'wcs-state', 'en', undefined, schema);
 
-    it('数値添字が 1 つのパスは読み替えた形（items.*.v）で解決し、診断を出さない', () => {
+    it('数値の添字が 1 つのパス（items.0.v）と、数値キーのオブジェクト（sales.2024.total）は診断を出さない', () => {
       expect(schemaDiags('items.0.v')).toEqual([]);
       expect(schemaDiags('sales.2024.total')).toEqual([]);
+      expect(schemaDiags('stats.0.byYear.2024.n')).toEqual([]);
     });
 
     it('行の下の未宣言メンバー（items.0.nmae）は wcs/path-nonexistent（error）', () => {
-      // 修正前: `0` のまま配列の上で property を探して unknown に倒れ、沈黙していた
-      const diags = schemaDiags('items.0.nmae');
-      expect(diags.map(d => [d.code, d.severity])).toEqual([[WcsDiagnosticCode.PathNonexistent, 'error']]);
+      expect(schemaDiags('items.0.nmae').map(d => [d.code, d.severity])).toEqual([[WcsDiagnosticCode.PathNonexistent, 'error']]);
     });
 
-    it('配列でない親の未宣言の数値キー（sales.2025.total）は素のキーのまま wcs/path-nonexistent', () => {
-      expect(schemaDiags('sales.2025.total').map(d => d.code)).toEqual([WcsDiagnosticCode.PathNonexistent]);
+    it.each([
+      // an undeclared numeric key
+      ['sales.2025.total'],
+      // a typo under a declared numeric key
+      ['sales.2024.totl'],
+      // a numeric key under a non-array parent below an array row (an index and a numeric key mixed)
+      ['stats.0.byYear.2024.m'],
+      ['stats.0.byYear.2025.n'],
+    ])('配列でない親の下の %s は素のキーのまま引いて wcs/path-nonexistent', (path) => {
+      expect(schemaDiags(path).map(d => [page(path).slice(d.start, d.end), d.code])).toEqual([[path, WcsDiagnosticCode.PathNonexistent]]);
     });
   });
 
-  // 素のパス（添字が 2 つ以上・数値の for の行）も、配列の上の添字を要素の形（*）にしてから schema を引く。
-  // 修正前は `0` のまま配列の上で property を探して unknown に倒れ、打ち間違いが完全に無言だった
-  describe('stateSchema 宣言時の素のパス', () => {
+  // A path with two or more indexes and the rows of a numeric `for` also read only the indexes on an array as `*`
+  // (main's 1.20.0 inputs; 4.0 has no "plain path" wcs/template-syntax of 3.x)
+  describe('stateSchema 宣言時 — 添字が 2 つ以上のパス', () => {
     const schema = {
       type: 'object',
       properties: {
@@ -1466,19 +1458,150 @@ export default {
 
     it('数値の for の行の打ち間違い（for: groups.0.items の中の .nmae）は wcs/path-nonexistent、正しい .v は存在', () => {
       expect(schemaDiags('<template data-wcs="for: groups.0.items"><p data-wcs="textContent: .v"></p><p data-wcs="textContent: .nmae"></p></template>')).toEqual([
-        ['groups.0.items', WcsDiagnosticCode.TemplateSyntax],
         ['.nmae', WcsDiagnosticCode.PathNonexistent],
       ]);
     });
 
     it.each([
-      ['groups.0.items.0.nmae', [WcsDiagnosticCode.PathNonexistent, WcsDiagnosticCode.TemplateSyntax]],
-      ['groups.0.items.0.v', [WcsDiagnosticCode.TemplateSyntax]],
-      // $ref で再帰する schema も辿る
-      ['nodes.0.children.0.valu', [WcsDiagnosticCode.PathNonexistent, WcsDiagnosticCode.TemplateSyntax]],
-      ['nodes.0.children.0.value', [WcsDiagnosticCode.TemplateSyntax]],
+      ['groups.0.items.0.nmae', [WcsDiagnosticCode.PathNonexistent]],
+      ['groups.0.items.0.v', []],
+      // a schema that recurses through $ref is followed too
+      ['nodes.0.children.0.valu', [WcsDiagnosticCode.PathNonexistent]],
+      ['nodes.0.children.0.value', []],
     ])('%s', (path, codes) => {
       expect(schemaDiags(`<p data-wcs="textContent: ${path}"></p>`).map(([, code]) => code)).toEqual(codes);
     });
+  });
+});
+
+describe('validateBindings — 行の中の別のリストの *（4.0 の [wcs/wildcard-rank] #1403・F32）', () => {
+  const STATE = `
+<wcs-state>
+  <script type="module">
+export default {
+  a: [{ x: 1 }],
+  b: [{ y: 2 }],
+  groups: [{ items: [{ v: 1 }] }],
+};
+  </script>
+</wcs-state>`;
+
+  it('for: a の行の中の b.*.y は、その段の for のリストと食い違うので warning', () => {
+    const html = `${STATE}
+<template data-wcs="for: a">
+  <span data-wcs="textContent: b.*.y"></span>
+  <span data-wcs="textContent: a.*.x"></span>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en');
+    const rank = diags.filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank.map(d => html.slice(d.start, d.end))).toEqual(['b.*.y']);
+    expect(rank[0].severity).toBe('warning');
+    expect(rank[0].message).toContain('ranges over the rows of "b"');
+    expect(rank[0].message).toContain('renders "a"');
+    expect(rank[0].message).toContain('$resolve(path, indexes)');
+  });
+
+  it('入れ子の for は段ごとに比べる（相対 for・数値の添字のリストを含む）', () => {
+    const html = `${STATE}
+<template data-wcs="for: groups">
+  <template data-wcs="for: .items">
+    <span data-wcs="textContent: groups.*.items.*.v"></span>
+    <span data-wcs="textContent: a.*.items.*.v"></span>
+  </template>
+</template>
+<template data-wcs="for: groups.0.items">
+  <span data-wcs="textContent: groups.0.items.*.v"></span>
+</template>`;
+    const rank = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank.map(d => html.slice(d.start, d.end))).toEqual(['a.*.items.*.v']);
+  });
+
+  it('for: の右辺も、囲む for の段と比べる（行の中の for: b.*.items）', () => {
+    const html = `${STATE}
+<template data-wcs="for: a">
+  <template data-wcs="for: b.*.items"></template>
+</template>`;
+    const rank = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank.map(d => html.slice(d.start, d.end))).toEqual(['b.*.items']);
+  });
+
+  it('段数が足りない形は従来どおり段数の warning だけ（二重に報告しない）', () => {
+    const html = `${STATE}
+<template data-wcs="for: a">
+  <span data-wcs="textContent: b.*.items.*.v"></span>
+</template>`;
+    const rank = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.WildcardRank);
+    expect(rank).toHaveLength(1);
+    expect(rank[0].message).toContain('needs 2 enclosing loop level(s)');
+  });
+});
+
+describe('validateBindings — for / if テンプレートの中の outerHTML: / outerText:（4.0 の #203）', () => {
+  it('for / if / else の中は error、テンプレートの外と、構造でないテンプレートの中は通す', () => {
+    const html = `
+<wcs-state><script type="module">export default { items: [], ok: true, h: "" };</script></wcs-state>
+<div data-wcs="outerHTML: h"></div>
+<template data-wcs="for: items"><div data-wcs="outerHTML: h"></div></template>
+<template data-wcs="if: ok"><p><span data-wcs=".outerText: h"></span></p></template>
+<template data-wcs="else:"><b data-wcs="outerHTML#ro: h"></b></template>
+<template><i data-wcs="outerHTML: h"></i></template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['outerHTML', '.outerText', 'outerHTML']);
+    expect(diags.every(d => d.severity === 'error')).toBe(true);
+    expect(diags[0].message).toContain('"outerHTML:" replaces its element');
+    expect(diags[1].message).toContain('"outerText:"');
+  });
+
+  it('行の中でも、ランタイムが読まない場所（構造でない <template> の中・textContent / innerHTML を束縛した要素の子孫）は通す', () => {
+    const html = `
+<wcs-state><script type="module">export default { items: [], h: "" };</script></wcs-state>
+<template data-wcs="for: items">
+  <template><div data-wcs="outerHTML: h"></div></template>
+  <div data-wcs="textContent: h"><i data-wcs="outerHTML: h"></i></div>
+  <div data-wcs="innerHTML: h"><p><b data-wcs="outerText: h"></b></p></div>
+  <section><u data-wcs="outerHTML: h"></u></section>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags).toHaveLength(1);
+    expect(html.slice(html.lastIndexOf('<', diags[0].start), diags[0].start)).toBe('<u data-wcs="');
+  });
+
+  it('要素自身が終了タグの省略で前の <p> / <option> を閉じる形も報告する', () => {
+    const p = `<template data-wcs="for: a"><p data-wcs="textContent: n">t<div data-wcs="outerHTML: h"></div></template>`;
+    const option = `<template data-wcs="for: a"><select><option data-wcs="textContent: n">a<option data-wcs="outerHTML: h"></select></template>`;
+    for (const html of [p, option]) {
+      const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+      expect(diags.map(d => html.slice(d.start, d.end)), html).toEqual(['outerHTML']);
+      expect(diags[0].severity).toBe('error');
+    }
+  });
+
+  it('validateDocument（CLI と同じ入口）でも同じ code と範囲になる', () => {
+    const html = `<template data-wcs="for: items"><div data-wcs="outerHTML: h"></div></template>`;
+    const diags = validateDocument(html, { locale: 'en' }).filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['outerHTML']);
+  });
+});
+
+describe('validateBindings — 修飾子 #direct（4.0）', () => {
+  it('イベント束縛（on*:）の #direct は通し、それ以外は「無視される」warning', () => {
+    const html = `
+<wcs-state><script type="module">export default { v: "", save() {} };</script></wcs-state>
+<button data-wcs="onclick#direct: save; onsubmit#prevent,direct: save"></button>
+<input data-wcs="value#ro, direct: v">
+<input data-wcs=".onclick#direct: v">`;
+    const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'en').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['direct', 'direct']);
+    expect(diags.every(d => d.severity === 'warning')).toBe(true);
+    expect(diags[0].message).toContain('applies only to event bindings');
+    expect(diags[0].message).toContain('"value"');
+  });
+
+  it('eventToken.* の #direct も無視されるので warning', () => {
+    const html = `
+<wcs-state><script type="module">export default { $eventTokens: ["t"] };</script></wcs-state>
+<x-el data-wcs="eventToken.value#direct: t"></x-el>`;
+    const diags = validateBindings(html, 'data-wcs').filter(d => d.code === WcsDiagnosticCode.TemplateSyntax);
+    expect(diags.map(d => html.slice(d.start, d.end))).toEqual(['direct']);
   });
 });

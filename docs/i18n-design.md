@@ -80,8 +80,8 @@ i18n の仕組みは**無い**。あるのは l10n の断片だけである。
 | 資産 | 実体 | 評価 |
 |---|---|---|
 | `config.locale`（既定 `'en'`） | [config.ts:45](../packages/state/src/config.ts#L45)。`setConfig` で変更可 | グローバル・非リアクティブ。**D1 を降ろした今はこれが正しい形**（§10） |
-| ロケール依存フィルタ **4 種** | `locale` / `date` / `time` / `datetime`（[builtinFilters.ts](../packages/state/src/filters/builtinFilters.ts)） | 起動時 1 言語なら動く。ただし焼き込みが順序に弱い（§1-1） |
-| 外部 state ソース | `<wcs-state src="....json">` / `src="....js"`（[State.ts:236-247](../packages/state/src/components/State.ts#L236)） | **辞書の配送路として今日使える** |
+| ロケール依存フィルタ **4 種** | `locale` / `date` / `time` / `datetime`（[builtinFilters.ts](https://github.com/wcstack/wcstack/blob/v2.6.1/packages/state/src/filters/builtinFilters.ts)） | 起動時 1 言語なら動く。ただし焼き込みが順序に弱い（§1-1） |
+| 外部 state ソース | `<wcs-state src="....json">` / `src="....js"`（[State.ts:236-247](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L236)） | **辞書の配送路として今日使える** |
 | router | lang セグメント・hreflang の概念なし | 未着手 |
 | server | `<html lang>` を書くだけ | 未着手 |
 | `packages/vscode-wcs` の messages | **拡張自身の UI 言語**。アプリの i18n とは無関係 | 混同しないこと |
@@ -95,7 +95,7 @@ const date = (options?:string[]): FilterFn<string> => {
 }
 ```
 
-`IFilterInfo.filterFn`（[binding/types.ts:9](../packages/state/src/binding/types.ts#L9)）はバインド構築時に一度生成され、以後同じ関数が使い回される。**ロケールはクロージャに焼き込まれる。**
+`IFilterInfo.filterFn`（[binding/types.ts:9](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/binding/types.ts#L9)）はバインド構築時に一度生成され、以後同じ関数が使い回される。**ロケールはクロージャに焼き込まれる。**
 
 ライブ切替を採らないなら、焼き込むこと自体は害ではない。**実際に事故るのは順序**である。ロケールを決めて `setConfig({locale})` を呼ぶのが遅れると、それより前に構築されたバインドは既定の `'en'` を焼き込んでいる。しかも `config.locale` の変更は依存グラフに載らないので、後から直しても再描画されない。症状は「**同じページの中で日付だけ英語**」で、原因（呼び出し順序）から遠い場所に出る。
 
@@ -117,7 +117,7 @@ const date = (options?:string[]): FilterFn<string> => {
 それでも採らない。**理由が入れ替わる。**
 
 - **辞書の置き場が無くなる**。フィルタから辞書を引くには**グローバルな辞書レジストリ**が要る。`<wcs-state>` にも ES モジュールにも載らないデータができ、D3 と衝突する
-- **訳漏れが見えなくなる**（優先順位 2）。`'greeting'` は文字列リテラルであってパスではない。パスなら、バインド確立時の存在検査が `wcs/binding-path-missing` を出し（[pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)）、lint も IDE も同じ語彙で同じ場所を指せる。フィルタ引数の文字列は三面のどこからも見えない
+- **訳漏れが見えなくなる**（優先順位 2）。`'greeting'` は文字列リテラルであってパスではない。パスなら、バインド確立時の存在検査が `wcs/binding-path-missing` を出し（[pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)）、lint も IDE も同じ語彙で同じ場所を指せる。フィルタ引数の文字列は三面のどこからも見えない
 - `data-wcs` の規範「**端点指定と線上変換のみ許容、計算は state 側に押し出す**」に反する。辞書引きは変換ではなく参照解決である
 
 **結論が切替方式に依存していないことが重要である。** 前提（D1）を反転させても結論は変わらず、根拠だけが差し替わった。根拠が 1 本折れても立っている ＝ **D2 は D1 より安定した決定**であり、将来 D1 を復活させても書き直しにならない。
@@ -168,7 +168,7 @@ export const t = mergeAndDeepFreeze(fallback.default, current.default);
 
 - **ロケールは `<html lang>` から読む**。これは SSR ではサーバーが、静的ページでは head のスニペット（§8）が、DOM 解析前に書いている。**モジュール評価時点で必ず確定している**のがこの形の要点
 - **fallback はロード時に deep merge する**。ロケールが動かないので、実行時に 1 キーずつ fallback を辿る必要が無い。shallow merge では足りない — パスは階層で解決されるため、`t.form.submit` を書くには `form` がネストしたオブジェクトである必要がある
-- **deep freeze した plain object にする**。`Object.freeze` は浅いので、根だけ凍らせても `t.orders` は書き換え可能なまま残り、そこに誰かが getter を足せてしまう（Phase 0 の実測で判明）。理由は 2 つあり、後者のほうが見落とされやすい。(a) 辞書は不変なので誤書き込みを即エラーにできる。(b) **訳漏れ診断の前提**である — 実行時のパス存在検査は **getter に当たった時点で `UNKNOWN` を返して打ち切る**（[pathDiagnostics.ts:161](../packages/state/src/pathDiagnostics.ts#L161) 付近の `typeof descriptor.get === "function"` 分岐）。辞書が value descriptor だけで構成されている限り検査は最後まで進み `missing` を確定できる。**辞書に getter を 1 つ足すだけで §12 の診断がその枝ごと静かに死ぬ**（§4-3 / §12）
+- **deep freeze した plain object にする**。`Object.freeze` は浅いので、根だけ凍らせても `t.orders` は書き換え可能なまま残り、そこに誰かが getter を足せてしまう（Phase 0 の実測で判明）。理由は 2 つあり、後者のほうが見落とされやすい。(a) 辞書は不変なので誤書き込みを即エラーにできる。(b) **訳漏れ診断の前提**である — 実行時のパス存在検査は **getter に当たった時点で `UNKNOWN` を返して打ち切る**（[pathDiagnostics.ts:161](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts#L161) 付近の `typeof descriptor.get === "function"` 分岐）。辞書が value descriptor だけで構成されている限り検査は最後まで進み `missing` を確定できる。**辞書に getter を 1 つ足すだけで §12 の診断がその枝ごと静かに死ぬ**（§4-3 / §12）
 - 動的 `import()` とトップレベル `await` を使う。バンドラもビルドも要らない（buildless 原則）
 - **マージ結果にソース由来の参照を残さない**（2026-09-06 追記・レビュー指摘）。deep freeze が構造的に防ぐのは「マージ**後**のオブジェクトに getter を足せない」ことまでで、**ソース側カタログにあった getter がマージ結果に生き残るか**はマージ実装に依存する。プロパティ読みで写せば評価されて平坦化するが、片側にしか無いサブツリーを参照のまま返す実装は、その枝だけ凍結も平坦化も効かない — **参照実装の初版が実際にこの穴を持っていた**（`examples/router-i18n/i18n/merge.js` で修正済み）。ヘルパの契約は「結果は全域が凍結済み・value descriptor のみ・どちらのソースとも参照を共有しない」であり、`e2e/tests/router-i18n.spec.ts` が 1 本のテストで固定している（§4-1 と §12 の 2 節をこのテストが守る）
 
@@ -180,7 +180,7 @@ import { lang, t } from "./catalog.js";
 export default { lang, t };
 ```
 
-`<wcs-state src="....js">` は module の default export を state にする（[State.ts:242](../packages/state/src/components/State.ts#L242)）。**辞書のためのゲッターは 1 つも要らない。**
+`<wcs-state src="....js">` は module の default export を state にする（[State.ts:242](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/components/State.ts#L242)）。**辞書のためのゲッターは 1 つも要らない。**
 
 初稿にあった「`t.*` を 1 つずつ宣言するか、`t` をオブジェクトごと 1 パスにするか」という粒度の未決は、**依存グラフに載せる必要が無くなったので消滅した**。素のデータなので、パス存在検査もそのまま効く（§12）。
 
@@ -192,7 +192,7 @@ export default { lang, t };
 [wcs/binding-path-missing] Bound path "t.typo" does not exist on state "i18n". Did you mean "t.title"? …
 ```
 
-描画は空になるが、**警告が原因そのものを指す**（1 パス 1 回・`console.warn`・lint 誘導。[pathDiagnostics.ts](../packages/state/src/pathDiagnostics.ts)）。初稿は「キー文字列を描画して目視で気づく」形にしていたが、素のデータでは既存の三面共有診断がそのまま働くので、**i18n 専用のフォールバックも専用の診断コードも要らない**。
+描画は空になるが、**警告が原因そのものを指す**（1 パス 1 回・`console.warn`・lint 誘導。[pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)）。初稿は「キー文字列を描画して目視で気づく」形にしていたが、素のデータでは既存の三面共有診断がそのまま働くので、**i18n 専用のフォールバックも専用の診断コードも要らない**。
 
 fallback のマージ（§4-1）があるため、実運用で空になるのは「**どの言語にも無いキー**」＝ 打ち間違いだけである。言語間のキー集合の突合は §12 が担う。
 
@@ -412,7 +412,7 @@ D9 の確定時に比較したのは「`/:lang` ルートパラメータ vs base
 D1 を降ろしたことで、初稿にあった SSR の課題 2 件が消えた。
 
 - クロス state 読み取りの遡上を hydrate 経路（`hydrateBindings` の `getStateElementByName`）にも通す必要 → **不要**
-- SSR の state 抽出（[Ssr.ts:161](../packages/state/src/components/Ssr.ts#L161)）が `$refs` を読む getter を raw な `this` で評価して壊れる問題 → **`$refs` を使わないので発生しない**
+- SSR の state 抽出（[Ssr.ts:161](https://github.com/wcstack/wcstack/blob/v2.6.1/packages/state/src/components/Ssr.ts#L161)）が `$refs` を読む getter を raw な `this` で評価して壊れる問題 → **`$refs` を使わないので発生しない**
 
 残るのは 1 点。辞書を state に射影している以上（§4-2）、**SSR の初期 JSON に辞書 1 言語ぶんが載る**。クライアントは `catalog.js` を import するので内容は二重に配られる。許容するか、SSR では `t` を state に載せず module 直読みに寄せるかは未決（§14-3）。
 
@@ -456,7 +456,7 @@ D1 を降ろした結果、**`config.locale` は「降格した旧機構」で�
 
 抽出ツールを作らない代わりに、**訳漏れを検査で捕まえる**。[static-wiring-dx-design.md](./static-wiring-dx-design.md) の延長として自然に載る。
 
-**D1 を降ろしたことでこの検査は成立条件を得た。** 初稿では、辞書が getter の向こう側にあるため実行時のパス存在検査が `UNKNOWN` で打ち切られ（[pathDiagnostics.ts:161](../packages/state/src/pathDiagnostics.ts#L161)）、静的検査も「カタログの所在が分からない」という問題を抱えていた。素のデータになった今、**バインド確立時の検査は追加実装ゼロで効く**（§4-3）。静的側で足すのは次の 2 つ。
+**D1 を降ろしたことでこの検査は成立条件を得た。** 初稿では、辞書が getter の向こう側にあるため実行時のパス存在検査が `UNKNOWN` で打ち切られ（[pathDiagnostics.ts:161](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts#L161)）、静的検査も「カタログの所在が分からない」という問題を抱えていた。素のデータになった今、**バインド確立時の検査は追加実装ゼロで効く**（§4-3）。静的側で足すのは次の 2 つ。
 
 - `@i18n` を参照するバインドのパスが、辞書モジュールのキーに存在するか（`import` を辿ってキー集合を得る）— **見送り**（下の追記）
 - **言語間でキー集合が一致しているか** — fallback で埋まってしまう訳漏れは実行時には見えないので、ここが唯一の検出点 — **単体スクリプトとして着地**（下の追記）

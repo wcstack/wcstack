@@ -47,6 +47,35 @@ describe("WcsBroadcast", () => {
       el.manual = false;
       expect(el.hasAttribute("manual")).toBe(false);
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-broadcast name="authored" manual></wcs-broadcast>';
+      const el = host.firstElementChild as WcsBroadcast;
+      el.name = "bound";
+      el.manual = false;
+      el.name = undefined;
+      el.manual = undefined;
+      expect(el.name).toBe("authored");
+      expect(el.manual).toBe(true);
+      el.name = null;
+      el.manual = null;
+      // 文字列 "null" ではなく属性なし（既定値）
+      expect(el.hasAttribute("name")).toBe(false);
+      expect(el.name).toBe("");
+      expect(el.manual).toBe(false);
+    });
+
+    it("接続後の name の undefined / null で \"undefined\" / \"null\" チャンネルを開かない", () => {
+      const el = makeElement({ name: "room" });
+      document.body.appendChild(el);
+      el.name = "other";
+      el.name = undefined;
+      expect(el.name).toBe("room");
+      el.name = null;
+      const names = FakeBroadcastChannel.created.map((c) => c.name);
+      expect(names).toEqual(["room", "other", "room"]);
+    });
   });
 
   describe("connectedCallback", () => {

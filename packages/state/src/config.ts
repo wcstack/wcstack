@@ -1,131 +1,64 @@
-import { IConfig, IWritableConfig } from "./types.js";
-import { SSR_ORCHESTRATED_VALUE } from "./protocol/ssrSnapshot.js";
+import { raise, M } from "./messages";
 
 /**
- * サーバー主導スナップショット（orchestrated）の判定
- * （docs/ssr-router-design.md §5）。renderToString が snapshot builder を
- * 見つけたときだけ `data-wcs-server="orchestrated"` を宣言する — 値が他の
- * もの（旧 server の "" を含む）なら inline 生成が従来どおり働く。
- * inSsr と同じ理由でキャッシュしない。
+ * Page-wide configuration (`bootstrapState(config)`): how this page spells wcstack markup (the tag
+ * names, the binding attribute, the anchor comments — fixed before the first definition, the same
+ * on the server) and the locale default. How a state tree behaves is its own `$behavior` (engine.ts).
  */
-export function isOrchestratedSsr(): boolean {
-  const html = document.documentElement;
-  return html ? html.getAttribute('data-wcs-server') === SSR_ORCHESTRATED_VALUE : false;
-}
-
-export function inSsr(): boolean {
-  // キャッシュしない: SSR モードはプロセスの属性ではなく「現在の document」の
-  // 属性。@wcstack/server はグローバル document を差し替えてサーバーレンダリング
-  // した後、同一プロセスでクライアント側ハイドレーションが走る（SSR→hydrate の
-  // e2e が該当）。サーバーフェーズの判定をキャッシュするとクライアントフェーズが
-  // SSR モード扱いになり、hydrateBindings の代わりに buildBindings が選ばれて
-  // connectedCallbackPromise が永久に未解決になる。
-  const html = document.documentElement;
-  return html ? html.hasAttribute('data-wcs-server') : false;
-}
-
-/**
- * SSR 描画中に描いた枝・行を外した印（#356）。境界の組は Content の外に置くので、外した枝・行の中に
- * 入れ子で居た組が取り残され得る。取り残しは if の非表示と行の削除（apply/applyChangeToIf・
- * applyChangeToFor）からしか生じないので、立っていなければ `<wcs-ssr>` を書き出すときの探索
- * （ssr/Ssr.ts の removeStaleBlockBoundaries）を省く。下ろすのはサーバーのレンダリング 1 回分の後始末
- * （ssr/buildSsrDocument.ts の resetSsrRenderState）
- */
-export const ssrBlockRemoval = { seen: false };
-
-interface IInternalConfig {
+export interface Config {
   bindAttributeName: string;
-  commentTextPrefix: string;
+  /** The text of a `for` template's anchor comment. */
   commentForPrefix: string;
+  /** The texts of an `if` / `elseif` / `else` chain's anchor comments. */
   commentIfPrefix: string;
   commentElseIfPrefix: string;
   commentElsePrefix: string;
-  tagNames: {
-    state: string;
-    ssr: string;
-  };
+  tagNames: { state: string; ssr: string };
   locale: string;
-  debug: boolean;
-  enableMustache: boolean;
-  enableDirectionalInitialSync: boolean;
-  enablePropagationContext: boolean;
+  /** Opt-in `analyzeContract()` (dev time); off, it returns at once. */
   enableContractAnalyzer: boolean;
-  sameValueGuard: boolean;
 }
 
-const _config: IInternalConfig = {
-  bindAttributeName: 'data-wcs',
-  commentTextPrefix: 'wcs-text',
-  commentForPrefix: 'wcs-for',
-  commentIfPrefix: 'wcs-if',
-  commentElseIfPrefix: 'wcs-elseif',
-  commentElsePrefix: 'wcs-else',
-  tagNames: {
-    state: 'wcs-state',
-    ssr: 'wcs-ssr',
-  },
-  locale: 'en',
-  debug: false,
-  enableMustache: true,
-  enableDirectionalInitialSync: true,
-  enablePropagationContext: true,
-  // Phase 5b の dev-time contract analyzer は意図的に explicit opt-in（既定 off）。
-  // wcstack は buildless / zero-config で NODE_ENV 相当の確実な dev/prod 判定が無く、
-  // hostname や minification の heuristic で auto-ON すると誤検出で prod にコストを
-  // 乗せうるため、dev 既定 ON は採らない。利用側が setConfig で明示有効化する
-  // （docs/architecture-hardening/10-defaulting-rollout-status.md §C）。
+export const config: Config = {
+  bindAttributeName: "data-wcs",
+  commentForPrefix: "wcs-for",
+  commentIfPrefix: "wcs-if",
+  commentElseIfPrefix: "wcs-elseif",
+  commentElsePrefix: "wcs-else",
+  tagNames: { state: "wcs-state", ssr: "wcs-ssr" },
+  locale: typeof document !== "undefined" ? document.documentElement?.lang || "en" : "en",
   enableContractAnalyzer: false,
-  sameValueGuard: true,
 };
 
-// backward compatible export (read-only usage)
-export const config: IConfig = _config as IConfig;
+export type PartialConfig = Partial<Omit<Config, "tagNames">> & { tagNames?: Partial<Config["tagNames"]> };
 
-export function getConfig(): IConfig {
-  return config;
+/**
+ * Applies the options given; an undefined value is left out. An option `bootstrapState` does not
+ * have (a key 4.0 moved to the state's `$behavior` or removed included), a value of another type
+ * than its default (null, or an array for an object, included) or a tag name it does not define
+ * throws, and then nothing is applied — the same rule as every package's bootstrap.
+ */
+export function setConfig(partial: PartialConfig): void {
+  const options = config as unknown as Record<string, unknown>;
+  const tags = config.tagNames as Record<string, string>;
+  const given = Object.entries(partial).filter(([, value]) => value !== undefined);
+  const givenTags = Object.entries(partial.tagNames ?? {}).filter(([, tag]) => tag !== undefined);
+  for (const [key, value] of given) {
+    const current = options[key];
+    if (!Object.hasOwn(options, key) || value === null || typeof value !== typeof current || Array.isArray(value) !== Array.isArray(current)) {
+      raise(M.OptionInvalid, ["bootstrapState", key]);
+    }
+  }
+  for (const [name, tag] of givenTags) {
+    if (!Object.hasOwn(tags, name) || typeof tag !== "string") raise(M.OptionInvalid, ["bootstrapState", `tagNames.${name}`]);
+  }
+  for (const [key, value] of given) {
+    if (key !== "tagNames") {
+      options[key] = value;
+    }
+  }
+  for (const [name, tag] of givenTags) tags[name] = tag as string;
 }
 
-export function setConfig(partialConfig: IWritableConfig): void {
-  if (partialConfig.tagNames) {
-    Object.assign(_config.tagNames, partialConfig.tagNames);
-  }
-  if (typeof partialConfig.bindAttributeName === "string") {
-    _config.bindAttributeName = partialConfig.bindAttributeName;
-  }
-  if (typeof partialConfig.commentTextPrefix === "string") {
-    _config.commentTextPrefix = partialConfig.commentTextPrefix;
-  }
-  if (typeof partialConfig.commentForPrefix === "string") {
-    _config.commentForPrefix = partialConfig.commentForPrefix;
-  }
-  if (typeof partialConfig.commentIfPrefix === "string") {
-    _config.commentIfPrefix = partialConfig.commentIfPrefix;
-  }
-  if (typeof partialConfig.commentElseIfPrefix === "string") {
-    _config.commentElseIfPrefix = partialConfig.commentElseIfPrefix;
-  }
-  if (typeof partialConfig.commentElsePrefix === "string") {
-    _config.commentElsePrefix = partialConfig.commentElsePrefix;
-  }
-  if (typeof partialConfig.locale === "string") {
-    _config.locale = partialConfig.locale;
-  }
-  if (typeof partialConfig.debug === "boolean") {
-    _config.debug = partialConfig.debug;
-  }
-  if (typeof partialConfig.enableMustache === "boolean") {
-    _config.enableMustache = partialConfig.enableMustache;
-  }
-  if (typeof partialConfig.enableDirectionalInitialSync === "boolean") {
-    _config.enableDirectionalInitialSync = partialConfig.enableDirectionalInitialSync;
-  }
-  if (typeof partialConfig.enablePropagationContext === "boolean") {
-    _config.enablePropagationContext = partialConfig.enablePropagationContext;
-  }
-  if (typeof partialConfig.enableContractAnalyzer === "boolean") {
-    _config.enableContractAnalyzer = partialConfig.enableContractAnalyzer;
-  }
-  if (typeof partialConfig.sameValueGuard === "boolean") {
-    _config.sameValueGuard = partialConfig.sameValueGuard;
-  }
-}
+/** The current configuration (read-only view). */
+export const getConfig = (): Readonly<Config> => config;

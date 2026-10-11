@@ -206,6 +206,8 @@ These properties control connection and messaging from HTML, JS, or `@wcstack/st
 | `send` | `any` | Set to transmit data (auto-stringifies objects) |
 | `manual` | `boolean` | Disables auto-connect on DOM attach |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`url`, `protocols`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `binaryType`, `manual` — see [Elements](#elements)) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A `url` restored this way reconnects like any other `url` change; a cleared `url` does not connect. `trigger` and `send` ignore both.
+
 ## CSS styling with `:state()`
 
 `<wcs-ws>` reflects three boolean output states onto its
@@ -331,6 +333,8 @@ By default, `<wcs-ws>` automatically opens a connection when:
 
 1. it is connected to the DOM and `url` is set
 2. the `url` attribute changes while connected to the DOM
+
+Each of these opens exactly one connection. Writing the same `url` again (as an attribute or a property) is not a change and does not reconnect; call `connect()` to reconnect to the same URL. When the element is upgraded with a `url` already in the markup, the connection is opened once, when it is connected.
 
 Set the `manual` attribute to disable auto-connect and control the connection explicitly via `connect()` or `trigger`.
 
@@ -667,7 +671,7 @@ bootstrapWebSocket({
 });
 ```
 
-Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+`bootstrapWebSocket()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.
 
 ## Design Notes
 

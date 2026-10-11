@@ -70,7 +70,7 @@ defineState({
 defineState({
   filter: "all",
   $commandTokens: ["play"],
-  $streams: {
+  $stream: {
     metrics: {
       source: (_args: unknown, _signal: AbortSignal) => (async function* () { yield 1; })(),
       initial: [] as number[],
@@ -154,14 +154,14 @@ defineState({
     expect(messages(diags)).toEqual([]);
   });
 
-  it('$ 予約キーはドットパスアクセサに含まれない（$streams.metrics は型エラー）', () => {
+  it('$ 予約キーはドットパスアクセサに含まれない（$stream.metrics は型エラー）', () => {
     const diags = typecheck(`
 defineState({
-  $streams: {
+  $stream: {
     metrics: { source: () => (async function* () { yield 1; })(), initial: 0 },
   },
   handle() {
-    this["$streams.metrics"];
+    this["$stream.metrics"];
   },
 });
 `);

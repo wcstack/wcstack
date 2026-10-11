@@ -20,7 +20,7 @@
  * ❌ と明記している。
  */
 
-import { parseWcsScriptBlocks } from '../language/htmlParse.js';
+import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages, type WcsMessageCatalog } from '../core/messages.js';
 import {
   ASSIGN_TAIL,
@@ -61,7 +61,7 @@ const PRE_NESTED_INCDEC = `${PRE_INCDEC}${ROOT_DOT}(${CHAIN_ONE_PLUS})`;
  */
 export function validateNestedAssigns(html: string, stateTagName: string = 'wcs-state', locale?: string): NestedAssignDiagnostic[] {
   const msgs = getMessages(locale);
-  const blocks = parseWcsScriptBlocks(html, stateTagName);
+  const blocks = parseLoadedScriptBlocks(html, stateTagName);
   const diagnostics: NestedAssignDiagnostic[] = [];
 
   for (const block of blocks) {

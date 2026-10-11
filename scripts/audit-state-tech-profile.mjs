@@ -1,8 +1,9 @@
 // Sampling profile of one benchmark operation (create 10,000 rows by default) through CDP's
 // Profiler, aggregated by function as self time, so that the per-row cost of creation can be
-// attributed to functions rather than to the coarse counters of audit-state-tech-counters.mjs.
-// dist/index.esm.js (or a prototype build) is served; build it with WCS_STATE_UNMINIFIED=1 so that the
-// names are readable (the named entry is minified since requirement N1);
+// attributed to functions rather than to coarse per-operation counters (3.x's
+// audit-state-tech-counters.mjs, removed after the 4.0 swap — it rebuilt with Rollup; see git history).
+// dist/index.esm.js (or a prototype build) is served. The 4.0 bundles are always minified (3.x's
+// WCS_STATE_UNMINIFIED is gone), so pass --bundle a readable build of your own to read the names;
 // samples every 100 µs; three pages, the function table is summed over them and expressed per
 // row. Run from the repository root after `npm ci` in e2e/, with no other performance driver running:
 //   node scripts/audit-state-tech-profile.mjs [--bundle <file>] [--op create10k|append1k|select10k] [--fixture manual|tracked] [--samples N] [--top N]
@@ -27,7 +28,7 @@ const port = 4308;
 const url = `http://127.0.0.1:${port}/packages/state/__e2e__/benchmark/index.html`;
 // フィクスチャの getter 本文の目印。**この綴りはフィクスチャ内で 1 度しか現れてはならない**
 // （String.replace は先頭 1 件しか置換しない — packages/state/__e2e__/benchmark/index.html の NOTE）
-const MARKER = 'this.$untrackDependency(() => this.selectedIndex)';
+const MARKER = 'this.$untracked(() => this.selectedIndex)';
 const original = await readFile(join(root, 'packages/state/__e2e__/benchmark/index.html'), 'utf8');
 let html = original;
 if (fixture === 'tracked') {

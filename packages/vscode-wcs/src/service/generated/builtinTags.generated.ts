@@ -498,7 +498,11 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
   "wcs-defined": {
     "package": "defined",
     "hasWcBindable": true,
-    "observedAttributes": [],
+    "observedAttributes": [
+      "tags",
+      "mode",
+      "timeout"
+    ],
     "inputs": {
       "tags": "tags",
       "mode": "mode",

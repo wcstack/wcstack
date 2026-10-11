@@ -130,6 +130,8 @@ Add the `monitor` attribute to republish document `copy` / `cut` / `paste` as re
 | --------- | ------- | ------- | --------------------------------------------------------------------------- |
 | `monitor` | boolean | `false` | Subscribe to document `copy` / `cut` / `paste` on connect and republish them as `copied` / `cut` / `pasted`. |
 
+**`null` and `undefined`.** `monitor`, backed by its attribute, takes `null` as "clear": the attribute is removed and the input falls back to its default (off). `undefined` means "no value supplied": the attribute goes back to what it was before the first write — present if the markup wrote it, otherwise absent. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 ### DOM trigger attributes (autoTrigger, copy-on-click)
 
 | Attribute             | On             | Description                                                             |
@@ -153,7 +155,7 @@ Add the `monitor` attribute to republish document `copy` / `cut` / `paste` as re
 >
 > Call `bootstrapClipboard()` before the elements connect. (`setConfig` is internal; configure through `bootstrapClipboard`.)
 >
-> Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+> `bootstrapClipboard()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.
 
 ## Observable Properties (outputs)
 

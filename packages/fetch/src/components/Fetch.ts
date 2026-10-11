@@ -6,6 +6,7 @@ import { FetchHeader } from "./FetchHeader.js";
 import { FetchBody } from "./FetchBody.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 import { writeTargetHTML } from "../trustedTypes.js";
 
 export class Fetch extends HTMLElement {
@@ -18,8 +19,8 @@ export class Fetch extends HTMLElement {
     ],
     // Shell-level input surface. The Core declares only the portable `url` / `method`;
     // the Shell adds the DOM-driven settable surface. No `attribute` hints are given:
-    // these setters already reflect to their attributes themselves, so a binding system
-    // that mirrors inputs[].attribute would set the attribute twice. `commands`
+    // these setters reflect to their attributes themselves, and a binding system that
+    // mirrored inputs[].attribute (@wcstack/state 3.x) would set the attribute twice. `commands`
     // (fetch / abort) are inherited unchanged from the Core via the spread above.
     inputs: [
       { name: "url" },
@@ -99,44 +100,33 @@ export class Fetch extends HTMLElement {
     }
   }
 
-  // Input setters normalize null/undefined to attribute removal instead of
-  // letting setAttribute stringify them ("undefined" url would auto-fetch
-  // /undefined, "undefined" method is an invalid HTTP method). The binder
-  // already skips undefined writes; this guards direct JS assignment too.
+  // Input setters never let setAttribute stringify null / undefined ("undefined"
+  // url would auto-fetch /undefined, "undefined" method is an invalid HTTP
+  // method): `null` removes the attribute (the default), `undefined` restores
+  // the attribute the element started with (wc-bindable producer guidance P1;
+  // React 19 and a direct assignment deliver it, @wcstack/state does not).
   get url(): string {
     return this.getAttribute("url") || "";
   }
 
-  set url(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("url");
-    } else {
-      this.setAttribute("url", value);
-    }
+  set url(value: string | null | undefined) {
+    reflectAttribute(this, "url", value);
   }
 
   get method(): string {
     return (this.getAttribute("method") || "GET").toUpperCase();
   }
 
-  set method(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("method");
-    } else {
-      this.setAttribute("method", value);
-    }
+  set method(value: string | null | undefined) {
+    reflectAttribute(this, "method", value);
   }
 
   get target(): string | null {
     return this.getAttribute("target");
   }
 
-  set target(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("target");
-    } else {
-      this.setAttribute("target", value);
-    }
+  set target(value: string | null | undefined) {
+    reflectAttribute(this, "target", value);
   }
 
   // Response body interpretation. Backed by the `response-type` attribute so it is
@@ -146,12 +136,8 @@ export class Fetch extends HTMLElement {
     return (this.getAttribute("response-type") as FetchResponseType) || "auto";
   }
 
-  set responseType(value: string | null) {
-    if (value == null) {
-      this.removeAttribute("response-type");
-    } else {
-      this.setAttribute("response-type", value);
-    }
+  set responseType(value: string | null | undefined) {
+    reflectAttribute(this, "response-type", value);
   }
 
   get value(): any {
@@ -190,12 +176,8 @@ export class Fetch extends HTMLElement {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   get body(): any {

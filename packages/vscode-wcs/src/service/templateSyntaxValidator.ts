@@ -9,22 +9,21 @@
  * pure(DOM / vscode 非依存)。
  */
 
-import { BUILTIN_FILTERS, canonicalFilterName } from "./completionData.js";
-import { getStatePathsFromHtml, type FileReader } from "./statePathResolver.js";
+import { BUILTIN_FILTERS } from "./completionData.js";
+import { getStatePathIndex, isUnresolvedPath, type FileReader } from "./statePathResolver.js";
 import { mergeSchemaCandidates, type PathCandidate } from "./stateAnalyzer.js";
 import { findAllCommentBindings, findAllMustacheSyntax } from "./templateSyntax.js";
 import { splitOutsideQuotes } from "../core/parser/quoteAware.js";
 import {
-  isInsideForTemplate, getInnermostForPath, countWildcardSegments, getResolvedForListPath, rankOfForList, findOtherListWildcard,
+  isInsideForTemplate, getRowShorthandForPath, countWildcardSegments, getResolvedForListPath, rankOfForList, findOtherListWildcard,
 } from "./forContext.js";
-import { classifyIndexParam, createDeclaredKeyTester, MAX_INDEX_PARAM, SUBSTR_FILTER, substrRewrite } from "./v4Migration.js";
 import { WcsDiagnosticCode, type WcsDiagnosticCodeValue } from "../core/diagnostics.js";
 import { getMessages } from "../core/messages.js";
-import { resolveSchemaPath } from "../core/sidecar/schemaSubset.js";
 import type { JsonSchemaNode } from "../core/sidecar/types.js";
-import { matchesRecursionCandidates, type BindingDiagnostic } from "./bindingValidator.js";
+import { pathExistsInCandidates, resolveIndexedSchemaPath, type BindingDiagnostic } from "./bindingValidator.js";
 import { hasRecursionWildcard } from "./recursionPaths.js";
-import { isPlainElementPath, isPlainIndexPath, toPlainPatternPath, toRowPatternPath } from "./indexPath.js";
+import { removedFilterMessage } from "./removedNames.js";
+import { classifyIndexParam, hasUnsafeSegment, MAX_INDEX_PARAM } from "./indexPath.js";
 
 export function validateTemplateSyntax(
   html: string,
@@ -39,7 +38,9 @@ export function validateTemplateSyntax(
 
   // schema 由来の候補も合流させる（bindingValidator と同じ規則・D12）。mustache は
   // default state のみを検証するので、存在判定の三値化も default の schema に対して行う。
-  const allPaths = mergeSchemaCandidates(getStatePathsFromHtml(html, stateTagName, fileReader), applicationSchema);
+  // Without a stateSchema, nothing is said about a path in a state the validator could not read (as in bindingValidator)
+  const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
+  const allPaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
   const defaultSchema = applicationSchema;
   /** 存在しなければ code / severity / message を返す（stateSchema 宣言時は三値判定）。 */
   const missingVerdict = (
@@ -57,16 +58,16 @@ export function validateTemplateSyntax(
         message: msgs.recursionUnsupported(path, "binding"),
       };
     }
-    // 数値添字が 1 つのパスは行として読む（`items.1.v` → `items.*.v`・#355。bindingValidator と同じ規則）
-    const rowPath = toRowPatternPath(path, pathSet);
-    if (isValidTemplatePath(path, rowPath, pathSet, scoped)) return null;
+    // 正本パーサが #120 で拒むパスは `wcs/binding-syntax` が報告する（存在の検査を重ねない）
+    if (hasUnsafeSegment(path)) return null;
+    if (isValidTemplatePath(path, pathSet, scoped)) return null;
     if (defaultSchema !== undefined && !path.startsWith("$")) {
-      // 素のパスも配列の上の添字を要素の形（`*`）にしてから引く（bindingValidator と同じ）
-      const resolution = resolveSchemaPath(defaultSchema, defaultSchema.$defs ?? {}, toPlainPatternPath(rowPath, pathSet).split("."));
+      const resolution = resolveIndexedSchemaPath(defaultSchema, path);
       return resolution.kind === "nonexistent"
         ? { code: WcsDiagnosticCode.PathNonexistent, severity: "error", message: msgs.pathNonexistent(displayPath) }
         : null;
     }
+    if (isUnresolvedPath(path, pathIndex.scopes)) return null;
     return { code: WcsDiagnosticCode.BindingPathMissing, severity: "warning", message: msgs.pathMissing(displayPath) };
   };
   if (allPaths.length === 0) return diagnostics;
@@ -74,10 +75,6 @@ export function validateTemplateSyntax(
   const defaultPaths = allPaths;
   const pathSet = new Set(defaultPaths.map((p) => p.path));
   const filterNameSet = new Set(BUILTIN_FILTERS.map((f) => f.name));
-
-  // root の state が宣言しているトップレベルのキー（`$0` のようなキーの判定にだけ使う。遅延収集）
-  let declaredKey: ((key: string) => boolean) | null = null;
-  const isDeclaredKey = (key: string): boolean => (declaredKey ??= createDeclaredKeyTester(html, stateTagName, fileReader))(key);
 
   const mustaches = findAllMustacheSyntax(html);
   const comments = findAllCommentBindings(html);
@@ -119,9 +116,11 @@ export function validateTemplateSyntax(
     const insideFor = item.insideTemplate && isInsideForTemplate(html, item.matchStart, bindAttrName);
 
     if (pathPart && !/^-?\d|^["'`]|^true$|^false$|^null$/.test(pathPart)) {
+      // for の外のパターンパス・省略パス・ループの添字は、ランタイムと同じ `wcs/wildcard-rank`（#1401 / #1402。
+      // 重大度は bindingValidator と同じく warning）
       if (!insideFor && pathPart.includes("*")) {
         diagnostics.push({
-          code: WcsDiagnosticCode.TemplateSyntax,
+          code: WcsDiagnosticCode.WildcardRank,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
           message: msgs.patternPathOutsideFor(pathPart),
@@ -130,33 +129,51 @@ export function validateTemplateSyntax(
       }
       if (!insideFor && pathPart.startsWith(".")) {
         diagnostics.push({
-          code: WcsDiagnosticCode.TemplateSyntax,
+          code: WcsDiagnosticCode.WildcardRank,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
           message: msgs.omittedPathOutsideFor(pathPart),
           severity: "warning",
         });
       }
-      // `$` ＋数字だけのパスで、ループの添字（`$1`〜`$128`）の表の外（`$0`・`$01`・`$129`）。ランタイムは
-      // 状態のパスとして読んで `[wcs/binding-path-missing]` で失敗させる（bindingValidator と同じ規則）
+      const outsideIndex = insideFor ? null : classifyIndexParam(pathPart);
+      if (outsideIndex !== null && outsideIndex.kind !== "notIndex") {
+        diagnostics.push({
+          code: WcsDiagnosticCode.WildcardRank,
+          start: item.exprStart,
+          end: item.exprStart + pathPart.length,
+          message: msgs.loopIndexOutsideFor(pathPart),
+          severity: "warning",
+        });
+      }
+      // `$` ＋数字だけのパス（bindingValidator と同じ規則）: `$0` / `$01` / `$1000` は添字でもパスでもない
+      // （ランタイムは `[wcs/binding-path-missing]` で失敗させる）、for の中の `$129` は `[wcs/index-param-range]`
       const indexParam = classifyIndexParam(pathPart);
-      if (indexParam === "notIndex" && !pathSet.has(pathPart) && !isDeclaredKey(pathPart)) {
+      if (indexParam !== null && indexParam.kind === "notIndex") {
         diagnostics.push({
           code: WcsDiagnosticCode.BindingPathMissing,
           start: item.exprStart,
           end: item.exprStart + pathPart.length,
-          message: msgs.indexParamNotIndex(pathPart, MAX_INDEX_PARAM),
-          severity: "warning",
+          message: msgs.indexParamNotPath(pathPart, MAX_INDEX_PARAM),
+          severity: "error",
+        });
+      } else if (insideFor && indexParam !== null && indexParam.kind === "range") {
+        diagnostics.push({
+          code: WcsDiagnosticCode.IndexParamRange,
+          start: item.exprStart,
+          end: item.exprStart + pathPart.length,
+          message: msgs.indexParamRange(pathPart, MAX_INDEX_PARAM),
+          severity: "error",
         });
       }
       // for の**段数**を超える階数（`matrix.*.*` / `$2`）。上の 2 つは「for の外か」の
       // 二値しか見ておらず、深さ方向は未検査だった。available === 0 は上が担う。
       //（`@` 入りの式は上で continue 済み）
-      if (insideFor && !pathPart.startsWith(".") && indexParam !== "notIndex") {
-        const indexN = indexParam === "index" ? Number(pathPart.slice(1)) : null;
-        const needed = indexN !== null
-          ? indexN
-          : (pathPart.includes("*") ? countWildcardSegments(pathPart) : 0);
+      if (insideFor && !pathPart.startsWith(".")) {
+        const indexMatch = indexParam !== null && indexParam.kind === "index" ? indexParam : null;
+        const needed = indexMatch !== null
+          ? indexMatch.n
+          : (indexParam === null && pathPart.includes("*") ? countWildcardSegments(pathPart) : 0);
         if (needed > 0) {
           const resolvedList = getResolvedForListPath(html, item.matchStart, bindAttrName);
           const available = resolvedList === null ? 0 : rankOfForList(resolvedList);
@@ -168,8 +185,8 @@ export function validateTemplateSyntax(
               message: msgs.wildcardRank(`"${pathPart}"`, needed, available),
               severity: "warning",
             });
-          } else if (indexN === null && resolvedList !== null) {
-            // 各段の `*` はその段で囲む for のリストの行（bindingValidator と同じ規則）
+          } else if (indexMatch === null && resolvedList !== null) {
+            // 各段の `*` は**その段で囲む for のリスト**の行（4.0 の F32・#1403）。bindingValidator と同じ規則
             const other = findOtherListWildcard(pathPart, resolvedList);
             if (other !== null) {
               diagnostics.push({
@@ -183,20 +200,11 @@ export function validateTemplateSyntax(
           }
         }
       }
-
-      // 行として読まれない数値添字のパスだけ（添字が 1 つの `items.1.v` は行を読む — #355）
-      if (isPlainIndexPath(pathPart)) {
-        diagnostics.push({
-          code: WcsDiagnosticCode.TemplateSyntax,
-          start: item.exprStart,
-          end: item.exprStart + pathPart.length,
-          message: msgs.resolvedPathInUi(pathPart),
-          severity: "warning",
-        });
-      }
+      // 数値の添字のパス（`{{ items.0.name }}`）は警告しない — 4.0 は添字の数によらず追従する（F17・#355・#383）
 
       if (pathPart.startsWith(".")) {
-        const forPath = insideFor ? getInnermostForPath(html, item.matchStart, bindAttrName) : null;
+        // Not under a for the parser refuses (getRowShorthandForPath — those rows never exist)
+        const forPath = insideFor ? getRowShorthandForPath(html, item.matchStart, bindAttrName) : null;
         if (forPath && !forPath.startsWith(".")) {
           // 単独の `.` は行そのもの＝`<forPath>.*`（末尾に区切りは付かない）。
           // ランタイム: state/src/structural/expandShorthandPaths.ts
@@ -237,38 +245,14 @@ export function validateTemplateSyntax(
       // 範囲は名前の先頭から（区切りの `|` の後の空白を含めない）
       const filterOffset = segmentStart + (segment.length - segment.trimStart().length);
       segmentStart += segment.length + 1;
-      const canonical = canonicalFilterName(filterName);
-      if (filterName && canonical !== filterName && filterNameSet.has(canonical)) {
-        // 旧名（3.x のエイリアス）は動く — info で正式名を提案する（要件 B12）
-        diagnostics.push({
-          code: WcsDiagnosticCode.NameAlias,
-          start: item.exprStart + filterOffset,
-          end: item.exprStart + filterOffset + filterName.length,
-          message: msgs.nameAlias(filterName, canonical),
-          severity: "info",
-        });
-      } else if (filterName && !filterNameSet.has(filterName)) {
+      if (filterName && !filterNameSet.has(filterName)) {
+        // 4.0 で外れた名前（3.x の旧名・`substr`）も未知のフィルタ。文面だけ書き換え先を案内する
         diagnostics.push({
           code: WcsDiagnosticCode.FilterUnknown,
           start: item.exprStart + filterOffset,
           end: item.exprStart + filterOffset + filterName.length,
-          message: msgs.filterUnknown(filterName),
+          message: removedFilterMessage(filterName, filterArgsOf(segment), msgs) ?? msgs.filterUnknown(filterName),
           severity: "warning",
-        });
-      } else if (filterName === SUBSTR_FILTER) {
-        // 3.x では動き、4.0 で削除される（bindingValidator と同じ予告）。引数は引用符の外の `,` で切る
-        const trimmed = segment.trim();
-        const open = trimmed.indexOf("(");
-        const close = trimmed.lastIndexOf(")");
-        const args = open !== -1 && close > open
-          ? splitOutsideQuotes(trimmed.slice(open + 1, close), ",").map((a) => a.trim()).filter((a, i, all) => a !== "" || i < all.length - 1)
-          : [];
-        diagnostics.push({
-          code: WcsDiagnosticCode.V4Migration,
-          start: item.exprStart + filterOffset,
-          end: item.exprStart + filterOffset + filterName.length,
-          message: msgs.v4SubstrRemoved(substrRewrite(args)),
-          severity: "info",
         });
       }
     }
@@ -277,10 +261,19 @@ export function validateTemplateSyntax(
   return diagnostics;
 }
 
-/** `rowPath` は `path` を行として読んだ形（toRowPatternPath。行でなければ `path` と同じ）。 */
+/** フィルタの区間（`substr(2, 3)`）の引数（最初の `(` と最後の `)` の間を引用符の外の `,` で切る。ランタイムと同じ）。 */
+function filterArgsOf(segment: string): string[] {
+  const text = segment.trim();
+  const open = text.indexOf("(");
+  const close = text.lastIndexOf(")");
+  if (open === -1 || close <= open) return [];
+  const args = splitOutsideQuotes(text.slice(open + 1, close), ",").map((a) => a.trim());
+  if (args[args.length - 1] === "") args.pop();
+  return args;
+}
+
 function isValidTemplatePath(
   path: string,
-  rowPath: string,
   pathSet: Set<string>,
   scopedPaths: readonly PathCandidate[],
 ): boolean {
@@ -290,8 +283,7 @@ function isValidTemplatePath(
     const hasNamespace = scopedPaths.some((p) => p.path.startsWith(prefix));
     return !hasNamespace || pathSet.has(path);
   }
-  // `$recursion` 宣言済みの木の展開形（深さを畳んでから候補集合に当てる）。
+  // `$recursion` 宣言済みの木の展開形（深さを畳んでから候補集合に当てる）・数値の添字のパス。
   // bindingValidator の validatePathExistence と同じ規則。
-  return pathSet.has(path) || pathSet.has(rowPath) || matchesRecursionCandidates(scopedPaths, rowPath, pathSet)
-    || isPlainElementPath(path, scopedPaths, pathSet);
+  return pathExistsInCandidates(path, scopedPaths, pathSet);
 }

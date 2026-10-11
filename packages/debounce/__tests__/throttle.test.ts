@@ -55,6 +55,41 @@ describe("<wcs-throttle>", () => {
     el2.remove();
   });
 
+  it("leading プロパティは no-leading 属性を読み書きする（binder の書き込みが効く）", () => {
+    const el = create({ wait: "100" });
+    document.body.appendChild(el);
+    const settled: any[] = [];
+    el.addEventListener("wcs-throttle:settled", (e) => settled.push((e as CustomEvent).detail.value));
+    expect(el.leading).toBe(true);
+
+    el.leading = false;
+    expect(el.hasAttribute("no-leading")).toBe(true);
+    expect(el.hasAttribute("leading")).toBe(false);
+    expect(el.leading).toBe(false);
+    el.source = "a";
+    expect(settled).toEqual([]); // 先頭発火しない
+    vi.advanceTimersByTime(100);
+    expect(settled).toEqual(["a"]);
+
+    el.leading = true;
+    expect(el.hasAttribute("no-leading")).toBe(false);
+    expect(el.leading).toBe(true);
+    el.remove();
+  });
+
+  it("leading の undefined はマークアップの状態へ戻し、null は既定（on）に戻す", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-throttle no-leading></wcs-throttle>';
+    const el = host.firstElementChild as Throttle;
+    el.leading = true;
+    expect(el.leading).toBe(true);
+    el.leading = undefined;
+    expect(el.leading).toBe(false);
+    el.leading = null;
+    expect(el.hasAttribute("no-leading")).toBe(false);
+    expect(el.leading).toBe(true);
+  });
+
   it("maxWait は既定で wait に固定され連続入力中も一定間隔で発火する", () => {
     const el = create({ wait: "100" });
     document.body.appendChild(el);

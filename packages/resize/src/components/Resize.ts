@@ -1,6 +1,7 @@
 import { IWcBindable, ResizeOptions, ResizeBoxOption, WcsResizeEntry } from "../types.js";
 import { ResizeCore } from "../core/ResizeCore.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 const BOX_VALUES: ReadonlyArray<ResizeBoxOption> = ["content-box", "border-box", "device-pixel-content-box"];
 
@@ -124,57 +125,51 @@ export class WcsResize extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Setters never let setAttribute stringify null / undefined (an "undefined"
+  // target is a selector that matches nothing, so nothing would be observed):
+  // `null` removes the attribute (the default), `undefined` restores the
+  // attribute the element started with (wc-bindable producer guidance P1;
+  // React 19 and a direct assignment deliver it, @wcstack/state does not).
 
   get target(): string {
     return this.getAttribute("target") ?? "";
   }
 
-  set target(value: string) {
-    this.setAttribute("target", value);
+  set target(value: string | null | undefined) {
+    reflectAttribute(this, "target", value);
   }
 
   get box(): string {
     return this.getAttribute("box") ?? "";
   }
 
-  set box(value: string) {
-    this.setAttribute("box", value);
+  set box(value: string | null | undefined) {
+    reflectAttribute(this, "box", value);
   }
 
   get round(): boolean {
     return this.hasAttribute("round");
   }
 
-  set round(value: boolean) {
-    if (value) {
-      this.setAttribute("round", "");
-    } else {
-      this.removeAttribute("round");
-    }
+  set round(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "round", value);
   }
 
   get once(): boolean {
     return this.hasAttribute("once");
   }
 
-  set once(value: boolean) {
-    if (value) {
-      this.setAttribute("once", "");
-    } else {
-      this.removeAttribute("once");
-    }
+  set once(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "once", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---

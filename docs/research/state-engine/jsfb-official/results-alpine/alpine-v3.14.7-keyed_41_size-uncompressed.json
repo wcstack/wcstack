@@ -1,0 +1,1 @@
+{"framework":"alpine-v3.14.7-keyed","keyed":true,"benchmark":"41_size-uncompressed","type":"size","values":{"DEFAULT":{"min":47.4,"max":47.4,"median":47.4,"mean":47.4,"stddev":null,"values":[47.4]}}}

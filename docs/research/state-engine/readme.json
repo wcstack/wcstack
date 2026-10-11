@@ -1,0 +1,4918 @@
+[
+ {
+  "doc": "README.md",
+  "section": "# @wcstack/state",
+  "lines": [
+   1,
+   10
+  ],
+  "tags": {
+   "C.init": 1
+  },
+  "kind": "normative",
+  "contract": "Loading /auto only registers <wcs-state>; everything else is driven by the element's lifecycle: on connect it reads its state source, scans every data-wcs binding in the same root node (document or ShadowRoot) and wires reactivity.",
+  "dependsOn": [
+   "C.grammar",
+   "C.bind"
+  ],
+  "signals": [
+   "essential-claim: 'UI and state are connected by HTML and path strings alone' - no virtual DOM, no compile step, no hooks, no selectors",
+   "scope: bindings are scanned per root node (document / ShadowRoot)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## What Does Not Exist Here",
+  "lines": [
+   11,
+   24
+  ],
+  "tags": {
+   "C.state": 0.5,
+   "C.grammar": 0.5
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": [
+   "design-constraint: APIs that pull state into components, per-element binding objects mediating state access, hooks, selectors and glue code 'do not exist by design' - constrains the rewrite's public surface",
+   "note: $connectedCallback lifecycle callbacks are explicitly 'not hooks'"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Where It Sits — and When Not to Choose It",
+  "lines": [
+   25,
+   47
+  ],
+  "tags": {
+   "C.grammar": 0.3,
+   "X.wcbindable": 0.2,
+   "X.cmdtoken": 0.1,
+   "X.evttoken": 0.1,
+   "X.component": 0.1,
+   "T.tooling": 0.2
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [
+   "C.getter",
+   "C.filter"
+  ],
+  "signals": [
+   "essential-claim: the two points that decide the choice vs Alpine/petite-vue are (1) no expression language - path + filter chain only, computation in path getters, which enables static checking and strict CSP without unsafe-eval; (2) 'It wires Web Components to each other' via wc-bindable, command-token, event-token and bind-component mounts",
+   "limitation: 'Do not choose it' when the hot path is a very large keyed list - create/append measured at 2.5-3.5x @wcstack/signals",
+   "overlap: @wcstack/signals named as the better fit for large keyed lists (alternative reactive core, interoperates)",
+   "limitation: paths are strings - templates cannot be compiler type-checked; @wcstack/typescript narrows the gap only"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### The Lineage Outside JavaScript",
+  "lines": [
+   48,
+   64
+  ],
+  "tags": {
+   "C.getter": 0.6,
+   "C.grammar": 0.2,
+   "X.component": 0.1,
+   "C.filter": 0.1
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": [
+   "essential-claim: 'What survives the comparison as genuinely new is narrow: the wildcard path getter' (one definition per pattern, dependency edge held per pattern)",
+   "inconsistency: 'a closed set of 46 filters' here vs '48 built-in filters' in ## Filters",
+   "framing: bind-component `state: user` presented as the WPF DataContext re-rooting"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## First Principle: Path as the Universal Contract",
+  "lines": [
+   65,
+   84
+  ],
+  "tags": {
+   "C.grammar": 0.3,
+   "C.state": 0.15,
+   "C.mount": 0.2,
+   "X.component": 0.25,
+   "C.list": 0.1
+  },
+  "kind": "normative",
+  "contract": "The only contract between UI and state is a path string: state knows no DOM nodes, UI knows no storage, components know only the mount table the host writes; inside for, * is an abstract index.",
+  "dependsOn": [
+   "C.list",
+   "C.mount",
+   "X.component"
+  ],
+  "signals": [
+   "essential-claim: three levels of path contract - UI<->State, Component<->Component, Loop context; the component level is part of the First Principle",
+   "dependsOn-evidence: level 2 presents host mounts onto components (`<my-card data-wcs=\"state: user\">`, bind-component = X.component) and volumes (`<wcs-state mount=\"i18n\">`, C.mount) as one mechanism: 'a whole-object mount is a path prefix on the single tree'",
+   "caveat: an exported-getter binding 'depends on a component being mounted there'",
+   "note: a bind-component class still declares its own plain state object"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Why This Matters",
+  "lines": [
+   85,
+   96
+  ],
+  "tags": {
+   "C.grammar": 0.5,
+   "C.getter": 0.2,
+   "X.watch": 0.1,
+   "X.stream": 0.1,
+   "X.scan": 0.1
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [
+   "C.getter",
+   "X.watch",
+   "X.stream",
+   "X.scan"
+  ],
+  "signals": [
+   "caveat: a live binding is one of three demand roots, so a display-only element can be the page's only subscription (a UI redesign can change semantics)",
+   "claim: the dependencies not in the HTML ($watch, $stream, $scan) are all declared in one place, the state"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## 4 Steps to Reactive HTML",
+  "lines": [
+   97,
+   118
+  ],
+  "tags": {
+   "C.init": 0.6,
+   "C.bind": 0.2,
+   "C.grammar": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "One /auto script tag, a <wcs-state> with an inline `export default` module and a data-wcs attribute are sufficient - no build or bootstrap code.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "## Features Derived from This Principle",
+  "lines": [
+   119,
+   144
+  ],
+  "tags": {
+   "C.grammar": 0.1,
+   "C.list": 0.08,
+   "C.if": 0.02,
+   "C.bind": 0.08,
+   "C.filter": 0.04,
+   "C.filter-format": 0.03,
+   "C.getter": 0.08,
+   "C.state": 0.07,
+   "C.update": 0.04,
+   "C.mount": 0.04,
+   "C.init": 0.04,
+   "C.lifecycle": 0.03,
+   "X.listkeys": 0.03,
+   "X.recursion": 0.04,
+   "X.component": 0.05,
+   "X.dcc": 0.03,
+   "X.wcbindable": 0.05,
+   "X.cmdtoken": 0.02,
+   "X.evttoken": 0.02,
+   "X.stream": 0.02,
+   "X.watch": 0.02,
+   "X.scan": 0.02,
+   "X.diagnostics": 0.03,
+   "X.trustedtypes": 0.01,
+   "X.i18n": 0.01
+  },
+  "kind": "reference",
+  "contract": "Every area in the table ships in this package (unless listed under 'Where the neighbours come in') and is a section of this README.",
+  "dependsOn": [],
+  "signals": [
+   "essential-claim: 'Every row ... ships in this package' and 'Every feature below is a consequence of this principle' - DCC, bind-component, tokens, $stream/$watch/$scan, $recursion, $listKeys, diagnostics and Trusted Types are all framed as derived from the First Principle; none is labelled optional",
+   "exclusive-with: Components row - 'Two mutually exclusive mechanisms: a JavaScript class with bind-component, or HTML-only DCC'",
+   "inconsistency: Filters row says 46 built-ins; ## Filters says 48",
+   "Modularity row groups mount= volumes with `state: path` component mounts, the per-property form and exported getters",
+   "Delivery row claims 'no unsafe-eval, Trusted Types supported' (X.trustedtypes has no other README section)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Where the neighbours come in",
+  "lines": [
+   145,
+   161
+  ],
+  "tags": {
+   "X.ssr": 0.15,
+   "T.tooling": 0.25,
+   "X.devtools": 0.1,
+   "X.viewtransition": 0.1,
+   "X.wcbindable": 0.2,
+   "X.cmdtoken": 0.05,
+   "X.evttoken": 0.05,
+   "X.diagnostics": 0.1
+  },
+  "kind": "reference",
+  "contract": "state provides the hook and the contract (enable-ssr hydration contract, diagnostic codes + getWcsManifest(), DevTools instrumentation, transition-runner hand-off, wc-bindable wiring / spread / token protocols, bindings that wait for late definitions); sibling packages provide the machinery.",
+  "dependsOn": [],
+  "signals": [
+   "essential-claim: '@wcstack/state is the reactive core and nothing else' - yet the core keeps the hooks for SSR, lint manifest, DevTools, view-transition and I/O-node wiring",
+   "overlap: @wcstack/signals is 'a different reactive core, 2.5-3.5x faster on create/append'; both speak wc-bindable so I/O nodes and DCCs are shared",
+   "late-definition: 'bindings that wait for a late definition' is what state contributes to autoloader interop (X.wcbindable upgrade waiting)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Installation",
+  "lines": [
+   162,
+   163
+  ],
+  "tags": {},
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### CDN (recommended)",
+  "lines": [
+   164,
+   170
+  ],
+  "tags": {
+   "C.init": 1
+  },
+  "kind": "normative",
+  "contract": "`<script type=module src=.../@wcstack/state/auto>` is all that is needed; it auto-initializes.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### CDN (manual initialization)",
+  "lines": [
+   171,
+   179
+  ],
+  "tags": {
+   "C.init": 1
+  },
+  "kind": "normative",
+  "contract": "Importing bootstrapState() from the package entry and calling it initializes manually.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Split entries (only the features you use)",
+  "lines": [
+   180,
+   240
+  ],
+  "tags": {
+   "X.split": 0.65,
+   "C.mount": 0.1,
+   "X.component": 0.03,
+   "X.dcc": 0.03,
+   "C.filter-format": 0.07,
+   "X.diagnostics": 0.05,
+   "X.stream": 0.01,
+   "X.watch": 0.02,
+   "X.scan": 0.01,
+   "X.recursion": 0.01,
+   "X.ssr": 0.01,
+   "X.devtools": 0.01
+  },
+  "kind": "normative",
+  "contract": "Call installFeatures([...]) before bootstrapState(); a declaration whose feature is missing throws [wcs/feature-not-installed], a filter with no implementation throws [wcs/filter-unknown]; load split files from the package's own files (never esm.run); installing is idempotent and all entries share one core chunk.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": [
+   "packaging: mount= volumes (decided core C.mount) ship in features/scopes together with bind-component, overlay exports and DCC - the current engine treats C.mount as optional and co-packaged with X.component/X.dcc",
+   "packaging: 'The core answers only `not`, which if / else need' - every other built-in filter (the table names upper, date, round, truncate) lives in features/formats, so the engine's split line differs from the taxonomy's C.filter / C.filter-format line",
+   "packaging: the core entry includes `$command` / `$on` (X.cmdtoken / X.evttoken) - tokens are not a separable feature in the current split",
+   "dependsOn-evidence: a volume declaring $watch throws [wcs/feature-not-installed] at graft, because a volume's state bypasses the element's declaration gate (C.mount <-> X.watch / X.split coupling)",
+   "limitation: esm.run inlines the core chunk into each entry -> a feature installs into a copy the core never sees",
+   "features/diagnostics is optional: without it the page stays silent (thrown errors keep full messages)",
+   "workaround: cross-feature calls go through a 'receptacle the owning feature fills on install'"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Basic Usage",
+  "lines": [
+   241,
+   295
+  ],
+  "tags": {
+   "C.bind": 0.25,
+   "C.list": 0.2,
+   "C.if": 0.15,
+   "C.event": 0.15,
+   "C.getter": 0.1,
+   "C.grammar": 0.1,
+   "C.filter": 0.05
+  },
+  "kind": "tutorial",
+  "contract": "Canonical forms: textContent and mustache text, two-way value, onclick, class.x with a filter, for with dot shorthand, if / elseif / else.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "## State Initialization",
+  "lines": [
+   296,
+   334
+  ],
+  "tags": {
+   "C.init": 1
+  },
+  "kind": "normative",
+  "contract": "Six state sources: state= (JSON script id), json= inline, src= (.json or .js module), inner <script type=module>, setInitialState(); resolution order state -> src -> json -> inner script -> wait for setInitialState().",
+  "dependsOn": [],
+  "signals": [
+   "limitation: inline <script type=module> is evaluated through a blob: URL and needs `script-src blob:` under CSP (a nonce does not cover it); src=./state.js recommended for strict CSP"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Mounting Additional State (`mount=`)",
+  "lines": [
+   335,
+   376
+  ],
+  "tags": {
+   "C.mount": 0.6,
+   "X.component": 0.12,
+   "C.lifecycle": 0.08,
+   "X.watch": 0.05,
+   "X.listkeys": 0.05,
+   "X.scan": 0.03,
+   "X.stream": 0.03,
+   "X.recursion": 0.02,
+   "X.cmdtoken": 0.01,
+   "X.evttoken": 0.01
+  },
+  "kind": "normative",
+  "contract": "One state tree per root; a volume <wcs-state mount=p> grafts data, getters, $watch, $listKeys, $renderedCallback and connect/disconnect callbacks relative to p regardless of load order; `data-wcs=\"state.<key>: rootPath\"` on the volume injects one static root path (#ro -> [wcs/mount-readonly]); the mount path is static and fixed after init.",
+  "dependsOn": [
+   "C.init",
+   "C.state",
+   "C.getter",
+   "C.lifecycle",
+   "X.component",
+   "X.watch",
+   "X.listkeys",
+   "X.split"
+  ],
+  "signals": [
+   "dependsOn-evidence: root-path injection into a volume (3.1) is written 'in the same form as a component's partial mount' - it reuses the bind-component per-property mount grammar (`state.taxRate: settings.taxRate`) and machinery",
+   "dependsOn-evidence: the 'What each scope runs' table (requirement B11) specifies volume behaviour side by side with mounted bind-component scopes",
+   "limitation: $stream, $scan, $recursion and ** getters are rejected in a volume before grafting; $commandTokens / $eventTokens / $on and $errorCallback are not run (warning)",
+   "limitation: mount path must be static (*, $, #, @ rejected); changing mount after init is ignored with a warning",
+   "limitation: an orphaned volume (root failed) never grafts later - recovery needs new elements",
+   "B-item:B11",
+   "compat: v1 `<wcs-state name>` + `total@cart` fail fast with migration guidance (removed in v2)",
+   "complexity: detailed mount-slot release / reclaim rules for orphaned, failed and detached volumes"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Updating State",
+  "lines": [
+   377,
+   387
+  ],
+  "tags": {
+   "C.state": 1
+  },
+  "kind": "normative",
+  "contract": "Assign to the path (`this.count = 10`, `this['user.name'] = 'Bob'`) and the DOM updates automatically.",
+  "dependsOn": [
+   "C.update"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Why `this.user.name = \"Bob\"` Doesn't Work",
+  "lines": [
+   388,
+   403
+  ],
+  "tags": {
+   "C.state": 1
+  },
+  "kind": "normative",
+  "contract": "Mutating a plain object obtained through a path read (`this.user.name = x`) is not a path assignment and is not detected - by design.",
+  "dependsOn": [],
+  "signals": [
+   "limitation (by design): making nested mutation reactive is rejected as breaking the path-only principle"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Arrays",
+  "lines": [
+   404,
+   422
+  ],
+  "tags": {
+   "C.state": 0.8,
+   "C.list": 0.2
+  },
+  "kind": "normative",
+  "contract": "Replace arrays by path assignment using non-destructive methods (concat / toSpliced / filter / toSorted / toReversed / with); push / splice / sort in place are not detected.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": [
+   "limitation: in-place array mutation is not detected"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Binding Syntax",
+  "lines": [
+   423,
+   424
+  ],
+  "tags": {},
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### `data-wcs` Attribute",
+  "lines": [
+   425,
+   445
+  ],
+  "tags": {
+   "C.grammar": 1
+  },
+  "kind": "normative",
+  "contract": "Grammar `property[#modifier]: path[|filter[|filter(args)...]]`; bindings separated by `;`; `;` and `|` split only outside quotes (3.0).",
+  "dependsOn": [],
+  "signals": [
+   "behaviour change 3.0: quoted filter arguments may contain ; and | (previously broke the binding)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Property Types",
+  "lines": [
+   446,
+   470
+  ],
+  "tags": {
+   "C.bind": 0.6,
+   "C.grammar": 0.3,
+   "C.event": 0.1
+  },
+  "kind": "normative",
+  "contract": "Binding targets: value, checked, textContent / text, html, class.NAME, style.PROP, attr.NAME (SVG namespace), radio, checkbox, on* events, and `.NAME` explicit property (3.1) which is never an event.",
+  "dependsOn": [
+   "C.event"
+  ],
+  "signals": [
+   "compat: `text` is an alias for textContent",
+   "rule: any binding name starting with `on` is an event (`online:` listens for 'line'); `.online:` escape added in 3.1",
+   "grammar reserves namespace words `.class` / `.attr` / `.style` / `.command` / `.eventToken` - the core parser knows the X.cmdtoken / X.evttoken namespaces"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Modifiers",
+  "lines": [
+   471,
+   487
+  ],
+  "tags": {
+   "C.grammar": 0.7,
+   "X.wcbindable": 0.15,
+   "C.bind": 0.1,
+   "C.event": 0.05
+  },
+  "kind": "normative",
+  "contract": "#ro / #prevent / #stop / #onchange / #init= / #sync= are comma-separated after one #; a modifier never changes the binding kind (3.0); the parser rejects a second #, a value after else:, modifiers or left filters on for / if / elseif / else / ..., and unterminated quotes with [wcs/binding-syntax].",
+  "dependsOn": [
+   "X.wcbindable"
+  ],
+  "signals": [
+   "dependsOn-evidence: #init= / #sync= are core-grammar modifiers whose semantics belong to X.wcbindable binding authority",
+   "behaviour change 3.0: radio#ro / checkbox#ro stay radio / checkbox; strict parsing replaces silent round-off"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Two-Way Binding",
+  "lines": [
+   488,
+   500
+  ],
+  "tags": {
+   "C.bind": 0.8,
+   "C.event": 0.2
+  },
+  "kind": "normative",
+  "contract": "Two-way is automatic for input checked / value / valueAsNumber / valueAsDate (input event), select value (change) and textarea value (input); input type=button excluded; #ro disables, #onchange switches the event.",
+  "dependsOn": [
+   "C.grammar"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Binding Authority (`#init=` / `#sync=`)",
+  "lines": [
+   501,
+   515
+  ],
+  "tags": {
+   "X.wcbindable": 0.9,
+   "C.grammar": 0.1
+  },
+  "kind": "normative",
+  "contract": "For wcBindable custom elements every prop binding resolves an initial-sync authority from where the member is declared (properties-only = element / output-only, inputs-only = state, both = state); steady-state direction follows the declared shape; plain HTML elements are unchanged.",
+  "dependsOn": [
+   "C.bind",
+   "C.grammar"
+  ],
+  "signals": [
+   "flag:enableDirectionalInitialSync (default on)",
+   "authoring rule: declare settable members in both properties and inputs, else they become output-only and state writes are suppressed for the binding's life"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "#### What the element writes back (`properties[].getter`)",
+  "lines": [
+   516,
+   580
+  ],
+  "tags": {
+   "X.wcbindable": 0.85,
+   "X.diagnostics": 0.05,
+   "X.dcc": 0.05,
+   "C.bind": 0.05
+  },
+  "kind": "normative",
+  "contract": "On properties[].event the value written to state is getter(event), default e.detail (a plain element instead reads element[prop] on input/change); #init=state|element|auto|none overrides only the initial-sync winner; #sync=call|connect sets snapshot timing; with enableDirectionalInitialSync:false #init / #sync throw.",
+  "dependsOn": [
+   "C.bind",
+   "C.grammar"
+  ],
+  "signals": [
+   "heading-nesting: the #init= / #sync= override tables and the load-before-bind guidance (~lines 544-580) sit under this #### heading",
+   "limitation: a wrong default-getter payload is mostly silent - the runtime warns only for two shapes (wcs/default-getter-mismatch) and lint cannot see it",
+   "compat: 'Migrating from <= 1.20' seeding advice; 'Until 1.21.x' init=element/auto/none suppressed state->element writes for the binding's whole lifetime (changed)",
+   "flag:enableDirectionalInitialSync (false -> #init / #sync throw)",
+   "X.dcc: DCC $bindables declare getter: (e) => e.target[name]"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Radio Binding",
+  "lines": [
+   581,
+   602
+  ],
+  "tags": {
+   "C.bind": 0.9,
+   "C.list": 0.1
+  },
+  "kind": "normative",
+  "contract": "`radio: path` checks the radio whose value equals the state value and writes the selected value back; #ro for read-only; works inside for.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Checkbox Binding",
+  "lines": [
+   603,
+   614
+  ],
+  "tags": {
+   "C.bind": 0.9,
+   "C.filter": 0.1
+  },
+  "kind": "normative",
+  "contract": "`checkbox: arrayPath` checks boxes whose value is in the array and adds / removes on toggle; |int converts values; #ro read-only.",
+  "dependsOn": [
+   "C.filter"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Mustache Syntax",
+  "lines": [
+   615,
+   625
+  ],
+  "tags": {
+   "C.grammar": 1
+  },
+  "kind": "normative",
+  "contract": "With enableMustache (default true) `{{ path|filters }}` in text nodes becomes a comment binding `<!--@@:expr-->`.",
+  "dependsOn": [
+   "C.bind"
+  ],
+  "signals": [
+   "flag:enableMustache"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Spread Binding (`...`)",
+  "lines": [
+   626,
+   678
+  ],
+  "tags": {
+   "C.bind": 0.4,
+   "X.wcbindable": 0.3,
+   "C.grammar": 0.1,
+   "C.filter": 0.1,
+   "C.filter-format": 0.1
+  },
+  "kind": "normative",
+  "contract": "`...: obj` expands a wcBindable element's properties + inputs into per-name bindings (a later explicit binding wins; commands / event tokens excluded); undefined means 'no opinion' (write skipped) for element inputs while null is written; on display surfaces (text, mustache, attr.*, style.*, class.*) undefined / null mean empty / removed; formatting filters pass undefined / null through.",
+  "dependsOn": [
+   "X.wcbindable",
+   "C.list",
+   "C.grammar"
+  ],
+  "signals": [
+   "dependsOn-evidence: spread (spread application = C.bind per taxonomy) rejects elements without a wcBindable declaration - a C.bind -> X.wcbindable edge",
+   "late-definition: expansion is deferred until customElements.whenDefined(tag) (X.wcbindable upgrade waiting)",
+   "misplaced: the general 'undefined = no opinion / display surfaces empty' rule and the filter null-passthrough contract apply to ALL property bindings but are documented inside the Spread section",
+   "behaviour change 3.0: textContent: undefined now empties (previously left the previous row's text in a reused row); attributes no longer receive 'undefined' / 'null'",
+   "limitation: class.* with any non-boolean, non-null value throws",
+   "flag:debug (logs each skipped undefined write)",
+   "composite shells (wc-bindable Composition Profile) supported"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Structural Directives",
+  "lines": [
+   679,
+   682
+  ],
+  "tags": {
+   "C.list": 0.5,
+   "C.if": 0.5
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Loop (`for`)",
+  "lines": [
+   683,
+   701
+  ],
+  "tags": {
+   "C.list": 1
+  },
+  "kind": "normative",
+  "contract": "`for:` diffs by element value / reference identity - no key attribute; non-destructive array methods preserve references so sort and filter reuse DOM.",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "limitation: freshly created objects (fetch().json(), JSON.parse, WS/SSE snapshots, postMessage) never match by reference - every row is torn down and rebuilt; the README points to $listKeys (X.listkeys) as the remedy"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "#### `$listKeys` — identity for refetched rows",
+  "lines": [
+   702,
+   732
+  ],
+  "tags": {
+   "X.listkeys": 0.9,
+   "C.list": 0.1
+  },
+  "kind": "normative",
+  "contract": "$listKeys: {path: field | (row) => key} makes array reassignment keep matched row objects and write only changed fields; opt-in per path (nesting too); a no-op refresh is free; rows must be plain objects with present, unique keys (else throws); dropped fields cleared with null; the stored array !== the assigned array.",
+  "dependsOn": [
+   "C.list",
+   "C.state"
+  ],
+  "signals": [
+   "overlap: a second row-identity mechanism beside the reference-identity diff (C.list)",
+   "used-by: headless wildcard $watch and wildcard $scan `from` require $listKeys (or a for binding)",
+   "vocabulary: null = explicit clear, undefined = no opinion"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "#### Dot Shorthand",
+  "lines": [
+   733,
+   765
+  ],
+  "tags": {
+   "C.grammar": 0.7,
+   "C.list": 0.3
+  },
+  "kind": "normative",
+  "contract": "Inside for, `.x` expands to `<loopPath>.*.x` and `.` to the current element; filters are preserved; a nested `for: .states` expands against the parent loop path.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Conditional (`if` / `elseif` / `else`)",
+  "lines": [
+   766,
+   781
+  ],
+  "tags": {
+   "C.if": 1
+  },
+  "kind": "normative",
+  "contract": "if / elseif / else on <template>; chains; elseif inverts the previous condition.",
+  "dependsOn": [
+   "C.grammar",
+   "C.filter"
+  ],
+  "signals": [
+   "dependsOn-evidence: else / elseif rely on the `not` filter, the only filter the split core keeps"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Path Getters (Computed Properties)",
+  "lines": [
+   782,
+   785
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "Getters with dot-path string keys containing * define virtual properties at any depth, all flat in one place, with automatic per-loop-element dependency tracking.",
+  "dependsOn": [],
+  "signals": [
+   "essential-claim: 'Path getters are the core feature of @wcstack/state'"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Basic Path Getter",
+  "lines": [
+   786,
+   817
+  ],
+  "tags": {
+   "C.getter": 0.8,
+   "C.list": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "Inside `get 'users.*.x'()`, `this['users.*.y']` resolves to the current loop element with no manual indexing.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Top-Level Computed Properties",
+  "lines": [
+   818,
+   831
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "Getters without wildcards are ordinary computed properties.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Getter Chaining",
+  "lines": [
+   832,
+   879
+  ],
+  "tags": {
+   "C.getter": 0.8,
+   "C.state": 0.1,
+   "C.filter-format": 0.1
+  },
+  "kind": "normative",
+  "contract": "Getters may read other getters (incl. $getAll aggregates); the cached chain is invalidated when any upstream value changes.",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Nested Wildcard Getters",
+  "lines": [
+   880,
+   924
+  ],
+  "tags": {
+   "C.getter": 0.8,
+   "C.list": 0.2
+  },
+  "kind": "normative",
+  "contract": "Multiple wildcards in a getter key resolve against nested for contexts.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Flat Virtual Properties Across Any Depth",
+  "lines": [
+   925,
+   977
+  ],
+  "tags": {
+   "C.getter": 0.7,
+   "C.state": 0.3
+  },
+  "kind": "tutorial",
+  "contract": "Getters at every nesting depth sit side by side; $getAll with omitted indexes aggregates within the current loop context, [] means every match.",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "rationale: removes the need to split components per nesting level just to hold computed values"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Accessing Sub-Properties of Getter Results",
+  "lines": [
+   978,
+   1009
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "A path through a getter's returned object (`cart.items.*.product.price`) transparently reads into the returned value.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Path Setters",
+  "lines": [
+   1010,
+   1038
+  ],
+  "tags": {
+   "C.getter": 0.8,
+   "C.bind": 0.2
+  },
+  "kind": "normative",
+  "contract": "`set 'path'(v)` defines write logic, wildcard setters included; two-way bindings call it.",
+  "dependsOn": [
+   "C.bind"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Supported Path Getter Patterns",
+  "lines": [
+   1039,
+   1048
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "reference",
+  "contract": "Supported: top-level get, nested get 'a.b', single- and multi-wildcard get, wildcard set.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### How It Works",
+  "lines": [
+   1049,
+   1058
+  ],
+  "tags": {
+   "C.getter": 0.6,
+   "C.state": 0.2,
+   "I.internal": 0.2
+  },
+  "kind": "reference",
+  "contract": "* resolves via the ListIndex stack pushed by for; reads register dynamic dependencies; results are cached per concrete address; numeric-index paths (users.0.name) resolve without loop context.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": [
+   "internal vocabulary exposed: ListIndex, address stack, per-address cache entries"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Getters must be pure with respect to state",
+  "lines": [
+   1059,
+   1089
+  ],
+  "tags": {
+   "C.getter": 0.8,
+   "C.state": 0.1,
+   "C.eq": 0.1
+  },
+  "kind": "normative",
+  "contract": "A getter's cache invalidates only through dependencies read via `this`; untracked inputs (Date.now, DOM, module variables) freeze the first value; escape hatches are $dependOn / $postUpdate / $untracked / $eq*; getter exceptions surface where evaluated.",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "limitation: an impure getter silently keeps its first value"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "#### Dependency tracking boundaries",
+  "lines": [
+   1090,
+   1103
+  ],
+  "tags": {
+   "C.getter": 0.6,
+   "C.state": 0.25,
+   "T.tooling": 0.1,
+   "X.watch": 0.05
+  },
+  "kind": "normative",
+  "contract": "Only path reads through `this` are tracked (`this.form.name` tracks `form` only); reads inside setters are untracked; the same-value guard drops Object.is-equal primitive writes only (objects always pass).",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "flag:sameValueGuard",
+   "exemption: a `semantics: 'event'` property (wcBindable) bypasses the same-value guard",
+   "limitation: crossing a rule gives a silently stale value; lint wcs/getter-untracked-read catches rule 1 statically"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Keyed selection (`$eq` / `$eqPath` / `$eqIndex`)",
+  "lines": [
+   1104,
+   1136
+  ],
+  "tags": {
+   "C.eq": 0.85,
+   "C.mount": 0.05,
+   "X.component": 0.05,
+   "X.devtools": 0.05
+  },
+  "kind": "normative",
+  "contract": "$eq(path, key) / $eqPath(path, keyPath) / $eqIndex(path, level) subscribe each row under its own key so a write to path re-evaluates only the previously and newly selected rows; called from methods they just compare; $eqIndex outside a row throws; no type conversion; inside volumes and mounted components the path is relative to the scope.",
+  "dependsOn": [
+   "C.getter",
+   "C.list",
+   "C.state",
+   "C.mount",
+   "X.component"
+  ],
+  "signals": [
+   "limitation: when path is (or sits under) a getter the call falls back to an ordinary tracked read - every row re-evaluates",
+   "limitation: $eqPath reads the key untracked - a key changing in place is not seen (use for immutable ids)",
+   "dependsOn-evidence: scope-relative path resolution is specified for mounted bind-component scopes as well as volumes",
+   "X.devtools: the State pane counts keyed subscriptions and marks fallback paths with a `tracked` badge (3.0)",
+   "keys compare with Object.is except Map semantics (+0/-0, NaN/NaN equal)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Loop Index Variables (`$1`, `$2`, ...)",
+  "lines": [
+   1137,
+   1170
+  ],
+  "tags": {
+   "C.state": 0.7,
+   "C.list": 0.2,
+   "C.event": 0.1
+  },
+  "kind": "normative",
+  "contract": "this.$1, $2 ... are the current loop indexes (0-based value, 1-based naming), outer first; also usable in templates ({{ $1|add(1) }}).",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Proxy APIs",
+  "lines": [
+   1171,
+   1187
+  ],
+  "tags": {
+   "C.state": 0.55,
+   "C.getter": 0.15,
+   "C.eq": 0.1,
+   "X.cmdtoken": 0.1,
+   "C.init": 0.05,
+   "C.list": 0.05
+  },
+  "kind": "reference",
+  "contract": "`this` exposes $getAll, $setAll, $resolve, $postUpdate, $dependOn, $untracked, $eq / $eqPath / $eqIndex, $command.<name>, $stateElement and $1 ... $n.",
+  "dependsOn": [
+   "C.state",
+   "X.cmdtoken"
+  ],
+  "signals": [
+   "compat: $dependOn '(3.2; old name $trackDependency)' and $untracked '(3.2; old name $untrackDependency)' - old names still accepted; no removal version stated here",
+   "X.cmdtoken's $command namespace is part of the documented proxy API surface"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "#### `$getAll` — Aggregate Across Array Elements",
+  "lines": [
+   1188,
+   1222
+  ],
+  "tags": {
+   "C.state": 0.9,
+   "C.list": 0.1
+  },
+  "kind": "normative",
+  "contract": "$getAll(path, indexes?) returns every matching value; indexes is a prefix, [] = every match, omitted = the enclosing loop context on shared wildcard levels; throws when the path shares no wildcard level with a non-empty context.",
+  "dependsOn": [
+   "C.getter",
+   "C.list"
+  ],
+  "signals": [
+   "behaviour: throws instead of silently reading every row when the context belongs to another list"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "#### `$setAll` — Update Every Array Element In Place",
+  "lines": [
+   1223,
+   1264
+  ],
+  "tags": {
+   "C.state": 1
+  },
+  "kind": "normative",
+  "contract": "$setAll(path, indexes, value | mapper | array + {spread:true}) writes every matched address in place, preserving the array; indexes required (no implicit loop context); undefined skips; returns the count written; a spread length mismatch throws.",
+  "dependsOn": [
+   "C.update"
+  ],
+  "signals": [
+   "perf: each write is enqueued individually - no fewer cycles than a hand loop; buys list identity only"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "#### `$resolve` — Access by Explicit Index",
+  "lines": [
+   1265,
+   1282
+  ],
+  "tags": {
+   "C.state": 0.5,
+   "X.elemwrite": 0.4,
+   "C.list": 0.1
+  },
+  "kind": "normative",
+  "contract": "$resolve(path, indexes) reads and $resolve(path, indexes, value) writes (undefined included, 3.0); writes on a readonly proxy throw; swapping list elements through $resolve moves the row blocks (swap identity) while writing a value not in the list replaces the row in place.",
+  "dependsOn": [
+   "C.list",
+   "C.state"
+  ],
+  "signals": [
+   "behaviour change 3.0: argument count decides read vs write; $resolve and $setAll now throw on a readonly proxy",
+   "X.elemwrite: documents the swap-vs-replace identity model for writes to list elements (#4 family); for primitives, equal values that end reordered count as a swap"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Recursive Paths (`$recursion`)",
+  "lines": [
+   1283,
+   1321
+  ],
+  "tags": {
+   "X.recursion": 0.9,
+   "C.getter": 0.1
+  },
+  "kind": "normative",
+  "contract": "$recursion: {anchor: repeat} lets `**` stand for any depth in getter keys and reads; `**` is authoring notation only - fixed-arity accessors are materialized per depth on demand.",
+  "dependsOn": [
+   "C.getter",
+   "C.state"
+  ],
+  "signals": [
+   "layering claim: 'The reactive core did not learn a new shape' - PathInfo, dependency graph, $1...$n, $resolve and the list diff see ordinary fixed-arity paths (X.recursion layered over C.getter)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Declaring the recursion point",
+  "lines": [
+   1322,
+   1341
+  ],
+  "tags": {
+   "X.recursion": 1
+  },
+  "kind": "normative",
+  "contract": "$recursion maps one anchor list-element path to one repeating sub-path; without a declaration `**` is not a path character (wcs/recursion-unsupported).",
+  "dependsOn": [],
+  "signals": [
+   "limitation: exactly one self-recursive anchor per state; mid-anchor wildcards, a second entry, mutual recursion, a second ** per path, structure-naming ** getters and recursive setters are rejected when the declaration is read"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### What `**` means where",
+  "lines": [
+   1342,
+   1367
+  ],
+  "tags": {
+   "X.recursion": 0.85,
+   "C.state": 0.15
+  },
+  "kind": "normative",
+  "contract": "** is bound to the evaluated depth in getter keys, reads and $getAll with omitted indexes; $getAll(path, []) unions every depth (pre-order); $setAll(path, [], v) broadcasts; ** is rejected in $resolve / $postUpdate / $dependOn / $watch and $listKeys keys / markup / assignment.",
+  "dependsOn": [
+   "C.state",
+   "C.getter"
+  ],
+  "signals": [
+   "limitation: a bound ** read outside a recursive or row getter -> wcs/recursion-context; the depth is read from the innermost frame only"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Aggregating without counting grandchildren twice",
+  "lines": [
+   1368,
+   1406
+  ],
+  "tags": {
+   "X.recursion": 1
+  },
+  "kind": "tutorial",
+  "contract": "Aggregate with omitted indexes inside the recursive getter; union raw values or sum the roots - never union an aggregate.",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "limitation: double counting is not decidable from the path string - no diagnostic"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Writing: broadcast only",
+  "lines": [
+   1407,
+   1427
+  ],
+  "tags": {
+   "X.recursion": 0.85,
+   "C.state": 0.15
+  },
+  "kind": "normative",
+  "contract": "A recursive $setAll accepts only [] + a plain value, refuses every other form before writing, and refuses structural targets and getter-derived targets (also for concrete expansions written by any route).",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "limitation: no mapper, spread, prefix or omitted indexes (wcs/recursion-setall-form, wcs/recursion-structural-write, wcs/recursion-readonly)",
+   "history: an unmaterialized expansion used to accept a write onto the node and pin the getter's cached result",
+   "inconsistency: cites the fixed-arity `$setAll('nodes.*.children.0.value', [], v)` - a partially resolved path, which docs/path-classification.md calls unsupported"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### The input has to be a tree",
+  "lines": [
+   1428,
+   1435
+  ],
+  "tags": {
+   "X.recursion": 0.7,
+   "I.internal": 0.2,
+   "X.component": 0.1
+  },
+  "kind": "normative",
+  "contract": "The walk refuses reaching the same array instance twice (wcs/recursion-cycle / wcs/recursion-shared-list); ceiling 128 wildcard levels (wcs/recursion-depth-exceeded); nothing is truncated.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": [
+   "defect:#256",
+   "version-specific internals documented ('Only the same-array-instance restore behaves this way on 2.3.0') - row-owner semantics for shared child arrays",
+   "mentions bind-component child-scope rows surviving a row-object replacement"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Rendering the tree",
+  "lines": [
+   1436,
+   1471
+  ],
+  "tags": {
+   "X.recursion": 0.4,
+   "X.component": 0.6
+  },
+  "kind": "tutorial",
+  "contract": "There is no recursive <template> and ** cannot appear in markup; a tree is rendered by a self-referential bind-component element that mounts itself per child (`state.node: node.children.*`).",
+  "dependsOn": [
+   "X.component",
+   "C.list"
+  ],
+  "signals": [
+   "dependsOn-evidence: rendering a recursive tree requires X.component (self-referential bind-component mounts) - X.recursion alone cannot render one",
+   "trap: the component's state must not declare the mounted key (wcs/mount-own-key-shadow)",
+   "trap (environment-dependent): build the shadow in connectedCallback, not the constructor"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Not in this version",
+  "lines": [
+   1472,
+   1483
+  ],
+  "tags": {
+   "X.recursion": 1
+  },
+  "kind": "normative",
+  "contract": "Refused forms are each a diagnostic, never a silent reinterpretation.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: $recursion and ** getters are refused in a volume (mount=) and a mounted component - root only",
+   "limitation: no recursive <template>, no $depth, no public maxDepth"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Event Handling",
+  "lines": [
+   1484,
+   1513
+  ],
+  "tags": {
+   "C.event": 1
+  },
+  "kind": "normative",
+  "contract": "`on<event>[#prevent|#stop]: method` calls state.method(event, ...loopIndexes).",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "## Filters",
+  "lines": [
+   1514,
+   1519
+  ],
+  "tags": {
+   "C.filter": 0.5,
+   "C.filter-format": 0.5
+  },
+  "kind": "normative",
+  "contract": "48 built-in filters, usable in both directions (DOM -> state and state -> DOM); 3.2 canonical names, old names kept through 3.x.",
+  "dependsOn": [],
+  "signals": [
+   "B-item:B12",
+   "deprecate?: old filter names (inc, dec, fix, uc, lc, cap, pad, rep, rev, null) 'work the same through 3.x and are removed in 4.0'; lint reports wcs/name-alias",
+   "inconsistency: 48 here vs 46 in 'Features Derived' and 'Lineage'"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Comparison",
+  "lines": [
+   1520,
+   1531
+  ],
+  "tags": {
+   "C.filter": 1
+  },
+  "kind": "reference",
+  "contract": "eq, ne, not, lt, le, gt, ge; `not` inverts truthiness (0, '', null, undefined -> true).",
+  "dependsOn": [],
+  "signals": [
+   "behaviour change 3.x: `not` no longer throws on a non-boolean (it made else: render neither branch)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Arithmetic",
+  "lines": [
+   1532,
+   1543
+  ],
+  "tags": {
+   "C.filter": 1
+  },
+  "kind": "reference",
+  "contract": "add, sub, mul, div, mod, abs, clamp.",
+  "dependsOn": [],
+  "signals": [
+   "compat: inc / dec aliases (removed in 4.0)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Number Formatting",
+  "lines": [
+   1544,
+   1555
+  ],
+  "tags": {
+   "C.filter-format": 1
+  },
+  "kind": "reference",
+  "contract": "toFixed, round, floor, ceil, locale, percent, unit.",
+  "dependsOn": [
+   "X.i18n"
+  ],
+  "signals": [
+   "compat: fix alias (removed in 4.0)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### String",
+  "lines": [
+   1556,
+   1572
+  ],
+  "tags": {
+   "C.filter": 0.7,
+   "C.filter-format": 0.3
+  },
+  "kind": "reference",
+  "contract": "upper, lower, capitalize, trim, slice, substr, padStart, padEnd, repeat, reverse, truncate, join.",
+  "dependsOn": [],
+  "signals": [
+   "compat: uc / lc / cap / pad / rep / rev aliases (removed in 4.0)",
+   "engine-split: the split-entries table lists `upper` and `truncate` under features/formats - string ops are 'formats' in the current engine although the taxonomy counts them as C.filter"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Type Conversion",
+  "lines": [
+   1573,
+   1583
+  ],
+  "tags": {
+   "C.filter": 1
+  },
+  "kind": "reference",
+  "contract": "int, float, boolean, number, string, nullIfEmpty.",
+  "dependsOn": [],
+  "signals": [
+   "compat: `null` alias for nullIfEmpty (removed in 4.0)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Date / Time",
+  "lines": [
+   1584,
+   1595
+  ],
+  "tags": {
+   "C.filter-format": 0.8,
+   "X.i18n": 0.2
+  },
+  "kind": "normative",
+  "contract": "date, time, datetime, ymd, hms accept a Date only (other types rejected); loc defaults to config.locale, re-read on every apply.",
+  "dependsOn": [
+   "X.i18n"
+  ],
+  "signals": [
+   "limitation: timestamps / ISO strings are rejected - convert in a getter"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Boolean / Default",
+  "lines": [
+   1596,
+   1604
+  ],
+  "tags": {
+   "C.filter": 1
+  },
+  "kind": "reference",
+  "contract": "truthy, falsy, defaults (any falsy), coalesce (null / undefined only, 3.2).",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Filter Chaining",
+  "lines": [
+   1605,
+   1624
+  ],
+  "tags": {
+   "C.filter": 0.6,
+   "C.grammar": 0.4
+  },
+  "kind": "normative",
+  "contract": "Filters chain with |, are resolved when bindings are planned ([wcs/filter-unknown], [wcs/filter-arity]); unquoted true / false / null / numbers are typed; quotes make strings, with no escape character.",
+  "dependsOn": [
+   "C.grammar"
+  ],
+  "signals": [
+   "behaviour change 3.0: typed argument literals; arity checked",
+   "behaviour change 3.2: a numeric value vs typed null / boolean is 'not equal' instead of throwing"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Web Component Binding",
+  "lines": [
+   1625,
+   1637
+  ],
+  "tags": {
+   "X.component": 0.8,
+   "C.update": 0.1,
+   "C.list": 0.1
+  },
+  "kind": "normative",
+  "contract": "Parent and child components connect through path contracts: the host binds outer paths to inner component state; the child reads / writes its own state proxy with no props, events or parent awareness.",
+  "dependsOn": [
+   "C.state",
+   "C.grammar"
+  ],
+  "signals": [
+   "perf: create / append at 2.5-3.5x @wcstack/signals is attributed to 'the per-row binding ledger the package builds for every row' - framed as the price of this cross-component wiring",
+   "limitation: a Light DOM component cannot run standalone - the host must wire it"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Component Definition (Shadow DOM)",
+  "lines": [
+   1638,
+   1656
+  ],
+  "tags": {
+   "X.component": 1
+  },
+  "kind": "tutorial",
+  "contract": "A class with a `state` object whose shadow root contains `<wcs-state bind-component=\"state\">` gets a reactive state.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Component Definition (Light DOM)",
+  "lines": [
+   1657,
+   1681
+  ],
+  "tags": {
+   "X.component": 1
+  },
+  "kind": "normative",
+  "contract": "Light DOM components use the same form; the <wcs-state> must be a direct child and the host must wire it (`state.x:` or `state:`).",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "removed in v2: a plain unwired Light DOM bind-component fails loudly with migration guidance",
+   "note: getBindingsReady(root) covers mounted scopes once the mount record resolves"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Host Usage",
+  "lines": [
+   1682,
+   1700
+  ],
+  "tags": {
+   "X.component": 1
+  },
+  "kind": "normative",
+  "contract": "`bind-component=\"state\"` maps the component's state property; `state.message: user.name` on the host element binds bidirectionally.",
+  "dependsOn": [
+   "C.grammar",
+   "C.state"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Whole-object Mount (`state: path`)",
+  "lines": [
+   1701,
+   1759
+  ],
+  "tags": {
+   "X.component": 0.85,
+   "C.state": 0.1,
+   "C.grammar": 0.05
+  },
+  "kind": "normative",
+  "contract": "`state: path` mounts a host subtree as the component root (reads, writes, getters and for resolve against the tree); unmapped own keys are private (R1, wcs/mount-own-key-shadow); an explicit partial mount beats an own key (3.0); #ro is honoured ([wcs/mount-readonly], 3.0); $getAll / $setAll / $resolve / $postUpdate are translated onto the mount.",
+  "dependsOn": [
+   "C.state",
+   "C.getter",
+   "C.list",
+   "C.grammar"
+  ],
+  "signals": [
+   "shared-machinery: 'mounts are the only way to extend the tree'; own-key privacy is rule R1 of docs/state-mount-design.md, the design shared with volumes",
+   "limitation: mounting an array as the root is unsupported",
+   "compat: the per-property form 'keeps working - it is a partial mount on the same machinery'",
+   "behaviour change 3.0: partial mount wins over own key; #ro honoured (2.x accepted and ignored it)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "#### Exported getters (reading a component's getter from outside)",
+  "lines": [
+   1760,
+   1776
+  ],
+  "tags": {
+   "X.component": 0.9,
+   "C.getter": 0.1
+  },
+  "kind": "normative",
+  "contract": "A read of a key the tree lacks is answered by the getter of the component mounted there; tree keys win (wcs/mount-export-shadowed); private keys and methods are never visible; a write runs the accessor's setter or throws.",
+  "dependsOn": [
+   "C.getter"
+  ],
+  "signals": [
+   "limitation: accessors with a wildcard in their component-local path are not exported",
+   "limitation: the first read may be undefined before the component registers - write defensively",
+   "limitation: wcs/mount-export-ambiguous may escape detection after the first resolution (cache hit)",
+   "overlap / staleness: 'Paths cannot express recursion themselves ... so the recursion lives in the DOM' - contradicted by $recursion / **, which now expresses recursion in paths; two mechanisms for unbounded-depth trees",
+   "`in` does not see exported keys; missing-path warnings deferred one macrotask"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Standalone Web Component Injection (`__e2e__/single-component`)",
+  "lines": [
+   1777,
+   1810
+  ],
+  "tags": {
+   "X.component": 0.85,
+   "C.lifecycle": 0.15
+  },
+  "kind": "normative",
+  "contract": "An independent Shadow DOM component can use bind-component alone: this.state becomes a writable reactive proxy (a frozen initial object is replaced); async $stateReadyCallback(stateProp) fires when it is ready.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": [
+   "heading names an internal e2e fixture path (__e2e__/single-component)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Constraints",
+  "lines": [
+   1811,
+   1817
+  ],
+  "tags": {
+   "X.component": 0.7,
+   "X.watch": 0.08,
+   "X.stream": 0.05,
+   "X.scan": 0.05,
+   "X.recursion": 0.05,
+   "C.mount": 0.07
+  },
+  "kind": "normative",
+  "contract": "The bind-component <wcs-state> must be a direct child of a custom element; Light DOM must be host-wired; a mounted scope ignores $watch / $stream / $scan (one-time warning) and rejects $recursion / ** getters.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: mounted scopes execute no declaration surfaces",
+   "inconsistency: says a volume 'can host $watch, while $scan and $recursion are root-only' - omits $stream, which the scope table also rejects in volumes",
+   "an unwired Shadow DOM child owns an independent tree and may declare everything"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Loop with Components",
+  "lines": [
+   1818,
+   1830
+  ],
+  "tags": {
+   "X.component": 0.8,
+   "C.list": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "Components inside a for are wired per property (`state.message: .name`) or by mounting the row (`state: .`).",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Rendering a List Inside the Component",
+  "lines": [
+   1831,
+   1856
+  ],
+  "tags": {
+   "X.component": 0.7,
+   "C.list": 0.3
+  },
+  "kind": "normative",
+  "contract": "An array bound into a component (`state.items: rows`) can be iterated inside it; row adds, removals, reorders and field writes flow both ways.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "#### Nesting and stacking scopes",
+  "lines": [
+   1857,
+   1874
+  ],
+  "tags": {
+   "X.component": 0.8,
+   "C.list": 0.1,
+   "C.lifecycle": 0.1
+  },
+  "kind": "normative",
+  "contract": "Components nested in host loops and in other components keep outer and inner rows related; $1, handler indexes, $renderedCallback and $getAll report positions within the component's own scope.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "## Command Token (Method Binding)",
+  "lines": [
+   1875,
+   1885
+  ],
+  "tags": {
+   "X.cmdtoken": 1
+  },
+  "kind": "normative",
+  "contract": "State invokes element methods through a token: the element subscribes with `command.<method>: $command.<token>`, state emits; fan-out in subscribe order; neither side holds a reference to the other.",
+  "dependsOn": [
+   "X.wcbindable"
+  ],
+  "signals": [
+   "framing: fills the gap property binding cannot cover (calling <wcs-fetch>.fetch(), <wcs-dialog>.open())"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Basic Usage",
+  "lines": [
+   1886,
+   1913
+  ],
+  "tags": {
+   "X.cmdtoken": 0.9,
+   "C.event": 0.1
+  },
+  "kind": "tutorial",
+  "contract": "$commandTokens + this.$command.x.emit(args) calls method(args) on every subscribed wc-bindable element.",
+  "dependsOn": [
+   "X.wcbindable",
+   "C.event"
+  ],
+  "signals": [
+   "subscribers must be wc-bindable custom elements"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### `$commandTokens` Declaration",
+  "lines": [
+   1914,
+   1933
+  ],
+  "tags": {
+   "X.cmdtoken": 1
+  },
+  "kind": "normative",
+  "contract": "Entries are non-empty unique strings (not `$command`); tokens are memoized under $command; an undeclared name reads undefined.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: a typo surfaces late (TypeError on emit, or a binding-time error)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### `command.<methodName>:` Binding",
+  "lines": [
+   1934,
+   1972
+  ],
+  "tags": {
+   "X.cmdtoken": 0.6,
+   "X.wcbindable": 0.4
+  },
+  "kind": "normative",
+  "contract": "`command.<method>: $command.<token>` requires the method in static wcBindable.commands ({name, async?}), protocol 'wc-bindable' version >= 1 and a CommandToken value; bare token names are not supported.",
+  "dependsOn": [
+   "X.wcbindable"
+  ],
+  "signals": [
+   "compat / removal: since v1.9.1 the plain-string commands form is rejected - 'There is no legacy fallback'"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Token API",
+  "lines": [
+   1973,
+   1988
+  ],
+  "tags": {
+   "X.cmdtoken": 1
+  },
+  "kind": "normative",
+  "contract": "CommandToken {name, size, subscribe, unsubscribe, emit}; emit returns subscriber results in order; a throwing subscriber is console.error-ed and does not stop the others; exceptions never reach the emitter.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Subscription Lifecycle",
+  "lines": [
+   1989,
+   2002
+  ],
+  "tags": {
+   "X.cmdtoken": 0.9,
+   "C.lifecycle": 0.1
+  },
+  "kind": "normative",
+  "contract": "Subscribers are held by WeakRef and lazily purged on emit when collected or disconnected; the token registry survives a <wcs-state> disconnect / re-attach.",
+  "dependsOn": [
+   "C.lifecycle"
+  ],
+  "signals": [
+   "limitation (current implementation): the subscriber closure captures binding.node strongly, defeating the WeakRef; the fix is not in 3.x because 'the binding machinery has no element-lifecycle hook'",
+   "workaround: rely on the lazy purge"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Emitting a Command from a DOM Event",
+  "lines": [
+   2003,
+   2028
+  ],
+  "tags": {
+   "X.cmdtoken": 0.6,
+   "C.event": 0.4
+  },
+  "kind": "normative",
+  "contract": "`onclick: $command.token` emits (event, ...listIndexes) straight from a DOM event; modifiers apply; an unresolved token is reported with console.error per event.",
+  "dependsOn": [
+   "C.event"
+  ],
+  "signals": [
+   "dependsOn-evidence (reverse): the core event binding (C.event) accepts a `$command.<name>` right-hand side - event dispatch knows the X.cmdtoken namespace"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Event Token (Event Binding)",
+  "lines": [
+   2029,
+   2041
+  ],
+  "tags": {
+   "X.evttoken": 1
+  },
+  "kind": "normative",
+  "contract": "Event tokens are the dual of command tokens (element -> state): the element wires `eventToken.<property>: <token>`, state declares $eventTokens and handles them in $on as (state, event, ...listIndexes).",
+  "dependsOn": [
+   "X.wcbindable"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Basic Usage",
+  "lines": [
+   2042,
+   2069
+  ],
+  "tags": {
+   "X.evttoken": 1
+  },
+  "kind": "tutorial",
+  "contract": "Dispatching the event mapped to a wcBindable property fires the token and runs $on.<token>(state, event).",
+  "dependsOn": [
+   "X.wcbindable"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### `$eventTokens` Declaration",
+  "lines": [
+   2070,
+   2083
+  ],
+  "tags": {
+   "X.evttoken": 1
+  },
+  "kind": "normative",
+  "contract": "Entries are non-empty unique strings; only declared names are valid; a token with no $on handler is a no-op.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### `$on` — Receiving on the State Side",
+  "lines": [
+   2084,
+   2102
+  ],
+  "tags": {
+   "X.evttoken": 1
+  },
+  "kind": "normative",
+  "contract": "Every $on key must be declared in $eventTokens and map to a function called (state, event, ...listIndexes) with state as the first argument (this is not bound).",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### `eventToken.<property>:` Binding",
+  "lines": [
+   2103,
+   2135
+  ],
+  "tags": {
+   "X.evttoken": 0.6,
+   "X.wcbindable": 0.4
+  },
+  "kind": "normative",
+  "contract": "The key is a wcBindable property name; a listener is attached for properties[].event; the element must be wc-bindable (attach-time check); the token name is checked at fire time against the state resolved from the live root; #prevent / #stop work.",
+  "dependsOn": [
+   "X.wcbindable",
+   "C.event"
+  ],
+  "signals": [
+   "works inside for / if and after SSR hydration because state is resolved at fire time"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Inside a Loop",
+  "lines": [
+   2136,
+   2154
+  ],
+  "tags": {
+   "X.evttoken": 0.8,
+   "C.list": 0.2
+  },
+  "kind": "normative",
+  "contract": "Enclosing loop indexes are appended after the event, like on* handlers.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Fan-in and Chaining",
+  "lines": [
+   2155,
+   2168
+  ],
+  "tags": {
+   "X.evttoken": 0.6,
+   "X.cmdtoken": 0.4
+  },
+  "kind": "normative",
+  "contract": "Many elements may wire one token; an $on handler may re-emit a command token (element -> state -> element).",
+  "dependsOn": [
+   "X.cmdtoken"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Token API",
+  "lines": [
+   2169,
+   2172
+  ],
+  "tags": {
+   "X.evttoken": 0.8,
+   "X.scan": 0.1,
+   "C.lifecycle": 0.1
+  },
+  "kind": "normative",
+  "contract": "Event tokens share the Token primitive; the token is resolved from the registry per event (survives a setInitialState rebuild); the registry is kept across disconnect; events while disconnected are not delivered.",
+  "dependsOn": [
+   "X.cmdtoken"
+  ],
+  "signals": [
+   "X.scan `on` scans share this subscription lifecycle"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Choosing a Time Mechanism",
+  "lines": [
+   2173,
+   2188
+  ],
+  "tags": {
+   "C.getter": 0.25,
+   "X.stream": 0.25,
+   "X.watch": 0.25,
+   "X.scan": 0.25
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": [
+   "overlap: four declarations answer four questions (getter = what a value is; $stream = async producer folded within one run; $watch = reaction owning no value; $scan = accumulation over time) - 'the usual mistake is to reach for the wrong one'",
+   "overlap: $renderedCallback is explicitly 'not on this list' - it depends on what is rendered",
+   "overlap: a $stream fold resets on every restart, a $scan does not"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Streams (`$stream`)",
+  "lines": [
+   2189,
+   2272
+  ],
+  "tags": {
+   "X.stream": 0.9,
+   "C.lifecycle": 0.05,
+   "X.ssr": 0.05
+  },
+  "kind": "normative",
+  "contract": "$stream: {name: {source(args, signal), args?(state), fold?, initial?}} folds an async iterable / ReadableStream into a reactive property with $streamStatus / $streamError companions; switchMap restart when args' dependencies change; eager start after $connectedCallback, abort on disconnect; SSR only materializes initial.",
+  "dependsOn": [
+   "C.state",
+   "C.getter",
+   "C.update",
+   "C.lifecycle"
+  ],
+  "signals": [
+   "B-item:B12",
+   "deprecate?: `$streams` (old key) 'works the same through 3.x and is removed in 4.0'; declaring both fails with [wcs/declaration-alias]",
+   "limitation: mutual cycles between streams are not detected (restart forever)",
+   "limitation: args must be synchronous; wildcard reads rejected; hand-rolled generators only partially rescued on abort",
+   "overlap: $renderedCallback is not a headless subscription to a stream - use $watch",
+   "overlap (purpose): the 'Bridging an event API' recipe wraps EventSource / WebSocket in a ReadableStream - the same platform APIs the <wcs-sse> / <wcs-ws> I/O nodes expose as elements"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Demand roots — what makes a getter run",
+  "lines": [
+   2273,
+   2286
+  ],
+  "tags": {
+   "C.getter": 0.5,
+   "X.watch": 0.2,
+   "X.stream": 0.2,
+   "C.lifecycle": 0.1
+  },
+  "kind": "normative",
+  "contract": "Getters are lazy; exactly three demand roots make them run - a live DOM binding, a $watch declaration, a $stream args function; $renderedCallback is not a root.",
+  "dependsOn": [
+   "X.watch",
+   "X.stream"
+  ],
+  "signals": [
+   "dependsOn-evidence: C.getter's evaluation contract is defined with X.watch and X.stream as two of the three demand roots"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Rendering can change program semantics",
+  "lines": [
+   2287,
+   2308
+  ],
+  "tags": {
+   "C.lifecycle": 0.4,
+   "X.scan": 0.2,
+   "X.watch": 0.2,
+   "X.stream": 0.1,
+   "T.tooling": 0.1
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [
+   "X.watch",
+   "X.scan"
+  ],
+  "signals": [
+   "overlap / footgun: a $renderedCallback used as a subscription silently stopped when a display-only <b> was removed (examples/state-intersect-scroll); the example now uses $scan + $watch",
+   "rule: logic that must not depend on rendering belongs on $watch, $scan or $stream args",
+   "tooling: wcs/updated-callback-unbound detects the shape statically"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### The limitation that remains",
+  "lines": [
+   2309,
+   2314
+  ],
+  "tags": {
+   "C.getter": 0.5,
+   "X.watch": 0.3,
+   "X.devtools": 0.1,
+   "T.tooling": 0.1
+  },
+  "kind": "normative",
+  "contract": "Whether a getter runs requires inspecting every binding, $watch and $stream args; a scalar getter named in $watch becomes eager, wildcard row getters do not.",
+  "dependsOn": [
+   "X.watch"
+  ],
+  "signals": [
+   "limitation: demand is not visible from a getter's definition - the linter and the DevTools wiring-coverage view exist to cross-check it"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Watch (`$watch`)",
+  "lines": [
+   2315,
+   2379
+  ],
+  "tags": {
+   "X.watch": 0.85,
+   "C.update": 0.1,
+   "X.viewtransition": 0.05
+  },
+  "kind": "normative",
+  "contract": "$watch: {path(cur, prev, ...indexes)} fires once per batch per changed address, headless for scalar paths; `this` is writable, the return value ignored; prev only with primitive writes; watched scalar getters become eager; order $renderedCallback -> $scan -> $watch -> $stream restart; handler exceptions isolated; write chains cut after 32 links.",
+  "dependsOn": [
+   "C.update",
+   "C.state",
+   "C.list",
+   "X.listkeys"
+  ],
+  "signals": [
+   "dependsOn-evidence: a headless row watch (wildcard path) requires $listKeys or a for binding - 'the one place $watch is not headless on its own'",
+   "overlap: $watch is 'the headless counterpart' of the binding-driven $renderedCallback",
+   "flag:sameValueGuard (off -> prev undefined)",
+   "limitation: wildcard getters are not made eager and their prev is always undefined",
+   "limitation: write chain bounded at 32 with a console error; no rollback",
+   "not run in mounted bind-component scopes (warning); SSR does not run watches; `@` paths rejected",
+   "X.viewtransition: with the tag present, $renderedCallback moves after $watch"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Scan (`$scan`)",
+  "lines": [
+   2380,
+   2449
+  ],
+  "tags": {
+   "X.scan": 0.85,
+   "X.stream": 0.05,
+   "X.evttoken": 0.05,
+   "X.watch": 0.05
+  },
+  "kind": "normative",
+  "contract": "$scan: {out: {from | on, initial, fold, resetOn?}} keeps a runtime-owned accumulation that survives stream restarts and reconnects; `from` folds once per landed address at the end of the drain, before $watch; `on` folds once per event, before $on; getters are never a source; root only.",
+  "dependsOn": [
+   "C.update",
+   "C.state",
+   "X.evttoken",
+   "X.watch",
+   "X.stream"
+  ],
+  "signals": [
+   "dependsOn-evidence: `on` sources are X.evttoken names; `prev` follows $watch's ledger",
+   "limitation: root only - a volume refuses it, a mounted scope ignores it; under SSR `from` does not fold",
+   "limitation: wcs/scan-feedback-loop - a stream's args must not derive from its own scan output",
+   "overlap: accumulation is also possible in a $watch handler or a $stream fold; $scan exists to own it"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Inputs and Attribute Mirror",
+  "lines": [
+   2450,
+   2495
+  ],
+  "tags": {
+   "X.wcbindable": 1
+  },
+  "kind": "normative",
+  "contract": "wcBindable.inputs marks members settable from state; an entry with `attribute` mirrors every property write to that attribute (String / JSON.stringify / removed for null-undefined); native elements ignore inputs.",
+  "dependsOn": [
+   "C.bind"
+  ],
+  "signals": [
+   "limitation: the mirror is best-effort - a setAttribute failure is swallowed with a debug warning"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Choosing a Component Mechanism",
+  "lines": [
+   2496,
+   2513
+  ],
+  "tags": {
+   "X.component": 0.45,
+   "X.dcc": 0.45,
+   "X.wcbindable": 0.1
+  },
+  "kind": "normative",
+  "contract": "DCC and bind-component are mutually exclusive per component - no JS class: DCC; a class: bind-component; combining them raises.",
+  "dependsOn": [
+   "X.wcbindable"
+  ],
+  "signals": [
+   "exclusive-with: X.dcc <-> X.component ('mutually exclusive - pick one per component'; a <wcs-state bind-component> inside a data-wc-definition host is a configuration error)",
+   "overlap: two component mechanisms give a custom element its own state",
+   "bind-component deliberately stays outside wc-bindable -> no spread, no command tokens, the parent cannot invoke methods"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Declarative Custom Components (DCC)",
+  "lines": [
+   2514,
+   2517
+  ],
+  "tags": {
+   "X.dcc": 1
+  },
+  "kind": "normative",
+  "contract": "Custom elements can be defined entirely in HTML with data-wc-definition + Declarative Shadow DOM and inline reactive state.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Basic Definition",
+  "lines": [
+   2518,
+   2550
+  ],
+  "tags": {
+   "X.dcc": 0.9,
+   "C.init": 0.1
+  },
+  "kind": "normative",
+  "contract": "A <wcs-state> inside a data-wc-definition host loads the state, generates a class with getter / setter / method properties and calls customElements.define; every instance clones the template and gets its own state.",
+  "dependsOn": [
+   "C.init",
+   "X.wcbindable"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Recommended CSS",
+  "lines": [
+   2551,
+   2557
+  ],
+  "tags": {
+   "X.dcc": 1
+  },
+  "kind": "tutorial",
+  "contract": "Hide :not(:defined) and [data-wc-definition].",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### `$bindables` / `$commands` and the wc-bindable Protocol",
+  "lines": [
+   2558,
+   2587
+  ],
+  "tags": {
+   "X.dcc": 0.7,
+   "X.wcbindable": 0.3
+  },
+  "kind": "normative",
+  "contract": "$bindables become two-way wcBindable properties + inputs with `<tag>:<name>-changed` CustomEvents; $commands become async commands; both are validated at definition (array of unique, non-$, existing names; method vs value kind must match).",
+  "dependsOn": [
+   "X.wcbindable",
+   "X.stream"
+  ],
+  "signals": [
+   "dependsOn-evidence: $stream names count as existing $bindables members",
+   "history: a duplicated entry used to fail silently"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Driving a DCC Method",
+  "lines": [
+   2588,
+   2607
+  ],
+  "tags": {
+   "X.dcc": 0.5,
+   "X.cmdtoken": 0.5
+  },
+  "kind": "tutorial",
+  "contract": "A $commands member is invoked from parent state through a command token; arguments pass through verbatim.",
+  "dependsOn": [
+   "X.cmdtoken"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Binding to DCC Properties",
+  "lines": [
+   2608,
+   2622
+  ],
+  "tags": {
+   "X.dcc": 0.6,
+   "X.wcbindable": 0.4
+  },
+  "kind": "tutorial",
+  "contract": "Other states bind DCC properties like any wc-bindable element (`count: parentCount`).",
+  "dependsOn": [
+   "X.wcbindable"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Shadow Root Mode",
+  "lines": [
+   2623,
+   2634
+  ],
+  "tags": {
+   "X.dcc": 1
+  },
+  "kind": "normative",
+  "contract": "open and closed shadowrootmode are both supported.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Internal Properties",
+  "lines": [
+   2635,
+   2646
+  ],
+  "tags": {
+   "X.dcc": 0.8,
+   "C.lifecycle": 0.2
+  },
+  "kind": "reference",
+  "contract": "$-prefixed properties ($bindables, $commands, lifecycle hooks) are not exposed on the component prototype.",
+  "dependsOn": [
+   "C.lifecycle"
+  ],
+  "signals": [
+   "inconsistency: describes $renderedCallback as 'Called after state mutations', contradicting ## Lifecycle Hooks (applied bindings only)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## SVG Support",
+  "lines": [
+   2647,
+   2658
+  ],
+  "tags": {
+   "C.bind": 1
+  },
+  "kind": "normative",
+  "contract": "All bindings work inside <svg>; use attr.* for SVG attributes.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "## Lifecycle Hooks",
+  "lines": [
+   2659,
+   2715
+  ],
+  "tags": {
+   "C.lifecycle": 0.85,
+   "C.update": 0.05,
+   "X.component": 0.05,
+   "X.devtools": 0.05
+  },
+  "kind": "normative",
+  "contract": "$connectedCallback (awaited, on every connect), $disconnectedCallback (sync), $renderedCallback(paths, indexesListByPath) after bindings are applied (not awaited), $errorCallback(error, {path, bindingType, node}) once per failed binding after the drain; `this` is the writable proxy; $stateReadyCallback for bind-component.",
+  "dependsOn": [
+   "C.update",
+   "C.state",
+   "X.component"
+  ],
+  "signals": [
+   "B-item:B12",
+   "deprecate?: `$updatedCallback` - canonical name is now $renderedCallback (3.2); the old name 'works the same through 3.x and is removed in 4.0'; declaring both -> [wcs/declaration-alias]",
+   "overlap: $renderedCallback (applied bindings only) vs $watch (every state update) - the rename exists to say so",
+   "limitation: $errorCallback is root-only (a volume's is ignored) and does not cover $watch handlers or throws from $connectedCallback / $renderedCallback",
+   "dependsOn-evidence: $stateReadyCallback belongs to bind-component (X.component); DevTools receives state:binding-apply-error regardless"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Transition animations",
+  "lines": [
+   2716,
+   2740
+  ],
+  "tags": {
+   "X.viewtransition": 0.85,
+   "C.update": 0.15
+  },
+  "kind": "normative",
+  "contract": "Enter animations need only CSS; with <wcs-view-transition> accepting the state participant the drain applies DOM changes inside a View Transition on a frame, so $scan / $watch / $stream restart run before $renderedCallback; without the tag the drain is unchanged; headless writes never start a transition.",
+  "dependsOn": [
+   "C.update"
+  ],
+  "signals": [
+   "timing change: code that writes state and reads the DOM after `await Promise.resolve()` must wait for the transition when the tag is present"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Diagnostics and failure handling",
+  "lines": [
+   2741,
+   2742
+  ],
+  "tags": {
+   "X.diagnostics": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Wiring to a path that does not exist is reported",
+  "lines": [
+   2743,
+   2769
+  ],
+  "tags": {
+   "X.diagnostics": 0.8,
+   "T.tooling": 0.2
+  },
+  "kind": "normative",
+  "contract": "A wired path that provably does not resolve warns once (wcs/binding-path-missing, wcs/watch-path-missing, wcs/scan-path-missing) with a did-you-mean; a top-level typo throws on read; the check under-approximates.",
+  "dependsOn": [
+   "C.grammar",
+   "C.state"
+  ],
+  "signals": [
+   "limitation: no warning is not a proof - null parents, rows of lists that start empty, getter sub-properties, mount markers and $ namespaces never warn",
+   "split: runtime warnings need features/diagnostics (silent otherwise)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Index arity, wildcard rank, and getter cycles are checked too",
+  "lines": [
+   2770,
+   2804
+  ],
+  "tags": {
+   "X.diagnostics": 0.3,
+   "C.getter": 0.2,
+   "C.state": 0.2,
+   "X.recursion": 0.25,
+   "T.tooling": 0.05
+  },
+  "kind": "normative",
+  "contract": "wcs/index-arity, wcs/wildcard-rank, wcs/getter-cycle, wcs/getter-depth-exceeded (128 frames), wcs/index-param-range ($1-$128) and the wcs/recursion-* codes are reported at runtime and (mostly) by lint; extra indexes now throw instead of being discarded.",
+  "dependsOn": [
+   "C.state",
+   "C.getter"
+  ],
+  "signals": [
+   "six codes are runtime-only (lint does not emit them)",
+   "behaviour change: extra indexes used to be silently discarded, returning plausible wrong values"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### One failing binding is confined to that binding",
+  "lines": [
+   2805,
+   2814
+  ],
+  "tags": {
+   "C.update": 0.5,
+   "C.lifecycle": 0.2,
+   "X.diagnostics": 0.2,
+   "X.devtools": 0.1
+  },
+  "kind": "normative",
+  "contract": "A throwing binding apply is confined: the rest of the batch, $renderedCallback, $watch and $stream restarts still run; it is reported to console.error and to DevTools (state:binding-apply-error).",
+  "dependsOn": [
+   "C.update",
+   "X.watch",
+   "X.stream"
+  ],
+  "signals": [
+   "dependsOn-evidence: the confinement contract is stated in terms of X.watch handlers and X.stream restarts continuing (firing-order contract)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Values and the DOM are never rolled back",
+  "lines": [
+   2815,
+   2824
+  ],
+  "tags": {
+   "C.update": 0.5,
+   "X.propagation": 0.3,
+   "X.watch": 0.2
+  },
+  "kind": "normative",
+  "contract": "Every failure reports and continues; nothing already applied is reverted; propagation hops limited to 32 (quarantine), $watch write chain to 32 (skip), a failing binding skips only itself.",
+  "dependsOn": [
+   "C.update"
+  ],
+  "signals": [
+   "X.propagation: the 32-hop limit quarantines the transaction's remaining records"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Configuration",
+  "lines": [
+   2825,
+   2854
+  ],
+  "tags": {
+   "C.init": 0.45,
+   "X.propagation": 0.1,
+   "X.wcbindable": 0.1,
+   "T.tooling": 0.1,
+   "C.grammar": 0.05,
+   "C.state": 0.05,
+   "X.i18n": 0.1,
+   "X.ssr": 0.05
+  },
+  "kind": "reference",
+  "contract": "bootstrapState(partialConfig) accepts bindAttributeName, tagNames.state / tagNames.ssr, locale, debug, enableMustache, enableDirectionalInitialSync, enablePropagationContext, enableContractAnalyzer, sameValueGuard.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": [
+   "flag:enableDirectionalInitialSync (default true)",
+   "flag:enablePropagationContext (default true - 'echo/diamond loop prevention')",
+   "flag:enableContractAnalyzer (default false)",
+   "flag:sameValueGuard (default true)",
+   "flag:enableMustache",
+   "flag:debug",
+   "X.ssr: tagNames.ssr is a core config key"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Locale",
+  "lines": [
+   2855,
+   2913
+  ],
+  "tags": {
+   "X.i18n": 0.5,
+   "C.filter-format": 0.15,
+   "C.mount": 0.05,
+   "X.propagation": 0.1,
+   "X.wcbindable": 0.1,
+   "T.tooling": 0.1
+  },
+  "kind": "normative",
+  "contract": "config.locale defaults to <html lang> (explicit bootstrapState({locale}) wins, invalid tags ignored); changing it later re-renders nothing; per-call overrides are fixed at bind time; no live language switch - a dictionary is a volume chosen per locale.",
+  "dependsOn": [
+   "C.filter-format",
+   "C.mount"
+  ],
+  "signals": [
+   "decision: 'There is no i18n package and no live language switch, on purpose'",
+   "dependsOn-evidence: i18n dictionaries are mounted as volumes (<wcs-state mount=\"i18n\" src=...>) - X.i18n -> C.mount",
+   "misplaced: the blockquote on the architecture-hardening flags (enablePropagationContext, enableDirectionalInitialSync, enableContractAnalyzer) sits at the end of this section",
+   "flag:enablePropagationContext and flag:enableDirectionalInitialSync are each 'a permanent opt-out'"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Testing Your Page",
+  "lines": [
+   2914,
+   2919
+  ],
+  "tags": {
+   "T.tooling": 0.6,
+   "C.init": 0.4
+  },
+  "kind": "tutorial",
+  "contract": "Pages test headlessly under happy-dom with no test-only API; recipe 1 is pinned by __tests__/readme.testingRecipe.test.ts.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### 1. vitest + happy-dom",
+  "lines": [
+   2920,
+   2990
+  ],
+  "tags": {
+   "C.init": 0.5,
+   "T.tooling": 0.4,
+   "C.update": 0.1
+  },
+  "kind": "tutorial",
+  "contract": "Await stateEl.connectedCallbackPromise and getBindingsReady(document); write through createStateAsync('writable', ...); one setTimeout(0) settles updates.",
+  "dependsOn": [
+   "C.init",
+   "C.update"
+  ],
+  "signals": [
+   "workaround: `URL.createObjectURL = undefined` routes inline-script state through the data: URL loader (Node cannot import blob:)",
+   "limitation: happy-dom replaces nodes on late define; happy-dom renders textContent 0 as ''",
+   "getBindingsReady rejects on binding-init failure (v1.26+) or a failed root"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### 2. Bare Node (no vitest)",
+  "lines": [
+   2991,
+   3012
+  ],
+  "tags": {
+   "T.tooling": 0.6,
+   "X.ssr": 0.2,
+   "C.init": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "Use @wcstack/server's installGlobals and import @wcstack/state dynamically afterwards.",
+  "dependsOn": [
+   "X.ssr"
+  ],
+  "signals": [
+   "workaround: element classes pick their base class at module evaluation - a static import registers elements happy-dom cannot construct"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### 3. Snapshot the rendered HTML",
+  "lines": [
+   3013,
+   3029
+  ],
+  "tags": {
+   "X.ssr": 0.6,
+   "T.tooling": 0.4
+  },
+  "kind": "tutorial",
+  "contract": "renderToString() from @wcstack/server with enable-ssr returns the rendered markup for snapshot tests.",
+  "dependsOn": [
+   "X.ssr"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "## TypeScript Support",
+  "lines": [
+   3030,
+   3056
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "reference",
+  "contract": "defineState() is an identity function that types `this`; WcsPaths<T> / WcsPathValue<T, P> exported; wcs-schema / wcs-tsc carry the types into HTML.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "## API Reference",
+  "lines": [
+   3057,
+   3058
+  ],
+  "tags": {},
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### `bootstrapState()`",
+  "lines": [
+   3059,
+   3067
+  ],
+  "tags": {
+   "C.init": 1
+  },
+  "kind": "reference",
+  "contract": "bootstrapState() registers <wcs-state> and sets up the DOMContentLoaded handler.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Other exports",
+  "lines": [
+   3068,
+   3082
+  ],
+  "tags": {
+   "C.init": 0.4,
+   "T.tooling": 0.5,
+   "X.ssr": 0.1
+  },
+  "kind": "reference",
+  "contract": "Exports getBindingsReady(root), buildBindings(root), getConfig(), defineState, VERSION, getWcsManifest / WCS_MANIFEST_VERSION, builtinFilterMeta, analyzeContract; subpaths /parser, /manifest, /wcs-manifest.json.",
+  "dependsOn": [],
+  "signals": [
+   "X.ssr coupling: VERSION is stamped into <wcs-ssr> and compared on hydration",
+   "flag:enableContractAnalyzer (analyzeContract is a no-op unless on)"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### `<wcs-state>` Element",
+  "lines": [
+   3083,
+   3093
+  ],
+  "tags": {
+   "C.init": 0.5,
+   "C.mount": 0.2,
+   "X.component": 0.15,
+   "X.ssr": 0.15
+  },
+  "kind": "reference",
+  "contract": "Attributes: mount, state, src, json, bind-component, enable-ssr.",
+  "dependsOn": [],
+  "signals": [
+   "compat: mount replaces the removed v1 `name` attribute"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### IStateElement",
+  "lines": [
+   3094,
+   3107
+  ],
+  "tags": {
+   "C.init": 0.7,
+   "C.mount": 0.1,
+   "X.component": 0.05,
+   "X.dcc": 0.05,
+   "C.list": 0.05,
+   "C.getter": 0.05
+  },
+  "kind": "reference",
+  "contract": "initializePromise always resolves; connectedCallbackPromise rejects on root init failure (volumes never reject); createState / createStateAsync('readonly' | 'writable'); setInitialState replaces the whole state and re-applies bindings (not a write: no $watch / $renderedCallback) and throws on volumes, grafted trees and failed elements.",
+  "dependsOn": [
+   "C.init",
+   "C.mount",
+   "X.component"
+  ],
+  "signals": [
+   "limitation: some volume failures report nothing of their own (only an 'Uncaught (in promise)')",
+   "limitation: re-setting with the same mutated array instance is unsupported",
+   "coupling: setInitialState throws on a tree with grafted volumes or mounted components (C.init <-> C.mount / X.component)",
+   "normative pointer: 'For the exact behaviour of any single failure site, read __tests__/integration.initFailureDiagnostics.test.ts'",
+   "internal surface exposed: listPaths, getterPaths, setterPaths, nextVersion()"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Architecture",
+  "lines": [
+   3108,
+   3131
+  ],
+  "tags": {
+   "I.internal": 0.55,
+   "C.init": 0.25,
+   "X.dcc": 0.05,
+   "C.mount": 0.05,
+   "X.component": 0.05,
+   "C.grammar": 0.05
+  },
+  "kind": "reference",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": [
+   "connectedCallback branches by placement into four init paths - DCC, volume, bind-component, root - one element class carries C.mount, X.component and X.dcc initialization",
+   "buildBindings: wait for every initializePromise, mustache -> comments, collect structural fragments, initialize bindings"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### Reactivity Flow",
+  "lines": [
+   3132,
+   3138
+  ],
+  "tags": {
+   "C.update": 0.6,
+   "I.internal": 0.4
+  },
+  "kind": "reference",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": [
+   "Proxy set -> setByAddress -> updater enqueues absolute address -> dependency walker dirties caches -> applyChangeFromBindings"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### State Address System",
+  "lines": [
+   3139,
+   3147
+  ],
+  "tags": {
+   "I.internal": 0.8,
+   "C.mount": 0.1,
+   "X.component": 0.1
+  },
+  "kind": "reference",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": [
+   "shared-machinery: mounted components and volumes both translate relative paths onto the host tree at the TreePath / AbsoluteStateAddress level"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Performance",
+  "lines": [
+   3148,
+   3195
+  ],
+  "tags": {
+   "C.list": 0.6,
+   "C.update": 0.2,
+   "X.ssr": 0.1,
+   "X.devtools": 0.1
+  },
+  "kind": "reference",
+  "contract": "create 1,000 rows 25.2 ms vs signals 9.5 ms; create / append ~2.5-3.5x signals; interactive ops take a few ms or less; a bounded row pool (up to 1,000 rows) is retained after clear.",
+  "dependsOn": [],
+  "signals": [
+   "perf: the 2.5-3.5x create / append cost is attributed to 'the declarative binding ledger ... that powers data-wcs inspection, DevTools wiring, and SSR hydration' - the ledger is justified by X.devtools and X.ssr",
+   "perf: numbers from v1.21.6, +-20% machine swing",
+   "perf: row pooling is documented behaviour"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "## Server-Side Rendering",
+  "lines": [
+   3196,
+   3199
+  ],
+  "tags": {
+   "X.ssr": 1
+  },
+  "kind": "normative",
+  "contract": "The same templates render on the server through @wcstack/server.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### Quick Setup",
+  "lines": [
+   3200,
+   3232
+  ],
+  "tags": {
+   "X.ssr": 1
+  },
+  "kind": "tutorial",
+  "contract": "Add enable-ssr and call renderToString(); the client restores from <wcs-ssr> and resumes without re-rendering.",
+  "dependsOn": [
+   "C.init",
+   "C.lifecycle"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "### How It Works",
+  "lines": [
+   3233,
+   3240
+  ],
+  "tags": {
+   "X.ssr": 0.9,
+   "C.lifecycle": 0.1
+  },
+  "kind": "normative",
+  "contract": "The server runs $connectedCallback and bindings in happy-dom and emits <wcs-ssr>; the client loads state from it, skips $connectedCallback and hydrates bindings; a version mismatch falls back to a full client render.",
+  "dependsOn": [
+   "C.lifecycle",
+   "C.init"
+  ],
+  "signals": [
+   "X.ssr alters C.lifecycle: the client skips $connectedCallback on hydration"
+  ]
+ },
+ {
+  "doc": "README.md",
+  "section": "### What `enable-ssr` Does",
+  "lines": [
+   3241,
+   3249
+  ],
+  "tags": {
+   "X.ssr": 1
+  },
+  "kind": "reference",
+  "contract": "Server: emit <wcs-ssr> (state JSON, template fragments, property data); client: restore state, skip $connectedCallback, hydrate bindings.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "README.md",
+  "section": "## License",
+  "lines": [
+   3250,
+   3252
+  ],
+  "tags": {},
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "# `defineState()` — Typed State Definitions",
+  "lines": [
+   1,
+   2
+  ],
+  "tags": {},
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## Overview",
+  "lines": [
+   3,
+   12
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "normative",
+  "contract": "defineState() is a runtime identity function; all work is at the type level via ThisType<> (typed this, dot-path completion, typed proxy API).",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## Basic Usage",
+  "lines": [
+   13,
+   14
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### TypeScript",
+  "lines": [
+   15,
+   34
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "tutorial",
+  "contract": "Wrap the state literal in defineState() for a typed `this` and typed dot-path reads.",
+  "dependsOn": [
+   "C.getter"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### JavaScript (with JSDoc / `checkJs`)",
+  "lines": [
+   35,
+   47
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "tutorial",
+  "contract": "The same wrapper type-checks JavaScript under checkJs.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### HTML Inline Script",
+  "lines": [
+   48,
+   61
+  ],
+  "tags": {
+   "T.tooling": 0.8,
+   "C.init": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "defineState can be imported inside an inline <wcs-state> module script.",
+  "dependsOn": [
+   "C.init"
+  ],
+  "signals": [
+   "unstated prerequisite: the bare specifier '@wcstack/state' inside an inline module needs an import map"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## How It Works",
+  "lines": [
+   62,
+   76
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "reference",
+  "contract": "`this` is typed WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T> & Record<string, any>.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## Dot-Path Type Resolution",
+  "lines": [
+   77,
+   78
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### `WcsPaths<T>` — Path Generation",
+  "lines": [
+   79,
+   110
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "reference",
+  "contract": "WcsPaths<T> is the union of dot paths with * for array elements; built-ins are not recursed, methods excluded; depth limit 4.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: recursion depth 4"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### `WcsPathValue<T, P>` — Path Value Resolution",
+  "lines": [
+   111,
+   132
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "reference",
+  "contract": "WcsPathValue<T, P> resolves the value type at a path: direct key (incl. getter keys) -> K.* -> K.rest.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Multi-Level Wildcards",
+  "lines": [
+   133,
+   154
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "reference",
+  "contract": "Nested arrays generate multi-wildcard paths with resolved value types.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Recursive Paths (`**`)",
+  "lines": [
+   155,
+   177
+  ],
+  "tags": {
+   "T.tooling": 0.7,
+   "X.recursion": 0.3
+  },
+  "kind": "normative",
+  "contract": "Keys containing ** are typed any through a pattern index signature; ordinary paths keep precise types; the VS Code preamble declares the same.",
+  "dependsOn": [
+   "X.recursion"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## State Proxy API (`WcsStateApi`)",
+  "lines": [
+   178,
+   181
+  ],
+  "tags": {
+   "T.tooling": 0.5,
+   "C.state": 0.5
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Methods",
+  "lines": [
+   182,
+   191
+  ],
+  "tags": {
+   "T.tooling": 0.5,
+   "C.state": 0.3,
+   "C.getter": 0.2
+  },
+  "kind": "reference",
+  "contract": "Typed methods: $getAll, $postUpdate, $resolve, $dependOn, $untracked (suppresses dynamic and $1 index dependencies).",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "doc-staleness: lists `$getAll(path, defaultValue?: V[])` while the README defines the second argument as `indexes` (prefix / [] / omitted = loop context)",
+   "doc-gap: $setAll and $eq / $eqPath / $eqIndex are missing from the typed API table"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Properties",
+  "lines": [
+   192,
+   198
+  ],
+  "tags": {
+   "T.tooling": 0.5,
+   "C.state": 0.5
+  },
+  "kind": "reference",
+  "contract": "$stateElement and $1-$9 are typed on `this`.",
+  "dependsOn": [],
+  "signals": [
+   "doc-gap: typed only up to $9 while the runtime accepts $1-$128 (wcs/index-param-range)"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Lifecycle Callbacks",
+  "lines": [
+   199,
+   220
+  ],
+  "tags": {
+   "T.tooling": 0.4,
+   "C.lifecycle": 0.6
+  },
+  "kind": "tutorial",
+  "contract": "$connectedCallback / $disconnectedCallback / $renderedCallback are declared as methods.",
+  "dependsOn": [
+   "C.lifecycle"
+  ],
+  "signals": [
+   "doc-gap: $errorCallback not shown"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## `$stream` Declaration",
+  "lines": [
+   221,
+   251
+  ],
+  "tags": {
+   "X.stream": 0.6,
+   "T.tooling": 0.4
+  },
+  "kind": "normative",
+  "contract": "$stream entries are recognized alongside $commandTokens / $eventTokens / $on; pre-declaring the value property types it; the stream starts after $connectedCallback and restarts on args changes.",
+  "dependsOn": [
+   "X.stream"
+  ],
+  "signals": [
+   "limitation: '$stream callbacks get no contextual type yet (typing the declaration map is a planned follow-up)' - annotate parameters"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## Examples",
+  "lines": [
+   252,
+   253
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Counter",
+  "lines": [
+   254,
+   265
+  ],
+  "tags": {
+   "T.tooling": 0.5,
+   "C.state": 0.5
+  },
+  "kind": "tutorial",
+  "contract": "A counter with this.count++ in methods.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### User List with Computed Properties",
+  "lines": [
+   266,
+   285
+  ],
+  "tags": {
+   "T.tooling": 0.4,
+   "C.getter": 0.6
+  },
+  "kind": "tutorial",
+  "contract": "Wildcard getter reads are typed through WcsPathAccessor.",
+  "dependsOn": [
+   "C.getter"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Shopping Cart with Getter Chaining",
+  "lines": [
+   286,
+   322
+  ],
+  "tags": {
+   "T.tooling": 0.3,
+   "C.getter": 0.5,
+   "C.event": 0.1,
+   "C.state": 0.1
+  },
+  "kind": "tutorial",
+  "contract": "Getter chaining is typed; an event handler reads this.$1 for the row index.",
+  "dependsOn": [
+   "C.getter",
+   "C.state"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Event Handler with Loop Index",
+  "lines": [
+   323,
+   337
+  ],
+  "tags": {
+   "T.tooling": 0.3,
+   "C.event": 0.5,
+   "C.state": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "Inside a for, this.$1 in a handler is the row index.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Async Data Loading",
+  "lines": [
+   338,
+   361
+  ],
+  "tags": {
+   "T.tooling": 0.3,
+   "C.lifecycle": 0.5,
+   "C.state": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "An async $connectedCallback with plain assignments manages loading / error state.",
+  "dependsOn": [
+   "C.lifecycle"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## Known Limitations",
+  "lines": [
+   362,
+   363
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Generic type arguments inside `ThisType<>`",
+  "lines": [
+   364,
+   379
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "normative",
+  "contract": "Type arguments on `this` methods are not allowed inside ThisType<>; use assertions.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: TypeScript ThisType<> generic limitation"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### `Record<string, any>` fallback",
+  "lines": [
+   380,
+   383
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "normative",
+  "contract": "Because of the Record<string, any> fallback every bracket access types as any; typed paths appear only as completions.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: bracket-access result type is any"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "### Recursion depth limit",
+  "lines": [
+   384,
+   387
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "normative",
+  "contract": "WcsPaths recursion stops at 4 levels.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: depth 4"
+  ]
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## Reaching the HTML: `wcs-schema` → `wcs-validate`",
+  "lines": [
+   388,
+   398
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "normative",
+  "contract": "wcs-schema emit / check writes and validates the stateSchema sidecar used by wcs-validate and the VS Code extension.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/define-state.md",
+  "section": "## Exported Types",
+  "lines": [
+   399,
+   407
+  ],
+  "tags": {
+   "T.tooling": 1
+  },
+  "kind": "reference",
+  "contract": "Exports defineState, WcsThis, WcsStateApi, WcsPaths, WcsPathValue.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "# Path Classification",
+  "lines": [
+   1,
+   4
+  ],
+  "tags": {
+   "C.grammar": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "## Classification Tree",
+  "lines": [
+   5,
+   28
+  ],
+  "tags": {
+   "C.grammar": 0.5,
+   "C.state": 0.3,
+   "C.getter": 0.2
+  },
+  "kind": "reference",
+  "contract": "Paths are static (simple / nested), pattern (*), shorthand (.x inside for), resolved (concrete indexes; partial resolution unsupported) or computed (getter).",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "## 1. Static Path",
+  "lines": [
+   29,
+   32
+  ],
+  "tags": {
+   "C.state": 0.5,
+   "C.grammar": 0.5
+  },
+  "kind": "reference",
+  "contract": "A path without wildcards addresses exactly one location.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Simple Path",
+  "lines": [
+   33,
+   49
+  ],
+  "tags": {
+   "C.state": 0.6,
+   "C.grammar": 0.4
+  },
+  "kind": "reference",
+  "contract": "A single-segment top-level reference.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Nested Path",
+  "lines": [
+   50,
+   67
+  ],
+  "tags": {
+   "C.state": 0.7,
+   "C.grammar": 0.3
+  },
+  "kind": "normative",
+  "contract": "A dotted nested reference; `this.a.b = x` is not detected by the proxy - write this['a.b'].",
+  "dependsOn": [],
+  "signals": [
+   "limitation: nested mutation not detected (same rule as README Updating State)"
+  ]
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "## 2. Pattern Path",
+  "lines": [
+   68,
+   72
+  ],
+  "tags": {
+   "C.grammar": 0.5,
+   "C.list": 0.5
+  },
+  "kind": "reference",
+  "contract": "A path containing * addresses each array element and is used inside for bindings.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Single-level Pattern",
+  "lines": [
+   73,
+   90
+  ],
+  "tags": {
+   "C.list": 0.5,
+   "C.grammar": 0.5
+  },
+  "kind": "reference",
+  "contract": "One * iterates one array.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Multi-level Pattern",
+  "lines": [
+   91,
+   108
+  ],
+  "tags": {
+   "C.list": 0.6,
+   "C.grammar": 0.4
+  },
+  "kind": "reference",
+  "contract": "Two or more * iterate nested arrays with nested for templates.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "## 3. Shorthand Path",
+  "lines": [
+   109,
+   113
+  ],
+  "tags": {
+   "C.grammar": 1
+  },
+  "kind": "normative",
+  "contract": "`.x` inside a for is prefixed with the nearest for path + `.*`.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Single-level Shorthand",
+  "lines": [
+   114,
+   131
+  ],
+  "tags": {
+   "C.grammar": 0.7,
+   "C.list": 0.3
+  },
+  "kind": "reference",
+  "contract": "Inside `for: users`, `.name` is `users.*.name`.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Multi-level Shorthand",
+  "lines": [
+   132,
+   172
+  ],
+  "tags": {
+   "C.grammar": 0.7,
+   "C.list": 0.3
+  },
+  "kind": "normative",
+  "contract": "Shorthand always expands against the innermost for; outer-loop fields need the full pattern path.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": [
+   "limitation: no shorthand for outer loop levels"
+  ]
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "## 4. Resolved Path",
+  "lines": [
+   173,
+   177
+  ],
+  "tags": {
+   "C.state": 1
+  },
+  "kind": "reference",
+  "contract": "A resolved path has * replaced with concrete indexes; mainly used programmatically.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Fully Resolved Path",
+  "lines": [
+   178,
+   201
+  ],
+  "tags": {
+   "C.state": 1
+  },
+  "kind": "normative",
+  "contract": "Fully resolved paths (users.0.name) work in methods through bracket access, template literals or $resolve.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Partially Resolved Path — Unsupported",
+  "lines": [
+   202,
+   212
+  ],
+  "tags": {
+   "C.state": 1
+  },
+  "kind": "normative",
+  "contract": "Partially resolved paths (categories.0.products.*.name) are unsupported - resolve all * or none.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: partially resolved paths unsupported",
+   "inconsistency: README's Recursive Paths section cites `$setAll('nodes.*.children.0.value', [], v)` (wildcard then index) as a working fixed-arity form"
+  ]
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "## 5. Computed Path",
+  "lines": [
+   213,
+   239
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "Getter-defined virtual paths in pattern or static form; recomputed when dependencies change; read-only unless a setter exists.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "## Path Classification Quick Reference",
+  "lines": [
+   240,
+   253
+  ],
+  "tags": {
+   "C.grammar": 0.4,
+   "C.state": 0.3,
+   "C.getter": 0.15,
+   "C.list": 0.15
+  },
+  "kind": "reference",
+  "contract": "Quick-reference table of path classes, wildcard / index presence and typical usage.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "## Availability Matrix by Situation",
+  "lines": [
+   254,
+   255
+  ],
+  "tags": {},
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Legend",
+  "lines": [
+   256,
+   261
+  ],
+  "tags": {},
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### UI (HTML Bindings)",
+  "lines": [
+   262,
+   280
+  ],
+  "tags": {
+   "C.grammar": 0.4,
+   "C.list": 0.3,
+   "C.if": 0.1,
+   "C.getter": 0.1,
+   "C.bind": 0.1
+  },
+  "kind": "normative",
+  "contract": "Outside for only static and computed paths are valid; inside for pattern and shorthand paths are valid; concrete indexes never appear in markup; a getter returning an array is a valid for target.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": [
+   "limitation: resolved (concrete-index) paths are not allowed in markup",
+   "if / elseif with a pattern path only inside a for"
+  ]
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### State (JavaScript — inside defineState)",
+  "lines": [
+   281,
+   303
+  ],
+  "tags": {
+   "C.state": 0.5,
+   "C.getter": 0.3,
+   "C.grammar": 0.2
+  },
+  "kind": "normative",
+  "contract": "Matrix of which path classes are valid as data / getter / setter keys, getter reads, method reads, and $getAll / $resolve / $postUpdate / $dependOn arguments.",
+  "dependsOn": [
+   "C.getter"
+  ],
+  "signals": [
+   "caveat: `this['users.0.name']` inside a getter 'technically works but dependency tracking may not be accurate' - use $resolve",
+   "doc-gap: $setAll and $eq* absent from the matrix"
+  ]
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Event Handler Notes",
+  "lines": [
+   304,
+   322
+  ],
+  "tags": {
+   "C.event": 1
+  },
+  "kind": "normative",
+  "contract": "An on*: value is a method name, not a path; handlers receive loop indexes as arguments.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": [
+   "doc-gap: says $1-$9"
+  ]
+ },
+ {
+  "doc": "docs/path-classification.md",
+  "section": "### Wildcard Scope in Getters",
+  "lines": [
+   323,
+   389
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "Inside a pattern getter, direct this[...] reads may only use paths sharing the declaration's wildcard scope (same arrays, no deeper wildcard); $getAll / $resolve arguments are exempt.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": [
+   "limitation: cross-array or deeper-wildcard direct reads inside a wildcard getter are disallowed (runtime wcs/wildcard-rank)",
+   "#### subsections (What is Wildcard Scope? / Example / Decision Rules) folded into this entry"
+  ]
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "# Path Getters — Flat Virtual Properties for Nested Data",
+  "lines": [
+   1,
+   2
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "## What Is This?",
+  "lines": [
+   3,
+   34
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "A getter with a dot-path key is plain valid JavaScript and defines a virtual property - computed on access, cached per element, invalidated when dependencies change.",
+  "dependsOn": [],
+  "signals": [
+   "essential-claim: 'This getter is called a path getter ... and it is the library's core feature'"
+  ]
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "## The Problem Path Getters Solve",
+  "lines": [
+   35,
+   36
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### The Nesting Wall in Other Frameworks",
+  "lines": [
+   37,
+   53
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": [
+   "rationale: in React / Vue / Angular per-element computed values force a component per nesting level"
+  ]
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### The Path Getter Solution",
+  "lines": [
+   54,
+   103
+  ],
+  "tags": {
+   "C.getter": 0.7,
+   "C.state": 0.3
+  },
+  "kind": "tutorial",
+  "contract": "All computed properties for every depth live in one flat object; $getAll aggregates bottom-up.",
+  "dependsOn": [
+   "C.state"
+  ],
+  "signals": [
+   "doc-inconsistency: passes `[]` to $getAll inside wildcard getters (regions.*.prefectures.*.totalPopulation), which the README defines as 'every match' - it would sum every city of every prefecture; the README's copy of this example omits indexes (loop-context default)"
+  ]
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "## One Syntax, Many Features",
+  "lines": [
+   104,
+   107
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### 1. Virtual Property Definition",
+  "lines": [
+   108,
+   127
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "Templates cannot distinguish a getter-backed path from a stored one.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### 2. Cross-Getter References and Computation",
+  "lines": [
+   128,
+   148
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "Getters chain; any upstream change recomputes the chain.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### 3. Automatic Dependency Tracking",
+  "lines": [
+   149,
+   177
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "Reads register dependencies automatically, per element - no dependency arrays.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### 4. Per-Element Cache",
+  "lines": [
+   178,
+   188
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "normative",
+  "contract": "Each concrete address caches independently; updating one row recomputes only that row's getter.",
+  "dependsOn": [],
+  "signals": [
+   "perf claim: in a 1,000-item array, updating one recalculates only that one getter"
+  ]
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### 5. Depth-Independent Definition",
+  "lines": [
+   189,
+   201
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### 6. Wildcard Resolution via Loop Context",
+  "lines": [
+   202,
+   237
+  ],
+  "tags": {
+   "C.getter": 0.6,
+   "C.list": 0.4
+  },
+  "kind": "normative",
+  "contract": "* resolves to the loop index at runtime, left to right for nested loops.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "## Practical Patterns",
+  "lines": [
+   238,
+   239
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### Lookup Table",
+  "lines": [
+   240,
+   274
+  ],
+  "tags": {
+   "C.getter": 1
+  },
+  "kind": "tutorial",
+  "contract": "A getter returning a Map lookup joins data; sub-properties of returned objects are path-readable.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### Two-Way Binding with Path Setters",
+  "lines": [
+   275,
+   302
+  ],
+  "tags": {
+   "C.getter": 0.7,
+   "C.bind": 0.3
+  },
+  "kind": "tutorial",
+  "contract": "`set 'a.*.b'(v)` handles two-way writes from inputs.",
+  "dependsOn": [
+   "C.bind"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### Conditional Formatting",
+  "lines": [
+   303,
+   332
+  ],
+  "tags": {
+   "C.getter": 0.6,
+   "C.bind": 0.2,
+   "C.filter": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "Classify rows in a getter and toggle classes with |eq filters.",
+  "dependsOn": [
+   "C.bind",
+   "C.filter"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "## State Update Rules",
+  "lines": [
+   333,
+   336
+  ],
+  "tags": {
+   "C.state": 1
+  },
+  "kind": "normative",
+  "contract": "Changes must pass through the Proxy set trap.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### Path Assignment Is Required",
+  "lines": [
+   337,
+   347
+  ],
+  "tags": {
+   "C.state": 1
+  },
+  "kind": "normative",
+  "contract": "Path assignment is required; `this.user.name = x` bypasses the proxy.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "### Use Non-Destructive Methods for Arrays",
+  "lines": [
+   348,
+   365
+  ],
+  "tags": {
+   "C.state": 0.8,
+   "C.list": 0.2
+  },
+  "kind": "normative",
+  "contract": "Use non-destructive array methods plus assignment; mutating methods are not detected.",
+  "dependsOn": [
+   "C.list"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/path-getters.md",
+  "section": "## Summary",
+  "lines": [
+   366,
+   379
+  ],
+  "tags": {
+   "C.getter": 0.9,
+   "C.state": 0.1
+  },
+  "kind": "reference",
+  "contract": "Summary: path getter, wildcard, flat definition, automatic tracking, per-element cache, chaining, $getAll, path setter.",
+  "dependsOn": [],
+  "signals": [
+   "essential-claim: 'define computed properties where the data lives, not where the components are'"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "# `$scan` — declaring an accumulation over time",
+  "lines": [
+   1,
+   2
+  ],
+  "tags": {
+   "X.scan": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## What this is",
+  "lines": [
+   3,
+   44
+  ],
+  "tags": {
+   "X.scan": 0.8,
+   "X.stream": 0.1,
+   "X.watch": 0.1
+  },
+  "kind": "normative",
+  "contract": "$scan folds the occurrences of one source (a state path or an event token) into a runtime-owned output; it is not a stream algebra, never folds a getter, and has no backpressure.",
+  "dependsOn": [
+   "X.stream",
+   "X.watch",
+   "X.evttoken"
+  ],
+  "signals": [
+   "overlap: $scan exists because $stream.fold resets on restart and $watch owns no value (accumulating inside a $watch handler works but declares no owner, rate or reset)",
+   "limitation: exactly one source per output; no merge / filter / debounce"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## Declaration reference",
+  "lines": [
+   45,
+   62
+  ],
+  "tags": {
+   "X.scan": 1
+  },
+  "kind": "reference",
+  "contract": "Declaration shape: {out: {from | on, initial, fold, resetOn?}}.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Field contracts",
+  "lines": [
+   63,
+   72
+  ],
+  "tags": {
+   "X.scan": 0.9,
+   "X.evttoken": 0.05,
+   "X.recursion": 0.05
+  },
+  "kind": "normative",
+  "contract": "`from` (state path; wildcards allowed; no leading $, getters, setter-only paths or the entry's own output) xor `on` (declared event token); initial required, plain data copied on placement, non-plain placed by reference; fold required; resetOn optional.",
+  "dependsOn": [
+   "X.evttoken",
+   "C.state"
+  ],
+  "signals": [
+   "complexity: detailed plain-data copy rules for `initial` (prototype, frozen, enumerability, Array subclasses...)"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Fold arguments",
+  "lines": [
+   73,
+   89
+  ],
+  "tags": {
+   "X.scan": 0.7,
+   "X.watch": 0.15,
+   "C.update": 0.1,
+   "X.stream": 0.05
+  },
+  "kind": "normative",
+  "contract": "from: fold(acc, cur, prev, ...indexes); on: fold(acc, event, ...indexes); prev follows the $watch ledger and is undefined for reference writes, $postUpdate, whole-parent / replaced-list landings, writes during binding application or inside the scan / watch listener, or when sameValueGuard is off.",
+  "dependsOn": [
+   "X.watch",
+   "C.update"
+  ],
+  "signals": [
+   "dependsOn-evidence: shares the $watch prev ledger",
+   "flag:sameValueGuard",
+   "complexity: prev-undefined cases tied to drain phases",
+   "#### When prev is undefined folded into this entry"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Declaration-time checks (raise)",
+  "lines": [
+   90,
+   103
+  ],
+  "tags": {
+   "X.scan": 0.85,
+   "X.recursion": 0.1,
+   "X.stream": 0.05
+  },
+  "kind": "normative",
+  "contract": "Invalid declarations raise [wcs/scan-declaration-invalid] / [wcs/scan-source-computed] / [wcs/recursion-unsupported] when the state is set; a throwing re-set keeps the previous generation.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## Firing",
+  "lines": [
+   104,
+   105
+  ],
+  "tags": {
+   "X.scan": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### `from` — a scan of changes",
+  "lines": [
+   106,
+   130
+  ],
+  "tags": {
+   "X.scan": 0.6,
+   "C.update": 0.15,
+   "X.watch": 0.1,
+   "X.listkeys": 0.05,
+   "X.elemwrite": 0.05,
+   "X.viewtransition": 0.05
+  },
+  "kind": "normative",
+  "contract": "`from` folds at the end of the drain once per landed absolute address (writes in one job coalesced); a wildcard from folds per row in ascending order and needs a for-rendered list or $listKeys; mechanism order $renderedCallback -> $scan -> $watch -> $stream restart.",
+  "dependsOn": [
+   "C.update",
+   "X.listkeys",
+   "X.watch"
+  ],
+  "signals": [
+   "dependsOn-evidence: a wildcard `from` needs a for binding or $listKeys - 'the same condition as $watch'",
+   "limitation: 'A configuration with config.sameValueGuard turned off is not supported'",
+   "limitation: a running total can drift when the source is written during binding application (the value in between is never folded)",
+   "X.elemwrite: writing an element into list.* folds that position once",
+   "X.viewtransition reorders the mechanism layer"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### `on` — a scan of occurrences",
+  "lines": [
+   131,
+   137
+  ],
+  "tags": {
+   "X.scan": 0.6,
+   "X.evttoken": 0.4
+  },
+  "kind": "normative",
+  "contract": "An `on` scan subscribes to the event token and folds synchronously once per event, before that token's $on handlers; loop indexes are passed.",
+  "dependsOn": [
+   "X.evttoken"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Where it meets `$stream`",
+  "lines": [
+   138,
+   155
+  ],
+  "tags": {
+   "X.scan": 0.6,
+   "X.stream": 0.4
+  },
+  "kind": "normative",
+  "contract": "Restart wins over a chunk landing in the same batch; stream args reachable from the scan's own output raise [wcs/scan-feedback-loop].",
+  "dependsOn": [
+   "X.stream"
+  ],
+  "signals": [
+   "limitation: at start the feedback-loop error is not normalized - the stream stays idle and connectedCallbackPromise never settles"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## The fold contract",
+  "lines": [
+   156,
+   162
+  ],
+  "tags": {
+   "X.scan": 0.9,
+   "X.devtools": 0.1
+  },
+  "kind": "normative",
+  "contract": "fold is synchronous, has no this and returns a new value; returning acc writes nothing; throws / Promises / unreadable values are reported (state:watch-error) and write nothing; other mechanisms continue.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Once per landing, not once per page",
+  "lines": [
+   163,
+   171
+  ],
+  "tags": {
+   "X.scan": 1
+  },
+  "kind": "normative",
+  "contract": "The runtime guarantees one fold per landing, not per logical page; keep an idempotency key in the fold.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Never fold a getter",
+  "lines": [
+   172,
+   175
+  ],
+  "tags": {
+   "X.scan": 0.8,
+   "C.getter": 0.1,
+   "X.recursion": 0.1
+  },
+  "kind": "normative",
+  "contract": "Getters (and ** expansions) are refused as from / resetOn; a from that later becomes a getter reports once and stops folding.",
+  "dependsOn": [
+   "C.getter"
+  ],
+  "signals": [
+   "C.mount interplay: a volume registering an accessor can turn a from path into a getter after declaration"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Bounded folds",
+  "lines": [
+   176,
+   187
+  ],
+  "tags": {
+   "X.scan": 1
+  },
+  "kind": "normative",
+  "contract": "No backpressure; an infinite source must fold into a bounded value.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## resetOn",
+  "lines": [
+   188,
+   206
+  ],
+  "tags": {
+   "X.scan": 0.9,
+   "C.update": 0.1
+  },
+  "kind": "normative",
+  "contract": "Writing a resetOn path returns the output to a fresh copy of initial (from: that batch's fold is skipped; on: later events fold into initial); resets fire on addresses without value comparison; object paths reset only on whole-object writes; ancestors of from allowed, descendants raise.",
+  "dependsOn": [
+   "C.update"
+  ],
+  "signals": [
+   "complexity: extensive carry-over rules for pending resets across state re-set, drain phases and $watch chain cut-offs",
+   "advice: use a nonce to clear from a user action"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## Lifecycle",
+  "lines": [
+   207,
+   221
+  ],
+  "tags": {
+   "X.scan": 0.7,
+   "C.lifecycle": 0.1,
+   "X.ssr": 0.05,
+   "C.mount": 0.05,
+   "X.component": 0.05,
+   "X.evttoken": 0.05
+  },
+  "kind": "normative",
+  "contract": "The output is materialized at set time and kept across restart, reconnect and re-set of the same object; from / resetOn fire only while connected; on subscriptions are kept across disconnect; SSR only materializes; a volume refuses, a mounted component ignores.",
+  "dependsOn": [
+   "C.lifecycle"
+  ],
+  "signals": [
+   "defect:#273",
+   "limitation: root only (volume refuses; mounted bind-component ignores with a warning)"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## Choosing the right tool",
+  "lines": [
+   222,
+   232
+  ],
+  "tags": {
+   "X.scan": 0.25,
+   "X.stream": 0.25,
+   "X.watch": 0.2,
+   "X.evttoken": 0.05,
+   "C.getter": 0.25
+  },
+  "kind": "rationale",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": [
+   "overlap: getter / $stream fold / $scan / $watch + $on are each assigned a distinct job (spatial derivation, within-run fold, accumulation over time, side effect)"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## Examples",
+  "lines": [
+   233,
+   234
+  ],
+  "tags": {
+   "X.scan": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Accumulating a stream's pages into a feed",
+  "lines": [
+   235,
+   261
+  ],
+  "tags": {
+   "X.scan": 0.5,
+   "X.stream": 0.2,
+   "X.watch": 0.2,
+   "X.cmdtoken": 0.1
+  },
+  "kind": "tutorial",
+  "contract": "$stream owns each page run, $scan owns the feed, $watch re-arms a sentinel through a command token.",
+  "dependsOn": [
+   "X.stream",
+   "X.watch",
+   "X.cmdtoken"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Keeping the last N SSE messages and clearing them when the host changes",
+  "lines": [
+   262,
+   272
+  ],
+  "tags": {
+   "X.scan": 0.8,
+   "X.evttoken": 0.2
+  },
+  "kind": "tutorial",
+  "contract": "Keep the last N event-token messages and a count; reset both when host changes.",
+  "dependsOn": [
+   "X.evttoken"
+  ],
+  "signals": []
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "### Counting the requests that were sent",
+  "lines": [
+   273,
+   289
+  ],
+  "tags": {
+   "X.scan": 0.6,
+   "X.evttoken": 0.3,
+   "X.wcbindable": 0.1
+  },
+  "kind": "tutorial",
+  "contract": "Count occurrences through `on` + eventToken.loading, because equal writes to a state path never land.",
+  "dependsOn": [
+   "X.evttoken",
+   "X.wcbindable"
+  ],
+  "signals": [
+   "same-value guard makes `from` unable to count equal writes"
+  ]
+ },
+ {
+  "doc": "docs/scan.md",
+  "section": "## Summary",
+  "lines": [
+   290,
+   305
+  ],
+  "tags": {
+   "X.scan": 1
+  },
+  "kind": "reference",
+  "contract": "Summary of $scan: sources, fold, initial, resetOn, getter ban, stream interplay, idempotency, lifetime.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "# `$stream` — Folding Async Producers into Reactive Properties",
+  "lines": [
+   1,
+   2
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## What Is This?",
+  "lines": [
+   3,
+   36
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "normative",
+  "contract": "$stream connects an async producer to one reactive property through fold; each chunk flows through ordinary path assignment so bindings, getters and $renderedCallback react as usual.",
+  "dependsOn": [
+   "C.state",
+   "C.update"
+  ],
+  "signals": [
+   "non-goals: not a streams pipeline (no operators, tees, transforms); no backpressure"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## Declaration Reference",
+  "lines": [
+   37,
+   38
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### The `$stream` Map",
+  "lines": [
+   39,
+   62
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "reference",
+  "contract": "Keys are flat property names; full form (args / source / fold / initial) and minimal form (source only: latest, start once).",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### Field Contract",
+  "lines": [
+   63,
+   71
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "normative",
+  "contract": "source(args, signal) MUST honor the AbortSignal (a ReadableStream is consumed via getReader and cancelled); args is a synchronous pure function over a read-only view; fold is synchronous and returns a new value (default latest); initial is required with fold.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### Validation",
+  "lines": [
+   72,
+   95
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "normative",
+  "contract": "Declaration errors raise at set time (name shape, prototype names, getter / setter / method collisions, entry shape); args violations (Promise, self-read, wildcard read) throw on eager start and are normalized into $streamStatus / $streamError on restart.",
+  "dependsOn": [],
+  "signals": [
+   "silent: a literal `__proto__:` key is ignored rather than rejected"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### The Value Property",
+  "lines": [
+   96,
+   105
+  ],
+  "tags": {
+   "X.stream": 0.8,
+   "X.scan": 0.1,
+   "X.ssr": 0.1
+  },
+  "kind": "normative",
+  "contract": "A missing value property is materialized with initial at parse time (visible in the first render and SSR); once started the property is runtime-owned - user writes are not blocked but behaviour is undefined.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: assigning to a stream-owned property is not blocked; behaviour undefined",
+   "overlap: accumulation across restarts belongs in $scan with `from: <stream>`"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## Companion Namespaces: `$streamStatus` / `$streamError`",
+  "lines": [
+   106,
+   151
+  ],
+  "tags": {
+   "X.stream": 0.8,
+   "C.getter": 0.1,
+   "X.watch": 0.1
+  },
+  "kind": "normative",
+  "contract": "$streamStatus.<name> (idle | active | done | error) and $streamError.<name> are read-only, bindable and reset on (re)start; undeclared names read undefined; getters must use the dotted bracket form to register a dependency.",
+  "dependsOn": [
+   "C.getter",
+   "C.state"
+  ],
+  "signals": [
+   "limitation: the chained form this.$streamStatus.tokens registers no dependency (silent)",
+   "limitation: $watch cannot watch $streamStatus / $streamError (watch paths may not start with $)",
+   "tolerance: the same-value guard lets identical primitive writes to the read-only namespaces pass silently"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## Dependency-Driven Restart",
+  "lines": [
+   152,
+   186
+  ],
+  "tags": {
+   "X.stream": 0.9,
+   "C.getter": 0.1
+  },
+  "kind": "normative",
+  "contract": "A captured args dependency change aborts the run, resets to initial, re-evaluates args and restarts (switchMap); coalesced per tick; done / error streams restart too; getters in args work; chains are legitimate; self-dependency is an error; mutual cycles MUST NOT (undetected).",
+  "dependsOn": [
+   "C.getter",
+   "C.update"
+  ],
+  "signals": [
+   "limitation: mutual cycles are not detected",
+   "no occurrence-only restart command - bump a generation counter"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## Rules and Footguns",
+  "lines": [
+   187,
+   188
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### Bounded Fold (MUST)",
+  "lines": [
+   189,
+   207
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "normative",
+  "contract": "Infinite streams MUST use a bounded fold; raw accumulation is for finite streams only.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### Return a New Value (No In-Place Mutation)",
+  "lines": [
+   208,
+   219
+  ],
+  "tags": {
+   "X.stream": 0.8,
+   "C.state": 0.1,
+   "C.list": 0.1
+  },
+  "kind": "normative",
+  "contract": "fold must return a fresh value; in-place mutation defeats the same-value guard and list diffing.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### Chunk Reflection Granularity",
+  "lines": [
+   220,
+   228
+  ],
+  "tags": {
+   "X.stream": 0.8,
+   "C.update": 0.2
+  },
+  "kind": "normative",
+  "contract": "fold runs once per chunk; DOM reflection follows microtask batching (in practice one drain per chunk); equal primitive chunks are skipped by the same-value guard; there is no built-in throttling.",
+  "dependsOn": [
+   "C.update"
+  ],
+  "signals": [
+   "overlap: throttling is delegated to the <wcs-debounce> / <wcs-throttle> I/O nodes"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## Lifecycle",
+  "lines": [
+   229,
+   246
+  ],
+  "tags": {
+   "X.stream": 0.8,
+   "C.lifecycle": 0.1,
+   "X.ssr": 0.1
+  },
+  "kind": "normative",
+  "contract": "Eager start after $connectedCallback; abort + idle on disconnect; restart from initial on reconnect (no resume); a re-set aborts and restarts once; SSR never starts streams.",
+  "dependsOn": [
+   "C.lifecycle"
+  ],
+  "signals": [
+   "doc-staleness: 'another state element with the same name' - v1 named states were removed in v2"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## Out of Scope (First Stage)",
+  "lines": [
+   247,
+   263
+  ],
+  "tags": {
+   "X.stream": 0.9,
+   "X.dcc": 0.1
+  },
+  "kind": "normative",
+  "contract": "Not supported: wildcard / dotted names and wildcard args reads, async fold, Observable sources, auto-reconnect, lazy start (reserved), per-binding lifetimes, $stream on a DCC definition element, backpressure.",
+  "dependsOn": [],
+  "signals": [
+   "limitation: known edge - removing a stream declaration on re-set leaves bindings to its status / error showing stale values",
+   "reserved: `lazy: true` not implemented"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## Examples",
+  "lines": [
+   264,
+   265
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "meta",
+  "contract": "none",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### Accumulating LLM Tokens",
+  "lines": [
+   266,
+   295
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "tutorial",
+  "contract": "A finite LLM token stream accumulated into a string; editing the prompt aborts and restarts.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### Latest-Value Ticker",
+  "lines": [
+   296,
+   314
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "tutorial",
+  "contract": "An infinite price feed with the default latest fold, started once.",
+  "dependsOn": [],
+  "signals": []
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "### Streaming a Fetch Response Body",
+  "lines": [
+   315,
+   343
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "tutorial",
+  "contract": "A fetch response body piped through TextDecoderStream; changing url aborts mid-body.",
+  "dependsOn": [],
+  "signals": [
+   "overlap (partial): fetching through $stream vs the <wcs-fetch> I/O node - this recipe covers streamed bodies"
+  ]
+ },
+ {
+  "doc": "docs/streams.md",
+  "section": "## Summary",
+  "lines": [
+   344,
+   357
+  ],
+  "tags": {
+   "X.stream": 1
+  },
+  "kind": "reference",
+  "contract": "Summary of the $stream contract.",
+  "dependsOn": [],
+  "signals": []
+ }
+]

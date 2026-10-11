@@ -70,7 +70,7 @@ because with scoped registries that question has no page-wide answer.
 
 | Package | Change |
 |---|---|
-| `state` | [`platform/customElementRegistry.ts`](../packages/state/src/platform/customElementRegistry.ts) resolves `Node.customElementRegistry`; all call sites pass their node. DCC defines into the registry governing its own host — a global define never applied to its own siblings. |
+| `state` | [`platform/customElementRegistry.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/platform/customElementRegistry.ts) resolves `Node.customElementRegistry`; all call sites pass their node. DCC defines into the registry governing its own host — a global define never applied to its own siblings. |
 | `defined` | `DefinedCore` takes the registry to watch; `<wcs-defined>` passes the one its subtree resolves against. |
 | `autoloader` | Lazy loading defines into the scanned root's registry, and keeps the in-flight load ledger per registry. |
 
@@ -124,7 +124,7 @@ author to get scoping, something has to call `new CustomElementRegistry()` and a
 registry association is immutable (§1.2), that must happen at `attachShadow()` time.
 
 wcstack does control one such call: `_ensureShadow()` in
-[`defineDCC.ts`](../packages/state/src/dcc/defineDCC.ts) attaches each DCC *instance*'s shadow. Passing a
+[`defineDCC.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/dcc/defineDCC.ts) attaches each DCC *instance*'s shadow. Passing a
 registry there would make a DCC's internals genuinely private. But because there is no inheritance, a fresh
 registry starts empty — the instance's own `<wcs-state>`, and every I/O tag its template uses, would resolve to
 nothing. Phase 1 exists so that seeding is possible; deciding *what* to seed is the hard part.
@@ -176,7 +176,7 @@ const shadow = host.attachShadow({ mode: "open", customElementRegistry: registry
    carries the template's registry, not the destination's** — and since `initialize()` only fills in `null`
    registries, that would be unrecoverable. The shipped MVP has no `ShadowRoot.importNode()` to fix it (§1).
    This must be measured on a real browser before any of phase 3 is designed, because the answer decides whether
-   [`structural/createContent.ts`](../packages/state/src/structural/createContent.ts) needs to change at all.
+   [`structural/createContent.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/structural/createContent.ts) needs to change at all.
    **Measured on Chromium 149 (2026-09-27, while fixing #357) — the expectation was wrong there.** A clone made by
    `document.importNode(template.content, true)` reports the global registry while it is in the fragment (the
    template content's own elements report `null`), and on insertion into a shadow root with a scoped registry it is

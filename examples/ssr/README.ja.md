@@ -10,7 +10,17 @@ npm install
 npm start
 ```
 
-http://localhost:3001 を開いてください。
+http://localhost:3001 を開いてください（ポートは `PORT` で変えられます）。
+
+### リポジトリのビルドで動かす（`WCS_LOCAL=1`）
+
+作業ツリーの変更を公開前に試すには、npm のインストールと CDN の代わりにリポジトリ自身のビルドでデモを動かします（`npm install` は不要です）。
+
+```bash
+WCS_LOCAL=1 node examples/ssr/server.js
+```
+
+`WCS_LOCAL=1` は `packages/server/dist`（`@wcstack/state` は `packages/server/node_modules` を通して `packages/state` に解決されます）で描画し、`/packages/<pkg>/dist/…` をリポジトリから配り、クライアントを固定した `esm.run` の URL ではなく `/packages/state/dist/auto.min.js` から読み込みます。サーバーとクライアントが同じエンジンで動きます。指定しなければ何も変わりません。e2e スイート（`e2e/tests/ssr-example.spec.ts`）はこの形でデモを動かします。
 
 ## このデモで確認できること
 
@@ -66,10 +76,10 @@ http://localhost:3001 を開いてください。
 │  3. <wcs-state enable-ssr>       │
 │     → <wcs-ssr> データを読み取り │
 │     → $connectedCallback をスキップ │
-│  4. hydrateBindings()            │
-│     → テンプレートを復元         │
-│     → for/if ブロックを Content 化 │
-│     → バインディングを登録       │
+│  4. サーバーの DOM を引き取る    │
+│     → テンプレートを印の位置へ   │
+│     → 行・枝はその場に残す       │
+│     → バインディングを当てる     │
 │  5. ページがインタラクティブに    │
 │     → ボタン、状態変更が動作     │
 └──────────────────────────────────┘
@@ -93,15 +103,15 @@ http://localhost:3001 を開いてください。
 
 ## SSR 出力構造
 
-サーバーは以下のような HTML を生成します：
+サーバーは以下のような HTML を生成します（4.0。抜粋）：
 
 ```html
-<!-- ハイドレーション用 SSR メタデータ -->
-<wcs-ssr version="1.5.3">
+<!-- ハイドレーション用 SSR メタデータ: 描画した @wcstack/state の版・状態・ページ直下のテンプレート -->
+<wcs-ssr version="4.0.0">
   <script type="application/json">{"users":[...],"show":true,"counter":0}</script>
-  <template id="u0" data-wcs="for: users">...</template>
-  <template id="u1" data-wcs="if: show">...</template>
-  <template id="u2" data-wcs="else:">...</template>
+  <template id="wcs-t0" data-wcs="for: users">...</template>
+  <template id="wcs-t1" data-wcs="if: show">...</template>
+  <template id="wcs-t2" data-wcs="else:">...</template>
 </wcs-ssr>
 
 <!-- 状態要素（クライアント側では $connectedCallback をスキップ） -->
@@ -109,20 +119,15 @@ http://localhost:3001 を開いてください。
   <script type="module">export default { ... };</script>
 </wcs-state>
 
-<!-- プリレンダリング済みコンテンツ -->
-<h2>Counter: <!--@@wcs-text-start:counter-->0<!--@@wcs-text-end:counter--></h2>
+<!-- プリレンダリング済みテキストバインディング -->
+<h2>Counter: <!--wcs-t:counter-->0<!--wcs-/t--></h2>
 
-<!-- プリレンダリング済み for ブロック -->
-<!--@@wcs-for:u0-->
-<!--@@wcs-for-start:u0:users:0-->
-<li class="user-item">...</li>
-<!--@@wcs-for-end:u0:users:0-->
+<!-- プリレンダリング済み for ブロック: 印に続けて行 -->
+<!--wcs-p:wcs-t0--><!--wcs-[--><!--wcs-|--><li class="user-item">...</li><!--wcs-|-->...<!--wcs-]-->
 
-<!-- プリレンダリング済み if/else ブロック -->
-<!--@@wcs-if:u1-->
-<!--@@wcs-if-start:u1:show-->
-<div class="info-box">This block is visible...</div>
-<!--@@wcs-if-end:u1:show-->
+<!-- プリレンダリング済み if/else の連なり: テンプレートごとの印に続けて、描いた枝（0 = if:） -->
+<!--wcs-p:wcs-t1-->
+<!--wcs-p:wcs-t2--><!--wcs-[:0--><div class="info-box">This block is visible...</div><!--wcs-]-->
 ```
 
-テキストの境界コメントは束縛の式を出力フィルタごと運ぶので、ハイドレーションは同じ束縛を復元します。`{{ price|toFixed(2) }}` は `<!--@@wcs-text-start:price|toFixed(2)-->3.14<!--@@wcs-text-end:price|toFixed(2)-->`、`for:` の行の `{{ .price|toFixed(2) }}` は `<!--@@wcs-text-start:users.*.price|toFixed(2)-->…` になります。コメントに入れられない式（`--` を含むもの）はパスだけを書きます。
+ページ直下のテキストの印は、束縛の式全体を出力フィルタごと URI エンコードして運ぶので、ハイドレーションは同じ束縛を復元します。`{{ price|toFixed(2) }}` は `<!--wcs-t:price%7CtoFixed(2)-->3.14<!--wcs-/t-->` になります。行と枝にはテキストの印がありません。式は `<wcs-ssr>` の中のテンプレートが持ち、クライアントが引き取ったノードに当てます。印の一覧は [`@wcstack/server` の README](../../packages/server/README.ja.md#ssr-出力構造) にあります。印の形式は API ではないので、それを前提に出力を加工しないでください。コメントも消さないでください（HTML 圧縮の `removeComments` などはハイドレーションを壊します）。

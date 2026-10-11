@@ -1,11 +1,11 @@
 # The wcstack timing and firing contract
 
-- **Audience**: authors of apps and examples that combine the `@wcstack/state` binder / `$streams` with the wc-bindable async primitive tags (`@wcstack/fetch`, `@wcstack/intersection`, and the rest)
+- **Audience**: authors of apps and examples that combine the `@wcstack/state` binder / `$stream` with the wc-bindable async primitive tags (`@wcstack/fetch`, `@wcstack/intersection`, and the rest)
 - **Status**: reference. Each entry describes the behavior of the current reference implementation. A change in behavior means a change to this document
 - **Why this exists**: the examples — [`state-search`](../examples/state-search) and [`state-intersect-scroll`](../examples/state-intersect-scroll) in particular — rely for their correctness on things no README API table states: when and how many times an event fires, what is synchronous versus a microtask, which operations are idempotent. Left implicit, a demo's long comments become a stopgap for missing documentation and a user cannot reproduce the result without reading the internals. This document collects those contracts onto one page
 - **See also**: a proposed cross-cutting verification layer that maps the firing order here onto conformance vectors as test inputs and settle boundaries is [io-node-trace-conformance.md](./io-node-trace-conformance.md) (ja). Execution forms, lanes, and commit rules for I/O nodes are in [async-execution-model.md](./async-execution-model.md)
 - **日本語版**: [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md)
-- **TL;DR**: (1) `loading-changed(true)` fires once per dispatch, before the await, unconditionally. (2) auto-fetch is **deferred to a microtask and de-duplicated by url**; an explicit trigger is **immediate and unconditional (bypassing the dedupe)**. (3) a dependency change in `$streams.args` aborts the old run after the updater drains and restarts it (switchMap style). (4) `observe()` is **idempotent for the same target+options (it emits no new callback)**; force re-observation with `reobserve()`. (5) the initial data-wcs binding application happens on a separate microtask (waitable with `getBindingsReady()`)
+- **TL;DR**: (1) `loading-changed(true)` fires once per dispatch, before the await, unconditionally. (2) auto-fetch is **deferred to a microtask and de-duplicated by url**; an explicit trigger is **immediate and unconditional (bypassing the dedupe)**. (3) a dependency change in a `$stream` entry's `args` aborts the old run at the end of the drain and restarts it (switchMap style). (4) `observe()` is **idempotent for the same target+options (it emits no new callback)**; force re-observation with `reobserve()`. (5) the initial data-wcs binding application happens before `$connectedCallback` runs (`getBindingsReady()` resolves then); a binding on a custom element that is not defined yet is attached when it is defined
 
 ---
 
@@ -78,17 +78,17 @@ Visibility notifications arrive as a task after layout. They are **not microtask
 
 ---
 
-## 3. A cross-cutting contract: `$streams` restart and equal-value page selection (preventing page skips)
+## 3. A cross-cutting contract: `$stream` restart and equal-value page selection (preventing page skips)
 
-`state-intersect-scroll` uses the switchMap-style restart of `$streams`. Incrementing `page++` on every intersection edge would be wrong there: a later edge would abort the in-flight run for page N and jump to N+1. The demo preserves ordered appends with the following combination.
+`state-intersect-scroll` uses the switchMap-style restart of `$stream`. Incrementing `page++` on every intersection edge would be wrong there: a later edge would abort the in-flight run for page N and jump to N+1. The demo preserves ordered appends with the following combination.
 
 1. `sentinelChanged` (an IntersectionObserver task) computes `page = floor(feed.items.length / pageSize) + 1`
 2. While page N is running, or after it failed, `feed.items.length` is unchanged, so this merely re-assigns N. The primitive same-value guard (on by default) makes the enqueue itself a no-op and the stream does not restart
-3. `$scan` (`from: "pageResult"`) folds the landing of a successful chunk into `feed.items`, and `$watch.feed` calls `reobserve()` at the end of the next batch. The commit is the chunk's landing, not `done`, and a second landing of the same page is dropped by the page key inside the fold
-4. On the next visibility callback the expression returns N+1. After the updater drains the `page` update, the dependency hit in `$streams.args` aborts the old run and starts a new one with the new args
+3. `$watch.pageResult` folds the landing of a successful chunk into `feed.items`, and `$watch.feed` calls `reobserve()` at the end of the next batch. The commit is the chunk's landing, not `done`, and a second landing of the same page is dropped by the page key inside the handler
+4. On the next visibility callback the expression returns N+1. At the end of the drain that applies the `page` update, the dependency hit in the `$stream` entry's `args` aborts the old run and starts a new one with the new args
 
 → No hand-written exhaust guard on `!loading` / `!error` is needed, and an ordinary intersection edge never turns into an out-of-budget retry of a failed page.
-Deliberately retrying the same page updates a separate dependency, `retryNonce`. That is the boundary of the current `$streams` restart API, which encodes an occurrence ("again with the same arguments") as a value difference. Besides the button, in an error state that already has items, a sentinel edge accompanied by evidence that "scrollY moved since the error was recorded" updates `retryNonce`. There are two forms of evidence: a `leave` where scrollY moved arms the following `enter` once, and an `enter` where scrollY moved qualifies on its own. The latter rescues the case where the layout shift of the error UI itself pushed the sentinel out of the band — that leave fires with scrollY unchanged and cannot arm, and no new leave edge follows however far the user then scrolls away (IntersectionObserver fires only on transitions), so making arming the sole qualification would silently void the round trip back. The former rescues the case where the returning enter lands exactly on `errorScrollY` (a fling to a clamped bottom, say). A layout-induced edge satisfies neither qualification, since scrollY did not move, so merely rendering the error never reserves a retry.
+Deliberately retrying the same page updates a separate dependency, `retryNonce`. That is the boundary of the current `$stream` restart API, which encodes an occurrence ("again with the same arguments") as a value difference. Besides the button, in an error state that already has items, a sentinel edge accompanied by evidence that "scrollY moved since the error was recorded" updates `retryNonce`. There are two forms of evidence: a `leave` where scrollY moved arms the following `enter` once, and an `enter` where scrollY moved qualifies on its own. The latter rescues the case where the layout shift of the error UI itself pushed the sentinel out of the band — that leave fires with scrollY unchanged and cannot arm, and no new leave edge follows however far the user then scrolls away (IntersectionObserver fires only on transitions), so making arming the sole qualification would silently void the round trip back. The former rescues the case where the returning enter lands exactly on `errorScrollY` (a fling to a clamped bottom, say). A layout-induced edge satisfies neither qualification, since scrollY did not move, so merely rendering the error never reserves a retry.
 
 Do not call `reobserve()` on error. With the sentinel still visible, the new observer's initial callback retries immediately, producing a layout-driven infinite retry that repeats the same cycle every time the budget is exhausted. So "re-arm even on error" is rejected, and an actual `leave → enter` or the Retry button is the recovery edge. An empty feed cannot scroll, so only the button remains.
 The cancel / restart / stale-drop contract for a changed dependency is normatively defined in [`packages/state/docs/streams.md`](../packages/state/docs/streams.md).
@@ -97,36 +97,46 @@ The cancel / restart / stale-drop contract for a changed dependency is normative
 
 ## 4. @wcstack/state — when bindings are applied
 
-Reference: [`packages/state/src/buildBindings.ts`](../packages/state/src/buildBindings.ts), [`stateElementByName.ts`](../packages/state/src/stateElementByName.ts)
+Reference (4.0): in `packages/state/src`, `element.ts` (`WcsState.start`, `getBindingsReady`), `dom/mount.ts`, `dom/wc.ts` (`whenDefined`) and `engine.ts` (`drain`, `report`)
 
-### 4.1 The initial data-wcs application is on a separate microtask (no ordering guarantee against `$connectedCallback`)
-`connectedCallback` on `<wcs-state>` goes: (1) load the state → resolve `initializePromise` → (2) run `$connectedCallback`. The **initial application of data-wcs bindings, meanwhile, happens in `buildBindings` (a separate microtask)**, which runs after waiting on `initializePromise`. So **at the time `$connectedCallback` runs, neither "the url is on the element" nor "the command tokens are wired" is guaranteed**.
+### 4.1 The initial data-wcs application runs before `$connectedCallback` (a custom element not yet defined is bound when it is defined)
+`connectedCallback` on `<wcs-state>` goes: (1) load the state (on the split auto entry, also the features its `$features` names) → (2) bind the page: every `data-wcs` / `{{ }}` binding under the root is built and its initial value applied, synchronously → (3) resolve `initializePromise` and `getBindingsReady()` → (4) run `$connectedCallback` → resolve `connectedCallbackPromise`. So **when `$connectedCallback` runs, the url is already on a defined element and its command tokens are wired**.
 
-→ **Consequence**: to poke an element from `$connectedCallback` on the assumption that bindings exist (emitting a command, reading an element property), wait on `getBindingsReady()`:
+The exception is a custom element whose class is not defined yet. Its property, `command.`, `eventToken.` and spread bindings wait for `customElements.whenDefined()` and are attached then; `getBindingsReady()` does not wait for them. Native elements, and the other binding types (`attr.`, `class.`, `style.`, text, `on*:`), are bound at once.
+
+→ **Consequence**: `$connectedCallback` can poke a defined element (emit a command, read an element property) without waiting. For an element whose package may load later, wait for its definition — state attaches the element's bindings in its own reaction to that definition, registered earlier, so they are in place when the `await` resumes:
 
 ```js
 async $connectedCallback() {
-  await customElements.get("wcs-state").getBindingsReady(document);
+  await customElements.whenDefined("wcs-fetch");
   // by here the url has been applied and the commands are wired
 }
 ```
 
-For an unregistered rootNode it returns `Promise.resolve()`, so it cannot hang.
+For a root with no `<wcs-state>`, `getBindingsReady()` resolves at once, so it cannot hang.
 
-Note that **this wait is not needed in order to read the initial snapshot of a monitor node**. Directional initial sync (on by default) solves that structurally, and the value arrives through the property read when the binding is established (§7.1, §10.1). The wait is needed only when `$connectedCallback` actively pokes the element (emitting a command, reading an element property).
+Note that **no wait is needed to read the initial snapshot of a monitor node**. Directional initial sync (on by default) solves that structurally, and the value arrives through the property read when the binding is established (§7.1, §10.1).
+
+3.x: the initial application ran in `buildBindings`, a separate microtask after `initializePromise`, so nothing was guaranteed when `$connectedCallback` ran, and poking an element required `await customElements.get("wcs-state").getBindingsReady(document)` first. That wait still works in 4.0 (it is already settled).
 
 ### 4.2 Writing `undefined` is skipped (clear explicitly with `null`)
-The binder does not write `undefined` into properties/inputs (it skips the write itself). For details and the SPEC proposal see [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md) (ja).
+`@wcstack/state` does not write `undefined` into properties/inputs (it skips the write itself), even when the path held a value before. This is state's own rule: wc-bindable 0.10.0's applier profile (A2) writes `undefined` after a value so the element can return to its initial state, and state does not claim that profile. Other writers (React 19, `@wcstack/signals`' `bindInput`, a direct assignment) do deliver `undefined`, so the I/O nodes still handle it (producer guidance P1). For details, the SPEC proposal and upstream's answer see [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md) (ja).
 
 
 ### 4.3 With `<wcs-view-transition>` on the page, the drain lands on a frame, not a microtask
-The drain (`Updater._applyChange`) normally applies its bindings synchronously inside the microtask it was queued on. When a `@wcstack/view-transition` arbiter is installed **and accepts the `state` participant** (`for=` includes `state`, the default), the binding application is handed to `document.startViewTransition`, which invokes it on a later frame.
+The drain (`Engine.drain`) normally applies the bindings of each pass synchronously inside the microtask it was queued on. Each pass's DOM changes go through the transition-runner protocol: when a `@wcstack/view-transition` arbiter is installed **and accepts the `state` participant** (`for=` includes `state`, the default), it receives them in `run()` and, when it starts a view transition, applies them in the transition's update callback on a later frame.
 
-→ **Consequence 1**: code that writes state and then reads the DOM after `await Promise.resolve()` sees the old DOM. Wait for the transition, or use `$updatedCallback` — it still fires right after the bindings are applied, inside the update callback, so its *position* is unchanged even though it moves a frame later along with them.
+→ **Consequence 1**: code that writes state and then reads the DOM after `await Promise.resolve()` sees the old DOM. Wait for the transition, or use `$renderedCallback` — it fires right after the deferred bindings are applied, inside the update callback (the binding failures reach `$errorCallback` there too), so its *position* is unchanged even though it moves a frame later along with them.
 
-→ **Consequence 2 — the mechanism order inverts.** The drain-end batch listeners (`$scan` → `$watch` → `$streams` restart, §3) stay on the original microtask, because they consume state addresses and not the DOM. `$updatedCallback` does not. So the order §3 calls fixed — `$updatedCallback` → `$scan` → `$watch` → `$streams` restart — becomes `$scan` → `$watch` → `$streams` restart → `$updatedCallback` for as long as the arbiter accepts `state`. This is the only thing on a page that reorders that layer. A `$watch` handler that reads something `$updatedCallback` wrote cannot rely on the declared order while the tag is present.
+→ **Consequence 2 — the mechanism order inverts.** At the end of a drain the order is fixed: bindings applied → `$renderedCallback` → binding failures (`$errorCallback`, or the console) → `$watch` handlers → `$stream` restarts. `$watch` and the `$stream` restart stay on the original microtask, because they consume state and not the DOM; `$renderedCallback` goes with the deferred bindings. So while the arbiter defers the changes, the order becomes `$watch` → `$stream` restart → `$renderedCallback`. This is the only thing on a page that reorders that layer. A `$watch` handler that reads something `$renderedCallback` wrote cannot rely on the declared order while the tag is present.
 
-What does **not** change: initial rendering is never wrapped (only the drain is); `inSsr()` short-circuits to the synchronous path; and a batch with no bindings to apply is never handed to the arbiter, so a write to a headless path (`$watch`-only, `$streams` internal state) neither animates nor defers. With no arbiter installed — or with `for="router"` — the drain is byte-for-byte what it was.
+The arbiter does not defer — the change is applied synchronously inside `run()` and the order stays as declared — when the browser has no `document.startViewTransition`, the tab is hidden, `prefers-reduced-motion: reduce` applies without `reduced-motion="animate"`, the tag is `disabled`, the page is being rendered on the server (`data-wcs-server`), or `mode="exhaust"` is set and a running transition is already past its update callback ([view-transition README](../packages/view-transition/README.md)).
+
+Writes the deferred apply makes synchronously — an element's write-back, a synchronous `$renderedCallback` — continue the render chain of the drain that handed the change over (the 100-drain limit), so an update loop through the arbiter is still cut. Writes made after an `await` in an async `$renderedCallback` start a new chain: such a loop runs one lap per transition and is not cut.
+
+What does **not** change: initial rendering is never wrapped (only the drain is); a drain with nothing queued to render hands nothing to the arbiter, so a write to a headless path (`$watch`-only, `$stream` internal state) neither animates nor defers. With no arbiter installed — or with `for="router"` — the changes are applied synchronously in the drain.
+
+3.x: the apply of a drain (`Updater._applyChange`) was handed to the arbiter as one unit, state itself short-circuited to the synchronous path under SSR (`inSsr()`; 4.0 leaves that to the arbiter), and the declared order `$updatedCallback` → `$scan` → `$watch` → `$streams` restart became `$scan` → `$watch` → `$streams` restart → `$updatedCallback`.
 
 Normative description: [view-transition-design.md](./view-transition-design.md) §7.2.
 
@@ -139,7 +149,7 @@ Normative description: [view-transition-design.md](./view-transition-design.md) 
 | [`state-search`](../examples/state-search) | §1.1 (counting dispatches by loading edges) / §1.2 (auto-fetch on a debounced url change) / §1.4 (no response on abort → no staleness) |
 | [`users-crud`](../packages/fetch/examples/users-crud) | §1.3 (re-fetching with the `refreshList` command) / §1.4 (response fires on error too → decide success by status) / §1.5 (suppressing detail for an empty url) |
 | [`infinite-scroll`](../packages/fetch/examples/infinite-scroll) | §1.2/§1.4 (appends check status) / §2.1 (the sentinel needs a box and fires on the first task) |
-| [`state-intersect-scroll`](../examples/state-intersect-scroll) | §2.2+§2.3 (self-healing with reobserve) / §3 (`$streams` restart plus equal-value page selection to prevent page skips) |
+| [`state-intersect-scroll`](../examples/state-intersect-scroll) | §2.2+§2.3 (self-healing with reobserve) / §3 (`$stream` restart plus equal-value page selection to prevent page skips) |
 
 ---
 

@@ -1,7 +1,7 @@
 # 鍵付き購読の派生先へ通知が伝播しない（3.0 の穴・修正済み）
 
 **状態**: **修正済み**（3.x の次のリリース）。回帰テストは
-[`packages/state/__tests__/integration.keyedDerived.test.ts`](../packages/state/__tests__/integration.keyedDerived.test.ts)
+[`packages/state/__tests__/integration.keyedDerived.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/integration.keyedDerived.test.ts)
 （characterization から、修正後の正しい挙動を固定する形へ書き換え済み）。
 何をどう直したかは末尾の「[修正（いつ・どう直したか）](#修正いつどう直したか)」。
 以下の「症状」「原因」は**修正前の記述**で、経緯として残してある。
@@ -297,7 +297,7 @@ D17 の `rows` が 4 → 8 → 12 → 16 → 20。`groups = []` で全消しし�
 書いたが、それは誤りだった。** vitest 側で計装すれば core は 1 バイトも変わらない。
 `vitest.config.ts` の `wcs-keyed-dependency-probe`（vite の `transform` フック）が
 `keyedDependency.ts` の内部台帳を読み出し口として足し、
-[`__tests__/dependency.keyedAncestorIndex.test.ts`](../packages/state/__tests__/dependency.keyedAncestorIndex.test.ts)
+[`__tests__/dependency.keyedAncestorIndex.test.ts`](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/__tests__/dependency.keyedAncestorIndex.test.ts)
 が不変条件を突き合わせる。bundle にも `d.ts` にも出ないので**サイズ予算は掛からない**。
 このリポジトリには既にソース走査型の番人があり（`webComponent.dollarPathApis.test.ts` /
 `protocol.typesDrift.test.ts`）、同じ発想の延長にある。

@@ -1,0 +1,69 @@
+import { DELIMITER, MAX_PATH_SEGMENTS, RECURSION_WILDCARD } from "./define";
+import { splitFilters } from "./parseFilters";
+import { raise, M } from "../messages";
+import { ParsedBinding, ParsedFilter } from "./types";
+
+// 解析の段の形（フィルタは名前と引数だけ — 実関数はエンジンが引く。要件 D16）。
+// `@wcstack/state` はここで `statePathInfo`（`getPathInfo` の intern 結果）も返していたが、
+// 新エンジンはパスを自分で解決するので文字列だけを返す。
+export type StatePartParseResult = Pick<ParsedBinding, 'statePathName' | 'outFilters'>;
+
+/**
+ * 出力フィルタ列の解析結果のキャッシュ（鍵は `|` より後ろの原文）。同じ原文は**同じ配列**を返す —
+ * 消費側は返された `outFilters` を変更しないこと。落ちた解析は載らない。
+ * （`@wcstack/state` の tooling 専用の解放口 `clearStatePartCacheForTooling` は移植しない）
+ */
+const cacheFilterInfos = new Map<string, ParsedFilter[]>();
+/** Tooling (`clearParserCaches`): a long-running process drops what it parsed. */
+export const clearStatePartCache = (): void => cacheFilterInfos.clear();
+
+/**
+ * `getPathInfo` が初回 intern で行っていた文字列だけで決まる検査の移植（順序も同じ:
+ * `**` → セグメント数）。`getPathInfo` は `**` のパスを intern しないので毎回落ち、
+ * 上限超えのパスも intern されないので毎回落ちる — 状態を持たない検査と同値。
+ */
+function checkPathLikeGetPathInfo(path: string): void {
+  if (path.includes(RECURSION_WILDCARD)) {
+    recursionUnsupported(path);
+  }
+  const segmentCount = path.split(DELIMITER).length;
+  if (segmentCount > MAX_PATH_SEGMENTS) {
+    raise(M.TooManySegments, [path, segmentCount]);
+  }
+}
+
+// format: statePath|filter|filter
+// statePath-format: path.to.property (e.g., user.name.first, users.*.name, users.0.name, not include @)
+// filters-format: filterName or filterName(arg1,arg2)
+
+/** Port of `@wcstack/state` `src/bindTextParser/parseStatePart.ts` (no `statePathInfo`). */
+/** `**` outside the places a `$recursion` declaration gives it meaning. */
+export function recursionUnsupported(path: string): never {
+  raise(M.RecursionUnsupported, [path]);
+}
+
+export function parseStatePart(statePart: string): StatePartParseResult {
+  const [stateAndPath, filters] = splitFilters(statePart, "output", cacheFilterInfos);
+  if (stateAndPath.includes("@")) {
+    // 名前次元は v2 で撤去（docs/state-mount-design.md D16 / §9）。パスは 1 本のツリー。
+    raise(M.SelectorRemoved, [stateAndPath]);
+  }
+  const statePathName = stateAndPath;
+  // 右辺も左辺（`parsePropPart`）と同じ規準で空セグメントを弾く（要件 B1）。
+  //
+  // **判定の前にループ相対の短縮形を正規化する。** `.` で始まる右辺は `for` 行の相対パスで
+  // （展開はエンジンの仕事 — パーサは展開前の原文をそのまま返す）、先頭の空セグメント 1 つは正当。
+  // とくに **`.` 単独は「行そのもの」を指す正規の書き方**（`state: .`）— 「先頭は許すが末尾は拒否」と
+  // 素朴に書くと `"."` は `["", ""]` ＝ 先頭かつ末尾なので落ちる。取り除いた残りが空でも通すこと
+  const isLoopRelative = statePathName.startsWith(DELIMITER);
+  const body = isLoopRelative ? statePathName.slice(DELIMITER.length) : statePathName;
+  const hasEmptySegment = body.length > 0 && body.split(DELIMITER).some((segment) => segment.length === 0);
+  if (hasEmptySegment || (!isLoopRelative && body.length === 0)) {
+    raise(M.EmptySegment, [statePart]);
+  }
+  checkPathLikeGetPathInfo(statePathName);
+  return {
+    statePathName,
+    outFilters: filters,
+  };
+}

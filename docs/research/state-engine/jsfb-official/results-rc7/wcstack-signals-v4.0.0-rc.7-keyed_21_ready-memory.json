@@ -1,0 +1,1 @@
+{"framework":"wcstack-signals-v4.0.0-rc.7-keyed","keyed":true,"benchmark":"21_ready-memory","type":"memory","values":{"DEFAULT":{"min":0.6205129623413086,"max":0.6205129623413086,"median":0.6205129623413086,"mean":0.6205129623413086,"stddev":null,"values":[0.6205129623413086]}}}

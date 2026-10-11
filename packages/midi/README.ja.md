@@ -128,6 +128,8 @@ state.$command.midiSend.emit([0x90, 60, 100]);
 
 接続中の要素で `input` / `output` / `channel` を変更すると、**既存のアクセスに対して購読を張り替えます**。再要求は行わないので、権限プロンプトが再度出ることはありません。
 
+**`null` と `undefined`。** 属性に対応する入力（`input`・`output`・`channel`・`sysex`・`auto`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値 — 全ての入力ポート、最初の出力ポート、全チャンネル、SysEx なし、接続時の要求なし — に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、`undefined` で `sysex` / `auto` が反転することもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。
+
 `devices` は全ポートを `{ id, name, manufacturer, direction, state }` として publish し、着脱のたびに更新します。デバイス名は一意ではない（同一機種を2台挿すと同じ名前になる）ため、特定の1台を指したい場合は id を使ってください。
 
 ## 権限

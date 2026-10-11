@@ -115,6 +115,8 @@ The duality in one element: `post` is wired from a command-token, and an incomin
 | `max-restarts`     | number  | `Infinity` | Upper bound on the **cumulative** number of automatic restarts over the worker's lifetime (not consecutive crashes — the counter is not reset by a stable run). Reset only by a fresh `start()` / `src` change. |
 | `restart-interval` | number  | `0`        | Delay in ms before an automatic restart.                                     |
 
+**`null` and `undefined`.** The inputs backed by an attribute (`src`, `type`, `name`, `manual`, `keepAlive`, `restartOnError`, `maxRestarts`, `restartInterval`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A `src` restored this way spawns the restored script like any other `src` change; a cleared `src` spawns nothing (the running worker is left as it is).
+
 ### DOM trigger attributes (autoTrigger, post-on-click)
 
 | Attribute            | On             | Description                                                            |
@@ -136,7 +138,7 @@ The DOM trigger **always posts a string** — the literal `data-worker-text`, or
 >
 > Call `bootstrapWorker()` before the elements connect. (`setConfig` is internal; configure through `bootstrapWorker`.)
 >
-> Unknown or wrongly typed options (unknown `tagNames` keys included) log a console warning in 3.5 and throw in 4.0.
+> `bootstrapWorker()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.
 
 ## Observable Properties (outputs)
 

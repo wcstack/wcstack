@@ -117,6 +117,8 @@ The stable `code` values are exported as `WCS_POINTER_LOCK_ERROR_CODE`; the shar
 | --------- | ------------ |
 | `target`  | Selector (or `"self"`) identifying the element to lock. See "The `target` attribute decides what is locked" above. Omitted → first element child. |
 
+**`null` and `undefined`.** The `target` input, backed by its attribute, takes `null` as "clear": the attribute is removed and `target` falls back to its default, the first element child. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"` (such a selector would resolve nothing, so every request would fail). (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.)
+
 ## CSS styling with `:state()`
 
 `<wcs-pointer-lock>` reflects its `active` output onto its

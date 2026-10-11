@@ -1,0 +1,1 @@
+{"framework":"wcstack-state-4-v4.0.0-rc.2-keyed","keyed":true,"benchmark":"42_size-compressed","type":"size","values":{"DEFAULT":{"min":42.6,"max":42.6,"median":42.6,"mean":42.6,"stddev":null,"values":[42.6]}}}

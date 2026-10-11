@@ -4,6 +4,7 @@ import { GeolocationCore } from "../core/GeolocationCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 // Named WcsGeolocation (not `Geolocation`) so the class does not shadow the
 // global DOM `Geolocation` interface (the type of `navigator.geolocation`), and
@@ -100,17 +101,18 @@ export class WcsGeolocation extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  // Input setters never let setAttribute stringify null / undefined (an
+  // "undefined" timeout would silently fall back to Infinity): `null` removes the
+  // attribute (the default), `undefined` restores the attribute the element
+  // started with (wc-bindable producer guidance P1; React 19 and a direct
+  // assignment deliver it, @wcstack/state does not).
 
   get highAccuracy(): boolean {
     return this.hasAttribute("high-accuracy");
   }
 
-  set highAccuracy(value: boolean) {
-    if (value) {
-      this.setAttribute("high-accuracy", "");
-    } else {
-      this.removeAttribute("high-accuracy");
-    }
+  set highAccuracy(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "high-accuracy", value);
   }
 
   get timeout(): number {
@@ -123,8 +125,8 @@ export class WcsGeolocation extends HTMLElement {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : Infinity;
   }
 
-  set timeout(value: number) {
-    this.setAttribute("timeout", String(value));
+  set timeout(value: number | null | undefined) {
+    reflectAttribute(this, "timeout", value);
   }
 
   get maximumAge(): number {
@@ -137,32 +139,24 @@ export class WcsGeolocation extends HTMLElement {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
   }
 
-  set maximumAge(value: number) {
-    this.setAttribute("maximum-age", String(value));
+  set maximumAge(value: number | null | undefined) {
+    reflectAttribute(this, "maximum-age", value);
   }
 
   get watch(): boolean {
     return this.hasAttribute("watch");
   }
 
-  set watch(value: boolean) {
-    if (value) {
-      this.setAttribute("watch", "");
-    } else {
-      this.removeAttribute("watch");
-    }
+  set watch(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "watch", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---

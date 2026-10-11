@@ -1,0 +1,28 @@
+{
+  "floor": {
+    "w1k": 4.149999976158142,
+    "c10k": 50
+  },
+  "floorExcl": {
+    "w1k": 4.149999976158142,
+    "c10k": 44.59999996423721
+  },
+  "current": {
+    "w1k": 17.9,
+    "c10k": 384.5,
+    "ratioW1k": 4.31,
+    "ratioC10k": 7.69,
+    "ratioW1kExcl": 4.31,
+    "ratioC10kExcl": 8.62,
+    "n": 18
+  },
+  "next": {
+    "w1k": 5.95,
+    "c10k": 76.8,
+    "ratioW1k": 1.43,
+    "ratioC10k": 1.54,
+    "ratioW1kExcl": 1.43,
+    "ratioC10kExcl": 1.72,
+    "n": 18
+  }
+}

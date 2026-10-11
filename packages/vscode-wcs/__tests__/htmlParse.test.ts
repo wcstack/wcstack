@@ -227,6 +227,40 @@ describe('parseWcsStateElements', () => {
     expect(elements).toHaveLength(1);
     expect(elements[0].jsonAttr).toBe('{"visible": true}');
   });
+
+  it('raw text 要素（script・style・textarea・title）の中身の <wcs-state> は文書の要素ではないので数えない', () => {
+    const html = `<wcs-state json='{"root":1}'></wcs-state>
+<script type="module">
+class XCard extends HTMLElement {
+  constructor() { super(); this.attachShadow({ mode: "open" }).innerHTML = \`<wcs-state json='{"n":1}'></wcs-state><p>{{ n }}</p>\`; }
+}
+const t = "<wcs-state mount='x'><script type=\\"module\\">export default { $watch: {} };<\\/script></wcs-state>";
+</script>
+<style>/* <wcs-state> */</style>
+<textarea><wcs-state></wcs-state></textarea>
+<title><wcs-state bind-component="s" json="{}"></wcs-state></title>
+<SCRIPT>"<wcs-state>"</SCRIPT >
+<wcs-state json='{"after":1}'></wcs-state>`;
+    expect(parseWcsStateElements(html).map(e => e.jsonAttr)).toEqual(['{"root":1}', '{"after":1}']);
+    expect(parseWcsScriptBlocks(html)).toEqual([]);
+  });
+
+  it('閉じていない raw text 要素の後ろは、HTML のパーサと同じく文書の残りすべてが中身になる', () => {
+    expect(parseWcsStateElements(`<wcs-state></wcs-state><script>let a = 1;<wcs-state></wcs-state>`)).toHaveLength(1);
+    // `</scripts>` は終了タグではない
+    expect(parseWcsStateElements(`<script>"</scripts><wcs-state>"</script><wcs-state></wcs-state>`)).toHaveLength(1);
+  });
+
+  it('<wcs-state> の中のスクリプトの文字列の </wcs-state> を要素の終わりと読まない', () => {
+    const html = `<wcs-state><script type="module">
+export default { tpl: "</wcs-state><wcs-state mount='y'>" };
+</script></wcs-state>
+<wcs-state mount="v"><script>"</wcs-state>"</script><script type="module">export default { a: 1 };</script></wcs-state>`;
+    const elements = parseWcsStateElements(html);
+    expect(elements.map(e => [e.mountPath, e.scriptBlocks.length])).toEqual([[null, 1], ['v', 1]]);
+    expect(elements[0].scriptBlocks[0].content).toContain(`tpl: "</wcs-state><wcs-state mount='y'>"`);
+    expect(elements[1].scriptBlocks[0].content).toBe('export default { a: 1 };');
+  });
 });
 
 describe('findScriptJsonById', () => {

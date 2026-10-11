@@ -75,6 +75,38 @@ describe("<wcs-listen>", () => {
       el.setAttribute("max-restarts", "1.9");
       expect(el.maxRestarts).toBe(1);
     });
+
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外して既定へ戻す（P1 / P2）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = '<wcs-listen lang="ja-JP" continuous interim max-restarts="3" manual></wcs-listen>';
+      const el = host.firstElementChild as WcsListen;
+      el.lang = "en-US";
+      el.continuous = false;
+      el.interim = false;
+      el.maxRestarts = 9;
+      el.manual = false;
+      el.lang = undefined;
+      el.continuous = undefined;
+      el.interim = undefined;
+      el.maxRestarts = undefined;
+      el.manual = undefined;
+      expect(el.lang).toBe("ja-JP");
+      expect(el.continuous).toBe(true);
+      expect(el.interim).toBe(true);
+      expect(el.maxRestarts).toBe(3);
+      expect(el.manual).toBe(true);
+      el.lang = null;
+      el.continuous = null;
+      el.interim = null;
+      el.maxRestarts = null;
+      el.manual = null;
+      for (const name of ["lang", "continuous", "interim", "max-restarts", "manual"]) {
+        expect(el.hasAttribute(name)).toBe(false);
+      }
+      expect(el.maxRestarts).toBe(0);
+      expect(el.continuous).toBe(false);
+      expect(el.manual).toBe(false);
+    });
   });
 
   describe("コマンド委譲", () => {

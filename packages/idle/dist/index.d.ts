@@ -186,7 +186,7 @@ declare class WcsIdle extends HTMLElement {
      * `start()`s again.
      */
     get threshold(): number;
-    set threshold(value: number);
+    set threshold(value: number | null | undefined);
     get userState(): IdleUserState | null;
     get screenState(): IdleScreenState | null;
     get active(): boolean;

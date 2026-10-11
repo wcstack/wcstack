@@ -1,0 +1,1 @@
+{"framework":"wcstack-signals-v3.3.0-keyed","keyed":true,"benchmark":"41_size-uncompressed","type":"size","values":{"DEFAULT":{"values":[21.2,21.2,21.2,21.2,21.2],"median":21.2,"min":21.2,"max":21.2,"mean":21.2,"stddev":0}}}

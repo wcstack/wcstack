@@ -136,7 +136,11 @@ export interface BoundNode<S extends NodeShape = DefaultNodeShape> {
    * Reactively write a declared input from a signal: an effect mirrors `source` into
    * `node[name]`. A same-value guard (`node[name] !== v`) skips redundant writes, so
    * a property whose write re-dispatches an event cannot feed back into an infinite
-   * loop. Returns a disposer; the effect is also torn down by `dispose()`.
+   * loop. `undefined` follows the wc-bindable applier profile (A2): it is not written
+   * while the source has had no other value (the first evaluation, or after another
+   * `undefined`), so the element keeps its own initial state; after a value it is
+   * written, so the element restores that state. Returns a disposer; the effect is
+   * also torn down by `dispose()` (neither writes anything).
    */
   bindInput<K extends keyof InputsOf<S>>(name: K, source: ReadSignal<InputsOf<S>[K]>): () => void;
   /** Invoke a declared command on the node (imperative); args/return typed from the shape. */
@@ -339,8 +343,16 @@ export function bindNode<S extends NodeShape = DefaultNodeShape>(
       if (!declaredInputs.has(name)) {
         throw new Error(`bindNode.bindInput: "${name}" is not a declared input on this node.`);
       }
+      // The previous evaluation, written or not. Its initial `undefined` stands for "no
+      // previous evaluation", which A2 treats the same as a previous `undefined`.
+      let previous: unknown = undefined;
       const handle = effect(() => {
         const v = source.get();
+        const before = previous;
+        previous = v;
+        // A2: an `undefined` that follows no value means "no value yet" — writing it
+        // would overwrite the element's own initial state (its default, or the markup)
+        if (v === undefined && before === undefined) return;
         if (node[name] !== v) {
           node[name] = v; // same-value guard above breaks write→event→write loops
         }

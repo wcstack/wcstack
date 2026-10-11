@@ -96,15 +96,15 @@ export function validateRecursion(
   const out: WcsDiagnostic[] = [];
 
   for (const element of parseWcsStateElements(html, stateTagName)) {
-    // マウントされたコンポーネントの state（`bind-component`）は `$recursion` / `**` getter を実行しない。
-    // 属性名で判定する（タグ全体への正規表現は属性値の中の "bind-component" にも当たる）
-    const mounted = element.bindComponent;
+    // `<wcs-state bind-component>` の中のスクリプトはランタイムが読み込みごと拒む（4.0 の scopes/component.ts の
+    // `load` — `wcs/bind-component-source` が 1 件報告する）。中身の検査は重ねない。属性名で判定する
+    // （タグ全体への正規表現は属性値の中の "bind-component" にも当たる）
+    if (element.bindComponent) continue;
     for (const block of element.scriptBlocks) {
     // `**` も `$recursion` も無いスクリプトは 1 回の indexOf で抜ける（ゼロコスト規約）
     if (!hasRecursionWildcard(block.content) && block.content.indexOf('$recursion') === -1) continue;
     const declaration = analyzeRecursionDeclaration(block.content);
-    // ボリューム（`mount=`）とマウントされたコンポーネント（`bind-component`）は `$recursion` も
-    // `**` getter も持てない（runtime は接ぎ木前に raise / warn して捨てる）。宣言に依存する
+    // ボリューム（`mount=`）は `$recursion` も `**` getter も持てない（runtime は接ぎ木を拒む）。宣言に依存する
     // 検査（getter の形・`$getAll` / `$setAll` の形）はそこで終わるが、宣言に依存しない検査
     // — `**` を解釈しない消費者（代入・`$resolve` / `$postUpdate` / `$dependOn`（旧名
     // `$trackDependency`）・`$listKeys` キー）— は runtime が必ず throw するので、そのまま掛ける
@@ -114,8 +114,6 @@ export function validateRecursion(
     let getterSuffixes: readonly string[] = [];
     if (block.mountPath !== null) {
       validateVolumeBlock(block.content, block.contentStart, block.mountPath, declaration, msgs, out);
-    } else if (mounted) {
-      validateMountedComponentBlock(block.content, block.contentStart, declaration, msgs, out);
     } else {
       spec = validateDeclaration(declaration, block.contentStart, msgs, out);
       // 「宣言が無い」と断定できるのは、オブジェクトリテラルが読めて、spread（`...tree` — 宣言を
@@ -324,32 +322,6 @@ function validateRecursiveGetters(
     }
   }
   return suffixes;
-}
-
-/**
- * マウントされたコンポーネント（`<wcs-state bind-component>`）の state は `$recursion` も
- * `**` getter も実行しない（runtime は `wcs/mount-dollar-declaration` で warn して捨てる —
- * `markerizeAccessorPath` は `*` しか探さないので `**` キーは登録されない）。黙って効かない
- * 形なので warning。
- */
-function validateMountedComponentBlock(
-  script: string,
-  offset: number,
-  declaration: RecursionDeclarationInfo | null,
-  msgs: WcsMessageCatalog,
-  out: WcsDiagnostic[],
-): void {
-  if (declaration !== null) {
-    push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, offset + declaration.start, offset + declaration.end,
-      msgs.recursionInMountedComponent('$recursion'), 'warning');
-  }
-  const seen = new Set<string>();
-  for (const span of analyzeDeclarationSpans(script)) {
-    if (!hasRecursionWildcard(span.name) || seen.has(span.name)) continue;
-    seen.add(span.name);
-    push(out, WcsDiagnosticCode.RecursionDeclarationInvalid, offset + span.start, offset + span.end,
-      msgs.recursionInMountedComponent(`"${span.name}"`), 'warning');
-  }
 }
 
 /**

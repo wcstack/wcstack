@@ -1,0 +1,1 @@
+{"framework":"alpine-v3.14.7-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"min":156,"max":156,"median":156,"mean":156,"stddev":null,"values":[156]}}}

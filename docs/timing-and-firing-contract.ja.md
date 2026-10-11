@@ -1,11 +1,11 @@
 # wcstack タイミングと発火の契約 (Timing & Firing Contract)
 
-- **対象**: `@wcstack/state` の binder / `$streams` と、wc-bindable 準拠の非同期プリミティブタグ群（`@wcstack/fetch` / `@wcstack/intersection` ほか）を組み合わせて使うアプリ・example 作者
+- **対象**: `@wcstack/state` の binder / `$stream` と、wc-bindable 準拠の非同期プリミティブタグ群（`@wcstack/fetch` / `@wcstack/intersection` ほか）を組み合わせて使うアプリ・example 作者
 - **状態**: 参照ドキュメント（リファレンス）。各項目は現行の参照実装の挙動を記述する。挙動を変える場合はこの文書も更新すること
 - **なぜ存在するか**: examples（特に [`state-search`](../examples/state-search) / [`state-intersect-scroll`](../examples/state-intersect-scroll)）は、各 README の API 表には載っていない「いつ・何回イベントが出るか」「何が同期で何が microtask か」「どの操作が冪等か」に依存して正しさを成立させている。これらが暗黙のままだとデモの長文コメントが文書不在の応急処置になり、利用者は内部実装を読まないと再現できない。本書はその契約を一枚に集約する
 - **関連**: 本書の発火順を test input / settle boundary として適合ベクトルへ写像する横断検証層の提案は [io-node-trace-conformance.md](./io-node-trace-conformance.md)。I/O ノードの実行形・lane・commit 規則は [async-execution-model.ja.md](./async-execution-model.ja.md)
 - **English**: [timing-and-firing-contract.md](./timing-and-firing-contract.md)
-- **TL;DR**: ① `loading-changed(true)` は「送信ごとに1回・await 前・無条件」。② auto-fetch は **microtask に遅延＋同一 url を de-dup**、明示トリガーは **即時・無条件（de-dup 迂回）**。③ `$streams.args` の依存変更は updater drain 後に旧 run を abort して再起動する（switchMap 型）。④ `observe()` は同一 target+options で**冪等（新コールバックを出さない）**、強制再観測は `reobserve()`。⑤ data-wcs の初期バインド適用は別 microtask（`getBindingsReady()` で待てる）
+- **TL;DR**: ① `loading-changed(true)` は「送信ごとに1回・await 前・無条件」。② auto-fetch は **microtask に遅延＋同一 url を de-dup**、明示トリガーは **即時・無条件（de-dup 迂回）**。③ `$stream` のエントリの `args` の依存変更は、drain の終わりに旧 run を abort して再起動する（switchMap 型）。④ `observe()` は同一 target+options で**冪等（新コールバックを出さない）**、強制再観測は `reobserve()`。⑤ data-wcs の初期バインド適用は `$connectedCallback` の前に終わる（`getBindingsReady()` はその時点で解決する）。まだ定義されていないカスタム要素への束縛は、定義された時点で付く
 
 ---
 
@@ -78,20 +78,20 @@
 
 ---
 
-## 3. 横断契約: `$streams` restart と同値 page 選択（ページスキップ防止）
+## 3. 横断契約: `$stream` restart と同値 page 選択（ページスキップ防止）
 
-`state-intersect-scroll` は `$streams` の switchMap 型 restart を使う。ここで交差 edge ごとに
+`state-intersect-scroll` は `$stream` の switchMap 型 restart を使う。ここで交差 edge ごとに
 `page++` すると、page N の in-flight run を後発 edge が abort し、N+1 へ飛ばすため誤りである。
 デモは次の組み合わせで ordered append を守る。
 
 1. `sentinelChanged`（IntersectionObserver task）は `page = floor(feed.items.length / pageSize) + 1` とする
 2. page N の実行中／失敗後は `feed.items.length` が不変なので N を再代入するだけ。既定 ON の primitive same-value guard が enqueue 自体を no-op にし、stream は restart しない
-3. 成功 chunk の着地を `$scan`（`from: "pageResult"`）が `feed.items` へ畳み、次のバッチの `$watch.feed` が `reobserve()` する。commit は `done` ではなく成功 chunk の着地で、同じ page の再着地は fold の page キーが捨てる
-4. 新しい可視性 callback では式が N+1 を返す。`page` 更新の updater drain 後、`$streams.args` の依存 hit が旧 run を abort し、新しい args で run を開始する
+3. 成功 chunk の着地を `$watch.pageResult` が `feed.items` へ畳み、次のバッチの `$watch.feed` が `reobserve()` する。commit は `done` ではなく成功 chunk の着地で、同じ page の再着地はハンドラの page キーが捨てる
+4. 新しい可視性 callback では式が N+1 を返す。`page` 更新を当てる drain の終わりに、`$stream` のエントリの `args` の依存 hit が旧 run を abort し、新しい args で run を開始する
 
 → `!loading` / `!error` の手書き exhaust guard は不要で、通常の交差 edge は失敗ページの予算外 retry にもならない。
 同じ page を意図的に retry する操作は、別依存 `retryNonce` を更新する。これは occurrence（同じ引数でもう一度）を
-value 差分へ符号化する現行 `$streams` restart API の境界である。ボタンに加え、既存 item がある error 状態では、
+value 差分へ符号化する現行 `$stream` restart API の境界である。ボタンに加え、既存 item がある error 状態では、
 「error 確定時から scrollY が動いた」証拠を伴う sentinel edge が `retryNonce` を更新する。証拠は2系統あり、
 scrollY が動いた `leave` は後続 `enter` を1回 arm し、scrollY が動いた `enter` はそれ自体で成立する。
 後者は、error UI の layout shift 自体が sentinel を band 外へ押し出した場合の救済である — その leave は
@@ -110,36 +110,46 @@ error 時に `reobserve()` してはならない。sentinel が可視のまま�
 
 ## 4. @wcstack/state — バインド適用のタイミング
 
-参照: [`packages/state/src/buildBindings.ts`](../packages/state/src/buildBindings.ts)、[`stateElementByName.ts`](../packages/state/src/stateElementByName.ts)
+参照（4.0）: `packages/state/src` の `element.ts`（`WcsState.start`・`getBindingsReady`）、`dom/mount.ts`、`dom/wc.ts`（`whenDefined`）、`engine.ts`（`drain`・`report`）
 
-### 4.1 data-wcs の初期バインド適用は別 microtask（`$connectedCallback` と順序保証なし）
-`<wcs-state>` の `connectedCallback` は ① state ロード → `initializePromise` 解決 → ② `$connectedCallback` 実行、の順。一方 data-wcs バインドの**初期値適用は `buildBindings`（別 microtask）**で、`initializePromise` を待ってから走る。つまり **`$connectedCallback` 実行時点で「url が要素に乗っているか」「command トークンが結線済みか」は保証されない**。
+### 4.1 data-wcs の初期バインド適用は `$connectedCallback` の前に終わる（まだ定義されていないカスタム要素は、定義された時点で束ねる）
+`<wcs-state>` の `connectedCallback` は ① state ロード（分割 auto では、その `$features` が挙げる機能の読み込みも）→ ② ページを束ねる: ルートの下のすべての `data-wcs` / `{{ }}` の束縛を作り、初期値を当てる（同期）→ ③ `initializePromise` と `getBindingsReady()` を解決 → ④ `$connectedCallback` 実行 → `connectedCallbackPromise` を解決、の順。つまり **`$connectedCallback` の実行時点で、定義済みの要素には url が乗っており、command トークンも結線済み**。
 
-→ **帰結**: `$connectedCallback` でバインド済みを前提に要素を叩く（コマンド emit・要素プロパティ読み）なら、`getBindingsReady()` を待つ:
+例外は、クラスがまだ定義されていないカスタム要素。そのプロパティ・`command.`・`eventToken.`・スプレッドの束縛は `customElements.whenDefined()` を待って、その時点で付く。`getBindingsReady()` はそれを待たない。ネイティブ要素と、ほかの種類の束縛（`attr.`・`class.`・`style.`・テキスト・`on*:`）はすぐに束ねる。
+
+→ **帰結**: `$connectedCallback` から定義済みの要素を叩く（コマンド emit・要素プロパティ読み）のに、待ちは要らない。パッケージが後から読み込まれうる要素は、その定義を待つ。state は同じ定義への自分の反応（先に登録してある）で要素の束縛を付けるので、`await` から戻った時点で束縛はそろっている:
 
 ```js
 async $connectedCallback() {
-  await customElements.get("wcs-state").getBindingsReady(document);
+  await customElements.whenDefined("wcs-fetch");
   // ここでは url 適用・command 結線が完了している
 }
 ```
 
-未登録 rootNode では `Promise.resolve()` を返すのでハングしない。
+`<wcs-state>` の無い root では `getBindingsReady()` はすぐに解決するのでハングしない。
 
-なお **monitor 系ノードの初回スナップショットを読むためにこの待ちを使う必要はない**。それは directional initial sync（既定 ON）が構造的に解決しており、バインド確立時のプロパティ読み取りで届く（§7.1・§10.1）。この待ちが要るのは、`$connectedCallback` 側から要素を能動的に叩く場合（command emit、要素プロパティの読み取り）に限られる。
+なお **monitor 系ノードの初回スナップショットを読むのに待ちは要らない**。それは directional initial sync（既定 ON）が構造的に解決しており、バインド確立時のプロパティ読み取りで届く（§7.1・§10.1）。
+
+3.x: 初期適用は `buildBindings`（`initializePromise` の後の別 microtask）で走ったので、`$connectedCallback` の実行時点では何も保証されず、要素を叩く前に `await customElements.get("wcs-state").getBindingsReady(document)` が要った。この待ちは 4.0 でもそのまま動く（すでに決着している）。
 
 ### 4.2 `undefined` 書き込みはスキップ（明示クリアは `null`）
-binder は `undefined` を properties/inputs に書かない（書き込み自体をスキップ）。詳細と SPEC 提案は [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md)。
+`@wcstack/state` は `undefined` を properties/inputs に書かない（書き込み自体をスキップ）。前にそのパスが値を持っていても同じ。これは state 自身の規則で、wc-bindable 0.10.0 の applier プロファイル（A2）は値の後の `undefined` を書いて要素を初期状態に戻させる。state はこのプロファイルを宣言しない。ほかの書き手（React 19、`@wcstack/signals` の `bindInput`、直接の代入）は `undefined` を届けるので、I/O ノードは引き続き `undefined` を扱う（producer ガイダンス P1）。詳細、SPEC 提案と上流の回答は [spec-proposal-undefined-write-skip.md](./spec-proposal-undefined-write-skip.md)。
 
 
 ### 4.3 `<wcs-view-transition>` があると drain は microtask ではなくフレームで着地する
-drain（`Updater._applyChange`）は通常、キューされた microtask の中で同期的にバインディングを適用する。`@wcstack/view-transition` の arbiter が install され、かつ **`state` 参加者を受け付けている**とき（`for=` に `state` が含まれる。既定）、バインディング適用は `document.startViewTransition` へ預けられ、後のフレームで呼ばれる。
+drain（`Engine.drain`）は通常、キューされた microtask の中で、パスごとのバインディングを同期的に適用する。パスごとの DOM の変更は transition-runner プロトコルを通る: `@wcstack/view-transition` の arbiter が install され、かつ **`state` 参加者を受け付けている**とき（`for=` に `state` が含まれる。既定）、arbiter が `run()` で受け取り、view transition を始めるときは、その遷移の更新コールバックの中で（後のフレームで）適用する。
 
-→ **帰結 1**: state に書いてから `await Promise.resolve()` で DOM を読むコードは古い DOM を見る。遷移を待つか、`$updatedCallback` を使うこと —— こちらは更新コールバックの中、バインディング適用の直後に発火するので*位置*は変わらない（ただし適用ごと 1 フレーム後ろへずれる）。
+→ **帰結 1**: state に書いてから `await Promise.resolve()` で DOM を読むコードは古い DOM を見る。遷移を待つか、`$renderedCallback` を使うこと —— こちらは更新コールバックの中、預けたバインディングの適用の直後に発火する（バインディングの失敗もそこで `$errorCallback` に届く）ので*位置*は変わらない（ただし適用ごと 1 フレーム後ろへずれる）。
 
-→ **帰結 2 —— 機構間の順序が反転する**。drain 終了リスナー（`$scan` → `$watch` → `$streams` restart、§3）は state アドレスを消費し DOM を見ないので元の microtask に留まる。`$updatedCallback` は留まらない。したがって §3 が「固定」と呼ぶ `$updatedCallback` → `$scan` → `$watch` → `$streams` restart は、arbiter が `state` を受け付けている間だけ `$scan` → `$watch` → `$streams` restart → `$updatedCallback` になる。この層を並べ替えるものはページ上でこれ 1 つだけ。`$updatedCallback` が書いたものを `$watch` ハンドラが読む組み方は、タグがある間は成立しない。
+→ **帰結 2 —— 機構間の順序が反転する**。drain の終わりの順序は固定: バインディングの適用 → `$renderedCallback` → バインディングの失敗（`$errorCallback`、無ければコンソール）→ `$watch` ハンドラ → `$stream` の再開。`$watch` と `$stream` の再開は state を消費し DOM を見ないので元の microtask に留まり、`$renderedCallback` は預けたバインディングと一緒に動く。したがって arbiter が変更を預かっている間は `$watch` → `$stream` restart → `$renderedCallback` になる。この層を並べ替えるものはページ上でこれ 1 つだけ。`$renderedCallback` が書いたものを `$watch` ハンドラが読む組み方は、タグがある間は成立しない。
 
-**変わらない**もの: 初期レンダリングは決して包まれない（包むのは drain だけ）。`inSsr()` は同期パスへ短絡する。適用すべきバインディングが 0 本のバッチは arbiter へ渡さないので、headless なパス（`$watch` 専用・`$streams` の内部状態）への書き込みはアニメーションも遅延も起こさない。arbiter が居ない場合、あるいは `for="router"` の場合、drain は従来と完全に同一。
+arbiter が預からない —— `run()` の中で同期的に適用し、順序が宣言どおりのままになる —— のは、ブラウザに `document.startViewTransition` が無い、タブが非表示、`reduced-motion="animate"` なしで `prefers-reduced-motion: reduce` が効いている、タグが `disabled`、サーバーで描画中（`data-wcs-server`）、`mode="exhaust"` で走行中の遷移がすでに更新コールバックを過ぎている、のどれかのとき（[view-transition の README](../packages/view-transition/README.ja.md)）。
+
+預けた適用が同期的に書いたもの —— 要素の書き戻し、同期の `$renderedCallback` —— は、変更を預けた drain の描画の連鎖（100 回の drain の上限）の続きに数えるので、arbiter を挟む更新のループも打ち切られる。async の `$renderedCallback` が `await` の後で書いたものは新しい連鎖を始めるので、そのループは遷移 1 回につき 1 周ずつ進み、打ち切られない。
+
+**変わらない**もの: 初期レンダリングは決して包まれない（包むのは drain だけ）。描くものがキューに無い drain は arbiter に何も渡さないので、headless なパス（`$watch` 専用・`$stream` の内部状態）への書き込みはアニメーションも遅延も起こさない。arbiter が居ない場合、あるいは `for="router"` の場合、変更は drain の中で同期的に適用される。
+
+3.x: drain の適用（`Updater._applyChange`）を 1 つのまとまりとして arbiter に渡し、SSR では state 自身が同期パスへ短絡した（`inSsr()`。4.0 は arbiter に任せる）。宣言どおりの順序 `$updatedCallback` → `$scan` → `$watch` → `$streams` restart が、`$scan` → `$watch` → `$streams` restart → `$updatedCallback` になった。
 
 規範記述: [view-transition-design.ja.md](./view-transition-design.ja.md) §7.2。
 
@@ -152,7 +162,7 @@ drain（`Updater._applyChange`）は通常、キューされた microtask の中
 | [`state-search`](../examples/state-search) | §1.1（loading エッジで送信数を計数）/ §1.2（debounced url 変化で auto-fetch）/ §1.4（abort 時は response 無し → stale 防止） |
 | [`users-crud`](../packages/fetch/examples/users-crud) | §1.3（`refreshList` command で再取得）/ §1.4（response はエラーでも発火 → status で成功判定）/ §1.5（空 url の detail 抑止） |
 | [`infinite-scroll`](../packages/fetch/examples/infinite-scroll) | §1.2/§1.4（append は status 判定）/ §2.1（センチネルは box 必須・初回 task で発火） |
-| [`state-intersect-scroll`](../examples/state-intersect-scroll) | §2.2+§2.3（reobserve で自己修復）/ §3（`$streams` restart と同値 page 選択で page-skip 防止） |
+| [`state-intersect-scroll`](../examples/state-intersect-scroll) | §2.2+§2.3（reobserve で自己修復）/ §3（`$stream` restart と同値 page 選択で page-skip 防止） |
 
 ---
 

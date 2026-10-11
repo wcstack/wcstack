@@ -1,0 +1,198 @@
+{
+  "timestamp": "2026-09-24T22:28:21.976Z",
+  "rows": [
+    {
+      "measure": "append1k cold",
+      "current": 56.35,
+      "currentB": 72.75,
+      "aaPct": 28.35,
+      "next": 7.85,
+      "nextVsCurrentPct": -86.43
+    },
+    {
+      "measure": "append1k warm",
+      "current": 50,
+      "currentB": 119.1,
+      "aaPct": 112.27,
+      "next": 10.3,
+      "nextVsCurrentPct": -83.27
+    },
+    {
+      "measure": "clear10k cold",
+      "current": 39.9,
+      "currentB": 79.15,
+      "aaPct": 72.42,
+      "next": 68.25,
+      "nextVsCurrentPct": 25.92
+    },
+    {
+      "measure": "clear10k warm",
+      "current": 48.65,
+      "currentB": 94.95,
+      "aaPct": 78.54,
+      "next": 67.05,
+      "nextVsCurrentPct": 13.74
+    },
+    {
+      "measure": "create10k cold",
+      "current": 372.45,
+      "currentB": 372.05,
+      "aaPct": 0.11,
+      "next": 58.2,
+      "nextVsCurrentPct": -84.36
+    },
+    {
+      "measure": "create10k warm",
+      "current": 377.45,
+      "currentB": 349.5,
+      "aaPct": 7.53,
+      "next": 31.65,
+      "nextVsCurrentPct": -91.47
+    },
+    {
+      "measure": "create1k cold",
+      "current": 48.25,
+      "currentB": 59.55,
+      "aaPct": 22.87,
+      "next": 7.05,
+      "nextVsCurrentPct": -85.73
+    },
+    {
+      "measure": "create1k warm",
+      "current": 18.75,
+      "currentB": 26.6,
+      "aaPct": 35.36,
+      "next": 5.55,
+      "nextVsCurrentPct": -75
+    },
+    {
+      "measure": "jsfb append1kTo10k (cold page)",
+      "current": 55.5,
+      "currentB": 57.85,
+      "aaPct": 4.16,
+      "next": 8.1,
+      "nextVsCurrentPct": -85.65
+    },
+    {
+      "measure": "jsfb clear10k (cold page)",
+      "current": 61.35,
+      "currentB": 73.75,
+      "aaPct": 19.5,
+      "next": 41.45,
+      "nextVsCurrentPct": -34.83
+    },
+    {
+      "measure": "jsfb create1k (cold page)",
+      "current": 37.55,
+      "currentB": 45.45,
+      "aaPct": 20.71,
+      "next": 7.35,
+      "nextVsCurrentPct": -80.73
+    },
+    {
+      "measure": "jsfb remove1k (cold page)",
+      "current": 2.9,
+      "currentB": 4.05,
+      "aaPct": 38.33,
+      "next": 0.6,
+      "nextVsCurrentPct": -80
+    },
+    {
+      "measure": "jsfb replace1k (cold page)",
+      "current": 14.25,
+      "currentB": 24.85,
+      "aaPct": 53.81,
+      "next": 6.95,
+      "nextVsCurrentPct": -64.72
+    },
+    {
+      "measure": "jsfb select1k (cold page)",
+      "current": 0.15,
+      "currentB": 0.2,
+      "aaPct": 25,
+      "next": 0.1,
+      "nextVsCurrentPct": -50
+    },
+    {
+      "measure": "jsfb swap1k (cold page)",
+      "current": 1.2,
+      "currentB": 1.5,
+      "aaPct": 23.08,
+      "next": 0.4,
+      "nextVsCurrentPct": -69.23
+    },
+    {
+      "measure": "jsfb update10k (cold page)",
+      "current": 12.8,
+      "currentB": 16.15,
+      "aaPct": 25.09,
+      "next": 5.85,
+      "nextVsCurrentPct": -56.18
+    },
+    {
+      "measure": "keyed (1 = passed)",
+      "current": 1,
+      "currentB": 1,
+      "aaPct": 0,
+      "next": 1,
+      "nextVsCurrentPct": 0
+    },
+    {
+      "measure": "remove1of10k eqIndex",
+      "current": 8.6,
+      "currentB": 12.15,
+      "aaPct": 32.42,
+      "next": 3.8,
+      "nextVsCurrentPct": -65.3
+    },
+    {
+      "measure": "remove1of10k tracked",
+      "current": 25,
+      "currentB": 31,
+      "aaPct": 20.73,
+      "next": 6.25,
+      "nextVsCurrentPct": -78.41
+    },
+    {
+      "measure": "select10k eqIndex",
+      "current": 4.1,
+      "currentB": 7.95,
+      "aaPct": 52.38,
+      "next": 2.7,
+      "nextVsCurrentPct": -63.27
+    },
+    {
+      "measure": "select10k tracked",
+      "current": 25.1,
+      "currentB": 26.35,
+      "aaPct": 4.98,
+      "next": 4.45,
+      "nextVsCurrentPct": -82.27
+    }
+  ],
+  "targets": {
+    "next": {
+      "create1k warm": {
+        "engine": 5.55,
+        "dom": 6.15,
+        "ratio": 0.9,
+        "pass": true,
+        "domExcl": 5.8,
+        "ratioExcl": 0.96
+      },
+      "create10k cold": {
+        "engine": 58.2,
+        "dom": 73.85,
+        "ratio": 0.79,
+        "pass": true,
+        "domExcl": 67.5,
+        "ratioExcl": 0.86
+      }
+    }
+  },
+  "size": {
+    "file": "packages/state-next/dist/auto.min.js",
+    "bytes": 68487,
+    "gzip": 24710
+  }
+}

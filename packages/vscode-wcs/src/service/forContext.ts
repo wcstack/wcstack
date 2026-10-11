@@ -4,9 +4,10 @@
  * HTML 内の指定位置が <template data-wcs="for:"> の内側にあるかを判定する。
  */
 
-import { splitBindTexts } from '@wcstack/state/parser';
+import { parseBindTextsForElement, splitBindTexts } from '@wcstack/state/parser';
+import { WcsDiagnosticCode } from '../core/diagnostics.js';
 import { indexOfOutsideQuotes } from '../core/parser/quoteAware.js';
-import { asciiLowerCase, parseAttributeNames, RAW_TEXT_ELEMENTS } from '../language/htmlParse.js';
+import { asciiLowerCase, extractAttribute, parseAttributeNames, RAW_TEXT_ELEMENTS } from '../language/htmlParse.js';
 
 /**
  * 指定オフセットが <template data-wcs="for: ..."> の内側にあるかを判定する。
@@ -57,6 +58,39 @@ export function isInsideForTemplate(html: string, offset: number, bindAttrName: 
 export function getInnermostForPath(html: string, offset: number, bindAttrName: string = 'data-wcs'): string | null {
   const chain = getEnclosingForPaths(html, offset, bindAttrName);
   return chain.length === 0 ? null : chain[chain.length - 1];
+}
+
+/** How a canonical parser error names its code (`[@wcstack/state] [wcs/binding-syntax] #121 "…"`). */
+const BINDING_SYNTAX_MARKER = `[${WcsDiagnosticCode.BindingSyntax}]`;
+
+/**
+ * Whether the canonical parser refuses a `for:` binding with `[wcs/binding-syntax]`: an output filter
+ * (`for: items|take(2)` — #121), an unclosed quote, an empty filter, a modifier on `for`. bindingSyntaxValidator
+ * reports it, and that error is the only diagnostic for it: the runtime refuses the binding as a whole (and with it
+ * the template, whose rows never exist), so the lint stacks no checks on the binding or on its rows — as it stacks
+ * no existence check on a path the parser refuses with #120. The parser's other refusals (`@state`, `**`) keep
+ * their own reporting and are not counted here.
+ */
+export function isForBindingRefused(bindText: string): boolean {
+  try {
+    parseBindTextsForElement(bindText);
+    return false;
+  } catch (e) {
+    return (e as Error).message.includes(BINDING_SYNTAX_MARKER);
+  }
+}
+
+/**
+ * The for path a row shorthand at offset expands against (`.name` → `<for path>.*.name`): the innermost enclosing
+ * for's raw path, as getInnermostForPath. null outside a for, and inside a for the canonical parser refuses
+ * (isForBindingRefused) at any depth: the runtime refuses that template, so its rows never exist, and expanding
+ * against the raw text would name `items|take(2).*.name` in a false `wcs/binding-path-missing`. The same single
+ * scan of the document as getInnermostForPath.
+ */
+export function getRowShorthandForPath(html: string, offset: number, bindAttrName: string = 'data-wcs'): string | null {
+  const chain = getEnclosingForPaths(html, offset, bindAttrName);
+  if (chain.length === 0 || chain.some((raw) => isForBindingRefused(`for: ${raw}`))) return null;
+  return chain[chain.length - 1];
 }
 
 /** offset を囲む for テンプレート 1 枚（生 for パス + テンプレート同一性のアンカー）。 */
@@ -117,9 +151,11 @@ export function getEnclosingFors(html: string, offset: number, bindAttrName: str
 }
 
 /**
- * for 属性値（`for:` の後ろ）の最初の式。`for: items;` のように末尾に `;` を書いても 3.x の構造ディレクティブ
- * （空の式は数えない）なので、引用符の外の最初の `;` で切る — 切らないと `items;` が for のリストのパスとして
- * 合成され、行の `items.*.name` や `.name` を別のリストと取り違える。
+ * for 属性値（`for:` の後ろ）の最初の式。`for: items;` のように末尾に `;` を書いても構造ディレクティブ
+ * （空の式は数えない — 正本パーサの splitBindTexts の後で空を落とす）なので、引用符の外の最初の `;` で切る。
+ * 切らないと `items;` が for のリストのパスとして合成され、行の `items.*.name` を別のリストの `*` と
+ * 取り違え（`wcs/wildcard-rank` #1403）、省略パス（`.name` → `items;.*.name`）も偽の
+ * `wcs/binding-path-missing` になる。
  */
 function firstExpressionOf(raw: string): string {
   const semicolon = indexOfOutsideQuotes(raw, ';');
@@ -150,7 +186,7 @@ function forPathOf(raw: string): string {
 
 /**
  * 囲む for が描くリストのパス（getResolvedForListPath の結果）が与える段数 ＝ そのスコープで
- * **ワイルドカードを解決できる段数**。囲む for が無ければ段数は 0（呼び手が null を 0 と読む）。
+ * **ワイルドカードを解決できる段数**。
  *
  * 段数は「囲む for の枚数」ではない。for のパス自身が階数を持つ入れ子
  * （`for: matrix` の中の `for: matrix.*`）があるため、合成したリストのパスの `*` の本数 + 1
@@ -183,6 +219,15 @@ export function getResolvedForListPath(html: string, offset: number, bindAttrNam
   return resolved;
 }
 
+/**
+ * 段ごとのリスト（外側 → 内側）。段 k（1 始まり）の `*` が回るリスト ＝ 囲む for のリスト。
+ * 最も内側の段は for のリストそのもの、それより外の段はそのパスの k 番目の `*` の手前
+ * （`groups.*.items` → [`groups`, `groups.*.items`]。ランタイムの `Pattern.lists`）。
+ */
+export function listsPerLevel(resolvedListPath: string): string[] {
+  return [...wildcardPrefixes(resolvedListPath), resolvedListPath];
+}
+
 /** パスの各 `*` の手前（その `*` が回るリスト）を外側から順に返す（`a.*.b.*.c` → [`a`, `a.*.b`]）。 */
 export function wildcardPrefixes(path: string): string[] {
   const segments = path.split('.');
@@ -194,25 +239,9 @@ export function wildcardPrefixes(path: string): string[] {
 }
 
 /**
- * 段ごとのリスト（外側 → 内側）。段 k（1 始まり）の `*` が回るのは、その段で囲む for のリスト。
- * 最も内側の段は for のリストそのもの、それより外の段はそのパスの k 番目の `*` の手前
- * （`groups.*.items` → [`groups`, `groups.*.items`]）。
- */
-export function listsPerLevel(resolvedListPath: string): string[] {
-  return [...wildcardPrefixes(resolvedListPath), resolvedListPath];
-}
-
-/**
- * 束縛のパスの各 `*` が、その段で囲む for のリストの行か。最初に食い違った段の「パスの `*` が回るリスト」と
- * 「その段の for のリスト」を返す。食い違いが無い・判定できない（相対 for が解けない・段数が足りない —
- * それは段数の検査の担当）なら null。
- *
- * 3.x のランタイム（list/getListIndexByBindingInfo.ts）は、最も内側のループ文脈のパスと束縛のパスの
- * ワイルドカードの接頭辞（`wildcardPathSet`）の**共通部分**の数だけ添字を渡す。`for: a` の行の中の
- * `b.*.y` は共通部分が無く添字が null のまま解決に進み、`Cannot resolve state address for binding with
- * wildcard statePathName "b.*.y" because list index is null.` で囲む for ごと失敗する。接頭辞は入れ子
- * なので、共通部分の数 ＝ 外側から一致した段の数で、ここで段ごとに比べるのと同じ判定になる。
- * 4.0 は同じ形をバインド確立時に `[wcs/wildcard-rank]`（#1403）で拒む。
+ * 束縛のパスの各 `*` が、その段で囲む for のリストの行か（4.0 の F32・`[wcs/wildcard-rank]` #1403）。
+ * 最初に食い違った段の「パスの `*` が回るリスト」と「その段の for のリスト」を返す。食い違いが無い・
+ * 判定できない（囲む for が無い・段数が足りない — それは #1401 の担当）なら null。
  */
 export function findOtherListWildcard(path: string, resolvedListPath: string): { over: string; loop: string } | null {
   if (resolvedListPath.startsWith('.')) return null;
@@ -225,17 +254,16 @@ export function findOtherListWildcard(path: string, resolvedListPath: string): {
   return null;
 }
 
-
 // ------------------------------------------------------------------ 要素の置かれた文脈（1 回の走査）
 
 /** 子を持たない要素（終了タグが無い）。 */
 const VOID_ELEMENTS = new Set([
   'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr',
 ]);
-/** 要素の中身を値で置き換える束縛（その要素の子は束縛として読まれない）。 */
-const CONTENT_PROPERTIES = new Set(['textContent', 'innerText', 'innerHTML', 'outerHTML', 'outerText']);
-const STRUCTURAL_DIRECTIVE_NAMES = new Set(['for', 'if', 'elseif', 'else']);
-/** `<p>` を暗に閉じる開始タグ（直前に開いた `<p>` だけを見る近似）。 */
+/** 要素の中身を値で置き換える束縛（`setsContent` — ランタイムはその要素の子を束縛として読まない）。 */
+const CONTENT_PROPERTIES = new Set(['textContent', 'innerText', 'innerHTML', 'text', 'html', 'outerHTML', 'outerText']);
+const STRUCTURAL_DIRECTIVES = new Set(['for', 'if', 'elseif', 'else']);
+/** `<p>` を暗に閉じる開始タグ（HTML の「button scope にある p を閉じる」— 直前に開いた `<p>` だけを見る近似）。 */
 const P_CLOSERS = new Set([
   'address', 'article', 'aside', 'blockquote', 'details', 'dialog', 'div', 'dl', 'fieldset', 'figcaption', 'figure',
   'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'main', 'menu', 'nav', 'ol', 'p',
@@ -258,7 +286,7 @@ const IMPLIED_CLOSE: Record<string, ReadonlySet<string>> = {
 
 /** 束縛属性の値の各式の左辺の名前（修飾子・入力フィルタ・明示のプロパティ形の `.` を外した形）。 */
 function propertyNamesOf(value: string): string[] {
-  // 空の式（末尾の `;` — `for: items;`）は数えない
+  // 空の式（末尾の `;` — `for: items;`）はランタイムと同じく数えない
   return splitBindTexts(value).filter((expr) => expr.trim().length > 0).map((expr) => {
     const colon = indexOfOutsideQuotes(expr, ':');
     const left = (colon === -1 ? expr : expr.slice(0, colon)).trim();
@@ -273,6 +301,29 @@ function propertyNamesOf(value: string): string[] {
  */
 interface ITemplateScope {
   hasOwnState: boolean;
+  /** The `id` attribute (a layout template a `<wcs-layout layout="id">` names? — decided at the end of the scan). */
+  readonly id: string | null;
+  /** Inside a `<wcs-router>` (a route template: the router inserts its content and hands it to the binder). */
+  readonly underRouter: boolean;
+}
+
+/** The router element (`<wcs-router>` — the `<template>` in it holds the routes). The router's default tag name. */
+const ROUTER_TAG = 'wcs-router';
+/** The layout element (`<wcs-layout layout="id">` reads the `<template>` of that id). The router's default tag name. */
+const LAYOUT_TAG = 'wcs-layout';
+
+/**
+ * Whether the state binds the content of a top-level non-structural `<template>`: a route template (inside
+ * `<wcs-router>` — the router hands the content it inserts to the binder) or a layout template a
+ * `<wcs-layout layout="id">` names (the light-DOM outlet hands what it places to the binder; a layout with
+ * `enable-shadow-root` puts the template into the outlet's shadow root, which the page's state does not bind).
+ * Anything else (a `<template id="row-tpl">` that only app code clones, a declarative shadow root) is not bound.
+ * Assumes the router's defaults: the tag names `wcs-router` / `wcs-layout` and `enableShadowRoot: false`
+ * (`config.tagNames` / `config.enableShadowRoot` are not visible here), and that a `<wcs-layout>` with both
+ * `src` and `layout` still names the template (the router reads `src`).
+ */
+function stateBindsTemplate(scope: ITemplateScope, layoutIds: ReadonlySet<string>): boolean {
+  return scope.underRouter || (scope.id !== null && layoutIds.has(scope.id));
 }
 
 interface IOpenElement {
@@ -291,7 +342,7 @@ interface IOpenElement {
 }
 
 /** 開始タグ `name` が暗に閉じる、開いたままの要素（直前に開いたもの）を積み上げから外す。 */
-function closeImplied(stack: IOpenElement[], name: string): void {
+function closeImplied(stack: { name: string }[], name: string): void {
   const implied = IMPLIED_CLOSE[name];
   if (implied !== undefined) {
     while (stack.length > 0 && implied.has(stack[stack.length - 1].name)) stack.pop();
@@ -304,13 +355,17 @@ function closeImplied(stack: IOpenElement[], name: string): void {
 export interface IElementContext {
   /**
    * 束縛として読まれる（raw text 要素の中身でも、中身を置き換える束縛を持つ要素の子孫でも、別の `<template>`
-   * の中に入れ子にした構造でない `<template>` の中でもない）。
+   * の中に入れ子にした構造でない `<template>` の中でもない）。Inside a top-level non-structural `<template>`, only
+   * when a state binds its content: one with its own `<wcs-state>` (a declarative shadow root, a DCC —
+   * ownStateTemplate), a route template or a layout template (stateBindsTemplate). The content of a
+   * `<template id="tpl">` that only app code clones is not bound.
    */
   readonly bound: boolean;
   /**
    * for / if / elseif / else テンプレートの行や枝の中で、束縛として読まれる。要素を置き換える束縛
-   * （`outerHTML:` / `outerText:`）はここで問題になる（3.x は置き換えた中身を取り残し、4.0 は初期化で拒む）。
-   * 自前の `<wcs-state>` を持つ template の中は数えない。
+   * （`outerHTML:` / `outerText:`）はここで 4.0 が初期化で拒む（#203 — 行や枝はノードを位置で持つ）。
+   * 自前の `<wcs-state>` を持つ template の中は数えない。Only where `bound` holds (inside a top-level template, a route
+   * or layout template — not one that only app code clones).
    */
   readonly rowOrBranch: boolean;
   /**
@@ -334,10 +389,18 @@ interface IPendingContext {
  * 束縛ごとに文書を数え直さない）。template の中に自前の `<wcs-state>` があるかは offset より後ろで分かる
  * ことがあるので、文書の終わりまで走査してから決める。
  *
+ * ランタイムの走査（`dom/plan.ts` の walkBindings）と同じく、次の中は束縛として読まれない:
+ *   - 別の `<template>` の中に入れ子にした構造でない `<template>`（中身は inert のまま）
+ *   - 中身を置き換える束縛（`textContent:` / `innerHTML:` / `innerText:` / `text:` / `html:` /
+ *     `outerHTML:` / `outerText:`）を持つ要素の子孫
+ *   - raw text 要素（`<script>` / `<style>` / `<textarea>` / `<title>` / `<noscript>` / `<iframe>` …）の中身
+ * 文書の直下の構造でない `<template>`（router の route）は、差し込まれた先で束縛されるので塞がない。
+ * `bound` (what `wcs/delegated-current-target` checks) and `rowOrBranch` (#203) count the content of such a template
+ * only when a state binds it (its own `<wcs-state>`, a route template, a layout template — stateBindsTemplate).
+ *
  * HTML のパーサに合わせて、終了タグの省略（`<li>…<li>`・`<p>…<div>`・表の行とセルなど）は開始タグで
  * 暗に閉じ、`/>` は void 要素と svg / math の中だけで閉じたとみなす（HTML では void でない要素の `/>` は
- * 無視される）。offset が raw text 要素（`<script>` / `<style>` / `<textarea>` / `<title>` / `<noscript>` /
- * `<iframe>` …）の中なら束縛ではない。
+ * 無視される）。
  * 既知の限界: 暗に閉じる規則は「直前に開いた要素」だけを見る近似（HTML の scope の規則のすべてではない）。
  */
 export function analyzeElementContexts(
@@ -350,6 +413,9 @@ export function analyzeElementContexts(
   const pending = [...new Set(offsets)].sort((a, b) => a - b);
   if (pending.length === 0) return out;
   const judged: [number, IPendingContext][] = [];
+  // The template ids a `<wcs-layout layout="id">` without `enable-shadow-root` names. A layout can come before or
+  // after its template, so this is collected over the whole scan and used at the end
+  const layoutIds = new Set<string>();
   let next = 0;
   const NOT_BOUND: IPendingContext = { bound: false, structural: false, scopes: [] };
   const stack: IOpenElement[] = [];
@@ -386,6 +452,7 @@ export function analyzeElementContexts(
       continue;
     }
     const attrs = match[3];
+    // 終了タグの省略: この開始タグが暗に閉じる、開いたままの要素を外す
     closeImplied(stack, name);
     if (name === stateTag && !parseAttributeNames(attrs).has('mount')) {
       // 自前の `<wcs-state>`: 最も内側の構造でない template（宣言的 shadow root・DCC・雛形）の state。
@@ -399,10 +466,15 @@ export function analyzeElementContexts(
         }
       }
     }
+    if (name === LAYOUT_TAG) {
+      const layout = extractAttribute(attrs, 'layout');
+      if (layout !== null && !parseAttributeNames(attrs).has('enable-shadow-root')) layoutIds.add(layout);
+    }
     const foreign = name === 'svg' || name === 'math' || stack.some((e) => e.name === 'svg' || e.name === 'math');
     if (VOID_ELEMENTS.has(name) || (foreign && /\/\s*$/.test(attrs))) continue;
     if (RAW_TEXT_ELEMENTS.has(name)) {
-      const close = (lower ??= asciiLowerCase(html)).indexOf(`</${name}`, end);
+      // `<plaintext>` は終了タグを持たない（文書の終わりまで文字）
+      const close = name === 'plaintext' ? -1 : (lower ??= asciiLowerCase(html)).indexOf(`</${name}`, end);
       const stop = close === -1 ? html.length : close;
       // 中身の中の offset: ブラウザでは文字であって束縛ではない
       while (next < pending.length && pending[next] < stop) judged.push([pending[next++], NOT_BOUND]);
@@ -414,26 +486,41 @@ export function analyzeElementContexts(
     const value = match3 === null ? null : match3[1] ?? match3[2] ?? match3[3];
     const names = value === null ? [] : propertyNamesOf(value);
     // 構造ディレクティブは単独の束縛（`for: items`）。修飾子付き（`for#x:`）は正本パーサが拒む形なので数えない
-    const structural = name === 'template' && names.length === 1 && STRUCTURAL_DIRECTIVE_NAMES.has(names[0])
+    const structural = name === 'template' && names.length === 1 && STRUCTURAL_DIRECTIVES.has(names[0])
       && !value!.slice(0, Math.max(0, indexOfOutsideQuotes(value!, ':'))).includes('#');
     const plainTemplate = name === 'template' && !structural;
     const blocks = (plainTemplate && stack.some((e) => e.name === 'template'))
       || (name !== 'template' && names.some((n) => CONTENT_PROPERTIES.has(n)));
-    stack.push({ name, structural, scope: plainTemplate ? { hasOwnState: false } : null, blocks });
+    const scope: ITemplateScope | null = plainTemplate
+      ? { hasOwnState: false, id: extractAttribute(attrs, 'id'), underRouter: stack.some((e) => e.name === ROUTER_TAG) }
+      : null;
+    stack.push({ name, structural, scope, blocks });
   }
   // 閉じていない文書の末尾
   while (next < pending.length) judged.push([pending[next++], judge()]);
   for (const [offset, context] of judged) {
     const ownStateTemplate = context.scopes.some((scope) => scope.hasOwnState);
+    // Where the walker reads bindings, an enclosing non-structural template is a top-level one (a nested one blocks).
+    // Its content is bound only when a state binds it (its own <wcs-state>, a route template, a layout template)
+    const bound = context.bound
+      && context.scopes.every((scope) => scope.hasOwnState || stateBindsTemplate(scope, layoutIds));
     out.set(offset, {
-      bound: context.bound,
-      rowOrBranch: context.bound && context.structural && !ownStateTemplate,
+      bound,
+      rowOrBranch: bound && context.structural && !ownStateTemplate,
       ownStateTemplate,
     });
   }
   return out;
 }
 
+/**
+ * offset（要素の開始タグの中 — 束縛属性の値の位置）の要素が、**行か枝の計画の中で**束縛として読まれるか
+ * （analyzeElementContexts の `rowOrBranch`。offset 1 つだけを判定する — 束縛ごとに呼ぶときは
+ * analyzeElementContexts にまとめて渡すこと）。
+ */
+export function isRowOrBranchContent(html: string, offset: number, bindAttrName: string = 'data-wcs'): boolean {
+  return analyzeElementContexts(html, [offset], bindAttrName).get(offset)?.rowOrBranch === true;
+}
 
 /**
  * 指定位置での for テンプレートのネスト深度を計算する。

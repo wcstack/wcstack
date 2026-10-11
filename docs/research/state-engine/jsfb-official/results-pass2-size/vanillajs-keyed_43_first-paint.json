@@ -1,0 +1,1 @@
+{"framework":"vanillajs-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"values":[160.9,157.9,133,143.6,231.6],"median":157.9,"min":133,"max":231.6,"mean":165.4,"stddev":38.677965303257615}}}

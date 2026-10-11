@@ -157,9 +157,9 @@ declare class Storage extends HTMLElement {
     private _wireStates;
     private _syncCore;
     get key(): string;
-    set key(value: string);
+    set key(value: string | null | undefined);
     get type(): StorageType;
-    set type(value: StorageType);
+    set type(value: StorageType | null | undefined);
     get value(): any;
     set value(v: any);
     get loading(): boolean;
@@ -167,7 +167,7 @@ declare class Storage extends HTMLElement {
     get errorInfo(): WcsIoErrorInfo | null;
     get connectedCallbackPromise(): Promise<void>;
     get manual(): boolean;
-    set manual(value: boolean);
+    set manual(value: boolean | null | undefined);
     get trigger(): boolean;
     set trigger(value: boolean);
     load(): any;

@@ -7,6 +7,7 @@ import { NotificationCore } from "../core/NotificationCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { registerAutoTrigger } from "../autoTrigger.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-notify>` — declarative desktop notifications. Wraps NotificationCore and
@@ -108,46 +109,51 @@ export class WcsNotify extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  // Input setters never let setAttribute stringify null / undefined: `null`
+  // removes the attribute (the default — no option, `mode` "auto"), `undefined`
+  // restores the attribute the element started with (wc-bindable producer
+  // guidance P1; React 19 and a direct assignment deliver it, @wcstack/state
+  // does not).
 
   get mode(): NotifyBackend {
     const m = this.getAttribute("mode");
     return (m === "sw" || m === "constructor") ? m : "auto";
   }
 
-  set mode(value: NotifyBackend) {
-    this.setAttribute("mode", value);
+  set mode(value: NotifyBackend | null | undefined) {
+    reflectAttribute(this, "mode", value);
   }
 
   get body(): string {
     return this.getAttribute("body") ?? "";
   }
 
-  set body(value: string | null) {
-    this._reflect("body", value);
+  set body(value: string | null | undefined) {
+    reflectAttribute(this, "body", value);
   }
 
   get icon(): string {
     return this.getAttribute("icon") ?? "";
   }
 
-  set icon(value: string | null) {
-    this._reflect("icon", value);
+  set icon(value: string | null | undefined) {
+    reflectAttribute(this, "icon", value);
   }
 
   get badge(): string {
     return this.getAttribute("badge") ?? "";
   }
 
-  set badge(value: string | null) {
-    this._reflect("badge", value);
+  set badge(value: string | null | undefined) {
+    reflectAttribute(this, "badge", value);
   }
 
   get tag(): string {
     return this.getAttribute("tag") ?? "";
   }
 
-  set tag(value: string | null) {
-    this._reflect("tag", value);
+  set tag(value: string | null | undefined) {
+    reflectAttribute(this, "tag", value);
   }
 
   // NOTE: `lang` and `dir` intentionally repurpose the standard HTMLElement IDL
@@ -159,48 +165,48 @@ export class WcsNotify extends HTMLElement {
     return this.getAttribute("lang") ?? "";
   }
 
-  set lang(value: string | null) {
-    this._reflect("lang", value);
+  set lang(value: string | null | undefined) {
+    reflectAttribute(this, "lang", value);
   }
 
   get dir(): string {
     return this.getAttribute("dir") ?? "";
   }
 
-  set dir(value: string | null) {
-    this._reflect("dir", value);
+  set dir(value: string | null | undefined) {
+    reflectAttribute(this, "dir", value);
   }
 
   get requireInteraction(): boolean {
     return this.hasAttribute("require-interaction");
   }
 
-  set requireInteraction(value: boolean) {
-    this._reflectBool("require-interaction", value);
+  set requireInteraction(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "require-interaction", value);
   }
 
   get silent(): boolean {
     return this.hasAttribute("silent");
   }
 
-  set silent(value: boolean) {
-    this._reflectBool("silent", value);
+  set silent(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "silent", value);
   }
 
   get renotify(): boolean {
     return this.hasAttribute("renotify");
   }
 
-  set renotify(value: boolean) {
-    this._reflectBool("renotify", value);
+  set renotify(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "renotify", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    this._reflectBool("manual", value);
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Reactive command-property ---
@@ -211,9 +217,10 @@ export class WcsNotify extends HTMLElement {
 
   set notice(value: string | null) {
     // Reactive: writing a new value shows it. `manual` mutes the path entirely
-    // (the imperative `notify` command still works). A conforming binder never
-    // delivers `undefined` (it skips the write), but a direct assignment can, so
-    // normalize null/undefined to a no-op.
+    // (the imperative `notify` command still works). @wcstack/state never writes
+    // `undefined`, but a wc-bindable applier writes it after a value (applier
+    // profile A2; React 19 does too), and a direct assignment can: "no value" is
+    // not a notice, so null/undefined are a no-op.
     if (value == null) return;
     if (this.manual) return;
     const v = String(value);
@@ -293,22 +300,6 @@ export class WcsNotify extends HTMLElement {
   }
 
   // --- Internal ---
-
-  private _reflect(name: string, value: string | null): void {
-    if (value == null) {
-      this.removeAttribute(name);
-    } else {
-      this.setAttribute(name, String(value));
-    }
-  }
-
-  private _reflectBool(name: string, value: boolean): void {
-    if (value) {
-      this.setAttribute(name, "");
-    } else {
-      this.removeAttribute(name);
-    }
-  }
 
   private _options(): NotifyOptions {
     const o: NotifyOptions = {};

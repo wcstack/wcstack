@@ -57,8 +57,8 @@ import {
 } from '../../service/templateSyntax.js';
 import { parseWcsStateElements } from '../../language/htmlParse.js';
 import { builtinFilterMeta, getWcsManifest, type IFilterMeta } from '../../service/wcsManifest.js';
-import { canonicalFilterName } from '../../service/completionData.js';
-import { DIRECT_MODIFIER } from '../../service/v4Migration.js';
+import { removedFilterReplacement, SUBSTR_FILTER } from '../../service/removedNames.js';
+import { candidateKeyOf } from '../../service/indexPath.js';
 import { resolveLocale, type WcsLocale } from '../messages.js';
 
 export interface IWiringLensOptions {
@@ -114,15 +114,12 @@ interface ILensLabels {
   declaredAtLine(line: number): string;
   externalState(src: string): string;
   onPrefixModifier(eventName: string): string;
-  /** 3.x の間だけ残る旧名（`uc` → `upper`）。説明だけ出すと「旧名である」ことが伝わらない。 */
-  filterAlias(written: string, canonical: string): string;
+  /** 4.0 で外れたフィルタの旧名（`uc` → `upper`）。hover で書き換え先を言う（`wcs/filter-unknown` と同じ事実）。 */
+  filterRemoved(written: string, canonical: string): string;
+  /** 4.0 で外れた `substr`（`slice` に一本化）。 */
+  readonly substrRemoved: string;
   readonly flagModifiers: Record<string, string>;
   readonly keyValueModifiers: Record<string, string>;
-  /**
-   * `#direct`（4.0 の修飾子）。3.x の manifest の `flags` には無い — 3.x のランタイムは知らない修飾子を
-   * 無視し、イベント束縛はもともと要素に直接リスナーを付ける。
-   */
-  readonly directModifier: string;
 }
 
 const LABELS: Record<WcsLocale, ILensLabels> = {
@@ -141,19 +138,19 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
     declaredAtLine: (line) => `declared at L${line}`,
     externalState: (src) => `external definition (\`${src}\`) — not statically analyzed`,
     onPrefixModifier: (eventName) => `overrides the two-way trigger event to \`${eventName}\``,
-    filterAlias: (written, canonical) =>
-      `\`${written}\` is the old name of \`${canonical}\` — it works through 3.x and is removed in 4.0 (@wcstack/state 3.2)`,
+    filterRemoved: (written, canonical) =>
+      `\`${written}\` was removed in 4.0 (the 3.x old name of \`${canonical}\`) — write \`${canonical}\``,
+    substrRemoved: '`substr` was removed in 4.0 — write `slice(start, start + length)` (slice takes the end index, not a length)',
     flagModifiers: {
       prevent: 'calls event.preventDefault()',
       stop: 'calls event.stopPropagation()',
       ro: 'suppresses two-way write-back (read-only)',
+      direct: 'attaches the listener to this element instead of delegating it to the root (4.0): `currentTarget` is the element, `#stop` stops the page\'s listeners on ancestors, and an ancestor\'s `stopPropagation()` does not cut it off',
     },
     keyValueModifiers: {
       init: 'binding authority for the initial sync — which side seeds the other when the binding attaches (`state` / `element` / `auto` / `none`)',
       sync: 'when the element snapshot is read for element-authority bindings (`call` = on attach / `connect` = when connected)',
     },
-    directModifier:
-      'takes effect in 4.0: keeps an event binding (`on*:`) on this element instead of delegating it to the root, so `event.currentTarget` stays the element. 3.x ignores the modifier and already listens on the element',
   },
   ja: {
     data: 'データ',
@@ -170,19 +167,19 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
     declaredAtLine: (line) => `宣言: L${line}`,
     externalState: (src) => `外部定義（\`${src}\`）— 静的解析の対象外`,
     onPrefixModifier: (eventName) => `双方向バインディングのトリガーイベントを \`${eventName}\` に上書き`,
-    filterAlias: (written, canonical) =>
-      `\`${written}\` は \`${canonical}\` の旧名です — 3.x の間は動きますが 4.0 で削除されます（@wcstack/state 3.2）`,
+    filterRemoved: (written, canonical) =>
+      `\`${written}\` は 4.0 で外れました（\`${canonical}\` の 3.x の旧名）— \`${canonical}\` と書いてください`,
+    substrRemoved: '`substr` は 4.0 で外れました — `slice(start, start + length)` と書いてください（slice の第 2 引数は長さではなく終わりの位置）',
     flagModifiers: {
       prevent: 'event.preventDefault() を呼ぶ',
       stop: 'event.stopPropagation() を呼ぶ',
       ro: '双方向バインディングの書き戻しを抑止（読み取り専用）',
+      direct: 'イベントを root へ委譲せず、この要素に直接リスナーを付ける（4.0）: `currentTarget` は要素、`#stop` で祖先のページ側のリスナーを止められ、祖先の `stopPropagation()` に影響されない',
     },
     keyValueModifiers: {
       init: '初期同期の権限指定 — バインド接続時にどちら側の値で初期化するか（`state` / `element` / `auto` / `none`）',
       sync: 'element 権限時に要素スナップショットを読むタイミング（`call` = 接続即時 / `connect` = DOM 接続後）',
     },
-    directModifier:
-      '4.0 で効く: イベント束縛（`on*:`）を root へ委譲せず、この要素にリスナーを付けたままにする（`event.currentTarget` は要素のまま）。3.x はこの修飾子を無視し、もともと要素にリスナーを付ける',
   },
 };
 
@@ -191,6 +188,11 @@ const LABELS: Record<WcsLocale, ILensLabels> = {
 // ============================================================
 
 const { delimiters } = getWcsManifest().syntax;
+
+/** 組み込みフィルタのメタ情報（自前のキーだけ — `constructor` などの継承名を拾わない）。 */
+function filterMetaOf(name: string): IFilterMeta | undefined {
+  return Object.prototype.hasOwnProperty.call(builtinFilterMeta, name) ? builtinFilterMeta[name] : undefined;
+}
 
 /**
  * for 短縮パスをランタイムと同一規則で展開する。短縮でなければそのまま返す。
@@ -271,7 +273,7 @@ function declarationFor(index: IReferenceIndex, path: string): IDeclarationSite 
   if (direct !== null) return direct;
   if (path.startsWith('$command.')) return index.declarationOf('$commandTokens');
   if (path.startsWith('$streamStatus.') || path.startsWith('$streamError.')) {
-    // `$stream` が正式名、`$streams` は 3.x の間の旧名（@wcstack/state 3.2）
+    // `$stream` が正式名。`$streams` は 3.x の旧名（4.0 は読み込み時に throw — wcs/declaration-alias）だが、ジャンプ先としては残す
     return index.declarationOf('$stream') ?? index.declarationOf('$streams');
   }
   return null;
@@ -407,8 +409,10 @@ function hoverForOccurrence(
   if (resolved === null) return null; // 静的に解決不能な短縮パス（最外殻が相対 for 等）— 出さない
 
   const candidates = getStatePathsFromHtml(html, stateTagName);
+  // 数値の添字のパス（`items.0.name`）は添字を `*` に読み替えた候補（4.0 は行として読む — #355）
+  const key = candidateKeyOf(resolved, (p) => candidates.some((c) => c.path === p));
   const candidate =
-    candidates.find((c) => c.path === resolved) ?? null;
+    candidates.find((c) => c.path === key) ?? null;
 
   if (candidate === null) {
     // 解析できない src を持つ要素（ルート、またはパスがマウント接頭辞下のボリューム）
@@ -450,15 +454,19 @@ function hoverForToken(
 
     const filterHit = locateFilterAt(binding, offset, site);
     if (filterHit !== null) {
-      const canonical = canonicalFilterName(filterHit.name);
-      const meta = builtinFilterMeta[canonical];
-      if (meta === undefined) return null; // 未知フィルタ（誤 hint ゼロ）
+      const meta = filterMetaOf(filterHit.name);
+      if (meta === undefined) {
+        // 4.0 で外れた名前（3.x の旧名・`substr`）は書き換え先を言う（`wcs/filter-unknown` と同じ事実）
+        const canonical = removedFilterReplacement(filterHit.name);
+        const removed = filterHit.name === SUBSTR_FILTER
+          ? labels.substrRemoved
+          : canonical === null ? null : labels.filterRemoved(filterHit.name, canonical);
+        if (removed === null) return null; // 未知フィルタ（誤 hint ゼロ）
+        return { markdown: [`\`${filterHit.name}\` — ${labels.filter}`, removed].join('\n\n'), range: filterHit.range };
+      }
       const typeLine = filterTypeLineOf(meta, labels);
-      // 旧名で書かれていたら、正式名の説明を出すだけでなく「旧名である」ことを言う
-      // （`wcs/name-alias` と同じ事実を hover でも見せる）
       const markdown = [
         `\`${filterSignatureOf(filterHit.name, meta)}\` — ${labels.filter}`,
-        ...(canonical === filterHit.name ? [] : [labels.filterAlias(filterHit.name, canonical)]),
         meta.description,
         ...(typeLine === null ? [] : [typeLine]),
       ].join('\n\n');
@@ -615,7 +623,6 @@ function describeModifier(rawModifier: string, labels: ILensLabels): string | nu
   if (modifier.startsWith(modifiers.eventNamePrefix) && modifier.length > modifiers.eventNamePrefix.length) {
     return labels.onPrefixModifier(modifier.slice(modifiers.eventNamePrefix.length));
   }
-  if (modifier === DIRECT_MODIFIER) return labels.directModifier;
   return null;
 }
 
@@ -856,17 +863,18 @@ export function getInlayHints(
     if (exprDocRange.end < rangeStart || exprDocRange.end > rangeEnd) continue;
 
     const resolved = expandOccurrencePath(html, path, pathDocRange.start, bindAttribute);
-    const inputType =
-      resolved === null
-        ? undefined
-        : getCandidates().find(
-            (c) => c.path === resolved,
-          )?.typeHint;
+    // 数値の添字のパス（`items.0.price`）は添字を `*` に読み替えた候補の型（4.0 は行として読む — #355）
+    let inputType: string | undefined;
+    if (resolved !== null) {
+      const candidates = getCandidates();
+      const key = candidateKeyOf(resolved, (p) => candidates.some((c) => c.path === p));
+      inputType = candidates.find((c) => c.path === key)?.typeHint;
+    }
 
     let current: string | null = inputType ?? null;
     let known = true;
     for (const filter of binding.parsed.outFilters) {
-      const meta = builtinFilterMeta[canonicalFilterName(filter.filterName)];
+      const meta = filterMetaOf(filter.filterName);
       if (meta === undefined) {
         known = false;
         break;

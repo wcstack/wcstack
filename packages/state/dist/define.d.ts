@@ -153,10 +153,6 @@ interface WcsStateApi {
      * 再評価させたくない場合に使う（該当行へ直接書き込む設計と組で用いる）。
      */
     $untracked<T>(fn: () => T): T;
-    /** @deprecated `$dependOn` の旧名（3.x の間は動き、4.0 で外れる — 要件 B12） */
-    $trackDependency(path: string): void;
-    /** @deprecated `$untracked` の旧名（3.x の間は動き、4.0 で外れる — 要件 B12） */
-    $untrackDependency<T>(fn: () => T): T;
     /**
      * 鍵付き購読: `path` の現在値が `key` に等しいかを返し、評価中のリスト行 getter を
      * その鍵で購読する。`path` への書き込みは旧値・新値の鍵の行だけを再評価する
@@ -235,7 +231,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  *
  * ### 基本的な使い方 (TypeScript)
  * ```ts
- * import { defineState } from '@wcstack/state';
+ * import { defineState } from '@wcstack/state/define';
  *
  * export default defineState({
  *   count: 0,
@@ -254,7 +250,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  *
  * ### JavaScript (JSDoc)
  * ```js
- * import { defineState } from '@wcstack/state';
+ * import { defineState } from '@wcstack/state/define';
  *
  * export default defineState({
  *   count: 0,
@@ -268,7 +264,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  * ```html
  * <wcs-state>
  *   <script type="module">
- *     import { defineState } from '@wcstack/state';
+ *     import { defineState } from '@wcstack/state/define';
  *     export default defineState({
  *       count: 0,
  *       increment() { this.count++; }
@@ -288,7 +284,7 @@ type WcsThis<T> = T & WcsStateApi & WcsPathAccessor<T>;
  *     // cleanup
  *   },
  *   $renderedCallback() {
- *     // called after the bindings are applied (old name: $updatedCallback)
+ *     // called after the bindings are applied
  *   }
  * });
  * ```

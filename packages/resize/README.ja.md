@@ -120,6 +120,8 @@ npm install @wcstack/resize
 | `once`    | boolean | `false`        | 初回計測後に切断（一度きり計測）。 |
 | `manual`  | boolean | `false`        | connect 時に自動監視せず、コマンドで駆動する。 |
 
+**`null` と `undefined`。** 属性に対応する入力（`target`・`box`・`round`・`once`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値（`target` なら最初の子）に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、何にも一致しない `"undefined"` というセレクタになることもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`trigger` はどちらも無視します。
+
 > **`trigger`** には*属性がありません* — `@wcstack/state` 配線専用の momentary なコマンドプロパティです。`false → true` の書き込みで `observe()` を再実行し、即 `false` に戻ります（一度きりの確認応答。実際の成否は `observing` を読む）。状態駆動の監視には、この boolean よりコマンドトークンプロトコル（`command.observe: …`）を推奨します。
 
 ## 出力状態

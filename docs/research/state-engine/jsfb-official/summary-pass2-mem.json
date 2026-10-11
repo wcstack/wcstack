@@ -1,0 +1,441 @@
+{
+  "frameworks": [
+    "vanillajs",
+    "wcstack-signals",
+    "wcstack-state-next",
+    "wcstack-state-next-core"
+  ],
+  "cpu": {
+    "md": "### CPU (ms, median; factor vs fastest)\n\n| benchmark | vanillajs | wcstack-signals | wcstack-state-next | wcstack-state-next-core |\n|---|---:|---:|---:|---:|\n| create rows (1k) | — | — | — | — |\n| replace all rows (1k) | — | — | — | — |\n| partial update (every 10th of 1k, 4x) | — | — | — | — |\n| select row (4x) | — | — | — | — |\n| swap rows (4x) | — | — | — | — |\n| remove row (2x) | — | — | — | — |\n| create many rows (10k) | — | — | — | — |\n| append 1k to 1k (2x) | — | — | — | — |\n| clear 1k rows (4x) | — | — | — | — |\n| **geometric mean (weighted)** | — | — | — | — |\n",
+    "data": [
+      {
+        "id": "01_run1k",
+        "label": "create rows (1k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "02_replace1k",
+        "label": "replace all rows (1k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "03_update10th1k_x16",
+        "label": "partial update (every 10th of 1k, 4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "04_select1k",
+        "label": "select row (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "05_swap1k",
+        "label": "swap rows (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "06_remove-one-1k",
+        "label": "remove row (2x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "07_create10k",
+        "label": "create many rows (10k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "08_create1k-after1k_x2",
+        "label": "append 1k to 1k (2x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "09_clear1k_x8",
+        "label": "clear 1k rows (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": null,
+      "wcstack-signals": null,
+      "wcstack-state-next": null,
+      "wcstack-state-next-core": null
+    }
+  },
+  "script": {
+    "md": "### CPU — script only (ms, median)\n\n| benchmark | vanillajs | wcstack-signals | wcstack-state-next | wcstack-state-next-core |\n|---|---:|---:|---:|---:|\n| create rows (1k) | — | — | — | — |\n| replace all rows (1k) | — | — | — | — |\n| partial update (every 10th of 1k, 4x) | — | — | — | — |\n| select row (4x) | — | — | — | — |\n| swap rows (4x) | — | — | — | — |\n| remove row (2x) | — | — | — | — |\n| create many rows (10k) | — | — | — | — |\n| append 1k to 1k (2x) | — | — | — | — |\n| clear 1k rows (4x) | — | — | — | — |\n| **geometric mean** | — | — | — | — |\n",
+    "data": [
+      {
+        "id": "01_run1k",
+        "label": "create rows (1k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "02_replace1k",
+        "label": "replace all rows (1k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "03_update10th1k_x16",
+        "label": "partial update (every 10th of 1k, 4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "04_select1k",
+        "label": "select row (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "05_swap1k",
+        "label": "swap rows (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "06_remove-one-1k",
+        "label": "remove row (2x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "07_create10k",
+        "label": "create many rows (10k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "08_create1k-after1k_x2",
+        "label": "append 1k to 1k (2x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "09_clear1k_x8",
+        "label": "clear 1k rows (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": null,
+      "wcstack-signals": null,
+      "wcstack-state-next": null,
+      "wcstack-state-next-core": null
+    }
+  },
+  "paint": {
+    "md": "### CPU — paint only (ms, median)\n\n| benchmark | vanillajs | wcstack-signals | wcstack-state-next | wcstack-state-next-core |\n|---|---:|---:|---:|---:|\n| create rows (1k) | — | — | — | — |\n| replace all rows (1k) | — | — | — | — |\n| partial update (every 10th of 1k, 4x) | — | — | — | — |\n| select row (4x) | — | — | — | — |\n| swap rows (4x) | — | — | — | — |\n| remove row (2x) | — | — | — | — |\n| create many rows (10k) | — | — | — | — |\n| append 1k to 1k (2x) | — | — | — | — |\n| clear 1k rows (4x) | — | — | — | — |\n| **geometric mean** | — | — | — | — |\n",
+    "data": [
+      {
+        "id": "01_run1k",
+        "label": "create rows (1k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "02_replace1k",
+        "label": "replace all rows (1k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "03_update10th1k_x16",
+        "label": "partial update (every 10th of 1k, 4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "04_select1k",
+        "label": "select row (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "05_swap1k",
+        "label": "swap rows (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "06_remove-one-1k",
+        "label": "remove row (2x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "07_create10k",
+        "label": "create many rows (10k)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "08_create1k-after1k_x2",
+        "label": "append 1k to 1k (2x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "09_clear1k_x8",
+        "label": "clear 1k rows (4x)",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": null,
+      "wcstack-signals": null,
+      "wcstack-state-next": null,
+      "wcstack-state-next-core": null
+    }
+  },
+  "mem": {
+    "md": "### Memory (MB, median)\n\n| benchmark | vanillajs | wcstack-signals | wcstack-state-next | wcstack-state-next-core |\n|---|---:|---:|---:|---:|\n| ready memory | 0.57 (1.00) | 0.63 (1.09) | 1.06 (1.85) | 0.85 (1.49) |\n| run memory (1k rows) | 2.03 (1.00) | 3.72 (1.83) | 2.87 (1.41) | 2.61 (1.28) |\n| create/clear 1k x5 | 0.65 (1.00) | 0.90 (1.38) | 1.48 (2.28) | 1.18 (1.81) |\n| **geometric mean** | **1.00** | **1.40** | **1.81** | **1.51** |\n",
+    "data": [
+      {
+        "id": "21_ready-memory",
+        "label": "ready memory",
+        "values": {
+          "vanillajs": {
+            "median": 0.5717716217041016,
+            "factor": 1,
+            "ci95": 0.0037684207869295
+          },
+          "wcstack-signals": {
+            "median": 0.6255464553833008,
+            "factor": 1.0940494974530728,
+            "ci95": 0.03292513799708388
+          },
+          "wcstack-state-next": {
+            "median": 1.056370735168457,
+            "factor": 1.8475396383263336,
+            "ci95": 0.040774986279574786
+          },
+          "wcstack-state-next-core": {
+            "median": 0.8526382446289062,
+            "factor": 1.4912216910795835,
+            "ci95": 0.0025295484410924147
+          }
+        }
+      },
+      {
+        "id": "22_run-memory",
+        "label": "run memory (1k rows)",
+        "values": {
+          "vanillajs": {
+            "median": 2.0296287536621094,
+            "factor": 1,
+            "ci95": 0.0363628736908264
+          },
+          "wcstack-signals": {
+            "median": 3.7200517654418945,
+            "factor": 1.832873011248837,
+            "ci95": 0.0003733882347774596
+          },
+          "wcstack-state-next": {
+            "median": 2.8660783767700195,
+            "factor": 1.4121195177190329,
+            "ci95": 0.000267226290742841
+          },
+          "wcstack-state-next-core": {
+            "median": 2.6069183349609375,
+            "factor": 1.2844311208427701,
+            "ci95": 0.0017761824207570586
+          }
+        }
+      },
+      {
+        "id": "25_run-clear-memory",
+        "label": "create/clear 1k x5",
+        "values": {
+          "vanillajs": {
+            "median": 0.6505060195922852,
+            "factor": 1,
+            "ci95": 0.07948496267005224
+          },
+          "wcstack-signals": {
+            "median": 0.8996553421020508,
+            "factor": 1.3830084810989511,
+            "ci95": 0.01871038167478907
+          },
+          "wcstack-state-next": {
+            "median": 1.4838571548461914,
+            "factor": 2.2810813584418823,
+            "ci95": 0.0003694799551924913
+          },
+          "wcstack-state-next-core": {
+            "median": 1.1783180236816406,
+            "factor": 1.811386809948615,
+            "ci95": 0.04772642983616581
+          }
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": 1,
+      "wcstack-signals": 1.4049624923481387,
+      "wcstack-state-next": 1.8121827773097945,
+      "wcstack-state-next-core": 1.5138682392380334
+    }
+  },
+  "size": {
+    "md": "### Size and first paint\n\n| benchmark | vanillajs | wcstack-signals | wcstack-state-next | wcstack-state-next-core |\n|---|---:|---:|---:|---:|\n| uncompressed size | — | — | — | — |\n| compressed size | — | — | — | — |\n| first paint | — | — | — | — |\n| **geometric mean** | — | — | — | — |\n",
+    "data": [
+      {
+        "id": "41_size-uncompressed",
+        "label": "uncompressed size",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "42_size-compressed",
+        "label": "compressed size",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      },
+      {
+        "id": "43_first-paint",
+        "label": "first paint",
+        "values": {
+          "vanillajs": null,
+          "wcstack-signals": null,
+          "wcstack-state-next": null,
+          "wcstack-state-next-core": null
+        }
+      }
+    ],
+    "geomean": {
+      "vanillajs": null,
+      "wcstack-signals": null,
+      "wcstack-state-next": null,
+      "wcstack-state-next-core": null
+    }
+  }
+}

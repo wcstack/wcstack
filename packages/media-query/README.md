@@ -34,7 +34,7 @@ A media query that only changes *styling* belongs in a stylesheet. This node is 
 npm install @wcstack/media-query
 ```
 
-CDN (pinned): `https://esm.run/@wcstack/media-query@3.5.4/auto`
+CDN (pinned): `https://esm.run/@wcstack/media-query@4.0.0/auto`
 
 ## Quick Start
 
@@ -111,6 +111,8 @@ Every bound state path must be declared up front — binding an undeclared path 
 | `query`   | `query`  | The media query string passed to `matchMedia()`. Changing it while connected tears down the old `MediaQueryList` subscription and subscribes to the new one. Removing the attribute means "watch nothing" — `matched` drops to `false`. An invalid query does not throw (browsers report `media: "not all"`, `matched: false`). |
 
 `query` is the only input, declared in `wcBindable.inputs` with `attribute: "query"`. Property assignment before the element is upgraded is picked up on connect (property upgrade).
+
+**`null` and `undefined`.** The input backed by an attribute (`query`) takes `null` as "clear": the attribute is removed and the input falls back to its default — no query, "watch nothing". `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) While connected, either one re-subscribes, like any change of the attribute.
 
 ## Observable Properties (outputs)
 

@@ -1,0 +1,1 @@
+{"framework":"alpine-v3.14.7-keyed","keyed":true,"benchmark":"22_run-memory","type":"memory","values":{"DEFAULT":{"min":16.9246244430542,"max":16.9246244430542,"median":16.9246244430542,"mean":16.9246244430542,"stddev":null,"values":[16.9246244430542]}}}

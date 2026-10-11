@@ -2,6 +2,7 @@ import { IWcBindable, WakeLockKind } from "../types.js";
 import { WakeLockCore } from "../core/WakeLockCore.js";
 import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
+import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
 /**
  * `<wcs-wakelock>` — declarative Screen Wake Lock.
@@ -47,6 +48,13 @@ export class WcsWakeLock extends HTMLElement {
 
   private _core: WakeLockCore;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // True from the end of connectedCallback until disconnectedCallback. On upgrade,
+  // attributeChangedCallback runs for the markup's attributes before
+  // connectedCallback (with isConnected already true), and connectedCallback's
+  // upgradeProperties() replays early inputs in declaration order, so gating on
+  // isConnected started work before `manual` was applied. connectedCallback does
+  // the first run itself, from the values after the replay (as <wcs-ws> does).
+  private _attached = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -108,6 +116,12 @@ export class WcsWakeLock extends HTMLElement {
   }
 
   // --- Attribute accessors ---
+  //
+  // Input setters never let setAttribute stringify null / undefined (an
+  // "undefined" `type` would reach the Core and make the next request reject):
+  // `null` removes the attribute (the documented default), `undefined` restores
+  // the attribute the element started with (wc-bindable producer guidance P1;
+  // React 19 and a direct assignment deliver it, @wcstack/state does not).
 
   get active(): boolean {
     // Reflects the *attribute*, not the Core's desired intent (`_core.active`). These
@@ -119,12 +133,8 @@ export class WcsWakeLock extends HTMLElement {
     return this.hasAttribute("active");
   }
 
-  set active(value: boolean) {
-    if (value) {
-      this.setAttribute("active", "");
-    } else {
-      this.removeAttribute("active");
-    }
+  set active(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "active", value);
   }
 
   get type(): WakeLockKind {
@@ -132,20 +142,16 @@ export class WcsWakeLock extends HTMLElement {
     return (this.getAttribute("type") as WakeLockKind) || "screen";
   }
 
-  set type(value: WakeLockKind) {
-    this.setAttribute("type", value);
+  set type(value: WakeLockKind | null | undefined) {
+    reflectAttribute(this, "type", value);
   }
 
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
 
-  set manual(value: boolean) {
-    if (value) {
-      this.setAttribute("manual", "");
-    } else {
-      this.removeAttribute("manual");
-    }
+  set manual(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "manual", value);
   }
 
   // --- Core delegated getters ---
@@ -192,18 +198,21 @@ export class WcsWakeLock extends HTMLElement {
     if (!this.manual && this.active) {
       void this._core.request();
     }
+    this._attached = true;
   }
 
   disconnectedCallback(): void {
+    this._attached = false;
     this._core.dispose();
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
     if (oldValue === newValue) return;
-    // Ignore changes applied before connect (e.g. createElement + setAttribute);
-    // connectedCallback applies the initial state. Acquiring a lock for a detached
-    // element would be wrong.
-    if (!this.isConnected) return;
+    // Ignore changes applied before connectedCallback has run (createElement +
+    // setAttribute, the markup attributes on upgrade, upgradeProperties replaying an
+    // early `active` before `manual`): connectedCallback applies the initial state.
+    // Acquiring a lock for a detached element would be wrong.
+    if (!this._attached) return;
     if (name === "type") {
       this._core.type = this.type;
       return;

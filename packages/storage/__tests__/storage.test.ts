@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Storage } from "../src/components/Storage";
 import { bootstrapStorage } from "../src/bootstrapStorage";
 import { registerComponents } from "../src/registerComponents";
@@ -39,22 +39,14 @@ describe("config", () => {
     setConfig({ tagNames: { storage: "wcs-storage" } });
   });
 
-  it("setConfig()でtagNamesの非文字列値は無視され既存値を保持する（3.5 は文字列でない値を警告する）", () => {
+  it("setConfig()でtagNamesの undefined は飛ばし、文字列でない値は投げて既存値を保持する", () => {
     // 指摘5: { storage: undefined } のような非文字列で汚染されると
-    // customElements.define(undefined, …) が失敗する。typeofガードで弾く。
-    // undefined は 4.0 でも飛ばすので警告しない。ほかは 4.0 で投げるので 3.5 は警告する。
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      setConfig({ tagNames: { storage: undefined as any } });
-      expect(config.tagNames.storage).toBe("wcs-storage");
-      expect(warn).not.toHaveBeenCalled();
+    // customElements.define(undefined, …) が失敗する。undefined は飛ばし、ほかは投げる（4.0）。
+    setConfig({ tagNames: { storage: undefined as any } });
+    expect(config.tagNames.storage).toBe("wcs-storage");
 
-      setConfig({ tagNames: { storage: 123 as any } });
-      expect(config.tagNames.storage).toBe("wcs-storage");
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"tagNames.storage" is not one of its options'));
-    } finally {
-      warn.mockRestore();
-    }
+    expect(() => setConfig({ tagNames: { storage: 123 as any } })).toThrow('"tagNames.storage" is not one of its options');
+    expect(config.tagNames.storage).toBe("wcs-storage");
 
     // 正常な文字列は反映される
     setConfig({ tagNames: { storage: "x-storage" } });
@@ -165,6 +157,70 @@ describe("Storage", () => {
     el.manual = false;
     expect(el.manual).toBe(false);
     expect(el.hasAttribute("manual")).toBe(false);
+  });
+
+  it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    const host = document.createElement("div");
+    host.innerHTML = '<wcs-storage key="authored" type="session" manual></wcs-storage>';
+    const el = host.firstElementChild as Storage;
+    el.key = "bound";
+    el.type = "local";
+    el.manual = false;
+    el.key = undefined;
+    el.type = undefined;
+    el.manual = undefined;
+    expect(el.getAttribute("key")).toBe("authored");
+    expect(el.type).toBe("session");
+    expect(el.manual).toBe(true);
+    el.key = null;
+    el.type = null;
+    el.manual = null;
+    // 文字列 "null" ではなく属性なし（既定値）
+    expect(el.hasAttribute("key")).toBe(false);
+    expect(el.key).toBe("");
+    expect(el.hasAttribute("type")).toBe(false);
+    expect(el.type).toBe("local");
+    expect(el.manual).toBe(false);
+  });
+
+  it("マークアップに無い key の undefined は文字列 \"undefined\" を書かず属性なしにする", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    document.body.appendChild(el);
+    el.key = undefined;
+    expect(el.hasAttribute("key")).toBe(false);
+    expect(localStorage.getItem("undefined")).toBeNull();
+  });
+
+  it("value に undefined を代入しても保存済みのエントリを消さない（null は消す）", () => {
+    localStorage.setItem("keep-key", '{"kept":true}');
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "keep-key");
+    document.body.appendChild(el);
+    expect(el.value).toEqual({ kept: true });
+
+    const events: unknown[] = [];
+    el.addEventListener("wcs-storage:value-changed", (e) => events.push((e as CustomEvent).detail));
+    el.value = undefined;
+    expect(localStorage.getItem("keep-key")).toBe('{"kept":true}');
+    expect(el.value).toEqual({ kept: true });
+    expect(events).toEqual([]);
+
+    el.value = null;
+    expect(localStorage.getItem("keep-key")).toBeNull();
+    expect(el.value).toBeNull();
+  });
+
+  it("manual モードで value に undefined を代入してもステージしない", () => {
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "manual-undefined-key");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+
+    el.value = { staged: true };
+    el.value = undefined;
+    expect(el.value).toEqual({ staged: true });
+    el.save();
+    expect(localStorage.getItem("manual-undefined-key")).toBe('{"staged":true}');
   });
 
   it("config.autoTriggerがfalseのときはconnectedCallbackでregisterAutoTriggerを呼ばない", () => {

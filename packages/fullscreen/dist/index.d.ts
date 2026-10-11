@@ -201,7 +201,7 @@ declare class WcsFullscreen extends HTMLElement {
     private _wireStates;
     get connectedCallbackPromise(): Promise<void>;
     get target(): string;
-    set target(value: string);
+    set target(value: string | null | undefined);
     get active(): boolean;
     get error(): any;
     get errorInfo(): WcsIoErrorInfo | null;

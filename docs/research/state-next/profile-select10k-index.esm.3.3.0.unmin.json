@@ -1,0 +1,247 @@
+{
+  "revision": "a796d7125c3d98e04c8120c3983d5400ce396e97",
+  "timestamp": "2026-09-23T22:15:37.122Z",
+  "cpu": "Intel(R) Core(TM) Ultra 9 275HX",
+  "bundle": "index.esm.3.3.0.unmin.js",
+  "op": "select10k",
+  "fixture": "tracked",
+  "samples": 3,
+  "samplingIntervalUs": 100,
+  "results": {
+    "windowMsPerRun": 30.1,
+    "profiledMsPerRun": 39.8,
+    "top": [
+      {
+        "fn": "(program) :0",
+        "msPerRun": 8.06,
+        "usPerRow": 0.81
+      },
+      {
+        "fn": "querySelectorAll :0",
+        "msPerRun": 4.34,
+        "usPerRow": 0.43
+      },
+      {
+        "fn": "applyChange auto.min.js:9261",
+        "msPerRun": 3.54,
+        "usPerRow": 0.35
+      },
+      {
+        "fn": "(anonymous) auto.min.js:9424",
+        "msPerRun": 2,
+        "usPerRow": 0.2
+      },
+      {
+        "fn": "(anonymous) auto.min.js:6167",
+        "msPerRun": 1.95,
+        "usPerRow": 0.2
+      },
+      {
+        "fn": "(idle) :0",
+        "msPerRun": 1.29,
+        "usPerRow": 0.13
+      },
+      {
+        "fn": "at auto.min.js:5698",
+        "msPerRun": 1.23,
+        "usPerRow": 0.12
+      },
+      {
+        "fn": "_walkDependency auto.min.js:12007",
+        "msPerRun": 1.15,
+        "usPerRow": 0.12
+      },
+      {
+        "fn": "createAbsoluteStateAddress auto.min.js:2191",
+        "msPerRun": 1.12,
+        "usPerRow": 0.11
+      },
+      {
+        "fn": "_getByAddress auto.min.js:11406",
+        "msPerRun": 1.12,
+        "usPerRow": 0.11
+      },
+      {
+        "fn": "_applyChange auto.min.js:6125",
+        "msPerRun": 1.1,
+        "usPerRow": 0.11
+      },
+      {
+        "fn": "createStateAddress auto.min.js:2581",
+        "msPerRun": 1.07,
+        "usPerRow": 0.11
+      },
+      {
+        "fn": "get auto.min.js:13445",
+        "msPerRun": 0.94,
+        "usPerRow": 0.09
+      },
+      {
+        "fn": "_collectDependencies auto.min.js:12051",
+        "msPerRun": 0.93,
+        "usPerRow": 0.09
+      },
+      {
+        "fn": "dirtyCacheEntryByAbsoluteStateAddress auto.min.js:5930",
+        "msPerRun": 0.89,
+        "usPerRow": 0.09
+      },
+      {
+        "fn": "peekBindingsForAddress auto.min.js:2541",
+        "msPerRun": 0.56,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "getRootNode :0",
+        "msPerRun": 0.56,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "toggle :0",
+        "msPerRun": 0.55,
+        "usPerRow": 0.06
+      },
+      {
+        "fn": "getTreePath auto.min.js:2232",
+        "msPerRun": 0.54,
+        "usPerRow": 0.05
+      },
+      {
+        "fn": "_getByAddressWithCache auto.min.js:11482",
+        "msPerRun": 0.52,
+        "usPerRow": 0.05
+      },
+      {
+        "fn": "getCacheEntryByAbsoluteStateAddress auto.min.js:5919",
+        "msPerRun": 0.41,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "getSymbolApiCache auto.min.js:13437",
+        "msPerRun": 0.38,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "walkDependency.listExpansion.listExpansion auto.min.js:12450",
+        "msPerRun": 0.37,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "listIndexAtWildcard auto.min.js:2345",
+        "msPerRun": 0.37,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "applyChangeToClass auto.min.js:5387",
+        "msPerRun": 0.37,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "enqueueAbsoluteAddress auto.min.js:6068",
+        "msPerRun": 0.37,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "walkDependency auto.min.js:12207",
+        "msPerRun": 0.37,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "applyValueToBinding auto.min.js:9210",
+        "msPerRun": 0.37,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "shouldApplyState auto.min.js:4400",
+        "msPerRun": 0.36,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "getValue auto.min.js:9076",
+        "msPerRun": 0.36,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "setCacheEntryByAbsoluteStateAddress auto.min.js:5922",
+        "msPerRun": 0.36,
+        "usPerRow": 0.04
+      },
+      {
+        "fn": "getResolvedAddress auto.min.js:11191",
+        "msPerRun": 0.3,
+        "usPerRow": 0.03
+      },
+      {
+        "fn": "enqueue auto.min.js:12013",
+        "msPerRun": 0.21,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "createListDiff auto.min.js:6879",
+        "msPerRun": 0.19,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "syncListIndexes auto.min.js:6859",
+        "msPerRun": 0.19,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "checkDependency auto.min.js:11275",
+        "msPerRun": 0.19,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "popAddress auto.min.js:13864",
+        "msPerRun": 0.18,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "get hasRecursion auto.min.js:14969",
+        "msPerRun": 0.18,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "get data.*.selected b56c946a-b8c2-4267-8204-ea7bf3881ef2:25",
+        "msPerRun": 0.18,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "get data.*.selected a1a2e8d5-7c0a-43e0-b411-bf4e117975e7:25",
+        "msPerRun": 0.18,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "(anonymous) :3",
+        "msPerRun": 0.18,
+        "usPerRow": 0.02
+      },
+      {
+        "fn": "evaluate :297",
+        "msPerRun": 0.13,
+        "usPerRow": 0.01
+      },
+      {
+        "fn": "pushAddress auto.min.js:13791",
+        "msPerRun": 0.08,
+        "usPerRow": 0.01
+      },
+      {
+        "fn": "runTransition auto.min.js:5990",
+        "msPerRun": 0.08,
+        "usPerRow": 0.01
+      },
+      {
+        "fn": "getScopedIndexes auto.min.js:2360",
+        "msPerRun": 0.01,
+        "usPerRow": 0
+      },
+      {
+        "fn": "getByAddress auto.min.js:11500",
+        "msPerRun": 0.01,
+        "usPerRow": 0
+      }
+    ]
+  },
+  "browser": "149.0.7827.55"
+}

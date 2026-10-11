@@ -32,7 +32,7 @@ const SAMPLE = `<!doctype html>
   </script>
 </wcs-state>
 <wcs-state mount="ext" src="./ext-state.js"></wcs-state>
-<div data-wcs="textContent: count | fix(0)"></div>
+<div data-wcs="textContent: count | toFixed(0)"></div>
 <input data-wcs="value#ro: user.name">
 <input data-wcs="value#init=element,sync=connect: user.name">
 <input data-wcs="value#onblur: user.name">
@@ -43,7 +43,7 @@ const SAMPLE = `<!doctype html>
   <span data-wcs="textContent: .label"></span>
 </template>
 <p>{{ total }}</p>
-<p>{{ count | fix(0) }}</p>
+<p>{{ count | toFixed(0) }}</p>
 <!--@@: user.name -->
 <span data-wcs="textContent: cart.total"></span>
 <span data-wcs="textContent: missing.path"></span>
@@ -61,7 +61,7 @@ function offsetIn(needle: string, token: string): number {
 
 describe('wiringLens: hover（§5-2）', () => {
   it('データパスの hover に種別・型・宣言行が出ること', () => {
-    const hover = getHoverAt(SAMPLE, offsetIn('"textContent: count | fix(0)"', 'count'), { locale: 'en' })!;
+    const hover = getHoverAt(SAMPLE, offsetIn('"textContent: count | toFixed(0)"', 'count'), { locale: 'en' })!;
     expect(hover).not.toBeNull();
     expect(hover.markdown).toContain('`count`');
     expect(hover.markdown).toContain('data (number)');
@@ -69,7 +69,7 @@ describe('wiringLens: hover（§5-2）', () => {
   });
 
   it('locale 未指定の既定は ja であること（パッケージ既定と同じ）', () => {
-    const hover = getHoverAt(SAMPLE, offsetIn('"textContent: count | fix(0)"', 'count'))!;
+    const hover = getHoverAt(SAMPLE, offsetIn('"textContent: count | toFixed(0)"', 'count'))!;
     expect(hover.markdown).toContain('データ (number)');
   });
 
@@ -94,37 +94,64 @@ describe('wiringLens: hover（§5-2）', () => {
     expect(getHoverAt(SAMPLE, offsetIn('missing.path', 'missing.path'))).toBeNull();
   });
 
+  it('数値の添字のパス（items.0.label）は添字を * に読み替えた候補の種別を出すこと（4.0 — #355）', () => {
+    const html = `<wcs-state><script type="module">export default { items: [{ label: 'a' }] };</script></wcs-state>
+<span data-wcs="textContent: items.0.label"></span>`;
+    const hover = getHoverAt(html, html.indexOf('items.0.label') + 3, { locale: 'en' })!;
+    expect(hover.markdown).toContain('`items.0.label`');
+    expect(hover.markdown).toContain('data (string)');
+  });
+
   it('ボリューム（mount=）のパスがマウント接頭辞で解決されること', () => {
     const hover = getHoverAt(SAMPLE, offsetIn('cart.total', 'cart.total'), { locale: 'en' })!;
     expect(hover.markdown).toContain('data (number)');
   });
 
   it('フィルタ名の hover にシグネチャ・説明・型行が出ること', () => {
-    const hover = getHoverAt(SAMPLE, offsetIn('count | fix(0)"', 'fix'))!;
-    expect(hover.markdown).toContain('fix(');
+    const hover = getHoverAt(SAMPLE, offsetIn('count | toFixed(0)"', 'toFixed'))!;
+    expect(hover.markdown).toContain('toFixed(');
     expect(hover.markdown).toContain('number → string');
   });
 
-  // Fixed by review — 旧名に対して正式名の説明を出すだけで「旧名である」ことを言わなかった
-  it('旧名のフィルタの hover が「旧名である」ことと正式名を言うこと', () => {
-    const en = getHoverAt(SAMPLE, offsetIn('count | fix(0)"', 'fix'), { locale: 'en' })!;
-    expect(en.markdown).toContain('`fix` is the old name of `toFixed`');
-    const ja = getHoverAt(SAMPLE, offsetIn('count | fix(0)"', 'fix'), { locale: 'ja' })!;
-    expect(ja.markdown).toContain('`fix` は `toFixed` の旧名です');
+  // 4.0 は旧名を外した（`wcs/filter-unknown`）。hover は書き換え先を言う
+  it('4.0 で外れたフィルタの旧名の hover が「4.0 で外れた」ことと正式名を言うこと', () => {
+    const html = `<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>
+<span data-wcs="textContent: count|fix(0)"></span>`;
+    const at = html.indexOf('fix(') + 1;
+    const en = getHoverAt(html, at, { locale: 'en' })!;
+    expect(en.markdown).toContain('`fix` was removed in 4.0');
+    expect(en.markdown).toContain('`toFixed`');
+    const ja = getHoverAt(html, at, { locale: 'ja' })!;
+    expect(ja.markdown).toContain('`fix` は 4.0 で外れました');
   });
 
-  it('正式名のフィルタの hover には旧名の断り書きを出さないこと', () => {
-    const html = `<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>
-<span data-wcs="textContent: count | toFixed(0)"></span>`;
-    const attr = 'textContent: count | toFixed(0)';
-    const hover = getHoverAt(html, html.indexOf(attr) + attr.indexOf('toFixed'), { locale: 'en' })!;
-    expect(hover.markdown).toContain('toFixed(');
-    expect(hover.markdown).not.toContain('old name');
+  it('4.0 で外れた substr の hover は slice(start, start + length) を案内すること', () => {
+    const html = `<wcs-state><script type="module">export default { s: "" };</script></wcs-state>
+<span data-wcs="textContent: s | substr(1,2)"></span>`;
+    const hover = getHoverAt(html, html.indexOf('substr') + 2, { locale: 'en' })!;
+    expect(hover.markdown).toContain('slice(start, start + length)');
+  });
+
+  it('未知のフィルタ（4.0 で外れた名前でもない）には hover を出さないこと', () => {
+    const html = `<wcs-state><script type="module">export default { s: "" };</script></wcs-state>
+<span data-wcs="textContent: s | zzz | constructor"></span>`;
+    expect(getHoverAt(html, html.indexOf('zzz') + 1, { locale: 'en' })).toBeNull();
+    expect(getHoverAt(html, html.indexOf('constructor') + 1, { locale: 'en' })).toBeNull();
   });
 
   it('mustache 内のフィルタ名でも hover が出ること', () => {
-    const hover = getHoverAt(SAMPLE, offsetIn('{{ count | fix(0) }}', 'fix'))!;
-    expect(hover.markdown).toContain('fix(');
+    const hover = getHoverAt(SAMPLE, offsetIn('{{ count | toFixed(0) }}', 'toFixed'))!;
+    expect(hover.markdown).toContain('toFixed(');
+  });
+
+  it('修飾子 #direct（4.0）の hover が意味を説明すること', () => {
+    const html = `<wcs-state><script type="module">export default { go() {} };</script></wcs-state>
+<button data-wcs="onclick#prevent,direct: go"></button>`;
+    const hover = getHoverAt(html, html.indexOf('direct') + 2, { locale: 'en' })!;
+    expect(hover.markdown).toContain('#direct');
+    expect(hover.markdown).toContain('instead of delegating');
+    const ja = getHoverAt(html, html.indexOf('direct') + 2, { locale: 'ja' })!;
+    expect(ja.markdown).toContain('委譲せず');
   });
 
   it('フラグ修飾子 #ro の hover が意味を説明すること', () => {
@@ -299,7 +326,7 @@ describe('wiringLens: inlay hint（§5-2）', () => {
   it('フィルタ鎖の結果型ヒントが式末尾に付くこと（属性 + mustache）', () => {
     const hints = getInlayHints(SAMPLE, 0, SAMPLE.length);
     const filterType = hints.filter((h) => h.kind === 'filterType');
-    // `count | fix(0)` の属性と mustache の 2 箇所（fix → string）
+    // `count | toFixed(0)` の属性と mustache の 2 箇所（toFixed → string）
     expect(filterType).toHaveLength(2);
     for (const hint of filterType) {
       expect(hint.label).toBe('→ string');
@@ -315,7 +342,7 @@ describe('wiringLens: inlay hint（§5-2）', () => {
     // total は computed（型不明）— nullIfEmpty は passthrough なので最終型も不明
     const html = SAMPLE.replace('{{ total }}', '{{ total | nullIfEmpty }}');
     const hints = getInlayHints(html, 0, html.length).filter((h) => h.kind === 'filterType');
-    // count | fix(0) の 2 箇所のまま増えない
+    // count | toFixed(0) の 2 箇所のまま増えない
     expect(hints).toHaveLength(2);
   });
 });
@@ -336,13 +363,16 @@ describe('wiringLens: レビュー指摘の回帰（誤 hint ゼロ）', () => {
     expect(hover.range.start).toBe(base + attr.lastIndexOf('uc'));
   });
 
-  it('for パスのフィルタは正本パーサで除去してから展開すること（ランタイムの書き換えと同一）', () => {
+  // 4.0 の正本パーサは for: のフィルタを [wcs/binding-syntax] #121 で拒む（ランタイムは初期化で失敗する）。
+  // 不正な for 式の中は静的に解決できない（expandOccurrencePath の null）ので、ヒントを出さない
+  it('フィルタ付きの for（正本パーサが拒む）の中の短縮パスにはヒントを出さず、フィルタの無い for は展開すること', () => {
     const html = `<wcs-state><script type="module">export default { rows: [{ label: 1 }] };</script></wcs-state>
 <template data-wcs="for: rows|slice(0,2)"><span data-wcs="textContent: .label"></span></template>`;
-    const labels = getInlayHints(html, 0, html.length)
-      .filter((h) => h.kind === 'shorthand')
-      .map((h) => h.label);
-    expect(labels).toEqual(['= rows.*.label']);
+    const shorthand = (h: string) => getInlayHints(h, 0, h.length)
+      .filter((x) => x.kind === 'shorthand')
+      .map((x) => x.label);
+    expect(shorthand(html)).toEqual([]);
+    expect(shorthand(html.replace('rows|slice(0,2)', 'rows'))).toEqual(['= rows.*.label']);
   });
 
   it('passthrough フィルタ（defaults / null）は型を断定せずヒントを抑止すること', () => {

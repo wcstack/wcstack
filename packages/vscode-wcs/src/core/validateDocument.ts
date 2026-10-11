@@ -20,11 +20,12 @@ import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
-import { validateScanDeclarations, validateScanV4Migration } from "../service/scanDeclarationValidator.js";
+import { validateScanDeclarations } from "../service/scanDeclarationValidator.js";
 import { validateRecursion } from "../service/recursionValidator.js";
+import { validateConfigDeclarations } from "../service/configDeclarationValidator.js";
 import { validateNamedState } from "../service/namedStateValidator.js";
 import { validateMountAttributes } from "../service/mountAttrValidator.js";
-import { validateSecondRoot } from "../service/secondRootValidator.js";
+import { validateScopeDeclarations } from "../service/scopeDeclarationValidator.js";
 import { validateSemantics } from "../service/semanticValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
@@ -87,19 +88,20 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   // validator 側で code を付与して返す。
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale));
-  out.push(...validateWatchDeclarations(text, stateTagName, locale));
+  // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
+  out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader));
   // `$scan` 宣言（runtime の scan/processScanDeclaration.ts と同じ診断 code。3 コード持ち）
   out.push(...validateScanDeclarations(text, stateTagName, locale));
-  // `$scan` は 4.0 で削除される（3.x では動くので wcs/v4-migration の info で予告する）
-  out.push(...validateScanV4Migration(text, stateTagName, locale));
   // `$recursion` 宣言と `**` の使い方（runtime の recursion/ と同じ診断 code）。
   out.push(...validateRecursion(text, stateTagName, locale));
+  // 4.0 の設定の宣言（`$behavior` / `$features` / root の `features=`）
+  out.push(...validateConfigDeclarations(text, stateTagName, locale));
   // 名前付き State の deprecation（v2 でマウントに置き換わる。docs/state-mount-design.md D16）
   out.push(...validateNamedState(text, bindAttribute, stateTagName, locale));
   // mount= の値検証（runtime の validateVolumeMountPath と同条件・同文言 — name= の鏡映と対称）
   out.push(...validateMountAttributes(text, stateTagName, locale));
-  // 同じ root の 2 つ目の <wcs-state>（runtime の setStateElement が後から登録しに来た方を拒む — v2 から 1 root 1 ツリー）
-  out.push(...validateSecondRoot(text, stateTagName, locale));
+  // ボリュームが受け付けない宣言・bind-component と併記した読み込み（4.0 の scopes/volume.ts・component.ts と同条件）
+  out.push(...validateScopeDeclarations(text, stateTagName, locale));
   // 単一カテゴリの validator は集約時に code を付与する。
   for (const d of validateStateTypes(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.TypeAnnotation, start: d.start, end: d.end, message: d.message, severity: d.severity });

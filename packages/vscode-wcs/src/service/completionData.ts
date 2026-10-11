@@ -5,15 +5,7 @@
  * @wcstack/state の仕様に基づく静的な補完データを提供する。
  */
 
-import { builtinFilterAliases, builtinFilterMeta, STRUCTURAL_BINDING_TYPE_SET, type IFilterMeta } from './wcsManifest.js';
-
-/**
- * 組み込みフィルタの旧名（エイリアス）を正式名へ戻す（@wcstack/state 3.2・要件 B12）。未知の名前はそのまま返す。
- * 補完は正式名だけを出し、検証は旧名も受けて `wcs/name-alias`（info）で正式名を提案する。
- */
-export function canonicalFilterName(name: string): string {
-  return Object.prototype.hasOwnProperty.call(builtinFilterAliases, name) ? builtinFilterAliases[name] : name;
-}
+import { builtinFilterMeta, STRUCTURAL_BINDING_TYPE_SET, type IFilterMeta } from './wcsManifest.js';
 
 // ============================================================
 // フィルタ
@@ -103,9 +95,8 @@ export const COMMON_EVENTS: PropertyInfo[] = [
 /**
  * バインディング修飾子（`prop#modifier` — カンマ区切りで複数指定可）。
  * prevent/stop/direct はイベント系、ro は two-way / radio / checkbox の書き戻し抑止。
- * direct は 4.0 の修飾子: `on*:` を root へ委譲せず、その要素にリスナーを付けたままにする
- * （currentTarget は要素）。3.x のランタイムは知らない修飾子を無視し（event/handler.ts は prevent / stop
- * だけを見る）、イベント束縛はもともと要素に付けるので、今から書いても 3.x では同じに動く。
+ * direct（4.0）は `on*:` を委譲せず、その要素に直接 addEventListener する（currentTarget は要素。
+ * `#stop` が祖先のページ側のリスナーを止め、祖先の stopPropagation() に影響されない — 3.x と同じ形）。
  * このほか two-way では `on<event>`（例: `value#onblur`）でトリガーイベントを上書きできる
  * （event/twowayHandler.ts）— イベント名は自由記述のため静的候補には含めない。
  */
@@ -113,5 +104,5 @@ export const EVENT_MODIFIERS = [
   { name: 'prevent', description: 'event.preventDefault() を呼び出す' },
   { name: 'stop', description: 'event.stopPropagation() を呼び出す' },
   { name: 'ro', description: '双方向バインディングの書き戻しを抑止（読み取り専用）' },
-  { name: 'direct', description: '4.0 で効く: イベントを root へ委譲せず、この要素にリスナーを付ける（currentTarget は要素のまま。3.x はもともと要素に付けるので変わらない）' },
+  { name: 'direct', description: 'イベントを委譲せず、この要素に直接リスナーを付ける（4.0。currentTarget は要素）' },
 ];

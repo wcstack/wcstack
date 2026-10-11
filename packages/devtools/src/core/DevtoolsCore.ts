@@ -77,14 +77,21 @@ export interface IWiringEntry {
   readonly stateElementRef: WeakRef<object> | null;
 }
 
-export type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage";
+/**
+ * Core の変化の種類。`values` は「状態の値が変わったかもしれない」の合図で、更新バッチ
+ * （`state:update-batch`）ごとに流れる。timeline の一時停止（paused）とは独立 —
+ * 一時停止が止めるのは記録であって観測ではないので、State ペインは追従し続ける。
+ */
+export type CoreChangeKind = "sources" | "roster" | "wiring" | "timeline" | "coverage" | "values";
 export type CoreChangeListener = (kind: CoreChangeKind) => void;
 
 /**
  * 配線カバレッジ 1 行（static-wiring-dx-design.md §4 — 宣言 × 実測の突合）。
  * - watch: `fired`（count 回）/ `never` / `prerequisite-missing`
  *   （ワイルドカード行 watch は「for バインド or $listKeys 宣言」が無いと
- *   リスト書き込みが行へ届かない — 「未発火」と区別しないと誤警告になる）
+ *   リスト書き込みが行へ届かない — 「未発火」と区別しないと誤警告になる）.
+ *   `prerequisite-missing` is reported for a @wcstack/state 3.x runtime only: 4.0 row watches
+ *   need neither (see rowWatchNeedsListBinding).
  * - command / eventToken: `emitted`（count 回）/ `never` /
  *   `emitted-unheard`（全 emit が subscriberCount 0 = 空撃ち。§4 の突合対象）
  * - binding: canonical declared がある場合のみ。`attached` / `never-attached`
@@ -135,6 +142,24 @@ function rootLabelOf(rootNode: Node): string {
     return "document";
   }
   return rootNode.nodeName.toLowerCase();
+}
+
+/**
+ * Whether list writes reach a wildcard row watch of this runtime only when each list it ranges
+ * over is bound by a `for` (`paths.list`) or declared in `$listKeys` (`keyedListPaths`).
+ *
+ * That is @wcstack/state 3.x (state-watch-hook-design.md §6-3). 4.0 keeps the lists a row watch
+ * ranges over synced itself, so its row watches fire on list writes without either
+ * (packages/state/src/temporal/watch.ts) — the prerequisite does not exist there, and a row watch
+ * that has not fired is plain `never`. (A 4.0 summary's `paths.list` also holds the lists of every
+ * declared path, the `$watch` keys' own included, so it never reads as "no for binding" anyway.)
+ *
+ * Decided by the major of the source's `packageVersion`: a devtools 4.x can meet a 3.x runtime on a
+ * page that pinned `@wcstack/state@3` while migrating. A version that does not parse is taken as an
+ * old runtime, which keeps the report as cautious as it was before 4.0.
+ */
+function rowWatchNeedsListBinding(packageVersion: string): boolean {
+  return !(Number.parseInt(String(packageVersion), 10) >= 4);
 }
 
 /** token emit の実測（カバレッジ台帳の集計値）。zeroSubscriberCount = 空撃ち回数 */
@@ -412,6 +437,8 @@ export class DevtoolsCore {
       if (stateElement !== undefined && summary.element !== stateElement) {
         continue;
       }
+      // a roster entry exists only while its source is registered (onSourceUnregistered drops both)
+      const needsListBinding = rowWatchNeedsListBinding(this._sources.get(entry.sourceId)!.packageVersion);
       // --- watch: 宣言（watchPaths）× 実測（watch-fired 台帳・自ツリー + 旧 payload 合算） ---
       for (const path of summary.watchPaths ?? []) {
         const count =
@@ -420,7 +447,12 @@ export class DevtoolsCore {
           out.push({ kind: "watch", name: path, status: "fired", count, note: null });
           continue;
         }
-        // ワイルドカード行 watch に**リスト書き込み**が届く前提 = 各 `.*` 階層の
+        // 4.0: a row watch keeps its lists synced itself — nothing to be missing
+        if (!needsListBinding) {
+          out.push({ kind: "watch", name: path, status: "never", count: 0, note: null });
+          continue;
+        }
+        // (@wcstack/state 3.x) ワイルドカード行 watch に**リスト書き込み**が届く前提 = 各 `.*` 階層の
         // リストが「for バインド（paths.list）or `$listKeys` 宣言（keyedListPaths）」
         // されていること（watch 設計 §6-3）。未成立は「未発火」と区別する。
         // 前提はリスト置換経路に限る主張 — 明示 index 書き込み（`$resolve` /
@@ -719,6 +751,9 @@ export class DevtoolsCore {
         if (total === 0) {
           return;
         }
+        // 値の変化の合図（State ペインの丸ごとの再読 — devtools-tag-design.md §10 G-U1）。
+        // timeline の行より先に、一時停止中でも流す
+        this._notify("values");
         const rest = total > labels.length ? `, …(${total})` : "";
         this._appendTimeline({
           sourceId,

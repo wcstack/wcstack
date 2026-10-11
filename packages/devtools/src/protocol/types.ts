@@ -66,6 +66,8 @@ export interface IStateElementSummaryLike {
    * $listKeys 宣言」なので、前提判定の正確化に paths.list と対で使う
    *（明示 index 書き込みは前提に依らず発火し得る）。旧ランタイムにはフィールド自体が
    * 無いため optional（undefined = $listKeys 側が観測不能）。宣言なしは null。
+   * The prerequisite is @wcstack/state 3.x's: a 4.0 runtime fires row watches without a `for`
+   * or `$listKeys`, so the coverage report does not judge it there (DevtoolsCore).
    */
   readonly keyedListPaths?: ReadonlySet<string> | null;
 }
