@@ -1089,3 +1089,10 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - #376 の形（行の中でトップレベルの一覧を回す `for:`）の添字を、README のループ添字の節に書いた（上の「#376 の内側の行」の未決）: `$1` は内側の添字、`$2` は空、ハンドラには内側の添字だけ。行 getter（`for: .tagsHere`）にすれば `$1` が外側、`$2` が内側（throwaway のテストで確かめた）。
 - 文書: CHANGELOG のサイズを rc.9 の dist の値に直し、`wcstack/auto` を足した（109,793 → 69,627 B）。冒頭とルートの README の Versioning に v4 の移行ガイドへのリンク、README と wcstack の README の `wcstack/auto` のサイズ（218 KB min / 70 KB gzip）、AGENTS.md の版の記述、storage の README の `enableDirectionalInitialSync`（4.0 は `$behavior` のキー）、vscode-wcs の CHANGELOG（ネイティブ要素の `command.<method>:` の検査、属性の hover の文言）。
 - リリースの手順で見つけたこと: main とのマージで `release.yml` が 3 か所衝突する（main の #429 のバックポート。どれも research 側を採る）。CHANGELOG の見出しの書き換えは release.yml がしないので、dispatch の前に main へ入れる。安定版のリリースノートには移行ガイドへの案内が入らない（rc のときだけ足す）。拡張の版は 1.21.0 のまま（2.0.0 は 4.0.0 と同時。公開する workflow は無く、手で出す）。
+
+### 4.0.0 の公開（2026-10-11）
+
+- 上の点検の書き換えと 4.0.0 の準備（版の固定・移行ガイドの文面・main 向けの CLAUDE.md / AGENTS.md）、CHANGELOG の `[4.0.0] — 2026-10-11`、拡張の 2.0.0 を research に入れ、main を取り込んで（`release.yml` の 3 か所は research 側）、PR #433 で main にマージした（merge commit、984f909a）。
+- PR の CI の初回は、`ci` の matrix が 49 パッケージのうち 12 しか選ばなかった。`detect-changes` が `set -o pipefail` の下で `echo "$changed" | grep -q` を使っていたため: 変更の一覧（2,705 行）がパイプのバッファを超えると、`grep -q` が最初の一致で抜けた後に `echo` が SIGPIPE で落ち、パイプ全体が「一致なし」になる（一覧の後ろで一致するパッケージだけが残った）。here-string に替えて（db674d94）、49 パッケージすべてと e2e が通った。main の CI も同じ穴を持っていた（大きな PR でだけ表に出る）。
+- main で `release`（run 38104459294）。49 パッケージが npm の `latest` で 4.0.0（`next` は 4.0.0-rc.9 のまま）、タグ `v4.0.0`、GitHub Release（Latest）、版を上げた commit は 614714c3。server の依存は `^4.0.0`。CDN（`esm.run` の state・router・wcstack の `/auto`、jsDelivr の `auto.min.js`・`split/auto.js`・`split/core.js`、`wcstack@4.0.0`）が 200、jsDelivr の state の `auto.min.js` はコミットされた 4.0.0 の dist と同一。
+- ゲートの基準値を 4.0.0 の dist で取り直した（カップリングは基準値どおり）。動いたのは版の文字列の数バイトだけ: `index.esm.js` 50,648B、`auto.min.js` 47,711B、split の core 24,496B、core.min.js 19,846B（上限 20,480B まで 634B）。
