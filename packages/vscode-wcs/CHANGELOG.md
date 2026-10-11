@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased — 2.0.0（@wcstack/state 4.0.0 と同時に出す）
+## 2.0.0 — 2026-10-11
 
-`@wcstack/state` 4.0 のパーサと manifest（`@wcstack/state/parser`・`/manifest`）で検証する。3.x のページには当てはまらない規則なので、メジャーを上げた 2.0.0 として `@wcstack/state` 4.0.0 と同時に出す（R11）。4.0.0-rc の間は拡張を出さない — rc を試すプロジェクトは、同じ規則を `@wcstack/lint@next`（rc と一緒に公開される）で使える。3.x のプロジェクトは 1.21.x のまま。package.json の版は、出すまで 1.21.0（3.x 向けに公開した最新の版）。
+`@wcstack/state` 4.0 のパーサと manifest（`@wcstack/state/parser`・`/manifest`）で検証する。3.x のページには当てはまらない規則なので、メジャーを上げた 2.0.0 として `@wcstack/state` 4.0.0 と同時に出す（R11）。3.x のプロジェクトは 1.21.x のまま。
 
 ### 4.0 で外れた名前
 

@@ -8,15 +8,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
-<!--
-  Draft of the 4.0.0 entry. It stays under [Unreleased] for the whole rc series: an rc
-  (4.0.0-rc.N on npm's `next` tag) gets no heading of its own — its GitHub Release points here —
-  and what an rc changes is edited into this draft. Only the final release renames this heading
-  to `## [4.0.0] — <date>`, opens a new empty `## [Unreleased]` above it, and re-measures the
-  sizes below if the release build differs. Sizes: gzip level 9 of the committed 4.0.0-rc.9 dist
-  (scripts/check-state-size.mjs prints the state ones) against the committed 3.5.4 dist. The
-  benchmark figures are from 4.0.0-rc.7 (docs/research/state-engine/jsfb-official, 2026-10-08).
--->
+## [4.0.0] — 2026-10-11
 
 **4.0 replaces the engine inside `@wcstack/state` with a rewritten one — a smaller core and faster updates behind the same markup, `$` APIs and package entries.** It removes what 3.2 renamed and what 3.5 warned about (`$scan`, the old names, `substr`, three `bootstrapState()` options), moves three more options into each state's `$behavior`, and delegates the common `on*:` events to the root. Every published package moves to 4.0.0, and every package's `bootstrapXxx(config)` now throws on an option it does not have instead of ignoring it. Upgrade to 3.5 first and clear its warnings, then follow the [3.x → 4.0 migration guide](./docs/migration-v4.md); deploy `@wcstack/server` 4.0 together with the 4.0 client. Known limitations are in the guide's [§5](./docs/migration-v4.md#5-known-limitations).
 
@@ -725,7 +717,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v3.5.4...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/wcstack/wcstack/compare/v3.5.4...v4.0.0
 [3.5.4]: https://github.com/wcstack/wcstack/compare/v3.5.3...v3.5.4
 [3.5.3]: https://github.com/wcstack/wcstack/compare/v3.5.2...v3.5.3
 [3.5.2]: https://github.com/wcstack/wcstack/compare/v3.5.1...v3.5.2
