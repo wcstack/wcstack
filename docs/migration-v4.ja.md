@@ -2,7 +2,7 @@
 
 **English**: [migration-v4.md](./migration-v4.md)
 
-> **4.0 はリリース候補として出ています。** `4.0.0-rc.N` を npm の `next` タグで公開しています（`npm i @wcstack/state@next`。ほかの `@wcstack/*` パッケージも同じタグ）。4.0.0 はその後に `latest` で出ます。このガイドは、リリース候補が出している 4.0 について書いています。変更の要約は [CHANGELOG](../CHANGELOG.md)（英語）の 4.0 の項（4.0.0 を出すまでは `[Unreleased]` の下）に、既知の制限は §5 にあります。
+> 4.0.0 は npm の `latest` タグで出ています（ほかの `@wcstack/*` パッケージも同じ版）。変更の要約は [CHANGELOG](../CHANGELOG.md)（英語）の 4.0.0 の項に、既知の制限は §5 にあります。
 
 **対象**: `@wcstack/state` 3.x を使っているアプリの開発者です。`@wcstack/state`・`/auto`・分割エントリ・`wcstack/auto` のどれで読み込んでいるかは問いません。一緒にリリースされるパッケージ（`@wcstack/router`・`@wcstack/server`・I/O ノードのパッケージ・`@wcstack/lint`）も含みます。
 
@@ -62,7 +62,7 @@
 
 ### 1.1 メジャー版を固定して、3.5 にする
 
-`https://esm.run/@wcstack/state/auto` は最新版を指すので、4.0.0 が公開された日から 4.0 を読み込みます（`next` のリリース候補は届きません）。移行が終わるまでは、メジャー版を固定してください。固定した URL は 3.5 を読み込みます。
+`https://esm.run/@wcstack/state/auto` は最新版を指すので、4.0.0 の公開から 4.0 を読み込みます。移行が終わるまでは、メジャー版を固定してください。固定した URL は 3.5 を読み込みます。
 
 ```html
 <script type="module" src="https://esm.run/@wcstack/state@3/auto"></script>
@@ -174,10 +174,10 @@ export default {
 
 ## 2. 4.0 に上げる
 
-- すべての `@wcstack/*` パッケージを同じ 4.0 の版にします。4.0 がリリース候補のあいだは `next` タグから取るか（`npm i @wcstack/state@next @wcstack/router@next …`）、版を名指しします（`4.0.0-rc.9`）。
+- すべての `@wcstack/*` パッケージを同じ 4.0 の版にします（`npm i @wcstack/state@4 @wcstack/router@4 …`）。
 - `@wcstack/server` 4.0 と 4.0 のクライアントを一緒にデプロイします（§3.6）。
-- CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。`@4` が解決するのは 4.0.0 の公開後です。範囲の指定はリリース候補を選ばないので、試すときは版を名指しします（`https://esm.run/@wcstack/state@4.0.0-rc.9/auto`）。
-- `@wcstack/lint` と `@wcstack/typescript` はどの `@wcstack/*` のリリースでも一緒に上がるので、リリース候補から 4.0 の規則を持ちます（`npx @wcstack/lint@next <files>`）。VS Code 拡張は 2.0.0 として 4.0.0 と同時に出します。3.x のプロジェクトでは 3.5 のもの（拡張は 1.21.x）を使い続けてください。4.0 の規則は、3.x が受け付ける書き方も報告します。
+- CDN の URL を新しいメジャー版にします（`https://esm.run/@wcstack/state@4/auto`）。
+- `@wcstack/lint` と `@wcstack/typescript` はどの `@wcstack/*` のリリースでも一緒に上がるので、4.0 の版が 4.0 の規則を持ちます（`npx @wcstack/lint@4 <files>`）。VS Code 拡張では 2.0.0 です。3.x のプロジェクトでは 3.5 のもの（拡張は 1.21.x）を使い続けてください。4.0 の規則は、3.x が受け付ける書き方も報告します。
 
 **4.0 のエラーの出方。** `diagnostics` 機能があると、メッセージには lint と同じ `[wcs/<code>]` と文が付きます。無いと、番号と値が出ます。
 
@@ -533,7 +533,7 @@ import { defineState } from "@wcstack/state/define";
 
 - **`$listKeys` は core の外**の新しい機能 `@wcstack/state/features/list-keys` に移りました。`@wcstack/state` と `/auto` は含みます。`$listKeys` を使う `/core` のページは、これを入れる必要があります。入れないと、状態が `[wcs/feature-not-installed] $listKeys needs the add-on @wcstack/state/features/list-keys` で失敗します。
 - `features/temporal` が受け持つのは `$watch` と `$stream` です（`$scan` はなくなりました）。
-- **`/core` は条件の 10 のフィルタを持ちます** — `eq`・`ne`・`not`・`lt`・`le`・`gt`・`ge`・`truthy`・`falsy`・`boolean`。3.x の `/core` が答えるのは `not` だけで、ほかのフィルタにはどれも `features/formats` が要りました。残りは今も要ります。`features/formats` が持つのは 37 です: 算術（`add`・`sub`・`mul`・`div`・`mod`・`abs`・`clamp`）、変換（`int`・`float`・`number`・`string`）、既定値（`defaults`・`coalesce`・`nullIfEmpty`）、書式のフィルタ（`upper`・`date`・`round`・`truncate` …）。これを入れずにそのどれかを使うと、その機能を名指しした `[wcs/filter-unknown]` で失敗します。（4.0.0-rc.1〜rc.3 は算術・変換・既定値のフィルタも `/core` に持っていました。それらのために `features/formats` を外した `/core` のページは、入れ直してください。）
+- **`/core` は条件の 10 のフィルタを持ちます** — `eq`・`ne`・`not`・`lt`・`le`・`gt`・`ge`・`truthy`・`falsy`・`boolean`。3.x の `/core` が答えるのは `not` だけで、ほかのフィルタにはどれも `features/formats` が要りました。残りは今も要ります。`features/formats` が持つのは 37 です: 算術（`add`・`sub`・`mul`・`div`・`mod`・`abs`・`clamp`）、変換（`int`・`float`・`number`・`string`）、既定値（`defaults`・`coalesce`・`nullIfEmpty`）、書式のフィルタ（`upper`・`date`・`round`・`truncate` …）。これを入れずにそのどれかを使うと、その機能を名指しした `[wcs/filter-unknown]` で失敗します。
 - `features/diagnostics` を入れない `/core` では、メッセージが番号と値になり（§2）、4.0 で外した 3.x の名前も見つかりません（§3.1）。開発中は `diagnostics` を入れてください。
 - 3.x と同じく、`installFeatures([...])` は `bootstrapState()` の前に呼びます。機能を入れる前に、その機能のキーを宣言した状態が定義されると、`[wcs/feature-not-installed]` で失敗します。
 - `dist/split/chunks/` の下のファイル名に、中身のハッシュが付くようになりました。チャンクのファイルを自分で並べている場合（preload のリンク、import map の `integrity`）は、4.0 のビルドから名前を取り直してください。
@@ -574,7 +574,7 @@ import { defineState } from "@wcstack/state/define";
 
 ### 4.1 4.0 の lint
 
-`npx @wcstack/lint@4 <files>` を流します。4.0 がリリース候補のあいだは `@next` です（VS Code 拡張 2.0 も同じコードを出します）。4.0 の lint に `wcs/v4-migration` はありません。3.5 が info で知らせていたものは、4.0 ではその場で壊れるので、それぞれのコードの error か warning になります。`--strict` を付けると warning でも CI が失敗します。下の warning のうち 2 つは実行時に throw するので、付けると役に立ちます。`--strict` では、`src=` で読み込むボリュームのパスへの誤った警告（§3.5）も失敗になる点に注意してください。
+`npx @wcstack/lint@4 <files>` を流します（VS Code 拡張 2.0 も同じコードを出します）。4.0 の lint に `wcs/v4-migration` はありません。3.5 が info で知らせていたものは、4.0 ではその場で壊れるので、それぞれのコードの error か warning になります。`--strict` を付けると warning でも CI が失敗します。下の warning のうち 2 つは実行時に throw するので、付けると役に立ちます。`--strict` では、`src=` で読み込むボリュームのパスへの誤った警告（§3.5）も失敗になる点に注意してください。
 
 | コード | 報告するもの | 重大度 |
 |---|---|---|

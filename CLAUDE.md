@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **wcstack** (Web Components Stack) is a monorepo of focused TypeScript packages for building Web Components-based SPAs. The design philosophy is standards-first (Custom Elements, Shadow DOM, ES Modules, Import Maps), zero-config, buildless, with zero runtime dependencies (the exception is `@wcstack/server`, which depends on `@wcstack/state` and `happy-dom`). Each package is a self-contained custom element (or core utility) that can be dropped onto a page via CDN/Import Map and composed like LEGO bricks.
 
-**This is the `research/state-engine` branch — the `@wcstack/state` 4.0 rewrite.** Since the R1 swap `packages/state` holds the 4.0 engine (developed as `packages/state-next`, which is gone). Everything specific to it is in [research/state-engine (4.0 engine)](#researchstate-engine-40-engine).
+**`@wcstack/state` is the 4.0 engine**, rewritten on the `research/state-engine` branch (developed there as `packages/state-next`, which is gone) and released as 4.0.0. Everything specific to it is in [The `@wcstack/state` 4.0 engine](#the-wcstackstate-40-engine).
 
 ## Repository Layout
 
@@ -139,9 +139,9 @@ Every published package's `dist` is committed (`packages/vscode-wcs`'s is not), 
 
 Two more traps around committed dists: `npm run build` in `packages/testing` rebuilds `state`, `router` and `server` in place and dirties their committed dist (restore with `git checkout -- packages/<pkg>/dist` when that was not the intent); and `packages/vscode-wcs/src/service/generated/builtinTags.generated.ts` + `packages/vscode-wcs/wcs.html-data.json` are generated from the committed dists by `packages/vscode-wcs/scripts/emit-builtin-tags.mjs` (release.yml regenerates them; CI runs `--check`) — never edit them by hand.
 
-## research/state-engine (4.0 engine)
+## The `@wcstack/state` 4.0 engine
 
-This branch rewrites `@wcstack/state` for 4.0. The plan and the record of the work are in `docs/state-engine-rewrite/` (start with [v4-remaining.ja.md](docs/state-engine-rewrite/v4-remaining.ja.md)); [docs/migration-v4.md](docs/migration-v4.md) / `.ja.md` is the 3.x → 4.0 guide.
+4.0 rewrote `@wcstack/state`. The plan and the record of the work are in `docs/state-engine-rewrite/` (start with [v4-remaining.ja.md](docs/state-engine-rewrite/v4-remaining.ja.md)); [docs/migration-v4.md](docs/migration-v4.md) / `.ja.md` is the 3.x → 4.0 guide.
 
 ### The 4.0 engine (`packages/state`)
 
@@ -152,7 +152,7 @@ This branch rewrites `@wcstack/state` for 4.0. The plan and the record of the wo
 - `src/auto.ts` imports `./element`, `./hooks` and `./features/all`, not `./exports`; esbuild bundles it from source, so `dist/auto.min.js` is still self-contained.
 - **Commands**: `build`, `clean`, `test`, `test:watch`, `test:coverage` (99.5 / 98.5 / 100 / 99.5, as 3.x), `lint`, `typecheck` (`tsc --noEmit`), `golden` (re-records `__tests__/golden/current-3.3.0.json` from the 3.x dist `WCS_GOLDEN_DIST` names; it refuses a 4.0 dist, so the golden is frozen). No `__tests__/setup.ts`. Benchmarks: `npx vitest run --config bench/vitest.perf.config.ts`, `bench/run-all.sh` (`CURRENT_BUNDLE` names the 3.x bundle to compare with). Scale verification (locality / linearity / boundedness / limits / correctness at scale, [scale-verification.ja.md](docs/state-engine-rewrite/scale-verification.ja.md)): `npx vitest run --config bench/vitest.scale.config.ts` (happy-dom, src, work counted), `node bench/scale/browser.mjs` (Chromium, dist, after a build), `node bench/scale/report.mjs <out dir>`.
 - **Cross-package tests**: the 3.x side of the parity tests is frozen — `public-surface.test.ts` reads `__tests__/fixtures/state-3.5.4`, the JSON goldens in `__tests__/golden/` do not change, and `scripts/ssr-3x.mjs` refuses a 4.0 dist (`WCS_3X_PACKAGES` names 3.x packages to render with). `regression-3x-binder-router.test.ts` reads the committed `packages/router/dist`. `packages/router/__tests__/routeRange.state.test.ts` imports `../../state/src`, so a state change can break the router suite.
-- **Version**: every package is at 4.0.0-rc.9 (npm `next`, tag `v4.0.0-rc.9`; `latest` is still 3.5.4). The engine compares `<wcs-ssr version>` with its own by major.minor, so it reads any 4.0.x SSR output as its own and discards 3.x snapshots (`__tests__/ssr-3x.test.ts` pins `VERSION` to 4.0.0).
+- **Version**: 4.0.0 is on npm `latest`, released from main with `release` after the rc series (4.0.0-rc.1 – rc.9 on `next`); 3.x ended at 3.5.4. The engine compares `<wcs-ssr version>` with its own by major.minor, so it reads any 4.0.x SSR output as its own and discards 3.x snapshots (`__tests__/ssr-3x.test.ts` pins `VERSION` to 4.0.0).
 - **Layout**: `engine.ts` (the reactive core; path patterns in `pattern.ts`, lists and rows in `list.ts`, the dirty strategy in `strategy/`), `element.ts` (`<wcs-state>`), `dom/` (binding plans, views, binder, mounts, wc-bindable), `parser/` (the `data-wcs` grammar, a port of 3.x `bindTextParser/`), `filters/`, `token.ts`, `hooks.ts` (the slots the add-ons fill), and one directory per add-on (`temporal/`, `scopes/`, `recursion/`, `ssr/`, `devtools/`, `diagnostics/`, `native/` for `native-commands`) with its entry under `features/`.
 - **Differences from 3.x that touch the protocols**:
   - binder — 4.0 renders top-level `for:` / `if:` of inserted content only when the caller passes `bind(subtree, { range: true })` ([docs/binder-protocol-design.md](docs/binder-protocol-design.md), migration-v4 §3.9); 3.x ignores the second argument.
@@ -164,13 +164,9 @@ This branch rewrites `@wcstack/state` for 4.0. The plan and the record of the wo
 
 ### vscode-wcs and the tooling read the 4.0 engine
 
-- `packages/vscode-wcs` depends on `"@wcstack/state": "file:../state"` (as on main), the 4.0 engine since the swap. `@wcstack/lint`, `@wcstack/typescript` and the vsix bundle it, so they carry the 4.0 rules, and every page in the repository must pass them.
-- **CI**: the `wcs-validate` job builds `packages/state` from source before vscode-wcs, lint and typescript. But `ci.yml` and `e2e.yml` run only on pull requests to `main` (`on: pull_request: branches: [main]`), and this branch has none, so **none of these gates run on it — run them locally**.
-- **Release** (decision R8; the rules are in the release paragraph under Monorepo Structure): cut each rc from this branch with `prerelease-rc` — `gh workflow run release.yml --ref research/state-engine -f version_type=prerelease-rc` — and merge nothing into it while the run is going. (The first rc was `premajor-rc`. 4.0.0-rc.1 went out partial on 2026-10-04: 31 of the 49 packages reached npm before router's prepublishOnly failed, with no tag or bump commit; the branch was then set to 4.0.0-rc.1 by hand and the series continues at rc.2. Since then the release runs the package tests after the bump, at the target version.) The bump commit and tag come back to this branch, so main stays 3.x and can still ship 3.x patches. 4.0.0: merge this branch into main, then run `release` on main (`major` is refused there, so merging before the first rc cannot ship 4.0.0 without an rc). `release.yml` still skips `private: true` packages. The extension's version is not bumped before 4.0 (R11: 2.0.0 with 4.0.0); **do not publish the vsix from this branch** — no workflow stops it.
-
-### After the swap (R1)
-
-`packages/state` is the 4.0 engine, and the state-next special cases are gone (v4-remaining §3 / §4). The CI gates have been rebuilt for the 4.0 output: `check-state-size.mjs` and `check-state-coupling.mjs` replace the four 3.x gates, and the core target is now an absolute limit.
+- `packages/vscode-wcs` depends on `"@wcstack/state": "file:../state"`, the 4.0 engine. `@wcstack/lint`, `@wcstack/typescript` and the vsix bundle it, so they carry the 4.0 rules, and every page in the repository must pass them.
+- **CI**: the `wcs-validate` job builds `packages/state` from source before vscode-wcs, lint and typescript. `ci.yml` and `e2e.yml` run only on pull requests to `main` (`on: pull_request: branches: [main]`), so a branch with no such PR (`research/*`, `release/*`) gets none of these gates — run them locally there.
+- **Release** (decision R8; the rules are in the release paragraph under Monorepo Structure): the rcs were cut from `research/state-engine` with `premajor-rc` / `prerelease-rc` (npm `next`), and 4.0.0 with `release` on main after the branch was merged (`major` is refused). (4.0.0-rc.1 went out partial on 2026-10-04: 31 of the 49 packages reached npm before router's prepublishOnly failed, with no tag or bump commit; the branch was then set to 4.0.0-rc.1 by hand and the series continued at rc.2. Since then the release runs the package tests after the bump, at the target version.) A stable release runs from main only, and main is the 4.0 engine, so `release.yml` cannot ship a 3.x patch any more. npm `next` keeps pointing at the last rc unless it is moved by hand (`npm dist-tag add <pkg>@<version> next`; the workflow's OIDC credential only publishes). `release.yml` still skips `private: true` packages. The extension is published by hand (no workflow does it): 2.0.0 carries the 4.0 rules and goes out with 4.0.0 (R11); 3.x projects stay on 1.21.x.
 
 ## Testing
 
@@ -242,7 +238,7 @@ The layout is in [The 4.0 engine](#the-40-engine-packagesstate).
 
 ## Docs & Design Notes
 
-`docs/` contains design documents, implementation plans, and spec proposals (e.g. tag-design notes, `signals-migration-plan.md`, `spec-proposal-*.md`, `timing-and-firing-contract.md`, `async-io-node-guidelines.md`). Consult the relevant doc before extending a component's behavior or its protocol. Per-package `README.md`/`README.ja.md` are the normative references for that package — update both (the unscoped `wcstack` package has an English README only). On this branch the 4.0 work is planned and recorded in `docs/state-engine-rewrite/` (start with `v4-remaining.ja.md`), and `docs/migration-v4.md` / `.ja.md` is the 3.x → 4.0 guide.
+`docs/` contains design documents, implementation plans, and spec proposals (e.g. tag-design notes, `signals-migration-plan.md`, `spec-proposal-*.md`, `timing-and-firing-contract.md`, `async-io-node-guidelines.md`). Consult the relevant doc before extending a component's behavior or its protocol. Per-package `README.md`/`README.ja.md` are the normative references for that package — update both (the unscoped `wcstack` package has an English README only). The 4.0 work was planned and recorded in `docs/state-engine-rewrite/` (start with `v4-remaining.ja.md`), and `docs/migration-v4.md` / `.ja.md` is the 3.x → 4.0 guide.
 
 The AI app-building skill (`wcstack-app`) lives in the separate [wcstack/wcstack-skill](https://github.com/wcstack/wcstack-skill) repository. When changing `data-wcs` syntax, the wc-bindable / command-token / event-token protocols, or router attributes/behavior, update that skill's references to match (its plugin version tracks the wcstack release it was verified against).
 

@@ -2,7 +2,7 @@
 
 **日本語版**: [migration-v4.ja.md](./migration-v4.ja.md)
 
-> **4.0 is out as a release candidate.** `4.0.0-rc.N` is published on npm's `next` tag — `npm i @wcstack/state@next`, and the same tag for every other `@wcstack/*` package — and 4.0.0 follows on `latest`. This guide describes 4.0 as the release candidate ships it. The 4.0 entry of the [CHANGELOG](../CHANGELOG.md) summarizes the changes (under `[Unreleased]` until 4.0.0 is published); §5 lists the known limitations.
+> 4.0.0 is on npm's `latest` tag, with every other `@wcstack/*` package at the same version. The 4.0.0 entry of the [CHANGELOG](../CHANGELOG.md) summarizes the changes; §5 lists the known limitations.
 
 **Who this is for**: application developers whose pages use `@wcstack/state` 3.x — through `@wcstack/state`, `/auto`, the split entries or the `wcstack/auto` bundle — together with the packages released alongside it (`@wcstack/router`, `@wcstack/server`, the I/O node packages, `@wcstack/lint`).
 
@@ -62,7 +62,7 @@ When upgrading to 4.0 (§2, §3):
 
 ### 1.1 Pin the major version, then take 3.5
 
-`https://esm.run/@wcstack/state/auto` follows the latest release, so it will load 4.0 on the day 4.0.0 is published (the release candidate on `next` does not reach it). Pin the major version until you have migrated; the pinned URL picks up 3.5:
+`https://esm.run/@wcstack/state/auto` follows the latest release, so it loads 4.0 since 4.0.0 was published. Pin the major version until you have migrated; the pinned URL picks up 3.5:
 
 ```html
 <script type="module" src="https://esm.run/@wcstack/state@3/auto"></script>
@@ -174,10 +174,10 @@ In 4.0 the common bubbling events are delegated, and `event.currentTarget` is th
 
 ## 2. Upgrading to 4.0
 
-- Move every `@wcstack/*` package to the same 4.0 version. While 4.0 is a release candidate, take it from the `next` tag (`npm i @wcstack/state@next @wcstack/router@next …`), or name the version (`4.0.0-rc.9`).
+- Move every `@wcstack/*` package to the same 4.0 version (`npm i @wcstack/state@4 @wcstack/router@4 …`).
 - Deploy `@wcstack/server` 4.0 and the 4.0 client together (§3.6).
-- Update CDN URLs to the new major version (`https://esm.run/@wcstack/state@4/auto`). `@4` resolves once 4.0.0 is published; a range does not pick a release candidate, so name it while trying one (`https://esm.run/@wcstack/state@4.0.0-rc.9/auto`).
-- `@wcstack/lint` and `@wcstack/typescript` move with every `@wcstack/*` release, so they carry the 4.0 rules from the release candidate on (`npx @wcstack/lint@next <files>`); the VS Code extension ships them as 2.0.0, together with 4.0.0. Keep the 3.5 ones (extension 1.21.x) for 3.x projects: the 4.0 rules report forms that 3.x still accepts.
+- Update CDN URLs to the new major version (`https://esm.run/@wcstack/state@4/auto`).
+- `@wcstack/lint` and `@wcstack/typescript` move with every `@wcstack/*` release, so their 4.0 releases carry the 4.0 rules (`npx @wcstack/lint@4 <files>`); the VS Code extension ships them as 2.0.0. Keep the 3.5 ones (extension 1.21.x) for 3.x projects: the 4.0 rules report forms that 3.x still accepts.
 
 **How 4.0 reports errors.** With the `diagnostics` feature, messages carry the same `[wcs/<code>]` codes as the lint and a sentence; without it, a number and the values:
 
@@ -533,7 +533,7 @@ A bundler cannot drop the 4.0 engine's modules from the `@wcstack/state` entry, 
 
 - **`$listKeys` moved out of the core** into a new feature, `@wcstack/state/features/list-keys`. `@wcstack/state` and `/auto` include it. A `/core` page that uses `$listKeys` must install it; otherwise the state fails with `[wcs/feature-not-installed] $listKeys needs the add-on @wcstack/state/features/list-keys`.
 - `features/temporal` serves `$watch` and `$stream` (`$scan` is gone).
-- **`/core` carries the 10 condition filters** — `eq`, `ne`, `not`, `lt`, `le`, `gt`, `ge`, `truthy`, `falsy`, `boolean`. The 3.x `/core` answered only `not`, and every other filter needed `features/formats`; the others still do. `features/formats` holds 37: arithmetic (`add`, `sub`, `mul`, `div`, `mod`, `abs`, `clamp`), conversion (`int`, `float`, `number`, `string`), defaults (`defaults`, `coalesce`, `nullIfEmpty`) and the formatting filters (`upper`, `date`, `round`, `truncate`, …). One of them on a page without it fails with `[wcs/filter-unknown]`, naming the add-on. (4.0.0-rc.1 to rc.3 carried the arithmetic, conversion and defaults filters in `/core` too; a `/core` page that dropped `features/formats` for them installs it again.)
+- **`/core` carries the 10 condition filters** — `eq`, `ne`, `not`, `lt`, `le`, `gt`, `ge`, `truthy`, `falsy`, `boolean`. The 3.x `/core` answered only `not`, and every other filter needed `features/formats`; the others still do. `features/formats` holds 37: arithmetic (`add`, `sub`, `mul`, `div`, `mod`, `abs`, `clamp`), conversion (`int`, `float`, `number`, `string`), defaults (`defaults`, `coalesce`, `nullIfEmpty`) and the formatting filters (`upper`, `date`, `round`, `truncate`, …). One of them on a page without it fails with `[wcs/filter-unknown]`, naming the add-on.
 - On `/core` without `features/diagnostics`, a message is a number and the values (§2), and the 3.x names 4.0 removed are not detected (§3.1). Install `diagnostics` while developing.
 - Call `installFeatures([...])` before `bootstrapState()`, as in 3.x. A state that declares a feature's key before that feature is installed fails with `[wcs/feature-not-installed]`.
 - The file names under `dist/split/chunks/` now carry a content hash. If you list chunk files yourself (preload links, `integrity` in an import map), take the names from the 4.0 build.
@@ -574,7 +574,7 @@ Before upgrading, the 3.5 console warnings and the 3.5 lint (§1.2, §1.3) find 
 
 ### 4.1 The 4.0 lint
 
-Run `npx @wcstack/lint@4 <files>` — `@next` while 4.0 is a release candidate (the VS Code extension 2.0 shows the same codes). The 4.0 lint has no `wcs/v4-migration`: what 3.5 pointed out as info is an error or a warning of its own code there, because 4.0 breaks on it. `--strict` also fails CI on warnings, which helps because two of the warnings below throw at run time. With `--strict`, expect the false warnings on paths of a volume loaded with `src=` (§3.5).
+Run `npx @wcstack/lint@4 <files>` (the VS Code extension 2.0 shows the same codes). The 4.0 lint has no `wcs/v4-migration`: what 3.5 pointed out as info is an error or a warning of its own code there, because 4.0 breaks on it. `--strict` also fails CI on warnings, which helps because two of the warnings below throw at run time. With `--strict`, expect the false warnings on paths of a volume loaded with `src=` (§3.5).
 
 | Code | What it reports | Severity |
 |---|---|---|

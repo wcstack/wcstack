@@ -21,7 +21,7 @@
 | どこで | `@wcstack/state`（`bootstrapState()` がすべての後付けを入れる）、`/auto`、`/parser`。`installFeatures([diagnostics])` の後の `/core`。`features="diagnostics"` の分割 auto | `/core` だけ |
 | 文面 | `[@wcstack/state] [wcs/<コード>] <文>` | `[@wcstack/state] #<番号> <値>` |
 
-- **コード**は番号の百の位から決まる: 1xx は `binding-syntax`、2xx は `template-syntax`、3xx は `binding-path-missing`、…（表の「Code」の列）。後付けが文の前に書く。後付けが無いとメッセージにコードは付かない（4.0.0-rc.1〜rc.3 は番号の前にも書いていた）ので、番号の「Code」の列で読む。1〜51 にはコードが無いので、後付けがあるときは文から始まる。コードは `@wcstack/lint` と VS Code 拡張が報告するものと同じ。
+- **コード**は番号の百の位から決まる: 1xx は `binding-syntax`、2xx は `template-syntax`、3xx は `binding-path-missing`、…（表の「Code」の列）。後付けが文の前に書く。後付けが無いとメッセージにコードは付かないので、番号の「Code」の列で読む。1〜51 にはコードが無いので、後付けがあるときは文から始まる。コードは `@wcstack/lint` と VS Code 拡張が報告するものと同じ。
 - **#1・#1601・#1701 は後付けがあるときだけ出る。** 4.0 で外した 3.x の名前を見つけるのは後付けの仕事: 宣言の `$scan`・`$streams`・`$updatedCallback` と、`$trackDependency` / `$untrackDependency` の読み取り。後付けが無いと、これらの名前の宣言は無視され、読むと `undefined` になる（エンジンの知らないほかの `$` の名前と同じ）。
 - **値**は、後付けが無いとき、番号の後に表の「Values」の列の順で並ぶ。文字列は JSON（`"uc"`）、それ以外は `String(値)`。
 - **案内**: 後付けがあると、エンジンがエラーの経路で投げるメッセージの後に、直し方が続くことがある — 「Did you mean」（編集距離 2 まで）、4.0 で外れたフィルタ名にはその書き換え先（「Did you mean」の代わり）、その場合の直し方、lint が検出するコードには `Validate statically: npx @wcstack/lint <file>.`。コンソールに書くメッセージ（#11・#12・#17・#25・#41・#48・#49・#50・#51）は文だけ。
