@@ -130,7 +130,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 
 `data-wcs` 属性、`{{ }}` 構文、`<!--@@:-->` 構文のリアルタイム検証:
 
-重大度の方針: **error** = ランタイムが throw する・束縛がけっして動かない、**warning** = 動くが黙って違うことをする、**info** = 助言。意図した例外: 存在しないフィルタ（4.0 で外れた名前と `substr` を含む）と `wcs/wildcard-rank`（`for` の外のパターンパス・省略パス・ループの添字 #1401 / #1402、段数の不足 #1401、別のリストの `*` #1403）は、4.0 のランタイムでは初期化で throw しますが **warning** です — ページは実行時に自前のフィルタを登録でき、拡張からはそれが見えないため、また `for` のスコープはマークアップから組み立て直すので、どの形でも厳密とは限らないためです。CI で落としたいときは `wcs-validate --strict` を使ってください。
+重大度の方針: **error** = ランタイムが throw する・束縛がけっして動かない、**warning** = 動くが黙って違うことをする、**info** = 助言。意図した例外: `wcs/wildcard-rank`（`for` の外のパターンパス・省略パス・ループの添字 #1401 / #1402、段数の不足 #1401、別のリストの `*` #1403）は、4.0 のランタイムでは初期化で throw しますが **warning** です — `for` のスコープはマークアップから組み立て直すので、どの形でも厳密とは限らないためです。CI で落としたいときは `wcs-validate --strict` を使ってください。（存在しないフィルタ `wcs/filter-unknown` は 2.0.0 まで「ページが実行時に自前のフィルタを登録できる」という理由で warning でしたが、それをする公開 API は 4.0 にも 3.x にもありません。組み込みに無いフィルタは必ず state を止めるので error です。）
 
 `outerHTML:` / `outerText:` の検査（#203）は、state が束ねる `for` / `if` テンプレートを見ます: 文書の中のものと、文書の直下の構造でない `<template>` の中のものはその中身を state が束ねるときだけ — `<wcs-router>` の中の route の雛形と、`<wcs-layout layout="id">` が指すレイアウトの雛形（指す `<wcs-layout>` がどれも `enable-shadow-root` なら対象外 — 雛形は outlet の shadow root に置かれ、ページの state は束ねない）。アプリの JS が複製するだけの最上位の `<template id="tpl">` と、自前の `<wcs-state>` を持つ `<template>`（宣言的 shadow root・DCC）の中は見ません。`wcs/delegated-current-target` も同じ範囲です。どちらも router の既定（スクリプトでしか変えられない）を前提にします: タグ名が `wcs-router` / `wcs-layout`（`config.tagNames`）で、レイアウトが light DOM（`config.enableShadowRoot: false` — `true` にすると、ページの state が束ねないレイアウトの雛形も検査の対象になります）。`src` と `layout` を両方持つ `<wcs-layout>` は、router が `src` を読みますが、`layout` の雛形を数えます。生のマークアップから要素の入れ子を組み立て直します。終了タグの省略（`<li>…<li>`・`<p>…<div>`・表の行とセル）は直前に開いた要素だけを見て閉じる近似で（HTML のパーサの scope の規則のすべてではない）、`/>` は void 要素と `<svg>` / `<math>` の中だけで閉じたとみなします。引用符の無い `data-wcs` は、囲むテンプレートと要素の判定には読みますが、束縛そのものの検証は引用符付きの属性だけです。
 
@@ -139,7 +139,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | 存在しないパス（パスの候補が取れないとき、拡張が読めない state の持ち分は黙る — 読めないボリューム `<wcs-state mount="cart" src="./cart.js">` のマウントパスの下とその祖先（`shop.cart` の `shop`）、ページの root の state が読めないときのボリュームの外。「読めない」は、読めない `src=`（reader が無い・URL・先頭 `/`・無いファイル）、素の `export default { … }` でない・トップレベルに spread のあるスクリプト、読み込み元の無い `<wcs-state>`（`setInitialState()` を待つ）。読めた空の state（`json='{}'`・`export default {}`）は読めたので報告する。`<template>` の中・`bind-component` の `<wcs-state>` は別の木で、ページの root の判定に数えない。読める `src=` は中身のキーとメソッドをマウントパスの下に足す — `.js` は同名の `.ts` を先に読む。4.0 はメソッドも接ぎ木する: `onclick: cart.add`。`stateSchema` があれば schema で判定するが、読めない state のイベント束縛のハンドラは除く — schema はメソッドを持たない） | `textContent: typo` | ⚠ warning |
 | ループの添字でも状態のパスでもない `$0`・`$01`・`$1000`（`wcs/binding-path-missing`。ランタイムは同じコードで束縛を失敗させる） | `textContent: $0` | ❌ error |
 | `for` の中の範囲の外の添字（`wcs/index-param-range`。添字は `$1`〜`$128`、上限は manifest の `syntax.indexParam.maxDepth`。`for` の外は「for の外のループ添字」— `wcs/wildcard-rank`） | `textContent: $129` | ❌ error |
-| 存在しないフィルタ（4.0 で外れた旧名 `uc` / `fix` … と `substr` を含む。書き換え先を案内 — `substr(2, 3)` → `slice(2, 5)`） | `textContent: count\|fake` | ⚠ warning |
+| 存在しないフィルタ（4.0 で外れた旧名 `uc` / `fix` … と `substr` を含む。書き換え先を案内 — `substr(2, 3)` → `slice(2, 5)`） | `textContent: count\|fake` | ❌ error |
 | `for:` に非配列 | `for: count` | ❌ error |
 | `if:` に非 boolean | `if: count` | ⚠ warning |
 | `class.` に非 boolean | `class.active: count` | ⚠ warning |

@@ -8,6 +8,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Changed
+
+- `@wcstack/state`: **`class:` and `attr:` without a name are refused** at load time with `[wcs/binding-syntax]` (`#122`). They set an element property named `class` / `attr`, which does nothing, and nothing reported it. Write `class.NAME:` / `attr.NAME:`, or bind `className:` to set the whole class attribute. `style:` (which reaches `cssText`) and `command:` (the invoker-commands property of `<button>`) are unchanged. The core grows by 34 B gzip (`dist/core.min.js` 19,880 B of 20,480 B).
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/filter-unknown` is an error**, as the runtime stops the state on it. It was a warning on the grounds that a page could register filters of its own, but no public API does that, in 4.0 or 3.x.
+
+### Fixed
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **no false `wcs/binding-path-missing` under a getter's result.** The lint now reads a getter's `return` expressions: a list derived from a known one (`this.todos.filter(…)`, `toSorted`, `slice`, `[...this.items]`, through a `const` alias, a ternary or `||` / `??`) has that list's row shape, so `for: visible` rows are checked instead of reported; `find` / `findLast` / `at` give one row's shape, `map(t => ({ … }))` the literal's (with `...t`, the row's too), and an object literal its fields (`summary.total`). Only data is carried over: a path getter on the source list (`todos.*.upper`) is not on the getter's rows, and stays reported. The README's own Todo app had three such warnings.
+
 ## [4.0.0] — 2026-10-11
 
 **4.0 replaces the engine inside `@wcstack/state` with a rewritten one — a smaller core and faster updates behind the same markup, `$` APIs and package entries.** It removes what 3.2 renamed and what 3.5 warned about (`$scan`, the old names, `substr`, three `bootstrapState()` options), moves three more options into each state's `$behavior`, and delegates the common `on*:` events to the root. Every published package moves to 4.0.0, and every package's `bootstrapXxx(config)` now throws on an option it does not have instead of ignoring it. Upgrade to 3.5 first and clear its warnings, then follow the [3.x → 4.0 migration guide](./docs/migration-v4.md); deploy `@wcstack/server` 4.0 together with the 4.0 client. Known limitations are in the guide's [§5](./docs/migration-v4.md#5-known-limitations).

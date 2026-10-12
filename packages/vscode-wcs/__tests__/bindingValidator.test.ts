@@ -39,11 +39,11 @@ describe('validateBindings', () => {
     expect(nonExistent[0].severity).toBe('warning');
   });
 
-  it('存在しないフィルタに warning を出す', () => {
+  it('存在しないフィルタに error を出す（ランタイムは初期化で throw し、ページがフィルタを足す公開 API は無い）', () => {
     const diags = validateBindings(SAMPLE_HTML, 'data-wcs');
     const unknownFilter = diags.filter(d => d.message.includes('"unknownFilter"'));
     expect(unknownFilter).toHaveLength(1);
-    expect(unknownFilter[0].severity).toBe('warning');
+    expect(unknownFilter[0].severity).toBe('error');
   });
 
   it('既知のフィルタにはエラーを出さない', () => {
@@ -100,6 +100,36 @@ export default {
     const missing = diags.filter(d => d.code === WcsDiagnosticCode.BindingPathMissing);
     expect(missing.map(d => html.slice(d.start, d.end))).toEqual(['.typo']);
     expect(missing[0].message).toContain('dependents.*.typo');
+  });
+
+  it('絞り込んだリストを返す getter を for: で回した行は、元のリストの行の形で存在扱いになる', () => {
+    const html = `
+<wcs-state>
+  <script type="module">
+export default {
+  todos: [{ id: 1, text: "Read the guide", done: false }],
+  filter: "all",
+  get visible() {
+    if (this.filter === "active") return this.todos.filter(t => !t.done);
+    return this.todos;
+  },
+  get "todos.*.upper"() { return this["todos.*.text"].toUpperCase(); },
+  get summary() { return { total: this.todos.length }; },
+};
+  </script>
+</wcs-state>
+<p data-wcs="textContent: summary.total"></p>
+<template data-wcs="for: visible">
+  <input type="checkbox" data-wcs="checked#ro: .done">
+  <span data-wcs="textContent: .text; class.done: .done"></span>
+  <span data-wcs="textContent: .txet"></span>
+  <span data-wcs="textContent: .upper"></span>
+</template>`;
+    const diags = validateBindings(html, 'data-wcs');
+    const missing = diags.filter(d => d.code === WcsDiagnosticCode.BindingPathMissing);
+    // 打ち間違いと、元のリストのパス getter（getter が返した行には無い）だけが残る
+    expect(missing.map(d => html.slice(d.start, d.end))).toEqual(['.txet', '.upper']);
+    expect(missing[0].message).toContain('visible.*.txet');
   });
 
   it('for: に非配列パスを指定すると error を出す', () => {
@@ -1272,7 +1302,7 @@ export default { name: "a", count: 1 };
     const diags = validateBindings(html, 'data-wcs', 'wcs-state', 'ja');
     const unknown = diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
     expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['uc', 'rep']);
-    expect(unknown.every(d => d.severity === 'warning')).toBe(true);
+    expect(unknown.every(d => d.severity === 'error')).toBe(true);
     expect(unknown[0].message).toContain('4.0 で外れました');
     expect(unknown[0].message).toContain('"upper"');
     expect(unknown[1].message).toContain('"repeat"');

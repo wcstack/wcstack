@@ -202,8 +202,8 @@ export default {
 
 | 3.x | 4.0 | 実行時のメッセージ | 4.0 の lint |
 |---|---|---|---|
-| フィルタの旧名（`uc`・`fix` …） | ページの初期化で throw | `[wcs/filter-unknown] filter not found: uc.` に続けて `"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".`（#501） | `wcs/filter-unknown`（warning。書き換え先を示す） |
-| `substr(start, length)` | 同上 | `[wcs/filter-unknown] filter not found: substr.` に続けて `"substr" was removed in 4.0 — write slice(start, start + length) …` | `wcs/filter-unknown`（warning。`slice` の呼び出しを示す） |
+| フィルタの旧名（`uc`・`fix` …） | ページの初期化で throw | `[wcs/filter-unknown] filter not found: uc.` に続けて `"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".`（#501） | `wcs/filter-unknown`（error。書き換え先を示す） |
+| `substr(start, length)` | 同上 | `[wcs/filter-unknown] filter not found: substr.` に続けて `"substr" was removed in 4.0 — write slice(start, start + length) …` | `wcs/filter-unknown`（error。`slice` の呼び出しを示す） |
 | `$trackDependency` / `$untrackDependency` | 読んだ時点で throw（`diagnostics` があるとき） | `[wcs/name-alias] $trackDependency was removed: write $dependOn.`（#1701） | `wcs/name-alias`（error） |
 | `$updatedCallback` / `$streams` | 状態の読み込みで throw（`diagnostics` があるとき） | `[wcs/declaration-alias] $streams was removed: write $stream.`（#1601） | `wcs/declaration-alias`（error） |
 | `$scan` | 状態の読み込みで throw（`diagnostics` があるとき） | `$scan was removed (use $watch or $on)`（#1） | `wcs/scan-declaration-invalid`（error） |
@@ -212,7 +212,7 @@ export default {
 
 ボリューム（`<wcs-state mount=…>`）では、なくなった宣言キーと `$scan` は throw しません。そのボリュームは接ぎ木されず、理由が `console.error` に出ます（§3.5）。
 
-`wcs/filter-unknown` は、実行時には throw しますが lint では warning です。ページが実行時に自分のフィルタを登録できるためです。
+`wcs/filter-unknown` は、実行時と同じく lint でも error です。ページが自分のフィルタを足す公開 API は無いので、組み込みに無い名前は必ず state を止めます。（`@wcstack/lint` 4.0.0 と拡張 2.0.0 までは、ページが自分のフィルタを登録できるという理由で warning でした。）
 
 直し方: §1.4〜§1.6。
 
@@ -578,7 +578,7 @@ import { defineState } from "@wcstack/state/define";
 
 | コード | 報告するもの | 重大度 |
 |---|---|---|
-| `wcs/filter-unknown` | 3.2 のフィルタの旧名と `substr`。書き換え先を示す | warning（実行時は throw） |
+| `wcs/filter-unknown` | 3.2 のフィルタの旧名と `substr`。書き換え先を示す | error |
 | `wcs/name-alias` | `$trackDependency`・`$untrackDependency` | error |
 | `wcs/declaration-alias` | `$streams`・`$updatedCallback` | error |
 | `wcs/scan-declaration-invalid` | `$scan` | error |

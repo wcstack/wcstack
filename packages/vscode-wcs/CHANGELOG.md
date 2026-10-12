@@ -2,6 +2,12 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **getter の戻り値の下で `wcs/binding-path-missing` の偽陽性を出さない** — getter の `return` 式を読み、既知のリストから導いたリスト（`this.todos.filter(…)`・`toSorted`・`slice`・`[...this.items]`。`const` の別名・三項演算子・`||` / `??` を通しても）はそのリストの行の形を持つ。`for: visible` の行は報告ではなく検査の対象になる。`find` / `findLast` / `at` は行 1 つの形、`map(t => ({ … }))` はリテラルの形（`...t` があれば元の行も）、オブジェクトリテラルはそのフィールド（`summary.total`）。写すのはデータだけ — 元のリストのパス getter（`todos.*.upper`）は getter が返した行には無いので、今までどおり報告する。`wcstack` の README の Todo アプリが出していた 3 件の警告が消える。
+- **`wcs/filter-unknown` は error** — ランタイムは初期化で throw する。「ページが実行時に自前のフィルタを登録できる」として warning にしていたが、それをする公開 API は 4.0 にも 3.x にも無い。
+- **名前の無い `class:` / `attr:` は `wcs/binding-syntax`（error）** — `@wcstack/state` のパーサが `#122` で拒否するようになった（lint は同じパーサを通す）。要素の存在しないプロパティへ黙って書くだけの束縛だった。
+
 ## 2.0.0 — 2026-10-11
 
 `@wcstack/state` 4.0 のパーサと manifest（`@wcstack/state/parser`・`/manifest`）で検証する。3.x のページには当てはまらない規則なので、メジャーを上げた 2.0.0 として `@wcstack/state` 4.0.0 と同時に出す（R11）。3.x のプロジェクトは 1.21.x のまま。

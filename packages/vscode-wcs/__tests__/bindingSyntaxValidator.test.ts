@@ -23,6 +23,15 @@ describe("wcs/binding-syntax（正本パーサと同じ判定 — @wcstack/state
     }
   });
 
+  it("名前の無い class: / attr: を error で報告すること（#122 — 黙って何もしない束縛だった）", () => {
+    const html = `<div data-wcs="textContent: t; class: done; attr: url; class.on: y; className: c"></div>`;
+    const d = codes(html);
+    expect(d.map((x) => html.slice(x.start, x.end))).toEqual(["class: done", "attr: url"]);
+    expect(d.every((x) => x.code === "wcs/binding-syntax" && x.severity === "error")).toBe(true);
+    expect(d[0].message).toContain('"class:" needs a class name — "class.NAME:" toggles one class');
+    expect(d[1].message).toContain('"attr:" needs an attribute name');
+  });
+
   it("範囲は壊れた式だけを指し、同じ属性の他の式は報告しないこと", () => {
     const html = `<input data-wcs="title: t; value#ro#wo: x ; class.on: y">`;
     const d = codes(html);

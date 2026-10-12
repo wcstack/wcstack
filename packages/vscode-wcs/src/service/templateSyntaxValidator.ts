@@ -246,13 +246,14 @@ export function validateTemplateSyntax(
       const filterOffset = segmentStart + (segment.length - segment.trimStart().length);
       segmentStart += segment.length + 1;
       if (filterName && !filterNameSet.has(filterName)) {
-        // 4.0 で外れた名前（3.x の旧名・`substr`）も未知のフィルタ。文面だけ書き換え先を案内する
+        // 4.0 で外れた名前（3.x の旧名・`substr`）も未知のフィルタ。文面だけ書き換え先を案内する。
+        // error: ランタイムは throw する（bindingValidator の validateFilterUsage と同じ理由）
         diagnostics.push({
           code: WcsDiagnosticCode.FilterUnknown,
           start: item.exprStart + filterOffset,
           end: item.exprStart + filterOffset + filterName.length,
           message: removedFilterMessage(filterName, filterArgsOf(segment), msgs) ?? msgs.filterUnknown(filterName),
-          severity: "warning",
+          severity: "error",
         });
       }
     }

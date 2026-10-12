@@ -549,7 +549,7 @@ Multiple modifiers are comma-separated after a single `#`: `value#ro,init=none: 
 
 A modifier never changes the kind of binding: `radio#ro:` and `checkbox#ro:` stay radio / checkbox bindings. A modifier the binding does not use is ignored (`#direct` on a property binding, an unknown `#foo`); an unknown `key=value` modifier (`#foo=1`) throws.
 
-The parser rejects, with `[wcs/binding-syntax]`: a second `#` (write `value#ro,wo`, not `value#ro#wo`), a value after `else:` (write `else:`), modifiers or left-side filters on `for` / `if` / `elseif` / `else` / `...`, output filters on `for:` (`#121` — see [Loop](#loop-for)), a path segment `__proto__` or `prototype` (`#120` — refused in writes, `$resolve`, `$setAll` and reads such as `this.__proto__` too), and an unterminated quote in filter arguments.
+The parser rejects, with `[wcs/binding-syntax]`: a second `#` (write `value#ro,wo`, not `value#ro#wo`), a value after `else:` (write `else:`), modifiers or left-side filters on `for` / `if` / `elseif` / `else` / `...`, output filters on `for:` (`#121` — see [Loop](#loop-for)), `class:` and `attr:` without a name (`#122` — write `class.NAME:` / `attr.NAME:`; a bare `class:` would only set an element property named `class`, which does nothing — bind `className:` for the whole attribute), a path segment `__proto__` or `prototype` (`#120` — refused in writes, `$resolve`, `$setAll` and reads such as `this.__proto__` too), and an unterminated quote in filter arguments.
 
 ### Two-Way Binding
 
