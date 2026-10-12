@@ -371,7 +371,7 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 
 ## 安定性(Stability)
 
-パッケージのバージョンは **1.x** ですが、公開サーフェスは **安定(stable)** なコアと **発展中 / 実験的(evolving / experimental)** なエッジに分かれています。破壊的変更は実験的な側に集中しており、安定サーフェスは semver に従います。
+パッケージのバージョンは wcstack 全体と同じ（**4.x**。全パッケージを 1 つの版で公開します）ですが、公開サーフェスは **安定(stable)** なコアと **発展中 / 実験的(evolving / experimental)** なエッジに分かれています。破壊的変更は実験的な側に集中しており、安定サーフェスは semver に従います。
 
 | API グループ | エクスポート | 安定度 |
 |---|---|---|
@@ -382,7 +382,7 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 | **DOM レイヤ** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` | **Evolving / experimental** — 今すぐ使えるが、安定昇格までにシグネチャや要素ファクトリの形が変わりうる。 |
 | **開発モード** | `globalThis.__WCS_DEV__` と各警告コード | **Experimental** — 診断専用。警告の集合や文言はいつでも変わりうる。本番では一切動かない。 |
 
-**deprecation ポリシー。** **1.x** の系列内では、**安定**な API は後方互換を維持します: 非互換な変更は、導入の最低 1 マイナーリリース前に deprecation として告知します。**evolving / experimental** とマークされた API は、マイナーリリースで変わりうる(シグネチャ・型の形・警告文言)ので、現在の形に依存する場合は厳密なバージョンを pin してください。
+**deprecation ポリシー。** 同じメジャーバージョンの中では、**安定**な API は後方互換を維持します: 非互換な変更は、導入の最低 1 マイナーリリース前に deprecation として告知します。**evolving / experimental** とマークされた API は、マイナーリリースで変わりうる(シグネチャ・型の形・警告文言)ので、現在の形に依存する場合は厳密なバージョンを pin してください。
 
 ## 注意・制限
 

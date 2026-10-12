@@ -41,8 +41,8 @@ CDN (pinned): `https://esm.run/@wcstack/media-query@4.0.4/auto`
 ### 1. Dark-mode default for a theme
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/media-query/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

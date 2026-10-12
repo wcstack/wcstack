@@ -42,8 +42,8 @@ npm install @wcstack/timer
 `<wcs-timer>` が DOM に接続されると、自動的にインターバルタイマーを開始します。`tick` / `elapsed` / `running` を状態パスにバインドします。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

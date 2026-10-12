@@ -41,8 +41,8 @@ npm install @wcstack/eyedropper
 ### 1. A color-picker button
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/eyedropper/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

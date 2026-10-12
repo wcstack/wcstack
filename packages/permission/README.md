@@ -41,8 +41,8 @@ npm install @wcstack/permission
 ### 1. Watch a grant and gate the UI
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

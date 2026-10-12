@@ -47,8 +47,8 @@ npm install @wcstack/sse
 `<wcs-sse>` が DOM に接続され `url` が設定されると、自動的に `EventSource` を開きます。JSON ペイロードは自動パースされます。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

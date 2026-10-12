@@ -51,8 +51,8 @@ npm install @wcstack/picture-in-picture
 ### 1. A "pop out" button for a video player
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/picture-in-picture/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

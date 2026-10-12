@@ -47,8 +47,8 @@ npm install @wcstack/sse
 When `<wcs-sse>` is connected to the DOM with a `url`, it automatically opens an `EventSource`. JSON payloads are automatically parsed.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

@@ -50,8 +50,8 @@ When `url` changes, `<wcs-fetch>` automatically runs a new request.
 If another request is already in flight, it aborts the previous one.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

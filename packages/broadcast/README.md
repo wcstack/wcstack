@@ -49,8 +49,8 @@ npm install @wcstack/broadcast
 Drive a post from a DOM click (autoTrigger) or a command-token.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/broadcast/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-broadcast id="bc" name="room"></wcs-broadcast>
 

@@ -32,9 +32,9 @@ This guide describes **`@wcstack/state` 4.0** and the packages released with it.
 wcstack is buildless — load what you need from a CDN. The default is one tag per package, paying only for what the page uses:
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 ```
 
 Each `/auto` script registers its custom elements and does nothing else. No initialization call, no bootstrap. Tags activate when the browser parses them. The tags fetch in parallel (every `/auto` is self-contained), so multiple tags cost requests, not a waterfall.

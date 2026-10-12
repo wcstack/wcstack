@@ -39,8 +39,8 @@ npm install @wcstack/network
 ### 1. 回線品質に応じた画像品質の切り替え
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

@@ -48,8 +48,8 @@ npm install @wcstack/websocket
 `<wcs-ws>` が DOM に接続され `url` が設定されると、自動的に WebSocket 接続を開きます。JSON メッセージは自動パースされます。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

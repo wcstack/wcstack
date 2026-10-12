@@ -136,8 +136,8 @@ By default, the trigger attribute is `data-uploadtarget`.
 ### 4. With `@wcstack/state`
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

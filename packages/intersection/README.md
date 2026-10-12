@@ -53,8 +53,8 @@ npm install @wcstack/intersection
 `visible` flips to `true` the first time the target intersects and **stays** `true`. Bind the image `src` to it and the image only loads once it scrolls into view.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/intersection/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

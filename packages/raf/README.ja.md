@@ -40,8 +40,8 @@ npm install @wcstack/raf
 `<wcs-raf>` は DOM に接続されると自動でフレームループを開始します。`tick` / `dt` をバインドするか、event token でフレームを受けて 1 フレーム 1 ステップを回します:
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

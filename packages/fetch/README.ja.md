@@ -50,8 +50,8 @@ npm install @wcstack/fetch
 既にリクエストが進行中の場合、前のリクエストは abort されます。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

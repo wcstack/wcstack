@@ -44,8 +44,8 @@ npm install @wcstack/ambient-light-sensor
 `start`コマンドを発火する必要があります:
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/ambient-light-sensor/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

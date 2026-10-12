@@ -48,8 +48,8 @@ npm install @wcstack/websocket
 When `<wcs-ws>` is connected to the DOM with a `url`, it automatically opens a WebSocket connection. JSON messages are automatically parsed.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

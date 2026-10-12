@@ -31,8 +31,8 @@ npm install @wcstack/screen-orientation
 ### 1. 向きをライブ表示
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/screen-orientation/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

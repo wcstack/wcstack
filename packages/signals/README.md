@@ -373,13 +373,13 @@ A step-by-step guide (esbuild / tsc / Vite setups, a verifying `.tsx` example, t
 Both entries ship as production code-split bundles that import **one shared reactive-core chunk** — but that chunk is imported by **relative path** (`./core-*.esm.js`), so whether a buildless page ends up with one reactive instance depends on how the files are served.
 
 - **Map the single `/dom` entry (the recommended CDN form).** `@wcstack/signals/dom` re-exports the entire headless core (`signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `resource` / `streamResource` / `bindNode` / `nodeSource`) alongside the DOM helpers, so one specifier covers everything and the single instance is structural — nothing depends on chunk sharing. The signals demos in this repo all import from this one entry.
-- **Mapping both specifiers only works from a path-preserving origin.** `.` and `./dom` keep sharing the core only if their relative `./core-*.esm.js` import resolves to the **same URL** — i.e. the whole `dist/` is served as files (self-hosted, or version-pinned path URLs such as `https://cdn.jsdelivr.net/npm/@wcstack/signals@1.25.0/dist/index.esm.js` + `…/dist/dom.esm.js`, both pinned to the same version). A *transforming* ESM endpoint like `https://esm.run/@wcstack/signals` bundles each entry into its own self-contained file, so mapping both esm.run entries ships **two** reactive cores: a signal created through one is invisible to an effect from the other.
+- **Mapping both specifiers only works from a path-preserving origin.** `.` and `./dom` keep sharing the core only if their relative `./core-*.esm.js` import resolves to the **same URL** — i.e. the whole `dist/` is served as files (self-hosted, or version-pinned path URLs such as `https://cdn.jsdelivr.net/npm/@wcstack/signals@4.0.4/dist/index.esm.js` + `…/dist/dom.esm.js`, both pinned to the same version). A *transforming* ESM endpoint like `https://esm.run/@wcstack/signals` bundles each entry into its own self-contained file, so mapping both esm.run entries ships **two** reactive cores: a signal created through one is invisible to an effect from the other.
 
 Bundler users dedupe via the module graph and may use either entry.
 
 ## Stability
 
-The package version is **1.x**, but the public surface is split into a **stable** core and an **evolving / experimental** edge. The breaking changes are concentrated on the experimental side; the stable surface follows semver.
+The package is versioned with the rest of wcstack (**4.x**: every package is released with one version), but the public surface is split into a **stable** core and an **evolving / experimental** edge. The breaking changes are concentrated on the experimental side; the stable surface follows semver.
 
 | API group | Exports | Stability |
 |---|---|---|
@@ -390,7 +390,7 @@ The package version is **1.x**, but the public surface is split into a **stable*
 | **DOM layer** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` | **Evolving / experimental** — usable today; signatures and the element factory shape may adjust before they are promoted to stable. |
 | **Development mode** | `globalThis.__WCS_DEV__` + the warning codes | **Experimental** — diagnostics only; the set of warnings and their wording may change at any time. It never runs in production. |
 
-**Deprecation policy.** Within the **1.x** line, the **stable** APIs keep backward compatibility: any incompatible change is announced as a deprecation at least one minor release before it lands. APIs marked **evolving / experimental** may change in a minor release (signatures, type shapes, or warning wording) — pin an exact version if you depend on their current shape.
+**Deprecation policy.** Within a major version, the **stable** APIs keep backward compatibility: any incompatible change is announced as a deprecation at least one minor release before it lands. APIs marked **evolving / experimental** may change in a minor release (signatures, type shapes, or warning wording) — pin an exact version if you depend on their current shape.
 
 ## Notes & limitations
 
