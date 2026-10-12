@@ -1129,3 +1129,15 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - **`#init=element` を付け忘れたアクセサペア**（`<wcs-storage data-wcs="value: savedCart">`）は、再読み込みでカートを空にする（getter の `[]` が先に保存される。実測）。`wcs/storage-seed-clobber` はデータのスロットだけを見るので、lint は報告しない。`manual` でない `<wcs-storage>` の `value` を `#init` なしで getter に束ねた形を報告するのが候補（チュートリアルのステップ 11 と 12 は、今は「検査器に見えない」と書いている）。
   - **`<wcs-fetch>` の `body:` は使い捨て**: `body` は `fetch()` の後に `null` に戻り、束ねたパスの下への書き込み（`value: newUser.name`）では当て直されない。fetch の README §4 の POST の例は、2 回目の送信で本文が空になる（実測。1 回目は同じオブジェクトの参照で届く）。送信のハンドラで本文の新しいオブジェクトを代入すれば、何度でも届く（実測。束縛を書く順によらない）。README の例を直すか、`body` のリセットを見直すかは未決。
   - npm の `next` は 4.0.0 のまま（付け替えは 2 要素認証が要るので、ユーザーの端末で行う）。
+
+### 4.0.3 の公開（2026-10-12）
+
+- 中身: 4.0.2 の記録に残した 2 件と、LP のチュートリアル Part 3 の調査で見つけた 1 件を、PR #442（merge commit 80085992）で直した。`wcs/storage-seed-clobber` は、`#init=element` なしで `<wcs-storage>` に束ねたアクセサペア（getter と setter）も報告する（setter の無い getter は保存専用の設計がありうるので対象外。`PathCandidate.settable`）。`wcs/input-nested-write` は `<wcs-fetch>` の `body` も対象にする（`manual` でも。`body` は使い捨てで、直し方は「要求を始めるハンドラで新しいオブジェクトを作る」）。fetch の README §4 の POST の例をその形に直し、実物の state で両方の形を固定する統合テストを足した（fetch に `@wcstack/state` の `file:../state` の devDependency）。`wcs/base-href-missing` と `wcs/script-order` は版を付けた URL（`@wcstack/router@4/auto`・jsDelivr の `dist/auto.min.js`・`dist/split/auto.js`）と一括バンドル `wcstack/auto` を認める（バンドルでは `<wcs-router>` のあるページでだけ `<base href>` を求める）。本番の書き方でだけ黙っていた。runtime は 4.0.1 から変わらない。
+- 準備: PR #443 で CHANGELOG を `[4.0.3] — 2026-10-12` に締め、CDN の固定 17 か所を 4.0.3 にした。
+- main で `release`（patch、run 38249397898）。49 パッケージが npm の `latest` で 4.0.3、来歴証明も 49/49、タグ `v4.0.3`、GitHub Release（`sri.json` 付き）、版を上げた commit は 851d0c36。SRI は 44/44 が `sri.json`・タグの dist・jsDelivr で一致し、固定 URL（7 種）が 200。
+- 公開後の作業（同日）:
+  - PR #444（merge commit ff1f5291）: ゲートの基準値を 4.0.3 の dist で取り直した（版の文字列の数バイトだけ。カップリングは基準値どおり）。CLAUDE.md / AGENTS.md の版、拡張の 2.0.3。
+  - VS Code 拡張 2.0.3: ff1f5291 で `npm run package` した vsix（vscode-wcs のテスト 1,221 件）を Marketplace に公開した。タグ `vscode-wcs-v2.0.3`（ff1f5291）。
+  - wcstack-skill: PR #36 で版の印と CDN の固定を 4.0.3 にし、「アクセサペアは lint に見えない」の記述を外し、fetch の `body` の直し方を具体的にした。マージしてタグ `v4.0.3`。
+  - LP: チュートリアル Part 3（13-router〜16-publish、日英）と、Part 2 のステップ 11・12 の 4.0.3 への追随、版の参照、llms の作り直し（777699f）。読者のファイル（`app/`、`<base href="/">`）から、サイトの中のフォルダを指す base に差し替えたデモ（`shop/`）を build-tutorial.mjs が書く。デモと読者のファイルは公開版の lint 4.0.3 で 0 件、テストは公開版 4.0.3＋vitest 5＋happy-dom 21 で 5 件通過、本文の主張は Chromium で確かめた。
+- 書く中で見つけたこと（直していない）: `<wcs-router>` は outlet を**自分のすぐ次の兄弟要素**としてしか探さず、無ければ自分の直後に作る（`Router.ts` の `_getOutlet`）。router をページの上の方に置き、`<wcs-outlet>` を `<main>` の中に置くと、ページはヘッダーの上に描かれ、`<main>` の outlet は空のまま、何も報告されない。チュートリアルは router を outlet の直前（`<main>` の中）に置き、`wcs-router { display: contents; }` で格子に場所を取らせない形にし、この間違いを「よくある間違い」に書いた。lint で「router の直後に outlet が無いのに、別の場所に `<wcs-outlet>` がある」を報告するか、router が文書の中の自分用の outlet を探すかは未決。
