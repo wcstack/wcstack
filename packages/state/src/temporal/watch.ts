@@ -129,6 +129,15 @@ export class WatchRuntime {
   active = false;
   /** Landings of the current batch: watch → row → hit. */
   private hits = new Map<Watch, Map<StateRow | null, Hit>>();
+  /**
+   * What elements wrote to a watched data path before the watches were active — the value an
+   * element already had when its binding attached (an open `<wcs-sse>`, the router's first params):
+   * [watch, row, the value before, the value the element wrote]. Whether that value is
+   * there before or after the bindings attach depends on how fast the page loaded, so activate()
+   * fires it once, when the path still holds it (docs/seam-apps.md: state-collab-board, router-admin).
+   * A write from code before then (`$connectedCallback`) fires nothing, as before.
+   */
+  private early: [Watch, StateRow | null, unknown, unknown][] = [];
   /** The chain depth of a write made now: 0, or one more than what fired the running handler (or restart). */
   depth = 0;
   /**
@@ -150,6 +159,8 @@ export class WatchRuntime {
   activate(): void {
     const engine = this.engine;
     this.hits.clear();
+    const early = this.early;
+    this.early = [];
     for (const w of this.watches) {
       w.getter = w.p.getter !== null || w.p.underGetter;
       w.last = new WeakMap();
@@ -166,6 +177,11 @@ export class WatchRuntime {
       });
     }
     this.active = true;
+    // what elements brought before now, still there: fired once, as the writes of a batch
+    for (const [w, row, before, value] of early) {
+      if ((row === null || row.alive) && Object.is(engine.readUntracked(w.p, row), value)) this.hit(w, row, before, true);
+    }
+    if (this.hits.size > 0) engine.schedule();
   }
 
   /** What a watch reads before the writes (its `prev`): what throws is reported, the others go on. */
@@ -181,6 +197,7 @@ export class WatchRuntime {
   deactivate(): void {
     this.active = false;
     this.hits.clear();
+    this.early = [];
   }
 
   /** Calls fn for every row at p.depth, creating the lists on the way (they then stay synced). */
@@ -205,8 +222,12 @@ export class WatchRuntime {
     }
   }
 
-  written(p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean): void {
-    if (!this.active) return;
+  written(p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean, element?: boolean): void {
+    if (!this.active) {
+      // an element's write to a watched data path itself, before the watches are active (see `early`)
+      if (element) for (const w of this.watches) if (w.p === p) this.early.push([w, row, old, value]);
+      return;
+    }
     (this.changed ??= new Set()).add(p);
     for (const w of this.watches) {
       const wp = w.p;

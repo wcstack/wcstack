@@ -68,8 +68,10 @@ function missing(engine: Engine, p: Pattern): { seg: string; names: string[] } |
   for (let q: Pattern | null = p; q !== null; q = q.parent) chain.unshift(q);
   let v: any = engine.target;
   const named = (q: Pattern | null): Pattern | null | undefined => (q === null ? null : wildcardForm(engine, q));
+  // a getter anywhere on the path answers it — also one declared deeper than a segment the data
+  // lacks (\`get "box.label"()\` with no \`box\` key: it renders and updates — docs/seam-apps.md)
+  if (chain.some((q) => named(q)?.getter != null)) return null;
   for (const q of chain) {
-    if (named(q)?.getter != null) return null;
     if (v === null || typeof v !== "object") return null;
     if (q.last === "*") {
       if (!Array.isArray(v) || v.length === 0) return null;

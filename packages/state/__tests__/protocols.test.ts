@@ -55,13 +55,32 @@ function installRunner(opts: { naming?: "manual" | "auto"; limit?: number; defer
 }
 
 describe("transition-runner の受け口", () => {
-  it("描画を変える書き込みは、アービターの run を 1 回通って反映される", async () => {
-    const { root, el } = await host(`<wcs-state></wcs-state><p>{{ n }}</p>`, { n: 1 });
+  it("一覧の行を変える書き込みは、アービターの run を 1 回通って反映される", async () => {
+    const { root, el } = await host(`<wcs-state></wcs-state><ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul>`, { items: ["a"] });
+    const { calls } = installRunner();
+    el.createState("writable", (s: any) => { s.items = ["a", "b"]; });
+    await flush();
+    expect(calls).toEqual([{ source: "state", types: undefined }]);
+    expect(root.querySelectorAll("li").length).toBe(2);
+  });
+
+  it("if: の分岐を変える書き込みも run を通る", async () => {
+    const { root, el } = await host(`<wcs-state></wcs-state><template data-wcs="if: on"><b>on</b></template>`, { on: false });
+    const { calls } = installRunner();
+    el.createState("writable", (s: any) => { s.on = true; });
+    await flush();
+    expect(calls.length).toBe(1);
+    expect(root.querySelector("b")).not.toBeNull();
+  });
+
+  it("値だけを変える書き込み（テキスト・プロパティ）は run を通さずその場で反映する — 打鍵ごとの遷移でクリックが失われた（docs/seam-apps.md、router-admin）", async () => {
+    const { root, el } = await host(`<wcs-state></wcs-state><p>{{ n }}</p><input data-wcs="value: n">`, { n: 1 });
     const { calls } = installRunner();
     el.createState("writable", (s: any) => { s.n = 2; });
     await flush();
-    expect(calls).toEqual([{ source: "state", types: undefined }]);
+    expect(calls).toEqual([]);
     expect(root.querySelector("p")!.textContent).toBe("2");
+    expect((root.querySelector("input") as HTMLInputElement).value).toBe("2");
   });
 
   it("バインドの無いパスへの書き込みでは run を呼ばない（空の遷移を作らない）", async () => {
@@ -73,16 +92,17 @@ describe("transition-runner の受け口", () => {
   });
 
   it("run が反映を後回しにしても、反映はちょうど 1 回で、その間の書き込みも最新の値で入る", async () => {
-    const { root, el } = await host(`<wcs-state></wcs-state><p>{{ n }}</p>`, { n: 1 });
+    const { root, el } = await host(`<wcs-state></wcs-state><ul><template data-wcs="for: items"><li>{{ . }}</li></template></ul>`, { items: ["a"] });
+    const texts = () => Array.from(root.querySelectorAll("li")).map((li) => li.textContent);
     const { calls, runDeferred } = installRunner({ defer: true });
-    el.createState("writable", (s: any) => { s.n = 2; });
+    el.createState("writable", (s: any) => { s.items = ["a", "b"]; });
     await flush();
-    expect(root.querySelector("p")!.textContent).toBe("1");
-    el.createState("writable", (s: any) => { s.n = 3; });
+    expect(texts()).toEqual(["a"]);
+    el.createState("writable", (s: any) => { s.items = ["a", "b", "c"]; });
     await flush();
     expect(calls.length).toBe(1);
     runDeferred();
-    expect(root.querySelector("p")!.textContent).toBe("3");
+    expect(texts()).toEqual(["a", "b", "c"]);
     await flush();
     expect(calls.length).toBe(1);
   });

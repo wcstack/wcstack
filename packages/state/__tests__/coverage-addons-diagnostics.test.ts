@@ -52,6 +52,20 @@ describe("束ねたパスが状態に無い（wcs/binding-path-missing）", () =
     ]);
   });
 
+  it("データに無い区切りの先で宣言した getter（get \"box.label\"）は警告しない — 描画も更新もされる（docs/seam-apps.md、router-admin）", async () => {
+    let root!: ShadowRoot;
+    const got = await warnings(async () => {
+      ({ root } = await page(`<p>{{ box.label }}</p><p>{{ box.nope }}</p>`, {
+        count: 1,
+        get "box.label"() { return `count is ${(this as any).count}`; },
+      }));
+    });
+    expect(root.querySelector("p")!.textContent).toBe("count is 1");
+    // 同じ区切りの下でも、getter の無いパスは今までどおり報告する
+    expect(got).toHaveLength(1);
+    expect(got[0]).toContain('Bound path "box.nope" does not resolve on the state tree: "box" is not declared.');
+  });
+
   it("後から束ねた部分木（binder プロトコル）の新しいパスだけを確かめる", async () => {
     let root!: ShadowRoot;
     const first = await warnings(async () => { ({ root } = await page(`<p>{{ user.name }}</p>`, { user: { name: "a", age: 1 } })); });

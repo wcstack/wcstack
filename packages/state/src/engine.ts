@@ -777,7 +777,7 @@ export class Engine implements ReconcileHooks {
       try {
         this.callAt(p.setter, row, [value]);
       } finally {
-        this.landed(p, row, undefined, undefined, false);
+        this.landed(p, row, undefined, undefined, false, element);
       }
       return;
     }
@@ -802,7 +802,7 @@ export class Engine implements ReconcileHooks {
     this.syncListsUnder(p, row);
     if (row !== null) this.mirror(row, p, old, value);
     if (p.depth === 0) this.rekeyEqUnder(p, old, value);
-    this.landed(p, row, old, value, true);
+    this.landed(p, row, old, value, true, element);
   }
 
   /** The lists over `l`'s array now (`l` among them), none of a removed row. */
@@ -926,8 +926,8 @@ export class Engine implements ReconcileHooks {
   }
 
   /** A write landed at (p, row): the add-ons hear of it, then its dependents. */
-  private landed(p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean): void {
-    hooks.written?.(this, p, row, old, value, direct);
+  private landed(p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean, element?: boolean): void {
+    hooks.written?.(this, p, row, old, value, direct, element);
     this.changed(p, row);
   }
 
@@ -1277,10 +1277,13 @@ export class Engine implements ReconcileHooks {
         const q = this.queue;
         this.dirtyLists = [];
         this.queue = [];
-        // the DOM changes of this pass go to the page's view-transition arbiter, if any
-        // (transition-runner protocol): with none, they are applied right here. Queued
-        // entries stay marked until applied, so a write meanwhile folds into them
-        const pending = runTransition("state", () => {
+        // a pass that changes structure — a list's rows, an `if` branch — goes to the page's
+        // view-transition arbiter, if any (transition-runner protocol); one that only updates
+        // values is applied right here, as with no arbiter (a value change is CSS transitions'
+        // job, and a transition per keystroke left the page unclickable — docs/seam-apps.md,
+        // router-admin). Queued entries stay marked until applied, so a write meanwhile folds
+        // into them
+        const apply = (): void => {
           // list views first (they build rows), then bindings
           for (const l of lists) {
             l.queued = false;
@@ -1313,7 +1316,8 @@ export class Engine implements ReconcileHooks {
             this.report();
             if (this.scheduled) this.carried = chain + 1;
           }
-        });
+        };
+        const pending = lists.length > 0 || q.some((b) => b.chain !== null) ? runTransition("state", apply) : apply();
         if (pending !== undefined) pending.then(undefined, (e) => console.error(e));
       }
     } finally {

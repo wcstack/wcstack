@@ -2,12 +2,13 @@
  * fixes-seam-apps.test.ts — 継ぎ目アプリ（docs/seam-apps.ja.md）で見つかった不具合の修正。
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
-import { bootstrapState, getBindingsReady, installFormats } from "../src/index";
+import { bootstrapState, getBindingsReady, installFeatures, installFormats, temporal } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 let seq = 0;
 
 beforeAll(() => {
+  installFeatures([temporal]);
   installFormats();
   bootstrapState();
 });
@@ -108,5 +109,68 @@ describe("router-auth: getter の if: は、閉じる更新で中身のバイン
     });
     await write((s) => { s["obj.n"] = 2000; });
     expect(root.querySelector(".v")?.textContent).toBe("2,000");
+  });
+});
+
+/** A wc-bindable element whose output is already set when it connects (an open <wcs-sse>, a router). */
+let tagSeq = 0;
+function connectedTag(initial: unknown): string {
+  const tag = `seam-conn-${tagSeq++}`;
+  customElements.define(tag, class extends HTMLElement {
+    static wcBindable = { protocol: "wc-bindable", version: 1, properties: [{ name: "connected", event: `${tag}:connected-changed` }] };
+    connected: unknown = undefined;
+    connectedCallback() {
+      this.connected = initial;
+      this.dispatchEvent(new CustomEvent(`${tag}:connected-changed`, { detail: initial }));
+    }
+  });
+  return tag;
+}
+
+describe("state-collab-board / router-admin: 要素が bind のときに既に持っていた値でも $watch が 1 回動く", () => {
+  it("bind で要素から引いた値（シードと違う）で、起動後に $watch が (cur, シード) で 1 回呼ばれる", async () => {
+    const tag = connectedTag(true);
+    const calls: unknown[][] = [];
+    await page(`<${tag} data-wcs="connected: connected"></${tag}>`, {
+      connected: false,
+      $watch: { connected(cur: unknown, prev: unknown) { calls.push([cur, prev]); } },
+    });
+    expect(calls).toEqual([[true, false]]);
+  });
+
+  it("$connectedCallback が同じパスを書き換えたら呼ばない（コードの書き込みは今までどおり動かさない）", async () => {
+    const tag = connectedTag(true);
+    const calls: unknown[] = [];
+    await page(`<${tag} data-wcs="connected: connected"></${tag}>`, {
+      connected: false,
+      $connectedCallback(this: any) { this.connected = "overridden"; },
+      $watch: { connected(cur: unknown) { calls.push(cur); } },
+    });
+    expect(calls).toEqual([]);
+  });
+
+  it("要素の値がシードと同じなら呼ばない。起動後の変化は今までどおり 1 回ずつ", async () => {
+    const tag = connectedTag(false);
+    const calls: unknown[] = [];
+    const { root } = await page(`<${tag} data-wcs="connected: connected"></${tag}>`, {
+      connected: false,
+      $watch: { connected(cur: unknown) { calls.push(cur); } },
+    });
+    expect(calls).toEqual([]);
+    const el = root.querySelector(tag)!;
+    el.dispatchEvent(new CustomEvent(`${tag}:connected-changed`, { detail: true }));
+    await flush();
+    await flush();
+    expect(calls).toEqual([true]);
+  });
+
+  it("$connectedCallback での書き込みは、要素の無いパスでも動かさない（従来どおり）", async () => {
+    const calls: unknown[] = [];
+    await page(`<p>{{ n }}</p>`, {
+      n: 0,
+      $connectedCallback(this: any) { this.n = 5; },
+      $watch: { n(cur: unknown) { calls.push(cur); } },
+    });
+    expect(calls).toEqual([]);
   });
 });

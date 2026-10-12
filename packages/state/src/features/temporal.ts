@@ -62,7 +62,7 @@ export const temporal: Feature = {
   install(): void {
     hooks.declare = chain(hooks.declare, declare);
     hooks.element = chain(hooks.element, element);
-    hooks.written = chain(hooks.written, (engine, p, row, old, value, direct) => live(engine)?.watch.written(p, row, old, value, direct));
+    hooks.written = chain(hooks.written, (engine, p, row, old, value, direct, element) => live(engine)?.watch.written(p, row, old, value, direct, element));
     hooks.getterReached = chain(hooks.getterReached, (engine, g, row) => {
       const rt = live(engine);
       if (rt === undefined) return;

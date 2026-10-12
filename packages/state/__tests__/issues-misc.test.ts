@@ -259,7 +259,7 @@ describe("#353 描画の連鎖の上限に掛からない形の無限ループ�
     });
   });
 
-  it("形 2b: 形 2 の後に mode を 1 回書いて循環を始める（state-next の $watch は読み込み時の要素からの初期同期を見ないため）", async () => {
+  it("形 2b: 形 2 の後に mode を 1 回書いても循環を打ち切る（$watch は読み込み時の要素の値でも動くので循環は読み込みで始まり、書き込みでもう一度始まる — docs/seam-apps.md）", async () => {
     await listCase("#353 形 2b（$watch を挟む・書き込みで開始）", defineOut({ initial: "distinct", emit: "none" }), "x", {
       x: "",
       $watch: { x(this: any, v: unknown) { this.mode = v; } },
