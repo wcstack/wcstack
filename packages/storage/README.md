@@ -173,7 +173,7 @@ Use `type="session"` for sessionStorage:
 </wcs-state>
 
 <wcs-storage key="session-data" type="session"
-  data-wcs="value: sessionData">
+  data-wcs="value#init=element: sessionData">
 </wcs-storage>
 
 <p data-wcs="textContent: sessionData"></p>
@@ -510,7 +510,7 @@ interface WcsStorageValues<T = unknown> extends WcsStorageCoreValues<T> {
 - `value` is bound to a state path, reflected in the UI
 - User interactions update state, which auto-saves back to storage
 - State survives page reloads
-- The bound slot starts as `undefined` (Quick Start 5), so a reload never overwrites what was saved
+- The binding takes `#init=element` and the slot starts as `null` (Quick Start 5), so a reload never overwrites what was saved
 
 Persistence looks just like any other state update.
 

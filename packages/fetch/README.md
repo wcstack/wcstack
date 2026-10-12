@@ -565,12 +565,23 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 
 ### `<wcs-fetch-header>`
 
-Defines a request header. Place it as a child of `<wcs-fetch>`.
+Defines a request header. Place it as a child of `<wcs-fetch>`. It is read when a request starts.
 
-| Attribute | Type | Description |
+| Attribute / property | Type | Description |
 |-----------|------|-------------|
 | `name` | `string` | Header name |
-| `value` | `string` | Header value |
+| `value` | `string` | Header value. Without a `value` attribute the header is not sent (an empty `value=""` is) |
+
+`name` and `value` are also properties, reflected to the attributes (`null` removes the attribute, `undefined` restores the one in the markup), so a header can come from state:
+
+```html
+<wcs-fetch url="/api/me" data-wcs="...: me">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<!-- get authHeader() { return this.token ? `Bearer ${this.token}` : null; } -->
+```
+
+While `authHeader` is `null` the request goes out with no `Authorization` header at all. **A request that needs state — a token, an id — should also get its `url` from state** (`data-wcs="url: meUrl"` with a getter that is `null` until the token is there): the I/O packages load before `@wcstack/state`, so a `<wcs-fetch>` with a literal `url` fetches on a page load before state has set the header — inside route content too.
 
 ### `<wcs-fetch-body>`
 

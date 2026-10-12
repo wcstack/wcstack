@@ -39,7 +39,7 @@ The tutorial was different on each count, and that is what this document turns i
 
 1. **Brief.** Write the app's story, its steps, the seams each step crosses, the life events to go through, the mistakes to try, and the server API it needs (the backend is not under test, so its contract is fixed up front). The candidates below are briefs in short form.
 2. **Build from the documents.** A first-time author builds it — in practice a subagent given the brief and told which files it may read (the public documents above) and which it may not (`packages/*/src`, the tests, `docs/` design notes). It runs the app against the published packages on the CDN, as a user would, and keeps the friction log.
-3. **Verify intent.** Open the app in a real browser and go through the life events; write them as an e2e spec that asserts intent (the checklist below). Run `wcs-validate` over the page.
+3. **Verify intent.** Open the app in a real browser and go through the life events; write them as an e2e spec that asserts intent (the checklist below). Run `wcs-validate` over the page. **Reproduce every claim of the friction log yourself** before classifying it — a first-time author's diagnosis can be wrong in either direction (in `router-auth`, "even an `if:` on the same path does not shield its content" was wider than the defect: only an `if:` over a getter did not).
 4. **Make the mistakes.** Go through the mistake list; record which ones are loud and which are silent.
 5. **Classify.** Every entry of the friction log and the mistake pass is one of:
    - **runtime defect** — a package does the wrong thing;
@@ -80,7 +80,25 @@ Seam apps are listed in their own table in [examples/README.md](../examples/READ
 
 | App | Seams | Life events | Status |
 |---|---|---|---|
-| `router-auth` — a members area: log in, protected pages, an order history from an API that needs a token | router guards × state, `<wcs-fetch>` 401 × navigation, `<wcs-storage>` × the guard, guard loaders (`data`) | deep link while logged out → log in → back to that page; reload while logged in; the session expiring mid-use; Back after logging out; logging out in another tab | planned |
+| `router-auth` — a members area: log in, protected pages, an order history from an API that needs a token | router guards × state, `<wcs-fetch>` 401 × navigation, `<wcs-storage>` × the guard, guard loaders (`data`) | deep link while logged out → log in → back to that page; reload while logged in; the session expiring mid-use; Back after logging out; logging out in another tab | built (2026-10-13), findings below |
 | `router-admin` — an admin console: nested layouts, a list with server-side paging and sorting in the URL, edit forms with server validation, view transitions, two languages | `<wcs-layout>` × state, query ⇄ state ⇄ fetch, two-way form bindings × fetch `body`, `<wcs-view-transition>` × router × lists, locale in the basename | deep link to page 3 sorted by name; edit, save, save again; a 422 with field errors; reload on an edit page; Back from a detail | planned |
 | `state-collab-board` — a shared board: changes from others arrive over SSE, yours are applied at once and rolled back if the server refuses | `<wcs-sse>` × state lists, `<wcs-fetch>` × optimistic updates, `<wcs-network>` × state, reconnect × resync | two browsers; a refused change; going offline and back; the server restarting | planned |
 | `signals-shop` — the tutorial's shop on `@wcstack/signals` | signals × router, signals × `<wcs-fetch>` / `<wcs-storage>` through the wc-bindable bridge | the tutorial's own (reload, deep link, Back, a second tab) | planned |
+
+### router-auth (2026-10-13)
+
+The first-time author (a subagent, public documents only) logged 23 frictions; all seven life events passed in the end, three of them only after a workaround. Reproduced and classified:
+
+| Kind | Finding | Outcome |
+|---|---|---|
+| runtime defect | state: an `if:` over a getter applied its content with the value that closed it (filters threw) | fixed |
+| runtime defect | router: a guard redirect pushed a history entry — Back returned to the guarded URL and was redirected again | fixed (replace) |
+| runtime defect | router: a guard redirect on landing reloaded the document (it ran before the navigate listener existed) | fixed |
+| runtime defect | router: a `<wcs-guard-handler>` without `guard=""` left the landing route unguarded (later navigations were guarded) | fixed — decision: a handler enables the guard |
+| runtime defect | router: a new route's content was bound with the previous route's params | fixed — decision: outputs before the content, `path` after |
+| runtime defect | fetch: `<wcs-fetch-header>` had no `value` property; `value:` sent an empty header | fixed |
+| design question | router: every designed redirect logged a warning (with a double period); no limit on guards redirecting each other | decision: no log; stop after 10 in a row with an error |
+| lint gap | `wcs/storage-seed-clobber` missed a seed with content, and was a warning (the skill's `--errors-only` gate passed it) | fixed — decision: any literal seed, as an error |
+| document gap | where a guard reads the session, that its module runs once, `toPath` without the query, `navigate()` rejecting on a redirect, a header from state, the storage README's sessionStorage example and `undefined` / `null` contradiction | fixed |
+| lint gap | an `$on` handler written with `this`; `onsubmit:` without `#prevent` (with the router, the native GET puts the password in the URL) | open |
+| design question | re-entering a route re-fires its `<wcs-fetch>` with the previous `url` before state writes the new one | open |
