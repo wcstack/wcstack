@@ -883,6 +883,10 @@ var SENTENCES = {
     /* ForNoFilters */
   ]: (t) => `"${t}": "for:" takes no filters \u2014 a row is "<path>.<index>", so the rows of a filtered list would name other elements. Declare a getter that returns the filtered list and loop over it ("for: <getter>").`,
   [
+    122
+    /* NamespaceNeedsName */
+  ]: (t, ns) => ns === "class" ? `"${t}": "class:" needs a class name \u2014 "class.NAME:" toggles one class (a bare "class:" would set an element property named "class", which does nothing). To set the whole class attribute, bind "className:".` : `"${t}": "attr:" needs an attribute name \u2014 "attr.NAME:" sets one attribute (a bare "attr:" would set an element property named "attr", which does nothing).`,
+  [
     119
     /* EmptySegment */
   ]: (t) => `"${t}": the right side of a binding must name a state path \u2014 write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are the loop-relative shorthand).`,
@@ -1145,6 +1149,9 @@ function parseBindTextsForElement(bindText) {
         ...stateResult2,
         bindingType: keyword === SPREAD_PROP ? "spread" : keyword
       };
+    }
+    if (keyword === CLASS_NAMESPACE || keyword === ATTR_NAMESPACE) {
+      raise(122, [bindText2, keyword]);
     }
     const stateResult = parseStatePart(statePart);
     const propResult = parsePropPart(propPart);
@@ -2443,6 +2450,7 @@ function analyzeStatePaths(scriptContent) {
     }
   }
   collectRowShapesFromAssignments(scriptContent, paths);
+  collectGetterResultShapes(topLevelProps, effectiveDescriptors, paths);
   return paths;
 }
 function specFromRecursionValue(prop) {
@@ -2825,6 +2833,284 @@ function pushRowFieldPaths(path, prop, paths, depth) {
       pushRowFieldPaths(`${path}.${child.name}`, child, paths, depth + 1);
     }
   }
+}
+var ROW_PRESERVING_METHODS = /* @__PURE__ */ new Set([
+  "filter",
+  "toSorted",
+  "toReversed",
+  "slice",
+  "toSpliced",
+  "concat",
+  "with",
+  "sort",
+  "reverse"
+]);
+var ROW_PICKING_METHODS = /* @__PURE__ */ new Set(["find", "findLast", "at"]);
+var MAX_GETTER_SHAPE_PASSES = 4;
+function collectGetterResultShapes(props, effective, paths) {
+  const getters = /* @__PURE__ */ new Map();
+  for (const prop of props) {
+    if (prop.kind !== "getter" || prop.accessor !== "get" || prop.value === void 0) continue;
+    if (prop.name.startsWith("$") || hasRecursionWildcard(prop.name) || effective.get(prop.name) === "data") continue;
+    getters.set(prop.name, prop);
+  }
+  for (let pass = 0; pass < MAX_GETTER_SHAPE_PASSES; pass++) {
+    const before = paths.length;
+    for (const [name, prop] of getters) {
+      const shape = getterResultShape(prop.value, paths);
+      if (shape !== null) applyResultShape(name, shape, paths);
+    }
+    if (paths.length === before) break;
+  }
+}
+function getterResultShape(body, paths) {
+  const scan = maskCommentsAndStrings(body);
+  const aliases = /* @__PURE__ */ new Map();
+  for (const m of scan.matchAll(/\b(?:const|let|var)\s+([$\w]+)\s*=(?![=>])/g)) {
+    const name = m[1];
+    if (aliases.has(name)) continue;
+    const start = m.index + m[0].length;
+    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
+    if (shape !== null) aliases.set(name, shape);
+  }
+  const shapes = [];
+  for (const m of scan.matchAll(/\breturn\b/g)) {
+    const start = m.index + m[0].length;
+    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
+    if (shape !== null) shapes.push(shape);
+  }
+  return shapes.length === 0 ? null : mergeShapes(shapes);
+}
+function readExpression(text3, scan, start) {
+  let depth = 0;
+  let i = start;
+  for (; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      if (depth === 0) break;
+      depth--;
+    } else if (depth === 0 && (ch === ";" || ch === ",")) break;
+    else if (depth === 0 && ch === "\n") {
+      const before = scan.slice(start, i).trimEnd();
+      const after = scan.slice(i + 1).trimStart();
+      if (before === "") continue;
+      if (!/[.?:|&+\-*/=(,]$/.test(before) && !/^[.?:|&]/.test(after)) break;
+    }
+  }
+  return text3.slice(start, i).trim();
+}
+function expressionShape(text3, paths, aliases) {
+  const expr = stripWrappingParens(text3.trim());
+  if (expr === "") return null;
+  const scan = maskCommentsAndStrings(expr);
+  const ternary = splitTernary(scan);
+  if (ternary !== null) {
+    const branches = [expr.slice(ternary[0] + 1, ternary[1]), expr.slice(ternary[1] + 1)].map((part) => expressionShape(part, paths, aliases)).filter((s) => s !== null);
+    return branches.length === 0 ? null : mergeShapes(branches);
+  }
+  const operands = splitTopLevel(scan, /\|\||\?\?/g);
+  if (operands.length > 1) {
+    const sides = operands.map(([s, e]) => expressionShape(expr.slice(s, e), paths, aliases)).filter((s) => s !== null);
+    return sides.length === 0 ? null : mergeShapes(sides);
+  }
+  if (scan.startsWith("{")) {
+    if (extractDelimitedContent(expr, scan, 0, "{", "}").length !== expr.length - 2) return null;
+    return { isList: false, mirrors: [], fields: extractRowLiteralFields(expr).map((field) => ({ to: "", field })) };
+  }
+  let shape;
+  let rest;
+  if (scan.startsWith("[")) {
+    const inner = extractDelimitedContent(expr, scan, 0, "[", "]");
+    rest = inner.length + 2;
+    const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
+    if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
+    const source = expressionShape(spread[1], paths, aliases);
+    if (source === null || !source.isList) return null;
+    shape = source;
+  } else {
+    const base = readBase(expr, scan, aliases, paths);
+    if (base === null) return null;
+    ({ shape, rest } = base);
+  }
+  return applyChain(expr, scan, rest, shape);
+}
+function readBase(expr, scan, aliases, paths) {
+  const alias = /^([$\w]+)/.exec(scan);
+  if (alias === null) return null;
+  if (alias[1] !== "this") {
+    const shape = aliases.get(alias[1]);
+    return shape === void 0 ? null : { shape, rest: alias[1].length };
+  }
+  const segments = [];
+  let i = 4;
+  for (; ; ) {
+    const dot = /^\s*\??\.\s*([$\w]+)/.exec(scan.slice(i));
+    if (dot !== null) {
+      if (/^\s*\(/.test(scan.slice(i + dot[0].length))) break;
+      segments.push(dot[1]);
+      i += dot[0].length;
+      continue;
+    }
+    const bracket = /^\s*\[\s*(["'])/.exec(scan.slice(i));
+    if (bracket !== null) {
+      const open = i + bracket[0].length - 1;
+      const close = scan.indexOf("]", open);
+      const literal2 = /^(["'])([^"']*)\1\s*$/.exec(expr.slice(open, close));
+      if (close === -1 || literal2 === null) return null;
+      segments.push(literal2[2]);
+      i = close + 1;
+      continue;
+    }
+    break;
+  }
+  const path = segments.join(".");
+  if (path === "" || path.startsWith("$")) return null;
+  return {
+    shape: { isList: hasPath(paths, `${path}.*`), mirrors: [{ from: path, to: "" }], fields: [] },
+    rest: i
+  };
+}
+function applyChain(expr, scan, start, initial) {
+  let shape = initial;
+  let i = start;
+  while (scan.slice(i).trim() !== "") {
+    const call = /^\s*\??\.\s*([$\w]+)\s*\(/.exec(scan.slice(i));
+    if (call === null) return null;
+    const open = i + call[0].length - 1;
+    const args = extractDelimitedContent(expr, scan, open, "(", ")");
+    i = open + args.length + 2;
+    const method = call[1];
+    if (ROW_PRESERVING_METHODS.has(method)) {
+      if (!shape.isList) return null;
+    } else if (ROW_PICKING_METHODS.has(method)) {
+      if (!shape.isList) return null;
+      shape = pickRow(shape);
+    } else if (method === "map") {
+      if (!shape.isList) return null;
+      const mapped = mapRows(args, shape);
+      if (mapped === null) return null;
+      shape = mapped;
+    } else {
+      return null;
+    }
+  }
+  return shape;
+}
+function pickRow(shape) {
+  return {
+    isList: false,
+    mirrors: shape.mirrors.map((m) => m.to === "" ? { from: `${m.from}.*`, to: "" } : { from: m.from, to: "" }),
+    fields: shape.fields.filter((f) => f.to === ".*").map((f) => ({ to: "", field: f.field }))
+  };
+}
+function mapRows(args, shape) {
+  const [callback] = splitTopLevelElements(args);
+  if (callback === void 0) return null;
+  const head = /^(?:async\s+)?(?:function\b[^(]*\(\s*([$\w]+)[^)]*\)|\(\s*([$\w]+)[^)]*\)|([$\w]+))\s*(=>)?\s*/.exec(callback);
+  if (head === null) return null;
+  const param = head[1] ?? head[2] ?? head[3];
+  const body = callback.slice(head[0].length);
+  let literal2 = null;
+  const bodyScan = maskCommentsAndStrings(body);
+  if (bodyScan.startsWith("(")) {
+    const inner = stripWrappingParens(body).trim();
+    if (inner.startsWith("{")) literal2 = inner;
+  } else if (bodyScan.startsWith("{")) {
+    const block = extractDelimitedContent(body, bodyScan, 0, "{", "}");
+    const blockScan = maskCommentsAndStrings(block);
+    const ret = /\breturn\s*\{/.exec(blockScan);
+    if (ret !== null) {
+      const open = ret.index + ret[0].length - 1;
+      literal2 = `{${extractDelimitedContent(block, blockScan, open, "{", "}")}}`;
+    }
+  }
+  if (literal2 === null) return null;
+  const content = extractObjectContent(literal2);
+  const spreadsRow = splitTopLevelElements(content).some((e) => e === `...${param}`);
+  return {
+    isList: true,
+    mirrors: spreadsRow ? shape.mirrors.map((m) => m.to === "" ? { from: `${m.from}.*`, to: ".*" } : m) : [],
+    fields: [
+      ...spreadsRow ? shape.fields.filter((f) => f.to === ".*") : [],
+      ...extractRowLiteralFields(literal2).map((field) => ({ to: ".*", field }))
+    ]
+  };
+}
+function applyResultShape(getter, shape, paths) {
+  if (shape.isList) {
+    if (!hasPath(paths, `${getter}.*`)) paths.push({ path: `${getter}.*`, kind: "list" });
+    if (!hasPath(paths, `${getter}.length`)) paths.push({ path: `${getter}.length`, kind: "data", typeHint: "number" });
+  }
+  for (const { from, to } of shape.mirrors) {
+    if (from === getter || from.startsWith(`${getter}.`)) continue;
+    const sources = paths.filter((p) => p.path.startsWith(`${from}.`) && (p.kind === "data" || p.kind === "list"));
+    for (const source of sources) {
+      const target = `${getter}${to}${source.path.slice(from.length)}`;
+      if (!hasPath(paths, target)) paths.push(withHint({ path: target, kind: source.kind }, source.typeHint));
+    }
+  }
+  for (const { to, field } of shape.fields) {
+    pushRowFieldPaths(`${getter}${to}.${field.name}`, field, paths, 1);
+  }
+}
+function mergeShapes(shapes) {
+  return {
+    isList: shapes.some((s) => s.isList),
+    mirrors: shapes.flatMap((s) => s.mirrors),
+    fields: shapes.flatMap((s) => s.fields)
+  };
+}
+function stripWrappingParens(text3) {
+  let expr = text3.trim();
+  for (; ; ) {
+    if (!expr.startsWith("(")) return expr;
+    const scan = maskCommentsAndStrings(expr);
+    const inner = extractDelimitedContent(expr, scan, 0, "(", ")");
+    if (inner.length !== expr.length - 2) return expr;
+    expr = inner.trim();
+  }
+}
+function splitTernary(scan) {
+  let depth = 0;
+  let question = -1;
+  let nested = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (depth !== 0) continue;
+    else if (ch === "?") {
+      if (scan[i + 1] === "." || scan[i + 1] === "?" || scan[i - 1] === "?") continue;
+      if (question === -1) question = i;
+      else nested++;
+    } else if (ch === ":" && question !== -1) {
+      if (nested > 0) nested--;
+      else return [question, i];
+    }
+  }
+  return null;
+}
+function splitTopLevel(scan, separator) {
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (depth === 0) {
+      separator.lastIndex = i;
+      const m = separator.exec(scan);
+      if (m !== null && m.index === i) {
+        out.push([start, i]);
+        start = i + m[0].length;
+        i = start - 1;
+      }
+    }
+  }
+  out.push([start, scan.length]);
+  return out;
 }
 function hasPath(paths, path) {
   return paths.some((p) => p.path === path);
@@ -11055,7 +11341,7 @@ function validateFilterUsage(filter, bindingStart, msgs) {
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
       message: removedFilterMessage(filter.name, filter.args, msgs) ?? msgs.filterUnknown(filter.name),
-      severity: "warning"
+      severity: "error"
     });
     return diagnostics;
   }
@@ -11743,7 +12029,7 @@ function validateTemplateSyntax(html, stateTagName, bindAttrName = "data-wcs", l
           start: item.exprStart + filterOffset,
           end: item.exprStart + filterOffset + filterName.length,
           message: removedFilterMessage(filterName, filterArgsOf(segment), msgs) ?? msgs.filterUnknown(filterName),
-          severity: "warning"
+          severity: "error"
         });
       }
     }

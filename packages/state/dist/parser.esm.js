@@ -398,6 +398,7 @@ var SENTENCES = {
   [32 /* SelectorRemoved */]: (t) => `"${t}": the "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it by its path prefix instead.`,
   [120 /* UnsafeSegment */]: (p) => `"${p}": a state path cannot go through "__proto__" or "prototype" (it would reach every object's prototype).`,
   [121 /* ForNoFilters */]: (t) => `"${t}": "for:" takes no filters \u2014 a row is "<path>.<index>", so the rows of a filtered list would name other elements. Declare a getter that returns the filtered list and loop over it ("for: <getter>").`,
+  [122 /* NamespaceNeedsName */]: (t, ns) => ns === "class" ? `"${t}": "class:" needs a class name \u2014 "class.NAME:" toggles one class (a bare "class:" would set an element property named "class", which does nothing). To set the whole class attribute, bind "className:".` : `"${t}": "attr:" needs an attribute name \u2014 "attr.NAME:" sets one attribute (a bare "attr:" would set an element property named "attr", which does nothing).`,
   [119 /* EmptySegment */]: (t) => `"${t}": the right side of a binding must name a state path \u2014 write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are the loop-relative shorthand).`,
   [201 /* StructuralNotSingle */]: (t) => `Invalid bindText: "${t}". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`,
   [202 /* ElseWithoutIf */]: (type) => `"${type}:" must follow an "if:" template`,
@@ -582,6 +583,9 @@ function parseBindTextsForElement(bindText) {
         ...stateResult2,
         bindingType: keyword === SPREAD_PROP ? "spread" : keyword
       };
+    }
+    if (keyword === CLASS_NAMESPACE || keyword === ATTR_NAMESPACE) {
+      raise(122 /* NamespaceNeedsName */, [bindText2, keyword]);
     }
     const stateResult = parseStatePart(statePart);
     const propResult = parsePropPart(propPart);
