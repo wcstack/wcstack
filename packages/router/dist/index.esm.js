@@ -4092,7 +4092,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.0.2";
+var version = "4.0.3";
 var pkg = {
 	version: version};
 

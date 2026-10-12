@@ -2721,7 +2721,9 @@ function analyzeStatePaths(scriptContent) {
     }
     if (prop.kind === "getter") {
       if (!paths.some((p) => p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: hasRecursionWildcard(prop.name) ? "recursive" : "computed" });
+        const recursive = hasRecursionWildcard(prop.name);
+        const settable = !recursive && effective !== "data" && effective.set;
+        paths.push({ path: prop.name, kind: recursive ? "recursive" : "computed", ...settable ? { settable } : {} });
       }
       continue;
     }
@@ -10564,7 +10566,9 @@ var ja = {
   triggerSeededTruthy: (path) => `trigger \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C true \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002trigger \u306F\u30A8\u30C3\u30B8\u691C\u51FA\u306A\u3057\uFF08truthy \u66F8\u304D\u8FBC\u307F\u3067\u5373\u767A\u706B\u30FBmanual \u3082\u30D0\u30A4\u30D1\u30B9\uFF09\u306E\u305F\u3081\u3001\u30D0\u30A4\u30F3\u30C9\u6642\u306B\u5373\u767A\u706B\u3057\u307E\u3059\u3002false \u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
   storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${raw} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 \u30D0\u30A4\u30F3\u30C9\u306B #init=element \u3092\u4ED8\u3051\u3066\uFF08\`value#init=element: ${path}\`\uFF09\u4FDD\u5B58\u5024\u3092\u52DD\u305F\u305B\u3001\u30B9\u30ED\u30C3\u30C8\u306F null\uFF08\u7A7A\u306E\u30AD\u30FC\u304C\u8AAD\u3080\u5024\uFF09\u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
   storageInitSeed: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u304C\u3001#init=element \u306F\u8981\u7D20\u306E\u5024\u3092\u3053\u306E\u30B9\u30ED\u30C3\u30C8\u3078\u5F15\u304D\u8FBC\u307F\u307E\u3059\u3002\u521D\u56DE\uFF08\u7A7A\u306E\u30AD\u30FC\uFF09\u306F null \u306A\u306E\u3067\u3001\u30B7\u30FC\u30C9\u306F null \u306B\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059 \u2014 null \u3067\u30B7\u30FC\u30C9\u3057\u3066\u8AAD\u3080\u5074\u3067\u65E2\u5B9A\u5024\u3092\u88DC\u3046\uFF08\`this.${path} ?? \u2026\`\uFF09\u304B\u3001null \u3092\u7121\u8996\u3059\u308B setter \u3092\u6301\u3064\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
+  storagePairClobber: (path) => `<wcs-storage> \u306E value \u3092 #init=element \u306A\u3057\u3067\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2 "${path}" \u306B\u675F\u306D\u3066\u3044\u307E\u3059\u3002state \u306E\u5074\u304C\u5148\u306B\u66F8\u304F\u306E\u3067\u3001\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B getter \u306E\u6700\u521D\u306E\u5024\u304C\u4FDD\u5B58\u5024\u306E\u4E0A\u306B\u4FDD\u5B58\u3055\u308C\u3001setter \u306F\u4FDD\u5B58\u5024\u3092\u53D7\u3051\u53D6\u308C\u307E\u305B\u3093 \u2014 #init=element \u3092\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\uFF08\`value#init=element: ${path}\`\uFF09`,
   inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u308B\u304B\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
+  inputNestedWriteOneShot: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u305A\u3001<${tag}> \u306F\u8981\u6C42\u306E\u305F\u3073\u306B "${input}" \u3092 null \u306B\u623B\u3059\u306E\u3067\u3001\u6B21\u306E\u8981\u6C42\u306F "${input}" \u306A\u3057\u3067\u9001\u3089\u308C\u307E\u3059 \u2014 \u8981\u6C42\u3092\u59CB\u3081\u308B\u30CF\u30F3\u30C9\u30E9\u3067\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4F5C\u3063\u3066\u4EE3\u5165\u3057\uFF08\`this.submitBody = { \u2026 }\`\uFF09\u3001\u305D\u308C\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
   devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u3060\u3068\u914D\u7DDA\u53F0\u5E33\u304C\u30E9\u30A4\u30D6\u3067 captured \u3055\u308C\u307E\u305B\u3093\uFF09`,
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/"> \u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
@@ -10752,7 +10756,9 @@ var en = {
   triggerSeededTruthy: (path) => `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
   storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${raw}. The initial write-back overwrites the persisted value on every load \u2014 add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
   storageInitSeed: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}, but #init=element pulls the element's value into it. On a first visit (an empty key) that is null, so the seed is replaced by null \u2014 seed it with null and supply the default where you read it (\`this.${path} ?? \u2026\`), or bind an accessor pair whose setter ignores null`,
+  storagePairClobber: (path) => `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it \u2014 add #init=element (\`value#init=element: ${path}\`)`,
   inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
+  inputNestedWriteOneShot: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it \u2014 build a new object in the handler that starts the request (\`this.submitBody = { \u2026 }\`) and bind that`,
   devtoolsAfterState: () => `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
@@ -13953,7 +13959,8 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     }
   }
   if (tagName === "wcs-storage" && property === "value" && !hasManual && parsed.path && !/(?:^|,)init=(?:element|auto)\b/.test(modifiers)) {
-    const cand = findDataSlot(getPaths(), parsed.path);
+    const paths = getPaths();
+    const cand = findDataSlot(paths, parsed.path);
     if (cand?.rawInitial !== void 0 && EMPTYISH_SEEDS.has(normalizeSeed(cand.rawInitial))) {
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
@@ -13963,6 +13970,16 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
         tag: tagName,
         statePath: parsed.path,
         message: msgs.storageSeedClobber(parsed.path, cand.rawInitial)
+      });
+    } else if (cand === void 0 && paths.some((c) => c.kind === "computed" && c.settable && c.path === parsed.path)) {
+      diagnostics.push({
+        code: WcsDiagnosticCode.StorageSeedClobber,
+        start,
+        end,
+        severity: "warning",
+        tag: tagName,
+        statePath: parsed.path,
+        message: msgs.storagePairClobber(parsed.path)
       });
     }
   }
@@ -14121,10 +14138,10 @@ function validateDocumentEnv(html, locale2) {
   const msgs = getMessages(locale2);
   const scanText = blankHtmlComments(html);
   const autos = findWcstackAutoScripts(scanText);
-  const stateIndex = autos.findIndex((a) => a.pkg === "state");
+  const stateIndex = autos.findIndex((a) => a.pkgs.includes("state"));
   if (stateIndex !== -1) {
     for (const later of autos.slice(stateIndex + 1)) {
-      if (later.pkg !== "devtools") continue;
+      if (!later.pkgs.includes("devtools")) continue;
       diagnostics.push({
         code: WcsDiagnosticCode.ScriptOrder,
         start: later.start,
@@ -14134,7 +14151,7 @@ function validateDocumentEnv(html, locale2) {
       });
     }
   }
-  const router = autos.find((a) => a.pkg === "router");
+  const router = autos.find((a) => a.pkgs.includes("router") && (!a.bundle || /<wcs-router\b/i.test(scanText)));
   if (router && !/<base\b[^>]*\bhref\s*=/i.test(scanText)) {
     diagnostics.push({
       code: WcsDiagnosticCode.BaseHrefMissing,
@@ -14159,6 +14176,9 @@ function validateDocumentEnv(html, locale2) {
   }
   return diagnostics;
 }
+var SCOPED_AUTO = /@wcstack\/([a-z0-9-]+)(?:@[^/"'\s]+)?\/(?:auto\b|dist\/(?:split\/)?auto(?:\.min)?\.js\b)/;
+var BUNDLE_AUTO = /(?:^|\/)wcstack(?:@[^/"'\s]+)?\/(?:auto\b|dist\/auto\.min\.js\b)/;
+var BUNDLE_PACKAGES = ["state", "router", "fetch", "storage", "autoloader"];
 function findWcstackAutoScripts(html) {
   const out = [];
   const scriptRegex = /<script\b(?:"[^"]*"|'[^']*'|[^>"'])*>/gi;
@@ -14166,10 +14186,12 @@ function findWcstackAutoScripts(html) {
   while ((match = scriptRegex.exec(html)) !== null) {
     const src = extractSrc(match[0]);
     if (!src) continue;
-    const pkgMatch = /@wcstack\/([a-z0-9-]+)\/auto\b/.exec(src.value);
-    if (!pkgMatch) continue;
+    const pkgMatch = SCOPED_AUTO.exec(src.value);
+    const bundle = pkgMatch === null && BUNDLE_AUTO.test(src.value);
+    if (pkgMatch === null && !bundle) continue;
     out.push({
-      pkg: pkgMatch[1],
+      pkgs: bundle ? BUNDLE_PACKAGES : [pkgMatch[1]],
+      bundle,
       start: match.index + src.offsetInTag,
       end: match.index + src.offsetInTag + src.value.length
     });
@@ -15628,7 +15650,8 @@ function validateGetterUntrackedReads(script, scriptStart, nestedWriteRoots, loc
   return out;
 }
 var NESTED_WRITE_INPUTS = {
-  "wcs-storage": { inputs: ["value"], exemptWhenManual: true }
+  "wcs-storage": { inputs: ["value"], exemptWhenManual: true },
+  "wcs-fetch": { inputs: ["body"], exemptWhenManual: false, oneShot: true }
 };
 var MANUAL_ATTRIBUTE = /(?:^|\s)manual(?:\s|=|$)/i;
 function validateInputNestedWrites(html, stateTagName, bindAttrName, nestedWriteRoots, locale2) {
@@ -15650,6 +15673,7 @@ function validateInputNestedWrites(html, stateTagName, bindAttrName, nestedWrite
     if (!NESTED_WRITE_INPUTS[tag.tagName].inputs.includes(input)) continue;
     const example = nestedWriteRoots().get(occ.path);
     if (example === void 0) continue;
+    const message = NESTED_WRITE_INPUTS[tag.tagName].oneShot ? msgs.inputNestedWriteOneShot(tag.tagName, input, occ.path, example) : msgs.inputNestedWrite(tag.tagName, input, occ.path, example);
     out.push({
       code: WcsDiagnosticCode.InputNestedWrite,
       start: occ.pathRange.start,
@@ -15657,7 +15681,7 @@ function validateInputNestedWrites(html, stateTagName, bindAttrName, nestedWrite
       severity: "warning",
       tag: tag.tagName,
       statePath: occ.path,
-      message: msgs.inputNestedWrite(tag.tagName, input, occ.path, example)
+      message
     });
   }
   return out;
