@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.0.4 — 2026-10-13
+
+`@wcstack/state` 4.0.4 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.0.4・`@wcstack/typescript` 4.0.4 と同じ判定）。
 
 - **`wcs/router-outlet-misplaced`（warning・新設）** — `<wcs-router>` の直後に無い `<wcs-outlet>`（直後に outlet を持たない router があるページで）。router が使うのは自分のすぐ後の要素だけで、無ければそこに自前の outlet を作るので、ルートはそこに描かれ、置いた outlet は空のまま（エラーも警告も出なかった）。チュートリアル Part 3 の試作で、router を `<body>` の先頭、outlet を `<main>` の中に置いてページがヘッダーの上に描かれた形。規則と経緯は docs/router-outlet-placement.ja.md。router も実行時に同じ code で警告する。
 
