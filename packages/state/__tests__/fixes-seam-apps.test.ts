@@ -1,0 +1,112 @@
+/**
+ * fixes-seam-apps.test.ts — 継ぎ目アプリ（docs/seam-apps.ja.md）で見つかった不具合の修正。
+ */
+import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
+import { bootstrapState, getBindingsReady, installFormats } from "../src/index";
+
+const flush = () => new Promise((r) => setTimeout(r, 0));
+let seq = 0;
+
+beforeAll(() => {
+  installFormats();
+  bootstrapState();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** A page (a shadow root) with a root `<wcs-state>` over `state`. */
+async function page(html: string, state: Record<string, any>) {
+  const h = document.createElement(`seam-page-${seq++}`);
+  const root = h.attachShadow({ mode: "open" });
+  root.innerHTML = `<wcs-state></wcs-state>${html}`;
+  const el = root.querySelector("wcs-state") as any;
+  el.setInitialState(state);
+  document.body.appendChild(h);
+  await el.connectedCallbackPromise;
+  await getBindingsReady(root);
+  await flush();
+  await flush();
+  const write = async (fn: (s: any) => void) => {
+    el.createState("writable", fn);
+    await flush();
+    await flush();
+  };
+  return { root, write };
+}
+
+describe("router-auth: getter の if: は、閉じる更新で中身のバインディングを適用しない", () => {
+  it("条件の getter が偽になる書き込みで、中身の {{ obj.n|locale }} は null で適用されない（エラーにならない）", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root, write } = await page(`<template data-wcs="if: ok"><p class="v">{{ obj.n|locale }}</p></template>`, {
+      obj: { n: 1234 },
+      get ok() { return this["obj.n"] != null; },
+    });
+    expect(root.querySelector(".v")?.textContent).toBe("1,234");
+    await write((s) => { s["obj.n"] = null; });
+    expect(root.querySelector(".v")).toBeNull();
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("上のオブジェクトごと null にしても同じ（obj = null）", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root, write } = await page(`<template data-wcs="if: ok"><p class="v">{{ obj.n|locale }}</p></template>`, {
+      obj: { n: 1234 },
+      get ok() { return this["obj.n"] != null; },
+    });
+    await write((s) => { s.obj = null; });
+    expect(root.querySelector(".v")).toBeNull();
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("elseif の条件の getter も、閉じる分岐の中身を守る", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root, write } = await page(
+      `<template data-wcs="if: off"><p class="off">off</p></template>` +
+      `<template data-wcs="elseif: ok"><p class="v">{{ obj.n|locale }}</p></template>` +
+      `<template data-wcs="else:"><p class="none">none</p></template>`, {
+        off: false,
+        obj: { n: 5 },
+        get ok() { return this["obj.n"] != null; },
+      });
+    expect(root.querySelector(".v")?.textContent).toBe("5");
+    await write((s) => { s["obj.n"] = null; });
+    expect(root.querySelector(".v")).toBeNull();
+    expect(root.querySelector(".none")?.textContent).toBe("none");
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("入れ子: 外の getter の if: が閉じれば、内の if: の中身も適用されない", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { root, write } = await page(
+      `<template data-wcs="if: ok"><div><template data-wcs="if: show"><p class="v">{{ obj.n|locale }}</p></template></div></template>`, {
+        show: true,
+        obj: { n: 7 },
+        get ok() { return this["obj.n"] != null; },
+      });
+    expect(root.querySelector(".v")?.textContent).toBe("7");
+    await write((s) => { s["obj.n"] = null; });
+    expect(root.querySelector(".v")).toBeNull();
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("開くときは中身が新しい値で描かれる（null → 数）", async () => {
+    const { root, write } = await page(`<template data-wcs="if: ok"><p class="v">{{ obj.n|locale }}</p></template>`, {
+      obj: { n: null },
+      get ok() { return this["obj.n"] != null; },
+    });
+    expect(root.querySelector(".v")).toBeNull();
+    await write((s) => { s["obj.n"] = 42000; });
+    expect(root.querySelector(".v")?.textContent).toBe("42,000");
+  });
+
+  it("開いたままの分岐の中身は、同じ書き込みで新しい値になる", async () => {
+    const { root, write } = await page(`<template data-wcs="if: ok"><p class="v">{{ obj.n|locale }}</p></template>`, {
+      obj: { n: 1 },
+      get ok() { return this["obj.n"] != null; },
+    });
+    await write((s) => { s["obj.n"] = 2000; });
+    expect(root.querySelector(".v")?.textContent).toBe("2,000");
+  });
+});
