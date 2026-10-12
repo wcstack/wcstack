@@ -90,6 +90,7 @@ export const enum M {
   EmptySegment = 119,
   UnsafeSegment = 120,
   ForNoFilters = 121,
+  NamespaceNeedsName = 122,
   // [wcs/template-syntax]
   StructuralNotSingle = 201,
   ElseWithoutIf = 202,

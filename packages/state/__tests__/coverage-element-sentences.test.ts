@@ -94,6 +94,7 @@ const RENDERED: [M, unknown[], string][] = [
   [M.UnsafeSegment, ["a.__proto__"], '[wcs/binding-syntax] "a.__proto__": a state path cannot go through "__proto__" or "prototype" (it would reach every object\'s prototype).'],
   [M.EmptySegment, ["value: a..b"], '[wcs/binding-syntax] "value: a..b": the right side of a binding must name a state path — write "<property>: <path>" (a path segment cannot be empty; "." alone and a leading "." are the loop-relative shorthand).'],
   [M.ForNoFilters, ["for: items|take(2)"], '[wcs/binding-syntax] "for: items|take(2)": "for:" takes no filters — a row is "<path>.<index>", so the rows of a filtered list would name other elements. Declare a getter that returns the filtered list and loop over it ("for: <getter>").'],
+  [M.NamespaceNeedsName, ["class: done", "class"], '[wcs/binding-syntax] "class: done": "class:" needs a class name — "class.NAME:" toggles one class (a bare "class:" would set an element property named "class", which does nothing). To set the whole class attribute, bind "className:".'],
 
   [M.StructuralNotSingle, ["for: a; value: b"], `[wcs/template-syntax] Invalid bindText: "for: a; value: b". 'if', 'elseif', 'else', and 'for' bindings must be single binding.`],
   [M.ElseWithoutIf, ["else"], '[wcs/template-syntax] "else:" must follow an "if:" template'],
@@ -134,6 +135,10 @@ describe("番号付きのメッセージの文面（診断の後付け）", () =
 
   it.each(RENDERED.map(([id, args, expected]) => [id, args, expected] as const))("#%i は値を埋めた文面になる", (id, args, expected) => {
     expect(text(id, args)).toBe(expected);
+  });
+
+  it("#122 は attr: にも名前空間に合った文面を持つ", () => {
+    expect(text(M.NamespaceNeedsName, ["attr: url", "attr"])).toBe('[wcs/binding-syntax] "attr: url": "attr:" needs an attribute name — "attr.NAME:" sets one attribute (a bare "attr:" would set an element property named "attr", which does nothing).');
   });
 
   it("初期化の失敗の行は、要素と、あれば読み込み元などの属性を、書かれた順でなく決まった順に並べる", () => {

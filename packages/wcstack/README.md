@@ -321,6 +321,10 @@ GOOD: <p><!--@@: count--></p>              <!-- comment binding: no FOUC, no ext
 BAD:  <template data-wcs="for: items|take(2)">
 GOOD: <template data-wcs="for: firstTwo">   <!-- get firstTwo() { return this.items.slice(0, 2); } -->
 
+<!-- A class binding names its class after the dot (the same for attr.). -->
+BAD:  <li data-wcs="class: done">          <!-- sets a "class" property: no class changes -->
+GOOD: <li data-wcs="class.done: done">
+
 <!-- In a delegated handler, currentTarget is the root. -->
 BAD:  select(event) { event.currentTarget.classList.add("on"); }   <!-- with onclick: select -->
 GOOD: select(event) { event.target.closest("li").classList.add("on"); }

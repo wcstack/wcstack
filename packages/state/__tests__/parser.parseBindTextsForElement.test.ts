@@ -125,4 +125,20 @@ describe('parseBindTextsForElement — 文法エラーの語彙', () => {
     expect(parseBindTextsForElement('for: items')[0].outFilters).toEqual([]);
     expect(parseBindTextsForElement('if: items|not')[0].outFilters.map((f) => f.filterName)).toEqual(['not']);
   });
+
+  it('名前の無い class: / attr: を [wcs/binding-syntax] #122 で拒むこと（要素の存在しないプロパティへ黙って書いていた）', () => {
+    for (const text of ['class: done', 'class#ro: done', 'class|not: done', 'attr: url', 'textContent: a; class: done']) {
+      expect(() => parseBindTextsForElement(text), text).toThrow('[wcs/binding-syntax]');
+      expect(() => parseBindTextsForElement(text), text).toThrow('npx @wcstack/lint');
+    }
+    expect(() => parseBindTextsForElement('class: done')).toThrow('"class:" needs a class name');
+    expect(() => parseBindTextsForElement('attr: url')).toThrow('"attr:" needs an attribute name');
+    // 名前のある形・ほかの名前空間の語・class を含むだけのプロパティは今までどおり
+    expect(parseBindTextsForElement('class.done: done')[0].propSegments).toEqual(['class', 'done']);
+    expect(parseBindTextsForElement('attr.href: url')[0].propSegments).toEqual(['attr', 'href']);
+    expect(parseBindTextsForElement('className: cls')[0].propName).toBe('className');
+    expect(parseBindTextsForElement('classList: list')[0].propName).toBe('classList');
+    expect(parseBindTextsForElement('style: css')[0].propName).toBe('style');
+    expect(parseBindTextsForElement('command: cmd')[0].propName).toBe('command');
+  });
 });

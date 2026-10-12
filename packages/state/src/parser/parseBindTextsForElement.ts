@@ -115,6 +115,13 @@ export function parseBindTextsForElement(bindText: string): ParsedBinding[] {
         bindingType: keyword === SPREAD_PROP ? 'spread' : keyword as ParsedBinding['bindingType'],
       };
     }
+    // `class` / `attr` は名前を伴ってはじめて束縛になる（`class.done:` / `attr.href:`）。名前の無い
+    // `class:` / `attr:` は要素の（存在しない）`class` / `attr` プロパティへの書き込みになり、何も起きず
+    // 何も報告されなかった（`.class:` は B5 で拒否済み）。`style:` は `el.style = "…"` が cssText に
+    // 届くので受ける
+    if (keyword === CLASS_NAMESPACE || keyword === ATTR_NAMESPACE) {
+      raise(M.NamespaceNeedsName, [bindText, keyword]);
+    }
     const stateResult = parseStatePart(statePart);
     const propResult = parsePropPart(propPart);
     const [head] = propResult.propSegments;

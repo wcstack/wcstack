@@ -865,3 +865,147 @@ export default {
     expect(paths.map(p => p.path)).toContain('ticks.*');
   });
 });
+
+describe('analyzeStatePaths — getter の戻り値の形（リストを返す getter の行・オブジェクトを返す getter の子）', () => {
+  const names = (script: string): string[] => analyzeStatePaths(script).map(p => p.path);
+  const find = (paths: PathCandidate[], path: string): PathCandidate | undefined => paths.find(p => p.path === path);
+
+  it('絞り込んだリストを返す getter（README の ToDo の形）は元のリストの行の形を持つ', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  todos: [{ id: 1, text: "a", done: false, tags: ["x"] }],
+  filter: "all",
+  get visible() {
+    if (this.filter === "active") return this.todos.filter(t => !t.done);
+    if (this.filter === "done")   return this.todos.filter(t => t.done);
+    return this.todos;
+  },
+  get "todos.*.upper"() { return this["todos.*.text"].toUpperCase(); },
+};`);
+    expect(find(paths, 'visible')?.kind).toBe('computed');
+    expect(find(paths, 'visible.*')).toEqual({ path: 'visible.*', kind: 'list' });
+    expect(find(paths, 'visible.length')).toEqual({ path: 'visible.length', kind: 'data', typeHint: 'number' });
+    expect(find(paths, 'visible.*.text')).toEqual({ path: 'visible.*.text', kind: 'data', typeHint: 'string' });
+    expect(find(paths, 'visible.*.done')?.typeHint).toBe('boolean');
+    expect(find(paths, 'visible.*.tags.*')?.kind).toBe('list');
+    // 元のリストのパス getter は `todos.*` のパターンに付く — getter が返した行には無い
+    expect(find(paths, 'visible.*.upper')).toBeUndefined();
+  });
+
+  it('別名・三項演算子・`||` / `??`・スプレッドした配列の連鎖を読む', () => {
+    const all = names(`
+export default {
+  products: [{ name: "a", price: 1 }],
+  extras: [{ note: "n" }],
+  sort: "asc",
+  get sorted() {
+    const list = this.products.filter(p => p.price > 0);
+    return this.sort === "asc"
+      ? list.toSorted((a, b) => a.price - b.price)
+      : list.toReversed();
+  },
+  get copied() { return [...this.products].sort((a, b) => a.price - b.price); },
+  get either() { return this.missing ?? this.extras || []; },
+};`);
+    expect(all).toContain('sorted.*.name');
+    expect(all).toContain('sorted.*.price');
+    expect(all).toContain('copied.*.name');
+    expect(all).toContain('either.*.note');
+  });
+
+  it('find / findLast / at は行 1 つの形、map はコールバックが返すリテラルの形を持つ', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [{ id: 1, name: "a", price: 2 }],
+  selectedId: 1,
+  get selected() { return this.items.find(i => i.id === this.selectedId); },
+  get last() { return this.items.at(-1); },
+  get labels() { return this.items.map(i => ({ label: i.name, count: 1 })); },
+  get decorated() { return this.items.map((i) => ({ ...i, sale: true })); },
+  get blocks() { return this.items.map(function (i) { return { block: i.id }; }); },
+  get firstLabel() { return this.labels.find(l => l.count > 0); },
+};`);
+    const all = paths.map(p => p.path);
+    expect(all).toContain('selected.name');
+    expect(all).toContain('last.price');
+    expect(all).not.toContain('selected.*');
+    expect(find(paths, 'labels.*.label')).toEqual({ path: 'labels.*.label', kind: 'data' });
+    expect(find(paths, 'labels.*.count')?.typeHint).toBe('number');
+    expect(all).not.toContain('labels.*.name');
+    // `...i` は元の行も写す
+    expect(all).toContain('decorated.*.name');
+    expect(find(paths, 'decorated.*.sale')?.typeHint).toBe('boolean');
+    expect(all).toContain('blocks.*.block');
+    // getter の上の getter
+    expect(all).toContain('firstLabel.label');
+  });
+
+  it('オブジェクトリテラルを返す getter はそのフィールドを持つ', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [],
+  get summary() {
+    return { total: this.items.length, label: "items", range: { min: 0, max: 9 } };
+  },
+};`);
+    expect(find(paths, 'summary.total')).toEqual({ path: 'summary.total', kind: 'data' });
+    expect(find(paths, 'summary.label')?.typeHint).toBe('string');
+    expect(find(paths, 'summary.range.max')?.typeHint).toBe('number');
+  });
+
+  it('宣言の順序に依らない（後に宣言した getter を写す getter）・代入式から分かった行も写す', () => {
+    const all = names(`
+export default {
+  get firstTwo() { return this.inCart.slice(0, 2); },
+  get inCart() { return this.cart.filter(line => line.quantity > 0); },
+  cart: [],
+  add(product) {
+    this.cart = this.cart.concat({ id: product.id, name: product.name, quantity: 1 });
+  },
+};`);
+    expect(all).toContain('inCart.*.name');
+    expect(all).toContain('firstTwo.*.quantity');
+  });
+
+  it('ワイルドカードを含むパスの getter・引用符付きのパスを写す', () => {
+    const all = names(`
+export default {
+  groups: [{ name: "g", items: [{ title: "t", done: false }] }],
+  get "groups.*.open"() { return this["groups.*.items"].filter(i => !i.done); },
+};`);
+    expect(all).toContain('groups.*.open.*');
+    expect(all).toContain('groups.*.open.*.title');
+  });
+
+  it('読めない戻り値からは何も導かない', () => {
+    const all = names(`
+export default {
+  items: [{ name: "a" }],
+  q: "",
+  get computed() { return compute(this.items); },
+  get mapped() { return this.items.map(format); },
+  get count() { return this.items.length; },
+  get callbackOnly() { return helper(this.items, i => { return i.name; }); },
+  get "items.*.matches"() { return (this.q === "") || this["items.*.name"].includes(this.q); },
+  get quoted() { const s = "return this.items"; return s; },
+};`);
+    for (const getter of ['computed', 'mapped', 'count', 'callbackOnly', 'items.*.matches', 'quoted']) {
+      expect(all.filter(p => p.startsWith(`${getter}.`))).toEqual([]);
+    }
+  });
+
+  it('setter・データで置き換えられたキー・`$` で始まるパスは写さない', () => {
+    const all = names(`
+export default {
+  items: [{ name: "a" }],
+  get replaced() { return this.items; },
+  replaced: 0,
+  get onlySet() { return this.items; },
+  set onlySet(v) {},
+  get api() { return this.$getAll("items.*", []); },
+};`);
+    expect(all.filter(p => p.startsWith('replaced.'))).toEqual([]);
+    expect(all).toContain('onlySet.*.name');
+    expect(all.filter(p => p.startsWith('api.'))).toEqual([]);
+  });
+});

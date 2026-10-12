@@ -543,7 +543,7 @@ property[#modifier]: path[|filter[|filter(args)...]]
 
 修飾子は束縛の種別を変えません: `radio#ro:` と `checkbox#ro:` は radio / checkbox の束縛のままです。その束縛が使わない修飾子は無視されます（プロパティ束縛の `#direct`、未知の `#foo`）。未知の `key=value` 形式の修飾子（`#foo=1`）は throw します。
 
-パーサは次の書き方を `[wcs/binding-syntax]` で拒否します: 2 つ目の `#`（`value#ro#wo` ではなく `value#ro,wo` と書く）、`else:` の後ろの値（`else:` と書く）、`for` / `if` / `elseif` / `else` / `...` の左辺の修飾子やフィルタ、`for:` の出力フィルタ（`#121` — [ループ](#ループ-for) 参照）、`__proto__` や `prototype` というパスセグメント（`#120` — 書き込み・`$resolve`・`$setAll`、そして `this.__proto__` のような読み取りでも拒否される）、フィルタ引数の閉じていない引用符。
+パーサは次の書き方を `[wcs/binding-syntax]` で拒否します: 2 つ目の `#`（`value#ro#wo` ではなく `value#ro,wo` と書く）、`else:` の後ろの値（`else:` と書く）、`for` / `if` / `elseif` / `else` / `...` の左辺の修飾子やフィルタ、`for:` の出力フィルタ（`#121` — [ループ](#ループ-for) 参照）、名前の無い `class:` と `attr:`（`#122` — `class.NAME:` / `attr.NAME:` と書く。名前の無い `class:` は要素の `class` というプロパティに書くだけで何も起きない。属性全体なら `className:` をバインドする）、`__proto__` や `prototype` というパスセグメント（`#120` — 書き込み・`$resolve`・`$setAll`、そして `this.__proto__` のような読み取りでも拒否される）、フィルタ引数の閉じていない引用符。
 
 ### 双方向バインディング
 

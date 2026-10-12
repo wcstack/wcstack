@@ -68,6 +68,8 @@ describe('validateTemplateSyntax — 4.0 で外れたフィルタ名（3.x の�
     const diags = validateTemplateSyntax(html, 'wcs-state');
     const unknown = diags.filter(d => d.code === WcsDiagnosticCode.FilterUnknown);
     expect(unknown.map(d => html.slice(d.start, d.end))).toEqual(['fix', 'fxi']);
+    // ランタイムは初期化で throw する（data-wcs 側と同じ error）
+    expect(unknown.every(d => d.severity === 'error')).toBe(true);
     expect(unknown[0].message).toContain('4.0 で外れました');
     expect(unknown[0].message).toContain('"toFixed"');
     expect(unknown[1].message).toBe('フィルタ "fxi" は組み込みフィルタに存在しません');

@@ -162,6 +162,11 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   // 明示宣言・$streams・$listKeys の候補が揃った後に走らせ、無いパスだけを足す。
   collectRowShapesFromAssignments(scriptContent, paths);
 
+  // getter の戻り値の形（`get visible() { return this.todos.filter(…) }` の行、
+  // `get summary() { return { total: … } }` の子）。行の形が揃った後に走らせる —
+  // 写す元のリストの行が、上の代入式から分かることもあるため。
+  collectGetterResultShapes(topLevelProps, effectiveDescriptors, paths);
+
   return paths;
 }
 
@@ -946,6 +951,370 @@ function pushRowFieldPaths(path: string, prop: PropertyInfo, paths: PathCandidat
       pushRowFieldPaths(`${path}.${child.name}`, child, paths, depth + 1);
     }
   }
+}
+
+// ============================================================
+// getter の戻り値から導く形
+// ============================================================
+
+/**
+ * getter の戻り値の形。`mirrors` は既知のパスの下を写す元（`from` の下の候補を、結果の
+ * `to` ── `''` なら結果そのもの、`'.*'` なら結果の行 ── の下へ写す）、`fields` はリテラル
+ * から読んだフィールド（`to` は同じく結果からの相対）。`isList` は結果がリストか。
+ */
+interface ResultShape {
+  isList: boolean;
+  mirrors: { from: string; to: '' | '.*' }[];
+  fields: { to: '' | '.*'; field: PropertyInfo }[];
+}
+
+/** 行を保ったまま並べ替え・絞り込み・切り出す配列メソッド（結果の行は元の行そのもの）。 */
+const ROW_PRESERVING_METHODS: ReadonlySet<string> = new Set([
+  'filter', 'toSorted', 'toReversed', 'slice', 'toSpliced', 'concat', 'with', 'sort', 'reverse',
+]);
+/** 行を 1 つ返す配列メソッド。 */
+const ROW_PICKING_METHODS: ReadonlySet<string> = new Set(['find', 'findLast', 'at']);
+/** 依存する getter の形が後から分かることがあるので、追加が止まるまで繰り返す回数の上限。 */
+const MAX_GETTER_SHAPE_PASSES = 4;
+
+/**
+ * getter の戻り値から、その下のパス候補を導く。
+ *
+ * `for:` はフィルタを取らないので、絞り込んだリストは getter で返して回すのが正しい書き方
+ * （ランタイムの `#121` もそう案内する）。ところが getter の行の形は宣言のどこにも無いので、
+ * `for: visible` の行の `.text` が `wcs/binding-path-missing` の偽陽性になっていた。
+ *
+ * 戻り値の式（`return` の後ろ・`const list = …` の別名を通したもの）を読む:
+ * - `this.todos` / `this["groups.*.items"]` と、行を保つメソッドの連鎖（`filter` / `toSorted` /
+ *   `slice` …）・`[...this.todos]` → 元のリストの下を写す（`visible.*.text` ← `todos.*.text`）
+ * - `find` / `findLast` / `at` → 元の行の下を写す（`selected.name` ← `items.*.name`）
+ * - `map(t => ({ … }))` → リテラルのフィールドが行になる（`...t` があれば元の行も写す）
+ * - オブジェクトリテラル（`return { total: … }`）→ そのフィールド
+ * - 三項演算子・`||` / `??` は両辺の和
+ *
+ * 写すのは**データの形**（data / list 候補）だけ。元のリストのパス getter（`todos.*.upper`）は
+ * `todos.*` のパターンに付くもので、getter が返した行（`visible.0`）にはプロパティが無い ──
+ * `visible.*.upper` はランタイムで undefined なので、候補にしない（警告が正しい）。
+ * 読めない式（関数呼び出しの結果など）からは何も導かない（今までどおり）。
+ */
+function collectGetterResultShapes(
+  props: readonly PropertyInfo[],
+  effective: Map<string, EffectiveDescriptor>,
+  paths: PathCandidate[],
+): void {
+  // 同じキーの get を 2 度書いたら後のものが勝つ
+  const getters = new Map<string, PropertyInfo>();
+  for (const prop of props) {
+    if (prop.kind !== 'getter' || prop.accessor !== 'get' || prop.value === undefined) continue;
+    if (prop.name.startsWith('$') || hasRecursionWildcard(prop.name) || effective.get(prop.name) === 'data') continue;
+    getters.set(prop.name, prop);
+  }
+  for (let pass = 0; pass < MAX_GETTER_SHAPE_PASSES; pass++) {
+    const before = paths.length;
+    for (const [name, prop] of getters) {
+      const shape = getterResultShape(prop.value as string, paths);
+      if (shape !== null) applyResultShape(name, shape, paths);
+    }
+    if (paths.length === before) break;
+  }
+}
+
+/** getter 本体の `return` 式すべての形の和。読める式が 1 つも無ければ null。 */
+function getterResultShape(body: string, paths: PathCandidate[]): ResultShape | null {
+  const scan = maskCommentsAndStrings(body);
+  // `const list = this.products.filter(…)` の別名（最初の宣言が勝つ）
+  const aliases = new Map<string, ResultShape>();
+  for (const m of scan.matchAll(/\b(?:const|let|var)\s+([$\w]+)\s*=(?![=>])/g)) {
+    const name = m[1];
+    if (aliases.has(name)) continue;
+    const start = (m.index as number) + m[0].length;
+    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
+    if (shape !== null) aliases.set(name, shape);
+  }
+  const shapes: ResultShape[] = [];
+  for (const m of scan.matchAll(/\breturn\b/g)) {
+    const start = (m.index as number) + m[0].length;
+    // コールバックの中の `return t.done` は読めない式（null）として落ちる
+    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
+    if (shape !== null) shapes.push(shape);
+  }
+  return shapes.length === 0 ? null : mergeShapes(shapes);
+}
+
+/**
+ * `start` から式 1 つ分の原文を切り出す。深さ 0 の `;` / `,` / 閉じ括弧で止まり、深さ 0 の改行では、
+ * 次の行が `.` / `?` / `:` / `|` / `&` で始まるか、行末が演算子で終わるとき（連鎖・三項の継続）だけ続ける。
+ */
+function readExpression(text: string, scan: string, start: number): string {
+  let depth = 0;
+  let i = start;
+  for (; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      if (depth === 0) break;
+      depth--;
+    } else if (depth === 0 && (ch === ';' || ch === ',')) break;
+    else if (depth === 0 && ch === '\n') {
+      const before = scan.slice(start, i).trimEnd();
+      const after = scan.slice(i + 1).trimStart();
+      if (before === '') continue;
+      if (!/[.?:|&+\-*/=(,]$/.test(before) && !/^[.?:|&]/.test(after)) break;
+    }
+  }
+  return text.slice(start, i).trim();
+}
+
+/** 式の形。読めなければ null。 */
+function expressionShape(text: string, paths: PathCandidate[], aliases: Map<string, ResultShape>): ResultShape | null {
+  const expr = stripWrappingParens(text.trim());
+  if (expr === '') return null;
+  const scan = maskCommentsAndStrings(expr);
+
+  // 三項演算子（深さ 0 の `?` … `:`）・`||` / `??` は両辺の和
+  const ternary = splitTernary(scan);
+  if (ternary !== null) {
+    const branches = [expr.slice(ternary[0] + 1, ternary[1]), expr.slice(ternary[1] + 1)]
+      .map(part => expressionShape(part, paths, aliases))
+      .filter((s): s is ResultShape => s !== null);
+    return branches.length === 0 ? null : mergeShapes(branches);
+  }
+  const operands = splitTopLevel(scan, /\|\||\?\?/g);
+  if (operands.length > 1) {
+    const sides = operands.map(([s, e]) => expressionShape(expr.slice(s, e), paths, aliases))
+      .filter((s): s is ResultShape => s !== null);
+    return sides.length === 0 ? null : mergeShapes(sides);
+  }
+
+  // オブジェクトリテラル
+  if (scan.startsWith('{')) {
+    if (extractDelimitedContent(expr, scan, 0, '{', '}').length !== expr.length - 2) return null;
+    return { isList: false, mirrors: [], fields: extractRowLiteralFields(expr).map(field => ({ to: '', field })) };
+  }
+
+  // `[...this.todos]`（要素がスプレッド 1 つの配列リテラル）と、それに続く連鎖
+  let shape: ResultShape | null;
+  let rest: number;
+  if (scan.startsWith('[')) {
+    const inner = extractDelimitedContent(expr, scan, 0, '[', ']');
+    rest = inner.length + 2;
+    const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
+    if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
+    const source = expressionShape(spread[1], paths, aliases);
+    if (source === null || !source.isList) return null;
+    shape = source;
+  } else {
+    const base = readBase(expr, scan, aliases, paths);
+    if (base === null) return null;
+    ({ shape, rest } = base);
+  }
+  return applyChain(expr, scan, rest, shape);
+}
+
+/** `this.a.b` / `this["a.*.b"]` / 別名。続く `.method(` の手前まで。 */
+function readBase(
+  expr: string,
+  scan: string,
+  aliases: Map<string, ResultShape>,
+  paths: PathCandidate[],
+): { shape: ResultShape; rest: number } | null {
+  const alias = /^([$\w]+)/.exec(scan);
+  if (alias === null) return null;
+  if (alias[1] !== 'this') {
+    const shape = aliases.get(alias[1]);
+    return shape === undefined ? null : { shape, rest: alias[1].length };
+  }
+  const segments: string[] = [];
+  let i = 4;
+  for (;;) {
+    const dot = /^\s*\??\.\s*([$\w]+)/.exec(scan.slice(i));
+    if (dot !== null) {
+      // `.name(` はメソッド呼び出し ── ベースのパスはその手前まで
+      if (/^\s*\(/.test(scan.slice(i + dot[0].length))) break;
+      segments.push(dot[1]);
+      i += dot[0].length;
+      continue;
+    }
+    const bracket = /^\s*\[\s*(["'])/.exec(scan.slice(i));
+    if (bracket !== null) {
+      const open = i + bracket[0].length - 1;
+      const close = scan.indexOf(']', open);
+      const literal = /^(["'])([^"']*)\1\s*$/.exec(expr.slice(open, close));
+      if (close === -1 || literal === null) return null;
+      segments.push(literal[2]);
+      i = close + 1;
+      continue;
+    }
+    break;
+  }
+  const path = segments.join('.');
+  if (path === '' || path.startsWith('$')) return null;
+  return {
+    shape: { isList: hasPath(paths, `${path}.*`), mirrors: [{ from: path, to: '' }], fields: [] },
+    rest: i,
+  };
+}
+
+/** `.filter(…)` / `.find(…)` / `.map(…)` の連鎖。最後まで読めたときだけ形を返す。 */
+function applyChain(expr: string, scan: string, start: number, initial: ResultShape): ResultShape | null {
+  let shape = initial;
+  let i = start;
+  while (scan.slice(i).trim() !== '') {
+    const call = /^\s*\??\.\s*([$\w]+)\s*\(/.exec(scan.slice(i));
+    if (call === null) return null;
+    const open = i + call[0].length - 1;
+    const args = extractDelimitedContent(expr, scan, open, '(', ')');
+    i = open + args.length + 2;
+    const method = call[1];
+    if (ROW_PRESERVING_METHODS.has(method)) {
+      if (!shape.isList) return null;
+    } else if (ROW_PICKING_METHODS.has(method)) {
+      if (!shape.isList) return null;
+      shape = pickRow(shape);
+    } else if (method === 'map') {
+      if (!shape.isList) return null;
+      const mapped = mapRows(args, shape);
+      if (mapped === null) return null;
+      shape = mapped;
+    } else {
+      return null;
+    }
+  }
+  return shape;
+}
+
+/** リストの形 → その行 1 つの形。 */
+function pickRow(shape: ResultShape): ResultShape {
+  return {
+    isList: false,
+    mirrors: shape.mirrors.map(m => (m.to === '' ? { from: `${m.from}.*`, to: '' as const } : { from: m.from, to: '' as const })),
+    fields: shape.fields.filter(f => f.to === '.*').map(f => ({ to: '' as const, field: f.field })),
+  };
+}
+
+/**
+ * `map` のコールバック（`t => ({ … })` / `(t) => { return { … }; }` / `function (t) { return { … }; }`）が
+ * 返すオブジェクトリテラルから行の形を作る。`...t`（引数のスプレッド）があれば元の行も写す。
+ */
+function mapRows(args: string, shape: ResultShape): ResultShape | null {
+  const [callback] = splitTopLevelElements(args);
+  if (callback === undefined) return null;
+  const head = /^(?:async\s+)?(?:function\b[^(]*\(\s*([$\w]+)[^)]*\)|\(\s*([$\w]+)[^)]*\)|([$\w]+))\s*(=>)?\s*/.exec(callback);
+  if (head === null) return null;
+  const param = head[1] ?? head[2] ?? head[3];
+  const body = callback.slice(head[0].length);
+  let literal: string | null = null;
+  const bodyScan = maskCommentsAndStrings(body);
+  if (bodyScan.startsWith('(')) {
+    const inner = stripWrappingParens(body).trim();
+    if (inner.startsWith('{')) literal = inner;
+  } else if (bodyScan.startsWith('{')) {
+    const block = extractDelimitedContent(body, bodyScan, 0, '{', '}');
+    const blockScan = maskCommentsAndStrings(block);
+    const ret = /\breturn\s*\{/.exec(blockScan);
+    if (ret !== null) {
+      const open = ret.index + ret[0].length - 1;
+      literal = `{${extractDelimitedContent(block, blockScan, open, '{', '}')}}`;
+    }
+  }
+  if (literal === null) return null;
+  const content = extractObjectContent(literal);
+  const spreadsRow = splitTopLevelElements(content).some(e => e === `...${param}`);
+  return {
+    isList: true,
+    mirrors: spreadsRow
+      ? shape.mirrors.map(m => (m.to === '' ? { from: `${m.from}.*`, to: '.*' as const } : m))
+      : [],
+    fields: [
+      ...(spreadsRow ? shape.fields.filter(f => f.to === '.*') : []),
+      ...extractRowLiteralFields(literal).map(field => ({ to: '.*' as const, field })),
+    ],
+  };
+}
+
+/** 形を `getter` の下の候補として足す（既にあるパスは上書きしない）。 */
+function applyResultShape(getter: string, shape: ResultShape, paths: PathCandidate[]): void {
+  if (shape.isList) {
+    if (!hasPath(paths, `${getter}.*`)) paths.push({ path: `${getter}.*`, kind: 'list' });
+    if (!hasPath(paths, `${getter}.length`)) paths.push({ path: `${getter}.length`, kind: 'data', typeHint: 'number' });
+  }
+  for (const { from, to } of shape.mirrors) {
+    // 写す元が getter 自身の下（`get a() { return this.a… }`）なら写さない
+    if (from === getter || from.startsWith(`${getter}.`)) continue;
+    const sources = paths.filter(p => p.path.startsWith(`${from}.`) && (p.kind === 'data' || p.kind === 'list'));
+    for (const source of sources) {
+      const target = `${getter}${to}${source.path.slice(from.length)}`;
+      if (!hasPath(paths, target)) paths.push(withHint({ path: target, kind: source.kind }, source.typeHint));
+    }
+  }
+  for (const { to, field } of shape.fields) {
+    pushRowFieldPaths(`${getter}${to}.${field.name}`, field, paths, 1);
+  }
+}
+
+function mergeShapes(shapes: ResultShape[]): ResultShape {
+  return {
+    isList: shapes.some(s => s.isList),
+    mirrors: shapes.flatMap(s => s.mirrors),
+    fields: shapes.flatMap(s => s.fields),
+  };
+}
+
+/** 式全体を包む括弧（`(a)`）を外す。`(a) && (b)` は外さない。 */
+function stripWrappingParens(text: string): string {
+  let expr = text.trim();
+  for (;;) {
+    if (!expr.startsWith('(')) return expr;
+    const scan = maskCommentsAndStrings(expr);
+    const inner = extractDelimitedContent(expr, scan, 0, '(', ')');
+    if (inner.length !== expr.length - 2) return expr;
+    expr = inner.trim();
+  }
+}
+
+/** 深さ 0 の三項演算子 `?` と対応する `:` の位置。`?.` と `??` は演算子ではない。 */
+function splitTernary(scan: string): [number, number] | null {
+  let depth = 0;
+  let question = -1;
+  let nested = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (depth !== 0) continue;
+    else if (ch === '?') {
+      if (scan[i + 1] === '.' || scan[i + 1] === '?' || scan[i - 1] === '?') continue;
+      if (question === -1) question = i;
+      else nested++;
+    } else if (ch === ':' && question !== -1) {
+      if (nested > 0) nested--;
+      else return [question, i];
+    }
+  }
+  return null;
+}
+
+/** 深さ 0 の区切り（`||` / `??`）で式を割り、各オペランドの範囲を返す。 */
+function splitTopLevel(scan: string, separator: RegExp): [number, number][] {
+  const out: [number, number][] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (depth === 0) {
+      separator.lastIndex = i;
+      const m = separator.exec(scan);
+      if (m !== null && m.index === i) {
+        out.push([start, i]);
+        start = i + m[0].length;
+        i = start - 1;
+      }
+    }
+  }
+  out.push([start, scan.length]);
+  return out;
 }
 
 /** 候補集合にパスが既にあるか。 */

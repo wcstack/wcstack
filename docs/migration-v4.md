@@ -202,8 +202,8 @@ The replacement, like the sentence, comes from the `diagnostics` feature. Withou
 
 | 3.x | In 4.0 | Runtime message | 4.0 lint |
 |---|---|---|---|
-| Old filter names (`uc`, `fix`, …) | throws when the page is initialized | `[wcs/filter-unknown] filter not found: uc.` followed by `"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".` (#501) | `wcs/filter-unknown` (warning; names the replacement) |
-| `substr(start, length)` | same | `[wcs/filter-unknown] filter not found: substr.` followed by `"substr" was removed in 4.0 — write slice(start, start + length) …` | `wcs/filter-unknown` (warning; suggests the `slice` call) |
+| Old filter names (`uc`, `fix`, …) | throws when the page is initialized | `[wcs/filter-unknown] filter not found: uc.` followed by `"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".` (#501) | `wcs/filter-unknown` (error; names the replacement) |
+| `substr(start, length)` | same | `[wcs/filter-unknown] filter not found: substr.` followed by `"substr" was removed in 4.0 — write slice(start, start + length) …` | `wcs/filter-unknown` (error; suggests the `slice` call) |
 | `$trackDependency` / `$untrackDependency` | throws when read (with `diagnostics`) | `[wcs/name-alias] $trackDependency was removed: write $dependOn.` (#1701) | `wcs/name-alias` (error) |
 | `$updatedCallback` / `$streams` | throws when the state loads (with `diagnostics`) | `[wcs/declaration-alias] $streams was removed: write $stream.` (#1601) | `wcs/declaration-alias` (error) |
 | `$scan` | throws when the state loads (with `diagnostics`) | `$scan was removed (use $watch or $on)` (#1) | `wcs/scan-declaration-invalid` (error) |
@@ -212,7 +212,7 @@ Without the `diagnostics` feature the runtime message for an old filter name or 
 
 In a volume (`<wcs-state mount=…>`), the removed declaration keys and `$scan` do not throw: the volume is not grafted and the reason goes to `console.error` (§3.5).
 
-The lint reports `wcs/filter-unknown` as a warning although the runtime throws, because a page can register filters of its own at run time.
+The lint reports `wcs/filter-unknown` as an error, as the runtime throws: no public API lets a page add a filter of its own, so a name that is not built in always stops the state. (Up to `@wcstack/lint` 4.0.0 and the extension 2.0.0 it was a warning, on the grounds that a page could register its own filters.)
 
 What to do: §1.4–§1.6.
 
@@ -578,7 +578,7 @@ Run `npx @wcstack/lint@4 <files>` (the VS Code extension 2.0 shows the same code
 
 | Code | What it reports | Severity |
 |---|---|---|
-| `wcs/filter-unknown` | the 3.2 old filter names and `substr`, with the replacement | warning (the runtime throws) |
+| `wcs/filter-unknown` | the 3.2 old filter names and `substr`, with the replacement | error |
 | `wcs/name-alias` | `$trackDependency`, `$untrackDependency` | error |
 | `wcs/declaration-alias` | `$streams`, `$updatedCallback` | error |
 | `wcs/scan-declaration-invalid` | `$scan` | error |

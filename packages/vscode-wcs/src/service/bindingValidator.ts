@@ -876,13 +876,15 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number, msgs: W
   const info = filterMap.get(filter.name);
   if (!info) {
     // 4.0 で外れた名前（3.x の旧名 `uc` / `fix` …・`substr`）も、ランタイムと同じく未知のフィルタ。
-    // 文面だけ書き換え先を案内する（`substr(2, 3)` には `slice(2, 5)` と言う）
+    // 文面だけ書き換え先を案内する（`substr(2, 3)` には `slice(2, 5)` と言う）。
+    // error: ランタイムはバインディングの計画で throw し、state は起動しない。ページがフィルタを
+    // 足す公開 API は無い（`registerFilters` はアドオンの install だけが呼ぶ）ので、組み込みに無い名前は必ず落ちる
     diagnostics.push({
       code: WcsDiagnosticCode.FilterUnknown,
       start: bindingStart + filter.offset,
       end: bindingStart + filter.offset + filter.name.length,
       message: removedFilterMessage(filter.name, filter.args, msgs) ?? msgs.filterUnknown(filter.name),
-      severity: 'warning',
+      severity: 'error',
     });
     return diagnostics;
   }
