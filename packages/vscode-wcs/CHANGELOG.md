@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.0.1 — 2026-10-12
+
+`@wcstack/state` 4.0.1 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.0.1・`@wcstack/typescript` 4.0.1 と同じ判定）。
 
 - **getter の戻り値の下で `wcs/binding-path-missing` の偽陽性を出さない** — getter の `return` 式を読み、既知のリストから導いたリスト（`this.todos.filter(…)`・`toSorted`・`slice`・`[...this.items]`。`const` の別名・三項演算子・`||` / `??` を通しても）はそのリストの行の形を持つ。`for: visible` の行は報告ではなく検査の対象になる。`find` / `findLast` / `at` は行 1 つの形、`map(t => ({ … }))` はリテラルの形（`...t` があれば元の行も）、オブジェクトリテラルはそのフィールド（`summary.total`）。写すのはデータだけ — 元のリストのパス getter（`todos.*.upper`）は getter が返した行には無いので、今までどおり報告する。`wcstack` の README の Todo アプリが出していた 3 件の警告が消える。
 - **`wcs/filter-unknown` は error** — ランタイムは初期化で throw する。「ページが実行時に自前のフィルタを登録できる」として warning にしていたが、それをする公開 API は 4.0 にも 3.x にも無い。
