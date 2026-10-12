@@ -171,8 +171,12 @@ export interface WcsMessageCatalog {
   triggerSeededTruthy(path: string): string;
   storageSeedClobber(path: string, rawInitial: string): string;
   storageInitSeed(path: string, rawInitial: string): string;
+  /** 非 manual の `<wcs-storage>` の value を `#init=element` なしでアクセサペア `path` に束ねた。 */
+  storagePairClobber(path: string): string;
   /** `tag` の入力 `input` を束ねた `path` の下へ、ページが `example` に書き込む。 */
   inputNestedWrite(tag: string, input: string, path: string, example: string): string;
+  /** 同上で、`input` が要求のたびに null へ戻る使い捨ての入力（`<wcs-fetch>` の `body`）。 */
+  inputNestedWriteOneShot(tag: string, input: string, path: string, example: string): string;
   // --- documentEnvValidator ---
   devtoolsAfterState(): string;
   baseHrefMissing(): string;
@@ -375,8 +379,12 @@ const ja: WcsMessageCatalog = {
     `<wcs-storage> の value バインド先 "${path}" が ${raw} でシードされています。読み込みのたびに初期書き戻しが保存値を上書きします — バインドに #init=element を付けて（\`value#init=element: ${path}\`）保存値を勝たせ、スロットは null（空のキーが読む値）でシードしてください`,
   storageInitSeed: (path, raw) =>
     `<wcs-storage> の value バインド先 "${path}" が ${shortSeed(raw)} でシードされていますが、#init=element は要素の値をこのスロットへ引き込みます。初回（空のキー）は null なので、シードは null に置き換わります — null でシードして読む側で既定値を補う（\`this.${path} ?? …\`）か、null を無視する setter を持つアクセサペアを束ねてください`,
+  storagePairClobber: (path) =>
+    `<wcs-storage> の value を #init=element なしでアクセサペア "${path}" に束ねています。state の側が先に書くので、読み込みのたびに getter の最初の値が保存値の上に保存され、setter は保存値を受け取れません — #init=element を付けてください（\`value#init=element: ${path}\`）`,
   inputNestedWrite: (tag, input, path, example) =>
     `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されないので、下への書き込みは <${tag}> に届きません — フィールドをパスで読んで新しい値を返す getter（\`this["${example}"]\`・\`$getAll\`）を束ねるか、下へ書かずに "${path}" を差し替えてください`,
+  inputNestedWriteOneShot: (tag, input, path, example) =>
+    `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されず、<${tag}> は要求のたびに "${input}" を null に戻すので、次の要求は "${input}" なしで送られます — 要求を始めるハンドラで新しいオブジェクトを作って代入し（\`this.submitBody = { … }\`）、それを束ねてください`,
   devtoolsAfterState: () =>
     `@wcstack/devtools/auto は @wcstack/state/auto より先に読み込んでください（後だと配線台帳がライブで captured されません）`,
   baseHrefMissing: () =>
@@ -614,8 +622,12 @@ const en: WcsMessageCatalog = {
     `The <wcs-storage> value-bound slot "${path}" is seeded with ${raw}. The initial write-back overwrites the persisted value on every load — add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
   storageInitSeed: (path, raw) =>
     `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}, but #init=element pulls the element's value into it. On a first visit (an empty key) that is null, so the seed is replaced by null — seed it with null and supply the default where you read it (\`this.${path} ?? …\`), or bind an accessor pair whose setter ignores null`,
+  storagePairClobber: (path) =>
+    `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it — add #init=element (\`value#init=element: ${path}\`)`,
   inputNestedWrite: (tag, input, path, example) =>
     `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> — bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
+  inputNestedWriteOneShot: (tag, input, path, example) =>
+    `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it — build a new object in the handler that starts the request (\`this.submitBody = { … }\`) and bind that`,
   devtoolsAfterState: () =>
     `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
   baseHrefMissing: () =>

@@ -163,9 +163,9 @@ The `outerHTML:` / `outerText:` check (#203) looks at the `for` / `if` templates
 | `wcs/on-prefixed-member` | A tag member whose name starts with `on` (`once` on `<wcs-timer>`), bound without the leading dot: the runtime makes it an event binding and the value never arrives. Write `.once:` (`@wcstack/state` 3.1) | ⚠ warning |
 | `wcs/spread-no-bindable` | `...:` spread onto a helper tag without `wcBindable` (`wcs-fetch-header`, `wcs-fetch-body`, `wcs-infinite-scroll`, `wcs-voice`) — the runtime raises | ❌ error |
 | `wcs/trigger-seeded-truthy` | A `trigger` slot seeded with `true` (fires immediately, no edge) | ⚠ warning |
-| `wcs/storage-seed-clobber` | Non-manual `<wcs-storage>` value bound to an empty seed without `#init=element` — the initial write-back overwrites the stored value on every load. The fix is `value#init=element:` with a `null` seed | ⚠ warning |
+| `wcs/storage-seed-clobber` | Non-manual `<wcs-storage>` value bound without `#init=element` to an empty seed, or to an accessor pair (a getter with a setter — the restore form) — the initial write-back overwrites the stored value on every load. The fix is `value#init=element:` (with a `null` seed for a data slot). A getter without a setter is not reported (it may be save-only) | ⚠ warning |
 | `wcs/storage-init-seed` | `<wcs-storage>` `value#init=element:` bound to a slot seeded with a literal other than `null` (`cart: []`, `theme: "light"`) — `#init=element` pulls the element's value in, and an empty key loads as `null`, so the seed is gone on a first visit (`this.cart.findIndex(…)` throws). Seed `null` and supply the default where you read it, or bind an accessor pair whose setter ignores `null` | ⚠ warning |
-| `wcs/input-nested-write` | Non-manual `<wcs-storage>` `value` bound to a path the page writes below (`value: cart` with `` this[`cart.${i}.quantity`] += 1 ``, `this["cart.0.quantity"] = 2`, or `value: .quantity` in a `for: cart` row): a binding is re-applied only when its path itself is assigned, so those writes are never saved — no error, and a reload brings back the old value. Bind a getter that reads the fields by path (a row getter and `$getAll`) and returns a new value, or replace the array instead of writing below it. `manual` is exempt: its `trigger` save reads the current object | ⚠ warning |
+| `wcs/input-nested-write` | Non-manual `<wcs-storage>` `value` bound to a path the page writes below (`value: cart` with `` this[`cart.${i}.quantity`] += 1 ``, `this["cart.0.quantity"] = 2`, or `value: .quantity` in a `for: cart` row): a binding is re-applied only when its path itself is assigned, so those writes are never saved — no error, and a reload brings back the old value. Bind a getter that reads the fields by path (a row getter and `$getAll`) and returns a new value, or replace the array instead of writing below it. `manual` is exempt: its `trigger` save reads the current object. Also `<wcs-fetch>`'s `body` bound to such a path (`body: newUser` with `value: newUser.name`), `manual` or not: `body` resets to `null` after every request, so the second one goes without it — build a new object in the handler that starts the request | ⚠ warning |
 
 #### `<wcs-state>` script
 
@@ -196,7 +196,7 @@ The `outerHTML:` / `outerText:` check (#203) looks at the `for` / `if` templates
 | Code | Detects | Severity |
 |---|---|---|
 | `wcs/script-order` | Another wcstack `/auto` script loaded after `@wcstack/state/auto` | ⚠ warning |
-| `wcs/base-href-missing` | `router/auto` present without `<base href>` (basename would be mis-derived) | ⚠ warning |
+| `wcs/base-href-missing` | `router/auto` present without `<base href>` (basename would be mis-derived). Pinned URLs count (`@wcstack/router@4/auto`, jsDelivr's `@wcstack/router@4.0.2/dist/auto.min.js`), and so does the `wcstack/auto` bundle on a page that has a `<wcs-router>` | ⚠ warning |
 | `wcs/signals-dual-entry` | `@wcstack/signals` and `@wcstack/signals/dom` on the same page (duplicated reactive core) | ❌ error |
 
 #### v2 migration

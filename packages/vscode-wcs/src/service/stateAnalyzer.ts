@@ -35,6 +35,11 @@ export interface PathCandidate {
    */
   rawInitial?: string;
   /**
+   * kind: 'computed' のときだけ、setter も宣言されていれば true（アクセサペア）。書き込みの
+   * 受け口がある getter — `<wcs-storage>` の値を復元する形 — を見分ける検査が使う。
+   */
+  settable?: boolean;
+  /**
    * sidecar manifest の `stateSchema` から導出した候補（analyzeSchemaPaths）。
    * 型は宣言された契約由来なので「確定」扱い — `for:` の非配列を error にする判定に使う。
    */
@@ -132,7 +137,9 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
       // `**` を含むキーは**深さの族**を表す再帰 getter（`nodes.**.total`）。具体パスの
       // 存在判定に要るので候補には載せるが、補完（＝ data-wcs へ書く候補）には出さない。
       if (!paths.some(p => p.path === prop.name)) {
-        paths.push({ path: prop.name, kind: hasRecursionWildcard(prop.name) ? 'recursive' : 'computed' });
+        const recursive = hasRecursionWildcard(prop.name);
+        const settable = !recursive && effective !== 'data' && effective.set;
+        paths.push({ path: prop.name, kind: recursive ? 'recursive' : 'computed', ...(settable ? { settable } : {}) });
       }
       continue;
     }

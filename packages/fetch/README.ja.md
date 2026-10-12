@@ -164,7 +164,7 @@ npm install @wcstack/fetch
 その書き込みは **黙って無視** されます。fetch は実行されず、`trigger` は `false` のまま、
 イベントも発火しません。先に `url` を設定してから改めて `true` を書き込んでください。
 
-### 4. リアクティブ body での POST
+### 4. body 付きの POST
 
 ```html
 <wcs-state>
@@ -174,11 +174,16 @@ npm install @wcstack/fetch
         name: "",
         email: "",
       },
+      submitBody: null,
       submitRequest: false,
       submitResult: null,
       submitError: null,
+      submitLoading: false,
 
       submit() {
+        // 送信のたびに（再試行も）新しいオブジェクトを作る。<wcs-fetch> は
+        // 要求のたびに `body` を null に戻す。
+        this.submitBody = { name: this["newUser.name"], email: this["newUser.email"] };
         this.submitRequest = true;
       },
     };
@@ -195,7 +200,7 @@ npm install @wcstack/fetch
   method="POST"
   manual
   data-wcs="
-    body: newUser;
+    body: submitBody;
     trigger: submitRequest;
     value: submitResult;
     error: submitError;
@@ -211,6 +216,8 @@ npm install @wcstack/fetch
   <p>送信に失敗しました。</p>
 </template>
 ```
+
+`body` は**使い捨て**の入力です。`<wcs-fetch>` は送信すると `body` を `null` に戻します（[設計メモ](#設計メモ)）。だから本文は要求を始めるハンドラで作り、毎回新しいオブジェクトを代入します。フォームのオブジェクトそのもの（`body: newUser`）を束ねると、送られるのは 1 回だけです。入力は束ねたパスの*下*の `newUser.name` に書くので束縛は当て直されず、2 回目の送信は本文なしになります。エラーは出ません。`wcs-validate` はこの形を `wcs/input-nested-write` で報告します。
 
 ### 5. `<wcs-infinite-scroll>` による無限スクロール
 

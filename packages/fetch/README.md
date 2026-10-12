@@ -164,7 +164,7 @@ If `url` is empty when `true` is written (e.g. a state-driven computed url not y
 resolved), the write is **silently ignored**: no fetch runs, `trigger` stays `false`,
 and no event fires. Set the `url` first, then write `true` again to execute.
 
-### 4. POST with reactive body
+### 4. POST with a body
 
 ```html
 <wcs-state>
@@ -174,11 +174,16 @@ and no event fires. Set the `url` first, then write `true` again to execute.
         name: "",
         email: "",
       },
+      submitBody: null,
       submitRequest: false,
       submitResult: null,
       submitError: null,
+      submitLoading: false,
 
       submit() {
+        // A new object on every submit (a retry included): <wcs-fetch> resets
+        // `body` to null after each request.
+        this.submitBody = { name: this["newUser.name"], email: this["newUser.email"] };
         this.submitRequest = true;
       },
     };
@@ -195,7 +200,7 @@ and no event fires. Set the `url` first, then write `true` again to execute.
   method="POST"
   manual
   data-wcs="
-    body: newUser;
+    body: submitBody;
     trigger: submitRequest;
     value: submitResult;
     error: submitError;
@@ -211,6 +216,8 @@ and no event fires. Set the `url` first, then write `true` again to execute.
   <p>Submit failed.</p>
 </template>
 ```
+
+`body` is a **one-shot** input: `<wcs-fetch>` sends it and resets it to `null` (see [Design Notes](#design-notes)). So build the body in the handler that starts the request, and assign a new object every time. Binding the form object itself (`body: newUser`) sends it once: typing writes `newUser.name`, a path *below* the bound one, which never re-applies the binding, so the second submit goes without a body — no error. `wcs-validate` reports that form as `wcs/input-nested-write`.
 
 ### 5. Infinite scroll with `<wcs-infinite-scroll>`
 

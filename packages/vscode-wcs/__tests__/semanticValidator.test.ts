@@ -910,10 +910,34 @@ describe("wcs/input-nested-write — 入力を束ねたパスの下への書き�
     expect(run(html)).toHaveLength(0);
   });
 
-  it("対象の表に無い入力（<wcs-fetch> の body）は報告しないこと", () => {
-    const html = script(`{ newUser: { name: "" } }`) +
-      `<wcs-fetch url="/api" method="POST" manual data-wcs="body: newUser"></wcs-fetch>` +
+  it("<wcs-fetch> の body は manual でも報告し、要求のたびに作り直す直し方を言うこと（使い捨ての入力）", () => {
+    // fetch の README §4 の旧い形: 2 回目の送信は本文なしになる（body は要求のたびに null へ戻る）
+    const html = script(`{ newUser: { name: "" }, submitRequest: false }`) +
+      `<wcs-fetch url="/api" method="POST" manual data-wcs="body: newUser; trigger: submitRequest"></wcs-fetch>` +
       `<input data-wcs="value: newUser.name">`;
+    const diags = run(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('"newUser.name"');
+    expect(diags[0].message).toContain("null");
+    expect(diags[0].message).toContain("this.submitBody");
+  });
+
+  it("<wcs-fetch> の body を送信のたびに作るオブジェクトに束ねた形は報告しないこと", () => {
+    const html = script(`{
+  newUser: { name: "" },
+  submitBody: null,
+  submitRequest: false,
+  submit() { this.submitBody = { name: this["newUser.name"] }; this.submitRequest = true; },
+}`) +
+      `<wcs-fetch url="/api" method="POST" manual data-wcs="body: submitBody; trigger: submitRequest"></wcs-fetch>` +
+      `<input data-wcs="value: newUser.name">`;
+    expect(run(html)).toHaveLength(0);
+  });
+
+  it("表に無いタグ・入力は報告しないこと", () => {
+    const html = script(`{ outgoing: { text: "" } }`) +
+      `<wcs-ws url="wss://example.com" data-wcs="send: outgoing"></wcs-ws>` +
+      `<input data-wcs="value: outgoing.text">`;
     expect(run(html)).toHaveLength(0);
   });
 
