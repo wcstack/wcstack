@@ -118,6 +118,8 @@ export class Router extends HTMLElement implements IRouter {
   private _data: GuardData | null = null;
   /** 最初の成功 commit を通過したか（§4.4 の初回ガード） */
   private _hasCommitted: boolean = false;
+  /** commitNavigation(…, true) が path-changed の発火を保留している（releasePath で発火） */
+  private _pathHeld: boolean = false;
   private _connectedCallbackPromise: Promise<void>;
   private _resolveConnectedCallback: (() => void) | null = null;
   private _rejectConnectedCallback: ((reason?: unknown) => void) | null = null;
@@ -343,8 +345,14 @@ export class Router extends HTMLElement implements IRouter {
    * 先頭に置くのは、params のリスナーがロード済みデータを読めるようにするため。
    * `path` を最後に置くのは、既存例で `path` が「ナビゲーション完了」の信号として
    * 使われているため。各イベントは変化した commit のみ発火する。
+   *
+   * `holdPath` は path-changed だけを `releasePath()` まで保留する。applyRoute はルートの中身を
+   * 描く前にこれで commit する — 中身のバインディング（state）が、その遷移の params / data を
+   * 最初から読めるように。保留しないと、中身は前のルートの値で一度評価され、getter や
+   * フィルタが例外を出しうる（docs/seam-apps.md、router-auth）。path は中身を描いた後に発火し、
+   * 「ナビゲーション完了」の意味を保つ。
    */
-  commitNavigation(commit: IRouterCommit): void {
+  commitNavigation(commit: IRouterCommit, holdPath = false): void {
     const nextParams = Object.freeze({ ...commit.params });
     const nextTypedParams = Object.freeze({ ...commit.typedParams });
     const nextSearchParams = parseSearchParams(commit.search);
@@ -399,12 +407,24 @@ export class Router extends HTMLElement implements IRouter {
         bubbles: true,
       }));
     }
-    if (pathChanged) {
-      this.dispatchEvent(new CustomEvent("wcs-router:path-changed", {
-        detail: commit.path,
-        bubbles: true,
-      }));
+    this._pathHeld = pathChanged && holdPath;
+    if (pathChanged && !holdPath) {
+      this._firePathChanged();
     }
+  }
+
+  releasePath(): void {
+    if (this._pathHeld) {
+      this._pathHeld = false;
+      this._firePathChanged();
+    }
+  }
+
+  private _firePathChanged(): void {
+    this.dispatchEvent(new CustomEvent("wcs-router:path-changed", {
+      detail: this._path,
+      bubbles: true,
+    }));
   }
 
   get fallbackRoute(): IRoute | null {

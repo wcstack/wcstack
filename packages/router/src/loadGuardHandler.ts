@@ -1,6 +1,7 @@
 import { GuardHandler } from "./components/types.js";
 import { IRoute } from "./components/types.js";
 import { raiseError } from "./raiseError.js";
+import { config } from "./config.js";
 
 type ScriptModule = { default?: unknown };
 
@@ -91,6 +92,8 @@ export function loadGuardHandler(script: HTMLScriptElement, route: IRoute): void
     if (handler) {
       route.guardHandler = handler;
     } else {
+      // default export が関数でない: 黙ってリダイレクトに倒すと理由が分からないので知らせる
+      console.error(`${config.tagNames.guardHandler}: the <script type="module"> has no default-exported function, so the route's guard redirects every navigation.`);
       // ハンドラが取得できなかった場合は guardCheck の待ちを解除する
       route.notifyGuardHandlerLoadFailed();
     }

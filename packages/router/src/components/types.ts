@@ -96,7 +96,10 @@ export interface IRoute extends IRouteChildContainer {
   readonly absoluteSegmentCount: number;
   readonly segmentInfos: ISegmentInfo[];
   readonly absoluteSegmentInfos: ISegmentInfo[];
-  /** guard 属性の有無。SSR の guard バリア判定に使う（docs/ssr-router-design.md §2-4） */
+  /**
+   * guard を持つか（`guard` 属性、または `<wcs-guard-handler>`）。SSR の guard バリア判定に使う
+   * （docs/ssr-router-design.md §2-4）
+   */
   readonly hasGuard: boolean;
   guardHandler: GuardHandler;
   shouldChange(newParams: Record<string, string>): boolean;
@@ -107,6 +110,11 @@ export interface IRoute extends IRouteChildContainer {
   setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
   clearParams(): void;
   notifyGuardHandlerLoadFailed(): void;
+  /**
+   * `<wcs-guard-handler>` を持つルートの guard を有効にする（`guard` 属性が無くても）。ハンドラの
+   * 読み込みより前に呼ぶ — 最初のナビゲーションの guard 相がハンドラを待てるように（parse）
+   */
+  enableGuard(): void;
   /**
    * SSR ハイドレーションの採用: サーバー描画済みノード列を内容として引き取る
    * （docs/ssr-router-design.md §4）
@@ -152,15 +160,24 @@ export interface IRouter extends IRouteChildContainer {
   /** navigateUrl（push）の対になる replace 遷移（§4.2） */
   replace(path: string): Promise<void>;
   /**
+   * 初期化（最初のルート適用と navigate リスナの登録）が終わると決着する。guard のリダイレクトは
+   * これを待つ — 初期化中の遷移はリスナに捕まらず、文書ごとの読み込みになるため
+   */
+  readonly connectedCallbackPromise: Promise<void>;
+  /**
    * same-match 判定（§4.4）。比較は basename スライス後の path 同士。
    * 最初の成功 commit より前は常に false（初回ガード）。
    */
   isSameMatch(path: string): boolean;
   /**
    * 観測面のコミットと発火（§3.4）。全内部値を先にコミットし、その後で
-   * params → route-name → search → path の順に変化したものだけ発火する。
+   * data → params → route-name → search → path の順に変化したものだけ発火する。
+   * `holdPath` なら path だけ発火を保留し、`releasePath()` で発火する — ルートの中身を
+   * 描く前に出力を渡し、描いた後で「遷移完了」を知らせるため（applyRoute）。
    */
-  commitNavigation(commit: IRouterCommit): void;
+  commitNavigation(commit: IRouterCommit, holdPath?: boolean): void;
+  /** `commitNavigation(…, true)` で保留した path-changed を発火する（保留が無ければ何もしない） */
+  releasePath(): void;
   /** `announce=` 用 live region。未生成なら null（docs/a11y-design.md §3-4） */
   readonly a11yRegion: HTMLElement | null;
   /**

@@ -179,26 +179,23 @@ describe('showRouteContent', () => {
     });
 
     const navError = new Error('navigate failed');
-    router.navigate = vi.fn().mockRejectedValue(navError);
+    router.replace = vi.fn().mockRejectedValue(navError);
 
-    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const matchResult = createMatchResult([route1]);
 
     await showRouteContent(router, matchResult, []);
 
-    // microtask + rejected promise の解決を待つ
-    await new Promise<void>(resolve => queueMicrotask(() => resolve()));
+    // 初期化（connectedCallbackPromise）の決着と rejected promise の解決を待つ
     await new Promise<void>(resolve => setTimeout(resolve, 0));
 
-    expect(router.navigate).toHaveBeenCalledWith('/fallback');
+    expect(router.replace).toHaveBeenCalledWith('/fallback');
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       'Fallback navigation failed:',
       navError
     );
 
-    consoleWarnSpy.mockRestore();
     consoleErrorSpy.mockRestore();
   });
 
@@ -214,22 +211,26 @@ describe('showRouteContent', () => {
     });
 
     router.navigate = vi.fn().mockResolvedValue(undefined);
+    router.replace = vi.fn().mockResolvedValue(undefined);
 
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const matchResult = createMatchResult([route1]);
 
     await showRouteContent(router, matchResult, []);
 
-    // Wait for microtask
-    await new Promise<void>(resolve => queueMicrotask(() => resolve()));
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
 
-    expect(consoleWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Navigation cancelled')
-    );
-    expect(router.navigate).toHaveBeenCalledWith('/fallback');
+    // 設計どおりのリダイレクトは何も出さず、履歴を置き換える（push だと「戻る」で同じ
+    // リダイレクトへ戻される）
+    expect(consoleWarnSpy).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    expect(router.replace).toHaveBeenCalledWith('/fallback');
+    expect(router.navigate).not.toHaveBeenCalled();
 
     consoleWarnSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 
   it('ガード以外のエラーは再スローすること', async () => {
@@ -593,5 +594,116 @@ describe('showRouteContent — binder への受け渡し', () => {
     expect(String(warnSpy.mock.calls[0][0])).toMatch(/<section> inside a route contains data-wcs bindings/);
     warnSpy.mockRestore();
     router.remove();
+  });
+});
+
+describe('showRouteContent — guard のリダイレクトと commit の時機（docs/seam-apps.md、router-auth）', () => {
+  /** connectedCallbackPromise を外から決着させられる router の代役 */
+  function routerWith(promise: Promise<void> = Promise.resolve()) {
+    const router = document.createElement('wcs-router') as Router;
+    Object.defineProperty(router, 'connectedCallbackPromise', { get: () => promise });
+    router.replace = vi.fn().mockResolvedValue(undefined);
+    router.navigate = vi.fn().mockResolvedValue(undefined);
+    return router;
+  }
+  const cancelling = (path = '/login') => createMockRoute({
+    guardCheck: vi.fn().mockRejectedValue(new GuardCancel('Navigation cancelled by guard.', path)),
+    shouldChange: vi.fn().mockReturnValue(true),
+  });
+  const passing = () => createMockRoute({ guardCheck: vi.fn().mockResolvedValue(null), shouldChange: vi.fn().mockReturnValue(true) });
+  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('リダイレクトは初期化（connectedCallbackPromise）の後に行う — 初期化中の遷移は navigate リスナに捕まらず文書ごと読み直されるため', async () => {
+    let finishInit!: () => void;
+    const router = routerWith(new Promise<void>((resolve) => { finishInit = resolve; }));
+
+    expect(await showRouteContent(router, createMatchResult([cancelling()]), [])).toBe(false);
+    await settle();
+    expect(router.replace).not.toHaveBeenCalled();
+
+    finishInit();
+    await settle();
+    expect(router.replace).toHaveBeenCalledWith('/login');
+  });
+
+  it('初期化が失敗していてもリダイレクトを試みる（失敗はログに出る）', async () => {
+    const failed = Promise.reject(new Error('init failed'));
+    failed.catch(() => {});
+    const router = routerWith(failed);
+
+    await showRouteContent(router, createMatchResult([cancelling()]), []);
+    await settle();
+
+    expect(router.replace).toHaveBeenCalledWith('/login');
+  });
+
+  it(`guard 同士のリダイレクトが続くと、上限を超えたところで止めてエラーにする`, async () => {
+    const { MAX_GUARD_REDIRECTS } = await import('../src/showRouteContent');
+    const router = routerWith();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    for (let i = 0; i < MAX_GUARD_REDIRECTS; i++) {
+      await showRouteContent(router, createMatchResult([cancelling('/b')], {}, '/a'), []);
+    }
+    await settle();
+    expect(router.replace).toHaveBeenCalledTimes(MAX_GUARD_REDIRECTS);
+    expect(errorSpy).not.toHaveBeenCalled();
+
+    expect(await showRouteContent(router, createMatchResult([cancelling('/b')], {}, '/a'), [])).toBe(false);
+    await settle();
+    expect(router.replace).toHaveBeenCalledTimes(MAX_GUARD_REDIRECTS);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(String(errorSpy.mock.calls[0][0])).toMatch(/guard redirect loop .* \/a → \/b/);
+
+    // 止めた後は数え直す: 次のリダイレクトはまた行う
+    await showRouteContent(router, createMatchResult([cancelling('/b')], {}, '/a'), []);
+    await settle();
+    expect(router.replace).toHaveBeenCalledTimes(MAX_GUARD_REDIRECTS + 1);
+    errorSpy.mockRestore();
+  });
+
+  it('guard 相を通った遷移で数え直す（上限は「続けて」のリダイレクトの数）', async () => {
+    const { MAX_GUARD_REDIRECTS } = await import('../src/showRouteContent');
+    const router = routerWith();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    for (let i = 0; i < MAX_GUARD_REDIRECTS; i++) {
+      await showRouteContent(router, createMatchResult([cancelling()]), []);
+    }
+    expect(await showRouteContent(router, createMatchResult([passing()]), [])).toBe(true);
+    await showRouteContent(router, createMatchResult([cancelling()]), []);
+    await settle();
+
+    expect(router.replace).toHaveBeenCalledTimes(MAX_GUARD_REDIRECTS + 1);
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('beforeChange は guard 相を通った後、ルートの中身を置く前に呼ぶ', async () => {
+    const router = routerWith();
+    const route = passing();
+    const placedAtCall: boolean[] = [];
+    const beforeChange = vi.fn(() => {
+      placedAtCall.push((route.setParams as any).mock.calls.length > 0);
+    });
+
+    await showRouteContent(router, createMatchResult([route]), [], beforeChange);
+
+    expect(beforeChange).toHaveBeenCalledTimes(1);
+    expect(placedAtCall).toEqual([false]);
+    expect(route.setParams).toHaveBeenCalled();
+  });
+
+  it('guard が拒否したら beforeChange は呼ばない', async () => {
+    const router = routerWith();
+    const beforeChange = vi.fn();
+
+    await showRouteContent(router, createMatchResult([cancelling()]), [], beforeChange);
+
+    expect(beforeChange).not.toHaveBeenCalled();
   });
 });

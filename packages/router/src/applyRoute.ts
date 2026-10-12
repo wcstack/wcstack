@@ -61,21 +61,23 @@ export async function applyRoute(
   // guard 相の第 3 引数（IGuardContext.searchParams）が commit と同じクエリを読めるように供給する
   matchResult.search = search;
   const lastRoutes = outlet.lastRoutes;
-  const committed = await showRouteContent(routerNode, matchResult, lastRoutes);
-  // GuardCancel により中断された場合は state を更新しない
-  // （拒否されたパスでの wcs-router:path-changed 発火を防ぐため）
-  if (!committed) return false;
-  // if successful, update router and outlet state
-  // routeName は最深マッチの name。fallback 時は fallback ルートの name（D8）。
-  routerNode.commitNavigation({
-    params: matchResult.params,
-    typedParams: matchResult.typedParams,
-    routeName: matchResult.routes[matchResult.routes.length - 1]?.name ?? "",
-    // guard 相（runGuardPhase）が集めたロード済みデータ。無ければ null に戻る
-    data: matchResult.data ?? null,
-    search,
-    path,
+  // guard 相を通ったら、中身を描く前に commit する（path-changed だけ描いた後）。中身の
+  // バインディングが最初からこの遷移の params / data を読めるように（Router.commitNavigation）。
+  // GuardCancel で中断された場合は commit しない（拒否されたパスでの発火を防ぐため）
+  const committed = await showRouteContent(routerNode, matchResult, lastRoutes, () => {
+    // routeName は最深マッチの name。fallback 時は fallback ルートの name（D8）。
+    routerNode.commitNavigation({
+      params: matchResult.params,
+      typedParams: matchResult.typedParams,
+      routeName: matchResult.routes[matchResult.routes.length - 1]?.name ?? "",
+      // guard 相（runGuardPhase）が集めたロード済みデータ。無ければ null に戻る
+      data: matchResult.data ?? null,
+      search,
+      path,
+    }, true);
   });
+  if (!committed) return false;
+  routerNode.releasePath();
   outlet.lastRoutes = matchResult.routes;
   // オプトインの focus/announce は commit 直後・mutate() の外で適用する（D3）。
   // 初回描画（lastRoutes が空）では動かない — ページロードはブラウザの担当で、

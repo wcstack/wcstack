@@ -64,6 +64,10 @@ async function _parseNode(
           const route = routes[routes.length - 1];
           const script = element.querySelector('script[type="module"]');
           if (script) {
+            // ハンドラがあれば guard を有効にする（`guard` 属性が無くても）。読み込みより前に —
+            // 最初のナビゲーションの guard 相がハンドラを待てるように。属性が無いと待たずに通し、
+            // 最初の表示だけ守られなかった（docs/seam-apps.md、router-auth）
+            route.enableGuard();
             loadGuardHandler(script as HTMLScriptElement, route);
           }
         }

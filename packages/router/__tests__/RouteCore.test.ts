@@ -297,6 +297,35 @@ describe('RouteCore', () => {
     });
   });
 
+  describe('enableGuard（<wcs-guard-handler> だけでも guard を有効にする）', () => {
+    it('guard 属性の無いルートで有効にすると、guard 相がハンドラを待ち、falsy は "/" へ', async () => {
+      const core = new RouteCore();
+      core.parsePath('/members');
+      expect(core.hasGuard).toBe(false);
+      core.enableGuard();
+      expect(core.hasGuard).toBe(true);
+
+      const check = core.guardCheck({ path: '/members', routes: [], params: {}, typedParams: {}, lastPath: '' });
+      let settled = false;
+      check.then(() => { settled = true; }, () => { settled = true; });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+
+      core.guardHandler = vi.fn().mockResolvedValue(false);
+      await expect(check).rejects.toMatchObject({ fallbackPath: '/' });
+    });
+
+    it('guard 属性があればそのパスへ。二度目の enableGuard は何もしない（待ちを作り直さない）', async () => {
+      const core = new RouteCore();
+      core.parsePath('/members', { hasGuard: true, guardFallback: '/login' });
+      core.enableGuard();
+      core.guardHandler = vi.fn().mockResolvedValue(false);
+
+      await expect(core.guardCheck({ path: '/members', routes: [], params: {}, typedParams: {}, lastPath: '' }))
+        .rejects.toMatchObject({ fallbackPath: '/login' });
+    });
+  });
+
   describe('guardCheck', () => {
     it('guardがない場合は何もしない', async () => {
       const core = new RouteCore();

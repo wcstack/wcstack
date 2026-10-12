@@ -8,6 +8,17 @@ import * as showRouteContentModule from '../src/showRouteContent';
 import * as a11yPoliciesModule from '../src/a11yPolicies';
 import './setup';
 
+/**
+ * showRouteContent の代役。通過（true）なら、変更相の前に呼ぶコールバック（applyRoute の commit）を
+ * 本物と同じく呼ぶ。`before` は guard 相の代わり（matchResult.data を書くなど）。
+ */
+const shows = (ok: boolean, before?: (result: any) => void) =>
+  async (_router: unknown, result: any, _lastRoutes: unknown, beforeChange?: () => void): Promise<boolean> => {
+    before?.(result);
+    if (ok) beforeChange?.();
+    return ok;
+  };
+
 describe('applyRoute', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -31,7 +42,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
     
     await applyRoute(router, outlet, '/app/test', '');
     
@@ -55,7 +66,7 @@ describe('applyRoute', () => {
     };
 
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
     await applyRoute(router, outlet, '/app', '/prev');
 
@@ -79,7 +90,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
     
     await applyRoute(router, outlet, '/home', '');
     
@@ -110,7 +121,7 @@ describe('applyRoute', () => {
     const outlet = document.createElement('wcs-outlet') as Outlet;
 
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(null);
-    const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
     await applyRoute(router, outlet, '/nonexistent', '/prev');
 
@@ -135,7 +146,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
     
     const committed = await applyRoute(router, outlet, '/page', '/previous');
 
@@ -185,7 +196,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
     
     const lastPathValue = '/old-path';
     await applyRoute(router, outlet, '/current', lastPathValue);
@@ -211,11 +222,11 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    const showRouteContentSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    const showRouteContentSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
     
     await applyRoute(router, outlet, '/test', '');
     
-    expect(showRouteContentSpy).toHaveBeenCalledWith(router, matchResult, [mockPreviousRoute]);
+    expect(showRouteContentSpy).toHaveBeenCalledWith(router, matchResult, [mockPreviousRoute], expect.any(Function));
   });
 
   it('basenameで始まらないパスをそのまま使用すること', async () => {
@@ -234,7 +245,7 @@ describe('applyRoute', () => {
     };
     
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
     
     // basenameは'/admin'だが、パスは'/user'で始まらない
     await applyRoute(router, outlet, '/user/profile', '');
@@ -259,7 +270,7 @@ describe('applyRoute', () => {
     };
 
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
     await applyRoute(router, outlet, '/appX/products', '');
 
@@ -286,7 +297,7 @@ describe('applyRoute', () => {
     };
 
     vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-    vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(false);
+    vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(false));
 
     const pathChangedListener = vi.fn();
     router.addEventListener('wcs-router:path-changed', pathChangedListener);
@@ -333,7 +344,7 @@ describe('applyRoute', () => {
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
         matchResultWith([{ childNodeArray: [] }])
       );
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
       document.title = 'After Nav';
 
       await applyRoute(router, outlet, '/page', '/prev');
@@ -349,7 +360,7 @@ describe('applyRoute', () => {
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
         matchResultWith([{ childNodeArray: [] }])
       );
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
       document.title = 'Initial Load';
 
       await applyRoute(router, outlet, '/page', '');
@@ -367,7 +378,7 @@ describe('applyRoute', () => {
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
         matchResultWith([{ childNodeArray: [h1] }])
       );
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(false);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(false));
       document.title = 'Blocked';
 
       await applyRoute(router, outlet, '/blocked', '/prev');
@@ -387,7 +398,7 @@ describe('applyRoute', () => {
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
         matchResultWith([{ childNodeArray: [] }, { childNodeArray: [h1] }])
       );
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
       await applyRoute(router, outlet, '/page', '/prev');
 
@@ -427,7 +438,7 @@ describe('applyRoute', () => {
         lastPath: ''
       };
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
       await applyRoute(router, outlet, '/products/5', '', '?tab=specs');
 
@@ -444,7 +455,7 @@ describe('applyRoute', () => {
       const outlet = document.createElement('wcs-outlet') as Outlet;
       const matchResult = { path: '/products/5', routes: [{ name: 'detail' } as unknown as Route], params: {}, typedParams: {}, lastPath: '' };
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-      const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
       await applyRoute(router, outlet, '/products/5', '', '?tab=specs');
 
@@ -458,10 +469,7 @@ describe('applyRoute', () => {
       const loaded = { product: { id: 5, name: 'Widget' } };
       const matchResult = { path: '/products/5', routes: [{ name: 'detail' } as unknown as Route], params: { productId: '5' }, typedParams: { productId: 5 }, lastPath: '' };
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(async (_router, result) => {
-        result.data = loaded;
-        return true;
-      });
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true, (result) => { result.data = loaded; }));
       const order: string[] = [];
       let dataSeenAtParams: unknown = undefined;
       router.addEventListener('wcs-router:data-changed', (e) => { order.push('data'); expect((e as CustomEvent).detail).toBe(loaded); });
@@ -482,10 +490,7 @@ describe('applyRoute', () => {
       expect(router.data).toEqual({ stale: true });
       const matchResult = { path: '/about', routes: [{ name: 'about' } as unknown as Route], params: {}, typedParams: {}, lastPath: '/products/5' };
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(async (_router, result) => {
-        result.data = null;
-        return true;
-      });
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true, (result) => { result.data = null; }));
       const dataListener = vi.fn();
       router.addEventListener('wcs-router:data-changed', dataListener);
 
@@ -509,7 +514,7 @@ describe('applyRoute', () => {
         lastPath: ''
       };
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
       await applyRoute(router, outlet, '/p', '', '?a=1');
 
@@ -526,7 +531,7 @@ describe('applyRoute', () => {
       const outlet = document.createElement('wcs-outlet') as Outlet;
 
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(null);
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
       await applyRoute(router, outlet, '/nonexistent', '/prev');
 
@@ -541,7 +546,7 @@ describe('applyRoute', () => {
       const outlet = document.createElement('wcs-outlet') as Outlet;
 
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(null);
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
       await applyRoute(router, outlet, '/nonexistent', '/prev');
 
@@ -561,7 +566,7 @@ describe('applyRoute', () => {
         lastPath: ''
       };
       vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(false);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(false));
 
       const listeners = {
         params: vi.fn(),
@@ -667,7 +672,7 @@ describe('applyRoute', () => {
         lastPath: ''
       };
       const matchSpy = vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-      vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
       await applyRoute(router, outlet, '/products', '/products', '');
 
@@ -687,7 +692,7 @@ describe('applyRoute', () => {
         lastPath: ''
       };
       const matchSpy = vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(matchResult);
-      const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockResolvedValue(true);
+      const showSpy = vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(shows(true));
 
       await applyRoute(router, outlet, '/about', '/products', '');
 
