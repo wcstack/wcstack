@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.0.3] — 2026-10-12
+
+Fixes from finishing Part 2 of the [tutorial](https://wcstack.github.io/tutorial/) and planning Part 3: three lint checks that stayed silent where a page loses data or is published with pinned URLs, and a README example that sent no body the second time.
+
 ### Fixed
 
 - `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/storage-seed-clobber` also reports an accessor pair bound without `#init=element`.** `<wcs-storage data-wcs="value: savedCart">` with a getter / setter `savedCart` saves the getter's starting value (an empty cart's `[]`) over the stored one on every load, and the setter never receives it. A getter without a setter is not reported: it may be save-only.
@@ -756,7 +760,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v4.0.2...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v4.0.3...HEAD
+[4.0.3]: https://github.com/wcstack/wcstack/compare/v4.0.2...v4.0.3
 [4.0.2]: https://github.com/wcstack/wcstack/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/wcstack/wcstack/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/wcstack/wcstack/compare/v3.5.4...v4.0.0
