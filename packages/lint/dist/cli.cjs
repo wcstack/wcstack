@@ -253,6 +253,13 @@ var WcsDiagnosticCode = {
   TriggerSeededTruthy: "wcs/trigger-seeded-truthy",
   // 非 manual <wcs-storage> value バインド先の空値シード(初期書き戻しが保存値を上書き)。
   StorageSeedClobber: "wcs/storage-seed-clobber",
+  // `value#init=element` の <wcs-storage> バインド先の null 以外のリテラルシード
+  // (空のキーは null を読むので、初回の引き込みでシードが null に置き換わる)。
+  StorageInitSeed: "wcs/storage-init-seed",
+  // 組み込み I/O ノードの入力を束ねたパスの下へ、ページが書き込む(`value: cart` と
+  // `this["cart.0.quantity"] = …`)。束縛はそのパス自身への代入でしか当て直されないので、
+  // 下への書き込みは要素に届かない(storage なら保存されない)。
+  InputNestedWrite: "wcs/input-nested-write",
   // --- accessibility (docs/a11y-design.md §8 / D9) ---
   // `attr.aria-*` バインドの属性名が WAI-ARIA に存在しない(タイポ)。
   // setAttribute はそのまま書き、支援技術は黙って無視する。severity は warning
@@ -2395,6 +2402,292 @@ function coversSuffix(spec, familySuffix, suffix) {
   return false;
 }
 
+// src/service/jsdocType.ts
+var UNKNOWN = { kind: "unknown" };
+var NULL_TYPE = { kind: "name", name: "null" };
+var ARRAY_GENERICS = /* @__PURE__ */ new Set(["Array", "ReadonlyArray"]);
+var MAX_RESOLVE_DEPTH = 8;
+function tokenize(text3) {
+  const tokens = [];
+  let i = 0;
+  while (i < text3.length) {
+    const ch = text3[i];
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === "=" && text3[i + 1] === ">") {
+      tokens.push({ t: "punct", v: "=>" });
+      i += 2;
+      continue;
+    }
+    if ("{}[]<>()|,;:?!*.=".includes(ch)) {
+      tokens.push({ t: "punct", v: ch });
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const end = text3.indexOf(ch, i + 1);
+      if (end === -1) return null;
+      tokens.push({ t: "string", v: text3.slice(i + 1, end) });
+      i = end + 1;
+      continue;
+    }
+    const num = /^-?\d+(?:\.\d+)?/.exec(text3.slice(i));
+    if (num) {
+      tokens.push({ t: "number" });
+      i += num[0].length;
+      continue;
+    }
+    const name = /^[$A-Za-z_][$\w]*/.exec(text3.slice(i));
+    if (name) {
+      tokens.push({ t: "name", v: name[0] });
+      i += name[0].length;
+      continue;
+    }
+    return null;
+  }
+  return tokens;
+}
+function parseJsDocType(text3) {
+  const tokens = tokenize(text3);
+  if (tokens === null || tokens.length === 0) return null;
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const isPunct = (v) => {
+    const token = tokens[pos];
+    return token !== void 0 && token.t === "punct" && token.v === v;
+  };
+  const expect = (v) => {
+    if (!isPunct(v)) return false;
+    pos++;
+    return true;
+  };
+  const parseUnion = () => {
+    expect("|");
+    const members = [];
+    for (; ; ) {
+      const member = parsePostfix();
+      if (member === null) return null;
+      members.push(member);
+      if (!expect("|")) break;
+    }
+    if (isPunct("=>")) {
+      pos++;
+      if (parseUnion() === null) return null;
+      return UNKNOWN;
+    }
+    return members.length === 1 ? members[0] : { kind: "union", members };
+  };
+  const parsePostfix = () => {
+    let type2 = parsePrimary();
+    if (type2 === null) return null;
+    while (isPunct("[") && tokens[pos + 1]?.t === "punct" && tokens[pos + 1].v === "]") {
+      pos += 2;
+      type2 = { kind: "array", element: type2 };
+    }
+    return type2;
+  };
+  const parsePrimary = () => {
+    const token = peek();
+    if (token === void 0) return null;
+    if (token.t === "string" || token.t === "number") {
+      pos++;
+      return UNKNOWN;
+    }
+    if (token.t === "punct") {
+      if (token.v === "{") return parseObject();
+      if (token.v === "(") {
+        pos++;
+        if (expect(")")) return isPunct("=>") ? UNKNOWN : null;
+        const inner = parseUnion();
+        if (inner === null) return null;
+        if (isPunct(":") || isPunct(",")) {
+          if (!skipUntilClose("(", ")")) return null;
+          return UNKNOWN;
+        }
+        return expect(")") ? inner : null;
+      }
+      if (token.v === "?") {
+        pos++;
+        const next = peek();
+        if (next === void 0 || next.t === "punct" && ["|", ",", ";", ")", ">", "]", "}", "="].includes(next.v)) return UNKNOWN;
+        const inner = parsePostfix();
+        return inner === null ? null : { kind: "union", members: [inner, NULL_TYPE] };
+      }
+      if (token.v === "!") {
+        pos++;
+        return parsePostfix();
+      }
+      if (token.v === "*") {
+        pos++;
+        return UNKNOWN;
+      }
+      return null;
+    }
+    pos++;
+    let name = token.v;
+    while (isPunct(".") && tokens[pos + 1]?.t === "name") {
+      name += "." + tokens[pos + 1].v;
+      pos += 2;
+    }
+    if ((name === "typeof" || name === "keyof") && peek()?.t === "name") {
+      pos++;
+      return UNKNOWN;
+    }
+    if (name === "function" && isPunct("(")) {
+      pos++;
+      if (!skipUntilClose("(", ")")) return null;
+      if (expect(":")) {
+        if (parsePostfix() === null) return null;
+      }
+      return UNKNOWN;
+    }
+    if (isPunct(".") && tokens[pos + 1]?.t === "punct" && tokens[pos + 1].v === "<") pos++;
+    if (isPunct("<")) {
+      pos++;
+      const args = [];
+      for (; ; ) {
+        const arg = parseUnion();
+        if (arg === null) return null;
+        args.push(arg);
+        if (!expect(",")) break;
+      }
+      if (!expect(">")) return null;
+      return ARRAY_GENERICS.has(name) && args.length === 1 ? { kind: "array", element: args[0] } : UNKNOWN;
+    }
+    return { kind: "name", name };
+  };
+  const parseObject = () => {
+    pos++;
+    const fields = [];
+    while (!isPunct("}")) {
+      const key = peek();
+      if (key === void 0) return null;
+      if (key.t === "punct" && key.v === "[") {
+        pos++;
+        if (!skipUntilClose("[", "]")) return null;
+        if (!expect(":") || parseUnion() === null) return null;
+      } else {
+        if (key.t !== "name" && key.t !== "string") return null;
+        pos++;
+        expect("?");
+        if (!expect(":")) return null;
+        const type2 = parseUnion();
+        if (type2 === null) return null;
+        fields.push({ name: key.v, type: type2 });
+      }
+      if (!expect(",") && !expect(";")) break;
+    }
+    return expect("}") ? { kind: "object", fields } : null;
+  };
+  const skipUntilClose = (open, close) => {
+    let depth = 0;
+    while (pos < tokens.length) {
+      const token = tokens[pos++];
+      if (token.t !== "punct") continue;
+      if (token.v === open) depth++;
+      else if (token.v === close) {
+        if (depth === 0) return true;
+        depth--;
+      }
+    }
+    return false;
+  };
+  const type = parseUnion();
+  if (type === null || pos !== tokens.length) return null;
+  return type;
+}
+function findJsDocComments(script, scan) {
+  const out = [];
+  let from = 0;
+  for (; ; ) {
+    const start = scan.indexOf("/*", from);
+    if (start === -1) break;
+    const close = scan.indexOf("*/", start + 2);
+    if (close === -1) break;
+    from = close + 2;
+    if (script[start + 2] === "*") out.push({ start, end: close + 2, text: script.slice(start, close + 2) });
+  }
+  return out;
+}
+function readJsDocTagType(comment, tag) {
+  return readBracedType(comment, tag)?.type.trim() ?? null;
+}
+function readBracedType(comment, tag) {
+  const tagMatch = new RegExp(`@${tag}\\s*\\{`).exec(comment);
+  if (!tagMatch) return null;
+  const open = tagMatch.index + tagMatch[0].length - 1;
+  let depth = 0;
+  for (let i = open; i < comment.length; i++) {
+    const ch = comment[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const type = comment.slice(open + 1, i).replace(/\n\s*\*(?!\/)/g, "\n ");
+        return { type, end: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+function readJsDocTypeBefore(content, propIndex) {
+  let end = propIndex;
+  while (end > 0 && /\s/.test(content[end - 1])) end--;
+  if (!content.startsWith("*/", end - 2)) return void 0;
+  const start = content.lastIndexOf("/*", end - 2);
+  if (start === -1 || content[start + 2] !== "*") return void 0;
+  return readBracedType(content.slice(start, end), "type")?.type.trim();
+}
+function collectJsDocTypedefs(script, scan) {
+  const typedefs = /* @__PURE__ */ new Map();
+  for (const { text: comment } of findJsDocComments(script, scan)) {
+    const braced = readBracedType(comment, "typedef");
+    if (braced === null) continue;
+    const name = /^\s*([$A-Za-z_][$\w]*)/.exec(comment.slice(braced.end));
+    const type = parseJsDocType(braced.type);
+    if (name && type !== null) typedefs.set(name[1], type);
+  }
+  return typedefs;
+}
+function flattenJsDocType(type, typedefs, depth = 0) {
+  if (type.kind === "union") return type.members.flatMap((member) => flattenJsDocType(member, typedefs, depth));
+  if (type.kind === "name" && depth < MAX_RESOLVE_DEPTH) {
+    const resolved = typedefs.get(type.name);
+    if (resolved !== void 0) return flattenJsDocType(resolved, typedefs, depth + 1);
+  }
+  return [type];
+}
+function jsDocTypeHint(type, typedefs = /* @__PURE__ */ new Map()) {
+  const hints = /* @__PURE__ */ new Set();
+  for (const member of flattenJsDocType(type, typedefs)) {
+    if (member.kind === "array") hints.add("array");
+    else if (member.kind === "object") hints.add("object");
+    else if (member.kind === "name") {
+      const lower2 = member.name.toLowerCase();
+      if (lower2 === "string" || lower2 === "number" || lower2 === "boolean" || lower2 === "object") hints.add(lower2);
+      else if (lower2 === "null" || lower2 === "undefined") hints.add("null");
+      else if (lower2 === "array" || lower2 === "readonlyarray") hints.add("array");
+    }
+  }
+  return hints.size === 0 ? void 0 : [...hints].sort().join("|");
+}
+function jsDocShape(type, typedefs) {
+  const elements = [];
+  const fields = [];
+  for (const member of flattenJsDocType(type, typedefs)) {
+    if (member.kind === "array") elements.push(member.element);
+    else if (member.kind === "object") {
+      for (const field of member.fields) {
+        if (!fields.some((f) => f.name === field.name)) fields.push(field);
+      }
+    }
+  }
+  const element2 = elements.length === 0 ? null : elements.length === 1 ? elements[0] : { kind: "union", members: elements };
+  return { element: element2, fields };
+}
+
 // src/service/stateAnalyzer.ts
 var RESERVED_STREAMS_KEYS = /* @__PURE__ */ new Set(["$stream", "$streams"]);
 var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
@@ -2412,6 +2705,7 @@ function analyzeStatePaths(scriptContent) {
   const pendingListKeys = [];
   const recursionSpec = specFromRecursionValue(topLevelProps.find((p) => p.name === RESERVED_RECURSION_KEY));
   const effectiveDescriptors = effectiveTopLevelDescriptors(topLevelProps);
+  const typedefs = scriptContent.includes("@typedef") ? collectJsDocTypedefs(scriptContent, maskCommentsAndStrings(scriptContent)) : /* @__PURE__ */ new Map();
   for (const prop of topLevelProps) {
     if (prop.name.startsWith("$")) {
       collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
@@ -2431,11 +2725,11 @@ function analyzeStatePaths(scriptContent) {
       }
       continue;
     }
-    pushDataPropertyPaths(prop, paths);
+    pushDataPropertyPaths(prop, paths, typedefs);
   }
   for (const streamValue of pendingStreamValues) {
     if (paths.some((p) => p.path === streamValue.name && p.kind !== "eventToken")) continue;
-    pushDataPropertyPaths(streamValue, paths);
+    pushDataPropertyPaths(streamValue, paths, typedefs);
   }
   for (const listKeyEntry of pendingListKeys) {
     pushListKeyPaths(listKeyEntry, paths);
@@ -3165,17 +3459,37 @@ function effectiveTopLevelDescriptors(props) {
   }
   return effective;
 }
-function pushDataPropertyPaths(prop, paths) {
-  pushDataPropertyPathsAt(prop.name, prop, paths, 0);
+function pushDataPropertyPaths(prop, paths, typedefs) {
+  pushDataPropertyPathsAt(prop.name, prop, paths, 0, typedefs);
 }
-function pushDataPropertyPathsAt(path, prop, paths, depth) {
+function pushDataPropertyPathsAt(path, prop, paths, depth, typedefs) {
   paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
+  pushLiteralStructurePaths(path, prop, paths, depth, typedefs);
+  if (prop.declaredType !== void 0) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+}
+function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
+  const shape = jsDocShape(type, typedefs);
+  if (shape.element !== null) {
+    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
+    if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    if (depth < MAX_OBJECT_NEST_DEPTH) pushDeclaredShapePaths(`${path}.*`, shape.element, paths, depth + 1, typedefs);
+  }
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+  for (const field of shape.fields) {
+    const fieldPath = `${path}.${field.name}`;
+    if (!hasPath(paths, fieldPath)) {
+      paths.push(withHint({ path: fieldPath, kind: "data" }, jsDocTypeHint(field.type, typedefs)));
+    }
+    pushDeclaredShapePaths(fieldPath, field.type, paths, depth + 1, typedefs);
+  }
+}
+function pushLiteralStructurePaths(path, prop, paths, depth, typedefs) {
   if (prop.value && isArrayLiteral(prop.value)) {
     paths.push({ path: `${path}.*`, kind: "list" });
     paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     for (const childProp of extractArrayElementDataProperties(prop.value)) {
-      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1);
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1, typedefs);
     }
     return;
   }
@@ -3184,7 +3498,7 @@ function pushDataPropertyPathsAt(path, prop, paths, depth) {
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
       if (childProp.kind !== "data") continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1);
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1, typedefs);
     }
   }
 }
@@ -3295,13 +3609,16 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
     if (propName !== void 0) {
       const valueStartIndex = match.index + match[0].length;
       const value = extractFullValue(objectContent, scan, valueStartIndex);
-      const jsdocType = extractJsDocType(objectContent, match.index);
+      const jsdocText = readJsDocTypeBefore(objectContent, match.index);
+      const declaredType = jsdocText === void 0 ? null : parseJsDocType(jsdocText);
+      const jsdocType = declaredType !== null ? jsDocTypeHint(declaredType) : jsdocText === void 0 ? void 0 : normalizeJsDocType(jsdocText);
       const typeHint = jsdocType ?? inferTypeHint(value);
       props.push({
         name: propName,
         kind: "data",
         value,
         typeHint,
+        ...declaredType !== null ? { declaredType } : {},
         nameStart: nameSpan[0],
         nameEnd: nameSpan[1],
         valueStart: valueStartIndex
@@ -3421,13 +3738,6 @@ function extractArrayElementDataProperties(value) {
   if (scan[first] !== "{") return [];
   const objectContent = extractBracedContent(trimmed, scan, first);
   return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === "data");
-}
-function extractJsDocType(content, propIndex) {
-  const before = content.slice(Math.max(0, propIndex - 200), propIndex);
-  const jsdocMatch = before.match(/\/\*\*\s*@type\s*\{([^}]+)\}\s*\*\/\s*$/);
-  if (!jsdocMatch) return void 0;
-  const typeExpr = jsdocMatch[1].trim();
-  return normalizeJsDocType(typeExpr);
 }
 function normalizeJsDocType(typeExpr) {
   const parts = typeExpr.split("|").map((p) => p.trim());
@@ -10169,6 +10479,10 @@ function resolveLocale(locale2) {
   if (locale2 === void 0 || locale2 === "" || /^ja\b|^ja[-_]/i.test(locale2) || locale2.toLowerCase() === "ja") return "ja";
   return "en";
 }
+function shortSeed(raw) {
+  const flat = raw.replace(/\s+/g, " ");
+  return flat.length <= 32 ? flat : `${flat.slice(0, 29)}\u2026`;
+}
 var JA_EXPECTED_LABEL = {
   array: "\u914D\u5217\u578B\u306E\u30D1\u30B9",
   boolean: "\u30D6\u30FC\u30EA\u30A2\u30F3\u578B",
@@ -10248,7 +10562,9 @@ var ja = {
   didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
   none: () => `\u306A\u3057`,
   triggerSeededTruthy: (path) => `trigger \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C true \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002trigger \u306F\u30A8\u30C3\u30B8\u691C\u51FA\u306A\u3057\uFF08truthy \u66F8\u304D\u8FBC\u307F\u3067\u5373\u767A\u706B\u30FBmanual \u3082\u30D0\u30A4\u30D1\u30B9\uFF09\u306E\u305F\u3081\u3001\u30D0\u30A4\u30F3\u30C9\u6642\u306B\u5373\u767A\u706B\u3057\u307E\u3059\u3002false \u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
-  storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${raw} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 undefined \u3067\u30B7\u30FC\u30C9\uFF08\`${path}: undefined\`\uFF09\u3059\u308B\u304B manual \u3092\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044`,
+  storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${raw} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 \u30D0\u30A4\u30F3\u30C9\u306B #init=element \u3092\u4ED8\u3051\u3066\uFF08\`value#init=element: ${path}\`\uFF09\u4FDD\u5B58\u5024\u3092\u52DD\u305F\u305B\u3001\u30B9\u30ED\u30C3\u30C8\u306F null\uFF08\u7A7A\u306E\u30AD\u30FC\u304C\u8AAD\u3080\u5024\uFF09\u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
+  storageInitSeed: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u304C\u3001#init=element \u306F\u8981\u7D20\u306E\u5024\u3092\u3053\u306E\u30B9\u30ED\u30C3\u30C8\u3078\u5F15\u304D\u8FBC\u307F\u307E\u3059\u3002\u521D\u56DE\uFF08\u7A7A\u306E\u30AD\u30FC\uFF09\u306F null \u306A\u306E\u3067\u3001\u30B7\u30FC\u30C9\u306F null \u306B\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059 \u2014 null \u3067\u30B7\u30FC\u30C9\u3057\u3066\u8AAD\u3080\u5074\u3067\u65E2\u5B9A\u5024\u3092\u88DC\u3046\uFF08\`this.${path} ?? \u2026\`\uFF09\u304B\u3001null \u3092\u7121\u8996\u3059\u308B setter \u3092\u6301\u3064\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
+  inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u308B\u304B\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
   devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u3060\u3068\u914D\u7DDA\u53F0\u5E33\u304C\u30E9\u30A4\u30D6\u3067 captured \u3055\u308C\u307E\u305B\u3093\uFF09`,
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/"> \u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
@@ -10434,7 +10750,9 @@ var en = {
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) => `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
-  storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${raw}. The initial write-back overwrites the persisted value \u2014 seed it with undefined (\`${path}: undefined\`) or add manual`,
+  storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${raw}. The initial write-back overwrites the persisted value on every load \u2014 add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
+  storageInitSeed: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}, but #init=element pulls the element's value into it. On a first visit (an empty key) that is null, so the seed is replaced by null \u2014 seed it with null and supply the default where you read it (\`this.${path} ?? \u2026\`), or bind an accessor pair whose setter ignores null`,
+  inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
   devtoolsAfterState: () => `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
@@ -11571,18 +11889,24 @@ function validateStateTypes(html, stateTagName = "wcs-state", locale2) {
   }
   return diagnostics;
 }
+var PROPERTY_AFTER_COMMENT = /^\s*(?:"([^"]+)"|'([^']+)'|(\w+))\s*:\s*/;
 function findJsDocTypedProperties(script) {
   const results = [];
-  const regex = /\/\*\*\s*@type\s*\{([^}]+)\}\s*\*\/\s*(?:"([^"]+)"|'([^']+)'|(\w+))\s*:\s*/g;
-  let match;
-  while ((match = regex.exec(script)) !== null) {
-    const rawType = match[1].trim();
-    const name = match[2] ?? match[3] ?? match[4];
-    const valueStart = match.index + match[0].length;
+  const scan = maskCommentsAndStrings(script);
+  const typedefs = script.includes("@typedef") ? collectJsDocTypedefs(script, scan) : /* @__PURE__ */ new Map();
+  for (const comment of findJsDocComments(script, scan)) {
+    const typeText = readJsDocTagType(comment.text, "type");
+    if (typeText === null) continue;
+    const match = PROPERTY_AFTER_COMMENT.exec(script.slice(comment.end));
+    if (!match) continue;
+    const rawType = typeText.replace(/\s+/g, " ");
+    const name = match[1] ?? match[2] ?? match[3];
+    const valueStart = comment.end + match[0].length;
     const valueText = extractValue(script, valueStart);
     const valueType = inferValueType(valueText);
     if (valueType) {
-      const declaredTypes = rawType.split("|").map((t) => normalizeType(t.trim()));
+      const declaredTypes = declaredTypesOf(rawType, typedefs);
+      if (declaredTypes === null) continue;
       results.push({
         name,
         rawType,
@@ -11594,6 +11918,20 @@ function findJsDocTypedProperties(script) {
     }
   }
   return results;
+}
+var ANY_TYPES = /* @__PURE__ */ new Set(["any", "unknown", "*"]);
+function declaredTypesOf(rawType, typedefs) {
+  if (rawType.split("|").some((t) => ANY_TYPES.has(t.trim().toLowerCase()))) return null;
+  const parsed = parseJsDocType(rawType);
+  if (parsed === null) return rawType.split("|").map((t) => normalizeType(t.trim()));
+  const out = [];
+  for (const member of flattenJsDocType(parsed, typedefs)) {
+    if (member.kind === "unknown") return null;
+    if (member.kind === "array") out.push("array");
+    else if (member.kind === "object") out.push("object");
+    else if (member.kind === "name") out.push(normalizeType(member.name));
+  }
+  return out;
 }
 function extractValue(script, start) {
   let depth = 0;
@@ -13628,6 +13966,24 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
       });
     }
   }
+  if (tagName === "wcs-storage" && property === "value" && parsed.path && /(?:^|,)init=element\b/.test(modifiers)) {
+    const cand = findDataSlot(getPaths(), parsed.path);
+    if (cand?.rawInitial !== void 0 && isNonNullLiteralSeed(cand.rawInitial)) {
+      diagnostics.push({
+        code: WcsDiagnosticCode.StorageInitSeed,
+        start,
+        end,
+        severity: "warning",
+        tag: tagName,
+        statePath: parsed.path,
+        message: msgs.storageInitSeed(parsed.path, cand.rawInitial)
+      });
+    }
+  }
+}
+function isNonNullLiteralSeed(raw) {
+  const v = raw.trim();
+  return /^(?:["'`[{]|-?\d)/.test(v) || v === "true" || v === "false";
 }
 function findDataSlot(paths, path) {
   return paths.find((c) => c.kind === "data" && c.path === path);
@@ -15271,15 +15627,63 @@ function validateGetterUntrackedReads(script, scriptStart, nestedWriteRoots, loc
   }
   return out;
 }
+var NESTED_WRITE_INPUTS = {
+  "wcs-storage": { inputs: ["value"], exemptWhenManual: true }
+};
+var MANUAL_ATTRIBUTE = /(?:^|\s)manual(?:\s|=|$)/i;
+function validateInputNestedWrites(html, stateTagName, bindAttrName, nestedWriteRoots, locale2) {
+  const tags = findBuiltinTagOccurrences(html).filter((occ) => {
+    const target = NESTED_WRITE_INPUTS[occ.tagName];
+    return target !== void 0 && !(target.exemptWhenManual && MANUAL_ATTRIBUTE.test(occ.attrsText));
+  }).map((occ) => ({ tagName: occ.tagName, start: occ.tagStart, end: occ.attrsStart + occ.attrsText.length }));
+  if (tags.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
+  for (const occ of index.occurrences) {
+    if (occ.kind !== "path" || occ.source !== "attribute" || occ.bindingType !== "prop" || occ.propName === null) continue;
+    if (occ.path.startsWith(".")) continue;
+    const at2 = occ.exprRange.start;
+    const tag = tags.find((t) => t.start <= at2 && at2 <= t.end);
+    if (tag === void 0) continue;
+    const input = occ.propName.startsWith(".") ? occ.propName.slice(1) : occ.propName;
+    if (!NESTED_WRITE_INPUTS[tag.tagName].inputs.includes(input)) continue;
+    const example = nestedWriteRoots().get(occ.path);
+    if (example === void 0) continue;
+    out.push({
+      code: WcsDiagnosticCode.InputNestedWrite,
+      start: occ.pathRange.start,
+      end: occ.pathRange.end,
+      severity: "warning",
+      tag: tag.tagName,
+      statePath: occ.path,
+      message: msgs.inputNestedWrite(tag.tagName, input, occ.path, example)
+    });
+  }
+  return out;
+}
 var TWO_WAY_PROPS = /* @__PURE__ */ new Set(["value", "checked"]);
 var BRACKET_WRITE = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, "g");
 var PRE_BRACKET_INCDEC2 = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, "g");
+var TEMPLATE_BRACKET = String.raw`\bthis\s*(?:\?\.)?\s*\[\s*` + "`([^`]*)`" + String.raw`\s*\]`;
+var TEMPLATE_BRACKET_WRITE = new RegExp(`${TEMPLATE_BRACKET}${ASSIGN_TAIL}`, "g");
+var PRE_TEMPLATE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${TEMPLATE_BRACKET}`, "g");
+var TEMPLATE_KEY_PATH = /^[A-Za-z_][\w]*(?:\.(?:\*|[\w]+))*$/;
+function templateKeyPath(raw) {
+  if (raw.includes("`")) return null;
+  const path = raw.replace(/\$\{[^{}]*\}/g, "*");
+  return TEMPLATE_KEY_PATH.test(path) ? path : null;
+}
 function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
-  const roots = /* @__PURE__ */ new Set();
+  const roots = /* @__PURE__ */ new Map();
   const addPrefixes = (path, inclusive) => {
     const segments = path.split(".");
     const last = inclusive ? segments.length : segments.length - 1;
-    for (let i = 1; i <= last; i++) roots.add(segments.slice(0, i).join("."));
+    const example = inclusive ? `${path}.*` : path;
+    for (let i = 1; i <= last; i++) {
+      const prefix = segments.slice(0, i).join(".");
+      if (!roots.has(prefix)) roots.set(prefix, example);
+    }
   };
   const tags = findBuiltinTagOccurrences(html).map((occ) => ({
     contract: BUILTIN_TAGS[occ.tagName],
@@ -15288,23 +15692,29 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
   }));
   const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
   for (const occ of index.occurrences) {
-    if (occ.kind !== "path" || occ.path.startsWith(".") || occ.source !== "attribute") continue;
+    if (occ.kind !== "path" || occ.source !== "attribute") continue;
+    let path = occ.path;
+    if (path.startsWith(".")) {
+      const list = getRowShorthandForPath(html, occ.pathRange.start, bindAttrName) === null ? null : getResolvedForListPath(html, occ.pathRange.start, bindAttrName);
+      if (list === null) continue;
+      path = path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+    }
     if (occ.bindingType === "spread") {
-      addPrefixes(occ.path, true);
+      addPrefixes(path, true);
       continue;
     }
     if (occ.bindingType === "radio" || occ.bindingType === "checkbox") {
-      addPrefixes(occ.path, false);
+      addPrefixes(path, false);
       continue;
     }
     if (occ.bindingType !== "prop" || occ.propName === null) continue;
     if (TWO_WAY_PROPS.has(occ.propName)) {
-      addPrefixes(occ.path, false);
+      addPrefixes(path, false);
       continue;
     }
     const at2 = occ.exprRange.start;
     const tag = tags.find((t) => t.start <= at2 && at2 <= t.end);
-    if (tag?.contract?.hasWcBindable && tag.contract.properties.includes(occ.propName)) addPrefixes(occ.path, false);
+    if (tag?.contract?.hasWcBindable && tag.contract.properties.includes(occ.propName)) addPrefixes(path, false);
   }
   for (const block of blocks) {
     if (block.mountPath !== null) addPrefixes(block.mountPath, true);
@@ -15315,6 +15725,15 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
       while ((match = regex.exec(scan)) !== null) {
         const keyStart = match.index + match[0].search(/["']/) + 1;
         addPrefixes(block.content.slice(keyStart, keyStart + match[1].length), false);
+      }
+    }
+    for (const regex of [TEMPLATE_BRACKET_WRITE, PRE_TEMPLATE_BRACKET_INCDEC]) {
+      regex.lastIndex = 0;
+      let match;
+      while ((match = regex.exec(scan)) !== null) {
+        const keyStart = match.index + match[0].indexOf("`") + 1;
+        const path = templateKeyPath(block.content.slice(keyStart, keyStart + match[1].length));
+        if (path !== null) addPrefixes(path, false);
       }
     }
     API_CALL.lastIndex = 0;
@@ -15432,6 +15851,7 @@ function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrNa
     out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale2));
   }
+  out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale2));
   out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2));
   return out;
 }
