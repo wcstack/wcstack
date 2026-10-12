@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.0.2 — 2026-10-12
 
-チュートリアル Part 2（`<wcs-fetch>` で読む商品一覧・`<wcs-storage>` に残すカート）の試作で見つけたもの。
+`@wcstack/state` 4.0.2 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.0.2・`@wcstack/typescript` 4.0.2 と同じ判定）。チュートリアル Part 2（`<wcs-fetch>` で読む商品一覧・`<wcs-storage>` に残すカート）の試作で見つけたもの。
 
 - **JSDoc の `@type` で形を宣言できる** — `null` で始まり `<wcs-fetch>` / `<wcs-storage>` が埋めるリストは、フィールドを読む行が無く、行の `{{ .name }}` が `wcs/binding-path-missing` になっていた。`/** @type {{ id: number, name: string }[] | null} */ catalog: null` で `catalog.*.id`・`catalog.*.name` が（型付きで）存在し、`this.catalog ?? []` を返す getter も形を引き継ぐ。同じスクリプトの `@typedef` の名前も解決する（`@type {Product[] | null}`）。読む型は TypeScript の JSDoc の部分集合（名前・オブジェクト型・`T[]` / `Array<T>`・合併・`?T`）。説明文を含む複数行の JSDoc も読む。
 - **`wcs/input-nested-write`（warning・新設）** — `manual` でない `<wcs-storage>` の `value` を束ねたパスの下へページが書き込む形（`value: cart` と `` this[`cart.${i}.quantity`] += 1 ``・`for: cart` の行の `value: .quantity`）。束縛はそのパス自身への代入でしか当て直されないので、下への書き込みは保存されない（エラーは出ず、再読み込みで古い数量に戻る）。フィールドをパスで読む getter（行 getter と `$getAll`）を束ねるか、配列を差し替える。`manual` は対象外（`trigger` の保存が今のオブジェクトを読む — storage の README §2）。
