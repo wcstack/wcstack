@@ -216,6 +216,67 @@ describe('Router', () => {
       expect(document.body.contains(found)).toBe(true);
     });
 
+    describe('離れた位置の <wcs-outlet> の警告（docs/router-outlet-placement.md）', () => {
+      it('直後に outlet が無く、別の場所に outlet があれば、その outlet を名指して 1 回警告し、挙動は変えないこと', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        document.body.innerHTML = '<wcs-router></wcs-router><header></header><main><wcs-outlet></wcs-outlet></main>';
+        const router = document.querySelector('wcs-router') as Router;
+        const placed = document.querySelector('main wcs-outlet')!;
+
+        const found = (router as any)._getOutlet();
+        // 挙動は従来どおり: 直後に作り、置かれた outlet は使わない
+        expect(found).not.toBe(placed);
+        expect(router.nextElementSibling).toBe(found);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][0]).toContain('[wcs/router-outlet-misplaced]');
+        expect(warn.mock.calls[0][0]).toContain('Move the <wcs-outlet> right after the <wcs-router>');
+        expect(warn.mock.calls[0][1]).toBe(placed);
+
+        // 同じ outlet について 2 度は言わない
+        const second = document.createElement('wcs-router') as Router;
+        document.body.prepend(second);
+        (second as any)._getOutlet();
+        expect(warn).toHaveBeenCalledTimes(1);
+      });
+
+      it('別の router の直後にある outlet は、その router のものなので警告しないこと（マルチ Router）', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        document.body.innerHTML = '<wcs-router basename="/a"></wcs-router><section><wcs-router basename="/b"></wcs-router><wcs-outlet></wcs-outlet></section>';
+        const first = document.querySelector('wcs-router[basename="/a"]') as Router;
+
+        (first as any)._getOutlet();
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('outlet がどこにも無い（router に作らせる）ページでは警告しないこと', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        document.body.innerHTML = '<wcs-router></wcs-router><main></main>';
+        (document.querySelector('wcs-router') as any)._getOutlet();
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('直後に outlet があれば、ほかに outlet があっても警告しないこと', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        document.body.innerHTML = '<wcs-router></wcs-router><wcs-outlet></wcs-outlet><main><wcs-outlet></wcs-outlet></main>';
+        (document.querySelector('wcs-router') as any)._getOutlet();
+        expect(warn).not.toHaveBeenCalled();
+      });
+
+      it('見るのは router と同じ root だけであること（shadow root の中の router は文書の outlet を見ない）', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        document.body.innerHTML = '<div id="host"></div><main><wcs-outlet></wcs-outlet></main>';
+        const shadow = document.getElementById('host')!.attachShadow({ mode: 'open' });
+        shadow.innerHTML = '<wcs-router></wcs-router><p></p>';
+        (shadow.querySelector('wcs-router') as any)._getOutlet();
+        expect(warn).not.toHaveBeenCalled();
+
+        shadow.innerHTML = '<wcs-router></wcs-router><p><wcs-outlet></wcs-outlet></p>';
+        (shadow.querySelector('wcs-router') as any)._getOutlet();
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0][1]).toBe(shadow.querySelector('p wcs-outlet'));
+      });
+    });
+
     it('outlet未設定の場合、エラーになること', () => {
       const router = document.createElement('wcs-router') as Router;
       expect(() => router.outlet).toThrow('[@wcstack/router] wcs-router has no outlet.');

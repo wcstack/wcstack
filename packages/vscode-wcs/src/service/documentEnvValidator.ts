@@ -10,6 +10,9 @@
  *   公式 examples も state 先行のため、一般の順序規則は検査しない）
  * - BaseHrefMissing: `@wcstack/router/auto` を読むページに `<base href>` がない
  *   （SPA のディープリンクで basename が誤導出される）
+ * - RouterOutletMisplaced: `<wcs-router>` の直後に無い `<wcs-outlet>` があり、直後に outlet を
+ *   持たない router がある（router は直後の兄弟だけを outlet にし、無ければ自前で作る。置いた
+ *   outlet は空のまま — docs/router-outlet-placement.md。ランタイムも同じ code で警告する）
  * - SignalsDualEntry: `@wcstack/signals` と `@wcstack/signals/dom` の実参照が同一ページに
  *   混在（CDN では各エントリがコア同梱の自己完結バンドルのため、リアクティブコアが
  *   二重化して境界で反応が壊れる）。コメント内の言及に誤反応しないよう、
@@ -70,6 +73,15 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
       code: WcsDiagnosticCode.BaseHrefMissing,
       start: router.start, end: router.end, severity: 'warning',
       message: msgs.baseHrefMissing(),
+    });
+  }
+
+  // --- RouterOutletMisplaced: どの router にも使われない <wcs-outlet> ---
+  for (const outlet of findMisplacedOutlets(scanText)) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.RouterOutletMisplaced,
+      start: outlet.start, end: outlet.end, severity: 'warning',
+      message: msgs.routerOutletMisplaced(),
     });
   }
 
@@ -189,4 +201,57 @@ function blankJsComments(code: string): string {
   return code
     .replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length))
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, pre: string) => pre + ' '.repeat(m.length - pre.length));
+}
+
+// ============================================================
+// router と outlet の並び（docs/router-outlet-placement.md）
+// ============================================================
+
+const ROUTER_TAG = 'wcs-router';
+const OUTLET_TAG = 'wcs-outlet';
+
+interface TagToken {
+  name: string;
+  close: boolean;
+  /** タグ名の範囲（診断の位置）。 */
+  start: number;
+  end: number;
+}
+
+/**
+ * どの router にも使われない `<wcs-outlet>` の開始タグを返す。
+ *
+ * router は自分の直後の兄弟要素だけを outlet として使い、無ければ自分の直後に作る（`Router.ts`
+ * の `_getOutlet`）。だから直前の兄弟が `<wcs-router>` でない outlet は、どの router にも使われない。
+ * 報告するのは、そういう outlet があり、かつ直後に outlet を持たない router があるとき — router が
+ * 自前の outlet を作り、ページがそこに描かれる形（ランタイムの警告と同じ条件）。
+ *
+ * タグの並びで判定する: `</wcs-router>` の次のタグが開始タグなら、それが router の次の兄弟、
+ * 終了タグなら次の兄弟は無い。`<wcs-outlet>` の前のタグが `</wcs-router>` なら直前の兄弟は router。
+ * `<script>` / `<style>` の中身は数えない（`innerHTML` に書いた文字列はページの要素ではない）。
+ */
+function findMisplacedOutlets(html: string): { start: number; end: number }[] {
+  const scan = html.replace(/(<(script|style)\b[^>]*>)([\s\S]*?)(<\/\2\s*>)/gi,
+    (_m, open: string, _name: string, body: string, close: string) => open + ' '.repeat(body.length) + close);
+  const tokens: TagToken[] = [];
+  const tagRegex = /<(\/?)([a-zA-Z][\w-]*)(?:"[^"]*"|'[^']*'|[^>"'])*>/g;
+  let match: RegExpExecArray | null;
+  while ((match = tagRegex.exec(scan)) !== null) {
+    const nameStart = match.index + 1 + match[1].length;
+    tokens.push({ name: match[2].toLowerCase(), close: match[1] === '/', start: nameStart, end: nameStart + match[2].length });
+  }
+
+  let routerWithoutOutlet = false;
+  const misplaced: { start: number; end: number }[] = [];
+  tokens.forEach((token, i) => {
+    if (token.name === ROUTER_TAG && token.close) {
+      const next = tokens[i + 1];
+      if (!next || next.close || next.name !== OUTLET_TAG) routerWithoutOutlet = true;
+    }
+    if (token.name === OUTLET_TAG && !token.close) {
+      const prev = tokens[i - 1];
+      if (!(prev && prev.close && prev.name === ROUTER_TAG)) misplaced.push({ start: token.start, end: token.end });
+    }
+  });
+  return routerWithoutOutlet ? misplaced : [];
 }

@@ -135,3 +135,46 @@ import { signal, h } from "@wcstack/signals/dom";
     expect(validateDocumentEnv(html)).toHaveLength(0);
   });
 });
+
+describe('validateDocumentEnv: router-outlet-misplaced（docs/router-outlet-placement.md）', () => {
+  const codes = (html: string) => validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.RouterOutletMisplaced);
+
+  it('router が上・outlet が <main> の中の形を、outlet の位置で報告する（チュートリアルで踏んだ形）', () => {
+    const html = `<body>
+<wcs-router><template><wcs-route path="/"><p>home</p></wcs-route></template></wcs-router>
+<header>Shop</header>
+<main><wcs-outlet></wcs-outlet><aside>cart</aside></main>
+</body>`;
+    const diags = codes(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe('warning');
+    expect(html.slice(diags[0].start, diags[0].end)).toBe('wcs-outlet');
+    expect(validateDocumentEnv(html, 'en').find(d => d.code === WcsDiagnosticCode.RouterOutletMisplaced)!.message).toContain('right after the <wcs-router>');
+    expect(diags[0].message).toContain('<wcs-router> の直後へ移して');
+  });
+
+  it('outlet が router の直後なら報告しない（空白・テキスト・コメントを挟んでも）', () => {
+    expect(codes(`<main><wcs-router><template></template></wcs-router>\n  <!-- pages -->\n  <wcs-outlet></wcs-outlet><aside></aside></main>`)).toHaveLength(0);
+  });
+
+  it('outlet を書かない（router に作らせる）ページは報告しない', () => {
+    expect(codes(`<wcs-router><template></template></wcs-router><main></main>`)).toHaveLength(0);
+  });
+
+  it('マルチ Router: 片方が outlet を持たなくても、もう片方の直後の outlet は報告しない', () => {
+    const html = `<wcs-router basename="/a"><template></template></wcs-router><section>
+<wcs-router basename="/b"><template></template></wcs-router><wcs-outlet></wcs-outlet></section>`;
+    expect(codes(html)).toHaveLength(0);
+  });
+
+  it('どの router も直後に outlet を持つなら、余った outlet があっても報告しない（ランタイムと同じ条件）', () => {
+    expect(codes(`<wcs-router><template></template></wcs-router><wcs-outlet></wcs-outlet><div><wcs-outlet></wcs-outlet></div>`)).toHaveLength(0);
+  });
+
+  it('<script> / <style> の中の文字列やコメントの中のタグは数えない', () => {
+    const html = `<wcs-router><template></template></wcs-router><wcs-outlet></wcs-outlet>
+<script type="module">el.innerHTML = "<p></p><wcs-outlet></wcs-outlet>";</script>
+<!-- <wcs-router></wcs-router><div></div><wcs-outlet></wcs-outlet> -->`;
+    expect(codes(html)).toHaveLength(0);
+  });
+});

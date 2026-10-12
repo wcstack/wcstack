@@ -180,6 +180,8 @@ export interface WcsMessageCatalog {
   // --- documentEnvValidator ---
   devtoolsAfterState(): string;
   baseHrefMissing(): string;
+  /** `<wcs-router>` の直後に無い `<wcs-outlet>`（どの router にも使われない）。 */
+  routerOutletMisplaced(): string;
   signalsDualEntry(): string;
   // --- namedStateValidator（deprecation） ---
   /** `<wcs-state name="x">` は v2 で `mount="x"` に置き換わる。 */
@@ -389,6 +391,8 @@ const ja: WcsMessageCatalog = {
     `@wcstack/devtools/auto は @wcstack/state/auto より先に読み込んでください（後だと配線台帳がライブで captured されません）`,
   baseHrefMissing: () =>
     `@wcstack/router を使う SPA には <head> 内の <base href="/"> が必要です（無いとディープリンクで basename が誤導出されます）`,
+  routerOutletMisplaced: () =>
+    `この <wcs-outlet> は <wcs-router> の直後に無いので、どの router も使いません。router は自分の直後の要素だけを outlet として使い、そこに <wcs-outlet> が無ければ自前の outlet を作ります。ルートは router の直後に描かれ、この outlet は空のままです — <wcs-router> の直後へ移してください`,
   signalsDualEntry: () =>
     `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、境界で反応が壊れます — すべて /dom エントリから import してください`,
   namedStateAttrDeprecated: (name) =>
@@ -632,6 +636,8 @@ const en: WcsMessageCatalog = {
     `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
   baseHrefMissing: () =>
     `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
+  routerOutletMisplaced: () =>
+    `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty — move it right after the <wcs-router>`,
   signalsDualEntry: () =>
     `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam — import everything from the single /dom entry`,
   namedStateAttrDeprecated: (name) =>

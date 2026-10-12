@@ -204,6 +204,10 @@ export const WcsDiagnosticCode = {
   ScriptOrder: "wcs/script-order",
   // router/auto があるのに <base href> がない(SPA の basename 誤導出)。
   BaseHrefMissing: "wcs/base-href-missing",
+  // <wcs-router> の直後に無い <wcs-outlet>（どの router にも使われない）と、直後に outlet を持たない
+  // router。router は自前の outlet を直後に作り、ページはそこに描かれ、置いた outlet は空のまま。
+  // ランタイムも同じ code で警告する（docs/router-outlet-placement.md）。
+  RouterOutletMisplaced: "wcs/router-outlet-misplaced",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
   // --- deprecations ---

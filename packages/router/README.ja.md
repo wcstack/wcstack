@@ -156,7 +156,7 @@ router は、スタンプしたルート本文の終わりにコメントの印 
 
 ### Router(wcs-router)
 
-子要素のtemplateタグ内にルーティング・レイアウトスロット定義する。直下にtemplateタグが必要。定義に従って、`<wcs-outlet>`へ出力する。`basename` が異なれば、同一ドキュメント内に複数の Router を共存可能
+子要素のtemplateタグ内にルーティング・レイアウトスロット定義する。直下にtemplateタグが必要。定義に従って、**自分のすぐ後の**`<wcs-outlet>`へ出力する(下のOutletを参照)。`basename` が異なれば、同一ドキュメント内に複数の Router を共存可能
 
 | 属性 | 説明 |
 |------|------|
@@ -378,7 +378,15 @@ console.log(router.typedParams.userId);  // 123 (number)
 
 ### Outlet(wcs-outlet)
 
-ルーティング・レイアウト設定に従いDOMツリーを表示する。HTML内に定義するか、ない場合は`<wcs-router>`により作成される。
+ルーティング・レイアウト設定に従いDOMツリーを表示する。**対応する`<wcs-router>`のすぐ後に置く**(間に空白・テキスト・コメントはあってよいが、別の要素は挟めない)。書かなければ、router がそこに作る。router が使うのは自分のすぐ後の要素だけで、それ以外の場所の`<wcs-outlet>`(router を`<body>`の先頭に置いたときの`<main>`の中や、router の中)は空のままになり、ルートは router のすぐ後に描かれる。router はそういう outlet を実行時に警告し、`wcs-validate`も報告する(`[wcs/router-outlet-misplaced]`)。この規則の経緯: [docs/router-outlet-placement.ja.md](../../docs/router-outlet-placement.ja.md)。
+
+```html
+<main>
+  <wcs-router><template>…</template></wcs-router>
+  <wcs-outlet></wcs-outlet>
+  <aside>…</aside>
+</main>
+```
 
 ### LayoutOutlet(wcs-layout-outlet)
 

@@ -12,6 +12,14 @@
   - 現状：`"No route matched for path: /"`
   - 改善案：「ルートが1つも定義されていません」と明示
 
+- [x] 離れた位置の `<wcs-outlet>` の警告（`[wcs/router-outlet-misplaced]`、docs/router-outlet-placement.ja.md の A）
+  - outlet は router の直後の兄弟だけ（マルチ Router 対応で隣接スコープにした結果）。それ以外の outlet は使われず、router が自前の outlet を作るので黙って空になっていた
+- [ ] （実需が出るまで保留）outlet の探索を広げる（B）
+  - 直後が outlet でなければ、同じ root の、どの router も使っていない `<wcs-outlet>` を使う
+  - router が複数のときの組ませる順番と、SSR の採用（隣の位置が前提）を決める必要がある
+- [ ] （実需が出るまで保留）router と outlet を明示的に結ぶ属性（C）
+  - 例: `<wcs-router outlet="main-outlet">`
+
 ## Route
 
 - [x] 同一階層での重複ルート警告
