@@ -1141,3 +1141,14 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - wcstack-skill: PR #36 で版の印と CDN の固定を 4.0.3 にし、「アクセサペアは lint に見えない」の記述を外し、fetch の `body` の直し方を具体的にした。マージしてタグ `v4.0.3`。
   - LP: チュートリアル Part 3（13-router〜16-publish、日英）と、Part 2 のステップ 11・12 の 4.0.3 への追随、版の参照、llms の作り直し（777699f）。読者のファイル（`app/`、`<base href="/">`）から、サイトの中のフォルダを指す base に差し替えたデモ（`shop/`）を build-tutorial.mjs が書く。デモと読者のファイルは公開版の lint 4.0.3 で 0 件、テストは公開版 4.0.3＋vitest 5＋happy-dom 21 で 5 件通過、本文の主張は Chromium で確かめた。
 - 書く中で見つけたこと（直していない）: `<wcs-router>` は outlet を**自分のすぐ次の兄弟要素**としてしか探さず、無ければ自分の直後に作る（`Router.ts` の `_getOutlet`）。router をページの上の方に置き、`<wcs-outlet>` を `<main>` の中に置くと、ページはヘッダーの上に描かれ、`<main>` の outlet は空のまま、何も報告されない。チュートリアルは router を outlet の直前（`<main>` の中）に置き、`wcs-router { display: contents; }` で格子に場所を取らせない形にし、この間違いを「よくある間違い」に書いた。lint で「router の直後に outlet が無いのに、別の場所に `<wcs-outlet>` がある」を報告するか、router が文書の中の自分用の outlet を探すかは未決。
+
+### 4.0.4 の公開（2026-10-13）
+
+- 中身: 4.0.3 の記録に残した outlet の穴を、PR #446（merge commit 2c76f847）で扱った。経緯を調べると、outlet を「router の次の兄弟要素だけ」で探すのは v1.8.6 のマルチ Router 対応（`15ac3bc4`）で `document.querySelector` から狭めた副産物で、規則はどこにも書かれていなかった。2026-10-13 に著者が **A**（規則は変えず、間違いを知らせ、規則を書き残す）を決めた: router は自前の outlet を作るときに、同じ root の「直前の兄弟が router でない `<wcs-outlet>`」を outlet ごとに 1 回 `[wcs/router-outlet-misplaced]` で警告する（`src/misplacedOutletWarning.ts`、挙動は変えない）。lint は同じ code を warning としてタグの並びから報告する（直後に outlet を持たない router があるページでだけ）。router の README（日英）に置き場所を書き、`examples/router-i18n` の outlet（router の中にあった）を外へ出した。規則・経緯・決定は docs/router-outlet-placement.md / `.ja.md`。探す範囲を広げる（B）と明示的に結ぶ属性（C）は実需が出るまで見送り、router の TODO.md に残した。リポジトリの HTML 115 ページで新しい警告が出たのは router-i18n だけだった。state の runtime は 4.0.1 から変わらない。
+- 準備: PR #447 で CHANGELOG を `[4.0.4] — 2026-10-13` に締め、CDN の固定 17 か所を 4.0.4 にした。
+- main で `release`（patch、run 38305339370）。49 パッケージが npm の `latest` で 4.0.4、来歴証明も 49/49、タグ `v4.0.4`、GitHub Release（`sri.json` 付き）、版を上げた commit は d4d9c691。SRI は 44/44 が `sri.json`・タグの dist・jsDelivr で一致し、固定 URL（skill の分を含め 9 種）が 200。jsDelivr の router 4.0.4 と lint 4.0.4 に `router-outlet-misplaced` が入っていることも確かめた。
+- 公開後の作業（同日）:
+  - PR #448（merge commit 1550d47d）: ゲートの基準値を 4.0.4 の dist で取り直した（版の文字列の数バイトだけ。`core.min.js` は 19,880 B のまま）。CLAUDE.md / AGENTS.md の版、拡張の 2.0.4。
+  - VS Code 拡張 2.0.4: 1550d47d で `npm run package` した vsix（vscode-wcs のテスト 1,227 件）を Marketplace に公開した。タグ `vscode-wcs-v2.0.4`（1550d47d）。
+  - wcstack-skill: PR #37 で版の印と CDN の固定を 4.0.4 にし、`references/router-and-scaffold.md` §1 に置き場所の規則（「書かなければ自動生成」だけだった）、SKILL.md に規則・lint の一覧・落とし穴の行を足した。マージしてタグ `v4.0.4`。
+  - LP（2564628）: 版の参照と「Shipped in」の v4.0.4 の一文、state / signals のページの版、llms の作り直し。チュートリアルのステップ 13 の「ルーターから離れた outlet」は「コンソールには何も出ない」を 4.0.4 の警告に直し、ステップ 15 の依存を `^4.0.4`、ステップ 16 の固定を `wcstack@4.0.4` と v4.0.4 の `sri.json` の integrity にした。本番で 13・14・16 のデモ（outlet の位置・商品ページ・戻る・警告が出ないこと・16 は integrity 付きの 4.0.4）と、jsDelivr の router 4.0.4 が離れた outlet を 1 回警告することを Chromium で確かめた（9/9）。
