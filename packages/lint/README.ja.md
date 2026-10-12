@@ -56,7 +56,7 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 
 ## state の契約を宣言する（`stateSchema`）
 
-契約が無いと、validator が解決できないパスは **warning**（`wcs/binding-path-missing`）に留まります: インラインスクリプトが静的に読めなくても `count` は実行時には存在するかもしれないからです。HTML と同じ（または上の）ディレクトリに `application` sidecar を置くと、同じ typo が **error** になります:
+契約が無いと、validator が解決できないパスは **warning**（`wcs/binding-path-missing`）に留まります: インラインスクリプトが静的に読めなくても `count` は実行時には存在するかもしれないからです。`[]` で始まるリストの行のフィールドは、行を足す・置き換える代入式の行リテラルから読みます。外から届くリスト（`<wcs-fetch>` や `<wcs-storage>` が埋めるまで `null`）にはそのリテラルが無いので、プロパティの直前の JSDoc `@type` で形を宣言してください（`/** @type {{ id: number, name: string }[] | null} */ catalog: null`）。同じスクリプトの `@typedef` で行の型に名前を付け、`@type {Product[] | null}` と書いてもかまいません。HTML と同じ（または上の）ディレクトリに `application` sidecar を置くと、同じ typo が **error** になります:
 
 ```json
 {

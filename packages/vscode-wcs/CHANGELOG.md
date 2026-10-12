@@ -2,6 +2,17 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+チュートリアル Part 2（`<wcs-fetch>` で読む商品一覧・`<wcs-storage>` に残すカート）の試作で見つけたもの。
+
+- **JSDoc の `@type` で形を宣言できる** — `null` で始まり `<wcs-fetch>` / `<wcs-storage>` が埋めるリストは、フィールドを読む行が無く、行の `{{ .name }}` が `wcs/binding-path-missing` になっていた。`/** @type {{ id: number, name: string }[] | null} */ catalog: null` で `catalog.*.id`・`catalog.*.name` が（型付きで）存在し、`this.catalog ?? []` を返す getter も形を引き継ぐ。同じスクリプトの `@typedef` の名前も解決する（`@type {Product[] | null}`）。読む型は TypeScript の JSDoc の部分集合（名前・オブジェクト型・`T[]` / `Array<T>`・合併・`?T`）。説明文を含む複数行の JSDoc も読む。
+- **`wcs/input-nested-write`（warning・新設）** — `manual` でない `<wcs-storage>` の `value` を束ねたパスの下へページが書き込む形（`value: cart` と `` this[`cart.${i}.quantity`] += 1 ``・`for: cart` の行の `value: .quantity`）。束縛はそのパス自身への代入でしか当て直されないので、下への書き込みは保存されない（エラーは出ず、再読み込みで古い数量に戻る）。フィールドをパスで読む getter（行 getter と `$getAll`）を束ねるか、配列を差し替える。`manual` は対象外（`trigger` の保存が今のオブジェクトを読む — storage の README §2）。
+- **`wcs/storage-init-seed`（warning・新設）** — `null` 以外のリテラルでシードしたスロットへの `value#init=element:`（`cart: []`）。空のキーは `null` を読み、引き込みがそれを書くので、初回はシードが消える（`this.cart.findIndex(…)` が投げる）。
+- **`wcs/storage-seed-clobber` の直し方を `#init=element` と `null` のシードに** — 「undefined でシードするか manual を付ける」と言っていた。storage の README は `undefined` のシードを、`enableDirectionalInitialSync` を切ったページの代わりとしてだけ挙げている。
+- **`wcs/getter-untracked-read` の証拠を広げた** — テンプレートリテラルのキーでの書き込み（`` this[`form.${key}`] = … ``）と、`for:` の行の中の双方向の束縛も、ルートの下への書き込みに数える。
+- **`wcs/type-annotation` が読み飛ばしていた型を読む** — 入れ子の波括弧を含む型（`{{ id: number }[] | null}`）と説明文付きの複数行の JSDoc は検査されていなかった。`@typedef` の名前を未知の名前として比べていた（オブジェクトの typedef にオブジェクトの値で警告）。`any` / `unknown` / `*` も比べていた（`@type {any}` の `null` で警告）。
+
 ## 2.0.1 — 2026-10-12
 
 `@wcstack/state` 4.0.1 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.0.1・`@wcstack/typescript` 4.0.1 と同じ判定）。

@@ -84,7 +84,7 @@ As a generalization of option A, directional initial sync (`docs/architecture-ha
 - In the steady state, state→element keeps flowing as for any two-way member, so **the save direction does not die** (the permanent-block divergence present in v1.21.x is fixed).
 - Seed the state slot to match the element's real initial value (`null` for an empty key), and null-guard reads with a normalizing getter.
 - Applied in: `packages/storage/README.md|.ja.md` §1/§4/§5, `examples/state-cross-tab-todo`, `examples/state-color-palette`. The regression is `e2e/tests/state-cross-tab-todo.spec.ts` (reload persistence = the clobber side; cross-tab sync = the save direction).
-- `wcs-validate` recognizes the same modifier and emits `wcs/storage-seed-clobber` only for an empty-value seed without it (`packages/vscode-wcs/src/service/ioNodeValidator.ts`).
+- `wcs-validate` recognizes the same modifier and emits `wcs/storage-seed-clobber` only for an empty-value seed without it, and `wcs/storage-init-seed` for a seed other than `null` with it — the pull replaces that seed with the `null` an empty key loads as (`packages/vscode-wcs/src/service/ioNodeValidator.ts`).
 
 ---
 

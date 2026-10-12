@@ -163,7 +163,9 @@ The `outerHTML:` / `outerText:` check (#203) looks at the `for` / `if` templates
 | `wcs/on-prefixed-member` | A tag member whose name starts with `on` (`once` on `<wcs-timer>`), bound without the leading dot: the runtime makes it an event binding and the value never arrives. Write `.once:` (`@wcstack/state` 3.1) | ⚠ warning |
 | `wcs/spread-no-bindable` | `...:` spread onto a helper tag without `wcBindable` (`wcs-fetch-header`, `wcs-fetch-body`, `wcs-infinite-scroll`, `wcs-voice`) — the runtime raises | ❌ error |
 | `wcs/trigger-seeded-truthy` | A `trigger` slot seeded with `true` (fires immediately, no edge) | ⚠ warning |
-| `wcs/storage-seed-clobber` | Non-manual `<wcs-storage>` value bound to an empty seed — the initial write-back overwrites the stored value | ⚠ warning |
+| `wcs/storage-seed-clobber` | Non-manual `<wcs-storage>` value bound to an empty seed without `#init=element` — the initial write-back overwrites the stored value on every load. The fix is `value#init=element:` with a `null` seed | ⚠ warning |
+| `wcs/storage-init-seed` | `<wcs-storage>` `value#init=element:` bound to a slot seeded with a literal other than `null` (`cart: []`, `theme: "light"`) — `#init=element` pulls the element's value in, and an empty key loads as `null`, so the seed is gone on a first visit (`this.cart.findIndex(…)` throws). Seed `null` and supply the default where you read it, or bind an accessor pair whose setter ignores `null` | ⚠ warning |
+| `wcs/input-nested-write` | Non-manual `<wcs-storage>` `value` bound to a path the page writes below (`value: cart` with `` this[`cart.${i}.quantity`] += 1 ``, `this["cart.0.quantity"] = 2`, or `value: .quantity` in a `for: cart` row): a binding is re-applied only when its path itself is assigned, so those writes are never saved — no error, and a reload brings back the old value. Bind a getter that reads the fields by path (a row getter and `$getAll`) and returns a new value, or replace the array instead of writing below it. `manual` is exempt: its `trigger` save reads the current object | ⚠ warning |
 
 #### `<wcs-state>` script
 
@@ -231,6 +233,19 @@ label: null,        // ⚠ Type "null" is not compatible with @type {string}
 /** @type {string|null} */
 label: null,        // ✅ OK
 ```
+
+The same `@type` also declares a **shape**. A list that starts as `null` (or `[]`) and is filled by `<wcs-fetch>` or `<wcs-storage>` has no row to read its fields from, so its rows would be reported as `wcs/binding-path-missing`; with an object type for the rows, `catalog.*.id` and `catalog.*.name` exist (with their types), and a typo under them is still reported. Name the row type with a `@typedef` in the same script if you like:
+
+```javascript
+/** @typedef {{ id: number, name: string, price: number }} Product */
+export default {
+  /** @type {Product[] | null} */
+  catalog: null,                           // for: catalog → .id / .name / .price
+  get products() { return this.catalog ?? []; },   // a getter's result keeps the shape
+};
+```
+
+The types understood are a subset of TypeScript's JSDoc: names, object types (`{ a: T; b?: U }`), `T[]` / `Array<T>`, unions, `?T`, and `@typedef` names (a self-referencing typedef stops at the nesting limit). A type the validator cannot read (a function type, `Record<…>`) declares no shape; `any` / `unknown` / `*` are not checked against the initial value.
 
 ### Sidecar Manifest, `stateSchema`, and the CLI
 

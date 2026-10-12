@@ -847,3 +847,94 @@ describe("wcs/declaration-alias-read — 4.0 で外れた宣言キーの読み�
     expect(pick(api)).toEqual([[WcsDiagnosticCode.NameAlias, "error"]]);
   });
 });
+
+describe("wcs/input-nested-write — 入力を束ねたパスの下への書き込み（保存されない）", () => {
+  const CART = `{
+  cart: [],
+  addToCart(event, index) { this.cart = this.cart.concat({ id: index, quantity: 1 }); },
+  increase(event, index) { this[\`cart.\${index}.quantity\`] += 1; },
+}`;
+  const run = (html: string) => codes(validateSemantics(html), WcsDiagnosticCode.InputNestedWrite);
+
+  it("value: cart とテンプレートリテラルのキーで書く数量を報告すること（チュートリアル Part 2 の罠）", () => {
+    const html = script(CART) + `<wcs-storage key="cart" data-wcs="value#init=element: cart"></wcs-storage>`;
+    const diags = validateSemantics(html).filter((d) => d.code === WcsDiagnosticCode.InputNestedWrite);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe("warning");
+    expect(diags[0].statePath).toBe("cart");
+    expect(diags[0].message).toContain('"cart.*.quantity"');
+    expect(diags[0].message).toContain("<wcs-storage>");
+    // 範囲は束縛のパス（`cart`）
+    expect(html.slice(diags[0].start, diags[0].end)).toBe("cart");
+  });
+
+  it("文字列のキー・前置の増減・行の中の相対の value: も証拠に数えること", () => {
+    const literal = script(`{ cart: [], set2() { this["cart.0.quantity"] = 2; } }`) +
+      `<wcs-storage key="cart" data-wcs="value: cart"></wcs-storage>`;
+    expect(run(literal)).toHaveLength(1);
+    const pre = script(`{ cart: [], inc(e, i) { ++this[\`cart.\${i}.quantity\`]; } }`) +
+      `<wcs-storage key="cart" data-wcs="value: cart"></wcs-storage>`;
+    expect(run(pre)).toHaveLength(1);
+    const row = script(`{ cart: [] }`) +
+      `<wcs-storage key="cart" data-wcs="value: cart"></wcs-storage>` +
+      `<template data-wcs="for: cart"><input type="number" data-wcs="value: .quantity"></template>`;
+    const diags = run(row);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('"cart.*.quantity"');
+  });
+
+  it("配列の差し替えだけなら報告しないこと", () => {
+    const html = script(`{
+  cart: [],
+  add(e, i) { this.cart = this.cart.concat({ id: i, quantity: 1 }); },
+  bump(e, i) { this.cart = this.cart.with(i, { ...this.cart[i], quantity: this.cart[i].quantity + 1 }); },
+}`) + `<wcs-storage key="cart" data-wcs="value: cart"></wcs-storage>`;
+    expect(run(html)).toHaveLength(0);
+  });
+
+  it("フィールドをパスで読む getter（アクセサペア）に束ねた形は報告しないこと", () => {
+    const html = script(`{
+  cart: [],
+  get "cart.*.saved"() { return { id: this["cart.*.id"], quantity: this["cart.*.quantity"] }; },
+  get savedCart() { return this.$getAll("cart.*.saved", []); },
+  set savedCart(lines) { if (Array.isArray(lines)) this.cart = lines; },
+  increase(event, index) { this[\`cart.\${index}.quantity\`] += 1; },
+}`) + `<wcs-storage key="cart" data-wcs="value#init=element: savedCart"></wcs-storage>`;
+    expect(run(html)).toHaveLength(0);
+  });
+
+  it("manual の <wcs-storage> は報告しないこと（trigger の保存が同じオブジェクトを読む — README §2）", () => {
+    const html = script(`{ settings: { theme: "light" }, get changed() { this.$dependOn("settings.theme"); return true; } }`) +
+      `<wcs-storage key="s" manual data-wcs="value: settings; trigger: changed"></wcs-storage>` +
+      `<select data-wcs="value: settings.theme"></select>`;
+    expect(run(html)).toHaveLength(0);
+  });
+
+  it("対象の表に無い入力（<wcs-fetch> の body）は報告しないこと", () => {
+    const html = script(`{ newUser: { name: "" } }`) +
+      `<wcs-fetch url="/api" method="POST" manual data-wcs="body: newUser"></wcs-fetch>` +
+      `<input data-wcs="value: newUser.name">`;
+    expect(run(html)).toHaveLength(0);
+  });
+
+  it("段の一部だけの置換・ランタイムが拒む for: の行は証拠に数えないこと", () => {
+    const partial = script(`{ cart: [], set(e, i) { this[\`cart\${i}\`] = 1; } }`) +
+      `<wcs-storage key="cart" data-wcs="value: cart"></wcs-storage>`;
+    expect(run(partial)).toHaveLength(0);
+    const refused = script(`{ cart: [] }`) +
+      `<wcs-storage key="cart" data-wcs="value: cart"></wcs-storage>` +
+      `<template data-wcs="for: cart|take(2)"><input data-wcs="value: .quantity"></template>`;
+    expect(run(refused)).toHaveLength(0);
+  });
+});
+
+describe("wcs/getter-untracked-read — テンプレートリテラルのキーも入れ子書き込みの証拠", () => {
+  it("this[`form.${field}`] = v があれば this.form.name を報告すること", () => {
+    const html = script(`{
+  form: { name: "" },
+  get label() { return this.form.name; },
+  edit(field, value) { this[\`form.\${field}\`] = value; },
+}`);
+    expect(codes(validateSemantics(html), WcsDiagnosticCode.GetterUntrackedRead)).toHaveLength(1);
+  });
+});

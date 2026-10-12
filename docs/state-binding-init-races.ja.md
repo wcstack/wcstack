@@ -85,7 +85,7 @@ $connectedCallback() {
 - 定常では two-way member として state→element が流れ続けるため、**保存方向は死なない**（v1.21.x にあった恒久ブロックの乖離は修正済み）。
 - state スロットのシードは要素の実初期値（空キーは `null`）に合わせ、読み出しは正規化 getter で null ガードする。
 - 反映済み: `packages/storage/README.md|.ja.md` §1/§4/§5、`examples/state-cross-tab-todo`、`examples/state-color-palette`。回帰は `e2e/tests/state-cross-tab-todo.spec.ts`（リロード永続 = clobber 側、別タブ同期 = 保存方向側）。
-- `wcs-validate` も同修飾子を認識し、修飾子なしの空値シードにだけ `wcs/storage-seed-clobber` を出す（`packages/vscode-wcs/src/service/ioNodeValidator.ts`）。
+- `wcs-validate` も同修飾子を認識し、修飾子なしの空値シードにだけ `wcs/storage-seed-clobber` を出す。修飾子付きで `null` 以外のシードには `wcs/storage-init-seed` を出す —— 引き込みが、空キーの読む `null` でそのシードを置き換えるため（`packages/vscode-wcs/src/service/ioNodeValidator.ts`）。
 
 ---
 

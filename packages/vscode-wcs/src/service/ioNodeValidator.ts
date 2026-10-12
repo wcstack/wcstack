@@ -12,6 +12,8 @@
  *   （trigger はエッジ検出なし・`manual` バイパスのため、バインド時に即発火する）
  * - StorageSeedClobber: 非 manual の `<wcs-storage>` `value` バインド先スロットの
  *   空値シード（初期書き戻しが保存値を上書きする — load-before-bind イディオム違反）
+ * - StorageInitSeed: `value#init=element` のバインド先スロットの null 以外のリテラルシード
+ *   （空のキーは null を読むので、初回の引き込みでシードが null に置き換わる）
  *
  * pure(DOM / vscode 非依存)。bindingValidator と同一のバインディングパーサを共有する。
  */
@@ -256,6 +258,29 @@ function validateBindingAgainstContract(
       });
     }
   }
+
+  // `#init=element` の引き込みは要素の値をスロットへ書く。空のキーは null を読むので、
+  // null 以外のリテラルのシード（`cart: []` / `theme: "light"`）は初回に null へ置き換わる
+  // （`[]` のつもりで `this.cart.findIndex(…)` を呼ぶコードが投げる）。storage の README
+  // §5 の「シードは要素の本当の初期値（null）で」の静的な形。アクセサペア（getter）は
+  // データスロットではないので対象外 — setter が null を捨てられる。
+  if (tagName === 'wcs-storage' && property === 'value' && parsed.path
+    && /(?:^|,)init=element\b/.test(modifiers)) {
+    const cand = findDataSlot(getPaths(), parsed.path);
+    if (cand?.rawInitial !== undefined && isNonNullLiteralSeed(cand.rawInitial)) {
+      diagnostics.push({
+        code: WcsDiagnosticCode.StorageInitSeed,
+        start, end, severity: 'warning', tag: tagName, statePath: parsed.path,
+        message: msgs.storageInitSeed(parsed.path, cand.rawInitial),
+      });
+    }
+  }
+}
+
+/** null / undefined 以外のリテラル（文字列・数値・真偽・配列・オブジェクト）か。式や識別子は判断しない。 */
+function isNonNullLiteralSeed(raw: string): boolean {
+  const v = raw.trim();
+  return /^(?:["'`[{]|-?\d)/.test(v) || v === 'true' || v === 'false';
 }
 
 function findDataSlot(paths: PathCandidate[], path: string): PathCandidate | undefined {

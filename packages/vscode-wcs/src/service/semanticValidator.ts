@@ -10,6 +10,7 @@
  *   wcs/getter-untracked-read    — getter の中の `this.form.name`（追跡されるのは `form` だけ）
  *   wcs/updated-callback-unbound — `$renderedCallback` が未バインドのパスを判定に使っている
  *   wcs/index-param-range        — `this.$0` / `this.$129`（ループの添字の範囲の外。読んだ時点で throw）
+ *   wcs/input-nested-write       — `<wcs-storage>` の `value: cart` と `cart.0.quantity` への書き込み（保存されない）
  *
  * （もう 1 つの意味論検査 `wcs/wildcard-rank` は HTML 側の for スコープが要るため
  *   bindingValidator / templateSyntaxValidator に同居している。）
@@ -30,7 +31,7 @@ import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
 import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
 import { isOutOfRangeIndexRead, MAX_INDEX_PARAM } from './indexPath.js';
-import { countWildcardSegments, getInnermostForPath } from './forContext.js';
+import { countWildcardSegments, getInnermostForPath, getResolvedForListPath, getRowShorthandForPath } from './forContext.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 import { findBuiltinTagOccurrences } from './ioNodeValidator.js';
 import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
@@ -398,7 +399,7 @@ function validateGetterCycles(script: string, scriptStart: number, locale?: stri
 function validateGetterUntrackedReads(
   script: string,
   scriptStart: number,
-  nestedWriteRoots: () => ReadonlySet<string>,
+  nestedWriteRoots: () => ReadonlyMap<string, string>,
   locale?: string,
 ): WcsDiagnostic[] {
   const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === 'getter' && entry.accessor === 'get');
@@ -432,21 +433,106 @@ function validateGetterUntrackedReads(
   return out;
 }
 
+/**
+ * `wcs/input-nested-write` の対象: 束縛が当て直されたとき（＝束ねたパス自身への代入のとき）に
+ * だけ働く組み込みタグの入力。下への書き込み（`cart.0.quantity`）では当て直されないので、
+ * その書き込みは要素に届かない。
+ *   - `<wcs-storage>` の `value`: 代入で保存する。下への書き込みは保存されず、エラーも出ない。
+ *     `manual` なら対象外 — `trigger` の保存が今の値（書き込みが入った同じオブジェクト）を
+ *     読むので届く（storage の README §2 の形）。
+ * 束縛を当て直さないことは全部の入力に共通だが、それで壊れるかは要素の作り（代入で動くか、
+ * 後で読むか）次第なので、壊れると分かっている入力だけを載せる（偽陽性ゼロ優先）。
+ */
+const NESTED_WRITE_INPUTS: Readonly<Record<string, { readonly inputs: readonly string[]; readonly exemptWhenManual: boolean }>> = {
+  'wcs-storage': { inputs: ['value'], exemptWhenManual: true },
+};
+const MANUAL_ATTRIBUTE = /(?:^|\s)manual(?:\s|=|$)/i;
+
+/**
+ * 組み込みタグの入力を束ねたパスの下へページが書き込む形（`wcs/input-nested-write`）。
+ *
+ * `<wcs-storage data-wcs="value: cart">` に `this[`cart.${i}.quantity`] += 1` を合わせると、
+ * 数量の変化は保存されない（表示は 2、保存は 1。再読み込みで 1 に戻る）。束縛は `cart` への
+ * 代入（行の追加・削除）でしか当て直されない — 依存の伝播は親 → 子の向きだけ。直し方は、
+ * フィールドをパスで読む getter（行 getter と `$getAll`）を束ねるか、下へ書かずに配列を差し替える。
+ * 証拠は collectNestedWriteRoots と同じ（`wcs/getter-untracked-read` と共有）。severity は warning:
+ * 下への書き込みの後に、別の経路で必ず `cart` を差し替えるページでは届く。
+ */
+function validateInputNestedWrites(
+  html: string,
+  stateTagName: string,
+  bindAttrName: string,
+  nestedWriteRoots: () => ReadonlyMap<string, string>,
+  locale?: string,
+): WcsDiagnostic[] {
+  const tags = findBuiltinTagOccurrences(html)
+    .filter((occ) => {
+      const target = NESTED_WRITE_INPUTS[occ.tagName];
+      return target !== undefined && !(target.exemptWhenManual && MANUAL_ATTRIBUTE.test(occ.attrsText));
+    })
+    .map((occ) => ({ tagName: occ.tagName, start: occ.tagStart, end: occ.attrsStart + occ.attrsText.length }));
+  if (tags.length === 0) return [];
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
+  for (const occ of index.occurrences) {
+    if (occ.kind !== 'path' || occ.source !== 'attribute' || occ.bindingType !== 'prop' || occ.propName === null) continue;
+    if (occ.path.startsWith('.')) continue;
+    const at = occ.exprRange.start;
+    const tag = tags.find((t) => t.start <= at && at <= t.end);
+    if (tag === undefined) continue;
+    const input = occ.propName.startsWith('.') ? occ.propName.slice(1) : occ.propName;
+    if (!NESTED_WRITE_INPUTS[tag.tagName].inputs.includes(input)) continue;
+    const example = nestedWriteRoots().get(occ.path);
+    if (example === undefined) continue;
+    out.push({
+      code: WcsDiagnosticCode.InputNestedWrite,
+      start: occ.pathRange.start,
+      end: occ.pathRange.end,
+      severity: 'warning',
+      tag: tag.tagName,
+      statePath: occ.path,
+      message: msgs.inputNestedWrite(tag.tagName, input, occ.path, example),
+    });
+  }
+  return out;
+}
+
 /** ランタイムの既定 two-way DOM プロパティ（書き戻しあり）。 */
 const TWO_WAY_PROPS = new Set(['value', 'checked']);
 /** `this["a.b"] = …` / `+=` / `++`（後置）と `++this["a.b"]`（前置）。ドットパス経由の入れ子書き込み。 */
 const BRACKET_WRITE = new RegExp(`${ROOT_BRACKET}${ASSIGN_TAIL}`, 'g');
 const PRE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${ROOT_BRACKET}`, 'g');
+/** `` this[`cart.${i}.quantity`] `` — テンプレートリテラルのキー（鏡像では中身が空白、群 1 が中身の範囲）。 */
+const TEMPLATE_BRACKET = String.raw`\bthis\s*(?:\?\.)?\s*\[\s*` + '`([^`]*)`' + String.raw`\s*\]`;
+const TEMPLATE_BRACKET_WRITE = new RegExp(`${TEMPLATE_BRACKET}${ASSIGN_TAIL}`, 'g');
+const PRE_TEMPLATE_BRACKET_INCDEC = new RegExp(`${PRE_INCDEC}${TEMPLATE_BRACKET}`, 'g');
+/** 置換（`${…}`）を `*` に読み替えた後のキーがパスとして読めるか（段の一部だけの置換 `item${i}` は読まない）。 */
+const TEMPLATE_KEY_PATH = /^[A-Za-z_][\w]*(?:\.(?:\*|[\w]+))*$/;
 
 /**
- * 入れ子書き込みの証拠があるルート（およびその全接頭辞）を集める。
+ * テンプレートリテラルのキーを、置換を `*` に読み替えたパスにする（`` `cart.${i}.quantity` `` →
+ * `cart.*.quantity`）。段の一部だけの置換・`$` 始まり（API 名前空間）・入れ子の置換は読めないので null。
+ */
+function templateKeyPath(raw: string): string | null {
+  if (raw.includes('`')) return null;
+  const path = raw.replace(/\$\{[^{}]*\}/g, '*');
+  return TEMPLATE_KEY_PATH.test(path) ? path : null;
+}
+
+/**
+ * 入れ子書き込みの証拠があるルート（およびその全接頭辞）を集める。値は証拠になった書き込みの
+ * パス（最初に見つけたもの。メッセージの例に使う）。
  * `wcs/getter-untracked-read` のゲート: `form.name` が書かれるなら `form` に証拠が付く。
+ * `wcs/input-nested-write` も同じ証拠を使う: `cart.*.quantity` が書かれるなら `cart` に付く。
  *
  * 証拠として数える形（どれも `root.<sub>` への書き込みだと静的に断定できるもの）:
  *   - HTML: `value:` / `checked:` の prop バインド、`radio:` / `checkbox:`、spread `...: root`
  *     （spread は展開先のメンバーへ書く — `...: fetch` は `fetch.value` 等）
  *   - HTML: 組み込み wcs-* タグの出力プロパティへのバインド（`latitude: geo.lat`）
- *   - script: `this["a.b"] = …`（複合代入・増減含む）、`$setAll("a.…")`、値付き `$resolve("a.…", [...], v)`
+ *   - HTML: 上のどれかの、`for:` の行の中の相対パス（`value: .quantity` は `cart.*.quantity`）
+ *   - script: `this["a.b"] = …`（複合代入・増減含む）、`` this[`a.${i}.b`] = … ``（置換は `*`）、
+ *     `$setAll("a.…")`、値付き `$resolve("a.…", [...], v)`
  *   - `<wcs-state mount="a.b">` ボリューム（そのサブツリーは `a.b.*` への書き込み）
  * 数えない形: `textContent:` / mustache（読み）、ルート自身へのバインド（`typedParams: params` は
  * 丸ごと置換）、`this.a.b = …`（素のプロパティ書き込み — 反応しないので wcs/nested-assign が error にする）。
@@ -458,12 +544,16 @@ function collectNestedWriteRoots(
   stateTagName: string,
   bindAttrName: string,
   blocks: readonly { content: string; mountPath: string | null }[],
-): Set<string> {
-  const roots = new Set<string>();
+): Map<string, string> {
+  const roots = new Map<string, string>();
   const addPrefixes = (path: string, inclusive: boolean): void => {
     const segments = path.split('.');
     const last = inclusive ? segments.length : segments.length - 1;
-    for (let i = 1; i <= last; i++) roots.add(segments.slice(0, i).join('.'));
+    const example = inclusive ? `${path}.*` : path;
+    for (let i = 1; i <= last; i++) {
+      const prefix = segments.slice(0, i).join('.');
+      if (!roots.has(prefix)) roots.set(prefix, example);
+    }
   };
 
   // HTML 側。組み込みタグの範囲を先に取り、出現のオフセットで所属タグを引く
@@ -474,14 +564,24 @@ function collectNestedWriteRoots(
   }));
   const index = buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName });
   for (const occ of index.occurrences) {
-    if (occ.kind !== 'path' || occ.path.startsWith('.') || occ.source !== 'attribute') continue;
-    if (occ.bindingType === 'spread') { addPrefixes(occ.path, true); continue; }
-    if (occ.bindingType === 'radio' || occ.bindingType === 'checkbox') { addPrefixes(occ.path, false); continue; }
+    if (occ.kind !== 'path' || occ.source !== 'attribute') continue;
+    // 行の中の相対パスは、囲む `for:` のリストの行へ展開する（`.quantity` → `cart.*.quantity`）。
+    // ランタイムが拒む `for:` の中（getRowShorthandForPath が null）の行は存在しないので数えない。
+    let path = occ.path;
+    if (path.startsWith('.')) {
+      const list = getRowShorthandForPath(html, occ.pathRange.start, bindAttrName) === null
+        ? null
+        : getResolvedForListPath(html, occ.pathRange.start, bindAttrName);
+      if (list === null) continue;
+      path = path === '.' ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+    }
+    if (occ.bindingType === 'spread') { addPrefixes(path, true); continue; }
+    if (occ.bindingType === 'radio' || occ.bindingType === 'checkbox') { addPrefixes(path, false); continue; }
     if (occ.bindingType !== 'prop' || occ.propName === null) continue;
-    if (TWO_WAY_PROPS.has(occ.propName)) { addPrefixes(occ.path, false); continue; }
+    if (TWO_WAY_PROPS.has(occ.propName)) { addPrefixes(path, false); continue; }
     const at = occ.exprRange.start;
     const tag = tags.find((t) => t.start <= at && at <= t.end);
-    if (tag?.contract?.hasWcBindable && tag.contract.properties.includes(occ.propName)) addPrefixes(occ.path, false);
+    if (tag?.contract?.hasWcBindable && tag.contract.properties.includes(occ.propName)) addPrefixes(path, false);
   }
 
   // script 側
@@ -496,6 +596,15 @@ function collectNestedWriteRoots(
       while ((match = regex.exec(scan)) !== null) {
         const keyStart = match.index + match[0].search(/["']/) + 1;
         addPrefixes(block.content.slice(keyStart, keyStart + match[1].length), false);
+      }
+    }
+    for (const regex of [TEMPLATE_BRACKET_WRITE, PRE_TEMPLATE_BRACKET_INCDEC]) {
+      regex.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(scan)) !== null) {
+        const keyStart = match.index + match[0].indexOf('`') + 1;
+        const path = templateKeyPath(block.content.slice(keyStart, keyStart + match[1].length));
+        if (path !== null) addPrefixes(path, false);
       }
     }
     API_CALL.lastIndex = 0;
@@ -679,8 +788,8 @@ export function validateSemantics(
   const out: WcsDiagnostic[] = [];
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
   // 入れ子書き込みの証拠はドキュメント単位で 1 回だけ集める（必要になるまで作らない）
-  let nestedWriteRoots: Set<string> | null = null;
-  const getNestedWriteRoots = (): ReadonlySet<string> =>
+  let nestedWriteRoots: Map<string, string> | null = null;
+  const getNestedWriteRoots = (): ReadonlyMap<string, string> =>
     (nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks));
   for (const block of blocks) {
     out.push(...validateIndexArity(block.content, block.contentStart, locale));
@@ -689,6 +798,7 @@ export function validateSemantics(
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
   }
+  out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale));
   out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale));
   return out;
 }
