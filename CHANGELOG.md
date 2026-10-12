@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.0.4] — 2026-10-13
+
+From writing Part 3 of the [tutorial](https://wcstack.github.io/tutorial/): a `<wcs-outlet>` placed away from its `<wcs-router>` stayed empty while the pages rendered right after the router, and nothing said so. The router and the lint now report it, and the router README says where the outlet goes. No behavior changes.
+
 ### Added
 
 - `@wcstack/router`: **a warning for a `<wcs-outlet>` the router does not use.** A `<wcs-router>` renders into the element right after it if that is a `<wcs-outlet>`, and otherwise creates one there; a `<wcs-outlet>` anywhere else (inside `<main>` while the router sits at the top of `<body>`, or inside the router) stayed empty while the routes rendered right after the router, with no error. When a router is about to create its outlet, it now warns once per such outlet in its own root, with the code `[wcs/router-outlet-misplaced]` and the outlet as the second argument. Behavior does not change. The rule dates from the multi-router support of v1.8.6 and was never written down; [docs/router-outlet-placement.md](./docs/router-outlet-placement.md) records it, its history and the decision (2026-10-13) to keep it.
