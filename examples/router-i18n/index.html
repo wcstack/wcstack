@@ -215,8 +215,9 @@
       </section>
     </wcs-route>
   </template>
-  <wcs-outlet></wcs-outlet>
 </wcs-router>
+<!-- The router fills only the element right after it (docs/router-outlet-placement.md). -->
+<wcs-outlet></wcs-outlet>
 
 <!-- Rendered by state, gated on the path the router publishes. -->
 <template data-wcs="if: isList">

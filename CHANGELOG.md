@@ -8,6 +8,16 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/router`: **a warning for a `<wcs-outlet>` the router does not use.** A `<wcs-router>` renders into the element right after it if that is a `<wcs-outlet>`, and otherwise creates one there; a `<wcs-outlet>` anywhere else (inside `<main>` while the router sits at the top of `<body>`, or inside the router) stayed empty while the routes rendered right after the router, with no error. When a router is about to create its outlet, it now warns once per such outlet in its own root, with the code `[wcs/router-outlet-misplaced]` and the outlet as the second argument. Behavior does not change. The rule dates from the multi-router support of v1.8.6 and was never written down; [docs/router-outlet-placement.md](./docs/router-outlet-placement.md) records it, its history and the decision (2026-10-13) to keep it.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/router-outlet-misplaced`** (warning). The same check, from the order of tags in the HTML: a `<wcs-outlet>` that is not right after a `<wcs-router>`, on a page where some router has no outlet right after it.
+
+### Fixed
+
+- `@wcstack/router`: **the README states where `<wcs-outlet>` goes** — right after its `<wcs-router>` (whitespace, text and comments may sit between them). It said only "define it in HTML, or the router creates it".
+- `examples/router-i18n` placed its `<wcs-outlet>` inside the `<wcs-router>`, after the `<template>`; the router never used it and rendered into one it created next to it. The outlet now sits right after the router.
+
 ## [4.0.3] — 2026-10-12
 
 Fixes from finishing Part 2 of the [tutorial](https://wcstack.github.io/tutorial/) and planning Part 3: three lint checks that stayed silent where a page loses data or is published with pinned URLs, and a README example that sent no body the second time.

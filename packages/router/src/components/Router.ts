@@ -1,5 +1,6 @@
 import { parse } from "../parse.js";
 import { createOutlet } from "./Outlet.js";
+import { warnMisplacedOutlet } from "../misplacedOutletWarning.js";
 import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { GuardData, ILink, IOutlet, IRoute, IRouteChildContainer, IRouteMatchResult, IRouter, IRouterCommit } from "./types.js";
@@ -239,12 +240,15 @@ export class Router extends HTMLElement implements IRouter {
   }
 
   private _getOutlet(): IOutlet {
-    // 自身を起点に兄弟・子孫から Outlet を探す（マルチ Router 対応）
+    // outlet は自身の直後の兄弟だけ（docs/router-outlet-placement.md）。マルチ Router で router と
+    // outlet を 1 対 1 に結ぶための規則で、SSR の採用経路もこの位置を前提にする。
     const next = this.nextElementSibling;
     if (next && next.matches(config.tagNames.outlet)) {
       return next as unknown as IOutlet;
     }
-    // なければ新規作成して自身の直後に挿入
+    // なければ新規作成して自身の直後に挿入する。別の場所に置かれた <wcs-outlet> は使わないので、
+    // それがあれば黙って見過ごさずに警告する（ページは直後に描かれ、置いた outlet は空のまま）。
+    warnMisplacedOutlet(this);
     const outlet = createOutlet();
     if (this.parentNode) {
       this.parentNode.insertBefore(outlet, this.nextSibling);

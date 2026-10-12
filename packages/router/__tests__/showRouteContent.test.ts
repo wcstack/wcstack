@@ -459,6 +459,9 @@ describe('showRouteContent — binder への受け渡し', () => {
     delete globals[BINDER_KEY];
     delete globals[Symbol.for('wcstack.binder.pending')];
     delete globals[Symbol.for('wcstack.binder.taken')];
+    // 接続した router が自分の直後に作った outlet も片付ける。残すと、次のテストの router が
+    // 「どの router も使わない outlet」として [wcs/router-outlet-misplaced] を警告する
+    document.body.innerHTML = '';
   });
 
   it('後から表示されるルートの内容を binder へ渡すこと', async () => {

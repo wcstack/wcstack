@@ -156,7 +156,7 @@ What the exception costs: `focus="heading"` finds no heading in an empty route b
 
 ### Router (wcs-router)
 
-Define routes and layout slots inside a child template tag. A direct child template tag is required. Outputs according to definitions to `<wcs-outlet>`. Multiple routers can coexist in the same document when each has a distinct `basename`.
+Define routes and layout slots inside a child template tag. A direct child template tag is required. Outputs according to definitions to the `<wcs-outlet>` **right after it** (see Outlet below). Multiple routers can coexist in the same document when each has a distinct `basename`.
 
 | Attribute | Description |
 |------|------|
@@ -378,7 +378,15 @@ With @wcstack/state, the outlet hands the elements it places — and with them t
 
 ### Outlet (wcs-outlet)
 
-Displays a DOM tree according to the routing and layout settings. Define it in HTML, or if missing it is created by `<wcs-router>`.
+Displays a DOM tree according to the routing and layout settings. **Place it right after its `<wcs-router>`** (whitespace, text and comments may sit between them; another element may not), or leave it out and the router creates one there. A router uses only the element right after it: a `<wcs-outlet>` anywhere else — inside `<main>` while the router sits at the top of `<body>`, or inside the router — stays empty while the routes render right after the router. The router warns about such an outlet at runtime, and `wcs-validate` reports it, as `[wcs/router-outlet-misplaced]`. Why the rule is what it is: [docs/router-outlet-placement.md](../../docs/router-outlet-placement.md).
+
+```html
+<main>
+  <wcs-router><template>…</template></wcs-router>
+  <wcs-outlet></wcs-outlet>
+  <aside>…</aside>
+</main>
+```
 
 ### LayoutOutlet (wcs-layout-outlet)
 

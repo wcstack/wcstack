@@ -197,6 +197,7 @@ The `outerHTML:` / `outerText:` check (#203) looks at the `for` / `if` templates
 |---|---|---|
 | `wcs/script-order` | Another wcstack `/auto` script loaded after `@wcstack/state/auto` | ⚠ warning |
 | `wcs/base-href-missing` | `router/auto` present without `<base href>` (basename would be mis-derived). Pinned URLs count (`@wcstack/router@4/auto`, jsDelivr's `@wcstack/router@4.0.2/dist/auto.min.js`), and so does the `wcstack/auto` bundle on a page that has a `<wcs-router>` | ⚠ warning |
+| `wcs/router-outlet-misplaced` | A `<wcs-outlet>` that is not right after a `<wcs-router>`, on a page where some router has no outlet right after it. A router uses only the element right after it and otherwise creates its own outlet there, so the routes render there and this outlet stays empty ([docs/router-outlet-placement.md](../../docs/router-outlet-placement.md)) | ⚠ warning |
 | `wcs/signals-dual-entry` | `@wcstack/signals` and `@wcstack/signals/dom` on the same page (duplicated reactive core) | ❌ error |
 
 #### v2 migration
