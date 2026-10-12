@@ -249,12 +249,22 @@ function validateBindingAgainstContract(
   // `#init=element` / `#init=auto` は load-before-bind の宣言的な解なので対象外。
   if (tagName === 'wcs-storage' && property === 'value' && !hasManual && parsed.path
     && !/(?:^|,)init=(?:element|auto)\b/.test(modifiers)) {
-    const cand = findDataSlot(getPaths(), parsed.path);
+    const paths = getPaths();
+    const cand = findDataSlot(paths, parsed.path);
     if (cand?.rawInitial !== undefined && EMPTYISH_SEEDS.has(normalizeSeed(cand.rawInitial))) {
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
         start, end, severity: 'warning', tag: tagName, statePath: parsed.path,
         message: msgs.storageSeedClobber(parsed.path, cand.rawInitial),
+      });
+    } else if (cand === undefined && paths.some(c => c.kind === 'computed' && c.settable && c.path === parsed.path)) {
+      // アクセサペア（getter + setter）も同じ: 初期の書き戻しが getter の最初の値（空のカートの
+      // `[]` など）を保存値の上に保存し、setter は保存値を受け取れない。setter があるのは復元する
+      // つもりの印。getter だけ（保存専用の設計がありうる）は対象外。
+      diagnostics.push({
+        code: WcsDiagnosticCode.StorageSeedClobber,
+        start, end, severity: 'warning', tag: tagName, statePath: parsed.path,
+        message: msgs.storagePairClobber(parsed.path),
       });
     }
   }

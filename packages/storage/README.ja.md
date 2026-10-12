@@ -117,7 +117,7 @@ npm install @wcstack/storage
 - フィールドは `this["form.name"]` で読み、`this.form.name` で読ま**ない**こと。後者は `form` にしか依存を張らず（`.name` は返ってきたオブジェクトへの素のプロパティアクセス）、フィールドを編集しても getter は再評価されません —— [依存追跡の境界](../state/README.ja.md#依存追跡の境界) を参照
 - 空キーでは初回ロードで seed オブジェクトが 1 回書かれます。`null` が setter を通り、アクセサペアへの書き込みは常に getter を再評価するからです。永続化済みデータが上書きされることはありません —— 保存済みオブジェクトは復元され、同じ内容で再保存されます
 
-`value` を `form` へ直接束ねないのは、束縛がそのパス自身への代入でしか当て直されないからです。`form.name`（リストなら `cart.0.quantity`）への書き込みでは `value: form` は当て直されず、変更は保存されません —— エラーは出ず、再読み込みで古い値に戻ります。上の getter はフィールドをすべてパスで読むので、編集のたびに再評価されます。リストも同じ形で、保存するものを返す行 getter と、それを集める `$getAll` を使います（`get "cart.*.saved"() { … }`、`get savedCart() { return this.$getAll("cart.*.saved", []); }`）。`wcs-validate` は直接の形を `wcs/input-nested-write` で、`null` 以外でシードしたスロットへの `#init=element` を `wcs/storage-init-seed` で報告します。
+`value` を `form` へ直接束ねないのは、束縛がそのパス自身への代入でしか当て直されないからです。`form.name`（リストなら `cart.0.quantity`）への書き込みでは `value: form` は当て直されず、変更は保存されません —— エラーは出ず、再読み込みで古い値に戻ります。上の getter はフィールドをすべてパスで読むので、編集のたびに再評価されます。リストも同じ形で、保存するものを返す行 getter と、それを集める `$getAll` を使います（`get "cart.*.saved"() { … }`、`get savedCart() { return this.$getAll("cart.*.saved", []); }`）。`wcs-validate` は直接の形を `wcs/input-nested-write` で、`null` 以外でシードしたスロットへの `#init=element` を `wcs/storage-init-seed` で、`#init=element` なしで束ねたアクセサペア（getter の最初の値が保存値の上に保存される）を `wcs/storage-seed-clobber` で報告します。
 
 このパターンは `packages/storage/__tests__/integration.accessorPairForm.test.ts` が実 `@wcstack/state` に対して固定しています。
 

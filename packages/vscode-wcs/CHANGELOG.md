@@ -2,6 +2,11 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **`wcs/storage-seed-clobber` が `#init=element` なしで束ねたアクセサペアも報告する** — `<wcs-storage data-wcs="value: savedCart">` に getter / setter の `savedCart` を束ねると、読み込みのたびに getter の最初の値（空のカートの `[]`）が保存値の上に保存され、setter は保存値を受け取れない（チュートリアルのステップ 11 で「検査器には見えない」としていた形）。setter の無い getter は保存専用の設計がありうるので報告しない。
+- **`wcs/input-nested-write` が `<wcs-fetch>` の `body` も対象にする**（`manual` でも）— `body` は使い捨てで要求のたびに `null` へ戻るので、`body: newUser` と `value: newUser.name` の組み合わせは 1 回目だけ本文を送り、2 回目は本文なしになる。直し方は「要求を始めるハンドラで新しいオブジェクトを作る」。
+
 ## 2.0.2 — 2026-10-12
 
 `@wcstack/state` 4.0.2 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.0.2・`@wcstack/typescript` 4.0.2 と同じ判定）。チュートリアル Part 2（`<wcs-fetch>` で読む商品一覧・`<wcs-storage>` に残すカート）の試作で見つけたもの。

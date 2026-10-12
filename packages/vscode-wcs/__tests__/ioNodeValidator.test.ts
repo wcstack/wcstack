@@ -289,3 +289,32 @@ describe('validateIoNodes: storage-init-seed', () => {
     expect(validateIoNodes(html)).toHaveLength(0);
   });
 });
+
+describe('validateIoNodes: storage-seed-clobber — アクセサペア', () => {
+  const PAIR = `  cart: [],
+  get savedCart() { return this.$getAll("cart.*.saved", []); },
+  set savedCart(lines) { if (Array.isArray(lines)) this.cart = lines; },`;
+
+  it('#init=element なしでアクセサペアに束ねると警告する（再読み込みで保存値が消える）', () => {
+    const html = STATE(PAIR) + `<wcs-storage key="cart" data-wcs="value: savedCart"></wcs-storage>`;
+    const diags = validateIoNodes(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe(WcsDiagnosticCode.StorageSeedClobber);
+    expect(diags[0].statePath).toBe('savedCart');
+    expect(diags[0].message).toContain('value#init=element: savedCart');
+  });
+
+  it('#init=element / #init=auto・manual なら警告しない', () => {
+    for (const binding of ['value#init=element: savedCart', 'value#init=auto: savedCart']) {
+      expect(validateIoNodes(STATE(PAIR) + `<wcs-storage key="cart" data-wcs="${binding}"></wcs-storage>`)).toHaveLength(0);
+    }
+    expect(validateIoNodes(STATE(PAIR) + `<wcs-storage key="cart" manual data-wcs="value: savedCart"></wcs-storage>`)).toHaveLength(0);
+  });
+
+  it('setter の無い getter（保存専用の設計がありうる）は警告しない', () => {
+    const html = STATE(`  cart: [],
+  get savedCart() { return this.$getAll("cart.*.saved", []); },`) +
+      `<wcs-storage key="cart" data-wcs="value: savedCart"></wcs-storage>`;
+    expect(validateIoNodes(html)).toHaveLength(0);
+  });
+});

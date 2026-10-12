@@ -440,11 +440,20 @@ function validateGetterUntrackedReads(
  *   - `<wcs-storage>` の `value`: 代入で保存する。下への書き込みは保存されず、エラーも出ない。
  *     `manual` なら対象外 — `trigger` の保存が今の値（書き込みが入った同じオブジェクト）を
  *     読むので届く（storage の README §2 の形）。
+ *   - `<wcs-fetch>` の `body`: 使い捨ての入力で、要求のたびに `null` へ戻る（fetch の README
+ *     Design Notes）。最初の要求は同じオブジェクトの参照で届くが、下への書き込みでは当て直されない
+ *     ので、2 回目からは本文なしで送られる（`manual` + `trigger` でも同じ・実測）。`oneShot` は
+ *     直し方の違い（getter では足りない — 入力を変えない再試行で `null` のまま）をメッセージに出す。
  * 束縛を当て直さないことは全部の入力に共通だが、それで壊れるかは要素の作り（代入で動くか、
  * 後で読むか）次第なので、壊れると分かっている入力だけを載せる（偽陽性ゼロ優先）。
  */
-const NESTED_WRITE_INPUTS: Readonly<Record<string, { readonly inputs: readonly string[]; readonly exemptWhenManual: boolean }>> = {
+const NESTED_WRITE_INPUTS: Readonly<Record<string, {
+  readonly inputs: readonly string[];
+  readonly exemptWhenManual: boolean;
+  readonly oneShot?: boolean;
+}>> = {
   'wcs-storage': { inputs: ['value'], exemptWhenManual: true },
+  'wcs-fetch': { inputs: ['body'], exemptWhenManual: false, oneShot: true },
 };
 const MANUAL_ATTRIBUTE = /(?:^|\s)manual(?:\s|=|$)/i;
 
@@ -485,6 +494,9 @@ function validateInputNestedWrites(
     if (!NESTED_WRITE_INPUTS[tag.tagName].inputs.includes(input)) continue;
     const example = nestedWriteRoots().get(occ.path);
     if (example === undefined) continue;
+    const message = NESTED_WRITE_INPUTS[tag.tagName].oneShot
+      ? msgs.inputNestedWriteOneShot(tag.tagName, input, occ.path, example)
+      : msgs.inputNestedWrite(tag.tagName, input, occ.path, example);
     out.push({
       code: WcsDiagnosticCode.InputNestedWrite,
       start: occ.pathRange.start,
@@ -492,7 +504,7 @@ function validateInputNestedWrites(
       severity: 'warning',
       tag: tag.tagName,
       statePath: occ.path,
-      message: msgs.inputNestedWrite(tag.tagName, input, occ.path, example),
+      message,
     });
   }
   return out;

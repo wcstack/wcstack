@@ -8,6 +8,12 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/storage-seed-clobber` also reports an accessor pair bound without `#init=element`.** `<wcs-storage data-wcs="value: savedCart">` with a getter / setter `savedCart` saves the getter's starting value (an empty cart's `[]`) over the stored one on every load, and the setter never receives it. A getter without a setter is not reported: it may be save-only.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/input-nested-write` also covers `<wcs-fetch>`'s `body`**, `manual` or not. `body` is a one-shot input that resets to `null` after every request, so `body: newUser` with `value: newUser.name` sends the form once and the second request without a body. The message says to build a new object in the handler that starts the request.
+- `@wcstack/fetch`: **the README's POST example sent no body the second time.** It bound the form object (`body: newUser`); it now builds a new `submitBody` in `submit()` on every submit, a retry included. An integration test against `@wcstack/state` pins both forms.
+
 ## [4.0.2] — 2026-10-12
 
 Fixes from planning Part 2 of the [tutorial](https://wcstack.github.io/tutorial/) (a catalog loaded with `<wcs-fetch>`, a cart kept with `<wcs-storage>`): the lint learns the shape of data that arrives from outside, and reports the two ways a stored cart silently loses changes.
