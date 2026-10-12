@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.0.3 — 2026-10-12
+
+`@wcstack/state` 4.0.3 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.0.3・`@wcstack/typescript` 4.0.3 と同じ判定）。
 
 - **`wcs/storage-seed-clobber` が `#init=element` なしで束ねたアクセサペアも報告する** — `<wcs-storage data-wcs="value: savedCart">` に getter / setter の `savedCart` を束ねると、読み込みのたびに getter の最初の値（空のカートの `[]`）が保存値の上に保存され、setter は保存値を受け取れない（チュートリアルのステップ 11 で「検査器には見えない」としていた形）。setter の無い getter は保存専用の設計がありうるので報告しない。
 - **`wcs/base-href-missing` と `wcs/script-order` が版を付けた URL を見る** — どちらも版の無い `@wcstack/<pkg>/auto` しか wcstack の script と認めず、`@wcstack/router@4/auto`、jsDelivr の `@wcstack/router@4.0.2/dist/auto.min.js`（SRI に要る形）、一括バンドル `wcstack/auto` で黙っていた。一括バンドルは state と router を含むものとして数え、`<base href>` は `<wcs-router>` のあるページでだけ求める。
