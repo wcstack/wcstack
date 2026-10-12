@@ -27,6 +27,8 @@ import {
 
 interface NavigateEventLike {
   canIntercept: boolean;
+  /** ページ側のリスナーが preventDefault() した（mock では欠け得る） */
+  defaultPrevented?: boolean;
   hashChange: boolean;
   downloadRequest: string | null;
   destination: { url: string };
@@ -555,6 +557,9 @@ export class Router extends HTMLElement implements IRouter {
   private _onNavigateFunc(navEvent: NavigateEventLike) {
     if (
       !navEvent.canIntercept ||
+      // ページ側が取り消したナビゲーション（未保存の確認など）に intercept() を呼ぶと
+      // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
+      navEvent.defaultPrevented ||
       navEvent.hashChange ||
       navEvent.downloadRequest !== null
     ) {

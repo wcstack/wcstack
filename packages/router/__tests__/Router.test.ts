@@ -524,6 +524,21 @@ describe('Router', () => {
       expect(navEvent.intercept).not.toHaveBeenCalled();
     });
 
+    it('ページ側が取り消した（defaultPrevented）ナビゲーションには intercept しないこと（呼ぶと InvalidStateError — docs/seam-apps.md、router-admin）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const navEvent = {
+        canIntercept: true,
+        defaultPrevented: true,
+        hashChange: false,
+        downloadRequest: null,
+        destination: { url: 'http://localhost/next' },
+        intercept: vi.fn(),
+      };
+
+      (router as any)._onNavigateFunc(navEvent);
+      expect(navEvent.intercept).not.toHaveBeenCalled();
+    });
+
     it('interceptハンドラー内部でapplyRouteを呼ぶこと', async () => {
       const router = document.createElement('wcs-router') as Router;
       (router as any)._outlet = createOutlet();
