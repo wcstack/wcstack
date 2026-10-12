@@ -8,6 +8,23 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+Fixes from planning Part 2 of the [tutorial](https://wcstack.github.io/tutorial/) (a catalog loaded with `<wcs-fetch>`, a cart kept with `<wcs-storage>`): the lint learns the shape of data that arrives from outside, and reports the two ways a stored cart silently loses changes.
+
+### Added
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **a JSDoc `@type` declares a shape.** A list that starts as `null` and is filled by `<wcs-fetch>` or `<wcs-storage>` has no row to read its fields from, so `{{ .name }}` in its rows was `wcs/binding-path-missing`. `/** @type {{ id: number, name: string }[] | null} */ catalog: null` now gives `catalog.*.id` and `catalog.*.name` (with their types), and a getter that returns `this.catalog ?? []` keeps that shape. A `@typedef` in the same script names a type (`@type {Product[] | null}`). The types read are a subset of TypeScript's JSDoc: names, object types, `T[]` / `Array<T>`, unions, `?T`.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/input-nested-write`** (warning). A non-manual `<wcs-storage>` whose `value` is bound to a path the page writes below — `value: cart` with `` this[`cart.${i}.quantity`] += 1 `` or `value: .quantity` in a `for: cart` row. A binding is re-applied only when its own path is assigned, so those writes are never saved: no error, and a reload brings back the old quantity. Bind a getter that reads the fields by path (a row getter and `$getAll`), or replace the array.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/storage-init-seed`** (warning). `value#init=element:` on a slot seeded with a literal other than `null` (`cart: []`): an empty key loads as `null` and the pull writes it in, so the seed is gone on a first visit (`this.cart.findIndex(…)` throws).
+
+### Changed
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/storage-seed-clobber` says to add `#init=element` and seed `null`.** It said to seed `undefined` or add `manual`; the storage README gives the `undefined` seed only for a page that turns `enableDirectionalInitialSync` off.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: `wcs/getter-untracked-read` also counts a write through a template-literal key (`` this[`form.${key}`] = … ``) and a two-way binding inside a `for:` row as writes below a root, so it reports in more of the cases it describes.
+
+### Fixed
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/type-annotation` reads the types it skipped.** A type with nested braces (`{{ id: number }[] | null}`) and a multi-line JSDoc with a description were not checked at all; a `@typedef` name was compared as an unknown name, so an object value for an object typedef was reported; and `any` / `unknown` / `*` were compared too, so `null` for `@type {any}` was reported.
+
 ## [4.0.1] — 2026-10-12
 
 Fixes from writing the [tutorial](https://wcstack.github.io/tutorial/): a binding form that did nothing is now refused, and the lint stops reporting paths under a getter's result that exist.

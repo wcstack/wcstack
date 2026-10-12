@@ -205,7 +205,9 @@ describe('validateIoNodes: storage-seed-clobber', () => {
     const diags = validateIoNodes(html);
     expect(diags).toHaveLength(1);
     expect(diags[0].code).toBe(WcsDiagnosticCode.StorageSeedClobber);
-    expect(diags[0].message).toContain('undefined');
+    // 直し方は README §5 の #init=element（undefined のシードは無効化したときの代わり）
+    expect(diags[0].message).toContain('#init=element');
+    expect(diags[0].message).not.toContain('undefined');
   });
 
   it('null / [] / {} シードも警告する', () => {
@@ -219,10 +221,14 @@ describe('validateIoNodes: storage-seed-clobber', () => {
 
   it('`#init=element` / `#init=auto` 修飾子付きは load-before-bind の解なので警告しない', () => {
     for (const mod of ['#init=element', '#init=auto']) {
-      const html = STATE(`  username: '',`) +
+      const html = STATE(`  username: null,`) +
         `<wcs-storage key="username" data-wcs="value${mod}: username"></wcs-storage>`;
       expect(validateIoNodes(html)).toHaveLength(0);
     }
+    // `''` のシードは上書きされないが、#init=element の引き込みで null になる（storage-init-seed の担当）
+    const html = STATE(`  username: '',`) +
+      `<wcs-storage key="username" data-wcs="value#init=element: username"></wcs-storage>`;
+    expect(validateIoNodes(html).map(d => d.code)).not.toContain(WcsDiagnosticCode.StorageSeedClobber);
   });
 
   it('修飾子付きの正当なメンバーは tag-member-unknown にならない', () => {
@@ -238,5 +244,48 @@ describe('validateIoNodes: storage-seed-clobber', () => {
     const manual = STATE(`  username: '',`) +
       `<wcs-storage key="username" manual data-wcs="value: username"></wcs-storage>`;
     expect(validateIoNodes(manual)).toHaveLength(0);
+  });
+});
+
+describe('validateIoNodes: storage-init-seed', () => {
+  it('#init=element のバインド先が [] シードなら警告する（初回は null が入る）', () => {
+    const html = STATE(`  cart: [],`) +
+      `<wcs-storage key="cart" data-wcs="value#init=element: cart"></wcs-storage>`;
+    const diags = validateIoNodes(html);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe(WcsDiagnosticCode.StorageInitSeed);
+    expect(diags[0].severity).toBe('warning');
+    expect(diags[0].statePath).toBe('cart');
+    expect(diags[0].message).toContain('null');
+  });
+
+  it("文字列・数値・真偽・オブジェクトのリテラルも警告する", () => {
+    for (const seed of ["''", '"light"', '0', 'false', '{ theme: "dark" }']) {
+      const html = STATE(`  saved: ${seed},`) +
+        `<wcs-storage key="k" data-wcs="value#init=element: saved"></wcs-storage>`;
+      expect(validateIoNodes(html).map(d => d.code)).toEqual([WcsDiagnosticCode.StorageInitSeed]);
+    }
+  });
+
+  it('null / undefined のシードと、リテラルでない初期値は警告しない', () => {
+    for (const seed of ['null', 'undefined', 'loadDefaults()']) {
+      const html = STATE(`  saved: ${seed},`) +
+        `<wcs-storage key="k" data-wcs="value#init=element: saved"></wcs-storage>`;
+      expect(validateIoNodes(html)).toHaveLength(0);
+    }
+  });
+
+  it('アクセサペア（getter）に束ねた形は警告しない — setter が null を捨てられる', () => {
+    const html = STATE(`  cart: [],
+  get savedCart() { return this.$getAll("cart.*.saved", []); },
+  set savedCart(lines) { if (Array.isArray(lines)) this.cart = lines; },`) +
+      `<wcs-storage key="cart" data-wcs="value#init=element: savedCart"></wcs-storage>`;
+    expect(validateIoNodes(html)).toHaveLength(0);
+  });
+
+  it('#init=element でない束縛は対象外（storage-seed-clobber の担当）', () => {
+    const html = STATE(`  cart: [],`) +
+      `<wcs-storage key="cart" data-wcs="value#init=auto: cart"></wcs-storage>`;
+    expect(validateIoNodes(html)).toHaveLength(0);
   });
 });

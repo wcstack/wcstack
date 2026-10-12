@@ -7,6 +7,16 @@
 
 import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
+import { maskCommentsAndStrings } from './stateAnalyzer.js';
+import {
+  collectJsDocTypedefs,
+  findJsDocComments,
+  flattenJsDocType,
+  parseJsDocType,
+  readJsDocTagType,
+  type JsDocType,
+  type JsDocTypedefs,
+} from './jsdocType.js';
 
 /** 診断情報 */
 export interface StateTypeDiagnostic {
@@ -56,27 +66,34 @@ interface JsDocTypedProperty {
   valueLength: number;
 }
 
+/** 直後のプロパティ定義（JSDoc コメントの直後の `name:` / `"name":`）。 */
+const PROPERTY_AFTER_COMMENT = /^\s*(?:"([^"]+)"|'([^']+)'|(\w+))\s*:\s*/;
+
 /**
  * スクリプト内容から JSDoc @type 付きプロパティを検出する。
+ * 型表現は jsdocType の読み方（入れ子の `{…}`・`@typedef` の名前）に揃える。
  */
 function findJsDocTypedProperties(script: string): JsDocTypedProperty[] {
   const results: JsDocTypedProperty[] = [];
+  const scan = maskCommentsAndStrings(script);
+  const typedefs = script.includes('@typedef') ? collectJsDocTypedefs(script, scan) : new Map<string, JsDocType>();
 
-  // JSDoc コメント直後のプロパティ定義を検出
-  const regex = /\/\*\*\s*@type\s*\{([^}]+)\}\s*\*\/\s*(?:"([^"]+)"|'([^']+)'|(\w+))\s*:\s*/g;
-
-  let match: RegExpExecArray | null;
-  while ((match = regex.exec(script)) !== null) {
-    const rawType = match[1].trim();
-    const name = match[2] ?? match[3] ?? match[4];
-    const valueStart = match.index + match[0].length;
+  for (const comment of findJsDocComments(script, scan)) {
+    const typeText = readJsDocTagType(comment.text, 'type');
+    if (typeText === null) continue;
+    const match = PROPERTY_AFTER_COMMENT.exec(script.slice(comment.end));
+    if (!match) continue;
+    const rawType = typeText.replace(/\s+/g, ' ');
+    const name = match[1] ?? match[2] ?? match[3];
+    const valueStart = comment.end + match[0].length;
 
     // 値部分を抽出
     const valueText = extractValue(script, valueStart);
     const valueType = inferValueType(valueText);
 
     if (valueType) {
-      const declaredTypes = rawType.split('|').map(t => normalizeType(t.trim()));
+      const declaredTypes = declaredTypesOf(rawType, typedefs);
+      if (declaredTypes === null) continue;
 
       results.push({
         name,
@@ -90,6 +107,28 @@ function findJsDocTypedProperties(script: string): JsDocTypedProperty[] {
   }
 
   return results;
+}
+
+/** 何でも受ける型（検証しない）。 */
+const ANY_TYPES = new Set(['any', 'unknown', '*']);
+
+/**
+ * 宣言された型の構成員を、値の型と比べられる語（`string` / `array` / `object` …）にする。
+ * `@typedef` の名前は解決する。何でも受ける構成員（`any` / `unknown` / `*`・関数型などの
+ * 読めない型）があれば検証できないので null。読めない表現は従来どおり `|` で割る。
+ */
+function declaredTypesOf(rawType: string, typedefs: JsDocTypedefs): string[] | null {
+  if (rawType.split('|').some((t) => ANY_TYPES.has(t.trim().toLowerCase()))) return null;
+  const parsed = parseJsDocType(rawType);
+  if (parsed === null) return rawType.split('|').map(t => normalizeType(t.trim()));
+  const out: string[] = [];
+  for (const member of flattenJsDocType(parsed, typedefs)) {
+    if (member.kind === 'unknown') return null;
+    if (member.kind === 'array') out.push('array');
+    else if (member.kind === 'object') out.push('object');
+    else if (member.kind === 'name') out.push(normalizeType(member.name));
+  }
+  return out;
 }
 
 /**

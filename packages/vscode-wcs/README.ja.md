@@ -194,6 +194,19 @@ label: null,        // ⚠ 型 "null" は @type {string} と互換性があり�
 label: null,        // ✅ OK
 ```
 
+同じ `@type` は**形**の宣言にもなります。`null`（または `[]`）で始まり `<wcs-fetch>` や `<wcs-storage>` が埋めるリストには、フィールドを読む行がないので、行の束縛は `wcs/binding-path-missing` になります。行をオブジェクトの型で書けば `catalog.*.id`・`catalog.*.name` が（型付きで）存在し、その下の打ち間違いは引き続き報告されます。行の型には同じスクリプトの `@typedef` で名前を付けてもかまいません:
+
+```javascript
+/** @typedef {{ id: number, name: string, price: number }} Product */
+export default {
+  /** @type {Product[] | null} */
+  catalog: null,                           // for: catalog → .id / .name / .price
+  get products() { return this.catalog ?? []; },   // getter の結果も形を引き継ぐ
+};
+```
+
+読む型は TypeScript の JSDoc の部分集合です: 名前、オブジェクト型（`{ a: T; b?: U }`）、`T[]` / `Array<T>`、合併、`?T`、`@typedef` の名前（自己参照する typedef は入れ子の上限で止まる）。読めない型（関数型・`Record<…>`）は形を宣言しません。`any` / `unknown` / `*` は初期値と照合しません。
+
 ### Nested Property Assignment Warning
 
 `<wcs-state>` スクリプト内でネストされたプロパティへの代入を検出し、リアクティブ更新がトリガーされない旨を警告します。

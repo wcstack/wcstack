@@ -187,6 +187,13 @@ export const WcsDiagnosticCode = {
   TriggerSeededTruthy: "wcs/trigger-seeded-truthy",
   // 非 manual <wcs-storage> value バインド先の空値シード(初期書き戻しが保存値を上書き)。
   StorageSeedClobber: "wcs/storage-seed-clobber",
+  // `value#init=element` の <wcs-storage> バインド先の null 以外のリテラルシード
+  // (空のキーは null を読むので、初回の引き込みでシードが null に置き換わる)。
+  StorageInitSeed: "wcs/storage-init-seed",
+  // 組み込み I/O ノードの入力を束ねたパスの下へ、ページが書き込む(`value: cart` と
+  // `this["cart.0.quantity"] = …`)。束縛はそのパス自身への代入でしか当て直されないので、
+  // 下への書き込みは要素に届かない(storage なら保存されない)。
+  InputNestedWrite: "wcs/input-nested-write",
   // --- accessibility (docs/a11y-design.md §8 / D9) ---
   // `attr.aria-*` バインドの属性名が WAI-ARIA に存在しない(タイポ)。
   // setAttribute はそのまま書き、支援技術は黙って無視する。severity は warning

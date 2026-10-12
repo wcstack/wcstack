@@ -170,6 +170,9 @@ export interface WcsMessageCatalog {
   none(): string;
   triggerSeededTruthy(path: string): string;
   storageSeedClobber(path: string, rawInitial: string): string;
+  storageInitSeed(path: string, rawInitial: string): string;
+  /** `tag` の入力 `input` を束ねた `path` の下へ、ページが `example` に書き込む。 */
+  inputNestedWrite(tag: string, input: string, path: string, example: string): string;
   // --- documentEnvValidator ---
   devtoolsAfterState(): string;
   baseHrefMissing(): string;
@@ -239,6 +242,12 @@ export type RecursionNodePathProblem =
   | 'reservedRoot' | 'reservedMount' | 'midWildcard' | 'nestedRecursion' | 'indexSegment';
 /** `**` を含む宣言キーの不正。 */
 export type RecursionGetterProblem = 'setter' | 'notGetter' | 'nodeItself' | 'structural';
+
+/** シードの原文（長いリテラルは先頭だけ）。 */
+function shortSeed(raw: string): string {
+  const flat = raw.replace(/\s+/g, ' ');
+  return flat.length <= 32 ? flat : `${flat.slice(0, 29)}…`;
+}
 
 const JA_EXPECTED_LABEL: Record<ExpectedTypeKind, string> = {
   array: '配列型のパス',
@@ -363,7 +372,11 @@ const ja: WcsMessageCatalog = {
   triggerSeededTruthy: (path) =>
     `trigger バインド先 "${path}" が true でシードされています。trigger はエッジ検出なし（truthy 書き込みで即発火・manual もバイパス）のため、バインド時に即発火します。false でシードしてください`,
   storageSeedClobber: (path, raw) =>
-    `<wcs-storage> の value バインド先 "${path}" が ${raw} でシードされています。初期書き戻しが保存値を上書きします — undefined でシード（\`${path}: undefined\`）するか manual を付けてください`,
+    `<wcs-storage> の value バインド先 "${path}" が ${raw} でシードされています。読み込みのたびに初期書き戻しが保存値を上書きします — バインドに #init=element を付けて（\`value#init=element: ${path}\`）保存値を勝たせ、スロットは null（空のキーが読む値）でシードしてください`,
+  storageInitSeed: (path, raw) =>
+    `<wcs-storage> の value バインド先 "${path}" が ${shortSeed(raw)} でシードされていますが、#init=element は要素の値をこのスロットへ引き込みます。初回（空のキー）は null なので、シードは null に置き換わります — null でシードして読む側で既定値を補う（\`this.${path} ?? …\`）か、null を無視する setter を持つアクセサペアを束ねてください`,
+  inputNestedWrite: (tag, input, path, example) =>
+    `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されないので、下への書き込みは <${tag}> に届きません — フィールドをパスで読んで新しい値を返す getter（\`this["${example}"]\`・\`$getAll\`）を束ねるか、下へ書かずに "${path}" を差し替えてください`,
   devtoolsAfterState: () =>
     `@wcstack/devtools/auto は @wcstack/state/auto より先に読み込んでください（後だと配線台帳がライブで captured されません）`,
   baseHrefMissing: () =>
@@ -598,7 +611,11 @@ const en: WcsMessageCatalog = {
   triggerSeededTruthy: (path) =>
     `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
   storageSeedClobber: (path, raw) =>
-    `The <wcs-storage> value-bound slot "${path}" is seeded with ${raw}. The initial write-back overwrites the persisted value — seed it with undefined (\`${path}: undefined\`) or add manual`,
+    `The <wcs-storage> value-bound slot "${path}" is seeded with ${raw}. The initial write-back overwrites the persisted value on every load — add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
+  storageInitSeed: (path, raw) =>
+    `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}, but #init=element pulls the element's value into it. On a first visit (an empty key) that is null, so the seed is replaced by null — seed it with null and supply the default where you read it (\`this.${path} ?? …\`), or bind an accessor pair whose setter ignores null`,
+  inputNestedWrite: (tag, input, path, example) =>
+    `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> — bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
   devtoolsAfterState: () =>
     `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
   baseHrefMissing: () =>

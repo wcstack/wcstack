@@ -50,6 +50,15 @@ import {
   makeRecursionSpec,
   type RecursionSpec,
 } from './recursionPaths.js';
+import {
+  collectJsDocTypedefs,
+  jsDocShape,
+  jsDocTypeHint,
+  parseJsDocType,
+  readJsDocTypeBefore,
+  type JsDocType,
+  type JsDocTypedefs,
+} from './jsdocType.js';
 
 // ランタイム予約キー（@wcstack/state src/define.ts の reservedStateApi が正本）。
 // トップレベルの `$` プレフィックスキーは宣言・API 名前空間でありデータパスにならない。
@@ -90,6 +99,10 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   const recursionSpec = specFromRecursionValue(topLevelProps.find(p => p.name === RESERVED_RECURSION_KEY));
   // 同じキーを 2 度書いた宣言は、オブジェクトリテラルの評価順どおりに畳む（後の宣言が勝つ）
   const effectiveDescriptors = effectiveTopLevelDescriptors(topLevelProps);
+  // JSDoc `@typedef` の名前（`/** @type {Product[] | null} */` の `Product` を形に解決する）
+  const typedefs: JsDocTypedefs = scriptContent.includes('@typedef')
+    ? collectJsDocTypedefs(scriptContent, maskCommentsAndStrings(scriptContent))
+    : new Map();
 
   for (const prop of topLevelProps) {
     // トップレベルの `$` プレフィックスキーは予約名（$streams/$scan/$commandTokens/$eventTokens/
@@ -124,7 +137,7 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
       continue;
     }
 
-    pushDataPropertyPaths(prop, paths);
+    pushDataPropertyPaths(prop, paths, typedefs);
   }
 
   // $streams / $scan 宣言による値プロパティの実体化（processStreamsDeclaration §1-3 /
@@ -133,7 +146,7 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   for (const streamValue of pendingStreamValues) {
     // `$eventTokens` の名前（kind: 'eventToken'）は `eventToken.<prop>:` の右辺でパスではないので、同名でも実体化する
     if (paths.some(p => p.path === streamValue.name && p.kind !== 'eventToken')) continue;
-    pushDataPropertyPaths(streamValue, paths);
+    pushDataPropertyPaths(streamValue, paths, typedefs);
   }
 
   // $listKeys 宣言によるリストパスの実体化（processListKeysDeclaration §3 相当）。
@@ -1410,23 +1423,65 @@ function effectiveTopLevelDescriptors(props: readonly PropertyInfo[]): Map<strin
   return effective;
 }
 
-function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[]): void {
-  pushDataPropertyPathsAt(prop.name, prop, paths, 0);
+function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], typedefs: JsDocTypedefs): void {
+  pushDataPropertyPathsAt(prop.name, prop, paths, 0, typedefs);
 }
 
 /**
  * `path` に紐づくデータプロパティのパス候補を生成し、オブジェクトリテラルなら
  * 子プロパティへ再帰する（`MAX_OBJECT_NEST_DEPTH` まで）。
+ * JSDoc `@type` で形が宣言されていれば、値から読めなかった分をその形から足す。
  */
 function pushDataPropertyPathsAt(
   path: string,
   prop: PropertyInfo,
   paths: PathCandidate[],
   depth: number,
+  typedefs: JsDocTypedefs,
 ): void {
   // データプロパティ
   paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
+  pushLiteralStructurePaths(path, prop, paths, depth, typedefs);
+  if (prop.declaredType !== undefined) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+}
 
+/**
+ * JSDoc `@type` で宣言された形の候補を、既存候補を上書きせずに足す（値のリテラルが先 —
+ * 同じパスがあれば値から読んだ型ヒントを残す）。初期値ではないので `rawInitial` は付けない。
+ * `null` で始まる `fetch` の結果（`/** @type {{ id: number }[] | null} *\/ catalog: null`）の
+ * 行の形（`catalog.*.id`）は、これが唯一の手掛かり。
+ */
+function pushDeclaredShapePaths(
+  path: string,
+  type: JsDocType,
+  paths: PathCandidate[],
+  depth: number,
+  typedefs: JsDocTypedefs,
+): void {
+  const shape = jsDocShape(type, typedefs);
+  if (shape.element !== null) {
+    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: 'list' });
+    if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
+    if (depth < MAX_OBJECT_NEST_DEPTH) pushDeclaredShapePaths(`${path}.*`, shape.element, paths, depth + 1, typedefs);
+  }
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+  for (const field of shape.fields) {
+    const fieldPath = `${path}.${field.name}`;
+    if (!hasPath(paths, fieldPath)) {
+      paths.push(withHint({ path: fieldPath, kind: 'data' }, jsDocTypeHint(field.type, typedefs)));
+    }
+    pushDeclaredShapePaths(fieldPath, field.type, paths, depth + 1, typedefs);
+  }
+}
+
+/** 値のリテラルから読める構造（配列の行・オブジェクトの子）の候補を足す。 */
+function pushLiteralStructurePaths(
+  path: string,
+  prop: PropertyInfo,
+  paths: PathCandidate[],
+  depth: number,
+  typedefs: JsDocTypedefs,
+): void {
   // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成。
   // 先頭要素の子プロパティへは再帰する — 子が配列/オブジェクトなら
   // `a.*.b.*` / `a.*.b.c` のような深いワイルドカード候補も導出される
@@ -1437,7 +1492,7 @@ function pushDataPropertyPathsAt(
     paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     for (const childProp of extractArrayElementDataProperties(prop.value)) {
-      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1);
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1, typedefs);
     }
     return;
   }
@@ -1448,7 +1503,7 @@ function pushDataPropertyPathsAt(
     const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
     for (const childProp of childProps) {
       if (childProp.kind !== 'data') continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1);
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1, typedefs);
     }
   }
 }
@@ -1557,6 +1612,8 @@ interface PropertyInfo {
   accessor?: 'get' | 'set';
   value?: string;
   typeHint?: string;
+  /** 直前の JSDoc `@type` の型（パースできたときだけ）。形の候補を足すのに使う。 */
+  declaredType?: JsDocType;
   /**
    * 解析対象の objectContent 内での名前の範囲（引用符は含まない）と値の開始位置。
    * 診断のレンジ計算にだけ使う。宣言から合成した派生プロパティ（`$streams` の値
@@ -1677,13 +1734,18 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
       const valueStartIndex = match.index + match[0].length;
       const value = extractFullValue(objectContent, scan, valueStartIndex);
       // JSDoc @type アノテーションがあれば優先、なければ値から推定
-      const jsdocType = extractJsDocType(objectContent, match.index);
+      const jsdocText = readJsDocTypeBefore(objectContent, match.index);
+      const declaredType = jsdocText === undefined ? null : parseJsDocType(jsdocText);
+      const jsdocType = declaredType !== null
+        ? jsDocTypeHint(declaredType)
+        : jsdocText === undefined ? undefined : normalizeJsDocType(jsdocText);
       const typeHint = jsdocType ?? inferTypeHint(value);
       props.push({
         name: propName,
         kind: 'data',
         value,
         typeHint,
+        ...(declaredType !== null ? { declaredType } : {}),
         nameStart: nameSpan![0],
         nameEnd: nameSpan![1],
         valueStart: valueStartIndex,
@@ -1876,26 +1938,6 @@ function extractArrayElementDataProperties(value: string): PropertyInfo[] {
 
   const objectContent = extractBracedContent(trimmed, scan, first);
   return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === 'data');
-}
-
-/**
- * プロパティの直前にある JSDoc `@type` コメントから型ヒントを抽出する。
- *
- * 対応パターン:
- * - `/** @type {string} * /`
- * - `/** @type {boolean|null} * /`
- * - `/** @type {number[]} * /`
- *
- * Union 型の場合、null/undefined を除いた主要な型を返す。
- */
-function extractJsDocType(content: string, propIndex: number): string | undefined {
-  // プロパティの直前の空白・改行をスキップして JSDoc コメントを探す
-  const before = content.slice(Math.max(0, propIndex - 200), propIndex);
-  const jsdocMatch = before.match(/\/\*\*\s*@type\s*\{([^}]+)\}\s*\*\/\s*$/);
-  if (!jsdocMatch) return undefined;
-
-  const typeExpr = jsdocMatch[1].trim();
-  return normalizeJsDocType(typeExpr);
 }
 
 /**
