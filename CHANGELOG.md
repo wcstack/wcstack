@@ -8,6 +8,8 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.0.2] — 2026-10-12
+
 Fixes from planning Part 2 of the [tutorial](https://wcstack.github.io/tutorial/) (a catalog loaded with `<wcs-fetch>`, a cart kept with `<wcs-storage>`): the lint learns the shape of data that arrives from outside, and reports the two ways a stored cart silently loses changes.
 
 ### Added
@@ -747,7 +749,8 @@ Repairs from the pre-release quality loop, all with tests: `setInitialState` on 
 
 1.29.0 and earlier predate this file. Their contents are in the merged pull requests (`gh pr list --state merged`) and the git history; each GitHub Release page carries the SRI digests for that version.
 
-[Unreleased]: https://github.com/wcstack/wcstack/compare/v4.0.1...HEAD
+[Unreleased]: https://github.com/wcstack/wcstack/compare/v4.0.2...HEAD
+[4.0.2]: https://github.com/wcstack/wcstack/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/wcstack/wcstack/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/wcstack/wcstack/compare/v3.5.4...v4.0.0
 [3.5.4]: https://github.com/wcstack/wcstack/compare/v3.5.3...v3.5.4
