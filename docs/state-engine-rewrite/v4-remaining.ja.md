@@ -1114,3 +1114,18 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - wcstack-skill: PR #34 で版の印と CDN の固定を 4.0.1 にし、拒まれる書き方の表に #122 を、`wcs/filter-unknown` を error として書き直した。マージしてタグ `v4.0.1`。
   - LP: 版の参照を 4.0.1 にした（0ad4efd）。state ページに #122 と lint の重さ、チュートリアルのステップ 2（`class:` は名指しで拒まれる）とステップ 7（未知のフィルタは error）を 4.0.1 の挙動に合わせ、llms.txt / llms-full.txt を 4.0.1 と skill v4.0.1 から作り直した。チュートリアルのデモの操作と本文の主張は、4.0.1 の dist と lint で検証し直した。
   - examples の依存は `^4.0.0` のまま 4.0.1 を受ける（lockfile は 4.0.0）。npm の `next` は 4.0.0 のまま（付け替えは 2 要素認証が要るので、ユーザーの端末で行う）。
+
+### 4.0.2 の公開（2026-10-12）
+
+- 中身: LP のチュートリアル Part 2（`<wcs-fetch>` で読む商品一覧と `<wcs-storage>` に残すカート）の完成形を試作し、4.0.1 の dist の上で Chromium で動かして見つけた lint の穴を、PR #438（merge commit 6a7f4f16）で直した。JSDoc の `@type` / `@typedef` で形を宣言できる（新しい `jsdocType.ts`。`null` で始まるリストの行の形が読めず、完成形に `wcs/binding-path-missing` が 7 件出ていた）。`wcs/input-nested-write`（新設・warning）は、`manual` でない `<wcs-storage>` の `value` を束ねたパスの下への書き込み（`value: cart` と `` this[`cart.${i}.quantity`] += 1 ``）を報告する。表示は 2、保存は 1 で、再読み込みすると 1 に戻り、エラーは出ない。`wcs/storage-init-seed`（新設・warning）は、`null` 以外のシードと `#init=element` の組み合わせを報告する（初回は `null` が入り、`findIndex` が投げる）。`wcs/storage-seed-clobber` の直し方は `#init=element` と `null` のシードにした（`undefined` のシードと言っていた）。`wcs/type-annotation` は入れ子の型・`@typedef`・`any` を読むようにした。`wcs/getter-untracked-read` の証拠に、テンプレートリテラルのキーと行の中の双方向の束縛を加えた。runtime は 4.0.1 から変わらない。
+- 準備: PR #439 で CHANGELOG を `[4.0.2] — 2026-10-12` に締め、CDN の固定 17 か所を 4.0.2 にした。
+- main で `release`（patch、run 38222712176）。49 パッケージが npm の `latest` で 4.0.2、来歴証明も 49/49、タグ `v4.0.2`、GitHub Release（`sri.json` 付き）、版を上げた commit は e7e4ce50。SRI は 44/44 が `sri.json`・タグの dist・jsDelivr で一致し、固定 URL（7 種・17 か所）が 200。view-transition と websocket はレジストリに約 2 分遅れて見えた（公開のログには 49 件すべて）。
+- 公開後の作業（同日）:
+  - PR #440（merge commit 42d57c56）: ゲートの基準値を 4.0.2 の dist で取り直した（ssr の版の文字列の 1B だけ。カップリングは基準値どおり）。CLAUDE.md / AGENTS.md の版、拡張の 2.0.2。
+  - VS Code 拡張 2.0.2: 42d57c56 で `npm run package` した vsix（vscode-wcs のテスト 1,212 件。server・cli・schema-core に新しい 2 規則と JSDoc の形が入っていることを確かめた）を、セッションから Marketplace に公開した。タグ `vscode-wcs-v2.0.2`（42d57c56）。
+  - wcstack-skill: PR #35 で版の印と CDN の固定を 4.0.2 にした。storage の節は、`undefined` のシードではなく `#init=element` と `null` のシードを先に置き、リスト（カート）の形（行 getter と `$getAll` のアクセサペア、ID と数量だけ）、新しい 2 規則、fetch したリストの JSDoc、`body:` が使い捨てであること（下を参照）を書いた。マージしてタグ `v4.0.2`。
+  - LP: チュートリアル Part 2（08-fetch〜12-lint、日英）と版の参照を 4.0.2 にし、llms.txt / llms-full.txt を 4.0.2 と skill v4.0.2 から作り直した（33ab0f3）。デモは公開版の `@wcstack/lint@4.0.2` で全部 0 件、本文の主張 24 件は Chromium で確かめた。
+- 残したもの:
+  - **`#init=element` を付け忘れたアクセサペア**（`<wcs-storage data-wcs="value: savedCart">`）は、再読み込みでカートを空にする（getter の `[]` が先に保存される。実測）。`wcs/storage-seed-clobber` はデータのスロットだけを見るので、lint は報告しない。`manual` でない `<wcs-storage>` の `value` を `#init` なしで getter に束ねた形を報告するのが候補（チュートリアルのステップ 11 と 12 は、今は「検査器に見えない」と書いている）。
+  - **`<wcs-fetch>` の `body:` は使い捨て**: `body` は `fetch()` の後に `null` に戻り、束ねたパスの下への書き込み（`value: newUser.name`）では当て直されない。fetch の README §4 の POST の例は、2 回目の送信で本文が空になる（実測。1 回目は同じオブジェクトの参照で届く）。送信のハンドラで本文の新しいオブジェクトを代入すれば、何度でも届く（実測。束縛を書く順によらない）。README の例を直すか、`body` のリセットを見直すかは未決。
+  - npm の `next` は 4.0.0 のまま（付け替えは 2 要素認証が要るので、ユーザーの端末で行う）。
