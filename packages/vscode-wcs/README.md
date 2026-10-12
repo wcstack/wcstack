@@ -196,7 +196,7 @@ The `outerHTML:` / `outerText:` check (#203) looks at the `for` / `if` templates
 | Code | Detects | Severity |
 |---|---|---|
 | `wcs/script-order` | Another wcstack `/auto` script loaded after `@wcstack/state/auto` | ⚠ warning |
-| `wcs/base-href-missing` | `router/auto` present without `<base href>` (basename would be mis-derived) | ⚠ warning |
+| `wcs/base-href-missing` | `router/auto` present without `<base href>` (basename would be mis-derived). Pinned URLs count (`@wcstack/router@4/auto`, jsDelivr's `@wcstack/router@4.0.2/dist/auto.min.js`), and so does the `wcstack/auto` bundle on a page that has a `<wcs-router>` | ⚠ warning |
 | `wcs/signals-dual-entry` | `@wcstack/signals` and `@wcstack/signals/dom` on the same page (duplicated reactive core) | ❌ error |
 
 #### v2 migration

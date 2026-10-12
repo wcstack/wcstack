@@ -5,6 +5,7 @@
 ## Unreleased
 
 - **`wcs/storage-seed-clobber` が `#init=element` なしで束ねたアクセサペアも報告する** — `<wcs-storage data-wcs="value: savedCart">` に getter / setter の `savedCart` を束ねると、読み込みのたびに getter の最初の値（空のカートの `[]`）が保存値の上に保存され、setter は保存値を受け取れない（チュートリアルのステップ 11 で「検査器には見えない」としていた形）。setter の無い getter は保存専用の設計がありうるので報告しない。
+- **`wcs/base-href-missing` と `wcs/script-order` が版を付けた URL を見る** — どちらも版の無い `@wcstack/<pkg>/auto` しか wcstack の script と認めず、`@wcstack/router@4/auto`、jsDelivr の `@wcstack/router@4.0.2/dist/auto.min.js`（SRI に要る形）、一括バンドル `wcstack/auto` で黙っていた。一括バンドルは state と router を含むものとして数え、`<base href>` は `<wcs-router>` のあるページでだけ求める。
 - **`wcs/input-nested-write` が `<wcs-fetch>` の `body` も対象にする**（`manual` でも）— `body` は使い捨てで要求のたびに `null` へ戻るので、`body: newUser` と `value: newUser.name` の組み合わせは 1 回目だけ本文を送り、2 回目は本文なしになる。直し方は「要求を始めるハンドラで新しいオブジェクトを作る」。
 
 ## 2.0.2 — 2026-10-12

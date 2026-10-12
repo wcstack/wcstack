@@ -50,6 +50,44 @@ describe('validateDocumentEnv: base-href-missing', () => {
 </head>`;
     expect(validateDocumentEnv(html)).toHaveLength(0);
   });
+
+  it('版を付けた URL・jsDelivr の dist の直接の路でも警告する（本番の書き方で黙っていた）', () => {
+    for (const src of [
+      'https://esm.run/@wcstack/router@4/auto',
+      'https://cdn.jsdelivr.net/npm/@wcstack/router@4.0.2/dist/auto.min.js',
+      'https://cdn.jsdelivr.net/npm/@wcstack/router/dist/auto.min.js',
+    ]) {
+      const diags = validateDocumentEnv(`<head><script type="module" src="${src}"></script></head>`);
+      expect(diags.map(d => d.code), src).toEqual([WcsDiagnosticCode.BaseHrefMissing]);
+    }
+  });
+
+  it('一括バンドル wcstack/auto は <wcs-router> を使うページでだけ警告する', () => {
+    for (const src of ['https://esm.run/wcstack@4/auto', 'https://cdn.jsdelivr.net/npm/wcstack@4.0.2/dist/auto.min.js']) {
+      const head = `<head><script type="module" src="${src}" integrity="sha384-x"></script></head>`;
+      expect(validateDocumentEnv(`${head}<body><wcs-router><template></template></wcs-router></body>`).map(d => d.code), src)
+        .toEqual([WcsDiagnosticCode.BaseHrefMissing]);
+      expect(validateDocumentEnv(`${head}<body><wcs-state></wcs-state></body>`), src).toHaveLength(0);
+    }
+  });
+
+  it('@wcstack/ のパッケージ名や wcstack.github.io は一括バンドルと取り違えない', () => {
+    for (const src of ['https://esm.run/@wcstack/state@4/auto', 'https://wcstack.github.io/tutorial/shop.js']) {
+      const html = `<head><script type="module" src="${src}"></script></head><body><wcs-router></wcs-router></body>`;
+      expect(validateDocumentEnv(html), src).toHaveLength(0);
+    }
+  });
+});
+
+describe('validateDocumentEnv: 版を付けた URL の script-order', () => {
+  it('版を付けた state / 一括バンドルの後の devtools も警告する', () => {
+    for (const first of ['https://esm.run/@wcstack/state@4/auto', 'https://cdn.jsdelivr.net/npm/wcstack@4.0.2/dist/auto.min.js', 'https://cdn.jsdelivr.net/npm/@wcstack/state@4.0.2/dist/split/auto.js']) {
+      const html = `
+<script type="module" src="${first}"></script>
+<script type="module" src="https://esm.run/@wcstack/devtools@4/auto"></script>`;
+      expect(validateDocumentEnv(html).map(d => d.code), first).toEqual([WcsDiagnosticCode.ScriptOrder]);
+    }
+  });
 });
 
 describe('validateDocumentEnv: signals-dual-entry', () => {

@@ -22,8 +22,10 @@ import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { getMessages } from '../core/messages.js';
 
 interface ScriptSrcOccurrence {
-  /** `@wcstack/<pkg>` のパッケージ名。 */
-  pkg: string;
+  /** 読み込まれるパッケージ名（`@wcstack/<pkg>` の `<pkg>`。一括バンドル `wcstack/auto` は中身の全部）。 */
+  pkgs: readonly string[];
+  /** 一括バンドル `wcstack/auto` か。router を使わないページもあるので、router の検査は `<wcs-router>` を見る。 */
+  bundle: boolean;
   /** src 属性値の開始オフセット。 */
   start: number;
   /** src 属性値の終了オフセット。 */
@@ -49,10 +51,10 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
   const autos = findWcstackAutoScripts(scanText);
 
   // --- ScriptOrder: state/auto の後の devtools/auto（実在する唯一の順序依存） ---
-  const stateIndex = autos.findIndex(a => a.pkg === 'state');
+  const stateIndex = autos.findIndex(a => a.pkgs.includes('state'));
   if (stateIndex !== -1) {
     for (const later of autos.slice(stateIndex + 1)) {
-      if (later.pkg !== 'devtools') continue;
+      if (!later.pkgs.includes('devtools')) continue;
       diagnostics.push({
         code: WcsDiagnosticCode.ScriptOrder,
         start: later.start, end: later.end, severity: 'warning',
@@ -62,7 +64,7 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
   }
 
   // --- BaseHrefMissing: router/auto があるのに <base href> がない ---
-  const router = autos.find(a => a.pkg === 'router');
+  const router = autos.find(a => a.pkgs.includes('router') && (!a.bundle || /<wcs-router\b/i.test(scanText)));
   if (router && !/<base\b[^>]*\bhref\s*=/i.test(scanText)) {
     diagnostics.push({
       code: WcsDiagnosticCode.BaseHrefMissing,
@@ -88,9 +90,20 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
 }
 
 /**
- * `<script ... src="...@wcstack/<pkg>/auto...">` を文書順で列挙する。
- * CDN（esm.run / jsdelivr / unpkg）・ローカルパスのいずれでも
- * `@wcstack/<pkg>/auto` の部分文字列で判定する。
+ * `@wcstack/<pkg>/auto` の入口。版の指定（`@wcstack/router@4/auto` — チュートリアルや esm.run の
+ * 固定の形）と、jsDelivr の dist の直接の路（`@wcstack/router@4.0.2/dist/auto.min.js` —
+ * SRI を付ける本番の形。`@wcstack/state/dist/split/auto.js` も）を含む。版の付いた形を
+ * 見落とすと、本番の書き方のページでだけ検査が黙る。
+ */
+const SCOPED_AUTO = /@wcstack\/([a-z0-9-]+)(?:@[^/"'\s]+)?\/(?:auto\b|dist\/(?:split\/)?auto(?:\.min)?\.js\b)/;
+/** 一括バンドル `wcstack/auto`（`wcstack@4/auto`・`wcstack@4.0.2/dist/auto.min.js`）。 */
+const BUNDLE_AUTO = /(?:^|\/)wcstack(?:@[^/"'\s]+)?\/(?:auto\b|dist\/auto\.min\.js\b)/;
+/** 一括バンドルの中身（packages/wcstack/README.md）。 */
+const BUNDLE_PACKAGES: readonly string[] = ['state', 'router', 'fetch', 'storage', 'autoloader'];
+
+/**
+ * `/auto` の入口を読む `<script src>` を文書順で列挙する。
+ * CDN（esm.run / jsdelivr / unpkg）・ローカルパスのいずれでも、上の 2 つの形で判定する。
  */
 function findWcstackAutoScripts(html: string): ScriptSrcOccurrence[] {
   const out: ScriptSrcOccurrence[] = [];
@@ -99,10 +112,12 @@ function findWcstackAutoScripts(html: string): ScriptSrcOccurrence[] {
   while ((match = scriptRegex.exec(html)) !== null) {
     const src = extractSrc(match[0]);
     if (!src) continue;
-    const pkgMatch = /@wcstack\/([a-z0-9-]+)\/auto\b/.exec(src.value);
-    if (!pkgMatch) continue;
+    const pkgMatch = SCOPED_AUTO.exec(src.value);
+    const bundle = pkgMatch === null && BUNDLE_AUTO.test(src.value);
+    if (pkgMatch === null && !bundle) continue;
     out.push({
-      pkg: pkgMatch[1],
+      pkgs: bundle ? BUNDLE_PACKAGES : [pkgMatch![1]],
+      bundle,
       start: match.index + src.offsetInTag,
       end: match.index + src.offsetInTag + src.value.length,
     });
