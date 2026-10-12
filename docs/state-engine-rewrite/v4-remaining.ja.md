@@ -1102,3 +1102,15 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - wcstack-skill: `release/v4.0.0` の版の印（plugin・README・SKILL.md・references）と CDN の固定を 4.0.0 にし、PR #33 で main にマージしてタグ `v4.0.0` を付けた。devtools の行の watch についての注記（SKILL.md）は、devtools の変更を待つものなので残した。
   - npm の `next`: 49 パッケージとも 4.0.0 に付け替えた（ユーザーの端末で。npm のアカウントは書き込みに 2 要素認証を求めるので、セッションからは `EOTP` で通らない）。`latest` と `next` がどちらも 4.0.0 であることを確かめた。
   - VS Code 拡張 2.0.0: 8de910cb で `npm run package` した vsix（vscode-wcs のテスト 1,167 件）を、ユーザーが Marketplace に公開した（2026-10-11 03:00 UTC。`vsce show` で確認）。3.x のプロジェクトは 1.21.x のまま。
+
+### 4.0.1 の公開（2026-10-12）
+
+- 中身: LP のチュートリアル（`wcstack.github.io/tutorial/`、ショップを題材にした Part 1 の 7 ステップ、日英）を書く中で見つけた 3 件を、PR #434（merge commit bc02a211）で直した。lint が getter の `return` 式から戻り値の形を読む（`for: visible` の行・`summary.total` の偽陽性。写すのはデータだけで、元のリストのパス getter は写さない）、名前の無い `class:` / `attr:` をパーサが `[wcs/binding-syntax]` #122 で拒む（core +34B）、`wcs/filter-unknown` を error にした（warning の根拠「ページが自前のフィルタを登録できる」は、3.5.4 にも 4.0 にもその公開 API が無く、成り立っていなかった）。
+- 準備: PR #435 で CHANGELOG を `[4.0.1] — 2026-10-12` に締め、CDN の固定 17 か所を 4.0.1 にした。パッチにしたのは、名前の無い `class:` が文書化された形ではなく、どの要素でも何も起きない書き方だったため。
+- main で `release`（patch、run 38208134097、約 21 分）。49 パッケージが npm の `latest` で 4.0.1、来歴証明（SLSA provenance）も 49/49、タグ `v4.0.1`、GitHub Release（`sri.json` 付き）、版を上げた commit は 8e6033ce。SRI は 44/44 が `sri.json`・タグの dist・jsDelivr で一致し、README の固定 7 URL が 200。公開版の `npx @wcstack/lint@4.0.1` で、README の Todo は 0 警告、名前の無い `class:` と未知のフィルタは error になった。
+- 公開後の作業（同日）:
+  - ゲートの基準値を 4.0.1 の dist で取り直した（カップリングは基準値どおり）: `index.esm.js` 50,789B、`auto.min.js` 47,850B、split の core 24,511B、core.min.js 19,880B（上限 20,480B まで 600B）。CLAUDE.md / AGENTS.md の数値と、拡張の 2.0.1 も同じ PR #436（merge commit f90504d2）。
+  - VS Code 拡張 2.0.1: f90504d2 で `npm run package` した vsix（vscode-wcs のテスト 1,177 件。server・cli・schema-core に #122 と getter の形が入っていることを確かめた）を、セッションから Marketplace に公開した（PAT はレジストリの `VSCE_PAT`）。タグ `vscode-wcs-v2.0.1`（f90504d2）。付け忘れていた `vscode-wcs-v2.0.0` を、その vsix をパッケージした 8de910cb に付けた。
+  - wcstack-skill: PR #34 で版の印と CDN の固定を 4.0.1 にし、拒まれる書き方の表に #122 を、`wcs/filter-unknown` を error として書き直した。マージしてタグ `v4.0.1`。
+  - LP: 版の参照を 4.0.1 にした（0ad4efd）。state ページに #122 と lint の重さ、チュートリアルのステップ 2（`class:` は名指しで拒まれる）とステップ 7（未知のフィルタは error）を 4.0.1 の挙動に合わせ、llms.txt / llms-full.txt を 4.0.1 と skill v4.0.1 から作り直した。チュートリアルのデモの操作と本文の主張は、4.0.1 の dist と lint で検証し直した。
+  - examples の依存は `^4.0.0` のまま 4.0.1 を受ける（lockfile は 4.0.0）。npm の `next` は 4.0.0 のまま（付け替えは 2 要素認証が要るので、ユーザーの端末で行う）。
