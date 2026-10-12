@@ -67,7 +67,15 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
   }
 
   // --- BaseHrefMissing: router/auto があるのに <base href> がない ---
-  const router = autos.find(a => a.pkgs.includes('router') && (!a.bundle || /<wcs-router\b/i.test(scanText)));
+  // `<script src>` に加えて、インラインの module script の import（import map で解決する
+  // `import "@wcstack/router/auto"` — signals のページの書き方）も数える。import は型だけの
+  // こともあるので、こちらは一括バンドルと同じく `<wcs-router>` のあるページに限る
+  // （docs/seam-apps.md、signals-shop）
+  const hasRouterTag = /<wcs-router\b/i.test(scanText);
+  const router = autos.find(a => a.pkgs.includes('router') && (!a.bundle || hasRouterTag))
+    ?? (hasRouterTag
+      ? collectInlineImports(scanText).find(i => /@wcstack\/router\b/.test(i.spec) || BUNDLE_AUTO.test(i.spec))
+      : undefined);
   if (router && !/<base\b[^>]*\bhref\s*=/i.test(scanText)) {
     diagnostics.push({
       code: WcsDiagnosticCode.BaseHrefMissing,
@@ -143,36 +151,54 @@ function findWcstackAutoScripts(html: string): ScriptSrcOccurrence[] {
  */
 function collectSignalsRefs(html: string): SignalsRef[] {
   const refs: SignalsRef[] = [];
+  const scriptRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = scriptRegex.exec(html)) !== null) {
+    const src = extractSrc(match[0]);
+    const kind = src ? classifySignalsSpecifier(src.value) : null;
+    if (src && kind) {
+      refs.push({
+        kind,
+        start: match.index + src.offsetInTag,
+        end: match.index + src.offsetInTag + src.value.length,
+      });
+    }
+  }
+  for (const im of collectInlineImports(html)) {
+    const kind = classifySignalsSpecifier(im.spec);
+    if (kind) refs.push({ kind, start: im.start, end: im.end });
+  }
+  return refs.sort((a, b) => a.start - b.start);
+}
+
+/** インラインの module script の import 指定子 1 つ。 */
+interface InlineImport {
+  spec: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * インラインの module script の import 指定子（import 文・副作用の import・dynamic import）を
+ * 文書順で集める。JS コメントは空白化して見る。importmap のキー宣言だけでは何も読み込まれない
+ * ため、数えない。
+ */
+function collectInlineImports(html: string): InlineImport[] {
+  const out: InlineImport[] = [];
   const scriptRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
   let match: RegExpExecArray | null;
   while ((match = scriptRegex.exec(html)) !== null) {
-    const openTag = html.slice(match.index, match.index + match[0].indexOf('>') + 1);
-    const src = extractSrc(openTag);
-    if (src) {
-      const kind = classifySignalsSpecifier(src.value);
-      if (kind) {
-        refs.push({
-          kind,
-          start: match.index + src.offsetInTag,
-          end: match.index + src.offsetInTag + src.value.length,
-        });
-      }
-      continue;
-    }
-    // inline module: import 文 / dynamic import の指定子だけを見る（JS コメントは空白化）。
-    if (!/\btype\s*=\s*(["'])module\1/i.test(match[1])) continue;
+    if (extractSrc(`<script${match[1]}>`) || !/\btype\s*=\s*(["'])module\1/i.test(match[1])) continue;
     const bodyStart = match.index + match[0].indexOf('>') + 1;
     const body = blankJsComments(match[2]);
-    const importRegex = /(?:\bfrom\s*|\bimport\s*\(?\s*)(["'])([^"']*@wcstack\/signals[^"']*)\1/g;
+    const importRegex = /(?:\bfrom\s*|\bimport\s*\(?\s*)(["'])([^"']*)\1/g;
     let im: RegExpExecArray | null;
     while ((im = importRegex.exec(body)) !== null) {
-      const kind = classifySignalsSpecifier(im[2]);
-      if (!kind) continue;
-      const specStart = bodyStart + im.index + im[0].indexOf(im[1]) + 1;
-      refs.push({ kind, start: specStart, end: specStart + im[2].length });
+      const start = bodyStart + im.index + im[0].indexOf(im[1]) + 1;
+      out.push({ spec: im[2], start, end: start + im[2].length });
     }
   }
-  return refs;
+  return out;
 }
 
 /** signals 指定子の分類（signals 以外は null）。 */

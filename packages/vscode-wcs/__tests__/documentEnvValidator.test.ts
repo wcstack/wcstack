@@ -71,6 +71,27 @@ describe('validateDocumentEnv: base-href-missing', () => {
     }
   });
 
+  it('import map で解決するインラインの import "@wcstack/router/auto" も数える（signals のページの書き方、docs/seam-apps.md）', () => {
+    const map = `<script type="importmap">{ "imports": { "@wcstack/router/auto": "https://esm.run/@wcstack/router/auto" } }</script>`;
+    const body = `<body><wcs-router><template></template></wcs-router><wcs-outlet></wcs-outlet>
+<script type="module">
+  // import "@wcstack/state/auto";
+  import "@wcstack/router/auto";
+  import { h } from "@wcstack/signals/dom";
+</script></body>`;
+    const diags = validateDocumentEnv(`<head>${map}</head>${body}`);
+    expect(diags.map(d => d.code)).toEqual([WcsDiagnosticCode.BaseHrefMissing]);
+    // 指定子の位置を指す
+    expect(`<head>${map}</head>${body}`.slice(diags[0].start, diags[0].end)).toBe('@wcstack/router/auto');
+    expect(validateDocumentEnv(`<head><base href="/">${map}</head>${body}`)).toHaveLength(0);
+  });
+
+  it('インラインの import は <wcs-router> の無いページでは数えない（型だけの import がありうる）。import map のキーだけでも数えない', () => {
+    const map = `<script type="importmap">{ "imports": { "@wcstack/router": "https://esm.run/@wcstack/router" } }</script>`;
+    expect(validateDocumentEnv(`<head>${map}</head><body><script type="module">import { Router } from "@wcstack/router";</script></body>`)).toHaveLength(0);
+    expect(validateDocumentEnv(`<head>${map}</head><body><wcs-router></wcs-router></body>`)).toHaveLength(0);
+  });
+
   it('@wcstack/ のパッケージ名や wcstack.github.io は一括バンドルと取り違えない', () => {
     for (const src of ['https://esm.run/@wcstack/state@4/auto', 'https://wcstack.github.io/tutorial/shop.js']) {
       const html = `<head><script type="module" src="${src}"></script></head><body><wcs-router></wcs-router></body>`;
