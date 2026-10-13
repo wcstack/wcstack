@@ -81,9 +81,9 @@ Seam apps are listed in their own table in [examples/README.md](../examples/READ
 | App | Seams | Life events | Status |
 |---|---|---|---|
 | `router-auth` — a members area: log in, protected pages, an order history from an API that needs a token | router guards × state, `<wcs-fetch>` 401 × navigation, `<wcs-storage>` × the guard, guard loaders (`data`) | deep link while logged out → log in → back to that page; reload while logged in; the session expiring mid-use; Back after logging out; logging out in another tab | built (2026-10-13), findings below |
-| `router-admin` — an admin console: nested layouts, a list with server-side paging and sorting in the URL, edit forms with server validation, view transitions, two languages | `<wcs-layout>` × state, query ⇄ state ⇄ fetch, two-way form bindings × fetch `body`, `<wcs-view-transition>` × router × lists, locale in the basename | deep link to page 3 sorted by name; edit, save, save again; a 422 with field errors; reload on an edit page; Back from a detail | planned |
-| `state-collab-board` — a shared board: changes from others arrive over SSE, yours are applied at once and rolled back if the server refuses | `<wcs-sse>` × state lists, `<wcs-fetch>` × optimistic updates, `<wcs-network>` × state, reconnect × resync | two browsers; a refused change; going offline and back; the server restarting | planned |
-| `signals-shop` — the tutorial's shop on `@wcstack/signals` | signals × router, signals × `<wcs-fetch>` / `<wcs-storage>` through the wc-bindable bridge | the tutorial's own (reload, deep link, Back, a second tab) | planned |
+| `router-admin` — an admin console: nested layouts, a list with server-side paging and sorting in the URL, edit forms with server validation, view transitions, two languages | `<wcs-layout>` × state, query ⇄ state ⇄ fetch, two-way form bindings × fetch `body`, `<wcs-view-transition>` × router × lists, locale in the basename | deep link to page 3 sorted by name; edit, save, save again; a 422 with field errors; reload on an edit page; Back from a detail | built (2026-10-13), findings below |
+| `state-collab-board` — a shared board: changes from others arrive over SSE, yours are applied at once and rolled back if the server refuses | `<wcs-sse>` × state lists, `<wcs-fetch>` × optimistic updates, `<wcs-network>` × state, reconnect × resync | two browsers; a refused change; going offline and back; the server restarting | built (2026-10-13), findings below |
+| `signals-shop` — the tutorial's shop on `@wcstack/signals` | signals × router, signals × `<wcs-fetch>` / `<wcs-storage>` through the wc-bindable bridge | the tutorial's own (reload, deep link, Back, a second tab) | built (2026-10-13), findings below |
 
 ### router-auth (2026-10-13)
 
@@ -102,3 +102,24 @@ The first-time author (a subagent, public documents only) logged 23 frictions; a
 | document gap | where a guard reads the session, that its module runs once, `toPath` without the query, `navigate()` rejecting on a redirect, a header from state, the storage README's sessionStorage example and `undefined` / `null` contradiction | fixed |
 | lint gap | an `$on` handler written with `this`; `onsubmit:` without `#prevent` (with the router, the native GET puts the password in the URL) | open |
 | design question | re-entering a route re-fires its `<wcs-fetch>` with the previous `url` before state writes the new one | open |
+
+### router-admin, state-collab-board, signals-shop (2026-10-13)
+
+Built in parallel after the pilot, the same way. All life events passed in the end (10, 6 and 17 checks); 24, 14 and 18 frictions. Reproduced and classified:
+
+| App | Kind | Finding | Outcome |
+|---|---|---|---|
+| router-admin | runtime defect | router: a navigation the page cancelled itself (an unsaved-changes check) made the router call `intercept()` on it — an uncaught `InvalidStateError` | fixed |
+| router-admin | design question | view-transition: every drain pass ran in a transition, so each keystroke in a bound input started one and the click after it was lost (5 of 5) | decision: only a list or branch change animates; view-transition-design §7.2 amended |
+| router-admin | runtime defect | state: a binding to a getter declared under a key the data lacks (`get "box.label"()`) warned "silently dropped" while it worked | fixed |
+| router-admin | design question | no way to ask before leaving a page with unsaved changes (the author used the Navigation API directly; Firefox lacks it) | decision: `<wcs-router leaveConfirm>` |
+| router-admin | design question | `<wcs-link>` was active on its exact path only | decision: `match="prefix"` |
+| router-admin, state-collab-board | design question | `$watch` did not fire for a value an element already had when its binding attached (the router's first params, an open `<wcs-sse>`): whether it fired depended on load speed | decision: it fires once when the watches start |
+| state-collab-board, router-auth | lint gap | an `$on` handler written with `this` (the runtime calls it as `handler(state, event)`) | fixed: `wcs/on-handler-this` (error) |
+| state-collab-board | design question | no online / offline output (the author listened on `window`) | decision: `<wcs-network offline>` — not `online`: a `data-wcs` name starting with `on` is an event binding, which the browser check of the new output caught |
+| state-collab-board | document gap | one `<wcs-fetch>` is one request at a time; field errors in `error.body`; SSE `Last-Event-ID` only after an event with an `id:`, and no retry after an HTTP error; 69 package READMEs loaded `@wcstack/state` before the I/O packages | fixed |
+| signals-shop | design question | a keyed `For` row keeps the item it was built with: an immutable update showed stale rows (the README's own example) | decision: `each`'s third argument `current()`; rows still reused (rebuilding them, first proposed, would have rebuilt every row on each re-fetch) |
+| signals-shop | design question | `h()` ran a lowercase `onclick` function at render, as a reactive prop | decision: any `on…` key with a function is a listener (`onclick` → click, `onadd-to-cart` → add-to-cart) |
+| signals-shop | lint gap | `wcs/base-href-missing` missed a router imported through an import map | fixed |
+| signals-shop | document gap | the signals README still said 1.x and pinned 1.25.0; no signals × router / `<wcs-storage>` recipe; `@wcstack/testing` is for `<wcs-state>` pages | fixed |
+| all three | open | lint: in-place mutation through `Object.assign` or an alias; `$on` writes as evidence for `wcs/getter-untracked-read`; a getter reading `location`; a bare `{{ }}` under a route; `onsubmit:` without `#prevent`. Runtime: a layout without its default slot drops the page silently; route re-entry re-fires `<wcs-fetch>` with the old `url`; `date` / `locale` cannot format "Oct 13, 2026" or currencies. Signals dev mode: a computed that tracks nothing. The tutorial's step 13 loads state first | open |

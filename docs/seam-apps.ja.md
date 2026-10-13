@@ -81,9 +81,9 @@
 | アプリ | 継ぎ目 | 生活の出来事 | 状態 |
 |---|---|---|---|
 | `router-auth` — 会員エリア: ログイン、保護されたページ、トークンの要る API からの注文履歴 | router のガード × state、`<wcs-fetch>` の 401 × 遷移、`<wcs-storage>` × ガード、ガードのローダー（`data`） | ログアウト中のディープリンク → ログイン → そのページへ戻る; ログイン中の再読み込み; 使用中のセッション切れ; ログアウト後の戻る; 別のタブでのログアウト | 作成済み（2026-10-13）、発見は下 |
-| `router-admin` — 管理画面: 入れ子のレイアウト、ページングと並べ替えを URL に持つサーバー側の一覧、サーバー検証付きの編集フォーム、ビュー遷移、2 言語 | `<wcs-layout>` × state、クエリ ⇄ state ⇄ fetch、フォームの双方向束縛 × fetch の `body`、`<wcs-view-transition>` × router × 一覧、basename の言語 | 名前順の 3 ページ目へのディープリンク; 編集して保存、もう一度保存; フィールドのエラー付きの 422; 編集ページでの再読み込み; 詳細からの戻る | 予定 |
-| `state-collab-board` — 共有ボード: ほかの人の変更は SSE で届き、自分の変更はすぐ反映し、サーバーが拒めば巻き戻す | `<wcs-sse>` × state の一覧、`<wcs-fetch>` × 楽観的更新、`<wcs-network>` × state、再接続 × 再同期 | 2 つのブラウザ; 拒まれる変更; オフラインになって戻る; サーバーの再起動 | 予定 |
-| `signals-shop` — チュートリアルのショップを `@wcstack/signals` で | signals × router、wc-bindable の橋を通した signals × `<wcs-fetch>` / `<wcs-storage>` | チュートリアルと同じ（再読み込み、ディープリンク、戻る、2 つ目のタブ） | 予定 |
+| `router-admin` — 管理画面: 入れ子のレイアウト、ページングと並べ替えを URL に持つサーバー側の一覧、サーバー検証付きの編集フォーム、ビュー遷移、2 言語 | `<wcs-layout>` × state、クエリ ⇄ state ⇄ fetch、フォームの双方向束縛 × fetch の `body`、`<wcs-view-transition>` × router × 一覧、basename の言語 | 名前順の 3 ページ目へのディープリンク; 編集して保存、もう一度保存; フィールドのエラー付きの 422; 編集ページでの再読み込み; 詳細からの戻る | 作成済み（2026-10-13）、発見は下 |
+| `state-collab-board` — 共有ボード: ほかの人の変更は SSE で届き、自分の変更はすぐ反映し、サーバーが拒めば巻き戻す | `<wcs-sse>` × state の一覧、`<wcs-fetch>` × 楽観的更新、`<wcs-network>` × state、再接続 × 再同期 | 2 つのブラウザ; 拒まれる変更; オフラインになって戻る; サーバーの再起動 | 作成済み（2026-10-13）、発見は下 |
+| `signals-shop` — チュートリアルのショップを `@wcstack/signals` で | signals × router、wc-bindable の橋を通した signals × `<wcs-fetch>` / `<wcs-storage>` | チュートリアルと同じ（再読み込み、ディープリンク、戻る、2 つ目のタブ） | 作成済み（2026-10-13）、発見は下 |
 
 ### router-auth（2026-10-13）
 
@@ -102,3 +102,24 @@
 | 文書の穴 | ガードがセッションをどこから読むか、モジュールは一度だけ評価、`toPath` にクエリが無い、リダイレクトで `navigate()` が reject、state からのヘッダ、storage の README の sessionStorage の例と `undefined` / `null` の矛盾 | 修正 |
 | lint の穴 | `this` で書いた `$on` のハンドラ。`#prevent` の無い `onsubmit:`（router があると、ネイティブの GET がパスワードを URL に入れる） | 未着手 |
 | 設計の問い | ルートへ戻ると、state が新しい `url` を書く前に、`<wcs-fetch>` が前の `url` でもう一度要求を出す | 未着手 |
+
+### router-admin・state-collab-board・signals-shop（2026-10-13）
+
+試行の後、同じやり方で並行して作った。生活の出来事は最後にはすべて通り（10・6・17 項目）、引っかかりは 24・14・18 件。再現して分類した結果:
+
+| アプリ | 分類 | 発見 | 結末 |
+|---|---|---|---|
+| router-admin | runtime の欠陥 | router: ページ自身が取り消したナビゲーション（未保存の確認）に `intercept()` を呼び、捕まらない `InvalidStateError` | 修正 |
+| router-admin | 設計の問い | view-transition: drain のパスすべてが遷移の中で走り、束ねた入力欄の 1 打鍵ごとに遷移が始まり、その後のクリックが失われた（5 回中 5 回） | 決定: 一覧と分岐の変化だけを動かす。view-transition-design §7.2 を改訂 |
+| router-admin | runtime の欠陥 | state: データに無いキーの下で宣言した getter（`get "box.label"()`）への束縛が、動いているのに「silently dropped」と警告した | 修正 |
+| router-admin | 設計の問い | 未保存の変更があるページを出る前に聞く口が無い（作者は Navigation API を直接使った。Firefox には無い） | 決定: `<wcs-router leaveConfirm>` |
+| router-admin | 設計の問い | `<wcs-link>` は完全一致のパスでしか active にならない | 決定: `match="prefix"` |
+| router-admin・state-collab-board | 設計の問い | 要素がバインディングの時点で既に持っていた値（router の最初の params、開いている `<wcs-sse>`）では `$watch` が発火せず、発火するかどうかが読み込みの速さで変わった | 決定: watch が始まるときに 1 回発火する |
+| state-collab-board・router-auth | lint の穴 | `this` で書いた `$on` のハンドラ（ランタイムは `handler(state, event)` と呼ぶ） | 修正: `wcs/on-handler-this`（error） |
+| state-collab-board | 設計の問い | オンライン / オフラインの出力が無い（作者は `window` を聞いた） | 決定: `<wcs-network offline>` — `online` ではない: `on` で始まる `data-wcs` の名前はイベントの束縛になる。新しい出力をブラウザで確かめて見つけた |
+| state-collab-board | 文書の穴 | `<wcs-fetch>` 1 つは一度に要求 1 本、フィールドのエラーは `error.body`、SSE の `Last-Event-ID` は `id:` 付きのイベントの後だけで HTTP のエラーの後は再試行されない、パッケージの README 69 個が I/O より先に `@wcstack/state` を読み込んでいた | 修正 |
+| signals-shop | 設計の問い | key 付きの `For` の行は作ったときの item を持ち続け、置き換えの更新で古い行が出た（README 自身の例も） | 決定: `each` の第 3 引数 `current()`。行は使い回したまま（最初に提案した「作り直す」は、再取得のたびに全行を作り直すことになった） |
+| signals-shop | 設計の問い | `h()` が小文字の `onclick` の関数を、リアクティブな prop として描画時に実行した | 決定: 関数を持つ `on…` キーはすべてリスナー（`onclick` → click、`onadd-to-cart` → add-to-cart） |
+| signals-shop | lint の穴 | `wcs/base-href-missing` が import map で読み込んだ router を見逃した | 修正 |
+| signals-shop | 文書の穴 | signals の README が 1.x のまま 1.25.0 を固定していた。signals × router / `<wcs-storage>` の書き方が無い。`@wcstack/testing` は `<wcs-state>` のページ向け | 修正 |
+| 3 本とも | 未着手 | lint: `Object.assign` や別名を通したその場の変更、`wcs/getter-untracked-read` の証拠としての `$on` の書き込み、`location` を読む getter、ルート直下の裸の `{{ }}`、`#prevent` の無い `onsubmit:`。runtime: 既定の slot の無いレイアウトがページを黙って落とす、ルートへ戻ると `<wcs-fetch>` が古い `url` で要求し直す、`date` / `locale` で「Oct 13, 2026」や通貨を出せない。signals の開発モード: 何も追跡しない computed。チュートリアルのステップ 13 が state を先に読み込む | 未着手 |
