@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.1.1] — 2026-10-14
+
+From landing the seam apps in `examples/`: `@wcstack/lint` and `@wcstack/typescript` 4.1.0 shipped with the previous tag catalog (they reported `<wcs-network>`'s new `offline` as unknown), and a redirected `navigateUrl` logged an error. No behavior changes beyond those.
+
 ### Added
 
 - `examples/`: **four seam apps**, each with an e2e spec that checks intent ([docs/seam-apps.md](./docs/seam-apps.md), [examples/README.md](./examples/README.md#seam-apps)): `router-auth` (a members area — guards, session, token-protected API, two tabs), `router-admin` (an admin console — nested layout, paging in the URL, server-validated forms, `leaveConfirm`, view transitions, two languages), `state-collab-board` (a shared board over SSE with optimistic updates, reconnect and offline) and `signals-shop` (the tutorial's shop on `@wcstack/signals`).
