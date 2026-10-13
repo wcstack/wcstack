@@ -327,6 +327,19 @@ jobs:
       - name: Regenerate builtin-tags catalog (rebuilt dist)
         run: node packages/vscode-wcs/scripts/emit-builtin-tags.mjs
 
+      # @wcstack/lint and @wcstack/typescript bundle that catalog (they build vscode-wcs and copy
+      # its cli.cjs / schema-core.cjs / tsc-core.cjs). Both were built above, before the catalog
+      # was regenerated, so a member a release added reached them one release late: 4.1.0's lint
+      # reported <wcs-network>'s new `offline` as wcs/tag-member-unknown (docs/seam-apps.md,
+      # state-collab-board). Build them again from the regenerated catalog, and test them again.
+      - name: Rebuild the tools that bundle the catalog
+        run: |
+          for pkg in lint typescript; do
+            echo "::group::rebuild — $pkg"
+            (cd "packages/$pkg" && npm run build && npm test)
+            echo "::endgroup::"
+          done
+
       # Subresource Integrity digests for every package's single-tag bootstrap.
       #
       # Computed here, from the freshly rebuilt tree that is about to be
