@@ -381,6 +381,18 @@ class ComputedNode<T> implements Computation, ReadSignal<T> {
     // `equals` must not be invoked with the undefined sentinel.
     if (!this._initialized) {
       this._initialized = true;
+      // A first run that read no signal never recomputes: a value read outside the function,
+      // or with peek(), was fixed when it ran (docs/seam-apps.md, signals-shop). Dev-only.
+      if (isDev() && this._sources.size === 0) {
+        warnDev(
+          "UNTRACKED_COMPUTED",
+          String(this._fn).slice(0, 120),
+          "computed read no signal on its first run, so it never recomputes. Read each signal " +
+            "with get() inside the function — a value read outside it, or with peek(), is fixed " +
+            "when it first runs.",
+          this._fn,
+        );
+      }
     } else if (!this._equals(previous as T, this._value as T)) {
       for (const observer of this._observers) {
         observer._state = DIRTY;
@@ -415,7 +427,7 @@ class EffectNode implements Computation, Owner {
   private _fn: () => Cleanup | void;
   private _cleanup: Cleanup | void = undefined;
 
-  constructor(fn: () => Cleanup | void) {
+  constructor(fn: () => Cleanup | void, checkTracked = false) {
     this._fn = fn;
     if (isDev()) {
       this._devStack = new Error().stack;
@@ -424,6 +436,21 @@ class EffectNode implements Computation, Owner {
     // parent teardown disposes this effect.
     registerDisposer(() => this.dispose());
     updateIfNecessary(this); // initial run (state starts DIRTY)
+    // An author's effect whose first run read no signal never runs again (docs/seam-apps.md,
+    // signals-shop). One that returned a cleanup, registered onCleanup or built children is a
+    // setup effect, run once on purpose. The effects dom.ts and the adapters build for an
+    // author's values are not checked (checkTracked false): the author did not write them.
+    if (checkTracked && isDev() && !this._disposed && this._sources.size === 0 &&
+      typeof this._cleanup !== "function" && this._owned.length === 0) {
+      warnDev(
+        "UNTRACKED_EFFECT",
+        String(fn).slice(0, 120),
+        "effect read no signal on its first run, so it never runs again. Read each signal with " +
+          "get() inside it (peek() does not track). An effect meant to run once can return its " +
+          "cleanup or register onCleanup.",
+        fn,
+      );
+    }
   }
 
   _update(): void {
@@ -472,6 +499,9 @@ export function computed<T>(fn: () => T, equals: Equals<T> = Object.is): ReadSig
 }
 
 export function effect(fn: () => Cleanup | void): EffectHandle {
+  // (an effect built by dom.ts or an adapter for the author's value — innerEffect — is not checked for tracking)
+  const checkTracked = !innerNext;
+  innerNext = false;
   if (isDev() && currentOwner === null) {
     // No enclosing owner: nothing will ever dispose this effect, so it (and the
     // subscriptions it builds) leak. Legitimate top-level effects should be mounted
@@ -484,7 +514,20 @@ export function effect(fn: () => Cleanup | void): EffectHandle {
         "dispose on teardown.",
     );
   }
-  return new EffectNode(fn);
+  return new EffectNode(fn, checkTracked);
+}
+
+/** The next effect() is one the package builds for an author's value (not checked for tracking). */
+let innerNext = false;
+
+/**
+ * Internal (dom.ts, bindNode, the resource adapters): an effect the package builds around an
+ * author's value — a function child or prop, a bound node, a fetcher. Behaves as effect(); only
+ * the dev-mode UNTRACKED_EFFECT check, which is about effects the author wrote, is skipped.
+ */
+export function innerEffect(fn: () => Cleanup | void): EffectHandle {
+  innerNext = true;
+  return effect(fn);
 }
 
 /**

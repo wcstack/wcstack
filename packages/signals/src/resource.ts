@@ -10,7 +10,7 @@
 // response from a superseded request never lands on the new state — is handled
 // here by checking `signal.aborted` before committing any result.
 
-import { signal, effect, onCleanup, ReadSignal } from "./reactive.js";
+import { signal, innerEffect as effect, onCleanup, ReadSignal } from "./reactive.js";
 
 export interface ResourceState<T> {
   value: ReadSignal<T | undefined>;

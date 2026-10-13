@@ -328,7 +328,7 @@ id.set(2); // ノードの abort コマンド経由で進行中の fetch を abo
 
 #### `mountNode` — ヘッドレスノードの生成から接続まで
 
-`bindNode` は**既に存在する**要素を適応します — つまり定義タイミングの保証は呼び出し側の責任です: descriptor は呼び出し時に `el.constructor.wcBindable` から読まれ、upgrade 前の要素はこれを持ちません。アプリがヘッドレス IO ノードを自分で持つ場合、`mountNode` はこの問題系をまるごと消します。定義モジュールを import してから、生成→束縛→接続を1呼び出しで: モジュール評価順が定義を保証するので、`whenDefined` も HTML との順序結合も不要です。
+`bindNode` は**既に存在する**要素を適応します — つまり定義タイミングの保証は呼び出し側の責任です: descriptor は呼び出し時に `el.constructor.wcBindable` から読まれ、upgrade 前の要素はこれを持ちません — そのとき `bindNode` は、タグがまだ定義されていないことと、読み込み方・待ち方を言います。アプリがヘッドレス IO ノードを自分で持つ場合、`mountNode` はこの問題系をまるごと消します。定義モジュールを import してから、生成→束縛→接続を1呼び出しで: モジュール評価順が定義を保証するので、`whenDefined` も HTML との順序結合も不要です。
 
 ```typescript
 import "@wcstack/fetch/auto";                    // <wcs-fetch> を定義 — module graph が順序を保証
@@ -431,7 +431,7 @@ esbuild / tsc / Vite の設定例・検証用 `.tsx` 例・トラブルシュー
 - **リストは素のリアクティブ child でなく `For`/`Index` を。** 関数/signal の child は*挿入点*で、実行のたびに以前生成した全ノードを除去し新ノードを挿入します。条件描画や小さい動的領域には十分ですが、リスト(`() => items.map(render)`)では任意の変更でサブツリー全体を再生成し、DOM 再生成コストはサイズに比例、行ごとの状態(focus・編集中の `<input>`/`<select>`・scroll・selection)が失われます。keyed 再利用には [`For`/`Index`](#6-keyed-リスト--for--index)を使ってください。各行は単一 Node です。
 - **backpressure なし(stream)。** fold の結果が*そのまま*バッファです — 需要はプロデューサに伝わりません。無限ストリームには fold を有界に(latest / count / window)してください。無制限の蓄積は罠です。
 - **協調的キャンセル — `source` は `AbortSignal` を必ず honor すること(強い契約)。** これが switchMap の restart/dispose を駆動します。`ReadableStream` は abort 時に `reader.cancel()` で**完全に**巻き戻されます(park した `read()` も強制解決)。プレーンな `AsyncIterable` / async generator は**部分的に**救済されます: abort 時にアダプタが iterator の `return()` を呼び `finally`/クリーンアップを起動しますが、park した `await`(`signal` を*無視*して次の `yield` 前で停止)は外から強制巻き戻しできず、`return()` は generator が次に再開したときに初めて効きます。永久に park して `signal` を一切観測しない generator は `consume()` タスクをリークさせます。**必ず `source` 内で `signal` を観測**してください(例: `signal.aborted` で reject/break)。
-- **`setProp` は主要な属性↔プロパティのケースをカバー(全てではない)。** 小さなリマップ表で `for`→`htmlFor`・`tabindex`→`tabIndex`・`colspan`/`rowspan` 等を処理し、read-only な DOM メンバーは `setAttribute` に退避、SVG タグは SVG 名前空間で生成し `class` は常に属性として設定(SVG でも動く)します。`style` オブジェクトは camelCase・kebab-case・CSS カスタムプロパティ(`--x`)を受け付けます。DOM プロパティへの `null`/`undefined` は `""` に正規化(`id`/`src` 等が `"null"` でなくクリア)されますが、`false` はそのまま据え置きます — boolean プロパティ(`disabled = false`)では正しいので、*文字列*プロパティにリアクティブな `false` が流れると `"false"` になります。この `""` 正規化は**オブジェクト/配列を取るカスタム要素プロパティ**にも及びます — リアクティブな `null` は `null` でなく `""` になるので、クリアするには空配列/空オブジェクトを渡してください。`""` を渡すか thunk でガードを。`class` は特別扱い済み(`false` → `""`)。
+- **`setProp` は主要な属性↔プロパティのケースをカバー(全てではない)。** 小さなリマップ表で `for`→`htmlFor`・`tabindex`→`tabIndex`・`colspan`/`rowspan` 等を処理し、read-only な DOM メンバーは `setAttribute` に退避、SVG タグは SVG 名前空間で生成し `class` は常に属性として設定(SVG でも動く)します。`style` オブジェクトは camelCase・kebab-case・CSS カスタムプロパティ(`--x`)を受け付けます。DOM プロパティへの `null`/`undefined` は `""` に正規化(`id`/`src` 等が `"null"` でなくクリア)されますが、`false` はそのまま据え置きます — boolean プロパティ(`disabled = false`)では正しいので、*文字列*プロパティにリアクティブな `false` が流れると `"false"` になります。この `""` 正規化は**オブジェクト/配列を取るカスタム要素プロパティ**にも及びます — リアクティブな `null` は `null` でなく `""` になるので、クリアするには空配列/空オブジェクトを渡してください。`""` を渡すか thunk でガードを。`class` は特別扱い済み(`false` → `""`)。**まだ定義されていない**カスタム要素(`h()` が作った後でモジュールが動く)へのオブジェクト・配列は属性(`"[object Object]"`)にせず、手元に持って、要素が定義されたらその setter で渡します(その間に変われば最後の値)。プリミティブは今までどおり属性です。
 - **依存する値を(毎回変えながら)書き込む effect はループする。** 暴走フラッシュは反復回数の上限で打ち切られ、ハングせずに throw します。
 - **v1 スコープ外。** SSR/hydration(マークアップでなく JS から初期化)・深い/proxy リアクティビティ(パスベースの深い追跡は `@wcstack/state` を使用)・ストリーム backpressure は意図的に非対応です — 設計ドキュメント参照。
 
@@ -489,11 +489,13 @@ class MyEl extends Base { protected render() { /* … */ } }
 | コード | 発生条件 | 意味 |
 | --- | --- | --- |
 | `DUPLICATE_KEY` | `For` に同一キーの item が 2 つ。 | レンダリングが**throw**し(本番挙動は不変)リストが更新停止。dev 警告は重複キーと index を示し、静かな「更新停止」症状を診断可能にします。 |
-| `NON_PRIMITIVE_KEY` | `For` を `key` 未指定で使い、item がオブジェクト/関数。 | item の参照同一性がキーになるがレンダ毎に変わる — 全行が作り直され行ごとの状態が失われます。`{ key: item => item.id }` を渡してください。 |
+| `NON_PRIMITIVE_KEY` | `For` を `key` 未指定で使い、item がオブジェクト/関数。 | item の参照同一性がキーになるがレンダ毎に変わる — 全行が作り直され行ごとの状態が失われます。`{ key: item => item.id }` を渡し、行の item は `each` の第 3 引数 `current()` で読んでください(使い回す行は item が置き換わっても作り直されません)。 |
 | `NULLISH_KEY` | `For` のキーが `null` / `undefined` / `NaN`。 | `SameValueZero` で衝突し、該当行が静かにマージ/脱落します。安定した一意キーを与えてください。 |
 | `UNOWNED_EFFECT` | owner なしで `effect(...)` を生成。 | 誰にも dispose されず、購読ごとリークします。`createRoot(dispose => …)` か `SignalsElement` の `render()` 配下で使ってください。 |
 | `UNOWNED_INSERT` | owner なしで reactive child(`h("div", null, () => …)`)を挿入。 | 更新 effect が dispose されずリークしうる。`createRoot` / `SignalsElement` 配下でマウントしてください。 |
 | `ORPHAN_CLEANUP` | owner 外で `onCleanup(...)` を呼ぶ。 | no-op になり cleanup が実行されません。effect / `createRoot` / `SignalsElement` の `render()` 内で呼んでください。 |
+| `UNTRACKED_COMPUTED` | `computed` の最初の実行が signal を 1 つも読まなかった。 | 二度と再計算されません: 関数の外で読んだ値や `peek()` で読んだ値は、実行したときに固定されます。signal は関数の中で `get()` で読んでください。 |
+| `UNTRACKED_EFFECT` | 自分で書いた `effect` の最初の実行が signal を 1 つも読まず、cleanup も返さず、`onCleanup` も登録せず、何も作らなかった。 | 二度と実行されません。signal は中で `get()` で読んでください(`peek()` は追跡しない)。一度だけ動かす effect は cleanup を返すか `onCleanup` を登録します(`h()`・`For`・アダプタが値のために作る effect は見ません)。 |
 | `REACTIVE_CYCLE` | 暴走サイクルガード(`MAX_FLUSH_ITERATIONS`)が発火。 | dev 時は throw する `Error` メッセージに、最終パスで再実行され続けた effect 群とその生成スタックを付加し、サイクルの原因 effect を特定できます。 |
 
 ## エラーハンドリング契約

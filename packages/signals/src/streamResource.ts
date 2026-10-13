@@ -42,7 +42,7 @@
 // The `if (signal.aborted) return` check only runs after a chunk arrives, not while
 // parked — it drops stale chunks but is not, by itself, a cancellation mechanism.
 
-import { signal, effect, onCleanup, ReadSignal, WriteSignal } from "./reactive.js";
+import { signal, innerEffect as effect, onCleanup, ReadSignal, WriteSignal } from "./reactive.js";
 
 export type StreamStatus = "idle" | "active" | "done" | "error";
 
