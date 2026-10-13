@@ -633,8 +633,7 @@ function checkKeyDev(key: unknown, item: unknown, hasExplicitKey: boolean): void
       typeof key,
       "For: a non-primitive item is used as its own key (no `key` option given). " +
         "Object identity changes across renders, so every row is rebuilt and per-row " +
-        "state is lost. Pass `{ key: item => item.id }` — and read a row's item through `each`'s " +
-        "third argument, `current()`: a kept row is not rebuilt when its item is replaced.",
+        "state is lost. Pass `{ key: item => item.id }`, and read the item through current().",
       { item },
     );
   }

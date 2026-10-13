@@ -387,9 +387,7 @@ class ComputedNode<T> implements Computation, ReadSignal<T> {
         warnDev(
           "UNTRACKED_COMPUTED",
           String(this._fn).slice(0, 120),
-          "computed read no signal on its first run, so it never recomputes. Read each signal " +
-            "with get() inside the function — a value read outside it, or with peek(), is fixed " +
-            "when it first runs.",
+          "computed read no signal, so it never recomputes: read signals with get() inside it.",
           this._fn,
         );
       }
@@ -445,9 +443,7 @@ class EffectNode implements Computation, Owner {
       warnDev(
         "UNTRACKED_EFFECT",
         String(fn).slice(0, 120),
-        "effect read no signal on its first run, so it never runs again. Read each signal with " +
-          "get() inside it (peek() does not track). An effect meant to run once can return its " +
-          "cleanup or register onCleanup.",
+        "effect read no signal, so it never runs again: read signals with get() inside it.",
         fn,
       );
     }

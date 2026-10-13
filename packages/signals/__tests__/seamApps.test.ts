@@ -156,11 +156,7 @@ describe("定義の前の要素への bindNode", () => {
   it("まだ定義されていないカスタム要素は、そう言い、読み込み方と待ち方を示す", () => {
     const tag = `wcs-not-yet-${tagSeq++}`;
     const el = document.createElement(tag);
-    expect(() => bindNode(el)).toThrow(`bindNode: <${tag}> is not defined yet, so it has no wc-bindable descriptor`);
-    expect(() => bindNode(el)).toThrow(/its \/auto entry, or the module that defines it\) before this code runs/);
-    expect(() => bindNode(el)).toThrow(`await customElements.whenDefined("${tag}")`);
-    const other = document.createElement(`my-not-yet-${tagSeq++}`);
-    expect(() => bindNode(other)).toThrow(/\(or the module that defines it\)/);
+    expect(() => bindNode(el)).toThrow(`bindNode: <${tag}> is not defined yet: load it before this code, or await customElements.whenDefined("${tag}").`);
   });
 
   it("カスタム要素でないもの・定義済みで記述子の無い要素は今までの文言", () => {

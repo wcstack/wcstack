@@ -269,9 +269,7 @@ export function bindNode<S extends NodeShape = DefaultNodeShape>(
     const tag = (target as { localName?: unknown }).localName;
     if (typeof tag === "string" && tag.includes("-") && typeof customElements !== "undefined" && customElements.get(tag) === undefined) {
       throw new Error(
-        `bindNode: <${tag}> is not defined yet, so it has no wc-bindable descriptor. Load its package ` +
-          `(${tag.startsWith("wcs-") ? `its /auto entry, ` : ""}or the module that defines it) before this code runs — import it at the top ` +
-          `of this module — or wait for it: await customElements.whenDefined("${tag}").`,
+        `bindNode: <${tag}> is not defined yet: load it before this code, or await customElements.whenDefined("${tag}").`,
       );
     }
     throw new Error("bindNode: no wc-bindable descriptor provided and none found on target.constructor.wcBindable");
