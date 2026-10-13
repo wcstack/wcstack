@@ -16,7 +16,13 @@
  * - SignalsDualEntry: `@wcstack/signals` と `@wcstack/signals/dom` の実参照が同一ページに
  *   混在（CDN では各エントリがコア同梱の自己完結バンドルのため、リアクティブコアが
  *   二重化して境界で反応が壊れる）。コメント内の言及に誤反応しないよう、
- *   script src と inline module の import 指定子だけを参照として数える。
+ *   script src と inline module の import 指定子だけを参照として数える。import map が両方の
+ *   エントリを割り当てているだけでも warning（別ファイルの module がコアを import すると二重化する —
+ *   docs/seam-apps.md、signals-shop）。
+ * - RouteBareMustache: `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`
+ *   （最初に着いたルートでしか束ねられない）
+ * - LayoutSlotMissing: 既定の `<slot>` の無いレイアウトのテンプレートに、名前付きスロットの外の中身を
+ *   渡している（入れ子のルートが表示されない。ランタイムも同じ code で警告する）
  *
  * pure(DOM / vscode 非依存)。
  */
@@ -104,9 +110,67 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
       start: later.start, end: later.end, severity: 'error',
       message: msgs.signalsDualEntry(),
     });
+  } else {
+    // 両方を割り当てた import map: このページの import が /dom だけでも、読み込む別ファイルの module が
+    // `@wcstack/signals` を import すると 2 つ目のコアになる（lint はそのファイルを読まない）
+    const both = findSignalsImportMapBoth(scanText);
+    if (both) {
+      diagnostics.push({
+        code: WcsDiagnosticCode.SignalsDualEntry,
+        start: both.start, end: both.end, severity: 'warning',
+        message: msgs.signalsImportMapBoth(),
+      });
+    }
+  }
+
+  // --- RouteBareMustache / LayoutSlotMissing: タグとテキストの並びから ---
+  const structure = scanStructure(scanText);
+  for (const at of structure.bareMustaches) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.RouteBareMustache,
+      start: at.start, end: at.end, severity: 'warning',
+      message: msgs.routeBareMustache(at.inLayout),
+    });
+  }
+  for (const layout of structure.layoutsWithoutDefaultSlot) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.LayoutSlotMissing,
+      start: layout.start, end: layout.end, severity: 'warning',
+      message: msgs.layoutSlotMissing(layout.id),
+    });
   }
 
   return diagnostics;
+}
+
+/**
+ * `<script type="importmap">` が `@wcstack/signals` と `@wcstack/signals/dom`（または接頭辞の
+ * `@wcstack/signals/`）の両方を割り当てていれば、前者のキーの範囲。どちらも `dist/` のファイル
+ * （チャンクを共有する）なら null。
+ */
+function findSignalsImportMapBoth(html: string): { start: number; end: number } | null {
+  const mapRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = mapRegex.exec(html)) !== null) {
+    if (!/\btype\s*=\s*(["'])importmap\1/i.test(match[1])) continue;
+    let imports: Record<string, unknown> | undefined;
+    try {
+      imports = (JSON.parse(match[2]) as { imports?: Record<string, unknown> }).imports;
+    } catch {
+      continue;
+    }
+    if (imports === null || typeof imports !== 'object') continue;
+    const core = imports['@wcstack/signals'];
+    const dom = imports['@wcstack/signals/dom'] ?? imports['@wcstack/signals/'];
+    if (typeof core !== 'string' || typeof dom !== 'string') continue;
+    if (core.includes('/dist/') && dom.includes('/dist/')) continue;
+    const key = '"@wcstack/signals"';
+    const at = match[2].indexOf(key);
+    const bodyStart = match.index + match[0].indexOf('>') + 1;
+    const start = bodyStart + (at === -1 ? 0 : at + 1);
+    return { start, end: start + key.length - 2 };
+  }
+  return null;
 }
 
 /**
@@ -227,6 +291,116 @@ function blankJsComments(code: string): string {
   return code
     .replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length))
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, pre: string) => pre + ' '.repeat(m.length - pre.length));
+}
+
+// ============================================================
+// route の直下のテキストと、レイアウトのスロット（docs/seam-apps.md、router-admin）
+// ============================================================
+
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr']);
+const ROUTE_TAG = 'wcs-route';
+const LAYOUT_TAG = 'wcs-layout';
+
+interface OpenElement {
+  name: string;
+  /** `<wcs-layout layout>` が使うテンプレートか（直下のテキストの `{{ }}` は遷移で束ねられない）。 */
+  layoutTemplate: boolean;
+  /** `<wcs-layout>` の、名前付きスロットの外の中身があるか（直下の slot の無い子・空でないテキスト）。 */
+  unslotted?: boolean;
+  layoutId?: string;
+  nameStart: number;
+  nameEnd: number;
+}
+
+/** 属性の値（無ければ null）。 */
+function attrValue(attrs: string, name: string): string | null {
+  const m = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(attrs);
+  return m === null ? null : (m[1] ?? m[2] ?? m[3] ?? '');
+}
+
+/**
+ * タグとその間のテキストを文書順に読み、開いている要素をスタックで追う。
+ * - bareMustaches: 直上の要素が `<wcs-route>` かレイアウトのテンプレートであるテキストの `{{ … }}`
+ * - layoutsWithoutDefaultSlot: 名前付きスロットの外の中身を持つ `<wcs-layout layout="X">`（`src` 無し）で、
+ *   `<template id="X">` の中身に既定の `<slot>`（`name` が無いか空）が無いもの
+ * `<script>` / `<style>` の中身は数えない。閉じタグは、開いている同名の要素まで閉じる（省略された閉じタグ）。
+ */
+function scanStructure(html: string): {
+  bareMustaches: { start: number; end: number; inLayout: boolean }[];
+  layoutsWithoutDefaultSlot: { start: number; end: number; id: string }[];
+} {
+  const scan = html.replace(/(<(script|style)\b[^>]*>)([\s\S]*?)(<\/\2\s*>)/gi,
+    (_m, open: string, _name: string, body: string, close: string) => open + ' '.repeat(body.length) + close);
+  const tagRegex = /<(\/?)([a-zA-Z][\w-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>/g;
+  const layoutIds = new Set<string>();
+  for (const m of scan.matchAll(/<wcs-layout\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi)) {
+    const id = attrValue(m[1], 'layout');
+    if (id !== null && id !== '') layoutIds.add(id);
+  }
+  const bareMustaches: { start: number; end: number; inLayout: boolean }[] = [];
+  const layouts: { start: number; end: number; id: string }[] = [];
+  /** テンプレートの id → 中身に既定の slot があるか */
+  const templateHasDefaultSlot = new Map<string, boolean>();
+  const stack: OpenElement[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  const text = (from: number, to: number): void => {
+    const top = stack[stack.length - 1];
+    if (top === undefined || to <= from) return;
+    const chunk = scan.slice(from, to);
+    if (top.name === LAYOUT_TAG && chunk.trim() !== '') top.unslotted = true;
+    if (top.name !== ROUTE_TAG && !top.layoutTemplate) return;
+    for (const m of chunk.matchAll(/\{\{[\s\S]*?\}\}/g)) {
+      bareMustaches.push({ start: from + m.index!, end: from + m.index! + m[0].length, inLayout: top.layoutTemplate });
+    }
+  };
+  while ((match = tagRegex.exec(scan)) !== null) {
+    text(last, match.index);
+    last = match.index + match[0].length;
+    const name = match[2].toLowerCase();
+    const nameStart = match.index + 1 + match[1].length;
+    if (match[1] === '/') {
+      const at = stack.map((e) => e.name).lastIndexOf(name);
+      if (at === -1) continue;
+      for (const closed of stack.splice(at)) {
+        if (closed.name === LAYOUT_TAG && closed.unslotted && closed.layoutId !== undefined) {
+          layouts.push({ start: closed.nameStart, end: closed.nameEnd, id: closed.layoutId });
+        }
+      }
+      continue;
+    }
+    const attrs = match[3];
+    const parent = stack[stack.length - 1];
+    // a direct child of <wcs-layout>: content for the default slot unless it names a slot
+    if (parent?.name === LAYOUT_TAG && !attrValue(attrs, 'slot')) parent.unslotted = true;
+    // a <slot> inside a layout template: is it the default one
+    for (const open of stack) {
+      if (open.layoutTemplate && name === 'slot' && !attrValue(attrs, 'name')) templateHasDefaultSlot.set(open.layoutId!, true);
+    }
+    if (VOID_TAGS.has(name) || /\/\s*$/.test(attrs)) continue;
+    const id = name === 'template' ? attrValue(attrs, 'id') : null;
+    const element: OpenElement = {
+      name, layoutTemplate: id !== null && layoutIds.has(id), nameStart, nameEnd: nameStart + match[2].length,
+    };
+    if (element.layoutTemplate) {
+      element.layoutId = id!;
+      if (!templateHasDefaultSlot.has(id!)) templateHasDefaultSlot.set(id!, false);
+    }
+    if (name === LAYOUT_TAG && attrValue(attrs, 'src') === null) {
+      const layoutId = attrValue(attrs, 'layout');
+      if (layoutId !== null && layoutId !== '') element.layoutId = layoutId;
+    }
+    stack.push(element);
+  }
+  text(last, scan.length);
+  for (const closed of stack) {
+    if (closed.name === LAYOUT_TAG && closed.unslotted && closed.layoutId !== undefined) {
+      layouts.push({ start: closed.nameStart, end: closed.nameEnd, id: closed.layoutId });
+    }
+  }
+  // a layout whose template is on the page (an unknown one is the runtime's warning) and has no default slot
+  const layoutsWithoutDefaultSlot = layouts.filter((l) => templateHasDefaultSlot.get(l.id) === false);
+  return { bareMustaches, layoutsWithoutDefaultSlot };
 }
 
 // ============================================================

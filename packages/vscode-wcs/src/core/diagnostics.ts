@@ -154,6 +154,10 @@ export const WcsDiagnosticCode = {
   // ランタイムは何も報告しない（root は正しい値）ので lint の code。`#direct` か `event.target.closest(...)` を
   // 案内する。読みが実行されない分岐にあることもあるので warning。
   DelegatedCurrentTarget: "wcs/delegated-current-target",
+  // `<form data-wcs="onsubmit: login">` の `#prevent` 忘れ（ハンドラも preventDefault を呼ばない）。ブラウザが
+  // フォームも送る — ページが読み直されるか、router があれば GET が欄（パスワードも）を URL と履歴に載せる
+  // （docs/seam-apps.md、router-auth）。warning（action 付きのフォームと、読めないハンドラでは黙る）。
+  SubmitWithoutPrevent: "wcs/submit-without-prevent",
   // 4.0 で外れた API の旧名（`this.$trackDependency` → `$dependOn`、`$untrackDependency` → `$untracked`）。
   // ランタイムは読んだ時点で同じ code（#1701）で throw するので error。3.x（3.2〜3.3）では「動くが 4.0 で
   // 外れる」info だった。フィルタの旧名（`uc` など）は 4.0 のランタイムと同じく `wcs/filter-unknown` で、
@@ -211,6 +215,13 @@ export const WcsDiagnosticCode = {
   RouterOutletMisplaced: "wcs/router-outlet-misplaced",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
+  // `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`。最初に着いたルートでしか束ねられず、
+  // 遷移で入ったルートでは書いたままの文字が出る（router の README「Where route content lives」— docs/seam-apps.md、
+  // router-admin）。warning。
+  RouteBareMustache: "wcs/route-bare-mustache",
+  // 既定の `<slot>` の無いレイアウトのテンプレートに、名前付きスロットの外の中身（入れ子のルート）を渡している。
+  // 中身は表示されない。ランタイムも同じ code で警告する（docs/seam-apps.md、router-admin）。warning。
+  LayoutSlotMissing: "wcs/layout-slot-missing",
   // --- deprecations ---
   // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
   // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。

@@ -76,6 +76,10 @@ export interface WcsMessageCatalog {
   /** getter の中でパス読み取りの先の素のプロパティアクセス（追跡されるのは root だけ）。 */
   getterUntrackedRead(root: string, suggestedPath: string): string;
   onHandlerThis(name: string): string;
+  /** getter の中の `location` 読み（state ではないので追跡されない — 最初の URL のまま）。 */
+  getterReadsLocation(read: string): string;
+  /** `<form>` の `onsubmit:` に `#prevent` が無く、ハンドラも preventDefault を呼ばない。 */
+  submitWithoutPrevent(handler: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
   filterUnknown(name: string): string;
@@ -109,6 +113,10 @@ export interface WcsMessageCatalog {
   // --- arrayMutationValidator ---
   arrayMutation(method: string, alternative: string): string;
   arrayIndexAssign(suggestedPath: string): string;
+  /** state の値を指す別名（`const cards = this.cards`）を通したその場の変更。`source` は別名の初期化、`target` は代入する先。 */
+  inPlaceAlias(alias: string, source: string, target: string): string;
+  /** 別名を通さないその場の変更（`Object.assign(this.x…, …)`、$on の `state.x.push(…)`）。`source` は変更の式。 */
+  inPlaceChange(source: string, target: string): string;
   // --- ioNodeValidator ---
   tagMemberUnknown(property: string, tag: string): string;
   /**
@@ -184,6 +192,12 @@ export interface WcsMessageCatalog {
   /** `<wcs-router>` の直後に無い `<wcs-outlet>`（どの router にも使われない）。 */
   routerOutletMisplaced(): string;
   signalsDualEntry(): string;
+  /** import map が @wcstack/signals と /dom の両方を割り当てている（別ファイルの module が 2 つ目のコアを持つ）。 */
+  signalsImportMapBoth(): string;
+  /** `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`。 */
+  routeBareMustache(inLayout: boolean): string;
+  /** 既定の `<slot>` の無いレイアウトのテンプレートに、名前付きスロットの外の中身を渡している。 */
+  layoutSlotMissing(layout: string): string;
   // --- namedStateValidator（deprecation） ---
   /** `<wcs-state name="x">` は v2 で `mount="x"` に置き換わる。 */
   namedStateAttrDeprecated(name: string): string;
@@ -296,6 +310,10 @@ const ja: WcsMessageCatalog = {
     `$renderedCallback は binding 駆動です。"${p}" はこのドキュメントのどのバインディングにも現れないため、この分岐は一度も実行されません。描画に依存せず反応するなら $watch を使ってください`,
   onHandlerThis: (name) =>
     `$on のハンドラ "${name}" が this を使っています。$on のハンドラは state を第 1 引数で受け取り（\`${name}(state, event) { state.x = … }\`）、this は undefined なので、this.… は呼ばれたときに例外になります。$watch やメソッドと違う点に注意`,
+  getterReadsLocation: (read) =>
+    `この getter は ${read} を読んでいますが、location は state ではないので、最初に読んだ URL を持ち続けます（ナビゲーションで再評価されません）。URL は state を通して読んでください — <wcs-router> の path / searchParams を束ねる`,
+  submitWithoutPrevent: (h) =>
+    `onsubmit に #prevent が無く、"${h}" も preventDefault を呼びません。ブラウザはフォームも送るので、ページが読み直されるか、router があれば GET が欄の値（パスワードも）を URL と履歴に載せます。onsubmit#prevent: ${h} と書くか、ハンドラで event.preventDefault() を呼んでください`,
   getterUntrackedRead: (root, sp) =>
     `ここで追跡されるのは "${root}" だけです。"${sp}" が変わってもこの getter は再評価されません（パス読み取りの先の素のプロパティアクセスは追跡されない）。this["${sp}"] で読んでください`,
   handlerFilterNotAllowed: (prop) => `イベントハンドラ "${prop}" にフィルタは使用できません`,
@@ -328,6 +346,10 @@ const ja: WcsMessageCatalog = {
     `配列の破壊的メソッド "${m}" はリアクティブ更新をトリガーしません（同一参照の自己再代入でも要素の追加・削除は反映されません）。非破壊メソッドと再代入を使用してください（例: ${alt}）。`,
   arrayIndexAssign: (sp) =>
     `配列インデックスへの直接代入はリアクティブ更新をトリガーしません。this["${sp}"] のようなドットパス代入、または with() と再代入を使用してください。`,
+  inPlaceAlias: (a, src, t) =>
+    `"${a}" は ${src}（state の値そのもの）です。それを通した変更はリアクティブ更新をトリガーせず、同じ値を書き戻しても一覧の行は追加・削除・置き換えされません。新しい値を作って ${t} に代入してください（${a}.with(i, item) / [...${a}, item] / { ...${a}, key: value }）`,
+  inPlaceChange: (src, t) =>
+    `${src} は state の値をその場で変えるので、リアクティブ更新をトリガーしません。新しい値を作って ${t} に代入してください`,
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
   nameAlias: (written, canonical) =>
@@ -398,6 +420,13 @@ const ja: WcsMessageCatalog = {
     `この <wcs-outlet> は <wcs-router> の直後に無いので、どの router も使いません。router は自分の直後の要素だけを outlet として使い、そこに <wcs-outlet> が無ければ自前の outlet を作ります。ルートは router の直後に描かれ、この outlet は空のままです — <wcs-router> の直後へ移してください`,
   signalsDualEntry: () =>
     `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、境界で反応が壊れます — すべて /dom エントリから import してください`,
+  signalsImportMapBoth: () =>
+    `この import map は @wcstack/signals と @wcstack/signals/dom の両方を割り当てています。CDN では各エントリがリアクティブコアを持つので、@wcstack/signals を import するモジュール（このページのものでも、読み込む .js でも）が 2 つ目のコアを持ち、境界で反応が壊れます。@wcstack/signals/dom だけを割り当ててください（コアの全部を export します）`,
+  routeBareMustache: (inLayout) => inLayout
+    ? `レイアウトのテンプレートの直下のテキストの {{ }} は、遷移では束ねられません — 要素で包んでください（<span>{{ … }}</span>）`
+    : `<wcs-route> の直下のテキストの {{ }} は、最初に着いたルートでしか束ねられません。遷移で入ったルートでは書いたままの文字が出ます — 要素で包んでください（<h1>{{ … }}</h1>）`,
+  layoutSlotMissing: (l) =>
+    `レイアウト "${l}" のテンプレートに既定の <slot>（name の無いもの）がありません。この <wcs-layout> の名前付きスロットの外の中身（入れ子のルートとそのページ）は表示されません — ページを置く場所に <slot></slot> を書いてください`,
   namedStateAttrDeprecated: (name) =>
     `name 属性は v2 で撤去されました（1 root 1 ツリー）。ルートツリーへのマウント <wcs-state mount="${name}"> に置き換え、パスは "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
   namedStatePathDeprecated: (name) =>
@@ -543,6 +572,10 @@ const en: WcsMessageCatalog = {
     `$renderedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
   onHandlerThis: (name) =>
     `The $on handler "${name}" uses this. A $on handler receives the state as its first argument (\`${name}(state, event) { state.x = … }\`) and this is undefined, so this.… throws when it is called — unlike $watch handlers and methods`,
+  getterReadsLocation: (read) =>
+    `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state — bind <wcs-router>'s path / searchParams`,
+  submitWithoutPrevent: (h) =>
+    `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   getterUntrackedRead: (root, sp) =>
     `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
@@ -575,6 +608,10 @@ const en: WcsMessageCatalog = {
     `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
   arrayIndexAssign: (sp) =>
     `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
+  inPlaceAlias: (a, src, t) =>
+    `"${a}" is ${src} — the state's own value. A change through it does not trigger a reactive update, and writing the same value back does not add, remove or replace a list's rows. Build a new value and assign it to ${t} (${a}.with(i, item), [...${a}, item], { ...${a}, key: value })`,
+  inPlaceChange: (src, t) =>
+    `${src} changes the state's value in place, which does not trigger a reactive update. Build a new value and assign it to ${t}`,
   tagMemberUnknown: (prop, tag) =>
     `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   nameAlias: (written, canonical) =>
@@ -645,6 +682,13 @@ const en: WcsMessageCatalog = {
     `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty — move it right after the <wcs-router>`,
   signalsDualEntry: () =>
     `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam — import everything from the single /dom entry`,
+  signalsImportMapBoth: () =>
+    `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals — this page's, or a .js file it loads — gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
+  routeBareMustache: (inLayout) => inLayout
+    ? `{{ }} in text directly under a layout template is not bound on a navigation. Wrap it in an element (<span>{{ … }}</span>)`
+    : `{{ }} in text directly under <wcs-route> is bound only on the landing route: a route entered by navigation shows it as written. Wrap it in an element (<h1>{{ … }}</h1>)`,
+  layoutSlotMissing: (l) =>
+    `The template of layout "${l}" has no default <slot> (one without a name), so what this <wcs-layout> holds outside the named slots — the nested routes and their pages — is not shown. Put a <slot></slot> where the page goes`,
   namedStateAttrDeprecated: (name) =>
     `The "name" attribute was removed in v2 — there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
   namedStatePathDeprecated: (name) =>
