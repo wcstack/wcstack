@@ -184,7 +184,7 @@ router は、スタンプしたルート本文の終わりにコメントの印 
 | `data` | output のみ | 現在のナビゲーションの guard 関数がロードしたデータ — `true` の代わりにオブジェクトを返した guard の返り値（[ルート commit 前のデータロード](#ルート-commit-前のデータロード) 参照）。どの guard もオブジェクトを返さなければ `null`（初期化前も `null`）。クエリのみの遷移（same-match）では前の値を保つ。上の各メンバーと違い **frozen にしない** — guard が返したオブジェクトをそのまま露出する。`wcs-router:data-changed` を発火 |
 | `navigateUrl` | 書き込み面（null-idle transient） | ターゲットを書くと push 遷移。null は待機、文字列の書き込みで `navigate()` が起動し、完了後に自分で null へ戻る。null / `""` の書き込みは no-op。書くのは**ルートのパス** — basename は router が付ける: リンクの `href` ではなく `/products/3` を書く（basename `/ja` の下で `/ja/products/3` を書くと `/ja/ja/products/3` へ行く） |
 | `replaceUrl` | 書き込み面（null-idle transient） | `navigateUrl` と完全同型の契約。ただし現在の履歴エントリを**置き換える** |
-| `leaveConfirm` | input（属性 `leave-confirm`） | 空でない文字列の間、**別のルート**へのナビゲーション（リンク・戻る / 進む・`navigate()`）の前に `confirm(leaveConfirm)` を出し、断られたら留まる。ページを閉じる・読み直すときはブラウザ自身の確認（`beforeunload`）。未保存の変更に束ねる: `data-wcs="leaveConfirm: discardPrompt"` と `get discardPrompt() { return this.dirty ? "変更を破棄しますか？" : null; }`。クエリだけの遷移と、確認済みの遷移のリダイレクトでは聞かない。保存のハンドラが同じ更新でこれを外して `navigateUrl` を書いてもよい — router はその更新の後で確かめる。ブラウザがページに取り消させない戻る / 進むでは聞けない。`null` は属性を外す |
+| `leaveConfirm` | input（属性 `leave-confirm`） | 空でない文字列の間、**別のルート**へのナビゲーション（リンク・戻る / 進む・`navigate()`）の前に `confirm(leaveConfirm)` を出し、断られたら留まる。**ページを離れる**ナビゲーションのうちページが取り消せるもの（router の `basename` の外へのリンク — 言語を basename に持つページの言語の切り替え — や別のサイトへのリンク、フォームの送信）も、Navigation API があれば同じく聞く（無ければブラウザの確認）。受け入れたらブラウザは聞き直さない。ページを閉じる・読み直すときはブラウザ自身の確認（`beforeunload`）。未保存の変更に束ねる: `data-wcs="leaveConfirm: discardPrompt"` と `get discardPrompt() { return this.dirty ? "変更を破棄しますか？" : null; }`。クエリだけの遷移と、確認済みの遷移のリダイレクトでは聞かない。保存のハンドラが同じ更新でこれを外して `navigateUrl` を書いてもよい — router はその更新の後で確かめる。ブラウザがページに取り消させない戻る / 進むでは聞けない。`null` は属性を外す |
 | `basename` | input | `basename` 属性に書く。Router はこの属性を初期化のときに一度だけ読むので、それより前に書く（後から書いてもルーティングの基準は変わらない。属性を書き換えたときと同じ）。読むと使われている basename を返す（初期化前は `""`）。`null` は属性を外し、`undefined` は最初の属性へ戻す |
 
 コマンド `navigate(path)` / `replace(path)`（いずれも async）も宣言され、command-token プロトコルから起動できる。
@@ -370,6 +370,8 @@ console.log(router.typedParams.userId);  // 123 (number)
 
 テンプレートを読み込み、子要素を`<slot>`へ挿入して`<wcs-layout-outlet>`へ書き出す。Light DOM対応。外部ファイル対応。
 
+テンプレートには、名前付きのスロットの外の子（入れ子のルートとそのページ）のための既定の `<slot>`（`name` の無いもの）が要る。無いとそれらは表示されず、outlet が `[wcs/layout-slot-missing]` で警告する（`wcs-validate` も報告する）。テンプレートには `<wcs-outlet>` を置かない: どの router にも使われない（`[wcs/router-outlet-misplaced]`）。入れ子のルートは既定のスロットを埋める。
+
 @wcstack/state と組むと、outlet は置いた要素を、ページに入った後で（テンプレートの読み込みは非同期）state の binder へ渡す。レイアウトのテンプレートと、スロットに入るルートの内容の、要素の中の `data-wcs` / `{{ }}` は、着地のルートだけでなく、ナビゲーションで初めてレイアウトに入ったときから束ねられる。渡すのは要素だけなので、レイアウトのテンプレートの直下の（要素に包まれていない）テキストの `{{ }}` は、ナビゲーションでは束ねられない。ルート本文と同じく要素で包むこと（「ルートの本文はどこに置くか」の節）。`enable-shadow-root` では、テンプレートは outlet の shadow root の中にあり、ページの state は束ねない（light DOM のルートの内容は束ねる）。outlet は、router がルートの本文を渡すのと同じく範囲を宣言して内容を渡す（`bind(subtree, { range: true })`）ので、**@wcstack/state 4.0** と組むと、レイアウトのテンプレートの先頭に置いた `for:` / `if:` のテンプレートも、着地のルートでもナビゲーションでも描かれ、行や枝はルートと一緒に出入りする。@wcstack/state 3.x はナビゲーションではそれを描かない（3.x ではルート本文と同じく要素で包むこと）。
 
 | 属性 | 説明 |
@@ -452,7 +454,7 @@ console.log(router.typedParams.userId);  // 123 (number)
 | 属性 | 説明 |
 |------|------|
 | `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basename は pathname にのみ付与され、`?クエリ` / `#ハッシュ` はそのまま温存される）。`?` で始まる場合は**クエリのみリンク**：href は「現在 pathname + 指定クエリ」で組み立てられ、ロケーション変更に追従する。それ以外は外部URLとして扱われる |
-| `match` | `exact`（既定）か `prefix`。`prefix` なら下のパスでも active になる（サイドナビの「商品」が `/products/3` でも）。そのときの `aria-current` は `"true"`（そのパス自身では `"page"`） |
+| `match` | `exact`（既定）か `prefix`。`prefix` なら下のパスでも active になる（サイドナビの「商品」が `/products/3` でも）。そのときの `aria-current` は `"true"`（そのパス自身では `"page"`）。下のパスへのリンクにも印が付く: `/products/new` では `prefix` の「商品」と「新しい商品」の両方が active で、`aria-current` は `"true"` と `"page"`。印を 1 つに見せるなら `[aria-current="page"]` でスタイルを書く |
 
 **アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスと、同じ事実の ARIA 表現である `aria-current="page"` を受け取る（スクリーンリーダーがナビゲーション内の現在地を読み上げられる）。比較は **pathname のみ**で行われ、どちら側のクエリも影響しない（`to="/products"` は `/products?page=2` でも active のまま。クエリのみリンクはそのページに居る間つねに active）。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
 

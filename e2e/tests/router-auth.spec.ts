@@ -468,4 +468,22 @@ test.describe("examples/router-auth", () => {
 
     expect(withoutStatusLog(messages, 404)).toEqual([]);
   });
+
+  test("ルートへ戻る 2 回目: 注文 → 一覧 → 別の注文で、前の注文の url で要求し直さない（新しい見出しの下に前の注文を出さない）", async ({ page }) => {
+    const messages = collectConsole(page);
+    const api = recordApi(page);
+    const [first, second] = alice.orders.map((o) => o.id);
+    await page.goto(`${BASE}/login?next=%2Faccount%2Forders%2F${first}`);
+    await fillLogin(page, "alice", "alice123");
+    await expectOrder(page, alice.details.get(first)!);
+    await outlet(page).getByRole("link", { name: "Back to my orders" }).click();
+    await expectOrderList(page, alice.orders);
+    // 同じ注文詳細のルート（同じ <wcs-fetch> の節点）へ、別の id で戻る
+    api.length = 0;
+    await orderRows(page).locator(`a[href="/account/orders/${second}"]`).click();
+    await expectOrder(page, alice.details.get(second)!);
+    expect(api.map((r) => r.path)).toEqual([`/api/orders/${second}`]);
+
+    expect(messages).toEqual([]);
+  });
 });

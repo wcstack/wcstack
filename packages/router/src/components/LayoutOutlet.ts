@@ -3,6 +3,28 @@ import { config } from "../config.js";
 import { raiseError } from "../raiseError.js";
 import { ILayout, ILayoutOutlet } from "./types.js";
 import { offerToBinder } from "../routeRange.js";
+import { warnStrayOutlets } from "../misplacedOutletWarning.js";
+
+/** 何かを置くノードか（空白だけのテキストとコメントは置かない） */
+const hasContent = (nodes: Iterable<Node>): boolean => {
+  for (const node of nodes) {
+    if (node.nodeType === Node.ELEMENT_NODE || (node.nodeType === Node.TEXT_NODE && node.textContent!.trim() !== '')) return true;
+  }
+  return false;
+};
+
+/**
+ * 既定の `<slot>` の無いテンプレートに、名前付きのスロットの外の子（入れ子のルートとそのページ）を
+ * 渡した: 子は表示されない — これまでは何も報告されなかった（docs/seam-apps.md、router-admin）。
+ */
+function warnNoDefaultSlot(outlet: Element): void {
+  console.warn(
+    `[@wcstack/router] [wcs/layout-slot-missing] This layout's template has no default <slot>, so what its ` +
+    `<${config.tagNames.layout}> holds outside the named slots — the nested routes and their pages — is not shown. ` +
+    `Put a <slot></slot> where the page goes.`,
+    outlet,
+  );
+}
 
 export class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
   private _layout: (ILayout & Pick<Element,'childNodes'>) | null = null;
@@ -48,10 +70,14 @@ export class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
       }
       if (this.shadowRoot) {
         this.shadowRoot.appendChild(template.content.cloneNode(true));
+        const unslotted: Node[] = [];
         for(const childNode of Array.from(this.layout.childNodes)) {
           this._layoutChildNodes.push(childNode);
+          if (!(childNode instanceof Element) || !childNode.getAttribute('slot')) unslotted.push(childNode);
           this.appendChild(childNode);
         }
+        if (!this.shadowRoot.querySelector('slot:not([name]), slot[name=""]') && hasContent(unslotted)) warnNoDefaultSlot(this);
+        warnStrayOutlets(this.shadowRoot);
       } else {
         const fragmentForTemplate = template.content.cloneNode(true) as DocumentFragment;
         const slotElementBySlotName: Map<string, Element> = new Map();
@@ -89,9 +115,12 @@ export class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
         const defaultSlot = slotElementBySlotName.get('');
         if (defaultSlot) {
           defaultSlot.replaceWith(fragmentForChildNodes);
+        } else if (hasContent(fragmentForChildNodes.childNodes)) {
+          warnNoDefaultSlot(this);
         }
 
         this.appendChild(fragmentForTemplate);
+        warnStrayOutlets(this);
       }
       // 置いた後で binder へ渡す（D5）。遷移で入ったルートの内容は router が渡す時点では文書の外で、
       // レイアウトのテンプレート自身の束縛もここでしか渡せない（shadow root の中は対象外）。light DOM は

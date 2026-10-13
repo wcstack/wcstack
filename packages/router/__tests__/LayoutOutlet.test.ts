@@ -553,4 +553,56 @@ describe('LayoutOutlet', () => {
       }).not.toThrow();
     });
   });
+
+  describe('置かれない中身の警告（docs/seam-apps.md、router-admin）', () => {
+    /** template と子でレイアウトを置き、初期化を待つ。console.warn の呼び出しを返す */
+    async function place(html: string, children: Node[], enableShadowRoot = false) {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
+      const template = document.createElement('template');
+      template.innerHTML = html;
+      layoutOutlet.layout = {
+        name: 'admin', uuid: 'uuid', enableShadowRoot,
+        loadTemplate: vi.fn().mockResolvedValue(template), childNodes: children,
+      } as any;
+      document.body.appendChild(layoutOutlet);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const calls = warn.mock.calls.map((c) => String(c[0]));
+      warn.mockRestore();
+      return { layoutOutlet, calls };
+    }
+    const el = (tag: string, slot?: string) => {
+      const e = document.createElement(tag);
+      if (slot !== undefined) e.setAttribute('slot', slot);
+      return e;
+    };
+
+    it('既定の slot の無いテンプレートに名前付きの外の子（ルート）を渡すと 1 回警告する', async () => {
+      const { calls } = await place('<header><slot name="nav"></slot></header><main></main>', [el('nav', 'nav'), el('wcs-route'), el('wcs-route')]);
+      expect(calls.filter((m) => m.includes('[wcs/layout-slot-missing]'))).toHaveLength(1);
+    });
+
+    it('既定の slot がある・名前付きの子と空白とコメントだけなら警告しない', async () => {
+      const a = await place('<main><slot></slot></main>', [el('wcs-route')]);
+      const b = await place('<slot name="nav"></slot>', [el('nav', 'nav'), document.createTextNode(' \t '), document.createComment('x')]);
+      expect([...a.calls, ...b.calls].some((m) => m.includes('layout-slot-missing'))).toBe(false);
+    });
+
+    it('shadow root でも、既定の slot が無ければ警告する（slot="" は既定の slot へ行く子）', async () => {
+      const a = await place('<slot name="nav"></slot>', [el('nav', 'nav'), el('section', '')], true);
+      expect(a.calls.filter((m) => m.includes('[wcs/layout-slot-missing]'))).toHaveLength(1);
+      const b = await place('<slot name="nav"></slot><slot></slot>', [el('nav', 'nav'), el('section')], true);
+      const c = await place('<slot name="nav"></slot>', [el('nav', 'nav')], true);
+      expect([...b.calls, ...c.calls].some((m) => m.includes('layout-slot-missing'))).toBe(false);
+    });
+
+    it('テンプレートが持ち込んだ、どの router にも使われない outlet を警告する（router の直後のものは除く）', async () => {
+      const stray = await place('<main><wcs-outlet></wcs-outlet></main>', []);
+      expect(stray.calls.filter((m) => m.includes('[wcs/router-outlet-misplaced]'))).toHaveLength(1);
+      const paired = await place('<main><wcs-router></wcs-router><wcs-outlet></wcs-outlet></main>', []);
+      expect(paired.calls.some((m) => m.includes('router-outlet-misplaced'))).toBe(false);
+      const shadow = await place('<wcs-outlet></wcs-outlet><slot></slot>', [], true);
+      expect(shadow.calls.filter((m) => m.includes('[wcs/router-outlet-misplaced]'))).toHaveLength(1);
+    });
+  });
 });

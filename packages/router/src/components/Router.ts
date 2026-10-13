@@ -131,6 +131,8 @@ export class Router extends HTMLElement implements IRouter {
   private _leaveChecked: boolean = false;
   /** 離脱が確認された: 次の commit まで（その遷移の guard のリダイレクトで聞き直さない） */
   private _leaveConfirmed: boolean = false;
+  /** ページを離れるナビゲーションが確認された: beforeunload で二度聞かない（次のタスクで戻す） */
+  private _unloadConfirmed: boolean = false;
   private _listeningUnload: boolean = false;
   private _connectedCallbackPromise: Promise<void>;
   private _resolveConnectedCallback: (() => void) | null = null;
@@ -254,8 +256,9 @@ export class Router extends HTMLElement implements IRouter {
   }
 
   // `leaveConfirm` は input（属性は leave-confirm）。空でない文字列の間、別のルートへ出るナビゲーション
-  // （リンク・戻る / 進む・navigate()）の前に confirm(値) を出し、断られたら出ない。ページを閉じる・
-  // 読み直すときはブラウザ自身の確認（beforeunload）。未保存の変更を守る口（docs/seam-apps.md、
+  // （リンク・戻る / 進む・navigate()）と、ページを離れる取り消せるナビゲーション（basename の外・別の
+  // オリジンへのリンク、フォームの送信）の前に confirm(値) を出し、断られたら出ない。ページを閉じる・
+  // 読み直すとき（と Navigation API の無いブラウザでページを離れるとき）はブラウザ自身の確認（beforeunload）。未保存の変更を守る口（docs/seam-apps.md、
   // router-admin — Navigation API を直接使うしかなかった）。null は属性を外し、undefined は最初の属性へ戻す。
   get leaveConfirm(): string | null {
     return this.getAttribute("leave-confirm") || null;
@@ -267,7 +270,7 @@ export class Router extends HTMLElement implements IRouter {
   }
 
   private _onBeforeUnload = (e: Event): void => {
-    if (this.leaveConfirm !== null) e.preventDefault();
+    if (this.leaveConfirm !== null && !this._unloadConfirmed) e.preventDefault();
   };
 
   /** beforeunload は leaveConfirm がある間だけ聞く（リスナーがあるだけで bfcache を外すブラウザがある） */
@@ -290,6 +293,33 @@ export class Router extends HTMLElement implements IRouter {
       return true;
     }
     return (this._leaveConfirmed = window.confirm(message));
+  }
+
+  /**
+   * ページを離れるナビゲーション（どの router も受けない）の確認。leaveConfirm の文言で聞き、断られたら
+   * 取り消す。受け入れたら、そのナビゲーションの beforeunload で二度聞かない（Chromium では navigate の
+   * 直後、次のタスクより前に来る。遅れて来るブラウザでは二度聞くだけ）。取り消せないもの（別の文書への
+   * 戻る / 進む）と最初の表示の前は聞かない — beforeunload の側に任せる。
+   */
+  private _confirmUnload(navEvent: NavigateEventLike): void {
+    const message = this.leaveConfirm;
+    if (message === null || navEvent.cancelable === false || !this._hasCommitted || this._unloadConfirmed) return;
+    if (!window.confirm(message)) {
+      navEvent.preventDefault?.();
+      return;
+    }
+    this._unloadConfirmed = true;
+    setTimeout(() => {
+      this._unloadConfirmed = false;
+    }, 0);
+  }
+
+  /** 同じ文書の別の router が受ける URL か（マルチ Router: そちらの遷移はページを離れない） */
+  private _ownedByAnotherRouter(fullPath: string): boolean {
+    for (const node of document.querySelectorAll(config.tagNames.router)) {
+      if (node !== this && node instanceof Router && node._isOwnPath(fullPath)) return true;
+    }
+    return false;
   }
 
   private _getOutlet(): IOutlet {
@@ -619,7 +649,6 @@ export class Router extends HTMLElement implements IRouter {
 
   private _onNavigateFunc(navEvent: NavigateEventLike) {
     if (
-      !navEvent.canIntercept ||
       // ページ側が取り消したナビゲーション（未保存の確認など）に intercept() を呼ぶと
       // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
       navEvent.defaultPrevented ||
@@ -630,8 +659,13 @@ export class Router extends HTMLElement implements IRouter {
     }
     const url = new URL(navEvent.destination.url);
     const fullPath = this._normalizePathname(url.pathname);
-    // basename 配下でない URL は無視（マルチ Router 対応）
-    if (!this._isOwnPath(fullPath)) return;
+    // basename 配下でない URL は受けない（マルチ Router 対応）。どの router も受けないもの（別の
+    // オリジン、basename の外 — 言語を basename に持つページの言語の切り替え）はページを離れる:
+    // leaveConfirm の文言で聞く（docs/seam-apps.md、router-admin）
+    if (!navEvent.canIntercept || !this._isOwnPath(fullPath)) {
+      if (!navEvent.canIntercept || !this._ownedByAnotherRouter(fullPath)) this._confirmUnload(navEvent);
+      return;
+    }
     // 別のルートへ出る前の確認（leaveConfirm）。取り消せないナビゲーション（一部の戻る / 進む）では
     // 聞けない。自分の navigate() / replace() からのものは確認済み
     if (!this._leaveChecked && navEvent.cancelable !== false && !this._confirmLeave(fullPath)) {
