@@ -18,7 +18,7 @@ const MIRRORED_ATTRIBUTES: readonly string[] = ['title', 'rel', 'target', 'downl
 
 export class Link extends HTMLElement implements ILink {
   static get observedAttributes(): string[] {
-    return ['to', ...MIRRORED_ATTRIBUTES];
+    return ['to', 'match', ...MIRRORED_ATTRIBUTES];
   }
 
   private _childNodeArray: Node[] = [];
@@ -240,6 +240,10 @@ export class Link extends HTMLElement implements ILink {
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
+    if (name === 'match' && oldValue !== newValue) {
+      this._updateActiveState();
+      return;
+    }
     if (name === 'to' && oldValue !== newValue) {
       this._path = newValue || '';
       if (this._anchorElement) {
@@ -276,12 +280,16 @@ export class Link extends HTMLElement implements ILink {
         : pathname
     );
 
+    // match="prefix": 下のパスでも active（サイドナビの「商品」が /products/3 でも印を付ける —
+    // docs/seam-apps.md、router-admin）。そのページそのものではないので aria-current は "true"
+    const exact = currentPath === linkPath;
+    const within = !exact && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
     if (this._anchorElement) {
-      if (currentPath === linkPath) {
+      if (exact || within) {
         this._anchorElement.classList.add('active');
         // 修理・既定オン（docs/a11y-design.md §3-3）: active class と同じ事実の ARIA 表現。
         // 鮮度保証は active class と同一（同じ分岐・同じ呼び出し経路）。
-        this._anchorElement.setAttribute('aria-current', 'page');
+        this._anchorElement.setAttribute('aria-current', exact ? 'page' : 'true');
       } else {
         this._anchorElement.classList.remove('active');
         this._anchorElement.removeAttribute('aria-current');

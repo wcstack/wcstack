@@ -6,6 +6,8 @@
 
 A `<wcs-state>` page is plain DOM, so it already tests headlessly with happy-dom — the recipe is in the [state README](../state/README.md#testing-your-page) and needs no test-only API. `@wcstack/testing` is that recipe packaged: mount the HTML, wait for every element and binding, read and write the state, settle, assert. It is a convenience, not a requirement; the bare recipe keeps working without it.
 
+It is for `<wcs-state>` pages. A page built on `@wcstack/signals` has no state tree for `state()` to return: test its signals, components and `bindNode` wiring directly under vitest + happy-dom.
+
 ```ts
 import { mount, settle, fire } from "@wcstack/testing";
 

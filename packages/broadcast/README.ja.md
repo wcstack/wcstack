@@ -49,8 +49,8 @@ npm install @wcstack/broadcast
 post は DOM クリック（autoTrigger）または command-token から起動します。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/broadcast/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-broadcast id="bc" name="room"></wcs-broadcast>
 

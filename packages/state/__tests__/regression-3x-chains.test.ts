@@ -514,7 +514,9 @@ describe("#338 有限の連鎖・外から刻む書き込みは打ち切らな�
     };
     const error = errorSpy();
     try {
-      const { host, root, read } = await page(`<input data-wcs="value: text"><p>{{ text }}</p><b>{{ echo }}</b>`, {
+      // (the input's text under an if: a pass that only updates values does not go to the arbiter —
+      // docs/seam-apps.md, router-admin — so each input changes a branch condition to make one)
+      const { host, root, read } = await page(`<input data-wcs="value: text"><template data-wcs="if: text"><p>{{ text }}</p></template><b>{{ echo }}</b>`, {
         text: "",
         echo: "",
         $renderedCallback(this: any) { if (this.echo !== this.text) this.echo = this.text; },
@@ -656,9 +658,7 @@ describe("#353 $watch を挟む描画の循環も、描画の連鎖の上限で�
       $watch: { x(this: any, current: unknown) { this.mode = current; } },
     }));
     await settle();
-    // 4.0 の $watch は読み込み時の要素からの初期同期を見ない（issues-misc.test.ts #353 形 2b）: 書き込みで循環を始める
-    write((s) => { s.mode = "kick"; });
-    await settle();
+    // $watch は要素が bind のときに持っていた値でも 1 回動く（docs/seam-apps.md）: 循環は読み込みで始まる
 
     expect(error).toHaveBeenCalledTimes(1);
     expect(watchLimits(events)).toEqual([]);

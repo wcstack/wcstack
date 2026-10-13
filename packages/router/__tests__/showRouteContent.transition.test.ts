@@ -140,6 +140,7 @@ describe('showRouteContent — transition-runner 連携', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     router.navigate = vi.fn().mockResolvedValue(undefined);
+    router.replace = vi.fn().mockResolvedValue(undefined);
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => { /* silence */ });
 
     const previous = createMockRoute();

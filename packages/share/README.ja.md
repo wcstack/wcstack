@@ -39,8 +39,8 @@ npm install @wcstack/share
 ### 1. 記事を共有する（キャンセルは失敗と区別して扱う）
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/share/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

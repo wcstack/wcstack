@@ -2589,6 +2589,8 @@ The handler runs with `this` bound to a **writable** state proxy, so it can writ
 
 **Watching a getter makes it eager.** A computed getter is normally lazy, and its dependencies are only recorded when it is evaluated — so an unrendered getter would never fire at all. Declaring one in `$watch` evaluates it once at connect — for every row, when it is a wildcard getter (`items.*.tax`) — and again at the end of every batch that touches its dependencies. Its `prev` is the previous evaluation, and a change that reaches it fires the watch whether or not the value changed (but for the two cases above). Watch a heavy computed and you pay that evaluation on every batch; exceptions inside it surface through the watch instead of staying dormant. An evaluation at connect that throws is reported (`$watch initial evaluation of "…" threw.`), that watch's first `prev` is `undefined`, and everything else goes on.
 
+**A value an element already had fires too.** Watches start after `$connectedCallback`; a write before then does not fire them. But an element bound to a watched path may already hold its value when the binding attaches — an open `<wcs-sse>`'s `connected`, the router's first `typedParams` — or may report it a moment later, depending on how fast the page loaded. So an element's write to a watched path before the watches start fires the watch once when they start, with `prev` the seed, if the path still holds that value. A write from code before then — `$connectedCallback` — still fires nothing, and a value equal to the seed was never written.
+
 Firing order is defined in three layers, and only the middle one is yours to steer:
 
 | Layer | Order | Your control |

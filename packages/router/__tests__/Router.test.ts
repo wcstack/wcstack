@@ -510,6 +510,127 @@ describe('Router', () => {
     });
   });
 
+  describe('leaveConfirm（離脱の確認 — docs/seam-apps.md、router-admin）', () => {
+    /** commit 済みの router（今は /edit）。navigation の mock を入れる */
+    function committedRouter(path = '/edit') {
+      const router = document.createElement('wcs-router') as Router;
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: '', search: '', path });
+      const navigation = { navigate: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() };
+      (window as any).navigation = navigation;
+      return { router, navigation };
+    }
+    /** happy-dom に window.confirm は無いので入れる（返す値を順に。最後の値を繰り返す） */
+    function stubConfirm(...answers: boolean[]) {
+      let i = 0;
+      const fn = vi.fn(() => answers[Math.min(i++, answers.length - 1)]);
+      (window as any).confirm = fn;
+      return fn;
+    }
+    afterEach(() => {
+      delete (window as any).confirm;
+    });
+    const navEventTo = (url: string, extra: Record<string, unknown> = {}) => ({
+      canIntercept: true, hashChange: false, downloadRequest: null,
+      destination: { url }, intercept: vi.fn(), preventDefault: vi.fn(), ...extra,
+    });
+
+    it('入力として宣言し、属性 leave-confirm へ反映する（null は外す）', () => {
+      expect(Router.wcBindable.inputs!.find((i) => i.name === 'leaveConfirm')?.attribute).toBe('leave-confirm');
+      const router = document.createElement('wcs-router') as Router;
+      expect(router.leaveConfirm).toBeNull();
+      router.leaveConfirm = 'Discard?';
+      expect(router.getAttribute('leave-confirm')).toBe('Discard?');
+      router.leaveConfirm = null;
+      expect(router.hasAttribute('leave-confirm')).toBe(false);
+    });
+
+    it('別のルートへ出るナビゲーションで confirm を出し、断られたら取り消して intercept しない', () => {
+      const { router } = committedRouter();
+      router.leaveConfirm = 'Discard your changes?';
+      const confirm = stubConfirm(false);
+      const ev = navEventTo('http://localhost/products');
+      (router as any)._onNavigateFunc(ev);
+      expect(confirm).toHaveBeenCalledWith('Discard your changes?');
+      expect(ev.preventDefault).toHaveBeenCalled();
+      expect(ev.intercept).not.toHaveBeenCalled();
+    });
+
+    it('受け入れたら intercept する。その遷移の続き（guard のリダイレクト）では聞き直さず、commit で元に戻る', () => {
+      const { router } = committedRouter();
+      router.leaveConfirm = 'Discard?';
+      const confirm = stubConfirm(true);
+      const ev = navEventTo('http://localhost/products');
+      (router as any)._onNavigateFunc(ev);
+      expect(ev.intercept).toHaveBeenCalled();
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/login'));
+      expect(confirm).toHaveBeenCalledTimes(1);
+      router.commitNavigation({ params: {}, typedParams: {}, routeName: '', search: '', path: '/login' });
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/other'));
+      expect(confirm).toHaveBeenCalledTimes(2);
+    });
+
+    it('同じルート（クエリだけ）・leaveConfirm なし・取り消せないナビゲーション・最初の表示の前は聞かない', () => {
+      const confirm = stubConfirm(false);
+      const { router } = committedRouter();
+      router.leaveConfirm = 'Discard?';
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/edit?tab=2'));
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/products', { cancelable: false }));
+      router.leaveConfirm = null;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/products'));
+      const fresh = document.createElement('wcs-router') as Router;
+      fresh.leaveConfirm = 'Discard?';
+      (fresh as any)._onNavigateFunc(navEventTo('http://localhost/products'));
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('navigate() は確かめてから navigation.navigate を呼び、navigate イベントで二度聞かない。断られたら呼ばない', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveConfirm = 'Discard?';
+      const confirm = stubConfirm(false, true);
+      await router.navigate('/products');
+      expect(navigation.navigate).not.toHaveBeenCalled();
+      navigation.navigate.mockImplementation((url: string) => {
+        (router as any)._onNavigateFunc(navEventTo(`http://localhost${url}`));
+      });
+      await router.navigate('/products');
+      expect(navigation.navigate).toHaveBeenCalledWith('/products');
+      expect(confirm).toHaveBeenCalledTimes(2);
+    });
+
+    it('navigate() と同じ流れで leaveConfirm が外れたら聞かない（保存のハンドラが両方を書く形）', async () => {
+      const { router, navigation } = committedRouter();
+      router.leaveConfirm = 'Discard?';
+      const confirm = stubConfirm(false);
+      const done = router.navigate('/products/3');
+      router.leaveConfirm = null; // the binding that clears it applied after navigateUrl's
+      await done;
+      expect(confirm).not.toHaveBeenCalled();
+      expect(navigation.navigate).toHaveBeenCalledWith('/products/3');
+    });
+
+    it('beforeunload は leaveConfirm がある間だけ聞き、その間は取り消す', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const add = vi.spyOn(window, 'addEventListener');
+      const remove = vi.spyOn(window, 'removeEventListener');
+      router.leaveConfirm = 'Discard?'; // not connected yet: nothing
+      expect(add).not.toHaveBeenCalledWith('beforeunload', expect.anything());
+      document.body.appendChild(router);
+      expect(add).toHaveBeenCalledWith('beforeunload', expect.any(Function));
+      const handler = add.mock.calls.find((c) => c[0] === 'beforeunload')![1] as (e: Event) => void;
+      const ev = new Event('beforeunload', { cancelable: true });
+      handler(ev);
+      expect(ev.defaultPrevented).toBe(true);
+      router.leaveConfirm = null;
+      expect(remove).toHaveBeenCalledWith('beforeunload', handler);
+      const ev2 = new Event('beforeunload', { cancelable: true });
+      handler(ev2);
+      expect(ev2.defaultPrevented).toBe(false);
+      router.leaveConfirm = 'Again';
+      router.remove();
+      expect(remove).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('_onNavigateFunc', () => {
     it('canInterceptがfalseの場合、何もしないこと', () => {
       const router = document.createElement('wcs-router') as Router;
@@ -517,6 +638,21 @@ describe('Router', () => {
         canIntercept: false,
         hashChange: false,
         downloadRequest: null,
+        intercept: vi.fn(),
+      };
+
+      (router as any)._onNavigateFunc(navEvent);
+      expect(navEvent.intercept).not.toHaveBeenCalled();
+    });
+
+    it('ページ側が取り消した（defaultPrevented）ナビゲーションには intercept しないこと（呼ぶと InvalidStateError — docs/seam-apps.md、router-admin）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const navEvent = {
+        canIntercept: true,
+        defaultPrevented: true,
+        hashChange: false,
+        downloadRequest: null,
+        destination: { url: 'http://localhost/next' },
         intercept: vi.fn(),
       };
 
@@ -1325,7 +1461,7 @@ describe('Router', () => {
 
   describe('wcBindable (inputs / commands)', () => {
     it('inputsにbasenameが宣言されていること', () => {
-      expect(Router.wcBindable.inputs).toHaveLength(3);
+      expect(Router.wcBindable.inputs).toHaveLength(4);
       expect(Router.wcBindable.inputs![0].name).toBe('basename');
       expect(Router.wcBindable.inputs![0].attribute).toBe('basename');
     });

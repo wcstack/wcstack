@@ -962,3 +962,34 @@ describe("wcs/getter-untracked-read — テンプレートリテラルのキー�
     expect(codes(validateSemantics(html), WcsDiagnosticCode.GetterUntrackedRead)).toHaveLength(1);
   });
 });
+
+describe("wcs/on-handler-this — $on のハンドラの this（docs/seam-apps.md: router-auth / state-collab-board）", () => {
+  it("メソッド短縮記法のハンドラで this.… を使うと error（ランタイムは handler(state, event) と呼び、this は undefined）", () => {
+    const html = script(`{ session: null, $eventTokens: ["loginResponded"], $on: { loginResponded(event) { this.session = event.detail; } } }`);
+    const found = validateSemantics(html, "wcs-state", "en").filter((d) => d.code === WcsDiagnosticCode.OnHandlerThis);
+    expect(found).toHaveLength(1);
+    expect(found[0].severity).toBe("error");
+    expect(found[0].message).toContain('The $on handler "loginResponded" uses this');
+    expect(html.slice(found[0].start, found[0].end)).toBe("session");
+  });
+
+  it("function 式の値のハンドラも報告する", () => {
+    const html = script(`{ n: 0, $eventTokens: ["tick"], $on: { tick: function (state) { this.n++; } } }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.OnHandlerThis)).toHaveLength(1);
+  });
+
+  it("state を第 1 引数で使うハンドラ・入れ子の function の this・アロー関数の値・$watch の this は報告しない", () => {
+    const html = script(`{
+      n: 0,
+      $eventTokens: ["a", "b", "c"],
+      $on: {
+        a(state, event) { state.n = event.detail; },
+        b(state) { const o = { f: function () { return this.x; } }; state.n = o.f(); },
+        c: (state) => { state.n = 1; },
+      },
+      $watch: { n(cur) { this.m = cur; } },
+      m: 0,
+    }`);
+    expect(codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.OnHandlerThis)).toHaveLength(0);
+  });
+});

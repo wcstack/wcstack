@@ -41,8 +41,8 @@ npm install @wcstack/geolocation
 When `<wcs-geo>` is connected to the DOM, it requests a single position fix and publishes the result.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/geolocation/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

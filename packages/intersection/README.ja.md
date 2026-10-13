@@ -53,8 +53,8 @@ npm install @wcstack/intersection
 `visible` はターゲットが初めて交差したときに `true` に切り替わり、その後 `true` の**ままになります**。画像の `src` をこれにバインドすると、画像はビューにスクロールインしたときに一度だけ読み込まれます。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/intersection/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

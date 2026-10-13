@@ -40,8 +40,8 @@ npm install @wcstack/fullscreen
 ### 1. Fullscreen an image on button click
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/fullscreen/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

@@ -41,8 +41,8 @@ CDN（バージョン固定）: `https://esm.run/@wcstack/media-query@4.0.4/auto
 ### 1. テーマのダークモード既定値
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/media-query/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

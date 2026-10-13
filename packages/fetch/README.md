@@ -50,8 +50,8 @@ When `url` changes, `<wcs-fetch>` automatically runs a new request.
 If another request is already in flight, it aborts the previous one.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">
@@ -218,6 +218,20 @@ and no event fires. Set the `url` first, then write `true` again to execute.
 ```
 
 `body` is a **one-shot** input: `<wcs-fetch>` sends it and resets it to `null` (see [Design Notes](#design-notes)). So build the body in the handler that starts the request, and assign a new object every time. Binding the form object itself (`body: newUser`) sends it once: typing writes `newUser.name`, a path *below* the bound one, which never re-applies the binding, so the second submit goes without a body — no error. `wcs-validate` reports that form as `wcs/input-nested-write`.
+
+**One element is one request at a time.** A new request on the same `<wcs-fetch>` aborts the one in flight, and a `trigger` that is still `true` drops a second `true` (the same value). So give each request that can overlap its own element — one per kind of change (create / update / delete), not one shared by every mutation — or two quick changes lose one of them silently.
+
+**Field errors from the server** (a `422` with `{ errors: { name: "…" } }`) arrive in `error`: on an HTTP error `error` is `{ status, statusText, body }`, with the response body as text. Read them with a getter:
+
+```js
+get fieldErrors() {
+  const e = this.submitError;
+  if (!e?.body) return {};
+  try { return JSON.parse(e.body).errors ?? {}; } catch { return {}; }
+},
+```
+
+and bind `textContent: fieldErrors.name` next to the field. `error` goes back to `null` when the next request succeeds.
 
 ### 5. Infinite scroll with `<wcs-infinite-scroll>`
 

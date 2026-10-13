@@ -330,6 +330,39 @@ describe('Link', () => {
       }
     });
 
+    it('match="prefix" なら下のパスでも active（aria-current は "true"）。完全一致は "page"、外れたら外す（docs/seam-apps.md、router-admin）', () => {
+      const originalHref = Object.getOwnPropertyDescriptor(window.location, 'href');
+      const at = (href: string) => Object.defineProperty(window.location, 'href', { writable: true, value: href });
+      try {
+        at('http://localhost/products/3');
+        const router = document.createElement('wcs-router') as Router;
+        document.body.appendChild(router);
+        const link = document.createElement('wcs-link') as Link;
+        link.setAttribute('to', '/products');
+        link.textContent = 'Products';
+        document.body.appendChild(link);
+        const anchor = link.anchorElement!;
+        // 既定（exact）は下のパスで active にしない
+        expect(anchor.classList.contains('active')).toBe(false);
+
+        link.setAttribute('match', 'prefix');
+        expect(anchor.classList.contains('active')).toBe(true);
+        expect(anchor.getAttribute('aria-current')).toBe('true');
+
+        at('http://localhost/products');
+        (link as any)._updateActiveState();
+        expect(anchor.getAttribute('aria-current')).toBe('page');
+
+        // /productsX は下のパスではない
+        at('http://localhost/productsX');
+        (link as any)._updateActiveState();
+        expect(anchor.classList.contains('active')).toBe(false);
+        expect(anchor.hasAttribute('aria-current')).toBe(false);
+      } finally {
+        if (originalHref) Object.defineProperty(window.location, 'href', originalHref);
+      }
+    });
+
     it('現在のパスと一致しない場合にactiveクラスを追加しないこと', () => {
       const router = document.createElement('wcs-router') as Router;
       document.body.appendChild(router);

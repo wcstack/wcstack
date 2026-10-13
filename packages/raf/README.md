@@ -40,8 +40,8 @@ npm install @wcstack/raf
 When `<wcs-raf>` is connected to the DOM, it automatically starts a frame loop. Bind `tick` / `dt` to state paths — or receive the frame as an event token and run one physics step per frame:
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

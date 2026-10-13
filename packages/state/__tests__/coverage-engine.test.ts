@@ -703,7 +703,8 @@ describe("view-transition の arbiter", () => {
 
   it("run が reject しても反映は済み、失敗は console.error に出る", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const e = setup(`<p>{{ n }}</p>`, { n: 1 });
+    // (a structural change: a pass that only updates values does not go to the arbiter)
+    const e = setup(`<template data-wcs="for: items"><p>{{ . }}</p></template>`, { items: [1] });
     const failure = new Error("arbiter failed");
     (globalThis as any)[RUNNER_KEY] = {
       protocol: "wcs-transition-runner", version: 1, naming: "manual", namingLimit: 100,
@@ -713,7 +714,7 @@ describe("view-transition の arbiter", () => {
         return Promise.reject(failure);
       },
     };
-    e.proxy.n = 2;
+    e.proxy.items = [2];
     await flush();
     expect(texts("p")).toEqual(["2"]);
     expect(error).toHaveBeenCalledWith(failure);

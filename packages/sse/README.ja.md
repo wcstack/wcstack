@@ -47,8 +47,8 @@ npm install @wcstack/sse
 `<wcs-sse>` が DOM に接続され `url` が設定されると、自動的に `EventSource` を開きます。JSON ペイロードは自動パースされます。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">
@@ -184,6 +184,8 @@ data: {"side":"buy","qty":10}
 - `error` は最新のエラー `Event` を保持
 
 再接続を止めるには、`close()` を呼ぶ（または DOM から要素を削除する）。
+
+**再接続の後に取りこぼしを埋めるのは、サーバーとページの仕事です。** ブラウザが再接続で `Last-Event-ID` を送るのは、ストリームが `id:` 付きのイベントを届けた後だけです。スナップショットを読んでからストリームを開くページは、最初の切断の時点で 1 つも受け取っていないので、再接続は何も求めず、その間の変更は失われ、`connected` はまた `true` になります。ストリームに始める位置を渡してください — スナップショットの位置を URL に入れる（`data-wcs="url: eventsUrl"` と、`"/api/events?since=" + this.seq` を返す getter）か、サーバーが最初に今の `id:` を送る。また `CLOSED (2)`（HTTP のエラー）で終わったストリームを、ブラウザは再試行しません: `close()` と `trigger` で、いた位置から開き直します。
 
 ## ステートサーフェス vs コマンドサーフェス
 

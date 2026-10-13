@@ -33,6 +33,13 @@ export interface WcsNetworkSnapshot {
   rtt: number | null;
   saveData: boolean | null;
   supported: boolean;
+  /**
+   * `!navigator.onLine`, followed through the window's `online` / `offline` events. Every browser
+   * has it, so it does not depend on `supported` (Network Information). `null` where there is no
+   * navigator (SSR). Named `offline`, not `online`: a `data-wcs` name starting with `on` is an
+   * event binding (`online:` would listen for a "line" event).
+   */
+  offline: boolean | null;
 }
 
 /**

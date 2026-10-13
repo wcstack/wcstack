@@ -82,6 +82,7 @@ export const WcsDiagnosticCode = {
   // 静的にしか検出できない。対象はオブジェクトリテラル初期値のルートだけ（配列は `items`
   // の依存で足りる — 行の置換は `items` 自体を書き換え、in-place 変異は array-mutation が止める）。
   GetterUntrackedRead: "wcs/getter-untracked-read",
+  OnHandlerThis: "wcs/on-handler-this",
   // --- <wcs-state> script: $watch declaration ---
   // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
   // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。

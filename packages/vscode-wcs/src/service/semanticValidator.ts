@@ -28,7 +28,7 @@
 import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
-import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
+import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
 import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
 import { isOutOfRangeIndexRead, MAX_INDEX_PARAM } from './indexPath.js';
 import { countWildcardSegments, getInnermostForPath, getResolvedForListPath, getRowShorthandForPath } from './forContext.js';
@@ -791,6 +791,37 @@ function hasOutOfRangeIndexName(script: string): boolean {
 /**
  * HTML 内の `<wcs-state>` スクリプトから意味論的な取り違えを検出する。
  */
+/** どの名前にも当たる（`this.<何でも>` を集める）。 */
+const ANY_MEMBER: MemberNameFilter = { has: () => true };
+
+/**
+ * `wcs/on-handler-this`（error）: `$on` のハンドラの中の `this.…`。ランタイムは `$on` のハンドラを
+ * `handler(state, event, …)` と呼ぶ（engine.ts の deliver）ので `this` は undefined — `$watch` や
+ * メソッドの書き方で書くと、呼ばれたときに例外になる。router-auth と state-collab-board の初めての作者が
+ * どちらも踏み、ランタイムの報告（`event.detail` を state のパスとして読んだ `binding-path-missing`）は
+ * 原因を指さなかった（docs/seam-apps.md）。入れ子の function / class の中の `this` と、値がアロー関数の
+ * ハンドラは見ない（断定できない側に倒す）。ハンドラごとに最初の 1 か所を報告する。
+ */
+function validateOnHandlerThis(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  for (const handler of analyzeOnHandlerSources(script)) {
+    const refs = handler.kind === 'body'
+      ? collectThisMemberRefs(handler.text, ANY_MEMBER)
+      : collectThisMemberRefsInValue(handler.text, ANY_MEMBER);
+    const first = refs?.[0];
+    if (first === undefined) continue;
+    out.push({
+      code: WcsDiagnosticCode.OnHandlerThis,
+      start: scriptStart + handler.start + first.start,
+      end: scriptStart + handler.start + first.end,
+      severity: 'error',
+      message: msgs.onHandlerThis(handler.name),
+    });
+  }
+  return out;
+}
+
 export function validateSemantics(
   html: string,
   stateTagName: string = 'wcs-state',
@@ -809,6 +840,7 @@ export function validateSemantics(
     out.push(...validateIndexParamReads(block.content, block.contentStart, locale));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
+    out.push(...validateOnHandlerThis(block.content, block.contentStart, locale));
   }
   out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale));
   out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale));

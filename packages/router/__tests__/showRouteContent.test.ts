@@ -152,6 +152,7 @@ describe('showRouteContent', () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
     vi.spyOn(router, 'navigate').mockResolvedValue(undefined);
+    vi.spyOn(router, 'replace').mockResolvedValue(undefined);
     const route1 = createMockRoute({ shouldChange: vi.fn().mockReturnValue(true), guardCheck: vi.fn().mockResolvedValue({ a: 1 }) });
     const route2 = createMockRoute({
       shouldChange: vi.fn().mockReturnValue(true),
@@ -439,6 +440,8 @@ describe('showRouteContent', () => {
 
     router.navigate = vi.fn().mockResolvedValue(undefined);
 
+    router.replace = vi.fn().mockResolvedValue(undefined);
+
     const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const matchResult = createMatchResult([route1]);
@@ -604,6 +607,7 @@ describe('showRouteContent — guard のリダイレクトと commit の時機�
     Object.defineProperty(router, 'connectedCallbackPromise', { get: () => promise });
     router.replace = vi.fn().mockResolvedValue(undefined);
     router.navigate = vi.fn().mockResolvedValue(undefined);
+    router.replace = vi.fn().mockResolvedValue(undefined);
     return router;
   }
   const cancelling = (path = '/login') => createMockRoute({

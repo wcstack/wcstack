@@ -136,8 +136,8 @@ npm install @wcstack/upload
 ### 4. `@wcstack/state` と組み合わせる
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

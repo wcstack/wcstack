@@ -43,8 +43,8 @@ npm install @wcstack/accelerometer
 (e.g. from a button) before readings flow:
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/accelerometer/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

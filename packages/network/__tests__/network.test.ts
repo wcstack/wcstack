@@ -32,6 +32,7 @@ describe("Network (Shell)", () => {
     expect(el.rtt).toBe(200);
     expect(el.saveData).toBe(true);
     expect(el.supported).toBe(true);
+    expect(el.offline).toBe(false);
   });
 
   it("接続前の getter は既定値を返す", () => {
@@ -112,6 +113,6 @@ describe("Network (Shell)", () => {
 
   it("wcBindable: Shell は Core の5プロパティをそのまま継承する", () => {
     const props = WcsNetwork.wcBindable.properties.map((p) => p.name);
-    expect(props).toEqual(["effectiveType", "downlink", "rtt", "saveData", "supported"]);
+    expect(props).toEqual(["effectiveType", "downlink", "rtt", "saveData", "supported", "offline"]);
   });
 });

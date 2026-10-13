@@ -47,8 +47,8 @@ npm install @wcstack/clipboard
 書き込みにはユーザージェスチャが必要なので、DOM クリック（autoTrigger）または command-token から起動します。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/clipboard/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-clipboard id="cb"></wcs-clipboard>
 

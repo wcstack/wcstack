@@ -191,7 +191,11 @@ The `navigate` event's `intercept({ handler })` awaits `run()`, so navigation is
 
 The wrap point is each pass of the drain in `Engine.drain` (`engine.ts`): the DOM
 changes of a pass — the list views first, then the queued bindings — go to
-`runTransition("state", …)`. Consequences, normative:
+`runTransition("state", …)`. **Amended 2026-10-13: only a pass that changes structure** — a
+dirty list view, or a queued `if` / `elseif` condition — goes to the arbiter; a pass that only
+updates values is applied directly, as with no arbiter. Every keystroke in a bound input had
+started a document-wide transition and the click after it was lost (docs/seam-apps.md,
+router-admin). Consequences, normative:
 
 - The drain is already a microtask; with a transition it becomes **a frame**. Code
   that writes state and then reads the DOM after `await Promise.resolve()` must

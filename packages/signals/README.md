@@ -141,11 +141,14 @@ import { signal, h, For, Index } from "@wcstack/signals/dom";
 
 const todos = signal([{ id: 1, text: "a" }, { id: 2, text: "b" }]);
 
-// For — keyed by `id`. Rows are reused/moved on reorder; `each` receives the item
-// and an index ACCESSOR (the index changes when the row moves).
+// For — keyed by `id`. Rows are reused/moved on reorder; `each` receives the item it
+// was built for, an index ACCESSOR (the index changes when the row moves) and a CURRENT
+// accessor — the item under the row's key now.
 h("ul", null,
-  For(todos, (t, index) => h("li", null, () => `${index()}: ${t.text}`), { key: (t) => t.id }),
+  For(todos, (t, index, current) => h("li", null, () => `${index()}: ${current().text}`), { key: (t) => t.id }),
 );
+// An immutable update keeps the row and reaches it through current():
+todos.set(todos.peek().map((t) => (t.id === 1 ? { ...t, text: "A" } : t)));
 
 // Index — keyed by position (good for primitive arrays). `each` receives the item
 // as an ACCESSOR (the value at a slot changes; the slot does not) and a fixed index.
@@ -156,7 +159,45 @@ h("ul", null,
 ```
 
 - `For` keys default to value identity (`===`); pass `{ key }` for objects. Keys must be unique (a duplicate throws). Use `Index` for primitive lists where position is the stable identity.
+- **A keyed row is kept while its key is**, whatever object the list now holds under it — a reorder, a re-fetch and an immutable update all reuse the row (and its DOM, focus, input state). So the first argument is the item **the row was built with**: read what can change through `current()` (`() => current().text`), or `t.text` stays what it was.
 - `each` must return a **single** Node (one row = one node).
+
+### 7. Pages behind `@wcstack/router`, and a value kept in `<wcs-storage>`
+
+The router puts a route's content into `<wcs-outlet>` when the route is entered, takes it out when it is left, and puts **the same nodes** back on the next entry. `@wcstack/state` binds that content through the binder protocol; signals has no binder, so do not `render()` into route content from outside — the nodes come back with what you rendered last time, and a second render appends to it. Make each page a `SignalsElement` instead: it renders when it connects and disposes its effects when it disconnects, so a page is live exactly while its route is shown. Read the route's parameters by binding the router element:
+
+```html
+<wcs-router>
+  <template>
+    <wcs-route path="/"><catalog-page></catalog-page></wcs-route>
+    <wcs-route path="/products/:id(int)"><product-page></product-page></wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+```
+
+```js
+import "@wcstack/router/auto";
+import { computed, h, bindNode, mountNode, signal, SignalsElement } from "@wcstack/signals/dom";
+
+const router = bindNode(document.querySelector("wcs-router")); // defined by the import above
+const productId = computed(() => router.signals.typedParams.get()?.id ?? null);
+
+class ProductPage extends SignalsElement {
+  render() {
+    return h("h2", null, () => `Product ${productId.get()}`);
+  }
+}
+customElements.define("product-page", ProductPage);
+```
+
+A value kept in `<wcs-storage>`: the element loads its key when it connects, so right after `mountNode` its `value` signal holds what was saved (`null` for an empty key). **Seed your signal from it before `bindInput`** — `bindInput`'s first run writes the signal into the element, and an empty seed (`[]`) would be saved over the stored value on every load. This is the signals form of `#init=element` ([storage README §5](../storage/README.md#5-load-before-bind-initelement)).
+
+```js
+const store = mountNode("wcs-storage", { attrs: { key: "cart" } });
+const cart = signal(store.signals.value.peek() ?? []); // what was saved, or a fresh cart
+store.bindInput("value", cart);                         // from now on, changes are saved
+```
 
 ### 4. Async resource (switchMap)
 
@@ -206,10 +247,10 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 
 | Export | Signature | Notes |
 |---|---|---|
-| `h` | `(tag, props?, ...children) => Node` | `tag` is a tag string, a `Component`, or `Fragment`. Function/signal props & children are reactive. `onXxx` props are event listeners. |
+| `h` | `(tag, props?, ...children) => Node` | `tag` is a tag string, a `Component`, or `Fragment`. Function/signal props & children are reactive. A function under an `on…` key is an event listener: `onClick` → `click` (lowercased); `onclick` / `"onadd-to-cart"` → the name as written (`click`, `add-to-cart`). |
 | `render` | `(child, container) => Node` | Append a child (resolving fragments/arrays/reactives) into a container. |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` groups without a wrapper element. |
-| `For<T>` | `(list, each, options?) => ListView` | Keyed list. `list` is a signal or `() => T[]`; `each(item, index: () => number)` returns one Node; `options.key(item, i)` defaults to value identity. Reuses/moves rows by key; disposes removed rows. |
+| `For<T>` | `(list, each, options?) => ListView` | Keyed list. `list` is a signal or `() => T[]`; `each(item, index: () => number, current: () => T)` returns one Node (`item` is the item the row was built with, `current()` the item under its key now); `options.key(item, i)` defaults to value identity. Reuses/moves rows by key; disposes removed rows. |
 | `Index<T>` | `(list, each) => ListView` | Position-keyed list. `each(item: () => T, index: number)` returns one Node. Rows are reused per slot (the value at a slot updates via a signal); grows/shrinks at the tail. |
 | `SignalsElement` | `abstract` base (lazy `extends HTMLElement`) | Lifecycle base; implement `render()`, optionally `getMountPoint()`. `HTMLElement` is resolved lazily so the `./dom` module evaluates in non-DOM environments — see [SSR / non-DOM](#ssr--non-dom-the-dom-entry-loads-without-a-dom). |
 | `createSignalsElement` | `() => SignalsElementClass` | Build (memoized) the `SignalsElement` base at call time. Resolves `HTMLElement` when called; throws a clear error if no DOM. The SSR-safe way to obtain the base. |
@@ -373,13 +414,13 @@ A step-by-step guide (esbuild / tsc / Vite setups, a verifying `.tsx` example, t
 Both entries ship as production code-split bundles that import **one shared reactive-core chunk** — but that chunk is imported by **relative path** (`./core-*.esm.js`), so whether a buildless page ends up with one reactive instance depends on how the files are served.
 
 - **Map the single `/dom` entry (the recommended CDN form).** `@wcstack/signals/dom` re-exports the entire headless core (`signal` / `computed` / `effect` / `createRoot` / `onCleanup` / `flushSync` / `resource` / `streamResource` / `bindNode` / `nodeSource`) alongside the DOM helpers, so one specifier covers everything and the single instance is structural — nothing depends on chunk sharing. The signals demos in this repo all import from this one entry.
-- **Mapping both specifiers only works from a path-preserving origin.** `.` and `./dom` keep sharing the core only if their relative `./core-*.esm.js` import resolves to the **same URL** — i.e. the whole `dist/` is served as files (self-hosted, or version-pinned path URLs such as `https://cdn.jsdelivr.net/npm/@wcstack/signals@1.25.0/dist/index.esm.js` + `…/dist/dom.esm.js`, both pinned to the same version). A *transforming* ESM endpoint like `https://esm.run/@wcstack/signals` bundles each entry into its own self-contained file, so mapping both esm.run entries ships **two** reactive cores: a signal created through one is invisible to an effect from the other.
+- **Mapping both specifiers only works from a path-preserving origin.** `.` and `./dom` keep sharing the core only if their relative `./core-*.esm.js` import resolves to the **same URL** — i.e. the whole `dist/` is served as files (self-hosted, or version-pinned path URLs such as `https://cdn.jsdelivr.net/npm/@wcstack/signals@4.0.4/dist/index.esm.js` + `…/dist/dom.esm.js`, both pinned to the same version). A *transforming* ESM endpoint like `https://esm.run/@wcstack/signals` bundles each entry into its own self-contained file, so mapping both esm.run entries ships **two** reactive cores: a signal created through one is invisible to an effect from the other.
 
 Bundler users dedupe via the module graph and may use either entry.
 
 ## Stability
 
-The package version is **1.x**, but the public surface is split into a **stable** core and an **evolving / experimental** edge. The breaking changes are concentrated on the experimental side; the stable surface follows semver.
+The package is versioned with the rest of wcstack (**4.x**: every package is released with one version), but the public surface is split into a **stable** core and an **evolving / experimental** edge. The breaking changes are concentrated on the experimental side; the stable surface follows semver.
 
 | API group | Exports | Stability |
 |---|---|---|
@@ -390,7 +431,7 @@ The package version is **1.x**, but the public surface is split into a **stable*
 | **DOM layer** | `h` / `render` / `Fragment` / `For` / `Index` / `setProp` / `SignalsElement` / `createSignalsElement` / `ListView` / `mountNode` | **Evolving / experimental** — usable today; signatures and the element factory shape may adjust before they are promoted to stable. |
 | **Development mode** | `globalThis.__WCS_DEV__` + the warning codes | **Experimental** — diagnostics only; the set of warnings and their wording may change at any time. It never runs in production. |
 
-**Deprecation policy.** Within the **1.x** line, the **stable** APIs keep backward compatibility: any incompatible change is announced as a deprecation at least one minor release before it lands. APIs marked **evolving / experimental** may change in a minor release (signatures, type shapes, or warning wording) — pin an exact version if you depend on their current shape.
+**Deprecation policy.** Within a major version, the **stable** APIs keep backward compatibility: any incompatible change is announced as a deprecation at least one minor release before it lands. APIs marked **evolving / experimental** may change in a minor release (signatures, type shapes, or warning wording) — pin an exact version if you depend on their current shape.
 
 ## Notes & limitations
 

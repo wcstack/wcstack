@@ -28,7 +28,8 @@ export interface Hooks {
    */
   beforeWrite?: ((engine: Engine, p: Pattern, row: StateRow | null, value: unknown, element: boolean) => boolean) | null;
   /** A write landed: `direct` for a data write (then `old` is the value before, `value` the new one). */
-  written?: ((engine: Engine, p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean) => void) | null;
+  /** `element`: an element wrote it (a binding's write-back or its initial value), not code. */
+  written?: ((engine: Engine, p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean, element?: boolean) => void) | null;
   /** A change reached a getter occurrence whose cached value was current (it may now differ). */
   getterReached?: ((engine: Engine, g: Pattern, row: StateRow | null) => void) | null;
   /** A list was reconciled with a new value; `old` are its rows before. */

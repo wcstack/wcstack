@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- **`wcs/on-handler-this`（error・新設）** — `$on` のハンドラの中の `this.…`。ランタイムは `$on` のハンドラを `handler(state, event)` と呼ぶので `this` は undefined で、呼ばれたときに例外になる。router-auth と state-collab-board の初めての作者がどちらも `$watch` の書き方で書いた。
+- **`wcs/base-href-missing` が import map 経由の router も見る** — インラインの module script の `import "@wcstack/router/auto"`（signals のページの読み込み方）を数える（`<wcs-router>` のあるページで）。
 - **`wcs/storage-seed-clobber` が中身のあるリテラルのシードも報告し、error になった** — 空の値（`''` / `null` / `[]` / `{}`）しか見ておらず、`#init=element` なしの `<wcs-storage>` の `value` に `session: { token: "", user: {…} }` を束ねると、2 つ目のタブを開くたびに全タブがログアウトするのに黙っていた。どのリテラルのシードも読み込みのたびに保存値を上書きする（データの消失）ので error にする — warning では AI 向けスキルの完了条件（`--errors-only`）をすり抜けた。`undefined` のシードと式は対象外のまま。継ぎ目アプリ router-auth で見つけた（docs/seam-apps.ja.md）。
 
 ## 2.0.4 — 2026-10-13

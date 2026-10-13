@@ -12,6 +12,36 @@ interface Person {
 
 const P = (id: number, name: string): Person => ({ id, name });
 
+describe("For: 行の今の item（第 3 引数 current — docs/seam-apps.md、signals-shop）", () => {
+  it("同じ key の新しいオブジェクトに置き換えると、行は使い回したまま current() 経由の表示が新しい値になる", () => {
+    const list = signal<readonly Person[]>([P(1, "a"), P(2, "b")]);
+    const ul = h("ul", null,
+      For(list, (p, _index, current) => h("li", null, () => `${p.name}→${current().name}`), { key: (p) => p.id }),
+    ) as HTMLUListElement;
+    flushSync();
+    const [first, second] = [...ul.querySelectorAll("li")];
+
+    list.set([P(1, "A"), P(2, "b")]);
+    flushSync();
+    const after = [...ul.querySelectorAll("li")];
+    // 第 1 引数は作ったときの値のまま、current() は今の値
+    expect(after.map((li) => li.textContent)).toEqual(["a→A", "b→b"]);
+    expect(after[0]).toBe(first);
+    expect(after[1]).toBe(second);
+  });
+
+  it("並び替えと置き換えが同時でも、各行の current() はその key の今の item", () => {
+    const list = signal<readonly Person[]>([P(1, "a"), P(2, "b"), P(3, "c")]);
+    const ul = h("ul", null,
+      For(list, (_p, _index, current) => h("li", null, () => current().name), { key: (p) => p.id }),
+    ) as HTMLUListElement;
+    flushSync();
+    list.set([P(3, "C"), P(1, "a"), P(2, "B")]);
+    flushSync();
+    expect([...ul.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["C", "a", "B"]);
+  });
+});
+
 describe("For: keyed リスト", () => {
   it("初期描画でリストを行に展開する", () => {
     const list = signal<readonly Person[]>([P(1, "a"), P(2, "b"), P(3, "c")]);

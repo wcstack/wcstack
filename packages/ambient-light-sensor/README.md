@@ -45,8 +45,8 @@ leaves `illuminance` at its initial `null`. You must fire the `start` command
 (e.g. from a button) before readings flow:
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/ambient-light-sensor/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

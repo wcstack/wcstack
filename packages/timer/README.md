@@ -49,8 +49,8 @@ npm install @wcstack/timer
 When `<wcs-timer>` is connected to the DOM, it automatically starts an interval timer. Bind `tick` / `elapsed` / `running` to state paths.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

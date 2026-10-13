@@ -55,8 +55,8 @@ npm install @wcstack/resize
 Bind `width` to a state value and react to the *parent container's* size in your state logic.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/resize/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

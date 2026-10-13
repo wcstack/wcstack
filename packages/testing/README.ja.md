@@ -6,6 +6,8 @@
 
 `<wcs-state>` のページは素の DOM なので、happy-dom で既にヘッドレスにテストできます — レシピは [state README](../state/README.ja.md#ページをテストする) にあり、テスト専用 API は要りません。`@wcstack/testing` はそのレシピをパッケージにしたもの: HTML をマウントし、全要素と全バインドを待ち、state を読み書きし、settle して assert する。便利であって必須ではなく、素のレシピはこのパッケージ無しでも動き続けます。
 
+対象は `<wcs-state>` のページです。`@wcstack/signals` で作ったページには `state()` が返す状態の木がありません: その signal・コンポーネント・`bindNode` の配線を、vitest + happy-dom で直接テストします。
+
 ```ts
 import { mount, settle, fire } from "@wcstack/testing";
 

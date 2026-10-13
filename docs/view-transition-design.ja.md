@@ -178,7 +178,10 @@ router は `_initialize` の中で最初のルート適用を await するが、
 
 包む点は `Engine.drain`（`engine.ts`）の drain のパスごと。パスの DOM の変更 —— 先に
 リストのビュー、次にキューのバインディング —— を `runTransition("state", …)` へ渡す。
-規範的な帰結:
+**2026-10-13 改訂: 渡すのは構造を変えるパスだけ** —— 汚れたリストのビューか、キューにある
+`if` / `elseif` の条件を持つパス。値を変えるだけのパスは、arbiter が無いときと同じくその場で
+適用する。束ねた入力欄の 1 打鍵ごとにドキュメント全体の遷移が始まり、その後のクリックが
+失われていた（docs/seam-apps.ja.md、router-admin）。規範的な帰結:
 
 - drain は既に microtask だが、遷移を挟むと**フレーム**になる。state に書いてから
   `await Promise.resolve()` で DOM を読むコードは、遷移を待つ（あるいは

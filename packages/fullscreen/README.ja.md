@@ -40,8 +40,8 @@ npm install @wcstack/fullscreen
 ### 1. ボタンクリックで画像をfullscreen化
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/fullscreen/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">

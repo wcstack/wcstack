@@ -47,8 +47,8 @@ npm install @wcstack/clipboard
 Writes need a user gesture, so drive them from a DOM click (autoTrigger) or a command-token.
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/clipboard/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-clipboard id="cb"></wcs-clipboard>
 

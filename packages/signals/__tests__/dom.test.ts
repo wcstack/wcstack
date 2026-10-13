@@ -90,6 +90,25 @@ describe("h: 要素と静的 props", () => {
     el.click();
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  it("小文字の onclick も描画時には呼ばず、クリックで呼ぶ（以前は描画時に実行されていた — docs/seam-apps.md、signals-shop）", () => {
+    const onclick = vi.fn();
+    const el = h("button", { onclick }) as HTMLButtonElement;
+    expect(onclick).not.toHaveBeenCalled();
+    el.click();
+    expect(onclick).toHaveBeenCalledTimes(1);
+  });
+
+  it("on の後を書いたままのイベント名にする（onadd-to-cart → add-to-cart、onAddToCart は addtocart のまま）", () => {
+    const hyphen = vi.fn();
+    const camel = vi.fn();
+    const el = h("product-card", { "onadd-to-cart": hyphen, onAddToCart: camel }) as HTMLElement;
+    el.dispatchEvent(new CustomEvent("add-to-cart"));
+    expect(hyphen).toHaveBeenCalledTimes(1);
+    expect(camel).not.toHaveBeenCalled();
+    el.dispatchEvent(new CustomEvent("addtocart"));
+    expect(camel).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("h: reactive props", () => {

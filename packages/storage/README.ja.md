@@ -49,8 +49,8 @@ npm install @wcstack/storage
 プリミティブ値（文字列、数値、boolean）は `value` バインディングだけで双方向永続化できます。
 
 ```html
-<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 
 <wcs-state>
   <script type="module">
