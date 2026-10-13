@@ -29,6 +29,9 @@ interface NavigateEventLike {
   canIntercept: boolean;
   /** ページ側のリスナーが preventDefault() した（mock では欠け得る） */
   defaultPrevented?: boolean;
+  /** 取り消せるか（戻る・進むでは false のことがある）。mock では欠け得る */
+  cancelable?: boolean;
+  preventDefault?: () => void;
   hashChange: boolean;
   downloadRequest: string | null;
   destination: { url: string };
@@ -87,6 +90,7 @@ export class Router extends HTMLElement implements IRouter {
       { name: "basename", attribute: "basename" },
       { name: "navigateUrl" },
       { name: "replaceUrl" },
+      { name: "leaveConfirm", attribute: "leave-confirm" },
     ],
     commands: [
       { name: "navigate", async: true },
@@ -122,6 +126,11 @@ export class Router extends HTMLElement implements IRouter {
   private _hasCommitted: boolean = false;
   /** commitNavigation(…, true) が path-changed の発火を保留している（releasePath で発火） */
   private _pathHeld: boolean = false;
+  /** 自分の navigate() / replace() が離脱の確認を済ませて navigation.navigate() を呼んでいる間 */
+  private _leaveChecked: boolean = false;
+  /** 離脱が確認された: 次の commit まで（その遷移の guard のリダイレクトで聞き直さない） */
+  private _leaveConfirmed: boolean = false;
+  private _listeningUnload: boolean = false;
   private _connectedCallbackPromise: Promise<void>;
   private _resolveConnectedCallback: (() => void) | null = null;
   private _rejectConnectedCallback: ((reason?: unknown) => void) | null = null;
@@ -241,6 +250,45 @@ export class Router extends HTMLElement implements IRouter {
   // TypeError になり、後者では connectedCallbackPromise が決着しなくなる。
   set basename(value: string | null | undefined) {
     reflectAttribute(this, "basename", value);
+  }
+
+  // `leaveConfirm` は input（属性は leave-confirm）。空でない文字列の間、別のルートへ出るナビゲーション
+  // （リンク・戻る / 進む・navigate()）の前に confirm(値) を出し、断られたら出ない。ページを閉じる・
+  // 読み直すときはブラウザ自身の確認（beforeunload）。未保存の変更を守る口（docs/seam-apps.md、
+  // router-admin — Navigation API を直接使うしかなかった）。null は属性を外し、undefined は最初の属性へ戻す。
+  get leaveConfirm(): string | null {
+    return this.getAttribute("leave-confirm") || null;
+  }
+
+  set leaveConfirm(value: string | null | undefined) {
+    reflectAttribute(this, "leave-confirm", value);
+    this._syncBeforeUnload();
+  }
+
+  private _onBeforeUnload = (e: Event): void => {
+    if (this.leaveConfirm !== null) e.preventDefault();
+  };
+
+  /** beforeunload は leaveConfirm がある間だけ聞く（リスナーがあるだけで bfcache を外すブラウザがある） */
+  private _syncBeforeUnload(): void {
+    const want = this.isConnected && this.leaveConfirm !== null && !inSsr();
+    if (want === this._listeningUnload) return;
+    this._listeningUnload = want;
+    if (want) window.addEventListener("beforeunload", this._onBeforeUnload);
+    else window.removeEventListener("beforeunload", this._onBeforeUnload);
+  }
+
+  /**
+   * 別のルートへ出る前の確認。断られたら false。leaveConfirm が無い・最初の表示の前・同じルート
+   * （クエリだけの遷移）・確認済みの遷移の続き（guard のリダイレクト）では聞かない。
+   */
+  private _confirmLeave(fullPath: string): boolean {
+    const message = this.leaveConfirm;
+    if (message === null || !this._hasCommitted || this._leaveConfirmed ||
+      this.isSameMatch(sliceBasename(this._normalizePathname(fullPath), this._basename))) {
+      return true;
+    }
+    return (this._leaveConfirmed = window.confirm(message));
   }
 
   private _getOutlet(): IOutlet {
@@ -384,6 +432,7 @@ export class Router extends HTMLElement implements IRouter {
     }
     this._path = commit.path;
     this._hasCommitted = true;
+    this._leaveConfirmed = false;
     // --- その後で発火（順序規範: data → params → route-name → search → path） ---
     if (dataChanged) {
       this.dispatchEvent(new CustomEvent("wcs-router:data-changed", {
@@ -508,6 +557,12 @@ export class Router extends HTMLElement implements IRouter {
         ? window.location.pathname
         : this._joinInternalPath(this._basename, target.pathname);
     const url = fullPath + effectiveSearch(target.search) + target.hash;
+    if (this.leaveConfirm !== null) {
+      // 1 マイクロタスク待ってから確かめる: 保存のハンドラが leaveConfirm を外すバインディングと
+      // navigateUrl を同じ drain で書いたとき、どちらが先に適用されても外れた後の値を見る
+      await Promise.resolve();
+      if (!this._confirmLeave(fullPath)) return;
+    }
     const navigation = getNavigation();
     if (navigation?.navigate) {
       // Navigation API は { committed, finished } を返す。
@@ -515,9 +570,16 @@ export class Router extends HTMLElement implements IRouter {
       // 実際のナビゲーション完了まで pending となり、_navigateUrl / _replaceUrl の
       // 二重起動ガード (setter 内の同一値チェック) が適切な時間ウィンドウで機能する。
       // Polyfill や mock 環境で undefined / 戻り値なしのケースもあるため optional chaining。
-      const result = replace
-        ? navigation.navigate(url, { history: "replace" })
-        : navigation.navigate(url);
+      // navigate イベントは navigate() の中で同期に来る: そこでの確認は済ませた
+      this._leaveChecked = true;
+      let result;
+      try {
+        result = replace
+          ? navigation.navigate(url, { history: "replace" })
+          : navigation.navigate(url);
+      } finally {
+        this._leaveChecked = false;
+      }
       await result?.finished;
     } else {
       if (replace) {
@@ -569,6 +631,12 @@ export class Router extends HTMLElement implements IRouter {
     const fullPath = this._normalizePathname(url.pathname);
     // basename 配下でない URL は無視（マルチ Router 対応）
     if (!this._isOwnPath(fullPath)) return;
+    // 別のルートへ出る前の確認（leaveConfirm）。取り消せないナビゲーション（一部の戻る / 進む）では
+    // 聞けない。自分の navigate() / replace() からのものは確認済み
+    if (!this._leaveChecked && navEvent.cancelable !== false && !this._confirmLeave(fullPath)) {
+      navEvent.preventDefault?.();
+      return;
+    }
     // same-match 判定は applyRoute 内の分岐と同じ共有実装（§4.4: スライス後比較）。
     // intercept オプションは applyRoute 実行前に決める必要があるためここでも判定する。
     const sameMatch = this.isSameMatch(sliceBasename(fullPath, this._basename));
@@ -991,6 +1059,8 @@ export class Router extends HTMLElement implements IRouter {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
     // await より前に同期で行い、初期化が古い値を読まないようにする。
     upgradeProperties(this);
+    // マークアップに書いた leave-confirm も beforeunload で守る（初期化の成否によらず）
+    this._syncBeforeUnload();
     // SSR モード（docs/ssr-router-design.md §3.2）:
     // - enable-ssr 無し → サーバーでは一切初期化しない（クライアント専用 = 部分 CSR）
     // - enable-ssr あり → SSR 初期化のみ。navigate / popstate リスナは登録しない
@@ -1071,6 +1141,7 @@ export class Router extends HTMLElement implements IRouter {
       window.removeEventListener("popstate", this._onPopState);
       this._listeningPopState = false;
     }
+    this._syncBeforeUnload();
     // live region は router の寿命に同期して撤去する（body 直下に置かない理由と同根）
     if (this._a11yRegion !== null) {
       this._a11yRegion.remove();
