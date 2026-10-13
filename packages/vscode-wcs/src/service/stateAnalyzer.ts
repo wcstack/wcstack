@@ -347,6 +347,8 @@ export function analyzeWatchEntries(scriptContent: string): WatchEntryInfo[] {
  * `kind: 'value'` は値に置いた式（`count: function (…) { … }` / アロー / 識別子参照）。
  */
 export interface WatchHandlerSource {
+  /** 宣言のキー（`$watch` ならパス、`$on` ならトークン名） */
+  readonly name: string;
   readonly kind: 'body' | 'value';
   readonly text: string;
   /** `text` の先頭に対応する scriptContent 内のオフセット（trim しない生の位置）。 */
@@ -365,9 +367,21 @@ export interface WatchHandlerSource {
  * は data 値向けに先頭空白ぶんを進めるので、本体のオフセットには使えない。
  */
 export function analyzeWatchHandlerSources(scriptContent: string): WatchHandlerSource[] {
+  return analyzeHandlerSources(scriptContent, RESERVED_WATCH_KEY);
+}
+
+/**
+ * `$on: { <token>: handler }` のハンドラの原文（位置の規約は analyzeWatchHandlerSources と同じ）。
+ * ランタイムは `handler(state, event, …)` と呼ぶ — `this` は state ではない（`wcs/on-handler-this`）。
+ */
+export function analyzeOnHandlerSources(scriptContent: string): WatchHandlerSource[] {
+  return analyzeHandlerSources(scriptContent, '$on');
+}
+
+function analyzeHandlerSources(scriptContent: string, key: string): WatchHandlerSource[] {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return [];
-  const prop = parseTopLevelProperties(root.content).find(p => p.name === RESERVED_WATCH_KEY);
+  const prop = parseTopLevelProperties(root.content).find(p => p.name === key);
   if (
     !prop || prop.kind !== 'data' || !prop.value ||
     !isObjectLiteral(prop.value) || prop.valueStart === undefined
@@ -382,6 +396,7 @@ export function analyzeWatchHandlerSources(scriptContent: string): WatchHandlerS
   for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
     if (entry.value === undefined || entry.valueStart === undefined) continue;
     out.push({
+      name: entry.name,
       kind: entry.kind === 'data' ? 'value' : 'body',
       text: entry.value,
       start: innerStart + entry.valueStart,
