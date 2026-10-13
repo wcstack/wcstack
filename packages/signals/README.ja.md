@@ -140,11 +140,14 @@ import { signal, h, For, Index } from "@wcstack/signals/dom";
 
 const todos = signal([{ id: 1, text: "a" }, { id: 2, text: "b" }]);
 
-// For — `id` でキーイング。並び替えで行を再利用/移動。`each` は item と
-// index アクセサ(行が移動するとインデックスが変わる)を受け取る。
+// For — `id` でキーイング。並び替えで行を再利用/移動。`each` は行を作ったときの item・
+// index アクセサ(行が移動するとインデックスが変わる)・current アクセサ(その key の今の
+// item)を受け取る。
 h("ul", null,
-  For(todos, (t, index) => h("li", null, () => `${index()}: ${t.text}`), { key: (t) => t.id }),
+  For(todos, (t, index, current) => h("li", null, () => `${index()}: ${current().text}`), { key: (t) => t.id }),
 );
+// 置き換えの更新でも行は使い回され、current() で新しい値が届く:
+todos.set(todos.peek().map((t) => (t.id === 1 ? { ...t, text: "A" } : t)));
 
 // Index — 位置でキーイング(プリミティブ配列向け)。`each` は item を
 // アクセサ(スロットの値が変わる・スロット自体は不変)、index を固定値で受け取る。
@@ -155,7 +158,45 @@ h("ul", null,
 ```
 
 - `For` のキー既定は値の同一性(`===`)。オブジェクトは `{ key }` を渡す。キーは一意必須(重複は throw)。位置が安定なプリミティブ配列には `Index`。
+- **key 付きの行は、key がある限り保たれる** — その key の下のオブジェクトが何であっても。並び替え・再取得・置き換えの更新のどれでも行(と DOM・focus・入力状態)は使い回される。だから第 1 引数は**行を作ったときの** item。変わりうる値は `current()` から読む(`() => current().text`)。`t.text` のままだと作ったときの値で止まる。
 - `each` は**単一**の Node を返すこと(1 行 = 1 ノード)。
+
+### 7. `@wcstack/router` の裏のページと、`<wcs-storage>` に残す値
+
+router は、ルートに入ると中身を `<wcs-outlet>` に置き、出ると取り出し、次に入ると**同じノード**を戻す。`@wcstack/state` はその中身を binder プロトコルでバインドするが、signals に binder は無い。だから外からルートの中身へ `render()` しない — ノードは前回描いたものを持ったまま戻り、2 回目の描画はそれに足される。代わりに、ページごとに `SignalsElement` を作る: 接続したときに描き、外れたときに effect を破棄するので、ページはそのルートが表示されている間だけ生きる。ルートのパラメータは router 要素を bind して読む:
+
+```html
+<wcs-router>
+  <template>
+    <wcs-route path="/"><catalog-page></catalog-page></wcs-route>
+    <wcs-route path="/products/:id(int)"><product-page></product-page></wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+```
+
+```js
+import "@wcstack/router/auto";
+import { computed, h, bindNode, mountNode, signal, SignalsElement } from "@wcstack/signals/dom";
+
+const router = bindNode(document.querySelector("wcs-router")); // 上の import で定義済み
+const productId = computed(() => router.signals.typedParams.get()?.id ?? null);
+
+class ProductPage extends SignalsElement {
+  render() {
+    return h("h2", null, () => `Product ${productId.get()}`);
+  }
+}
+customElements.define("product-page", ProductPage);
+```
+
+`<wcs-storage>` に残す値: 要素は接続したときにキーを読み込むので、`mountNode` の直後には `value` の signal に保存値が入っている（空のキーなら `null`）。**`bindInput` の前に、そこから自分の signal をシードする** — `bindInput` の最初の実行は signal を要素へ書くので、空のシード（`[]`）は読み込みのたびに保存値の上に保存される。`#init=element` の signals 版（[storage の README §5](../storage/README.ja.md)）。
+
+```js
+const store = mountNode("wcs-storage", { attrs: { key: "cart" } });
+const cart = signal(store.signals.value.peek() ?? []); // 保存値か、新しいカート
+store.bindInput("value", cart);                         // ここから先の変更が保存される
+```
 
 ### 4. 非同期リソース(switchMap)
 
@@ -205,10 +246,10 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 
 | エクスポート | シグネチャ | 備考 |
 |---|---|---|
-| `h` | `(tag, props?, ...children) => Node` | `tag` はタグ文字列・`Component`・`Fragment`。関数/signal の prop と child はリアクティブ。`onXxx` prop はイベントリスナ。 |
+| `h` | `(tag, props?, ...children) => Node` | `tag` はタグ文字列・`Component`・`Fragment`。関数/signal の prop と child はリアクティブ。`on…` キーの関数はイベントリスナ: `onClick` → `click`(小文字化)、`onclick` / `"onadd-to-cart"` → 書いたままの名前(`click`・`add-to-cart`)。 |
 | `render` | `(child, container) => Node` | child(fragment/配列/リアクティブを解決)を container に追加。 |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` でラッパ要素なしにグループ化。 |
-| `For<T>` | `(list, each, options?) => ListView` | keyed リスト。`list` は signal または `() => T[]`、`each(item, index: () => number)` は単一 Node を返す、`options.key(item, i)` 既定は値の同一性。キーで行を再利用/移動し、削除行を dispose。 |
+| `For<T>` | `(list, each, options?) => ListView` | keyed リスト。`list` は signal または `() => T[]`、`each(item, index: () => number, current: () => T)` は単一 Node を返す(`item` は行を作ったときの値、`current()` はその key の今の item)、`options.key(item, i)` 既定は値の同一性。キーで行を再利用/移動し、削除行を dispose。 |
 | `Index<T>` | `(list, each) => ListView` | 位置キーのリスト。`each(item: () => T, index: number)` は単一 Node を返す。スロット単位で行を再利用(スロットの値は signal で更新)し、末尾で grow/shrink。 |
 | `SignalsElement` | `abstract` 基底(遅延 `extends HTMLElement`) | ライフサイクル基底。`render()` を実装、必要なら `getMountPoint()` を上書き。`HTMLElement` は遅延解決され、`./dom` モジュールは非 DOM 環境でも評価可能 — [SSR / 非DOM](#ssr--非dom-dom-エントリは-dom-無しで読み込める)参照。 |
 | `createSignalsElement` | `() => SignalsElementClass` | `SignalsElement` 基底を(memoize して)呼び出し時に構築。DOM が無ければ分かりやすい Error を投げる。SSR セーフな基底取得手段。 |

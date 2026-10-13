@@ -195,10 +195,13 @@ function isSettableProperty(el: Element, key: string): boolean {
 }
 
 function bindProp(el: Element, key: string, value: unknown): void {
-  // Event handlers (`onClick` → "click") are special-cased BEFORE the reactive
-  // check: a function here is the listener, not a thunk to track.
-  if (/^on[A-Z]/.test(key) && typeof value === "function") {
-    const type = key.slice(2).toLowerCase();
+  // Event handlers are special-cased BEFORE the reactive check: a function here is the
+  // listener, not a thunk to track. `onClick` → "click" (lowercased); `onclick` /
+  // `onadd-to-cart` → the name as written ("click", "add-to-cart" — data-wcs's `on<event>:`
+  // form). A lowercase `onclick` used to fall through to the reactive path, so the handler
+  // ran at render and never on click (docs/seam-apps.md, signals-shop).
+  if (/^on[A-Za-z-]/.test(key) && typeof value === "function") {
+    const type = /^on[A-Z]/.test(key) ? key.slice(2).toLowerCase() : key.slice(2);
     const listener = value as EventListener;
     el.addEventListener(type, listener);
     // Remove the listener when the owning scope is torn down (e.g. a dynamic
@@ -426,7 +429,13 @@ function insertReactive(parent: Node, accessor: () => unknown): void {
 // item as an accessor (the value at a slot changes, the slot does not).
 
 export type ListAccessor<T> = ReadSignal<readonly T[]> | (() => readonly T[]);
-export type ForEach<T> = (item: T, index: () => number) => Node;
+/**
+ * `For`'s row builder. `item` is the item the row was built for — a plain value. A keyed row is
+ * kept while its key is (an immutable update hands it a new object under the same key), so read
+ * what changes through `current`, an accessor of the item under the row's key now
+ * (`() => current().text`). docs/seam-apps.md, signals-shop.
+ */
+export type ForEach<T> = (item: T, index: () => number, current: () => T) => Node;
 export type IndexEach<T> = (item: () => T, index: number) => Node;
 
 /**
@@ -608,6 +617,8 @@ export function For<T>(list: ListAccessor<T>, each: ForEach<T>, options?: ForOpt
         node: Node;
         dispose: () => void;
         idx: WriteSignal<number>;
+        /** The item under the row's key now (`each`'s `current`). */
+        cur: WriteSignal<T>;
       }
       let rows = new Map<unknown, Row>();
       // The node order placed by the previous reconcile run. Empty on first run.
@@ -617,12 +628,13 @@ export function For<T>(list: ListAccessor<T>, each: ForEach<T>, options?: ForOpt
 
       const make = (item: T, i: number): Row => {
         const idx = signal(i);
+        const cur = signal(item);
         let node!: Node;
         const dispose = createRoot((d) => {
-          node = each(item, () => idx.get());
+          node = each(item, () => idx.get(), () => cur.get());
           return d;
         });
-        return { node, dispose, idx };
+        return { node, dispose, idx, cur };
       };
 
       effect(() => {
@@ -676,6 +688,7 @@ export function For<T>(list: ListAccessor<T>, each: ForEach<T>, options?: ForOpt
               if (row.idx.peek() !== i) {
                 row.idx.set(i); // position changed — refresh the index accessor
               }
+              row.cur.set(items[i]); // the item under the key now (a no-op when it is the same)
             } else {
               row = make(items[i], i);
               fresh.push(row);

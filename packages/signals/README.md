@@ -141,11 +141,14 @@ import { signal, h, For, Index } from "@wcstack/signals/dom";
 
 const todos = signal([{ id: 1, text: "a" }, { id: 2, text: "b" }]);
 
-// For — keyed by `id`. Rows are reused/moved on reorder; `each` receives the item
-// and an index ACCESSOR (the index changes when the row moves).
+// For — keyed by `id`. Rows are reused/moved on reorder; `each` receives the item it
+// was built for, an index ACCESSOR (the index changes when the row moves) and a CURRENT
+// accessor — the item under the row's key now.
 h("ul", null,
-  For(todos, (t, index) => h("li", null, () => `${index()}: ${t.text}`), { key: (t) => t.id }),
+  For(todos, (t, index, current) => h("li", null, () => `${index()}: ${current().text}`), { key: (t) => t.id }),
 );
+// An immutable update keeps the row and reaches it through current():
+todos.set(todos.peek().map((t) => (t.id === 1 ? { ...t, text: "A" } : t)));
 
 // Index — keyed by position (good for primitive arrays). `each` receives the item
 // as an ACCESSOR (the value at a slot changes; the slot does not) and a fixed index.
@@ -156,7 +159,45 @@ h("ul", null,
 ```
 
 - `For` keys default to value identity (`===`); pass `{ key }` for objects. Keys must be unique (a duplicate throws). Use `Index` for primitive lists where position is the stable identity.
+- **A keyed row is kept while its key is**, whatever object the list now holds under it — a reorder, a re-fetch and an immutable update all reuse the row (and its DOM, focus, input state). So the first argument is the item **the row was built with**: read what can change through `current()` (`() => current().text`), or `t.text` stays what it was.
 - `each` must return a **single** Node (one row = one node).
+
+### 7. Pages behind `@wcstack/router`, and a value kept in `<wcs-storage>`
+
+The router puts a route's content into `<wcs-outlet>` when the route is entered, takes it out when it is left, and puts **the same nodes** back on the next entry. `@wcstack/state` binds that content through the binder protocol; signals has no binder, so do not `render()` into route content from outside — the nodes come back with what you rendered last time, and a second render appends to it. Make each page a `SignalsElement` instead: it renders when it connects and disposes its effects when it disconnects, so a page is live exactly while its route is shown. Read the route's parameters by binding the router element:
+
+```html
+<wcs-router>
+  <template>
+    <wcs-route path="/"><catalog-page></catalog-page></wcs-route>
+    <wcs-route path="/products/:id(int)"><product-page></product-page></wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+```
+
+```js
+import "@wcstack/router/auto";
+import { computed, h, bindNode, mountNode, signal, SignalsElement } from "@wcstack/signals/dom";
+
+const router = bindNode(document.querySelector("wcs-router")); // defined by the import above
+const productId = computed(() => router.signals.typedParams.get()?.id ?? null);
+
+class ProductPage extends SignalsElement {
+  render() {
+    return h("h2", null, () => `Product ${productId.get()}`);
+  }
+}
+customElements.define("product-page", ProductPage);
+```
+
+A value kept in `<wcs-storage>`: the element loads its key when it connects, so right after `mountNode` its `value` signal holds what was saved (`null` for an empty key). **Seed your signal from it before `bindInput`** — `bindInput`'s first run writes the signal into the element, and an empty seed (`[]`) would be saved over the stored value on every load. This is the signals form of `#init=element` ([storage README §5](../storage/README.md#5-load-before-bind-initelement)).
+
+```js
+const store = mountNode("wcs-storage", { attrs: { key: "cart" } });
+const cart = signal(store.signals.value.peek() ?? []); // what was saved, or a fresh cart
+store.bindInput("value", cart);                         // from now on, changes are saved
+```
 
 ### 4. Async resource (switchMap)
 
@@ -206,10 +247,10 @@ const log = streamResource((args, signal) => openLogStream(signal), {
 
 | Export | Signature | Notes |
 |---|---|---|
-| `h` | `(tag, props?, ...children) => Node` | `tag` is a tag string, a `Component`, or `Fragment`. Function/signal props & children are reactive. `onXxx` props are event listeners. |
+| `h` | `(tag, props?, ...children) => Node` | `tag` is a tag string, a `Component`, or `Fragment`. Function/signal props & children are reactive. A function under an `on…` key is an event listener: `onClick` → `click` (lowercased); `onclick` / `"onadd-to-cart"` → the name as written (`click`, `add-to-cart`). |
 | `render` | `(child, container) => Node` | Append a child (resolving fragments/arrays/reactives) into a container. |
 | `Fragment` | `symbol` | `h(Fragment, null, ...children)` groups without a wrapper element. |
-| `For<T>` | `(list, each, options?) => ListView` | Keyed list. `list` is a signal or `() => T[]`; `each(item, index: () => number)` returns one Node; `options.key(item, i)` defaults to value identity. Reuses/moves rows by key; disposes removed rows. |
+| `For<T>` | `(list, each, options?) => ListView` | Keyed list. `list` is a signal or `() => T[]`; `each(item, index: () => number, current: () => T)` returns one Node (`item` is the item the row was built with, `current()` the item under its key now); `options.key(item, i)` defaults to value identity. Reuses/moves rows by key; disposes removed rows. |
 | `Index<T>` | `(list, each) => ListView` | Position-keyed list. `each(item: () => T, index: number)` returns one Node. Rows are reused per slot (the value at a slot updates via a signal); grows/shrinks at the tail. |
 | `SignalsElement` | `abstract` base (lazy `extends HTMLElement`) | Lifecycle base; implement `render()`, optionally `getMountPoint()`. `HTMLElement` is resolved lazily so the `./dom` module evaluates in non-DOM environments — see [SSR / non-DOM](#ssr--non-dom-the-dom-entry-loads-without-a-dom). |
 | `createSignalsElement` | `() => SignalsElementClass` | Build (memoized) the `SignalsElement` base at call time. Resolves `HTMLElement` when called; throws a clear error if no DOM. The SSR-safe way to obtain the base. |
