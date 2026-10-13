@@ -109,6 +109,7 @@ Every bound state path must be declared up front — binding an undeclared path 
 | `rtt`            | `wcs-network:change` | Estimated round-trip time in ms, or `null` when unsupported. |
 | `saveData`       | `wcs-network:change` | `true` when the user has enabled Data Saver mode, or `null` when unsupported. |
 | `supported`      | `wcs-network:change` | `true` once a real `navigator.connection` was found; `false` otherwise. |
+| `online`         | `wcs-network:change` | `navigator.onLine`, followed through the window's `online` / `offline` events — every browser has it, whatever `supported` says. `null` without a navigator (SSR). Bind it to disable what needs the network (`data-wcs="online: online"` + `disabled: online|not`). Like `navigator.onLine`, `true` means a network is there, not that your server answers. |
 
 All five derive from the single `wcs-network:change` event (a full snapshot dispatched together, mirroring how the native API reports all fields on one `change` event). The four data fields also normalize to `null` individually — even when `supported` is `true` — if the browser reports a field as missing or with an unexpected type.
 
@@ -142,6 +143,7 @@ so you can style it directly from CSS with the `:state()` pseudo-class — no
 |-------|---------|
 | `save-data` | `wcs-network:change` fires with `saveData === true` (off — including when `saveData` is `null`, i.e. unsupported) |
 | `supported` | `wcs-network:change` fires with `supported === true` (off when `supported === false`) |
+| `offline` | `wcs-network:change` fires with `online === false` (off while online, and when `online` is `null`) |
 
 `effectiveType` / `downlink` / `rtt` are not reflected — see `docs/custom-state-reflection-design.md` §3.2 (continuous/high-frequency values are excluded from `:state()` reflection).
 

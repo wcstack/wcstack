@@ -39,7 +39,7 @@ describe("NetworkCore", () => {
       expect(core.saveData).toBe(true);
       expect(core.supported).toBe(true);
       expect(events).toEqual([
-        { effectiveType: "3g", downlink: 1.5, rtt: 200, saveData: true, supported: true },
+        { effectiveType: "3g", downlink: 1.5, rtt: 200, saveData: true, supported: true, online: true },
       ]);
     });
 
@@ -77,7 +77,7 @@ describe("NetworkCore", () => {
   });
 
   describe("observe() — 非対応環境", () => {
-    it("connection 不在なら supported=false のまま、既定値と同値なので change は dispatch しない", () => {
+    it("connection 不在なら supported=false・4 項目は null のまま。online はどのブラウザにもあるので届く", () => {
       removeConnection();
       const core = new NetworkCore();
       const events: any[] = [];
@@ -87,7 +87,53 @@ describe("NetworkCore", () => {
 
       expect(core.supported).toBe(false);
       expect(core.effectiveType).toBeNull();
-      expect(events).toEqual([]);
+      expect(core.online).toBe(true);
+      expect(events).toEqual([
+        { effectiveType: null, downlink: null, rtt: null, saveData: null, supported: false, online: true },
+      ]);
+    });
+
+    it("navigator も window も無い（SSR）なら online も null で、何も dispatch せず、dispose も投げない", () => {
+      removeConnection();
+      vi.stubGlobal("navigator", undefined);
+      vi.stubGlobal("window", undefined);
+      try {
+        const core = new NetworkCore();
+        const events: any[] = [];
+        core.addEventListener("wcs-network:change", (e) => events.push((e as CustomEvent).detail));
+        core.observe();
+        expect(core.online).toBeNull();
+        expect(events).toEqual([]);
+        expect(() => core.dispose()).not.toThrow();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("window の offline / online で online が変わり再 dispatch する。dispose 後は追わない（docs/seam-apps.md、state-collab-board）", () => {
+      removeConnection();
+      const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(navigator), "onLine") ?? Object.getOwnPropertyDescriptor(navigator, "onLine");
+      let online = true;
+      Object.defineProperty(navigator, "onLine", { get: () => online, configurable: true });
+      try {
+        const core = new NetworkCore();
+        core.observe();
+        const events: any[] = [];
+        core.addEventListener("wcs-network:change", (e) => events.push((e as CustomEvent).detail.online));
+        online = false;
+        window.dispatchEvent(new Event("offline"));
+        expect(core.online).toBe(false);
+        online = true;
+        window.dispatchEvent(new Event("online"));
+        expect(events).toEqual([false, true]);
+        core.dispose();
+        online = false;
+        window.dispatchEvent(new Event("offline"));
+        expect(events).toEqual([false, true]);
+      } finally {
+        delete (navigator as any).onLine;
+        if (desc && !Object.getOwnPropertyDescriptor(Object.getPrototypeOf(navigator), "onLine")) Object.defineProperty(navigator, "onLine", desc);
+      }
     });
   });
 
@@ -105,7 +151,7 @@ describe("NetworkCore", () => {
       expect(core.downlink).toBe(0.4);
       expect(core.rtt).toBe(900);
       expect(events).toEqual([
-        { effectiveType: "2g", downlink: 0.4, rtt: 900, saveData: false, supported: true },
+        { effectiveType: "2g", downlink: 0.4, rtt: 900, saveData: false, supported: true, online: true },
       ]);
     });
 
@@ -221,7 +267,7 @@ describe("NetworkCore", () => {
 
       // target 経路でも detail にスナップショット全体が載ることまで確認する
       expect(events).toEqual([
-        { effectiveType: "4g", downlink: 10, rtt: 50, saveData: false, supported: true },
+        { effectiveType: "4g", downlink: 10, rtt: 50, saveData: false, supported: true, online: true },
       ]);
     });
   });
@@ -233,7 +279,7 @@ describe("NetworkCore", () => {
 
     it("各 property の getter が event.detail から正しく値を取り出す", () => {
       const byName = (n: string) => NetworkCore.wcBindable.properties.find((p) => p.name === n)!;
-      const detail = { effectiveType: "3g", downlink: 1.5, rtt: 200, saveData: true, supported: true };
+      const detail = { effectiveType: "3g", downlink: 1.5, rtt: 200, saveData: true, supported: true, online: false };
       const ev = new CustomEvent("wcs-network:change", { detail });
 
       expect(byName("effectiveType").getter!(ev)).toBe("3g");
@@ -241,6 +287,7 @@ describe("NetworkCore", () => {
       expect(byName("rtt").getter!(ev)).toBe(200);
       expect(byName("saveData").getter!(ev)).toBe(true);
       expect(byName("supported").getter!(ev)).toBe(true);
+      expect(byName("online").getter!(ev)).toBe(false);
     });
   });
 });

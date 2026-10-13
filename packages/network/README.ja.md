@@ -109,6 +109,7 @@ npm install @wcstack/network
 | `rtt`            | `wcs-network:change` | 概算往復遅延（ms）、非対応環境では `null`。 |
 | `saveData`       | `wcs-network:change` | ユーザーがデータセーバーモードを有効にしていれば `true`、非対応環境では `null`。 |
 | `supported`      | `wcs-network:change` | 実在する `navigator.connection` が見つかれば `true`、それ以外は `false`。 |
+| `online`         | `wcs-network:change` | `navigator.onLine`。window の `online` / `offline` イベントで追う — `supported` に関わらずどのブラウザにもある。navigator が無ければ（SSR）`null`。ネットワークが要る操作を止めるのに束ねる（`data-wcs="online: online"` と `disabled: online|not`）。`navigator.onLine` と同じく、`true` はネットワークがあることで、サーバーが応えることではない。 |
 
 5 つすべては単一の `wcs-network:change` イベントから派生します（ネイティブ API が全フィールドを1つの `change` イベントで報告するのと同じく、スナップショット全体を1つのイベントにまとめて発火します）。また、`supported` が `true` の環境でも、ブラウザが該当フィールドを欠落または期待外の型で報告した場合、4 つのデータフィールドは個別に `null` へ正規化されます。
 
@@ -142,6 +143,7 @@ npm install @wcstack/network
 |----------|----------------|
 | `save-data` | `wcs-network:change` が `saveData === true` で発火（`saveData` が `null`＝非対応の場合も含め off） |
 | `supported` | `wcs-network:change` が `supported === true` で発火（`supported === false` で off） |
+| `offline` | `wcs-network:change` が `online === false` で発火（オンラインの間と、`online` が `null` のときは off） |
 
 `effectiveType` / `downlink` / `rtt` は反映されません — 理由は `docs/custom-state-reflection-design.ja.md` §3.2（連続値・高頻度値は `:state()` 反映の対象外）を参照してください。
 
