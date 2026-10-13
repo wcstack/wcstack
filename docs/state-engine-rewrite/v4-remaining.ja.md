@@ -1152,3 +1152,15 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - VS Code 拡張 2.0.4: 1550d47d で `npm run package` した vsix（vscode-wcs のテスト 1,227 件）を Marketplace に公開した。タグ `vscode-wcs-v2.0.4`（1550d47d）。
   - wcstack-skill: PR #37 で版の印と CDN の固定を 4.0.4 にし、`references/router-and-scaffold.md` §1 に置き場所の規則（「書かなければ自動生成」だけだった）、SKILL.md に規則・lint の一覧・落とし穴の行を足した。マージしてタグ `v4.0.4`。
   - LP（2564628）: 版の参照と「Shipped in」の v4.0.4 の一文、state / signals のページの版、llms の作り直し。チュートリアルのステップ 13 の「ルーターから離れた outlet」は「コンソールには何も出ない」を 4.0.4 の警告に直し、ステップ 15 の依存を `^4.0.4`、ステップ 16 の固定を `wcstack@4.0.4` と v4.0.4 の `sri.json` の integrity にした。本番で 13・14・16 のデモ（outlet の位置・商品ページ・戻る・警告が出ないこと・16 は integrity 付きの 4.0.4）と、jsDelivr の router 4.0.4 が離れた outlet を 1 回警告することを Chromium で確かめた（9/9）。
+
+### 4.1.0 の公開（2026-10-13）
+
+- 中身: 継ぎ目アプリ（docs/seam-apps.ja.md — 公開文書だけを読む初めての作者のサブエージェントが、テストの見逃すものを見つけるために作るアプリ）4 本の発見を、PR #450（merge commit 846aedc2・方法の文書と router-auth）と PR #451（4bbdfde6・router-admin / state-collab-board / signals-shop）で直した。設計の決定は著者（2026-10-13）。新しい API（router の `leaveConfirm` と `<wcs-link match="prefix">`、`<wcs-network offline>`、signals の `For` の第 3 引数 `current()`、lint の `wcs/on-handler-this`）と挙動の変更（ガードのリダイレクトは履歴を置き換え・無言・10 回で打ち切り・ハンドラだけで有効、ルートの出力は中身の前・`path` は後、ビュー遷移は一覧と分岐の変化だけ、`$watch` は要素の初期値で 1 回、`h()` の `on…` はすべてリスナー、`wcs/storage-seed-clobber` は error）を含むので minor。core は 19,880 → 19,919 B、temporal +76 B。
+- 準備: PR #452 で CHANGELOG を `[4.1.0] — 2026-10-13` に締め、CDN の固定 18 か所（signals の README の古い 1.25.0 が加わった）を 4.1.0 にした。
+- main で `release`（minor、run 38402818289）。49 パッケージが npm の `latest` で 4.1.0、来歴証明も 49/49、タグ `v4.1.0`、GitHub Release（`sri.json` 付き）、版を上げた commit は 1eda9b4a。SRI は 44/44 が `sri.json`・タグの dist・jsDelivr で一致し、固定 URL（skill の分を含め 10 種）が 200。jsDelivr の router / network / lint / signals 4.1.0 に新しいもの（`leave-confirm`・`offline`・`on-handler-this`・`current`）が入っていることも確かめた。
+- 公開後の作業（2026-10-14）:
+  - PR #453（merge commit 12afd670）: サイズの基準値を 4.1.0 の dist で取り直した。CLAUDE.md / AGENTS.md の版とサイズ、拡張の 2.1.0（新しい error が 2 つあるので minor）。
+  - VS Code 拡張 2.1.0: 12afd670 で `npm run package` した vsix を Marketplace に公開した。タグ `vscode-wcs-v2.1.0`（12afd670）。
+  - wcstack-skill: PR #38 で版の印と CDN の固定を 4.1.0 にし、ガード（セッションは関数の中で `localStorage` から・モジュールは一度だけ評価・`toPath` にクエリ無し）、`leaveConfirm`、`$watch` の初期値、`$on` の `(state, event)`、`<wcs-network offline>`、構造だけのビュー遷移、`<wcs-fetch-header value:>` とトークンの要る要求の url、`For` の `current()` と signals の router・storage の書き方を足した。マージしてタグ `v4.1.0`。
+  - LP（50d7c25）: 版の参照と「Shipped in」の v4.1.0 の一文、state / signals のページの版、llms の作り直し、チュートリアルのステップ 15 の `^4.1.0`、ステップ 16 の `wcstack@4.1.0` と integrity。本番で 13・14・16 のデモと jsDelivr の router 4.1.0 を Chromium で確かめた（9/9）。
+- 残り: 4 本のアプリを回避策を外して `examples/` へ（e2e 付き）。seam-apps の表の未着手（lint 数件、レイアウトの既定 slot、ルート再入の fetch、`date` の書式、チュートリアルの読み込み順など）。
