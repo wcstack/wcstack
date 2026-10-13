@@ -19,7 +19,7 @@ import { collectErrors } from "./helpers";
 //
 // この spec が固定するもの（docs/migration-v4.ja.md §3.6・packages/server/README.md）:
 //  - 内容は JS より前に HTML に載っている（一覧・カウンタ・if の枝）
-//  - <wcs-ssr version> が 4.0.x で、クライアントはそれを自分の出力として読む
+//  - <wcs-ssr version> が 4.x で、クライアントはそれを自分の出力として読む
 //    （"does not match … snapshot is discarded" の警告が出ない）
 //  - ハイドレーションはサーバーのノードをその場で引き取り、描き直さない。
 //    `$connectedCallback` はサーバーで走ったのでクライアントでは走らない
@@ -99,14 +99,15 @@ async function hydrated(page: Page): Promise<void> {
 const userItems = (page: Page) => page.locator("ul.user-list li.user-item");
 
 test.describe("examples/ssr — サーバー描画", () => {
-  test("生 HTML に一覧・カウンタ・if の枝と 4.0 のスナップショットが載る", async ({ request }) => {
+  test("生 HTML に一覧・カウンタ・if の枝と 4.x のスナップショットが載る", async ({ request }) => {
     const res = await request.get(`${BASE}/`);
     expect(res.ok()).toBeTruthy();
     const html = await res.text();
 
-    // スナップショットは 4.0 のエンジンが書いたもの（クライアントは major.minor で照合する）
+    // スナップショットは 4.x のエンジンが書いたもの（クライアントは major.minor で照合する）。minor を
+    // 固定すると、4.1.0 のように minor が上がったとたんに落ちる
     const version = html.match(/<wcs-ssr\b[^>]*\sversion="([^"]+)"/)?.[1];
-    expect(version).toMatch(/^4\.0\./);
+    expect(version).toMatch(/^4\.\d+\./);
     // スナップショットの状態は $connectedCallback が取得した後のもの
     const snapshot = JSON.parse(html.match(/<wcs-ssr\b[\s\S]*?<script type="application\/json">([\s\S]*?)<\/script>/)![1]);
     expect(snapshot).toEqual({ users: USERS, show: true, counter: 0 });

@@ -1,0 +1,181 @@
+/*
+ * Little Roastery — the stylesheet of the wcstack tutorial's demo shop.
+ * Every step links it as https://wcstack.github.io/tutorial/shop.css, so a
+ * copy of a step's index.html looks the same on your machine.
+ */
+:root {
+  --paper: #fbf7f1;
+  --card: #ffffff;
+  --ink: #2b211b;
+  --ink-soft: #6d5f55;
+  --line: #eadfd2;
+  --brand: #8a4b2a;
+  --brand-ink: #ffffff;
+  --brand-soft: #f4e6da;
+  --muted: #b9aca1;
+  --alert: #a3311f;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; line-height: 1.5; }
+h1, h2, h3, p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+
+/* ── Header ── */
+.shop-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 24px;
+  background: var(--brand); color: var(--brand-ink);
+}
+.shop-header h1 { font-size: 1.15rem; letter-spacing: .02em; }
+.cart-badge {
+  font-size: .9rem; font-weight: 600;
+  padding: 4px 12px; border-radius: 999px;
+  background: rgba(255, 255, 255, .16);
+}
+
+/* ── Layout ── */
+.shop {
+  display: grid; gap: 24px; align-items: start;
+  max-width: 1040px; margin: 0 auto; padding: 24px;
+}
+.shop:has(.cart) { grid-template-columns: minmax(0, 1fr) 300px; }
+@media (max-width: 720px) {
+  .shop:has(.cart) { grid-template-columns: minmax(0, 1fr); }
+}
+.shop h2 { font-size: 1rem; margin-bottom: 12px; }
+
+/* ── Loading and error lines (Part 2) ── */
+.status {
+  max-width: 1040px; margin: 24px auto 0; padding: 0 24px;
+  font-size: .9rem; color: var(--ink-soft);
+}
+.status.error { color: var(--alert); font-weight: 600; }
+.status button { margin-left: 8px; }
+
+/* ── Product cards ── */
+.grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+.card {
+  display: flex; flex-direction: column; gap: 6px;
+  max-width: 320px;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.grid .card { max-width: none; }
+.card-icon {
+  display: grid; place-items: center;
+  height: 72px; border-radius: 8px;
+  background: var(--brand-soft);
+  font-size: 2.2rem;
+}
+.card h2, .card h3 { font-size: 1rem; margin: 4px 0 0; }
+.card p { font-size: .86rem; color: var(--ink-soft); }
+.card .price { font-size: 1rem; font-weight: 700; color: var(--ink); margin-top: auto; }
+.card .badge {
+  align-self: flex-start;
+  font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--line); color: var(--ink-soft);
+}
+.card.sold-out .card-icon { filter: grayscale(1); opacity: .45; }
+.card.sold-out h3, .card.sold-out .price { color: var(--muted); }
+.card h3 a { color: inherit; text-decoration: none; }
+.card h3 a:hover { text-decoration: underline; }
+
+/* ── Product page and the <product-card> component (Part 3) ── */
+/* The component's own element adds no box: its .card is the grid item. */
+product-card { display: contents; }
+/* The router only holds its routes; its outlet, right after it, is the grid item. */
+wcs-router { display: contents; }
+.product-page {
+  display: flex; flex-direction: column; gap: 10px;
+  max-width: 520px; padding: 20px;
+  background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.product-page .back { font-size: .88rem; }
+.product-page .back a { color: var(--brand); }
+.product-page .card-icon { height: 140px; font-size: 3.4rem; }
+.shop .product-page h2 { font-size: 1.3rem; margin: 4px 0 0; }
+.product-page p { color: var(--ink-soft); }
+.product-page .price { font-size: 1.15rem; font-weight: 700; color: var(--ink); }
+.product-page .badge {
+  align-self: flex-start;
+  font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--line); color: var(--ink-soft);
+}
+.product-page button { align-self: flex-start; }
+
+/* ── Buttons ── */
+button {
+  cursor: pointer;
+  padding: 8px 12px; border-radius: 8px;
+  border: 1px solid var(--brand);
+  background: var(--brand); color: var(--brand-ink);
+  font-weight: 600; font-size: .86rem;
+}
+button:hover:not(:disabled) { filter: brightness(1.1); }
+button:disabled { cursor: not-allowed; background: var(--line); border-color: var(--line); color: var(--muted); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ── Cart ── */
+.cart {
+  position: sticky; top: 16px;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.cart .empty { font-size: .9rem; color: var(--ink-soft); }
+.cart-lines { list-style: none; margin: 0; padding: 0; }
+.cart-lines li {
+  display: grid; gap: 4px 8px; align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: .88rem;
+}
+.cart-lines .line-name { font-weight: 600; }
+.cart-lines .line-total { text-align: right; font-variant-numeric: tabular-nums; }
+.stepper { display: inline-flex; align-items: center; gap: 8px; }
+.stepper button { width: 30px; padding: 2px 0; }
+.stepper span { min-width: 1.5em; text-align: center; font-variant-numeric: tabular-nums; }
+button.remove {
+  justify-self: end;
+  padding: 2px 8px;
+  background: none; border-color: transparent; color: var(--ink-soft);
+  font-weight: 500; font-size: .8rem; text-decoration: underline;
+}
+.totals {
+  display: grid; grid-template-columns: 1fr auto; gap: 6px 12px;
+  margin: 14px 0 0; font-size: .9rem;
+}
+.totals dt { color: var(--ink-soft); }
+.totals dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.totals .grand { font-weight: 700; color: var(--ink); font-size: 1rem; }
+.cart .hint { margin-top: 10px; font-size: .8rem; color: var(--brand); }
+
+/* ── Toolbar (search, category, sort) ── */
+.toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  margin-bottom: 16px;
+}
+.toolbar input[type="search"], .toolbar select {
+  padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--card);
+}
+.toolbar input[type="search"] { flex: 1 1 180px; min-width: 0; }
+.categories { display: flex; flex-wrap: wrap; gap: 4px 12px; border: 0; margin: 0; padding: 0; font-size: .88rem; }
+.categories label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+.no-results { font-size: .9rem; color: var(--ink-soft); }

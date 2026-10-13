@@ -13,6 +13,7 @@ import { parseSearchParams, shallowEqualRecords } from "../searchParams.js";
 import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { reflectAttribute } from "../protocol/inputAttribute.js";
+import { isAbortError } from "../isAbortError.js";
 import { bindSubtree, getBinder } from "../protocol/binder.js";
 import { inSsr } from "../inSsr.js";
 import { runGuardPhase } from "../showRouteContent.js";
@@ -498,7 +499,7 @@ export class Router extends HTMLElement implements IRouter {
     if (this._navigateUrl === value) return;
     this._navigateUrl = value;
     this.navigate(value).catch((err) => {
-      console.error(`${config.tagNames.router} navigate failed:`, err);
+      if (!isAbortError(err)) console.error(`${config.tagNames.router} navigate failed:`, err);
     }).finally(() => {
       this._navigateUrl = null;
       this.dispatchEvent(new CustomEvent("wcs-router:navigate-url-changed", {
@@ -523,7 +524,7 @@ export class Router extends HTMLElement implements IRouter {
     if (this._replaceUrl === value) return;
     this._replaceUrl = value;
     this.replace(value).catch((err) => {
-      console.error(`${config.tagNames.router} replace failed:`, err);
+      if (!isAbortError(err)) console.error(`${config.tagNames.router} replace failed:`, err);
     }).finally(() => {
       this._replaceUrl = null;
       this.dispatchEvent(new CustomEvent("wcs-router:replace-url-changed", {

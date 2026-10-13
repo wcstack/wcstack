@@ -629,3 +629,40 @@ function propertyKeyIs(property: AnyNode & { type: 'Property' }, name: string): 
   if (!property.computed && key.type === 'Identifier') return key.name === name;
   return key.type === 'Literal' && key.value === name;
 }
+
+/**
+ * 関数本体（メソッド短縮記法の本体 `kind: 'body'`、またはプロパティの値 `kind: 'value'`）の中で、その関数の
+ * `this` を指す最初の `this` の位置（入力テキスト相対）。入れ子の function / class の中は見ない（アロー関数は
+ * 外側の `this` を継承するので見る）。値がアロー関数・識別子などの関数式でないものは null（`this` は
+ * その関数のものではない）。パースできなければ null。`$on` のハンドラ（`this` は undefined）の検査が使う —
+ * `this.x` だけでなく `const state = this` のような別名も同じ間違い（docs/seam-apps.md、state-collab-board）。
+ */
+export function findOwnThis(text: string, kind: 'body' | 'value'): { start: number; end: number } | null {
+  let program: AnyNode;
+  const prefix = kind === 'body' ? PREFIX : VALUE_PREFIX;
+  try {
+    program = parse(prefix + text + (kind === 'body' ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return null;
+  let root: AnyNode = wrapper.body;
+  if (kind === 'value') {
+    const statement = wrapper.body.body.length === 1 ? wrapper.body.body[0] : null;
+    if (statement === null || statement.type !== 'ExpressionStatement' || statement.expression.type !== 'FunctionExpression') return null;
+    root = statement.expression.body;
+  }
+  let found: { start: number; end: number } | null = null;
+  const walk = (node: AnyNode): void => {
+    if (found !== null || isClassNode(node)) return;
+    if (isFunctionNode(node) && node.type !== 'ArrowFunctionExpression') return;
+    if (node.type === 'ThisExpression') {
+      found = { start: node.start - prefix.length, end: node.end - prefix.length };
+      return;
+    }
+    forEachChild(node, walk);
+  };
+  forEachChild(root, walk);
+  return found;
+}

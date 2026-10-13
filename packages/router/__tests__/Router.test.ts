@@ -1582,6 +1582,24 @@ describe('Router', () => {
       expect(errorSpy).toHaveBeenCalled();
       errorSpy.mockRestore();
     });
+
+    it('別のナビゲーションに引き継がれた（AbortError — guard のリダイレクトなど）ものは失敗として報告しない（docs/seam-apps.md、router-auth）', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      const abort = new DOMException('Navigation was aborted', 'AbortError');
+      vi.spyOn(router, 'navigate').mockRejectedValue(abort);
+      vi.spyOn(router, 'replace').mockRejectedValue(abort);
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      router.navigateUrl = '/guarded';
+      router.replaceUrl = '/guarded';
+
+      await vi.waitFor(() => {
+        expect(router.navigateUrl).toBeNull();
+        expect(router.replaceUrl).toBeNull();
+      });
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
   });
 
   // docs/router-state-contract-design.md §4.2 — null-idle transient（navigateUrl と完全同型）
