@@ -10914,6 +10914,35 @@ function propertyKeyIs(property, name) {
   if (!property.computed && key.type === "Identifier") return key.name === name;
   return key.type === "Literal" && key.value === name;
 }
+function findOwnThis(text3, kind) {
+  let program;
+  const prefix = kind === "body" ? PREFIX : VALUE_PREFIX;
+  try {
+    program = parse3(prefix + text3 + (kind === "body" ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: "latest", sourceType: "module" });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return null;
+  let root = wrapper.body;
+  if (kind === "value") {
+    const statement = wrapper.body.body.length === 1 ? wrapper.body.body[0] : null;
+    if (statement === null || statement.type !== "ExpressionStatement" || statement.expression.type !== "FunctionExpression") return null;
+    root = statement.expression.body;
+  }
+  let found = null;
+  const walk = (node) => {
+    if (found !== null || isClassNode(node)) return;
+    if (isFunctionNode(node) && node.type !== "ArrowFunctionExpression") return;
+    if (node.type === "ThisExpression") {
+      found = { start: node.start - prefix.length, end: node.end - prefix.length };
+      return;
+    }
+    forEachChild(node, walk);
+  };
+  forEachChild(root, walk);
+  return found;
+}
 
 // src/core/messages.ts
 function resolveLocale(locale2) {
@@ -13544,7 +13573,8 @@ var BUILTIN_TAGS = {
       "downlink",
       "rtt",
       "saveData",
-      "supported"
+      "supported",
+      "offline"
     ],
     "commands": []
   },
@@ -16153,14 +16183,12 @@ function hasOutOfRangeIndexName(script) {
   }
   return false;
 }
-var ANY_MEMBER = { has: () => true };
 function validateOnHandlerThis(script, scriptStart, locale2) {
   const msgs = getMessages(locale2);
   const out = [];
   for (const handler of analyzeOnHandlerSources(script)) {
-    const refs = handler.kind === "body" ? collectThisMemberRefs(handler.text, ANY_MEMBER) : collectThisMemberRefsInValue(handler.text, ANY_MEMBER);
-    const first = refs?.[0];
-    if (first === void 0) continue;
+    const first = findOwnThis(handler.text, handler.kind);
+    if (first === null) continue;
     out.push({
       code: WcsDiagnosticCode.OnHandlerThis,
       start: scriptStart + handler.start + first.start,

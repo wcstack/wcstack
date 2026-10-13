@@ -2263,6 +2263,16 @@ function whenLoadOrderSettled(check) {
     check();
 }
 
+/**
+ * A navigation another one took over — a guard's redirect, a newer navigation — rejects with an
+ * `AbortError` (Navigation API). That is the designed outcome, not a failure: the write surfaces
+ * (`navigateUrl` / `replaceUrl`) and the guard's fallback do not report it (docs/seam-apps.md,
+ * router-auth — `navigateUrl` to a guarded page logged "navigate failed: AbortError").
+ */
+function isAbortError(error) {
+    return error?.name === "AbortError";
+}
+
 /** 続けて起きた guard のリダイレクトの数（guard 相を通った遷移で数え直す） */
 const redirectCounts = new WeakMap();
 /** これを超えて続くリダイレクトはループとして止める（docs/seam-apps.md、router-auth） */
@@ -2340,7 +2350,8 @@ async function runGuardPhase(routerNode, matchResult) {
                 .catch(() => { })
                 .then(() => routerNode.replace(e.fallbackPath))
                 .catch((err) => {
-                console.error('Fallback navigation failed:', err);
+                if (!isAbortError(err))
+                    console.error('Fallback navigation failed:', err);
             });
             return false;
         }
@@ -3079,7 +3090,8 @@ class Router extends HTMLElement {
             return;
         this._navigateUrl = value;
         this.navigate(value).catch((err) => {
-            console.error(`${config.tagNames.router} navigate failed:`, err);
+            if (!isAbortError(err))
+                console.error(`${config.tagNames.router} navigate failed:`, err);
         }).finally(() => {
             this._navigateUrl = null;
             this.dispatchEvent(new CustomEvent("wcs-router:navigate-url-changed", {
@@ -3104,7 +3116,8 @@ class Router extends HTMLElement {
             return;
         this._replaceUrl = value;
         this.replace(value).catch((err) => {
-            console.error(`${config.tagNames.router} replace failed:`, err);
+            if (!isAbortError(err))
+                console.error(`${config.tagNames.router} replace failed:`, err);
         }).finally(() => {
             this._replaceUrl = null;
             this.dispatchEvent(new CustomEvent("wcs-router:replace-url-changed", {
@@ -4280,7 +4293,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.1.0";
+var version = "4.1.1";
 var pkg = {
 	version: version};
 
