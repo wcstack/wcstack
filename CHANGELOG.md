@@ -8,6 +8,33 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+What the seam apps left open ([docs/seam-apps.md](./docs/seam-apps.md), "What was left open"). The design decisions are the author's (2026-10-14).
+
+### Added
+
+- `@wcstack/state`: **`date` / `time` / `datetime` take a style** second — `full`, `long`, `medium` or `short` (Intl's `dateStyle` / `timeStyle`): `date(en-US,medium)` → "Oct 13, 2026". A style alone keeps the page locale (`date(medium)`); without one the format is the locale's numeric one, as before. An unknown style fails when the bindings are planned.
+- `@wcstack/state`: **`currency(code, loc?)`** — a number as money in an ISO 4217 currency (`price|currency(JPY)`), the code checked when the bindings are planned. 48 built-in filters.
+- `@wcstack/signals`: dev mode warns **`UNTRACKED_COMPUTED`** / **`UNTRACKED_EFFECT`** when a `computed`, or an effect the author wrote, read no signal on its first run — it never runs again (a value read outside it, or with `peek()`, was fixed). A setup effect (one that returns a cleanup, registers `onCleanup` or builds children) and the effects `h()`, `For` and the adapters build are not checked.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/submit-without-prevent`** (warning) — `onsubmit:` on a `<form>` without `#prevent`, whose handler does not call `preventDefault`: the browser submits the form too (with the router, a GET puts the fields — a password too — in the URL and the history).
+- Lint: **`wcs/route-bare-mustache`** (warning) — `{{ }}` in text directly under `<wcs-route>` (bound only on the landing route) or a layout's template (not bound on a navigation).
+- `@wcstack/router` and lint: **`wcs/layout-slot-missing`** (warning) — a layout template without a default `<slot>`, given nested routes: they are not shown. The outlet warns at runtime, the lint from the markup.
+
+### Changed
+
+- `@wcstack/router`: **`leaveConfirm` also asks before a navigation that leaves the page** and the page may cancel — a link outside the router's `basename` (a language switch, with the locale in the basename) or to another site, a form submission — with its own message, where the Navigation API is. Accepted, the browser does not ask again. Before, those got only the browser's own `beforeunload` prompt.
+- `@wcstack/state`: **`$watch` on a root getter fires for a first value an element brought** — a getter over a `<wcs-storage>`'s saved session, over the router's first params — once when the watches start, with `prev` `undefined`. 4.1.0 did this for the element's own path only.
+- `@wcstack/signals`: **an object or array `h()` gives a custom element that is not defined yet is held** and assigned through the element's setter once it is defined (the latest value). It was written as an attribute, `product="[object Object]"`. Primitives still go to the attribute.
+- Lint: **in-place changes the `this.<…>` patterns did not see** are reported under their family's codes (error): a change through an alias of a state value (`const cards = this.cards; cards[i] = card` — assigning the same array back adds or replaces no row), `Object.assign(this.x, v)`, and a change through a `$on` handler's state argument (`state.board.cards.push(x)`).
+- Lint: **`wcs/getter-untracked-read`** takes a `$on` handler's `state["a.b"] = …` as evidence too (where SSE and WebSocket data land), and reports a getter that reads the URL from `location` (`pathname`, `search`, `hash`, `href`) — it is not state, so the getter keeps the URL it first read.
+- Lint: **`wcs/signals-dual-entry`** warns on an import map that maps both `@wcstack/signals` and `@wcstack/signals/dom` to CDN bundles: a module the page loads that imports the core gets a second one.
+
+### Fixed
+
+- `@wcstack/router`: a `<wcs-outlet>` that a layout template brings is warned about as `[wcs/router-outlet-misplaced]` too (it is never used; the page stayed blank without a word).
+- `@wcstack/state`: a number or date filter given the wrong type says what it got and how to convert it (`filter date requires a date value (a Date), not a string ("2026-10-13") — make the Date where it is read`). A binding that failed to apply is named as written — `textContent: iso`, `class.active: x` — instead of by its type (`prop: iso`), and the console gets its node.
+- `@wcstack/signals`: `bindNode` on a custom element that is not defined yet says so, and how to load or wait for it, instead of the generic "no wc-bindable descriptor". `NON_PRIMITIVE_KEY` points at `For`'s `current()`.
+- Documentation: the state README says a list's rows follow its array only when a new array is assigned (the same array again, or `$postUpdate`, adds, removes or replaces no row). The router README says a layout template needs a default `<slot>`, and that a `prefix` link is marked on a path under it next to the page's own link. The fetch pagination signals example maps only `@wcstack/signals/dom`.
+
 ## [4.1.1] — 2026-10-14
 
 From landing the seam apps in `examples/`: `@wcstack/lint` and `@wcstack/typescript` 4.1.0 shipped with the previous tag catalog (they reported `<wcs-network>`'s new `offline` as unknown), and a redirected `navigateUrl` logged an error. No behavior changes beyond those.

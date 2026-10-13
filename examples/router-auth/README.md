@@ -48,7 +48,7 @@ This app was the pilot of the seam apps: a first-time author built it from the p
 - `<wcs-fetch-header>` has a `value` property, so the header can come from state;
 - `wcs-validate` reports any literal seed of a `<wcs-storage>` `value` bound without `#init=element` (it logs every tab out when a second one opens), and an `$on` handler that uses `this`.
 
-Still open: the lint does not report an `onsubmit:` without `#prevent` (with the router, the browser's native GET submission puts the password in the URL), and writing `navigateUrl` to a page whose guard redirects logs `wcs-router navigate failed: AbortError` (the app's own links do not, which is why the home page links to the member area instead of navigating from state).
+Found later and fixed: writing `navigateUrl` to a page whose guard redirects logged `wcs-router navigate failed: AbortError` (4.1.1 does not), and the lint did not report an `onsubmit:` without `#prevent` — with the router, the browser's native GET submission puts the password in the URL (now `wcs/submit-without-prevent`).
 
 ## Tests
 

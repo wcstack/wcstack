@@ -59,6 +59,6 @@ This example was built by an author new to wcstack from the public documents onl
 - There was no online / offline output; the page listened on `window`. 4.1.0 adds `<wcs-network>`'s `offline`.
 - An `$on` handler written with `this`, like a `$watch` handler, failed with a misleading message. 4.1.0 lint reports `this.…` in an `$on` handler (`wcs/on-handler-this`).
 - The READMEs did not say that one `<wcs-fetch>` is one request at a time, that `Last-Event-ID` comes only after an event with an `id:`, or that a `CLOSED` stream is not retried. They do now.
-- Still open: lint does not see an in-place change through `Object.assign` or a local alias, nor a write made in `$on` through `state` as the cause of `wcs/getter-untracked-read`.
+- Found later and fixed: lint did not see an in-place change through `Object.assign` or a local alias (`const cards = this.serverCards; cards[i] = card` — assigning the same array back does not replace the row), nor a write made in `$on` through `state` as the cause of `wcs/getter-untracked-read`. It reports both now.
 
 The real-browser spec is `e2e/tests/state-collab-board.spec.ts`.

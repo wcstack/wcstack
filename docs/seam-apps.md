@@ -100,8 +100,8 @@ The first-time author (a subagent, public documents only) logged 23 frictions; a
 | design question | router: every designed redirect logged a warning (with a double period); no limit on guards redirecting each other | decision: no log; stop after 10 in a row with an error |
 | lint gap | `wcs/storage-seed-clobber` missed a seed with content, and was a warning (the skill's `--errors-only` gate passed it) | fixed — decision: any literal seed, as an error |
 | document gap | where a guard reads the session, that its module runs once, `toPath` without the query, `navigate()` rejecting on a redirect, a header from state, the storage README's sessionStorage example and `undefined` / `null` contradiction | fixed |
-| lint gap | an `$on` handler written with `this`; `onsubmit:` without `#prevent` (with the router, the native GET puts the password in the URL) | open |
-| design question | re-entering a route re-fires its `<wcs-fetch>` with the previous `url` before state writes the new one | open |
+| lint gap | an `$on` handler written with `this`; `onsubmit:` without `#prevent` (with the router, the native GET puts the password in the URL) | see [What was left open](#what-was-left-open-2026-10-14) |
+| design question | re-entering a route re-fires its `<wcs-fetch>` with the previous `url` before state writes the new one | see [What was left open](#what-was-left-open-2026-10-14) |
 
 ### router-admin, state-collab-board, signals-shop (2026-10-13)
 
@@ -122,7 +122,7 @@ Built in parallel after the pilot, the same way. All life events passed in the e
 | signals-shop | design question | `h()` ran a lowercase `onclick` function at render, as a reactive prop | decision: any `on…` key with a function is a listener (`onclick` → click, `onadd-to-cart` → add-to-cart) |
 | signals-shop | lint gap | `wcs/base-href-missing` missed a router imported through an import map | fixed |
 | signals-shop | document gap | the signals README still said 1.x and pinned 1.25.0; no signals × router / `<wcs-storage>` recipe; `@wcstack/testing` is for `<wcs-state>` pages | fixed |
-| all three | open | lint: in-place mutation through `Object.assign` or an alias; `$on` writes as evidence for `wcs/getter-untracked-read`; a getter reading `location`; a bare `{{ }}` under a route; `onsubmit:` without `#prevent`. Runtime: a layout without its default slot drops the page silently; route re-entry re-fires `<wcs-fetch>` with the old `url`; `date` / `locale` cannot format "Oct 13, 2026" or currencies. Signals dev mode: a computed that tracks nothing. The tutorial's step 13 loads state first | open |
+| all three | open | lint: in-place mutation through `Object.assign` or an alias; `$on` writes as evidence for `wcs/getter-untracked-read`; a getter reading `location`; a bare `{{ }}` under a route; `onsubmit:` without `#prevent`. Runtime: a layout without its default slot drops the page silently; route re-entry re-fires `<wcs-fetch>` with the old `url`; `date` / `locale` cannot format "Oct 13, 2026" or currencies. Signals dev mode: a computed that tracks nothing. The tutorial's step 13 loads state first | see [What was left open](#what-was-left-open-2026-10-14) |
 
 ### Landing them in examples/ (2026-10-14)
 
@@ -134,5 +134,26 @@ After 4.1.0 the same authors moved their apps into `examples/`, took out the wor
 | runtime defect | router: `navigateUrl` / `replaceUrl` to a page whose guard redirects logged `navigate failed: AbortError` (and a guard loop logged ten `Fallback navigation failed`) — a redirected navigation rejecting with `AbortError` is designed | fixed: an `AbortError` is not reported |
 | lint gap | `wcs/on-handler-this` missed an alias (`const state = this`) | fixed: any own `this` in a `$on` handler |
 | test defect | an e2e assertion pinned the SSR snapshot's minor version (`4.0.`), failing on every PR after 4.1.0 | fixed |
-| design question | a language switch is a real navigation (the locale is in the basename), so unsaved changes get the browser's `beforeunload` prompt, not `leaveConfirm`'s message; `match="prefix"` marks "Products" on `/products/new` too; `$watch` on a getter does not fire for a first value an element brought | open |
-| open | signals: an object prop on an element defined after `h()` lands as an attribute; `bindNode` before the element is defined gives a generic error; lint: `onsubmit:` without `#prevent`, in-place changes through `Object.assign` / an alias, `$on` writes for `wcs/getter-untracked-read`, `signals-dual-entry` across a sidecar module | open |
+| design question | a language switch is a real navigation (the locale is in the basename), so unsaved changes get the browser's `beforeunload` prompt, not `leaveConfirm`'s message; `match="prefix"` marks "Products" on `/products/new` too; `$watch` on a getter does not fire for a first value an element brought | see [What was left open](#what-was-left-open-2026-10-14) |
+| open | signals: an object prop on an element defined after `h()` lands as an attribute; `bindNode` before the element is defined gives a generic error; lint: `onsubmit:` without `#prevent`, in-place changes through `Object.assign` / an alias, `$on` writes for `wcs/getter-untracked-read`, `signals-dual-entry` across a sidecar module | see [What was left open](#what-was-left-open-2026-10-14) |
+
+### What was left open (2026-10-14)
+
+The rows marked open above, after 4.1.1. The author decided the design questions (all as recommended).
+
+| Kind | Finding | Outcome |
+|---|---|---|
+| design question | a language switch is a real navigation (the locale is in the basename), so unsaved changes got the browser's `beforeunload` prompt, not `leaveConfirm`'s message | decided: `leaveConfirm` asks before a navigation that leaves the page and the page may cancel (out of the basename, another site, a form submission) where the Navigation API is; accepted, the browser does not ask again (checked in Chromium: `navigate` comes first and is cancelable) |
+| design question | `match="prefix"` marks "Products" on `/products/new` next to "New product" | decided: as designed — the section (`aria-current="true"`) and the page (`"page"`); the router README says to style `[aria-current="page"]` for one mark |
+| design question | `$watch` on a getter did not fire for a first value an element brought | decided: a root getter that reads such a path fires once when the watches start, `prev` `undefined` (4.1.0's rule, extended) |
+| design question | `date` / `locale` could not give "Oct 13, 2026" or a currency | decided: a style for `date` / `time` / `datetime` (`date(en-US,medium)`) and `currency(code, loc?)`; plurals stay in getters (`Intl.PluralRules`) |
+| runtime defect | a layout template without a default `<slot>` dropped the nested routes without a word; an outlet a layout template brings was not warned about | fixed: `[wcs/layout-slot-missing]`, and `[wcs/router-outlet-misplaced]` for that outlet, at runtime; the lint reports the slot from the markup |
+| design question | re-entering a route re-fired its `<wcs-fetch>` with the previous `url` | already gone in 4.1.0 (params reach state before the content); router-auth's e2e now checks the request log |
+| runtime defect | the message for an ISO string given to `date` called `textContent: iso|date` "prop: iso" | fixed: a failed binding is named as written, with its node; the type errors say what they got and how to convert it |
+| runtime defect | signals: an object prop for an element defined after `h()` landed as `[object Object]`; `bindNode` before the definition gave a generic error; dev mode said nothing about a `computed` / effect that tracks nothing | fixed: the object is held and assigned through the setter once the element is defined (checked in Chromium too — happy-dom replaces an element instead of upgrading it); `bindNode` says the tag is not defined yet; `UNTRACKED_COMPUTED` / `UNTRACKED_EFFECT` |
+| lint gap | `onsubmit:` without `#prevent` | fixed: `wcs/submit-without-prevent` (warning) |
+| lint gap | in-place changes through `Object.assign` or an alias, and through a `$on` handler's state | fixed: under `wcs/nested-assign` / `wcs/array-*` (error). Checking it found a document gap too: assigning the same array back — or `$postUpdate` — adds, removes or replaces no row of a list (rows follow only a new array, as the array-mutation design records); the state README's "an array write always passes, even the same reference" read as if it would. The README says so now |
+| lint gap | `$on` writes as evidence for `wcs/getter-untracked-read`; a getter reading `location` | fixed: both (`location`'s `pathname` / `search` / `hash` / `href` — not `protocol` / `host`, which two examples read to build a WebSocket URL) |
+| lint gap | bare `{{ }}` under a route | fixed: `wcs/route-bare-mustache` (warning), under a layout template too |
+| lint gap | `signals-dual-entry` across a sidecar module | fixed as far as the page shows it: an import map that maps both entries warns (the lint does not read other files). The fetch pagination signals example mapped both |
+| document gap | the site tutorial's step 13 loads `@wcstack/state` first, against the skill and the examples | fixed on the site |
