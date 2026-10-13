@@ -90,10 +90,17 @@ describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () =
     expect(v4.version).toBe(v3.version);
     // 4.0: `#direct` is added (an `on*:` listener on the element itself, not delegated)
     expect(v4.syntax).toEqual({ ...v3.syntax, modifiers: { ...v3.syntax.modifiers, flags: [...v3.syntax.modifiers.flags, "direct"] } });
-    // 4.0: substr is folded into slice (slice(start, start + length))
-    expect([...v4.filters].sort()).toEqual([...v3.filters].filter((n: string) => n !== "substr").sort());
+    // 4.0: substr is folded into slice (slice(start, start + length)). 4.2: currency is added, and the
+    // date filters take a style second (docs/seam-apps.md, router-admin — decision 2026-10-14)
+    expect([...v4.filters].sort()).toEqual([...v3.filters.filter((n: string) => n !== "substr"), "currency"].sort());
     const { substr: _substr, ...v3Meta } = v3.filterMeta;
-    expect(v4.filterMeta).toEqual(v3Meta);
+    const { currency, date, time, datetime, ...v4Same } = v4.filterMeta;
+    const { date: date3, time: time3, datetime: datetime3, ...v3Same } = v3Meta;
+    expect(v4Same).toEqual(v3Same);
+    for (const [v4m, v3m] of [[date, date3], [time, time3], [datetime, datetime3]]) {
+      expect({ ...v4m, description: undefined }).toEqual({ ...v3m, description: undefined, maxArgs: 2, argTypes: ["string", "string"] });
+    }
+    expect(currency).toMatchObject({ minArgs: 1, maxArgs: 2, acceptTypes: ["number"], resultType: "string" });
     expect(v4.reservedLifecycle).toEqual(v3.reservedLifecycle);
     // 4.0: $scan is removed, $behavior / $features are added; the old filter / declaration names are gone from the runtime
     expect(v4.reservedStateApi).toEqual([...v3.reservedStateApi.filter((n: string) => n !== "$scan"), "$behavior", "$features"]);

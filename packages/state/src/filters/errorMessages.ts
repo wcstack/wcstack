@@ -16,14 +16,24 @@ export function optionMustBeNumber(fnName: string): never {
   raise(M.FilterOptionNotNumber, [fnName]);
 }
 
-/** The value given to a numeric filter is not a number. */
-export function valueMustBeNumber(fnName: string): never {
-  raise(M.FilterValueNotNumber, [fnName]);
+/** A date filter's style is not one of full / long / medium / short. */
+export function styleInvalid(fnName: string, value: string): never {
+  raise(M.FilterStyleInvalid, [fnName, value]);
 }
 
-/** The value given to a date filter is not a Date. */
-export function valueMustBeDate(fnName: string): never {
-  raise(M.FilterValueNotDate, [fnName]);
+/** `currency`'s code is not a currency Intl knows. */
+export function currencyInvalid(value: string): never {
+  raise(M.FilterCurrencyInvalid, [value]);
+}
+
+/** The value given to a numeric filter is not a number (the message says what it was). */
+export function valueMustBeNumber(fnName: string, value: unknown): never {
+  raise(M.FilterValueNotNumber, [fnName, value]);
+}
+
+/** The value given to a date filter is not a Date (the message says what it was). */
+export function valueMustBeDate(fnName: string, value: unknown): never {
+  raise(M.FilterValueNotDate, [fnName, value]);
 }
 
 /** The value given to an array filter is not an array. */

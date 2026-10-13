@@ -162,7 +162,16 @@ describe("番号付きのコアのメッセージの文面（src/messages.ts）"
   it("バインディングの失敗の console も文面になる", async () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     await page(`<p>{{ bad }}</p>`, { get bad() { throw new Error("boom"); } });
-    expect(err).toHaveBeenCalledWith('[@wcstack/state] binding "text: bad" failed to apply.', expect.any(Error));
+    expect(err).toHaveBeenCalledWith('[@wcstack/state] binding "text: bad" failed to apply.', expect.any(Error), expect.any(Text));
+    err.mockRestore();
+  });
+
+  it("名前のあるバインディングは書いたとおりの名前で呼び（textContent: iso、class.active: x）、要素を添える（docs/seam-apps.md、router-admin）", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const boom = () => { throw new Error("boom"); };
+    const { root } = await page(`<p class="t" data-wcs="textContent: iso"></p><p class="c" data-wcs="class.active: on"></p>`, { get iso() { return boom(); }, get on() { return boom(); } });
+    expect(err).toHaveBeenCalledWith('[@wcstack/state] binding "textContent: iso" failed to apply.', expect.any(Error), root.querySelector(".t"));
+    expect(err).toHaveBeenCalledWith('[@wcstack/state] binding "class.active: on" failed to apply.', expect.any(Error), root.querySelector(".c"));
     err.mockRestore();
   });
 });

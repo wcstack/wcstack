@@ -164,6 +164,50 @@ describe("state-collab-board / router-admin: 要素が bind のときに既に�
     expect(calls).toEqual([true]);
   });
 
+  it("その値を読む根の getter の $watch も起動後に 1 回、(cur, undefined) で呼ばれる（2026-10-14 の決定）", async () => {
+    const tag = connectedTag(true);
+    const calls: unknown[][] = [];
+    await page(`<${tag} data-wcs="connected: connected"></${tag}>`, {
+      connected: false,
+      get label() { return this.connected ? "online" : "offline"; },
+      $watch: {
+        connected(cur: unknown) { calls.push(["connected", cur]); },
+        label(cur: unknown, prev: unknown) { calls.push(["label", cur, prev]); },
+      },
+    });
+    expect(calls).toEqual([["connected", true], ["label", "online", undefined]]);
+  });
+
+  it("要素が書いたオブジェクトの下を読む getter・getter を読む getter でも呼ばれ、読まない getter は呼ばれない", async () => {
+    const tag = connectedTag({ token: "t1", user: "alice" });
+    const calls: unknown[][] = [];
+    await page(`<${tag} data-wcs="connected: session"></${tag}>`, {
+      session: null,
+      n: 1,
+      get token() { return this["session.token"] ?? null; },
+      get loggedIn() { return this.token !== null; },
+      get double() { return this.n * 2; },
+      $watch: {
+        token(cur: unknown, prev: unknown) { calls.push(["token", cur, prev]); },
+        loggedIn(cur: unknown) { calls.push(["loggedIn", cur]); },
+        double(cur: unknown) { calls.push(["double", cur]); },
+      },
+    });
+    expect(calls).toEqual([["token", "t1", undefined], ["loggedIn", true]]);
+  });
+
+  it("$connectedCallback が要素の値を書き換えたら getter の $watch も呼ばない", async () => {
+    const tag = connectedTag(true);
+    const calls: unknown[] = [];
+    await page(`<${tag} data-wcs="connected: connected"></${tag}>`, {
+      connected: false,
+      $connectedCallback(this: any) { this.connected = false; },
+      get label() { return this.connected ? "online" : "offline"; },
+      $watch: { label(cur: unknown) { calls.push(cur); } },
+    });
+    expect(calls).toEqual([]);
+  });
+
   it("$connectedCallback での書き込みは、要素の無いパスでも動かさない（従来どおり）", async () => {
     const calls: unknown[] = [];
     await page(`<p>{{ n }}</p>`, {

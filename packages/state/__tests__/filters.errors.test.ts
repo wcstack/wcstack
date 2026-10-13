@@ -50,15 +50,20 @@ describe("filter errorMessages", () => {
 
   describe("valueMustBeNumber", () => {
     it("エラーメッセージにフィルター名が含まれること", () => {
-      expect(() => valueMustBeNumber("testFilter")).toThrow(/testFilter/);
-      expect(() => valueMustBeNumber("testFilter")).toThrow(/requires a number value/);
+      expect(() => valueMustBeNumber("testFilter", "12")).toThrow(/testFilter/);
+      expect(() => valueMustBeNumber("testFilter", "12")).toThrow(/requires a number value, not a string \("12"\) — put \|number before \|testFilter/);
+      expect(() => valueMustBeNumber("testFilter", null)).toThrow(/requires a number value, not null$/);
+      expect(() => valueMustBeNumber("testFilter", [1])).toThrow(/not an array$/);
     });
   });
 
   describe("valueMustBeDate", () => {
     it("エラーメッセージにフィルター名が含まれること", () => {
-      expect(() => valueMustBeDate("testFilter")).toThrow(/testFilter/);
-      expect(() => valueMustBeDate("testFilter")).toThrow(/requires a date value/);
+      expect(() => valueMustBeDate("testFilter", "2026-10-13T00:00:00.000Z and a long tail")).toThrow(/testFilter/);
+      expect(() => valueMustBeDate("testFilter", "2026-10-13T00:00:00.000Z and a long tail")).toThrow(/requires a date value \(a Date\), not a string \("2026-10-13T00:00:00.000Z and a l…"\) — make the Date where it is read/);
+      expect(() => valueMustBeDate("testFilter", 1760313600000)).toThrow(/not a number \(1760313600000\) — make the Date/);
+      expect(() => valueMustBeDate("testFilter", {})).toThrow(/not an object$/);
+      expect(() => valueMustBeDate("testFilter", undefined)).toThrow(/not undefined$/);
     });
   });
 

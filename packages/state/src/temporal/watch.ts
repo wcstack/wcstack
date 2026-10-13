@@ -130,14 +130,15 @@ export class WatchRuntime {
   /** Landings of the current batch: watch → row → hit. */
   private hits = new Map<Watch, Map<StateRow | null, Hit>>();
   /**
-   * What elements wrote to a watched data path before the watches were active — the value an
-   * element already had when its binding attached (an open `<wcs-sse>`, the router's first params):
-   * [watch, row, the value before, the value the element wrote]. Whether that value is
-   * there before or after the bindings attach depends on how fast the page loaded, so activate()
-   * fires it once, when the path still holds it (docs/seam-apps.md: state-collab-board, router-admin).
+   * What elements wrote before the watches were active — the value an element already had when its
+   * binding attached (an open `<wcs-sse>`, the router's first params, a `<wcs-storage>`'s saved value):
+   * [path, row, the value before, the value the element wrote]. Whether that value is there before or
+   * after the bindings attach depends on how fast the page loaded, so activate() fires, once, the
+   * watches of the paths that still hold it, and the root getters that read them (`prev`: the value
+   * before, none for a getter) — docs/seam-apps.md: state-collab-board, router-admin, router-auth.
    * A write from code before then (`$connectedCallback`) fires nothing, as before.
    */
-  private early: [Watch, StateRow | null, unknown, unknown][] = [];
+  private early: [Pattern, StateRow | null, unknown, unknown][] = [];
   /** The chain depth of a write made now: 0, or one more than what fired the running handler (or restart). */
   depth = 0;
   /**
@@ -178,9 +179,15 @@ export class WatchRuntime {
     }
     this.active = true;
     // what elements brought before now, still there: fired once, as the writes of a batch
-    for (const [w, row, before, value] of early) {
-      if ((row === null || row.alive) && Object.is(engine.readUntracked(w.p, row), value)) this.hit(w, row, before, true);
+    const held = new Set<Pattern>();
+    for (const [p, row, before, value] of early) {
+      if ((row === null || row.alive) && Object.is(engine.readUntracked(p, row), value)) {
+        held.add(p);
+        for (const w of this.watches) if (w.p === p) this.hit(w, row, before, true);
+      }
     }
+    // (a root getter's sources are known now: priming evaluated it)
+    for (const w of this.watches) if (w.getter && w.p.depth === 0 && !this.hits.has(w) && reads(getterOf(w.p), held)) this.hit(w, null, undefined, true);
     if (this.hits.size > 0) engine.schedule();
   }
 
@@ -224,8 +231,8 @@ export class WatchRuntime {
 
   written(p: Pattern, row: StateRow | null, old: unknown, value: unknown, direct: boolean, element?: boolean): void {
     if (!this.active) {
-      // an element's write to a watched data path itself, before the watches are active (see `early`)
-      if (element) for (const w of this.watches) if (w.p === p) this.early.push([w, row, old, value]);
+      // an element's write before the watches are active (see `early`)
+      if (element) this.early.push([p, row, old, value]);
       return;
     }
     (this.changed ??= new Set()).add(p);

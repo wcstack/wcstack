@@ -1409,7 +1409,8 @@ export class Engine implements ReconcileHooks {
           console.error(e);
         }
       } else {
-        console.error(`[@wcstack/state] ${text(M.BindingFailed, [type, path])}`, error);
+        // (the binding's member and kind name it as written; the node points at it)
+        console.error(`[@wcstack/state] ${text(M.BindingFailed, binding.name ? [type, path, binding.name, binding.kind] : [type, path])}`, error, binding.node);
       }
     }
   }

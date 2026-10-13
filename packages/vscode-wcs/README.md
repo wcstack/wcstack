@@ -42,7 +42,7 @@ Completions for property names, state paths, modifiers, and filter names in `dat
 
 - `data-wcs="` → `textContent`, `class.`, `style.`, `attr.`, `onclick`, `for`, `if`, `...`, `radio`, `checkbox`, `command.`, `eventToken.` ...
 - `data-wcs="textContent: ` → `count`, `users`, `users.*.name` ...
-- `data-wcs="textContent: count|` → `gt`, `eq`, `upper`, `trim` ... (all 47 built-in filters of 4.0)
+- `data-wcs="textContent: count|` → `gt`, `eq`, `upper`, `trim` ... (all 48 built-in filters of 4.2)
 - `data-wcs="value|` → write-back (input) filters such as `int`
 - `data-wcs="onclick#` → `prevent`, `stop`, `ro`, `direct` (the modifier list is the same after any `#`; `ro` suppresses write-back on two-way bindings; `direct` attaches an `on*:` listener to the element itself instead of delegating it to the root — 4.0)
 - `data-wcs="for: ` → only array-typed paths

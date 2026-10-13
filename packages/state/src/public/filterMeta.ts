@@ -77,10 +77,11 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   unit:    { description: "単位（接尾辞）を付加",  hasArgs: true,  resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
   // 日付・時刻
   // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
-  // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた
-  date:     { description: "ロケール形式の日付 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-  time:     { description: "ロケール形式の時刻 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-  datetime: { description: "ロケール形式の日時 ([locale]。既定は config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた。
+  // 4.2: 2 つ目は書式（full / long / medium / short — Intl の dateStyle / timeStyle）。書式だけなら既定のロケール
+  date:     { description: "ロケール形式の日付 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  time:     { description: "ロケール形式の時刻 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  datetime: { description: "ロケール形式の日時 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
   ymd:      { description: "YYYY-MM-DD 形式 ([separator]。既定は -)",   hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   hms:      { description: "HH:MM:SS 形式 ([separator]。既定は :)",     hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換
@@ -92,4 +93,6 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   number:   { description: "数値に変換",             hasArgs: false, resultType: "number",      acceptTypes: "any",      minArgs: 0, maxArgs: 0 },
   string:   { description: "文字列に変換",           hasArgs: false, resultType: "string",      acceptTypes: "any",      minArgs: 0, maxArgs: 0 },
   nullIfEmpty: { description: "空文字列をnullに変換",   hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  // 4.2（formats の最後に登録）
+  currency: { description: "通貨の書式 (code[, locale]。code は ISO 4217 — JPY / USD / EUR、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 1, maxArgs: 2, argTypes: ["string", "string"] },
 };

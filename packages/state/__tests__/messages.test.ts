@@ -46,7 +46,7 @@ describe("コアだけのメッセージ（診断の後付けなし）", () => {
     const el = document.body.querySelector("wcs-state") as any;
     el.setInitialState({ get bad() { throw new Error("boom"); } });
     await getBindingsReady(document);
-    expect(err).toHaveBeenCalledWith('[@wcstack/state] #12 "text" "bad"', expect.any(Error));
+    expect(err).toHaveBeenCalledWith('[@wcstack/state] #12 "text" "bad"', expect.any(Error), expect.any(Text));
     err.mockRestore();
     document.body.innerHTML = "";
   });
