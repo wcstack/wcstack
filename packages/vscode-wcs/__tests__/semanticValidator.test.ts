@@ -970,7 +970,13 @@ describe("wcs/on-handler-this — $on のハンドラの this（docs/seam-apps.m
     expect(found).toHaveLength(1);
     expect(found[0].severity).toBe("error");
     expect(found[0].message).toContain('The $on handler "loginResponded" uses this');
-    expect(html.slice(found[0].start, found[0].end)).toBe("session");
+    expect(html.slice(found[0].start, found[0].end)).toBe("this");
+  });
+
+  it("別名（const state = this）も報告する（state-collab-board の初めての形）", () => {
+    const html = script(`{ cards: [], $eventTokens: ["cardEvent"], $on: { cardEvent(event) { const state = this; state.cards = event.detail; } } }`);
+    const found = codes(validateSemantics(html, "wcs-state", "en"), WcsDiagnosticCode.OnHandlerThis);
+    expect(found).toHaveLength(1);
   });
 
   it("function 式の値のハンドラも報告する", () => {

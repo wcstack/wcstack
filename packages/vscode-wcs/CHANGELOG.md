@@ -2,6 +2,11 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **`wcs/on-handler-this` が別名も報告する** — `$on` のハンドラの中の `const state = this` も同じ間違い（state-collab-board の作者の最初の形）。ハンドラ自身の `this` はどう使っても報告する。
+- 組み込みのタグの一覧（`<wcs-network>` の `offline` を含む）は、npm の `@wcstack/lint` / `@wcstack/typescript` 4.1.0 では古いままだった（リリースの順序。拡張 2.1.0 は main から作ったので新しい一覧を持つ）。
+
 ## 2.1.0 — 2026-10-14
 
 `@wcstack/state` 4.1.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.1.0・`@wcstack/typescript` 4.1.0 と同じ判定）。継ぎ目アプリ（docs/seam-apps.ja.md）で見つけたもの。新しい error が 2 つある（`wcs/on-handler-this`、error に上げた `wcs/storage-seed-clobber`）ので minor。
