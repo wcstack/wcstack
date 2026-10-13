@@ -8,7 +8,9 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
-Fixes from *seam apps* — apps built from the public documents only, by a first-time author, to find what tests miss ([docs/seam-apps.md](./docs/seam-apps.md)). Four were built: `router-auth` (a members area: log-in, guarded pages, a token-protected API), `router-admin` (an admin console: nested layouts, paging, edit forms, view transitions, two languages), `state-collab-board` (a shared board over SSE with optimistic updates) and `signals-shop` (the tutorial's shop on `@wcstack/signals`). Every defect they found sat between two packages or showed only over time, and most were silent.
+## [4.1.0] — 2026-10-13
+
+Fixes and additions from *seam apps* — apps built from the public documents only, by a first-time author, to find what tests miss ([docs/seam-apps.md](./docs/seam-apps.md)). Four were built: `router-auth` (a members area: log-in, guarded pages, a token-protected API), `router-admin` (an admin console: nested layouts, paging, edit forms, view transitions, two languages), `state-collab-board` (a shared board over SSE with optimistic updates) and `signals-shop` (the tutorial's shop on `@wcstack/signals`). Every defect they found sat between two packages or showed only over time, and most were silent.
 
 ### Added
 
