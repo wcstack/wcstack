@@ -7,6 +7,7 @@ import { warnUnboundMarkup } from "./unboundMarkupWarning";
 import { bindSubtree, getBinder } from "./protocol/binder";
 import { ROUTE_RANGE } from "./routeRange";
 import { config } from "./config";
+import { isAbortError } from "./isAbortError";
 
 /** 続けて起きた guard のリダイレクトの数（guard 相を通った遷移で数え直す） */
 const redirectCounts = new WeakMap<IRouter, number>();
@@ -92,7 +93,7 @@ export async function runGuardPhase(
         .catch(() => {})
         .then(() => routerNode.replace(e.fallbackPath))
         .catch((err) => {
-          console.error('Fallback navigation failed:', err);
+          if (!isAbortError(err)) console.error('Fallback navigation failed:', err);
         });
       return false;
     } else {

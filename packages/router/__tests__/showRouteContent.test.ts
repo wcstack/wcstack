@@ -711,3 +711,23 @@ describe('showRouteContent — guard のリダイレクトと commit の時機�
     expect(beforeChange).not.toHaveBeenCalled();
   });
 });
+
+describe('showRouteContent — 引き継がれたフォールバックは失敗として報告しない', () => {
+  it('フォールバックの replace() が AbortError（次のリダイレクトに引き継がれた）で終わっても console.error を出さない', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    Object.defineProperty(router, 'connectedCallbackPromise', { get: () => Promise.resolve() });
+    router.replace = vi.fn().mockRejectedValue(new DOMException('Navigation was aborted', 'AbortError'));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const route = createMockRoute({
+      guardCheck: vi.fn().mockRejectedValue(new GuardCancel('Navigation cancelled by guard.', '/login')),
+      shouldChange: vi.fn().mockReturnValue(true),
+    });
+
+    await showRouteContent(router, createMatchResult([route]), []);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(router.replace).toHaveBeenCalledWith('/login');
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+});
