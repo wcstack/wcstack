@@ -219,6 +219,20 @@ npm install @wcstack/fetch
 
 `body` は**使い捨て**の入力です。`<wcs-fetch>` は送信すると `body` を `null` に戻します（[設計メモ](#設計メモ)）。だから本文は要求を始めるハンドラで作り、毎回新しいオブジェクトを代入します。フォームのオブジェクトそのもの（`body: newUser`）を束ねると、送られるのは 1 回だけです。入力は束ねたパスの*下*の `newUser.name` に書くので束縛は当て直されず、2 回目の送信は本文なしになります。エラーは出ません。`wcs-validate` はこの形を `wcs/input-nested-write` で報告します。
 
+**要素 1 つは、一度に要求 1 本。** 同じ `<wcs-fetch>` で新しい要求を始めると実行中の要求は中断され、`true` のままの `trigger` に 2 回目の `true` を書いても同じ値として捨てられます。だから重なりうる要求には、それぞれ要素を用意します — 変更の種類（作成・更新・削除）ごとに 1 つ。全部の変更で 1 つを共有すると、素早い 2 回の変更の片方が黙って失われます。
+
+**サーバーのフィールドのエラー**（`{ errors: { name: "…" } }` 付きの `422`）は `error` に届きます。HTTP のエラーでは `error` は `{ status, statusText, body }` で、`body` は応答の本文のテキストです。getter で読みます:
+
+```js
+get fieldErrors() {
+  const e = this.submitError;
+  if (!e?.body) return {};
+  try { return JSON.parse(e.body).errors ?? {}; } catch { return {}; }
+},
+```
+
+フィールドの隣に `textContent: fieldErrors.name` を束ねます。次の要求が成功すると `error` は `null` に戻ります。
+
 ### 5. `<wcs-infinite-scroll>` による無限スクロール
 
 `<wcs-infinite-scroll>` は、sentinel 要素が表示領域に入ったときに既存の `<wcs-fetch>` を実行します。

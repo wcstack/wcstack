@@ -102,6 +102,7 @@ npm install @wcstack/view-transition
 
 1. **`for="state"`（既定で有効）は state の drain を非同期にする。** 現在の drain は microtask で着地するが、遷移の中ではフレームで着地する。state に書いてから `await Promise.resolve()` で DOM を読むコードは、代わりに遷移を待つ必要がある。`$renderedCallback` は影響を受けない（バインディング適用直後に発火する）。drain を完全に元のままにしたいなら `for="router"`。
 2. **参加は要素単位ではなくドキュメント単位。** 1 つの updater がページ上の全 `<wcs-state>` をまとめて drain するので、`for="state"` は全部に効く。
+3. **構造の変化だけが動く。** 一覧の行を足す・消す・動かす、`if` の分岐を切り替える state の更新は遷移の中で走り、テキスト・プロパティ・クラスを変えるだけの更新はタグが無いときと同じくその場で適用される（値の変化は CSS transition の担当）。だから束ねた入力欄への入力で遷移は始まらない —— 以前は 1 打鍵ごとに始まり、その間ページはクリックを受け付けなかった。
 
 遷移がスキップされ、変更が現行どおり同期適用されるのは: `startViewTransition` が無い環境、`document.hidden` が true のとき（バックグラウンドタブには描画機会が無く、遷移を張ると見に戻るまで DOM が凍る）、`reduced-motion="animate"` でない状態で `prefers-reduced-motion: reduce` のとき、`disabled` のとき、そして SSR 中。
 

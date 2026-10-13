@@ -185,6 +185,8 @@ Unlike `<wcs-ws>`, there is **no** `auto-reconnect` / `reconnect-interval` / `ma
 
 To stop reconnection, call `close()` (or remove the element from the DOM).
 
+**Catching up after a reconnect is the server's and your page's job.** The browser sends `Last-Event-ID` on a reconnect only after the stream delivered an event with an `id:`. A page that loads a snapshot and then opens the stream has received none when the first drop comes, so the reconnect asks for nothing, the changes made in the gap are lost, and `connected` is `true` again. Tell the stream where to start: put the snapshot's position in the URL — `data-wcs="url: eventsUrl"` with a getter returning `"/api/events?since=" + this.seq` — or have the server send the current `id:` first. And a stream that ended in `CLOSED (2)` (an HTTP error) is not retried by the browser: reopen it with `close()` and `trigger`, from where you were.
+
 ## State Surface vs Command Surface
 
 ### Output state (bindable async state)
