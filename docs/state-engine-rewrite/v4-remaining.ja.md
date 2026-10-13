@@ -1164,3 +1164,15 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - wcstack-skill: PR #38 で版の印と CDN の固定を 4.1.0 にし、ガード（セッションは関数の中で `localStorage` から・モジュールは一度だけ評価・`toPath` にクエリ無し）、`leaveConfirm`、`$watch` の初期値、`$on` の `(state, event)`、`<wcs-network offline>`、構造だけのビュー遷移、`<wcs-fetch-header value:>` とトークンの要る要求の url、`For` の `current()` と signals の router・storage の書き方を足した。マージしてタグ `v4.1.0`。
   - LP（50d7c25）: 版の参照と「Shipped in」の v4.1.0 の一文、state / signals のページの版、llms の作り直し、チュートリアルのステップ 15 の `^4.1.0`、ステップ 16 の `wcstack@4.1.0` と integrity。本番で 13・14・16 のデモと jsDelivr の router 4.1.0 を Chromium で確かめた（9/9）。
 - 残り: 4 本のアプリを回避策を外して `examples/` へ（e2e 付き）。seam-apps の表の未着手（lint 数件、レイアウトの既定 slot、ルート再入の fetch、`date` の書式、チュートリアルの読み込み順など）。
+
+### 4.1.1 の公開（2026-10-14）
+
+- 中身: 4.1.0 の記録に残した「4 本のアプリを `examples/` へ」を PR #455（merge commit a273cf66）で済ませた。同じ作者のサブエージェントが、4.1.0 で要らなくなった回避策を外してアプリを移し、意図を確かめる e2e の spec を書いた（router-auth 10 件・router-admin 15 件・state-collab-board 7 件・signals-shop 8 件、`WCS_LOCAL=1` で各例の `server.js` を起動）。そこで見つかったものも同じ PR で直した: 公開した `@wcstack/lint` / `@wcstack/typescript` 4.1.0 が `<wcs-network offline>` を知らなかった（`release.yml` が組み込みのタグの一覧を作り直す前に両方をビルドしていた。リリースは一覧の後に両方をビルドし直してテストする）、router の `navigateUrl` / `replaceUrl` がガードのリダイレクトで `AbortError` を報告していた（`src/isAbortError.ts`、報告しない）、`wcs/on-handler-this` が `const state = this` のような別名を見逃した（`findOwnThis`）、SSR の e2e が minor の `4.0.` を固定していた。examples/README（日英）に「継ぎ目アプリ」の節、docs/seam-apps に取り込みの表。state の runtime は 4.1.0 から変わらない（`core.min.js` は 19,919 B）。
+- 準備: PR #456（merge commit a5e27be5）で CHANGELOG を `[4.1.1] — 2026-10-14` に締め、CDN の固定 18 か所を 4.1.1 にした。
+- main で `release`（patch、run 38450629077）。49 パッケージが npm の `latest` で 4.1.1、来歴証明も 49/49、タグ `v4.1.1`、GitHub Release（`sri.json` 付き）、版を上げた commit は ca726e01。SRI は 44/44 が `sri.json`・タグの dist・jsDelivr で一致し、固定 URL（skill の分を含め 10 種）が 200。公開された lint / typescript 4.1.1 の一覧に `<wcs-network>` の `offline` があり、lint 4.1.1 の `--strict` で `examples/state-collab-board` が 0 件になることも確かめた（リリースの修正の確認）。
+- 公開後の作業（同日）:
+  - PR #457（merge commit 91d93c81）: サイズの基準値を 4.1.1 の dist で取り直した（版の文字列だけ）。CLAUDE.md / AGENTS.md の版、拡張の 2.1.1。
+  - VS Code 拡張 2.1.1: 91d93c81 で `npm run package` した vsix（一覧に `offline` あり）を Marketplace に公開した。タグ `vscode-wcs-v2.1.1`（91d93c81）。
+  - wcstack-skill: PR #39（merge commit d20c5ac5）で版の印と CDN の固定を 4.1.1 にし、lint の一覧の `wcs/on-handler-this` に別名を足した。タグ `v4.1.1`。
+  - LP（ec36c4a）: 版の参照と「Shipped in」の v4.1.1 の一文、state / signals のページの版、llms の作り直し、チュートリアルのステップ 15 の `^4.1.1`、ステップ 16 の `wcstack@4.1.1` と integrity。本番で 13・14・16 のデモと jsDelivr の router 4.1.1 を Chromium で確かめた（9/9）。
+- 残り: docs/seam-apps.ja.md の表の未着手 — 設計の問い 3 つ（言語の切り替えに `leaveConfirm` が効かない、兄弟のリンクがある `match="prefix"`、要素の最初の値での getter の `$watch`）、signals の遅れて定義される要素、lint の候補（`#prevent` の無い `onsubmit:`、`Object.assign` や別名を通したその場の変更、`$on` の書き込みを証拠にする `wcs/getter-untracked-read`、getter の中の `location`、ルート下の裸の `{{ }}`、別ファイルをまたぐ `signals-dual-entry`）、レイアウトの既定 slot、ルート再入の fetch、`date` の書式、チュートリアルの読み込み順。
