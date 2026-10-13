@@ -193,6 +193,10 @@ export class Route extends HTMLElement implements IRoute {
     this._core.notifyGuardHandlerLoadFailed();
   }
 
+  enableGuard(): void {
+    this._core.enableGuard();
+  }
+
   /**
    * Shell（Route）の routeParentNode を辿って祖先関係を判定する。
    *

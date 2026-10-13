@@ -288,13 +288,24 @@ export class RouteCore extends EventTarget {
       }
     }
 
-    this._hasGuard = options.hasGuard || false;
-    if (this._hasGuard) {
+    this._hasGuard = false;
+    if (options.hasGuard) {
       this._guardFallbackPath = options.guardFallback || '/';
-      this._waitForSetGuardHandler = new Promise((resolve) => {
-        this._resolveSetGuardHandler = resolve;
-      });
+      this.enableGuard();
     }
+  }
+
+  /**
+   * guard を有効にする: guard 相がハンドラの設定を待つようにする。`guard` 属性（parsePath）と
+   * `<wcs-guard-handler>`（parse）のどちらからも呼ばれる。リダイレクト先の既定は '/'。
+   */
+  enableGuard(): void {
+    if (this._hasGuard) return;
+    this._hasGuard = true;
+    this._guardFallbackPath ||= '/';
+    this._waitForSetGuardHandler = new Promise((resolve) => {
+      this._resolveSetGuardHandler = resolve;
+    });
   }
 
   setParams(params: Record<string, string>, typedParams: Record<string, any>): void {

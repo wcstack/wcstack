@@ -174,6 +174,36 @@ describe('wcs-guard-handler', () => {
     ).rejects.toThrow('Navigation cancelled by guard.');
   });
 
+  it('guard 属性の無いルートでも <wcs-guard-handler> があれば guard を有効にし、最初の guard 相からハンドラを待つ', async () => {
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+    const template = document.createElement('template');
+    template.innerHTML = `
+      <wcs-route path="/members">
+        <wcs-guard-handler>
+          <script type="module">
+            export default () => false;
+          </script>
+        </wcs-guard-handler>
+      </wcs-route>
+      <wcs-route path="/open">
+        <wcs-guard-handler></wcs-guard-handler>
+      </wcs-route>
+    `;
+    (router as any)._template = template;
+
+    await parse(router);
+
+    const [members, open] = router.routeChildNodes as Route[];
+    expect(members.hasGuard).toBe(true);
+    // ハンドラの読み込みを待たずに呼んでも、通さずに待つ（属性が無いと最初の表示だけ素通りしていた）
+    await expect(
+      members.guardCheck({ path: '/members', routes: [], params: {}, typedParams: {}, lastPath: '' })
+    ).rejects.toMatchObject({ fallbackPath: '/' });
+    // script の無い <wcs-guard-handler> は guard を有効にしない（待ちが決着しなくなるため）
+    expect(open.hasGuard).toBe(false);
+  });
+
   it('default exportが関数でない場合、guardHandlerが設定されないこと', async () => {
     const router = document.createElement('wcs-router') as Router;
     document.body.appendChild(router);
@@ -372,12 +402,16 @@ describe('wcs-guard-handler', () => {
     script.setAttribute('type', 'module');
     script.text = 'export default "not a function";';
 
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     loadGuardHandler(script, mockRoute as IRoute);
     await vi.waitFor(() => {
       expect(notifyMock).toHaveBeenCalled();
     });
 
     expect(guardHandlerSetter).not.toHaveBeenCalled();
+    // 黙ってリダイレクトに倒さず、理由を知らせる
+    expect(String(errorSpy.mock.calls[0]?.[0])).toMatch(/no default-exported function/);
+    errorSpy.mockRestore();
   });
 
   it('uuid が設定された route で loadGuardHandler が正常に動作すること（sourceURL 識別子付き）', async () => {

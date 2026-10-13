@@ -174,7 +174,7 @@ npm install @wcstack/storage
 </wcs-state>
 
 <wcs-storage key="session-data" type="session"
-  data-wcs="value: sessionData">
+  data-wcs="value#init=element: sessionData">
 </wcs-storage>
 
 <p data-wcs="textContent: sessionData"></p>
@@ -508,7 +508,7 @@ interface WcsStorageValues<T = unknown> extends WcsStorageCoreValues<T> {
 - `value` が状態パスにバインドされ、UI に反映
 - ユーザーが UI を操作すると状態が変わり、自動的にストレージに書き戻し
 - リロードしても状態が復元される
-- バインドするスロットは `undefined` で開始する（クイックスタート 5）ため、リロードが保存値を上書きしない
+- バインドに `#init=element` を付け、スロットは `null` で開始する（クイックスタート 5）ため、リロードが保存値を上書きしない
 
 永続化が通常の状態更新と同じように見えるようになります。
 

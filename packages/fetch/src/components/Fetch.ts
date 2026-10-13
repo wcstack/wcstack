@@ -223,10 +223,9 @@ export class Fetch extends HTMLElement {
     const headers: Record<string, string> = {};
     const headerElements = this.querySelectorAll<FetchHeader>(config.tagNames.fetchHeader);
     for (const el of headerElements) {
-      const name = el.headerName;
-      const value = el.headerValue;
-      if (name) {
-        headers[name] = value;
+      // a header without a value attribute is not sent (FetchHeader)
+      if (el.hasHeader) {
+        headers[el.headerName] = el.headerValue;
       }
     }
     return headers;

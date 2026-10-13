@@ -6,6 +6,12 @@ import { runTransition } from "./protocol/transitionRunner";
 import { warnUnboundMarkup } from "./unboundMarkupWarning";
 import { bindSubtree, getBinder } from "./protocol/binder";
 import { ROUTE_RANGE } from "./routeRange";
+import { config } from "./config";
+
+/** 続けて起きた guard のリダイレクトの数（guard 相を通った遷移で数え直す） */
+const redirectCounts = new WeakMap<IRouter, number>();
+/** これを超えて続くリダイレクトはループとして止める（docs/seam-apps.md、router-auth） */
+export const MAX_GUARD_REDIRECTS = 10;
 
 /**
  * 差し込んだルート内容を binder へ渡す。binder が居なければ、バインドが効かない
@@ -41,7 +47,13 @@ function bindRouteContent(route: IRoute): void {
 
 /**
  * ガード相の単独実装。何も触らずに全ルートの guardCheck を待ち、GuardCancel なら
- * フォールバックへの再ナビゲートを microtask で予約して false を返す。
+ * フォールバックへの再ナビゲートを予約して false を返す。
+ *
+ * リダイレクトは設計どおりの使い方なので、コンソールには何も出さない。履歴は**置き換える** —
+ * 守られた URL は表示されていないので「戻る」の行き先にしない（push だと、戻るたびに同じ
+ * リダイレクトへ戻される）。初期化（connectedCallbackPromise）の後で行う — 初期化中の遷移は
+ * navigate リスナに捕まらず、文書ごと読み直される。guard 同士が送り合うループは
+ * MAX_GUARD_REDIRECTS 回で止めてエラーにする。
  *
  * showRouteContent の相 1 であると同時に、SSR ハイドレーション
  * （docs/ssr-router-design.md §4 — 採用はレンダリング最適化であって認可の
@@ -63,14 +75,25 @@ export async function runGuardPhase(
       }
     }
     matchResult.data = data;
+    redirectCounts.delete(routerNode);
   } catch (e) {
     if (e instanceof GuardCancel) {
-      console.warn(`Navigation cancelled: ${e.message}. Redirecting to ${e.fallbackPath}`);
-      queueMicrotask(() => {
-        routerNode.navigate(e.fallbackPath).catch((err) => {
+      const count = (redirectCounts.get(routerNode) ?? 0) + 1;
+      if (count > MAX_GUARD_REDIRECTS) {
+        redirectCounts.delete(routerNode);
+        console.error(
+          `${config.tagNames.router}: guard redirect loop — stopped after ${MAX_GUARD_REDIRECTS} redirects in a row ` +
+          `(the last: ${matchResult.path} → ${e.fallbackPath}). The guards of these routes send each other back and forth.`,
+        );
+        return false;
+      }
+      redirectCounts.set(routerNode, count);
+      routerNode.connectedCallbackPromise
+        .catch(() => {})
+        .then(() => routerNode.replace(e.fallbackPath))
+        .catch((err) => {
           console.error('Fallback navigation failed:', err);
         });
-      });
       return false;
     } else {
       throw e;
@@ -93,6 +116,8 @@ export async function runGuardPhase(
  * 相を分けたことで「ガードが拒否したのに旧ルートだけ先に消えている」という
  * 順序の歪みも同時に解消している。
  *
+ * `beforeChange` はガード相を通った後、変更相の前に呼ぶ（applyRoute はここで commit する）。
+ *
  * @returns ガードチェックを通過してコンテンツ表示が成立した場合 true、
  *          GuardCancel により中断（フォールバックへ再ナビゲート）した場合 false。
  *          呼び出し側（applyRoute）は false の場合、router.path / outlet.lastRoutes を
@@ -102,11 +127,14 @@ export async function showRouteContent(
   routerNode: IRouter,
   matchResult: IRouteMatchResult,
   lastRoutes: IRoute[],
+  beforeChange?: () => void,
 ): Promise<boolean> {
   // --- ガード相 ---
   if (!(await runGuardPhase(routerNode, matchResult))) {
     return false;
   }
+  // 中身を描く前（applyRoute の commit — 中身のバインディングがこの遷移の出力を読めるように）
+  beforeChange?.();
 
   // --- 変更相 ---
   const routesSet = new Set<IRoute>(matchResult.routes);

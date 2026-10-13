@@ -10,8 +10,9 @@
  *   （wc-bindable は未知メンバーを黙って無視する）
  * - TriggerSeededTruthy: `trigger` バインド先スロットの `true` シード
  *   （trigger はエッジ検出なし・`manual` バイパスのため、バインド時に即発火する）
- * - StorageSeedClobber: 非 manual の `<wcs-storage>` `value` バインド先スロットの
- *   空値シード（初期書き戻しが保存値を上書きする — load-before-bind イディオム違反）
+ * - StorageSeedClobber（error）: 非 manual の `<wcs-storage>` `value` を `#init=element` なしで束ねた
+ *   スロットのリテラルのシード（null を含む。初期書き戻しが保存値を毎回上書きする — load-before-bind
+ *   イディオム違反）と、アクセサペア
  * - StorageInitSeed: `value#init=element` のバインド先スロットの null 以外のリテラルシード
  *   （空のキーは null を読むので、初回の引き込みでシードが null に置き換わる）
  *
@@ -58,8 +59,6 @@ const EXPLICIT_PROPERTY_REJECTED_HEADS_RE = new RegExp(
 );
 
 /** `''` / `null` / `[]` / `{}` — storage の保存値を初期書き戻しで上書きする空値シード。 */
-const EMPTYISH_SEEDS = new Set(["''", '""', '``', 'null', '[]', '{}']);
-
 /** 組み込み wcs-* タグ 1 出現（core/navigation の spread ヒントが所属タグ特定に共有。走査が二重実装になると検査とヒントでタグ解釈が割れる）。 */
 export interface IoTagOccurrence {
   tagName: string;
@@ -244,17 +243,19 @@ function validateBindingAgainstContract(
     }
   }
 
-  // storage の空値シード: 非 manual では value= が書き戻し保存されるため、
-  // '' / null 等のシードが localStorage の保存値を初期化時に上書きする。
-  // `#init=element` / `#init=auto` は load-before-bind の宣言的な解なので対象外。
+  // storage のシード: 非 manual では state の側が先に書くので、リテラルのシード（null・'' から
+  // 中身のあるオブジェクトまで）が保存値を読み込みのたびに上書きする — データが消えるので error。
+  // 空の値に限っていたため、`{ token: "", user: {…} }` のシードは黙って通っていた（docs/seam-apps.md、
+  // router-auth）。undefined のシード（`enableDirectionalInitialSync` を切ったページの形）と、式・
+  // 識別子（判断しない）は対象外。`#init=element` / `#init=auto` は load-before-bind の宣言的な解なので対象外。
   if (tagName === 'wcs-storage' && property === 'value' && !hasManual && parsed.path
     && !/(?:^|,)init=(?:element|auto)\b/.test(modifiers)) {
     const paths = getPaths();
     const cand = findDataSlot(paths, parsed.path);
-    if (cand?.rawInitial !== undefined && EMPTYISH_SEEDS.has(normalizeSeed(cand.rawInitial))) {
+    if (cand?.rawInitial !== undefined && (cand.rawInitial.trim() === 'null' || isNonNullLiteralSeed(cand.rawInitial))) {
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
-        start, end, severity: 'warning', tag: tagName, statePath: parsed.path,
+        start, end, severity: 'error', tag: tagName, statePath: parsed.path,
         message: msgs.storageSeedClobber(parsed.path, cand.rawInitial),
       });
     } else if (cand === undefined && paths.some(c => c.kind === 'computed' && c.settable && c.path === parsed.path)) {
@@ -263,7 +264,7 @@ function validateBindingAgainstContract(
       // つもりの印。getter だけ（保存専用の設計がありうる）は対象外。
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
-        start, end, severity: 'warning', tag: tagName, statePath: parsed.path,
+        start, end, severity: 'error', tag: tagName, statePath: parsed.path,
         message: msgs.storagePairClobber(parsed.path),
       });
     }
@@ -295,12 +296,6 @@ function isNonNullLiteralSeed(raw: string): boolean {
 
 function findDataSlot(paths: PathCandidate[], path: string): PathCandidate | undefined {
   return paths.find(c => c.kind === 'data' && c.path === path);
-}
-
-/** `[ ]` / `{ }` の内部空白を潰して EMPTYISH_SEEDS と比較できる形にする。 */
-function normalizeSeed(raw: string): string {
-  const compact = raw.replace(/\s+/g, '');
-  return compact === '' ? raw : compact;
 }
 
 // ============================================================

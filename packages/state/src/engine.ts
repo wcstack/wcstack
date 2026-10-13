@@ -1295,12 +1295,17 @@ export class Engine implements ReconcileHooks {
               }
             }
           }
-          for (let i = 0; i < q.length; i++) {
-            const b = q[i];
-            // applied since it was queued (a row slot, when its row was built)
-            if (!b.queued) continue;
-            b.queued = false;
-            if (b.owner === null || b.owner.alive) this.applyBinding(b);
+          // `if` / `elseif` conditions first: a branch one closes takes its bindings with it, so
+          // they are not applied with the value that closes it (a condition over a getter is
+          // queued after the bindings on the path it reads — docs/seam-apps.md, router-auth)
+          for (let k = 0; k < 2; k++) {
+            for (let i = 0; i < q.length; i++) {
+              const b = q[i];
+              // applied since it was queued (a row slot, when its row was built)
+              if (!b.queued || (b.chain === null) === (k === 0)) continue;
+              b.queued = false;
+              if (b.owner === null || b.owner.alive) this.applyBinding(b);
+            }
           }
           // applied later by the arbiter, outside any drain: report its failures now, and the drain
           // what it fed back starts (a write-back, `$renderedCallback`) is the next of this drain's chain

@@ -8,6 +8,24 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+Fixes from the first *seam app* — an app built from the public documents only, by a first-time author, to find what tests miss ([docs/seam-apps.md](./docs/seam-apps.md)). `router-auth`, a members area with log-in, guarded pages and a token-protected API, found defects at the seams between router, state, fetch and storage.
+
+### Changed
+
+- `@wcstack/router`: **a guard's redirect replaces the history entry** of the navigation it cancelled. It pushed one, so Back returned to the guarded URL and was redirected again — a user sent to `/login` could not leave it with Back.
+- `@wcstack/router`: **a designed guard redirect is not logged.** Every redirect logged `Navigation cancelled: Navigation cancelled by guard.. Redirecting to …` as a warning. Guards that keep redirecting each other are now stopped after 10 redirects in a row, with an error naming the last one (there was no limit: two guards that disagreed reloaded the page forever).
+- `@wcstack/router`: **a `<wcs-guard-handler>` enables guard handling by itself.** Without a `guard=""` attribute the first navigation did not wait for the handler, so the landing route was unguarded while later navigations were guarded. The attribute is now the redirect for a falsy result (default `/`). A guard script with no default-exported function is reported.
+- `@wcstack/router`: **`data`, `params`, `route-name` and `search` reach state before a route's content is placed**, `path` after it. The content was bound while state still held the previous route's params, so its getters were evaluated once with stale values (a filter could throw). The order of the events is unchanged; [docs/router-state-contract-design.md](./docs/router-state-contract-design.md) (ja) §3.4 records the change.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **`wcs/storage-seed-clobber` reports any literal seed, as an error.** It reported only an empty seed (`''`, `null`, `[]`, `{}`), but any literal seed of a `<wcs-storage>` `value` bound without `#init=element` is saved over the stored value on every load: a seeded session object logged every tab out when a second tab opened. It is data loss, and as a warning it passed the AI authoring skill's completion gate (`--errors-only`). An `undefined` seed and an expression are still not reported.
+
+### Fixed
+
+- `@wcstack/state`: **an `if:` over a getter no longer applies its content in the update that closes it.** A write queued the bindings on the written path before those of the getters that read it, so `{{ obj.n|locale }}` inside `<template data-wcs="if: ready">` (`ready` a getter over `obj.n`) was applied with `null` and threw "filter locale requires a number value". An `if:` on the path itself was not affected.
+- `@wcstack/router`: **a guard redirect on landing no longer reloads the page.** It ran before the router listened to navigations, so the browser loaded the redirect target as a new document.
+- `@wcstack/fetch`: **`<wcs-fetch-header>` takes `name` / `value` as properties**, reflected to the attributes, and **a header without a `value` attribute is not sent.** `data-wcs="value: authHeader"` wrote a property the element never read, so the request went out with an empty `Authorization` header — no error, no lint. The README now shows a header from state, and says that a request needing state should take its `url` from state too (the I/O packages load first, so a literal `url` fetches before state has set the header).
+- `@wcstack/router` README: the guard section says what a guard can read (not the state tree; on a page load it can run before state has loaded), that its module is evaluated once, that `toPath` has no query string, that a redirected `navigate()` rejects with `AbortError`, and how redirects treat history.
+- `@wcstack/storage` README: the sessionStorage example bound `value` without `#init=element` (the clobber the lint reports), and "Why it works well" said the slot starts as `undefined` while Quick Start 5 seeds `null`.
+
 ## [4.0.4] — 2026-10-13
 
 From writing Part 3 of the [tutorial](https://wcstack.github.io/tutorial/): a `<wcs-outlet>` placed away from its `<wcs-router>` stayed empty while the pages rendered right after the router, and nothing said so. The router and the lint now report it, and the router README says where the outlet goes. No behavior changes.

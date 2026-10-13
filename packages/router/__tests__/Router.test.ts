@@ -1055,6 +1055,37 @@ describe('Router', () => {
       path: '/products/5',
     };
 
+    it('holdPath なら path-changed だけを releasePath() まで保留する（値は先にコミット済み）', () => {
+      const router = document.createElement('wcs-router') as Router;
+      const order: string[] = [];
+      for (const ev of ['wcs-router:params-changed', 'wcs-router:path-changed']) {
+        router.addEventListener(ev, (e) => order.push(`${ev}:${ev.endsWith('path-changed') ? (e as CustomEvent).detail : ''}`));
+      }
+
+      router.commitNavigation(COMMIT, true);
+      expect(order).toEqual(['wcs-router:params-changed:']);
+      expect(router.path).toBe('/products/5');
+
+      router.releasePath();
+      expect(order).toEqual(['wcs-router:params-changed:', 'wcs-router:path-changed:/products/5']);
+
+      // 保留が無ければ何もしない
+      router.releasePath();
+      expect(order.length).toBe(2);
+    });
+
+    it('path が変わらない commit は holdPath でも保留せず、releasePath() は何も発火しない', () => {
+      const router = document.createElement('wcs-router') as Router;
+      router.commitNavigation(COMMIT);
+      const pathListener = vi.fn();
+      router.addEventListener('wcs-router:path-changed', pathListener);
+
+      router.commitNavigation({ ...COMMIT, search: '?q=1' }, true);
+      router.releasePath();
+
+      expect(pathListener).not.toHaveBeenCalled();
+    });
+
     it('発火順序が params → route-name → search → path であること', () => {
       const router = document.createElement('wcs-router') as Router;
       const order: string[] = [];

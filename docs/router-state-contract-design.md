@@ -195,6 +195,12 @@ commit（applyRoute がガード通過を確認した後）における規範:
    使われているため — `path` 発火時点で他の全観測面は確定済みであることを保証する。
 3. guard 拒否（committed = false）では何も更新せず何も発火しない
    （既存の path 非発火規範を全面に拡張）。
+4. **（2026-10-13 追補）commit はルートの中身を置く前に行う。** data / params / route-name /
+   search は変更相（中身の hide / show）の**前**に、path は**後**に発火する
+   （`commitNavigation(commit, holdPath)` と `releasePath()`）。以前は全部を変更相の後で
+   発火していたので、新しく置いた中身のバインディング（state）は前のルートの params で一度
+   評価され、getter やフィルタが例外を出しえた（docs/seam-apps.ja.md の router-auth で発見）。
+   path が「ナビゲーション完了」の信号である点は変わらない。
 
 ### 3.7 追補（2026-09-06）— guard の第 3 引数・動的リダイレクト・ロード済みデータ `data`
 

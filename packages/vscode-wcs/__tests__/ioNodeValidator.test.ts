@@ -210,6 +210,35 @@ describe('validateIoNodes: storage-seed-clobber', () => {
     expect(diags[0].message).not.toContain('undefined');
   });
 
+  it('データが消えるので error（skill の完了条件 --errors-only でも止まる）', () => {
+    const html = STATE(`  username: null,`) +
+      `<wcs-storage key="username" data-wcs="value: username"></wcs-storage>`;
+    expect(validateIoNodes(html)[0].severity).toBe('error');
+    const pair = STATE(`  cart: [],
+  get savedCart() { return this.cart; },
+  set savedCart(lines) { this.cart = lines; },`) + `<wcs-storage key="cart" data-wcs="value: savedCart"></wcs-storage>`;
+    expect(validateIoNodes(pair)[0].severity).toBe('error');
+  });
+
+  it('中身のあるリテラル（オブジェクト・文字列・数・真偽）のシードも保存値を上書きするので報告する（docs/seam-apps.md、router-auth）', () => {
+    for (const seed of ['{ token: "", user: { name: "", email: "" } }', '"guest"', '0', 'false', '["a"]']) {
+      const html = STATE(`  session: ${seed},`) +
+        `<wcs-storage key="session" data-wcs="value: session"></wcs-storage>`;
+      const diags = validateIoNodes(html);
+      expect(diags.map(d => d.code)).toEqual([WcsDiagnosticCode.StorageSeedClobber]);
+      // 長いシードは先頭だけ
+      expect(diags[0].message.length).toBeLessThan(400);
+    }
+  });
+
+  it('式・識別子の初期値は判断しない（報告しない）', () => {
+    for (const seed of ['loadDefaults()', 'DEFAULT_SESSION']) {
+      const html = STATE(`  session: ${seed},`) +
+        `<wcs-storage key="session" data-wcs="value: session"></wcs-storage>`;
+      expect(validateIoNodes(html)).toHaveLength(0);
+    }
+  });
+
   it('null / [] / {} シードも警告する', () => {
     for (const seed of ['null', '[]', '{}']) {
       const html = STATE(`  saved: ${seed},`) +

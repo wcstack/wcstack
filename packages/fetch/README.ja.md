@@ -557,12 +557,23 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 
 ### `<wcs-fetch-header>`
 
-リクエストヘッダを定義。`<wcs-fetch>` の子要素として配置。
+リクエストヘッダを定義。`<wcs-fetch>` の子要素として配置。要求を始めるときに読まれる。
 
-| 属性 | 型 | 説明 |
+| 属性 / プロパティ | 型 | 説明 |
 |------|------|------|
 | `name` | `string` | ヘッダ名 |
-| `value` | `string` | ヘッダ値 |
+| `value` | `string` | ヘッダ値。`value` 属性が無ければヘッダは送らない（空の `value=""` は送る） |
+
+`name` と `value` はプロパティでもあり、属性へ反映する（`null` は属性を外し、`undefined` はマークアップの値に戻す）。だからヘッダを state から渡せる:
+
+```html
+<wcs-fetch url="/api/me" data-wcs="...: me">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<!-- get authHeader() { return this.token ? `Bearer ${this.token}` : null; } -->
+```
+
+`authHeader` が `null` の間、要求は `Authorization` ヘッダ無しで出る。**state の値（トークンや id）が要る要求は、`url` も state から渡す**（`data-wcs="url: meUrl"` と、トークンが揃うまで `null` を返す getter）。I/O のパッケージは `@wcstack/state` より先に読み込まれるので、`url` をリテラルで書いた `<wcs-fetch>` は、ページの読み込みで state がヘッダを入れる前に要求を出す — ルートの中身の中でも同じ。
 
 ### `<wcs-fetch-body>`
 

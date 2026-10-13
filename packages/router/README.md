@@ -190,7 +190,7 @@ Commands `navigate(path)` and `replace(path)` (both async) are also declared, so
 
 Output-only members are **read** when a binding attaches and streamed through their change events afterwards — the value is read, not awaited, so a binding that attaches after the router already resolved its first route misses nothing.
 
-**Firing contract**: on a committed navigation the router commits *all* internal values first and only then fires events, in the order `data-changed` → `params-changed` → `route-name-changed` → `search-changed` → `path-changed`, each only when its value actually changed (`data` compares by identity — a guard returns a fresh object per navigation). Any listener that reads the element's properties sees the consistent post-navigation snapshot; `path` fires last and doubles as the "navigation finished" signal. A guard-rejected navigation updates nothing and fires nothing.
+**Firing contract**: on a committed navigation the router commits *all* internal values first and only then fires events, in the order `data-changed` → `params-changed` → `route-name-changed` → `search-changed` → `path-changed`, each only when its value actually changed (`data` compares by identity — a guard returns a fresh object per navigation). Any listener that reads the element's properties sees the consistent post-navigation snapshot; `path` fires last and doubles as the "navigation finished" signal. The first four fire **before** the route's content is placed and `path` after it, so the bindings inside the new content read the new params and data from their first evaluation. A guard-rejected navigation updates nothing and fires nothing.
 
 The exposed objects are **frozen snapshots** owned by the router: a new object per navigation, never mutated in place. Mutating them throws — copy into your own state instead. `data` is the one exception — it is owned by the guard that returned it, and the router neither copies nor freezes it.
 
@@ -227,7 +227,7 @@ Displays children when the route path matches. Match priority is static paths ov
 | `fallback` | Displayed when no route matches the path. |
 | `fullpath` | Path including parent routes (read-only). |
 | `name` | Identifier. |
-| `guard` | Enables guard handling. Specify the full path to navigate to on guard cancellation. |
+| `guard` | The full path to redirect to when the guard handler returns a falsy value (default `/`). A route with a `<wcs-guard-handler>` has a guard without it; a route whose handler is set from JS (`guardHandler`) needs it to enable guard handling. |
 
 | Property | Description |
 |------|------|
@@ -274,8 +274,11 @@ Place as a child of `<wcs-route>` to declaratively define a guard decision funct
 </wcs-route>
 ```
 
-- The `guard` attribute value is the redirect path when the guard cancels navigation
-- If the function returns `false`, navigation is cancelled and the user is redirected to the `guard` path; a non-empty string redirects there instead (e.g. `` return `/login?next=${encodeURIComponent(toPath)}` ``)
+- The handler enables guard handling by itself, and every navigation into the route waits for it — the first one included. The `guard` attribute is the redirect for a falsy result (default `/`)
+- If the function returns `false`, navigation is cancelled and the user is redirected to the `guard` path; a non-empty string redirects there instead (e.g. `` return `/login?next=${encodeURIComponent(toPath)}` ``). `toPath` has no query string: rebuild it from the third argument's `searchParams` when the target needs it (`new URLSearchParams(searchParams)`)
+- A redirect **replaces** the history entry of the cancelled navigation, so Back does not lead to the guarded URL (and straight back to the redirect). It is not logged — it is what the guard is for. Guards that keep redirecting each other are stopped after 10 redirects in a row, with an error naming the last one. A `navigate()` / `replace()` whose navigation is redirected rejects with an `AbortError`
+- The module is evaluated **once**; the function runs on every navigation. Read anything that changes — a session — inside the function, not at the module's top level
+- A guard does not see the `<wcs-state>` tree, and on a page load the landing route's guard can run before `@wcstack/state` has loaded. Read what the session is kept in directly — `localStorage`, under the key a `<wcs-storage>` saves it to (stored as JSON) — which is also current in every tab
 - The function can return a `Promise` for async checks — the route is not committed until it settles
 - The third argument carries the match being entered (`params` / `typedParams` / `searchParams` / `routeName`); `toPath` / `fromPath` are basename-sliced paths
 - `<wcs-guard-handler>` placed outside a `<wcs-route>` is ignored
