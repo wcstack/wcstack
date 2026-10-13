@@ -258,7 +258,13 @@ declare function h(tag: string | typeof Fragment | Component, props?: Props, ...
 /** Append `child` into `container`, resolving fragments/arrays. */
 declare function render(child: Child, container: Node): Node;
 type ListAccessor<T> = ReadSignal<readonly T[]> | (() => readonly T[]);
-type ForEach<T> = (item: T, index: () => number) => Node;
+/**
+ * `For`'s row builder. `item` is the item the row was built for — a plain value. A keyed row is
+ * kept while its key is (an immutable update hands it a new object under the same key), so read
+ * what changes through `current`, an accessor of the item under the row's key now
+ * (`() => current().text`). docs/seam-apps.md, signals-shop.
+ */
+type ForEach<T> = (item: T, index: () => number, current: () => T) => Node;
 type IndexEach<T> = (item: () => T, index: number) => Node;
 /**
  * The return type of {@link For} / {@link Index}: a keyed list that owns an anchored

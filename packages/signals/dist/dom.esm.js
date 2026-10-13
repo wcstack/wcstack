@@ -126,10 +126,13 @@ function isSettableProperty(el, key) {
     return result;
 }
 function bindProp(el, key, value) {
-    // Event handlers (`onClick` → "click") are special-cased BEFORE the reactive
-    // check: a function here is the listener, not a thunk to track.
-    if (/^on[A-Z]/.test(key) && typeof value === "function") {
-        const type = key.slice(2).toLowerCase();
+    // Event handlers are special-cased BEFORE the reactive check: a function here is the
+    // listener, not a thunk to track. `onClick` → "click" (lowercased); `onclick` /
+    // `onadd-to-cart` → the name as written ("click", "add-to-cart" — data-wcs's `on<event>:`
+    // form). A lowercase `onclick` used to fall through to the reactive path, so the handler
+    // ran at render and never on click (docs/seam-apps.md, signals-shop).
+    if (/^on[A-Za-z-]/.test(key) && typeof value === "function") {
+        const type = /^on[A-Z]/.test(key) ? key.slice(2).toLowerCase() : key.slice(2);
         const listener = value;
         el.addEventListener(type, listener);
         // Remove the listener when the owning scope is torn down (e.g. a dynamic
@@ -468,12 +471,13 @@ function For(list, each, options) {
             let prevOrder = [];
             const make = (item, i) => {
                 const idx = signal(i);
+                const cur = signal(item);
                 let node;
                 const dispose = createRoot((d) => {
-                    node = each(item, () => idx.get());
+                    node = each(item, () => idx.get(), () => cur.get());
                     return d;
                 });
-                return { node, dispose, idx };
+                return { node, dispose, idx, cur };
             };
             effect(() => {
                 const items = read() ?? [];
@@ -518,6 +522,7 @@ function For(list, each, options) {
                             if (row.idx.peek() !== i) {
                                 row.idx.set(i); // position changed — refresh the index accessor
                             }
+                            row.cur.set(items[i]); // the item under the key now (a no-op when it is the same)
                         }
                         else {
                             row = make(items[i], i);

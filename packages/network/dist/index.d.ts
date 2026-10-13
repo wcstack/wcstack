@@ -64,6 +64,13 @@ interface WcsNetworkSnapshot {
     rtt: number | null;
     saveData: boolean | null;
     supported: boolean;
+    /**
+     * `!navigator.onLine`, followed through the window's `online` / `offline` events. Every browser
+     * has it, so it does not depend on `supported` (Network Information). `null` where there is no
+     * navigator (SSR). Named `offline`, not `online`: a `data-wcs` name starting with `on` is an
+     * event binding (`online:` would listen for a "line" event).
+     */
+    offline: boolean | null;
 }
 /**
  * Value types for NetworkCore (headless) — the observable state properties.
@@ -114,8 +121,11 @@ declare class NetworkCore extends EventTarget {
     get rtt(): number | null;
     get saveData(): boolean | null;
     get supported(): boolean;
+    get offline(): boolean | null;
     observe(): Promise<void>;
     dispose(): void;
+    /** The window the online / offline events fire on (none under SSR). Call-time, as _api(). */
+    private _window;
     private _api;
     private _read;
     private _onChange;
@@ -145,6 +155,7 @@ declare class WcsNetwork extends HTMLElement {
     get rtt(): number | null;
     get saveData(): boolean | null;
     get supported(): boolean;
+    get offline(): boolean | null;
     get connectedCallbackPromise(): Promise<void>;
     connectedCallback(): void;
     disconnectedCallback(): void;

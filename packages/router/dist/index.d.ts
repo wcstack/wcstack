@@ -194,7 +194,10 @@ interface IRoute extends IRouteChildContainer {
     readonly absoluteSegmentCount: number;
     readonly segmentInfos: ISegmentInfo[];
     readonly absoluteSegmentInfos: ISegmentInfo[];
-    /** guard 属性の有無。SSR の guard バリア判定に使う（docs/ssr-router-design.md §2-4） */
+    /**
+     * guard を持つか（`guard` 属性、または `<wcs-guard-handler>`）。SSR の guard バリア判定に使う
+     * （docs/ssr-router-design.md §2-4）
+     */
     readonly hasGuard: boolean;
     guardHandler: GuardHandler;
     shouldChange(newParams: Record<string, string>): boolean;
@@ -205,6 +208,11 @@ interface IRoute extends IRouteChildContainer {
     setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
     clearParams(): void;
     notifyGuardHandlerLoadFailed(): void;
+    /**
+     * `<wcs-guard-handler>` を持つルートの guard を有効にする（`guard` 属性が無くても）。ハンドラの
+     * 読み込みより前に呼ぶ — 最初のナビゲーションの guard 相がハンドラを待てるように（parse）
+     */
+    enableGuard(): void;
     /**
      * SSR ハイドレーションの採用: サーバー描画済みノード列を内容として引き取る
      * （docs/ssr-router-design.md §4）
@@ -248,15 +256,24 @@ interface IRouter extends IRouteChildContainer {
     /** navigateUrl（push）の対になる replace 遷移（§4.2） */
     replace(path: string): Promise<void>;
     /**
+     * 初期化（最初のルート適用と navigate リスナの登録）が終わると決着する。guard のリダイレクトは
+     * これを待つ — 初期化中の遷移はリスナに捕まらず、文書ごとの読み込みになるため
+     */
+    readonly connectedCallbackPromise: Promise<void>;
+    /**
      * same-match 判定（§4.4）。比較は basename スライス後の path 同士。
      * 最初の成功 commit より前は常に false（初回ガード）。
      */
     isSameMatch(path: string): boolean;
     /**
      * 観測面のコミットと発火（§3.4）。全内部値を先にコミットし、その後で
-     * params → route-name → search → path の順に変化したものだけ発火する。
+     * data → params → route-name → search → path の順に変化したものだけ発火する。
+     * `holdPath` なら path だけ発火を保留し、`releasePath()` で発火する — ルートの中身を
+     * 描く前に出力を渡し、描いた後で「遷移完了」を知らせるため（applyRoute）。
      */
-    commitNavigation(commit: IRouterCommit): void;
+    commitNavigation(commit: IRouterCommit, holdPath?: boolean): void;
+    /** `commitNavigation(…, true)` で保留した path-changed を発火する（保留が無ければ何もしない） */
+    releasePath(): void;
     /** `announce=` 用 live region。未生成なら null（docs/a11y-design.md §3-4） */
     readonly a11yRegion: HTMLElement | null;
     /**
@@ -318,6 +335,13 @@ declare class Router extends HTMLElement implements IRouter {
     private _data;
     /** 最初の成功 commit を通過したか（§4.4 の初回ガード） */
     private _hasCommitted;
+    /** commitNavigation(…, true) が path-changed の発火を保留している（releasePath で発火） */
+    private _pathHeld;
+    /** 自分の navigate() / replace() が離脱の確認を済ませて navigation.navigate() を呼んでいる間 */
+    private _leaveChecked;
+    /** 離脱が確認された: 次の commit まで（その遷移の guard のリダイレクトで聞き直さない） */
+    private _leaveConfirmed;
+    private _listeningUnload;
     private _connectedCallbackPromise;
     private _resolveConnectedCallback;
     private _rejectConnectedCallback;
@@ -358,6 +382,16 @@ declare class Router extends HTMLElement implements IRouter {
     private _getBasename;
     get basename(): string;
     set basename(value: string | null | undefined);
+    get leaveConfirm(): string | null;
+    set leaveConfirm(value: string | null | undefined);
+    private _onBeforeUnload;
+    /** beforeunload は leaveConfirm がある間だけ聞く（リスナーがあるだけで bfcache を外すブラウザがある） */
+    private _syncBeforeUnload;
+    /**
+     * 別のルートへ出る前の確認。断られたら false。leaveConfirm が無い・最初の表示の前・同じルート
+     * （クエリだけの遷移）・確認済みの遷移の続き（guard のリダイレクト）では聞かない。
+     */
+    private _confirmLeave;
     private _getOutlet;
     private _getTemplate;
     get outlet(): IOutlet;
@@ -394,8 +428,16 @@ declare class Router extends HTMLElement implements IRouter {
      * 先頭に置くのは、params のリスナーがロード済みデータを読めるようにするため。
      * `path` を最後に置くのは、既存例で `path` が「ナビゲーション完了」の信号として
      * 使われているため。各イベントは変化した commit のみ発火する。
+     *
+     * `holdPath` は path-changed だけを `releasePath()` まで保留する。applyRoute はルートの中身を
+     * 描く前にこれで commit する — 中身のバインディング（state）が、その遷移の params / data を
+     * 最初から読めるように。保留しないと、中身は前のルートの値で一度評価され、getter や
+     * フィルタが例外を出しうる（docs/seam-apps.md、router-auth）。path は中身を描いた後に発火し、
+     * 「ナビゲーション完了」の意味を保つ。
      */
-    commitNavigation(commit: IRouterCommit): void;
+    commitNavigation(commit: IRouterCommit, holdPath?: boolean): void;
+    releasePath(): void;
+    private _firePathChanged;
     get fallbackRoute(): IRoute | null;
     /**
      * Routeのfallback属性がある場合にそのルートを設定します。
@@ -514,6 +556,7 @@ declare class Route extends HTMLElement implements IRoute {
     shouldChange(newParams: Record<string, string>): boolean;
     guardCheck(matchResult: IRouteMatchResult): Promise<GuardData | null>;
     notifyGuardHandlerLoadFailed(): void;
+    enableGuard(): void;
     /**
      * Shell（Route）の routeParentNode を辿って祖先関係を判定する。
      *
@@ -590,6 +633,11 @@ declare class RouteCore extends EventTarget {
     get segmentCount(): number;
     get absoluteSegmentCount(): number;
     parsePath(path: string, options?: RouteParseOptions): void;
+    /**
+     * guard を有効にする: guard 相がハンドラの設定を待つようにする。`guard` 属性（parsePath）と
+     * `<wcs-guard-handler>`（parse）のどちらからも呼ばれる。リダイレクト先の既定は '/'。
+     */
+    enableGuard(): void;
     setParams(params: Record<string, string>, typedParams: Record<string, any>): void;
     clearParams(): void;
     shouldChange(newParams: Record<string, string>): boolean;

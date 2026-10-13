@@ -1167,7 +1167,7 @@
       "name": "wcs-network",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/network` custom element (wc-bindable).\n\n**Bindable properties**: `effectiveType`, `downlink`, `rtt`, `saveData`, `supported`"
+        "value": "`@wcstack/network` custom element (wc-bindable).\n\n**Bindable properties**: `effectiveType`, `downlink`, `rtt`, `saveData`, `supported`, `offline`"
       },
       "attributes": [],
       "references": [

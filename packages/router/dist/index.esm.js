@@ -485,13 +485,24 @@ class RouteCore extends EventTarget {
                 });
             }
         }
-        this._hasGuard = options.hasGuard || false;
-        if (this._hasGuard) {
+        this._hasGuard = false;
+        if (options.hasGuard) {
             this._guardFallbackPath = options.guardFallback || '/';
-            this._waitForSetGuardHandler = new Promise((resolve) => {
-                this._resolveSetGuardHandler = resolve;
-            });
+            this.enableGuard();
         }
+    }
+    /**
+     * guard を有効にする: guard 相がハンドラの設定を待つようにする。`guard` 属性（parsePath）と
+     * `<wcs-guard-handler>`（parse）のどちらからも呼ばれる。リダイレクト先の既定は '/'。
+     */
+    enableGuard() {
+        if (this._hasGuard)
+            return;
+        this._hasGuard = true;
+        this._guardFallbackPath ||= '/';
+        this._waitForSetGuardHandler = new Promise((resolve) => {
+            this._resolveSetGuardHandler = resolve;
+        });
     }
     setParams(params, typedParams) {
         const wasActive = this._active;
@@ -755,6 +766,9 @@ class Route extends HTMLElement {
     }
     notifyGuardHandlerLoadFailed() {
         this._core.notifyGuardHandlerLoadFailed();
+    }
+    enableGuard() {
+        this._core.enableGuard();
     }
     /**
      * Shell（Route）の routeParentNode を辿って祖先関係を判定する。
@@ -1555,6 +1569,8 @@ function loadGuardHandler(script, route) {
             route.guardHandler = handler;
         }
         else {
+            // default export が関数でない: 黙ってリダイレクトに倒すと理由が分からないので知らせる
+            console.error(`${config.tagNames.guardHandler}: the <script type="module"> has no default-exported function, so the route's guard redirects every navigation.`);
             // ハンドラが取得できなかった場合は guardCheck の待ちを解除する
             route.notifyGuardHandlerLoadFailed();
         }
@@ -1618,6 +1634,10 @@ async function _parseNode(routerNode, node, routes, routesByPath) {
                     const route = routes[routes.length - 1];
                     const script = element.querySelector('script[type="module"]');
                     if (script) {
+                        // ハンドラがあれば guard を有効にする（`guard` 属性が無くても）。読み込みより前に —
+                        // 最初のナビゲーションの guard 相がハンドラを待てるように。属性が無いと待たずに通し、
+                        // 最初の表示だけ守られなかった（docs/seam-apps.md、router-auth）
+                        route.enableGuard();
                         loadGuardHandler(script, route);
                     }
                 }
@@ -2243,6 +2263,10 @@ function whenLoadOrderSettled(check) {
     check();
 }
 
+/** 続けて起きた guard のリダイレクトの数（guard 相を通った遷移で数え直す） */
+const redirectCounts = new WeakMap();
+/** これを超えて続くリダイレクトはループとして止める（docs/seam-apps.md、router-auth） */
+const MAX_GUARD_REDIRECTS = 10;
 /**
  * 差し込んだルート内容を binder へ渡す。binder が居なければ、バインドが効かない
  * ことを 1 回だけ報告する。
@@ -2275,7 +2299,13 @@ function bindRouteContent(route) {
 }
 /**
  * ガード相の単独実装。何も触らずに全ルートの guardCheck を待ち、GuardCancel なら
- * フォールバックへの再ナビゲートを microtask で予約して false を返す。
+ * フォールバックへの再ナビゲートを予約して false を返す。
+ *
+ * リダイレクトは設計どおりの使い方なので、コンソールには何も出さない。履歴は**置き換える** —
+ * 守られた URL は表示されていないので「戻る」の行き先にしない（push だと、戻るたびに同じ
+ * リダイレクトへ戻される）。初期化（connectedCallbackPromise）の後で行う — 初期化中の遷移は
+ * navigate リスナに捕まらず、文書ごと読み直される。guard 同士が送り合うループは
+ * MAX_GUARD_REDIRECTS 回で止めてエラーにする。
  *
  * showRouteContent の相 1 であると同時に、SSR ハイドレーション
  * （docs/ssr-router-design.md §4 — 採用はレンダリング最適化であって認可の
@@ -2294,14 +2324,23 @@ async function runGuardPhase(routerNode, matchResult) {
             }
         }
         matchResult.data = data;
+        redirectCounts.delete(routerNode);
     }
     catch (e) {
         if (e instanceof GuardCancel) {
-            console.warn(`Navigation cancelled: ${e.message}. Redirecting to ${e.fallbackPath}`);
-            queueMicrotask(() => {
-                routerNode.navigate(e.fallbackPath).catch((err) => {
-                    console.error('Fallback navigation failed:', err);
-                });
+            const count = (redirectCounts.get(routerNode) ?? 0) + 1;
+            if (count > MAX_GUARD_REDIRECTS) {
+                redirectCounts.delete(routerNode);
+                console.error(`${config.tagNames.router}: guard redirect loop — stopped after ${MAX_GUARD_REDIRECTS} redirects in a row ` +
+                    `(the last: ${matchResult.path} → ${e.fallbackPath}). The guards of these routes send each other back and forth.`);
+                return false;
+            }
+            redirectCounts.set(routerNode, count);
+            routerNode.connectedCallbackPromise
+                .catch(() => { })
+                .then(() => routerNode.replace(e.fallbackPath))
+                .catch((err) => {
+                console.error('Fallback navigation failed:', err);
             });
             return false;
         }
@@ -2325,16 +2364,20 @@ async function runGuardPhase(routerNode, matchResult) {
  * 相を分けたことで「ガードが拒否したのに旧ルートだけ先に消えている」という
  * 順序の歪みも同時に解消している。
  *
+ * `beforeChange` はガード相を通った後、変更相の前に呼ぶ（applyRoute はここで commit する）。
+ *
  * @returns ガードチェックを通過してコンテンツ表示が成立した場合 true、
  *          GuardCancel により中断（フォールバックへ再ナビゲート）した場合 false。
  *          呼び出し側（applyRoute）は false の場合、router.path / outlet.lastRoutes を
  *          更新しないことで「拒否されたパスでの path-changed 発火」を防ぐ。
  */
-async function showRouteContent(routerNode, matchResult, lastRoutes) {
+async function showRouteContent(routerNode, matchResult, lastRoutes, beforeChange) {
     // --- ガード相 ---
     if (!(await runGuardPhase(routerNode, matchResult))) {
         return false;
     }
+    // 中身を描く前（applyRoute の commit — 中身のバインディングがこの遷移の出力を読めるように）
+    beforeChange?.();
     // --- 変更相 ---
     const routesSet = new Set(matchResult.routes);
     const lastRouteSet = new Set(lastRoutes);
@@ -2444,22 +2487,24 @@ async function applyRoute(routerNode, outlet, fullPath, lastPath, search = "") {
     // guard 相の第 3 引数（IGuardContext.searchParams）が commit と同じクエリを読めるように供給する
     matchResult.search = search;
     const lastRoutes = outlet.lastRoutes;
-    const committed = await showRouteContent(routerNode, matchResult, lastRoutes);
-    // GuardCancel により中断された場合は state を更新しない
-    // （拒否されたパスでの wcs-router:path-changed 発火を防ぐため）
+    // guard 相を通ったら、中身を描く前に commit する（path-changed だけ描いた後）。中身の
+    // バインディングが最初からこの遷移の params / data を読めるように（Router.commitNavigation）。
+    // GuardCancel で中断された場合は commit しない（拒否されたパスでの発火を防ぐため）
+    const committed = await showRouteContent(routerNode, matchResult, lastRoutes, () => {
+        // routeName は最深マッチの name。fallback 時は fallback ルートの name（D8）。
+        routerNode.commitNavigation({
+            params: matchResult.params,
+            typedParams: matchResult.typedParams,
+            routeName: matchResult.routes[matchResult.routes.length - 1]?.name ?? "",
+            // guard 相（runGuardPhase）が集めたロード済みデータ。無ければ null に戻る
+            data: matchResult.data ?? null,
+            search,
+            path,
+        }, true);
+    });
     if (!committed)
         return false;
-    // if successful, update router and outlet state
-    // routeName は最深マッチの name。fallback 時は fallback ルートの name（D8）。
-    routerNode.commitNavigation({
-        params: matchResult.params,
-        typedParams: matchResult.typedParams,
-        routeName: matchResult.routes[matchResult.routes.length - 1]?.name ?? "",
-        // guard 相（runGuardPhase）が集めたロード済みデータ。無ければ null に戻る
-        data: matchResult.data ?? null,
-        search,
-        path,
-    });
+    routerNode.releasePath();
     outlet.lastRoutes = matchResult.routes;
     // オプトインの focus/announce は commit 直後・mutate() の外で適用する（D3）。
     // 初回描画（lastRoutes が空）では動かない — ページロードはブラウザの担当で、
@@ -2653,6 +2698,7 @@ class Router extends HTMLElement {
             { name: "basename", attribute: "basename" },
             { name: "navigateUrl" },
             { name: "replaceUrl" },
+            { name: "leaveConfirm", attribute: "leave-confirm" },
         ],
         commands: [
             { name: "navigate", async: true },
@@ -2685,6 +2731,13 @@ class Router extends HTMLElement {
     _data = null;
     /** 最初の成功 commit を通過したか（§4.4 の初回ガード） */
     _hasCommitted = false;
+    /** commitNavigation(…, true) が path-changed の発火を保留している（releasePath で発火） */
+    _pathHeld = false;
+    /** 自分の navigate() / replace() が離脱の確認を済ませて navigation.navigate() を呼んでいる間 */
+    _leaveChecked = false;
+    /** 離脱が確認された: 次の commit まで（その遷移の guard のリダイレクトで聞き直さない） */
+    _leaveConfirmed = false;
+    _listeningUnload = false;
     _connectedCallbackPromise;
     _resolveConnectedCallback = null;
     _rejectConnectedCallback = null;
@@ -2794,6 +2847,44 @@ class Router extends HTMLElement {
     set basename(value) {
         reflectAttribute(this, "basename", value);
     }
+    // `leaveConfirm` は input（属性は leave-confirm）。空でない文字列の間、別のルートへ出るナビゲーション
+    // （リンク・戻る / 進む・navigate()）の前に confirm(値) を出し、断られたら出ない。ページを閉じる・
+    // 読み直すときはブラウザ自身の確認（beforeunload）。未保存の変更を守る口（docs/seam-apps.md、
+    // router-admin — Navigation API を直接使うしかなかった）。null は属性を外し、undefined は最初の属性へ戻す。
+    get leaveConfirm() {
+        return this.getAttribute("leave-confirm") || null;
+    }
+    set leaveConfirm(value) {
+        reflectAttribute(this, "leave-confirm", value);
+        this._syncBeforeUnload();
+    }
+    _onBeforeUnload = (e) => {
+        if (this.leaveConfirm !== null)
+            e.preventDefault();
+    };
+    /** beforeunload は leaveConfirm がある間だけ聞く（リスナーがあるだけで bfcache を外すブラウザがある） */
+    _syncBeforeUnload() {
+        const want = this.isConnected && this.leaveConfirm !== null && !inSsr();
+        if (want === this._listeningUnload)
+            return;
+        this._listeningUnload = want;
+        if (want)
+            window.addEventListener("beforeunload", this._onBeforeUnload);
+        else
+            window.removeEventListener("beforeunload", this._onBeforeUnload);
+    }
+    /**
+     * 別のルートへ出る前の確認。断られたら false。leaveConfirm が無い・最初の表示の前・同じルート
+     * （クエリだけの遷移）・確認済みの遷移の続き（guard のリダイレクト）では聞かない。
+     */
+    _confirmLeave(fullPath) {
+        const message = this.leaveConfirm;
+        if (message === null || !this._hasCommitted || this._leaveConfirmed ||
+            this.isSameMatch(sliceBasename(this._normalizePathname(fullPath), this._basename))) {
+            return true;
+        }
+        return (this._leaveConfirmed = window.confirm(message));
+    }
     _getOutlet() {
         // outlet は自身の直後の兄弟だけ（docs/router-outlet-placement.md）。マルチ Router で router と
         // outlet を 1 対 1 に結ぶための規則で、SSR の採用経路もこの位置を前提にする。
@@ -2888,8 +2979,14 @@ class Router extends HTMLElement {
      * 先頭に置くのは、params のリスナーがロード済みデータを読めるようにするため。
      * `path` を最後に置くのは、既存例で `path` が「ナビゲーション完了」の信号として
      * 使われているため。各イベントは変化した commit のみ発火する。
+     *
+     * `holdPath` は path-changed だけを `releasePath()` まで保留する。applyRoute はルートの中身を
+     * 描く前にこれで commit する — 中身のバインディング（state）が、その遷移の params / data を
+     * 最初から読めるように。保留しないと、中身は前のルートの値で一度評価され、getter や
+     * フィルタが例外を出しうる（docs/seam-apps.md、router-auth）。path は中身を描いた後に発火し、
+     * 「ナビゲーション完了」の意味を保つ。
      */
-    commitNavigation(commit) {
+    commitNavigation(commit, holdPath = false) {
         const nextParams = Object.freeze({ ...commit.params });
         const nextTypedParams = Object.freeze({ ...commit.typedParams });
         const nextSearchParams = parseSearchParams(commit.search);
@@ -2919,6 +3016,7 @@ class Router extends HTMLElement {
         }
         this._path = commit.path;
         this._hasCommitted = true;
+        this._leaveConfirmed = false;
         // --- その後で発火（順序規範: data → params → route-name → search → path） ---
         if (dataChanged) {
             this.dispatchEvent(new CustomEvent("wcs-router:data-changed", {
@@ -2944,12 +3042,22 @@ class Router extends HTMLElement {
                 bubbles: true,
             }));
         }
-        if (pathChanged) {
-            this.dispatchEvent(new CustomEvent("wcs-router:path-changed", {
-                detail: commit.path,
-                bubbles: true,
-            }));
+        this._pathHeld = pathChanged && holdPath;
+        if (pathChanged && !holdPath) {
+            this._firePathChanged();
         }
+    }
+    releasePath() {
+        if (this._pathHeld) {
+            this._pathHeld = false;
+            this._firePathChanged();
+        }
+    }
+    _firePathChanged() {
+        this.dispatchEvent(new CustomEvent("wcs-router:path-changed", {
+            detail: this._path,
+            bubbles: true,
+        }));
     }
     get fallbackRoute() {
         return this._fallbackRoute;
@@ -3026,6 +3134,13 @@ class Router extends HTMLElement {
             ? window.location.pathname
             : this._joinInternalPath(this._basename, target.pathname);
         const url = fullPath + effectiveSearch(target.search) + target.hash;
+        if (this.leaveConfirm !== null) {
+            // 1 マイクロタスク待ってから確かめる: 保存のハンドラが leaveConfirm を外すバインディングと
+            // navigateUrl を同じ drain で書いたとき、どちらが先に適用されても外れた後の値を見る
+            await Promise.resolve();
+            if (!this._confirmLeave(fullPath))
+                return;
+        }
         const navigation = getNavigation();
         if (navigation?.navigate) {
             // Navigation API は { committed, finished } を返す。
@@ -3033,9 +3148,17 @@ class Router extends HTMLElement {
             // 実際のナビゲーション完了まで pending となり、_navigateUrl / _replaceUrl の
             // 二重起動ガード (setter 内の同一値チェック) が適切な時間ウィンドウで機能する。
             // Polyfill や mock 環境で undefined / 戻り値なしのケースもあるため optional chaining。
-            const result = replace
-                ? navigation.navigate(url, { history: "replace" })
-                : navigation.navigate(url);
+            // navigate イベントは navigate() の中で同期に来る: そこでの確認は済ませた
+            this._leaveChecked = true;
+            let result;
+            try {
+                result = replace
+                    ? navigation.navigate(url, { history: "replace" })
+                    : navigation.navigate(url);
+            }
+            finally {
+                this._leaveChecked = false;
+            }
             await result?.finished;
         }
         else {
@@ -3073,6 +3196,9 @@ class Router extends HTMLElement {
     }
     _onNavigateFunc(navEvent) {
         if (!navEvent.canIntercept ||
+            // ページ側が取り消したナビゲーション（未保存の確認など）に intercept() を呼ぶと
+            // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
+            navEvent.defaultPrevented ||
             navEvent.hashChange ||
             navEvent.downloadRequest !== null) {
             return;
@@ -3082,6 +3208,12 @@ class Router extends HTMLElement {
         // basename 配下でない URL は無視（マルチ Router 対応）
         if (!this._isOwnPath(fullPath))
             return;
+        // 別のルートへ出る前の確認（leaveConfirm）。取り消せないナビゲーション（一部の戻る / 進む）では
+        // 聞けない。自分の navigate() / replace() からのものは確認済み
+        if (!this._leaveChecked && navEvent.cancelable !== false && !this._confirmLeave(fullPath)) {
+            navEvent.preventDefault?.();
+            return;
+        }
         // same-match 判定は applyRoute 内の分岐と同じ共有実装（§4.4: スライス後比較）。
         // intercept オプションは applyRoute 実行前に決める必要があるためここでも判定する。
         const sameMatch = this.isSameMatch(sliceBasename(fullPath, this._basename));
@@ -3495,6 +3627,8 @@ class Router extends HTMLElement {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
         // await より前に同期で行い、初期化が古い値を読まないようにする。
         upgradeProperties(this);
+        // マークアップに書いた leave-confirm も beforeunload で守る（初期化の成否によらず）
+        this._syncBeforeUnload();
         // SSR モード（docs/ssr-router-design.md §3.2）:
         // - enable-ssr 無し → サーバーでは一切初期化しない（クライアント専用 = 部分 CSR）
         // - enable-ssr あり → SSR 初期化のみ。navigate / popstate リスナは登録しない
@@ -3576,6 +3710,7 @@ class Router extends HTMLElement {
             window.removeEventListener("popstate", this._onPopState);
             this._listeningPopState = false;
         }
+        this._syncBeforeUnload();
         // live region は router の寿命に同期して撤去する（body 直下に置かない理由と同根）
         if (this._a11yRegion !== null) {
             this._a11yRegion.remove();
@@ -3592,7 +3727,7 @@ class Router extends HTMLElement {
 const MIRRORED_ATTRIBUTES = ['title', 'rel', 'target', 'download', 'hreflang', 'lang', 'dir'];
 class Link extends HTMLElement {
     static get observedAttributes() {
-        return ['to', ...MIRRORED_ATTRIBUTES];
+        return ['to', 'match', ...MIRRORED_ATTRIBUTES];
     }
     _childNodeArray = [];
     _uuid = getUUID();
@@ -3807,6 +3942,10 @@ class Link extends HTMLElement {
         this._router = null;
     }
     attributeChangedCallback(name, oldValue, newValue) {
+        if (name === 'match' && oldValue !== newValue) {
+            this._updateActiveState();
+            return;
+        }
         if (name === 'to' && oldValue !== newValue) {
             this._path = newValue || '';
             if (this._anchorElement) {
@@ -3841,12 +3980,16 @@ class Link extends HTMLElement {
                 ? window.location.pathname
                 : this._joinInternalPath(this.router.basename, pathname))
             : pathname);
+        // match="prefix": 下のパスでも active（サイドナビの「商品」が /products/3 でも印を付ける —
+        // docs/seam-apps.md、router-admin）。そのページそのものではないので aria-current は "true"
+        const exact = currentPath === linkPath;
+        const within = !exact && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
         if (this._anchorElement) {
-            if (currentPath === linkPath) {
+            if (exact || within) {
                 this._anchorElement.classList.add('active');
                 // 修理・既定オン（docs/a11y-design.md §3-3）: active class と同じ事実の ARIA 表現。
                 // 鮮度保証は active class と同一（同じ分岐・同じ呼び出し経路）。
-                this._anchorElement.setAttribute('aria-current', 'page');
+                this._anchorElement.setAttribute('aria-current', exact ? 'page' : 'true');
             }
             else {
                 this._anchorElement.classList.remove('active');
@@ -4137,7 +4280,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.0.4";
+var version = "4.1.0";
 var pkg = {
 	version: version};
 

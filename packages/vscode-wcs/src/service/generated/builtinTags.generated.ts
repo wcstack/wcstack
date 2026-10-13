@@ -801,7 +801,8 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "downlink",
       "rtt",
       "saveData",
-      "supported"
+      "supported",
+      "offline"
     ],
     "commands": []
   },

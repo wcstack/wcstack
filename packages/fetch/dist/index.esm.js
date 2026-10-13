@@ -1301,10 +1301,9 @@ class Fetch extends HTMLElement {
         const headers = {};
         const headerElements = this.querySelectorAll(config.tagNames.fetchHeader);
         for (const el of headerElements) {
-            const name = el.headerName;
-            const value = el.headerValue;
-            if (name) {
-                headers[name] = value;
+            // a header without a value attribute is not sent (FetchHeader)
+            if (el.hasHeader) {
+                headers[el.headerName] = el.headerValue;
             }
         }
         return headers;
@@ -1490,15 +1489,50 @@ class Fetch extends HTMLElement {
     }
 }
 
+/**
+ * `<wcs-fetch-header name value>`: one request header of the `<wcs-fetch>` it sits in, read when a
+ * request starts. `name` / `value` are properties too, reflected to the attributes (`null` removes
+ * one, `undefined` restores the markup's), so a binding — `data-wcs="value: authHeader"` — sets the
+ * header. Without a `value` attribute the header is not sent: a token that is not there yet sends
+ * no `Authorization` instead of an empty one. Before this, `value:` wrote an expando the element
+ * never read, and the request went out with an empty header (docs/seam-apps.md, router-auth).
+ *
+ * It declares no `wcBindable`: it is part of `<wcs-fetch>`'s markup, not an I/O node of its own.
+ */
 class FetchHeader extends HTMLElement {
     connectedCallback() {
+        // A value assigned before the element was upgraded sits on the instance and hides the
+        // accessor: pass it through the setter (the upgrade-properties pattern, for two members).
+        for (const key of ["name", "value"]) {
+            if (Object.prototype.hasOwnProperty.call(this, key)) {
+                const value = this[key];
+                delete this[key];
+                this[key] = value;
+            }
+        }
         this.style.display = "none";
     }
+    get name() {
+        return this.getAttribute("name") ?? "";
+    }
+    set name(value) {
+        reflectAttribute(this, "name", value);
+    }
+    get value() {
+        return this.getAttribute("value") ?? "";
+    }
+    set value(value) {
+        reflectAttribute(this, "value", value);
+    }
     get headerName() {
-        return this.getAttribute("name") || "";
+        return this.name;
     }
     get headerValue() {
-        return this.getAttribute("value") || "";
+        return this.value;
+    }
+    /** Whether the header is sent: it has a name and a `value` attribute (an empty one included). */
+    get hasHeader() {
+        return this.name !== "" && this.hasAttribute("value");
     }
 }
 

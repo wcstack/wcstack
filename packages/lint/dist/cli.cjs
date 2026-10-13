@@ -148,6 +148,7 @@ var WcsDiagnosticCode = {
   // 静的にしか検出できない。対象はオブジェクトリテラル初期値のルートだけ（配列は `items`
   // の依存で足りる — 行の置換は `items` 自体を書き換え、in-place 変異は array-mutation が止める）。
   GetterUntrackedRead: "wcs/getter-untracked-read",
+  OnHandlerThis: "wcs/on-handler-this",
   // --- <wcs-state> script: $watch declaration ---
   // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
   // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。
@@ -2812,9 +2813,15 @@ function analyzeWatchEntries(scriptContent) {
   }));
 }
 function analyzeWatchHandlerSources(scriptContent) {
+  return analyzeHandlerSources(scriptContent, RESERVED_WATCH_KEY);
+}
+function analyzeOnHandlerSources(scriptContent) {
+  return analyzeHandlerSources(scriptContent, "$on");
+}
+function analyzeHandlerSources(scriptContent, key) {
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return [];
-  const prop = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_WATCH_KEY);
+  const prop = parseTopLevelProperties(root.content).find((p) => p.name === key);
   if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value) || prop.valueStart === void 0) {
     return [];
   }
@@ -2824,6 +2831,7 @@ function analyzeWatchHandlerSources(scriptContent) {
   for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
     if (entry.value === void 0 || entry.valueStart === void 0) continue;
     out.push({
+      name: entry.name,
       kind: entry.kind === "data" ? "value" : "body",
       text: entry.value,
       start: innerStart + entry.valueStart
@@ -10518,6 +10526,7 @@ var ja = {
   delegatedCurrentTarget: (suggested, eventName, handler) => `"${eventName}" \u30A4\u30D9\u30F3\u30C8\u306E\u675F\u7E1B\u306F root \u3078\u59D4\u8B72\u3055\u308C\u308B\u306E\u3067\u3001"${handler}" \u306E\u4E2D\u306E event.currentTarget \u306F\u3053\u306E\u8981\u7D20\u3067\u306F\u306A\u304F root \u306B\u306A\u308A\u307E\u3059\u3002\u8981\u7D20\u306B\u30EA\u30B9\u30CA\u30FC\u3092\u4ED8\u3051\u308B\u306B\u306F "${suggested}:" \u3068\u66F8\u304F\u304B\u3001event.target.closest(...) \u3067\u8981\u7D20\u3092\u63A2\u3057\u3066\u304F\u3060\u3055\u3044`,
   getterCycle: (cycle) => `\u30D1\u30B9 getter \u304C\u5FAA\u74B0\u53C2\u7167\u3057\u3066\u3044\u307E\u3059: ${cycle}`,
   updatedCallbackUnbound: (p) => `$renderedCallback \u306F binding \u99C6\u52D5\u3067\u3059\u3002"${p}" \u306F\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u3069\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306B\u3082\u73FE\u308C\u306A\u3044\u305F\u3081\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u63CF\u753B\u306B\u4F9D\u5B58\u305B\u305A\u53CD\u5FDC\u3059\u308B\u306A\u3089 $watch \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044`,
+  onHandlerThis: (name) => `$on \u306E\u30CF\u30F3\u30C9\u30E9 "${name}" \u304C this \u3092\u4F7F\u3063\u3066\u3044\u307E\u3059\u3002$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F state \u3092\u7B2C 1 \u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\uFF08\`${name}(state, event) { state.x = \u2026 }\`\uFF09\u3001this \u306F undefined \u306A\u306E\u3067\u3001this.\u2026 \u306F\u547C\u3070\u308C\u305F\u3068\u304D\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002$watch \u3084\u30E1\u30BD\u30C3\u30C9\u3068\u9055\u3046\u70B9\u306B\u6CE8\u610F`,
   getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
@@ -10568,7 +10577,7 @@ var ja = {
   didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
   none: () => `\u306A\u3057`,
   triggerSeededTruthy: (path) => `trigger \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C true \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002trigger \u306F\u30A8\u30C3\u30B8\u691C\u51FA\u306A\u3057\uFF08truthy \u66F8\u304D\u8FBC\u307F\u3067\u5373\u767A\u706B\u30FBmanual \u3082\u30D0\u30A4\u30D1\u30B9\uFF09\u306E\u305F\u3081\u3001\u30D0\u30A4\u30F3\u30C9\u6642\u306B\u5373\u767A\u706B\u3057\u307E\u3059\u3002false \u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
-  storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${raw} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 \u30D0\u30A4\u30F3\u30C9\u306B #init=element \u3092\u4ED8\u3051\u3066\uFF08\`value#init=element: ${path}\`\uFF09\u4FDD\u5B58\u5024\u3092\u52DD\u305F\u305B\u3001\u30B9\u30ED\u30C3\u30C8\u306F null\uFF08\u7A7A\u306E\u30AD\u30FC\u304C\u8AAD\u3080\u5024\uFF09\u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
+  storageSeedClobber: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B\u521D\u671F\u66F8\u304D\u623B\u3057\u304C\u4FDD\u5B58\u5024\u3092\u4E0A\u66F8\u304D\u3057\u307E\u3059 \u2014 \u30D0\u30A4\u30F3\u30C9\u306B #init=element \u3092\u4ED8\u3051\u3066\uFF08\`value#init=element: ${path}\`\uFF09\u4FDD\u5B58\u5024\u3092\u52DD\u305F\u305B\u3001\u30B9\u30ED\u30C3\u30C8\u306F null\uFF08\u7A7A\u306E\u30AD\u30FC\u304C\u8AAD\u3080\u5024\uFF09\u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
   storageInitSeed: (path, raw) => `<wcs-storage> \u306E value \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C ${shortSeed(raw)} \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u304C\u3001#init=element \u306F\u8981\u7D20\u306E\u5024\u3092\u3053\u306E\u30B9\u30ED\u30C3\u30C8\u3078\u5F15\u304D\u8FBC\u307F\u307E\u3059\u3002\u521D\u56DE\uFF08\u7A7A\u306E\u30AD\u30FC\uFF09\u306F null \u306A\u306E\u3067\u3001\u30B7\u30FC\u30C9\u306F null \u306B\u7F6E\u304D\u63DB\u308F\u308A\u307E\u3059 \u2014 null \u3067\u30B7\u30FC\u30C9\u3057\u3066\u8AAD\u3080\u5074\u3067\u65E2\u5B9A\u5024\u3092\u88DC\u3046\uFF08\`this.${path} ?? \u2026\`\uFF09\u304B\u3001null \u3092\u7121\u8996\u3059\u308B setter \u3092\u6301\u3064\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
   storagePairClobber: (path) => `<wcs-storage> \u306E value \u3092 #init=element \u306A\u3057\u3067\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2 "${path}" \u306B\u675F\u306D\u3066\u3044\u307E\u3059\u3002state \u306E\u5074\u304C\u5148\u306B\u66F8\u304F\u306E\u3067\u3001\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B getter \u306E\u6700\u521D\u306E\u5024\u304C\u4FDD\u5B58\u5024\u306E\u4E0A\u306B\u4FDD\u5B58\u3055\u308C\u3001setter \u306F\u4FDD\u5B58\u5024\u3092\u53D7\u3051\u53D6\u308C\u307E\u305B\u3093 \u2014 #init=element \u3092\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\uFF08\`value#init=element: ${path}\`\uFF09`,
   inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u308B\u304B\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
@@ -10709,6 +10718,7 @@ var en = {
   delegatedCurrentTarget: (suggested, eventName, handler) => `"${eventName}" bindings are delegated to the root, so event.currentTarget in "${handler}" is the root, not this element. Write "${suggested}:" to keep the listener on the element, or find the element with event.target.closest(...)`,
   getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
   updatedCallbackUnbound: (p) => `$renderedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
+  onHandlerThis: (name) => `The $on handler "${name}" uses this. A $on handler receives the state as its first argument (\`${name}(state, event) { state.x = \u2026 }\`) and this is undefined, so this.\u2026 throws when it is called \u2014 unlike $watch handlers and methods`,
   getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
@@ -10759,7 +10769,7 @@ var en = {
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) => `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
-  storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${raw}. The initial write-back overwrites the persisted value on every load \u2014 add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
+  storageSeedClobber: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}. The initial write-back overwrites the persisted value on every load \u2014 add #init=element to the binding (\`value#init=element: ${path}\`) so the stored value wins, and seed the slot with null (what an empty key loads as)`,
   storageInitSeed: (path, raw) => `The <wcs-storage> value-bound slot "${path}" is seeded with ${shortSeed(raw)}, but #init=element pulls the element's value into it. On a first visit (an empty key) that is null, so the seed is replaced by null \u2014 seed it with null and supply the default where you read it (\`this.${path} ?? \u2026\`), or bind an accessor pair whose setter ignores null`,
   storagePairClobber: (path) => `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it \u2014 add #init=element (\`value#init=element: ${path}\`)`,
   inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
@@ -13820,7 +13830,6 @@ var EXPLICIT_PROPERTY_REJECTED_HEADS2 = /* @__PURE__ */ new Set([
 var EXPLICIT_PROPERTY_REJECTED_HEADS_RE = new RegExp(
   `^(?:${[...EXPLICIT_PROPERTY_REJECTED_HEADS2].map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(\\.|$)`
 );
-var EMPTYISH_SEEDS = /* @__PURE__ */ new Set(["''", '""', "``", "null", "[]", "{}"]);
 function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2, fileReader) {
   const diagnostics = [];
   const msgs = getMessages(locale2);
@@ -13967,12 +13976,12 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
   if (tagName === "wcs-storage" && property === "value" && !hasManual && parsed.path && !/(?:^|,)init=(?:element|auto)\b/.test(modifiers)) {
     const paths = getPaths();
     const cand = findDataSlot(paths, parsed.path);
-    if (cand?.rawInitial !== void 0 && EMPTYISH_SEEDS.has(normalizeSeed(cand.rawInitial))) {
+    if (cand?.rawInitial !== void 0 && (cand.rawInitial.trim() === "null" || isNonNullLiteralSeed(cand.rawInitial))) {
       diagnostics.push({
         code: WcsDiagnosticCode.StorageSeedClobber,
         start,
         end,
-        severity: "warning",
+        severity: "error",
         tag: tagName,
         statePath: parsed.path,
         message: msgs.storageSeedClobber(parsed.path, cand.rawInitial)
@@ -13982,7 +13991,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
         code: WcsDiagnosticCode.StorageSeedClobber,
         start,
         end,
-        severity: "warning",
+        severity: "error",
         tag: tagName,
         statePath: parsed.path,
         message: msgs.storagePairClobber(parsed.path)
@@ -14010,10 +14019,6 @@ function isNonNullLiteralSeed(raw) {
 }
 function findDataSlot(paths, path) {
   return paths.find((c) => c.kind === "data" && c.path === path);
-}
-function normalizeSeed(raw) {
-  const compact = raw.replace(/\s+/g, "");
-  return compact === "" ? raw : compact;
 }
 function findBuiltinTagOccurrences(html) {
   const out = [];
@@ -14157,7 +14162,8 @@ function validateDocumentEnv(html, locale2) {
       });
     }
   }
-  const router = autos.find((a) => a.pkgs.includes("router") && (!a.bundle || /<wcs-router\b/i.test(scanText)));
+  const hasRouterTag = /<wcs-router\b/i.test(scanText);
+  const router = autos.find((a) => a.pkgs.includes("router") && (!a.bundle || hasRouterTag)) ?? (hasRouterTag ? collectInlineImports(scanText).find((i) => /@wcstack\/router\b/.test(i.spec) || BUNDLE_AUTO.test(i.spec)) : void 0);
   if (router && !/<base\b[^>]*\bhref\s*=/i.test(scanText)) {
     diagnostics.push({
       code: WcsDiagnosticCode.BaseHrefMissing,
@@ -14215,35 +14221,41 @@ function findWcstackAutoScripts(html) {
 }
 function collectSignalsRefs(html) {
   const refs = [];
+  const scriptRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi;
+  let match;
+  while ((match = scriptRegex.exec(html)) !== null) {
+    const src = extractSrc(match[0]);
+    const kind = src ? classifySignalsSpecifier(src.value) : null;
+    if (src && kind) {
+      refs.push({
+        kind,
+        start: match.index + src.offsetInTag,
+        end: match.index + src.offsetInTag + src.value.length
+      });
+    }
+  }
+  for (const im of collectInlineImports(html)) {
+    const kind = classifySignalsSpecifier(im.spec);
+    if (kind) refs.push({ kind, start: im.start, end: im.end });
+  }
+  return refs.sort((a, b) => a.start - b.start);
+}
+function collectInlineImports(html) {
+  const out = [];
   const scriptRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
   let match;
   while ((match = scriptRegex.exec(html)) !== null) {
-    const openTag = html.slice(match.index, match.index + match[0].indexOf(">") + 1);
-    const src = extractSrc(openTag);
-    if (src) {
-      const kind = classifySignalsSpecifier(src.value);
-      if (kind) {
-        refs.push({
-          kind,
-          start: match.index + src.offsetInTag,
-          end: match.index + src.offsetInTag + src.value.length
-        });
-      }
-      continue;
-    }
-    if (!/\btype\s*=\s*(["'])module\1/i.test(match[1])) continue;
+    if (extractSrc(`<script${match[1]}>`) || !/\btype\s*=\s*(["'])module\1/i.test(match[1])) continue;
     const bodyStart = match.index + match[0].indexOf(">") + 1;
     const body = blankJsComments(match[2]);
-    const importRegex = /(?:\bfrom\s*|\bimport\s*\(?\s*)(["'])([^"']*@wcstack\/signals[^"']*)\1/g;
+    const importRegex = /(?:\bfrom\s*|\bimport\s*\(?\s*)(["'])([^"']*)\1/g;
     let im;
     while ((im = importRegex.exec(body)) !== null) {
-      const kind = classifySignalsSpecifier(im[2]);
-      if (!kind) continue;
-      const specStart = bodyStart + im.index + im[0].indexOf(im[1]) + 1;
-      refs.push({ kind, start: specStart, end: specStart + im[2].length });
+      const start = bodyStart + im.index + im[0].indexOf(im[1]) + 1;
+      out.push({ spec: im[2], start, end: start + im[2].length });
     }
   }
-  return refs;
+  return out;
 }
 function classifySignalsSpecifier(spec) {
   if (!spec.includes("@wcstack/signals")) return null;
@@ -15906,6 +15918,24 @@ function hasOutOfRangeIndexName(script) {
   }
   return false;
 }
+var ANY_MEMBER = { has: () => true };
+function validateOnHandlerThis(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const handler of analyzeOnHandlerSources(script)) {
+    const refs = handler.kind === "body" ? collectThisMemberRefs(handler.text, ANY_MEMBER) : collectThisMemberRefsInValue(handler.text, ANY_MEMBER);
+    const first = refs?.[0];
+    if (first === void 0) continue;
+    out.push({
+      code: WcsDiagnosticCode.OnHandlerThis,
+      start: scriptStart + handler.start + first.start,
+      end: scriptStart + handler.start + first.end,
+      severity: "error",
+      message: msgs.onHandlerThis(handler.name)
+    });
+  }
+  return out;
+}
 function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrName = "data-wcs") {
   const out = [];
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
@@ -15917,6 +15947,7 @@ function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrNa
     out.push(...validateIndexParamReads(block.content, block.contentStart, locale2));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale2));
+    out.push(...validateOnHandlerThis(block.content, block.contentStart, locale2));
   }
   out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale2));
   out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2));

@@ -370,10 +370,26 @@ declare const WCS_FETCH_ERROR_CODE: {
     readonly Aborted: "aborted";
 };
 
+/**
+ * `<wcs-fetch-header name value>`: one request header of the `<wcs-fetch>` it sits in, read when a
+ * request starts. `name` / `value` are properties too, reflected to the attributes (`null` removes
+ * one, `undefined` restores the markup's), so a binding — `data-wcs="value: authHeader"` — sets the
+ * header. Without a `value` attribute the header is not sent: a token that is not there yet sends
+ * no `Authorization` instead of an empty one. Before this, `value:` wrote an expando the element
+ * never read, and the request went out with an empty header (docs/seam-apps.md, router-auth).
+ *
+ * It declares no `wcBindable`: it is part of `<wcs-fetch>`'s markup, not an I/O node of its own.
+ */
 declare class FetchHeader extends HTMLElement {
     connectedCallback(): void;
+    get name(): string;
+    set name(value: unknown);
+    get value(): string;
+    set value(value: unknown);
     get headerName(): string;
     get headerValue(): string;
+    /** Whether the header is sent: it has a name and a `value` attribute (an empty one included). */
+    get hasHeader(): boolean;
 }
 
 declare class FetchBody extends HTMLElement {

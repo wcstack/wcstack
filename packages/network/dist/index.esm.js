@@ -64,6 +64,7 @@ const UNSUPPORTED_SNAPSHOT = Object.freeze({
     rtt: null,
     saveData: null,
     supported: false,
+    offline: null,
 });
 /**
  * Headless Network Information primitive. A thin, framework-agnostic wrapper
@@ -88,6 +89,9 @@ class NetworkCore extends EventTarget {
             { name: "rtt", event: "wcs-network:change", semantics: "state", getter: (e) => e.detail.rtt },
             { name: "saveData", event: "wcs-network:change", semantics: "state", getter: (e) => e.detail.saveData },
             { name: "supported", event: "wcs-network:change", semantics: "state", getter: (e) => e.detail.supported },
+            // Offline (docs/seam-apps.md, state-collab-board: a page had to listen on window itself). Not
+            // `online`: a data-wcs name starting with `on` is an event binding.
+            { name: "offline", event: "wcs-network:change", semantics: "state", getter: (e) => e.detail.offline },
         ],
         // Pure monitor: navigator.connection has no request()/action method to invoke.
         commands: [],
@@ -126,6 +130,9 @@ class NetworkCore extends EventTarget {
     get supported() {
         return this._snapshot.supported;
     }
+    get offline() {
+        return this._snapshot.offline;
+    }
     // Lifecycle (§3.5). Idempotent: a second observe() while already subscribed
     // is a no-op (no double listener, no redundant dispatch). Synchronous overall
     // (no probe to await), so the returned promise is only for API uniformity
@@ -138,6 +145,8 @@ class NetworkCore extends EventTarget {
                 this._connection = api;
                 api.addEventListener("change", this._onChange);
             }
+            this._window()?.addEventListener("online", this._onChange);
+            this._window()?.addEventListener("offline", this._onChange);
             this._apply(this._read());
         }
         return this._ready;
@@ -148,6 +157,13 @@ class NetworkCore extends EventTarget {
             this._connection.removeEventListener("change", this._onChange);
             this._connection = null;
         }
+        this._window()?.removeEventListener("online", this._onChange);
+        this._window()?.removeEventListener("offline", this._onChange);
+    }
+    /** The window the online / offline events fire on (none under SSR). Call-time, as _api(). */
+    _window() {
+        const w = globalThis.window;
+        return typeof w !== "undefined" && typeof w.addEventListener === "function" ? w : undefined;
     }
     // API resolution is call-time, never cached (§3.7): lets tests install/remove
     // navigator.connection freely and lets an unsupported environment be detected
@@ -158,10 +174,13 @@ class NetworkCore extends EventTarget {
     }
     _read() {
         const c = this._api();
+        const nav = globalThis.navigator;
+        const offline = typeof nav !== "undefined" && typeof nav.onLine === "boolean" ? !nav.onLine : null;
         if (!c) {
-            return UNSUPPORTED_SNAPSHOT;
+            return offline === null ? UNSUPPORTED_SNAPSHOT : { ...UNSUPPORTED_SNAPSHOT, offline };
         }
         return {
+            offline,
             effectiveType: typeof c.effectiveType === "string" ? c.effectiveType : null,
             downlink: typeof c.downlink === "number" ? c.downlink : null,
             rtt: typeof c.rtt === "number" ? c.rtt : null,
@@ -182,7 +201,8 @@ class NetworkCore extends EventTarget {
             prev.downlink === next.downlink &&
             prev.rtt === next.rtt &&
             prev.saveData === next.saveData &&
-            prev.supported === next.supported) {
+            prev.supported === next.supported &&
+            prev.offline === next.offline) {
             return;
         }
         this._snapshot = next;
@@ -268,6 +288,7 @@ class WcsNetwork extends HTMLElement {
             "wcs-network:change": (d) => ({
                 "save-data": d.saveData === true,
                 supported: d.supported === true,
+                offline: d.offline === true,
             }),
         });
     }
@@ -334,6 +355,9 @@ class WcsNetwork extends HTMLElement {
     }
     get supported() {
         return this._core.supported;
+    }
+    get offline() {
+        return this._core.offline;
     }
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
