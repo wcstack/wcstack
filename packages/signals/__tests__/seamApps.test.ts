@@ -14,7 +14,7 @@ declare global {
 }
 
 let warnSpy: ReturnType<typeof vi.spyOn>;
-const codes = () => warnSpy.mock.calls.map((c) => String(c[0]).match(/\]\[(\w+)\]/)?.[1]);
+const codes = () => warnSpy.mock.calls.map((c: unknown[]) => String(c[0]).match(/\]\[(\w+)\]/)?.[1]);
 
 beforeEach(() => {
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -70,7 +70,7 @@ describe("開発モード: 最初の実行で signal を読まなかった compu
       h("p", { title: () => "static" }, () => "static");
       For(() => [1, 2], (n) => h("li", null, String(n)));
     });
-    expect(codes().filter((c) => c?.startsWith("UNTRACKED"))).toEqual([]);
+    expect(codes().filter((c: string | undefined) => c?.startsWith("UNTRACKED"))).toEqual([]);
   });
 });
 
