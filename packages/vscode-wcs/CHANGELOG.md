@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.1.0 — 2026-10-14
+
+`@wcstack/state` 4.1.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.1.0・`@wcstack/typescript` 4.1.0 と同じ判定）。継ぎ目アプリ（docs/seam-apps.ja.md）で見つけたもの。新しい error が 2 つある（`wcs/on-handler-this`、error に上げた `wcs/storage-seed-clobber`）ので minor。
 
 - **`wcs/on-handler-this`（error・新設）** — `$on` のハンドラの中の `this.…`。ランタイムは `$on` のハンドラを `handler(state, event)` と呼ぶので `this` は undefined で、呼ばれたときに例外になる。router-auth と state-collab-board の初めての作者がどちらも `$watch` の書き方で書いた。
 - **`wcs/base-href-missing` が import map 経由の router も見る** — インラインの module script の `import "@wcstack/router/auto"`（signals のページの読み込み方）を数える（`<wcs-router>` のあるページで）。
