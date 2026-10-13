@@ -80,10 +80,10 @@
 
 | アプリ | 継ぎ目 | 生活の出来事 | 状態 |
 |---|---|---|---|
-| `router-auth` — 会員エリア: ログイン、保護されたページ、トークンの要る API からの注文履歴 | router のガード × state、`<wcs-fetch>` の 401 × 遷移、`<wcs-storage>` × ガード、ガードのローダー（`data`） | ログアウト中のディープリンク → ログイン → そのページへ戻る; ログイン中の再読み込み; 使用中のセッション切れ; ログアウト後の戻る; 別のタブでのログアウト | 作成済み（2026-10-13）、発見は下 |
-| `router-admin` — 管理画面: 入れ子のレイアウト、ページングと並べ替えを URL に持つサーバー側の一覧、サーバー検証付きの編集フォーム、ビュー遷移、2 言語 | `<wcs-layout>` × state、クエリ ⇄ state ⇄ fetch、フォームの双方向束縛 × fetch の `body`、`<wcs-view-transition>` × router × 一覧、basename の言語 | 名前順の 3 ページ目へのディープリンク; 編集して保存、もう一度保存; フィールドのエラー付きの 422; 編集ページでの再読み込み; 詳細からの戻る | 作成済み（2026-10-13）、発見は下 |
-| `state-collab-board` — 共有ボード: ほかの人の変更は SSE で届き、自分の変更はすぐ反映し、サーバーが拒めば巻き戻す | `<wcs-sse>` × state の一覧、`<wcs-fetch>` × 楽観的更新、`<wcs-network>` × state、再接続 × 再同期 | 2 つのブラウザ; 拒まれる変更; オフラインになって戻る; サーバーの再起動 | 作成済み（2026-10-13）、発見は下 |
-| `signals-shop` — チュートリアルのショップを `@wcstack/signals` で | signals × router、wc-bindable の橋を通した signals × `<wcs-fetch>` / `<wcs-storage>` | チュートリアルと同じ（再読み込み、ディープリンク、戻る、2 つ目のタブ） | 作成済み（2026-10-13）、発見は下 |
+| `router-auth` — 会員エリア: ログイン、保護されたページ、トークンの要る API からの注文履歴 | router のガード × state、`<wcs-fetch>` の 401 × 遷移、`<wcs-storage>` × ガード、ガードのローダー（`data`） | ログアウト中のディープリンク → ログイン → そのページへ戻る; ログイン中の再読み込み; 使用中のセッション切れ; ログアウト後の戻る; 別のタブでのログアウト | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
+| `router-admin` — 管理画面: 入れ子のレイアウト、ページングと並べ替えを URL に持つサーバー側の一覧、サーバー検証付きの編集フォーム、ビュー遷移、2 言語 | `<wcs-layout>` × state、クエリ ⇄ state ⇄ fetch、フォームの双方向束縛 × fetch の `body`、`<wcs-view-transition>` × router × 一覧、basename の言語 | 名前順の 3 ページ目へのディープリンク; 編集して保存、もう一度保存; フィールドのエラー付きの 422; 編集ページでの再読み込み; 詳細からの戻る | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
+| `state-collab-board` — 共有ボード: ほかの人の変更は SSE で届き、自分の変更はすぐ反映し、サーバーが拒めば巻き戻す | `<wcs-sse>` × state の一覧、`<wcs-fetch>` × 楽観的更新、`<wcs-network>` × state、再接続 × 再同期 | 2 つのブラウザ; 拒まれる変更; オフラインになって戻る; サーバーの再起動 | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
+| `signals-shop` — チュートリアルのショップを `@wcstack/signals` で | signals × router、wc-bindable の橋を通した signals × `<wcs-fetch>` / `<wcs-storage>` | チュートリアルと同じ（再読み込み、ディープリンク、戻る、2 つ目のタブ） | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
 
 ### router-auth（2026-10-13）
 
@@ -123,3 +123,16 @@
 | signals-shop | lint の穴 | `wcs/base-href-missing` が import map で読み込んだ router を見逃した | 修正 |
 | signals-shop | 文書の穴 | signals の README が 1.x のまま 1.25.0 を固定していた。signals × router / `<wcs-storage>` の書き方が無い。`@wcstack/testing` は `<wcs-state>` のページ向け | 修正 |
 | 3 本とも | 未着手 | lint: `Object.assign` や別名を通したその場の変更、`wcs/getter-untracked-read` の証拠としての `$on` の書き込み、`location` を読む getter、ルート直下の裸の `{{ }}`、`#prevent` の無い `onsubmit:`。runtime: 既定の slot の無いレイアウトがページを黙って落とす、ルートへ戻ると `<wcs-fetch>` が古い `url` で要求し直す、`date` / `locale` で「Oct 13, 2026」や通貨を出せない。signals の開発モード: 何も追跡しない computed。チュートリアルのステップ 13 が state を先に読み込む | 未着手 |
+
+### examples/ への取り込み（2026-10-14）
+
+4.1.0 の後、同じ作者たちがアプリを `examples/` へ移し、4.1.0 で要らなくなった回避策を外し、それぞれ e2e の spec を書いた（10・15・7・8 件、意図を確かめる）。そこでさらに見つかったもの:
+
+| 分類 | 発見 | 結末 |
+|---|---|---|
+| リリースの欠陥 | 公開した `@wcstack/lint` / `@wcstack/typescript` 4.1.0 が `<wcs-network>` の新しい `offline` を知らなかった: `release.yml` が組み込みのタグの一覧を作り直す前に両方をビルドしていたので、新しいメンバーは 1 リリース遅れて lint に届いていた | 修正: リリースは一覧を作り直した後に両方をビルドし直す |
+| runtime の欠陥 | router: ガードがリダイレクトするページへの `navigateUrl` / `replaceUrl` が `navigate failed: AbortError` を出した（ガードのループでは `Fallback navigation failed` が 10 個）— リダイレクトされたナビゲーションが `AbortError` で reject するのは設計どおり | 修正: `AbortError` は報告しない |
+| lint の穴 | `wcs/on-handler-this` が別名（`const state = this`）を見逃した | 修正: `$on` のハンドラ自身の `this` はすべて |
+| テストの欠陥 | e2e の確認が SSR のスナップショットの minor（`4.0.`）を固定していて、4.1.0 の後のすべての PR で落ちた | 修正 |
+| 設計の問い | 言語の切り替えは本物のナビゲーション（言語は basename）なので、未保存の変更にはブラウザの `beforeunload` が出て、`leaveConfirm` の文言は出ない。`match="prefix"` は `/products/new` でも「Products」に印を付ける。要素が持ってきた最初の値で、getter の `$watch` は発火しない | 未着手 |
+| 未着手 | signals: `h()` の後で定義される要素へのオブジェクトの prop は属性になる、要素の定義前の `bindNode` は汎用のエラー。lint: `#prevent` の無い `onsubmit:`、`Object.assign` や別名を通したその場の変更、`wcs/getter-untracked-read` の証拠としての `$on` の書き込み、別ファイルの module をまたぐ `signals-dual-entry` | 未着手 |

@@ -70,6 +70,17 @@ await するのは避けてください — あの Promise は「永久に regis
 npx serve examples/state-permission-banner
 ```
 
+## 継ぎ目アプリ
+
+機能を見せるためではなく、欠陥を見つけるために書いた大きめのアプリ。初めての作者が公開文書だけから作り、引っかかりはすべて再現して分類した（[docs/seam-apps.ja.md](../docs/seam-apps.ja.md)）。どれもパッケージの間の継ぎ目を越え、`e2e/tests/` の spec が意図 — 中身がどこに描かれるか、再読み込みで何が残るか、2 回目、2 つ目のタブ、失敗するネットワーク — を確かめる。
+
+| アプリ | 越える継ぎ目 | 起動 | URL |
+|------|------|-----|-----|
+| [`router-auth/`](router-auth/) | router のガード × state × `<wcs-storage>` × トークンの要る `<wcs-fetch>`（会員エリア: ログイン・守られたページ・セッション切れ・2 つのタブ） | `node examples/router-auth/server.js` | :3000 |
+| [`router-admin/`](router-admin/) | `<wcs-layout>` × クエリ ⇄ state ⇄ fetch × サーバー検証のあるフォーム × `leaveConfirm` × `<wcs-view-transition>` × 2 言語（管理画面） | `node examples/router-admin/server.js` | :3000 |
+| [`state-collab-board/`](state-collab-board/) | `<wcs-sse>` × 楽観的な `fetch` × `<wcs-network offline>` × 再接続と追いつき（共有ボード・2 つのブラウザ） | `node examples/state-collab-board/server.js` | :3000 |
+| [`signals-shop/`](signals-shop/) | `@wcstack/signals` × router × `<wcs-fetch>` / `<wcs-storage>`（チュートリアルのショップをもう一方のリアクティブコアで） | `node examples/signals-shop/server.js` | :3000 |
+
 ## 共有サーバーコア
 
 `shared/server.js` は上記デモが委譲する静的配信 + JSON API コアです —

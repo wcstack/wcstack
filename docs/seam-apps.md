@@ -80,10 +80,10 @@ Seam apps are listed in their own table in [examples/README.md](../examples/READ
 
 | App | Seams | Life events | Status |
 |---|---|---|---|
-| `router-auth` — a members area: log in, protected pages, an order history from an API that needs a token | router guards × state, `<wcs-fetch>` 401 × navigation, `<wcs-storage>` × the guard, guard loaders (`data`) | deep link while logged out → log in → back to that page; reload while logged in; the session expiring mid-use; Back after logging out; logging out in another tab | built (2026-10-13), findings below |
-| `router-admin` — an admin console: nested layouts, a list with server-side paging and sorting in the URL, edit forms with server validation, view transitions, two languages | `<wcs-layout>` × state, query ⇄ state ⇄ fetch, two-way form bindings × fetch `body`, `<wcs-view-transition>` × router × lists, locale in the basename | deep link to page 3 sorted by name; edit, save, save again; a 422 with field errors; reload on an edit page; Back from a detail | built (2026-10-13), findings below |
-| `state-collab-board` — a shared board: changes from others arrive over SSE, yours are applied at once and rolled back if the server refuses | `<wcs-sse>` × state lists, `<wcs-fetch>` × optimistic updates, `<wcs-network>` × state, reconnect × resync | two browsers; a refused change; going offline and back; the server restarting | built (2026-10-13), findings below |
-| `signals-shop` — the tutorial's shop on `@wcstack/signals` | signals × router, signals × `<wcs-fetch>` / `<wcs-storage>` through the wc-bindable bridge | the tutorial's own (reload, deep link, Back, a second tab) | built (2026-10-13), findings below |
+| `router-auth` — a members area: log in, protected pages, an order history from an API that needs a token | router guards × state, `<wcs-fetch>` 401 × navigation, `<wcs-storage>` × the guard, guard loaders (`data`) | deep link while logged out → log in → back to that page; reload while logged in; the session expiring mid-use; Back after logging out; logging out in another tab | in [`examples/`](../examples/README.md#seam-apps) with its e2e spec (2026-10-14); findings below |
+| `router-admin` — an admin console: nested layouts, a list with server-side paging and sorting in the URL, edit forms with server validation, view transitions, two languages | `<wcs-layout>` × state, query ⇄ state ⇄ fetch, two-way form bindings × fetch `body`, `<wcs-view-transition>` × router × lists, locale in the basename | deep link to page 3 sorted by name; edit, save, save again; a 422 with field errors; reload on an edit page; Back from a detail | in [`examples/`](../examples/README.md#seam-apps) with its e2e spec (2026-10-14); findings below |
+| `state-collab-board` — a shared board: changes from others arrive over SSE, yours are applied at once and rolled back if the server refuses | `<wcs-sse>` × state lists, `<wcs-fetch>` × optimistic updates, `<wcs-network>` × state, reconnect × resync | two browsers; a refused change; going offline and back; the server restarting | in [`examples/`](../examples/README.md#seam-apps) with its e2e spec (2026-10-14); findings below |
+| `signals-shop` — the tutorial's shop on `@wcstack/signals` | signals × router, signals × `<wcs-fetch>` / `<wcs-storage>` through the wc-bindable bridge | the tutorial's own (reload, deep link, Back, a second tab) | in [`examples/`](../examples/README.md#seam-apps) with its e2e spec (2026-10-14); findings below |
 
 ### router-auth (2026-10-13)
 
@@ -123,3 +123,16 @@ Built in parallel after the pilot, the same way. All life events passed in the e
 | signals-shop | lint gap | `wcs/base-href-missing` missed a router imported through an import map | fixed |
 | signals-shop | document gap | the signals README still said 1.x and pinned 1.25.0; no signals × router / `<wcs-storage>` recipe; `@wcstack/testing` is for `<wcs-state>` pages | fixed |
 | all three | open | lint: in-place mutation through `Object.assign` or an alias; `$on` writes as evidence for `wcs/getter-untracked-read`; a getter reading `location`; a bare `{{ }}` under a route; `onsubmit:` without `#prevent`. Runtime: a layout without its default slot drops the page silently; route re-entry re-fires `<wcs-fetch>` with the old `url`; `date` / `locale` cannot format "Oct 13, 2026" or currencies. Signals dev mode: a computed that tracks nothing. The tutorial's step 13 loads state first | open |
+
+### Landing them in examples/ (2026-10-14)
+
+After 4.1.0 the same authors moved their apps into `examples/`, took out the workarounds 4.1.0 made unnecessary, and wrote an e2e spec each (10, 15, 7 and 8 tests, asserting intent). Doing so found more:
+
+| Kind | Finding | Outcome |
+|---|---|---|
+| release defect | the published `@wcstack/lint` / `@wcstack/typescript` 4.1.0 did not know `<wcs-network>`'s new `offline`: `release.yml` built them before it regenerated the built-in tag catalog, so a new member reached the lint one release late | fixed: the release rebuilds both after regenerating the catalog |
+| runtime defect | router: `navigateUrl` / `replaceUrl` to a page whose guard redirects logged `navigate failed: AbortError` (and a guard loop logged ten `Fallback navigation failed`) — a redirected navigation rejecting with `AbortError` is designed | fixed: an `AbortError` is not reported |
+| lint gap | `wcs/on-handler-this` missed an alias (`const state = this`) | fixed: any own `this` in a `$on` handler |
+| test defect | an e2e assertion pinned the SSR snapshot's minor version (`4.0.`), failing on every PR after 4.1.0 | fixed |
+| design question | a language switch is a real navigation (the locale is in the basename), so unsaved changes get the browser's `beforeunload` prompt, not `leaveConfirm`'s message; `match="prefix"` marks "Products" on `/products/new` too; `$watch` on a getter does not fire for a first value an element brought | open |
+| open | signals: an object prop on an element defined after `h()` lands as an attribute; `bindNode` before the element is defined gives a generic error; lint: `onsubmit:` without `#prevent`, in-place changes through `Object.assign` / an alias, `$on` writes for `wcs/getter-untracked-read`, `signals-dual-entry` across a sidecar module | open |

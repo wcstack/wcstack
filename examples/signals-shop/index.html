@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Little Roastery</title>
+  <base href="/">
+  <link rel="stylesheet" href="shop.css">
+  <style>
+    /* The route pages are wrapper elements that add no box (like product-card in shop.css). */
+    catalog-page, product-page { display: contents; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "@wcstack/signals/dom": "https://esm.run/@wcstack/signals/dom",
+      "@wcstack/fetch/auto": "https://esm.run/@wcstack/fetch/auto",
+      "@wcstack/storage/auto": "https://esm.run/@wcstack/storage/auto",
+      "@wcstack/router/auto": "https://esm.run/@wcstack/router/auto"
+    }
+  }
+  </script>
+</head>
+<body>
+
+<header class="shop-header">
+  <h1>Little Roastery</h1>
+  <p class="cart-badge">Cart: <span id="item-count"></span></p>
+</header>
+
+<div id="status"></div>
+
+<main class="shop" hidden>
+  <wcs-router>
+    <template>
+      <wcs-route path="/">
+        <catalog-page></catalog-page>
+      </wcs-route>
+      <wcs-route path="/products/:id(int)">
+        <product-page></product-page>
+      </wcs-route>
+      <wcs-route fallback>
+        <p class="no-results">Page not found. <a href="./">Back to the shop</a></p>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+
+  <aside class="cart"></aside>
+</main>
+
+<script type="module">
+  import "@wcstack/fetch/auto";
+  import "@wcstack/storage/auto";
+  import "@wcstack/router/auto";
+  import "./product-card.js";
+  import {
+    signal, computed, effect, h, render, Fragment, For, createRoot,
+    bindNode, mountNode, SignalsElement,
+  } from "@wcstack/signals/dom";
+
+  // ── Catalog ──
+  const catalogFetch = mountNode("wcs-fetch", { attrs: { url: "products.json" } });
+  const catalog = catalogFetch.signals.value;          // null until loaded
+  const loading = catalogFetch.signals.loading;
+  const loadError = catalogFetch.signals.error;
+
+  const products = computed(() => catalog.get() ?? []);
+  const catalogReady = computed(() => catalog.get() !== null);
+  const productById = computed(() => new Map(products.get().map((p) => [p.id, p])));
+
+  const retry = () => catalogFetch.command("fetch");
+
+  // ── Route ──
+  // <wcs-router> is in the markup and defined by the import above, so it is
+  // upgraded by now: bind it for the route's typed params.
+  const router = bindNode(document.querySelector("wcs-router"));
+  const routeParams = router.signals.typedParams;
+  const currentProduct = computed(() => productById.get().get(routeParams.get()?.id) ?? null);
+
+  // ── Filters (module-level: they outlive the catalog page's DOM) ──
+  const query = signal("");
+  const category = signal("all");
+  const visibleProducts = computed(() => {
+    const q = query.get().trim().toLowerCase();
+    const c = category.get();
+    return products.get().filter((p) =>
+      (c === "all" || p.category === c) && p.name.toLowerCase().includes(q));
+  });
+  const CATEGORIES = [["all", "All"], ["coffee", "Coffee"], ["tea", "Tea"], ["tools", "Tools"]];
+
+  // ── Cart: only ids and quantities; everything else is derived ──
+  // <wcs-storage> loads the key in its connectedCallback, so right after
+  // mountNode its value signal already holds what was saved (null if nothing).
+  // Seed the cart from it BEFORE bindInput (below): bindInput's first run
+  // writes the signal into the element, and an empty seed would be saved over
+  // the stored cart (signals README §7).
+  const cartStore = mountNode("wcs-storage", { attrs: { key: "little-roastery-cart" } });
+  // Whatever is in localStorage, keep only well-formed { id, quantity } lines.
+  const toLines = (v) => (Array.isArray(v)
+    ? v.filter((l) => l && Number.isInteger(l.id) && Number.isInteger(l.quantity) && l.quantity > 0)
+        .map(({ id, quantity }) => ({ id, quantity }))
+    : null);
+  // Two carts are equal when they hold the same lines. toLines() returns new
+  // objects, so without this the element's echo of each save would be a
+  // "change", be saved again, and echo again.
+  const sameLines = (a, b) => a.length === b.length &&
+    a.every((line, i) => line.id === b[i].id && line.quantity === b[i].quantity);
+  const cart = signal(toLines(cartStore.signals.value.peek()) ?? [], sameLines);   // [{ id, quantity }]
+  const cartLines = computed(() => cart.get().map(({ id, quantity }) => {
+    const product = productById.get().get(id);
+    const price = product?.price ?? 0;
+    return { id, quantity, name: product?.name ?? "…", price, lineTotal: price * quantity };
+  }));
+  const itemCount = computed(() => cart.get().reduce((sum, line) => sum + line.quantity, 0));
+  const subtotal = computed(() => cartLines.get().reduce((sum, line) => sum + line.lineTotal, 0));
+  const shipping = computed(() => (subtotal.get() >= 50 ? 0 : 5));
+  const total = computed(() => subtotal.get() + shipping.get());
+
+  // Every change replaces the cart array (and the line it touches).
+  const addProduct = (id) => {
+    const lines = cart.peek();
+    const i = lines.findIndex((line) => line.id === id);
+    cart.set(i >= 0
+      ? lines.with(i, { id, quantity: lines[i].quantity + 1 })
+      : [...lines, { id, quantity: 1 }]);
+  };
+  const changeQuantity = (id, delta) =>
+    cart.set(cart.peek().map((line) =>
+      line.id === id ? { id, quantity: Math.max(1, line.quantity + delta) } : line));
+  const removeLine = (id) => cart.set(cart.peek().filter((line) => line.id !== id));
+
+  const money = (n) => "$" + n.toFixed(2);
+
+  // ── Route pages ──
+  // The router stamps a route's content into <wcs-outlet> when the route is
+  // entered and takes it out when it is left; a SignalsElement renders on
+  // connect and disposes its effects on disconnect, so each page simply
+  // renders whenever it is in the document.
+  class CatalogPage extends SignalsElement {
+    render() {
+      return h("section", { class: "catalog" },
+        h("h2", null, "Products"),
+        h("div", { class: "toolbar" },
+          h("input", {
+            type: "search", placeholder: "Search products", "aria-label": "Search products",
+            value: () => query.get(),
+            onInput: (e) => query.set(e.target.value),
+          }),
+          h("fieldset", { class: "categories" },
+            h("legend", { class: "visually-hidden" }, "Category"),
+            ...CATEGORIES.map(([value, label]) =>
+              h("label", null,
+                h("input", {
+                  type: "radio", name: "category", value,
+                  checked: () => category.get() === value,
+                  onChange: () => category.set(value),
+                }),
+                " " + label,
+              )),
+          ),
+        ),
+        h("div", { class: "grid" },
+          // product-card.js is imported above, so <product-card> is defined
+          // when h() creates it and `product` lands on its property (an
+          // element defined later would get a "[object Object]" attribute).
+          For(visibleProducts, (p) =>
+            h("product-card", { product: p, "onadd-to-cart": () => addProduct(p.id) }),
+            { key: (p) => p.id },
+          ),
+        ),
+        h("p", { class: "no-results", hidden: () => visibleProducts.get().length !== 0 }, "No products match."),
+      );
+    }
+  }
+  customElements.define("catalog-page", CatalogPage);
+
+  class ProductPage extends SignalsElement {
+    render() {
+      return h("article", { class: "product-page" },
+        h("p", { class: "back" }, h("a", { href: "./" }, "← All products")),
+        () => {
+          const p = currentProduct.get();
+          if (!p) return h("p", { class: "no-results" }, "No such product.");
+          return h(Fragment, null,
+            h("div", { class: "card-icon" }, p.icon),
+            h("h2", null, p.name),
+            h("p", null, p.description),
+            h("p", { class: "price" }, money(p.price)),
+            h("p", { class: "badge", hidden: p.stock !== 0 }, "Sold out"),
+            h("button", { type: "button", disabled: p.stock === 0, onClick: () => addProduct(p.id) }, "Add to cart"),
+          );
+        },
+      );
+    }
+  }
+  customElements.define("product-page", ProductPage);
+
+  // ── Page-level views (always in the document) ──
+  createRoot(() => {
+    render(h("div", null,
+      h("p", { class: "status", hidden: () => !loading.get() }, "Loading products…"),
+      h("p", { class: "status error", hidden: () => !loadError.get() },
+        "Couldn't load the products. ",
+        h("button", { type: "button", onClick: retry }, "Try again"),
+      ),
+    ), document.getElementById("status"));
+
+    render(() => String(itemCount.get()), document.getElementById("item-count"));
+
+    // Another tab saved (or this tab's own save echoed back): take it.
+    // sameLines makes the echo a no-op.
+    effect(() => {
+      const lines = toLines(cartStore.signals.value.get());
+      if (lines) cart.set(lines);
+    });
+    // This tab changed the cart: save it (the element auto-saves on a value write).
+    cartStore.bindInput("value", cart);
+
+    const main = document.querySelector("main.shop");
+    effect(() => { main.hidden = !catalogReady.get(); });
+
+    // One row per product id. A keyed row is kept while its key is, and an
+    // immutable update puts a new line object under the same key: the row
+    // reads what changes through current(), the line under its key now.
+    const cartRow = ({ id }, _index, current) =>
+      h("li", null,
+        h("span", { class: "line-name" }, () => current().name),
+        h("span", { class: "line-total" }, () => money(current().lineTotal)),
+        h("span", { class: "stepper" },
+          h("button", { type: "button", "aria-label": "Decrease",
+            disabled: () => current().quantity <= 1,
+            onClick: () => changeQuantity(id, -1) }, "−"),
+          h("span", null, () => String(current().quantity)),
+          h("button", { type: "button", "aria-label": "Increase", onClick: () => changeQuantity(id, +1) }, "+"),
+        ),
+        h("button", { type: "button", class: "remove", onClick: () => removeLine(id) }, "Remove"),
+      );
+
+    const cartLinesList = h("ul", { class: "cart-lines" }, For(cartLines, cartRow, { key: (line) => line.id }));
+    const totals = h("dl", { class: "totals" },
+      h("dt", null, "Subtotal"), h("dd", null, () => money(subtotal.get())),
+      h("dt", null, "Shipping"), h("dd", null, () => money(shipping.get())),
+      h("dt", { class: "grand" }, "Total"), h("dd", { class: "grand" }, () => money(total.get())),
+    );
+    const hint = h("p", { class: "hint", hidden: () => shipping.get() === 0 }, "Free shipping on orders of $50 or more.");
+    const emptyNote = h("p", { class: "empty" }, "Your cart is empty.");
+    const cartIsEmpty = computed(() => cart.get().length === 0);
+
+    render(h(Fragment, null,
+      h("h2", null, "Cart"),
+      () => (cartIsEmpty.get() ? emptyNote : [cartLinesList, totals, hint]),
+    ), document.querySelector("aside.cart"));
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>Members area</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 0 auto; padding: 1.5rem; color: #1a1a2e; }
+    .site-header { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1rem; background: #f4f5f9; border-radius: 8px; margin-bottom: 1.5rem; }
+    .site-header .spacer { flex: 1; }
+    .site-header a { color: #3949ab; text-decoration: none; }
+    .site-header a.active { font-weight: 600; }
+    .error { color: #c62828; }
+    .notice { background: #fff8e1; border: 1px solid #ffe082; padding: 0.5rem 0.75rem; border-radius: 6px; }
+  </style>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+
+<header class="site-header">
+  <wcs-link to="/">Coffee Corner</wcs-link>
+  <span class="spacer"></span>
+  <template data-wcs="if: loggedIn">
+    <span class="greeting">Hello, <span data-wcs="textContent: userName"></span></span>
+    <button type="button" data-wcs="onclick: logout">Log out</button>
+  </template>
+  <template data-wcs="else:">
+    <wcs-link to="/login">Log in</wcs-link>
+  </template>
+</header>
+
+<wcs-state>
+  <script type="module">
+    // A `next` target is followed only when it is a path inside this app.
+    function safeNext(next) {
+      if (typeof next !== "string" || !next.startsWith("/")) return "/account";
+      if (next.startsWith("//") || next.startsWith("/\\")) return "/account";
+      return next;
+    }
+
+    export default {
+      // --- router surface ---------------------------------------------
+      path: "",
+      routeName: "",
+      /** @type {{ id?: number }} */
+      routeParams: {},
+      query: {},
+      navigateUrl: null,
+      replaceUrl: null,
+
+      // --- session (persisted by <wcs-storage>, shared by every tab) ---
+      // null = logged out; { token, user: { name, email } } = logged in
+      session: null,
+      get token() { return this["session.token"] ?? ""; },
+      get loggedIn() { return this.token !== ""; },
+      get userName() { return this["session.user.name"] ?? ""; },
+
+      // --- login form ---------------------------------------------------
+      form: { username: "", password: "" },
+      loginBody: null,
+      loginTrigger: false,
+      loginLoading: false,
+      loginError: null,
+      notice: "",
+      get loginErrorMessage() {
+        const err = this.loginError;
+        if (!err) return "";
+        try { return JSON.parse(err.body).error ?? "Could not log in."; }
+        catch { return "Could not log in."; }
+      },
+      login() {
+        this.loginBody = { username: this["form.username"], password: this["form.password"] };
+        this.loginTrigger = true;
+      },
+      logoutTrigger: false,
+      sessionEndReason: "",
+      logout() {
+        // tell the server, then forget the session
+        this.logoutTrigger = true;
+        this.sessionEndReason = "logout";
+        this.session = null;
+      },
+      get onMemberPage() { return ["account", "orders", "order"].includes(this.routeName); },
+
+      // --- member data (token-protected API) -----------------------------
+      // null = no Authorization header at all (an empty value would still be sent)
+      get authHeader() { return this.loggedIn ? "Bearer " + this.token : null; },
+      /** @type {{ value: { name: string, email: string } | null, loading: boolean, error: any, status: number }} */
+      meFetch: { value: null, loading: false, error: null, status: 0 },
+      /** @type {{ value: { id: number, date: string, total: number, status: string }[] | null, loading: boolean, error: any, status: number }} */
+      ordersFetch: { value: null, loading: false, error: null, status: 0 },
+      /** @type {{ value: { id: number, date: string, total: number, status: string, items: { name: string, qty: number, price: number }[] } | null, loading: boolean, error: any, status: number }} */
+      orderFetch: { value: null, loading: false, error: null, status: 0 },
+      get orders() { return this["ordersFetch.value"] ?? []; },
+      get "orders.*.href"() { return "/account/orders/" + this["orders.*.id"]; },
+      // Urls come from state, gated on the session: a fetch node never starts
+      // before state has bound its Authorization header (see README).
+      get meUrl() { return this.loggedIn ? "/api/me" : null; },
+      get ordersUrl() { return this.loggedIn ? "/api/orders" : null; },
+      get orderUrl() {
+        const id = this["routeParams.id"];
+        return this.loggedIn && id != null ? "/api/orders/" + id : null;
+      },
+      get profileReady() { return !this["meFetch.loading"] && this["meFetch.status"] === 200; },
+      get ordersReady() { return !this["ordersFetch.loading"] && this["ordersFetch.status"] === 200; },
+      get hasOrders() { return this.ordersReady && this.orders.length > 0; },
+      get noOrders() { return this.ordersReady && this.orders.length === 0; },
+      // The route body comes back with the previous order still loaded:
+      // show an order only when it is the one in the URL.
+      get orderReady() {
+        const order = this["orderFetch.value"];
+        return !this["orderFetch.loading"] && order != null && order.id === this["routeParams.id"];
+      },
+      get orderTitle() { return "Order #" + (this["routeParams.id"] ?? "") + " — Coffee Corner"; },
+      get orderItems() { return this["orderFetch.value.items"] ?? []; },
+      get orderNotFound() { return !this["orderFetch.loading"] && this["orderFetch.status"] === 404; },
+
+      // --- session expiry --------------------------------------------------
+      expireSession() {
+        this.notice = "Your session has expired — please log in again.";
+        this.sessionEndReason = "expired";
+        this.session = null;
+        this.replaceUrl = "/login?next=" + encodeURIComponent(this.path);
+      },
+
+      $watch: {
+        // Every session change lands here, whether it happened in this tab
+        // (login, logout, expiry) or in another one (the storage event).
+        token(cur, prev) {
+          if (cur === prev) return;
+          if (prev) {
+            // A session ended, or another member's replaced it: drop its
+            // data, and do not stay on a member page.
+            const reason = this.sessionEndReason;
+            this.sessionEndReason = "";
+            this["meFetch.value"] = null;
+            this["ordersFetch.value"] = null;
+            this["orderFetch.value"] = null;
+            if (reason === "expired") return;             // expireSession() already went to /login
+            if (reason === "logout") { this.navigateUrl = "/"; return; }
+            if (this.onMemberPage) this.replaceUrl = "/";  // logged out / switched member in another tab
+          }
+          // Logged in (here, or in another tab while this one shows the form).
+          if (cur && this.routeName === "login") this.replaceUrl = safeNext(this["query.next"]);
+        },
+        routeName(cur) {
+          if (cur !== "login") { this.notice = ""; this.loginError = null; }
+        },
+      },
+
+      $eventTokens: ["loginResponded", "memberResponded"],
+      $on: {
+        memberResponded(state, event) {
+          if (event.detail?.status === 401) state.expireSession();
+        },
+        loginResponded(state, event) {
+          const { status, value } = event.detail ?? {};
+          if (status !== 200 || !value?.token) return;
+          state.session = value;            // the token watch takes the member to `next`
+          state.form = { username: "", password: "" };
+          state.notice = "";
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- The session lives in localStorage: it survives a reload and every tab sees it. -->
+<wcs-storage key="coffee-corner.session" data-wcs="value#init=element: session"></wcs-storage>
+
+<wcs-fetch url="/api/logout" method="POST" manual data-wcs="trigger: logoutTrigger">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+
+<wcs-fetch url="/api/login" method="POST" manual
+  data-wcs="body: loginBody; trigger: loginTrigger; loading: loginLoading; error: loginError; eventToken.value: loginResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<main>
+  <wcs-router focus="heading" announce="title" data-wcs="path: path; routeName: routeName; typedParams: routeParams; searchParams: query; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+    <template>
+      <wcs-route path="/" name="home">
+        <wcs-head><title>Home — Coffee Corner</title></wcs-head>
+        <section>
+          <h1>Welcome to Coffee Corner</h1>
+          <p>Fresh beans, good gear. Members can see their profile and order history.</p>
+          <p><wcs-link to="/account/orders">See my orders</wcs-link></p>
+        </section>
+      </wcs-route>
+
+      <wcs-route path="/login" name="login">
+        <!-- A member who is already logged in has nothing to do here. -->
+        <wcs-guard-handler>
+          <script type="module">
+            export default function () {
+              let session = null;
+              try { session = JSON.parse(localStorage.getItem("coffee-corner.session")); } catch {}
+              return session?.token ? "/account" : true;
+            }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title>Log in — Coffee Corner</title></wcs-head>
+        <section>
+          <h1>Log in</h1>
+          <template data-wcs="if: notice">
+            <p class="notice" role="status" data-wcs="textContent: notice"></p>
+          </template>
+          <form data-wcs="onsubmit#prevent: login">
+            <p><label>Username <input name="username" autocomplete="username" data-wcs="value: form.username"></label></p>
+            <p><label>Password <input name="password" type="password" autocomplete="current-password" data-wcs="value: form.password"></label></p>
+            <p><button type="submit" data-wcs="disabled: loginLoading">Log in</button></p>
+            <p class="error" role="alert" data-wcs="textContent: loginErrorMessage"></p>
+          </form>
+        </section>
+      </wcs-route>
+
+      <!-- Members only: one guard on the parent covers every page under /account. -->
+      <wcs-route path="/account" guard="/login">
+        <wcs-guard-handler>
+          <script type="module">
+            export default function (toPath, fromPath, { searchParams }) {
+              let session = null;
+              try { session = JSON.parse(localStorage.getItem("coffee-corner.session")); } catch {}
+              if (session?.token) return true;
+              // toPath has no query string: put it back from the match being entered
+              const query = new URLSearchParams(searchParams).toString();
+              return `/login?next=${encodeURIComponent(query ? toPath + "?" + query : toPath)}`;
+            }
+          </script>
+        </wcs-guard-handler>
+
+        <wcs-route index name="account">
+          <wcs-head><title>My account — Coffee Corner</title></wcs-head>
+          <section>
+            <h1>My account</h1>
+            <wcs-fetch data-wcs="...: meFetch; url: meUrl; eventToken.value: memberResponded">
+              <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+            </wcs-fetch>
+            <template data-wcs="if: meFetch.loading"><p>Loading…</p></template>
+            <template data-wcs="if: profileReady">
+              <dl class="profile">
+                <dt>Name</dt><dd data-wcs="textContent: meFetch.value.name"></dd>
+                <dt>Email</dt><dd data-wcs="textContent: meFetch.value.email"></dd>
+              </dl>
+            </template>
+            <p><wcs-link to="/account/orders">My orders</wcs-link></p>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="orders">
+          <wcs-route index name="orders">
+            <wcs-head><title>My orders — Coffee Corner</title></wcs-head>
+            <section>
+              <h1>My orders</h1>
+              <wcs-fetch data-wcs="...: ordersFetch; url: ordersUrl; eventToken.value: memberResponded">
+                <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+              </wcs-fetch>
+              <template data-wcs="if: ordersFetch.loading"><p>Loading…</p></template>
+              <template data-wcs="if: noOrders"><p class="empty">You have no orders yet.</p></template>
+              <template data-wcs="if: hasOrders">
+              <table class="orders">
+                <thead><tr><th>Order</th><th>Date</th><th>Total</th><th>Status</th></tr></thead>
+                <tbody>
+                  <template data-wcs="for: orders">
+                    <tr>
+                      <td><wcs-link data-wcs="attr.to: .href">#{{ .id }}</wcs-link></td>
+                      <td>{{ .date }}</td>
+                      <td>¥{{ .total|locale }}</td>
+                      <td>{{ .status }}</td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              </template>
+            </section>
+          </wcs-route>
+          <wcs-route path=":id(int)" name="order">
+            <wcs-head><title data-wcs="textContent: orderTitle">Order — Coffee Corner</title></wcs-head>
+            <section>
+              <h1>Order #<span data-wcs="textContent: routeParams.id"></span></h1>
+              <wcs-fetch data-wcs="...: orderFetch; url: orderUrl; eventToken.value: memberResponded">
+                <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+              </wcs-fetch>
+              <template data-wcs="if: orderFetch.loading"><p>Loading…</p></template>
+              <template data-wcs="if: orderNotFound"><p class="empty">Order not found.</p></template>
+              <template data-wcs="if: orderReady">
+                <p>Placed on {{ orderFetch.value.date }} — {{ orderFetch.value.status }}</p>
+                <table class="items">
+                  <thead><tr><th>Item</th><th>Qty</th><th>Price</th></tr></thead>
+                  <tbody>
+                    <template data-wcs="for: orderItems">
+                      <tr><td>{{ .name }}</td><td>{{ .qty }}</td><td>¥{{ .price|locale }}</td></tr>
+                    </template>
+                  </tbody>
+                </table>
+                <p>Total: ¥{{ orderFetch.value.total|locale }}</p>
+              </template>
+              <p><wcs-link to="/account/orders">Back to my orders</wcs-link></p>
+            </section>
+          </wcs-route>
+        </wcs-route>
+      </wcs-route>
+
+      <wcs-route fallback name="not-found">
+        <wcs-head><title>Not found — Coffee Corner</title></wcs-head>
+        <section>
+          <h1>Page not found</h1>
+          <p>Nothing lives at this address. <wcs-link to="/">Back to the home page</wcs-link></p>
+        </section>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</main>
+
+</body>
+</html>

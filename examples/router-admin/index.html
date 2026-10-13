@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- The router takes its basename from <base>. The script below points it
+       at the language segment (/en/ or /ja/) before any module runs. -->
+  <base href="/">
+  <title>Admin</title>
+  <script>
+  (function () {
+    var SUPPORTED = { en: true, ja: true };
+    var segments = location.pathname.split("/");
+    var head = segments[1] || "";
+    if (!SUPPORTED[head]) {
+      // "/" -> "/en/"; a path without a language gets "/en" in front.
+      if (head === "") segments = ["", "en", ""];
+      else segments.splice(1, 0, "en");
+      location.replace(segments.join("/") + location.search + location.hash);
+      return;
+    }
+    document.documentElement.lang = head;
+    document.title = head === "ja" ? "管理" : "Admin";   // until a route sets its own
+    var base = document.querySelector("base");
+    base.setAttribute("href", "/" + head + "/");
+  })();
+  </script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; color: #1f2933; }
+    .app-header { display: flex; align-items: center; gap: 1rem; padding: .75rem 1.25rem; background: #243b53; color: #fff; }
+    .app-header .store { font-weight: 700; }
+    .app-header .lang-switch { margin-left: auto; color: #fff; }
+    .app-body { display: grid; grid-template-columns: 12rem 1fr; min-height: calc(100vh - 3rem); }
+    .side-nav { background: #f0f4f8; padding: 1rem .5rem; display: flex; flex-direction: column; gap: .25rem; }
+    .side-nav a { padding: .4rem .75rem; border-radius: 4px; color: #243b53; text-decoration: none; }
+    /* <wcs-link match="prefix">: aria-current="page" on its own path, "true" below it.
+       /products/new is also "below" /products, so Products is active there too;
+       when another link is the page itself, only that one is marked. */
+    .side-nav a.active { background: #d9e2ec; font-weight: 600; }
+    .side-nav:has(a[aria-current="page"]) a[aria-current="true"] { background: none; font-weight: normal; }
+    main { padding: 1rem 1.5rem; }
+    .stats { display: flex; gap: 1rem; margin: 1rem 0; }
+    .stat { padding: .75rem 1rem; border: 1px solid #d9e2ec; border-radius: 6px; min-width: 10rem; }
+    .stat b { display: block; font-size: 1.5rem; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #e4e7eb; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .toolbar { display: flex; gap: .5rem; align-items: center; margin: .75rem 0; }
+    .pager { display: flex; gap: .35rem; align-items: center; margin-top: .75rem; }
+    .pager a, .pager span { padding: .2rem .55rem; border: 1px solid #d9e2ec; border-radius: 4px; text-decoration: none; }
+    .pager [aria-current="page"] { background: #243b53; color: #fff; }
+    .pager span.disabled { color: #9aa5b1; }
+    .loading { color: #627d98; }
+    .is-loading tbody { opacity: .5; }
+    .error { color: #b42318; }
+    .error:empty, .field-error:empty { display: none; }
+    .detail dl { display: grid; grid-template-columns: 8rem 1fr; gap: .35rem 1rem; }
+    .detail dd { margin: 0; }
+    .actions { display: flex; gap: .75rem; align-items: center; margin-top: 1rem; }
+    .product-form { max-width: 28rem; }
+    .field { display: grid; gap: .25rem; margin-bottom: .75rem; }
+    .field input { padding: .4rem .5rem; font: inherit; border: 1px solid #bcccdc; border-radius: 4px; }
+    .field input[aria-invalid="true"] { border-color: #b42318; }
+    .field-error { margin: 0; color: #b42318; font-size: .875rem; }
+    button { font: inherit; padding: .4rem .9rem; }
+    button.danger { color: #b42318; }
+    /* View transitions: a short cross-fade for route swaps; list rows (named
+       automatically, view-transition-class wcs-row) move and fade. */
+    ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .18s; }
+    ::view-transition-group(*.wcs-row) { animation-duration: .25s; }
+  </style>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+
+<wcs-state>
+  <script type="module">
+    const LANG = document.documentElement.lang === "ja" ? "ja" : "en";
+    const DICT = {
+      en: {
+        storeName: "Little Roastery Admin",
+        otherLangName: "日本語",
+        nav: { label: "Sections", dashboard: "Dashboard", products: "Products", newProduct: "New product" },
+        titles: { dashboard: "Dashboard", products: "Products", newProduct: "New product", product: "Product", edit: "Edit product", notFound: "Not found" },
+        notFound: { heading: "Page not found", body: "There is nothing at this address.", back: "Back to the dashboard" },
+        common: { loading: "Loading…", loadError: "Could not load the data." },
+        dashboard: { count: "Products", totalStock: "Total stock", recent: "Recently updated" },
+        list: {
+          search: "Search", searchLabel: "Search by name or SKU", searchButton: "Search",
+          total: { one: "{n} product", other: "{n} products" }, empty: "No products match.",
+          prev: "Previous", next: "Next", pager: "Pages",
+        },
+        fields: { sku: "SKU", name: "Name", price: "Price", stock: "Stock", updatedAt: "Updated" },
+        detail: {
+          back: "← Back to the list", edit: "Edit", delete: "Delete", deleting: "Deleting…",
+          missing: "This product does not exist (it may have been deleted).",
+          confirmDelete: "Delete “{name}”? This cannot be undone.",
+          deleteFailed: "Could not delete the product. Please try again.",
+        },
+        form: {
+          save: "Save", saving: "Saving…", cancel: "Cancel",
+          saveFailed: "Could not save. Please try again.",
+          fixErrors: "Please correct the fields marked below.",
+          discard: "Discard your changes?",
+          editTitle: "Edit: {name}",
+        },
+        errors: {
+          required: "Required.",
+          taken: "This SKU is already used by another product.",
+          positiveInteger: "Enter a whole number greater than 0.",
+          nonNegativeInteger: "Enter a whole number, 0 or more.",
+        },
+      },
+      ja: {
+        storeName: "リトル・ロースタリー 管理",
+        otherLangName: "English",
+        nav: { label: "セクション", dashboard: "ダッシュボード", products: "商品", newProduct: "新しい商品" },
+        titles: { dashboard: "ダッシュボード", products: "商品", newProduct: "新しい商品", product: "商品", edit: "商品の編集", notFound: "見つかりません" },
+        notFound: { heading: "ページが見つかりません", body: "このアドレスには何もありません。", back: "ダッシュボードへ戻る" },
+        common: { loading: "読み込み中…", loadError: "データを読み込めませんでした。" },
+        dashboard: { count: "商品数", totalStock: "在庫の合計", recent: "最近更新した商品" },
+        list: {
+          search: "検索", searchLabel: "商品名か SKU で検索", searchButton: "検索",
+          total: { other: "{n} 件" }, empty: "該当する商品はありません。",
+          prev: "前へ", next: "次へ", pager: "ページ",
+        },
+        fields: { sku: "SKU", name: "商品名", price: "価格", stock: "在庫", updatedAt: "更新日" },
+        detail: {
+          back: "← 一覧へ戻る", edit: "編集", delete: "削除", deleting: "削除中…",
+          missing: "この商品はありません（削除された可能性があります）。",
+          confirmDelete: "「{name}」を削除しますか？元に戻せません。",
+          deleteFailed: "商品を削除できませんでした。もう一度お試しください。",
+        },
+        form: {
+          save: "保存", saving: "保存中…", cancel: "キャンセル",
+          saveFailed: "保存できませんでした。もう一度お試しください。",
+          fixErrors: "下の印の付いた項目を直してください。",
+          discard: "変更を破棄しますか？",
+          editTitle: "編集: {name}",
+        },
+        errors: {
+          required: "入力してください。",
+          taken: "この SKU は別の商品で使われています。",
+          positiveInteger: "0 より大きい整数を入力してください。",
+          nonNegativeInteger: "0 以上の整数を入力してください。",
+        },
+      },
+    };
+    // Shapes for wcs-validate, which cannot see which dictionary is picked or
+    // what the API returns.
+    /** @typedef {{ id: number, sku: string, name: string, price: number, stock: number, updatedAt: string }} Product */
+    /** @typedef {{
+          storeName: string, otherLangName: string,
+          nav: { label: string, dashboard: string, products: string, newProduct: string },
+          titles: { dashboard: string, products: string, newProduct: string, product: string, edit: string, notFound: string },
+          notFound: { heading: string, body: string, back: string },
+          common: { loading: string, loadError: string },
+          dashboard: { count: string, totalStock: string, recent: string },
+          list: { search: string, searchLabel: string, searchButton: string, total: { one: string, other: string }, empty: string, prev: string, next: string, pager: string },
+          fields: { sku: string, name: string, price: string, stock: string, updatedAt: string },
+          detail: { back: string, edit: string, delete: string, deleting: string, missing: string, confirmDelete: string, deleteFailed: string },
+          form: { save: string, saving: string, cancel: string, saveFailed: string, fixErrors: string, discard: string, editTitle: string },
+          errors: { required: string, taken: string, positiveInteger: string, nonNegativeInteger: string }
+        }} Dict */
+    const SORTS = ["name", "price", "stock", "updatedAt"];
+    const PAGE_SIZE = 10;
+    const money = new Intl.NumberFormat(LANG, { style: "currency", currency: "JPY" });
+    const count = new Intl.NumberFormat(LANG);
+    const day = new Intl.DateTimeFormat(LANG, { dateStyle: "medium" });
+    const plural = new Intl.PluralRules(LANG);
+
+    export default {
+      lang: LANG,
+      /** @type {Dict} */
+      t: DICT[LANG],
+      base: "/" + LANG + "/",
+
+      // Router outputs (read on attach, then streamed by the router).
+      path: "/",
+      routeName: "",
+      routeParams: {},
+      query: {},
+      navigateUrl: null,
+      replaceUrl: null,
+
+      // Bumped after every write to the server, so the next GET is a new url.
+      rev: 0,
+
+      statsFetch: { value: null, loading: false, error: null, status: 0 },
+      listFetch: { value: null, loading: false, error: null, status: 0 },
+
+      // ---- layout -------------------------------------------------------
+      get otherLang() { return this.lang === "ja" ? "en" : "ja"; },
+      // Same page, other language. Built from the router's parsed outputs.
+      get switchHref() {
+        const search = new URLSearchParams(this.query).toString();
+        return "/" + this.otherLang + (this.path === "/" ? "/" : this.path) + (search ? "?" + search : "");
+      },
+
+      // ---- dashboard ----------------------------------------------------
+      get "statsFetch.url"() {
+        return this.routeName === "dashboard" ? "/api/stats?rev=" + this.rev : undefined;
+      },
+      get stats() { return this["statsFetch.value"]; },
+      get statsCountText() { return this.stats ? count.format(this.stats.count) : "–"; },
+      get statsStockText() { return this.stats ? count.format(this.stats.totalStock) : "–"; },
+      /** @type {Product[]} */
+      recent: [],          // copied from the stats response in $watch (typed for the lint)
+      get "recent.*.href"() { return this.base + "products/" + this["recent.*.id"]; },
+      get "recent.*.priceText"() { return money.format(this["recent.*.price"]); },
+      get "recent.*.dateText"() { return day.format(new Date(this["recent.*.updatedAt"])); },
+
+      // ---- list: the URL is the state -----------------------------------
+      // searchParams values are strings; convert before any arithmetic.
+      get page() {
+        const n = parseInt(this["query.page"] ?? "", 10);
+        return Number.isInteger(n) && n >= 1 ? n : 1;
+      },
+      get sort() { return SORTS.includes(this["query.sort"]) ? this["query.sort"] : "name"; },
+      get dir() { return this["query.dir"] === "desc" ? "desc" : "asc"; },
+      get q() { return (this["query.q"] ?? "").trim(); },
+      // The list's route path (inside the basename) for given changes: what
+      // navigateUrl / replaceUrl take. listHref() adds the basename for <a href>.
+      listPath(changes) {
+        const next = { page: this.page, sort: this.sort, dir: this.dir, q: this.q, ...changes };
+        const sp = new URLSearchParams();
+        if (next.page !== 1) sp.set("page", String(next.page));
+        if (next.sort !== "name") sp.set("sort", next.sort);
+        if (next.dir !== "asc") sp.set("dir", next.dir);
+        if (next.q) sp.set("q", next.q);
+        const s = sp.toString();
+        return "/products" + (s ? "?" + s : "");
+      },
+      listHref(changes) { return "/" + this.lang + this.listPath(changes); },
+      get "listFetch.url"() {
+        if (this.routeName !== "products") return undefined;
+        const sp = new URLSearchParams({ page: String(this.page), size: String(PAGE_SIZE), sort: this.sort, dir: this.dir, q: this.q, rev: String(this.rev) });
+        return "/api/products?" + sp;
+      },
+      get list() { return this["listFetch.value"]; },
+      /** @type {Product[]} */
+      rows: [],
+      $listKeys: { rows: "id" },
+      get total() { return this.list?.total ?? 0; },
+      get totalText() {
+        const forms = this.t.list.total;
+        return (forms[plural.select(this.total)] ?? forms.other).replace("{n}", count.format(this.total));
+      },
+      get pageCount() { return Math.max(1, Math.ceil(this.total / PAGE_SIZE)); },
+      get listEmpty() { return this.list !== null && this.rows.length === 0; },
+      get listBusy() { return this["listFetch.loading"]; },
+      get listFailed() { return !!this["listFetch.error"] && !this["listFetch.loading"]; },
+      get "rows.*.href"() { return this.base + "products/" + this["rows.*.id"]; },
+      get "rows.*.priceText"() { return money.format(this["rows.*.price"]); },
+      get "rows.*.stockText"() { return count.format(this["rows.*.stock"]); },
+      get "rows.*.dateText"() { return day.format(new Date(this["rows.*.updatedAt"])); },
+
+      // Sortable column headers: clicking sorts by it; again reverses; page 1.
+      columns: [
+        { key: "name", num: false },
+        { key: "price", num: true },
+        { key: "stock", num: true },
+        { key: "updatedAt", num: false },
+      ],
+      get "columns.*.label"() { return this.t.fields[this["columns.*.key"]]; },
+      get "columns.*.href"() {
+        const key = this["columns.*.key"];
+        const dir = this.sort === key && this.dir === "asc" ? "desc" : "asc";
+        return this.listHref({ sort: key, dir, page: 1 });
+      },
+      get "columns.*.ariaSort"() {
+        return this.sort === this["columns.*.key"] ? (this.dir === "asc" ? "ascending" : "descending") : null;
+      },
+      get "columns.*.arrow"() {
+        return this.sort === this["columns.*.key"] ? (this.dir === "asc" ? " ▲" : " ▼") : "";
+      },
+
+      // Pager.
+      get prevHref() { return this.page > 1 ? this.listHref({ page: this.page - 1 }) : null; },
+      get nextHref() { return this.page < this.pageCount ? this.listHref({ page: this.page + 1 }) : null; },
+      get hasPrev() { return this.prevHref !== null; },
+      get hasNext() { return this.nextHref !== null; },
+      // Page numbers [1 … pageCount], kept by a $watch on pageCount. A typed
+      // property rather than a getter: wcs-validate cannot see the element
+      // type of a list a getter returns (`.` in the row would be "missing").
+      /** @type {number[]} */
+      pageLinks: [1],
+      get "pageLinks.*.href"() { return this.listHref({ page: this["pageLinks.*"] }); },
+      get "pageLinks.*.current"() { return this["pageLinks.*"] === this.page ? "page" : null; },
+
+      // Search: the input shows the URL's q; submitting goes back to page 1.
+      search(event) {
+        const q = String(new FormData(event.target).get("q") ?? "").trim();
+        this.navigateUrl = this.listPath({ q, page: 1 });
+      },
+
+      // ---- detail -------------------------------------------------------
+      productFetch: { value: null, loading: false, error: null, status: 0 },
+      // The list the staff member came from (page, sort, search), or null.
+      lastListPath: null,
+      returnPath: null,
+      get listPathNow() { return this.routeName === "products" ? this.listPath({}) : null; },
+      get productId() { return this["routeParams.id"] ?? null; },
+      get onProduct() { return this.routeName === "product" || this.routeName === "product-edit"; },
+      get "productFetch.url"() {
+        if (!this.onProduct || this.productId === null || this.productId === this.deletedId) return undefined;
+        return "/api/products/" + this.productId + "?rev=" + this.rev;
+      },
+      // Only the product of the current URL: never the previous one's data.
+      get product() {
+        const p = this["productFetch.value"];
+        return this.onProduct && p && p.id === this.productId ? p : null;
+      },
+      get productReady() { return this.product !== null; },
+      get productName() { return this.product?.name ?? ""; },
+      get productSku() { return this.product?.sku ?? ""; },
+      get productLoading() { return this.onProduct && !this.productReady && this["productFetch.status"] !== 404; },
+      get productMissing() { return this.onProduct && this["productFetch.status"] === 404 && !this["productFetch.loading"]; },
+      get productTitle() { return this.product ? this.product.name + " — " + this.t.titles.product : this.t.titles.product; },
+      get productPriceText() { return this.product ? money.format(this.product.price) : ""; },
+      get productStockText() { return this.product ? count.format(this.product.stock) : ""; },
+      get productDateText() { return this.product ? day.format(new Date(this.product.updatedAt)) : ""; },
+      get editHref() { return this.base + "products/" + this.productId + "/edit"; },
+      get detailHref() { return this.base + "products/" + this.productId; },
+      get backPath() { return this.returnPath ?? "/products"; },
+      get backHref() { return "/" + this.lang + this.backPath; },
+
+      // ---- edit / create form -------------------------------------------
+      // The form edits a copy (strings, as inputs give them), never the
+      // object the fetch returned.
+      draft: { sku: "", name: "", price: "", stock: "" },
+      original: { sku: "", name: "", price: "", stock: "" },
+      formFor: null,                    // "new", a product id, or null
+      errors: { sku: null, name: null, price: null, stock: null },
+      formError: "",
+      submitting: false,
+      saveFetch: { url: null, method: "POST", body: null, trigger: false, loading: false },
+      get formMode() { return this.routeName === "product-new" ? "new" : this.routeName === "product-edit" ? "edit" : null; },
+      get formReady() { return this.formMode === "new" || (this.formMode === "edit" && this.formFor === this.productId && this.productReady); },
+      get dirty() {
+        if (this.formMode === null) return false;
+        return this["draft.sku"] !== this["original.sku"] || this["draft.name"] !== this["original.name"]
+          || this["draft.price"] !== this["original.price"] || this["draft.stock"] !== this["original.stock"];
+      },
+      // Bound to <wcs-router>.leaveConfirm: the question while there are
+      // unsaved changes, null otherwise.
+      get discardPrompt() { return this.dirty ? this.t.form.discard : null; },
+      get saving() { return this.submitting || this["saveFetch.loading"]; },
+      get saveLabel() { return this.saving ? this.t.form.saving : this.t.form.save; },
+      get editTitle() { return this.product ? this.t.form.editTitle.replace("{name}", this.product.name) : this.t.titles.edit; },
+      get skuErrorText() { return this["errors.sku"] ? this.t.errors[this["errors.sku"]] ?? this["errors.sku"] : ""; },
+      get nameErrorText() { return this["errors.name"] ? this.t.errors[this["errors.name"]] ?? this["errors.name"] : ""; },
+      get priceErrorText() { return this["errors.price"] ? this.t.errors[this["errors.price"]] ?? this["errors.price"] : ""; },
+      get stockErrorText() { return this["errors.stock"] ? this.t.errors[this["errors.stock"]] ?? this["errors.stock"] : ""; },
+      get skuInvalid() { return this["errors.sku"] ? "true" : null; },
+      get nameInvalid() { return this["errors.name"] ? "true" : null; },
+      get priceInvalid() { return this["errors.price"] ? "true" : null; },
+      get stockInvalid() { return this["errors.stock"] ? "true" : null; },
+      get cancelHref() { return this.formMode === "edit" ? this.detailHref : this.backHref; },
+
+      loadDraft(p) {
+        const values = p
+          ? { sku: p.sku, name: p.name, price: String(p.price), stock: String(p.stock) }
+          : { sku: "", name: "", price: "", stock: "" };
+        this.draft = values;
+        this.original = { ...values };
+        this.formFor = p ? p.id : "new";
+        this.errors = { sku: null, name: null, price: null, stock: null };
+        this.formError = "";
+      },
+      save() {
+        if (this.saving || this.formFor === null) return;   // a double click sends one request
+        const int = (s) => (String(s).trim() === "" ? null : Number(s));
+        const isNew = this.formFor === "new";
+        this.submitting = true;
+        this.formError = "";
+        // body is one-shot: a new object on every save, the second save included.
+        this["saveFetch.url"] = isNew ? "/api/products" : "/api/products/" + this.formFor;
+        this["saveFetch.method"] = isNew ? "POST" : "PUT";
+        this["saveFetch.body"] = {
+          sku: this["draft.sku"].trim(), name: this["draft.name"].trim(),
+          price: int(this["draft.price"]), stock: int(this["draft.stock"]),
+        };
+        this["saveFetch.trigger"] = true;
+      },
+
+      // ---- delete ---------------------------------------------------------
+      deleteFetch: { url: null, trigger: false, loading: false },
+      deleteError: "",
+      deletedId: null,
+      get deleting() { return this["deleteFetch.loading"]; },
+      get deleteLabel() { return this.deleting ? this.t.detail.deleting : this.t.detail.delete; },
+      remove() {
+        if (!this.product || this.deleting) return;
+        if (!confirm(this.t.detail.confirmDelete.replace("{name}", this.product.name))) return;
+        this.deleteError = "";
+        this["deleteFetch.url"] = "/api/products/" + this.product.id;
+        this["deleteFetch.trigger"] = true;
+      },
+
+      $eventTokens: ["saveResponded", "saveFailed", "deleteResponded", "deleteFailed"],
+      $on: {
+        saveResponded(state, event) {
+          const { status, value } = event.detail ?? {};
+          if (status !== 200 && status !== 201) return;      // errors arrive on saveFailed
+          state.submitting = false;
+          // Nothing unsaved any more: discardPrompt becomes null in this same
+          // update, and the router checks leaveConfirm after it, so the
+          // navigation below does not ask.
+          state.original = { ...state.draft };
+          state.rev = state.rev + 1;
+          // replace: Back from the detail should not reopen the form that was just saved.
+          state.replaceUrl = "/products/" + value.id;
+        },
+        saveFailed(state, event) {
+          const error = event.detail;
+          if (!error) return;                                // the reset to null when a request starts
+          state.submitting = false;
+          if (error.status === 422) {
+            let parsed = null;
+            try { parsed = JSON.parse(error.body); } catch { parsed = null; }
+            state.errors = { sku: null, name: null, price: null, stock: null, ...(parsed?.errors ?? {}) };
+            state.formError = state.t.form.fixErrors;
+          } else {
+            state.formError = state.t.form.saveFailed;
+          }
+        },
+        deleteResponded(state, event) {
+          if (event.detail?.status !== 204) return;
+          state.rev = state.rev + 1;
+          // replace: Back should not lead to the page of the product that is gone.
+          state.deletedId = state.productId;
+          state.replaceUrl = state.backPath;
+        },
+        deleteFailed(state, event) {
+          if (!event.detail) return;
+          state.deleteError = state.t.detail.deleteFailed;
+        },
+      },
+
+      $watch: {
+        // routeName (written by <wcs-router>) also fires once for the value the
+        // router already held when the page loaded — a deep link or a reload.
+        // A watched getter such as listPathNow does not: its first evaluation
+        // is its starting value, not a change.
+        listPathNow(cur) {
+          if (cur) this.lastListPath = cur;
+        },
+        routeName(cur, prev) {
+          // (listPathNow is a getter: its first value is not delivered as a
+          // change, so a deep link straight to the list is recorded here.)
+          if (cur === "products") this.lastListPath = this.listPathNow;
+          if (cur === "product-new") this.loadDraft(null);
+          if (cur === "product-edit") {
+            this.formFor = null;
+            if (this.product) this.loadDraft(this.product);   // already loaded (came from the detail)
+          }
+          if (cur !== "product" && cur !== "product-edit") return;
+          if (prev === "products") this.returnPath = this.lastListPath;
+          else if (prev !== "product" && prev !== "product-edit") this.returnPath = null;
+        },
+        // The product arrived (a reload or a deep link to the edit page).
+        product(cur) {
+          if (this.routeName === "product-edit" && cur && this.formFor !== cur.id) this.loadDraft(cur);
+        },
+        stats(cur) {
+          this.recent = cur?.recent ?? [];
+        },
+        pageCount(cur) {
+          this.pageLinks = Array.from({ length: cur }, (_, i) => i + 1);
+        },
+        list(cur) {
+          if (!cur) return;
+          // The rows are copied into a list of our own so that $listKeys can
+          // match them by id: a re-sort then moves the same rows (and their
+          // view-transition names) instead of rebuilding them.
+          this.rows = cur.items;
+          // A page past the end (after a delete, or a hand-typed URL) is
+          // replaced by the last page that exists.
+          if (this.routeName !== "products") return;
+          const last = Math.max(1, Math.ceil(cur.total / PAGE_SIZE));
+          if (cur.page > last) this.replaceUrl = this.listPath({ page: last });
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- One arbiter for the page: route swaps and state list/branch updates
+     animate; rows get view-transition names automatically. A value-only
+     update (typing in a form) applies at once, without a transition. -->
+<wcs-view-transition naming="auto"></wcs-view-transition>
+
+<wcs-fetch data-wcs="...: statsFetch"></wcs-fetch>
+<wcs-fetch data-wcs="...: listFetch"></wcs-fetch>
+<wcs-fetch data-wcs="...: productFetch"></wcs-fetch>
+<!-- Writes: manual, so only a trigger sends. url / method / body are written
+     before trigger in the same handler. -->
+<wcs-fetch manual data-wcs="url: saveFetch.url; method: saveFetch.method; body: saveFetch.body; trigger: saveFetch.trigger;
+                            loading: saveFetch.loading; eventToken.value: saveResponded; eventToken.error: saveFailed">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch manual method="DELETE" data-wcs="url: deleteFetch.url; trigger: deleteFetch.trigger; loading: deleteFetch.loading;
+                                            eventToken.value: deleteResponded; eventToken.error: deleteFailed"></wcs-fetch>
+
+<!-- leaveConfirm: while the form has unsaved changes, leaving the route (a
+     link, Back, the language switch, navigateUrl) asks first; reload / close
+     get the browser's own prompt. -->
+<wcs-router data-wcs="path: path; routeName: routeName; typedParams: routeParams; searchParams: query;
+                      navigateUrl: navigateUrl; replaceUrl: replaceUrl; leaveConfirm: discardPrompt">
+  <template>
+    <wcs-route path="/">
+      <wcs-layout layout="admin-layout">
+        <div slot="header" class="header-inner">
+          <span class="store" data-wcs="textContent: t.storeName"></span>
+          <a class="lang-switch" data-wcs="attr.href: switchHref; attr.hreflang: otherLang; attr.lang: otherLang; textContent: t.otherLangName"></a>
+        </div>
+        <nav slot="nav" class="side-nav" data-wcs="attr.aria-label: t.nav.label">
+          <wcs-link to="/"><span data-wcs="textContent: t.nav.dashboard"></span></wcs-link>
+          <!-- prefix: also marks /products/3 and /products/3/edit -->
+          <wcs-link to="/products" match="prefix"><span data-wcs="textContent: t.nav.products"></span></wcs-link>
+          <wcs-link to="/products/new"><span data-wcs="textContent: t.nav.newProduct"></span></wcs-link>
+        </nav>
+
+        <wcs-route index name="dashboard">
+          <wcs-head><title data-wcs="textContent: t.titles.dashboard"></title></wcs-head>
+          <section>
+            <h1 data-wcs="textContent: t.titles.dashboard"></h1>
+            <p class="loading" data-wcs="hidden: statsFetch.loading|not; textContent: t.common.loading"></p>
+            <div class="stats">
+              <div class="stat"><span data-wcs="textContent: t.dashboard.count"></span><b data-wcs="textContent: statsCountText"></b></div>
+              <div class="stat"><span data-wcs="textContent: t.dashboard.totalStock"></span><b data-wcs="textContent: statsStockText"></b></div>
+            </div>
+            <h2 data-wcs="textContent: t.dashboard.recent"></h2>
+            <table>
+              <thead><tr>
+                <th data-wcs="textContent: t.fields.name"></th>
+                <th class="num" data-wcs="textContent: t.fields.price"></th>
+                <th data-wcs="textContent: t.fields.updatedAt"></th>
+              </tr></thead>
+              <tbody>
+                <template data-wcs="for: recent">
+                  <tr>
+                    <td><a data-wcs="attr.href: .href; textContent: .name"></a></td>
+                    <td class="num" data-wcs="textContent: .priceText"></td>
+                    <td data-wcs="textContent: .dateText"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="products">
+          <wcs-route index name="products">
+            <wcs-head><title data-wcs="textContent: t.titles.products"></title></wcs-head>
+            <section>
+              <h1 data-wcs="textContent: t.titles.products"></h1>
+              <form class="toolbar" role="search" data-wcs="onsubmit#prevent: search">
+                <input type="search" name="q" data-wcs="value#ro: q; attr.aria-label: t.list.searchLabel; attr.placeholder: t.list.search">
+                <button type="submit" data-wcs="textContent: t.list.searchButton"></button>
+                <span data-wcs="textContent: totalText"></span>
+                <span class="loading" data-wcs="hidden: listBusy|not; textContent: t.common.loading"></span>
+              </form>
+              <p class="error" data-wcs="hidden: listFailed|not; textContent: t.common.loadError"></p>
+              <table data-wcs="class.is-loading: listBusy">
+                <thead><tr>
+                  <template data-wcs="for: columns">
+                    <th data-wcs="class.num: .num; attr.aria-sort: .ariaSort">
+                      <a data-wcs="attr.href: .href"><span data-wcs="textContent: .label"></span><span aria-hidden="true" data-wcs="textContent: .arrow"></span></a>
+                    </th>
+                  </template>
+                </tr></thead>
+                <tbody>
+                  <template data-wcs="for: rows">
+                    <tr>
+                      <td><a data-wcs="attr.href: .href; textContent: .name"></a> <small data-wcs="textContent: .sku"></small></td>
+                      <td class="num" data-wcs="textContent: .priceText"></td>
+                      <td class="num" data-wcs="textContent: .stockText"></td>
+                      <td data-wcs="textContent: .dateText"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+              <p data-wcs="hidden: listEmpty|not; textContent: t.list.empty"></p>
+              <nav class="pager" data-wcs="attr.aria-label: t.list.pager">
+                <template data-wcs="if: hasPrev">
+                  <a data-wcs="attr.href: prevHref; textContent: t.list.prev"></a>
+                </template>
+                <template data-wcs="else:">
+                  <span class="disabled" aria-disabled="true" data-wcs="textContent: t.list.prev"></span>
+                </template>
+                <template data-wcs="for: pageLinks">
+                  <a data-wcs="attr.href: .href; attr.aria-current: .current; textContent: ."></a>
+                </template>
+                <template data-wcs="if: hasNext">
+                  <a data-wcs="attr.href: nextHref; textContent: t.list.next"></a>
+                </template>
+                <template data-wcs="else:">
+                  <span class="disabled" aria-disabled="true" data-wcs="textContent: t.list.next"></span>
+                </template>
+              </nav>
+            </section>
+          </wcs-route>
+          <wcs-route path="new" name="product-new">
+            <wcs-head><title data-wcs="textContent: t.titles.newProduct"></title></wcs-head>
+            <section>
+              <h1 data-wcs="textContent: t.titles.newProduct"></h1>
+              <form class="product-form" novalidate data-wcs="onsubmit#prevent: save; attr.data-dirty: dirty">
+                <p class="error" role="alert" data-wcs="textContent: formError"></p>
+                <div class="field">
+                  <label for="new-sku" data-wcs="textContent: t.fields.sku"></label>
+                  <input id="new-sku" name="sku" autocomplete="off" aria-describedby="new-sku-error" data-wcs="value: draft.sku; attr.aria-invalid: skuInvalid">
+                  <p id="new-sku-error" class="field-error" data-wcs="textContent: skuErrorText"></p>
+                </div>
+                <div class="field">
+                  <label for="new-name" data-wcs="textContent: t.fields.name"></label>
+                  <input id="new-name" name="name" autocomplete="off" aria-describedby="new-name-error" data-wcs="value: draft.name; attr.aria-invalid: nameInvalid">
+                  <p id="new-name-error" class="field-error" data-wcs="textContent: nameErrorText"></p>
+                </div>
+                <div class="field">
+                  <label for="new-price" data-wcs="textContent: t.fields.price"></label>
+                  <input id="new-price" name="price" type="number" inputmode="numeric" min="1" step="1" aria-describedby="new-price-error" data-wcs="value: draft.price; attr.aria-invalid: priceInvalid">
+                  <p id="new-price-error" class="field-error" data-wcs="textContent: priceErrorText"></p>
+                </div>
+                <div class="field">
+                  <label for="new-stock" data-wcs="textContent: t.fields.stock"></label>
+                  <input id="new-stock" name="stock" type="number" inputmode="numeric" min="0" step="1" aria-describedby="new-stock-error" data-wcs="value: draft.stock; attr.aria-invalid: stockInvalid">
+                  <p id="new-stock-error" class="field-error" data-wcs="textContent: stockErrorText"></p>
+                </div>
+                <p class="actions">
+                  <button type="submit" data-wcs="disabled: saving; textContent: saveLabel"></button>
+                  <a data-wcs="attr.href: cancelHref; textContent: t.form.cancel"></a>
+                </p>
+              </form>
+            </section>
+          </wcs-route>
+          <wcs-route path=":id(int)">
+            <wcs-route index name="product">
+              <wcs-head><title data-wcs="textContent: productTitle"></title></wcs-head>
+              <section>
+                <p><a data-wcs="attr.href: backHref; textContent: t.detail.back"></a></p>
+                <p class="loading" data-wcs="hidden: productLoading|not; textContent: t.common.loading"></p>
+                <p class="error" data-wcs="hidden: productMissing|not; textContent: t.detail.missing"></p>
+                <template data-wcs="if: productReady">
+                  <article class="detail">
+                    <h1 data-wcs="textContent: productName"></h1>
+                    <dl>
+                      <dt data-wcs="textContent: t.fields.sku"></dt><dd data-wcs="textContent: productSku"></dd>
+                      <dt data-wcs="textContent: t.fields.price"></dt><dd data-wcs="textContent: productPriceText"></dd>
+                      <dt data-wcs="textContent: t.fields.stock"></dt><dd data-wcs="textContent: productStockText"></dd>
+                      <dt data-wcs="textContent: t.fields.updatedAt"></dt><dd data-wcs="textContent: productDateText"></dd>
+                    </dl>
+                    <p class="actions">
+                      <a class="button" data-wcs="attr.href: editHref; textContent: t.detail.edit"></a>
+                      <button type="button" class="danger" data-wcs="onclick: remove; disabled: deleting; textContent: deleteLabel"></button>
+                    </p>
+                    <p class="error" role="alert" data-wcs="textContent: deleteError"></p>
+                  </article>
+                </template>
+              </section>
+            </wcs-route>
+            <wcs-route path="edit" name="product-edit">
+              <wcs-head><title data-wcs="textContent: editTitle"></title></wcs-head>
+              <section>
+                <p class="loading" data-wcs="hidden: productLoading|not; textContent: t.common.loading"></p>
+                <p class="error" data-wcs="hidden: productMissing|not; textContent: t.detail.missing"></p>
+                <template data-wcs="if: formReady">
+                  <h1 data-wcs="textContent: editTitle"></h1>
+                  <form class="product-form" novalidate data-wcs="onsubmit#prevent: save; attr.data-dirty: dirty">
+                    <p class="error" role="alert" data-wcs="textContent: formError"></p>
+                    <div class="field">
+                      <label for="edit-sku" data-wcs="textContent: t.fields.sku"></label>
+                      <input id="edit-sku" name="sku" autocomplete="off" aria-describedby="edit-sku-error" data-wcs="value: draft.sku; attr.aria-invalid: skuInvalid">
+                      <p id="edit-sku-error" class="field-error" data-wcs="textContent: skuErrorText"></p>
+                    </div>
+                    <div class="field">
+                      <label for="edit-name" data-wcs="textContent: t.fields.name"></label>
+                      <input id="edit-name" name="name" autocomplete="off" aria-describedby="edit-name-error" data-wcs="value: draft.name; attr.aria-invalid: nameInvalid">
+                      <p id="edit-name-error" class="field-error" data-wcs="textContent: nameErrorText"></p>
+                    </div>
+                    <div class="field">
+                      <label for="edit-price" data-wcs="textContent: t.fields.price"></label>
+                      <input id="edit-price" name="price" type="number" inputmode="numeric" min="1" step="1" aria-describedby="edit-price-error" data-wcs="value: draft.price; attr.aria-invalid: priceInvalid">
+                      <p id="edit-price-error" class="field-error" data-wcs="textContent: priceErrorText"></p>
+                    </div>
+                    <div class="field">
+                      <label for="edit-stock" data-wcs="textContent: t.fields.stock"></label>
+                      <input id="edit-stock" name="stock" type="number" inputmode="numeric" min="0" step="1" aria-describedby="edit-stock-error" data-wcs="value: draft.stock; attr.aria-invalid: stockInvalid">
+                      <p id="edit-stock-error" class="field-error" data-wcs="textContent: stockErrorText"></p>
+                    </div>
+                    <p class="actions">
+                      <button type="submit" data-wcs="disabled: saving; textContent: saveLabel"></button>
+                      <a data-wcs="attr.href: cancelHref; textContent: t.form.cancel"></a>
+                    </p>
+                  </form>
+                </template>
+              </section>
+            </wcs-route>
+          </wcs-route>
+        </wcs-route>
+
+        <wcs-route path="*" name="not-found">
+          <wcs-head><title data-wcs="textContent: t.titles.notFound"></title></wcs-head>
+          <section>
+            <h1 data-wcs="textContent: t.notFound.heading"></h1>
+            <p data-wcs="textContent: t.notFound.body"></p>
+            <p><a href="./" data-wcs="textContent: t.notFound.back"></a></p>
+          </section>
+        </wcs-route>
+      </wcs-layout>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+
+<template id="admin-layout">
+  <header class="app-header"><slot name="header"></slot></header>
+  <div class="app-body">
+    <slot name="nav"></slot>
+    <main><slot></slot></main>
+  </div>
+</template>
+
+</body>
+</html>

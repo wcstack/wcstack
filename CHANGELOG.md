@@ -8,6 +8,16 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `examples/`: **four seam apps**, each with an e2e spec that checks intent ([docs/seam-apps.md](./docs/seam-apps.md), [examples/README.md](./examples/README.md#seam-apps)): `router-auth` (a members area — guards, session, token-protected API, two tabs), `router-admin` (an admin console — nested layout, paging in the URL, server-validated forms, `leaveConfirm`, view transitions, two languages), `state-collab-board` (a shared board over SSE with optimistic updates, reconnect and offline) and `signals-shop` (the tutorial's shop on `@wcstack/signals`).
+
+### Fixed
+
+- `@wcstack/lint` and `@wcstack/typescript` **4.1.0 did not know `<wcs-network>`'s new `offline`** and reported it as `wcs/tag-member-unknown`: the release built them before it regenerated the built-in tag catalog, so a new member reached them one release late. The release now builds them again after regenerating it.
+- `@wcstack/router`: `navigateUrl` / `replaceUrl` to a page whose guard redirects no longer logs `navigate failed: AbortError` (nor a guard's fallback `Fallback navigation failed`) — a navigation another one took over rejects with `AbortError` by design.
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: `wcs/on-handler-this` also reports an alias of `this` in a `$on` handler (`const state = this`).
+
 ## [4.1.0] — 2026-10-13
 
 Fixes and additions from *seam apps* — apps built from the public documents only, by a first-time author, to find what tests miss ([docs/seam-apps.md](./docs/seam-apps.md)). Four were built: `router-auth` (a members area: log-in, guarded pages, a token-protected API), `router-admin` (an admin console: nested layouts, paging, edit forms, view transitions, two languages), `state-collab-board` (a shared board over SSE with optimistic updates) and `signals-shop` (the tutorial's shop on `@wcstack/signals`). Every defect they found sat between two packages or showed only over time, and most were silent.

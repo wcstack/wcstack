@@ -1,0 +1,9 @@
+[
+  { "id": 1, "name": "House Blend", "category": "coffee", "description": "Chocolate, caramel, a hint of citrus.", "price": 14, "stock": 12, "icon": "☕" },
+  { "id": 2, "name": "Ethiopia Yirgacheffe", "category": "coffee", "description": "Bright and floral, with jasmine and lemon.", "price": 18, "stock": 5, "icon": "☕" },
+  { "id": 3, "name": "Colombia Supremo", "category": "coffee", "description": "Nutty and smooth, with a cocoa finish.", "price": 16, "stock": 8, "icon": "☕" },
+  { "id": 4, "name": "Sencha", "category": "tea", "description": "Fresh, grassy Japanese green tea.", "price": 12, "stock": 20, "icon": "🍵" },
+  { "id": 5, "name": "Matcha", "category": "tea", "description": "Stone-ground, ceremonial grade.", "price": 24, "stock": 0, "icon": "🍵" },
+  { "id": 6, "name": "Measuring Spoon", "category": "tools", "description": "One scoop, one cup.", "price": 6, "stock": 30, "icon": "🥄" },
+  { "id": 7, "name": "Milk Pitcher", "category": "tools", "description": "Stainless steel, 350 ml.", "price": 15, "stock": 4, "icon": "🥛" }
+]

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shared board</title>
+  <!-- I/O nodes first, state last: the elements are defined before state wires them. -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+  <style>
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }   /* `hidden:` bindings must beat the display rules below */
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 1.25rem 1.5rem; color: #1f2430; background: #fafbfc; }
+    header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    h1 { font-size: 1.4rem; margin: 0; }
+    .conn { font-size: .8rem; padding: 2px 10px; border-radius: 12px; background: #fff3cd; color: #8a6100; }
+    .conn.live { background: #e3f6e8; color: #1e7a3a; }
+    .conn.offline { background: #eceef2; color: #555; }
+    .me { margin-left: auto; font-size: .85rem; color: #555; }
+    .banner { background: #eceef2; border-left: 4px solid #777; padding: .6rem .9rem; margin-bottom: 1rem; }
+    .notice { display: flex; gap: .75rem; align-items: center; padding: .6rem .9rem; margin-bottom: 1rem; border-left: 4px solid #c62828; background: #fdecea; }
+    .notice.conflict { border-color: #b26a00; background: #fff4e0; }
+    .notice button { margin-left: auto; }
+    .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    @media (max-width: 760px) { .board { grid-template-columns: 1fr; } }
+    .column { background: #eef0f5; border-radius: 8px; padding: .75rem; min-height: 8rem; }
+    .column h2 { font-size: 1rem; margin: 0 0 .6rem; }
+    .card { background: #fff; border-radius: 6px; padding: .5rem .6rem; margin-bottom: .5rem; box-shadow: 0 1px 2px #0002; }
+    .card.pending { opacity: .6; }
+    .card .title { cursor: text; overflow-wrap: anywhere; }
+    .card .by { font-size: .75rem; color: #777; margin: .2rem 0 .35rem; }
+    .card .actions { display: flex; gap: .3rem; }
+    .card .actions .del { margin-left: auto; }
+    .card input.edit { width: 100%; }
+    .add { display: flex; gap: .4rem; }
+    .add input { flex: 1; min-width: 0; }
+    .name-dialog { background: #fff; border: 1px solid #d0d4dc; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; max-width: 26rem; }
+  </style>
+</head>
+<body>
+<wcs-state>
+  <script type="module">
+    /** @typedef {{ id: number | string, title: string, column: string, order: number, version: number, updatedBy: string, pending?: boolean }} Card */
+    /** @typedef {{ op: number, kind: string, id: number | string, title?: string, column?: string, order?: number, by: string }} Op */
+    const NEXT = { todo: "doing", doing: "done" };
+    const PREV = { doing: "todo", done: "doing" };
+
+    export default {
+      // ---- who am I (kept in localStorage by <wcs-storage>) ----
+      userName: null,
+      nameDraft: "",
+
+      // ---- the board as the server last told us ----
+      /** @type {Card[]} */
+      serverCards: [],
+      seq: 0,            // id of the last event applied
+      synced: false,     // a snapshot has been applied since the stream (re)opened
+      buffer: [],        // events that arrived before that snapshot
+      streamLastId: "",  // the last SSE id this EventSource received (what it sends back as Last-Event-ID)
+      gone: [],          // ids the stream reported deleted (a late answer must not bring them back)
+
+      // ---- <wcs-fetch> snapshot (GET /api/cards) ----
+      /** @type {{ cards: Card[], seq: number } | null} */
+      snapshot: null,
+      snapshotRequest: false,
+      snapshotError: null,
+
+      // ---- <wcs-sse> ----
+      sseConnected: false,
+      sseReadyState: 0,
+      everConnected: false,
+
+      // ---- <wcs-network>: !navigator.onLine ----
+      offline: false,
+
+      // ---- my changes the server has not answered yet ----
+      /** @type {Op[]} */
+      ops: [],
+      opSeq: 0,
+
+      // ---- UI ----
+      columns: [
+        { key: "todo", label: "To do", draft: "" },
+        { key: "doing", label: "Doing", draft: "" },
+        { key: "done", label: "Done", draft: "" },
+      ],
+      editingId: null,
+      editDraft: "",
+      editVersion: 0,    // the version the edit started from (sent with the save)
+      notice: "",
+      noticeKind: "",
+
+      // ---- derived ----
+      get cards() {
+        let cards = this.serverCards;
+        for (const op of this.ops) {
+          if (op.kind === "add") {
+            cards = cards.concat({ id: op.id, title: op.title, column: op.column, order: op.order, version: 0, updatedBy: op.by, pending: true });
+          } else if (op.kind === "delete") {
+            cards = cards.filter((c) => c.id !== op.id);
+          } else {
+            cards = cards.map((c) => (c.id === op.id
+              ? { ...c, ...(op.title !== undefined ? { title: op.title } : {}), ...(op.column !== undefined ? { column: op.column, order: op.order } : {}), updatedBy: op.by, pending: true }
+              : c));
+          }
+        }
+        return cards;
+      },
+      get "columns.*.cards"() {
+        const key = this["columns.*.key"];
+        return this.cards.filter((c) => c.column === key).toSorted((a, b) => a.order - b.order);
+      },
+      get "columns.*.count"() { return this["columns.*.cards"].length; },
+      get "columns.*.cards.*.editing"() { return this["columns.*.cards.*.id"] === this.editingId; },
+      get "columns.*.cards.*.busy"() { return this.locked || this["columns.*.cards.*.pending"] === true; },
+      get "columns.*.cards.*.noLeft"() { return this["columns.*.cards.*.busy"] || this["columns.*.key"] === "todo"; },
+      get "columns.*.cards.*.noRight"() { return this["columns.*.cards.*.busy"] || this["columns.*.key"] === "done"; },
+      get needsName() { return !this.userName; },
+      get locked() { return this.offline || !this.userName; },
+      get connectionLabel() {
+        if (this.offline) return "Offline";
+        if (this.sseConnected && this.synced) return "Live";
+        return this.everConnected ? "Reconnecting…" : "Connecting…";
+      },
+      get isLive() { return this.connectionLabel === "Live"; },
+      get isConflict() { return this.noticeKind === "conflict"; },
+
+      // ---- name ----
+      saveName() {
+        const name = this.nameDraft.trim();
+        if (name) this.userName = name;
+      },
+      changeName() { this.nameDraft = this.userName ?? ""; this.userName = null; },
+
+      // ---- server truth ----
+      mergeCard(card) {
+        if (this.gone.includes(card.id)) return;
+        const cards = this.serverCards;
+        const i = cards.findIndex((c) => c.id === card.id);
+        if (i < 0) this.serverCards = cards.concat(card);
+        else if (cards[i].version < card.version) this.serverCards = cards.with(i, card);
+      },
+      removeCard(id) {
+        if (this.serverCards.some((c) => c.id === id)) this.serverCards = this.serverCards.filter((c) => c.id !== id);
+      },
+      applyEvent(id, data) {
+        if (id <= this.seq) return;          // already in the snapshot, or replayed twice
+        this.seq = id;
+        if (data.type === "added") {
+          // The event for my own add can arrive before the POST answers. The
+          // server gives the card an id the temporary card does not have, so
+          // match the pending add by what it carries and retire it now —
+          // otherwise the card shows twice until the answer arrives.
+          const mine = this.ops.find((o) => o.kind === "add" && o.by === data.card.updatedBy
+            && o.title === data.card.title && o.column === data.card.column);
+          if (mine) this.dropOp(mine.op);
+        }
+        if (data.type === "deleted") {
+          this.gone = this.gone.concat(data.card.id).slice(-500);
+          this.removeCard(data.card.id);
+        } else {
+          this.mergeCard(data.card);
+        }
+      },
+      streamOpened() {
+        // Catching up is the page's job (sse README, "Reconnection is native"):
+        // the browser sends Last-Event-ID on a reconnect only after the stream
+        // delivered an event with an id. If it has not, the server cannot
+        // replay what we missed, so load the board again. (The README's other
+        // recipe — the snapshot's position in the stream's url — needs a
+        // server that reads it; this API takes only Last-Event-ID.)
+        if (this.everConnected && !this.streamLastId) { this.synced = false; this.buffer = []; }
+        this.everConnected = true;
+        if (!this.synced) this.snapshotRequest = true;   // a fresh stream: load the board, then apply what arrived meanwhile
+      },
+      reopenStream() {
+        // A stream that ended in CLOSED (an HTTP error) is not retried by the
+        // browser: reopen it with close() + connect(). The new EventSource
+        // starts without Last-Event-ID, so load the board again.
+        if (this.sseReadyState !== 2 || this.offline) return;
+        this.streamLastId = "";
+        this.synced = false;
+        this.buffer = [];
+        this.$command.closeStream.emit();
+        this.$command.openStream.emit();
+      },
+      retrySnapshot() {
+        if (!this.synced && !this.offline && this.sseConnected) this.snapshotRequest = true;
+      },
+      resync() {
+        this.synced = false;
+        this.buffer = [];
+        this.snapshotRequest = true;
+      },
+
+      // ---- requests ----
+      say(kind, text) { this.noticeKind = kind; this.notice = text; },
+      dismiss() { this.notice = ""; },
+      newOp(fields) {
+        this.opSeq = this.opSeq + 1;
+        const op = { op: this.opSeq, by: this.userName, ...fields };
+        this.ops = this.ops.concat(op);
+        return op.op;
+      },
+      dropOp(opId) { this.ops = this.ops.filter((o) => o.op !== opId); },
+      endOrder(column) {
+        return this.cards.filter((c) => c.column === column).reduce((max, c) => Math.max(max, c.order), 0) + 1;
+      },
+      // Changes go through plain fetch(): one <wcs-fetch> is one request at a
+      // time (fetch README), and moves of two cards may overlap.
+      async request(method, url, body) {
+        try {
+          const res = await fetch(url, {
+            method,
+            headers: body ? { "Content-Type": "application/json" } : undefined,
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          const data = res.status === 204 ? null : await res.json().catch(() => null);
+          return { status: res.status, data };
+        } catch {
+          return { status: 0, data: { error: "The server could not be reached" } };
+        }
+      },
+      settle(opId, res, card, verb) {
+        this.dropOp(opId);
+        if (res.status === 200 || res.status === 201) { this.mergeCard(res.data); return; }
+        if (res.status === 204) { this.removeCard(card.id); return; }
+        if (res.status === 409 && res.data?.card) {
+          this.mergeCard(res.data.card);
+          this.say("conflict", `${res.data.card.updatedBy} changed “${res.data.card.title}” before you did — the card now shows their version.`);
+          return;
+        }
+        if (res.status === 404) {
+          this.removeCard(card.id);
+          this.say("error", `“${card.title}” no longer exists — someone deleted it.`);
+          return;
+        }
+        const why = res.data?.error ?? `HTTP ${res.status}`;
+        this.say("error", `Could not ${verb} “${card.title}”: ${why}. Your change was undone.`);
+      },
+
+      // ---- actions ----
+      async addCard() {
+        const title = this["columns.*.draft"].trim();
+        const column = this["columns.*.key"];
+        if (!title || this.locked) return;
+        this["columns.*.draft"] = "";
+        const tempId = `tmp-${this.opSeq + 1}`;
+        const opId = this.newOp({ kind: "add", id: tempId, title, column, order: this.endOrder(column) });
+        const res = await this.request("POST", "/api/cards", { title, column, by: this.userName });
+        this.settle(opId, res, { id: tempId, title }, "add");
+      },
+      async move(card, column) {
+        const opId = this.newOp({ kind: "update", id: card.id, column, order: this.endOrder(column) });
+        const res = await this.request("PATCH", `/api/cards/${card.id}`, { column, version: card.version, by: this.userName });
+        this.settle(opId, res, card, "move");
+      },
+      moveLeft() {
+        const card = this["columns.*.cards.*"];
+        if (PREV[card.column] && !card.pending && !this.locked) this.move(card, PREV[card.column]);
+      },
+      moveRight() {
+        const card = this["columns.*.cards.*"];
+        if (NEXT[card.column] && !card.pending && !this.locked) this.move(card, NEXT[card.column]);
+      },
+      async remove() {
+        const card = this["columns.*.cards.*"];
+        if (card.pending || this.locked) return;
+        const opId = this.newOp({ kind: "delete", id: card.id });
+        const res = await this.request("DELETE", `/api/cards/${card.id}?by=${encodeURIComponent(this.userName)}`);
+        this.settle(opId, res, card, "delete");
+      },
+      startEdit() {
+        const card = this["columns.*.cards.*"];
+        if (card.pending || this.locked) return;
+        this.editDraft = card.title;
+        this.editVersion = card.version;
+        this.editingId = card.id;
+      },
+      cancelEdit() { this.editingId = null; },
+      editKey(event) { if (event.key === "Escape") this.cancelEdit(); },
+      async saveEdit() {
+        const card = this["columns.*.cards.*"];
+        const title = this.editDraft.trim();
+        this.editingId = null;
+        if (!title || title === card.title || this.locked) return;
+        const opId = this.newOp({ kind: "update", id: card.id, title });
+        const res = await this.request("PATCH", `/api/cards/${card.id}`, { title, version: this.editVersion, by: this.userName });
+        this.settle(opId, res, card, "rename");
+      },
+
+      // ---- event stream ----
+      $commandTokens: ["closeStream", "openStream"],
+      $eventTokens: ["cardEvent"],
+      $on: {
+        cardEvent(state, event) {
+          const msg = event.detail;               // { event, data, lastEventId }
+          state.streamLastId = msg.lastEventId;
+          if (msg.event === "resync") { state.resync(); return; }
+          if (msg.event !== "card") return;
+          const id = Number(msg.lastEventId);
+          if (!state.synced) { state.buffer = state.buffer.concat({ id, data: msg.data }); return; }
+          state.applyEvent(id, msg.data);
+        },
+      },
+      $watch: {
+        // Also fires once when the watches start if the stream opened before
+        // the bindings attached (the usual case on a fast network).
+        sseConnected(cur) {
+          if (cur) this.streamOpened();
+        },
+        snapshot(cur) {
+          if (!cur) return;
+          const buffered = this.buffer;
+          this.serverCards = cur.cards;
+          this.seq = cur.seq;
+          this.buffer = [];
+          this.synced = true;
+          for (const ev of buffered) this.applyEvent(ev.id, ev.data);
+        },
+        snapshotError(cur) {
+          if (cur) setTimeout(() => this.retrySnapshot(), 2000);
+        },
+        sseReadyState(cur) {
+          if (cur === 2) setTimeout(() => this.reopenStream(), 2000);
+        },
+        offline(cur) {
+          if (!cur) { this.reopenStream(); this.retrySnapshot(); }   // back online
+        },
+        editingId(cur) {
+          if (cur !== null) document.querySelector("input.edit")?.focus();
+        },
+      },
+    };
+  </script>
+</wcs-state>
+
+<!-- Headless nodes -->
+<wcs-storage key="state-collab-board:name" data-wcs="value#init=element: userName"></wcs-storage>
+<wcs-fetch url="/api/cards" manual
+  data-wcs="trigger: snapshotRequest; value: snapshot; error: snapshotError"></wcs-fetch>
+<wcs-network data-wcs="offline: offline"></wcs-network>
+<wcs-sse url="/api/events" events="card,resync"
+  data-wcs="eventToken.message: cardEvent; connected: sseConnected; readyState: sseReadyState;
+            command.close: $command.closeStream; command.connect: $command.openStream"></wcs-sse>
+
+<header>
+  <h1>Shared board</h1>
+  <span class="conn" id="conn" data-wcs="textContent: connectionLabel; class.live: isLive; class.offline: offline"></span>
+  <span class="me" data-wcs="hidden: needsName">You are <b data-wcs="textContent: userName"></b> <button type="button" data-wcs="onclick: changeName">change</button></span>
+</header>
+
+<div class="banner" id="offline-banner" role="status" data-wcs="hidden: offline|not">
+  You are offline. The board is read-only until the connection is back; changes made meanwhile will appear then.
+</div>
+
+<div class="notice" id="notice" role="alert" data-wcs="hidden: notice|not; class.conflict: isConflict">
+  <span data-wcs="textContent: notice"></span>
+  <button type="button" data-wcs="onclick: dismiss">Dismiss</button>
+</div>
+
+<template data-wcs="if: needsName">
+  <form class="name-dialog" data-wcs="onsubmit#prevent: saveName">
+    <label>Your name (shown on the cards you change):
+      <input id="name-input" data-wcs="value: nameDraft" required>
+    </label>
+    <button type="submit">Start</button>
+  </form>
+</template>
+
+<div class="board">
+  <template data-wcs="for: columns">
+    <section class="column" data-wcs="attr.data-col: .key">
+      <h2><span data-wcs="textContent: .label"></span> (<span data-wcs="textContent: .count"></span>)</h2>
+      <template data-wcs="for: .cards">
+        <article class="card" data-wcs="class.pending: .pending|truthy; attr.data-id: .id">
+          <template data-wcs="if: .editing">
+            <form data-wcs="onsubmit#prevent: saveEdit">
+              <input class="edit" aria-label="Card title" data-wcs="value: editDraft; onkeydown: editKey">
+            </form>
+          </template>
+          <template data-wcs="else:">
+            <div class="title" data-wcs="textContent: .title; ondblclick: startEdit"></div>
+          </template>
+          <div class="by">changed by <span data-wcs="textContent: .updatedBy"></span></div>
+          <div class="actions">
+            <button type="button" aria-label="Move left" data-wcs="onclick: moveLeft; disabled: .noLeft">◀</button>
+            <button type="button" aria-label="Move right" data-wcs="onclick: moveRight; disabled: .noRight">▶</button>
+            <button type="button" data-wcs="onclick: startEdit; disabled: .busy">Edit</button>
+            <button type="button" class="del" data-wcs="onclick: remove; disabled: .busy">Delete</button>
+          </div>
+        </article>
+      </template>
+      <form class="add" data-wcs="onsubmit#prevent: addCard">
+        <input aria-label="New card title" placeholder="New card" data-wcs="value: .draft; disabled: locked">
+        <button type="submit" data-wcs="disabled: locked">Add</button>
+      </form>
+    </section>
+  </template>
+</div>
+</body>
+</html>

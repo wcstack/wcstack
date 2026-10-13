@@ -72,6 +72,17 @@ the directory over `http://localhost` works, e.g.:
 npx serve examples/state-permission-banner
 ```
 
+## Seam apps
+
+Larger apps written to find defects rather than to show a feature: a first-time author built each from the public documents only, and every friction was reproduced and classified ([docs/seam-apps.md](../docs/seam-apps.md)). Each crosses seams between packages and is tested for intent — where content renders, what survives a reload, the second time, a second tab, a failing network — by its e2e spec in `e2e/tests/`.
+
+| App | Seams it crosses | Run | URL |
+|------|------|-----|-----|
+| [`router-auth/`](router-auth/) | router guards × state × `<wcs-storage>` × token-protected `<wcs-fetch>` (members area: log-in, guarded pages, session expiry, two tabs) | `node examples/router-auth/server.js` | :3000 |
+| [`router-admin/`](router-admin/) | `<wcs-layout>` × query ⇄ state ⇄ fetch × forms with server validation × `leaveConfirm` × `<wcs-view-transition>` × two languages (admin console) | `node examples/router-admin/server.js` | :3000 |
+| [`state-collab-board/`](state-collab-board/) | `<wcs-sse>` × optimistic `fetch` × `<wcs-network offline>` × reconnect and catch-up (shared board, two browsers) | `node examples/state-collab-board/server.js` | :3000 |
+| [`signals-shop/`](signals-shop/) | `@wcstack/signals` × router × `<wcs-fetch>` / `<wcs-storage>` (the tutorial's shop on the other reactive core) | `node examples/signals-shop/server.js` | :3000 |
+
 ## Shared server core
 
 `shared/server.js` is the static-file + JSON API core the demos above delegate
