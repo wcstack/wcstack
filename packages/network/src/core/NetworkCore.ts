@@ -6,7 +6,7 @@ const UNSUPPORTED_SNAPSHOT: WcsNetworkSnapshot = Object.freeze({
   rtt: null,
   saveData: null,
   supported: false,
-  online: null,
+  offline: null,
 });
 
 /**
@@ -32,8 +32,9 @@ export class NetworkCore extends EventTarget {
       { name: "rtt", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.rtt },
       { name: "saveData", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.saveData },
       { name: "supported", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.supported },
-      // Online / offline (docs/seam-apps.md, state-collab-board: a page had to listen on window itself).
-      { name: "online", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.online },
+      // Offline (docs/seam-apps.md, state-collab-board: a page had to listen on window itself). Not
+      // `online`: a data-wcs name starting with `on` is an event binding.
+      { name: "offline", event: "wcs-network:change", semantics: "state", getter: (e: Event) => (e as CustomEvent).detail.offline },
     ],
     // Pure monitor: navigator.connection has no request()/action method to invoke.
     commands: [],
@@ -84,8 +85,8 @@ export class NetworkCore extends EventTarget {
     return this._snapshot.supported;
   }
 
-  get online(): boolean | null {
-    return this._snapshot.online;
+  get offline(): boolean | null {
+    return this._snapshot.offline;
   }
 
   // Lifecycle (§3.5). Idempotent: a second observe() while already subscribed
@@ -134,12 +135,12 @@ export class NetworkCore extends EventTarget {
   private _read(): WcsNetworkSnapshot {
     const c = this._api();
     const nav = (globalThis as any).navigator;
-    const online = typeof nav !== "undefined" && typeof nav.onLine === "boolean" ? nav.onLine : null;
+    const offline = typeof nav !== "undefined" && typeof nav.onLine === "boolean" ? !nav.onLine : null;
     if (!c) {
-      return online === null ? UNSUPPORTED_SNAPSHOT : { ...UNSUPPORTED_SNAPSHOT, online };
+      return offline === null ? UNSUPPORTED_SNAPSHOT : { ...UNSUPPORTED_SNAPSHOT, offline };
     }
     return {
-      online,
+      offline,
       effectiveType: typeof c.effectiveType === "string" ? c.effectiveType : null,
       downlink: typeof c.downlink === "number" ? c.downlink : null,
       rtt: typeof c.rtt === "number" ? c.rtt : null,
@@ -164,7 +165,7 @@ export class NetworkCore extends EventTarget {
       prev.rtt === next.rtt &&
       prev.saveData === next.saveData &&
       prev.supported === next.supported &&
-      prev.online === next.online
+      prev.offline === next.offline
     ) {
       return;
     }

@@ -36,7 +36,7 @@ export class WcsNetwork extends HTMLElement {
       "wcs-network:change": (d) => ({
         "save-data": d.saveData === true,
         supported: d.supported === true,
-        offline: d.online === false,
+        offline: d.offline === true,
       }),
     });
   }
@@ -104,8 +104,8 @@ export class WcsNetwork extends HTMLElement {
     return this._core.supported;
   }
 
-  get online(): boolean | null {
-    return this._core.online;
+  get offline(): boolean | null {
+    return this._core.offline;
   }
 
   get connectedCallbackPromise(): Promise<void> {
