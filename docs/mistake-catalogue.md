@@ -100,7 +100,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 
 | Mistake | Lint | What goes wrong | Harm | Disposition |
 |---|---|---|---|---|
-| Binds an I/O node's input to a path (`value: cart` on `<wcs-storage>`, `body: form` on `<wcs-fetch>`) and writes under it (`this["cart.0.quantity"] = 2`). | `wcs/input-nested-write` (warning) | A write re-applies the bindings at its path and below, never above: storage does not save the change (a reload reverts it) and fetch sends the next request without a body. | data loss | design out — 4.x. An opt-in wc-bindable input hint (assign again when something under the path changes) would remove it; doing it for every input would be breaking. The lint only warns, which passes the skill's `--errors-only` gate. |
+| Binds an I/O node's input to a path (`value: cart` on `<wcs-storage>`, `body: form` on `<wcs-fetch>`) and writes under it (`this["cart.0.quantity"] = 2`). | `wcs/input-nested-write` (error) | A write re-applies the bindings at its path and below, never above: storage does not save the change (a reload reverts it) and fetch sends the next request without a body. | data loss | design out — 4.x. An opt-in wc-bindable input hint (assign again when something under the path changes) would remove it; doing it for every input would be breaking. |
 | Binds a non-manual `<wcs-storage>`'s `value`, without `#init=element`, to a path seeded with a literal, or to an accessor pair. | `wcs/storage-seed-clobber` (error) | The element loads the saved value, then state writes its seed and the element saves it over the stored one, on every load. A `null` seed removes the key. | data loss | runtime report — 4.x; then design out — 5.0 agenda (breaking). 4.x: at the first sync the runtime can warn when it overwrites a value the element already holds (diagnostics add-on). 5.0: the element wins the first sync of a loading storage. |
 | Seeds the state slot bound to `trigger:` with `true`. | `wcs/trigger-seeded-truthy` (warning) | The first sync writes `true`: `<wcs-fetch>` sends a request on load, `manual` or not, and `<wcs-storage manual>` saves what it holds. With no `url` yet, the `true` stays and the first real trigger does nothing. | data loss | design out — 5.0 agenda (breaking). A wc-bindable hint that the element, not state, wins the first sync of `trigger` would remove it; a page that seeds `true` on purpose would change. |
 | Binds `onsubmit:` on a `<form>` without `#prevent`, and the handler does not call `preventDefault`. | `wcs/submit-without-prevent` (warning) | The handler runs, then the browser submits the form: the page reloads, or with the router a GET puts the fields, a password too, in the URL and the history. | security | runtime report — 4.x; then design out — 5.0 agenda (breaking). 4.x: after the handler, the runtime can see a submit that was not prevented on a form without `action` — a hook in the core (536 B of room), the report in the diagnostics add-on. 5.0: `onsubmit:` prevents by default. |
@@ -121,7 +121,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Binds `<wcs-storage>`'s `value#init=element` to a path seeded with a literal that is not `null` (`cart: []`). | `wcs/storage-init-seed` (warning) | An empty key reads as `null`, so the first pull replaces the seed: `for: cart` renders nothing, and code that reads `this.cart.length` throws a generic TypeError. | broken | runtime report — 4.x; then design out — 5.0 agenda (breaking). 4.x: warn when an explicit `#init=element` replaces a value with `null` (diagnostics add-on). 5.0: an absent key reads as `undefined`, which keeps the seed (the README documents `null`). |
 | A `$watch` key has an empty segment (`a..b`). | `wcs/watch-declaration-invalid` (error) | The runtime does not check it: the watch never fires. | broken | runtime report — 4.x. One test in the temporal add-on (about 10 B). |
 | Misspells an ARIA attribute in `attr.aria-*:`. | `wcs/aria-attr-unknown` (warning) | The attribute is written; assistive technology ignores it. | degraded | stays with the lint (the runtime cannot see it). The name is in the markup, so the lint has everything; a runtime table of ARIA names would cost 300–400 B. |
-| Loads `@wcstack/devtools/auto` after `@wcstack/state/auto`. | `wcs/script-order` (warning) | 4.0 hands a late DevTools every binding there already, so only the timeline before it attached is missing. | degraded | runtime report — 4.x. DevTools can say that its timeline starts when it attached. The lint's message still describes 3.x (the ledger is not captured). |
+| Loads `@wcstack/devtools/auto` after `@wcstack/state/auto`. | `wcs/script-order` (info) | 4.0 hands a late DevTools every binding there already, so only the timeline before it attached is missing. | degraded | runtime report — 4.x. DevTools can say that its timeline starts when it attached. |
 | Writes `<wcs-state name="…">` (v1). | `wcs/named-state-deprecated` (error) | 4.0 never reads `name`: harmless alone, and a v1 page with two named states fails as `#47` instead. | degraded | runtime report — 4.x. The diagnostics add-on could warn when the element mounts; low value. |
 
 ### Reported at runtime
@@ -134,18 +134,18 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Gives `<wcs-state bind-component>` a `state`, `src` or `json` attribute, or an inline module script. | Without the code: The load is refused (`failed to initialize`), and the component does not mount. | `wcs/bind-component-source` (error) |
 | Binds a path the state does not have (`wcs/path-nonexistent` when a `stateSchema` says so). | Same code: A missing top-level key fails the binding (`#301`); a missing nested segment is warned by the diagnostics add-on as `[wcs/binding-path-missing]` (silent on `/core`). Without a `stateSchema` the lint only warns. | `wcs/binding-path-missing` (varies), `wcs/path-nonexistent` (error) |
 | Writes a binding the grammar refuses: an unclosed quote, a second `#`, an empty filter, a `__proto__` segment. | Same code: `#101` – `#122` when the bindings are planned: the state fails to initialize. | `wcs/binding-syntax` (error) |
-| Binds a value that is not a boolean to `class.NAME:`. | Same code: `#401`: the binding fails (`[wcs/binding-type-expectation]` with diagnostics). The lint's boolean rule for `if:` with `else:` is from 3.x; 4.0 tests truthiness. | `wcs/binding-type-expectation` (varies) |
+| Binds a value that is not a boolean to `class.NAME:`. | Same code: `#401`: the binding fails (`[wcs/binding-type-expectation]` with diagnostics). | `wcs/binding-type-expectation` (varies) |
 | Declares a removed 3.x name (`$streams`, `$updatedCallback`). | Same code: The diagnostics add-on throws `#1601` at load; on `/core` the key is ignored. | `wcs/declaration-alias` (varies) |
 | Names an add-on that does not exist in `features=` or `$features`. | Same code: The split auto loader throws `[wcs/feature-unknown]` (`<wcs-state>` is never defined); the other entries report `[wcs/feature-not-installed]`. | `wcs/feature-unknown` (error) |
 | `$features` is not an array, or sits in a volume. | Without the code: `#46` at load (a volume: `console.error`). | `wcs/features-invalid` (error) |
-| Gives a filter an argument of the wrong type (`gt(abc)`). | Without the code: `#27` when the bindings are planned: the state fails to initialize. The lint only warns. | `wcs/filter-arg-type` (warning) |
+| Gives a filter a numeric argument that does not read as a number (`gt(abc)`). | Without the code: `#27` when the bindings are planned: the state fails to initialize. (A number for a string argument, `join(1)`, passes as a string; the lint warns about it.) | `wcs/filter-arg-type` (varies) |
 | Gives a filter the wrong number of arguments. | Same code: `#601` / `#602` when the bindings are planned: the state fails to initialize. | `wcs/filter-arity` (error) |
 | Feeds a filter a value of the wrong type (a string into `date`, a number into `join`). | Without the code: `#28` – `#30` when the value is applied: the binding fails. String filters coerce instead (`null\|upper` shows `NULL`). | `wcs/filter-input-type` (warning) |
 | Uses a filter that does not exist, or a 3.x name (`uc`, `substr`). | Same code: `#501` when the bindings are planned: the state fails to initialize. A formatting filter without the formats add-on says so in full, even on `/core`. | `wcs/filter-unknown` (error) |
-| Writes getters that read each other in a cycle. | Same code: `#701` when they are evaluated: every binding that reads them fails. The lint only warns. | `wcs/getter-cycle` (warning) |
-| Gives `$getAll` / `$setAll` / `$resolve` a number of indexes that does not match the path's `*`s. | Same code: `#901` / `#902`, thrown where it is called. The lint only warns. | `wcs/index-arity` (warning) |
+| Writes getters that read each other in a cycle. | Same code: `#701` when they are evaluated: every binding that reads them fails. | `wcs/getter-cycle` (error) |
+| Gives `$getAll` / `$setAll` / `$resolve` a number of indexes that does not match the path's `*`s. | Same code: `#901` / `#902`, thrown where it is called. | `wcs/index-arity` (error) |
 | Reads a loop index outside `$1` – `$128` (`this.$0`, `$129`). | Same code: `#1001`: thrown when the script reads it; in markup the binding fails. | `wcs/index-param-range` (error) |
-| Gives `mount=` an empty value or segment, `*`, `$`, `#`, `@` or whitespace. | Without the code: The scopes add-on refuses the volume with `console.error` (`has an invalid mount path`). The lint misses whitespace and a `*` inside a segment (`mount="a b"`, `mount="a*"`). | `wcs/mount-path-invalid` (error) |
+| Gives `mount=` an empty value or segment, `*`, `$`, `#`, `@` or whitespace. | Without the code: The scopes add-on refuses the volume with `console.error` (`has an invalid mount path`). | `wcs/mount-path-invalid` (error) |
 | Calls a removed 3.x API name (`$trackDependency`, `$untrackDependency`). | Same code: The diagnostics add-on throws `#1701` on the read; on `/core` it is `undefined` and the call a generic TypeError. | `wcs/name-alias` (error) |
 | Writes a v1 named-state selector, `path@name`. | Without the code: Parse error `#32`: the page's binding stops there (in route content, a `console.error`). | `wcs/named-state-deprecated` (error) |
 | Uses `this` in a `$on` handler. | Without the code: `this` is `undefined` there; the TypeError is logged as `#17` (a subscriber of the token threw); an async handler gives an unhandled rejection. A classic script handed in through `setInitialState` gets `window` as `this`: silent, and outside the lint. | `wcs/on-handler-this` (error) |
@@ -155,14 +155,14 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Writes into a recursive (`**`) getter or what it expands to. | Same code: Throws `[wcs/recursion-readonly]`. | `wcs/recursion-readonly` (error) |
 | Calls `$setAll` over a `**` path with a partial prefix, a mapper or spread. | Same code: Throws `[wcs/recursion-setall-form]` (omitted indexes give `#9`). | `wcs/recursion-setall-form` (error) |
 | Writes through `**` with `$setAll` into a node, its child list or that list's length. | Same code: Throws `[wcs/recursion-structural-write]`. | `wcs/recursion-structural-write` (error) |
-| Uses `**` where it is not read (a binding, a `$watch` key, `$postUpdate`), or without `$recursion`. | Same code: `#1101`: planning fails, or the call throws. An undeclared `**` getter key fails at load, though the lint only warns. | `wcs/recursion-unsupported` (varies) |
+| Uses `**` where it is not read (a binding, a `$watch` key, `$postUpdate`), or without `$recursion`. | Same code: `#1101`: planning fails, or the call throws; an undeclared `**` getter key fails at load. | `wcs/recursion-unsupported` (error) |
 | Declares `$scan` (removed in 4.0). | Without the code: The diagnostics add-on throws `#1` at load (`$scan was removed`); on `/core` without it the key is ignored. | `wcs/scan-declaration-invalid` (varies) |
 | Puts a second root `<wcs-state>` in the document. | Without the code: The one that finishes loading second fails with `#47`; the first keeps the page. | `wcs/second-root` (error) |
 | Spreads (`...:`) onto a tag without a `wcBindable` declaration (`<wcs-fetch-header>`). | Same code: `#1501` when attached: at the root the state fails to initialize, in a row the binding fails. | `wcs/spread-no-bindable` (error) |
-| Binds a member a `wcs-*` tag does not declare. | Without the code: `#38` (a property), `#1203` / `#1204` (`command.` / `eventToken.`): at the root the state fails to initialize, in a row the binding fails. The lint only warns, and skips common DOM properties (`title`, `hidden`, `id`) that the runtime refuses too. | `wcs/tag-member-unknown` (warning) |
+| Binds a member a `wcs-*` tag does not declare, a DOM property such as `hidden` or `textContent` included. | Without the code: `#38` (a property), `#1203` / `#1204` (`command.` / `eventToken.`): at the root the state fails to initialize, in a row the binding fails. Only the HTML sinks are written without a declaration. | `wcs/tag-member-unknown` (error) |
 | Breaks a template rule: two structural directives on one template, `outerHTML:` inside a `for:` / `if:` template. | Same code: `#201` – `#203` when the bindings are planned: the state fails to initialize; `#204` (a structural template at the top of inserted content) is logged. | `wcs/template-syntax` (varies) |
-| Wires a command or event token wrongly: `command.m:` whose right side is not `$command.…`, a `$commandTokens` entry that is not a string. | Same code: `#1201` – `#1205` when planned or attached: at the root the state fails to initialize. The lint only warns for some of them. | `wcs/token-misconfigured` (varies) |
-| Uses a command or event token the state does not declare. | Same code: `command.m: $command.x` fails when attached (`#1302`); `eventToken.` and `onclick: $command.x` log `#1301` each time the event fires. The lint only warns. | `wcs/token-undeclared` (warning) |
+| Wires a command token wrongly: `command.m:` whose right side is not `$command.…`, or a native element's method outside the `nativeCommands` table. | Same code: `#1201` – `#1205` when planned or attached: at the root the state fails to initialize. | `wcs/token-misconfigured` (error) |
+| Uses a command or event token the state does not declare. | Same code: `command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` and `onclick: $command.x` log `#1301` each time the event fires (the lint: warning). | `wcs/token-undeclared` (varies) |
 | Declares in a volume what only a root runs: `$stream`, `$watch`, `$listKeys`, `$renderedCallback` (refused), or `$commandTokens`, `$eventTokens`, `$on`, `$errorCallback` (not run). | Without the code: The scopes add-on refuses the volume with `console.error`, or ignores the declaration with `console.warn`. | `wcs/volume-declaration` (varies) |
 | `$watch` is not an object, a key starts with `$` or holds `@`, or a handler is not a function. | Without the code: The temporal add-on throws at load, and the state fails to initialize. | `wcs/watch-declaration-invalid` (error) |
 | A `$watch` key names a path the state does not declare. | Same code: The diagnostics add-on warns `[wcs/watch-path-missing]` after load (silent on `/core`, and under a getter or a list that is still empty). | `wcs/watch-path-missing` (warning) |
@@ -199,25 +199,33 @@ None.
 
 ## Found while cataloguing (2026-10-17)
 
-Not all of the lint's text and severities have caught up with the 4.0 runtime. These are not in the tables above, which record what the runtime and the lint do today. Each one is a fix for the lint or its documents:
+The first inventory found places where the lint's text and severities still described 3.x. The tables above record them as they are now.
 
-- **Messages that describe 3.x.**
-  - `wcs/script-order` says the ledger is not captured live. 4.0 hands a late DevTools every binding.
-  - `wcs/scan-declaration-invalid` says the runtime throws at load. Only the diagnostics add-on does.
-  - `wcs/declaration-alias-read` tells the author to read `$stream` / `$renderedCallback` instead. Those also read `undefined` through `this`.
-  - The registry's comments on `wcs/tag-member-unknown` ("silently ignored") and `wcs/getter-cycle`, and the header of `wcs/named-state-deprecated` (the runtime fails on `name=`), are 3.x too.
-- **The `/core` message format.** The vscode-wcs README says `/core` prints `[wcs/template-syntax] #203 "outerHTML"`. Since 4.0.0-rc.3 it prints `#203 "outerHTML"`.
+**Fixed** (CHANGELOG `[Unreleased]`, "The lint now follows the 4.0 runtime"):
+
+- **Messages that described 3.x.**
+  - `wcs/script-order` said the ledger is not captured live. It is an info now.
+  - `wcs/scan-declaration-invalid` said the runtime throws at load. Only the diagnostics add-on does.
+  - `wcs/declaration-alias-read` suggested reading the new name, which is `undefined` too.
+  - `wcs/tag-member-unknown` and `wcs/recursion-unsupported` said the mistake is silently ignored.
+  - The registry's comments, and the vscode-wcs README on the `/core` message format.
 - **Checks narrower than the runtime.**
-  - `wcs/mount-path-invalid` misses whitespace and a `*` inside a segment (`mount="a b"`, `mount="a*"`).
-  - `wcs/tag-member-unknown` skips common DOM properties (`title`, `hidden`, `id`) on `wcs-*` tags. The runtime refuses them with `#38`.
-  - `public/filterMeta.ts` says `lt`, `le`, `gt` and `ge` accept strings. The runtime throws `#28` on a string.
-- **Warnings where the runtime fails.** For these, the page's initialization or a binding fails, but the lint only warns:
-  - `wcs/filter-arg-type`, `wcs/tag-member-unknown`, `wcs/getter-cycle`, `wcs/index-arity`
-  - `wcs/token-misconfigured` (`#1201`), `wcs/token-undeclared` (`command.`)
-  - `wcs/recursion-unsupported` (an undeclared `**` getter key), `wcs/binding-path-missing` (a missing top-level key)
-  - `wcs/input-nested-write` loses data and is only a warning, so it passes the skill's `--errors-only` gate.
-- **A rule left from 3.x.** `wcs/binding-type-expectation` asks for a boolean in `if:` with `else:`. 4.0 tests truthiness.
-- **Not verified.** `wcs/array-index-assign` may report `this.items[0] = x; this.$postUpdate("items.0")`, which the runtime supports.
+  - `wcs/mount-path-invalid` now refuses whitespace and a `*` inside a segment.
+  - `wcs/tag-member-unknown` now covers DOM properties such as `hidden` and `textContent` on `wcs-*` tags.
+  - The manifest's `lt` / `le` / `gt` / `ge` accept numbers only.
+- **Warnings where the runtime fails.** These are errors now:
+  - `wcs/filter-arg-type` (a numeric argument), `wcs/tag-member-unknown`, `wcs/getter-cycle`, `wcs/index-arity`
+  - `wcs/token-misconfigured`, `wcs/token-undeclared` (`command.`)
+  - `wcs/recursion-unsupported`
+  - `wcs/input-nested-write`, which loses data
+
+  `wcs/wildcard-rank` and `wcs/binding-path-missing` stay warnings: the validator cannot be certain of them.
+- **A rule left from 3.x.** `wcs/binding-type-expectation` asked for a boolean in `if:` with `else:`. The rule is gone.
+
+**Open:**
+
+- `wcs/array-index-assign` reports `this.items[0] = x; this.$postUpdate("items.0")`, which the runtime supports: `$postUpdate` on a row path makes the row take what the array holds now. Seeing it would need the lint to follow the script's data flow, and the documented form is `this["items.0"] = x`. Low priority.
+- `wcs/getter-cycle` does not follow conditions. A cycle behind mutually exclusive branches, which never runs, is reported too (rare).
 
 ## Candidates not yet verified
 

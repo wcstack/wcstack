@@ -1,7 +1,7 @@
 /**
- * `wcs/mount-path-invalid` — `<wcs-state mount="...">` の値検証（v2）。
- * runtime（state の validateVolumeMountPath）が raise する値を同条件・同文言で
- * 編集時 error にする（name= の fail-fast 鏡映と対称）。
+ * `wcs/mount-path-invalid` — `<wcs-state mount="...">` の値検証。
+ * runtime（state の scopes/volume.ts の `validPath` — 段ごとに `/[*$#@\s]/` を拒む）が拒む値を、
+ * 同じ条件で編集時 error にする（name= の検査と対称）。
  */
 import { describe, it, expect } from 'vitest';
 import { validateMountAttributes, findMountPathProblem } from '../src/service/mountAttrValidator';
@@ -15,6 +15,12 @@ describe('findMountPathProblem（runtime と同条件）', () => {
     expect(findMountPathProblem('')).toBe('empty');
     expect(findMountPathProblem('a..b')).toBe('emptySegment');
     expect(findMountPathProblem('a.*')).toBe('wildcard');
+    // `*` は段の中のどこでも、空白も拒む（runtime の `/[*$#@\s]/`）
+    expect(findMountPathProblem('a*')).toBe('wildcard');
+    expect(findMountPathProblem('a.b*c')).toBe('wildcard');
+    expect(findMountPathProblem('a b')).toBe('whitespace');
+    expect(findMountPathProblem(' a')).toBe('whitespace');
+    expect(findMountPathProblem('a.\tb')).toBe('whitespace');
     expect(findMountPathProblem('$x')).toBe('reserved');
     expect(findMountPathProblem('a.#m')).toBe('reserved');
     expect(findMountPathProblem('a@b')).toBe('reserved');
@@ -32,23 +38,26 @@ describe('findMountPathProblem（runtime と同条件）', () => {
 describe('validateMountAttributes', () => {
   it('ワイルドカードの mount 値に error を出し、値を範囲にすること', () => {
     const html = `<wcs-state mount="a.*" json='{}'></wcs-state>`;
-    const diags = validateMountAttributes(html);
+    const diags = validateMountAttributes(html, 'wcs-state', 'en');
     expect(diags).toHaveLength(1);
     expect(diags[0].code).toBe(WcsDiagnosticCode.MountPathInvalid);
     expect(diags[0].severity).toBe('error');
     expect(slice(html, diags[0])).toBe('a.*');
     expect(diags[0].message).toContain('must be static');
+    expect(diags[0].message).toContain('has an invalid mount path');
   });
 
-  it('空セグメント・予約文字（先頭/中間）にも error を出すこと', () => {
+  it('空セグメント・段の中の *・空白・予約文字（先頭/中間）にも error を出すこと', () => {
     for (const [bad, fragment] of [
       ['a..b', 'empty segment'],
+      ['a*', 'must be static'],
+      ['a b', 'whitespace'],
       ['$x', 'reserved characters'],
       ['a#b', 'reserved characters'],
       ['a@b', 'reserved characters'],
     ] as const) {
       const html = `<wcs-state mount="${bad}"></wcs-state>`;
-      const diags = validateMountAttributes(html);
+      const diags = validateMountAttributes(html, 'wcs-state', 'en');
       expect(diags, bad).toHaveLength(1);
       expect(diags[0].message, bad).toContain(fragment);
       expect(slice(html, diags[0]), bad).toBe(bad);
@@ -57,7 +66,7 @@ describe('validateMountAttributes', () => {
 
   it('空の mount 値は属性全体を範囲にして error を出すこと', () => {
     const html = `<wcs-state mount="" json='{}'></wcs-state>`;
-    const diags = validateMountAttributes(html);
+    const diags = validateMountAttributes(html, 'wcs-state', 'en');
     expect(diags).toHaveLength(1);
     expect(slice(html, diags[0])).toBe('mount=""');
     expect(diags[0].message).toContain('non-empty');
@@ -71,7 +80,8 @@ describe('validateMountAttributes', () => {
   it('ja ロケールでは日本語メッセージになること', () => {
     const html = `<wcs-state mount="a.*"></wcs-state>`;
     const diags = validateMountAttributes(html, 'wcs-state', 'ja');
-    expect(diags[0].message).toContain('ワイルドカード');
+    expect(diags[0].message).toContain('静的でなければなりません');
+    expect(diags[0].message).toContain('ランタイムはボリュームを拒みます');
   });
 
   it('validateDocument が同じ code / severity で含めること', () => {

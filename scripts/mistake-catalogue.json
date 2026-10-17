@@ -192,8 +192,7 @@
       "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Gives `mount=` an empty value or segment, `*`, `$`, `#`, `@` or whitespace.", "ja": "`mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。" },
       "effect": { "en": "The scopes add-on refuses the volume with `console.error` (`has an invalid mount path`).", "ja": "scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。" },
-      "evidence": [{ "file": "packages/state/src/scopes/volume.ts", "text": "has an invalid mount path" }],
-      "note": { "en": "The lint misses whitespace and a `*` inside a segment (`mount=\"a b\"`, `mount=\"a*\"`).", "ja": "lint は空白と段の中の `*`（`mount=\"a b\"`・`mount=\"a*\"`）を見逃す。" }
+      "evidence": [{ "file": "packages/state/src/scopes/volume.ts", "text": "has an invalid mount path" }]
     },
     {
       "id": "named-state-selector",
@@ -235,15 +234,14 @@
       "runtime": "same", "harm": "broken",
       "mistake": { "en": "Binds a value that is not a boolean to `class.NAME:`.", "ja": "`class.NAME:` に boolean でない値を束ねる。" },
       "effect": { "en": "`#401`: the binding fails (`[wcs/binding-type-expectation]` with diagnostics).", "ja": "`#401` で束縛が失敗する（diagnostics があれば `[wcs/binding-type-expectation]`）。" },
-      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"binding-type-expectation\"" }],
-      "note": { "en": "The lint's boolean rule for `if:` with `else:` is from 3.x; 4.0 tests truthiness.", "ja": "`else:` 付きの `if:` に boolean を求める lint の規則は 3.x のもの。4.0 は真偽で判定する。" }
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"binding-type-expectation\"" }]
     },
     {
       "id": "filter-arg-type",
-      "lint": [{ "code": "wcs/filter-arg-type", "severity": "warning" }],
+      "lint": [{ "code": "wcs/filter-arg-type", "severity": "varies" }],
       "runtime": "loud", "harm": "broken",
-      "mistake": { "en": "Gives a filter an argument of the wrong type (`gt(abc)`).", "ja": "フィルタに型の違う引数を渡す（`gt(abc)`）。" },
-      "effect": { "en": "`#27` when the bindings are planned: the state fails to initialize. The lint only warns.", "ja": "束縛の計画の時点で `#27`、state は初期化に失敗する。lint は警告だけ。" },
+      "mistake": { "en": "Gives a filter a numeric argument that does not read as a number (`gt(abc)`).", "ja": "フィルタの数値の引数に、数値として読めないものを渡す（`gt(abc)`）。" },
+      "effect": { "en": "`#27` when the bindings are planned: the state fails to initialize. (A number for a string argument, `join(1)`, passes as a string; the lint warns about it.)", "ja": "束縛の計画の時点で `#27`、state は初期化に失敗する（文字列の引数に数値を渡す `join(1)` は文字列として通る。lint はそれを警告する）。" },
       "evidence": [{ "file": "packages/state/src/filters/errorMessages.ts", "text": "raise(M.FilterOptionNotNumber, [fnName])" }]
     },
     {
@@ -256,10 +254,10 @@
     },
     {
       "id": "tag-member-unknown",
-      "lint": [{ "code": "wcs/tag-member-unknown", "severity": "warning" }],
+      "lint": [{ "code": "wcs/tag-member-unknown", "severity": "error" }],
       "runtime": "loud", "harm": "broken",
-      "mistake": { "en": "Binds a member a `wcs-*` tag does not declare.", "ja": "`wcs-*` のタグが宣言しないメンバーを束ねる。" },
-      "effect": { "en": "`#38` (a property), `#1203` / `#1204` (`command.` / `eventToken.`): at the root the state fails to initialize, in a row the binding fails. The lint only warns, and skips common DOM properties (`title`, `hidden`, `id`) that the runtime refuses too.", "ja": "`#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。lint は警告だけで、実行時が同じく拒む DOM の一般的なプロパティ（`title`・`hidden`・`id`）を見ない。" },
+      "mistake": { "en": "Binds a member a `wcs-*` tag does not declare, a DOM property such as `hidden` or `textContent` included.", "ja": "`wcs-*` のタグが宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。" },
+      "effect": { "en": "`#38` (a property), `#1203` / `#1204` (`command.` / `eventToken.`): at the root the state fails to initialize, in a row the binding fails. Only the HTML sinks are written without a declaration.", "ja": "`#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。" },
       "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "raise(M.MemberUndeclared, [name])" }]
     },
     {
@@ -323,18 +321,18 @@
     },
     {
       "id": "getter-cycle",
-      "lint": [{ "code": "wcs/getter-cycle", "severity": "warning" }],
+      "lint": [{ "code": "wcs/getter-cycle", "severity": "error" }],
       "runtime": "same", "harm": "broken",
       "mistake": { "en": "Writes getters that read each other in a cycle.", "ja": "互いを読み合って循環する getter を書く。" },
-      "effect": { "en": "`#701` when they are evaluated: every binding that reads them fails. The lint only warns.", "ja": "評価の時点で `#701`、それを読む束縛はすべて失敗する。lint は警告だけ。" },
+      "effect": { "en": "`#701` when they are evaluated: every binding that reads them fails.", "ja": "評価の時点で `#701`、それを読む束縛はすべて失敗する。" },
       "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"getter-cycle\"" }]
     },
     {
       "id": "index-arity",
-      "lint": [{ "code": "wcs/index-arity", "severity": "warning" }],
+      "lint": [{ "code": "wcs/index-arity", "severity": "error" }],
       "runtime": "same", "harm": "broken",
       "mistake": { "en": "Gives `$getAll` / `$setAll` / `$resolve` a number of indexes that does not match the path's `*`s.", "ja": "`$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。" },
-      "effect": { "en": "`#901` / `#902`, thrown where it is called. The lint only warns.", "ja": "呼んだ所で `#901`・`#902` を throw する。lint は警告だけ。" },
+      "effect": { "en": "`#901` / `#902`, thrown where it is called.", "ja": "呼んだ所で `#901`・`#902` を throw する。" },
       "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"index-arity\"" }]
     },
     {
@@ -371,10 +369,10 @@
     },
     {
       "id": "recursion-unsupported",
-      "lint": [{ "code": "wcs/recursion-unsupported", "severity": "varies" }],
+      "lint": [{ "code": "wcs/recursion-unsupported", "severity": "error" }],
       "runtime": "same", "harm": "broken",
       "mistake": { "en": "Uses `**` where it is not read (a binding, a `$watch` key, `$postUpdate`), or without `$recursion`.", "ja": "`**` を読まない場所（束縛・`$watch` のキー・`$postUpdate`）で、または `$recursion` なしで使う。" },
-      "effect": { "en": "`#1101`: planning fails, or the call throws. An undeclared `**` getter key fails at load, though the lint only warns.", "ja": "`#1101`。計画が失敗するか、呼び出しが throw する。宣言の無い `**` の getter のキーは読み込みで失敗するが、lint は警告だけ。" },
+      "effect": { "en": "`#1101`: planning fails, or the call throws; an undeclared `**` getter key fails at load.", "ja": "`#1101`。計画が失敗するか、呼び出しが throw する。宣言の無い `**` の getter のキーは読み込みで失敗する。" },
       "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"recursion-unsupported\"" }]
     },
     {
@@ -395,18 +393,18 @@
     },
     {
       "id": "token-misconfigured",
-      "lint": [{ "code": "wcs/token-misconfigured", "severity": "varies" }],
+      "lint": [{ "code": "wcs/token-misconfigured", "severity": "error" }],
       "runtime": "same", "harm": "broken",
-      "mistake": { "en": "Wires a command or event token wrongly: `command.m:` whose right side is not `$command.…`, a `$commandTokens` entry that is not a string.", "ja": "コマンドかイベントのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、文字列でない `$commandTokens` の要素。" },
-      "effect": { "en": "`#1201` – `#1205` when planned or attached: at the root the state fails to initialize. The lint only warns for some of them.", "ja": "計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。lint はその一部を警告だけにする。" },
+      "mistake": { "en": "Wires a command token wrongly: `command.m:` whose right side is not `$command.…`, or a native element's method outside the `nativeCommands` table.", "ja": "コマンドのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、または `nativeCommands` の表に無いネイティブ要素のメソッド。" },
+      "effect": { "en": "`#1201` – `#1205` when planned or attached: at the root the state fails to initialize.", "ja": "計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。" },
       "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"token-misconfigured\"" }]
     },
     {
       "id": "token-undeclared",
-      "lint": [{ "code": "wcs/token-undeclared", "severity": "warning" }],
+      "lint": [{ "code": "wcs/token-undeclared", "severity": "varies" }],
       "runtime": "same", "harm": "broken",
       "mistake": { "en": "Uses a command or event token the state does not declare.", "ja": "state が宣言しないコマンドかイベントのトークンを使う。" },
-      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`); `eventToken.` and `onclick: $command.x` log `#1301` each time the event fires. The lint only warns.", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する。lint は警告だけ。" },
+      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` and `onclick: $command.x` log `#1301` each time the event fires (the lint: warning).", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。" },
       "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"token-undeclared\"" }]
     },
     {
@@ -454,12 +452,12 @@
     },
     {
       "id": "input-nested-write",
-      "lint": [{ "code": "wcs/input-nested-write", "severity": "warning" }],
+      "lint": [{ "code": "wcs/input-nested-write", "severity": "error" }],
       "runtime": "silent", "harm": "data-loss",
       "mistake": { "en": "Binds an I/O node's input to a path (`value: cart` on `<wcs-storage>`, `body: form` on `<wcs-fetch>`) and writes under it (`this[\"cart.0.quantity\"] = 2`).", "ja": "I/O ノードの入力をパスに束ね（`<wcs-storage>` の `value: cart`、`<wcs-fetch>` の `body: form`）、その下へ書く（`this[\"cart.0.quantity\"] = 2`）。" },
       "effect": { "en": "A write re-applies the bindings at its path and below, never above: storage does not save the change (a reload reverts it) and fetch sends the next request without a body.", "ja": "書き込みが当て直すのはそのパスとその下の束縛だけで、上は当て直さない。storage は変更を保存せず（再読み込みで戻る）、fetch は次の要求を本文なしで送る。" },
       "disposition": "design-out", "breaking": false,
-      "note": { "en": "An opt-in wc-bindable input hint (assign again when something under the path changes) would remove it; doing it for every input would be breaking. The lint only warns, which passes the skill's `--errors-only` gate.", "ja": "入力ごとの wc-bindable の印（下が変わったら代入し直す）で消せる。すべての入力でそうするのは破壊的。lint は警告だけで、スキルの `--errors-only` の関門を通る。" }
+      "note": { "en": "An opt-in wc-bindable input hint (assign again when something under the path changes) would remove it; doing it for every input would be breaking.", "ja": "入力ごとの wc-bindable の印（下が変わったら代入し直す）で消せる。すべての入力でそうするのは破壊的。" }
     },
     {
       "id": "submit-without-prevent",
@@ -472,12 +470,12 @@
     },
     {
       "id": "devtools-after-state",
-      "lint": [{ "code": "wcs/script-order", "severity": "warning" }],
+      "lint": [{ "code": "wcs/script-order", "severity": "info" }],
       "runtime": "silent", "harm": "degraded",
       "mistake": { "en": "Loads `@wcstack/devtools/auto` after `@wcstack/state/auto`.", "ja": "`@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。" },
       "effect": { "en": "4.0 hands a late DevTools every binding there already, so only the timeline before it attached is missing.", "ja": "4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。" },
       "disposition": "runtime-report",
-      "note": { "en": "DevTools can say that its timeline starts when it attached. The lint's message still describes 3.x (the ledger is not captured).", "ja": "DevTools が、タイムラインは付いた時点からと言える。lint の文面は 3.x のまま（台帳が取れない）。" }
+      "note": { "en": "DevTools can say that its timeline starts when it attached.", "ja": "DevTools が、タイムラインは付いた時点からと言える。" }
     },
     {
       "id": "base-href-missing",

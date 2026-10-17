@@ -100,7 +100,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 誤り | lint | 何が起きるか | 害 | 扱い |
 |---|---|---|---|---|
-| I/O ノードの入力をパスに束ね（`<wcs-storage>` の `value: cart`、`<wcs-fetch>` の `body: form`）、その下へ書く（`this["cart.0.quantity"] = 2`）。 | `wcs/input-nested-write` (warning) | 書き込みが当て直すのはそのパスとその下の束縛だけで、上は当て直さない。storage は変更を保存せず（再読み込みで戻る）、fetch は次の要求を本文なしで送る。 | データの損失 | 設計で消す — 4.x。入力ごとの wc-bindable の印（下が変わったら代入し直す）で消せる。すべての入力でそうするのは破壊的。lint は警告だけで、スキルの `--errors-only` の関門を通る。 |
+| I/O ノードの入力をパスに束ね（`<wcs-storage>` の `value: cart`、`<wcs-fetch>` の `body: form`）、その下へ書く（`this["cart.0.quantity"] = 2`）。 | `wcs/input-nested-write` (error) | 書き込みが当て直すのはそのパスとその下の束縛だけで、上は当て直さない。storage は変更を保存せず（再読み込みで戻る）、fetch は次の要求を本文なしで送る。 | データの損失 | 設計で消す — 4.x。入力ごとの wc-bindable の印（下が変わったら代入し直す）で消せる。すべての入力でそうするのは破壊的。 |
 | manual でない `<wcs-storage>` の `value` を、`#init=element` なしで、リテラルで始めたパスかアクセサペアに束ねる。 | `wcs/storage-seed-clobber` (error) | 要素が保存値を読み込んだ後に state がシードを書き、要素がそれを保存値の上に保存する — 読み込みのたびに。`null` のシードはキーを消す。 | データの損失 | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 最初の同期で、要素が既に持つ値を上書きするときに実行時が警告できる（diagnostics の後付け）。5.0: 読み込む storage の最初の同期は要素が勝つ。 |
 | `trigger:` に束ねた state のスロットを `true` で始める。 | `wcs/trigger-seeded-truthy` (warning) | 最初の同期が `true` を書く。`<wcs-fetch>` は `manual` でも読み込みで要求を送り、`<wcs-storage manual>` は持っている値を保存する。まだ `url` が無ければ `true` が残り、最初の本当の trigger が何もしない。 | データの損失 | 設計で消す — 5.0 の議題（破壊的）。`trigger` の最初の同期は state でなく要素が勝つ、という wc-bindable の印で消せる。わざと `true` で始めるページは変わる。 |
 | `<form>` の `onsubmit:` を `#prevent` なしで束ね、ハンドラも `preventDefault` を呼ばない。 | `wcs/submit-without-prevent` (warning) | ハンドラが走った後、ブラウザがフォームを送る。ページが読み直されるか、router があれば GET が欄 — パスワードも — を URL と履歴に載せる。 | 安全 | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: ハンドラの後で、`action` の無いフォームの防がれなかった submit を実行時が見られる — core にフック（残り 536 B）、知らせは diagnostics の後付け。5.0: `onsubmit:` は既定で防ぐ。 |
@@ -121,7 +121,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `<wcs-storage>` の `value#init=element` を、`null` でないリテラルで始めたパスに束ねる（`cart: []`）。 | `wcs/storage-init-seed` (warning) | 空のキーは `null` を読むので、最初の引き込みがシードを置き換える。`for: cart` は何も描かず、`this.cart.length` を読むコードは汎用の TypeError を投げる。 | 動かない | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 明示の `#init=element` が値を `null` で置き換えるときに警告する（diagnostics の後付け）。5.0: 無いキーは `undefined` を読み、シードを残す（README は `null` と書いている）。 |
 | `$watch` のキーに空の段がある（`a..b`）。 | `wcs/watch-declaration-invalid` (error) | 実行時は調べないので、watch は発火しない。 | 動かない | 実行時に知らせる — 4.x。temporal の後付けに検査を 1 つ（約 10 B）。 |
 | `attr.aria-*:` の ARIA 属性名を打ち間違える。 | `wcs/aria-attr-unknown` (warning) | 属性は書かれ、支援技術は無視する。 | 劣化 | lint のまま（実行時には見えない）。名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。 |
-| `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (warning) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。lint の文面は 3.x のまま（台帳が取れない）。 |
+| `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (info) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。 |
 | `<wcs-state name="…">` を書く（v1）。 | `wcs/named-state-deprecated` (error) | 4.0 は `name` を読まない。単独では害が無く、名前付き State が 2 つある v1 のページは代わりに `#47` で失敗する。 | 劣化 | 実行時に知らせる — 4.x。diagnostics の後付けが要素のマウントで警告できる。価値は低い。 |
 
 ### 実行時に知らせるもの
@@ -134,18 +134,18 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `<wcs-state bind-component>` に `state`・`src`・`json` 属性か、中の module スクリプトを付ける。 | code なし: 読み込みは拒まれ（`failed to initialize`）、コンポーネントはマウントされない。 | `wcs/bind-component-source` (error) |
 | state に無いパスを束ねる（`stateSchema` がそう言えば `wcs/path-nonexistent`）。 | 同じ code: トップレベルのキーが無ければ束縛が失敗する（`#301`）。入れ子の段が無ければ diagnostics の後付けが `[wcs/binding-path-missing]` で警告する（`/core` では無言）。`stateSchema` が無いと lint は警告だけ。 | `wcs/binding-path-missing` (varies), `wcs/path-nonexistent` (error) |
 | 文法が拒む束縛を書く: 閉じない引用符・2 つ目の `#`・空のフィルタ・`__proto__` の段。 | 同じ code: 束縛の計画で `#101`〜`#122`、state は初期化に失敗する。 | `wcs/binding-syntax` (error) |
-| `class.NAME:` に boolean でない値を束ねる。 | 同じ code: `#401` で束縛が失敗する（diagnostics があれば `[wcs/binding-type-expectation]`）。 `else:` 付きの `if:` に boolean を求める lint の規則は 3.x のもの。4.0 は真偽で判定する。 | `wcs/binding-type-expectation` (varies) |
+| `class.NAME:` に boolean でない値を束ねる。 | 同じ code: `#401` で束縛が失敗する（diagnostics があれば `[wcs/binding-type-expectation]`）。 | `wcs/binding-type-expectation` (varies) |
 | 外れた 3.x の名前を宣言する（`$streams`・`$updatedCallback`）。 | 同じ code: diagnostics の後付けが読み込みで `#1601` を throw する。`/core` ではキーは無視される。 | `wcs/declaration-alias` (varies) |
 | `features=` か `$features` に、無い後付けの名前を書く。 | 同じ code: 分割 auto の読み込みが `[wcs/feature-unknown]` を throw する（`<wcs-state>` は定義されない）。ほかの入口は `[wcs/feature-not-installed]` を出す。 | `wcs/feature-unknown` (error) |
 | `$features` が配列でない、またはボリュームにある。 | code なし: 読み込みで `#46`（ボリュームは `console.error`）。 | `wcs/features-invalid` (error) |
-| フィルタに型の違う引数を渡す（`gt(abc)`）。 | code なし: 束縛の計画の時点で `#27`、state は初期化に失敗する。lint は警告だけ。 | `wcs/filter-arg-type` (warning) |
+| フィルタの数値の引数に、数値として読めないものを渡す（`gt(abc)`）。 | code なし: 束縛の計画の時点で `#27`、state は初期化に失敗する（文字列の引数に数値を渡す `join(1)` は文字列として通る。lint はそれを警告する）。 | `wcs/filter-arg-type` (varies) |
 | フィルタに違う数の引数を渡す。 | 同じ code: 束縛の計画で `#601`・`#602`、state は初期化に失敗する。 | `wcs/filter-arity` (error) |
 | フィルタに型の違う値を流す（`date` に文字列、`join` に数値）。 | code なし: 値を当てる時点で `#28`〜`#30`、束縛が失敗する。文字列のフィルタは変換して通す（`null\|upper` は `NULL`）。 | `wcs/filter-input-type` (warning) |
 | 無いフィルタか、3.x の名前（`uc`・`substr`）を使う。 | 同じ code: 束縛の計画で `#501`、state は初期化に失敗する。formats の後付けの無い書式フィルタは、`/core` でも文で言う。 | `wcs/filter-unknown` (error) |
-| 互いを読み合って循環する getter を書く。 | 同じ code: 評価の時点で `#701`、それを読む束縛はすべて失敗する。lint は警告だけ。 | `wcs/getter-cycle` (warning) |
-| `$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。 | 同じ code: 呼んだ所で `#901`・`#902` を throw する。lint は警告だけ。 | `wcs/index-arity` (warning) |
+| 互いを読み合って循環する getter を書く。 | 同じ code: 評価の時点で `#701`、それを読む束縛はすべて失敗する。 | `wcs/getter-cycle` (error) |
+| `$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。 | 同じ code: 呼んだ所で `#901`・`#902` を throw する。 | `wcs/index-arity` (error) |
 | `$1`〜`$128` の外のループの添字を読む（`this.$0`・`$129`）。 | 同じ code: `#1001`。スクリプトは読んだ時点で throw し、マークアップでは束縛が失敗する。 | `wcs/index-param-range` (error) |
-| `mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。 | code なし: scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。 lint は空白と段の中の `*`（`mount="a b"`・`mount="a*"`）を見逃す。 | `wcs/mount-path-invalid` (error) |
+| `mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。 | code なし: scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。 | `wcs/mount-path-invalid` (error) |
 | 外れた 3.x の API の名前を呼ぶ（`$trackDependency`・`$untrackDependency`）。 | 同じ code: diagnostics の後付けが読んだ時点で `#1701` を throw する。`/core` では `undefined` で、呼べば汎用の TypeError。 | `wcs/name-alias` (error) |
 | v1 の名前付き State の選択子 `path@name` を書く。 | code なし: 解析の誤り `#32`。ページの束縛はそこで止まる（ルートの中身では `console.error`）。 | `wcs/named-state-deprecated` (error) |
 | `$on` のハンドラで `this` を使う。 | code なし: そこでの `this` は `undefined`。TypeError は `#17`（トークンの購読者が throw した）として記録され、async のハンドラは未処理の reject になる。 `setInitialState` で渡したクラシックのスクリプトでは `this` が `window` になり、無言（lint の外）。 | `wcs/on-handler-this` (error) |
@@ -155,14 +155,14 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 再帰（`**`）の getter か、その展開形へ書く。 | 同じ code: `[wcs/recursion-readonly]` を throw する。 | `wcs/recursion-readonly` (error) |
 | `**` のパスの `$setAll` に、途中までの添字・mapper・spread を渡す。 | 同じ code: `[wcs/recursion-setall-form]` を throw する（添字を省くと `#9`）。 | `wcs/recursion-setall-form` (error) |
 | `**` を通した `$setAll` で、ノード・子の一覧・その length に書く。 | 同じ code: `[wcs/recursion-structural-write]` を throw する。 | `wcs/recursion-structural-write` (error) |
-| `**` を読まない場所（束縛・`$watch` のキー・`$postUpdate`）で、または `$recursion` なしで使う。 | 同じ code: `#1101`。計画が失敗するか、呼び出しが throw する。宣言の無い `**` の getter のキーは読み込みで失敗するが、lint は警告だけ。 | `wcs/recursion-unsupported` (varies) |
+| `**` を読まない場所（束縛・`$watch` のキー・`$postUpdate`）で、または `$recursion` なしで使う。 | 同じ code: `#1101`。計画が失敗するか、呼び出しが throw する。宣言の無い `**` の getter のキーは読み込みで失敗する。 | `wcs/recursion-unsupported` (error) |
 | `$scan` を宣言する（4.0 で外れた）。 | code なし: diagnostics の後付けが読み込みで `#1`（`$scan was removed`）を throw する。それの無い `/core` ではキーは無視される。 | `wcs/scan-declaration-invalid` (varies) |
 | 文書に 2 つ目の root の `<wcs-state>` を置く。 | code なし: 後から読み込み終えた方が `#47` で失敗し、先の方がページを持つ。 | `wcs/second-root` (error) |
 | `wcBindable` の宣言の無いタグ（`<wcs-fetch-header>`）に spread（`...:`）する。 | 同じ code: 取り付けの時点で `#1501`。root では state が初期化に失敗し、行では束縛が失敗する。 | `wcs/spread-no-bindable` (error) |
-| `wcs-*` のタグが宣言しないメンバーを束ねる。 | code なし: `#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。lint は警告だけで、実行時が同じく拒む DOM の一般的なプロパティ（`title`・`hidden`・`id`）を見ない。 | `wcs/tag-member-unknown` (warning) |
+| `wcs-*` のタグが宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。 | code なし: `#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。 | `wcs/tag-member-unknown` (error) |
 | テンプレートの規則を破る: 1 つのテンプレートに構造ディレクティブを 2 つ、`for:`・`if:` のテンプレートの中の `outerHTML:`。 | 同じ code: 束縛の計画で `#201`〜`#203`、state は初期化に失敗する。`#204`（挿入された中身の先頭の構造テンプレート）は記録される。 | `wcs/template-syntax` (varies) |
-| コマンドかイベントのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、文字列でない `$commandTokens` の要素。 | 同じ code: 計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。lint はその一部を警告だけにする。 | `wcs/token-misconfigured` (varies) |
-| state が宣言しないコマンドかイベントのトークンを使う。 | 同じ code: `command.m: $command.x` は取り付けで失敗する（`#1302`）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する。lint は警告だけ。 | `wcs/token-undeclared` (warning) |
+| コマンドのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、または `nativeCommands` の表に無いネイティブ要素のメソッド。 | 同じ code: 計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。 | `wcs/token-misconfigured` (error) |
+| state が宣言しないコマンドかイベントのトークンを使う。 | 同じ code: `command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。 | `wcs/token-undeclared` (varies) |
 | root だけが走らせる宣言をボリュームに書く: `$stream`・`$watch`・`$listKeys`・`$renderedCallback`（拒む）、`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback`（走らせない）。 | code なし: scopes の後付けが `console.error` でボリュームを拒むか、`console.warn` で宣言を無視する。 | `wcs/volume-declaration` (varies) |
 | `$watch` がオブジェクトでない、キーが `$` で始まる・`@` を含む、ハンドラが関数でない。 | code なし: temporal の後付けが読み込みで throw し、state は初期化に失敗する。 | `wcs/watch-declaration-invalid` (error) |
 | `$watch` のキーが、state の宣言に無いパスを名指す。 | 同じ code: diagnostics の後付けが読み込みの後に `[wcs/watch-path-missing]` で警告する（`/core`、getter の下、まだ空の一覧の下では無言）。 | `wcs/watch-path-missing` (warning) |
@@ -199,25 +199,33 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 ## 目録を作る中で見つけたもの（2026-10-17）
 
-lint の文面と重大度は、4.0 の実行時にすべて追いついているわけではない。ここに挙げるものは上の表には入れていない。表は、今の実行時と lint がすることを記録している。どれも lint かその文書の直しになる:
+最初の棚卸しで、lint の文面と重大度が 3.x のままの所が見つかった。上の表は今の姿を記録している。
 
-- **3.x のことを言う文面。**
-  - `wcs/script-order` は、台帳がライブで取れないと言う。4.0 は後から付いた DevTools に束縛をすべて渡す。
-  - `wcs/scan-declaration-invalid` は、実行時が読み込みで throw すると言う。そうするのは diagnostics の後付けだけ。
-  - `wcs/declaration-alias-read` は、代わりに `$stream`・`$renderedCallback` を読めと案内する。それも `this` 越しには `undefined`。
-  - レジストリの `wcs/tag-member-unknown`（「黙って無視される」）と `wcs/getter-cycle` のコメント、`wcs/named-state-deprecated` の冒頭（実行時が `name=` で失敗する）も 3.x のもの。
-- **`/core` の文面の形。** vscode-wcs の README は、`/core` が `[wcs/template-syntax] #203 "outerHTML"` と出すと書いている。4.0.0-rc.3 からは `#203 "outerHTML"`。
+**直したもの**（CHANGELOG の `[Unreleased]`「The lint now follows the 4.0 runtime」）:
+
+- **3.x のことを言っていた文面。**
+  - `wcs/script-order` は、台帳がライブで取れないと言っていた。今は info。
+  - `wcs/scan-declaration-invalid` は、実行時が読み込みで throw すると言っていた。そうするのは diagnostics の後付けだけ。
+  - `wcs/declaration-alias-read` は、正式名を読めと案内していた。それも `undefined`。
+  - `wcs/tag-member-unknown` と `wcs/recursion-unsupported` は、黙って無視されると言っていた。
+  - レジストリのコメントと、vscode-wcs の README の `/core` の文面の形。
 - **実行時より狭い検査。**
-  - `wcs/mount-path-invalid` は、空白と段の中の `*`（`mount="a b"`・`mount="a*"`）を見逃す。
-  - `wcs/tag-member-unknown` は、`wcs-*` のタグの DOM の一般的なプロパティ（`title`・`hidden`・`id`）を見ない。実行時はそれも `#38` で拒む。
-  - `public/filterMeta.ts` は、`lt`・`le`・`gt`・`ge` が文字列を受けると書いている。実行時は文字列に `#28` を投げる。
-- **実行時が失敗するのに警告。** 次の code では、ページの初期化か束縛が失敗するのに、lint は警告だけ:
-  - `wcs/filter-arg-type`・`wcs/tag-member-unknown`・`wcs/getter-cycle`・`wcs/index-arity`
-  - `wcs/token-misconfigured`（`#1201`）・`wcs/token-undeclared`（`command.`）
-  - `wcs/recursion-unsupported`（宣言の無い `**` の getter のキー）・`wcs/binding-path-missing`（無いトップレベルのキー）
-  - `wcs/input-nested-write` はデータを失うのに警告だけで、スキルの `--errors-only` の関門を通る。
-- **3.x から残った規則。** `wcs/binding-type-expectation` は、`else:` 付きの `if:` に boolean を求める。4.0 は真偽で判定する。
-- **未確認。** `wcs/array-index-assign` は、実行時が支える `this.items[0] = x; this.$postUpdate("items.0")` を報告するかもしれない。
+  - `wcs/mount-path-invalid` は、空白と段の中の `*` も拒む。
+  - `wcs/tag-member-unknown` は、`wcs-*` のタグの `hidden`・`textContent` などの DOM のプロパティも見る。
+  - manifest の `lt`・`le`・`gt`・`ge` は数値だけを受ける。
+- **実行時が失敗するのに警告だったもの。** 次は error になった:
+  - `wcs/filter-arg-type`（数値の引数）・`wcs/tag-member-unknown`・`wcs/getter-cycle`・`wcs/index-arity`
+  - `wcs/token-misconfigured`・`wcs/token-undeclared`（`command.`）
+  - `wcs/recursion-unsupported`
+  - データを失う `wcs/input-nested-write`
+
+  `wcs/wildcard-rank` と `wcs/binding-path-missing` は、検出が確実でないので warning のまま。
+- **3.x から残った規則。** `wcs/binding-type-expectation` は、`else:` 付きの `if:` に boolean を求めていた。この規則は外した。
+
+**残っているもの:**
+
+- `wcs/array-index-assign` は、実行時が支える `this.items[0] = x; this.$postUpdate("items.0")` を報告する（行のパスへの `$postUpdate` は、行を配列の今の値に合わせる）。見分けるには lint がスクリプトのデータの流れを追う必要があり、文書が勧めるのは `this["items.0"] = x`。優先度は低い。
+- `wcs/getter-cycle` は条件分岐を見ない。排他な分岐の裏にあって決して回らない循環も報告する（まれ）。
 
 ## まだ確かめていない候補
 

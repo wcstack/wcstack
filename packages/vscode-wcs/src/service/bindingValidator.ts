@@ -202,13 +202,6 @@ export function validateBindings(
   // バインド属性を全て検出
   const attrs = findAllBindAttributes(html, attrName);
 
-  // if/elseif の型要求判定にだけ要る構造テンプレート一覧は遅延収集する。
-  let structuralTemplates: StructuralTemplate[] | null = null;
-  const getStructuralTemplates = (): StructuralTemplate[] => {
-    structuralTemplates ??= collectStructuralTemplates(html, attrName);
-    return structuralTemplates;
-  };
-
   // 要素の置かれた文脈（行・枝の中か・自前の state を持つ template の中か）で決まる検査は、候補を集めてから
   // ループの後で 1 回の走査（analyzeElementContexts）にまとめて判定する — 束縛ごとに文書を数え直さない
   const outerCandidates: ElementSiteCandidate[] = [];
@@ -427,7 +420,8 @@ export function validateBindings(
               start: pathStart,
               end: pathStart + tokenPath.length,
               message: msgs.commandRhsFormat(),
-              severity: 'warning',
+              // ランタイムは束縛の計画で #1201 として throw し、root では初期化が失敗する
+              severity: 'error',
             });
           } else if (commandNames.size > 0 && !commandNames.has(tokenPath)) {
             diagnostics.push({
@@ -435,7 +429,9 @@ export function validateBindings(
               start: pathStart,
               end: pathStart + tokenPath.length,
               message: msgs.commandTokenUndeclared(tokenPath),
-              severity: 'warning',
+              // ランタイムは取り付けで #1302 として throw し、root では初期化が失敗する
+              // （eventToken. と `on*: $command.x` はイベントのたびに #1301 を記録するだけなので warning のまま）
+              severity: 'error',
             });
           }
         }
@@ -672,10 +668,7 @@ export function validateBindings(
           const typePath = candidateKeyOf(pathTrimmed, (c) => scopedPathSet.has(c));
           const resultType = resolveResultType(typePath, parsed.filters, scopedPaths);
           if (resultType !== null) {
-            const typeReq = getExpectedType(
-              parsed.property,
-              () => isNegatedByElseChain(getStructuralTemplates(), attr.valueStart),
-            );
+            const typeReq = getExpectedType(parsed.property);
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
@@ -969,19 +962,23 @@ function validateFilterUsage(filter: ParsedFilter, bindingStart: number, msgs: W
     });
   }
 
-  // 引数の型チェック
+  // 引数の型チェック。数値の引数はランタイムがフィルタを組む時点で `Number()` で読み、読めなければ #27 で
+  // 初期化を失敗させる（state の filters/options.ts の `numberOption` — 引用符付きの "5" は読める）ので error。
+  // ほかの型の食い違い（文字列の引数に数値の `join(1)`）はランタイムが文字列として通すので warning。
   if (info.argTypes && argCount > 0) {
     for (let i = 0; i < Math.min(argCount, info.argTypes.length); i++) {
       const expectedArgType = info.argTypes[i];
       if (expectedArgType === 'any') continue;
-      const actualArgType = inferArgType(filter.args[i]);
-      if (actualArgType !== expectedArgType) {
+      const arg = filter.args[i];
+      const numericFails = expectedArgType === 'number' && !readsAsNumber(arg);
+      const actualArgType = inferArgType(arg);
+      if (expectedArgType === 'number' ? numericFails : actualArgType !== expectedArgType) {
         diagnostics.push({
           code: WcsDiagnosticCode.FilterArgType,
           start: bindingStart + filter.argsOffset,
           end: bindingStart + filter.argsOffset + filter.name.length,
-          message: msgs.filterArgType(filter.name, i + 1, expectedArgType, filter.args[i], actualArgType),
-          severity: 'warning',
+          message: msgs.filterArgType(filter.name, i + 1, expectedArgType, arg, actualArgType),
+          severity: numericFails ? 'error' : 'warning',
         });
       }
     }
@@ -1144,77 +1141,6 @@ function validateSchemaPathExistence(
   return null;
 }
 
-/** 構造ディレクティブを持つ `<template>` 1 つ分（if チェーン判定用）。 */
-interface StructuralTemplate {
-  /** バインド属性値の開始オフセット（findAllBindAttributes の valueStart と一致）。 */
-  valueStart: number;
-  /** `<template>` のネスト深さ（0 = 最上位）。ランタイムはネストごとに別チェーンを組む。 */
-  depth: number;
-  /** 先頭バインディングのプロパティ名（構造ディレクティブ以外は 'other'）。 */
-  type: 'if' | 'elseif' | 'else' | 'other';
-}
-
-/**
- * HTML 内のバインド属性付き `<template>` を出現順に収集する。
- * ランタイム（structural/collectStructuralFragments.ts）は同じ順序でチェーンを組む。
- */
-function collectStructuralTemplates(html: string, attrName: string): StructuralTemplate[] {
-  const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const attrRegex = new RegExp(`${escaped}\\s*=\\s*(["'])`, 'i');
-  const tagRegex = /<template(?:\s[^>]*)?>|<\/template\s*>/gi;
-  const templates: StructuralTemplate[] = [];
-  let depth = 0;
-
-  let match: RegExpExecArray | null;
-  while ((match = tagRegex.exec(html)) !== null) {
-    if (match[0].startsWith('</')) {
-      depth = Math.max(0, depth - 1);
-      continue;
-    }
-    const attrMatch = attrRegex.exec(match[0]);
-    if (attrMatch) {
-      const quote = attrMatch[1];
-      const valueStart = match.index + attrMatch.index + attrMatch[0].length;
-      const valueEnd = html.indexOf(quote, valueStart);
-      if (valueEnd !== -1) {
-        // 構造ディレクティブは単独バインディング必須（parseBindTextsForElement.ts）。
-        const first = splitBindingExpressions(html.slice(valueStart, valueEnd))[0] ?? '';
-        const firstColon = indexOfOutsideQuotes(first, ':');
-        const prop = (firstColon === -1 ? first : first.slice(0, firstColon)).replace(/#.*$/, '').trim();
-        const type = prop === 'if' || prop === 'elseif' || prop === 'else' ? prop : 'other';
-        templates.push({ valueStart, depth, type });
-      }
-    }
-    depth++;
-  }
-
-  return templates;
-}
-
-/**
- * `if:` / `elseif:` の条件値が else チェーンによって `not` 否定されるかを判定する。
- *
- * ランタイムは `elseif` / `else` を直前の `if` / `elseif` にぶら下げ、その条件へ `not` を
- * 付けた否定フラグメントを作る（collectStructuralFragments.ts）。`not` は boolean 以外で
- * raise するため、後続に `elseif` / `else` がある条件だけが boolean 必須になる。
- * ネストした `<template>` は別スコープで再帰処理されるのでチェーンに加わらない。
- */
-function isNegatedByElseChain(templates: StructuralTemplate[], valueStart: number): boolean {
-  const index = templates.findIndex(t => t.valueStart === valueStart);
-  if (index === -1) return false;
-
-  const selfDepth = templates[index].depth;
-  for (let i = index + 1; i < templates.length; i++) {
-    const next = templates[i];
-    if (next.depth > selfDepth) continue;   // 子孫＝別スコープ
-    if (next.depth < selfDepth) return false; // 親を抜けた＝チェーン終了
-    if (next.type === 'elseif' || next.type === 'else') return true;
-    if (next.type === 'if') return false;   // 新しいチェーンの開始
-    // 'other'（for など）はチェーンを切らない — ランタイムも直前の if を保持する。
-  }
-  return false;
-}
-
 interface TypeRequirement {
   label: string;
   expected: ExpectedTypeKind;
@@ -1224,22 +1150,15 @@ interface TypeRequirement {
 /**
  * プロパティ名から期待される型を返す。型制約がない場合は null。
  *
- * @param isNegatedIf - `if` / `elseif` の値が else チェーンで `not` 否定されるか
- *   （遅延評価。if / elseif 以外では呼ばれない）
+ * `if:` / `elseif:` には型を求めない: 4.0 の連鎖は、条件の値（フィルタを通した後）の JavaScript の
+ * 真偽で最初に成り立つ枝を選ぶ（state の dom/view.ts の `IfView.update`）。3.x は `else` を `not` を
+ * 足した条件として組み、boolean 以外で throw したが、4.0 にその形は無い。
  */
-function getExpectedType(property: string, isNegatedIf: () => boolean): TypeRequirement | null {
+function getExpectedType(property: string): TypeRequirement | null {
   const prop = property.replace(/#.*$/, ''); // 修飾子を除去
 
   if (prop === 'for') {
     return { label: 'for', expected: 'array', severity: 'error' };
-  }
-  if (prop === 'if' || prop === 'elseif') {
-    // 単独の if / elseif はランタイムが Boolean() で強制変換する（apply/applyChangeToIf.ts）
-    // ので任意の型を受け付ける。後続に elseif / else が続く場合だけ、その条件へ `not`
-    // フィルタが後付けされ（structural/collectStructuralFragments.ts）、boolean 以外は
-    // 実行時に raise する。型を要求できるのはその場合だけ。
-    if (!isNegatedIf()) return null;
-    return { label: prop, expected: 'boolean', severity: 'warning' };
   }
   if (prop.startsWith('class.')) {
     return { label: prop, expected: 'boolean', severity: 'warning' };
@@ -1336,6 +1255,15 @@ function inferArgType(arg: string): string {
   const v = arg.trim();
   if (/^-?\d+(\.\d+)?$/.test(v)) return 'number';
   return 'string';
+}
+
+/**
+ * ランタイムの `numberOption` と同じ判定: 引用符（`"` / `'` — パーサが外すのはこの 2 つ）を外した文字列が
+ * 空でなく、`Number()` で読める。数値の引数はリテラルの型ではなくこの文字列から読むので、`gt('5')` も通る。
+ */
+function readsAsNumber(arg: string): boolean {
+  const v = arg.trim().replace(/^(["'])([\s\S]*)\1$/, '$2');
+  return v !== '' && !Number.isNaN(Number(v));
 }
 
 /**
