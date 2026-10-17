@@ -1893,6 +1893,114 @@ describe("自動 fetch の microtask coalesce", () => {
     });
   });
 
+  it("url が空になってから同じ url に戻ると fetch する（成功の後も、失敗の後も — docs/seam-apps.md、ssr-news）", async () => {
+    fetchSpy.mockRejectedValueOnce(new Error("network down"));
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/articles/3");
+    document.body.appendChild(el);
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(el.error).not.toBeNull();
+
+    // the route left (the url getter gives null), then opened again
+    el.url = null;
+    await flushMicrotasks();
+    el.url = "/api/articles/3";
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+    // and after a success too
+    el.url = null;
+    await flushMicrotasks();
+    el.url = "/api/articles/3";
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+    });
+    expect(fetchSpy).toHaveBeenLastCalledWith("/api/articles/3", expect.any(Object));
+  });
+
+  it("同じ tick に空にして戻すのは変化ではない（microtask で集約される）", async () => {
+    const el = document.createElement("wcs-fetch") as Fetch;
+    el.setAttribute("url", "/api/users");
+    document.body.appendChild(el);
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+    el.url = null;
+    el.url = "/api/users";
+    await flushMicrotasks();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  describe("url の変化が本文の無い変更を送る（wcs/fetch-auto-unsafe）", () => {
+    const unsafe = (calls: unknown[][]) => calls.map((c) => String(c[0])).filter((m) => m.includes("[wcs/fetch-auto-unsafe]"));
+
+    it("読み込みと投稿を 1 つの要素で行うと、投稿の後の url の変化で警告する", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const el = document.createElement("wcs-fetch") as Fetch;
+        el.url = "/api/articles/2/comments";
+        document.body.appendChild(el);
+        await vi.waitFor(() => {
+          expect(fetchSpy).toHaveBeenCalledTimes(1);
+        });
+        // the post: method + body + trigger
+        el.method = "POST";
+        el.body = { text: "hi" };
+        el.trigger = true;
+        await vi.waitFor(() => {
+          expect(fetchSpy).toHaveBeenCalledTimes(2);
+        });
+        expect(unsafe(warn.mock.calls)).toEqual([]);
+        // a navigation to another article
+        el.url = "/api/articles/3/comments";
+        await vi.waitFor(() => {
+          expect(fetchSpy).toHaveBeenCalledTimes(3);
+        });
+        expect(fetchSpy.mock.calls[2][1]).toMatchObject({ method: "POST" });
+        const got = unsafe(warn.mock.calls);
+        expect(got).toHaveLength(1);
+        expect(got[0]).toContain('The url changed to "/api/articles/3/comments", so this <wcs-fetch> sent a POST with no body');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("本文がある（body の値・<wcs-fetch-body>）、GET、接続時の 1 回目は警告しない", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        // a POST the element starts as it connects with a url
+        const ping = document.createElement("wcs-fetch") as Fetch;
+        ping.setAttribute("method", "POST");
+        ping.setAttribute("url", "/api/visits");
+        document.body.appendChild(ping);
+        // a POST whose body is a child element
+        const search = document.createElement("wcs-fetch") as Fetch;
+        search.setAttribute("method", "POST");
+        search.innerHTML = `<wcs-fetch-body type="application/json">{"q":"a"}</wcs-fetch-body>`;
+        document.body.appendChild(search);
+        search.url = "/api/search";
+        // a POST with a body value
+        const save = document.createElement("wcs-fetch") as Fetch;
+        save.setAttribute("method", "PUT");
+        document.body.appendChild(save);
+        save.body = { a: 1 };
+        save.url = "/api/items/1";
+        // a GET
+        const get = document.createElement("wcs-fetch") as Fetch;
+        document.body.appendChild(get);
+        get.url = "/api/items";
+        await vi.waitFor(() => {
+          expect(fetchSpy).toHaveBeenCalledTimes(4);
+        });
+        expect(unsafe(warn.mock.calls)).toEqual([]);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
+
   it("microtask 待ち中に disconnect されると fetch しない", async () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     el.setAttribute("url", "/api/users");

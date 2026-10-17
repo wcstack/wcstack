@@ -311,7 +311,16 @@ export class Fetch extends HTMLElement {
       // change would refetch. Auto-path only — explicit fetch()/trigger/command
       // stay unconditional (a manual refresh of the same url must work), and
       // `_lastFetchedUrl` is reset on disconnect so a remount refetches.
+      if (!url) {
+        // The url went empty (a route left, a getter returning null): the next url
+        // is a change, even back to the one fetched last. Without this, A → null → A
+        // sent nothing the second time — after a failed request too, so a page
+        // left and opened again never retried (docs/seam-apps.md, ssr-news).
+        this._lastFetchedUrl = null;
+      }
       if (this.isConnected && !this.manual && url && url !== this._lastFetchedUrl) {
+        // (not the request the element starts as it connects with a url: a POST that is meant)
+        if (resolveConnect === null) this._warnUnsafeAutoFetch();
         // fetch() cannot reject here: FetchCore swallows network/HTTP errors and
         // only rejects on an empty url, which the `url` guard above rules out.
         this.fetch().finally(() => resolveConnect?.());
@@ -319,6 +328,24 @@ export class Fetch extends HTMLElement {
         resolveConnect?.();
       }
     });
+  }
+
+  /**
+   * The url changed and the request it starts is a change (POST, PUT, …) with no
+   * body: the method stays, and the body was sent once with the previous request.
+   * One element that both loads (by url) and posts (by method + body + trigger)
+   * sent an empty POST on every navigation after the first post, without a word
+   * (docs/seam-apps.md, ssr-news; docs/mistake-catalogue.md).
+   */
+  private _warnUnsafeAutoFetch(): void {
+    const method = this.method;
+    if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
+    if (this._body !== null || this.querySelector(config.tagNames.fetchBody) !== null) return;
+    console.warn(
+      `[@wcstack/fetch] [wcs/fetch-auto-unsafe] The url changed to "${this.url}", so this <wcs-fetch> sent a ` +
+      `${method} with no body (its method stays ${method}; a body is sent once). Give loading and each change ` +
+      `its own <wcs-fetch>, or set \`manual\` on the one that changes data.`,
+    );
   }
 
   async fetch(): Promise<any> {

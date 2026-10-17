@@ -55,6 +55,25 @@ describe("束ねたパスが状態に無い（wcs/binding-path-missing）", () =
     expect(got[1]).toContain('Did you mean "subtotal"?');
   });
 
+  it("行の任意のフィールドは、最初の行に無くても、どれかの行にあれば警告しない（docs/seam-apps.md、ssr-news）", async () => {
+    const got = await warnings(() => page(`<ul><template data-wcs="for: comments"><li data-wcs="class.pending: .pending|truthy">{{ .text }}</li></template></ul>`, {
+      comments: [{ text: "from the server" }, { text: "mine", pending: true }],
+    }));
+    expect(got).toEqual([]);
+    // どの行にも無ければ、従来どおり
+    const none = await warnings(() => page(`<ul><template data-wcs="for: comments"><li data-wcs="class.pending: .pendng|truthy">{{ .text }}</li></template></ul>`, {
+      comments: [{ text: "a" }, { text: "b", pending: true }],
+    }));
+    expect(none).toHaveLength(1);
+    expect(none[0]).toContain('Bound path "comments.*.pendng"');
+    expect(none[0]).toContain('Did you mean "pending"?');
+    // 入れ子の行: 外のどれかの行の中の、どれかの行にあればよい
+    const nested = await warnings(() => page(`<template data-wcs="for: groups"><template data-wcs="for: .items"><i>{{ .note }}</i></template></template>`, {
+      groups: [{ items: [{ id: 1 }] }, { items: [] }, { items: [{ id: 2 }, { id: 3, note: "n" }] }],
+    }));
+    expect(nested).toEqual([]);
+  });
+
   it("$watch のキーは wcs/watch-path-missing（1 段のキーも）", async () => {
     const got = await warnings(() => page(``, { count: 0, $watch: { cout() {}, count() {} } }));
     expect(got).toHaveLength(1);
