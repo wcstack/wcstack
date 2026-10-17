@@ -145,7 +145,7 @@ The DOM trigger **always posts a string** — the literal `data-worker-text`, or
 | Property  | Event                         | Description                                                                          |
 | --------- | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `message` | `wcs-worker:message`          | The last value posted back by the worker (structured-clone copy). Re-fires on every message, even when the value is unchanged. |
-| `error`   | `wcs-worker:error`            | Normalized `{ name, message, filename?, lineno?, colno? }` — `DataCloneError` (non-cloneable post), `DataError` (a worker message could not be deserialized), `InvalidStateError` (post with no running worker), a script `Error` (uncaught error in the worker, with location), or a spawn failure (bad URL / CSP / unsupported). |
+| `error`   | `wcs-worker:error`            | Normalized `{ name, message, filename?, lineno?, colno? }` — `DataCloneError` (non-cloneable post), `DataError` (a worker message could not be deserialized), `InvalidStateError` (post with no running worker — the message is lost, and the element warns `[wcs/command-not-ready]`, once per element), a script `Error` (uncaught error in the worker, with location), or a spawn failure (bad URL / CSP / unsupported). |
 | `errorInfo` | `wcs-worker:error-info-changed` | Serializable failure taxonomy `WcsIoErrorInfo \| null` (stable `code` / `phase` / `recoverable`), derived from the same failure as `error`. Additive — the `error` shape is unchanged. |
 | `running` | `wcs-worker:running-changed`  | `true` while a worker is spawned and not yet terminated.                              |
 

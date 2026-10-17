@@ -61,6 +61,13 @@ export class BroadcastCore extends EventTarget {
   // so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
 
+  /**
+   * Whether `[wcs/command-not-ready]` was said for this element: a `post()` refused because the
+   * element is not ready loses what it carried, and `error` alone told only a page that binds it.
+   * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+   */
+  private _toldNotReady = false;
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
@@ -207,6 +214,7 @@ export class BroadcastCore extends EventTarget {
         name: "InvalidStateError",
         message: "Channel is not open. Call open(name) before post().",
       });
+      this._warnNotReady();
       return;
     }
     try {
@@ -214,6 +222,16 @@ export class BroadcastCore extends EventTarget {
     } catch (err) {
       this._setError(this._normalizeError(err));
     }
+  }
+
+  private _warnNotReady(): void {
+    if (this._toldNotReady) return;
+    this._toldNotReady = true;
+    console.warn(
+      "[@wcstack/broadcast] [wcs/command-not-ready] post() was refused: no channel is open, so the message is lost. " +
+        "It goes to `error` too. Give the element a `name` (or call open(name)) first. (Said once per element.)",
+      this._target,
+    );
   }
 
   /** Leave the channel. Idempotent — a no-op when no channel is open. */

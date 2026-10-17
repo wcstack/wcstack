@@ -93,6 +93,27 @@ describe("WorkerCore - start / spawn", () => {
 });
 
 describe("WorkerCore - post", () => {
+  it("準備のできていない要素への post を、1 要素につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+      const target = new EventTarget();
+      const core = new WorkerCore(target);
+      core.post({ a: 1 });
+      core.post({ a: 1 });
+      expect(said()).toHaveLength(1);
+      expect(String(said()[0][0])).toContain("post() was refused: no worker is running, so the message is lost.");
+      expect(said()[0][1]).toBe(target);
+      // (error にも流れる — 従来どおり)
+      expect(core.error).not.toBeNull();
+      // 別の要素ではまた言う
+      const other = new WorkerCore();
+      other.post({ a: 1 });
+      expect(said()).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
   it("Worker 未起動で post すると InvalidStateError", () => {
     const core = new WorkerCore();
     core.post({ a: 1 });

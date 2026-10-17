@@ -176,6 +176,27 @@ describe("BroadcastCore", () => {
       expect(coreA.error).toBeNull();
     });
 
+    it("準備のできていない要素への post を、1 要素につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+        const target = new EventTarget();
+        const core = new BroadcastCore(target);
+        core.post("hello");
+        core.post("hello");
+        expect(said()).toHaveLength(1);
+        expect(String(said()[0][0])).toContain("post() was refused: no channel is open, so the message is lost.");
+        expect(said()[0][1]).toBe(target);
+        // (error にも流れる — 従来どおり)
+        expect(core.error).not.toBeNull();
+        // 別の要素ではまた言う
+        const other = new BroadcastCore();
+        other.post("hello");
+        expect(said()).toHaveLength(2);
+      } finally {
+        warn.mockRestore();
+      }
+    });
     it("チャンネル未 open で post すると InvalidStateError", () => {
       const core = new BroadcastCore();
       core.post("hello");

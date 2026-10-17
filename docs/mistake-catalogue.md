@@ -71,16 +71,15 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | What tells the author | Entries |
 |---|---|
 | The design (cannot be written, or harmless) | 2 |
-| The runtime | 45 |
+| The runtime | 46 |
 | The lint only — conditional silence | 22 |
-| The documents only — silence | 11 |
+| The documents only — silence | 10 |
 | Lint codes not counted | 18 |
 
 ### The documents only — silence
 
 | Mistake | What goes wrong | Harm | Disposition |
 |---|---|---|---|
-| Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, a recorder `start` with no stream. | The call goes to the node's `error` output only; with `error` unbound, the message is lost without a word. | data loss | runtime report — 4.x. The node can also log the refused call once in the console. |
 | Re-fetches a list without `$listKeys` while its rows hold unbound state: text being typed, focus, an open `<details>`. | Fresh objects never match by reference, so every row is rebuilt and that state is lost. | data loss | lint rule — 4.x; then design out — 5.0 agenda (breaking). 4.x: an info for a `for:` over fetched data whose rows hold inputs, with no `$listKeys`. 5.0: key rows by `id` when the objects carry one. |
 | Binds text a user controls to `href:`, `src:`, `attr.href:` or `attr.on*:`. | A `javascript:` URL or a handler string is written as it is: XSS, unless a CSP stops it. | security | lint rule — 4.x; then runtime report — 4.x. 4.x: the lint can report any `attr.on*:`, and the diagnostics add-on can warn on a `javascript:` URL. 4.0 chose not to refuse them in the core (2026-10-02); refusing would be breaking. |
 | Writes user content into the page's markup from a server template or page code, without `data-wcs-ignore` on the element that holds it. | The page scan binds what is in it — `{{ apiKey }}`, `data-wcs`, a comment binding: client-side template injection. | security | nothing can see it — the documents. Injected markup cannot be told from authored markup. 4.3 adds the defence the documents teach: `data-wcs-ignore` (R10) on the element, and the walk reads nothing in it. |
@@ -125,6 +124,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 |---|---|---|
 | Loads with one `<wcs-fetch>` by `url`, and posts with the same element by `method` + `body` + `trigger`. | Without the code: The method stays and a body is sent once, so every later url change sends a `POST` with no body. The element warns `[wcs/fetch-auto-unsafe]` when url observation sends a change with no body. | — |
 | Shares one `<wcs-fetch>` between requests that can overlap: two saves in a row, a save while a load runs. | Without the code: A new request aborts the one in flight and drops its result. When that was a change (not GET / HEAD / OPTIONS), the element warns `[wcs/fetch-request-superseded]`, naming its method and URL. | — |
+| Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, `post` on a `<wcs-broadcast>` with no channel or a `<wcs-worker>` with no worker, a recorder `start` with no stream. | Without the code: The call is refused and what it carried is lost. It goes to the node's `error` output, and the element warns `[wcs/command-not-ready]` once (an API the environment lacks is reported by `supported` instead). | — |
 | Puts `<wcs-guard-handler>` outside a `<wcs-route>`, or gives it a script without `type="module"`. | Without the code: The router reports it with `console.error` (`[wcs/guard-handler-ignored]`): the route is not guarded. One outside after a route at the same level keeps guarding that route, as it did before. No lint rule yet; the markup shows both cases. | — |
 | Misspells `<wcs-storage type>` (`type="sesion"`). | Without the code: Anything but exactly `session` becomes `local`, so data meant for the session is kept on disk; the element warns `[wcs/storage-type-invalid]` once per value. No lint rule yet; the value is in the markup. | — |
 | Loads the router on a page with no `<base href>` and no `basename`. | Same code: On a deep link or a reload at `/products/3`, the router takes `/products/3` as the basename, shows the root route and resolves links under it; it warns `[wcs/base-href-missing]` with the basename it derived. 5.0 agenda: derive no basename, which changes sub-folder apps that rely on the derivation. | `wcs/base-href-missing` (warning) |

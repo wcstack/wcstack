@@ -536,12 +536,15 @@
     },
     {
       "id": "io-command-before-ready",
-      "runtime": "silent", "harm": "data-loss",
-      "mistake": { "en": "Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, a recorder `start` with no stream.", "ja": "I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、ストリームの無い recorder の `start`。" },
-      "effect": { "en": "The call goes to the node's `error` output only; with `error` unbound, the message is lost without a word.", "ja": "呼び出しはノードの `error` の出力にだけ流れる。`error` を束ねていなければ、メッセージは黙って失われる。" },
-      "evidence": [{ "file": "packages/websocket/src/core/WebSocketCore.ts", "text": "WebSocket is not connected." }],
-      "disposition": "runtime-report",
-      "note": { "en": "The node can also log the refused call once in the console.", "ja": "ノードが、拒んだ呼び出しをコンソールにも 1 回記録できる。" }
+      "runtime": "loud", "harm": "data-loss",
+      "mistake": { "en": "Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, `post` on a `<wcs-broadcast>` with no channel or a `<wcs-worker>` with no worker, a recorder `start` with no stream.", "ja": "I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、チャンネルの無い `<wcs-broadcast>` や worker の無い `<wcs-worker>` の `post`、ストリームの無い recorder の `start`。" },
+      "effect": { "en": "The call is refused and what it carried is lost. It goes to the node's `error` output, and the element warns `[wcs/command-not-ready]` once (an API the environment lacks is reported by `supported` instead).", "ja": "呼び出しは拒まれ、運んでいたものは失われる。ノードの `error` の出力に流れ、要素が `[wcs/command-not-ready]` で 1 回警告する（環境に無い API は `supported` が知らせる）。" },
+      "evidence": [
+        { "file": "packages/websocket/src/core/WebSocketCore.ts", "text": "[wcs/command-not-ready] send() was refused" },
+        { "file": "packages/broadcast/src/core/BroadcastCore.ts", "text": "[wcs/command-not-ready] post() was refused" },
+        { "file": "packages/worker/src/core/WorkerCore.ts", "text": "[wcs/command-not-ready] post() was refused" },
+        { "file": "packages/camera/src/core/RecorderCore.ts", "text": "[wcs/command-not-ready] start() was refused" }
+      ]
     },
     {
       "id": "list-refetch-without-keys",

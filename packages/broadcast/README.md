@@ -134,7 +134,7 @@ You do not need the event-token to *read* the latest message — bind `message` 
 | Property  | Event                    | Description                                                                          |
 | --------- | ------------------------ | ------------------------------------------------------------------------------------ |
 | `message` | `wcs-broadcast:message`  | The last value received from another context on the channel (structured-clone copy). Never set by this context's own posts. |
-| `error`   | `wcs-broadcast:error`    | Normalized `{ name, message }` — `DataCloneError` (non-cloneable post), `DataError` (a peer's message could not be deserialized), `InvalidStateError` (post with no open channel), or `NotSupportedError` (BroadcastChannel unavailable). |
+| `error`   | `wcs-broadcast:error`    | Normalized `{ name, message }` — `DataCloneError` (non-cloneable post), `DataError` (a peer's message could not be deserialized), `InvalidStateError` (post with no open channel — the message is lost, and the element warns `[wcs/command-not-ready]`, once per element), or `NotSupportedError` (BroadcastChannel unavailable). |
 | `errorInfo` | `wcs-broadcast:error-info-changed` | Serializable failure taxonomy `WcsIoErrorInfo \| null` (stable `code` / `phase` / `recoverable`), derived from the same failure as `error`. Additive — the `error` shape is unchanged. |
 
 ## Commands
