@@ -263,13 +263,13 @@ const html = await renderToString(`
   <template data-wcs="for: items">
     <div data-wcs="textContent: items.*.name"></div>
   </template>
-`);
+`, { url: "http://localhost:3000/" }); // リクエストの URL: 相対の fetch() はその origin で解決される
 ```
 
 - **ドロップインSSR** — `<wcs-state>` に `enable-ssr` を追加して `renderToString()` を呼ぶだけ
 - **自動ハイドレーション** — クライアントがサーバーの続きをシームレスに引き継ぎ、フリッカーなし
-- **相対URL自動解決** — `baseUrl` オプションで `fetch("/api/...")` がサーバー上でも動作
-- **バージョン安全フォールバック** — バージョン不一致時はDOMをクリーンアップしてCSRにフォールバック
+- **相対URL自動解決** — リクエストの `url`（か `baseUrl`）を渡すと `fetch("/api/...")` がサーバー上でも動作。どちらも無いと `Failed to parse URL` で失敗する
+- **バージョン安全フォールバック** — 別の minor のクライアントはスナップショットを捨て、ページを自分で描く。クライアントには `<wcs-ssr version>` の版を配ること（古いクライアントは新しい版向けのマークアップで失敗し得る）
 - **`<wcs-ssr>` ハイドレーションデータ** — 状態スナップショット、テンプレート、プロパティを1要素に集約
 
 [詳細ドキュメント &rarr;](packages/server/README.ja.md)

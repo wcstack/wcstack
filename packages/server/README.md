@@ -13,7 +13,7 @@ That's what `@wcstack/server` explores. It runs your existing `@wcstack/state` t
 ### Basic Features
 - **Full Template Rendering**: Runs `@wcstack/state` bindings server-side — text, attributes, `for` loops, `if`/`elseif`/`else` conditionals, filters, and mustache `{{ }}` syntax.
 - **Automatic Hydration Data**: Generates `<wcs-ssr>` elements containing the state's data and the page-level templates, and marks rows, branches and text bindings with comments, for seamless client-side hydration.
-- **Async Data Fetching**: Supports `$connectedCallback` with `fetch()` — server waits for all async operations before rendering.
+- **Async Data Fetching**: Supports `$connectedCallback` with `fetch()` — the server waits for `$connectedCallback` and the elements that report readiness before it serializes (a request a binding starts later is not waited for: see [Server Communication with wcs-fetch](#server-communication-with-wcs-fetch)).
 - **RenderCore**: A headless, event-driven rendering class that follows the `wc-bindable` protocol for observable `html` / `loading` / `error` state.
 - **Zero Browser Dependencies**: Runs in Node.js with happy-dom as the only runtime dependency.
 
@@ -204,6 +204,8 @@ The client-side `@wcstack/state` reads the `<wcs-ssr>` element during hydration,
 
 `<wcs-ssr version>` is the version of `@wcstack/state` that rendered the page, and the client hydrates only a snapshot of its own major.minor. **Deploy `@wcstack/server` and the client together**, of the same major.minor.
 
+- **Pin `@wcstack/state` next to the server.** The engine that renders the page — the version `<wcs-ssr version>` names — is the `@wcstack/state` npm installs, and `@wcstack/server` depends on it with a caret (`^4.2.0`): pinning the server alone does not pin it, and a fresh install after a release renders with the new minor. Pin both in `package.json`, and take the client's version from `<wcs-ssr version>` in the output (as [`examples/ssr`](../../examples/ssr/) does), so the client cannot drift from the engine.
+- **Never serve a client older than the server's minor.** It discards the snapshot, and a binding written for the newer minor (a filter argument it does not know, for example) fails its initialization after the server's rows and branches were taken away: the page is left without them. A client of a newer minor discards the snapshot too and renders the page again, so everything `$connectedCallback` loads is fetched again in the browser.
 - A 4.0 client discards the output of a 3.x server. It warns `<wcs-ssr version="3.5.0"> does not match 4.0.0: its snapshot is discarded, and the page renders on the client from its own state.` and renders the page on the client as if there were no server: the state loads from its own source, `$connectedCallback` runs on the client, and the server's rows, branches and markers give way to the templates they were rendered from. With the output of a 3.x server up to 3.5.2, a text binding outside templates also loses its filters (the warning says so). Purge HTML cached from a 3.x server when you switch.
 - A 4.0 server with a 3.x client is not supported: the 3.x client does not read the 4.0 markers.
 
@@ -255,7 +257,7 @@ createServer(async (req, res) => {
 
 ### State Initialization & Data Fetching
 
-- Load `<wcs-state>` from `json` attribute, `src` attribute, or inline `<script type="module">`
+- Load `<wcs-state>` from a `json` attribute or an inline `<script type="module">`. A `src` attribute is not server-rendered: Node's module loader reads only `file:` and `data:` URLs, so the render fails with `ERR_UNSUPPORTED_ESM_URL_SCHEME`. On a server-rendered page, write the state inline (with the response's CSP nonce on the `<script>`)
 - Execute `$connectedCallback` for server-side fetch (API calls, etc.)
 
 ```html
@@ -280,6 +282,7 @@ createServer(async (req, res) => {
 
 - `<wcs-fetch>` auto-fetch (without `manual`) also executes on the server. A `url` written in the markup is waited for; a `url` that a binding sets from state (`data-wcs="url: articleUrl"`) starts its request during the render, but **the render does not wait for it**: the page is rendered without its value, which loads on the client. Load what the first render needs in `$connectedCallback`.
 - When the render is done, the server takes the page's elements out of the document before it puts the globals back, so that each element's own cleanup (a `<wcs-fetch>` aborting its request, a `<wcs-timer>` stopping) runs inside the render. A request or a timer that outlived the render used to throw into the process (since 4.3).
+- On the client, a `<wcs-fetch>` sends its request when it connects or when hydration writes its `url`: it does not know what the snapshot holds, so data the server loaded is fetched again. To load it once, give the element `manual` and send it with `trigger` when the page needs it, or return `null` from its `url` getter while the state already holds the data for that url (keep the id the data belongs to).
 - Use `manual` + `$connectedCallback` for explicit control:
 
 ```html
@@ -319,6 +322,8 @@ createServer(async (req, res) => {
 - Automatic `<wcs-ssr>` metadata generation for `<wcs-state enable-ssr>`
 - Client-side hydration restores bindings without re-rendering: the server's rows and branches, nested ones included, are adopted where they are
 - A `<wcs-state>` without `enable-ssr` is still rendered on the server, but it gets no `<wcs-ssr>` and is not hydrated: on the client only its `data-wcs` attribute bindings outside templates follow the state, while its `{{ }}` text, rows and branches stay as the server rendered them
+- The client of a hydrated page does not run `$connectedCallback` (the server did). What only the browser can read — `localStorage`, the viewport, a media query — is not read there on the client, and a guarded read in it on the server finds nothing: read it through an element (`<wcs-storage>`, `<wcs-media-query>`), whose value reaches the state on the client, or in a `$watch` handler, which runs on the client only.
+- `date`, `time` and `datetime` format in the time zone of the runtime: the server's on the server and the reader's on the client, so the text can change at hydration. For one text, format in a getter with an explicit `timeZone` (`new Intl.DateTimeFormat(locale, { timeZone })`).
 
 ### Custom Element Waiting
 
