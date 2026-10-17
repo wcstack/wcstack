@@ -450,6 +450,8 @@ const FETCH_CAPABILITIES = new Map([
     ["web.abort-controller", { probe: () => typeof globalThis.AbortController === "function", compatKey: "api.AbortController" }],
 ]);
 
+/** Methods that read only: superseding one loses nothing (RFC 9110 §9.2.1). */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 class FetchCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
@@ -494,6 +496,8 @@ class FetchCore extends EventTarget {
     // relying on a coarse generation recheck, closing the "completion racing an
     // abort commits stale state" gap during body reads.
     _lane = new OperationLane("fetch", "latest", { withSignal: true });
+    // The request in flight (method and url), to name a change a new request supersedes.
+    _inFlight = null;
     // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
     _ready = Promise.resolve();
     // Phase 6 (§7.2): error taxonomy. The existing `error` property/event shape is
@@ -694,10 +698,24 @@ class FetchCore extends EventTarget {
         // attempt whose `signal` is the lane-owned AbortController for this operation.
         // `attempt.signal` is undefined when `web.abort-controller` is missing
         // (degraded): the request runs without a native abort signal.
+        //
+        // Superseding is by design, and a superseded read loses nothing. A superseded
+        // change does: it is aborted on the client (the server may or may not have
+        // applied it) and its response is dropped, without a word. Say so, naming it
+        // (docs/mistake-catalogue.md, "fetch-superseded-mutation").
+        const previous = this._inFlight;
+        if (previous !== null && !SAFE_METHODS.has(previous.method)) {
+            console.warn(`[@wcstack/fetch] [wcs/fetch-request-superseded] A ${previous.method} request to "${previous.url}" ` +
+                `was still in flight when another request started on the same element: it was aborted and its ` +
+                `response dropped (the server may have applied it). Give each change its own <wcs-fetch>, or wait ` +
+                `for loading to end before starting the next request.`);
+        }
         const started = this._lane.begin();
         // `latest` begin never returns null (exhaust is the only rejecting policy).
         const { ticket, attempt } = started;
         const signal = attempt.signal;
+        const current = { method: String(options.method ?? "GET").toUpperCase(), url };
+        this._inFlight = current;
         this._commitStep(ticket, () => this._setLoading(true));
         this._commitStep(ticket, () => { this._commitErrorInfo(null); this._setError(null); });
         const { method = "GET", body = null, contentType = null, forceText = false, responseType = "auto", timeout = 0, } = options;
@@ -846,6 +864,8 @@ class FetchCore extends EventTarget {
             return null;
         }
         finally {
+            if (this._inFlight === current)
+                this._inFlight = null;
             if (timeoutTimer !== null) {
                 clearTimeout(timeoutTimer);
             }
@@ -1106,6 +1126,8 @@ function writeTargetHTML(element, html) {
 
 class Fetch extends HTMLElement {
     static hasConnectedCallbackPromise = true;
+    /** It reports the request it has in flight (pendingPromise): a server render waits for it. */
+    static hasPendingPromise = true;
     static wcBindable = {
         ...FetchCore.wcBindable,
         properties: [
@@ -1255,6 +1277,19 @@ class Fetch extends HTMLElement {
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
+    /**
+     * The readiness protocol's pending work (`static hasPendingPromise`): the request this element
+     * has in flight, or is about to start (an auto-fetch waits a microtask), settled either way; null
+     * when there is none. A server render waits for it, so a request a binding started — a `url`
+     * written from state after the element connected — is in the page it serializes
+     * (@wcstack/server; docs/v4-direction-2026-10.md §5.1).
+     */
+    get pendingPromise() {
+        if (this._autoPending && !this.manual && this.url)
+            return Promise.resolve().then(() => this.pendingPromise ?? undefined);
+        // (FetchCore settles a failed request too: it rejects only on an empty url)
+        return this.loading ? this._core.promise.then(() => undefined) : null;
+    }
     get manual() {
         return this.hasAttribute("manual");
     }
@@ -1383,7 +1418,17 @@ class Fetch extends HTMLElement {
             // change would refetch. Auto-path only — explicit fetch()/trigger/command
             // stay unconditional (a manual refresh of the same url must work), and
             // `_lastFetchedUrl` is reset on disconnect so a remount refetches.
+            if (!url) {
+                // The url went empty (a route left, a getter returning null): the next url
+                // is a change, even back to the one fetched last. Without this, A → null → A
+                // sent nothing the second time — after a failed request too, so a page
+                // left and opened again never retried (docs/seam-apps.md, ssr-news).
+                this._lastFetchedUrl = null;
+            }
             if (this.isConnected && !this.manual && url && url !== this._lastFetchedUrl) {
+                // (not the request the element starts as it connects with a url: a POST that is meant)
+                if (resolveConnect === null)
+                    this._warnUnsafeAutoFetch();
                 // fetch() cannot reject here: FetchCore swallows network/HTTP errors and
                 // only rejects on an empty url, which the `url` guard above rules out.
                 this.fetch().finally(() => resolveConnect?.());
@@ -1392,6 +1437,23 @@ class Fetch extends HTMLElement {
                 resolveConnect?.();
             }
         });
+    }
+    /**
+     * The url changed and the request it starts is a change (POST, PUT, …) with no
+     * body: the method stays, and the body was sent once with the previous request.
+     * One element that both loads (by url) and posts (by method + body + trigger)
+     * sent an empty POST on every navigation after the first post, without a word
+     * (docs/seam-apps.md, ssr-news; docs/mistake-catalogue.md).
+     */
+    _warnUnsafeAutoFetch() {
+        const method = this.method;
+        if (method === "GET" || method === "HEAD" || method === "OPTIONS")
+            return;
+        if (this._body !== null || this.querySelector(config.tagNames.fetchBody) !== null)
+            return;
+        console.warn(`[@wcstack/fetch] [wcs/fetch-auto-unsafe] The url changed to "${this.url}", so this <wcs-fetch> sent a ` +
+            `${method} with no body (its method stays ${method}; a body is sent once). Give loading and each change ` +
+            `its own <wcs-fetch>, or set \`manual\` on the one that changes data.`);
     }
     async fetch() {
         // Record the url for the auto-fetch same-value guard. Every fetch (explicit
@@ -1556,6 +1618,8 @@ class InfiniteScroll extends HTMLElement {
     }
     _observer = null;
     _done = false;
+    // the target last warned about (once per value)
+    _warnedTarget = null;
     get target() {
         return this.getAttribute("target") || "";
     }
@@ -1649,6 +1713,13 @@ class InfiniteScroll extends HTMLElement {
     _triggerFetch() {
         const target = document.getElementById(this.target);
         if (!(target instanceof Fetch)) {
+            // Nothing to load from: say so once per target, instead of loading no more pages without a word
+            // (docs/mistake-catalogue.md, "infinite-scroll-target").
+            if (this._warnedTarget !== this.target) {
+                this._warnedTarget = this.target;
+                console.warn(`[@wcstack/fetch] [wcs/infinite-scroll-target] <${config.tagNames.infiniteScroll} target="${this.target}"> ` +
+                    `came into view, but no <${config.tagNames.fetch}> has that id, so no page was loaded.`);
+            }
             return;
         }
         if (target.loading) {

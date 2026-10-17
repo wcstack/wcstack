@@ -51,6 +51,16 @@ interface RenderOptions {
      * 「上限なし」と同義になり mutex が漏れるため）。`0`（無制限）では後始末も無制限。
      */
     timeoutMs?: number;
+    /**
+     * `<wcs-state src>` のモジュールを読むローカルのファイル。ページが名指す URL（`baseUrl` / `url` で解決した
+     * 絶対 URL）を受け取り、ファイルのパスか `file:` URL を返す（例: `(url) => join(publicDir, url.pathname)`）。
+     * Node のモジュールローダは `file:` と `data:` しか読まないので、これが無いと `src` の状態は
+     * サーバーで描けない — 厳しい CSP の下で文書が勧める形なのに（docs/seam-apps.md、ssr-news。著者の決定は
+     * docs/v4-direction-2026-10.md §5.1）。`null` / `undefined` を返した URL と、この選択肢の無い描画は、
+     * 理由を言う例外で状態の初期化を失敗させる。モジュールは描画ごとに読み直す（inline の状態と同じく、状態の
+     * オブジェクトをリクエストの間で共有しない）。`.json` の `src` は従来どおり fetch で読む。
+     */
+    resolveModule?: (url: URL) => string | URL | null | undefined;
 }
 interface WaitForReadyOptions {
     /**
@@ -86,7 +96,7 @@ declare function waitForReady(root: ParentNode & Node, options?: WaitForReadyOpt
  * ## SSR でできること
  *
  * ### 状態の初期化とデータ取得
- * - `<wcs-state>` の状態ロード（json 属性, src 属性, inline `<script type="module">`）
+ * - `<wcs-state>` の状態ロード（json 属性, src 属性 — `resolveModule` でローカルのファイルへ写す —, inline `<script type="module">`）
  * - `$connectedCallback` でのサーバーサイド fetch（API 呼び出し、DB 問い合わせ等）
  *
  * ```html

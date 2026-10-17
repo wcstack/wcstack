@@ -435,6 +435,12 @@ declare class RecorderCore extends EventTarget {
     private _startTime;
     private _gen;
     private _ready;
+    /**
+     * Whether `[wcs/command-not-ready]` was said for this element: a `start()` refused because the
+     * element is not ready loses what it carried, and `error` alone told only a page that binds it.
+     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     */
+    private _toldNotReady;
     constructor(target?: EventTarget);
     get recording(): boolean;
     get paused(): boolean;
@@ -471,6 +477,7 @@ declare class RecorderCore extends EventTarget {
     attachStream(stream: MediaStream): void;
     /** Start recording the borrowed stream. Never throws — surfaces `error`. */
     start(options?: RecorderOptions): void;
+    private _warnNotReady;
     /** Stop recording; the assembled Blob is published from the recorder's onstop. */
     stop(): void;
     pause(): void;

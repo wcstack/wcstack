@@ -214,6 +214,7 @@ declare class FetchCore extends EventTarget {
     private _objectURL;
     private _promise;
     private _lane;
+    private _inFlight;
     private _ready;
     private _errorInfo;
     private static readonly REQUIRED_CAPABILITIES;
@@ -262,6 +263,8 @@ declare class FetchCore extends EventTarget {
 
 declare class Fetch extends HTMLElement {
     static hasConnectedCallbackPromise: boolean;
+    /** It reports the request it has in flight (pendingPromise): a server render waits for it. */
+    static hasPendingPromise: boolean;
     static wcBindable: IWcBindable;
     static get observedAttributes(): string[];
     private _core;
@@ -292,6 +295,14 @@ declare class Fetch extends HTMLElement {
     get errorInfo(): WcsIoErrorInfo | null;
     get promise(): Promise<any>;
     get connectedCallbackPromise(): Promise<void>;
+    /**
+     * The readiness protocol's pending work (`static hasPendingPromise`): the request this element
+     * has in flight, or is about to start (an auto-fetch waits a microtask), settled either way; null
+     * when there is none. A server render waits for it, so a request a binding started — a `url`
+     * written from state after the element connected — is in the page it serializes
+     * (@wcstack/server; docs/v4-direction-2026-10.md §5.1).
+     */
+    get pendingPromise(): Promise<void> | null;
     get manual(): boolean;
     set manual(value: boolean | null | undefined);
     get body(): any;
@@ -321,6 +332,14 @@ declare class Fetch extends HTMLElement {
      * when the final state turns out to be manual / url-less / disconnected.
      */
     private _scheduleAutoFetch;
+    /**
+     * The url changed and the request it starts is a change (POST, PUT, …) with no
+     * body: the method stays, and the body was sent once with the previous request.
+     * One element that both loads (by url) and posts (by method + body + trigger)
+     * sent an empty POST on every navigation after the first post, without a word
+     * (docs/seam-apps.md, ssr-news; docs/mistake-catalogue.md).
+     */
+    private _warnUnsafeAutoFetch;
     fetch(): Promise<any>;
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     connectedCallback(): void;
@@ -331,6 +350,7 @@ declare class InfiniteScroll extends HTMLElement {
     static get observedAttributes(): string[];
     private _observer;
     private _done;
+    private _warnedTarget;
     get target(): string;
     set target(value: string);
     get root(): string | null;

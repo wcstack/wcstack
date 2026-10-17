@@ -160,6 +160,8 @@ declare class Storage extends HTMLElement {
     set key(value: string | null | undefined);
     get type(): StorageType;
     set type(value: StorageType | null | undefined);
+    private _warnedType;
+    private _checkType;
     get value(): any;
     set value(v: any);
     get loading(): boolean;

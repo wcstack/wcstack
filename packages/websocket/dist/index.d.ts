@@ -153,6 +153,12 @@ declare class WebSocketCore extends EventTarget {
     private _gen;
     private _socketGen;
     private _ready;
+    /**
+     * Whether `[wcs/command-not-ready]` was said for this element: a `send()` refused because the
+     * element is not ready loses what it carried, and `error` alone told only a page that binds it.
+     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     */
+    private _toldNotReady;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     observe(): Promise<void>;
@@ -177,6 +183,7 @@ declare class WebSocketCore extends EventTarget {
     private _setReadyState;
     connect(url: string, options?: WebSocketConnectOptions): void;
     send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
+    private _warnNotReady;
     close(code?: number, reason?: string): void;
     private _doConnect;
     private _onOpen;

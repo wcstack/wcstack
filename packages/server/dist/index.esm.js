@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 import { Window } from 'happy-dom';
 
 // ===========================================================================
@@ -45,6 +46,16 @@ const SSR_SNAPSHOT_BUILDER_KEY = Symbol.for("wcstack.ssr.snapshotBuilder");
  * when they see this value, and keep it for any other value (including "").
  */
 const SSR_ORCHESTRATED_VALUE = "orchestrated";
+/**
+ * Global key the renderer installs a module resolver under, for the length of one render:
+ * `(url: string) => string | null`, the specifier to import instead of `url` for a
+ * `<wcs-state src>` module (Node's loader reads `file:` and `data:` URLs, not the `http:` URL a
+ * page names), or null to import `url` as it is. It may throw to say why the URL cannot be
+ * rendered. The renderer maps the URL to a local file and makes each render's module its own, so
+ * a state object is not shared between requests. A provider reads it where it imports a `src`
+ * module; with no resolver installed (the browser), it imports `url`.
+ */
+const SSR_MODULE_RESOLVER_KEY = Symbol.for("wcstack.ssr.resolveModule");
 /**
  * The installed builder, or null when there is none or it speaks a shape this
  * reader does not.
@@ -219,6 +230,30 @@ async function waitForReady(root, options) {
     await Promise.all(Array.from(readyCtors, (ctor) => ctor.getBindingsReady(root)));
 }
 /**
+ * 要素が接続の後に始めた仕事を待つ（readiness プロトコルの任意の段）。`static hasPendingPromise = true`
+ * を持つ要素の `pendingPromise`（実行中の仕事。無ければ null）— state が束縛で `url` を書いた
+ * `<wcs-fetch>` の要求など。その結果は状態へ届き、それが描いたもの（行と、その中の要素）も続けて待つ
+ * （waitForReady をもう一度）。以前は待たず、ページは値の無いまま（「Loading…」で）直列化された
+ * （docs/seam-apps.md、ssr-news。著者の決定は docs/v4-direction-2026-10.md §5.1）。仕事の失敗は待ち終わりと
+ * して扱う（要素が自分の error に出す）。
+ */
+async function settlePendingWork(root, maxIterations = 10) {
+    for (let i = 0; i < maxIterations; i++) {
+        const pending = [];
+        for (const el of root.querySelectorAll('*-*')) {
+            if (!el.constructor.hasPendingPromise)
+                continue;
+            const p = el.pendingPromise;
+            if (p)
+                pending.push(Promise.resolve(p).catch(() => undefined));
+        }
+        if (pending.length === 0)
+            return;
+        await Promise.all(pending);
+        await waitForReady(root, { maxIterations });
+    }
+}
+/**
  * HTML 文字列を SSR レンダリングして返す。
  *
  * ## 入力 HTML のルール
@@ -229,7 +264,7 @@ async function waitForReady(root, options) {
  * ## SSR でできること
  *
  * ### 状態の初期化とデータ取得
- * - `<wcs-state>` の状態ロード（json 属性, src 属性, inline `<script type="module">`）
+ * - `<wcs-state>` の状態ロード（json 属性, src 属性 — `resolveModule` でローカルのファイルへ写す —, inline `<script type="module">`）
  * - `$connectedCallback` でのサーバーサイド fetch（API 呼び出し、DB 問い合わせ等）
  *
  * ```html
@@ -350,10 +385,12 @@ async function renderInWindow(html, options, timeoutMs) {
     let window = null;
     let restoreGlobals = null;
     let restoreBaseUrl = null;
+    let restoreResolver = null;
     let documentOrNull = null;
     try {
         window = options?.url ? new Window({ url: options.url }) : new Window();
         restoreGlobals = installGlobals(window);
+        restoreResolver = installModuleResolver(options?.resolveModule);
         const document = window.document;
         documentOrNull = document;
         // url 指定時は <base href> を注入する（既定 "/"）。ブラウザで <base> を置く
@@ -393,6 +430,16 @@ async function renderInWindow(html, options, timeoutMs) {
                 `A custom element's connectedCallbackPromise or getBindingsReady never settled. ` +
                 `Raise or disable the limit with the "timeoutMs" option.`);
         });
+        // 接続の後に要素が始めた仕事（束縛が url を書いた <wcs-fetch> の要求）も、残りの時間の範囲で待つ。
+        // 使い切ったら、それ抜きで描く（初期化と違って、ページはそれが無くても成り立つ）— 黙らずに言う
+        await withDeadline(settlePendingWork(document).then(() => true), 
+        // （0 は無制限なので、使い切った予算は 0 ではなく 1 ms）
+        timeoutMs <= 0 ? 0 : Math.max(1, timeoutMs - (Date.now() - startedAt)), () => {
+            console.warn(`[@wcstack/server] [wcs/ssr-pending-timeout] A request an element started during the render (a <wcs-fetch> whose url a binding set) ` +
+                `did not finish within ${timeoutMs} ms: the page is rendered without its result, which loads on the client. ` +
+                `Raise or disable the limit with the "timeoutMs" option.`);
+            return false;
+        });
         // スナップショット最終パス（orchestrated）: 全要素の完了とバインディング構築の
         // 後に <wcs-ssr> を生成する。inline 生成（connectedCallback 内）が取り逃がす
         // 「後から挿入されたルート内容の構造テンプレート」も、この時点なら確定している
@@ -428,12 +475,27 @@ async function renderInWindow(html, options, timeoutMs) {
         if (Array.isArray(pendingBinds)) {
             pendingBinds.length = 0;
         }
-        // 後始末の 3 本は**それぞれ独立に**守る。1 本が投げても残りを飛ばさない
+        // 後始末の各段は**それぞれ独立に**守る。1 本が投げても残りを飛ばさない
         // （飛ばすとグローバルが差し替わったまま残り、次のレンダリングが別 realm の
         // document を掴む）。呼び出し元の releaseMutex はこの finally の外なので、
         // ここから投げても mutex は必ず解放される
         for (const step of [
+            // 描画の中で始まった非同期の仕事を、グローバルを戻す**前に**止める。要素が呼ぶ fetch とタイマーは
+            // Node のもの（happy-dom のものに差し替えていない）なので、描画の後も生き続け、その続きが Node の
+            // グローバルの CustomEvent を happy-dom の要素に dispatch して投げた — state から url を束ねた
+            // <wcs-fetch> の要求が描画の後に失敗したとき、描画の中で始まった <wcs-timer> の刻みごとに、捕まらない
+            // 例外でプロセスを落とした（seam app ssr-news）。グローバルを差し替えて追跡するのではなく（描画の間も
+            // 同じプロセスのほかの処理が走る）、文書の中身を外して各要素に自分の後始末（disconnectedCallback:
+            // 要求の中断・タイマーの停止）をさせ、その続きが happy-dom のグローバルのまま走り終えるよう、Node の
+            // マクロタスクを 1 つ譲ってから戻す。happy-dom 自身の非同期の仕事は abort() で止める
+            () => {
+                emptyOut(documentOrNull?.body);
+                emptyOut(documentOrNull?.head);
+            },
+            () => new Promise((resolve) => setImmediate(resolve)),
+            () => window?.happyDOM.abort(),
             () => restoreBaseUrl?.(),
+            () => restoreResolver?.(),
             () => restoreGlobals?.(),
             () => window?.close(),
             // スナップショット提供側（state）がこのレンダリングのために貯めたモジュール大域を
@@ -454,6 +516,58 @@ async function renderInWindow(html, options, timeoutMs) {
         }
     }
 }
+/** 描画の番号（`resolveModule` のモジュールを描画ごとに分ける） */
+let renders = 0;
+/**
+ * `<wcs-state src>` のモジュールの読み先（ssr-snapshot プロトコルの SSR_MODULE_RESOLVER_KEY）を、この描画の
+ * 間だけ置く。`file:` / `data:` はそのまま読ませる。ほかの URL は `resolve` が返すファイルへ — Node は
+ * モジュールを URL ごとに持ち続けるので、描画の番号を問い合わせに付けて、その描画だけのモジュールにする
+ * （付けないと、状態のオブジェクトがリクエストの間で共有される）。`resolve` が無いか何も返さなければ、
+ * 何をすればよいかを言って投げる（以前は Node の ERR_UNSUPPORTED_ESM_URL_SCHEME だけだった）。
+ */
+function installModuleResolver(resolve) {
+    const g = globalThis;
+    const had = Object.prototype.hasOwnProperty.call(g, SSR_MODULE_RESOLVER_KEY);
+    const previous = g[SSR_MODULE_RESOLVER_KEY];
+    const render = ++renders;
+    g[SSR_MODULE_RESOLVER_KEY] = (url) => {
+        const u = new URL(url);
+        if (u.protocol === 'file:' || u.protocol === 'data:')
+            return null;
+        const local = resolve?.(u);
+        if (local === null || local === undefined) {
+            throw new Error(`[@wcstack/server] <wcs-state src> names ${url}, which Node cannot import (its loader reads file: and data: URLs). ` +
+                (resolve === undefined
+                    ? 'Pass renderToString({ resolveModule }) to map it to a local file, or write the state inline.'
+                    : 'resolveModule returned no file for it.'));
+        }
+        const file = local instanceof URL ? new URL(local.href) : /^file:/i.test(local) ? new URL(local) : pathToFileURL(local);
+        file.searchParams.set('wcs-render', String(render));
+        return file.href;
+    };
+    return () => {
+        if (had)
+            g[SSR_MODULE_RESOLVER_KEY] = previous;
+        else
+            delete g[SSR_MODULE_RESOLVER_KEY];
+    };
+}
+/**
+ * 要素を文書順の後ろから 1 つずつ外す（子は親より先、後の兄弟は前の兄弟より先）。各要素の
+ * disconnectedCallback が走る。replaceChildren() でまとめて外さないのは、happy-dom が外した部分木を
+ * 子の写しで辿る途中で callback を呼ぶため: 切断で兄弟を外す要素（`<wcs-link>` は自分の `<a>` を外す）が
+ * あると、外された兄弟を辿って TypeError で止まり、その先の要素は切断されず後始末もされなかった
+ * （段落の中のリンク — ナビゲーションの典型の形）。1 つずつなら、外す要素の下には子が無い。
+ */
+function emptyOut(parent) {
+    if (!parent) {
+        return;
+    }
+    for (const el of Array.from(parent.querySelectorAll('*')).reverse()) {
+        el.remove();
+    }
+    parent.replaceChildren();
+}
 /**
  * `finally` の後始末に与える上限。ready 待ちと予算を共有し（残り時間）、
  * 使い切っていても {@link CLEANUP_MIN_TIMEOUT_MS} は確保する。無制限（`0`）は無制限のまま。
@@ -465,7 +579,7 @@ function cleanupTimeout(timeoutMs, startedAt) {
     return Math.max(CLEANUP_MIN_TIMEOUT_MS, timeoutMs - (Date.now() - startedAt));
 }
 
-var version = "4.2.0";
+var version = "4.3.0";
 var pkg = {
 	version: version};
 

@@ -162,6 +162,12 @@ declare class BroadcastCore extends EventTarget {
     private _errorInfo;
     private _gen;
     private _ready;
+    /**
+     * Whether `[wcs/command-not-ready]` was said for this element: a `post()` refused because the
+     * element is not ready loses what it carried, and `error` alone told only a page that binds it.
+     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     */
+    private _toldNotReady;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     get message(): any;
@@ -192,6 +198,7 @@ declare class BroadcastCore extends EventTarget {
      * posting with no open channel surfaces an `InvalidStateError`.
      */
     post(data: any): void;
+    private _warnNotReady;
     /** Leave the channel. Idempotent — a no-op when no channel is open. */
     close(): void;
     /**

@@ -222,6 +222,12 @@ declare class WorkerCore extends EventTarget {
     private _restartTimer;
     private _gen;
     private _ready;
+    /**
+     * Whether `[wcs/command-not-ready]` was said for this element: a `post()` refused because the
+     * element is not ready loses what it carried, and `error` alone told only a page that binds it.
+     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     */
+    private _toldNotReady;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     observe(): Promise<void>;
@@ -260,6 +266,7 @@ declare class WorkerCore extends EventTarget {
      * worker surfaces an `InvalidStateError`, both through `error`.
      */
     post(data: any, transfer?: Transferable[]): void;
+    private _warnNotReady;
     /** Terminate the worker. Idempotent — a no-op when none is running. */
     terminate(): void;
     /**

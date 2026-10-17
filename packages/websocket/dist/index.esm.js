@@ -184,6 +184,12 @@ class WebSocketCore extends EventTarget {
     // SSR (§3.8): WebSocket is command-driven with no asynchronous probe to await,
     // so readiness is immediate.
     _ready = Promise.resolve();
+    /**
+     * Whether `[wcs/command-not-ready]` was said for this element: a `send()` refused because the
+     * element is not ready loses what it carried, and `error` alone told only a page that binds it.
+     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     */
+    _toldNotReady = false;
     constructor(target) {
         super();
         this._target = target ?? this;
@@ -320,9 +326,17 @@ class WebSocketCore extends EventTarget {
         // fire-and-forget 経路で例外が伝播するのを防ぐ。
         if (!this._ws || this._ws.readyState !== WS_OPEN) {
             this._setError({ message: "WebSocket is not connected." }, WCS_WEBSOCKET_ERROR_CODE.InvalidState);
+            this._warnNotReady();
             return;
         }
         this._ws.send(data);
+    }
+    _warnNotReady() {
+        if (this._toldNotReady)
+            return;
+        this._toldNotReady = true;
+        console.warn("[@wcstack/websocket] [wcs/command-not-ready] send() was refused: the WebSocket is not connected, so the message is lost. " +
+            "It goes to `error` too. Send once `connected` is true. (Said once per element.)", this._target);
     }
     close(code, reason) {
         this._intentionalClose = true;

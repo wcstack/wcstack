@@ -68,12 +68,15 @@ var WcsDiagnosticCode = {
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
   // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
-  // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
+  // ランタイムは #901 / #902 で throw する（diagnostics の後付けがあれば同じ code の文面。超過は 3.x では
+  // 黙って無視されていた）。error。
   IndexArity: "wcs/index-arity",
   // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
   // `$2` を 1 段のループで読む。ランタイムの #1401）。既存の「for の外」検査の深さ方向の一般化。
   // 4.0 は各段の `*` が**その段で囲む for のリスト**の行であることも確かめる（#1403・F32 — `for: a`
-  // の行の中の `b.*.y` は投げる）。静的側も囲む for の一覧と段ごとに比べて同じ code で報告する。
+  // の行の中の `b.*.y` は投げる）。静的側も囲む for の一覧と段ごとに比べて同じ code で報告する
+  // （ランタイムの文面に code が付くのは diagnostics の後付けがあるとき）。for のスコープを組み直しきれない
+  // ので、ランタイムは初期化を失敗させるが warning のまま（vscode-wcs の README の重大度の例外）。
   WildcardRank: "wcs/wildcard-rank",
   // ループの添字の範囲（`$1`〜`$128`。上限は manifest の `syntax.indexParam.maxDepth`）の外。ランタイムと同じ code:
   // for の中のマークアップの `$129`（バインディングが失敗する）と、スクリプトの `this.$0` / `this.$129` / `this.$1000`
@@ -81,7 +84,8 @@ var WcsDiagnosticCode = {
   // `wcs/binding-path-missing`（ただしけっして動かないので error）。for の外の `$129` はランタイムでは #1401 なので
   // 従来どおり「for の外のループ添字」（`wcs/template-syntax`）で報告する。
   IndexParamRange: "wcs/index-param-range",
-  // パス getter どうしの循環参照。ランタイムはアドレススタック上限まで再帰してから落ちる。
+  // パス getter どうしの循環参照。4.0 のランタイムは評価の時点で #701 として throw し、その getter を読む
+  // 束縛はすべて失敗する（3.x はアドレススタック上限まで再帰してから落ちた）。error。
   GetterCycle: "wcs/getter-cycle",
   // `$renderedCallback`（3.x の旧名 `$updatedCallback`）が、どのバインディングにも現れないパスを判定に使っている。
   // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
@@ -96,8 +100,9 @@ var WcsDiagnosticCode = {
   GetterUntrackedRead: "wcs/getter-untracked-read",
   OnHandlerThis: "wcs/on-handler-this",
   // --- <wcs-state> script: $watch declaration ---
-  // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
-  // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。
+  // temporal の後付け（state の temporal/watch.ts）が読み込みで throw する宣言: 越境 `@` / `$` 始まり /
+  // 空キー / 明らかな非関数ハンドラ。空の段（`a..b`）はランタイムが調べず、その watch は黙って発火しない
+  // （lint だけが知らせる — docs/mistake-catalogue.md）。
   WatchDeclarationInvalid: "wcs/watch-declaration-invalid",
   // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
   // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
@@ -116,8 +121,8 @@ var WcsDiagnosticCode = {
   //
   // `**` を解釈しない場所へ `**` が渡った(data-wcs / mustache / $watch キー / $listKeys
   // キー / $resolve / $postUpdate / $dependOn(旧名 $trackDependency) / 代入)、または `$recursion` 宣言が
-  // 無いのに `**` を使った。runtime は PathInfo の不変条件として raiseError するか
-  //(API 経由)、getter を黙って無視する(宣言なしの `**` getter)。
+  // 無いのに `**` を使った。4.0 の runtime はどれも #1101 で throw する — 宣言なしの `**` getter も、
+  // アクセサを登録する時点で（3.x は黙って無視した）。error。
   RecursionUnsupported: "wcs/recursion-unsupported",
   // 宣言済みアンカーと合致しない `**`(綴り違い・2 つ目の `**`)、または `**` の後ろが
   // 整形されていない(空セグメント・`**` 直後の素の `*`)。
@@ -155,7 +160,8 @@ var WcsDiagnosticCode = {
   // ドットアクセスを含むチェーン代入は NestedAssign の担当(相補・二重報告なし)。
   ArrayIndexAssign: "wcs/array-index-assign",
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
-  // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
+  // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。4.0 のランタイムは #38 / #1203 /
+  // #1204 で拒み、root では初期化が、行では束縛が失敗する（3.x の「黙って無視」ではない）。error。
   TagMemberUnknown: "wcs/tag-member-unknown",
   // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
   // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
@@ -217,7 +223,8 @@ var WcsDiagnosticCode = {
   // (error 昇格時は packages/lint/scripts/smoke-test.mjs の対ケース更新が必須)。
   AriaAttrUnknown: "wcs/aria-attr-unknown",
   // --- document-level load configuration ---
-  // @wcstack/state/auto より後に他 wcstack /auto が読まれている。
+  // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
+  // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。
   ScriptOrder: "wcs/script-order",
   // router/auto があるのに <base href> がない(SPA の basename 誤導出)。
   BaseHrefMissing: "wcs/base-href-missing",
@@ -2056,6 +2063,61 @@ function extractAttribute(tagContent, attrName) {
   if (!match) return null;
   return match[1] ?? match[2] ?? match[3] ?? null;
 }
+var IGNORE_VOID_ELEMENTS = /* @__PURE__ */ new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr"
+]);
+function findIgnoredRanges(html, bindAttribute) {
+  const marker = asciiLowerCase(`${bindAttribute}-ignore`);
+  const lower2 = asciiLowerCase(html);
+  if (!lower2.includes(marker)) return [];
+  const out = [];
+  const stack = [];
+  const tag = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][^\s/>]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+  let match;
+  while ((match = tag.exec(html)) !== null) {
+    if (match[2] === void 0) continue;
+    const name = asciiLowerCase(match[2]);
+    const end = match.index + match[0].length;
+    if (match[1] === "/") {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].name !== name) continue;
+        for (const open of stack.slice(i)) if (open.start !== null) out.push([open.start, end]);
+        stack.length = i;
+        break;
+      }
+      continue;
+    }
+    const ignored = parseAttributeNames(match[3]).has(marker) ? match.index : null;
+    if (IGNORE_VOID_ELEMENTS.has(name)) {
+      if (ignored !== null) out.push([ignored, end]);
+      continue;
+    }
+    if (RAW_TEXT_ELEMENTS.has(name)) {
+      const close = name === "plaintext" ? -1 : lower2.indexOf(`</${name}`, end);
+      const closeEnd = close === -1 ? html.length : html.indexOf(">", close) + 1 || html.length;
+      if (ignored !== null) out.push([ignored, closeEnd]);
+      if (close === -1) break;
+      tag.lastIndex = closeEnd;
+      continue;
+    }
+    stack.push({ name, start: ignored });
+  }
+  for (const open of stack) if (open.start !== null) out.push([open.start, html.length]);
+  return out;
+}
 
 // src/core/parser/quoteAware.ts
 var isQuote = (c) => c === "'" || c === '"';
@@ -2563,10 +2625,11 @@ var builtinFilterMeta = {
   // `not` は真偽性（truthy / falsy）の反転。`if:` が `Boolean()` で寄せるのと同じ規則で、
   // `else:` はこのフィルタを足した束縛として組み立てられる（structural/createNotFilter.ts）
   not: { description: "\u771F\u507D\u6027\u3092\u53CD\u8EE2\uFF08falsy \u2192 true\uFF09", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-  lt: { description: "\u3088\u308A\u5C0F\u3055\u3044\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-  le: { description: "\u4EE5\u4E0B\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-  gt: { description: "\u3088\u308A\u5927\u304D\u3044\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-  ge: { description: "\u4EE5\u4E0A\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  // 比較は数値だけを受ける（filters/core.ts の `numeric` は数値以外の値で #28。3.x も同じで、"string" は誤りだった）
+  lt: { description: "\u3088\u308A\u5C0F\u3055\u3044\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  le: { description: "\u4EE5\u4E0B\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  gt: { description: "\u3088\u308A\u5927\u304D\u3044\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  ge: { description: "\u4EE5\u4E0A\u304B", hasArgs: true, resultType: "boolean", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   // 算術
   add: { description: "\u52A0\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   sub: { description: "\u6E1B\u7B97", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
@@ -11253,15 +11316,15 @@ var ja = {
   watchKeyEmptySegment: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306B\u7A7A\u306E\u30D1\u30B9\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059`,
   watchHandlerNotFunction: (k) => `$watch \u306E\u30A8\u30F3\u30C8\u30EA "${k}" \u306E\u5024\u306F\u95A2\u6570\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059`,
   watchPathMissing: (k) => `$watch \u306E\u30AD\u30FC "${k}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\uFF08\u4E00\u5EA6\u3082\u767A\u706B\u3057\u307E\u305B\u3093\uFF09`,
-  scanRemoved: (mountPath) => mountPath === null ? `$scan \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002\u30D1\u30B9\u306E\u5909\u5316\u3092\u7573\u3080\u306A\u3089 $watch\u3001\u30A4\u30D9\u30F3\u30C8\u3092\u7573\u3080\u306A\u3089 $on \u306E\u30CF\u30F3\u30C9\u30E9\u3067\u3001\u51FA\u529B\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u66F8\u3044\u3066\u304F\u3060\u3055\u3044` : `$scan \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306E $watch \u304B $on \u306E\u30CF\u30F3\u30C9\u30E9\u3067\u7573\u3093\u3067\u304F\u3060\u3055\u3044`,
+  scanRemoved: (mountPath) => mountPath === null ? `$scan \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08diagnostics \u306E\u5F8C\u4ED8\u3051\u3092\u5165\u308C\u305F\u5165\u53E3 \u2014 /auto \u306A\u3069 \u2014 \u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u3001/core \u3060\u3051\u3067\u306F\u9ED9\u3063\u3066\u7121\u8996\u3057\u307E\u3059\uFF09\u3002\u30D1\u30B9\u306E\u5909\u5316\u3092\u7573\u3080\u306A\u3089 $watch\u3001\u30A4\u30D9\u30F3\u30C8\u3092\u7573\u3080\u306A\u3089 $on \u306E\u30CF\u30F3\u30C9\u30E9\u3067\u3001\u51FA\u529B\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u3078\u66F8\u3044\u3066\u304F\u3060\u3055\u3044` : `$scan \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\u3002\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306E $watch \u304B $on \u306E\u30CF\u30F3\u30C9\u30E9\u3067\u7573\u3093\u3067\u304F\u3060\u3055\u3044`,
   typeAnnotationIncompatible: (vt, rt) => `\u578B "${vt}" \u306F @type {${rt}} \u3068\u4E92\u63DB\u6027\u304C\u3042\u308A\u307E\u305B\u3093`,
   arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
   arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
   inPlaceAlias: (a, src, t) => `"${a}" \u306F ${src}\uFF08state \u306E\u5024\u305D\u306E\u3082\u306E\uFF09\u3067\u3059\u3002\u305D\u308C\u3092\u901A\u3057\u305F\u5909\u66F4\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u305B\u305A\u3001\u540C\u3058\u5024\u3092\u66F8\u304D\u623B\u3057\u3066\u3082\u4E00\u89A7\u306E\u884C\u306F\u8FFD\u52A0\u30FB\u524A\u9664\u30FB\u7F6E\u304D\u63DB\u3048\u3055\u308C\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u5024\u3092\u4F5C\u3063\u3066 ${t} \u306B\u4EE3\u5165\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${a}.with(i, item) / [...${a}, item] / { ...${a}, key: value }\uFF09`,
   inPlaceChange: (src, t) => `${src} \u306F state \u306E\u5024\u3092\u305D\u306E\u5834\u3067\u5909\u3048\u308B\u306E\u3067\u3001\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u5024\u3092\u4F5C\u3063\u3066 ${t} \u306B\u4EE3\u5165\u3057\u3066\u304F\u3060\u3055\u3044`,
-  tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u672A\u77E5\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u30D0\u30A4\u30F3\u30C9\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`,
+  tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5BA3\u8A00\u306B\u7121\u3044\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u675F\u7E1B\u3092 #38 \u3067\u62D2\u307F\u3001root \u3067\u306F state \u304C\u521D\u671F\u5316\u306B\u5931\u6557\u3057\u307E\u3059\uFF09`,
   nameAlias: (written, canonical) => `"${written}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\u3067\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u3093\u3060\u6642\u70B9\u3067 throw \u3057\u307E\u3059\uFF09\u3002"${canonical}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
-  declarationAliasRead: (alias, canonical) => `"${alias}" \u306F 4.0 \u3067\u5916\u308C\u305F\u5BA3\u8A00\u30AD\u30FC\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u306A\u306E\u3067\u3001this["${alias}"] \u306F undefined \u306B\u306A\u308A\u307E\u3059\u3002"${canonical}" \u3092\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  declarationAliasRead: (alias, canonical) => `"${alias}" \u306F 4.0 \u3067\u5916\u308C\u305F\u5BA3\u8A00\u30AD\u30FC\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u306A\u306E\u3067\u3001this["${alias}"] \u306F undefined \u306B\u306A\u308A\u307E\u3059\u3002\u5BA3\u8A00\u306F this \u3092\u901A\u3057\u3066\u8AAD\u3081\u307E\u305B\u3093 \u2014 "${canonical}" \u3092\u8AAD\u3093\u3067\u3082 undefined \u3067\u3059${canonical === "$stream" ? "\uFF08\u30B9\u30C8\u30EA\u30FC\u30E0\u306E\u72B6\u614B\u306F $streamStatus\u30FB$streamError \u3067\u8AAD\u307F\u307E\u3059\uFF09" : ""}`,
   declarationAlias: (alias, canonical) => `\u5BA3\u8A00\u30AD\u30FC "${alias}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\u3067\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09\u3002"${canonical}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   declarationAliasInVolume: (alias, canonical, mountPath) => `\u5BA3\u8A00\u30AD\u30FC "${alias}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u3002\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002"${canonical}" \u3082\u30DC\u30EA\u30E5\u30FC\u30E0\u3067\u306F\u5BA3\u8A00\u3067\u304D\u306A\u3044\u306E\u3067\u3001root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
   behaviorNotObject: (keys) => `$behavior \u306F { ${keys.map((k) => `${k}?`).join(", ")} } \u306E\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
@@ -11291,7 +11354,7 @@ var ja = {
   storagePairClobber: (path) => `<wcs-storage> \u306E value \u3092 #init=element \u306A\u3057\u3067\u30A2\u30AF\u30BB\u30B5\u30DA\u30A2 "${path}" \u306B\u675F\u306D\u3066\u3044\u307E\u3059\u3002state \u306E\u5074\u304C\u5148\u306B\u66F8\u304F\u306E\u3067\u3001\u8AAD\u307F\u8FBC\u307F\u306E\u305F\u3073\u306B getter \u306E\u6700\u521D\u306E\u5024\u304C\u4FDD\u5B58\u5024\u306E\u4E0A\u306B\u4FDD\u5B58\u3055\u308C\u3001setter \u306F\u4FDD\u5B58\u5024\u3092\u53D7\u3051\u53D6\u308C\u307E\u305B\u3093 \u2014 #init=element \u3092\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\uFF08\`value#init=element: ${path}\`\uFF09`,
   inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u308B\u304B\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
   inputNestedWriteOneShot: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u305A\u3001<${tag}> \u306F\u8981\u6C42\u306E\u305F\u3073\u306B "${input}" \u3092 null \u306B\u623B\u3059\u306E\u3067\u3001\u6B21\u306E\u8981\u6C42\u306F "${input}" \u306A\u3057\u3067\u9001\u3089\u308C\u307E\u3059 \u2014 \u8981\u6C42\u3092\u59CB\u3081\u308B\u30CF\u30F3\u30C9\u30E9\u3067\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4F5C\u3063\u3066\u4EE3\u5165\u3057\uFF08\`this.submitBody = { \u2026 }\`\uFF09\u3001\u305D\u308C\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
-  devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u3060\u3068\u914D\u7DDA\u53F0\u5E33\u304C\u30E9\u30A4\u30D6\u3067 captured \u3055\u308C\u307E\u305B\u3093\uFF09`,
+  devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u304B\u3089\u3060\u3068\u3001DevTools \u306E\u30BF\u30A4\u30E0\u30E9\u30A4\u30F3\u306F\u4ED8\u3044\u305F\u6642\u70B9\u304B\u3089\u59CB\u307E\u308A\u307E\u3059\u3002\u65E2\u306B\u3042\u308B\u914D\u7DDA\u306F 4.0 \u304C\u9001\u308A\u76F4\u3057\u307E\u3059\uFF09`,
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/"> \u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
   routerOutletMisplaced: () => `\u3053\u306E <wcs-outlet> \u306F <wcs-router> \u306E\u76F4\u5F8C\u306B\u7121\u3044\u306E\u3067\u3001\u3069\u306E router \u3082\u4F7F\u3044\u307E\u305B\u3093\u3002router \u306F\u81EA\u5206\u306E\u76F4\u5F8C\u306E\u8981\u7D20\u3060\u3051\u3092 outlet \u3068\u3057\u3066\u4F7F\u3044\u3001\u305D\u3053\u306B <wcs-outlet> \u304C\u7121\u3051\u308C\u3070\u81EA\u524D\u306E outlet \u3092\u4F5C\u308A\u307E\u3059\u3002\u30EB\u30FC\u30C8\u306F router \u306E\u76F4\u5F8C\u306B\u63CF\u304B\u308C\u3001\u3053\u306E outlet \u306F\u7A7A\u306E\u307E\u307E\u3067\u3059 \u2014 <wcs-router> \u306E\u76F4\u5F8C\u3078\u79FB\u3057\u3066\u304F\u3060\u3055\u3044`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
@@ -11303,13 +11366,15 @@ var ja = {
   mountPathInvalid: (problem, mountPath) => {
     switch (problem) {
       case "empty":
-        return `"mount" \u306B\u306F\u7A7A\u3067\u306A\u3044\u30C4\u30EA\u30FC\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059\uFF08runtime: "mount" requires a non-empty tree path.\uFF09`;
+        return `"mount" \u306B\u306F\u7A7A\u3067\u306A\u3044\u9759\u7684\u306A\u30D1\u30B9\u304C\u5FC5\u8981\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
       case "emptySegment":
-        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u306E\u30BB\u30B0\u30E1\u30F3\u30C8\u304C\u3042\u308A\u307E\u3059\uFF08runtime: has an empty segment.\uFF09`;
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u306E\u6BB5\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
       case "wildcard":
-        return `"mount" \u30D1\u30B9 "${mountPath}" \u306F\u9759\u7684\u3067\u306A\u3051\u308C\u3070\u306A\u308A\u307E\u305B\u3093 \u2014 \u30EF\u30A4\u30EB\u30C9\u30AB\u30FC\u30C9\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08runtime: must be static.\uFF09`;
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306F\u9759\u7684\u3067\u306A\u3051\u308C\u3070\u306A\u308A\u307E\u305B\u3093 \u2014 "*" \u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
+      case "whitespace":
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u7A7A\u767D\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
       default:
-        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u4E88\u7D04\u6587\u5B57\uFF08$, #, @\uFF09\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08runtime: must not use reserved characters.\uFF09`;
+        return `"mount" \u30D1\u30B9 "${mountPath}" \u306B\u4E88\u7D04\u6587\u5B57\uFF08$, #, @\uFF09\u306F\u4F7F\u3048\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30DC\u30EA\u30E5\u30FC\u30E0\u3092\u62D2\u307F\u307E\u3059: has an invalid mount path\uFF09`;
     }
   },
   recursionUnsupported: (p, where) => {
@@ -11331,7 +11396,7 @@ var ja = {
       case "listKeys":
         return `$listKeys \u306E\u30AD\u30FC "${p}" \u306B "**" \u306F\u4F7F\u3048\u307E\u305B\u3093\u3002\u30AD\u30FC\u4ED8\u304D\u30EA\u30B9\u30C8\u306F 1 \u672C\u306E\u5177\u4F53\u30EA\u30B9\u30C8\u30D1\u30B9\u3067\u3059 \u2014 \u6DF1\u3055\u3054\u3068\u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: "nodes.*.children"\uFF09`;
       default:
-        return `"${p}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C\u3001\u3053\u306E state \u306B\u306F $recursion \u5BA3\u8A00\u304C\u3042\u308A\u307E\u305B\u3093\u3002$recursion = { "<anchor>": "<repeat>" }\uFF08\u4F8B: { "nodes.*": "children.*" }\uFF09\u3092\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u304C\u7121\u3044\u3068 "**" \u306E\u30AD\u30FC\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`;
+        return `"${p}" \u306F "**" \u3092\u542B\u307F\u307E\u3059\u304C\u3001\u3053\u306E state \u306B\u306F $recursion \u5BA3\u8A00\u304C\u3042\u308A\u307E\u305B\u3093\u3002$recursion = { "<anchor>": "<repeat>" }\uFF08\u4F8B: { "nodes.*": "children.*" }\uFF09\u3092\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u304C\u7121\u3044\u3068\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B #1101 \u3067 throw \u3057\u3001state \u306F\u521D\u671F\u5316\u306B\u5931\u6557\u3057\u307E\u3059\uFF09`;
     }
   },
   recursionAnchorMismatch: (p, anchor) => `"${p}" \u306F\u5BA3\u8A00\u6E08\u307F\u306E\u518D\u5E30\u30A2\u30F3\u30AB\u30FC "${anchor}" \u3068\u5408\u81F4\u3057\u307E\u305B\u3093\uFF08\u521D\u7248\u306F state \u3054\u3068\u306B 1 \u3064\u306E\u81EA\u5DF1\u518D\u5E30\u306E\u307F\u3002"**" \u306E\u5F8C\u308D\u306F\u6574\u5F62\u3055\u308C\u305F\u63A5\u5C3E\u8F9E \u2014 2 \u3064\u76EE\u306E "**"\u30FB\u7A7A\u30BB\u30B0\u30E1\u30F3\u30C8\u30FB"**" \u76F4\u5F8C\u306E\u7D20\u306E "*" \u306F\u7F6E\u3051\u307E\u305B\u3093\uFF09`,
@@ -11452,15 +11517,15 @@ var en = {
   watchKeyEmptySegment: (k) => `$watch key "${k}" has an empty path segment`,
   watchHandlerNotFunction: (k) => `The value of $watch entry "${k}" must be a function`,
   watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
-  scanRemoved: (mountPath) => mountPath === null ? `$scan was removed in 4.0 (the runtime throws at load time). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there` : `$scan was removed in 4.0. In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). Fold in a $watch or $on handler on the root state`,
+  scanRemoved: (mountPath) => mountPath === null ? `$scan was removed in 4.0 (the entries with the diagnostics add-on, such as /auto, throw at load; /core alone ignores it). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there` : `$scan was removed in 4.0. In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). Fold in a $watch or $on handler on the root state`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
   arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
   inPlaceAlias: (a, src, t) => `"${a}" is ${src} \u2014 the state's own value. A change through it does not trigger a reactive update, and writing the same value back does not add, remove or replace a list's rows. Build a new value and assign it to ${t} (${a}.with(i, item), [...${a}, item], { ...${a}, key: value })`,
   inPlaceChange: (src, t) => `${src} changes the state's value in place, which does not trigger a reactive update. Build a new value and assign it to ${t}`,
-  tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
+  tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (the runtime refuses a binding to an undeclared member with #38; at the root the state fails to initialize)`,
   nameAlias: (written, canonical) => `"${written}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws when it is read) \u2014 write "${canonical}"`,
-  declarationAliasRead: (alias, canonical) => `"${alias}" is a declaration key 4.0 removed (the 3.x old name of "${canonical}"), so this["${alias}"] is undefined. Read "${canonical}" instead`,
+  declarationAliasRead: (alias, canonical) => `"${alias}" is a declaration key 4.0 removed (the 3.x old name of "${canonical}"), so this["${alias}"] is undefined. A declaration cannot be read through this \u2014 reading "${canonical}" is undefined too${canonical === "$stream" ? " (read a stream's state from $streamStatus / $streamError)" : ""}`,
   declarationAlias: (alias, canonical) => `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws at load time) \u2014 write "${canonical}"`,
   declarationAliasInVolume: (alias, canonical, mountPath) => `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"). In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). "${canonical}" cannot be declared in a volume either \u2014 declare it on the root state`,
   behaviorNotObject: (keys) => `$behavior must be an object { ${keys.map((k) => `${k}?`).join(", ")} } (the runtime throws at load time)`,
@@ -11490,7 +11555,7 @@ var en = {
   storagePairClobber: (path) => `The <wcs-storage> value is bound to the accessor pair "${path}" without #init=element. The state's side goes first, so on every load the getter's starting value is saved over the stored one, and the setter never receives it \u2014 add #init=element (\`value#init=element: ${path}\`)`,
   inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
   inputNestedWriteOneShot: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it \u2014 build a new object in the handler that starts the request (\`this.submitBody = { \u2026 }\`) and bind that`,
-  devtoolsAfterState: () => `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
+  devtoolsAfterState: () => `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
   routerOutletMisplaced: () => `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty \u2014 move it right after the <wcs-router>`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
@@ -11502,13 +11567,15 @@ var en = {
   mountPathInvalid: (problem, mountPath) => {
     switch (problem) {
       case "empty":
-        return `"mount" requires a non-empty tree path.`;
+        return `"mount" needs a non-empty static path (the runtime refuses the volume: "has an invalid mount path").`;
       case "emptySegment":
-        return `"mount" path "${mountPath}" has an empty segment.`;
+        return `"mount" path "${mountPath}" has an empty segment (the runtime refuses the volume: "has an invalid mount path").`;
       case "wildcard":
-        return `"mount" path "${mountPath}" must be static (wildcards are not allowed).`;
+        return `"mount" path "${mountPath}" must be static \u2014 no "*" (the runtime refuses the volume: "has an invalid mount path").`;
+      case "whitespace":
+        return `"mount" path "${mountPath}" must not contain whitespace (the runtime refuses the volume: "has an invalid mount path").`;
       default:
-        return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
+        return `"mount" path "${mountPath}" must not use the reserved characters $, #, @ (the runtime refuses the volume: "has an invalid mount path").`;
     }
   },
   recursionUnsupported: (p, where) => {
@@ -11530,7 +11597,7 @@ var en = {
       case "listKeys":
         return `$listKeys key "${p}" cannot contain "**" \u2014 a keyed list is one concrete list path. Declare the key per depth instead (for example "nodes.*.children")`;
       default:
-        return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) \u2014 without it a "**" key is silently ignored`;
+        return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) \u2014 without it the runtime throws #1101 at load and the state fails to initialize`;
     }
   },
   recursionAnchorMismatch: (p, anchor) => `"${p}" does not match the declared recursion anchor "${anchor}" (this version supports exactly one self-recursive anchor per state, and "**" must be followed by a well-formed suffix: no second "**", no empty segment, no bare "*" right after "**")`,
@@ -11761,11 +11828,6 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
   const pathIndex = getStatePathIndex(html, stateTagName, fileReader);
   const statePaths = mergeSchemaCandidates(pathIndex.paths, applicationSchema);
   const attrs = findAllBindAttributes(html, attrName);
-  let structuralTemplates = null;
-  const getStructuralTemplates = () => {
-    structuralTemplates ??= collectStructuralTemplates(html, attrName);
-    return structuralTemplates;
-  };
   const outerCandidates = [];
   const currentTargetCandidates = [];
   let currentTargetHandlers = null;
@@ -11925,7 +11987,8 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
               start: pathStart,
               end: pathStart + tokenPath.length,
               message: msgs.commandRhsFormat(),
-              severity: "warning"
+              // ランタイムは束縛の計画で #1201 として throw し、root では初期化が失敗する
+              severity: "error"
             });
           } else if (commandNames.size > 0 && !commandNames.has(tokenPath)) {
             diagnostics.push({
@@ -11933,7 +11996,9 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
               start: pathStart,
               end: pathStart + tokenPath.length,
               message: msgs.commandTokenUndeclared(tokenPath),
-              severity: "warning"
+              // ランタイムは取り付けで #1302 として throw し、root では初期化が失敗する
+              // （eventToken. と `on*: $command.x` はイベントのたびに #1301 を記録するだけなので warning のまま）
+              severity: "error"
             });
           }
         }
@@ -12103,10 +12168,7 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
           const typePath = candidateKeyOf(pathTrimmed, (c) => scopedPathSet.has(c));
           const resultType = resolveResultType(typePath, parsed.filters, scopedPaths);
           if (resultType !== null) {
-            const typeReq = getExpectedType(
-              parsed.property,
-              () => isNegatedByElseChain(getStructuralTemplates(), attr.valueStart)
-            );
+            const typeReq = getExpectedType(parsed.property);
             if (typeReq && resultType !== typeReq.expected) {
               const pathOffset = binding.indexOf(parsed.path);
               const pathStart = bindingStart + pathOffset;
@@ -12264,14 +12326,16 @@ function validateFilterUsage(filter, bindingStart, msgs) {
     for (let i = 0; i < Math.min(argCount, info.argTypes.length); i++) {
       const expectedArgType = info.argTypes[i];
       if (expectedArgType === "any") continue;
-      const actualArgType = inferArgType(filter.args[i]);
-      if (actualArgType !== expectedArgType) {
+      const arg = filter.args[i];
+      const numericFails = expectedArgType === "number" && !readsAsNumber(arg);
+      const actualArgType = inferArgType(arg);
+      if (expectedArgType === "number" ? numericFails : actualArgType !== expectedArgType) {
         diagnostics.push({
           code: WcsDiagnosticCode.FilterArgType,
           start: bindingStart + filter.argsOffset,
           end: bindingStart + filter.argsOffset + filter.name.length,
-          message: msgs.filterArgType(filter.name, i + 1, expectedArgType, filter.args[i], actualArgType),
-          severity: "warning"
+          message: msgs.filterArgType(filter.name, i + 1, expectedArgType, arg, actualArgType),
+          severity: numericFails ? "error" : "warning"
         });
       }
     }
@@ -12336,56 +12400,10 @@ function validateSchemaPathExistence(checkPath, displayPath, scopedPaths, scoped
   }
   return null;
 }
-function collectStructuralTemplates(html, attrName) {
-  const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const attrRegex = new RegExp(`${escaped}\\s*=\\s*(["'])`, "i");
-  const tagRegex = /<template(?:\s[^>]*)?>|<\/template\s*>/gi;
-  const templates = [];
-  let depth = 0;
-  let match;
-  while ((match = tagRegex.exec(html)) !== null) {
-    if (match[0].startsWith("</")) {
-      depth = Math.max(0, depth - 1);
-      continue;
-    }
-    const attrMatch = attrRegex.exec(match[0]);
-    if (attrMatch) {
-      const quote = attrMatch[1];
-      const valueStart = match.index + attrMatch.index + attrMatch[0].length;
-      const valueEnd = html.indexOf(quote, valueStart);
-      if (valueEnd !== -1) {
-        const first = splitBindingExpressions(html.slice(valueStart, valueEnd))[0] ?? "";
-        const firstColon = indexOfOutsideQuotes2(first, ":");
-        const prop = (firstColon === -1 ? first : first.slice(0, firstColon)).replace(/#.*$/, "").trim();
-        const type = prop === "if" || prop === "elseif" || prop === "else" ? prop : "other";
-        templates.push({ valueStart, depth, type });
-      }
-    }
-    depth++;
-  }
-  return templates;
-}
-function isNegatedByElseChain(templates, valueStart) {
-  const index = templates.findIndex((t) => t.valueStart === valueStart);
-  if (index === -1) return false;
-  const selfDepth = templates[index].depth;
-  for (let i = index + 1; i < templates.length; i++) {
-    const next = templates[i];
-    if (next.depth > selfDepth) continue;
-    if (next.depth < selfDepth) return false;
-    if (next.type === "elseif" || next.type === "else") return true;
-    if (next.type === "if") return false;
-  }
-  return false;
-}
-function getExpectedType(property, isNegatedIf) {
+function getExpectedType(property) {
   const prop = property.replace(/#.*$/, "");
   if (prop === "for") {
     return { label: "for", expected: "array", severity: "error" };
-  }
-  if (prop === "if" || prop === "elseif") {
-    if (!isNegatedIf()) return null;
-    return { label: prop, expected: "boolean", severity: "warning" };
   }
   if (prop.startsWith("class.")) {
     return { label: prop, expected: "boolean", severity: "warning" };
@@ -12441,6 +12459,10 @@ function inferArgType(arg) {
   const v = arg.trim();
   if (/^-?\d+(\.\d+)?$/.test(v)) return "number";
   return "string";
+}
+function readsAsNumber(arg) {
+  const v = arg.trim().replace(/^(["'])([\s\S]*)\1$/, "$2");
+  return v !== "" && !Number.isNaN(Number(v));
 }
 function isLiteral(value) {
   return /^-?\d/.test(value) || /^["'`]/.test(value) || value === "true" || value === "false" || value === "null";
@@ -14366,20 +14388,7 @@ var BUILTIN_TAGS = {
 };
 
 // src/service/ioNodeValidator.ts
-var DOM_COMMON_PROPERTIES = /* @__PURE__ */ new Set([
-  "textContent",
-  "innerHTML",
-  "innerText",
-  "hidden",
-  "title",
-  "id",
-  "slot",
-  "dir",
-  "lang",
-  "role",
-  "tabIndex",
-  "className"
-]);
+var HTML_SINK_PROPERTIES = /* @__PURE__ */ new Set(["html", "innerHTML", "outerHTML", "srcdoc"]);
 var STRUCTURAL_DIRECTIVES3 = /* @__PURE__ */ new Set(["for", "if", "elseif", "else"]);
 var EXPLICIT_PROPERTY_REJECTED_HEADS2 = /* @__PURE__ */ new Set([
   ...Object.values(getWcsManifest().syntax.bindingTypes.propNamespaces),
@@ -14481,7 +14490,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
         code: WcsDiagnosticCode.TagMemberUnknown,
         start,
         end,
-        severity: "warning",
+        severity: "error",
         tag: tagName,
         member: name,
         message: msgs.tagCommandUnknown(name, tagName, contract.commands.join(", ") || msgs.none()) + suggestion(name, contract.commands, msgs)
@@ -14496,7 +14505,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
         code: WcsDiagnosticCode.TagMemberUnknown,
         start,
         end,
-        severity: "warning",
+        severity: "error",
         tag: tagName,
         member: name,
         message: msgs.tagEventTokenKeyUnknown(name, tagName, contract.properties.join(", ")) + suggestion(name, contract.properties, msgs)
@@ -14504,13 +14513,13 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     }
     return;
   }
-  if (!contract.properties.includes(property) && !(property in contract.inputs) && !DOM_COMMON_PROPERTIES.has(property)) {
+  if (!contract.properties.includes(property) && !(property in contract.inputs) && !HTML_SINK_PROPERTIES.has(property)) {
     const members = [...contract.properties, ...inputNames];
     diagnostics.push({
       code: WcsDiagnosticCode.TagMemberUnknown,
       start,
       end,
-      severity: "warning",
+      severity: "error",
       tag: tagName,
       member: property,
       message: msgs.tagMemberUnknown(property, tagName) + suggestion(property, members, msgs)
@@ -14715,7 +14724,7 @@ function validateDocumentEnv(html, locale2) {
         code: WcsDiagnosticCode.ScriptOrder,
         start: later.start,
         end: later.end,
-        severity: "warning",
+        severity: "info",
         message: msgs.devtoolsAfterState()
       });
     }
@@ -15411,7 +15420,7 @@ function validateRecursiveGetters(script, offset2, spec, undeclared, msgs, out) 
           start,
           end,
           msgs.recursionUnsupported(span.name, "undeclared"),
-          "warning"
+          "error"
         );
       }
       continue;
@@ -15935,7 +15944,8 @@ function findMountPathProblem(mountPath) {
   if (mountPath.length === 0) return "empty";
   for (const segment of mountPath.split(".")) {
     if (segment.length === 0) return "emptySegment";
-    if (segment === "*") return "wildcard";
+    if (segment.includes("*")) return "wildcard";
+    if (/\s/.test(segment)) return "whitespace";
     if (segment.includes("$") || segment.includes("#") || segment.includes("@")) return "reserved";
   }
   return null;
@@ -16307,7 +16317,7 @@ function validateIndexArity(script, scriptStart, locale2) {
       start: scriptStart + parsed.starts[1] + leading,
       end: scriptStart + parsed.starts[1] + argText.trimEnd().length,
       message: msgs.indexArity(api, path, requirement, wildcardCount, actual),
-      severity: "warning"
+      severity: "error"
     });
   }
   return out;
@@ -16363,7 +16373,7 @@ function validateGetterCycles(script, scriptStart, locale2) {
       start: scriptStart + getter.start,
       end: scriptStart + getter.end,
       message: msgs.getterCycle(cycle),
-      severity: "warning"
+      severity: "error"
     });
   }
   return out;
@@ -16475,7 +16485,7 @@ function validateInputNestedWrites(html, stateTagName, bindAttrName, nestedWrite
       code: WcsDiagnosticCode.InputNestedWrite,
       start: occ.pathRange.start,
       end: occ.pathRange.end,
-      severity: "warning",
+      severity: "error",
       tag: tag.tagName,
       statePath: occ.path,
       message
@@ -16769,7 +16779,9 @@ function validateDocument(text3, options = {}) {
   for (const d of validateNestedAssigns(text3, stateTagName, locale2)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
-  return sortDiagnostics(out);
+  const ignored = findIgnoredRanges(text3, bindAttribute);
+  const kept = ignored.length === 0 ? out : out.filter((d) => !ignored.some(([start, end]) => d.start >= start && d.start < end));
+  return sortDiagnostics(kept);
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {

@@ -134,8 +134,7 @@
       "hasArgs": true,
       "resultType": "boolean",
       "acceptTypes": [
-        "number",
-        "string"
+        "number"
       ],
       "minArgs": 1,
       "maxArgs": 1,
@@ -148,8 +147,7 @@
       "hasArgs": true,
       "resultType": "boolean",
       "acceptTypes": [
-        "number",
-        "string"
+        "number"
       ],
       "minArgs": 1,
       "maxArgs": 1,
@@ -162,8 +160,7 @@
       "hasArgs": true,
       "resultType": "boolean",
       "acceptTypes": [
-        "number",
-        "string"
+        "number"
       ],
       "minArgs": 1,
       "maxArgs": 1,
@@ -176,8 +173,7 @@
       "hasArgs": true,
       "resultType": "boolean",
       "acceptTypes": [
-        "number",
-        "string"
+        "number"
       ],
       "minArgs": 1,
       "maxArgs": 1,

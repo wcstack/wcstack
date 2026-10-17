@@ -1522,6 +1522,12 @@ class LayoutOutlet extends HTMLElement {
         }
     }
     async connectedCallback() {
+        // レイアウトの無い outlet: サーバーが描いた <wcs-layout-outlet> がクライアントで upgrade された（router は
+        // レイアウトを採用せず、内容を描き直して置き換える — README「Server-side rendering」）。何もしない。
+        // 以前は `layout` の getter が throw し、深いリンクのたびに捕まらないエラーが出ていた（docs/seam-apps.md、
+        // ssr-news）。outlet は router が作るもので、ページには書かない
+        if (this._layout === null)
+            return;
         if (!this._initialized) {
             this._disconnectedDuringInit = false;
             await this._initialize();
@@ -1680,14 +1686,24 @@ function _duplicateCheck(routesByPath, route) {
         routesByPath.set(route.absolutePath, routes);
     }
 }
-async function _parseNode(routerNode, node, routes, routesByPath) {
-    const routeParentNode = routes.length > 0 ? routes[routes.length - 1] : null;
+/**
+ * `routeParentNode` は `node` を囲む最も内側の `<wcs-route>`（無ければ null）。再帰の引数で渡す —
+ * それまでに解析したルートの一覧の最後で決めると、前の兄弟（とその子孫）が親に化けた: `<div>` や
+ * `<wcs-layout>` の中のルートが前のルートの下のパスになるか、絶対パスなら「親がある」で落ち、
+ * 入れ子のルートの後に置いた `<wcs-guard-handler>` は外側でなく子のルートを守った
+ * （docs/mistake-catalogue.md）。
+ */
+async function _parseNode(routerNode, node, routeParentNode, routesByPath) {
     const fragment = document.createDocumentFragment();
+    // the last <wcs-route> among node's children so far: the route an outside <wcs-guard-handler> after it guarded
+    let previousRoute = null;
     const childNodes = Array.from(node.childNodes);
     for (const childNode of childNodes) {
         if (childNode.nodeType === Node.ELEMENT_NODE) {
             let appendNode = childNode;
             let element = childNode;
+            // the route the children are parsed under: this one when it is a <wcs-route>, else the enclosing one
+            let childParent = routeParentNode;
             const tagName = element.tagName.toLowerCase();
             if (tagName === config.tagNames.route) {
                 const childFragment = document.createDocumentFragment();
@@ -1701,21 +1717,33 @@ async function _parseNode(routerNode, node, routes, routesByPath) {
                 const route = cloneElement;
                 route.initialize(routerNode, routeParentNode);
                 _duplicateCheck(routesByPath, route);
-                routes.push(route);
                 appendNode = route.placeHolder;
                 element = route;
+                childParent = route;
+                previousRoute = route;
             }
             else if (tagName === config.tagNames.guardHandler) {
-                if (routes.length > 0) {
-                    const route = routes[routes.length - 1];
-                    const script = element.querySelector('script[type="module"]');
-                    if (script) {
-                        // ハンドラがあれば guard を有効にする（`guard` 属性が無くても）。読み込みより前に —
-                        // 最初のナビゲーションの guard 相がハンドラを待てるように。属性が無いと待たずに通し、
-                        // 最初の表示だけ守られなかった（docs/seam-apps.md、router-auth）
-                        route.enableGuard();
-                        loadGuardHandler(script, route);
+                // 囲むルートを守る（子のルートの前でも後でも）。ルートの外のものは、同じ階層の直前のルートを守る —
+                // 以前は「直前に解析したルート」に付いたので、その形で守ってきたページを、更新で黙って開けないため
+                // （README は外に置けば無視されると書いていた）。どちらでもない形と、守れない形は黙らない — その
+                // ルートは守られず、保護したページが見えるので console.error（docs/mistake-catalogue.md）
+                const route = routeParentNode ?? previousRoute;
+                const script = element.querySelector('script[type="module"]');
+                if (route === null) {
+                    console.error(`[@wcstack/router] [wcs/guard-handler-ignored] A <${config.tagNames.guardHandler}> outside a <${config.tagNames.route}> guards nothing: put it inside the route it guards.`);
+                }
+                else if (!script) {
+                    console.error(`[@wcstack/router] [wcs/guard-handler-ignored] The <${config.tagNames.guardHandler}> of route "${route.absolutePath}" has no <script type="module">, so the route is not guarded.`);
+                }
+                else {
+                    if (routeParentNode === null) {
+                        console.error(`[@wcstack/router] [wcs/guard-handler-ignored] A <${config.tagNames.guardHandler}> outside a <${config.tagNames.route}> guards the route before it, "${route.absolutePath}": put it inside that route.`);
                     }
+                    // ハンドラがあれば guard を有効にする（`guard` 属性が無くても）。読み込みより前に —
+                    // 最初のナビゲーションの guard 相がハンドラを待てるように。属性が無いと待たずに通し、
+                    // 最初の表示だけ守られなかった（docs/seam-apps.md、router-auth）
+                    route.enableGuard();
+                    loadGuardHandler(script, route);
                 }
                 continue;
             }
@@ -1748,7 +1776,7 @@ async function _parseNode(routerNode, node, routes, routesByPath) {
                 appendNode = layoutOutlet;
                 element = cloneElement;
             }
-            const children = await _parseNode(routerNode, element, routes, routesByPath);
+            const children = await _parseNode(routerNode, element, childParent, routesByPath);
             // 空文字の innerHTML 代入は Trusted Types 下でも通る実装が多いが、その細目に
             // 寄りかからずノード操作で書く（docs/csp.md §7）。意図としても「子を全消しして
             // 差し替える」のほうが直接的。
@@ -1764,7 +1792,7 @@ async function _parseNode(routerNode, node, routes, routesByPath) {
 }
 async function parse(routerNode) {
     const routesByPath = new Map();
-    const fr = await _parseNode(routerNode, routerNode.template.content, [], routesByPath);
+    const fr = await _parseNode(routerNode, routerNode.template.content, null, routesByPath);
     return fr;
 }
 
@@ -3352,6 +3380,15 @@ class Router extends HTMLElement {
             if (this._basename === "" && !hasBaseTag && url.pathname !== "/") {
                 raiseError(`${config.tagNames.router} basename is empty, but current path is not "/".`);
             }
+            // basename の属性も <base href> も無いと、basename は今のページの URL から導かれる — アプリの根でない
+            // URL（ディープリンク・再読み込み）では、そのページのパスが basename になり、根のルートが表示され、
+            // リンクもその下で解決される。lint と同じ code で知らせる（docs/mistake-catalogue.md）
+            if (!ssr && this._basename !== "" && !hasBaseTag && !this.getAttribute("basename")) {
+                console.warn(`[@wcstack/router] [wcs/base-href-missing] The basename "${this._basename}" was taken from this page's URL: ` +
+                    `the page has no <base href> and <${config.tagNames.router}> no basename, so routes and links resolve under it, ` +
+                    `and a deep link or a reload away from the app's root shows the wrong route. ` +
+                    `Add <base href="/"> (or the app's folder) to <head>.`);
+            }
             this._outlet = this._getOutlet();
             this._outlet.routesNode = this;
             this._template = this._getTemplate();
@@ -3849,7 +3886,11 @@ class Link extends HTMLElement {
         raiseError(`${config.tagNames.link} is not connected to a router.`);
     }
     _initialize() {
-        this.style.display = "none";
+        // サーバーでは書かない: 直列化されると style 属性になり、厳しい style-src が拒む（docs/seam-apps.md、
+        // ssr-news）。サーバーのホストは子を anchor へ移して空なので、隠さなくても見えない。
+        // クライアントは upgrade でここを通り、CSSOM で書く
+        if (!inSsr())
+            this.style.display = "none";
         this._childNodeArray = Array.from(this.childNodes);
         this._path = this.getAttribute('to') || '';
         this._initialized = true;
@@ -3880,6 +3921,13 @@ class Link extends HTMLElement {
         return path.startsWith('/') || path.startsWith('?');
     }
     _setAnchorHref(anchor, path) {
+        if (path === '') {
+            // 行き先がまだ無い: `attr.to:` の束縛が書く前に接続した（router を state より先に読むページ、
+            // SSR の描き直す行 — docs/seam-apps.md、ssr-news）。href の無い <a> にして、`to` が来たら
+            // attributeChangedCallback が書く。以前は外部 URL として throw し、anchor を作らずに終わっていた
+            anchor.removeAttribute('href');
+            return;
+        }
         if (this._isInternalTarget(path)) {
             // basename 結合・正規化は pathname にのみ適用し、search / hash は再結合する。
             // pathname 空（to="?k=v"）は「現在 pathname + 指定クエリ」で組み立てる。
@@ -3905,9 +3953,17 @@ class Link extends HTMLElement {
             // anchor 化される。パースは同期完了するので 1 microtask 譲る。
             // renderToString は待機プロトコル要素（state / router）の await で
             // microtask を消化するため、serialize より先にこの初期化は完了する。
+            // microtask の中では投げない: 捕まえる者がいないので、Node ではプロセスが落ちる — router の無い
+            // ページ、URL として読めない `to` で（docs/seam-apps.md、ssr-news）。サーバーのコンソールに報告し、
+            // リンクは描かない（ホストが子を持ったまま出力される。クライアントでは従来どおり throw する）
             queueMicrotask(() => {
                 if (this.isConnected) {
-                    this._connect();
+                    try {
+                        this._connect();
+                    }
+                    catch (error) {
+                        console.error(error);
+                    }
                 }
             });
             return;
@@ -3980,7 +4036,8 @@ class Link extends HTMLElement {
         window.addEventListener('popstate', this._updateActiveState);
         // Navigation API が無い場合は、クリックで router.navigate にフォールバック
         // （`?` 始まりのクエリのみリンクも対象 — 素の href だとフルページ遷移になる）
-        if (this._isInternalTarget(this._path) && !getNavigation()?.navigate) {
+        // （`to` がまだ空のリンクも: 後から来る行き先は内部のことが多い。外部ならクリック時に素通しする）
+        if ((this._path === '' || this._isInternalTarget(this._path)) && !getNavigation()?.navigate) {
             this._onClick = async (e) => {
                 // only left-click without modifiers
                 if (e.defaultPrevented)
@@ -4064,8 +4121,9 @@ class Link extends HTMLElement {
             : pathname);
         // match="prefix": 下のパスでも active（サイドナビの「商品」が /products/3 でも印を付ける —
         // docs/seam-apps.md、router-admin）。そのページそのものではないので aria-current は "true"
-        const exact = currentPath === linkPath;
-        const within = !exact && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
+        // 行き先の無いリンク（`to` が空）はどこでも active ではない（空のパスは "/" に正規化される）
+        const exact = this._path !== '' && currentPath === linkPath;
+        const within = !exact && this._path !== '' && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
         if (this._anchorElement) {
             if (exact || within) {
                 this._anchorElement.classList.add('active');
@@ -4110,7 +4168,6 @@ class Head extends HTMLElement {
     _childElementArray = [];
     constructor() {
         super();
-        this.style.display = 'none';
     }
     _initialize() {
         if (this._initialized) {
@@ -4118,6 +4175,14 @@ class Head extends HTMLElement {
         }
         this._initialized = true;
         this._childElementArray = Array.from(this.children);
+        // サーバーでは子を残す: レンダリングの document.head は直列化されない（@wcstack/server は body だけを
+        // 返す）ので、子を移すと出力から消え、クライアントが採用したルートの <wcs-head> は空のまま —
+        // そのセッションの間 <title> が二度と変わらなかった（docs/seam-apps.md、ssr-news）。残した子は
+        // クライアントの upgrade がここで引き取る。<title> / <meta> は既定で表示されない。
+        // 隠すのもクライアントだけ（サーバーで書くと style 属性になり、厳しい style-src が拒む）
+        if (inSsr())
+            return;
+        this.style.display = 'none';
         for (const child of this._childElementArray) {
             this.removeChild(child);
         }
@@ -4362,7 +4427,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.2.0";
+var version = "4.3.0";
 var pkg = {
 	version: version};
 
