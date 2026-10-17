@@ -141,15 +141,17 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | `for` の中の範囲の外の添字（`wcs/index-param-range`。添字は `$1`〜`$128`、上限は manifest の `syntax.indexParam.maxDepth`。`for` の外は「for の外のループ添字」— `wcs/wildcard-rank`） | `textContent: $129` | ❌ error |
 | 存在しないフィルタ（4.0 で外れた旧名 `uc` / `fix` … と `substr` を含む。書き換え先を案内 — `substr(2, 3)` → `slice(2, 5)`） | `textContent: count\|fake` | ❌ error |
 | `for:` に非配列 | `for: count` | ❌ error |
-| `if:` に非 boolean | `if: count` | ⚠ warning |
 | `class.` に非 boolean | `class.active: count` | ⚠ warning |
 | `attr.`/`style.` に非 string | `attr.href: count` | ⚠ warning |
 | フィルタ入力型不一致 | `count\|upper` (number→string filter) | ⚠ warning |
 | フィルタ引数不足 | `count\|mul` | ❌ error |
-| フィルタ引数型不一致 | `count\|gt(abc)` | ⚠ warning |
+| 数値の引数が数値として読めない（ランタイムは束縛の計画で #27 を投げる。引用符付きの `gt('5')` は 5 と読む — ランタイムと同じ） | `count\|gt(abc)` | ❌ error |
+| 文字列の引数に数値（ランタイムは文字列として通す） | `items\|join(1)` | ⚠ warning |
 | イベント+フィルタ | `onclick: fn\|gt(10)` | ⚠ warning |
 | ネイティブ要素の `command.<method>:` で、メソッドが manifest の `nativeCommands`（`native-commands` 機能の表。`<dialog>` の `showModal`、全要素の `focus` など）に無い（`wcs/token-misconfigured`。「もしかして」付き。ランタイムは初期化で #1205 を投げる） | `<div data-wcs="command.showModal: $command.open">` | ❌ error |
-| `command.<method>:` の右辺が `$command.<name>` でない（`wcs/token-misconfigured`） | `command.play: count` | ⚠ warning |
+| `command.<method>:` の右辺が `$command.<name>` でない（`wcs/token-misconfigured`。ランタイムは束縛の計画で #1201 を投げる） | `command.play: count` | ❌ error |
+| `command.<method>:` の右辺の `$command.<name>` が `$commandTokens` に無い（`wcs/token-undeclared`。ランタイムは取り付けで #1302 を投げる。イベント束縛の `$command.<name>` と `eventToken.` はイベントのたびに #1301 を記録する — warning） | `command.play: $command.typo` | ❌ / ⚠ |
+| `wcs-*` のタグが宣言しないメンバー（`wcs/tag-member-unknown`。ランタイムは #38・#1203・#1204 で拒む。`hidden`・`title`・`textContent` などの DOM のプロパティも同じで、宣言なしで書けるのは HTML の書き込み先 — `html:`・`innerHTML:`・`outerHTML:`・`srcdoc:` — だけ） | `<wcs-fetch data-wcs="hidden: busy">` | ❌ error |
 | `<template for>` 外のパターンパス・省略パス・ループの添字（`wcs/wildcard-rank`。4.0 は初期化で #1401 / #1402 を投げる — code はランタイムと同じ） | `textContent: items.*.name`・`.name`・`$1` | ⚠ warning |
 | 行の中で別のリストの `*` を読む（4.0 の #1403） | `for: a` の中の `textContent: b.*.y` | ⚠ warning |
 | `for` / `if` テンプレートの中の `outerHTML:` / `outerText:`（4.0 は初期化で throw — #203。route・レイアウトの雛形の中も対象、アプリの JS が複製するだけの最上位の `<template>` の中は対象外） | `<template data-wcs="for: items"><div data-wcs="outerHTML: h">` | ❌ error |
@@ -160,7 +162,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | ネストされたプロパティへの代入 | `this.user.name = "..."` | ⚠ warning |
 | `<!--@@:-->` バインディング表示 | `<!--@@:count-->` | ℹ info |
 
-フィルタチェーンの型追跡により、`if: count|gt(0)` (number→boolean) は正しく OK と判定されます。
+`if:`・`elseif:` には型を求めません。4.0 は条件の値（フィルタを通した後）の真偽で、最初に成り立つ枝を選びます。
 
 数値の添字のパス（`items.0.name`・`groups.0.items.1.v`・行の中の `groups.*.sel.0.id`）は報告しません — 4.0 は添字の数によらず、いまその位置にある行を読んで書き込みに追従します。存在は添字を `*` に読み替えて確かめます（`items.0.nmae` は存在しないパスとして報告）。`stateSchema` では、数値の段を `*` に読み替えるのは schema のその位置が配列のときだけで、オブジェクトの下（数値のキーを持つオブジェクト `sales.2024`）はランタイムと同じく素のキーとして引きます（`sales.2024.totl`・宣言の無い `sales.2025.total` は `wcs/path-nonexistent`）。
 
@@ -180,7 +182,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | 読み込みと併記した `bind-component`（`wcs/bind-component-source`。state はホスト要素のプロパティだけで、ランタイムは読み込みを拒んで console.error — コンポーネントはマウントされない。中のスクリプトはランタイムが読まないので、ほかの検査を重ねない） | `<wcs-state bind-component="state" json='{}'>` | ❌ error |
 | 同じ root の 2 つ目の `<wcs-state>`（`wcs/second-root`。state の木は root ごとに 1 つで、後から読み込んだ方は拒まれる） | `<wcs-state>` を `mount` なしで 2 つ | ❌ error |
 
-診断のコードはランタイムと同じです。4.0 のランタイムは、診断の後付けが無いと `[@wcstack/state] [wcs/template-syntax] #203 "outerHTML"` のようにコード・番号・値だけを出し、全部入りの `auto` は文を出します。どの入口を読んだか（`wcs/feature-not-installed`）など、ページを動かさないと分からないものは静的には出しません。マウントしたコンポーネントで `$watch`・`$stream`・`$renderedCallback` が動かないという警告（`wcs/mount-dollar-declaration`）も出しません — その state はコンポーネントの JavaScript のプロパティにあり、拡張は読みません（`<wcs-state bind-component>` の中に書いたスクリプトはランタイムが読まない — `wcs/bind-component-source`）。ボリュームの `$watch` は接ぎ木ごと拒まれるので、キーの存在（`wcs/watch-path-missing`）は検査しません。ページの root の `$watch` のキーはボリュームの配下（`"cart.total"` — 接ぎ木された state への書き込みで発火する）も指せるので、ボリュームのキーと照合し、ボリュームの state が読めないときは束縛と同じく報告しません。ボリュームは、root の `<wcs-state>` を持つ最も内側の `<template>`（宣言的 shadow root・DCC）の root のもので、その root の `$watch` が照合します。それ以外のボリューム（文書の中、route・レイアウトの雛形の中）はページの root のものです。
+診断のコードはランタイムと同じです。4.0 のランタイムは、診断の後付けが無いと `[@wcstack/state] #203 "outerHTML"` のように番号と値だけを出し（番号の百の位が code を表す — 2xx は `wcs/template-syntax`）、全部入りの `auto` は code と文を出します。どの入口を読んだか（`wcs/feature-not-installed`）など、ページを動かさないと分からないものは静的には出しません。マウントしたコンポーネントで `$watch`・`$stream`・`$renderedCallback` が動かないという警告（`wcs/mount-dollar-declaration`）も出しません — その state はコンポーネントの JavaScript のプロパティにあり、拡張は読みません（`<wcs-state bind-component>` の中に書いたスクリプトはランタイムが読まない — `wcs/bind-component-source`）。ボリュームの `$watch` は接ぎ木ごと拒まれるので、キーの存在（`wcs/watch-path-missing`）は検査しません。ページの root の `$watch` のキーはボリュームの配下（`"cart.total"` — 接ぎ木された state への書き込みで発火する）も指せるので、ボリュームのキーと照合し、ボリュームの state が読めないときは束縛と同じく報告しません。ボリュームは、root の `<wcs-state>` を持つ最も内側の `<template>`（宣言的 shadow root・DCC）の root のもので、その root の `$watch` が照合します。それ以外のボリューム（文書の中、route・レイアウトの雛形の中）はページの root のものです。
 
 ### JSDoc Type Validation
 

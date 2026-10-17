@@ -243,6 +243,8 @@ const API_CALL = /\.\s*\$(getAll|setAll|resolve)\s*\(/g;
  *
  * `$resolve` は**厳密一致**（不足はランタイムが元から throw、超過は黙って無視されていた）、
  * `$getAll` / `$setAll` は**上限**（不足は「残りの階層を全展開」という正当な意味を持つ接頭辞）。
+ * severity は error: 4.0 のランタイムは呼んだ所で #901 / #902 として throw する。リテラルのパスと
+ * リテラルの配列だけを見るので、検出は確実。
  */
 function validateIndexArity(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
   const msgs = getMessages(locale);
@@ -278,7 +280,7 @@ function validateIndexArity(script: string, scriptStart: number, locale?: string
       start: scriptStart + parsed.starts[1] + leading,
       end: scriptStart + parsed.starts[1] + argText.trimEnd().length,
       message: msgs.indexArity(api, path, requirement, wildcardCount, actual),
-      severity: 'warning',
+      severity: 'error',
     });
   }
   return out;
@@ -313,6 +315,10 @@ function validateIndexArity(script: string, scriptStart: number, locale?: string
  * 辺を張ってはならない。畳むと深さ差 > 0 の辺が自己ループに化け、正常な再帰集計が
  * すべて `wcs/getter-cycle` になる。パス存在判定（recursionPaths.matchesRecursion）は
  * 畳むが、依存グラフはここで畳まない — この非対称が要点。
+ *
+ * severity は error: 4.0 のランタイムは評価の時点で #701 として throw し、その getter を読む束縛はすべて
+ * 失敗する（3.x はアドレススタックの上限まで再帰してから落ちた）。限界: 辺は条件分岐を見ないので、
+ * 排他な条件の裏にあって実行時には決して回らない循環も報告する（まれ）。
  */
 function validateGetterCycles(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
   const msgs = getMessages(locale);
@@ -372,7 +378,7 @@ function validateGetterCycles(script: string, scriptStart: number, locale?: stri
       start: scriptStart + getter.start,
       end: scriptStart + getter.end,
       message: msgs.getterCycle(cycle),
-      severity: 'warning',
+      severity: 'error',
     });
   }
   return out;
@@ -539,8 +545,10 @@ const MANUAL_ATTRIBUTE = /(?:^|\s)manual(?:\s|=|$)/i;
  * 数量の変化は保存されない（表示は 2、保存は 1。再読み込みで 1 に戻る）。束縛は `cart` への
  * 代入（行の追加・削除）でしか当て直されない — 依存の伝播は親 → 子の向きだけ。直し方は、
  * フィールドをパスで読む getter（行 getter と `$getAll`）を束ねるか、下へ書かずに配列を差し替える。
- * 証拠は collectNestedWriteRoots と同じ（`wcs/getter-untracked-read` と共有）。severity は warning:
- * 下への書き込みの後に、別の経路で必ず `cart` を差し替えるページでは届く。
+ * 証拠は collectNestedWriteRoots と同じ（`wcs/getter-untracked-read` と共有）。severity は error:
+ * データを失い（storage は保存せず、fetch は本文なしで送る）、実行時は何も言わない。warning のままでは
+ * スキルの `--errors-only` の関門を通った（docs/mistake-catalogue.md）。下への書き込みの後に別の経路で必ず
+ * `cart` を差し替えるページでは届くが、そのとき下への書き込みは要らない — 差し替えだけを書けばよい。
  */
 function validateInputNestedWrites(
   html: string,
@@ -576,7 +584,7 @@ function validateInputNestedWrites(
       code: WcsDiagnosticCode.InputNestedWrite,
       start: occ.pathRange.start,
       end: occ.pathRange.end,
-      severity: 'warning',
+      severity: 'error',
       tag: tag.tagName,
       statePath: occ.path,
       message,

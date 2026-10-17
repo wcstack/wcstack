@@ -860,7 +860,8 @@ describe("wcs/input-nested-write — 入力を束ねたパスの下への書き�
     const html = script(CART) + `<wcs-storage key="cart" data-wcs="value#init=element: cart"></wcs-storage>`;
     const diags = validateSemantics(html).filter((d) => d.code === WcsDiagnosticCode.InputNestedWrite);
     expect(diags).toHaveLength(1);
-    expect(diags[0].severity).toBe("warning");
+    // error: データを失い、実行時は何も言わない（docs/mistake-catalogue.md）
+    expect(diags[0].severity).toBe("error");
     expect(diags[0].statePath).toBe("cart");
     expect(diags[0].message).toContain('"cart.*.quantity"');
     expect(diags[0].message).toContain("<wcs-storage>");

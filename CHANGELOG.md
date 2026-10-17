@@ -8,6 +8,34 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md), "Found while cataloguing").
+
+### Changed
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **lint severities follow the 4.0 runtime.** These mistakes make the runtime fail initialization or a binding, so they are errors now, not warnings:
+  - `wcs/tag-member-unknown` (#38 / #1203 / #1204)
+  - `wcs/getter-cycle` (#701)
+  - `wcs/index-arity` (#901 / #902)
+  - `wcs/token-misconfigured`, for a right-hand side that is not `$command.…` (#1201)
+  - `wcs/token-undeclared`, for `command.` (#1302)
+  - `wcs/recursion-unsupported`, for an undeclared `**` getter key (#1101)
+  - `wcs/filter-arg-type`, for a numeric argument that does not read as a number (#27)
+
+  `wcs/input-nested-write` is an error too. The data is lost and the runtime says nothing; as a warning it passed the AI authoring skill's `--errors-only` gate. `wcs/wildcard-rank` and `wcs/binding-path-missing` stay warnings, because the validator cannot be certain of them.
+- Lint: **`wcs/tag-member-unknown` covers DOM properties** on `wcs-*` tags — `hidden:`, `title:`, `id:`, `textContent:` and the rest. The runtime refuses them like any undeclared member. Only the HTML sinks (`html:`, `innerHTML:`, `outerHTML:`, `srcdoc:`) are written without a declaration.
+- Lint: **`wcs/mount-path-invalid` refuses everything the runtime refuses**, including a `*` inside a segment (`mount="a*"`) and whitespace (`mount="a b"`).
+- Lint: **`wcs/script-order` is an info.** 4.0 hands a late DevTools the bindings that are already there, so only the timeline before it attached is missing.
+
+### Fixed
+
+- Lint:
+  - `wcs/binding-type-expectation` no longer asks for a boolean in an `if:` followed by `else:` / `elseif:`. That rule was from 3.x; 4.0 picks the first branch whose condition is truthy.
+  - `wcs/filter-arg-type` reads a quoted numeric argument as the runtime does: `gt('5')` passes.
+  - `wcs/declaration-alias-read` no longer suggests reading the new name, since a declaration cannot be read through `this`.
+  - The messages of `wcs/scan-declaration-invalid`, `wcs/tag-member-unknown` and `wcs/recursion-unsupported` now describe 4.0, not 3.x.
+- `@wcstack/state`: the manifest's `filterMeta` says `lt`, `le`, `gt` and `ge` accept numbers only, which is what their runtime has always done. It said strings too, so the lint did not report a string input.
+- Documentation: the vscode-wcs README says that `/core` prints only a message number and values, not the code. This has been so since 4.0.0-rc.3.
+
 ## [4.2.0] — 2026-10-17
 
 What the seam apps left open ([docs/seam-apps.md](./docs/seam-apps.md), "What was left open"). The design decisions are the author's (2026-10-14).
