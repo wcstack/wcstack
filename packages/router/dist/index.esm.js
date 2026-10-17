@@ -1350,6 +1350,72 @@ function moveInto(target, nodes) {
     }
 }
 
+/**
+ * `<wcs-router>` の直後に無い `<wcs-outlet>` を loud に報告する
+ * （docs/router-outlet-placement.md）。
+ *
+ * router が使う outlet は、自分の直後の兄弟要素だけである（マルチ Router で router と
+ * outlet を 1 対 1 に結ぶための規則。SSR の採用経路もこの位置を前提にする）。直後に
+ * 無ければ、router は outlet を作って自分の直後に置く。そのとき別の場所に置かれた
+ * `<wcs-outlet>` は使われず、ページは router の直後に描かれ、置いた outlet は空のまま
+ * になる — これまでは何も報告されなかった。
+ *
+ * **挙動は変えない。** 変えるのは「黙って別の場所に描く」を「原因を指す警告」にする
+ * ことだけ。outlet を探す範囲を広げる案・属性で明示的に結ぶ案は、実需が出てから決める。
+ *
+ * router が outlet を自分のものにするのは「直後にある」か「直後に作った」かのどちら
+ * かなので、直前の要素が router でない outlet は、どの router にも使われない。その判定
+ * だけで足り、ほかの router の初期化の順番を待つ必要は無い。
+ *
+ * レイアウトのテンプレートが持ち込んだ outlet（スロットの代わりに置いた形）は、router が outlet を
+ * 作った後で文書に入るので、レイアウトを置いたところでも同じ判定をする（docs/seam-apps.md、router-admin）。
+ */
+const warned$1 = new WeakSet();
+/**
+ * 直後に outlet を持たない router が outlet を作る直前に呼ぶ。同じ root（document か
+ * shadow root）に、どの router にも使われない `<wcs-outlet>` があれば 1 回だけ警告する。
+ */
+function warnMisplacedOutlet(router) {
+    const root = router.getRootNode();
+    // 文書に入っていない router（root は自分自身）には、比べる相手のページが無い
+    if (root.nodeType !== Node.DOCUMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+        return;
+    }
+    warnStrayOutlets(root);
+}
+/** scope の中の、どの router にも使われない `<wcs-outlet>` を 1 回だけ警告する。 */
+function warnStrayOutlets(scope) {
+    const routerTag = config.tagNames.router;
+    const outletTag = config.tagNames.outlet;
+    for (const outlet of scope.querySelectorAll(outletTag)) {
+        if (warned$1.has(outlet) || outlet.previousElementSibling?.matches(routerTag)) {
+            continue;
+        }
+        warned$1.add(outlet);
+        console.warn(`[@wcstack/router] [wcs/router-outlet-misplaced] A <${routerTag}> uses only the element right after it ` +
+            `as its outlet, and this page has a <${outletTag}> that no router uses. The router makes an outlet of ` +
+            `its own right after itself, so the routes render there and the <${outletTag}> you placed stays empty. ` +
+            `Move the <${outletTag}> right after the <${routerTag}>.`, outlet);
+    }
+}
+
+/** 何かを置くノードか（空白だけのテキストとコメントは置かない） */
+const hasContent = (nodes) => {
+    for (const node of nodes) {
+        if (node.nodeType === Node.ELEMENT_NODE || (node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== ''))
+            return true;
+    }
+    return false;
+};
+/**
+ * 既定の `<slot>` の無いテンプレートに、名前付きのスロットの外の子（入れ子のルートとそのページ）を
+ * 渡した: 子は表示されない — これまでは何も報告されなかった（docs/seam-apps.md、router-admin）。
+ */
+function warnNoDefaultSlot(outlet) {
+    console.warn(`[@wcstack/router] [wcs/layout-slot-missing] This layout's template has no default <slot>, so what its ` +
+        `<${config.tagNames.layout}> holds outside the named slots — the nested routes and their pages — is not shown. ` +
+        `Put a <slot></slot> where the page goes.`, outlet);
+}
 class LayoutOutlet extends HTMLElement {
     _layout = null;
     _initialized = false;
@@ -1391,10 +1457,16 @@ class LayoutOutlet extends HTMLElement {
             }
             if (this.shadowRoot) {
                 this.shadowRoot.appendChild(template.content.cloneNode(true));
+                const unslotted = [];
                 for (const childNode of Array.from(this.layout.childNodes)) {
                     this._layoutChildNodes.push(childNode);
+                    if (!(childNode instanceof Element) || !childNode.getAttribute('slot'))
+                        unslotted.push(childNode);
                     this.appendChild(childNode);
                 }
+                if (!this.shadowRoot.querySelector('slot:not([name]), slot[name=""]') && hasContent(unslotted))
+                    warnNoDefaultSlot(this);
+                warnStrayOutlets(this.shadowRoot);
             }
             else {
                 const fragmentForTemplate = template.content.cloneNode(true);
@@ -1434,7 +1506,11 @@ class LayoutOutlet extends HTMLElement {
                 if (defaultSlot) {
                     defaultSlot.replaceWith(fragmentForChildNodes);
                 }
+                else if (hasContent(fragmentForChildNodes.childNodes)) {
+                    warnNoDefaultSlot(this);
+                }
                 this.appendChild(fragmentForTemplate);
+                warnStrayOutlets(this);
             }
             // 置いた後で binder へ渡す（D5）。遷移で入ったルートの内容は router が渡す時点では文書の外で、
             // レイアウトのテンプレート自身の束縛もここでしか渡せない（shadow root の中は対象外）。light DOM は
@@ -1690,48 +1766,6 @@ async function parse(routerNode) {
     const routesByPath = new Map();
     const fr = await _parseNode(routerNode, routerNode.template.content, [], routesByPath);
     return fr;
-}
-
-/**
- * `<wcs-router>` の直後に無い `<wcs-outlet>` を loud に報告する
- * （docs/router-outlet-placement.md）。
- *
- * router が使う outlet は、自分の直後の兄弟要素だけである（マルチ Router で router と
- * outlet を 1 対 1 に結ぶための規則。SSR の採用経路もこの位置を前提にする）。直後に
- * 無ければ、router は outlet を作って自分の直後に置く。そのとき別の場所に置かれた
- * `<wcs-outlet>` は使われず、ページは router の直後に描かれ、置いた outlet は空のまま
- * になる — これまでは何も報告されなかった。
- *
- * **挙動は変えない。** 変えるのは「黙って別の場所に描く」を「原因を指す警告」にする
- * ことだけ。outlet を探す範囲を広げる案・属性で明示的に結ぶ案は、実需が出てから決める。
- *
- * router が outlet を自分のものにするのは「直後にある」か「直後に作った」かのどちら
- * かなので、直前の要素が router でない outlet は、どの router にも使われない。その判定
- * だけで足り、ほかの router の初期化の順番を待つ必要は無い。
- */
-const warned$1 = new WeakSet();
-/**
- * 直後に outlet を持たない router が outlet を作る直前に呼ぶ。同じ root（document か
- * shadow root）に、どの router にも使われない `<wcs-outlet>` があれば 1 回だけ警告する。
- */
-function warnMisplacedOutlet(router) {
-    const root = router.getRootNode();
-    // 文書に入っていない router（root は自分自身）には、比べる相手のページが無い
-    if (root.nodeType !== Node.DOCUMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
-        return;
-    }
-    const routerTag = config.tagNames.router;
-    const outletTag = config.tagNames.outlet;
-    for (const outlet of root.querySelectorAll(outletTag)) {
-        if (warned$1.has(outlet) || outlet.previousElementSibling?.matches(routerTag)) {
-            continue;
-        }
-        warned$1.add(outlet);
-        console.warn(`[@wcstack/router] [wcs/router-outlet-misplaced] A <${routerTag}> uses only the element right after it ` +
-            `as its outlet, and this page has a <${outletTag}> that no router uses. The router makes an outlet of ` +
-            `its own right after itself, so the routes render there and the <${outletTag}> you placed stays empty. ` +
-            `Move the <${outletTag}> right after the <${routerTag}>.`, outlet);
-    }
 }
 
 /**
@@ -2748,6 +2782,8 @@ class Router extends HTMLElement {
     _leaveChecked = false;
     /** 離脱が確認された: 次の commit まで（その遷移の guard のリダイレクトで聞き直さない） */
     _leaveConfirmed = false;
+    /** ページを離れるナビゲーションが確認された: beforeunload で二度聞かない（次のタスクで戻す） */
+    _unloadConfirmed = false;
     _listeningUnload = false;
     _connectedCallbackPromise;
     _resolveConnectedCallback = null;
@@ -2859,8 +2895,9 @@ class Router extends HTMLElement {
         reflectAttribute(this, "basename", value);
     }
     // `leaveConfirm` は input（属性は leave-confirm）。空でない文字列の間、別のルートへ出るナビゲーション
-    // （リンク・戻る / 進む・navigate()）の前に confirm(値) を出し、断られたら出ない。ページを閉じる・
-    // 読み直すときはブラウザ自身の確認（beforeunload）。未保存の変更を守る口（docs/seam-apps.md、
+    // （リンク・戻る / 進む・navigate()）と、ページを離れる取り消せるナビゲーション（basename の外・別の
+    // オリジンへのリンク、フォームの送信）の前に confirm(値) を出し、断られたら出ない。ページを閉じる・
+    // 読み直すとき（と Navigation API の無いブラウザでページを離れるとき）はブラウザ自身の確認（beforeunload）。未保存の変更を守る口（docs/seam-apps.md、
     // router-admin — Navigation API を直接使うしかなかった）。null は属性を外し、undefined は最初の属性へ戻す。
     get leaveConfirm() {
         return this.getAttribute("leave-confirm") || null;
@@ -2870,7 +2907,7 @@ class Router extends HTMLElement {
         this._syncBeforeUnload();
     }
     _onBeforeUnload = (e) => {
-        if (this.leaveConfirm !== null)
+        if (this.leaveConfirm !== null && !this._unloadConfirmed)
             e.preventDefault();
     };
     /** beforeunload は leaveConfirm がある間だけ聞く（リスナーがあるだけで bfcache を外すブラウザがある） */
@@ -2895,6 +2932,33 @@ class Router extends HTMLElement {
             return true;
         }
         return (this._leaveConfirmed = window.confirm(message));
+    }
+    /**
+     * ページを離れるナビゲーション（どの router も受けない）の確認。leaveConfirm の文言で聞き、断られたら
+     * 取り消す。受け入れたら、そのナビゲーションの beforeunload で二度聞かない（Chromium では navigate の
+     * 直後、次のタスクより前に来る。遅れて来るブラウザでは二度聞くだけ）。取り消せないもの（別の文書への
+     * 戻る / 進む）と最初の表示の前は聞かない — beforeunload の側に任せる。
+     */
+    _confirmUnload(navEvent) {
+        const message = this.leaveConfirm;
+        if (message === null || navEvent.cancelable === false || !this._hasCommitted || this._unloadConfirmed)
+            return;
+        if (!window.confirm(message)) {
+            navEvent.preventDefault?.();
+            return;
+        }
+        this._unloadConfirmed = true;
+        setTimeout(() => {
+            this._unloadConfirmed = false;
+        }, 0);
+    }
+    /** 同じ文書の別の router が受ける URL か（マルチ Router: そちらの遷移はページを離れない） */
+    _ownedByAnotherRouter(fullPath) {
+        for (const node of document.querySelectorAll(config.tagNames.router)) {
+            if (node !== this && node instanceof Router && node._isOwnPath(fullPath))
+                return true;
+        }
+        return false;
     }
     _getOutlet() {
         // outlet は自身の直後の兄弟だけ（docs/router-outlet-placement.md）。マルチ Router で router と
@@ -3208,19 +3272,24 @@ class Router extends HTMLElement {
         return fullPath === this._basename || fullPath.startsWith(this._basename + "/");
     }
     _onNavigateFunc(navEvent) {
-        if (!navEvent.canIntercept ||
-            // ページ側が取り消したナビゲーション（未保存の確認など）に intercept() を呼ぶと
-            // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
-            navEvent.defaultPrevented ||
+        if (
+        // ページ側が取り消したナビゲーション（未保存の確認など）に intercept() を呼ぶと
+        // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
+        navEvent.defaultPrevented ||
             navEvent.hashChange ||
             navEvent.downloadRequest !== null) {
             return;
         }
         const url = new URL(navEvent.destination.url);
         const fullPath = this._normalizePathname(url.pathname);
-        // basename 配下でない URL は無視（マルチ Router 対応）
-        if (!this._isOwnPath(fullPath))
+        // basename 配下でない URL は受けない（マルチ Router 対応）。どの router も受けないもの（別の
+        // オリジン、basename の外 — 言語を basename に持つページの言語の切り替え）はページを離れる:
+        // leaveConfirm の文言で聞く（docs/seam-apps.md、router-admin）
+        if (!navEvent.canIntercept || !this._isOwnPath(fullPath)) {
+            if (!navEvent.canIntercept || !this._ownedByAnotherRouter(fullPath))
+                this._confirmUnload(navEvent);
             return;
+        }
         // 別のルートへ出る前の確認（leaveConfirm）。取り消せないナビゲーション（一部の戻る / 進む）では
         // 聞けない。自分の navigate() / replace() からのものは確認済み
         if (!this._leaveChecked && navEvent.cancelable !== false && !this._confirmLeave(fullPath)) {
@@ -4293,7 +4362,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.1.1";
+var version = "4.2.0";
 var pkg = {
 	version: version};
 

@@ -51,11 +51,17 @@ function optionsRequired(fnName) {
 function optionMustBeNumber(fnName) {
   raise(27 /* FilterOptionNotNumber */, [fnName]);
 }
-function valueMustBeNumber(fnName) {
-  raise(28 /* FilterValueNotNumber */, [fnName]);
+function styleInvalid(fnName, value) {
+  raise(52 /* FilterStyleInvalid */, [fnName, value]);
 }
-function valueMustBeDate(fnName) {
-  raise(29 /* FilterValueNotDate */, [fnName]);
+function currencyInvalid(value) {
+  raise(53 /* FilterCurrencyInvalid */, [value]);
+}
+function valueMustBeNumber(fnName, value) {
+  raise(28 /* FilterValueNotNumber */, [fnName, value]);
+}
+function valueMustBeDate(fnName, value) {
+  raise(29 /* FilterValueNotDate */, [fnName, value]);
 }
 function valueMustBeArray(fnName) {
   raise(30 /* FilterValueNotArray */, [fnName]);
@@ -126,7 +132,7 @@ var numeric = (name, op) => ({
     const opt = requiredNumberOption(options, 0, name);
     return (value) => {
       if (typeof value !== "number") {
-        valueMustBeNumber(name);
+        valueMustBeNumber(name, value);
       }
       return op(value, opt);
     };
@@ -158,7 +164,7 @@ var toFixed = (options) => {
   const opt = numberOption(options?.[0] ?? "0", "toFixed");
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("toFixed");
+      valueMustBeNumber("toFixed", value);
     }
     return value.toFixed(opt);
   };
@@ -167,7 +173,7 @@ var round = (options) => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? "0", "round"));
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("round");
+      valueMustBeNumber("round", value);
     }
     return Math.round(value * optValue) / optValue;
   };
@@ -176,7 +182,7 @@ var floor = (options) => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? "0", "floor"));
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("floor");
+      valueMustBeNumber("floor", value);
     }
     return Math.floor(value * optValue) / optValue;
   };
@@ -185,7 +191,7 @@ var ceil = (options) => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? "0", "ceil"));
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("ceil");
+      valueMustBeNumber("ceil", value);
     }
     return Math.ceil(value * optValue) / optValue;
   };
@@ -194,7 +200,7 @@ var percent = (options) => {
   const opt = numberOption(options?.[0] ?? "0", "percent");
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("percent");
+      valueMustBeNumber("percent", value);
     }
     return `${(value * 100).toFixed(opt)}%`;
   };
@@ -221,9 +227,27 @@ var locale = (options) => {
   const explicit = options?.[0];
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("locale");
+      valueMustBeNumber("locale", value);
     }
     return value.toLocaleString(explicit ?? defaultLocale());
+  };
+};
+var currency = (options) => {
+  const code = options?.[0] ?? optionsRequired("currency");
+  const explicit = options?.[1];
+  const format = { style: "currency", currency: code };
+  try {
+    new Intl.NumberFormat("en", format);
+    const known = Intl.supportedValuesOf?.("currency");
+    if (known && !known.includes(code.toUpperCase())) throw 0;
+  } catch {
+    currencyInvalid(code);
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("currency", value);
+    }
+    return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
 var upper = () => (value) => String(value).toUpperCase();
@@ -282,38 +306,48 @@ var join = (options) => {
     return value.join(opt);
   };
 };
+var STYLES = ["full", "long", "medium", "short"];
+function dateOptions(options, fn) {
+  let [loc, style] = options ?? [];
+  if (style === void 0 && loc !== void 0 && STYLES.includes(loc)) [loc, style] = [void 0, loc];
+  if (style !== void 0 && !STYLES.includes(style)) styleInvalid(fn, style);
+  return [loc, style];
+}
 var date = (options) => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, "date");
+  const format = style && { dateStyle: style };
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("date");
+      valueMustBeDate("date", value);
     }
-    return value.toLocaleDateString(explicit ?? defaultLocale());
+    return value.toLocaleDateString(explicit ?? defaultLocale(), format);
   };
 };
 var time = (options) => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, "time");
+  const format = style && { timeStyle: style };
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("time");
+      valueMustBeDate("time", value);
     }
-    return value.toLocaleTimeString(explicit ?? defaultLocale());
+    return value.toLocaleTimeString(explicit ?? defaultLocale(), format);
   };
 };
 var datetime = (options) => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, "datetime");
+  const format = style && { dateStyle: style, timeStyle: style };
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("datetime");
+      valueMustBeDate("datetime", value);
     }
-    return value.toLocaleString(explicit ?? defaultLocale());
+    return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
 var ymd = (options) => {
   const opt = options?.[0] ?? "-";
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("ymd");
+      valueMustBeDate("ymd", value);
     }
     const year = value.getFullYear().toString();
     const month = (value.getMonth() + 1).toString().padStart(2, "0");
@@ -325,7 +359,7 @@ var hms = (options) => {
   const opt = options?.[0] ?? ":";
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("hms");
+      valueMustBeDate("hms", value);
     }
     const hours = value.getHours().toString().padStart(2, "0");
     const minutes = value.getMinutes().toString().padStart(2, "0");
@@ -335,7 +369,7 @@ var hms = (options) => {
 };
 var abs = () => (value) => {
   if (typeof value !== "number") {
-    valueMustBeNumber("abs");
+    valueMustBeNumber("abs", value);
   }
   return Math.abs(value);
 };
@@ -344,7 +378,7 @@ var clamp = (options) => {
   const max = requiredNumberOption(options, 1, "clamp");
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("clamp");
+      valueMustBeNumber("clamp", value);
     }
     return Math.min(Math.max(value, min), max);
   };
@@ -391,10 +425,10 @@ var registered = {
   ceil: { factory: ceil, arity: [0, 1] },
   percent: { factory: percent, arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
-  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`)
-  date: { factory: date, arity: [0, 1] },
-  time: { factory: time, arity: [0, 1] },
-  datetime: { factory: datetime, arity: [0, 1] },
+  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
+  date: { factory: date, arity: [0, 2] },
+  time: { factory: time, arity: [0, 2] },
+  datetime: { factory: datetime, arity: [0, 2] },
   ymd: { factory: ymd, arity: [0, 1] },
   hms: { factory: hms, arity: [0, 1] },
   // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
@@ -421,7 +455,9 @@ var registered = {
   boolean: boolean2,
   number: { factory: number, arity: [0, 0] },
   string: { factory: string, arity: [0, 0] },
-  nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] }
+  nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] },
+  // (added in 4.2: last, so the order of the others is unchanged)
+  currency: { factory: currency, arity: [1, 2] }
 };
 var formatFilters = /* @__PURE__ */ Object.fromEntries(
   /* @__PURE__ */ Object.entries(registered).filter(([name]) => !(name in coreFilters))
@@ -498,10 +534,11 @@ var builtinFilterMeta = {
   unit: { description: "\u5358\u4F4D\uFF08\u63A5\u5C3E\u8F9E\uFF09\u3092\u4ED8\u52A0", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
   // 日付・時刻
   // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
-  // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた
-  date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8 ([locale]\u3002\u65E2\u5B9A\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-  time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B ([locale]\u3002\u65E2\u5B9A\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-  datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642 ([locale]\u3002\u65E2\u5B9A\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた。
+  // 4.2: 2 つ目は書式（full / long / medium / short — Intl の dateStyle / timeStyle）。書式だけなら既定のロケール
+  date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8 ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642 ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
   ymd: { description: "YYYY-MM-DD \u5F62\u5F0F ([separator]\u3002\u65E2\u5B9A\u306F -)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   hms: { description: "HH:MM:SS \u5F62\u5F0F ([separator]\u3002\u65E2\u5B9A\u306F :)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換
@@ -512,7 +549,9 @@ var builtinFilterMeta = {
   boolean: { description: "\u30D6\u30FC\u30EB\u5024\u306B\u5909\u63DB", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   number: { description: "\u6570\u5024\u306B\u5909\u63DB", hasArgs: false, resultType: "number", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   string: { description: "\u6587\u5B57\u5217\u306B\u5909\u63DB", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-  nullIfEmpty: { description: "\u7A7A\u6587\u5B57\u5217\u3092null\u306B\u5909\u63DB", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 }
+  nullIfEmpty: { description: "\u7A7A\u6587\u5B57\u5217\u3092null\u306B\u5909\u63DB", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  // 4.2（formats の最後に登録）
+  currency: { description: "\u901A\u8CA8\u306E\u66F8\u5F0F (code[, locale]\u3002code \u306F ISO 4217 \u2014 JPY / USD / EUR\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 1, maxArgs: 2, argTypes: ["string", "string"] }
 };
 
 // src/public/manifest.ts

@@ -20,7 +20,7 @@ interface Feature {
 }
 
 /**
- * The formats add-on (@wcstack/state/features/formats): the 37 filters that compute and show a value
+ * The formats add-on (@wcstack/state/features/formats): the 38 filters that compute and show a value
  * (display, string shaping, dates — locale-aware —, arithmetic, conversions, missing values).
  */
 

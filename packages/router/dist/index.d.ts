@@ -341,6 +341,8 @@ declare class Router extends HTMLElement implements IRouter {
     private _leaveChecked;
     /** 離脱が確認された: 次の commit まで（その遷移の guard のリダイレクトで聞き直さない） */
     private _leaveConfirmed;
+    /** ページを離れるナビゲーションが確認された: beforeunload で二度聞かない（次のタスクで戻す） */
+    private _unloadConfirmed;
     private _listeningUnload;
     private _connectedCallbackPromise;
     private _resolveConnectedCallback;
@@ -392,6 +394,15 @@ declare class Router extends HTMLElement implements IRouter {
      * （クエリだけの遷移）・確認済みの遷移の続き（guard のリダイレクト）では聞かない。
      */
     private _confirmLeave;
+    /**
+     * ページを離れるナビゲーション（どの router も受けない）の確認。leaveConfirm の文言で聞き、断られたら
+     * 取り消す。受け入れたら、そのナビゲーションの beforeunload で二度聞かない（Chromium では navigate の
+     * 直後、次のタスクより前に来る。遅れて来るブラウザでは二度聞くだけ）。取り消せないもの（別の文書への
+     * 戻る / 進む）と最初の表示の前は聞かない — beforeunload の側に任せる。
+     */
+    private _confirmUnload;
+    /** 同じ文書の別の router が受ける URL か（マルチ Router: そちらの遷移はページを離れない） */
+    private _ownedByAnotherRouter;
     private _getOutlet;
     private _getTemplate;
     get outlet(): IOutlet;

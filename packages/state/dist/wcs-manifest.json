@@ -95,7 +95,8 @@
     "coalesce",
     "number",
     "string",
-    "nullIfEmpty"
+    "nullIfEmpty",
+    "currency"
   ],
   "filterMeta": {
     "eq": {
@@ -520,35 +521,38 @@
       ]
     },
     "date": {
-      "description": "ロケール形式の日付 ([locale]。既定は config.locale)",
+      "description": "ロケール形式の日付 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 1,
+      "maxArgs": 2,
       "argTypes": [
+        "string",
         "string"
       ]
     },
     "time": {
-      "description": "ロケール形式の時刻 ([locale]。既定は config.locale)",
+      "description": "ロケール形式の時刻 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 1,
+      "maxArgs": 2,
       "argTypes": [
+        "string",
         "string"
       ]
     },
     "datetime": {
-      "description": "ロケール形式の日時 ([locale]。既定は config.locale)",
+      "description": "ロケール形式の日時 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 1,
+      "maxArgs": 2,
       "argTypes": [
+        "string",
         "string"
       ]
     },
@@ -645,6 +649,20 @@
       ],
       "minArgs": 0,
       "maxArgs": 0
+    },
+    "currency": {
+      "description": "通貨の書式 (code[, locale]。code は ISO 4217 — JPY / USD / EUR、既定のロケールは config.locale)",
+      "hasArgs": true,
+      "resultType": "string",
+      "acceptTypes": [
+        "number"
+      ],
+      "minArgs": 1,
+      "maxArgs": 2,
+      "argTypes": [
+        "string",
+        "string"
+      ]
     }
   },
   "filterAliases": {},

@@ -1,5 +1,5 @@
-import { e as effect, o as onCleanup, b as bindNode, g as isDev, h as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-GLSUraaa.esm.js';
-export { D as DisposedError, c as computed, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-GLSUraaa.esm.js';
+import { g as innerEffect, o as onCleanup, b as bindNode, h as isDev, j as hasOwner, w as warnDev, s as signal, a as createRoot } from './core-kS9CKPFP.esm.js';
+export { D as DisposedError, c as computed, e as effect, f as flushSync, i as isDisposedError, n as nodeSource, r as resource, d as streamResource } from './core-kS9CKPFP.esm.js';
 
 // Fine-grained hyperscript (v1 design notes). The "step before JSX" (docs §4-1).
 //
@@ -141,14 +141,41 @@ function bindProp(el, key, value) {
         return;
     }
     if (typeof value === "function") {
-        effect(() => setProp(el, key, value()));
+        innerEffect(() => setProp(el, key, value()));
         return;
     }
     if (isReadSignal(value)) {
-        effect(() => setProp(el, key, value.get()));
+        innerEffect(() => setProp(el, key, value.get()));
         return;
     }
     setProp(el, key, value);
+}
+/**
+ * Objects given to a custom element that is not defined yet, by element → property, until it is
+ * (docs/seam-apps.md, signals-shop: `h("product-card", { product })` before `product-card.js` ran
+ * landed as `product="[object Object]"`). Not set on the element now: an own property set before
+ * the upgrade would hide the class's accessor, so its setter would never run. The latest value is
+ * assigned once the element is defined — through the setter, as a defined element gets it.
+ */
+const heldUntilDefined = new WeakMap();
+/** A custom element (a dash in its name) whose definition has not run yet. */
+function awaitsDefinition(el) {
+    return el.localName.includes("-") && typeof customElements !== "undefined" && customElements.get(el.localName) === undefined;
+}
+function holdUntilDefined(el, key, value) {
+    let held = heldUntilDefined.get(el);
+    if (!held) {
+        heldUntilDefined.set(el, (held = new Map()));
+        const props = held;
+        void customElements.whenDefined(el.localName).then(() => {
+            heldUntilDefined.delete(el);
+            // (an element not in the document is not upgraded by define(): upgrade it before the setter is wanted)
+            customElements.upgrade(el);
+            for (const [k, v] of props)
+                el[k] = v;
+        });
+    }
+    held.set(key, value);
 }
 function setProp(el, key, value) {
     if (key === "style") {
@@ -188,6 +215,12 @@ function setProp(el, key, value) {
         // props coerce ""→0 (same as null). We do NOT normalize `false`:
         // `el.disabled = false` is the intended boolean clear.
         el[propKey] = value == null ? "" : value;
+        return;
+    }
+    // (a value given since replaces a held one: a primitive goes to the attribute, as below)
+    heldUntilDefined.get(el)?.delete(propKey);
+    if (typeof value === "object" && value !== null && awaitsDefinition(el)) {
+        holdUntilDefined(el, propKey, value);
         return;
     }
     if (value == null || value === false) {
@@ -293,7 +326,7 @@ function insertReactive(parent, accessor) {
     const anchor = document.createComment("");
     parent.appendChild(anchor);
     let current = [];
-    effect(() => {
+    innerEffect(() => {
         const value = accessor();
         // FAST PATH: a plain text result that replaces a plain text result. The common
         // reactive child is a string/number thunk (`() => \`count: ${n.get()}\``); the
@@ -453,7 +486,7 @@ function checkKeyDev(key, item, hasExplicitKey) {
     if (!hasExplicitKey && (typeof key === "object" || typeof key === "function")) {
         warnDev("NON_PRIMITIVE_KEY", typeof key, "For: a non-primitive item is used as its own key (no `key` option given). " +
             "Object identity changes across renders, so every row is rebuilt and per-row " +
-            "state is lost. Pass `{ key: item => item.id }`.", { item });
+            "state is lost. Pass `{ key: item => item.id }`, and read the item through current().", { item });
     }
 }
 function For(list, each, options) {
@@ -479,7 +512,7 @@ function For(list, each, options) {
                 });
                 return { node, dispose, idx, cur };
             };
-            effect(() => {
+            innerEffect(() => {
                 const items = read() ?? [];
                 // Key-uniqueness PRE-PASS (no side effects): throwing here, before any row is
                 // created or moved, keeps a duplicate-key error from leaving half-built rows
@@ -609,7 +642,7 @@ function Index(list, each) {
             const anchor = document.createComment("index");
             parent.appendChild(anchor);
             const rows = [];
-            effect(() => {
+            innerEffect(() => {
                 const items = read() ?? [];
                 // Live parent (see `For`), null only if the anchor was detached undisposed.
                 const host = anchor.parentNode;
@@ -841,5 +874,5 @@ function mountNode(tagName, options = {}) {
     };
 }
 
-export { For, Fragment, Index, SignalsElement, bindNode, createRoot, createSignalsElement, effect, h, mountNode, onCleanup, render, signal };
+export { For, Fragment, Index, SignalsElement, bindNode, createRoot, createSignalsElement, h, mountNode, onCleanup, render, signal };
 //# sourceMappingURL=dom.esm.js.map

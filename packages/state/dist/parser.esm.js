@@ -92,7 +92,8 @@ var FORMATS_FILTER_NAMES = [
   "coalesce",
   "number",
   "string",
-  "nullIfEmpty"
+  "nullIfEmpty",
+  "currency"
 ];
 var definitions = /* @__PURE__ */ new Map();
 function hasFilter(name) {
@@ -325,6 +326,8 @@ var codeOf = (id) => {
   return c ? `[wcs/${c}] ` : "";
 };
 var MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
+var was = (v) => v == null ? String(v) : v instanceof Date ? "a Date" : Array.isArray(v) ? "an array" : typeof v === "string" ? `a string (${JSON.stringify(v.length > 32 ? v.slice(0, 32) + "\u2026" : v)})` : typeof v === "object" ? "an object" : `a ${typeof v} (${String(v)})`;
+var NAMESPACES = ["", "", "class.", "attr.", "style."];
 var element = (tag, at) => `<${tag}${at.map((a, i) => i % 2 ? `="${a}"` : ` ${a}`).join("")}>`;
 var CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
 var SENTENCES = {
@@ -340,7 +343,8 @@ var SENTENCES = {
   [10 /* SetAllSpreadLength */]: (p, n) => `$setAll("${p}", \u2026, { spread: true }) needs an array of ${n} values`,
   [11 /* DrainNotSettled */]: () => `updates did not settle after ${MAX_DRAIN_PASSES} passes`,
   [41 /* RenderChain */]: () => `render chain depth limit exceeded (${MAX_RENDER_CHAIN} drains that rendering itself started); bindings for this batch were not applied.`,
-  [12 /* BindingFailed */]: (type, p) => `binding "${type}: ${p}" failed to apply.`,
+  // (named as written — `textContent: iso`, `class.active: x` — when the binding has a member; else its type)
+  [12 /* BindingFailed */]: (type, p, name, kind) => `binding "${name ? (NAMESPACES[kind] ?? "") + name : type}: ${p}" failed to apply.`,
   [13 /* LoadFailed */]: (src, status) => `failed to load "${src}": ${status}`,
   [14 /* ElementFailed */]: () => "this <wcs-state> failed to initialize; create a new one",
   [15 /* NotInitialized */]: () => "state is not initialized",
@@ -358,8 +362,10 @@ var SENTENCES = {
   [25 /* NamingLimit */]: (limit) => `view-transition naming-limit (${limit}) reached.`,
   [26 /* FilterOptionsRequired */]: (fn) => `filter ${fn} requires at least one option`,
   [27 /* FilterOptionNotNumber */]: (fn) => `filter ${fn} requires a number as option`,
-  [28 /* FilterValueNotNumber */]: (fn) => `filter ${fn} requires a number value`,
-  [29 /* FilterValueNotDate */]: (fn) => `filter ${fn} requires a date value`,
+  [28 /* FilterValueNotNumber */]: (fn, v) => `filter ${fn} requires a number value, not ${was(v)}${typeof v === "string" ? ` \u2014 put |number before |${fn}, or convert it where it is read` : ""}`,
+  [29 /* FilterValueNotDate */]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " \u2014 make the Date where it is read: a getter returning new Date(\u2026)" : ""}`,
+  [52 /* FilterStyleInvalid */]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"`,
+  [53 /* FilterCurrencyInvalid */]: (v) => `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "${v}"`,
   [30 /* FilterValueNotArray */]: (fn) => `filter ${fn} requires an array value`,
   [31 /* DirectionalSyncDisabled */]: () => "init=/sync= modifiers require enableDirectionalInitialSync.",
   [33 /* ModifierUnknown */]: (key, modifier) => `Unknown binding modifier "${key}" in "${modifier}".`,

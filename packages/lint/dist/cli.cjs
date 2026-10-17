@@ -220,6 +220,10 @@ var WcsDiagnosticCode = {
   // ランタイムは何も報告しない（root は正しい値）ので lint の code。`#direct` か `event.target.closest(...)` を
   // 案内する。読みが実行されない分岐にあることもあるので warning。
   DelegatedCurrentTarget: "wcs/delegated-current-target",
+  // `<form data-wcs="onsubmit: login">` の `#prevent` 忘れ（ハンドラも preventDefault を呼ばない）。ブラウザが
+  // フォームも送る — ページが読み直されるか、router があれば GET が欄（パスワードも）を URL と履歴に載せる
+  // （docs/seam-apps.md、router-auth）。warning（action 付きのフォームと、読めないハンドラでは黙る）。
+  SubmitWithoutPrevent: "wcs/submit-without-prevent",
   // 4.0 で外れた API の旧名（`this.$trackDependency` → `$dependOn`、`$untrackDependency` → `$untracked`）。
   // ランタイムは読んだ時点で同じ code（#1701）で throw するので error。3.x（3.2〜3.3）では「動くが 4.0 で
   // 外れる」info だった。フィルタの旧名（`uc` など）は 4.0 のランタイムと同じく `wcs/filter-unknown` で、
@@ -277,6 +281,13 @@ var WcsDiagnosticCode = {
   RouterOutletMisplaced: "wcs/router-outlet-misplaced",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
+  // `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`。最初に着いたルートでしか束ねられず、
+  // 遷移で入ったルートでは書いたままの文字が出る（router の README「Where route content lives」— docs/seam-apps.md、
+  // router-admin）。warning。
+  RouteBareMustache: "wcs/route-bare-mustache",
+  // 既定の `<slot>` の無いレイアウトのテンプレートに、名前付きスロットの外の中身（入れ子のルート）を渡している。
+  // 中身は表示されない。ランタイムも同じ code で警告する（docs/seam-apps.md、router-admin）。warning。
+  LayoutSlotMissing: "wcs/layout-slot-missing",
   // --- deprecations ---
   // 名前付き State（`<wcs-state name>` / `path@name`）。v2 でマウント（`mount=` と接頭辞付きパス）に
   // 置き換わる（docs/state-mount-design.md D16）。1.x では warning、v2 では parse error と同時に error。
@@ -394,7 +405,8 @@ var FORMATS_FILTER_NAMES = [
   "coalesce",
   "number",
   "string",
-  "nullIfEmpty"
+  "nullIfEmpty",
+  "currency"
 ];
 var definitions = /* @__PURE__ */ new Map();
 function hasFilter(name) {
@@ -611,6 +623,8 @@ var codeOf = (id) => {
   return c ? `[wcs/${c}] ` : "";
 };
 var MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
+var was = (v) => v == null ? String(v) : v instanceof Date ? "a Date" : Array.isArray(v) ? "an array" : typeof v === "string" ? `a string (${JSON.stringify(v.length > 32 ? v.slice(0, 32) + "\u2026" : v)})` : typeof v === "object" ? "an object" : `a ${typeof v} (${String(v)})`;
+var NAMESPACES = ["", "", "class.", "attr.", "style."];
 var element = (tag, at2) => `<${tag}${at2.map((a, i) => i % 2 ? `="${a}"` : ` ${a}`).join("")}>`;
 var CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
 var SENTENCES = {
@@ -662,10 +676,11 @@ var SENTENCES = {
     41
     /* RenderChain */
   ]: () => `render chain depth limit exceeded (${MAX_RENDER_CHAIN} drains that rendering itself started); bindings for this batch were not applied.`,
+  // (named as written — `textContent: iso`, `class.active: x` — when the binding has a member; else its type)
   [
     12
     /* BindingFailed */
-  ]: (type, p) => `binding "${type}: ${p}" failed to apply.`,
+  ]: (type, p, name, kind) => `binding "${name ? (NAMESPACES[kind] ?? "") + name : type}: ${p}" failed to apply.`,
   [
     13
     /* LoadFailed */
@@ -737,11 +752,19 @@ var SENTENCES = {
   [
     28
     /* FilterValueNotNumber */
-  ]: (fn) => `filter ${fn} requires a number value`,
+  ]: (fn, v) => `filter ${fn} requires a number value, not ${was(v)}${typeof v === "string" ? ` \u2014 put |number before |${fn}, or convert it where it is read` : ""}`,
   [
     29
     /* FilterValueNotDate */
-  ]: (fn) => `filter ${fn} requires a date value`,
+  ]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " \u2014 make the Date where it is read: a getter returning new Date(\u2026)" : ""}`,
+  [
+    52
+    /* FilterStyleInvalid */
+  ]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"`,
+  [
+    53
+    /* FilterCurrencyInvalid */
+  ]: (v) => `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "${v}"`,
   [
     30
     /* FilterValueNotArray */
@@ -1681,11 +1704,17 @@ function optionsRequired(fnName) {
 function optionMustBeNumber(fnName) {
   raise2(27, [fnName]);
 }
-function valueMustBeNumber(fnName) {
-  raise2(28, [fnName]);
+function styleInvalid(fnName, value) {
+  raise2(52, [fnName, value]);
 }
-function valueMustBeDate(fnName) {
-  raise2(29, [fnName]);
+function currencyInvalid(value) {
+  raise2(53, [value]);
+}
+function valueMustBeNumber(fnName, value) {
+  raise2(28, [fnName, value]);
+}
+function valueMustBeDate(fnName, value) {
+  raise2(29, [fnName, value]);
 }
 function valueMustBeArray(fnName) {
   raise2(30, [fnName]);
@@ -1752,7 +1781,7 @@ var numeric = (name, op) => ({
     const opt = requiredNumberOption(options, 0, name);
     return (value) => {
       if (typeof value !== "number") {
-        valueMustBeNumber(name);
+        valueMustBeNumber(name, value);
       }
       return op(value, opt);
     };
@@ -1782,7 +1811,7 @@ var toFixed = (options) => {
   const opt = numberOption(options?.[0] ?? "0", "toFixed");
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("toFixed");
+      valueMustBeNumber("toFixed", value);
     }
     return value.toFixed(opt);
   };
@@ -1791,7 +1820,7 @@ var round = (options) => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? "0", "round"));
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("round");
+      valueMustBeNumber("round", value);
     }
     return Math.round(value * optValue) / optValue;
   };
@@ -1800,7 +1829,7 @@ var floor = (options) => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? "0", "floor"));
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("floor");
+      valueMustBeNumber("floor", value);
     }
     return Math.floor(value * optValue) / optValue;
   };
@@ -1809,7 +1838,7 @@ var ceil = (options) => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? "0", "ceil"));
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("ceil");
+      valueMustBeNumber("ceil", value);
     }
     return Math.ceil(value * optValue) / optValue;
   };
@@ -1818,7 +1847,7 @@ var percent = (options) => {
   const opt = numberOption(options?.[0] ?? "0", "percent");
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("percent");
+      valueMustBeNumber("percent", value);
     }
     return `${(value * 100).toFixed(opt)}%`;
   };
@@ -1845,9 +1874,27 @@ var locale = (options) => {
   const explicit = options?.[0];
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("locale");
+      valueMustBeNumber("locale", value);
     }
     return value.toLocaleString(explicit ?? defaultLocale());
+  };
+};
+var currency = (options) => {
+  const code = options?.[0] ?? optionsRequired("currency");
+  const explicit = options?.[1];
+  const format = { style: "currency", currency: code };
+  try {
+    new Intl.NumberFormat("en", format);
+    const known = Intl.supportedValuesOf?.("currency");
+    if (known && !known.includes(code.toUpperCase())) throw 0;
+  } catch {
+    currencyInvalid(code);
+  }
+  return (value) => {
+    if (typeof value !== "number") {
+      valueMustBeNumber("currency", value);
+    }
+    return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
 var upper = () => (value) => String(value).toUpperCase();
@@ -1906,38 +1953,48 @@ var join = (options) => {
     return value.join(opt);
   };
 };
+var STYLES = ["full", "long", "medium", "short"];
+function dateOptions(options, fn) {
+  let [loc, style] = options ?? [];
+  if (style === void 0 && loc !== void 0 && STYLES.includes(loc)) [loc, style] = [void 0, loc];
+  if (style !== void 0 && !STYLES.includes(style)) styleInvalid(fn, style);
+  return [loc, style];
+}
 var date = (options) => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, "date");
+  const format = style && { dateStyle: style };
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("date");
+      valueMustBeDate("date", value);
     }
-    return value.toLocaleDateString(explicit ?? defaultLocale());
+    return value.toLocaleDateString(explicit ?? defaultLocale(), format);
   };
 };
 var time = (options) => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, "time");
+  const format = style && { timeStyle: style };
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("time");
+      valueMustBeDate("time", value);
     }
-    return value.toLocaleTimeString(explicit ?? defaultLocale());
+    return value.toLocaleTimeString(explicit ?? defaultLocale(), format);
   };
 };
 var datetime = (options) => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, "datetime");
+  const format = style && { dateStyle: style, timeStyle: style };
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("datetime");
+      valueMustBeDate("datetime", value);
     }
-    return value.toLocaleString(explicit ?? defaultLocale());
+    return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
 var ymd = (options) => {
   const opt = options?.[0] ?? "-";
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("ymd");
+      valueMustBeDate("ymd", value);
     }
     const year = value.getFullYear().toString();
     const month = (value.getMonth() + 1).toString().padStart(2, "0");
@@ -1949,7 +2006,7 @@ var hms = (options) => {
   const opt = options?.[0] ?? ":";
   return (value) => {
     if (!(value instanceof Date)) {
-      valueMustBeDate("hms");
+      valueMustBeDate("hms", value);
     }
     const hours = value.getHours().toString().padStart(2, "0");
     const minutes = value.getMinutes().toString().padStart(2, "0");
@@ -1959,7 +2016,7 @@ var hms = (options) => {
 };
 var abs = () => (value) => {
   if (typeof value !== "number") {
-    valueMustBeNumber("abs");
+    valueMustBeNumber("abs", value);
   }
   return Math.abs(value);
 };
@@ -1968,7 +2025,7 @@ var clamp = (options) => {
   const max = requiredNumberOption(options, 1, "clamp");
   return (value) => {
     if (typeof value !== "number") {
-      valueMustBeNumber("clamp");
+      valueMustBeNumber("clamp", value);
     }
     return Math.min(Math.max(value, min), max);
   };
@@ -2015,10 +2072,10 @@ var registered = {
   ceil: { factory: ceil, arity: [0, 1] },
   percent: { factory: percent, arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
-  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`)
-  date: { factory: date, arity: [0, 1] },
-  time: { factory: time, arity: [0, 1] },
-  datetime: { factory: datetime, arity: [0, 1] },
+  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
+  date: { factory: date, arity: [0, 2] },
+  time: { factory: time, arity: [0, 2] },
+  datetime: { factory: datetime, arity: [0, 2] },
   ymd: { factory: ymd, arity: [0, 1] },
   hms: { factory: hms, arity: [0, 1] },
   // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
@@ -2045,7 +2102,9 @@ var registered = {
   boolean: boolean2,
   number: { factory: number, arity: [0, 0] },
   string: { factory: string, arity: [0, 0] },
-  nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] }
+  nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] },
+  // (added in 4.2: last, so the order of the others is unchanged)
+  currency: { factory: currency, arity: [1, 2] }
 };
 var formatFilters = /* @__PURE__ */ Object.fromEntries(
   /* @__PURE__ */ Object.entries(registered).filter(([name]) => !(name in coreFilters))
@@ -2116,10 +2175,11 @@ var builtinFilterMeta = {
   unit: { description: "\u5358\u4F4D\uFF08\u63A5\u5C3E\u8F9E\uFF09\u3092\u4ED8\u52A0", hasArgs: true, resultType: "string", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["string"] },
   // 日付・時刻
   // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
-  // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた
-  date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8 ([locale]\u3002\u65E2\u5B9A\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-  time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B ([locale]\u3002\u65E2\u5B9A\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
-  datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642 ([locale]\u3002\u65E2\u5B9A\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
+  // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた。
+  // 4.2: 2 つ目は書式（full / long / medium / short — Intl の dateStyle / timeStyle）。書式だけなら既定のロケール
+  date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8 ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642 ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
   ymd: { description: "YYYY-MM-DD \u5F62\u5F0F ([separator]\u3002\u65E2\u5B9A\u306F -)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   hms: { description: "HH:MM:SS \u5F62\u5F0F ([separator]\u3002\u65E2\u5B9A\u306F :)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換
@@ -2130,7 +2190,9 @@ var builtinFilterMeta = {
   boolean: { description: "\u30D6\u30FC\u30EB\u5024\u306B\u5909\u63DB", hasArgs: false, resultType: "boolean", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   number: { description: "\u6570\u5024\u306B\u5909\u63DB", hasArgs: false, resultType: "number", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
   string: { description: "\u6587\u5B57\u5217\u306B\u5909\u63DB", hasArgs: false, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 0 },
-  nullIfEmpty: { description: "\u7A7A\u6587\u5B57\u5217\u3092null\u306B\u5909\u63DB", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 }
+  nullIfEmpty: { description: "\u7A7A\u6587\u5B57\u5217\u3092null\u306B\u5909\u63DB", hasArgs: false, resultType: "passthrough", acceptTypes: ["string"], minArgs: 0, maxArgs: 0 },
+  // 4.2（formats の最後に登録）
+  currency: { description: "\u901A\u8CA8\u306E\u66F8\u5F0F (code[, locale]\u3002code \u306F ISO 4217 \u2014 JPY / USD / EUR\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: ["number"], minArgs: 1, maxArgs: 2, argTypes: ["string", "string"] }
 };
 var WCS_MANIFEST_VERSION = 2;
 var builtinFilterAliases = Object.freeze({});
@@ -10516,6 +10578,193 @@ function findOwnThis(text3, kind) {
   forEachChild(root, walk);
   return found;
 }
+var DESTRUCTIVE_ARRAY_METHODS = /* @__PURE__ */ new Set(["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin"]);
+function memberChain(node, source) {
+  const segments = [];
+  let cur = unwrapChain(node);
+  while (cur.type === "MemberExpression") {
+    const property = cur.property;
+    let name = null;
+    if (!cur.computed && property.type === "Identifier") name = property.name;
+    else if (property.type === "Literal" && (typeof property.value === "string" || typeof property.value === "number")) name = String(property.value);
+    segments.unshift({ name, raw: source(property), computed: cur.computed });
+    cur = unwrapChain(cur.object);
+  }
+  return { base: cur, segments };
+}
+function assignTarget(root, segments) {
+  if (segments.every((s) => s.name !== null)) {
+    const path = segments.map((s) => s.name).join(".");
+    return segments.length === 1 && /^[A-Za-z_$][\w$]*$/.test(path) ? `${root}.${path}` : `${root}["${path}"]`;
+  }
+  return `${root}[\`${segments.map((s) => s.name ?? `\${${s.raw}}`).join(".")}\`]`;
+}
+function findInPlaceChanges(text3, kind, root) {
+  const prefix = kind === "body" ? PREFIX : VALUE_PREFIX;
+  let program;
+  try {
+    program = parse3(prefix + text3 + (kind === "body" ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: "latest", sourceType: "module" });
+  } catch {
+    return [];
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return [];
+  let body = wrapper.body;
+  if (kind === "value") {
+    const statement = wrapper.body.body.length === 1 ? wrapper.body.body[0] : null;
+    const fn = statement?.type === "ExpressionStatement" ? statement.expression : null;
+    if (fn === null || fn.type !== "FunctionExpression" && fn.type !== "ArrowFunctionExpression") return [];
+    if (root === null) {
+      const first = fn.params[0];
+      if (first === void 0 || first.type !== "Identifier") return [];
+      root = first.name;
+    }
+    body = fn.body;
+  }
+  if (root === null) return [];
+  const stateRoot = root;
+  const shift = prefix.length;
+  const source = (n) => (prefix + text3).slice(n.start, n.end);
+  const isRoot = (n) => stateRoot === "this" ? n.type === "ThisExpression" : n.type === "Identifier" && n.name === stateRoot;
+  const bound = /* @__PURE__ */ new Map();
+  const bind = (name) => {
+    bound.set(name, (bound.get(name) ?? 0) + 1);
+  };
+  const aliases = /* @__PURE__ */ new Map();
+  const collect2 = (node) => {
+    if (isFunctionNode(node)) {
+      if (node.type === "FunctionDeclaration" && node.id !== null) bind(node.id.name);
+      const names = /* @__PURE__ */ new Set();
+      for (const param of node.params) bindingNames(param, names);
+      names.forEach(bind);
+    } else if (node.type === "VariableDeclarator") {
+      const names = /* @__PURE__ */ new Set();
+      bindingNames(node.id, names);
+      names.forEach(bind);
+      const init = node.init ? unwrapChain(node.init) : null;
+      if (init !== null && node.id.type === "Identifier" && init.type === "MemberExpression") {
+        const chain = memberChain(init, source);
+        if (isRoot(chain.base) && chain.segments.length > 0 && !chain.segments[0].name?.startsWith("$")) {
+          aliases.set(node.id.name, { source: source(init), segments: chain.segments });
+        }
+      } else if (init !== null && node.id.type === "ObjectPattern" && isRoot(init)) {
+        for (const property of node.id.properties) {
+          if (property.type !== "Property" || property.computed) continue;
+          const key = property.key.type === "Identifier" ? property.key.name : property.key.type === "Literal" ? String(property.key.value) : null;
+          const value = property.value.type === "AssignmentPattern" ? property.value.left : property.value;
+          if (key === null || key.startsWith("$") || value.type !== "Identifier") continue;
+          const segment = { name: key, raw: key, computed: false };
+          aliases.set(value.name, { source: `${stateRoot}.${key}`, segments: [segment] });
+        }
+      }
+    } else if (node.type === "CatchClause" && node.param) {
+      const names = /* @__PURE__ */ new Set();
+      bindingNames(node.param, names);
+      names.forEach(bind);
+    } else if (node.type === "ClassDeclaration" && node.id !== null) {
+      bind(node.id.name);
+    } else if (node.type === "AssignmentExpression" && node.left.type === "Identifier") {
+      bind(node.left.name);
+    }
+    forEachChild(node, collect2);
+  };
+  collect2(body);
+  const alias = (name) => bound.get(name) === 1 ? aliases.get(name) : void 0;
+  const out = [];
+  const report = (target, at2, form, directMin) => {
+    const chain = memberChain(target, source);
+    const base = chain.base;
+    const range = { start: at2.start - shift, end: at2.end - shift };
+    const pick = (segments) => form ?? (segments.length > 0 && segments.every((s) => s.computed) ? "index" : "property");
+    if (base.type === "Identifier" && base.name !== stateRoot) {
+      const a = alias(base.name);
+      if (a === void 0) return;
+      out.push({ form: pick(chain.segments), alias: base.name, source: a.source, target: assignTarget(stateRoot, a.segments), ...range });
+      return;
+    }
+    if (!isRoot(base) || chain.segments.length < directMin || chain.segments[0].name?.startsWith("$")) return;
+    out.push({ form: pick(chain.segments.slice(1)), alias: null, source: source(at2), target: assignTarget(stateRoot, chain.segments), ...range });
+  };
+  const direct = stateRoot === "this" ? Infinity : 2;
+  const visitChanges = (node) => {
+    if (node.type === "AssignmentExpression" && unwrapChain(node.left).type === "MemberExpression") {
+      report(node.left, node.left, null, direct);
+    } else if (node.type === "UpdateExpression" && unwrapChain(node.argument).type === "MemberExpression") {
+      report(node.argument, node.argument, null, direct);
+    } else if (node.type === "UnaryExpression" && node.operator === "delete" && unwrapChain(node.argument).type === "MemberExpression") {
+      report(node.argument, node.argument, "property", direct);
+    } else if (node.type === "CallExpression") {
+      const callee = unwrapChain(node.callee);
+      if (callee.type === "MemberExpression") {
+        const method = !callee.computed && callee.property.type === "Identifier" ? callee.property.name : null;
+        const object = unwrapChain(callee.object);
+        if (method === "assign" && object.type === "Identifier" && object.name === "Object" && node.arguments.length > 0) {
+          const first = node.arguments[0];
+          if (first.type === "Identifier" || unwrapChain(first).type === "MemberExpression") report(first, node, "property", 1);
+        } else if (method !== null && DESTRUCTIVE_ARRAY_METHODS.has(method)) {
+          report(callee.object, node, "method", stateRoot === "this" ? Infinity : 1);
+        }
+      }
+    }
+    forEachChild(node, visitChanges);
+  };
+  visitChanges(body);
+  return out;
+}
+var LOCATION_HOLDERS = /* @__PURE__ */ new Set(["window", "document", "globalThis", "self"]);
+var LOCATION_VARYING = /* @__PURE__ */ new Set(["pathname", "search", "hash", "href"]);
+function findLocationRead(body) {
+  let program;
+  try {
+    program = parse3(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return null;
+  const names = /* @__PURE__ */ new Set();
+  const scan = (node) => {
+    if (isFunctionNode(node)) for (const param of node.params) bindingNames(param, names);
+    if (node.type === "VariableDeclarator") bindingNames(node.id, names);
+    forEachChild(node, scan);
+  };
+  scan(wrapper.body);
+  if (names.has("location")) return null;
+  const isLocation = (node) => {
+    const n = unwrapChain(node);
+    if (n.type === "Identifier") return n.name === "location";
+    return n.type === "MemberExpression" && !n.computed && n.property.type === "Identifier" && n.property.name === "location" && n.object.type === "Identifier" && LOCATION_HOLDERS.has(n.object.name);
+  };
+  let found = null;
+  const at2 = (node) => {
+    found = { start: node.start - PREFIX.length, end: node.end - PREFIX.length, text: (PREFIX + body).slice(node.start, node.end) };
+  };
+  const walk = (node) => {
+    if (found !== null) return;
+    if (node.type === "MemberExpression" && isLocation(node.object)) {
+      const part = !node.computed && node.property.type === "Identifier" ? node.property.name : null;
+      if (part === null || LOCATION_VARYING.has(part)) at2(node);
+      return;
+    }
+    if (isLocation(node)) {
+      at2(node);
+      return;
+    }
+    if (node.type === "MemberExpression") {
+      walk(node.object);
+      if (node.computed) walk(node.property);
+      return;
+    }
+    if (node.type === "Property") {
+      if (node.computed) walk(node.key);
+      walk(node.value);
+      return;
+    }
+    forEachChild(node, walk);
+  };
+  walk(wrapper.body);
+  return found;
+}
 
 // src/core/messages.ts
 function resolveLocale(locale2) {
@@ -10556,6 +10805,8 @@ var ja = {
   getterCycle: (cycle) => `\u30D1\u30B9 getter \u304C\u5FAA\u74B0\u53C2\u7167\u3057\u3066\u3044\u307E\u3059: ${cycle}`,
   updatedCallbackUnbound: (p) => `$renderedCallback \u306F binding \u99C6\u52D5\u3067\u3059\u3002"${p}" \u306F\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u3069\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306B\u3082\u73FE\u308C\u306A\u3044\u305F\u3081\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u63CF\u753B\u306B\u4F9D\u5B58\u305B\u305A\u53CD\u5FDC\u3059\u308B\u306A\u3089 $watch \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044`,
   onHandlerThis: (name) => `$on \u306E\u30CF\u30F3\u30C9\u30E9 "${name}" \u304C this \u3092\u4F7F\u3063\u3066\u3044\u307E\u3059\u3002$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F state \u3092\u7B2C 1 \u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\uFF08\`${name}(state, event) { state.x = \u2026 }\`\uFF09\u3001this \u306F undefined \u306A\u306E\u3067\u3001this.\u2026 \u306F\u547C\u3070\u308C\u305F\u3068\u304D\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002$watch \u3084\u30E1\u30BD\u30C3\u30C9\u3068\u9055\u3046\u70B9\u306B\u6CE8\u610F`,
+  getterReadsLocation: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001location \u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u3001\u6700\u521D\u306B\u8AAD\u3093\u3060 URL \u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u30CA\u30D3\u30B2\u30FC\u30B7\u30E7\u30F3\u3067\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002URL \u306F state \u3092\u901A\u3057\u3066\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044 \u2014 <wcs-router> \u306E path / searchParams \u3092\u675F\u306D\u308B`,
+  submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
   getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
@@ -10579,6 +10830,8 @@ var ja = {
   typeAnnotationIncompatible: (vt, rt) => `\u578B "${vt}" \u306F @type {${rt}} \u3068\u4E92\u63DB\u6027\u304C\u3042\u308A\u307E\u305B\u3093`,
   arrayMutation: (m, alt) => `\u914D\u5217\u306E\u7834\u58CA\u7684\u30E1\u30BD\u30C3\u30C9 "${m}" \u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\uFF08\u540C\u4E00\u53C2\u7167\u306E\u81EA\u5DF1\u518D\u4EE3\u5165\u3067\u3082\u8981\u7D20\u306E\u8FFD\u52A0\u30FB\u524A\u9664\u306F\u53CD\u6620\u3055\u308C\u307E\u305B\u3093\uFF09\u3002\u975E\u7834\u58CA\u30E1\u30BD\u30C3\u30C9\u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u4F8B: ${alt}\uFF09\u3002`,
   arrayIndexAssign: (sp) => `\u914D\u5217\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3078\u306E\u76F4\u63A5\u4EE3\u5165\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002this["${sp}"] \u306E\u3088\u3046\u306A\u30C9\u30C3\u30C8\u30D1\u30B9\u4EE3\u5165\u3001\u307E\u305F\u306F with() \u3068\u518D\u4EE3\u5165\u3092\u4F7F\u7528\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
+  inPlaceAlias: (a, src, t) => `"${a}" \u306F ${src}\uFF08state \u306E\u5024\u305D\u306E\u3082\u306E\uFF09\u3067\u3059\u3002\u305D\u308C\u3092\u901A\u3057\u305F\u5909\u66F4\u306F\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u305B\u305A\u3001\u540C\u3058\u5024\u3092\u66F8\u304D\u623B\u3057\u3066\u3082\u4E00\u89A7\u306E\u884C\u306F\u8FFD\u52A0\u30FB\u524A\u9664\u30FB\u7F6E\u304D\u63DB\u3048\u3055\u308C\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u5024\u3092\u4F5C\u3063\u3066 ${t} \u306B\u4EE3\u5165\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${a}.with(i, item) / [...${a}, item] / { ...${a}, key: value }\uFF09`,
+  inPlaceChange: (src, t) => `${src} \u306F state \u306E\u5024\u3092\u305D\u306E\u5834\u3067\u5909\u3048\u308B\u306E\u3067\u3001\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u66F4\u65B0\u3092\u30C8\u30EA\u30AC\u30FC\u3057\u307E\u305B\u3093\u3002\u65B0\u3057\u3044\u5024\u3092\u4F5C\u3063\u3066 ${t} \u306B\u4EE3\u5165\u3057\u3066\u304F\u3060\u3055\u3044`,
   tagMemberUnknown: (prop, tag) => `"${prop}" \u306F <${tag}> \u306E wcBindable \u30E1\u30F3\u30D0\u30FC\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u672A\u77E5\u30E1\u30F3\u30D0\u30FC\u3078\u306E\u30D0\u30A4\u30F3\u30C9\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059\uFF09`,
   nameAlias: (written, canonical) => `"${written}" \u306F 4.0 \u3067\u5916\u308C\u307E\u3057\u305F\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\u3067\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u3093\u3060\u6642\u70B9\u3067 throw \u3057\u307E\u3059\uFF09\u3002"${canonical}" \u3068\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   declarationAliasRead: (alias, canonical) => `"${alias}" \u306F 4.0 \u3067\u5916\u308C\u305F\u5BA3\u8A00\u30AD\u30FC\uFF08"${canonical}" \u306E 3.x \u306E\u65E7\u540D\uFF09\u306A\u306E\u3067\u3001this["${alias}"] \u306F undefined \u306B\u306A\u308A\u307E\u3059\u3002"${canonical}" \u3092\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
@@ -10615,6 +10868,9 @@ var ja = {
   baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/"> \u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
   routerOutletMisplaced: () => `\u3053\u306E <wcs-outlet> \u306F <wcs-router> \u306E\u76F4\u5F8C\u306B\u7121\u3044\u306E\u3067\u3001\u3069\u306E router \u3082\u4F7F\u3044\u307E\u305B\u3093\u3002router \u306F\u81EA\u5206\u306E\u76F4\u5F8C\u306E\u8981\u7D20\u3060\u3051\u3092 outlet \u3068\u3057\u3066\u4F7F\u3044\u3001\u305D\u3053\u306B <wcs-outlet> \u304C\u7121\u3051\u308C\u3070\u81EA\u524D\u306E outlet \u3092\u4F5C\u308A\u307E\u3059\u3002\u30EB\u30FC\u30C8\u306F router \u306E\u76F4\u5F8C\u306B\u63CF\u304B\u308C\u3001\u3053\u306E outlet \u306F\u7A7A\u306E\u307E\u307E\u3067\u3059 \u2014 <wcs-router> \u306E\u76F4\u5F8C\u3078\u79FB\u3057\u3066\u304F\u3060\u3055\u3044`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
+  signalsImportMapBoth: () => `\u3053\u306E import map \u306F @wcstack/signals \u3068 @wcstack/signals/dom \u306E\u4E21\u65B9\u3092\u5272\u308A\u5F53\u3066\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u3092\u6301\u3064\u306E\u3067\u3001@wcstack/signals \u3092 import \u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\uFF08\u3053\u306E\u30DA\u30FC\u30B8\u306E\u3082\u306E\u3067\u3082\u3001\u8AAD\u307F\u8FBC\u3080 .js \u3067\u3082\uFF09\u304C 2 \u3064\u76EE\u306E\u30B3\u30A2\u3092\u6301\u3061\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059\u3002@wcstack/signals/dom \u3060\u3051\u3092\u5272\u308A\u5F53\u3066\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30A2\u306E\u5168\u90E8\u3092 export \u3057\u307E\u3059\uFF09`,
+  routeBareMustache: (inLayout) => inLayout ? `\u30EC\u30A4\u30A2\u30A6\u30C8\u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u9077\u79FB\u3067\u306F\u675F\u306D\u3089\u308C\u307E\u305B\u3093 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<span>{{ \u2026 }}</span>\uFF09` : `<wcs-route> \u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u6700\u521D\u306B\u7740\u3044\u305F\u30EB\u30FC\u30C8\u3067\u3057\u304B\u675F\u306D\u3089\u308C\u307E\u305B\u3093\u3002\u9077\u79FB\u3067\u5165\u3063\u305F\u30EB\u30FC\u30C8\u3067\u306F\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<h1>{{ \u2026 }}</h1>\uFF09`,
+  layoutSlotMissing: (l) => `\u30EC\u30A4\u30A2\u30A6\u30C8 "${l}" \u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306B\u65E2\u5B9A\u306E <slot>\uFF08name \u306E\u7121\u3044\u3082\u306E\uFF09\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u3053\u306E <wcs-layout> \u306E\u540D\u524D\u4ED8\u304D\u30B9\u30ED\u30C3\u30C8\u306E\u5916\u306E\u4E2D\u8EAB\uFF08\u5165\u308C\u5B50\u306E\u30EB\u30FC\u30C8\u3068\u305D\u306E\u30DA\u30FC\u30B8\uFF09\u306F\u8868\u793A\u3055\u308C\u307E\u305B\u3093 \u2014 \u30DA\u30FC\u30B8\u3092\u7F6E\u304F\u5834\u6240\u306B <slot></slot> \u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   namedStateAttrDeprecated: (name) => `name \u5C5E\u6027\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30EB\u30FC\u30C8\u30C4\u30EA\u30FC\u3078\u306E\u30DE\u30A6\u30F3\u30C8 <wcs-state mount="${name}"> \u306B\u7F6E\u304D\u63DB\u3048\u3001\u30D1\u30B9\u306F "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
   namedStatePathDeprecated: (name) => name === "default" ? `"@default" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\u3002"@default" \u3092\u5916\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09` : `"@name" \u30BB\u30EC\u30AF\u30BF\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30DE\u30A6\u30F3\u30C8\u3057\u305F\u30C4\u30EA\u30FC\u3092 "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
   mountPathInvalid: (problem, mountPath) => {
@@ -10748,6 +11004,8 @@ var en = {
   getterCycle: (cycle) => `Path getters form a dependency cycle: ${cycle}`,
   updatedCallbackUnbound: (p) => `$renderedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
   onHandlerThis: (name) => `The $on handler "${name}" uses this. A $on handler receives the state as its first argument (\`${name}(state, event) { state.x = \u2026 }\`) and this is undefined, so this.\u2026 throws when it is called \u2014 unlike $watch handlers and methods`,
+  getterReadsLocation: (read) => `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state \u2014 bind <wcs-router>'s path / searchParams`,
+  submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
@@ -10771,6 +11029,8 @@ var en = {
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) => `Destructive array method "${m}" does not trigger a reactive update (re-assigning the same reference does not reflect added/removed elements either). Use a non-destructive method with reassignment (e.g. ${alt}).`,
   arrayIndexAssign: (sp) => `Assigning directly to an array index does not trigger a reactive update. Use a dot-path assignment like this["${sp}"], or with() plus reassignment.`,
+  inPlaceAlias: (a, src, t) => `"${a}" is ${src} \u2014 the state's own value. A change through it does not trigger a reactive update, and writing the same value back does not add, remove or replace a list's rows. Build a new value and assign it to ${t} (${a}.with(i, item), [...${a}, item], { ...${a}, key: value })`,
+  inPlaceChange: (src, t) => `${src} changes the state's value in place, which does not trigger a reactive update. Build a new value and assign it to ${t}`,
   tagMemberUnknown: (prop, tag) => `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
   nameAlias: (written, canonical) => `"${written}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws when it is read) \u2014 write "${canonical}"`,
   declarationAliasRead: (alias, canonical) => `"${alias}" is a declaration key 4.0 removed (the 3.x old name of "${canonical}"), so this["${alias}"] is undefined. Read "${canonical}" instead`,
@@ -10807,6 +11067,9 @@ var en = {
   baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
   routerOutletMisplaced: () => `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty \u2014 move it right after the <wcs-router>`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
+  signalsImportMapBoth: () => `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals \u2014 this page's, or a .js file it loads \u2014 gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
+  routeBareMustache: (inLayout) => inLayout ? `{{ }} in text directly under a layout template is not bound on a navigation. Wrap it in an element (<span>{{ \u2026 }}</span>)` : `{{ }} in text directly under <wcs-route> is bound only on the landing route: a route entered by navigation shows it as written. Wrap it in an element (<h1>{{ \u2026 }}</h1>)`,
+  layoutSlotMissing: (l) => `The template of layout "${l}" has no default <slot> (one without a name), so what this <wcs-layout> holds outside the named slots \u2014 the nested routes and their pages \u2014 is not shown. Put a <slot></slot> where the page goes`,
   namedStateAttrDeprecated: (name) => `The "name" attribute was removed in v2 \u2014 there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
   namedStatePathDeprecated: (name) => name === "default" ? `The "@default" selector was removed in v2 \u2014 drop it (docs/state-mount-design.md \xA79)` : `The "@name" selector was removed in v2 \u2014 there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
   mountPathInvalid: (problem, mountPath) => {
@@ -11221,6 +11484,19 @@ var DELEGATED_EVENTS = /* @__PURE__ */ new Set([
 var CUSTOM_ELEMENT_OWN_EVENTS = /* @__PURE__ */ new Set(["input", "change", "submit"]);
 function collectCurrentTargetHandlers(elements, html, fileReader) {
   const names = /* @__PURE__ */ new Set();
+  forEachStateMethod(elements, html, fileReader, "currentTarget", (name, params, body) => {
+    if (readsEventCurrentTarget(params, body)) names.add(name);
+  });
+  return names;
+}
+function collectPreventDefaultHandlers(elements, html, fileReader) {
+  const handlers = /* @__PURE__ */ new Map();
+  forEachStateMethod(elements, html, fileReader, null, (name, _params, body) => {
+    handlers.set(name, /\bpreventDefault\b/.test(body));
+  });
+  return handlers;
+}
+function forEachStateMethod(elements, html, fileReader, spelling, fn) {
   let insideTemplate = null;
   for (const element2 of elements) {
     if (element2.bindComponent) continue;
@@ -11230,20 +11506,19 @@ function collectCurrentTargetHandlers(elements, html, fileReader) {
       const script = readStateScript(element2.srcAttr, fileReader);
       if (script !== void 0) scripts = [script];
     }
-    scripts = scripts.filter((script) => script.includes("currentTarget"));
+    if (spelling !== null) scripts = scripts.filter((script) => script.includes(spelling));
     if (scripts.length === 0) continue;
     if ((insideTemplate ??= createTemplateTester(html))(element2.tagStart)) continue;
     for (const script of scripts) {
       for (const callable of analyzeCallableBodies(script)) {
-        if (callable.kind !== "method" || !callable.body.includes("currentTarget")) continue;
+        if (callable.kind !== "method" || spelling !== null && !callable.body.includes(spelling)) continue;
         const head = script.slice(callable.end, callable.bodyStart - 1);
         const params = /\(([^)]*)\)\s*$/.exec(head);
         if (params === null) continue;
-        if (readsEventCurrentTarget(params[1], callable.body)) names.add(volume === null ? callable.name : `${volume}.${callable.name}`);
+        fn(volume === null ? callable.name : `${volume}.${callable.name}`, params[1], callable.body);
       }
     }
   }
-  return names;
 }
 function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
   const diagnostics = [];
@@ -11262,6 +11537,11 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
   const getCurrentTargetHandlers = () => {
     currentTargetHandlers ??= collectCurrentTargetHandlers(pathIndex.elements, html, fileReader);
     return currentTargetHandlers;
+  };
+  let preventDefaultHandlers = null;
+  const getPreventDefaultHandlers = () => {
+    preventDefaultHandlers ??= collectPreventDefaultHandlers(pathIndex.elements, html, fileReader);
+    return preventDefaultHandlers;
   };
   for (const attr of attrs) {
     const bindings = splitBindingExpressions(attr.value);
@@ -11324,6 +11604,15 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
         const eventName = propNoMod.slice(2);
         const handler = parsed.path.trim();
         const modifiers = modifiersOf(parsed.property);
+        if (eventName === "submit" && attr.tagName === "form" && !modifiers.includes("prevent") && getPreventDefaultHandlers().get(handler) === false && !/\saction\s*=/i.test(openTagBefore(html, attr.valueStart))) {
+          diagnostics.push({
+            code: WcsDiagnosticCode.SubmitWithoutPrevent,
+            start: bindingStart + leadingSpace,
+            end: bindingStart + leadingSpace + propNoMod.length,
+            message: msgs.submitWithoutPrevent(handler),
+            severity: "warning"
+          });
+        }
         if (DELEGATED_EVENTS.has(eventName) && !modifiers.includes(DIRECT_MODIFIER) && attr.tagName !== void 0 && !(attr.tagName.includes("-") && CUSTOM_ELEMENT_OWN_EVENTS.has(eventName)) && /^[A-Za-z_][\w$]*(?:\.[A-Za-z_][\w$]*)*$/.test(handler) && getCurrentTargetHandlers().has(handler)) {
           currentTargetCandidates.push({
             offset: attr.valueStart,
@@ -11631,6 +11920,10 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
     }
   }
   return diagnostics;
+}
+function openTagBefore(html, valueStart) {
+  const lt2 = html.lastIndexOf("<", valueStart);
+  return lt2 === -1 ? "" : html.slice(lt2, valueStart);
 }
 function findAllBindAttributes(html, attrName) {
   const attrs = [];
@@ -14224,8 +14517,62 @@ function validateDocumentEnv(html, locale2) {
       severity: "error",
       message: msgs.signalsDualEntry()
     });
+  } else {
+    const both = findSignalsImportMapBoth(scanText);
+    if (both) {
+      diagnostics.push({
+        code: WcsDiagnosticCode.SignalsDualEntry,
+        start: both.start,
+        end: both.end,
+        severity: "warning",
+        message: msgs.signalsImportMapBoth()
+      });
+    }
+  }
+  const structure = scanStructure(scanText);
+  for (const at2 of structure.bareMustaches) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.RouteBareMustache,
+      start: at2.start,
+      end: at2.end,
+      severity: "warning",
+      message: msgs.routeBareMustache(at2.inLayout)
+    });
+  }
+  for (const layout of structure.layoutsWithoutDefaultSlot) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.LayoutSlotMissing,
+      start: layout.start,
+      end: layout.end,
+      severity: "warning",
+      message: msgs.layoutSlotMissing(layout.id)
+    });
   }
   return diagnostics;
+}
+function findSignalsImportMapBoth(html) {
+  const mapRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+  let match;
+  while ((match = mapRegex.exec(html)) !== null) {
+    if (!/\btype\s*=\s*(["'])importmap\1/i.test(match[1])) continue;
+    let imports;
+    try {
+      imports = JSON.parse(match[2]).imports;
+    } catch {
+      continue;
+    }
+    if (imports === null || typeof imports !== "object") continue;
+    const core = imports["@wcstack/signals"];
+    const dom = imports["@wcstack/signals/dom"] ?? imports["@wcstack/signals/"];
+    if (typeof core !== "string" || typeof dom !== "string") continue;
+    if (core.includes("/dist/") && dom.includes("/dist/")) continue;
+    const key = '"@wcstack/signals"';
+    const at2 = match[2].indexOf(key);
+    const bodyStart = match.index + match[0].indexOf(">") + 1;
+    const start = bodyStart + (at2 === -1 ? 0 : at2 + 1);
+    return { start, end: start + key.length - 2 };
+  }
+  return null;
 }
 var SCOPED_AUTO = /@wcstack\/([a-z0-9-]+)(?:@[^/"'\s]+)?\/(?:auto\b|dist\/(?:split\/)?auto(?:\.min)?\.js\b)/;
 var BUNDLE_AUTO = /(?:^|\/)wcstack(?:@[^/"'\s]+)?\/(?:auto\b|dist\/auto\.min\.js\b)/;
@@ -14304,6 +14651,88 @@ function blankHtmlComments(html) {
 }
 function blankJsComments(code) {
   return code.replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length)).replace(/(^|[^:])\/\/[^\n]*/g, (m, pre) => pre + " ".repeat(m.length - pre.length));
+}
+var VOID_TAGS = /* @__PURE__ */ new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
+var ROUTE_TAG = "wcs-route";
+var LAYOUT_TAG2 = "wcs-layout";
+function attrValue(attrs, name) {
+  const m = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(attrs);
+  return m === null ? null : m[1] ?? m[2] ?? m[3] ?? "";
+}
+function scanStructure(html) {
+  const scan = html.replace(
+    /(<(script|style)\b[^>]*>)([\s\S]*?)(<\/\2\s*>)/gi,
+    (_m, open, _name, body, close) => open + " ".repeat(body.length) + close
+  );
+  const tagRegex = /<(\/?)([a-zA-Z][\w-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>/g;
+  const layoutIds = /* @__PURE__ */ new Set();
+  for (const m of scan.matchAll(/<wcs-layout\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi)) {
+    const id = attrValue(m[1], "layout");
+    if (id !== null && id !== "") layoutIds.add(id);
+  }
+  const bareMustaches = [];
+  const layouts = [];
+  const templateHasDefaultSlot = /* @__PURE__ */ new Map();
+  const stack = [];
+  let last = 0;
+  let match;
+  const text3 = (from, to) => {
+    const top = stack[stack.length - 1];
+    if (top === void 0 || to <= from) return;
+    const chunk = scan.slice(from, to);
+    if (top.name === LAYOUT_TAG2 && chunk.trim() !== "") top.unslotted = true;
+    if (top.name !== ROUTE_TAG && !top.layoutTemplate) return;
+    for (const m of chunk.matchAll(/\{\{[\s\S]*?\}\}/g)) {
+      bareMustaches.push({ start: from + m.index, end: from + m.index + m[0].length, inLayout: top.layoutTemplate });
+    }
+  };
+  while ((match = tagRegex.exec(scan)) !== null) {
+    text3(last, match.index);
+    last = match.index + match[0].length;
+    const name = match[2].toLowerCase();
+    const nameStart = match.index + 1 + match[1].length;
+    if (match[1] === "/") {
+      const at2 = stack.map((e) => e.name).lastIndexOf(name);
+      if (at2 === -1) continue;
+      for (const closed of stack.splice(at2)) {
+        if (closed.name === LAYOUT_TAG2 && closed.unslotted && closed.layoutId !== void 0) {
+          layouts.push({ start: closed.nameStart, end: closed.nameEnd, id: closed.layoutId });
+        }
+      }
+      continue;
+    }
+    const attrs = match[3];
+    const parent = stack[stack.length - 1];
+    if (parent?.name === LAYOUT_TAG2 && !attrValue(attrs, "slot")) parent.unslotted = true;
+    for (const open of stack) {
+      if (open.layoutTemplate && name === "slot" && !attrValue(attrs, "name")) templateHasDefaultSlot.set(open.layoutId, true);
+    }
+    if (VOID_TAGS.has(name) || /\/\s*$/.test(attrs)) continue;
+    const id = name === "template" ? attrValue(attrs, "id") : null;
+    const element2 = {
+      name,
+      layoutTemplate: id !== null && layoutIds.has(id),
+      nameStart,
+      nameEnd: nameStart + match[2].length
+    };
+    if (element2.layoutTemplate) {
+      element2.layoutId = id;
+      if (!templateHasDefaultSlot.has(id)) templateHasDefaultSlot.set(id, false);
+    }
+    if (name === LAYOUT_TAG2 && attrValue(attrs, "src") === null) {
+      const layoutId = attrValue(attrs, "layout");
+      if (layoutId !== null && layoutId !== "") element2.layoutId = layoutId;
+    }
+    stack.push(element2);
+  }
+  text3(last, scan.length);
+  for (const closed of stack) {
+    if (closed.name === LAYOUT_TAG2 && closed.unslotted && closed.layoutId !== void 0) {
+      layouts.push({ start: closed.nameStart, end: closed.nameEnd, id: closed.layoutId });
+    }
+  }
+  const layoutsWithoutDefaultSlot = layouts.filter((l) => templateHasDefaultSlot.get(l.id) === false);
+  return { bareMustaches, layoutsWithoutDefaultSlot };
 }
 var ROUTER_TAG2 = "wcs-router";
 var OUTLET_TAG = "wcs-outlet";
@@ -15734,6 +16163,54 @@ function validateGetterUntrackedReads(script, scriptStart, nestedWriteRoots, loc
   }
   return out;
 }
+function validateGetterLocationReads(script, scriptStart, locale2) {
+  if (!script.includes("location")) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== "getter" || getter.accessor !== "get" || !getter.body.includes("location")) continue;
+    const read = findLocationRead(getter.body);
+    if (read === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.start,
+      end: scriptStart + getter.bodyStart + read.end,
+      message: msgs.getterReadsLocation(read.text),
+      severity: "warning"
+    });
+  }
+  return out;
+}
+function onHandlerStateParam(script, handler) {
+  if (handler.kind === "body") {
+    const head = script.slice(Math.max(0, handler.start - 400), handler.start);
+    return /\(\s*([A-Za-z_$][\w$]*)[^()]*\)\s*\{\s*$/.exec(head)?.[1] ?? null;
+  }
+  return /^\s*(?:async\s+)?(?:function\b[^(]*\(\s*([A-Za-z_$][\w$]*)|\(\s*([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\s*=>)/.exec(handler.text)?.slice(1).find((name) => name !== void 0) ?? null;
+}
+function validateInPlaceChanges(script, scriptStart, locale2) {
+  const msgs = getMessages(locale2);
+  const out = [];
+  const push3 = (text3, kind, textStart, root) => {
+    for (const change of findInPlaceChanges(text3, kind, root)) {
+      out.push({
+        code: change.form === "method" ? WcsDiagnosticCode.ArrayMutation : change.form === "index" ? WcsDiagnosticCode.ArrayIndexAssign : WcsDiagnosticCode.NestedAssign,
+        start: scriptStart + textStart + change.start,
+        end: scriptStart + textStart + change.end,
+        severity: "error",
+        message: change.alias !== null ? msgs.inPlaceAlias(change.alias, change.source, change.target) : msgs.inPlaceChange(change.source, change.target)
+      });
+    }
+  };
+  for (const callable of analyzeCallableBodies(script)) push3(callable.body, "body", callable.bodyStart, "this");
+  for (const handler of analyzeWatchHandlerSources(script)) push3(handler.text, handler.kind, handler.start, "this");
+  for (const handler of analyzeOnHandlerSources(script)) {
+    const root = handler.kind === "body" ? onHandlerStateParam(script, handler) : null;
+    if (handler.kind === "body" && root === null) continue;
+    push3(handler.text, handler.kind, handler.start, root);
+  }
+  return out;
+}
 var NESTED_WRITE_INPUTS = {
   "wcs-storage": { inputs: ["value"], exemptWhenManual: true },
   "wcs-fetch": { inputs: ["body"], exemptWhenManual: false, oneShot: true }
@@ -15843,6 +16320,26 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
         const keyStart = match.index + match[0].indexOf("`") + 1;
         const path = templateKeyPath(block.content.slice(keyStart, keyStart + match[1].length));
         if (path !== null) addPrefixes(path, false);
+      }
+    }
+    for (const handler of analyzeOnHandlerSources(block.content)) {
+      const param = onHandlerStateParam(block.content, handler);
+      if (param === null) continue;
+      const name = param.replace(/\$/g, "\\$");
+      const region = { start: handler.start, end: handler.start + handler.text.length };
+      const bracket = `\\b${name}\\s*(?:\\?\\.)?\\s*\\[\\s*["']([^"']+)["']\\s*\\]`;
+      const template = `\\b${name}\\s*(?:\\?\\.)?\\s*\\[\\s*\`([^\`]*)\`` + String.raw`\s*\]`;
+      for (const [pattern, quote] of [[bracket, /["']/], [template, /`/]]) {
+        for (const regex of [new RegExp(`${pattern}${ASSIGN_TAIL}`, "g"), new RegExp(`${PRE_INCDEC}${pattern}`, "g")]) {
+          let match;
+          const part = scan.slice(region.start, region.end);
+          while ((match = regex.exec(part)) !== null) {
+            const keyStart = region.start + match.index + match[0].search(quote) + 1;
+            const raw = block.content.slice(keyStart, keyStart + match[1].length);
+            const path = quote.source === "`" ? templateKeyPath(raw) : raw;
+            if (path !== null) addPrefixes(path, false);
+          }
+        }
       }
     }
     API_CALL.lastIndex = 0;
@@ -15975,7 +16472,9 @@ function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrNa
     out.push(...validateIndexParamReads(block.content, block.contentStart, locale2));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale2));
+    out.push(...validateGetterLocationReads(block.content, block.contentStart, locale2));
     out.push(...validateOnHandlerThis(block.content, block.contentStart, locale2));
+    out.push(...validateInPlaceChanges(block.content, block.contentStart, locale2));
   }
   out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale2));
   out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2));
