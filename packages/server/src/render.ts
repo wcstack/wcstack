@@ -1,5 +1,6 @@
+import { pathToFileURL } from 'node:url';
 import { Window } from 'happy-dom';
-import { getSsrSnapshotBuilder, SSR_ORCHESTRATED_VALUE } from './protocol/ssrSnapshot';
+import { getSsrSnapshotBuilder, SSR_MODULE_RESOLVER_KEY, SSR_ORCHESTRATED_VALUE } from './protocol/ssrSnapshot';
 
 /**
  * globalThis を差し替える renderToString の並列実行を防止する Mutex。
@@ -123,6 +124,16 @@ export interface RenderOptions {
    * 「上限なし」と同義になり mutex が漏れるため）。`0`（無制限）では後始末も無制限。
    */
   timeoutMs?: number;
+  /**
+   * `<wcs-state src>` のモジュールを読むローカルのファイル。ページが名指す URL（`baseUrl` / `url` で解決した
+   * 絶対 URL）を受け取り、ファイルのパスか `file:` URL を返す（例: `(url) => join(publicDir, url.pathname)`）。
+   * Node のモジュールローダは `file:` と `data:` しか読まないので、これが無いと `src` の状態は
+   * サーバーで描けない — 厳しい CSP の下で文書が勧める形なのに（docs/seam-apps.md、ssr-news。著者の決定は
+   * docs/v4-direction-2026-10.md §5.1）。`null` / `undefined` を返した URL と、この選択肢の無い描画は、
+   * 理由を言う例外で状態の初期化を失敗させる。モジュールは描画ごとに読み直す（inline の状態と同じく、状態の
+   * オブジェクトをリクエストの間で共有しない）。`.json` の `src` は従来どおり fetch で読む。
+   */
+  resolveModule?: (url: URL) => string | URL | null | undefined;
 }
 
 /** 既定のレンダリング上限（ms）。`RenderOptions.timeoutMs` で変えられる。 */
@@ -262,7 +273,7 @@ async function settlePendingWork(root: ParentNode & Node, maxIterations = 10): P
  * ## SSR でできること
  *
  * ### 状態の初期化とデータ取得
- * - `<wcs-state>` の状態ロード（json 属性, src 属性, inline `<script type="module">`）
+ * - `<wcs-state>` の状態ロード（json 属性, src 属性 — `resolveModule` でローカルのファイルへ写す —, inline `<script type="module">`）
  * - `$connectedCallback` でのサーバーサイド fetch（API 呼び出し、DB 問い合わせ等）
  *
  * ```html
@@ -383,11 +394,13 @@ async function renderInWindow(html: string, options: RenderOptions | undefined, 
   let window: Window | null = null;
   let restoreGlobals: (() => void) | null = null;
   let restoreBaseUrl: (() => void) | null = null;
+  let restoreResolver: (() => void) | null = null;
   let documentOrNull: Document | null = null;
 
   try {
     window = options?.url ? new Window({ url: options.url }) : new Window();
     restoreGlobals = installGlobals(window);
+    restoreResolver = installModuleResolver(options?.resolveModule);
     const document = window.document as unknown as Document;
     documentOrNull = document;
     // url 指定時は <base href> を注入する（既定 "/"）。ブラウザで <base> を置く
@@ -515,6 +528,7 @@ async function renderInWindow(html: string, options: RenderOptions | undefined, 
       () => new Promise<void>((resolve) => setImmediate(resolve)),
       () => window?.happyDOM.abort(),
       () => restoreBaseUrl?.(),
+      () => restoreResolver?.(),
       () => restoreGlobals?.(),
       () => window?.close(),
       // スナップショット提供側（state）がこのレンダリングのために貯めたモジュール大域を
@@ -533,6 +547,43 @@ async function renderInWindow(html: string, options: RenderOptions | undefined, 
       }
     }
   }
+}
+
+/** 描画の番号（`resolveModule` のモジュールを描画ごとに分ける） */
+let renders = 0;
+
+/**
+ * `<wcs-state src>` のモジュールの読み先（ssr-snapshot プロトコルの SSR_MODULE_RESOLVER_KEY）を、この描画の
+ * 間だけ置く。`file:` / `data:` はそのまま読ませる。ほかの URL は `resolve` が返すファイルへ — Node は
+ * モジュールを URL ごとに持ち続けるので、描画の番号を問い合わせに付けて、その描画だけのモジュールにする
+ * （付けないと、状態のオブジェクトがリクエストの間で共有される）。`resolve` が無いか何も返さなければ、
+ * 何をすればよいかを言って投げる（以前は Node の ERR_UNSUPPORTED_ESM_URL_SCHEME だけだった）。
+ */
+function installModuleResolver(resolve: RenderOptions['resolveModule']): () => void {
+  const g = globalThis as Record<symbol, unknown>;
+  const had = Object.prototype.hasOwnProperty.call(g, SSR_MODULE_RESOLVER_KEY);
+  const previous = g[SSR_MODULE_RESOLVER_KEY];
+  const render = ++renders;
+  g[SSR_MODULE_RESOLVER_KEY] = (url: string): string | null => {
+    const u = new URL(url);
+    if (u.protocol === 'file:' || u.protocol === 'data:') return null;
+    const local = resolve?.(u);
+    if (local === null || local === undefined) {
+      throw new Error(
+        `[@wcstack/server] <wcs-state src> names ${url}, which Node cannot import (its loader reads file: and data: URLs). ` +
+        (resolve === undefined
+          ? 'Pass renderToString({ resolveModule }) to map it to a local file, or write the state inline.'
+          : 'resolveModule returned no file for it.'),
+      );
+    }
+    const file = local instanceof URL ? new URL(local.href) : /^file:/i.test(local) ? new URL(local) : pathToFileURL(local);
+    file.searchParams.set('wcs-render', String(render));
+    return file.href;
+  };
+  return () => {
+    if (had) g[SSR_MODULE_RESOLVER_KEY] = previous;
+    else delete g[SSR_MODULE_RESOLVER_KEY];
+  };
 }
 
 /**

@@ -90,6 +90,7 @@ console.log(renderer.html);
 | `baseUrl` | 相対 fetch URL の解決に使うベース URL。既定は `url` の origin。 |
 | `bootstraps` | bootstrap 関数の配列（既定は `bootstrapState`）。非同期ローダーも渡せる — モジュールスコープで `HTMLElement` を継承するクラスを持つパッケージは純 Node でトップレベル import できないため、`async () => (await import('@wcstack/fetch')).bootstrapFetch()` のように渡す（ローダーは DOM グローバル設置後に実行される）。 |
 | `timeoutMs` | ページが ready になるのを待つ上限（ミリ秒）。既定は `DEFAULT_RENDER_TIMEOUT_MS`（**30,000**）。超えると原因を名指しして reject する。**上限を外すときは `0`。** 上限として機能しえない値も「無制限」に倒す: `NaN`・`0` 以下・`MAX_RENDER_TIMEOUT_MS`（2,147,483,647）より大きい値（**`Infinity` を含む**）。Node の `setTimeout` は 2³¹−1 を超える delay を 1 ms に丸めるため、そうしないと「上限を上げたつもり」が即時タイムアウトに反転する。 |
+| `resolveModule` | 4.3（未リリース）から。`(url: URL) => string \| URL \| null` — サーバーで `<wcs-state src>` のモジュールを読むローカルのファイル。ページが名指す URL（`baseUrl` / `url` で解決したもの）を受け取り、パスか `file:` URL を返す（例: `(url) => join(publicDir, url.pathname)`）。Node のモジュールローダは `file:` と `data:` の URL しか読まない。これが無いか何も返さないと、状態の初期化はそう言って失敗する。モジュールは inline の状態と同じく描画ごとに読み直すので、状態のオブジェクトはリクエストの間で共有されない。`.json` の `src` は従来どおり fetch で読む。 |
 
 > **なぜ上限があるか。** `renderToString` は `globalThis` を差し替えるので、レンダリングは 1 本の mutex で直列化され、解放は `finally` にあります。上限が無かった頃は、ready にならないページがその `finally` に到達せず、**1 ページの不具合で以後そのプロセスの全レンダリングが永久に返らなく**なっていました。上限は mutex が必ず戻ることを保証します。
 >
@@ -258,7 +259,7 @@ createServer(async (req, res) => {
 
 ### 状態の初期化とデータ取得
 
-- `<wcs-state>` の状態ロード（json 属性, inline `<script type="module">`）。src 属性はサーバーで描けません: Node のモジュールローダは `file:` と `data:` の URL しか読まないので、描画が `ERR_UNSUPPORTED_ESM_URL_SCHEME` で失敗します。サーバーで描くページでは状態を inline で書いてください（`<script>` にレスポンスの CSP nonce を付けて）
+- `<wcs-state>` の状態ロード（json 属性, inline `<script type="module">`, src 属性 — 厳しい CSP の下で文書が勧める形）。src は、4.3（未リリース）から、`resolveModule` を渡してページが名指す URL をローカルのファイルへ写します（Node のモジュールローダは `file:` と `data:` の URL しか読みません）。4.2 までは src の状態をサーバーで描けず、描画が `ERR_UNSUPPORTED_ESM_URL_SCHEME` で失敗しました
 - `$connectedCallback` でのサーバーサイド fetch（API 呼び出し等）
 
 ```html

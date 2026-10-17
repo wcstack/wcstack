@@ -90,6 +90,7 @@ Renders an HTML string containing `@wcstack/state` templates. Returns fully-rend
 | `baseUrl` | Base URL for resolving relative fetch URLs. Defaults to the origin of `url`. |
 | `bootstraps` | Array of bootstrap functions (defaults to `bootstrapState`). Async loaders are allowed — packages whose classes extend `HTMLElement` at module scope cannot be imported top-level in plain Node, so pass e.g. `async () => (await import('@wcstack/fetch')).bootstrapFetch()`; the loader runs after DOM globals are installed. |
 | `timeoutMs` | How long to wait for the page to become ready, in milliseconds. Default `DEFAULT_RENDER_TIMEOUT_MS` (**30 000**). Exceeding it rejects with a message naming the cause. **Pass `0` to disable the limit.** Values that cannot work as a limit are treated as "no limit" too: `NaN`, anything `≤ 0`, and anything above `MAX_RENDER_TIMEOUT_MS` (2 147 483 647) **including `Infinity`** — Node's `setTimeout` rounds a delay past 2³¹−1 down to 1 ms, so "raising" the limit that way would otherwise invert into an immediate timeout. |
+| `resolveModule` | Since 4.3 (not released yet). `(url: URL) => string \| URL \| null` — the local file a `<wcs-state src>` module is read from on the server: it gets the URL the page names (resolved against `baseUrl` / `url`) and returns a path or a `file:` URL, e.g. `(url) => join(publicDir, url.pathname)`. Node's module loader reads `file:` and `data:` URLs only. Without it, or when it returns nothing, the state fails to initialize with a message saying so. The module is imported anew for each render, as an inline state is, so no state object is shared between requests. A `.json` `src` is fetched, as before. |
 
 > **Why there is a limit at all.** `renderToString` swaps `globalThis`, so renders are serialised through one mutex, released in a `finally`. Before the limit, a page that never became ready never reached that `finally` — one bad page left **every later render on the process hanging forever**. The limit guarantees the mutex comes back.
 >
@@ -258,7 +259,7 @@ createServer(async (req, res) => {
 
 ### State Initialization & Data Fetching
 
-- Load `<wcs-state>` from a `json` attribute or an inline `<script type="module">`. A `src` attribute is not server-rendered: Node's module loader reads only `file:` and `data:` URLs, so the render fails with `ERR_UNSUPPORTED_ESM_URL_SCHEME`. On a server-rendered page, write the state inline (with the response's CSP nonce on the `<script>`)
+- Load `<wcs-state>` from a `json` attribute, an inline `<script type="module">`, or a `src` attribute — the form the documents prefer under a strict CSP. For `src`, since 4.3 (not released yet), pass `resolveModule` to map the URL the page names to a local file (Node's module loader reads only `file:` and `data:` URLs). Up to 4.2 a `src` state could not be server-rendered, and the render failed with `ERR_UNSUPPORTED_ESM_URL_SCHEME`
 - Execute `$connectedCallback` for server-side fetch (API calls, etc.)
 
 ```html
