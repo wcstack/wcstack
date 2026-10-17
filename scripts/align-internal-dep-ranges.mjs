@@ -8,9 +8,11 @@
 // peerDependencies keep their old ranges, and across a major that ships a
 // mismatched pair to consumers (e.g. server 2.0.0 declaring "@wcstack/state":
 // "^1.9.1" pairs installs with state 1.x). This script rewrites every such
-// entry to ^<target-version> — or, for a prerelease target (4.0.0-rc.1), to the
-// exact version, so an rc's packages install only with the same rc
-// (`internalRange` in scripts/compute-next-version.mjs says why). `file:`
+// entry: a runtime dependency to the exact <target-version> (server renders with
+// the state of its own version), a peer to ^<target-version> — or, for a
+// prerelease target (4.0.0-rc.1), both to the exact version, so an rc's packages
+// install only with the same rc (`internalRange` in scripts/compute-next-version.mjs
+// says why). `file:`
 // specifiers (local dev links) are left alone — they never reach the registry.
 //
 // Prints each package dir it changed, one per line (consumed by release.yml
@@ -34,12 +36,12 @@ if (!validTarget || pkgDirs.length === 0) {
   process.exit(1);
 }
 
-const next = internalRange(target);
 for (const dir of pkgDirs) {
   const manifestPath = join(dir, "package.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   let changed = false;
   for (const section of ["dependencies", "peerDependencies"]) {
+    const next = internalRange(target, section);
     for (const [name, range] of Object.entries(manifest[section] ?? {})) {
       if (name.startsWith("@wcstack/") && !range.startsWith("file:")) {
         if (range !== next) {

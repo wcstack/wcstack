@@ -123,6 +123,11 @@ jobs:
       # catalogued, a shared runtime code still exists in a runtime package's src,
       # and the rendered tables match scripts/mistake-catalogue.json.
       - run: node scripts/sync-mistake-catalogue.mjs --check
+      # What the READMEs describe before npm has it is marked with its version
+      # ("Since 4.3 (not released yet)"), and a version not yet released is never
+      # written without the mark (docs/v4-direction-2026-10.md §5.1, ja).
+      - run: node --test scripts/unreleased-marks.test.mjs
+      - run: node scripts/unreleased-marks.mjs --check
       # builtinTags カタログ + wcs.html-data.json が committed dist からの再生成と
       # 一致するか(audio/midi 追加時に 12 タグ分 stale だった鮮度罠の恒久ゲート)。
       # committed dist が入力なので npm ci 不要・src が dist より先行していても安定。

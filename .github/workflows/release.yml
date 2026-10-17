@@ -251,9 +251,11 @@ jobs:
           # runtime dependency; testing declares state/server peers) keep their
           # old ranges and, across a major, would hand consumers a mismatched
           # pair at install time (e.g. server 2.0.0 + state 1.x, or an
-          # unsatisfiable peer). Align them to the unified target: ^X.Y.Z, or the
-          # exact version for an rc (rcs may still break each other, so an rc's
-          # packages install only with the same rc). Lockfiles cannot follow
+          # unsatisfiable peer). Align them to the unified target: the exact
+          # version for a runtime dependency (the server renders with the state of
+          # its own version), ^X.Y.Z for a peer, and the exact version for both in
+          # an rc (rcs may still break each other, so an rc's packages install only
+          # with the same rc). Lockfiles cannot follow
           # yet — the target versions reach the registry only at the publish
           # step below — so the lock sync runs right after publish and amends
           # the release commit before tagging.
@@ -262,6 +264,16 @@ jobs:
           echo "Internal @wcstack/* ranges aligned in: ${rewritten:-<none>}"
           echo "range_rewritten=$(echo $rewritten)" >> "$GITHUB_OUTPUT"
           echo "version=$target" >> "$GITHUB_OUTPUT"
+
+      # The READMEs on the branch mark what is not released yet ("Since 4.3 (not
+      # released yet)"). A stable release removes the marks of its own major.minor
+      # before the rebuild and the publish, and refuses one of another version —
+      # a patch cut while the branch holds the next minor's behavior, which would
+      # ship it as "not released" (scripts/unreleased-marks.mjs,
+      # docs/v4-direction-2026-10.md §5.1). An rc keeps them: it is not on latest.
+      - name: Drop this version's unreleased marks from the READMEs
+        if: ${{ !contains(steps.bump.outputs.version, '-') }}
+        run: node scripts/unreleased-marks.mjs --strip "${{ steps.bump.outputs.version }}"
 
       # Verify all packages now share the unified version.
       - name: Verify version consistency
@@ -374,6 +386,8 @@ jobs:
           # emit-builtin-tags --check gate stays green after the release lands.
           git add packages/vscode-wcs/src/service/generated/builtinTags.generated.ts \
                   packages/vscode-wcs/wcs.html-data.json
+          # (the READMEs whose unreleased marks a stable release dropped)
+          git add -u -- README.md README.ja.md 'packages/*/README.md' 'packages/*/README.ja.md'
           git commit -m "chore: bump all packages to v${{ steps.bump.outputs.version }}"
 
       # The last moment to back out: nothing is published yet. If the branch moved

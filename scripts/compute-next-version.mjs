@@ -156,17 +156,26 @@ export function distTagFor(version) {
 }
 
 /**
- * The range an internal @wcstack/* dependency gets in a release at `version`.
+ * The range an internal @wcstack/* dependency gets in a release at `version`, in a
+ * package.json `section` (`dependencies` or `peerDependencies`).
  *
- * Stable: `^X.Y.Z`. Prerelease: the exact version. `^4.0.0-rc.1` would match
+ * A runtime dependency (`dependencies`) is the exact version. @wcstack/server ships
+ * @wcstack/state as one, and the engine that renders a page — the version
+ * `<wcs-ssr version>` names, which the client must match — is the one npm installs:
+ * with `^X.Y.Z`, a pinned server rendered with whatever minor came out later
+ * (docs/seam-apps.md, ssr-news; the author's decision, docs/v4-direction-2026-10.md
+ * §5.1). Every package is released in lockstep, so the exact pair is always there.
+ *
+ * A peer dependency, stable: `^X.Y.Z` (the page brings its own). Prerelease: the
+ * exact version in both sections. `^4.0.0-rc.1` would match
  * every later 4.0.0-rc.N (and 4.x), so @wcstack/server 4.0.0-rc.1 could install
  * with @wcstack/state 4.0.0-rc.3 — a pair no release run tested, while rcs may
  * still break each other (the SSR version gate compares major.minor only, so it
  * cannot tell rcs apart). Each rc is released in lockstep, so `@next` installs a
  * matching set either way; the pin only refuses a mixed one.
  */
-export function internalRange(version) {
-  return isPrerelease(version) ? version : `^${version}`;
+export function internalRange(version, section = "peerDependencies") {
+  return isPrerelease(version) || section === "dependencies" ? version : `^${version}`;
 }
 
 /** Whether a state dist/wcs-manifest.json comes from the 4.0 engine. */
