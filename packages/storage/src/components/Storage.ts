@@ -128,6 +128,22 @@ export class Storage extends HTMLElement {
     reflectAttribute(this, "type", value);
   }
 
+  // The type attribute last warned about (once per value).
+  private _warnedType: string | null = null;
+
+  // A type attribute that is neither "local" nor "session" falls back to "local" (the getter above).
+  // Say so: data meant for the session would otherwise be kept on disk without a word
+  // (docs/mistake-catalogue.md, "storage-type-typo").
+  private _checkType(): void {
+    const type = this.getAttribute("type");
+    if (type === null || type === "" || type === "local" || type === "session" || type === this._warnedType) return;
+    this._warnedType = type;
+    console.warn(
+      `[@wcstack/storage] [wcs/storage-type-invalid] <${config.tagNames.storage} type="${type}"> is neither ` +
+      `"local" nor "session": it uses localStorage, so the data is kept after the session ends.`,
+    );
+  }
+
   get value(): any {
     return this._core.value;
   }
@@ -243,6 +259,7 @@ export class Storage extends HTMLElement {
     if (name === "type") {
       // Route through the normalizing getter so an invalid attribute value
       // (e.g. type="foo") falls back to "local" instead of throwing.
+      this._checkType();
       this._syncCore();
     }
   }
@@ -251,6 +268,7 @@ export class Storage extends HTMLElement {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
     this.style.display = "none";
+    this._checkType();
     if (config.autoTrigger) {
       registerAutoTrigger();
     }

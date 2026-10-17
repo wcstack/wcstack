@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Storage } from "../src/components/Storage";
 import { bootstrapStorage } from "../src/bootstrapStorage";
 import { registerComponents } from "../src/registerComponents";
@@ -715,6 +715,40 @@ describe("Storage", () => {
 
     expect(() => document.body.appendChild(el)).not.toThrow();
     expect(el.type).toBe("local");
+  });
+
+  it("不正なtype属性は、localStorage を使うことを値ごとに 1 回だけ警告する", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const el = document.createElement("wcs-storage") as Storage;
+    el.setAttribute("key", "typo-type-key");
+    el.setAttribute("type", "sesion");
+    el.setAttribute("manual", "");
+    document.body.appendChild(el);
+    // 同じ値の再接続と同じ値の再設定では繰り返さない
+    el.remove();
+    document.body.appendChild(el);
+    el.setAttribute("type", "sesion");
+    // 別の不正な値なら改めて警告する
+    el.setAttribute("type", "Session");
+
+    const messages = warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("[wcs/storage-type-invalid]"));
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toContain('<wcs-storage type="sesion">');
+    expect(messages[1]).toContain('<wcs-storage type="Session">');
+    warn.mockRestore();
+  });
+
+  it("type の local / session / 空 / 無しは警告しない", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const type of ["local", "session", "", null]) {
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("key", "valid-type-key");
+      if (type !== null) el.setAttribute("type", type);
+      el.setAttribute("manual", "");
+      document.body.appendChild(el);
+    }
+    expect(warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/storage-type-invalid]"))).toEqual([]);
+    warn.mockRestore();
   });
 
   it("connectedCallbackPromiseが解決される", async () => {

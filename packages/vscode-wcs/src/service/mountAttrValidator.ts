@@ -1,14 +1,16 @@
 /**
- * mountAttrValidator.ts — `<wcs-state mount="path">` の値検証（v2）。
+ * mountAttrValidator.ts — `<wcs-state mount="path">` の値検証。
  *
- * runtime（state/src/webComponent/volume.ts の validateVolumeMountPath）が raise する
- * 値を **同条件・同文言**で編集時 error にする。name= の fail-fast 鏡映
- * （namedStateValidator）と対称 — mount= だけ無診断だと、runtime で初めて落ちる。
+ * runtime（state の src/scopes/volume.ts の `validPath`）が拒む値を、同じ条件で編集時 error にする。
+ * runtime はボリュームを接ぎ木せず、`<wcs-state mount="…"> has an invalid mount path: it must be a
+ * static path (no "*", "$", "#", "@").` を console.error に出す（形によらず同じ文面）。lint の文面は
+ * 形ごとに理由を言う。name= の検査（namedStateValidator）と対称 — mount= だけ無診断だと、runtime で初めて落ちる。
  *
- * runtime の条件（v2）:
+ * runtime の条件（4.0 — 段ごとに `/[*$#@\s]/` を拒む）:
  *   - 空文字列は不可
- *   - 空セグメント（`a..b`）は不可
- *   - ワイルドカード `*` セグメントは不可（静的パスのみ）
+ *   - 空の段（`a..b`）は不可
+ *   - `*` は段の中のどこにあっても不可（静的パスのみ）
+ *   - 空白は不可
  *   - 予約文字 `$` / `#` / `@` は位置を問わず不可
  *
  * pure（DOM / vscode 非依存）。
@@ -19,12 +21,13 @@ import { getMessages, type MountPathProblem } from '../core/messages.js';
 import { parseWcsStateElements } from '../language/htmlParse.js';
 import type { BindingDiagnostic } from './bindingValidator.js';
 
-/** runtime の validateVolumeMountPath と同じ判定（raise の種類を返す。妥当なら null）。 */
+/** runtime の `validPath` と同じ判定（拒む形の種類を返す。妥当なら null）。 */
 export function findMountPathProblem(mountPath: string): MountPathProblem | null {
   if (mountPath.length === 0) return 'empty';
   for (const segment of mountPath.split('.')) {
     if (segment.length === 0) return 'emptySegment';
-    if (segment === '*') return 'wildcard';
+    if (segment.includes('*')) return 'wildcard';
+    if (/\s/.test(segment)) return 'whitespace';
     if (segment.includes('$') || segment.includes('#') || segment.includes('@')) return 'reserved';
   }
   return null;

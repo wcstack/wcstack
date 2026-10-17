@@ -732,6 +732,17 @@ export class Router extends HTMLElement implements IRouter {
       if (this._basename === "" && !hasBaseTag && url.pathname !== "/") {
         raiseError(`${config.tagNames.router} basename is empty, but current path is not "/".`);
       }
+      // basename の属性も <base href> も無いと、basename は今のページの URL から導かれる — アプリの根でない
+      // URL（ディープリンク・再読み込み）では、そのページのパスが basename になり、根のルートが表示され、
+      // リンクもその下で解決される。lint と同じ code で知らせる（docs/mistake-catalogue.md）
+      if (!ssr && this._basename !== "" && !hasBaseTag && !this.getAttribute("basename")) {
+        console.warn(
+          `[@wcstack/router] [wcs/base-href-missing] The basename "${this._basename}" was taken from this page's URL: ` +
+          `the page has no <base href> and <${config.tagNames.router}> no basename, so routes and links resolve under it, ` +
+          `and a deep link or a reload away from the app's root shows the wrong route. ` +
+          `Add <base href="/"> (or the app's folder) to <head>.`,
+        );
+      }
 
       this._outlet = this._getOutlet();
       this._outlet.routesNode = this;

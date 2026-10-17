@@ -38,10 +38,11 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   // `not` は真偽性（truthy / falsy）の反転。`if:` が `Boolean()` で寄せるのと同じ規則で、
   // `else:` はこのフィルタを足した束縛として組み立てられる（structural/createNotFilter.ts）
   not: { description: "真偽性を反転（falsy → true）", hasArgs: false, resultType: "boolean", acceptTypes: "any",   minArgs: 0, maxArgs: 0 },
-  lt:  { description: "より小さいか",   hasArgs: true,  resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-  le:  { description: "以下か",         hasArgs: true,  resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-  gt:  { description: "より大きいか",   hasArgs: true,  resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
-  ge:  { description: "以上か",         hasArgs: true,  resultType: "boolean", acceptTypes: ["number", "string"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  // 比較は数値だけを受ける（filters/core.ts の `numeric` は数値以外の値で #28。3.x も同じで、"string" は誤りだった）
+  lt:  { description: "より小さいか",   hasArgs: true,  resultType: "boolean", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  le:  { description: "以下か",         hasArgs: true,  resultType: "boolean", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  gt:  { description: "より大きいか",   hasArgs: true,  resultType: "boolean", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
+  ge:  { description: "以上か",         hasArgs: true,  resultType: "boolean", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   // 算術
   add: { description: "加算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },
   sub: { description: "減算", hasArgs: true, resultType: "number", acceptTypes: ["number"], minArgs: 1, maxArgs: 1, argTypes: ["number"] },

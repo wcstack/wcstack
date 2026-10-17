@@ -320,6 +320,10 @@ export function walkBindings(engine: Engine, children: ChildNode[], list: Patter
       if (child.nodeType === 1) {
         const el = child as Element;
         const tag = el.localName;
+        // `data-wcs-ignore` (the bind attribute + "-ignore"): neither the element nor anything in it is read
+        // as bindings — markup the page did not write (user content a server template put there; README,
+        // "Markup you did not write")
+        if (el.hasAttribute(bindAttr() + "-ignore")) continue;
         if (page) {
           // walked before (a subtree handed over again): left alone — its text and rows show
           // values now, which are not markup

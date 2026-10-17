@@ -29,6 +29,7 @@ import { validateScopeDeclarations } from "../service/scopeDeclarationValidator.
 import { validateSemantics } from "../service/semanticValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
+import { findIgnoredRanges } from "../language/htmlParse.js";
 import type { JsonSchemaNode } from "./sidecar/types.js";
 
 export interface ValidateDocumentOptions {
@@ -109,5 +110,8 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   for (const d of validateNestedAssigns(text, stateTagName, locale)) {
     out.push({ code: WcsDiagnosticCode.NestedAssign, start: d.start, end: d.end, message: d.message, severity: d.severity });
   }
-  return sortDiagnostics(out);
+  // `data-wcs-ignore`: the runtime reads nothing in such an element as bindings, so nothing in it is reported
+  const ignored = findIgnoredRanges(text, bindAttribute);
+  const kept = ignored.length === 0 ? out : out.filter((d) => !ignored.some(([start, end]) => d.start >= start && d.start < end));
+  return sortDiagnostics(kept);
 }

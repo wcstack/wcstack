@@ -59,14 +59,16 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
   const scanText = blankHtmlComments(html);
   const autos = findWcstackAutoScripts(scanText);
 
-  // --- ScriptOrder: state/auto の後の devtools/auto（実在する唯一の順序依存） ---
+  // --- ScriptOrder: state/auto の後の devtools/auto ---
+  // info: 4.0 は後から付いた DevTools に既存の束縛をすべて送り直す（state の devtools/devtools.ts の
+  // `_setSink`）ので、欠けるのは付く前のタイムラインだけ（3.x は配線台帳が取れなかったので warning だった）
   const stateIndex = autos.findIndex(a => a.pkgs.includes('state'));
   if (stateIndex !== -1) {
     for (const later of autos.slice(stateIndex + 1)) {
       if (!later.pkgs.includes('devtools')) continue;
       diagnostics.push({
         code: WcsDiagnosticCode.ScriptOrder,
-        start: later.start, end: later.end, severity: 'warning',
+        start: later.start, end: later.end, severity: 'info',
         message: msgs.devtoolsAfterState(),
       });
     }

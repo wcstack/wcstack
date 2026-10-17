@@ -99,9 +99,21 @@ describe('validateIoNodes: tag-member-unknown', () => {
     expect(validateIoNodes(html)).toHaveLength(0);
   });
 
-  it('スプレッド・構造・class/style/attr/on・DOM 汎用プロパティは対象外', () => {
-    const html = `<wcs-fetch data-wcs="...: slot; if: cond; class.busy: busy; attr.data-x: v; onclick: go; hidden: h"></wcs-fetch>`;
+  it('スプレッド・構造・class/style/attr/on・HTML の書き込み先は対象外', () => {
+    const html = `<wcs-fetch data-wcs="...: slot; if: cond; class.busy: busy; attr.data-x: v; onclick: go; html: h; innerHTML: h; outerHTML: h; srcdoc: h"></wcs-fetch>`;
     expect(validateIoNodes(html)).toHaveLength(0);
+  });
+
+  it('宣言に無い DOM のプロパティ（hidden / title / textContent …）は error にする（ランタイムは #38 で拒む）', () => {
+    const html = `<wcs-fetch data-wcs="hidden: h; title: t; textContent: x; text: x; id: i"></wcs-fetch>`;
+    const diags = validateIoNodes(html);
+    expect(diags.map(d => [d.code, d.member, d.severity])).toEqual([
+      [WcsDiagnosticCode.TagMemberUnknown, 'hidden', 'error'],
+      [WcsDiagnosticCode.TagMemberUnknown, 'title', 'error'],
+      [WcsDiagnosticCode.TagMemberUnknown, 'textContent', 'error'],
+      [WcsDiagnosticCode.TagMemberUnknown, 'text', 'error'],
+      [WcsDiagnosticCode.TagMemberUnknown, 'id', 'error'],
+    ]);
   });
 
   it('存在しない command を警告する', () => {

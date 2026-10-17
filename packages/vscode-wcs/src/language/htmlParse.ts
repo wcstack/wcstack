@@ -526,3 +526,55 @@ export function extractAttribute(tagContent: string, attrName: string): string |
   if (!match) return null;
   return match[1] ?? match[2] ?? match[3] ?? null;
 }
+
+/** 子を持たない要素（終了タグが無い）。 */
+const IGNORE_VOID_ELEMENTS: ReadonlySet<string> = new Set([
+  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr',
+]);
+
+/**
+ * `<束縛の属性>-ignore`（既定は `data-wcs-ignore`）を持つ要素の範囲を、`[開始タグの "<", 終了タグの ">" の後)` で返す
+ * （閉じていなければ文書の終わりまで）。ランタイムはその要素も中身も束縛として読まない（state の dom/plan.ts の
+ * `walkBindings`）ので、lint もその中を報告しない（validateDocument）。コメントと raw text 要素の中身は数えない。
+ */
+export function findIgnoredRanges(html: string, bindAttribute: string): Array<readonly [number, number]> {
+  const marker = asciiLowerCase(`${bindAttribute}-ignore`);
+  const lower = asciiLowerCase(html);
+  if (!lower.includes(marker)) return [];
+  const out: Array<readonly [number, number]> = [];
+  const stack: { name: string; start: number | null }[] = [];
+  const tag = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][^\s/>]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+  let match: RegExpExecArray | null;
+  while ((match = tag.exec(html)) !== null) {
+    if (match[2] === undefined) continue; // コメント
+    const name = asciiLowerCase(match[2]);
+    const end = match.index + match[0].length;
+    if (match[1] === '/') {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].name !== name) continue;
+        for (const open of stack.slice(i)) if (open.start !== null) out.push([open.start, end]);
+        stack.length = i;
+        break;
+      }
+      continue;
+    }
+    const ignored = parseAttributeNames(match[3]).has(marker) ? match.index : null;
+    // (HTML's `<div/>` is not self-closing: it stays open until its end tag. A foreign `<circle/>` left on the
+    // stack is popped with its parent's end tag)
+    if (IGNORE_VOID_ELEMENTS.has(name)) {
+      if (ignored !== null) out.push([ignored, end]);
+      continue;
+    }
+    if (RAW_TEXT_ELEMENTS.has(name)) {
+      const close = name === 'plaintext' ? -1 : lower.indexOf(`</${name}`, end);
+      const closeEnd = close === -1 ? html.length : html.indexOf('>', close) + 1 || html.length;
+      if (ignored !== null) out.push([ignored, closeEnd]);
+      if (close === -1) break;
+      tag.lastIndex = closeEnd;
+      continue;
+    }
+    stack.push({ name, start: ignored });
+  }
+  for (const open of stack) if (open.start !== null) out.push([open.start, html.length]);
+  return out;
+}

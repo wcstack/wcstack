@@ -1,4 +1,5 @@
 import { Fetch } from "./Fetch.js";
+import { config } from "../config.js";
 
 export class InfiniteScroll extends HTMLElement {
   static get observedAttributes(): string[] {
@@ -7,6 +8,8 @@ export class InfiniteScroll extends HTMLElement {
 
   private _observer: IntersectionObserver | null = null;
   private _done: boolean = false;
+  // the target last warned about (once per value)
+  private _warnedTarget: string | null = null;
 
   get target(): string {
     return this.getAttribute("target") || "";
@@ -117,6 +120,15 @@ export class InfiniteScroll extends HTMLElement {
   private _triggerFetch(): void {
     const target = document.getElementById(this.target);
     if (!(target instanceof Fetch)) {
+      // Nothing to load from: say so once per target, instead of loading no more pages without a word
+      // (docs/mistake-catalogue.md, "infinite-scroll-target").
+      if (this._warnedTarget !== this.target) {
+        this._warnedTarget = this.target;
+        console.warn(
+          `[@wcstack/fetch] [wcs/infinite-scroll-target] <${config.tagNames.infiniteScroll} target="${this.target}"> ` +
+          `came into view, but no <${config.tagNames.fetch}> has that id, so no page was loaded.`,
+        );
+      }
       return;
     }
 
