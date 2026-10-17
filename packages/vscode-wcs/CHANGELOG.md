@@ -2,6 +2,18 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 2.2.0 — 2026-10-17
+
+`@wcstack/state` 4.2.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.2.0・`@wcstack/typescript` 4.2.0 と同じ判定）。継ぎ目アプリ（docs/seam-apps.ja.md）で未着手だったもの。新しい規則と、error で報告する形が増えたので minor。
+
+- **`wcs/submit-without-prevent`（warning・新設）** — `<form>` の `onsubmit:` に `#prevent` が無く、ハンドラも `preventDefault` を呼ばない。ブラウザがフォームも送るので、ページが読み直されるか、router があれば GET が欄の値（パスワードも）を URL と履歴に載せる。`action` 付きのフォームと、読めないハンドラでは黙る。
+- **`wcs/route-bare-mustache`（warning・新設）** — `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`。最初に着いたルートでしか束ねられない。
+- **`wcs/layout-slot-missing`（warning・新設）** — 既定の `<slot>` の無いレイアウトのテンプレートに、入れ子のルートを渡している（表示されない）。router も実行時に同じ code で警告する。
+- **その場の変更を、別名・`Object.assign`・`$on` の state 引数を通したものも報告する** — `const cards = this.cards; cards[i] = card`、`Object.assign(this.form, v)`、`state.board.cards.push(x)` を、形ごとに `wcs/nested-assign` / `wcs/array-index-assign` / `wcs/array-mutation`（error）で。同じ配列を書き戻しても一覧の行は追加・置き換えされない。
+- **`wcs/getter-untracked-read`** — `$on` のハンドラの `state["a.b"] = …` も証拠に数え、`location` の `pathname` / `search` / `hash` / `href` を読む getter を報告する（`protocol` / `host` は数えない）。
+- **`wcs/signals-dual-entry`** — 両方のエントリを CDN に割り当てた import map を warning にする（別ファイルの module がコアを import すると 2 つ目のコアになる）。
+- フィルタ: `currency` と、`date` / `time` / `datetime` の 2 つ目の引数（書式）を知る（`wcs/filter-arity`・補完）。
+
 ## 2.1.1 — 2026-10-14
 
 `@wcstack/state` 4.1.1 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.1.1・`@wcstack/typescript` 4.1.1 と同じ判定）。

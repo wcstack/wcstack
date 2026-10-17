@@ -13,17 +13,17 @@
   "split/core.js (with its chunks)": {
     "files": 12,
     "bytes": 58012,
-    "gzip": 24584
+    "gzip": 24585
   },
   "split/features/devtools.js (beyond the core)": {
     "files": 1,
     "bytes": 5692,
-    "gzip": 2528
+    "gzip": 2527
   },
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
     "bytes": 18841,
-    "gzip": 7744
+    "gzip": 7743
   },
   "split/features/formats.js (beyond the core)": {
     "files": 1,
@@ -48,12 +48,12 @@
   "split/features/scopes.js (beyond the core)": {
     "files": 1,
     "bytes": 23691,
-    "gzip": 8906
+    "gzip": 8903
   },
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
     "bytes": 13288,
-    "gzip": 5325
+    "gzip": 5323
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,
@@ -63,6 +63,6 @@
   "split/auto.js (beyond the core)": {
     "files": 1,
     "bytes": 1081,
-    "gzip": 636
+    "gzip": 635
   }
 }
