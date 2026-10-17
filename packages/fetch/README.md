@@ -477,6 +477,8 @@ Set the `manual` attribute to disable auto-fetch and control execution explicitl
 > resolved promise, not the auto-fetch. Explicit triggers (`fetch()`, `trigger`,
 > the `fetch` command) are unaffected and still run immediately.
 
+To await a request the element started later — a `url` a binding wrote after it connected — read `pendingPromise`: the request in flight (or about to start), settled whether it succeeds or fails, or `null` when there is none. Since 4.3 (not released yet), [`@wcstack/server`](../server/README.md#custom-element-waiting) waits for it before it serializes a page (the class declares `static hasPendingPromise = true`).
+
 ## Programmatic Usage
 
 ```javascript

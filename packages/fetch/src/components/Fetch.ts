@@ -11,6 +11,8 @@ import { writeTargetHTML } from "../trustedTypes.js";
 
 export class Fetch extends HTMLElement {
   static hasConnectedCallbackPromise = true;
+  /** It reports the request it has in flight (pendingPromise): a server render waits for it. */
+  static hasPendingPromise = true;
   static wcBindable: IWcBindable = {
     ...FetchCore.wcBindable,
     properties: [
@@ -170,6 +172,19 @@ export class Fetch extends HTMLElement {
 
   get connectedCallbackPromise(): Promise<void> {
     return this._connectedCallbackPromise;
+  }
+
+  /**
+   * The readiness protocol's pending work (`static hasPendingPromise`): the request this element
+   * has in flight, or is about to start (an auto-fetch waits a microtask), settled either way; null
+   * when there is none. A server render waits for it, so a request a binding started — a `url`
+   * written from state after the element connected — is in the page it serializes
+   * (@wcstack/server; docs/v4-direction-2026-10.md §5.1).
+   */
+  get pendingPromise(): Promise<void> | null {
+    if (this._autoPending && !this.manual && this.url) return Promise.resolve().then(() => this.pendingPromise ?? undefined);
+    // (FetchCore settles a failed request too: it rejects only on an empty url)
+    return this.loading ? this._core.promise.then(() => undefined) : null;
   }
 
   get manual(): boolean {

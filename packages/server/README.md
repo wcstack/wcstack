@@ -13,7 +13,7 @@ That's what `@wcstack/server` explores. It runs your existing `@wcstack/state` t
 ### Basic Features
 - **Full Template Rendering**: Runs `@wcstack/state` bindings server-side — text, attributes, `for` loops, `if`/`elseif`/`else` conditionals, filters, and mustache `{{ }}` syntax.
 - **Automatic Hydration Data**: Generates `<wcs-ssr>` elements containing the state's data and the page-level templates, and marks rows, branches and text bindings with comments, for seamless client-side hydration.
-- **Async Data Fetching**: Supports `$connectedCallback` with `fetch()` — the server waits for `$connectedCallback` and the elements that report readiness before it serializes (a request a binding starts later is not waited for: see [Server Communication with wcs-fetch](#server-communication-with-wcs-fetch)).
+- **Async Data Fetching**: Supports `$connectedCallback` with `fetch()` — the server waits for `$connectedCallback` and the elements that report readiness before it serializes, and — since 4.3 (not released yet) — for a request a binding started (see [Server Communication with wcs-fetch](#server-communication-with-wcs-fetch)).
 - **RenderCore**: A headless, event-driven rendering class that follows the `wc-bindable` protocol for observable `html` / `loading` / `error` state.
 - **Zero Browser Dependencies**: Runs in Node.js with happy-dom as the only runtime dependency.
 
@@ -281,7 +281,7 @@ createServer(async (req, res) => {
 
 ### Server Communication with wcs-fetch
 
-- `<wcs-fetch>` auto-fetch (without `manual`) also executes on the server. A `url` written in the markup is waited for; a `url` that a binding sets from state (`data-wcs="url: articleUrl"`) starts its request during the render, but **the render does not wait for it**: the page is rendered without its value, which loads on the client. Load what the first render needs in `$connectedCallback`.
+- `<wcs-fetch>` auto-fetch (without `manual`) also executes on the server. A `url` written in the markup is waited for; a `url` that a binding sets from state (`data-wcs="url: articleUrl"`) starts its request during the render. Since 4.3 (not released yet), **the render waits for it too**, within `timeoutMs`: its value is in the page and in the snapshot, and so is what it renders — a `<wcs-fetch>` in those rows is waited for in turn. A request that has not finished when the limit runs out is left out with a warning (`[wcs/ssr-pending-timeout]`), and loads on the client; the render does not fail for it. Up to 4.2 the render did not wait for it, and the page was served without its value.
 - When the render is done, the server takes the page's elements out of the document before it puts the globals back, so that each element's own cleanup (a `<wcs-fetch>` aborting its request, a `<wcs-timer>` stopping) runs inside the render. A request or a timer that outlived the render used to throw into the process (fixed in 4.3 (not released yet)).
 - On the client, a `<wcs-fetch>` sends its request when it connects or when hydration writes its `url`: it does not know what the snapshot holds, so data the server loaded is fetched again. To load it once, give the element `manual` and send it with `trigger` when the page needs it, or return `null` from its `url` getter while the state already holds the data for that url (keep the id the data belongs to).
 - Use `manual` + `$connectedCallback` for explicit control:
@@ -330,6 +330,7 @@ createServer(async (req, res) => {
 
 - Automatically awaits all custom elements with `static hasConnectedCallbackPromise = true`
 - Uses a stabilization loop: after awaiting, re-scans the DOM for newly added custom elements (up to 10 iterations), ensuring elements dynamically inserted during `$connectedCallback` are also awaited
+- Then waits for the work an element started after it connected, since 4.3 (not released yet): an element whose class has `static hasPendingPromise = true` reports it as its `pendingPromise` (`null` when there is none; `<wcs-fetch>` reports its request, settled whether it succeeds or fails). This is waited for within what is left of `timeoutMs`, and what it rendered is waited for in turn. When the limit runs out, the page is rendered without it, with a warning. `waitForReady()` (and `@wcstack/testing`'s `mount()`) does not take this step
 
 ### Router SSR
 

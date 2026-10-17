@@ -1920,6 +1920,35 @@ describe("自動 fetch の microtask coalesce", () => {
     expect(fetchSpy).toHaveBeenLastCalledWith("/api/articles/3", expect.any(Object));
   });
 
+  it("pendingPromise: 始める直前と実行中の要求を返し、終われば（失敗でも）解決して null に戻る", async () => {
+    expect((Fetch as any).hasPendingPromise).toBe(true);
+    const el = document.createElement("wcs-fetch") as Fetch;
+    document.body.appendChild(el);
+    expect(el.pendingPromise).toBeNull();
+    let finish!: (r: Response) => void;
+    fetchSpy.mockImplementationOnce(() => new Promise<Response>((r) => { finish = r; }));
+    // a binding writes the url after the element connected
+    el.url = "/api/articles/3";
+    const pending = el.pendingPromise;
+    expect(pending).not.toBeNull();
+    let settled = false;
+    void pending!.then(() => { settled = true; });
+    await flushMicrotasks();
+    expect(el.loading).toBe(true);
+    expect(el.pendingPromise).not.toBeNull();
+    expect(settled).toBe(false);
+    finish(new Response(JSON.stringify({ title: "t" }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    await pending;
+    expect(settled).toBe(true);
+    expect(el.value).toEqual({ title: "t" });
+    expect(el.pendingPromise).toBeNull();
+    // a failure settles it too
+    fetchSpy.mockRejectedValueOnce(new Error("network down"));
+    el.url = "/api/articles/4";
+    await expect(el.pendingPromise).resolves.toBeUndefined();
+    expect(el.error).not.toBeNull();
+  });
+
   it("同じ tick に空にして戻すのは変化ではない（microtask で集約される）", async () => {
     const el = document.createElement("wcs-fetch") as Fetch;
     el.setAttribute("url", "/api/users");
