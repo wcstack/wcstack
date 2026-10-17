@@ -8,7 +8,9 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
-The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md), "Found while cataloguing"), and the router reports what it skipped silently.
+## [4.3.0] — 2026-10-18
+
+The first minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja). The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md)). The packages report what they used to drop silently. The `ssr-news` seam app (SSR × router × state, [docs/seam-apps.md](./docs/seam-apps.md)) found what server rendering, the router and state got wrong between them. The design decisions are the author's (2026-10-17 and 2026-10-18).
 
 ### Added
 
