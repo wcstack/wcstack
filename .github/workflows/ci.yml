@@ -119,6 +119,10 @@ jobs:
       - run: node scripts/sync-io-core.mjs --check
       - run: node scripts/sync-package-configs.mjs --check
       - run: node scripts/sync-readme-agents-banner.mjs --check
+      # The mistake catalogue (docs/mistake-catalogue.md): every lint code is
+      # catalogued, a shared runtime code still exists in a runtime package's src,
+      # and the rendered tables match scripts/mistake-catalogue.json.
+      - run: node scripts/sync-mistake-catalogue.mjs --check
       # builtinTags カタログ + wcs.html-data.json が committed dist からの再生成と
       # 一致するか(audio/midi 追加時に 12 タグ分 stale だった鮮度罠の恒久ゲート)。
       # committed dist が入力なので npm ci 不要・src が dist より先行していても安定。
