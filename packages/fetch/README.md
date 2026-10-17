@@ -458,7 +458,11 @@ importing `FetchCore` stays safe under SSR / workers):
 By default, `<wcs-fetch>` automatically executes a request when:
 
 1. it is connected to the DOM and `url` is set
-2. the `url` changes
+2. the `url` changes — back to the url it fetched last as well, once the url was empty in between (a route left and entered again, a getter that returned `null` meanwhile), whether that request succeeded or failed
+
+Rewriting the url it fetched last, with nothing in between, is not a change (a re-evaluation writes every input again): use `trigger` or `fetch()` to send it again.
+
+The method stays what it is set to, and a `body` is sent once. So an element that loads by url and posts by `method` + `body` + `trigger` sends the next url change as a `POST` with no body. It warns when it does (`[wcs/fetch-auto-unsafe]`): give loading and each change its own `<wcs-fetch>`.
 
 If a request is already in flight when the URL changes, the previous request is automatically aborted before the new one starts.
 

@@ -66,17 +66,31 @@ function wildcardForm(engine: Engine, q: Pattern): Pattern | undefined {
 function missing(engine: Engine, p: Pattern): { seg: string; names: string[] } | null {
   const chain: Pattern[] = [];
   for (let q: Pattern | null = p; q !== null; q = q.parent) chain.unshift(q);
-  let v: any = engine.target;
   const named = (q: Pattern | null): Pattern | null | undefined => (q === null ? null : wildcardForm(engine, q));
   // a getter anywhere on the path answers it — also one declared deeper than a segment the data
   // lacks (\`get "box.label"()\` with no \`box\` key: it renders and updates — docs/seam-apps.md)
   if (chain.some((q) => named(q)?.getter != null)) return null;
-  for (const q of chain) {
+  return under(engine, chain, 0, engine.target, named);
+}
+
+/** `missing` from `chain[k]` on, in `v`. */
+function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: Pattern | null) => Pattern | null | undefined): { seg: string; names: string[] } | null {
+  for (; k < chain.length; k++) {
+    const q = chain[k];
     if (v === null || typeof v !== "object") return null;
     if (q.last === "*") {
       if (!Array.isArray(v) || v.length === 0) return null;
-      v = v[0];
-      continue;
+      // a row field is declared when any row has it — an optional one (`pending` on the rows a page
+      // added itself) is not missing because the first row lacks it (docs/seam-apps.md, ssr-news)
+      // (missing in every row: the names any row has are the candidates)
+      let first: { seg: string; names: string[] } | null = null;
+      for (const row of v) {
+        const m = under(engine, chain, k + 1, row, named);
+        if (m === null) return null;
+        if (first === null) first = m;
+        else if (m.seg === first.seg) for (const n of m.names) if (!first.names.includes(n)) first.names.push(n);
+      }
+      return first;
     }
     if (Array.isArray(v) && /^\d+$/.test(q.last)) {
       // an explicit index: only a row that is there can be looked into
