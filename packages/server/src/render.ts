@@ -458,11 +458,25 @@ async function renderInWindow(html: string, options: RenderOptions | undefined, 
     if (Array.isArray(pendingBinds)) {
       pendingBinds.length = 0;
     }
-    // 後始末の 3 本は**それぞれ独立に**守る。1 本が投げても残りを飛ばさない
+    // 後始末の各段は**それぞれ独立に**守る。1 本が投げても残りを飛ばさない
     // （飛ばすとグローバルが差し替わったまま残り、次のレンダリングが別 realm の
     // document を掴む）。呼び出し元の releaseMutex はこの finally の外なので、
     // ここから投げても mutex は必ず解放される
     for (const step of [
+      // 描画の中で始まった非同期の仕事を、グローバルを戻す**前に**止める。要素が呼ぶ fetch とタイマーは
+      // Node のもの（happy-dom のものに差し替えていない）なので、描画の後も生き続け、その続きが Node の
+      // グローバルの CustomEvent を happy-dom の要素に dispatch して投げた — state から url を束ねた
+      // <wcs-fetch> の要求が描画の後に失敗したとき、描画の中で始まった <wcs-timer> の刻みごとに、捕まらない
+      // 例外でプロセスを落とした（seam app ssr-news）。グローバルを差し替えて追跡するのではなく（描画の間も
+      // 同じプロセスのほかの処理が走る）、文書の中身を外して各要素に自分の後始末（disconnectedCallback:
+      // 要求の中断・タイマーの停止）をさせ、その続きが happy-dom のグローバルのまま走り終えるよう、Node の
+      // マクロタスクを 1 つ譲ってから戻す。happy-dom 自身の非同期の仕事は abort() で止める
+      () => {
+        documentOrNull?.body?.replaceChildren();
+        documentOrNull?.head?.replaceChildren();
+      },
+      () => new Promise<void>((resolve) => setImmediate(resolve)),
+      () => window?.happyDOM.abort(),
       () => restoreBaseUrl?.(),
       () => restoreGlobals?.(),
       () => window?.close(),
