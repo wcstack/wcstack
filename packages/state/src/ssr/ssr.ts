@@ -645,6 +645,45 @@ function legacy(container: Node, ssr: Element, fresh: boolean): void {
   for (const e of Array.from((container as ParentNode).querySelectorAll("[data-wcs-ssr-id]"))) e.removeAttribute("data-wcs-ssr-id");
 }
 
+/**
+ * What the reader typed before the client bound the page — the server's HTML is usable at once, the
+ * bundles may take seconds: the form controls whose value is not the one their markup gives (a
+ * browser restoring a form on reload counts too). Binding the page writes the state's values over
+ * them, and the text was lost without a word (docs/seam-apps.md, ssr-news; the author's decision,
+ * docs/v4-direction-2026-10.md §5.1). Returns what gives each its value back and sends it an
+ * `input` and a `change`, as the reader's own edit would: a two-way binding writes it to the state.
+ */
+function typed(container: Node): () => void {
+  const edits: [HTMLElement, () => void][] = [];
+  for (const n of Array.from((container as ParentNode).querySelectorAll<any>("input,textarea,select"))) {
+    if (n.localName === "select") {
+      const o: HTMLOptionElement[] = Array.from(n.options);
+      const sel = o.map((x) => x.selected);
+      // a single select's markup selects its last marked option, or its first enabled one (the mark
+      // is read as the attribute: a server's DOM need not have defaultSelected)
+      const marked = o.map((x) => x.hasAttribute("selected"));
+      let at = marked.lastIndexOf(true);
+      if (at < 0) at = o.findIndex((x) => !x.disabled);
+      if (n.multiple ? o.some((x, i) => sel[i] !== marked[i]) : n.selectedIndex !== at) edits.push([n, () => o.forEach((x, i) => (x.selected = sel[i]))]);
+    } else if (n.type === "checkbox" || n.type === "radio") {
+      // (a radio: the one the reader chose; the group's others follow it)
+      const c = n.checked;
+      if (c !== n.defaultChecked && (c || n.type === "checkbox")) edits.push([n, () => (n.checked = c)]);
+    } else if (n.type !== "file" && n.value !== n.defaultValue) {
+      const v = n.value;
+      edits.push([n, () => (n.value = v)]);
+    }
+  }
+  return () => {
+    for (const [n, put] of edits) {
+      if (!n.isConnected) continue;
+      put();
+      n.dispatchEvent(new Event("input", { bubbles: true }));
+      n.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  };
+}
+
 /** The `element` hook, "mounting": a client root with a server snapshot adopts the server's DOM. */
 export function hydrate(engine: Engine): void {
   const el = engine.element as Element;
@@ -689,6 +728,8 @@ export function hydrate(engine: Engine): void {
     r.removeAttribute(RAW_ATTR);
   }
   const container = root.nodeType === 9 ? (root as Document).body : root;
+  // (taken before the page is bound, which writes the state's values; given back right after)
+  queueMicrotask(typed(container));
   if (old) legacy(container, ssr!, fresh);
   else prepare(container, ssr!, same);
   ssr!.remove();

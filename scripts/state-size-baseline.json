@@ -53,7 +53,8 @@
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
     "bytes": 13288,
-    "gzip": 5323
+    "gzip": 5323,
+    "slack": 256
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,
