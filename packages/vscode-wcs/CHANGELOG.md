@@ -26,6 +26,7 @@ lint の重大度と文面を 4.0 のランタイムに合わせる（docs/mista
   - `wcs/declaration-alias-read` は、効かない書き換え（正式名を読む）を勧めない。宣言は `this` から読めない。
   - `wcs/scan-declaration-invalid` は、throw するのは diagnostics の後付けがあるときだけだと言う。
   - `wcs/tag-member-unknown` と `wcs/recursion-unsupported` の「黙って無視される」は 3.x のことだったので直した。
+- **`data-wcs-ignore` の中は報告しない** — `@wcstack/state` 4.3 の印。その要素も中身も、ランタイムは束縛として読まない。
 - **`@wcstack/state` の manifest** — `lt`・`le`・`gt`・`ge` は数値だけを受ける。`filterMeta` は 3.x から「文字列も」と書いていたが、ランタイムは数値以外に #28 を投げる。次の state のビルドで lint に届く。
 
 ## 2.2.0 — 2026-10-17

@@ -10,6 +10,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md), "Found while cataloguing"), and the router reports what it skipped silently.
 
+### Added
+
+- `@wcstack/state`: **`data-wcs-ignore`**. An element with it is not walked: neither its own `data-wcs` nor any `{{ }}`, `data-wcs` or comment binding inside it is read, at page level, inside templates, or in content the router hands over. It marks markup the page did not write, such as user content a server template put there, which was otherwise read as bindings (client-side template injection). The name is the bind attribute's plus `-ignore`. It costs 26 B in the core. The lint reports nothing inside such an element either. This was decided as R10 for 4.x ([docs/state-engine-rewrite/v4-remaining.ja.md](./docs/state-engine-rewrite/v4-remaining.ja.md)).
+
 ### Changed
 
 - `@wcstack/router`: **a `<wcs-guard-handler>` guards the `<wcs-route>` it is inside**, wherever it sits there: before or after the nested routes, or inside an element. It used to guard the route parsed last. A guard placed after a route's nested routes guarded the last of them, and the route itself was left open.
