@@ -70,6 +70,21 @@ function upsert<K, V>(m: { get(k: K): V | undefined; set(k: K, v: V): unknown },
 const newSet = <T>(): Set<T> => new Set<T>();
 const newArray = <T>(): T[] => [];
 
+/**
+ * Whether an array holds one object at two positions (F26, `items: [o, o]`), found when a write into a
+ * row's object first needs it: once per array, so the writes after it stay O(1). An element written in
+ * place drops the answer.
+ */
+const twice = new WeakMap<unknown[], boolean>();
+function holdsTwice(arr: unknown[]): boolean {
+  let v = twice.get(arr);
+  if (v === undefined) {
+    const seen = new Set<unknown>();
+    twice.set(arr, v = arr.some((x) => Object(x) === x && (seen.has(x) || !seen.add(x))));
+  }
+  return v;
+}
+
 /** A promise, or anything with a then(). */
 export function isThenable(r: any): r is PromiseLike<unknown> {
   return r !== null && typeof r === "object" && typeof r.then === "function";
@@ -266,6 +281,7 @@ export class Engine implements ReconcileHooks {
       // changed in place: an element is what its array holds now
       if (p.last === WILDCARD && row !== null) {
         row.item = row.list.arr![row.index];
+        twice.delete(row.list.arr!);
         this.strategy.resetRow(row);
       }
       this.touched(p, row);
@@ -790,6 +806,7 @@ export class Engine implements ReconcileHooks {
       // element write: the position keeps its row, the row takes the new value
       const r = row!;
       (r.list.arr as unknown[])[r.index] = value;
+      twice.delete(r.list.arr!);
       r.item = value;
       this.strategy.resetRow(r);
     } else {
@@ -823,11 +840,13 @@ export class Engine implements ReconcileHooks {
    */
   private mirror(row: StateRow, p: Pattern, old: unknown, value: unknown, direct = true): void {
     const l = row.list;
+    const suffix = p.path.slice(l.pattern.path.length + 2);
+    // a write into the row's object, which its array holds at another position too (F26): those rows show it
+    const dup = suffix !== "" && holdsTwice(l.arr!);
     // another list has its array, or it is over a getter or a getter reads it: its object may be in
     // another array too. A plain list pays these checks only
-    if (!l.shared && l.pattern.getter === null && !l.pattern.dependents.length) return;
+    if (!dup && !l.shared && l.pattern.getter === null && !l.pattern.dependents.length) return;
     const o = row.item;
-    const suffix = p.path.slice(l.pattern.path.length + 2);
     const land = (m: StateList, r: StateRow | undefined): void => {
       if (r === undefined || r === row) return;
       const mp = this.pattern(`${m.pattern.path}.*${suffix}`, true);
@@ -839,7 +858,10 @@ export class Engine implements ReconcileHooks {
       else this.touched(mp, r);
       this.landed(mp, r, old, value, direct);
     };
-    for (const m of this.sharing(l)) land(m, m.rows[row.index]);
+    for (const m of this.sharing(l)) {
+      land(m, m.rows[row.index]);
+      if (dup) for (const r of m.rows) if (r.item === o && r.index !== row.index) land(m, r);
+    }
     if (suffix === "") return;
     // (a leaf write: the row's item is an object. The lists over its own array were reached above)
     const seen = new Set<unknown>([l.arr]);

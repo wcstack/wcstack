@@ -39,6 +39,10 @@ The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake
 
 ### Fixed
 
+- `@wcstack/state`: **one object at two positions of one list** (`items: [o, o]`, #365). A write below one of the rows (`this["items.0.name"] = "z"`) now reaches the other rows that hold it, their row getters and `$getAll`; before, it reached only the row it was made through (F26).
+  - The array is checked for a doubled object once, at the first such write, and again after one of its elements is written in place, so later writes stay O(1). The scale verification passes (33 probes).
+  - It costs 87 B in the core.
+  - One object in two arrays that no getter relates (#401) is still a known limitation ([migration guide §5](./docs/migration-v4.md#5-known-limitations)).
 - `@wcstack/router`: **a route's parent is the `<wcs-route>` it is inside.** It used to be the route parsed last, so the routes before a route could become its parent:
   - a route inside an element after a sibling route got a path under that sibling (`/p/a/b` for `/p/b`);
   - a route inside a `<wcs-layout>` after another route was nested under it;

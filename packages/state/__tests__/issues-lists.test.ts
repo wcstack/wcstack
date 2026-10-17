@@ -570,7 +570,7 @@ describe("#365 同じオブジェクトをリストの 2 つの行に置いて�
   };
 
   // 4.0 の既知の制限（F26）: 同じオブジェクトを 1 つの一覧の 2 つの行に置くと、片方の行への書き込みはもう片方の行の束縛に届かない。it.fails で症状を残す
-  it.fails("Issue の手順（for で描く）", async () => {
+  it("Issue の手順（for で描く）", async () => {
     const { root, write, read } = await page(`<ul><template data-wcs="for: items"><li>{{ .name }}</li></template></ul>`, state());
     expect(texts(root, "li")).toEqual(["a", "a", "c"]);
     await write((s) => { s.rename(); });
@@ -584,7 +584,7 @@ describe("#365 同じオブジェクトをリストの 2 つの行に置いて�
   });
 
   // 4.0 の既知の制限（F26）: 同じオブジェクトを 1 つの一覧の 2 つの行に置くと、片方の行への書き込みはもう片方の行の束縛に届かない。it.fails で症状を残す
-  it.fails("for で描き、行の中で読む getter（items.*.label）", async () => {
+  it("for で描き、行の中で読む getter（items.*.label）", async () => {
     const { root, write } = await page(`<ul><template data-wcs="for: items"><li>{{ .label }}</li></template></ul>`,
       { ...state(), get "items.*.label"() { return `[${(this as any)["items.*.name"]}]`; } });
     await write((s) => { s.rename(); });
