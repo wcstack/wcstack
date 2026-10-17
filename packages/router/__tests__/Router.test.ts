@@ -924,6 +924,53 @@ describe('Router', () => {
       expect(router.basename).toBe('/app');
     });
 
+    describe('[wcs/base-href-missing] — URL から導いた basename', () => {
+      async function initAt(path: string, setup: (router: Router) => void = () => {}): Promise<{ router: Router; warned: boolean }> {
+        history.replaceState(null, '', path);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const router = document.createElement('wcs-router') as Router;
+        setup(router);
+        const template = document.createElement('template');
+        template.innerHTML = '<div>content</div>';
+        router.appendChild(template);
+        vi.spyOn(parseModule, 'parse').mockImplementation(async (r) => {
+          (r as any).routeChildNodes.push({ path: '/' });
+          return document.createDocumentFragment();
+        });
+        vi.spyOn(applyRouteModule, 'applyRoute').mockResolvedValue(true);
+        try {
+          await (router as any)._initialize();
+          return { router, warned: warn.mock.calls.some((c) => String(c[0]).includes('[wcs/base-href-missing]')) };
+        } finally {
+          warn.mockRestore();
+          history.replaceState(null, '', '/');
+        }
+      }
+
+      it('basename の属性も <base href> も無いディープリンクでは、導いた basename を警告すること', async () => {
+        const { router, warned } = await initAt('/products/3');
+        expect(router.basename).toBe('/products/3');
+        expect(warned).toBe(true);
+      });
+
+      it('basename の属性があれば警告しないこと', async () => {
+        const { warned } = await initAt('/app/products/3', (router) => router.setAttribute('basename', '/app'));
+        expect(warned).toBe(false);
+      });
+
+      it('<base href> があれば警告しないこと', async () => {
+        const base = document.createElement('base');
+        base.setAttribute('href', '/');
+        document.head.appendChild(base);
+        try {
+          const { warned } = await initAt('/products/3');
+          expect(warned).toBe(false);
+        } finally {
+          base.remove();
+        }
+      });
+    });
+
     it('basename の undefined は最初の属性へ戻し、null は属性を外すこと', () => {
       const host = document.createElement('div');
       host.innerHTML = '<wcs-router basename="/authored"></wcs-router>';

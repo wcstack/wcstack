@@ -70,10 +70,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 
 | What tells the author | Entries |
 |---|---|
-| The design (cannot be written, or harmless) | 0 |
-| The runtime | 39 |
-| The lint only — conditional silence | 23 |
-| The documents only — silence | 15 |
+| The design (cannot be written, or harmless) | 1 |
+| The runtime | 41 |
+| The lint only — conditional silence | 22 |
+| The documents only — silence | 14 |
 | Lint codes not counted | 18 |
 
 ### The documents only — silence
@@ -83,7 +83,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Shares one `<wcs-fetch>` between requests that can overlap: two saves in a row, a save while a load runs. | A new request aborts the one in flight and drops its result without a word: one change can be lost. | data loss | runtime report — 4.x. The fetch element can warn when a request with a body, or with a method other than GET, is superseded. |
 | Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, a recorder `start` with no stream. | The call goes to the node's `error` output only; with `error` unbound, the message is lost without a word. | data loss | runtime report — 4.x. The node can also log the refused call once in the console. |
 | Re-fetches a list without `$listKeys` while its rows hold unbound state: text being typed, focus, an open `<details>`. | Fresh objects never match by reference, so every row is rebuilt and that state is lost. | data loss | lint rule — 4.x; then design out — 5.0 agenda (breaking). 4.x: an info for a `for:` over fetched data whose rows hold inputs, with no `$listKeys`. 5.0: key rows by `id` when the objects carry one. |
-| Puts `<wcs-guard-handler>` outside a `<wcs-route>`, or gives it a script without `type="module"`. | The router skips it without a word: the route is not guarded and the protected page shows. | security | runtime report — 4.x; then lint rule — 4.x. The router sees both cases while it parses the routes. |
 | Misspells `<wcs-storage type>` (`type="sesion"`). | Anything but exactly `session` becomes `local`: data meant for the session is kept on disk. | security | runtime report — 4.x; then lint rule — 4.x. The element normalizes the value silently, though its core reports a bad type; it can warn. |
 | Binds text a user controls to `href:`, `src:`, `attr.href:` or `attr.on*:`. | A `javascript:` URL or a handler string is written as it is: XSS, unless a CSP stops it. | security | lint rule — 4.x; then runtime report — 4.x. 4.x: the lint can report any `attr.on*:`, and the diagnostics add-on can warn on a `javascript:` URL. 4.0 chose not to refuse them in the core (2026-10-02); refusing would be breaking. |
 | Writes user content into the page's markup from a server template or page code. | The page scan binds what is in it — `{{ apiKey }}`, `data-wcs`, a comment binding: client-side template injection. | security | design out — 4.x. R10: a `data-wcs-ignore` attribute, decided for 4.x, lets a page mark such content. |
@@ -104,7 +103,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Binds a non-manual `<wcs-storage>`'s `value`, without `#init=element`, to a path seeded with a literal, or to an accessor pair. | `wcs/storage-seed-clobber` (error) | The element loads the saved value, then state writes its seed and the element saves it over the stored one, on every load. A `null` seed removes the key. | data loss | runtime report — 4.x; then design out — 5.0 agenda (breaking). 4.x: at the first sync the runtime can warn when it overwrites a value the element already holds (diagnostics add-on). 5.0: the element wins the first sync of a loading storage. |
 | Seeds the state slot bound to `trigger:` with `true`. | `wcs/trigger-seeded-truthy` (warning) | The first sync writes `true`: `<wcs-fetch>` sends a request on load, `manual` or not, and `<wcs-storage manual>` saves what it holds. With no `url` yet, the `true` stays and the first real trigger does nothing. | data loss | design out — 5.0 agenda (breaking). A wc-bindable hint that the element, not state, wins the first sync of `trigger` would remove it; a page that seeds `true` on purpose would change. |
 | Binds `onsubmit:` on a `<form>` without `#prevent`, and the handler does not call `preventDefault`. | `wcs/submit-without-prevent` (warning) | The handler runs, then the browser submits the form: the page reloads, or with the router a GET puts the fields, a password too, in the URL and the history. | security | runtime report — 4.x; then design out — 5.0 agenda (breaking). 4.x: after the handler, the runtime can see a submit that was not prevented on a form without `action` — a hook in the core (536 B of room), the report in the diagnostics add-on. 5.0: `onsubmit:` prevents by default. |
-| Loads the router on a page with no `<base href>` and no `basename`. | `wcs/base-href-missing` (warning) | On a deep link or a reload at `/products/3`, the router takes `/products/3` as the basename, shows the root route and resolves links under it. Only a root that is a file (`/index.html`) throws, without a code. | missing / wrong place | runtime report — 4.x; then design out — 5.0 agenda (breaking). 4.x: the router knows when the basename came from the document URL and can warn. 5.0: no derived basename, which changes sub-folder apps that rely on the derivation. |
 | Puts `for:` on a value that is not an array. | `wcs/path-type-mismatch` (error), `wcs/binding-type-expectation` (error) | Anything but an array renders as an empty list, without a word. | missing / wrong place | runtime report — 4.x. The diagnostics add-on can check each list's first value; later values need one hook call in `reconcile`. |
 | Writes `{{ }}` in text directly under `<wcs-route>` or a layout's template. | `wcs/route-bare-mustache` (warning) | It renders on the landing route only; a route entered by navigation shows the literal `{{ … }}`. | missing / wrong place | runtime report — 4.x. The router can warn: a text node of its own route content that still holds `{{` has never been bound (state replaces the text it binds). Binding text on navigation would need state to mark the text it renders — core bytes and a binder change. |
 | Assigns an array element by index: `this.items[0] = x`. | `wcs/array-index-assign` (error) | The row keeps showing the old element until a new array is assigned. | stale | runtime report — 4.x. The same comparison of rows with the array, in the diagnostics add-on. |
@@ -128,6 +126,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 
 | Mistake | How the runtime reports it | Lint |
 |---|---|---|
+| Puts `<wcs-guard-handler>` outside a `<wcs-route>`, or gives it a script without `type="module"`. | Without the code: The router reports it with `console.error` (`[wcs/guard-handler-ignored]`): the route is not guarded. One outside after a route at the same level keeps guarding that route, as it did before. No lint rule yet; the markup shows both cases. | — |
+| Loads the router on a page with no `<base href>` and no `basename`. | Same code: On a deep link or a reload at `/products/3`, the router takes `/products/3` as the basename, shows the root route and resolves links under it; it warns `[wcs/base-href-missing]` with the basename it derived. 5.0 agenda: derive no basename, which changes sub-folder apps that rely on the derivation. | `wcs/base-href-missing` (warning) |
 | Gives a layout template no default `<slot>` while the layout holds nested routes. | Same code: The router warns `[wcs/layout-slot-missing]`; it also checks `src=` layouts and a `slot=` the template lacks, which the lint does not. | `wcs/layout-slot-missing` (warning) |
 | Places `<wcs-outlet>` anywhere but right after `<wcs-router>`. | Same code: The router warns `[wcs/router-outlet-misplaced]` when it makes its own outlet, and about an outlet a layout brings in. | `wcs/router-outlet-misplaced` (warning) |
 | `$behavior` is not an object, has an unknown key or a value that is not a boolean, or sits in a volume. | Without the code: `#44` at load: the state fails to initialize (a volume is refused with `console.error`). | `wcs/behavior-invalid` (error) |
@@ -170,7 +170,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 
 ### Designed out
 
-None.
+| Mistake | What goes wrong |
+|---|---|
+| Puts a `<wcs-route>` (or a `<wcs-guard-handler>`) inside an element or a `<wcs-layout>` after another route, or a guard after the nested routes of the route it guards. | Since 4.3 a route's parent, and the route a guard guards, is the `<wcs-route>` it is inside. Before, it was the route parsed last: the route got a path under the previous one, an absolute one threw (`is absolute but has a parent route`), and the guard guarded a child route while its own was open. |
 
 ### Lint codes not counted
 

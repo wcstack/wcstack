@@ -70,10 +70,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 作者に知らせるもの | 項目 |
 |---|---|
-| 設計（書けない、または害が無い） | 0 |
-| 実行時 | 39 |
-| lint だけ — 条件付きの沈黙 | 23 |
-| 文書だけ — 沈黙 | 15 |
+| 設計（書けない、または害が無い） | 1 |
+| 実行時 | 41 |
+| lint だけ — 条件付きの沈黙 | 22 |
+| 文書だけ — 沈黙 | 14 |
 | 数えない lint の code | 18 |
 
 ### 文書だけ — 沈黙
@@ -83,7 +83,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。 | 新しい要求が実行中の要求を中断し、その結果を黙って捨てる。変更が 1 つ失われうる。 | データの損失 | 実行時に知らせる — 4.x。本文付き、または GET 以外の要求が中断されたときに、fetch の要素が警告できる。 |
 | I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、ストリームの無い recorder の `start`。 | 呼び出しはノードの `error` の出力にだけ流れる。`error` を束ねていなければ、メッセージは黙って失われる。 | データの損失 | 実行時に知らせる — 4.x。ノードが、拒んだ呼び出しをコンソールにも 1 回記録できる。 |
 | 行が束ねていない状態（入力中の文字・フォーカス・開いた `<details>`）を持つ一覧を、`$listKeys` なしで取り直す。 | 新しいオブジェクトは参照で一致しないので、すべての行が作り直され、その状態は失われる。 | データの損失 | lint の規則 — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 取得したデータの `for:` で、行に入力欄があり `$listKeys` が無ければ info。5.0: オブジェクトが `id` を持てば、それで行を合わせる。 |
-| `<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type="module"` の無いスクリプトを付ける。 | router は黙って飛ばす。ルートは守られず、保護したページが見える。 | 安全 | 実行時に知らせる — 4.x。その後、lint の規則 — 4.x。router はルートを解析する時点で、どちらの場合も分かる。 |
 | `<wcs-storage type>` を打ち間違える（`type="sesion"`）。 | `session` ちょうど以外は `local` になる。セッション向けのデータがディスクに残る。 | 安全 | 実行時に知らせる — 4.x。その後、lint の規則 — 4.x。要素は値を黙って正規化する（コアは不正な型を報告するのに）。警告できる。 |
 | 利用者が決められる文字列を `href:`・`src:`・`attr.href:`・`attr.on*:` に束ねる。 | `javascript:` の URL やハンドラの文字列がそのまま書かれる。CSP が止めなければ XSS。 | 安全 | lint の規則 — 4.x。その後、実行時に知らせる — 4.x。4.x: lint はすべての `attr.on*:` を報告でき、diagnostics の後付けは `javascript:` の URL に警告できる。4.0 は core で拒まないと決めた（2026-10-02）。拒むのは破壊的。 |
 | 利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込む。 | ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。 | 安全 | 設計で消す — 4.x。R10: 4.x で足すと決めた `data-wcs-ignore` 属性で、ページがその中身に印を付けられる。 |
@@ -104,7 +103,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | manual でない `<wcs-storage>` の `value` を、`#init=element` なしで、リテラルで始めたパスかアクセサペアに束ねる。 | `wcs/storage-seed-clobber` (error) | 要素が保存値を読み込んだ後に state がシードを書き、要素がそれを保存値の上に保存する — 読み込みのたびに。`null` のシードはキーを消す。 | データの損失 | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 最初の同期で、要素が既に持つ値を上書きするときに実行時が警告できる（diagnostics の後付け）。5.0: 読み込む storage の最初の同期は要素が勝つ。 |
 | `trigger:` に束ねた state のスロットを `true` で始める。 | `wcs/trigger-seeded-truthy` (warning) | 最初の同期が `true` を書く。`<wcs-fetch>` は `manual` でも読み込みで要求を送り、`<wcs-storage manual>` は持っている値を保存する。まだ `url` が無ければ `true` が残り、最初の本当の trigger が何もしない。 | データの損失 | 設計で消す — 5.0 の議題（破壊的）。`trigger` の最初の同期は state でなく要素が勝つ、という wc-bindable の印で消せる。わざと `true` で始めるページは変わる。 |
 | `<form>` の `onsubmit:` を `#prevent` なしで束ね、ハンドラも `preventDefault` を呼ばない。 | `wcs/submit-without-prevent` (warning) | ハンドラが走った後、ブラウザがフォームを送る。ページが読み直されるか、router があれば GET が欄 — パスワードも — を URL と履歴に載せる。 | 安全 | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: ハンドラの後で、`action` の無いフォームの防がれなかった submit を実行時が見られる — core にフック（残り 536 B）、知らせは diagnostics の後付け。5.0: `onsubmit:` は既定で防ぐ。 |
-| `<base href>` も `basename` も無いページで router を読み込む。 | `wcs/base-href-missing` (warning) | `/products/3` へのディープリンクか再読み込みで、router は `/products/3` を basename にし、根のルートを表示して、リンクをその下で解決する。根がファイル（`/index.html`）のときだけ、code なしで throw する。 | 出ない・違う場所 | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: router は basename が文書の URL から来たと分かるので警告できる。5.0: basename を導かない。導出に頼るサブフォルダのアプリが変わる。 |
 | 配列でない値に `for:` を付ける。 | `wcs/path-type-mismatch` (error), `wcs/binding-type-expectation` (error) | 配列以外は、何も言わずに空の一覧として描かれる。 | 出ない・違う場所 | 実行時に知らせる — 4.x。diagnostics の後付けが各一覧の最初の値を調べられる。後の値には `reconcile` にフックの呼び出しが 1 つ要る。 |
 | `<wcs-route>` かレイアウトのテンプレートの直下のテキストに `{{ }}` を書く。 | `wcs/route-bare-mustache` (warning) | 最初に着いたルートでだけ描かれ、遷移で入ったルートでは `{{ … }}` がそのまま出る。 | 出ない・違う場所 | 実行時に知らせる — 4.x。router が警告できる: 自分のルートの中身のテキストノードに `{{` が残っていれば、それは束ねられていない（state は束ねたテキストを置き換える）。遷移でテキストを束ねるには、state が描いたテキストに印を付ける必要がある — core のバイトと binder の変更。 |
 | 添字で配列の要素に代入する: `this.items[0] = x`。 | `wcs/array-index-assign` (error) | 新しい配列を代入するまで、行は古い要素を表示し続ける。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けで、同じく行と配列を突き合わせる。 |
@@ -128,6 +126,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 誤り | 実行時の知らせ方 | lint |
 |---|---|---|
+| `<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type="module"` の無いスクリプトを付ける。 | code なし: router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートは守られない。同じ階層でルートの後に置いた外のものは、以前と同じくそのルートを守り続ける。 lint の規則はまだ無い。どちらの形もマークアップに見える。 | — |
+| `<base href>` も `basename` も無いページで router を読み込む。 | 同じ code: `/products/3` へのディープリンクか再読み込みで、router は `/products/3` を basename にし、根のルートを表示して、リンクをその下で解決する。導いた basename を添えて `[wcs/base-href-missing]` で警告する。 5.0 の議題: basename を導かない。導出に頼るサブフォルダのアプリが変わる。 | `wcs/base-href-missing` (warning) |
 | 入れ子のルートを持つレイアウトのテンプレートに、既定の `<slot>` が無い。 | 同じ code: router が `[wcs/layout-slot-missing]` で警告する。lint の見ない `src=` のレイアウトと、テンプレートに無い `slot=` も調べる。 | `wcs/layout-slot-missing` (warning) |
 | `<wcs-outlet>` を `<wcs-router>` の直後以外に置く。 | 同じ code: router が自前の outlet を作るときに `[wcs/router-outlet-misplaced]` で警告する。レイアウトが持ち込んだ outlet にも。 | `wcs/router-outlet-misplaced` (warning) |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
@@ -170,7 +170,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 ### 設計で消したもの
 
-なし。
+| 誤り | 何が起きるか |
+|---|---|
+| `<wcs-route>`（や `<wcs-guard-handler>`）を、別のルートの後の要素や `<wcs-layout>` の中に置く。または、守るルートの入れ子のルートの後にガードを置く。 | 4.3 から、ルートの親とガードの守るルートは、それを中に持つ `<wcs-route>`。以前は最後に解析したルートで、ルートは前のルートの下のパスになるか、絶対パスなら throw し（`is absolute but has a parent route`）、ガードは子のルートを守って自分のルートは開いていた。 |
 
 ### 数えない lint の code
 

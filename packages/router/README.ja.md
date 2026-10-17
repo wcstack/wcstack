@@ -223,7 +223,7 @@ basename 結合と pathname 正規化は pathname にのみ適用され、クエ
 
 | 属性 | 説明 |
 |------|------|
-| `path` | トップレベルルートの場合、"/"で始まる絶対パスを指定、それ以外は相対パスを指定。パラメータを指定する場合、`:パラメータ名`。キャッチオールは`*`。トップレベルルートでは相対パスを指定できない。 |
+| `path` | トップレベルルートの場合、"/"で始まる絶対パスを指定、それ以外は相対パスを指定。パラメータを指定する場合、`:パラメータ名`。キャッチオールは`*`。トップレベルルートでは相対パスを指定できない。ルートの親は、そのルートを中に持つ `<wcs-route>`。周りの要素や `<wcs-layout>`、前にあるルートでは変わらない。 |
 | `index` | 上位のパスを引き継ぐ |
 | `fallback` | ルートパスに対応するルートがない場合、表示する |
 | `fullpath` | 上位ルートを含むパス、読み取り専用 |
@@ -282,8 +282,9 @@ interface IGuardContext {          // 進入先マッチの frozen スナップ�
 - ガードから `<wcs-state>` の状態は見えない。ページの読み込みでは、最初のルートのガードが `@wcstack/state` の読み込みより先に走ることもある。セッションは、それを保存している場所 — `<wcs-storage>` が保存する `localStorage` のキー（JSON で入っている）— から直接読む。どのタブでも最新の値になる
 - 判定関数は `Promise` を返すことも可能（非同期チェック対応）— 解決するまでルートは commit されない
 - 第 3 引数に進入先マッチ（`params` / `typedParams` / `searchParams` / `routeName`）が渡る。`toPath` / `fromPath` は basename スライス後のパス
-- `<wcs-route>` の外に配置された `<wcs-guard-handler>` は無視される
-- `<script type="module">` がない場合、`guardHandler` は設定されない
+- 中に置いた `<wcs-route>` を守る。その中のどこに置いてもよい — 入れ子のルートの前でも後でも、要素の中でも。親のガードは、子のルートへのナビゲーションでも走る
+- どの `<wcs-route>` の外に置いたものも、`console.error`（`[wcs/guard-handler-ignored]`）で報告する。同じ階層で前にルートがあれば、4.3 より前と同じくそのルートを守り続ける — 中へ移すこと。前にルートが無ければ何も守らない
+- `<script type="module">` がない場合、`guardHandler` は設定されず、ルートは守られない。`console.error`（`[wcs/guard-handler-ignored]`）で報告する
 - **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため、router を読み込む `<script>` にページの nonce を付けるか（blob: の import がその nonce を引き継ぐ）、`script-src blob:` が必要（blob: の import が失敗すると router は `data:` URL で読み直すので `script-src data:` でも通るが、危険の大きい source なので開けないこと）。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
 - **`require-trusted-types-for 'script'` 下では**、`<wcs-layout>` のテンプレート展開が `wcstack` という名前の Trusted Types policy を通るため、CSP に `trusted-types wcstack;` が必要（または自前の policy を注入する。詳細は [docs/csp.ja.md](../../docs/csp.ja.md) の §7）
 
@@ -587,7 +588,7 @@ router は、プラットフォームが既に正しく行うことについて�
 
 1. `<wcs-router basename="/app">` の `basename` 属性
 2. `<base href="/app/">` がある場合は `new URL(document.baseURI).pathname` から導出
-3. どちらも無い場合、`document.baseURI` は現在のドキュメント URL なので basename は `location.pathname` から導出される。**空文字** `""` になるのはドキュメント自体がルートで読み込まれた場合だけで、`/products/3` を直接開けば basename は `/products/3` になる。深いリンクを成立させるには `<base href="/">` か `basename` 属性が必要
+3. どちらも無い場合、`document.baseURI` は現在のドキュメント URL なので basename は `location.pathname` から導出される。**空文字** `""` になるのはドキュメント自体がルートで読み込まれた場合だけで、`/products/3` を直接開けば basename は `/products/3` になる。深いリンクを成立させるには `<base href="/">` か `basename` 属性が必要。こうして導いた basename が空でなければ、router は `[wcs/base-href-missing]` で警告する（`wcs-validate` がマークアップから報告するのと同じ code）
 
 ### 1.2 basename の正規化（重要）
 
