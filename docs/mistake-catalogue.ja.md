@@ -71,19 +71,17 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 1 |
-| 実行時 | 41 |
+| 実行時 | 44 |
 | lint だけ — 条件付きの沈黙 | 22 |
-| 文書だけ — 沈黙 | 14 |
+| 文書だけ — 沈黙 | 11 |
 | 数えない lint の code | 18 |
 
 ### 文書だけ — 沈黙
 
 | 誤り | 何が起きるか | 害 | 扱い |
 |---|---|---|---|
-| 重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。 | 新しい要求が実行中の要求を中断し、その結果を黙って捨てる。変更が 1 つ失われうる。 | データの損失 | 実行時に知らせる — 4.x。本文付き、または GET 以外の要求が中断されたときに、fetch の要素が警告できる。 |
 | I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、ストリームの無い recorder の `start`。 | 呼び出しはノードの `error` の出力にだけ流れる。`error` を束ねていなければ、メッセージは黙って失われる。 | データの損失 | 実行時に知らせる — 4.x。ノードが、拒んだ呼び出しをコンソールにも 1 回記録できる。 |
 | 行が束ねていない状態（入力中の文字・フォーカス・開いた `<details>`）を持つ一覧を、`$listKeys` なしで取り直す。 | 新しいオブジェクトは参照で一致しないので、すべての行が作り直され、その状態は失われる。 | データの損失 | lint の規則 — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 取得したデータの `for:` で、行に入力欄があり `$listKeys` が無ければ info。5.0: オブジェクトが `id` を持てば、それで行を合わせる。 |
-| `<wcs-storage type>` を打ち間違える（`type="sesion"`）。 | `session` ちょうど以外は `local` になる。セッション向けのデータがディスクに残る。 | 安全 | 実行時に知らせる — 4.x。その後、lint の規則 — 4.x。要素は値を黙って正規化する（コアは不正な型を報告するのに）。警告できる。 |
 | 利用者が決められる文字列を `href:`・`src:`・`attr.href:`・`attr.on*:` に束ねる。 | `javascript:` の URL やハンドラの文字列がそのまま書かれる。CSP が止めなければ XSS。 | 安全 | lint の規則 — 4.x。その後、実行時に知らせる — 4.x。4.x: lint はすべての `attr.on*:` を報告でき、diagnostics の後付けは `javascript:` の URL に警告できる。4.0 は core で拒まないと決めた（2026-10-02）。拒むのは破壊的。 |
 | 利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込む。 | ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。 | 安全 | 設計で消す — 4.x。R10: 4.x で足すと決めた `data-wcs-ignore` 属性で、ページがその中身に印を付けられる。 |
 | getter が state でないものを読む: `Date.now()`・`new Date()`・DOM・モジュールの変数・`localStorage`。 | 追跡されないので、getter は最初の値のまま。 | 古い表示 | 実行時に知らせる — 4.x。その後、lint の規則 — 4.x。diagnostics の後付けが、最初の評価で何も追跡しなかった getter に警告できる（signals の `UNTRACKED_COMPUTED` と同じ）。lint の `wcs/getter-untracked-read` はほかのグローバルにも広げられる。 |
@@ -91,7 +89,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 4.0 はキーを作る。`count` に束ねたものは何も変わらない。 | 古い表示 | lint の規則 — 4.x。その後、実行時に知らせる — 4.x。lint はスクリプトの書き込みを宣言済みのキーと比べられる。diagnostics の後付けは、読み込みの後に作られたキーに警告できる。 |
 | 要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。 | 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。 |
 | どの `command.` の束縛も結ばないコマンドのトークンを emit する、または spread がコマンドとイベントを結ぶと思う。 | emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。 | 動かない | lint の規則 — 4.x。両側はマークアップとスクリプトにあり、lint は既に解析している。 |
-| `<wcs-infinite-scroll target>` が、無い id か `<wcs-fetch>` でない要素を指す。 | 何もしない。次のページは読み込まれず、何も言わない。 | 動かない | 実行時に知らせる — 4.x。その後、lint の規則 — 4.x |
 | I/O ノードの `/auto` を `@wcstack/state/auto` の後に読み込む。 | コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。 | 動かない | lint の規則 — 4.x。`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。 |
 | `<wcs-link>` に `attr.aria-*:` を束ねる。 | `aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。 | 劣化 | 設計で消す — 4.x。リンクが後の `aria-*` の変化を転送できる。 |
 
@@ -126,7 +123,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 誤り | 実行時の知らせ方 | lint |
 |---|---|---|
+| 重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。 | code なし: 新しい要求が実行中の要求を中断し、その結果を捨てる。それが変更の要求（GET・HEAD・OPTIONS 以外）なら、要素がメソッドと URL を名指して `[wcs/fetch-request-superseded]` で警告する。 | — |
 | `<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type="module"` の無いスクリプトを付ける。 | code なし: router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートは守られない。同じ階層でルートの後に置いた外のものは、以前と同じくそのルートを守り続ける。 lint の規則はまだ無い。どちらの形もマークアップに見える。 | — |
+| `<wcs-storage type>` を打ち間違える（`type="sesion"`）。 | code なし: `session` ちょうど以外は `local` になり、セッション向けのデータがディスクに残る。要素は値ごとに 1 回 `[wcs/storage-type-invalid]` で警告する。 lint の規則はまだ無い。値はマークアップにある。 | — |
 | `<base href>` も `basename` も無いページで router を読み込む。 | 同じ code: `/products/3` へのディープリンクか再読み込みで、router は `/products/3` を basename にし、根のルートを表示して、リンクをその下で解決する。導いた basename を添えて `[wcs/base-href-missing]` で警告する。 5.0 の議題: basename を導かない。導出に頼るサブフォルダのアプリが変わる。 | `wcs/base-href-missing` (warning) |
 | 入れ子のルートを持つレイアウトのテンプレートに、既定の `<slot>` が無い。 | 同じ code: router が `[wcs/layout-slot-missing]` で警告する。lint の見ない `src=` のレイアウトと、テンプレートに無い `slot=` も調べる。 | `wcs/layout-slot-missing` (warning) |
 | `<wcs-outlet>` を `<wcs-router>` の直後以外に置く。 | 同じ code: router が自前の outlet を作るときに `[wcs/router-outlet-misplaced]` で警告する。レイアウトが持ち込んだ outlet にも。 | `wcs/router-outlet-misplaced` (warning) |
@@ -145,6 +144,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 互いを読み合って循環する getter を書く。 | 同じ code: 評価の時点で `#701`、それを読む束縛はすべて失敗する。 | `wcs/getter-cycle` (error) |
 | `$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。 | 同じ code: 呼んだ所で `#901`・`#902` を throw する。 | `wcs/index-arity` (error) |
 | `$1`〜`$128` の外のループの添字を読む（`this.$0`・`$129`）。 | 同じ code: `#1001`。スクリプトは読んだ時点で throw し、マークアップでは束縛が失敗する。 | `wcs/index-param-range` (error) |
+| `<wcs-infinite-scroll target>` が、無い id か `<wcs-fetch>` でない要素を指す。 | code なし: 次のページは読み込まれない。見えたときに、要素が `target` の値ごとに 1 回 `[wcs/infinite-scroll-target]` で警告する。 lint の規則はまだ無い。id はマークアップにある。 | — |
 | `mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。 | code なし: scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。 | `wcs/mount-path-invalid` (error) |
 | 外れた 3.x の API の名前を呼ぶ（`$trackDependency`・`$untrackDependency`）。 | 同じ code: diagnostics の後付けが読んだ時点で `#1701` を throw する。`/core` では `undefined` で、呼べば汎用の TypeError。 | `wcs/name-alias` (error) |
 | v1 の名前付き State の選択子 `path@name` を書く。 | code なし: 解析の誤り `#32`。ページの束縛はそこで止まる（ルートの中身では `console.error`）。 | `wcs/named-state-deprecated` (error) |

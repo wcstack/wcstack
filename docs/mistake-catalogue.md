@@ -71,19 +71,17 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | What tells the author | Entries |
 |---|---|
 | The design (cannot be written, or harmless) | 1 |
-| The runtime | 41 |
+| The runtime | 44 |
 | The lint only — conditional silence | 22 |
-| The documents only — silence | 14 |
+| The documents only — silence | 11 |
 | Lint codes not counted | 18 |
 
 ### The documents only — silence
 
 | Mistake | What goes wrong | Harm | Disposition |
 |---|---|---|---|
-| Shares one `<wcs-fetch>` between requests that can overlap: two saves in a row, a save while a load runs. | A new request aborts the one in flight and drops its result without a word: one change can be lost. | data loss | runtime report — 4.x. The fetch element can warn when a request with a body, or with a method other than GET, is superseded. |
 | Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, a recorder `start` with no stream. | The call goes to the node's `error` output only; with `error` unbound, the message is lost without a word. | data loss | runtime report — 4.x. The node can also log the refused call once in the console. |
 | Re-fetches a list without `$listKeys` while its rows hold unbound state: text being typed, focus, an open `<details>`. | Fresh objects never match by reference, so every row is rebuilt and that state is lost. | data loss | lint rule — 4.x; then design out — 5.0 agenda (breaking). 4.x: an info for a `for:` over fetched data whose rows hold inputs, with no `$listKeys`. 5.0: key rows by `id` when the objects carry one. |
-| Misspells `<wcs-storage type>` (`type="sesion"`). | Anything but exactly `session` becomes `local`: data meant for the session is kept on disk. | security | runtime report — 4.x; then lint rule — 4.x. The element normalizes the value silently, though its core reports a bad type; it can warn. |
 | Binds text a user controls to `href:`, `src:`, `attr.href:` or `attr.on*:`. | A `javascript:` URL or a handler string is written as it is: XSS, unless a CSP stops it. | security | lint rule — 4.x; then runtime report — 4.x. 4.x: the lint can report any `attr.on*:`, and the diagnostics add-on can warn on a `javascript:` URL. 4.0 chose not to refuse them in the core (2026-10-02); refusing would be breaking. |
 | Writes user content into the page's markup from a server template or page code. | The page scan binds what is in it — `{{ apiKey }}`, `data-wcs`, a comment binding: client-side template injection. | security | design out — 4.x. R10: a `data-wcs-ignore` attribute, decided for 4.x, lets a page mark such content. |
 | A getter reads something that is not state: `Date.now()`, `new Date()`, the DOM, a module variable, `localStorage`. | It is not tracked: the getter keeps its first value. | stale | runtime report — 4.x; then lint rule — 4.x. The diagnostics add-on can warn about a getter whose first run tracked nothing (as signals' `UNTRACKED_COMPUTED` does); the lint's `wcs/getter-untracked-read` can cover more globals. |
@@ -91,7 +89,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Writes a top-level key the state does not declare — a typo (`this.coutn = 1`). | 4.0 creates the key; nothing bound to `count` changes. | stale | lint rule — 4.x; then runtime report — 4.x. The lint can compare the script's writes with the declared keys; the diagnostics add-on can warn on a key created after load. |
 | Writes `undefined` to an element's input or property after a value: a reset, a getter that returns `undefined`. | 4.0 never writes `undefined` (B8): the element keeps the previous value — the previous user's avatar, old text. | stale | runtime report — 4.x. The diagnostics add-on can warn when an `undefined` follows a value; writing `null` clears. |
 | Emits a command token that no `command.` binding wires, or expects a spread to wire commands and events. | The emit reaches no subscriber and returns nothing; `$on` never fires. | broken | lint rule — 4.x. Both sides are in the markup and the script, which the lint already parses. |
-| Points `<wcs-infinite-scroll target>` at an id that is missing or not a `<wcs-fetch>`. | It does nothing: no more pages load, without a word. | broken | runtime report — 4.x; then lint rule — 4.x |
 | Loads an I/O node's `/auto` after `@wcstack/state/auto`. | Command bindings wait for the tag's definition, so a `$command` emit in that window reaches no one and is dropped. | broken | lint rule — 4.x. `wcs/script-order` checks DevTools only; extending it to the I/O `/auto` entries is small. |
 | Binds `attr.aria-*:` on a `<wcs-link>`. | `aria-*` is copied once, when the link makes its `<a>`: later values never reach it. | degraded | design out — 4.x. The link can forward later `aria-*` changes. |
 
@@ -126,7 +123,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 
 | Mistake | How the runtime reports it | Lint |
 |---|---|---|
+| Shares one `<wcs-fetch>` between requests that can overlap: two saves in a row, a save while a load runs. | Without the code: A new request aborts the one in flight and drops its result. When that was a change (not GET / HEAD / OPTIONS), the element warns `[wcs/fetch-request-superseded]`, naming its method and URL. | — |
 | Puts `<wcs-guard-handler>` outside a `<wcs-route>`, or gives it a script without `type="module"`. | Without the code: The router reports it with `console.error` (`[wcs/guard-handler-ignored]`): the route is not guarded. One outside after a route at the same level keeps guarding that route, as it did before. No lint rule yet; the markup shows both cases. | — |
+| Misspells `<wcs-storage type>` (`type="sesion"`). | Without the code: Anything but exactly `session` becomes `local`, so data meant for the session is kept on disk; the element warns `[wcs/storage-type-invalid]` once per value. No lint rule yet; the value is in the markup. | — |
 | Loads the router on a page with no `<base href>` and no `basename`. | Same code: On a deep link or a reload at `/products/3`, the router takes `/products/3` as the basename, shows the root route and resolves links under it; it warns `[wcs/base-href-missing]` with the basename it derived. 5.0 agenda: derive no basename, which changes sub-folder apps that rely on the derivation. | `wcs/base-href-missing` (warning) |
 | Gives a layout template no default `<slot>` while the layout holds nested routes. | Same code: The router warns `[wcs/layout-slot-missing]`; it also checks `src=` layouts and a `slot=` the template lacks, which the lint does not. | `wcs/layout-slot-missing` (warning) |
 | Places `<wcs-outlet>` anywhere but right after `<wcs-router>`. | Same code: The router warns `[wcs/router-outlet-misplaced]` when it makes its own outlet, and about an outlet a layout brings in. | `wcs/router-outlet-misplaced` (warning) |
@@ -145,6 +144,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Writes getters that read each other in a cycle. | Same code: `#701` when they are evaluated: every binding that reads them fails. | `wcs/getter-cycle` (error) |
 | Gives `$getAll` / `$setAll` / `$resolve` a number of indexes that does not match the path's `*`s. | Same code: `#901` / `#902`, thrown where it is called. | `wcs/index-arity` (error) |
 | Reads a loop index outside `$1` – `$128` (`this.$0`, `$129`). | Same code: `#1001`: thrown when the script reads it; in markup the binding fails. | `wcs/index-param-range` (error) |
+| Points `<wcs-infinite-scroll target>` at an id that is missing or not a `<wcs-fetch>`. | Without the code: No more pages load; when it comes into view, the element warns `[wcs/infinite-scroll-target]` once per `target` value. No lint rule yet; the id is in the markup. | — |
 | Gives `mount=` an empty value or segment, `*`, `$`, `#`, `@` or whitespace. | Without the code: The scopes add-on refuses the volume with `console.error` (`has an invalid mount path`). | `wcs/mount-path-invalid` (error) |
 | Calls a removed 3.x API name (`$trackDependency`, `$untrackDependency`). | Same code: The diagnostics add-on throws `#1701` on the read; on `/core` it is `undefined` and the call a generic TypeError. | `wcs/name-alias` (error) |
 | Writes a v1 named-state selector, `path@name`. | Without the code: Parse error `#32`: the page's binding stops there (in route content, a `console.error`). | `wcs/named-state-deprecated` (error) |

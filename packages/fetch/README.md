@@ -219,7 +219,7 @@ and no event fires. Set the `url` first, then write `true` again to execute.
 
 `body` is a **one-shot** input: `<wcs-fetch>` sends it and resets it to `null` (see [Design Notes](#design-notes)). So build the body in the handler that starts the request, and assign a new object every time. Binding the form object itself (`body: newUser`) sends it once: typing writes `newUser.name`, a path *below* the bound one, which never re-applies the binding, so the second submit goes without a body — no error. `wcs-validate` reports that form as `wcs/input-nested-write`.
 
-**One element is one request at a time.** A new request on the same `<wcs-fetch>` aborts the one in flight, and a `trigger` that is still `true` drops a second `true` (the same value). So give each request that can overlap its own element — one per kind of change (create / update / delete), not one shared by every mutation — or two quick changes lose one of them silently.
+**One element is one request at a time.** A new request on the same `<wcs-fetch>` aborts the one in flight, and a `trigger` that is still `true` drops a second `true` (the same value). So give each request that can overlap its own element — one per kind of change (create / update / delete), not one shared by every mutation — or two quick changes lose one of them. When the request it aborts is a change (any method but `GET`, `HEAD` and `OPTIONS`), the element warns `[wcs/fetch-request-superseded]`, naming it: it was aborted on the client, the server may have applied it, and its response is dropped.
 
 **Field errors from the server** (a `422` with `{ errors: { name: "…" } }`) arrive in `error`: on an HTTP error `error` is `{ status, statusText, body }`, with the response body as text. Read them with a getter:
 
@@ -242,7 +242,7 @@ Behavior rules:
 
 - it does not trigger again while the target `<wcs-fetch>` is `loading`
 - `once` is strict: after the first execution, changing attributes does not re-arm observation
-- if `target` does not resolve, or resolves to a non-`<wcs-fetch>` element, it is a silent no-op
+- if `target` does not resolve, or resolves to a non-`<wcs-fetch>` element, nothing is loaded, and it warns `[wcs/infinite-scroll-target]` once per `target` value
 
 ```html
 <wcs-state>

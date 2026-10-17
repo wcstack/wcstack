@@ -522,12 +522,10 @@
     },
     {
       "id": "fetch-superseded-mutation",
-      "runtime": "silent", "harm": "data-loss",
+      "runtime": "loud", "harm": "data-loss",
       "mistake": { "en": "Shares one `<wcs-fetch>` between requests that can overlap: two saves in a row, a save while a load runs.", "ja": "重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。" },
-      "effect": { "en": "A new request aborts the one in flight and drops its result without a word: one change can be lost.", "ja": "新しい要求が実行中の要求を中断し、その結果を黙って捨てる。変更が 1 つ失われうる。" },
-      "evidence": [{ "file": "packages/fetch/src/core/FetchCore.ts", "text": "new OperationLane(\"fetch\", \"latest\"" }],
-      "disposition": "runtime-report",
-      "note": { "en": "The fetch element can warn when a request with a body, or with a method other than GET, is superseded.", "ja": "本文付き、または GET 以外の要求が中断されたときに、fetch の要素が警告できる。" }
+      "effect": { "en": "A new request aborts the one in flight and drops its result. When that was a change (not GET / HEAD / OPTIONS), the element warns `[wcs/fetch-request-superseded]`, naming its method and URL.", "ja": "新しい要求が実行中の要求を中断し、その結果を捨てる。それが変更の要求（GET・HEAD・OPTIONS 以外）なら、要素がメソッドと URL を名指して `[wcs/fetch-request-superseded]` で警告する。" },
+      "evidence": [{ "file": "packages/fetch/src/core/FetchCore.ts", "text": "[wcs/fetch-request-superseded]" }]
     },
     {
       "id": "io-command-before-ready",
@@ -562,12 +560,11 @@
     },
     {
       "id": "storage-type-typo",
-      "runtime": "silent", "harm": "security",
+      "runtime": "loud", "harm": "security",
       "mistake": { "en": "Misspells `<wcs-storage type>` (`type=\"sesion\"`).", "ja": "`<wcs-storage type>` を打ち間違える（`type=\"sesion\"`）。" },
-      "effect": { "en": "Anything but exactly `session` becomes `local`: data meant for the session is kept on disk.", "ja": "`session` ちょうど以外は `local` になる。セッション向けのデータがディスクに残る。" },
-      "evidence": [{ "file": "packages/storage/src/components/Storage.ts", "text": "return this.getAttribute(\"type\") === \"session\" ? \"session\" : \"local\";" }],
-      "disposition": ["runtime-report", "lint-rule"],
-      "note": { "en": "The element normalizes the value silently, though its core reports a bad type; it can warn.", "ja": "要素は値を黙って正規化する（コアは不正な型を報告するのに）。警告できる。" }
+      "effect": { "en": "Anything but exactly `session` becomes `local`, so data meant for the session is kept on disk; the element warns `[wcs/storage-type-invalid]` once per value.", "ja": "`session` ちょうど以外は `local` になり、セッション向けのデータがディスクに残る。要素は値ごとに 1 回 `[wcs/storage-type-invalid]` で警告する。" },
+      "evidence": [{ "file": "packages/storage/src/components/Storage.ts", "text": "[wcs/storage-type-invalid]" }],
+      "note": { "en": "No lint rule yet; the value is in the markup.", "ja": "lint の規則はまだ無い。値はマークアップにある。" }
     },
     {
       "id": "url-or-handler-injection",
@@ -604,11 +601,11 @@
     },
     {
       "id": "infinite-scroll-target",
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Points `<wcs-infinite-scroll target>` at an id that is missing or not a `<wcs-fetch>`.", "ja": "`<wcs-infinite-scroll target>` が、無い id か `<wcs-fetch>` でない要素を指す。" },
-      "effect": { "en": "It does nothing: no more pages load, without a word.", "ja": "何もしない。次のページは読み込まれず、何も言わない。" },
-      "evidence": [{ "file": "packages/fetch/src/components/InfiniteScroll.ts", "text": "if (!(target instanceof Fetch)) {" }],
-      "disposition": ["runtime-report", "lint-rule"]
+      "effect": { "en": "No more pages load; when it comes into view, the element warns `[wcs/infinite-scroll-target]` once per `target` value.", "ja": "次のページは読み込まれない。見えたときに、要素が `target` の値ごとに 1 回 `[wcs/infinite-scroll-target]` で警告する。" },
+      "evidence": [{ "file": "packages/fetch/src/components/InfiniteScroll.ts", "text": "[wcs/infinite-scroll-target]" }],
+      "note": { "en": "No lint rule yet; the id is in the markup.", "ja": "lint の規則はまだ無い。id はマークアップにある。" }
     },
     {
       "id": "getter-reads-global",
