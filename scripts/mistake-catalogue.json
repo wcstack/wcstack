@@ -528,6 +528,13 @@
       "evidence": [{ "file": "packages/fetch/src/core/FetchCore.ts", "text": "[wcs/fetch-request-superseded]" }]
     },
     {
+      "id": "fetch-auto-unsafe",
+      "runtime": "loud", "harm": "data-loss",
+      "mistake": { "en": "Loads with one `<wcs-fetch>` by `url`, and posts with the same element by `method` + `body` + `trigger`.", "ja": "1 つの `<wcs-fetch>` で `url` によって読み込み、同じ要素で `method` + `body` + `trigger` によって投稿する。" },
+      "effect": { "en": "The method stays and a body is sent once, so every later url change sends a `POST` with no body. The element warns `[wcs/fetch-auto-unsafe]` when url observation sends a change with no body.", "ja": "メソッドはそのままで本文は 1 回だけ送られるので、以後の url の変化ごとに本文の無い `POST` を送る。url の監視が本文の無い変更を送るとき、要素が `[wcs/fetch-auto-unsafe]` で警告する。" },
+      "evidence": [{ "file": "packages/fetch/src/components/Fetch.ts", "text": "[wcs/fetch-auto-unsafe]" }]
+    },
+    {
       "id": "io-command-before-ready",
       "runtime": "silent", "harm": "data-loss",
       "mistake": { "en": "Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, a recorder `start` with no stream.", "ja": "I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、ストリームの無い recorder の `start`。" },

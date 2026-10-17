@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 2 |
-| 実行時 | 44 |
+| 実行時 | 45 |
 | lint だけ — 条件付きの沈黙 | 22 |
 | 文書だけ — 沈黙 | 11 |
 | 数えない lint の code | 18 |
@@ -123,6 +123,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 誤り | 実行時の知らせ方 | lint |
 |---|---|---|
+| 1 つの `<wcs-fetch>` で `url` によって読み込み、同じ要素で `method` + `body` + `trigger` によって投稿する。 | code なし: メソッドはそのままで本文は 1 回だけ送られるので、以後の url の変化ごとに本文の無い `POST` を送る。url の監視が本文の無い変更を送るとき、要素が `[wcs/fetch-auto-unsafe]` で警告する。 | — |
 | 重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。 | code なし: 新しい要求が実行中の要求を中断し、その結果を捨てる。それが変更の要求（GET・HEAD・OPTIONS 以外）なら、要素がメソッドと URL を名指して `[wcs/fetch-request-superseded]` で警告する。 | — |
 | `<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type="module"` の無いスクリプトを付ける。 | code なし: router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートは守られない。同じ階層でルートの後に置いた外のものは、以前と同じくそのルートを守り続ける。 lint の規則はまだ無い。どちらの形もマークアップに見える。 | — |
 | `<wcs-storage type>` を打ち間違える（`type="sesion"`）。 | code なし: `session` ちょうど以外は `local` になり、セッション向けのデータがディスクに残る。要素は値ごとに 1 回 `[wcs/storage-type-invalid]` で警告する。 lint の規則はまだ無い。値はマークアップにある。 | — |

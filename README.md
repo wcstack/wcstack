@@ -265,13 +265,13 @@ const html = await renderToString(`
   <template data-wcs="for: items">
     <div data-wcs="textContent: items.*.name"></div>
   </template>
-`);
+`, { url: "http://localhost:3000/" }); // the request's URL: relative fetch() resolves against its origin
 ```
 
 - **Drop-in SSR** — add `enable-ssr` to `<wcs-state>`, call `renderToString()`. Done.
 - **Automatic hydration** — client picks up where the server left off, zero flicker
-- **Relative URL resolution** — `baseUrl` option makes `fetch("/api/...")` work on the server
-- **Version-safe fallback** — on version mismatch, DOM is cleaned up and CSR kicks in
+- **Relative URL resolution** — pass the request's `url` (or `baseUrl`) and `fetch("/api/...")` works on the server; without either it fails with `Failed to parse URL`
+- **Version-safe fallback** — a client of another minor discards the snapshot and renders the page itself; serve the client the version `<wcs-ssr version>` names (an older client can fail on markup written for a newer one)
 - **`<wcs-ssr>` hydration data** — state snapshots, templates, and properties in one element
 
 [Full documentation &rarr;](packages/server/README.md)

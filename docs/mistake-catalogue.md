@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | What tells the author | Entries |
 |---|---|
 | The design (cannot be written, or harmless) | 2 |
-| The runtime | 44 |
+| The runtime | 45 |
 | The lint only — conditional silence | 22 |
 | The documents only — silence | 11 |
 | Lint codes not counted | 18 |
@@ -123,6 +123,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 
 | Mistake | How the runtime reports it | Lint |
 |---|---|---|
+| Loads with one `<wcs-fetch>` by `url`, and posts with the same element by `method` + `body` + `trigger`. | Without the code: The method stays and a body is sent once, so every later url change sends a `POST` with no body. The element warns `[wcs/fetch-auto-unsafe]` when url observation sends a change with no body. | — |
 | Shares one `<wcs-fetch>` between requests that can overlap: two saves in a row, a save while a load runs. | Without the code: A new request aborts the one in flight and drops its result. When that was a change (not GET / HEAD / OPTIONS), the element warns `[wcs/fetch-request-superseded]`, naming its method and URL. | — |
 | Puts `<wcs-guard-handler>` outside a `<wcs-route>`, or gives it a script without `type="module"`. | Without the code: The router reports it with `console.error` (`[wcs/guard-handler-ignored]`): the route is not guarded. One outside after a route at the same level keeps guarding that route, as it did before. No lint rule yet; the markup shows both cases. | — |
 | Misspells `<wcs-storage type>` (`type="sesion"`). | Without the code: Anything but exactly `session` becomes `local`, so data meant for the session is kept on disk; the element warns `[wcs/storage-type-invalid]` once per value. No lint rule yet; the value is in the markup. | — |
