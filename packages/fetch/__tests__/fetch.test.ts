@@ -1362,17 +1362,23 @@ describe("InfiniteScroll", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("targetが存在しない場合は何もしない", () => {
+  it("targetが存在しない場合は読み込まず、target ごとに 1 回だけ警告する", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const scrollEl = document.createElement("wcs-infinite-scroll") as InfiniteScroll;
     scrollEl.setAttribute("target", "missing-fetch");
     document.body.appendChild(scrollEl);
 
     observers[0].trigger(true);
+    observers[0].trigger(true);
 
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain('[wcs/infinite-scroll-target] <wcs-infinite-scroll target="missing-fetch">');
+    warn.mockRestore();
   });
 
-  it("targetがFetchでない場合は何もしない", () => {
+  it("targetがFetchでない場合は読み込まず、警告する（別の target なら改めて警告する）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const div = document.createElement("div");
     div.id = "not-fetch";
     document.body.appendChild(div);
@@ -1382,8 +1388,12 @@ describe("InfiniteScroll", () => {
     document.body.appendChild(scrollEl);
 
     observers[0].trigger(true);
+    scrollEl.setAttribute("target", "still-missing");
+    observers[observers.length - 1].trigger(true);
 
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(warn.mock.calls.map((c) => String(c[0]).match(/target="([^"]*)"/)?.[1])).toEqual(["not-fetch", "still-missing"]);
+    warn.mockRestore();
   });
 
   it("url未設定のtargetでも未捕捉rejectionを発生させない", async () => {
