@@ -50,7 +50,9 @@ async function loadSrc(src: string): Promise<Record<string, any>> {
     if (!res.ok) raise(M.LoadFailed, [src, res.status]);
     return (await res.json()) as Record<string, any>;
   }
-  const mod = await import(/* @vite-ignore */ url);
+  // on the server, the renderer's local module for the URL (protocol/ssr-snapshot.ts, resolveModule):
+  // Node's loader reads no http: URL
+  const mod = await import(/* @vite-ignore */ (globalThis as any)[Symbol.for("wcstack.ssr.resolveModule")]?.(url) ?? url);
   return (mod.default ?? {}) as Record<string, any>;
 }
 

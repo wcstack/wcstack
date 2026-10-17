@@ -40,6 +40,16 @@ export const SSR_SNAPSHOT_BUILDER_KEY = Symbol.for("wcstack.ssr.snapshotBuilder"
  * when they see this value, and keep it for any other value (including "").
  */
 export const SSR_ORCHESTRATED_VALUE = "orchestrated";
+/**
+ * Global key the renderer installs a module resolver under, for the length of one render:
+ * `(url: string) => string | null`, the specifier to import instead of `url` for a
+ * `<wcs-state src>` module (Node's loader reads `file:` and `data:` URLs, not the `http:` URL a
+ * page names), or null to import `url` as it is. It may throw to say why the URL cannot be
+ * rendered. The renderer maps the URL to a local file and makes each render's module its own, so
+ * a state object is not shared between requests. A provider reads it where it imports a `src`
+ * module; with no resolver installed (the browser), it imports `url`.
+ */
+export const SSR_MODULE_RESOLVER_KEY = Symbol.for("wcstack.ssr.resolveModule");
 
 export interface IWcsSsrSnapshotBuilder {
   readonly protocol: "wcs-ssr-snapshot";

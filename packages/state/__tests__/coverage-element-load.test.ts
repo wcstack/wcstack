@@ -130,6 +130,22 @@ describe("src 属性", () => {
     expect(text(root)).toBe("module src");
   });
 
+  it("サーバーが読み先を置いていれば（ssr-snapshot プロトコルの resolveModule）、その指定を import する", async () => {
+    const key = Symbol.for("wcstack.ssr.resolveModule");
+    const asked: string[] = [];
+    (globalThis as any)[key] = (url: string) => {
+      asked.push(url);
+      return "data:text/javascript;charset=utf-8," + encodeURIComponent("export default { msg: 'from the server file' };");
+    };
+    try {
+      const { root } = await load(`<wcs-state src="js/state.js"></wcs-state><p>{{ msg }}</p>`);
+      expect(text(root)).toBe("from the server file");
+      expect(asked).toEqual([new URL("js/state.js", document.baseURI).href]);
+    } finally {
+      delete (globalThis as any)[key];
+    }
+  });
+
   it("default export の無いモジュールは空の状態になる", async () => {
     const src = "data:text/javascript;charset=utf-8," + encodeURIComponent("export const unused = 'src without default';");
     const { el } = await load(`<wcs-state></wcs-state>`, (e) => e.setAttribute("src", src));
