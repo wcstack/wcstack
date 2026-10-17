@@ -278,7 +278,8 @@ createServer(async (req, res) => {
 
 ### Server Communication with wcs-fetch
 
-- `<wcs-fetch>` auto-fetch (without `manual`) also executes on the server
+- `<wcs-fetch>` auto-fetch (without `manual`) also executes on the server. A `url` written in the markup is waited for; a `url` that a binding sets from state (`data-wcs="url: articleUrl"`) starts its request during the render, but **the render does not wait for it**: the page is rendered without its value, which loads on the client. Load what the first render needs in `$connectedCallback`.
+- When the render is done, the server takes the page's elements out of the document before it puts the globals back, so that each element's own cleanup (a `<wcs-fetch>` aborting its request, a `<wcs-timer>` stopping) runs inside the render. A request or a timer that outlived the render used to throw into the process (since 4.3).
 - Use `manual` + `$connectedCallback` for explicit control:
 
 ```html

@@ -39,6 +39,11 @@ The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake
 
 ### Fixed
 
+- `@wcstack/server`: **work an element starts during a render no longer outlives it and takes the process down.** The fetches and timers elements use are Node's own, so they kept running after `renderToString()` returned. When they finished, they dispatched into the closed page with Node's `CustomEvent` and threw an uncaught `TypeError` (`parameter 1 is not of type 'Event'`), which ends a plain Node server. Two cases did this:
+  - a `<wcs-fetch>` whose `url` a binding sets from state, when its request failed on the network after the render (the render does not wait for that request);
+  - every tick of a timer that started during the render, such as a `<wcs-timer>`.
+
+  The cleanup now takes the page's elements out of the document before the globals go back, so that each element's own cleanup runs inside the render. It then yields once and aborts happy-dom's own pending work. This was found by the `ssr-news` seam app.
 - `@wcstack/state`: **one object at two positions of one list** (`items: [o, o]`, #365). A write below one of the rows (`this["items.0.name"] = "z"`) now reaches the other rows that hold it, their row getters and `$getAll`; before, it reached only the row it was made through (F26).
   - The array is checked for a doubled object once, at the first such write, and again after one of its elements is written in place, so later writes stay O(1). The scale verification passes (33 probes).
   - It costs 87 B in the core.
