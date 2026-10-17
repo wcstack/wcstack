@@ -32,6 +32,16 @@ export const codeOf = (id: M): string => {
 const MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
 
 /** `<tag a="v" …>` from the tag and its attributes' names and values. */
+/** What a value given to a filter was (`a string ("2026-10-13T…")`), for the type messages. */
+const was = (v: unknown): string =>
+  v == null ? String(v)
+    : v instanceof Date ? "a Date"
+      : Array.isArray(v) ? "an array"
+        : typeof v === "string" ? `a string (${JSON.stringify(v.length > 32 ? v.slice(0, 32) + "…" : v)})`
+          : typeof v === "object" ? "an object" : `a ${typeof v} (${String(v)})`;
+/** The namespace a binding of kind 2–4 (dom/view.ts: K_CLASS, K_ATTR, K_STYLE) names its member under. */
+const NAMESPACES = ["", "", "class.", "attr.", "style."];
+
 const element = (tag: string, at: string[]): string => `<${tag}${at.map((a, i) => (i % 2 ? `="${a}"` : ` ${a}`)).join("")}>`;
 
 const CSP_GUIDE = "https://github.com/wcstack/wcstack/blob/main/docs/csp.md";
@@ -49,7 +59,8 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.SetAllSpreadLength]: (p, n) => `$setAll("${p}", …, { spread: true }) needs an array of ${n} values`,
   [M.DrainNotSettled]: () => `updates did not settle after ${MAX_DRAIN_PASSES} passes`,
   [M.RenderChain]: () => `render chain depth limit exceeded (${MAX_RENDER_CHAIN} drains that rendering itself started); bindings for this batch were not applied.`,
-  [M.BindingFailed]: (type, p) => `binding "${type}: ${p}" failed to apply.`,
+  // (named as written — `textContent: iso`, `class.active: x` — when the binding has a member; else its type)
+  [M.BindingFailed]: (type, p, name, kind) => `binding "${name ? (NAMESPACES[kind] ?? "") + name : type}: ${p}" failed to apply.`,
   [M.LoadFailed]: (src, status) => `failed to load "${src}": ${status}`,
   [M.ElementFailed]: () => "this <wcs-state> failed to initialize; create a new one",
   [M.NotInitialized]: () => "state is not initialized",
@@ -67,8 +78,10 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.NamingLimit]: (limit) => `view-transition naming-limit (${limit}) reached.`,
   [M.FilterOptionsRequired]: (fn) => `filter ${fn} requires at least one option`,
   [M.FilterOptionNotNumber]: (fn) => `filter ${fn} requires a number as option`,
-  [M.FilterValueNotNumber]: (fn) => `filter ${fn} requires a number value`,
-  [M.FilterValueNotDate]: (fn) => `filter ${fn} requires a date value`,
+  [M.FilterValueNotNumber]: (fn, v) => `filter ${fn} requires a number value, not ${was(v)}${typeof v === "string" ? ` — put |number before |${fn}, or convert it where it is read` : ""}`,
+  [M.FilterValueNotDate]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " — make the Date where it is read: a getter returning new Date(…)" : ""}`,
+  [M.FilterStyleInvalid]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"`,
+  [M.FilterCurrencyInvalid]: (v) => `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "${v}"`,
   [M.FilterValueNotArray]: (fn) => `filter ${fn} requires an array value`,
   [M.DirectionalSyncDisabled]: () => "init=/sync= modifiers require enableDirectionalInitialSync.",
   [M.ModifierUnknown]: (key, modifier) => `Unknown binding modifier "${key}" in "${modifier}".`,

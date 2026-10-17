@@ -608,6 +608,76 @@ describe('Router', () => {
       expect(navigation.navigate).toHaveBeenCalledWith('/products/3');
     });
 
+    it('ページを離れる取り消せるナビゲーション（basename の外・別オリジン）でも文言で聞き、断られたら取り消す', () => {
+      const { router } = committedRouter();
+      (router as any)._basename = '/en';
+      router.leaveConfirm = 'Discard your changes?';
+      const confirm = stubConfirm(false);
+      const out = navEventTo('http://localhost/ja/products/3/edit');
+      (router as any)._onNavigateFunc(out);
+      const away = navEventTo('https://other.example/', { canIntercept: false });
+      (router as any)._onNavigateFunc(away);
+      expect(confirm).toHaveBeenCalledTimes(2);
+      expect(confirm).toHaveBeenCalledWith('Discard your changes?');
+      expect(out.preventDefault).toHaveBeenCalled();
+      expect(away.preventDefault).toHaveBeenCalled();
+      expect(out.intercept).not.toHaveBeenCalled();
+    });
+
+    it('受け入れたら、そのナビゲーションの beforeunload では聞かない（次のタスクで元に戻る）', () => {
+      vi.useFakeTimers();
+      try {
+        const { router } = committedRouter();
+        (router as any)._basename = '/en';
+        document.body.appendChild(router);
+        router.leaveConfirm = 'Discard?';
+        const confirm = stubConfirm(true);
+        const out = navEventTo('http://localhost/ja/');
+        (router as any)._onNavigateFunc(out);
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(out.preventDefault).not.toHaveBeenCalled();
+        const unload = new Event('beforeunload', { cancelable: true });
+        (router as any)._onBeforeUnload(unload);
+        expect(unload.defaultPrevented).toBe(false);
+        // the same navigation reaching the router again does not ask twice
+        (router as any)._onNavigateFunc(navEventTo('http://localhost/ja/'));
+        expect(confirm).toHaveBeenCalledTimes(1);
+        vi.runAllTimers();
+        const later = new Event('beforeunload', { cancelable: true });
+        (router as any)._onBeforeUnload(later);
+        expect(later.defaultPrevented).toBe(true);
+        router.remove();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('ページを離れるナビゲーションでも、leaveConfirm なし・取り消せない・最初の表示の前・別の router が受ける URL では聞かない', () => {
+      const confirm = stubConfirm(false);
+      const { router } = committedRouter();
+      (router as any)._basename = '/en';
+      router.leaveConfirm = 'Discard?';
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/ja/', { cancelable: false }));
+      expect(confirm).not.toHaveBeenCalled();
+      // (control: without the other router, /ja/ leaves the page)
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/ja/'));
+      expect(confirm).toHaveBeenCalledTimes(1);
+      confirm.mockClear();
+      const other = document.createElement('wcs-router') as Router;
+      other.setAttribute('basename', '/ja');
+      document.body.append(other);
+      (other as any)._basename = '/ja'; // (its initialization is asynchronous)
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/ja/'));
+      router.leaveConfirm = null;
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/fr/'));
+      const fresh = document.createElement('wcs-router') as Router;
+      (fresh as any)._basename = '/en';
+      fresh.leaveConfirm = 'Discard?';
+      (fresh as any)._onNavigateFunc(navEventTo('http://localhost/fr/'));
+      expect(confirm).not.toHaveBeenCalled();
+      other.remove();
+    });
+
     it('beforeunload は leaveConfirm がある間だけ聞き、その間は取り消す', () => {
       const router = document.createElement('wcs-router') as Router;
       const add = vi.spyOn(window, 'addEventListener');
@@ -638,6 +708,7 @@ describe('Router', () => {
         canIntercept: false,
         hashChange: false,
         downloadRequest: null,
+        destination: { url: 'https://other.example/' },
         intercept: vi.fn(),
       };
 

@@ -99,6 +99,40 @@ function collectCurrentTargetHandlers(
   fileReader: FileReader | undefined,
 ): ReadonlySet<string> {
   const names = new Set<string>();
+  forEachStateMethod(elements, html, fileReader, 'currentTarget', (name, params, body) => {
+    if (readsEventCurrentTarget(params, body)) names.add(name);
+  });
+  return names;
+}
+
+/**
+ * The page's state methods (read as `collectCurrentTargetHandlers` reads them) by handler name, and whether each
+ * calls `preventDefault` — what `wcs/submit-without-prevent` needs. A handler that is not here (a function in a
+ * data property, a root `src=`) is not known, and the check stays silent on it.
+ */
+function collectPreventDefaultHandlers(
+  elements: readonly WcsStateInfo[],
+  html: string,
+  fileReader: FileReader | undefined,
+): ReadonlyMap<string, boolean> {
+  const handlers = new Map<string, boolean>();
+  forEachStateMethod(elements, html, fileReader, null, (name, _params, body) => {
+    handlers.set(name, /\bpreventDefault\b/.test(body));
+  });
+  return handlers;
+}
+
+/**
+ * Calls `fn` with each method shorthand of the page's states (handler name, parameter list, body). A script without
+ * `spelling` is skipped (null: none is). States inside a `<template>` and bound components are another root's.
+ */
+function forEachStateMethod(
+  elements: readonly WcsStateInfo[],
+  html: string,
+  fileReader: FileReader | undefined,
+  spelling: string | null,
+  fn: (name: string, params: string, body: string) => void,
+): void {
   let insideTemplate: ((offset: number) => boolean) | null = null;
   for (const element of elements) {
     if (element.bindComponent) continue;
@@ -109,21 +143,20 @@ function collectCurrentTargetHandlers(
       const script = readStateScript(element.srcAttr, fileReader);
       if (script !== undefined) scripts = [script];
     }
-    scripts = scripts.filter((script) => script.includes('currentTarget'));
+    if (spelling !== null) scripts = scripts.filter((script) => script.includes(spelling));
     if (scripts.length === 0) continue;
     if ((insideTemplate ??= createTemplateTester(html))(element.tagStart)) continue;
     for (const script of scripts) {
       for (const callable of analyzeCallableBodies(script)) {
-        if (callable.kind !== 'method' || !callable.body.includes('currentTarget')) continue;
+        if (callable.kind !== 'method' || (spelling !== null && !callable.body.includes(spelling))) continue;
         // 名前の後ろから本体の `{` の手前まで: `(e) ` / 引用符付きの名前なら `"(e) `
         const head = script.slice(callable.end, callable.bodyStart - 1);
         const params = /\(([^)]*)\)\s*$/.exec(head);
         if (params === null) continue;
-        if (readsEventCurrentTarget(params[1], callable.body)) names.add(volume === null ? callable.name : `${volume}.${callable.name}`);
+        fn(volume === null ? callable.name : `${volume}.${callable.name}`, params[1], callable.body);
       }
     }
   }
-  return names;
 }
 
 /** 診断情報 */
@@ -185,6 +218,12 @@ export function validateBindings(
   const getCurrentTargetHandlers = (): ReadonlySet<string> => {
     currentTargetHandlers ??= collectCurrentTargetHandlers(pathIndex.elements, html, fileReader);
     return currentTargetHandlers;
+  };
+  // メソッドごとに preventDefault を呼ぶか（`wcs/submit-without-prevent`、遅延収集）
+  let preventDefaultHandlers: ReadonlyMap<string, boolean> | null = null;
+  const getPreventDefaultHandlers = (): ReadonlyMap<string, boolean> => {
+    preventDefaultHandlers ??= collectPreventDefaultHandlers(pathIndex.elements, html, fileReader);
+    return preventDefaultHandlers;
   };
 
   for (const attr of attrs) {
@@ -279,6 +318,21 @@ export function validateBindings(
         const eventName = propNoMod.slice(2);
         const handler = parsed.path.trim();
         const modifiers = modifiersOf(parsed.property);
+        // `<form data-wcs="onsubmit: login">` without `#prevent`: the browser submits the form too — the page
+        // reloads, or with the router a GET puts the fields (a password too) in the URL and the history
+        // (docs/seam-apps.md, router-auth). Silent when the handler calls preventDefault, when it is not a method the
+        // page declares (it cannot be read), and on a form with an `action` (a native submission may be meant).
+        if (eventName === 'submit' && attr.tagName === 'form' && !modifiers.includes('prevent')
+          && getPreventDefaultHandlers().get(handler) === false
+          && !/\saction\s*=/i.test(openTagBefore(html, attr.valueStart))) {
+          diagnostics.push({
+            code: WcsDiagnosticCode.SubmitWithoutPrevent,
+            start: bindingStart + leadingSpace,
+            end: bindingStart + leadingSpace + propNoMod.length,
+            message: msgs.submitWithoutPrevent(handler),
+            severity: 'warning',
+          });
+        }
         if (DELEGATED_EVENTS.has(eventName)
           && !modifiers.includes(DIRECT_MODIFIER)
           && attr.tagName !== undefined
@@ -690,6 +744,12 @@ export function validateBindings(
 // ============================================================
 // Internal helpers
 // ============================================================
+
+/** The start tag holding the attribute value at `valueStart` (from its `<` to the value). */
+function openTagBefore(html: string, valueStart: number): string {
+  const lt = html.lastIndexOf('<', valueStart);
+  return lt === -1 ? '' : html.slice(lt, valueStart);
+}
 
 export interface BindAttrLocation {
   value: string;

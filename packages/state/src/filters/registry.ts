@@ -42,6 +42,7 @@ export const FORMATS_FILTER_NAMES: readonly string[] = [
   "round", "floor", "ceil", "percent", "unit",
   "date", "time", "datetime", "ymd", "hms",
   "add", "sub", "mul", "div", "mod", "abs", "clamp", "int", "float", "defaults", "coalesce", "number", "string", "nullIfEmpty",
+  "currency",
 ];
 
 /**

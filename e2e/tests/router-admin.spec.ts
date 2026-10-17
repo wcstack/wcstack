@@ -445,7 +445,7 @@ test.describe("examples/router-admin", () => {
     expect(errors).toEqual([]);
   });
 
-  test("編集ページで言語切替: 同じ編集ページの別言語版へ。未保存の変更があればブラウザの beforeunload が確認する", async ({ page }) => {
+  test("編集ページで言語切替: 同じ編集ページの別言語版へ。未保存の変更があれば leaveConfirm の文言で確認し、受け入れたらブラウザは聞き直さない", async ({ page }) => {
     const errors = collectErrors(page);
     const dialogs = handleDialogs(page);
 
@@ -459,13 +459,15 @@ test.describe("examples/router-admin", () => {
     dialogs.answer(false);
     await page.locator(".lang-switch").click();
     await expect.poll(() => dialogs.seen.length).toBe(1);
-    expect(dialogs.seen[0]).toMatch(/^beforeunload:/);
+    // the switch leaves the router's basename (a real navigation): the router asks with its own message
+    expect(dialogs.seen[0]).toBe("confirm: Discard your changes?");
     expect(pathAndQuery(page)).toBe("/en/products/2/edit");
     await expect(page.locator("#edit-name")).toHaveValue("Changed");
 
     dialogs.answer(true);
     await page.locator(".lang-switch").click();
     await expect.poll(() => pathAndQuery(page)).toBe("/ja/products/2/edit");
+    expect(dialogs.seen).toEqual(["confirm: Discard your changes?", "confirm: Discard your changes?"]);
     await expect(page.locator("html")).toHaveAttribute("lang", "ja");
     await expect(page).toHaveTitle("編集: Glass Teapot");
     await expect(page.locator("main label")).toHaveText(["SKU", "商品名", "価格", "在庫"]);

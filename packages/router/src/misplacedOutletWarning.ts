@@ -14,6 +14,9 @@
  * router が outlet を自分のものにするのは「直後にある」か「直後に作った」かのどちら
  * かなので、直前の要素が router でない outlet は、どの router にも使われない。その判定
  * だけで足り、ほかの router の初期化の順番を待つ必要は無い。
+ *
+ * レイアウトのテンプレートが持ち込んだ outlet（スロットの代わりに置いた形）は、router が outlet を
+ * 作った後で文書に入るので、レイアウトを置いたところでも同じ判定をする（docs/seam-apps.md、router-admin）。
  */
 import { config } from "./config.js";
 
@@ -29,9 +32,14 @@ export function warnMisplacedOutlet(router: Element): void {
   if (root.nodeType !== Node.DOCUMENT_NODE && root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
     return;
   }
+  warnStrayOutlets(root as Document | ShadowRoot);
+}
+
+/** scope の中の、どの router にも使われない `<wcs-outlet>` を 1 回だけ警告する。 */
+export function warnStrayOutlets(scope: ParentNode): void {
   const routerTag = config.tagNames.router;
   const outletTag = config.tagNames.outlet;
-  for (const outlet of (root as Document | ShadowRoot).querySelectorAll(outletTag)) {
+  for (const outlet of scope.querySelectorAll(outletTag)) {
     if (warned.has(outlet) || outlet.previousElementSibling?.matches(routerTag)) {
       continue;
     }

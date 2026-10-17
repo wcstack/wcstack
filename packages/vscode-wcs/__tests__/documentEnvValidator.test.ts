@@ -131,7 +131,7 @@ import { h } from "@wcstack/signals/dom";
     expect(diags[0].code).toBe(WcsDiagnosticCode.SignalsDualEntry);
   });
 
-  it('/dom のみなら警告しない（importmap のキー宣言は参照に数えない）', () => {
+  it('/dom のみなら error にしない（importmap のキー宣言は参照に数えない — 両方を割り当てた map は warning、下の describe）', () => {
     const html = `<script type="importmap">
 { "imports": {
   "@wcstack/signals": "https://esm.run/@wcstack/signals",
@@ -139,7 +139,7 @@ import { h } from "@wcstack/signals/dom";
 } }
 </script>
 <script type="module">import { signal } from "@wcstack/signals/dom";</script>`;
-    expect(validateDocumentEnv(html)).toHaveLength(0);
+    expect(validateDocumentEnv(html).map(d => d.severity)).toEqual(['warning']);
   });
 
   it('本体のみ（バンドラ前提ページ）なら警告しない', () => {
@@ -197,5 +197,86 @@ describe('validateDocumentEnv: router-outlet-misplaced（docs/router-outlet-plac
 <script type="module">el.innerHTML = "<p></p><wcs-outlet></wcs-outlet>";</script>
 <!-- <wcs-router></wcs-router><div></div><wcs-outlet></wcs-outlet> -->`;
     expect(codes(html)).toHaveLength(0);
+  });
+});
+
+describe('validateDocumentEnv: signals-dual-entry（両方を割り当てた import map — docs/seam-apps.md、signals-shop）', () => {
+  const of = (html: string) => validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.SignalsDualEntry);
+  const map = (imports: Record<string, string>) => `<script type="importmap">${JSON.stringify({ imports })}</script>`;
+
+  it('両方のエントリを CDN に割り当てた import map は、このページが /dom だけを import しても warning', () => {
+    const html = `${map({ '@wcstack/signals': 'https://esm.run/@wcstack/signals', '@wcstack/signals/dom': 'https://esm.run/@wcstack/signals/dom' })}
+<script type="module" src="./cart-model.js"></script>
+<script type="module">import { h } from "@wcstack/signals/dom";</script>`;
+    const d = of(html);
+    expect(d).toHaveLength(1);
+    expect(d[0].severity).toBe('warning');
+    expect(html.slice(d[0].start, d[0].end)).toBe('@wcstack/signals');
+  });
+
+  it('/dom だけの import map、dist のファイル同士（チャンクを共有する）、両方を import するページ（error が出る）では出さない', () => {
+    expect(of(map({ '@wcstack/signals/dom': 'https://esm.run/@wcstack/signals/dom' }))).toEqual([]);
+    expect(of(map({ '@wcstack/signals': '/packages/signals/dist/index.esm.js', '@wcstack/signals/dom': '/packages/signals/dist/dom.esm.js' }))).toEqual([]);
+    const both = `${map({ '@wcstack/signals': 'https://esm.run/@wcstack/signals', '@wcstack/signals/dom': 'https://esm.run/@wcstack/signals/dom' })}
+<script type="module">import { signal } from "@wcstack/signals";
+import { h } from "@wcstack/signals/dom";</script>`;
+    expect(of(both).map(d => d.severity)).toEqual(['error']);
+    expect(of(`<script type="importmap">{ not json</script>`)).toEqual([]);
+  });
+});
+
+describe('validateDocumentEnv: route-bare-mustache（docs/seam-apps.md、router-admin）', () => {
+  const of = (html: string) => validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.RouteBareMustache);
+
+  it('<wcs-route> の直下のテキストの {{ }} を warning、要素の中のものは出さない', () => {
+    const html = `<wcs-router><template>
+  <wcs-route path="*">{{ t.notFound.heading }}<p>{{ t.notFound.body }}</p></wcs-route>
+</template></wcs-router><wcs-outlet></wcs-outlet>`;
+    const d = validateDocumentEnv(html, 'en').filter(x => x.code === WcsDiagnosticCode.RouteBareMustache);
+    expect(d).toHaveLength(1);
+    expect(d[0].severity).toBe('warning');
+    expect(html.slice(d[0].start, d[0].end)).toBe('{{ t.notFound.heading }}');
+    expect(d[0].message).toContain('landing route');
+  });
+
+  it('レイアウトのテンプレートの直下のテキストの {{ }} も、そのテンプレートを使うレイアウトがあれば出す', () => {
+    const html = `<template id="main">{{ title }}<main><slot></slot></main></template>
+<template id="other">{{ x }}</template>
+<wcs-router><template><wcs-route path="/"><wcs-layout layout="main"><p>x</p></wcs-layout></wcs-route></template></wcs-router><wcs-outlet></wcs-outlet>`;
+    const d = validateDocumentEnv(html, 'en').filter(x => x.code === WcsDiagnosticCode.RouteBareMustache);
+    expect(d.map(x => html.slice(x.start, x.end))).toEqual(['{{ title }}']);
+    expect(d[0].message).toContain('layout template');
+  });
+
+  it('属性・コメント・script の中の {{ }} は数えない', () => {
+    const html = `<wcs-route path="/" title="{{ a }}"><!-- {{ b }} --><script>const s = "{{ c }}";</script></wcs-route>`;
+    expect(of(html)).toEqual([]);
+  });
+});
+
+describe('validateDocumentEnv: layout-slot-missing（docs/seam-apps.md、router-admin）', () => {
+  const of = (html: string) => validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.LayoutSlotMissing);
+  const page = (template: string, layoutBody: string, layoutAttrs = 'layout="admin"') =>
+    `<template id="admin">${template}</template>
+<wcs-router><template><wcs-route path="/"><wcs-layout ${layoutAttrs}>${layoutBody}</wcs-layout></wcs-route></template></wcs-router><wcs-outlet></wcs-outlet>`;
+
+  it('既定の slot の無いテンプレートに名前付きの外の子（ルート）を渡すと、<wcs-layout> に warning', () => {
+    const html = page('<header><slot name="nav"></slot></header><main></main>', '<nav slot="nav">n</nav><wcs-route path="products"><p>x</p></wcs-route>');
+    const d = of(html);
+    expect(d).toHaveLength(1);
+    expect(html.slice(d[0].start, d[0].end)).toBe('wcs-layout');
+    expect(d[0].message).toContain('"admin"');
+  });
+
+  it('既定の slot（name 無し・空）がある・名前付きの子と空白だけ・src のレイアウト・ページに無いテンプレートでは出さない', () => {
+    expect(of(page('<main><slot></slot></main>', '<wcs-route path="a"></wcs-route>'))).toEqual([]);
+    expect(of(page('<main><slot name=""></slot></main>', '<wcs-route path="a"></wcs-route>'))).toEqual([]);
+    expect(of(page('<slot name="nav"></slot>', '<nav slot="nav">n</nav>\n  '))).toEqual([]);
+    expect(of(page('<slot name="nav"></slot>', '<wcs-route path="a"></wcs-route>', 'layout="admin" src="/admin.html"'))).toEqual([]);
+    expect(of(page('<slot name="nav"></slot>', '<wcs-route path="a"></wcs-route>', 'layout="missing"'))).toEqual([]);
+  });
+
+  it('名前付きの外のテキストも中身として数える', () => {
+    expect(of(page('<slot name="nav"></slot>', 'Hello'))).toHaveLength(1);
   });
 });

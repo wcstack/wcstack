@@ -21,7 +21,7 @@
 // update). `on` is the OCCURRENCE view of the same event (a stream — every emit
 // updates, even with an equal value), folded latest-by-default.
 
-import { signal, effect, WriteSignal, ReadSignal } from "./reactive.js";
+import { signal, innerEffect as effect, WriteSignal, ReadSignal } from "./reactive.js";
 import { reportError } from "./reportError.js";
 import type { ResourceSource } from "./resource.js";
 
@@ -264,6 +264,14 @@ export function bindNode<S extends NodeShape = DefaultNodeShape>(
   const node = target as NodeTarget;
   const desc = descriptor ?? (node.constructor as { wcBindable?: WcBindableDescriptor }).wcBindable;
   if (!desc) {
+    // A custom element whose definition has not run yet has no descriptor yet: say so
+    // (docs/signals-definition-timing.md §5.3; docs/seam-apps.md, signals-shop)
+    const tag = (target as { localName?: unknown }).localName;
+    if (typeof tag === "string" && tag.includes("-") && typeof customElements !== "undefined" && customElements.get(tag) === undefined) {
+      throw new Error(
+        `bindNode: <${tag}> is not defined yet: load it before this code, or await customElements.whenDefined("${tag}").`,
+      );
+    }
     throw new Error("bindNode: no wc-bindable descriptor provided and none found on target.constructor.wcBindable");
   }
 

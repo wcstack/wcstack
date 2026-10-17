@@ -29,7 +29,8 @@ import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
-import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findOwnThis, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
+import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findInPlaceChanges, findLocationRead, findOwnThis, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
+import type { WatchHandlerSource } from './stateAnalyzer.js';
 import { isOutOfRangeIndexRead, MAX_INDEX_PARAM } from './indexPath.js';
 import { countWildcardSegments, getInnermostForPath, getResolvedForListPath, getRowShorthandForPath } from './forContext.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
@@ -434,6 +435,80 @@ function validateGetterUntrackedReads(
 }
 
 /**
+ * getter の中の `location` 読み（`wcs/getter-untracked-read`、warning）。`location` は state ではないので依存として
+ * 登録されず、getter は最初に読んだ URL を持ち続ける — 遷移の後の言語の切り替えのリンクが前のページを指した
+ * （docs/seam-apps.md、router-admin）。getter ごとに最初の 1 か所。
+ */
+function validateGetterLocationReads(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
+  if (!script.includes('location')) return [];
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== 'getter' || getter.accessor !== 'get' || !getter.body.includes('location')) continue;
+    const read = findLocationRead(getter.body);
+    if (read === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.start,
+      end: scriptStart + getter.bodyStart + read.end,
+      message: msgs.getterReadsLocation(read.text),
+      severity: 'warning',
+    });
+  }
+  return out;
+}
+
+/**
+ * `$on` のハンドラが state を受ける第 1 引数の名前（`cardEvent(state, event) { … }` の `state`）。メソッド記法なら
+ * 本体の前の引数リストから、値（function 式・アロー関数）ならその先頭から読む。読めなければ null。
+ */
+function onHandlerStateParam(script: string, handler: WatchHandlerSource): string | null {
+  if (handler.kind === 'body') {
+    const head = script.slice(Math.max(0, handler.start - 400), handler.start);
+    return /\(\s*([A-Za-z_$][\w$]*)[^()]*\)\s*\{\s*$/.exec(head)?.[1] ?? null;
+  }
+  return /^\s*(?:async\s+)?(?:function\b[^(]*\(\s*([A-Za-z_$][\w$]*)|\(\s*([A-Za-z_$][\w$]*)|([A-Za-z_$][\w$]*)\s*=>)/.exec(handler.text)
+    ?.slice(1).find((name) => name !== undefined) ?? null;
+}
+
+/**
+ * state の値をその場で変える形のうち、正規表現の規則（`this.<…>` を基点にした wcs/nested-assign・wcs/array-*）が
+ * 見ないもの（docs/seam-apps.md、state-collab-board — ボードのカードの更新が出なかった）:
+ *   - 別名を通した変更（`const cards = this.cards; cards[i] = card` / `Object.assign(cards[i], card)` / `cards.push(x)`）
+ *   - `Object.assign(this.cards[i], card)`
+ *   - `$on` のハンドラの state 引数を通した変更（`state.board.cards.push(x)`）
+ * 同じ値を書き戻しても（`this.cards = cards`）一覧の行は追加・削除・置き換えされない（新しい配列を代入したときだけ
+ * 行を合わせ直す）。形ごとに族の code（破壊的メソッド → array-mutation、添字だけ → array-index-assign、ほか →
+ * nested-assign）、error。
+ */
+function validateInPlaceChanges(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  const push = (text: string, kind: 'body' | 'value', textStart: number, root: string | null): void => {
+    for (const change of findInPlaceChanges(text, kind, root)) {
+      out.push({
+        code: change.form === 'method' ? WcsDiagnosticCode.ArrayMutation
+          : change.form === 'index' ? WcsDiagnosticCode.ArrayIndexAssign : WcsDiagnosticCode.NestedAssign,
+        start: scriptStart + textStart + change.start,
+        end: scriptStart + textStart + change.end,
+        severity: 'error',
+        message: change.alias !== null
+          ? msgs.inPlaceAlias(change.alias, change.source, change.target)
+          : msgs.inPlaceChange(change.source, change.target),
+      });
+    }
+  };
+  for (const callable of analyzeCallableBodies(script)) push(callable.body, 'body', callable.bodyStart, 'this');
+  for (const handler of analyzeWatchHandlerSources(script)) push(handler.text, handler.kind, handler.start, 'this');
+  for (const handler of analyzeOnHandlerSources(script)) {
+    const root = handler.kind === 'body' ? onHandlerStateParam(script, handler) : null;
+    if (handler.kind === 'body' && root === null) continue;
+    push(handler.text, handler.kind, handler.start, root);
+  }
+  return out;
+}
+
+/**
  * `wcs/input-nested-write` の対象: 束縛が当て直されたとき（＝束ねたパス自身への代入のとき）に
  * だけ働く組み込みタグの入力。下への書き込み（`cart.0.quantity`）では当て直されないので、
  * その書き込みは要素に届かない。
@@ -617,6 +692,28 @@ function collectNestedWriteRoots(
         const keyStart = match.index + match[0].indexOf('`') + 1;
         const path = templateKeyPath(block.content.slice(keyStart, keyStart + match[1].length));
         if (path !== null) addPrefixes(path, false);
+      }
+    }
+    // `$on` のハンドラは state を第 1 引数で受ける（`handler(state, event)`）: `state["board.cards"] = …` も同じ証拠。
+    // SSE・WebSocket のデータが着く所（docs/seam-apps.md、state-collab-board — lint が黙っていた）
+    for (const handler of analyzeOnHandlerSources(block.content)) {
+      const param = onHandlerStateParam(block.content, handler);
+      if (param === null) continue;
+      const name = param.replace(/\$/g, '\\$');
+      const region = { start: handler.start, end: handler.start + handler.text.length };
+      const bracket = `\\b${name}\\s*(?:\\?\\.)?\\s*\\[\\s*["']([^"']+)["']\\s*\\]`;
+      const template = `\\b${name}\\s*(?:\\?\\.)?\\s*\\[\\s*` + '`([^`]*)`' + String.raw`\s*\]`;
+      for (const [pattern, quote] of [[bracket, /["']/], [template, /`/]] as const) {
+        for (const regex of [new RegExp(`${pattern}${ASSIGN_TAIL}`, 'g'), new RegExp(`${PRE_INCDEC}${pattern}`, 'g')]) {
+          let match: RegExpExecArray | null;
+          const part = scan.slice(region.start, region.end);
+          while ((match = regex.exec(part)) !== null) {
+            const keyStart = region.start + match.index + match[0].search(quote) + 1;
+            const raw = block.content.slice(keyStart, keyStart + match[1].length);
+            const path = quote.source === '`' ? templateKeyPath(raw) : raw;
+            if (path !== null) addPrefixes(path, false);
+          }
+        }
       }
     }
     API_CALL.lastIndex = 0;
@@ -836,7 +933,9 @@ export function validateSemantics(
     out.push(...validateIndexParamReads(block.content, block.contentStart, locale));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
+    out.push(...validateGetterLocationReads(block.content, block.contentStart, locale));
     out.push(...validateOnHandlerThis(block.content, block.contentStart, locale));
+    out.push(...validateInPlaceChanges(block.content, block.contentStart, locale));
   }
   out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale));
   out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale));

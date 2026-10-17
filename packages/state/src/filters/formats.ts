@@ -1,9 +1,9 @@
 /**
- * filters/formats.ts — the formats add-on (37 filters): the values a binding computes and shows, as
+ * filters/formats.ts — the formats add-on (38 filters): the values a binding computes and shows, as
  * opposed to the conditions the core set (`./core`) tests. Ported from `@wcstack/state`
  * (`formats/builtinFilters.ts`) with the semantics unchanged.
  *
- * - number display: `toFixed round floor ceil percent unit locale`
+ * - number display: `toFixed round floor ceil percent unit locale currency`
  * - string shaping: `upper lower capitalize trim slice padStart padEnd repeat reverse truncate join`
  *   (`substr` was removed in 4.0: `slice(start, start + length)`)
  * - date and time: `date time datetime ymd hms`
@@ -15,10 +15,10 @@
  *
  * `installFormats()` puts them in the registry. Without it, one of these filters fails when the
  * bindings are planned with `[wcs/filter-unknown]` naming this add-on (never passes silently).
- * The locale-dependent four (`locale date time datetime`) read `config.locale` as their default.
+ * The locale-dependent five (`locale currency date time datetime`) read `config.locale` as their default.
  */
 import { config } from "../config";
-import { optionsRequired, valueMustBeArray, valueMustBeDate, valueMustBeNumber } from "./errorMessages";
+import { currencyInvalid, optionsRequired, styleInvalid, valueMustBeArray, valueMustBeDate, valueMustBeNumber } from "./errorMessages";
 import { firstLiteral, numberOption, requiredNumberOption } from "./options";
 import { registerFilters, type FilterDefinition, type FilterFactory, type FilterFn } from "./registry";
 import { coreFilters, numeric } from "./core";
@@ -46,7 +46,7 @@ const nullishPassthrough = (factory: (options: string[]) => FilterFn): FilterFac
 const toFixed = (options: string[]): FilterFn => {
   const opt = numberOption(options?.[0] ?? "0", 'toFixed');
   return (value: unknown): string => {
-    if (typeof value !== 'number') {valueMustBeNumber('toFixed');}
+    if (typeof value !== 'number') {valueMustBeNumber('toFixed', value);}
     return value.toFixed(opt);
   };
 };
@@ -55,7 +55,7 @@ const toFixed = (options: string[]): FilterFn => {
 const round = (options: string[]): FilterFn => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'round'));
   return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('round');}
+    if (typeof value !== 'number') {valueMustBeNumber('round', value);}
     return Math.round(value * optValue) / optValue;
   };
 };
@@ -64,7 +64,7 @@ const round = (options: string[]): FilterFn => {
 const floor = (options: string[]): FilterFn => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'floor'));
   return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('floor');}
+    if (typeof value !== 'number') {valueMustBeNumber('floor', value);}
     return Math.floor(value * optValue) / optValue;
   };
 };
@@ -73,7 +73,7 @@ const floor = (options: string[]): FilterFn => {
 const ceil = (options: string[]): FilterFn => {
   const optValue = Math.pow(10, numberOption(options?.[0] ?? '0', 'ceil'));
   return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('ceil');}
+    if (typeof value !== 'number') {valueMustBeNumber('ceil', value);}
     return Math.ceil(value * optValue) / optValue;
   };
 };
@@ -82,7 +82,7 @@ const ceil = (options: string[]): FilterFn => {
 const percent = (options: string[]): FilterFn => {
   const opt = numberOption(options?.[0] ?? '0', 'percent');
   return (value: unknown): string => {
-    if (typeof value !== 'number') {valueMustBeNumber('percent');}
+    if (typeof value !== 'number') {valueMustBeNumber('percent', value);}
     return `${(value * 100).toFixed(opt)}%`;
   };
 };
@@ -128,8 +128,31 @@ function defaultLocale(): string {
 const locale = (options: string[]): FilterFn => {
   const explicit = options?.[0];
   return (value: unknown): string => {
-    if (typeof value !== 'number') {valueMustBeNumber('locale');}
+    if (typeof value !== 'number') {valueMustBeNumber('locale', value);}
     return value.toLocaleString(explicit ?? defaultLocale());
+  };
+};
+
+/**
+ * A number as money: `currency(code[, locale])`, the code ISO 4217 (`price|currency(JPY)` → "¥1,800",
+ * `currency(EUR,de-DE)` → "1.800,00 €"). A code Intl does not take fails when the bindings are planned.
+ * (docs/seam-apps.md, router-admin: the page built an `Intl.NumberFormat` per currency in getters.)
+ */
+const currency = (options: string[]): FilterFn => {
+  const code = options?.[0] ?? optionsRequired('currency');
+  const explicit = options?.[1];
+  const format = { style: "currency", currency: code } as const;
+  try {
+    new Intl.NumberFormat("en", format);
+    // (Intl takes any three letters: the list of the ones it knows, where there is one)
+    const known = (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("currency");
+    if (known && !known.includes(code.toUpperCase())) throw 0;
+  } catch {
+    currencyInvalid(code);
+  }
+  return (value: unknown): string => {
+    if (typeof value !== 'number') {valueMustBeNumber('currency', value);}
+    return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
 
@@ -203,30 +226,47 @@ const join = (options: string[]): FilterFn => {
   };
 };
 
+const STYLES = ["full", "long", "medium", "short"];
+
+/**
+ * The options of `date time datetime`: `(locale?, style?)`, the style Intl's `dateStyle` / `timeStyle`
+ * (`date(en-US,medium)` → "Oct 13, 2026"). A style alone keeps the default locale (`date(long)`).
+ * Without a style the format is the locale's numeric one, as before.
+ */
+function dateOptions(options: string[], fn: string): [string | undefined, Intl.DateTimeFormatOptions["dateStyle"]] {
+  let [loc, style]: (string | undefined)[] = options ?? [];
+  if (style === undefined && loc !== undefined && STYLES.includes(loc)) [loc, style] = [undefined, loc];
+  if (style !== undefined && !STYLES.includes(style)) styleInvalid(fn, style);
+  return [loc, style as Intl.DateTimeFormatOptions["dateStyle"]];
+}
+
 /** Locale-formatted date (the default locale is read per apply — see `locale`). */
 const date = (options: string[]): FilterFn => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, 'date');
+  const format: Intl.DateTimeFormatOptions | undefined = style && { dateStyle: style };
   return (value: unknown): string => {
-    if (!(value instanceof Date)) {valueMustBeDate('date');}
-    return value.toLocaleDateString(explicit ?? defaultLocale());
+    if (!(value instanceof Date)) {valueMustBeDate('date', value);}
+    return value.toLocaleDateString(explicit ?? defaultLocale(), format);
   };
 };
 
 /** Locale-formatted time (the default locale is read per apply — see `locale`). */
 const time = (options: string[]): FilterFn => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, 'time');
+  const format: Intl.DateTimeFormatOptions | undefined = style && { timeStyle: style };
   return (value: unknown): string => {
-    if (!(value instanceof Date)) {valueMustBeDate('time');}
-    return value.toLocaleTimeString(explicit ?? defaultLocale());
+    if (!(value instanceof Date)) {valueMustBeDate('time', value);}
+    return value.toLocaleTimeString(explicit ?? defaultLocale(), format);
   };
 };
 
 /** Locale-formatted date and time (the default locale is read per apply — see `locale`). */
 const datetime = (options: string[]): FilterFn => {
-  const explicit = options?.[0];
+  const [explicit, style] = dateOptions(options, 'datetime');
+  const format: Intl.DateTimeFormatOptions | undefined = style && { dateStyle: style, timeStyle: style };
   return (value: unknown): string => {
-    if (!(value instanceof Date)) {valueMustBeDate('datetime');}
-    return value.toLocaleString(explicit ?? defaultLocale());
+    if (!(value instanceof Date)) {valueMustBeDate('datetime', value);}
+    return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
 
@@ -234,7 +274,7 @@ const datetime = (options: string[]): FilterFn => {
 const ymd = (options: string[]): FilterFn => {
   const opt = options?.[0] ?? '-';
   return (value: unknown): string => {
-    if (!(value instanceof Date)) {valueMustBeDate('ymd');}
+    if (!(value instanceof Date)) {valueMustBeDate('ymd', value);}
     const year = value.getFullYear().toString();
     const month = (value.getMonth() + 1).toString().padStart(2, '0');
     const day = value.getDate().toString().padStart(2, '0');
@@ -246,7 +286,7 @@ const ymd = (options: string[]): FilterFn => {
 const hms = (options: string[]): FilterFn => {
   const opt = options?.[0] ?? ':';
   return (value: unknown): string => {
-    if (!(value instanceof Date)) {valueMustBeDate('hms');}
+    if (!(value instanceof Date)) {valueMustBeDate('hms', value);}
     const hours = value.getHours().toString().padStart(2, '0');
     const minutes = value.getMinutes().toString().padStart(2, '0');
     const seconds = value.getSeconds().toString().padStart(2, '0');
@@ -255,7 +295,7 @@ const hms = (options: string[]): FilterFn => {
 };
 
 const abs = (): FilterFn => (value: unknown): number => {
-  if (typeof value !== 'number') {valueMustBeNumber('abs');}
+  if (typeof value !== 'number') {valueMustBeNumber('abs', value);}
   return Math.abs(value);
 };
 
@@ -264,7 +304,7 @@ const clamp = (options: string[]): FilterFn => {
   const min = requiredNumberOption(options, 0, 'clamp');
   const max = requiredNumberOption(options, 1, 'clamp');
   return (value: unknown): number => {
-    if (typeof value !== 'number') {valueMustBeNumber('clamp');}
+    if (typeof value !== 'number') {valueMustBeNumber('clamp', value);}
     return Math.min(Math.max(value, min), max);
   };
 };
@@ -334,10 +374,10 @@ const registered: Readonly<Record<string, FilterDefinition>> = {
   percent: { factory: percent, arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
 
-  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`)
-  date: { factory: date, arity: [0, 1] },
-  time: { factory: time, arity: [0, 1] },
-  datetime: { factory: datetime, arity: [0, 1] },
+  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
+  date: { factory: date, arity: [0, 2] },
+  time: { factory: time, arity: [0, 2] },
+  datetime: { factory: datetime, arity: [0, 2] },
   ymd: { factory: ymd, arity: [0, 1] },
   hms: { factory: hms, arity: [0, 1] },
 
@@ -359,6 +399,8 @@ const registered: Readonly<Record<string, FilterDefinition>> = {
   number: { factory: number, arity: [0, 0] },
   string: { factory: string, arity: [0, 0] },
   nullIfEmpty: { factory: nullIfEmpty, arity: [0, 0] },
+  // (added in 4.2: last, so the order of the others is unchanged)
+  currency: { factory: currency, arity: [1, 2] },
 };
 
 /** The formats add-on's own filters (what `registered` holds beyond the core set), in that order. */

@@ -48,6 +48,7 @@ The first-time author (public documents only, `@wcstack/*` 4.0.4) logged 24 fric
 - There was no way to ask before leaving unsaved changes (the page listened to the Navigation API itself) — `<wcs-router leaveConfirm>`.
 - `<wcs-link>` was active on its exact path only (the side navigation computed its own marking) — `match="prefix"`.
 - `$watch` did not fire for a value the router already held at load (the page seeded it in `$connectedCallback`) — it fires once when the watches start.
+- The language switch leaves the router's basename (a real navigation), so with unsaved changes it got the browser's own "Leave site?" prompt instead of "Discard your changes?" — `leaveConfirm` now asks before a navigation that leaves the page too, and the browser does not ask again.
 - A dotted getter (`get "nav.x"()`) warned "silently dropped" while it worked — fixed.
 - The fetch README now shows reading a `422`'s field errors and "one `<wcs-fetch>` is one request at a time"; the router README says `navigateUrl` takes a route path.
 
@@ -55,7 +56,6 @@ The full record — the other apps, what was classified as a defect, a design qu
 
 ## Known limitations
 
-- The language switch leaves the router's basename (a real navigation), so with unsaved changes it gets the browser's own "Leave site?" prompt (`beforeunload`), not "Discard your changes?". Declining keeps you on the form.
-- `/products/new` is also under `/products`, so `<wcs-link match="prefix">` gives Products `aria-current="true"` there next to New product's `"page"`; the stylesheet marks only the page link visually.
+- `/products/new` is also under `/products`, so `<wcs-link match="prefix">` gives Products `aria-current="true"` there next to New product's `"page"` — the section and the page, as designed (router README, `match`); the stylesheet marks only the page link visually.
 - A Back / Forward the browser does not let a page cancel is not asked (router README, `leaveConfirm`).
 - "Back to the list" forgets where you came from after the detail page is reloaded (the list path is kept in state, not in the URL); browser Back still works.

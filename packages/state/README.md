@@ -56,7 +56,7 @@ The premise — *a path string is the whole contract between a view and a model*
 | **Spreadsheets** (VisiCalc, 1979) | An address, a formula declaring what a cell **is**, a dependency graph, lazy recomputation — and no update code anywhere | Names instead of grid coordinates, and one formula per *shape* rather than per cell: `get "cart.items.*.subtotal"()` is not filled down into the rows; the wildcard is the definition |
 | **Cocoa Bindings / KVC–KVO** (NeXT's EOF, 1994; Mac OS X 10.3, 2003) | Key paths (`person.address.street`), a binding triple of target + key path + value transformer, and collection operators that aggregate along a path (`@sum.items.price`) | The triple lives in the markup instead of a nib or a `bind:toObject:withKeyPath:` call, so it can be grepped, linted and diffed. Change detection is an ES Proxy over plain objects rather than KVC compliance |
 | **XForms** (W3C Recommendation, 2003) | Model / instance / view separation, `ref` paths into the instance, and `<bind calculate="…">` — a computed value declared **at a path**, the direct ancestor of a path getter | The path is an address and nothing else: the computation is a JavaScript getter on the state, not XPath inside an attribute. And it runs in a stock browser, with no XForms processor |
-| **WPF / XAML** (2006) | `{Binding Path=User.Name, Mode=TwoWay}`; a `DataContext` that re-roots a whole subtree; `UpdateSourceTrigger` choosing when the source is written; `IValueConverter` between the ends | One state tree per root, rather than a context inherited down the visual tree with `RelativeSource` / `ElementName` escapes — `state: user` is that re-rooting, written in the host's HTML. Converters are a closed set of 47 filters, not classes you register, and nothing is compiled |
+| **WPF / XAML** (2006) | `{Binding Path=User.Name, Mode=TwoWay}`; a `DataContext` that re-roots a whole subtree; `UpdateSourceTrigger` choosing when the source is written; `IValueConverter` between the ends | One state tree per root, rather than a context inherited down the visual tree with `RelativeSource` / `ElementName` escapes — `state: user` is that re-rooting, written in the host's HTML. Converters are a closed set of 48 filters, not classes you register, and nothing is compiled |
 | **Android Data Binding** (2015) | The path in the layout file itself — `android:text="@{user.name}"`, `@={}` for two-way | No build step and no generated binding class, and no expressions inside the attribute |
 | **SCADA / HMI tag binding** (industrial, decades) | Widget properties wired to tag paths (`Line1/Tank/Level`) by configuration alone, and *indirect* bindings that parameterize the path (`Folder/Tag_{1}`) so one screen drives many devices | The tree carries derived values, lists and mounted components, not a flat namespace of scalars; the parameter is a loop's wildcard, resolved by the row the binding sits in rather than assigned from a dropdown |
 
@@ -130,7 +130,7 @@ Every row is a section of this README. Unless it appears under [Where the neighb
 | **Structural directives** | `for` and `if` / `elseif` / `else` on `<template>` elements | [Structural directives](#structural-directives) |
 | **Row identity** | Rows diff by reference, so a sort or a filter reuses the DOM; `$listKeys` keeps row DOM and row objects across refetched arrays | [`$listKeys`](#listkeys--identity-for-refetched-rows) |
 | **Forms** | Two-way binding for `input` / `select` / `textarea`, a radio group to one value, a checkbox group to an array, `#ro` / `#onchange` / `#prevent` / `#stop` | [Two-way binding](#two-way-binding) · [Modifiers](#modifiers) |
-| **Filters** | 47 built-ins, chainable, locale-aware formatting that reads `<html lang>` | [Filters](#filters) · [Locale](#locale) |
+| **Filters** | 48 built-ins, chainable, locale-aware formatting that reads `<html lang>` | [Filters](#filters) · [Locale](#locale) |
 | **Derived state** | Path getters declare virtual properties at any depth from one flat place; they chain, and they take setters | [Path getters](#path-getters-computed-properties) |
 | **Aggregation and bulk write** | `$getAll` / `$setAll` / `$resolve` read and write across `items.*.price` without rebuilding the array | [Proxy APIs](#proxy-apis) |
 | **Recursive paths** | `$recursion` declares where a tree's shape repeats; one `**` getter covers every depth | [Recursive paths](#recursive-paths-recursion) |
@@ -234,7 +234,7 @@ The file names under `dist/split/chunks/` carry a content hash: if you list chun
 | `@wcstack/state/features/scopes` | `bind-component`, `mount=` volumes, overlay exports, DCC (`data-wc-definition`) |
 | `@wcstack/state/features/recursion` | `$recursion` and `**` paths |
 | `@wcstack/state/features/ssr` | `enable-ssr`: server rendering and hydration |
-| `@wcstack/state/features/formats` | The other 37 filters: arithmetic, conversion and defaults (`add`, `int`, `coalesce`, …) and formatting (`upper`, `date`, `round`, `truncate`, …) |
+| `@wcstack/state/features/formats` | The other 38 filters: arithmetic, conversion and defaults (`add`, `int`, `coalesce`, …) and formatting (`upper`, `date`, `currency`, `round`, `truncate`, …) |
 | `@wcstack/state/features/devtools` | The DevTools hook protocol source |
 | `@wcstack/state/features/diagnostics` | The sentences of error messages, with the did-you-mean and the pointer to lint, and the development-time warnings (a bound or `$watch` path that does not resolve, `wcs/default-getter-mismatch`). Without it a message is its number and its values ([Error messages](#error-messages-and-numbers)), those warnings are not printed, and the 3.x names 4.0 removed (`$scan`, `$streams`, `$updatedCallback`, `$trackDependency`, `$untrackDependency`) are not detected |
 | `@wcstack/state/define` | `defineState` and the types only — no runtime at all |
@@ -1221,7 +1221,7 @@ Three rules decide what the dependency graph sees. None of them matters until yo
 |---|---|
 | **Only path reads through `this` are tracked.** `this.form` tracks `form`; `this["form.name"]` tracks `form.name`; `this.form.name` tracks **`form` only** — the `.name` is a plain property access on the object that came back. `Date.now()`, the DOM, a module variable, a closed-over object register nothing | The getter is never re-evaluated for that input; the first value sticks (the examples above). A getter that reads `this.form.name` does not re-run when a bound `<input data-wcs="value: form.name">` changes — read `this["form.name"]` |
 | **Reads inside a setter are not tracked.** A setter is an imperative assignment, not a derivation, so nothing it reads becomes a dependency of anything | A setter that reads `this.a` to decide what to write does not run again when `a` changes — only a getter re-runs |
-| **The same-value guard applies to primitives only.** A primitive write `Object.is`-equal to the current value is dropped before anything is enqueued; an object or array write always passes, even the same reference | Assigning the same string again fires nothing; assigning the same object again re-fires its bindings and `$watch` (`$behavior.sameValueGuard`; a `semantics: "event"` property is exempt either way) |
+| **The same-value guard applies to primitives only.** A primitive write `Object.is`-equal to the current value is dropped before anything is enqueued; an object or array write always passes, even the same reference | Assigning the same string again fires nothing; assigning the same object again re-fires its bindings and `$watch` (`$behavior.sameValueGuard`; a `semantics: "event"` property is exempt either way). A list is the exception: its rows follow the array's items only when a **new** array is assigned. The same array assigned again — or `$postUpdate` — re-reads what is below the rows it has, but adds, removes or replaces no row: `cards[i] = card; this.cards = cards` keeps showing the old card. Assign a new array (`this.cards = cards.with(i, card)`, `[...cards, x]`); lint reports the in-place change (`wcs/array-index-assign`, `wcs/array-mutation`) |
 
 The first rule is the one static analysis can catch: `wcs-validate` and the VS Code extension report `wcs/getter-untracked-read` when a getter reads `this.form.name` and the document writes `form.name` somewhere (a `value:` binding, a spread, `this["form.name"] = …`). A root that is only ever replaced wholesale — router params, a `$stream` fold — is left alone.
 
@@ -1680,7 +1680,7 @@ Handlers run where the DOM puts them. An outer `#direct` handler runs **before**
 
 ## Filters
 
-47 built-in filters are available for both input (DOM → state) and output (state → DOM) directions: the 10 condition filters in the core (`eq`, `ne`, `not`, `lt`, `le`, `gt`, `ge`, `truthy`, `falsy`, `boolean`) and the other 37 in the `formats` add-on (arithmetic, number formatting, string, type conversion, date / time, defaults), which the full entries include. On `/core` without `formats`, a filter of `formats` fails when the bindings are planned, naming the add-on.
+48 built-in filters are available for both input (DOM → state) and output (state → DOM) directions: the 10 condition filters in the core (`eq`, `ne`, `not`, `lt`, `le`, `gt`, `ge`, `truthy`, `falsy`, `boolean`) and the other 38 in the `formats` add-on (arithmetic, number formatting, string, type conversion, date / time, defaults), which the full entries include. On `/core` without `formats`, a filter of `formats` fails when the bindings are planned, naming the add-on.
 
 The names 3.x kept as aliases of the 3.2 renames (`inc`, `dec`, `fix`, `uc`, `lc`, `cap`, `rep`, `rev`, `pad`, `null`) and the `substr` filter do not exist: they fail like any unknown name, and the message names what to write instead (`"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".`; `substr(start, length)` is `slice(start, start + length)`).
 
@@ -1717,6 +1717,7 @@ The names 3.x kept as aliases of the 3.2 renames (`inc`, `dec`, `fix`, `uc`, `lc
 | `floor(n?)` | Floor | `value\|floor` |
 | `ceil(n?)` | Ceiling | `value\|ceil` |
 | `locale(loc?)` | Locale number format | `count\|locale` / `count\|locale(ja-JP)` |
+| `currency(code, loc?)` | Money in an ISO 4217 currency | `price\|currency(JPY)` / `price\|currency(USD,en-US)` → `"$1,234.50"` |
 | `percent(n?)` | Percentage format | `ratio\|percent(1)` |
 | `unit(u)` | Append a unit (any suffix) | `width\|unit(px)` → `"40px"` |
 
@@ -1751,13 +1752,13 @@ The names 3.x kept as aliases of the 3.2 renames (`inc`, `dec`, `fix`, `uc`, `lc
 
 | Filter | Description | Example |
 |---|---|---|
-| `date(loc?)` | Date format | `createdAt\|date` / `createdAt\|date(ja-JP)` |
-| `time(loc?)` | Time format | `createdAt\|time` |
-| `datetime(loc?)` | Date + Time | `createdAt\|datetime(en-US)` |
+| `date(loc?, style?)` | Date format | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` |
+| `time(loc?, style?)` | Time format | `createdAt\|time` / `createdAt\|time(short)` |
+| `datetime(loc?, style?)` | Date + Time | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` |
 | `ymd(sep?)` | YYYY-MM-DD (default `-`) | `createdAt\|ymd` / `createdAt\|ymd(/)` |
 | `hms(sep?)` | HH:MM:SS (default `:`) | `createdAt\|hms` / `createdAt\|hms(-)` |
 
-**All five take a `Date`,** not a timestamp — a value of any other type is rejected with "requires a date value". State loaded from JSON carries a number or an ISO string, so convert it where it is read rather than in the binding: `get createdAt() { return new Date(this.createdAtMs); }`. `loc?` defaults to the page locale ([Locale](#locale)), and the default is re-read on **every** apply, so a locale settled after the bindings were planned still takes effect (an explicit `date(ja-JP)` is part of the binding expression and is fixed when it is planned).
+**All five take a `Date`,** not a timestamp — a value of any other type is rejected with "requires a date value". State loaded from JSON carries a number or an ISO string, so convert it where it is read rather than in the binding: `get createdAt() { return new Date(this.createdAtMs); }`. `loc?` defaults to the page locale ([Locale](#locale)), and the default is re-read on **every** apply, so a locale settled after the bindings were planned still takes effect (an explicit `date(ja-JP)` is part of the binding expression and is fixed when it is planned). `style?` is `full`, `long`, `medium` or `short` (Intl's `dateStyle` / `timeStyle`); without it the format is the locale's numeric one (`10/13/2026`), and a style alone keeps the page locale (`date(medium)`). `currency`'s code is checked when the bindings are planned; the number is formatted in the page locale unless `loc` names one. Plurals and other formats belong in a getter (`Intl.PluralRules`, `Intl.NumberFormat`).
 
 ### Boolean / Default
 
@@ -2589,7 +2590,7 @@ The handler runs with `this` bound to a **writable** state proxy, so it can writ
 
 **Watching a getter makes it eager.** A computed getter is normally lazy, and its dependencies are only recorded when it is evaluated — so an unrendered getter would never fire at all. Declaring one in `$watch` evaluates it once at connect — for every row, when it is a wildcard getter (`items.*.tax`) — and again at the end of every batch that touches its dependencies. Its `prev` is the previous evaluation, and a change that reaches it fires the watch whether or not the value changed (but for the two cases above). Watch a heavy computed and you pay that evaluation on every batch; exceptions inside it surface through the watch instead of staying dormant. An evaluation at connect that throws is reported (`$watch initial evaluation of "…" threw.`), that watch's first `prev` is `undefined`, and everything else goes on.
 
-**A value an element already had fires too.** Watches start after `$connectedCallback`; a write before then does not fire them. But an element bound to a watched path may already hold its value when the binding attaches — an open `<wcs-sse>`'s `connected`, the router's first `typedParams` — or may report it a moment later, depending on how fast the page loaded. So an element's write to a watched path before the watches start fires the watch once when they start, with `prev` the seed, if the path still holds that value. A write from code before then — `$connectedCallback` — still fires nothing, and a value equal to the seed was never written.
+**A value an element already had fires too.** Watches start after `$connectedCallback`; a write before then does not fire them. But an element bound to a watched path may already hold its value when the binding attaches — an open `<wcs-sse>`'s `connected`, the router's first `typedParams` — or may report it a moment later, depending on how fast the page loaded. So an element's write to a watched path before the watches start fires the watch once when they start, with `prev` the seed, if the path still holds that value. A watch on a root getter that reads such a path — `get loggedIn() { return this["session.token"] != null; }` over a `<wcs-storage>`'s saved session — fires once too, with `prev` `undefined` (the getter had no value before). A write from code before then — `$connectedCallback` — still fires nothing, and a value equal to the seed was never written.
 
 Firing order is defined in three layers, and only the middle one is yours to steer:
 
@@ -2925,7 +2926,7 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | 9 | | `$setAll("<path>") needs indexes ([] for every match)` |
 | 10 | | `$setAll("<path>", …, { spread: true }) needs an array of <n> values` |
 | 11 | | `updates did not settle after 32 passes` |
-| 12 | | `binding "<type>: <path>" failed to apply.` |
+| 12 | | `binding "<member>: <path>" failed to apply.` (`<member>` as written — `textContent`, `class.active` —, or the type, `text`, for one without a name such as `{{ }}`; the console gets the node too) |
 | 13 | | `failed to load "<src>": <status>` |
 | 14 | | `this <wcs-state> failed to initialize; create a new one` |
 | 15 | | `state is not initialized` |
@@ -2941,8 +2942,8 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | 25 | | `view-transition naming-limit (<limit>) reached.` |
 | 26 | | `filter <name> requires at least one option` |
 | 27 | | `filter <name> requires a number as option` |
-| 28 | | `filter <name> requires a number value` |
-| 29 | | `filter <name> requires a date value` |
+| 28 | | `filter <name> requires a number value, not <what it was>` (a string adds: `— put |number before |<name>, or convert it where it is read`) |
+| 29 | | `filter <name> requires a date value (a Date), not <what it was>` (a string or a number adds: `— make the Date where it is read: a getter returning new Date(…)`) |
 | 30 | | `filter <name> requires an array value` |
 | 31 | | `init=/sync= modifiers require enableDirectionalInitialSync.` |
 | 32 | | `"<text>": the "@name" selector was removed in v2 — there is a single state tree. …` |
@@ -2965,6 +2966,8 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | 49 | | `<wcs-state src="…"> failed to initialize.` |
 | 50 | | `<wcs-state src="…"> $connectedCallback failed.` |
 | 51 | | `<wcs-state src="…"> $disconnectedCallback failed.` |
+| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"` |
+| 53 | | `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "<code>"` |
 | 101 | `binding-syntax` | `Invalid bindText: "<text>". Missing ':' separator between propPart and statePart.` |
 | 102 | `binding-syntax` | `"<text>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` |
 | 103 | `binding-syntax` | `"<text>": "else" takes no value — write "else:".` |

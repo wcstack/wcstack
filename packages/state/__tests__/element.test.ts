@@ -134,7 +134,7 @@ describe("<wcs-state> の状態の読み込みと公開 API", () => {
     const { root } = await host(`<wcs-state></wcs-state><p class="a">{{ bad }}</p><p class="b">{{ ok }}</p>`, (el) =>
       el.setInitialState({ ok: "ok", get bad() { throw new Error("boom"); } }));
     expect(root.querySelector(".b")!.textContent).toBe("ok");
-    expect(err).toHaveBeenCalledWith(expect.stringContaining(`#${M.BindingFailed} "text" "bad"`), expect.any(Error));
+    expect(err).toHaveBeenCalledWith(expect.stringContaining(`#${M.BindingFailed} "text" "bad"`), expect.any(Error), expect.any(Text));
     err.mockRestore();
   });
 });

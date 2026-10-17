@@ -100,8 +100,8 @@
 | 設計の問い | router: 設計どおりのリダイレクトのたびに警告（二重のピリオド付き）。ガード同士のリダイレクトに上限が無い | 決定: 出さない。続けて 10 回で止めてエラー |
 | lint の穴 | `wcs/storage-seed-clobber` が中身のあるシードを見逃し、しかも warning だった（スキルの `--errors-only` の関門を通った） | 修正 — 決定: どのリテラルのシードも、error で |
 | 文書の穴 | ガードがセッションをどこから読むか、モジュールは一度だけ評価、`toPath` にクエリが無い、リダイレクトで `navigate()` が reject、state からのヘッダ、storage の README の sessionStorage の例と `undefined` / `null` の矛盾 | 修正 |
-| lint の穴 | `this` で書いた `$on` のハンドラ。`#prevent` の無い `onsubmit:`（router があると、ネイティブの GET がパスワードを URL に入れる） | 未着手 |
-| 設計の問い | ルートへ戻ると、state が新しい `url` を書く前に、`<wcs-fetch>` が前の `url` でもう一度要求を出す | 未着手 |
+| lint の穴 | `this` で書いた `$on` のハンドラ。`#prevent` の無い `onsubmit:`（router があると、ネイティブの GET がパスワードを URL に入れる） | [残っていたもの](#残っていたもの2026-10-14)を参照 |
+| 設計の問い | ルートへ戻ると、state が新しい `url` を書く前に、`<wcs-fetch>` が前の `url` でもう一度要求を出す | [残っていたもの](#残っていたもの2026-10-14)を参照 |
 
 ### router-admin・state-collab-board・signals-shop（2026-10-13）
 
@@ -122,7 +122,7 @@
 | signals-shop | 設計の問い | `h()` が小文字の `onclick` の関数を、リアクティブな prop として描画時に実行した | 決定: 関数を持つ `on…` キーはすべてリスナー（`onclick` → click、`onadd-to-cart` → add-to-cart） |
 | signals-shop | lint の穴 | `wcs/base-href-missing` が import map で読み込んだ router を見逃した | 修正 |
 | signals-shop | 文書の穴 | signals の README が 1.x のまま 1.25.0 を固定していた。signals × router / `<wcs-storage>` の書き方が無い。`@wcstack/testing` は `<wcs-state>` のページ向け | 修正 |
-| 3 本とも | 未着手 | lint: `Object.assign` や別名を通したその場の変更、`wcs/getter-untracked-read` の証拠としての `$on` の書き込み、`location` を読む getter、ルート直下の裸の `{{ }}`、`#prevent` の無い `onsubmit:`。runtime: 既定の slot の無いレイアウトがページを黙って落とす、ルートへ戻ると `<wcs-fetch>` が古い `url` で要求し直す、`date` / `locale` で「Oct 13, 2026」や通貨を出せない。signals の開発モード: 何も追跡しない computed。チュートリアルのステップ 13 が state を先に読み込む | 未着手 |
+| 3 本とも | 未着手 | lint: `Object.assign` や別名を通したその場の変更、`wcs/getter-untracked-read` の証拠としての `$on` の書き込み、`location` を読む getter、ルート直下の裸の `{{ }}`、`#prevent` の無い `onsubmit:`。runtime: 既定の slot の無いレイアウトがページを黙って落とす、ルートへ戻ると `<wcs-fetch>` が古い `url` で要求し直す、`date` / `locale` で「Oct 13, 2026」や通貨を出せない。signals の開発モード: 何も追跡しない computed。チュートリアルのステップ 13 が state を先に読み込む | [残っていたもの](#残っていたもの2026-10-14)を参照 |
 
 ### examples/ への取り込み（2026-10-14）
 
@@ -134,5 +134,26 @@
 | runtime の欠陥 | router: ガードがリダイレクトするページへの `navigateUrl` / `replaceUrl` が `navigate failed: AbortError` を出した（ガードのループでは `Fallback navigation failed` が 10 個）— リダイレクトされたナビゲーションが `AbortError` で reject するのは設計どおり | 修正: `AbortError` は報告しない |
 | lint の穴 | `wcs/on-handler-this` が別名（`const state = this`）を見逃した | 修正: `$on` のハンドラ自身の `this` はすべて |
 | テストの欠陥 | e2e の確認が SSR のスナップショットの minor（`4.0.`）を固定していて、4.1.0 の後のすべての PR で落ちた | 修正 |
-| 設計の問い | 言語の切り替えは本物のナビゲーション（言語は basename）なので、未保存の変更にはブラウザの `beforeunload` が出て、`leaveConfirm` の文言は出ない。`match="prefix"` は `/products/new` でも「Products」に印を付ける。要素が持ってきた最初の値で、getter の `$watch` は発火しない | 未着手 |
-| 未着手 | signals: `h()` の後で定義される要素へのオブジェクトの prop は属性になる、要素の定義前の `bindNode` は汎用のエラー。lint: `#prevent` の無い `onsubmit:`、`Object.assign` や別名を通したその場の変更、`wcs/getter-untracked-read` の証拠としての `$on` の書き込み、別ファイルの module をまたぐ `signals-dual-entry` | 未着手 |
+| 設計の問い | 言語の切り替えは本物のナビゲーション（言語は basename）なので、未保存の変更にはブラウザの `beforeunload` が出て、`leaveConfirm` の文言は出ない。`match="prefix"` は `/products/new` でも「Products」に印を付ける。要素が持ってきた最初の値で、getter の `$watch` は発火しない | [残っていたもの](#残っていたもの2026-10-14)を参照 |
+| 未着手 | signals: `h()` の後で定義される要素へのオブジェクトの prop は属性になる、要素の定義前の `bindNode` は汎用のエラー。lint: `#prevent` の無い `onsubmit:`、`Object.assign` や別名を通したその場の変更、`wcs/getter-untracked-read` の証拠としての `$on` の書き込み、別ファイルの module をまたぐ `signals-dual-entry` | [残っていたもの](#残っていたもの2026-10-14)を参照 |
+
+### 残っていたもの（2026-10-14）
+
+上の表で未着手だったものの、4.1.1 の後の結末。設計の問いは著者が決めた（どれも推奨どおり）。
+
+| 分類 | 発見 | 結末 |
+|---|---|---|
+| 設計の問い | 言語の切り替えは本物のナビゲーション（言語は basename）なので、未保存の変更にはブラウザの `beforeunload` が出て、`leaveConfirm` の文言は出なかった | 決定: Navigation API があれば、ページを離れる取り消せるナビゲーション（basename の外・別のサイト・フォームの送信）でも `leaveConfirm` が聞く。受け入れたらブラウザは聞き直さない（Chromium で確認: `navigate` が先に来て取り消せる） |
+| 設計の問い | `match="prefix"` は `/products/new` で「Products」にも「New product」と並んで印を付ける | 決定: 設計どおり — セクション（`aria-current="true"`）とページ（`"page"`）。印を 1 つに見せるなら `[aria-current="page"]` でスタイルを書く、と router の README に書いた |
+| 設計の問い | 要素が持ってきた最初の値で、getter の `$watch` が発火しなかった | 決定: その値のパスを読む根の getter も、watch が始まるときに 1 回発火する。`prev` は `undefined`（4.1.0 の規則を広げた） |
+| 設計の問い | `date` / `locale` で「Oct 13, 2026」や通貨を出せなかった | 決定: `date` / `time` / `datetime` に書式（`date(en-US,medium)`）、新しい `currency(code, loc?)`。複数形は getter のまま（`Intl.PluralRules`） |
+| runtime の欠陥 | 既定の `<slot>` の無いレイアウトのテンプレートは、入れ子のルートを黙って落とした。レイアウトのテンプレートが持ち込んだ outlet も警告されなかった | 修正: 実行時に `[wcs/layout-slot-missing]`、その outlet には `[wcs/router-outlet-misplaced]`。lint はマークアップからスロットを報告する |
+| 設計の問い | ルートへ戻ると `<wcs-fetch>` が前の `url` で要求し直した | 4.1.0 で既に消えていた（params が中身より先に state に届く）。router-auth の e2e が要求の記録を確かめるようにした |
+| runtime の欠陥 | `date` に ISO 文字列を渡したときの文言が、`textContent: iso|date` を「prop: iso」と呼んだ | 修正: 失敗したバインディングを書いたとおりの名前で呼び、要素を添える。型のエラーは受け取った型と直し方を言う |
+| runtime の欠陥 | signals: `h()` の後で定義される要素へのオブジェクトの prop は `[object Object]` の属性になった。定義前の `bindNode` は汎用のエラー。何も追跡しない `computed` / effect に開発モードが黙っていた | 修正: オブジェクトは手元に持ち、要素が定義されたら setter で渡す（Chromium でも確認 — happy-dom は upgrade の代わりに要素を作り直す）。`bindNode` はタグがまだ定義されていないと言う。`UNTRACKED_COMPUTED` / `UNTRACKED_EFFECT` |
+| lint の穴 | `#prevent` の無い `onsubmit:` | 修正: `wcs/submit-without-prevent`（warning） |
+| lint の穴 | `Object.assign` や別名、`$on` の state を通したその場の変更 | 修正: `wcs/nested-assign` / `wcs/array-*`（error）で報告する。確かめる中で文書の穴も見つかった: 同じ配列を書き戻しても、`$postUpdate` しても、一覧の行は追加・削除・置き換えされない（行が合わせ直されるのは新しい配列だけ — 配列の破壊的操作の設計書の記録どおり）。state の README の「配列の書き込みは同じ参照でも必ず通る」は、そうなるように読めた。README に書いた |
+| lint の穴 | `wcs/getter-untracked-read` の証拠としての `$on` の書き込み、`location` を読む getter | 修正: どちらも（`location` は `pathname` / `search` / `hash` / `href`。`protocol` / `host` は数えない — WebSocket の URL を作るために 2 つの example が読んでいる） |
+| lint の穴 | ルート直下の裸の `{{ }}` | 修正: `wcs/route-bare-mustache`（warning）。レイアウトのテンプレートの直下も |
+| lint の穴 | 別ファイルの module をまたぐ `signals-dual-entry` | ページから見える範囲で修正: 両方のエントリを割り当てる import map を warning にする（lint はほかのファイルを読まない）。fetch の pagination の signals の例が両方を割り当てていた |
+| 文書の穴 | サイトのチュートリアルのステップ 13 が `@wcstack/state` を先に読み込む（スキルと examples に反する） | サイトで修正 |

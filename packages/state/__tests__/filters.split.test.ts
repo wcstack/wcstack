@@ -1,10 +1,11 @@
 /**
- * filters.split.test.ts — コア 10 本と formats 37 本の分け方と、各フィルタの引数の個数（要件 B3）を
+ * filters.split.test.ts — コア 10 本と formats 38 本の分け方と、各フィルタの引数の個数（要件 B3）を
  * 固定する。4.0.0-rc.3 まではコア 24 本・formats 23 本（scope-classification §8 案 A）で、算術・
  * 型変換・欠損値の 14 本をコアの大きさの目標のために formats へ移した。
  *
  * 引数の個数の表は @wcstack/state 3.3.0 の `builtinFilterArity`（＝ filterMeta の minArgs / maxArgs、
- * lint と同じ正本）の写し。ここが変わる＝ lint / エディタと食い違う、ということ。
+ * lint と同じ正本）の写し。ここが変わる＝ lint / エディタと食い違う、ということ。4.2 の意図した差
+ * （docs/seam-apps.md、router-admin — 2026-10-14 の決定）は `CHANGED_4_2` に別に持つ。
  */
 import { describe, it, expect } from "vitest";
 import { coreFilters, installCoreFilters } from "../src/filters/core";
@@ -22,6 +23,15 @@ const SOURCE_ARITY: Readonly<Record<string, readonly [number, number]>> = {
   falsy: [0, 0], truthy: [0, 0], defaults: [1, 1], coalesce: [1, 1],
   boolean: [0, 0], number: [0, 0], string: [0, 0], nullIfEmpty: [0, 0],
 };
+
+/**
+ * 4.2 の意図した差: 日付の 3 本は書式（full / long / medium / short）を 2 つ目に取り、`currency` を足した
+ * （formats の最後に登録する。ほかの順は変わらない）。
+ */
+const CHANGED_4_2: Readonly<Record<string, readonly [number, number]>> = {
+  date: [0, 2], time: [0, 2], datetime: [0, 2], currency: [1, 2],
+};
+const ADDED_4_2 = ["currency"];
 
 /** 3.x の `builtinFilterMeta` の並び（lint が did-you-mean の候補をこの順に読む） */
 const SOURCE_ORDER = [
@@ -51,9 +61,9 @@ describe("コアと formats の分け方", () => {
     ].sort());
   });
 
-  it("formats は数値の表示・文字列の加工・日時・算術・型変換・欠損値の 37 本であること", () => {
+  it("formats は数値の表示・文字列の加工・日時・算術・型変換・欠損値の 38 本であること", () => {
     expect(Object.keys(formatFilters).sort()).toEqual([
-      "toFixed", "round", "floor", "ceil", "percent", "unit", "locale",
+      "toFixed", "round", "floor", "ceil", "percent", "unit", "locale", "currency",
       "upper", "lower", "capitalize", "trim", "slice", "padStart", "padEnd", "repeat", "reverse", "truncate", "join",
       "date", "time", "datetime", "ymd", "hms",
       "add", "sub", "mul", "div", "mod", "abs", "clamp",
@@ -62,11 +72,12 @@ describe("コアと formats の分け方", () => {
     ].sort());
   });
 
-  it("コアの表は 3.x（lint）の相対順、formats の表は表示の 23 本・移した 14 本のそれぞれが 3.x の相対順であること", () => {
+  it("コアの表は 3.x（lint）の相対順、formats の表は表示の 23 本・移した 14 本のそれぞれが 3.x の相対順で、4.2 で足したものが最後であること", () => {
     expect(Object.keys(coreFilters)).toEqual(SOURCE_ORDER.filter((name) => name in coreFilters));
     expect(Object.keys(formatFilters)).toEqual([
       ...DISPLAY,
       ...SOURCE_ARITY_CORE_RC3.filter((name) => name in formatFilters),
+      ...ADDED_4_2,
     ]);
   });
 
@@ -74,25 +85,25 @@ describe("コアと formats の分け方", () => {
     expect([...FORMATS_FILTER_NAMES]).toEqual(Object.keys(formatFilters));
   });
 
-  it("2 つは重ならず、合わせて 3.x の 48 本（旧名を除く）ちょうどであること", () => {
+  it("2 つは重ならず、合わせて 3.x の 48 本（旧名を除く）と 4.2 で足したものちょうどであること", () => {
     const core = Object.keys(coreFilters);
     const formats = Object.keys(formatFilters);
     expect(core.filter((name) => formats.includes(name))).toEqual([]);
-    expect([...core, ...formats].sort()).toEqual(Object.keys(SOURCE_ARITY).sort());
+    expect([...core, ...formats].sort()).toEqual([...Object.keys(SOURCE_ARITY), ...ADDED_4_2].sort());
   });
 });
 
 describe("登録の順（did-you-mean の同距離先勝ちの順）", () => {
-  it("formats を入れてからコアの集合を入れるページ（. と /auto）は、4.0.0-rc.3 と同じ順で登録すること（表示の 23 本、次に当時のコアの 24 本）", () => {
+  it("formats を入れてからコアの集合を入れるページ（. と /auto）は、4.0.0-rc.3 と同じ順で登録すること（表示の 23 本、次に当時のコアの 24 本、最後に 4.2 で足したもの）", () => {
     installFormats();
     installCoreFilters();
-    expect(knownFilterNames()).toEqual([...DISPLAY, ...SOURCE_ARITY_CORE_RC3]);
+    expect(knownFilterNames()).toEqual([...DISPLAY, ...SOURCE_ARITY_CORE_RC3, ...ADDED_4_2]);
   });
 });
 
 describe("引数の個数（要件 B3）", () => {
-  it.each(Object.entries({ ...coreFilters, ...formatFilters }))("%s の [最少, 最多] が 3.x と同じであること", (name, definition) => {
-    expect(definition.arity).toEqual(SOURCE_ARITY[name]);
+  it.each(Object.entries({ ...coreFilters, ...formatFilters }))("%s の [最少, 最多] が 3.x と同じ（4.2 の意図した差を除く）であること", (name, definition) => {
+    expect(definition.arity).toEqual(CHANGED_4_2[name] ?? SOURCE_ARITY[name]);
     expect(definition.arity[0]).toBeLessThanOrEqual(definition.arity[1]);
   });
 });

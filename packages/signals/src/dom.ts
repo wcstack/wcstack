@@ -17,7 +17,7 @@
 // an app under `createRoot` so the whole tree can be torn down on unmount; a
 // dynamic child establishes its own scope automatically (it IS an effect).
 
-import { signal, effect, onCleanup, createRoot, hasOwner, ReadSignal, WriteSignal } from "./reactive.js";
+import { signal, innerEffect as effect, onCleanup, createRoot, hasOwner, ReadSignal, WriteSignal } from "./reactive.js";
 import { isDev, warnDev } from "./dev.js";
 import { bindNode } from "./bindNode.js";
 import type { BoundNode, NodeShape, DefaultNodeShape, WcBindableDescriptor } from "./bindNode.js";
@@ -223,6 +223,35 @@ function bindProp(el: Element, key: string, value: unknown): void {
   setProp(el, key, value);
 }
 
+/**
+ * Objects given to a custom element that is not defined yet, by element → property, until it is
+ * (docs/seam-apps.md, signals-shop: `h("product-card", { product })` before `product-card.js` ran
+ * landed as `product="[object Object]"`). Not set on the element now: an own property set before
+ * the upgrade would hide the class's accessor, so its setter would never run. The latest value is
+ * assigned once the element is defined — through the setter, as a defined element gets it.
+ */
+const heldUntilDefined = new WeakMap<Element, Map<string, unknown>>();
+
+/** A custom element (a dash in its name) whose definition has not run yet. */
+function awaitsDefinition(el: Element): boolean {
+  return el.localName.includes("-") && typeof customElements !== "undefined" && customElements.get(el.localName) === undefined;
+}
+
+function holdUntilDefined(el: Element, key: string, value: unknown): void {
+  let held = heldUntilDefined.get(el);
+  if (!held) {
+    heldUntilDefined.set(el, (held = new Map()));
+    const props = held;
+    void customElements.whenDefined(el.localName).then(() => {
+      heldUntilDefined.delete(el);
+      // (an element not in the document is not upgraded by define(): upgrade it before the setter is wanted)
+      customElements.upgrade(el);
+      for (const [k, v] of props) (el as unknown as Record<string, unknown>)[k] = v;
+    });
+  }
+  held.set(key, value);
+}
+
 function setProp(el: Element, key: string, value: unknown): void {
   if (key === "style") {
     setStyle(el as HTMLElement, value);
@@ -261,6 +290,12 @@ function setProp(el: Element, key: string, value: unknown): void {
     // props coerce ""→0 (same as null). We do NOT normalize `false`:
     // `el.disabled = false` is the intended boolean clear.
     (el as unknown as Record<string, unknown>)[propKey] = value == null ? "" : value;
+    return;
+  }
+  // (a value given since replaces a held one: a primitive goes to the attribute, as below)
+  heldUntilDefined.get(el)?.delete(propKey);
+  if (typeof value === "object" && value !== null && awaitsDefinition(el)) {
+    holdUntilDefined(el, propKey, value);
     return;
   }
   if (value == null || value === false) {
@@ -598,7 +633,7 @@ function checkKeyDev(key: unknown, item: unknown, hasExplicitKey: boolean): void
       typeof key,
       "For: a non-primitive item is used as its own key (no `key` option given). " +
         "Object identity changes across renders, so every row is rebuilt and per-row " +
-        "state is lost. Pass `{ key: item => item.id }`.",
+        "state is lost. Pass `{ key: item => item.id }`, and read the item through current().",
       { item },
     );
   }

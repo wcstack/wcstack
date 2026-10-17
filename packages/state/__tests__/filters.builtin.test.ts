@@ -593,9 +593,51 @@ describe('ロケール引数を取る日付フィルタ（要件 B3 の引数の
     expect(getFilter('datetime', ['en-US'])(DATE)).toBe(DATE.toLocaleString('en-US'));
   });
 
-  it('2 つ以上は引数の個数として拒否されること', () => {
-    expect(() => getFilter('date', ['ja-JP', 'x']))
-      .toThrow(/\[wcs\/filter-arity\] filter "date" accepts at most 1 argument\(s\) \(2 given\)/);
+  it('3 つ以上は引数の個数として拒否されること', () => {
+    expect(() => getFilter('date', ['ja-JP', 'long', 'x']))
+      .toThrow(/\[wcs\/filter-arity\] filter "date" accepts at most 2 argument\(s\) \(3 given\)/);
+  });
+});
+
+// 4.2: 2 つ目は書式（Intl の dateStyle / timeStyle）。書式だけなら既定のロケール
+// （docs/seam-apps.md、router-admin — 「Oct 13, 2026」を出せなかった）
+describe('日付フィルタの書式と currency（4.2）', () => {
+  const DATE = new Date(2026, 9, 13, 9, 5, 6);
+
+  it('date / time / datetime は 2 つ目に full / long / medium / short を取ること', () => {
+    expect(getFilter('date', ['en-US', 'medium'])(DATE)).toBe('Oct 13, 2026');
+    expect(getFilter('date', ['ja-JP', 'long'])(DATE)).toBe(DATE.toLocaleDateString('ja-JP', { dateStyle: 'long' }));
+    expect(getFilter('time', ['en-US', 'short'])(DATE)).toBe(DATE.toLocaleTimeString('en-US', { timeStyle: 'short' }));
+    expect(getFilter('datetime', ['en-US', 'full'])(DATE)).toBe(DATE.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'full' }));
+    // without a style: the numeric format, as before
+    expect(getFilter('date', ['en-US'])(DATE)).toBe('10/13/2026');
+  });
+
+  it('書式だけなら既定のロケールで書くこと', () => {
+    expect(getFilter('date', ['medium'])(DATE)).toBe(DATE.toLocaleDateString(Intl.getCanonicalLocales(config.locale)[0], { dateStyle: 'medium' }));
+  });
+
+  it('知らない書式は束縛の計画の段で、取れる値を挙げて拒否されること', () => {
+    expect(() => getFilter('date', ['en-US', 'huge'])).toThrow(/filter date takes a style of full, long, medium or short, not "huge"/);
+    expect(() => getFilter('time', ['en-US', 'Medium'])).toThrow(/filter time takes a style/);
+  });
+
+  it('currency は ISO 4217 の通貨で書き、ロケールは 2 つ目（無ければ既定）であること', () => {
+    expect(getFilter('currency', ['USD', 'en-US'])(1234.5)).toBe('$1,234.50');
+    expect(getFilter('currency', ['JPY', 'ja-JP'])(1800)).toBe((1800).toLocaleString('ja-JP', { style: 'currency', currency: 'JPY' }));
+    expect(getFilter('currency', ['EUR'])(5)).toBe((5).toLocaleString(Intl.getCanonicalLocales(config.locale)[0], { style: 'currency', currency: 'EUR' }));
+  });
+
+  it('currency は通貨が要り、Intl の取らない通貨は計画の段で、数でない値は適用で拒否されること', () => {
+    expect(() => getFilter('currency')).toThrow(/\[wcs\/filter-arity\] filter "currency" requires at least 1 argument\(s\) \(0 given\)/);
+    expect(() => getFilter('currency', ['yen'])).toThrow(/filter currency takes an ISO 4217 currency code \(JPY, USD, EUR\), not "yen"/);
+    expect(() => getFilter('currency', ['dollar'])).toThrow(/not "dollar"/);
+    expect(getFilter('currency', ['jpy', 'en-US'])(1800)).toBe('¥1,800');
+    expect(() => getFilter('currency', ['JPY'])('1800')).toThrow(/filter currency requires a number value, not a string \("1800"\) — put \|number before \|currency/);
+  });
+
+  it('ISO 文字列の date は、受け取った値と直し方を言うこと', () => {
+    expect(() => getFilter('date')('2026-10-13')).toThrow(/filter date requires a date value \(a Date\), not a string \("2026-10-13"\) — make the Date where it is read/);
   });
 });
 

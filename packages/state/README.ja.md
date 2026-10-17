@@ -56,7 +56,7 @@
 | **表計算**（VisiCalc, 1979） | アドレス、セルが**何であるか**を宣言する数式、依存グラフ、遅延再計算 — 更新コードはどこにもない | 格子座標ではなく名前を使い、数式をセル単位ではなく*形*単位で書く。`get "cart.items.*.subtotal"()` は各行へフィルダウンされるのではなく、ワイルドカードそのものが定義 |
 | **Cocoa Bindings / KVC–KVO**（NeXT の EOF, 1994／Mac OS X 10.3, 2003） | キーパス（`person.address.street`）、「対象 + キーパス + value transformer」の三つ組、パスに沿って集計するコレクション演算子（`@sum.items.price`） | その三つ組が nib や `bind:toObject:withKeyPath:` の呼び出しではなくマークアップにあるので、grep・lint・diff できる。変更検知は KVC 準拠ではなく素のオブジェクトへの ES Proxy |
 | **XForms**（W3C 勧告, 2003） | model / instance / view の分離、instance を指す `ref` パス、そして `<bind calculate="…">` — **パスの位置に**宣言される算出値であり、パス getter の直系の祖先 | パスはアドレスに徹し、計算は属性内の XPath ではなく state 上の JavaScript getter。XForms プロセッサなしで素のブラウザで動く |
-| **WPF / XAML**（2006） | `{Binding Path=User.Name, Mode=TwoWay}`、部分木ごと基点を張り替える `DataContext`、ソースへの書き戻し時点を選ぶ `UpdateSourceTrigger`、両端を変換する `IValueConverter` | ビジュアルツリーを継承するコンテキストと `RelativeSource` / `ElementName` の脱出口ではなく、ルートごとに 1 本の state ツリー。`state: user` がその基点張り替えで、しかもホストの HTML に書かれる。変換器は登録するクラスではなく 47 個の閉じたフィルタで、コンパイルも不要 |
+| **WPF / XAML**（2006） | `{Binding Path=User.Name, Mode=TwoWay}`、部分木ごと基点を張り替える `DataContext`、ソースへの書き戻し時点を選ぶ `UpdateSourceTrigger`、両端を変換する `IValueConverter` | ビジュアルツリーを継承するコンテキストと `RelativeSource` / `ElementName` の脱出口ではなく、ルートごとに 1 本の state ツリー。`state: user` がその基点張り替えで、しかもホストの HTML に書かれる。変換器は登録するクラスではなく 48 個の閉じたフィルタで、コンパイルも不要 |
 | **Android Data Binding**（2015） | レイアウトファイル自体に書くパス — `android:text="@{user.name}"`、双方向は `@={}` | ビルド手順も生成されるバインディングクラスもなく、属性の中に式を書かない |
 | **SCADA / HMI のタグバインド**（産業用・数十年） | 設定だけでウィジェットのプロパティをタグパス（`Line1/Tank/Level`）へ配線する。パスを媒介変数化する*間接*バインド（`Folder/Tag_{1}`）で 1 画面が多数の機器を駆動する | ツリーが持つのはスカラーのフラットな名前空間ではなく、派生値・リスト・マウントされたコンポーネント。媒介変数はドロップダウンから与えるものではなく、バインディングが置かれた行が解決するループのワイルドカード |
 
@@ -130,7 +130,7 @@
 | **構造ディレクティブ** | `<template>` 上の `for` と `if` / `elseif` / `else` | [構造ディレクティブ](#構造ディレクティブ) |
 | **行の同一性** | 行は参照で差分を取るので、並べ替えや絞り込みで DOM を再利用する。`$listKeys` は再取得した配列でも行 DOM と行オブジェクトを保つ | [`$listKeys`](#listkeys--再取得された行の同一性) |
 | **フォーム** | `input` / `select` / `textarea` の双方向バインディング、ラジオグループと単一値、チェックボックスグループと配列、`#ro` / `#onchange` / `#prevent` / `#stop` | [双方向バインディング](#双方向バインディング) · [修飾子](#修飾子) |
-| **フィルタ** | 47 種類の組み込み、チェーン可能、`<html lang>` を見るロケール依存フォーマット | [フィルタ](#フィルタ) · [ロケール](#ロケール) |
+| **フィルタ** | 48 種類の組み込み、チェーン可能、`<html lang>` を見るロケール依存フォーマット | [フィルタ](#フィルタ) · [ロケール](#ロケール) |
 | **派生状態** | パス getter がデータツリーの任意の深さの仮想プロパティを 1 箇所にフラットに宣言する。チェーンでき、setter も書ける | [パス getter](#パス-getter算出プロパティ) |
 | **集計と一括書き込み** | `$getAll` / `$setAll` / `$resolve` が `items.*.price` を横断して読み書きする。配列は作り直さない | [Proxy API](#proxy-api) |
 | **再帰パス** | `$recursion` が木の形の繰り返し地点を宣言し、1 本の `**` getter が全深さを覆う | [再帰パス](#再帰パスrecursion) |
@@ -233,7 +233,7 @@
 | `@wcstack/state/features/scopes` | `bind-component`・`mount=` のボリューム・オーバーレイの公開 getter・DCC（`data-wc-definition`） |
 | `@wcstack/state/features/recursion` | `$recursion` と `**` パス |
 | `@wcstack/state/features/ssr` | `enable-ssr`: サーバー描画とハイドレーション |
-| `@wcstack/state/features/formats` | 残りの 37 個のフィルタ: 算術・型変換・デフォルト（`add`・`int`・`coalesce` …）と書式（`upper`・`date`・`round`・`truncate` …） |
+| `@wcstack/state/features/formats` | 残りの 38 個のフィルタ: 算術・型変換・デフォルト（`add`・`int`・`coalesce` …）と書式（`upper`・`date`・`currency`・`round`・`truncate` …） |
 | `@wcstack/state/features/devtools` | DevTools Hook Protocol への source 登録 |
 | `@wcstack/state/features/diagnostics` | エラーメッセージの文章（did-you-mean と lint への案内を含む）と、開発時の警告（束縛や `$watch` のパスが解決しない、`wcs/default-getter-mismatch`）。入れなければ、メッセージは番号と値だけになり（[エラーメッセージ](#エラーメッセージと番号)）、これらの警告は出ず、4.0 で外した 3.x の名前（`$scan`・`$streams`・`$updatedCallback`・`$trackDependency`・`$untrackDependency`）も見つけない |
 | `@wcstack/state/define` | `defineState` と型だけ — ランタイムは 0 |
@@ -1215,7 +1215,7 @@ getter の例外は握り潰されません。評価された場所（バイン�
 |---|---|
 | **追跡されるのは `this` を通した *パス* の読み取りだけ。** `this.form` は `form` を、`this["form.name"]` は `form.name` を追跡する。`this.form.name` が追跡するのは **`form` だけ** —— `.name` は返ってきたオブジェクトへの素のプロパティアクセスでしかない。`Date.now()`・DOM・モジュール変数・クロージャで掴んだオブジェクトは何も登録しない | その入力に対して getter は二度と再評価されず、最初の値が残り続ける（上の例）。`this.form.name` を読む getter は、`<input data-wcs="value: form.name">` を編集しても再実行されない —— `this["form.name"]` で読む |
 | **setter の中の読み取りは追跡しない。** setter は命令的な代入であって派生ではないので、その中で読んだものは何の依存にもならない | 何を書くかを `this.a` を読んで決める setter は、`a` が変わっても再実行されない。再実行されるのは getter だけ |
-| **同値ガードはプリミティブにだけ効く。** 現在値と `Object.is` で等しいプリミティブの書き込みはキューに入る前に落とされる。オブジェクト・配列の書き込みは同じ参照でも必ず通る | 同じ文字列を再代入しても何も起きない。同じオブジェクトを再代入するとバインディングと `$watch` が再発火する（`$behavior.sameValueGuard`。`semantics: "event"` のプロパティはどちらにせよ対象外） |
+| **同値ガードはプリミティブにだけ効く。** 現在値と `Object.is` で等しいプリミティブの書き込みはキューに入る前に落とされる。オブジェクト・配列の書き込みは同じ参照でも必ず通る | 同じ文字列を再代入しても何も起きない。同じオブジェクトを再代入するとバインディングと `$watch` が再発火する（`$behavior.sameValueGuard`。`semantics: "event"` のプロパティはどちらにせよ対象外）。一覧は例外で、行が配列の要素に合わせ直されるのは**新しい**配列を代入したときだけ。同じ配列の再代入や `$postUpdate` は、ある行の下を読み直すが、行を追加・削除・置き換えしない: `cards[i] = card; this.cards = cards` は古いカードを出し続ける。新しい配列を代入する（`this.cards = cards.with(i, card)`、`[...cards, x]`）。lint はその場の変更を報告する（`wcs/array-index-assign`、`wcs/array-mutation`） |
 
 規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$stream` の fold）には出ません。
 
@@ -1674,7 +1674,7 @@ export default {
 
 ## フィルタ
 
-47 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます: core に条件の 10 個のフィルタ（`eq`・`ne`・`not`・`lt`・`le`・`gt`・`ge`・`truthy`・`falsy`・`boolean`）、`formats` アドオンに残りの 37 個（算術・数値フォーマット・文字列・型変換・日付 / 時刻・デフォルト）があり、全部入りのエントリには両方が含まれます。`formats` なしの `/core` で `formats` のフィルタを使うと、束縛計画の段でアドオン名を挙げて失敗します。
+48 種類の組み込みフィルタが入力（DOM → 状態）と出力（状態 → DOM）の両方向で利用できます: core に条件の 10 個のフィルタ（`eq`・`ne`・`not`・`lt`・`le`・`gt`・`ge`・`truthy`・`falsy`・`boolean`）、`formats` アドオンに残りの 38 個（算術・数値フォーマット・文字列・型変換・日付 / 時刻・デフォルト）があり、全部入りのエントリには両方が含まれます。`formats` なしの `/core` で `formats` のフィルタを使うと、束縛計画の段でアドオン名を挙げて失敗します。
 
 3.x が 3.2 の改名の別名として残していた名前（`inc`・`dec`・`fix`・`uc`・`lc`・`cap`・`rep`・`rev`・`pad`・`null`）と `substr` フィルタは存在しません: 未知の名前と同じく失敗し、メッセージが代わりに書くものを示します（`"uc" was renamed "upper" in 3.2 and removed in 4.0 — write "upper".`。`substr(start, length)` は `slice(start, start + length)`）。
 
@@ -1711,6 +1711,7 @@ export default {
 | `floor(n?)` | 切り捨て | `value\|floor` |
 | `ceil(n?)` | 切り上げ | `value\|ceil` |
 | `locale(loc?)` | ロケール数値フォーマット | `count\|locale` / `count\|locale(ja-JP)` |
+| `currency(code, loc?)` | ISO 4217 の通貨で書く | `price\|currency(JPY)` / `price\|currency(USD,en-US)` → `"$1,234.50"` |
 | `percent(n?)` | パーセンテージフォーマット | `ratio\|percent(1)` |
 | `unit(u)` | 単位（任意の接尾辞）を付加 | `width\|unit(px)` → `"40px"` |
 
@@ -1745,13 +1746,13 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `date(loc?)` | 日付フォーマット | `createdAt\|date` / `createdAt\|date(ja-JP)` |
-| `time(loc?)` | 時刻フォーマット | `createdAt\|time` |
-| `datetime(loc?)` | 日付 + 時刻 | `createdAt\|datetime(en-US)` |
+| `date(loc?, style?)` | 日付フォーマット | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` |
+| `time(loc?, style?)` | 時刻フォーマット | `createdAt\|time` / `createdAt\|time(short)` |
+| `datetime(loc?, style?)` | 日付 + 時刻 | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` |
 | `ymd(sep?)` | YYYY-MM-DD（既定は `-`） | `createdAt\|ymd` / `createdAt\|ymd(/)` |
 | `hms(sep?)` | HH:MM:SS（既定は `:`） | `createdAt\|hms` / `createdAt\|hms(-)` |
 
-**5 つとも `Date` を取ります**（タイムスタンプではありません）。他の型は「requires a date value」で拒否されます。JSON から読み込んだ state は数値か ISO 文字列を持つので、束縛ではなく読み出し側で変換してください: `get createdAt() { return new Date(this.createdAtMs); }`。`loc?` の既定はページのロケール（[ロケール](#ロケール)）で、**適用のたびに**読み直されるため、束縛を組み立てた後に確定したロケールも反映されます（明示引数 `date(ja-JP)` は束縛式の一部なので組み立て時に固定されます）。
+**5 つとも `Date` を取ります**（タイムスタンプではありません）。他の型は「requires a date value」で拒否されます。JSON から読み込んだ state は数値か ISO 文字列を持つので、束縛ではなく読み出し側で変換してください: `get createdAt() { return new Date(this.createdAtMs); }`。`loc?` の既定はページのロケール（[ロケール](#ロケール)）で、**適用のたびに**読み直されるため、束縛を組み立てた後に確定したロケールも反映されます（明示引数 `date(ja-JP)` は束縛式の一部なので組み立て時に固定されます）。`style?` は `full`・`long`・`medium`・`short`（Intl の `dateStyle` / `timeStyle`）で、無ければロケールの数字の書式（`2026/10/13`）、書式だけならページのロケールです（`date(medium)`）。`currency` の通貨は束縛を組み立てるときに確かめ、数は `loc` が無ければページのロケールで書きます。複数形などほかの書式は getter で書きます（`Intl.PluralRules`、`Intl.NumberFormat`）。
 
 ### 真偽値 / デフォルト
 
@@ -2579,7 +2580,7 @@ $renderedCallback(paths) {
 
 **getter を watch すると eager になります。** computed は本来 lazy で、依存は評価時にしか記録されません —— つまり描画していない getter は本来一度も発火しません。`$watch` に宣言すると接続時に 1 回 —— ワイルドカード getter（`items.*.tax`）なら全行について —— 評価され、以後は依存に触れたバッチの終端で毎回評価されます。`prev` は前回の評価値で、変更が届けば、値が変わったかどうかに関わらず watch は発火します（上の 2 つの場合を除く）。重い computed を watch すればその評価コストが毎バッチ乗り、getter 内の例外は眠ったままにならず watch 経由で表面化します。接続時の評価が throw した場合は報告され（`$watch initial evaluation of "…" threw.`）、その watch の最初の `prev` は `undefined` になり、ほかはすべて続行します。
 
-**要素が既に持っていた値でも発火します。** watch は `$connectedCallback` の後に始まり、それより前の書き込みでは発火しません。しかし watch するパスに束ねた要素は、バインディングがつながった時点で値を既に持っていること（開いている `<wcs-sse>` の `connected`、router の最初の `typedParams`）も、少し後に報告することもあり、どちらになるかはページの読み込みの速さで変わります。そこで、watch が始まる前に要素が watch するパスへ書いた値は、始まったときにそのパスがまだその値なら、`prev` をシードにして 1 回発火します。それより前のコードからの書き込み —— `$connectedCallback` —— は今までどおり発火せず、シードと同じ値はそもそも書き込まれません。
+**要素が既に持っていた値でも発火します。** watch は `$connectedCallback` の後に始まり、それより前の書き込みでは発火しません。しかし watch するパスに束ねた要素は、バインディングがつながった時点で値を既に持っていること（開いている `<wcs-sse>` の `connected`、router の最初の `typedParams`）も、少し後に報告することもあり、どちらになるかはページの読み込みの速さで変わります。そこで、watch が始まる前に要素が watch するパスへ書いた値は、始まったときにそのパスがまだその値なら、`prev` をシードにして 1 回発火します。そのパスを読む根の getter の watch —— `<wcs-storage>` が保存していたセッションを読む `get loggedIn() { return this["session.token"] != null; }` —— も 1 回発火し、`prev` は `undefined` です（getter にはそれより前の値がありません）。それより前のコードからの書き込み —— `$connectedCallback` —— は今までどおり発火せず、シードと同じ値はそもそも書き込まれません。
 
 発火順序は 3 層に分かれ、利用者が意思を持てるのは真ん中の層だけです。
 
@@ -2915,7 +2916,7 @@ li {
 | 9 | | `$setAll("<path>") needs indexes ([] for every match)` |
 | 10 | | `$setAll("<path>", …, { spread: true }) needs an array of <n> values` |
 | 11 | | `updates did not settle after 32 passes` |
-| 12 | | `binding "<type>: <path>" failed to apply.` |
+| 12 | | `binding "<member>: <path>" failed to apply.`（`<member>` は書いたとおりの名前 — `textContent`・`class.active` —、名前の無い `{{ }}` などは種類 `text`。console には要素も添える） |
 | 13 | | `failed to load "<src>": <status>` |
 | 14 | | `this <wcs-state> failed to initialize; create a new one` |
 | 15 | | `state is not initialized` |
@@ -2931,8 +2932,8 @@ li {
 | 25 | | `view-transition naming-limit (<limit>) reached.` |
 | 26 | | `filter <name> requires at least one option` |
 | 27 | | `filter <name> requires a number as option` |
-| 28 | | `filter <name> requires a number value` |
-| 29 | | `filter <name> requires a date value` |
+| 28 | | `filter <name> requires a number value, not <what it was>` (a string adds: `— put |number before |<name>, or convert it where it is read`) |
+| 29 | | `filter <name> requires a date value (a Date), not <what it was>` (a string or a number adds: `— make the Date where it is read: a getter returning new Date(…)`) |
 | 30 | | `filter <name> requires an array value` |
 | 31 | | `init=/sync= modifiers require enableDirectionalInitialSync.` |
 | 32 | | `"<text>": the "@name" selector was removed in v2 — there is a single state tree. …` |
@@ -2955,6 +2956,8 @@ li {
 | 49 | | `<wcs-state src="…"> failed to initialize.` |
 | 50 | | `<wcs-state src="…"> $connectedCallback failed.` |
 | 51 | | `<wcs-state src="…"> $disconnectedCallback failed.` |
+| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"` |
+| 53 | | `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "<code>"` |
 | 101 | `binding-syntax` | `Invalid bindText: "<text>". Missing ':' separator between propPart and statePart.` |
 | 102 | `binding-syntax` | `"<text>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` |
 | 103 | `binding-syntax` | `"<text>": "else" takes no value — write "else:".` |

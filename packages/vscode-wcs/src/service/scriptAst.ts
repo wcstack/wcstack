@@ -666,3 +666,253 @@ export function findOwnThis(text: string, kind: 'body' | 'value'): { start: numb
   forEachChild(root, walk);
   return found;
 }
+
+// ============================================================
+// その場の変更（別名・Object.assign・$on の state 引数 — docs/seam-apps.md、state-collab-board）
+// ============================================================
+
+/** state の値をその場で変える形 1 件（オフセットは入力テキスト相対）。 */
+export interface InPlaceChange {
+  /** 変更の形: 配列の破壊的メソッド・添字だけの代入・それ以外（プロパティへの代入・`Object.assign`・`delete`）。 */
+  readonly form: 'method' | 'index' | 'property';
+  /** 別名を通した変更なら、その名前（`cards`）。root を直に通したもの（`Object.assign(this.x, …)`）は null。 */
+  readonly alias: string | null;
+  /** 変える値の書き方: 別名ならその初期化（`this.cards`）、そうでなければ変更の式（`Object.assign(this.cards[i], …)`）。 */
+  readonly source: string;
+  /** 新しい値を代入する先の書き方（`this.cards` / `this["board.cards"]` / `` state[`cards.${i}`] ``）。 */
+  readonly target: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+const DESTRUCTIVE_ARRAY_METHODS = new Set(['push', 'pop', 'shift', 'unshift', 'splice', 'sort', 'reverse', 'fill', 'copyWithin']);
+
+/** チェーンの 1 段: 静的な名前か、動的な添字の式（原文）。 */
+interface ChainSegment {
+  readonly name: string | null;
+  readonly raw: string;
+  readonly computed: boolean;
+}
+
+/** `a.b[c]["d"]` を基点と段に分ける（呼び出しを含むなら基点は呼び出し）。 */
+function memberChain(node: AnyNode, source: (n: AnyNode) => string): { base: AnyNode; segments: ChainSegment[] } {
+  const segments: ChainSegment[] = [];
+  let cur = unwrapChain(node);
+  while (cur.type === 'MemberExpression') {
+    const property = cur.property;
+    let name: string | null = null;
+    if (!cur.computed && property.type === 'Identifier') name = property.name;
+    else if (property.type === 'Literal' && (typeof property.value === 'string' || typeof property.value === 'number')) name = String(property.value);
+    segments.unshift({ name, raw: source(property), computed: cur.computed });
+    cur = unwrapChain(cur.object);
+  }
+  return { base: cur, segments };
+}
+
+/** 段から、新しい値を代入する先の書き方を作る（`this.cards` / `this["a.b"]` / `` this[`a.${i}`] ``）。 */
+function assignTarget(root: string, segments: readonly ChainSegment[]): string {
+  if (segments.every((s) => s.name !== null)) {
+    const path = segments.map((s) => s.name).join('.');
+    return segments.length === 1 && /^[A-Za-z_$][\w$]*$/.test(path) ? `${root}.${path}` : `${root}["${path}"]`;
+  }
+  return `${root}[\`${segments.map((s) => s.name ?? `\${${s.raw}}`).join('.')}\`]`;
+}
+
+/**
+ * 関数本体（`kind: 'body'`）か関数の値（`kind: 'value'` — function 式かアロー関数）の中の、state の値をその場で
+ * 変える形。`root` は state を指す名前（`'this'`、$on のハンドラなら第 1 引数）。null なら値の関数の第 1 引数。
+ *
+ * 拾う形:
+ *   - 別名: `const cards = this.cards`（`this["a.b"]`・`this.a.b` も）・`const { cards } = this` の名前を通した
+ *     代入（`cards[i] = x` / `cards[i].title = x`）・増減・`delete`・破壊的メソッド・`Object.assign(cards…, …)`
+ *   - `Object.assign(<root>.<…>, …)`（root を直に通したもの）
+ *   - root が `this` でないとき（$on の state 引数）: root を直に通した 2 段以上への代入・増減・`delete`・
+ *     破壊的メソッド（`this` のものは wcs/nested-assign・wcs/array-* の正規表現が報告する）
+ * 黙る形: 別名の名前が 2 回以上束縛される（引数・宣言・再代入 — どの値か断定できない）、初期化が呼び出しを
+ * 含む（`this.cards.slice()` は複製）、`$` 始まりのルート、計算キーの分割代入。パースできなければ空。
+ */
+export function findInPlaceChanges(text: string, kind: 'body' | 'value', root: string | null): InPlaceChange[] {
+  const prefix = kind === 'body' ? PREFIX : VALUE_PREFIX;
+  let program: AnyNode;
+  try {
+    program = parse(prefix + text + (kind === 'body' ? SUFFIX : VALUE_SUFFIX), { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    return [];
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return [];
+  let body: AnyNode = wrapper.body;
+  if (kind === 'value') {
+    const statement = wrapper.body.body.length === 1 ? wrapper.body.body[0] : null;
+    const fn = statement?.type === 'ExpressionStatement' ? statement.expression : null;
+    if (fn === null || (fn.type !== 'FunctionExpression' && fn.type !== 'ArrowFunctionExpression')) return [];
+    if (root === null) {
+      const first = fn.params[0];
+      if (first === undefined || first.type !== 'Identifier') return [];
+      root = first.name;
+    }
+    body = fn.body;
+  }
+  if (root === null) return [];
+  const stateRoot = root;
+  const shift = prefix.length;
+  const source = (n: AnyNode): string => (prefix + text).slice(n.start, n.end);
+  const isRoot = (n: AnyNode): boolean =>
+    stateRoot === 'this' ? n.type === 'ThisExpression' : n.type === 'Identifier' && n.name === stateRoot;
+
+  // 名前ごとの束縛の数（宣言・引数・catch・関数 / class の名前・再代入）と、別名の候補
+  const bound = new Map<string, number>();
+  const bind = (name: string): void => { bound.set(name, (bound.get(name) ?? 0) + 1); };
+  const aliases = new Map<string, { source: string; segments: ChainSegment[] }>();
+  const collect = (node: AnyNode): void => {
+    if (isFunctionNode(node)) {
+      if (node.type === 'FunctionDeclaration' && node.id !== null) bind(node.id.name);
+      const names = new Set<string>();
+      for (const param of node.params) bindingNames(param, names);
+      names.forEach(bind);
+    } else if (node.type === 'VariableDeclarator') {
+      const names = new Set<string>();
+      bindingNames(node.id, names);
+      names.forEach(bind);
+      const init = node.init ? unwrapChain(node.init) : null;
+      if (init !== null && node.id.type === 'Identifier' && init.type === 'MemberExpression') {
+        const chain = memberChain(init, source);
+        if (isRoot(chain.base) && chain.segments.length > 0 && !chain.segments[0].name?.startsWith('$')) {
+          aliases.set(node.id.name, { source: source(init), segments: chain.segments });
+        }
+      } else if (init !== null && node.id.type === 'ObjectPattern' && isRoot(init)) {
+        for (const property of node.id.properties) {
+          if (property.type !== 'Property' || property.computed) continue;
+          const key = property.key.type === 'Identifier' ? property.key.name : property.key.type === 'Literal' ? String(property.key.value) : null;
+          const value = property.value.type === 'AssignmentPattern' ? property.value.left : property.value;
+          if (key === null || key.startsWith('$') || value.type !== 'Identifier') continue;
+          const segment: ChainSegment = { name: key, raw: key, computed: false };
+          aliases.set(value.name, { source: `${stateRoot}.${key}`, segments: [segment] });
+        }
+      }
+    } else if (node.type === 'CatchClause' && node.param) {
+      const names = new Set<string>();
+      bindingNames(node.param, names);
+      names.forEach(bind);
+    } else if (node.type === 'ClassDeclaration' && node.id !== null) {
+      bind(node.id.name);
+    } else if (node.type === 'AssignmentExpression' && node.left.type === 'Identifier') {
+      bind(node.left.name);
+    }
+    forEachChild(node, collect);
+  };
+  collect(body);
+  const alias = (name: string) => (bound.get(name) === 1 ? aliases.get(name) : undefined);
+
+  const out: InPlaceChange[] = [];
+  /** 変更の対象（代入の左辺・増減・delete の被演算子・破壊的メソッドの受け手・Object.assign の第 1 引数）を判定する。 */
+  const report = (target: AnyNode, at: AnyNode, form: InPlaceChange['form'] | null, directMin: number): void => {
+    const chain = memberChain(target, source);
+    const base = chain.base;
+    const range = { start: at.start - shift, end: at.end - shift };
+    const pick = (segments: readonly ChainSegment[]): InPlaceChange['form'] =>
+      form ?? (segments.length > 0 && segments.every((s) => s.computed) ? 'index' : 'property');
+    if (base.type === 'Identifier' && base.name !== stateRoot) {
+      const a = alias(base.name);
+      if (a === undefined) return;
+      out.push({ form: pick(chain.segments), alias: base.name, source: a.source, target: assignTarget(stateRoot, a.segments), ...range });
+      return;
+    }
+    if (!isRoot(base) || chain.segments.length < directMin || chain.segments[0].name?.startsWith('$')) return;
+    out.push({ form: pick(chain.segments.slice(1)), alias: null, source: source(at), target: assignTarget(stateRoot, chain.segments), ...range });
+  };
+  // root を直に通した代入・増減・delete・破壊的メソッドは、this なら正規表現の規則の担当
+  const direct = stateRoot === 'this' ? Infinity : 2;
+  const visitChanges = (node: AnyNode): void => {
+    if (node.type === 'AssignmentExpression' && unwrapChain(node.left as AnyNode).type === 'MemberExpression') {
+      report(node.left as AnyNode, node.left as AnyNode, null, direct);
+    } else if (node.type === 'UpdateExpression' && unwrapChain(node.argument).type === 'MemberExpression') {
+      report(node.argument, node.argument, null, direct);
+    } else if (node.type === 'UnaryExpression' && node.operator === 'delete' && unwrapChain(node.argument).type === 'MemberExpression') {
+      report(node.argument, node.argument, 'property', direct);
+    } else if (node.type === 'CallExpression') {
+      const callee = unwrapChain(node.callee as AnyNode);
+      if (callee.type === 'MemberExpression') {
+        const method = !callee.computed && callee.property.type === 'Identifier' ? callee.property.name : null;
+        const object = unwrapChain(callee.object as AnyNode);
+        if (method === 'assign' && object.type === 'Identifier' && object.name === 'Object' && node.arguments.length > 0) {
+          // Object.assign(<alias…> | <root>.<…>, …): the first argument changes in place (`Object.assign(this, …)` is per-key writes)
+          const first = node.arguments[0] as AnyNode;
+          if (first.type === 'Identifier' || unwrapChain(first).type === 'MemberExpression') report(first, node, 'property', 1);
+        } else if (method !== null && DESTRUCTIVE_ARRAY_METHODS.has(method)) {
+          report(callee.object as AnyNode, node, 'method', stateRoot === 'this' ? Infinity : 1);
+        }
+      }
+    }
+    forEachChild(node, visitChanges);
+  };
+  visitChanges(body);
+  return out;
+}
+
+// ============================================================
+// getter の中の location（docs/seam-apps.md、router-admin）
+// ============================================================
+
+const LOCATION_HOLDERS = new Set(['window', 'document', 'globalThis', 'self']);
+/** 遷移で変わる URL の部分（`protocol` / `host` / `origin` などは同じ文書の中では変わらない — WebSocket の URL を作る読みは報告しない）。 */
+const LOCATION_VARYING = new Set(['pathname', 'search', 'hash', 'href']);
+
+/**
+ * getter 本体の中の、state ではない URL の読み（`location.pathname` / `window.location.search` / `new URL(location)`）の
+ * 最初の位置と原文。依存として登録されないので、getter は最初に読んだ URL を持ち続ける。遷移で変わらない部分
+ * （`location.protocol` など）は見ない。本体が `location` を束縛していれば（引数・宣言）見ない。パースできなければ null。
+ */
+export function findLocationRead(body: string): { start: number; end: number; text: string } | null {
+  let program: AnyNode;
+  try {
+    program = parse(PREFIX + body + SUFFIX, { ecmaVersion: 'latest', sourceType: 'module' });
+  } catch {
+    return null;
+  }
+  const wrapper = unwrapWrapper(program);
+  if (wrapper === null) return null;
+  const names = new Set<string>();
+  const scan = (node: AnyNode): void => {
+    if (isFunctionNode(node)) for (const param of node.params) bindingNames(param, names);
+    if (node.type === 'VariableDeclarator') bindingNames(node.id, names);
+    forEachChild(node, scan);
+  };
+  scan(wrapper.body);
+  if (names.has('location')) return null;
+  /** `location` そのもの（`location` / `window.location`）か。 */
+  const isLocation = (node: AnyNode): boolean => {
+    const n = unwrapChain(node);
+    if (n.type === 'Identifier') return n.name === 'location';
+    return n.type === 'MemberExpression' && !n.computed && n.property.type === 'Identifier' && n.property.name === 'location'
+      && n.object.type === 'Identifier' && LOCATION_HOLDERS.has(n.object.name);
+  };
+  let found: { start: number; end: number; text: string } | null = null;
+  const at = (node: AnyNode): void => {
+    found = { start: node.start - PREFIX.length, end: node.end - PREFIX.length, text: (PREFIX + body).slice(node.start, node.end) };
+  };
+  const walk = (node: AnyNode): void => {
+    if (found !== null) return;
+    if (node.type === 'MemberExpression' && isLocation(node.object as AnyNode)) {
+      // `location.pathname`: a part a navigation changes (or a computed one); `location.protocol` does not change
+      const part = !node.computed && node.property.type === 'Identifier' ? node.property.name : null;
+      if (part === null || LOCATION_VARYING.has(part)) at(node);
+      return;
+    }
+    if (isLocation(node)) { at(node); return; }
+    if (node.type === 'MemberExpression') {
+      // a member's name is not a read of `location` (`this.location`)
+      walk(node.object as AnyNode);
+      if (node.computed) walk(node.property as AnyNode);
+      return;
+    }
+    if (node.type === 'Property') {
+      if (node.computed) walk(node.key as AnyNode);
+      walk(node.value as AnyNode);
+      return;
+    }
+    forEachChild(node, walk);
+  };
+  walk(wrapper.body);
+  return found;
+}

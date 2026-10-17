@@ -71,7 +71,7 @@ export const numeric = (name: string, op: (value: number, opt: number) => unknow
   factory: (options: string[]): FilterFn => {
     const opt = requiredNumberOption(options, 0, name);
     return (value: unknown): unknown => {
-      if (typeof value !== 'number') {valueMustBeNumber(name);}
+      if (typeof value !== 'number') {valueMustBeNumber(name, value);}
       return op(value, opt);
     };
   },
