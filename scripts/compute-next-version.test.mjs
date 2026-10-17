@@ -120,6 +120,12 @@ describe("distTagFor / internalRange", () => {
   it("internal ranges: caret for a stable version, the exact version for an rc", () => {
     assert.equal(internalRange("4.0.0"), "^4.0.0");
     assert.equal(internalRange("4.0.0-rc.1"), "4.0.0-rc.1");
+    assert.equal(internalRange("4.3.0", "peerDependencies"), "^4.3.0");
+  });
+
+  it("a runtime dependency is the exact version (the server renders with the engine of its own version)", () => {
+    assert.equal(internalRange("4.3.0", "dependencies"), "4.3.0");
+    assert.equal(internalRange("4.0.0-rc.1", "dependencies"), "4.0.0-rc.1");
   });
 });
 
@@ -367,15 +373,17 @@ describe("align-internal-dep-ranges.mjs", () => {
     }
   });
 
-  it("goes back to a caret range for the final release", () => {
-    const { tmp, server } = setup();
+  it("a stable release: the exact version for a runtime dependency, a caret for a peer", () => {
+    const { tmp, server, testing } = setup();
     try {
-      align("4.0.0-rc.3", server);
-      const r = align("4.0.0", server);
+      align("4.0.0-rc.3", server, testing);
+      const r = align("4.0.0", server, testing);
       assert.equal(r.status, 0, r.stderr);
-      assert.equal(read(server).dependencies["@wcstack/state"], "^4.0.0");
+      // the server renders with the state of its own version (docs/v4-direction-2026-10.md §5.1)
+      assert.equal(read(server).dependencies["@wcstack/state"], "4.0.0");
+      assert.deepEqual(read(testing).peerDependencies, { "@wcstack/state": "^4.0.0", "@wcstack/server": "^4.0.0" });
       // nothing to rewrite: no output, still exit 0
-      assert.equal(align("4.0.0", server).stdout, "");
+      assert.equal(align("4.0.0", server, testing).stdout, "");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
