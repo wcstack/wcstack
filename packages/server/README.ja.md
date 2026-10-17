@@ -278,7 +278,8 @@ createServer(async (req, res) => {
 
 ### wcs-fetch を使ったサーバー通信
 
-- `<wcs-fetch>` の auto-fetch（`manual` なし）はサーバーでも実行される
+- `<wcs-fetch>` の auto-fetch（`manual` なし）はサーバーでも実行される。マークアップに書いた `url` は待つ。束縛が state から設定する `url`（`data-wcs="url: articleUrl"`）は描画の中で要求を始めるが、**描画はそれを待たない**: ページはその値なしで描かれ、値はクライアントで読み込まれる。最初の描画に要るものは `$connectedCallback` で読み込む
+- 描画が終わると、サーバーはグローバルを戻す前にページの要素を文書から外し、各要素自身の後始末（`<wcs-fetch>` の要求の中断、`<wcs-timer>` の停止）を描画の中で走らせる。描画より長く生きた要求やタイマーは、以前はプロセスに例外を投げていた（4.3 から）
 - `manual` + `$connectedCallback` で明示的に制御する場合：
 
 ```html
