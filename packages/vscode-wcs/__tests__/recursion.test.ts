@@ -427,9 +427,9 @@ describe('`**` を解釈しない消費者', () => {
       WcsDiagnosticCode.RecursionUnsupported,
     ]);
     expect(diags[0].message).toContain('$recursion');
-    // getter キーは runtime が黙って無視する（落ちない）ので warning、
-    // API 引数は getPathInfo の不変条件で throw する（落ちる）ので error
-    expect(diags.map(d => d.severity)).toEqual(['warning', 'error']);
+    // どちらも error: 4.0 の runtime は宣言の無い `**` の getter キーを、アクセサを登録する時点で
+    // #1101 として throw する（3.x は黙って無視した）。API 引数もパスの不変条件で throw する
+    expect(diags.map(d => d.severity)).toEqual(['error', 'error']);
   });
 });
 

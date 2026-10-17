@@ -94,11 +94,16 @@ describe("manifest が 3.3 と同じ（4.0 の意図した差を除く）", () =
     // date filters take a style second (docs/seam-apps.md, router-admin — decision 2026-10-14)
     expect([...v4.filters].sort()).toEqual([...v3.filters.filter((n: string) => n !== "substr"), "currency"].sort());
     const { substr: _substr, ...v3Meta } = v3.filterMeta;
-    const { currency, date, time, datetime, ...v4Same } = v4.filterMeta;
-    const { date: date3, time: time3, datetime: datetime3, ...v3Same } = v3Meta;
+    const { currency, date, time, datetime, lt, le, gt, ge, ...v4Same } = v4.filterMeta;
+    const { date: date3, time: time3, datetime: datetime3, lt: lt3, le: le3, gt: gt3, ge: ge3, ...v3Same } = v3Meta;
     expect(v4Same).toEqual(v3Same);
     for (const [v4m, v3m] of [[date, date3], [time, time3], [datetime, datetime3]]) {
       expect({ ...v4m, description: undefined }).toEqual({ ...v3m, description: undefined, maxArgs: 2, argTypes: ["string", "string"] });
+    }
+    // 4.3: the comparisons accept numbers only, as their runtime always did (3.x's meta said strings too —
+    // docs/mistake-catalogue.md, "Found while cataloguing")
+    for (const [v4m, v3m] of [[lt, lt3], [le, le3], [gt, gt3], [ge, ge3]]) {
+      expect(v4m).toEqual({ ...v3m, acceptTypes: ["number"] });
     }
     expect(currency).toMatchObject({ minArgs: 1, maxArgs: 2, acceptTypes: ["number"], resultType: "string" });
     expect(v4.reservedLifecycle).toEqual(v3.reservedLifecycle);
