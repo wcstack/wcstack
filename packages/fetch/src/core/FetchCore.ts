@@ -29,6 +29,9 @@ export interface FetchRequestOptions {
   timeout?: number;
 }
 
+/** Methods that read only: superseding one loses nothing (RFC 9110 §9.2.1). */
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
 export class FetchCore extends EventTarget {
   static wcBindable: IWcBindable = {
     protocol: "wc-bindable",
@@ -74,6 +77,8 @@ export class FetchCore extends EventTarget {
   // relying on a coarse generation recheck, closing the "completion racing an
   // abort commits stale state" gap during body reads.
   private _lane = new OperationLane("fetch", "latest", { withSignal: true });
+  // The request in flight (method and url), to name a change a new request supersedes.
+  private _inFlight: { readonly method: string; readonly url: string } | null = null;
   // SSR (§3.8): no asynchronous probe to await, so readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
   // Phase 6 (§7.2): error taxonomy. The existing `error` property/event shape is
@@ -299,10 +304,26 @@ export class FetchCore extends EventTarget {
     // attempt whose `signal` is the lane-owned AbortController for this operation.
     // `attempt.signal` is undefined when `web.abort-controller` is missing
     // (degraded): the request runs without a native abort signal.
+    //
+    // Superseding is by design, and a superseded read loses nothing. A superseded
+    // change does: it is aborted on the client (the server may or may not have
+    // applied it) and its response is dropped, without a word. Say so, naming it
+    // (docs/mistake-catalogue.md, "fetch-superseded-mutation").
+    const previous = this._inFlight;
+    if (previous !== null && !SAFE_METHODS.has(previous.method)) {
+      console.warn(
+        `[@wcstack/fetch] [wcs/fetch-request-superseded] A ${previous.method} request to "${previous.url}" ` +
+        `was still in flight when another request started on the same element: it was aborted and its ` +
+        `response dropped (the server may have applied it). Give each change its own <wcs-fetch>, or wait ` +
+        `for loading to end before starting the next request.`,
+      );
+    }
     const started = this._lane.begin();
     // `latest` begin never returns null (exhaust is the only rejecting policy).
     const { ticket, attempt } = started!;
     const signal = attempt.signal;
+    const current = { method: String(options.method ?? "GET").toUpperCase(), url };
+    this._inFlight = current;
 
     this._commitStep(ticket, () => this._setLoading(true));
     this._commitStep(ticket, () => { this._commitErrorInfo(null); this._setError(null); });
@@ -458,6 +479,7 @@ export class FetchCore extends EventTarget {
       this._commitStep(ticket, () => this._setLoading(false));
       return null;
     } finally {
+      if (this._inFlight === current) this._inFlight = null;
       if (timeoutTimer !== null) {
         clearTimeout(timeoutTimer);
       }

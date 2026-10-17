@@ -160,35 +160,33 @@ export default { users: [{ name: "A" }] };
     expect(forDiag).toBeUndefined();
   });
 
-  it('else: が続く if: に非ブーリアンパスを指定すると warning を出す', () => {
+  it('else: / elseif: が続く if: にも型を求めない（4.0 は条件の値の真偽で枝を選ぶ）', () => {
+    // 3.x は else を `not` を足した条件として組み、boolean 以外で throw した。4.0 の連鎖
+    // （state の dom/view.ts の IfView.update）は真偽で最初に成り立つ枝を選ぶので、どの型でもよい。
     const html = `
 <wcs-state>
   <script type="module">
-export default { count: 0 };
+export default {
+  count: 0,
+  users: [{ name: "A" }],
+  /** @type {boolean|null} */
+  ok: null,
+};
   </script>
 </wcs-state>
 <template data-wcs="if: count"></template>
-<template data-wcs="else:"></template>`;
-    const diags = validateBindings(html, 'data-wcs');
-    const ifDiag = diags.find(d => d.message.includes('"if"'));
-    expect(ifDiag).toBeDefined();
-    expect(ifDiag!.severity).toBe('warning');
-    expect(ifDiag!.message).toContain('ブーリアン型');
-  });
-
-  it('else: が続く if: users.length は number なので warning', () => {
-    const html = `
-<wcs-state>
-  <script type="module">
-export default { users: [{ name: "A" }] };
-  </script>
-</wcs-state>
+<template data-wcs="else:"></template>
 <template data-wcs="if: users.length"></template>
-<template data-wcs="else:"></template>`;
+<template data-wcs="elseif: count|gt(1)"></template>
+<template data-wcs="else:"></template>
+<template data-wcs="if: ok"></template>
+<template data-wcs="else:"></template>
+<template data-wcs="if: count">
+  <template data-wcs="if: ok"></template>
+  <template data-wcs="else:"></template>
+</template>`;
     const diags = validateBindings(html, 'data-wcs');
-    const ifDiag = diags.find(d => d.message.includes('"if"'));
-    expect(ifDiag).toBeDefined();
-    expect(ifDiag!.message).toContain('number');
+    expect(diags.find(d => d.message.includes('"if"') || d.message.includes('"elseif"'))).toBeUndefined();
   });
 
   it('if: users.length|gt(0) はフィルタ後 boolean なので OK', () => {
@@ -217,27 +215,7 @@ export default { count: 0 };
     expect(ifDiag).toBeUndefined();
   });
 
-  it('JSDoc @type {boolean|null} は else: が続く if: で warning（null を含むため）', () => {
-    const html = `
-<wcs-state>
-  <script type="module">
-export default {
-  /** @type {boolean|null} */
-  ok: null,
-};
-  </script>
-</wcs-state>
-<template data-wcs="if: ok"></template>
-<template data-wcs="else:"></template>`;
-    const diags = validateBindings(html, 'data-wcs');
-    const ifDiag = diags.find(d => d.message.includes('"if"'));
-    expect(ifDiag).toBeDefined();
-    expect(ifDiag!.message).toContain('boolean|null');
-  });
-
-  it('単独の if: は Boolean() 強制変換なので非ブーリアンでも warning を出さない', () => {
-    // ランタイム（apply/applyChangeToIf.ts）は `Boolean(rawNewValue)` で受けるため、
-    // else チェーンの無い if は任意の型を取れる。
+  it('単独の if: は真偽で判定するので非ブーリアンでも warning を出さない', () => {
     const html = `
 <wcs-state>
   <script type="module">
@@ -246,38 +224,6 @@ export default { count: 0, items: null };
 </wcs-state>
 <template data-wcs="if: count"></template>
 <template data-wcs="if: items"></template>`;
-    const diags = validateBindings(html, 'data-wcs');
-    expect(diags.find(d => d.message.includes('"if"'))).toBeUndefined();
-  });
-
-  it('elseif: が続く if: は warning（否定フラグメントに not が付くため）', () => {
-    const html = `
-<wcs-state>
-  <script type="module">
-export default { count: 0 };
-  </script>
-</wcs-state>
-<template data-wcs="if: count"></template>
-<template data-wcs="elseif: count|gt(1)"></template>`;
-    const diags = validateBindings(html, 'data-wcs');
-    const ifDiag = diags.find(d => d.message.includes('"if"'));
-    expect(ifDiag).toBeDefined();
-    expect(ifDiag!.message).toContain('ブーリアン型');
-  });
-
-  it('入れ子の else: は外側の if: をチェーンしない（別スコープ）', () => {
-    // ランタイムは template.content ごとに再帰してチェーンを組み直す
-    // （structural/collectStructuralFragments.ts）。
-    const html = `
-<wcs-state>
-  <script type="module">
-export default { count: 0, ok: true };
-  </script>
-</wcs-state>
-<template data-wcs="if: count">
-  <template data-wcs="if: ok"></template>
-  <template data-wcs="else:"></template>
-</template>`;
     const diags = validateBindings(html, 'data-wcs');
     expect(diags.find(d => d.message.includes('"if"'))).toBeUndefined();
   });
@@ -751,9 +697,9 @@ export default {
       expect(validateBindings(html, 'data-wcs')).toEqual([]);
     });
 
-    it('右辺の誤りとメソッドの誤りは、それぞれ出す', () => {
+    it('右辺の誤りとメソッドの誤りは、それぞれ error で出す（ランタイムは #1201 / #1205 で初期化を失敗させる）', () => {
       const html = `${TOKEN_STATE}\n<div data-wcs="command.showModal: count"></div>`;
-      expect(validateBindings(html, 'data-wcs').map((d) => d.severity)).toEqual(['error', 'warning']);
+      expect(validateBindings(html, 'data-wcs').map((d) => d.severity)).toEqual(['error', 'error']);
     });
   });
 
@@ -1166,12 +1112,22 @@ export default { items: ["x"], label: "a" };
     expect(unknown.map(d => d.code)).toEqual([WcsDiagnosticCode.FilterUnknown]);
   });
 
-  it('引用符付きの引数は数値ではなく文字列として型検査すること（要件 B9）', () => {
-    // `gt(5)` は数値なので通り、`gt('5')` は文字列なので filter-arg-type
-    expect(validateBindings(page('textContent: label|gt(5)'), 'data-wcs')
-      .filter(d => d.code === WcsDiagnosticCode.FilterArgType)).toHaveLength(0);
-    expect(validateBindings(page("textContent: label|gt('5')"), 'data-wcs')
-      .filter(d => d.code === WcsDiagnosticCode.FilterArgType)).toHaveLength(1);
+  it('数値の引数はランタイムと同じく引用符を外して読み、読めなければ error にすること', () => {
+    // ランタイムの `numberOption` は引用符を外した文字列を `Number()` で読み、読めなければ #27 で
+    // 初期化を失敗させる。`gt('5')` は読めるので通る
+    const argType = (expr: string) => validateBindings(page(`textContent: ${expr}`), 'data-wcs')
+      .filter(d => d.code === WcsDiagnosticCode.FilterArgType).map(d => d.severity);
+    expect(argType('label|gt(5)')).toEqual([]);
+    expect(argType("label|gt('5')")).toEqual([]);
+    expect(argType('label|gt(1e3)')).toEqual([]);
+    expect(argType('label|gt(abc)')).toEqual(['error']);
+    expect(argType("label|gt('')")).toEqual(['error']);
+  });
+
+  it('文字列の引数に数値を渡すと warning のままにすること（ランタイムは文字列として通す）', () => {
+    const argType = (expr: string) => validateBindings(page(`textContent: ${expr}`), 'data-wcs')
+      .filter(d => d.code === WcsDiagnosticCode.FilterArgType).map(d => d.severity);
+    expect(argType('label|join(1)')).toEqual(['warning']);
   });
 });
 

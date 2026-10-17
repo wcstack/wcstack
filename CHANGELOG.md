@@ -8,6 +8,45 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md), "Found while cataloguing"), and the router reports what it skipped silently.
+
+### Changed
+
+- `@wcstack/router`: **a `<wcs-guard-handler>` guards the `<wcs-route>` it is inside**, wherever it sits there: before or after the nested routes, or inside an element. It used to guard the route parsed last. A guard placed after a route's nested routes guarded the last of them, and the route itself was left open.
+- `@wcstack/router`: **a guard the router cannot use is reported** with `console.error` (`[wcs/guard-handler-ignored]`): one outside any route, and one without a `<script type="module">`. Its route is not guarded, so the protected page shows. One outside after a route at the same level keeps guarding that route, as it did before; move it inside.
+- `@wcstack/fetch`: **a change aborted by a newer request is warned about** (`[wcs/fetch-request-superseded]`, naming its method and URL). One `<wcs-fetch>` runs one request at a time, and a new one aborts the one in flight by design. When that request was a change (any method but `GET`, `HEAD`, `OPTIONS`), it was aborted on the client, the server may have applied it, and its response was dropped without a word.
+- `@wcstack/fetch`: **`<wcs-infinite-scroll>` warns when its `target` is not a `<wcs-fetch>`** (`[wcs/infinite-scroll-target]`, once per value). It loaded no more pages without a word.
+- `@wcstack/storage`: **a `type` that is neither `local` nor `session` is warned about** (`[wcs/storage-type-invalid]`, once per value). `type="sesion"` falls back to `local`, as before, so data meant for the session is kept on disk.
+- `@wcstack/router`: **a basename derived from the page's URL is warned about** (`[wcs/base-href-missing]`, the code the lint reports). With no `<base href>` and no `basename`, a deep link or a reload at `/products/3` takes `/products/3` as the basename and shows the root route.
+
+- `@wcstack/lint`, `@wcstack/typescript` and the VS Code extension: **lint severities follow the 4.0 runtime.** These mistakes make the runtime fail initialization or a binding, so they are errors now, not warnings:
+  - `wcs/tag-member-unknown` (#38 / #1203 / #1204)
+  - `wcs/getter-cycle` (#701)
+  - `wcs/index-arity` (#901 / #902)
+  - `wcs/token-misconfigured`, for a right-hand side that is not `$command.…` (#1201)
+  - `wcs/token-undeclared`, for `command.` (#1302)
+  - `wcs/recursion-unsupported`, for an undeclared `**` getter key (#1101)
+  - `wcs/filter-arg-type`, for a numeric argument that does not read as a number (#27)
+
+  `wcs/input-nested-write` is an error too. The data is lost and the runtime says nothing; as a warning it passed the AI authoring skill's `--errors-only` gate. `wcs/wildcard-rank` and `wcs/binding-path-missing` stay warnings, because the validator cannot be certain of them.
+- Lint: **`wcs/tag-member-unknown` covers DOM properties** on `wcs-*` tags — `hidden:`, `title:`, `id:`, `textContent:` and the rest. The runtime refuses them like any undeclared member. Only the HTML sinks (`html:`, `innerHTML:`, `outerHTML:`, `srcdoc:`) are written without a declaration.
+- Lint: **`wcs/mount-path-invalid` refuses everything the runtime refuses**, including a `*` inside a segment (`mount="a*"`) and whitespace (`mount="a b"`).
+- Lint: **`wcs/script-order` is an info.** 4.0 hands a late DevTools the bindings that are already there, so only the timeline before it attached is missing.
+
+### Fixed
+
+- `@wcstack/router`: **a route's parent is the `<wcs-route>` it is inside.** It used to be the route parsed last, so the routes before a route could become its parent:
+  - a route inside an element after a sibling route got a path under that sibling (`/p/a/b` for `/p/b`);
+  - a route inside a `<wcs-layout>` after another route was nested under it;
+  - an absolute route there threw `wcs-route is absolute but has a parent route`, and the page did not start.
+- Lint:
+  - `wcs/binding-type-expectation` no longer asks for a boolean in an `if:` followed by `else:` / `elseif:`. That rule was from 3.x; 4.0 picks the first branch whose condition is truthy.
+  - `wcs/filter-arg-type` reads a quoted numeric argument as the runtime does: `gt('5')` passes.
+  - `wcs/declaration-alias-read` no longer suggests reading the new name, since a declaration cannot be read through `this`.
+  - The messages of `wcs/scan-declaration-invalid`, `wcs/tag-member-unknown` and `wcs/recursion-unsupported` now describe 4.0, not 3.x.
+- `@wcstack/state`: the manifest's `filterMeta` says `lt`, `le`, `gt` and `ge` accept numbers only, which is what their runtime has always done. It said strings too, so the lint did not report a string input.
+- Documentation: the vscode-wcs README says that `/core` prints only a message number and values, not the code. This has been so since 4.0.0-rc.3.
+
 ## [4.2.0] — 2026-10-17
 
 What the seam apps left open ([docs/seam-apps.md](./docs/seam-apps.md), "What was left open"). The design decisions are the author's (2026-10-14).

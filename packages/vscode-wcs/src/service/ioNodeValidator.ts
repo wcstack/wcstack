@@ -5,9 +5,11 @@
  * （generated/builtinTags.generated.ts — 各パッケージの `static wcBindable` が単一正本）
  * と突き合わせて検査する。
  *
- * 検出するのはすべて「例外なく静かに壊れる」誤り:
- * - TagMemberUnknown: 契約に存在しないプロパティ / command / eventToken キーへのバインド
- *   （wc-bindable は未知メンバーを黙って無視する）
+ * 検出するのは:
+ * - TagMemberUnknown（error）: 契約に存在しないプロパティ / command / eventToken キーへのバインド。
+ *   4.0 のランタイムは宣言の無いメンバーを拒む — プロパティは #38、`command.` は #1203、`eventToken.` は
+ *   #1204 で、root では初期化が、行では束縛が失敗する（3.x の「黙って無視」ではない）。拒まないのは
+ *   HTML の書き込み先（`HTML_SINK_PROPERTIES`）だけ
  * - TriggerSeededTruthy: `trigger` バインド先スロットの `true` シード
  *   （trigger はエッジ検出なし・`manual` バイパスのため、バインド時に即発火する）
  * - StorageSeedClobber（error）: 非 manual の `<wcs-storage>` `value` を `#init=element` なしで束ねた
@@ -29,13 +31,13 @@ import { getWcsManifest } from './wcsManifest.js';
 import { suggestion } from './suggestion.js';
 
 /**
- * 任意の要素で正当な DOM プロパティバインド。契約メンバーでなくても警告しない。
+ * wc-bindable の宣言を持つ要素でも、契約メンバーでなくてよいプロパティバインド。ランタイムは HTML の
+ * 書き込み先（state の `isHtmlSink`: `innerHTML` / `outerHTML` / `srcdoc`）と `html:` だけを宣言の外で
+ * 直接書き、ほかのプロパティ（`textContent` / `hidden` / `title` / `id` …）は宣言に無ければ #38 で拒む
+ * （state の dom/plan.ts の `specFor` と dom/wc.ts の `attachProperty`）。
  * （class./style./attr./on* プレフィックスは別途スキップされる。）
  */
-const DOM_COMMON_PROPERTIES = new Set([
-  'textContent', 'innerHTML', 'innerText', 'hidden', 'title', 'id',
-  'slot', 'dir', 'lang', 'role', 'tabIndex', 'className',
-]);
+const HTML_SINK_PROPERTIES = new Set(['html', 'innerHTML', 'outerHTML', 'srcdoc']);
 
 /** 構造ディレクティブ（タグ契約の検査対象外）。 */
 const STRUCTURAL_DIRECTIVES = new Set(['for', 'if', 'elseif', 'else']);
@@ -198,7 +200,7 @@ function validateBindingAgainstContract(
     if (!contract.commands.includes(name)) {
       diagnostics.push({
         code: WcsDiagnosticCode.TagMemberUnknown,
-        start, end, severity: 'warning', tag: tagName, member: name,
+        start, end, severity: 'error', tag: tagName, member: name,
         message: msgs.tagCommandUnknown(name, tagName, contract.commands.join(', ') || msgs.none())
           + suggestion(name, contract.commands, msgs),
       });
@@ -211,7 +213,7 @@ function validateBindingAgainstContract(
     if (!contract.properties.includes(name)) {
       diagnostics.push({
         code: WcsDiagnosticCode.TagMemberUnknown,
-        start, end, severity: 'warning', tag: tagName, member: name,
+        start, end, severity: 'error', tag: tagName, member: name,
         message: msgs.tagEventTokenKeyUnknown(name, tagName, contract.properties.join(', '))
           + suggestion(name, contract.properties, msgs),
       });
@@ -219,13 +221,13 @@ function validateBindingAgainstContract(
     return;
   }
 
-  // 通常のプロパティバインド: properties ∪ inputs ∪ 汎用 DOM プロパティ。
+  // 通常のプロパティバインド: properties ∪ inputs ∪ HTML の書き込み先。
   if (!contract.properties.includes(property) && !(property in contract.inputs)
-    && !DOM_COMMON_PROPERTIES.has(property)) {
+    && !HTML_SINK_PROPERTIES.has(property)) {
     const members = [...contract.properties, ...inputNames];
     diagnostics.push({
       code: WcsDiagnosticCode.TagMemberUnknown,
-      start, end, severity: 'warning', tag: tagName, member: property,
+      start, end, severity: 'error', tag: tagName, member: property,
       message: msgs.tagMemberUnknown(property, tagName) + suggestion(property, members, msgs),
     });
     return;

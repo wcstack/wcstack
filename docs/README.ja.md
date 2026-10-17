@@ -46,6 +46,7 @@
 | [view-transition-design.md](./view-transition-design.md) | [view-transition-design.ja.md](./view-transition-design.ja.md) |
 | [router-outlet-placement.md](./router-outlet-placement.md) | [router-outlet-placement.ja.md](./router-outlet-placement.ja.md) |
 | [seam-apps.md](./seam-apps.md) | [seam-apps.ja.md](./seam-apps.ja.md) |
+| [mistake-catalogue.md](./mistake-catalogue.md) | [mistake-catalogue.ja.md](./mistake-catalogue.ja.md) |
 | [architecture-hardening/README.md](./architecture-hardening/README.md) | [README.ja.md](./architecture-hardening/README.ja.md) |
 | [architecture-hardening/09-remediation-design.md](./architecture-hardening/09-remediation-design.md) | [09…ja.md](./architecture-hardening/09-remediation-design.ja.md) |
 | [architecture-hardening/10-defaulting-rollout-status.md](./architecture-hardening/10-defaulting-rollout-status.md) | [10…ja.md](./architecture-hardening/10-defaulting-rollout-status.ja.md) |
@@ -71,3 +72,4 @@
 - `go-to-market-2026-08.md`, `go-to-market-2026-08-council.md`, `go-to-market-2026-08-synthesis-review.md`
 - `project-strategy-2026-07.md`
 - `state-redesign-council.md`
+- `v4-direction-2026-10.md` — 4.x の指針: 継ぎ目で黙って壊れない（2026-10-17 採択）
