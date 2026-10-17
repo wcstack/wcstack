@@ -633,12 +633,18 @@
       "note": { "en": "The diagnostics add-on can warn when an `undefined` follows a value; writing `null` clears.", "ja": "diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。" }
     },
     {
-      "id": "shared-object-two-places",
+      "id": "object-twice-in-one-list",
+      "runtime": "designed-out", "harm": "stale",
+      "mistake": { "en": "Puts one object at two positions of one list (`items: [o, o]`) and writes below one of the rows.", "ja": "1 つのオブジェクトを一覧の 2 つの位置に置き（`items: [o, o]`）、片方の行の下へ書く。" },
+      "effect": { "en": "Since 4.3 the write reaches every row holding the object, their row getters and `$getAll` (#365). Before, it reached only the row it was made through.", "ja": "4.3 から、書き込みはそのオブジェクトを持つすべての行、その行 getter、`$getAll` に届く（#365）。以前は書き込んだ行にしか届かなかった。" }
+    },
+    {
+      "id": "shared-object-two-arrays",
       "runtime": "silent", "harm": "stale",
-      "mistake": { "en": "Puts one object at two positions of a list, or in two arrays no getter connects.", "ja": "1 つのオブジェクトを、一覧の 2 つの位置か、getter が結ばない 2 つの配列に置く。" },
-      "effect": { "en": "A write under one row does not reach the other row's bindings, row getters or `$getAll`.", "ja": "片方の行の下への書き込みが、もう片方の行の束縛・行 getter・`$getAll` に届かない。" },
+      "mistake": { "en": "Puts one object in two arrays no getter connects (`backup = items`, both rendered) and writes below a row of one.", "ja": "1 つのオブジェクトを、getter が結ばない 2 つの配列に置き（`backup = items` で両方を描く）、片方の行の下へ書く。" },
+      "effect": { "en": "The write does not reach the other array's rows, row getters or `$getAll` aggregates over them.", "ja": "書き込みは、もう片方の配列の行・行 getter・それらの `$getAll` の集計に届かない。" },
       "disposition": "design-out", "breaking": false,
-      "note": { "en": "The only known limitation of 4.0 (#365, #401), to be fixed in 4.x.", "ja": "4.0 の唯一の既知の制限（#365・#401）。4.x で直す。" }
+      "note": { "en": "Left as the known limitation of 4.x (#401, decided 2026-10-17): reaching it needs an index from objects to the rows of every list, which costs core bytes and work on every row. `$postUpdate` on the other list is the way around it.", "ja": "4.x の既知の制限として残す（#401、2026-10-17 決定）。届けるにはオブジェクトからすべての一覧の行を引く索引が要り、core のバイトと行ごとの手間がかかる。回避はもう片方の一覧の `$postUpdate`。" }
     },
     {
       "id": "link-aria-not-forwarded",

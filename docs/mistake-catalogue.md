@@ -70,7 +70,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 
 | What tells the author | Entries |
 |---|---|
-| The design (cannot be written, or harmless) | 1 |
+| The design (cannot be written, or harmless) | 2 |
 | The runtime | 44 |
 | The lint only — conditional silence | 22 |
 | The documents only — silence | 11 |
@@ -85,7 +85,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Binds text a user controls to `href:`, `src:`, `attr.href:` or `attr.on*:`. | A `javascript:` URL or a handler string is written as it is: XSS, unless a CSP stops it. | security | lint rule — 4.x; then runtime report — 4.x. 4.x: the lint can report any `attr.on*:`, and the diagnostics add-on can warn on a `javascript:` URL. 4.0 chose not to refuse them in the core (2026-10-02); refusing would be breaking. |
 | Writes user content into the page's markup from a server template or page code, without `data-wcs-ignore` on the element that holds it. | The page scan binds what is in it — `{{ apiKey }}`, `data-wcs`, a comment binding: client-side template injection. | security | nothing can see it — the documents. Injected markup cannot be told from authored markup. 4.3 adds the defence the documents teach: `data-wcs-ignore` (R10) on the element, and the walk reads nothing in it. |
 | A getter reads something that is not state: `Date.now()`, `new Date()`, the DOM, a module variable, `localStorage`. | It is not tracked: the getter keeps its first value. | stale | runtime report — 4.x; then lint rule — 4.x. The diagnostics add-on can warn about a getter whose first run tracked nothing (as signals' `UNTRACKED_COMPUTED` does); the lint's `wcs/getter-untracked-read` can cover more globals. |
-| Puts one object at two positions of a list, or in two arrays no getter connects. | A write under one row does not reach the other row's bindings, row getters or `$getAll`. | stale | design out — 4.x. The only known limitation of 4.0 (#365, #401), to be fixed in 4.x. |
+| Puts one object in two arrays no getter connects (`backup = items`, both rendered) and writes below a row of one. | The write does not reach the other array's rows, row getters or `$getAll` aggregates over them. | stale | design out — 4.x. Left as the known limitation of 4.x (#401, decided 2026-10-17): reaching it needs an index from objects to the rows of every list, which costs core bytes and work on every row. `$postUpdate` on the other list is the way around it. |
 | Writes a top-level key the state does not declare — a typo (`this.coutn = 1`). | 4.0 creates the key; nothing bound to `count` changes. | stale | lint rule — 4.x; then runtime report — 4.x. The lint can compare the script's writes with the declared keys; the diagnostics add-on can warn on a key created after load. |
 | Writes `undefined` to an element's input or property after a value: a reset, a getter that returns `undefined`. | 4.0 never writes `undefined` (B8): the element keeps the previous value — the previous user's avatar, old text. | stale | runtime report — 4.x. The diagnostics add-on can warn when an `undefined` follows a value; writing `null` clears. |
 | Emits a command token that no `command.` binding wires, or expects a spread to wire commands and events. | The emit reaches no subscriber and returns nothing; `$on` never fires. | broken | lint rule — 4.x. Both sides are in the markup and the script, which the lint already parses. |
@@ -173,6 +173,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Mistake | What goes wrong |
 |---|---|
 | Puts a `<wcs-route>` (or a `<wcs-guard-handler>`) inside an element or a `<wcs-layout>` after another route, or a guard after the nested routes of the route it guards. | Since 4.3 a route's parent, and the route a guard guards, is the `<wcs-route>` it is inside. Before, it was the route parsed last: the route got a path under the previous one, an absolute one threw (`is absolute but has a parent route`), and the guard guarded a child route while its own was open. |
+| Puts one object at two positions of one list (`items: [o, o]`) and writes below one of the rows. | Since 4.3 the write reaches every row holding the object, their row getters and `$getAll` (#365). Before, it reached only the row it was made through. |
 
 ### Lint codes not counted
 
