@@ -23,9 +23,48 @@ describe('Head', () => {
   });
 
   describe('constructor', () => {
-    it('display:noneが設定されること', () => {
+    it('display:noneは接続時に設定されること（コンストラクタでは属性を持たない）', () => {
       const head = document.createElement('wcs-head') as Head;
+      expect(head.hasAttribute('style')).toBe(false);
+      container.appendChild(head);
       expect(head.style.display).toBe('none');
+    });
+  });
+
+  describe('サーバー（SSR）', () => {
+    afterEach(() => {
+      document.documentElement.removeAttribute('data-wcs-server');
+    });
+
+    it('サーバーでは子をホストに残し、style 属性を書かない（直列化される出力に残る）', () => {
+      document.documentElement.setAttribute('data-wcs-server', '');
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<title>Article</title><meta name="description" content="d">';
+      container.appendChild(head);
+      expect(head.outerHTML).toBe('<wcs-head><title>Article</title><meta name="description" content="d"></wcs-head>');
+      // document.head への反映はする
+      expect(document.title).toBe('Article');
+    });
+
+    it('サーバーが残した子をクライアントの upgrade が引き取る', () => {
+      document.documentElement.setAttribute('data-wcs-server', '');
+      const server = document.createElement('wcs-head') as Head;
+      server.innerHTML = '<title>Article 3</title>';
+      container.appendChild(server);
+      const html = container.innerHTML;
+      server.remove();
+      _resetHeadStack();
+      document.documentElement.removeAttribute('data-wcs-server');
+      document.title = 'Server title';
+      // (ブラウザではクライアントの define はパースの後: 子の揃った要素が upgrade される。happy-dom の
+      // innerHTML は開始タグで接続するので、template で組んでから入れる)
+      const t = document.createElement('template');
+      t.innerHTML = html;
+      container.appendChild(t.content);
+      const head = container.querySelector('wcs-head') as Head;
+      expect(head.children.length).toBe(0);
+      expect(head.childElementArray.map((e) => e.outerHTML)).toEqual(['<title>Article 3</title>']);
+      expect(document.title).toBe('Article 3');
     });
   });
 

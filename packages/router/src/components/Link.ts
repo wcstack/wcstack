@@ -63,7 +63,10 @@ export class Link extends HTMLElement implements ILink {
   }
 
   private _initialize() {
-    this.style.display = "none";
+    // サーバーでは書かない: 直列化されると style 属性になり、厳しい style-src が拒む（docs/seam-apps.md、
+    // ssr-news）。サーバーのホストは子を anchor へ移して空なので、隠さなくても見えない。
+    // クライアントは upgrade でここを通り、CSSOM で書く
+    if (!inSsr()) this.style.display = "none";
     this._childNodeArray = Array.from(this.childNodes);
     this._path = this.getAttribute('to') || '';
     this._initialized = true;
@@ -96,6 +99,13 @@ export class Link extends HTMLElement implements ILink {
   }
 
   private _setAnchorHref(anchor: HTMLAnchorElement,path: string) {
+    if (path === '') {
+      // 行き先がまだ無い: `attr.to:` の束縛が書く前に接続した（router を state より先に読むページ、
+      // SSR の描き直す行 — docs/seam-apps.md、ssr-news）。href の無い <a> にして、`to` が来たら
+      // attributeChangedCallback が書く。以前は外部 URL として throw し、anchor を作らずに終わっていた
+      anchor.removeAttribute('href');
+      return;
+    }
     if (this._isInternalTarget(path)) {
       // basename 結合・正規化は pathname にのみ適用し、search / hash は再結合する。
       // pathname 空（to="?k=v"）は「現在 pathname + 指定クエリ」で組み立てる。
@@ -120,9 +130,16 @@ export class Link extends HTMLElement implements ILink {
       // anchor 化される。パースは同期完了するので 1 microtask 譲る。
       // renderToString は待機プロトコル要素（state / router）の await で
       // microtask を消化するため、serialize より先にこの初期化は完了する。
+      // microtask の中では投げない: 捕まえる者がいないので、Node ではプロセスが落ちる — router の無い
+      // ページ、URL として読めない `to` で（docs/seam-apps.md、ssr-news）。サーバーのコンソールに報告し、
+      // リンクは描かない（ホストが子を持ったまま出力される。クライアントでは従来どおり throw する）
       queueMicrotask(() => {
         if (this.isConnected) {
-          this._connect();
+          try {
+            this._connect();
+          } catch (error) {
+            console.error(error);
+          }
         }
       });
       return;
@@ -198,7 +215,8 @@ export class Link extends HTMLElement implements ILink {
 
     // Navigation API が無い場合は、クリックで router.navigate にフォールバック
     // （`?` 始まりのクエリのみリンクも対象 — 素の href だとフルページ遷移になる）
-    if (this._isInternalTarget(this._path) && !getNavigation()?.navigate) {
+    // （`to` がまだ空のリンクも: 後から来る行き先は内部のことが多い。外部ならクリック時に素通しする）
+    if ((this._path === '' || this._isInternalTarget(this._path)) && !getNavigation()?.navigate) {
       this._onClick = async (e: MouseEvent) => {
         // only left-click without modifiers
         if (e.defaultPrevented) return;
@@ -282,8 +300,9 @@ export class Link extends HTMLElement implements ILink {
 
     // match="prefix": 下のパスでも active（サイドナビの「商品」が /products/3 でも印を付ける —
     // docs/seam-apps.md、router-admin）。そのページそのものではないので aria-current は "true"
-    const exact = currentPath === linkPath;
-    const within = !exact && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
+    // 行き先の無いリンク（`to` が空）はどこでも active ではない（空のパスは "/" に正規化される）
+    const exact = this._path !== '' && currentPath === linkPath;
+    const within = !exact && this._path !== '' && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
     if (this._anchorElement) {
       if (exact || within) {
         this._anchorElement.classList.add('active');

@@ -83,3 +83,61 @@ test.describe("ssr-router — クライアント採用", () => {
     expect(errors).toEqual([]);
   });
 });
+
+test.describe("ssr-router — 行のリンク・ルートの head・レイアウト（docs/seam-apps.md、ssr-news）", () => {
+  test("for: の行の <wcs-link> はサーバーで <a> と中身ごと描かれ、style 属性は出力に無い", async ({ request }) => {
+    const html = await (await request.get(BASE)).text();
+    const outlet = html.slice(html.indexOf("<wcs-outlet"));
+    for (const [id, name] of [[1, "Keyboard"], [2, "Mouse"], [3, "Monitor"]]) {
+      expect(outlet).toMatch(new RegExp(`<a href="/ssr-router/products/${id}"[^>]*data-wcs-ssr-link[^>]*><span>${name}</span></a>`));
+    }
+    // ルートの head はホストに残る（クライアントが引き取る）
+    expect(outlet).toContain("<wcs-head><title>Products</title></wcs-head>");
+    // 厳しい style-src が拒む style 属性を書かない（<wcs-link> / <wcs-head>）
+    expect(html).not.toContain("style=");
+  });
+
+  test("クライアントはサーバーの行のリンクをそのまま引き取り、リンクとして動く", async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto(BASE);
+    await expect(page.locator("wcs-outlet[data-wcs-ssr]")).toHaveCount(0);
+    await expect(page.locator("#product-links a")).toHaveText(["Keyboard", "Mouse", "Monitor"]);
+    await expect(page.locator("a[data-wcs-ssr-link]")).toHaveCount(0);
+    // the very nodes the server rendered (recorded before the client modules ran)
+    const kept = await page.evaluate(() => {
+      const before = (window as any).__ssrNodes as Element[];
+      const now = Array.from(document.querySelectorAll("#product-links a, #product-links span"));
+      return { count: before.length, same: before.length === now.length && before.every((n, i) => n === now[i]) };
+    });
+    expect(kept).toEqual({ count: 6, same: true });
+    await page.getByRole("link", { name: "Monitor" }).click();
+    await expect(page.locator("#view")).toHaveText("detail");
+    await expect(page.locator("#product-id")).toHaveText("3");
+    expect(errors).toEqual([]);
+  });
+
+  test("採用したルートの <wcs-head> がタイトルを持ち、遷移のたびに変わる", async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto(`${BASE}products/2`);
+    await expect(page.locator("#product-id")).toHaveText("2");
+    await expect(page).toHaveTitle("Product 2");
+    await page.getByRole("link", { name: "list" }).click();
+    await expect(page).toHaveTitle("Products");
+    await page.getByRole("link", { name: "Monitor" }).click();
+    await expect(page).toHaveTitle("Product 3");
+    await page.getByRole("link", { name: "product 2" }).click();
+    await expect(page).toHaveTitle("Product 2");
+    expect(errors).toEqual([]);
+  });
+
+  test("レイアウトの中のルートへの深いリンクは、エラーなく描き直される（レイアウトは採用しない）", async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto(`${BASE}section/1`);
+    await expect(page.locator("#view")).toHaveText("section");
+    await expect(page.locator(".section aside")).toHaveText("side");
+    await expect(page.locator("wcs-outlet[data-wcs-ssr]")).toHaveCount(0);
+    await page.getByRole("link", { name: "list" }).click();
+    await expect(page.locator("#view")).toHaveText("list");
+    expect(errors).toEqual([]);
+  });
+});

@@ -234,7 +234,13 @@ async function handleSsrRouter(req, res, url) {
   <script type="module" src="/packages/state/dist/auto.min.js"></script>
   <script type="module" src="/packages/router/dist/auto.min.js"></script>
 </head>
-<body>${body}</body>
+<body>${body}
+<script>
+  // (runs while the page parses, before the deferred client modules: the nodes the server rendered,
+  // which the spec checks are the ones still in the page after the client adopted it)
+  window.__ssrNodes = Array.from(document.querySelectorAll("#product-links a, #product-links span"));
+</script>
+</body>
 </html>`;
   res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",

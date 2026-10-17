@@ -1163,4 +1163,88 @@ describe('Link', () => {
       }).not.toThrow();
     });
   });
+describe('行き先がまだ無いリンク（to が空）', () => {
+    it('to の無いまま接続しても throw せず、href の無い anchor を作り、to が来たら書く', () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const link = document.createElement('wcs-link') as Link;
+      link.textContent = 'About';
+      expect(() => document.body.appendChild(link)).not.toThrow();
+      const anchor = link.anchorElement!;
+      expect(anchor.hasAttribute('href')).toBe(false);
+      expect(anchor.textContent).toBe('About');
+      // 空のパスは "/" に正規化されるが、行き先の無いリンクは active にしない
+      expect(anchor.classList.contains('active')).toBe(false);
+      expect(anchor.hasAttribute('aria-current')).toBe(false);
+      link.setAttribute('to', '/');
+      expect(anchor.getAttribute('href')).toBe('/');
+      expect(anchor.classList.contains('active')).toBe(true);
+    });
+
+    it('Navigation API の無いブラウザでは、to が後から来ても router へのクリックを付ける', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(undefined as any);
+      const link = document.createElement('wcs-link') as Link;
+      link.textContent = 'About';
+      document.body.appendChild(link);
+      expect((link as any)._onClick).toBeDefined();
+      link.setAttribute('to', '/about');
+      const e = { defaultPrevented: false, button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, preventDefault: vi.fn() };
+      await (link as any)._onClick(e);
+      expect(e.preventDefault).toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith('/about');
+    });
+
+    it('サーバーでは描けないリンク（router の無いページ・URL として読めない to）を報告し、投げない（プロセスが落ちる）', async () => {
+      document.documentElement.setAttribute('data-wcs-server', '');
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const lonely = document.createElement('wcs-link') as Link;
+        lonely.setAttribute('to', '/a');
+        lonely.textContent = 'A';
+        document.body.appendChild(lonely);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(error).toHaveBeenCalledTimes(1);
+        expect(String(error.mock.calls[0][0])).toContain('is not connected to a router');
+        // 描かれず、子はホストに残る
+        expect(lonely.anchorElement).toBeNull();
+        expect(lonely.textContent).toBe('A');
+        const router = document.createElement('wcs-router') as Router;
+        document.body.appendChild(router);
+        const bad = document.createElement('wcs-link') as Link;
+        bad.setAttribute('to', 'not a url');
+        document.body.appendChild(bad);
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(error).toHaveBeenCalledTimes(2);
+        expect(String(error.mock.calls[1][0])).toContain("Invalid URL in 'to' attribute: not a url");
+      } finally {
+        error.mockRestore();
+        document.documentElement.removeAttribute('data-wcs-server');
+      }
+    });
+
+    it('サーバーでは style 属性を書かない（直列化される出力に残る）', async () => {
+      document.documentElement.setAttribute('data-wcs-server', '');
+      try {
+        const router = document.createElement('wcs-router') as Router;
+        document.body.appendChild(router);
+        const link = document.createElement('wcs-link') as Link;
+        link.setAttribute('to', '/a');
+        link.textContent = 'A';
+        document.body.appendChild(link);
+        await Promise.resolve();
+        expect(link.hasAttribute('style')).toBe(false);
+        const a = link.nextElementSibling!;
+        expect(a.getAttribute('href')).toBe('/a');
+        expect(a.hasAttribute('data-wcs-ssr-link')).toBe(true);
+        expect(a.textContent).toBe('A');
+      } finally {
+        document.documentElement.removeAttribute('data-wcs-server');
+      }
+    });
+  });
 });
+

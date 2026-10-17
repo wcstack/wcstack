@@ -454,7 +454,7 @@ console.log(router.typedParams.userId);  // 123 (number)
 
 | 属性 | 説明 |
 |------|------|
-| `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basename は pathname にのみ付与され、`?クエリ` / `#ハッシュ` はそのまま温存される）。`?` で始まる場合は**クエリのみリンク**：href は「現在 pathname + 指定クエリ」で組み立てられ、ロケーション変更に追従する。それ以外は外部URLとして扱われる |
+| `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basename は pathname にのみ付与され、`?クエリ` / `#ハッシュ` はそのまま温存される）。`?` で始まる場合は**クエリのみリンク**：href は「現在 pathname + 指定クエリ」で組み立てられ、ロケーション変更に追従する。それ以外は外部URLとして扱われる。`to` が空の間（`attr.to:` で束ね、まだ書かれていない — router を state より先に読むページ）は、`<a>` に `href` が無く、active にもならない。`to` が来たらそれを書く |
 | `match` | `exact`（既定）か `prefix`。`prefix` なら下のパスでも active になる（サイドナビの「商品」が `/products/3` でも）。そのときの `aria-current` は `"true"`（そのパス自身では `"page"`）。下のパスへのリンクにも印が付く: `/products/new` では `prefix` の「商品」と「新しい商品」の両方が active で、`aria-current` は `"true"` と `"page"`。印を 1 つに見せるなら `[aria-current="page"]` でスタイルを書く |
 
 **アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスと、同じ事実の ARIA 表現である `aria-current="page"` を受け取る（スクリーンリーダーがナビゲーション内の現在地を読み上げられる）。比較は **pathname のみ**で行われ、どちら側のクエリも影響しない（`to="/products"` は `/products?page=2` でも active のまま。クエリのみリンクはそのページに居る間つねに active）。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
@@ -547,8 +547,9 @@ bootstrapRouter({
 
 - サーバー出力が現在の URL・ルート定義と検証で一致しない場合、クライアントは静かに通常のクライアント描画へフォールバックする。
 - guard 付きルートはサーバーで描画されない — guard は認可点でありクライアントで実行される。outlet は空のまま配信される。
-- `<wcs-layout>` を使うルートは採用時にクライアント描画へフォールバックする。
-- `<wcs-link>` の anchor はサーバーで描画され（`active` / `aria-current` 付き）、クライアントが採用する。
+- `<wcs-layout>` を使うルートはサーバーで描画されるが、採用されない: クライアントがルートを描き直すので、サーバーのノードは置き換わる — クライアントが読み込まれる前に読者が入力したものは失われる。
+- `<wcs-link>` の anchor はサーバーで描画され（`active` / `aria-current` 付き）、クライアントが採用する — `for:` の行や `if:` の枝の中でも。
+- `<wcs-head>` はサーバーでは子を持ったままにする（出力は body だけで、サーバーの `<head>` は載らない）: クライアントがルートを採用するときに `document.head` へ反映する。クローラに見せる `<title>` と説明は、出力を包む HTML に書く。
 
 サーバー側の設定は `@wcstack/server` の README、設計は [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) を参照。
 

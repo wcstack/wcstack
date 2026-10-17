@@ -93,27 +93,42 @@ function attrs<T extends Element>(from: Element, to: T, ...content: Node[]): T {
 
 const lastOf = (b: Block): Node => (b.nodes === null ? b.first : b.nodes[b.nodes.length - 1]);
 
-/** Moves the blocks' nodes right after `after`, as one region. */
-function region(after: Node, blocks: Block[], branch: number | null): void {
-  const nodes: Node[] = [mark(branch === null ? "wcs-[" : `wcs-[:${branch}`)];
-  for (const b of blocks) {
-    if (branch === null) nodes.push(mark("wcs-|"));
-    nodes.push(...range(b.first, lastOf(b)));
-  }
-  nodes.push(mark("wcs-]"));
-  (after as ChildNode).after(...nodes);
-  for (const n of nodes) skip.add(n);
+/**
+ * The anchor `<wcs-link>` (@wcstack/router) renders right after itself, its children moved into it:
+ * the server's is marked `data-wcs-ssr-link`, and is the link's `anchorElement` once the router took
+ * it (dropping the mark). In a row it is the link's: the link's children are there.
+ */
+const beside = (n: Node): Node | null => {
+  const a = n.nextSibling as Element | null;
+  return n.nodeType === 1 && a?.localName === "a" && (a.hasAttribute("data-wcs-ssr-link") || (n as any).anchorElement === a) ? a : null;
+};
+
+/**
+ * Makes the blocks one region right after the anchors `from` … `to` (a view renders its blocks before
+ * its anchor; a branch before its own, the chain's later anchors after it). The anchors move, not the
+ * blocks: a custom element in a row is not disconnected, so what it rendered as it connected stays
+ * (`<wcs-link>` renders its anchor a microtask later, and would not again before the server serializes).
+ */
+function region(from: Node, to: Node, blocks: Block[], branch: number | null): void {
+  const open = mark(branch === null ? "wcs-[" : `wcs-[:${branch}`);
+  const close = mark("wcs-]");
+  if (blocks.length > 0) (blocks[0].head() as ChildNode).before(...range(from, to));
+  (to as ChildNode).after(open);
+  for (const b of blocks) if (branch === null) b.head().before(mark("wcs-|"));
+  const last = blocks.length > 0 ? lastOf(blocks[blocks.length - 1]) : open;
+  ((beside(last) ?? last) as ChildNode).after(close);
+  for (const n of range(open, close)) skip.add(n);
 }
 
 function visitView(v: ForView | IfView): void {
   if (v instanceof ForView) {
-    region(v.anchor, v.rowViews, null);
+    region(v.anchor, v.anchor, v.rowViews, null);
     for (const b of v.rowViews) visitBlock(b);
     return;
   }
   const cur = v.current;
   if (cur === null) return;
-  region(v.branches[v.branches.length - 1].anchor, [cur], v.index);
+  region(v.branches[v.index].anchor, v.branches[v.branches.length - 1].anchor, [cur], v.index);
   visitBlock(cur);
 }
 
@@ -744,7 +759,10 @@ const isIfAnchor = (n: Node | null): boolean =>
 const isBlank = (n: Node): boolean => n.nodeType === 3 && (n as Text).data.trim() === "";
 
 /** The next of the plan's nodes after `n`: a held region after an anchor is the anchor's view's. */
-const after = (n: Node): Node | null => (held.get(n)?.tail ?? n).nextSibling;
+const after = (n: Node): Node | null => {
+  const x = held.get(n)?.tail ?? n;
+  return (beside(x) ?? x).nextSibling;
+};
 
 /**
  * Whether a row's top-level nodes `own` have the plan's nodes where a binding lands — not so when a
@@ -762,7 +780,7 @@ function fits(plan: RowPlan, own: Node[]): boolean {
       a = a.childNodes[path[j]];
       if (b?.nodeName !== a.nodeName) return false;
       if (++j === path.length) break;
-      b = b.firstChild;
+      b = (beside(b) ?? b).firstChild;
       for (let k = path[j]; k > 0 && b !== null; k--) b = after(b);
     }
     plan.scratch[i] = b;
@@ -809,13 +827,14 @@ export function adopt(plan: RowPlan, anchor: Node, isFor: boolean): ChildNode[] 
   r.tail?.replaceWith(...range(anchor, key));
   r.tail = null;
   if (nodes === undefined) return null;
-  // the row's own top-level nodes (a region in it is a nested view's)
+  // the row's own top-level nodes (a region in it is a nested view's, a link's anchor the link's)
   let own: Node[] = [];
   for (let i = 0; i < nodes.length; i++) {
     const inner = held.get(nodes[i]);
     own.push(nodes[i]);
     // (its nodes follow it, up to its end mark)
     if (inner !== undefined) while (i < nodes.length && nodes[i] !== inner.tail) i++;
+    else if (beside(nodes[i]) === nodes[i + 1]) i++;
   }
   if (!fits(plan, own)) {
     // rendered anew, in its place (the rows around it stay; an empty one's place is before the next
