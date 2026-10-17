@@ -37,6 +37,13 @@ async function clientLoad(html: string, state: Record<string, any>, before?: (ro
   const h = document.createElement(`ssr-client-${seq++}`);
   const root = h.attachShadow({ mode: "open" });
   root.innerHTML = html;
+  // happy-dom selects the option before a marked one (`<option selected>` third → selectedIndex 1);
+  // a browser's parser selects the marked one. The client compares the selection with the marks to
+  // find what a reader changed before hydration, so give it what a browser parsed
+  for (const s of Array.from(root.querySelectorAll("select"))) {
+    const o = Array.from(s.options);
+    if (o.some((x) => x.hasAttribute("selected"))) o.forEach((x) => (x.selected = x.hasAttribute("selected")));
+  }
   before?.(root);
   const el = root.querySelector("wcs-state") as any;
   el.setInitialState(state);
@@ -232,6 +239,62 @@ describe("SSR のフォームの値（3.x と同じく HTML に書く）", () =>
     expect(q("textarea.memo").value).toBe("next");
     expect(Array.from(root.querySelectorAll("li input[type=checkbox]"), (i: any) => i.checked)).toEqual([true, true]);
     expect(q("input.r1").checked).toBe(true);
+  });
+
+  it("ハイドレーションの前に読者が入力した値を消さず、状態へ書き戻す（docs/seam-apps.md、ssr-news）", async () => {
+    const html = await serverRender(formPage, formState());
+    const inputs: string[] = [];
+    const { root, write } = await clientLoad(html, formState(), (r) => {
+      const q = (sel: string) => r.querySelector(sel) as any;
+      // the reader, while the client bundles load
+      q("input.name").value = "Typed";
+      q("input.news").checked = false;
+      q("select.idx").selectedIndex = 0;
+      q("select.color").selectedIndex = 0;
+      q("textarea.memo").value = "draft";
+      (r.querySelectorAll("li input.t")[1] as HTMLInputElement).value = "b, edited";
+      q("input.r1").checked = true;
+      r.addEventListener("input", (e) => inputs.push((e.target as Element).className), true);
+    });
+    const q = (sel: string) => root.querySelector(sel) as any;
+    expect(q("input.name").value).toBe("Typed");
+    expect(q("input.news").checked).toBe(false);
+    expect(q("select.idx").selectedIndex).toBe(0);
+    expect(q("select.color").value).toBe("red");
+    expect(q("textarea.memo").value).toBe("draft");
+    expect((root.querySelectorAll("li input.t")[1] as HTMLInputElement).value).toBe("b, edited");
+    expect(q("input.r1").checked).toBe(true);
+    // what the reader did not touch has the state's value
+    expect(q("input.agreed").checked).toBe(false);
+    expect((root.querySelectorAll("li input.t")[0] as HTMLInputElement).value).toBe("a");
+    // the state has what the reader typed, as if typed after hydration
+    let got: Record<string, unknown> = {};
+    await write((s) => {
+      got = { name: s.name, news: s.news, idx: s.idx, color: s.color, memo: s.memo, t1: s["todos.1.t"], size: s.size, agreed: s.agreed };
+    });
+    // (selectedIndex: is one-way: the state keeps its value, as when the reader changes it after hydration)
+    expect(got).toEqual({ name: "Typed", news: false, idx: 2, color: "red", memo: "draft", t1: "b, edited", size: "s", agreed: false });
+    // once per control the reader changed, the radio they chose included
+    expect(inputs.sort()).toEqual(["color", "idx", "memo", "name", "news", "r1", "t"]);
+  });
+
+  it("スナップショットを捨てたページでも、ページの部品に入力した値は残り、捨てられた行の部品は戻さない", async () => {
+    const html = (await serverRender(formPage, formState())).replace(`version="${VERSION}"`, `version="99.0.0"`);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { root, write } = await clientLoad(html, formState(), (r) => {
+        (r.querySelector("input.name") as HTMLInputElement).value = "Typed";
+        // a row the client renders anew: its server nodes go
+        (r.querySelectorAll("li input.t")[0] as HTMLInputElement).value = "lost";
+      });
+      expect((root.querySelector("input.name") as HTMLInputElement).value).toBe("Typed");
+      expect((root.querySelectorAll("li input.t")[0] as HTMLInputElement).value).toBe("a");
+      let got: unknown[] = [];
+      await write((s) => { got = [s.name, s["todos.0.t"]]; });
+      expect(got).toEqual(["Typed", "a"]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("サーバが変えていないフォーム要素の HTML は変えず、{{ を含む textarea の値はクライアントに任せる", async () => {
