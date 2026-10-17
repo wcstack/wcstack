@@ -98,4 +98,43 @@ describe('renderToString — 描画の後に終わる非同期の仕事', () => 
     expect(unhandled).toEqual([]);
     expect(ticks.length - after).toBe(0);
   });
+
+  it('切断で隣の要素を外す要素（<wcs-link> は自分の <a> を外す）があっても、後の要素まで後始末されること', async () => {
+    const left: string[] = [];
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ')); };
+    try {
+      await renderToString(`<p><beside-link>a</beside-link><late-leaver id="x"></late-leaver></p><ul><li><beside-link>b</beside-link></li></ul><div><beside-link>c</beside-link></div><late-leaver id="y"></late-leaver>`, {
+        bootstraps: [
+          () => {
+            customElements.define('beside-link', class extends HTMLElement {
+              private anchor: HTMLAnchorElement | null = null;
+              connectedCallback() {
+                // (a microtask later, as <wcs-link> on the server: the parser has put its children in)
+                queueMicrotask(() => {
+                  this.anchor = document.createElement('a');
+                  this.anchor.append(...this.childNodes);
+                  this.after(this.anchor);
+                });
+              }
+              disconnectedCallback() {
+                this.anchor?.remove();
+                this.anchor = null;
+              }
+            });
+            customElements.define('late-leaver', class extends HTMLElement {
+              disconnectedCallback() {
+                left.push(this.id);
+              }
+            });
+          },
+        ],
+      });
+    } finally {
+      console.error = original;
+    }
+    expect(errors).toEqual([]);
+    expect(left.sort()).toEqual(['x', 'y']);
+  });
 });

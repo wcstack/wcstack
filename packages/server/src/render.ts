@@ -472,8 +472,8 @@ async function renderInWindow(html: string, options: RenderOptions | undefined, 
       // 要求の中断・タイマーの停止）をさせ、その続きが happy-dom のグローバルのまま走り終えるよう、Node の
       // マクロタスクを 1 つ譲ってから戻す。happy-dom 自身の非同期の仕事は abort() で止める
       () => {
-        documentOrNull?.body?.replaceChildren();
-        documentOrNull?.head?.replaceChildren();
+        emptyOut(documentOrNull?.body);
+        emptyOut(documentOrNull?.head);
       },
       () => new Promise<void>((resolve) => setImmediate(resolve)),
       () => window?.happyDOM.abort(),
@@ -496,6 +496,23 @@ async function renderInWindow(html: string, options: RenderOptions | undefined, 
       }
     }
   }
+}
+
+/**
+ * 要素を文書順の後ろから 1 つずつ外す（子は親より先、後の兄弟は前の兄弟より先）。各要素の
+ * disconnectedCallback が走る。replaceChildren() でまとめて外さないのは、happy-dom が外した部分木を
+ * 子の写しで辿る途中で callback を呼ぶため: 切断で兄弟を外す要素（`<wcs-link>` は自分の `<a>` を外す）が
+ * あると、外された兄弟を辿って TypeError で止まり、その先の要素は切断されず後始末もされなかった
+ * （段落の中のリンク — ナビゲーションの典型の形）。1 つずつなら、外す要素の下には子が無い。
+ */
+function emptyOut(parent: Element | null | undefined): void {
+  if (!parent) {
+    return;
+  }
+  for (const el of Array.from(parent.querySelectorAll('*')).reverse()) {
+    el.remove();
+  }
+  parent.replaceChildren();
 }
 
 /**
