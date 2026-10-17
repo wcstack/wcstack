@@ -228,6 +228,28 @@ export async function waitForReady(root: ParentNode & Node, options?: WaitForRea
   await Promise.all(Array.from(readyCtors, (ctor) => ctor.getBindingsReady(root)));
 }
 
+/**
+ * 要素が接続の後に始めた仕事を待つ（readiness プロトコルの任意の段）。`static hasPendingPromise = true`
+ * を持つ要素の `pendingPromise`（実行中の仕事。無ければ null）— state が束縛で `url` を書いた
+ * `<wcs-fetch>` の要求など。その結果は状態へ届き、それが描いたもの（行と、その中の要素）も続けて待つ
+ * （waitForReady をもう一度）。以前は待たず、ページは値の無いまま（「Loading…」で）直列化された
+ * （docs/seam-apps.md、ssr-news。著者の決定は docs/v4-direction-2026-10.md §5.1）。仕事の失敗は待ち終わりと
+ * して扱う（要素が自分の error に出す）。
+ */
+async function settlePendingWork(root: ParentNode & Node, maxIterations = 10): Promise<void> {
+  for (let i = 0; i < maxIterations; i++) {
+    const pending: Promise<unknown>[] = [];
+    for (const el of root.querySelectorAll('*-*')) {
+      if (!(el.constructor as any).hasPendingPromise) continue;
+      const p = (el as any).pendingPromise as Promise<unknown> | null | undefined;
+      if (p) pending.push(Promise.resolve(p).catch(() => undefined));
+    }
+    if (pending.length === 0) return;
+    await Promise.all(pending);
+    await waitForReady(root, { maxIterations });
+  }
+}
+
 
 /**
  * HTML 文字列を SSR レンダリングして返す。
@@ -419,6 +441,21 @@ async function renderInWindow(html: string, options: RenderOptions | undefined, 
           `A custom element's connectedCallbackPromise or getBindingsReady never settled. ` +
           `Raise or disable the limit with the "timeoutMs" option.`,
         );
+      },
+    );
+    // 接続の後に要素が始めた仕事（束縛が url を書いた <wcs-fetch> の要求）も、残りの時間の範囲で待つ。
+    // 使い切ったら、それ抜きで描く（初期化と違って、ページはそれが無くても成り立つ）— 黙らずに言う
+    await withDeadline(
+      settlePendingWork(document as unknown as ParentNode & Node).then(() => true),
+      // （0 は無制限なので、使い切った予算は 0 ではなく 1 ms）
+      timeoutMs <= 0 ? 0 : Math.max(1, timeoutMs - (Date.now() - startedAt)),
+      () => {
+        console.warn(
+          `[@wcstack/server] [wcs/ssr-pending-timeout] A request an element started during the render (a <wcs-fetch> whose url a binding set) ` +
+          `did not finish within ${timeoutMs} ms: the page is rendered without its result, which loads on the client. ` +
+          `Raise or disable the limit with the "timeoutMs" option.`,
+        );
+        return false;
       },
     );
 
