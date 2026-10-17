@@ -135,9 +135,9 @@ export function validateRecursion(
 /**
  * severity の規約は既存 validator と同じ:
  * **error はランタイムが `raiseError` で落とす形**（ページ初期化ごと止まる）、
- * warning は「黙って効かない」形。`**` は PathInfo の不変条件なのでほぼ error だが、
- * 宣言の無い `**` **getter キー**だけは runtime が黙って無視する（レジストリに載らない）
- * ので warning に落とす。
+ * warning は「黙って効かない」形。`**` はパスの不変条件なのですべて error — 宣言の無い `**` の
+ * **getter キー**も、4.0 のランタイムは state がアクセサを登録するときに #1101 で throw する
+ * （engine.ts の `onPatternCreated`。3.x はレジストリに載せずに黙って無視したので warning だった）。
  */
 function push(
   out: WcsDiagnostic[],
@@ -258,12 +258,12 @@ function validateRecursiveGetters(
     const start = offset + span.start;
     const end = offset + span.end;
     if (spec === null) {
-      // 宣言が無い（または宣言そのものが壊れている・読めない）。ランタイムはこの getter を
-      // レジストリに載せないので、具体パスを読んでも**黙って** undefined になる ＝
-      // 落ちないので warning。壊れている場合は上で error を出し済み、読めない場合は断定しない。
+      // 宣言が無い（または宣言そのものが壊れている・読めない）。4.0 のランタイムはこの getter を
+      // 登録する時点で #1101 として throw し、state は初期化に失敗する ＝ error。壊れている場合は
+      // 上で error を出し済み、読めない場合は断定しない。
       if (undeclared) {
         push(out, WcsDiagnosticCode.RecursionUnsupported, start, end,
-          msgs.recursionUnsupported(span.name, 'undeclared'), 'warning');
+          msgs.recursionUnsupported(span.name, 'undeclared'), 'error');
       }
       continue;
     }

@@ -56,12 +56,15 @@ export const WcsDiagnosticCode = {
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
   // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
-  // ランタイムは同じ code で raiseError する（超過は以前は黙って無視されていた）。
+  // ランタイムは #901 / #902 で throw する（diagnostics の後付けがあれば同じ code の文面。超過は 3.x では
+  // 黙って無視されていた）。error。
   IndexArity: "wcs/index-arity",
   // ワイルドカードの階数がスコープの段数を超える（`matrix.*.*` を 1 段の for で読む、
   // `$2` を 1 段のループで読む。ランタイムの #1401）。既存の「for の外」検査の深さ方向の一般化。
   // 4.0 は各段の `*` が**その段で囲む for のリスト**の行であることも確かめる（#1403・F32 — `for: a`
-  // の行の中の `b.*.y` は投げる）。静的側も囲む for の一覧と段ごとに比べて同じ code で報告する。
+  // の行の中の `b.*.y` は投げる）。静的側も囲む for の一覧と段ごとに比べて同じ code で報告する
+  // （ランタイムの文面に code が付くのは diagnostics の後付けがあるとき）。for のスコープを組み直しきれない
+  // ので、ランタイムは初期化を失敗させるが warning のまま（vscode-wcs の README の重大度の例外）。
   WildcardRank: "wcs/wildcard-rank",
   // ループの添字の範囲（`$1`〜`$128`。上限は manifest の `syntax.indexParam.maxDepth`）の外。ランタイムと同じ code:
   // for の中のマークアップの `$129`（バインディングが失敗する）と、スクリプトの `this.$0` / `this.$129` / `this.$1000`
@@ -69,7 +72,8 @@ export const WcsDiagnosticCode = {
   // `wcs/binding-path-missing`（ただしけっして動かないので error）。for の外の `$129` はランタイムでは #1401 なので
   // 従来どおり「for の外のループ添字」（`wcs/template-syntax`）で報告する。
   IndexParamRange: "wcs/index-param-range",
-  // パス getter どうしの循環参照。ランタイムはアドレススタック上限まで再帰してから落ちる。
+  // パス getter どうしの循環参照。4.0 のランタイムは評価の時点で #701 として throw し、その getter を読む
+  // 束縛はすべて失敗する（3.x はアドレススタック上限まで再帰してから落ちた）。error。
   GetterCycle: "wcs/getter-cycle",
   // `$renderedCallback`（3.x の旧名 `$updatedCallback`）が、どのバインディングにも現れないパスを判定に使っている。
   // 同コールバックは **binding 駆動**（live binding が適用された path しか報告しない）
@@ -84,8 +88,9 @@ export const WcsDiagnosticCode = {
   GetterUntrackedRead: "wcs/getter-untracked-read",
   OnHandlerThis: "wcs/on-handler-this",
   // --- <wcs-state> script: $watch declaration ---
-  // ランタイム（watch/processWatchDeclaration.ts）が raiseError で落とす宣言。
-  // 越境 `@` / `$` 始まり / 空キー・空セグメント / 明らかな非関数ハンドラ。
+  // temporal の後付け（state の temporal/watch.ts）が読み込みで throw する宣言: 越境 `@` / `$` 始まり /
+  // 空キー / 明らかな非関数ハンドラ。空の段（`a..b`）はランタイムが調べず、その watch は黙って発火しない
+  // （lint だけが知らせる — docs/mistake-catalogue.md）。
   WatchDeclarationInvalid: "wcs/watch-declaration-invalid",
   // `$watch` のキーが状態定義に存在しない。バインディング側と違い黙って発火しない
   // だけなので気づけない。severity は binding-path-missing に揃える（warning）。
@@ -104,8 +109,8 @@ export const WcsDiagnosticCode = {
   //
   // `**` を解釈しない場所へ `**` が渡った(data-wcs / mustache / $watch キー / $listKeys
   // キー / $resolve / $postUpdate / $dependOn(旧名 $trackDependency) / 代入)、または `$recursion` 宣言が
-  // 無いのに `**` を使った。runtime は PathInfo の不変条件として raiseError するか
-  //(API 経由)、getter を黙って無視する(宣言なしの `**` getter)。
+  // 無いのに `**` を使った。4.0 の runtime はどれも #1101 で throw する — 宣言なしの `**` getter も、
+  // アクセサを登録する時点で（3.x は黙って無視した）。error。
   RecursionUnsupported: "wcs/recursion-unsupported",
   // 宣言済みアンカーと合致しない `**`(綴り違い・2 つ目の `**`)、または `**` の後ろが
   // 整形されていない(空セグメント・`**` 直後の素の `*`)。
@@ -143,7 +148,8 @@ export const WcsDiagnosticCode = {
   // ドットアクセスを含むチェーン代入は NestedAssign の担当(相補・二重報告なし)。
   ArrayIndexAssign: "wcs/array-index-assign",
   // --- built-in wcs-* tag contract (generated/builtinTags.generated.ts が正本) ---
-  // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。黙って無視される。
+  // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。4.0 のランタイムは #38 / #1203 /
+  // #1204 で拒み、root では初期化が、行では束縛が失敗する（3.x の「黙って無視」ではない）。error。
   TagMemberUnknown: "wcs/tag-member-unknown",
   // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
   // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
@@ -205,7 +211,8 @@ export const WcsDiagnosticCode = {
   // (error 昇格時は packages/lint/scripts/smoke-test.mjs の対ケース更新が必須)。
   AriaAttrUnknown: "wcs/aria-attr-unknown",
   // --- document-level load configuration ---
-  // @wcstack/state/auto より後に他 wcstack /auto が読まれている。
+  // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
+  // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。
   ScriptOrder: "wcs/script-order",
   // router/auto があるのに <base href> がない(SPA の basename 誤導出)。
   BaseHrefMissing: "wcs/base-href-missing",

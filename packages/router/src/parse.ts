@@ -30,19 +30,29 @@ function _duplicateCheck(routesByPath: Map<string, IRoute[]>, route: IRoute): vo
   }
 }
 
+/**
+ * `routeParentNode` は `node` を囲む最も内側の `<wcs-route>`（無ければ null）。再帰の引数で渡す —
+ * それまでに解析したルートの一覧の最後で決めると、前の兄弟（とその子孫）が親に化けた: `<div>` や
+ * `<wcs-layout>` の中のルートが前のルートの下のパスになるか、絶対パスなら「親がある」で落ち、
+ * 入れ子のルートの後に置いた `<wcs-guard-handler>` は外側でなく子のルートを守った
+ * （docs/mistake-catalogue.md）。
+ */
 async function _parseNode(
   routerNode: IRouter,
   node: Node,
-  routes: IRoute[],
+  routeParentNode: IRoute | null,
   routesByPath: Map<string, IRoute[]>
 ): Promise<DocumentFragment> {
-  const routeParentNode: IRoute | null = routes.length > 0 ? routes[routes.length - 1] : null;
   const fragment = document.createDocumentFragment();
+  // the last <wcs-route> among node's children so far: the route an outside <wcs-guard-handler> after it guarded
+  let previousRoute: IRoute | null = null;
   const childNodes = Array.from(node.childNodes);
   for(const childNode of childNodes) {
     if (childNode.nodeType === Node.ELEMENT_NODE) {
       let appendNode = childNode
       let element = childNode as HTMLElement;
+      // the route the children are parsed under: this one when it is a <wcs-route>, else the enclosing one
+      let childParent = routeParentNode;
       const tagName = element.tagName.toLowerCase();
       if (tagName === config.tagNames.route) {
         const childFragment = document.createDocumentFragment();
@@ -56,20 +66,30 @@ async function _parseNode(
         const route = cloneElement;
         route.initialize(routerNode, routeParentNode);
         _duplicateCheck(routesByPath, route);
-        routes.push(route);
         appendNode = route.placeHolder;
         element = route;
+        childParent = route;
+        previousRoute = route;
       } else if (tagName === config.tagNames.guardHandler) {
-        if (routes.length > 0) {
-          const route = routes[routes.length - 1];
-          const script = element.querySelector('script[type="module"]');
-          if (script) {
-            // ハンドラがあれば guard を有効にする（`guard` 属性が無くても）。読み込みより前に —
-            // 最初のナビゲーションの guard 相がハンドラを待てるように。属性が無いと待たずに通し、
-            // 最初の表示だけ守られなかった（docs/seam-apps.md、router-auth）
-            route.enableGuard();
-            loadGuardHandler(script as HTMLScriptElement, route);
+        // 囲むルートを守る（子のルートの前でも後でも）。ルートの外のものは、同じ階層の直前のルートを守る —
+        // 以前は「直前に解析したルート」に付いたので、その形で守ってきたページを、更新で黙って開けないため
+        // （README は外に置けば無視されると書いていた）。どちらでもない形と、守れない形は黙らない — その
+        // ルートは守られず、保護したページが見えるので console.error（docs/mistake-catalogue.md）
+        const route = routeParentNode ?? previousRoute;
+        const script = element.querySelector('script[type="module"]');
+        if (route === null) {
+          console.error(`[@wcstack/router] [wcs/guard-handler-ignored] A <${config.tagNames.guardHandler}> outside a <${config.tagNames.route}> guards nothing: put it inside the route it guards.`);
+        } else if (!script) {
+          console.error(`[@wcstack/router] [wcs/guard-handler-ignored] The <${config.tagNames.guardHandler}> of route "${route.absolutePath}" has no <script type="module">, so the route is not guarded.`);
+        } else {
+          if (routeParentNode === null) {
+            console.error(`[@wcstack/router] [wcs/guard-handler-ignored] A <${config.tagNames.guardHandler}> outside a <${config.tagNames.route}> guards the route before it, "${route.absolutePath}": put it inside that route.`);
           }
+          // ハンドラがあれば guard を有効にする（`guard` 属性が無くても）。読み込みより前に —
+          // 最初のナビゲーションの guard 相がハンドラを待てるように。属性が無いと待たずに通し、
+          // 最初の表示だけ守られなかった（docs/seam-apps.md、router-auth）
+          route.enableGuard();
+          loadGuardHandler(script as HTMLScriptElement, route);
         }
         continue;
       } else if (tagName === "template") {
@@ -100,7 +120,7 @@ async function _parseNode(
         appendNode = layoutOutlet;
         element = cloneElement;
       }
-      const children = await _parseNode(routerNode, element, routes, routesByPath);
+      const children = await _parseNode(routerNode, element, childParent, routesByPath);
       // 空文字の innerHTML 代入は Trusted Types 下でも通る実装が多いが、その細目に
       // 寄りかからずノード操作で書く（docs/csp.md §7）。意図としても「子を全消しして
       // 差し替える」のほうが直接的。
@@ -116,6 +136,6 @@ async function _parseNode(
 
 export async function parse(routerNode: IRouter): Promise<DocumentFragment> {
   const routesByPath: Map<string, IRoute[]> = new Map();
-  const fr = await _parseNode(routerNode, routerNode.template.content, [], routesByPath);
+  const fr = await _parseNode(routerNode, routerNode.template.content, null, routesByPath);
   return fr;
 }

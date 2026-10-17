@@ -394,7 +394,7 @@ export default {
 - **Bind user text with `textContent:`, `{{ }}` or a comment binding.** A value a binding writes is never read as a binding: `{{ }}` or `data-wcs` inside a value stays literal.
 - **`innerHTML:` / `html:` only with HTML you sanitized** — install a sanitizing Trusted Types policy (`docs/csp.md` §7).
 - **`href:`, `src:` and `attr.href:` accept `javascript:` URLs, and `attr.on*:` accepts handler strings.** state rejects neither: validate the value, and use a CSP whose `script-src` has no `'unsafe-inline'`.
-- **Never put user content into the page's markup** — a server template that is not wcstack SSR, or HTML your code inserts. The page walk reads every `{{ … }}`, `data-wcs` attribute and comment binding (`<!--@@: x-->`) in the markup as a binding (client-side template injection), and `$behavior.enableMustache: false` does not stop comment bindings. 4.0 has no attribute that excludes a subtree from the walk (there is no `data-wcs-ignore`). Deliver such content as state data — a `<script type="application/json">` read with `state="id"`, a `src=` module, `fetch` — and bind it with `textContent:`.
+- **Never put user content into the page's markup** — a server template that is not wcstack SSR, or HTML your code inserts. The page walk reads every `{{ … }}`, `data-wcs` attribute and comment binding (`<!--@@: x-->`) in the markup as a binding (client-side template injection), and `$behavior.enableMustache: false` does not stop comment bindings. Since 4.3, an element marked `data-wcs-ignore` is not walked, with everything in it — mark the element a server template fills with user content. Better still, deliver such content as state data — a `<script type="application/json">` read with `state="id"`, a `src=` module, `fetch` — and bind it with `textContent:`.
 
 ---
 
@@ -421,7 +421,7 @@ An old filter name or `substr` fails initialization with `[wcs/filter-unknown]` 
 
 ## Known limitations
 
-- **One object at two positions of one list, or in two arrays no getter relates** (`backup = items; items = items.filter(…)`, both rendered): a write below one row does not reach the other row's bindings and row getters. Do not write below such a row; replace the object in the top-level list instead, as the app above does (`toggle()` reassigns `todos` with a new object for the changed item, and the checkbox is `checked#ro:`). Arrays a getter relates are fine: with `get shown()` returning a filtered copy of `todos`, a write below a row of either list reaches the other's row, `todos.*` readers and the filter.
+- **One object in two arrays no getter relates** (`backup = items; items = items.filter(…)`, both rendered): a write below one row does not reach the other row's bindings and row getters. (At two positions of *one* list it does, since 4.3.) Do not write below such a row; replace the object in the top-level list instead, as the app above does (`toggle()` reassigns `todos` with a new object for the changed item, and the checkbox is `checked#ro:`). Arrays a getter relates are fine: with `get shown()` returning a filtered copy of `todos`, a write below a row of either list reaches the other's row, `todos.*` readers and the filter.
 
 Details: the migration guide, [§5](https://github.com/wcstack/wcstack/blob/main/docs/migration-v4.md#5-known-limitations).
 

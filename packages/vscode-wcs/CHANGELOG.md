@@ -2,6 +2,33 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+lint の重大度と文面を 4.0 のランタイムに合わせる（docs/mistake-catalogue.ja.md の「目録を作る中で見つけたもの」）。warning だった形のうち 8 つを error にするので minor。
+
+- **ランタイムが初期化か束縛を失敗させる形を error に**:
+  - `wcs/tag-member-unknown`（#38・#1203・#1204）
+  - `wcs/getter-cycle`（#701）
+  - `wcs/index-arity`（#901・#902）
+  - `wcs/token-misconfigured` の右辺（#1201）
+  - `wcs/token-undeclared` の `command.`（#1302）
+  - `wcs/recursion-unsupported` の、宣言の無い `**` の getter のキー（#1101）
+  - `wcs/filter-arg-type` の、数値として読めない数値の引数（#27）
+
+  どれも 3.x の実行時に合わせた warning だった。`wcs/wildcard-rank` と `wcs/binding-path-missing` は、検出が確実でないので warning のまま。
+- **`wcs/input-nested-write` を error に** — データを失い、実行時は何も言わない。warning のままでは、スキルの `--errors-only` の関門を通った。
+- **`wcs/tag-member-unknown` が DOM のプロパティも見る** — `hidden`・`title`・`id`・`textContent` などを `wcs-*` のタグに束ねると、4.0 は宣言に無いメンバーとして #38 で拒む。宣言なしで書けるのは、HTML の書き込み先（`html:`・`innerHTML:`・`outerHTML:`・`srcdoc:`）だけ。
+- **`wcs/filter-arg-type`** — 数値の引数は、ランタイムと同じく引用符を外して読む（`gt('5')` は通る）。文字列の引数に数値を渡す形（`join(1)`）は warning のまま。
+- **`wcs/mount-path-invalid` が、ランタイムと同じ形を拒む** — 段の中の `*`（`mount="a*"`）と空白（`mount="a b"`）も。
+- **`wcs/binding-type-expectation` が、`else:` 付きの `if:` に boolean を求めない** — 3.x の規則だった。4.0 は条件の値の真偽で枝を選ぶ。
+- **`wcs/script-order` を info に** — 4.0 は後から付いた DevTools に既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。文面も 4.0 に合わせた。
+- **文面**:
+  - `wcs/declaration-alias-read` は、効かない書き換え（正式名を読む）を勧めない。宣言は `this` から読めない。
+  - `wcs/scan-declaration-invalid` は、throw するのは diagnostics の後付けがあるときだけだと言う。
+  - `wcs/tag-member-unknown` と `wcs/recursion-unsupported` の「黙って無視される」は 3.x のことだったので直した。
+- **`data-wcs-ignore` の中は報告しない** — `@wcstack/state` 4.3 の印。その要素も中身も、ランタイムは束縛として読まない。
+- **`@wcstack/state` の manifest** — `lt`・`le`・`gt`・`ge` は数値だけを受ける。`filterMeta` は 3.x から「文字列も」と書いていたが、ランタイムは数値以外に #28 を投げる。次の state のビルドで lint に届く。
+
 ## 2.2.0 — 2026-10-17
 
 `@wcstack/state` 4.2.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.2.0・`@wcstack/typescript` 4.2.0 と同じ判定）。継ぎ目アプリ（docs/seam-apps.ja.md）で未着手だったもの。新しい規則と、error で報告する形が増えたので minor。
