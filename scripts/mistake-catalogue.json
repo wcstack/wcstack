@@ -577,10 +577,11 @@
     {
       "id": "user-content-in-markup",
       "runtime": "silent", "harm": "security",
-      "mistake": { "en": "Writes user content into the page's markup from a server template or page code.", "ja": "利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込む。" },
+      "mistake": { "en": "Writes user content into the page's markup from a server template or page code, without `data-wcs-ignore` on the element that holds it.", "ja": "利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込み、それを持つ要素に `data-wcs-ignore` を付けない。" },
       "effect": { "en": "The page scan binds what is in it — `{{ apiKey }}`, `data-wcs`, a comment binding: client-side template injection.", "ja": "ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。" },
-      "disposition": "design-out", "breaking": false,
-      "note": { "en": "R10: a `data-wcs-ignore` attribute, decided for 4.x, lets a page mark such content.", "ja": "R10: 4.x で足すと決めた `data-wcs-ignore` 属性で、ページがその中身に印を付けられる。" }
+      "evidence": [{ "file": "packages/state/src/dom/plan.ts", "text": "if (el.hasAttribute(bindAttr() + \"-ignore\")) continue;" }],
+      "disposition": "docs-only",
+      "note": { "en": "Injected markup cannot be told from authored markup. 4.3 adds the defence the documents teach: `data-wcs-ignore` (R10) on the element, and the walk reads nothing in it.", "ja": "注入されたマークアップは、作者が書いたものと見分けられない。4.3 で文書が教える守りが加わった: 要素に `data-wcs-ignore`（R10）を付ければ、走査はその中を読まない。" }
     },
     {
       "id": "io-auto-after-state",
