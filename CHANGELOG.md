@@ -8,6 +8,8 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.2.0] — 2026-10-17
+
 What the seam apps left open ([docs/seam-apps.md](./docs/seam-apps.md), "What was left open"). The design decisions are the author's (2026-10-14).
 
 ### Added
