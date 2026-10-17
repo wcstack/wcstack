@@ -66,6 +66,18 @@ describe('LayoutOutlet', () => {
     });
   });
 
+  describe('レイアウトの無い outlet（サーバーが描いたもの）', () => {
+    it('接続しても throw せず、何も描かない（router が内容を描き直して置き換える）', async () => {
+      const outlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;
+      outlet.innerHTML = '<aside>server</aside>';
+      // (接続時の呼び出しの promise は捨てられるので、同じ呼び出しを直に待つ)
+      await expect(outlet.connectedCallback()).resolves.toBeUndefined();
+      document.body.appendChild(outlet);
+      expect(outlet.shadowRoot).toBeNull();
+      expect(outlet.innerHTML).toBe('<aside>server</aside>');
+    });
+  });
+
   describe('connectedCallback と _initialize', () => {
     it('shadowRootが有効な場合にshadowRootを作成すること', async () => {
       const layoutOutlet = document.createElement('wcs-layout-outlet') as LayoutOutlet;

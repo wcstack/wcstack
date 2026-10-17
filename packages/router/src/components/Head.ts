@@ -2,6 +2,7 @@ import { raiseError } from "../raiseError";
 import { config } from "../config";
 import { warnUnboundMarkup } from "../unboundMarkupWarning";
 import { bindSubtree } from "../protocol/binder";
+import { inSsr } from "../inSsr";
 
 /**
  * グローバルHeadスタック
@@ -33,7 +34,6 @@ export class Head extends HTMLElement {
 
   constructor() {
     super();
-    this.style.display = 'none';
   }
 
   private _initialize(): void {
@@ -42,6 +42,13 @@ export class Head extends HTMLElement {
     }
     this._initialized = true;
     this._childElementArray = Array.from(this.children);
+    // サーバーでは子を残す: レンダリングの document.head は直列化されない（@wcstack/server は body だけを
+    // 返す）ので、子を移すと出力から消え、クライアントが採用したルートの <wcs-head> は空のまま —
+    // そのセッションの間 <title> が二度と変わらなかった（docs/seam-apps.md、ssr-news）。残した子は
+    // クライアントの upgrade がここで引き取る。<title> / <meta> は既定で表示されない。
+    // 隠すのもクライアントだけ（サーバーで書くと style 属性になり、厳しい style-src が拒む）
+    if (inSsr()) return;
+    this.style.display = 'none';
     for (const child of this._childElementArray) {
       this.removeChild(child);
     }

@@ -3,7 +3,10 @@
      Phase 4). Structural templates INSIDE route content are deliberate — they
      exercise the parse() template-preservation fix and the orchestrated
      snapshot pass in a real browser. The #q output inside the "/" route proves
-     adopted bindings stay live across a same-match query navigation. -->
+     adopted bindings stay live across a same-match query navigation. The
+     <wcs-link> rows, the <wcs-head> of each route and the layout route are
+     docs/seam-apps.md's ssr-news findings: links in rows rendered empty on the
+     server, an adopted route's head never applied, a deep link into a layout threw. -->
 <wcs-state enable-ssr>
   <script type="module">
     export default {
@@ -17,6 +20,12 @@
       query: {},
       routeName: "",
       navigateUrl: null,
+      get "products.*.href"() {
+        return "/products/" + this["products.*.id"];
+      },
+      get detailTitle() {
+        return "Product " + this.productId;
+      },
       get productId() {
         return this.routeParams.productId ?? "";
       },
@@ -37,17 +46,34 @@
   data-wcs="path: path; typedParams: routeParams; searchParams: query; routeName: routeName; navigateUrl: navigateUrl">
   <template>
     <wcs-route path="/" name="list">
+      <wcs-head><title>Products</title></wcs-head>
       <h1 id="view">list</h1>
       <ul id="product-list">
         <template data-wcs="for: products">
           <li data-wcs="textContent: .name"></li>
         </template>
       </ul>
+      <ul id="product-links">
+        <template data-wcs="for: products">
+          <li><wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .name"></span></wcs-link></li>
+        </template>
+      </ul>
       <p>q: <output id="q" data-wcs="textContent: q"></output></p>
     </wcs-route>
     <wcs-route path="/products/:productId(int)" name="detail">
+      <wcs-head><title data-wcs="textContent: detailTitle"></title></wcs-head>
       <h1 id="view">detail</h1>
       <p>productId: <output id="product-id" data-wcs="textContent: productId"></output></p>
     </wcs-route>
+    <wcs-route path="/section">
+      <wcs-layout layout="ssr-section-layout">
+        <wcs-route path=":sectionId(int)" name="section">
+          <h1 id="view">section</h1>
+        </wcs-route>
+      </wcs-layout>
+    </wcs-route>
   </template>
 </wcs-router>
+<wcs-outlet></wcs-outlet>
+
+<template id="ssr-section-layout"><div class="section"><slot></slot><aside>side</aside></div></template>

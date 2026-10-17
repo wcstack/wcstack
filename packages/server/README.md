@@ -344,7 +344,7 @@ const body = await renderToString(template, {
 - The initial route of the request URL is rendered on the server — typed params, nested routes, and structural templates (`for:` / `if:`) inside route content included.
 - The client-side router **adopts** the server-rendered DOM instead of re-rendering it; state bindings hydrated on those nodes stay live. If anything about the server output doesn't verify (URL mismatch, edited templates), the client silently falls back to normal client-side rendering.
 - `<wcs-ssr>` snapshots are built as a server-orchestrated final pass (the ssr-snapshot protocol), so hydration data always includes route content regardless of load order.
-- `<wcs-link>` anchors are server-rendered (with `active` / `aria-current`) and adopted on the client.
+- `<wcs-link>` anchors are server-rendered (with `active` / `aria-current`) and adopted on the client — in `for:` rows and `if:` branches too.
 - Sub-path deployments: pass `baseHref` and serve a matching `<base href>` to the client.
 
 ## What SSR Cannot Do
@@ -357,7 +357,9 @@ const body = await renderToString(template, {
 - Apply `outerHTML:` / `outerText:` (they are applied on the client: the server output contains the element as written, so the value is not in the HTML that search engines or no-JS views see)
 - Render the children that a Light DOM custom element bound at page level renders from a value (the client renders them; children you wrote stay in the output)
 - Run `$watch` handlers or `$stream` sources (on the server, streams keep their `initial` value; both start on the client)
-- Server-render guarded routes (by design — the guard is an authorization point that runs client-side; the outlet is left empty), `<wcs-layout>` routes (adopted pages fall back to client-side rendering), or `<wcs-head>` contents (reflection targets `document.head`, which a body-only render cannot carry)
+- Server-render guarded routes (by design — the guard is an authorization point that runs client-side; the outlet is left empty)
+- Adopt `<wcs-layout>` routes: the server renders them, and the client renders them again — the server's nodes are replaced, so what a reader typed into them before the client loaded is lost
+- Put `<wcs-head>` contents in the output's `<head>` (the output is the body only): they stay in the route's markup, where the client applies them to `document.head` when it adopts the route. Write the `<title>` and description a crawler should see in the HTML you wrap the output in
 
 ## HTML Splitting Pattern
 

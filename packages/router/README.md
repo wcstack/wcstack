@@ -454,7 +454,7 @@ Link. Converted to an `<a>`, and the route path in the `to` attribute is convert
 
 | Attribute | Description |
 |------|------|
-| `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended to the pathname; a `?query` / `#hash` suffix is kept as-is). A value starting with `?` is a **query-only** link: the href is assembled as "current pathname + that query" and tracks location changes. Other values are treated as external URLs. |
+| `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended to the pathname; a `?query` / `#hash` suffix is kept as-is). A value starting with `?` is a **query-only** link: the href is assembled as "current pathname + that query" and tracks location changes. Other values are treated as external URLs. While `to` is empty — bound with `attr.to:` and not written yet, as when the router loads before state — the `<a>` has no `href` and is never active; it takes the `to` when it arrives. |
 | `match` | `exact` (default) or `prefix`. With `prefix` the link is also active on the paths under it — a side navigation's "Products" on `/products/3` — with `aria-current="true"` there (`"page"` on the path itself). A link to a path under it is marked as well: on `/products/new`, a `prefix` "Products" and a "New product" are both active, with `aria-current="true"` and `"page"`; to show one mark, style `[aria-current="page"]`. |
 
 **Active state**: The generated `<a>` receives the `active` class when its path matches the current location, and `aria-current="page"` alongside it — the same fact, expressed in ARIA, so screen readers announce the current page in navigation. The comparison uses the **pathname only** — queries on either side never affect it (so `to="/products"` stays active on `/products?page=2`, and a query-only link is active whenever you are on its page). Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
@@ -547,8 +547,9 @@ The router runs its guards first and hands only the hide/show pair to the transi
 
 - If the server output does not verify against the current URL and route definitions, the client silently falls back to normal client-side rendering.
 - Guarded routes are never rendered on the server — a guard is an authorization point and runs client-side; the outlet is served empty.
-- Routes using `<wcs-layout>` fall back to client-side rendering on adoption.
-- `<wcs-link>` renders its anchor on the server (with `active` / `aria-current`) and adopts it on the client.
+- Routes using `<wcs-layout>` are rendered on the server but not adopted: the client renders the route again, so the server's nodes are replaced — what a reader typed into them before the client loaded is lost.
+- `<wcs-link>` renders its anchor on the server (with `active` / `aria-current`) and adopts it on the client — in a `for:` row or an `if:` branch too.
+- `<wcs-head>` keeps its children on the server (the output is the body only, so the server's `<head>` is not in it): the client applies them to `document.head` when it adopts the route. Write the `<title>` and description a crawler should see in the HTML you wrap the output in.
 
 See the `@wcstack/server` README for the server-side setup and [docs/ssr-router-design.md](https://github.com/wcstack/wcstack/blob/main/docs/ssr-router-design.md) (ja) for the design.
 

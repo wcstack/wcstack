@@ -132,6 +132,11 @@ export class LayoutOutlet extends HTMLElement implements ILayoutOutlet {
   }
 
   async connectedCallback() {
+    // レイアウトの無い outlet: サーバーが描いた <wcs-layout-outlet> がクライアントで upgrade された（router は
+    // レイアウトを採用せず、内容を描き直して置き換える — README「Server-side rendering」）。何もしない。
+    // 以前は `layout` の getter が throw し、深いリンクのたびに捕まらないエラーが出ていた（docs/seam-apps.md、
+    // ssr-news）。outlet は router が作るもので、ページには書かない
+    if (this._layout === null) return;
     if (!this._initialized) {
       this._disconnectedDuringInit = false;
       await this._initialize();
