@@ -2,9 +2,9 @@
  * namedStateValidator.ts — 名前付き State（`<wcs-state name>` / `path@name`）は v2 で撤去。
  *
  * 名前の次元そのものが消え、`<wcs-state mount="path">` と接頭辞付きパスに置き換わった
- * （docs/state-mount-design.md D1 / D16、impl-plan P4-1）。ランタイムは name 属性で
- * fail-fast し、`@` を含むパスは parse error にする — この lint はそれと同じ文言を
- * 編集時に error で出す。
+ * （docs/state-mount-design.md D1 / D16、impl-plan P4-1）。4.0 のランタイムは `@` を含むパスを
+ * parse error（#32）にするが、name 属性は読まない（単独では害が無く、名前付き State が 2 つある v1 の
+ * ページは #47 で失敗する）。この lint はどちらも編集時に error で出す — v1 のページを 4.0 へ移す案内として。
  *
  * 対象:
  *   - `<wcs-state name="x">` の name 属性（bind-component 込み — v1 の Light DOM

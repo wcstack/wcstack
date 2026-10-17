@@ -1,0 +1,675 @@
+{
+  "$comment": "The canonical data of docs/mistake-catalogue.md. Edit here, then run node scripts/sync-mistake-catalogue.mjs. Runtime outcomes are for the full entries (/auto, .), which the documents tell authors to load; a /core difference is in the effect.",
+  "entries": [
+    {
+      "id": "nested-assign",
+      "lint": [{ "code": "wcs/nested-assign", "severity": "error" }],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Writes a property of an object read through `this`: `this.user.name = x`, `+=`, `++`, also through an alias or a `$on` handler's state argument.", "ja": "`this` で読んだオブジェクトのプロパティに書く: `this.user.name = x`・`+=`・`++`、別名や `$on` のハンドラの state 引数を通したものも。" },
+      "effect": { "en": "The write lands on the plain object, not the state: bindings, getters and `$watch` on `user.name` keep the old value.", "ja": "書き込みは素のオブジェクトに入り、state を通らない。`user.name` の束縛・getter・`$watch` は古い値のまま。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The diagnostics add-on could re-read the bindings after the next update and report a value that changed without a write — late, but 0 core bytes. Proxies all the way down would go against the path rule.", "ja": "diagnostics の後付けが、次の更新の後に束縛を読み直し、書き込みなしに変わった値を知らせられる（遅れるが core は 0 B）。深い Proxy はパスの規則に反する。" }
+    },
+    {
+      "id": "array-mutation",
+      "lint": [{ "code": "wcs/array-mutation", "severity": "error" }],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Changes an array in place: `this.items.push(x)` and the other eight mutating methods.", "ja": "配列をその場で変える: `this.items.push(x)` などの破壊的メソッド 9 つ。" },
+      "effect": { "en": "No row is added or removed, not even after `this.items = this.items` or `$postUpdate(\"items\")`: rows follow only a new array.", "ja": "行は増えも減りもしない — `this.items = this.items` や `$postUpdate(\"items\")` の後でも。行が合うのは新しい配列だけ。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The diagnostics add-on can compare a list's rows with its array after an update (0 core bytes).", "ja": "diagnostics の後付けが、更新の後に一覧の行と配列を突き合わせられる（core は 0 B）。" }
+    },
+    {
+      "id": "array-index-assign",
+      "lint": [{ "code": "wcs/array-index-assign", "severity": "error" }],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Assigns an array element by index: `this.items[0] = x`.", "ja": "添字で配列の要素に代入する: `this.items[0] = x`。" },
+      "effect": { "en": "The row keeps showing the old element until a new array is assigned.", "ja": "新しい配列を代入するまで、行は古い要素を表示し続ける。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The same comparison of rows with the array, in the diagnostics add-on.", "ja": "diagnostics の後付けで、同じく行と配列を突き合わせる。" }
+    },
+    {
+      "id": "getter-untracked-object-read",
+      "lint": [{ "code": "wcs/getter-untracked-read", "severity": "warning" }],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "A getter reads `this.form.name` while the page writes `form.name`.", "ja": "getter が `this.form.name` を読み、ページは `form.name` へ書く。" },
+      "effect": { "en": "Only `form` is tracked, and a write does not invalidate its ancestors: the getter keeps its old value.", "ja": "追跡されるのは `form` だけで、書き込みは祖先を無効にしない。getter は古い値のまま。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The diagnostics add-on can see a write under a path whose ancestor feeds a getter the write did not reach (a read for identity only would be a false alarm).", "ja": "diagnostics の後付けが、祖先が getter に使われているのに書き込みが届かなかったパスを見つけられる（同一性だけを見る読みは誤報になる）。" }
+    },
+    {
+      "id": "getter-reads-location",
+      "lint": [{ "code": "wcs/getter-untracked-read", "severity": "warning" }],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "A getter reads the URL from `location` (`pathname`, `search`, `hash`, `href`).", "ja": "getter が `location` から URL を読む（`pathname`・`search`・`hash`・`href`）。" },
+      "effect": { "en": "`location` is not state: the getter keeps the URL it first read.", "ja": "`location` は state ではないので、getter は最初に読んだ URL のまま。" },
+      "disposition": "static-only"
+    },
+    {
+      "id": "rendered-callback-unbound-path",
+      "lint": [{ "code": "wcs/updated-callback-unbound", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "`$renderedCallback(paths)` tests a declared path that no binding names (`paths.includes(\"feed\")`).", "ja": "`$renderedCallback(paths)` が、どの束縛も名指さない宣言済みのパスを調べる（`paths.includes(\"feed\")`）。" },
+      "effect": { "en": "`paths` lists only the bindings that were applied, so the branch never runs.", "ja": "`paths` には当てた束縛しか載らないので、その分岐は走らない。" },
+      "disposition": "static-only",
+      "note": { "en": "A runtime heuristic (a `paths` whose `includes` warns) would catch the test, not the intent.", "ja": "実行時の推測（`includes` が警告する `paths`）は、調べ方は捕まえても意図は捕まえられない。" }
+    },
+    {
+      "id": "on-handler-this",
+      "lint": [{ "code": "wcs/on-handler-this", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Uses `this` in a `$on` handler.", "ja": "`$on` のハンドラで `this` を使う。" },
+      "effect": { "en": "`this` is `undefined` there; the TypeError is logged as `#17` (a subscriber of the token threw); an async handler gives an unhandled rejection.", "ja": "そこでの `this` は `undefined`。TypeError は `#17`（トークンの購読者が throw した）として記録され、async のハンドラは未処理の reject になる。" },
+      "evidence": [{ "file": "packages/state/src/token.ts", "text": "M.TokenSubscriberThrew" }],
+      "note": { "en": "A classic script handed in through `setInitialState` gets `window` as `this`: silent, and outside the lint.", "ja": "`setInitialState` で渡したクラシックのスクリプトでは `this` が `window` になり、無言（lint の外）。" }
+    },
+    {
+      "id": "watch-declaration-invalid",
+      "lint": [{ "code": "wcs/watch-declaration-invalid", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "`$watch` is not an object, a key starts with `$` or holds `@`, or a handler is not a function.", "ja": "`$watch` がオブジェクトでない、キーが `$` で始まる・`@` を含む、ハンドラが関数でない。" },
+      "effect": { "en": "The temporal add-on throws at load, and the state fails to initialize.", "ja": "temporal の後付けが読み込みで throw し、state は初期化に失敗する。" },
+      "evidence": [{ "file": "packages/state/src/temporal/watch.ts", "text": "$watch must be an object mapping paths to handler functions." }]
+    },
+    {
+      "id": "watch-empty-segment",
+      "lint": [{ "code": "wcs/watch-declaration-invalid", "severity": "error" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "A `$watch` key has an empty segment (`a..b`).", "ja": "`$watch` のキーに空の段がある（`a..b`）。" },
+      "effect": { "en": "The runtime does not check it: the watch never fires.", "ja": "実行時は調べないので、watch は発火しない。" },
+      "disposition": "runtime-report",
+      "note": { "en": "One test in the temporal add-on (about 10 B).", "ja": "temporal の後付けに検査を 1 つ（約 10 B）。" }
+    },
+    {
+      "id": "watch-path-missing",
+      "lint": [{ "code": "wcs/watch-path-missing", "severity": "warning" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "A `$watch` key names a path the state does not declare.", "ja": "`$watch` のキーが、state の宣言に無いパスを名指す。" },
+      "effect": { "en": "The diagnostics add-on warns `[wcs/watch-path-missing]` after load (silent on `/core`, and under a getter or a list that is still empty).", "ja": "diagnostics の後付けが読み込みの後に `[wcs/watch-path-missing]` で警告する（`/core`、getter の下、まだ空の一覧の下では無言）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "\"watch-path-missing\"" }]
+    },
+    {
+      "id": "scan-declared",
+      "lint": [{ "code": "wcs/scan-declaration-invalid", "severity": "varies" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Declares `$scan` (removed in 4.0).", "ja": "`$scan` を宣言する（4.0 で外れた）。" },
+      "effect": { "en": "The diagnostics add-on throws `#1` at load (`$scan was removed`); on `/core` without it the key is ignored.", "ja": "diagnostics の後付けが読み込みで `#1`（`$scan was removed`）を throw する。それの無い `/core` ではキーは無視される。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "raise(M.ScanRemoved)" }]
+    },
+    {
+      "id": "recursion-getall-form",
+      "lint": [{ "code": "wcs/recursion-getall-form", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Calls `$getAll` over a `**` path with a partial index prefix, or with indexes that are not an array.", "ja": "`**` のパスの `$getAll` に、途中までの添字か配列でない添字を渡す。" },
+      "effect": { "en": "The recursion add-on throws `[wcs/recursion-getall-form]` where it is called.", "ja": "recursion の後付けが、呼んだ所で `[wcs/recursion-getall-form]` を throw する。" },
+      "evidence": [{ "file": "packages/state/src/recursion/recursion.ts", "text": "code(\"getall-form\")" }]
+    },
+    {
+      "id": "recursion-setall-form",
+      "lint": [{ "code": "wcs/recursion-setall-form", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Calls `$setAll` over a `**` path with a partial prefix, a mapper or spread.", "ja": "`**` のパスの `$setAll` に、途中までの添字・mapper・spread を渡す。" },
+      "effect": { "en": "Throws `[wcs/recursion-setall-form]` (omitted indexes give `#9`).", "ja": "`[wcs/recursion-setall-form]` を throw する（添字を省くと `#9`）。" },
+      "evidence": [{ "file": "packages/state/src/recursion/recursion.ts", "text": "code(\"setall-form\")" }]
+    },
+    {
+      "id": "recursion-structural-write",
+      "lint": [{ "code": "wcs/recursion-structural-write", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Writes through `**` with `$setAll` into a node, its child list or that list's length.", "ja": "`**` を通した `$setAll` で、ノード・子の一覧・その length に書く。" },
+      "effect": { "en": "Throws `[wcs/recursion-structural-write]`.", "ja": "`[wcs/recursion-structural-write]` を throw する。" },
+      "evidence": [{ "file": "packages/state/src/recursion/recursion.ts", "text": "code(\"structural-write\")" }]
+    },
+    {
+      "id": "recursion-readonly",
+      "lint": [{ "code": "wcs/recursion-readonly", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Writes into a recursive (`**`) getter or what it expands to.", "ja": "再帰（`**`）の getter か、その展開形へ書く。" },
+      "effect": { "en": "Throws `[wcs/recursion-readonly]`.", "ja": "`[wcs/recursion-readonly]` を throw する。" },
+      "evidence": [{ "file": "packages/state/src/recursion/recursion.ts", "text": "code(\"readonly\")" }]
+    },
+    {
+      "id": "removed-declaration-read",
+      "lint": [{ "code": "wcs/declaration-alias-read", "severity": "varies" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Reads a removed 3.x declaration through `this` (`this.$streams`, `this.$updatedCallback`).", "ja": "外れた 3.x の宣言を `this` 越しに読む（`this.$streams`・`this.$updatedCallback`）。" },
+      "effect": { "en": "It reads `undefined`, and calling it is a generic TypeError.", "ja": "`undefined` が返り、呼べば汎用の TypeError。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The diagnostics add-on's `dollar` hook can name the removed declaration (0 core bytes).", "ja": "diagnostics の後付けの `dollar` のフックが、外れた宣言を名指せる（core は 0 B）。" }
+    },
+    {
+      "id": "behavior-invalid",
+      "lint": [{ "code": "wcs/behavior-invalid", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "`$behavior` is not an object, has an unknown key or a value that is not a boolean, or sits in a volume.", "ja": "`$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。" },
+      "effect": { "en": "`#44` at load: the state fails to initialize (a volume is refused with `console.error`).", "ja": "読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。" },
+      "evidence": [{ "file": "packages/state/src/engine.ts", "text": "raise(M.OptionInvalid, [\"$behavior\", key])" }]
+    },
+    {
+      "id": "features-not-array",
+      "lint": [{ "code": "wcs/features-invalid", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "`$features` is not an array, or sits in a volume.", "ja": "`$features` が配列でない、またはボリュームにある。" },
+      "effect": { "en": "`#46` at load (a volume: `console.error`).", "ja": "読み込みで `#46`（ボリュームは `console.error`）。" },
+      "evidence": [{ "file": "packages/state/src/engine.ts", "text": "raise(M.FeaturesNotArray)" }]
+    },
+    {
+      "id": "features-attribute-not-root",
+      "lint": [{ "code": "wcs/features-invalid", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Puts `features=` on a `<wcs-state>` that is not the document's root.", "ja": "文書の root でない `<wcs-state>` に `features=` を書く。" },
+      "effect": { "en": "`split/auto.js` reads the root's attribute only: those add-ons are not loaded, and what needs them fails later with `[wcs/feature-not-installed]` (no effect on the full entries).", "ja": "`split/auto.js` は root の属性しか読まないので、その後付けは読み込まれず、それを要るものが後で `[wcs/feature-not-installed]` で失敗する（全部入りの入口では影響なし）。" },
+      "disposition": "runtime-report",
+      "note": { "en": "`split/auto.js` could warn at startup; design A3 chose the lint only (its 635 B baseline would need re-recording).", "ja": "`split/auto.js` が起動時に警告できる。設計 A3 は lint だけを選んだ（635 B の基準値を取り直すことになる）。" }
+    },
+    {
+      "id": "volume-declaration",
+      "lint": [{ "code": "wcs/volume-declaration", "severity": "varies" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Declares in a volume what only a root runs: `$stream`, `$watch`, `$listKeys`, `$renderedCallback` (refused), or `$commandTokens`, `$eventTokens`, `$on`, `$errorCallback` (not run).", "ja": "root だけが走らせる宣言をボリュームに書く: `$stream`・`$watch`・`$listKeys`・`$renderedCallback`（拒む）、`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback`（走らせない）。" },
+      "effect": { "en": "The scopes add-on refuses the volume with `console.error`, or ignores the declaration with `console.warn`.", "ja": "scopes の後付けが `console.error` でボリュームを拒むか、`console.warn` で宣言を無視する。" },
+      "evidence": [{ "file": "packages/state/src/scopes/volume.ts", "text": "is not run in a volume — declare it on the root state." }]
+    },
+    {
+      "id": "bind-component-source",
+      "lint": [{ "code": "wcs/bind-component-source", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Gives `<wcs-state bind-component>` a `state`, `src` or `json` attribute, or an inline module script.", "ja": "`<wcs-state bind-component>` に `state`・`src`・`json` 属性か、中の module スクリプトを付ける。" },
+      "effect": { "en": "The load is refused (`failed to initialize`), and the component does not mount.", "ja": "読み込みは拒まれ（`failed to initialize`）、コンポーネントはマウントされない。" },
+      "evidence": [{ "file": "packages/state/src/scopes/component.ts", "text": "it cannot also load one (state / src / json / an inline script)." }]
+    },
+    {
+      "id": "second-root",
+      "lint": [{ "code": "wcs/second-root", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Puts a second root `<wcs-state>` in the document.", "ja": "文書に 2 つ目の root の `<wcs-state>` を置く。" },
+      "effect": { "en": "The one that finishes loading second fails with `#47`; the first keeps the page.", "ja": "後から読み込み終えた方が `#47` で失敗し、先の方がページを持つ。" },
+      "evidence": [{ "file": "packages/state/src/element.ts", "text": "raise(M.SecondRoot)" }]
+    },
+    {
+      "id": "mount-path-invalid",
+      "lint": [{ "code": "wcs/mount-path-invalid", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Gives `mount=` an empty value or segment, `*`, `$`, `#`, `@` or whitespace.", "ja": "`mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。" },
+      "effect": { "en": "The scopes add-on refuses the volume with `console.error` (`has an invalid mount path`).", "ja": "scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。" },
+      "evidence": [{ "file": "packages/state/src/scopes/volume.ts", "text": "has an invalid mount path" }]
+    },
+    {
+      "id": "named-state-selector",
+      "lint": [{ "code": "wcs/named-state-deprecated", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Writes a v1 named-state selector, `path@name`.", "ja": "v1 の名前付き State の選択子 `path@name` を書く。" },
+      "effect": { "en": "Parse error `#32`: the page's binding stops there (in route content, a `console.error`).", "ja": "解析の誤り `#32`。ページの束縛はそこで止まる（ルートの中身では `console.error`）。" },
+      "evidence": [{ "file": "packages/state/src/parser/parseStatePart.ts", "text": "raise(M.SelectorRemoved, [stateAndPath])" }]
+    },
+    {
+      "id": "named-state-attribute",
+      "lint": [{ "code": "wcs/named-state-deprecated", "severity": "error" }],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Writes `<wcs-state name=\"…\">` (v1).", "ja": "`<wcs-state name=\"…\">` を書く（v1）。" },
+      "effect": { "en": "4.0 never reads `name`: harmless alone, and a v1 page with two named states fails as `#47` instead.", "ja": "4.0 は `name` を読まない。単独では害が無く、名前付き State が 2 つある v1 のページは代わりに `#47` で失敗する。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The diagnostics add-on could warn when the element mounts; low value.", "ja": "diagnostics の後付けが要素のマウントで警告できる。価値は低い。" }
+    },
+    {
+      "id": "binding-path-missing",
+      "lint": [{ "code": "wcs/binding-path-missing", "severity": "varies" }, { "code": "wcs/path-nonexistent", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Binds a path the state does not have (`wcs/path-nonexistent` when a `stateSchema` says so).", "ja": "state に無いパスを束ねる（`stateSchema` がそう言えば `wcs/path-nonexistent`）。" },
+      "effect": { "en": "A missing top-level key fails the binding (`#301`); a missing nested segment is warned by the diagnostics add-on as `[wcs/binding-path-missing]` (silent on `/core`). Without a `stateSchema` the lint only warns.", "ja": "トップレベルのキーが無ければ束縛が失敗する（`#301`）。入れ子の段が無ければ diagnostics の後付けが `[wcs/binding-path-missing]` で警告する（`/core` では無言）。`stateSchema` が無いと lint は警告だけ。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"binding-path-missing\"" }]
+    },
+    {
+      "id": "for-not-array",
+      "lint": [{ "code": "wcs/path-type-mismatch", "severity": "error" }, { "code": "wcs/binding-type-expectation", "severity": "error" }],
+      "runtime": "silent", "harm": "wrong-place",
+      "mistake": { "en": "Puts `for:` on a value that is not an array.", "ja": "配列でない値に `for:` を付ける。" },
+      "effect": { "en": "Anything but an array renders as an empty list, without a word.", "ja": "配列以外は、何も言わずに空の一覧として描かれる。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The diagnostics add-on can check each list's first value; later values need one hook call in `reconcile`.", "ja": "diagnostics の後付けが各一覧の最初の値を調べられる。後の値には `reconcile` にフックの呼び出しが 1 つ要る。" }
+    },
+    {
+      "id": "class-not-boolean",
+      "lint": [{ "code": "wcs/binding-type-expectation", "severity": "varies" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Binds a value that is not a boolean to `class.NAME:`.", "ja": "`class.NAME:` に boolean でない値を束ねる。" },
+      "effect": { "en": "`#401`: the binding fails (`[wcs/binding-type-expectation]` with diagnostics).", "ja": "`#401` で束縛が失敗する（diagnostics があれば `[wcs/binding-type-expectation]`）。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"binding-type-expectation\"" }]
+    },
+    {
+      "id": "filter-arg-type",
+      "lint": [{ "code": "wcs/filter-arg-type", "severity": "varies" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Gives a filter a numeric argument that does not read as a number (`gt(abc)`).", "ja": "フィルタの数値の引数に、数値として読めないものを渡す（`gt(abc)`）。" },
+      "effect": { "en": "`#27` when the bindings are planned: the state fails to initialize. (A number for a string argument, `join(1)`, passes as a string; the lint warns about it.)", "ja": "束縛の計画の時点で `#27`、state は初期化に失敗する（文字列の引数に数値を渡す `join(1)` は文字列として通る。lint はそれを警告する）。" },
+      "evidence": [{ "file": "packages/state/src/filters/errorMessages.ts", "text": "raise(M.FilterOptionNotNumber, [fnName])" }]
+    },
+    {
+      "id": "filter-input-type",
+      "lint": [{ "code": "wcs/filter-input-type", "severity": "warning" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Feeds a filter a value of the wrong type (a string into `date`, a number into `join`).", "ja": "フィルタに型の違う値を流す（`date` に文字列、`join` に数値）。" },
+      "effect": { "en": "`#28` – `#30` when the value is applied: the binding fails. String filters coerce instead (`null|upper` shows `NULL`).", "ja": "値を当てる時点で `#28`〜`#30`、束縛が失敗する。文字列のフィルタは変換して通す（`null|upper` は `NULL`）。" },
+      "evidence": [{ "file": "packages/state/src/filters/errorMessages.ts", "text": "raise(M.FilterValueNotNumber, [fnName, value])" }]
+    },
+    {
+      "id": "tag-member-unknown",
+      "lint": [{ "code": "wcs/tag-member-unknown", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Binds a member a `wcs-*` tag does not declare, a DOM property such as `hidden` or `textContent` included.", "ja": "`wcs-*` のタグが宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。" },
+      "effect": { "en": "`#38` (a property), `#1203` / `#1204` (`command.` / `eventToken.`): at the root the state fails to initialize, in a row the binding fails. Only the HTML sinks are written without a declaration.", "ja": "`#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。" },
+      "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "raise(M.MemberUndeclared, [name])" }]
+    },
+    {
+      "id": "on-prefixed-member",
+      "lint": [{ "code": "wcs/on-prefixed-member", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Binds a member whose name starts with `on` without the leading dot (`once:` instead of `.once:`).", "ja": "`on` で始まるメンバーを先頭のドット無しで束ねる（`.once:` でなく `once:`）。" },
+      "effect": { "en": "It is read as an event binding that waits for a `ce` event: the value never arrives, and nothing is reported.", "ja": "`ce` イベントを待つイベントの束縛として読まれ、値は届かず、何も知らされない。" },
+      "disposition": "runtime-report",
+      "note": { "en": "Needs a hook in the core's event attach (about 20 B), so the diagnostics add-on can compare the name with the element's declaration once it is defined.", "ja": "core のイベントの取り付けにフック（約 20 B）が要り、diagnostics の後付けが要素の定義の後に名前と宣言を突き合わせる。" }
+    },
+    {
+      "id": "delegated-current-target",
+      "lint": [{ "code": "wcs/delegated-current-target", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "A handler of a delegated event (`onclick:` and the other bubbling events) reads `event.currentTarget`.", "ja": "委譲されるイベント（`onclick:` などバブルするイベント）のハンドラが `event.currentTarget` を読む。" },
+      "effect": { "en": "It is the root, not the element: `getBoundingClientRect`, `setPointerCapture` or `new FormData(e.currentTarget)` act on the wrong node or throw.", "ja": "要素ではなく root なので、`getBoundingClientRect`・`setPointerCapture`・`new FormData(e.currentTarget)` が違うノードに効くか throw する。" },
+      "disposition": "design-out", "breaking": true,
+      "note": { "en": "The root listener could give the event an own `currentTarget` (the element) while the handler runs — about 60–90 B of core; it revisits the 2026-10-02 decision behind `#direct`.", "ja": "root のリスナーが、ハンドラの間だけイベントに自前の `currentTarget`（要素）を持たせられる — core に約 60〜90 B。2026-10-02 の `#direct` の決定を見直すことになる。" }
+    },
+    {
+      "id": "aria-attr-unknown",
+      "lint": [{ "code": "wcs/aria-attr-unknown", "severity": "warning" }],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Misspells an ARIA attribute in `attr.aria-*:`.", "ja": "`attr.aria-*:` の ARIA 属性名を打ち間違える。" },
+      "effect": { "en": "The attribute is written; assistive technology ignores it.", "ja": "属性は書かれ、支援技術は無視する。" },
+      "disposition": "static-only",
+      "note": { "en": "The name is in the markup, so the lint has everything; a runtime table of ARIA names would cost 300–400 B.", "ja": "名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。" }
+    },
+    {
+      "id": "binding-syntax",
+      "lint": [{ "code": "wcs/binding-syntax", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Writes a binding the grammar refuses: an unclosed quote, a second `#`, an empty filter, a `__proto__` segment.", "ja": "文法が拒む束縛を書く: 閉じない引用符・2 つ目の `#`・空のフィルタ・`__proto__` の段。" },
+      "effect": { "en": "`#101` – `#122` when the bindings are planned: the state fails to initialize.", "ja": "束縛の計画で `#101`〜`#122`、state は初期化に失敗する。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"binding-syntax\"" }]
+    },
+    {
+      "id": "declaration-alias",
+      "lint": [{ "code": "wcs/declaration-alias", "severity": "varies" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Declares a removed 3.x name (`$streams`, `$updatedCallback`).", "ja": "外れた 3.x の名前を宣言する（`$streams`・`$updatedCallback`）。" },
+      "effect": { "en": "The diagnostics add-on throws `#1601` at load; on `/core` the key is ignored.", "ja": "diagnostics の後付けが読み込みで `#1601` を throw する。`/core` ではキーは無視される。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"declaration-alias\"" }]
+    },
+    {
+      "id": "filter-arity",
+      "lint": [{ "code": "wcs/filter-arity", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Gives a filter the wrong number of arguments.", "ja": "フィルタに違う数の引数を渡す。" },
+      "effect": { "en": "`#601` / `#602` when the bindings are planned: the state fails to initialize.", "ja": "束縛の計画で `#601`・`#602`、state は初期化に失敗する。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"filter-arity\"" }]
+    },
+    {
+      "id": "filter-unknown",
+      "lint": [{ "code": "wcs/filter-unknown", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Uses a filter that does not exist, or a 3.x name (`uc`, `substr`).", "ja": "無いフィルタか、3.x の名前（`uc`・`substr`）を使う。" },
+      "effect": { "en": "`#501` when the bindings are planned: the state fails to initialize. A formatting filter without the formats add-on says so in full, even on `/core`.", "ja": "束縛の計画で `#501`、state は初期化に失敗する。formats の後付けの無い書式フィルタは、`/core` でも文で言う。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"filter-unknown\"" }]
+    },
+    {
+      "id": "getter-cycle",
+      "lint": [{ "code": "wcs/getter-cycle", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Writes getters that read each other in a cycle.", "ja": "互いを読み合って循環する getter を書く。" },
+      "effect": { "en": "`#701` when they are evaluated: every binding that reads them fails.", "ja": "評価の時点で `#701`、それを読む束縛はすべて失敗する。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"getter-cycle\"" }]
+    },
+    {
+      "id": "index-arity",
+      "lint": [{ "code": "wcs/index-arity", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Gives `$getAll` / `$setAll` / `$resolve` a number of indexes that does not match the path's `*`s.", "ja": "`$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。" },
+      "effect": { "en": "`#901` / `#902`, thrown where it is called.", "ja": "呼んだ所で `#901`・`#902` を throw する。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"index-arity\"" }]
+    },
+    {
+      "id": "index-param-range",
+      "lint": [{ "code": "wcs/index-param-range", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Reads a loop index outside `$1` – `$128` (`this.$0`, `$129`).", "ja": "`$1`〜`$128` の外のループの添字を読む（`this.$0`・`$129`）。" },
+      "effect": { "en": "`#1001`: thrown when the script reads it; in markup the binding fails.", "ja": "`#1001`。スクリプトは読んだ時点で throw し、マークアップでは束縛が失敗する。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"index-param-range\"" }]
+    },
+    {
+      "id": "name-alias",
+      "lint": [{ "code": "wcs/name-alias", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Calls a removed 3.x API name (`$trackDependency`, `$untrackDependency`).", "ja": "外れた 3.x の API の名前を呼ぶ（`$trackDependency`・`$untrackDependency`）。" },
+      "effect": { "en": "The diagnostics add-on throws `#1701` on the read; on `/core` it is `undefined` and the call a generic TypeError.", "ja": "diagnostics の後付けが読んだ時点で `#1701` を throw する。`/core` では `undefined` で、呼べば汎用の TypeError。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"name-alias\"" }]
+    },
+    {
+      "id": "recursion-anchor",
+      "lint": [{ "code": "wcs/recursion-anchor", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Writes a `**` path that does not match the declared anchor (a typo, a second `**`).", "ja": "宣言したアンカーと合わない `**` のパスを書く（打ち間違い、2 つ目の `**`）。" },
+      "effect": { "en": "The recursion add-on throws `[wcs/recursion-anchor]` at load or where the path is used.", "ja": "recursion の後付けが、読み込みかパスを使う所で `[wcs/recursion-anchor]` を throw する。" },
+      "evidence": [{ "file": "packages/state/src/recursion/recursion.ts", "text": "[wcs/recursion-anchor]" }]
+    },
+    {
+      "id": "recursion-declaration-invalid",
+      "lint": [{ "code": "wcs/recursion-declaration-invalid", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Declares `$recursion` or a `**` getter in a shape the add-on refuses.", "ja": "後付けが拒む形で `$recursion` か `**` の getter を宣言する。" },
+      "effect": { "en": "Throws `[wcs/recursion-declaration-invalid]` at load; three of the shapes are checked only with the diagnostics add-on.", "ja": "読み込みで `[wcs/recursion-declaration-invalid]` を throw する。うち 3 つの形は diagnostics の後付けがあるときだけ調べる。" },
+      "evidence": [{ "file": "packages/state/src/recursion/recursion.ts", "text": "code(\"declaration-invalid\")" }]
+    },
+    {
+      "id": "recursion-unsupported",
+      "lint": [{ "code": "wcs/recursion-unsupported", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Uses `**` where it is not read (a binding, a `$watch` key, `$postUpdate`), or without `$recursion`.", "ja": "`**` を読まない場所（束縛・`$watch` のキー・`$postUpdate`）で、または `$recursion` なしで使う。" },
+      "effect": { "en": "`#1101`: planning fails, or the call throws; an undeclared `**` getter key fails at load.", "ja": "`#1101`。計画が失敗するか、呼び出しが throw する。宣言の無い `**` の getter のキーは読み込みで失敗する。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"recursion-unsupported\"" }]
+    },
+    {
+      "id": "spread-no-bindable",
+      "lint": [{ "code": "wcs/spread-no-bindable", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Spreads (`...:`) onto a tag without a `wcBindable` declaration (`<wcs-fetch-header>`).", "ja": "`wcBindable` の宣言の無いタグ（`<wcs-fetch-header>`）に spread（`...:`）する。" },
+      "effect": { "en": "`#1501` when attached: at the root the state fails to initialize, in a row the binding fails.", "ja": "取り付けの時点で `#1501`。root では state が初期化に失敗し、行では束縛が失敗する。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"spread-no-bindable\"" }]
+    },
+    {
+      "id": "template-syntax",
+      "lint": [{ "code": "wcs/template-syntax", "severity": "varies" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Breaks a template rule: two structural directives on one template, `outerHTML:` inside a `for:` / `if:` template.", "ja": "テンプレートの規則を破る: 1 つのテンプレートに構造ディレクティブを 2 つ、`for:`・`if:` のテンプレートの中の `outerHTML:`。" },
+      "effect": { "en": "`#201` – `#203` when the bindings are planned: the state fails to initialize; `#204` (a structural template at the top of inserted content) is logged.", "ja": "束縛の計画で `#201`〜`#203`、state は初期化に失敗する。`#204`（挿入された中身の先頭の構造テンプレート）は記録される。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"template-syntax\"" }]
+    },
+    {
+      "id": "token-misconfigured",
+      "lint": [{ "code": "wcs/token-misconfigured", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Wires a command token wrongly: `command.m:` whose right side is not `$command.…`, or a native element's method outside the `nativeCommands` table.", "ja": "コマンドのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、または `nativeCommands` の表に無いネイティブ要素のメソッド。" },
+      "effect": { "en": "`#1201` – `#1205` when planned or attached: at the root the state fails to initialize.", "ja": "計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"token-misconfigured\"" }]
+    },
+    {
+      "id": "token-undeclared",
+      "lint": [{ "code": "wcs/token-undeclared", "severity": "varies" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Uses a command or event token the state does not declare.", "ja": "state が宣言しないコマンドかイベントのトークンを使う。" },
+      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` and `onclick: $command.x` log `#1301` each time the event fires (the lint: warning).", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"token-undeclared\"" }]
+    },
+    {
+      "id": "wildcard-rank",
+      "lint": [{ "code": "wcs/wildcard-rank", "severity": "warning" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Uses more `*` (or `$2`) than the enclosing `for:`s give, or a `*` of another list's rows.", "ja": "囲む `for:` が与えるより多い `*`（や `$2`）、またはほかの一覧の行の `*` を使う。" },
+      "effect": { "en": "`#1401` – `#1403` when the bindings are planned: the state fails to initialize. The lint warns on purpose (it cannot rebuild every `for` scope).", "ja": "束縛の計画で `#1401`〜`#1403`、state は初期化に失敗する。lint は意図して警告にしている（すべての `for` のスコープを組み直せないため）。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"wildcard-rank\"" }]
+    },
+    {
+      "id": "feature-unknown",
+      "lint": [{ "code": "wcs/feature-unknown", "severity": "error" }],
+      "runtime": "same", "harm": "broken",
+      "mistake": { "en": "Names an add-on that does not exist in `features=` or `$features`.", "ja": "`features=` か `$features` に、無い後付けの名前を書く。" },
+      "effect": { "en": "The split auto loader throws `[wcs/feature-unknown]` (`<wcs-state>` is never defined); the other entries report `[wcs/feature-not-installed]`.", "ja": "分割 auto の読み込みが `[wcs/feature-unknown]` を throw する（`<wcs-state>` は定義されない）。ほかの入口は `[wcs/feature-not-installed]` を出す。" },
+      "evidence": [{ "file": "packages/state/src/load.ts", "text": "[wcs/feature-unknown]" }]
+    },
+    {
+      "id": "trigger-seeded-truthy",
+      "lint": [{ "code": "wcs/trigger-seeded-truthy", "severity": "warning" }],
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Seeds the state slot bound to `trigger:` with `true`.", "ja": "`trigger:` に束ねた state のスロットを `true` で始める。" },
+      "effect": { "en": "The first sync writes `true`: `<wcs-fetch>` sends a request on load, `manual` or not, and `<wcs-storage manual>` saves what it holds. With no `url` yet, the `true` stays and the first real trigger does nothing.", "ja": "最初の同期が `true` を書く。`<wcs-fetch>` は `manual` でも読み込みで要求を送り、`<wcs-storage manual>` は持っている値を保存する。まだ `url` が無ければ `true` が残り、最初の本当の trigger が何もしない。" },
+      "disposition": "design-out", "breaking": true,
+      "note": { "en": "A wc-bindable hint that the element, not state, wins the first sync of `trigger` would remove it; a page that seeds `true` on purpose would change.", "ja": "`trigger` の最初の同期は state でなく要素が勝つ、という wc-bindable の印で消せる。わざと `true` で始めるページは変わる。" }
+    },
+    {
+      "id": "storage-seed-clobber",
+      "lint": [{ "code": "wcs/storage-seed-clobber", "severity": "error" }],
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Binds a non-manual `<wcs-storage>`'s `value`, without `#init=element`, to a path seeded with a literal, or to an accessor pair.", "ja": "manual でない `<wcs-storage>` の `value` を、`#init=element` なしで、リテラルで始めたパスかアクセサペアに束ねる。" },
+      "effect": { "en": "The element loads the saved value, then state writes its seed and the element saves it over the stored one, on every load. A `null` seed removes the key.", "ja": "要素が保存値を読み込んだ後に state がシードを書き、要素がそれを保存値の上に保存する — 読み込みのたびに。`null` のシードはキーを消す。" },
+      "disposition": ["runtime-report", "design-out"], "breaking": true,
+      "note": { "en": "4.x: at the first sync the runtime can warn when it overwrites a value the element already holds (diagnostics add-on). 5.0: the element wins the first sync of a loading storage.", "ja": "4.x: 最初の同期で、要素が既に持つ値を上書きするときに実行時が警告できる（diagnostics の後付け）。5.0: 読み込む storage の最初の同期は要素が勝つ。" }
+    },
+    {
+      "id": "storage-init-seed",
+      "lint": [{ "code": "wcs/storage-init-seed", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Binds `<wcs-storage>`'s `value#init=element` to a path seeded with a literal that is not `null` (`cart: []`).", "ja": "`<wcs-storage>` の `value#init=element` を、`null` でないリテラルで始めたパスに束ねる（`cart: []`）。" },
+      "effect": { "en": "An empty key reads as `null`, so the first pull replaces the seed: `for: cart` renders nothing, and code that reads `this.cart.length` throws a generic TypeError.", "ja": "空のキーは `null` を読むので、最初の引き込みがシードを置き換える。`for: cart` は何も描かず、`this.cart.length` を読むコードは汎用の TypeError を投げる。" },
+      "disposition": ["runtime-report", "design-out"], "breaking": true,
+      "note": { "en": "4.x: warn when an explicit `#init=element` replaces a value with `null` (diagnostics add-on). 5.0: an absent key reads as `undefined`, which keeps the seed (the README documents `null`).", "ja": "4.x: 明示の `#init=element` が値を `null` で置き換えるときに警告する（diagnostics の後付け）。5.0: 無いキーは `undefined` を読み、シードを残す（README は `null` と書いている）。" }
+    },
+    {
+      "id": "input-nested-write",
+      "lint": [{ "code": "wcs/input-nested-write", "severity": "error" }],
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Binds an I/O node's input to a path (`value: cart` on `<wcs-storage>`, `body: form` on `<wcs-fetch>`) and writes under it (`this[\"cart.0.quantity\"] = 2`).", "ja": "I/O ノードの入力をパスに束ね（`<wcs-storage>` の `value: cart`、`<wcs-fetch>` の `body: form`）、その下へ書く（`this[\"cart.0.quantity\"] = 2`）。" },
+      "effect": { "en": "A write re-applies the bindings at its path and below, never above: storage does not save the change (a reload reverts it) and fetch sends the next request without a body.", "ja": "書き込みが当て直すのはそのパスとその下の束縛だけで、上は当て直さない。storage は変更を保存せず（再読み込みで戻る）、fetch は次の要求を本文なしで送る。" },
+      "disposition": "design-out", "breaking": false,
+      "note": { "en": "An opt-in wc-bindable input hint (assign again when something under the path changes) would remove it; doing it for every input would be breaking.", "ja": "入力ごとの wc-bindable の印（下が変わったら代入し直す）で消せる。すべての入力でそうするのは破壊的。" }
+    },
+    {
+      "id": "submit-without-prevent",
+      "lint": [{ "code": "wcs/submit-without-prevent", "severity": "warning" }],
+      "runtime": "silent", "harm": "security",
+      "mistake": { "en": "Binds `onsubmit:` on a `<form>` without `#prevent`, and the handler does not call `preventDefault`.", "ja": "`<form>` の `onsubmit:` を `#prevent` なしで束ね、ハンドラも `preventDefault` を呼ばない。" },
+      "effect": { "en": "The handler runs, then the browser submits the form: the page reloads, or with the router a GET puts the fields, a password too, in the URL and the history.", "ja": "ハンドラが走った後、ブラウザがフォームを送る。ページが読み直されるか、router があれば GET が欄 — パスワードも — を URL と履歴に載せる。" },
+      "disposition": ["runtime-report", "design-out"], "breaking": true,
+      "note": { "en": "4.x: after the handler, the runtime can see a submit that was not prevented on a form without `action` — a hook in the core (536 B of room), the report in the diagnostics add-on. 5.0: `onsubmit:` prevents by default.", "ja": "4.x: ハンドラの後で、`action` の無いフォームの防がれなかった submit を実行時が見られる — core にフック（残り 536 B）、知らせは diagnostics の後付け。5.0: `onsubmit:` は既定で防ぐ。" }
+    },
+    {
+      "id": "devtools-after-state",
+      "lint": [{ "code": "wcs/script-order", "severity": "info" }],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Loads `@wcstack/devtools/auto` after `@wcstack/state/auto`.", "ja": "`@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。" },
+      "effect": { "en": "4.0 hands a late DevTools every binding there already, so only the timeline before it attached is missing.", "ja": "4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。" },
+      "disposition": "runtime-report",
+      "note": { "en": "DevTools can say that its timeline starts when it attached.", "ja": "DevTools が、タイムラインは付いた時点からと言える。" }
+    },
+    {
+      "id": "base-href-missing",
+      "lint": [{ "code": "wcs/base-href-missing", "severity": "warning" }],
+      "runtime": "same", "harm": "wrong-place",
+      "mistake": { "en": "Loads the router on a page with no `<base href>` and no `basename`.", "ja": "`<base href>` も `basename` も無いページで router を読み込む。" },
+      "effect": { "en": "On a deep link or a reload at `/products/3`, the router takes `/products/3` as the basename, shows the root route and resolves links under it; it warns `[wcs/base-href-missing]` with the basename it derived.", "ja": "`/products/3` へのディープリンクか再読み込みで、router は `/products/3` を basename にし、根のルートを表示して、リンクをその下で解決する。導いた basename を添えて `[wcs/base-href-missing]` で警告する。" },
+      "evidence": [{ "file": "packages/router/src/components/Router.ts", "text": "[wcs/base-href-missing]" }],
+      "note": { "en": "5.0 agenda: derive no basename, which changes sub-folder apps that rely on the derivation.", "ja": "5.0 の議題: basename を導かない。導出に頼るサブフォルダのアプリが変わる。" }
+    },
+    {
+      "id": "signals-dual-entry",
+      "lint": [{ "code": "wcs/signals-dual-entry", "severity": "varies" }],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Loads `@wcstack/signals` and `@wcstack/signals/dom` from a CDN that bundles each one (esm.run).", "ja": "`@wcstack/signals` と `@wcstack/signals/dom` を、それぞれを束ねる CDN（esm.run）から読み込む。" },
+      "effect": { "en": "The page gets two reactive cores: an effect in one does not track a signal of the other, and the UI stops updating across them.", "ja": "ページにリアクティブなコアが 2 つでき、片方の effect はもう片方の signal を追わず、その間で UI が更新されなくなる。" },
+      "disposition": "runtime-report",
+      "note": { "en": "Each core can mark itself on a global symbol when it makes its first signal; a second copy warns in dev mode.", "ja": "各コアが最初の signal を作るときにグローバルなシンボルに印を付け、2 つ目のコピーが開発モードで警告する。" }
+    },
+    {
+      "id": "route-bare-mustache",
+      "lint": [{ "code": "wcs/route-bare-mustache", "severity": "warning" }],
+      "runtime": "silent", "harm": "wrong-place",
+      "mistake": { "en": "Writes `{{ }}` in text directly under `<wcs-route>` or a layout's template.", "ja": "`<wcs-route>` かレイアウトのテンプレートの直下のテキストに `{{ }}` を書く。" },
+      "effect": { "en": "It renders on the landing route only; a route entered by navigation shows the literal `{{ … }}`.", "ja": "最初に着いたルートでだけ描かれ、遷移で入ったルートでは `{{ … }}` がそのまま出る。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The router can warn: a text node of its own route content that still holds `{{` has never been bound (state replaces the text it binds). Binding text on navigation would need state to mark the text it renders — core bytes and a binder change.", "ja": "router が警告できる: 自分のルートの中身のテキストノードに `{{` が残っていれば、それは束ねられていない（state は束ねたテキストを置き換える）。遷移でテキストを束ねるには、state が描いたテキストに印を付ける必要がある — core のバイトと binder の変更。" }
+    },
+    {
+      "id": "layout-slot-missing",
+      "lint": [{ "code": "wcs/layout-slot-missing", "severity": "warning" }],
+      "runtime": "same", "harm": "wrong-place",
+      "mistake": { "en": "Gives a layout template no default `<slot>` while the layout holds nested routes.", "ja": "入れ子のルートを持つレイアウトのテンプレートに、既定の `<slot>` が無い。" },
+      "effect": { "en": "The router warns `[wcs/layout-slot-missing]`; it also checks `src=` layouts and a `slot=` the template lacks, which the lint does not.", "ja": "router が `[wcs/layout-slot-missing]` で警告する。lint の見ない `src=` のレイアウトと、テンプレートに無い `slot=` も調べる。" },
+      "evidence": [{ "file": "packages/router/src/components/LayoutOutlet.ts", "text": "[wcs/layout-slot-missing]" }]
+    },
+    {
+      "id": "router-outlet-misplaced",
+      "lint": [{ "code": "wcs/router-outlet-misplaced", "severity": "warning" }],
+      "runtime": "same", "harm": "wrong-place",
+      "mistake": { "en": "Places `<wcs-outlet>` anywhere but right after `<wcs-router>`.", "ja": "`<wcs-outlet>` を `<wcs-router>` の直後以外に置く。" },
+      "effect": { "en": "The router warns `[wcs/router-outlet-misplaced]` when it makes its own outlet, and about an outlet a layout brings in.", "ja": "router が自前の outlet を作るときに `[wcs/router-outlet-misplaced]` で警告する。レイアウトが持ち込んだ outlet にも。" },
+      "evidence": [{ "file": "packages/router/src/misplacedOutletWarning.ts", "text": "[wcs/router-outlet-misplaced]" }]
+    },
+    {
+      "id": "fetch-superseded-mutation",
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Shares one `<wcs-fetch>` between requests that can overlap: two saves in a row, a save while a load runs.", "ja": "重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。" },
+      "effect": { "en": "A new request aborts the one in flight and drops its result without a word: one change can be lost.", "ja": "新しい要求が実行中の要求を中断し、その結果を黙って捨てる。変更が 1 つ失われうる。" },
+      "evidence": [{ "file": "packages/fetch/src/core/FetchCore.ts", "text": "new OperationLane(\"fetch\", \"latest\"" }],
+      "disposition": "runtime-report",
+      "note": { "en": "The fetch element can warn when a request with a body, or with a method other than GET, is superseded.", "ja": "本文付き、または GET 以外の要求が中断されたときに、fetch の要素が警告できる。" }
+    },
+    {
+      "id": "io-command-before-ready",
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, a recorder `start` with no stream.", "ja": "I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、ストリームの無い recorder の `start`。" },
+      "effect": { "en": "The call goes to the node's `error` output only; with `error` unbound, the message is lost without a word.", "ja": "呼び出しはノードの `error` の出力にだけ流れる。`error` を束ねていなければ、メッセージは黙って失われる。" },
+      "evidence": [{ "file": "packages/websocket/src/core/WebSocketCore.ts", "text": "WebSocket is not connected." }],
+      "disposition": "runtime-report",
+      "note": { "en": "The node can also log the refused call once in the console.", "ja": "ノードが、拒んだ呼び出しをコンソールにも 1 回記録できる。" }
+    },
+    {
+      "id": "list-refetch-without-keys",
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Re-fetches a list without `$listKeys` while its rows hold unbound state: text being typed, focus, an open `<details>`.", "ja": "行が束ねていない状態（入力中の文字・フォーカス・開いた `<details>`）を持つ一覧を、`$listKeys` なしで取り直す。" },
+      "effect": { "en": "Fresh objects never match by reference, so every row is rebuilt and that state is lost.", "ja": "新しいオブジェクトは参照で一致しないので、すべての行が作り直され、その状態は失われる。" },
+      "disposition": ["lint-rule", "design-out"], "breaking": true,
+      "note": { "en": "4.x: an info for a `for:` over fetched data whose rows hold inputs, with no `$listKeys`. 5.0: key rows by `id` when the objects carry one.", "ja": "4.x: 取得したデータの `for:` で、行に入力欄があり `$listKeys` が無ければ info。5.0: オブジェクトが `id` を持てば、それで行を合わせる。" }
+    },
+    {
+      "id": "guard-handler-ignored",
+      "runtime": "loud", "harm": "security",
+      "mistake": { "en": "Puts `<wcs-guard-handler>` outside a `<wcs-route>`, or gives it a script without `type=\"module\"`.", "ja": "`<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type=\"module\"` の無いスクリプトを付ける。" },
+      "effect": { "en": "The router reports it with `console.error` (`[wcs/guard-handler-ignored]`): the route is not guarded. One outside after a route at the same level keeps guarding that route, as it did before.", "ja": "router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートは守られない。同じ階層でルートの後に置いた外のものは、以前と同じくそのルートを守り続ける。" },
+      "evidence": [{ "file": "packages/router/src/parse.ts", "text": "[wcs/guard-handler-ignored]" }],
+      "note": { "en": "No lint rule yet; the markup shows both cases.", "ja": "lint の規則はまだ無い。どちらの形もマークアップに見える。" }
+    },
+    {
+      "id": "route-parent-from-previous-route",
+      "runtime": "designed-out", "harm": "wrong-place",
+      "mistake": { "en": "Puts a `<wcs-route>` (or a `<wcs-guard-handler>`) inside an element or a `<wcs-layout>` after another route, or a guard after the nested routes of the route it guards.", "ja": "`<wcs-route>`（や `<wcs-guard-handler>`）を、別のルートの後の要素や `<wcs-layout>` の中に置く。または、守るルートの入れ子のルートの後にガードを置く。" },
+      "effect": { "en": "Since 4.3 a route's parent, and the route a guard guards, is the `<wcs-route>` it is inside. Before, it was the route parsed last: the route got a path under the previous one, an absolute one threw (`is absolute but has a parent route`), and the guard guarded a child route while its own was open.", "ja": "4.3 から、ルートの親とガードの守るルートは、それを中に持つ `<wcs-route>`。以前は最後に解析したルートで、ルートは前のルートの下のパスになるか、絶対パスなら throw し（`is absolute but has a parent route`）、ガードは子のルートを守って自分のルートは開いていた。" }
+    },
+    {
+      "id": "storage-type-typo",
+      "runtime": "silent", "harm": "security",
+      "mistake": { "en": "Misspells `<wcs-storage type>` (`type=\"sesion\"`).", "ja": "`<wcs-storage type>` を打ち間違える（`type=\"sesion\"`）。" },
+      "effect": { "en": "Anything but exactly `session` becomes `local`: data meant for the session is kept on disk.", "ja": "`session` ちょうど以外は `local` になる。セッション向けのデータがディスクに残る。" },
+      "evidence": [{ "file": "packages/storage/src/components/Storage.ts", "text": "return this.getAttribute(\"type\") === \"session\" ? \"session\" : \"local\";" }],
+      "disposition": ["runtime-report", "lint-rule"],
+      "note": { "en": "The element normalizes the value silently, though its core reports a bad type; it can warn.", "ja": "要素は値を黙って正規化する（コアは不正な型を報告するのに）。警告できる。" }
+    },
+    {
+      "id": "url-or-handler-injection",
+      "runtime": "silent", "harm": "security",
+      "mistake": { "en": "Binds text a user controls to `href:`, `src:`, `attr.href:` or `attr.on*:`.", "ja": "利用者が決められる文字列を `href:`・`src:`・`attr.href:`・`attr.on*:` に束ねる。" },
+      "effect": { "en": "A `javascript:` URL or a handler string is written as it is: XSS, unless a CSP stops it.", "ja": "`javascript:` の URL やハンドラの文字列がそのまま書かれる。CSP が止めなければ XSS。" },
+      "disposition": ["lint-rule", "runtime-report"],
+      "note": { "en": "4.x: the lint can report any `attr.on*:`, and the diagnostics add-on can warn on a `javascript:` URL. 4.0 chose not to refuse them in the core (2026-10-02); refusing would be breaking.", "ja": "4.x: lint はすべての `attr.on*:` を報告でき、diagnostics の後付けは `javascript:` の URL に警告できる。4.0 は core で拒まないと決めた（2026-10-02）。拒むのは破壊的。" }
+    },
+    {
+      "id": "user-content-in-markup",
+      "runtime": "silent", "harm": "security",
+      "mistake": { "en": "Writes user content into the page's markup from a server template or page code.", "ja": "利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込む。" },
+      "effect": { "en": "The page scan binds what is in it — `{{ apiKey }}`, `data-wcs`, a comment binding: client-side template injection.", "ja": "ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。" },
+      "disposition": "design-out", "breaking": false,
+      "note": { "en": "R10: a `data-wcs-ignore` attribute, decided for 4.x, lets a page mark such content.", "ja": "R10: 4.x で足すと決めた `data-wcs-ignore` 属性で、ページがその中身に印を付けられる。" }
+    },
+    {
+      "id": "io-auto-after-state",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Loads an I/O node's `/auto` after `@wcstack/state/auto`.", "ja": "I/O ノードの `/auto` を `@wcstack/state/auto` の後に読み込む。" },
+      "effect": { "en": "Command bindings wait for the tag's definition, so a `$command` emit in that window reaches no one and is dropped.", "ja": "コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。" },
+      "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "pending(r.whenDefined(tag), owner" }],
+      "disposition": "lint-rule",
+      "note": { "en": "`wcs/script-order` checks DevTools only; extending it to the I/O `/auto` entries is small.", "ja": "`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。" }
+    },
+    {
+      "id": "command-token-unbound",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Emits a command token that no `command.` binding wires, or expects a spread to wire commands and events.", "ja": "どの `command.` の束縛も結ばないコマンドのトークンを emit する、または spread がコマンドとイベントを結ぶと思う。" },
+      "effect": { "en": "The emit reaches no subscriber and returns nothing; `$on` never fires.", "ja": "emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。" },
+      "disposition": "lint-rule",
+      "note": { "en": "Both sides are in the markup and the script, which the lint already parses.", "ja": "両側はマークアップとスクリプトにあり、lint は既に解析している。" }
+    },
+    {
+      "id": "infinite-scroll-target",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Points `<wcs-infinite-scroll target>` at an id that is missing or not a `<wcs-fetch>`.", "ja": "`<wcs-infinite-scroll target>` が、無い id か `<wcs-fetch>` でない要素を指す。" },
+      "effect": { "en": "It does nothing: no more pages load, without a word.", "ja": "何もしない。次のページは読み込まれず、何も言わない。" },
+      "evidence": [{ "file": "packages/fetch/src/components/InfiniteScroll.ts", "text": "if (!(target instanceof Fetch)) {" }],
+      "disposition": ["runtime-report", "lint-rule"]
+    },
+    {
+      "id": "getter-reads-global",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "A getter reads something that is not state: `Date.now()`, `new Date()`, the DOM, a module variable, `localStorage`.", "ja": "getter が state でないものを読む: `Date.now()`・`new Date()`・DOM・モジュールの変数・`localStorage`。" },
+      "effect": { "en": "It is not tracked: the getter keeps its first value.", "ja": "追跡されないので、getter は最初の値のまま。" },
+      "disposition": ["runtime-report", "lint-rule"],
+      "note": { "en": "The diagnostics add-on can warn about a getter whose first run tracked nothing (as signals' `UNTRACKED_COMPUTED` does); the lint's `wcs/getter-untracked-read` can cover more globals.", "ja": "diagnostics の後付けが、最初の評価で何も追跡しなかった getter に警告できる（signals の `UNTRACKED_COMPUTED` と同じ）。lint の `wcs/getter-untracked-read` はほかのグローバルにも広げられる。" }
+    },
+    {
+      "id": "top-level-write-typo",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Writes a top-level key the state does not declare — a typo (`this.coutn = 1`).", "ja": "state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。" },
+      "effect": { "en": "4.0 creates the key; nothing bound to `count` changes.", "ja": "4.0 はキーを作る。`count` に束ねたものは何も変わらない。" },
+      "disposition": ["lint-rule", "runtime-report"],
+      "note": { "en": "The lint can compare the script's writes with the declared keys; the diagnostics add-on can warn on a key created after load.", "ja": "lint はスクリプトの書き込みを宣言済みのキーと比べられる。diagnostics の後付けは、読み込みの後に作られたキーに警告できる。" }
+    },
+    {
+      "id": "undefined-write-skipped",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Writes `undefined` to an element's input or property after a value: a reset, a getter that returns `undefined`.", "ja": "要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。" },
+      "effect": { "en": "4.0 never writes `undefined` (B8): the element keeps the previous value — the previous user's avatar, old text.", "ja": "4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The diagnostics add-on can warn when an `undefined` follows a value; writing `null` clears.", "ja": "diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。" }
+    },
+    {
+      "id": "shared-object-two-places",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Puts one object at two positions of a list, or in two arrays no getter connects.", "ja": "1 つのオブジェクトを、一覧の 2 つの位置か、getter が結ばない 2 つの配列に置く。" },
+      "effect": { "en": "A write under one row does not reach the other row's bindings, row getters or `$getAll`.", "ja": "片方の行の下への書き込みが、もう片方の行の束縛・行 getter・`$getAll` に届かない。" },
+      "disposition": "design-out", "breaking": false,
+      "note": { "en": "The only known limitation of 4.0 (#365, #401), to be fixed in 4.x.", "ja": "4.0 の唯一の既知の制限（#365・#401）。4.x で直す。" }
+    },
+    {
+      "id": "link-aria-not-forwarded",
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Binds `attr.aria-*:` on a `<wcs-link>`.", "ja": "`<wcs-link>` に `attr.aria-*:` を束ねる。" },
+      "effect": { "en": "`aria-*` is copied once, when the link makes its `<a>`: later values never reach it.", "ja": "`aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。" },
+      "evidence": [{ "file": "packages/router/src/components/Link.ts", "text": "attr.name.startsWith('aria-')" }],
+      "disposition": "design-out", "breaking": false,
+      "note": { "en": "The link can forward later `aria-*` changes.", "ja": "リンクが後の `aria-*` の変化を転送できる。" }
+    }
+  ],
+  "uncounted": [
+    { "code": "wcs/manifest-broken", "why": { "en": "The sidecar manifest is not valid JSON. The manifest is the lint's input; the runtime never reads it.", "ja": "sidecar の manifest が JSON として読めない。manifest は lint の入力で、実行時は読まない。" } },
+    { "code": "wcs/manifest-schema-version", "why": { "en": "The sidecar manifest names a schema version the lint does not read.", "ja": "sidecar の manifest が、lint の読まない schema の版を名乗っている。" } },
+    { "code": "wcs/manifest-kind-invalid", "why": { "en": "The sidecar manifest's kind is not one the lint knows.", "ja": "sidecar の manifest の kind が、lint の知らないもの。" } },
+    { "code": "wcs/manifest-unknown-keyword", "why": { "en": "The sidecar manifest uses a schema keyword outside the subset the lint reads.", "ja": "sidecar の manifest が、lint の読む部分集合の外の schema のキーワードを使っている。" } },
+    { "code": "wcs/manifest-external-ref", "why": { "en": "The sidecar manifest refers to an external document, which the lint does not fetch.", "ja": "sidecar の manifest が外部の文書を参照している。lint は取りに行かない。" } },
+    { "code": "wcs/manifest-ref-cycle", "why": { "en": "The sidecar manifest's references loop.", "ja": "sidecar の manifest の参照が循環している。" } },
+    { "code": "wcs/manifest-ref-unresolved", "why": { "en": "A reference in the sidecar manifest points at nothing.", "ja": "sidecar の manifest の参照先が無い。" } },
+    { "code": "wcs/manifest-namespace-version", "why": { "en": "Sidecar manifests declare one namespace with different versions.", "ja": "複数の sidecar の manifest が、1 つの名前空間を違う版で宣言している。" } },
+    { "code": "wcs/manifest-tag-collision", "why": { "en": "Two sidecar manifests declare the same tag without override.", "ja": "2 つの sidecar の manifest が、override 無しで同じタグを宣言している。" } },
+    { "code": "wcs/manifest-filter-collision", "why": { "en": "Two sidecar manifests declare the same filter without override.", "ja": "2 つの sidecar の manifest が、override 無しで同じフィルタを宣言している。" } },
+    { "code": "wcs/manifest-state-collision", "why": { "en": "Two application manifests declare a stateSchema for the same state; the lint then checks that state against neither.", "ja": "2 つの application の manifest が同じ state の stateSchema を宣言している。lint はどちらでもその state を検査しない。" } },
+    { "code": "wcs/manifest-override", "why": { "en": "An info: a sidecar manifest overrides another on purpose.", "ja": "info: sidecar の manifest が、意図して別の宣言を上書きしている。" } },
+    { "code": "wcs/drift-missing-member", "why": { "en": "A component's sidecar manifest declares a member its live wcBindable declaration lacks. The runtime uses the live declaration; the manifest is what needs fixing, not the page.", "ja": "コンポーネントの sidecar の manifest が、実際の wcBindable の宣言に無いメンバーを宣言している。実行時が使うのは実際の宣言で、直すのは manifest（ページではない）。" } },
+    { "code": "wcs/drift-event-mismatch", "why": { "en": "A component's sidecar manifest names a different event for a property than its live wcBindable declaration.", "ja": "コンポーネントの sidecar の manifest が、実際の wcBindable の宣言と違うイベントをプロパティに名指している。" } },
+    { "code": "wcs/type-annotation", "why": { "en": "A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value.", "ja": "初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。" } },
+    { "code": "wcs/path-readonly", "why": { "en": "Reserved in the code table, not emitted yet.", "ja": "code の表に予約されているだけで、まだ出さない。" } },
+    { "code": "wcs/path-reserved-name", "why": { "en": "Reserved in the code table, not emitted yet.", "ja": "code の表に予約されているだけで、まだ出さない。" } },
+    { "code": "wcs/path-dynamic-unknown", "why": { "en": "Reserved in the code table, not emitted yet; it states a limit of the lint, not an author's mistake.", "ja": "code の表に予約されているだけで、まだ出さない。作者の誤りではなく lint の限界を表す。" } }
+  ]
+}

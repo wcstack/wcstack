@@ -106,7 +106,8 @@ export interface WcsMessageCatalog {
   watchPathMissing(key: string): string;
   // --- scanDeclarationValidator ---
   /**
-   * 4.0 で外れた `$scan` を宣言した。ランタイムは読み込み時に throw する。ボリューム（`mountPath` が非 null）は
+   * 4.0 で外れた `$scan` を宣言した。diagnostics の後付けを入れた入口（`/auto` など）は読み込み時に throw し、
+   * `/core` だけのページはキーを黙って無視する。ボリューム（`mountPath` が非 null）は
    * 読み込みを通らず、接ぎ木を拒んで console.error で報告する（その state は木に載らない）。
    */
   scanRemoved(mountPath: string | null): string;
@@ -129,6 +130,7 @@ export interface WcsMessageCatalog {
   /**
    * 4.0 で外れた宣言キーの旧名を `this.` 越しに**読んだ**（`this.$streams`）。4.0 の state に
    * そのキーは無いので、読み出しは黙って `undefined` になる（宣言していれば読み込み時に throw）。
+   * 正式名（`$stream`・`$renderedCallback`）も宣言で、`this` 越しには読めない — 書き換えを勧めない。
    */
   declarationAliasRead(alias: string, canonical: string): string;
   /** 4.0 で外れた宣言キーの旧名を宣言した（`$streams` → `$stream`。ランタイムは読み込み時に `[wcs/declaration-alias]`）。 */
@@ -204,7 +206,10 @@ export interface WcsMessageCatalog {
   /** `path@name` は v2 で `name.path` に置き換わる（`@default` は単に外す）。 */
   namedStatePathDeprecated(name: string): string;
   // --- mountAttrValidator ---
-  /** `mount` 属性値が runtime の validateVolumeMountPath で raise する形（同条件・同文言）。 */
+  /**
+   * `mount` 属性値が runtime（state の scopes/volume.ts の `validPath`）で拒まれる形。runtime の文面は
+   * どの形でも `has an invalid mount path` で、ここは形ごとに理由を言う。
+   */
   mountPathInvalid(problem: MountPathProblem, mountPath: string): string;
   // --- recursionValidator（$recursion / `**`） ---
   /**
@@ -245,7 +250,7 @@ export interface WcsMessageCatalog {
 }
 
 /** `mount` 属性値の不正の種類（runtime の validateVolumeMountPath の raise と 1:1）。 */
-export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'reserved';
+export type MountPathProblem = 'empty' | 'emptySegment' | 'wildcard' | 'whitespace' | 'reserved';
 
 /** `**` が現れた場所（`**` を解釈しない消費者）。 */
 export type RecursionWildcardSite =
@@ -339,7 +344,7 @@ const ja: WcsMessageCatalog = {
   watchPathMissing: (k) => `$watch のキー "${k}" は状態定義に存在しません（一度も発火しません）`,
   scanRemoved: (mountPath) =>
     mountPath === null
-      ? `$scan は 4.0 で外れました（ランタイムは読み込み時に throw します）。パスの変化を畳むなら $watch、イベントを畳むなら $on のハンドラで、出力のプロパティへ書いてください`
+      ? `$scan は 4.0 で外れました（diagnostics の後付けを入れた入口 — /auto など — は読み込み時に throw し、/core だけでは黙って無視します）。パスの変化を畳むなら $watch、イベントを畳むなら $on のハンドラで、出力のプロパティへ書いてください`
       : `$scan は 4.0 で外れました。ボリューム（mount="${mountPath}"）では、ランタイムは接ぎ木を拒んで console.error で報告します（この state は木に載りません）。root の state の $watch か $on のハンドラで畳んでください`,
   typeAnnotationIncompatible: (vt, rt) => `型 "${vt}" は @type {${rt}} と互換性がありません`,
   arrayMutation: (m, alt) =>
@@ -351,11 +356,11 @@ const ja: WcsMessageCatalog = {
   inPlaceChange: (src, t) =>
     `${src} は state の値をその場で変えるので、リアクティブ更新をトリガーしません。新しい値を作って ${t} に代入してください`,
   tagMemberUnknown: (prop, tag) =>
-    `"${prop}" は <${tag}> の wcBindable メンバーではありません（未知メンバーへのバインドは黙って無視されます）`,
+    `"${prop}" は <${tag}> の wcBindable メンバーではありません（ランタイムは宣言に無いメンバーへの束縛を #38 で拒み、root では state が初期化に失敗します）`,
   nameAlias: (written, canonical) =>
     `"${written}" は 4.0 で外れました（"${canonical}" の 3.x の旧名で、ランタイムは読んだ時点で throw します）。"${canonical}" と書いてください`,
   declarationAliasRead: (alias, canonical) =>
-    `"${alias}" は 4.0 で外れた宣言キー（"${canonical}" の 3.x の旧名）なので、this["${alias}"] は undefined になります。"${canonical}" を読んでください`,
+    `"${alias}" は 4.0 で外れた宣言キー（"${canonical}" の 3.x の旧名）なので、this["${alias}"] は undefined になります。宣言は this を通して読めません — "${canonical}" を読んでも undefined です${canonical === '$stream' ? '（ストリームの状態は $streamStatus・$streamError で読みます）' : ''}`,
   declarationAlias: (alias, canonical) =>
     `宣言キー "${alias}" は 4.0 で外れました（"${canonical}" の 3.x の旧名で、ランタイムは読み込み時に throw します）。"${canonical}" と書いてください`,
   declarationAliasInVolume: (alias, canonical, mountPath) =>
@@ -413,7 +418,7 @@ const ja: WcsMessageCatalog = {
   inputNestedWriteOneShot: (tag, input, path, example) =>
     `<${tag}> の入力 "${input}" に "${path}" を束ねていますが、ページはその下（"${example}"）へ書き込んでいます。束縛は "${path}" 自身への代入でしか当て直されず、<${tag}> は要求のたびに "${input}" を null に戻すので、次の要求は "${input}" なしで送られます — 要求を始めるハンドラで新しいオブジェクトを作って代入し（\`this.submitBody = { … }\`）、それを束ねてください`,
   devtoolsAfterState: () =>
-    `@wcstack/devtools/auto は @wcstack/state/auto より先に読み込んでください（後だと配線台帳がライブで captured されません）`,
+    `@wcstack/devtools/auto は @wcstack/state/auto より先に読み込んでください（後からだと、DevTools のタイムラインは付いた時点から始まります。既にある配線は 4.0 が送り直します）`,
   baseHrefMissing: () =>
     `@wcstack/router を使う SPA には <head> 内の <base href="/"> が必要です（無いとディープリンクで basename が誤導出されます）`,
   routerOutletMisplaced: () =>
@@ -435,10 +440,11 @@ const ja: WcsMessageCatalog = {
       : `"@name" セレクタは v2 で撤去されました（1 root 1 ツリー）。マウントしたツリーを "${name}.<path>" で参照してください（docs/state-mount-design.md §9）`,
   mountPathInvalid: (problem, mountPath) => {
     switch (problem) {
-      case 'empty': return `"mount" には空でないツリーパスが必要です（runtime: "mount" requires a non-empty tree path.）`;
-      case 'emptySegment': return `"mount" パス "${mountPath}" に空のセグメントがあります（runtime: has an empty segment.）`;
-      case 'wildcard': return `"mount" パス "${mountPath}" は静的でなければなりません — ワイルドカードは使えません（runtime: must be static.）`;
-      default: return `"mount" パス "${mountPath}" に予約文字（$, #, @）は使えません（runtime: must not use reserved characters.）`;
+      case 'empty': return `"mount" には空でない静的なパスが必要です（ランタイムはボリュームを拒みます: has an invalid mount path）`;
+      case 'emptySegment': return `"mount" パス "${mountPath}" に空の段があります（ランタイムはボリュームを拒みます: has an invalid mount path）`;
+      case 'wildcard': return `"mount" パス "${mountPath}" は静的でなければなりません — "*" は使えません（ランタイムはボリュームを拒みます: has an invalid mount path）`;
+      case 'whitespace': return `"mount" パス "${mountPath}" に空白は使えません（ランタイムはボリュームを拒みます: has an invalid mount path）`;
+      default: return `"mount" パス "${mountPath}" に予約文字（$, #, @）は使えません（ランタイムはボリュームを拒みます: has an invalid mount path）`;
     }
   },
   recursionUnsupported: (p, where) => {
@@ -460,7 +466,7 @@ const ja: WcsMessageCatalog = {
       case 'listKeys':
         return `$listKeys のキー "${p}" に "**" は使えません。キー付きリストは 1 本の具体リストパスです — 深さごとに宣言してください（例: "nodes.*.children"）`;
       default:
-        return `"${p}" は "**" を含みますが、この state には $recursion 宣言がありません。$recursion = { "<anchor>": "<repeat>" }（例: { "nodes.*": "children.*" }）を宣言してください（宣言が無いと "**" のキーは黙って無視されます）`;
+        return `"${p}" は "**" を含みますが、この state には $recursion 宣言がありません。$recursion = { "<anchor>": "<repeat>" }（例: { "nodes.*": "children.*" }）を宣言してください（宣言が無いと、ランタイムは読み込み時に #1101 で throw し、state は初期化に失敗します）`;
     }
   },
   recursionAnchorMismatch: (p, anchor) =>
@@ -601,7 +607,7 @@ const en: WcsMessageCatalog = {
   watchPathMissing: (k) => `$watch key "${k}" does not exist in the state definition (it will never fire)`,
   scanRemoved: (mountPath) =>
     mountPath === null
-      ? `$scan was removed in 4.0 (the runtime throws at load time). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there`
+      ? `$scan was removed in 4.0 (the entries with the diagnostics add-on, such as /auto, throw at load; /core alone ignores it). Fold a path's changes in a $watch handler, or events in an $on handler, and write the output property there`
       : `$scan was removed in 4.0. In a volume (mount="${mountPath}") the runtime refuses to graft it and reports that with console.error (this state is not on the tree). Fold in a $watch or $on handler on the root state`,
   typeAnnotationIncompatible: (vt, rt) => `Type "${vt}" is not compatible with @type {${rt}}`,
   arrayMutation: (m, alt) =>
@@ -613,11 +619,11 @@ const en: WcsMessageCatalog = {
   inPlaceChange: (src, t) =>
     `${src} changes the state's value in place, which does not trigger a reactive update. Build a new value and assign it to ${t}`,
   tagMemberUnknown: (prop, tag) =>
-    `"${prop}" is not a wcBindable member of <${tag}> (bindings to unknown members are silently ignored)`,
+    `"${prop}" is not a wcBindable member of <${tag}> (the runtime refuses a binding to an undeclared member with #38; at the root the state fails to initialize)`,
   nameAlias: (written, canonical) =>
     `"${written}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws when it is read) — write "${canonical}"`,
   declarationAliasRead: (alias, canonical) =>
-    `"${alias}" is a declaration key 4.0 removed (the 3.x old name of "${canonical}"), so this["${alias}"] is undefined. Read "${canonical}" instead`,
+    `"${alias}" is a declaration key 4.0 removed (the 3.x old name of "${canonical}"), so this["${alias}"] is undefined. A declaration cannot be read through this — reading "${canonical}" is undefined too${canonical === '$stream' ? ' (read a stream\'s state from $streamStatus / $streamError)' : ''}`,
   declarationAlias: (alias, canonical) =>
     `The declaration key "${alias}" was removed in 4.0 (the 3.x old name of "${canonical}"; the runtime throws at load time) — write "${canonical}"`,
   declarationAliasInVolume: (alias, canonical, mountPath) =>
@@ -675,7 +681,7 @@ const en: WcsMessageCatalog = {
   inputNestedWriteOneShot: (tag, input, path, example) =>
     `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it — build a new object in the handler that starts the request (\`this.submitBody = { … }\`) and bind that`,
   devtoolsAfterState: () =>
-    `Load @wcstack/devtools/auto BEFORE @wcstack/state/auto (otherwise the wiring ledger is not captured live)`,
+    `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
   baseHrefMissing: () =>
     `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
   routerOutletMisplaced: () =>
@@ -696,12 +702,13 @@ const en: WcsMessageCatalog = {
       ? `The "@default" selector was removed in v2 — drop it (docs/state-mount-design.md §9)`
       : `The "@name" selector was removed in v2 — there is a single state tree. Mount the named state onto the tree (<wcs-state mount="...">) and read it as "${name}.<path>" (docs/state-mount-design.md §9)`,
   mountPathInvalid: (problem, mountPath) => {
-    // runtime（state/src/webComponent/volume.ts validateVolumeMountPath）と同文言
+    // runtime（state の scopes/volume.ts の `validPath`）はどの形も `has an invalid mount path` で拒む
     switch (problem) {
-      case 'empty': return `"mount" requires a non-empty tree path.`;
-      case 'emptySegment': return `"mount" path "${mountPath}" has an empty segment.`;
-      case 'wildcard': return `"mount" path "${mountPath}" must be static (wildcards are not allowed).`;
-      default: return `"mount" path "${mountPath}" must not use reserved characters ($, #, @).`;
+      case 'empty': return `"mount" needs a non-empty static path (the runtime refuses the volume: "has an invalid mount path").`;
+      case 'emptySegment': return `"mount" path "${mountPath}" has an empty segment (the runtime refuses the volume: "has an invalid mount path").`;
+      case 'wildcard': return `"mount" path "${mountPath}" must be static — no "*" (the runtime refuses the volume: "has an invalid mount path").`;
+      case 'whitespace': return `"mount" path "${mountPath}" must not contain whitespace (the runtime refuses the volume: "has an invalid mount path").`;
+      default: return `"mount" path "${mountPath}" must not use the reserved characters $, #, @ (the runtime refuses the volume: "has an invalid mount path").`;
     }
   },
   recursionUnsupported: (p, where) => {
@@ -723,7 +730,7 @@ const en: WcsMessageCatalog = {
       case 'listKeys':
         return `$listKeys key "${p}" cannot contain "**" — a keyed list is one concrete list path. Declare the key per depth instead (for example "nodes.*.children")`;
       default:
-        return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) — without it a "**" key is silently ignored`;
+        return `"${p}" contains "**" but this state declares no $recursion anchor. Declare $recursion = { "<anchor>": "<repeat>" } (for example { "nodes.*": "children.*" }) — without it the runtime throws #1101 at load and the state fails to initialize`;
     }
   },
   recursionAnchorMismatch: (p, anchor) =>

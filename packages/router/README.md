@@ -223,7 +223,7 @@ Displays children when the route path matches. Match priority is static paths ov
 
 | Attribute | Description |
 |------|------|
-| `path` | For top-level routes, specify an absolute path starting with `/`. Otherwise, specify a relative path. For parameters, use `:paramName`. For catch-all, use `*`. Top-level routes cannot use relative paths. |
+| `path` | For top-level routes, specify an absolute path starting with `/`. Otherwise, specify a relative path. For parameters, use `:paramName`. For catch-all, use `*`. Top-level routes cannot use relative paths. A route's parent is the `<wcs-route>` it is inside: elements and `<wcs-layout>` around it do not change that, and neither do the routes before it. |
 | `index` | Inherits the upper path. |
 | `fallback` | Displayed when no route matches the path. |
 | `fullpath` | Path including parent routes (read-only). |
@@ -282,8 +282,9 @@ Place as a child of `<wcs-route>` to declaratively define a guard decision funct
 - A guard does not see the `<wcs-state>` tree, and on a page load the landing route's guard can run before `@wcstack/state` has loaded. Read what the session is kept in directly — `localStorage`, under the key a `<wcs-storage>` saves it to (stored as JSON) — which is also current in every tab
 - The function can return a `Promise` for async checks — the route is not committed until it settles
 - The third argument carries the match being entered (`params` / `typedParams` / `searchParams` / `routeName`); `toPath` / `fromPath` are basename-sliced paths
-- `<wcs-guard-handler>` placed outside a `<wcs-route>` is ignored
-- If no `<script type="module">` is present, `guardHandler` is not set
+- It guards the `<wcs-route>` it is inside, wherever it sits there — before or after the nested routes, or inside an element. A parent's guard runs for every navigation into its child routes too
+- Outside any `<wcs-route>` it is reported with `console.error` (`[wcs/guard-handler-ignored]`). If it follows a route at the same level, it keeps guarding that route, as it did before 4.3 — move it inside. Otherwise it guards nothing
+- If no `<script type="module">` is present, `guardHandler` is not set, and the route is not guarded: reported with `console.error` (`[wcs/guard-handler-ignored]`)
 - **Under a Content-Security-Policy**, the guard script is evaluated through a `blob:` URL, so it needs either the page's nonce on the `<script>` that loads router (the blob: import inherits it) or `script-src blob:`. (Router retries through a `data:` URL when the blob: import fails, so `script-src data:` would also pass — do not open it; it is the riskier source.) Guards are inline-only — there is no `src=` escape hatch as there is for `<wcs-state>`. See [docs/csp.md](../../docs/csp.md)
 - **Under `require-trusted-types-for 'script'`**, `<wcs-layout>` expands its template through a Trusted Types policy named `wcstack`, so the CSP needs `trusted-types wcstack;` (or your own policy, injected as described in [docs/csp.md](../../docs/csp.md) section 7)
 
@@ -587,7 +588,7 @@ See [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y
 
 1. The `basename` attribute on `<wcs-router basename="/app">`
 2. If `<base href="/app/">` exists, derive from `new URL(document.baseURI).pathname`
-3. If neither exists, `document.baseURI` is the current document URL, so the basename is still derived from `location.pathname`. It becomes **empty string** `""` only when the document itself was loaded at the root — a direct load of `/products/3` yields the basename `/products/3`, so an app that must survive deep links needs `<base href="/">` or an explicit `basename` attribute
+3. If neither exists, `document.baseURI` is the current document URL, so the basename is still derived from `location.pathname`. It becomes **empty string** `""` only when the document itself was loaded at the root — a direct load of `/products/3` yields the basename `/products/3`, so an app that must survive deep links needs `<base href="/">` or an explicit `basename` attribute. When the basename is derived this way and is not empty, the router warns `[wcs/base-href-missing]` (the code `wcs-validate` reports from the markup)
 
 ### 1.2 basename normalization (important)
 
