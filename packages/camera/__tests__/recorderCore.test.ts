@@ -43,6 +43,27 @@ describe("RecorderCore", () => {
     expect((recorded[0] as { blob: Blob }).blob).toBe(core.blob);
   });
 
+  it("準備のできていない要素への start を、1 要素につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+      const target = new EventTarget();
+      const core = new RecorderCore(target);
+      core.start();
+      core.start();
+      expect(said()).toHaveLength(1);
+      expect(String(said()[0][0])).toContain("start() was refused: no stream is attached, so nothing is recorded.");
+      expect(said()[0][1]).toBe(target);
+      // (error にも流れる — 従来どおり)
+      expect(core.error).not.toBeNull();
+      // 別の要素ではまた言う
+      const other = new RecorderCore();
+      other.start();
+      expect(said()).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
   it("stream 未 attach で start すると error（NoStreamError）", () => {
     const core = new RecorderCore();
     core.start();

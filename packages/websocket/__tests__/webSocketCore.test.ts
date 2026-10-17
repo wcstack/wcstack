@@ -265,6 +265,27 @@ describe("WebSocketCore", () => {
       expect(MockWebSocket.instances[0].send).toHaveBeenCalledWith("hello");
     });
 
+    it("準備のできていない要素への send を、1 要素につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+        const target = new EventTarget();
+        const core = new WebSocketCore(target);
+        core.send("hello");
+        core.send("hello");
+        expect(said()).toHaveLength(1);
+        expect(String(said()[0][0])).toContain("send() was refused: the WebSocket is not connected, so the message is lost.");
+        expect(said()[0][1]).toBe(target);
+        // (error にも流れる — 従来どおり)
+        expect(core.error).not.toBeNull();
+        // 別の要素ではまた言う
+        const other = new WebSocketCore();
+        other.send("hello");
+        expect(said()).toHaveLength(2);
+      } finally {
+        warn.mockRestore();
+      }
+    });
     it("未接続時は例外をスローせず error プロパティに流す", () => {
       const core = new WebSocketCore();
       const errors: any[] = [];

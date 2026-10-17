@@ -71,16 +71,15 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 2 |
-| 実行時 | 45 |
+| 実行時 | 46 |
 | lint だけ — 条件付きの沈黙 | 22 |
-| 文書だけ — 沈黙 | 11 |
+| 文書だけ — 沈黙 | 10 |
 | 数えない lint の code | 18 |
 
 ### 文書だけ — 沈黙
 
 | 誤り | 何が起きるか | 害 | 扱い |
 |---|---|---|---|
-| I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、ストリームの無い recorder の `start`。 | 呼び出しはノードの `error` の出力にだけ流れる。`error` を束ねていなければ、メッセージは黙って失われる。 | データの損失 | 実行時に知らせる — 4.x。ノードが、拒んだ呼び出しをコンソールにも 1 回記録できる。 |
 | 行が束ねていない状態（入力中の文字・フォーカス・開いた `<details>`）を持つ一覧を、`$listKeys` なしで取り直す。 | 新しいオブジェクトは参照で一致しないので、すべての行が作り直され、その状態は失われる。 | データの損失 | lint の規則 — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 取得したデータの `for:` で、行に入力欄があり `$listKeys` が無ければ info。5.0: オブジェクトが `id` を持てば、それで行を合わせる。 |
 | 利用者が決められる文字列を `href:`・`src:`・`attr.href:`・`attr.on*:` に束ねる。 | `javascript:` の URL やハンドラの文字列がそのまま書かれる。CSP が止めなければ XSS。 | 安全 | lint の規則 — 4.x。その後、実行時に知らせる — 4.x。4.x: lint はすべての `attr.on*:` を報告でき、diagnostics の後付けは `javascript:` の URL に警告できる。4.0 は core で拒まないと決めた（2026-10-02）。拒むのは破壊的。 |
 | 利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込み、それを持つ要素に `data-wcs-ignore` を付けない。 | ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。 | 安全 | どこからも見えない — 文書。注入されたマークアップは、作者が書いたものと見分けられない。4.3 で文書が教える守りが加わった: 要素に `data-wcs-ignore`（R10）を付ければ、走査はその中を読まない。 |
@@ -125,6 +124,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|---|
 | 1 つの `<wcs-fetch>` で `url` によって読み込み、同じ要素で `method` + `body` + `trigger` によって投稿する。 | code なし: メソッドはそのままで本文は 1 回だけ送られるので、以後の url の変化ごとに本文の無い `POST` を送る。url の監視が本文の無い変更を送るとき、要素が `[wcs/fetch-auto-unsafe]` で警告する。 | — |
 | 重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。 | code なし: 新しい要求が実行中の要求を中断し、その結果を捨てる。それが変更の要求（GET・HEAD・OPTIONS 以外）なら、要素がメソッドと URL を名指して `[wcs/fetch-request-superseded]` で警告する。 | — |
+| I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、チャンネルの無い `<wcs-broadcast>` や worker の無い `<wcs-worker>` の `post`、ストリームの無い recorder の `start`。 | code なし: 呼び出しは拒まれ、運んでいたものは失われる。ノードの `error` の出力に流れ、要素が `[wcs/command-not-ready]` で 1 回警告する（環境に無い API は `supported` が知らせる）。 | — |
 | `<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type="module"` の無いスクリプトを付ける。 | code なし: router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートは守られない。同じ階層でルートの後に置いた外のものは、以前と同じくそのルートを守り続ける。 lint の規則はまだ無い。どちらの形もマークアップに見える。 | — |
 | `<wcs-storage type>` を打ち間違える（`type="sesion"`）。 | code なし: `session` ちょうど以外は `local` になり、セッション向けのデータがディスクに残る。要素は値ごとに 1 回 `[wcs/storage-type-invalid]` で警告する。 lint の規則はまだ無い。値はマークアップにある。 | — |
 | `<base href>` も `basename` も無いページで router を読み込む。 | 同じ code: `/products/3` へのディープリンクか再読み込みで、router は `/products/3` を basename にし、根のルートを表示して、リンクをその下で解決する。導いた basename を添えて `[wcs/base-href-missing]` で警告する。 5.0 の議題: basename を導かない。導出に頼るサブフォルダのアプリが変わる。 | `wcs/base-href-missing` (warning) |

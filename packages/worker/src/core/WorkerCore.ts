@@ -78,6 +78,13 @@ export class WorkerCore extends EventTarget {
   // asynchronous probe to await — readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
 
+  /**
+   * Whether `[wcs/command-not-ready]` was said for this element: a `post()` refused because the
+   * element is not ready loses what it carried, and `error` alone told only a page that binds it.
+   * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+   */
+  private _toldNotReady = false;
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
@@ -220,6 +227,7 @@ export class WorkerCore extends EventTarget {
         name: "InvalidStateError",
         message: "Worker is not running. Call start(src) before post().",
       });
+      this._warnNotReady();
       return;
     }
     try {
@@ -231,6 +239,16 @@ export class WorkerCore extends EventTarget {
     } catch (err) {
       this._setError(this._normalizeError(err));
     }
+  }
+
+  private _warnNotReady(): void {
+    if (this._toldNotReady) return;
+    this._toldNotReady = true;
+    console.warn(
+      "[@wcstack/worker] [wcs/command-not-ready] post() was refused: no worker is running, so the message is lost. " +
+        "It goes to `error` too. Give the element a `src` (or call start(src)) first. (Said once per element.)",
+      this._target,
+    );
   }
 
   /** Terminate the worker. Idempotent — a no-op when none is running. */

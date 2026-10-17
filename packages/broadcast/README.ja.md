@@ -134,7 +134,7 @@ post は DOM クリック（autoTrigger）または command-token から起動�
 | プロパティ | イベント                 | 説明                                                                                 |
 | --------- | ------------------------ | ------------------------------------------------------------------------------------ |
 | `message` | `wcs-broadcast:message`  | チャンネル上の他のコンテキストから受信した直近の値（structured clone のコピー）。このコンテキスト自身の post では決して設定されない。 |
-| `error`   | `wcs-broadcast:error`    | 正規化された `{ name, message }` — `DataCloneError`（クローン不可能な post）、`DataError`（ピアのメッセージをデシリアライズできなかった）、`InvalidStateError`（開いているチャンネルが無い状態での post）、または `NotSupportedError`（BroadcastChannel が利用不可）。 |
+| `error`   | `wcs-broadcast:error`    | 正規化された `{ name, message }` — `DataCloneError`（クローン不可能な post）、`DataError`（ピアのメッセージをデシリアライズできなかった）、`InvalidStateError`（開いているチャンネルが無い状態での post — メッセージは失われ、要素が `[wcs/command-not-ready]` で警告する。1 要素につき 1 回）、または `NotSupportedError`（BroadcastChannel が利用不可）。 |
 | `errorInfo` | `wcs-broadcast:error-info-changed` | シリアライズ可能な失敗タクソノミ `WcsIoErrorInfo \| null`（安定した `code` / `phase` / `recoverable`）。`error` と同じ失敗から導出される。追加的で、`error` の形状は不変。 |
 
 ## コマンド

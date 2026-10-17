@@ -203,7 +203,7 @@ These properties control connection and messaging from HTML, JS, or `@wcstack/st
 |----------|------|-------------|
 | `url` | `string` | WebSocket endpoint URL |
 | `trigger` | `boolean` | One-way connection trigger |
-| `send` | `any` | Set to transmit data (auto-stringifies objects) |
+| `send` | `any` | Set to transmit data (auto-stringifies objects). Before the socket is open it is refused: it goes to `error` (`invalid-state`), the message is lost, and the element warns `[wcs/command-not-ready]` (once per element) |
 | `manual` | `boolean` | Disables auto-connect on DOM attach |
 
 **`null` and `undefined`.** The inputs backed by an attribute (`url`, `protocols`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `binaryType`, `manual` — see [Elements](#elements)) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A `url` restored this way reconnects like any other `url` change; a cleared `url` does not connect. `trigger` and `send` ignore both.

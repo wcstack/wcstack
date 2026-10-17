@@ -86,6 +86,13 @@ export class RecorderCore extends EventTarget {
   // asynchronous probe to await — readiness is immediate.
   private _ready: Promise<void> = Promise.resolve();
 
+  /**
+   * Whether `[wcs/command-not-ready]` was said for this element: a `start()` refused because the
+   * element is not ready loses what it carried, and `error` alone told only a page that binds it.
+   * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+   */
+  private _toldNotReady = false;
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
@@ -185,6 +192,7 @@ export class RecorderCore extends EventTarget {
     }
     if (!this._stream) {
       this._setError({ name: "NoStreamError", message: "No stream attached. Wire a camera's stream-ready to attachStream first." });
+      this._warnNotReady();
       return;
     }
     if (this._recording) return;
@@ -250,6 +258,16 @@ export class RecorderCore extends EventTarget {
     this._setDuration(0);
     recorder.start(this._timeslice ? options.timeslice : undefined);
     this._setRecording(true);
+  }
+
+  private _warnNotReady(): void {
+    if (this._toldNotReady) return;
+    this._toldNotReady = true;
+    console.warn(
+      "[@wcstack/camera] [wcs/command-not-ready] start() was refused: no stream is attached, so nothing is recorded. " +
+        "It goes to `error` too. Wire a camera's stream to the recorder first. (Said once per element.)",
+      this._target,
+    );
   }
 
   /** Stop recording; the assembled Blob is published from the recorder's onstop. */

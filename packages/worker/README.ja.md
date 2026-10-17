@@ -145,7 +145,7 @@ DOM トリガは**常に文字列を post します** — リテラルの `data-
 | プロパティ | イベント                      | 説明                                                                                 |
 | --------- | ----------------------------- | ------------------------------------------------------------------------------------ |
 | `message` | `wcs-worker:message`          | worker が post し返した直近の値（structured clone のコピー）。値が変わらなくても、メッセージごとに再発火する。 |
-| `error`   | `wcs-worker:error`            | 正規化された `{ name, message, filename?, lineno?, colno? }` — `DataCloneError`（クローン不可能な post）、`DataError`（worker メッセージをデシリアライズできなかった）、`InvalidStateError`（稼働中の worker が無い状態での post）、スクリプトの `Error`（worker 内の未捕捉エラー、位置情報付き）、または spawn 失敗（不正な URL / CSP / 非対応）。 |
+| `error`   | `wcs-worker:error`            | 正規化された `{ name, message, filename?, lineno?, colno? }` — `DataCloneError`（クローン不可能な post）、`DataError`（worker メッセージをデシリアライズできなかった）、`InvalidStateError`（稼働中の worker が無い状態での post — メッセージは失われ、要素が `[wcs/command-not-ready]` で警告する。1 要素につき 1 回）、スクリプトの `Error`（worker 内の未捕捉エラー、位置情報付き）、または spawn 失敗（不正な URL / CSP / 非対応）。 |
 | `errorInfo` | `wcs-worker:error-info-changed` | シリアライズ可能な失敗タクソノミ `WcsIoErrorInfo \| null`（安定した `code` / `phase` / `recoverable`）。`error` と同じ失敗から導出される。追加的で、`error` の形状は不変。 |
 | `running` | `wcs-worker:running-changed`  | worker が spawn され、まだ terminate されていない間は `true`。                       |
 
