@@ -45,7 +45,7 @@ describe('外部 state（<wcs-state src>）にもスクリプトの規則をか�
     const found = validateDocument(html, { locale: 'en', fileReader: reader({ './state.js': STATE }) });
     expect(codes(found)).toEqual(codes(inline));
     const inFile = found.filter((d) => d.origin !== undefined);
-    expect(codes(inFile)).toEqual(['wcs/array-mutation', 'wcs/nested-assign', 'wcs/on-handler-this', 'wcs/updated-callback-unbound']);
+    expect(codes(inFile)).toEqual(['wcs/array-mutation', 'wcs/command-token-unbound', 'wcs/nested-assign', 'wcs/on-handler-this', 'wcs/updated-callback-unbound']);
     const value = html.indexOf('./state.js');
     for (const d of inFile) {
       expect([d.start, d.end]).toEqual([value, value + './state.js'.length]);
@@ -74,7 +74,7 @@ describe('外部 state（<wcs-state src>）にもスクリプトの規則をか�
       { source: 'app/b.html', text: html, kind: 'html', fileReader },
     ], { locale: 'en' });
     const inState = result.lines.filter((l) => l.startsWith('app/state.js:'));
-    expect(inState).toHaveLength(4);
+    expect(inState).toHaveLength(5);
     const nested = STATE.indexOf('this.items[0].on');
     const { line, column } = at(STATE, nested);
     expect(inState).toContain(result.lines.find((l) => l.startsWith(`app/state.js:${line}:${column} error wcs/nested-assign `)));

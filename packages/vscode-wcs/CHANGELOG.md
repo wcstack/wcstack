@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+- **7GUIs の評価で、実行時も lint も黙っていた（または汎用の TypeError だけだった）形を報告する**:
+  - `wcs/path-readonly`（error。予約だけだった code）— 書き戻す束縛（`<input>`・`<select>`・`<textarea>` の `value:`、checkbox・radio の `checked:`、`radio:` / `checkbox:`。`#ro` なし）が setter の無い getter を指す。入力のたびに `"celsius" is a getter without a setter` を投げていた。
+  - `wcs/command-token-unbound`（warning、新規）— 宣言したコマンドトークンを emit する（スクリプトの `.emit()`、マークアップの `on*: $command.<名前>`）のに、ドキュメントのどの `command.<メソッド>:` 束縛も受けない。emit は誰にも届かず、何も言わなかった。
+  - `wcs/write-path-missing`（warning、新規）— state が宣言していないキーへの `this.<キー> = …` で、近い宣言済みのキーがあるもの（`this.selectedID` と `selectedId`）。新しいキーができるだけで、宣言したキーに束ねたものは変わらなかった。近い名前の無い新しいキーは報告しない。
+  - `wcs/token-undeclared` がスクリプトも見る — `$commandTokens` に無い名前の `this.$command.<名前>`（error）。`.emit()` は何も名指さない TypeError を投げていた。
+  - `wcs/getter-untracked-read` が時刻を読む getter も見る（`Date.now()`・引数の無い `new Date()`・`performance.now()`）。キャッシュされた getter は最初の値のままで、Timer の経過時間は 0.0s から動かなかった。
+  - `wcs/updated-callback-unbound` が、`$renderedCallback` で調べる state に無いパスも、近いパスがあれば報告する（`paths.includes("labell")` と `label`）。
 - **外部 state（`<wcs-state src>` の `.js` / `.ts`）にもスクリプトの規則をかける** — `wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` などは `<wcs-state>` の中のスクリプトしか見ず、`src=` の state ではパスだけを検査していた（7GUIs の評価: 同じスクリプトがインラインなら error 3・warning 1、`src="./state.js"` では 0 件）。ページを、読めた state のスクリプトを要素の中に置いた形でもう一度検査し、ファイルの中の指摘はそのファイルの位置へ、ページの指摘はページへ戻す。CLI はファイルの中の指摘をそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数える。IDE はページの `src` の値の上に出し、文面の頭にファイルの位置を、関連情報にファイルへのリンクを付ける。ページの側でも、ファイルのハンドラが見えて初めて分かるもの（`wcs/submit-without-prevent`・`wcs/delegated-current-target`）が出るようになる。
 - **`wcs/updated-callback-unbound` が、入れ子の相対 `for:` の中の束縛を数える** — `for: rows` の中の `for: .cells` の中の `if: .editing`（`rows.*.cells.*.editing`）を「どこにも束縛されていない」と誤って報告していた。相対の `for:` を外側から合成して展開する。
 

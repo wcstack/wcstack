@@ -43,6 +43,8 @@ export const WcsDiagnosticCode = {
   // --- path / type resolution against a stateSchema ---
   PathNonexistent: "wcs/path-nonexistent",
   PathTypeMismatch: "wcs/path-type-mismatch",
+  // 書き戻す束縛（`value:` / `checked:` / `radio:` / `checkbox:`、`#ro` なし）が、setter の無い getter を指す。ランタイムは
+  // 入力のたびに `"<path>" is a getter without a setter` を投げる（code なし — 7GUIs の評価の Temperature）。error。
   PathReadonly: "wcs/path-readonly",
   PathReservedName: "wcs/path-reserved-name",
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
@@ -55,6 +57,13 @@ export const WcsDiagnosticCode = {
   BindingTypeExpectation: "wcs/binding-type-expectation",
   TokenUndeclared: "wcs/token-undeclared",
   TokenMisconfigured: "wcs/token-misconfigured",
+  // 宣言したコマンドトークンを emit する（スクリプトの `.emit()`・マークアップの `on*: $command.x`）のに、どの
+  // `command.<method>:` 束縛にも結ばれていない。emit は誰にも届かず、ランタイムは何も言わない（7GUIs の評価）。warning
+  // （ページの外 — 別ファイルのルートのテンプレート — で束ねる形は見えない）。
+  CommandTokenUnbound: "wcs/command-token-unbound",
+  // state が宣言していないトップレベルのキーへの書き込み（`this.selectedID = …` と `selectedId`）。新しいキーができる
+  // だけで、宣言したキーの束縛は変わらない。ランタイムは何も言わない。近い名前（打ち間違い）があるときだけ、warning。
+  WritePathMissing: "wcs/write-path-missing",
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
   // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
