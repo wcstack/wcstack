@@ -139,6 +139,11 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     const direct = b.propModifiers.includes("direct");
     const delegated = !direct && BUBBLING.has(type);
     if (delegated) engine.delegate(type);
+    // (a delegated handler's failure: the diagnostics add-on says when event.currentTarget, the root there, is why)
+    const fail = (error: unknown): void => {
+      console.error(error);
+      if (delegated) hooks.handlerThrew?.(engine, path, type);
+    };
     return {
       ...blank(), node, kind: K_EVENT, name: type, delegated, custom, direct,
       listener(e: Event, row: StateRow | null) {
@@ -149,10 +154,10 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
           else {
             // an async handler's failure is reported like a sync one's (not left unhandled)
             const r = engine.invoke(path, e, row) as any;
-            if (isThenable(r)) r.then(undefined, (error: unknown) => console.error(error));
+            if (isThenable(r)) r.then(undefined, fail);
           }
         } catch (error) {
-          console.error(error);
+          fail(error);
         }
       },
     };

@@ -1660,7 +1660,7 @@ export default {
 
 `on*:` bindings for `click`, `dblclick`, `input`, `change`, `submit`, `keydown`, `keyup`, `mousedown`, `mouseup`, `pointerdown` and `pointerup` are **delegated**: one listener per event type sits on the root the state binds — the document, a shadow root, or, inside a Light DOM mounted component, the host element — and it runs the handlers of the elements the event passed, innermost first. So:
 
-- `event.currentTarget` in the handler is that root, not the element. Find the element from `event.target` (`event.target.closest("li")`), or use the loop index the handler receives (`removeItem(event, index)`).
+- `event.currentTarget` in the handler is that root, not the element. Find the element from `event.target` (`event.target.closest("li")`), or use the loop index the handler receives (`removeItem(event, index)`). Since 4.4 (not released yet), when a delegated handler whose source reads `currentTarget` throws (`getBoundingClientRect is not a function`), the `diagnostics` add-on says why after the error, once per handler (`[wcs/delegated-current-target]`, the lint's code).
 - `#stop` on an inner `on*:` binding stops the `on*:` handlers further out. It cannot stop a listener your own code added to an ancestor (`addEventListener` on a clickable card): that listener ran before the event reached the root.
 - Your code calling `stopPropagation()` on an ancestor (a modal's content keeping clicks from the overlay) keeps the delegated handlers inside it from running at all.
 - An element moved under another root (a dialog moved from a shadow root to `document.body`) no longer runs its delegated handlers.
@@ -2109,6 +2109,7 @@ export default {
 - The reserved name `$command` itself cannot appear in the array
 - Tokens are gathered under `$command` so they do not pollute the top-level state namespace; reactive properties with the same name as a token can coexist
 - Accessing an undeclared name on `$command` (e.g. `this.$command.typo`) returns `undefined`. The typo then surfaces as a `TypeError` on the subsequent `.emit()` call, or — when used as a binding right-hand side — as `[wcs/token-undeclared] "$command.typo" is not declared in $commandTokens.` (`#1302`, with a did-you-mean) when the binding is attached
+- A token keeps nothing: an emit while no `command.` binding subscribes to it is lost. Since 4.4 (not released yet) the `diagnostics` add-on warns about it once per token (`[wcs/command-token-unbound]`). The binding may not be attached yet — its element is defined later (an autoloader, a slow CDN), or it is in an `if:` branch the same update renders, so emit from `$renderedCallback` — or there may be none (the lint reports that case too)
 
 ### `command.<methodName>:` Binding
 

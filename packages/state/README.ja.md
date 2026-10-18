@@ -1654,7 +1654,7 @@ export default {
 
 `click`・`dblclick`・`input`・`change`・`submit`・`keydown`・`keyup`・`mousedown`・`mouseup`・`pointerdown`・`pointerup` の `on*:` バインディングは**委譲**されます: イベント種別ごとに 1 つのリスナーが、state がバインドするルート —— document、shadow root、あるいは Light DOM のマウントされたコンポーネントの中ではホスト要素 —— に置かれ、イベントが通過した要素のハンドラを内側から順に実行します。そのため:
 
-- ハンドラの中の `event.currentTarget` は要素ではなく、そのルートです。要素は `event.target` から探すか（`event.target.closest("li")`）、ハンドラが受け取るループインデックスを使ってください（`removeItem(event, index)`）。
+- ハンドラの中の `event.currentTarget` は要素ではなく、そのルートです。要素は `event.target` から探すか（`event.target.closest("li")`）、ハンドラが受け取るループインデックスを使ってください（`removeItem(event, index)`）。4.4（未リリース）から、ソースが `currentTarget` を読む委譲されたハンドラが throw すると（`getBoundingClientRect is not a function`）、`diagnostics` アドオンがエラーの後に、ハンドラごとに 1 回その理由を言います（`[wcs/delegated-current-target]`、lint と同じ code）。
 - 内側の `on*:` バインディングの `#stop` は、それより外側の `on*:` ハンドラを止めます。自分のコードが祖先に付けたリスナー（クリックできるカードへの `addEventListener`）は止められません: そのリスナーは、イベントがルートに届く前に実行済みです。
 - 自分のコードが祖先で `stopPropagation()` を呼ぶと（モーダルの中身がオーバーレイにクリックを渡さないようにする場合など）、その内側の委譲されたハンドラはまったく実行されません。
 - 別のルートの下へ移した要素（shadow root から `document.body` へ移したダイアログ）では、委譲されたハンドラはもう実行されません。
@@ -2099,6 +2099,7 @@ export default {
 - 予約名 `$command` 自体は配列に含められない
 - token は `$command` 配下にまとめられるためトップレベルの state 名前空間を汚さない。token と同名のリアクティブプロパティが共存できる
 - `$command` 上の未宣言の名前にアクセスする（例: `this.$command.typo`）と `undefined` が返る。typo はその後の `.emit()` 呼び出しで `TypeError` として、あるいはバインディングの右辺で使った場合は、バインディングの取り付け時に `[wcs/token-undeclared] "$command.typo" is not declared in $commandTokens.`（`#1302`、did-you-mean 付き）として表面化する
+- トークンは何も取っておかない: どの `command.` 束縛も購読していない間の emit は消える。4.4（未リリース）から、`diagnostics` アドオンがトークンごとに 1 回警告する（`[wcs/command-token-unbound]`）。束縛がまだ付いていない — 要素の定義が遅れる（autoloader、遅い CDN）、または同じ更新で描かれる `if:` の枝の中にある（`$renderedCallback` から emit する） — か、束縛が無い（その場合は lint も報告する）
 
 ### `command.<methodName>:` バインディング
 

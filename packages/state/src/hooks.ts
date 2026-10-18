@@ -85,6 +85,8 @@ export interface Hooks {
   tags?: ((registry: CustomElementRegistry) => void) | null;
   /** A wc-bindable property's event read with the default getter (`e.detail`): diagnostics checks its shape. */
   detail?: ((el: Element, name: string, detail: unknown) => void) | null;
+  /** The handler `path` of a delegated `on<type>:` threw (reported already): diagnostics says when `currentTarget` is why. */
+  handlerThrew?: ((engine: Engine, path: string, type: string) => void) | null;
   /**
    * `command.<method>:` on an element with no wc-bindable declaration: how a native element's
    * method is called (native-commands), or null for a custom element. The add-on throws for a

@@ -274,7 +274,7 @@
       "lint": [{ "code": "wcs/delegated-current-target", "severity": "warning" }],
       "runtime": "silent", "harm": "broken",
       "mistake": { "en": "A handler of a delegated event (`onclick:` and the other bubbling events) reads `event.currentTarget`.", "ja": "委譲されるイベント（`onclick:` などバブルするイベント）のハンドラが `event.currentTarget` を読む。" },
-      "effect": { "en": "It is the root, not the element: `getBoundingClientRect`, `setPointerCapture` or `new FormData(e.currentTarget)` act on the wrong node or throw.", "ja": "要素ではなく root なので、`getBoundingClientRect`・`setPointerCapture`・`new FormData(e.currentTarget)` が違うノードに効くか throw する。" },
+      "effect": { "en": "It is the root, not the element: `getBoundingClientRect`, `setPointerCapture` or `new FormData(e.currentTarget)` act on the wrong node or throw. When the handler throws, the diagnostics add-on says why, once per handler (`[wcs/delegated-current-target]`); a `.value` that reads `undefined` stays silent.", "ja": "要素ではなく root なので、`getBoundingClientRect`・`setPointerCapture`・`new FormData(e.currentTarget)` が違うノードに効くか throw する。ハンドラが throw したときは、diagnostics の後付けがハンドラごとに 1 回その理由を言う（`[wcs/delegated-current-target]`）。`undefined` を読むだけの `.value` は黙ったまま。" },
       "disposition": "design-out", "breaking": true,
       "note": { "en": "The root listener could give the event an own `currentTarget` (the element) while the handler runs — about 60–90 B of core; it revisits the 2026-10-02 decision behind `#direct`.", "ja": "root のリスナーが、ハンドラの間だけイベントに自前の `currentTarget`（要素）を持たせられる — core に約 60〜90 B。2026-10-02 の `#direct` の決定を見直すことになる。" }
     },
@@ -604,21 +604,20 @@
     },
     {
       "id": "io-auto-after-state",
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Loads an I/O node's `/auto` after `@wcstack/state/auto`.", "ja": "I/O ノードの `/auto` を `@wcstack/state/auto` の後に読み込む。" },
-      "effect": { "en": "Command bindings wait for the tag's definition, so a `$command` emit in that window reaches no one and is dropped.", "ja": "コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。" },
-      "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "pending(r.whenDefined(tag), owner" }],
-      "disposition": "lint-rule",
-      "note": { "en": "`wcs/script-order` checks DevTools only; extending it to the I/O `/auto` entries is small.", "ja": "`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。" }
+      "effect": { "en": "Command bindings wait for the tag's definition, so a `$command` emit in that window reaches no one and is dropped; the diagnostics add-on warns `[wcs/command-token-unbound]` once per token.", "ja": "コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。diagnostics の後付けがトークンごとに 1 回 `[wcs/command-token-unbound]` を警告する。" },
+      "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "pending(r.whenDefined(tag), owner" }, { "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/command-token-unbound]" }],
+      "note": { "en": "A late definition does it too (an autoloader, a slow CDN — a 7GUIs evaluation's Timer). `wcs/script-order` checks DevTools only; extending it to the I/O `/auto` entries is small.", "ja": "定義が遅れても起きる（autoloader、遅い CDN — 7GUIs の評価の Timer）。`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。" }
     },
     {
       "id": "command-token-unbound",
       "lint": [{ "code": "wcs/command-token-unbound", "severity": "warning" }],
-      "runtime": "silent", "harm": "broken",
+      "runtime": "same", "harm": "broken",
       "mistake": { "en": "Emits a command token that no `command.` binding wires, or expects a spread to wire commands and events.", "ja": "どの `command.` の束縛も結ばないコマンドのトークンを emit する、または spread がコマンドとイベントを結ぶと思う。" },
-      "effect": { "en": "The emit reaches no subscriber and returns nothing; `$on` never fires.", "ja": "emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。" },
-      "disposition": "runtime-report",
-      "note": { "en": "The lint reports a token emitted (in the script or by `on*:`) that no `command.` binding in the document receives. DevTools already marks an emit with no subscriber. A warning from the diagnostics add-on is a design question: a token bound in a branch not shown yet is emitted to nobody on purpose, and an emit before the element is defined or the branch is rendered is lost the same way (7GUIs evaluation).", "ja": "lint は、（スクリプトか `on*:` で）emit するのに、ドキュメントのどの `command.` 束縛も受けないトークンを報告する。DevTools は購読者の無い emit に既に印を付ける。diagnostics の後付けで警告するかは設計の問い: まだ見せていない枝で束ねたトークンは、わざと誰にも届かない emit をされ、要素の定義や枝の描画の前の emit も同じように消える（7GUIs の評価）。" }
+      "effect": { "en": "The emit reaches no subscriber and returns nothing; `$on` never fires. The diagnostics add-on warns once per token.", "ja": "emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。diagnostics の後付けがトークンごとに 1 回警告する。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/command-token-unbound]" }],
+      "note": { "en": "The lint reports a token emitted (in the script or by `on*:`) that no `command.` binding in the document receives; the runtime warns on any emit that reaches no subscriber, once per token — a token emitted to a hidden branch on purpose too (the author's decision, docs/v4-direction-2026-10.md §5.2).", "ja": "lint は、（スクリプトか `on*:` で）emit するのに、ドキュメントのどの `command.` 束縛も受けないトークンを報告する。実行時は、購読者に届かないすべての emit にトークンごとに 1 回警告する — 隠れた枝へわざと emit するトークンにも（著者の決定、docs/v4-direction-2026-10.md §5.2）。" }
     },
     {
       "id": "infinite-scroll-target",
@@ -664,11 +663,11 @@
     },
     {
       "id": "command-emit-before-render",
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Emits a command token right after the write that renders its receiver — an input in an `if:` branch (`this.editing = key; this.$command.focusEditor.emit()`).", "ja": "受け手を描く書き込みの直後にコマンドのトークンを emit する — `if:` の枝の中の入力欄（`this.editing = key; this.$command.focusEditor.emit()`）。" },
-      "effect": { "en": "The branch is rendered later, in the update: the emit reaches no subscriber and is lost (tokens are neither kept nor replayed). Emit it from `$renderedCallback`.", "ja": "枝はあとの更新で描かれるので、emit はどの購読者にも届かずに消える（トークンは保持も再送もされない）。`$renderedCallback` から emit する。" },
-      "disposition": "runtime-report",
-      "note": { "en": "Found by a 7GUIs evaluation (Cells). The time-shifted form of `command-token-unbound` (and of `io-auto-after-state`, an element defined late): a binding exists, but not yet. Whether the diagnostics add-on warns on an emit that reaches no subscriber is a design question (a token emitted to a hidden branch on purpose would warn too).", "ja": "7GUIs の評価（Cells）で見つかった。`command-token-unbound`（と、要素の定義が遅れる `io-auto-after-state`）の時間差版: 束縛はあるが、まだ無い。購読者に届かない emit に diagnostics の後付けが警告するかは設計の問い（隠れた枝へわざと emit するトークンにも警告することになる）。" }
+      "effect": { "en": "The branch is rendered later, in the update: the emit reaches no subscriber and is lost (tokens are neither kept nor replayed); the diagnostics add-on warns `[wcs/command-token-unbound]` once per token. Emit it from `$renderedCallback`.", "ja": "枝はあとの更新で描かれるので、emit はどの購読者にも届かずに消える（トークンは保持も再送もされない）。diagnostics の後付けがトークンごとに 1 回 `[wcs/command-token-unbound]` を警告する。`$renderedCallback` から emit する。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/command-token-unbound]" }],
+      "note": { "en": "Found by a 7GUIs evaluation (Cells). The time-shifted form of `command-token-unbound` (and of `io-auto-after-state`, an element defined late): a binding exists, but not yet. Keeping the emit to replay it was not chosen: a late command can be the wrong one (docs/v4-direction-2026-10.md §5.1 #6, §5.2).", "ja": "7GUIs の評価（Cells）で見つかった。`command-token-unbound`（と、要素の定義が遅れる `io-auto-after-state`）の時間差版: 束縛はあるが、まだ無い。emit を取っておいて後で送ることはしない: 遅れて届くコマンドは間違いになりうる（docs/v4-direction-2026-10.md §5.1 の 6、§5.2）。" }
     },
     {
       "id": "undefined-write-skipped",

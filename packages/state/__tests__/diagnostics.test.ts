@@ -274,3 +274,89 @@ describe("宣言していないキーへの書き込み（wcs/write-path-missing
     expect(got.filter((w) => w.includes("write-path-missing"))).toEqual([]);
   });
 });
+
+describe("購読者のいないコマンドの emit（wcs/command-token-unbound — 7GUIs の評価の Timer・Cells、著者の決定）", () => {
+  it("描かれる前の if: の枝の受け手への emit は、トークンごとに 1 回警告する。受け手がいれば黙る", async () => {
+    const { el } = await page(`<template data-wcs="if: editing"><input data-wcs="command.focus: $command.focusIt"></template>`, {
+      editing: false,
+      $commandTokens: ["focusIt"],
+    });
+    const before = await warnings(async () => {
+      el.createState("writable", (s: any) => {
+        s.$command.focusIt.emit();
+        s.$command.focusIt.emit();
+      });
+    });
+    expect(before).toEqual([
+      '[@wcstack/state] [wcs/command-token-unbound] "$command.focusIt" was emitted with no subscriber and is lost: its element is not defined or rendered yet (emit from $renderedCallback), or no command. binding takes it. Validate statically: npx @wcstack/lint <file>.',
+    ]);
+    el.createState("writable", (s: any) => { s.editing = true; });
+    await flush();
+    const after = await warnings(async () => {
+      el.createState("writable", (s: any) => { s.$command.focusIt.emit(); });
+    });
+    expect(after).toEqual([]);
+  });
+
+  it("再セットで増えたトークンも見る（残ったトークンは警告を繰り返さない）", async () => {
+    const { el } = await page(``, { $commandTokens: ["a"] });
+    const got = await warnings(async () => {
+      el.createState("writable", (s: any) => { s.$command.a.emit(); });
+      el.setInitialState({ $commandTokens: ["a", "b"] });
+      el.createState("writable", (s: any) => {
+        s.$command.a.emit();
+        s.$command.b.emit();
+      });
+    });
+    expect(got.map((w) => /"\$command\.(\w+)"/.exec(w)?.[1])).toEqual(["a", "b"]);
+  });
+});
+
+describe("委譲されたハンドラの throw と event.currentTarget（wcs/delegated-current-target — 7GUIs の評価の Circle Drawer、著者の決定）", () => {
+  const clickIn = async (root: ShadowRoot, selector: string) => {
+    (root.querySelector(selector) as HTMLElement).click();
+    await flush();
+  };
+
+  it("currentTarget を読むハンドラが throw すると、エラーの後にハンドラごとに 1 回、#direct を案内する（async のハンドラも）", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { root } = await page(`<button class="a" data-wcs="onclick: place">a</button><button class="b" data-wcs="onclick: later">b</button>`, {
+        place(e: Event) { (e.currentTarget as any).getBoundingClientRect(); },
+        async later(e: Event) { await 0; (e.currentTarget as any).getBoundingClientRect(); },
+      });
+      await clickIn(root, ".a");
+      await clickIn(root, ".a");
+      await clickIn(root, ".b");
+      expect(error).toHaveBeenCalledTimes(3);
+      expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
+        '[@wcstack/state] [wcs/delegated-current-target] "place" reads event.currentTarget, the root for a delegated onclick:. Write onclick#direct:, or use event.target.closest(…). Validate statically: npx @wcstack/lint <file>.',
+        expect.stringContaining('"later" reads event.currentTarget'),
+      ]);
+    } finally {
+      error.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("currentTarget を読まないハンドラの throw・#direct のハンドラには案内しない", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let rect: unknown = null;
+      const { root } = await page(`<button class="a" data-wcs="onclick: boom">a</button><button class="b" data-wcs="onclick#direct: place">b</button>`, {
+        boom() { throw new Error("boom"); },
+        place(e: Event) { rect = (e.currentTarget as any).getBoundingClientRect(); },
+      });
+      await clickIn(root, ".a");
+      await clickIn(root, ".b");
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(rect).not.toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      warn.mockRestore();
+    }
+  });
+});

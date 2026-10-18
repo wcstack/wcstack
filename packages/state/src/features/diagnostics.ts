@@ -17,6 +17,7 @@ import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
 import { didYouMean, LINT_HINT } from "../diagnostics/guidance";
 import { explain, render } from "../diagnostics/explain";
 import { raise, M } from "../messages";
+import type { Token } from "../token";
 
 // ---------------------------------------------------------------- paths that do not resolve
 
@@ -228,6 +229,64 @@ function written(engine: Engine, p: Pattern): void {
   }
 }
 
+// ---------------------------------------------------------------- commands that reach nothing
+
+/**
+ * A command token emitted while nothing subscribes to it: the call is lost, and tokens keep nothing to replay.
+ * Its `command.` binding may not be attached yet — the element is defined later (an autoloader, a slow CDN),
+ * or it is in an `if:` branch the same update renders (emit from `$renderedCallback`) — or there is none.
+ * Warned once per token (the author's decision, docs/v4-direction-2026-10.md §5.2 — a 7GUIs evaluation's Timer
+ * and Cells). The engine's `commands` is watched from its first declaration on, so the tokens of a re-set
+ * are wrapped too.
+ */
+function watchCommands(engine: Engine): void {
+  if (Object.getOwnPropertyDescriptor(engine, "commands")?.set !== undefined) return;
+  let ns = engine.commands;
+  Object.defineProperty(engine, "commands", {
+    configurable: true,
+    get: () => ns,
+    set: (v: Readonly<Record<string, Token>>) => {
+      ns = v;
+      for (const t of Object.values(v)) loud(t);
+    },
+  });
+}
+
+const wrappedTokens = new WeakSet<Token>();
+
+function loud(t: Token): void {
+  if (wrappedTokens.has(t)) return;
+  wrappedTokens.add(t);
+  const emit = t.emit;
+  let said = false;
+  (t as any).emit = (...args: unknown[]): unknown[] => {
+    if (t.size === 0 && !said) {
+      said = true;
+      console.warn(`[@wcstack/state] [wcs/command-token-unbound] "$command.${t.name}" was emitted with no subscriber and is lost: its element is not defined or rendered yet (emit from $renderedCallback), or no command. binding takes it.${LINT_HINT}`);
+    }
+    return emit.apply(t, args);
+  };
+}
+
+/** The handlers whose failure was explained, by engine. */
+const explained = new WeakMap<Engine, Set<string>>();
+
+/**
+ * The handler of a delegated `on<type>:` threw, and it reads `event.currentTarget`: that is the root there,
+ * not the element (`getBoundingClientRect` is not a function, a `.value` is undefined). Said once per handler,
+ * after the error (the author's decision, docs/v4-direction-2026-10.md §5.2 — a 7GUIs evaluation).
+ */
+function handlerThrew(engine: Engine, path: string, type: string): void {
+  let v: any = engine.target;
+  for (const seg of path.split(".")) v = v == null ? undefined : findDescriptor(v, seg)?.value;
+  if (typeof v !== "function" || !String(v).includes("currentTarget")) return;
+  let said = explained.get(engine);
+  if (said === undefined) explained.set(engine, (said = new Set()));
+  if (said.has(path)) return;
+  said.add(path);
+  console.warn(`[@wcstack/state] [wcs/delegated-current-target] "${path}" reads event.currentTarget, the root for a delegated on${type}:. Write on${type}#direct:, or use event.target.closest(…).${LINT_HINT}`);
+}
+
 /** A re-set: every path is checked again against the new state. */
 function recheck(engine: Engine): void {
   checked.delete(engine);
@@ -360,8 +419,10 @@ export const diagnostics: Feature = {
       checkRecursion(target);
       recheck(engine);
       watchPostUpdate(engine);
+      watchCommands(engine);
       declaredKeys.set(engine, new Set(keysOf(target)));
     };
+    hooks.handlerThrew = handlerThrew;
     hooks.written = chain(hooks.written, written);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
   },
