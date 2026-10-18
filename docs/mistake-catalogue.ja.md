@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 2 |
-| 実行時 | 52 |
+| 実行時 | 53 |
 | lint だけ — 条件付きの沈黙 | 23 |
 | 文書だけ — 沈黙 | 7 |
 | 数えない lint の code | 17 |
@@ -128,6 +128,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `<base href>` も `basename` も無いページで router を読み込む。 | 同じ code: `/products/3` へのディープリンクか再読み込みで、router は `/products/3` を basename にし、根のルートを表示して、リンクをその下で解決する。導いた basename を添えて `[wcs/base-href-missing]` で警告する。 5.0 の議題: basename を導かない。導出に頼るサブフォルダのアプリが変わる。 | `wcs/base-href-missing` (warning) |
 | 入れ子のルートを持つレイアウトのテンプレートに、既定の `<slot>` が無い。 | 同じ code: router が `[wcs/layout-slot-missing]` で警告する。lint の見ない `src=` のレイアウトと、テンプレートに無い `slot=` も調べる。 | `wcs/layout-slot-missing` (warning) |
 | `<wcs-outlet>` を `<wcs-router>` の直後以外に置く。 | 同じ code: router が自前の outlet を作るときに `[wcs/router-outlet-misplaced]` で警告する。レイアウトが持ち込んだ outlet にも。 | `wcs/router-outlet-misplaced` (warning) |
+| getter が読むパスを打ち間違える: `this["items.*.pirce"]`、`this.$getAll("items.*.pirce", [])`。 | 同じ code: 読みは `undefined` になり、getter がそこから計算する値は違う。diagnostics の後付けが、getter がそのパスを読んだあと、近い名前があるとき、読んだ getter の名前を添えてパスごとに 1 回警告する（トップレベルのキーは読んだ時点で throw する、#301）。 外部の評価で見つかった（確定申告の下書き: getter 96 本が、読んだパスから金額を計算する）。どちらも近い名前があるときだけ報告する: `this["opts.flag"] ?? false` は任意のキーをわざと読む。lint は getter・setter・メソッドを実行せずに検査し、リテラルのパスだけを見る（`this[key]` は見ない）。`stateSchema` が「無い」と言うときは error。 | `wcs/read-path-missing` (warning) |
 | 解決しないパスで `$postUpdate` を呼ぶ: 打ち間違い（`cells` に対する `rows.${r}.cell.${c}.text`）。 | code なし: その呼び出しは何も更新しない。diagnostics の後付けが、パスごとに 1 回、近い名前付きで `[wcs/post-update-path-missing]` を警告する。 7GUIs の評価（Cells）で見つかった。lint の規則は無い: パスはふつう実行時に組み立てる。 | — |
 | state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 同じ code: 4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。 どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。 | `wcs/write-path-missing` (warning) |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
@@ -198,7 +199,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `wcs/manifest-state-collision` | 2 つの application の manifest が同じ state の stateSchema を宣言している。lint はどちらでもその state を検査しない。 |
 | `wcs/manifest-tag-collision` | 2 つの sidecar の manifest が、override 無しで同じタグを宣言している。 |
 | `wcs/manifest-unknown-keyword` | sidecar の manifest が、lint の読む部分集合の外の schema のキーワードを使っている。 |
-| `wcs/path-dynamic-unknown` | code の表に予約されているだけで、まだ出さない。作者の誤りではなく lint の限界を表す。 |
+| `wcs/path-dynamic-unknown` | 作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。 |
 | `wcs/path-reserved-name` | code の表に予約されているだけで、まだ出さない。 |
 | `wcs/type-annotation` | 初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。 |
 

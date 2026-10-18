@@ -28,7 +28,7 @@ import { analyzeStatePaths, analyzeWatchEntries, findNonObjectWatch, type PathCa
 import { collectRecursionSpecs, hasRecursionWildcard, matchesRecursion } from './recursionPaths.js';
 import { toWildcardForm } from './indexPath.js';
 import {
-  isReadableStateScript, isUnresolvedPath, resolveStatePathIndex, type FileReader, type StatePathIndex, type StatePathScopes,
+  isUnresolvedPath, resolveStatePathIndex, scriptReadable, type FileReader, type StatePathIndex, type StatePathScopes,
 } from './statePathResolver.js';
 
 /** 他 state を指す区切り（@wcstack/state define.ts の STATE_NAME_SEPARATOR）。 */
@@ -86,7 +86,7 @@ export function validateWatchDeclarations(
       if (entries.length === 0) continue;
 
       // The root's own keys are unknown when its script cannot be read in full (no `export default { … }` literal,
-      // or a top-level spread) — the same rule as the bindings' (statePathResolver's isReadableStateScript). An
+      // or a top-level spread) — the same rule as the bindings' (statePathResolver's scriptReadable). An
       // empty literal is read: its keys are known not to exist.
       const own = analyzeStatePaths(block.content);
       let volumes: StatePathIndex | null = null;
@@ -104,7 +104,7 @@ export function validateWatchDeclarations(
       const scopes: StatePathScopes = {
         mounts: volumes?.scopes.mounts ?? [],
         unresolvedMounts: volumes?.scopes.unresolvedMounts ?? NO_MOUNTS,
-        rootUnresolved: own.length === 0 && !isReadableStateScript(block.content),
+        rootUnresolved: !scriptReadable(block.content, own),
       };
 
       for (const entry of entries) {

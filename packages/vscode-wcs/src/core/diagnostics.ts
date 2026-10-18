@@ -47,6 +47,8 @@ export const WcsDiagnosticCode = {
   // 入力のたびに `"<path>" is a getter without a setter` を投げる（code なし — 7GUIs の評価の Temperature）。error。
   PathReadonly: "wcs/path-readonly",
   PathReservedName: "wcs/path-reserved-name",
+  // lint の限界の告知（作者の誤りではない）: `export default { … }` のトップレベルの spread が持ち込むキーは読めないので、
+  // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
   // --- existing binding-expression validators (retrofitted) ---
   FilterUnknown: "wcs/filter-unknown",
@@ -64,6 +66,10 @@ export const WcsDiagnosticCode = {
   // state が宣言していないトップレベルのキーへの書き込み（`this.selectedID = …` と `selectedId`）。新しいキーができる
   // だけで、宣言したキーの束縛は変わらない。ランタイムは何も言わない。近い名前（打ち間違い）があるときだけ、warning。
   WritePathMissing: "wcs/write-path-missing",
+  // getter・メソッドの中で読む state のパス（`this["items.*.amout"]`・`$getAll("items.*.amout")`・`this.totl`）が宣言に無い。
+  // 入れ子のパスの読みは undefined になり、そこから計算した金額が黙って違う（確定申告の下書きツールの評価）。トップレベルの
+  // キーは読んだ時点で throw する。近い名前（打ち間違い）があるときだけ、warning。ランタイムの diagnostics も同じ code。
+  ReadPathMissing: "wcs/read-path-missing",
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
   // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。

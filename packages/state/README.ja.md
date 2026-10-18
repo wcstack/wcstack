@@ -3029,6 +3029,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | `$watch` のキーの打ち間違い | `console.warn`（`wcs/watch-path-missing`）。単一セグメントでも報告する |
 | `$postUpdate` のパスの打ち間違い（`cells` に対する `` `rows.${r}.cell.${c}.text` ``） | 4.4（未リリース）から: `console.warn`（`wcs/post-update-path-missing`）。単一セグメントでも報告する — その呼び出しは何も更新しない |
 | state が宣言していないトップレベルのキーへの書き込みで、近い宣言済みのキーがあるもの（`this.selectedID` と `selectedId`） | 4.4（未リリース）から: キーごとに 1 回 `console.warn`（`wcs/write-path-missing`） — 書き込みは新しいキーを作るだけで、宣言したキーに束ねたものは変わらない。近い名前の無い新しいキーは、state がわざと足すことがあるので報告しない |
+| getter が読むパスの打ち間違い（`this["items.*.pirce"]`、`this.$getAll("items.*.pirce", [])`） | 4.4（未リリース）から: パスごとに 1 回、読んだ getter の名前を添えて `console.warn`（`wcs/read-path-missing`）。近い名前があるときだけ — 読みは `undefined` になり、getter がそこから計算する値は違う。getter がそのパスを読んだあとで調べるので、後から足した行は描かれたときに調べる。トップレベルのキー（`this.totl`）は読んだ時点で throw する（`#301`）。`@wcstack/lint` は getter とメソッドの中の同じ読みを、実行せずに検査する |
 
 判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
 

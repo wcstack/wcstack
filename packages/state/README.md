@@ -3039,6 +3039,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | Typo in a `$watch` key | `console.warn` (`wcs/watch-path-missing`), reported even for a single segment |
 | Typo in a `$postUpdate` path (`` `rows.${r}.cell.${c}.text` `` for `cells`) | Since 4.4 (not released yet): `console.warn` (`wcs/post-update-path-missing`), a single segment too — the call updates nothing |
 | A write of a top-level key the state does not declare, beside a near one (`this.selectedID` and `selectedId`) | Since 4.4 (not released yet): `console.warn` (`wcs/write-path-missing`), once per key — the write creates a new key, and nothing bound to the declared one changes. A new key with no near name is not reported: a state may add keys on purpose |
+| Typo in a path a getter reads (`this["items.*.pirce"]`, `this.$getAll("items.*.pirce", [])`) | Since 4.4 (not released yet): `console.warn` (`wcs/read-path-missing`), once per path, naming the getter, beside a near name only — the read gives `undefined`, and what the getter computes from it is wrong. Checked once a getter has read the path: a row added later is checked when it renders. A top-level key (`this.totl`) throws on read (`#301`). `@wcstack/lint` checks the same reads in getters and methods without running them |
 
 The check **under-approximates**: it stays silent for anything it cannot decide statically, because a false alarm costs more than a missed one. None of these warn:
 

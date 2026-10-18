@@ -479,17 +479,31 @@ export function hasDefaultExportObject(scriptContent: string): boolean {
  * 黙る側に倒す。入れ子（`nodes: [...rows]`）は数えない。
  */
 export function hasTopLevelSpread(scriptContent: string): boolean {
+  return findTopLevelSpread(scriptContent) !== null;
+}
+
+/**
+ * The first top-level spread of `export default { ... }`: from its `...` to the end of the expression (before the
+ * next top-level `,` or the closing `}`, trailing space excluded), script-relative. null when there is none.
+ */
+export function findTopLevelSpread(scriptContent: string): { start: number; end: number } | null {
   const root = locateDefaultExportObject(scriptContent);
-  if (!root) return false;
+  if (!root) return null;
   const scan = maskCommentsAndStrings(root.content);
   let depth = 0;
+  let start = -1;
   for (let i = 0; i < scan.length; i++) {
     const ch = scan[i];
     if (ch === '(' || ch === '[' || ch === '{') depth++;
     else if (ch === ')' || ch === ']' || ch === '}') depth--;
-    else if (depth === 0 && ch === '.' && scan.startsWith('...', i)) return true;
+    else if (depth === 0 && start < 0 && ch === '.' && scan.startsWith('...', i)) start = i;
+    else if (depth === 0 && start >= 0 && ch === ',') return spreadRange(root.start, scan, start, i);
   }
-  return false;
+  return start < 0 ? null : spreadRange(root.start, scan, start, scan.length);
+}
+
+function spreadRange(base: number, scan: string, start: number, stop: number): { start: number; end: number } {
+  return { start: base + start, end: base + start + scan.slice(start, stop).trimEnd().length };
 }
 
 interface ObjectEntry {

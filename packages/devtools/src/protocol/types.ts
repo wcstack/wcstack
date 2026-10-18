@@ -235,11 +235,11 @@ export type DevtoolsEventLike =
       readonly stateElement?: unknown;
     }
   | {
-      // バインド / `$watch` の対象パスが state 上で解決しないと確定した。
-      // ランタイムは console.warn で続行するので、これが無いと「配線したのに
-      // 黙って死んでいる」が devtools から見えない。
+      // バインド / `$watch` の対象パス（4.4 から `$postUpdate` のパスと getter が読んだパスも）が
+      // state 上で解決しないと確定した。ランタイムは console.warn で続行するので、これが無いと
+      // 「配線したのに黙って死んでいる」が devtools から見えない。`scan` は 3.x の `$scan`。
       readonly type: "state:path-unresolved";
-      readonly source: "binding" | "watch" | "scan";
+      readonly source: "binding" | "watch" | "scan" | "postUpdate" | "getter";
       readonly path: string;
       readonly missingSegment: string;
     }
