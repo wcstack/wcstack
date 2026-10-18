@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+- **getter・メソッドの中で読むパスを検査する**（`wcs/read-path-missing`、warning。`stateSchema` が「無い」と言うときは error）— `this["items.*.amout"]`・`this.totl`・`this.$getAll("items.*.amout", [])`（`$resolve`・`$dependOn` も、パスがリテラルのとき）が state に無く、近い名前があるもの。束縛のパスと同じ規則で引き、ボリュームのスクリプトはマウントパスの下で引く。実行時に作るパス（`this[key]`・`${…}` を含むテンプレート）は見ない。確定申告の下書きツールの評価（4.2.0、getter 96 本）: lint が見るのは HTML のパスだけで、getter の中の打ち間違いは `undefined` と違う金額になるだけだった。ランタイムの diagnostics も同じ code で警告する。
+- **トップレベルの spread がある state で、spread が持ち込むキーを「存在しない」と言わない** — `export default { ...sanitizeInputs({}).inputs, get total() { … } }` は、spread の横に何か 1 つでもあると読めた state として扱われ、spread のキーへの束縛がすべて `wcs/binding-path-missing` になっていた（上の評価で 79 件。作者は manifest を手で書いて黙らせた）。spread のある state は、文書どおり読めない state として扱う: `stateSchema` があれば schema で引き、無ければ検査しない。無いときは spread の上で 1 回 `wcs/path-dynamic-unknown`（info、予約だけだった code）を出し、検査を入れる手段（`stateSchema`・`wcs-schema`）を示す。`$watch` のキーも同じ。
 - **ページで定義した自作要素の `static wcBindable` を読み、その要素への束縛を照合する**（`wcs/tag-member-unknown`、error）— インラインのスクリプト・`src=` のモジュールとそこからの相対の import の中の `customElements.define("tag", Class)` で、クラス（かページの中の親クラス）が `static wcBindable` を字面で宣言しているもの。`eventToken.` / `command.` / プロパティの名前の打ち間違いを、近い名前付きで報告する。7GUIs の評価では、`<listbox-nav>` の `eventToken.mov` と `command.` の打ち間違いを lint が見逃し、近い名前を示さない実行時の初期化の失敗だけが知らせていた。宣言が計算・spread・ページの外の継承のもの、ドット付きのプロパティ（コンポーネントの `state.x:` の配線）は照合しない。
 - **7GUIs の評価で、実行時も lint も黙っていた（または汎用の TypeError だけだった）形を報告する**:
   - `wcs/path-readonly`（error。予約だけだった code）— 書き戻す束縛（`<input>`・`<select>`・`<textarea>` の `value:`、checkbox・radio の `checked:`、`radio:` / `checkbox:`。`#ro` なし）が setter の無い getter を指す。入力のたびに `"celsius" is a getter without a setter` を投げていた。

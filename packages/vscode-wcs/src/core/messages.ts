@@ -88,6 +88,13 @@ export interface WcsMessageCatalog {
   commandTokenUnbound(tokenPath: string): string;
   /** state が宣言していないトップレベルのキーへの書き込み（近い名前があるときだけ）。 */
   writePathMissing(key: string): string;
+  /**
+   * getter・メソッドの中で読む state のパスが宣言に無い（近い名前があるときだけ）。`topLevel`: 宣言に無いトップレベルの
+   * キー（ランタイムは読んだ時点で throw する）。そうでなければ読みは undefined になる。
+   */
+  readPathMissing(path: string, topLevel: boolean): string;
+  /** `export default { … }` のトップレベルの spread: それが持ち込むキーは読めず、stateSchema が無いのでパスを検査しない。 */
+  pathDynamicUnknownSpread(spread: string): string;
   /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
   pathReadonlyTwoWay(path: string, property: string): string;
   handlerFilterNotAllowed(property: string): string;
@@ -335,6 +342,11 @@ const ja: WcsMessageCatalog = {
     `コマンドトークン "${t}" を emit していますが、このドキュメントにそれを受ける command.<メソッド>: ${t} の束縛がありません。emit は誰にも届きません。メソッドを呼ぶ要素に束ねてください（command.focus: ${t}）`,
   writePathMissing: (k) =>
     `"${k}" は state が宣言していないキーです。書き込みは新しいキーを作るだけで、宣言したキーの束縛には届きません`,
+  readPathMissing: (p, top) => top
+    ? `"${p}" は state が宣言していないキーです。読んだ時点で例外になります（#301）`
+    : `パス "${p}" は状態定義に存在しません。読みは undefined になり、そこから計算した値は黙って違います`,
+  pathDynamicUnknownSpread: (sp) =>
+    `${sp} が持ち込むキーは静的に読めないので、この state のパスは検査していません（束縛・getter の中の読み・$watch のキー）。キーを wcstack.manifest.json の stateSchema に宣言すると検査されます。npx wcs-schema（@wcstack/typescript）が state の型（JSDoc・TypeScript）から作れます`,
   pathReadonlyTwoWay: (p, prop) =>
     `"${p}" は setter の無い getter ですが、${prop}: は読者の入力を書き戻すので、入力のたびに書き込みが失敗します（"${p}" is a getter without a setter）。setter を足す（set "${p}"(v) { … }）か、#ro で一方向にしてください（${prop}#ro: ${p}）`,
   submitWithoutPrevent: (h) =>
@@ -608,6 +620,11 @@ const en: WcsMessageCatalog = {
     `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
   writePathMissing: (k) =>
     `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
+  readPathMissing: (p, top) => top
+    ? `"${p}" is not a key the state declares. Reading it throws (#301)`
+    : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
+  pathDynamicUnknownSpread: (sp) =>
+    `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathReadonlyTwoWay: (p, prop) =>
     `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { … }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) =>

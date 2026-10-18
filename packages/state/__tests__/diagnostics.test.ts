@@ -236,6 +236,53 @@ describe("$postUpdate のパスが状態に無い（wcs/post-update-path-missing
   });
 });
 
+describe("getter が読んだパスが状態に無い（wcs/read-path-missing — 確定申告の下書きツールの評価）", () => {
+  it("ワイルドカード getter の行のフィールドと $getAll のパスの打ち間違いを、読んだ getter の名前と近い名前付きで 1 回だけ警告する", async () => {
+    const got = await warnings(() => page(`<template data-wcs="for: deps"><i>{{ .status }}</i></template><p>{{ total }}|{{ total2 }}</p>`, {
+      deps: [{ kind: "a", income: 1 }, { kind: "b", income: 2 }],
+      items: [{ amount: 1 }, { amount: 2 }],
+      get "deps.*.status"() { return `${this["deps.*.kind"]}:${this["deps.*.incom"]}`; },
+      get total() { return this.$getAll("items.*.amout", []).length; },
+      get total2() { return this.$getAll("items.*.amout", []).length; },
+    }));
+    expect(got).toHaveLength(2);
+    expect(got[0]).toBe('[@wcstack/state] [wcs/read-path-missing] Path "deps.*.incom" read by the getter "deps.*.status" does not resolve on the state tree: "incom" is not declared. Did you mean "income"? The getter reads undefined. Validate statically: npx @wcstack/lint <file>.');
+    expect(got[1]).toContain('[wcs/read-path-missing] Path "items.*.amout" read by the getter "total" does not resolve on the state tree: "amout" is not declared. Did you mean "amount"? The getter reads undefined.');
+  });
+
+  it("行の無い一覧に後から足した行で getter が読んだパスも、行が描かれたあとに警告する", async () => {
+    const { el } = await page(`<template data-wcs="for: deps"><i>{{ .status }}</i></template>`, {
+      deps: [] as any[],
+      get "deps.*.status"() { return this["deps.*.incom"] ?? 0; },
+    });
+    const got = await warnings(async () => {
+      el.createState("writable", (s: any) => { s.deps = s.deps.concat({ income: 1 }); });
+      await flush();
+      await flush();
+    });
+    expect(got).toHaveLength(1);
+    expect(got[0]).toContain('Path "deps.*.incom" read by the getter "deps.*.status"');
+  });
+
+  it("近い名前の無い任意のキー・正しいパス・束ねたパスと同じパスには黙り、宣言に無いトップレベルのキーはコアのエラーだけにする", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const got = await warnings(() => page(`<p>{{ a }}|{{ b }}|{{ form.nmae }}|{{ c }}</p><template data-wcs="for: items"><i>{{ .note }}</i></template>`, {
+      opts: {},
+      form: { name: "x" },
+      items: [{ amount: 1 }],
+      get a() { return this["opts.flag"] ?? false; },
+      get b() { return this["form.nmae"] ?? this["form.name"]; },
+      get "items.*.note"() { return this["items.*.pending"] ? "…" : String(this["items.*.amount"]); },
+      get c() { return this.totl; },
+    }));
+    err.mockRestore();
+    expect(got.filter((w) => w.includes("read-path-missing"))).toEqual([]);
+    // the bound path is reported as a binding's, once
+    expect(got.filter((w) => w.includes('"form.nmae"'))).toHaveLength(1);
+    expect(got.find((w) => w.includes('"form.nmae"'))).toContain("[wcs/binding-path-missing]");
+  });
+});
+
 describe("宣言していないキーへの書き込み（wcs/write-path-missing — 7GUIs の評価の CRUD）", () => {
   it("近い宣言済みのキーがあればキーごとに 1 回警告し、近い名前の無い新しいキーと宣言済みのキーには黙る", async () => {
     const { el } = await page(`<p>{{ selectedId }}</p>`, { selectedId: null, count: 0 });
