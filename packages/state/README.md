@@ -3041,6 +3041,7 @@ The check **under-approximates**: it stays silent for anything it cannot decide 
 
 - A `null` / `undefined` parent (the "seed as `null`, assign later" shape)
 - Row fields of a list that starts empty (the row shape is unknown)
+- A row field no row has, unless a row has a near name (a likely typo, `.nmae` beside `name`) — rows are data, and an optional field (a `pending` the page puts on its own rows) is absent from the others. Since 4.4 (not released yet); the first row lacking a field another row has does not warn either (4.3)
 - Sub-properties of an intermediate getter's return value
 - Paths under the mount path of a volume that is still loading — they are checked once it settles
 - Reserved `$` namespaces (`$command.*` and friends)

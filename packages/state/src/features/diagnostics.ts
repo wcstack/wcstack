@@ -63,7 +63,7 @@ function wildcardForm(engine: Engine, q: Pattern): Pattern | undefined {
  * when the path exists or it cannot be told without evaluating a getter (a getter on the way, a
  * null or primitive on the way, a list with no row to look into).
  */
-function missing(engine: Engine, p: Pattern): { seg: string; names: string[] } | null {
+function missing(engine: Engine, p: Pattern): { seg: string; names: string[]; row: boolean } | null {
   const chain: Pattern[] = [];
   for (let q: Pattern | null = p; q !== null; q = q.parent) chain.unshift(q);
   const named = (q: Pattern | null): Pattern | null | undefined => (q === null ? null : wildcardForm(engine, q));
@@ -74,7 +74,7 @@ function missing(engine: Engine, p: Pattern): { seg: string; names: string[] } |
 }
 
 /** `missing` from `chain[k]` on, in `v`. */
-function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: Pattern | null) => Pattern | null | undefined): { seg: string; names: string[] } | null {
+function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: Pattern | null) => Pattern | null | undefined): { seg: string; names: string[]; row: boolean } | null {
   for (; k < chain.length; k++) {
     const q = chain[k];
     if (v === null || typeof v !== "object") return null;
@@ -83,7 +83,7 @@ function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: P
       // a row field is declared when any row has it — an optional one (`pending` on the rows a page
       // added itself) is not missing because the first row lacks it (docs/seam-apps.md, ssr-news)
       // (missing in every row: the names any row has are the candidates)
-      let first: { seg: string; names: string[] } | null = null;
+      let first: { seg: string; names: string[]; row: boolean } | null = null;
       for (const row of v) {
         const m = under(engine, chain, k + 1, row, named);
         if (m === null) return null;
@@ -106,7 +106,7 @@ function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: P
       // getters declared one level under the same parent (`items.*.subtotal`)
       const parent = named(q.parent);
       for (const g of engine.patterns.all()) if (g.parent === parent && g.getter !== null) names.push(g.last);
-      return { seg: q.last, names };
+      return { seg: q.last, names, row: chain.slice(0, k).some((x) => x.last === "*") };
     }
     if (d.get !== undefined || d.set !== undefined) return null;
     v = d.value;
@@ -136,8 +136,6 @@ function check(engine: Engine): void {
       });
       continue;
     }
-    const [code, subject] = watch ? ["watch-path-missing", "$watch path"] : ["binding-path-missing", "Bound path"];
-    hooks.noticed?.(engine, { "type": "state:path-unresolved", "source": watch ? "watch" : "binding", "path": p.path, "missingSegment": m.seg });
     // a row of `for: groups.0.items` with a row getter declared on `groups.*.items.*` (#388)
     const w = engine.patterns.peek(parsePath(p.path).pattern);
     let rowGetter = "";
@@ -145,7 +143,15 @@ function check(engine: Engine): void {
       const loops = w.lists.slice(1).map((l, k) => `for: ${k === 0 ? l!.path : l!.path.slice(w.lists[k]!.path.length + 2)}`);
       rowGetter = ` The getter "${w.path}" is declared for the rows of ${loops.join(" → ")}; a list named by an index has rows of its own.`;
     }
-    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}" does not resolve on the state tree: "${m.seg}" is not declared.${didYouMean(m.seg, m.names)}${rowGetter} Updates to this path will be silently dropped.${LINT_HINT}`);
+    const near = didYouMean(m.seg, m.names);
+    // A row field no row has is not a sign of a mistake: rows are data, and an optional field (the
+    // `pending` a page puts on its own rows) is absent from the server's (docs/seam-apps.md, ssr-news).
+    // Reported only with a near name — a likely typo (`.nmae` beside `name`) — or a row getter of
+    // another list form
+    if (m.row && near === "" && rowGetter === "") continue;
+    const [code, subject] = watch ? ["watch-path-missing", "$watch path"] : ["binding-path-missing", "Bound path"];
+    hooks.noticed?.(engine, { "type": "state:path-unresolved", "source": watch ? "watch" : "binding", "path": p.path, "missingSegment": m.seg });
+    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}" does not resolve on the state tree: "${m.seg}" is not declared.${near}${rowGetter} Updates to this path will be silently dropped.${LINT_HINT}`);
   }
 }
 

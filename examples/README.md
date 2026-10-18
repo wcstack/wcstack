@@ -82,6 +82,7 @@ Larger apps written to find defects rather than to show a feature: a first-time 
 | [`router-admin/`](router-admin/) | `<wcs-layout>` × query ⇄ state ⇄ fetch × forms with server validation × `leaveConfirm` × `<wcs-view-transition>` × two languages (admin console) | `node examples/router-admin/server.js` | :3000 |
 | [`state-collab-board/`](state-collab-board/) | `<wcs-sse>` × optimistic `fetch` × `<wcs-network offline>` × reconnect and catch-up (shared board, two browsers) | `node examples/state-collab-board/server.js` | :3000 |
 | [`signals-shop/`](signals-shop/) | `@wcstack/signals` × router × `<wcs-fetch>` / `<wcs-storage>` (the tutorial's shop on the other reactive core) | `node examples/signals-shop/server.js` | :3000 |
+| [`ssr-news/`](ssr-news/) | `@wcstack/server` × router × state × `<wcs-fetch>` on the server and at hydration × `<wcs-link>` / `<wcs-head>` / `<wcs-layout>` under SSR × the client's version (a server-rendered news site, readable without JavaScript) | `cd examples/ssr-news && npm install && node server.js` | :3000 |
 
 ## Shared server core
 

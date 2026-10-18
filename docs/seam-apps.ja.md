@@ -84,7 +84,7 @@
 | `router-admin` — 管理画面: 入れ子のレイアウト、ページングと並べ替えを URL に持つサーバー側の一覧、サーバー検証付きの編集フォーム、ビュー遷移、2 言語 | `<wcs-layout>` × state、クエリ ⇄ state ⇄ fetch、フォームの双方向束縛 × fetch の `body`、`<wcs-view-transition>` × router × 一覧、basename の言語 | 名前順の 3 ページ目へのディープリンク; 編集して保存、もう一度保存; フィールドのエラー付きの 422; 編集ページでの再読み込み; 詳細からの戻る | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
 | `state-collab-board` — 共有ボード: ほかの人の変更は SSE で届き、自分の変更はすぐ反映し、サーバーが拒めば巻き戻す | `<wcs-sse>` × state の一覧、`<wcs-fetch>` × 楽観的更新、`<wcs-network>` × state、再接続 × 再同期 | 2 つのブラウザ; 拒まれる変更; オフラインになって戻る; サーバーの再起動 | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
 | `signals-shop` — チュートリアルのショップを `@wcstack/signals` で | signals × router、wc-bindable の橋を通した signals × `<wcs-fetch>` / `<wcs-storage>` | チュートリアルと同じ（再読み込み、ディープリンク、戻る、2 つ目のタブ） | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
-| `ssr-news` — `@wcstack/server` で描くニュースサイト: 記事の一覧、コメント付きの記事のページ、読者の設定、セクションのレイアウト、本番の形（CSP、SRI、HTML のキャッシュ） | `@wcstack/server` × router × state、サーバーとハイドレーションでの `<wcs-fetch>`、SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>`、クライアントの版 × サーバーの版 | ディープリンクと再読み込み; JavaScript 無し; 遅いクライアントのバンドル（ハイドレーション前の入力）; サーバーの再起動; 別の minor のクライアント; 投稿の後の HTML のキャッシュ | 発見は下（2026-10-18） |
+| `ssr-news` — `@wcstack/server` で描くニュースサイト: 記事の一覧、コメント付きの記事のページ、読者の設定、セクションのレイアウト、本番の形（CSP、SRI、HTML のキャッシュ） | `@wcstack/server` × router × state、サーバーとハイドレーションでの `<wcs-fetch>`、SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>`、クライアントの版 × サーバーの版 | ディープリンクと再読み込み; JavaScript 無し; 遅いクライアントのバンドル（ハイドレーション前の入力）; サーバーの再起動; 別の minor のクライアント; 投稿の後の HTML のキャッシュ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-18）。発見は下 |
 
 ### router-auth（2026-10-13）
 
@@ -191,3 +191,12 @@
 著者は上の設計の問い 5 つを 2026-10-18 に推奨どおり決めた（[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.1）。前からの 6 つ目も: 要素の準備ができていないために拒まれた I/O のコマンドは、1 要素につき 1 回警告する（`[wcs/command-not-ready]`、#473）。
 
 上の fetch のほかに何も知らせなかった間違い: `renderToString()` の前に利用者の内容をテンプレートへ連結する（サーバーがその中の `{{ }}` を描く — そうしたマークアップには `data-wcs-ignore`（#467）で印を付ける）。出力からコメントを取り除く（クライアントが値をマークアップとして読む）。`enable-ssr` の無い `<wcs-router>`、`url` の無い `renderToString()`（空の outlet、記事の URL でホームのページ — どれも状態 200）。公開するルートのガード（サーバーで描かれない）。サーバーで走ると思った `$watch`。どれも[誤りの目録](./mistake-catalogue.ja.md)の候補。
+
+### ssr-news を examples/ に置く（2026-10-18）
+
+4.3.0 の後で、アプリを `examples/ssr-news/` に移した。4.3.0 で要らなくなった回避策 — 行の中の素の `<a>`（`<wcs-link>` はサーバーで描かれるようになった）、router を待ってから `$connectedCallback` で記事を読むこと（束縛が始めた `<wcs-fetch>` を描画が待つようになった）、nonce 付きの inline の状態（`src` の状態が `resolveModule` で描ける）— を外し、意図を確かめる e2e の spec（13 件）を付けた。その中で見つけたもの:
+
+| 分類 | 発見 | 結末 |
+|---|---|---|
+| runtime の欠陥 | state の diagnostics: どの行にも無い行フィールド — ページ自身の行だけが持つ `pending` の無い、サーバーのコメント — を、再読み込みの後で「silently dropped」と報告した（4.3 で直したのは、ほかの行にあるものが最初の行に無い場合だけだった） | 修正: 行フィールドが無いことは、近い名前（打ち間違いらしいもの）か、別の一覧の形の行 getter があるときだけ報告する |
+| 設計の問い | コメントのフォームは `<wcs-layout>` のルートにあり、クライアントが描き直す（レイアウトは採用しない）: そこにハイドレーションの前に入力したものは失われる — 4.3 で残すようにしたのは、ページ直下の部品と採用されるルート | 未決: レイアウトのルートの採用（アプリの README の「Known limits」） |
