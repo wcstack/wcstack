@@ -20,6 +20,8 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { isMainThread, parentPort, Worker } from "node:worker_threads";
 import { generateStateSchema } from "../generate.js";
 import { APPLICATION_MANIFEST_FILENAME, buildManifest, compareStateSchema } from "../manifest.js";
 import { loadSchemaCore } from "../schemaCore.js";
@@ -218,6 +220,19 @@ const invokedAsBin = typeof process !== "undefined"
   && Array.isArray(process.argv)
   && /wcs-schema(\.mjs)?$/.test(process.argv[1] ?? "");
 if (invokedAsBin) {
-  process.exit(main(process.argv.slice(2)));
+  if (isMainThread) {
+    // The TypeScript checker recurses once per getter that reads `this` in a state literal with a top-level spread
+    // (program.ts): a state of a hundred getters ran out of the main thread's stack (an outside evaluation, a tax
+    // return draft). The command runs on a worker thread with a larger one, and its exit code comes back.
+    const worker = new Worker(fileURLToPath(import.meta.url), { argv: process.argv.slice(2), resourceLimits: { stackSizeMb: 256 } });
+    worker.on("message", (code: number) => { process.exitCode = code; });
+    worker.on("error", (e) => {
+      process.stderr.write(`${e.stack ?? e}
+`);
+      process.exitCode = 2;
+    });
+  } else {
+    parentPort!.postMessage(main(process.argv.slice(2)));
+  }
 }
 /* v8 ignore stop */

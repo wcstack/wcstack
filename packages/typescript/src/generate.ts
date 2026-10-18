@@ -15,6 +15,6 @@ export interface GeneratedSchema {
 
 export function generateStateSchema(file: string, options: GenerateOptions = {}): GeneratedSchema {
   const loaded = loadStateFile(file, options);
-  const schema = stateTypeToSchema(loaded.checker, loaded.program, loaded.type, loaded.location, options);
+  const schema = loaded.open ? {} : stateTypeToSchema(loaded.checker, loaded.program, loaded.type, loaded.location, options);
   return { schema, warnings: loaded.warnings };
 }

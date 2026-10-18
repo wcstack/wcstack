@@ -20,7 +20,22 @@ npx wcs-validate --strict index.html      # typo は error に、偽警告は消
 
 ### `wcs-schema emit <state.ts|state.js> [options]`
 
-ファイルの `export default` から `states[<name>].stateSchema` を生成します（`defineState(...)` は構文的に剥がすので、このパッケージは `@wcstack/state` を解決できなくても動きます）。生成結果は書き出す前に検証器自身の manifest 検査を通します。
+ファイルの `export default` から manifest の単一の `stateSchema`（`schemaVersion` 2）を生成します（`defineState(...)` は構文的に剥がすので、このパッケージは `@wcstack/state` を解決できなくても動きます）。生成結果は書き出す前に検証器自身の manifest 検査を通します。
+
+トップレベルの spread は、その型のキーを持ち込みます: `{ ...defaults(), get total() { … } }` は、`defaults()` の戻り値の型が挙げるキーを載せます。4.4（未リリース）から、キーを挙げない型 —— index signature（`Record<string, unknown>`）・`any`・`unknown` —— の spread があると、schema は開いた `{}` になります（警告付き）。コンパイラは spread から index signature を落とすので、literal 自身のキーだけの schema にすると、spread のキーがすべて `wcs/path-nonexistent` になってしまうためです。その式に型を付けてください。キーが表から来るなら、型も表から導けば、宣言は 1 か所のままです:
+
+```javascript
+export const FIELDS = /** @type {const} */ ({ total: { type: "amount" }, married: { type: "flag" } });
+/**
+ * @typedef {{ amount: number, flag: boolean }} ValueOf
+ * @typedef {{ -readonly [K in keyof typeof FIELDS]: ValueOf[(typeof FIELDS)[K]["type"]] }} Inputs
+ * @returns {Inputs}
+ */
+export const defaults = () => /** @type {Inputs} */ (Object.fromEntries(
+  /** @type {(keyof typeof FIELDS)[]} */ (Object.keys(FIELDS)).map((k) => [k, FIELDS[k].type === "flag" ? false : 0])));
+```
+
+4.4（未リリース）から、コマンドは大きなスタックの worker スレッドで動きます。spread のある literal では、TypeScript のチェッカーが `this` を読む getter 1 本ごとに 1 段再帰し、getter が 100 本ほどの state で主スレッドのスタックが尽きたためです。API（`generateStateSchema()`）から呼ぶと、そうした state は `the TypeScript checker ran out of stack` を投げることがあります。`resourceLimits.stackSizeMb` を大きくした worker で呼んでください。
 
 | オプション | 説明 |
 |---|---|
