@@ -71,9 +71,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 2 |
-| 実行時 | 47 |
-| lint だけ — 条件付きの沈黙 | 25 |
-| 文書だけ — 沈黙 | 7 |
+| 実行時 | 49 |
+| lint だけ — 条件付きの沈黙 | 24 |
+| 文書だけ — 沈黙 | 9 |
 | 数えない lint の code | 17 |
 
 ### 文書だけ — 沈黙
@@ -83,8 +83,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 行が束ねていない状態（入力中の文字・フォーカス・開いた `<details>`）を持つ一覧を、`$listKeys` なしで取り直す。 | 新しいオブジェクトは参照で一致しないので、すべての行が作り直され、その状態は失われる。 | データの損失 | lint の規則 — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 取得したデータの `for:` で、行に入力欄があり `$listKeys` が無ければ info。5.0: オブジェクトが `id` を持てば、それで行を合わせる。 |
 | 利用者が決められる文字列を `href:`・`src:`・`attr.href:`・`attr.on*:` に束ねる。 | `javascript:` の URL やハンドラの文字列がそのまま書かれる。CSP が止めなければ XSS。 | 安全 | lint の規則 — 4.x。その後、実行時に知らせる — 4.x。4.x: lint はすべての `attr.on*:` を報告でき、diagnostics の後付けは `javascript:` の URL に警告できる。4.0 は core で拒まないと決めた（2026-10-02）。拒むのは破壊的。 |
 | 利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込み、それを持つ要素に `data-wcs-ignore` を付けない。 | ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。 | 安全 | どこからも見えない — 文書。注入されたマークアップは、作者が書いたものと見分けられない。4.3 で文書が教える守りが加わった: 要素に `data-wcs-ignore`（R10）を付ければ、走査はその中を読まない。 |
+| すべての行のつもりで `*` を含むパスで `$postUpdate` を呼ぶ（イベントのハンドラから `$postUpdate("rows.*.cells.*.text")`）。 | `*` は getter と同じく今の行の添字で、イベントが来た行だけが通知され、それに依存するセルは古いまま。 | 古い表示 | 設計で消す — 5.0 の議題（破壊的）。7GUIs の評価（Cells）で見つかった。README は 4.4 からそう書く。`$getAll` は `[]` ですべての行を指せるが、`$postUpdate` にその形は無い。5.0 で足すか、行の文脈が解決しない `*` を拒むかを決める。 |
 | 1 つのオブジェクトを、getter が結ばない 2 つの配列に置き（`backup = items` で両方を描く）、片方の行の下へ書く。 | 書き込みは、もう片方の配列の行・行 getter・それらの `$getAll` の集計に届かない。 | 古い表示 | 設計で消す — 4.x。4.x の既知の制限として残す（#401、2026-10-17 決定）。届けるにはオブジェクトからすべての一覧の行を引く索引が要り、core のバイトと行ごとの手間がかかる。回避はもう片方の一覧の `$postUpdate`。 |
 | 要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。 | 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。 |
+| 受け手を描く書き込みの直後にコマンドのトークンを emit する — `if:` の枝の中の入力欄（`this.editing = key; this.$command.focusEditor.emit()`）。 | 枝はあとの更新で描かれるので、emit はどの購読者にも届かずに消える（トークンは保持も再送もされない）。`$renderedCallback` から emit する。 | 動かない | 実行時に知らせる — 4.x。7GUIs の評価（Cells）で見つかった。`command-token-unbound`（と、要素の定義が遅れる `io-auto-after-state`）の時間差版: 束縛はあるが、まだ無い。購読者に届かない emit に diagnostics の後付けが警告するかは設計の問い（隠れた枝へわざと emit するトークンにも警告することになる）。 |
 | I/O ノードの `/auto` を `@wcstack/state/auto` の後に読み込む。 | コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。 | 動かない | lint の規則 — 4.x。`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。 |
 | `<wcs-link>` に `attr.aria-*:` を束ねる。 | `aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。 | 劣化 | 設計で消す — 4.x。リンクが後の `aria-*` の変化を転送できる。 |
 
@@ -105,7 +107,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | getter が `this.form.name` を読み、ページは `form.name` へ書く。 | `wcs/getter-untracked-read` (warning) | 追跡されるのは `form` だけで、書き込みは祖先を無効にしない。getter は古い値のまま。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、祖先が getter に使われているのに書き込みが届かなかったパスを見つけられる（同一性だけを見る読みは誤報になる）。 |
 | `this` で読んだオブジェクトのプロパティに書く: `this.user.name = x`・`+=`・`++`、別名や `$on` のハンドラの state 引数を通したものも。 | `wcs/nested-assign` (error) | 書き込みは素のオブジェクトに入り、state を通らない。`user.name` の束縛・getter・`$watch` は古い値のまま。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、次の更新の後に束縛を読み直し、書き込みなしに変わった値を知らせられる（遅れるが core は 0 B）。深い Proxy はパスの規則に反する。 |
 | `@wcstack/signals` と `@wcstack/signals/dom` を、それぞれを束ねる CDN（esm.run）から読み込む。 | `wcs/signals-dual-entry` (varies) | ページにリアクティブなコアが 2 つでき、片方の effect はもう片方の signal を追わず、その間で UI が更新されなくなる。 | 古い表示 | 実行時に知らせる — 4.x。各コアが最初の signal を作るときにグローバルなシンボルに印を付け、2 つ目のコピーが開発モードで警告する。 |
-| state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | `wcs/write-path-missing` (warning) | 4.0 はキーを作る。`count` に束ねたものは何も変わらない。 | 古い表示 | 実行時に知らせる — 4.x。lint は、近い宣言済みのキーがある未宣言のキーへの書き込みを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。diagnostics の後付けは、読み込みの後に作られたキーに警告できる。 |
 | どの `command.` の束縛も結ばないコマンドのトークンを emit する、または spread がコマンドとイベントを結ぶと思う。 | `wcs/command-token-unbound` (warning) | emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。 | 動かない | 実行時に知らせる — 4.x。lint は、（スクリプトか `on*:` で）emit するのに、ドキュメントのどの `command.` 束縛も受けないトークンを報告する。DevTools は購読者の無い emit に既に印を付ける。diagnostics の後付けで警告するかは設計の問い: まだ見せていない枝で束ねたトークンは、わざと誰にも届かない emit をされ、要素の定義や枝の描画の前の emit も同じように消える（7GUIs の評価）。 |
 | 委譲されるイベント（`onclick:` などバブルするイベント）のハンドラが `event.currentTarget` を読む。 | `wcs/delegated-current-target` (warning) | 要素ではなく root なので、`getBoundingClientRect`・`setPointerCapture`・`new FormData(e.currentTarget)` が違うノードに効くか throw する。 | 動かない | 設計で消す — 5.0 の議題（破壊的）。root のリスナーが、ハンドラの間だけイベントに自前の `currentTarget`（要素）を持たせられる — core に約 60〜90 B。2026-10-02 の `#direct` の決定を見直すことになる。 |
 | 文書の root でない `<wcs-state>` に `features=` を書く。 | `wcs/features-invalid` (warning) | `split/auto.js` は root の属性しか読まないので、その後付けは読み込まれず、それを要るものが後で `[wcs/feature-not-installed]` で失敗する（全部入りの入口では影響なし）。 | 動かない | 実行時に知らせる — 4.x。`split/auto.js` が起動時に警告できる。設計 A3 は lint だけを選んだ（635 B の基準値を取り直すことになる）。 |
@@ -130,6 +131,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `<base href>` も `basename` も無いページで router を読み込む。 | 同じ code: `/products/3` へのディープリンクか再読み込みで、router は `/products/3` を basename にし、根のルートを表示して、リンクをその下で解決する。導いた basename を添えて `[wcs/base-href-missing]` で警告する。 5.0 の議題: basename を導かない。導出に頼るサブフォルダのアプリが変わる。 | `wcs/base-href-missing` (warning) |
 | 入れ子のルートを持つレイアウトのテンプレートに、既定の `<slot>` が無い。 | 同じ code: router が `[wcs/layout-slot-missing]` で警告する。lint の見ない `src=` のレイアウトと、テンプレートに無い `slot=` も調べる。 | `wcs/layout-slot-missing` (warning) |
 | `<wcs-outlet>` を `<wcs-router>` の直後以外に置く。 | 同じ code: router が自前の outlet を作るときに `[wcs/router-outlet-misplaced]` で警告する。レイアウトが持ち込んだ outlet にも。 | `wcs/router-outlet-misplaced` (warning) |
+| 解決しないパスで `$postUpdate` を呼ぶ: 打ち間違い（`cells` に対する `rows.${r}.cell.${c}.text`）。 | code なし: その呼び出しは何も更新しない。diagnostics の後付けが、パスごとに 1 回、近い名前付きで `[wcs/post-update-path-missing]` を警告する。 7GUIs の評価（Cells）で見つかった。lint の規則は無い: パスはふつう実行時に組み立てる。 | — |
+| state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 同じ code: 4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。 どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。 | `wcs/write-path-missing` (warning) |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
 | `<wcs-state bind-component>` に `state`・`src`・`json` 属性か、中の module スクリプトを付ける。 | code なし: 読み込みは拒まれ（`failed to initialize`）、コンポーネントはマウントされない。 | `wcs/bind-component-source` (error) |
 | state に無いパスを束ねる（`stateSchema` がそう言えば `wcs/path-nonexistent`）。 | 同じ code: トップレベルのキーが無ければ束縛が失敗する（`#301`）。入れ子の段が無ければ diagnostics の後付けが `[wcs/binding-path-missing]` で警告する（`/core` では無言）。`stateSchema` が無いと lint は警告だけ。 | `wcs/binding-path-missing` (varies), `wcs/path-nonexistent` (error) |

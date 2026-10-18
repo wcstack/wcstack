@@ -20,8 +20,12 @@ import { raise, M } from "../messages";
 
 // ---------------------------------------------------------------- paths that do not resolve
 
-/** Paths bindings and `$watch` keys named, by engine: checked one macrotask later (and after a re-set). */
-const named = new WeakMap<Engine, Map<Pattern, boolean>>();
+/** What named a path: a binding, a `$watch` key, a `$postUpdate` call. */
+const BINDING = 0;
+const WATCH = 1;
+const POST = 2;
+/** Paths bindings, `$watch` keys and `$postUpdate` named, by engine: checked one macrotask later (and after a re-set). */
+const named = new WeakMap<Engine, Map<Pattern, number>>();
 const checked = new WeakMap<Engine, Set<Pattern>>();
 const due = new WeakSet<Engine>();
 /** Volumes (`<wcs-state mount>`) whose loading settled: the paths under them are checked from then on. */
@@ -120,7 +124,7 @@ function check(engine: Engine): void {
   if (map === undefined) return;
   let done = checked.get(engine);
   if (done === undefined) checked.set(engine, (done = new Set()));
-  for (const [p, watch] of map) {
+  for (const [p, kind] of map) {
     if (done.has(p)) continue;
     done.add(p);
     const m = missing(engine, p);
@@ -149,9 +153,11 @@ function check(engine: Engine): void {
     // Reported only with a near name — a likely typo (`.nmae` beside `name`) — or a row getter of
     // another list form
     if (m.row && near === "" && rowGetter === "") continue;
-    const [code, subject] = watch ? ["watch-path-missing", "$watch path"] : ["binding-path-missing", "Bound path"];
-    hooks.noticed?.(engine, { "type": "state:path-unresolved", "source": watch ? "watch" : "binding", "path": p.path, "missingSegment": m.seg });
-    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}" does not resolve on the state tree: "${m.seg}" is not declared.${near}${rowGetter} Updates to this path will be silently dropped.${LINT_HINT}`);
+    const [code, subject, source] = kind === WATCH ? ["watch-path-missing", "$watch path", "watch"]
+      : kind === POST ? ["post-update-path-missing", "$postUpdate path", "postUpdate"]
+      : ["binding-path-missing", "Bound path", "binding"];
+    hooks.noticed?.(engine, { "type": "state:path-unresolved", "source": source, "path": p.path, "missingSegment": m.seg });
+    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}" does not resolve on the state tree: "${m.seg}" is not declared.${near}${rowGetter} ${kind === POST ? "The call updates nothing." : "Updates to this path will be silently dropped."}${LINT_HINT}`);
   }
 }
 
@@ -163,12 +169,63 @@ function schedule(engine: Engine): void {
 
 /** The `declared` hook: a path a binding or a `$watch` key names. */
 function declared(engine: Engine, p: Pattern, watch = false): void {
+  note(engine, p, watch ? WATCH : BINDING);
+}
+
+function note(engine: Engine, p: Pattern, kind: number): void {
   // a missing top-level key already fails the binding's read (the core's error)
-  if (p.path[0] === "$" || p.path.includes("#") || (!watch && p.parent === null)) return;
+  if (p.path[0] === "$" || p.path.includes("#") || (kind === BINDING && p.parent === null)) return;
   let map = named.get(engine);
   if (map === undefined) named.set(engine, (map = new Map()));
-  if (!map.has(p)) map.set(p, watch);
+  if (!map.has(p)) map.set(p, kind);
   schedule(engine);
+}
+
+const wrapped = new WeakSet<Engine>();
+/** A `$postUpdate` is running: what it lands is not a write (see written). */
+let posting = false;
+
+/**
+ * `$postUpdate(path)` says what at a path changed in place; a path that does not resolve updates nothing,
+ * and said nothing (`rows.${r}.cell.${c}.text` for `cells` — a 7GUIs evaluation's Cells). Its pattern is
+ * checked as a binding's is, the top-level key too (no read fails for it).
+ */
+function watchPostUpdate(engine: Engine): void {
+  if (wrapped.has(engine)) return;
+  wrapped.add(engine);
+  const api = (engine as any).api as Record<string, (path: string) => void>;
+  const post = api.$postUpdate;
+  api.$postUpdate = (path: string) => {
+    posting = true;
+    try {
+      post(path);
+    } finally {
+      posting = false;
+    }
+    const p = engine.patterns.peek(parsePath(path).pattern);
+    if (p !== undefined) note(engine, p, POST);
+  };
+}
+
+/** The top-level keys a state declared (its own and its prototypes'), and those written since, by engine. */
+const declaredKeys = new WeakMap<Engine, Set<string>>();
+
+/**
+ * A write of a top-level key the state did not declare, beside a near one it did (`this.selectedID` and
+ * `selectedId`): 4.0 creates the key, and nothing bound to the declared one changes (a 7GUIs evaluation's
+ * CRUD). Warned once per key; a key with no near name is one the state adds on purpose.
+ */
+function written(engine: Engine, p: Pattern): void {
+  const keys = declaredKeys.get(engine);
+  const key = p.last;
+  if (p.parent !== null || posting || keys === undefined || keys.has(key) || key[0] === "$" || engine.dropped.has(key)) return;
+  const near = didYouMean(key, [...keys]);
+  keys.add(key);
+  // (a volume grafts its state at its mount path, and the keys on the way to it: those keys are the page's)
+  if (near !== "" && ![...((engine.root as ParentNode | undefined)?.querySelectorAll(`${config.tagNames.state}[mount]`) ?? [])]
+    .some((e) => `${e.getAttribute("mount")}.`.startsWith(`${key}.`))) {
+    console.warn(`[@wcstack/state] [wcs/write-path-missing] "${key}" is not declared: writing it creates a new key.${near}${LINT_HINT}`);
+  }
 }
 
 /** A re-set: every path is checked again against the new state. */
@@ -302,7 +359,10 @@ export const diagnostics: Feature = {
       prev?.(engine, target);
       checkRecursion(target);
       recheck(engine);
+      watchPostUpdate(engine);
+      declaredKeys.set(engine, new Set(keysOf(target)));
     };
+    hooks.written = chain(hooks.written, written);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
   },
 };

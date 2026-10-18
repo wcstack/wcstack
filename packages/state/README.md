@@ -1307,7 +1307,7 @@ Inside state objects (getters / methods), the following APIs are available via `
 | `this.$getAll(path, indexes?)` | Get all values matching a wildcard path |
 | `this.$setAll(path, indexes, value, options?)` | Write to every address matching a wildcard path |
 | `this.$resolve(path, indexes, value?)` | Resolve a wildcard path with specific indexes |
-| `this.$postUpdate(path)` | Manually trigger update notification for a path |
+| `this.$postUpdate(path)` | Manually trigger update notification for a path. A `*` in it is the current row's index, as in a getter: called from an event handler of a row, `$postUpdate("rows.*.cells.*.text")` announces that row's cell only. To announce several rows, name each one (`` this.$postUpdate(`rows.${r}.cells.${c}.text`) ``) |
 | `this.$dependOn(path)` | Manually register a dependency for cache invalidation |
 | `this.$untracked(fn)` | Read values inside fn without registering dependencies |
 | `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | Keyed subscription for "is this row's key the value of `path`?" (see [Keyed selection](#keyed-selection-eq--eqpath--eqindex)) |
@@ -3036,6 +3036,8 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | Typo in a nested path (`user.nmae`) | `console.warn` (`wcs/binding-path-missing`). Updates still never arrive — you fix it |
 | Typo in a top-level path (`cout`) | Throws on read — `[wcs/binding-path-missing] Path "cout" does not exist on the state tree. Did you mean "count"?` (`#301`) — so the binding fails to apply, reported like any binding failure |
 | Typo in a `$watch` key | `console.warn` (`wcs/watch-path-missing`), reported even for a single segment |
+| Typo in a `$postUpdate` path (`` `rows.${r}.cell.${c}.text` `` for `cells`) | Since 4.4 (not released yet): `console.warn` (`wcs/post-update-path-missing`), a single segment too — the call updates nothing |
+| A write of a top-level key the state does not declare, beside a near one (`this.selectedID` and `selectedId`) | Since 4.4 (not released yet): `console.warn` (`wcs/write-path-missing`), once per key — the write creates a new key, and nothing bound to the declared one changes. A new key with no near name is not reported: a state may add keys on purpose |
 
 The check **under-approximates**: it stays silent for anything it cannot decide statically, because a false alarm costs more than a missed one. None of these warn:
 

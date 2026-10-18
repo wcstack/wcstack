@@ -211,3 +211,66 @@ describe("番号付きのコアのメッセージの文面（src/messages.ts）"
     err.mockRestore();
   });
 });
+
+describe("$postUpdate のパスが状態に無い（wcs/post-update-path-missing — 7GUIs の評価の Cells）", () => {
+  it("行の中の打ち間違いは近い名前付きで 1 回だけ警告し、トップレベルのキーも見る。正しいパスでは黙る", async () => {
+    const { el } = await page(`<template data-wcs="for: rows"><template data-wcs="for: .cells"><i>{{ .text }}</i></template></template>`, {
+      rows: [{ cells: [{ text: "a" }, { text: "b" }] }],
+      label: "x",
+    });
+    const got = await warnings(async () => {
+      el.createState("writable", (s: any) => {
+        s.$postUpdate("rows.0.cell.1.text");
+        s.$postUpdate("rows.0.cell.0.text");
+        s.$postUpdate("lable");
+        s.$postUpdate("rows.0.cells.1.text");
+        s.$postUpdate("label");
+      });
+      await flush();
+    });
+    expect(got).toHaveLength(2);
+    expect(got[0]).toContain('[wcs/post-update-path-missing] $postUpdate path "rows.*.cell.*.text" does not resolve on the state tree: "cell" is not declared. Did you mean "cells"?');
+    expect(got[1]).toContain('$postUpdate path "lable"');
+    expect(got[0]).toContain('The call updates nothing.');
+    expect(got[1]).toContain('Did you mean "label"?');
+  });
+});
+
+describe("宣言していないキーへの書き込み（wcs/write-path-missing — 7GUIs の評価の CRUD）", () => {
+  it("近い宣言済みのキーがあればキーごとに 1 回警告し、近い名前の無い新しいキーと宣言済みのキーには黙る", async () => {
+    const { el } = await page(`<p>{{ selectedId }}</p>`, { selectedId: null, count: 0 });
+    const got = await warnings(async () => {
+      el.createState("writable", (s: any) => {
+        s.selectedID = 1;
+        s.selectedID = 2;
+        s.somethingNew = 3;
+        s.selectedId = 4;
+        s.count = 5;
+      });
+      await flush();
+    });
+    expect(got).toEqual([
+      '[@wcstack/state] [wcs/write-path-missing] "selectedID" is not declared: writing it creates a new key. Did you mean "selectedId"? Validate statically: npx @wcstack/lint <file>.',
+    ]);
+  });
+
+  it("ボリュームが接ぎ木するマウントのパス（とその途中のキー）は、近い名前があっても黙る", async () => {
+    const tag = `diag-vol-${seq++}`;
+    const h = document.createElement(tag);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state><wcs-state mount="card"></wcs-state><wcs-state mount="shopp.cart"></wcs-state><p>{{ cart }}</p>`;
+    const [rootEl, card, shop] = Array.from(root.querySelectorAll("wcs-state")) as any[];
+    rootEl.setInitialState({ cart: 1, shop: 2 });
+    card.setInitialState({ n: 1 });
+    shop.setInitialState({ n: 2 });
+    const got = await warnings(async () => {
+      document.body.appendChild(h);
+      await rootEl.connectedCallbackPromise;
+      await card.connectedCallbackPromise;
+      await shop.connectedCallbackPromise;
+      await getBindingsReady(root);
+      await flush();
+    });
+    expect(got.filter((w) => w.includes("write-path-missing"))).toEqual([]);
+  });
+});
