@@ -765,7 +765,7 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
     hooks.element?.(C, "mounting");
   }
   // a Light DOM component in a server-rendered page takes the server's nodes of its content (F33)
-  const adopted = hooks.adoptScope?.(root);
+  const adopted = hooks.adoptScope?.(root, C);
   mount(C, root as ShadowRoot | Element);
   adopted?.();
   m.nodes = [...root.childNodes];

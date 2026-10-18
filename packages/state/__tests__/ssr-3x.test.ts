@@ -139,6 +139,18 @@ describe("3.x の @wcstack/server の出力（版の違い）", () => {
     expect(root.querySelector("h1")!.textContent).toBe("Typed");
   });
 
+  it("4.0 が計画できない 3.x のマークアップ（@state）なら、3.x のサーバの行と印を残したまま初期化に失敗する", async () => {
+    const html = golden.pages.basic.output.replace('data-wcs="textContent: items.*.name"></span> <!--@@: items.*.n-->', 'data-wcs="textContent: items.*.name@main"></span> <!--@@: items.*.n-->');
+    expect(html).not.toBe(golden.pages.basic.output);
+    let root!: ShadowRoot;
+    const failed = await load("basic", undefined, (r) => { root = r; }, html).then(() => null, (e: Error) => e);
+    expect(failed).toBeInstanceOf(Error);
+    expect(error).toHaveBeenCalledWith(expect.any(String), failed);
+    expect(texts(root, "li")).toEqual(["Apple 1", "Banana 2"]);
+    expect(texts(root, "div.shown")).toEqual(["shown 3"]);
+    expect(root.innerHTML).toContain("<!--@@wcs-for-start:");
+  });
+
   it("入れ子の for（相対パス）と行の中の if を、入れ子のテンプレートまで戻して描く", async () => {
     const { root, write } = await load("nested");
     expect(error).not.toHaveBeenCalled();

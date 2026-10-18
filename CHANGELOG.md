@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/state`: **a client of another minor keeps the server's page when it cannot plan it.** A client that discards a snapshot of another major.minor took the server's rows and branches away before it planned the page. Markup it could not plan — a newer minor's filter argument, a 3.x `@state` binding — then failed its initialization on a page left without them. The client now walks a copy of the page first, in a template's content, where no custom element is created, and so does a Light DOM component's engine with its content. It fails before it touches the page, which stays as the server rendered it: readable, but nothing in it responds. A client up to 4.3 cannot be helped: serve the client of the server's minor. It costs 120 B in the ssr add-on and nothing in the core. Found by the `ssr-news` seam app ([docs/seam-apps.md](./docs/seam-apps.md)).
+
 ## [4.3.0] — 2026-10-18
 
 The first minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja). The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md)). The packages report what they used to drop silently. The `ssr-news` seam app (SSR × router × state, [docs/seam-apps.md](./docs/seam-apps.md)) found what server rendering, the router and state got wrong between them. The design decisions are the author's (2026-10-17 and 2026-10-18).

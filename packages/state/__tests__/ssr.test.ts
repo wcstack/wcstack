@@ -158,6 +158,45 @@ describe("SSR", () => {
     warn.mockRestore();
   });
 
+  it("版が違い、このクライアントが計画できないマークアップ（未知のフィルタ）なら、サーバの行と分岐を残したまま初期化に失敗する（docs/seam-apps.md、ssr-news）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const served = (await serverRender(page, state())).replace(/<wcs-ssr version="[^"]*"/, '<wcs-ssr version="99.0.0"');
+    // a newer minor's markup: a filter this client does not know, in a template (`<wcs-ssr>` keeps
+    // the rows' templates) and in a page-level text binding (its mark)
+    const cases = [served.replace("{{ .label }}", "{{ .label|zzz }}"), served.replace("wcs-t:picked", "wcs-t:picked%7Czzz")];
+    expect(cases.every((c) => c !== served)).toBe(true);
+    for (const html of cases) {
+      let root!: ShadowRoot;
+      const failed = await clientLoad(html, state(), (r) => { root = r; }).then(() => null, (e: Error) => e);
+      expect(failed?.message).toContain("zzz");
+      // (reported as an initialization failure: its text is the diagnostics add-on's, a number without it)
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("#49"), failed);
+      // the server's HTML as it was: its rows, its branch, its texts
+      expect(Array.from(root.querySelectorAll("ol > li")).map((li) => li.textContent)).toEqual(["a1", "a2", "b1"]);
+      expect(root.querySelector("p.closed")?.textContent).toBe("closed");
+      expect(root.querySelector("h1")?.textContent).toBe("T");
+        error.mockClear();
+    }
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it("版が違っても計画できるページは、写しで歩いたあとに一度だけ描き、イベントの委譲も一つだけ（写しの上の歩きが二重に効かない）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const html = (await serverRender(page, state())).replace(/<wcs-ssr version="[^"]*"/, '<wcs-ssr version="99.0.0"');
+    let picks = 0;
+    const s = { ...state(), pick(this: any, _e: Event, i: number, j: number) { picks++; this.picked = `${i}.${j}`; } };
+    const { root } = await clientLoad(html, s);
+    expect(Array.from(root.querySelectorAll("ol > li")).map((li) => li.textContent)).toEqual(["a1", "a2", "b1"]);
+    expect(root.querySelectorAll("p.closed")).toHaveLength(1);
+    (root.querySelectorAll("ol > li")[1] as HTMLElement).click();
+    await flush();
+    expect(picks).toBe(1);
+    expect(root.querySelector("p.picked")!.textContent).toBe("0.1");
+    warn.mockRestore();
+  });
+
   it("クライアントの状態と行の数が食い違っても、クライアントの状態どおりに描く", async () => {
     const html = await serverRender(`<wcs-state enable-ssr></wcs-state><ul><template data-wcs="for: rows"><li>{{ . }}</li></template></ul>`, { rows: ["a", "b", "c"] });
     const fewer = html.replace(/<script type="application\/json">[^<]*<\/script>/, '<script type="application/json">{"rows":["a"]}</script>');

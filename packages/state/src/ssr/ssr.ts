@@ -26,7 +26,8 @@
  * A snapshot of another major.minor is discarded, and the page renders on the client as it would
  * without a server: the state comes from its own source, `$connectedCallback` runs, and the server's
  * rows and marks give way to the templates they came from — those of @wcstack/server 3.x's output
- * too (`legacy`).
+ * too (`legacy`). They give way only once the page was planned on a copy: markup this client cannot
+ * plan fails its initialization with the server's HTML left as it was.
  *
  * Not carried over from @wcstack/state 3.3 (approved): the inline snapshot for servers without
  * the builder protocol, and the property value table (every binding is applied on adoption).
@@ -37,7 +38,7 @@ import { config } from "../config";
 import { hooks } from "../hooks";
 
 import { VERSION } from "../version";
-import { isOuter, setsContent, templateContent, walked } from "../dom/plan";
+import { isOuter, setsContent, templateContent, textSpec, walkBindings, walked } from "../dom/plan";
 import { majorMinor } from "./element";
 import { parseBindTextsForElement } from "../parser/parseBindTextsForElement";
 /** The snapshot element's tag (`config.tagNames.ssr`, `wcs-ssr` by default). */
@@ -506,11 +507,14 @@ function mend(container: Node): void {
  * What it did not adopt is dropped after the walk: the regions held then are its own (a page's are
  * read and adopted in one go too, and dropped before anything else runs).
  */
-export function adoptScope(host: Node): (() => void) | null {
+export function adoptScope(host: Node, engine: Engine): (() => void) | null {
   const d = deferred.get(host);
   if (d === undefined) return null;
   deferred.delete(host);
-  prepare(host, d.ssr, d.adopt);
+  const undo = (c: Node): void => prepare(c, d.ssr, d.adopt);
+  // (a snapshot discarded: planned on a copy first, as the page — see hydrate)
+  if (!d.adopt) plan(engine, host, host, undo);
+  undo(host);
   if (!d.adopt) return null;
   const prev = hooks.adopt;
   hooks.adopt = adopt;
@@ -684,6 +688,22 @@ function typed(container: Node): () => void {
   };
 }
 
+/**
+ * Walks a copy of `container` — in a template's content, where no custom element is created — as the
+ * mount of `root` walks it, once `undo` put it back as written: what this client cannot plan (a newer
+ * minor's markup, a filter argument it does not know) fails its initialization while the server's
+ * rows and branches are still in the page, not after they went (docs/seam-apps.md, ssr-news). (An
+ * event binding puts its listener on the root at once: the mount's walk finds it there)
+ */
+function plan(engine: Engine, root: Node, container: Node, undo: (c: Node) => void): void {
+  const copy = document.createElement("template").content;
+  for (const n of container.childNodes) copy.appendChild(copy.ownerDocument.importNode(n, true));
+  undo(copy);
+  engine.root = root;
+  const none = (): void => {};
+  walkBindings(engine, [...copy.childNodes], null, true, none, none, none, (_, expr) => textSpec(engine, expr, null, 0));
+}
+
 /** The `element` hook, "mounting": a client root with a server snapshot adopts the server's DOM. */
 export function hydrate(engine: Engine): void {
   const el = engine.element as Element;
@@ -728,11 +748,14 @@ export function hydrate(engine: Engine): void {
     r.removeAttribute(RAW_ATTR);
   }
   const container = root.nodeType === 9 ? (root as Document).body : root;
+  // (its templates are not the page's markup: out before the page is walked)
+  ssr!.remove();
+  // back to the page as written (see prepare, legacy)
+  const undo = (c: Node): void => (old ? legacy(c, ssr!, fresh) : prepare(c, ssr!, same));
+  if (!same) plan(engine, root, container, undo);
   // (taken before the page is bound, which writes the state's values; given back right after)
   queueMicrotask(typed(container));
-  if (old) legacy(container, ssr!, fresh);
-  else prepare(container, ssr!, same);
-  ssr!.remove();
+  undo(container);
   if (same) {
     // only while the page is adopted — its walk, which runs now: every other block is built with one
     // null check. What no view took then goes before anything else runs
