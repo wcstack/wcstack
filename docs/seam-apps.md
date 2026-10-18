@@ -214,4 +214,5 @@ Not a seam app of this repository: an AI author built the seven 7GUIs tasks with
 | document gap | a `*` in `$postUpdate` is the current row, not every row | fixed (#486): the README says so; a form for every row is on the 5.0 agenda |
 | design question | an emit while nothing subscribes is lost — an element defined late (Timer), an `if:` branch the same update renders (Cells) | decided: warned once per token (`[wcs/command-token-unbound]`) |
 | design question | a delegated handler reading `event.currentTarget` (the root) fails with a TypeError that says nothing of it | decided: when such a handler throws, the diagnostics add-on says why once per handler (a 33 B core hook) |
-| open | the lint does not read a page's own custom element's `static wcBindable`, so a typo in its `eventToken.` / `command.` names is left to the runtime (which fails initialization with the code); commanding one row of a `for:` needs a custom element | recorded |
+| lint gap | the lint did not read a page's own custom element's `static wcBindable`, so a typo in its `eventToken.` / `command.` names was left to the runtime (which fails initialization with the code, and names no near member) | fixed: checked against a literal declaration in the page's scripts |
+| open | commanding one row of a `for:` needs a custom element (a token reaches every row that binds it) | recorded |

@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- **ページで定義した自作要素の `static wcBindable` を読み、その要素への束縛を照合する**（`wcs/tag-member-unknown`、error）— インラインのスクリプト・`src=` のモジュールとそこからの相対の import の中の `customElements.define("tag", Class)` で、クラス（かページの中の親クラス）が `static wcBindable` を字面で宣言しているもの。`eventToken.` / `command.` / プロパティの名前の打ち間違いを、近い名前付きで報告する。7GUIs の評価では、`<listbox-nav>` の `eventToken.mov` と `command.` の打ち間違いを lint が見逃し、近い名前を示さない実行時の初期化の失敗だけが知らせていた。宣言が計算・spread・ページの外の継承のもの、ドット付きのプロパティ（コンポーネントの `state.x:` の配線）は照合しない。
 - **7GUIs の評価で、実行時も lint も黙っていた（または汎用の TypeError だけだった）形を報告する**:
   - `wcs/path-readonly`（error。予約だけだった code）— 書き戻す束縛（`<input>`・`<select>`・`<textarea>` の `value:`、checkbox・radio の `checked:`、`radio:` / `checkbox:`。`#ro` なし）が setter の無い getter を指す。入力のたびに `"celsius" is a getter without a setter` を投げていた。
   - `wcs/command-token-unbound`（warning、新規）— 宣言したコマンドトークンを emit する（スクリプトの `.emit()`、マークアップの `on*: $command.<名前>`）のに、ドキュメントのどの `command.<メソッド>:` 束縛も受けない。emit は誰にも届かず、何も言わなかった。

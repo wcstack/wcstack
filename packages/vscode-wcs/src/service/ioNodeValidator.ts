@@ -29,6 +29,15 @@ import type { PathCandidate } from './stateAnalyzer.js';
 import { splitBindingExpressions, parseBindingExpression } from './bindingValidator.js';
 import { getWcsManifest } from './wcsManifest.js';
 import { suggestion } from './suggestion.js';
+import { collectPageElementContracts, mayDefineElements } from './pageElements.js';
+import { findStartTagRegions } from '../language/htmlParse.js';
+
+/** What a binding is checked against: a built-in tag's catalog entry, or a page element's `static wcBindable`. */
+interface MemberContract {
+  readonly properties: readonly string[];
+  readonly inputs: Readonly<Record<string, unknown>>;
+  readonly commands: readonly string[];
+}
 
 /**
  * wc-bindable の宣言を持つ要素でも、契約メンバーでなくてよいプロパティバインド。ランタイムは HTML の
@@ -85,7 +94,6 @@ export function validateIoNodes(
   const diagnostics: WcsDiagnostic[] = [];
   const msgs = getMessages(locale);
   const occurrences = findBuiltinTagOccurrences(html);
-  if (occurrences.length === 0) return diagnostics;
 
   // state スロットのシード値検査（trigger / storage）にだけ状態パスが要る。遅延解決。
   let statePaths: PathCandidate[] | null = null;
@@ -127,31 +135,58 @@ export function validateIoNodes(
 
     const hasManual = hasBooleanAttribute(occ.attrsText, 'manual');
 
-    let exprOffset = 0;
-    for (const expr of splitBindingExpressions(bindAttr.value)) {
-      const exprStart = valueStart + exprOffset;
-      exprOffset += expr.length + 1; // ';' の分
-      const parsed = parseBindingExpression(expr);
-      const property = parsed.property;
-      if (!property) continue;
+    checkBindings(occ.tagName, contract, bindAttr.value, valueStart, hasManual, getPaths, diagnostics, msgs);
+  }
 
-      const propIndex = expr.indexOf(property);
-      const start = propIndex === -1 ? exprStart : exprStart + propIndex;
-      const end = propIndex === -1 ? exprStart + expr.length : start + property.length;
-
-      validateBindingAgainstContract(
-        occ.tagName, contract, parsed, property, start, end, hasManual, getPaths, diagnostics, msgs,
-      );
+  // The custom elements the page defines itself: checked against their `static wcBindable` as the runtime does
+  // (#38 / #1203 / #1204 — at the root the state fails to initialize). Only an element whose declaration the
+  // page's scripts state literally (pageElements.ts); the scripts are read only when such an element is bound
+  if (mayDefineElements(html)) {
+    const own = findPageTagOccurrences(html, bindAttribute);
+    const contracts = own.length > 0 ? collectPageElementContracts(html, fileReader) : null;
+    for (const occ of own) {
+      const contract = contracts!.get(occ.tagName);
+      if (contract === undefined) continue;
+      if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
+      const bindAttr = extractAttributeValue(occ.attrsText, bindAttribute)!;
+      checkBindings(occ.tagName, contract, bindAttr.value, occ.attrsStart + bindAttr.valueOffsetInAttrs, false, getPaths, diagnostics, msgs);
     }
   }
 
   return diagnostics;
 }
 
+/** Each binding of one element's bind attribute against `contract`. */
+function checkBindings(
+  tagName: string,
+  contract: MemberContract,
+  value: string,
+  valueStart: number,
+  hasManual: boolean,
+  getPaths: () => PathCandidate[],
+  diagnostics: WcsDiagnostic[],
+  msgs: WcsMessageCatalog,
+): void {
+  let exprOffset = 0;
+  for (const expr of splitBindingExpressions(value)) {
+    const exprStart = valueStart + exprOffset;
+    exprOffset += expr.length + 1; // ';' の分
+    const parsed = parseBindingExpression(expr);
+    const property = parsed.property;
+    if (!property) continue;
+
+    const propIndex = expr.indexOf(property);
+    const start = propIndex === -1 ? exprStart : exprStart + propIndex;
+    const end = propIndex === -1 ? exprStart + expr.length : start + property.length;
+
+    validateBindingAgainstContract(tagName, contract, parsed, property, start, end, hasManual, getPaths, diagnostics, msgs);
+  }
+}
+
 /** 1 バインディングを契約と突き合わせる。 */
 function validateBindingAgainstContract(
   tagName: string,
-  contract: (typeof BUILTIN_TAGS)[string],
+  contract: MemberContract,
   parsed: ReturnType<typeof parseBindingExpression>,
   property: string,
   start: number,
@@ -221,6 +256,9 @@ function validateBindingAgainstContract(
     return;
   }
 
+  // A page element's dotted property (`state.items:` on a Light DOM component's host) is its wiring, not a member
+  if (!tagName.startsWith('wcs-') && property.includes('.')) return;
+
   // 通常のプロパティバインド: properties ∪ inputs ∪ HTML の書き込み先。
   if (!contract.properties.includes(property) && !(property in contract.inputs)
     && !HTML_SINK_PROPERTIES.has(property)) {
@@ -234,7 +272,7 @@ function validateBindingAgainstContract(
   }
 
   // trigger の true シード: エッジ検出なし・manual バイパスのためバインド時に即発火する。
-  if (property === 'trigger' && 'trigger' in contract.inputs && parsed.path) {
+  if (tagName.startsWith('wcs-') && property === 'trigger' && 'trigger' in contract.inputs && parsed.path) {
     const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial === 'true') {
       diagnostics.push({
@@ -319,6 +357,22 @@ export function findBuiltinTagOccurrences(html: string): IoTagOccurrence[] {
       attrsText: match[2],
       attrsStart: match.index + 1 + match[1].length,
     });
+  }
+  return out;
+}
+
+/**
+ * The start tags of custom elements that are not built-in `wcs-*` tags and carry the bind attribute — in the
+ * markup only (not in a comment, a script's strings or escaped text: findStartTagRegions).
+ */
+function findPageTagOccurrences(html: string, bindAttribute: string): IoTagOccurrence[] {
+  const out: IoTagOccurrence[] = [];
+  for (const region of findStartTagRegions(html)) {
+    const tagName = region.tagName;
+    if (!tagName.includes('-') || tagName.startsWith('wcs-')) continue;
+    const attrsText = html.slice(region.start, region.end);
+    if (extractAttributeValue(attrsText, bindAttribute) === null) continue;
+    out.push({ tagName, tagStart: region.start - tagName.length - 1, attrsText, attrsStart: region.start });
   }
   return out;
 }
