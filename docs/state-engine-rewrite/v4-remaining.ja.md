@@ -1188,3 +1188,32 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - wcstack-skill: PR #40（merge commit 49c6a92）で版の印と CDN の固定を 4.2.0 にし、`leaveConfirm`・レイアウトの既定の slot・`match="prefix"`・日付の書式と `currency`（arity も）・getter の `$watch`・新しい lint と広げた検出・signals の 3 件を足した。4.1.0 の更新で「Since 4.0.4 the router warns」が版の一括置換で書き換わっていたのも戻した。タグ `v4.2.0`。
   - LP（c945adc）: 版の参照と「Shipped in」の v4.2.0 の一文、state / signals のページの版、llms の作り直し、チュートリアルのステップ 15 の `^4.2.0`、ステップ 16 の `wcstack@4.2.0` と integrity、sitemap の lastmod（ステップ 8〜14 は 2026-10-14）。本番で 13・14・16 のデモと jsDelivr の router 4.2.0 を Chromium で確かめた（9/9）。
 - 残り: docs/seam-apps.ja.md の表に未着手は無い。npm の `next` は 4.0.0 のまま（著者の方針で動かさない）。
+
+### 4.3.0 の公開（2026-10-18）
+
+- 中身: 4.x の指針（[docs/v4-direction-2026-10.md](../v4-direction-2026-10.md)、2026-10-17 に著者が採択した「黙って壊れない」）の下での最初の minor。PR #463〜#478（2026-10-18 にマージ）:
+  - 誤りの目録（#463）と、lint を 4.0 のランタイムに合わせる変更（#464 — 8 つの形を error に）。
+  - router の囲むルート（#465）と、fetch / storage の警告（#466）。
+  - `data-wcs-ignore`（#467）と、1 つの一覧の 2 つの位置の同じオブジェクト（#468、Fixes #365）。
+  - 継ぎ目アプリ ssr-news（SSR × router × state）の発見の修正（#469〜#471・#475〜#477）と記録（#472・#478）。
+  - 著者が 2026-10-18 に推奨どおり決めた 6 つ（指針の §5.1）の実装（#473〜#477）。リリースの workflow に、README の未リリースの印を外す段が加わった（#474）。
+- 準備: PR #479（merge commit ac9499bd）で CHANGELOG を `[4.3.0] — 2026-10-18` に締め、CDN の固定 18 か所を 4.3.0 にした。印を外す段は、書き込まずに試してから走らせた（4.3.0 で問題 0、patch の版では止まる）。
+- main で `release`（minor、run 39077407800）。
+  - npm: 49 パッケージが `latest` で 4.3.0、来歴証明も 49/49（`@wcstack/media-query` の dist-tags だけ最初の照会で読めず、再照会で 4.3.0）。
+  - タグ `v4.3.0` と GitHub Release（`sri.json` 付き）。版を上げたコミット f0fb286b は、7 つの README の 26 か所の印を外した（日本語は「4.3 から」に戻る）。npm の README に印は残っていない。
+  - SRI 44/44（`sri.json`＝タグの dist＝jsDelivr）。文書の固定 URL 8 つがすべて 200。
+  - jsDelivr の配布物に今回の変更（`resolveModule`・`data-wcs-ignore`・`[wcs/command-not-ready]`・`[wcs/fetch-auto-unsafe]`・`pendingPromise`・router の新しい報告・`[wcs/ssr-pending-timeout]`）がある。`@wcstack/server` 4.3.0 は `@wcstack/state` の `4.3.0` にちょうどで依存する。
+- 公開後の作業（同日）:
+  - PR #480（merge commit f2652f70）: サイズの基準値を 4.3.0 の dist で取り直した（`core.min.js` は 20,069 B で残り 411 B）。ssr の slack 256 B は、増えた分が基準に入ったので外した。CLAUDE.md / AGENTS.md の版・サイズと、SSR のスナップショットの規則も更新し、拡張を 2.3.0 にした。
+  - VS Code 拡張 2.3.0: f2652f70 で `npm run package` した vsix（890 ファイル、vscode-wcs のテスト 1,264 件、4.3.0 の state を同梱）を Marketplace に公開した。タグ `vscode-wcs-v2.3.0`（f2652f70）。
+  - wcstack-skill: PR #41（merge commit 9c74f68）で、版の印と CDN の固定を 4.3.0 にした。あわせて `data-wcs-ignore`・lint の重大度・ガードの囲むルート・`[wcs/base-href-missing]`・fetch の url の扱いと 2 つの警告・`[wcs/command-not-ready]`・SSR の変更を足した。タグ `v4.3.0`。
+  - LP（1c08afd）:
+    - 版の参照と、「Shipped in」の v4.3.0 の一文。state / signals のページの版。
+    - チュートリアルのステップ 12 の lint の出力を、4.3.0 の実際の出力に直した。`wcs/input-nested-write` は 4.3 から error で、`wcs/storage-seed-clobber` は 4.1 から error なのに warning と書いてあった。
+    - ステップ 15 の `^4.3.0`、ステップ 16 の `wcstack@4.3.0` と integrity（ショップとページの両方）。
+    - llms の作り直しと、sitemap の lastmod。
+    - 本番で 9/9。
+- 残り:
+  - ssr-news を examples/ に取り込み、e2e を付ける。
+  - #24（古いクライアントが、初期化に失敗する前にサーバーの行を取り除く）。
+  - npm の `next` は 4.0.0 のまま（著者の方針で動かさない）。
