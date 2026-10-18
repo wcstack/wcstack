@@ -4,6 +4,8 @@
 
 > **This README describes 4.0.** Coming from 3.x? Read [Upgrading from 3.x](#upgrading-from-3x) and the [3.x → 4.0 migration guide](https://github.com/wcstack/wcstack/blob/main/docs/migration-v4.md).
 
+> **How much to read.** An app of inputs and the values computed from them — most apps — needs five sections: [Basic usage](#basic-usage), [Updating state](#updating-state) (assign to the path; a new array, not an array changed in place), [Binding syntax](#binding-syntax), [Structural directives](#structural-directives) and [Path getters](#path-getters-computed-properties) (wildcard getters and `$getAll`). Add [Web Component binding](#web-component-binding) and [Binding authority](#binding-authority-init--sync) when the page wires custom elements or I/O nodes (`<wcs-fetch>`, `<wcs-storage>`), and [`$listKeys`](#listkeys--identity-for-refetched-rows) when rows come back as new objects (a refetch, a restore from storage). For text, `{{ }}` and `<!--@@: path -->` are the same binding: write the comment form outside a `<template>` — it shows nothing before the state loads — and either inside. The rest is reference: the [features table](#features-derived-from-this-principle) names the section for each question, and `npx @wcstack/lint` reports most of the mistakes the sections warn about.
+
 **This is not another convenient frontend framework. It brings a lineage established outside frontend development — the one where a path string is the contract between view and model — onto web standards.**
 
 Most libraries place the coupling point between UI, state, and components inside JavaScript. `@wcstack/state` does not. It assumes no virtual DOM, no compilation step, no hooks, no selectors. UI and state are connected by HTML and path strings alone.
@@ -606,6 +608,8 @@ class YenInput extends HTMLElement {
 ```
 
 Whichever you pick, `element.value` and the value extracted from the event must be the same logical state (the protocol's *Producer State Consistency Invariant*): the initial sync reads the property, every later update reads the event. Both shapes are in use inside wcstack — `<wcs-fetch>`'s `loading` dispatches the boolean as `detail` with no `getter`, its `value` reads `detail.value` through one — and DCC `$bindables` declare `getter: (e) => e.target[name]` because a sub-path write has no single value to put in `detail`. The default itself is not going to change: it is normative for every wc-bindable adapter (`@wc-bindable/core`'s `bind()` and the framework adapters implement the same `e.detail`), and the protocol classes a different default as a breaking change requiring a new protocol identifier.
+
+**State's own write coming back.** When state writes a member (`element.value = v`) and the element dispatches the member's event from that setter, synchronously, with the same value (`Object.is`), the event is state's own write echoing back: it is not written to the state, and the setter of an accessor pair bound there does not run. This is part of the binding — no `$behavior` key changes it. An event dispatched later (after an `await`, from a timer) or carrying another object (a copy, JSON parsed again) is the element's own write: it reaches the state, and an accessor pair's setter runs. Write such a setter so that receiving what the state already holds changes nothing. Persisting a whole form through `<wcs-storage>` with a getter / setter pair relies on this rule: [Persisting a form as one object](../storage/README.md#2-persisting-a-form-as-one-object).
 
 Override the authority per binding with `#init=`:
 
@@ -2651,6 +2655,7 @@ Notes:
 
 - 3.x also wrote the attribute after the property (`String(value)`, JSON for an object). An element that reflects in its setter is unaffected; one that has no setter and relied on the binder to write its attribute needs a setter now (Migration guide, §3.4).
 - Native HTML elements ignore `inputs` entirely — the declaration only applies to custom elements that expose `static wcBindable`.
+- A `for:` row or an `if:` branch is bound before it is inserted: a custom element in it receives its inputs (`element.value = …`) before its `connectedCallback` runs. At page level the element is connected first. A `connectedCallback` that renders from its defaults overwrites what the setters received — render from the current properties instead. (An outside evaluation's amount field lost an entry it had not accepted yet this way when its page moved from 3.x to 4.0.) The other early write, a property set before the element is defined, is the [I/O node guidelines](../../docs/async-io-node-guidelines.md)' `upgradeProperties` step.
 
 ## Choosing a Component Mechanism
 

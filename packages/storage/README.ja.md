@@ -110,7 +110,7 @@ npm install @wcstack/storage
 
 1. 接続時に `<wcs-storage>` がキーをロード。`#init=element` によりロード済みオブジェクトが `formSnapshot` に書かれ → setter が `form` を埋め → 入力欄に復元値が出る
 2. 入力すると `form.name` が書かれ → `formSnapshot` が dirty に → バインディングが新しいオブジェクトを `value` に適用 → 保存
-3. 保存が発火する `value` イベントは同じオブジェクトを戻すだけ。ランタイムは書き込み確認として認識して止まり、setter が走るのはロード時の 1 回だけ
+3. 保存が発火する `value` イベントは、state が `value` に書いている最中に、同じオブジェクトで dispatch される。これは state 自身の書き込みが返ってきたもので、state へは書かれない（[規則](../state/README.ja.md#要素から-state-に何が書かれるかpropertiesgetter)）。setter が走るのはロード時と、別のタブがキーを保存したとき（そのオブジェクトは新しいもの）。タブをまたぐとキーは 1 つの単位で、後から保存した方が勝つ
 
 間違えやすい点が 2 つ:
 

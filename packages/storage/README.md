@@ -109,7 +109,7 @@ The most common shape: several inputs, one storage key, restored on reload. Give
 
 1. On connection `<wcs-storage>` loads the key; `#init=element` writes the loaded object to `formSnapshot` → the setter fills `form` → the inputs show the restored values
 2. Typing writes `form.name` → `formSnapshot` is dirty → its binding applies the new object to `value` → saved
-3. The save's own `value` event carries the same object back; the runtime recognizes the write confirmation and stops — the setter runs once, on load
+3. The save's own `value` event is dispatched while state writes `value`, with the same object: it is state's own write coming back, which is not written to the state ([the rule](../state/README.md#what-the-element-writes-back-propertiesgetter)). The setter runs on load, and when another tab saves the key — its object is a new one. Across tabs the key is one unit: the last save wins
 
 Two details that are easy to get wrong:
 

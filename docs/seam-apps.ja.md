@@ -216,3 +216,20 @@
 | 設計の問い | `event.currentTarget`（ルート）を読む委譲されたハンドラが、それに触れない TypeError で落ちる | 決定: そのハンドラが throw したら、diagnostics の後付けがハンドラごとに 1 回理由を言う（core のフック 33 B） |
 | lint の穴 | lint がページで定義した自作要素の `static wcBindable` を読まず、その `eventToken.` / `command.` の名前の打ち間違いを実行時（code 付きで初期化に失敗し、近いメンバーは示さない）に任せていた | 修正: ページのスクリプトの字面の宣言と照合する |
 | 残り | `for:` の 1 行だけに命令するには自作要素が要る（トークンは束ねたすべての行に届く） | 記録 |
+
+### 外からの評価: 確定申告の下書きツール（2026-10-18）
+
+このリポジトリの継ぎ目アプリではない: AI の作者が、自分のリポジトリで確定申告（事業所得のみ）の下書きツールを @wcstack/state 4.2.0・router・`<wcs-storage>` で作り — 値 1 つの入力 34 個、行の表 3 つ、getter 96 本 — state エンジンの評価を書いた。ドメインとの相性は良い（申告書は表計算で、パス getter はその式）とし、コストを 3 つ挙げた: エンジンの暗黙のルール、リリースの速さ、静的検査のために state を二度宣言すること。提案は 4 つ: state の定義から `stateSchema` を作る手段、getter の中のパスも lint で検査する、保存と復元を書き戻しの約束事ごと公式のレシピにする、major のペースを落とすか長期サポート版を設ける。
+
+| 分類 | 発見 | 結末 |
+|---|---|---|
+| lint の穴 | getter が読むパスを検査しない: `this["dependents.*.incom"]`・`$getAll("incomes.*.amout", [])` の打ち間違いはテスト頼み | 修正（#489）: `wcs/read-path-missing` |
+| runtime の欠陥 | そうした入れ子の読みは `undefined` になり、金額が黙って違う | 修正（#489）: diagnostics の後付けが、読んだ getter の名前を添えてパスごとに 1 回警告する |
+| lint の欠陥 | 他のキーと並ぶトップレベルの spread で、spread が持ち込むキーがすべて `wcs/binding-path-missing` になった（誤報 79 件）— 作者は黙らせるために `stateSchema` 全体を手で書き、食い違わないことをテストで確かめていた | 修正（#489）: そうした state は文書どおり読めない state として扱う。`stateSchema` が無ければ spread の上で 1 回そう言う（`wcs/path-dynamic-unknown`、info） |
+| 道具の欠陥 | `wcs-schema` がその state でスタックを使い切った（spread のある literal では、TypeScript のチェッカーが `this` を読む getter 1 本ごとに 1 段再帰する）。スタックを足すと、入力 34 個を error にする閉じた schema を書いた | 修正（#490）: bin は大きなスタックで動く。キーを挙げない型の spread は、警告付きの開いた schema にする。表から JSDoc の mapped type で型を付けると、手書きの manifest のキーがすべて生成される |
+| 文書の穴 | アプリの保存と復元が立っている規則 — state が書いている最中に要素が返す値は書き込みではない — が storage の README のレシピにしか無く、作者は `$behavior` で切り替わるエンジンの挙動と受け取った | 修正: state の README に規則を書き（同期で同じ値。どの `$behavior` のキーでも変わらない。後のイベントやコピーは setter を走らせる）、storage のレシピからそこへリンクした |
+| 文書の穴 | 4.0 は `for:` / `if:` の中身を挿入する前にバインドするので、その中のカスタム要素は `connectedCallback` の前に入力を受け取る。アプリの金額欄は 3.x から上げたとき、未採用の入力を失った | 修正: state の README（Inputs）と目録（文書だけ: 接続した後の要素自身の書き込みは編集と見分けられない） |
+| 文書の穴 | 3,600 行の README のどこまでがアプリに要るかが書かれていない。`{{ }}` と `<!--@@: -->` が 1 ページに混在 | 修正: state の README の冒頭に読む範囲の案内を置き、2 つのテキストの書き方の使い分けも書いた |
+| 文書のずれ | cross-tab-todo の例が 3.x のエコーの止め方を説明していた。`docs/typescript.md` と typescript の日本語 README が v1 の manifest の形を書いていた | 修正 |
+| 設計の問い | リリースの速さ（6 週間で 26 回、major 2 回）と長期サポート版 | 未決、著者の判断: [v4-direction-2026-10.md](./v4-direction-2026-10.md) §4 と §6 が、継ぎ目アプリ 1 本で minor 1 回・patch はデータ損失と退行だけ・4.x の中で破壊的変更をしない、をすでに決めている。3.x や 4.x のサポート版は決めていない |
+| 残り | 補助の関数（`concat(newRow())`）で足した行は形を読まない | 記録: `stateSchema` で補える |

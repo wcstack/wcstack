@@ -43,7 +43,7 @@ The validator also has a typed input it never had a producer for: the `applicati
 
 ```bash
 npm install -D @wcstack/typescript typescript
-npx wcs-schema emit src/state.ts        # ./wcstack.manifest.json — states.default.stateSchema from the TS type
+npx wcs-schema emit src/state.ts        # ./wcstack.manifest.json — its stateSchema (manifestExtensions["wcstack.application"]) from the state's type; a .js file's JSDoc types work too
 npx wcs-validate --strict index.html    # discovers the manifest next to / above the HTML automatically
 ```
 

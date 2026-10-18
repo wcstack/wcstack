@@ -43,7 +43,7 @@ export default defineState({
 
 ```bash
 npm install -D @wcstack/typescript typescript
-npx wcs-schema emit src/state.ts        # ./wcstack.manifest.json — TS 型から states.default.stateSchema
+npx wcs-schema emit src/state.ts        # ./wcstack.manifest.json — state の型から stateSchema（manifestExtensions["wcstack.application"]）。.js の JSDoc の型も読む
 npx wcs-validate --strict index.html    # HTML と同じ / 上のディレクトリの manifest を自動発見
 ```
 
