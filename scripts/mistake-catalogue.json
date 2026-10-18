@@ -679,6 +679,14 @@
       "note": { "en": "The diagnostics add-on can warn when an `undefined` follows a value; writing `null` clears.", "ja": "diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。" }
     },
     {
+      "id": "element-input-before-connected",
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "A custom element in a `for:` row or an `if:` branch renders from its defaults in `connectedCallback`, over the inputs state set before.", "ja": "`for:` の行や `if:` の枝の中のカスタム要素が、`connectedCallback` で既定値から描き、state が先に設定した入力を上書きする。" },
+      "effect": { "en": "4.0 binds a row or a branch before it inserts it, so the setters have run when the element connects: it shows its defaults, and an entry it held but had not accepted yet is lost. At page level the element is connected first, so the same element works there.", "ja": "4.0 は行や枝を挿入する前にバインドするので、要素が接続されるときには setter が走り終えている。要素は既定値を見せ、持っていたが未採用だった入力は失われる。ページの直下では要素が先に接続されるので、同じ要素がそこでは動く。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by an outside evaluation (a tax return draft's amount field, when its page moved from 3.x to 4.0). An element's own write after it connects cannot be told from an edit. The state README's \"Inputs and the attribute hint\" says to render from the current properties.", "ja": "外部の評価で見つかった（確定申告の下書きの金額欄。ページを 3.x から 4.0 に上げたとき）。接続した後の要素自身の書き込みは、編集と見分けられない。state の README の「Inputs と attribute ヒント」が、今のプロパティから描くよう書いている。" }
+    },
+    {
       "id": "object-twice-in-one-list",
       "runtime": "designed-out", "harm": "stale",
       "mistake": { "en": "Puts one object at two positions of one list (`items: [o, o]`) and writes below one of the rows.", "ja": "1 つのオブジェクトを一覧の 2 つの位置に置き（`items: [o, o]`）、片方の行の下へ書く。" },

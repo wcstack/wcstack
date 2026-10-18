@@ -73,13 +73,14 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | The design (cannot be written, or harmless) | 2 |
 | The runtime | 52 |
 | The lint only — conditional silence | 23 |
-| The documents only — silence | 7 |
+| The documents only — silence | 8 |
 | Lint codes not counted | 17 |
 
 ### The documents only — silence
 
 | Mistake | What goes wrong | Harm | Disposition |
 |---|---|---|---|
+| A custom element in a `for:` row or an `if:` branch renders from its defaults in `connectedCallback`, over the inputs state set before. | 4.0 binds a row or a branch before it inserts it, so the setters have run when the element connects: it shows its defaults, and an entry it held but had not accepted yet is lost. At page level the element is connected first, so the same element works there. | data loss | nothing can see it — the documents. Found by an outside evaluation (a tax return draft's amount field, when its page moved from 3.x to 4.0). An element's own write after it connects cannot be told from an edit. The state README's "Inputs and the attribute hint" says to render from the current properties. |
 | Re-fetches a list without `$listKeys` while its rows hold unbound state: text being typed, focus, an open `<details>`. | Fresh objects never match by reference, so every row is rebuilt and that state is lost. | data loss | lint rule — 4.x; then design out — 5.0 agenda (breaking). 4.x: an info for a `for:` over fetched data whose rows hold inputs, with no `$listKeys`. 5.0: key rows by `id` when the objects carry one. |
 | Binds text a user controls to `href:`, `src:`, `attr.href:` or `attr.on*:`. | A `javascript:` URL or a handler string is written as it is: XSS, unless a CSP stops it. | security | lint rule — 4.x; then runtime report — 4.x. 4.x: the lint can report any `attr.on*:`, and the diagnostics add-on can warn on a `javascript:` URL. 4.0 chose not to refuse them in the core (2026-10-02); refusing would be breaking. |
 | Writes user content into the page's markup from a server template or page code, without `data-wcs-ignore` on the element that holds it. | The page scan binds what is in it — `{{ apiKey }}`, `data-wcs`, a comment binding: client-side template injection. | security | nothing can see it — the documents. Injected markup cannot be told from authored markup. 4.3 adds the defence the documents teach: `data-wcs-ignore` (R10) on the element, and the walk reads nothing in it. |
