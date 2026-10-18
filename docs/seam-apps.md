@@ -200,3 +200,18 @@ After 4.3.0 the app moved into `examples/ssr-news/` without the workarounds 4.3.
 |---|---|---|
 | runtime defect | state diagnostics: a row field no row had — the server's comments, without the `pending` only the page's own rows carry — was still reported as "silently dropped" after a reload (4.3 covered a first row lacking what another row had) | fixed: a missing row field is reported only with a near name (a likely typo) or a row getter of another list form |
 | design question | the comment form is in a `<wcs-layout>` route, which the client renders again (layouts are not adopted): what was typed there before hydration is lost — 4.3 keeps it on page-level controls and adopted routes | open: adopting layout routes (the app's README, "Known limits") |
+
+### An outside evaluation: 7GUIs (2026-10-18)
+
+Not a seam app of this repository: an AI author built the seven 7GUIs tasks with @wcstack/state 4.2.0 in a repository of its own, then made 34 mistakes on purpose and recorded what told it of each — the method of step 5. Nothing told it of 10, and the lint alone of 8. The runtime and the lint were mostly good at structure (paths, filters, tokens, native commands); the silent ones were outside the dependency graph (`Date.now()` in a getter, `$postUpdate`) or a command emitted before its receiver was there. The design questions were the author's ([v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.2, ja).
+
+| Kind | Finding | Outcome |
+|---|---|---|
+| lint gap | an external state (`<wcs-state src>`) got none of the script rules — the same script gave 3 errors and 1 warning inline, none as `src="./state.js"`; the lint README said the opposite | fixed (#484): the page is checked again with the script inline; a finding in the file is reported in the file |
+| lint gap | `wcs/updated-callback-unbound` reported `if: .editing` in `for: .cells` in `for: rows` as bound nowhere (found once Cells' `src` state was checked) | fixed (#484) |
+| lint gap | a two-way binding on a getter without a setter; a command token no `command.` binding receives; `this.selectedID` for `selectedId`; `this.$command.<typo>`; `Date.now()` in a getter; `paths.includes("labell")` | fixed (#485): `wcs/path-readonly`, `wcs/command-token-unbound`, `wcs/write-path-missing`, and three rules widened |
+| runtime defect | a `$postUpdate` path that does not resolve, and a write of an undeclared key beside a near one, did nothing without a word | fixed (#486): warned once by the diagnostics add-on |
+| document gap | a `*` in `$postUpdate` is the current row, not every row | fixed (#486): the README says so; a form for every row is on the 5.0 agenda |
+| design question | an emit while nothing subscribes is lost — an element defined late (Timer), an `if:` branch the same update renders (Cells) | decided: warned once per token (`[wcs/command-token-unbound]`) |
+| design question | a delegated handler reading `event.currentTarget` (the root) fails with a TypeError that says nothing of it | decided: when such a handler throws, the diagnostics add-on says why once per handler (a 33 B core hook) |
+| open | the lint does not read a page's own custom element's `static wcBindable`, so a typo in its `eventToken.` / `command.` names is left to the runtime (which fails initialization with the code); commanding one row of a `for:` needs a custom element | recorded |

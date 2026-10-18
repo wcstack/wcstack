@@ -200,3 +200,18 @@
 |---|---|---|
 | runtime の欠陥 | state の diagnostics: どの行にも無い行フィールド — ページ自身の行だけが持つ `pending` の無い、サーバーのコメント — を、再読み込みの後で「silently dropped」と報告した（4.3 で直したのは、ほかの行にあるものが最初の行に無い場合だけだった） | 修正: 行フィールドが無いことは、近い名前（打ち間違いらしいもの）か、別の一覧の形の行 getter があるときだけ報告する |
 | 設計の問い | コメントのフォームは `<wcs-layout>` のルートにあり、クライアントが描き直す（レイアウトは採用しない）: そこにハイドレーションの前に入力したものは失われる — 4.3 で残すようにしたのは、ページ直下の部品と採用されるルート | 未決: レイアウトのルートの採用（アプリの README の「Known limits」） |
+
+### 外からの評価: 7GUIs（2026-10-18）
+
+このリポジトリの継ぎ目アプリではない: AI の作者が、自分のリポジトリで 7GUIs の 7 課題を @wcstack/state 4.2.0 で作り、誤りを 34 件わざと入れて、それぞれ何が知らせたかを記録した — 手順 5 の方法。何も知らせなかったのが 10 件、lint だけが 8 件。実行時と lint は構造（パス・フィルタ・トークン・ネイティブコマンド）にはおおむね強く、無言のものは依存グラフの外（getter の中の `Date.now()`、`$postUpdate`）か、受け手がまだ無い間のコマンドの emit だった。設計の問いは著者が決めた（[v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.2）。
+
+| 分類 | 発見 | 結末 |
+|---|---|---|
+| lint の穴 | 外部 state（`<wcs-state src>`）にスクリプトの規則が一切かからない — 同じスクリプトがインラインなら error 3・warning 1、`src="./state.js"` では 0 件。lint の README は逆のことを書いていた | 修正（#484）: スクリプトを要素の中に置いた形でもう一度検査し、ファイルの中の指摘はそのファイルで報告する |
+| lint の穴 | `wcs/updated-callback-unbound` が、`for: rows` の中の `for: .cells` の中の `if: .editing` を、どこにも束縛されていないと報告した（Cells の `src` の state を検査して見つかった） | 修正（#484） |
+| lint の穴 | setter の無い getter への双方向の束縛、どの `command.` 束縛も受けないコマンドトークン、`selectedId` に対する `this.selectedID`、`this.$command.<打ち間違い>`、getter の中の `Date.now()`、`paths.includes("labell")` | 修正（#485）: `wcs/path-readonly`・`wcs/command-token-unbound`・`wcs/write-path-missing` と、3 つの規則の拡張 |
+| runtime の欠陥 | 解決しない `$postUpdate` のパスと、近い名前のある未宣言のキーへの書き込みが、何も言わずに何もしなかった | 修正（#486）: diagnostics の後付けが 1 回警告する |
+| 文書の穴 | `$postUpdate` の `*` はすべての行ではなく今の行 | 修正（#486）: README に書いた。すべての行の形は 5.0 の議題 |
+| 設計の問い | 購読者のいない間の emit は消える — 定義の遅れた要素（Timer）、同じ更新で描かれる `if:` の枝（Cells） | 決定: トークンごとに 1 回警告する（`[wcs/command-token-unbound]`） |
+| 設計の問い | `event.currentTarget`（ルート）を読む委譲されたハンドラが、それに触れない TypeError で落ちる | 決定: そのハンドラが throw したら、diagnostics の後付けがハンドラごとに 1 回理由を言う（core のフック 33 B） |
+| 残り | lint がページで定義した自作要素の `static wcBindable` を読まないので、その `eventToken.` / `command.` の名前の打ち間違いは実行時（code 付きで初期化に失敗する）に任せている。`for:` の 1 行だけに命令するには自作要素が要る | 記録 |

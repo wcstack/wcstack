@@ -71,9 +71,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 2 |
-| 実行時 | 49 |
-| lint だけ — 条件付きの沈黙 | 24 |
-| 文書だけ — 沈黙 | 9 |
+| 実行時 | 52 |
+| lint だけ — 条件付きの沈黙 | 23 |
+| 文書だけ — 沈黙 | 7 |
 | 数えない lint の code | 17 |
 
 ### 文書だけ — 沈黙
@@ -86,8 +86,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | すべての行のつもりで `*` を含むパスで `$postUpdate` を呼ぶ（イベントのハンドラから `$postUpdate("rows.*.cells.*.text")`）。 | `*` は getter と同じく今の行の添字で、イベントが来た行だけが通知され、それに依存するセルは古いまま。 | 古い表示 | 設計で消す — 5.0 の議題（破壊的）。7GUIs の評価（Cells）で見つかった。README は 4.4 からそう書く。`$getAll` は `[]` ですべての行を指せるが、`$postUpdate` にその形は無い。5.0 で足すか、行の文脈が解決しない `*` を拒むかを決める。 |
 | 1 つのオブジェクトを、getter が結ばない 2 つの配列に置き（`backup = items` で両方を描く）、片方の行の下へ書く。 | 書き込みは、もう片方の配列の行・行 getter・それらの `$getAll` の集計に届かない。 | 古い表示 | 設計で消す — 4.x。4.x の既知の制限として残す（#401、2026-10-17 決定）。届けるにはオブジェクトからすべての一覧の行を引く索引が要り、core のバイトと行ごとの手間がかかる。回避はもう片方の一覧の `$postUpdate`。 |
 | 要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。 | 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。 |
-| 受け手を描く書き込みの直後にコマンドのトークンを emit する — `if:` の枝の中の入力欄（`this.editing = key; this.$command.focusEditor.emit()`）。 | 枝はあとの更新で描かれるので、emit はどの購読者にも届かずに消える（トークンは保持も再送もされない）。`$renderedCallback` から emit する。 | 動かない | 実行時に知らせる — 4.x。7GUIs の評価（Cells）で見つかった。`command-token-unbound`（と、要素の定義が遅れる `io-auto-after-state`）の時間差版: 束縛はあるが、まだ無い。購読者に届かない emit に diagnostics の後付けが警告するかは設計の問い（隠れた枝へわざと emit するトークンにも警告することになる）。 |
-| I/O ノードの `/auto` を `@wcstack/state/auto` の後に読み込む。 | コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。 | 動かない | lint の規則 — 4.x。`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。 |
 | `<wcs-link>` に `attr.aria-*:` を束ねる。 | `aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。 | 劣化 | 設計で消す — 4.x。リンクが後の `aria-*` の変化を転送できる。 |
 
 ### lint だけ — 条件付きの沈黙
@@ -107,8 +105,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | getter が `this.form.name` を読み、ページは `form.name` へ書く。 | `wcs/getter-untracked-read` (warning) | 追跡されるのは `form` だけで、書き込みは祖先を無効にしない。getter は古い値のまま。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、祖先が getter に使われているのに書き込みが届かなかったパスを見つけられる（同一性だけを見る読みは誤報になる）。 |
 | `this` で読んだオブジェクトのプロパティに書く: `this.user.name = x`・`+=`・`++`、別名や `$on` のハンドラの state 引数を通したものも。 | `wcs/nested-assign` (error) | 書き込みは素のオブジェクトに入り、state を通らない。`user.name` の束縛・getter・`$watch` は古い値のまま。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、次の更新の後に束縛を読み直し、書き込みなしに変わった値を知らせられる（遅れるが core は 0 B）。深い Proxy はパスの規則に反する。 |
 | `@wcstack/signals` と `@wcstack/signals/dom` を、それぞれを束ねる CDN（esm.run）から読み込む。 | `wcs/signals-dual-entry` (varies) | ページにリアクティブなコアが 2 つでき、片方の effect はもう片方の signal を追わず、その間で UI が更新されなくなる。 | 古い表示 | 実行時に知らせる — 4.x。各コアが最初の signal を作るときにグローバルなシンボルに印を付け、2 つ目のコピーが開発モードで警告する。 |
-| どの `command.` の束縛も結ばないコマンドのトークンを emit する、または spread がコマンドとイベントを結ぶと思う。 | `wcs/command-token-unbound` (warning) | emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。 | 動かない | 実行時に知らせる — 4.x。lint は、（スクリプトか `on*:` で）emit するのに、ドキュメントのどの `command.` 束縛も受けないトークンを報告する。DevTools は購読者の無い emit に既に印を付ける。diagnostics の後付けで警告するかは設計の問い: まだ見せていない枝で束ねたトークンは、わざと誰にも届かない emit をされ、要素の定義や枝の描画の前の emit も同じように消える（7GUIs の評価）。 |
-| 委譲されるイベント（`onclick:` などバブルするイベント）のハンドラが `event.currentTarget` を読む。 | `wcs/delegated-current-target` (warning) | 要素ではなく root なので、`getBoundingClientRect`・`setPointerCapture`・`new FormData(e.currentTarget)` が違うノードに効くか throw する。 | 動かない | 設計で消す — 5.0 の議題（破壊的）。root のリスナーが、ハンドラの間だけイベントに自前の `currentTarget`（要素）を持たせられる — core に約 60〜90 B。2026-10-02 の `#direct` の決定を見直すことになる。 |
+| 委譲されるイベント（`onclick:` などバブルするイベント）のハンドラが `event.currentTarget` を読む。 | `wcs/delegated-current-target` (warning) | 要素ではなく root なので、`getBoundingClientRect`・`setPointerCapture`・`new FormData(e.currentTarget)` が違うノードに効くか throw する。ハンドラが throw したときは、diagnostics の後付けがハンドラごとに 1 回その理由を言う（`[wcs/delegated-current-target]`）。`undefined` を読むだけの `.value` は黙ったまま。 | 動かない | 設計で消す — 5.0 の議題（破壊的）。root のリスナーが、ハンドラの間だけイベントに自前の `currentTarget`（要素）を持たせられる — core に約 60〜90 B。2026-10-02 の `#direct` の決定を見直すことになる。 |
 | 文書の root でない `<wcs-state>` に `features=` を書く。 | `wcs/features-invalid` (warning) | `split/auto.js` は root の属性しか読まないので、その後付けは読み込まれず、それを要るものが後で `[wcs/feature-not-installed]` で失敗する（全部入りの入口では影響なし）。 | 動かない | 実行時に知らせる — 4.x。`split/auto.js` が起動時に警告できる。設計 A3 は lint だけを選んだ（635 B の基準値を取り直すことになる）。 |
 | `on` で始まるメンバーを先頭のドット無しで束ねる（`.once:` でなく `once:`）。 | `wcs/on-prefixed-member` (warning) | `ce` イベントを待つイベントの束縛として読まれ、値は届かず、何も知らされない。 | 動かない | 実行時に知らせる — 4.x。core のイベントの取り付けにフック（約 20 B）が要り、diagnostics の後付けが要素の定義の後に名前と宣言を突き合わせる。 |
 | 外れた 3.x の宣言を `this` 越しに読む（`this.$streams`・`this.$updatedCallback`）。 | `wcs/declaration-alias-read` (varies) | `undefined` が返り、呼べば汎用の TypeError。 | 動かない | 実行時に知らせる — 4.x。diagnostics の後付けの `dollar` のフックが、外れた宣言を名指せる（core は 0 B）。 |
@@ -138,6 +135,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | state に無いパスを束ねる（`stateSchema` がそう言えば `wcs/path-nonexistent`）。 | 同じ code: トップレベルのキーが無ければ束縛が失敗する（`#301`）。入れ子の段が無ければ diagnostics の後付けが `[wcs/binding-path-missing]` で警告する（`/core` では無言）。`stateSchema` が無いと lint は警告だけ。 | `wcs/binding-path-missing` (varies), `wcs/path-nonexistent` (error) |
 | 文法が拒む束縛を書く: 閉じない引用符・2 つ目の `#`・空のフィルタ・`__proto__` の段。 | 同じ code: 束縛の計画で `#101`〜`#122`、state は初期化に失敗する。 | `wcs/binding-syntax` (error) |
 | `class.NAME:` に boolean でない値を束ねる。 | 同じ code: `#401` で束縛が失敗する（diagnostics があれば `[wcs/binding-type-expectation]`）。 | `wcs/binding-type-expectation` (varies) |
+| 受け手を描く書き込みの直後にコマンドのトークンを emit する — `if:` の枝の中の入力欄（`this.editing = key; this.$command.focusEditor.emit()`）。 | code なし: 枝はあとの更新で描かれるので、emit はどの購読者にも届かずに消える（トークンは保持も再送もされない）。diagnostics の後付けがトークンごとに 1 回 `[wcs/command-token-unbound]` を警告する。`$renderedCallback` から emit する。 7GUIs の評価（Cells）で見つかった。`command-token-unbound`（と、要素の定義が遅れる `io-auto-after-state`）の時間差版: 束縛はあるが、まだ無い。emit を取っておいて後で送ることはしない: 遅れて届くコマンドは間違いになりうる（docs/v4-direction-2026-10.md §5.1 の 6、§5.2）。 | — |
+| どの `command.` の束縛も結ばないコマンドのトークンを emit する、または spread がコマンドとイベントを結ぶと思う。 | 同じ code: emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。diagnostics の後付けがトークンごとに 1 回警告する。 lint は、（スクリプトか `on*:` で）emit するのに、ドキュメントのどの `command.` 束縛も受けないトークンを報告する。実行時は、購読者に届かないすべての emit にトークンごとに 1 回警告する — 隠れた枝へわざと emit するトークンにも（著者の決定、docs/v4-direction-2026-10.md §5.2）。 | `wcs/command-token-unbound` (warning) |
 | 外れた 3.x の名前を宣言する（`$streams`・`$updatedCallback`）。 | 同じ code: diagnostics の後付けが読み込みで `#1601` を throw する。`/core` ではキーは無視される。 | `wcs/declaration-alias` (varies) |
 | `features=` か `$features` に、無い後付けの名前を書く。 | 同じ code: 分割 auto の読み込みが `[wcs/feature-unknown]` を throw する（`<wcs-state>` は定義されない）。ほかの入口は `[wcs/feature-not-installed]` を出す。 | `wcs/feature-unknown` (error) |
 | `$features` が配列でない、またはボリュームにある。 | code なし: 読み込みで `#46`（ボリュームは `console.error`）。 | `wcs/features-invalid` (error) |
@@ -149,6 +148,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `$getAll`・`$setAll`・`$resolve` に、パスの `*` の数と合わない数の添字を渡す。 | 同じ code: 呼んだ所で `#901`・`#902` を throw する。 | `wcs/index-arity` (error) |
 | `$1`〜`$128` の外のループの添字を読む（`this.$0`・`$129`）。 | 同じ code: `#1001`。スクリプトは読んだ時点で throw し、マークアップでは束縛が失敗する。 | `wcs/index-param-range` (error) |
 | `<wcs-infinite-scroll target>` が、無い id か `<wcs-fetch>` でない要素を指す。 | code なし: 次のページは読み込まれない。見えたときに、要素が `target` の値ごとに 1 回 `[wcs/infinite-scroll-target]` で警告する。 lint の規則はまだ無い。id はマークアップにある。 | — |
+| I/O ノードの `/auto` を `@wcstack/state/auto` の後に読み込む。 | code なし: コマンドの束縛はタグの定義を待つので、その間の `$command` の emit は誰にも届かず落ちる。diagnostics の後付けがトークンごとに 1 回 `[wcs/command-token-unbound]` を警告する。 定義が遅れても起きる（autoloader、遅い CDN — 7GUIs の評価の Timer）。`wcs/script-order` は DevTools しか見ていない。I/O の `/auto` へ広げるのは小さい。 | — |
 | `mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。 | code なし: scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。 | `wcs/mount-path-invalid` (error) |
 | 外れた 3.x の API の名前を呼ぶ（`$trackDependency`・`$untrackDependency`）。 | 同じ code: diagnostics の後付けが読んだ時点で `#1701` を throw する。`/core` では `undefined` で、呼べば汎用の TypeError。 | `wcs/name-alias` (error) |
 | v1 の名前付き State の選択子 `path@name` を書く。 | code なし: 解析の誤り `#32`。ページの束縛はそこで止まる（ルートの中身では `console.error`）。 | `wcs/named-state-deprecated` (error) |
