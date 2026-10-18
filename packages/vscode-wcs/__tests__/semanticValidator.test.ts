@@ -475,6 +475,22 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     )).toHaveLength(0);
   });
 
+  it("入れ子の相対 for の中の相対パス（for: rows → for: .cells → if: .editing）も「バインドあり」と数えること（7GUIs の Cells）", () => {
+    const html = `<wcs-state><script type="module">
+      export default {
+        rows: [{ cells: [{ editing: false, other: 1 }] }],
+        $renderedCallback(paths) {
+          if (paths.includes("rows.*.cells.*.editing")) { this.page = 1; }
+          if (paths.includes("rows.*.cells.*.other")) { this.page = 2; }
+        },
+      };
+    </script></wcs-state>
+    <template data-wcs="for: rows"><template data-wcs="for: .cells"><template data-wcs="if: .editing"><input></template></template></template>`;
+    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.UpdatedCallbackUnbound);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["rows.*.cells.*.other"]);
+  });
+
   it("読み取り（this[path]）は未バインドでも報告しないこと（読みは成立する）", () => {
     const html = `<wcs-state><script type="module">
       export default {

@@ -284,7 +284,7 @@ external state referenced via `<wcs-state src="...">` (the root's and the volume
 discover the nearest `wcstack.manifest.json` through the same file reader, relative to
 the HTML file. The IDE does so for a document saved on disk (a `file:` URI); an untitled
 or virtual document skips `src` (its paths are not reported, as for a `src` that cannot
-be read), and an external state file with unsaved edits is read as it is on disk. The bundled **`wcs-validate`** CLI runs the same checks headlessly — over
+be read), and an external state file with unsaved edits is read as it is on disk. The script rules (`wcs/nested-assign`, `wcs/array-mutation`, `wcs/on-handler-this`, …) check a `.js` / `.ts` external state too: the IDE shows a finding in the file on the page's `src` value, with the file's line and column in front of the message and a link to the file; the CLI reports it in the file. The bundled **`wcs-validate`** CLI runs the same checks headlessly — over
 `wcstack.manifest.json` sidecars (any `*.manifest.json` argument) and/or HTML
 `data-wcs` bindings — and is distributed on npm as
 [**`@wcstack/lint`**](https://www.npmjs.com/package/@wcstack/lint), a zero-dependency

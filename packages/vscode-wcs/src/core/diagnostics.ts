@@ -10,6 +10,8 @@
  * このモジュールは DOM / vscode / typescript に依存しない pure library。
  */
 
+import type { LineColumn } from "./offsetToPosition.js";
+
 export type WcsSeverity = "error" | "warning" | "info";
 
 /**
@@ -274,6 +276,22 @@ export interface WcsDiagnostic {
   readonly member?: string;
   /** 関連する state path。 */
   readonly statePath?: string;
+  /**
+   * A finding in a state file the page loads with `src=` (core/externalState.ts): `start` / `end` are the `src`
+   * value in the page — where the IDE shows it — and this is where it is in the file, which the CLI reports.
+   */
+  readonly origin?: WcsDiagnosticOrigin;
+}
+
+export interface WcsDiagnosticOrigin {
+  /** The file, as the page names it (relative to the HTML file). */
+  readonly path: string;
+  /** Offsets into the file. */
+  readonly start: number;
+  readonly end: number;
+  /** 1-based line and column of `start` and `end`. */
+  readonly startPosition: LineColumn;
+  readonly endPosition: LineColumn;
 }
 
 /** severity の LSP 数値(1=Error, 2=Warning, 3=Information)への写像。 */

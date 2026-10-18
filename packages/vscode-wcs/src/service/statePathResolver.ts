@@ -305,11 +305,17 @@ function resolveElementPathsRaw(
  * read or is not a script (`.json`).
  */
 export function readStateScript(srcPath: string, fileReader: FileReader): string | undefined {
-  if (srcPath.endsWith('.js')) {
-    // .ts ファイルが存在すればそちらを優先
-    return fileReader(srcPath.replace(/\.js$/, '.ts')) || fileReader(srcPath) || undefined;
+  return readStateScriptFile(srcPath, fileReader)?.text;
+}
+
+/** `readStateScript`, with the path that was read (the `.ts` beside a `.js`, when there is one). */
+export function readStateScriptFile(srcPath: string, fileReader: FileReader): { readonly path: string; readonly text: string } | undefined {
+  // .ts ファイルが存在すればそちらを優先
+  const paths = srcPath.endsWith('.js') ? [srcPath.replace(/\.js$/, '.ts'), srcPath] : srcPath.endsWith('.ts') ? [srcPath] : [];
+  for (const path of paths) {
+    const text = fileReader(path);
+    if (text) return { path, text };
   }
-  if (srcPath.endsWith('.ts')) return fileReader(srcPath) || undefined;
   return undefined;
 }
 

@@ -23,7 +23,7 @@ npx wcs-validate --errors-only src/**/*.html
 
 `.manifest.json` で終わるファイルは sidecar manifest として、それ以外は `data-wcs` バインディングを含む HTML として検査されます。
 
-`<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL・絶対パスは読み込まず、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。
+`<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL・絶対パスは読み込まず、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。4.4（未リリース）から、`.js` / `.ts` の state にはスクリプトの規則（`wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` など）もかかります: ファイルの中の指摘はそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数え、IDE はページの `src` の値の上に出します。4.3 までは、外部 state ではパスだけを検査していました。
 
 ```
 wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]
