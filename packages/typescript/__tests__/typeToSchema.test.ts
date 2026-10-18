@@ -254,6 +254,38 @@ export default s;`);
   });
 });
 
+describe("トップレベルの spread（確定申告の下書きツールの評価: 入力 34 個を関数の戻り値から spread する）", () => {
+  it("キーを列挙しない型（index signature・any・unknown）の spread は、警告付きで開いた {} を返す — 閉じた object にしない", () => {
+    const js = schemaOf(`
+/** @returns {{ inputs: Record<string, unknown> }} */
+const sanitize = () => ({ inputs: {} });
+export default {
+  ...sanitize().inputs,
+  routeName: "",
+  get total() { return this.routeName.length; },
+};`, "js");
+    expect(js.schema).toEqual({});
+    expect(js.warnings[0]).toMatch(/^the spread `\.\.\.sanitize\(\)\.inputs` \(.*state\.js:5\) brings in keys its type does not list \(`Record<string, unknown>`\); the generated stateSchema will be open \(\{\}\)/);
+    expect(schemaOf(`const loose: any = {};\nexport default { a: 1, ...loose };`).schema).toEqual({});
+    expect(schemaOf(`declare const m: { a: number } | { [k: string]: string };\nexport default { ...m, b: 1 };`).schema).toEqual({});
+  });
+
+  it("キーを列挙する型の spread は、spread のキーと literal のキーをどちらも載せる（JSDoc で型を付けた .js も）", () => {
+    const { schema, warnings } = schemaOf(`
+/** @typedef {{ filingType: string, incomes: { label: string, amount: number }[] }} Inputs */
+/** @returns {Inputs} */
+const defaults = () => ({ filingType: "white", incomes: [] });
+export default {
+  ...defaults(),
+  routeName: "",
+  get "incomes.*.share"() { return 0; },
+};`, "js");
+    expect(warnings).toEqual([]);
+    expect(Object.keys(schema.properties!)).toEqual(expect.arrayContaining(["filingType", "incomes", "routeName"]));
+    expect(schema.properties!.incomes.items!.properties!.amount).toEqual({ type: "number" });
+  });
+});
+
 describe("loadStateFile — 入力の失敗モード", () => {
   it("存在しないファイル", () => {
     expect(() => loadStateFile(`${tmp.dir}/nope/state.ts`)).toThrow(/cannot read/);
