@@ -22,7 +22,7 @@ Zero runtime dependencies. `typescript` is a peer dependency — the project's o
 
 Generates the manifest's single `stateSchema` (`schemaVersion` 2) from the file's `export default` (a `defineState(...)` call is unwrapped syntactically, so the package does not even need to resolve `@wcstack/state`). The result is run through the validator core's own manifest check before anything is written.
 
-A top-level spread brings its type's keys in: `{ ...defaults(), get total() { … } }` lists what `defaults()` is typed to return. Since 4.4 (not released yet), a spread whose type does not list its keys — an index signature (`Record<string, unknown>`), `any`, `unknown` — makes the schema open (`{}`, with a warning): the compiler drops an index signature from a spread, and a schema of the literal's own keys would make every key of the spread `wcs/path-nonexistent`. Type the expression instead. When the keys come from a table, derive the type from the table, so they are still declared once:
+A top-level spread brings its type's keys in: `{ ...defaults(), get total() { … } }` lists what `defaults()` is typed to return. Since 4.4, a spread whose type does not list its keys — an index signature (`Record<string, unknown>`), `any`, `unknown` — makes the schema open (`{}`, with a warning): the compiler drops an index signature from a spread, and a schema of the literal's own keys would make every key of the spread `wcs/path-nonexistent`. Type the expression instead. When the keys come from a table, derive the type from the table, so they are still declared once:
 
 ```javascript
 export const FIELDS = /** @type {const} */ ({ total: { type: "amount" }, married: { type: "flag" } });
@@ -35,7 +35,7 @@ export const defaults = () => /** @type {Inputs} */ (Object.fromEntries(
   /** @type {(keyof typeof FIELDS)[]} */ (Object.keys(FIELDS)).map((k) => [k, FIELDS[k].type === "flag" ? false : 0])));
 ```
 
-Since 4.4 (not released yet), the command runs on a worker thread with a large stack: the TypeScript checker recurses once per getter that reads `this` in a literal with a spread, and a state of a hundred getters ran out of the main thread's. Called from the API (`generateStateSchema()`), such a state may throw `the TypeScript checker ran out of stack`; call it on a worker with a larger `resourceLimits.stackSizeMb`.
+Since 4.4, the command runs on a worker thread with a large stack: the TypeScript checker recurses once per getter that reads `this` in a literal with a spread, and a state of a hundred getters ran out of the main thread's. Called from the API (`generateStateSchema()`), such a state may throw `the TypeScript checker ran out of stack`; call it on a worker with a larger `resourceLimits.stackSizeMb`.
 
 | Option | Description |
 |---|---|

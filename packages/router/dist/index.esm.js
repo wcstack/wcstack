@@ -4427,7 +4427,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.3.0";
+var version = "4.4.0";
 var pkg = {
 	version: version};
 

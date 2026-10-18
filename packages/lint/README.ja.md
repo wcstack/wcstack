@@ -23,7 +23,7 @@ npx wcs-validate --errors-only src/**/*.html
 
 `.manifest.json` で終わるファイルは sidecar manifest として、それ以外は `data-wcs` バインディングを含む HTML として検査されます。
 
-`<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL・絶対パスは読み込まず、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。4.4（未リリース）から、`.js` / `.ts` の state にはスクリプトの規則（`wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` など）もかかります: ファイルの中の指摘はそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数え、IDE はページの `src` の値の上に出します。4.3 までは、外部 state ではパスだけを検査していました。
+`<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL・絶対パスは読み込まず、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。4.4 から、`.js` / `.ts` の state にはスクリプトの規則（`wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` など）もかかります: ファイルの中の指摘はそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数え、IDE はページの `src` の値の上に出します。4.3 までは、外部 state ではパスだけを検査していました。
 
 ```
 wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]
@@ -79,7 +79,7 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 
 - **発見**: HTML ファイルから上へ辿って最も近い `wcstack.manifest.json` が自動で使われます — コマンドラインに渡す必要はありません。`application` artifact を含む `*.manifest.json` を引数に渡した場合は、その実行全体で発見を置き換えます。VS Code 拡張も同じファイルを発見するので IDE と CLI の結果は一致します。
 - **効果**: `stateSchema` を宣言すると、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は沈黙し、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。`stateSchema` が無ければ従来どおりです。
-- **契約が要るとき**: validator が全体を読めない state は、契約が無いとパスをまったく検査できません。よくあるのはトップレベルの spread です — `export default { ...defaults(), get total() { … } }` は静的には見えないキーを持ち込むので、その state のパスは検査しません。4.4（未リリース）から、spread の上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。`stateSchema` があれば束縛を —— 4.4（未リリース）から getter の中で読むパス（`wcs/read-path-missing`）も —— それで検査します。
+- **契約が要るとき**: validator が全体を読めない state は、契約が無いとパスをまったく検査できません。よくあるのはトップレベルの spread です — `export default { ...defaults(), get total() { … } }` は静的には見えないキーを持ち込むので、その state のパスは検査しません。4.4 から、spread の上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。`stateSchema` があれば束縛を —— 4.4 から getter の中で読むパス（`wcs/read-path-missing`）も —— それで検査します。
 - **schema の出どころ**: 手で書く（受け付けるのは JSON-Schema サブセット `type / properties / required / items / enum / const / anyOf / $defs / $ref` のみ）か、TypeScript の state ファイル（または JSDoc で型を付けた JavaScript のファイル）から `wcs-schema`（`@wcstack/typescript`）で生成します。manifest は派生物なので、CI では `wcs-schema check` で同期を保ってください。
 
 ## 生成 → 検証 → 修正ループでの利用

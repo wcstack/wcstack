@@ -94,6 +94,9 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
     const jsonAttr = extractAttribute(wcsMatch.tagContent, "json") ?? void 0;
     const stateAttr = extractAttribute(wcsMatch.tagContent, "state") ?? void 0;
     const srcAttr = extractAttribute(wcsMatch.tagContent, "src") ?? void 0;
+    const contentAt = pos + 1 + stateTagName.length;
+    const srcSpan = extractAttributeSpan(wcsMatch.tagContent, "src", contentAt);
+    const jsonSpan = extractAttributeSpan(wcsMatch.tagContent, "json", contentAt);
     const tagStart = pos;
     const tagEnd = wcsMatch.end;
     pos = wcsMatch.end;
@@ -137,7 +140,18 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
         wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
       }
     }
-    elements.push({ mountPath, bindComponent, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
+    elements.push({
+      mountPath,
+      bindComponent,
+      jsonAttr,
+      stateAttr,
+      srcAttr,
+      scriptBlocks,
+      tagStart,
+      tagEnd,
+      ...srcSpan !== null ? { srcSpan } : {},
+      ...jsonSpan !== null ? { jsonSpan } : {}
+    });
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) pos = afterCloseTag(html, wcsCloseIdx);
   }
@@ -214,6 +228,16 @@ function extractAttribute(tagContent, attrName) {
   const match = tagContent.match(regex);
   if (!match) return null;
   return match[1] ?? match[2] ?? match[3] ?? null;
+}
+function extractAttributeSpan(tagContent, attrName, at) {
+  const regex = new RegExp(`(^|\\s)${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|(\\S+))`, "i");
+  const match = regex.exec(tagContent);
+  if (match === null) return null;
+  const start = at + match.index + match[1].length;
+  const end = at + match.index + match[0].length;
+  const value = match[2] ?? match[3] ?? match[4] ?? "";
+  const valueEnd = match[4] === void 0 ? end - 1 : end;
+  return { start, end, valueStart: valueEnd - value.length, valueEnd };
 }
 
 // ../state/dist/manifest.esm.js

@@ -1658,7 +1658,7 @@ export default {
 
 `click`・`dblclick`・`input`・`change`・`submit`・`keydown`・`keyup`・`mousedown`・`mouseup`・`pointerdown`・`pointerup` の `on*:` バインディングは**委譲**されます: イベント種別ごとに 1 つのリスナーが、state がバインドするルート —— document、shadow root、あるいは Light DOM のマウントされたコンポーネントの中ではホスト要素 —— に置かれ、イベントが通過した要素のハンドラを内側から順に実行します。そのため:
 
-- ハンドラの中の `event.currentTarget` は要素ではなく、そのルートです。要素は `event.target` から探すか（`event.target.closest("li")`）、ハンドラが受け取るループインデックスを使ってください（`removeItem(event, index)`）。4.4（未リリース）から、ソースが `currentTarget` を読む委譲されたハンドラが throw すると（`getBoundingClientRect is not a function`）、`diagnostics` アドオンがエラーの後に、ハンドラごとに 1 回その理由を言います（`[wcs/delegated-current-target]`、lint と同じ code）。
+- ハンドラの中の `event.currentTarget` は要素ではなく、そのルートです。要素は `event.target` から探すか（`event.target.closest("li")`）、ハンドラが受け取るループインデックスを使ってください（`removeItem(event, index)`）。4.4 から、ソースが `currentTarget` を読む委譲されたハンドラが throw すると（`getBoundingClientRect is not a function`）、`diagnostics` アドオンがエラーの後に、ハンドラごとに 1 回その理由を言います（`[wcs/delegated-current-target]`、lint と同じ code）。
 - 内側の `on*:` バインディングの `#stop` は、それより外側の `on*:` ハンドラを止めます。自分のコードが祖先に付けたリスナー（クリックできるカードへの `addEventListener`）は止められません: そのリスナーは、イベントがルートに届く前に実行済みです。
 - 自分のコードが祖先で `stopPropagation()` を呼ぶと（モーダルの中身がオーバーレイにクリックを渡さないようにする場合など）、その内側の委譲されたハンドラはまったく実行されません。
 - 別のルートの下へ移した要素（shadow root から `document.body` へ移したダイアログ）では、委譲されたハンドラはもう実行されません。
@@ -2103,7 +2103,7 @@ export default {
 - 予約名 `$command` 自体は配列に含められない
 - token は `$command` 配下にまとめられるためトップレベルの state 名前空間を汚さない。token と同名のリアクティブプロパティが共存できる
 - `$command` 上の未宣言の名前にアクセスする（例: `this.$command.typo`）と `undefined` が返る。typo はその後の `.emit()` 呼び出しで `TypeError` として、あるいはバインディングの右辺で使った場合は、バインディングの取り付け時に `[wcs/token-undeclared] "$command.typo" is not declared in $commandTokens.`（`#1302`、did-you-mean 付き）として表面化する
-- トークンは何も取っておかない: どの `command.` 束縛も購読していない間の emit は消える。4.4（未リリース）から、`diagnostics` アドオンがトークンごとに 1 回警告する（`[wcs/command-token-unbound]`）。束縛がまだ付いていない — 要素の定義が遅れる（autoloader、遅い CDN）、または同じ更新で描かれる `if:` の枝の中にある（`$renderedCallback` から emit する） — か、束縛が無い（その場合は lint も報告する）
+- トークンは何も取っておかない: どの `command.` 束縛も購読していない間の emit は消える。4.4 から、`diagnostics` アドオンがトークンごとに 1 回警告する（`[wcs/command-token-unbound]`）。束縛がまだ付いていない — 要素の定義が遅れる（autoloader、遅い CDN）、または同じ更新で描かれる `if:` の枝の中にある（`$renderedCallback` から emit する） — か、束縛が無い（その場合は lint も報告する）
 
 ### `command.<methodName>:` バインディング
 
@@ -3032,14 +3032,14 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | ネストしたパスの打ち間違い（`user.nmae`） | `console.warn`（`wcs/binding-path-missing`）。更新は届かないままなので、直すのは書き手 |
 | トップレベルのパスの打ち間違い（`cout`） | 読み取り時に throw —— `[wcs/binding-path-missing] Path "cout" does not exist on the state tree. Did you mean "count"?`（`#301`）—— そのためバインディングの適用が失敗し、ほかのバインディングの失敗と同じく報告される |
 | `$watch` のキーの打ち間違い | `console.warn`（`wcs/watch-path-missing`）。単一セグメントでも報告する |
-| `$postUpdate` のパスの打ち間違い（`cells` に対する `` `rows.${r}.cell.${c}.text` ``） | 4.4（未リリース）から: `console.warn`（`wcs/post-update-path-missing`）。単一セグメントでも報告する — その呼び出しは何も更新しない |
-| state が宣言していないトップレベルのキーへの書き込みで、近い宣言済みのキーがあるもの（`this.selectedID` と `selectedId`） | 4.4（未リリース）から: キーごとに 1 回 `console.warn`（`wcs/write-path-missing`） — 書き込みは新しいキーを作るだけで、宣言したキーに束ねたものは変わらない。近い名前の無い新しいキーは、state がわざと足すことがあるので報告しない |
-| getter が読むパスの打ち間違い（`this["items.*.pirce"]`、`this.$getAll("items.*.pirce", [])`） | 4.4（未リリース）から: パスごとに 1 回、読んだ getter の名前を添えて `console.warn`（`wcs/read-path-missing`）。近い名前があるときだけ — 読みは `undefined` になり、getter がそこから計算する値は違う。getter がそのパスを読んだあとで調べるので、後から足した行は描かれたときに調べる。トップレベルのキー（`this.totl`）は読んだ時点で throw する（`#301`）。`@wcstack/lint` は getter とメソッドの中の同じ読みを、実行せずに検査する |
+| `$postUpdate` のパスの打ち間違い（`cells` に対する `` `rows.${r}.cell.${c}.text` ``） | 4.4 から: `console.warn`（`wcs/post-update-path-missing`）。単一セグメントでも報告する — その呼び出しは何も更新しない |
+| state が宣言していないトップレベルのキーへの書き込みで、近い宣言済みのキーがあるもの（`this.selectedID` と `selectedId`） | 4.4 から: キーごとに 1 回 `console.warn`（`wcs/write-path-missing`） — 書き込みは新しいキーを作るだけで、宣言したキーに束ねたものは変わらない。近い名前の無い新しいキーは、state がわざと足すことがあるので報告しない |
+| getter が読むパスの打ち間違い（`this["items.*.pirce"]`、`this.$getAll("items.*.pirce", [])`） | 4.4 から: パスごとに 1 回、読んだ getter の名前を添えて `console.warn`（`wcs/read-path-missing`）。近い名前があるときだけ — 読みは `undefined` になり、getter がそこから計算する値は違う。getter がそのパスを読んだあとで調べるので、後から足した行は描かれたときに調べる。トップレベルのキー（`this.totl`）は読んだ時点で throw する（`#301`）。`@wcstack/lint` は getter とメソッドの中の同じ読みを、実行せずに検査する |
 
 判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
 
 - 親が `null` / `undefined`（初期値 `null` に後から代入する形）
-- どの行にも無い行フィールド —— ただし、行に近い名前がある（打ち間違いらしい。`name` の横の `.nmae`）なら警告します。行はデータで、任意のフィールド（ページが自分の行に付ける `pending` など）はほかの行にはありません。4.4（未リリース）から。ほかの行にあるフィールドが最初の行に無いだけの場合も警告しません（4.3 から）
+- どの行にも無い行フィールド —— ただし、行に近い名前がある（打ち間違いらしい。`name` の横の `.nmae`）なら警告します。行はデータで、任意のフィールド（ページが自分の行に付ける `pending` など）はほかの行にはありません。4.4 から。ほかの行にあるフィールドが最初の行に無いだけの場合も警告しません（4.3 から）
 - 途中の getter の戻り値のサブプロパティ
 - まだ読み込み中のボリュームのマウントパス配下のパス —— ボリュームが決着した時点で検査される
 - `$` 始まりの予約名前空間（`$command.*` など）
@@ -3597,7 +3597,7 @@ const html = await renderToString(template, {
 |---------|------|
 | **サーバー** | `renderToString()` が happy-dom でテンプレートを実行、`$connectedCallback`（`fetch()` 含む）を実行し、全バインディングを適用して、`<wcs-state>` の前に `<wcs-ssr>` 要素を置いたレンダリング済み HTML を出力。行・枝・テキストバインディングにはコメントで印を付ける。`$watch` のハンドラは実行されず、stream は `initial` の値のまま |
 | **クライアント** | `<wcs-state enable-ssr>` は自分のソースから state を読み込み、その上にスナップショットのデータを被せ（getter・setter・メソッドは残る）、`$connectedCallback` をスキップし、サーバーの DOM をその場でバインドする。行と枝はその場で引き継がれ —— その中のカスタム要素は 1 回だけ接続され、切断・再接続されることはない —— バインディングを得る。テンプレートに合わなくなったサーバーの行はその場所で描画し直され、クライアントが描画しない行や枝（行が少ない、別の枝）はページがバインドされた時点で取り除かれる。ボリュームはマウントパスの位置でサーバーのデータを引き継ぐ |
-| **バージョン不一致** | `<wcs-ssr version>` の major.minor が違うスナップショットは `console.warn` を 1 回出して破棄され、ページはサーバーが無かったかのようにクライアントで描画される: state は自分のソースから読み込まれ、`$connectedCallback` が走り、サーバーの行・枝・マーカーは、描画元のテンプレートに場所を譲る。4.4（未リリース）から、場所を譲るのはページを計画できた後: このクライアントが計画できないマークアップ（新しい minor のフィルタ引数など）は、サーバーの HTML をそのまま残して初期化に失敗する |
+| **バージョン不一致** | `<wcs-ssr version>` の major.minor が違うスナップショットは `console.warn` を 1 回出して破棄され、ページはサーバーが無かったかのようにクライアントで描画される: state は自分のソースから読み込まれ、`$connectedCallback` が走り、サーバーの行・枝・マーカーは、描画元のテンプレートに場所を譲る。4.4 から、場所を譲るのはページを計画できた後: このクライアントが計画できないマークアップ（新しい minor のフィルタ引数など）は、サーバーの HTML をそのまま残して初期化に失敗する |
 
 ### `enable-ssr` の動作
 

@@ -106,12 +106,54 @@ function loadStateFile(file, options = {}) {
     }
     const location = stateExpression(exportAssignment.expression);
     const checker = program.getTypeChecker();
-    const type = checker.getTypeAtLocation(location);
     const warnings = [];
+    // A spread whose type does not list its keys first: the type of the whole literal is not needed then (and is the
+    // expensive one, below)
+    const spread = openSpread(checker, sourceFile, location);
+    if (spread !== null) {
+        warnings.push(`the spread \`${spread.text}\` (${file}:${spread.line}) brings in keys its type does not list (\`${spread.type}\`); the generated stateSchema will be open ({}). Give that expression a type that lists them (a JSDoc @returns or @type)`);
+        return { program, checker, sourceFile, type: checker.getAnyType(), location, warnings, open: true };
+    }
+    let type;
+    try {
+        type = checker.getTypeAtLocation(location);
+    }
+    catch (e) {
+        /* v8 ignore next 2 -- the checker's own overflow, exercised against the built dist (stack.test.ts) */
+        if (!(e instanceof RangeError))
+            throw e;
+        throw new Error(`the TypeScript checker ran out of stack on ${file}: an \`export default { … }\` with a top-level spread makes it recurse once per getter that reads \`this\`. The wcs-schema command runs on a larger stack; from the API, call generateStateSchema() on a worker with a larger resourceLimits.stackSizeMb`);
+    }
     if ((type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) {
         warnings.push(`the default export of ${file} has type \`${checker.typeToString(type)}\`; the generated stateSchema will be open ({})`);
     }
-    return { program, checker, sourceFile, type, location, warnings };
+    return { program, checker, sourceFile, type, location, warnings, open: false };
+}
+/**
+ * A top-level spread of the state literal whose type does not list the keys it brings in — `any`, `unknown`, or an
+ * index signature (`...sanitizeInputs({}).inputs` returning `Record<string, unknown>`). The compiler drops an
+ * index signature from a spread, so the literal's type then lists only its own keys: a schema made from it would
+ * call every key of the spread nonexistent (`wcs/path-nonexistent`, an error), where the validator knows nothing.
+ * Found by an outside evaluation (a tax return draft whose 34 inputs come from such a spread).
+ */
+function openSpread(checker, sourceFile, location) {
+    if (!ts.isObjectLiteralExpression(location))
+        return null;
+    for (const property of location.properties) {
+        if (!ts.isSpreadAssignment(property))
+            continue;
+        const type = checker.getTypeAtLocation(property.expression);
+        const open = (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0
+            || (type.isUnion() ? type.types : [type]).some((t) => checker.getIndexInfosOfType(t).length > 0);
+        if (!open)
+            continue;
+        return {
+            text: property.getText(sourceFile),
+            line: sourceFile.getLineAndCharacterOfPosition(property.getStart(sourceFile)).line + 1,
+            type: checker.typeToString(type),
+        };
+    }
+    return null;
 }
 
 /**
@@ -350,7 +392,7 @@ function dedupeNodes(nodes) {
  */
 function generateStateSchema(file, options = {}) {
     const loaded = loadStateFile(file, options);
-    const schema = stateTypeToSchema(loaded.checker, loaded.program, loaded.type, loaded.location, options);
+    const schema = loaded.open ? {} : stateTypeToSchema(loaded.checker, loaded.program, loaded.type, loaded.location, options);
     return { schema, warnings: loaded.warnings };
 }
 
@@ -572,7 +614,7 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "4.3.0";
+var version = "4.4.0";
 var pkg = {
 	version: version};
 

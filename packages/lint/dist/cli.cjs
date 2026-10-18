@@ -56,31 +56,6 @@ function createFileReader(htmlPath, read = (p) => (0, import_node_fs.readFileSyn
   };
 }
 
-// src/core/offsetToPosition.ts
-function createPositionMapper(text3) {
-  const lineStarts = [0];
-  for (let i = 0; i < text3.length; i++) {
-    const c = text3.charCodeAt(i);
-    if (c === 10) {
-      lineStarts.push(i + 1);
-    } else if (c === 13) {
-      if (text3.charCodeAt(i + 1) === 10) i++;
-      lineStarts.push(i + 1);
-    }
-  }
-  return (offset2) => {
-    const clamped = Math.max(0, Math.min(offset2, text3.length));
-    let lo = 0;
-    let hi = lineStarts.length - 1;
-    while (lo < hi) {
-      const mid = lo + hi + 1 >> 1;
-      if (lineStarts[mid] <= clamped) lo = mid;
-      else hi = mid - 1;
-    }
-    return { line: lo + 1, column: clamped - lineStarts[lo] + 1 };
-  };
-}
-
 // src/core/diagnostics.ts
 var WcsDiagnosticCode = {
   // --- sidecar manifest envelope / schema subset ---
@@ -107,8 +82,12 @@ var WcsDiagnosticCode = {
   // --- path / type resolution against a stateSchema ---
   PathNonexistent: "wcs/path-nonexistent",
   PathTypeMismatch: "wcs/path-type-mismatch",
+  // 書き戻す束縛（`value:` / `checked:` / `radio:` / `checkbox:`、`#ro` なし）が、setter の無い getter を指す。ランタイムは
+  // 入力のたびに `"<path>" is a getter without a setter` を投げる（code なし — 7GUIs の評価の Temperature）。error。
   PathReadonly: "wcs/path-readonly",
   PathReservedName: "wcs/path-reserved-name",
+  // lint の限界の告知（作者の誤りではない）: `export default { … }` のトップレベルの spread が持ち込むキーは読めないので、
+  // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
   // --- existing binding-expression validators (retrofitted) ---
   FilterUnknown: "wcs/filter-unknown",
@@ -119,6 +98,17 @@ var WcsDiagnosticCode = {
   BindingTypeExpectation: "wcs/binding-type-expectation",
   TokenUndeclared: "wcs/token-undeclared",
   TokenMisconfigured: "wcs/token-misconfigured",
+  // 宣言したコマンドトークンを emit する（スクリプトの `.emit()`・マークアップの `on*: $command.x`）のに、どの
+  // `command.<method>:` 束縛にも結ばれていない。emit は誰にも届かず、ランタイムは何も言わない（7GUIs の評価）。warning
+  // （ページの外 — 別ファイルのルートのテンプレート — で束ねる形は見えない）。
+  CommandTokenUnbound: "wcs/command-token-unbound",
+  // state が宣言していないトップレベルのキーへの書き込み（`this.selectedID = …` と `selectedId`）。新しいキーができる
+  // だけで、宣言したキーの束縛は変わらない。ランタイムは何も言わない。近い名前（打ち間違い）があるときだけ、warning。
+  WritePathMissing: "wcs/write-path-missing",
+  // getter・メソッドの中で読む state のパス（`this["items.*.amout"]`・`$getAll("items.*.amout")`・`this.totl`）が宣言に無い。
+  // 入れ子のパスの読みは undefined になり、そこから計算した金額が黙って違う（確定申告の下書きツールの評価）。トップレベルの
+  // キーは読んだ時点で throw する。近い名前（打ち間違い）があるときだけ、warning。ランタイムの diagnostics も同じ code。
+  ReadPathMissing: "wcs/read-path-missing",
   NestedAssign: "wcs/nested-assign",
   // --- 意味論（構文・存在検査では捕まらない取り違え。service/semanticValidator.ts） ---
   // `$getAll` / `$setAll` / `$resolve` の添字の本数がパスの `*` の本数と噛み合わない。
@@ -324,6 +314,31 @@ var WcsDiagnosticCode = {
 function sortDiagnostics(diagnostics) {
   const severityRank = { error: 0, warning: 1, info: 2 };
   return [...diagnostics].sort((a, b) => a.start - b.start || severityRank[a.severity] - severityRank[b.severity] || (a.code < b.code ? -1 : a.code > b.code ? 1 : 0));
+}
+
+// src/core/offsetToPosition.ts
+function createPositionMapper(text3) {
+  const lineStarts = [0];
+  for (let i = 0; i < text3.length; i++) {
+    const c = text3.charCodeAt(i);
+    if (c === 10) {
+      lineStarts.push(i + 1);
+    } else if (c === 13) {
+      if (text3.charCodeAt(i + 1) === 10) i++;
+      lineStarts.push(i + 1);
+    }
+  }
+  return (offset2) => {
+    const clamped = Math.max(0, Math.min(offset2, text3.length));
+    let lo = 0;
+    let hi = lineStarts.length - 1;
+    while (lo < hi) {
+      const mid = lo + hi + 1 >> 1;
+      if (lineStarts[mid] <= clamped) lo = mid;
+      else hi = mid - 1;
+    }
+    return { line: lo + 1, column: clamped - lineStarts[lo] + 1 };
+  };
 }
 
 // ../state/dist/parser.esm.js
@@ -585,8 +600,8 @@ function checkPathLikeGetPathInfo(path) {
 function recursionUnsupported(path) {
   raise(1101, [path]);
 }
-function parseStatePart(statePart) {
-  const [stateAndPath, filters] = splitFilters(statePart, "output", cacheFilterInfos);
+function parseStatePart(statePart2) {
+  const [stateAndPath, filters] = splitFilters(statePart2, "output", cacheFilterInfos);
   if (stateAndPath.includes("@")) {
     raise(32, [stateAndPath]);
   }
@@ -595,7 +610,7 @@ function parseStatePart(statePart) {
   const body = isLoopRelative ? statePathName.slice(DELIMITER.length) : statePathName;
   const hasEmptySegment = body.length > 0 && body.split(DELIMITER).some((segment) => segment.length === 0);
   if (hasEmptySegment || !isLoopRelative && body.length === 0) {
-    raise(119, [statePart]);
+    raise(119, [statePart2]);
   }
   checkPathLikeGetPathInfo(statePathName);
   return {
@@ -1157,7 +1172,7 @@ function parseBindTextsForElement(bindText) {
       raise(101, [bindText2]);
     }
     const propPart = bindText2.slice(0, separatorIndex).trim();
-    const statePart = bindText2.slice(separatorIndex + 1).trim();
+    const statePart2 = bindText2.slice(separatorIndex + 1).trim();
     const keyword = propPart.split(MODIFIER_SEPARATOR)[0].split(FILTER_SEPARATOR)[0].trim();
     if (KEYWORDS_WITHOUT_MODIFIERS.has(keyword)) {
       if (keyword !== propPart) {
@@ -1165,20 +1180,20 @@ function parseBindTextsForElement(bindText) {
       }
       let stateResult2;
       if (keyword === ELSE_KEYWORD) {
-        if (statePart.length > 0) {
+        if (statePart2.length > 0) {
           raise(103, [bindText2]);
         }
         stateResult2 = { statePathName: "#else", outFilters: [] };
       } else if (keyword === SPREAD_PROP) {
-        if (statePart.length === 0) {
+        if (statePart2.length === 0) {
           raise(104, [bindText2]);
         }
-        stateResult2 = parseStatePart(statePart);
+        stateResult2 = parseStatePart(statePart2);
         if (stateResult2.outFilters.length > 0) {
           raise(105, [bindText2]);
         }
       } else {
-        stateResult2 = parseStatePart(statePart);
+        stateResult2 = parseStatePart(statePart2);
         if (keyword === "for" && stateResult2.outFilters.length > 0) {
           raise(121, [bindText2]);
         }
@@ -1195,7 +1210,7 @@ function parseBindTextsForElement(bindText) {
     if (keyword === CLASS_NAMESPACE || keyword === ATTR_NAMESPACE) {
       raise(122, [bindText2, keyword]);
     }
-    const stateResult = parseStatePart(statePart);
+    const stateResult = parseStatePart(statePart2);
     const propResult = parsePropPart(propPart);
     const [head] = propResult.propSegments;
     if (head === "" && propResult.propSegments.length > 1) {
@@ -1441,6 +1456,9 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
     const jsonAttr = extractAttribute(wcsMatch.tagContent, "json") ?? void 0;
     const stateAttr = extractAttribute(wcsMatch.tagContent, "state") ?? void 0;
     const srcAttr = extractAttribute(wcsMatch.tagContent, "src") ?? void 0;
+    const contentAt = pos + 1 + stateTagName.length;
+    const srcSpan = extractAttributeSpan(wcsMatch.tagContent, "src", contentAt);
+    const jsonSpan = extractAttributeSpan(wcsMatch.tagContent, "json", contentAt);
     const tagStart = pos;
     const tagEnd = wcsMatch.end;
     pos = wcsMatch.end;
@@ -1484,7 +1502,18 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
         wcsEnd = wcsCloseIdx === -1 ? len : wcsCloseIdx;
       }
     }
-    elements.push({ mountPath, bindComponent, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
+    elements.push({
+      mountPath,
+      bindComponent,
+      jsonAttr,
+      stateAttr,
+      srcAttr,
+      scriptBlocks,
+      tagStart,
+      tagEnd,
+      ...srcSpan !== null ? { srcSpan } : {},
+      ...jsonSpan !== null ? { jsonSpan } : {}
+    });
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) pos = afterCloseTag(html, wcsCloseIdx);
   }
@@ -1619,13 +1648,13 @@ function findCloseTag(html, startPos, tagName, lower2 = asciiLowerCase(html)) {
   return -1;
 }
 function parseAttributeNames(tagContent) {
-  const names = /* @__PURE__ */ new Set();
+  const names2 = /* @__PURE__ */ new Set();
   const attribute = /([^\s"'<>/=]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>`=]+))?/g;
   let match;
   while ((match = attribute.exec(tagContent)) !== null) {
-    names.add(match[1].toLowerCase());
+    names2.add(match[1].toLowerCase());
   }
-  return names;
+  return names2;
 }
 function extractAttribute(tagContent, attrName) {
   const regex = new RegExp(
@@ -1635,6 +1664,16 @@ function extractAttribute(tagContent, attrName) {
   const match = tagContent.match(regex);
   if (!match) return null;
   return match[1] ?? match[2] ?? match[3] ?? null;
+}
+function extractAttributeSpan(tagContent, attrName, at2) {
+  const regex = new RegExp(`(^|\\s)${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|(\\S+))`, "i");
+  const match = regex.exec(tagContent);
+  if (match === null) return null;
+  const start = at2 + match.index + match[1].length;
+  const end = at2 + match.index + match[0].length;
+  const value = match[2] ?? match[3] ?? match[4] ?? "";
+  const valueEnd = match[4] === void 0 ? end - 1 : end;
+  return { start, end, valueStart: valueEnd - value.length, valueEnd };
 }
 var IGNORE_VOID_ELEMENTS = /* @__PURE__ */ new Set([
   "area",
@@ -2990,17 +3029,25 @@ function hasDefaultExportObject(scriptContent) {
   return locateDefaultExportObject(scriptContent) !== null;
 }
 function hasTopLevelSpread(scriptContent) {
+  return findTopLevelSpread(scriptContent) !== null;
+}
+function findTopLevelSpread(scriptContent) {
   const root = locateDefaultExportObject(scriptContent);
-  if (!root) return false;
+  if (!root) return null;
   const scan = maskCommentsAndStrings(root.content);
   let depth = 0;
+  let start = -1;
   for (let i = 0; i < scan.length; i++) {
     const ch = scan[i];
     if (ch === "(" || ch === "[" || ch === "{") depth++;
     else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (depth === 0 && ch === "." && scan.startsWith("...", i)) return true;
+    else if (depth === 0 && start < 0 && ch === "." && scan.startsWith("...", i)) start = i;
+    else if (depth === 0 && start >= 0 && ch === ",") return spreadRange(root.start, scan, start, i);
   }
-  return false;
+  return start < 0 ? null : spreadRange(root.start, scan, start, scan.length);
+}
+function spreadRange(base, scan, start, stop) {
+  return { start: base + start, end: base + start + scan.slice(start, stop).trimEnd().length };
 }
 function analyzeObjectEntries(scriptContent, key, allowEmptyKeys = false) {
   const root = locateDefaultExportObject(scriptContent);
@@ -3954,9 +4001,9 @@ function derefSchemaNodes(node, defs) {
   }
   return out;
 }
-function schemaTypeHint(nodes) {
+function schemaTypeHint(nodes2) {
   const hints = /* @__PURE__ */ new Set();
-  for (const n of nodes) {
+  for (const n of nodes2) {
     const types2 = typeof n.type === "string" ? [n.type] : Array.isArray(n.type) ? n.type : [];
     if (types2.length > 0) {
       for (const t of types2) {
@@ -3995,10 +4042,10 @@ function collectSchemaObjectPaths(node, prefix, paths, defs, depth) {
   }
 }
 function pushSchemaValuePaths(path, node, paths, defs, depth) {
-  const nodes = derefSchemaNodes(node, defs);
-  const typeHint = schemaTypeHint(nodes);
+  const nodes2 = derefSchemaNodes(node, defs);
+  const typeHint = schemaTypeHint(nodes2);
   paths.push(withHint({ path, kind: "data", fromSchema: true }, typeHint));
-  const items = nodes.map((n) => n.items).find((i) => i !== void 0 && i !== null && typeof i === "object");
+  const items = nodes2.map((n) => n.items).find((i) => i !== void 0 && i !== null && typeof i === "object");
   const isArray2 = items !== void 0 || (typeHint?.split("|").includes("array") ?? false);
   if (isArray2) {
     const itemNodes = items !== void 0 ? derefSchemaNodes(items, defs) : [];
@@ -4015,7 +4062,7 @@ function pushSchemaValuePaths(path, node, paths, defs, depth) {
     }
     return;
   }
-  if (nodes.some((n) => n.properties !== void 0)) {
+  if (nodes2.some((n) => n.properties !== void 0)) {
     collectSchemaObjectPaths(node, path, paths, defs, depth + 1);
   }
 }
@@ -4114,9 +4161,12 @@ function fromJson(text3) {
   const paths = analyzeJsonPaths(text3);
   return { paths, readable: paths.length > 0 || isJsonObject(text3) };
 }
+function scriptReadable(script, paths) {
+  return !hasTopLevelSpread(script) && (paths.length > 0 || hasDefaultExportObject(script));
+}
 function fromScript(script) {
   const paths = analyzeStatePaths(script);
-  return { paths, readable: paths.length > 0 || isReadableStateScript(script) };
+  return { paths, readable: scriptReadable(script, paths) };
 }
 function resolveElementPathsRaw(element2, html, fileReader) {
   let readable = false;
@@ -4139,19 +4189,23 @@ function resolveElementPathsRaw(element2, html, fileReader) {
     readable ||= resolved.readable;
   }
   if (element2.scriptBlocks.length > 0) {
-    const paths = element2.scriptBlocks.flatMap((block) => analyzeStatePaths(block.content));
+    const blocks = element2.scriptBlocks.map((block) => ({ script: block.content, paths: analyzeStatePaths(block.content) }));
     return {
-      paths,
-      readable: paths.length > 0 || readable || element2.scriptBlocks.some((block) => isReadableStateScript(block.content))
+      paths: blocks.flatMap((block) => block.paths),
+      readable: readable || blocks.some((block) => scriptReadable(block.script, block.paths))
     };
   }
   return readable ? { paths: [], readable } : UNREADABLE;
 }
 function readStateScript(srcPath, fileReader) {
-  if (srcPath.endsWith(".js")) {
-    return fileReader(srcPath.replace(/\.js$/, ".ts")) || fileReader(srcPath) || void 0;
+  return readStateScriptFile(srcPath, fileReader)?.text;
+}
+function readStateScriptFile(srcPath, fileReader) {
+  const paths = srcPath.endsWith(".js") ? [srcPath.replace(/\.js$/, ".ts"), srcPath] : srcPath.endsWith(".ts") ? [srcPath] : [];
+  for (const path of paths) {
+    const text3 = fileReader(path);
+    if (text3) return { path, text: text3 };
   }
-  if (srcPath.endsWith(".ts")) return fileReader(srcPath) || void 0;
   return void 0;
 }
 function resolveSrcAttribute(srcPath, fileReader) {
@@ -4183,10 +4237,6 @@ function isInsideForTemplate(html, offset2, bindAttrName = "data-wcs") {
     if (depth > 0) return true;
   }
   return false;
-}
-function getInnermostForPath(html, offset2, bindAttrName = "data-wcs") {
-  const chain = getEnclosingForPaths(html, offset2, bindAttrName);
-  return chain.length === 0 ? null : chain[chain.length - 1];
 }
 var BINDING_SYNTAX_MARKER = `[${WcsDiagnosticCode.BindingSyntax}]`;
 function isForBindingRefused(bindText) {
@@ -4433,10 +4483,10 @@ function analyzeElementContexts(html, offsets, bindAttrName = "data-wcs", stateT
     }
     const match3 = bindAttr.exec(attrs);
     const value = match3 === null ? null : match3[1] ?? match3[2] ?? match3[3];
-    const names = value === null ? [] : propertyNamesOf(value);
-    const structural = name === "template" && names.length === 1 && STRUCTURAL_DIRECTIVES2.has(names[0]) && !value.slice(0, Math.max(0, indexOfOutsideQuotes2(value, ":"))).includes("#");
+    const names2 = value === null ? [] : propertyNamesOf(value);
+    const structural = name === "template" && names2.length === 1 && STRUCTURAL_DIRECTIVES2.has(names2[0]) && !value.slice(0, Math.max(0, indexOfOutsideQuotes2(value, ":"))).includes("#");
     const plainTemplate = name === "template" && !structural;
-    const blocks = plainTemplate && stack.some((e) => e.name === "template") || name !== "template" && names.some((n) => CONTENT_PROPERTIES.has(n));
+    const blocks = plainTemplate && stack.some((e) => e.name === "template") || name !== "template" && names2.some((n) => CONTENT_PROPERTIES.has(n));
     const scope = plainTemplate ? { hasOwnState: false, id: extractAttribute(attrs, "id"), underRouter: stack.some((e) => e.name === ROUTER_TAG) } : null;
     stack.push({ name, structural, scope, blocks });
   }
@@ -5893,7 +5943,7 @@ pp$8.parseClassElement = function(constructorAllowsSuper) {
   }
   var ecmaVersion = this.options.ecmaVersion;
   var node = this.startNode();
-  var keyName = "";
+  var keyName2 = "";
   var isGenerator = false;
   var isAsync = false;
   var kind = "method";
@@ -5906,34 +5956,34 @@ pp$8.parseClassElement = function(constructorAllowsSuper) {
     if (this.isClassElementNameStart() || this.type === types$1.star) {
       isStatic = true;
     } else {
-      keyName = "static";
+      keyName2 = "static";
     }
   }
   node.static = isStatic;
-  if (!keyName && ecmaVersion >= 8 && this.eatContextual("async")) {
+  if (!keyName2 && ecmaVersion >= 8 && this.eatContextual("async")) {
     if ((this.isClassElementNameStart() || this.type === types$1.star) && !this.canInsertSemicolon()) {
       isAsync = true;
     } else {
-      keyName = "async";
+      keyName2 = "async";
     }
   }
-  if (!keyName && (ecmaVersion >= 9 || !isAsync) && this.eat(types$1.star)) {
+  if (!keyName2 && (ecmaVersion >= 9 || !isAsync) && this.eat(types$1.star)) {
     isGenerator = true;
   }
-  if (!keyName && !isAsync && !isGenerator) {
+  if (!keyName2 && !isAsync && !isGenerator) {
     var lastValue = this.value;
     if (this.eatContextual("get") || this.eatContextual("set")) {
       if (this.isClassElementNameStart()) {
         kind = lastValue;
       } else {
-        keyName = lastValue;
+        keyName2 = lastValue;
       }
     }
   }
-  if (keyName) {
+  if (keyName2) {
     node.computed = false;
     node.key = this.startNodeAt(this.lastTokStart, this.lastTokStartLoc);
-    node.key.name = keyName;
+    node.key.name = keyName2;
     this.finishNode(node.key, "Identifier");
   } else {
     this.parseClassElementName(node);
@@ -6234,7 +6284,7 @@ pp$8.parseExportSpecifier = function(exports$1) {
   return this.finishNode(node, "ExportSpecifier");
 };
 pp$8.parseExportSpecifiers = function(exports$1) {
-  var nodes = [], first = true;
+  var nodes2 = [], first = true;
   this.expect(types$1.braceL);
   while (!this.eat(types$1.braceR)) {
     if (!first) {
@@ -6245,9 +6295,9 @@ pp$8.parseExportSpecifiers = function(exports$1) {
     } else {
       first = false;
     }
-    nodes.push(this.parseExportSpecifier(exports$1));
+    nodes2.push(this.parseExportSpecifier(exports$1));
   }
-  return nodes;
+  return nodes2;
 };
 pp$8.parseImport = function(node) {
   this.next();
@@ -6292,16 +6342,16 @@ pp$8.parseImportNamespaceSpecifier = function() {
   return this.finishNode(node, "ImportNamespaceSpecifier");
 };
 pp$8.parseImportSpecifiers = function() {
-  var nodes = [], first = true;
+  var nodes2 = [], first = true;
   if (this.type === types$1.name) {
-    nodes.push(this.parseImportDefaultSpecifier());
+    nodes2.push(this.parseImportDefaultSpecifier());
     if (!this.eat(types$1.comma)) {
-      return nodes;
+      return nodes2;
     }
   }
   if (this.type === types$1.star) {
-    nodes.push(this.parseImportNamespaceSpecifier());
-    return nodes;
+    nodes2.push(this.parseImportNamespaceSpecifier());
+    return nodes2;
   }
   this.expect(types$1.braceL);
   while (!this.eat(types$1.braceR)) {
@@ -6313,14 +6363,14 @@ pp$8.parseImportSpecifiers = function() {
     } else {
       first = false;
     }
-    nodes.push(this.parseImportSpecifier());
+    nodes2.push(this.parseImportSpecifier());
   }
-  return nodes;
+  return nodes2;
 };
 pp$8.parseWithClause = function() {
-  var nodes = [];
+  var nodes2 = [];
   if (!this.eat(types$1._with)) {
-    return nodes;
+    return nodes2;
   }
   this.expect(types$1.braceL);
   var attributeKeys = {};
@@ -6335,14 +6385,14 @@ pp$8.parseWithClause = function() {
       first = false;
     }
     var attr = this.parseImportAttribute();
-    var keyName = attr.key.type === "Identifier" ? attr.key.name : attr.key.value;
-    if (hasOwn(attributeKeys, keyName)) {
-      this.raiseRecoverable(attr.key.start, "Duplicate attribute key '" + keyName + "'");
+    var keyName2 = attr.key.type === "Identifier" ? attr.key.name : attr.key.value;
+    if (hasOwn(attributeKeys, keyName2)) {
+      this.raiseRecoverable(attr.key.start, "Duplicate attribute key '" + keyName2 + "'");
     }
-    attributeKeys[keyName] = true;
-    nodes.push(attr);
+    attributeKeys[keyName2] = true;
+    nodes2.push(attr);
   }
-  return nodes;
+  return nodes2;
 };
 pp$8.parseImportAttribute = function() {
   var node = this.startNode();
@@ -10491,7 +10541,7 @@ function visitDestructure(pattern, prefix, scope, out) {
     emit(out, segments, { form: "destructure", callee: false, written: false }, property.start, property.end);
   }
 }
-function collectThisMemberRefs(body, names) {
+function collectThisMemberRefs(body, names2) {
   let program;
   try {
     program = parse3(PREFIX + body + SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
@@ -10500,11 +10550,11 @@ function collectThisMemberRefs(body, names) {
   }
   const fn = unwrapWrapper(program);
   if (fn === null) return null;
-  return walkThisMembers(fn.body, names, PREFIX.length);
+  return walkThisMembers(fn.body, names2, PREFIX.length);
 }
 var VALUE_PREFIX = "(async function* () {\n(";
 var VALUE_SUFFIX = ")\n})";
-function collectThisMemberRefsInValue(value, names) {
+function collectThisMemberRefsInValue(value, names2) {
   let program;
   try {
     program = parse3(VALUE_PREFIX + value + VALUE_SUFFIX, { ecmaVersion: "latest", sourceType: "module" });
@@ -10517,9 +10567,9 @@ function collectThisMemberRefsInValue(value, names) {
   if (statement.type !== "ExpressionStatement") return null;
   const expression = statement.expression;
   if (expression.type !== "FunctionExpression") return [];
-  return walkThisMembers(expression.body, names, VALUE_PREFIX.length);
+  return walkThisMembers(expression.body, names2, VALUE_PREFIX.length);
 }
-function walkThisMembers(root, names, offsetShift) {
+function walkThisMembers(root, names2, offsetShift) {
   const out = [];
   const walk = (node, thisIsState) => {
     if (isClassNode(node)) return;
@@ -10530,7 +10580,7 @@ function walkThisMembers(root, names, offsetShift) {
     }
     if (thisIsState && node.type === "MemberExpression" && node.object.type === "ThisExpression") {
       const hit = thisMemberName(node);
-      if (hit !== null && names.has(hit.name)) {
+      if (hit !== null && names2.has(hit.name)) {
         out.push({ name: hit.name, start: hit.start - offsetShift, end: hit.end - offsetShift });
       }
     }
@@ -10697,13 +10747,13 @@ function findInPlaceChanges(text3, kind, root) {
   const collect2 = (node) => {
     if (isFunctionNode(node)) {
       if (node.type === "FunctionDeclaration" && node.id !== null) bind(node.id.name);
-      const names = /* @__PURE__ */ new Set();
-      for (const param of node.params) bindingNames(param, names);
-      names.forEach(bind);
+      const names2 = /* @__PURE__ */ new Set();
+      for (const param of node.params) bindingNames(param, names2);
+      names2.forEach(bind);
     } else if (node.type === "VariableDeclarator") {
-      const names = /* @__PURE__ */ new Set();
-      bindingNames(node.id, names);
-      names.forEach(bind);
+      const names2 = /* @__PURE__ */ new Set();
+      bindingNames(node.id, names2);
+      names2.forEach(bind);
       const init = node.init ? unwrapChain(node.init) : null;
       if (init !== null && node.id.type === "Identifier" && init.type === "MemberExpression") {
         const chain = memberChain(init, source);
@@ -10721,9 +10771,9 @@ function findInPlaceChanges(text3, kind, root) {
         }
       }
     } else if (node.type === "CatchClause" && node.param) {
-      const names = /* @__PURE__ */ new Set();
-      bindingNames(node.param, names);
-      names.forEach(bind);
+      const names2 = /* @__PURE__ */ new Set();
+      bindingNames(node.param, names2);
+      names2.forEach(bind);
     } else if (node.type === "ClassDeclaration" && node.id !== null) {
       bind(node.id.name);
     } else if (node.type === "AssignmentExpression" && node.left.type === "Identifier") {
@@ -10785,14 +10835,14 @@ function findLocationRead(body) {
   }
   const wrapper = unwrapWrapper(program);
   if (wrapper === null) return null;
-  const names = /* @__PURE__ */ new Set();
+  const names2 = /* @__PURE__ */ new Set();
   const scan = (node) => {
-    if (isFunctionNode(node)) for (const param of node.params) bindingNames(param, names);
-    if (node.type === "VariableDeclarator") bindingNames(node.id, names);
+    if (isFunctionNode(node)) for (const param of node.params) bindingNames(param, names2);
+    if (node.type === "VariableDeclarator") bindingNames(node.id, names2);
     forEachChild(node, scan);
   };
   scan(wrapper.body);
-  if (names.has("location")) return null;
+  if (names2.has("location")) return null;
   const isLocation = (node) => {
     const n = unwrapChain(node);
     if (n.type === "Identifier") return n.name === "location";
@@ -10869,6 +10919,13 @@ var ja = {
   updatedCallbackUnbound: (p) => `$renderedCallback \u306F binding \u99C6\u52D5\u3067\u3059\u3002"${p}" \u306F\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306E\u3069\u306E\u30D0\u30A4\u30F3\u30C7\u30A3\u30F3\u30B0\u306B\u3082\u73FE\u308C\u306A\u3044\u305F\u3081\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u63CF\u753B\u306B\u4F9D\u5B58\u305B\u305A\u53CD\u5FDC\u3059\u308B\u306A\u3089 $watch \u3092\u4F7F\u3063\u3066\u304F\u3060\u3055\u3044`,
   onHandlerThis: (name) => `$on \u306E\u30CF\u30F3\u30C9\u30E9 "${name}" \u304C this \u3092\u4F7F\u3063\u3066\u3044\u307E\u3059\u3002$on \u306E\u30CF\u30F3\u30C9\u30E9\u306F state \u3092\u7B2C 1 \u5F15\u6570\u3067\u53D7\u3051\u53D6\u308A\uFF08\`${name}(state, event) { state.x = \u2026 }\`\uFF09\u3001this \u306F undefined \u306A\u306E\u3067\u3001this.\u2026 \u306F\u547C\u3070\u308C\u305F\u3068\u304D\u306B\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\u3002$watch \u3084\u30E1\u30BD\u30C3\u30C9\u3068\u9055\u3046\u70B9\u306B\u6CE8\u610F`,
   getterReadsLocation: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001location \u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u3001\u6700\u521D\u306B\u8AAD\u3093\u3060 URL \u3092\u6301\u3061\u7D9A\u3051\u307E\u3059\uFF08\u30CA\u30D3\u30B2\u30FC\u30B7\u30E7\u30F3\u3067\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF09\u3002URL \u306F state \u3092\u901A\u3057\u3066\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044 \u2014 <wcs-router> \u306E path / searchParams \u3092\u675F\u306D\u308B`,
+  getterReadsClock: (read) => `\u3053\u306E getter \u306F ${read} \u3092\u8AAD\u3093\u3067\u3044\u307E\u3059\u304C\u3001\u6642\u523B\u306F state \u3067\u306F\u306A\u3044\u306E\u3067\u4F9D\u5B58\u3068\u3057\u3066\u767B\u9332\u3055\u308C\u305A\u3001getter \u306F\u30AD\u30E3\u30C3\u30B7\u30E5\u3057\u305F\u6700\u521D\u306E\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30A4\u30D9\u30F3\u30C8\u30C8\u30FC\u30AF\u30F3\u3067\u6BCE\u30D5\u30EC\u30FC\u30E0\u300C\u63CF\u304D\u76F4\u3057\u300D\u3066\u3082\u5909\u308F\u308A\u307E\u305B\u3093\uFF09\u3002\u6642\u523B\u3092 state \u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044 \u2014 <wcs-raf> \u3084 <wcs-timer> \u304C\u66F8\u304F\u5024\u3092\u675F\u306D\u308B`,
+  updatedCallbackUnknownPath: (p) => `"${p}" \u306F state \u306E\u30D1\u30B9\u3067\u306F\u306A\u3044\u306E\u3067 $renderedCallback \u306E paths \u306B\u73FE\u308C\u305A\u3001\u3053\u306E\u5206\u5C90\u306F\u4E00\u5EA6\u3082\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093`,
+  commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.focus: ${t}\uFF09`,
+  writePathMissing: (k) => `"${k}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u66F8\u304D\u8FBC\u307F\u306F\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
+  readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
+  pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
+  pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
   submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
   getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
@@ -10905,7 +10962,7 @@ var ja = {
   behaviorValueType: (key, type) => `$behavior \u306E "${key}" \u306F ${type === "boolean" ? "true \u304B false" : type} \u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
   configInVolume: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5BA3\u8A00\u3067\u304D\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u307F\u3001console.error \u3067\u5831\u544A\u3057\u307E\u3059 \u2014 \u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044 \u2014 \u30DC\u30EA\u30E5\u30FC\u30E0\u306F root \u306E\u30A8\u30F3\u30B8\u30F3\u306B\u63A5\u304E\u6728\u3055\u308C\u307E\u3059`,
   featuresNotArray: () => `$features \u306F\u5F8C\u4ED8\u3051\u306E\u540D\u524D\u306E\u914D\u5217\u3067\u3042\u308B\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\uFF08\u4F8B: ["temporal", "formats"]\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u8AAD\u307F\u8FBC\u307F\u6642\u306B throw \u3057\u307E\u3059\uFF09`,
-  featureUnknown: (name, names, suggestion2) => `"${name}" \u306F\u5F8C\u4ED8\u3051\u306E\u540D\u524D\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${names.join("\u30FB")}\uFF09${suggestion2}`,
+  featureUnknown: (name, names2, suggestion2) => `"${name}" \u306F\u5F8C\u4ED8\u3051\u306E\u540D\u524D\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${names2.join("\u30FB")}\uFF09${suggestion2}`,
   volumeDeclarationRejected: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u63A5\u304E\u6728\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF08\u3053\u306E state \u306F\u6728\u306B\u8F09\u308A\u307E\u305B\u3093\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
   volumeDeclarationNotRun: (key, mountPath) => `${key} \u306F\u30DC\u30EA\u30E5\u30FC\u30E0\uFF08mount="${mountPath}"\uFF09\u3067\u306F\u5B9F\u884C\u3055\u308C\u307E\u305B\u3093\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F console.warn \u3067\u77E5\u3089\u305B\u3001\u3053\u306E\u5BA3\u8A00\u3092\u7121\u8996\u3057\u307E\u3059 \u2014 root \u306E state \u306E\u3082\u306E\u3067\u3059\uFF09\u3002root \u306E state \u306B\u5BA3\u8A00\u3057\u3066\u304F\u3060\u3055\u3044`,
   secondRoot: () => '\u540C\u3058 root \u306B 2 \u3064\u76EE\u306E <wcs-state> \u304C\u3042\u308A\u307E\u3059\u3002state \u306E\u6728\u306F root \u3054\u3068\u306B 1 \u3064\u3067\u3059\uFF08\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u5F8C\u304B\u3089\u8AAD\u307F\u8FBC\u3093\u3060\u65B9\u3092\u62D2\u3093\u3067 console.error \u3067\u5831\u544A\u3057\u307E\u3059\uFF09\u3002\u90E8\u5206\u6728\u306F <wcs-state mount="path"> \u3067\u63A5\u304E\u6728\u3057\u3066\u304F\u3060\u3055\u3044',
@@ -11070,6 +11127,13 @@ var en = {
   updatedCallbackUnbound: (p) => `$renderedCallback is binding-driven. "${p}" is not bound anywhere in this document, so this branch never runs. Use $watch to react without depending on what is rendered`,
   onHandlerThis: (name) => `The $on handler "${name}" uses this. A $on handler receives the state as its first argument (\`${name}(state, event) { state.x = \u2026 }\`) and this is undefined, so this.\u2026 throws when it is called \u2014 unlike $watch handlers and methods`,
   getterReadsLocation: (read) => `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state \u2014 bind <wcs-router>'s path / searchParams`,
+  getterReadsClock: (read) => `This getter reads ${read}. The time is not state, so it is not a dependency: the getter is cached and keeps returning its first value (an event token "redrawing" every frame does not change it). Keep the time in state \u2014 bind the value <wcs-raf> or <wcs-timer> writes`,
+  updatedCallbackUnknownPath: (p) => `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
+  commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
+  writePathMissing: (k) => `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
+  readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
+  pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
+  pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
@@ -11106,7 +11170,7 @@ var en = {
   behaviorValueType: (key, type) => `$behavior "${key}" must be ${type === "boolean" ? "true or false" : type} (the runtime throws at load time)`,
   configInVolume: (key, mountPath) => `${key} cannot be declared in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state \u2014 a volume is grafted onto the root's engine`,
   featuresNotArray: () => `$features must be an array of add-on names (for example ["temporal", "formats"]; the runtime throws at load time)`,
-  featureUnknown: (name, names, suggestion2) => `"${name}" is not an add-on (${names.join(", ")})${suggestion2}`,
+  featureUnknown: (name, names2, suggestion2) => `"${name}" is not an add-on (${names2.join(", ")})${suggestion2}`,
   volumeDeclarationRejected: (key, mountPath) => `${key} is not run in a volume (mount="${mountPath}"): the runtime refuses to graft the volume and reports that with console.error (this state is not on the tree). Declare it on the root state`,
   volumeDeclarationNotRun: (key, mountPath) => `${key} is not run in a volume (mount="${mountPath}"): the runtime says so with console.warn and ignores this declaration \u2014 it belongs to the root state. Declare it there`,
   secondRoot: () => 'A second <wcs-state> on the same root: there is one state tree per root (the runtime refuses the one that loads second and reports it with console.error). Graft a subtree with <wcs-state mount="path">',
@@ -11421,8 +11485,8 @@ function derefUnion(node, rootDefs) {
   }
   return { kind: "ok", nodes: out };
 }
-function firstDefined(nodes, pick) {
-  for (const n of nodes) {
+function firstDefined(nodes2, pick) {
+  for (const n of nodes2) {
     const v = pick(n);
     if (v !== void 0) return v;
   }
@@ -11550,11 +11614,11 @@ var DELEGATED_EVENTS = /* @__PURE__ */ new Set([
 ]);
 var CUSTOM_ELEMENT_OWN_EVENTS = /* @__PURE__ */ new Set(["input", "change", "submit"]);
 function collectCurrentTargetHandlers(elements, html, fileReader) {
-  const names = /* @__PURE__ */ new Set();
+  const names2 = /* @__PURE__ */ new Set();
   forEachStateMethod(elements, html, fileReader, "currentTarget", (name, params, body) => {
-    if (readsEventCurrentTarget(params, body)) names.add(name);
+    if (readsEventCurrentTarget(params, body)) names2.add(name);
   });
-  return names;
+  return names2;
 }
 function collectPreventDefaultHandlers(elements, html, fileReader) {
   const handlers = /* @__PURE__ */ new Map();
@@ -11801,6 +11865,18 @@ function validateBindings(html, attrName, stateTagName = "wcs-state", locale2, f
                 message: `${verdict.message}${pathTrimmed.startsWith(".") ? msgs.expansionSuffix(checkPath) : ""}`,
                 severity: verdict.severity
               });
+            } else if (writesBack(attr, propNoMod, parsed.property)) {
+              const target = scopedPaths.find((p) => p.path === checkPath);
+              if (target !== void 0 && target.kind === "computed" && target.settable !== true) {
+                const pathStart = bindingStart + binding.indexOf(parsed.path);
+                diagnostics.push({
+                  code: WcsDiagnosticCode.PathReadonly,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: msgs.pathReadonlyTwoWay(checkPath, propNoMod),
+                  severity: "error"
+                });
+              }
             }
           }
         }
@@ -11987,6 +12063,19 @@ function openTagBefore(html, valueStart) {
   const lt2 = html.lastIndexOf("<", valueStart);
   return lt2 === -1 ? "" : html.slice(lt2, valueStart);
 }
+function writesBack(attr, prop, written) {
+  if (written.split("#").slice(1).some((modifier) => modifier.trim() === "ro")) return false;
+  if (prop === "radio" || prop === "checkbox") return true;
+  const tag = attr.tagName;
+  if (tag === void 0 || tag.includes("-")) return false;
+  if (tag === "input") {
+    const type = (attr.inputType || "text").toLowerCase();
+    if (type === "button") return false;
+    if ((type === "radio" || type === "checkbox") && prop === "checked") return true;
+    return prop === "value" || prop === "valueAsNumber" || prop === "valueAsDate";
+  }
+  return (tag === "select" || tag === "textarea") && prop === "value";
+}
 function findAllBindAttributes(html, attrName) {
   const attrs = [];
   const escaped = attrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -12000,7 +12089,8 @@ function findAllBindAttributes(html, attrName) {
       const valueStart = tag.start + match.index + match[0].length;
       const valueEnd = html.indexOf(quote, valueStart);
       if (valueEnd === -1 || valueEnd > tag.end) continue;
-      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart, tagName: tag.tagName });
+      const inputType = tag.tagName === "input" ? extractAttribute(attrsText, "type") ?? void 0 : void 0;
+      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart, tagName: tag.tagName, ...inputType !== void 0 ? { inputType } : {} });
       regex.lastIndex = valueEnd - tag.start;
     }
   }
@@ -14152,6 +14242,162 @@ var BUILTIN_TAGS = {
   }
 };
 
+// src/service/pageElements.ts
+var MAX_FILES = 32;
+var JS_TYPES = /* @__PURE__ */ new Set(["", "module", "text/javascript", "application/javascript", "text/ecmascript"]);
+function pageScripts(html) {
+  const inline = [];
+  const srcs = [];
+  const re = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+  const text3 = html.replace(/<!--[\s\S]*?-->/g, (c) => " ".repeat(c.length));
+  let m;
+  while ((m = re.exec(text3)) !== null) {
+    const attrs = m[1];
+    const type = (extractAttribute(attrs, "type") ?? "").trim().toLowerCase();
+    if (!JS_TYPES.has(type)) continue;
+    const src = extractAttribute(attrs, "src");
+    if (src !== null) srcs.push(src);
+    else if (m[2].trim() !== "") inline.push(m[2]);
+  }
+  return { inline, srcs };
+}
+function joinRelative(from, spec) {
+  if (!spec.startsWith("./") && !spec.startsWith("../")) return null;
+  const dir = from.includes("/") ? from.slice(0, from.lastIndexOf("/") + 1) : "";
+  const out = [];
+  for (const seg of `${dir}${spec}`.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === ".." && out.length > 0 && out[out.length - 1] !== "..") out.pop();
+    else out.push(seg);
+  }
+  return `./${out.join("/")}`;
+}
+function parseScript(source) {
+  for (const sourceType of ["module", "script"]) {
+    try {
+      return parse3(source, { ecmaVersion: "latest", sourceType, allowHashBang: true });
+    } catch {
+    }
+  }
+  return null;
+}
+function* nodes(node) {
+  yield node;
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const v of value) if (v !== null && typeof v === "object" && typeof v.type === "string") yield* nodes(v);
+    } else if (value !== null && typeof value === "object" && typeof value.type === "string") {
+      yield* nodes(value);
+    }
+  }
+}
+var keyName = (key, computed) => computed ? null : key.type === "Identifier" ? key.name : key.type === "Literal" && typeof key.value === "string" ? key.value : null;
+function names(obj, key) {
+  const prop = obj.properties.find((p) => p.type === "Property" && keyName(p.key, p.computed) === key);
+  if (prop === void 0 || prop.type !== "Property") return void 0;
+  if (prop.value.type !== "ArrayExpression") return null;
+  const out = [];
+  for (const el of prop.value.elements) {
+    if (el === null || el.type !== "ObjectExpression" || el.properties.some((p) => p.type !== "Property")) return null;
+    const name = el.properties.find((p) => p.type === "Property" && keyName(p.key, p.computed) === "name");
+    if (name === void 0 || name.type !== "Property" || name.value.type !== "Literal" || typeof name.value.value !== "string") return null;
+    out.push(name.value.value);
+  }
+  return out;
+}
+function contractOf(value) {
+  if (value.type !== "ObjectExpression" || value.properties.some((p) => p.type !== "Property")) return "unknown";
+  const properties = names(value, "properties");
+  const inputs = names(value, "inputs");
+  const commands = names(value, "commands");
+  if (properties === null || inputs === null || commands === null) return "unknown";
+  return {
+    properties: properties ?? [],
+    inputs: Object.fromEntries((inputs ?? []).map((n) => [n, null])),
+    commands: commands ?? []
+  };
+}
+function declaredBy(cls) {
+  let declared = "none";
+  for (const member of cls.body.body) {
+    if (member.type !== "PropertyDefinition" && member.type !== "MethodDefinition" || !member.static) continue;
+    if (keyName(member.key, member.computed) !== "wcBindable") continue;
+    if (member.type === "PropertyDefinition") {
+      declared = member.value === null || member.value === void 0 ? "unknown" : contractOf(member.value);
+    } else {
+      const body = member.kind === "get" ? member.value.body.body : [];
+      const ret = body.length === 1 && body[0].type === "ReturnStatement" ? body[0].argument : null;
+      declared = ret === null || ret === void 0 ? "unknown" : contractOf(ret);
+    }
+  }
+  const sup = cls.superClass;
+  return { declared, superName: sup !== null && sup !== void 0 && sup.type === "Identifier" ? sup.name : null };
+}
+function isDefine(callee) {
+  if (callee.type !== "MemberExpression" || keyName(callee.property, callee.computed) !== "define") return false;
+  const o = callee.object;
+  return o.type === "Identifier" && o.name === "customElements" || o.type === "MemberExpression" && keyName(o.property, o.computed) === "customElements";
+}
+function collectPageElementContracts(html, fileReader) {
+  const { inline, srcs } = pageScripts(html);
+  const programs = [];
+  const read = /* @__PURE__ */ new Set();
+  const queue = srcs.map((spec) => ({ from: "", spec: spec.startsWith(".") ? spec : `./${spec}` }));
+  const visit2 = (program, from) => {
+    programs.push(program);
+    for (const n of nodes(program)) {
+      const source = n.type === "ImportDeclaration" || n.type === "ExportAllDeclaration" || n.type === "ExportNamedDeclaration" ? n.source : n.type === "ImportExpression" ? n.source : null;
+      if (source !== null && source !== void 0 && source.type === "Literal" && typeof source.value === "string") queue.push({ from, spec: source.value });
+    }
+  };
+  for (const source of inline) {
+    const program = parseScript(source);
+    if (program !== null) visit2(program, "");
+  }
+  while (queue.length > 0 && fileReader !== void 0 && read.size < MAX_FILES) {
+    const { from, spec } = queue.shift();
+    const path = joinRelative(from, spec);
+    if (path === null || read.has(path) || !/\.m?js$/.test(path)) continue;
+    read.add(path);
+    const text3 = fileReader(path);
+    const program = text3 === void 0 ? null : parseScript(text3);
+    if (program !== null) visit2(program, path);
+  }
+  const classes = /* @__PURE__ */ new Map();
+  const defines = [];
+  for (const program of programs) {
+    for (const n of nodes(program)) {
+      if (n.type === "ClassDeclaration" && n.id !== null && !classes.has(n.id.name)) classes.set(n.id.name, declaredBy(n));
+      else if (n.type === "VariableDeclarator" && n.id.type === "Identifier" && n.init?.type === "ClassExpression" && !classes.has(n.id.name)) {
+        classes.set(n.id.name, declaredBy(n.init));
+      } else if (n.type === "CallExpression" && isDefine(n.callee) && n.arguments.length >= 2) {
+        const [tag, cls] = n.arguments;
+        if (tag.type !== "Literal" || typeof tag.value !== "string") continue;
+        if (cls.type === "ClassExpression") defines.push({ tag: tag.value, info: declaredBy(cls) });
+        else if (cls.type === "Identifier") defines.push({ tag: tag.value, info: cls.name });
+      }
+    }
+  }
+  const resolve2 = (info, depth) => {
+    if (info.declared === "unknown") return null;
+    if (info.declared !== "none") return info.declared;
+    const sup = info.superName === null ? void 0 : classes.get(info.superName);
+    return sup === void 0 || depth > 16 ? null : resolve2(sup, depth + 1);
+  };
+  const out = /* @__PURE__ */ new Map();
+  for (const { tag, info } of defines) {
+    const name = tag.toLowerCase();
+    if (name.startsWith("wcs-") || out.has(name)) continue;
+    const cls = typeof info === "string" ? classes.get(info) : info;
+    const contract = cls === void 0 ? null : resolve2(cls, 0);
+    if (contract !== null) out.set(name, contract);
+  }
+  return out;
+}
+function mayDefineElements(html) {
+  return /customElements|<script\b[^>]*\bsrc\s*=/i.test(html);
+}
+
 // src/service/ioNodeValidator.ts
 var HTML_SINK_PROPERTIES = /* @__PURE__ */ new Set(["html", "innerHTML", "outerHTML", "srcdoc"]);
 var STRUCTURAL_DIRECTIVES3 = /* @__PURE__ */ new Set(["for", "if", "elseif", "else"]);
@@ -14166,7 +14412,6 @@ function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-s
   const diagnostics = [];
   const msgs = getMessages(locale2);
   const occurrences = findBuiltinTagOccurrences(html);
-  if (occurrences.length === 0) return diagnostics;
   let statePaths = null;
   const getPaths = () => statePaths ??= getStatePathsFromHtml(html, stateTagName, fileReader);
   for (const occ of occurrences) {
@@ -14194,31 +14439,34 @@ function validateIoNodes(html, bindAttribute = "data-wcs", stateTagName = "wcs-s
     }
     if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
     const hasManual = hasBooleanAttribute(occ.attrsText, "manual");
-    let exprOffset = 0;
-    for (const expr of splitBindingExpressions(bindAttr.value)) {
-      const exprStart = valueStart + exprOffset;
-      exprOffset += expr.length + 1;
-      const parsed = parseBindingExpression(expr);
-      const property = parsed.property;
-      if (!property) continue;
-      const propIndex = expr.indexOf(property);
-      const start = propIndex === -1 ? exprStart : exprStart + propIndex;
-      const end = propIndex === -1 ? exprStart + expr.length : start + property.length;
-      validateBindingAgainstContract(
-        occ.tagName,
-        contract,
-        parsed,
-        property,
-        start,
-        end,
-        hasManual,
-        getPaths,
-        diagnostics,
-        msgs
-      );
+    checkBindings(occ.tagName, contract, bindAttr.value, valueStart, hasManual, getPaths, diagnostics, msgs);
+  }
+  if (mayDefineElements(html)) {
+    const own2 = findPageTagOccurrences(html, bindAttribute);
+    const contracts = own2.length > 0 ? collectPageElementContracts(html, fileReader) : null;
+    for (const occ of own2) {
+      const contract = contracts.get(occ.tagName);
+      if (contract === void 0) continue;
+      if (contract.properties.length === 0 && contract.commands.length === 0 && Object.keys(contract.inputs).length === 0) continue;
+      const bindAttr = extractAttributeValue(occ.attrsText, bindAttribute);
+      checkBindings(occ.tagName, contract, bindAttr.value, occ.attrsStart + bindAttr.valueOffsetInAttrs, false, getPaths, diagnostics, msgs);
     }
   }
   return diagnostics;
+}
+function checkBindings(tagName, contract, value, valueStart, hasManual, getPaths, diagnostics, msgs) {
+  let exprOffset = 0;
+  for (const expr of splitBindingExpressions(value)) {
+    const exprStart = valueStart + exprOffset;
+    exprOffset += expr.length + 1;
+    const parsed = parseBindingExpression(expr);
+    const property = parsed.property;
+    if (!property) continue;
+    const propIndex = expr.indexOf(property);
+    const start = propIndex === -1 ? exprStart : exprStart + propIndex;
+    const end = propIndex === -1 ? exprStart + expr.length : start + property.length;
+    validateBindingAgainstContract(tagName, contract, parsed, property, start, end, hasManual, getPaths, diagnostics, msgs);
+  }
 }
 function validateBindingAgainstContract(tagName, contract, parsed, property, start, end, hasManual, getPaths, diagnostics, msgs) {
   const hashIndex = property.indexOf("#");
@@ -14278,6 +14526,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     }
     return;
   }
+  if (!tagName.startsWith("wcs-") && property.includes(".")) return;
   if (!contract.properties.includes(property) && !(property in contract.inputs) && !HTML_SINK_PROPERTIES.has(property)) {
     const members = [...contract.properties, ...inputNames];
     diagnostics.push({
@@ -14291,7 +14540,7 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
     });
     return;
   }
-  if (property === "trigger" && "trigger" in contract.inputs && parsed.path) {
+  if (tagName.startsWith("wcs-") && property === "trigger" && "trigger" in contract.inputs && parsed.path) {
     const cand = findDataSlot(getPaths(), parsed.path);
     if (cand?.rawInitial === "true") {
       diagnostics.push({
@@ -14365,6 +14614,17 @@ function findBuiltinTagOccurrences(html) {
       attrsText: match[2],
       attrsStart: match.index + 1 + match[1].length
     });
+  }
+  return out;
+}
+function findPageTagOccurrences(html, bindAttribute) {
+  const out = [];
+  for (const region of findStartTagRegions(html)) {
+    const tagName = region.tagName;
+    if (!tagName.includes("-") || tagName.startsWith("wcs-")) continue;
+    const attrsText = html.slice(region.start, region.end);
+    if (extractAttributeValue(attrsText, bindAttribute) === null) continue;
+    out.push({ tagName, tagStart: region.start - tagName.length - 1, attrsText, attrsStart: region.start });
   }
   return out;
 }
@@ -14813,7 +15073,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fi
       const scopes = {
         mounts: volumes?.scopes.mounts ?? [],
         unresolvedMounts: volumes?.scopes.unresolvedMounts ?? NO_MOUNTS,
-        rootUnresolved: own2.length === 0 && !isReadableStateScript(block.content)
+        rootUnresolved: !scriptReadable(block.content, own2)
       };
       for (const entry of entries) {
         const diagnostic = validateEntry(entry, pathSet, paths, scopes, msgs);
@@ -14834,10 +15094,10 @@ var NO_MOUNTS = /* @__PURE__ */ new Set();
 function assignVolumes(elements, html) {
   const chainOf = createTemplateChain(html);
   const innermost = (chain) => chain.length > 0 ? chain[chain.length - 1] : -1;
-  const treeOf = (root) => innermost(chainOf(root.tagStart));
+  const treeOf2 = (root) => innermost(chainOf(root.tagStart));
   const rootTrees = /* @__PURE__ */ new Set();
   for (const element2 of elements) {
-    if (element2.mountPath === null && !element2.bindComponent) rootTrees.add(treeOf(element2));
+    if (element2.mountPath === null && !element2.bindComponent) rootTrees.add(treeOf2(element2));
   }
   const volumes = /* @__PURE__ */ new Map();
   for (const element2 of elements) {
@@ -14854,7 +15114,7 @@ function assignVolumes(elements, html) {
     if (list === void 0) volumes.set(tree, [element2]);
     else list.push(element2);
   }
-  return { treeOf, volumes };
+  return { treeOf: treeOf2, volumes };
 }
 function validateEntry(entry, pathSet, paths, scopes, msgs) {
   const { key } = entry;
@@ -15842,8 +16102,8 @@ function validateVolumeBlock2(block, mountPath, msgs, out) {
 }
 function validateBindComponentSource(html, tagStart, tagEnd, hasInlineScript, msgs, out) {
   const tag = html.slice(tagStart, tagEnd);
-  const names = parseAttributeNames(tag);
-  const sources = BIND_COMPONENT_SOURCE_ATTRIBUTES.filter((name) => names.has(name));
+  const names2 = parseAttributeNames(tag);
+  const sources = BIND_COMPONENT_SOURCE_ATTRIBUTES.filter((name) => names2.has(name));
   if (hasInlineScript) sources.push('<script type="module">');
   if (sources.length === 0) return;
   const prop = /\sbind-component\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))/i.exec(tag);
@@ -15971,7 +16231,7 @@ var OLD_DECLARATION_KEY = /(^|[{,;\s])(\$streams|\$updatedCallback)(?=\s*(?:[:(]
 function collectDeclarationAliasReads(script) {
   return collectStateThisReads(script, OLD_DECLARATION_MEMBER_NAMES);
 }
-function collectStateThisReads(script, names) {
+function collectStateThisReads(script, names2) {
   if (!hasDefaultExportObject(script)) return null;
   const out = [];
   const take = (refs, base) => {
@@ -15980,10 +16240,10 @@ function collectStateThisReads(script, names) {
     return true;
   };
   for (const callable of analyzeCallableBodies(script)) {
-    if (!take(collectThisMemberRefs(callable.body, names), callable.bodyStart)) return null;
+    if (!take(collectThisMemberRefs(callable.body, names2), callable.bodyStart)) return null;
   }
   for (const handler of analyzeWatchHandlerSources(script)) {
-    const refs = handler.kind === "body" ? collectThisMemberRefs(handler.text, names) : collectThisMemberRefsInValue(handler.text, names);
+    const refs = handler.kind === "body" ? collectThisMemberRefs(handler.text, names2) : collectThisMemberRefsInValue(handler.text, names2);
     if (!take(refs, handler.start)) return null;
   }
   out.sort((a, b) => a.start - b.start);
@@ -16191,6 +16451,26 @@ function validateGetterLocationReads(script, scriptStart, locale2) {
   }
   return out;
 }
+var CLOCK_READ = /\bDate\s*\.\s*now\s*\(|\bnew\s+Date\s*\(\s*\)|\bperformance\s*\.\s*now\s*\(/;
+function validateGetterClockReads(script, scriptStart, locale2) {
+  if (!/Date|performance/.test(script)) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== "getter" || getter.accessor !== "get") continue;
+    const read = CLOCK_READ.exec(maskCommentsAndStrings(getter.body));
+    if (read === null) continue;
+    const text3 = read[0].startsWith("new") ? "new Date()" : read[0].startsWith("performance") ? "performance.now()" : "Date.now()";
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.index,
+      end: scriptStart + getter.bodyStart + read.index + read[0].length,
+      message: msgs.getterReadsClock(text3),
+      severity: "warning"
+    });
+  }
+  return out;
+}
 function onHandlerStateParam(script, handler) {
   if (handler.kind === "body") {
     const head = script.slice(Math.max(0, handler.start - 400), handler.start);
@@ -16388,15 +16668,22 @@ function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2
     const reported = /* @__PURE__ */ new Set();
     while ((match = PATH_TEST_LITERAL.exec(body)) !== null) {
       const path = match[2];
-      if (path.length === 0 || !declared.has(path) || bound.has(path)) continue;
-      if (reported.has(path)) continue;
+      if (path.length === 0 || bound.has(path) || reported.has(path)) continue;
+      let message;
+      if (declared.has(path)) {
+        message = msgs.updatedCallbackUnbound(path);
+      } else {
+        const near = suggestion(path, [...declared, ...bound], msgs);
+        if (near === "") continue;
+        message = msgs.updatedCallbackUnknownPath(path) + near;
+      }
       reported.add(path);
       const quoteAt = match.index + match[0].length - path.length - 1;
       out.push({
         code: WcsDiagnosticCode.UpdatedCallbackUnbound,
         start: block.contentStart + callback.bodyStart + quoteAt,
         end: block.contentStart + callback.bodyStart + quoteAt + path.length,
-        message: msgs.updatedCallbackUnbound(path),
+        message,
         severity: "warning"
       });
     }
@@ -16409,8 +16696,8 @@ function collectBoundPaths(html, stateTagName, bindAttrName) {
   for (const occurrence of index.occurrences) {
     bound.add(occurrence.path);
     if (!occurrence.path.startsWith(".")) continue;
-    const forPath = getInnermostForPath(html, occurrence.pathRange.start, bindAttrName);
-    if (forPath === null || forPath.startsWith(".")) continue;
+    const forPath = getResolvedForListPath(html, occurrence.pathRange.start, bindAttrName);
+    if (forPath === null) continue;
     bound.add(
       occurrence.path === "." ? `${forPath}.*` : `${forPath}.*.${occurrence.path.slice(1)}`
     );
@@ -16483,12 +16770,176 @@ function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrNa
     out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale2));
     out.push(...validateGetterLocationReads(block.content, block.contentStart, locale2));
+    out.push(...validateGetterClockReads(block.content, block.contentStart, locale2));
     out.push(...validateOnHandlerThis(block.content, block.contentStart, locale2));
     out.push(...validateInPlaceChanges(block.content, block.contentStart, locale2));
   }
   out.push(...validateInputNestedWrites(html, stateTagName, bindAttrName, getNestedWriteRoots, locale2));
   out.push(...validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2));
   return out;
+}
+
+// src/service/scriptStateUseValidator.ts
+var COMMAND_USE = /\.\s*\$command\s*\.\s*([A-Za-z_$][\w$]*)/dg;
+var EMIT_AFTER = /^\s*\.\s*emit\s*\(/;
+var THIS_WRITE = /\bthis\s*\.\s*([A-Za-z_][\w$]*)\s*(?:=(?![=>])|[-+*/%&|^]=|\*\*=|<<=|>>>?=|&&=|\|\|=|\?\?=|\+\+|--)/dg;
+var PRE_THIS_WRITE = /(?:\+\+|--)\s*this\s*\.\s*([A-Za-z_][\w$]*)/dg;
+function validateScriptStateUses(html, stateTagName = "wcs-state", locale2, bindAttrName = "data-wcs") {
+  const blocks = parseLoadedScriptBlocks(html, stateTagName).filter((block) => isReadableStateScript(block.content));
+  if (blocks.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const out = [];
+  let receivers = null;
+  let markupEmits = null;
+  const bindings = () => {
+    if (receivers !== null) return;
+    receivers = /* @__PURE__ */ new Set();
+    markupEmits = /* @__PURE__ */ new Map();
+    for (const o of buildReferenceIndex(html, { bindAttribute: bindAttrName, stateTagName }).occurrences) {
+      if (!o.path.startsWith("$command.")) continue;
+      const name = o.path.slice("$command.".length);
+      const prop = o.propName ?? "";
+      if (prop.startsWith("command.")) receivers.add(name);
+      else if (prop.startsWith("on") && !markupEmits.has(name)) markupEmits.set(name, o.pathRange);
+    }
+  };
+  for (const block of blocks) {
+    const paths = analyzeStatePaths(block.content);
+    const masked = maskCommentsAndStrings(block.content);
+    const declared = paths.filter((p) => p.kind === "command").map((p) => p.path.slice("$command.".length));
+    if (block.mountPath === null && declared.length > 0) {
+      const emitted = /* @__PURE__ */ new Map();
+      COMMAND_USE.lastIndex = 0;
+      let match;
+      while ((match = COMMAND_USE.exec(masked)) !== null) {
+        const name = match[1];
+        const [start, end] = match.indices[1];
+        if (!declared.includes(name)) {
+          out.push({
+            code: WcsDiagnosticCode.TokenUndeclared,
+            start: block.contentStart + start,
+            end: block.contentStart + end,
+            // `$command` holds the declared tokens only: `.emit()` on what it lacks is a TypeError
+            message: msgs.commandTokenUndeclared(`$command.${name}`) + suggestion(name, declared, msgs),
+            severity: "error"
+          });
+        } else if (!emitted.has(name) && EMIT_AFTER.test(masked.slice(match.index + match[0].length))) {
+          emitted.set(name, { start: block.contentStart + start, end: block.contentStart + end });
+        }
+      }
+      bindings();
+      for (const name of declared) {
+        if (receivers.has(name)) continue;
+        const at2 = emitted.get(name) ?? markupEmits.get(name);
+        if (at2 === void 0) continue;
+        out.push({
+          code: WcsDiagnosticCode.CommandTokenUnbound,
+          start: at2.start,
+          end: at2.end,
+          message: msgs.commandTokenUnbound(`$command.${name}`),
+          severity: "warning"
+        });
+      }
+    }
+    const keys = [...new Set(paths.map((p) => p.path.split(".")[0]).filter((key) => key !== "" && !key.startsWith("$")))];
+    const reported = /* @__PURE__ */ new Set();
+    for (const pattern of [THIS_WRITE, PRE_THIS_WRITE]) {
+      pattern.lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(masked)) !== null) {
+        const key = match[1];
+        if (keys.includes(key) || reported.has(key)) continue;
+        const near = suggestion(key, keys, msgs);
+        if (near === "") continue;
+        reported.add(key);
+        const [start, end] = match.indices[1];
+        out.push({
+          code: WcsDiagnosticCode.WritePathMissing,
+          start: block.contentStart + start,
+          end: block.contentStart + end,
+          message: msgs.writePathMissing(key) + near,
+          severity: "warning"
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// src/service/scriptReadValidator.ts
+function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
+  const blocks = parseLoadedScriptBlocks(html, stateTagName);
+  if (blocks.length === 0) return [];
+  const msgs = getMessages(locale2);
+  const index = getStatePathIndex(html, stateTagName, fileReader);
+  const candidates = mergeSchemaCandidates(index.paths, applicationSchema);
+  const candidateSet = new Set(candidates.map((p) => p.path));
+  let tree = null;
+  const out = [];
+  for (const block of blocks) {
+    const spread = applicationSchema === void 0 ? findTopLevelSpread(block.content) : null;
+    if (spread !== null) {
+      out.push({
+        code: WcsDiagnosticCode.PathDynamicUnknown,
+        start: block.contentStart + spread.start,
+        end: block.contentStart + spread.end,
+        message: msgs.pathDynamicUnknownSpread(block.content.slice(spread.start, spread.end)),
+        severity: "info"
+      });
+    }
+    const prefix = block.mountPath === null || block.mountPath === "" ? "" : `${block.mountPath}.`;
+    for (const callable of analyzeCallableBodies(block.content)) {
+      for (const read of collectGetterReads(callable.body) ?? []) {
+        if (read.written || read.path.split(".").some((s) => s === "" || s.startsWith("$")) || hasRecursionWildcard(read.path)) continue;
+        const path = prefix + read.path;
+        if (pathExistsInCandidates(path, candidates, candidateSet)) continue;
+        if (applicationSchema !== void 0 ? resolveIndexedSchemaPath(applicationSchema, path).kind !== "nonexistent" : isUnresolvedPath(path, index.scopes)) continue;
+        const near = nearName(path, tree ??= treeOf(candidates));
+        if (near === null) continue;
+        const said = suggestion(near.segment, near.names, msgs);
+        if (said === "") continue;
+        const at2 = block.contentStart + callable.bodyStart;
+        out.push({
+          code: WcsDiagnosticCode.ReadPathMissing,
+          start: at2 + read.start,
+          end: read.form === "member" ? at2 + read.start + statePart(callable.body.slice(read.start, read.end)) : at2 + read.end,
+          message: msgs.readPathMissing(read.path, !read.path.includes(".")) + said,
+          // a stateSchema says the path is not there, as for a binding's `wcs/path-nonexistent`
+          severity: applicationSchema !== void 0 ? "error" : "warning"
+        });
+      }
+    }
+  }
+  return out;
+}
+var THIS_PART = /^this\s*(?:\?\.\s*|\.\s*)(?:[A-Za-z_$][\w$]*)|^this\s*(?:\?\.)?\s*\[\s*(["'`])[^"'`]*\1\s*\]/;
+function statePart(text3) {
+  return THIS_PART.exec(text3)?.[0].length ?? text3.length;
+}
+function treeOf(candidates) {
+  const tree = /* @__PURE__ */ new Map();
+  for (const c of candidates) {
+    let parent = "";
+    for (const segment of c.path.split(".")) {
+      let names2 = tree.get(parent);
+      if (names2 === void 0) tree.set(parent, names2 = /* @__PURE__ */ new Set());
+      names2.add(segment);
+      parent = parent === "" ? segment : `${parent}.${segment}`;
+    }
+  }
+  return tree;
+}
+function nearName(path, tree) {
+  let parent = "";
+  for (const segment of (hasIndexSegment(path) ? toWildcardForm(path) : path).split(".")) {
+    const names2 = tree.get(parent);
+    if (names2?.has(segment)) {
+      parent = parent === "" ? segment : `${parent}.${segment}`;
+      continue;
+    }
+    return { segment, names: [...names2 ?? []].filter((name) => name !== "*" && !name.startsWith("$")) };
+  }
+  return null;
 }
 
 // src/core/sidecar/jsonSource.ts
@@ -16878,13 +17329,104 @@ function joinRelativeSource(htmlSource, relativePath) {
   return dirSegments.join("/");
 }
 
+// src/core/externalState.ts
+var OPEN = '<script type="module">';
+var CLOSE = "</script>";
+function inlineExternalStates(html, stateTagName, fileReader) {
+  let text3 = "";
+  let from = 0;
+  let shift = 0;
+  const states = [];
+  for (const element2 of parseWcsStateElements(html, stateTagName)) {
+    const src = element2.srcSpan;
+    if (src === void 0 || element2.srcAttr === void 0 || element2.stateAttr !== void 0 || element2.bindComponent) continue;
+    const file = readStateScriptFile(element2.srcAttr, fileReader);
+    if (file === void 0) continue;
+    const blanks = [src];
+    if (element2.jsonSpan !== void 0) blanks.push(element2.jsonSpan);
+    blanks.sort((a, b) => a.start - b.start);
+    for (const span of blanks) {
+      text3 += html.slice(from, span.start) + " ".repeat(span.end - span.start);
+      from = span.end;
+    }
+    text3 += html.slice(from, element2.tagEnd);
+    from = element2.tagEnd;
+    const content = file.text.replace(/<\/(script)/gi, "<\\$1");
+    const at2 = element2.tagEnd + shift;
+    const length = OPEN.length + content.length + CLOSE.length;
+    text3 += OPEN + content + CLOSE;
+    states.push({
+      path: file.path,
+      text: file.text,
+      at: at2,
+      contentAt: at2 + OPEN.length,
+      length,
+      valueStart: src.valueStart,
+      valueEnd: src.valueEnd,
+      position: createPositionMapper(file.text)
+    });
+    shift += length;
+  }
+  if (states.length === 0) return null;
+  return { text: text3 + html.slice(from), states };
+}
+function locateInlined(page, offset2) {
+  let shift = 0;
+  for (const state of page.states) {
+    if (offset2 < state.at) break;
+    if (offset2 < state.at + state.length) {
+      return { state, offset: Math.min(Math.max(offset2 - state.contentAt, 0), state.text.length) };
+    }
+    shift += state.length;
+  }
+  return { offset: offset2 - shift };
+}
+
 // src/core/validateDocument.ts
 function validateDocument(text3, options = {}) {
+  const stateTagName = options.stateTagName ?? "wcs-state";
+  const fileReader = options.fileReader;
+  const applicationSchema = options.applicationSchema ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.schema : void 0);
+  const found = validateText(text3, options, applicationSchema);
+  const page = fileReader === void 0 ? null : inlineExternalStates(text3, stateTagName, fileReader);
+  if (page === null) return found;
+  const key = (d) => [d.code, d.start, d.end, d.message, d.origin?.path, d.origin?.start].join("\0");
+  const seen2 = new Set(found.map(key));
+  const out = [...found];
+  for (const d of validateText(page.text, options, applicationSchema)) {
+    const start = locateInlined(page, d.start);
+    const end = locateInlined(page, d.end);
+    let mapped;
+    if (start.state !== void 0) {
+      const state = start.state;
+      const fileEnd = end.state === state ? Math.max(end.offset, start.offset) : start.offset;
+      mapped = {
+        ...d,
+        start: state.valueStart,
+        end: state.valueEnd,
+        origin: {
+          path: state.path,
+          start: start.offset,
+          end: fileEnd,
+          startPosition: state.position(start.offset),
+          endPosition: state.position(fileEnd)
+        }
+      };
+    } else {
+      mapped = { ...d, start: start.offset, end: end.state === void 0 ? Math.max(end.offset, start.offset) : start.offset };
+    }
+    const k = key(mapped);
+    if (seen2.has(k)) continue;
+    seen2.add(k);
+    out.push(mapped);
+  }
+  return sortDiagnostics(out);
+}
+function validateText(text3, options, applicationSchema) {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale2 = options.locale;
   const fileReader = options.fileReader;
-  const applicationSchema = options.applicationSchema ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.schema : void 0);
   const out = [];
   out.push(...validateBindings(text3, bindAttribute, stateTagName, locale2, fileReader, applicationSchema));
   out.push(...validateTemplateSyntax(text3, stateTagName, bindAttribute, locale2, fileReader, applicationSchema));
@@ -16893,6 +17435,8 @@ function validateDocument(text3, options = {}) {
   out.push(...validateAriaAttributes(text3, bindAttribute, locale2));
   out.push(...validateDocumentEnv(text3, locale2));
   out.push(...validateSemantics(text3, stateTagName, locale2, bindAttribute));
+  out.push(...validateScriptStateUses(text3, stateTagName, locale2, bindAttribute));
+  out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema));
   out.push(...validateArrayMutations(text3, stateTagName, locale2));
   out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader));
   out.push(...validateScanDeclarations(text3, stateTagName, locale2));
@@ -17064,6 +17608,7 @@ function runValidation(inputs, options = {}) {
       explicitSchema = result.resolvedSchema;
     }
   }
+  const inFiles = /* @__PURE__ */ new Map();
   for (const input of inputs) {
     if (input.kind !== "html") continue;
     let applicationSchema = explicitSchema;
@@ -17083,8 +17628,24 @@ function runValidation(inputs, options = {}) {
       ...input.fileReader !== void 0 ? { fileReader: input.fileReader } : {},
       ...applicationSchema !== void 0 ? { applicationSchema } : {}
     };
-    diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
+    const own2 = [];
+    for (const d of validateDocument(input.text, docOptions)) {
+      if (d.origin === void 0) {
+        own2.push(d);
+        continue;
+      }
+      const source = joinRelativeSource(input.source, d.origin.path);
+      if (!textBySource.has(source)) textBySource.set(source, input.fileReader?.(d.origin.path) ?? "");
+      let list = inFiles.get(source);
+      if (list === void 0) inFiles.set(source, list = []);
+      const { origin, ...rest } = d;
+      if (!list.some((x) => x.code === d.code && x.start === origin.start && x.end === origin.end && x.message === d.message)) {
+        list.push({ ...rest, start: origin.start, end: origin.end });
+      }
+    }
+    diagnosticsBySource.set(input.source, own2);
   }
+  for (const [source, list] of inFiles) diagnosticsBySource.set(source, sortDiagnostics(list));
   const lines = [];
   let errorCount = 0;
   let warningCount = 0;

@@ -214,7 +214,7 @@ type DevtoolsEventLike = {
     readonly stateElement?: unknown;
 } | {
     readonly type: "state:path-unresolved";
-    readonly source: "binding" | "watch" | "scan";
+    readonly source: "binding" | "watch" | "scan" | "postUpdate" | "getter";
     readonly path: string;
     readonly missingSegment: string;
 } | {

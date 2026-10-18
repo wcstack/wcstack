@@ -25,6 +25,8 @@ interface LoadedState {
     readonly location: ts.Node;
     /** Non-fatal notes for the caller (e.g. the state type resolved to `any`). */
     readonly warnings: readonly string[];
+    /** A top-level spread brings in keys its type does not list: the state's schema is open (`{}`), whatever `type` says. */
+    readonly open: boolean;
 }
 /** Defaults used when no tsconfig.json is found — enough to type a plain state file. */
 declare const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions;
