@@ -2,7 +2,10 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## 2.3.0 — 2026-10-18
+## Unreleased
+
+- **外部 state（`<wcs-state src>` の `.js` / `.ts`）にもスクリプトの規則をかける** — `wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` などは `<wcs-state>` の中のスクリプトしか見ず、`src=` の state ではパスだけを検査していた（7GUIs の評価: 同じスクリプトがインラインなら error 3・warning 1、`src="./state.js"` では 0 件）。ページを、読めた state のスクリプトを要素の中に置いた形でもう一度検査し、ファイルの中の指摘はそのファイルの位置へ、ページの指摘はページへ戻す。CLI はファイルの中の指摘をそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数える。IDE はページの `src` の値の上に出し、文面の頭にファイルの位置を、関連情報にファイルへのリンクを付ける。ページの側でも、ファイルのハンドラが見えて初めて分かるもの（`wcs/submit-without-prevent`・`wcs/delegated-current-target`）が出るようになる。
+- **`wcs/updated-callback-unbound` が、入れ子の相対 `for:` の中の束縛を数える** — `for: rows` の中の `for: .cells` の中の `if: .editing`（`rows.*.cells.*.editing`）を「どこにも束縛されていない」と誤って報告していた。相対の `for:` を外側から合成して展開する。
 
 `@wcstack/state` 4.3.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.3.0・`@wcstack/typescript` 4.3.0 と同じ判定）。lint の重大度と文面を 4.0 のランタイムに合わせる（docs/mistake-catalogue.ja.md の「目録を作る中で見つけたもの」）。warning だった形のうち 8 つを error にするので minor。
 

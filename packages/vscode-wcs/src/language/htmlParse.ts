@@ -113,6 +113,10 @@ export interface WcsStateInfo {
   stateAttr?: string;
   /** src 属性の値（外部ファイルパス） */
   srcAttr?: string;
+  /** src 属性の位置（属性全体と値の、HTML のオフセット）。src 属性があるときだけ */
+  srcSpan?: AttributeSpan;
+  /** json 属性の位置。json 属性があるときだけ */
+  jsonSpan?: AttributeSpan;
   /** 内部の <script type="module"> ブロック */
   scriptBlocks: WcsScriptBlock[];
   /** 開始タグ `<wcs-state ...>` の開始オフセット（`<` の位置） */
@@ -250,6 +254,10 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
     const jsonAttr = extractAttribute(wcsMatch.tagContent, 'json') ?? undefined;
     const stateAttr = extractAttribute(wcsMatch.tagContent, 'state') ?? undefined;
     const srcAttr = extractAttribute(wcsMatch.tagContent, 'src') ?? undefined;
+    // (tagContent starts right after the tag name)
+    const contentAt = pos + 1 + stateTagName.length;
+    const srcSpan = extractAttributeSpan(wcsMatch.tagContent, 'src', contentAt);
+    const jsonSpan = extractAttributeSpan(wcsMatch.tagContent, 'json', contentAt);
     const tagStart = pos;
     const tagEnd = wcsMatch.end;
     pos = wcsMatch.end;
@@ -301,7 +309,11 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
       }
     }
 
-    elements.push({ mountPath, bindComponent, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd });
+    elements.push({
+      mountPath, bindComponent, jsonAttr, stateAttr, srcAttr, scriptBlocks, tagStart, tagEnd,
+      ...(srcSpan !== null ? { srcSpan } : {}),
+      ...(jsonSpan !== null ? { jsonSpan } : {}),
+    });
 
     pos = wcsEnd;
     if (wcsCloseIdx !== -1) pos = afterCloseTag(html, wcsCloseIdx);
@@ -525,6 +537,30 @@ export function extractAttribute(tagContent: string, attrName: string): string |
   const match = tagContent.match(regex);
   if (!match) return null;
   return match[1] ?? match[2] ?? match[3] ?? null;
+}
+
+/** An attribute's place in the HTML: the whole attribute (`src="./a.js"`) and its value (`./a.js`). */
+export interface AttributeSpan {
+  readonly start: number;
+  readonly end: number;
+  readonly valueStart: number;
+  readonly valueEnd: number;
+}
+
+/**
+ * Where `extractAttribute` finds the attribute (the same match), as offsets in the HTML: `at` is the offset of
+ * `tagContent`'s first character. Null when the tag has no such attribute.
+ */
+export function extractAttributeSpan(tagContent: string, attrName: string, at: number): AttributeSpan | null {
+  const regex = new RegExp(`(^|\\s)${attrName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|(\\S+))`, 'i');
+  const match = regex.exec(tagContent);
+  if (match === null) return null;
+  const start = at + match.index + match[1].length;
+  const end = at + match.index + match[0].length;
+  const value = match[2] ?? match[3] ?? match[4] ?? '';
+  // (a quoted value ends before its closing quote)
+  const valueEnd = match[4] === undefined ? end - 1 : end;
+  return { start, end, valueStart: valueEnd - value.length, valueEnd };
 }
 
 /** 子を持たない要素（終了タグが無い）。 */

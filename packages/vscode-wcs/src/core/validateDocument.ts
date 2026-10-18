@@ -30,6 +30,7 @@ import { validateSemantics } from "../service/semanticValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
 import { findIgnoredRanges } from "../language/htmlParse.js";
+import { inlineExternalStates, locateInlined } from "./externalState.js";
 import type { JsonSchemaNode } from "./sidecar/types.js";
 
 export interface ValidateDocumentOptions {
@@ -70,12 +71,55 @@ export interface ValidateDocumentOptions {
  * HTML テキストを全 validator で検査し、code 付き診断を安定順で返す。
  */
 export function validateDocument(text: string, options: ValidateDocumentOptions = {}): WcsDiagnostic[] {
+  const stateTagName = options.stateTagName ?? "wcs-state";
+  const fileReader = options.fileReader;
+  const applicationSchema = options.applicationSchema
+    ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.schema : undefined);
+  const found = validateText(text, options, applicationSchema);
+  // A state in a file of its own (`src=`): the page again, with each such script inline (core/externalState.ts).
+  // A finding in a file is shown on its `src` value and carries where it is in the file (`origin`); one in the
+  // page is added when the page alone did not find it (the handler of an `onsubmit:` written in the file)
+  const page = fileReader === undefined ? null : inlineExternalStates(text, stateTagName, fileReader);
+  if (page === null) return found;
+  const key = (d: WcsDiagnostic): string => [d.code, d.start, d.end, d.message, d.origin?.path, d.origin?.start].join("\u0000");
+  const seen = new Set(found.map(key));
+  const out = [...found];
+  for (const d of validateText(page.text, options, applicationSchema)) {
+    const start = locateInlined(page, d.start);
+    const end = locateInlined(page, d.end);
+    let mapped: WcsDiagnostic;
+    if (start.state !== undefined) {
+      const state = start.state;
+      const fileEnd = end.state === state ? Math.max(end.offset, start.offset) : start.offset;
+      mapped = {
+        ...d,
+        start: state.valueStart,
+        end: state.valueEnd,
+        origin: {
+          path: state.path,
+          start: start.offset,
+          end: fileEnd,
+          startPosition: state.position(start.offset),
+          endPosition: state.position(fileEnd),
+        },
+      };
+    } else {
+      mapped = { ...d, start: start.offset, end: end.state === undefined ? Math.max(end.offset, start.offset) : start.offset };
+    }
+    const k = key(mapped);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(mapped);
+  }
+  return sortDiagnostics(out);
+}
+
+/** Every validator over one text (the page, or the page with its external states inline). */
+function validateText(text: string, options: ValidateDocumentOptions, applicationSchema: JsonSchemaNode | undefined): WcsDiagnostic[] {
   const bindAttribute = options.bindAttribute ?? "data-wcs";
   const stateTagName = options.stateTagName ?? "wcs-state";
   const locale = options.locale;
   const fileReader = options.fileReader;
-  const applicationSchema = options.applicationSchema
-    ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.schema : undefined);
 
   const out: WcsDiagnostic[] = [];
   // bindingValidator / templateSyntaxValidator / ioNodeValidator / documentEnvValidator は既に code 付き。

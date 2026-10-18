@@ -306,16 +306,31 @@ export function createWcsCompletionPlugin(): LanguageServicePlugin {
           const options = fileReader === undefined
             ? { bindAttribute: bindAttrName, stateTagName, locale: messageLocale }
             : { bindAttribute: bindAttrName, stateTagName, locale: messageLocale, fileReader };
-          return validateDocument(text, options).map(d => ({
-            range: {
+          return validateDocument(text, options).map(d => {
+            const range = {
               start: document.positionAt(d.start),
               end: document.positionAt(d.end),
-            },
-            code: d.code,
-            message: d.message,
-            severity: severityToLsp(d.severity),
-            source: 'wcstack',
-          }));
+            };
+            const base = { range, code: d.code, severity: severityToLsp(d.severity), source: 'wcstack' };
+            if (d.origin === undefined) return { ...base, message: d.message };
+            // A finding in a state file the page loads with `src=`: on the `src` value, with where it is in the file
+            // (the CLI reports it in the file)
+            const at = `${d.origin.path}:${d.origin.startPosition.line}:${d.origin.startPosition.column}`;
+            return {
+              ...base,
+              message: `${at}: ${d.message}`,
+              relatedInformation: [{
+                location: {
+                  uri: new URL(d.origin.path, document.uri).toString(),
+                  range: {
+                    start: { line: d.origin.startPosition.line - 1, character: d.origin.startPosition.column - 1 },
+                    end: { line: d.origin.endPosition.line - 1, character: d.origin.endPosition.column - 1 },
+                  },
+                },
+                message: d.message,
+              }],
+            };
+          });
         },
       };
     },

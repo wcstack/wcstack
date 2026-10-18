@@ -8,7 +8,7 @@
  * pure(DOM / vscode / node fs 非依存 → テスト可能)。
  */
 
-import { WcsDiagnostic, WcsSeverity } from "../diagnostics.js";
+import { WcsDiagnostic, WcsSeverity, sortDiagnostics } from "../diagnostics.js";
 import { createPositionMapper } from "../offsetToPosition.js";
 import { validateDocument, ValidateDocumentOptions } from "../validateDocument.js";
 import { validateManifestArtifact, validateManifestSet } from "../sidecar/validate.js";
@@ -96,6 +96,8 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   // 発見した manifest 自身の診断(envelope / schema subset)は HTML の source に混ぜず、
   // manifest の source(HTML 相対で表示)に載せる。同じ manifest を複数の HTML が発見しても
   // 検証は 1 回。
+  /** Findings in the state files the pages load with `src=`, by source (see below). */
+  const inFiles = new Map<string, WcsDiagnostic[]>();
   for (const input of inputs) {
     if (input.kind !== "html") continue;
     let applicationSchema = explicitSchema;
@@ -115,8 +117,26 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
       ...(input.fileReader !== undefined ? { fileReader: input.fileReader } : {}),
       ...(applicationSchema !== undefined ? { applicationSchema } : {}),
     };
-    diagnosticsBySource.set(input.source, validateDocument(input.text, docOptions));
+    const own: WcsDiagnostic[] = [];
+    for (const d of validateDocument(input.text, docOptions)) {
+      if (d.origin === undefined) {
+        own.push(d);
+        continue;
+      }
+      // A finding in a state file the page loads with `src=` is reported in that file (once, however many pages
+      // load it); the IDE shows it on the page's `src` value
+      const source = joinRelativeSource(input.source, d.origin.path);
+      if (!textBySource.has(source)) textBySource.set(source, input.fileReader?.(d.origin.path) ?? "");
+      let list = inFiles.get(source);
+      if (list === undefined) inFiles.set(source, (list = []));
+      const { origin, ...rest } = d;
+      if (!list.some((x) => x.code === d.code && x.start === origin.start && x.end === origin.end && x.message === d.message)) {
+        list.push({ ...rest, start: origin.start, end: origin.end });
+      }
+    }
+    diagnosticsBySource.set(input.source, own);
   }
+  for (const [source, list] of inFiles) diagnosticsBySource.set(source, sortDiagnostics(list));
   const lines: string[] = [];
   let errorCount = 0;
   let warningCount = 0;

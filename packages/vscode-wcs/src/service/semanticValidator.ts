@@ -32,7 +32,7 @@ import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources
 import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findInPlaceChanges, findLocationRead, findOwnThis, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
 import type { WatchHandlerSource } from './stateAnalyzer.js';
 import { isOutOfRangeIndexRead, MAX_INDEX_PARAM } from './indexPath.js';
-import { countWildcardSegments, getInnermostForPath, getResolvedForListPath, getRowShorthandForPath } from './forContext.js';
+import { countWildcardSegments, getResolvedForListPath, getRowShorthandForPath } from './forContext.js';
 import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 import { findBuiltinTagOccurrences } from './ioNodeValidator.js';
 import { BUILTIN_TAGS } from './generated/builtinTags.generated.js';
@@ -830,8 +830,10 @@ function collectBoundPaths(
   for (const occurrence of index.occurrences) {
     bound.add(occurrence.path);
     if (!occurrence.path.startsWith('.')) continue;
-    const forPath = getInnermostForPath(html, occurrence.pathRange.start, bindAttrName);
-    if (forPath === null || forPath.startsWith('.')) continue;
+    // the list the innermost for renders, its relative fors joined from the outside in (`for: rows` →
+    // `for: .cells` → `rows.*.cells`): `if: .editing` there is `rows.*.cells.*.editing`
+    const forPath = getResolvedForListPath(html, occurrence.pathRange.start, bindAttrName);
+    if (forPath === null) continue;
     bound.add(
       occurrence.path === '.' ? `${forPath}.*` : `${forPath}.*.${occurrence.path.slice(1)}`,
     );
