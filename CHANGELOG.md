@@ -8,6 +8,14 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `examples/ssr-news/`: the `ssr-news` seam app (a server-rendered news site: `@wcstack/server` × router × state × `<wcs-fetch>` × `<wcs-storage>`, readable without JavaScript), without the workarounds 4.3.0 made unnecessary, and its e2e spec ([docs/seam-apps.md](./docs/seam-apps.md), "Landing ssr-news in examples/").
+
+### Fixed
+
+- `@wcstack/state` (diagnostics): **a row field no row has is reported only when a row has a near name**, which suggests a typo (`.nmae` beside `name`), or when a row getter of another list form explains it. Rows are data, so an optional field can be absent from all of them. A page's own optimistic rows carry `pending`, and the server's do not, so after a reload the page warned `[wcs/binding-path-missing] … silently dropped` while it worked. 4.3 covered only a first row lacking what another row had. Found while landing the `ssr-news` seam app.
+
 ## [4.3.0] — 2026-10-18
 
 The first minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja). The lint now follows the 4.0 runtime ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md)). The packages report what they used to drop silently. The `ssr-news` seam app (SSR × router × state, [docs/seam-apps.md](./docs/seam-apps.md)) found what server rendering, the router and state got wrong between them. The design decisions are the author's (2026-10-17 and 2026-10-18).
