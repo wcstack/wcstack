@@ -7,6 +7,37 @@ import { WcsIoErrorInfo } from "../core/platformCapability.js";
 import { upgradeProperties } from "../protocol/upgradeProperties.js";
 import { reflectAttribute, reflectBooleanAttribute } from "../protocol/inputAttribute.js";
 
+const PREVIEW_CSS = ":host{display:inline-block}video{display:block;width:100%;height:100%}";
+
+// One constructed sheet for every preview. A Content-Security-Policy's `style-src` governs
+// `<style>` elements (a shadow root's included) but not constructed sheets, so a page whose
+// policy has no 'unsafe-inline' still gets the preview's layout. A `<style>` is the fallback
+// where constructed sheets are not available.
+let previewSheet: CSSStyleSheet | null | undefined;
+
+function adoptPreviewStyles(root: ShadowRoot): void {
+  if (previewSheet === undefined) {
+    try {
+      previewSheet = new CSSStyleSheet();
+      previewSheet.replaceSync(PREVIEW_CSS);
+    } catch {
+      previewSheet = null;
+    }
+  }
+  if (previewSheet !== null && Array.isArray(root.adoptedStyleSheets)) {
+    root.adoptedStyleSheets = [previewSheet];
+    return;
+  }
+  const style = document.createElement("style");
+  style.textContent = PREVIEW_CSS;
+  root.append(style);
+}
+
+/** Test seam: build the shared sheet again on the next preview. */
+export function resetPreviewStyles(): void {
+  previewSheet = undefined;
+}
+
 /**
  * `<wcs-camera>` — declarative camera capture with a built-in preview.
  *
@@ -61,14 +92,13 @@ export class WcsCamera extends HTMLElement {
     super();
     this._core = new CameraCore(this);
     const root = this.attachShadow({ mode: "open" });
-    const style = document.createElement("style");
-    style.textContent = ":host{display:inline-block}video{display:block;width:100%;height:100%}";
+    adoptPreviewStyles(root);
     this._video = document.createElement("video");
     this._video.autoplay = true;
     this._video.muted = true;
     this._video.setAttribute("playsinline", "");
     this._video.setAttribute("part", "video");
-    root.append(style, this._video);
+    root.append(this._video);
     // Bind the live handle to the preview internally — never through state. These
     // self-listeners are intentionally not removed on disconnect (asymmetric with the
     // document-level `visibilitychange` in connect/disconnectedCallback): the target

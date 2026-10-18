@@ -193,6 +193,13 @@ export class FakeMediaRecorder {
   // Force the instance to report an empty `mimeType` (some real browsers leave it
   // blank), so the Core's `recorder.mimeType || recOptions.mimeType` fallback runs.
   static reportEmptyMimeType = false;
+  // Chromium's shape: `mimeType` stays "" until recording starts, then `onstart` reports the
+  // type it picked (when none was requested).
+  static resolveOnStart: string | null = null;
+  // A browser's shape: stop() returns at once, and the last chunk and `onstop` come later —
+  // call finishStop() to deliver them.
+  static deferStop = false;
+  static throwOnStop = false;
 
   static isTypeSupported(type: string): boolean {
     return FakeMediaRecorder.supportedTypes.includes(type);
@@ -201,6 +208,7 @@ export class FakeMediaRecorder {
   state: "inactive" | "recording" | "paused" = "inactive";
   mimeType: string;
   ondataavailable: ((e: { data: Blob }) => void) | null = null;
+  onstart: (() => void) | null = null;
   onstop: (() => void) | null = null;
   onerror: ((e: Event) => void) | null = null;
   onpause: (() => void) | null = null;
@@ -210,13 +218,27 @@ export class FakeMediaRecorder {
     if (FakeMediaRecorder.throwOnConstruct) {
       throw Object.assign(new Error("construct failed"), { name: "NotSupportedError" });
     }
-    this.mimeType = FakeMediaRecorder.reportEmptyMimeType ? "" : (options.mimeType ?? "video/webm");
+    this.mimeType = FakeMediaRecorder.reportEmptyMimeType || FakeMediaRecorder.resolveOnStart !== null
+      ? "" : (options.mimeType ?? "video/webm");
     FakeMediaRecorder.instances.push(this);
   }
 
-  start(_timeslice?: number): void { this.state = "recording"; }
+  start(_timeslice?: number): void {
+    this.state = "recording";
+    if (FakeMediaRecorder.resolveOnStart !== null && this.mimeType === "") {
+      this.mimeType = this.options.mimeType ?? FakeMediaRecorder.resolveOnStart;
+      if (this.onstart) this.onstart();
+    }
+  }
   stop(): void {
+    if (FakeMediaRecorder.throwOnStop) throw Object.assign(new Error("stop failed"), { name: "InvalidStateError" });
     this.state = "inactive";
+    if (FakeMediaRecorder.deferStop) return;
+    if (this.onstop) this.onstop();
+  }
+  /** Deliver a deferred stop: the last chunk (when given), then `onstop`. */
+  finishStop(last?: Blob): void {
+    if (last) this.emitData(last);
     if (this.onstop) this.onstop();
   }
   pause(): void { this.state = "paused"; if (this.onpause) this.onpause(); }
@@ -243,6 +265,9 @@ export function installRecorder(): { uninstall(): void } {
   FakeMediaRecorder.instances = [];
   FakeMediaRecorder.throwOnConstruct = false;
   FakeMediaRecorder.reportEmptyMimeType = false;
+  FakeMediaRecorder.resolveOnStart = null;
+  FakeMediaRecorder.deferStop = false;
+  FakeMediaRecorder.throwOnStop = false;
   FakeMediaRecorder.supportedTypes = ["video/webm"];
   g.MediaRecorder = FakeMediaRecorder;
 

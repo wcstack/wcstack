@@ -8,6 +8,21 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/camera`: **a camera or recorder in a route the page leaves no longer leaves the page showing it as on.** The `state-field-report` seam app ([docs/seam-apps.md](./docs/seam-apps.md)) found it: leaving `/new` stopped the camera, but `<wcs-camera>` set `active` to `false` without its event, and the router puts the same nodes back on the next entry, bindings included. The page said "Camera live." with no preview, Start (disabled while `active`) stayed disabled, and Stop changed nothing, until a reload. A disconnect now publishes `active: false`, and `recording` / `paused: false` on `<wcs-recorder>`.
+- `@wcstack/camera`: **a recording in progress when `<wcs-recorder>` leaves the document is kept**, the author's decision. It was thrown away without a word, with `recording` left `true`; now it stops as it does when the stream's tracks end, and the clip arrives as `wcs-recorder:recorded` when the browser delivers it.
+- `@wcstack/camera`: **`<wcs-recorder>` without `mime-type` gives a typed clip.** Chromium settles the type only when recording starts, and the recorder read it before, so the `Blob` had no type and `mimeType` stayed `""`: the camera README's own recipe (`new File([blob], …)` into `<wcs-upload>`) was refused by a server that checks the type, and by `accept="video/*"`. `mimeType` is now the type recording started with (or the first chunk's), and the `Blob` carries it.
+- `@wcstack/camera`: **the preview keeps its layout under a Content-Security-Policy without `'unsafe-inline'` in `style-src`.** Its styles were a `<style>` in the shadow root, which such a policy blocks (the `<video>` rendered at its own size, overflowing the element); they are a constructed stylesheet now, which `style-src` does not govern.
+
+### Added
+
+- `@wcstack/camera`: **a camera that stops a stream being recorded because the page was hidden warns**, once per element (`[wcs/camera-keep-alive-missing]`): the recording ends there with what it has, and without `keep-alive` nothing said why the take was short.
+
+### Documentation
+
+- `@wcstack/camera`: binding `mimeType` two-way writes the state's seed into the request (`mimeType#init=element` reads the resolved type only); `error` / `errorInfo` describe the last attempt, not the current permission; the shape of `devices`.
+
 ## [4.4.0] — 2026-10-18
 
 The second minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja). Two outside evaluations found what was still silent: an AI author built the seven 7GUIs tasks and made 34 mistakes on purpose, and another wrote a tax return draft of 96 getters. So did landing the `ssr-news` seam app in `examples/` ([docs/seam-apps.md](./docs/seam-apps.md)). The design decisions are the author's (§5.2). No API is removed or changed; `core.min.js` is 20,102 B gzip (+33 B).

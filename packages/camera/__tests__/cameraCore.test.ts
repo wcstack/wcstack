@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { CameraCore } from "../src/core/CameraCore";
+import { beginRecording, endRecording } from "../src/media/recording";
 import {
   installMedia, InstalledMedia, FakeMediaStream, FakeMediaStreamTrack, flush,
 } from "./helpers";
@@ -305,7 +306,7 @@ describe("CameraCore", () => {
     expect(core.active).toBe(true);
   });
 
-  it("dispose で全 track.stop()・再 dispatch しない", async () => {
+  it("dispose で全 track.stop() し、active=false をイベントで知らせる（ルートが残したノードの束縛が古い値を持たない）", async () => {
     const core = new CameraCore();
     const stream = new FakeMediaStream("s");
     media.resolveWith(stream);
@@ -313,12 +314,67 @@ describe("CameraCore", () => {
     core.start();
     await flush();
 
+    const activeChanges: unknown[] = [];
+    core.addEventListener("wcs-camera:active-changed", (e) => activeChanges.push((e as CustomEvent).detail));
+    core.dispose();
+    expect(stream.tracks[0].stopped).toBe(true);
+    expect(core.active).toBe(false);
+    expect(activeChanges).toEqual([false]);
+  });
+
+  it("流れていないカメラの dispose は何も知らせない", async () => {
+    const core = new CameraCore();
+    await core.observe({});
     let activeChanges = 0;
     core.addEventListener("wcs-camera:active-changed", () => activeChanges++);
     core.dispose();
-    expect(stream.tracks[0].stopped).toBe(true);
-    // dispose の release は silent（dispatch しない）。
     expect(activeChanges).toBe(0);
+  });
+
+  it("録画中のストリームを隠れたページで止めるとき、1 要素につき 1 回、要素を添えて警告する（[wcs/camera-keep-alive-missing]）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/camera-keep-alive-missing]"));
+      const target = new EventTarget();
+      const core = new CameraCore(target);
+      const stream = new FakeMediaStream("s");
+      media.resolveWith(stream);
+      await core.observe({});
+      core.start();
+      await flush();
+      beginRecording(stream as unknown as MediaStream);
+      core.suspend();
+      expect(said()).toHaveLength(1);
+      expect(String(said()[0][0])).toContain("keepAlive");
+      expect(said()[0][1]).toBe(target);
+      // 戻ってまた隠れても、同じ要素では言わない
+      const again = new FakeMediaStream("again");
+      media.resolveWith(again);
+      core.resume();
+      await flush();
+      beginRecording(again as unknown as MediaStream);
+      core.suspend();
+      expect(said()).toHaveLength(1);
+      endRecording(stream as unknown as MediaStream);
+      endRecording(again as unknown as MediaStream);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("録画されていないストリームの suspend は警告しない", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const core = new CameraCore();
+      media.resolveWith(new FakeMediaStream("s"));
+      await core.observe({});
+      core.start();
+      await flush();
+      core.suspend();
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/camera-keep-alive-missing]"))).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("observe 再呼び出しで audio 制約の付け外しに microphone watcher が追従する", async () => {

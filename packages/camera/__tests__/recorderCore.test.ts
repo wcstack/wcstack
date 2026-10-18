@@ -3,6 +3,7 @@ import { RecorderCore } from "../src/core/RecorderCore";
 import {
   installRecorder, FakeMediaStream, FakeMediaStreamTrack, FakeMediaRecorder, revokedUrls,
 } from "./helpers";
+import { isRecording } from "../src/media/recording";
 
 describe("RecorderCore", () => {
   let recorder: { uninstall(): void };
@@ -485,6 +486,155 @@ describe("RecorderCore", () => {
       core.start(); // 成功 → _setError(null) → errorInfo も null
       expect(core.error).toBeNull();
       expect(core.errorInfo).toBeNull();
+    });
+  });
+  describe("切断（dispose）中の録画と解決済みの型", () => {
+    it("録画中の dispose: recording / paused を false でイベントに流し、撮った分を recorded で渡す", () => {
+      FakeMediaRecorder.deferStop = true;
+      const core = new RecorderCore();
+      const recording = capture(core, "wcs-recorder:recording-changed");
+      const recorded = capture(core, "wcs-recorder:recorded");
+      const stream = makeStream();
+      core.attachStream(stream);
+      core.start();
+      const mr = FakeMediaRecorder.instances[0];
+      mr.emitData(new Blob(["take-1"], { type: "video/webm" }));
+      core.dispose();
+      // dispose のその場で、出力は戻ったと知らせる
+      expect(recording).toEqual([true, false]);
+      expect(core.recording).toBe(false);
+      expect(recorded).toHaveLength(0);
+      expect(isRecording(stream)).toBe(true);
+      // ブラウザでは最後のチャンクと onstop が後から来る
+      mr.finishStop(new Blob(["take-2"], { type: "video/webm" }));
+      expect(recorded).toHaveLength(1);
+      const clip = recorded[0] as { blob: Blob; objectURL: string; mimeType: string };
+      expect(clip.blob.size).toBe("take-1take-2".length);
+      expect(clip.mimeType).toBe("video/webm");
+      expect(clip.objectURL).toMatch(/^blob:fake-/);
+      expect(core.blob).toBe(clip.blob);
+      expect(isRecording(stream)).toBe(false);
+    });
+
+    it("dispose の後に次の録画が始まっても、遅れて来た前の録画のチャンクは前のクリップにだけ入る", () => {
+      FakeMediaRecorder.deferStop = true;
+      const core = new RecorderCore();
+      const recorded = capture(core, "wcs-recorder:recorded");
+      core.attachStream(makeStream());
+      core.start();
+      const first = FakeMediaRecorder.instances[0];
+      first.emitData(new Blob(["old"]));
+      core.dispose();
+      // 再接続して、次の録画を始める
+      core.attachStream(makeStream());
+      core.start();
+      const second = FakeMediaRecorder.instances[1];
+      second.emitData(new Blob(["new"]));
+      first.finishStop(new Blob(["-tail"]));
+      expect(recorded).toHaveLength(1);
+      expect((recorded[0] as { blob: Blob }).blob.size).toBe("old-tail".length);
+      expect(core.recording).toBe(true);
+      core.stop();
+      second.finishStop();
+      expect(recorded).toHaveLength(2);
+      expect((recorded[1] as { blob: Blob }).blob.size).toBe("new".length);
+    });
+
+    it("一時停止中の dispose は、一時停止で確定した duration を保つ（録画中なら dispose までの長さ）", () => {
+      let t = 1000;
+      const now = vi.spyOn(performance, "now").mockImplementation(() => t);
+      try {
+        const core = new RecorderCore();
+        const recorded = capture(core, "wcs-recorder:recorded");
+        core.attachStream(makeStream());
+        core.start();
+        t = 1500;
+        core.pause();
+        t = 3000;
+        core.dispose();
+        expect(core.duration).toBe(500);
+        expect((recorded[0] as { duration: number }).duration).toBe(500);
+        expect(core.paused).toBe(false);
+
+        const live = new RecorderCore();
+        const liveRecorded = capture(live, "wcs-recorder:recorded");
+        live.attachStream(makeStream());
+        t = 4000;
+        live.start();
+        t = 4700;
+        live.dispose();
+        expect((liveRecorded[0] as { duration: number }).duration).toBe(700);
+      } finally {
+        now.mockRestore();
+      }
+    });
+
+    it("dispose で stop() が投げても投げ返さず、クリップは来ない（録画中の印も消える）", () => {
+      const core = new RecorderCore();
+      const recorded = capture(core, "wcs-recorder:recorded");
+      const stream = makeStream();
+      core.attachStream(stream);
+      core.start();
+      FakeMediaRecorder.throwOnStop = true;
+      expect(() => core.dispose()).not.toThrow();
+      expect(recorded).toHaveLength(0);
+      expect(core.recording).toBe(false);
+      expect(isRecording(stream)).toBe(false);
+    });
+
+    it("録画していない dispose は recording を知らせない", () => {
+      const core = new RecorderCore();
+      const recording = capture(core, "wcs-recorder:recording-changed");
+      core.dispose();
+      expect(recording).toHaveLength(0);
+    });
+
+    it("型を求めないとき、録画の開始（onstart）でブラウザが決めた型を mimeType に出し、Blob にも付ける", () => {
+      FakeMediaRecorder.resolveOnStart = "video/webm;codecs=vp8,opus";
+      const core = new RecorderCore();
+      const types = capture(core, "wcs-recorder:mimetype-changed");
+      core.attachStream(makeStream());
+      core.start();
+      expect(core.mimeType).toBe("video/webm;codecs=vp8,opus");
+      expect(types).toEqual(["video/webm;codecs=vp8,opus"]);
+      FakeMediaRecorder.instances[0].emitData(new Blob(["x"]));
+      core.stop();
+      expect(core.blob!.type).toBe("video/webm;codecs=vp8,opus");
+    });
+
+    it("どこにも型が無いときは、チャンクの型を mimeType と Blob に使う", () => {
+      FakeMediaRecorder.reportEmptyMimeType = true;
+      const core = new RecorderCore();
+      const recorded = capture(core, "wcs-recorder:recorded");
+      core.attachStream(makeStream());
+      core.start();
+      expect(core.mimeType).toBe("");
+      FakeMediaRecorder.instances[0].emitData(new Blob(["x"], { type: "video/webm" }));
+      expect(core.mimeType).toBe("video/webm");
+      core.stop();
+      expect(core.blob!.type).toBe("video/webm");
+      expect((recorded[0] as { mimeType: string }).mimeType).toBe("video/webm");
+    });
+
+    it("型の無いチャンクだけなら、型の無い Blob のまま", () => {
+      FakeMediaRecorder.reportEmptyMimeType = true;
+      const core = new RecorderCore();
+      core.attachStream(makeStream());
+      core.start();
+      FakeMediaRecorder.instances[0].emitData(new Blob(["x"]));
+      core.stop();
+      expect(core.blob!.type).toBe("");
+    });
+
+    it("録画中のストリームは isRecording で分かり、止めると外れる", () => {
+      const core = new RecorderCore();
+      const stream = makeStream();
+      core.attachStream(stream);
+      expect(isRecording(stream)).toBe(false);
+      core.start();
+      expect(isRecording(stream)).toBe(true);
+      core.stop();
+      expect(isRecording(stream)).toBe(false);
     });
   });
 });

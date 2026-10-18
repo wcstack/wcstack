@@ -110,6 +110,21 @@ describe("<wcs-recorder> Shell", () => {
     expect(el.recording).toBe(false);
   });
 
+  it("録画中に文書から外れると、recording=false を知らせ、撮った分を wcs-recorder:recorded で渡す", () => {
+    FakeMediaRecorder.deferStop = true;
+    const el = mount(`<wcs-recorder></wcs-recorder>`);
+    const seen: string[] = [];
+    el.addEventListener("wcs-recorder:recording-changed", (e) => seen.push(`recording:${(e as CustomEvent).detail}`));
+    el.addEventListener("wcs-recorder:recorded", (e) => seen.push(`recorded:${(e as CustomEvent).detail.blob.size}`));
+    el.attachStream(new FakeMediaStream("s") as unknown as MediaStream);
+    el.start();
+    FakeMediaRecorder.instances[0].emitData(new Blob(["abc"]));
+    el.remove();
+    expect(seen).toEqual(["recording:true", "recording:false"]);
+    FakeMediaRecorder.instances[0].finishStop();
+    expect(seen).toEqual(["recording:true", "recording:false", "recorded:3"]);
+  });
+
   it("SSR: hasConnectedCallbackPromise=true で connectedCallbackPromise が connect で解決する", async () => {
     expect(WcsRecorder.hasConnectedCallbackPromise).toBe(true);
     const el = mount(`<wcs-recorder></wcs-recorder>`);

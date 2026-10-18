@@ -2,6 +2,7 @@ import {
   IWcBindable, RecorderOptions, WcsMediaErrorDetail, WcsRecordedDetail,
 } from "../types.js";
 import { hasMediaRecorder, normalizeMediaError } from "../media/getUserMedia.js";
+import { beginRecording, endRecording } from "../media/recording.js";
 import { WcsIoErrorInfo } from "./platformCapability.js";
 import { deriveMediaErrorInfo } from "./mediaCapabilities.js";
 
@@ -73,7 +74,8 @@ export class RecorderCore extends EventTarget {
 
   private _recorder: MediaRecorder | null = null;
   private _stream: MediaStream | null = null; // borrowed — never stopped here
-  private _chunks: Blob[] = [];
+  // the stream the live MediaRecorder records (attachStream may swap _stream mid-recording)
+  private _recordingStream: MediaStream | null = null;
   private _timeslice: boolean = false;
   private _startTime: number = 0;
 
@@ -81,6 +83,11 @@ export class RecorderCore extends EventTarget {
   // dispose(); each MediaRecorder callback bails if stale so a torn-down/restarted
   // recorder's late event cannot mutate state.
   private _gen: number = 0;
+
+  // The generation of a recording that dispose() stopped: its MediaRecorder still delivers
+  // the clip (onstop comes later in a browser), and only that clip gets through — with the
+  // type and duration it had when the element went away.
+  private _closing: { gen: number; mimeType: string; duration: number } | null = null;
 
   // SSR: recording is command-driven (attachStream/start), so there is no
   // asynchronous probe to await — readiness is immediate.
@@ -213,25 +220,45 @@ export class RecorderCore extends EventTarget {
     }
 
     const gen = ++this._gen;
-    this._chunks = [];
+    // per recording: a clip finishing after a disconnect must not take a later one's chunks
+    const chunks: Blob[] = [];
+    const stream = this._stream;
     this._timeslice = typeof options.timeslice === "number" && options.timeslice > 0;
+    const closing = (): boolean => this._closing !== null && this._closing.gen === gen;
 
     recorder.ondataavailable = (event: BlobEvent): void => {
-      if (gen !== this._gen) return;
+      if (gen !== this._gen && !closing()) return;
       if (event.data && event.data.size > 0) {
-        this._chunks.push(event.data);
+        chunks.push(event.data);
+        if (gen !== this._gen) return;
+        // a browser that resolved no type at start still types the chunks
+        if (!this._mimeType && event.data.type) this._setMimeType(event.data.type);
         if (this._timeslice) {
           this._dispatch("wcs-recorder:dataavailable", event.data);
         }
       }
     };
+    // Chromium resolves the type only when recording starts (`mimeType` is "" until then
+    // when none was requested): the resolved type is the one the clip has.
+    recorder.onstart = (): void => {
+      if (gen === this._gen && recorder.mimeType) this._setMimeType(recorder.mimeType);
+    };
     recorder.onstop = (): void => {
+      endRecording(stream);
+      if (this._recordingStream === stream) this._recordingStream = null;
+      if (closing()) {
+        // stopped by dispose(): recording / paused / duration were published then
+        const { mimeType, duration } = this._closing!;
+        this._closing = null;
+        this._assembleBlob(chunks, mimeType, duration);
+        return;
+      }
       if (gen !== this._gen) return;
       // When stopped while paused, `_duration` was already finalized in onpause —
       // recomputing _elapsed() here would wrongly include the paused gap (the
       // clock kept running but `_startTime` was not advanced). Keep the held value.
       if (!this._paused) this._setDuration(this._elapsed());
-      this._assembleBlob();
+      this._assembleBlob(chunks, this._mimeType, this._duration);
       this._setPaused(false);
       this._setRecording(false);
     };
@@ -257,6 +284,8 @@ export class RecorderCore extends EventTarget {
     this._startTime = this._now();
     this._setDuration(0);
     recorder.start(this._timeslice ? options.timeslice : undefined);
+    beginRecording(stream);
+    this._recordingStream = stream;
     this._setRecording(true);
   }
 
@@ -299,32 +328,49 @@ export class RecorderCore extends EventTarget {
     return this._ready;
   }
 
-  /** Stop in-flight recording, revoke the last object URL, drop the borrowed stream. */
+  /**
+   * Stop in-flight recording, revoke the last object URL, drop the borrowed stream.
+   *
+   * A recording in progress is not thrown away: it stops, and the clip arrives as
+   * `wcs-recorder:recorded` when the MediaRecorder delivers it (later, in a browser) — as it
+   * does when the stream's tracks end. `recording` / `paused` go back to false at once, with
+   * their events: a route the element leaves keeps its nodes (and their bindings) for the
+   * next entry, so a reset nobody heard would leave the page showing a recording that is
+   * not there.
+   */
   dispose(): void {
-    // Bump the generation first so the native stop()'s onstop (gen-guarded) does
-    // not run on a disposed Core — then reset the recording flags directly here.
-    this._gen++;
-    if (this._recorder && this._recorder.state !== "inactive") {
-      try {
-        this._recorder.stop();
-      } catch {
-        // A recorder already torn down by the environment must not throw here.
-      }
+    const recorder = this._recorder;
+    const inFlight = recorder !== null && recorder.state !== "inactive";
+    if (inFlight) {
+      if (!this._paused) this._setDuration(this._elapsed());
+      this._closing = { gen: this._gen, mimeType: this._mimeType, duration: this._duration };
     }
+    // Bump the generation so no other callback of this recorder reaches the Core.
+    this._gen++;
     this._recorder = null;
     this._revokeUrl();
     // Drop the borrowed reference WITHOUT stopping its tracks — the camera owns it.
     this._stream = null;
-    // Reset transient recording state silently (onstop was gen-guarded out above).
-    this._recording = false;
-    this._paused = false;
+    this._setPaused(false);
+    this._setRecording(false);
+    if (inFlight) {
+      try {
+        recorder.stop();
+      } catch {
+        // A recorder already torn down by the environment must not throw here; no clip comes.
+        this._closing = null;
+        if (this._recordingStream) endRecording(this._recordingStream);
+        this._recordingStream = null;
+      }
+    }
   }
 
   // --- Internal ---
 
-  private _assembleBlob(): void {
-    const blob = new Blob(this._chunks, this._mimeType ? { type: this._mimeType } : undefined);
-    this._chunks = [];
+  private _assembleBlob(chunks: Blob[], mimeType: string, duration: number): void {
+    // the chunks carry the type when the recorder resolved none
+    const type = mimeType || chunks[0]?.type || "";
+    const blob = new Blob(chunks, type ? { type } : undefined);
     // The PREVIOUS clip's object URL is revoked here, before minting the new one — so
     // any consumer still pointing a `<video src>` at the old URL will break once a new
     // recording completes. Consumers must follow the latest `objectURL`/`recorded`
@@ -336,8 +382,8 @@ export class RecorderCore extends EventTarget {
     const detail: WcsRecordedDetail = {
       blob,
       objectURL,
-      mimeType: this._mimeType,
-      duration: this._duration,
+      mimeType: type,
+      duration,
     };
     this._dispatch("wcs-recorder:recorded", detail);
   }

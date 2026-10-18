@@ -50,16 +50,16 @@ Acquires a camera stream and renders a preview. Acquisition is **explicit** — 
 
 **Commands:** `start()`, `stop()`, `switchCamera()` (toggle front/back).
 
-**Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`), `deviceId` (the device the stream uses, published with `wcs-camera:device-changed`; reading the property gives the same value once one is known, and the requested `device-id` until then — the request itself stays in the attribute), `devices`, `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-camera:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
+**Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`), `deviceId` (the device the stream uses, published with `wcs-camera:device-changed`; reading the property gives the same value once one is known, and the requested `device-id` until then — the request itself stays in the attribute), `devices` (the video inputs, `[{ deviceId, label, groupId, kind: "videoinput" }]`; labels are empty until a grant), `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-camera:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
 
 **Events (event-token):** `streamReady` (`wcs-camera:stream-ready`, detail = the live `MediaStream`), `error`, `ended` (a track was revoked by the OS). The `streamReady` "property" exists for event-token wiring only — never bind it as a value.
 
 ### Lifecycle
 
-- On `disconnectedCallback` every track is stopped (`track.stop()`), clearing the hardware indicator. Leaking a stream is the one failure mode unique to this node.
+- On `disconnectedCallback` every track is stopped (`track.stop()`), clearing the hardware indicator. Leaking a stream is the one failure mode unique to this node. Since 4.5 (not released yet), `active` goes back to `false` with its `wcs-camera:active-changed` event. A route the element leaves keeps its nodes, bindings included, for the next entry (router README, "Where route content lives"), so up to 4.4 the page kept showing a live camera after the way back, and a Start button disabled while `active` stayed disabled.
 - Moving the element in the DOM (remove → re-append) runs `disconnectedCallback` (dispose, stop tracks) then `connectedCallback` (observe again). With `autostart` it re-acquires on reconnect (and may re-prompt). To keep a stream across a move, avoid `autostart` and re-`start()` yourself, or don't detach the element.
 - A constraints change (`device-id`, `facing-mode`, `switchCamera()`) **re-acquires** (stop → new `getUserMedia`), guarded by a generation counter so a superseded acquire cannot leave an orphan stream live.
-- While the page is hidden the stream is suspended and re-acquired on return — unless `keep-alive` is set. Bind `keepAlive: recording` to keep the camera alive while recording.
+- While the page is hidden the stream is suspended and re-acquired on return — unless `keep-alive` is set. Bind `keepAlive: recording` to keep the camera alive while recording: a recording of a suspended stream ends there, with what it has. Since 4.5 (not released yet) the camera warns when it suspends a stream a `<wcs-recorder>` is recording (`[wcs/camera-keep-alive-missing]`, once per element).
 
 ## `<wcs-recorder>`
 
@@ -78,8 +78,14 @@ Records a **borrowed** stream received via `attachStream` (the direct channel fr
 > **`duration` is finalized at stop/pause, not live.** There is no internal ticking timer: `duration` stays `0` from `start()` until the first `pause()` or `stop()`. For a live elapsed counter while recording, drive your own client-side timer off the `recording` flag.
 
 > **`mimeType` has two sides — request vs. resolved.** The **input** is the `mime-type` *attribute* (what you ask the recorder to use). The **output** is the `mimeType` *bindable value* (what the browser actually picked, published via `wcs-recorder:mimetype-changed`). They share a base name by design but are distinct surfaces: bind the attribute to set the request (`mime-type` attribute / element setter), and bind the value property to read the resolved type. Don't expect reading `mimeType` to echo back what you wrote — it reflects the recording, not the request.
+>
+> Because the declaration lists `mimeType` both as an input and as an output, `@wcstack/state` treats `mimeType: path` as two-way, and a two-way binding starts by writing the state's value to the element: a `null` seed removes `mime-type`, and the browser picks the type. To read the resolved type without touching the request, write `mimeType#init=element: path`.
+>
+> Chromium settles the type only when recording starts (a `MediaRecorder` built without one reports `""` until then). Up to 4.4, without `mime-type`, the clip's `Blob` had no type and `mimeType` stayed `""`, so a server that checks the type, or `<wcs-upload accept="video/*">`, refused the clip. Since 4.5 (not released yet) `mimeType` is the type recording started with (or the type of the first chunk), and the `Blob` carries it.
 
-The assembled `Blob` is structured-clone friendly, so it *is* a value and may flow through state — for example `new File([blob], "clip.webm")` into [`@wcstack/upload`](../upload/). The object URL is managed: the previous one is revoked before a new clip **and on `disconnectedCallback` (dispose)**.
+The assembled `Blob` is structured-clone friendly, so it *is* a value and may flow through state — for example `new File([blob], "clip.webm", { type: blob.type })` into [`@wcstack/upload`](../upload/). The object URL is managed: the previous one is revoked before a new clip **and on `disconnectedCallback` (dispose)**.
+
+**Leaving the document while recording** (a route left, an `if:` branch closed): up to 4.4 the recording was thrown away, with no `recorded` event, and `recording` stayed `true` in state. Since 4.5 (not released yet) the recording stops as it does when the stream's tracks end: `recording` / `paused` go back to `false` at once, with their events, and the clip arrives as `wcs-recorder:recorded` when the browser delivers it (a moment later). Its `objectURL` stays valid until the next clip or the next disconnect.
 
 > **`objectURL` lifetime is bound to the recorder.** Because dispose revokes the last object URL — **and a new recording revokes the previous clip's URL before minting the next** — any `<video src>` / `<wcs-upload>` still pointing at an old URL breaks once the `<wcs-recorder>` is removed or the next clip completes. Always follow the latest `objectURL` / `recorded` value; never pin a stale one. If you hand the URL to a longer-lived consumer, either keep the recorder mounted for as long as the URL is in use, or build your own URL from the `Blob` (`URL.createObjectURL(blob)`) and own its revoke. The structured-clone-friendly **`blob`** has no such coupling — prefer flowing the `Blob` through state and minting URLs at the point of use.
 
@@ -153,6 +159,8 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
 ## Notes & gotchas
 
 - **Secure context (https) required.** `getUserMedia` is unavailable on `file://` / plain `http://`.
+- **Content-Security-Policy.** The preview's own styles are a constructed stylesheet since 4.5 (not released yet), which `style-src` does not govern, so a policy without `'unsafe-inline'` keeps the preview's layout. Up to 4.4 they were a `<style>` in the shadow root, which such a policy blocks (the preview `<video>` rendered at its own size): style it from your stylesheet with `wcs-camera::part(video) { display: block; width: 100%; height: 100% }`.
+- **`error` / `errorInfo` describe the last attempt.** A permission granted later (in the site settings) does not clear them: `permission` follows the grant at once, while `errorInfo` keeps `not-allowed` until the next `start()` succeeds. Decide "blocked" from `permission`, and offer Start again when the last error was `not-allowed` and `permission` is `granted`.
 - **The camera indicator = a leak detector.** If it stays on after you are done, a track was not stopped.
 - **User gesture.** Some browsers require `getUserMedia` to be triggered by a user action; firing it from a timer may silently fail (surfaced via `error`, never thrown).
 - **Errors are classified, never thrown:** `NotAllowedError` (denied), `NotFoundError` (no device), `NotReadableError` (in use by another app), `OverconstrainedError`.
