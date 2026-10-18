@@ -647,6 +647,15 @@
       "note": { "en": "Both report a write of an undeclared key beside a near declared one only (`this.selectedID` and `selectedId` — a 7GUIs evaluation): a new key with no near one is not reported, as a state may add keys on purpose. A volume's mount path is the page's.", "ja": "どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。" }
     },
     {
+      "id": "getter-read-path-typo",
+      "lint": [{ "code": "wcs/read-path-missing", "severity": "warning" }],
+      "runtime": "same", "harm": "stale",
+      "mistake": { "en": "Misspells a path a getter reads: `this[\"items.*.pirce\"]`, `this.$getAll(\"items.*.pirce\", [])`.", "ja": "getter が読むパスを打ち間違える: `this[\"items.*.pirce\"]`、`this.$getAll(\"items.*.pirce\", [])`。" },
+      "effect": { "en": "The read gives `undefined`, and what the getter computes from it is wrong. The diagnostics add-on warns once per path, naming the getter, beside a near name, once a getter has read it (a top-level key throws on read, #301).", "ja": "読みは `undefined` になり、getter がそこから計算する値は違う。diagnostics の後付けが、getter がそのパスを読んだあと、近い名前があるとき、読んだ getter の名前を添えてパスごとに 1 回警告する（トップレベルのキーは読んだ時点で throw する、#301）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "read-path-missing" }],
+      "note": { "en": "Found by an outside evaluation (a tax return draft: 96 getters, the sums of money computed from the paths they read). Both report only beside a near name: `this[\"opts.flag\"] ?? false` reads an optional key on purpose. The lint checks getters, setters and methods without running them, a literal path only (not `this[key]`); it is an error where a `stateSchema` says the path is not there.", "ja": "外部の評価で見つかった（確定申告の下書き: getter 96 本が、読んだパスから金額を計算する）。どちらも近い名前があるときだけ報告する: `this[\"opts.flag\"] ?? false` は任意のキーをわざと読む。lint は getter・setter・メソッドを実行せずに検査し、リテラルのパスだけを見る（`this[key]` は見ない）。`stateSchema` が「無い」と言うときは error。" }
+    },
+    {
       "id": "post-update-path-missing",
       "runtime": "loud", "harm": "stale",
       "mistake": { "en": "Calls `$postUpdate` with a path that does not resolve: a typo (`rows.${r}.cell.${c}.text` for `cells`).", "ja": "解決しないパスで `$postUpdate` を呼ぶ: 打ち間違い（`cells` に対する `rows.${r}.cell.${c}.text`）。" },
@@ -727,6 +736,6 @@
     { "code": "wcs/drift-event-mismatch", "why": { "en": "A component's sidecar manifest names a different event for a property than its live wcBindable declaration.", "ja": "コンポーネントの sidecar の manifest が、実際の wcBindable の宣言と違うイベントをプロパティに名指している。" } },
     { "code": "wcs/type-annotation", "why": { "en": "A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value.", "ja": "初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。" } },
     { "code": "wcs/path-reserved-name", "why": { "en": "Reserved in the code table, not emitted yet.", "ja": "code の表に予約されているだけで、まだ出さない。" } },
-    { "code": "wcs/path-dynamic-unknown", "why": { "en": "Reserved in the code table, not emitted yet; it states a limit of the lint, not an author's mistake.", "ja": "code の表に予約されているだけで、まだ出さない。作者の誤りではなく lint の限界を表す。" } }
+    { "code": "wcs/path-dynamic-unknown", "why": { "en": "A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info).", "ja": "作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。" } }
   ]
 }

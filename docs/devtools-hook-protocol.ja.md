@@ -287,7 +287,8 @@ binding**。どちらもランタイムは報告して続行する ＝ ここに
 - Event: `state:path-unresolved`（v1 追補・additive）、
   payload = `{ source: "binding" | "watch", path, missingSegment }`。バインド確立時
   （または `$watch` 宣言時）に「このパスは解決しない」と確定したとき、(state 要素, パス) ごとに
-  1 回だけ流れる。判定は**過小近似** — getter の戻り値の先・空リスト・null 親・mapped な
+  1 回だけ流れる。4.x は `source: "postUpdate"`（`$postUpdate` のパス、4.4）と `source: "getter"`（getter が
+  読んだパスで、近い名前があるもの、4.4）を足す。受け手は知らない source をそのまま表示する。判定は**過小近似** — getter の戻り値の先・空リスト・null 親・mapped な
   `bind-component` の子はすべて沈黙するので、**イベントが無いことは正しさの証明にならない**
   （[pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)）。
 - Event: `state:binding-apply-error`（v1 追補・additive）、

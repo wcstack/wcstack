@@ -251,9 +251,20 @@ function fromJson(text: string): ElementPaths {
   return { paths, readable: paths.length > 0 || isJsonObject(text) };
 }
 
+/**
+ * Whether a script's state is read in full. A top-level spread makes it unreadable whatever else the literal declares: the keys
+ * it brings in are not known, so a path the candidates lack cannot be called missing. The getters beside
+ * `...sanitizeInputs({}).inputs` once made every key it brings in a `wcs/binding-path-missing` (an outside evaluation,
+ * a tax return draft — its author wrote a manifest for them). With a stateSchema the schema decides, as for any
+ * unreadable state; without one, `wcs/path-dynamic-unknown` (info) says so at the spread (scriptReadValidator.ts).
+ */
+export function scriptReadable(script: string, paths: readonly PathCandidate[]): boolean {
+  return !hasTopLevelSpread(script) && (paths.length > 0 || hasDefaultExportObject(script));
+}
+
 function fromScript(script: string): ElementPaths {
   const paths = analyzeStatePaths(script);
-  return { paths, readable: paths.length > 0 || isReadableStateScript(script) };
+  return { paths, readable: scriptReadable(script, paths) };
 }
 
 function resolveElementPathsRaw(
@@ -290,10 +301,10 @@ function resolveElementPathsRaw(
 
   // 4. inner <script type="module">: 既存の解析
   if (element.scriptBlocks.length > 0) {
-    const paths = element.scriptBlocks.flatMap(block => analyzeStatePaths(block.content));
+    const blocks = element.scriptBlocks.map((block) => ({ script: block.content, paths: analyzeStatePaths(block.content) }));
     return {
-      paths,
-      readable: paths.length > 0 || readable || element.scriptBlocks.some((block) => isReadableStateScript(block.content)),
+      paths: blocks.flatMap((block) => block.paths),
+      readable: readable || blocks.some((block) => scriptReadable(block.script, block.paths)),
     };
   }
 

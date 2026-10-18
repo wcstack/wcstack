@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | What tells the author | Entries |
 |---|---|
 | The design (cannot be written, or harmless) | 2 |
-| The runtime | 52 |
+| The runtime | 53 |
 | The lint only — conditional silence | 23 |
 | The documents only — silence | 8 |
 | Lint codes not counted | 17 |
@@ -129,6 +129,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Loads the router on a page with no `<base href>` and no `basename`. | Same code: On a deep link or a reload at `/products/3`, the router takes `/products/3` as the basename, shows the root route and resolves links under it; it warns `[wcs/base-href-missing]` with the basename it derived. 5.0 agenda: derive no basename, which changes sub-folder apps that rely on the derivation. | `wcs/base-href-missing` (warning) |
 | Gives a layout template no default `<slot>` while the layout holds nested routes. | Same code: The router warns `[wcs/layout-slot-missing]`; it also checks `src=` layouts and a `slot=` the template lacks, which the lint does not. | `wcs/layout-slot-missing` (warning) |
 | Places `<wcs-outlet>` anywhere but right after `<wcs-router>`. | Same code: The router warns `[wcs/router-outlet-misplaced]` when it makes its own outlet, and about an outlet a layout brings in. | `wcs/router-outlet-misplaced` (warning) |
+| Misspells a path a getter reads: `this["items.*.pirce"]`, `this.$getAll("items.*.pirce", [])`. | Same code: The read gives `undefined`, and what the getter computes from it is wrong. The diagnostics add-on warns once per path, naming the getter, beside a near name, once a getter has read it (a top-level key throws on read, #301). Found by an outside evaluation (a tax return draft: 96 getters, the sums of money computed from the paths they read). Both report only beside a near name: `this["opts.flag"] ?? false` reads an optional key on purpose. The lint checks getters, setters and methods without running them, a literal path only (not `this[key]`); it is an error where a `stateSchema` says the path is not there. | `wcs/read-path-missing` (warning) |
 | Calls `$postUpdate` with a path that does not resolve: a typo (`rows.${r}.cell.${c}.text` for `cells`). | Without the code: The call updates nothing; the diagnostics add-on warns `[wcs/post-update-path-missing]` once per path, with a near name. Found by a 7GUIs evaluation (Cells). No lint rule: the paths are usually built at run time. | — |
 | Writes a top-level key the state does not declare — a typo (`this.coutn = 1`). | Same code: 4.0 creates the key; nothing bound to `count` changes. The diagnostics add-on warns once per key, beside a near declared one. Both report a write of an undeclared key beside a near declared one only (`this.selectedID` and `selectedId` — a 7GUIs evaluation): a new key with no near one is not reported, as a state may add keys on purpose. A volume's mount path is the page's. | `wcs/write-path-missing` (warning) |
 | `$behavior` is not an object, has an unknown key or a value that is not a boolean, or sits in a volume. | Without the code: `#44` at load: the state fails to initialize (a volume is refused with `console.error`). | `wcs/behavior-invalid` (error) |
@@ -199,7 +200,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | `wcs/manifest-state-collision` | Two application manifests declare a stateSchema for the same state; the lint then checks that state against neither. |
 | `wcs/manifest-tag-collision` | Two sidecar manifests declare the same tag without override. |
 | `wcs/manifest-unknown-keyword` | The sidecar manifest uses a schema keyword outside the subset the lint reads. |
-| `wcs/path-dynamic-unknown` | Reserved in the code table, not emitted yet; it states a limit of the lint, not an author's mistake. |
+| `wcs/path-dynamic-unknown` | A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). |
 | `wcs/path-reserved-name` | Reserved in the code table, not emitted yet. |
 | `wcs/type-annotation` | A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value. |
 
