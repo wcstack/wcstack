@@ -2,7 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.4.0 — 2026-10-18
+
+`@wcstack/state` 4.4.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.4.0・`@wcstack/typescript` 4.4.0 と同じ判定）。新しい error の規則（`wcs/path-readonly`、スクリプトの `wcs/token-undeclared`、ページで定義した要素の `wcs/tag-member-unknown`、`stateSchema` があるときの `wcs/read-path-missing`）と、`src=` の state へのスクリプトの規則が入るので minor。
 
 - **getter・メソッドの中で読むパスを検査する**（`wcs/read-path-missing`、warning。`stateSchema` が「無い」と言うときは error）— `this["items.*.amout"]`・`this.totl`・`this.$getAll("items.*.amout", [])`（`$resolve`・`$dependOn` も、パスがリテラルのとき）が state に無く、近い名前があるもの。束縛のパスと同じ規則で引き、ボリュームのスクリプトはマウントパスの下で引く。実行時に作るパス（`this[key]`・`${…}` を含むテンプレート）は見ない。確定申告の下書きツールの評価（4.2.0、getter 96 本）: lint が見るのは HTML のパスだけで、getter の中の打ち間違いは `undefined` と違う金額になるだけだった。ランタイムの diagnostics も同じ code で警告する。
 - **トップレベルの spread がある state で、spread が持ち込むキーを「存在しない」と言わない** — `export default { ...sanitizeInputs({}).inputs, get total() { … } }` は、spread の横に何か 1 つでもあると読めた state として扱われ、spread のキーへの束縛がすべて `wcs/binding-path-missing` になっていた（上の評価で 79 件。作者は manifest を手で書いて黙らせた）。spread のある state は、文書どおり読めない state として扱う: `stateSchema` があれば schema で引き、無ければ検査しない。無いときは spread の上で 1 回 `wcs/path-dynamic-unknown`（info、予約だけだった code）を出し、検査を入れる手段（`stateSchema`・`wcs-schema`）を示す。`$watch` のキーも同じ。
@@ -16,6 +18,8 @@
   - `wcs/updated-callback-unbound` が、`$renderedCallback` で調べる state に無いパスも、近いパスがあれば報告する（`paths.includes("labell")` と `label`）。
 - **外部 state（`<wcs-state src>` の `.js` / `.ts`）にもスクリプトの規則をかける** — `wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` などは `<wcs-state>` の中のスクリプトしか見ず、`src=` の state ではパスだけを検査していた（7GUIs の評価: 同じスクリプトがインラインなら error 3・warning 1、`src="./state.js"` では 0 件）。ページを、読めた state のスクリプトを要素の中に置いた形でもう一度検査し、ファイルの中の指摘はそのファイルの位置へ、ページの指摘はページへ戻す。CLI はファイルの中の指摘をそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数える。IDE はページの `src` の値の上に出し、文面の頭にファイルの位置を、関連情報にファイルへのリンクを付ける。ページの側でも、ファイルのハンドラが見えて初めて分かるもの（`wcs/submit-without-prevent`・`wcs/delegated-current-target`）が出るようになる。
 - **`wcs/updated-callback-unbound` が、入れ子の相対 `for:` の中の束縛を数える** — `for: rows` の中の `for: .cells` の中の `if: .editing`（`rows.*.cells.*.editing`）を「どこにも束縛されていない」と誤って報告していた。相対の `for:` を外側から合成して展開する。
+
+## 2.3.0 — 2026-10-18
 
 `@wcstack/state` 4.3.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.3.0・`@wcstack/typescript` 4.3.0 と同じ判定）。lint の重大度と文面を 4.0 のランタイムに合わせる（docs/mistake-catalogue.ja.md の「目録を作る中で見つけたもの」）。warning だった形のうち 8 つを error にするので minor。
 
