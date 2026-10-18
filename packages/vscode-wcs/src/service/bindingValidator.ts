@@ -9,7 +9,7 @@
  */
 
 import { splitBindTexts } from '@wcstack/state/parser';
-import { createTemplateTester, findStartTagRegions, type WcsStateInfo } from '../language/htmlParse.js';
+import { createTemplateTester, extractAttribute, findStartTagRegions, type WcsStateInfo } from '../language/htmlParse.js';
 import { indexOfOutsideQuotes, splitOutsideQuotes } from '../core/parser/quoteAware.js';
 import { BUILTIN_FILTERS, type FilterInfo } from './completionData.js';
 import { nativeCommandsOf, STRUCTURAL_BINDING_TYPE_SET } from './wcsManifest.js';
@@ -493,6 +493,19 @@ export function validateBindings(
                 message: `${verdict.message}${pathTrimmed.startsWith('.') ? msgs.expansionSuffix(checkPath) : ''}`,
                 severity: verdict.severity,
               });
+            } else if (writesBack(attr, propNoMod, parsed.property)) {
+              // a getter without a setter, written back on every edit: the runtime throws each time
+              const target = scopedPaths.find((p) => p.path === checkPath);
+              if (target !== undefined && target.kind === 'computed' && target.settable !== true) {
+                const pathStart = bindingStart + binding.indexOf(parsed.path);
+                diagnostics.push({
+                  code: WcsDiagnosticCode.PathReadonly,
+                  start: pathStart,
+                  end: pathStart + pathTrimmed.length,
+                  message: msgs.pathReadonlyTwoWay(checkPath, propNoMod),
+                  severity: 'error',
+                });
+              }
             }
           }
         }
@@ -744,11 +757,31 @@ function openTagBefore(html: string, valueStart: number): string {
   return lt === -1 ? '' : html.slice(lt, valueStart);
 }
 
+/**
+ * Whether the runtime writes this binding back to the state (state's dom/plan.ts `isTwoWay`, and `radio:` /
+ * `checkbox:`): not with `#ro`, not on a custom element (its write-back follows its wcBindable).
+ */
+function writesBack(attr: BindAttrLocation, prop: string, written: string): boolean {
+  if (written.split('#').slice(1).some((modifier) => modifier.trim() === 'ro')) return false;
+  if (prop === 'radio' || prop === 'checkbox') return true;
+  const tag = attr.tagName;
+  if (tag === undefined || tag.includes('-')) return false;
+  if (tag === 'input') {
+    const type = (attr.inputType || 'text').toLowerCase();
+    if (type === 'button') return false;
+    if ((type === 'radio' || type === 'checkbox') && prop === 'checked') return true;
+    return prop === 'value' || prop === 'valueAsNumber' || prop === 'valueAsDate';
+  }
+  return (tag === 'select' || tag === 'textarea') && prop === 'value';
+}
+
 export interface BindAttrLocation {
   value: string;
   valueStart: number;
   /** 属性を持つ要素のタグ名（小文字）。 */
   tagName?: string;
+  /** その要素の `type` 属性（`<input>` の書き戻しの判定に使う）。無ければ undefined */
+  inputType?: string;
 }
 
 interface ParsedFilter {
@@ -796,7 +829,8 @@ export function findAllBindAttributes(html: string, attrName: string): BindAttrL
       // 値の終端は同じ属性領域の中だけで探す（タグを跨いだら属性ではない）
       const valueEnd = html.indexOf(quote, valueStart);
       if (valueEnd === -1 || valueEnd > tag.end) continue;
-      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart, tagName: tag.tagName });
+      const inputType = tag.tagName === 'input' ? extractAttribute(attrsText, 'type') ?? undefined : undefined;
+      attrs.push({ value: html.slice(valueStart, valueEnd), valueStart, tagName: tag.tagName, ...(inputType !== undefined ? { inputType } : {}) });
       regex.lastIndex = valueEnd - tag.start;
     }
   }

@@ -80,6 +80,16 @@ export interface WcsMessageCatalog {
   getterReadsLocation(read: string): string;
   /** `<form>` の `onsubmit:` に `#prevent` が無く、ハンドラも preventDefault を呼ばない。 */
   submitWithoutPrevent(handler: string): string;
+  /** getter の中の現在時刻（`Date.now()` / 引数の無い `new Date()` / `performance.now()`）。キャッシュされ、最初の値のまま。 */
+  getterReadsClock(read: string): string;
+  /** `$renderedCallback` が state に無いパスを判定に使っている（`paths` に現れないので、その分岐は走らない）。近い名前があるときだけ。 */
+  updatedCallbackUnknownPath(path: string): string;
+  /** 宣言したコマンドトークンを emit するが、どの `command.<method>:` 束縛にも結ばれていない。 */
+  commandTokenUnbound(tokenPath: string): string;
+  /** state が宣言していないトップレベルのキーへの書き込み（近い名前があるときだけ）。 */
+  writePathMissing(key: string): string;
+  /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
+  pathReadonlyTwoWay(path: string, property: string): string;
   handlerFilterNotAllowed(property: string): string;
   typeExpectation(label: string, expected: ExpectedTypeKind, resultType: string): string;
   filterUnknown(name: string): string;
@@ -317,6 +327,16 @@ const ja: WcsMessageCatalog = {
     `$on のハンドラ "${name}" が this を使っています。$on のハンドラは state を第 1 引数で受け取り（\`${name}(state, event) { state.x = … }\`）、this は undefined なので、this.… は呼ばれたときに例外になります。$watch やメソッドと違う点に注意`,
   getterReadsLocation: (read) =>
     `この getter は ${read} を読んでいますが、location は state ではないので、最初に読んだ URL を持ち続けます（ナビゲーションで再評価されません）。URL は state を通して読んでください — <wcs-router> の path / searchParams を束ねる`,
+  getterReadsClock: (read) =>
+    `この getter は ${read} を読んでいますが、時刻は state ではないので依存として登録されず、getter はキャッシュした最初の値を返し続けます（イベントトークンで毎フレーム「描き直し」ても変わりません）。時刻を state に置いてください — <wcs-raf> や <wcs-timer> が書く値を束ねる`,
+  updatedCallbackUnknownPath: (p) =>
+    `"${p}" は state のパスではないので $renderedCallback の paths に現れず、この分岐は一度も実行されません`,
+  commandTokenUnbound: (t) =>
+    `コマンドトークン "${t}" を emit していますが、このドキュメントにそれを受ける command.<メソッド>: ${t} の束縛がありません。emit は誰にも届きません。メソッドを呼ぶ要素に束ねてください（command.focus: ${t}）`,
+  writePathMissing: (k) =>
+    `"${k}" は state が宣言していないキーです。書き込みは新しいキーを作るだけで、宣言したキーの束縛には届きません`,
+  pathReadonlyTwoWay: (p, prop) =>
+    `"${p}" は setter の無い getter ですが、${prop}: は読者の入力を書き戻すので、入力のたびに書き込みが失敗します（"${p}" is a getter without a setter）。setter を足す（set "${p}"(v) { … }）か、#ro で一方向にしてください（${prop}#ro: ${p}）`,
   submitWithoutPrevent: (h) =>
     `onsubmit に #prevent が無く、"${h}" も preventDefault を呼びません。ブラウザはフォームも送るので、ページが読み直されるか、router があれば GET が欄の値（パスワードも）を URL と履歴に載せます。onsubmit#prevent: ${h} と書くか、ハンドラで event.preventDefault() を呼んでください`,
   getterUntrackedRead: (root, sp) =>
@@ -580,6 +600,16 @@ const en: WcsMessageCatalog = {
     `The $on handler "${name}" uses this. A $on handler receives the state as its first argument (\`${name}(state, event) { state.x = … }\`) and this is undefined, so this.… throws when it is called — unlike $watch handlers and methods`,
   getterReadsLocation: (read) =>
     `This getter reads ${read}, which is not state: it keeps the URL it first read (a navigation does not re-evaluate it). Read the URL through state — bind <wcs-router>'s path / searchParams`,
+  getterReadsClock: (read) =>
+    `This getter reads ${read}. The time is not state, so it is not a dependency: the getter is cached and keeps returning its first value (an event token "redrawing" every frame does not change it). Keep the time in state — bind the value <wcs-raf> or <wcs-timer> writes`,
+  updatedCallbackUnknownPath: (p) =>
+    `"${p}" is not a path of this state, so it is never in $renderedCallback's paths and this branch never runs`,
+  commandTokenUnbound: (t) =>
+    `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
+  writePathMissing: (k) =>
+    `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
+  pathReadonlyTwoWay: (p, prop) =>
+    `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { … }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) =>
     `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   getterUntrackedRead: (root, sp) =>

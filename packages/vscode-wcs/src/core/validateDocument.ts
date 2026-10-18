@@ -27,6 +27,7 @@ import { validateNamedState } from "../service/namedStateValidator.js";
 import { validateMountAttributes } from "../service/mountAttrValidator.js";
 import { validateScopeDeclarations } from "../service/scopeDeclarationValidator.js";
 import { validateSemantics } from "../service/semanticValidator.js";
+import { validateScriptStateUses } from "../service/scriptStateUseValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
 import { findIgnoredRanges } from "../language/htmlParse.js";
@@ -132,6 +133,8 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
   // validator 側で code を付与して返す。
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
+  // what a state's script uses of itself: undeclared and unbound command tokens, a write of a key it does not declare
+  out.push(...validateScriptStateUses(text, stateTagName, locale, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
   out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader));

@@ -29,6 +29,7 @@ import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
+import { suggestion } from './suggestion.js';
 import { collectGetterReads, collectThisMemberRefs, collectThisMemberRefsInValue, findInPlaceChanges, findLocationRead, findOwnThis, type MemberNameFilter, type ThisMemberRef } from './scriptAst.js';
 import type { WatchHandlerSource } from './stateAnalyzer.js';
 import { isOutOfRangeIndexRead, MAX_INDEX_PARAM } from './indexPath.js';
@@ -464,6 +465,34 @@ function validateGetterLocationReads(script: string, scriptStart: number, locale
   return out;
 }
 
+/** The clock a getter can read: `Date.now()`, a `new Date()` of no argument (now), `performance.now()`. */
+const CLOCK_READ = /\bDate\s*\.\s*now\s*\(|\bnew\s+Date\s*\(\s*\)|\bperformance\s*\.\s*now\s*\(/;
+
+/**
+ * getter の中の現在時刻の読み（`wcs/getter-untracked-read`、warning）。時刻は state ではないので依存として登録されず、
+ * getter はキャッシュした最初の値を返し続ける — 経過時間の getter が 0.0s のまま動かなかった（7GUIs の評価の Timer:
+ * 毎フレームのイベントトークンで「描き直される」と思いがちだが、getter は再評価されない）。getter ごとに最初の 1 か所。
+ */
+function validateGetterClockReads(script: string, scriptStart: number, locale?: string): WcsDiagnostic[] {
+  if (!/Date|performance/.test(script)) return [];
+  const msgs = getMessages(locale);
+  const out: WcsDiagnostic[] = [];
+  for (const getter of analyzeCallableBodies(script)) {
+    if (getter.kind !== 'getter' || getter.accessor !== 'get') continue;
+    const read = CLOCK_READ.exec(maskCommentsAndStrings(getter.body));
+    if (read === null) continue;
+    const text = read[0].startsWith('new') ? 'new Date()' : read[0].startsWith('performance') ? 'performance.now()' : 'Date.now()';
+    out.push({
+      code: WcsDiagnosticCode.GetterUntrackedRead,
+      start: scriptStart + getter.bodyStart + read.index,
+      end: scriptStart + getter.bodyStart + read.index + read[0].length,
+      message: msgs.getterReadsClock(text),
+      severity: 'warning',
+    });
+  }
+  return out;
+}
+
 /**
  * `$on` のハンドラが state を受ける第 1 引数の名前（`cardEvent(state, event) { … }` の `state`）。メソッド記法なら
  * 本体の前の引数リストから、値（function 式・アロー関数）ならその先頭から読む。読めなければ null。
@@ -796,8 +825,17 @@ function validateUpdatedCallbackDemand(
     const reported = new Set<string>();
     while ((match = PATH_TEST_LITERAL.exec(body)) !== null) {
       const path = match[2];
-      if (path.length === 0 || !declared.has(path) || bound.has(path)) continue;
-      if (reported.has(path)) continue;
+      if (path.length === 0 || bound.has(path) || reported.has(path)) continue;
+      // A path the state does not have is never in `paths` either: reported only beside a near one it has (a typo —
+      // `items.*.onn`, `labell`), as a string of another kind may be compared here too (7GUIs evaluation)
+      let message: string;
+      if (declared.has(path)) {
+        message = msgs.updatedCallbackUnbound(path);
+      } else {
+        const near = suggestion(path, [...declared, ...bound], msgs);
+        if (near === '') continue;
+        message = msgs.updatedCallbackUnknownPath(path) + near;
+      }
       reported.add(path);
       // レンジはリテラル本体（引用符の内側）
       const quoteAt = match.index + match[0].length - path.length - 1;
@@ -805,7 +843,7 @@ function validateUpdatedCallbackDemand(
         code: WcsDiagnosticCode.UpdatedCallbackUnbound,
         start: block.contentStart + callback.bodyStart + quoteAt,
         end: block.contentStart + callback.bodyStart + quoteAt + path.length,
-        message: msgs.updatedCallbackUnbound(path),
+        message,
         severity: 'warning',
       });
     }
@@ -944,6 +982,7 @@ export function validateSemantics(
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
     out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
     out.push(...validateGetterLocationReads(block.content, block.contentStart, locale));
+    out.push(...validateGetterClockReads(block.content, block.contentStart, locale));
     out.push(...validateOnHandlerThis(block.content, block.contentStart, locale));
     out.push(...validateInPlaceChanges(block.content, block.contentStart, locale));
   }

@@ -49,10 +49,10 @@
       "id": "rendered-callback-unbound-path",
       "lint": [{ "code": "wcs/updated-callback-unbound", "severity": "warning" }],
       "runtime": "silent", "harm": "broken",
-      "mistake": { "en": "`$renderedCallback(paths)` tests a declared path that no binding names (`paths.includes(\"feed\")`).", "ja": "`$renderedCallback(paths)` が、どの束縛も名指さない宣言済みのパスを調べる（`paths.includes(\"feed\")`）。" },
+      "mistake": { "en": "`$renderedCallback(paths)` tests a declared path that no binding names (`paths.includes(\"feed\")`), or a path the state does not have (`paths.includes(\"labell\")`).", "ja": "`$renderedCallback(paths)` が、どの束縛も名指さない宣言済みのパスか、state に無いパスを調べる（`paths.includes(\"feed\")`・`paths.includes(\"labell\")`）。" },
       "effect": { "en": "`paths` lists only the bindings that were applied, so the branch never runs.", "ja": "`paths` には当てた束縛しか載らないので、その分岐は走らない。" },
       "disposition": "static-only",
-      "note": { "en": "A runtime heuristic (a `paths` whose `includes` warns) would catch the test, not the intent.", "ja": "実行時の推測（`includes` が警告する `paths`）は、調べ方は捕まえても意図は捕まえられない。" }
+      "note": { "en": "A runtime heuristic (a `paths` whose `includes` warns) would catch the test, not the intent. A path the state does not have is reported only beside a near one it has (a likely typo), as the callback may compare strings of another kind.", "ja": "実行時の推測（`includes` が警告する `paths`）は、調べ方は捕まえても意図は捕まえられない。state に無いパスは、近いパスがあるときだけ（打ち間違いらしいとき）報告する。コールバックはほかの種類の文字列も比べうるため。" }
     },
     {
       "id": "on-handler-this",
@@ -404,8 +404,17 @@
       "lint": [{ "code": "wcs/token-undeclared", "severity": "varies" }],
       "runtime": "same", "harm": "broken",
       "mistake": { "en": "Uses a command or event token the state does not declare.", "ja": "state が宣言しないコマンドかイベントのトークンを使う。" },
-      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` and `onclick: $command.x` log `#1301` each time the event fires (the lint: warning).", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。" },
+      "effect": { "en": "`command.m: $command.x` fails when attached (`#1302`; the lint: error); `eventToken.` and `onclick: $command.x` log `#1301` each time the event fires (the lint: warning). In a script, `this.$command.x` of an undeclared name is `undefined`: `.emit()` throws a TypeError that names nothing (the lint: error).", "ja": "`command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は `undefined` で、`.emit()` は何も名指さない TypeError を投げる（lint は error）。" },
       "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "\"token-undeclared\"" }]
+    },
+    {
+      "id": "two-way-getter-without-setter",
+      "lint": [{ "code": "wcs/path-readonly", "severity": "error" }],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Binds a getter without a setter where the binding writes back: `value:` on an `<input>`, `<select>` or `<textarea>`, `checked:`, `radio:` / `checkbox:`.", "ja": "書き戻す束縛（`<input>`・`<select>`・`<textarea>` の `value:`、`checked:`、`radio:` / `checkbox:`）に、setter の無い getter を束ねる。" },
+      "effect": { "en": "every edit throws `\"celsius\" is a getter without a setter`; the field shows what was typed, and the state keeps its value.", "ja": "入力のたびに `\"celsius\" is a getter without a setter` を投げる。欄は打った値を見せ、state は元の値のまま。" },
+      "evidence": [{ "file": "packages/state/src/diagnostics/messages.ts", "text": "is a getter without a setter" }],
+      "note": { "en": "Found by a 7GUIs evaluation (Temperature). Add a setter, or bind it one way with `#ro`.", "ja": "7GUIs の評価（Temperature）で見つかった。setter を足すか、`#ro` で一方向にする。" }
     },
     {
       "id": "wildcard-rank",
@@ -604,11 +613,12 @@
     },
     {
       "id": "command-token-unbound",
+      "lint": [{ "code": "wcs/command-token-unbound", "severity": "warning" }],
       "runtime": "silent", "harm": "broken",
       "mistake": { "en": "Emits a command token that no `command.` binding wires, or expects a spread to wire commands and events.", "ja": "どの `command.` の束縛も結ばないコマンドのトークンを emit する、または spread がコマンドとイベントを結ぶと思う。" },
       "effect": { "en": "The emit reaches no subscriber and returns nothing; `$on` never fires.", "ja": "emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。" },
-      "disposition": "lint-rule",
-      "note": { "en": "Both sides are in the markup and the script, which the lint already parses.", "ja": "両側はマークアップとスクリプトにあり、lint は既に解析している。" }
+      "disposition": "runtime-report",
+      "note": { "en": "The lint reports a token emitted (in the script or by `on*:`) that no `command.` binding in the document receives. DevTools already marks an emit with no subscriber. A warning from the diagnostics add-on is a design question: a token bound in a branch not shown yet is emitted to nobody on purpose, and an emit before the element is defined or the branch is rendered is lost the same way (7GUIs evaluation).", "ja": "lint は、（スクリプトか `on*:` で）emit するのに、ドキュメントのどの `command.` 束縛も受けないトークンを報告する。DevTools は購読者の無い emit に既に印を付ける。diagnostics の後付けで警告するかは設計の問い: まだ見せていない枝で束ねたトークンは、わざと誰にも届かない emit をされ、要素の定義や枝の描画の前の emit も同じように消える（7GUIs の評価）。" }
     },
     {
       "id": "infinite-scroll-target",
@@ -620,19 +630,21 @@
     },
     {
       "id": "getter-reads-global",
+      "lint": [{ "code": "wcs/getter-untracked-read", "severity": "warning" }],
       "runtime": "silent", "harm": "stale",
       "mistake": { "en": "A getter reads something that is not state: `Date.now()`, `new Date()`, the DOM, a module variable, `localStorage`.", "ja": "getter が state でないものを読む: `Date.now()`・`new Date()`・DOM・モジュールの変数・`localStorage`。" },
       "effect": { "en": "It is not tracked: the getter keeps its first value.", "ja": "追跡されないので、getter は最初の値のまま。" },
-      "disposition": ["runtime-report", "lint-rule"],
-      "note": { "en": "The diagnostics add-on can warn about a getter whose first run tracked nothing (as signals' `UNTRACKED_COMPUTED` does); the lint's `wcs/getter-untracked-read` can cover more globals.", "ja": "diagnostics の後付けが、最初の評価で何も追跡しなかった getter に警告できる（signals の `UNTRACKED_COMPUTED` と同じ）。lint の `wcs/getter-untracked-read` はほかのグローバルにも広げられる。" }
+      "disposition": "runtime-report",
+      "note": { "en": "The lint reports a getter that reads the clock (`Date.now()`, a `new Date()` of no argument, `performance.now()` — a 7GUIs evaluation's Timer stayed at 0.0s) or `location`; the DOM, a module variable and `localStorage` are not seen. The diagnostics add-on can warn about a getter whose first run tracked nothing (as signals' `UNTRACKED_COMPUTED` does), though a getter of a constant tracks nothing either.", "ja": "lint は、時刻（`Date.now()`・引数の無い `new Date()`・`performance.now()` — 7GUIs の評価の Timer は 0.0s のままだった）か `location` を読む getter を報告する。DOM・モジュールの変数・`localStorage` は見えない。diagnostics の後付けが、最初の評価で何も追跡しなかった getter に警告できる（signals の `UNTRACKED_COMPUTED` と同じ）が、定数の getter も何も追跡しない。" }
     },
     {
       "id": "top-level-write-typo",
+      "lint": [{ "code": "wcs/write-path-missing", "severity": "warning" }],
       "runtime": "silent", "harm": "stale",
       "mistake": { "en": "Writes a top-level key the state does not declare — a typo (`this.coutn = 1`).", "ja": "state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。" },
       "effect": { "en": "4.0 creates the key; nothing bound to `count` changes.", "ja": "4.0 はキーを作る。`count` に束ねたものは何も変わらない。" },
-      "disposition": ["lint-rule", "runtime-report"],
-      "note": { "en": "The lint can compare the script's writes with the declared keys; the diagnostics add-on can warn on a key created after load.", "ja": "lint はスクリプトの書き込みを宣言済みのキーと比べられる。diagnostics の後付けは、読み込みの後に作られたキーに警告できる。" }
+      "disposition": "runtime-report",
+      "note": { "en": "The lint reports a write of an undeclared key beside a near declared one (`this.selectedID` and `selectedId` — a 7GUIs evaluation); a new key with no near one is not reported, as a state may add keys on purpose. The diagnostics add-on can warn on a key created after load.", "ja": "lint は、近い宣言済みのキーがある未宣言のキーへの書き込みを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。diagnostics の後付けは、読み込みの後に作られたキーに警告できる。" }
     },
     {
       "id": "undefined-write-skipped",
@@ -682,7 +694,6 @@
     { "code": "wcs/drift-missing-member", "why": { "en": "A component's sidecar manifest declares a member its live wcBindable declaration lacks. The runtime uses the live declaration; the manifest is what needs fixing, not the page.", "ja": "コンポーネントの sidecar の manifest が、実際の wcBindable の宣言に無いメンバーを宣言している。実行時が使うのは実際の宣言で、直すのは manifest（ページではない）。" } },
     { "code": "wcs/drift-event-mismatch", "why": { "en": "A component's sidecar manifest names a different event for a property than its live wcBindable declaration.", "ja": "コンポーネントの sidecar の manifest が、実際の wcBindable の宣言と違うイベントをプロパティに名指している。" } },
     { "code": "wcs/type-annotation", "why": { "en": "A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value.", "ja": "初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。" } },
-    { "code": "wcs/path-readonly", "why": { "en": "Reserved in the code table, not emitted yet.", "ja": "code の表に予約されているだけで、まだ出さない。" } },
     { "code": "wcs/path-reserved-name", "why": { "en": "Reserved in the code table, not emitted yet.", "ja": "code の表に予約されているだけで、まだ出さない。" } },
     { "code": "wcs/path-dynamic-unknown", "why": { "en": "Reserved in the code table, not emitted yet; it states a limit of the lint, not an author's mistake.", "ja": "code の表に予約されているだけで、まだ出さない。作者の誤りではなく lint の限界を表す。" } }
   ]
