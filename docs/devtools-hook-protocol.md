@@ -298,7 +298,8 @@ console is the only other place they appear.
 - Event: `state:path-unresolved` (v1 addendum, additive),
   payload = `{ source: "binding" | "watch", path, missingSegment }`, emitted once per
   (state element, path) when binding establishment (or a `$watch` declaration) proves the path cannot
-  resolve. The check **under-approximates** — a getter return value, an empty list, a `null` parent or
+  resolve. 4.x adds `source: "postUpdate"` (a `$postUpdate` path, 4.4) and `source: "getter"` (a path a getter
+  read, beside a near name, 4.4); a consumer shows an unknown source as it is. The check **under-approximates** — a getter return value, an empty list, a `null` parent or
   a mapped `bind-component` child all stay silent — so absence of this event is not proof of
   correctness ([pathDiagnostics.ts](https://github.com/wcstack/wcstack/blob/v3.5.4/packages/state/src/pathDiagnostics.ts)).
 - Event: `state:binding-apply-error` (v1 addendum, additive),

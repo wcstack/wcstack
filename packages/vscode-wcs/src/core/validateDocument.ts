@@ -28,6 +28,7 @@ import { validateMountAttributes } from "../service/mountAttrValidator.js";
 import { validateScopeDeclarations } from "../service/scopeDeclarationValidator.js";
 import { validateSemantics } from "../service/semanticValidator.js";
 import { validateScriptStateUses } from "../service/scriptStateUseValidator.js";
+import { validateScriptReads } from "../service/scriptReadValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
 import { findIgnoredRanges } from "../language/htmlParse.js";
@@ -135,6 +136,8 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
   // what a state's script uses of itself: undeclared and unbound command tokens, a write of a key it does not declare
   out.push(...validateScriptStateUses(text, stateTagName, locale, bindAttribute));
+  // the paths its getters and methods read, checked as the bindings' are; a spread the lint cannot read (info)
+  out.push(...validateScriptReads(text, stateTagName, locale, fileReader, applicationSchema));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
   out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader));

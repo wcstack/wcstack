@@ -21,10 +21,11 @@ import type { Token } from "../token";
 
 // ---------------------------------------------------------------- paths that do not resolve
 
-/** What named a path: a binding, a `$watch` key, a `$postUpdate` call. */
+/** What named a path: a binding, a `$watch` key, a `$postUpdate` call, a getter's read. */
 const BINDING = 0;
 const WATCH = 1;
 const POST = 2;
+const READ = 3;
 /** Paths bindings, `$watch` keys and `$postUpdate` named, by engine: checked one macrotask later (and after a re-set). */
 const named = new WeakMap<Engine, Map<Pattern, number>>();
 const checked = new WeakMap<Engine, Set<Pattern>>();
@@ -125,7 +126,19 @@ function check(engine: Engine): void {
   if (map === undefined) return;
   let done = checked.get(engine);
   if (done === undefined) checked.set(engine, (done = new Set()));
-  for (const [p, kind] of map) {
+  // The paths named, and those a getter read (`this["items.*.pirce"]`, `$getAll("items.*.pirce")`): such a read
+  // gets undefined, and what is computed from it is wrong without a word (an outside evaluation, a tax return
+  // draft). A top-level key the state lacks already fails the read (the core's error); a named path is reported
+  // as named; the engine's own accessor of an index path (`items.0.x`) reads for the binding that named it
+  const todo = new Map(map);
+  const readers = new Map<Pattern, Pattern>();
+  for (const p of engine.patterns.all()) {
+    const g = p.parent === null || done.has(p) || map.has(p) ? undefined : p.dependents.find((d) => !d.markup);
+    if (g === undefined) continue;
+    readers.set(p, g);
+    todo.set(p, READ);
+  }
+  for (const [p, kind] of todo) {
     if (done.has(p)) continue;
     done.add(p);
     const m = missing(engine, p);
@@ -152,13 +165,14 @@ function check(engine: Engine): void {
     // A row field no row has is not a sign of a mistake: rows are data, and an optional field (the
     // `pending` a page puts on its own rows) is absent from the server's (docs/seam-apps.md, ssr-news).
     // Reported only with a near name — a likely typo (`.nmae` beside `name`) — or a row getter of
-    // another list form
-    if (m.row && near === "" && rowGetter === "") continue;
+    // another list form. So is a getter's read: `this["opts.flag"] ?? false` reads an optional key on purpose
+    if ((m.row || kind === READ) && near === "" && rowGetter === "") continue;
     const [code, subject, source] = kind === WATCH ? ["watch-path-missing", "$watch path", "watch"]
       : kind === POST ? ["post-update-path-missing", "$postUpdate path", "postUpdate"]
+      : kind === READ ? ["read-path-missing", "Path", "getter"]
       : ["binding-path-missing", "Bound path", "binding"];
     hooks.noticed?.(engine, { "type": "state:path-unresolved", "source": source, "path": p.path, "missingSegment": m.seg });
-    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}" does not resolve on the state tree: "${m.seg}" is not declared.${near}${rowGetter} ${kind === POST ? "The call updates nothing." : "Updates to this path will be silently dropped."}${LINT_HINT}`);
+    console.warn(`[@wcstack/state] [wcs/${code}] ${subject} "${p.path}"${kind === READ ? ` read by the getter "${readers.get(p)!.path}"` : ""} does not resolve on the state tree: "${m.seg}" is not declared.${near}${rowGetter} ${kind === POST ? "The call updates nothing." : kind === READ ? "The getter reads undefined." : "Updates to this path will be silently dropped."}${LINT_HINT}`);
   }
 }
 
@@ -285,6 +299,15 @@ function handlerThrew(engine: Engine, path: string, type: string): void {
   if (said.has(path)) return;
   said.add(path);
   console.warn(`[@wcstack/state] [wcs/delegated-current-target] "${path}" reads event.currentTarget, the root for a delegated on${type}:. Write on${type}#direct:, or use event.target.closest(…).${LINT_HINT}`);
+}
+
+/**
+ * A drain made patterns (`loose`, before its sweep): a getter may have read a path for the first time — in a
+ * row added since, or down a branch of its own code. Checked as the bindings' are; a drain that read no new
+ * path schedules nothing.
+ */
+function drained(engine: Engine): void {
+  if (named.has(engine) && ((engine as any).loose as Pattern[]).length > 0) schedule(engine);
 }
 
 /** A re-set: every path is checked again against the new state. */
@@ -424,6 +447,7 @@ export const diagnostics: Feature = {
     };
     hooks.handlerThrew = handlerThrew;
     hooks.written = chain(hooks.written, written);
+    hooks.drained = chain(hooks.drained, drained);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
   },
 };
