@@ -1217,3 +1217,32 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - ssr-news を examples/ に取り込み、e2e を付ける。
   - #24（古いクライアントが、初期化に失敗する前にサーバーの行を取り除く）。
   - npm の `next` は 4.0.0 のまま（著者の方針で動かさない）。
+
+### 4.4.0 の公開（2026-10-18）
+
+- 中身: 4.x の指針の下での 2 つ目の minor。PR #482〜#491（2026-10-18 にマージ）:
+  - 4.3.0 の残り 2 件 — ssr-news を examples/ に取り込み e2e を付けた（#482）、版違いのクライアントはページを計画してからサーバーの行を外す（#483、#24）。
+  - 外からの評価 7GUIs（誤りを 34 件わざと入れたもの）から: 外部 state（`src=`）へのスクリプトの規則（#484）、lint の規則 3 つと拡張 3 つ（#485）、diagnostics の警告 2 つ（#486）、著者の決定 2 つの実装（#487、指針の §5.2）、ページで定義した自作要素の `static wcBindable` の照合（#488）。
+  - 外からの評価 確定申告の下書き（getter 96 本）から: getter が読むパスの検査（lint と diagnostics の `wcs/read-path-missing`）と、トップレベルの spread の誤報の修正（#489）、`wcs-schema` のスタック溢れと閉じた schema の修正（#490）、state の README の読む範囲の案内・書き戻しの規則・行の中の要素の初期化の順（#491）。
+- 準備: PR #492（merge commit 65e59329）で CHANGELOG を `[4.4.0] — 2026-10-18` に締め、要約と **Upgrading** の節を書いた（lint が多く報告し一部は error になる — `src=` の state への規則と新しい規則で CI が落ちうる、spread のある state は少なく報告する、コンソールの警告が増える、`wcs-schema` が開いた schema を書く、SSR はサーバーとクライアントを同じ minor で）。CDN の固定 18 か所を 4.4.0 にした。印を外す段は書き込まずに試した（問題 0・8 ファイル・残り 0）。リリースの前に、main の state を作業ツリーの外でビルドして、サイズと結合のゲート・e2e 347 件を確かめた。
+- main で `release`（minor、run 39113946327）。
+  - npm: 49 パッケージが `latest` で 4.4.0、来歴証明も 49/49。
+  - タグ `v4.4.0` と GitHub Release（`sri.json` 付き）。版を上げたコミット b3601c00 は、8 つの README の 26 か所の印を外した。npm の README に印は残っていない。
+  - GitHub Release の本文の先頭に、CHANGELOG の要約と Upgrading の節を足した（本文は SRI と PR の一覧だけだったため）。
+  - SRI 44/44（`sri.json`＝タグの dist＝jsDelivr）。文書の固定 URL 8 つがすべて 200（esm.run はリダイレクトの先で）。
+  - jsDelivr の配布物に今回の変更（state と `wcstack` の `read-path-missing`、lint の `read-path-missing` と `path-dynamic-unknown`、typescript の worker と「ran out of stack」）がある。`@wcstack/server` 4.4.0 は `@wcstack/state` の `4.4.0` にちょうどで依存する。
+- 公開後の作業（同日）:
+  - PR #493（merge commit 2f2c9ee9）: サイズの基準値を 4.4.0 の dist で取り直した（`core.min.js` は 20,102 B で残り 378 B、diagnostics +780 B、ssr +121 B）。diagnostics の slack 768 B は外した。結合の基準は変わらない。CLAUDE.md / AGENTS.md を更新し、拡張を 2.4.0 にした。拡張の CHANGELOG は #484 で「2.3.0」の見出しが「Unreleased」に置き換わっていたので戻した。
+  - VS Code 拡張 2.4.0: 2f2c9ee9 で `npm run package` した vsix（890 ファイル、4.4.0 の state を同梱、新しい規則を含むことを確かめた）を Marketplace に公開した（反映を `vsce show` で確認）。タグ `vscode-wcs-v2.4.0`（2f2c9ee9）。
+  - wcstack-skill: PR #42（merge commit a0c2d82）で、版の印と CDN の固定を 4.4.0 にした。あわせて lint の 4.4 の規則と `src=` の state、spread と `stateSchema`、`wcs-schema` の JS と spread の型付け、実行時の新しい警告、`$postUpdate` の `*`、書き戻しの規則、行の中の自作要素の初期化の順を足した。タグ `v4.4.0`。
+  - LP（3030317）:
+    - 版の参照と、「Shipped in」の v4.4.0 の一文（lint を上げると CI が落ちうることと、リリースノートへのリンク）。state / signals のページの版。
+    - state のページのフィルタが 4.1 のままだった: 48 個、`currency(code,loc?)`、日付のスタイル、v4.2.0 の注記。
+    - チュートリアルのステップ 07: `currency` は 4.2 から組み込みのフィルタなので、「存在しないフィルタ」の例を `money` にした（lint とコンソールの出力は 4.4.0 で取り直した）。48 個。
+    - ステップ 12: `@typedef` の打ち間違いで、4.4 の `wcs/read-path-missing` が検索の getter にも出る。
+    - ステップ 15 の `^4.4.0`、ステップ 16 の `wcstack@4.4.0` と integrity（ショップとページの両方）とリリースへのリンク。
+    - llms の作り直しと、sitemap の lastmod。
+    - 本番で 9/9。
+- 残り:
+  - 長期サポート版は保留（著者の判断）。
+  - npm の `next` は 4.0.0 のまま（著者の方針で動かさない）。
