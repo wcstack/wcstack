@@ -256,9 +256,10 @@
       "id": "tag-member-unknown",
       "lint": [{ "code": "wcs/tag-member-unknown", "severity": "error" }],
       "runtime": "loud", "harm": "broken",
-      "mistake": { "en": "Binds a member a `wcs-*` tag does not declare, a DOM property such as `hidden` or `textContent` included.", "ja": "`wcs-*` のタグが宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。" },
+      "mistake": { "en": "Binds a member a `wcs-*` tag (or a custom element the page defines) does not declare, a DOM property such as `hidden` or `textContent` included.", "ja": "`wcs-*` のタグ（やページが定義した自作要素）が宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。" },
       "effect": { "en": "`#38` (a property), `#1203` / `#1204` (`command.` / `eventToken.`): at the root the state fails to initialize, in a row the binding fails. Only the HTML sinks are written without a declaration.", "ja": "`#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。" },
-      "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "raise(M.MemberUndeclared, [name])" }]
+      "evidence": [{ "file": "packages/state/src/dom/wc.ts", "text": "raise(M.MemberUndeclared, [name])" }],
+      "note": { "en": "A custom element the page defines itself (`customElements.define` in its scripts, an `src=` module and what it imports) is checked the same way, against its `static wcBindable`, when that declaration is a literal; a 7GUIs evaluation found its `eventToken.` / `command.` typos left to the runtime, which names no near member.", "ja": "ページが自分で定義した自作要素（スクリプト・`src=` のモジュールとその import の中の `customElements.define`）も、その `static wcBindable` が字面で読めるときは同じように照合する。7GUIs の評価で、その `eventToken.` / `command.` の打ち間違いが、近いメンバーを示さない実行時に任されていたことが見つかった。" }
     },
     {
       "id": "on-prefixed-member",
