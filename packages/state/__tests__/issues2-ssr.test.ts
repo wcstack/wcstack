@@ -659,6 +659,32 @@ describe("追加: Light DOM の bind-component の子の if: の枝・for: の�
     expect(flat(p.root.querySelector("#root"))).toBe("");
   });
 
+  it("版が違い、子の中身をこのクライアントが計画できなければ、子はサーバのノードを残したまま初期化に失敗する（docs/seam-apps.md、ssr-news）", async () => {
+    const html = `<div id="root"><${kid} data-wcs="state.items: items"><wcs-state bind-component="state"></wcs-state><ul><template data-wcs="for: items"><li>{{ .id }}</li></template></ul></${kid}></div>`;
+    const state = () => ({ items: [{ id: "a" }, { id: "b" }] });
+    const other = (await serverRender(`<wcs-state enable-ssr></wcs-state>${html}`, state())).replace(/<wcs-ssr version="[^"]*"/, '<wcs-ssr version="99.0.0"');
+    // a newer minor's markup in the child's template (the page's <wcs-ssr> keeps it)
+    const bad = other.replace("{{ .id }}", "{{ .id|zzz }}");
+    expect(bad).not.toBe(other);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let server: Element[] = [];
+      const p = await hydrate(bad, state(), (r) => { server = Array.from(r.querySelectorAll("li")); });
+      expect(error.mock.calls.some((c) => c.some((x) => String(x?.message ?? x).includes("zzz")))).toBe(true);
+      expect(server).toHaveLength(2);
+      for (const n of server) expect(n.isConnected).toBe(true);
+      expect(flat(p.root.querySelector("#root"))).toBe("ab");
+      // what it can plan renders on the client, as before
+      const ok = await hydrate(other, state(), (r) => { server = Array.from(r.querySelectorAll("li")); });
+      for (const n of server) expect(n.isConnected).toBe(false);
+      expect(flat(ok.root.querySelector("#root"))).toBe("ab");
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
   it("対照: ページの if: の枝の中の子の、ページが描いた部分（div.a）は引き取る", async () => {
     const p = await ssrLoad(`<div id="root"><template data-wcs="if: a"><div class="a">A <${kid} data-wcs="state.x: x"><wcs-state bind-component="state"></wcs-state><template data-wcs="if: x"><i>X</i></template></${kid}></div></template></div>`,
       () => ({ a: true, x: true }), { adopt: ".a" });

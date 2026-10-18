@@ -15,6 +15,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Fixed
 
 - `@wcstack/state` (diagnostics): **a row field no row has is reported only when a row has a near name**, which suggests a typo (`.nmae` beside `name`), or when a row getter of another list form explains it. Rows are data, so an optional field can be absent from all of them. A page's own optimistic rows carry `pending`, and the server's do not, so after a reload the page warned `[wcs/binding-path-missing] … silently dropped` while it worked. 4.3 covered only a first row lacking what another row had. Found while landing the `ssr-news` seam app.
+- `@wcstack/state`: **a client of another minor keeps the server's page when it cannot plan it.** A client that discards a snapshot of another major.minor took the server's rows and branches away before it planned the page. Markup it could not plan — a newer minor's filter argument, a 3.x `@state` binding — then failed its initialization on a page left without them. The client now walks a copy of the page first, in a template's content, where no custom element is created, and so does a Light DOM component's engine with its content. It fails before it touches the page, which stays as the server rendered it: readable, but nothing in it responds. A client up to 4.3 cannot be helped: serve the client of the server's minor. It costs 120 B in the ssr add-on and nothing in the core. Found by the `ssr-news` seam app ([docs/seam-apps.md](./docs/seam-apps.md)).
 
 ## [4.3.0] — 2026-10-18
 

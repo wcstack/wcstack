@@ -78,7 +78,7 @@ export interface Hooks {
    * A Light DOM component's engine is about to bind `root` (its host): SSR hands over the server's
    * nodes there too; the function returned is called when the walk is done.
    */
-  adoptScope?: ((root: Node) => (() => void) | null) | null;
+  adoptScope?: ((root: Node, engine: Engine) => (() => void) | null) | null;
   /** A path a binding (or, with `watch`, a `$watch` key) names: diagnostics checks it exists. */
   declared?: ((engine: Engine, p: Pattern, watch?: boolean) => void) | null;
   /** `<wcs-state>` was defined in `registry`: an add-on defines its own tags there (`<wcs-ssr>`). */
