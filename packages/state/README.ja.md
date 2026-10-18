@@ -1301,7 +1301,7 @@ export default {
 | `this.$getAll(path, indexes?)` | ワイルドカードパスにマッチする全ての値を取得 |
 | `this.$setAll(path, indexes, value, options?)` | ワイルドカードパスにマッチする全アドレスへ一括書き込み |
 | `this.$resolve(path, indexes, value?)` | ワイルドカードパスを特定のインデックスで解決 |
-| `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行 |
+| `this.$postUpdate(path)` | 指定パスの更新通知を手動で発行。中の `*` は getter と同じく今の行の添字で、行のイベントのハンドラから呼ぶと `$postUpdate("rows.*.cells.*.text")` はその行のセルだけを通知する。複数の行を通知するには、それぞれを名指す（`` this.$postUpdate(`rows.${r}.cells.${c}.text`) ``） |
 | `this.$dependOn(path)` | キャッシュ無効化のための依存関係を手動で登録 |
 | `this.$untracked(fn)` | fn 実行中の依存追跡を抑止して値を読む |
 | `this.$eq(path, key)` / `$eqPath(path, keyPath)` / `$eqIndex(path, level?)` | 鍵付き購読: 「`path` の値はこの行の鍵か」（[鍵付き選択](#鍵付き選択eq--eqpath--eqindex)） |
@@ -3026,6 +3026,8 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 | ネストしたパスの打ち間違い（`user.nmae`） | `console.warn`（`wcs/binding-path-missing`）。更新は届かないままなので、直すのは書き手 |
 | トップレベルのパスの打ち間違い（`cout`） | 読み取り時に throw —— `[wcs/binding-path-missing] Path "cout" does not exist on the state tree. Did you mean "count"?`（`#301`）—— そのためバインディングの適用が失敗し、ほかのバインディングの失敗と同じく報告される |
 | `$watch` のキーの打ち間違い | `console.warn`（`wcs/watch-path-missing`）。単一セグメントでも報告する |
+| `$postUpdate` のパスの打ち間違い（`cells` に対する `` `rows.${r}.cell.${c}.text` ``） | 4.4（未リリース）から: `console.warn`（`wcs/post-update-path-missing`）。単一セグメントでも報告する — その呼び出しは何も更新しない |
+| state が宣言していないトップレベルのキーへの書き込みで、近い宣言済みのキーがあるもの（`this.selectedID` と `selectedId`） | 4.4（未リリース）から: キーごとに 1 回 `console.warn`（`wcs/write-path-missing`） — 書き込みは新しいキーを作るだけで、宣言したキーに束ねたものは変わらない。近い名前の無い新しいキーは、state がわざと足すことがあるので報告しない |
 
 判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
 

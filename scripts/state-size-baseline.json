@@ -23,7 +23,8 @@
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
     "bytes": 19046,
-    "gzip": 7837
+    "gzip": 7837,
+    "slack": 256
   },
   "split/features/formats.js (beyond the core)": {
     "files": 1,

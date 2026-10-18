@@ -640,11 +640,35 @@
     {
       "id": "top-level-write-typo",
       "lint": [{ "code": "wcs/write-path-missing", "severity": "warning" }],
-      "runtime": "silent", "harm": "stale",
+      "runtime": "same", "harm": "stale",
       "mistake": { "en": "Writes a top-level key the state does not declare — a typo (`this.coutn = 1`).", "ja": "state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。" },
-      "effect": { "en": "4.0 creates the key; nothing bound to `count` changes.", "ja": "4.0 はキーを作る。`count` に束ねたものは何も変わらない。" },
+      "effect": { "en": "4.0 creates the key; nothing bound to `count` changes. The diagnostics add-on warns once per key, beside a near declared one.", "ja": "4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/write-path-missing]" }],
+      "note": { "en": "Both report a write of an undeclared key beside a near declared one only (`this.selectedID` and `selectedId` — a 7GUIs evaluation): a new key with no near one is not reported, as a state may add keys on purpose. A volume's mount path is the page's.", "ja": "どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。" }
+    },
+    {
+      "id": "post-update-path-missing",
+      "runtime": "loud", "harm": "stale",
+      "mistake": { "en": "Calls `$postUpdate` with a path that does not resolve: a typo (`rows.${r}.cell.${c}.text` for `cells`).", "ja": "解決しないパスで `$postUpdate` を呼ぶ: 打ち間違い（`cells` に対する `rows.${r}.cell.${c}.text`）。" },
+      "effect": { "en": "The call updates nothing; the diagnostics add-on warns `[wcs/post-update-path-missing]` once per path, with a near name.", "ja": "その呼び出しは何も更新しない。diagnostics の後付けが、パスごとに 1 回、近い名前付きで `[wcs/post-update-path-missing]` を警告する。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "post-update-path-missing" }],
+      "note": { "en": "Found by a 7GUIs evaluation (Cells). No lint rule: the paths are usually built at run time.", "ja": "7GUIs の評価（Cells）で見つかった。lint の規則は無い: パスはふつう実行時に組み立てる。" }
+    },
+    {
+      "id": "post-update-wildcard-current-row",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Calls `$postUpdate` with a `*` meaning every row (`$postUpdate(\"rows.*.cells.*.text\")` from an event handler).", "ja": "すべての行のつもりで `*` を含むパスで `$postUpdate` を呼ぶ（イベントのハンドラから `$postUpdate(\"rows.*.cells.*.text\")`）。" },
+      "effect": { "en": "A `*` is the current row's index, as in a getter: only the row the event came from is announced, and the cells that depend on it stay stale.", "ja": "`*` は getter と同じく今の行の添字で、イベントが来た行だけが通知され、それに依存するセルは古いまま。" },
+      "disposition": "design-out", "breaking": true,
+      "note": { "en": "Found by a 7GUIs evaluation (Cells); the README says so since 4.4. `$getAll` takes `[]` for every row, and `$postUpdate` has no such form: 5.0 could add one, or refuse a `*` that no row context resolves.", "ja": "7GUIs の評価（Cells）で見つかった。README は 4.4 からそう書く。`$getAll` は `[]` ですべての行を指せるが、`$postUpdate` にその形は無い。5.0 で足すか、行の文脈が解決しない `*` を拒むかを決める。" }
+    },
+    {
+      "id": "command-emit-before-render",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Emits a command token right after the write that renders its receiver — an input in an `if:` branch (`this.editing = key; this.$command.focusEditor.emit()`).", "ja": "受け手を描く書き込みの直後にコマンドのトークンを emit する — `if:` の枝の中の入力欄（`this.editing = key; this.$command.focusEditor.emit()`）。" },
+      "effect": { "en": "The branch is rendered later, in the update: the emit reaches no subscriber and is lost (tokens are neither kept nor replayed). Emit it from `$renderedCallback`.", "ja": "枝はあとの更新で描かれるので、emit はどの購読者にも届かずに消える（トークンは保持も再送もされない）。`$renderedCallback` から emit する。" },
       "disposition": "runtime-report",
-      "note": { "en": "The lint reports a write of an undeclared key beside a near declared one (`this.selectedID` and `selectedId` — a 7GUIs evaluation); a new key with no near one is not reported, as a state may add keys on purpose. The diagnostics add-on can warn on a key created after load.", "ja": "lint は、近い宣言済みのキーがある未宣言のキーへの書き込みを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。diagnostics の後付けは、読み込みの後に作られたキーに警告できる。" }
+      "note": { "en": "Found by a 7GUIs evaluation (Cells). The time-shifted form of `command-token-unbound` (and of `io-auto-after-state`, an element defined late): a binding exists, but not yet. Whether the diagnostics add-on warns on an emit that reaches no subscriber is a design question (a token emitted to a hidden branch on purpose would warn too).", "ja": "7GUIs の評価（Cells）で見つかった。`command-token-unbound`（と、要素の定義が遅れる `io-auto-after-state`）の時間差版: 束縛はあるが、まだ無い。購読者に届かない emit に diagnostics の後付けが警告するかは設計の問い（隠れた枝へわざと emit するトークンにも警告することになる）。" }
     },
     {
       "id": "undefined-write-skipped",
