@@ -2,9 +2,9 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
-## Unreleased
+## 2.3.0 — 2026-10-18
 
-lint の重大度と文面を 4.0 のランタイムに合わせる（docs/mistake-catalogue.ja.md の「目録を作る中で見つけたもの」）。warning だった形のうち 8 つを error にするので minor。
+`@wcstack/state` 4.3.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.3.0・`@wcstack/typescript` 4.3.0 と同じ判定）。lint の重大度と文面を 4.0 のランタイムに合わせる（docs/mistake-catalogue.ja.md の「目録を作る中で見つけたもの」）。warning だった形のうち 8 つを error にするので minor。
 
 - **ランタイムが初期化か束縛を失敗させる形を error に**:
   - `wcs/tag-member-unknown`（#38・#1203・#1204）
