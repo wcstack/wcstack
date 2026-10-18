@@ -74,6 +74,23 @@ describe("束ねたパスが状態に無い（wcs/binding-path-missing）", () =
     expect(nested).toEqual([]);
   });
 
+  it("どの行にも無い行のフィールドは、近い名前が無ければ警告しない（任意のフィールド — ssr-news）。近い名前があれば警告する", async () => {
+    // the server's comments carry no `pending` (only the page's own optimistic rows do)
+    const optional = await warnings(() => page(`<ul><template data-wcs="for: comments"><li data-wcs="class.pending: .pending|truthy">{{ .text }}</li></template></ul>`, {
+      comments: [{ id: 1, text: "a" }, { id: 2, text: "b" }],
+    }));
+    expect(optional).toEqual([]);
+    const typo = await warnings(() => page(`<ul><template data-wcs="for: comments"><li>{{ .txet }}</li></template></ul>`, {
+      comments: [{ id: 1, text: "a" }],
+    }));
+    expect(typo).toHaveLength(1);
+    expect(typo[0]).toContain('Bound path "comments.*.txet"');
+    expect(typo[0]).toContain('Did you mean "text"?');
+    // a key outside a row is reported without a near name too
+    const top = await warnings(() => page(`<p>{{ user.zzz }}</p>`, { user: { name: "a" } }));
+    expect(top).toHaveLength(1);
+  });
+
   it("$watch のキーは wcs/watch-path-missing（1 段のキーも）", async () => {
     const got = await warnings(() => page(``, { count: 0, $watch: { cout() {}, count() {} } }));
     expect(got).toHaveLength(1);

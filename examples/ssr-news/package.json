@@ -1,0 +1,14 @@
+{
+  "name": "wcstack-ssr-news",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "start:prod": "node server.js --prod"
+  },
+  "dependencies": {
+    "@wcstack/server": "^4.3.0",
+    "@wcstack/router": "^4.3.0",
+    "@wcstack/fetch": "^4.3.0"
+  }
+}

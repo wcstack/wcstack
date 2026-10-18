@@ -1,0 +1,129 @@
+<!-- ssr-news: the body the server renders with @wcstack/server (server.js wraps it in the page). -->
+<wcs-state enable-ssr src="./state.js"></wcs-state>
+
+<!-- The article and its comments, on the server and after a navigation. The server waits for these
+     requests; their url getters give null once the route's data is in the snapshot, so hydration
+     fetches nothing. -->
+<wcs-fetch data-wcs="url: articleUrl; trigger: articleRetry; loading: articleLoading; eventToken.value: articleLoaded; eventToken.error: articleError"></wcs-fetch>
+<wcs-fetch data-wcs="url: commentsUrl; trigger: commentsRetry; loading: commentsLoading; eventToken.value: commentsLoaded; eventToken.error: commentsError"></wcs-fetch>
+<wcs-fetch manual method="POST"
+  data-wcs="url: postUrl; body: postBody; trigger: postTrigger; loading: postLoading; eventToken.value: postResponded; eventToken.error: postFailed">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<wcs-storage key="ssr-news.fontSize" data-wcs="value#init=element: fontSize"></wcs-storage>
+<wcs-storage key="ssr-news.read" data-wcs="value#init=element: readIds"></wcs-storage>
+
+<div class="page" data-wcs="style.fontSize: fontSizeCss">
+<header class="site">
+  <strong>SSR News</strong>
+  <nav aria-label="Main"><wcs-link to="/">Latest</wcs-link></nav>
+  <span class="prefs">
+    <label>Text size
+      <select data-wcs="value: fontChoice">
+        <option value="s">Small</option>
+        <option value="m">Medium</option>
+        <option value="l">Large</option>
+      </select>
+    </label>
+    · <span data-wcs="textContent: readCount"></span> read
+    <button type="button" data-wcs="onclick: wipe">Clear history</button>
+  </span>
+</header>
+<main>
+  <wcs-router enable-ssr data-wcs="typedParams: routeParams; routeName: routeName">
+    <template>
+      <wcs-route path="/" name="home">
+        <wcs-head><title>SSR News</title></wcs-head>
+        <section>
+          <h1>Latest</h1>
+          <ul class="articles">
+            <template data-wcs="for: articles">
+              <li data-wcs="class.read: .isRead">
+                <h2><wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .title"></span></wcs-link></h2>
+                <p data-wcs="textContent: .summary"></p>
+                <time class="meta" data-wcs="attr.datetime: .publishedAt; textContent: .published|date(en-US,medium)"></time>
+              </li>
+            </template>
+          </ul>
+        </section>
+      </wcs-route>
+      <wcs-route path="/articles">
+        <wcs-layout layout="section-layout">
+          <wcs-route path=":id(int)" name="article">
+            <wcs-head>
+              <title data-wcs="textContent: pageTitle"></title>
+              <meta name="description" data-wcs="attr.content: pageDescription">
+            </wcs-head>
+            <article>
+              <template data-wcs="if: shownArticle">
+                <h1 data-wcs="textContent: article.title"></h1>
+                <time class="meta" data-wcs="attr.datetime: article.publishedAt; textContent: articlePublished|date(en-US,medium)"></time>
+                <p data-wcs="textContent: article.body"></p>
+                <section class="comments" aria-labelledby="comments-h">
+                  <h2 id="comments-h">Comments (<span data-wcs="textContent: comments.length"></span>)</h2>
+                  <template data-wcs="if: commentsFailed">
+                    <p class="form-error">The comments could not be loaded. <button type="button" data-wcs="onclick: retry; disabled: commentsLoading">Retry</button></p>
+                  </template>
+                  <ul>
+                    <template data-wcs="for: comments">
+                      <li data-wcs="class.pending: .pending|truthy">
+                        <b data-wcs="textContent: .author"></b>:
+                        <span class="text" data-wcs="textContent: .text"></span>
+                      </li>
+                    </template>
+                  </ul>
+                  <!-- method="post": a reader without JavaScript (or before hydration) posts to the server's form handler -->
+                  <form method="post" data-wcs="attr.action: commentAction; onsubmit#prevent: submitComment">
+                    <p><label>Name <input name="author" autocomplete="nickname" data-wcs="value: draft.author"></label></p>
+                    <p><label>Comment<br><textarea name="text" rows="3" cols="40" data-wcs="value: draft.text"></textarea></label><br>
+                      <span class="field-error" data-wcs="textContent: fieldErrors.text"></span></p>
+                    <p><label><input type="checkbox" data-wcs="checked: failNext"> (test) make the server fail</label></p>
+                    <p><button data-wcs="disabled: posting">Post comment</button>
+                      <span class="form-error" role="alert" data-wcs="textContent: formError"></span></p>
+                  </form>
+                </section>
+              </template>
+              <template data-wcs="elseif: articleMissing">
+                <div class="not-found" data-http-status="404">
+                  <h1>Article not found</h1>
+                  <p><wcs-link to="/">Back to the latest news</wcs-link></p>
+                </div>
+              </template>
+              <template data-wcs="elseif: articleFailed">
+                <p class="form-error">The article could not be loaded. <button type="button" data-wcs="onclick: retry; disabled: articleLoading">Retry</button></p>
+              </template>
+              <template data-wcs="else:">
+                <p>Loading…</p>
+              </template>
+            </article>
+          </wcs-route>
+        </wcs-layout>
+      </wcs-route>
+      <wcs-route fallback name="not-found">
+        <wcs-head><title>Not found — SSR News</title></wcs-head>
+        <div class="not-found" data-http-status="404">
+          <h1>Page not found</h1>
+          <p><wcs-link to="/">Back to the latest news</wcs-link></p>
+        </div>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</main>
+</div>
+
+<!-- The section layout around the article pages: the page and a sidebar. -->
+<template id="section-layout">
+  <div class="layout">
+    <div class="content"><slot></slot></div>
+    <aside aria-label="More stories">
+      <h2>More stories</h2>
+      <ul>
+        <template data-wcs="for: articles">
+          <li data-wcs="class.read: .isRead"><wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .title"></span></wcs-link></li>
+        </template>
+      </ul>
+    </aside>
+  </div>
+</template>
