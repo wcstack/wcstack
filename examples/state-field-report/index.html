@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>Field report</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/app.css">
+  <!-- I/O nodes first, state last (module scripts run in document order). -->
+  <script type="module" src="https://esm.run/@wcstack/permission/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/notification/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/geolocation/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/camera/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/speech/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<wcs-state src="./state.js"></wcs-state>
+
+<!-- Permission watchers: global, so every page knows the grants. Read-only, they never ask. -->
+<wcs-permission name="camera" data-wcs="state: perm.camera"></wcs-permission>
+<wcs-permission name="microphone" data-wcs="state: perm.microphone"></wcs-permission>
+<wcs-permission name="geolocation" data-wcs="state: perm.geolocation"></wcs-permission>
+<wcs-permission name="notifications" data-wcs="state: perm.notifications"></wcs-permission>
+
+<!-- Read-back. Page level: speech is a global singleton that a disconnect does not cancel. -->
+<wcs-speak lang="en-US" data-wcs="command.speak: $command.speakText; command.cancel: $command.speakCancel;
+  speaking: speak.speaking; unsupported: speak.unsupported; error: speak.error; errorInfo: speak.errorInfo"></wcs-speak>
+
+<!-- The notifier (acquirer of the notifications permission). -->
+<wcs-notify data-wcs="command.request: $command.notifyRequest; command.notify: $command.notify; eventToken.clicked: notifyClicked;
+  permission: notifyPermission; error: notifyError"></wcs-notify>
+
+<!-- The draft's text and position survive a reload (one key, an accessor pair, element authority first).
+     type="session": one draft per tab (with localStorage a second tab's typing would replace this tab's draft). -->
+<wcs-storage key="fieldreport.draft" type="session" data-wcs="value#init=element: draftSnapshot"></wcs-storage>
+
+<!-- The sent reports and one report (page level: a command from anywhere reaches them). -->
+<wcs-fetch url="/api/reports" data-wcs="value: reportsList; loading: reportsLoading; error: reportsError; command.fetch: $command.reloadList"></wcs-fetch>
+<wcs-fetch data-wcs="url: reportUrl; value: report; loading: reportLoading; error: reportError"></wcs-fetch>
+
+<!-- Connection: drives the outbox. -->
+<wcs-network data-wcs="offline: offline"></wcs-network>
+
+<!-- Create the report (one element = one kind of request). Page level: a send survives navigation. -->
+<wcs-fetch url="/api/reports" method="POST" manual data-wcs="
+  body: createBody; trigger: createTrigger; loading: createLoading; error: createError;
+  eventToken.value: createResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<header>
+  <h1>Field report</h1>
+  <nav aria-label="Main">
+    <wcs-link to="/">Reports</wcs-link>
+    <wcs-link to="/new">New report</wcs-link>
+    <wcs-link to="/permissions">Permissions</wcs-link>
+  </nav>
+  <span class="net" id="net-pill" data-wcs="class.offline: offline|truthy; textContent: netText"></span>
+</header>
+
+<main>
+<template data-wcs="if: sentNotice">
+  <div class="banner info" id="sent-notice" role="status" data-wcs="textContent: sentNotice"></div>
+</template>
+<!-- Outbox: page level so uploads keep running across navigation. Never removed (an if: would abort uploads). -->
+<section id="outbox" data-wcs="hidden: outboxEmpty">
+  <h2>Outbox</h2>
+  <template data-wcs="for: outbox">
+    <div class="outbox-entry">
+      <strong class="entry-label">{{ .label }}</strong> — <span class="entry-phase">{{ .phase }}</span>
+      <span class="error entry-error">{{ .error }}</span>
+      <template data-wcs="if: .isRejected"><button class="entry-edit" data-wcs="onclick: editRejected">Edit in the draft</button></template>
+      <template data-wcs="if: .isFailed"><button class="entry-retry" data-wcs="onclick: retryEntry">Retry</button></template>
+      <template data-wcs="if: .isSent">
+        <button class="entry-open secondary" data-wcs="onclick: openSent">Open</button>
+        <button class="entry-dismiss secondary" data-wcs="onclick: dismissSent">Dismiss</button>
+      </template>
+    </div>
+  </template>
+  <template data-wcs="for: uploads">
+    <div class="upload-row">
+      <wcs-upload manual data-wcs="url: .url; files: .files; progress: .progress; loading: .loading; error: .error; value: .value; trigger: .trigger"></wcs-upload>
+      <span class="upload-label">{{ .label }}</span>
+      <progress max="100" data-wcs="value: .progress"></progress>
+      <span class="upload-phase">{{ .phaseText }}</span>
+      <button class="upload-cancel secondary" data-wcs="onclick: cancelUpload; disabled: .loading|not">Cancel</button>
+      <button class="upload-retry secondary" data-wcs="onclick: retryUpload; disabled: .canRetry|not">Retry</button>
+    </div>
+  </template>
+</section>
+<wcs-router focus="heading" data-wcs="routeName: routeName; typedParams: routeParams; path: routePath; navigateUrl: navigateUrl; leaveConfirm: leavePrompt">
+  <template>
+    <wcs-route path="/" name="home">
+      <wcs-head><title>Reports — Field report</title></wcs-head>
+      <section>
+        <h2>Reports</h2>
+        <template data-wcs="if: reportsLoading"><p class="muted">Loading…</p></template>
+        <template data-wcs="if: reportsError"><p class="error">The reports could not be loaded.</p></template>
+        <template data-wcs="if: reportsEmpty"><p class="muted">No report yet.</p></template>
+        <ul class="reports">
+          <template data-wcs="for: reports">
+            <li class="report-item">
+              <wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .title"></span></wcs-link>
+              <span class="muted">· {{ .when }} · {{ .mediaCount }} media</span>
+            </li>
+          </template>
+        </ul>
+        <p><wcs-link to="/new">+ New report</wcs-link></p>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/new" name="new">
+      <wcs-head><title>New report — Field report</title></wcs-head>
+      <article id="capture">
+        <h2>New report</h2>
+        <template data-wcs="if: lostClips">
+          <div class="banner" id="lost-clips"><span data-wcs="textContent: lostClipsText"></span>
+            <button class="secondary" data-wcs="onclick: dismissLostClips">OK</button></div>
+        </template>
+        <section>
+          <h3>Report</h3>
+          <label for="f-title">Title</label>
+          <input type="text" id="f-title" data-wcs="value: draft.title">
+          <p class="error" id="title-error" data-wcs="textContent: titleErrorText"></p>
+          <label for="f-note">Note</label>
+          <textarea id="f-note" data-wcs="value: draft.note"></textarea>
+          <wcs-listen manual interim lang="en-US" data-wcs="
+            command.start: $command.listenStart; command.stop: $command.listenStop;
+            finalTranscript: listen.final; interimTranscript: listen.interim; listening: listen.listening;
+            permission: listen.permission; unsupported: listen.unsupported; error: listen.error; errorInfo: listen.errorInfo"></wcs-listen>
+          <div class="row">
+            <button id="dictate" class="secondary" data-wcs="onclick: dictate; disabled: dictateDisabled">🎤 Dictate</button>
+            <button id="dictate-stop" class="secondary" data-wcs="onclick: stopDictation; disabled: listen.listening|not">Stop dictation</button>
+            <button id="read-back" class="secondary" data-wcs="onclick: readBack; disabled: readDisabled">🔊 Read note aloud</button>
+            <button id="read-stop" class="secondary" data-wcs="onclick: stopReading; disabled: speak.speaking|not">Stop reading</button>
+          </div>
+          <p class="muted" id="listen-text" data-wcs="textContent: listenText"></p>
+          <p class="muted" id="speak-text" data-wcs="textContent: speakStatus"></p>
+        </section>
+        <section>
+          <h3>Location</h3>
+          <wcs-geo manual high-accuracy timeout="10000" data-wcs="
+            command.getCurrentPosition: $command.locate;
+            position: geo.position; error: geo.error; errorInfo: geo.errorInfo; permission: geo.permission; loading: geo.loading"></wcs-geo>
+          <div class="row">
+            <button id="geo-locate" data-wcs="onclick: locate; disabled: geoLocateDisabled">Get position</button>
+            <button id="geo-clear" class="secondary" data-wcs="onclick: clearPosition; disabled: hasPosition|not">Remove position</button>
+            <span id="geo-position" data-wcs="textContent: positionText"></span>
+          </div>
+          <p class="error" id="geo-error" data-wcs="textContent: geoErrorText"></p>
+          <template data-wcs="if: geoUnavailable">
+            <div class="banner" id="geo-unavailable" data-wcs="textContent: geoUnavailableText"></div>
+          </template>
+          <template data-wcs="if: geoBlocked">
+            <div class="banner" id="geo-blocked">Location is blocked for this site. Type the address below — or allow Location in the site settings (lock icon) and press Get position.</div>
+          </template>
+          <label for="f-address">Address <span class="muted" data-wcs="textContent: addressHint"></span></label>
+          <input type="text" id="f-address" data-wcs="value: draft.address">
+        </section>
+        <section>
+          <h3>Camera</h3>
+          <template data-wcs="if: camUnavailable">
+            <div class="banner" id="cam-unavailable" data-wcs="textContent: camUnavailableText"></div>
+          </template>
+          <template data-wcs="if: camBlocked">
+            <div class="banner" id="cam-blocked">The camera is blocked for this site. Lock icon → Site settings → Camera → Allow, then press Start camera again. <wcs-link to="/permissions">Permissions</wcs-link></div>
+          </template>
+          <template data-wcs="if: camAllowedAgain">
+            <div class="banner info" id="cam-allowed-again">The camera is allowed now — press Start camera again.</div>
+          </template>
+          <template data-wcs="if: camNotice">
+            <div class="banner info" id="cam-notice" data-wcs="textContent: camNotice"></div>
+          </template>
+          <wcs-camera audio data-wcs="
+            command.start: $command.camStart;
+            command.stop: $command.camStop;
+            command.switchCamera: $command.camSwitch;
+            eventToken.streamReady: gotStream;
+            eventToken.ended: camEnded;
+            active: cam.active;
+            permission: cam.permission;
+            audioPermission: cam.audioPermission;
+            devices: cam.devices;
+            deviceId: cam.deviceId;
+            error: cam.error;
+            errorInfo: cam.errorInfo;
+            keepAlive: rec.recording"></wcs-camera>
+          <wcs-recorder data-wcs="
+            command.attachStream: $command.feedRecorder;
+            command.start: $command.recStart;
+            command.stop: $command.recStop;
+            recording: rec.recording;
+            mimeType#init=element: rec.mimeType;
+            error: rec.error;
+            errorInfo: rec.errorInfo;
+            eventToken.recorded: onRecorded"></wcs-recorder>
+          <wcs-wakelock data-wcs="active: rec.recording; held: wake.held; error: wake.error"></wcs-wakelock>
+          <wcs-timer interval="250" manual data-wcs="
+            command.start: $command.timerStart;
+            command.stop: $command.timerStop;
+            command.reset: $command.timerReset;
+            elapsed: rec.elapsed"></wcs-timer>
+          <div class="row">
+            <button id="cam-start" data-wcs="onclick: startCamera; disabled: camStartDisabled">Start camera</button>
+            <button id="cam-stop" class="secondary" data-wcs="onclick: stopCamera; disabled: cam.active|not">Stop camera</button>
+            <button id="cam-switch" class="secondary" data-wcs="onclick: switchCamera; hidden: camCanSwitch|not">Front / back</button>
+            <button id="rec-start" class="danger" data-wcs="onclick: startRecording; disabled: recDisabled">● Record</button>
+            <button id="rec-stop" data-wcs="onclick: stopRecording; disabled: rec.recording|not">■ Stop</button>
+            <span class="rec" id="rec-indicator" data-wcs="hidden: rec.recording|not">REC <span id="rec-elapsed" data-wcs="textContent: recElapsedText"></span></span>
+          </div>
+          <p class="muted" id="cam-status" data-wcs="textContent: camStatus"></p>
+          <p class="muted" id="wake-text" data-wcs="textContent: wakeText"></p>
+          <p class="error" id="rec-error" data-wcs="textContent: recErrorText"></p>
+          <p class="muted">No still photo: <code>&lt;wcs-camera&gt;</code> has no way to take one, so a report carries clips only.</p>
+        </section>
+        <section>
+          <h3>Clips</h3>
+          <template data-wcs="if: hasClips|not"><p class="muted">No clip yet. Start the camera and press Record.</p></template>
+          <div class="clips">
+            <template data-wcs="for: clips">
+              <div class="clip-card">
+                <video class="clip" controls preload="metadata" data-wcs="src: .url"></video>
+                <div class="muted clip-label">{{ .label }}</div>
+                <button class="danger clip-discard" data-wcs="onclick: discardClip">Discard</button>
+              </div>
+            </template>
+          </div>
+        </section>
+        <section>
+          <div class="row">
+            <button id="send" data-wcs="onclick: send; disabled: draftEmpty">Send report</button>
+            <span class="muted" id="send-hint" data-wcs="textContent: sendHint"></span>
+          </div>
+        </section>
+      </article>
+    </wcs-route>
+
+    <wcs-route path="/reports/:id(int)" name="report">
+      <wcs-head><title>Report — Field report</title></wcs-head>
+      <article id="report">
+        <template data-wcs="if: reportLoading"><p class="muted">Loading…</p></template>
+        <template data-wcs="if: reportNotFound">
+          <h2 id="report-missing">No report #<!--@@: routeParams.id--></h2>
+          <p>It does not exist (or was not sent). <wcs-link to="/">Back to the reports</wcs-link></p>
+        </template>
+        <template data-wcs="if: reportFailed"><p class="error">The report could not be loaded.</p></template>
+        <template data-wcs="if: shownReport">
+          <h2 id="report-title" data-wcs="textContent: shownReport.title"></h2>
+          <p class="muted" data-wcs="textContent: reportPositionText"></p>
+          <p id="report-note" data-wcs="textContent: shownReport.note"></p>
+          <div class="clips">
+            <template data-wcs="for: reportMedia">
+              <div class="clip-card">
+                <template data-wcs="if: .isVideo"><video class="clip report-media" controls preload="metadata" data-wcs="src: .url"></video></template>
+                <div class="muted">{{ .name }} · {{ .type }} · {{ .size }} B</div>
+              </div>
+            </template>
+          </div>
+        </template>
+      </article>
+    </wcs-route>
+
+    <wcs-route path="/permissions" name="permissions">
+      <wcs-head><title>Permissions — Field report</title></wcs-head>
+      <section>
+        <h2>Permissions</h2>
+        <p class="muted">Each row follows the browser's site settings live (no reload needed).
+          "Watcher" is what the Permissions API says; "acquirer" is what the element that asks reported last.</p>
+        <table>
+          <thead><tr><th>Permission</th><th>Watcher</th><th>Acquirer</th><th>What to do</th></tr></thead>
+          <tbody>
+            <template data-wcs="for: permRows">
+              <tr class="perm-row" data-wcs="attr.data-perm: .name">
+                <td>{{ .label }}</td>
+                <td><span class="pill perm-state" data-wcs="textContent: .state; class.granted: .isGranted; class.denied: .isDenied"></span></td>
+                <td class="perm-acquirer">{{ .acquirer }}</td>
+                <td class="perm-advice">{{ .advice }}</td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div class="row">
+          <button id="ask-notify" data-wcs="onclick: askNotifications; disabled: notifyAskDisabled">Allow notifications</button>
+          <button id="ask-geo" data-wcs="onclick: askLocation">Get position</button>
+          <wcs-link to="/new">Camera and microphone: open Capture</wcs-link>
+        </div>
+        <p class="muted" id="perm-geo-text" data-wcs="textContent: permGeoText"></p>
+        <wcs-geo manual data-wcs="command.getCurrentPosition: $command.permLocate;
+          permission: permGeo.permission; error: permGeo.error; loading: permGeo.loading;
+          latitude: permGeo.latitude; longitude: permGeo.longitude; accuracy: permGeo.accuracy"></wcs-geo>
+      </section>
+    </wcs-route>
+
+    <wcs-route fallback name="notfound">
+      <wcs-head><title>Not found — Field report</title></wcs-head>
+      <section><h2>Not found</h2><p><wcs-link to="/">Back to the reports</wcs-link></p></section>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+</main>
+</body>
+</html>

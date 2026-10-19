@@ -83,6 +83,7 @@ Larger apps written to find defects rather than to show a feature: a first-time 
 | [`state-collab-board/`](state-collab-board/) | `<wcs-sse>` × optimistic `fetch` × `<wcs-network offline>` × reconnect and catch-up (shared board, two browsers) | `node examples/state-collab-board/server.js` | :3000 |
 | [`signals-shop/`](signals-shop/) | `@wcstack/signals` × router × `<wcs-fetch>` / `<wcs-storage>` (the tutorial's shop on the other reactive core) | `node examples/signals-shop/server.js` | :3000 |
 | [`ssr-news/`](ssr-news/) | `@wcstack/server` × router × state × `<wcs-fetch>` on the server and at hydration × `<wcs-link>` / `<wcs-head>` / `<wcs-layout>` under SSR × the client's version (a server-rendered news site, readable without JavaScript) | `cd examples/ssr-news && npm install && node server.js` | :3000 |
+| [`state-field-report/`](state-field-report/) | `<wcs-permission>` × the acquiring elements × `<wcs-camera>` → `<wcs-recorder>` → `<wcs-upload>` × a route's nodes × `<wcs-network offline>` × `<wcs-storage>` × `Permissions-Policy` / an `<iframe>` (a field report from a phone: clips, the position, a dictated note, an outbox) | `node examples/state-field-report/server.js` | :3000 |
 
 ## Shared server core
 

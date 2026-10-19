@@ -14,7 +14,19 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "on-first-retry",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    // The headless shell has no getUserMedia: the field report's spec runs in full Chromium with a fake
+    // camera and microphone (examples/state-field-report, docs/seam-apps.md).
+    { name: "chromium", use: { ...devices["Desktop Chrome"] }, testIgnore: /state-field-report\.spec\.ts/ },
+    {
+      name: "chromium-media",
+      testMatch: /state-field-report\.spec\.ts/,
+      // one worker for the file: a fake camera encoding in many browsers at once starves the encoder
+      // (a short take comes out as a header-only WebM)
+      fullyParallel: false,
+      use: { ...devices["Desktop Chrome"], channel: "chromium", launchOptions: { args: ["--use-fake-device-for-media-stream"] } },
+    },
+  ],
   webServer: {
     command: "node serve.mjs",
     port: PORT,

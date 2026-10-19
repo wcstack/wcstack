@@ -81,6 +81,7 @@ npx serve examples/state-permission-banner
 | [`state-collab-board/`](state-collab-board/) | `<wcs-sse>` × 楽観的な `fetch` × `<wcs-network offline>` × 再接続と追いつき（共有ボード・2 つのブラウザ） | `node examples/state-collab-board/server.js` | :3000 |
 | [`signals-shop/`](signals-shop/) | `@wcstack/signals` × router × `<wcs-fetch>` / `<wcs-storage>`（チュートリアルのショップをもう一方のリアクティブコアで） | `node examples/signals-shop/server.js` | :3000 |
 | [`ssr-news/`](ssr-news/) | `@wcstack/server` × router × state × サーバーとハイドレーションでの `<wcs-fetch>` × SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>` × クライアントの版（サーバーで描くニュースサイト。JavaScript 無しでも読める） | `cd examples/ssr-news && npm install && node server.js` | :3000 |
+| [`state-field-report/`](state-field-report/) | `<wcs-permission>` × 取得する要素 × `<wcs-camera>` → `<wcs-recorder>` → `<wcs-upload>` × ルートのノード × `<wcs-network offline>` × `<wcs-storage>` × `Permissions-Policy` / `<iframe>`（スマートフォンからの現場報告: クリップ・位置・口述のメモ・送信待ちの箱） | `node examples/state-field-report/server.js` | :3000 |
 
 ## 共有サーバーコア
 
