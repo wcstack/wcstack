@@ -118,7 +118,7 @@ import { wireNotificationClicks } from "@wcstack/notification/sw";
 wireNotificationClicks();
 ```
 
-各クリックを `BroadcastChannel("wcs-notify")`（主）と `clients.postMessage`（フォールバック）で中継し、ページの `NotificationCore` が 2 経路を de-dup して `wcs-notify:click` を発火します。
+各クリックを `BroadcastChannel("wcs-notify")`（主）と `clients.postMessage`（フォールバック）で中継し、ページの `NotificationCore` が 2 経路を de-dup して `wcs-notify:click` を発火します。通知自身の `data` は `{ __wcsId, payload }` で、`payload` が `notify()` に渡した `data` です。クリックのイベントは `payload` を返しますが、Service Worker で `event.notification.data` を自分で読むと、この包みを読みます。
 
 ## 属性 / Inputs
 

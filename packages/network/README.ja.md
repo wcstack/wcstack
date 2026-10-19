@@ -111,7 +111,7 @@ npm install @wcstack/network
 | `supported`      | `wcs-network:change` | 実在する `navigator.connection` が見つかれば `true`、それ以外は `false`。 |
 | `offline`        | `wcs-network:change` | `!navigator.onLine`。window の `online` / `offline` イベントで追う — `supported` に関わらずどのブラウザにもある。navigator が無ければ（SSR）`null`。ネットワークが要る操作を止めるのに束ねる（`data-wcs="offline: offline"` と `disabled: offline`）。`navigator.onLine` と同じく、`false` はネットワークがあることで、サーバーが応えることではない（`online` という名前にしないのは、`on` で始まる `data-wcs` の名前がイベントの束縛になるため）。 |
 
-5 つすべては単一の `wcs-network:change` イベントから派生します（ネイティブ API が全フィールドを1つの `change` イベントで報告するのと同じく、スナップショット全体を1つのイベントにまとめて発火します）。また、`supported` が `true` の環境でも、ブラウザが該当フィールドを欠落または期待外の型で報告した場合、4 つのデータフィールドは個別に `null` へ正規化されます。
+6 つすべては単一の `wcs-network:change` イベントから派生します（ネイティブ API が全フィールドを1つの `change` イベントで報告するのと同じく、スナップショット全体を1つのイベントにまとめて発火します）。また、`supported` が `true` の環境でも、ブラウザが該当フィールドを欠落または期待外の型で報告した場合、4 つのデータフィールドは個別に `null` へ正規化されます。
 
 `downlinkMax` と接続種別（wifi/cellular等）の `type` は意図的に公開していません — 理由は `docs/network-tag-design.md` §2 を参照（実用上の使用例が乏しい、`type` はfingerprinting対策によりブラウザ間で信頼性が低い）。
 

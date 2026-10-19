@@ -92,6 +92,14 @@
 2. **委譲されたハンドラが throw したとき、そのハンドラのソースが `currentTarget` を含めば、ハンドラごとに 1 回 `#direct` を案内する**（`[wcs/delegated-current-target]`）。core に失敗を後付けへ渡すフックを 1 つ足す（33 B）。throw しない形（`currentTarget.value` が `undefined`）は黙ったままで、ハンドラの間だけ `currentTarget` を要素にする案は 5.0 の議題のまま。
 3. **`$postUpdate` の「すべての行」の形は足さない。** `*` は getter と同じく今の行を指すと README に書き、目録で 5.0 の議題にした（`$getAll` の `[]` に当たる形を足すか、行の文脈が解決しない `*` を拒むか）。
 
+### 5.3 state-field-report から決めたこと（2026-10-19、著者）
+
+§3.2 の 2 本目の継ぎ目アプリ（デバイス系の I/O × 権限。[seam-apps.ja.md](./seam-apps.ja.md) の state-field-report）が残した設計の問い。3 つとも推奨の案に決めた。
+
+1. **録画中に `<wcs-recorder>` が文書から外れたら、撮った分をクリップにして渡す。** 何も言わずに捨てていた。権限の取り消しでトラックが終わったときと同じく、止めて `recorded` で渡し、`recording: false` を知らせる。比べた案: 捨てて 1 回警告する。
+2. **このページで使えない機能（安全でない origin・Permissions-Policy）は、見張り役も取りに行く側の `permission` も `unsupported` にそろえ、`errorInfo` は理由付きの `capability-missing` にする。** Chromium の Permissions API はポリシーで切られたフレームで `granted`、安全でない origin で `denied` を返し、利用者の拒否と区別できなかった。`denied` は「サイトの設定で変えられる拒否」だけになる。値は増やさない。比べた案: 5 つ目の値（`blocked`）と新しい code を足す、文書だけ。
+3. **切断は、変える state の出力をすべてその場で知らせ、打ち切る操作は終わったと知らせる — I/O ノードのファミリー全体の規則にする**（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §22）。router は離れたルートのノードを束縛ごと戻すので、無言のリセット（`speaking`・`listening`）や世代の守りが捨てた完了（`loading`・`connected`）は、戻った後も state の中で古いままだった。洗うと 13 パッケージにあった。§13.4 の「無音のリセット」は「戻して知らせる」に変わる。比べた案: 見つかった camera と recorder だけ直し、残りは目録に記録する。
+
 ## 6. やらないこと
 
 - 新しい I/O ノードのパッケージを増やすこと（量産の候補は尽き、パッケージ数は KPI にしない — [go-to-market-2026-08.md](./go-to-market-2026-08.md) §7）。

@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 2 |
-| 実行時 | 53 |
+| 実行時 | 58 |
 | lint だけ — 条件付きの沈黙 | 24 |
 | 文書だけ — 沈黙 | 8 |
 | 数えない lint の code | 17 |
@@ -124,7 +124,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|---|
 | 1 つの `<wcs-fetch>` で `url` によって読み込み、同じ要素で `method` + `body` + `trigger` によって投稿する。 | code なし: メソッドはそのままで本文は 1 回だけ送られるので、以後の url の変化ごとに本文の無い `POST` を送る。url の監視が本文の無い変更を送るとき、要素が `[wcs/fetch-auto-unsafe]` で警告する。 | — |
 | 重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。 | code なし: 新しい要求が実行中の要求を中断し、その結果を捨てる。それが変更の要求（GET・HEAD・OPTIONS 以外）なら、要素がメソッドと URL を名指して `[wcs/fetch-request-superseded]` で警告する。 | — |
-| I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、チャンネルの無い `<wcs-broadcast>` や worker の無い `<wcs-worker>` の `post`、ストリームの無い recorder の `start`。 | code なし: 呼び出しは拒まれ、運んでいたものは失われる。ノードの `error` の出力に流れ、要素が `[wcs/command-not-ready]` で 1 回警告する（環境に無い API は `supported` が知らせる）。 | — |
+| I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、チャンネルの無い `<wcs-broadcast>` や worker の無い `<wcs-worker>` の `post`、ストリームの無い recorder の `start`、許可の無い `<wcs-notify>` の `notify`。 | code なし: 呼び出しは拒まれ、運んでいたものは失われる。ノードの `error` の出力に流れ、要素が `[wcs/command-not-ready]` で 1 回警告する（環境に無い API は `supported` が知らせる）。 | — |
+| `keepAlive: <録画中のパス>` なしの `<wcs-camera>` から録画し、録画中にタブが隠れる。 | code なし: カメラはページが隠れている間ストリームを止め、録画はそこまでの分で終わる（短いテイク）。カメラが `[wcs/camera-keep-alive-missing]` で 1 回警告する。 | — |
+| `<wcs-storage>` が保存する値に、`Blob` や `File`（録画したクリップ、選んだファイル）、`Map` / `Set`、バイナリを入れる。 | code なし: JSON はどれも保てない。それぞれ `{}` で保存され、再読み込みの後は空で返る（継ぎ目アプリは `[object Object]` を 15 バイトの「動画」として送った）。要素が、何がどこにあるかを添えて `[wcs/storage-unserializable]` で 1 回警告する。 | — |
+| 失敗・中断した `<wcs-upload>` を、ファイルを代入し直さずに `trigger` をもう一度書いて送り直す。 | code なし: アップロードは fetch の `body` と同じく `files` を使い切る。終わると `files` は `null` で（双方向の束縛はそのパスも空にする）、送り直しは何も送らない。要素が `[wcs/command-not-ready]` で 1 回警告する。 | — |
 | `<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type="module"` の無いスクリプトを付ける。 | code なし: router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートは守られない。同じ階層でルートの後に置いた外のものは、以前と同じくそのルートを守り続ける。 lint の規則はまだ無い。どちらの形もマークアップに見える。 | — |
 | `<wcs-storage type>` を打ち間違える（`type="sesion"`）。 | code なし: `session` ちょうど以外は `local` になり、セッション向けのデータがディスクに残る。要素は値ごとに 1 回 `[wcs/storage-type-invalid]` で警告する。 lint の規則はまだ無い。値はマークアップにある。 | — |
 | `<base href>` も `basename` も無いページで router を読み込む。 | 同じ code: `/products/3` へのディープリンクか再読み込みで、router は `/products/3` を basename にし、根のルートを表示して、リンクをその下で解決する。導いた basename を添えて `[wcs/base-href-missing]` で警告する。 5.0 の議題: basename を導かない。導出に頼るサブフォルダのアプリが変わる。 | `wcs/base-href-missing` (warning) |
@@ -165,11 +168,13 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `**` を読まない場所（束縛・`$watch` のキー・`$postUpdate`）で、または `$recursion` なしで使う。 | 同じ code: `#1101`。計画が失敗するか、呼び出しが throw する。宣言の無い `**` の getter のキーは読み込みで失敗する。 | `wcs/recursion-unsupported` (error) |
 | `$scan` を宣言する（4.0 で外れた）。 | code なし: diagnostics の後付けが読み込みで `#1`（`$scan was removed`）を throw する。それの無い `/core` ではキーは無視される。 | `wcs/scan-declaration-invalid` (varies) |
 | 文書に 2 つ目の root の `<wcs-state>` を置く。 | code なし: 後から読み込み終えた方が `#47` で失敗し、先の方がページを持つ。 | `wcs/second-root` (error) |
+| `<wcs-listen>` → state → `<wcs-speak>` を、聞き取り中に読み上げを止めずに繋ぐ。 | code なし: マイクが読み上げを聞き、聞いたものがまた話され、回るたびに長くなる。ページの `<wcs-listen>` が聞いている間に話し始めると、`<wcs-speak>` が `[wcs/speech-echo]` で 1 回警告する。 | — |
 | `wcBindable` の宣言の無いタグ（`<wcs-fetch-header>`）に spread（`...:`）する。 | 同じ code: 取り付けの時点で `#1501`。root では state が初期化に失敗し、行では束縛が失敗する。 | `wcs/spread-no-bindable` (error) |
 | `wcs-*` のタグ（やページが定義した自作要素）が宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。 | code なし: `#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。 ページが自分で定義した自作要素（スクリプト・`src=` のモジュールとその import の中の `customElements.define`）も、その `static wcBindable` が字面で読めるときは同じように照合する。7GUIs の評価で、その `eventToken.` / `command.` の打ち間違いが、近いメンバーを示さない実行時に任されていたことが見つかった。 | `wcs/tag-member-unknown` (error) |
 | テンプレートの規則を破る: 1 つのテンプレートに構造ディレクティブを 2 つ、`for:`・`if:` のテンプレートの中の `outerHTML:`。 | 同じ code: 束縛の計画で `#201`〜`#203`、state は初期化に失敗する。`#204`（挿入された中身の先頭の構造テンプレート）は記録される。 | `wcs/template-syntax` (varies) |
 | コマンドのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、または `nativeCommands` の表に無いネイティブ要素のメソッド。 | 同じ code: 計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。 | `wcs/token-misconfigured` (error) |
 | state が宣言しないコマンドかイベントのトークンを使う。 | 同じ code: `command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は `undefined` で、`.emit()` は何も名指さない TypeError を投げる（lint は error）。 | `wcs/token-undeclared` (varies) |
+| `<wcs-fetch>` / `<wcs-upload>` の 1 つの `data-wcs` で、`trigger:` を `url:`（と `files:`）より前に書く。`trigger: true` で作った行は、入力が揃う前に発火する。 | code なし: 束縛は書いた順に当たる。trigger は url（やファイル）を見つけられず、何も送らず、`error` も立てない。要素が `[wcs/command-not-ready]` で 1 回警告する。 継ぎ目アプリ state-field-report が見つけた（クリップごとのアップロードの行）。要素が残りの束縛をマイクロタスク 1 つ待ってから読むこともできる — 直接の代入では `loading` が遅れて立つので、5.0 の議題。 | — |
 | 書き戻す束縛（`<input>`・`<select>`・`<textarea>` の `value:`、`checked:`、`radio:` / `checkbox:`）に、setter の無い getter を束ねる。 | code なし: 入力のたびに `"celsius" is a getter without a setter` を投げる。欄は打った値を見せ、state は元の値のまま。 7GUIs の評価（Temperature）で見つかった。setter を足すか、`#ro` で一方向にする。 | `wcs/path-readonly` (error) |
 | root だけが走らせる宣言をボリュームに書く: `$stream`・`$watch`・`$listKeys`・`$renderedCallback`（拒む）、`$commandTokens`・`$eventTokens`・`$on`・`$errorCallback`（走らせない）。 | code なし: scopes の後付けが `console.error` でボリュームを拒むか、`console.warn` で宣言を無視する。 | `wcs/volume-declaration` (varies) |
 | `$watch` がオブジェクトでない、キーが `$` で始まる・`@` を含む、ハンドラが関数でない。 | code なし: temporal の後付けが読み込みで throw し、state は初期化に失敗する。 | `wcs/watch-declaration-invalid` (error) |

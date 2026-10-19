@@ -85,6 +85,7 @@
 | `state-collab-board` — 共有ボード: ほかの人の変更は SSE で届き、自分の変更はすぐ反映し、サーバーが拒めば巻き戻す | `<wcs-sse>` × state の一覧、`<wcs-fetch>` × 楽観的更新、`<wcs-network>` × state、再接続 × 再同期 | 2 つのブラウザ; 拒まれる変更; オフラインになって戻る; サーバーの再起動 | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
 | `signals-shop` — チュートリアルのショップを `@wcstack/signals` で | signals × router、wc-bindable の橋を通した signals × `<wcs-fetch>` / `<wcs-storage>` | チュートリアルと同じ（再読み込み、ディープリンク、戻る、2 つ目のタブ） | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
 | `ssr-news` — `@wcstack/server` で描くニュースサイト: 記事の一覧、コメント付きの記事のページ、読者の設定、セクションのレイアウト、本番の形（CSP、SRI、HTML のキャッシュ） | `@wcstack/server` × router × state、サーバーとハイドレーションでの `<wcs-fetch>`、SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>`、クライアントの版 × サーバーの版 | ディープリンクと再読み込み; JavaScript 無し; 遅いクライアントのバンドル（ハイドレーション前の入力）; サーバーの再起動; 別の minor のクライアント; 投稿の後の HTML のキャッシュ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-18）。発見は下 |
+| `state-field-report` — スマートフォンからの現場報告: クリップ・位置・口述のメモを、送信待ちを通して送る。本番の形で | `<wcs-permission>` × 取りに行く側（camera・geo・listen・notify）、`<wcs-camera>` × `<wcs-recorder>` × `<wcs-upload>`、ルートのノード × I/O ノードの切断、`<wcs-storage>` × 値とハンドルの混ざった下書き、`Permissions-Policy` / `<iframe>` × デバイスの要素すべて | 拒否してから許可する、録画中の権限の取り消し、録画中にタブを隠す、撮影のページを離れて戻る、アップロード中の再読み込み、アップロード中のオフライン、422 / 413 / 415 / 500、2 つのタブ、`<iframe>` の中のアプリ | 作成・分類済み（2026-10-19）。発見は下 |
 
 ### router-auth（2026-10-13）
 
@@ -233,3 +234,25 @@
 | 文書のずれ | cross-tab-todo の例が 3.x のエコーの止め方を説明していた。`docs/typescript.md` と typescript の日本語 README が v1 の manifest の形を書いていた | 修正 |
 | 設計の問い | リリースの速さ（6 週間で 26 回、major 2 回）と長期サポート版 | 未決、著者の判断: [v4-direction-2026-10.md](./v4-direction-2026-10.md) §4 と §6 が、継ぎ目アプリ 1 本で minor 1 回・patch はデータ損失と退行だけ・4.x の中で破壊的変更をしない、をすでに決めている。3.x や 4.x のサポート版は決めていない |
 | 残り | 補助の関数（`concat(newRow())`）で足した行は形を読まない | 記録: `stateSchema` で補える |
+
+### state-field-report（2026-10-19）
+
+[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) の下で 2 本目のアプリで、§3.2 が次に挙げる継ぎ目、デバイス系の I/O × 権限を越える。スマートフォンからの現場報告: 権限のページ、カメラのプレビューとクリップ（`<wcs-camera>`・`<wcs-recorder>`・`<wcs-wakelock>`）、位置（`<wcs-geo>`）、口述のメモ（`<wcs-listen>` / `<wcs-speak>`）、`<wcs-fetch>` で作る報告と `<wcs-upload>` で送るクリップ、`<wcs-network>` がオフラインと言う間の送信待ち、送り終えたときの通知（`<wcs-notify>`）、`<wcs-router>` のルートをまたいで `<wcs-storage>` が持つ下書き、そして本番の形（SRI・厳しい CSP・`Permissions-Policy`・`<iframe>` の中のアプリ）。初めての作者は公開文書と公開済みの 4.4.0 を使った。生活の出来事はすべて、偽のカメラとマイクを持つヘッドレスの Chromium で確かめた。隠れたタブ・音声認識のサービス・OS の通知は模擬した。引っかかりは 18 件。わざとした間違い 15 件のうち 12 件は、wcstack の何も知らせなかった。生活の出来事は 1 つが失敗した（撮影のページを離れて戻る）。5 つは回避策があって初めて通った。
+
+主張はどれも、分類する前に、リポジトリの 4.4.0 の dist を使って Chromium で再現した。2 つは書かれたより狭かった。安全でない origin で見張り役が `granted` と言ったのは、テスト環境がすべての origin に許可を与えたためで、本物のブラウザはそこで `denied` と言う（ページにとっては、やはり拒否に見える）。タブを落とした echo ループは、模擬の認識器の上で起きた。
+
+| 種類 | 発見 | 結果 |
+|---|---|---|
+| 実行時の欠陥 | camera: `<wcs-camera>` が切断で `active` をイベントなしに `false` にしていた。router は離れたルートのノードを束縛ごと戻すので、ページはカメラが無いのに「Camera live.」と表示し、`active` の間は押せない開始ボタンも再読み込みまで押せなかった | 直した: 切断が `active: false` を知らせる |
+| 実行時の欠陥 | 同じことが、さらに 12 のパッケージにあった（すべての I/O ノードを洗って見つけた）。出力をイベントなしに戻すもの（`speaking`・`listening`・消したエラー）と、世代の守りが完了を捨てて途中の値のまま残すもの（`loading`・`connected`） | 決めた: 横断の契約 — 切断は、変える state の出力をすべて知らせ、打ち切る操作は終わったと知らせる（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §22） |
+| 設計の問い | 録画中に `<wcs-recorder>` が文書から外れると、録画を何も言わずに捨てていた | 決めた: 残す。録画を止め、ストリームのトラックが終わったときと同じく、クリップを `recorded` で渡す |
+| 実行時の欠陥 | recorder: `mime-type` が無いと、クリップの `Blob` に型が無く、`mimeType` も `""` のままだった。Chromium は型を `onstart` で決め、recorder はその前に読んでいた。そのため README 自身の手順（`new File([blob], …)` を `<wcs-upload>` へ）が、サーバ（415）にも `accept="video/*"` にも拒まれた | 直した |
+| 実行時の欠陥 | camera: プレビューの shadow の `<style>` が、`'unsafe-inline'` の無い `style-src` に止められる（`<video>` が元の大きさで描かれる） | 直した: 構築したスタイルシート |
+| 設計の問い | `Permissions-Policy`（ヘッダ、`allow` の無い `<iframe>`）や安全でない origin がデバイスを切っていた。見張り役は `granted` か `denied`、取りに行く側は `not-allowed` と言い、利用者の拒否と同じに見えた（Chromium の Permissions API がそう答える）。アプリは利用者をサイトの設定へ案内した | 決めた: 見張り役も取りに行く側の `permission` も `unsupported`、理由付きの `capability-missing`、ブラウザには聞かない |
+| 無言の間違い | upload: 1 つの `data-wcs` で `url` / `files` より前の `trigger`、使い切った後の再送、url より前のファイルは、何も送らず、エラーも立てなかった。fetch: url の無い `trigger`。notify: 許可の無い `notify()` | 直した: `[wcs/command-not-ready]`、要素ごとに 1 回 |
+| 無言の間違い | `<wcs-storage>` が保存する下書きに入れた録画クリップ（`{}` で保存され、15 バイトの「動画」として送られた）、聞き取り中の読み上げ（echo ループ）、`keep-alive` なしで録画中にタブを隠す | 直した: `[wcs/storage-unserializable]`・`[wcs/speech-echo]`・`[wcs/camera-keep-alive-missing]` |
+| lint の穴 | モジュールの定数を `map` する getter（`PERMS.map(…)`）の行が `wcs/binding-path-missing` の偽陽性になっていた。値として束ねた `streamReady:` に何も言わなかった | 直した: 行はコールバックのリテラルから読む。`wcs/handle-bound-as-value` |
+| 文書の穴 | `mimeType` を双方向に束ねると state の初期値が要求に書かれる。`errorInfo` は今の許可ではなく最後の試み。アップロードは `files` を使い切る（fetch の `body` と同じ）。拒まれた 413 は `progress` を 100 に残す。1 つのウィンドウの下書きには `type="session"`。`leaveConfirm` は再読み込みとルートの移動を一緒に扱う。`devices` の形。network の README の「5 つ」の出力（6 つ）。通知の `data` の包み | 直した |
+| 残り | `for:` の 1 行の `<wcs-upload>` に命じる（`abort`）には DOM のコードが要る（7GUIs の発見）。ページの可視性を出す要素が無い（新しい I/O のパッケージは 4.x の予定に無い）。`<wcs-camera>` の静止画が無い。切断が無効にした `objectURL` は知らせない（そのイベントは `recorded`） | 記録 |
+
+上の 3 つの設計の問いは、2026-10-19 に著者が推奨どおりに決めた（[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.3）。アプリを `examples/` へ取り込むには、`channel: "chromium"` と `--use-fake-device-for-media-stream` の Playwright の project が要る。既定のヘッドレスシェルには `getUserMedia` が無い。
