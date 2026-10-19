@@ -48,8 +48,8 @@ A `fetch()` call, `trigger=true`, the `fetch` command, and a `data-fetchtarget` 
 
 → **Consequence**: a design that accumulates through `eventToken.value` plus `$on` (`packages/fetch/examples/infinite-scroll`) breaks by appending `null` unless the handler rejects on status first.
 
-### 1.5 `trigger` is silently ignored when the url is empty
-`trigger=true` while `url` is empty **does nothing** (no fetch, no event, the flag stays false). Set a url and write `true` again to run it.
+### 1.5 `trigger` is ignored when the url is empty, with a warning since 4.5
+`trigger=true` while `url` is empty **does nothing** (no fetch, no event, the flag stays false). Set a url and write `true` again to run it. Up to 4.4 it was silent; since 4.5 the element warns once (`[wcs/command-not-ready]`): a `trigger` written before `url` in one `data-wcs` is the usual cause (bindings apply in the order written).
 
 ### 1.6 `body` resets to null on every `fetch()`; `method="HEAD"` does not read the body
 (Supplementary. For details see the fetch README's "Design Notes".)

@@ -272,6 +272,25 @@ describe("notify() — constructor バックエンド", () => {
     expect((only(events, "wcs-notify:error")[0].detail as WcsNotifyErrorDetail).error).toBe("not-granted");
   });
 
+  it("許可の無い notify は、要素を添えて 1 回だけ警告する（[wcs/command-not-ready]）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      installNotification({ permission: "default" });
+      removePermissions();
+      const target = new EventTarget();
+      const core = new NotificationCore(target);
+      await core.observe();
+      core.notify("one");
+      core.notify("two");
+      const said = warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+      expect(said).toHaveLength(1);
+      expect(String(said[0][0])).toContain('the permission is "prompt"');
+      expect(said[0][1]).toBe(target);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("title が文字列でないとき error を出して '' を返す", async () => {
     const core = await granted();
     const events = listen(core);

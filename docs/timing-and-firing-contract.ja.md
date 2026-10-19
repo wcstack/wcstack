@@ -48,8 +48,8 @@
 
 → **帰結**: `eventToken.value` ＋ `$on` で蓄積する設計（`packages/fetch/examples/infinite-scroll`）は、ハンドラ先頭で status を弾かないと `null` を append して壊れる。
 
-### 1.5 `trigger` は url 空なら無言で無視
-`url` が空のときの `trigger=true` は **何もせず**（fetch 走らず・イベント無し・フラグは false のまま）。url を入れてから再度 `true` を書けば実行される。
+### 1.5 `trigger` は url 空なら無視（4.5 からは警告付き）
+`url` が空のときの `trigger=true` は **何もせず**（fetch 走らず・イベント無し・フラグは false のまま）。url を入れてから再度 `true` を書けば実行される。4.4 までは無言だった。4.5 からは要素ごとに 1 回警告する（`[wcs/command-not-ready]`）。よくある原因は、1 つの `data-wcs` で `trigger` を `url` より前に書くこと（束縛は書いた順に当たる）。
 
 ### 1.6 `body` は `fetch()` ごとに null へリセット / `method="HEAD"` は body 読まない
 （補足。詳細は fetch README「Design Notes」）

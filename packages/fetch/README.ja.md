@@ -879,7 +879,7 @@ bootstrapFetch({
 - `value`、`loading`、`error`、`status`、`objectURL`、`errorInfo` は **出力ステート**
 - `url`、`body`、`response-type`、`trigger` は **入力 / コマンドサーフェス**
 - `response-type`（既定 `auto`）はレスポンスボディの読み取り方を選ぶ。`blob` は加えて管理された `objectURL`（新しいレスポンスごと / dispose 時に revoke）を発行する。`target`（HTML リプレースモード）が優先される
-- `trigger` は意図的に単方向: `true` を書き込むと実行、リセットで完了を通知。`url` が空のまま `true` を書き込んだ場合は黙って無視される（fetch なし・イベントなし・フラグは `false` のまま）
+- `trigger` は意図的に単方向: `true` を書き込むと実行、リセットで完了を通知。`url` が空のまま `true` を書き込んだ場合は無視される（fetch なし・イベントなし・フラグは `false` のまま）。4.5（未リリース）から要素ごとに 1 回警告する（`[wcs/command-not-ready]`）。1 つの `data-wcs` では `trigger` を `url` の後に書くこと（束縛は書いた順に当たる）
 - HTTP エラー時（status >= 400）は `value` が `null` にリセットされ、`status` にエラーコードが入る — `value` のみのバインドでは直前の値が消えるため、失敗検知には `error` をバインドする
 - ネットワークエラー時（HTTP レスポンスなし — DNS 失敗・オフライン・CORS など）は `value` が `null`、`status` が `0` にリセットされ、`error` に投げられた `Error` が入る。HTTP エラーと同様、直前の成功時の value/status は残らない
 - `method="HEAD"` は仕様上ボディを持たないためレスポンスボディの読取をスキップする。`value` は `null` のままで `status` のみ通知される

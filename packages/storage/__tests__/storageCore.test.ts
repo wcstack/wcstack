@@ -291,6 +291,61 @@ describe("StorageCore", () => {
     expect(events).toEqual(["loading", "value", "loading"]);
   });
 
+  describe("JSON が保てない値の保存（[wcs/storage-unserializable]）", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    function said(warn: ReturnType<typeof vi.spyOn>): unknown[][] {
+      return warn.mock.calls.filter((c: unknown[]) => String(c[0]).includes("[wcs/storage-unserializable]"));
+    }
+
+    it("File を持つ値は保存したうえで、どこにあるかを添えて要素ごとに 1 回警告する", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const target = new EventTarget();
+      const core = new StorageCore(target);
+      core.key = "draft";
+      const draft = { title: "t", clips: [{ blob: new File(["x"], "a.webm", { type: "video/webm" }) }] };
+      core.save(draft);
+      core.save(draft);
+      // 保存はする（中身はブラウザで {} になる）
+      expect(JSON.parse(localStorage.getItem("draft")!).title).toBe("t");
+      expect(said(warn)).toHaveLength(1);
+      expect(String(said(warn)[0][0])).toContain('holds a File at "blob"');
+      expect(said(warn)[0][1]).toBe(target);
+    });
+
+    it.each([
+      ["a Blob", new Blob(["x"])],
+      ["a Map", new Map([["a", 1]])],
+      ["a Set", new Set([1])],
+      ["binary data", new Uint8Array([1, 2])],
+      ["binary data", new ArrayBuffer(2)],
+    ])("%s を見分ける", (what, v) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const core = new StorageCore();
+      core.key = "k";
+      core.save({ v });
+      expect(String(said(warn)[0][0])).toContain(`holds ${what} at "v"`);
+    });
+
+    it("値そのものが保てないときは場所を添えない", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const core = new StorageCore();
+      core.key = "k";
+      core.save(new Map());
+      expect(String(said(warn)[0][0])).toContain("holds a Map, which");
+    });
+
+    it("JSON が保てる値（Date・null・入れ子のオブジェクト）は警告しない", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const core = new StorageCore();
+      core.key = "k";
+      core.save({ at: new Date(0), none: null, nested: { list: [1, "a", true] } });
+      expect(said(warn)).toHaveLength(0);
+    });
+  });
+
   it("save()でストレージエラーが発生した場合にerrorが設定される", () => {
     const core = new StorageCore();
     core.key = "error-save-key";

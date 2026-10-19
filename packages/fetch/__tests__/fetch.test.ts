@@ -1178,6 +1178,24 @@ describe("Fetch", () => {
     }
   });
 
+  it("url の無い trigger は、要素を添えて 1 回だけ警告する（[wcs/command-not-ready]）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.setAttribute("manual", "");
+      document.body.appendChild(el);
+      el.trigger = true;
+      el.trigger = true;
+      const said = warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+      expect(said).toHaveLength(1);
+      expect(String(said[0][0])).toContain("trigger was refused: there is no url");
+      expect(said[0][1]).toBe(el);
+      el.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("url未設定スキップ後にurlを設定するとtrigger=trueで実行できる", async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ recovered: true }));
 
