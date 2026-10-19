@@ -374,7 +374,7 @@ describe("ShareCore", () => {
       expect(core.cancelled).toBe(false);
     });
 
-    it("dispose で loading=true が残った後、新しい share() の loading=true は同値ガードで再発火しない", async () => {
+    it("dispose は進行中の loading を false に戻してイベントで知らせ、新しい share() の true エッジも潰さない", async () => {
       let rejectFirst!: (e: any) => void;
       let first = true;
       installShare(() => {
@@ -387,15 +387,16 @@ describe("ShareCore", () => {
 
       const p1 = core.share({ url: "https://example.com/1" });
       expect(loadingEvents).toEqual([true]);
-      core.dispose();                    // loading=true のまま残る（stale は状態を書かない）
+      core.dispose();                    // loading=false をイベントで知らせる（stale は状態を書かない）
       rejectFirst(new TypeError("x"));
       await p1;
-      expect(core.loading).toBe(true);
+      expect(core.loading).toBe(false);
+      expect(loadingEvents).toEqual([true, false]);
 
-      // 新しい share(): _setLoading(true) は現在値と同値なので再発火せず、成功時の false のみ。
+      // 新しい share(): true, false が流れる。
       const result = await core.share({ url: "https://example.com/2" });
       expect(result).toEqual({ url: "https://example.com/2" });
-      expect(loadingEvents).toEqual([true, false]);
+      expect(loadingEvents).toEqual([true, false, true, false]);
     });
   });
 

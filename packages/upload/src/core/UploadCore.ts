@@ -83,6 +83,12 @@ export class UploadCore extends EventTarget {
   dispose(): void {
     this._lane.disposeOwner();
     this.abort();
+    // The aborted upload's handler can no longer claim its end (the owner generation
+    // moved), so it is published here (timing-and-firing-contract §22): a route the
+    // element leaves keeps its nodes — bindings included — for the next entry, and
+    // state would keep `loading`. `progress` stays where the transfer stopped, as on
+    // any abort. (`loading-changed` is not same-value guarded: only a change is sent.)
+    if (this._loading) this._setLoading(false);
   }
 
   get value(): any {

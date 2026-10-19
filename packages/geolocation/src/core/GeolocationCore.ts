@@ -411,11 +411,12 @@ export class GeolocationCore extends EventTarget {
     // clearWatch() before dispose(), but a direct headless dispose() (without a
     // preceding clearWatch) still neutralizes any queued watch callback.
     this._watchGen++;
-    // Reset the loading shadow silently (no dispatch on a disposed element). The
-    // bailed callback above will not clear it, and leaving it true would let the
-    // same-value guard swallow the loading=true edge of the next acquisition after
-    // a reconnect.
-    this._loading = false;
+    // Clear loading, with its event (timing-and-firing-contract §22): the bailed
+    // callback above will not clear it, and a route the element leaves keeps its
+    // nodes — bindings included — for the next entry, so a reset nobody heard would
+    // leave the page showing an acquisition that is gone. Clearing it also keeps the
+    // loading=true edge of the next acquisition after a reconnect.
+    this._setLoading(false);
     if (this._permissionStatus) {
       this._permissionStatus.removeEventListener("change", this._onPermissionChange);
       this._permissionStatus = null;

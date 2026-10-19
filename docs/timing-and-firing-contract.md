@@ -310,8 +310,8 @@ Reference: [`packages/geolocation/src/core/GeolocationCore.ts`](../packages/geol
 ### 13.3 A watch error does not cancel the watch
 The watchPosition error callback only raises `error`; `watching` stays true (the watchId is alive, and teardown is `clearWatch()`'s responsibility). To stop on a terminal error such as PERMISSION_DENIED, the consumer reacts to `error` and fires `clearWatch`.
 
-### 13.4 `dispose()` resets `_loading` silently
-`dispose()` bumps all three generations and returns `_loading` to false **without dispatching**. An in-flight callback that bailed will no longer clear loading, and leaving it set would let the same-value guard eat the loading=true edge of the next acquisition after a reconnect — hence the silent reset.
+### 13.4 `dispose()` resets `_loading`, with its event since 4.5
+`dispose()` bumps all three generations and returns `_loading` to false. An in-flight callback that bailed will no longer clear loading, and leaving it set would let the same-value guard eat the loading=true edge of the next acquisition after a reconnect — hence the reset. Up to 4.4 it was **silent** (no dispatch), which left `loading: true` in the state of a page whose route came back; it is published since 4.5 (§22).
 
 ### 13.5 The permission probe starts in the constructor / `getCurrentPosition()` never rejects (every path resolves)
 The first permission probe starts in Core's constructor (before connect). `getCurrentPosition()` resolves on every path — stale, success, and failure (so as not to hang the SSR connectedCallbackPromise). A non-`manual` connect auto-starts either watchPosition() or getCurrentPosition() depending on the presence of the `watch` attribute.
@@ -503,3 +503,34 @@ A navigation whose basename-sliced pathname equals the current committed `path` 
 ### 21.4 Late-attaching bindings miss nothing
 
 The observation members are read at binding attach, and the **first** commit's change detection compares against the internal initial values (`{}` / `""`), so a binding attached before the router's first route resolution is updated by the first commit's events, and one attached after reads the committed values directly. There is no seed and no await in either order.
+
+## 22. A cross-cutting contract: a disconnect publishes what it changes (2026-10-19)
+
+Applies to: every I/O node. The `state-field-report` seam app found it ([seam-apps.md](./seam-apps.md)). `@wcstack/router` takes a left route's nodes out of the document and puts the same nodes back on the next entry ([router README](../packages/router/README.md#where-route-content-lives)), and `@wcstack/state` keeps their bindings, learning an output's value only from the output's event. So an output that a disconnect changes without its event stays wrong in state after the way back. `<wcs-camera>` set `active` to `false` that way: the page said the camera was live, and a Start button disabled while `active` stayed disabled. An audit found 13 packages doing one of two things: resetting an output without its event, or dropping (through the generation guard) the completion that would have changed it.
+
+### 22.1 Every state output a disconnect changes is published, synchronously
+`disconnectedCallback` — `dispose()` and whatever the Shell calls before it — dispatches the change event of every `semantics: "state"` output whose value it changes, through the same setter and same-value guard as any other change. The reset itself stays: §13.4's reason (the next operation's `true` edge must not be eaten by the guard) still holds; only the silence is gone.
+
+### 22.2 An operation the disconnect abandons reports its end
+When the generation guard (`_gen`, or the operation lane's owner generation) will drop an operation's completion, `dispose()` ends the operation itself: `loading`, `speaking` / `pending` / `paused`, `listening`, `recording` / `paused`, `connected` / `readyState` go back, with their events. What the operation would have produced (a value, an error) is still not written — that is what the guard is for. One exception, the author's decision: `<wcs-recorder>` keeps a recording in progress. It stops, and the clip arrives as `wcs-recorder:recorded` when the browser delivers it, as when the stream's tracks end (camera README).
+
+### 22.3 What a disconnect does not change stays, and fires nothing
+An output that `dispose()` leaves alone keeps its value: a position, the transcripts, a value already fetched, `progress` where an upload stopped (as on any abort). A reparented element keeps its last state, as before. An error that `dispose()` clears (`<wcs-broadcast>`, `<wcs-worker>`) is published as `null`. Before, the next open's own `null` hit the same-value guard, and state kept the old error.
+
+### 22.4 The nodes this changed (4.5)
+
+| Package | Outputs published on disconnect |
+|---|---|
+| camera | `<wcs-camera>` `active`; `<wcs-recorder>` `recording`, `paused` (and the clip, §22.2) |
+| clipboard | `loading` |
+| geolocation | `loading` |
+| speech | `<wcs-speak>` `speaking`, `paused`, `pending` (an utterance in flight still finishes: speechSynthesis is global); `<wcs-listen>` `listening` |
+| broadcast, worker | `error`, `errorInfo` (`null`) |
+| websocket | `connected`, `loading`, `readyState` (`CLOSED`) — the socket's own `close` is dropped as stale |
+| contacts, credential, eyedropper, share | `loading` |
+| upload | `loading` |
+
+The other nodes already dispatched every change their disconnect makes, or change nothing on it.
+
+### 22.5 Testing
+Each node has a test that disconnects with the operation in flight, asserts the event, and (where it applies) checks that the next operation after a reconnect still fires its `true` edge.

@@ -410,16 +410,20 @@ export class SpeakCore extends EventTarget {
   dispose(): void {
     this._voicesSubscribed = false;
     this._gen++;
-    // Reset the queue bookkeeping silently (no dispatch on a disposed element);
-    // a reconnect starts fresh. The observable snapshot (error / charIndex /
-    // spokenWord) is intentionally *kept* so a reparented element preserves its
-    // last state, mirroring GeolocationCore.dispose(). The next speak() resets
-    // error / boundary for its own lifecycle.
+    // Reset the queue bookkeeping; a reconnect starts fresh. The element stops
+    // tracking its utterances (one in flight still finishes — speechSynthesis is
+    // global), so speaking / paused / pending go false, with their events
+    // (timing-and-firing-contract §22): a route the element leaves keeps its nodes —
+    // bindings included — for the next entry, and a reset nobody heard would leave
+    // the page showing speech it no longer tracks. The rest of the snapshot (error /
+    // charIndex / spokenWord) is intentionally *kept* so a reparented element
+    // preserves its last state, mirroring GeolocationCore.dispose(). The next speak()
+    // resets error / boundary for its own lifecycle.
     this._queued = 0;
     this._started = 0;
-    this._speaking = false;
-    this._paused = false;
-    this._pending = false;
+    this._setSpeaking(false);
+    this._setPaused(false);
+    this._setPending(false);
     if (this._hasApi()) {
       window.speechSynthesis.removeEventListener("voiceschanged", this._onVoicesChanged);
     }

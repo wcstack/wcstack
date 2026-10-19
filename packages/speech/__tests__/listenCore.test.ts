@@ -415,13 +415,16 @@ describe("ListenCore", () => {
   });
 
   describe("dispose", () => {
-    it("dispose で recognition を abort し listening をリセットする", () => {
+    it("dispose で recognition を abort し、listening=false をイベントで知らせる", () => {
       const core = new ListenCore();
       core.start();
       recs[0].fireStart();
+      const seen: unknown[] = [];
+      core.addEventListener("wcs-listen:listening-changed", (e) => seen.push((e as CustomEvent).detail));
       core.dispose();
       expect(recs[0].abort).toHaveBeenCalled();
       expect(core.listening).toBe(false);
+      expect(seen).toEqual([false]);
     });
 
     it("abort が throw しても dispose は安全", () => {

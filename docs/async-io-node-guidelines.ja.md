@@ -246,6 +246,7 @@ dispose(): void {
 
 - `observe(...)`: 監視/購読を開始。**冪等**（既に購読中なら設定更新のみで二重購読しない）。再起動は `dispose()` してから
 - `dispose()`: listener 解除・subscription flag リセット・`_gen++`。`dispose()` 後の `observe()` で復活できること
+- `dispose()` は、値を変える `semantics: "state"` の出力をすべて、その出力の setter とイベントで知らせ、守りが完了を捨てる操作は自分で終わらせる（`loading` を false に戻す など）こと（**MUST**）— [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §22。ルートを離れた要素は、次に入るときのためにノードと束縛を残すので、無言のリセットは state の中で間違ったままになる
 - リソースを残す設計判断（例: notification は dispose 後も画面に通知を残す）は理由をコメントに書く
 
 ### 3.6 never-throw（MUST）
@@ -452,6 +453,7 @@ Service Worker など追加エントリがあるノードは rollup 出力を増
 - [ ] property read と event payload / getter が同じ logical state を表す
 - [ ] `_gen` 世代ガードで非同期の stale 書き込みを防いでいる
 - [ ] `observe()` 冪等・`dispose()` で復活可能
+- [ ] `dispose()` が変える state の出力をすべて知らせ、打ち切る操作は終わったと知らせる（timing 契約 §22）。操作の途中で切断し、イベントを確かめるテストがある
 - [ ] API は呼び出し時解決（キャッシュしない）
 - [ ] SSR: `ready` / `connectedCallbackPromise` / `hasConnectedCallbackPromise`
 - [ ] config / bootstrap / registerComponents / exports が規約どおり

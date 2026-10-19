@@ -495,14 +495,20 @@ describe("WorkerCore - errorInfo taxonomy (Phase 6)", () => {
     expect(core.errorInfo).toBeNull();
   });
 
-  it("dispose は error と errorInfo を silent に null リセットする", () => {
+  it("dispose は error と errorInfo を null に戻してイベントで知らせる（再起動の null も同値ガードに潰されない）", () => {
     const core = new WorkerCore();
     core.start("a.js");
     FakeWorker.last!.emitError({ message: "boom" });
     expect(core.errorInfo).not.toBeNull();
+    const errors: unknown[] = [];
+    core.addEventListener("wcs-worker:error", (e) => errors.push((e as CustomEvent).detail));
+    const infos: unknown[] = [];
+    core.addEventListener("wcs-worker:error-info-changed", (e) => infos.push((e as CustomEvent).detail));
     core.dispose();
     expect(core.error).toBeNull();
     expect(core.errorInfo).toBeNull();
+    expect(errors).toEqual([null]);
+    expect(infos).toEqual([null]);
   });
 
   it("errorInfo は error と同期して遷移し、error より前に error-info-changed が流れる", () => {

@@ -210,9 +210,9 @@ describe("ClipboardCore", () => {
     core.dispose();                // 解決前に dispose → 世代を無効化
     await p;
 
-    // dispose のサイレントリセットで true→（dispatch 無し）false。stale なので
-    // resolve 側でも何も出さない。
-    expect(loadings).toEqual([true]);
+    // dispose が true→false をイベントで知らせる（ルートが残したノードの束縛が古い値を持たない）。
+    // stale なので resolve 側では何も出さない。
+    expect(loadings).toEqual([true, false]);
     expect(core.loading).toBe(false);
     await expect(p).resolves.toBeUndefined();
   });
@@ -249,7 +249,7 @@ describe("ClipboardCore", () => {
     expect(core.error).toBeNull();
   });
 
-  it("dispose は進行中の loading をサイレントにリセットする（再接続後の true エッジを潰さない）", async () => {
+  it("dispose は進行中の loading を false に戻してイベントで知らせ、再接続後の true エッジも潰さない", async () => {
     installClipboard();
     removePermissions();
     const core = new ClipboardCore();
@@ -265,8 +265,8 @@ describe("ClipboardCore", () => {
 
     const p2 = core.writeText("b");
     await p2;
-    // 1回目: true（dispose は無音）。2回目: true,false。
-    expect(loadings).toEqual([true, true, false]);
+    // 1回目: true, false（dispose が知らせる）。2回目: true, false。
+    expect(loadings).toEqual([true, false, true, false]);
   });
 
   it("取得中に再度コマンドしても loading は二重トグルしない", async () => {

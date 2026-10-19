@@ -292,6 +292,21 @@ describe("CredentialCore", () => {
   });
 
   describe("dispose / supersede 世代ガード（get()/store() 共有 lane・latest）", () => {
+    it("dispose は進行中の loading を false に戻してイベントで知らせる", async () => {
+      let resolveGet!: (c: any) => void;
+      installGet(() => new Promise((resolve) => { resolveGet = resolve; }));
+      const core = new CredentialCore();
+      const loadings: unknown[] = [];
+      core.addEventListener("wcs-credential:loading-changed", (e) => loadings.push((e as CustomEvent).detail));
+      const p = core.get();
+      core.dispose();
+      expect(core.loading).toBe(false);
+      expect(loadings).toEqual([true, false]);
+      resolveGet({ id: "stale" });
+      await p;
+      expect(loadings).toEqual([true, false]);
+    });
+
     it("dispose 後に resolve した stale な get() は状態を書かない", async () => {
       let resolveGet!: (c: any) => void;
       installGet(() => new Promise((resolve) => { resolveGet = resolve; }));

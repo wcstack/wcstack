@@ -131,6 +131,10 @@ export class ContactsCore extends EventTarget {
 
   dispose(): void {
     this._lane.disposeOwner();
+    // The operation the lane drops settles nothing any more, so its end is published
+    // here (timing-and-firing-contract §22): a route the element leaves keeps its
+    // nodes — bindings included — for the next entry, and state would keep `loading`.
+    this._setLoading(false);
   }
 
   private _setLoading(loading: boolean): void {

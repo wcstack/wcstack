@@ -157,7 +157,7 @@ describe("GeolocationCore", () => {
     expect(core.error).toBeNull();
   });
 
-  it("dispose は進行中の loading をサイレントにリセットする（再接続後の true エッジを潰さない）", async () => {
+  it("dispose は進行中の loading を false に戻してイベントで知らせ、再接続後の true エッジも潰さない", async () => {
     installGeolocation({ position: makePosition({ latitude: 1 }) });
     removePermissions();
     const core = new GeolocationCore();
@@ -167,15 +167,15 @@ describe("GeolocationCore", () => {
 
     const p1 = core.getCurrentPosition();
     expect(core.loading).toBe(true);
-    core.dispose(); // loading をサイレントに false に戻す（dispatch しない）
+    core.dispose(); // loading を false に戻し、イベントで知らせる
     expect(core.loading).toBe(false);
     await p1;
 
     // 再取得では true→false が正しく流れる（dispose 後にシャドウが false なので）
     const p2 = core.getCurrentPosition();
     await p2;
-    // 1回目: true（dispose は無音）。2回目: true,false。
-    expect(loadings).toEqual([true, true, false]);
+    // 1回目: true, false（dispose が知らせる）。2回目: true, false。
+    expect(loadings).toEqual([true, false, true, false]);
   });
 
   it("成功コールバック内の normalize 例外でも promise は解決し error に倒れる", async () => {

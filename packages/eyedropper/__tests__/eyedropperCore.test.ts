@@ -530,6 +530,20 @@ describe("EyedropperCore", () => {
   });
 
   describe("dispose 世代ガード（lane owner generation）", () => {
+    it("dispose は進行中の loading を false に戻してイベントで知らせる", async () => {
+      const { pendingOpens } = installEyeDropper();
+      const core = new EyedropperCore();
+      const loadings: unknown[] = [];
+      core.addEventListener("wcs-eyedropper:loading-changed", (e) => loadings.push((e as CustomEvent).detail));
+      const promise = core.open();
+      core.dispose();
+      expect(core.loading).toBe(false);
+      expect(loadings).toEqual([true, false]);
+      pendingOpens[0].resolve({ sRGBHex: "#aabbcc" });
+      await promise;
+      expect(loadings).toEqual([true, false]);
+    });
+
     it("dispose 後に resolve した stale な open() は状態を書かない", async () => {
       const { pendingOpens } = installEyeDropper();
       const core = new EyedropperCore();
