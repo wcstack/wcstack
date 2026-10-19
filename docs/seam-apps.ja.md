@@ -256,3 +256,11 @@
 | 残り | `for:` の 1 行の `<wcs-upload>` に命じる（`abort`）には DOM のコードが要る（7GUIs の発見）。ページの可視性を出す要素が無い（新しい I/O のパッケージは 4.x の予定に無い）。`<wcs-camera>` の静止画が無い。切断が無効にした `objectURL` は知らせない（そのイベントは `recorded`） | 記録 |
 
 上の 3 つの設計の問いは、2026-10-19 に著者が推奨どおりに決めた（[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.3）。2026-10-20 に `examples/` へ置き、4.5.0 で要らなくなった回避策を外した（[examples/state-field-report/README.md](../examples/state-field-report/README.md)）。spec は専用の Playwright の project（`chromium-media`: `channel: "chromium"` と `--use-fake-device-for-media-stream`。既定のヘッドレスシェルには `getUserMedia` が無い）で動く。
+
+### state-field-report の examples/ への取り込み（2026-10-20）
+
+4.5.0 の後、アプリを `examples/state-field-report/` へ移し、4.5.0 で要らなくなった回避策を外した。ルートの移動の後にカメラの状態を戻す `$watch`（F9）、自前の `document.permissionsPolicy` / `isSecureContext` の判定（F14）、強制した `mime-type`（F2）、`::part(video)` の CSS（F13）。意図を確かめる e2e（15 件）は、専用の Playwright の project `chromium-media` で走る: 偽のカメラとマイクを持つフル版の Chromium で、このファイルは 1 つの worker。多くのブラウザで同時に偽のカメラを符号化すると、ヘッダだけのクリップになったため。取り込みで、もう 1 つ見つかった:
+
+| 種類 | 発見 | 結果 |
+|---|---|---|
+| 設計の問い | デバイスを使えないページは、接続の時点でそれを知る（`permission: "unsupported"`）が、理由（ポリシー、`<iframe>` の `allow`、安全なコンテキスト）は `start()` / `getCurrentPosition()` / `listen.start()` を拒まれた後の `error` / `errorInfo` にしか届かない。`unsupported` でボタンを押せなくする — 自然な作り — ページは、理由を一度も出せない | 未決: `unsupported` と一緒に理由を出すか、試みたときに届くと README に書く（アプリの README の「Known limits」） |

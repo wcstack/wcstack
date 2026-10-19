@@ -256,3 +256,11 @@ Every claim was reproduced in Chromium against the repository's 4.4.0 dist befor
 | open | commanding one row's `<wcs-upload>` (`abort`) needs DOM code (the 7GUIs finding); no element reports page visibility (new I/O packages are not on the 4.x list); no still photo from `<wcs-camera>`; the `objectURL` a disconnect revokes is not published (its event is `recorded`) | recorded |
 
 The author decided the three design questions above as recommended on 2026-10-19 ([docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.3, ja). It is in `examples/` since 2026-10-20, with the workarounds 4.5.0 made unnecessary removed ([examples/state-field-report/README.md](../examples/state-field-report/README.md)); its spec runs in a Playwright project of its own (`chromium-media`: `channel: "chromium"` and `--use-fake-device-for-media-stream` — the default headless shell has no `getUserMedia`).
+
+### Landing state-field-report in examples/ (2026-10-20)
+
+After 4.5.0 the app moved into `examples/state-field-report/` without the workarounds 4.5.0 made unnecessary: the `$watch` that reset the camera's state after a route change (F9), its own `document.permissionsPolicy` / `isSecureContext` checks (F14), the forced `mime-type` (F2) and the `::part(video)` CSS (F13). It has an e2e spec (15 tests, asserting intent) on a Playwright project of its own, `chromium-media`: full Chromium with a fake camera and microphone, one worker for the file, since a fake camera encoding in many browsers at once came out as header-only clips. Doing so found one more:
+
+| Kind | Finding | Outcome |
+|---|---|---|
+| design question | a page that cannot use a device learns it at connect (`permission: "unsupported"`), but why (the policy, the `<iframe>`'s `allow`, the secure context) only arrives in `error` / `errorInfo` after `start()` / `getCurrentPosition()` / `listen.start()` is refused. A page that disables its button on `unsupported` — the natural reaction — never shows the reason | open: publish the reason with `unsupported`, or say in the READMEs that it comes with an attempt (the app's README, "Known limits") |
