@@ -132,13 +132,25 @@ describe("UploadCore", () => {
       expect(core.error).toBeNull();
     });
 
-    it("dispose 後に settle した stale abort は loading を変えない（_gen ガード）", () => {
+    it("dispose は進行中の loading を false に戻してイベントで知らせ、後から settle した stale abort は何も書かない（_gen ガード）", () => {
       const core = new UploadCore();
+      const loadings: unknown[] = [];
+      core.addEventListener("wcs-upload:loading-changed", (e) => loadings.push((e as CustomEvent).detail));
       core.upload("/api/upload", [createMockFile("a.txt", 10, "text/plain")]);
       const xhr = MockXMLHttpRequest.instances.at(-1)!;
       core.dispose();
+      expect(core.loading).toBe(false);
+      expect(loadings).toEqual([true, false]);
       xhr.simulateAbort();
-      expect(core.loading).toBe(true);
+      expect(loadings).toEqual([true, false]);
+    });
+
+    it("送信していない dispose は loading を知らせない", () => {
+      const core = new UploadCore();
+      const loadings: unknown[] = [];
+      core.addEventListener("wcs-upload:loading-changed", (e) => loadings.push((e as CustomEvent).detail));
+      core.dispose();
+      expect(loadings).toEqual([]);
     });
 
     it("dispose 後の stale progress は progress を書かない（_gen ガード）", () => {

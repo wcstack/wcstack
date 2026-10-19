@@ -337,13 +337,13 @@ export class ListenCore extends EventTarget {
         // ignore — teardown is best-effort.
       }
     }
-    // Reset the listening shadow silently (no dispatch on a disposed element),
-    // mirroring GeolocationCore's `_loading` reset. The abort() above neutralizes
-    // the recognizer but its `end` (which would clear listening via the setter)
-    // may not have fired yet; forcing false here means a reconnect+start's
-    // `onstart` still transitions false→true through the same-value guard, so the
-    // state never desyncs to a stale `true`.
-    this._listening = false;
+    // Clear listening, with its event (timing-and-firing-contract §22), mirroring
+    // GeolocationCore's `loading`. The abort() above neutralizes the recognizer but
+    // its `end` (which the guard drops after teardown) may not have fired yet; a route
+    // the element leaves keeps its nodes — bindings included — for the next entry, so
+    // a reset nobody heard would leave the page showing a session that is gone. A
+    // reconnect+start's `onstart` still transitions false→true.
+    this._setListening(false);
     if (this._permissionStatus) {
       this._permissionStatus.removeEventListener("change", this._onPermissionChange);
       this._permissionStatus = null;

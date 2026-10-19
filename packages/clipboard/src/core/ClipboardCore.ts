@@ -384,11 +384,12 @@ export class ClipboardCore extends EventTarget {
     // Invalidate any in-flight read/write so its resolution bails instead of
     // dispatching on a disconnected element.
     this._acqGen++;
-    // Reset the loading shadow silently (no dispatch on a disposed element). The
-    // bailed resolution will not clear it, and leaving it true would let the
-    // same-value guard swallow the loading=true edge of the next op after a
-    // reconnect.
-    this._loading = false;
+    // Clear loading, with its event (timing-and-firing-contract §22): the bailed
+    // resolution will not clear it, and a route the element leaves keeps its nodes —
+    // bindings included — for the next entry, so a reset nobody heard would leave the
+    // page showing an operation that is gone. Clearing it also keeps the loading=true
+    // edge of the next op after a reconnect.
+    this._setLoading(false);
     if (this._readStatus) {
       this._readStatus.removeEventListener("change", this._onReadChange);
       this._readStatus = null;

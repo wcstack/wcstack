@@ -311,20 +311,23 @@ describe("BroadcastCore", () => {
   });
 
   describe("dispose", () => {
-    it("チャンネルを閉じ、error を silent にリセットする", () => {
+    it("チャンネルを閉じ、error を null に戻してイベントで知らせる（再接続後の open の null も同値ガードに潰されない）", () => {
       const target = new EventTarget();
       const core = new BroadcastCore(target);
       core.post("x"); // error をセット
       expect(core.error).not.toBeNull();
 
       const events: any[] = [];
-      target.addEventListener("wcs-broadcast:error", (e) => events.push(e));
+      target.addEventListener("wcs-broadcast:error", (e) => events.push((e as CustomEvent).detail));
+      const infos: any[] = [];
+      target.addEventListener("wcs-broadcast:error-info-changed", (e) => infos.push((e as CustomEvent).detail));
       expect(core.errorInfo).not.toBeNull(); // post が errorInfo をセット済み
       core.dispose();
 
       expect(core.error).toBeNull();
-      expect(core.errorInfo).toBeNull(); // errorInfo も error に追随して silent クリア
-      expect(events).toHaveLength(0); // dispose では dispatch しない
+      expect(core.errorInfo).toBeNull(); // errorInfo も error に追随してクリア
+      expect(events).toEqual([null]);
+      expect(infos).toEqual([null]);
     });
 
     it("dispose 後はチャンネルがレジストリから外れている", () => {

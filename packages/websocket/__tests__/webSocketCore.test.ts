@@ -667,7 +667,7 @@ describe("WebSocketCore", () => {
       expect(core.error).toBe(errorBefore);
     });
 
-    it("dispose 後に発火した close イベントは状態を書き換えず再接続もしない（_gen ガード）", () => {
+    it("dispose は接続の終わりをその場で知らせ、後から来た close イベントでは再接続しない（_gen ガード）", () => {
       vi.useFakeTimers();
       const core = new WebSocketCore();
       core.connect("ws://localhost:8080", {
@@ -679,17 +679,19 @@ describe("WebSocketCore", () => {
       expect(core.connected).toBe(true);
 
       // dispose() は _gen を bump し close() する。mock の close() は close イベントを
-      // 発火しないため connected/readyState はこの時点で OPEN のまま残る。close はリスナを
-      // 除去しないので、ブラウザが後から close を返すケースを simulateClose で再現できる。
+      // 発火しない（ブラウザでは後から来る）。その close は stale として捨てるので、接続の
+      // 終わりは dispose がその場で知らせる（ルートが残したノードの束縛が古い値を持たない）。
+      const connected: unknown[] = [];
+      core.addEventListener("wcs-ws:connected-changed", (e) => connected.push((e as CustomEvent).detail));
       core.dispose();
-      expect(core.connected).toBe(true);
-      expect(core.readyState).toBe(WebSocket.OPEN);
+      expect(core.connected).toBe(false);
+      expect(core.readyState).toBe(WebSocket.CLOSED);
+      expect(connected).toEqual([false]);
 
       ws.simulateClose(1006);
       vi.advanceTimersByTime(1000);
-      // stale gen のため _onClose は早期 return し、状態も再接続も変わらない
-      expect(core.connected).toBe(true);
-      expect(core.readyState).toBe(WebSocket.OPEN);
+      // stale gen のため _onClose は早期 return し、何も知らせず再接続もしない
+      expect(connected).toEqual([false]);
       expect(MockWebSocket.instances).toHaveLength(1);
       vi.useRealTimers();
     });

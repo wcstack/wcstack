@@ -323,8 +323,8 @@ intersection §2.2 と同じ churn 対策。element か options（`box` / `round
 ### 13.3 watch のエラーは watch を解除しない
 watchPosition のエラーコールバックは `error` を立てるだけで `watching` は true のまま（watchId は生きており、teardown は `clearWatch()` の責務）。PERMISSION_DENIED のような terminal エラーで止めたい場合は、利用側が `error` に反応して `clearWatch` を発火する。
 
-### 13.4 `dispose()` は `_loading` を silent リセットする
-`dispose()` は3世代を全部 bump し、`_loading` は **dispatch せず** false に戻す。bail した in-flight コールバックはもう loading をクリアしないため、放置すると reconnect 後の次の取得で loading=true エッジが同値ガードに食われる — それを防ぐための無音リセット。
+### 13.4 `dispose()` は `_loading` を戻す（4.5 からはイベント付き）
+`dispose()` は3世代を全部 bump し、`_loading` を false に戻す。bail した in-flight コールバックはもう loading をクリアしないため、放置すると reconnect 後の次の取得で loading=true エッジが同値ガードに食われる — それを防ぐためのリセット。4.4 までは **dispatch しない**無音のリセットで、ルートが戻ってきたページの state に `loading: true` が残った。4.5 からは知らせる（§22）。
 
 ### 13.5 permission probe はコンストラクタ開始 / `getCurrentPosition()` は never-reject（全パス resolve）
 初回 permission probe は Core のコンストラクタで開始する（connect 前）。`getCurrentPosition()` は stale・成功・失敗の全パスで resolve する（SSR の connectedCallbackPromise を hang させない）。非 `manual` の connect は `watch` 属性の有無で watchPosition() / getCurrentPosition() のどちらかを自動起動する。
@@ -494,3 +494,34 @@ Shell は constructor（= upgrade 時）で自分自身の `*-changed` / `:error
 ### 20.4 §4.3（view-transition のフレーム着地）との相互作用
 
 ポリシーが走るのは `applyRoute` が await する遷移 promise の解決時 — つまり **mutation 適用時**であり、アニメーション完了時ではない（transition-runner の契約）。`router` を受け入れる arbiter の下では、フォーカスと告知はルート内容が差し替わったフレームに着地し、アニメーションはまだ再生中でありうる。「アニメーション完了後」は現プロトコルでは表現できず、非目標である（a11y-design D3 / §10）。
+
+## 22. 横断契約: 切断は、変えたものを知らせる（2026-10-19）
+
+対象: すべての I/O ノード。継ぎ目アプリ `state-field-report` が見つけた（[seam-apps.ja.md](./seam-apps.ja.md)）。`@wcstack/router` は離れたルートのノードを文書から外し、次に入るときに同じノードを戻す（[router の README](../packages/router/README.ja.md)）。`@wcstack/state` はその束縛を残し、出力の値を出力のイベントでしか知らない。だから、切断がイベントなしに変えた出力は、戻ってきた後も state の中で古いままになる。`<wcs-camera>` は `active` をそうやって `false` にしていた。ページはカメラが動いていると表示し、`active` の間は押せない開始ボタンも押せないままだった。洗ったところ、13 のパッケージが、出力をイベントなしに戻すか、出力を変えるはずの完了を（世代の守りで）捨てていた。
+
+### 22.1 切断が変える state の出力は、すべてその場で知らせる
+`disconnectedCallback` — `dispose()` と、シェルがその前に呼ぶもの — は、値を変える `semantics: "state"` の出力すべてについて、ほかの変化と同じ setter と同値ガードを通して変化のイベントを出す。戻すこと自体は残す。§13.4 の理由（次の操作の `true` のエッジを同値ガードに食わせない）はそのまま成り立ち、なくなるのは無言だけ。
+
+### 22.2 切断が打ち切る操作は、終わったと知らせる
+操作の完了を世代の守り（`_gen`、または operation lane の owner generation）が捨てるとき、`dispose()` が操作を自分で終わらせる。`loading`、`speaking` / `pending` / `paused`、`listening`、`recording` / `paused`、`connected` / `readyState` を戻し、イベントで知らせる。操作が生むはずだったもの（値、エラー）は、これまでどおり書かない — 守りはそのためにある。例外が 1 つあり、著者が決めた: `<wcs-recorder>` は録画中の分を残す。録画を止め、ストリームのトラックが終わったときと同じく、ブラウザが渡したときにクリップを `wcs-recorder:recorded` で渡す（camera の README）。
+
+### 22.3 切断が変えないものは残り、何も出さない
+`dispose()` が触らない出力は値を保つ。位置、認識した文、取得済みの値、アップロードが止まったところの `progress`（ほかの中断と同じ）。付け替えた要素が最後の状態を保つのはこれまでどおり。`dispose()` が消すエラー（`<wcs-broadcast>`・`<wcs-worker>`）は `null` として知らせる。これまでは、次に開いたときの `null` が同値ガードに食われ、state に古いエラーが残っていた。
+
+### 22.4 これで変わったノード（4.5）
+
+| パッケージ | 切断で知らせる出力 |
+|---|---|
+| camera | `<wcs-camera>` の `active`、`<wcs-recorder>` の `recording`・`paused`（とクリップ、§22.2） |
+| clipboard | `loading` |
+| geolocation | `loading` |
+| speech | `<wcs-speak>` の `speaking`・`paused`・`pending`（発話中のものは最後まで話す。speechSynthesis はページ全体で 1 つ）、`<wcs-listen>` の `listening` |
+| broadcast、worker | `error`・`errorInfo`（`null`） |
+| websocket | `connected`・`loading`・`readyState`（`CLOSED`）— ソケット自身の `close` は古いものとして捨てる |
+| contacts、credential、eyedropper、share | `loading` |
+| upload | `loading` |
+
+ほかのノードは、切断で変えるものをすでにすべて知らせていたか、切断で何も変えない。
+
+### 22.5 テスト
+各ノードに、操作の途中で切断し、イベントを確かめるテストがある。当てはまるものでは、再接続の後の次の操作がまだ `true` のエッジを出すことも確かめる。

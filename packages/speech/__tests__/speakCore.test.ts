@@ -391,6 +391,23 @@ describe("SpeakCore", () => {
       expect(synth.voicesChangedListenerCount).toBe(0);
     });
 
+    it("dispose は speaking / pending を false に戻してイベントで知らせる（ルートが残したノードの束縛が古い値を持たない）", () => {
+      const core = new SpeakCore();
+      const seen: string[] = [];
+      core.addEventListener("wcs-speak:speaking-changed", (e) => seen.push(`speaking:${(e as CustomEvent).detail}`));
+      core.addEventListener("wcs-speak:pending-changed", (e) => seen.push(`pending:${(e as CustomEvent).detail}`));
+      core.speak("one");
+      synth.fireStart();
+      core.speak("two");
+      expect(core.speaking).toBe(true);
+      expect(core.pending).toBe(true);
+      seen.length = 0;
+      core.dispose();
+      expect(seen).toEqual(["speaking:false", "pending:false"]);
+      expect(core.speaking).toBe(false);
+      expect(core.pending).toBe(false);
+    });
+
     it("dispose 後の utterance コールバックは状態を変えない", () => {
       const core = new SpeakCore();
       core.speak("hi");
