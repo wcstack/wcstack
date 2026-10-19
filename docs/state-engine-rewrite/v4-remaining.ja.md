@@ -1246,3 +1246,32 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - 残り:
   - 長期サポート版は保留（著者の判断）。
   - npm の `next` は 4.0.0 のまま（著者の方針で動かさない）。
+
+### 4.5.0 の公開（2026-10-20）
+
+- 中身: 4.x の指針の下での 3 つ目の minor。継ぎ目アプリ `state-field-report`（デバイス系の I/O × 権限、docs/seam-apps.md）から。PR #495〜#500（2026-10-20 にマージ）:
+  - camera: 切断で `active` / `recording` を知らせる、録画中に外れたら撮った分をクリップにして渡す（著者の決定）、`mime-type` が無くても型の付いたクリップ、CSP の下でのプレビューのスタイル、keep-alive なしの録画中の suspend の警告（#495）。
+  - 切断は変える state の出力をすべて知らせる — 13 パッケージにあった無言のリセットと捨てた完了を、横断の契約にした（timing-and-firing-contract §22、著者の決定、#496）。
+  - このページで使えない機能（安全でない origin・Permissions-Policy）は、見張り役も取りに行く側も `unsupported`、`errorInfo` は理由付きの `capability-missing`（著者の決定、#497）。
+  - 黙って拒んでいた upload / fetch / notify の警告、storage の JSON が保てない値、聞き取り中の読み上げ（#498）。lint の `map` で作る行と `wcs/handle-bound-as-value`（#499）。記録（#500）。
+  - `@wcstack/state` のソースは変えていない。
+- 準備: PR #501（merge commit 79bc95d2）で CHANGELOG を `[4.5.0] — 2026-10-20` に締め、要約と **Upgrading** の節を書いた（切断が出すイベント、切断で残る録画、`granted` / `denied` が `unsupported` になる場合、recorder の型、新しいコンソールの警告、lint、SSR は同じ minor で）。文書の固定版 18 か所を 4.5.0 にした。
+- main で `release`（minor、run 39289068647）。**部分リリースになった**:
+  - npm への公開までは通った（49 パッケージが `latest` で 4.5.0、来歴証明 49/49）。その後の「Tag and push release」で、版を上げたコミットの main への push が `remote: fatal error in commit_refs`（GitHub 側のエラー）で拒まれ、タグも GitHub Release も作られなかった。コミットは runner にしか無かった。
+  - 戻し方（著者の了承を得て）: workflow と同じ手順を 79bc95d2 から手元でたどった（各パッケージの `npm version 4.5.0`、`align-internal-dep-ranges`、`unreleased-marks --strip 4.5.0`、再ビルド、組み込みタグの目録、lint と typescript の道具、server と testing の lock の同期）。そのうえで、registry から落とした 49 本の tarball の全 460 ファイルと突き合わせた。JavaScript の束・README・package.json は一致し、source map と state の分割のチャンク名（手元のパスとハッシュ）だけが違ったので、dist は tarball のファイルそのものにした。npm に出ない `dist/core.min.js` だけは手元のビルドで、サイズの検査は通る。これを c72e28a0「chore: bump all packages to v4.5.0」として main に push し、タグ `v4.5.0` を付け、GitHub Release を `sri.json` 付きで作った（本文は workflow と同じ SRI と PR の一覧に、要約・Upgrading・手で作った経緯を足した）。
+  - 罠: 手元の npm は公開から日の浅い版を取らない設定なので、`npm pack <pkg>@4.5.0` は何も取らない。設定は触らず、`https://registry.npmjs.org/<name>/-/<base>-4.5.0.tgz` を curl で取った。
+  - SRI 44/44（`sri.json`＝タグの dist＝jsDelivr。公開直後の 1 回目は network だけ jsDelivr が 404、取り直して一致）。文書の固定 URL 7 つがすべて 200。npm の README に印は残っていない（16 ファイルの印は版を上げたコミットで外した）。`@wcstack/server` 4.5.0 は `@wcstack/state` の 4.5.0 にちょうどで依存する。
+  - jsDelivr の配布物に今回の変更（camera の `camera-keep-alive-missing`、storage の `storage-unserializable`、speech の `speech-echo`、upload / fetch / notification の拒否の警告、permission のポリシーと安全なコンテキストの判定、geolocation の `capability-missing`、websocket の切断の `connected-changed`、lint の `handle-bound-as-value`）がある。
+- 公開後の作業（同日）:
+  - PR #502（merge commit fe72408d）: サイズの基準値を 4.5.0 の dist で取り直した（state のソースは変えていないので、版の文字列だけ — devtools と ssr が +1 B、`core.min.js` は 20,102 B のまま）。CLAUDE.md / AGENTS.md の版と数値、拡張を 2.5.0 に。
+  - VS Code 拡張 2.5.0: fe72408d で `npm run package` した vsix（890 ファイル、4.5.0 の state を同梱、テスト 1,304 件）を Marketplace に公開した（反映は publish から十数分遅れ、gallery の照会 API で 2.5.0 を確認）。注釈付きのタグ `vscode-wcs-v2.5.0`（最初に軽量タグで付けてしまい、前回にそろえて付け直した）。
+  - wcstack-skill: PR #43（merge commit c3c8480）で、版の印と CDN の固定を 4.5.0 にした。あわせて切断が出すイベント、使えない機能の `unsupported`、拒んだコマンドの警告、upload の `files` の使い切りと束縛の順、recorder の型と `mimeType#init=element`、keep-alive、`type="session"` の下書きと Blob、`wcs/handle-bound-as-value`、`map` で作る行を書いた。注釈付きのタグ `v4.5.0`。
+  - LP（61bf612）:
+    - 版の参照と、「Shipped in」の v4.5.0 の一文（上げるとイベントとコンソールの警告が増えうることと、リリースノートへのリンク）。state / signals のページの版。
+    - ステップ 15 の `^4.5.0`、ステップ 16 の `wcstack@4.5.0` と integrity（ショップとページの両方）とリリースへのリンク。`wcstack/auto` は 73.0 KB gzip で「about 70 KB」のまま。
+    - ステップ 07・12: それぞれの「わざと壊す」変更を 4.5.0 の lint で取り直した — 出力は変わらない。
+    - llms の作り直しと、sitemap の lastmod。
+    - 本番で 9/9。
+- 残り:
+  - `state-field-report` を examples/ へ取り込む（e2e には `channel: "chromium"` の Playwright の project が要る）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
