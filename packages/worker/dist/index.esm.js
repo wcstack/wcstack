@@ -463,10 +463,11 @@ class WorkerCore extends EventTarget {
         this._gen++;
         this._clearRestartTimer();
         this._terminateWorker();
-        // Silent shadow reset (no dispatch), mirroring `_error`: keep `errorInfo`'s
-        // clear-to-null invariant so a reconnect does not read a stale classification.
-        this._error = null;
-        this._errorInfo = null;
+        // Clear the error, with its event (timing-and-firing-contract §22): a route the
+        // element leaves keeps its nodes — bindings included — for the next entry, and a
+        // reset nobody heard left the old error in state (the respawn's own clear then
+        // hit the same-value guard). errorInfo follows `error` through _setError.
+        this._setError(null);
     }
     // --- Internal ---
     _spawn() {

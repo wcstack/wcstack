@@ -156,7 +156,7 @@ export default {
 | `permission` | `"prompt"\|"granted"\|"denied"\|"unsupported"` | マイク permission |
 | `error` | `WcsListenErrorDetail` \| null | 直近の失敗 |
 | `errorInfo` | `WcsIoErrorInfo` \| null | `error` から派生するシリアライズ可能な失敗分類（`code` / `phase` / `recoverable`）。SpeechRecognition のコード（[注意・制限](#注意制限)参照）。付加的で `error` の形状は不変 |
-| `unsupported` | boolean | SpeechRecognition 非対応。4.5（未リリース）から、このページでマイクを使えないとき（secure context でない、Permissions-Policy が切っている）も。そのとき `permission` も `"unsupported"` になり、`start()` は理由を `error` に書く |
+| `unsupported` | boolean | SpeechRecognition 非対応。4.5 から、このページでマイクを使えないとき（secure context でない、Permissions-Policy が切っている）も。そのとき `permission` も `"unsupported"` になり、`start()` は理由を `error` に書く |
 
 ### コマンド
 
@@ -250,7 +250,7 @@ SpeechRecognition 自体が Chrome 系のみの対応だからです（後述の
 - **セキュアコンテキスト必須。** 両 API とも HTTPS か `localhost` が必要。`<wcs-listen>` はさらにマイク permission が必要です。
 - **ブラウザ対応。** SpeechSynthesis は広く対応。SpeechRecognition は Chrome 系のみ（`webkitSpeechRecognition`）で、それ以外では `<wcs-listen>` は `unsupported` を報告します。
 - **SpeechSynthesis はグローバルシングルトン。** `<wcs-speak>` は切断時に `cancel()` しません（他インスタンスまで止まるため）。音声を止めるには明示的に `cancel()` を。切断された要素は追跡を止めますが、発話中の utterance は自然に完了します。
-- **echo ループ。** `<wcs-listen>` → state → `<wcs-speak>` を繋ぐときは、認識中は発話をミュート（例: `manual` を束縛）して合成音声が再認識されないように。echo の例を参照。4.5（未リリース）から、ページの `<wcs-listen>` が聞いている間に話し始めた `<wcs-speak>` は、要素ごとに 1 回警告します（`[wcs/speech-echo]`）。ミュートが無いと、聞いたものがまた話され、回るたびに長くなります。
+- **echo ループ。** `<wcs-listen>` → state → `<wcs-speak>` を繋ぐときは、認識中は発話をミュート（例: `manual` を束縛）して合成音声が再認識されないように。echo の例を参照。4.5 から、ページの `<wcs-listen>` が聞いている間に話し始めた `<wcs-speak>` は、要素ごとに 1 回警告します（`[wcs/speech-echo]`）。ミュートが無いと、聞いたものがまた話され、回るたびに長くなります。
 - **`errorInfo`——付加的な失敗分類。** `error` と並んで、各要素は付加的なバインド可能出力 `errorInfo`（`WcsIoErrorInfo` = 安定した `code` / `phase` / `recoverable` / `message`）を公開します。同じ失敗から派生し（`error` の形状は不変）、成功時に `null` へクリアされます。2 つの要素は **異なる** code セット（SpeechRecognition と SpeechSynthesis の error enum）を持ち、どちらも `core/speechCapabilities.ts` に定義されています:
   - **`<wcs-listen>`**（`WCS_LISTEN_ERROR_CODE`・イベント `wcs-listen:error-info-changed`）: `capability-missing`（phase `probe`——SpeechRecognition 非対応）・`not-allowed`（`start`——`not-allowed` / `service-not-allowed`、マイク権限拒否）・`not-readable`（`start`——`audio-capture`、マイク読取不可）・`no-speech`（`execute`・recoverable——無音で検出なし）・`network-error`（`execute`・recoverable——`network`）・`aborted`（`execute`・recoverable——セッション中断）・`invalid-argument`（`start`——`language-not-supported` / `bad-grammar`）・`speech-error`（`execute`——その他コードへの防御的 fallback）。
   - **`<wcs-speak>`**（`WCS_SPEAK_ERROR_CODE`・イベント `wcs-speak:error-info-changed`）: `capability-missing`（phase `probe`——SpeechSynthesis 非対応）・`not-allowed`（`start`——合成不許可）・`aborted`（`execute`・recoverable——`canceled` / `interrupted`）・`not-readable`（`execute`——`audio-busy` は recoverable、`audio-hardware` は不可）・`network-error`（`execute`・recoverable——`network`）・`invalid-argument`（`start`——`language-unavailable` / `voice-unavailable` / `text-too-long` / `invalid-argument`）・`synthesis-failed`（`execute`——`synthesis-unavailable` / `synthesis-failed`）・`speech-error`（`execute`——防御的 fallback）。

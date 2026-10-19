@@ -71,6 +71,41 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /io-core/platform-capability.ts by scripts/sync-io-core.mjs.
+// Run `node scripts/sync-io-core.mjs` after editing the source.
+// ===========================================================================
+/** Permissions-Policy が制御する機能(permission 名と同じ文字列)。 */
+const POLICY_CONTROLLED = new Set([
+    "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+    "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+    "ambient-light-sensor", "display-capture",
+]);
+function featureUnavailable(feature) {
+    const g = globalThis;
+    if (g.isSecureContext === false)
+        return "insecure-context";
+    if (!POLICY_CONTROLLED.has(feature))
+        return null;
+    const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+    if (policy === undefined || typeof policy.allowsFeature !== "function")
+        return null;
+    try {
+        return policy.allowsFeature(feature) ? null : "policy-blocked";
+    }
+    catch {
+        return null;
+    }
+}
+/** `featureUnavailable` の理由を、作者が直し方を読める文にする。`what` は文頭(「The camera」など)。 */
+function featureUnavailableMessage(what, feature, reason) {
+    return reason === "insecure-context"
+        ? `${what} needs a secure context (https:, or http://localhost), and this page is not one.`
+        : `${what} is turned off for this page by a Permissions-Policy: the server's Permissions-Policy header, ` +
+            `or an <iframe> without allow="${feature}". The browser's site settings cannot change that.`;
+}
+
 /**
  * notificationCapabilities.ts
  *
@@ -213,6 +248,8 @@ class NotificationCore extends EventTarget {
     _ready = Promise.resolve();
     // Counter for auto-assigned tags when the caller omits one.
     _idSeq = 0;
+    /** Whether `[wcs/command-not-ready]` was said for this element. */
+    _toldNotReady = false;
     // Notifications created via the constructor backend, by tag, so close()/closeAll()
     // can dismiss them. The SW backend has no handle (showNotification returns void),
     // so its tags are tracked separately and closed via registration.getNotifications().
@@ -362,11 +399,15 @@ class NotificationCore extends EventTarget {
      */
     notify(title, options = {}) {
         if (!this._api()) {
-            this._setError(this._err("unsupported", "Notifications API is not available in this environment."));
+            const reason = featureUnavailable("notifications");
+            this._setError(this._err("unsupported", reason === null
+                ? "Notifications API is not available in this environment."
+                : featureUnavailableMessage("Notifications", "notifications", reason)));
             return "";
         }
         if (this._permission !== "granted") {
             this._setError(this._err("not-granted", "Notification permission is not granted; call request() first."));
+            this._warnNotReady();
             return "";
         }
         if (typeof title !== "string") {
@@ -623,9 +664,22 @@ class NotificationCore extends EventTarget {
     // --- Internal: misc ---
     // Resolve the global `Notification` constructor at call time (not cached) so
     // tests can install/remove it and so unsupported environments report correctly.
+    // A page that cannot use notifications (not a secure context) has none: Chromium
+    // keeps the constructor there and answers "denied", which reads as the user's refusal.
     _api() {
         const g = globalThis;
-        return typeof g.Notification === "function" ? g.Notification : undefined;
+        return typeof g.Notification === "function" && featureUnavailable("notifications") === null ? g.Notification : undefined;
+    }
+    // A notification refused because the permission is not granted was lost, and only a
+    // page that binds `error` heard of it. Said once per element (docs/v4-direction-2026-10.md
+    // §5.1, the I/O command policy).
+    _warnNotReady() {
+        if (this._toldNotReady)
+            return;
+        this._toldNotReady = true;
+        console.warn(`[@wcstack/notification] [wcs/command-not-ready] notify() was refused: the permission is "${this._permission}", ` +
+            "so nothing is shown. It goes to `error` too. Ask with request() first (from a user gesture), and " +
+            "notify once `permission` is \"granted\". (Said once per element.)", this._target);
     }
     _nextId() {
         return `wcs-${++this._idSeq}`;

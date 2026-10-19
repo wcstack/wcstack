@@ -58,6 +58,34 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /io-core/platform-capability.ts by scripts/sync-io-core.mjs.
+// Run `node scripts/sync-io-core.mjs` after editing the source.
+// ===========================================================================
+/** Permissions-Policy が制御する機能(permission 名と同じ文字列)。 */
+const POLICY_CONTROLLED = new Set([
+    "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+    "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+    "ambient-light-sensor", "display-capture",
+]);
+function featureUnavailable(feature) {
+    const g = globalThis;
+    if (g.isSecureContext === false)
+        return "insecure-context";
+    if (!POLICY_CONTROLLED.has(feature))
+        return null;
+    const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+    if (policy === undefined || typeof policy.allowsFeature !== "function")
+        return null;
+    try {
+        return policy.allowsFeature(feature) ? null : "policy-blocked";
+    }
+    catch {
+        return null;
+    }
+}
+
 /**
  * Headless permission-state primitive. A thin, framework-agnostic wrapper around
  * the Permissions API exposed through the wc-bindable protocol.
@@ -201,6 +229,17 @@ class PermissionCore extends EventTarget {
         // to "unsupported" without issuing a doomed query so the misconfiguration
         // surfaces deterministically and no listener is attached.
         if (!this._descriptor || !this._descriptor.name) {
+            this._setState("unsupported");
+            return Promise.resolve();
+        }
+        // A feature this page cannot use — not a secure context, or turned off by a
+        // Permissions-Policy (a header, an <iframe> without `allow`) — is "unsupported",
+        // as it is for the element that would acquire it. The Permissions API does not
+        // tell: Chromium answers "granted" in a policy-blocked frame and "denied" on an
+        // insecure origin, the same as a user's refusal, which the site settings would
+        // fix and these cannot. Neither changes while the page lives, so nothing is
+        // subscribed.
+        if (featureUnavailable(this._descriptor.name) !== null) {
             this._setState("unsupported");
             return Promise.resolve();
         }

@@ -207,6 +207,11 @@ var WcsDiagnosticCode = {
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。4.0 のランタイムは #38 / #1203 /
   // #1204 で拒み、root では初期化が、行では束縛が失敗する（3.x の「黙って無視」ではない）。error。
   TagMemberUnknown: "wcs/tag-member-unknown",
+  // `semantics: "handle"` の出力（`<wcs-camera>` の `streamReady` = 生の MediaStream）を、値としてパスに
+  // 束ねた。プロトコルは「値の置き場ではなく ref / callback で受ける」と定める（protocol/wc-bindable.ts）。
+  // ランタイムは書くので動くが、スナップショット・DevTools・SSR に載らないオブジェクトが state に入る
+  // （docs/seam-apps.md、state-field-report）。warning。5.0 でランタイムが拒むかは誤りの目録の議題。
+  HandleBoundAsValue: "wcs/handle-bound-as-value",
   // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
   // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
   OnPrefixedMember: "wcs/on-prefixed-member",
@@ -3420,7 +3425,7 @@ function readBase(expr, scan, aliases, paths) {
   if (alias === null) return null;
   if (alias[1] !== "this") {
     const shape = aliases.get(alias[1]);
-    return shape === void 0 ? null : { shape, rest: alias[1].length };
+    return { shape: shape ?? OPAQUE, rest: alias[1].length };
   }
   const segments = [];
   let i = 4;
@@ -3445,6 +3450,7 @@ function readBase(expr, scan, aliases, paths) {
     break;
   }
   const path = segments.join(".");
+  if (path === "" && /^\s*\??\.\s*\$[$\w]*\s*\(/.test(scan.slice(4))) return { shape: OPAQUE, rest: 4 };
   if (path === "" || path.startsWith("$")) return null;
   return {
     shape: { isList: hasPath(paths, `${path}.*`), mirrors: [{ from: path, to: "" }], fields: [] },
@@ -3455,12 +3461,25 @@ function applyChain(expr, scan, start, initial) {
   let shape = initial;
   let i = start;
   while (scan.slice(i).trim() !== "") {
+    if (shape.opaque && /^\s*\(/.test(scan.slice(i))) {
+      const open2 = scan.indexOf("(", i);
+      i = open2 + extractDelimitedContent(expr, scan, open2, "(", ")").length + 2;
+      continue;
+    }
     const call = /^\s*\??\.\s*([$\w]+)\s*\(/.exec(scan.slice(i));
     if (call === null) return null;
     const open = i + call[0].length - 1;
     const args = extractDelimitedContent(expr, scan, open, "(", ")");
     i = open + args.length + 2;
     const method = call[1];
+    if (shape.opaque) {
+      if (method === "map") {
+        const mapped = mapRows(args, shape);
+        if (mapped === null) return null;
+        shape = mapped;
+      }
+      continue;
+    }
     if (ROW_PRESERVING_METHODS.has(method)) {
       if (!shape.isList) return null;
     } else if (ROW_PICKING_METHODS.has(method)) {
@@ -3475,8 +3494,9 @@ function applyChain(expr, scan, start, initial) {
       return null;
     }
   }
-  return shape;
+  return shape.opaque ? null : shape;
 }
+var OPAQUE = { isList: true, mirrors: [], fields: [], opaque: true };
 function pickRow(shape) {
   return {
     isList: false,
@@ -3487,7 +3507,7 @@ function pickRow(shape) {
 function mapRows(args, shape) {
   const [callback] = splitTopLevelElements(args);
   if (callback === void 0) return null;
-  const head = /^(?:async\s+)?(?:function\b[^(]*\(\s*([$\w]+)[^)]*\)|\(\s*([$\w]+)[^)]*\)|([$\w]+))\s*(=>)?\s*/.exec(callback);
+  const head = /^(?:async\s+)?(?:function\b[^(]*\(\s*([$\w]+)?[^)]*\)|\(\s*([$\w]+)?[^)]*\)|([$\w]+))\s*(=>)?\s*/.exec(callback);
   if (head === null) return null;
   const param = head[1] ?? head[2] ?? head[3];
   const body = callback.slice(head[0].length);
@@ -10975,6 +10995,7 @@ var ja = {
   nativeCommandUnknown: (method, tag, allowed) => `"${method}" \u306F\u30CD\u30A4\u30C6\u30A3\u30D6\u306E <${tag}> \u306B command \u3067\u547C\u3079\u308B\u30E1\u30BD\u30C3\u30C9\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u547C\u3079\u308B\u306E\u306F ${allowed}\u3002\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u521D\u671F\u5316\u3067 wcs/token-misconfigured \u3092\u6295\u3052\u307E\u3059\uFF09`,
   spreadNoBindable: (tag) => `'...'\uFF08spread\uFF09\u306F <${tag}> \u306B\u6709\u52B9\u306A wcBindable \u5BA3\u8A00\u304C\u5FC5\u8981\u3067\u3059 \u2014 \u3053\u306E\u30BF\u30B0\u306F\u5BA3\u8A00\u3092\u6301\u305F\u306A\u3044\u305F\u3081\u3001\u30E9\u30F3\u30BF\u30A4\u30E0\u306F\u30A8\u30E9\u30FC\u3092\u9001\u51FA\u3057\u307E\u3059`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
+  handleBoundAsValue: (name, tag) => `<${tag}> \u306E "${name}" \u306F\u751F\u304D\u305F\u30EA\u30BD\u30FC\u30B9\uFF08\u30CF\u30F3\u30C9\u30EB\uFF09\u3067\u3001\u5024\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002state \u306E\u30D1\u30B9\u306B\u675F\u306D\u308B\u3068\u3001\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u3084 SSR \u306B\u8F09\u3089\u306A\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u304C state \u306B\u5165\u308A\u307E\u3059 \u2014 eventToken.${name}: \u3067\u53D7\u3051\u3001\u30B3\u30DE\u30F3\u30C9\u306E\u5F15\u6570\u3068\u3057\u3066\u6B21\u306E\u8981\u7D20\u3078\u76F4\u63A5\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
   ariaAttrUnknown: (name) => `"${name}" \u306F WAI-ARIA \u306E\u5C5E\u6027\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002setAttribute \u306F\u305D\u306E\u307E\u307E\u66F8\u304D\u8FBC\u307F\u307E\u3059\u304C\u3001\u652F\u63F4\u6280\u8853\u306B\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059`,
   didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
   none: () => `\u306A\u3057`,
@@ -11183,6 +11204,7 @@ var en = {
   nativeCommandUnknown: (method, tag, allowed) => `"${method}" is not a command of a native <${tag}> (its commands: ${allowed}; the runtime throws wcs/token-misconfigured at initialization)`,
   spreadNoBindable: (tag) => `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration \u2014 this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
+  handleBoundAsValue: (name, tag) => `"${name}" of <${tag}> is a live resource (a handle), not a value. Bound to a state path, it puts an object no snapshot or SSR can carry into the state \u2014 receive it with eventToken.${name}: and hand it to the next element as a command argument`,
   ariaAttrUnknown: (name) => `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
@@ -13299,6 +13321,9 @@ var BUILTIN_TAGS = {
       "start",
       "stop",
       "switchCamera"
+    ],
+    "handles": [
+      "streamReady"
     ]
   },
   "wcs-recorder": {
@@ -14537,6 +14562,18 @@ function validateBindingAgainstContract(tagName, contract, parsed, property, sta
       tag: tagName,
       member: property,
       message: msgs.tagMemberUnknown(property, tagName) + suggestion(property, members, msgs)
+    });
+    return;
+  }
+  if (contract.handles?.includes(property)) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.HandleBoundAsValue,
+      start,
+      end,
+      severity: "warning",
+      tag: tagName,
+      member: property,
+      message: msgs.handleBoundAsValue(property, tagName)
     });
     return;
   }

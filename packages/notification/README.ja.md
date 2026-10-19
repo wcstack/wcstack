@@ -28,7 +28,7 @@ Notifications API をリアクティブな state と state 駆動のコマンド
 
 つまり `<wcs-notify>` は **command-token**（表示）と **event-token**（クリック）が 1 つのタグに同居する wcstack 初のノードです。さらに `<wcs-permission>` と違い Notifications API には `Notification.requestPermission()` があるため、このノードは**自己完結**します —— 権限の要求/監視と通知の表示を両方担います。
 
-> **secure context が必要。** Notifications API は secure context（HTTPS か `localhost`）でのみ動作します。利用できない環境では `<wcs-notify>` は throw せず `permission = "unsupported"` を報告します。4.5（未リリース）から、secure context でないページでも同じく報告します。Chromium はそこで `Notification` を残したまま `"denied"` を返し、利用者の拒否と区別がつきません。`notify()` は理由を `error` に書きます。権限要求と表示は通常ユーザージェスチャを要するため、タイマーから `notify` を撃っても何も表示されないことがあります。
+> **secure context が必要。** Notifications API は secure context（HTTPS か `localhost`）でのみ動作します。利用できない環境では `<wcs-notify>` は throw せず `permission = "unsupported"` を報告します。4.5 から、secure context でないページでも同じく報告します。Chromium はそこで `Notification` を残したまま `"denied"` を返し、利用者の拒否と区別がつきません。`notify()` は理由を `error` に書きます。権限要求と表示は通常ユーザージェスチャを要するため、タイマーから `notify` を撃っても何も表示されないことがあります。
 
 ## インストール
 
@@ -227,7 +227,7 @@ form:has(wcs-notify:state(error)) .banner { display: block; }
 - **`mode` は接続時に固定される。** バックエンドは要素の接続時（`observe(mode)`）に一度だけ選択され、`mode` の `observedAttributes` エントリはありません。接続済みの要素で `mode` 属性を変更しても、要素を再接続（削除して再挿入）するまで効果はありません。
 - **SW バックエンドは `close` を中継しない。** `@wcstack/notification/sw` ヘルパは `notificationclick` のみを配線し、`notificationclose` は配線しません。そのため `sw` バックエンドでは `closed` / `wcs-notify:close` は発火しません（close 用のワーカー越え中継がない）。`clicked` はクリック中継で動作しますが、`closed` は constructor バックエンド限定の信号です。
 - **Push API はスコープ外。** 本パッケージは Notifications API（ローカル通知）をラップします。サーバ起点の Push は別の関心事です。
-- **サイレント失敗（zero-log）。** wcstack のゼロ依存哲学に沿い、`<wcs-notify>` は決してログ出力も throw もしません。API 不在 → `permission = "unsupported"`、未許可や表示失敗 → `error` プロパティ。`error` / `permission` をバインドして反応してください。例外が 1 つあります。4.5（未リリース）から、許可が無いために拒んだ `notify()` は要素ごとに 1 回警告もします（`[wcs/command-not-ready]`）。通知は失われ、`error` を束ねたページしか気づけなかったからです — 先に `request()` で尋ねてください。
+- **サイレント失敗（zero-log）。** wcstack のゼロ依存哲学に沿い、`<wcs-notify>` は決してログ出力も throw もしません。API 不在 → `permission = "unsupported"`、未許可や表示失敗 → `error` プロパティ。`error` / `permission` をバインドして反応してください。例外が 1 つあります。4.5 から、許可が無いために拒んだ `notify()` は要素ごとに 1 回警告もします（`[wcs/command-not-ready]`）。通知は失われ、`error` を束ねたページしか気づけなかったからです — 先に `request()` で尋ねてください。
 - **`errorInfo` taxonomy（additive）。** `error` と並んで、`<wcs-notify>` は*同一の*失敗を安定した `WcsIoErrorInfo`（`code` / `phase` / `recoverable`）に分類した serializable な `errorInfo`（`wcs-notify:error-info-changed`）を公開します。`error` の形状は変えません。Core 自身の安定エラーコードがそのまま写像されます: `unsupported` → `capability-missing`（phase `probe`）、未許可の権限 → `not-allowed`、非文字列 title → `invalid-argument`（いずれも phase `start`）、表示失敗 → `show-failed`、Service Worker バックエンド不在 → `no-service-worker`（いずれも phase `execute`）、想定外のコードは防御的に `notify-error`（phase `execute`）へ畳まれます。6 つとも `recoverable: false` です。`errorInfo` は `error` とまったく同じタイミングで遷移し（回復時に `null` へクリア）、共有の `WcsIoErrorInfo` 型と `WCS_NOTIFY_ERROR_CODE` 定数は export されています。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開するため、サーバレンダラは接続時の権限プローブが解決するまで待ってからスナップショットします。
 

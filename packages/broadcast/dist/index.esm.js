@@ -344,15 +344,14 @@ class BroadcastCore extends EventTarget {
      */
     dispose() {
         // Bump the generation first (§3.4) so any message/messageerror that drains
-        // after teardown is recognised as stale, then close the channel and reset the
-        // error shadow silently.
+        // after teardown is recognised as stale, then close the channel and clear the
+        // error, with its event (timing-and-firing-contract §22): a route the element
+        // leaves keeps its nodes — bindings included — for the next entry, and a reset
+        // nobody heard left the old error in state (the reconnect's own clear then hit
+        // the same-value guard). errorInfo follows `error` through _setError.
         this._gen++;
         this._closeChannel();
-        this._error = null;
-        // dispose bypasses _setError (silent, no dispatch on a torn-down element), so
-        // clear the errorInfo mirror directly too — otherwise a stale taxonomy would
-        // survive after `error` has been reset to null.
-        this._errorInfo = null;
+        this._setError(null);
     }
     // --- Internal ---
     // Per-channel listeners, (re)created in open() so each closes over its own

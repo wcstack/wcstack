@@ -62,6 +62,41 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /io-core/platform-capability.ts by scripts/sync-io-core.mjs.
+// Run `node scripts/sync-io-core.mjs` after editing the source.
+// ===========================================================================
+/** Permissions-Policy が制御する機能(permission 名と同じ文字列)。 */
+const POLICY_CONTROLLED = new Set([
+    "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+    "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+    "ambient-light-sensor", "display-capture",
+]);
+function featureUnavailable(feature) {
+    const g = globalThis;
+    if (g.isSecureContext === false)
+        return "insecure-context";
+    if (!POLICY_CONTROLLED.has(feature))
+        return null;
+    const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+    if (policy === undefined || typeof policy.allowsFeature !== "function")
+        return null;
+    try {
+        return policy.allowsFeature(feature) ? null : "policy-blocked";
+    }
+    catch {
+        return null;
+    }
+}
+/** `featureUnavailable` の理由を、作者が直し方を読める文にする。`what` は文頭(「The camera」など)。 */
+function featureUnavailableMessage(what, feature, reason) {
+    return reason === "insecure-context"
+        ? `${what} needs a secure context (https:, or http://localhost), and this page is not one.`
+        : `${what} is turned off for this page by a Permissions-Policy: the server's Permissions-Policy header, ` +
+            `or an <iframe> without allow="${feature}". The browser's site settings cannot change that.`;
+}
+
 /** True when getUserMedia is reachable (secure context with a media-devices impl). */
 function hasMediaDevices() {
     return typeof navigator !== "undefined"
@@ -107,17 +142,39 @@ function normalizeMediaError(error) {
     }
     return { name: "Error", message: "Media request failed." };
 }
-const UNSUPPORTED_ERROR = {
-    name: "unsupported",
-    message: "getUserMedia is not available (requires a secure context).",
-};
+// getUserMedia is absent on an insecure origin, and in a browser without it: say which.
+function unsupportedError() {
+    const reason = featureUnavailable("camera");
+    return {
+        name: "unsupported",
+        message: reason === "insecure-context"
+            ? featureUnavailableMessage("getUserMedia", "camera", reason)
+            : "getUserMedia is not available in this browser.",
+    };
+}
+/**
+ * Why this page cannot use the camera (or, with `audio`, the microphone): not a secure
+ * context, or turned off by a Permissions-Policy. `null` when it can, as far as the
+ * platform tells. `device` says which one, for the permission output it makes unsupported.
+ */
+function mediaUnavailable(audio) {
+    const camera = featureUnavailable("camera");
+    if (camera !== null) {
+        return { device: "camera", error: { name: "unsupported", message: featureUnavailableMessage("The camera", "camera", camera) } };
+    }
+    const microphone = audio ? featureUnavailable("microphone") : null;
+    if (microphone !== null) {
+        return { device: "microphone", error: { name: "unsupported", message: featureUnavailableMessage("The microphone", "microphone", microphone) } };
+    }
+    return null;
+}
 /**
  * Request a media stream. Never throws — resolves with `{ stream }` on success or
  * `{ error }` (normalized) on failure / when the API is unavailable.
  */
 async function requestUserMedia(constraints) {
     if (!hasMediaDevices()) {
-        return { error: UNSUPPORTED_ERROR };
+        return { error: unsupportedError() };
     }
     try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -218,6 +275,27 @@ class MediaPermissionWatcher {
         const status = event.target;
         this._onChange(status.state);
     };
+}
+
+/**
+ * Which streams a recorder is recording right now. A recorder borrows its stream and a
+ * camera owns it, and neither holds the other; but a camera that stops its stream while
+ * it is hidden ends a recording of it, so it asks here first
+ * (`[wcs/camera-keep-alive-missing]`). Counted, since two recorders may record one stream.
+ */
+const recording = new WeakMap();
+function beginRecording(stream) {
+    recording.set(stream, (recording.get(stream) ?? 0) + 1);
+}
+function endRecording(stream) {
+    const n = (recording.get(stream) ?? 0) - 1;
+    if (n > 0)
+        recording.set(stream, n);
+    else
+        recording.delete(stream);
+}
+function isRecording(stream) {
+    return recording.has(stream);
 }
 
 /**
@@ -364,6 +442,8 @@ class CameraCore extends EventTarget {
     _camWatcher = null;
     _micWatcher = null;
     _ready = Promise.resolve();
+    /** Whether `[wcs/camera-keep-alive-missing]` was said for this element (once per element). */
+    _toldKeepAlive = false;
     constructor(target) {
         super();
         this._target = target ?? this;
@@ -476,7 +556,7 @@ class CameraCore extends EventTarget {
     /** Release the camera (sets desired=false), stopping all tracks. */
     stop() {
         this._desired = false;
-        this._release(false);
+        this._release();
     }
     /**
      * Toggle facingMode (user ↔ environment) and re-acquire if active. This is the
@@ -508,8 +588,20 @@ class CameraCore extends EventTarget {
     suspend() {
         this._gen++;
         if (this._stream) {
-            this._release(false);
+            if (isRecording(this._stream))
+                this._warnKeepAlive();
+            this._release();
         }
+    }
+    // A recording of the stream ends with it: what was recorded becomes the clip, and nothing
+    // said why the take was short.
+    _warnKeepAlive() {
+        if (this._toldKeepAlive)
+            return;
+        this._toldKeepAlive = true;
+        console.warn("[@wcstack/camera] [wcs/camera-keep-alive-missing] The page was hidden while this camera's stream was " +
+            "being recorded, so the camera stopped the stream and the recording ended with it. Keep the camera " +
+            "on while recording: bind keepAlive to the recording flag (keepAlive: <recording path>). (Said once per element.)", this._target);
     }
     /** Re-acquire if the camera is desired but not currently active — for page-visible. */
     resume() {
@@ -517,12 +609,16 @@ class CameraCore extends EventTarget {
             this._restart();
         }
     }
-    /** Tear down: stop the stream and detach permission listeners. */
+    /**
+     * Tear down: stop the stream and detach permission listeners. `active` goes back to false
+     * with its event: a route the element leaves keeps its nodes (and their bindings) for the
+     * next entry, so a reset nobody heard would leave the page showing a camera that is off.
+     */
     dispose() {
         this._subscribed = false;
         this._gen++;
         this._desired = false;
-        this._release(true);
+        this._release();
         if (hasMediaDevices() && typeof navigator.mediaDevices.removeEventListener === "function") {
             navigator.mediaDevices.removeEventListener("devicechange", this._onDeviceChange);
         }
@@ -537,11 +633,19 @@ class CameraCore extends EventTarget {
             this._setPermission("unsupported");
             return Promise.resolve();
         }
-        this._camWatcher = new MediaPermissionWatcher("camera", (s) => this._setPermission(s));
-        const tasks = [this._camWatcher.observe()];
+        // A device this page cannot use (not a secure context, or a Permissions-Policy) is
+        // "unsupported", not what the Permissions API answers: Chromium says "granted" in a
+        // policy-blocked frame, which would read as "allowed" next to a start that fails.
+        const tasks = [];
+        if (featureUnavailable("camera") !== null) {
+            this._setPermission("unsupported");
+        }
+        else {
+            this._camWatcher = new MediaPermissionWatcher("camera", (s) => this._setPermission(s));
+            tasks.push(this._camWatcher.observe());
+        }
         if (this._constraints.audio) {
-            this._micWatcher = new MediaPermissionWatcher("microphone", (s) => this._setAudioPermission(s));
-            tasks.push(this._micWatcher.observe());
+            tasks.push(this._watchMicrophone());
         }
         // Track hot-plug: refresh the device list when a camera is added/removed.
         if (typeof navigator.mediaDevices.addEventListener === "function") {
@@ -562,22 +666,42 @@ class CameraCore extends EventTarget {
     // nothing started.
     _reconcileAudioWatcher() {
         if (this._constraints.audio && !this._micWatcher && hasMediaDevices()) {
-            this._micWatcher = new MediaPermissionWatcher("microphone", (s) => this._setAudioPermission(s));
-            return this._micWatcher.observe();
+            return this._watchMicrophone();
         }
-        else if (!this._constraints.audio && this._micWatcher) {
-            this._micWatcher.dispose();
+        else if (!this._constraints.audio && (this._micWatcher || this._audioPermission !== null)) {
+            this._micWatcher?.dispose();
             this._micWatcher = null;
             this._setAudioPermission(null);
         }
         return Promise.resolve();
     }
+    _watchMicrophone() {
+        if (featureUnavailable("microphone") !== null) {
+            this._setAudioPermission("unsupported");
+            return Promise.resolve();
+        }
+        this._micWatcher = new MediaPermissionWatcher("microphone", (s) => this._setAudioPermission(s));
+        return this._micWatcher.observe();
+    }
     _restart() {
-        this._release(false);
+        this._release();
         void this._acquire();
     }
     async _acquire() {
         const gen = ++this._gen;
+        // Not asked of the browser when the page cannot use the device: its NotAllowedError
+        // would read as the user's refusal, which the site settings would fix and these cannot.
+        const off = hasMediaDevices() ? mediaUnavailable(!!this._constraints.audio) : null;
+        if (off !== null) {
+            this._setError(off.error);
+            if (off.device === "camera")
+                this._setPermission("unsupported");
+            else
+                this._setAudioPermission("unsupported");
+            this._desired = false;
+            this._setActive(false);
+            return;
+        }
         const constraints = buildConstraints(this._constraints);
         const { stream, error } = await requestUserMedia(constraints);
         // Superseded by a newer acquire (rapid restart) or disposed while in flight:
@@ -630,7 +754,7 @@ class CameraCore extends EventTarget {
             this._setDevices(devices);
         }
     }
-    _release(silent) {
+    _release() {
         if (!this._stream)
             return;
         for (const track of this._stream.getTracks()) {
@@ -638,17 +762,12 @@ class CameraCore extends EventTarget {
         }
         stopAllTracks(this._stream);
         this._stream = null;
-        if (silent) {
-            this._active = false;
-        }
-        else {
-            this._setActive(false);
-        }
+        this._setActive(false);
     }
     _onTrackEnded = () => {
         // OS revoked a track (unplug / taken by another app). actual drops; desired
         // stays true so resume()/visibility-restore can re-acquire.
-        this._release(false);
+        this._release();
         this._dispatch("wcs-camera:ended", null);
     };
     _updateDeviceId(stream) {
@@ -757,6 +876,30 @@ function reflectBooleanAttribute(el, name, value) {
     writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
 }
 
+const PREVIEW_CSS = ":host{display:inline-block}video{display:block;width:100%;height:100%}";
+// One constructed sheet for every preview. A Content-Security-Policy's `style-src` governs
+// `<style>` elements (a shadow root's included) but not constructed sheets, so a page whose
+// policy has no 'unsafe-inline' still gets the preview's layout. A `<style>` is the fallback
+// where constructed sheets are not available.
+let previewSheet;
+function adoptPreviewStyles(root) {
+    if (previewSheet === undefined) {
+        try {
+            previewSheet = new CSSStyleSheet();
+            previewSheet.replaceSync(PREVIEW_CSS);
+        }
+        catch {
+            previewSheet = null;
+        }
+    }
+    if (previewSheet !== null && Array.isArray(root.adoptedStyleSheets)) {
+        root.adoptedStyleSheets = [previewSheet];
+        return;
+    }
+    const style = document.createElement("style");
+    style.textContent = PREVIEW_CSS;
+    root.append(style);
+}
 /**
  * `<wcs-camera>` — declarative camera capture with a built-in preview.
  *
@@ -808,14 +951,13 @@ class WcsCamera extends HTMLElement {
         super();
         this._core = new CameraCore(this);
         const root = this.attachShadow({ mode: "open" });
-        const style = document.createElement("style");
-        style.textContent = ":host{display:inline-block}video{display:block;width:100%;height:100%}";
+        adoptPreviewStyles(root);
         this._video = document.createElement("video");
         this._video.autoplay = true;
         this._video.muted = true;
         this._video.setAttribute("playsinline", "");
         this._video.setAttribute("part", "video");
-        root.append(style, this._video);
+        root.append(this._video);
         // Bind the live handle to the preview internally — never through state. These
         // self-listeners are intentionally not removed on disconnect (asymmetric with the
         // document-level `visibilitychange` in connect/disconnectedCallback): the target
@@ -1092,13 +1234,18 @@ class RecorderCore extends EventTarget {
     _errorInfo = null;
     _recorder = null;
     _stream = null; // borrowed — never stopped here
-    _chunks = [];
+    // the stream the live MediaRecorder records (attachStream may swap _stream mid-recording)
+    _recordingStream = null;
     _timeslice = false;
     _startTime = 0;
     // Monotonic id of the current recording lifecycle. Bumped by every start() and
     // dispose(); each MediaRecorder callback bails if stale so a torn-down/restarted
     // recorder's late event cannot mutate state.
     _gen = 0;
+    // The generation of a recording that dispose() stopped: its MediaRecorder still delivers
+    // the clip (onstop comes later in a browser), and only that clip gets through — with the
+    // type and duration it had when the element went away.
+    _closing = null;
     // SSR: recording is command-driven (attachStream/start), so there is no
     // asynchronous probe to await — readiness is immediate.
     _ready = Promise.resolve();
@@ -1222,19 +1369,43 @@ class RecorderCore extends EventTarget {
             return;
         }
         const gen = ++this._gen;
-        this._chunks = [];
+        // per recording: a clip finishing after a disconnect must not take a later one's chunks
+        const chunks = [];
+        const stream = this._stream;
         this._timeslice = typeof options.timeslice === "number" && options.timeslice > 0;
+        const closing = () => this._closing !== null && this._closing.gen === gen;
         recorder.ondataavailable = (event) => {
-            if (gen !== this._gen)
+            if (gen !== this._gen && !closing())
                 return;
             if (event.data && event.data.size > 0) {
-                this._chunks.push(event.data);
+                chunks.push(event.data);
+                if (gen !== this._gen)
+                    return;
+                // a browser that resolved no type at start still types the chunks
+                if (!this._mimeType && event.data.type)
+                    this._setMimeType(event.data.type);
                 if (this._timeslice) {
                     this._dispatch("wcs-recorder:dataavailable", event.data);
                 }
             }
         };
+        // Chromium resolves the type only when recording starts (`mimeType` is "" until then
+        // when none was requested): the resolved type is the one the clip has.
+        recorder.onstart = () => {
+            if (gen === this._gen && recorder.mimeType)
+                this._setMimeType(recorder.mimeType);
+        };
         recorder.onstop = () => {
+            endRecording(stream);
+            if (this._recordingStream === stream)
+                this._recordingStream = null;
+            if (closing()) {
+                // stopped by dispose(): recording / paused / duration were published then
+                const { mimeType, duration } = this._closing;
+                this._closing = null;
+                this._assembleBlob(chunks, mimeType, duration);
+                return;
+            }
             if (gen !== this._gen)
                 return;
             // When stopped while paused, `_duration` was already finalized in onpause —
@@ -1242,7 +1413,7 @@ class RecorderCore extends EventTarget {
             // clock kept running but `_startTime` was not advanced). Keep the held value.
             if (!this._paused)
                 this._setDuration(this._elapsed());
-            this._assembleBlob();
+            this._assembleBlob(chunks, this._mimeType, this._duration);
             this._setPaused(false);
             this._setRecording(false);
         };
@@ -1270,6 +1441,8 @@ class RecorderCore extends EventTarget {
         this._startTime = this._now();
         this._setDuration(0);
         recorder.start(this._timeslice ? options.timeslice : undefined);
+        beginRecording(stream);
+        this._recordingStream = stream;
         this._setRecording(true);
     }
     _warnNotReady() {
@@ -1304,31 +1477,50 @@ class RecorderCore extends EventTarget {
     observe() {
         return this._ready;
     }
-    /** Stop in-flight recording, revoke the last object URL, drop the borrowed stream. */
+    /**
+     * Stop in-flight recording, revoke the last object URL, drop the borrowed stream.
+     *
+     * A recording in progress is not thrown away: it stops, and the clip arrives as
+     * `wcs-recorder:recorded` when the MediaRecorder delivers it (later, in a browser) — as it
+     * does when the stream's tracks end. `recording` / `paused` go back to false at once, with
+     * their events: a route the element leaves keeps its nodes (and their bindings) for the
+     * next entry, so a reset nobody heard would leave the page showing a recording that is
+     * not there.
+     */
     dispose() {
-        // Bump the generation first so the native stop()'s onstop (gen-guarded) does
-        // not run on a disposed Core — then reset the recording flags directly here.
-        this._gen++;
-        if (this._recorder && this._recorder.state !== "inactive") {
-            try {
-                this._recorder.stop();
-            }
-            catch {
-                // A recorder already torn down by the environment must not throw here.
-            }
+        const recorder = this._recorder;
+        const inFlight = recorder !== null && recorder.state !== "inactive";
+        if (inFlight) {
+            if (!this._paused)
+                this._setDuration(this._elapsed());
+            this._closing = { gen: this._gen, mimeType: this._mimeType, duration: this._duration };
         }
+        // Bump the generation so no other callback of this recorder reaches the Core.
+        this._gen++;
         this._recorder = null;
         this._revokeUrl();
         // Drop the borrowed reference WITHOUT stopping its tracks — the camera owns it.
         this._stream = null;
-        // Reset transient recording state silently (onstop was gen-guarded out above).
-        this._recording = false;
-        this._paused = false;
+        this._setPaused(false);
+        this._setRecording(false);
+        if (inFlight) {
+            try {
+                recorder.stop();
+            }
+            catch {
+                // A recorder already torn down by the environment must not throw here; no clip comes.
+                this._closing = null;
+                if (this._recordingStream)
+                    endRecording(this._recordingStream);
+                this._recordingStream = null;
+            }
+        }
     }
     // --- Internal ---
-    _assembleBlob() {
-        const blob = new Blob(this._chunks, this._mimeType ? { type: this._mimeType } : undefined);
-        this._chunks = [];
+    _assembleBlob(chunks, mimeType, duration) {
+        // the chunks carry the type when the recorder resolved none
+        const type = mimeType || chunks[0]?.type || "";
+        const blob = new Blob(chunks, type ? { type } : undefined);
         // The PREVIOUS clip's object URL is revoked here, before minting the new one — so
         // any consumer still pointing a `<video src>` at the old URL will break once a new
         // recording completes. Consumers must follow the latest `objectURL`/`recorded`
@@ -1340,8 +1532,8 @@ class RecorderCore extends EventTarget {
         const detail = {
             blob,
             objectURL,
-            mimeType: this._mimeType,
-            duration: this._duration,
+            mimeType: type,
+            duration,
         };
         this._dispatch("wcs-recorder:recorded", detail);
     }

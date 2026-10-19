@@ -514,6 +514,13 @@ class UploadCore extends EventTarget {
     dispose() {
         this._lane.disposeOwner();
         this.abort();
+        // The aborted upload's handler can no longer claim its end (the owner generation
+        // moved), so it is published here (timing-and-firing-contract §22): a route the
+        // element leaves keeps its nodes — bindings included — for the next entry, and
+        // state would keep `loading`. `progress` stays where the transfer stopped, as on
+        // any abort. (`loading-changed` is not same-value guarded: only a change is sent.)
+        if (this._loading)
+            this._setLoading(false);
     }
     get value() {
         return this._value;
@@ -939,6 +946,9 @@ class WcsUpload extends HTMLElement {
     _core;
     _files = null;
     _trigger = false;
+    // The reasons `[wcs/command-not-ready]` was said for, once each per element
+    // (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
+    _told = null;
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
     constructor() {
@@ -1112,8 +1122,11 @@ class WcsUpload extends HTMLElement {
             detail: files,
             bubbles: true,
         }));
-        if (!this.manual && this.url && files && files.length > 0) {
-            this.upload();
+        if (!this.manual && files && files.length > 0) {
+            if (this.url)
+                this.upload();
+            else
+                this._warnNotReady("files were assigned while there is no url");
         }
     }
     // --- Validation ---
@@ -1165,6 +1178,7 @@ class WcsUpload extends HTMLElement {
         // これにより set trigger / set files の fire-and-forget 経路で unhandled rejection が
         // 発生せず、README の「upload() は全終了ケースで resolve し never reject」契約とも整合する。
         if (!files || files.length === 0 || !this.url) {
+            this._warnNotReady(!this.url ? "there is no url" : "there are no files");
             return null;
         }
         const validationError = this._validate(files);
@@ -1191,6 +1205,17 @@ class WcsUpload extends HTMLElement {
             }));
         }
         return result;
+    }
+    // A refused upload sent nothing and said nothing (no `error`, by design): a `trigger`
+    // written before `url` / `files` in one `data-wcs` (bindings apply in the order
+    // written), a retry after the files were used up, files picked before the url is known.
+    _warnNotReady(reason) {
+        if (this._told?.has(reason))
+            return;
+        (this._told ??= new Set()).add(reason);
+        console.warn(`[@wcstack/upload] [wcs/command-not-ready] The upload was refused: ${reason}, so nothing is sent. ` +
+            "Write url and files before trigger (bindings apply in the order written), and assign files again " +
+            "for each retry: an upload uses them up. (Said once per element and reason.)", this);
     }
     // --- Lifecycle ---
     attributeChangedCallback(_name, _oldValue, _newValue) {

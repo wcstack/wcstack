@@ -219,6 +219,8 @@ declare class NotificationCore extends EventTarget {
     private _gen;
     private _ready;
     private _idSeq;
+    /** Whether `[wcs/command-not-ready]` was said for this element. */
+    private _toldNotReady;
     private _constructed;
     private _swTags;
     private _channel;
@@ -300,6 +302,7 @@ declare class NotificationCore extends EventTarget {
     private _isDuplicate;
     private _unwrap;
     private _api;
+    private _warnNotReady;
     private _nextId;
     private _err;
 }

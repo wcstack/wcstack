@@ -381,7 +381,7 @@ unbind();
 | `null` / `undefined` | キーを削除 | `null` |
 | `Blob` / `File`、`Map` / `Set`、バイナリ（値のどこにあっても） | `{}`（JSON はどれも保てない） | 空のオブジェクト |
 
-これは Core の `save(value)` の挙動です。保存した下書きに入れた録画クリップや選んだファイルは、再読み込みの後 `{}` で返ってきます。そうした値は保存する値の外に置いてください（IndexedDB かサーバに置く）。4.5（未リリース）から、そうした値を持つ保存は、何がどこにあるかを添えて要素ごとに 1 回警告します（`[wcs/storage-unserializable]`）。要素の `value` セッターは `null` でキーを削除しますが、`undefined` は無視します（[入力 / コマンドサーフェス](#入力--コマンドサーフェス)参照）。
+これは Core の `save(value)` の挙動です。保存した下書きに入れた録画クリップや選んだファイルは、再読み込みの後 `{}` で返ってきます。そうした値は保存する値の外に置いてください（IndexedDB かサーバに置く）。4.5 から、そうした値を持つ保存は、何がどこにあるかを添えて要素ごとに 1 回警告します（`[wcs/storage-unserializable]`）。要素の `value` セッターは `null` でキーを削除しますが、`undefined` は無視します（[入力 / コマンドサーフェス](#入力--コマンドサーフェス)参照）。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

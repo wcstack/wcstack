@@ -274,6 +274,7 @@ declare class Fetch extends HTMLElement {
     private _autoPending;
     private _connectResolve;
     private _lastFetchedUrl;
+    private _toldTriggerWithoutUrl;
     private _internals;
     constructor();
     get debugStates(): string[];
@@ -339,6 +340,13 @@ declare class Fetch extends HTMLElement {
      * sent an empty POST on every navigation after the first post, without a word
      * (docs/seam-apps.md, ssr-news; docs/mistake-catalogue.md).
      */
+    /**
+     * A `trigger` written while `url` is empty does nothing (timing-and-firing-contract §1.5),
+     * and said nothing: a `trigger` before `url` in one `data-wcs` (bindings apply in the
+     * order written), a url that state has not computed yet. Said once per element
+     * (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
+     */
+    private _warnTriggerWithoutUrl;
     private _warnUnsafeAutoFetch;
     fetch(): Promise<any>;
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;

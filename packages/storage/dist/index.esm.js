@@ -126,6 +126,22 @@ function deriveStorageErrorInfo(error, name) {
     return { code: WCS_STORAGE_ERROR_CODE.StorageError, phase: "execute", recoverable: true, message: error.message };
 }
 
+/** What JSON cannot keep, named for the warning; `null` for a value it keeps. */
+function unkept(v) {
+    if (v === null || typeof v !== "object")
+        return null;
+    if (typeof File !== "undefined" && v instanceof File)
+        return "a File";
+    if (typeof Blob !== "undefined" && v instanceof Blob)
+        return "a Blob";
+    if (v instanceof Map)
+        return "a Map";
+    if (v instanceof Set)
+        return "a Set";
+    if (v instanceof ArrayBuffer || ArrayBuffer.isView(v))
+        return "binary data";
+    return null;
+}
 class StorageCore extends EventTarget {
     static wcBindable = {
         protocol: "wc-bindable",
@@ -157,6 +173,8 @@ class StorageCore extends EventTarget {
     _error = null;
     _errorInfo = null;
     _key = "";
+    /** Whether `[wcs/storage-unserializable]` was said for this element. */
+    _toldUnkept = false;
     _type = "local";
     _storageListener = null;
     // Generation guard: bumped on dispose(). The cross-tab `storage` listener
@@ -362,8 +380,19 @@ class StorageCore extends EventTarget {
                 this._setValue(value);
             }
             else {
-                storage.setItem(this._key, JSON.stringify(value));
+                let lost = null;
+                const json = JSON.stringify(value, (key, v) => {
+                    if (lost === null) {
+                        const what = unkept(v);
+                        if (what !== null)
+                            lost = key === "" ? what : `${what} at "${key}"`;
+                    }
+                    return v;
+                });
+                storage.setItem(this._key, json);
                 this._setValue(value);
+                if (lost !== null)
+                    this._warnUnkept(lost);
             }
             this._setLoading(false);
         }
@@ -371,6 +400,18 @@ class StorageCore extends EventTarget {
             this._setError(this._toStorageError("save", e), this._errName(e));
             this._setLoading(false);
         }
+    }
+    // JSON keeps none of these: a Blob or File is stored as {}, a Map or Set as {}, binary
+    // data as an object of its bytes. Saved without a word, they came back empty after a
+    // reload (docs/seam-apps.md, state-field-report: a recorded clip kept in a draft was
+    // uploaded as a 15-byte "video"). Said once per element.
+    _warnUnkept(what) {
+        if (this._toldUnkept)
+            return;
+        this._toldUnkept = true;
+        console.warn(`[@wcstack/storage] [wcs/storage-unserializable] The value saved under "${this._key}" holds ${what}, ` +
+            "which JSON cannot keep: it is stored as {} and comes back empty after a reload. Keep it out of the " +
+            "stored value (Blobs and files belong in IndexedDB or on a server). (Said once per element.)", this._target);
     }
     remove() {
         if (!this._key) {

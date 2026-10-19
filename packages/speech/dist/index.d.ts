@@ -295,6 +295,8 @@ declare class SpeakCore extends EventTarget {
     private _queued;
     private _started;
     private _gen;
+    /** Whether `[wcs/speech-echo]` was said for this element. */
+    private _toldEcho;
     private _voicesSubscribed;
     private _ready;
     constructor(target?: EventTarget);
@@ -367,6 +369,7 @@ declare class SpeakCore extends EventTarget {
     private _loadVoices;
     private _normalizeVoice;
     private _normalizeError;
+    private _warnEcho;
     private _unsupportedError;
 }
 

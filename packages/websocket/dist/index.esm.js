@@ -207,6 +207,13 @@ class WebSocketCore extends EventTarget {
     dispose() {
         this._gen++;
         this.close();
+        // The socket's close event is dropped as stale (the generation moved), so the
+        // connection's end is published here (timing-and-firing-contract §22): a route the
+        // element leaves keeps its nodes — bindings included — for the next entry, and
+        // state would keep showing a connection that is gone.
+        this._setConnected(false);
+        this._setLoading(false);
+        this._setReadyState(WS_CLOSED);
     }
     get message() {
         return this._message;

@@ -1158,6 +1158,7 @@ class Fetch extends HTMLElement {
     _autoPending = false;
     _connectResolve = null;
     _lastFetchedUrl = null;
+    _toldTriggerWithoutUrl = false;
     _internals = null;
     constructor() {
         super();
@@ -1320,8 +1321,10 @@ class Fetch extends HTMLElement {
             // surfacing a `wcs-fetch:trigger-changed` "completion" would lie to observers.
             // Keeping the flag false also avoids stalling — once url is provided, writing
             // `true` again is a real false→true transition that triggers the fetch.
-            if (!this.url)
+            if (!this.url) {
+                this._warnTriggerWithoutUrl();
                 return;
+            }
             this._trigger = true;
             this.fetch().finally(() => {
                 this._trigger = false;
@@ -1445,6 +1448,20 @@ class Fetch extends HTMLElement {
      * sent an empty POST on every navigation after the first post, without a word
      * (docs/seam-apps.md, ssr-news; docs/mistake-catalogue.md).
      */
+    /**
+     * A `trigger` written while `url` is empty does nothing (timing-and-firing-contract §1.5),
+     * and said nothing: a `trigger` before `url` in one `data-wcs` (bindings apply in the
+     * order written), a url that state has not computed yet. Said once per element
+     * (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
+     */
+    _warnTriggerWithoutUrl() {
+        if (this._toldTriggerWithoutUrl)
+            return;
+        this._toldTriggerWithoutUrl = true;
+        console.warn("[@wcstack/fetch] [wcs/command-not-ready] trigger was refused: there is no url, so nothing is fetched. " +
+            "Write url before trigger (bindings apply in the order written), and write trigger again once there is one. " +
+            "(Said once per element.)", this);
+    }
     _warnUnsafeAutoFetch() {
         const method = this.method;
         if (method === "GET" || method === "HEAD" || method === "OPTIONS")

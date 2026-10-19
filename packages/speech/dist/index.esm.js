@@ -231,6 +231,23 @@ function deriveSpeakErrorInfo(error) {
 }
 
 /**
+ * Which recognizers on this page are listening right now. A `<wcs-speak>` that starts
+ * speaking while one listens is heard through the microphone, and what is heard can be
+ * spoken again (the echo loop the README warns about), so it asks here first
+ * (`[wcs/speech-echo]`).
+ */
+const listening = new Set();
+function setListening(owner, on) {
+    if (on)
+        listening.add(owner);
+    else
+        listening.delete(owner);
+}
+function anyListening() {
+    return listening.size > 0;
+}
+
+/**
  * Headless text-to-speech primitive. A thin, framework-agnostic wrapper around
  * the SpeechSynthesis API exposed through the wc-bindable protocol.
  *
@@ -302,6 +319,8 @@ class SpeakCore extends EventTarget {
     // "canceled" error the browser fires from cancel()) never mutates state or
     // dispatches on a torn-down element.
     _gen = 0;
+    /** Whether `[wcs/speech-echo]` was said for this element. */
+    _toldEcho = false;
     // True once the voiceschanged subscription has been (or is being) established;
     // reset by dispose(). Guards reinitVoices() so the first connect after
     // construction does not double-subscribe, while a reconnect after dispose()
@@ -476,6 +495,8 @@ class SpeakCore extends EventTarget {
         if (typeof text !== "string" || text.trim() === "") {
             return;
         }
+        if (anyListening())
+            this._warnEcho();
         const synth = window.speechSynthesis;
         const utterance = new window.SpeechSynthesisUtterance(text);
         if (typeof options.rate === "number")
@@ -621,16 +642,20 @@ class SpeakCore extends EventTarget {
     dispose() {
         this._voicesSubscribed = false;
         this._gen++;
-        // Reset the queue bookkeeping silently (no dispatch on a disposed element);
-        // a reconnect starts fresh. The observable snapshot (error / charIndex /
-        // spokenWord) is intentionally *kept* so a reparented element preserves its
-        // last state, mirroring GeolocationCore.dispose(). The next speak() resets
-        // error / boundary for its own lifecycle.
+        // Reset the queue bookkeeping; a reconnect starts fresh. The element stops
+        // tracking its utterances (one in flight still finishes — speechSynthesis is
+        // global), so speaking / paused / pending go false, with their events
+        // (timing-and-firing-contract §22): a route the element leaves keeps its nodes —
+        // bindings included — for the next entry, and a reset nobody heard would leave
+        // the page showing speech it no longer tracks. The rest of the snapshot (error /
+        // charIndex / spokenWord) is intentionally *kept* so a reparented element
+        // preserves its last state, mirroring GeolocationCore.dispose(). The next speak()
+        // resets error / boundary for its own lifecycle.
         this._queued = 0;
         this._started = 0;
-        this._speaking = false;
-        this._paused = false;
-        this._pending = false;
+        this._setSpeaking(false);
+        this._setPaused(false);
+        this._setPending(false);
         if (this._hasApi()) {
             window.speechSynthesis.removeEventListener("voiceschanged", this._onVoicesChanged);
         }
@@ -686,6 +711,17 @@ class SpeakCore extends EventTarget {
     _normalizeError(event) {
         const error = event.error ?? "synthesis-failed";
         return { error, message: `Speech synthesis failed: ${error}.` };
+    }
+    // Speaking while a recognizer listens is heard through the microphone, and what is heard
+    // is often spoken again: the speech grows each round (the echo loop). Said once per
+    // element; the README's fix keeps the right page quiet.
+    _warnEcho() {
+        if (this._toldEcho)
+            return;
+        this._toldEcho = true;
+        console.warn("[@wcstack/speech] [wcs/speech-echo] <wcs-speak> started speaking while a <wcs-listen> is listening: the " +
+            "microphone can hear it, and what it hears may be spoken again. Mute speaking while listening (bind " +
+            "manual to the listening flag), or stop listening first. (Said once per element.)", this._target);
     }
     _unsupportedError() {
         return { error: "unsupported", message: "SpeechSynthesis API is not available in this environment." };
@@ -1096,6 +1132,41 @@ class WcsSpeak extends HTMLElement {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /io-core/platform-capability.ts by scripts/sync-io-core.mjs.
+// Run `node scripts/sync-io-core.mjs` after editing the source.
+// ===========================================================================
+/** Permissions-Policy が制御する機能(permission 名と同じ文字列)。 */
+const POLICY_CONTROLLED = new Set([
+    "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+    "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+    "ambient-light-sensor", "display-capture",
+]);
+function featureUnavailable(feature) {
+    const g = globalThis;
+    if (g.isSecureContext === false)
+        return "insecure-context";
+    if (!POLICY_CONTROLLED.has(feature))
+        return null;
+    const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+    if (policy === undefined || typeof policy.allowsFeature !== "function")
+        return null;
+    try {
+        return policy.allowsFeature(feature) ? null : "policy-blocked";
+    }
+    catch {
+        return null;
+    }
+}
+/** `featureUnavailable` の理由を、作者が直し方を読める文にする。`what` は文頭(「The camera」など)。 */
+function featureUnavailableMessage(what, feature, reason) {
+    return reason === "insecure-context"
+        ? `${what} needs a secure context (https:, or http://localhost), and this page is not one.`
+        : `${what} is turned off for this page by a Permissions-Policy: the server's Permissions-Policy header, ` +
+            `or an <iframe> without allow="${feature}". The browser's site settings cannot change that.`;
+}
+
 /**
  * Headless speech-to-text primitive. A thin, framework-agnostic wrapper around
  * the SpeechRecognition API (vendor-prefixed `webkitSpeechRecognition` in
@@ -1173,7 +1244,9 @@ class ListenCore extends EventTarget {
     constructor(target) {
         super();
         this._target = target ?? this;
-        const Ctor = this._getCtor();
+        // Recognition listens through the microphone: a page that cannot use it (not a
+        // secure context, or a Permissions-Policy) is unsupported, as without the API.
+        const Ctor = featureUnavailable("microphone") === null ? this._getCtor() : null;
         this._setUnsupported(!Ctor);
         if (Ctor) {
             this._recognition = new Ctor();
@@ -1239,6 +1312,7 @@ class ListenCore extends EventTarget {
         if (this._listening === value)
             return;
         this._listening = value;
+        setListening(this, value);
         this._target.dispatchEvent(new CustomEvent("wcs-listen:listening-changed", { detail: value, bubbles: true }));
     }
     _setPermission(value) {
@@ -1360,13 +1434,13 @@ class ListenCore extends EventTarget {
                 // ignore — teardown is best-effort.
             }
         }
-        // Reset the listening shadow silently (no dispatch on a disposed element),
-        // mirroring GeolocationCore's `_loading` reset. The abort() above neutralizes
-        // the recognizer but its `end` (which would clear listening via the setter)
-        // may not have fired yet; forcing false here means a reconnect+start's
-        // `onstart` still transitions false→true through the same-value guard, so the
-        // state never desyncs to a stale `true`.
-        this._listening = false;
+        // Clear listening, with its event (timing-and-firing-contract §22), mirroring
+        // GeolocationCore's `loading`. The abort() above neutralizes the recognizer but
+        // its `end` (which the guard drops after teardown) may not have fired yet; a route
+        // the element leaves keeps its nodes — bindings included — for the next entry, so
+        // a reset nobody heard would leave the page showing a session that is gone. A
+        // reconnect+start's `onstart` still transitions false→true.
+        this._setListening(false);
         if (this._permissionStatus) {
             this._permissionStatus.removeEventListener("change", this._onPermissionChange);
             this._permissionStatus = null;
@@ -1487,7 +1561,10 @@ class ListenCore extends EventTarget {
         return w?.SpeechRecognition ?? w?.webkitSpeechRecognition ?? null;
     }
     _initPermission() {
-        if (typeof navigator === "undefined" || !navigator.permissions || typeof navigator.permissions.query !== "function") {
+        // The Permissions API would answer "granted" in a policy-blocked frame and "denied"
+        // on an insecure origin — a user's refusal, which the site settings would fix.
+        if (featureUnavailable("microphone") !== null
+            || typeof navigator === "undefined" || !navigator.permissions || typeof navigator.permissions.query !== "function") {
             this._setPermission("unsupported");
             return;
         }
@@ -1514,7 +1591,13 @@ class ListenCore extends EventTarget {
         return { error, message: `Speech recognition failed: ${error}.` };
     }
     _unsupportedError() {
-        return { error: "unsupported", message: "SpeechRecognition API is not available in this environment." };
+        const reason = featureUnavailable("microphone");
+        return {
+            error: "unsupported",
+            message: reason === null
+                ? "SpeechRecognition API is not available in this environment."
+                : featureUnavailableMessage("Speech recognition (the microphone)", "microphone", reason),
+        };
     }
 }
 

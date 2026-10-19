@@ -65,6 +65,41 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /io-core/platform-capability.ts by scripts/sync-io-core.mjs.
+// Run `node scripts/sync-io-core.mjs` after editing the source.
+// ===========================================================================
+/** Permissions-Policy が制御する機能(permission 名と同じ文字列)。 */
+const POLICY_CONTROLLED = new Set([
+    "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+    "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+    "ambient-light-sensor", "display-capture",
+]);
+function featureUnavailable(feature) {
+    const g = globalThis;
+    if (g.isSecureContext === false)
+        return "insecure-context";
+    if (!POLICY_CONTROLLED.has(feature))
+        return null;
+    const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+    if (policy === undefined || typeof policy.allowsFeature !== "function")
+        return null;
+    try {
+        return policy.allowsFeature(feature) ? null : "policy-blocked";
+    }
+    catch {
+        return null;
+    }
+}
+/** `featureUnavailable` の理由を、作者が直し方を読める文にする。`what` は文頭(「The camera」など)。 */
+function featureUnavailableMessage(what, feature, reason) {
+    return reason === "insecure-context"
+        ? `${what} needs a secure context (https:, or http://localhost), and this page is not one.`
+        : `${what} is turned off for this page by a Permissions-Policy: the server's Permissions-Policy header, ` +
+            `or an <iframe> without allow="${feature}". The browser's site settings cannot change that.`;
+}
+
 /**
  * geolocationCapabilities.ts
  *
@@ -78,14 +113,21 @@ const WCS_GEO_ERROR_CODE = {
     PermissionDenied: "permission-denied",
     PositionUnavailable: "position-unavailable",
     Timeout: "timeout",
+    // このページで使えない(API 不在・安全でない origin・Permissions-Policy)。利用者の拒否
+    // (permission-denied)と区別する — サイトの設定では直らない。
+    CapabilityMissing: "capability-missing",
 };
 /**
  * 正規化済み `GeolocationPositionError`(spec code 1/2/3)を serializable な error
- * taxonomy に写す。Core は "unsupported"/"unexpected" を code 2(position-unavailable)
- * に畳むため、これは既存の `error.code` を忠実にミラーする。permission-denied(1)だけ
- * は retry で回復しないため recoverable=false。
+ * taxonomy に写す。"unexpected" は code 2(position-unavailable)に畳むため、これは既存の
+ * `error.code` を忠実にミラーする。permission-denied(1)だけは retry で回復しないため
+ * recoverable=false。`unsupported`(このページで使えない — Core は `error.code` を 2 にする)
+ * は capability-missing / probe / recoverable=false。
  */
-function deriveGeoErrorInfo(code, message) {
+function deriveGeoErrorInfo(code, message, unsupported = false) {
+    if (unsupported) {
+        return { code: WCS_GEO_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+    }
     const taxonomyCode = code === 1
         ? WCS_GEO_ERROR_CODE.PermissionDenied
         : code === 3
@@ -150,6 +192,8 @@ class GeolocationCore extends EventTarget {
     _loading = false;
     _error = null;
     _errorInfo = null;
+    // the errors that say this page cannot use geolocation (errorInfo: capability-missing)
+    _unsupportedErrors = new WeakSet();
     _permission = "prompt";
     // Live PermissionStatus handle (when the Permissions API is available), kept
     // so the `change` listener can be removed on dispose().
@@ -275,7 +319,7 @@ class GeolocationCore extends EventTarget {
         // the normalized error (or null on clear). Fires before the `error` event so an
         // observer binding both sees the classification first, mirroring the io-node
         // family. No lane here — geolocation's fixes don't compete (dispose-only guard).
-        this._commitErrorInfo(error === null ? null : deriveGeoErrorInfo(error.code, error.message));
+        this._commitErrorInfo(error === null ? null : deriveGeoErrorInfo(error.code, error.message, this._unsupportedErrors.has(error)));
         this._target.dispatchEvent(new CustomEvent("wcs-geo:error", {
             detail: error,
             bubbles: true,
@@ -466,11 +510,12 @@ class GeolocationCore extends EventTarget {
         // clearWatch() before dispose(), but a direct headless dispose() (without a
         // preceding clearWatch) still neutralizes any queued watch callback.
         this._watchGen++;
-        // Reset the loading shadow silently (no dispatch on a disposed element). The
-        // bailed callback above will not clear it, and leaving it true would let the
-        // same-value guard swallow the loading=true edge of the next acquisition after
-        // a reconnect.
-        this._loading = false;
+        // Clear loading, with its event (timing-and-firing-contract §22): the bailed
+        // callback above will not clear it, and a route the element leaves keeps its
+        // nodes — bindings included — for the next entry, so a reset nobody heard would
+        // leave the page showing an acquisition that is gone. Clearing it also keeps the
+        // loading=true edge of the next acquisition after a reconnect.
+        this._setLoading(false);
         if (this._permissionStatus) {
             this._permissionStatus.removeEventListener("change", this._onPermissionChange);
             this._permissionStatus = null;
@@ -478,9 +523,17 @@ class GeolocationCore extends EventTarget {
     }
     // --- Internal ---
     _hasGeolocation() {
-        return typeof navigator !== "undefined" && !!navigator.geolocation;
+        return typeof navigator !== "undefined" && !!navigator.geolocation && featureUnavailable("geolocation") === null;
     }
     _initPermission() {
+        // A page that cannot use geolocation (not a secure context, or turned off by a
+        // Permissions-Policy) is "unsupported": the Permissions API answers "granted" in a
+        // policy-blocked frame and "denied" on an insecure origin — a user's refusal, which
+        // the site settings would fix and these cannot. Neither changes while the page lives.
+        if (featureUnavailable("geolocation") !== null) {
+            this._setPermission("unsupported");
+            return Promise.resolve();
+        }
         // The Permissions API is optional. When absent (or it rejects, e.g. some
         // browsers don't accept the "geolocation" name), report "unsupported" and
         // leave acquisition to fail loudly via the error property if attempted.
@@ -533,9 +586,18 @@ class GeolocationCore extends EventTarget {
         return { code: err.code, message: err.message };
     }
     _unsupportedError() {
-        // Geolocation API absent: surface it as POSITION_UNAVAILABLE (2) so consumers
-        // that switch on the spec error codes treat it like any other unavailable fix.
-        return { code: 2, message: "Geolocation API is not available in this environment." };
+        // Geolocation API absent, or not available to this page: surface it as
+        // POSITION_UNAVAILABLE (2) so consumers that switch on the spec error codes treat
+        // it like any other unavailable fix; errorInfo says capability-missing.
+        const reason = featureUnavailable("geolocation");
+        const error = {
+            code: 2,
+            message: reason === null
+                ? "Geolocation API is not available in this environment."
+                : featureUnavailableMessage("Geolocation", "geolocation", reason),
+        };
+        this._unsupportedErrors.add(error);
+        return error;
     }
     _unexpectedError() {
         // An unexpected throw while normalizing/dispatching a fix. Surface it as

@@ -381,7 +381,7 @@ unbind();
 | `null` / `undefined` | Key removed | `null` |
 | A `Blob` / `File`, a `Map` / `Set`, binary data (anywhere in the value) | `{}` (JSON keeps none of them) | an empty object |
 
-This is the Core's `save(value)`. A recorded clip or a picked file kept in a saved draft comes back as `{}` after a reload; keep such values out of the stored one (IndexedDB or a server keeps them). Since 4.5 (not released yet) a save that holds one warns once per element (`[wcs/storage-unserializable]`), naming what and where. The element's `value` setter removes the key on `null` but ignores `undefined` (see [Input / Command Surface](#input--command-surface)).
+This is the Core's `save(value)`. A recorded clip or a picked file kept in a saved draft comes back as `{}` after a reload; keep such values out of the stored one (IndexedDB or a server keeps them). Since 4.5 a save that holds one warns once per element (`[wcs/storage-unserializable]`), naming what and where. The element's `value` setter removes the key on `null` but ignores `undefined` (see [Input / Command Surface](#input--command-surface)).
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

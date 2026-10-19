@@ -212,6 +212,7 @@ declare class GeolocationCore extends EventTarget {
     private _loading;
     private _error;
     private _errorInfo;
+    private _unsupportedErrors;
     private _permission;
     private _permissionStatus;
     private _permissionSubscribed;
@@ -354,6 +355,7 @@ declare const WCS_GEO_ERROR_CODE: {
     readonly PermissionDenied: "permission-denied";
     readonly PositionUnavailable: "position-unavailable";
     readonly Timeout: "timeout";
+    readonly CapabilityMissing: "capability-missing";
 };
 
 declare global {

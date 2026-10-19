@@ -106,6 +106,8 @@ declare class StorageCore extends EventTarget {
     private _error;
     private _errorInfo;
     private _key;
+    /** Whether `[wcs/storage-unserializable]` was said for this element. */
+    private _toldUnkept;
     private _type;
     private _storageListener;
     private _gen;
@@ -138,6 +140,7 @@ declare class StorageCore extends EventTarget {
     private _setValue;
     load(): any;
     save(value: any): void;
+    private _warnUnkept;
     remove(): void;
     startSync(): void;
     stopSync(): void;

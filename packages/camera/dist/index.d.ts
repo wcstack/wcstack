@@ -246,6 +246,8 @@ declare class CameraCore extends EventTarget {
     private _camWatcher;
     private _micWatcher;
     private _ready;
+    /** Whether `[wcs/camera-keep-alive-missing]` was said for this element (once per element). */
+    private _toldKeepAlive;
     constructor(target?: EventTarget);
     get active(): boolean;
     get permission(): MediaPermissionState;
@@ -303,13 +305,19 @@ declare class CameraCore extends EventTarget {
      * acquire stops its just-acquired orphan stream on resolve (see `_acquire`).
      */
     suspend(): void;
+    private _warnKeepAlive;
     /** Re-acquire if the camera is desired but not currently active — for page-visible. */
     resume(): void;
-    /** Tear down: stop the stream and detach permission listeners. */
+    /**
+     * Tear down: stop the stream and detach permission listeners. `active` goes back to false
+     * with its event: a route the element leaves keeps its nodes (and their bindings) for the
+     * next entry, so a reset nobody heard would leave the page showing a camera that is off.
+     */
     dispose(): void;
     private _initPermissions;
     private _onDeviceChange;
     private _reconcileAudioWatcher;
+    private _watchMicrophone;
     private _restart;
     private _acquire;
     private _release;
@@ -430,10 +438,11 @@ declare class RecorderCore extends EventTarget {
     private _errorInfo;
     private _recorder;
     private _stream;
-    private _chunks;
+    private _recordingStream;
     private _timeslice;
     private _startTime;
     private _gen;
+    private _closing;
     private _ready;
     /**
      * Whether `[wcs/command-not-ready]` was said for this element: a `start()` refused because the
@@ -489,7 +498,16 @@ declare class RecorderCore extends EventTarget {
      * resolves once ready. dispose() is its teardown counterpart.
      */
     observe(): Promise<void>;
-    /** Stop in-flight recording, revoke the last object URL, drop the borrowed stream. */
+    /**
+     * Stop in-flight recording, revoke the last object URL, drop the borrowed stream.
+     *
+     * A recording in progress is not thrown away: it stops, and the clip arrives as
+     * `wcs-recorder:recorded` when the MediaRecorder delivers it (later, in a browser) — as it
+     * does when the stream's tracks end. `recording` / `paused` go back to false at once, with
+     * their events: a route the element leaves keeps its nodes (and their bindings) for the
+     * next entry, so a reset nobody heard would leave the page showing a recording that is
+     * not there.
+     */
     dispose(): void;
     private _assembleBlob;
     private _revokeUrl;
