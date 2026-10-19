@@ -4,6 +4,7 @@ import {
 } from "../types.js";
 import { WcsIoErrorInfo, featureUnavailable, featureUnavailableMessage } from "./platformCapability.js";
 import { deriveListenErrorInfo } from "./speechCapabilities.js";
+import { setListening } from "./listening.js";
 
 // The vendor-prefixed constructor is not in the DOM lib types; declare a minimal
 // shape so we can feature-detect and construct it.
@@ -212,6 +213,7 @@ export class ListenCore extends EventTarget {
   private _setListening(value: boolean): void {
     if (this._listening === value) return;
     this._listening = value;
+    setListening(this, value);
     this._target.dispatchEvent(new CustomEvent("wcs-listen:listening-changed", { detail: value, bubbles: true }));
   }
 

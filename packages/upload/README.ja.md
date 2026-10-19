@@ -110,6 +110,8 @@ npm install @wcstack/upload
 
 観測できるのは `false` へのリセットのみです。`true` 遷移（アップロード開始）は `wcs-upload:trigger-changed` を発火しません。バインディングシステムは `true` を書き込んで開始し、唯一の `false` エッジを観測してコマンドの完了を知ります。これは `@wcstack/fetch` の `trigger` と同じトレードオフです。
 
+**`files` はアップロードで使い切ります。** `@wcstack/fetch` の `body` と同じです。アップロードが終わると（成功・失敗・中断のどれでも）`files` は `null` に戻り、`wcs-upload:files-changed` がそれを運ぶので、双方向の `files:` 束縛はそのパスも空にします。送り直すには、ファイルをもう一度代入してから `trigger` を書いてください。また `trigger` は書かれたときに `url` と `files` を読みます。1 つの `data-wcs` では、それらの後に書いてください（`url: …; files: …; trigger: …` — 束縛は書いた順に当たります）。ファイルか `url` の無い `trigger`（や `upload()`）は何も送らず、`error` も立てません。4.5（未リリース）から、要素と理由ごとに 1 回警告します（`[wcs/command-not-ready]`）。`url` がまだ無い自動送信の `<wcs-upload>` に代入したファイルも同じです（後から url を入れても送りません）。
+
 ### 3. 宣言的なトリガーターゲット
 
 自動トリガーが有効な場合、クリック可能な要素から id で `<wcs-upload>` を参照できます。
@@ -262,7 +264,7 @@ npm install @wcstack/upload
 
 ### エラー時の progress
 
-`progress` は各アップロード開始時に `0` へリセットされ、成功時に `100` へ設定されるだけです。HTTP・ネットワーク・abort のエラー時は、**`progress` は意図的に直前の値（例: `70`）のまま据え置かれます**。これは転送がどこで止まったかを UI が示せるようにするためです。失敗の検出には `progress` ではなく `error` / `loading` を使い、古い値を表示したくない場合は `wcs-upload:error` に応じて UI 側で進捗表示をリセット / 非表示にしてください。次回の `upload()` で `progress` は再び `0` にリセットされます。
+`progress` は各アップロード開始時に `0` へリセットされ、成功時に `100` へ設定されるだけです。HTTP・ネットワーク・abort のエラー時は、**`progress` は意図的に直前の値（例: `70`）のまま据え置かれます**。これは転送がどこで止まったかを UI が示せるようにするためです。読み終えてから拒むサーバ（`413 Payload Too Large` など）では、本文をすべて送っているので `progress` は `100` のままです。失敗の検出には `progress` ではなく `error` / `loading` を使い、古い値を表示したくない場合は `wcs-upload:error` に応じて UI 側で進捗表示をリセット / 非表示にしてください。次回の `upload()` で `progress` は再び `0` にリセットされます。
 
 ## `:state()` による CSS スタイリング
 

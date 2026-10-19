@@ -110,6 +110,8 @@ Use `manual` when you want to choose files first and upload later.
 
 Only the `false` reset is observable: the `true` transition (upload start) does **not** dispatch `wcs-upload:trigger-changed`. A binding system writes `true` to start and observes the single `false` edge to know the command finished. This is the same trade-off as `@wcstack/fetch`'s `trigger`.
 
+**`files` are used up by an upload**, as `@wcstack/fetch`'s `body` is: once an upload settles (success, failure or abort), `files` goes back to `null` and `wcs-upload:files-changed` carries it, so a two-way `files:` binding clears its path too. To retry, assign the files again, then write `trigger`. And `trigger` reads `url` and `files` when it is written: in one `data-wcs`, write it after them (`url: …; files: …; trigger: …` — bindings apply in the order written). A `trigger` (or `upload()`) without files or a `url` sends nothing and sets no `error`; since 4.5 (not released yet) it warns once per element and reason (`[wcs/command-not-ready]`), as do files assigned to an automatic `<wcs-upload>` that has no `url` yet (assigning the url later does not start them).
+
 ### 3. Declarative trigger target
 
 When auto trigger is enabled, a clickable element can point at a `<wcs-upload>` by id.
@@ -262,7 +264,7 @@ On a successful response (status 2xx), both `value` and `status` are updated via
 
 ### Progress on error
 
-`progress` is only reset to `0` at the start of each upload and set to `100` on success. On an HTTP, network, or abort error, **`progress` is intentionally left at its last value** (e.g. `70`) so the UI can show where the transfer stopped. Use `error` / `loading` (not `progress`) to detect failure, and reset or hide the progress indicator from your UI in response to `wcs-upload:error` if you do not want a stale value displayed. A subsequent `upload()` resets `progress` back to `0`.
+`progress` is only reset to `0` at the start of each upload and set to `100` on success. On an HTTP, network, or abort error, **`progress` is intentionally left at its last value** (e.g. `70`) so the UI can show where the transfer stopped. A server that refuses the upload after reading it (`413 Payload Too Large`, say) leaves `progress` at `100`: the whole body was sent. Use `error` / `loading` (not `progress`) to detect failure, and reset or hide the progress indicator from your UI in response to `wcs-upload:error` if you do not want a stale value displayed. A subsequent `upload()` resets `progress` back to `0`.
 
 ## CSS styling with `:state()`
 

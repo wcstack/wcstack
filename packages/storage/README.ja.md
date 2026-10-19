@@ -112,7 +112,9 @@ npm install @wcstack/storage
 2. 入力すると `form.name` が書かれ → `formSnapshot` が dirty に → バインディングが新しいオブジェクトを `value` に適用 → 保存
 3. 保存が発火する `value` イベントは、state が `value` に書いている最中に、同じオブジェクトで dispatch される。これは state 自身の書き込みが返ってきたもので、state へは書かれない（[規則](../state/README.ja.md#要素から-state-に何が書かれるかpropertiesgetter)）。setter が走るのはロード時と、別のタブがキーを保存したとき（そのオブジェクトは新しいもの）。タブをまたぐとキーは 1 つの単位で、後から保存した方が勝つ
 
-間違えやすい点が 2 つ:
+間違えやすい点が 3 つ:
+
+- 1 つのウィンドウのための下書き（書きかけのフォーム）には `type="session"` が向きます。再読み込みを越えて残り、2 つ目のタブは自分の下書きを持ちます。`localStorage`（既定）では、2 つ目のタブで打った文字が保存されるたびに、1 つ目のタブの下書きを置き換えます。
 
 - フィールドは `this["form.name"]` で読み、`this.form.name` で読ま**ない**こと。後者は `form` にしか依存を張らず（`.name` は返ってきたオブジェクトへの素のプロパティアクセス）、フィールドを編集しても getter は再評価されません —— [依存追跡の境界](../state/README.ja.md#依存追跡の境界) を参照
 - 空キーでは初回ロードで seed オブジェクトが 1 回書かれます。`null` が setter を通り、アクセサペアへの書き込みは常に getter を再評価するからです。永続化済みデータが上書きされることはありません —— 保存済みオブジェクトは復元され、同じ内容で再保存されます
@@ -377,8 +379,9 @@ unbind();
 | 文字列 | そのまま | JSON パース成功時はパース結果、失敗時はそのまま文字列 |
 | 数値 / boolean | `JSON.stringify()` 結果 | `JSON.parse()` 結果 |
 | `null` / `undefined` | キーを削除 | `null` |
+| `Blob` / `File`、`Map` / `Set`、バイナリ（値のどこにあっても） | `{}`（JSON はどれも保てない） | 空のオブジェクト |
 
-これは Core の `save(value)` の挙動です。要素の `value` セッターは `null` でキーを削除しますが、`undefined` は無視します（[入力 / コマンドサーフェス](#入力--コマンドサーフェス)参照）。
+これは Core の `save(value)` の挙動です。保存した下書きに入れた録画クリップや選んだファイルは、再読み込みの後 `{}` で返ってきます。そうした値は保存する値の外に置いてください（IndexedDB かサーバに置く）。4.5（未リリース）から、そうした値を持つ保存は、何がどこにあるかを添えて要素ごとに 1 回警告します（`[wcs/storage-unserializable]`）。要素の `value` セッターは `null` でキーを削除しますが、`undefined` は無視します（[入力 / コマンドサーフェス](#入力--コマンドサーフェス)参照）。
 
 Core の構造サーフェスは wcstack I/O ノード横断の規範です([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.ja.md))。要素なしで signals に束縛するには [@wcstack/signals — Core を直接束縛する](../signals/README.ja.md#core-を直接束縛する要素なし) を参照。
 

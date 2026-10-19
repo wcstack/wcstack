@@ -21,6 +21,12 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Added
 
 - `@wcstack/camera`: **a camera that stops a stream being recorded because the page was hidden warns**, once per element (`[wcs/camera-keep-alive-missing]`): the recording ends there with what it has, and without `keep-alive` nothing said why the take was short.
+- I/O nodes: **more refused commands warn**, once per element (`[wcs/command-not-ready]`, the I/O command policy of [docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.1, ja). The `state-field-report` seam app met each one silent:
+  - `<wcs-upload>`: a `trigger` or `upload()` without files or a `url` (and files assigned to an automatic one with no `url`) sent nothing and set no `error`. Its retry button sent nothing, because an upload uses its `files` up (the README now says so, as fetch's says of `body`), and a row whose `trigger` came before `url` in its `data-wcs` never uploaded (bindings apply in the order written). Once per element and reason.
+  - `<wcs-fetch>`: a `trigger` while `url` is empty (timing-and-firing-contract §1.5, which called it silent).
+  - `<wcs-notify>`: a `notify()` refused because the permission is not granted; the notification was lost, and only a page that binds `error` heard of it.
+- `@wcstack/storage`: **a saved value holding what JSON cannot keep warns**, once per element (`[wcs/storage-unserializable]`): a `Blob` or `File`, a `Map` or `Set`, binary data, anywhere in it, with where. They are stored as `{}`; a recorded clip kept in the seam app's draft came back empty after a reload and was uploaded as a 15-byte "video". The README's serialization table lists them, and the form recipe says a per-window draft wants `type="session"` (with `localStorage` a second tab's typing replaced the first tab's draft).
+- `@wcstack/speech`: **a `<wcs-speak>` that starts speaking while a `<wcs-listen>` on the page is listening warns**, once per element (`[wcs/speech-echo]`): without muting, the microphone hears the speech and it is spoken again, longer each round.
 
 ### Documentation
 

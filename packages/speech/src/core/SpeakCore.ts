@@ -3,6 +3,7 @@ import {
 } from "../types.js";
 import { WcsIoErrorInfo } from "./platformCapability.js";
 import { deriveSpeakErrorInfo } from "./speechCapabilities.js";
+import { anyListening } from "./listening.js";
 
 /**
  * Headless text-to-speech primitive. A thin, framework-agnostic wrapper around
@@ -80,6 +81,8 @@ export class SpeakCore extends EventTarget {
   // "canceled" error the browser fires from cancel()) never mutates state or
   // dispatches on a torn-down element.
   private _gen: number = 0;
+  /** Whether `[wcs/speech-echo]` was said for this element. */
+  private _toldEcho = false;
 
   // True once the voiceschanged subscription has been (or is being) established;
   // reset by dispose(). Guards reinitVoices() so the first connect after
@@ -271,6 +274,7 @@ export class SpeakCore extends EventTarget {
     if (typeof text !== "string" || text.trim() === "") {
       return;
     }
+    if (anyListening()) this._warnEcho();
 
     const synth = window.speechSynthesis;
     const utterance = new window.SpeechSynthesisUtterance(text);
@@ -485,6 +489,20 @@ export class SpeakCore extends EventTarget {
   private _normalizeError(event: SpeechSynthesisErrorEvent): WcsSpeakErrorDetail {
     const error = event.error ?? "synthesis-failed";
     return { error, message: `Speech synthesis failed: ${error}.` };
+  }
+
+  // Speaking while a recognizer listens is heard through the microphone, and what is heard
+  // is often spoken again: the speech grows each round (the echo loop). Said once per
+  // element; the README's fix keeps the right page quiet.
+  private _warnEcho(): void {
+    if (this._toldEcho) return;
+    this._toldEcho = true;
+    console.warn(
+      "[@wcstack/speech] [wcs/speech-echo] <wcs-speak> started speaking while a <wcs-listen> is listening: the " +
+        "microphone can hear it, and what it hears may be spoken again. Mute speaking while listening (bind " +
+        "manual to the listening flag), or stop listening first. (Said once per element.)",
+      this._target,
+    );
   }
 
   private _unsupportedError(): WcsSpeakErrorDetail {

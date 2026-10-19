@@ -111,7 +111,9 @@ The most common shape: several inputs, one storage key, restored on reload. Give
 2. Typing writes `form.name` → `formSnapshot` is dirty → its binding applies the new object to `value` → saved
 3. The save's own `value` event is dispatched while state writes `value`, with the same object: it is state's own write coming back, which is not written to the state ([the rule](../state/README.md#what-the-element-writes-back-propertiesgetter)). The setter runs on load, and when another tab saves the key — its object is a new one. Across tabs the key is one unit: the last save wins
 
-Two details that are easy to get wrong:
+Three details that are easy to get wrong:
+
+- A draft that belongs to one window (a form half filled in) wants `type="session"`: it survives a reload, and a second tab gets its own. With `localStorage` (the default) the second tab's typing replaces the first tab's draft as it is saved.
 
 - Read fields as `this["form.name"]`, **not** `this.form.name`. The second form registers a dependency on `form` only (`.name` is a plain property access on the returned object), so editing a field never re-evaluates the getter — see [Dependency tracking boundaries](../state/README.md#dependency-tracking-boundaries).
 - With an empty key the first load writes the seed object once: `null` goes through the setter, and a write to an accessor pair always re-evaluates the getter. Nothing persisted is ever overwritten — a stored object is restored, then re-saved unchanged.
@@ -377,8 +379,9 @@ unbind();
 | String | As-is | Parsed if valid JSON, otherwise the raw string |
 | Number / boolean | `JSON.stringify()` result | `JSON.parse()` result |
 | `null` / `undefined` | Key removed | `null` |
+| A `Blob` / `File`, a `Map` / `Set`, binary data (anywhere in the value) | `{}` (JSON keeps none of them) | an empty object |
 
-This is the Core's `save(value)`. The element's `value` setter removes the key on `null` but ignores `undefined` (see [Input / Command Surface](#input--command-surface)).
+This is the Core's `save(value)`. A recorded clip or a picked file kept in a saved draft comes back as `{}` after a reload; keep such values out of the stored one (IndexedDB or a server keeps them). Since 4.5 (not released yet) a save that holds one warns once per element (`[wcs/storage-unserializable]`), naming what and where. The element's `value` setter removes the key on `null` but ignores `undefined` (see [Input / Command Surface](#input--command-surface)).
 
 The structural Core surface is normative across wcstack IO nodes ([async-io-node-guidelines §3.9](../../docs/async-io-node-guidelines.md)); to bind it into signals with no element at all, see [@wcstack/signals — Binding a Core directly](../signals/README.md#binding-a-core-directly-no-element).
 

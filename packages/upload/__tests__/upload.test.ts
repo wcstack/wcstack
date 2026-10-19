@@ -418,6 +418,65 @@ describe("WcsUpload コンポーネント", () => {
     });
   });
 
+  describe("拒んだアップロードの警告（[wcs/command-not-ready]）", () => {
+    function said(warn: ReturnType<typeof vi.spyOn>): string[] {
+      return warn.mock.calls.map((c: unknown[]) => String(c[0])).filter((m: string) => m.includes("[wcs/command-not-ready]"));
+    }
+
+    it("url の無い trigger は送らず、要素を添えて 1 回だけ警告する", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createElement({ manual: "" });
+      document.body.appendChild(el);
+      el.files = [createMockFile("a.txt", 10, "text/plain")];
+      el.trigger = true;
+      el.trigger = true;
+      await Promise.resolve();
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+      expect(said(warn)).toHaveLength(1);
+      expect(said(warn)[0]).toContain("there is no url");
+      expect(warn.mock.calls.find((c: unknown[]) => String(c[0]).includes("[wcs/command-not-ready]"))![1]).toBe(el);
+      el.remove();
+    });
+
+    it("使い切った files での再送（trigger）は送らず、理由ごとに 1 回警告する", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createElement({ manual: "", url: "/api/upload" });
+      document.body.appendChild(el);
+      el.files = [createMockFile("a.txt", 10, "text/plain")];
+      el.trigger = true;
+      MockXMLHttpRequest.instances[0].simulateLoad(500, "{}");
+      await vi.waitFor(() => expect(el.files).toBeNull());
+      el.trigger = true;
+      await Promise.resolve();
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+      expect(said(warn)).toHaveLength(1);
+      expect(said(warn)[0]).toContain("there are no files");
+      expect(said(warn)[0]).toContain("assign files again");
+      el.remove();
+    });
+
+    it("自動送信で url の無いうちに files が来たら警告する（url が来ても送らない）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createElement();
+      document.body.appendChild(el);
+      el.files = [createMockFile("a.txt", 10, "text/plain")];
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+      expect(said(warn)).toHaveLength(1);
+      expect(said(warn)[0]).toContain("files were assigned while there is no url");
+      el.remove();
+    });
+
+    it("files を空にするのは拒んだうちに入らない", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createElement();
+      document.body.appendChild(el);
+      el.files = null;
+      el.files = [];
+      expect(said(warn)).toHaveLength(0);
+      el.remove();
+    });
+  });
+
   describe("trigger", () => {
     it("trigger設定でアップロードを開始する", async () => {
       const el = createElement({ url: "/api/upload", manual: "" });

@@ -42,6 +42,9 @@ export class WcsUpload extends HTMLElement {
   private _core: UploadCore;
   private _files: FileList | File[] | null = null;
   private _trigger: boolean = false;
+  // The reasons `[wcs/command-not-ready]` was said for, once each per element
+  // (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
+  private _told: Set<string> | null = null;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
 
@@ -238,8 +241,9 @@ export class WcsUpload extends HTMLElement {
       detail: files,
       bubbles: true,
     }));
-    if (!this.manual && this.url && files && files.length > 0) {
-      this.upload();
+    if (!this.manual && files && files.length > 0) {
+      if (this.url) this.upload();
+      else this._warnNotReady("files were assigned while there is no url");
     }
   }
 
@@ -298,6 +302,7 @@ export class WcsUpload extends HTMLElement {
     // これにより set trigger / set files の fire-and-forget 経路で unhandled rejection が
     // 発生せず、README の「upload() は全終了ケースで resolve し never reject」契約とも整合する。
     if (!files || files.length === 0 || !this.url) {
+      this._warnNotReady(!this.url ? "there is no url" : "there are no files");
       return null;
     }
 
@@ -328,6 +333,20 @@ export class WcsUpload extends HTMLElement {
     }
 
     return result;
+  }
+
+  // A refused upload sent nothing and said nothing (no `error`, by design): a `trigger`
+  // written before `url` / `files` in one `data-wcs` (bindings apply in the order
+  // written), a retry after the files were used up, files picked before the url is known.
+  private _warnNotReady(reason: string): void {
+    if (this._told?.has(reason)) return;
+    (this._told ??= new Set()).add(reason);
+    console.warn(
+      `[@wcstack/upload] [wcs/command-not-ready] The upload was refused: ${reason}, so nothing is sent. ` +
+        "Write url and files before trigger (bindings apply in the order written), and assign files again " +
+        "for each retry: an upload uses them up. (Said once per element and reason.)",
+      this,
+    );
   }
 
   // --- Lifecycle ---
