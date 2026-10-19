@@ -66,7 +66,7 @@ const SKIP = new Set([
   "wcstack",
 ]);
 
-/** @type {Record<string, {package: string, hasWcBindable: boolean, observedAttributes: string[], inputs: Record<string, string | null>, properties: string[], commands: string[]}>} */
+/** @type {Record<string, {package: string, hasWcBindable: boolean, observedAttributes: string[], inputs: Record<string, string | null>, properties: string[], commands: string[], handles?: string[]}>} */
 const tags = {};
 const failed = [];
 const skippedNoDist = [];
@@ -109,6 +109,9 @@ for (const dir of readdirSync(packagesRoot).sort()) {
         properties: (wb.properties ?? []).map((p) => p.name),
         commands: (wb.commands ?? []).map((c) => c.name),
       };
+      // semantics: "handle" の出力（生きたリソース）。あるタグにだけ書く
+      const handles = (wb.properties ?? []).filter((p) => p.semantics === "handle").map((p) => p.name);
+      if (handles.length > 0) tags[tagName].handles = handles;
     }
   } catch (e) {
     failed.push(`${dir}: ${String(e).slice(0, 120)}`);
@@ -151,6 +154,8 @@ export interface BuiltinTagContract {
   readonly properties: readonly string[];
   /** command 名。 */
   readonly commands: readonly string[];
+  /** semantics: "handle" の出力（生きたリソース — 値として束ねない）。あるタグにだけある。 */
+  readonly handles?: readonly string[];
 }
 
 export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = `;

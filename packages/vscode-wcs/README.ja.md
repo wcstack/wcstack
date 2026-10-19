@@ -154,6 +154,7 @@ Hover 本文の言語は `wcstack.messageLanguage` に従います（既定: VS 
 | `command.<method>:` の右辺が `$command.<name>` でない（`wcs/token-misconfigured`。ランタイムは束縛の計画で #1201 を投げる） | `command.play: count` | ❌ error |
 | `command.<method>:` の右辺の `$command.<name>` が `$commandTokens` に無い（`wcs/token-undeclared`。ランタイムは取り付けで #1302 を投げる。イベント束縛の `$command.<name>` と `eventToken.` はイベントのたびに #1301 を記録する — warning） | `command.play: $command.typo` | ❌ / ⚠ |
 | `wcs-*` のタグが宣言しないメンバー（`wcs/tag-member-unknown`。ランタイムは #38・#1203・#1204 で拒む。`hidden`・`title`・`textContent` などの DOM のプロパティも同じで、宣言なしで書けるのは HTML の書き込み先 — `html:`・`innerHTML:`・`outerHTML:`・`srcdoc:` — だけ） | `<wcs-fetch data-wcs="hidden: busy">` | ❌ error |
+| タグが `semantics: "handle"` と宣言する出力（`<wcs-camera>` の `streamReady` ＝ 生きた `MediaStream`）を state のパスに束ねる（`wcs/handle-bound-as-value`。動くが、スナップショット・DevTools・SSR に載らないオブジェクトが state に入る。`eventToken.streamReady:` で受け、コマンドの引数として次の要素へ渡す） | `<wcs-camera data-wcs="streamReady: cam.stream">` | ⚠ warning |
 | `<template for>` 外のパターンパス・省略パス・ループの添字（`wcs/wildcard-rank`。4.0 は初期化で #1401 / #1402 を投げる — code はランタイムと同じ） | `textContent: items.*.name`・`.name`・`$1` | ⚠ warning |
 | 行の中で別のリストの `*` を読む（4.0 の #1403） | `for: a` の中の `textContent: b.*.y` | ⚠ warning |
 | `for` / `if` テンプレートの中の `outerHTML:` / `outerText:`（4.0 は初期化で throw — #203。route・レイアウトの雛形の中も対象、アプリの JS が複製するだけの最上位の `<template>` の中は対象外） | `<template data-wcs="for: items"><div data-wcs="outerHTML: h">` | ❌ error |

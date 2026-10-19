@@ -23,6 +23,8 @@ export interface BuiltinTagContract {
   readonly properties: readonly string[];
   /** command 名。 */
   readonly commands: readonly string[];
+  /** semantics: "handle" の出力（生きたリソース — 値として束ねない）。あるタグにだけある。 */
+  readonly handles?: readonly string[];
 }
 
 export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
@@ -357,6 +359,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "start",
       "stop",
       "switchCamera"
+    ],
+    "handles": [
+      "streamReady"
     ]
   },
   "wcs-recorder": {

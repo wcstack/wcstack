@@ -168,6 +168,11 @@ export const WcsDiagnosticCode = {
   // 未知メンバーへのバインド(プロパティ / command. / eventToken. キー)。4.0 のランタイムは #38 / #1203 /
   // #1204 で拒み、root では初期化が、行では束縛が失敗する（3.x の「黙って無視」ではない）。error。
   TagMemberUnknown: "wcs/tag-member-unknown",
+  // `semantics: "handle"` の出力（`<wcs-camera>` の `streamReady` = 生の MediaStream）を、値としてパスに
+  // 束ねた。プロトコルは「値の置き場ではなく ref / callback で受ける」と定める（protocol/wc-bindable.ts）。
+  // ランタイムは書くので動くが、スナップショット・DevTools・SSR に載らないオブジェクトが state に入る
+  // （docs/seam-apps.md、state-field-report）。warning。5.0 でランタイムが拒むかは誤りの目録の議題。
+  HandleBoundAsValue: "wcs/handle-bound-as-value",
   // タグのメンバー名が "on" で始まる（`once` 等）のに先頭ドット無しで束縛した: ランタイムはイベント束縛にして
   // "ce" イベントを待ち、値は届かない。明示のプロパティ形 `.once:` を提案する（@wcstack/state 3.1・要件 B5 / 3.x 計画 D36）
   OnPrefixedMember: "wcs/on-prefixed-member",

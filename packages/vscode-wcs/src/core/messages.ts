@@ -190,6 +190,8 @@ export interface WcsMessageCatalog {
   nativeCommandUnknown(method: string, tag: string, allowed: string): string;
   spreadNoBindable(tag: string): string;
   tagEventTokenKeyUnknown(name: string, tag: string, declared: string): string;
+  /** `semantics: "handle"` の出力（`<wcs-camera>` の `streamReady`）を値として束ねた（ioNodeValidator）。 */
+  handleBoundAsValue(name: string, tag: string): string;
   /** `attr.aria-*` の属性名が WAI-ARIA に存在しない（ariaValidator）。 */
   ariaAttrUnknown(name: string): string;
   /** 最近傍候補の「もしかして」suffix。 */
@@ -433,6 +435,8 @@ const ja: WcsMessageCatalog = {
     `'...'（spread）は <${tag}> に有効な wcBindable 宣言が必要です — このタグは宣言を持たないため、ランタイムはエラーを送出します`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
     `eventToken のキー "${name}" は <${tag}> の wcBindable プロパティではありません。生 DOM イベント名は発火しません — プロパティ名を指定してください（宣言済み: ${declared}）`,
+  handleBoundAsValue: (name, tag) =>
+    `<${tag}> の "${name}" は生きたリソース（ハンドル）で、値ではありません。state のパスに束ねると、スナップショットや SSR に載らないオブジェクトが state に入ります — eventToken.${name}: で受け、コマンドの引数として次の要素へ直接渡してください`,
   ariaAttrUnknown: (name) =>
     `"${name}" は WAI-ARIA の属性ではありません。setAttribute はそのまま書き込みますが、支援技術には黙って無視されます`,
   didYouMean: (c) => `。もしかして: "${c}"`,
@@ -711,6 +715,8 @@ const en: WcsMessageCatalog = {
     `'...' (spread) requires <${tag}> to expose a valid wcBindable declaration — this tag declares none, so the runtime raises an error`,
   tagEventTokenKeyUnknown: (name, tag, declared) =>
     `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire — use the property name (declared: ${declared})`,
+  handleBoundAsValue: (name, tag) =>
+    `"${name}" of <${tag}> is a live resource (a handle), not a value. Bound to a state path, it puts an object no snapshot or SSR can carry into the state — receive it with eventToken.${name}: and hand it to the next element as a command argument`,
   ariaAttrUnknown: (name) =>
     `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
