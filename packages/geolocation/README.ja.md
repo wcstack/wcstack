@@ -115,7 +115,7 @@ npm install @wcstack/geolocation
 | `loading`    | `wcs-geo:loading-changed`      | 一発取得 `getCurrentPosition` のリクエスト中は `true`。              |
 | `error`      | `wcs-geo:error`                | 正規化された `{ code, message }`（`PERMISSION_DENIED=1`, `POSITION_UNAVAILABLE=2`, `TIMEOUT=3`）。 |
 | `permission` | `wcs-geo:permission-changed`   | `"prompt"` / `"granted"` / `"denied"` / `"unsupported"`。Permissions API でライブ追跡。 |
-| `errorInfo`  | `wcs-geo:error-info-changed`   | serializable な失敗 taxonomy（`WcsIoErrorInfo`）、または `null`。追加的で `error` から導出（`code` → `permission-denied` / `position-unavailable` / `timeout`、`recoverable` は `permission-denied` のみ `false`）。`error` の shape は不変。 |
+| `errorInfo`  | `wcs-geo:error-info-changed`   | serializable な失敗 taxonomy（`WcsIoErrorInfo`）、または `null`。追加的で `error` から導出（`code` → `permission-denied` / `position-unavailable` / `timeout`、`recoverable` は `permission-denied` と `capability-missing` だけ `false`）。4.5（未リリース）から、`capability-missing`（phase `probe`）はこのページで geolocation を使えないときに出します。Geolocation API が無い（4.4 までは `position-unavailable`）、secure context でない、Permissions-Policy が切っている、のどれかです。後の 2 つでは `permission` も `"unsupported"` になり、ブラウザには聞きません（利用者が拒否したかのように答えるため）。`error` の shape は不変（`code` は 2）。 |
 
 ## コマンド
 

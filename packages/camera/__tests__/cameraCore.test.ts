@@ -460,10 +460,25 @@ describe("CameraCore", () => {
       await flush();
       expect(core.errorInfo).toEqual({
         code: "capability-missing", phase: "probe", recoverable: false,
-        message: "getUserMedia is not available (requires a secure context).",
+        message: "getUserMedia is not available in this browser.",
       });
       // 公開 error shape は不変。
       expect(core.error?.name).toBe("unsupported");
+    });
+
+    it("安全でない origin で mediaDevices が無いときは、安全なコンテキストが要ると言う", async () => {
+      media.uninstall();
+      media = installMedia({ noMediaDevices: true });
+      vi.stubGlobal("isSecureContext", false);
+      try {
+        const core = new CameraCore();
+        await core.observe({});
+        core.start();
+        await flush();
+        expect(core.error?.message).toBe("getUserMedia needs a secure context (https:, or http://localhost), and this page is not one.");
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
 
     it("NotAllowedError → not-allowed / start、SecurityError も同分類", async () => {
@@ -544,6 +559,81 @@ describe("CameraCore", () => {
       await flush();
       expect(core.error).toBeNull();
       expect(core.errorInfo).toBeNull();
+    });
+  });
+
+  describe("このページで使えないデバイス（安全でない origin・Permissions-Policy）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete (document as { featurePolicy?: unknown }).featurePolicy;
+    });
+
+    function policy(blocked: string[]): void {
+      vi.stubGlobal("isSecureContext", true);
+      (document as any).featurePolicy = { allowsFeature: (f: string) => !blocked.includes(f) };
+    }
+
+    it("ポリシーが切ったカメラ: Permissions API が granted でも permission=unsupported、start は getUserMedia を呼ばず capability-missing", async () => {
+      media.setPermission("camera", "granted");
+      policy(["camera"]);
+      const core = new CameraCore();
+      await core.observe({});
+      expect(core.permission).toBe("unsupported");
+      core.start();
+      await flush();
+      expect(media.control.calls).toHaveLength(0);
+      expect(core.active).toBe(false);
+      expect(core.error?.name).toBe("unsupported");
+      expect(core.error?.message).toContain('allow="camera"');
+      expect(core.errorInfo?.code).toBe("capability-missing");
+      expect(core.permission).toBe("unsupported");
+    });
+
+    it("ポリシーが切ったマイク（audio）: audioPermission=unsupported、カメラの permission はそのまま、start はマイクの理由で止まる", async () => {
+      media.setPermission("camera", "granted");
+      policy(["microphone"]);
+      const core = new CameraCore();
+      await core.observe({ audio: true });
+      expect(core.audioPermission).toBe("unsupported");
+      expect(core.permission).toBe("granted");
+      core.start();
+      await flush();
+      expect(media.control.calls).toHaveLength(0);
+      expect(core.error?.message).toContain("The microphone is turned off for this page by a Permissions-Policy");
+      expect(core.permission).toBe("granted");
+      expect(core.audioPermission).toBe("unsupported");
+    });
+
+    it("audio を後から付けたときも、マイクが切られていれば audioPermission=unsupported、外せば null", async () => {
+      policy(["microphone"]);
+      const core = new CameraCore();
+      await core.observe({});
+      expect(core.audioPermission).toBeNull();
+      await core.observe({ audio: true });
+      expect(core.audioPermission).toBe("unsupported");
+      await core.observe({});
+      expect(core.audioPermission).toBeNull();
+    });
+
+    it("安全でない origin（mediaDevices が残る環境）: permission=unsupported、start は安全なコンテキストが要ると言う", async () => {
+      vi.stubGlobal("isSecureContext", false);
+      const core = new CameraCore();
+      await core.observe({});
+      expect(core.permission).toBe("unsupported");
+      core.start();
+      await flush();
+      expect(media.control.calls).toHaveLength(0);
+      expect(core.error?.message).toBe("The camera needs a secure context (https:, or http://localhost), and this page is not one.");
+    });
+
+    it("ポリシーが許すときは、これまでどおり取得する", async () => {
+      policy([]);
+      media.resolveWith(new FakeMediaStream("ok"));
+      const core = new CameraCore();
+      await core.observe({ audio: true });
+      core.start();
+      await flush();
+      expect(core.active).toBe(true);
     });
   });
 });

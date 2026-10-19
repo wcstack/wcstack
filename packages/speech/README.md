@@ -157,7 +157,7 @@ Like `<wcs-geo>`, it has two phases: a **one-shot** recognition (default) and a 
 | `permission` | `"prompt"\|"granted"\|"denied"\|"unsupported"` | microphone permission |
 | `error` | `WcsListenErrorDetail` \| null | last failure |
 | `errorInfo` | `WcsIoErrorInfo` \| null | serializable failure taxonomy (`code` / `phase` / `recoverable`) derived from `error` — SpeechRecognition codes, see [Notes & limitations](#notes--limitations); additive, `error` shape unchanged |
-| `unsupported` | boolean | SpeechRecognition is unavailable |
+| `unsupported` | boolean | SpeechRecognition is unavailable — since 4.5 (not released yet) also on a page that cannot use the microphone (not a secure context, or a Permissions-Policy); `permission` is then `"unsupported"` too, and `start()` says why in `error` |
 
 ### Commands
 

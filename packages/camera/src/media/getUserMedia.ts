@@ -1,4 +1,5 @@
 import { CameraConstraints, MediaDeviceSnapshot, WcsMediaErrorDetail } from "../types.js";
+import { featureUnavailable, featureUnavailableMessage } from "../core/platformCapability.js";
 
 /** True when getUserMedia is reachable (secure context with a media-devices impl). */
 export function hasMediaDevices(): boolean {
@@ -46,10 +47,33 @@ export function normalizeMediaError(error: unknown): WcsMediaErrorDetail {
   return { name: "Error", message: "Media request failed." };
 }
 
-const UNSUPPORTED_ERROR: WcsMediaErrorDetail = {
-  name: "unsupported",
-  message: "getUserMedia is not available (requires a secure context).",
-};
+// getUserMedia is absent on an insecure origin, and in a browser without it: say which.
+function unsupportedError(): WcsMediaErrorDetail {
+  const reason = featureUnavailable("camera");
+  return {
+    name: "unsupported",
+    message: reason === "insecure-context"
+      ? featureUnavailableMessage("getUserMedia", "camera", reason)
+      : "getUserMedia is not available in this browser.",
+  };
+}
+
+/**
+ * Why this page cannot use the camera (or, with `audio`, the microphone): not a secure
+ * context, or turned off by a Permissions-Policy. `null` when it can, as far as the
+ * platform tells. `device` says which one, for the permission output it makes unsupported.
+ */
+export function mediaUnavailable(audio: boolean): { device: "camera" | "microphone"; error: WcsMediaErrorDetail } | null {
+  const camera = featureUnavailable("camera");
+  if (camera !== null) {
+    return { device: "camera", error: { name: "unsupported", message: featureUnavailableMessage("The camera", "camera", camera) } };
+  }
+  const microphone = audio ? featureUnavailable("microphone") : null;
+  if (microphone !== null) {
+    return { device: "microphone", error: { name: "unsupported", message: featureUnavailableMessage("The microphone", "microphone", microphone) } };
+  }
+  return null;
+}
 
 export interface UserMediaResult {
   stream?: MediaStream;
@@ -62,7 +86,7 @@ export interface UserMediaResult {
  */
 export async function requestUserMedia(constraints: MediaStreamConstraints): Promise<UserMediaResult> {
   if (!hasMediaDevices()) {
-    return { error: UNSUPPORTED_ERROR };
+    return { error: unsupportedError() };
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);

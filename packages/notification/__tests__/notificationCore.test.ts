@@ -795,3 +795,25 @@ describe("errorInfo taxonomy (Phase 6)", () => {
     });
   });
 });
+
+describe("安全でない origin（このページで通知は使えない）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    removeNotification();
+    removePermissions();
+  });
+
+  it("Notification が残っていても unsupported、permission も unsupported、notify は安全なコンテキストが要ると言う", async () => {
+    installNotification({ permission: "denied" });
+    installPermissions({ state: "denied" });
+    vi.stubGlobal("isSecureContext", false);
+    const core = new NotificationCore();
+    await core.observe();
+    expect(core.permission).toBe("unsupported");
+    expect(core.unsupported).toBe(true);
+    expect(await core.request()).toBe("unsupported");
+    expect(core.notify("hi")).toBe("");
+    expect(core.error?.error).toBe("unsupported");
+    expect(core.error?.message).toBe("Notifications needs a secure context (https:, or http://localhost), and this page is not one.");
+  });
+});

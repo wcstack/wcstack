@@ -548,4 +548,34 @@ describe("ListenCore", () => {
       });
     });
   });
+
+  describe("このページで使えないマイク（安全でない origin・Permissions-Policy）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete (document as { featurePolicy?: unknown }).featurePolicy;
+    });
+
+    it("ポリシーがマイクを切っていれば unsupported、permission も unsupported、start は理由を言って認識器を作らない", async () => {
+      installPermissions({ state: "granted" });
+      vi.stubGlobal("isSecureContext", true);
+      (document as any).featurePolicy = { allowsFeature: (f: string) => f !== "microphone" };
+      const core = new ListenCore();
+      await flush();
+      expect(core.unsupported).toBe(true);
+      expect(core.permission).toBe("unsupported");
+      expect(recs).toHaveLength(0);
+      core.start();
+      expect(core.error?.error).toBe("unsupported");
+      expect(core.error?.message).toContain('allow="microphone"');
+      expect(core.errorInfo?.code).toBe("capability-missing");
+    });
+
+    it("安全でない origin: 安全なコンテキストが要ると言う", () => {
+      vi.stubGlobal("isSecureContext", false);
+      const core = new ListenCore();
+      expect(core.unsupported).toBe(true);
+      core.start();
+      expect(core.error?.message).toBe("Speech recognition (the microphone) needs a secure context (https:, or http://localhost), and this page is not one.");
+    });
+  });
 });

@@ -28,7 +28,7 @@ Most wcstack IO nodes lean one way: `<wcs-permission>` only *watches* (it has no
 
 So `<wcs-notify>` is the first wcstack node where the **command-token** (show) and **event-token** (click) directions live together in one tag. And unlike `<wcs-permission>`, the Notifications API *does* have `Notification.requestPermission()`, so this node is **self-contained**: it both requests/monitors the permission and shows notifications.
 
-> **Secure context required.** The Notifications API only works in a secure context (HTTPS, or `localhost`). Where it is absent, `<wcs-notify>` reports `permission = "unsupported"` instead of throwing. Requesting permission and showing also typically require a user gesture — firing `notify` from a timer may show nothing.
+> **Secure context required.** The Notifications API only works in a secure context (HTTPS, or `localhost`). Where it is absent, `<wcs-notify>` reports `permission = "unsupported"` instead of throwing. Since 4.5 (not released yet) it does so on a page that is not a secure context, too, where Chromium keeps the `Notification` constructor and answers `"denied"`, the same as a user's refusal; `notify()` says why in `error`. Requesting permission and showing also typically require a user gesture — firing `notify` from a timer may show nothing.
 
 ## Install
 

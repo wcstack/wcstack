@@ -2,7 +2,7 @@ import {
   IWcBindable, NotifyBackend, NotifyOptions, NotificationPermissionRaw,
   PermissionStateOrUnsupported, WcsNotifyClickDetail, WcsNotifyErrorDetail,
 } from "../types.js";
-import { WcsIoErrorInfo } from "./platformCapability.js";
+import { WcsIoErrorInfo, featureUnavailable, featureUnavailableMessage } from "./platformCapability.js";
 import { deriveNotifyErrorInfo } from "./notificationCapabilities.js";
 
 // Wrapper stored in a notification's `data` so the Service Worker side (a
@@ -277,7 +277,10 @@ export class NotificationCore extends EventTarget {
    */
   notify(title: string, options: NotifyOptions = {}): string {
     if (!this._api()) {
-      this._setError(this._err("unsupported", "Notifications API is not available in this environment."));
+      const reason = featureUnavailable("notifications");
+      this._setError(this._err("unsupported", reason === null
+        ? "Notifications API is not available in this environment."
+        : featureUnavailableMessage("Notifications", "notifications", reason)));
       return "";
     }
     if (this._permission !== "granted") {
@@ -540,9 +543,11 @@ export class NotificationCore extends EventTarget {
 
   // Resolve the global `Notification` constructor at call time (not cached) so
   // tests can install/remove it and so unsupported environments report correctly.
+  // A page that cannot use notifications (not a secure context) has none: Chromium
+  // keeps the constructor there and answers "denied", which reads as the user's refusal.
   private _api(): (typeof Notification) | undefined {
     const g = globalThis as unknown as { Notification?: typeof Notification };
-    return typeof g.Notification === "function" ? g.Notification : undefined;
+    return typeof g.Notification === "function" && featureUnavailable("notifications") === null ? g.Notification : undefined;
   }
 
   private _nextId(): string {

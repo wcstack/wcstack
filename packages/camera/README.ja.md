@@ -50,7 +50,7 @@ $on: {
 
 **コマンド:** `start()`・`stop()`・`switchCamera()`（前後カメラ切替）。
 
-**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`（ストリームが使っているデバイス。`wcs-camera:device-changed` で publish。プロパティを読むと、決まった後はこの値、それまでは要求した `device-id` を返す。要求そのものは属性に残る）・`devices`（映像入力の一覧。`[{ deviceId, label, groupId, kind: "videoinput" }]`。許可されるまで label は空）・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
+**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`。4.5（未リリース）から、このページでカメラ／マイクを使えないとき — secure context でない、Permissions-Policy が切っている — も `unsupported`。そのとき `start()` はブラウザに聞かず、`errorInfo` は理由付きの `capability-missing`）・`deviceId`（ストリームが使っているデバイス。`wcs-camera:device-changed` で publish。プロパティを読むと、決まった後はこの値、それまでは要求した `device-id` を返す。要求そのものは属性に残る）・`devices`（映像入力の一覧。`[{ deviceId, label, groupId, kind: "videoinput" }]`。許可されるまで label は空）・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
 
 **イベント（event-token）:** `streamReady`（`wcs-camera:stream-ready`、detail = 生 `MediaStream`）・`error`・`ended`（OS によるトラック剥奪）。`streamReady` の「プロパティ」は event-token 配線用で、値としてバインドしないでください。
 
@@ -164,8 +164,8 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 - **ユーザージェスチャ。** 一部ブラウザは `getUserMedia` をユーザー操作起点で要求します。タイマーから撃つと無言で失敗することがあります（`error` に出ます・throw しません）。
 - **エラーは分類され throw されません:** `NotAllowedError`（拒否）・`NotFoundError`（デバイス無し）・`NotReadableError`（他アプリ使用中）・`OverconstrainedError`。
 - **`errorInfo`——付加的な失敗分類。** `error` と並んで、`<wcs-camera>` / `<wcs-recorder>` はどちらも付加的なバインド可能出力 `errorInfo`（`WcsIoErrorInfo` = 安定した `code` / `phase` / `recoverable` / `message`）を公開します。同じ失敗から派生し、`wcs-camera:error-info-changed` / `wcs-recorder:error-info-changed` で publish されます。`error` の形状は不変で、`errorInfo` は `error` と完全に同期して遷移します（成功時に `null` へクリア）。両要素は 1 つの code セット（`core/mediaCapabilities.ts` の `WCS_MEDIA_ERROR_CODE`）を共有します:
-  - `capability-missing`（phase `probe`）——`getUserMedia` / `MediaRecorder` 非対応（非セキュアコンテキスト含む）。
-  - `not-allowed`（phase `start`）——`NotAllowedError` / `SecurityError`（権限拒否・feature-policy ブロック）。
+  - `capability-missing`（phase `probe`）——`getUserMedia` / `MediaRecorder` 非対応（非セキュアコンテキスト含む）。4.5（未リリース）から、Permissions-Policy が切ったカメラ／マイクも（ブラウザに聞く前に見つける）。
+  - `not-allowed`（phase `start`）——`NotAllowedError` / `SecurityError`（権限拒否。4.4 までは feature-policy ブロックも）。
   - `not-found`（phase `start`）——`NotFoundError`（要求した種類のカメラ / マイクが存在しない）。
   - `not-readable`（phase `start`）——`NotReadableError`（デバイス占有・ハードウェア障害）。
   - `invalid-argument`（phase `start`）——`OverconstrainedError` / `NotSupportedError`（制約・mimeType が満たせない）。

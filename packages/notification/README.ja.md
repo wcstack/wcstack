@@ -28,7 +28,7 @@ Notifications API をリアクティブな state と state 駆動のコマンド
 
 つまり `<wcs-notify>` は **command-token**（表示）と **event-token**（クリック）が 1 つのタグに同居する wcstack 初のノードです。さらに `<wcs-permission>` と違い Notifications API には `Notification.requestPermission()` があるため、このノードは**自己完結**します —— 権限の要求/監視と通知の表示を両方担います。
 
-> **secure context が必要。** Notifications API は secure context（HTTPS か `localhost`）でのみ動作します。利用できない環境では `<wcs-notify>` は throw せず `permission = "unsupported"` を報告します。権限要求と表示は通常ユーザージェスチャを要するため、タイマーから `notify` を撃っても何も表示されないことがあります。
+> **secure context が必要。** Notifications API は secure context（HTTPS か `localhost`）でのみ動作します。利用できない環境では `<wcs-notify>` は throw せず `permission = "unsupported"` を報告します。4.5（未リリース）から、secure context でないページでも同じく報告します。Chromium はそこで `Notification` を残したまま `"denied"` を返し、利用者の拒否と区別がつきません。`notify()` は理由を `error` に書きます。権限要求と表示は通常ユーザージェスチャを要するため、タイマーから `notify` を撃っても何も表示されないことがあります。
 
 ## インストール
 

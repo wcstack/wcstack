@@ -2,7 +2,7 @@ import {
   IWcBindable, ListenOptions, ListenPermissionState,
   WcsListenResultDetail, WcsListenAlternative, WcsListenErrorDetail,
 } from "../types.js";
-import { WcsIoErrorInfo } from "./platformCapability.js";
+import { WcsIoErrorInfo, featureUnavailable, featureUnavailableMessage } from "./platformCapability.js";
 import { deriveListenErrorInfo } from "./speechCapabilities.js";
 
 // The vendor-prefixed constructor is not in the DOM lib types; declare a minimal
@@ -133,7 +133,9 @@ export class ListenCore extends EventTarget {
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
-    const Ctor = this._getCtor();
+    // Recognition listens through the microphone: a page that cannot use it (not a
+    // secure context, or a Permissions-Policy) is unsupported, as without the API.
+    const Ctor = featureUnavailable("microphone") === null ? this._getCtor() : null;
     this._setUnsupported(!Ctor);
     if (Ctor) {
       this._recognition = new Ctor();
@@ -472,7 +474,10 @@ export class ListenCore extends EventTarget {
   }
 
   private _initPermission(): void {
-    if (typeof navigator === "undefined" || !navigator.permissions || typeof navigator.permissions.query !== "function") {
+    // The Permissions API would answer "granted" in a policy-blocked frame and "denied"
+    // on an insecure origin — a user's refusal, which the site settings would fix.
+    if (featureUnavailable("microphone") !== null
+      || typeof navigator === "undefined" || !navigator.permissions || typeof navigator.permissions.query !== "function") {
       this._setPermission("unsupported");
       return;
     }
@@ -503,6 +508,12 @@ export class ListenCore extends EventTarget {
   }
 
   private _unsupportedError(): WcsListenErrorDetail {
-    return { error: "unsupported", message: "SpeechRecognition API is not available in this environment." };
+    const reason = featureUnavailable("microphone");
+    return {
+      error: "unsupported",
+      message: reason === null
+        ? "SpeechRecognition API is not available in this environment."
+        : featureUnavailableMessage("Speech recognition (the microphone)", "microphone", reason),
+    };
   }
 }

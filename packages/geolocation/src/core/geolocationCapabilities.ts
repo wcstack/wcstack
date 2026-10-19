@@ -14,15 +14,22 @@ export const WCS_GEO_ERROR_CODE = {
   PermissionDenied: "permission-denied",
   PositionUnavailable: "position-unavailable",
   Timeout: "timeout",
+  // このページで使えない(API 不在・安全でない origin・Permissions-Policy)。利用者の拒否
+  // (permission-denied)と区別する — サイトの設定では直らない。
+  CapabilityMissing: "capability-missing",
 } as const;
 
 /**
  * 正規化済み `GeolocationPositionError`(spec code 1/2/3)を serializable な error
- * taxonomy に写す。Core は "unsupported"/"unexpected" を code 2(position-unavailable)
- * に畳むため、これは既存の `error.code` を忠実にミラーする。permission-denied(1)だけ
- * は retry で回復しないため recoverable=false。
+ * taxonomy に写す。"unexpected" は code 2(position-unavailable)に畳むため、これは既存の
+ * `error.code` を忠実にミラーする。permission-denied(1)だけは retry で回復しないため
+ * recoverable=false。`unsupported`(このページで使えない — Core は `error.code` を 2 にする)
+ * は capability-missing / probe / recoverable=false。
  */
-export function deriveGeoErrorInfo(code: number, message: string): WcsIoErrorInfo {
+export function deriveGeoErrorInfo(code: number, message: string, unsupported = false): WcsIoErrorInfo {
+  if (unsupported) {
+    return { code: WCS_GEO_ERROR_CODE.CapabilityMissing, phase: "probe", recoverable: false, message };
+  }
   const taxonomyCode = code === 1
     ? WCS_GEO_ERROR_CODE.PermissionDenied
     : code === 3
