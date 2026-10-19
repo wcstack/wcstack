@@ -561,7 +561,7 @@
       "runtime": "silent", "harm": "data-loss",
       "mistake": { "en": "Re-fetches a list without `$listKeys` while its rows hold unbound state: text being typed, focus, an open `<details>`.", "ja": "行が束ねていない状態（入力中の文字・フォーカス・開いた `<details>`）を持つ一覧を、`$listKeys` なしで取り直す。" },
       "effect": { "en": "Fresh objects never match by reference, so every row is rebuilt and that state is lost.", "ja": "新しいオブジェクトは参照で一致しないので、すべての行が作り直され、その状態は失われる。" },
-      "disposition": ["lint-rule", "design-out"], "breaking": true,
+      "disposition": "design-out", "breaking": true,
       "note": { "en": "4.x: an info for a `for:` over fetched data whose rows hold inputs, with no `$listKeys`. 5.0: key rows by `id` when the objects carry one.", "ja": "4.x: 取得したデータの `for:` で、行に入力欄があり `$listKeys` が無ければ info。5.0: オブジェクトが `id` を持てば、それで行を合わせる。" }
     },
     {
@@ -717,6 +717,16 @@
       "evidence": [{ "file": "packages/router/src/components/Link.ts", "text": "attr.name.startsWith('aria-')" }],
       "disposition": "design-out", "breaking": false,
       "note": { "en": "The link can forward later `aria-*` changes.", "ja": "リンクが後の `aria-*` の変化を転送できる。" }
+    },
+    {
+      "id": "handle-bound-as-value",
+      "lint": [{ "code": "wcs/handle-bound-as-value", "severity": "warning" }],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Binds an output declared `semantics: \"handle\"` to a state path: `<wcs-camera data-wcs=\"streamReady: cam.stream\">`, or writes the `MediaStream` from an event into state.", "ja": "`semantics: \"handle\"` と宣言された出力を state のパスに束ねる: `<wcs-camera data-wcs=\"streamReady: cam.stream\">`、またはイベントの `MediaStream` を state に書く。" },
+      "effect": { "en": "It works: the live `MediaStream` sits in state, unproxied. But no snapshot, DevTools view or SSR can carry it, and the protocol says a handle takes a ref or callback, not a value slot.", "ja": "動く。生きた `MediaStream` が素のまま state に入る。ただしスナップショットも DevTools も SSR も運べず、プロトコルはハンドルを値の置き場ではなく ref か callback で受けると定める。" },
+      "evidence": [{ "file": "protocol/wc-bindable.ts", "text": "consumers need an explicit" }],
+      "disposition": "design-out", "breaking": true,
+      "note": { "en": "Found by the state-field-report seam app (both forms worked, nothing said a word). The lint reads the binding form; the runtime could refuse a handle output bound to a path in 5.0. A write from an event handler is beyond both.", "ja": "継ぎ目アプリ state-field-report が見つけた（どちらの形も動き、何も言わなかった）。lint は束縛の形を読む。5.0 でランタイムがパスに束ねたハンドルの出力を拒むことはできる。イベントのハンドラからの書き込みはどちらにも見えない。" }
     }
   ],
   "uncounted": [

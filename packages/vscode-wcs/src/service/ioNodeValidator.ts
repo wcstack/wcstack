@@ -37,6 +37,8 @@ interface MemberContract {
   readonly properties: readonly string[];
   readonly inputs: Readonly<Record<string, unknown>>;
   readonly commands: readonly string[];
+  /** `semantics: "handle"` の出力（built-in の目録にだけある）。 */
+  readonly handles?: readonly string[];
 }
 
 /**
@@ -267,6 +269,17 @@ function validateBindingAgainstContract(
       code: WcsDiagnosticCode.TagMemberUnknown,
       start, end, severity: 'error', tag: tagName, member: property,
       message: msgs.tagMemberUnknown(property, tagName) + suggestion(property, members, msgs),
+    });
+    return;
+  }
+
+  // ハンドル（生きたリソース）を値として束ねた: `streamReady: cam.stream` は MediaStream を state に入れる。
+  // ランタイムは書くので動くが、スナップショット・DevTools・SSR に載らない（docs/seam-apps.md、state-field-report）。
+  if (contract.handles?.includes(property)) {
+    diagnostics.push({
+      code: WcsDiagnosticCode.HandleBoundAsValue,
+      start, end, severity: 'warning', tag: tagName, member: property,
+      message: msgs.handleBoundAsValue(property, tagName),
     });
     return;
   }

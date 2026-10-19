@@ -1015,6 +1015,11 @@ interface ResultShape {
   isList: boolean;
   mirrors: { from: string; to: '' | '.*' }[];
   fields: { to: '' | '.*'; field: PropertyInfo }[];
+  /**
+   * 元の形が分からない（モジュールの定数・関数の結果・`this.$getAll(…)`）。連鎖の `map` が
+   * リテラルを返せば行の形が分かる。最後まで分からなければ読めない式（null）として落ちる。
+   */
+  opaque?: boolean;
 }
 
 /** 行を保ったまま並べ替え・絞り込み・切り出す配列メソッド（結果の行は元の行そのもの）。 */
@@ -1037,7 +1042,9 @@ const MAX_GETTER_SHAPE_PASSES = 4;
  * - `this.todos` / `this["groups.*.items"]` と、行を保つメソッドの連鎖（`filter` / `toSorted` /
  *   `slice` …）・`[...this.todos]` → 元のリストの下を写す（`visible.*.text` ← `todos.*.text`）
  * - `find` / `findLast` / `at` → 元の行の下を写す（`selected.name` ← `items.*.name`）
- * - `map(t => ({ … }))` → リテラルのフィールドが行になる（`...t` があれば元の行も写す）
+ * - `map(t => ({ … }))` → リテラルのフィールドが行になる（`...t` があれば元の行も写す）。元が state の外
+ *   （`PERMS.map(…)`・`Object.entries(…).map(([k, v]) => ({ … }))`・`this.$getAll(…).map(…)`）でも、
+ *   行の形はリテラルから分かる
  * - オブジェクトリテラル（`return { total: … }`）→ そのフィールド
  * - 三項演算子・`||` / `??` は両辺の和
  *
@@ -1171,7 +1178,8 @@ function readBase(
   if (alias === null) return null;
   if (alias[1] !== 'this') {
     const shape = aliases.get(alias[1]);
-    return shape === undefined ? null : { shape, rest: alias[1].length };
+    // 別名でない名前（モジュールの定数・関数）: 形は分からない — 連鎖の map だけが行の形を決める
+    return { shape: shape ?? OPAQUE, rest: alias[1].length };
   }
   const segments: string[] = [];
   let i = 4;
@@ -1197,6 +1205,8 @@ function readBase(
     break;
   }
   const path = segments.join('.');
+  // `this.$getAll(…)` などの API の結果: 形は分からない（連鎖の map が決める）
+  if (path === '' && /^\s*\??\.\s*\$[$\w]*\s*\(/.test(scan.slice(4))) return { shape: OPAQUE, rest: 4 };
   if (path === '' || path.startsWith('$')) return null;
   return {
     shape: { isList: hasPath(paths, `${path}.*`), mirrors: [{ from: path, to: '' }], fields: [] },
@@ -1209,12 +1219,27 @@ function applyChain(expr: string, scan: string, start: number, initial: ResultSh
   let shape = initial;
   let i = start;
   while (scan.slice(i).trim() !== '') {
+    // 形の分からない元への呼び出し（`helper(…)`）は飛ばす
+    if (shape.opaque && /^\s*\(/.test(scan.slice(i))) {
+      const open = scan.indexOf('(', i);
+      i = open + extractDelimitedContent(expr, scan, open, '(', ')').length + 2;
+      continue;
+    }
     const call = /^\s*\??\.\s*([$\w]+)\s*\(/.exec(scan.slice(i));
     if (call === null) return null;
     const open = i + call[0].length - 1;
     const args = extractDelimitedContent(expr, scan, open, '(', ')');
     i = open + args.length + 2;
     const method = call[1];
+    if (shape.opaque) {
+      // 分からない行のまま並べ替え・絞り込みしても分からない。map だけが形を作る
+      if (method === 'map') {
+        const mapped = mapRows(args, shape);
+        if (mapped === null) return null;
+        shape = mapped;
+      }
+      continue;
+    }
     if (ROW_PRESERVING_METHODS.has(method)) {
       if (!shape.isList) return null;
     } else if (ROW_PICKING_METHODS.has(method)) {
@@ -1229,8 +1254,11 @@ function applyChain(expr: string, scan: string, start: number, initial: ResultSh
       return null;
     }
   }
-  return shape;
+  return shape.opaque ? null : shape;
 }
+
+/** 形の分からない元。 */
+const OPAQUE: ResultShape = { isList: true, mirrors: [], fields: [], opaque: true };
 
 /** リストの形 → その行 1 つの形。 */
 function pickRow(shape: ResultShape): ResultShape {
@@ -1248,7 +1276,8 @@ function pickRow(shape: ResultShape): ResultShape {
 function mapRows(args: string, shape: ResultShape): ResultShape | null {
   const [callback] = splitTopLevelElements(args);
   if (callback === undefined) return null;
-  const head = /^(?:async\s+)?(?:function\b[^(]*\(\s*([$\w]+)[^)]*\)|\(\s*([$\w]+)[^)]*\)|([$\w]+))\s*(=>)?\s*/.exec(callback);
+  // 引数は名前 1 つか、分割代入（`([key, value]) =>` — 元の行はスプレッドできない）
+  const head = /^(?:async\s+)?(?:function\b[^(]*\(\s*([$\w]+)?[^)]*\)|\(\s*([$\w]+)?[^)]*\)|([$\w]+))\s*(=>)?\s*/.exec(callback);
   if (head === null) return null;
   const param = head[1] ?? head[2] ?? head[3];
   const body = callback.slice(head[0].length);

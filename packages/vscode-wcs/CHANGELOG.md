@@ -2,6 +2,11 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **state の外のリストを `map` する getter の行の形を読む** — `get permRows() { return PERMS.map((p) => ({ name: p.name, label: p.label })); }` の `for: permRows` の行の `.label` が `wcs/binding-path-missing` の偽陽性になっていた（`this.items.map(…)` は読めていた）。元がモジュールの定数・関数の結果・`Object.entries(…)`・`this.$getAll(…)` でも、`map` のコールバックが返すリテラルから行の形を作る。分割代入の引数（`([key, value]) => ({ … })`）も読む。継ぎ目アプリ state-field-report が見つけた（作者は `stateSchema` を作るまで警告を消せなかった）。
+- **ハンドルを値として束ねた束縛を警告する**（`wcs/handle-bound-as-value`、warning、新規）— `<wcs-camera data-wcs="streamReady: cam.stream">` のように、タグが `semantics: "handle"` と宣言する出力をパスに束ねる。生きた `MediaStream` が state に入り、スナップショット・DevTools・SSR に載らない。組み込みタグの目録に `handles` を足した。同じアプリで、どちらの形も動き、何も言わなかった。
+
 ## 2.4.0 — 2026-10-18
 
 `@wcstack/state` 4.4.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.4.0・`@wcstack/typescript` 4.4.0 と同じ判定）。新しい error の規則（`wcs/path-readonly`、スクリプトの `wcs/token-undeclared`、ページで定義した要素の `wcs/tag-member-unknown`、`stateSchema` があるときの `wcs/read-path-missing`）と、`src=` の state へのスクリプトの規則が入るので minor。

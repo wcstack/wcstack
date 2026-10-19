@@ -359,3 +359,21 @@ describe('validateIoNodes: storage-seed-clobber — アクセサペア', () => {
     expect(validateIoNodes(html)).toHaveLength(0);
   });
 });
+
+describe('validateIoNodes: handle-bound-as-value（state-field-report）', () => {
+  it('<wcs-camera> の streamReady（semantics: "handle"）をパスに束ねると警告し、eventToken で受けるよう案内する', () => {
+    const html = `${STATE('cam: { stream: null },')}
+<wcs-camera data-wcs="streamReady: cam.stream"></wcs-camera>`;
+    const diags = validateIoNodes(html).filter(d => d.code === WcsDiagnosticCode.HandleBoundAsValue);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].severity).toBe('warning');
+    expect(diags[0].member).toBe('streamReady');
+    expect(diags[0].message).toContain('eventToken.streamReady:');
+  });
+
+  it('eventToken.streamReady: と、ハンドルでない出力（active）は警告しない', () => {
+    const html = `${STATE('$eventTokens: ["gotStream"], cam: { active: false },')}
+<wcs-camera data-wcs="eventToken.streamReady: gotStream; active: cam.active"></wcs-camera>`;
+    expect(validateIoNodes(html).filter(d => d.code === WcsDiagnosticCode.HandleBoundAsValue)).toEqual([]);
+  });
+});

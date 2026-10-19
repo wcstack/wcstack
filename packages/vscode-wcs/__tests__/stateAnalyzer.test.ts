@@ -940,6 +940,27 @@ export default {
     expect(all).toContain('firstLabel.label');
   });
 
+  it('state の外のリスト（モジュールの定数・関数の結果・$getAll）でも、map のリテラルから行の形を持つ（state-field-report）', () => {
+    const paths = analyzeStatePaths(`
+const PERMS = [{ name: "camera", label: "Camera" }];
+export default {
+  perm: { camera: "prompt" },
+  get permRows() { return PERMS.map((p) => ({ name: p.name, label: p.label, state: this["perm.camera"] })); },
+  get entries() { return Object.entries(this.perm).map(([key, value]) => ({ key, value })); },
+  get sortedRows() { return PERMS.filter(p => p.name).map(p => ({ title: p.label })).toSorted(); },
+  get totals() { return this.$getAll("perm.*", []).map(v => ({ v })); },
+  get viaHelper() { return helper(PERMS).map(p => ({ helped: true })); },
+};`);
+    const all = paths.map(p => p.path);
+    expect(find(paths, 'permRows.*')).toEqual({ path: 'permRows.*', kind: 'list' });
+    expect(all).toContain('permRows.*.label');
+    expect(all).toContain('permRows.*.state');
+    expect(all).toContain('entries.*.key');
+    expect(all).toContain('sortedRows.*.title');
+    expect(all).toContain('totals.*.v');
+    expect(all).toContain('viaHelper.*.helped');
+  });
+
   it('オブジェクトリテラルを返す getter はそのフィールドを持つ', () => {
     const paths = analyzeStatePaths(`
 export default {
