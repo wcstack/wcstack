@@ -547,13 +547,14 @@
     {
       "id": "io-command-before-ready",
       "runtime": "loud", "harm": "data-loss",
-      "mistake": { "en": "Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, `post` on a `<wcs-broadcast>` with no channel or a `<wcs-worker>` with no worker, a recorder `start` with no stream.", "ja": "I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、チャンネルの無い `<wcs-broadcast>` や worker の無い `<wcs-worker>` の `post`、ストリームの無い recorder の `start`。" },
+      "mistake": { "en": "Calls an I/O node's command before it can carry it out: `send` on a `<wcs-ws>` that is not connected, `post` on a `<wcs-broadcast>` with no channel or a `<wcs-worker>` with no worker, a recorder `start` with no stream, `notify` on a `<wcs-notify>` whose permission is not granted.", "ja": "I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、チャンネルの無い `<wcs-broadcast>` や worker の無い `<wcs-worker>` の `post`、ストリームの無い recorder の `start`、許可の無い `<wcs-notify>` の `notify`。" },
       "effect": { "en": "The call is refused and what it carried is lost. It goes to the node's `error` output, and the element warns `[wcs/command-not-ready]` once (an API the environment lacks is reported by `supported` instead).", "ja": "呼び出しは拒まれ、運んでいたものは失われる。ノードの `error` の出力に流れ、要素が `[wcs/command-not-ready]` で 1 回警告する（環境に無い API は `supported` が知らせる）。" },
       "evidence": [
         { "file": "packages/websocket/src/core/WebSocketCore.ts", "text": "[wcs/command-not-ready] send() was refused" },
         { "file": "packages/broadcast/src/core/BroadcastCore.ts", "text": "[wcs/command-not-ready] post() was refused" },
         { "file": "packages/worker/src/core/WorkerCore.ts", "text": "[wcs/command-not-ready] post() was refused" },
-        { "file": "packages/camera/src/core/RecorderCore.ts", "text": "[wcs/command-not-ready] start() was refused" }
+        { "file": "packages/camera/src/core/RecorderCore.ts", "text": "[wcs/command-not-ready] start() was refused" },
+        { "file": "packages/notification/src/core/NotificationCore.ts", "text": "[wcs/command-not-ready] notify() was refused" }
       ]
     },
     {
@@ -727,6 +728,45 @@
       "evidence": [{ "file": "protocol/wc-bindable.ts", "text": "consumers need an explicit" }],
       "disposition": "design-out", "breaking": true,
       "note": { "en": "Found by the state-field-report seam app (both forms worked, nothing said a word). The lint reads the binding form; the runtime could refuse a handle output bound to a path in 5.0. A write from an event handler is beyond both.", "ja": "継ぎ目アプリ state-field-report が見つけた（どちらの形も動き、何も言わなかった）。lint は束縛の形を読む。5.0 でランタイムがパスに束ねたハンドルの出力を拒むことはできる。イベントのハンドラからの書き込みはどちらにも見えない。" }
+    },
+    {
+      "id": "trigger-before-inputs",
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Writes `trigger:` before `url:` (and `files:`) in one `data-wcs` on `<wcs-fetch>` / `<wcs-upload>`, so a row created with `trigger: true` fires before its inputs are there.", "ja": "`<wcs-fetch>` / `<wcs-upload>` の 1 つの `data-wcs` で、`trigger:` を `url:`（と `files:`）より前に書く。`trigger: true` で作った行は、入力が揃う前に発火する。" },
+      "effect": { "en": "Bindings apply in the order written: the trigger finds no url (or no files), and nothing is sent, with no `error`. The element warns `[wcs/command-not-ready]` once.", "ja": "束縛は書いた順に当たる。trigger は url（やファイル）を見つけられず、何も送らず、`error` も立てない。要素が `[wcs/command-not-ready]` で 1 回警告する。" },
+      "evidence": [
+        { "file": "packages/fetch/src/components/Fetch.ts", "text": "[wcs/command-not-ready] trigger was refused: there is no url" },
+        { "file": "packages/upload/src/components/Upload.ts", "text": "[wcs/command-not-ready] The upload was refused" }
+      ],
+      "note": { "en": "Found by the state-field-report seam app (an upload row per clip). The element could wait a microtask for the rest of its bindings before it reads them — a 5.0 question, since a direct assignment then reads `loading` later.", "ja": "継ぎ目アプリ state-field-report が見つけた（クリップごとのアップロードの行）。要素が残りの束縛をマイクロタスク 1 つ待ってから読むこともできる — 直接の代入では `loading` が遅れて立つので、5.0 の議題。" }
+    },
+    {
+      "id": "upload-retry-used-files",
+      "runtime": "loud", "harm": "data-loss",
+      "mistake": { "en": "Retries a failed or cancelled `<wcs-upload>` by writing `trigger` again, without assigning the files again.", "ja": "失敗・中断した `<wcs-upload>` を、ファイルを代入し直さずに `trigger` をもう一度書いて送り直す。" },
+      "effect": { "en": "An upload uses its `files` up, as fetch's `body`: after it settles `files` is `null` (a two-way binding clears its path too), and the retry sends nothing. The element warns `[wcs/command-not-ready]` once.", "ja": "アップロードは fetch の `body` と同じく `files` を使い切る。終わると `files` は `null` で（双方向の束縛はそのパスも空にする）、送り直しは何も送らない。要素が `[wcs/command-not-ready]` で 1 回警告する。" },
+      "evidence": [{ "file": "packages/upload/src/components/Upload.ts", "text": "assign files again" }]
+    },
+    {
+      "id": "storage-unserializable",
+      "runtime": "loud", "harm": "data-loss",
+      "mistake": { "en": "Keeps a `Blob` or `File` (a recorded clip, a picked file), a `Map` / `Set` or binary data in a value `<wcs-storage>` saves.", "ja": "`<wcs-storage>` が保存する値に、`Blob` や `File`（録画したクリップ、選んだファイル）、`Map` / `Set`、バイナリを入れる。" },
+      "effect": { "en": "JSON keeps none of them: each is stored as `{}` and comes back empty after a reload (the seam app then uploaded `[object Object]` as a 15-byte \"video\"). The element warns `[wcs/storage-unserializable]` once, naming what and where.", "ja": "JSON はどれも保てない。それぞれ `{}` で保存され、再読み込みの後は空で返る（継ぎ目アプリは `[object Object]` を 15 バイトの「動画」として送った）。要素が、何がどこにあるかを添えて `[wcs/storage-unserializable]` で 1 回警告する。" },
+      "evidence": [{ "file": "packages/storage/src/core/StorageCore.ts", "text": "[wcs/storage-unserializable]" }]
+    },
+    {
+      "id": "speech-echo-unmuted",
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Wires `<wcs-listen>` → state → `<wcs-speak>` without muting speaking while listening.", "ja": "`<wcs-listen>` → state → `<wcs-speak>` を、聞き取り中に読み上げを止めずに繋ぐ。" },
+      "effect": { "en": "The microphone hears the speech, and what it hears is spoken again, longer each round. The `<wcs-speak>` warns `[wcs/speech-echo]` once when it starts speaking while a `<wcs-listen>` on the page listens.", "ja": "マイクが読み上げを聞き、聞いたものがまた話され、回るたびに長くなる。ページの `<wcs-listen>` が聞いている間に話し始めると、`<wcs-speak>` が `[wcs/speech-echo]` で 1 回警告する。" },
+      "evidence": [{ "file": "packages/speech/src/core/SpeakCore.ts", "text": "[wcs/speech-echo]" }]
+    },
+    {
+      "id": "recording-without-keep-alive",
+      "runtime": "loud", "harm": "data-loss",
+      "mistake": { "en": "Records from a `<wcs-camera>` without `keepAlive: <recording path>`, and the tab is hidden while recording.", "ja": "`keepAlive: <録画中のパス>` なしの `<wcs-camera>` から録画し、録画中にタブが隠れる。" },
+      "effect": { "en": "The camera suspends its stream while the page is hidden, which ends the recording with what it has: a short take. The camera warns `[wcs/camera-keep-alive-missing]` once.", "ja": "カメラはページが隠れている間ストリームを止め、録画はそこまでの分で終わる（短いテイク）。カメラが `[wcs/camera-keep-alive-missing]` で 1 回警告する。" },
+      "evidence": [{ "file": "packages/camera/src/core/CameraCore.ts", "text": "[wcs/camera-keep-alive-missing]" }]
     }
   ],
   "uncounted": [

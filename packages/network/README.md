@@ -111,7 +111,7 @@ Every bound state path must be declared up front — binding an undeclared path 
 | `supported`      | `wcs-network:change` | `true` once a real `navigator.connection` was found; `false` otherwise. |
 | `offline`        | `wcs-network:change` | `!navigator.onLine`, followed through the window's `online` / `offline` events — every browser has it, whatever `supported` says. `null` without a navigator (SSR). Bind it to disable what needs the network (`data-wcs="offline: offline"` + `disabled: offline`). Like `navigator.onLine`, `false` means a network is there, not that your server answers. (It is not called `online`: a `data-wcs` name starting with `on` is an event binding.) |
 
-All five derive from the single `wcs-network:change` event (a full snapshot dispatched together, mirroring how the native API reports all fields on one `change` event). The four data fields also normalize to `null` individually — even when `supported` is `true` — if the browser reports a field as missing or with an unexpected type.
+All six derive from the single `wcs-network:change` event (a full snapshot dispatched together, mirroring how the native API reports all fields on one `change` event). The four data fields also normalize to `null` individually — even when `supported` is `true` — if the browser reports a field as missing or with an unexpected type.
 
 `downlinkMax` and connection `type` (wifi/cellular/…) are intentionally not surfaced — see `docs/network-tag-design.md` §2 for the rationale (low real-world utility, and `type` is unreliable across browsers for fingerprinting-mitigation reasons).
 

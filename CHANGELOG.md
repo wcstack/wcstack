@@ -34,6 +34,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Documentation
 
 - `@wcstack/camera`: binding `mimeType` two-way writes the state's seed into the request (`mimeType#init=element` reads the resolved type only); `error` / `errorInfo` describe the last attempt, not the current permission; the shape of `devices`.
+- The `state-field-report` seam app's findings are logged ([docs/seam-apps.md](./docs/seam-apps.md)), with the author's three decisions ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.3, ja), and the mistakes it made are in the [mistake catalogue](./docs/mistake-catalogue.md) (92 entries). Also: the router README's `leaveConfirm` says that one switch covers a reload and a route change (guard only uploads with your own `beforeunload`); the network README counted five outputs of six; the notification README says a notification's own `data` wraps the one passed to `notify()`.
 
 ## [4.4.0] — 2026-10-18
 

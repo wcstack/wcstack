@@ -118,7 +118,7 @@ import { wireNotificationClicks } from "@wcstack/notification/sw";
 wireNotificationClicks();
 ```
 
-It relays each click over `BroadcastChannel("wcs-notify")` (primary) and `clients.postMessage` (fallback); `NotificationCore` on the page de-dups the two transports and emits `wcs-notify:click`.
+It relays each click over `BroadcastChannel("wcs-notify")` (primary) and `clients.postMessage` (fallback); `NotificationCore` on the page de-dups the two transports and emits `wcs-notify:click`. The notification's own `data` is `{ __wcsId, payload }`, where `payload` is the `data` you passed to `notify()` — the click event gives you `payload` back, but a Service Worker that reads `event.notification.data` itself reads the wrapper.
 
 ## Attributes / Inputs
 
