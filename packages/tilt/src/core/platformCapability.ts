@@ -135,3 +135,49 @@ export function assessCapabilities(registry: CapabilityRegistry, options: Assess
 export function requiredCapabilitiesAvailable(assessment: PlatformAssessment, required: readonly string[]): boolean {
   return required.every((id) => assessment.availability.get(id) === "available");
 }
+
+/**
+ * このページで機能が使えない理由(使える、または分からないなら null)。利用直前に読む。
+ *
+ * - `"insecure-context"`: 安全なコンテキストではない(`isSecureContext === false`)。
+ *   Permissions API が扱う機能はどれも安全なコンテキストを要る。
+ * - `"policy-blocked"`: Permissions-Policy(サーバーのヘッダ、または `allow` の無い
+ *   `<iframe>`)がその機能を切っている。
+ *
+ * どちらも Permissions API は教えない: Chromium はポリシーで切られた文書でも
+ * `granted` を、安全でない origin では `denied` を返す。利用者の拒否と区別するため、
+ * 見張り役(`<wcs-permission>`)も取りに行く側も `unsupported` を報告する
+ * (docs/v4-direction-2026-10.md の決定、state-field-report)。
+ * `isSecureContext` が無い環境(SSR・テスト)は判断しない。
+ */
+export type FeatureUnavailableReason = "insecure-context" | "policy-blocked";
+
+/** Permissions-Policy が制御する機能(permission 名と同じ文字列)。 */
+const POLICY_CONTROLLED = new Set([
+  "camera", "microphone", "geolocation", "midi", "clipboard-read", "clipboard-write",
+  "screen-wake-lock", "idle-detection", "accelerometer", "gyroscope", "magnetometer",
+  "ambient-light-sensor", "display-capture",
+]);
+
+interface PolicyLike { allowsFeature(feature: string): boolean }
+
+export function featureUnavailable(feature: string): FeatureUnavailableReason | null {
+  const g = globalThis as { isSecureContext?: unknown; document?: { permissionsPolicy?: PolicyLike; featurePolicy?: PolicyLike } };
+  if (g.isSecureContext === false) return "insecure-context";
+  if (!POLICY_CONTROLLED.has(feature)) return null;
+  const policy = g.document?.permissionsPolicy ?? g.document?.featurePolicy;
+  if (policy === undefined || typeof policy.allowsFeature !== "function") return null;
+  try {
+    return policy.allowsFeature(feature) ? null : "policy-blocked";
+  } catch {
+    return null;
+  }
+}
+
+/** `featureUnavailable` の理由を、作者が直し方を読める文にする。`what` は文頭(「The camera」など)。 */
+export function featureUnavailableMessage(what: string, feature: string, reason: FeatureUnavailableReason): string {
+  return reason === "insecure-context"
+    ? `${what} needs a secure context (https:, or http://localhost), and this page is not one.`
+    : `${what} is turned off for this page by a Permissions-Policy: the server's Permissions-Policy header, ` +
+      `or an <iframe> without allow="${feature}". The browser's site settings cannot change that.`;
+}

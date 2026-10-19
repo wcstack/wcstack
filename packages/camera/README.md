@@ -50,7 +50,7 @@ Acquires a camera stream and renders a preview. Acquisition is **explicit** — 
 
 **Commands:** `start()`, `stop()`, `switchCamera()` (toggle front/back).
 
-**Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`), `deviceId` (the device the stream uses, published with `wcs-camera:device-changed`; reading the property gives the same value once one is known, and the requested `device-id` until then — the request itself stays in the attribute), `devices` (the video inputs, `[{ deviceId, label, groupId, kind: "videoinput" }]`; labels are empty until a grant), `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-camera:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
+**Bindable values:** `active` (a stream is live), `permission` / `audioPermission` (`prompt`/`granted`/`denied`/`unsupported`; since 4.5 (not released yet) `unsupported` also on a page that cannot use the camera / microphone — not a secure context, or turned off by a Permissions-Policy — where `start()` does not ask the browser and `errorInfo` is `capability-missing` with the reason), `deviceId` (the device the stream uses, published with `wcs-camera:device-changed`; reading the property gives the same value once one is known, and the requested `device-id` until then — the request itself stays in the attribute), `devices` (the video inputs, `[{ deviceId, label, groupId, kind: "videoinput" }]`; labels are empty until a grant), `error`, `errorInfo` (`WcsIoErrorInfo | null` — a serializable failure taxonomy derived from `error`, published via `wcs-camera:error-info-changed`; see [Notes & gotchas](#notes--gotchas) below).
 
 **Events (event-token):** `streamReady` (`wcs-camera:stream-ready`, detail = the live `MediaStream`), `error`, `ended` (a track was revoked by the OS). The `streamReady` "property" exists for event-token wiring only — never bind it as a value.
 
@@ -165,8 +165,8 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
 - **User gesture.** Some browsers require `getUserMedia` to be triggered by a user action; firing it from a timer may silently fail (surfaced via `error`, never thrown).
 - **Errors are classified, never thrown:** `NotAllowedError` (denied), `NotFoundError` (no device), `NotReadableError` (in use by another app), `OverconstrainedError`.
 - **`errorInfo` — additive failure taxonomy.** Alongside `error`, both `<wcs-camera>` and `<wcs-recorder>` expose an **additive** bindable output `errorInfo` (`WcsIoErrorInfo` = a stable `code` / `phase` / `recoverable` / `message`), derived from the same failure and published via `wcs-camera:error-info-changed` / `wcs-recorder:error-info-changed`. The `error` shape is unchanged; `errorInfo` transitions exactly when `error` does (cleared to `null` on success). Both elements share one code set (`WCS_MEDIA_ERROR_CODE`, defined in `core/mediaCapabilities.ts`):
-  - `capability-missing` (phase `probe`) — `getUserMedia` / `MediaRecorder` unavailable, including non-secure context.
-  - `not-allowed` (phase `start`) — `NotAllowedError` / `SecurityError` (permission denied or feature-policy block).
+  - `capability-missing` (phase `probe`) — `getUserMedia` / `MediaRecorder` unavailable, including non-secure context; since 4.5 (not released yet) also a camera or microphone a Permissions-Policy turns off, found before the browser is asked.
+  - `not-allowed` (phase `start`) — `NotAllowedError` / `SecurityError` (permission denied; up to 4.4 also a feature-policy block).
   - `not-found` (phase `start`) — `NotFoundError` (no camera / mic of the requested kind).
   - `not-readable` (phase `start`) — `NotReadableError` (device busy or hardware fault).
   - `invalid-argument` (phase `start`) — `OverconstrainedError` / `NotSupportedError` (constraints or mimeType unsatisfiable).

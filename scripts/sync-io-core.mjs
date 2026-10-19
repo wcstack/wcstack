@@ -72,6 +72,7 @@ const PACKAGE_FILES = {
   fullscreen: CAPABILITY_ONLY,
   "picture-in-picture": CAPABILITY_ONLY,
   "pointer-lock": CAPABILITY_ONLY,
+  permission: CAPABILITY_ONLY,
 };
 
 // --- Completeness guards ---------------------------------------------------

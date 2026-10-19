@@ -105,6 +105,36 @@ describe("PermissionCore", () => {
     });
   });
 
+  describe("このページで使えない機能（安全でない origin・Permissions-Policy）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete (document as { featurePolicy?: unknown }).featurePolicy;
+    });
+
+    it("安全なコンテキストでなければ、Permissions API が denied と答えても unsupported を報告し、購読しない", async () => {
+      const mock = installPermissions({ state: "denied" });
+      vi.stubGlobal("isSecureContext", false);
+      const core = new PermissionCore();
+      await core.observe({ name: "camera" });
+      expect(core.state).toBe("unsupported");
+      expect(mock.query).not.toHaveBeenCalled();
+    });
+
+    it("Permissions-Policy が切った機能は、Permissions API が granted と答えても unsupported", async () => {
+      const mock = installPermissions({ state: "granted" });
+      vi.stubGlobal("isSecureContext", true);
+      (document as any).featurePolicy = { allowsFeature: (f: string) => f !== "camera" };
+      const camera = new PermissionCore();
+      await camera.observe({ name: "camera" });
+      expect(camera.state).toBe("unsupported");
+      // ポリシーが許す機能は、これまでどおり問い合わせる
+      const mic = new PermissionCore();
+      await mic.observe({ name: "microphone" });
+      expect(mic.state).toBe("granted");
+      expect(mock.query).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("unsupported フォールバック", () => {
     it("navigator.permissions が無いと unsupported になる", async () => {
       removePermissions();

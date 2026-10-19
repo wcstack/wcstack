@@ -3,8 +3,9 @@ import {
   MediaPermissionState, WcsMediaErrorDetail,
 } from "../types.js";
 import {
-  buildConstraints, enumerateVideoDevices, hasMediaDevices, requestUserMedia, stopAllTracks,
+  buildConstraints, enumerateVideoDevices, hasMediaDevices, mediaUnavailable, requestUserMedia, stopAllTracks,
 } from "../media/getUserMedia.js";
+import { featureUnavailable } from "./platformCapability.js";
 import { MediaPermissionWatcher } from "../media/permission.js";
 import { isRecording } from "../media/recording.js";
 import { WcsIoErrorInfo } from "./platformCapability.js";
@@ -292,11 +293,18 @@ export class CameraCore extends EventTarget {
       this._setPermission("unsupported");
       return Promise.resolve();
     }
-    this._camWatcher = new MediaPermissionWatcher("camera", (s) => this._setPermission(s));
-    const tasks: Promise<void>[] = [this._camWatcher.observe()];
+    // A device this page cannot use (not a secure context, or a Permissions-Policy) is
+    // "unsupported", not what the Permissions API answers: Chromium says "granted" in a
+    // policy-blocked frame, which would read as "allowed" next to a start that fails.
+    const tasks: Promise<void>[] = [];
+    if (featureUnavailable("camera") !== null) {
+      this._setPermission("unsupported");
+    } else {
+      this._camWatcher = new MediaPermissionWatcher("camera", (s) => this._setPermission(s));
+      tasks.push(this._camWatcher.observe());
+    }
     if (this._constraints.audio) {
-      this._micWatcher = new MediaPermissionWatcher("microphone", (s) => this._setAudioPermission(s));
-      tasks.push(this._micWatcher.observe());
+      tasks.push(this._watchMicrophone());
     }
     // Track hot-plug: refresh the device list when a camera is added/removed.
     if (typeof navigator.mediaDevices.addEventListener === "function") {
@@ -318,14 +326,22 @@ export class CameraCore extends EventTarget {
   // nothing started.
   private _reconcileAudioWatcher(): Promise<void> {
     if (this._constraints.audio && !this._micWatcher && hasMediaDevices()) {
-      this._micWatcher = new MediaPermissionWatcher("microphone", (s) => this._setAudioPermission(s));
-      return this._micWatcher.observe();
-    } else if (!this._constraints.audio && this._micWatcher) {
-      this._micWatcher.dispose();
+      return this._watchMicrophone();
+    } else if (!this._constraints.audio && (this._micWatcher || this._audioPermission !== null)) {
+      this._micWatcher?.dispose();
       this._micWatcher = null;
       this._setAudioPermission(null);
     }
     return Promise.resolve();
+  }
+
+  private _watchMicrophone(): Promise<void> {
+    if (featureUnavailable("microphone") !== null) {
+      this._setAudioPermission("unsupported");
+      return Promise.resolve();
+    }
+    this._micWatcher = new MediaPermissionWatcher("microphone", (s) => this._setAudioPermission(s));
+    return this._micWatcher.observe();
   }
 
   private _restart(): void {
@@ -335,6 +351,17 @@ export class CameraCore extends EventTarget {
 
   private async _acquire(): Promise<void> {
     const gen = ++this._gen;
+    // Not asked of the browser when the page cannot use the device: its NotAllowedError
+    // would read as the user's refusal, which the site settings would fix and these cannot.
+    const off = hasMediaDevices() ? mediaUnavailable(!!this._constraints.audio) : null;
+    if (off !== null) {
+      this._setError(off.error);
+      if (off.device === "camera") this._setPermission("unsupported");
+      else this._setAudioPermission("unsupported");
+      this._desired = false;
+      this._setActive(false);
+      return;
+    }
     const constraints = buildConstraints(this._constraints);
     const { stream, error } = await requestUserMedia(constraints);
 

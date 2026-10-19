@@ -1,7 +1,9 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   assessCapabilities,
   requiredCapabilitiesAvailable,
+  featureUnavailable,
+  featureUnavailableMessage,
   type CapabilityRegistry,
   type CapabilitySpec,
 } from "../src/core/platformCapability";
@@ -119,5 +121,64 @@ describe("requiredCapabilitiesAvailable", () => {
     const reg = registry({ a: { probe: () => true }, b: { probe: () => false } });
     expect(requiredCapabilitiesAvailable(assessCapabilities(reg, { required: ["a"] }), ["a"])).toBe(true);
     expect(requiredCapabilitiesAvailable(assessCapabilities(reg, { required: ["b"] }), ["b"])).toBe(false);
+  });
+});
+
+describe("platformCapability — featureUnavailable（このページで使えない理由）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (document as { featurePolicy?: unknown }).featurePolicy;
+    delete (document as { permissionsPolicy?: unknown }).permissionsPolicy;
+  });
+
+  it("安全なコンテキストでなければ insecure-context（ポリシーで制御されない機能も）", () => {
+    vi.stubGlobal("isSecureContext", false);
+    expect(featureUnavailable("camera")).toBe("insecure-context");
+    expect(featureUnavailable("notifications")).toBe("insecure-context");
+  });
+
+  it("isSecureContext が無い環境（SSR・テスト）は判断しない", () => {
+    vi.stubGlobal("isSecureContext", undefined);
+    expect(featureUnavailable("camera")).toBeNull();
+  });
+
+  it("Permissions-Policy が切った機能は policy-blocked、許した機能は null", () => {
+    vi.stubGlobal("isSecureContext", true);
+    (document as any).featurePolicy = { allowsFeature: (f: string) => f !== "camera" };
+    expect(featureUnavailable("camera")).toBe("policy-blocked");
+    expect(featureUnavailable("microphone")).toBeNull();
+  });
+
+  it("permissionsPolicy を featurePolicy より先に読む", () => {
+    vi.stubGlobal("isSecureContext", true);
+    (document as any).permissionsPolicy = { allowsFeature: () => false };
+    (document as any).featurePolicy = { allowsFeature: () => true };
+    expect(featureUnavailable("geolocation")).toBe("policy-blocked");
+  });
+
+  it("ポリシーが制御しない名前は allowsFeature に聞かない（未知の機能は false を返すため）", () => {
+    vi.stubGlobal("isSecureContext", true);
+    const allowsFeature = vi.fn(() => false);
+    (document as any).featurePolicy = { allowsFeature };
+    expect(featureUnavailable("notifications")).toBeNull();
+    expect(allowsFeature).not.toHaveBeenCalled();
+  });
+
+  it("ポリシーの API が無い、または投げるときは判断しない", () => {
+    vi.stubGlobal("isSecureContext", true);
+    expect(featureUnavailable("camera")).toBeNull();
+    (document as any).featurePolicy = {};
+    expect(featureUnavailable("camera")).toBeNull();
+    (document as any).featurePolicy = { allowsFeature: () => { throw new Error("x"); } };
+    expect(featureUnavailable("camera")).toBeNull();
+  });
+
+  it("理由ごとに直し方の読める文を返す", () => {
+    expect(featureUnavailableMessage("The camera", "camera", "insecure-context")).toBe(
+      "The camera needs a secure context (https:, or http://localhost), and this page is not one.",
+    );
+    const blocked = featureUnavailableMessage("The camera", "camera", "policy-blocked");
+    expect(blocked).toContain("Permissions-Policy");
+    expect(blocked).toContain('allow="camera"');
   });
 });

@@ -156,7 +156,7 @@ export default {
 | `permission` | `"prompt"\|"granted"\|"denied"\|"unsupported"` | マイク permission |
 | `error` | `WcsListenErrorDetail` \| null | 直近の失敗 |
 | `errorInfo` | `WcsIoErrorInfo` \| null | `error` から派生するシリアライズ可能な失敗分類（`code` / `phase` / `recoverable`）。SpeechRecognition のコード（[注意・制限](#注意制限)参照）。付加的で `error` の形状は不変 |
-| `unsupported` | boolean | SpeechRecognition 非対応 |
+| `unsupported` | boolean | SpeechRecognition 非対応。4.5（未リリース）から、このページでマイクを使えないとき（secure context でない、Permissions-Policy が切っている）も。そのとき `permission` も `"unsupported"` になり、`start()` は理由を `error` に書く |
 
 ### コマンド
 

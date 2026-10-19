@@ -2,7 +2,7 @@ import {
   IWcBindable, GeoOptions, GeoPermissionState,
   WcsGeoPositionDetail, WcsGeoCoords, WcsGeoErrorDetail,
 } from "../types.js";
-import { WcsIoErrorInfo } from "./platformCapability.js";
+import { WcsIoErrorInfo, featureUnavailable, featureUnavailableMessage } from "./platformCapability.js";
 import { deriveGeoErrorInfo } from "./geolocationCapabilities.js";
 
 /**
@@ -63,6 +63,8 @@ export class GeolocationCore extends EventTarget {
   private _loading: boolean = false;
   private _error: WcsGeoErrorDetail | null = null;
   private _errorInfo: WcsIoErrorInfo | null = null;
+  // the errors that say this page cannot use geolocation (errorInfo: capability-missing)
+  private _unsupportedErrors = new WeakSet<WcsGeoErrorDetail>();
   private _permission: GeoPermissionState = "prompt";
 
   // Live PermissionStatus handle (when the Permissions API is available), kept
@@ -209,7 +211,7 @@ export class GeolocationCore extends EventTarget {
     // the normalized error (or null on clear). Fires before the `error` event so an
     // observer binding both sees the classification first, mirroring the io-node
     // family. No lane here — geolocation's fixes don't compete (dispose-only guard).
-    this._commitErrorInfo(error === null ? null : deriveGeoErrorInfo(error.code, error.message));
+    this._commitErrorInfo(error === null ? null : deriveGeoErrorInfo(error.code, error.message, this._unsupportedErrors.has(error)));
     this._target.dispatchEvent(new CustomEvent("wcs-geo:error", {
       detail: error,
       bubbles: true,
@@ -426,10 +428,18 @@ export class GeolocationCore extends EventTarget {
   // --- Internal ---
 
   private _hasGeolocation(): boolean {
-    return typeof navigator !== "undefined" && !!navigator.geolocation;
+    return typeof navigator !== "undefined" && !!navigator.geolocation && featureUnavailable("geolocation") === null;
   }
 
   private _initPermission(): Promise<void> {
+    // A page that cannot use geolocation (not a secure context, or turned off by a
+    // Permissions-Policy) is "unsupported": the Permissions API answers "granted" in a
+    // policy-blocked frame and "denied" on an insecure origin — a user's refusal, which
+    // the site settings would fix and these cannot. Neither changes while the page lives.
+    if (featureUnavailable("geolocation") !== null) {
+      this._setPermission("unsupported");
+      return Promise.resolve();
+    }
     // The Permissions API is optional. When absent (or it rejects, e.g. some
     // browsers don't accept the "geolocation" name), report "unsupported" and
     // leave acquisition to fail loudly via the error property if attempted.
@@ -487,9 +497,18 @@ export class GeolocationCore extends EventTarget {
   }
 
   private _unsupportedError(): WcsGeoErrorDetail {
-    // Geolocation API absent: surface it as POSITION_UNAVAILABLE (2) so consumers
-    // that switch on the spec error codes treat it like any other unavailable fix.
-    return { code: 2, message: "Geolocation API is not available in this environment." };
+    // Geolocation API absent, or not available to this page: surface it as
+    // POSITION_UNAVAILABLE (2) so consumers that switch on the spec error codes treat
+    // it like any other unavailable fix; errorInfo says capability-missing.
+    const reason = featureUnavailable("geolocation");
+    const error: WcsGeoErrorDetail = {
+      code: 2,
+      message: reason === null
+        ? "Geolocation API is not available in this environment."
+        : featureUnavailableMessage("Geolocation", "geolocation", reason),
+    };
+    this._unsupportedErrors.add(error);
+    return error;
   }
 
   private _unexpectedError(): WcsGeoErrorDetail {

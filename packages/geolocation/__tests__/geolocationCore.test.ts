@@ -662,8 +662,20 @@ describe("GeolocationCore", () => {
       expect(core.errorInfo).toEqual({ code: "timeout", phase: "execute", recoverable: true, message: "timed out" });
     });
 
-    it("unsupported は code 2 に畳まれるため errorInfo=position-unavailable", async () => {
+    it("API 不在は error.code を 2 に畳み、errorInfo は capability-missing / probe / recoverable=false（ほかのノードと同じ）", async () => {
       removeGeolocation();
+      removePermissions();
+      const core = new GeolocationCore();
+      await core.getCurrentPosition();
+      expect(core.error?.code).toBe(2);
+      expect(core.errorInfo).toEqual({
+        code: "capability-missing", phase: "probe", recoverable: false,
+        message: "Geolocation API is not available in this environment.",
+      });
+    });
+
+    it("取得の失敗（code 2）は、これまでどおり position-unavailable", async () => {
+      installGeolocation({ error: { code: 2, message: "no fix" } });
       removePermissions();
       const core = new GeolocationCore();
       await core.getCurrentPosition();
@@ -678,6 +690,41 @@ describe("GeolocationCore", () => {
       core.addEventListener("wcs-geo:error-info-changed", (e) => { bubbles = e.bubbles; });
       await core.getCurrentPosition();
       expect(bubbles).toBe(true);
+    });
+  });
+
+  describe("このページで使えない geolocation（安全でない origin・Permissions-Policy）", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete (document as { featurePolicy?: unknown }).featurePolicy;
+    });
+
+    it("ポリシーが切っていれば、Permissions API が granted でも permission=unsupported、取得は capability-missing でブラウザに聞かない", async () => {
+      const geo = installGeolocation({ position: makePosition({ latitude: 1 }) });
+      installPermissions({ state: "granted" });
+      vi.stubGlobal("isSecureContext", true);
+      (document as any).featurePolicy = { allowsFeature: (f: string) => f !== "geolocation" };
+      const core = new GeolocationCore();
+      await core.ready;
+      expect(core.permission).toBe("unsupported");
+      await core.getCurrentPosition();
+      expect(geo.getCurrentPosition).not.toHaveBeenCalled();
+      expect(core.error?.code).toBe(2);
+      expect(core.error?.message).toContain('allow="geolocation"');
+      expect(core.errorInfo?.code).toBe("capability-missing");
+      core.watch();
+      expect(geo.watchPosition).not.toHaveBeenCalled();
+    });
+
+    it("安全でない origin: permission=unsupported、取得は安全なコンテキストが要ると言う", async () => {
+      installGeolocation({ position: makePosition({ latitude: 1 }) });
+      installPermissions({ state: "denied" });
+      vi.stubGlobal("isSecureContext", false);
+      const core = new GeolocationCore();
+      await core.ready;
+      expect(core.permission).toBe("unsupported");
+      await core.getCurrentPosition();
+      expect(core.error?.message).toBe("Geolocation needs a secure context (https:, or http://localhost), and this page is not one.");
     });
   });
 });

@@ -1,6 +1,7 @@
 import {
   IWcBindable, PermissionStateOrUnsupported, WcsPermissionDescriptor,
 } from "../types.js";
+import { featureUnavailable } from "./platformCapability.js";
 
 /**
  * Headless permission-state primitive. A thin, framework-agnostic wrapper around
@@ -164,6 +165,17 @@ export class PermissionCore extends EventTarget {
     // to "unsupported" without issuing a doomed query so the misconfiguration
     // surfaces deterministically and no listener is attached.
     if (!this._descriptor || !this._descriptor.name) {
+      this._setState("unsupported");
+      return Promise.resolve();
+    }
+    // A feature this page cannot use — not a secure context, or turned off by a
+    // Permissions-Policy (a header, an <iframe> without `allow`) — is "unsupported",
+    // as it is for the element that would acquire it. The Permissions API does not
+    // tell: Chromium answers "granted" in a policy-blocked frame and "denied" on an
+    // insecure origin, the same as a user's refusal, which the site settings would
+    // fix and these cannot. Neither changes while the page lives, so nothing is
+    // subscribed.
+    if (featureUnavailable(this._descriptor.name) !== null) {
       this._setState("unsupported");
       return Promise.resolve();
     }

@@ -28,7 +28,7 @@
 
 パーミッションの変化は `change` リスナーの購読ではなく **状態遷移** になります。
 
-> **secure context 必須。** Permissions API は secure context（HTTPS、または `localhost`）でのみ動作します。API が存在しない場合や、要求した権限名をブラウザが拒否する場合（対応はブラウザ差が大きい: Firefox は `clipboard-read` 非対応、Safari は複数の名前を欠く）、`<wcs-permission>` は例外を投げず `state = "unsupported"` を報告します。
+> **このページで使えない機能は `"unsupported"`。** API が存在しない場合や、要求した権限名をブラウザが拒否する場合（対応はブラウザ差が大きい: Firefox は `clipboard-read` 非対応、Safari は複数の名前を欠く）、`<wcs-permission>` は例外を投げず `state = "unsupported"` を報告します。4.5（未リリース）から、このページで使えない機能も同じく報告します。secure context（HTTPS、または `localhost`）でないページと、Permissions-Policy（サーバの `Permissions-Policy` ヘッダ、または `allow="camera"` の無い `<iframe>`）が切った機能です。Permissions API 自体はこれを拒否と区別しません。Chromium は安全でない origin では `"denied"`、ポリシーで切られたフレームでは `"granted"` を返します。そのため 4.4 までは、すでに許可されている、または許可しようのないカメラを、サイトの設定で許可するよう利用者に案内するページになりました。これからは `"denied"` はサイトの設定で変えられる拒否だけを表し、その機能を取りに行く要素（`<wcs-camera>`・`<wcs-geo>`・`<wcs-listen>`・`<wcs-notify>`）も同じ場合に `"unsupported"` を報告します。
 
 ## インストール
 
