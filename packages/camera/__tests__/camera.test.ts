@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { bootstrapCamera } from "../src/bootstrapCamera";
-import { WcsCamera } from "../src/components/Camera";
+import { WcsCamera, resetPreviewStyles } from "../src/components/Camera";
 import { installMedia, InstalledMedia, FakeMediaStream, FakeMediaStreamTrack, flush } from "./helpers";
 
 beforeAll(() => {
@@ -78,15 +78,47 @@ describe("<wcs-camera> Shell", () => {
     expect(el.active).toBe(true);
   });
 
-  it("disconnect で dispose（track.stop）する", async () => {
+  it("disconnect で dispose（track.stop）し、active=false を要素のイベントで知らせる", async () => {
     const el = mount(`<wcs-camera></wcs-camera>`);
     const stream = new FakeMediaStream("s");
     media.resolveWith(stream);
     await el.connectedCallbackPromise;
     el.start();
     await flush();
+    const seen: unknown[] = [];
+    el.addEventListener("wcs-camera:active-changed", (e) => seen.push((e as CustomEvent).detail));
     el.remove();
     expect(stream.tracks[0].stopped).toBe(true);
+    expect(seen).toEqual([false]);
+    expect(el.active).toBe(false);
+  });
+
+  describe("プレビューのスタイル", () => {
+    afterEach(() => {
+      resetPreviewStyles();
+    });
+
+    it("構築したスタイルシートを shadow root に採用し、<style> を置かない（CSP の style-src に止められない）", () => {
+      resetPreviewStyles();
+      const a = mount(`<wcs-camera></wcs-camera>`);
+      const b = mount(`<wcs-camera></wcs-camera>`);
+      expect(a.shadowRoot!.querySelector("style")).toBeNull();
+      expect(a.shadowRoot!.adoptedStyleSheets).toHaveLength(1);
+      // 要素どうしで 1 枚を共有する
+      expect(b.shadowRoot!.adoptedStyleSheets[0]).toBe(a.shadowRoot!.adoptedStyleSheets[0]);
+    });
+
+    it("構築したスタイルシートが使えない環境では <style> に戻る", () => {
+      resetPreviewStyles();
+      const original = globalThis.CSSStyleSheet;
+      (globalThis as { CSSStyleSheet: unknown }).CSSStyleSheet = function () { throw new Error("no constructable sheets"); };
+      try {
+        const el = mount(`<wcs-camera></wcs-camera>`);
+        expect(el.shadowRoot!.querySelector("style")!.textContent).toContain("display:inline-block");
+      } finally {
+        globalThis.CSSStyleSheet = original;
+      }
+    });
   });
 
   it("DOM 内移動（disconnect→reconnect）で autostart は再 dispose・再 acquire される（#5 挙動固定）", async () => {

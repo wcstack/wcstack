@@ -50,16 +50,16 @@ $on: {
 
 **コマンド:** `start()`・`stop()`・`switchCamera()`（前後カメラ切替）。
 
-**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`（ストリームが使っているデバイス。`wcs-camera:device-changed` で publish。プロパティを読むと、決まった後はこの値、それまでは要求した `device-id` を返す。要求そのものは属性に残る）・`devices`・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
+**バインド可能な値:** `active`（ストリーム生存）・`permission` / `audioPermission`（`prompt`/`granted`/`denied`/`unsupported`）・`deviceId`（ストリームが使っているデバイス。`wcs-camera:device-changed` で publish。プロパティを読むと、決まった後はこの値、それまでは要求した `device-id` を返す。要求そのものは属性に残る）・`devices`（映像入力の一覧。`[{ deviceId, label, groupId, kind: "videoinput" }]`。許可されるまで label は空）・`error`・`errorInfo`（`WcsIoErrorInfo | null`——`error` から派生するシリアライズ可能な失敗分類。`wcs-camera:error-info-changed` で publish。下記「注意・落とし穴」参照）。
 
 **イベント（event-token）:** `streamReady`（`wcs-camera:stream-ready`、detail = 生 `MediaStream`）・`error`・`ended`（OS によるトラック剥奪）。`streamReady` の「プロパティ」は event-token 配線用で、値としてバインドしないでください。
 
 ### ライフサイクル
 
-- `disconnectedCallback` で全トラックを `track.stop()` し、ハードウェアインジケータを消します。ストリームのリークは本ノード固有の唯一の失敗様式です。
+- `disconnectedCallback` で全トラックを `track.stop()` し、ハードウェアインジケータを消します。ストリームのリークは本ノード固有の唯一の失敗様式です。4.5（未リリース）から、`active` も `false` に戻し、`wcs-camera:active-changed` で知らせます。ルートを離れた要素は、次に入るときのためにノードを束縛ごと残すので（router の README「ルートの中身の置き場所」）、4.4 までは戻ってきたページがカメラが動いていると表示し続け、`active` の間は押せない開始ボタンも押せないままでした。
 - 要素を DOM 内で移動（remove → 再 append）すると `disconnectedCallback`（dispose・トラック停止）の後に `connectedCallback`（再 observe）が走ります。`autostart` 付きなら reconnect 時に再取得します（再プロンプトの可能性あり）。移動をまたいでストリームを維持したい場合は `autostart` を使わず自分で再 `start()` するか、要素を detach しないでください。
 - 制約変更（`device-id`・`facing-mode`・`switchCamera()`）は **再取得**（stop → 新 `getUserMedia`）を起こし、世代カウンタでガードするため、supersede された取得が orphan ストリームを生かしたまま残すことはありません。
-- ページ非表示中はストリームを suspend し、復帰時に再取得します——`keep-alive` がある場合を除く。`keepAlive: recording` をバインドすると録画中はカメラを生かし続けられます。
+- ページ非表示中はストリームを suspend し、復帰時に再取得します——`keep-alive` がある場合を除く。`keepAlive: recording` をバインドすると録画中はカメラを生かし続けられます。suspend したストリームの録画はそこで終わり、それまでの分がクリップになります。4.5（未リリース）から、`<wcs-recorder>` が録画中のストリームを suspend するとき、カメラが警告します（`[wcs/camera-keep-alive-missing]`、1 要素につき 1 回）。
 
 ## `<wcs-recorder>`
 
@@ -78,8 +78,14 @@ $on: {
 > **`duration` は stop/pause で確定する値で、録画中はライブ更新しません。** 内部に経過タイマーは持たないため、`start()` から最初の `pause()`／`stop()` までは `0` のままです。録画中の経過時間を表示したい場合は `recording` フラグを起点にクライアント側でタイマーを回してください。
 
 > **`mimeType` は「要求」と「解決後」の二面を持ちます。** **入力**は `mime-type` *属性*（recorder に使ってほしいタイプの要求）、**出力**は `mimeType` *バインド可能値*（ブラウザが実際に選んだタイプ。`wcs-recorder:mimetype-changed` で publish）です。基底名を共有しますが別サーフェスで、属性側で要求を設定し（`mime-type` 属性／要素 setter）、値プロパティ側で解決後タイプを読みます。`mimeType` を読んでも書いた値はエコーされません——録画結果を反映します。
+>
+> 宣言は `mimeType` を入力にも出力にも挙げているので、`@wcstack/state` は `mimeType: path` を双方向として扱います。双方向の束縛は、まず state の値を要素に書きます。初期値が `null` なら `mime-type` が外れ、型はブラウザが選びます。要求に触れずに解決後のタイプを読むには `mimeType#init=element: path` と書いてください。
+>
+> Chromium は録画を始めるときにタイプを決めます（タイプを指定せずに作った `MediaRecorder` は、それまで `""` を返します）。4.4 までは、`mime-type` が無いとクリップの `Blob` に型が無く、`mimeType` も `""` のままで、型を確かめるサーバや `<wcs-upload accept="video/*">` がクリップを拒みました。4.5（未リリース）から、`mimeType` は録画を始めたときのタイプ（無ければ最初のチャンクのタイプ）になり、`Blob` もその型を持ちます。
 
-組み立てた `Blob` は structured-clone 可能なので *値* であり、state に流せます——例えば `new File([blob], "clip.webm")` を [`@wcstack/upload`](../upload/) へ。object URL は管理され、新しいクリップ前と **`disconnectedCallback`（dispose）時** に前の URL を revoke します。
+組み立てた `Blob` は structured-clone 可能なので *値* であり、state に流せます——例えば `new File([blob], "clip.webm", { type: blob.type })` を [`@wcstack/upload`](../upload/) へ。object URL は管理され、新しいクリップ前と **`disconnectedCallback`（dispose）時** に前の URL を revoke します。
+
+**録画中に文書から外れたとき**（ルートを離れた、`if:` の枝が閉じた）: 4.4 までは録画を捨て、`recorded` も出さず、state の `recording` は `true` のままでした。4.5（未リリース）から、ストリームのトラックが終わったときと同じく録画を止めます。`recording` / `paused` はその場で `false` に戻してイベントで知らせ、クリップはブラウザが渡したとき（少し後）に `wcs-recorder:recorded` で届きます。その `objectURL` は、次のクリップか次の切断まで有効です。
 
 > **`objectURL` の寿命は recorder に束縛されます。** dispose が最後の object URL を revoke し、**さらに次の録画は前のクリップの URL を新規発行前に revoke する**ため、古い URL を指したままの `<video src>` / `<wcs-upload>` は `<wcs-recorder>` が外れる・次のクリップが完成した時点で壊れます。常に最新の `objectURL` / `recorded` 値を追従し、古い URL を保持しないでください。URL を寿命の長い消費側へ渡す場合は、URL を使い終わるまで recorder を接続したままにするか、`Blob` から自前で URL を作り（`URL.createObjectURL(blob)`）revoke も自分で管理してください。structured-clone 可能な **`blob`** にはこの結合がありません——`Blob` を state に流し、利用箇所で URL を生成するのが安全です。
 
@@ -152,6 +158,8 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 ## 注意・落とし穴
 
 - **セキュアコンテキスト（https）必須。** `getUserMedia` は `file://` / 素の `http://` では使えません。
+- **Content-Security-Policy。** 4.5（未リリース）から、プレビュー自身のスタイルは構築したスタイルシートで、`style-src` の対象外です。`'unsafe-inline'` の無いポリシーでもプレビューの配置が保たれます。4.4 までは shadow root の `<style>` で、そうしたポリシーに止められました（プレビューの `<video>` が元の大きさで描かれる）。その版では自分のスタイルシートで `wcs-camera::part(video) { display: block; width: 100%; height: 100% }` と書いてください。
+- **`error` / `errorInfo` は最後の試みを表します。** 後から（サイトの設定で）許可されても消えません。`permission` はすぐに許可に追従しますが、`errorInfo` は次の `start()` が成功するまで `not-allowed` のままです。「止められている」は `permission` で判断し、最後のエラーが `not-allowed` で `permission` が `granted` なら、もう一度開始を促してください。
 - **カメラインジケータ＝リーク検出器。** 終了後も点灯したままなら、トラックが停止されていません。
 - **ユーザージェスチャ。** 一部ブラウザは `getUserMedia` をユーザー操作起点で要求します。タイマーから撃つと無言で失敗することがあります（`error` に出ます・throw しません）。
 - **エラーは分類され throw されません:** `NotAllowedError`（拒否）・`NotFoundError`（デバイス無し）・`NotReadableError`（他アプリ使用中）・`OverconstrainedError`。

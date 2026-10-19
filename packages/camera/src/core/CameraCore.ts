@@ -6,6 +6,7 @@ import {
   buildConstraints, enumerateVideoDevices, hasMediaDevices, requestUserMedia, stopAllTracks,
 } from "../media/getUserMedia.js";
 import { MediaPermissionWatcher } from "../media/permission.js";
+import { isRecording } from "../media/recording.js";
 import { WcsIoErrorInfo } from "./platformCapability.js";
 import { deriveMediaErrorInfo } from "./mediaCapabilities.js";
 
@@ -84,6 +85,9 @@ export class CameraCore extends EventTarget {
   private _micWatcher: MediaPermissionWatcher | null = null;
 
   private _ready: Promise<void> = Promise.resolve();
+
+  /** Whether `[wcs/camera-keep-alive-missing]` was said for this element (once per element). */
+  private _toldKeepAlive = false;
 
   constructor(target?: EventTarget) {
     super();
@@ -203,7 +207,7 @@ export class CameraCore extends EventTarget {
   /** Release the camera (sets desired=false), stopping all tracks. */
   stop(): void {
     this._desired = false;
-    this._release(false);
+    this._release();
   }
 
   /**
@@ -237,8 +241,22 @@ export class CameraCore extends EventTarget {
   suspend(): void {
     this._gen++;
     if (this._stream) {
-      this._release(false);
+      if (isRecording(this._stream)) this._warnKeepAlive();
+      this._release();
     }
+  }
+
+  // A recording of the stream ends with it: what was recorded becomes the clip, and nothing
+  // said why the take was short.
+  private _warnKeepAlive(): void {
+    if (this._toldKeepAlive) return;
+    this._toldKeepAlive = true;
+    console.warn(
+      "[@wcstack/camera] [wcs/camera-keep-alive-missing] The page was hidden while this camera's stream was " +
+        "being recorded, so the camera stopped the stream and the recording ended with it. Keep the camera " +
+        "on while recording: bind keepAlive to the recording flag (keepAlive: <recording path>). (Said once per element.)",
+      this._target,
+    );
   }
 
   /** Re-acquire if the camera is desired but not currently active — for page-visible. */
@@ -248,12 +266,16 @@ export class CameraCore extends EventTarget {
     }
   }
 
-  /** Tear down: stop the stream and detach permission listeners. */
+  /**
+   * Tear down: stop the stream and detach permission listeners. `active` goes back to false
+   * with its event: a route the element leaves keeps its nodes (and their bindings) for the
+   * next entry, so a reset nobody heard would leave the page showing a camera that is off.
+   */
   dispose(): void {
     this._subscribed = false;
     this._gen++;
     this._desired = false;
-    this._release(true);
+    this._release();
     if (hasMediaDevices() && typeof navigator.mediaDevices.removeEventListener === "function") {
       navigator.mediaDevices.removeEventListener("devicechange", this._onDeviceChange);
     }
@@ -307,7 +329,7 @@ export class CameraCore extends EventTarget {
   }
 
   private _restart(): void {
-    this._release(false);
+    this._release();
     void this._acquire();
   }
 
@@ -368,24 +390,20 @@ export class CameraCore extends EventTarget {
     }
   }
 
-  private _release(silent: boolean): void {
+  private _release(): void {
     if (!this._stream) return;
     for (const track of this._stream.getTracks()) {
       track.removeEventListener("ended", this._onTrackEnded);
     }
     stopAllTracks(this._stream);
     this._stream = null;
-    if (silent) {
-      this._active = false;
-    } else {
-      this._setActive(false);
-    }
+    this._setActive(false);
   }
 
   private _onTrackEnded = (): void => {
     // OS revoked a track (unplug / taken by another app). actual drops; desired
     // stays true so resume()/visibility-restore can re-acquire.
-    this._release(false);
+    this._release();
     this._dispatch("wcs-camera:ended", null);
   };
 
