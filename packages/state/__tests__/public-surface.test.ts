@@ -77,7 +77,9 @@ describe("入口ごとの export が 3.3 と同じ", () => {
   it("package.json の exports の入口と、指す先のファイルの配置が 3.3 と同じ", () => {
     const v3 = JSON.parse(readFileSync(join(V3, "package.exports.json"), "utf8"));
     const v4 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
-    expect(v4.exports).toEqual(v3.exports);
+    // 4.6: `./auto` has a type (`export {};`), so `import("@wcstack/state/auto")` type-checks
+    // (docs/seam-apps.md, fw-inventory); the file it points to is the same
+    expect(v4.exports).toEqual({ ...v3.exports, "./auto": { types: "./dist/auto.d.ts", import: v3.exports["./auto"] } });
     expect({ main: v4.main, module: v4.module, types: v4.types }).toEqual({ main: v3.main, module: v3.module, types: v3.types });
   });
 });

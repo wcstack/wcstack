@@ -4,7 +4,10 @@
   "description": "wcstack SPA-core bundle: reactive state, router, fetch, storage and autoloader as one script tag with one SRI hash. Also the entry point for the wcstack ecosystem - run `npm view wcstack readme` for the full authoring guide.",
   "type": "module",
   "exports": {
-    "./auto": "./dist/auto.min.js"
+    "./auto": {
+      "types": "./dist/auto.d.ts",
+      "default": "./dist/auto.min.js"
+    }
   },
   "files": [
     "README.md",

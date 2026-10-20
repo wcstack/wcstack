@@ -103,4 +103,7 @@ for (const [input, file] of types) {
   await bundle.write({ file, format: 'es' });
   await bundle.close();
 }
-console.log(`types: ${types.length} .d.ts written`);
+// `./auto` defines <wcs-state> and exports nothing; this gives it a type, so a TypeScript app
+// can `import("@wcstack/state/auto")` (config-templates/rollup.config.js writes the same file)
+writeFileSync('dist/auto.d.ts', "// Importing this module defines the package's custom elements. It exports nothing.\nexport {};\n");
+console.log(`types: ${types.length + 1} .d.ts written`);

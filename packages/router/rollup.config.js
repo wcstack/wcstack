@@ -9,6 +9,18 @@ const typescriptPlugin = typescript({
   declarationMap: false,
 });
 
+// dist/auto.d.ts, as in config-templates/rollup.config.js: `./auto` exports nothing.
+const autoDeclaration = () => ({
+  name: 'wcstack-auto-declaration',
+  generateBundle() {
+    this.emitFile({
+      type: 'asset',
+      fileName: 'auto.d.ts',
+      source: "// Importing this module defines the package's custom elements. It exports nothing.\nexport {};\n",
+    });
+  },
+});
+
 export default [
   // ESM build
   {
@@ -41,6 +53,7 @@ export default [
         declarationMap: false,
       }),
       terser(),
+      autoDeclaration(),
     ],
   },
   // Type declarations
