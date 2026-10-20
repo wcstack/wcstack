@@ -1,6 +1,8 @@
 # framework アプリへの wcstack 要素の組み込み手順
 
 - **作成日**: 2026-08-01
+- **更新**: 2026-10-20 — §2・§3・§4・§5 と §6〜§10 を継ぎ目アプリ fw-inventory（React 19 と Vue 3 から
+  I/O ノードを使う、[seam-apps.md](./seam-apps.md)）から
 - **状態**: 利用手順（normative ではない。規範は各 SPEC と
   [非同期 I/O ノード作成ガイドライン](./async-io-node-guidelines.ja.md)）
 - **対象読者**: React / Vue / Svelte / Solid / Angular / Qwik などのアプリから `<wcs-*>` を使う人
@@ -16,10 +18,14 @@
    配送しない（§1）。
 2. **object を渡す input は「プロパティとして渡す」構文を明示する。** 既定のままだと framework に
    よっては属性へ文字列化される（§2）。
-3. **reactive store の値は raw にしてから渡す。** Proxy のままだと structured clone 境界で失敗する（§3）。
+3. **reactive store の値は深い素の写しにして渡す。** Proxy のままだと structured clone 境界で失敗し、
+   Vue の `toRaw()` は 1 段しか剥がさない（§3）。
 
 静的 import（`import "@wcstack/websocket/auto"`）でバンドルする通常構成なら、adapter の版によらず
 規則 1 は自動的に満たされる。規則 2 と 3 は構成によらず必要になる。
+
+§5〜§10 は、framework が `@wcstack/state` と違うふるまいをする所を扱う: イベントである出力、`trigger`
+でなく命令、props の順、framework が取る名前、Vite の開発サーバー、lint。
 
 ## 1. 定義タイミング
 
@@ -56,6 +62,10 @@ unbind = bind(el, onUpdate);
 | 動的 import / code-split で遅延ロード | ロード完了時 | **影響あり** |
 
 0.9 以降では、どの構成も影響を受けない。
+
+wcstack のタグそのものを autoloader で読み込むには、パッケージごとに、その `/auto` を読み込む包みを作る
+（[autoloader の README](../packages/autoloader/README.ja.md#wcstack-自身のタグを読み込む)）。クラスを 1 つだけ
+出し直す包みでは `<wcs-fetch-header>` / `<wcs-fetch-body>` が定義されず、要求はそのヘッダーや本文なしで出る。
 
 ### 1.3 ゲートの書き方（0.8 以前）
 
@@ -94,6 +104,10 @@ Svelte / Solid / Qwik / Angular も同じ形になる。**`whenDefined` を待�
 コンポーネントがマウントされる前**でなければ意味がない。同じコンポーネント内で待っても、
 adapter は既に諦めた後である。
 
+動的な `import("@wcstack/sse/auto")` は 4.6（未リリース）から型検査を通る。各パッケージが `/auto` の入口の
+`dist/auto.d.ts` を出すようになった。4.5 以前では TypeScript が `TS7016` を出すので、
+`declare module "@wcstack/*/auto";` を一度宣言する。
+
 ### 1.4 代用にならないもの
 
 - **`connectedCallbackPromise` / `hasConnectedCallbackPromise`** — 接続後に初期スナップショットを
@@ -129,6 +143,48 @@ wcstack の scalar 入力（`url` / `type` / `manual` など）は属性バッ�
 | Svelte | `bind:this` で取得して代入 |
 
 確実なのは、どの framework でも **ref で要素を掴んでプロパティに代入する**ことである。
+4.6（未リリース）から、接続したときに自分の属性にオブジェクトが書かれているのを見つけた要素
+（`files="[object File]"`・`body="[object Object]"`）は、1 回警告する: `[wcs/input-as-attribute]`。
+
+**オブジェクトはその場で変えず、新しいものを代入する。** framework は値が変わったときに入力を書き、
+その場で変えたオブジェクトは同じ値である。`files={files}` で渡した配列への `files.push(file)` や、
+`:body.prop` で束ねたオブジェクトへの `payload.rows.push(row)` は何も書かず、要素には何も伝わらない。
+自動送信の `<wcs-upload>` は代入で送り、`<wcs-fetch>` の `body` と `<wcs-upload>` の `files` は要求で
+使い切られるので、次の要求はそれなしで出る。新しい配列やオブジェクトを代入する（`setFiles([...files, file])`）。
+
+**adapter と並べて要素を持つ（React）。** `useWcBindable` の ref はコールバックなので、それも呼ぶ自分の ref で
+要素を持つ — 命令を呼ぶ、オブジェクトの入力を代入する、イベントを聴く（§5）ために:
+
+```tsx
+const [bindRef, values] = useWcBindable<WcsSse, WcsSseValues<Stock>>();
+const el = useRef<WcsSse | null>(null);
+const ref = useCallback((node: WcsSse | null) => { el.current = node; bindRef(node); }, [bindRef]);
+// <wcs-sse ref={ref} url="/api/stock/stream" /> の後で el.current?.close()
+```
+
+**Vue では、テンプレート ref を静的に名前で書く。** `const { ref: stock, values } = useWcBindable()` と
+`<wcs-sse ref="stock">` なら束縛され、`stock.value` が要素になる。`:ref="ref"` の束縛 — `@wc-bindable/vue` の
+README が示す形 — は、`<script setup>` では ref が剥がされて `null` を渡す: アダプターは束縛せず、`values` は
+何も言わずに空のまま。
+
+**TypeScript と JSX。** パッケージはタグの JSX 宣言を出していないので、使うタグを宣言する。React 19 では:
+
+```ts
+// wcs-jsx.d.ts
+import "react";
+type Base = React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+declare module "react" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "wcs-sse": Base & { url?: string | null; events?: string; manual?: boolean };
+      "wcs-storage": Base & { "storage-key"?: string; type?: "local" | "session"; manual?: boolean };
+    }
+  }
+}
+```
+
+[`examples/websocket-chat/react/src/wcs-ws.d.ts`](../examples/websocket-chat/react/src/wcs-ws.d.ts) が
+`<wcs-ws>` を同じように宣言している。
 
 ## 3. reactive store の値は raw で渡す
 
@@ -138,11 +194,15 @@ Vue の `reactive`、Svelte 5 の `$state`、Solid の store、Alpine、MobX、Q
 
 Proxy は structured clone できないため、そのまま渡すと `<wcs-worker>` の `post` や
 `<wcs-broadcast>` の送信で **`DataCloneError`** になる。wcstack は never-throw なので例外は飛ばず、
-`error` / `errorInfo` に落ちるだけで原因が見えにくい。
+`error` / `errorInfo` に落ちる。4.6（未リリース）からは、要素が 1 回警告もする: `[wcs/post-uncloneable]`。
+
+渡すのは**深い**素の写しである。Vue の `toRaw()` は 1 段しか剥がさない。リアクティブな一覧の行もプロキシで、
+`filter` やスプレッドで作り直した一覧（`picked.value.filter(…)`・`[...picked.value, item]`）の行もそうなので、
+`toRaw(list)` でもまだ失敗する。
 
 | framework | raw 化 |
 | --- | --- |
-| Vue | `toRaw(state.payload)` |
+| Vue | `JSON.parse(JSON.stringify(state.payload))`、または段ごとの `toRaw()`（`toRaw(state.payload)` だけでは足りない） |
 | Svelte 5 | `$state.snapshot(payload)` |
 | Solid（store） | `unwrap(payload)` |
 | MobX | `toJS(payload)` |
@@ -162,7 +222,7 @@ wcstack のイベント名は `wcs-camera:stream-ready` のようにコロンを
 | framework | テンプレートでの直接束縛 |
 | --- | --- |
 | Angular | **できない**。`(wcs-camera:stream-ready)` は `target:event` と解釈され `Unsupported event target` になる（[angular/angular#28491](https://github.com/angular/angular/issues/28491)・未解決） |
-| React | **できない**。`on<name>` はダッシュを含む名前を扱えるが、コロンは JSX の名前空間名として解釈される |
+| React | **JSX の変換しだいで、その先は大文字小文字しだい**。コロンがあると属性は JSX の名前空間名になる: Babel は既定で拒み、Vite 8 の変換は通す。React 19 は `on` の後に書かれたとおりの名前のイベントを聴く: `onwcs-fetch:response` は動くが、`onWcs-fetch:response` はコンパイルが通って一度も発火しない（`Wcs-fetch:response` は発火しない）。警告も無い |
 | Vue / Svelte / Solid | 書ける場合があるが、コロンを含む名前の扱いは framework とバージョンに依存する |
 
 **どの framework でも確実なのは、要素参照を取って `addEventListener` する経路**である。
@@ -200,9 +260,78 @@ adapter の values ではなく直接受け取るのが正しい（[棚卸し §
 避けられる。現時点でこの宣言を解釈するのは `@wcstack/state` だけで、`@wc-bindable` の
 各 adapter は未対応である。したがって現状は次を前提にすること。
 
-- 同じ payload が連続する `event`（`message` / `fired` / `clicked` など）は、値ベースの store に
-  そのまま入れると落ちうる。イベントとして受けるか、連番などで区別する。
+- **`event` の出力を adapter の values で読まない。** `<wcs-sse>` / `<wcs-ws>` / `<wcs-broadcast>` /
+  `<wcs-worker>` の `message` は出来事であって状態ではない。adapter はイベントごとに呼び返すが、値を
+  framework の状態に持ち、framework は続けて来た更新を 1 回の描画にまとめ（React は続くタスクの更新を
+  まとめる）、前と等しい値を捨てる（React の `useState`、Vue のリアクティビティ）。1 つのかたまりで届いた
+  5 件の SSE メッセージのうち、`values.message` の `useEffect` が見たのは 1 件で、等しい 2 回の ping は 1 回と
+  数えられた。イベントは要素で聴き、adapter は `state` の出力（`connected`・`loading`・`error`）に使う:
+
+  ```tsx
+  useEffect(() => {
+    const node = el.current;   // §2 のように持った要素
+    if (!node) return;
+    const onMessage = (e: Event) => apply((e as CustomEvent).detail);
+    node.addEventListener("wcs-sse:message", onMessage);
+    return () => node.removeEventListener("wcs-sse:message", onMessage);
+  }, []);
+  ```
+
 - `handle`（`streamReady`）は values に入れず、§4 の経路で受ける。
+
+## 6. `trigger` でなく命令
+
+`trigger`（`<wcs-fetch>`・`<wcs-upload>`・`<wcs-storage>` など）は `@wcstack/state` の書き方である。`true` を
+書くと命令が走り、要素がそれを `false` に戻す。state は代入のたびに書くので、次の `true` でまた走る。
+framework は変化しか書かない。`trigger={refresh}` でクリックごとに `setRefresh(true)` すると、最初の
+クリックで命令が走って要素が `trigger` を戻すが、React はまだ `true` を持っている。2 回目のクリックは
+何も書かず、何も送られず、何も言われない。framework からは、要素の命令を呼ぶ（§2）: `el.fetch()`・
+`el.upload()`・`el.save()`。
+
+## 7. props の順
+
+framework は JSX 要素の props も Vue テンプレートの束縛も書いた順に当て、React 19 は要素を文書に入れる前に
+それをする。ある入力が書かれたときに別の入力を読む要素では、1 つの `data-wcs` と同じく順が効く:
+`trigger` より前に `url` を書く。4.6（未リリース）から、`url` より先に `files` を渡された自動送信の
+`<wcs-upload>` はそれを持っておき、url が来たときに送る。4.5 以前では `files={files} url=…` は何も送らず、
+`[wcs/command-not-ready]` で警告していた。
+
+## 8. framework が取る名前と、要素の寿命
+
+React と Vue は `key`（と `ref`）を自分のものとして取り、要素に渡さない。JSX や Vue のテンプレートの
+`<wcs-storage key="…">` には key が無く、何も読み込まず何も保存しない: `storage-key` を書く（4.6（未リリース）
+から。key の無いままの最初の保存で、要素が `[wcs/command-not-ready]` で警告する）。4.5 以前では、ref を通して
+`el.key` を代入する。
+
+コンポーネントの `key` は、その寿命も決める。変わる `key` はコンポーネントを付け直し、その中の I/O ノードは
+みな最初からやり直す: `<wcs-sse>` や `<wcs-ws>` はそのたびに新しい接続を開き、前の接続の `Last-Event-ID` を
+持たないので、その間のイベントは失われる。I/O ノードは、`key` が変わるコンポーネントの外に置く。
+
+prop を外すと `undefined` が書かれ（React 19）、マークアップに書かれた属性に戻る。接続は閉じない:
+`<wcs-sse>` や `<wcs-ws>` を止めるには、その `close()` を呼ぶか、要素を外す。
+
+## 9. Vite の開発サーバー
+
+- 開発で最初に読み込んだとき、Vite は `@wcstack/*/auto` の import を見つけて最適化し直す: いくつかの
+  `504 (Outdated Optimize Dep)` と再読み込みが 1 回起きる。避けるには、入口を `optimizeDeps.include` に並べる。
+- Vite の proxy は、背後のサーバーが落ちてもブラウザへの応答を開いたままにするので、そこを通る
+  `EventSource` は再接続しない: サーバーが再起動した後も `<wcs-sse>` は `connected` のまま何も受け取らない。
+  proxy のエラーで応答を終わらせる:
+
+  ```js
+  // vite.config.js
+  const endOnError = (proxy) => proxy.on("error", (_err, _req, res) => res.destroy());
+  export default defineConfig({
+    server: { proxy: { "/api": { target: "http://localhost:3000", configure: endOnError } } },
+  });
+  ```
+
+## 10. lint
+
+`wcs-validate` は HTML のページを読む: `data-wcs` の束縛、`<wcs-*>` のタグ、wcstack の script。framework の
+アプリのページにはそのどれも無く、コンポーネント（`.jsx`・`.tsx`・`.vue`・`.svelte`）は読まないので、問題なしの
+結果は framework のアプリを覆わない。4.6（未リリース）から、CLI は件数の後にそれを言う: `not read:` が
+コンポーネントを、`nothing to check:` が何も無いページを挙げる。
 
 ## 参照
 
@@ -211,3 +340,4 @@ adapter の values ではなく直接受け取るのが正しい（[棚卸し §
 - [非同期 I/O ノード作成ガイドライン](./async-io-node-guidelines.ja.md)
 - [`bind()` の定義待ち提案](./spec-proposal-bind-definition-timing.md)
 - [websocket-chat の React / Vue 実装](../examples/websocket-chat/README.ja.md)
+- [継ぎ目アプリ](./seam-apps.md) — §2〜§10 を見つけた fw-inventory

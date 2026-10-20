@@ -8,6 +8,37 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+From the `fw-inventory` seam app: an inventory app written with React 19 and Vue 3 over the I/O nodes, through the `@wc-bindable` adapters ([docs/seam-apps.md](./docs/seam-apps.md)). The adapters' own findings go to the @wc-bindable repository as a proposal ([docs/spec-proposal-adapter-occurrences.md](./docs/spec-proposal-adapter-occurrences.md), ja).
+
+### Upgrading
+
+- **`<wcs-upload>` sends files that came before its `url`.** An automatic `<wcs-upload>` given its `files` while it has no `url` keeps them and uploads them when the url arrives; it sent nothing and warned `[wcs/command-not-ready]`. A page that set the files first and the url later on purpose, expecting nothing to be sent, now uploads.
+- **The console warns about more**, once per element: `[wcs/post-uncloneable]` (`<wcs-worker>`, `<wcs-broadcast>`), `[wcs/input-as-attribute]` (every I/O node), `[wcs/fetch-helper-undefined]`, and `[wcs/command-not-ready]` for a `<wcs-storage>` load, save or remove without a key.
+- **The lint does not read `.js`, `.ts`, `.jsx`, `.tsx`, `.vue` and `.svelte` files.** They were read as HTML and reported clean; now they are named after the counts as `not read:`. A page with no `data-wcs`, `<wcs-*>` tag or wcstack script is named as `nothing to check:`. The exit code is unchanged.
+
+### Added
+
+- `@wcstack/storage`: **`storage-key` (the property `storageKey`), `key` under a name React and Vue leave alone.** Both frameworks keep `key` for themselves, so the README's own React and Vue examples (`<wcs-storage key="app-settings">`) gave an element with no key: nothing loaded, nothing saved, `error` the only trace. `key` wins when both are written. The README's framework examples use `storage-key`, and show how to save from React without the update loop a `value={{ … }}` prop starts.
+- `@wcstack/fetch`: **`WcsFetchHeader` and `WcsFetchBody` are exported**, so a page that defines the tags itself (an autoloader's wrapper module, a scoped registry) can define the helper tags. A wrapper that re-exported `WcsFetch` alone left them plain elements, and the request went out without its `Authorization` header.
+- Every package with an `./auto` entry: **`dist/auto.d.ts`**, so `import("@wcstack/sse/auto")` — the late load the integration guide recommends — type-checks. It was `TS7016`.
+- I/O nodes: **an object written as an attribute is reported**, once per element, when the element connects (`[wcs/input-as-attribute]`, in the shared property-upgrade protocol). React 19 writes an object prop as an attribute when the element's definition has not loaded (`files="[object File]"`), and Vue's `.attr` does when told; the element read nothing and said nothing.
+- `@wcstack/worker`, `@wcstack/broadcast`: **a post structured clone cannot copy warns**, once per element (`[wcs/post-uncloneable]`). A Vue reactive list fails so even after `toRaw()`, which unwraps one level; the message was lost with only `error` to show it.
+- `@wcstack/fetch`: **an undefined `<wcs-fetch-header>` / `<wcs-fetch-body>` is reported**, once per element (`[wcs/fetch-helper-undefined]`).
+- `@wcstack/storage`: **a load, save or remove without a key warns**, once per element (`[wcs/command-not-ready]`), naming `storage-key` for React and Vue.
+- Lint: **the files a run did not check are named** after the counts, with `--errors-only` too: `not read:` for a framework's components and script files, `nothing to check:` for a page with no `data-wcs`, `<wcs-*>` tag or wcstack script. A framework app's run said "0 error(s)" as if it had been checked.
+
+### Changed
+
+- `@wcstack/upload`: **files assigned before the `url` wait for it** (the author's decision). React 19 applies props in the order written, before the element is in the document, so `<wcs-upload files={files} url="…">` uploaded nothing while `url="…" files={files}` did.
+
+### Documentation
+
+- `docs/framework-adapter-integration.md`: a deep plain copy for Vue (`toRaw()` unwraps one level), what React 19 does with a colon event (`onwcs-fetch:response` works, `onWcs-…` never fires), `event` outputs read on the element and not through the adapter's values (a burst reached React as one message), commands instead of `trigger` from framework state, the order of props, `key` and remounts, Vite's dev server, the element next to the adapter's ref, JSX declarations, and what the lint covers.
+- `@wcstack/autoloader` README: loading wcstack's own tags, one wrapper per package that imports its `/auto`.
+- The fetch, storage and websocket READMEs: the Vue examples name the template ref statically (`ref="users"`). The `:ref="ref"` they showed gets the unwrapped ref, `null`, in `<script setup>`, so the adapter never bound and `values` stayed empty.
+- `examples/websocket-chat`: the React and Vue variants listen to `wcs-ws:message` on the element; reading it through the adapter's values loses messages that arrive together.
+- The mistake catalogue has ten more entries ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md)).
+
 ## [4.5.0] — 2026-10-20
 
 The third minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja), from one seam app: `state-field-report`, a field report written with the device I/O nodes, from permissions to the upload ([docs/seam-apps.md](./docs/seam-apps.md)). It found a camera that looked on after a route came back, and 12 more packages that reset an output on disconnect without a word. It found watchers that called a page that cannot use a feature "granted", and commands that failed silently. The design decisions are the author's (§5.3). No API is removed or renamed. `@wcstack/state` is unchanged but for its version.

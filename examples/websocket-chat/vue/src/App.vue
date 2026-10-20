@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch, nextTick } from "vue";
+import { ref, reactive, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useWcBindable } from "@wc-bindable/vue";
 import type { WcsWsValues, WcsWebSocket } from "@wcstack/websocket";
 
@@ -43,7 +43,13 @@ const connectionLabel = computed(() => {
   return ws.connected ? "Connected" : "Disconnected";
 });
 
-watch(() => ws.message, (msg) => {
+// `message` is an occurrence, not a state: Vue skips a value equal to the last one, so each
+// message is taken from the element's event (docs/framework-adapter-integration.md §5).
+onMounted(() => wsEl.value?.addEventListener("wcs-ws:message", onMessage));
+onUnmounted(() => wsEl.value?.removeEventListener("wcs-ws:message", onMessage));
+
+function onMessage(e: Event) {
+  const msg = (e as CustomEvent<WsMessage | null>).detail;
   if (!msg) return;
 
   if (msg.type === "stats") {
@@ -65,7 +71,7 @@ watch(() => ws.message, (msg) => {
   }
 
   messageLog.push(entry);
-});
+}
 
 watch(() => messageLog.length, () => {
   nextTick(() => {

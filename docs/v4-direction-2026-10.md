@@ -100,6 +100,14 @@
 2. **このページで使えない機能（安全でない origin・Permissions-Policy）は、見張り役も取りに行く側の `permission` も `unsupported` にそろえ、`errorInfo` は理由付きの `capability-missing` にする。** Chromium の Permissions API はポリシーで切られたフレームで `granted`、安全でない origin で `denied` を返し、利用者の拒否と区別できなかった。`denied` は「サイトの設定で変えられる拒否」だけになる。値は増やさない。比べた案: 5 つ目の値（`blocked`）と新しい code を足す、文書だけ。
 3. **切断は、変える state の出力をすべてその場で知らせ、打ち切る操作は終わったと知らせる — I/O ノードのファミリー全体の規則にする**（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §22）。router は離れたルートのノードを束縛ごと戻すので、無言のリセット（`speaking`・`listening`）や世代の守りが捨てた完了（`loading`・`connected`）は、戻った後も state の中で古いままだった。洗うと 13 パッケージにあった。§13.4 の「無音のリセット」は「戻して知らせる」に変わる。比べた案: 見つかった camera と recorder だけ直し、残りは目録に記録する。
 
+### 5.4 fw-inventory から決めたこと（2026-10-20、著者）
+
+§3.2 の 3 本目の継ぎ目アプリ（フレームワークの中の `wcs-*`。[seam-apps.ja.md](./seam-apps.ja.md) の fw-inventory）が残した設計の問い。3 つとも推奨の案に決めた。アダプター（`@wc-bindable/react` / `vue`）の側の発見は、提案の文書を添えた issue として @wc-bindable のリポジトリへ出す。
+
+1. **`<wcs-storage>` に `key` の別名 `storage-key`（プロパティは `storageKey`）を足す。** React と Vue は `key` を自分のものとして取り、要素に渡さない。README 自身の両方の例が、key の無い要素になっていた。`key` は残し（互換を壊さない）、両方書いたときは `key` が勝つ。5.0 で `key` を外すかは誤りの目録の議題。比べた案: 文書だけ（ref で `el.key` を代入する）。
+2. **自動送信の `<wcs-upload>` は、url より先に来たファイルを、url が来たときに送る。** React 19 は props を書いた順に、要素を文書に入れる前に当てるので、`files={files} url=…` は送られなかった。`trigger` の順（`url` の後に書く）は警告のまま。比べた案: 挙動は変えず、警告の文を JSX の props の順にも当てはまる形に書き直す。
+3. **型は `/auto` のものだけ今出す。** どの `/auto` にも `dist/auto.d.ts`（`export {};`）を出し、統合の手引きが勧める遅い読み込み `import("@wcstack/<pkg>/auto")` を型検査に通す。タグの JSX 宣言（`IntrinsicElements`）は、属性・プロパティ・イベントをどこまで表すかの設計が要るので記録に残し、手引きが手書きの宣言を示す。比べた案: JSX の型も今出す（`wcBindable` から React / Vue 向けに生成する。大きい）、どちらも記録だけ。
+
 ## 6. やらないこと
 
 - 新しい I/O ノードのパッケージを増やすこと（量産の候補は尽き、パッケージ数は KPI にしない — [go-to-market-2026-08.md](./go-to-market-2026-08.md) §7）。

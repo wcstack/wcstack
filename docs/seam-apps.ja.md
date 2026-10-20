@@ -86,6 +86,7 @@
 | `signals-shop` — チュートリアルのショップを `@wcstack/signals` で | signals × router、wc-bindable の橋を通した signals × `<wcs-fetch>` / `<wcs-storage>` | チュートリアルと同じ（再読み込み、ディープリンク、戻る、2 つ目のタブ） | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
 | `ssr-news` — `@wcstack/server` で描くニュースサイト: 記事の一覧、コメント付きの記事のページ、読者の設定、セクションのレイアウト、本番の形（CSP、SRI、HTML のキャッシュ） | `@wcstack/server` × router × state、サーバーとハイドレーションでの `<wcs-fetch>`、SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>`、クライアントの版 × サーバーの版 | ディープリンクと再読み込み; JavaScript 無し; 遅いクライアントのバンドル（ハイドレーション前の入力）; サーバーの再起動; 別の minor のクライアント; 投稿の後の HTML のキャッシュ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-18）。発見は下 |
 | `state-field-report` — スマートフォンからの現場報告: クリップ・位置・口述のメモを、送信待ちを通して送る。本番の形で | `<wcs-permission>` × 取りに行く側（camera・geo・listen・notify）、`<wcs-camera>` × `<wcs-recorder>` × `<wcs-upload>`、ルートのノード × I/O ノードの切断、`<wcs-storage>` × 値とハンドルの混ざった下書き、`Permissions-Policy` / `<iframe>` × デバイスの要素すべて | 拒否してから許可する、録画中の権限の取り消し、録画中にタブを隠す、撮影のページを離れて戻る、アップロード中の再読み込み、アップロード中のオフライン、422 / 413 / 415 / 500、2 つのタブ、`<iframe>` の中のアプリ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-20）。発見は下 |
+| `fw-inventory` — 店の在庫の道具: React 19 の管理画面と Vue 3 の倉庫のパネル。`@wcstack/state` は使わない | I/O ノード × `@wc-bindable/react` / `vue`、React 19 の props × 要素の入力、フレームワークのリアクティビティ × structured clone、`key` × 要素、遅れた定義（autoloader・CDN・動的 import）× アダプター、Vite の開発サーバー × SSE | 続けて届くイベント、開発の proxy の背後でのサーバーの再起動、保存したフィルタでの再読み込み、片方が React でもう片方が Vue の 2 つのタブ、深いリンクと素早い移動、アップロードの取り消し・再送・拒否、最初の描画より後の定義、StrictMode、HMR | 2026-10-20 に作った。発見は下 |
 
 ### router-auth（2026-10-13）
 
@@ -264,3 +265,30 @@
 | 種類 | 発見 | 結果 |
 |---|---|---|
 | 設計の問い | デバイスを使えないページは、接続の時点でそれを知る（`permission: "unsupported"`）が、理由（ポリシー、`<iframe>` の `allow`、安全なコンテキスト）は `start()` / `getCurrentPosition()` / `listen.start()` を拒まれた後の `error` / `errorInfo` にしか届かない。`unsupported` でボタンを押せなくする — 自然な作り — ページは、理由を一度も出せない | 未決: `unsupported` と一緒に理由を出すか、試みたときに届くと README に書く（アプリの README の「Known limits」） |
+
+### fw-inventory（2026-10-20）
+
+[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) の下で 3 本目のアプリで、§3.2 が挙げる継ぎ目、フレームワークの中の `wcs-*` を越える。店の在庫の道具。React 19 の管理画面には、検索・ページ送り・並べ替えのある商品の一覧（`<wcs-fetch>`）、在庫の生の値（`<wcs-sse>`）、`<wcs-storage>` に保つフィルタ、react-router、写真のアップロード（`<wcs-upload>`、ファイルごとに 1 つ）、`<wcs-broadcast>` で分け合う取り置きの一覧がある。Vue 3 の倉庫のパネルは、CSV を `<wcs-worker>` で読み、`<wcs-fetch>` で送る。I/O ノードは `@wc-bindable/react` / `vue` 0.10.0 から動かす: `@wcstack/state` も `data-wcs` も無い。初めての著者は公開の文書と公開された 4.5.0 を使い、StrictMode の Vite 開発サーバーと本番のビルドで、タグを遅れて・CDN から・autoloader でも読み込んだ。引っかかりを 14 件記録した。わざと犯した 19 の間違いのうち、12 はクライアントの何も知らせず、lint はどれも知らせなかった。文書と例のとおりに書くと 5 つの生活の出来事が失敗し、6 つは回避策でだけ通り、1 つの確認は今も失敗する（React の状態からの `trigger` での再読み込み）。
+
+主張はどれも、分類する前に、公開された 4.5.0 を使って Chromium で再現した。1 つは 2 度目で再現した: リアクティブな配列の `toRaw()` は問題なく複製でき、行がプロキシになると — `filter` やスプレッドの後のように — post が失敗する。
+
+| 種類 | 発見 | 結果 |
+|---|---|---|
+| 設計の問い | storage: React と Vue は `key` を自分のものとして取るので、README 自身の React と Vue の例（`<wcs-storage key="app-settings">`）は key の無い要素になった — 何も読み込まず、何も保存せず、`error` だけが跡 | 決めた: `storage-key`（`storageKey`）は `key` の別名。key の無い読み込み・保存・削除は `[wcs/command-not-ready]` で警告する |
+| 設計の問い | upload: React 19 は props を書いた順に、要素を文書に入れる前に当てるので、`<wcs-upload files={files} url="…">` は何も送らなかった（警告は `data-wcs` の言葉で出ていた） | 決めた: url より先に来たファイルは、url が来たときに送る |
+| 設計の問い | 統合の手引きの遅い読み込み `import("@wcstack/sse/auto")` が `TS7016` だった（`/auto` に型が無い）。タグの JSX 宣言も無い | 決めた: 今はどの `/auto` にも `dist/auto.d.ts`。JSX 宣言は記録し、手引きが手書きのものを示す |
+| 無言の間違い | worker / broadcast: structured clone で写せない post は失われ、`error` だけが跡だった — Vue のリアクティブな一覧で、手引きの `toRaw()` の後でも | 直した: `[wcs/post-uncloneable]`。手引きとルートの README は深い素の写しと書く |
+| 無言の間違い | 属性として書かれたオブジェクトの入力 — 定義が読み込まれる前の React 19 の prop（`files="[object File]"`）、Vue の `:body.attr` — は要素に何も渡さなかった | 直した: `[wcs/input-as-attribute]`。どの I/O ノードも走らせる共有のプロパティの取り込み直しの中で |
+| 実行時の欠陥 | fetch: `<wcs-fetch-header>` / `<wcs-fetch-body>` のクラスが無く、autoloader の包みはそれを定義できず、要求はヘッダーなしで出ていた | 直した: `WcsFetchHeader` / `WcsFetchBody` を出し、`[wcs/fetch-helper-undefined]`。autoloader の README が `/auto` を読み込む包みを示す |
+| lint の穴 | `wcs-validate` は `.vue` / `.tsx` のファイルにも、`<div id="root">` だけのページにも "0 error(s)" と言い、skill の完了の門は何も検査せずに通っていた | 直した: 件数の後に `not read:` / `nothing to check:`。lint の README と手引きが、framework のアプリはその外だと書く |
+| 文書の穴 | 手引きの `toRaw()`。「JSX ではコロンのイベントを書けない」（コンパイルは通り、`onWcs-…` は発火しない）。`event` の出力をアダプターの values で読むと出来事を落とす — `websocket-chat` の React の例がそうだった（続けて来た 5 件のうち 2 件）。フレームワークの状態からの `trigger` は 1 回しか走らない。props の順。その場で変えたオブジェクトの入力。`key` による付け直しは接続し直す。外した prop はストリームを閉じない。React から更新の輪なしに `<wcs-storage>` へ保存する。Vite の optimize-deps の再読み込みと、死んだ SSE の応答を開いたままにする proxy | 直した: [framework-adapter-integration.ja.md](./framework-adapter-integration.ja.md) §2〜§10、storage の README、例 |
+| アダプター | `@wc-bindable/react` / `vue`: `values` は最後の値を持つので、続けて来たものや繰り返した値は 1 つの出来事になる。コールバックの ref の横に要素が無く、README は入力にも命令にも触れない。npm の README がパッケージの外のファイルへリンクする | @wc-bindable のリポジトリへ: 提案を添えた issue（[spec-proposal-adapter-occurrences.md](./spec-proposal-adapter-occurrences.md)） |
+| 残り | 復元だけする `<wcs-storage>` は、key が無くても今も何も言わない: key の無いまま接続した要素は、state が `key:` の束縛を当てる前の姿でもある。タグの JSX 宣言。死んだ SSE の応答にページが気づけるハートビート | 記録した |
+
+上の 3 つの設計の問いは、2026-10-20 に著者が推奨どおりに決めた（[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.4）。
+
+直した結果は、直したソースからビルドしたパッケージで、著者のアプリ（React 19.3、Vue 3.5）で確かめた: `files={files} url=…` は送られる（201）。遅れた `files` の prop と `:body.attr` は `[wcs/input-as-attribute]` で警告する。Vue の post は `[wcs/post-uncloneable]` で警告する。`storage-key` は React でも Vue でも復元する。storage の README の React の作法は、復元し、保存し、再読み込みの後も保ち、2 回の変更で描画は 4 回。key の無い保存は警告する。ビルドし直した `websocket-chat` の React の例は、まとめて送った 5 件のメッセージを 5 件とも記録する（以前は 5 件のうち 2 件）。確かめる中で、もう 1 つ見つかった:
+
+| 種類 | 発見 | 結果 |
+|---|---|---|
+| 文書の穴 | storage・fetch・websocket の README の Vue の例 — と `@wc-bindable/vue` 自身のもの — は `:ref="ref"` で束ねていた。`<script setup>` ではテンプレートが ref を剥がすので、`:ref` には `null` が渡る: アダプターは束縛せず、`values` は何も言わずに空のままだった（著者自身のコードは `ref="名前"` だった） | 3 つの README（静的な `ref="…"`）と手引きを直した。@wc-bindable への提案（§3）に入れた |
