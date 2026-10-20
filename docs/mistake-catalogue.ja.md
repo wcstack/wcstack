@@ -70,10 +70,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 
 | 作者に知らせるもの | 項目 |
 |---|---|
-| 設計（書けない、または害が無い） | 2 |
-| 実行時 | 58 |
+| 設計（書けない、または害が無い） | 3 |
+| 実行時 | 62 |
 | lint だけ — 条件付きの沈黙 | 24 |
-| 文書だけ — 沈黙 | 8 |
+| 文書だけ — 沈黙 | 13 |
 | 数えない lint の code | 17 |
 
 ### 文書だけ — 沈黙
@@ -81,12 +81,17 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 誤り | 何が起きるか | 害 | 扱い |
 |---|---|---|---|
 | `for:` の行や `if:` の枝の中のカスタム要素が、`connectedCallback` で既定値から描き、state が先に設定した入力を上書きする。 | 4.0 は行や枝を挿入する前にバインドするので、要素が接続されるときには setter が走り終えている。要素は既定値を見せ、持っていたが未採用だった入力は失われる。ページの直下では要素が先に接続されるので、同じ要素がそこでは動く。 | データの損失 | どこからも見えない — 文書。外部の評価で見つかった（確定申告の下書きの金額欄。ページを 3.x から 4.0 に上げたとき）。接続した後の要素自身の書き込みは、編集と見分けられない。state の README の「Inputs と attribute ヒント」が、今のプロパティから描くよう書いている。 |
+| `event` の意味の出力（`<wcs-sse>` / `<wcs-ws>` / `<wcs-broadcast>` / `<wcs-worker>` の `message`）を、アダプターの `values` と `useEffect` / `watch` で読む。`websocket-chat` の React の例がそうしていた。 | フレームワークは続けて来た更新を 1 回の描画にまとめ、前と等しい値を捨てる。1 つのかたまりで来た 5 件のメッセージや、等しい 2 回の ping のうち、effect が見るのは 1 件。ほかは、エラーもなく失われる。 | データの損失 | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。アダプターは設計どおり最新の値を持つ。出来事を受ける口は @wc-bindable に提案した。統合の手引きと例は、要素のイベントを聞くようになった。 |
 | 行が束ねていない状態（入力中の文字・フォーカス・開いた `<details>`）を持つ一覧を、`$listKeys` なしで取り直す。 | 新しいオブジェクトは参照で一致しないので、すべての行が作り直され、その状態は失われる。 | データの損失 | 設計で消す — 5.0 の議題（破壊的）。4.x: 取得したデータの `for:` で、行に入力欄があり `$listKeys` が無ければ info。5.0: オブジェクトが `id` を持てば、それで行を合わせる。 |
 | 利用者が決められる文字列を `href:`・`src:`・`attr.href:`・`attr.on*:` に束ねる。 | `javascript:` の URL やハンドラの文字列がそのまま書かれる。CSP が止めなければ XSS。 | 安全 | lint の規則 — 4.x。その後、実行時に知らせる — 4.x。4.x: lint はすべての `attr.on*:` を報告でき、diagnostics の後付けは `javascript:` の URL に警告できる。4.0 は core で拒まないと決めた（2026-10-02）。拒むのは破壊的。 |
 | 利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込み、それを持つ要素に `data-wcs-ignore` を付けない。 | ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。 | 安全 | どこからも見えない — 文書。注入されたマークアップは、作者が書いたものと見分けられない。4.3 で文書が教える守りが加わった: 要素に `data-wcs-ignore`（R10）を付ければ、走査はその中を読まない。 |
 | すべての行のつもりで `*` を含むパスで `$postUpdate` を呼ぶ（イベントのハンドラから `$postUpdate("rows.*.cells.*.text")`）。 | `*` は getter と同じく今の行の添字で、イベントが来た行だけが通知され、それに依存するセルは古いまま。 | 古い表示 | 設計で消す — 5.0 の議題（破壊的）。7GUIs の評価（Cells）で見つかった。README は 4.4 からそう書く。`$getAll` は `[]` ですべての行を指せるが、`$postUpdate` にその形は無い。5.0 で足すか、行の文脈が解決しない `*` を拒むかを決める。 |
 | 1 つのオブジェクトを、getter が結ばない 2 つの配列に置き（`backup = items` で両方を描く）、片方の行の下へ書く。 | 書き込みは、もう片方の配列の行・行 getter・それらの `$getAll` の集計に届かない。 | 古い表示 | 設計で消す — 4.x。4.x の既知の制限として残す（#401、2026-10-17 決定）。届けるにはオブジェクトからすべての一覧の行を引く索引が要り、core のバイトと行ごとの手間がかかる。回避はもう片方の一覧の `$postUpdate`。 |
 | 要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。 | 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。 |
+| フレームワークから、オブジェクトの入力をその場で変える。`files={files}` で渡した配列への `files.push(file)` や、`:body.prop` で束ねたオブジェクトへの `payload.rows.push(row)`。 | 同じ参照には、フレームワークは何も書かないので、要素には何も伝わらない。アップロードは始まらず、前の要求で `body` を使い切った `<wcs-fetch>` は、次の要求を本文なしで送る。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。渡されたオブジェクトの中の変化は、要素からは見えない。統合の手引きは、新しいオブジェクトや配列を代入するよう書くようになった。 |
+| React 19 の JSX で、コロンを含む `wcs-*` のイベントを、`on` の後を大文字にして聞く: `onWcs-fetch:response={fn}`。 | コンパイルは通る。React 19 は `on` の後に書かれたとおりの名前のイベント（`Wcs-fetch:response`）を聞き、それは発火しないので、ハンドラは走らない。小文字の形（`onwcs-fetch:response`）は動く。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。統合の手引きは、JSX ではコロンのイベントを書けないと書いていた。今は React 19 がどうするかを書き、引き続き `addEventListener` を勧める。 |
+| I/O ノードの `trigger` をフレームワークの状態から動かす（クリックごとに `setRefresh(true)` する `trigger={refresh}`）。 | 最初のクリックで命令が走り、要素は `trigger` を `false` に戻す。フレームワークはまだ `true` を持っているので、次の `true` は何も変えず、書かれない。2 回目のクリックは何もしない。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。`trigger` は `@wcstack/state` の書き方で、state は代入のたびに書く。フレームワークが省いた書き込みは、要素からは見えない。統合の手引きは、フレームワークからは命令（`el.fetch()`）を呼ぶよう書くようになった。 |
+| `<script setup>` で `@wc-bindable/vue` のテンプレート ref を `:ref="ref"` で束ねる。fetch・storage・websocket の README（とアダプター自身のもの）がそう示していた。 | テンプレートが ref を剥がすので、`:ref` には `null` が渡る。アダプターは束縛せず、`values` は初期値のまま。エラーも無い。 | 動かない | どこからも見えない — 文書。fw-inventory の直しを確かめる中で見つかった。Vue のテンプレートの ref は、実行時にも lint にも見えない。README と統合の手引きは `ref="名前"` と書くようになった。アダプターの README は @wc-bindable の issue に入れた。 |
 | `<wcs-link>` に `attr.aria-*:` を束ねる。 | `aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。 | 劣化 | 設計で消す — 4.x。リンクが後の `aria-*` の変化を転送できる。 |
 
 ### lint だけ — 条件付きの沈黙
@@ -126,6 +131,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 重なりうる要求で `<wcs-fetch>` を 1 つ共有する: 続けて 2 回保存、読み込み中に保存。 | code なし: 新しい要求が実行中の要求を中断し、その結果を捨てる。それが変更の要求（GET・HEAD・OPTIONS 以外）なら、要素がメソッドと URL を名指して `[wcs/fetch-request-superseded]` で警告する。 | — |
 | I/O ノードのコマンドを、実行できる前に呼ぶ: 接続していない `<wcs-ws>` の `send`、チャンネルの無い `<wcs-broadcast>` や worker の無い `<wcs-worker>` の `post`、ストリームの無い recorder の `start`、許可の無い `<wcs-notify>` の `notify`。 | code なし: 呼び出しは拒まれ、運んでいたものは失われる。ノードの `error` の出力に流れ、要素が `[wcs/command-not-ready]` で 1 回警告する（環境に無い API は `supported` が知らせる）。 | — |
 | `keepAlive: <録画中のパス>` なしの `<wcs-camera>` から録画し、録画中にタブが隠れる。 | code なし: カメラはページが隠れている間ストリームを止め、録画はそこまでの分で終わる（短いテイク）。カメラが `[wcs/camera-keep-alive-missing]` で 1 回警告する。 | — |
+| JSX や Vue のテンプレートで `<wcs-storage>` に `key` を書く（`<wcs-storage key="cart">`）。storage の README の React と Vue の例がそうだった。 | code なし: React と Vue は `key` を自分のものとして取り、要素に渡さない。要素には key が無く、何も読み込まず、何も保存せず、拒んだことは `error` に入るだけだった。4.6 から、最初の読み込み・保存・削除で要素が `[wcs/command-not-ready]` で 1 回警告する。`storage-key`（プロパティは `storageKey`）は、どちらのフレームワークも触らない名前の同じ入力。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。復元だけして保存しない `<wcs-storage>` は今も何も言わない。key の無いまま接続した要素は、state が `key:` の束縛を当てる前の姿でもある。5.0 で `key` を外して `storage-key` だけにするかは 5.0 の議題。 | — |
 | `<wcs-storage>` が保存する値に、`Blob` や `File`（録画したクリップ、選んだファイル）、`Map` / `Set`、バイナリを入れる。 | code なし: JSON はどれも保てない。それぞれ `{}` で保存され、再読み込みの後は空で返る（継ぎ目アプリは `[object Object]` を 15 バイトの「動画」として送った）。要素が、何がどこにあるかを添えて `[wcs/storage-unserializable]` で 1 回警告する。 | — |
 | 失敗・中断した `<wcs-upload>` を、ファイルを代入し直さずに `trigger` をもう一度書いて送り直す。 | code なし: アップロードは fetch の `body` と同じく `files` を使い切る。終わると `files` は `null` で（双方向の束縛はそのパスも空にする）、送り直しは何も送らない。要素が `[wcs/command-not-ready]` で 1 回警告する。 | — |
 | `<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type="module"` の無いスクリプトを付ける。 | code なし: router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートは守られない。同じ階層でルートの後に置いた外のものは、以前と同じくそのルートを守り続ける。 lint の規則はまだ無い。どちらの形もマークアップに見える。 | — |
@@ -146,6 +152,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 外れた 3.x の名前を宣言する（`$streams`・`$updatedCallback`）。 | 同じ code: diagnostics の後付けが読み込みで `#1601` を throw する。`/core` ではキーは無視される。 | `wcs/declaration-alias` (varies) |
 | `features=` か `$features` に、無い後付けの名前を書く。 | 同じ code: 分割 auto の読み込みが `[wcs/feature-unknown]` を throw する（`<wcs-state>` は定義されない）。ほかの入口は `[wcs/feature-not-installed]` を出す。 | `wcs/feature-unknown` (error) |
 | `$features` が配列でない、またはボリュームにある。 | code なし: 読み込みで `#46`（ボリュームは `console.error`）。 | `wcs/features-invalid` (error) |
+| タグを自分で定義するページで、`<wcs-fetch-header>` / `<wcs-fetch-body>` を定義せずに `<wcs-fetch>` を定義する。`WcsFetch` を出し直す autoloader の包みのモジュールや、スコープ付きのレジストリ。 | code なし: 補助のタグは素の要素のままで、そのヘッダー（`Authorization` など）や本文が要求から落ちる。4.6 より前、パッケージはそれらのクラスを出していなかった。4.6 から `WcsFetchHeader` / `WcsFetchBody` を出し、`<wcs-fetch>` が `[wcs/fetch-helper-undefined]` で 1 回警告する。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。autoloader の README は、パッケージの `/auto` を読み込む包みを示すようになった。`/auto` はパッケージのタグをすべて定義する。 | — |
 | フィルタの数値の引数に、数値として読めないものを渡す（`gt(abc)`）。 | code なし: 束縛の計画の時点で `#27`、state は初期化に失敗する（文字列の引数に数値を渡す `join(1)` は文字列として通る。lint はそれを警告する）。 | `wcs/filter-arg-type` (varies) |
 | フィルタに違う数の引数を渡す。 | 同じ code: 束縛の計画で `#601`・`#602`、state は初期化に失敗する。 | `wcs/filter-arity` (error) |
 | フィルタに型の違う値を流す（`date` に文字列、`join` に数値）。 | code なし: 値を当てる時点で `#28`〜`#30`、束縛が失敗する。文字列のフィルタは変換して通す（`null\|upper` は `NULL`）。 | `wcs/filter-input-type` (warning) |
@@ -158,7 +165,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `mount=` に空の値か段、`*`・`$`・`#`・`@`・空白を書く。 | code なし: scopes の後付けが `console.error`（`has an invalid mount path`）でボリュームを拒む。 | `wcs/mount-path-invalid` (error) |
 | 外れた 3.x の API の名前を呼ぶ（`$trackDependency`・`$untrackDependency`）。 | 同じ code: diagnostics の後付けが読んだ時点で `#1701` を throw する。`/core` では `undefined` で、呼べば汎用の TypeError。 | `wcs/name-alias` (error) |
 | v1 の名前付き State の選択子 `path@name` を書く。 | code なし: 解析の誤り `#32`。ページの束縛はそこで止まる（ルートの中身では `console.error`）。 | `wcs/named-state-deprecated` (error) |
+| オブジェクトの入力をフレームワークに属性として書かせる。定義が読み込まれる前の要素への React 19 の prop（`@wcstack/upload/auto` より前の `files={files}`）や、Vue の `.attr`（`:body.attr="payload"`）。 | code なし: 要素はその入力をプロパティでしか読まないので、何も受け取らない。`files="[object File]"` は何も送らず、`body="[object Object]"` は本文なしで送る。4.6 から、接続したときに要素が `[wcs/input-as-attribute]` で 1 回警告する。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。I/O ノードはみな、`connectedCallback` がすでに行うプロパティの取り込み直しの中でこれを調べる。接続した後にフレームワークが書いた属性は調べない。 | — |
 | `$on` のハンドラで `this` を使う。 | code なし: そこでの `this` は `undefined`。TypeError は `#17`（トークンの購読者が throw した）として記録され、async のハンドラは未処理の reject になる。 `setInitialState` で渡したクラシックのスクリプトでは `this` が `window` になり、無言（lint の外）。 | `wcs/on-handler-this` (error) |
+| 構造化複製で写せない値を `<wcs-worker>` / `<wcs-broadcast>` で送る。Vue のリアクティブな配列や、文書のとおり `toRaw()` しても行がまだプロキシのもの（リアクティブな配列の `filter` やスプレッドはプロキシを返す）。 | code なし: `postMessage` が `DataCloneError` を投げ、メッセージは失われる。ほかのタブやワーカーには届かない。`error` に入るだけだった。4.6 から、要素がよくある原因と深い素の写しという直し方を添えて `[wcs/post-uncloneable]` で 1 回警告する。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。統合の手引きは `toRaw(state.payload)` と書いていた。今は深い素の写しと書く。 | — |
 | 宣言したアンカーと合わない `**` のパスを書く（打ち間違い、2 つ目の `**`）。 | 同じ code: recursion の後付けが、読み込みかパスを使う所で `[wcs/recursion-anchor]` を throw する。 | `wcs/recursion-anchor` (error) |
 | 後付けが拒む形で `$recursion` か `**` の getter を宣言する。 | 同じ code: 読み込みで `[wcs/recursion-declaration-invalid]` を throw する。うち 3 つの形は diagnostics の後付けがあるときだけ調べる。 | `wcs/recursion-declaration-invalid` (error) |
 | `**` のパスの `$getAll` に、途中までの添字か配列でない添字を渡す。 | 同じ code: recursion の後付けが、呼んだ所で `[wcs/recursion-getall-form]` を throw する。 | `wcs/recursion-getall-form` (error) |
@@ -187,6 +196,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|
 | `<wcs-route>`（や `<wcs-guard-handler>`）を、別のルートの後の要素や `<wcs-layout>` の中に置く。または、守るルートの入れ子のルートの後にガードを置く。 | 4.3 から、ルートの親とガードの守るルートは、それを中に持つ `<wcs-route>`。以前は最後に解析したルートで、ルートは前のルートの下のパスになるか、絶対パスなら throw し（`is absolute but has a parent route`）、ガードは子のルートを守って自分のルートは開いていた。 |
 | 1 つのオブジェクトを一覧の 2 つの位置に置き（`items: [o, o]`）、片方の行の下へ書く。 | 4.3 から、書き込みはそのオブジェクトを持つすべての行、その行 getter、`$getAll` に届く（#365）。以前は書き込んだ行にしか届かなかった。 |
+| 自動送信の `<wcs-upload>` に、`url` より先に `files` を渡す。その順の JSX の props（`files={files} url=…`）や、1 つの `data-wcs` で `url:` より前の `files:`。 | 4.6 から、ファイルは url を待ち、url が来たときに送られる。以前は何も送られず、すぐ後に来た url でも始まらず、要素が `[wcs/command-not-ready]` で 1 回警告していた。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。React 19 は props を書いた順に、要素を文書に入れる前に当てる。React の開発者は属性の順が効くとは思わない。 |
 
 ### 数えない lint の code
 

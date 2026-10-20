@@ -83,6 +83,34 @@ describe("StorageCore", () => {
     expect(core.error).toEqual({ operation: "remove", message: "key is required." });
   });
 
+  it("key 未指定の操作は [wcs/command-not-ready] で要素ごとに 1 回だけ言い、storage-key を案内する", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const target = new EventTarget();
+      const core = new StorageCore(target);
+      core.save({ data: "test" });
+      core.load();
+      core.remove();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toContain("[wcs/command-not-ready] save() was refused: there is no key");
+      expect(warn.mock.calls[0][0]).toContain("write `storage-key`");
+      expect(warn.mock.calls[0][1]).toBe(target);
+      // 別の要素は別に 1 回
+      new StorageCore().remove();
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn.mock.calls[1][0]).toContain("remove() was refused");
+      // key があれば言わない
+      const keyed = new StorageCore();
+      keyed.key = "k";
+      keyed.save(1);
+      keyed.load();
+      keyed.remove();
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("無効なstorageタイプはthrowせずerrorへ流し、typeは現状維持する（never-throw）", () => {
     const core = new StorageCore();
     expect(() => { core.type = "invalid" as any; }).not.toThrow();

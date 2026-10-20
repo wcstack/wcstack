@@ -48,6 +48,8 @@ export class StorageCore extends EventTarget {
   private _key: string = "";
   /** Whether `[wcs/storage-unserializable]` was said for this element. */
   private _toldUnkept = false;
+  /** Whether `[wcs/command-not-ready]` was said for this element (an operation without a key). */
+  private _toldNoKey = false;
   private _type: StorageType = "local";
   private _storageListener: ((e: StorageEvent) => void) | null = null;
   // Generation guard: bumped on dispose(). The cross-tab `storage` listener
@@ -221,6 +223,7 @@ export class StorageCore extends EventTarget {
       // never-throw: a missing key is routed to the error property and a
       // sanitized null is returned, rather than throwing.
       this._setError({ operation: "load", message: "key is required." });
+      this._warnNoKey("load");
       return null;
     }
 
@@ -255,6 +258,7 @@ export class StorageCore extends EventTarget {
       // never-throw: a missing key is routed to the error property instead of
       // throwing. No return value to sanitize (save returns void).
       this._setError({ operation: "save", message: "key is required." });
+      this._warnNoKey("save");
       return;
     }
 
@@ -295,6 +299,21 @@ export class StorageCore extends EventTarget {
     }
   }
 
+  // An operation without a key does nothing, and only a page that binds `error` heard of it. In React and
+  // Vue the usual cause is `key` itself: both keep it for themselves and never hand it to the element
+  // (docs/seam-apps.md, fw-inventory). Said once per element (the I/O command policy,
+  // docs/v4-direction-2026-10.md).
+  private _warnNoKey(operation: string): void {
+    if (this._toldNoKey) return;
+    this._toldNoKey = true;
+    console.warn(
+      `[@wcstack/storage] [wcs/command-not-ready] ${operation}() was refused: there is no key, so nothing is ` +
+        "loaded or stored. It goes to `error` too. Give the element a `key` — in React and Vue, which keep `key` " +
+        "for themselves, write `storage-key`. (Said once per element.)",
+      this._target,
+    );
+  }
+
   // JSON keeps none of these: a Blob or File is stored as {}, a Map or Set as {}, binary
   // data as an object of its bytes. Saved without a word, they came back empty after a
   // reload (docs/seam-apps.md, state-field-report: a recorded clip kept in a draft was
@@ -315,6 +334,7 @@ export class StorageCore extends EventTarget {
       // never-throw: a missing key is routed to the error property instead of
       // throwing. No return value to sanitize (remove returns void).
       this._setError({ operation: "remove", message: "key is required." });
+      this._warnNoKey("remove");
       return;
     }
 

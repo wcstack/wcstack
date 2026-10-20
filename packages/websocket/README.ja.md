@@ -584,16 +584,18 @@ import type { WcsWsValues } from "@wcstack/websocket";
 
 interface ChatMessage { type: string; content: string; }
 
-const { ref, values } = useWcBindable<HTMLElement, WcsWsValues<ChatMessage>>();
+const { ref: socket, values } = useWcBindable<HTMLElement, WcsWsValues<ChatMessage>>();
 </script>
 
 <template>
-  <wcs-ws :ref="ref" url="wss://example.com/ws" auto-reconnect />
+  <wcs-ws ref="socket" url="wss://example.com/ws" auto-reconnect />
   <p v-if="values.loading">接続中...</p>
   <p v-else-if="values.connected">接続済み</p>
   <pre v-if="values.message">{{ values.message }}</pre>
 </template>
 ```
+
+テンプレート ref は静的に名前で書きます（`ref="socket"`）。`<script setup>` の `:ref="…"` には ref が剥がされた値（`null`）が渡り、アダプターは束縛しません。
 
 ### Svelte
 

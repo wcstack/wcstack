@@ -455,15 +455,52 @@ describe("WcsUpload コンポーネント", () => {
       el.remove();
     });
 
-    it("自動送信で url の無いうちに files が来たら警告する（url が来ても送らない）", () => {
+    it("自動送信で url の無いうちに files が来たら、url が来たときに送る（JSX の props や束縛の順に依らない）", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const el = createElement();
       document.body.appendChild(el);
       el.files = [createMockFile("a.txt", 10, "text/plain")];
       expect(MockXMLHttpRequest.instances).toHaveLength(0);
-      expect(said(warn)).toHaveLength(1);
-      expect(said(warn)[0]).toContain("files were assigned while there is no url");
+      el.url = "/api/upload";
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+      // 送った後の url の変更では、もう送らない（files は使い切った）
+      MockXMLHttpRequest.instances[0].simulateLoad(201, "{}");
+      el.url = "/api/other";
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+      expect(said(warn)).toHaveLength(0);
       el.remove();
+    });
+
+    it("文書に入る前の要素でも、files → url の順で当てれば送る（React 19 は挿入の前に props を当てる）", () => {
+      const el = createElement();
+      el.files = [createMockFile("a.txt", 10, "text/plain")];
+      el.url = "/api/upload";
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+      document.body.appendChild(el);
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+      el.remove();
+    });
+
+    it("url を待つ files は、manual のとき・files を空にしたとき・url が空のときは送らない", () => {
+      const manual = createElement({ manual: "" });
+      document.body.appendChild(manual);
+      manual.files = [createMockFile("a.txt", 10, "text/plain")];
+      manual.url = "/api/upload";
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+
+      const cleared = createElement();
+      document.body.appendChild(cleared);
+      cleared.files = [createMockFile("a.txt", 10, "text/plain")];
+      cleared.files = null;
+      cleared.url = "/api/upload";
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+
+      const emptied = createElement();
+      document.body.appendChild(emptied);
+      emptied.files = [createMockFile("a.txt", 10, "text/plain")];
+      emptied.url = "";
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+      manual.remove(); cleared.remove(); emptied.remove();
     });
 
     it("files を空にするのは拒んだうちに入らない", () => {

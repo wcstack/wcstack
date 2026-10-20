@@ -213,6 +213,22 @@ describe("BroadcastCore", () => {
       expect(core.error?.name).toBe("DataCloneError");
     });
 
+    it("クローン不可な値の post は、要素を添えて 1 回だけ警告する（[wcs/post-uncloneable]）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const target = new EventTarget();
+        const core = new BroadcastCore(target);
+        core.open("room");
+        core.post(() => {});
+        core.post(() => {});
+        const said = warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/post-uncloneable]"));
+        expect(said).toHaveLength(1);
+        expect(said[0][1]).toBe(target);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     it("Error 以外が throw された場合も正規化する", () => {
       vi.spyOn(FakeBroadcastChannel.prototype, "postMessage").mockImplementation(() => {
         throw "boom";

@@ -162,6 +162,29 @@ describe("WorkerCore - post", () => {
     expect(core.error?.name).toBe("DataCloneError");
   });
 
+  it("クローン不能な値の post は、要素を添えて 1 回だけ警告する（[wcs/post-uncloneable]、Vue の toRaw は 1 段だけと案内）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const target = new EventTarget();
+      const core = new WorkerCore(target);
+      core.start("worker.js");
+      core.post(() => {});
+      core.post(() => {});
+      const said = warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/post-uncloneable]"));
+      expect(said).toHaveLength(1);
+      expect(String(said[0][0])).toContain("toRaw() unwraps one level only");
+      expect(said[0][1]).toBe(target);
+      // ほかの失敗では言わない
+      const other = new WorkerCore();
+      other.start("worker.js");
+      (FakeWorker.last as unknown as { postMessage: () => void }).postMessage = () => { throw new Error("boom"); };
+      other.post("x");
+      expect(warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/post-uncloneable]"))).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("start → terminate 後の post は InvalidStateError（順序契約）", () => {
     const core = new WorkerCore();
     core.start("worker.js");

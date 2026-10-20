@@ -45,6 +45,7 @@ export class Fetch extends HTMLElement {
   private _connectResolve: (() => void) | null = null;
   private _lastFetchedUrl: string | null = null;
   private _toldTriggerWithoutUrl = false;
+  private _toldUndefinedHelper = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -242,6 +243,10 @@ export class Fetch extends HTMLElement {
     const headers: Record<string, string> = {};
     const headerElements = this.querySelectorAll<FetchHeader>(config.tagNames.fetchHeader);
     for (const el of headerElements) {
+      if (typeof el.hasHeader !== "boolean") {
+        this._warnUndefinedHelper(config.tagNames.fetchHeader, "header");
+        continue;
+      }
       // a header without a value attribute is not sent (FetchHeader)
       if (el.hasHeader) {
         headers[el.headerName] = el.headerValue;
@@ -281,7 +286,9 @@ export class Fetch extends HTMLElement {
 
     // サブタグからbodyを取得
     const bodyElement = this.querySelector<FetchBody>(config.tagNames.fetchBody);
-    if (bodyElement) {
+    if (bodyElement && typeof bodyElement.bodyContent !== "string") {
+      this._warnUndefinedHelper(config.tagNames.fetchBody, "body");
+    } else if (bodyElement) {
       return {
         body: bodyElement.bodyContent || null,
         contentType: bodyElement.contentType,
@@ -369,6 +376,23 @@ export class Fetch extends HTMLElement {
       "[@wcstack/fetch] [wcs/command-not-ready] trigger was refused: there is no url, so nothing is fetched. " +
         "Write url before trigger (bindings apply in the order written), and write trigger again once there is one. " +
         "(Said once per element.)",
+      this,
+    );
+  }
+
+  /**
+   * A `<wcs-fetch-header>` / `<wcs-fetch-body>` whose definition never loaded is a plain element, and its
+   * header or body was left out of the request without a word: a page that defines the tags itself (an
+   * autoloader's wrapper module, a scoped registry) defined `<wcs-fetch>` only (docs/seam-apps.md,
+   * fw-inventory). Said once per element.
+   */
+  private _warnUndefinedHelper(tag: string, what: string): void {
+    if (this._toldUndefinedHelper) return;
+    this._toldUndefinedHelper = true;
+    console.warn(
+      `[@wcstack/fetch] [wcs/fetch-helper-undefined] <${tag}> inside this <${config.tagNames.fetch}> is not ` +
+        `defined, so its ${what} is not sent. Load @wcstack/fetch/auto, or define WcsFetchHeader and WcsFetchBody ` +
+        "with WcsFetch when the page defines the tags itself. (Said once per element.)",
       this,
     );
   }

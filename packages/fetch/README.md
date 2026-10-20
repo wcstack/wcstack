@@ -625,6 +625,8 @@ Example:
 </wcs-fetch>
 ```
 
+**Defining the tags yourself.** `@wcstack/fetch/auto` defines all four tags. A page that defines them itself — an autoloader's wrapper module, a scoped registry — has to define the helper tags too: since 4.6 (not released yet) the package exports their classes, `WcsFetchHeader` and `WcsFetchBody`, beside `WcsFetch` and `WcsInfiniteScroll`. An undefined `<wcs-fetch-header>` or `<wcs-fetch-body>` is a plain element, and its header or body is not sent; `<wcs-fetch>` then warns once (`[wcs/fetch-helper-undefined]`). For the autoloader, a wrapper that imports `/auto` defines every tag at once ([autoloader README](../autoloader/README.md#loading-wcstacks-own-tags)).
+
 ## wc-bindable-protocol
 
 Both `FetchCore` and `<wcs-fetch>` declare `wc-bindable-protocol` compliance, making them interoperable with any framework or component that supports the protocol.
@@ -788,11 +790,11 @@ import type { WcsFetchValues } from "@wcstack/fetch";
 
 interface User { id: number; name: string; }
 
-const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
+const { ref: users, values } = useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
 </script>
 
 <template>
-  <wcs-fetch :ref="ref" url="/api/users" />
+  <wcs-fetch ref="users" url="/api/users" />
   <p v-if="values.loading">Loading...</p>
   <p v-else-if="values.error">Error</p>
   <ul v-else>
@@ -800,6 +802,8 @@ const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
   </ul>
 </template>
 ```
+
+Name the template ref statically (`ref="users"`): in `<script setup>` a `:ref="…"` binding gets the ref unwrapped, `null`, and the adapter never binds.
 
 ### Svelte
 
