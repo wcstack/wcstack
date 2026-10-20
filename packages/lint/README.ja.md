@@ -21,7 +21,7 @@ npm i -D @wcstack/lint
 npx wcs-validate --errors-only src/**/*.html
 ```
 
-`.manifest.json` で終わるファイルは sidecar manifest として、それ以外は `data-wcs` バインディングを含む HTML として検査されます。
+`.manifest.json` で終わるファイルは sidecar manifest として、それ以外は `data-wcs` バインディングを含む HTML として検査されます。ただし framework のコンポーネントと script のファイル（`.js`・`.ts`・`.jsx`・`.tsx`・`.vue`・`.svelte`）は読みません（4.6（未リリース）から。以前は HTML として読み、問題なしと報告していました）。
 
 `<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL・絶対パスは読み込まず、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。4.4 から、`.js` / `.ts` の state にはスクリプトの規則（`wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` など）もかかります: ファイルの中の指摘はそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数え、IDE はページの `src` の値の上に出します。4.3 までは、外部 state ではパスだけを検査していました。
 
@@ -54,6 +54,16 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 | `1` | error severity の診断が 1 件以上。`--strict` 時は error または warning が 1 件以上 |
 | `2` | usage エラー、またはファイル読み取り失敗 |
 
+件数の後に、件数が何も語らないファイルを 2 つの注が挙げます（4.6（未リリース）から。`--errors-only` でも出し、exit code は変えません）:
+
+```
+0 error(s), 0 warning(s), 0 info
+not read: src/App.tsx — wcs-validate reads HTML pages (data-wcs, <wcs-*> tags), not a framework's components or script files
+nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack script in them
+```
+
+`<wcs-*>` の要素を使う framework のアプリ（React・Vue）にはどちらも無く、ページはルートの要素を持つだけで、コンポーネントは読まれません。exit code `0` は、そのようなアプリを検査したという意味ではありません。代わりに見るべきことは [framework 統合の手引き](../../docs/framework-adapter-integration.ja.md) にあります。
+
 ## state の契約を宣言する（`stateSchema`）
 
 契約が無いと、validator が解決できないパスは **warning**（`wcs/binding-path-missing`）に留まります: インラインスクリプトが静的に読めなくても `count` は実行時には存在するかもしれないからです。`[]` で始まるリストの行のフィールドは、行を足す・置き換える代入式の行リテラルから読みます。外から届くリスト（`<wcs-fetch>` や `<wcs-storage>` が埋めるまで `null`）にはそのリテラルが無いので、プロパティの直前の JSDoc `@type` で形を宣言してください（`/** @type {{ id: number, name: string }[] | null} */ catalog: null`）。同じスクリプトの `@typedef` で行の型に名前を付け、`@type {Product[] | null}` と書いてもかまいません。HTML と同じ（または上の）ディレクトリに `application` sidecar を置くと、同じ typo が **error** になります:
@@ -84,7 +94,7 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 
 ## 生成 → 検証 → 修正ループでの利用
 
-安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。
+安定した diagnostic code・`source:line:col` range・exit code 契約により、CI のゲートにも AI コード生成フローにもそのまま組み込めます: HTML を生成 → `npx @wcstack/lint --errors-only` → 診断を読んで修正 → exit code `0` になるまで再実行。このゲートが覆うのは `data-wcs` のページです: 出力が `not read:` や `nothing to check:` で終わるときは、そのファイルは検査されていません。
 
 ## VS Code 拡張との関係
 

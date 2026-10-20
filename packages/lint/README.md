@@ -21,7 +21,7 @@ npm i -D @wcstack/lint
 npx wcs-validate --errors-only src/**/*.html
 ```
 
-Files ending in `.manifest.json` are validated as sidecar manifests; everything else is validated as HTML with `data-wcs` bindings.
+Files ending in `.manifest.json` are validated as sidecar manifests; everything else is validated as HTML with `data-wcs` bindings, except a framework's components and script files (`.js`, `.ts`, `.jsx`, `.tsx`, `.vue`, `.svelte`), which are not read (since 4.6 (not released yet); before, they were read as HTML and reported clean).
 
 External state referenced via `<wcs-state src="...">` (`.json` / `.js` / `.ts`) is resolved relative to the HTML file and included in path validation. URLs and absolute paths are never read, unreadable files are skipped, and unresolved paths stay warnings. Note that once external state *does* resolve, the full validation surface applies to those pages — error-severity findings (e.g. `for:` bound to a non-array) can fail a build that was previously silent because the paths could not be checked. Since 4.4 that includes the script rules (`wcs/nested-assign`, `wcs/array-mutation`, `wcs/on-handler-this`, `wcs/updated-callback-unbound` and the rest) on a `.js` / `.ts` state: a finding in the file is reported in the file (`state.js:12:5 error wcs/nested-assign …`), once however many pages load it, and the IDE shows it on the page's `src` value. Up to 4.3 only the paths of an external state were checked.
 
@@ -54,6 +54,16 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 | `1` | At least one error-severity diagnostic; with `--strict`, at least one error or warning |
 | `2` | Usage error or unreadable file |
 
+After the counts, two notes name the files the counts say nothing about (since 4.6 (not released yet); printed with `--errors-only` too, and they do not change the exit code):
+
+```
+0 error(s), 0 warning(s), 0 info
+not read: src/App.tsx — wcs-validate reads HTML pages (data-wcs, <wcs-*> tags), not a framework's components or script files
+nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack script in them
+```
+
+A framework app (React, Vue) that uses the `<wcs-*>` elements has neither: its page holds the root element and its components are not read. Exit code `0` does not mean such an app was checked; [the framework integration guide](../../docs/framework-adapter-integration.md) lists what to look for instead.
+
 ## Declaring a state contract (`stateSchema`)
 
 Without a contract, a path the validator cannot resolve is only a **warning** (`wcs/binding-path-missing`): `count` may well exist at runtime even when the inline script cannot be read statically. Note that a list starting as `[]` does not need a contract just to name its row fields — the analyzer reads them from the row literals in the assignments that add or replace rows (`this.items = this.items.concat({ id, kind: "general" })`, `.toSpliced(i, n, { … })`, `.with(i, { … })`, `[...this.items, { … }]`); only a row passed as a variable (`concat(row)`) is invisible to it. A list that arrives from outside — `null` until `<wcs-fetch>` or `<wcs-storage>` fills it — has no such literal: declare its shape with a JSDoc `@type` before the property (`/** @type {{ id: number, name: string }[] | null} */ catalog: null`), or name the row type with a `@typedef` in the same script and write `@type {Product[] | null}`. Put an `application` sidecar next to (or above) the HTML and the same typo becomes an **error**:
@@ -84,7 +94,7 @@ Without a contract, a path the validator cannot resolve is only a **warning** (`
 
 ## Use in generate–validate–fix loops
 
-Stable diagnostic codes, `source:line:col` ranges, and the exit-code contract make this CLI a drop-in gate for CI and for AI code-generation flows: generate HTML → `npx @wcstack/lint --errors-only` → read the diagnostics, fix, and re-run until exit code `0`.
+Stable diagnostic codes, `source:line:col` ranges, and the exit-code contract make this CLI a drop-in gate for CI and for AI code-generation flows: generate HTML → `npx @wcstack/lint --errors-only` → read the diagnostics, fix, and re-run until exit code `0`. The gate covers `data-wcs` pages: when the output ends with `not read:` or `nothing to check:`, those files were not checked.
 
 ## Relationship to the VS Code extension
 

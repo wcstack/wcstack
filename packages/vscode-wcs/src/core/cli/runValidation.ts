@@ -16,7 +16,27 @@ import { discoverApplicationManifest, joinRelativeSource } from "../sidecar/disc
 import { JsonSchemaNode, LiveBindableDeclaration } from "../sidecar/types.js";
 import type { FileReader } from "../../service/statePathResolver.js";
 
-export type InputKind = "html" | "manifest";
+/** `other`: a framework's component or a script file — not read (see `inputKindOf`). */
+export type InputKind = "html" | "manifest" | "other";
+
+/**
+ * What the CLI makes of a file it is given, by its name. A framework's components (`.jsx` / `.tsx` / `.vue` /
+ * `.svelte`) and script files are not HTML pages: read as one, `<wcs-storage key="…">` in JSX was reported clean
+ * although React keeps `key` for itself (docs/seam-apps.md, fw-inventory). They are listed as not read instead.
+ * Any other name (`.html`, a server's templates) is read as a page.
+ */
+export function inputKindOf(path: string): InputKind {
+  if (path.endsWith(".manifest.json")) return "manifest";
+  return /\.(?:[cm]?[jt]sx?|vue|svelte)$/i.test(path) ? "other" : "html";
+}
+
+// Whether a page holds anything the rules look at: the binding attribute, a `<wcs-*>` tag or the state tag, a
+// wcstack script. A framework app's page (`<div id="root">` and its bundle) holds none, and its clean result
+// said "0 error(s)" as if the page had been checked (docs/seam-apps.md, fw-inventory).
+function hasAnythingToCheck(text: string, bindAttribute: string, stateTagName: string): boolean {
+  return text.includes(bindAttribute) || /<wcs-/i.test(text) || text.includes(`<${stateTagName}`)
+    || /@wcstack\/|\bwcstack(?:@[\w.-]+)?\/auto\b/.test(text);
+}
 
 export interface CliFileInput {
   readonly source: string;
@@ -63,6 +83,15 @@ export interface RunValidationResult {
   readonly exitCode: 0 | 1;
   /** file source → 診断(テスト用)。 */
   readonly diagnosticsBySource: ReadonlyMap<string, readonly WcsDiagnostic[]>;
+  /** The files not read (`other`), in the order given. */
+  readonly notRead: readonly string[];
+  /** The pages read with nothing to check in them, in the order given. */
+  readonly nothingToCheck: readonly string[];
+  /**
+   * The lines to print after the counts, `--errors-only` or not: which files were not read and which had nothing
+   * to check, so a clean result over them is not taken for a checked app. Empty when every file was checked.
+   */
+  readonly notes: readonly string[];
 }
 
 const severityLabel: Record<WcsSeverity, string> = { error: "error", warning: "warning", info: "info" };
@@ -98,8 +127,12 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
   // 検証は 1 回。
   /** Findings in the state files the pages load with `src=`, by source (see below). */
   const inFiles = new Map<string, WcsDiagnostic[]>();
+  const nothingToCheck: string[] = [];
   for (const input of inputs) {
     if (input.kind !== "html") continue;
+    if (!hasAnythingToCheck(input.text, options.bindAttribute ?? "data-wcs", options.stateTagName ?? "wcs-state")) {
+      nothingToCheck.push(input.source);
+    }
     let applicationSchema = explicitSchema;
     if (!haveExplicitApplication && input.fileReader !== undefined) {
       const discovered = discoverApplicationManifest(input.fileReader);
@@ -157,6 +190,15 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     }
   }
 
+  const notRead = inputs.filter((i) => i.kind === "other").map((i) => i.source);
+  const notes: string[] = [];
+  if (notRead.length > 0) {
+    notes.push(`not read: ${notRead.join(", ")} — wcs-validate reads HTML pages (data-wcs, <wcs-*> tags), not a framework's components or script files`);
+  }
+  if (nothingToCheck.length > 0) {
+    notes.push(`nothing to check: ${nothingToCheck.join(", ")} — no data-wcs binding, <wcs-*> tag or wcstack script in them`);
+  }
+
   return {
     lines,
     errorCount,
@@ -164,5 +206,8 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
     infoCount,
     exitCode: errorCount > 0 || (options.strict === true && warningCount > 0) ? 1 : 0,
     diagnosticsBySource,
+    notRead,
+    nothingToCheck,
+    notes,
   };
 }

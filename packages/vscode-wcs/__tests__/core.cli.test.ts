@@ -304,6 +304,60 @@ describe("runValidation — CLI core", () => {
   });
 });
 
+describe("読まなかったファイルと、検査するものが無いページを言う（docs/seam-apps.md、fw-inventory）", () => {
+  it("inputKindOf: フレームワークのコンポーネントと script は other、manifest は manifest、他は html", async () => {
+    const { inputKindOf } = await import("../src/core/cli/runValidation.js");
+    for (const path of ["src/App.tsx", "src/App.jsx", "src/Warehouse.vue", "src/Card.svelte", "main.ts", "main.js", "x.mjs", "y.cts", "Z.TSX"]) {
+      expect(inputKindOf(path)).toBe("other");
+    }
+    expect(inputKindOf("wcstack.manifest.json")).toBe("manifest");
+    for (const path of ["index.html", "page.htm", "layout.njk", "view.php"]) expect(inputKindOf(path)).toBe("html");
+  });
+
+  it("other は検査せず notRead と notes に名前を出す。exit code は変えない", () => {
+    const result = runValidation([
+      { source: "src/App.tsx", text: `<wcs-storage key="k" />`, kind: "other" },
+      { source: "a.html", text: `<wcs-state json='{"a":1}'></wcs-state>\n<span data-wcs="textContent: a"></span>`, kind: "html" },
+    ]);
+    expect(result.diagnosticsBySource.has("src/App.tsx")).toBe(false);
+    expect(result.notRead).toEqual(["src/App.tsx"]);
+    expect(result.nothingToCheck).toEqual([]);
+    expect(result.notes).toEqual([expect.stringMatching(/^not read: src\/App\.tsx — wcs-validate reads HTML pages/)]);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("data-wcs・<wcs-*>・state タグ・wcstack の script のどれも無いページは nothingToCheck に入る", () => {
+    const root = `<!doctype html><title>Inventory</title><div id="root"></div><script type="module" src="/src/main.tsx"></script>`;
+    const result = runValidation([
+      { source: "index.html", text: root, kind: "html" },
+      { source: "late.html", text: root, kind: "html" },
+    ], { errorsOnly: true });
+    expect(result.nothingToCheck).toEqual(["index.html", "late.html"]);
+    expect(result.notes).toEqual(["nothing to check: index.html, late.html — no data-wcs binding, <wcs-*> tag or wcstack script in them"]);
+    expect(result.lines).toEqual([]);
+    expect(result.exitCode).toBe(0);
+  });
+
+  it("どれか一つがあれば検査したページとして数え、notes は空", () => {
+    const pages = [
+      `<span data-wcs="textContent: a"></span>`,
+      `<wcs-fetch url="/api"></wcs-fetch>`,
+      `<my-state></my-state>`,
+      `<script type="module" src="https://esm.run/@wcstack/state/auto"></script>`,
+      `<script type="module" src="https://cdn.jsdelivr.net/npm/wcstack@4/auto"></script>`,
+    ];
+    const result = runValidation(pages.map((text, i) => ({ source: `p${i}.html`, text, kind: "html" as const })), { stateTagName: "my-state" });
+    expect(result.nothingToCheck).toEqual([]);
+    expect(result.notes).toEqual([]);
+  });
+
+  it("--attr で変えた属性名で数える", () => {
+    const page = `<span data-x="textContent: a"></span>`;
+    expect(runValidation([{ source: "a.html", text: page, kind: "html" }]).nothingToCheck).toEqual(["a.html"]);
+    expect(runValidation([{ source: "a.html", text: page, kind: "html" }], { bindAttribute: "data-x" }).nothingToCheck).toEqual([]);
+  });
+});
+
 describe("parseArgs — CLI 引数分解", () => {
   it("--errors-only / --quiet を errorsOnly に、その他フラグと file を分離する", async () => {
     const { parseArgs } = await import("../src/cli.js");
