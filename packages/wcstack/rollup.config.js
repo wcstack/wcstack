@@ -9,6 +9,19 @@ import nodeResolve from "@rollup/plugin-node-resolve";
 import typescript from "@rollup/plugin-typescript";
 import terser from "@rollup/plugin-terser";
 
+// dist/auto.d.ts, as in config-templates/rollup.config.js: `./auto` exports nothing. It is
+// the one .d.ts this package ships, so `import("wcstack/auto")` type-checks.
+const autoDeclaration = () => ({
+  name: "wcstack-auto-declaration",
+  generateBundle() {
+    this.emitFile({
+      type: "asset",
+      fileName: "auto.d.ts",
+      source: "// Importing this module defines the package's custom elements. It exports nothing.\nexport {};\n",
+    });
+  },
+});
+
 export default [
   // Single-tag bootstrap for the whole SPA-core profile. node-resolve inlines each
   // member's dist/auto.min.js (resolved through its package.json "./auto" export);
@@ -33,6 +46,7 @@ export default [
       }),
       nodeResolve(),
       terser(),
+      autoDeclaration(),
     ],
   },
 ];

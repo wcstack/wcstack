@@ -8,6 +8,20 @@ const typescriptPlugin = typescript({
   declarationMap: false,
 });
 
+// `./auto` defines the package's tags and exports nothing; this gives it a type, so a
+// TypeScript app can `import("@wcstack/<pkg>/auto")` to load the tags late (docs/seam-apps.md,
+// fw-inventory: tsc failed on the import the integration guide recommends).
+const autoDeclaration = () => ({
+  name: "wcstack-auto-declaration",
+  generateBundle() {
+    this.emitFile({
+      type: "asset",
+      fileName: "auto.d.ts",
+      source: "// Importing this module defines the package's custom elements. It exports nothing.\nexport {};\n",
+    });
+  },
+});
+
 export default [
   // ESM build
   {
@@ -49,6 +63,7 @@ export default [
         declarationMap: false,
       }),
       terser(),
+      autoDeclaration(),
     ],
   },
   // Type declarations

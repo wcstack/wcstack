@@ -11,7 +11,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.esm.js"
     },
-    "./auto": "./dist/auto.min.js"
+    "./auto": {
+      "types": "./dist/auto.d.ts",
+      "import": "./dist/auto.min.js"
+    }
   },
   "files": [
     "dist"
