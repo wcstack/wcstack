@@ -10,7 +10,9 @@
  *
  * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> ...
  *   *.manifest.json → sidecar manifest として検査
- *   その他(.html 等)→ data-wcs バインディングとして検査
+ *   .js / .ts / .jsx / .tsx / .vue / .svelte → 読まない(summary の後に `not read:` として名前を出す)
+ *   その他(.html 等)→ data-wcs バインディングとして検査。検査するもの(data-wcs・<wcs-*>・wcstack の
+ *     script)が何も無いページは summary の後に `nothing to check:` として名前を出す
  *   --lang=ja|en → 診断メッセージの言語。決定則は「--lang > 環境(LC_ALL / LC_MESSAGES /
  *     LANG / Intl の OS ロケール — ja 系なら ja、それ以外は en) > フォールバック en」。
  *     code / range は言語に依らず不変。
@@ -21,12 +23,8 @@
 
 import { readFileSync } from "node:fs";
 import { createFileReader } from "./fileReader.js";
-import { runValidation, type CliFileInput, type RunValidationOptions } from "./core/cli/runValidation.js";
+import { inputKindOf, runValidation, type CliFileInput, type RunValidationOptions } from "./core/cli/runValidation.js";
 import type { FileReader } from "./service/statePathResolver.js";
-
-function classify(path: string): CliFileInput["kind"] {
-  return path.endsWith(".manifest.json") ? "manifest" : "html";
-}
 
 // 外部 state reader は node shell 層の単一正本（IDE の Language Server も同じものを使う）。
 // 既存の import 経路（テスト・将来の呼び出し）を壊さないよう再エクスポートする。
@@ -85,7 +83,7 @@ export function main(argv: readonly string[]): number {
       process.stderr.write(`cannot read ${path}: ${(e as Error).message}\n`);
       return 2;
     }
-    const kind = classify(path);
+    const kind = inputKindOf(path);
     inputs.push({ source: path, text, kind, fileReader: kind === "html" ? createFileReader(path) : undefined });
   }
 
@@ -97,6 +95,9 @@ export function main(argv: readonly string[]): number {
   process.stdout.write(
     `\n${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? " (strict)" : ""}\n`,
   );
+  // the files not read and those with nothing to check, shown with --errors-only too: the counts above say
+  // nothing about them (docs/seam-apps.md, fw-inventory)
+  for (const note of result.notes) process.stdout.write(note + "\n");
   return result.exitCode;
 }
 

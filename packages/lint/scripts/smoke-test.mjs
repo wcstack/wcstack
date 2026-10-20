@@ -232,6 +232,13 @@ export default { count: 0, $watch: { "${key}"() {}, "ext.total"() {} } };
 writeFileSync(volumeHtml, volumePage("cart.total"));
 writeFileSync(volumeTypoHtml, volumePage("cart.totl"));
 
+// A framework app: its page holds only the root element, its components are .tsx / .vue. The counts alone
+// said "0 error(s)" as if they had been checked (docs/seam-apps.md, fw-inventory).
+const frameworkHtml = join(workDir, "framework.html");
+const frameworkTsx = join(workDir, "App.tsx");
+writeFileSync(frameworkHtml, `<!doctype html>\n<div id="root"></div>\n<script type="module" src="/src/main.tsx"></script>\n`);
+writeFileSync(frameworkTsx, `export const App = () => <wcs-storage key="cart"></wcs-storage>;\n`);
+
 const failures = [];
 let caseCount = 0;
 
@@ -409,6 +416,11 @@ check("paths under a volume loaded with src= (readable or not) are clean under -
 check("a typo under a readable src= volume → warnings wcs/watch-path-missing and wcs/binding-path-missing, --strict exit 1", ["--lang=en", "--strict", volumeTypoHtml], {
   exit: 1,
   stdout: [/warning wcs\/watch-path-missing .*"cart\.totl"/, /warning wcs\/binding-path-missing .*"cart\.totl"/, "0 error(s), 2 warning(s), 0 info (strict)"],
+});
+
+check("a framework app's page and component → named as nothing to check / not read, also with --errors-only, exit 0", ["--lang=en", "--errors-only", frameworkHtml, frameworkTsx], {
+  exit: 0,
+  stdout: ["0 error(s), 0 warning(s)", /not read: .*App\.tsx — /, /nothing to check: .*framework\.html — /],
 });
 
 rmSync(workDir, { recursive: true, force: true });
