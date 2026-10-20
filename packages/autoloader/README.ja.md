@@ -152,6 +152,28 @@ export default class UiButton extends HTMLElement {
 }
 ```
 
+### wcstack 自身のタグを読み込む
+
+wcstack のパッケージはクラスを `default` でなく名前で出し、いくつかのパッケージは 2 つ以上のタグを定義します。`<wcs-fetch>` には `<wcs-fetch-header>` と `<wcs-fetch-body>` が付きます。パッケージごとに包みのファイルを 1 つ作り、パッケージの `/auto` を読み込んで（パッケージのタグがすべて定義されます）、定義されたクラスを autoloader に渡してください:
+
+```javascript
+// components/wcs/fetch.js: <wcs-fetch> と、それに付く <wcs-fetch-header> / <wcs-fetch-body>
+import "https://esm.run/@wcstack/fetch/auto";
+export default customElements.get("wcs-fetch");
+```
+
+```json
+{
+  "imports": {
+    "@components/wcs/": "./components/wcs/"
+  }
+}
+```
+
+autoloader はタグを 1 つずつ順に読み込み、すでに定義されたタグは飛ばすので、`<wcs-fetch-header>` に自分のファイルは要りません。ファイルの名前はパッケージでなくタグから付けます: `<wcs-ws>`（`@wcstack/websocket`）は `ws.js`、`<wcs-geo>`（`@wcstack/geolocation`）は `geo.js` です。
+
+クラスを 1 つだけ出し直す包み（`export { WcsFetch as default } from "https://esm.run/@wcstack/fetch"`）では補助のタグが定義されず、autoloader は `fetch-header.js` を探しに行きます。`<wcs-fetch>` はそのヘッダーや本文なしで要求を送ります。4.6（未リリース）から、`[wcs/fetch-helper-undefined]` で警告します。
+
 ## カスタマイズドビルトイン要素（`is`属性）
 
 オートローダーは`is`属性を使用したカスタマイズドビルトイン要素を検出します：

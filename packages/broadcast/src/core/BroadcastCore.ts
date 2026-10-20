@@ -67,6 +67,8 @@ export class BroadcastCore extends EventTarget {
    * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
    */
   private _toldNotReady = false;
+  /** Whether `[wcs/post-uncloneable]` was said for this element. */
+  private _toldUncloneable = false;
 
   constructor(target?: EventTarget) {
     super();
@@ -221,7 +223,24 @@ export class BroadcastCore extends EventTarget {
       this._channel.postMessage(data);
     } catch (err) {
       this._setError(this._normalizeError(err));
+      this._warnUncloneable(err);
     }
+  }
+
+  // A message that cannot be structured-cloned is lost, and only a page that binds `error` heard
+  // of it. A framework's reactive proxy is the usual one: Vue's `toRaw()` unwraps one level, so a
+  // list of rows rebuilt with `filter` or a spread still holds proxies (docs/seam-apps.md,
+  // fw-inventory). Said once per element.
+  private _warnUncloneable(err: unknown): void {
+    if (this._toldUncloneable || (err as { name?: unknown } | null)?.name !== "DataCloneError") return;
+    this._toldUncloneable = true;
+    console.warn(
+      "[@wcstack/broadcast] [wcs/post-uncloneable] post() was refused: the message cannot be structured-cloned " +
+        "(DataCloneError), so it is lost. It goes to `error` too. A framework's reactive proxy is the usual cause — " +
+        "Vue's toRaw() unwraps one level only: pass a deep plain copy (JSON.parse(JSON.stringify(value)), or toRaw " +
+        "on each level). (Said once per element.)",
+      this._target,
+    );
   }
 
   private _warnNotReady(): void {

@@ -767,6 +767,85 @@
       "mistake": { "en": "Records from a `<wcs-camera>` without `keepAlive: <recording path>`, and the tab is hidden while recording.", "ja": "`keepAlive: <録画中のパス>` なしの `<wcs-camera>` から録画し、録画中にタブが隠れる。" },
       "effect": { "en": "The camera suspends its stream while the page is hidden, which ends the recording with what it has: a short take. The camera warns `[wcs/camera-keep-alive-missing]` once.", "ja": "カメラはページが隠れている間ストリームを止め、録画はそこまでの分で終わる（短いテイク）。カメラが `[wcs/camera-keep-alive-missing]` で 1 回警告する。" },
       "evidence": [{ "file": "packages/camera/src/core/CameraCore.ts", "text": "[wcs/camera-keep-alive-missing]" }]
+    },
+    {
+      "id": "storage-key-in-framework",
+      "runtime": "loud", "harm": "data-loss",
+      "mistake": { "en": "Writes `key` on `<wcs-storage>` in JSX or a Vue template (`<wcs-storage key=\"cart\">`), as the storage README's React and Vue examples did.", "ja": "JSX や Vue のテンプレートで `<wcs-storage>` に `key` を書く（`<wcs-storage key=\"cart\">`）。storage の README の React と Vue の例がそうだった。" },
+      "effect": { "en": "React and Vue keep `key` for themselves and never hand it to the element: it has no key, so nothing is loaded or stored, and the refusal goes to `error` only. Since 4.6 the element warns `[wcs/command-not-ready]` once at the first load, save or remove, and `storage-key` (the property `storageKey`) is the same input under a name both frameworks leave alone.", "ja": "React と Vue は `key` を自分のものとして取り、要素に渡さない。要素には key が無く、何も読み込まず、何も保存せず、拒んだことは `error` に入るだけだった。4.6 から、最初の読み込み・保存・削除で要素が `[wcs/command-not-ready]` で 1 回警告する。`storage-key`（プロパティは `storageKey`）は、どちらのフレームワークも触らない名前の同じ入力。" },
+      "evidence": [{ "file": "packages/storage/src/core/StorageCore.ts", "text": "was refused: there is no key, so nothing is" }],
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). A `<wcs-storage>` that only restores and never saves still says nothing: an element connected without a key is also what a `key:` binding looks like before state applies it. Whether 5.0 drops `key` for `storage-key` is on the 5.0 agenda.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。復元だけして保存しない `<wcs-storage>` は今も何も言わない。key の無いまま接続した要素は、state が `key:` の束縛を当てる前の姿でもある。5.0 で `key` を外して `storage-key` だけにするかは 5.0 の議題。" }
+    },
+    {
+      "id": "upload-files-before-url",
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Gives an automatic `<wcs-upload>` its `files` before its `url`: JSX props in that order (`files={files} url=…`), or `files:` before `url:` in one `data-wcs`.", "ja": "自動送信の `<wcs-upload>` に、`url` より先に `files` を渡す。その順の JSX の props（`files={files} url=…`）や、1 つの `data-wcs` で `url:` より前の `files:`。" },
+      "effect": { "en": "Since 4.6 the files wait for the url and are sent when it arrives. Before, nothing was sent, the url arriving a moment later did not start them, and the element warned `[wcs/command-not-ready]` once.", "ja": "4.6 から、ファイルは url を待ち、url が来たときに送られる。以前は何も送られず、すぐ後に来た url でも始まらず、要素が `[wcs/command-not-ready]` で 1 回警告していた。" },
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). React 19 assigns props in the order written, before the element is in the document; no React developer expects attribute order to matter.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。React 19 は props を書いた順に、要素を文書に入れる前に当てる。React の開発者は属性の順が効くとは思わない。" }
+    },
+    {
+      "id": "post-uncloneable",
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Posts a value structured clone cannot copy through `<wcs-worker>` / `<wcs-broadcast>`: a Vue reactive array, or the docs' `toRaw()` of one whose rows are still proxies (`filter` and spreads over a reactive array hand back the proxies).", "ja": "構造化複製で写せない値を `<wcs-worker>` / `<wcs-broadcast>` で送る。Vue のリアクティブな配列や、文書のとおり `toRaw()` しても行がまだプロキシのもの（リアクティブな配列の `filter` やスプレッドはプロキシを返す）。" },
+      "effect": { "en": "`postMessage` throws `DataCloneError`: the message is lost, and the other tab or the worker never hears of it. It went to `error` only. Since 4.6 the element warns `[wcs/post-uncloneable]` once, naming the usual cause and a deep plain copy as the remedy.", "ja": "`postMessage` が `DataCloneError` を投げ、メッセージは失われる。ほかのタブやワーカーには届かない。`error` に入るだけだった。4.6 から、要素がよくある原因と深い素の写しという直し方を添えて `[wcs/post-uncloneable]` で 1 回警告する。" },
+      "evidence": [{ "file": "packages/worker/src/core/WorkerCore.ts", "text": "[wcs/post-uncloneable]" }, { "file": "packages/broadcast/src/core/BroadcastCore.ts", "text": "[wcs/post-uncloneable]" }],
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). The integration guide said `toRaw(state.payload)`; it now says a deep plain copy.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。統合の手引きは `toRaw(state.payload)` と書いていた。今は深い素の写しと書く。" }
+    },
+    {
+      "id": "object-input-as-attribute",
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Has a framework write an object input as an attribute: a React 19 prop on an element whose definition has not loaded (`files={files}` before `@wcstack/upload/auto`), or Vue's `.attr` (`:body.attr=\"payload\"`).", "ja": "オブジェクトの入力をフレームワークに属性として書かせる。定義が読み込まれる前の要素への React 19 の prop（`@wcstack/upload/auto` より前の `files={files}`）や、Vue の `.attr`（`:body.attr=\"payload\"`）。" },
+      "effect": { "en": "The element reads the input as a property only, so it receives nothing: `files=\"[object File]\"` uploads nothing, `body=\"[object Object]\"` sends no body. Since 4.6 the element warns `[wcs/input-as-attribute]` once when it connects.", "ja": "要素はその入力をプロパティでしか読まないので、何も受け取らない。`files=\"[object File]\"` は何も送らず、`body=\"[object Object]\"` は本文なしで送る。4.6 から、接続したときに要素が `[wcs/input-as-attribute]` で 1 回警告する。" },
+      "evidence": [{ "file": "protocol/upgrade-properties.ts", "text": "[wcs/input-as-attribute]" }, { "file": "packages/upload/src/protocol/upgradeProperties.ts", "text": "[wcs/input-as-attribute]" }],
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). Every I/O node runs the check, in the property upgrade its `connectedCallback` already does. An attribute a framework writes later, after the element connected, is not checked.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。I/O ノードはみな、`connectedCallback` がすでに行うプロパティの取り込み直しの中でこれを調べる。接続した後にフレームワークが書いた属性は調べない。" }
+    },
+    {
+      "id": "fetch-helper-undefined",
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Defines `<wcs-fetch>` without `<wcs-fetch-header>` / `<wcs-fetch-body>` on a page that defines the tags itself: an autoloader's wrapper module that re-exports `WcsFetch`, a scoped registry.", "ja": "タグを自分で定義するページで、`<wcs-fetch-header>` / `<wcs-fetch-body>` を定義せずに `<wcs-fetch>` を定義する。`WcsFetch` を出し直す autoloader の包みのモジュールや、スコープ付きのレジストリ。" },
+      "effect": { "en": "The helper tags stay plain elements, and their header (an `Authorization`) or body is left out of the request. The package exported no class for them before 4.6; since 4.6 it exports `WcsFetchHeader` / `WcsFetchBody`, and `<wcs-fetch>` warns `[wcs/fetch-helper-undefined]` once.", "ja": "補助のタグは素の要素のままで、そのヘッダー（`Authorization` など）や本文が要求から落ちる。4.6 より前、パッケージはそれらのクラスを出していなかった。4.6 から `WcsFetchHeader` / `WcsFetchBody` を出し、`<wcs-fetch>` が `[wcs/fetch-helper-undefined]` で 1 回警告する。" },
+      "evidence": [{ "file": "packages/fetch/src/components/Fetch.ts", "text": "[wcs/fetch-helper-undefined]" }],
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). The autoloader README now shows the wrapper that imports the package's `/auto`, which defines every tag of the package.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。autoloader の README は、パッケージの `/auto` を読み込む包みを示すようになった。`/auto` はパッケージのタグをすべて定義する。" }
+    },
+    {
+      "id": "trigger-from-framework-state",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Drives an I/O node's `trigger` from framework state (`trigger={refresh}` with `setRefresh(true)` on each click).", "ja": "I/O ノードの `trigger` をフレームワークの状態から動かす（クリックごとに `setRefresh(true)` する `trigger={refresh}`）。" },
+      "effect": { "en": "The first click runs the command and the element resets `trigger` to `false`. The framework still holds `true`, so the next `true` changes nothing and is never written: the second click does nothing.", "ja": "最初のクリックで命令が走り、要素は `trigger` を `false` に戻す。フレームワークはまだ `true` を持っているので、次の `true` は何も変えず、書かれない。2 回目のクリックは何もしない。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). `trigger` is a `@wcstack/state` idiom: state writes on every assignment. The element cannot tell a write the framework skipped. The integration guide now says to call the command (`el.fetch()`) from a framework.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。`trigger` は `@wcstack/state` の書き方で、state は代入のたびに書く。フレームワークが省いた書き込みは、要素からは見えない。統合の手引きは、フレームワークからは命令（`el.fetch()`）を呼ぶよう書くようになった。" }
+    },
+    {
+      "id": "jsx-colon-event-case",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Listens to a `wcs-*` event with a colon in React 19 JSX with a capital after `on`: `onWcs-fetch:response={fn}`.", "ja": "React 19 の JSX で、コロンを含む `wcs-*` のイベントを、`on` の後を大文字にして聞く: `onWcs-fetch:response={fn}`。" },
+      "effect": { "en": "It compiles. React 19 listens to the event named as written after `on` (`Wcs-fetch:response`), which is never dispatched: the handler never runs. The lower-case form (`onwcs-fetch:response`) works.", "ja": "コンパイルは通る。React 19 は `on` の後に書かれたとおりの名前のイベント（`Wcs-fetch:response`）を聞き、それは発火しないので、ハンドラは走らない。小文字の形（`onwcs-fetch:response`）は動く。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). The integration guide said JSX cannot write a colon event; it now says what React 19 does, and still recommends `addEventListener`.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。統合の手引きは、JSX ではコロンのイベントを書けないと書いていた。今は React 19 がどうするかを書き、引き続き `addEventListener` を勧める。" }
+    },
+    {
+      "id": "framework-input-changed-in-place",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Changes an object input in place from a framework: `files.push(file)` on the array passed as `files={files}`, `payload.rows.push(row)` on the object bound with `:body.prop`.", "ja": "フレームワークから、オブジェクトの入力をその場で変える。`files={files}` で渡した配列への `files.push(file)` や、`:body.prop` で束ねたオブジェクトへの `payload.rows.push(row)`。" },
+      "effect": { "en": "The framework writes nothing for the same reference, so the element is never told: no upload starts, and a `<wcs-fetch>` whose `body` was used up by the last request sends the next one without a body.", "ja": "同じ参照には、フレームワークは何も書かないので、要素には何も伝わらない。アップロードは始まらず、前の要求で `body` を使い切った `<wcs-fetch>` は、次の要求を本文なしで送る。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). The element cannot see a change inside an object it was given. The integration guide now says to assign a new object or array.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。渡されたオブジェクトの中の変化は、要素からは見えない。統合の手引きは、新しいオブジェクトや配列を代入するよう書くようになった。" }
+    },
+    {
+      "id": "event-output-through-values",
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Reads an `event`-semantics output (`<wcs-sse>` / `<wcs-ws>` / `<wcs-broadcast>` / `<wcs-worker>` `message`) through an adapter's `values` and `useEffect` / `watch`, as the `websocket-chat` React example did.", "ja": "`event` の意味の出力（`<wcs-sse>` / `<wcs-ws>` / `<wcs-broadcast>` / `<wcs-worker>` の `message`）を、アダプターの `values` と `useEffect` / `watch` で読む。`websocket-chat` の React の例がそうしていた。" },
+      "effect": { "en": "The framework batches the updates of a burst into one render and drops a value equal to the last one: of five messages in one chunk, or two equal pings, the effect sees one. The other occurrences are lost, with no error.", "ja": "フレームワークは続けて来た更新を 1 回の描画にまとめ、前と等しい値を捨てる。1 つのかたまりで来た 5 件のメッセージや、等しい 2 回の ping のうち、effect が見るのは 1 件。ほかは、エラーもなく失われる。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found by the fw-inventory seam app (React 19 and Vue 3 over the I/O nodes). The adapters keep the latest value by design; an occurrence surface is proposed to @wc-bindable. The integration guide and the example now listen to the event on the element.", "ja": "継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。アダプターは設計どおり最新の値を持つ。出来事を受ける口は @wc-bindable に提案した。統合の手引きと例は、要素のイベントを聞くようになった。" }
+    },
+    {
+      "id": "vue-dynamic-template-ref",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Binds `@wc-bindable/vue`'s template ref with `:ref=\"ref\"` in `<script setup>`, as the fetch, storage and websocket READMEs (and the adapter's own) showed.", "ja": "`<script setup>` で `@wc-bindable/vue` のテンプレート ref を `:ref=\"ref\"` で束ねる。fetch・storage・websocket の README（とアダプター自身のもの）がそう示していた。" },
+      "effect": { "en": "The template unwraps the ref, so `:ref` gets `null`: the adapter never binds, and `values` stays at its initial values, with no error.", "ja": "テンプレートが ref を剥がすので、`:ref` には `null` が渡る。アダプターは束縛せず、`values` は初期値のまま。エラーも無い。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found while checking the fw-inventory fixes. Neither the runtime nor the lint sees a Vue template's refs. The READMEs and the integration guide write `ref=\"name\"` now; the adapter's README is in the @wc-bindable issue.", "ja": "fw-inventory の直しを確かめる中で見つかった。Vue のテンプレートの ref は、実行時にも lint にも見えない。README と統合の手引きは `ref=\"名前\"` と書くようになった。アダプターの README は @wc-bindable の issue に入れた。" }
     }
   ],
   "uncounted": [

@@ -5,6 +5,11 @@ export type { IWcsTrustedTypesPolicy } from "./trustedTypes.js";
 export { FetchCore } from "./core/FetchCore.js";
 export { Fetch as WcsFetch } from "./components/Fetch.js";
 export { InfiniteScroll as WcsInfiniteScroll } from "./components/InfiniteScroll.js";
+// The helper tags too, so a page that defines the tags itself (an autoloader's wrapper module,
+// a scoped registry) can define <wcs-fetch-header> / <wcs-fetch-body>: without them a request
+// went out without its headers or body, and nothing said so (docs/seam-apps.md, fw-inventory).
+export { FetchHeader as WcsFetchHeader } from "./components/FetchHeader.js";
+export { FetchBody as WcsFetchBody } from "./components/FetchBody.js";
 
 export type {
   IWritableConfig, IWritableTagNames, WcsFetchHttpError, WcsFetchCoreValues, WcsFetchValues

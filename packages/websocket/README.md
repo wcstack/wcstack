@@ -587,16 +587,18 @@ import type { WcsWsValues } from "@wcstack/websocket";
 
 interface ChatMessage { type: string; content: string; }
 
-const { ref, values } = useWcBindable<HTMLElement, WcsWsValues<ChatMessage>>();
+const { ref: socket, values } = useWcBindable<HTMLElement, WcsWsValues<ChatMessage>>();
 </script>
 
 <template>
-  <wcs-ws :ref="ref" url="wss://example.com/ws" auto-reconnect />
+  <wcs-ws ref="socket" url="wss://example.com/ws" auto-reconnect />
   <p v-if="values.loading">Connecting...</p>
   <p v-else-if="values.connected">Connected</p>
   <pre v-if="values.message">{{ values.message }}</pre>
 </template>
 ```
+
+Name the template ref statically (`ref="socket"`): in `<script setup>` a `:ref="…"` binding gets the ref unwrapped, `null`, and the adapter never binds.
 
 ### Svelte
 

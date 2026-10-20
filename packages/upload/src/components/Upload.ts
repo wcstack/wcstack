@@ -34,9 +34,10 @@ export class WcsUpload extends HTMLElement {
       { name: "trigger" },
     ],
   };
-  // `url` を観測するのは FetchCore のシェルと構造を揃えるためだが、upload は
-  // url 変更だけでは送信できない（files が必須）。そのため attributeChangedCallback は
-  // 意図的に何もしない。url 変更で自動送信しないことは仕様であり、テストで担保している。
+  // `url` を観測するのは、url の無いうちに自動送信の files を受けたとき、url が来たらその
+  // files を送るため（4.5 までは url を待たずに黙って何もしなかった。JSX の props や data-wcs の
+  // 束縛は書いた順に当たるので、files を url より前に書くと送られなかった — docs/seam-apps.md、
+  // state-field-report と fw-inventory）。それ以外の url の変更では送らない。
   static get observedAttributes(): string[] { return ["url"]; }
 
   private _core: UploadCore;
@@ -45,6 +46,8 @@ export class WcsUpload extends HTMLElement {
   // The reasons `[wcs/command-not-ready]` was said for, once each per element
   // (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
   private _told: Set<string> | null = null;
+  // automatic-mode files assigned while there was no url: sent when the url arrives
+  private _waitingForUrl = false;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
 
@@ -241,10 +244,9 @@ export class WcsUpload extends HTMLElement {
       detail: files,
       bubbles: true,
     }));
-    if (!this.manual && files && files.length > 0) {
-      if (this.url) this.upload();
-      else this._warnNotReady("files were assigned while there is no url");
-    }
+    // files that arrive before the url wait for it (automatic mode only)
+    this._waitingForUrl = !this.manual && !!files && files.length > 0 && !this.url;
+    if (!this.manual && files && files.length > 0 && this.url) this.upload();
   }
 
   // --- Validation ---
@@ -336,24 +338,29 @@ export class WcsUpload extends HTMLElement {
   }
 
   // A refused upload sent nothing and said nothing (no `error`, by design): a `trigger`
-  // written before `url` / `files` in one `data-wcs` (bindings apply in the order
-  // written), a retry after the files were used up, files picked before the url is known.
+  // written before `url` / `files` (`data-wcs` bindings and a framework's props are applied in
+  // the order written), a retry after the files were used up.
   private _warnNotReady(reason: string): void {
     if (this._told?.has(reason)) return;
     (this._told ??= new Set()).add(reason);
     console.warn(
       `[@wcstack/upload] [wcs/command-not-ready] The upload was refused: ${reason}, so nothing is sent. ` +
-        "Write url and files before trigger (bindings apply in the order written), and assign files again " +
-        "for each retry: an upload uses them up. (Said once per element and reason.)",
+        "Write url and files before trigger (data-wcs bindings and a framework's props are applied in the order " +
+        "written), and assign files again for each retry: an upload uses them up. (Said once per element and reason.)",
       this,
     );
   }
 
   // --- Lifecycle ---
 
-  attributeChangedCallback(_name: string, _oldValue: string | null, _newValue: string | null): void {
-    // 意図的に空。url 変更ではアップロードを自動実行しない（files が必要なため）。
-    // observedAttributes のコメント参照。
+  attributeChangedCallback(_name: string, _oldValue: string | null, newValue: string | null): void {
+    // url だけの変更では送らない。url の無いうちに受けた自動送信の files は、url が来たら送る。
+    // 接続は問わない: React 19 は要素を文書に入れる前に props を当てる（files の setter も、url が
+    // あれば接続の前に送る）。
+    if (!this._waitingForUrl || !newValue || this.manual) return;
+    // (waiting means files were assigned and not replaced since: the setter resets it)
+    this._waitingForUrl = false;
+    this.upload();
   }
 
   connectedCallback(): void {

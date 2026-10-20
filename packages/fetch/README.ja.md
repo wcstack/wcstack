@@ -617,6 +617,8 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 </wcs-fetch>
 ```
 
+**タグを自分で定義するとき。** `@wcstack/fetch/auto` は 4 つのタグをすべて定義します。タグを自分で定義するページ — autoloader の包みのモジュールや、スコープ付きのレジストリ — は、補助のタグも定義する必要があります。4.6（未リリース）から、パッケージはそのクラス `WcsFetchHeader` と `WcsFetchBody` を、`WcsFetch` と `WcsInfiniteScroll` と並べて出します。定義されていない `<wcs-fetch-header>` や `<wcs-fetch-body>` は素の要素で、そのヘッダーや本文は送られません。そのとき `<wcs-fetch>` が 1 回警告します（`[wcs/fetch-helper-undefined]`）。autoloader では、`/auto` を読み込む包みがタグをまとめて定義します（[autoloader の README](../autoloader/README.ja.md#wcstack-自身のタグを読み込む)）。
+
 ## wc-bindable-protocol
 
 `FetchCore` と `<wcs-fetch>` はどちらも wc-bindable-protocol に準拠しており、プロトコル対応の任意のフレームワークやコンポーネントと相互運用できます。
@@ -780,11 +782,11 @@ import type { WcsFetchValues } from "@wcstack/fetch";
 
 interface User { id: number; name: string; }
 
-const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
+const { ref: users, values } = useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
 </script>
 
 <template>
-  <wcs-fetch :ref="ref" url="/api/users" />
+  <wcs-fetch ref="users" url="/api/users" />
   <p v-if="values.loading">読み込み中...</p>
   <p v-else-if="values.error">エラー</p>
   <ul v-else>
@@ -792,6 +794,8 @@ const { ref, values } = useWcBindable<HTMLElement, WcsFetchValues<User[]>>();
   </ul>
 </template>
 ```
+
+テンプレート ref は静的に名前で書きます（`ref="users"`）。`<script setup>` の `:ref="…"` には ref が剥がされた値（`null`）が渡り、アダプターは束縛しません。
 
 ### Svelte
 

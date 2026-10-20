@@ -259,6 +259,7 @@ HTML、JS、または `@wcstack/state` バインディングからストレー�
 | プロパティ | 型 | 説明 |
 |------------|------|------|
 | `key` | `string` | ストレージキー |
+| `storageKey` | `string` | React と Vue のための、`key` の別名（4.6（未リリース）から。[フレームワーク連携](#フレームワーク連携) を参照） |
 | `type` | `"local" \| "session"` | ストレージタイプ |
 | `value` | `any` | 設定すると自動保存（`manual` でない場合） |
 | `trigger` | `boolean` | 単方向の保存トリガー |
@@ -392,6 +393,7 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 | 属性 | 型 | デフォルト | 説明 |
 |------|------|------------|------|
 | `key` | `string` | — | ストレージキー |
+| `storage-key` | `string` | — | React と Vue が触らない名前のストレージキー（4.6（未リリース）から）。両方書いたときは `key` が勝つ |
 | `type` | `"local" \| "session"` | `local` | ストレージタイプ |
 | `manual` | `boolean` | `false` | 自動読み込み・自動保存を無効化 |
 
@@ -462,6 +464,7 @@ static wcBindable = {
   ],
   inputs: [
     { name: "key" },
+    { name: "storageKey" },
     { name: "type" },
     { name: "value" },
     { name: "manual" },
@@ -470,7 +473,7 @@ static wcBindable = {
 };
 ```
 
-Shell の inputs は意図的に `attribute` ヒントを持ちません: `key` / `type` / `manual` のセッターは既に各属性へ反映するため、`inputs[].attribute` を反映するバインディングシステムだと属性を二重に設定してしまうからです。
+Shell の inputs は意図的に `attribute` ヒントを持ちません: `key` / `storageKey` / `type` / `manual` のセッターは既に各属性へ反映するため、`inputs[].attribute` を反映するバインディングシステムだと属性を二重に設定してしまうからです。
 
 ## TypeScript 型
 
@@ -519,6 +522,8 @@ interface WcsStorageValues<T = unknown> extends WcsStorageCoreValues<T> {
 
 `<wcs-storage>` は CSBC + `wc-bindable-protocol` なので、`@wc-bindable/*` の薄いアダプタを通じて任意のフレームワークで動作します。
 
+**フレームワークのテンプレートでは、`key` でなく `storage-key` を書いてください**（4.6（未リリース）から）。React と Vue は `key` を自分のものとして取り、要素に渡しません。JSX や Vue のテンプレートの `<wcs-storage key="…">` には key が無く、何も読み込まず、何も保存しません。要素は最初の保存のときに `[wcs/command-not-ready]` で警告するようになりました。`storage-key`（プロパティは `storageKey`）は同じ入力で、以下の例はどのフレームワークでもこれを使います。4.5 以前では、ref を通してプロパティを設定してください: `el.key = "app-settings"`。
+
 ### React
 
 ```tsx
@@ -533,13 +538,38 @@ function SettingsPanel() {
 
   return (
     <>
-      <wcs-storage ref={ref} key="app-settings" />
+      <wcs-storage ref={ref} storage-key="app-settings" />
       {loading && <p>読み込み中...</p>}
       {settings && <p>テーマ: {settings.theme}</p>}
     </>
   );
 }
 ```
+
+**React から保存する。** 描画の中で作ったオブジェクトを `value` の prop で渡さないでください（`value={{ q, page }}`）。描画のたびに新しいオブジェクトを書き、書くたびに保存して `value` を知らせ、アダプターの更新がまた描画します。React は "Maximum update depth exceeded" で止まります。最初の描画は、空の既定値を保存済みの値の上に書いてしまいもします。保存済みの値を一度読み、その後はフィールドが変わったときだけ書いてください:
+
+```tsx
+type StorageElement = HTMLElement & { value: Filters | null };
+
+function FilterStore({ filters, onRestore }: { filters: Filters; onRestore: (f: Filters) => void }) {
+  const el = useRef<StorageElement | null>(null);
+  const [restored, setRestored] = useState(false);
+  // 要素は接続したときに読み込み、ref はその後に走る: 保存済みの値を一度読む
+  const ref = useCallback((node: StorageElement | null) => {
+    el.current = node;
+    if (node === null) return;
+    if (node.value) onRestore(node.value);
+    setRestored(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // 読んだ後に、フィールドが変わったときだけ保存する: 依存はオブジェクトでなくフィールド
+  useEffect(() => {
+    if (restored && el.current) el.current.value = { q: filters.q, page: filters.page };
+  }, [restored, filters.q, filters.page]);
+  return <wcs-storage ref={ref} storage-key="inv-filters" />;
+}
+```
+
+`@wcstack/state` では `value#init=element` が同じことをします（[§5](#5-load-before-bind-initelement)）。
 
 ### Vue
 
@@ -550,15 +580,17 @@ import type { WcsStorageValues } from "@wcstack/storage";
 
 interface Settings { theme: string; lang: string; }
 
-const { ref, values } = useWcBindable<HTMLElement, WcsStorageValues<Settings>>();
+const { ref: settings, values } = useWcBindable<HTMLElement, WcsStorageValues<Settings>>();
 </script>
 
 <template>
-  <wcs-storage :ref="ref" key="app-settings" />
+  <wcs-storage ref="settings" storage-key="app-settings" />
   <p v-if="values.loading">読み込み中...</p>
   <p v-else-if="values.value">テーマ: {{ values.value.theme }}</p>
 </template>
 ```
+
+テンプレート ref は静的に名前で書きます（`ref="settings"`）。`<script setup>` の `:ref="…"` には ref が剥がされた値（`null`）が渡り、アダプターは束縛しません。
 
 ### Svelte
 
@@ -570,7 +602,7 @@ let settings = $state(null);
 let loading = $state(false);
 </script>
 
-<wcs-storage key="app-settings"
+<wcs-storage storage-key="app-settings"
   use:wcBindable={{ onUpdate: (name, v) => {
     if (name === "value") settings = v;
     if (name === "loading") loading = v;
@@ -596,7 +628,7 @@ function SettingsPanel() {
 
   return (
     <>
-      <wcs-storage ref={directive} key="app-settings" />
+      <wcs-storage ref={directive} storage-key="app-settings" />
       <Show when={!values.loading} fallback={<p>読み込み中...</p>}>
         <p>テーマ: {values.value?.theme}</p>
       </Show>

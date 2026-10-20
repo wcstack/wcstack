@@ -152,6 +152,28 @@ export default class UiButton extends HTMLElement {
 }
 ```
 
+### Loading wcstack's own tags
+
+The wcstack packages export their classes by name, not as `default`, and some packages define more than one tag: `<wcs-fetch>` comes with `<wcs-fetch-header>` and `<wcs-fetch-body>`. Give each package one wrapper file that imports the package's `/auto` entry, which defines every tag of the package, and hands the autoloader the class it defined:
+
+```javascript
+// components/wcs/fetch.js: <wcs-fetch>, and with it <wcs-fetch-header> / <wcs-fetch-body>
+import "https://esm.run/@wcstack/fetch/auto";
+export default customElements.get("wcs-fetch");
+```
+
+```json
+{
+  "imports": {
+    "@components/wcs/": "./components/wcs/"
+  }
+}
+```
+
+The autoloader loads one tag after another and skips a tag that is already defined, so `<wcs-fetch-header>` needs no file of its own. The file is named after the tag, not the package: `<wcs-ws>` (`@wcstack/websocket`) is `ws.js`, `<wcs-geo>` (`@wcstack/geolocation`) is `geo.js`.
+
+A wrapper that re-exports one class (`export { WcsFetch as default } from "https://esm.run/@wcstack/fetch"`) leaves the helper tags undefined, and the autoloader then looks for `fetch-header.js`. `<wcs-fetch>` sends its request without their header or body; since 4.6 (not released yet) it warns `[wcs/fetch-helper-undefined]`.
+
 ## Customized Built-in Elements (`is` attribute)
 
 The autoloader detects customized built-in elements using the `is` attribute:

@@ -259,6 +259,7 @@ Controls storage operations from HTML, JS, or `@wcstack/state` bindings:
 | Property | Type | Description |
 |----------|------|-------------|
 | `key` | `string` | Storage key |
+| `storageKey` | `string` | `key` under another name, for React and Vue (since 4.6 (not released yet); see [Framework Integration](#framework-integration)) |
 | `type` | `"local" \| "session"` | Storage type |
 | `value` | `any` | Setting this auto-saves (when not `manual`) |
 | `trigger` | `boolean` | One-way save trigger |
@@ -392,6 +393,7 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
 | Attribute | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `key` | `string` | — | Storage key |
+| `storage-key` | `string` | — | The storage key under a name React and Vue leave alone (since 4.6 (not released yet)); `key` wins when both are written |
 | `type` | `"local" \| "session"` | `local` | Storage type |
 | `manual` | `boolean` | `false` | Disables auto-load and auto-save |
 
@@ -464,6 +466,7 @@ static wcBindable = {
   ],
   inputs: [
     { name: "key" },
+    { name: "storageKey" },
     { name: "type" },
     { name: "value" },
     { name: "manual" },
@@ -472,7 +475,7 @@ static wcBindable = {
 };
 ```
 
-The Shell's inputs intentionally carry no `attribute` hint: the `key` / `type` / `manual` setters already reflect to their attributes, so a binding system that mirrors `inputs[].attribute` would set the attribute twice.
+The Shell's inputs intentionally carry no `attribute` hint: the `key` / `storageKey` / `type` / `manual` setters already reflect to their attributes, so a binding system that mirrors `inputs[].attribute` would set the attribute twice.
 
 ## TypeScript Types
 
@@ -521,6 +524,8 @@ Persistence looks just like any other state update.
 
 `<wcs-storage>` is CSBC + `wc-bindable-protocol`, so it works in any framework via thin `@wc-bindable/*` adapters.
 
+**Write `storage-key` in a framework's template, not `key`** (since 4.6 (not released yet)). React and Vue keep `key` for themselves and never hand it to the element: `<wcs-storage key="…">` in JSX or a Vue template has no key, so it loads and stores nothing, and the element now warns `[wcs/command-not-ready]` at its first save. `storage-key` (the property `storageKey`) is the same input; the examples below use it in every framework. On 4.5 and earlier, set the property through a ref: `el.key = "app-settings"`.
+
 ### React
 
 ```tsx
@@ -535,13 +540,38 @@ function SettingsPanel() {
 
   return (
     <>
-      <wcs-storage ref={ref} key="app-settings" />
+      <wcs-storage ref={ref} storage-key="app-settings" />
       {loading && <p>Loading...</p>}
       {settings && <p>Theme: {settings.theme}</p>}
     </>
   );
 }
 ```
+
+**Saving from React.** Do not pass `value` as a prop built in the render (`value={{ q, page }}`). Each render writes a new object, each write saves and announces `value`, and the adapter's update renders again: React stops with "Maximum update depth exceeded". The first render would also write the empty defaults over what was stored. Read the stored value once, then write only when a field changed:
+
+```tsx
+type StorageElement = HTMLElement & { value: Filters | null };
+
+function FilterStore({ filters, onRestore }: { filters: Filters; onRestore: (f: Filters) => void }) {
+  const el = useRef<StorageElement | null>(null);
+  const [restored, setRestored] = useState(false);
+  // The element loads when it connects, and its ref runs after that: read the stored value once.
+  const ref = useCallback((node: StorageElement | null) => {
+    el.current = node;
+    if (node === null) return;
+    if (node.value) onRestore(node.value);
+    setRestored(true);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Save after the read, and only when a field changed: the dependencies are the fields, not an object.
+  useEffect(() => {
+    if (restored && el.current) el.current.value = { q: filters.q, page: filters.page };
+  }, [restored, filters.q, filters.page]);
+  return <wcs-storage ref={ref} storage-key="inv-filters" />;
+}
+```
+
+`@wcstack/state` does the same with `value#init=element` ([§5](#5-load-before-bind-initelement)).
 
 ### Vue
 
@@ -552,15 +582,17 @@ import type { WcsStorageValues } from "@wcstack/storage";
 
 interface Settings { theme: string; lang: string; }
 
-const { ref, values } = useWcBindable<HTMLElement, WcsStorageValues<Settings>>();
+const { ref: settings, values } = useWcBindable<HTMLElement, WcsStorageValues<Settings>>();
 </script>
 
 <template>
-  <wcs-storage :ref="ref" key="app-settings" />
+  <wcs-storage ref="settings" storage-key="app-settings" />
   <p v-if="values.loading">Loading...</p>
   <p v-else-if="values.value">Theme: {{ values.value.theme }}</p>
 </template>
 ```
+
+Name the template ref statically (`ref="settings"`): in `<script setup>` a `:ref="…"` binding gets the ref unwrapped, `null`, and the adapter never binds.
 
 ### Svelte
 
@@ -572,7 +604,7 @@ let settings = $state(null);
 let loading = $state(false);
 </script>
 
-<wcs-storage key="app-settings"
+<wcs-storage storage-key="app-settings"
   use:wcBindable={{ onUpdate: (name, v) => {
     if (name === "value") settings = v;
     if (name === "loading") loading = v;
@@ -598,7 +630,7 @@ function SettingsPanel() {
 
   return (
     <>
-      <wcs-storage ref={directive} key="app-settings" />
+      <wcs-storage ref={directive} storage-key="app-settings" />
       <Show when={!values.loading} fallback={<p>Loading...</p>}>
         <p>Theme: {values.value?.theme}</p>
       </Show>

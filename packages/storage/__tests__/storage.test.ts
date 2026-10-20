@@ -105,7 +105,7 @@ describe("Storage", () => {
 
   it("wcBindable inputsがShellの設定可能サーフェスを宣言している", () => {
     const inputs = Storage.wcBindable.inputs!;
-    expect(inputs.map((i) => i.name)).toEqual(["key", "type", "value", "manual", "trigger"]);
+    expect(inputs.map((i) => i.name)).toEqual(["key", "storageKey", "type", "value", "manual", "trigger"]);
   });
 
   it("wcBindable inputsはattributeヒントを持たない（setterが自己反映するため二重設定を避ける）", () => {
@@ -135,6 +135,65 @@ describe("Storage", () => {
     el.key = "my-key";
     expect(el.key).toBe("my-key");
     expect(el.getAttribute("key")).toBe("my-key");
+  });
+
+  describe("storage-key（React / Vue が key を自分のものにするための別名）", () => {
+    it("storage-key 属性と storageKey プロパティは key と同じ入力になる", () => {
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("storage-key", "alias-key");
+      expect(el.key).toBe("alias-key");
+      expect(el.storageKey).toBe("alias-key");
+      el.storageKey = "other";
+      expect(el.getAttribute("storage-key")).toBe("other");
+      el.storageKey = null;
+      expect(el.hasAttribute("storage-key")).toBe(false);
+      expect(el.key).toBe("");
+    });
+
+    it("storage-key だけで、接続時に読み込み、後からの変更でも読み込む", () => {
+      localStorage.setItem("alias-a", '{"a":1}');
+      localStorage.setItem("alias-b", '{"b":2}');
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("storage-key", "alias-a");
+      document.body.appendChild(el);
+      expect(el.value).toEqual({ a: 1 });
+      el.setAttribute("storage-key", "alias-b");
+      expect(el.value).toEqual({ b: 2 });
+      el.remove();
+    });
+
+    it("key と両方あるときは key が勝ち、storage-key の変更では読み直さない", () => {
+      localStorage.setItem("both-key", '{"k":1}');
+      localStorage.setItem("both-alias", '{"s":1}');
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("key", "both-key");
+      el.setAttribute("storage-key", "both-alias");
+      document.body.appendChild(el);
+      expect(el.key).toBe("both-key");
+      expect(el.value).toEqual({ k: 1 });
+      el.setAttribute("storage-key", "both-alias-2");
+      expect(el.value).toEqual({ k: 1 });
+      el.remove();
+    });
+
+    it("key を外すと storage-key に戻って読み込む。空の key は無いのと同じ", () => {
+      localStorage.setItem("fallback-key", '{"k":1}');
+      localStorage.setItem("fallback-alias", '{"s":1}');
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("key", "fallback-key");
+      el.setAttribute("storage-key", "fallback-alias");
+      document.body.appendChild(el);
+      expect(el.value).toEqual({ k: 1 });
+      el.removeAttribute("key");
+      expect(el.key).toBe("fallback-alias");
+      expect(el.value).toEqual({ s: 1 });
+      // key="" は無いのと同じ: storage-key の変更で読み直す
+      el.setAttribute("key", "");
+      localStorage.setItem("fallback-alias-2", '{"s":2}');
+      el.setAttribute("storage-key", "fallback-alias-2");
+      expect(el.value).toEqual({ s: 2 });
+      el.remove();
+    });
   });
 
   it("type属性のデフォルトはlocal", () => {

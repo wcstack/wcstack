@@ -23,13 +23,14 @@ export class Storage extends HTMLElement {
     // are inherited unchanged from the Core via the spread above.
     inputs: [
       { name: "key" },
+      { name: "storageKey" },
       { name: "type" },
       { name: "value" },
       { name: "manual" },
       { name: "trigger" },
     ],
   };
-  static get observedAttributes(): string[] { return ["key", "type"]; }
+  static get observedAttributes(): string[] { return ["key", "storage-key", "type"]; }
 
   private _core: StorageCore;
   private _trigger: boolean = false;
@@ -109,11 +110,23 @@ export class Storage extends HTMLElement {
   // started with (wc-bindable producer guidance P1; React 19 and a direct
   // assignment deliver it, @wcstack/state does not).
   get key(): string {
-    return this.getAttribute("key") || "";
+    return this.getAttribute("key") || this.getAttribute("storage-key") || "";
   }
 
   set key(value: string | null | undefined) {
     reflectAttribute(this, "key", value);
+  }
+
+  // `key` under another name. React and Vue take `key` for themselves and never hand it to
+  // the element, so `<wcs-storage key="…">` in JSX or a Vue template stored nothing, with no
+  // error (docs/seam-apps.md, fw-inventory). `storage-key` reaches the element in both;
+  // `key` wins when both are written.
+  get storageKey(): string {
+    return this.key;
+  }
+
+  set storageKey(value: string | null | undefined) {
+    reflectAttribute(this, "storage-key", value);
   }
 
   get type(): StorageType {
@@ -243,16 +256,20 @@ export class Storage extends HTMLElement {
     this._core.remove();
   }
 
-  attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void {
+  attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void {
     if (!this.isConnected) return;
-    if (name === "key") {
+    // `storage-key` is the same input under a name the frameworks leave alone; `key` wins
+    // when both are written (the getter), so a change to the other one changes nothing.
+    if (name === "storage-key" && this.getAttribute("key")) return;
+    if (name === "key" || name === "storage-key") {
       // Always keep the Core's key in sync with the attribute, regardless of
       // mode or whether the new value is empty. The cross-tab `storage` listener
       // compares `e.key !== _core.key`, so a stale Core key would make sync watch
       // the wrong (old/empty) key after a runtime key change. load() (which also
-      // syncs the Core) only runs for non-manual mode with a non-empty key.
+      // syncs the Core) only runs for non-manual mode with a non-empty key — the
+      // key now in effect, so removing `key` falls back to `storage-key`.
       this._syncCore();
-      if (newValue && !this.manual) {
+      if (this.key && !this.manual) {
         this.load();
       }
     }
