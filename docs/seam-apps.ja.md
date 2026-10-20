@@ -282,7 +282,7 @@
 | 実行時の欠陥 | fetch: `<wcs-fetch-header>` / `<wcs-fetch-body>` のクラスが無く、autoloader の包みはそれを定義できず、要求はヘッダーなしで出ていた | 直した: `WcsFetchHeader` / `WcsFetchBody` を出し、`[wcs/fetch-helper-undefined]`。autoloader の README が `/auto` を読み込む包みを示す |
 | lint の穴 | `wcs-validate` は `.vue` / `.tsx` のファイルにも、`<div id="root">` だけのページにも "0 error(s)" と言い、skill の完了の門は何も検査せずに通っていた | 直した: 件数の後に `not read:` / `nothing to check:`。lint の README と手引きが、framework のアプリはその外だと書く |
 | 文書の穴 | 手引きの `toRaw()`。「JSX ではコロンのイベントを書けない」（コンパイルは通り、`onWcs-…` は発火しない）。`event` の出力をアダプターの values で読むと出来事を落とす — `websocket-chat` の React の例がそうだった（続けて来た 5 件のうち 2 件）。フレームワークの状態からの `trigger` は 1 回しか走らない。props の順。その場で変えたオブジェクトの入力。`key` による付け直しは接続し直す。外した prop はストリームを閉じない。React から更新の輪なしに `<wcs-storage>` へ保存する。Vite の optimize-deps の再読み込みと、死んだ SSE の応答を開いたままにする proxy | 直した: [framework-adapter-integration.ja.md](./framework-adapter-integration.ja.md) §2〜§10、storage の README、例 |
-| アダプター | `@wc-bindable/react` / `vue`: `values` は最後の値を持つので、続けて来たものや繰り返した値は 1 つの出来事になる。コールバックの ref の横に要素が無く、README は入力にも命令にも触れない。npm の README がパッケージの外のファイルへリンクする | @wc-bindable のリポジトリへ: 提案を添えた issue（[spec-proposal-adapter-occurrences.md](./spec-proposal-adapter-occurrences.md)） |
+| アダプター | `@wc-bindable/react` / `vue`: `values` は最後の値を持つので、続けて来たものや繰り返した値は 1 つの出来事になる。コールバックの ref の横に要素が無く、README は入力にも命令にも触れない。npm の README がパッケージの外のファイルへリンクする | [wc-bindable-protocol#42](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/42) として提案した（[spec-proposal-adapter-occurrences.md](./spec-proposal-adapter-occurrences.md)） |
 | 残り | 復元だけする `<wcs-storage>` は、key が無くても今も何も言わない: key の無いまま接続した要素は、state が `key:` の束縛を当てる前の姿でもある。タグの JSX 宣言。死んだ SSE の応答にページが気づけるハートビート | 記録した |
 
 上の 3 つの設計の問いは、2026-10-20 に著者が推奨どおりに決めた（[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.4）。
@@ -291,4 +291,4 @@
 
 | 種類 | 発見 | 結果 |
 |---|---|---|
-| 文書の穴 | storage・fetch・websocket の README の Vue の例 — と `@wc-bindable/vue` 自身のもの — は `:ref="ref"` で束ねていた。`<script setup>` ではテンプレートが ref を剥がすので、`:ref` には `null` が渡る: アダプターは束縛せず、`values` は何も言わずに空のままだった（著者自身のコードは `ref="名前"` だった） | 3 つの README（静的な `ref="…"`）と手引きを直した。@wc-bindable への提案（§3）に入れた |
+| 文書の穴 | storage・fetch・websocket の README の Vue の例 — と `@wc-bindable/vue` 自身のもの — は `:ref="ref"` で束ねていた。`<script setup>` ではテンプレートが ref を剥がすので、`:ref` には `null` が渡る: アダプターは束縛せず、`values` は何も言わずに空のままだった（著者自身のコードは `ref="名前"` だった） | 3 つの README（静的な `ref="…"`）と手引きを直した。[wc-bindable-protocol#42](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/42)（§3）に入れた |

@@ -8,7 +8,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
-From the `fw-inventory` seam app: an inventory app written with React 19 and Vue 3 over the I/O nodes, through the `@wc-bindable` adapters ([docs/seam-apps.md](./docs/seam-apps.md)). The adapters' own findings go to the @wc-bindable repository as a proposal ([docs/spec-proposal-adapter-occurrences.md](./docs/spec-proposal-adapter-occurrences.md), ja).
+From the `fw-inventory` seam app: an inventory app written with React 19 and Vue 3 over the I/O nodes, through the `@wc-bindable` adapters ([docs/seam-apps.md](./docs/seam-apps.md)). The adapters' own findings are proposed to the @wc-bindable repository as [wc-bindable-protocol#42](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/42) ([docs/spec-proposal-adapter-occurrences.md](./docs/spec-proposal-adapter-occurrences.md), ja).
 
 ### Upgrading
 

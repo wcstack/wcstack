@@ -2,7 +2,7 @@
 
 - **提案先**: wc-bindable-protocol リポジトリ（`packages/react`・`packages/vue` のアダプターと、その README）
 - **提案元の文脈**: wcstack の継ぎ目アプリ fw-inventory。React 19.3 と Vue 3.5 のアプリから、@wcstack/* 4.5.0 の I/O ノードを `@wc-bindable/react` / `vue` 0.10.0 で使った（[seam-apps.md](./seam-apps.md)）
-- **状態**: 上流に issue として提案する（2026-10-20、英語）。wcstack 側でできること — 手引き・README・例の直し — は 4.6 に入れた（§6）
+- **状態**: 上流に [wc-bindable-protocol#42](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/42) として提案した（2026-10-21、英語）。wcstack 側でできること — 手引き・README・例の直し — は 4.6 に入れた（§6）
 - **TL;DR**:
   1. `semantics: "event"` の出力（`message` など）は `values` に最後の値しか残らない。React は続けて来た更新を 1 回の描画にまとめ、等しい値では描画しない。Vue も等しい値では反応しない。core の `bind()` は出来事ごとに呼び返すのに、アダプターの先で出来事が落ちる。**出来事ごとに呼ばれるコールバック**を hook のオプションに足すことを提案する（追加的）
   2. React の hook は ref をコールバックで返し、要素を返さない。命令（`fetch()`）やオブジェクトの入力（`files`）のために、利用者は ref を合成するコールバックを毎回書いている。**要素を 3 つ目の戻り値として返す**ことを提案する（追加的）
