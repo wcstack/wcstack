@@ -37,7 +37,8 @@ From the `fw-inventory` seam app: an inventory app written with React 19 and Vue
 - `@wcstack/autoloader` README: loading wcstack's own tags, one wrapper per package that imports its `/auto`.
 - The fetch, storage and websocket READMEs: the Vue examples name the template ref statically (`ref="users"`). The `:ref="ref"` they showed gets the unwrapped ref, `null`, in `<script setup>`, so the adapter never bound and `values` stayed empty.
 - `examples/websocket-chat`: the React and Vue variants listen to `wcs-ws:message` on the element; reading it through the adapter's values loses messages that arrive together.
-- The mistake catalogue has ten more entries ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md)).
+- `examples/fw-inventory`: the seam app, with its e2e spec. It is a Vite app; `e2e.yml` builds it with `WCS_LOCAL=1` over the dists rebuilt from src. Landing it found that following another tab by applying the adapter's `value` back to React state undoes the typing in between, and loops; the storage README's "Following other tabs" listens to `wcs-storage:value-changed` instead.
+- The mistake catalogue has eleven more entries ([docs/mistake-catalogue.md](./docs/mistake-catalogue.md)).
 
 ## [4.5.0] — 2026-10-20
 

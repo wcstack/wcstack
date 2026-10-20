@@ -86,7 +86,7 @@
 | `signals-shop` — チュートリアルのショップを `@wcstack/signals` で | signals × router、wc-bindable の橋を通した signals × `<wcs-fetch>` / `<wcs-storage>` | チュートリアルと同じ（再読み込み、ディープリンク、戻る、2 つ目のタブ） | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-14）。発見は下 |
 | `ssr-news` — `@wcstack/server` で描くニュースサイト: 記事の一覧、コメント付きの記事のページ、読者の設定、セクションのレイアウト、本番の形（CSP、SRI、HTML のキャッシュ） | `@wcstack/server` × router × state、サーバーとハイドレーションでの `<wcs-fetch>`、SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>`、クライアントの版 × サーバーの版 | ディープリンクと再読み込み; JavaScript 無し; 遅いクライアントのバンドル（ハイドレーション前の入力）; サーバーの再起動; 別の minor のクライアント; 投稿の後の HTML のキャッシュ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-18）。発見は下 |
 | `state-field-report` — スマートフォンからの現場報告: クリップ・位置・口述のメモを、送信待ちを通して送る。本番の形で | `<wcs-permission>` × 取りに行く側（camera・geo・listen・notify）、`<wcs-camera>` × `<wcs-recorder>` × `<wcs-upload>`、ルートのノード × I/O ノードの切断、`<wcs-storage>` × 値とハンドルの混ざった下書き、`Permissions-Policy` / `<iframe>` × デバイスの要素すべて | 拒否してから許可する、録画中の権限の取り消し、録画中にタブを隠す、撮影のページを離れて戻る、アップロード中の再読み込み、アップロード中のオフライン、422 / 413 / 415 / 500、2 つのタブ、`<iframe>` の中のアプリ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-20）。発見は下 |
-| `fw-inventory` — 店の在庫の道具: React 19 の管理画面と Vue 3 の倉庫のパネル。`@wcstack/state` は使わない | I/O ノード × `@wc-bindable/react` / `vue`、React 19 の props × 要素の入力、フレームワークのリアクティビティ × structured clone、`key` × 要素、遅れた定義（autoloader・CDN・動的 import）× アダプター、Vite の開発サーバー × SSE | 続けて届くイベント、開発の proxy の背後でのサーバーの再起動、保存したフィルタでの再読み込み、片方が React でもう片方が Vue の 2 つのタブ、深いリンクと素早い移動、アップロードの取り消し・再送・拒否、最初の描画より後の定義、StrictMode、HMR | 2026-10-20 に作った。発見は下 |
+| `fw-inventory` — 店の在庫の道具: React 19 の管理画面と Vue 3 の倉庫のパネル。`@wcstack/state` は使わない | I/O ノード × `@wc-bindable/react` / `vue`、React 19 の props × 要素の入力、フレームワークのリアクティビティ × structured clone、`key` × 要素、遅れた定義（autoloader・CDN・動的 import）× アダプター、Vite の開発サーバー × SSE | 続けて届くイベント、開発の proxy の背後でのサーバーの再起動、保存したフィルタでの再読み込み、片方が React でもう片方が Vue の 2 つのタブ、深いリンクと素早い移動、アップロードの取り消し・再送・拒否、最初の描画より後の定義、StrictMode、HMR | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-21）。発見は下 |
 
 ### router-auth（2026-10-13）
 
@@ -292,3 +292,11 @@
 | 種類 | 発見 | 結果 |
 |---|---|---|
 | 文書の穴 | storage・fetch・websocket の README の Vue の例 — と `@wc-bindable/vue` 自身のもの — は `:ref="ref"` で束ねていた。`<script setup>` ではテンプレートが ref を剥がすので、`:ref` には `null` が渡る: アダプターは束縛せず、`values` は何も言わずに空のままだった（著者自身のコードは `ref="名前"` だった） | 3 つの README（静的な `ref="…"`）と手引きを直した。[wc-bindable-protocol#42](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/42)（§3）に入れた |
+
+### fw-inventory の examples/ への取り込み（2026-10-21）
+
+直しをマージした後、アプリを `examples/fw-inventory/` へ移した。著者の実験のページと試験用の切り替えは外し、4.6 で要らなくなった回避策も外した: ref の中の `el.key = …`（`storage-key` を書く）、`files` より前の `url`（今は `<wcs-upload files={files} url={url}>`）。ストリーム・チャンネル・worker のメッセージは、手引きのとおり要素のイベントから取る。著者の一覧を丸ごと送る形で `values` が害の無かった所もそうした。Vite のアプリなので、`e2e.yml` が `WCS_LOCAL=1` でインストールとビルドをする。`WCS_LOCAL=1` は `@wcstack/*` の import を、CI が src から作り直した dist に向ける。spec（意図を確かめる 9 件）は、例自身の `server.js` を `TICK=0` で、5200 + ワーカーの番号のポートに立てる。取り込みで、もう 1 つ見つかった:
+
+| 種類 | 発見 | 結果 |
+|---|---|---|
+| 無言の間違い | 著者のフィルタは、アダプターの `value` を React の状態に当て直して、他のタブに追随していた。ページ自身の保存が 1 描画遅れて戻り、その間の入力を巻き戻すので、"bolt" を速く打つと "bol" と "bolt" を交互に保存して当てることが止まらなかった — そのたびに要求が出て、エラーは無い（著者の速い入力の確認は開発サーバーで走って通った。本番のビルドでは止まらなかった） | アプリを直した: 他のタブの保存は `wcs-storage:value-changed` から取り、ページ自身の保存が出すイベントは飛ばす。storage の README に書き、目録に入れた（文書だけ: 返ってきた書き込みと編集は、要素から見分けられない） |

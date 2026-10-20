@@ -1,0 +1,14 @@
+body { font: 14px/1.4 system-ui, sans-serif; margin: 0; padding: 12px 16px; color: #222; }
+header { display: flex; gap: 16px; align-items: center; border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+table { border-collapse: collapse; width: 100%; max-width: 900px; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #eee; }
+.badge { display: inline-block; padding: 1px 6px; border-radius: 8px; background: #eee; font-size: 12px; }
+.badge.on { background: #c8f7c5; } .badge.off { background: #f7c5c5; }
+.error { color: #b00020; }
+.flash { animation: flash 0.8s; }
+@keyframes flash { from { background: #fff3a0; } to { background: transparent; } }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; align-items: center; }
+.upload-row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+progress { width: 160px; }
+img.thumb { width: 64px; height: 64px; object-fit: cover; border: 1px solid #ccc; }
+aside { border: 1px solid #ddd; padding: 8px; margin-top: 12px; max-width: 900px; }

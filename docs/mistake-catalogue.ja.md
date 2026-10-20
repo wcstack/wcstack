@@ -73,7 +73,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 設計（書けない、または害が無い） | 3 |
 | 実行時 | 62 |
 | lint だけ — 条件付きの沈黙 | 24 |
-| 文書だけ — 沈黙 | 13 |
+| 文書だけ — 沈黙 | 14 |
 | 数えない lint の code | 17 |
 
 ### 文書だけ — 沈黙
@@ -90,6 +90,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。 | 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。 |
 | フレームワークから、オブジェクトの入力をその場で変える。`files={files}` で渡した配列への `files.push(file)` や、`:body.prop` で束ねたオブジェクトへの `payload.rows.push(row)`。 | 同じ参照には、フレームワークは何も書かないので、要素には何も伝わらない。アップロードは始まらず、前の要求で `body` を使い切った `<wcs-fetch>` は、次の要求を本文なしで送る。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。渡されたオブジェクトの中の変化は、要素からは見えない。統合の手引きは、新しいオブジェクトや配列を代入するよう書くようになった。 |
 | React 19 の JSX で、コロンを含む `wcs-*` のイベントを、`on` の後を大文字にして聞く: `onWcs-fetch:response={fn}`。 | コンパイルは通る。React 19 は `on` の後に書かれたとおりの名前のイベント（`Wcs-fetch:response`）を聞き、それは発火しないので、ハンドラは走らない。小文字の形（`onwcs-fetch:response`）は動く。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。統合の手引きは、JSX ではコロンのイベントを書けないと書いていた。今は React 19 がどうするかを書き、引き続き `addEventListener` を勧める。 |
+| 他のタブに追随するために、フレームワークのアダプターの `<wcs-storage>` の `value` を、ページが保存する元の状態へ当て直す（`useEffect(() => apply(stored.value), [stored.value])`）。 | ページ自身の保存が 1 描画遅れて戻り、その間に打った分を巻き戻す。その書き込みがまた保存し、速く打つと 2 つの値を交互に保存して当てることが止まらない — 1 回ごとに要求が出て、エラーは無い。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory の取り込みで見つかった: 著者のフィルタがそうしていた。フレームワークが返してきた書き込みと編集は、要素から見分けられない。storage の README は、要素の `wcs-storage:value-changed` を聴き、自分の保存が出すイベントを飛ばす。 |
 | I/O ノードの `trigger` をフレームワークの状態から動かす（クリックごとに `setRefresh(true)` する `trigger={refresh}`）。 | 最初のクリックで命令が走り、要素は `trigger` を `false` に戻す。フレームワークはまだ `true` を持っているので、次の `true` は何も変えず、書かれない。2 回目のクリックは何もしない。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。`trigger` は `@wcstack/state` の書き方で、state は代入のたびに書く。フレームワークが省いた書き込みは、要素からは見えない。統合の手引きは、フレームワークからは命令（`el.fetch()`）を呼ぶよう書くようになった。 |
 | `<script setup>` で `@wc-bindable/vue` のテンプレート ref を `:ref="ref"` で束ねる。fetch・storage・websocket の README（とアダプター自身のもの）がそう示していた。 | テンプレートが ref を剥がすので、`:ref` には `null` が渡る。アダプターは束縛せず、`values` は初期値のまま。エラーも無い。 | 動かない | どこからも見えない — 文書。fw-inventory の直しを確かめる中で見つかった。Vue のテンプレートの ref は、実行時にも lint にも見えない。README と統合の手引きは `ref="名前"` と書くようになった。アダプターの README は @wc-bindable の issue に入れた。 |
 | `<wcs-link>` に `attr.aria-*:` を束ねる。 | `aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。 | 劣化 | 設計で消す — 4.x。リンクが後の `aria-*` の変化を転送できる。 |

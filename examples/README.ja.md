@@ -13,7 +13,7 @@
 すべてのデモはビルドレスで、パッケージを CDN から直接ロードします
 （`https://esm.run/@wcstack/<pkg>/auto` の 1 行。signals デモは単一の
 `@wcstack/signals/dom` エントリを import）。例外は `websocket-chat` の
-React / Vue variant（Vite 使用）のみです。
+React / Vue variant と継ぎ目アプリ `fw-inventory`（Vite 使用）です。
 
 **script の順序**: I/O ノード系パッケージを `@wcstack/state` より*先*に並べて
 ください。module script は文書順で実行されるため、state がバインディングを
@@ -82,6 +82,7 @@ npx serve examples/state-permission-banner
 | [`signals-shop/`](signals-shop/) | `@wcstack/signals` × router × `<wcs-fetch>` / `<wcs-storage>`（チュートリアルのショップをもう一方のリアクティブコアで） | `node examples/signals-shop/server.js` | :3000 |
 | [`ssr-news/`](ssr-news/) | `@wcstack/server` × router × state × サーバーとハイドレーションでの `<wcs-fetch>` × SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>` × クライアントの版（サーバーで描くニュースサイト。JavaScript 無しでも読める） | `cd examples/ssr-news && npm install && node server.js` | :3000 |
 | [`state-field-report/`](state-field-report/) | `<wcs-permission>` × 取得する要素 × `<wcs-camera>` → `<wcs-recorder>` → `<wcs-upload>` × ルートのノード × `<wcs-network offline>` × `<wcs-storage>` × `Permissions-Policy` / `<iframe>`（スマートフォンからの現場報告: クリップ・位置・口述のメモ・送信待ちの箱） | `node examples/state-field-report/server.js` | :3000 |
+| [`fw-inventory/`](fw-inventory/) | I/O ノード × `@wc-bindable/react` / `vue` × React 19 の props × Vue のリアクティビティと structured clone × `key` と `<wcs-storage>` × 片方が React でもう片方が Vue の 2 つのタブ（店の在庫の道具: React の管理画面と Vue の倉庫のパネル。`@wcstack/state` は使わない。Vite のアプリ） | `cd examples/fw-inventory && npm install && npm run build && node server.js` | :3000 |
 
 ## 共有サーバーコア
 
