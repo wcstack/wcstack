@@ -405,7 +405,7 @@ import "@wcstack/websocket/auto";   // main.tsx / main.js — アプリの描画
 
 **2. object を渡す input はプロパティとして渡す。** DOM 属性は文字列しか持てず、要素が未 upgrade だと属性側へフォールバックするフレームワークがあるため、payload が文字列化されます。Vue の `.prop`、Solid の `prop:`、Lit の `.prop=`、または ref 経由の代入を使ってください。
 
-**3. reactive な Proxy は raw にしてから渡す。** Vue の `reactive`、Svelte の `$state`、Qwik の `useStore` は plain object を Proxy で包みます。Proxy は structured clone を越えられないため、`<wcs-worker>` や `<wcs-broadcast>` は送信の代わりに `DataCloneError` を報告します。`toRaw()` / `$state.snapshot()` / `unwrap()` を通してください。
+**3. reactive な Proxy は raw にしてから渡す。** Vue の `reactive`、Svelte の `$state`、Qwik の `useStore` は plain object を Proxy で包みます。Proxy は structured clone を越えられないため、`<wcs-worker>` や `<wcs-broadcast>` は送信の代わりに `DataCloneError` を報告します（4.6（未リリース）から `[wcs/post-uncloneable]` で警告もします）。深い素の写しを渡してください。Svelte では `$state.snapshot()`、Vue と Qwik では `JSON.parse(JSON.stringify(value))` です — Vue の `toRaw()` は 1 段しか剥がさず、リアクティブな一覧の行はまだ Proxy です（[フレームワーク統合 §3](docs/framework-adapter-integration.ja.md#3-reactive-store-の値は-raw-で渡す)）。
 
 `<wcs-camera>` の `MediaStream` のような live handle は、意図的に snapshot state に載せていません。ref で要素を掴んでイベントから受け取ってください。なお Angular のテンプレートと JSX はコロンを含むイベント名を束縛できないため、`addEventListener`（または `Renderer2.listen`）が可搬な経路になります。
 

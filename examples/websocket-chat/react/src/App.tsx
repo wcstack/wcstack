@@ -43,30 +43,39 @@ export function App() {
     wsRef(node);
   }, [wsRef]);
 
+  // `message` is an occurrence, not a state: messages that arrive together reach React as one
+  // through the adapter's values (React renders once for them), so each one is taken from the
+  // element's event (docs/framework-adapter-integration.md §5).
   useEffect(() => {
-    const msg = ws.message;
-    if (!msg) return;
+    const node = elRef.current;
+    if (!node) return;
+    const onMessage = (e: Event) => {
+      const msg = (e as CustomEvent<WsMessage | null>).detail;
+      if (!msg) return;
 
-    if (msg.type === "stats") {
-      setStats(msg as { clients: number; uptime: number });
-      return;
-    }
+      if (msg.type === "stats") {
+        setStats(msg as { clients: number; uptime: number });
+        return;
+      }
 
-    const time = msg.timestamp
-      ? new Date(msg.timestamp).toLocaleTimeString()
-      : new Date().toLocaleTimeString();
+      const time = msg.timestamp
+        ? new Date(msg.timestamp).toLocaleTimeString()
+        : new Date().toLocaleTimeString();
 
-    const entry: LogEntry = { type: msg.type || "unknown", time, text: "" };
-    if (msg.type === "echo") {
-      entry.text = msg.content ?? "";
-    } else if (msg.type === "broadcast") {
-      entry.text = `[${msg.from}] ${msg.content}`;
-    } else {
-      entry.text = JSON.stringify(msg);
-    }
+      const entry: LogEntry = { type: msg.type || "unknown", time, text: "" };
+      if (msg.type === "echo") {
+        entry.text = msg.content ?? "";
+      } else if (msg.type === "broadcast") {
+        entry.text = `[${msg.from}] ${msg.content}`;
+      } else {
+        entry.text = JSON.stringify(msg);
+      }
 
-    setMessageLog((prev) => [...prev, entry]);
-  }, [ws.message]);
+      setMessageLog((prev) => [...prev, entry]);
+    };
+    node.addEventListener("wcs-ws:message", onMessage);
+    return () => node.removeEventListener("wcs-ws:message", onMessage);
+  }, []);
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });

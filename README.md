@@ -407,7 +407,7 @@ With a 0.8 adapter and a definition that genuinely has to arrive late (autoloade
 
 **2. Pass object-valued inputs as properties.** DOM attributes only hold strings, and several frameworks fall back to attributes when the property is not on the element yet, which stringifies your payload. Use `.prop` (Vue), `prop:` (Solid), `.prop=` (Lit), or assign through a ref.
 
-**3. Unwrap reactive proxies before handing values in.** Vue's `reactive`, Svelte's `$state` and Qwik's `useStore` wrap plain objects in proxies, and a proxy cannot cross a structured-clone boundary — `<wcs-worker>` and `<wcs-broadcast>` will report a `DataCloneError` instead of sending. Pass `toRaw()` / `$state.snapshot()` / `unwrap()` results.
+**3. Unwrap reactive proxies before handing values in.** Vue's `reactive`, Svelte's `$state` and Qwik's `useStore` wrap plain objects in proxies, and a proxy cannot cross a structured-clone boundary — `<wcs-worker>` and `<wcs-broadcast>` will report a `DataCloneError` instead of sending (and warn `[wcs/post-uncloneable]`, since 4.6 (not released yet)). Pass a deep plain copy: `$state.snapshot()` in Svelte, `JSON.parse(JSON.stringify(value))` in Vue and Qwik — Vue's `toRaw()` unwraps one level only, and the rows of a reactive list are still proxies ([framework integration §3](docs/framework-adapter-integration.md#3-pass-reactive-store-values-as-raw)).
 
 Live handles such as `<wcs-camera>`'s `MediaStream` are deliberately not snapshot state: take them from the element event via a ref. Note that Angular templates and JSX cannot bind event names containing a colon, so `addEventListener` (or `Renderer2.listen`) is the portable path.
 
