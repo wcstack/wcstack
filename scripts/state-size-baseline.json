@@ -3,12 +3,12 @@
   "index.esm.js": {
     "files": 1,
     "bytes": 151981,
-    "gzip": 53092
+    "gzip": 53093
   },
   "auto.min.js": {
     "files": 1,
     "bytes": 140905,
-    "gzip": 50010
+    "gzip": 50011
   },
   "split/core.js (with its chunks)": {
     "files": 12,
@@ -53,7 +53,7 @@
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
     "bytes": 14665,
-    "gzip": 5776
+    "gzip": 5775
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,

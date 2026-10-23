@@ -2,6 +2,13 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 2.6.0 — 2026-10-24
+
+`@wcstack/state` 4.6.0 のパーサと manifest、4.6.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.6.0・`@wcstack/typescript` 4.6.0 と同じ判定）。タグの目録に入力が増えるので minor。
+
+- **`<wcs-storage>` の `storage-key` / `storageKey` を知る** — 4.6 で足した `key` の別名（React と Vue は `key` を自分のものとして取る）。`data-wcs="storageKey: …"` を `wcs/tag-member-unknown` にしない。綴り違い（`storgeKey`）は今までどおり error で、近い名前を挙げる。
+- `wcs-validate`（`@wcstack/lint`）が読まなかったファイルを件数の後に挙げる注（`not read:` / `nothing to check:`）は CLI だけのもので、拡張の表示は変わらない。
+
 ## 2.5.0 — 2026-10-20
 
 `@wcstack/state` 4.5.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.5.0・`@wcstack/typescript` 4.5.0 と同じ判定）。新しい warning の規則（`wcs/handle-bound-as-value`）と、state の外のリストを `map` する getter の行の形が入るので minor。
