@@ -228,6 +228,8 @@ declare class WorkerCore extends EventTarget {
      * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
      */
     private _toldNotReady;
+    /** Whether `[wcs/post-uncloneable]` was said for this element. */
+    private _toldUncloneable;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     observe(): Promise<void>;
@@ -266,6 +268,7 @@ declare class WorkerCore extends EventTarget {
      * worker surfaces an `InvalidStateError`, both through `error`.
      */
     post(data: any, transfer?: Transferable[]): void;
+    private _warnUncloneable;
     private _warnNotReady;
     /** Terminate the worker. Idempotent — a no-op when none is running. */
     terminate(): void;

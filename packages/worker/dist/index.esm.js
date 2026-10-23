@@ -287,6 +287,8 @@ class WorkerCore extends EventTarget {
      * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
      */
     _toldNotReady = false;
+    /** Whether `[wcs/post-uncloneable]` was said for this element. */
+    _toldUncloneable = false;
     constructor(target) {
         super();
         this._target = target ?? this;
@@ -427,7 +429,21 @@ class WorkerCore extends EventTarget {
         }
         catch (err) {
             this._setError(this._normalizeError(err));
+            this._warnUncloneable(err);
         }
+    }
+    // A message that cannot be structured-cloned is lost, and only a page that binds `error` heard
+    // of it. A framework's reactive proxy is the usual one: Vue's `toRaw()` unwraps one level, so a
+    // list of rows rebuilt with `filter` or a spread still holds proxies (docs/seam-apps.md,
+    // fw-inventory). Said once per element.
+    _warnUncloneable(err) {
+        if (this._toldUncloneable || err?.name !== "DataCloneError")
+            return;
+        this._toldUncloneable = true;
+        console.warn("[@wcstack/worker] [wcs/post-uncloneable] post() was refused: the message cannot be structured-cloned " +
+            "(DataCloneError), so it is lost. It goes to `error` too. A framework's reactive proxy is the usual cause — " +
+            "Vue's toRaw() unwraps one level only: pass a deep plain copy (JSON.parse(JSON.stringify(value)), or toRaw " +
+            "on each level). (Said once per element.)", this._target);
     }
     _warnNotReady() {
         if (this._toldNotReady)
@@ -661,6 +677,21 @@ function hasAccessorOnPrototype(target, name) {
     }
     return false;
 }
+// 属性になってしまったオブジェクトの入力（`files="[object File]"`）を、要素ごとに 1 回だけ言う。
+// React 19 は定義前の要素にプロパティが無いのでオブジェクトを属性に書き、Vue の `.attr` も
+// 書く。要素はその入力をプロパティでしか読まないので、何も受け取らず、何も言わなかった
+// （docs/seam-apps.md、fw-inventory）。
+const toldObjectAttribute = new WeakSet();
+function warnObjectAttribute(element, name, value) {
+    if (toldObjectAttribute.has(element))
+        return;
+    toldObjectAttribute.add(element);
+    const tag = element.localName ?? "element";
+    console.warn(`[wcs/input-as-attribute] <${tag}> has the attribute ${name}="${value}": an object was written as an ` +
+        `attribute, so the element did not receive it. A framework does that when the property is set before the ` +
+        `element's definition loads (React 19), or when told to (Vue's .attr). Load the definition before rendering, ` +
+        `or assign the property through a ref (Vue: .prop). (Said once per element.)`, element);
+}
 /**
  * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
  * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
@@ -668,14 +699,19 @@ function hasAccessorOnPrototype(target, name) {
  * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
  * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
  * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ * - 値が `[object …]` の属性（属性に書かれてしまったオブジェクトの入力）は、要素ごとに 1 回警告する。
  */
 function upgradeProperties(element) {
     const declaration = element.constructor?.wcBindable;
     const inputs = declaration?.inputs;
     if (inputs === undefined)
         return;
+    const getAttribute = element.getAttribute;
     for (const input of inputs) {
         const name = input.name;
+        const attribute = typeof getAttribute === "function" ? getAttribute.call(element, name.toLowerCase()) : null;
+        if (attribute !== null && attribute.startsWith("[object "))
+            warnObjectAttribute(element, name, attribute);
         if (!Object.prototype.hasOwnProperty.call(element, name))
             continue;
         if (!hasAccessorOnPrototype(element, name))

@@ -1089,10 +1089,12 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
     "hasWcBindable": true,
     "observedAttributes": [
       "key",
+      "storage-key",
       "type"
     ],
     "inputs": {
       "key": null,
+      "storageKey": null,
       "type": null,
       "value": null,
       "manual": null,

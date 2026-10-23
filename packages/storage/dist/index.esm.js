@@ -175,6 +175,8 @@ class StorageCore extends EventTarget {
     _key = "";
     /** Whether `[wcs/storage-unserializable]` was said for this element. */
     _toldUnkept = false;
+    /** Whether `[wcs/command-not-ready]` was said for this element (an operation without a key). */
+    _toldNoKey = false;
     _type = "local";
     _storageListener = null;
     // Generation guard: bumped on dispose(). The cross-tab `storage` listener
@@ -329,6 +331,7 @@ class StorageCore extends EventTarget {
             // never-throw: a missing key is routed to the error property and a
             // sanitized null is returned, rather than throwing.
             this._setError({ operation: "load", message: "key is required." });
+            this._warnNoKey("load");
             return null;
         }
         this._setLoading(true);
@@ -361,6 +364,7 @@ class StorageCore extends EventTarget {
             // never-throw: a missing key is routed to the error property instead of
             // throwing. No return value to sanitize (save returns void).
             this._setError({ operation: "save", message: "key is required." });
+            this._warnNoKey("save");
             return;
         }
         this._setLoading(true);
@@ -401,6 +405,18 @@ class StorageCore extends EventTarget {
             this._setLoading(false);
         }
     }
+    // An operation without a key does nothing, and only a page that binds `error` heard of it. In React and
+    // Vue the usual cause is `key` itself: both keep it for themselves and never hand it to the element
+    // (docs/seam-apps.md, fw-inventory). Said once per element (the I/O command policy,
+    // docs/v4-direction-2026-10.md).
+    _warnNoKey(operation) {
+        if (this._toldNoKey)
+            return;
+        this._toldNoKey = true;
+        console.warn(`[@wcstack/storage] [wcs/command-not-ready] ${operation}() was refused: there is no key, so nothing is ` +
+            "loaded or stored. It goes to `error` too. Give the element a `key` — in React and Vue, which keep `key` " +
+            "for themselves, write `storage-key`. (Said once per element.)", this._target);
+    }
     // JSON keeps none of these: a Blob or File is stored as {}, a Map or Set as {}, binary
     // data as an object of its bytes. Saved without a word, they came back empty after a
     // reload (docs/seam-apps.md, state-field-report: a recorded clip kept in a draft was
@@ -418,6 +434,7 @@ class StorageCore extends EventTarget {
             // never-throw: a missing key is routed to the error property instead of
             // throwing. No return value to sanitize (remove returns void).
             this._setError({ operation: "remove", message: "key is required." });
+            this._warnNoKey("remove");
             return;
         }
         this._setLoading(true);
@@ -523,6 +540,21 @@ function hasAccessorOnPrototype(target, name) {
     }
     return false;
 }
+// 属性になってしまったオブジェクトの入力（`files="[object File]"`）を、要素ごとに 1 回だけ言う。
+// React 19 は定義前の要素にプロパティが無いのでオブジェクトを属性に書き、Vue の `.attr` も
+// 書く。要素はその入力をプロパティでしか読まないので、何も受け取らず、何も言わなかった
+// （docs/seam-apps.md、fw-inventory）。
+const toldObjectAttribute = new WeakSet();
+function warnObjectAttribute(element, name, value) {
+    if (toldObjectAttribute.has(element))
+        return;
+    toldObjectAttribute.add(element);
+    const tag = element.localName ?? "element";
+    console.warn(`[wcs/input-as-attribute] <${tag}> has the attribute ${name}="${value}": an object was written as an ` +
+        `attribute, so the element did not receive it. A framework does that when the property is set before the ` +
+        `element's definition loads (React 19), or when told to (Vue's .attr). Load the definition before rendering, ` +
+        `or assign the property through a ref (Vue: .prop). (Said once per element.)`, element);
+}
 /**
  * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
  * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
@@ -530,14 +562,19 @@ function hasAccessorOnPrototype(target, name) {
  * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
  * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
  * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ * - 値が `[object …]` の属性（属性に書かれてしまったオブジェクトの入力）は、要素ごとに 1 回警告する。
  */
 function upgradeProperties(element) {
     const declaration = element.constructor?.wcBindable;
     const inputs = declaration?.inputs;
     if (inputs === undefined)
         return;
+    const getAttribute = element.getAttribute;
     for (const input of inputs) {
         const name = input.name;
+        const attribute = typeof getAttribute === "function" ? getAttribute.call(element, name.toLowerCase()) : null;
+        if (attribute !== null && attribute.startsWith("[object "))
+            warnObjectAttribute(element, name, attribute);
         if (!Object.prototype.hasOwnProperty.call(element, name))
             continue;
         if (!hasAccessorOnPrototype(element, name))
@@ -620,13 +657,14 @@ class Storage extends HTMLElement {
         // are inherited unchanged from the Core via the spread above.
         inputs: [
             { name: "key" },
+            { name: "storageKey" },
             { name: "type" },
             { name: "value" },
             { name: "manual" },
             { name: "trigger" },
         ],
     };
-    static get observedAttributes() { return ["key", "type"]; }
+    static get observedAttributes() { return ["key", "storage-key", "type"]; }
     _core;
     _trigger = false;
     // Storage load()/save() are synchronous, so connection work never defers.
@@ -709,10 +747,20 @@ class Storage extends HTMLElement {
     // started with (wc-bindable producer guidance P1; React 19 and a direct
     // assignment deliver it, @wcstack/state does not).
     get key() {
-        return this.getAttribute("key") || "";
+        return this.getAttribute("key") || this.getAttribute("storage-key") || "";
     }
     set key(value) {
         reflectAttribute(this, "key", value);
+    }
+    // `key` under another name. React and Vue take `key` for themselves and never hand it to
+    // the element, so `<wcs-storage key="…">` in JSX or a Vue template stored nothing, with no
+    // error (docs/seam-apps.md, fw-inventory). `storage-key` reaches the element in both;
+    // `key` wins when both are written.
+    get storageKey() {
+        return this.key;
+    }
+    set storageKey(value) {
+        reflectAttribute(this, "storage-key", value);
     }
     get type() {
         // Normalize at the Shell boundary: any attribute value other than the
@@ -826,17 +874,22 @@ class Storage extends HTMLElement {
         this._syncCore();
         this._core.remove();
     }
-    attributeChangedCallback(name, _oldValue, newValue) {
+    attributeChangedCallback(name, _oldValue, _newValue) {
         if (!this.isConnected)
             return;
-        if (name === "key") {
+        // `storage-key` is the same input under a name the frameworks leave alone; `key` wins
+        // when both are written (the getter), so a change to the other one changes nothing.
+        if (name === "storage-key" && this.getAttribute("key"))
+            return;
+        if (name === "key" || name === "storage-key") {
             // Always keep the Core's key in sync with the attribute, regardless of
             // mode or whether the new value is empty. The cross-tab `storage` listener
             // compares `e.key !== _core.key`, so a stale Core key would make sync watch
             // the wrong (old/empty) key after a runtime key change. load() (which also
-            // syncs the Core) only runs for non-manual mode with a non-empty key.
+            // syncs the Core) only runs for non-manual mode with a non-empty key — the
+            // key now in effect, so removing `key` falls back to `storage-key`.
             this._syncCore();
-            if (newValue && !this.manual) {
+            if (this.key && !this.manual) {
                 this.load();
             }
         }

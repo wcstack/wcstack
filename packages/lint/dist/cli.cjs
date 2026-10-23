@@ -14051,10 +14051,12 @@ var BUILTIN_TAGS = {
     "hasWcBindable": true,
     "observedAttributes": [
       "key",
+      "storage-key",
       "type"
     ],
     "inputs": {
       "key": null,
+      "storageKey": null,
       "type": null,
       "value": null,
       "manual": null,
@@ -17625,6 +17627,13 @@ function escapePtr(key) {
 }
 
 // src/core/cli/runValidation.ts
+function inputKindOf(path) {
+  if (path.endsWith(".manifest.json")) return "manifest";
+  return /\.(?:[cm]?[jt]sx?|vue|svelte)$/i.test(path) ? "other" : "html";
+}
+function hasAnythingToCheck(text3, bindAttribute, stateTagName) {
+  return text3.includes(bindAttribute) || /<wcs-/i.test(text3) || text3.includes(`<${stateTagName}`) || /@wcstack\/|\bwcstack(?:@[\w.-]+)?\/auto\b/.test(text3);
+}
 var severityLabel = { error: "error", warning: "warning", info: "info" };
 function runValidation(inputs, options = {}) {
   const diagnosticsBySource = /* @__PURE__ */ new Map();
@@ -17646,8 +17655,12 @@ function runValidation(inputs, options = {}) {
     }
   }
   const inFiles = /* @__PURE__ */ new Map();
+  const nothingToCheck = [];
   for (const input of inputs) {
     if (input.kind !== "html") continue;
+    if (!hasAnythingToCheck(input.text, options.bindAttribute ?? "data-wcs", options.stateTagName ?? "wcs-state")) {
+      nothingToCheck.push(input.source);
+    }
     let applicationSchema = explicitSchema;
     if (!haveExplicitApplication && input.fileReader !== void 0) {
       const discovered = discoverApplicationManifest(input.fileReader);
@@ -17699,20 +17712,28 @@ function runValidation(inputs, options = {}) {
       lines.push(`${source}:${pos.line}:${pos.column} ${severityLabel[d.severity]} ${d.code} ${d.message}`);
     }
   }
+  const notRead = inputs.filter((i) => i.kind === "other").map((i) => i.source);
+  const notes = [];
+  if (notRead.length > 0) {
+    notes.push(`not read: ${notRead.join(", ")} \u2014 wcs-validate reads HTML pages (data-wcs, <wcs-*> tags), not a framework's components or script files`);
+  }
+  if (nothingToCheck.length > 0) {
+    notes.push(`nothing to check: ${nothingToCheck.join(", ")} \u2014 no data-wcs binding, <wcs-*> tag or wcstack script in them`);
+  }
   return {
     lines,
     errorCount,
     warningCount,
     infoCount,
     exitCode: errorCount > 0 || options.strict === true && warningCount > 0 ? 1 : 0,
-    diagnosticsBySource
+    diagnosticsBySource,
+    notRead,
+    nothingToCheck,
+    notes
   };
 }
 
 // src/cli.ts
-function classify(path) {
-  return path.endsWith(".manifest.json") ? "manifest" : "html";
-}
 function parseArgs(argv) {
   const options = {};
   const files = [];
@@ -17753,7 +17774,7 @@ function main(argv) {
 `);
       return 2;
     }
-    const kind = classify(path);
+    const kind = inputKindOf(path);
     inputs.push({ source: path, text: text3, kind, fileReader: kind === "html" ? createFileReader(path) : void 0 });
   }
   const result = runValidation(inputs, { ...options, locale: locale2 });
@@ -17765,6 +17786,7 @@ function main(argv) {
 ${result.errorCount} error(s), ${result.warningCount} warning(s), ${result.infoCount} info${options.strict ? " (strict)" : ""}
 `
   );
+  for (const note of result.notes) process.stdout.write(note + "\n");
   return result.exitCode;
 }
 if (typeof require !== "undefined" && typeof module !== "undefined" && require.main === module) {

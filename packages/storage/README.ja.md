@@ -259,7 +259,7 @@ HTML、JS、または `@wcstack/state` バインディングからストレー�
 | プロパティ | 型 | 説明 |
 |------------|------|------|
 | `key` | `string` | ストレージキー |
-| `storageKey` | `string` | React と Vue のための、`key` の別名（4.6（未リリース）から。[フレームワーク連携](#フレームワーク連携) を参照） |
+| `storageKey` | `string` | React と Vue のための、`key` の別名（4.6 から。[フレームワーク連携](#フレームワーク連携) を参照） |
 | `type` | `"local" \| "session"` | ストレージタイプ |
 | `value` | `any` | 設定すると自動保存（`manual` でない場合） |
 | `trigger` | `boolean` | 単方向の保存トリガー |
@@ -393,7 +393,7 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 | 属性 | 型 | デフォルト | 説明 |
 |------|------|------------|------|
 | `key` | `string` | — | ストレージキー |
-| `storage-key` | `string` | — | React と Vue が触らない名前のストレージキー（4.6（未リリース）から）。両方書いたときは `key` が勝つ |
+| `storage-key` | `string` | — | React と Vue が触らない名前のストレージキー（4.6 から）。両方書いたときは `key` が勝つ |
 | `type` | `"local" \| "session"` | `local` | ストレージタイプ |
 | `manual` | `boolean` | `false` | 自動読み込み・自動保存を無効化 |
 
@@ -522,7 +522,7 @@ interface WcsStorageValues<T = unknown> extends WcsStorageCoreValues<T> {
 
 `<wcs-storage>` は CSBC + `wc-bindable-protocol` なので、`@wc-bindable/*` の薄いアダプタを通じて任意のフレームワークで動作します。
 
-**フレームワークのテンプレートでは、`key` でなく `storage-key` を書いてください**（4.6（未リリース）から）。React と Vue は `key` を自分のものとして取り、要素に渡しません。JSX や Vue のテンプレートの `<wcs-storage key="…">` には key が無く、何も読み込まず、何も保存しません。要素は最初の保存のときに `[wcs/command-not-ready]` で警告するようになりました。`storage-key`（プロパティは `storageKey`）は同じ入力で、以下の例はどのフレームワークでもこれを使います。4.5 以前では、ref を通してプロパティを設定してください: `el.key = "app-settings"`。
+**フレームワークのテンプレートでは、`key` でなく `storage-key` を書いてください**（4.6 から）。React と Vue は `key` を自分のものとして取り、要素に渡しません。JSX や Vue のテンプレートの `<wcs-storage key="…">` には key が無く、何も読み込まず、何も保存しません。要素は最初の保存のときに `[wcs/command-not-ready]` で警告するようになりました。`storage-key`（プロパティは `storageKey`）は同じ入力で、以下の例はどのフレームワークでもこれを使います。4.5 以前では、ref を通してプロパティを設定してください: `el.key = "app-settings"`。
 
 ### React
 

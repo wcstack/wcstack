@@ -259,7 +259,7 @@ Controls storage operations from HTML, JS, or `@wcstack/state` bindings:
 | Property | Type | Description |
 |----------|------|-------------|
 | `key` | `string` | Storage key |
-| `storageKey` | `string` | `key` under another name, for React and Vue (since 4.6 (not released yet); see [Framework Integration](#framework-integration)) |
+| `storageKey` | `string` | `key` under another name, for React and Vue (since 4.6; see [Framework Integration](#framework-integration)) |
 | `type` | `"local" \| "session"` | Storage type |
 | `value` | `any` | Setting this auto-saves (when not `manual`) |
 | `trigger` | `boolean` | One-way save trigger |
@@ -393,7 +393,7 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
 | Attribute | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `key` | `string` | — | Storage key |
-| `storage-key` | `string` | — | The storage key under a name React and Vue leave alone (since 4.6 (not released yet)); `key` wins when both are written |
+| `storage-key` | `string` | — | The storage key under a name React and Vue leave alone (since 4.6); `key` wins when both are written |
 | `type` | `"local" \| "session"` | `local` | Storage type |
 | `manual` | `boolean` | `false` | Disables auto-load and auto-save |
 
@@ -524,7 +524,7 @@ Persistence looks just like any other state update.
 
 `<wcs-storage>` is CSBC + `wc-bindable-protocol`, so it works in any framework via thin `@wc-bindable/*` adapters.
 
-**Write `storage-key` in a framework's template, not `key`** (since 4.6 (not released yet)). React and Vue keep `key` for themselves and never hand it to the element: `<wcs-storage key="…">` in JSX or a Vue template has no key, so it loads and stores nothing, and the element now warns `[wcs/command-not-ready]` at its first save. `storage-key` (the property `storageKey`) is the same input; the examples below use it in every framework. On 4.5 and earlier, set the property through a ref: `el.key = "app-settings"`.
+**Write `storage-key` in a framework's template, not `key`** (since 4.6). React and Vue keep `key` for themselves and never hand it to the element: `<wcs-storage key="…">` in JSX or a Vue template has no key, so it loads and stores nothing, and the element now warns `[wcs/command-not-ready]` at its first save. `storage-key` (the property `storageKey`) is the same input; the examples below use it in every framework. On 4.5 and earlier, set the property through a ref: `el.key = "app-settings"`.
 
 ### React
 

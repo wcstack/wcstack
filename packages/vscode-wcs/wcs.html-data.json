@@ -1837,7 +1837,7 @@
       "name": "wcs-storage",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/storage` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `errorInfo`, `trigger`\n\n**Inputs**: `key`, `type`, `value`, `manual`, `trigger`\n\n**Commands**: `command.load`, `command.save`, `command.remove`"
+        "value": "`@wcstack/storage` custom element (wc-bindable).\n\n**Bindable properties**: `value`, `loading`, `error`, `errorInfo`, `trigger`\n\n**Inputs**: `key`, `storageKey`, `type`, `value`, `manual`, `trigger`\n\n**Commands**: `command.load`, `command.save`, `command.remove`"
       },
       "attributes": [
         {
@@ -1845,6 +1845,13 @@
           "description": {
             "kind": "markdown",
             "value": "Configures the `key` input."
+          }
+        },
+        {
+          "name": "storage-key",
+          "description": {
+            "kind": "markdown",
+            "value": "Observed attribute."
           }
         },
         {

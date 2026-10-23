@@ -21,7 +21,7 @@ npm i -D @wcstack/lint
 npx wcs-validate --errors-only src/**/*.html
 ```
 
-Files ending in `.manifest.json` are validated as sidecar manifests; everything else is validated as HTML with `data-wcs` bindings, except a framework's components and script files (`.js`, `.ts`, `.jsx`, `.tsx`, `.vue`, `.svelte`), which are not read (since 4.6 (not released yet); before, they were read as HTML and reported clean).
+Files ending in `.manifest.json` are validated as sidecar manifests; everything else is validated as HTML with `data-wcs` bindings, except a framework's components and script files (`.js`, `.ts`, `.jsx`, `.tsx`, `.vue`, `.svelte`), which are not read (since 4.6; before, they were read as HTML and reported clean).
 
 External state referenced via `<wcs-state src="...">` (`.json` / `.js` / `.ts`) is resolved relative to the HTML file and included in path validation. URLs and absolute paths are never read, unreadable files are skipped, and unresolved paths stay warnings. Note that once external state *does* resolve, the full validation surface applies to those pages — error-severity findings (e.g. `for:` bound to a non-array) can fail a build that was previously silent because the paths could not be checked. Since 4.4 that includes the script rules (`wcs/nested-assign`, `wcs/array-mutation`, `wcs/on-handler-this`, `wcs/updated-callback-unbound` and the rest) on a `.js` / `.ts` state: a finding in the file is reported in the file (`state.js:12:5 error wcs/nested-assign …`), once however many pages load it, and the IDE shows it on the page's `src` value. Up to 4.3 only the paths of an external state were checked.
 
@@ -54,7 +54,7 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 | `1` | At least one error-severity diagnostic; with `--strict`, at least one error or warning |
 | `2` | Usage error or unreadable file |
 
-After the counts, two notes name the files the counts say nothing about (since 4.6 (not released yet); printed with `--errors-only` too, and they do not change the exit code):
+After the counts, two notes name the files the counts say nothing about (since 4.6; printed with `--errors-only` too, and they do not change the exit code):
 
 ```
 0 error(s), 0 warning(s), 0 info

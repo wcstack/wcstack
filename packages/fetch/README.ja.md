@@ -617,7 +617,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 </wcs-fetch>
 ```
 
-**タグを自分で定義するとき。** `@wcstack/fetch/auto` は 4 つのタグをすべて定義します。タグを自分で定義するページ — autoloader の包みのモジュールや、スコープ付きのレジストリ — は、補助のタグも定義する必要があります。4.6（未リリース）から、パッケージはそのクラス `WcsFetchHeader` と `WcsFetchBody` を、`WcsFetch` と `WcsInfiniteScroll` と並べて出します。定義されていない `<wcs-fetch-header>` や `<wcs-fetch-body>` は素の要素で、そのヘッダーや本文は送られません。そのとき `<wcs-fetch>` が 1 回警告します（`[wcs/fetch-helper-undefined]`）。autoloader では、`/auto` を読み込む包みがタグをまとめて定義します（[autoloader の README](../autoloader/README.ja.md#wcstack-自身のタグを読み込む)）。
+**タグを自分で定義するとき。** `@wcstack/fetch/auto` は 4 つのタグをすべて定義します。タグを自分で定義するページ — autoloader の包みのモジュールや、スコープ付きのレジストリ — は、補助のタグも定義する必要があります。4.6 から、パッケージはそのクラス `WcsFetchHeader` と `WcsFetchBody` を、`WcsFetch` と `WcsInfiniteScroll` と並べて出します。定義されていない `<wcs-fetch-header>` や `<wcs-fetch-body>` は素の要素で、そのヘッダーや本文は送られません。そのとき `<wcs-fetch>` が 1 回警告します（`[wcs/fetch-helper-undefined]`）。autoloader では、`/auto` を読み込む包みがタグをまとめて定義します（[autoloader の README](../autoloader/README.ja.md#wcstack-自身のタグを読み込む)）。
 
 ## wc-bindable-protocol
 

@@ -172,7 +172,7 @@ export default customElements.get("wcs-fetch");
 
 autoloader はタグを 1 つずつ順に読み込み、すでに定義されたタグは飛ばすので、`<wcs-fetch-header>` に自分のファイルは要りません。ファイルの名前はパッケージでなくタグから付けます: `<wcs-ws>`（`@wcstack/websocket`）は `ws.js`、`<wcs-geo>`（`@wcstack/geolocation`）は `geo.js` です。
 
-クラスを 1 つだけ出し直す包み（`export { WcsFetch as default } from "https://esm.run/@wcstack/fetch"`）では補助のタグが定義されず、autoloader は `fetch-header.js` を探しに行きます。`<wcs-fetch>` はそのヘッダーや本文なしで要求を送ります。4.6（未リリース）から、`[wcs/fetch-helper-undefined]` で警告します。
+クラスを 1 つだけ出し直す包み（`export { WcsFetch as default } from "https://esm.run/@wcstack/fetch"`）では補助のタグが定義されず、autoloader は `fetch-header.js` を探しに行きます。`<wcs-fetch>` はそのヘッダーや本文なしで要求を送ります。4.6 から、`[wcs/fetch-helper-undefined]` で警告します。
 
 ## カスタマイズドビルトイン要素（`is`属性）
 

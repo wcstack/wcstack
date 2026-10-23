@@ -625,7 +625,7 @@ Example:
 </wcs-fetch>
 ```
 
-**Defining the tags yourself.** `@wcstack/fetch/auto` defines all four tags. A page that defines them itself — an autoloader's wrapper module, a scoped registry — has to define the helper tags too: since 4.6 (not released yet) the package exports their classes, `WcsFetchHeader` and `WcsFetchBody`, beside `WcsFetch` and `WcsInfiniteScroll`. An undefined `<wcs-fetch-header>` or `<wcs-fetch-body>` is a plain element, and its header or body is not sent; `<wcs-fetch>` then warns once (`[wcs/fetch-helper-undefined]`). For the autoloader, a wrapper that imports `/auto` defines every tag at once ([autoloader README](../autoloader/README.md#loading-wcstacks-own-tags)).
+**Defining the tags yourself.** `@wcstack/fetch/auto` defines all four tags. A page that defines them itself — an autoloader's wrapper module, a scoped registry — has to define the helper tags too: since 4.6 the package exports their classes, `WcsFetchHeader` and `WcsFetchBody`, beside `WcsFetch` and `WcsInfiniteScroll`. An undefined `<wcs-fetch-header>` or `<wcs-fetch-body>` is a plain element, and its header or body is not sent; `<wcs-fetch>` then warns once (`[wcs/fetch-helper-undefined]`). For the autoloader, a wrapper that imports `/auto` defines every tag at once ([autoloader README](../autoloader/README.md#loading-wcstacks-own-tags)).
 
 ## wc-bindable-protocol
 

@@ -275,6 +275,7 @@ declare class Fetch extends HTMLElement {
     private _connectResolve;
     private _lastFetchedUrl;
     private _toldTriggerWithoutUrl;
+    private _toldUndefinedHelper;
     private _internals;
     constructor();
     get debugStates(): string[];
@@ -347,6 +348,13 @@ declare class Fetch extends HTMLElement {
      * (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
      */
     private _warnTriggerWithoutUrl;
+    /**
+     * A `<wcs-fetch-header>` / `<wcs-fetch-body>` whose definition never loaded is a plain element, and its
+     * header or body was left out of the request without a word: a page that defines the tags itself (an
+     * autoloader's wrapper module, a scoped registry) defined `<wcs-fetch>` only (docs/seam-apps.md,
+     * fw-inventory). Said once per element.
+     */
+    private _warnUndefinedHelper;
     private _warnUnsafeAutoFetch;
     fetch(): Promise<any>;
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
@@ -381,24 +389,6 @@ declare class InfiniteScroll extends HTMLElement {
 }
 
 /**
- * fetchCapabilities.ts
- *
- * fetch node 固有の capability registry と error code。汎用の assess 機構・型は
- * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
- * import する。node 固有の宣言はこのハンドライトファイルに置き、生成コピーとは分離する。
- */
-
-/** 安定した fetch error code(taxonomy)。値は公開キーとして固定。 */
-declare const WCS_FETCH_ERROR_CODE: {
-    readonly CapabilityMissing: "capability-missing";
-    readonly InvalidArgument: "invalid-argument";
-    readonly Network: "network";
-    readonly HttpError: "http-error";
-    readonly Timeout: "timeout";
-    readonly Aborted: "aborted";
-};
-
-/**
  * `<wcs-fetch-header name value>`: one request header of the `<wcs-fetch>` it sits in, read when a
  * request starts. `name` / `value` are properties too, reflected to the attributes (`null` removes
  * one, `undefined` restores the markup's), so a binding — `data-wcs="value: authHeader"` — sets the
@@ -426,6 +416,24 @@ declare class FetchBody extends HTMLElement {
     get bodyContent(): string;
 }
 
+/**
+ * fetchCapabilities.ts
+ *
+ * fetch node 固有の capability registry と error code。汎用の assess 機構・型は
+ * `./platformCapability.js`(/io-core/ から copy-distribution される生成ファイル)から
+ * import する。node 固有の宣言はこのハンドライトファイルに置き、生成コピーとは分離する。
+ */
+
+/** 安定した fetch error code(taxonomy)。値は公開キーとして固定。 */
+declare const WCS_FETCH_ERROR_CODE: {
+    readonly CapabilityMissing: "capability-missing";
+    readonly InvalidArgument: "invalid-argument";
+    readonly Network: "network";
+    readonly HttpError: "http-error";
+    readonly Timeout: "timeout";
+    readonly Aborted: "aborted";
+};
+
 declare global {
     interface HTMLElementTagNameMap {
         "wcs-fetch": Fetch;
@@ -435,5 +443,5 @@ declare global {
     }
 }
 
-export { FetchCore, TRUSTED_TYPES_POLICY_SLOT, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
+export { FetchCore, TRUSTED_TYPES_POLICY_SLOT, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, FetchBody as WcsFetchBody, FetchHeader as WcsFetchHeader, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
 export type { FetchRequestOptions, IWcsTrustedTypesPolicy, IWritableConfig, IWritableTagNames, WcsFetchCoreValues, WcsFetchHttpError, WcsFetchValues, WcsIoErrorInfo, WcsIoErrorPhase };

@@ -21,7 +21,7 @@ npm i -D @wcstack/lint
 npx wcs-validate --errors-only src/**/*.html
 ```
 
-`.manifest.json` で終わるファイルは sidecar manifest として、それ以外は `data-wcs` バインディングを含む HTML として検査されます。ただし framework のコンポーネントと script のファイル（`.js`・`.ts`・`.jsx`・`.tsx`・`.vue`・`.svelte`）は読みません（4.6（未リリース）から。以前は HTML として読み、問題なしと報告していました）。
+`.manifest.json` で終わるファイルは sidecar manifest として、それ以外は `data-wcs` バインディングを含む HTML として検査されます。ただし framework のコンポーネントと script のファイル（`.js`・`.ts`・`.jsx`・`.tsx`・`.vue`・`.svelte`）は読みません（4.6 から。以前は HTML として読み、問題なしと報告していました）。
 
 `<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL・絶対パスは読み込まず、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。4.4 から、`.js` / `.ts` の state にはスクリプトの規則（`wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` など）もかかります: ファイルの中の指摘はそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数え、IDE はページの `src` の値の上に出します。4.3 までは、外部 state ではパスだけを検査していました。
 
@@ -54,7 +54,7 @@ app.manifest.json:1:3 error wcs/manifest-broken Broken manifest JSON: ...
 | `1` | error severity の診断が 1 件以上。`--strict` 時は error または warning が 1 件以上 |
 | `2` | usage エラー、またはファイル読み取り失敗 |
 
-件数の後に、件数が何も語らないファイルを 2 つの注が挙げます（4.6（未リリース）から。`--errors-only` でも出し、exit code は変えません）:
+件数の後に、件数が何も語らないファイルを 2 つの注が挙げます（4.6 から。`--errors-only` でも出し、exit code は変えません）:
 
 ```
 0 error(s), 0 warning(s), 0 info

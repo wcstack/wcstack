@@ -213,6 +213,7 @@ declare class WcsUpload extends HTMLElement {
     private _files;
     private _trigger;
     private _told;
+    private _waitingForUrl;
     private _connectedCallbackPromise;
     private _internals;
     constructor();
@@ -249,7 +250,7 @@ declare class WcsUpload extends HTMLElement {
     abort(): void;
     upload(): Promise<any>;
     private _warnNotReady;
-    attributeChangedCallback(_name: string, _oldValue: string | null, _newValue: string | null): void;
+    attributeChangedCallback(_name: string, _oldValue: string | null, newValue: string | null): void;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }

@@ -168,6 +168,8 @@ declare class BroadcastCore extends EventTarget {
      * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
      */
     private _toldNotReady;
+    /** Whether `[wcs/post-uncloneable]` was said for this element. */
+    private _toldUncloneable;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     get message(): any;
@@ -198,6 +200,7 @@ declare class BroadcastCore extends EventTarget {
      * posting with no open channel surfaces an `InvalidStateError`.
      */
     post(data: any): void;
+    private _warnUncloneable;
     private _warnNotReady;
     /** Leave the channel. Idempotent — a no-op when no channel is open. */
     close(): void;

@@ -935,6 +935,21 @@ function hasAccessorOnPrototype(target, name) {
     }
     return false;
 }
+// 属性になってしまったオブジェクトの入力（`files="[object File]"`）を、要素ごとに 1 回だけ言う。
+// React 19 は定義前の要素にプロパティが無いのでオブジェクトを属性に書き、Vue の `.attr` も
+// 書く。要素はその入力をプロパティでしか読まないので、何も受け取らず、何も言わなかった
+// （docs/seam-apps.md、fw-inventory）。
+const toldObjectAttribute = new WeakSet();
+function warnObjectAttribute(element, name, value) {
+    if (toldObjectAttribute.has(element))
+        return;
+    toldObjectAttribute.add(element);
+    const tag = element.localName ?? "element";
+    console.warn(`[wcs/input-as-attribute] <${tag}> has the attribute ${name}="${value}": an object was written as an ` +
+        `attribute, so the element did not receive it. A framework does that when the property is set before the ` +
+        `element's definition loads (React 19), or when told to (Vue's .attr). Load the definition before rendering, ` +
+        `or assign the property through a ref (Vue: .prop). (Said once per element.)`, element);
+}
 /**
  * `connectedCallback` の先頭で呼ぶ。宣言済み input のうち upgrade 前の代入で
  * accessor をシャドウしている own プロパティを、delete → 再代入で setter に通し直す。
@@ -942,14 +957,19 @@ function hasAccessorOnPrototype(target, name) {
  * - 冪等: 再代入は accessor を通るので own プロパティは残らず、2 回目以降は no-op。
  * - 宣言に `inputs` が無い要素、`wcBindable` を持たない要素では何もしない。
  * - 値の意味は変えない。今まで捨てられていた代入が届くようになる一方向の変化。
+ * - 値が `[object …]` の属性（属性に書かれてしまったオブジェクトの入力）は、要素ごとに 1 回警告する。
  */
 function upgradeProperties(element) {
     const declaration = element.constructor?.wcBindable;
     const inputs = declaration?.inputs;
     if (inputs === undefined)
         return;
+    const getAttribute = element.getAttribute;
     for (const input of inputs) {
         const name = input.name;
+        const attribute = typeof getAttribute === "function" ? getAttribute.call(element, name.toLowerCase()) : null;
+        if (attribute !== null && attribute.startsWith("[object "))
+            warnObjectAttribute(element, name, attribute);
         if (!Object.prototype.hasOwnProperty.call(element, name))
             continue;
         if (!hasAccessorOnPrototype(element, name))
@@ -1159,6 +1179,7 @@ class Fetch extends HTMLElement {
     _connectResolve = null;
     _lastFetchedUrl = null;
     _toldTriggerWithoutUrl = false;
+    _toldUndefinedHelper = false;
     _internals = null;
     constructor() {
         super();
@@ -1339,6 +1360,10 @@ class Fetch extends HTMLElement {
         const headers = {};
         const headerElements = this.querySelectorAll(config.tagNames.fetchHeader);
         for (const el of headerElements) {
+            if (typeof el.hasHeader !== "boolean") {
+                this._warnUndefinedHelper(config.tagNames.fetchHeader, "header");
+                continue;
+            }
             // a header without a value attribute is not sent (FetchHeader)
             if (el.hasHeader) {
                 headers[el.headerName] = el.headerValue;
@@ -1375,7 +1400,10 @@ class Fetch extends HTMLElement {
         }
         // サブタグからbodyを取得
         const bodyElement = this.querySelector(config.tagNames.fetchBody);
-        if (bodyElement) {
+        if (bodyElement && typeof bodyElement.bodyContent !== "string") {
+            this._warnUndefinedHelper(config.tagNames.fetchBody, "body");
+        }
+        else if (bodyElement) {
             return {
                 body: bodyElement.bodyContent || null,
                 contentType: bodyElement.contentType,
@@ -1461,6 +1489,20 @@ class Fetch extends HTMLElement {
         console.warn("[@wcstack/fetch] [wcs/command-not-ready] trigger was refused: there is no url, so nothing is fetched. " +
             "Write url before trigger (bindings apply in the order written), and write trigger again once there is one. " +
             "(Said once per element.)", this);
+    }
+    /**
+     * A `<wcs-fetch-header>` / `<wcs-fetch-body>` whose definition never loaded is a plain element, and its
+     * header or body was left out of the request without a word: a page that defines the tags itself (an
+     * autoloader's wrapper module, a scoped registry) defined `<wcs-fetch>` only (docs/seam-apps.md,
+     * fw-inventory). Said once per element.
+     */
+    _warnUndefinedHelper(tag, what) {
+        if (this._toldUndefinedHelper)
+            return;
+        this._toldUndefinedHelper = true;
+        console.warn(`[@wcstack/fetch] [wcs/fetch-helper-undefined] <${tag}> inside this <${config.tagNames.fetch}> is not ` +
+            `defined, so its ${what} is not sent. Load @wcstack/fetch/auto, or define WcsFetchHeader and WcsFetchBody ` +
+            "with WcsFetch when the page defines the tags itself. (Said once per element.)", this);
     }
     _warnUnsafeAutoFetch() {
         const method = this.method;
@@ -1777,5 +1819,5 @@ function bootstrapFetch(userConfig, registry) {
     registerComponents(registry);
 }
 
-export { FetchCore, TRUSTED_TYPES_POLICY_SLOT, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
+export { FetchCore, TRUSTED_TYPES_POLICY_SLOT, WCS_FETCH_ERROR_CODE, Fetch as WcsFetch, FetchBody as WcsFetchBody, FetchHeader as WcsFetchHeader, InfiniteScroll as WcsInfiniteScroll, bootstrapFetch, getConfig, getTrustedTypesPolicy, setTrustedTypesPolicy };
 //# sourceMappingURL=index.esm.js.map

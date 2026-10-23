@@ -172,7 +172,7 @@ export default customElements.get("wcs-fetch");
 
 The autoloader loads one tag after another and skips a tag that is already defined, so `<wcs-fetch-header>` needs no file of its own. The file is named after the tag, not the package: `<wcs-ws>` (`@wcstack/websocket`) is `ws.js`, `<wcs-geo>` (`@wcstack/geolocation`) is `geo.js`.
 
-A wrapper that re-exports one class (`export { WcsFetch as default } from "https://esm.run/@wcstack/fetch"`) leaves the helper tags undefined, and the autoloader then looks for `fetch-header.js`. `<wcs-fetch>` sends its request without their header or body; since 4.6 (not released yet) it warns `[wcs/fetch-helper-undefined]`.
+A wrapper that re-exports one class (`export { WcsFetch as default } from "https://esm.run/@wcstack/fetch"`) leaves the helper tags undefined, and the autoloader then looks for `fetch-header.js`. `<wcs-fetch>` sends its request without their header or body; since 4.6 it warns `[wcs/fetch-helper-undefined]`.
 
 ## Customized Built-in Elements (`is` attribute)
 

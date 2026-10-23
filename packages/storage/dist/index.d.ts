@@ -108,6 +108,8 @@ declare class StorageCore extends EventTarget {
     private _key;
     /** Whether `[wcs/storage-unserializable]` was said for this element. */
     private _toldUnkept;
+    /** Whether `[wcs/command-not-ready]` was said for this element (an operation without a key). */
+    private _toldNoKey;
     private _type;
     private _storageListener;
     private _gen;
@@ -140,6 +142,7 @@ declare class StorageCore extends EventTarget {
     private _setValue;
     load(): any;
     save(value: any): void;
+    private _warnNoKey;
     private _warnUnkept;
     remove(): void;
     startSync(): void;
@@ -161,6 +164,8 @@ declare class Storage extends HTMLElement {
     private _syncCore;
     get key(): string;
     set key(value: string | null | undefined);
+    get storageKey(): string;
+    set storageKey(value: string | null | undefined);
     get type(): StorageType;
     set type(value: StorageType | null | undefined);
     private _warnedType;
@@ -178,7 +183,7 @@ declare class Storage extends HTMLElement {
     load(): any;
     save(): void;
     remove(): void;
-    attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }
