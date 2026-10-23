@@ -1275,3 +1275,29 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
 - 残り:
   - `state-field-report` を examples/ へ取り込む（e2e には `channel: "chromium"` の Playwright の project が要る）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.6.0 の公開（2026-10-24）
+
+- 中身: 4.x の指針の下での 4 つ目の minor。継ぎ目アプリ `fw-inventory`（フレームワークの中の `wcs-*` — React 19 と Vue 3 から `@wc-bindable` のアダプター越しに I/O ノードを使う、docs/seam-apps.md）から。PR #505〜#509（2026-10-21・24 にマージ）:
+  - storage の `storage-key` / `storageKey`（React と Vue は `key` を取る。著者の決定）と key の無い操作の警告、url より先に来たファイルを url が来たら送る upload（著者の決定）、worker / broadcast の `[wcs/post-uncloneable]`、全 I/O ノードの `[wcs/input-as-attribute]`、fetch の補助タグのクラスの書き出しと `[wcs/fetch-helper-undefined]`（#505）。
+  - どの `./auto` にも `dist/auto.d.ts`、`exports["./auto"]` は `{ types, import }`（著者の決定。JSX の宣言は記録だけ、#506）。lint は読まなかったファイルを `not read:` / `nothing to check:` で挙げる（#507）。文書と websocket-chat の例（#508）、examples/fw-inventory と e2e（Vite のビルドを e2e.yml に、#509）。
+  - アダプター側の発見は wc-bindable-protocol#42 に提案した。`@wcstack/state` のソースは変えていない（`./auto` の型だけ）。
+- 準備: PR #510（merge commit 87615378）で CHANGELOG を `[4.6.0] — 2026-10-24` に締め、要約と **Upgrading** の節を書いた（url より先のファイルを送るようになった upload、新しいコンソールの警告、lint の注、`./auto` の export がオブジェクトになったこと、SSR は同じ minor で）。文書の固定版 18 か所を 4.6.0 にした。README の印の剥がしは事前に試した（22 ファイル・42 行）。
+- main で `release`（minor、run 40033140631）。成功した: 版を上げたコミット e38e6d7b、タグ `v4.6.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約と Upgrading を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。ただし `wcstack` だけ、公開（22:57 UTC）から registry に現れるまで約 15 分かかった（ほかは約 1 分）。npm の「処理中」の非同期の受け付けで、公開し直さずに待った。
+  - SRI 44/44（1 回目は storage が jsDelivr の 502、wcstack が反映前の 404。取り直して一致）。文書の固定 URL（18 か所・8 本）がすべて 200。npm の README に印は残っていない。`@wcstack/server` 4.6.0 は `@wcstack/state` の 4.6.0 にちょうどで依存する。`wcstack/auto` 4.6.0 は 73.8 KB gzip、integrity は `sha384-0TjjA01DK4f0Mifl/Kf93JLUD/QM+koQyVquDIMwwTLmmW9Mh4oGGOQDSKI0sQyI`。
+  - 配布物に今回の変更（storage の `storage-key`、worker / broadcast の `post-uncloneable`、upload ほかの `input-as-attribute`、44 個の `auto.d.ts`、lint の `not read:`、タグの目録の `storageKey`）がある。
+- 公開後の作業（同日）:
+  - PR #511（merge commit b3142f9c）: サイズの基準値を 4.6.0 の dist で取り直した（版の文字列だけ — `index.esm.js` と `auto.min.js` が +1 B、ssr が −1 B、`core.min.js` は 20,102 B のまま）。CLAUDE.md / AGENTS.md の版と数値、拡張を 2.6.0 に。
+  - VS Code 拡張 2.6.0: b3142f9c で `npm run package` した vsix（890 ファイル、4.6.0 の state を同梱、テスト 1,309 件）は作ったが、**公開は Marketplace の PAT の期限切れで止まっている**（`VSCE_PAT` も手元に保存した資格情報も同じ PAT）。新しい PAT ができたら公開し、注釈付きのタグ `vscode-wcs-v2.6.0` を付ける。
+  - wcstack-skill: PR #44（merge commit bd90502）で、§5 の lint の門が覆う範囲、§6 のフレームワークの規則（深い写し、`event` の出力は要素で、要素を持つ ref と Vue の静的な ref、`trigger` でなく命令、`storage-key`、props の順、他のタブへの追随、付け直し、JSX のコロンのイベント、`/auto` の型、Vite の proxy）、失敗の表の 5 行、catalog を書き、版の印と CDN の固定を 4.6.0 にした。注釈付きのタグ `v4.6.0`。
+  - LP（03eeace）:
+    - 版の参照と、「Shipped in」の v4.6.0 の一文（上げるとコンソールの警告が増えうることと、リリースノートへのリンク）。state / signals のページの版。
+    - ステップ 15 の `^4.6.0`、ステップ 16 の `wcstack@4.6.0` と integrity とリリースへのリンク。`wcstack/auto` は 73.8 KB gzip で「about 70 KB」のまま。
+    - ステップ 07・12: それぞれの「わざと壊す」変更を 4.6.0 の lint で取り直した — 8 つの出力は一字一句変わらない。
+    - llms の作り直しと、sitemap の lastmod。
+    - 本番で 9/9。
+- 残り:
+  - 拡張 2.6.0 の公開（新しい PAT）とタグ。
+  - examples/fw-inventory の依存を `^4.6.0` にして lock を更新する（手元の npm は公開から 1 日たたない版を取らない設定）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
