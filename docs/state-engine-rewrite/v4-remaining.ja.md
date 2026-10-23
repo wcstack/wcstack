@@ -1289,7 +1289,7 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 配布物に今回の変更（storage の `storage-key`、worker / broadcast の `post-uncloneable`、upload ほかの `input-as-attribute`、44 個の `auto.d.ts`、lint の `not read:`、タグの目録の `storageKey`）がある。
 - 公開後の作業（同日）:
   - PR #511（merge commit b3142f9c）: サイズの基準値を 4.6.0 の dist で取り直した（版の文字列だけ — `index.esm.js` と `auto.min.js` が +1 B、ssr が −1 B、`core.min.js` は 20,102 B のまま）。CLAUDE.md / AGENTS.md の版と数値、拡張を 2.6.0 に。
-  - VS Code 拡張 2.6.0: b3142f9c で `npm run package` した vsix（890 ファイル、4.6.0 の state を同梱、テスト 1,309 件）は作ったが、**公開は Marketplace の PAT の期限切れで止まっている**（`VSCE_PAT` も手元に保存した資格情報も同じ PAT）。新しい PAT ができたら公開し、注釈付きのタグ `vscode-wcs-v2.6.0` を付ける。
+  - VS Code 拡張 2.6.0: b3142f9c で `npm run package` した vsix（890 ファイル、4.6.0 の state を同梱、テスト 1,309 件）。最初の公開は Marketplace の PAT の期限切れで止まった（`VSCE_PAT` も手元に保存した資格情報も同じ PAT）。著者が PAT を作り直し（Organization は All accessible organizations、スコープは Marketplace の Manage）、`vsce verify-pat` が通ってから同じ vsix を公開した（Marketplace の照会 API に 2.6.0 が出たのは公開から約 6 分後）。注釈付きのタグ `vscode-wcs-v2.6.0`（b3142f9c）。**global PAT は Azure DevOps で 2026-12-01 に廃止される**ので、その前に Microsoft Entra ID による公開（`vsce publish --azure-credential`）へ移る。
   - wcstack-skill: PR #44（merge commit bd90502）で、§5 の lint の門が覆う範囲、§6 のフレームワークの規則（深い写し、`event` の出力は要素で、要素を持つ ref と Vue の静的な ref、`trigger` でなく命令、`storage-key`、props の順、他のタブへの追随、付け直し、JSX のコロンのイベント、`/auto` の型、Vite の proxy）、失敗の表の 5 行、catalog を書き、版の印と CDN の固定を 4.6.0 にした。注釈付きのタグ `v4.6.0`。
   - LP（03eeace）:
     - 版の参照と、「Shipped in」の v4.6.0 の一文（上げるとコンソールの警告が増えうることと、リリースノートへのリンク）。state / signals のページの版。
@@ -1298,6 +1298,6 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
     - llms の作り直しと、sitemap の lastmod。
     - 本番で 9/9。
 - 残り:
-  - 拡張 2.6.0 の公開（新しい PAT）とタグ。
+  - 拡張の公開を、2026-12-01（global PAT の廃止）より前に Microsoft Entra ID の方法へ移す。
   - examples/fw-inventory の依存を `^4.6.0` にして lock を更新する（手元の npm は公開から 1 日たたない版を取らない設定）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
