@@ -8,13 +8,19 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
-From the `fw-inventory` seam app: an inventory app written with React 19 and Vue 3 over the I/O nodes, through the `@wc-bindable` adapters ([docs/seam-apps.md](./docs/seam-apps.md)). The adapters' own findings are proposed to the @wc-bindable repository as [wc-bindable-protocol#42](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/42) ([docs/spec-proposal-adapter-occurrences.md](./docs/spec-proposal-adapter-occurrences.md), ja).
+## [4.6.0] — 2026-10-24
+
+The fourth minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja), from one seam app: `fw-inventory`, a shop's inventory tool with a React 19 back office and a Vue 3 warehouse panel that drive the I/O nodes through the `@wc-bindable` adapters, with no `@wcstack/state` ([docs/seam-apps.md](./docs/seam-apps.md)). Of 19 mistakes made on purpose, nothing on the client reported 12. It found a `<wcs-storage>` the frameworks gave no key, an upload the order of props decided, posts and object inputs lost silently, and a lint that called a framework app clean. The design decisions are the author's (§5.4). No API is removed or renamed. `@wcstack/state` is unchanged but for its version and its `./auto` type. The adapters' own findings are proposed upstream as [wc-bindable-protocol#42](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/42) ([docs/spec-proposal-adapter-occurrences.md](./docs/spec-proposal-adapter-occurrences.md), ja).
 
 ### Upgrading
 
+What a right page does is unchanged, but for one upload, and more is reported:
+
 - **`<wcs-upload>` sends files that came before its `url`.** An automatic `<wcs-upload>` given its `files` while it has no `url` keeps them and uploads them when the url arrives; it sent nothing and warned `[wcs/command-not-ready]`. A page that set the files first and the url later on purpose, expecting nothing to be sent, now uploads.
-- **The console warns about more**, once per element: `[wcs/post-uncloneable]` (`<wcs-worker>`, `<wcs-broadcast>`), `[wcs/input-as-attribute]` (every I/O node), `[wcs/fetch-helper-undefined]`, and `[wcs/command-not-ready]` for a `<wcs-storage>` load, save or remove without a key.
+- **The console warns about more**, once per element: `[wcs/post-uncloneable]` (`<wcs-worker>`, `<wcs-broadcast>`), `[wcs/input-as-attribute]` (every I/O node), `[wcs/fetch-helper-undefined]`, and `[wcs/command-not-ready]` for a `<wcs-storage>` load, save or remove without a key. A test that asserts no `console.warn` may see these.
 - **The lint does not read `.js`, `.ts`, `.jsx`, `.tsx`, `.vue` and `.svelte` files.** They were read as HTML and reported clean; now they are named after the counts as `not read:`. A page with no `data-wcs`, `<wcs-*>` tag or wcstack script is named as `nothing to check:`. The exit code is unchanged.
+- **`exports["./auto"]` is an object**, `{ "types": "./dist/auto.d.ts", "import": "./dist/auto.min.js" }` (`default` for `wcstack`), in every package. Bundlers and Node resolve it as before; a script that read the entry as a string reads `.import` now.
+- **SSR: deploy `@wcstack/server` 4.6 and the 4.6 client together**, as on every minor. The client compares `<wcs-ssr version>` by major.minor, so it discards a 4.5 server's snapshot and renders the page on the client.
 
 ### Added
 
