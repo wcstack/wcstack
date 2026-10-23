@@ -573,6 +573,26 @@ function FilterStore({ filters, onRestore }: { filters: Filters; onRestore: (f: 
 
 `@wcstack/state` does the same with `value#init=element` ([§5](#5-load-before-bind-initelement)).
 
+**Following other tabs.** Another tab's save arrives as `wcs-storage:value-changed`. Listen to it on the element, and skip the events your own save dispatches (they fire during the assignment). Applying the adapter's `value` instead brings your own save back a render late, and it undoes what was typed in between: typing "bolt" quickly saved and applied "bol" and "bolt" in turn without end.
+
+```tsx
+const saving = useRef(false);
+useEffect(() => {
+  const node = el.current;
+  if (!node) return;
+  const onChange = (e: Event) => {
+    const v = (e as CustomEvent<Filters | null>).detail;
+    if (!saving.current && v) onRestore(v);
+  };
+  node.addEventListener("wcs-storage:value-changed", onChange);
+  return () => node.removeEventListener("wcs-storage:value-changed", onChange);
+}, []); // eslint-disable-line react-hooks/exhaustive-deps
+// and in the effect that saves:
+//   saving.current = true; try { el.current.value = { q: filters.q, page: filters.page }; } finally { saving.current = false; }
+```
+
+[`examples/fw-inventory`](../../examples/fw-inventory/) keeps its filters this way.
+
 ### Vue
 
 ```vue

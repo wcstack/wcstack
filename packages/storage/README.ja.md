@@ -571,6 +571,26 @@ function FilterStore({ filters, onRestore }: { filters: Filters; onRestore: (f: 
 
 `@wcstack/state` では `value#init=element` が同じことをします（[§5](#5-load-before-bind-initelement)）。
 
+**他のタブに追随する。** 他のタブの保存は `wcs-storage:value-changed` で届きます。要素でそれを聴き、自分の保存が出すイベント（代入の最中に出ます）は飛ばしてください。代わりにアダプターの `value` を当てると、自分の保存が 1 描画遅れて戻り、その間に打った分を巻き戻します: "bolt" を速く打つと、"bol" と "bolt" を交互に保存して当てることが止まりませんでした。
+
+```tsx
+const saving = useRef(false);
+useEffect(() => {
+  const node = el.current;
+  if (!node) return;
+  const onChange = (e: Event) => {
+    const v = (e as CustomEvent<Filters | null>).detail;
+    if (!saving.current && v) onRestore(v);
+  };
+  node.addEventListener("wcs-storage:value-changed", onChange);
+  return () => node.removeEventListener("wcs-storage:value-changed", onChange);
+}, []); // eslint-disable-line react-hooks/exhaustive-deps
+// 保存する effect の中で:
+//   saving.current = true; try { el.current.value = { q: filters.q, page: filters.page }; } finally { saving.current = false; }
+```
+
+[`examples/fw-inventory`](../../examples/fw-inventory/) はフィルタをこの形で保ちます。
+
 ### Vue
 
 ```vue

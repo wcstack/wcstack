@@ -14,7 +14,7 @@ single-package demos live in that package's own `examples/` directory instead:
 Every demo is buildless and loads packages straight from the CDN
 (`https://esm.run/@wcstack/<pkg>/auto` one-liners; signals demos import the
 single `@wcstack/signals/dom` entry) — except the React/Vue variants of
-`websocket-chat`, which use Vite.
+`websocket-chat` and the `fw-inventory` seam app, which use Vite.
 
 **Script order**: list the I/O-node packages *before* `@wcstack/state`. Module
 scripts execute in document order, so this guarantees every custom element is
@@ -84,6 +84,7 @@ Larger apps written to find defects rather than to show a feature: a first-time 
 | [`signals-shop/`](signals-shop/) | `@wcstack/signals` × router × `<wcs-fetch>` / `<wcs-storage>` (the tutorial's shop on the other reactive core) | `node examples/signals-shop/server.js` | :3000 |
 | [`ssr-news/`](ssr-news/) | `@wcstack/server` × router × state × `<wcs-fetch>` on the server and at hydration × `<wcs-link>` / `<wcs-head>` / `<wcs-layout>` under SSR × the client's version (a server-rendered news site, readable without JavaScript) | `cd examples/ssr-news && npm install && node server.js` | :3000 |
 | [`state-field-report/`](state-field-report/) | `<wcs-permission>` × the acquiring elements × `<wcs-camera>` → `<wcs-recorder>` → `<wcs-upload>` × a route's nodes × `<wcs-network offline>` × `<wcs-storage>` × `Permissions-Policy` / an `<iframe>` (a field report from a phone: clips, the position, a dictated note, an outbox) | `node examples/state-field-report/server.js` | :3000 |
+| [`fw-inventory/`](fw-inventory/) | the I/O nodes × `@wc-bindable/react` / `vue` × React 19's props × Vue's reactivity and structured clone × `key` and `<wcs-storage>` × two tabs, React in one and Vue in the other (a shop's inventory tool: a React back office and a Vue warehouse panel, no `@wcstack/state`; a Vite app) | `cd examples/fw-inventory && npm install && npm run build && node server.js` | :3000 |
 
 ## Shared server core
 

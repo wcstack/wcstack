@@ -846,6 +846,14 @@
       "effect": { "en": "The template unwraps the ref, so `:ref` gets `null`: the adapter never binds, and `values` stays at its initial values, with no error.", "ja": "テンプレートが ref を剥がすので、`:ref` には `null` が渡る。アダプターは束縛せず、`values` は初期値のまま。エラーも無い。" },
       "disposition": "docs-only",
       "note": { "en": "Found while checking the fw-inventory fixes. Neither the runtime nor the lint sees a Vue template's refs. The READMEs and the integration guide write `ref=\"name\"` now; the adapter's README is in the @wc-bindable issue.", "ja": "fw-inventory の直しを確かめる中で見つかった。Vue のテンプレートの ref は、実行時にも lint にも見えない。README と統合の手引きは `ref=\"名前\"` と書くようになった。アダプターの README は @wc-bindable の issue に入れた。" }
+    },
+    {
+      "id": "storage-value-applied-back",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Follows other tabs by applying `<wcs-storage>`'s `value` from a framework adapter back to the state the page saves from (`useEffect(() => apply(stored.value), [stored.value])`).", "ja": "他のタブに追随するために、フレームワークのアダプターの `<wcs-storage>` の `value` を、ページが保存する元の状態へ当て直す（`useEffect(() => apply(stored.value), [stored.value])`）。" },
+      "effect": { "en": "The page's own save comes back a render late and undoes what was typed in between; that write saves again, and typing quickly saves and applies two values in turn without end — a request per turn, with no error.", "ja": "ページ自身の保存が 1 描画遅れて戻り、その間に打った分を巻き戻す。その書き込みがまた保存し、速く打つと 2 つの値を交互に保存して当てることが止まらない — 1 回ごとに要求が出て、エラーは無い。" },
+      "disposition": "docs-only",
+      "note": { "en": "Found landing the fw-inventory seam app: the author's filters did so. The element cannot tell a write the framework echoes from an edit. The storage README listens to `wcs-storage:value-changed` on the element and skips the events its own save dispatches.", "ja": "継ぎ目アプリ fw-inventory の取り込みで見つかった: 著者のフィルタがそうしていた。フレームワークが返してきた書き込みと編集は、要素から見分けられない。storage の README は、要素の `wcs-storage:value-changed` を聴き、自分の保存が出すイベントを飛ばす。" }
     }
   ],
   "uncounted": [

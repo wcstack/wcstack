@@ -105,6 +105,12 @@ jobs:
             (cd "$dir" && npm ci --omit=dev)
             echo "::endgroup::"
           done
+      # examples/fw-inventory is a Vite app (React and Vue from npm), served from its dist/ by its
+      # own server.js. WCS_LOCAL=1 points its @wcstack/* imports at packages/*/dist, which the first
+      # step rebuilt from src, so e2e/tests/fw-inventory.spec.ts runs this tree's bundles.
+      - name: Build the fw-inventory seam app over the packages' dists
+        working-directory: examples/fw-inventory
+        run: npm ci && WCS_LOCAL=1 npm run build
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm test
