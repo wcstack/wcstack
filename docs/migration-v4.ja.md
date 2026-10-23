@@ -543,7 +543,7 @@ import { defineState } from "@wcstack/state/define";
 - **分割 auto のエントリ** `dist/split/auto.js` は、import map なしの 1 つの script タグで分割のビルドを読み込みます。版を固定した素の `/npm/` のパスから読み、`esm.run` は通さないでください。`exports` には載っていないので、バンドラでは `@wcstack/state/core` と `installFeatures` を使い続けます。
 
   ```html
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.5.0/dist/split/auto.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.0/dist/split/auto.js"></script>
   <wcs-state features="scopes diagnostics">…</wcs-state>
   ```
 
