@@ -64,14 +64,9 @@ function matchNameSpace(tagName: string, prefixMap: IPrefixMap): INameSpaceInfo 
 async function tagLoad(
   tagInfo: ITagInfo,
   config: IConfig,
-  prefixMap: IPrefixMap,
+  info: INameSpaceInfo,
   registry: ICustomElementRegistryAdapter,
 ): Promise<void> {
-  const info: INameSpaceInfo | null = matchNameSpace(tagInfo.name, prefixMap);
-  if (info === null) {
-    throw new Error("No matching namespace found for lazy loaded component: " + tagInfo.name);
-  }
-
   const loadingTags = getLoadingTags(registry);
   const inFlight = loadingTags.get(tagInfo.name);
   if (inFlight !== undefined) {
@@ -161,7 +156,7 @@ async function lazyLoad(
     elements.push(walker.currentNode as Element);
   }
 
-  const tagInfos: ITagInfo[] = [];
+  const tagInfos: [ITagInfo, INameSpaceInfo][] = [];
   const tagNames = new Set<string>();
   for(const element of elements) {
     const tagInfo = getCustomTagInfo(element);
@@ -175,9 +170,13 @@ async function lazyLoad(
           await checkObserveShadowRoot(element, config, prefixMap);
         });
       }
-      if (!tagNames.has(tagInfo.name) && !failedTags.has(tagInfo.name)) {
+      // 名前空間の外のタグ（別のライブラリのもの、後で定義される wcstack のもの）は読みに行かない。
+      // 以前はここで投げ、走査の残りと MutationObserver の設置ごと止めていた — 前に 1 つあるだけで
+      // ページの部品が 1 つも読まれなかった（docs/seam-apps.md、prod-booking）
+      const info = matchNameSpace(tagInfo.name, prefixMap);
+      if (info !== null && !tagNames.has(tagInfo.name) && !failedTags.has(tagInfo.name)) {
         tagNames.add(tagInfo.name);
-        tagInfos.push(tagInfo);
+        tagInfos.push([tagInfo, info]);
       }
     } else {
       // upgraded
@@ -185,8 +184,8 @@ async function lazyLoad(
     }
   }
   let tagCount = 0;
-  for(const tagInfo of tagInfos) {
-    await tagLoad(tagInfo, config, prefixMap, registry);
+  for(const [tagInfo, info] of tagInfos) {
+    await tagLoad(tagInfo, config, info, registry);
     tagCount++;
   }
   return tagCount;
