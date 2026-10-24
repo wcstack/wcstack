@@ -43,7 +43,7 @@ For an app that uses the SPA core anyway, **this package ships the bundle**: `wc
 
 ```html
 <script type="module"
-        src="https://cdn.jsdelivr.net/npm/wcstack@4.6.1/dist/auto.min.js"
+        src="https://cdn.jsdelivr.net/npm/wcstack@4.6.2/dist/auto.min.js"
         integrity="sha384-…"></script>
 ```
 

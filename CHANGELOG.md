@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.6.2] — 2026-10-24
+
+From the same study of TypeScript 7.1's content mappers: two `wcs-tsc` bugs it found, and the design for type-checking `<wcs-state>` under TypeScript 7 ([docs/typescript-content-mapper.md](./docs/typescript-content-mapper.md)), not implemented. Only `@wcstack/typescript` changed (and the VS Code extension, 2.6.1); every other package is 4.6.1 with a new version.
+
 ### Upgrading
 
 - **`wcs-tsc` and the VS Code extension check getter bodies.** A getter whose body reads `this` was left unchecked; now it is checked like a method, so a page that passed may report errors inside its getters — the kind its methods already got. `examples/router-spa` gains two: `this.routeParams.productId` and `this.query.category` on a state that declares `routeParams: {}` and `query: {}`.

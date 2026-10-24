@@ -34,7 +34,7 @@ A media query that only changes *styling* belongs in a stylesheet. This node is 
 npm install @wcstack/media-query
 ```
 
-CDN (pinned): `https://esm.run/@wcstack/media-query@4.6.1/auto`
+CDN (pinned): `https://esm.run/@wcstack/media-query@4.6.2/auto`
 
 ## Quick Start
 
