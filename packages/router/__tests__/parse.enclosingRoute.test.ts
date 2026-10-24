@@ -93,12 +93,21 @@ describe('parse — 囲むルート', () => {
     expect(errors[0]).toContain('guards nothing');
   });
 
-  it('module のスクリプトの無いガードは、ルートが守られないと console.error で知らせること', async () => {
+  it('module のスクリプトの無いガードは、ルートを閉じる側に倒し（guard を有効にしてリダイレクト）、その先を console.error で知らせること', async () => {
+    const failed = vi.spyOn(Route.prototype, 'notifyGuardHandlerLoadFailed');
     const { guarded, errors } = await parseMarkup(
       '<wcs-route path="/a"><wcs-guard-handler><script>export default () => true;</script></wcs-guard-handler></wcs-route>',
     );
-    expect(guarded).toEqual([]);
+    expect(guarded).toEqual(['/a']);
+    expect(failed).toHaveBeenCalledTimes(1);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('route "/a" has no <script type="module">');
+    expect(errors[0]).toContain('redirected to "/"');
+  });
+
+  it('module のスクリプトの無いガードの知らせは、guard 属性のリダイレクト先を名指すこと', async () => {
+    const { errors } = await parseMarkup('<wcs-route path="/a" guard="/login"><wcs-guard-handler></wcs-guard-handler></wcs-route>');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('redirected to "/login"');
   });
 });

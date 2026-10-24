@@ -200,8 +200,12 @@ describe('wcs-guard-handler', () => {
     await expect(
       members.guardCheck({ path: '/members', routes: [], params: {}, typedParams: {}, lastPath: '' })
     ).rejects.toMatchObject({ fallbackPath: '/' });
-    // script の無い <wcs-guard-handler> は guard を有効にしない（待ちが決着しなくなるため）
-    expect(open.hasGuard).toBe(false);
+    // script の無い <wcs-guard-handler> は、読み込めなかったハンドラと同じく閉じる側に倒す: 待たずにリダイレクト
+    // （以前は guard を有効にせずルートを開けていた — バンドラがスクリプトを取り去ると守るページが見えた）
+    expect(open.hasGuard).toBe(true);
+    await expect(
+      open.guardCheck({ path: '/open', routes: [], params: {}, typedParams: {}, lastPath: '' })
+    ).rejects.toMatchObject({ fallbackPath: '/' });
   });
 
   it('default exportが関数でない場合、guardHandlerが設定されないこと', async () => {

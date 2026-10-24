@@ -80,7 +80,12 @@ async function _parseNode(
         if (route === null) {
           console.error(`[@wcstack/router] [wcs/guard-handler-ignored] A <${config.tagNames.guardHandler}> outside a <${config.tagNames.route}> guards nothing: put it inside the route it guards.`);
         } else if (!script) {
-          console.error(`[@wcstack/router] [wcs/guard-handler-ignored] The <${config.tagNames.guardHandler}> of route "${route.absolutePath}" has no <script type="module">, so the route is not guarded.`);
+          // スクリプトの無いハンドラは、読み込めなかったハンドラと同じく閉じる側に倒す: 守るはずのページを開けない。
+          // バンドラが HTML のインラインスクリプトを取り去ると、この形になる。以前は「守られない」と知らせて開け、
+          // `guard` 属性があれば知らせとは逆に、来ないハンドラを待って描かなかった（docs/seam-apps.md、prod-booking）
+          route.enableGuard();
+          route.notifyGuardHandlerLoadFailed();
+          console.error(`[@wcstack/router] [wcs/guard-handler-ignored] The <${config.tagNames.guardHandler}> of route "${route.absolutePath}" has no <script type="module">, so its guard cannot run: every navigation into the route is redirected to "${(route as unknown as Element).getAttribute("guard") || "/"}".`);
         } else {
           if (routeParentNode === null) {
             console.error(`[@wcstack/router] [wcs/guard-handler-ignored] A <${config.tagNames.guardHandler}> outside a <${config.tagNames.route}> guards the route before it, "${route.absolutePath}": put it inside that route.`);

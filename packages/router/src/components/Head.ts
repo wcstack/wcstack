@@ -1,6 +1,6 @@
 import { raiseError } from "../raiseError";
 import { config } from "../config";
-import { warnUnboundMarkup } from "../unboundMarkupWarning";
+import { hasBinding, warnUnboundMarkup } from "../unboundMarkupWarning";
 import { bindSubtree } from "../protocol/binder";
 import { inSsr } from "../inSsr";
 
@@ -245,6 +245,12 @@ export class Head extends HTMLElement {
 
       // headを更新
       const current = headElementMap.get(key) ?? null;
+      // 同じ要素は入れ直さない。入れ直すとスタイルシートを取り直し、<base> の差し替えは base-uri の
+      // CSP を毎回検査させる（WebKit は遷移ごとに違反を報告した — docs/seam-apps.md、prod-booking）。
+      // 束縛を持つ要素は、束ねたクローンを入れるため従来どおり入れ直す
+      if (targetElement && current?.isEqualNode(targetElement) && !hasBinding(targetElement)) {
+        continue;
+      }
       if (targetElement) {
         if (current) {
           current.replaceWith(targetElement);

@@ -653,7 +653,11 @@ export class Router extends HTMLElement implements IRouter {
       // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
       navEvent.defaultPrevented ||
       navEvent.hashChange ||
-      navEvent.downloadRequest !== null
+      navEvent.downloadRequest !== null ||
+      // 読み直し（location.reload() / history.go(0) / navigation.reload()）は文書を読み直す。受けると同じ
+      // 文書でルートを描き直すだけになり、更新を促す「再読み込み」も Service Worker の更新も効かなかった
+      // （docs/seam-apps.md、prod-booking）。未保存の変更の確認は beforeunload の側（leaveConfirm）
+      navEvent.navigationType === "reload"
     ) {
       return;
     }

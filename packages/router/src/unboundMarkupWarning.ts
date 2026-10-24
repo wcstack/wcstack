@@ -22,7 +22,7 @@ const warned = new WeakSet<Element>();
 /** `data-wcs`。router は state の config を読めないので既定名を直接持つ */
 const BIND_ATTRIBUTE = "data-wcs";
 
-function hasBinding(element: Element): boolean {
+export function hasBinding(element: Element): boolean {
   return element.hasAttribute(BIND_ATTRIBUTE) || element.querySelector(`[${BIND_ATTRIBUTE}]`) !== null;
 }
 

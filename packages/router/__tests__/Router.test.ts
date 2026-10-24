@@ -1545,6 +1545,15 @@ describe('Router', () => {
       expect(options.focusReset).toBe('manual');
     });
 
+    it('読み直し（navigationType "reload"）は受けず、文書の読み直しをブラウザに任せること', () => {
+      const router = setupCommittedRouter();
+      const navEvent = makeNavEvent('http://localhost/products', 'reload');
+
+      (router as any)._onNavigateFunc(navEvent);
+
+      expect(navEvent.intercept).not.toHaveBeenCalled();
+    });
+
     it('パス遷移（same-match でない）では従来既定のままであること', () => {
       const router = setupCommittedRouter();
       const navEvent = makeNavEvent('http://localhost/about', 'push');
