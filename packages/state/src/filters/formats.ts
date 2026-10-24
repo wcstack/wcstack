@@ -31,9 +31,12 @@ import { M, text } from "../messages";
  * attribute. This family passes an absent value straight through and leaves the decision to the
  * apply side (attribute removed, class cleared, style cleared, text emptied).
  *
- * Deliberately **not** wrapped: the filters that reject a value of the wrong type (the number, date
- * and array families) — their throw is confined to the one binding and reported, a different
- * quality of failure from painting the word "undefined" into the page.
+ * Deliberately **not** wrapped: the filters that reject a value of the wrong type (the number and
+ * array families) — their throw is confined to the one binding and reported, a different quality of
+ * failure from painting the word "undefined" into the page. The date family is wrapped (since 4.7):
+ * a date usually arrives later (a fetch, a route) and is absent until then, and no value put in
+ * front (`coalesce`) could stand for a missing date — every load reported a failure
+ * (docs/seam-apps.md, prod-booking). A value of another type still throws.
  */
 const nullishPassthrough = (factory: (options: string[]) => FilterFn): FilterFactory =>
   (options: string[]): FilterFn => {
@@ -375,11 +378,11 @@ const registered: Readonly<Record<string, FilterDefinition>> = {
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
 
   // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
-  date: { factory: date, arity: [0, 2] },
-  time: { factory: time, arity: [0, 2] },
-  datetime: { factory: datetime, arity: [0, 2] },
-  ymd: { factory: ymd, arity: [0, 1] },
-  hms: { factory: hms, arity: [0, 1] },
+  date: { factory: nullishPassthrough(date), arity: [0, 2] },
+  time: { factory: nullishPassthrough(time), arity: [0, 2] },
+  datetime: { factory: nullishPassthrough(datetime), arity: [0, 2] },
+  ymd: { factory: nullishPassthrough(ymd), arity: [0, 1] },
+  hms: { factory: nullishPassthrough(hms), arity: [0, 1] },
 
   // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
   eq, ne, not, lt, le, gt, ge,
