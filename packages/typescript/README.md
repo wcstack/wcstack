@@ -14,7 +14,7 @@ npx wcs-schema emit src/state.ts          # writes ./wcstack.manifest.json
 npx wcs-validate --strict index.html      # typos are now errors, false warnings are gone
 ```
 
-Zero runtime dependencies. `typescript` is a peer dependency — the project's own compiler is used. It must be TypeScript 5 or 6: TypeScript 7 publishes no JavaScript compiler API (`typescript` exports only its version, and there is no `typescript/lib/tsc.js`) for either command to call.
+Zero runtime dependencies. `typescript` is a peer dependency — the project's own compiler is used. `wcs-schema` needs TypeScript 5 or 6: TypeScript 7 publishes no JavaScript compiler API (`typescript` exports only its version, and there is no `typescript/lib/tsc.js`). `wcs-tsc` runs on 5 or 6, and since 4.7 (not released yet) on 7.1 and later through the content mapper (below).
 
 ## Commands
 
@@ -76,7 +76,34 @@ npx wcs-tsc --noEmit
 | `--wcs-defaults` | If the project tsconfig lacks `include` covering `**/*.html`, `noImplicitThis`, `allowJs` or `checkJs`, run with a temporary config that extends it and adds them (otherwise only a warning is printed and HTML may go unchecked) |
 | anything else | passed to tsc verbatim (`-p`, `--noEmit`, …) |
 
-Exit codes are tsc's (`0` clean, non-zero with diagnostics); `2` when `typescript` / `@volar/typescript` cannot be resolved or an option is invalid. A page with several `<wcs-state>` blocks is combined into one virtual module (imports hoisted, each block in its own scope); a page without inline state is an empty module. The mechanism is vue-tsc's: `@volar/typescript`'s `runTsc` patches the project's own `typescript/lib/tsc.js`.
+Exit codes are tsc's (`0` clean, non-zero with diagnostics); `2` when `typescript` / `@volar/typescript` cannot be resolved or an option is invalid. A page with several `<wcs-state>` blocks is combined into one virtual module (imports hoisted, each block in its own scope); a page without inline state is an empty module. On TypeScript 5 and 6 the mechanism is vue-tsc's: `@volar/typescript`'s `runTsc` patches the project's own `typescript/lib/tsc.js`. On 7.1 and later it is the content mapper below.
+
+### TypeScript 7.1: the content mapper (experimental)
+
+Since 4.7 (not released yet), this package is also a [content mapper](https://github.com/wcstack/wcstack/blob/main/docs/typescript-content-mapper.md) — TypeScript 7.1's way to read file types it does not know. Name it in `tsconfig.json`, and TypeScript's own `tsc` checks every `<wcs-state>` block with the same virtual code `wcs-tsc` uses, reporting at HTML positions:
+
+```jsonc
+{
+  "compilerOptions": { "noEmit": true },
+  "contentMappers": [
+    { "package": "@wcstack/typescript", "extensions": [".html"] }
+  ]
+}
+```
+
+```bash
+npm i -D @wcstack/typescript typescript@^7.1
+npx tsc --runExternalCode          # TypeScript runs a mapper only with this flag
+```
+
+| Option (`"options"` of the entry) | Description |
+|---|---|
+| `urlImports`: `"any"` (default) / `"error"` | As `wcs-tsc --url-imports`: `http(s)://` module imports are `any`, or TS2307 each |
+| `stateTagName` (default `"wcs-state"`) | The element that holds the state, as the VS Code extension's `wcstack.stateTagName` |
+
+- **`wcs-tsc` on 7.1 and later** needs no tsconfig change: it runs the project's `tsc --runExternalCode`, with a temporary config next to yours (`.wcs-tsc.<name>`, removed afterwards) that adds the mapper when your config does not name it, and keeps any other content mappers you inherit. `--wcs-defaults` and the warnings work as above (on 7.1 they check that `.html` files are in the program and that `noImplicitThis` is on). `@wcstack/typescript` must be installed where the tsconfig is — TypeScript loads the mapper from there. Volar is not needed. TypeScript 7.0 has no content mappers and is refused.
+- **Editors.** In VS Code with TypeScript 7's extension and a trusted workspace, TypeScript's server answers in the `.html` too, next to the wcstack extension. Set `"js/ts.contentMappers.enabled": false` to keep one of them.
+- `wcs-schema` still needs TypeScript 5 or 6.
 
 ## What the generated schema contains
 

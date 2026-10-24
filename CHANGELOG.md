@@ -8,6 +8,20 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `@wcstack/typescript`: **a TypeScript 7.1 content mapper** (experimental). The package declares `typescript.contentMapper` in its `package.json`, so a tsconfig entry `{ "package": "@wcstack/typescript", "extensions": [".html"] }` and `tsc --runExternalCode` type-check every `<wcs-state>` block on TypeScript 7.1, reporting at HTML positions. The mapper (`dist/content-mapper.cjs`) is built from the VS Code extension's language plugin — the same virtual code as `wcs-tsc` and the editor — and needs only Node at run time. Options: `urlImports` (`"any"` by default, as `wcs-tsc --url-imports`) and `stateTagName`. Over `examples/` it reports the same 25 diagnostics at the same positions as `wcs-tsc` on TypeScript 5.9. The design, the decisions and what was measured are in [docs/typescript-content-mapper.md](./docs/typescript-content-mapper.md).
+- `@wcstack/typescript`: **`wcs-tsc` runs on TypeScript 7.1 and later.** It runs the project's own `tsc --runExternalCode`; when the tsconfig does not name the mapper, a temporary config next to it (`.wcs-tsc.<name>`, removed afterwards) adds it, keeping the content mappers the config inherits. `--url-imports` and `--wcs-defaults` work as on 5 / 6; Volar is not needed. `@wcstack/typescript` has to be installed where the tsconfig is, since TypeScript loads the mapper from there.
+
+### Changed
+
+- `@wcstack/typescript`: the peer range is `typescript >=5.0 <7 || >=7.1`. `wcs-tsc` refuses TypeScript 7.0 by name (it has neither a compiler API nor content mappers); `wcs-schema` and `loadStateFile` still need 5 or 6 and say so.
+- `@wcstack/typescript` (`wcs-tsc`) and the VS Code extension: the blanked `@wcstack/state` import of an inline script is no longer mapped back to the HTML, so every mapping of the checked code covers identical text. Nothing reported changes (`wcs-tsc` gives the same 25 diagnostics over `examples/`); an editor edit mapped onto the blanked text can no longer rewrite the import.
+
+### Fixed
+
+- `@wcstack/typescript`: **`wcs-tsc --wcs-defaults` keeps `--project=<path>` / `-p=<path>`.** It replaced the whole argument with the temporary config's path, which tsc then read as a file name rather than a project.
+
 ## [4.6.2] — 2026-10-24
 
 From the same study of TypeScript 7.1's content mappers: two `wcs-tsc` bugs it found, and the design for type-checking `<wcs-state>` under TypeScript 7 ([docs/typescript-content-mapper.md](./docs/typescript-content-mapper.md)), not implemented. Only `@wcstack/typescript` changed (and the VS Code extension, 2.6.1); every other package is 4.6.1 with a new version.
