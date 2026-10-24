@@ -160,7 +160,7 @@ router は、スタンプしたルート本文の終わりにコメントの印 
 
 | 属性 | 説明 |
 |------|------|
-| `basename` | サブフォルダのURLでルーティングする場合に、サブフォルダを指定。サブフォルダで動作させない場合は、指定不要 |
+| `basename` | サブフォルダのURLでルーティングする場合に、サブフォルダを指定。サブフォルダで動作させない場合は、指定不要。この属性は相対 URL の解決先を変えない — `<wcs-fetch url="api/…">`・`<wcs-state src>`・import map・autoloader の `@components/` — ので、ディープリンクではページの URL の下で解決される。サブフォルダのアプリには `<base href="/subfolder/">` を置く（router の basename にもなる） |
 | `focus` | commit したナビゲーション後に適用するオプトインのフォーカスポリシー。`"heading"` でリーフ route 内容の最初の見出しへフォーカス。「アクセシビリティ契約」参照 |
 | `announce` | オプトインのルート告知。`"title"` で commit 時点の `document.title` スナップショットを router 保有の live region へ書き込む。「アクセシビリティ契約」参照 |
 

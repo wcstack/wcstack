@@ -294,6 +294,13 @@
 ページは `@wcstack/state/core` を import して `installFeatures` を呼びます。実行時に import するアドオンは
 その `<script>` の `integrity` の外にあり、CSP の下では CDN のホストを許可しておく必要があります。
 
+バンドルするページでは、アドオンはすべて `bootstrapState()` の前に入れます — 1 つのルートだけが使うものも。
+state ごとにアドオンを読み込むのは分割版の auto エントリの仕事で、ルートに入るときに import したアドオンは、
+ディープリンクの部品が作られた後に届きます。HTML を処理するバンドラ（Vite）は、`<wcs-state>` の中の
+インラインの `<script type="module">` も — router の `<wcs-guard-handler>` の中のもの、`<template>` の中のものも —
+警告なしにバンドルへ取り込みます: state は `setInitialState()` を待ったままになり、何も束ねられません。
+そうしたスクリプトには `vite-ignore` を付ける（Vite はページに残します）か、state を `src=` で読んでください。
+
 ## 基本的な使い方
 
 ```html

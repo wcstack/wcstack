@@ -50,7 +50,7 @@ curl -sL https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js \
   | openssl dgst -sha384 -binary | openssl base64 -A
 ```
 
-**同じダイジェストは CSP の `script-src` ハッシュ式としてもそのまま使える。** CSP3 には `integrity` 属性のダイジェストが `script-src` のハッシュ式と一致する外部スクリプトを許可する経路があり、CSP 用に別の値を算出する必要はない。ただし実装は Chromium のみで、Firefox / Safari では一致せずブロックされる。詳細と制約は [csp.ja.md §3.2](./csp.ja.md#32-外部バンドルのハッシュ--値は-sri-と同一)。
+**同じダイジェストは CSP の `script-src` ハッシュ式としてもそのまま使える。** CSP3 には `integrity` 属性のダイジェストが `script-src` のハッシュ式と一致する外部スクリプトを許可する経路があり、CSP 用に別の値を算出する必要はない。実装は Chromium・Firefox（115）・Safari（2026-10 に Chromium 149・Firefox 151・WebKit 26.5 で確認）。古いブラウザでは一致せずブロックされる。詳細と制約は [csp.ja.md §3.2](./csp.ja.md#32-外部バンドルのハッシュ--値は-sri-と同一)。
 
 ## 3. `esm.run` では SRI は成立しない
 
@@ -114,7 +114,7 @@ node -e "const s=require('fs').readFileSync('packages/state/dist/auto.min.js','u
 
 ## 5. named import を守るには import map integrity
 
-`dist/index.esm.js` から named import する使い方（`import { bootstrapState } from '…'`）は、`<script>` の integrity では守れない。module 内部の `import` は別リクエストだからである。これを守る仕組みは import map の `integrity` キーで、**Chrome 127 / Safari 18 で実装済み、Firefox は未対応**。
+`dist/index.esm.js` から named import する使い方（`import { bootstrapState } from '…'`）は、`<script>` の integrity では守れない。module 内部の `import` は別リクエストだからである。これを守る仕組みは import map の `integrity` キーで、**Chrome 127 / Safari 18 / Firefox 138 で実装済み**。古いブラウザはこのキーを黙って無視する: import は検査されないまま動く。
 
 ```html
 <script type="importmap" nonce="{RANDOM}">
@@ -129,7 +129,7 @@ node -e "const s=require('fs').readFileSync('packages/state/dist/auto.min.js','u
 </script>
 ```
 
-全ブラウザで確実に守りたいなら、named import ではなく `dist/auto.min.js` の 1 タグ形式を使うのが最も確実。
+古いブラウザでも守りたいなら、named import ではなく `dist/auto.min.js` の 1 タグ形式を使うのが最も確実。
 
 ### 5.1 `@wcstack/state` の分割エントリ
 
@@ -141,21 +141,27 @@ URL ごとに要る — エントリ・各機能・`dist/split/chunks/` の各�
 <script type="importmap" nonce="{RANDOM}">
 {
   "imports": {
-    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/core.js",
-    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/features/temporal.js"
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/features/temporal.js"
   },
   "integrity": {
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/core.js": "sha384-…",
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/features/temporal.js": "sha384-…",
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/chunks/binder.js": "sha384-…"
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/core.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/features/temporal.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/chunks/chunk-467LYA2V.js": "sha384-…",
+    "…": "dist/split/chunks/ のほかのファイルすべて"
   }
 }
 </script>
 ```
 
-3.x では、チャンクのファイル名にハッシュは付けない。ダイジェストはビルドではなく固定したバージョンに紐づく。
-4.0 からは内容のハッシュが付く（`dist/split/chunks/chunk-<hash>.js`）。名前は、固定したバージョンの
-`dist/split/chunks/` から取る。全ブラウザで守りたいページは単一タグの `dist/auto.min.js` を使う — 分割エントリは
+4.0 からチャンクのファイル名には内容のハッシュが付く（`dist/split/chunks/chunk-<hash>.js`）ので、一覧は 1 つの
+ビルドのもの。**一覧は、固定した版のリリースから丸ごと取る**: 4.7 から、各リリースの `sri.json` は
+`dist/split` のすべてのファイルを `packages["@wcstack/state"].split` に持ち、リリースノートは写せる import map の
+ブロック — エントリ・すべての機能・すべてのチャンク — を載せる。手で書かず、版を上げたときに使い回さない:
+誰も要求しない URL の `integrity` は無視され、項目の無い URL の要求は検査されない — どちらも何も言わないので、
+別のビルドの一覧は、ページは動いたまま、どのチャンクも守らない（Chromium・Firefox・WebKit で確認）。4.6 までの
+`sri.json` は `auto.min.js` だけ: ダイジェストは §2 のとおり npm の tarball のファイルから算出する（tarball はタグと
+バイト単位で同じ）。古いブラウザでも守りたいページは単一タグの `dist/auto.min.js` を使う — 分割エントリは
 それを置き換えない。
 
 ### 5.2 `@wcstack/state` の分割 auto（4.0）
@@ -166,7 +172,7 @@ URL ごとに要る — エントリ・各機能・`dist/split/chunks/` の各�
 `<wcs-state features>` と状態の `$features` が挙げる名前）は動的に import し、どれもタグの integrity の外の、
 別のリクエストになる。
 
-- §5.1 と同じく、それらのリクエストを覆えるのは import map の `integrity` キーだけ（Chromium・Safari）。
+- §5.1 と同じく、それらのリクエストを覆えるのは import map の `integrity` キーだけ（Chromium・Safari・Firefox 138 以降）。一覧はリリースの `sri.json`（4.7 から）。
   ダイジェストは URL ごとに要る — 各チャンクと、ページが読み込みうる各機能。
 - 読み込めるものはビルドで決まっている: 機能は `auto.js` 自身の URL からの相対で解決し、既知の 8 つの名前しか
   受け付けないので、マークアップや取得した状態がページに別の URL を import させることはできず、すべて `auto.js`
@@ -181,3 +187,11 @@ URL ごとに要る — エントリ・各機能・`dist/split/chunks/` の各�
 2. `dist/auto.min.js` はバンドラの実エントリであり、コピーされる手書きスタブではない — Rollup のエントリ（[config-templates/rollup.config.js](../config-templates/rollup.config.js)）、`@wcstack/state` 4.0 では `build.mjs` の esbuild のエントリ
 3. ダイジェストは公開する tree から算出する。CDN のレスポンスから採ってはならない（MUST NOT）
 4. パッケージを増やしたら [scripts/generate-sri.mjs](../scripts/generate-sri.mjs) が自動で拾う。`dist/auto.min.js` を持たないパッケージは `withoutBootstrap` に明示的に列挙され、黙って落ちることはない
+
+## 7. 公開されたファイルを自前で配る
+
+パッケージを自分のサーバーから配る（`npm install` して `dist/` のファイルを置く）ときも上の規則はすべて同じで、1 つ増える: **URL に版を入れる** — `/vendor/state/dist/split/core.js` ではなく `/vendor/@wcstack/state@4.6.2/dist/split/core.js` — そして配備の後も古い版をサーバーに残す。
+
+- `immutable` でキャッシュしてよいのは、版を名指す URL だけ。単一タグ（`dist/auto.min.js`）と機能（`dist/split/features/*.js`）は版をまたいで同じ名前なので、長期キャッシュのままその場で置き換えると、戻ってきた利用者のブラウザは古いバイトを持ち続け、新しいページのダイジェストで拒む（キャッシュを消すまでページは動かない — Chromium・Firefox で確認）か、新しい core とキャッシュの古い機能を混ぜる（WebKit）。
+- 古い版を開いたままのタブは、まだ読んでいないもの — ルートの機能、autoloader の部品 — を後から読み、版の無い URL からは新しいファイルを受け取る。別のビルドの機能は 4.7 から拒まれる（`[wcs/feature-foreign]`。4.6 まではそれの `$watch` が一度も動かなかった）。版付きの URL なら、古いタブは自分の版を読む。
+- ダイジェストはリリースのもの: npm の tarball のファイルは公開されたファイルそのもの（§2）。

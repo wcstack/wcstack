@@ -73,6 +73,8 @@ If another request is already in flight, it aborts the previous one.
 </ul>
 ```
 
+`value` is `null` until the first response, and the binding writes it into the state when it attaches, so the seed `users: []` is replaced at once. `for:` renders nothing for `null`; a getter that reads the list writes `this.users ?? []`.
+
 This is the default mode:
 
 - connect `url`

@@ -160,7 +160,7 @@ Define routes and layout slots inside a child template tag. A direct child templ
 
 | Attribute | Description |
 |------|------|
-| `basename` | When routing in a subfolder URL, specify the subfolder. Not required if you don’t run in a subfolder. |
+| `basename` | When routing in a subfolder URL, specify the subfolder. Not required if you don’t run in a subfolder. The attribute does not change what relative URLs resolve against — `<wcs-fetch url="api/…">`, `<wcs-state src>`, the import map, the autoloader's `@components/` — so on a deep link they resolve under the page's URL. An app in a subfolder wants `<base href="/subfolder/">`, which also gives the router its basename. |
 | `focus` | Opt-in focus policy applied after a committed navigation. `"heading"` focuses the first heading of the leaf route's content. See "Accessibility contract". |
 | `announce` | Opt-in route announcement. `"title"` writes the commit-time `document.title` snapshot into the router-owned live region. See "Accessibility contract". |
 

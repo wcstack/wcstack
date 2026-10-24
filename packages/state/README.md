@@ -296,6 +296,14 @@ reason above. It is not in `exports`: a bundler cannot follow the URLs it builds
 bundled page imports `@wcstack/state/core` and calls `installFeatures` instead. The add-ons it imports
 at run time are outside the `integrity` of its `<script>`; under a CSP they need the CDN host allowed.
 
+In a bundled page, install every add-on before `bootstrapState()` — also one only a route needs: loading
+add-ons per state is what the split auto entry does, and an add-on imported when a route is entered
+arrives after a deep link's components were built. A bundler that processes the HTML (Vite) also takes
+the inline `<script type="module">` out of `<wcs-state>` — and out of the router's `<wcs-guard-handler>`,
+even inside a `<template>` — into its bundle, without a warning: the state then waits for
+`setInitialState()` and nothing binds. Mark such scripts `vite-ignore` (Vite keeps them in the page), or load
+the state with `src=`.
+
 ## Basic Usage
 
 ```html
