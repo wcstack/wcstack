@@ -87,6 +87,7 @@
 | `ssr-news` — `@wcstack/server` で描くニュースサイト: 記事の一覧、コメント付きの記事のページ、読者の設定、セクションのレイアウト、本番の形（CSP、SRI、HTML のキャッシュ） | `@wcstack/server` × router × state、サーバーとハイドレーションでの `<wcs-fetch>`、SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>`、クライアントの版 × サーバーの版 | ディープリンクと再読み込み; JavaScript 無し; 遅いクライアントのバンドル（ハイドレーション前の入力）; サーバーの再起動; 別の minor のクライアント; 投稿の後の HTML のキャッシュ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-18）。発見は下 |
 | `state-field-report` — スマートフォンからの現場報告: クリップ・位置・口述のメモを、送信待ちを通して送る。本番の形で | `<wcs-permission>` × 取りに行く側（camera・geo・listen・notify）、`<wcs-camera>` × `<wcs-recorder>` × `<wcs-upload>`、ルートのノード × I/O ノードの切断、`<wcs-storage>` × 値とハンドルの混ざった下書き、`Permissions-Policy` / `<iframe>` × デバイスの要素すべて | 拒否してから許可する、録画中の権限の取り消し、録画中にタブを隠す、撮影のページを離れて戻る、アップロード中の再読み込み、アップロード中のオフライン、422 / 413 / 415 / 500、2 つのタブ、`<iframe>` の中のアプリ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-20）。発見は下 |
 | `fw-inventory` — 店の在庫の道具: React 19 の管理画面と Vue 3 の倉庫のパネル。`@wcstack/state` は使わない | I/O ノード × `@wc-bindable/react` / `vue`、React 19 の props × 要素の入力、フレームワークのリアクティビティ × structured clone、`key` × 要素、遅れた定義（autoloader・CDN・動的 import）× アダプター、Vite の開発サーバー × SSE | 続けて届くイベント、開発の proxy の背後でのサーバーの再起動、保存したフィルタでの再読み込み、片方が React でもう片方が Vue の 2 つのタブ、深いリンクと素早い移動、アップロードの取り消し・再送・拒否、最初の描画より後の定義、StrictMode、HMR | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-21）。発見は下 |
+| `prod-booking` — 本番に出す会議室の予約アプリ: サブパスの下、`integrity` 付きの版の固定、分割エントリ、厳しい CSP と Trusted Types、`immutable` のキャッシュでの自前配信、Vite のビルド、Service Worker | 配信 × すべてのパッケージ: `integrity` × 分割の chunk、`installFeatures` × エンジンの 2 つのコピー、CSP × import map / インラインの state / ガード、Trusted Types × 部品、バンドラ × インラインのスクリプト、`<wcs-router>` × 読み直し、`<wcs-autoloader>` × 後で定義されるタグ、開いたままのタブ × 次の版のファイル | 各プロファイルを Chromium・Firefox・WebKit で; タブを開いたままの配備（v1 4.3.0 → v2 4.6.2）; 2 つの版の 2 つのタブ; 1 つのファイルの失敗（404・502・別の版のダイジェスト）; 本番でのエラー; オフラインと更新 | 2026-10-24 に作成。発見は下。`examples/` への取り込みは 4.7 の後 |
 
 ### router-auth（2026-10-13）
 
@@ -300,3 +301,26 @@
 | 種類 | 発見 | 結果 |
 |---|---|---|
 | 無言の間違い | 著者のフィルタは、アダプターの `value` を React の状態に当て直して、他のタブに追随していた。ページ自身の保存が 1 描画遅れて戻り、その間の入力を巻き戻すので、"bolt" を速く打つと "bol" と "bolt" を交互に保存して当てることが止まらなかった — そのたびに要求が出て、エラーは無い（著者の速い入力の確認は開発サーバーで走って通った。本番のビルドでは止まらなかった） | アプリを直した: 他のタブの保存は `wcs-storage:value-changed` から取り、ページ自身の保存が出すイベントは飛ばす。storage の README に書き、目録に入れた（文書だけ: 返ってきた書き込みと編集は、要素から見分けられない） |
+
+### prod-booking（2026-10-24）
+
+[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) の下での 4 本目、その §3.2 が挙げる最後の継ぎ目 — 本番の形 — のためのアプリ。サブパス `/booking/` で配る会議室の予約アプリ（料金つきの部屋、その日の枠と予約のフォームがある部屋のページ、「自分の予約」、`<wcs-storage>` に残す設定、ガードの後ろの管理ページ、`<wcs-autoloader>` が読むアプリ自身の部品 2 つ）を、本番のアプリが通る配信の形に順に通した: `integrity` 付きの版の固定、`@wcstack/state` の分割エントリ（import map と `dist/split/auto.js`）、nonce とハッシュの厳しい CSP、Trusted Types、`immutable` のキャッシュでの公開ファイルの自前配信、Vite のビルド、Service Worker。そして**古い版を開いたままの新しい版の配備**（v1 は 4.3.0、v2 は 4.6.2）。初めての作者は公開文書と公開版だけを使い、20 のプロファイルを 2 つの版で作り、Chromium 149・Firefox 151・WebKit 26.5 で通した。引っかかりを 29 件記録し、わざと犯した間違いは 40 件。配信の間違い 20 件のうち lint が知らせたのは 3 件。
+
+主張はすべて、分類の前に 3 つのブラウザで公開版に対して再現した。1 件は再現しなかった:「CSP が拒んだ import map にも autoloader が従う」— 作者のテストは nonce を外せていなかった。拒まれた import map では、autoloader の `import()` は解決に失敗する。いくつかは書かれたより広かった: autoloader の名前空間の外のカスタム要素が 1 つあると、ページの自動読み込みがすべて止まった（`wcs-*` に限らない）。`<wcs-head>` は遷移のたびに `<base>` だけでなく `<head>` の要素をすべて入れ直していた。v1 の core の中の v2 のアドオンは「黙って動いた」のではなく、`$watch` が一度も動かなかった。
+
+| 種類 | 発見 | 結果 |
+|---|---|---|
+| ランタイムの欠陥 | router: ページが求める読み直し（`location.reload()`・`history.go(0)`・`navigation.reload()`）を同じ文書の中のルートの遷移として受けた — 「更新があります — 再読み込み」のボタンも、Service Worker の更新も、`<wcs-devtools>` の再読み込みも、どのブラウザでも効かなかった | 修正 |
+| ランタイムの欠陥 | autoloader: どの `@components/` の名前空間にも属さないカスタム要素が 1 つ — 別のライブラリのタグ、後で定義される `<wcs-link>` / `<wcs-state>`（autoloader のスクリプトを先に置く、分割版の auto エントリ）— あると、`No matching namespace found` を投げて走査を止め、最初の走査なら監視も始めなかった: ページの部品は 1 つも読まれない。integrity の失敗も、エラーの収集にはこの reject としてしか届かなかった | 修正: そうした要素には手を出さない |
+| ランタイムの欠陥 | router: `<wcs-head>` は遷移のたびに `<head>` の要素をすべて写しで入れ直した — スタイルシートを取り直し、WebKit は遷移ごとに `base-uri` の CSP 違反を報告した | 修正: 同じ要素は残す |
+| ランタイムの欠陥 | router: module のスクリプトの無い `<wcs-guard-handler>` — HTML を処理するバンドラが取り去る — は「ルートは守られない」と言って開け、`guard` 属性があると逆に、来ないハンドラを待って何も描かなかった | 決定: 読み込めなかったハンドラと同じく閉じる — ルートへのナビゲーションはすべて guard のパスへ |
+| ランタイムの欠陥 | state: `installFeatures` は別のエンジンのコピーのアドオン（`esm.run` を通した分割エントリ、2 つの版、タブが古い core を動かしている間にその場で置き換えた自前配信のディレクトリ）を受け入れた: アドオンは別のコピーの口を埋めた — `$watch` は黙って一度も動かず、入れたはずの `formats` のフィルタは「入っていない」と報告された | 決定: 拒む。`[wcs/feature-foreign]`（次の行と合わせて core に 61 B） |
+| 設計の問い | state のエラーは `console.error` にだけ出た: `window.onerror` で作ったエラーの収集には何も届かず、ページの初期化の失敗さえ届かなかった | 決定: エンジンが報告するエラーはすべて `reportError()` を通す。エンジンの文面と、`cause` に元のエラー。無い環境では `console.error` |
+| 設計の問い | `date` / `time` / `datetime` / `ymd` / `hms` は `undefined` / `null` で投げた。README の `coalesce` は無い日付の代わりにならない | 決定: 値が無いときは素通し（書式の族と同じ） |
+| 設計の問い | 分割のファイルには公開されたダイジェストが無く（`sri.json` は `auto.min.js` だけ）、別のビルドの import map の `integrity` の一覧は、何も言わずに何も守らない | 決定: `sri.json` とリリースノートが `dist/split` のすべてのファイルと import map のブロックを載せる |
+| lint の穴 | lint が読めない `<wcs-state src>` — / から始まるパス（csp.md が `<base>` の下で勧める形）・URL・無いファイル — のページは、`0 error(s)` で検査されずに通った。`examples/router-i18n` がそうだった | 修正: `wcs/state-src-unread`（info）。lint の限界を属性の上で言う |
+| lint の穴 | `(this.items ?? []).map(() => ({ … }))` と、`null` を種にしたリストの行が `wcs/binding-path-missing` の偽陽性になった | 修正 |
+| 文書の穴 | Firefox は import map の `integrity`（138）と外部スクリプトの CSP ハッシュ（115）を強制し、Safari も同じ、Trusted Types は Safari 26 と Firefox にある — CSP と SRI の手引きは Chromium だけと書いていた。部品自身の `shadowRoot.innerHTML`（README の形）は Trusted Types の sink。自前配信（URL に版、古いものを残す）。バンドラはインラインの state とガードのスクリプトを取り去る。1 つのルートだけが使うアドオンをバンドルで。保存した値は前後の配備と共有される。`basename` は相対 URL の解決先を変えない。fetch の種 `[]` は要素の `null` で置き換わる | 修正 |
+| 未決 | autoloader は一度失敗した部品を読み直さない（配備中の 502 の窓）。1 つのパッケージの 2 つの版がページにあっても何も言わない（4.x のプロトコルは互換）。空の `<wcs-state>` は `setInitialState()` を黙って待つ。`bootstrapState()` の後の `installFeatures` はタイミングで動く。配信の間違いの多くに lint は何も言わない（アドオンの欠けは実行時に知らせる）。4.5 へ戻すと `storage-key` は何も保存しない | 記録 |
+
+上の設計の問いは、2026-10-25 に著者が推奨どおりに決めた（[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.5）。

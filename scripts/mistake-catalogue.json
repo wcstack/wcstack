@@ -514,6 +514,42 @@
       "evidence": [{ "file": "packages/state/src/hooks.ts", "text": "[wcs/feature-foreign]" }]
     },
     {
+      "id": "split-integrity-other-build",
+      "lint": [],
+      "runtime": "silent", "harm": "security",
+      "mistake": { "en": "Lists the split chunks in an import map's `integrity` by hand, or keeps the list across a version bump.", "ja": "import map の `integrity` に分割の chunk を手で並べる、または版を上げても一覧を使い回す。" },
+      "effect": { "en": "An entry for a URL nobody requests is ignored, and a requested chunk without one is not checked: the page works, and a tampered chunk runs (Chromium, Firefox, WebKit).", "ja": "誰も要求しない URL の項目は無視され、項目の無い chunk の要求は検査されない: ページは動き、改ざんされた chunk も動く（Chromium・Firefox・WebKit）。" },
+      "disposition": "docs-only",
+      "note": { "en": "Since 4.7 each release's `sri.json` and notes carry the whole list (docs/sri.md §5.1). The browser cannot tell; the engine does not read the import map.", "ja": "4.7 から各リリースの `sri.json` とノートが一覧を丸ごと載せる（docs/sri.ja.md §5.1）。ブラウザには見分けられず、エンジンは import map を読まない。" }
+    },
+    {
+      "id": "stored-shape-across-deploy",
+      "lint": [],
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Changes the shape of an object kept in `<wcs-storage>` between two versions of the app, with the same key.", "ja": "`<wcs-storage>` に残すオブジェクトの形を、同じキーのまま、アプリの 2 つの版の間で変える。" },
+      "effect": { "en": "The new version reads what the old one saved, and a tab still open on the old version receives the new shape through the `storage` event — it shows wrong values and its later saves are lost, without a word.", "ja": "新しい版は古い版が保存したものを読み、古い版を開いたままのタブは `storage` イベントで新しい形を受け取る — 違う値を見せ、その後の保存は失われる。何も言わない。" },
+      "disposition": "docs-only",
+      "note": { "en": "The storage README: keep a version in the object and migrate in the setter, or change the key with the shape.", "ja": "storage の README: オブジェクトに版を持たせて setter で移すか、形を変えるときにキーを変える。" }
+    },
+    {
+      "id": "basename-without-base",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Serves the app under a sub-path with `<wcs-router basename=\"/app\">` and no `<base href>`.", "ja": "サブパスの下で `<wcs-router basename=\"/app\">` を書き、`<base href>` を置かずに配る。" },
+      "effect": { "en": "Routing works, but on a deep link every relative URL resolves under the page's URL — `<wcs-fetch url=\"api/…\">`, `<wcs-state src>`, the import map, the autoloader's `@components/` — and fails far from the cause (an HTML fallback read as data, a 404 component).", "ja": "ルーティングは動くが、ディープリンクでは相対 URL がすべてページの URL の下で解決される — `<wcs-fetch url=\"api/…\">`・`<wcs-state src>`・import map・autoloader の `@components/` — そして原因から遠いところで失敗する（データとして読んだ HTML のフォールバック、404 の部品）。" },
+      "disposition": "lint-rule",
+      "note": { "en": "`wcs/base-href-missing` covers neither a `basename` nor a `<base>`; with the attribute it is silent. A rule could flag the attribute with relative URLs and no `<base>`.", "ja": "`wcs/base-href-missing` は basename も `<base>` も無いときだけ。属性があると無言。属性があり相対 URL があって `<base>` が無いページを知らせる規則を足せる。" }
+    },
+    {
+      "id": "bundler-strips-inline-state",
+      "lint": [],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Builds the page with a bundler that processes the HTML (Vite), with the state in `<wcs-state>`'s inline `<script type=\"module\">`.", "ja": "HTML を処理するバンドラ（Vite）でページを作り、state を `<wcs-state>` のインラインの `<script type=\"module\">` に書く。" },
+      "effect": { "en": "The bundler takes the script into its bundle without a warning: the `<wcs-state>` waits for `setInitialState()` for ever and nothing binds. (The same for a `<wcs-guard-handler>`'s script: since 4.7 the route is closed and the router says so.)", "ja": "バンドラは警告なしにスクリプトをバンドルへ取り込む: `<wcs-state>` は `setInitialState()` を待ち続け、何も束ねられない（`<wcs-guard-handler>` のスクリプトも同じ: 4.7 からはルートを閉じ、router が知らせる）。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The state README: `vite-ignore`, or `src=`. The diagnostics add-on could warn when a `<wcs-state>` with no source is still waiting after the page loaded.", "ja": "state の README: `vite-ignore` か `src=`。ページの読み込み後も源の無い `<wcs-state>` が待っていれば、診断の後付けが警告できる。" }
+    },
+    {
       "id": "route-bare-mustache",
       "lint": [{ "code": "wcs/route-bare-mustache", "severity": "warning" }],
       "runtime": "silent", "harm": "wrong-place",
