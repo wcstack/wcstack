@@ -9,6 +9,7 @@ import { nativeCommand } from "../native/commands";
 
 export const nativeCommands: Feature = {
   name: "native-commands",
+  hooks,
   install(): void {
     hooks.nativeCommand = nativeCommand;
   },

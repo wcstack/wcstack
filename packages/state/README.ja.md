@@ -220,11 +220,17 @@
 版を固定するか（素のパスは `exports` を読まないので、`dist/split/` 以下のファイル名を書く）、バンドラを
 通します。**`esm.run` からは読まないでください**。`+esm` はエントリごとにサーバー側で再バンドルし、
 共有の core チャンクをそれぞれに取り込むため、エントリごとに別のエンジンを抱えます。機能は core から
-見えないコピーへ install され、`installFeatures` を呼んでも `[wcs/feature-not-installed]` で落ちます。
-素のファイルなら、どのエントリの相対 import も同じチャンクの URL に解決され、エンジンは 1 回だけ評価
-されます。この形の integrity は [docs/sri.ja.md §5.1](../../docs/sri.ja.md#51-wcstackstate-の分割エントリ) を参照。
+見えないコピーへ install されます。素のファイルなら、どのエントリの相対 import も同じチャンクの URL に
+解決され、エンジンは 1 回だけ評価されます。この形の integrity は [docs/sri.ja.md §5.1](../../docs/sri.ja.md#51-wcstackstate-の分割エントリ) を参照。
 `dist/split/chunks/` 以下のファイル名にはコンテンツハッシュが入ります。チャンクのファイルを自分で列挙する
 場合（preload リンク、import map の `integrity`）は、読み込むビルドからファイル名を取ってください。
+
+**core とアドオンは 1 つのビルドから読みます。** 4.7（未リリース）から、`installFeatures` は別のエンジンの
+コピーのアドオン — 別の URL の同じファイル（`esm.run`）や、別の版（タブが古い core を動かしている間に
+その場で置き換えた自前配信のディレクトリ）— を `[wcs/feature-foreign] The add-on "temporal" is from another copy of @wcstack/state`
+で拒みます。4.6 までは受け入れ、アドオンは別のコピーの口を埋めたので、`$watch` は黙って一度も動かず、
+`formats` のフィルタは入っていないと報告されました。`dist/split/features/` のアドオンのファイル名には
+コンテンツハッシュが入りません。自前で配信するなら、URL に版を入れ、配備の後も古いものを残してください。
 
 | エントリ | 足されるもの |
 |---|---|
@@ -2607,7 +2613,7 @@ $renderedCallback(paths) {
 - **行 watch も headless です** —— `for:` も `$listKeys` も要りません: watch は、自分が範囲とするリストを自分で追従させます。同じ配列やその写しの代入と `$postUpdate("items")` では発火しません —— どの行もリストに入っておらず、どの行パスも書かれていないためです —— が、行を読む getter（`$getAll("items.*.price", [])`）はその場で変えた値を読みます。
 - **共有配列は位置ごとに発火します** —— 複数の外側の行が同じ配列を持っているとき、その要素の 1 つへの書き込みは、その配列を持つ外側の行ごとに 1 回ずつ、それぞれの添字で `$watch("groups.*.items.*")` を発火させます: それらのどのパスでも値が変わったからです。
 - **ハンドラの例外は隔離されます** —— throw は報告され（`$watch "…" failed; the other watches still run.`）、残りの watch（と stream の restart）は続行します。
-- **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。書き込みはそれぞれ連鎖の深さを持ちます: その書き込みをしたハンドラを起こした書き込みの深さに 1 を足したものです。32 段より深くで起こされたハンドラは実行されません: 連鎖は断ち切られ、`console.error`（`$watch handlers / $stream restarts kept writing for 32 batches; the chain is cut (nothing is rolled back).`）と DevTools の `state:watch-chain-limit` で 1 回報告され、そのバッチのほかのハンドラは実行されます。値と DOM は巻き戻しません。同じバッチに載る書き込み —— 描画の書き戻し —— は連鎖を伸ばしもリセットもしないので、長い有限の描画の連鎖（`$renderedCallback` が描画ごとに見出しを 1 段ずつ詰める）を見るハンドラは打ち切られません。`$stream` の restart もハンドラと同じく数えます: restart の書き込み（`initial` への戻し・status）は `args` に届いた書き込みの連鎖の続きで、上限を越えた restart は行いません。実行が（再）開始と同じタスクの中で書くもの —— source が出した値、status の `done` / `error` —— はその実行の連鎖に数え、それが起こすハンドラも restart も連鎖の続きになります。そのため、すぐに値を出す source を通るループはページを固まらせずに打ち切られます: `args` で互いの値を読む 2 つの stream も、stream の値を見る `$watch` がその `args` の読むものを進める形も。後者の 1 周（ハンドラ → restart）は 2 段なので、有限かどうかに関わらず 16 周ほどで止まります（メモリ上の source を使う自動ページ送りも）。後のタスク（ネットワークの応答、メッセージ、タイマー）から来た値と、それが起こすハンドラは、数え直しになります。
+- **書き込みの連鎖には上限があります** —— ハンドラの書き込みは新しいバッチを作るため、相互に書き合う watch は無限ループになり得ます。書き込みはそれぞれ連鎖の深さを持ちます: その書き込みをしたハンドラを起こした書き込みの深さに 1 を足したものです。32 段より深くで起こされたハンドラは実行されません: 連鎖は断ち切られ、エラーとして（[本番でのエラーの報告](#本番でのエラーの報告)。`$watch handlers / $stream restarts kept writing for 32 batches; the chain is cut (nothing is rolled back).`）と DevTools の `state:watch-chain-limit` で 1 回報告され、そのバッチのほかのハンドラは実行されます。値と DOM は巻き戻しません。同じバッチに載る書き込み —— 描画の書き戻し —— は連鎖を伸ばしもリセットもしないので、長い有限の描画の連鎖（`$renderedCallback` が描画ごとに見出しを 1 段ずつ詰める）を見るハンドラは打ち切られません。`$stream` の restart もハンドラと同じく数えます: restart の書き込み（`initial` への戻し・status）は `args` に届いた書き込みの連鎖の続きで、上限を越えた restart は行いません。実行が（再）開始と同じタスクの中で書くもの —— source が出した値、status の `done` / `error` —— はその実行の連鎖に数え、それが起こすハンドラも restart も連鎖の続きになります。そのため、すぐに値を出す source を通るループはページを固まらせずに打ち切られます: `args` で互いの値を読む 2 つの stream も、stream の値を見る `$watch` がその `args` の読むものを進める形も。後者の 1 周（ハンドラ → restart）は 2 段なので、有限かどうかに関わらず 16 周ほどで止まります（メモリ上の source を使う自動ページ送りも）。後のタスク（ネットワークの応答、メッセージ、タイマー）から来た値と、それが起こすハンドラは、数え直しになります。
 - **マウントされた `bind-component` スコープでは実行されません** —— マウントされたコンポーネントの `$watch` 宣言は、ルート state へ誘導する `wcs/mount-dollar-declaration` の警告を 1 回出して無視されます。`$stream` と `$renderedCallback` も同様です。ボリュームは `$watch` を拒否します（[`mount=`](#追加の状態をマウントするmount)）: ルートにフルパス（`"cart.total"`）で宣言してください。plain な（配線なし Shadow の）子は独立ツリーを持つので宣言できます。
 - **SSR では実行されません** —— ハンドラの副作用がサーバーとクライアントで二重に走るためです。
 
@@ -3083,7 +3089,7 @@ this.$getAll("matrix.*.*", [row]);
 
 ### 初期化の失敗
 
-初期化に失敗した `<wcs-state>` は `console.error` で 1 回報告されます —— まず要素とその state の出どころ、続いてエラー:
+初期化に失敗した `<wcs-state>` は 1 回報告されます（[本番でのエラーの報告](#本番でのエラーの報告)）—— まず要素とその state の出どころ、続いてエラー:
 
 ```
 [@wcstack/state] <wcs-state src="./state.js"> failed to initialize. SyntaxError: …
@@ -3117,13 +3123,27 @@ this.$getAll("matrix.*.*", [row]);
 
 ### バインディング 1 本の失敗は 1 本に閉じ込められます
 
-バインディングの適用が throw しても、そのバッチの残り・`$renderedCallback`・`$watch`・`$stream` の restart はすべて続行します。失敗は握り潰されず、`$errorCallback` に、それが無ければ `console.error` にエラーを続けて出し、DevTools（`state:binding-apply-error`）にも届きます。
+バインディングの適用が throw しても、そのバッチの残り・`$renderedCallback`・`$watch`・`$stream` の restart はすべて続行します。失敗は握り潰されず、`$errorCallback` に、それが無ければ報告され（[本番でのエラーの報告](#本番でのエラーの報告)）、エラーを続けて出し、DevTools（`state:binding-apply-error`）にも届きます。
 
 ```
 [@wcstack/state] binding "text: items.*.label" failed to apply.
 ```
 
 同期や描画に失敗したリスト（キーが無い、getter が throw した）も、その `for` バインディングの失敗として同じように報告され、それまでの行を保ちます。
+
+### 本番でのエラーの報告
+
+4.7（未リリース）から、エンジンが報告するエラーはすべてプラットフォームの `reportError()` を通ります: 初期化に失敗した `<wcs-state>`、適用に失敗したバインディング（`$errorCallback` が受けないとき）、ページの getter・フィルタ・イベントハンドラ・ライフサイクルのコールバック・`$watch` のハンドラ・トークンの購読者の throw、そしてエンジンが打ち切った更新のループ。ページのエラーハンドラはどれも捕まえられなかったエラーとして受け取り、コンソールには 1 回出ます。4.6 までは `console.error` にだけ出たので、`window.onerror` で作ったエラーの収集には何も届きませんでした — ページ全体の初期化が失敗したときでさえ。
+
+報告される `Error` は、どこで何が起きたかを言います: メッセージはエンジンの文面（要素、バインディング）に元のエラーを続けたもので、元のエラーは `cause` に入ります。`diagnostics` アドオンが無いと、エンジンの文面はメッセージ番号と値です（`#12 "prop" "count" "textContent" 1 TypeError: …`、`#49 "wcs-state" Error: … #501 "uc"`）— [エラーメッセージと番号](#エラーメッセージと番号) で引けます。
+
+```js
+window.addEventListener("error", (e) => {
+  navigator.sendBeacon("/api/client-errors", JSON.stringify({ message: e.message, stack: e.error?.stack, cause: String(e.error?.cause ?? "") }));
+});
+```
+
+`$errorCallback` は、これまでどおり state のバインディングの失敗を代わりに受けます（描く、自分で報告する）。`reportError()` の無い環境 — happy-dom、Node、`@wcstack/server` — では、これまでどおり `console.error` です。警告は `console.warn` のままです。
 
 ### 描画中の書き込みは無限ループになりません
 

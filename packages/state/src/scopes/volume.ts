@@ -19,7 +19,7 @@ import type { Claimed } from "../hooks";
 import type { WcsState } from "../element";
 import { config } from "../config";
 import { engines } from "../dom/mount";
-import { raiseError } from "../parser/raiseError";
+import { raiseError, report } from "../parser/raiseError";
 
 export interface Volume {
   readonly el: HTMLElement;
@@ -116,7 +116,7 @@ export function rootMoved(engine: Engine, phase: string): void {
 
 /** Reports a volume that will not graft, releases its slot and settles its promise. */
 function fail(v: Volume, message: string): void {
-  console.error(`${PREFIX(v.path)} ${message}`);
+  report(`${PREFIX(v.path)} ${message}`);
   release(v);
   v.settle?.();
   v.settle = null;
@@ -127,9 +127,9 @@ function callLifecycle(v: Volume, name: "$connectedCallback" | "$disconnectedCal
   if (typeof fn !== "function") return;
   try {
     const r = fn.call(v.chroot);
-    if (r !== null && typeof r === "object" && typeof r.then === "function") r.then(undefined, (e: unknown) => console.error(e));
+    if (r !== null && typeof r === "object" && typeof r.then === "function") r.then(undefined, report);
   } catch (e) {
-    console.error(e);
+    report(e);
   }
 }
 

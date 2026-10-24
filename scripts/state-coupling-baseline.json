@@ -33,6 +33,7 @@
       "filters/errorMessages.ts",
       "filters/options.ts",
       "filters/registry.ts",
+      "hooks.ts",
       "messages.ts"
     ],
     "list-keys": [

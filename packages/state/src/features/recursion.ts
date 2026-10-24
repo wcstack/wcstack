@@ -7,6 +7,7 @@ import { declareRecursion, guardExpansion, recursionSettled } from "../recursion
 
 export const recursion: Feature = {
   name: "recursion",
+  hooks,
   install(): void {
     hooks.declare = chain(hooks.declare, declareRecursion);
     hooks.element = chain(hooks.element, (engine, phase) => {

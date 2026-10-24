@@ -506,6 +506,14 @@
       "note": { "en": "Each core can mark itself on a global symbol when it makes its first signal; a second copy warns in dev mode.", "ja": "各コアが最初の signal を作るときにグローバルなシンボルに印を付け、2 つ目のコピーが開発モードで警告する。" }
     },
     {
+      "id": "feature-foreign",
+      "lint": [],
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Loads the core and an add-on from two copies of @wcstack/state: the split entries through `esm.run`, two versions, or a self-hosted directory replaced in place while a tab runs the old core.", "ja": "core とアドオンを @wcstack/state の 2 つのコピーから読み込む: `esm.run` を通した分割エントリ、2 つの版、タブが古い core を動かしている間にその場で置き換えた自前配信のディレクトリ。" },
+      "effect": { "en": "`installFeatures` throws `[wcs/feature-foreign]` (since 4.7). Up to 4.6 the add-on filled the other copy's slots: a `$watch` never ran, without a word, and a filter of `formats` was reported missing on a page that installed it.", "ja": "`installFeatures` が `[wcs/feature-foreign]` を throw する（4.7 から）。4.6 まではアドオンが別のコピーの口を埋めた: `$watch` は黙って一度も動かず、入れたはずの `formats` のフィルタが入っていないと報告された。" },
+      "evidence": [{ "file": "packages/state/src/hooks.ts", "text": "[wcs/feature-foreign]" }]
+    },
+    {
       "id": "route-bare-mustache",
       "lint": [{ "code": "wcs/route-bare-mustache", "severity": "warning" }],
       "runtime": "silent", "harm": "wrong-place",

@@ -9,6 +9,7 @@ import { registries } from "../element";
 
 export const ssr: Feature = {
   name: "ssr",
+  hooks,
   install(): void {
     hooks.ssrMark = ssrMark;
     hooks.adoptScope = adoptScope;

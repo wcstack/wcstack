@@ -7,6 +7,7 @@ import { config, setConfig } from "./config";
 import type { Strategy } from "./strategy/types";
 import { raise, M, text } from "./messages";
 import { hooks, loadFeatures, requireFeature, type Claimed } from "./hooks";
+import { report } from "./parser/raiseError";
 
 let makeStrategy: () => Strategy = () => new DirtyStrategy();
 
@@ -343,7 +344,7 @@ export class WcsState extends HTMLElementBase {
   /** Reports a failure once: the element (and where its state comes from), then what was thrown. */
   private report(id: M, e: unknown): void {
     const at = ["mount", "bind-component", "state", "src"].flatMap((n) => (this.hasAttribute(n) ? [n, this.getAttribute(n)] : []));
-    console.error(`[@wcstack/state] ${text(id, [this.localName, ...at])}`, e);
+    report(e, `[@wcstack/state] ${text(id, [this.localName, ...at])}`);
   }
 
   /**

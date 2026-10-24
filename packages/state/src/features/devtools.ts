@@ -7,6 +7,7 @@ import { devtoolsDrained, devtoolsElement, devtoolsFailed, devtoolsWritten, regi
 
 export const devtools: Feature = {
   name: "devtools",
+  hooks,
   install(): void {
     hooks.element = chain(hooks.element, devtoolsElement);
     hooks.written = chain(hooks.written, devtoolsWritten);

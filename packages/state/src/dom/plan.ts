@@ -11,6 +11,7 @@ import {
   K_ATTR, K_CHECKBOX, K_CLASS, K_COMMAND, K_EVENT, K_EVTTOKEN, K_FOR, K_HTML, K_IF, K_PROP, K_RADIO, K_SPREAD, K_STYLE, K_TEXT, BUBBLING,
   isContent, type Branch, type BranchSpec, type RowPlan, type Spec,
 } from "./view";
+import { report } from "../parser/raiseError";
 
 /** The binding attribute (`bindAttributeName`, default data-wcs). */
 export const bindAttr = (): string => config.bindAttributeName;
@@ -141,7 +142,7 @@ export function specFor(engine: Engine, b: ParsedBinding, list: Pattern | null, 
     if (delegated) engine.delegate(type);
     // (a delegated handler's failure: the diagnostics add-on says when event.currentTarget, the root there, is why)
     const fail = (error: unknown): void => {
-      console.error(error);
+      report(error);
       if (delegated) hooks.handlerThrew?.(engine, path, type);
     };
     return {

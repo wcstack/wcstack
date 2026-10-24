@@ -59,6 +59,7 @@ const NAMESPACES = ["$streamStatus", "$streamError"];
 
 export const temporal: Feature = {
   name: "temporal",
+  hooks,
   install(): void {
     hooks.declare = chain(hooks.declare, declare);
     hooks.element = chain(hooks.element, element);

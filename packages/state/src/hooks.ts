@@ -158,6 +158,8 @@ export const taken = (r: unknown): boolean => r != null;
 /** An add-on entry: `installFeatures([temporal, diagnostics])` before the state is defined. */
 export interface Feature {
   readonly name: string;
+  /** The slots of the build it comes from: it fills only those (the core checks they are its own). */
+  readonly hooks: object;
   install(): void;
 }
 
@@ -166,6 +168,12 @@ const installed = new Set<string>();
 export function installFeatures(features: readonly Feature[]): void {
   for (const f of features) {
     if (installed.has(f.name)) continue;
+    // An add-on of another copy of the engine — another version (a vendor directory replaced in place),
+    // or the same files under another URL (esm.run) — fills that copy's slots: its name would pass
+    // requireFeature, and a `$watch` would never run, without a word (docs/seam-apps.md, prod-booking)
+    if (f.hooks !== hooks) {
+      throw new Error(`[@wcstack/state] [wcs/feature-foreign] The add-on "${f.name}" is from another copy of @wcstack/state (another version, or another URL): load the core and its add-ons from one build`);
+    }
     installed.add(f.name);
     f.install();
   }

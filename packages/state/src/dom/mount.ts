@@ -3,6 +3,7 @@ import { hooks } from "../hooks";
 import { directive, textSpec, walkBindings } from "./plan";
 import { raise, M } from "../messages";
 import { attachChain, attachSpec, ForView, listFor } from "./view";
+import { report } from "../parser/raiseError";
 
 /**
  * The engine mounted on each root (document, shadow root): the binder's lookup. A root's while its
@@ -39,7 +40,7 @@ export function mountSubtree(engine: Engine, subtree: Element, range?: boolean):
     if (d !== null && !range) raise(M.TemplateHandedOver, [d.bindingType]);
     walk(engine, [subtree]);
   } catch (e) {
-    console.error(e);
+    report(e);
   }
   engine.report();
 }

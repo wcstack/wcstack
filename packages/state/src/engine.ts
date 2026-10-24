@@ -8,6 +8,7 @@ import { raise, M, text } from "./messages";
 import { recursionUnsupported } from "./parser/parseStatePart";
 import { hooks, requireFeature } from "./hooks";
 import { INDEX_PARAM, MAX_INDEX_PARAM } from "./parser/define";
+import { report } from "./parser/raiseError";
 
 /** Declarations an add-on serves: without it installed they fail instead of doing nothing. */
 const DECLARATIONS: [string, string][] = [["$watch", "temporal"], ["$stream", "temporal"], ["$listKeys", "list-keys"], ["$recursion", "recursion"]];
@@ -1256,7 +1257,7 @@ export class Engine implements ReconcileHooks {
    */
   private cutLoop(id: M, max: number): void {
     const paths = [...new Set([...this.queue, ...this.dirtyLists, ...this.staleLists].map((x) => x.pattern.path))];
-    console.error(`[@wcstack/state] ${text(id)}`, paths);
+    report(paths, `[@wcstack/state] ${text(id)}`);
     hooks.noticed?.(this, { "type": "state:render-chain-limit", "maxDepth": max, "paths": paths });
     this.dropWork();
   }
@@ -1340,7 +1341,7 @@ export class Engine implements ReconcileHooks {
           }
         };
         const pending = lists.length > 0 || q.some((b) => b.chain !== null) ? runTransition("state", apply) : apply();
-        if (pending !== undefined) pending.then(undefined, (e) => console.error(e));
+        if (pending !== undefined) pending.then(undefined, report);
       }
     } finally {
       this.draining = false;
@@ -1403,12 +1404,12 @@ export class Engine implements ReconcileHooks {
       try {
         r = this.callHook("$renderedCallback", [paths, indexes]);
       } catch (e) {
-        console.error(e);
+        report(e);
       }
       if (isThenable(r)) {
         r.then(this.renderedFn, (e: unknown) => {
           this.renderedFn();
-          console.error(e);
+          report(e);
         });
       } else {
         this.feeding--;
@@ -1426,13 +1427,13 @@ export class Engine implements ReconcileHooks {
         // quoted keys: the author reads them (mangle.mjs shortens the unquoted ones)
         try {
           const r = this.callHook("$errorCallback", [error, { "path": path, "bindingType": type, "node": binding.node }]) as any;
-          if (isThenable(r)) r.then(undefined, (e: unknown) => console.error(e));
+          if (isThenable(r)) r.then(undefined, report);
         } catch (e) {
-          console.error(e);
+          report(e);
         }
       } else {
         // (the binding's member and kind name it as written; the node points at it)
-        console.error(`[@wcstack/state] ${text(M.BindingFailed, binding.name ? [type, path, binding.name, binding.kind] : [type, path])}`, error, binding.node);
+        report(error, `[@wcstack/state] ${text(M.BindingFailed, binding.name ? [type, path, binding.name, binding.kind] : [type, path])}`, binding.node);
       }
     }
   }

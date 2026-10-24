@@ -127,8 +127,17 @@ describe("$features（読み込む口が無い: 全部入り・バンドラは�
     error.mockRestore();
   });
 
+  it("別の写しのエンジンの後付け（hooks が別物）は入れずに投げ、名前も入ったことにしない", () => {
+    const install = vi.fn();
+    expect(() => installFeatures([{ name: "fake-foreign", hooks: {}, install }])).toThrow(
+      '[wcs/feature-foreign] The add-on "fake-foreign" is from another copy of @wcstack/state',
+    );
+    expect(install).not.toHaveBeenCalled();
+    expect(() => make({ $features: ["fake-foreign"] })).toThrow("[wcs/feature-not-installed]");
+  });
+
   it("入っている名前は通り、配列でなければ投げる", () => {
-    installFeatures([{ name: "fake-installed", install() {} }]);
+    installFeatures([{ name: "fake-installed", hooks, install() {} }]);
     expect(make({ $features: ["fake-installed"] }).proxy).toBeDefined();
     expect(() => make({ $features: "fake-installed" })).toThrow(core(M.FeaturesNotArray));
   });
@@ -144,7 +153,7 @@ describe("loadFeatures と hooks.load（分割 auto の受け口）", () => {
   it("待つものが無ければ undefined（起動の microtask を増やさない）", () => {
     expect(loadFeatures({ $features: ["fake-a"] })).toBeUndefined();
     hooks.load = vi.fn(async () => {});
-    installFeatures([{ name: "fake-there", install() {} }]);
+    installFeatures([{ name: "fake-there", hooks, install() {} }]);
     expect(loadFeatures({})).toBeUndefined();
     expect(loadFeatures({ $features: "fake-a" })).toBeUndefined();
     expect(loadFeatures({ $features: ["fake-there"] })).toBeUndefined();
@@ -155,12 +164,12 @@ describe("loadFeatures と hooks.load（分割 auto の受け口）", () => {
     let release!: () => void;
     const load = vi.fn((names: string[]) => new Promise<void>((resolve) => {
       release = () => {
-        installFeatures(names.map((name) => ({ name, install() {} })));
+        installFeatures(names.map((name) => ({ name, hooks, install() {} })));
         resolve();
       };
     }));
     hooks.load = load;
-    installFeatures([{ name: "fake-have", install() {} }]);
+    installFeatures([{ name: "fake-have", hooks, install() {} }]);
     const { root, el } = mountPage(`<p>{{ n }}</p>`, { n: 1, $features: ["fake-have", "fake-b", "fake-c"] });
     await flush();
     expect(load).toHaveBeenCalledWith(["fake-b", "fake-c"]);
