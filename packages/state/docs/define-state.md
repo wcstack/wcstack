@@ -401,7 +401,7 @@ defineState({
 });
 ```
 
-Methods are not affected, and neither is a read whose result the return value does not depend on. Annotate a getter's return type when you want its body checked.
+Methods are not affected, and neither is a read whose result the return value does not depend on. Annotate a getter's return type when you want its body checked. An inline `<wcs-state>` script is JavaScript and cannot carry the annotation: from 4.6.2, `wcs-tsc` and the VS Code extension give each getter that reads `this` the return type `any` in the code they check, so its body is checked there ([docs/typescript.md](../../../docs/typescript.md) §4).
 
 ### Dynamic paths are not typed
 

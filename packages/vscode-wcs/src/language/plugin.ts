@@ -15,8 +15,9 @@ import type {
 } from '@volar/language-core';
 import type { TypeScriptExtraServiceScript } from '@volar/typescript';
 import { URI } from 'vscode-uri';
+import { GETTER_RETURN_ANNOTATION, getterAnnotationOffsets } from './getterAnnotations.js';
 import { parseWcsScriptBlocks, type WcsScriptBlock } from './htmlParse.js';
-import { WCS_PREAMBLE, WCS_PREAMBLE_LENGTH } from './preamble.js';
+import { WCS_PREAMBLE } from './preamble.js';
 
 /** 全 Language Feature を有効にする CodeInformation */
 const fullFeatures: CodeInformation = {
@@ -179,24 +180,19 @@ const IMPORT_STATEMENT_RE = /import\s+(?:[\s\S]*?\sfrom\s*)?['"][^'"]+['"]\s*;?/
  * `const __wcs_state_N =` に置き換える（プリアンブルの defineState でラップ）。
  * 巻き上げた import の元位置は同じ長さの空白にして、ブロック内のオフセットを保つ。
  * mapping はユーザーコードの各断片（import・export default より前・オブジェクト・
- * 末尾）を HTML のオフセットへ結ぶ。置き換えた `export default ` と挿入した記号は
- * 対応する HTML が無いので mapping を持たない。
+ * 末尾）を HTML のオフセットへ結ぶ。置き換えた `export default ` と挿入した記号
+ * （getter の `: any` も）は対応する HTML が無いので mapping を持たない。
  */
 /** @internal テスト用にエクスポート */
 export function buildCombinedScript(blocks: WcsScriptBlock[]): { code: string; mappings: CodeMapping[] } {
-  let code = WCS_PREAMBLE;
-  const mappings: CodeMapping[] = [];
-  const map = (sourceOffset: number, generatedOffset: number, length: number): void => {
-    if (length <= 0) return;
-    mappings.push({ sourceOffsets: [sourceOffset], generatedOffsets: [generatedOffset], lengths: [length], data: fullFeatures });
-  };
+  const out = new VirtualCodeBuilder(WCS_PREAMBLE);
 
   // 1. import の巻き上げ
   const bodies = blocks.map((block) => {
     const stripped = stripWcsImport(block.content);
     const userCode = stripped.replace(IMPORT_STATEMENT_RE, (match: string, offset: number) => {
-      map(block.contentStart + offset, code.length, match.length);
-      code += match + '\n';
+      out.user(stripped, offset, offset + match.length, block.contentStart);
+      out.text('\n');
       return ' '.repeat(match.length);
     });
     return { block, userCode };
@@ -204,36 +200,74 @@ export function buildCombinedScript(blocks: WcsScriptBlock[]): { code: string; m
 
   // 2. ブロックごとのスコープ
   bodies.forEach(({ block, userCode }, index) => {
-    code += '{\n';
-    const decl = `const __wcs_state_${index} = `;
+    const annotations = getterAnnotationOffsets(userCode);
+    const user = (from: number, to: number): void => out.user(userCode, from, to, block.contentStart, annotations);
+    out.text('{\n');
     const exportMatch = /export\s+default\s+/.exec(userCode);
     if (exportMatch === null) {
-      map(block.contentStart, code.length, userCode.length);
-      code += userCode;
+      user(0, userCode.length);
     } else {
-      const before = userCode.slice(0, exportMatch.index);
-      const afterExport = userCode.slice(exportMatch.index + exportMatch[0].length);
-      const afterExportSource = block.contentStart + exportMatch.index + exportMatch[0].length;
-      map(block.contentStart, code.length, before.length);
-      code += before + decl;
+      const exportEnd = exportMatch.index + exportMatch[0].length;
+      user(0, exportMatch.index);
+      out.text(`const __wcs_state_${index} = `);
       if (/\bdefineState\s*\(/.test(userCode)) {
-        map(afterExportSource, code.length, afterExport.length);
-        code += afterExport;
+        user(exportEnd, userCode.length);
       } else {
-        const trailingMatch = afterExport.match(/(\s*;?\s*)$/);
-        const trailing = trailingMatch ? trailingMatch[0] : '';
-        const objectPart = afterExport.slice(0, afterExport.length - trailing.length);
-        code += 'defineState(';
-        map(afterExportSource, code.length, objectPart.length);
-        code += objectPart + ')';
-        map(afterExportSource + objectPart.length, code.length, trailing.length);
-        code += trailing;
+        const objectEnd = userCode.length - trailingLength(userCode.slice(exportEnd));
+        out.text('defineState(');
+        user(exportEnd, objectEnd);
+        out.text(')');
+        user(objectEnd, userCode.length);
       }
     }
-    code += `\nvoid __wcs_state_${index};\n}\n`;
+    out.text(`\nvoid __wcs_state_${index};\n}\n`);
   });
 
-  return { code, mappings };
+  return { code: out.code, mappings: out.mappings };
+}
+
+/**
+ * 仮想コードの組み立て: 挿入する記号（mapping 無し）と、HTML へ戻るユーザーコードの断片。
+ * ユーザーコードの断片は、getter の注釈（getterAnnotations.ts）を挟む位置で分けて結ぶ。
+ */
+class VirtualCodeBuilder {
+  code: string;
+  readonly mappings: CodeMapping[] = [];
+
+  constructor(prefix: string) {
+    this.code = prefix;
+  }
+
+  /** HTML に対応の無い記号。 */
+  text(text: string): void {
+    this.code += text;
+  }
+
+  /**
+   * `userCode.slice(from, to)` を足し、`sourceStart + from` から HTML へ結ぶ。
+   * `annotations` のうち範囲内のオフセットの前に `GETTER_RETURN_ANNOTATION` を挟む。
+   */
+  user(userCode: string, from: number, to: number, sourceStart: number, annotations: readonly number[] = []): void {
+    let at = from;
+    for (const offset of annotations) {
+      if (offset < from || offset >= to) continue;
+      this.piece(userCode, at, offset, sourceStart);
+      this.code += GETTER_RETURN_ANNOTATION;
+      at = offset;
+    }
+    this.piece(userCode, at, to, sourceStart);
+  }
+
+  private piece(userCode: string, from: number, to: number, sourceStart: number): void {
+    if (to <= from) return;
+    this.mappings.push({ sourceOffsets: [sourceStart + from], generatedOffsets: [this.code.length], lengths: [to - from], data: fullFeatures });
+    this.code += userCode.slice(from, to);
+  }
+}
+
+/** `export default` の後ろの、オブジェクトに続く末尾（空白・`;`）の長さ。`)` はその前に挿入する。 */
+function trailingLength(afterExport: string): number {
+  return /(\s*;?\s*)$/.exec(afterExport)?.[0].length ?? 0;
 }
 
 /**
@@ -302,94 +336,39 @@ function createScriptVirtualCode(block: WcsScriptBlock, index: number): VirtualC
  * `export default { ... }` を `export default defineState({ ... })` に自動ラップする。
  *
  * ユーザーが既に defineState() を使用している場合はそのまま。
- * ラップ時もソースマッピングを正確に維持する。
+ * `this` を読む getter には戻り値の注釈 `: any` を挟む（getterAnnotations.ts）。
+ * ラップ時も注釈を挟んでもソースマッピングを正確に維持する。
  */
 /** @internal テスト用にエクスポート */
 export function wrapWithDefineState(
   userCode: string,
   block: WcsScriptBlock,
 ): { code: string; mappings: CodeMapping[] } {
-  const alreadyWrapped = /\bdefineState\s*\(/.test(userCode);
+  const out = new VirtualCodeBuilder(WCS_PREAMBLE);
+  const annotations = getterAnnotationOffsets(userCode);
+  const user = (from: number, to: number): void => out.user(userCode, from, to, block.contentStart, annotations);
 
-  if (alreadyWrapped) {
-    // defineState() 使用済み — プリアンブル + ユーザーコードをそのまま
-    const code = WCS_PREAMBLE + userCode;
-    return {
-      code,
-      mappings: [{
-        sourceOffsets: [block.contentStart],
-        generatedOffsets: [WCS_PREAMBLE_LENGTH],
-        lengths: [block.content.length],
-        data: fullFeatures,
-      }],
-    };
+  // defineState() 使用済み、または export default が無い — プリアンブル + ユーザーコードをそのまま
+  const match = /\bdefineState\s*\(/.test(userCode) ? null : /export\s+default\s+/.exec(userCode);
+  if (match === null) {
+    user(0, userCode.length);
+    return { code: out.code, mappings: out.mappings };
   }
 
   // `export default { ... }` を `export default defineState({ ... })` に変換
   //
   // 仮想コード構造:
-  //   [PREAMBLE][before "export default "]["export default defineState("][object...][")"][after]
+  //   [PREAMBLE]["export default "]["defineState("][object...][")"][末尾の ; と改行]
   //
-  // マッピング: ユーザーコード全体を1つのマッピングで対応付ける。
   // "defineState(" と ")" は挿入されるが、ユーザーのカーソル位置には影響しない。
-  const exportDefaultRe = /export\s+default\s+/;
-  const match = exportDefaultRe.exec(userCode);
-
-  if (!match) {
-    // export default がない場合はそのまま
-    const code = WCS_PREAMBLE + userCode;
-    return {
-      code,
-      mappings: [{
-        sourceOffsets: [block.contentStart],
-        generatedOffsets: [WCS_PREAMBLE_LENGTH],
-        lengths: [block.content.length],
-        data: fullFeatures,
-      }],
-    };
-  }
-
   const exportEnd = match.index + match[0].length;
-  const before = userCode.slice(0, exportEnd);      // "export default "
-  const after = userCode.slice(exportEnd);            // "{ ... };\n"
-
-  // 末尾のセミコロン + 改行を分離して ")" をセミコロンの前に挿入
-  const trailingMatch = after.match(/(\s*;?\s*)$/);
-  const objectPart = trailingMatch
-    ? after.slice(0, after.length - trailingMatch[0].length)
-    : after;
-  const trailing = trailingMatch ? trailingMatch[0] : '';
-
-  const wrapPrefix = 'defineState(';
-  const wrapSuffix = ')';
-
-  const code = WCS_PREAMBLE + before + wrapPrefix + objectPart + wrapSuffix + trailing;
-
-  // マッピング: 3つのセグメントに分割
-  //   1. "export default " 部分（before）
-  //   2. オブジェクト部分（objectPart） — defineState( の後ろ
-  //   3. 末尾部分（trailing）
-  const preambleLen = WCS_PREAMBLE_LENGTH;
-  const mappings: CodeMapping[] = [{
-    sourceOffsets: [
-      block.contentStart,                             // before の HTML 開始位置
-      block.contentStart + exportEnd,                 // objectPart の HTML 開始位置
-      block.contentStart + exportEnd + objectPart.length,  // trailing の HTML 開始位置
-    ],
-    generatedOffsets: [
-      preambleLen,                                    // before の仮想コード開始位置
-      preambleLen + before.length + wrapPrefix.length, // objectPart の仮想コード開始位置
-      preambleLen + before.length + wrapPrefix.length + objectPart.length + wrapSuffix.length, // trailing
-    ],
-    lengths: [
-      before.length,
-      objectPart.length,
-      trailing.length,
-    ],
-    data: fullFeatures,
-  }];
-
-  return { code, mappings };
+  const objectEnd = userCode.length - trailingLength(userCode.slice(exportEnd));
+  user(0, exportEnd);
+  out.text('defineState(');
+  user(exportEnd, objectEnd);
+  out.text(')');
+  user(objectEnd, userCode.length);
+  return { code: out.code, mappings: out.mappings };
 }
 
 /**

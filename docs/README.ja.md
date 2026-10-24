@@ -40,6 +40,8 @@
 | [signals-state-design.md](./signals-state-design.md) | [signals-state-design.ja.md](./signals-state-design.ja.md) |
 | [state-binding-init-races.md](./state-binding-init-races.md) | [state-binding-init-races.ja.md](./state-binding-init-races.ja.md) |
 | [state-bundle-size-analysis.md](./state-bundle-size-analysis.md) | [state-bundle-size-analysis.ja.md](./state-bundle-size-analysis.ja.md) |
+| [typescript.md](./typescript.md) | [typescript.ja.md](./typescript.ja.md) |
+| [typescript-content-mapper.md](./typescript-content-mapper.md) | [typescript-content-mapper.ja.md](./typescript-content-mapper.ja.md) |
 | [scoped-custom-element-registries.md](./scoped-custom-element-registries.md) | [scoped-custom-element-registries.ja.md](./scoped-custom-element-registries.ja.md) |
 | [screen-orientation-tag-design.md](./screen-orientation-tag-design.md) | [screen-orientation-tag-design.ja.md](./screen-orientation-tag-design.ja.md) |
 | [audio-impl-plan.md](./audio-impl-plan.md) | [audio-impl-plan.ja.md](./audio-impl-plan.ja.md) |
