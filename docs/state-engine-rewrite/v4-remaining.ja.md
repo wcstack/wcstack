@@ -1327,3 +1327,30 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 調査で見つけたもの（未修正）: `wcs-tsc` の設定の監査が、`include: ["src"]` のようなディレクトリだけの指定を「HTML を含まない」と誤って警告する。getter の中の `this.items[0].nmae` を `wcs-tsc` が見逃す（TS 5.9 でも 7.1 の試作でも同じ。メソッドの中なら報告する）。
   - 4.6.0 からの持ち越し: 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。examples/fw-inventory の依存を `^4.6.0` 以上にして lock を更新する。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.6.2 の公開（2026-10-24）
+
+- 中身: patch。4.6.1 と同じ content mapper の調査で見つけた `wcs-tsc` の不具合 2 件と、TypeScript 7 への対応の設計。PR #518（merge commit 074398e1）:
+  - getter の本体を検査する（`wcs-tsc` と VS Code 拡張）。`defineState` は T をオブジェクトから推論し、戻り値の型注釈の無い getter の型は本体から推論される。本体が `this` を読むとその推論が T に戻ってくるので、TypeScript（5.9 も 7.1 も）はその getter の `this` を `any` のままにする。最小の `f<T>(x: T & ThisType<T>)` でも再現する。
+    - その結果、`get first() { return this.items[0].nmae; }` は報告されず、strict では getter の中のコールバックが TS7006、`this.$getAll<number>()` が TS2347 の偽陽性になっていた。
+    - 制約の型を変えても、`NoInfer` でも、`_WcsThis` を削っても直らない。戻り値の型を注釈すれば直る。
+    - そこで言語プラグインが、state の直下の getter のうち `this` を読むものの `)` の後ろに `: any` を挟む（`getterAnnotations.ts`、acorn。挟んだテキストに対応は無い）。両モードとも `VirtualCodeBuilder` で組む。
+    - examples の 33 ページでは 23 件が 25 件になった。増えたのは router-spa の `routeParams: {}` / `query: {}` を読む getter で、メソッドなら前から報告される種類。CHANGELOG の Upgrading に書いた。
+  - `include: ["src"]` を「HTML を含まない」と誤って警告していたのを直した（`includeCoversHtml`。tsc はディレクトリを `src/**/*` と読む）。
+  - docs/typescript-content-mapper.md（日英）: TypeScript 7 の下で `<wcs-state>` を content mapper で検査する設計。プロトコル、試作で測ったこと（この修正込みで examples の 25 件が一致、TS18073、LSP の `runExternalCode`、CDN の import を supplemental の宣言で `any` に）、設計、エディタでの拡張との重なり、`wcs-schema` の別の移植、著者が決めること。未実装。
+- 準備: PR #519（merge commit b36f6e18）で CHANGELOG を `[4.6.2] — 2026-10-24` として締め、固定版 18 か所を 4.6.2 にした。
+- main で `patch`（run 40062903397）。成功した: 版を上げたコミット 595ae64b、タグ `v4.6.2`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Fixed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。ただし `wcstack` だけ、公開（04:57 UTC）から registry に現れるまで約 10 分かかった（4.6.0 と同じ。公開し直さずに待った）。SRI 44/44（1 回目は storage が jsDelivr の 502。取り直して一致）。文書の固定 URL 8 本がすべて 200。`@wcstack/typescript` 4.6.2 の peer は `>=5.0 <7`。`wcstack/auto` 4.6.2 の integrity は `sha384-XkPudkLILZ2r27xNWb1Zex/AuqgRZGUBp52c8k9GPB16q86k2y/GkCnhDqv2VG2+`。
+  - 公開された tarball で確かめた。strict の TS 6.0.3 のプロジェクトで、getter の typo を `getter.html(4,38)` で報告し、getter のコールバックに TS7006 は出ない。`include: ["src"]` の警告も出ない。
+- 公開後の作業（同日）:
+  - PR #520（merge commit 47d1e38a）: サイズの基準値を 4.6.2 の dist で取り直した（版の文字列だけ — ssr が +2 B、`core.min.js` は 20,102 B のまま）。結合の基準値は変わらない。CLAUDE.md / AGENTS.md の版と、拡張を 2.6.1 に。
+  - VS Code 拡張 2.6.1: 47d1e38a で `npm run package` した vsix（890 ファイル、テスト 1,314 件、server に getter の注釈が入っている）を公開した。PAT は事前に `vsce verify-pat` で確かめた。Marketplace の照会 API に 2.6.1 が出たのは 05:21 UTC。注釈付きのタグ `vscode-wcs-v2.6.1`。
+  - wcstack-skill: PR #46（merge commit 9006dfd）で、§5 の `wcs-tsc` の行に「4.6.2 から getter の本体も検査する（拡張 2.6.1 も同じ）」と書き、版の印と CDN の固定を 4.6.2 にした（6 本とも 200）。「since 4.6.1 npm refuses」は始まった版なので残した。注釈付きのタグ `v4.6.2`。
+  - LP（8c73f51）:
+    - トップは、pill と「Shipped in」の見出しだけを 4.6.2 にし、v4.6.1 の一文の後に v4.6.2 の一文を足した（4.6.1 のときの一括置換の罠を避けた）。
+    - state / signals のページの版、ステップ 15 の `^4.6.2`、ステップ 16 の `wcstack@4.6.2` と integrity とリリースへのリンク、llms の作り直し。
+    - 手元で Chromium 7/7。本番に残る 4.6.1 は、トップの v4.6.1 の一文（日英）と skill の「since 4.6.1」だけ。
+- 残り:
+  - content mapper の実装（著者の判断。docs/typescript-content-mapper.md §8）。
+  - 4.6.0 からの持ち越し: 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。examples/fw-inventory の依存を更新する。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
