@@ -16,7 +16,7 @@ npm run build && node server.js         # http://localhost:3000   (PORT=… to c
 node server.js & npm run dev            # Vite on http://localhost:5173, proxying /api and /photos to :3000
 ```
 
-It uses what 4.6 adds (`storage-key`, files before the url, the new warnings). Until 4.6 is on npm, build it from this repository with `WCS_LOCAL=1 npm run build`: the `@wcstack/*` imports then resolve to `packages/*/dist` (build those packages first, since the committed dists are rebuilt at a release only).
+It uses what 4.6 adds (`storage-key`, files before the url, the new warnings), and installs the `@wcstack/*` packages from npm at `^4.6.2`. To build it over this repository's packages instead — as CI does — run `WCS_LOCAL=1 npm run build`: the `@wcstack/*` imports then resolve to `packages/*/dist` (build those packages first, since the committed dists are rebuilt at a release only).
 
 | URL | |
 |---|---|
