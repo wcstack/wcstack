@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 3 |
-| 実行時 | 62 |
+| 実行時 | 63 |
 | lint だけ — 条件付きの沈黙 | 24 |
 | 文書だけ — 沈黙 | 14 |
 | 数えない lint の code | 17 |
@@ -151,6 +151,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 受け手を描く書き込みの直後にコマンドのトークンを emit する — `if:` の枝の中の入力欄（`this.editing = key; this.$command.focusEditor.emit()`）。 | code なし: 枝はあとの更新で描かれるので、emit はどの購読者にも届かずに消える（トークンは保持も再送もされない）。diagnostics の後付けがトークンごとに 1 回 `[wcs/command-token-unbound]` を警告する。`$renderedCallback` から emit する。 7GUIs の評価（Cells）で見つかった。`command-token-unbound`（と、要素の定義が遅れる `io-auto-after-state`）の時間差版: 束縛はあるが、まだ無い。emit を取っておいて後で送ることはしない: 遅れて届くコマンドは間違いになりうる（docs/v4-direction-2026-10.md §5.1 の 6、§5.2）。 | — |
 | どの `command.` の束縛も結ばないコマンドのトークンを emit する、または spread がコマンドとイベントを結ぶと思う。 | 同じ code: emit はどの購読者にも届かず、何も返さない。`$on` は発火しない。diagnostics の後付けがトークンごとに 1 回警告する。 lint は、（スクリプトか `on*:` で）emit するのに、ドキュメントのどの `command.` 束縛も受けないトークンを報告する。実行時は、購読者に届かないすべての emit にトークンごとに 1 回警告する — 隠れた枝へわざと emit するトークンにも（著者の決定、docs/v4-direction-2026-10.md §5.2）。 | `wcs/command-token-unbound` (warning) |
 | 外れた 3.x の名前を宣言する（`$streams`・`$updatedCallback`）。 | 同じ code: diagnostics の後付けが読み込みで `#1601` を throw する。`/core` ではキーは無視される。 | `wcs/declaration-alias` (varies) |
+| core とアドオンを @wcstack/state の 2 つのコピーから読み込む: `esm.run` を通した分割エントリ、2 つの版、タブが古い core を動かしている間にその場で置き換えた自前配信のディレクトリ。 | code なし: `installFeatures` が `[wcs/feature-foreign]` を throw する（4.7 から）。4.6 まではアドオンが別のコピーの口を埋めた: `$watch` は黙って一度も動かず、入れたはずの `formats` のフィルタが入っていないと報告された。 | — |
 | `features=` か `$features` に、無い後付けの名前を書く。 | 同じ code: 分割 auto の読み込みが `[wcs/feature-unknown]` を throw する（`<wcs-state>` は定義されない）。ほかの入口は `[wcs/feature-not-installed]` を出す。 | `wcs/feature-unknown` (error) |
 | `$features` が配列でない、またはボリュームにある。 | code なし: 読み込みで `#46`（ボリュームは `console.error`）。 | `wcs/features-invalid` (error) |
 | タグを自分で定義するページで、`<wcs-fetch-header>` / `<wcs-fetch-body>` を定義せずに `<wcs-fetch>` を定義する。`WcsFetch` を出し直す autoloader の包みのモジュールや、スコープ付きのレジストリ。 | code なし: 補助のタグは素の要素のままで、そのヘッダー（`Authorization` など）や本文が要求から落ちる。4.6 より前、パッケージはそれらのクラスを出していなかった。4.6 から `WcsFetchHeader` / `WcsFetchBody` を出し、`<wcs-fetch>` が `[wcs/fetch-helper-undefined]` で 1 回警告する。 継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。autoloader の README は、パッケージの `/auto` を読み込む包みを示すようになった。`/auto` はパッケージのタグをすべて定義する。 | — |

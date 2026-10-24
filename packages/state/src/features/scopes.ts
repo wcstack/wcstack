@@ -12,6 +12,7 @@ import { claimComponent, componentScope, crossed, guardReadonlyMount, hasMounts,
 
 export const scopes: Feature = {
   name: "scopes",
+  hooks,
   install(): void {
     hooks.claim = first(taken, hooks.claim, claimVolume);
     hooks.claim = first(taken, hooks.claim, claimDcc);

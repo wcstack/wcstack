@@ -221,11 +221,18 @@ Load the split form from the package's own files — jsDelivr's plain, version-p
 above (it does not read `exports`, so name the file under `dist/split/`), or a bundler — and **never
 through `esm.run`**. Its `+esm` endpoint re-bundles every entry on the server and inlines the shared
 core chunk into each one, so every entry would carry its own engine: a feature would install into a
-copy the core never sees, and the page throws `[wcs/feature-not-installed]` in spite of
-`installFeatures`. From the plain files, every entry's relative import resolves to the same chunk URL,
-so the browser evaluates the engine once. Integrity for this form: [docs/sri.md §5.1](../../docs/sri.md#51-the-split-entries-of-wcstackstate).
+copy the core never sees. From the plain files, every entry's relative import resolves to the same
+chunk URL, so the browser evaluates the engine once. Integrity for this form: [docs/sri.md §5.1](../../docs/sri.md#51-the-split-entries-of-wcstackstate).
 The file names under `dist/split/chunks/` carry a content hash: if you list chunk files yourself
 (preload links, `integrity` in an import map), take the names from the build you load.
+
+**The core and its add-ons come from one build.** Since 4.7 (not released yet) `installFeatures` refuses an
+add-on of another copy of the engine — the same files under another URL (`esm.run`), or another version
+(a self-hosted directory replaced in place while a tab still runs the old core) — with
+`[wcs/feature-foreign] The add-on "temporal" is from another copy of @wcstack/state`. Up to 4.6 it
+accepted it: the add-on filled the other copy's slots, so a `$watch` never ran, without a word, and a
+filter of `formats` was reported missing. The add-on files under `dist/split/features/` are not
+content-hashed: self-hosted, put the version in their URL and keep the old ones after a deploy.
 
 | Entry | What it adds |
 |---|---|
@@ -2617,7 +2624,7 @@ Key rules:
 - **A row watch is headless too** — it needs no `for:` and no `$listKeys`: the watch keeps the lists it ranges over in step itself. Reassigning the same array or a copy of it, and `$postUpdate("items")`, do not fire it — no row entered the list and no row path was written — but a getter over the rows (`$getAll("items.*.price", [])`) sees values changed in place.
 - **Shared arrays fire per position** — when several outer rows hold the same array, writing one of its elements fires `$watch("groups.*.items.*")` once for every outer row that holds it, each with its own indexes: the value changed at every one of those paths.
 - **Handler exceptions are isolated** — a throw is reported (`$watch "…" failed; the other watches still run.`) and the remaining watches (and stream restarts) still run.
-- **Write chains are bounded** — a handler's writes form a new batch, so mutually-writing watches would loop forever. Each write carries a chain depth: one more than that of the write that fired the handler making it. A handler fired more than 32 deep does not run: the chain is cut, reported once with `console.error` (`$watch handlers / $stream restarts kept writing for 32 batches; the chain is cut (nothing is rolled back).`) and to DevTools as `state:watch-chain-limit`, while the batch's other handlers still run. Values and DOM are not rolled back. Writes riding in the same batch — a render's write-back — neither lengthen nor reset a chain, so a handler that follows a long finite render chain — `$renderedCallback` shrinking a heading one step per render — is not cut off. A `$stream` restart counts like a handler: its writes (the reset to `initial`, the status) continue the chain of the write that reached its `args`, and a restart past the limit is not made. What a run writes in the same task as its (re)start — a value its source yields, its status `done` / `error` — counts toward that run's chain, for the handlers it fires as for the restarts it causes. A loop through a source that yields at once is therefore cut instead of freezing the page: two streams whose `args` read each other's values, or a `$watch` on a stream's value that moves what its `args` reads. One lap of the latter — the handler, then the restart — is two links, so it stops after about 16 laps, finite or not (auto-paging over an in-memory source included). A value from a later task (a network response, a message, a timer), and the handlers it fires, start afresh.
+- **Write chains are bounded** — a handler's writes form a new batch, so mutually-writing watches would loop forever. Each write carries a chain depth: one more than that of the write that fired the handler making it. A handler fired more than 32 deep does not run: the chain is cut, reported once as an error ([Reporting errors in production](#reporting-errors-in-production): `$watch handlers / $stream restarts kept writing for 32 batches; the chain is cut (nothing is rolled back).`) and to DevTools as `state:watch-chain-limit`, while the batch's other handlers still run. Values and DOM are not rolled back. Writes riding in the same batch — a render's write-back — neither lengthen nor reset a chain, so a handler that follows a long finite render chain — `$renderedCallback` shrinking a heading one step per render — is not cut off. A `$stream` restart counts like a handler: its writes (the reset to `initial`, the status) continue the chain of the write that reached its `args`, and a restart past the limit is not made. What a run writes in the same task as its (re)start — a value its source yields, its status `done` / `error` — counts toward that run's chain, for the handlers it fires as for the restarts it causes. A loop through a source that yields at once is therefore cut instead of freezing the page: two streams whose `args` read each other's values, or a `$watch` on a stream's value that moves what its `args` reads. One lap of the latter — the handler, then the restart — is two links, so it stops after about 16 laps, finite or not (auto-paging over an in-memory source included). A value from a later task (a network response, a message, a timer), and the handlers it fires, start afresh.
 - **Not run on a mounted `bind-component` scope** — the `$watch` declaration of a mounted component is ignored with a one-time `wcs/mount-dollar-declaration` warning that points to the root state; this applies to `$stream` and `$renderedCallback` too. A volume refuses `$watch` ([`mount=`](#mounting-additional-state-mount)): declare it on the root with the full path (`"cart.total"`). A plain (unwired Shadow) child owns an independent tree and can declare it.
 - **SSR does not run watches** — handler side effects would otherwise execute on both server and client.
 
@@ -3094,7 +3101,7 @@ this.$getAll("matrix.*.*", [row]);
 
 ### Initialization failures
 
-A `<wcs-state>` that fails to initialize is reported once with `console.error` — first the element and where its state comes from, then the error:
+A `<wcs-state>` that fails to initialize is reported once ([Reporting errors in production](#reporting-errors-in-production)) — first the element and where its state comes from, then the error:
 
 ```
 [@wcstack/state] <wcs-state src="./state.js"> failed to initialize. SyntaxError: …
@@ -3128,13 +3135,27 @@ Inside a `for:` / `if:` row, an error found while a binding is attached (an unde
 
 ### One failing binding is confined to that binding
 
-If applying a binding throws, the rest of that batch, `$renderedCallback`, `$watch`, and `$stream` restarts all still run. The failure is not swallowed — it goes to `$errorCallback`, or else to `console.error`, followed by the error, and to DevTools (`state:binding-apply-error`):
+If applying a binding throws, the rest of that batch, `$renderedCallback`, `$watch`, and `$stream` restarts all still run. The failure is not swallowed — it goes to `$errorCallback`, or else it is reported ([Reporting errors in production](#reporting-errors-in-production)), followed by the error, and to DevTools (`state:binding-apply-error`):
 
 ```
 [@wcstack/state] binding "text: items.*.label" failed to apply.
 ```
 
 A list that fails to sync or render (a missing key, a getter that throws) is reported the same way, as its `for` binding's failure, and keeps the rows it had.
+
+### Reporting errors in production
+
+Since 4.7 (not released yet), every error the engine reports goes through the platform's `reportError()`: a `<wcs-state>` that fails to initialize, a binding that fails to apply (when no `$errorCallback` takes it), and a getter, filter, event handler, lifecycle callback, `$watch` handler or token subscriber of the page that throws — and an update loop it cuts. The page's error handlers see each one as an uncaught error, and the console shows it once. Up to 4.6 they went to `console.error` only, so an error reporter built on `window.onerror` heard nothing — not even when the whole page failed to initialize.
+
+The reported `Error` says where and what: its message is the engine's (the element, the binding) followed by the original error, which is its `cause`. Without the `diagnostics` add-on the engine's part is the message number and its values (`#12 "prop" "count" "textContent" 1 TypeError: …`, `#49 "wcs-state" Error: … #501 "uc"`) — look them up in [Error messages and numbers](#error-messages-and-numbers).
+
+```js
+window.addEventListener("error", (e) => {
+  navigator.sendBeacon("/api/client-errors", JSON.stringify({ message: e.message, stack: e.error?.stack, cause: String(e.error?.cause ?? "") }));
+});
+```
+
+`$errorCallback` still takes a state's binding failures instead (render them, report them yourself). Where there is no `reportError()` — happy-dom, Node, `@wcstack/server` — the report is `console.error`, as before. Warnings stay `console.warn`.
 
 ### A write made while rendering cannot loop forever
 

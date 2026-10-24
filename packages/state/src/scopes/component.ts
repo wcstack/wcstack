@@ -31,7 +31,7 @@ import { DirtyStrategy } from "../strategy/dirty";
 import { engines, mount, mountSubtree } from "../dom/mount";
 import { bind, drainBinds } from "../dom/binder";
 import { registryOf } from "../dom/wc";
-import { raiseError } from "../parser/raiseError";
+import { raiseError, report } from "../parser/raiseError";
 import type { WcsState } from "../element";
 import { onRootFailed, orphan, rootEngineCreated, watchRoot, wired } from "./volume";
 
@@ -776,9 +776,9 @@ async function start(el: HTMLElement, host: Element, root: Node, state: Record<s
   if (typeof ready === "function") {
     try {
       const r = ready.call(host, h.prop);
-      if (r !== null && typeof r === "object" && typeof r.then === "function") r.then(undefined, (e: unknown) => console.error(e));
+      if (r !== null && typeof r === "object" && typeof r.then === "function") r.then(undefined, report);
     } catch (e) {
-      console.error(e);
+      report(e);
     }
   }
   // the bindings are built: what waits for them goes on, whatever $connectedCallback does (as a root)
@@ -905,14 +905,14 @@ export function claimComponent(el: HTMLElement, root: Node): Claimed | null {
     connected() {
       // a failed `$connectedCallback` is reported as a root's on reconnect is
       const m = mine();
-      if (m !== null) reconnect(m).catch((e) => console.error(e));
+      if (m !== null) reconnect(m).catch(report);
       // a newer `<wcs-state>` took the scope over: put back where it was, this one takes the scope over
       // again, as a new one would — once the DOM operation that put it back is done (it may take the
       // newer one out), and refused while the newer one is still in
       else if (bound) {
         void Promise.resolve().then(() => {
           if (el.parentNode === parent) return start(el, host!, shadow ? parent! : host!, hosts.get(host!)!.state, () => {});
-        }).catch((e) => console.error(e));
+        }).catch(report);
       }
       // still waiting for its host's wiring: the host is back (wireLate)
       else if (waiting.has(host!)) wireLate(host!);

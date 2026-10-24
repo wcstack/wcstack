@@ -58,7 +58,10 @@ test.describe("Trusted Types — @wcstack/state innerHTML binding", () => {
     await page.goto("/e2e/fixtures/trusted-types-state.html?policy=none");
     await expect(page.locator("#plain")).toHaveText("text only");
     await expect(page.locator("#out")).toBeEmpty();
-    expect(errors.filter((e) => e.startsWith("pageerror"))).toEqual([]);
+    // The failed binding reaches the page's error handlers once, through reportError() (since 4.7)
+    const failures = errors.filter((e) => e.startsWith("pageerror"));
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('[@wcstack/state] binding "innerHTML: html" failed to apply.');
     const reports = errors.filter((e) => e.includes('[@wcstack/state] Writing to "innerHTML" was blocked by Trusted Types'));
     expect(reports).toHaveLength(1);
     expect(reports[0]).toContain('Symbol.for("wcstack.trustedTypes.policy")');

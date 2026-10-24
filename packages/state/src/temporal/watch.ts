@@ -31,7 +31,7 @@
 import type { Engine } from "../engine";
 import type { Pattern } from "../pattern";
 import type { StateList, StateRow } from "../list";
-import { raiseError } from "../parser/raiseError";
+import { raiseError, report } from "../parser/raiseError";
 import { hooks } from "../hooks";
 
 type Handler = (this: unknown, cur: unknown, prev: unknown, ...indexes: number[]) => unknown;
@@ -196,7 +196,7 @@ export class WatchRuntime {
     try {
       read();
     } catch (error) {
-      console.error(`[@wcstack/state] $watch initial evaluation of "${w.path}" threw.`, error);
+      report(error, `[@wcstack/state] $watch initial evaluation of "${w.path}" threw.`);
       hooks.noticed?.(this.engine, { "type": "state:watch-error", "phase": "prime", "path": w.path, "error": error });
     }
   }
@@ -311,7 +311,7 @@ export class WatchRuntime {
           phase = "handler";
           w.handler.call(engine.proxy, cur, prev, ...engine.indexesOf(row));
         } catch (error) {
-          console.error(`[@wcstack/state] $watch "${w.path}" failed; the other watches still run.`, error);
+          report(error, `[@wcstack/state] $watch "${w.path}" failed; the other watches still run.`);
           hooks.noticed?.(engine, { "type": "state:watch-error", "phase": phase, "path": w.path, "error": error });
         } finally {
           engine.ctx = saved;
@@ -333,7 +333,7 @@ export class WatchRuntime {
     const fresh = paths.filter((path) => !this.reported.has(path));
     if (fresh.length === 0) return;
     for (const path of fresh) this.reported.add(path);
-    console.error(`[@wcstack/state] $watch handlers / $stream restarts kept writing for ${MAX_CHAIN} batches; the chain is cut (nothing is rolled back).`);
+    report(`[@wcstack/state] $watch handlers / $stream restarts kept writing for ${MAX_CHAIN} batches; the chain is cut (nothing is rolled back).`);
     hooks.noticed?.(this.engine, { "type": "state:watch-chain-limit", "maxDepth": MAX_CHAIN, "paths": fresh });
   }
 }

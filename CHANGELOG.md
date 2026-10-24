@@ -11,6 +11,12 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Upgrading
 
 - `@wcstack/router`: **a `<wcs-guard-handler>` without a `<script type="module">` closes its route.** Every navigation into the route is redirected to the `guard` path (default `/`), as when the script fails to load. It used to open the route unguarded (with a `console.error`) — or, with a `guard` attribute, wait for a handler that never came and show nothing. A bundler that processes the HTML (Vite) takes such scripts out.
+- `@wcstack/state`: **the errors the engine reports reach the page's error handlers.** They go through the platform's `reportError()` instead of `console.error`: a page's `window.onerror` / `error` listener receives them, the console shows them as uncaught errors, and a test runner that fails on uncaught errors (Playwright's `pageerror`) sees them. Where there is no `reportError()` — happy-dom, Node, `@wcstack/server` — nothing changes.
+
+### Added
+
+- `@wcstack/state`: **errors reach a production error reporter.** A `<wcs-state>` that fails to initialize, a binding that fails to apply (with no `$errorCallback`), a getter, filter, event handler, lifecycle callback, `$watch` handler or token subscriber that throws, and an update loop the engine cuts are reported through `reportError()`. The reported `Error` carries the engine's message and the original error, which is its `cause`. A reporter built on `window.onerror` heard none of them — not even a page that failed to initialize as a whole. The state README has a section, "Reporting errors in production".
+- `@wcstack/state`: **`installFeatures` refuses an add-on of another copy of the engine** — `[wcs/feature-foreign]`. The split entries loaded through `esm.run`, two versions on one page, or a self-hosted directory replaced in place while a tab still runs the old core: the add-on filled the other copy's slots, so a `$watch` never ran, without a word, and a filter of `formats` was reported missing on a page that installed it. Every add-on carries its build's slots, and the core checks they are its own.
 
 ### Fixed
 

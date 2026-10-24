@@ -15,6 +15,7 @@ import { hooks } from "../hooks";
 import type { StateRow } from "../list";
 import { adopt, Binding, failSpec, K_CUSTOM, type Block, type Spec } from "./view";
 import { pipe } from "./filters";
+import { report } from "../parser/raiseError";
 // (view.ts imports this module too: the cycle is fine, everything here is used at call time)
 
 interface PropertyDecl {
@@ -203,7 +204,7 @@ export function attachEventToken(engine: Engine, spec: Spec, el: Element, row: S
     try {
       engine.fireEventToken(name, e, row);
     } catch (error) {
-      console.error(error);
+      report(error);
     }
   });
 }

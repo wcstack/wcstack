@@ -3,6 +3,7 @@
  * `Token`). A subscriber that throws is reported and the others still receive the call.
  */
 import { raise, M, text } from "./messages";
+import { report } from "./parser/raiseError";
 
 export type TokenSubscriber = (...args: unknown[]) => unknown;
 
@@ -36,7 +37,7 @@ export class Token {
         results.push(fn(...args));
       } catch (error) {
         results.push(undefined);
-        console.error(`[@wcstack/state] ${text(M.TokenSubscriberThrew, [this.name])}`, error);
+        report(error, `[@wcstack/state] ${text(M.TokenSubscriberThrew, [this.name])}`);
       }
     }
     return results;

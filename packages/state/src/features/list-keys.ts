@@ -108,6 +108,7 @@ function beforeWrite(engine: Engine, p: Pattern, row: StateRow | null, value: un
 
 export const listKeys: Feature = {
   name: "list-keys",
+  hooks,
   install(): void {
     hooks.declare = chain(hooks.declare, declare);
     hooks.beforeWrite = first(handled, hooks.beforeWrite, beforeWrite);

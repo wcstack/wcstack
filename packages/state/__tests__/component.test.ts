@@ -108,7 +108,7 @@ describe("コンポーネントの $behavior・$features", () => {
       seen.push(names);
       // the page host is the last one appended; its component's <wcs-state> has no engine yet
       engineAtLoad = (document.body.lastElementChild!.shadowRoot!.querySelector(tag)!.shadowRoot!.querySelector("wcs-state") as any).engine;
-      installFeatures(names.map((name) => ({ name, install() {} })));
+      installFeatures(names.map((name) => ({ name, hooks, install() {} })));
     };
     try {
       const { root } = await page(`<${tag}></${tag}>`, {});

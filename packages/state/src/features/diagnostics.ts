@@ -427,6 +427,7 @@ function removedDeclarations(target: Record<string, any>): void {
 
 export const diagnostics: Feature = {
   name: "diagnostics",
+  hooks,
   install(): void {
     hooks.explain = explain;
     hooks.render = render;
