@@ -12,6 +12,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 - **`wcs-tsc` and the VS Code extension check getter bodies.** A getter whose body reads `this` was left unchecked; now it is checked like a method, so a page that passed may report errors inside its getters — the kind its methods already got. `examples/router-spa` gains two: `this.routeParams.productId` and `this.query.category` on a state that declares `routeParams: {}` and `query: {}`.
 
+### Added
+
+- docs: [docs/typescript-content-mapper.md](./docs/typescript-content-mapper.md) — how `<wcs-state>` would be type-checked under TypeScript 7 through a content mapper (TypeScript 7.1): the protocol, what a prototype measured (the 33 example pages give the same diagnostics as `wcs-tsc` on 5.9), the design, and the decisions left to the author.
+
 ### Fixed
 
 - `@wcstack/typescript` (`wcs-tsc`) and the VS Code extension: **a typo in a getter is reported.** `defineState` infers the state's type from the object, and a getter with no return type is typed from its body. When the body reads `this`, that inference comes back to the state, and TypeScript leaves the getter's `this` as `any`: `get first() { return this.items[0].nmae; }` was not reported, under `strict` a callback in a getter (`this.items.filter((i) => …)`) was an implicit `any` (TS7006), and `this.$getAll<number>(…)` in a getter was TS2347. An inline script cannot annotate a getter, so the checked code now gives each getter of the state that reads `this` the return type `any` — the type it had — and its body is checked against the state's `this`. A `.ts` state file keeps the documented way: annotate the getter's return type.
