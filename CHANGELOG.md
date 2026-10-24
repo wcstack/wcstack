@@ -8,18 +8,22 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.7.0] — 2026-10-25
+
+The fifth minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja), from one seam app: `prod-booking`, a meeting-room booking app taken to production — versions pinned with `integrity`, the split entries, a strict CSP and Trusted Types, self-hosting under `immutable` caching, a Vite build, a service worker, and a new version deployed while the old one is open ([docs/seam-apps.md](./docs/seam-apps.md)). Of 20 delivery mistakes made on purpose, the lint reported 3. It found a router that swallowed the reloads a page asks for, an autoloader stopped by one tag of another library, add-ons of another copy of the engine accepted and never run, errors a production error reporter never heard, and browser support the CSP and SRI guides understated. The author's five decisions are in v4-direction §5.5.
+
 ### Upgrading
 
 - `@wcstack/router`: **a `<wcs-guard-handler>` without a `<script type="module">` closes its route.** Every navigation into the route is redirected to the `guard` path (default `/`), as when the script fails to load. It used to open the route unguarded (with a `console.error`) — or, with a `guard` attribute, wait for a handler that never came and show nothing. A bundler that processes the HTML (Vite) takes such scripts out.
 - `@wcstack/state`: **the errors the engine reports reach the page's error handlers.** They go through the platform's `reportError()` instead of `console.error`: a page's `window.onerror` / `error` listener receives them, the console shows them as uncaught errors, and a test runner that fails on uncaught errors (Playwright's `pageerror`) sees them. Where there is no `reportError()` — happy-dom, Node, `@wcstack/server` — nothing changes.
+- `@wcstack/state`: **an add-on of another copy of the engine fails the state** (`[wcs/feature-foreign]` from `installFeatures`). A page that loads the split entries through `esm.run`, mixes two versions, or replaced a self-hosted directory in place under a still-open tab used to run with that add-on silently inert (a `$watch` that never fired); load the core and its add-ons from one build.
+- `@wcstack/lint`: **a `<wcs-state src>` the validator cannot read is reported as `wcs/state-src-unread` (info).** Nothing fails, `--errors-only` hides it; it says that state was not checked.
 
 ### Added
 
 - `@wcstack/state`: **errors reach a production error reporter.** A `<wcs-state>` that fails to initialize, a binding that fails to apply (with no `$errorCallback`), a getter, filter, event handler, lifecycle callback, `$watch` handler or token subscriber that throws, and an update loop the engine cuts are reported through `reportError()`. The reported `Error` carries the engine's message and the original error, which is its `cause`. A reporter built on `window.onerror` heard none of them — not even a page that failed to initialize as a whole. The state README has a section, "Reporting errors in production".
 - `@wcstack/state`: **`installFeatures` refuses an add-on of another copy of the engine** — `[wcs/feature-foreign]`. The split entries loaded through `esm.run`, two versions on one page, or a self-hosted directory replaced in place while a tab still runs the old core: the add-on filled the other copy's slots, so a `$watch` never ran, without a word, and a filter of `formats` was reported missing on a page that installed it. Every add-on carries its build's slots, and the core checks they are its own.
-
 - `@wcstack/lint`: **`wcs/state-src-unread`** (info, new) — a `<wcs-state src>` the validator cannot read (a path from `/`, the form `docs/csp.md` gives under a `<base>`; a URL; a file that is not there) left that state's paths and script rules unchecked, and the page passed without a word. It is said once, at the attribute, as `wcs/path-dynamic-unknown` says a spread. `examples/router-i18n`'s two states were such.
-
 - Releases: **the split entries of `@wcstack/state` get their digests.** Each release's `sri.json` carries every file of `dist/split` (the entries, the split auto entry, each feature and each content-hashed chunk) under `packages["@wcstack/state"].split`, and the release notes the import map `integrity` block to copy. It had `dist/auto.min.js` only, so an import map's list was written by hand — and a list from another build protects nothing, without a word ([docs/sri.md](./docs/sri.md) §5.1).
 
 ### Changed
