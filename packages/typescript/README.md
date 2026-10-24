@@ -14,7 +14,7 @@ npx wcs-schema emit src/state.ts          # writes ./wcstack.manifest.json
 npx wcs-validate --strict index.html      # typos are now errors, false warnings are gone
 ```
 
-Zero runtime dependencies. `typescript` is a peer dependency — the project's own compiler is used. `wcs-schema` needs TypeScript 5 or 6: TypeScript 7 publishes no JavaScript compiler API (`typescript` exports only its version, and there is no `typescript/lib/tsc.js`). `wcs-tsc` runs on 5 or 6, and since 4.7 (not released yet) on 7.1 and later through the content mapper (below).
+Zero runtime dependencies. `typescript` is a peer dependency — the project's own compiler is used. `wcs-schema` needs TypeScript 5 or 6: TypeScript 7 publishes no JavaScript compiler API (`typescript` exports only its version, and there is no `typescript/lib/tsc.js`). `wcs-tsc` runs on 5 or 6, and since 4.8 (not released yet) on 7.1 and later through the content mapper (below).
 
 ## Commands
 
@@ -80,7 +80,7 @@ Exit codes are tsc's (`0` clean, non-zero with diagnostics); `2` when `typescrip
 
 ### TypeScript 7.1: the content mapper (experimental)
 
-Since 4.7 (not released yet), this package is also a [content mapper](https://github.com/wcstack/wcstack/blob/main/docs/typescript-content-mapper.md) — TypeScript 7.1's way to read file types it does not know. Name it in `tsconfig.json`, and TypeScript's own `tsc` checks every `<wcs-state>` block with the same virtual code `wcs-tsc` uses, reporting at HTML positions:
+Since 4.8 (not released yet), this package is also a [content mapper](https://github.com/wcstack/wcstack/blob/main/docs/typescript-content-mapper.md) — TypeScript 7.1's way to read file types it does not know. Name it in `tsconfig.json`, and TypeScript's own `tsc` checks every `<wcs-state>` block with the same virtual code `wcs-tsc` uses, reporting at HTML positions:
 
 ```jsonc
 {

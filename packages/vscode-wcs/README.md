@@ -284,7 +284,7 @@ from [`@wcstack/typescript`](https://www.npmjs.com/package/@wcstack/typescript) 
 inline `<wcs-state>` scripts across a project using this extension's language plugin in
 `tsc` mode.
 
-**TypeScript 7.1.** From `@wcstack/typescript` 4.7 (not released yet, experimental) the
+**TypeScript 7.1.** From `@wcstack/typescript` 4.8 (not released yet, experimental) the
 package is also a TypeScript 7.1 content mapper built from this extension's language plugin
 ([`docs/typescript-content-mapper.md`](../../docs/typescript-content-mapper.md)). When a
 workspace's `tsconfig.json` names it and TypeScript 7's VS Code extension runs in a trusted

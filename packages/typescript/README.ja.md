@@ -14,7 +14,7 @@ npx wcs-schema emit src/state.ts          # ./wcstack.manifest.json を書く
 npx wcs-validate --strict index.html      # typo は error に、偽警告は消える
 ```
 
-ランタイム依存ゼロ。`typescript` は peer dependency — プロジェクト自身のコンパイラを使います。`wcs-schema` には TypeScript 5 か 6 が必要です: TypeScript 7 は JavaScript のコンパイラ API を公開しません（`typescript` が公開するのは版だけで、`typescript/lib/tsc.js` もありません）。`wcs-tsc` は 5 か 6 で動き、4.7（未リリース）からは content mapper を通して 7.1 以降でも動きます（後述）。
+ランタイム依存ゼロ。`typescript` は peer dependency — プロジェクト自身のコンパイラを使います。`wcs-schema` には TypeScript 5 か 6 が必要です: TypeScript 7 は JavaScript のコンパイラ API を公開しません（`typescript` が公開するのは版だけで、`typescript/lib/tsc.js` もありません）。`wcs-tsc` は 5 か 6 で動き、4.8（未リリース）からは content mapper を通して 7.1 以降でも動きます（後述）。
 
 ## コマンド
 
@@ -80,7 +80,7 @@ exit code は tsc のもの（`0` クリーン・診断があれば非ゼロ）�
 
 ### TypeScript 7.1: content mapper（experimental）
 
-4.7（未リリース）から、このパッケージは [content mapper](https://github.com/wcstack/wcstack/blob/main/docs/typescript-content-mapper.ja.md) でもあります — TypeScript 7.1 が知らない種類のファイルを読む仕組みです。`tsconfig.json` で名指せば、TypeScript 自身の `tsc` が、`wcs-tsc` と同じ仮想コードで各 `<wcs-state>` のブロックを検査し、HTML の位置で報告します:
+4.8（未リリース）から、このパッケージは [content mapper](https://github.com/wcstack/wcstack/blob/main/docs/typescript-content-mapper.ja.md) でもあります — TypeScript 7.1 が知らない種類のファイルを読む仕組みです。`tsconfig.json` で名指せば、TypeScript 自身の `tsc` が、`wcs-tsc` と同じ仮想コードで各 `<wcs-state>` のブロックを検査し、HTML の位置で報告します:
 
 ```jsonc
 {

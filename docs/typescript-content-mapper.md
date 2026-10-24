@@ -2,7 +2,7 @@
 
 **日本語版**: [typescript-content-mapper.ja.md](./typescript-content-mapper.ja.md)
 
-- **Status**: implemented, experimental, not released (branch `feat/typescript-content-mapper`, planned for 4.7 once TypeScript 7.1 is stable — §8). The design was written 2026-10-24 against TypeScript 7.1.0-beta (released 2026-10-20; an RC is expected about a month later) from a prototype outside the repository; the implementation was measured the same day on 7.1.0-beta and 7.1.0-dev.20261023.1. The decisions in §8 are the author's.
+- **Status**: implemented, experimental, not released (branch `feat/typescript-content-mapper`, planned for the first minor after TypeScript 7.1 is stable — §8). The design was written 2026-10-24 against TypeScript 7.1.0-beta (released 2026-10-20; an RC is expected about a month later) from a prototype outside the repository; the implementation was measured the same day on 7.1.0-beta and 7.1.0-dev.20261023.1. The decisions in §8 are the author's.
 - **Audience**: whoever maintains TypeScript 7 support in `@wcstack/typescript` and `packages/vscode-wcs`, and the author deciding when to ship it.
 - **Shipped so far**: 4.6.1 refuses TypeScript 7 by name (peer `typescript >=5.0 <7`, both commands exit 2 naming the version). 4.6.2 checks getter bodies (§5.3), which the mapper inherits unchanged.
 
@@ -145,7 +145,7 @@ Content mappers do not touch `wcs-schema`: it reads a `.ts` / `.js` state file t
 
 Taken 2026-10-24 with the recommendations; the plan was reviewed independently before the implementation, and the review's findings are folded into §3–§5.
 
-1. **When.** Built now on a branch, against 7.1.0-beta (and checked on a nightly). It is merged after 7.1 is stable — with the `typescript-7` devDependency moved to the stable release — and ships marked experimental for one minor.
+1. **When.** Built now on a branch, against 7.1.0-beta (and checked on a nightly). It is merged after 7.1 is stable — with the `typescript-7` devDependency moved to the stable release — and ships marked experimental for one minor: the first minor after 7.1 is stable. Not 4.7, which goes to the next seam app (one seam app per minor, [v4-direction-2026-10.md](./v4-direction-2026-10.md) §4, ja; decided 2026-10-24). The READMEs' marks say `4.8 (not released yet)`, the earliest it can be, and are set to the actual minor when the branch is merged — `scripts/unreleased-marks.mjs --check` refuses a mark of a released version.
 2. **The peer range**: `typescript: ">=5.0 <7 || >=7.1"`. `wcs-tsc` checks the version it needs (5 / 6, or 7.1 and later); `wcs-schema` stays 5 / 6 until §7.
 3. **The CLI shape**: both — `wcs-tsc` running `tsc --runExternalCode` itself (§5.2) for continuity, and the plain `tsc` invocation documented.
 4. **The editor**: no change in this work; the overlap is documented. Option A next, as its own change; Option B when TypeScript 7's extension is VS Code's default (§6).

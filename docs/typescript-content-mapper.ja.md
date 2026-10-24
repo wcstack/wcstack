@@ -2,7 +2,7 @@
 
 **English**: [typescript-content-mapper.md](./typescript-content-mapper.md)
 
-- **状態**: 実装済み・experimental・未リリース（ブランチ `feat/typescript-content-mapper`。TypeScript 7.1 の stable の後に 4.7 で出す予定 — §8）。設計は 2026-10-24 に TypeScript 7.1.0-beta（2026-10-20 公開。RC は約 1 か月後の見込み）に対して、リポジトリの外の試作から書いた。実装は同じ日に 7.1.0-beta と 7.1.0-dev.20261023.1 で測った。§8 の決定は著者のもの。
+- **状態**: 実装済み・experimental・未リリース（ブランチ `feat/typescript-content-mapper`。TypeScript 7.1 の stable の後の最初の minor で出す予定 — §8）。設計は 2026-10-24 に TypeScript 7.1.0-beta（2026-10-20 公開。RC は約 1 か月後の見込み）に対して、リポジトリの外の試作から書いた。実装は同じ日に 7.1.0-beta と 7.1.0-dev.20261023.1 で測った。§8 の決定は著者のもの。
 - **読み手**: `@wcstack/typescript` と `packages/vscode-wcs` の TypeScript 7 の対応を保守する人と、いつ出すかを決める著者。
 - **ここまでに出したもの**: 4.6.1 は TypeScript 7 を名指しで断る（peer は `typescript >=5.0 <7`、2 つのコマンドは版を名指しして exit 2）。4.6.2 は getter の本体を検査する（§5.3）。mapper はこれをそのまま受け継ぐ。
 
@@ -173,7 +173,7 @@ content mapper は `wcs-schema` に触れない。`wcs-schema` は `.ts` / `.js`
 
 2026-10-24 に推奨どおりに決めた。実装の前に計画を独立にレビューし、その指摘は §3〜§5 に入れてある。
 
-1. **いつ。** いまブランチで、7.1.0-beta に対して作った（nightly でも確かめた）。7.1 の stable の後に — devDependency の `typescript-7` を stable に上げて — マージし、1 つの minor の間は experimental として出す。
+1. **いつ。** いまブランチで、7.1.0-beta に対して作った（nightly でも確かめた）。7.1 の stable の後に — devDependency の `typescript-7` を stable に上げて — マージし、1 つの minor の間は experimental として出す。出すのは 7.1 の stable の後の最初の minor。4.7 ではない — 4.7 は次の継ぎ目アプリに充てる（継ぎ目アプリ 1 本で minor 1 回、[v4-direction-2026-10.md](./v4-direction-2026-10.md) §4。2026-10-24 に決定）。README の印はいちばん早い `4.8（未リリース）` と書き、ブランチをマージするときに実際の minor に直す — `scripts/unreleased-marks.mjs --check` はリリース済みの版の印を拒む。
 2. **peer の範囲**: `typescript: ">=5.0 <7 || >=7.1"`。`wcs-tsc` は要る版（5 / 6、または 7.1 以降）を確かめる。`wcs-schema` は §7 まで 5 / 6 のまま。
 3. **CLI の形**: 両方 — 続けて使えるように `wcs-tsc` が自分で `tsc --runExternalCode` を動かし（§5.2）、素の `tsc` の呼び方を文書に書く。
 4. **エディタ**: この作業では変えず、重なりを文書に書く。次に案 A を別の変更で、TypeScript 7 の拡張が VS Code の既定になったら案 B（§6）。
