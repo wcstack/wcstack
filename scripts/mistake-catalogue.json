@@ -569,7 +569,7 @@
       "id": "guard-handler-ignored",
       "runtime": "loud", "harm": "security",
       "mistake": { "en": "Puts `<wcs-guard-handler>` outside a `<wcs-route>`, or gives it a script without `type=\"module\"`.", "ja": "`<wcs-guard-handler>` を `<wcs-route>` の外に置く、または `type=\"module\"` の無いスクリプトを付ける。" },
-      "effect": { "en": "The router reports it with `console.error` (`[wcs/guard-handler-ignored]`): the route is not guarded. One outside after a route at the same level keeps guarding that route, as it did before.", "ja": "router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートは守られない。同じ階層でルートの後に置いた外のものは、以前と同じくそのルートを守り続ける。" },
+      "effect": { "en": "The router reports it with `console.error` (`[wcs/guard-handler-ignored]`). Outside a route it guards nothing — one after a route at the same level keeps guarding that route, as it did before. Without a module script the guard cannot run, and every navigation into the route is redirected to the `guard` path (since 4.7; it used to open the route).", "ja": "router が `console.error`（`[wcs/guard-handler-ignored]`）で知らせる。ルートの外のものは何も守らない — 同じ階層でルートの後に置いたものは、以前と同じくそのルートを守り続ける。module のスクリプトが無いと guard は動かせず、ルートへのナビゲーションはすべて `guard` のパスへリダイレクトする（4.7 から。以前はルートを開けた）。" },
       "evidence": [{ "file": "packages/router/src/parse.ts", "text": "[wcs/guard-handler-ignored]" }],
       "note": { "en": "No lint rule yet; the markup shows both cases.", "ja": "lint の規則はまだ無い。どちらの形もマークアップに見える。" }
     },

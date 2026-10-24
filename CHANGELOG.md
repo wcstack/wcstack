@@ -8,6 +8,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Upgrading
+
+- `@wcstack/router`: **a `<wcs-guard-handler>` without a `<script type="module">` closes its route.** Every navigation into the route is redirected to the `guard` path (default `/`), as when the script fails to load. It used to open the route unguarded (with a `console.error`) — or, with a `guard` attribute, wait for a handler that never came and show nothing. A bundler that processes the HTML (Vite) takes such scripts out.
+
+### Fixed
+
+- `@wcstack/router`: **a reload the page asks for reloads the document.** `location.reload()`, `history.go(0)` and `navigation.reload()` were taken as a route change in the same document, so an "update available — reload" button, a service worker's update flow, or `<wcs-devtools>`' one-click reload did nothing, in every browser with the Navigation API.
+- `@wcstack/router`: **`<wcs-head>` leaves an unchanged `<head>` element in place.** Each route change replaced every element of `<head>` with a copy — stylesheets were requested again, and WebKit reported a `base-uri` violation for the re-inserted `<base>` on every navigation. An element with bindings is still replaced by the copy it binds.
+
 ## [4.6.2] — 2026-10-24
 
 From the same study of TypeScript 7.1's content mappers: two `wcs-tsc` bugs it found, and the design for type-checking `<wcs-state>` under TypeScript 7 ([docs/typescript-content-mapper.md](./docs/typescript-content-mapper.md)), not implemented. Only `@wcstack/typescript` changed (and the VS Code extension, 2.6.1); every other package is 4.6.1 with a new version.

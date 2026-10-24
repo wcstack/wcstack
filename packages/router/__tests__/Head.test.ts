@@ -124,6 +124,51 @@ describe('Head', () => {
     });
   });
 
+  describe('変わらない要素', () => {
+    it('Head が扱わない head の要素（base・stylesheet）は、接続と切断で入れ直さないこと', () => {
+      document.head.innerHTML = '<base href="/app/"><link rel="stylesheet" href="/app.css"><title>Original</title>';
+      const base = document.head.querySelector('base');
+      const link = document.head.querySelector('link');
+
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<title>New Title</title>';
+      container.appendChild(head);
+      container.removeChild(head);
+
+      expect(document.head.querySelector('base')).toBe(base);
+      expect(document.head.querySelector('link')).toBe(link);
+      expect(document.title).toBe('Original');
+    });
+
+    it('同じ値の要素は入れ直さず、違う値の要素だけ入れ直すこと', () => {
+      document.head.innerHTML = '<meta name="robots" content="index"><title>Same</title>';
+      const meta = document.head.querySelector('meta');
+      const title = document.head.querySelector('title');
+
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<title>Same</title><meta name="robots" content="noindex">';
+      container.appendChild(head);
+
+      expect(document.head.querySelector('title')).toBe(title);
+      expect(document.head.querySelector('meta')).not.toBe(meta);
+      expect(document.head.querySelector('meta')!.getAttribute('content')).toBe('noindex');
+    });
+
+    it('束縛を持つ要素は、同じでも束ねるクローンを入れ直すこと', () => {
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<title data-wcs="textContent: title">Bound</title>';
+      container.appendChild(head);
+      const first = document.head.querySelector('title');
+
+      const other = document.createElement('wcs-head') as Head;
+      other.innerHTML = '<meta name="x" content="y">';
+      container.appendChild(other);
+
+      expect(document.head.querySelector('title')).not.toBe(first);
+      expect(document.head.querySelector('title')!.getAttribute('data-wcs')).toBe('textContent: title');
+    });
+  });
+
   describe('connectedCallback - meta', () => {
     it('meta[name]が書き換わること', () => {
       const existingMeta = document.createElement('meta');
