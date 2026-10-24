@@ -28,7 +28,11 @@ interface LoadedState {
     /** A top-level spread brings in keys its type does not list: the state's schema is open (`{}`), whatever `type` says. */
     readonly open: boolean;
 }
-/** Defaults used when no tsconfig.json is found — enough to type a plain state file. */
+/**
+ * Defaults used when no tsconfig.json is found — enough to type a plain state file.
+ * The enums are read with `?.` so that this module still loads under TypeScript 7,
+ * whose `typescript` has none: `loadStateFile` then refuses that compiler by name.
+ */
 declare const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions;
 declare function resolveCompilerOptions(stateFile: string, options?: LoadStateOptions): ts.CompilerOptions;
 declare function loadStateFile(file: string, options?: LoadStateOptions): LoadedState;

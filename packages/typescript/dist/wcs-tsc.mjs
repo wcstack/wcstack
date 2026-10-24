@@ -5,7 +5,27 @@ import { tmpdir } from 'node:os';
 import { dirname, join, isAbsolute, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-var version = "4.6.0";
+/**
+ * typescriptSupport.ts — which `typescript` this package can run on.
+ *
+ * Both commands drive the JavaScript compiler API of TypeScript 5 and 6:
+ * `wcs-schema` through `import ts from "typescript"`, `wcs-tsc` by running the
+ * project's `typescript/lib/tsc.js` through Volar's `runTsc`. TypeScript 7 (the
+ * native compiler) publishes neither — its `typescript` export is
+ * `{ version, versionMajorMinor }` and its `exports` has no `./lib/tsc` — so both
+ * refuse it by name instead of failing on what is missing. TypeScript 7 reads other
+ * file types through content mappers (7.1); this package does not provide one yet.
+ */
+/** The version, when it is one neither command can run on (7 and later); otherwise `undefined`. */
+function unsupportedTypeScript(version) {
+    return Number.parseInt(version ?? "", 10) >= 7 ? version : undefined;
+}
+/** The refusal both commands report (exit code 2), without a trailing newline. */
+function unsupportedTypeScriptMessage(version) {
+    return `@wcstack/typescript runs on TypeScript 5 or 6, and the project has TypeScript ${version}, which has no JavaScript compiler API: npm i -D typescript@6`;
+}
+
+var version = "4.6.1";
 var pkg = {
 	version: version};
 
@@ -34,12 +54,13 @@ const VERSION = pkg.version;
  *                        `checkJs`), run with a temporary config that extends it and
  *                        adds them, instead of only warning.
  *
- * Peers: `typescript` (required), `@volar/typescript` + `@volar/language-core`
- * (optional — only this command needs them). Resolved from the project first,
- * then from this package's own location.
+ * Peers: `typescript` (required, 5 or 6 — TypeScript 7 has no lib/tsc.js, see
+ * typescriptSupport.ts), `@volar/typescript` + `@volar/language-core` (optional —
+ * only this command needs them). Resolved from the project first, then from this
+ * package's own location.
  *
  * Exit codes: tsc's own (0 clean / 1 type errors / 2 usage) — plus 2 when the peers
- * are missing or the arguments are invalid.
+ * are missing or unsupported, or the arguments are invalid.
  */
 const USAGE = "usage: wcs-tsc [--url-imports=any|error] [--wcs-defaults] [tsc arguments...]\n" +
     "       e.g. wcs-tsc --noEmit            wcs-tsc -p tsconfig.json --noEmit\n";
@@ -195,6 +216,15 @@ function main(argv, io = defaultIo(), deps = defaultDeps) {
         return 2;
     }
     const cwd = io.cwd();
+    // TypeScript 7 resolves as `typescript` but has no lib/tsc.js: name it rather than say typescript is missing.
+    const tsPackagePath = deps.resolve("typescript/package.json", cwd);
+    const unsupported = tsPackagePath === undefined
+        ? undefined
+        : unsupportedTypeScript(deps.load(tsPackagePath).version);
+    if (unsupported !== undefined) {
+        io.stderr(`wcs-tsc: ${unsupportedTypeScriptMessage(unsupported)}\n`);
+        return 2;
+    }
     const runTscPath = deps.resolve("@volar/typescript/lib/quickstart/runTsc.js", cwd);
     if (runTscPath === undefined) {
         io.stderr("wcs-tsc needs @volar/typescript (an optional peer): npm i -D @volar/typescript@~2.4.0 @volar/language-core@~2.4.0\n");
@@ -203,7 +233,7 @@ function main(argv, io = defaultIo(), deps = defaultDeps) {
     const tscPath = deps.resolve("typescript/lib/tsc.js", cwd);
     const tsApiPath = deps.resolve("typescript", cwd);
     if (tscPath === undefined || tsApiPath === undefined) {
-        io.stderr("wcs-tsc needs typescript (a peer): npm i -D typescript\n");
+        io.stderr("wcs-tsc needs typescript (a peer): npm i -D typescript@6\n");
         return 2;
     }
     const corePath = tscCoreCandidates(import.meta.url).find((p) => existsSync(p));

@@ -7,6 +7,26 @@ import ts from 'typescript';
 import { createRequire } from 'node:module';
 
 /**
+ * typescriptSupport.ts — which `typescript` this package can run on.
+ *
+ * Both commands drive the JavaScript compiler API of TypeScript 5 and 6:
+ * `wcs-schema` through `import ts from "typescript"`, `wcs-tsc` by running the
+ * project's `typescript/lib/tsc.js` through Volar's `runTsc`. TypeScript 7 (the
+ * native compiler) publishes neither — its `typescript` export is
+ * `{ version, versionMajorMinor }` and its `exports` has no `./lib/tsc` — so both
+ * refuse it by name instead of failing on what is missing. TypeScript 7 reads other
+ * file types through content mappers (7.1); this package does not provide one yet.
+ */
+/** The version, when it is one neither command can run on (7 and later); otherwise `undefined`. */
+function unsupportedTypeScript(version) {
+    return Number.parseInt(version ?? "", 10) >= 7 ? version : undefined;
+}
+/** The refusal both commands report (exit code 2), without a trailing newline. */
+function unsupportedTypeScriptMessage(version) {
+    return `@wcstack/typescript runs on TypeScript 5 or 6, and the project has TypeScript ${version}, which has no JavaScript compiler API: npm i -D typescript@6`;
+}
+
+/**
  * program.ts — open a state file with the TypeScript compiler API and locate the
  * type of its `export default`.
  *
@@ -16,11 +36,15 @@ import { createRequire } from 'node:module';
  * call expression would type as `any` and every path would be lost, while the
  * argument literal still carries the full object type.
  */
-/** Defaults used when no tsconfig.json is found — enough to type a plain state file. */
+/**
+ * Defaults used when no tsconfig.json is found — enough to type a plain state file.
+ * The enums are read with `?.` so that this module still loads under TypeScript 7,
+ * whose `typescript` has none: `loadStateFile` then refuses that compiler by name.
+ */
 const DEFAULT_COMPILER_OPTIONS = {
-    target: ts.ScriptTarget.ESNext,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    target: ts.ScriptTarget?.ESNext,
+    module: ts.ModuleKind?.ESNext,
+    moduleResolution: ts.ModuleResolutionKind?.Bundler,
     lib: ["lib.esnext.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
     strict: true,
 };
@@ -80,6 +104,9 @@ function stateExpression(expression) {
     return current;
 }
 function loadStateFile(file, options = {}) {
+    const unsupported = unsupportedTypeScript(ts.version);
+    if (unsupported !== undefined)
+        throw new Error(unsupportedTypeScriptMessage(unsupported));
     const abs = resolve(file);
     if (!existsSync(abs))
         throw new Error(`cannot read ${file}: no such file`);
@@ -616,7 +643,7 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "4.6.0";
+var version = "4.6.1";
 var pkg = {
 	version: version};
 
