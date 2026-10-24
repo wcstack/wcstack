@@ -9,7 +9,8 @@
 //   2. builds vscode-wcs (esbuild emits the self-contained dist/schema-core.cjs)
 //   3. copies dist/schema-core.cjs next to this package's own bundles
 // schema-core.cjs requires neither typescript nor vscode, so the runtime
-// dependency count of this package stays at zero.
+// dependency count of this package stays at zero. The same build also brings
+// tsc-core.cjs and content-mapper.cjs (listed below).
 
 import { execSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
@@ -33,7 +34,9 @@ const dist = join(pkgRoot, "dist");
 mkdirSync(dist, { recursive: true });
 // schema-core.cjs: validator core for wcs-schema's self-check and e2e tests.
 // tsc-core.cjs: the Volar language plugin wcs-tsc hands to @volar/typescript's runTsc.
-for (const name of ["schema-core.cjs", "tsc-core.cjs"]) {
+// content-mapper.cjs: the TypeScript 7.1 content mapper package.json's
+//   `typescript.contentMapper.exec` names (docs/typescript-content-mapper.md).
+for (const name of ["schema-core.cjs", "tsc-core.cjs", "content-mapper.cjs"]) {
   const source = join(vscodeWcs, "dist", name);
   if (!existsSync(source)) {
     console.error(`[typescript build] expected build output not found: ${source}`);
