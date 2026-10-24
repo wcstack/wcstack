@@ -21,12 +21,13 @@
  *                        `checkJs`), run with a temporary config that extends it and
  *                        adds them, instead of only warning.
  *
- * Peers: `typescript` (required), `@volar/typescript` + `@volar/language-core`
- * (optional — only this command needs them). Resolved from the project first,
- * then from this package's own location.
+ * Peers: `typescript` (required, 5 or 6 — TypeScript 7 has no lib/tsc.js, see
+ * typescriptSupport.ts), `@volar/typescript` + `@volar/language-core` (optional —
+ * only this command needs them). Resolved from the project first, then from this
+ * package's own location.
  *
  * Exit codes: tsc's own (0 clean / 1 type errors / 2 usage) — plus 2 when the peers
- * are missing or the arguments are invalid.
+ * are missing or unsupported, or the arguments are invalid.
  */
 
 import { existsSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
@@ -34,6 +35,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { unsupportedTypeScript, unsupportedTypeScriptMessage } from "../typescriptSupport.js";
 import { VERSION } from "../version.js";
 
 export interface TscIo {
@@ -223,6 +225,16 @@ export function main(argv: readonly string[], io: TscIo = defaultIo(), deps: Mai
   }
   const cwd = io.cwd();
 
+  // TypeScript 7 resolves as `typescript` but has no lib/tsc.js: name it rather than say typescript is missing.
+  const tsPackagePath = deps.resolve("typescript/package.json", cwd);
+  const unsupported = tsPackagePath === undefined
+    ? undefined
+    : unsupportedTypeScript((deps.load(tsPackagePath) as { version?: string }).version);
+  if (unsupported !== undefined) {
+    io.stderr(`wcs-tsc: ${unsupportedTypeScriptMessage(unsupported)}\n`);
+    return 2;
+  }
+
   const runTscPath = deps.resolve("@volar/typescript/lib/quickstart/runTsc.js", cwd);
   if (runTscPath === undefined) {
     io.stderr("wcs-tsc needs @volar/typescript (an optional peer): npm i -D @volar/typescript@~2.4.0 @volar/language-core@~2.4.0\n");
@@ -231,7 +243,7 @@ export function main(argv: readonly string[], io: TscIo = defaultIo(), deps: Mai
   const tscPath = deps.resolve("typescript/lib/tsc.js", cwd);
   const tsApiPath = deps.resolve("typescript", cwd);
   if (tscPath === undefined || tsApiPath === undefined) {
-    io.stderr("wcs-tsc needs typescript (a peer): npm i -D typescript\n");
+    io.stderr("wcs-tsc needs typescript (a peer): npm i -D typescript@6\n");
     return 2;
   }
   const corePath = tscCoreCandidates(import.meta.url).find((p) => existsSync(p));

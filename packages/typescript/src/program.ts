@@ -12,6 +12,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import ts from "typescript";
+import { unsupportedTypeScript, unsupportedTypeScriptMessage } from "./typescriptSupport.js";
 
 export interface LoadStateOptions {
   /** Explicit tsconfig.json path. Default: the nearest tsconfig.json above the state file, else built-in defaults. */
@@ -32,11 +33,15 @@ export interface LoadedState {
   readonly open: boolean;
 }
 
-/** Defaults used when no tsconfig.json is found — enough to type a plain state file. */
+/**
+ * Defaults used when no tsconfig.json is found — enough to type a plain state file.
+ * The enums are read with `?.` so that this module still loads under TypeScript 7,
+ * whose `typescript` has none: `loadStateFile` then refuses that compiler by name.
+ */
 export const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
-  target: ts.ScriptTarget.ESNext,
-  module: ts.ModuleKind.ESNext,
-  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  target: ts.ScriptTarget?.ESNext,
+  module: ts.ModuleKind?.ESNext,
+  moduleResolution: ts.ModuleResolutionKind?.Bundler,
   lib: ["lib.esnext.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
   strict: true,
 };
@@ -97,6 +102,8 @@ function stateExpression(expression: ts.Expression): ts.Expression {
 }
 
 export function loadStateFile(file: string, options: LoadStateOptions = {}): LoadedState {
+  const unsupported = unsupportedTypeScript(ts.version);
+  if (unsupported !== undefined) throw new Error(unsupportedTypeScriptMessage(unsupported));
   const abs = resolve(file);
   if (!existsSync(abs)) throw new Error(`cannot read ${file}: no such file`);
   // Read up front so an unreadable file fails with a plain message, not a compiler internals one.

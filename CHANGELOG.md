@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Fixed
+
+- `@wcstack/typescript`: **TypeScript 7 is refused by name.** `npm i -D typescript` installs TypeScript 7 now, and its package publishes no JavaScript compiler API (`typescript` exports only its version, and there is no `typescript/lib/tsc.js`). `wcs-tsc` answered `needs typescript (a peer): npm i -D typescript`, which installs 7 again, and `wcs-schema` stopped on a `TypeError` as it loaded. The peer range is `>=5.0 <7`, so npm reports the conflict at install; `wcs-tsc`, `wcs-schema` and `loadStateFile` say which TypeScript the project has and to `npm i -D typescript@6`, with exit code 2. The install lines in the package README and [docs/typescript.md](./docs/typescript.md) name `typescript@6`. TypeScript 7 reads other file types through content mappers (7.1, in beta); this package does not provide one yet.
+
 ## [4.6.0] — 2026-10-24
 
 The fourth minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja), from one seam app: `fw-inventory`, a shop's inventory tool with a React 19 back office and a Vue 3 warehouse panel that drive the I/O nodes through the `@wc-bindable` adapters, with no `@wcstack/state` ([docs/seam-apps.md](./docs/seam-apps.md)). Of 19 mistakes made on purpose, nothing on the client reported 12. It found a `<wcs-storage>` the frameworks gave no key, an upload the order of props decided, posts and object inputs lost silently, and a lint that called a framework app clean. The design decisions are the author's (§5.4). No API is removed or renamed. `@wcstack/state` is unchanged but for its version and its `./auto` type. The adapters' own findings are proposed upstream as [wc-bindable-protocol#42](https://github.com/wc-bindable-protocol/wc-bindable-protocol/issues/42) ([docs/spec-proposal-adapter-occurrences.md](./docs/spec-proposal-adapter-occurrences.md), ja).

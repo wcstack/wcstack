@@ -42,7 +42,7 @@ export default defineState({
 検証器には、生産者が居なかった型付き入力がある: `application` sidecar manifest の `stateSchema`（JSON-Schema サブセット・[wcstack-manifest-schema.md](./wcstack-manifest-schema.md) §4）。`@wcstack/typescript` がその生産者:
 
 ```bash
-npm install -D @wcstack/typescript typescript
+npm install -D @wcstack/typescript typescript@6
 npx wcs-schema emit src/state.ts        # ./wcstack.manifest.json — state の型から stateSchema（manifestExtensions["wcstack.application"]）。.js の JSDoc の型も読む
 npx wcs-validate --strict index.html    # HTML と同じ / 上のディレクトリの manifest を自動発見
 ```
@@ -93,7 +93,7 @@ document.querySelectorAll("wcs-route");           // NodeListOf<Route>
 `wcs-tsc`（同じく `@wcstack/typescript`）は `.html` に対して `tsc` を回す。各 `<wcs-state>` のインライン `<script type="module">` は VS Code 拡張と**同じ** Volar 言語プラグインを通る — 型付き `this` のプリアンブル、素の `export default {}` の自動 `defineState` ラップ、`@wcstack/state` の import（bare **でも** CDN URL でも）の除去 — ので、エディタが下線を引くものがそのまま CI に出る:
 
 ```bash
-npm i -D @wcstack/typescript typescript @volar/typescript@~2.4.0 @volar/language-core@~2.4.0
+npm i -D @wcstack/typescript typescript@6 @volar/typescript@~2.4.0 @volar/language-core@~2.4.0
 npx wcs-tsc --noEmit                 # または npx wcs-tsc -p tsconfig.json --noEmit
 # index.html(9,14): error TS2551: Property 'coutn' does not exist on type '_WcsThis<{ count: number; … }>'. Did you mean 'count'?
 ```
@@ -103,5 +103,5 @@ npx wcs-tsc --noEmit                 # または npx wcs-tsc -p tsconfig.json --
 - **プロジェクト側の設定。** `tsconfig.json` が HTML に届く必要がある: `**/*.html` を覆う `include`（または `include` 無し = 既定で覆う）に加え、`noImplicitThis`（型付き `this`）・`allowJs`・`checkJs`。`wcs-tsc` は設定を監査して不足を警告し、`--wcs-defaults` なら元の設定を extends して不足を足した一時 config で実行する（終了時に削除）。
 - **CDN import。** buildless なページは `https://esm.run/...` から import するが、tsc はそれを解決できない。既定（`--url-imports=any`）では全ての `http(s)://` モジュールが `any` に型付き、`--url-imports=error` なら TS2307 で落ちる。`@wcstack/state` の URL import はどちらでも剥がされてプリアンブルが型を与える。
 - **1 ページに複数の `<wcs-state>`。** tsc は 1 ファイル 1 サービススクリプトしか扱えないので、ブロックを 1 本の仮想モジュールに合成する: import は先頭に巻き上げ、各ブロックは自分のスコープ（`{ const __wcs_state_N = defineState({ … }); }`）に入り、診断は HTML へ写像される。インライン state の無いページは空のモジュール — マークアップが TypeScript として読まれることはない。
-- peer: `typescript`（必須）、`@volar/typescript` + `@volar/language-core`（optional — このコマンドだけが必要とし、プロジェクト側から先に解決する）。パッケージのランタイム依存はゼロのまま。
+- peer: `typescript`（必須。5 か 6 — TypeScript 7 は `typescript/lib/tsc.js` も、`typescript` のコンパイラ API も公開しない）、`@volar/typescript` + `@volar/language-core`（optional — このコマンドだけが必要とし、プロジェクト側から先に解決する）。パッケージのランタイム依存はゼロのまま。
 - このリポジトリの CI は examples の全ページに対して `wcs-tsc` を experimental・非ゲートの job として 1 リリース分回し、偽陽性ゼロを確認できたらゲート化する（[app-testing-and-typescript-impl-plan.md](./app-testing-and-typescript-impl-plan.md) §7-6）。

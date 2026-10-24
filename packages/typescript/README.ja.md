@@ -9,12 +9,12 @@
 `@wcstack/typescript` はこの穴をコマンド 1 つで塞ぎます。`wcs-schema` は state ファイルを TypeScript コンパイラ API でコンパイルし、検証器が消費する sidecar `wcstack.manifest.json` の `stateSchema` を書き出します — CI でも、どのエディタでも。manifest は**派生物**です: 正本は型のままで、乖離すれば `wcs-schema check` が CI を落とします。
 
 ```bash
-npm install -D @wcstack/typescript typescript
+npm install -D @wcstack/typescript typescript@6
 npx wcs-schema emit src/state.ts          # ./wcstack.manifest.json を書く
 npx wcs-validate --strict index.html      # typo は error に、偽警告は消える
 ```
 
-ランタイム依存ゼロ。`typescript` は peer dependency — プロジェクト自身のコンパイラを使います。
+ランタイム依存ゼロ。`typescript` は peer dependency — プロジェクト自身のコンパイラを使います。TypeScript 5 か 6 が必要です: TypeScript 7 は、どちらのコマンドも呼べる JavaScript のコンパイラ API を公開しません（`typescript` が公開するのは版だけで、`typescript/lib/tsc.js` もありません）。
 
 ## コマンド
 
