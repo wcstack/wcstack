@@ -25,7 +25,7 @@ function unsupportedTypeScriptMessage(version) {
     return `@wcstack/typescript runs on TypeScript 5 or 6, and the project has TypeScript ${version}, which has no JavaScript compiler API: npm i -D typescript@6`;
 }
 
-var version = "4.6.1";
+var version = "4.6.2";
 var pkg = {
 	version: version};
 
@@ -130,6 +130,20 @@ function findProjectConfig(tscArgs, cwd) {
  * checked when present (tsc's default `**\/*` already picks `.html` up once the
  * extension is registered); a `files`-only config never sees HTML.
  */
+/**
+ * Whether an `include` pattern reaches `.html`, read as tsc reads it: a last segment with
+ * neither an extension nor a wildcard names a directory (`src` is `src/**\/*`), a trailing
+ * wildcard (`**\/*`, `src/*`) takes every supported extension — `.html` among them under
+ * wcs-tsc — and any other pattern names its own extension.
+ */
+function includeCoversHtml(pattern) {
+    const last = pattern.replace(/\\/g, "/").replace(/\/+$/, "").split("/").pop() ?? "";
+    if (/\.html?$/.test(last))
+        return true;
+    if (/[*?]/.test(last))
+        return last.endsWith("*");
+    return last === "." || last === ".." || !last.includes(".");
+}
 function auditConfig(configPath, ts) {
     const read = ts.readConfigFile(configPath, ts.sys.readFile);
     const raw = (read.config ?? {});
@@ -137,8 +151,7 @@ function auditConfig(configPath, ts) {
     const options = parsed.options;
     const missing = [];
     const include = Array.isArray(raw.include) ? raw.include : undefined;
-    const coversHtml = (patterns) => patterns.some((p) => /\.html?$|\*\*\/\*$|\*$/.test(p) && !/\.(ts|js|tsx|jsx|mts|cts|mjs|cjs)$/.test(p));
-    if (include !== undefined && !coversHtml(include))
+    if (include !== undefined && !include.some(includeCoversHtml))
         missing.push('include: "**/*.html"');
     else if (include === undefined && Array.isArray(raw.files))
         missing.push('include: "**/*.html" (a files-only config never sees HTML)');
@@ -309,5 +322,5 @@ if (invokedAsBin) {
 }
 /* v8 ignore stop */
 
-export { auditConfig, findProjectConfig, main, parseTscArgs, resolveFromProject, writeDefaultsConfig, writeUrlImportsDeclaration };
+export { auditConfig, findProjectConfig, includeCoversHtml, main, parseTscArgs, resolveFromProject, writeDefaultsConfig, writeUrlImportsDeclaration };
 //# sourceMappingURL=wcs-tsc.mjs.map
