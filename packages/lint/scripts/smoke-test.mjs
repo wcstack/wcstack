@@ -212,9 +212,9 @@ export default { total: 0, $watch: { total() {} } };
 `);
 
 // Paths under a volume loaded with src= (<wcs-state mount="cart" src="./cart.js">): the root's $watch and the
-// bindings read cart.total. The CLI reads src= relative to the HTML (.js tries the same-named .ts first) and stays
-// silent under a volume it cannot read (missing.js) — a correct page passes --strict. A typo under a volume it read
-// is still a warning.
+// bindings read cart.total. The CLI reads src= relative to the HTML (.js tries the same-named .ts first). It checks
+// nothing under a volume it cannot read (missing.js) and, since 4.7, says so once at the src (wcs/state-src-unread,
+// info) — a correct page still passes --strict. A typo under a volume it read is still a warning.
 const volumeDir = join(workDir, "volume");
 mkdirSync(volumeDir);
 const volumeHtml = join(volumeDir, "index.html");
@@ -408,14 +408,14 @@ check("delegated event handler reading event.currentTarget → warning wcs/deleg
   stdout: [/warning wcs\/delegated-current-target .*"onclick#direct:"/, "0 error(s), 1 warning(s)"],
 });
 
-check("paths under a volume loaded with src= (readable or not) are clean under --strict, exit 0", ["--lang=en", "--strict", volumeHtml], {
+check("paths under a volume loaded with src= (readable or not) are clean under --strict, the unreadable src said once (info), exit 0", ["--lang=en", "--strict", volumeHtml], {
   exit: 0,
-  stdout: ["0 error(s), 0 warning(s), 0 info (strict)"],
+  stdout: [/info wcs\/state-src-unread "\.\/missing\.js" cannot be read/, "0 error(s), 0 warning(s), 1 info (strict)"],
 });
 
 check("a typo under a readable src= volume → warnings wcs/watch-path-missing and wcs/binding-path-missing, --strict exit 1", ["--lang=en", "--strict", volumeTypoHtml], {
   exit: 1,
-  stdout: [/warning wcs\/watch-path-missing .*"cart\.totl"/, /warning wcs\/binding-path-missing .*"cart\.totl"/, "0 error(s), 2 warning(s), 0 info (strict)"],
+  stdout: [/warning wcs\/watch-path-missing .*"cart\.totl"/, /warning wcs\/binding-path-missing .*"cart\.totl"/, "0 error(s), 2 warning(s), 1 info (strict)"],
 });
 
 check("a framework app's page and component → named as nothing to check / not read, also with --errors-only, exit 0", ["--lang=en", "--errors-only", frameworkHtml, frameworkTsx], {
