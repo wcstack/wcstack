@@ -89,7 +89,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 - **発見**: HTML ファイルから上へ辿って最も近い `wcstack.manifest.json` が自動で使われます — コマンドラインに渡す必要はありません。`application` artifact を含む `*.manifest.json` を引数に渡した場合は、その実行全体で発見を置き換えます。VS Code 拡張も同じファイルを発見するので IDE と CLI の結果は一致します。
 - **効果**: `stateSchema` を宣言すると、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は沈黙し、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。`stateSchema` が無ければ従来どおりです。
-- **契約が要るとき**: validator が全体を読めない state は、契約が無いとパスをまったく検査できません。よくあるのはトップレベルの spread です — `export default { ...defaults(), get total() { … } }` は静的には見えないキーを持ち込むので、その state のパスは検査しません。4.4 から、spread の上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。`stateSchema` があれば束縛を —— 4.4 から getter の中で読むパス（`wcs/read-path-missing`）も —— それで検査します。
+- **契約が要るとき**: validator が全体を読めない state は、契約が無いとパスをまったく検査できません。よくあるのはトップレベルの spread です — `export default { ...defaults(), get total() { … } }` は静的には見えないキーを持ち込むので、その state のパスは検査しません。4.4 から、spread の上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。`stateSchema` があれば束縛を —— 4.4 から getter の中で読むパス（`wcs/read-path-missing`）も —— それで検査します。読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state も検査できません。4.7（未リリース）から、それを属性の上で 1 回だけ言います（`wcs/state-src-unread`、info）。4.6 までは何も言いませんでした。`src` はページからの相対パスで読むので、ファイルはサーバーと同じ並びに置いてください。
 - **schema の出どころ**: 手で書く（受け付けるのは JSON-Schema サブセット `type / properties / required / items / enum / const / anyOf / $defs / $ref` のみ）か、TypeScript の state ファイル（または JSDoc で型を付けた JavaScript のファイル）から `wcs-schema`（`@wcstack/typescript`）で生成します。manifest は派生物なので、CI では `wcs-schema check` で同期を保ってください。
 
 ## 生成 → 検証 → 修正ループでの利用

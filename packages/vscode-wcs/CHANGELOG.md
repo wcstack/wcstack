@@ -2,6 +2,11 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **読めない `<wcs-state src>` を告げる**（`wcs/state-src-unread`、info、新規）— `/` から始まるパス（`docs/csp.md` が `<base>` の下で勧める形）・URL・無いファイルを指す `src` の state は、パスもスクリプトの規則も検査されず、ページは何も言われずに通っていた。それを属性の上で 1 回だけ言う（`wcs/path-dynamic-unknown` と同じく lint の限界の告知）。`examples/router-i18n` の 2 つの state がこれだった。
+- **`null` を種にしたリストと、括弧の中の `?? []` から `map` する getter の行の形を読む** — `get rows() { return (this.myBookings ?? []).map((b) => ({ title: b.title })); }` の `for: rows` の行の `.title` が `wcs/binding-path-missing` の偽陽性になっていた。`fetch` が埋めるまで `null` のリストへの `map` も、リテラルから行の形を読む。
+
 ## 2.6.1 — 2026-10-24
 
 `@wcstack/state` 4.6.2 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.6.2・`@wcstack/typescript` 4.6.2 と同じ判定）。新しい規則は無く、`<wcs-state>` のスクリプトの型検査の直しなので patch。
