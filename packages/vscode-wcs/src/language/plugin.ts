@@ -181,7 +181,8 @@ const IMPORT_STATEMENT_RE = /import\s+(?:[\s\S]*?\sfrom\s*)?['"][^'"]+['"]\s*;?/
  * 巻き上げた import の元位置は同じ長さの空白にして、ブロック内のオフセットを保つ。
  * mapping はユーザーコードの各断片（import・export default より前・オブジェクト・
  * 末尾）を HTML のオフセットへ結ぶ。置き換えた `export default ` と挿入した記号
- * （getter の `: any` も）は対応する HTML が無いので mapping を持たない。
+ * （getter の `: any` も）は対応する HTML が無いので mapping を持たない。空白にした
+ * import（`@wcstack/state` の import と巻き上げた元位置）も結ばない。
  */
 /** @internal テスト用にエクスポート */
 export function buildCombinedScript(blocks: WcsScriptBlock[]): { code: string; mappings: CodeMapping[] } {
@@ -189,19 +190,22 @@ export function buildCombinedScript(blocks: WcsScriptBlock[]): { code: string; m
 
   // 1. import の巻き上げ
   const bodies = blocks.map((block) => {
-    const stripped = stripWcsImport(block.content);
+    const { code: stripped, blanks } = stripWcsImportRanges(block.content);
+    const gaps: BlankRange[] = [...blanks];
     const userCode = stripped.replace(IMPORT_STATEMENT_RE, (match: string, offset: number) => {
       out.user(stripped, offset, offset + match.length, block.contentStart);
       out.text('\n');
+      gaps.push([offset, offset + match.length]);
       return ' '.repeat(match.length);
     });
-    return { block, userCode };
+    gaps.sort((a, b) => a[0] - b[0]);
+    return { block, userCode, gaps };
   });
 
   // 2. ブロックごとのスコープ
-  bodies.forEach(({ block, userCode }, index) => {
+  bodies.forEach(({ block, userCode, gaps }, index) => {
     const annotations = getterAnnotationOffsets(userCode);
-    const user = (from: number, to: number): void => out.user(userCode, from, to, block.contentStart, annotations);
+    const user = (from: number, to: number): void => out.user(userCode, from, to, block.contentStart, annotations, gaps);
     out.text('{\n');
     const exportMatch = /export\s+default\s+/.exec(userCode);
     if (exportMatch === null) {
@@ -229,6 +233,7 @@ export function buildCombinedScript(blocks: WcsScriptBlock[]): { code: string; m
 /**
  * 仮想コードの組み立て: 挿入する記号（mapping 無し）と、HTML へ戻るユーザーコードの断片。
  * ユーザーコードの断片は、getter の注釈（getterAnnotations.ts）を挟む位置で分けて結ぶ。
+ * どの mapping も、生成側と HTML 側のテキストが一致する。
  */
 class VirtualCodeBuilder {
   code: string;
@@ -246,19 +251,39 @@ class VirtualCodeBuilder {
   /**
    * `userCode.slice(from, to)` を足し、`sourceStart + from` から HTML へ結ぶ。
    * `annotations` のうち範囲内のオフセットの前に `GETTER_RETURN_ANNOTATION` を挟む。
+   * `gaps`（空白にした区間）はテキストだけ足し、結ばない。
    */
-  user(userCode: string, from: number, to: number, sourceStart: number, annotations: readonly number[] = []): void {
+  user(
+    userCode: string,
+    from: number,
+    to: number,
+    sourceStart: number,
+    annotations: readonly number[] = [],
+    gaps: readonly BlankRange[] = [],
+  ): void {
     let at = from;
     for (const offset of annotations) {
       if (offset < from || offset >= to) continue;
-      this.piece(userCode, at, offset, sourceStart);
+      this.piece(userCode, at, offset, sourceStart, gaps);
       this.code += GETTER_RETURN_ANNOTATION;
       at = offset;
     }
-    this.piece(userCode, at, to, sourceStart);
+    this.piece(userCode, at, to, sourceStart, gaps);
   }
 
-  private piece(userCode: string, from: number, to: number, sourceStart: number): void {
+  private piece(userCode: string, from: number, to: number, sourceStart: number, gaps: readonly BlankRange[]): void {
+    let at = from;
+    for (const [gapStart, gapEnd] of gaps) {
+      if (gapEnd <= at || gapStart >= to) continue;
+      this.mapped(userCode, at, Math.max(at, gapStart), sourceStart);
+      const end = Math.min(to, gapEnd);
+      this.code += userCode.slice(Math.max(at, gapStart), end);
+      at = end;
+    }
+    this.mapped(userCode, at, to, sourceStart);
+  }
+
+  private mapped(userCode: string, from: number, to: number, sourceStart: number): void {
     if (to <= from) return;
     this.mappings.push({ sourceOffsets: [sourceStart + from], generatedOffsets: [this.code.length], lengths: [to - from], data: fullFeatures });
     this.code += userCode.slice(from, to);
@@ -317,8 +342,8 @@ function createWcsHtmlVirtualCode(blocks: WcsScriptBlock[], html: string): WcsHt
  * プリアンブル部分は HTML ソースへのマッピングを持たない（診断は表示されない）。
  */
 function createScriptVirtualCode(block: WcsScriptBlock, index: number): VirtualCode {
-  const userCode = stripWcsImport(block.content);
-  const { code: wrappedCode, mappings } = wrapWithDefineState(userCode, block);
+  const { code: userCode, blanks } = stripWcsImportRanges(block.content);
+  const { code: wrappedCode, mappings } = wrapWithDefineState(userCode, block, blanks);
 
   return {
     id: `wcs-script-${index}`,
@@ -338,15 +363,17 @@ function createScriptVirtualCode(block: WcsScriptBlock, index: number): VirtualC
  * ユーザーが既に defineState() を使用している場合はそのまま。
  * `this` を読む getter には戻り値の注釈 `: any` を挟む（getterAnnotations.ts）。
  * ラップ時も注釈を挟んでもソースマッピングを正確に維持する。
+ * `gaps`（空白にした import）は HTML へ結ばない。
  */
 /** @internal テスト用にエクスポート */
 export function wrapWithDefineState(
   userCode: string,
   block: WcsScriptBlock,
+  gaps: readonly BlankRange[] = [],
 ): { code: string; mappings: CodeMapping[] } {
   const out = new VirtualCodeBuilder(WCS_PREAMBLE);
   const annotations = getterAnnotationOffsets(userCode);
-  const user = (from: number, to: number): void => out.user(userCode, from, to, block.contentStart, annotations);
+  const user = (from: number, to: number): void => out.user(userCode, from, to, block.contentStart, annotations, gaps);
 
   // defineState() 使用済み、または export default が無い — プリアンブル + ユーザーコードをそのまま
   const match = /\bdefineState\s*\(/.test(userCode) ? null : /export\s+default\s+/.exec(userCode);
@@ -384,13 +411,31 @@ export function wrapWithDefineState(
  */
 /** @internal テスト用にエクスポート */
 export function stripWcsImport(code: string): string {
+  return stripWcsImportRanges(code).code;
+}
+
+/** 空白にした区間 `[start, end)`。ユーザーコードのオフセット。 */
+export type BlankRange = readonly [start: number, end: number];
+
+/**
+ * `stripWcsImport` と同じ置換をし、空白にした区間も返す。空白にした区間はもう元の
+ * テキストと一致しないので、仮想コードはそこを HTML へ結ばない（隙間にする）—
+ * content mapper の `Verbatim` の範囲は元のテキストとの一致を求める
+ * （docs/typescript-content-mapper.md §4.2）。
+ */
+export function stripWcsImportRanges(code: string): { code: string; blanks: BlankRange[] } {
   // 改行だけでなく**文字数も**保つ（改行以外を空白に置換）。仮想コードの mapping は
   // ユーザーコードのオフセットをそのまま HTML へ結ぶので、ここで短くすると import 以降の
   // 診断位置が削った分だけ手前にずれる。
-  return code.replace(
+  const blanks: BlankRange[] = [];
+  const stripped = code.replace(
     /import\s*\{[^}]*\}\s*from\s*['"](?:@wcstack\/state|https?:\/\/[^'"]*\/@wcstack\/state(?:@[^'"/]*)?(?:\/[^'"]*)?)['"];?[ \t]*/g,
-    (match) => match.replace(/[^\n]/g, ' ')
+    (match: string, offset: number) => {
+      blanks.push([offset, offset + match.length]);
+      return match.replace(/[^\n]/g, ' ');
+    }
   );
+  return { code: stripped, blanks };
 }
 
 /** HTML ルートの VirtualCode 型 */

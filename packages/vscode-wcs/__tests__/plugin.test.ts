@@ -226,3 +226,63 @@ describe('wrapWithDefineState', () => {
     expect(code).toContain('defineState({\n  count: 0\n})');
   });
 });
+
+describe('mapping は生成側と HTML 側のテキストが一致する（content mapper の Verbatim の前提）', () => {
+  const html = `<!doctype html><p>日本語の前置き 🎉</p>
+<wcs-state><script type="module">
+import {
+  defineState
+} from "https://esm.run/@wcstack/state";
+import { debounce } from "https://esm.run/lodash-es";
+// コメント 🎉
+export default defineState({
+  items: [{ name: "あ" }],
+  get first() { return this.items[0].name; },
+  inc() { debounce(() => {}, 1); },
+});
+</script></wcs-state>
+<wcs-state><script type="module">import { defineState } from '@wcstack/state';
+import "https://esm.run/side-effect";
+export default { count: 0, get double() { return this.count * 2; } };
+</script></wcs-state>`;
+
+  const expectExact = (code: string, mappings: readonly { sourceOffsets: number[]; generatedOffsets: number[]; lengths: number[] }[]): void => {
+    expect(mappings.length).toBeGreaterThan(0);
+    for (const m of mappings) {
+      for (let i = 0; i < m.sourceOffsets.length; i++) {
+        const generated = code.slice(m.generatedOffsets[i], m.generatedOffsets[i] + m.lengths[i]);
+        const source = html.slice(m.sourceOffsets[i], m.sourceOffsets[i] + m.lengths[i]);
+        expect(generated).toBe(source);
+      }
+    }
+  };
+
+  it('Language Server モード: ブロックごとの仮想コード', async () => {
+    const { createWcsLanguagePlugin } = await import('../src/language/plugin');
+    const snapshot = { getText: (s: number, e: number) => html.slice(s, e), getLength: () => html.length, getChangeRange: () => undefined };
+    const root = createWcsLanguagePlugin().createVirtualCode!('/proj/index.html', 'html', snapshot, {} as any)!;
+    expect(root.embeddedCodes).toHaveLength(2);
+    for (const embedded of root.embeddedCodes!) {
+      // 空白にした @wcstack/state の import を結んでいれば、ここで食い違う
+      expectExact(embedded.snapshot.getText(0, embedded.snapshot.getLength()), embedded.mappings);
+    }
+  });
+
+  it('tsc モード: 合成した 1 本（巻き上げた import の元位置も結ばない）', async () => {
+    const { parseWcsScriptBlocks } = await import('../src/language/htmlParse');
+    const { buildCombinedScript } = await import('../src/language/plugin');
+    const { code, mappings } = buildCombinedScript(parseWcsScriptBlocks(html, 'wcs-state'));
+    expectExact(code, mappings);
+    expect(code).toContain('import { debounce } from "https://esm.run/lodash-es";');
+    expect(code).toContain('import "https://esm.run/side-effect";');
+  });
+
+  it('stripWcsImportRanges は空白にした区間を返す', async () => {
+    const { stripWcsImportRanges } = await import('../src/language/plugin');
+    const code = `import { defineState } from "@wcstack/state";\nexport default {};`;
+    const { code: stripped, blanks } = stripWcsImportRanges(code);
+    expect(blanks).toEqual([[0, code.indexOf('\n')]]);
+    expect(stripped.slice(0, code.indexOf('\n')).trim()).toBe('');
+    expect(stripWcsImportRanges('export default {};').blanks).toEqual([]);
+  });
+});

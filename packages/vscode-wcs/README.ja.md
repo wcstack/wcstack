@@ -32,6 +32,8 @@ export default {
 </wcs-state>
 ```
 
+**TypeScript 7.1。** `@wcstack/typescript` 4.8（未リリース・experimental）から、このパッケージはこの拡張の言語プラグインから作った TypeScript 7.1 の content mapper でもあります（[`docs/typescript-content-mapper.ja.md`](../../docs/typescript-content-mapper.ja.md)）。ワークスペースの `tsconfig.json` がそれを名指し、信頼したワークスペースで TypeScript 7 の VS Code 拡張が動いていると、`<wcs-state>` のスクリプトにはこの拡張の隣で TypeScript 自身のサーバーも答え、同じ診断が 2 つ並びます。この拡張のものだけにするには `"js/ts.contentMappers.enabled": false` を設定してください。この拡張の振る舞いはまだ変えていません。
+
 ### Attribute Binding Completions
 
 `data-wcs` 属性値でプロパティ名、状態パス、フィルタ名の補完候補が表示されます。

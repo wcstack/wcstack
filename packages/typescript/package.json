@@ -19,9 +19,17 @@
   "files": [
     "dist"
   ],
+  "typescript": {
+    "contentMapper": {
+      "exec": [
+        "node",
+        "./dist/content-mapper.cjs"
+      ]
+    }
+  },
   "scripts": {
     "clean": "rimraf dist .tsc-out",
-    "build": "rimraf dist .tsc-out && tsc && rollup -c && node scripts/build-schema-core.mjs",
+    "build": "rimraf dist .tsc-out && node node_modules/typescript/bin/tsc && rollup -c && node scripts/build-schema-core.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -51,7 +59,7 @@
   "peerDependencies": {
     "@volar/language-core": "~2.4.0",
     "@volar/typescript": "~2.4.0",
-    "typescript": ">=5.0 <7"
+    "typescript": ">=5.0 <7 || >=7.1"
   },
   "peerDependenciesMeta": {
     "@volar/language-core": {
@@ -78,6 +86,7 @@
     "rollup-plugin-dts": "^6.1.1",
     "tslib": "^2.8.1",
     "typescript": "^5.9.3",
+    "typescript-7": "npm:typescript@7.1.0-beta",
     "typescript-eslint": "^8.49.0",
     "vitest": "^4.0.15"
   }
