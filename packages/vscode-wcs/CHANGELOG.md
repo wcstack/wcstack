@@ -2,6 +2,12 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 2.6.1 — 2026-10-24
+
+`@wcstack/state` 4.6.2 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.6.2・`@wcstack/typescript` 4.6.2 と同じ判定）。新しい規則は無く、`<wcs-state>` のスクリプトの型検査の直しなので patch。
+
+- **getter の本体を型検査する** — `this` を読む getter（`get first() { return this.items[0].nmae; }`）の本体は `this` が `any` のままで、打ち間違いに下線が引かれなかった。`defineState` の型の推論が getter の型から state に戻ってくる TypeScript の振る舞いで、メソッドは影響を受けない。検査するコードの中でそうした getter の戻り値の型を `any` にし（getter の型はもともと `any` だった）、本体を state の `this` で検査する。`wcs-tsc` 4.6.2 と同じ判定。
+
 ## 2.6.0 — 2026-10-24
 
 `@wcstack/state` 4.6.0 のパーサと manifest、4.6.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.6.0・`@wcstack/typescript` 4.6.0 と同じ判定）。タグの目録に入力が増えるので minor。

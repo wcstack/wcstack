@@ -53,7 +53,7 @@
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
     "bytes": 14665,
-    "gzip": 5774
+    "gzip": 5776
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,
