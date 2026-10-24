@@ -1301,3 +1301,29 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を、2026-12-01（global PAT の廃止）より前に Microsoft Entra ID の方法へ移す。
   - examples/fw-inventory の依存を `^4.6.0` にして lock を更新する（手元の npm は公開から 1 日たたない版を取らない設定）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.6.1 の公開（2026-10-24）
+
+- 中身: patch。TypeScript 7.1 の content mapper の調査から。`npm i -D typescript` で入るのは TypeScript 7 になったが、7 には JavaScript のコンパイラ API が無い（`typescript` が公開するのは版だけで、`exports` に `./lib/tsc` も無い）。それなのに `@wcstack/typescript` の peer は `>=5.0` で 7 を受け入れていた。`wcs-tsc` は「typescript が要る: `npm i -D typescript`」と言い（入れ直すとまた 7 が入る）、`wcs-schema` は読み込みの時点で `TypeError` で落ちた。PR #514（merge commit 47e4e821）:
+  - peer を `typescript >=5.0 <7` にした。`wcs-tsc`・`wcs-schema`・`loadStateFile` は版を名指しし、`npm i -D typescript@6` と言って exit 2。判定は `src/typescriptSupport.ts` にまとめた。
+  - `DEFAULT_COMPILER_OPTIONS` は enum を `?.` で読む（TS 7 の下でもモジュールが読み込める）。README と docs/typescript.md のインストールの行は `typescript@6`。
+  - ほかのパッケージは版だけ。content mapper そのもの（TS 7.1 の `tsc` が `.html` の `<wcs-state>` を検査する）は scratchpad で試作した。examples の 33 ページで `wcs-tsc`（TS 5.9）と診断 23 件が一致したが、パッケージには入れていない。
+- 準備: PR #515（merge commit e0eabd29）で CHANGELOG を `[4.6.1] — 2026-10-24` として締め、要約と Upgrading（TS 7 のプロジェクトでは、install の時点で npm が peer の不一致を報告する）を書いた。文書の固定版 18 か所を 4.6.1 にした。
+- main で `patch`（run 40045737516）。成功した: 版を上げたコミット ff8e5258、タグ `v4.6.1`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Fixed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49（初回ですべてそろった）。SRI 44/44。文書の固定 URL 8 本がすべて 200。npm の README に印は残っていない。`@wcstack/server` 4.6.1 は `@wcstack/state` の 4.6.1 にちょうどで依存する。`@wcstack/typescript` 4.6.1 の peer は `>=5.0 <7`。`wcstack/auto` 4.6.1 は 73.8 KB gzip（4.6.0 と同じ大きさ）、integrity は `sha384-C9/GHL+ARs367PIKAIE2C3xVETLlQoAhvFZQtVXp2hV1WoJ9T6956yfBIHMZbj2m`。
+  - 公開された tarball でも確かめた。TS 7.0.2 のプロジェクトでは npm が `ERESOLVE` を出し、`--force` で入れると 2 つのコマンドが版を名指しして exit 2。TS 6.0.3 では、`wcs-tsc` が型エラーを HTML の位置で報告し、`wcs-schema emit` が manifest を書く。
+- 公開後の作業（同日）:
+  - PR #516（merge commit 4fef6756）: サイズの基準値を 4.6.1 の dist で取り直した（版の文字列だけ — devtools と ssr が −1 B、`core.min.js` は 20,102 B のまま）。結合の基準値は変わらない。CLAUDE.md / AGENTS.md の版も直した。
+  - VS Code 拡張は 2.6.0 のまま。4.6.1 は拡張が同梱するものを変えていないので、vsix は出していない。
+  - wcstack-skill: PR #45（merge commit 7a178dc）で、§5 の `wcs-schema` / `wcs-tsc` の行に「TypeScript 5 か 6・`typescript@6` を入れる」と書き、版の印と CDN の固定を 4.6.1 にした（6 本とも 200）。注釈付きのタグ `v4.6.1`。
+  - LP（2447ecb・bd221d8）:
+    - 版の参照、「Shipped in」の v4.6.1 の一文、state / signals のページの版。
+    - ステップ 15 の `^4.6.1`、ステップ 16 の `wcstack@4.6.1` と integrity とリリースへのリンク。llms の作り直し。sitemap の lastmod は既に 2026-10-24 だった。
+    - 最初の commit がトップの v4.6.0 の一文とそのリンクまで v4.6.1 に置き換えていたので、bd221d8 で戻した。
+    - lint は変えていないので、ステップ 07・12 の出力は取り直していない。
+    - 手元で Chromium 7/7（ステップ 16 の integrity 付きの束で `wcs-state` が定義される）。本番の各ページに 4.6.0 の参照は残っていない。
+- 残り:
+  - content mapper を `@wcstack/typescript` に実験的に入れるか（著者の判断。TS 7.1 の stable を待つ案）。
+  - 調査で見つけたもの（未修正）: `wcs-tsc` の設定の監査が、`include: ["src"]` のようなディレクトリだけの指定を「HTML を含まない」と誤って警告する。getter の中の `this.items[0].nmae` を `wcs-tsc` が見逃す（TS 5.9 でも 7.1 の試作でも同じ。メソッドの中なら報告する）。
+  - 4.6.0 からの持ち越し: 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。examples/fw-inventory の依存を `^4.6.0` 以上にして lock を更新する。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
