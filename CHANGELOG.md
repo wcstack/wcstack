@@ -8,6 +8,14 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.6.1] — 2026-10-24
+
+From a study of TypeScript 7.1's content mappers: `npm i -D typescript` installs TypeScript 7 now, which `@wcstack/typescript` cannot run on, and the package said otherwise. Only `@wcstack/typescript` changed; every other package is 4.6.0 with a new version.
+
+### Upgrading
+
+- **A project on TypeScript 7 cannot install `@wcstack/typescript` 4.6.1** without `--force`: npm reports the peer `typescript@">=5.0 <7"`. Neither command ran on TypeScript 7 before; keep `typescript@6` for them.
+
 ### Fixed
 
 - `@wcstack/typescript`: **TypeScript 7 is refused by name.** `npm i -D typescript` installs TypeScript 7 now, and its package publishes no JavaScript compiler API (`typescript` exports only its version, and there is no `typescript/lib/tsc.js`). `wcs-tsc` answered `needs typescript (a peer): npm i -D typescript`, which installs 7 again, and `wcs-schema` stopped on a `TypeError` as it loaded. The peer range is `>=5.0 <7`, so npm reports the conflict at install; `wcs-tsc`, `wcs-schema` and `loadStateFile` say which TypeScript the project has and to `npm i -D typescript@6`, with exit code 2. The install lines in the package README and [docs/typescript.md](./docs/typescript.md) name `typescript@6`. TypeScript 7 reads other file types through content mappers (7.1, in beta); this package does not provide one yet.
