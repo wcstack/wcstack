@@ -74,7 +74,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 実行時 | 63 |
 | lint だけ — 条件付きの沈黙 | 24 |
 | 文書だけ — 沈黙 | 14 |
-| 数えない lint の code | 17 |
+| 数えない lint の code | 18 |
 
 ### 文書だけ — 沈黙
 
@@ -220,6 +220,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `wcs/manifest-unknown-keyword` | sidecar の manifest が、lint の読む部分集合の外の schema のキーワードを使っている。 |
 | `wcs/path-dynamic-unknown` | 作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。 |
 | `wcs/path-reserved-name` | code の表に予約されているだけで、まだ出さない。 |
+| `wcs/state-src-unread` | 作者の誤りではなく lint の限界: 読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state は、パスもスクリプトの規則も検査しない。それを属性の上で 1 回だけ言う（info）。4.6 までは何も言わなかった。 |
 | `wcs/type-annotation` | 初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。 |
 
 <!-- mistake-catalogue:end -->

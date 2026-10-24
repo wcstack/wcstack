@@ -1154,11 +1154,23 @@ function expressionShape(text: string, paths: PathCandidate[], aliases: Map<stri
   if (scan.startsWith('[')) {
     const inner = extractDelimitedContent(expr, scan, 0, '[', ']');
     rest = inner.length + 2;
-    const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
-    if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
-    const source = expressionShape(spread[1], paths, aliases);
-    if (source === null || !source.isList) return null;
-    shape = source;
+    if (inner.trim() === '') {
+      // `[]` — the fallback of `this.items ?? []`: a list, whose rows the chain decides
+      shape = EMPTY_LIST;
+    } else {
+      const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
+      if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
+      const source = expressionShape(spread[1], paths, aliases);
+      if (source === null || !source.isList) return null;
+      shape = source;
+    }
+  } else if (scan.startsWith('(')) {
+    // `(this.items ?? []).map(…)`: the expression in the parentheses is the base of the chain
+    const inner = extractDelimitedContent(expr, scan, 0, '(', ')');
+    const base = expressionShape(inner, paths, aliases);
+    if (base === null) return null;
+    shape = base;
+    rest = inner.length + 2;
   } else {
     const base = readBase(expr, scan, aliases, paths);
     if (base === null) return null;
@@ -1246,8 +1258,9 @@ function applyChain(expr: string, scan: string, start: number, initial: ResultSh
       if (!shape.isList) return null;
       shape = pickRow(shape);
     } else if (method === 'map') {
-      if (!shape.isList) return null;
-      const mapped = mapRows(args, shape);
+      // a value the state does not show as a list (seeded `null` until a fetch fills it): `map` makes it one, and
+      // the callback's literal is the row — as for a source of unknown shape (the prod-booking seam app)
+      const mapped = mapRows(args, shape.isList ? shape : OPAQUE);
       if (mapped === null) return null;
       shape = mapped;
     } else {
@@ -1259,6 +1272,8 @@ function applyChain(expr: string, scan: string, start: number, initial: ResultSh
 
 /** 形の分からない元。 */
 const OPAQUE: ResultShape = { isList: true, mirrors: [], fields: [], opaque: true };
+/** 空の配列リテラル `[]`: 行の無いリスト。 */
+const EMPTY_LIST: ResultShape = { isList: true, mirrors: [], fields: [] };
 
 /** リストの形 → その行 1 つの形。 */
 function pickRow(shape: ResultShape): ResultShape {

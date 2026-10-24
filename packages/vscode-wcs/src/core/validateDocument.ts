@@ -29,6 +29,7 @@ import { validateScopeDeclarations } from "../service/scopeDeclarationValidator.
 import { validateSemantics } from "../service/semanticValidator.js";
 import { validateScriptStateUses } from "../service/scriptStateUseValidator.js";
 import { validateScriptReads } from "../service/scriptReadValidator.js";
+import { validateStateSources } from "../service/stateSourceValidator.js";
 import type { FileReader } from "../service/statePathResolver.js";
 import { discoverApplicationManifest } from "./sidecar/discover.js";
 import { findIgnoredRanges } from "../language/htmlParse.js";
@@ -77,12 +78,13 @@ export function validateDocument(text: string, options: ValidateDocumentOptions 
   const fileReader = options.fileReader;
   const applicationSchema = options.applicationSchema
     ?? (fileReader !== undefined ? discoverApplicationManifest(fileReader)?.schema : undefined);
-  const found = validateText(text, options, applicationSchema);
+  // A `src` the reader cannot read: once, on the page (the second pass below would find it again)
+  const found = [...validateText(text, options, applicationSchema), ...validateStateSources(text, stateTagName, options.locale, fileReader)];
   // A state in a file of its own (`src=`): the page again, with each such script inline (core/externalState.ts).
   // A finding in a file is shown on its `src` value and carries where it is in the file (`origin`); one in the
   // page is added when the page alone did not find it (the handler of an `onsubmit:` written in the file)
   const page = fileReader === undefined ? null : inlineExternalStates(text, stateTagName, fileReader);
-  if (page === null) return found;
+  if (page === null) return sortDiagnostics(found);
   const key = (d: WcsDiagnostic): string => [d.code, d.start, d.end, d.message, d.origin?.path, d.origin?.start].join("\u0000");
   const seen = new Set(found.map(key));
   const out = [...found];

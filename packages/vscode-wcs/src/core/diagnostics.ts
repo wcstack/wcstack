@@ -50,6 +50,9 @@ export const WcsDiagnosticCode = {
   // lint の限界の告知（作者の誤りではない）: `export default { … }` のトップレベルの spread が持ち込むキーは読めないので、
   // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
+  // lint の限界の告知（作者の誤りではない）: 読めない `<wcs-state src>`（/ から始まるパス・URL・無いファイル）の state は
+  // パスもスクリプトの規則も検査しない — それを src の上で 1 回だけ言う。info（docs/seam-apps.md、prod-booking）。
+  StateSrcUnread: "wcs/state-src-unread",
   // --- existing binding-expression validators (retrofitted) ---
   FilterUnknown: "wcs/filter-unknown",
   FilterArity: "wcs/filter-arity",

@@ -95,6 +95,8 @@ export interface WcsMessageCatalog {
   readPathMissing(path: string, topLevel: boolean): string;
   /** `export default { … }` のトップレベルの spread: それが持ち込むキーは読めず、stateSchema が無いのでパスを検査しない。 */
   pathDynamicUnknownSpread(spread: string): string;
+  /** 読めない `<wcs-state src>`: その state のパスもスクリプトの規則も検査しない。 */
+  stateSrcUnread(src: string): string;
   /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
   pathReadonlyTwoWay(path: string, property: string): string;
   handlerFilterNotAllowed(property: string): string;
@@ -347,6 +349,8 @@ const ja: WcsMessageCatalog = {
   readPathMissing: (p, top) => top
     ? `"${p}" は state が宣言していないキーです。読んだ時点で例外になります（#301）`
     : `パス "${p}" は状態定義に存在しません。読みは undefined になり、そこから計算した値は黙って違います`,
+  stateSrcUnread: (src) =>
+    `"${src}" を読めないので、この state のパスもスクリプトの規則も検査していません。src はこのファイルからの相対パスで読みます（/ から始まるパスと URL は読みません）。サーバーと同じ並びに置いたファイルを、このファイルからの相対パスで指してください`,
   pathDynamicUnknownSpread: (sp) =>
     `${sp} が持ち込むキーは静的に読めないので、この state のパスは検査していません（束縛・getter の中の読み・$watch のキー）。キーを wcstack.manifest.json の stateSchema に宣言すると検査されます。npx wcs-schema（@wcstack/typescript）が state の型（JSDoc・TypeScript）から作れます`,
   pathReadonlyTwoWay: (p, prop) =>
@@ -627,6 +631,8 @@ const en: WcsMessageCatalog = {
   readPathMissing: (p, top) => top
     ? `"${p}" is not a key the state declares. Reading it throws (#301)`
     : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
+  stateSrcUnread: (src) =>
+    `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a path from / or a URL is not read): point it at the file laid out as on the server, relative to this file`,
   pathDynamicUnknownSpread: (sp) =>
     `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathReadonlyTwoWay: (p, prop) =>

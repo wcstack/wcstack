@@ -74,7 +74,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | The runtime | 63 |
 | The lint only — conditional silence | 24 |
 | The documents only — silence | 14 |
-| Lint codes not counted | 17 |
+| Lint codes not counted | 18 |
 
 ### The documents only — silence
 
@@ -220,6 +220,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | `wcs/manifest-unknown-keyword` | The sidecar manifest uses a schema keyword outside the subset the lint reads. |
 | `wcs/path-dynamic-unknown` | A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). |
 | `wcs/path-reserved-name` | Reserved in the code table, not emitted yet. |
+| `wcs/state-src-unread` | A limit of the lint, not an author's mistake: a `<wcs-state src>` it cannot read — a path from `/`, a URL, a file that is not there — leaves that state's paths and script rules unchecked; said once, at the attribute (info). Up to 4.6 it said nothing. |
 | `wcs/type-annotation` | A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value. |
 
 <!-- mistake-catalogue:end -->

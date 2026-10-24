@@ -961,6 +961,27 @@ export default {
     expect(all).toContain('viaHelper.*.helped');
   });
 
+  it('null を種にしたリスト・括弧の中の `?? []` からの map でも、リテラルから行の形を持つ（prod-booking）', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  myBookings: null,
+  seeded: [],
+  get parenRows() { return (this.myBookings ?? []).map((b) => ({ title: b.title, when: b.date })); },
+  get aliasRows() { const list = this.myBookings ?? []; return list.map((b) => ({ room: b.roomId })); },
+  get directRows() { return this.myBookings.map((b) => ({ id: b.id })); },
+  get seededRows() { return (this.seeded ?? []).map((b) => ({ label: b.label })); },
+  get empty() { return []; },
+};`);
+    const all = paths.map(p => p.path);
+    expect(find(paths, 'parenRows.*')).toEqual({ path: 'parenRows.*', kind: 'list' });
+    expect(all).toContain('parenRows.*.title');
+    expect(all).toContain('parenRows.*.when');
+    expect(all).toContain('aliasRows.*.room');
+    expect(all).toContain('directRows.*.id');
+    expect(all).toContain('seededRows.*.label');
+    expect(all.filter(p => p.startsWith('empty.*.'))).toEqual([]);
+  });
+
   it('オブジェクトリテラルを返す getter はそのフィールドを持つ', () => {
     const paths = analyzeStatePaths(`
 export default {
