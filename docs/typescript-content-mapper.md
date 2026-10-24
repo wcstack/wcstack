@@ -167,3 +167,4 @@ Taken 2026-10-24 with the recommendations; the plan was reviewed independently b
 - [microsoft/TypeScript#63800 — API usage patterns for complex editor extensions](https://github.com/microsoft/TypeScript/issues/63800)
 - [DanielRosenwasser/content-mapper-sample](https://github.com/DanielRosenwasser/content-mapper-sample) (an HTML mapper for `<script>` and event handler attributes)
 - [typescript.md](./typescript.md) §4 — `wcs-tsc` and the language plugin
+- [typescript-binding-check.md](./typescript-binding-check.md) — checking `data-wcs` bindings through the mapper (study and prototype)
