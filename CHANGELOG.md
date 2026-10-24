@@ -8,6 +8,15 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Upgrading
+
+- **`wcs-tsc` and the VS Code extension check getter bodies.** A getter whose body reads `this` was left unchecked; now it is checked like a method, so a page that passed may report errors inside its getters — the kind its methods already got. `examples/router-spa` gains two: `this.routeParams.productId` and `this.query.category` on a state that declares `routeParams: {}` and `query: {}`.
+
+### Fixed
+
+- `@wcstack/typescript` (`wcs-tsc`) and the VS Code extension: **a typo in a getter is reported.** `defineState` infers the state's type from the object, and a getter with no return type is typed from its body. When the body reads `this`, that inference comes back to the state, and TypeScript leaves the getter's `this` as `any`: `get first() { return this.items[0].nmae; }` was not reported, under `strict` a callback in a getter (`this.items.filter((i) => …)`) was an implicit `any` (TS7006), and `this.$getAll<number>(…)` in a getter was TS2347. An inline script cannot annotate a getter, so the checked code now gives each getter of the state that reads `this` the return type `any` — the type it had — and its body is checked against the state's `this`. A `.ts` state file keeps the documented way: annotate the getter's return type.
+- `@wcstack/typescript`: **`wcs-tsc` no longer warns about an `include` that names a directory.** tsc reads `include: ["src"]` as `src/**/*`, which takes the `.html` files, but the config check reported `include: "**/*.html"` missing.
+
 ## [4.6.1] — 2026-10-24
 
 From a study of TypeScript 7.1's content mappers: `npm i -D typescript` installs TypeScript 7 now, which `@wcstack/typescript` cannot run on, and the package said otherwise. Only `@wcstack/typescript` changed; every other package is 4.6.0 with a new version.

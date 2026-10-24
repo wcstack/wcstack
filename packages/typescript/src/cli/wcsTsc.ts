@@ -125,6 +125,19 @@ export interface ConfigAudit {
  * checked when present (tsc's default `**\/*` already picks `.html` up once the
  * extension is registered); a `files`-only config never sees HTML.
  */
+/**
+ * Whether an `include` pattern reaches `.html`, read as tsc reads it: a last segment with
+ * neither an extension nor a wildcard names a directory (`src` is `src/**\/*`), a trailing
+ * wildcard (`**\/*`, `src/*`) takes every supported extension — `.html` among them under
+ * wcs-tsc — and any other pattern names its own extension.
+ */
+export function includeCoversHtml(pattern: string): boolean {
+  const last = pattern.replace(/\\/g, "/").replace(/\/+$/, "").split("/").pop() ?? "";
+  if (/\.html?$/.test(last)) return true;
+  if (/[*?]/.test(last)) return last.endsWith("*");
+  return last === "." || last === ".." || !last.includes(".");
+}
+
 export function auditConfig(configPath: string, ts: TypeScriptLike): ConfigAudit {
   const read = ts.readConfigFile(configPath, ts.sys.readFile);
   const raw = (read.config ?? {}) as { include?: unknown; files?: unknown; compilerOptions?: Record<string, unknown> };
@@ -132,8 +145,7 @@ export function auditConfig(configPath: string, ts: TypeScriptLike): ConfigAudit
   const options = parsed.options as Record<string, unknown>;
   const missing: string[] = [];
   const include = Array.isArray(raw.include) ? (raw.include as string[]) : undefined;
-  const coversHtml = (patterns: readonly string[]): boolean => patterns.some((p) => /\.html?$|\*\*\/\*$|\*$/.test(p) && !/\.(ts|js|tsx|jsx|mts|cts|mjs|cjs)$/.test(p));
-  if (include !== undefined && !coversHtml(include)) missing.push('include: "**/*.html"');
+  if (include !== undefined && !include.some(includeCoversHtml)) missing.push('include: "**/*.html"');
   else if (include === undefined && Array.isArray(raw.files)) missing.push('include: "**/*.html" (a files-only config never sees HTML)');
   // `strict: true` implies noImplicitThis unless it is explicitly turned off.
   const noImplicitThis = options.noImplicitThis ?? options.strict === true;

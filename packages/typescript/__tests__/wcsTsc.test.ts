@@ -8,6 +8,7 @@ import {
   parseTscArgs,
   findProjectConfig,
   auditConfig,
+  includeCoversHtml,
   writeDefaultsConfig,
   writeUrlImportsDeclaration,
   resolveFromProject,
@@ -99,6 +100,19 @@ describe("findProjectConfig / auditConfig / writeDefaultsConfig", () => {
     expect(auditConfig(defaults, ts).missing).toEqual([]);
     const noImplicitOff = tmp.write("audit/off/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, noImplicitThis: false, allowJs: true, checkJs: true, target: "ESNext" } }));
     expect(auditConfig(noImplicitOff, ts).missing).toEqual(["compilerOptions.noImplicitThis: true"]);
+
+    // ディレクトリだけの include（`src` は tsc にとって src/**/*）は html も拾う — 不足にしない
+    const dirOnly = tmp.write("audit/dir/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true, allowJs: true, checkJs: true, target: "ESNext" }, include: ["src"] }));
+    expect(auditConfig(dirOnly, ts).missing).toEqual([]);
+  });
+
+  it("includeCoversHtml: tsc の読み方で html に届く include を見分ける", () => {
+    for (const covers of ["**/*", "src/**/*", "src/*", "src/page*", "**/*.html", "pages/index.htm", "src", "src/", "./src", ".", "./", "src\\pages"]) {
+      expect(includeCoversHtml(covers), covers).toBe(true);
+    }
+    for (const misses of ["src/**/*.ts", "**/*.js", "src/*.tsx", "src/main.ts", "src/v1.2", "a.json"]) {
+      expect(includeCoversHtml(misses), misses).toBe(false);
+    }
   });
 
   it("--wcs-defaults の一時 config は元を extends し、include と 3 オプションを足す", () => {
@@ -239,6 +253,24 @@ describe("wcs-tsc（ビルド済み bin・tsc まで通す）", () => {
     const result = runBin(dir, ["--url-imports=error", "-p", "tsconfig.json"]);
     expect(result.stdout).toMatch(/index\.html\(6,\d+\): error TS2307: Cannot find module 'https:\/\/esm\.run\/lodash-es'/);
     expect(result.stdout).not.toMatch(/TS2307: Cannot find module 'https:\/\/esm\.run\/@wcstack\/state'/);
+  }, 60_000);
+
+  it("getter の本体も検査する: this を読む getter の typo を報告し、getter のコールバックは暗黙の any にならない（strict）", () => {
+    const dir = join(tmp.dir, "getter");
+    const strictConfig = JSON.parse(READY_CONFIG);
+    strictConfig.compilerOptions.strict = true;
+    tmp.write("getter/tsconfig.json", JSON.stringify(strictConfig));
+    tmp.write("getter/index.html", `<wcs-state><script type="module">
+export default {
+  items: [{ name: "a", price: 1 }],
+  get first() { return this.items[0].nmae; },
+  get cheap() { return this.items.filter((i) => i.price < 2); },
+  get count() { return this.$getAll("items.*.price", []).length; },
+};
+</script></wcs-state>`);
+    const result = runBin(dir, ["-p", "tsconfig.json"]);
+    expect(result.stdout).toMatch(/index\.html\(4,38\): error TS2339: Property 'nmae' does not exist/);
+    expect(result.stdout.trim().split("\n")).toHaveLength(1);
   }, 60_000);
 
   it("正しいページは exit 0", () => {
