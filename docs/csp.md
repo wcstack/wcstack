@@ -97,7 +97,7 @@ Static hosting (GitHub Pages, object storage, files served straight off a CDN) c
 | Target | `'nonce-…'` | Hash | Notes |
 |---|---|---|---|
 | Inline import map (§2) | Yes | Yes (`sha256` / `384` / `512`) | The digest is over the contents of the `<script>` (§3.1) |
-| External `dist/auto.min.js` (`<script src integrity>`) | Yes | **Chromium only** (`sha384`) | Same value as `integrity`; wcstack ships sha384 (§3.2) |
+| External `dist/auto.min.js` (`<script src integrity>`) | Yes | Chromium, Firefox 115+, Safari (`sha384`) | Same value as `integrity`; wcstack ships sha384 (§3.2) |
 | Inline `<script type="module">` inside `<wcs-state>` (§4) | Yes (on the `<script>` that loads state) | No | Goes through a blob: URL, so it is never matched as an inline script |
 | A `<wcs-route>` guard (§5) | Yes (on the `<script>` that loads router) | No | Same; there is no `src=` escape hatch |
 | State in `<script type="application/json">` (§4) | not needed | not needed | Never executed, so `script-src` does not apply |
@@ -140,7 +140,7 @@ script-src 'self' 'sha384-{digest of auto.min.js}';
 
 Three constraints come with it:
 
-1. **Chromium only** (Firefox has not implemented it — [bug 1409200](https://bugzilla.mozilla.org/show_bug.cgi?id=1409200) — and neither has Safari). In those two the hash source simply fails to match and the script is blocked, so in practice you list the host from §1 alongside it. Which means the hash source buys nothing beyond "Chromium can drop the host allowance"
+1. **Chromium, Firefox (115, [bug 1409200](https://bugzilla.mozilla.org/show_bug.cgi?id=1409200)) and Safari** implement it (checked in Chromium 149, Firefox 151 and WebKit 26.5, 2026-10). An older browser fails to match and blocks the script: list the host from §1 alongside it if you support one
 2. **Every digest in the `integrity` attribute must also appear in `script-src`.** If you list several algorithms, the script is refused when even one of them is missing from the policy
 3. **One hash source per `<script>` tag.** On a page that loads many packages, a single host entry is shorter
 
@@ -181,7 +181,9 @@ One interaction to know about: if the page sets a `<base href>` — the i18n
 locale-basename pattern does exactly that ([i18n-design.md §9-1-4](./i18n-design.md)) —
 a *relative* `src="./state.js"` resolves against the base (`/ja/state.js`),
 not against the page, and 404s. Under a `<base>`, write the URL root-absolute:
-`src="/state.js"`.
+`src="/state.js"`. The lint reads a `src` relative to the page and cannot read a root-absolute one:
+since 4.7 it says so (`wcs/state-src-unread`, info) — that state's paths and script rules are not
+checked. Keep a copy of the layout the lint can read, or check the page with the state inline.
 
 ## 5. Router guards — a nonce or blob:
 
@@ -257,12 +259,13 @@ The two remote-data sinks keep failing — deliberately — but they now say so,
 
 The state property-write path swallows setter exceptions by design (the element is allowed to reject a value), so before this it broke *silently*. Enforcement is confirmed by probing a throwaway element rather than by matching the wording of an error, so a page that installs a `default` policy is correctly read as "not blocked".
 
-In `@wcstack/state` 4.0 the state line comes from the diagnostics feature, which `@wcstack/state` and `/auto` include. It does not probe: it is printed once per page when an HTML-sink write fails with a `TypeError` in a browser that has Trusted Types, and the failure is then reported like any binding that fails to apply — to `$errorCallback`, or as `binding "<type>: <path>" failed to apply.` on the console. On `/core` without that feature only the binding failure is reported (`#12` on the console, with the browser's error).
+In `@wcstack/state` 4.0 the state line comes from the diagnostics feature, which `@wcstack/state` and `/auto` include. It does not probe: it is printed once per page when an HTML-sink write fails with a `TypeError` in a browser that has Trusted Types, and the failure is then reported like any binding that fails to apply — to `$errorCallback`, or as `binding "<type>: <path>" failed to apply.` (through `reportError()` since 4.7, so the page's error handlers see it too). On `/core` without that feature only the binding failure is reported (`#12` on the console, with the browser's error).
 
 ### Notes
 
 - **The shared policy object is reachable from page scripts.** To create `wcstack` exactly once across packages, the created policy is kept in a global slot (`Symbol.for("wcstack.trustedTypes.internal")`). Any script running on the page can therefore read it and use its `createHTML` as a Trusted Types bypass gadget. This does not weaken the DOM-XSS case Trusted Types is aimed at — reaching the slot requires script execution, which is already game over — but it is the price of the single shared policy name, and it is stated here because a policy review will ask. Giving each package its own policy name would remove the global slot at the cost of one CSP entry per package.
-- Trusted Types ships in Chromium only. Elsewhere every path above is a pass-through.
+- Trusted Types is enforced in Chromium (83), Safari (26) and Firefox (checked in Firefox 151, 2026-10). In an older browser every path above is a pass-through — test under enforcement in each browser you support.
+- **Your own components are sinks too.** A component that writes its shadow tree with `this.shadowRoot.innerHTML = …` — the form the state and autoloader READMEs show — is blocked under `require-trusted-types-for 'script'` ("This document requires 'TrustedHTML' assignment"), and renders nothing. wcstack does not sign it: build the tree with DOM calls (`createElement`, `append`, a `<template>`'s `content.cloneNode(true)`), or create a policy of your own for the component's literal markup and name it in `trusted-types`.
 - All four sinks, both failure paths and the fallback are pinned against an enforcing Chromium in [e2e/tests/trusted-types.spec.ts](../e2e/tests/trusted-types.spec.ts) (fixtures `e2e/fixtures/trusted-types-*.html`); the unit suites can only stub the sinks because happy-dom has no Trusted Types.
 - Dynamic `import()` — state's inline `<script>`, router guard handlers, the autoloader — is **not** a Trusted Types sink. It is governed by `script-src` (§4, §5, §9).
 - The DCC switch to node cloning carries one behavior change: cloning a `script` element copies its already-started flag, so an inline `<script>` inside a DCC template no longer runs natively once per instance. The state definition inside `<wcs-state>` is unaffected — it evaluates `script.text` itself (§4).

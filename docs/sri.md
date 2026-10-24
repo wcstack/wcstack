@@ -50,7 +50,7 @@ curl -sL https://cdn.jsdelivr.net/npm/@wcstack/state@1.26.0/dist/auto.min.js \
   | openssl dgst -sha384 -binary | openssl base64 -A
 ```
 
-**The same digests double as CSP `script-src` hash sources.** CSP3 has a path that admits an external script whose `integrity` digest matches a hash source in `script-src`, so nothing needs computing separately for CSP. The catch is that only Chromium implements the matching; Firefox and Safari block on it. Details and constraints: [csp.md §3.2](./csp.md#32-hashing-the-external-bundle--the-value-is-the-sri-digest).
+**The same digests double as CSP `script-src` hash sources.** CSP3 has a path that admits an external script whose `integrity` digest matches a hash source in `script-src`, so nothing needs computing separately for CSP. Chromium, Firefox (115) and Safari implement the matching (checked in Chromium 149, Firefox 151 and WebKit 26.5, 2026-10); an older browser blocks the script. Details and constraints: [csp.md §3.2](./csp.md#32-hashing-the-external-bundle--the-value-is-the-sri-digest).
 
 ## 3. SRI cannot work through `esm.run`
 
@@ -114,7 +114,7 @@ node -e "const s=require('fs').readFileSync('packages/state/dist/auto.min.js','u
 
 ## 5. To protect named imports, use import map integrity
 
-The named-import style (`import { bootstrapState } from '…'`) against `dist/index.esm.js` cannot be protected by a `<script>` integrity attribute, because an `import` inside a module is a separate request. The mechanism for that is the `integrity` key of an import map, **shipped in Chrome 127 and Safari 18; Firefox does not support it**.
+The named-import style (`import { bootstrapState } from '…'`) against `dist/index.esm.js` cannot be protected by a `<script>` integrity attribute, because an `import` inside a module is a separate request. The mechanism for that is the `integrity` key of an import map, **shipped in Chrome 127, Safari 18 and Firefox 138**. An older browser ignores the key without a word: the import still runs, unchecked.
 
 ```html
 <script type="importmap" nonce="{RANDOM}">
@@ -129,7 +129,7 @@ The named-import style (`import { bootstrapState } from '…'`) against `dist/in
 </script>
 ```
 
-If you want protection in every browser, the single-tag `dist/auto.min.js` form rather than named imports is the surest route.
+If you want protection in older browsers too, the single-tag `dist/auto.min.js` form rather than named imports is the surest route.
 
 ### 5.1 The split entries of `@wcstack/state`
 
@@ -142,22 +142,30 @@ cover them, and every URL needs its own digest — the entry, each feature, and 
 <script type="importmap" nonce="{RANDOM}">
 {
   "imports": {
-    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/core.js",
-    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/features/temporal.js"
+    "@wcstack/state/core": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/core.js",
+    "@wcstack/state/features/temporal": "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/features/temporal.js"
   },
   "integrity": {
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/core.js": "sha384-…",
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/features/temporal.js": "sha384-…",
-    "https://cdn.jsdelivr.net/npm/@wcstack/state@3.5.4/dist/split/chunks/binder.js": "sha384-…"
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/core.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/features/temporal.js": "sha384-…",
+    "https://cdn.jsdelivr.net/npm/@wcstack/state@4.6.2/dist/split/chunks/chunk-467LYA2V.js": "sha384-…",
+    "…": "every other file of dist/split/chunks/"
   }
 }
 </script>
 ```
 
-In 3.x, chunk file names carry no hash, so a digest is tied to a pinned version rather than to a
-build. From 4.0 they carry a content hash (`dist/split/chunks/chunk-<hash>.js`): take the names
-from the `dist/split/chunks/` of the version you pin. A page that wants protection in every browser
-uses the single-tag `dist/auto.min.js` form, which the split entries deliberately do not replace.
+From 4.0 the chunk file names carry a content hash (`dist/split/chunks/chunk-<hash>.js`), so the list
+belongs to one build. **Take the whole list from the release of the version you pin**: since 4.7, each
+release's `sri.json` carries every file of `dist/split` under `packages["@wcstack/state"].split`, and
+the release notes give the import map block — the entries, every feature and every chunk — to copy.
+Do not write it by hand or keep it across a version bump: an `integrity` entry for a URL nobody
+requests is ignored, and a requested URL without one is not checked — both without a word, so a list
+from another build leaves every chunk unprotected while the page works (checked in Chromium,
+Firefox and WebKit). Up to 4.6 `sri.json` had `auto.min.js` only; compute the digests from the npm
+tarball's files as in §2 (the tarball is byte-equivalent to the tag). A page that wants protection in
+older browsers too uses the single-tag `dist/auto.min.js` form, which the split entries deliberately
+do not replace.
 
 ### 5.2 The split auto entry of `@wcstack/state` (4.0)
 
@@ -168,8 +176,9 @@ on that tag covers `auto.js` itself and nothing else: it imports the shared chun
 `<wcs-state features>` and the states' `$features` give) dynamically, each a request of its own
 outside the tag's integrity.
 
-- As in §5.1, only the import map's `integrity` key can cover those requests (Chromium and Safari),
-  one digest per URL: each chunk, and each feature the page may load.
+- As in §5.1, only the import map's `integrity` key can cover those requests (Chromium, Safari,
+  Firefox 138+), one digest per URL: each chunk, and each feature the page may load — the list in
+  the release's `sri.json` (since 4.7).
 - What it can load is fixed by the build: the features are resolved against `auto.js`'s own URL and
   only the eight known names are accepted, so markup or a fetched state cannot make the page import
   another URL, and everything comes from the same version as `auto.js`.
@@ -183,3 +192,11 @@ outside the tag's integrity.
 2. `dist/auto.min.js` is a real bundler entry, not a hand-written stub that gets copied — a Rollup entry ([config-templates/rollup.config.js](../config-templates/rollup.config.js)), or in `@wcstack/state` 4.0 an esbuild entry of its `build.mjs`
 3. Digests are computed from the tree being published. They MUST NOT be taken from a CDN response
 4. New packages are picked up automatically by [scripts/generate-sri.mjs](../scripts/generate-sri.mjs). Packages with no `dist/auto.min.js` are listed explicitly under `withoutBootstrap`, so none of them can drop out silently
+
+## 7. Self-hosting the published files
+
+Serving the packages from your own server (`npm install`, then the files of `dist/`) keeps every rule above, and adds one: **the version goes in the URL** — `/vendor/@wcstack/state@4.6.2/dist/split/core.js`, not `/vendor/state/dist/split/core.js` — and the old versions stay on the server after a deploy.
+
+- Only a URL that names its version may be cached as `immutable`. The bootstrap (`dist/auto.min.js`) and the add-ons (`dist/split/features/*.js`) keep their names across versions: replaced in place under long-lived caching, a returning visitor's browser keeps the old bytes and refuses them against the new page's digests (the page is dead until the cache is cleared — checked in Chromium and Firefox), or mixes a new core with cached old add-ons (WebKit).
+- A tab still open on the old version keeps loading what it has not loaded yet — a route's add-ons, an autoloaded component — and gets the new files from an unversioned URL. An add-on from another build is refused since 4.7 (`[wcs/feature-foreign]`; up to 4.6 a `$watch` from it never ran). With versioned URLs the old tab loads its own version.
+- The digests are the release's: the files in the npm tarball are the published ones (§2).

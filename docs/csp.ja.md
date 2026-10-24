@@ -97,7 +97,7 @@ nonce を発行できない配信形態ではハッシュに置き換えられ�
 | 対象 | `'nonce-…'` | ハッシュ | 補足 |
 |---|---|---|---|
 | インライン import map（§2） | ○ | ○（`sha256` / `384` / `512` のいずれか） | ダイジェストは `<script>` の中身に対して算出する（§3.1） |
-| 外部 `dist/auto.min.js`（`<script src integrity>`） | ○ | **Chromium のみ**（`sha384`） | `integrity` と同じ値。wcstack が配るのは sha384（§3.2） |
+| 外部 `dist/auto.min.js`（`<script src integrity>`） | ○ | Chromium・Firefox 115 以降・Safari（`sha384`） | `integrity` と同じ値。wcstack が配るのは sha384（§3.2） |
 | `<wcs-state>` の内包 `<script type="module">`（§4） | ○（state を読み込む `<script>` に付ける） | × | blob: URL 経由。インラインスクリプトとして照合されない |
 | `<wcs-route>` のガード（§5） | ○（router を読み込む `<script>` に付ける） | × | 同上。`src=` 退避は存在しない |
 | `<script type="application/json">` の state（§4） | 不要 | 不要 | 実行されないので `script-src` の対象外 |
@@ -140,7 +140,7 @@ script-src 'self' 'sha384-{auto.min.js のダイジェスト}';
 
 制約が 3 つある:
 
-1. **Chromium のみ**（Firefox は [bug 1409200](https://bugzilla.mozilla.org/show_bug.cgi?id=1409200) で未実装、Safari も未対応）。他の 2 ブラウザではハッシュ式が一致せずブロックされるので、実質的には §1 のホスト列挙を併記することになる。つまりこのハッシュ式は「Chromium でホスト許可を絞れる」以上の意味を持たない
+1. **Chromium・Firefox（115、[bug 1409200](https://bugzilla.mozilla.org/show_bug.cgi?id=1409200)）・Safari** が実装している（2026-10 に Chromium 149・Firefox 151・WebKit 26.5 で確認）。古いブラウザではハッシュ式が一致せずブロックされるので、それを支えるなら §1 のホスト列挙を併記する
 2. **`integrity` 属性に書いたダイジェストは全部 `script-src` に列挙する。** 複数アルゴリズムを併記した場合、そのうち 1 つでも `script-src` に無ければ許可されない
 3. **`<script>` タグの数だけハッシュ式が増える。** 多くのパッケージを読むページではホスト列挙 1 行のほうが短い
 
@@ -180,7 +180,9 @@ state はインライン `<script>` のテキストを取り出し、blob: URL �
 知っておくべき相互作用が 1 つある: ページが `<base href>` を設定している場合
 — i18n のロケール basename パターンがまさにそれをする（[i18n-design.md §9-1-4](./i18n-design.md)）—
 **相対**の `src="./state.js"` はページではなく base 基準（`/ja/state.js`）で
-解決されて 404 になる。`<base>` の下ではルート絶対で書くこと: `src="/state.js"`。
+解決されて 404 になる。`<base>` の下ではルート絶対で書くこと: `src="/state.js"`。lint は `src` をページからの
+相対パスで読むので、ルート絶対のものは読めない: 4.7 からそれを告げる（`wcs/state-src-unread`、info）— その state の
+パスもスクリプトの規則も検査されない。lint の読める並びの写しを持つか、state をインラインにしたページで検査すること。
 
 ## 5. router のガード — nonce か blob:
 
@@ -256,12 +258,13 @@ sanitize する policy なら、**`TrustedHTML` を返すこと**を確認する
 
 state のプロパティ書き込み経路は setter の例外を意図的に握り潰す設計（要素が値を拒否してよい）ため、以前はここが**無言で壊れていた**。強制されているかどうかはエラーメッセージの文言ではなく使い捨て要素への実書き込みで判定するので、`default` policy を置いているページは正しく「ブロックされていない」と判断される。
 
-`@wcstack/state` 4.0 では、state の行は診断の後付け（`@wcstack/state` と `/auto` は入れている）が出す。探りは入れない: Trusted Types のあるブラウザで HTML の sink への書き込みが `TypeError` で失敗したとき、ページにつき 1 回出し、その失敗はほかの当てられなかったバインディングと同じく報告される —— `$errorCallback` へ、無ければコンソールに `binding "<type>: <path>" failed to apply.`。診断の後付けの無い `/core` では、バインディングの失敗だけが報告される（コンソールに `#12` と、ブラウザのエラー）。
+`@wcstack/state` 4.0 では、state の行は診断の後付け（`@wcstack/state` と `/auto` は入れている）が出す。探りは入れない: Trusted Types のあるブラウザで HTML の sink への書き込みが `TypeError` で失敗したとき、ページにつき 1 回出し、その失敗はほかの当てられなかったバインディングと同じく報告される —— `$errorCallback` へ、無ければ `binding "<type>: <path>" failed to apply.` として（4.7 から `reportError()` を通るので、ページのエラーハンドラにも届く）。診断の後付けの無い `/core` では、バインディングの失敗だけが報告される（コンソールに `#12` と、ブラウザのエラー）。
 
 ### 補足
 
 - **共有 policy オブジェクトはページのスクリプトから読める。** `wcstack` をパッケージ横断で 1 度だけ生成するために、生成結果をグローバルスロット（`Symbol.for("wcstack.trustedTypes.internal")`）に置いている。したがってページ上の任意のスクリプトがそれを読み、`createHTML` を Trusted Types のバイパスガジェットとして使える。Trusted Types が本来狙う DOM XSS の防御を弱めるものではない（スロットに到達するには既にスクリプト実行が要る＝その時点で勝負はついている）が、単一 policy 名を選んだ代償であり、ポリシーレビューで必ず訊かれるのでここに書いておく。パッケージごとに policy 名を分ければグローバルスロットは不要になるが、CSP の記載がパッケージ数だけ増える。
-- Trusted Types は Chromium のみ。他のエンジンでは上記の経路はすべて素通し。
+- Trusted Types は Chromium（83）・Safari（26）・Firefox（2026-10 に Firefox 151 で確認）が強制する。古いブラウザでは上記の経路はすべて素通し — 支える各ブラウザで、強制の下で試すこと。
+- **自分の部品も sink になる。** 影の木を `this.shadowRoot.innerHTML = …` で書く部品 — state と autoloader の README が示す形 — は `require-trusted-types-for 'script'` の下で止められ（"This document requires 'TrustedHTML' assignment"）、何も描かない。wcstack はそれに署名しない: 木を DOM の呼び出し（`createElement`・`append`・`<template>` の `content.cloneNode(true)`）で組むか、部品のリテラルのマークアップ用に自分の policy を作り、`trusted-types` に名前を書く。
 - 4 つの sink・両方の失敗経路・フォールバックは、強制モードの実 Chromium で [e2e/tests/trusted-types.spec.ts](../e2e/tests/trusted-types.spec.ts)（fixture は `e2e/fixtures/trusted-types-*.html`）が固定している。happy-dom に Trusted Types が無いため、単体テストは sink をスタブすることしかできない。
 - 動的 `import()`（state のインライン `<script>`、router のガードハンドラ、autoloader）は Trusted Types の sink **ではない**。こちらは `script-src` の管轄（§4・§5・§9）。
 - DCC のノードクローン化には挙動差が 1 つある: script 要素はクローン時に already-started フラグを引き継ぐため、DCC テンプレート内のインライン `<script>` がインスタンスごとにネイティブ実行されなくなる。`<wcs-state>` の状態定義は `script.text` を自前で評価する実装なので影響を受けない（§4）。

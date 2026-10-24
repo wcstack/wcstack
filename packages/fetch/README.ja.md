@@ -73,6 +73,8 @@ npm install @wcstack/fetch
 </ul>
 ```
 
+`value` は最初の応答まで `null` で、束縛は付くときにそれを state へ書くので、種の `users: []` はすぐに置き換わります。`for:` は `null` では何も描きません。リストを読む getter は `this.users ?? []` と書きます。
+
 これがデフォルトモードです:
 
 - `url` を接続

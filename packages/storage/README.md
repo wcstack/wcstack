@@ -111,11 +111,12 @@ The most common shape: several inputs, one storage key, restored on reload. Give
 2. Typing writes `form.name` → `formSnapshot` is dirty → its binding applies the new object to `value` → saved
 3. The save's own `value` event is dispatched while state writes `value`, with the same object: it is state's own write coming back, which is not written to the state ([the rule](../state/README.md#what-the-element-writes-back-propertiesgetter)). The setter runs on load, and when another tab saves the key — its object is a new one. Across tabs the key is one unit: the last save wins
 
-Three details that are easy to get wrong:
+Four details that are easy to get wrong:
 
 - A draft that belongs to one window (a form half filled in) wants `type="session"`: it survives a reload, and a second tab gets its own. With `localStorage` (the default) the second tab's typing replaces the first tab's draft as it is saved.
 
 - Read fields as `this["form.name"]`, **not** `this.form.name`. The second form registers a dependency on `form` only (`.name` is a plain property access on the returned object), so editing a field never re-evaluates the getter — see [Dependency tracking boundaries](../state/README.md#dependency-tracking-boundaries).
+- A stored value outlives a deploy. The key holds what the previous version of the app saved, and a tab still open on the previous version receives what the new one saves (the `storage` event), and the reverse — without a word when the shape changed. Keep a version in the stored object and migrate in the setter, or change the key with the shape.
 - With an empty key the first load writes the seed object once: `null` goes through the setter, and a write to an accessor pair always re-evaluates the getter. Nothing persisted is ever overwritten — a stored object is restored, then re-saved unchanged.
 
 Why not bind `value` straight to `form`? A binding is re-applied only when its own path is assigned. A write to `form.name` — or, for a list, to `cart.0.quantity` — does not re-apply `value: form`, so the change is never saved: no error, and a reload brings back the old value. The getter above reads every field by path, so it re-evaluates on each edit. A list works the same way: a row getter that returns what to save and `$getAll` to collect it (`get "cart.*.saved"() { … }`, `get savedCart() { return this.$getAll("cart.*.saved", []); }`). `wcs-validate` reports the direct form as `wcs/input-nested-write`, `#init=element` on a slot seeded with anything but `null` as `wcs/storage-init-seed`, and an accessor pair bound without `#init=element` (whose getter's starting value is saved over the stored one) as `wcs/storage-seed-clobber`.
