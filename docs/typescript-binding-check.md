@@ -230,7 +230,7 @@ The type prints as `__WcsBindView<__T0>` (`Property 'coutn' does not exist on ty
 
 ## 8. Decisions for the author
 
-1. **Whether and when**: ship with the content mapper (planned as experimental in 4.7) as an option `bindings` (on by default), or after the content mapper is stable. Recommended: with the content mapper — no false reports on correct pages and 97.3% of typos caught were measured, and the canary makes a stopped check visible.
+1. **Whether and when**: ship with the content mapper (planned as experimental in the first minor after TypeScript 7.1 is stable) as an option `bindings` (on by default), or after the content mapper is stable. Recommended: with the content mapper — no false reports on correct pages and 97.3% of typos caught were measured, and the canary makes a stopped check visible.
 2. **The language plugin too** (`wcs-tsc` on 5 / 6, Volar in the editor)? It would give 5 / 6's `wcs-tsc` and the extension the same verdicts and hover, but in the extension it overlaps `wcs-validate`'s warnings. Recommended: the content mapper first; the plugin together with the editor-overlap decision (option A).
 3. **Element property types**: leave out, or add the relaxed form? Recommended: leave out (it either misreports or catches nothing).
 4. **Import `src` states**? It widens the checks but brings the `src` file into the program. Recommended: import, document the side effect, and let the canary report a collapsed type.

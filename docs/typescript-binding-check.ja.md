@@ -228,7 +228,7 @@ const __s0g = null as unknown as __WcsBindView<Omit<__T0, "cards"> & { readonly 
 
 ## 8. 著者の決定
 
-1. **入れるか・いつ**: content mapper（4.7 で experimental の予定）と同じ版で、オプション `bindings`（既定 on）として入れるか、content mapper が stable になってから入れるか。推奨: 同じ版で入れる。正しいページで誤報 0・検出 97.3% と測れており、カナリアで止まったことも見える。
+1. **入れるか・いつ**: content mapper（TypeScript 7.1 の stable の後の最初の minor で experimental の予定）と同じ版で、オプション `bindings`（既定 on）として入れるか、content mapper が stable になってから入れるか。推奨: 同じ版で入れる。正しいページで誤報 0・検出 97.3% と測れており、カナリアで止まったことも見える。
 2. **言語プラグイン（5 / 6 の `wcs-tsc`・Volar のエディタ）にも入れるか**: 入れれば 5 / 6 の `wcs-tsc` と拡張でも同じ判定と hover になる。ただし拡張では `wcs-validate` の warning と重なる。推奨: まず content mapper だけ。プラグインへは、エディタの重なりの方針（案 A）と一緒に。
 3. **要素のプロパティの型**: 入れないか、緩めた形で入れるか。推奨: 入れない（誤報か、何も捕まえないかのどちらか）。
 4. **`src` の state を import するか**: 検査の範囲は広がるが、`src` のファイルが program に入る副作用がある。推奨: import する。副作用は文書に書き、型が崩れた場合はカナリアが知らせる。
