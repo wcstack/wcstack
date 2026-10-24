@@ -709,7 +709,14 @@ describe('表示面の空値契約（要件 B8）と書式フィルタ', () => {
   it('値の型を検査するフィルタは今も落ちること（1 本に閉じ込められ $errorCallback に載る）', () => {
     expect(() => getFilter('toFixed', ['2'])(undefined)).toThrow(/requires a number value/);
     expect(() => getFilter('join')(undefined)).toThrow(/requires an array value/);
-    expect(() => getFilter('date')(undefined)).toThrow(/requires a date value/);
+  });
+
+  it('日付の系統は値の無いとき素通しし（後から届く日付）、別の型は今も落ちること', () => {
+    for (const name of ['date', 'time', 'datetime', 'ymd', 'hms']) {
+      expect(getFilter(name)(undefined), name).toBe(undefined);
+      expect(getFilter(name)(null), name).toBe(null);
+      expect(() => getFilter(name)('2026-10-13'), name).toThrow(/requires a date value/);
+    }
   });
 });
 

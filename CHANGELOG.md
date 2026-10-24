@@ -18,6 +18,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 - `@wcstack/state`: **errors reach a production error reporter.** A `<wcs-state>` that fails to initialize, a binding that fails to apply (with no `$errorCallback`), a getter, filter, event handler, lifecycle callback, `$watch` handler or token subscriber that throws, and an update loop the engine cuts are reported through `reportError()`. The reported `Error` carries the engine's message and the original error, which is its `cause`. A reporter built on `window.onerror` heard none of them — not even a page that failed to initialize as a whole. The state README has a section, "Reporting errors in production".
 - `@wcstack/state`: **`installFeatures` refuses an add-on of another copy of the engine** — `[wcs/feature-foreign]`. The split entries loaded through `esm.run`, two versions on one page, or a self-hosted directory replaced in place while a tab still runs the old core: the add-on filled the other copy's slots, so a `$watch` never ran, without a word, and a filter of `formats` was reported missing on a page that installed it. Every add-on carries its build's slots, and the core checks they are its own.
 
+### Changed
+
+- `@wcstack/state` (`formats`): **the date filters pass an absent value through.** `date`, `time`, `datetime`, `ymd` and `hms` render nothing for `undefined` / `null`, as the formatting family does. A date that arrives later (a fetch, a route) was reported as a failed binding on every load, and no `coalesce` value could stand for a missing date. A value of another type is still rejected.
+
 ### Fixed
 
 - `@wcstack/router`: **a reload the page asks for reloads the document.** `location.reload()`, `history.go(0)` and `navigation.reload()` were taken as a route change in the same document, so an "update available — reload" button, a service worker's update flow, or `<wcs-devtools>`' one-click reload did nothing, in every browser with the Navigation API.
