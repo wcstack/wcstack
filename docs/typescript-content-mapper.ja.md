@@ -207,3 +207,4 @@ content mapper は `wcs-schema` に触れない。`wcs-schema` は `.ts` / `.js`
 - [microsoft/TypeScript#63800 — API usage patterns for complex editor extensions](https://github.com/microsoft/TypeScript/issues/63800)
 - [DanielRosenwasser/content-mapper-sample](https://github.com/DanielRosenwasser/content-mapper-sample)（`<script>` とイベントハンドラ属性を扱う HTML の mapper）
 - [typescript.ja.md](./typescript.ja.md) §4 — `wcs-tsc` と言語プラグイン
+- [typescript-binding-check.ja.md](./typescript-binding-check.ja.md) — mapper を通して `data-wcs` の結び付けを検査する（検討と試作）
