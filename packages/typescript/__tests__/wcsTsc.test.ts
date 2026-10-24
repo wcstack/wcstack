@@ -158,6 +158,17 @@ describe("main — プロセス内（runTsc を差し替え）", () => {
     const noTs = run([], tmp.dir, { resolve: (id, cwd) => (id.startsWith("typescript") ? undefined : resolveFromProject(id, cwd)) });
     expect(noTs.code).toBe(2);
     expect(noTs.stderr).toContain("needs typescript");
+    expect(noTs.stderr).toContain("npm i -D typescript@6");
+  });
+
+  it("TypeScript 7 なら 2（版を名指しし 5 か 6 を案内。Volar より先に言う）", () => {
+    const fakePackage = join(tmp.dir, "ts7", "typescript", "package.json");
+    const ts7 = run([], tmp.dir, {
+      resolve: (id, cwd) => (id === "typescript/package.json" ? fakePackage : id.startsWith("@volar/") ? undefined : resolveFromProject(id, cwd)),
+      load: (p) => (p === fakePackage ? { version: "7.0.2" } : realRequire(p)),
+    });
+    expect(ts7.code).toBe(2);
+    expect(ts7.stderr).toBe("wcs-tsc: @wcstack/typescript runs on TypeScript 5 or 6, and the project has TypeScript 7.0.2, which has no JavaScript compiler API: npm i -D typescript@6\n");
   });
 
   it("runTsc に .html 拡張・tsc モードの plugin・URL import の ambient 宣言を渡し、argv を組み立て、後始末する", () => {

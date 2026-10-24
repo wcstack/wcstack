@@ -9,12 +9,12 @@
 `@wcstack/typescript` closes that gap with one command. `wcs-schema` compiles the state file with the TypeScript compiler API and writes the sidecar `wcstack.manifest.json` `stateSchema` that the validator consumes — in CI and in every editor. The manifest is a **derived artifact**: the type stays the source of truth, and `wcs-schema check` fails CI when they drift.
 
 ```bash
-npm install -D @wcstack/typescript typescript
+npm install -D @wcstack/typescript typescript@6
 npx wcs-schema emit src/state.ts          # writes ./wcstack.manifest.json
 npx wcs-validate --strict index.html      # typos are now errors, false warnings are gone
 ```
 
-Zero runtime dependencies. `typescript` is a peer dependency — the project's own compiler is used.
+Zero runtime dependencies. `typescript` is a peer dependency — the project's own compiler is used. It must be TypeScript 5 or 6: TypeScript 7 publishes no JavaScript compiler API (`typescript` exports only its version, and there is no `typescript/lib/tsc.js`) for either command to call.
 
 ## Commands
 
