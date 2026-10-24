@@ -16,6 +16,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 - `@wcstack/router`: **a reload the page asks for reloads the document.** `location.reload()`, `history.go(0)` and `navigation.reload()` were taken as a route change in the same document, so an "update available — reload" button, a service worker's update flow, or `<wcs-devtools>`' one-click reload did nothing, in every browser with the Navigation API.
 - `@wcstack/router`: **`<wcs-head>` leaves an unchanged `<head>` element in place.** Each route change replaced every element of `<head>` with a copy — stylesheets were requested again, and WebKit reported a `base-uri` violation for the re-inserted `<base>` on every navigation. An element with bindings is still replaced by the copy it binds.
+- `@wcstack/autoloader`: **a custom element outside every `@components/` namespace no longer stops autoloading.** One such element — another library's tag, or a `<wcs-link>` / `<wcs-state>` whose package was not evaluated yet (the autoloader's script placed first, or the split auto entry, which defines `<wcs-state>` late) — ended the scan with an unhandled `No matching namespace found`; on the first scan the observer was never installed, so no component of the page loaded, nor any added later. When an integrity failure blocked a wcstack script, that rejection was the only thing a page's error reporter received.
 
 ## [4.6.2] — 2026-10-24
 

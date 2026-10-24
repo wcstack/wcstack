@@ -142,14 +142,14 @@ describe('lazyLoad', () => {
     expect(customElements.define).toHaveBeenCalledWith('ui-input', mockConstructor);
   });
 
-  it('マッチするprefixがない要素の場合、エラーをthrowすること', async () => {
+  it('マッチするprefixがない要素は読みに行かず、後ろの名前空間の要素は読み、監視も始めること', async () => {
     const mockLoader: ILoader = {
       postfix: '.js',
-      loader: vi.fn()
+      loader: vi.fn().mockImplementation(async () => class extends HTMLElement {})
     };
     const config = {
       loaders: { [DEFAULT_KEY]: mockLoader },
-      observable: false,
+      observable: true,
     };
     const prefixMap = {
       'ui': {
@@ -160,10 +160,15 @@ describe('lazyLoad', () => {
       }
     };
 
-    document.body.innerHTML = '<other-element></other-element>';
+    // 別のライブラリのタグが、ページの部品より前にある
+    document.body.innerHTML = '<other-element></other-element><ui-button></ui-button>';
 
-    await expect(handlerForLazyLoad(document, config, prefixMap)).rejects.toThrow(/No matching namespace found/);
-    expect(mockLoader.loader).not.toHaveBeenCalled();
+    const mo = await handlerForLazyLoad(document, config, prefixMap);
+
+    expect(mockLoader.loader).toHaveBeenCalledTimes(1);
+    expect(mockLoader.loader).toHaveBeenCalledWith('@components/ui/button.js');
+    expect(mo).not.toBeNull();
+    mo?.disconnect();
   });
 
   it('loader失敗時はthrowせずconsole.errorを出力すること', async () => {
