@@ -16,6 +16,8 @@
 /** An add-on entry: `installFeatures([temporal, diagnostics])` before the state is defined. */
 interface Feature {
     readonly name: string;
+    /** The slots of the build it comes from: it fills only those (the core checks they are its own). */
+    readonly hooks: object;
     install(): void;
 }
 

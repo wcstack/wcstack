@@ -284,7 +284,7 @@ interface IGuardContext {          // 進入先マッチの frozen スナップ�
 - 第 3 引数に進入先マッチ（`params` / `typedParams` / `searchParams` / `routeName`）が渡る。`toPath` / `fromPath` は basename スライス後のパス
 - 中に置いた `<wcs-route>` を守る。その中のどこに置いてもよい — 入れ子のルートの前でも後でも、要素の中でも。親のガードは、子のルートへのナビゲーションでも走る
 - どの `<wcs-route>` の外に置いたものも、`console.error`（`[wcs/guard-handler-ignored]`）で報告する。同じ階層で前にルートがあれば、4.3 より前と同じくそのルートを守り続ける — 中へ移すこと。前にルートが無ければ何も守らない
-- `<script type="module">` がない場合 — HTML を処理するバンドラが取り去ることがある — guard は動かせず、ルートへのナビゲーションはすべて `guard` のパス（既定 `/`）へリダイレクトする。スクリプトの読み込みに失敗したときと同じ。`console.error`（`[wcs/guard-handler-ignored]`）で報告する。4.6 まではルートを守らずに表示した — `guard` 属性があると、逆に表示しなかった。4.7（未リリース）から閉じる側に倒す
+- `<script type="module">` がない場合 — HTML を処理するバンドラが取り去ることがある — guard は動かせず、ルートへのナビゲーションはすべて `guard` のパス（既定 `/`）へリダイレクトする。スクリプトの読み込みに失敗したときと同じ。`console.error`（`[wcs/guard-handler-ignored]`）で報告する。4.6 まではルートを守らずに表示した — `guard` 属性があると、逆に表示しなかった。4.7 から閉じる側に倒す
 - **Content-Security-Policy 下では**、ガードスクリプトは `blob:` URL 経由で評価されるため、router を読み込む `<script>` にページの nonce を付けるか（blob: の import がその nonce を引き継ぐ）、`script-src blob:` が必要（blob: の import が失敗すると router は `data:` URL で読み直すので `script-src data:` でも通るが、危険の大きい source なので開けないこと）。ガードはインライン専用で、`<wcs-state>` のような `src=` 退避経路は存在しない。詳細は [docs/csp.ja.md](../../docs/csp.ja.md)
 - **`require-trusted-types-for 'script'` 下では**、`<wcs-layout>` のテンプレート展開が `wcstack` という名前の Trusted Types policy を通るため、CSP に `trusted-types wcstack;` が必要（または自前の policy を注入する。詳細は [docs/csp.ja.md](../../docs/csp.ja.md) の §7）
 
@@ -468,7 +468,7 @@ a.active { font-weight: bold; color: blue; }
 
 **素の `<a>` について**: Navigation API のあるブラウザでは、basename 配下の素の `<a href="/about">` も SPA 遷移になる（router が intercept する）。フォールバックブラウザでは成立しない（SPA 経路は `<wcs-link>` の click ハンドラのみ）ため、推奨は `<wcs-link>` のまま。
 
-**読み直しについて**: 4.7（未リリース）から、ページが求める読み直し — `location.reload()`・`history.go(0)`・`navigation.reload()` — は文書を読み直す。`leaveConfirm` があればブラウザ自身の確認が出る。4.6 までは router が同じ文書の中のルートの遷移として受けたので、「更新があります — 再読み込み」のボタンも Service Worker の更新も効かなかった。basename 配下のほかのナビゲーションは、`location.replace(location.href)` も含めて SPA の遷移のまま。
+**読み直しについて**: 4.7 から、ページが求める読み直し — `location.reload()`・`history.go(0)`・`navigation.reload()` — は文書を読み直す。`leaveConfirm` があればブラウザ自身の確認が出る。4.6 までは router が同じ文書の中のルートの遷移として受けたので、「更新があります — 再読み込み」のボタンも Service Worker の更新も効かなかった。basename 配下のほかのナビゲーションは、`location.replace(location.href)` も含めて SPA の遷移のまま。
 
 ## 自動バインディング (`data-bind`)
 

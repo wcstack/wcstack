@@ -426,11 +426,11 @@ var registered = {
   percent: { factory: percent, arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
   // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
-  date: { factory: date, arity: [0, 2] },
-  time: { factory: time, arity: [0, 2] },
-  datetime: { factory: datetime, arity: [0, 2] },
-  ymd: { factory: ymd, arity: [0, 1] },
-  hms: { factory: hms, arity: [0, 1] },
+  date: { factory: nullishPassthrough(date), arity: [0, 2] },
+  time: { factory: nullishPassthrough(time), arity: [0, 2] },
+  datetime: { factory: nullishPassthrough(datetime), arity: [0, 2] },
+  ymd: { factory: nullishPassthrough(ymd), arity: [0, 1] },
+  hms: { factory: nullishPassthrough(hms), arity: [0, 1] },
   // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
   eq: eq2,
   ne: ne2,

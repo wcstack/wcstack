@@ -89,6 +89,9 @@ var WcsDiagnosticCode = {
   // lint の限界の告知（作者の誤りではない）: `export default { … }` のトップレベルの spread が持ち込むキーは読めないので、
   // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
+  // lint の限界の告知（作者の誤りではない）: 読めない `<wcs-state src>`（/ から始まるパス・URL・無いファイル）の state は
+  // パスもスクリプトの規則も検査しない — それを src の上で 1 回だけ言う。info（docs/seam-apps.md、prod-booking）。
+  StateSrcUnread: "wcs/state-src-unread",
   // --- existing binding-expression validators (retrofitted) ---
   FilterUnknown: "wcs/filter-unknown",
   FilterArity: "wcs/filter-arity",
@@ -2179,11 +2182,11 @@ var registered = {
   percent: { factory: percent, arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
   // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
-  date: { factory: date, arity: [0, 2] },
-  time: { factory: time, arity: [0, 2] },
-  datetime: { factory: datetime, arity: [0, 2] },
-  ymd: { factory: ymd, arity: [0, 1] },
-  hms: { factory: hms, arity: [0, 1] },
+  date: { factory: nullishPassthrough(date), arity: [0, 2] },
+  time: { factory: nullishPassthrough(time), arity: [0, 2] },
+  datetime: { factory: nullishPassthrough(datetime), arity: [0, 2] },
+  ymd: { factory: nullishPassthrough(ymd), arity: [0, 1] },
+  hms: { factory: nullishPassthrough(hms), arity: [0, 1] },
   // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
   eq: eq2,
   ne: ne2,
@@ -3408,11 +3411,21 @@ function expressionShape(text3, paths, aliases) {
   if (scan.startsWith("[")) {
     const inner = extractDelimitedContent(expr, scan, 0, "[", "]");
     rest = inner.length + 2;
-    const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
-    if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
-    const source = expressionShape(spread[1], paths, aliases);
-    if (source === null || !source.isList) return null;
-    shape = source;
+    if (inner.trim() === "") {
+      shape = EMPTY_LIST;
+    } else {
+      const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
+      if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
+      const source = expressionShape(spread[1], paths, aliases);
+      if (source === null || !source.isList) return null;
+      shape = source;
+    }
+  } else if (scan.startsWith("(")) {
+    const inner = extractDelimitedContent(expr, scan, 0, "(", ")");
+    const base = expressionShape(inner, paths, aliases);
+    if (base === null) return null;
+    shape = base;
+    rest = inner.length + 2;
   } else {
     const base = readBase(expr, scan, aliases, paths);
     if (base === null) return null;
@@ -3486,8 +3499,7 @@ function applyChain(expr, scan, start, initial) {
       if (!shape.isList) return null;
       shape = pickRow(shape);
     } else if (method === "map") {
-      if (!shape.isList) return null;
-      const mapped = mapRows(args, shape);
+      const mapped = mapRows(args, shape.isList ? shape : OPAQUE);
       if (mapped === null) return null;
       shape = mapped;
     } else {
@@ -3497,6 +3509,7 @@ function applyChain(expr, scan, start, initial) {
   return shape.opaque ? null : shape;
 }
 var OPAQUE = { isList: true, mirrors: [], fields: [], opaque: true };
+var EMPTY_LIST = { isList: true, mirrors: [], fields: [] };
 function pickRow(shape) {
   return {
     isList: false,
@@ -10944,6 +10957,7 @@ var ja = {
   commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.focus: ${t}\uFF09`,
   writePathMissing: (k) => `"${k}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u66F8\u304D\u8FBC\u307F\u306F\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
   readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
+  stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u3068 URL \u306F\u8AAD\u307F\u307E\u305B\u3093\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3057\u3066\u304F\u3060\u3055\u3044`,
   pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
   submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
@@ -11153,6 +11167,7 @@ var en = {
   commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
   writePathMissing: (k) => `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
   readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
+  stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a path from / or a URL is not read): point it at the file laid out as on the server, relative to this file`,
   pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
@@ -16981,6 +16996,27 @@ function nearName(path, tree) {
   return null;
 }
 
+// src/service/stateSourceValidator.ts
+function validateStateSources(html, stateTagName = "wcs-state", locale2, fileReader) {
+  if (fileReader === void 0) return [];
+  const out = [];
+  for (const element2 of parseWcsStateElements(html, stateTagName)) {
+    const src = element2.srcAttr;
+    const span = element2.srcSpan;
+    if (src === void 0 || span === void 0 || element2.stateAttr !== void 0 || element2.bindComponent) continue;
+    const readable = src.endsWith(".json") ? Boolean(fileReader(src)) : readStateScriptFile(src, fileReader) !== void 0;
+    if (readable) continue;
+    out.push({
+      code: WcsDiagnosticCode.StateSrcUnread,
+      start: span.start,
+      end: span.end,
+      message: getMessages(locale2).stateSrcUnread(src),
+      severity: "info"
+    });
+  }
+  return out;
+}
+
 // src/core/sidecar/jsonSource.ts
 var JsonReader = class {
   constructor(text3) {
@@ -17426,9 +17462,9 @@ function validateDocument(text3, options = {}) {
   const stateTagName = options.stateTagName ?? "wcs-state";
   const fileReader = options.fileReader;
   const applicationSchema = options.applicationSchema ?? (fileReader !== void 0 ? discoverApplicationManifest(fileReader)?.schema : void 0);
-  const found = validateText(text3, options, applicationSchema);
+  const found = [...validateText(text3, options, applicationSchema), ...validateStateSources(text3, stateTagName, options.locale, fileReader)];
   const page = fileReader === void 0 ? null : inlineExternalStates(text3, stateTagName, fileReader);
-  if (page === null) return found;
+  if (page === null) return sortDiagnostics(found);
   const key = (d) => [d.code, d.start, d.end, d.message, d.origin?.path, d.origin?.start].join("\0");
   const seen2 = new Set(found.map(key));
   const out = [...found];

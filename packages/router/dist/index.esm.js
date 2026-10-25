@@ -1733,7 +1733,12 @@ async function _parseNode(routerNode, node, routeParentNode, routesByPath) {
                     console.error(`[@wcstack/router] [wcs/guard-handler-ignored] A <${config.tagNames.guardHandler}> outside a <${config.tagNames.route}> guards nothing: put it inside the route it guards.`);
                 }
                 else if (!script) {
-                    console.error(`[@wcstack/router] [wcs/guard-handler-ignored] The <${config.tagNames.guardHandler}> of route "${route.absolutePath}" has no <script type="module">, so the route is not guarded.`);
+                    // スクリプトの無いハンドラは、読み込めなかったハンドラと同じく閉じる側に倒す: 守るはずのページを開けない。
+                    // バンドラが HTML のインラインスクリプトを取り去ると、この形になる。以前は「守られない」と知らせて開け、
+                    // `guard` 属性があれば知らせとは逆に、来ないハンドラを待って描かなかった（docs/seam-apps.md、prod-booking）
+                    route.enableGuard();
+                    route.notifyGuardHandlerLoadFailed();
+                    console.error(`[@wcstack/router] [wcs/guard-handler-ignored] The <${config.tagNames.guardHandler}> of route "${route.absolutePath}" has no <script type="module">, so its guard cannot run: every navigation into the route is redirected to "${route.getAttribute("guard") || "/"}".`);
                 }
                 else {
                     if (routeParentNode === null) {
@@ -3325,7 +3330,11 @@ class Router extends HTMLElement {
         // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
         navEvent.defaultPrevented ||
             navEvent.hashChange ||
-            navEvent.downloadRequest !== null) {
+            navEvent.downloadRequest !== null ||
+            // 読み直し（location.reload() / history.go(0) / navigation.reload()）は文書を読み直す。受けると同じ
+            // 文書でルートを描き直すだけになり、更新を促す「再読み込み」も Service Worker の更新も効かなかった
+            // （docs/seam-apps.md、prod-booking）。未保存の変更の確認は beforeunload の側（leaveConfirm）
+            navEvent.navigationType === "reload") {
             return;
         }
         const url = new URL(navEvent.destination.url);
@@ -4377,6 +4386,12 @@ class Head extends HTMLElement {
             }
             // headを更新
             const current = headElementMap.get(key) ?? null;
+            // 同じ要素は入れ直さない。入れ直すとスタイルシートを取り直し、<base> の差し替えは base-uri の
+            // CSP を毎回検査させる（WebKit は遷移ごとに違反を報告した — docs/seam-apps.md、prod-booking）。
+            // 束縛を持つ要素は、束ねたクローンを入れるため従来どおり入れ直す
+            if (targetElement && current?.isEqualNode(targetElement) && !hasBinding(targetElement)) {
+                continue;
+            }
             if (targetElement) {
                 if (current) {
                     current.replaceWith(targetElement);
@@ -4447,7 +4462,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.6.2";
+var version = "4.7.0";
 var pkg = {
 	version: version};
 

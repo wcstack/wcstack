@@ -294,7 +294,7 @@ bootstrapAutoloader({
 
 ### Error Handling
 
-- A custom element outside every `@components/` namespace — another library's tag, or a wcstack tag whose package has not been evaluated yet — is left alone. Up to 4.6 one such element ended the scan with `No matching namespace found`, and on the first scan no component of the page loaded, nor any added later; since 4.7 (not released yet) the scan goes on.
+- A custom element outside every `@components/` namespace — another library's tag, or a wcstack tag whose package has not been evaluated yet — is left alone. Up to 4.6 one such element ended the scan with `No matching namespace found`, and on the first scan no component of the page loaded, nor any added later; since 4.7 the scan goes on.
 - Components that fail to load are tracked internally and will not be retried on subsequent scans.
 - Duplicate loading is prevented: if a component is already being loaded, subsequent requests wait for the existing load to complete.
 
