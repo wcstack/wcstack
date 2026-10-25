@@ -60,6 +60,7 @@ import {
   jsDocShape,
   jsDocTypeHint,
   parseJsDocType,
+  readJsDocReturnsBefore,
   readJsDocTypeBefore,
   type JsDocType,
   type JsDocTypedefs,
@@ -141,6 +142,8 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
         const settable = !recursive && effective !== 'data' && effective.set;
         paths.push({ path: prop.name, kind: recursive ? 'recursive' : 'computed', ...(settable ? { settable } : {}) });
       }
+      // `@returns {T}` が宣言する戻りの形（本体から読めた形は collectGetterResultShapes が足す）
+      if (prop.declaredType !== undefined) pushDeclaredShapePaths(prop.name, prop.declaredType, paths, 0, typedefs);
       continue;
     }
 
@@ -1754,9 +1757,15 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
   // `allowEmptyDataKeys` は data の引用符付きキーに空文字（`"": …`）を許す。既定で拾わないのは
   // 補完候補に空のパスを作らないため。ただ拾わないと、値の中身（`"": { from: … }` の `from:`）を
   // トップレベルのプロパティと誤読するので、キーそのものを検証する `$scan` の解析だけが有効にする。
-  const regex = allowEmptyDataKeys
-    ? /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]*)"|'([^']*)'|([$\w]+))\s*:\s*)/gd
-    : /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
+  // 引数の並びは括弧の入れ子を 3 段まで読む（既定引数の呼び出し `id = crypto.randomUUID()`・
+  // 矢印関数 `cb = () => {}`）。`[^)]*` だけでは最初の `)` で止まり、メソッドが丸ごと消え、本体の
+  // `word:` をトップレベルのキーと読んでいた（docs/seam-apps.md、shift-desk）。
+  const params = String.raw`\((?:[^()]|\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))*\)`;
+  const dataKey = allowEmptyDataKeys ? String.raw`(?:"([^"]*)"|'([^']*)'|([$\w]+))` : String.raw`(?:"([^"]+)"|'([^']+)'|([$\w]+))`;
+  const regex = new RegExp(
+    String.raw`(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:${dataKey}\s*:\s*)`,
+    'gd',
+  );
 
   let match: RegExpExecArray | null;
   while ((match = regex.exec(scan)) !== null) {
@@ -1789,9 +1798,13 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
       // 正規表現は `(?:get|set)` を非捕捉で畳んでいる（群番号を動かさないため）。
       // マッチは必ず `get` / `set` のどちらかで始まるので先頭 3 文字で判別する。
       const accessor: 'get' | 'set' = match[0].startsWith('set') ? 'set' : 'get';
+      // getter の JSDoc `@returns {T}` — 本体から読めない戻りの形を宣言する
+      const returnsText = accessor === 'get' ? readJsDocReturnsBefore(objectContent, match.index) : undefined;
+      const declaredType = returnsText === undefined ? null : parseJsDocType(returnsText);
       props.push({
         name: accessorName, kind: 'getter', accessor, value: body, valueStart: bodyStart,
         nameStart: nameSpan![0], nameEnd: nameSpan![1],
+        ...(declaredType !== null ? { declaredType } : {}),
       });
       continue;
     }

@@ -113,7 +113,7 @@ The most common shape: several inputs, one storage key, restored on reload. Give
 
 Four details that are easy to get wrong:
 
-- A draft that belongs to one window (a form half filled in) wants `type="session"`: it survives a reload, and a second tab gets its own. With `localStorage` (the default) the second tab's typing replaces the first tab's draft as it is saved.
+- A draft that belongs to one window (a form half filled in) wants `type="session"`: it survives a reload, and a second tab gets its own. With `localStorage` (the default) the second tab's typing replaces the first tab's draft as it is saved. A draft that belongs to a record (a reply to a ticket) wants a key per record instead (`key: draftKey` with a getter on the record's id), usually in `localStorage`: one fixed key carries the draft from record to record, and session storage is lost with the tab and copied into a duplicated one ([Pages that stay open](../../docs/long-lived-pages.md)).
 
 - Read fields as `this["form.name"]`, **not** `this.form.name`. The second form registers a dependency on `form` only (`.name` is a plain property access on the returned object), so editing a field never re-evaluates the getter — see [Dependency tracking boundaries](../state/README.md#dependency-tracking-boundaries).
 - A stored value outlives a deploy. The key holds what the previous version of the app saved, and a tab still open on the previous version receives what the new one saves (the `storage` event), and the reverse — without a word when the shape changed. Keep a version in the stored object and migrate in the setter, or change the key with the shape.
@@ -700,6 +700,7 @@ bootstrapStorage({
 
 ## Design Notes
 
+- **Since 4.8 (not released yet), a reconnect loads in a microtask.** The first connect loads at once — a binding attached in the same task pulls `value` and expects it loaded. A reconnect loads one microtask later, with the `key` as it is then ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs, and loading at once read the previous route's key and published its value for a moment.
 - `value`, `loading`, `error` are **output state**
 - `key`, `type`, `trigger` are **input / command surface**
 - `trigger` is intentionally one-way: writing `true` saves, reset signals completion. `save()` is never-throw (a failure such as an unset `key` is routed to the `error` property, not thrown); `trigger` is reset to `false` and the completion event fires regardless, so it never gets stuck in the `true` state.

@@ -74,6 +74,7 @@ export interface WcsWsCoreCommands {
     reconnectInterval?: number;
     maxReconnects?: number;
     binaryType?: BinaryType;
+    staleAfter?: number;
   }): void;
   send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
   close(code?: number, reason?: string): void;

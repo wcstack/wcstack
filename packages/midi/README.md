@@ -184,6 +184,7 @@ Nothing throws. Failures surface as state:
 
 ## Notes
 
+- **Since 4.8 (not released yet), the connect-time access request waits one microtask** and reads `auto` / `sysex` then ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs, and the prompt asked for the previous route's level. `request()` reads the current `sysex`; `close()` in the same task cancels the pending request.
 - **Chromium only**, and a secure context is required.
 - **Velocity 0 note-ons are note-offs** — see above.
 - **`sysex` is a separate permission** and is often refused.

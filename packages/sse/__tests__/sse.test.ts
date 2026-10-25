@@ -2,6 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { WcsSse } from "../src/components/Sse";
 import { SseCore } from "../src/core/SseCore";
 
+/** 接続の判断はマイクロタスク（timing-and-firing-contract §23）: それを流す */
+const flush = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+
 // EventSource モック
 class MockEventSource extends EventTarget {
   static CONNECTING = 0;
@@ -86,10 +89,11 @@ describe("WcsSse", () => {
   });
 
   describe("属性アクセサ", () => {
-    it("url の get/set", () => {
+    it("url の get/set", async () => {
       const el = createEl();
       expect(el.url).toBe("");
       el.url = "/feed";
+      await flush();
       expect(el.getAttribute("url")).toBe("/feed");
       expect(el.url).toBe("/feed");
     });
@@ -129,16 +133,18 @@ describe("WcsSse", () => {
       expect(el.hasAttribute("manual")).toBe(false);
     });
 
-    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", async () => {
       const host = document.createElement("div");
       host.innerHTML = '<wcs-sse url="/authored" events="a,b" with-credentials raw manual></wcs-sse>';
       const el = host.firstElementChild as WcsSse;
       el.url = "/bound";
+      await flush();
       el.events = "c";
       el.withCredentials = false;
       el.raw = false;
       el.manual = false;
       el.url = undefined;
+      await flush();
       el.events = undefined;
       el.withCredentials = undefined;
       el.raw = undefined;
@@ -149,6 +155,7 @@ describe("WcsSse", () => {
       expect(el.raw).toBe(true);
       expect(el.manual).toBe(true);
       el.url = null;
+      await flush();
       el.events = null;
       el.withCredentials = null;
       el.raw = null;
@@ -160,16 +167,20 @@ describe("WcsSse", () => {
       expect(el.manual).toBe(false);
     });
 
-    it("接続中の url に undefined / null を書いても /undefined・/null へ接続しない", () => {
+    it("接続中の url に undefined / null を書いても /undefined・/null へ接続しない", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       el.url = "/other";
+      await flush();
       expect(MockEventSource.last.url).toBe("/other");
       // undefined はマークアップの url へ戻す（= その url へ張り直す）
       el.url = undefined;
+      await flush();
       expect(MockEventSource.last.url).toBe("/feed");
       // null は属性を外すだけ（url の除去は既存接続を切らない）
       el.url = null;
+      await flush();
       expect(MockEventSource.instances.map(es => es.url)).toEqual(["/feed", "/other", "/feed"]);
       expect(MockEventSource.last.close).not.toHaveBeenCalled();
     });
@@ -181,9 +192,9 @@ describe("WcsSse", () => {
       expect(names).toContain("trigger");
     });
 
-    it("inputs に url/withCredentials/events/raw/manual/trigger を持つ", () => {
+    it("inputs に url/withCredentials/events/raw/staleAfter/manual/trigger を持つ", () => {
       const names = WcsSse.wcBindable.inputs?.map(i => i.name);
-      expect(names).toEqual(["url", "withCredentials", "events", "raw", "manual", "trigger"]);
+      expect(names).toEqual(["url", "withCredentials", "events", "raw", "staleAfter", "manual", "trigger"]);
     });
 
     it("commands は Core の commands を単一情報源として継承する", () => {
@@ -193,29 +204,33 @@ describe("WcsSse", () => {
   });
 
   describe("ライフサイクル", () => {
-    it("connectedCallback で display:none・url があれば自動接続", () => {
+    it("connectedCallback で display:none・url があれば自動接続", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       expect(el.style.display).toBe("none");
       expect(MockEventSource.instances).toHaveLength(1);
       expect(MockEventSource.last.url).toBe("/feed");
     });
 
-    it("manual 指定時は自動接続しない", () => {
+    it("manual 指定時は自動接続しない", async () => {
       const el = createEl({ url: "/feed", manual: "" });
       document.body.appendChild(el);
+      await flush();
       expect(MockEventSource.instances).toHaveLength(0);
     });
 
-    it("url が無ければ自動接続しない", () => {
+    it("url が無ければ自動接続しない", async () => {
       const el = createEl();
       document.body.appendChild(el);
+      await flush();
       expect(MockEventSource.instances).toHaveLength(0);
     });
 
-    it("disconnectedCallback で接続をクローズする", () => {
+    it("disconnectedCallback で接続をクローズする", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       const es = MockEventSource.last;
       el.remove();
       expect(es.close).toHaveBeenCalled();
@@ -224,6 +239,7 @@ describe("WcsSse", () => {
     it("SSR: connectedCallbackPromise が解決し hasConnectedCallbackPromise=true", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
       expect((el.constructor as typeof WcsSse).hasConnectedCallbackPromise).toBe(true);
       el.remove();
@@ -236,86 +252,154 @@ describe("WcsSse", () => {
   });
 
   describe("attributeChangedCallback", () => {
-    it("接続中に url を変更すると再接続する", () => {
+    it("接続中に url を変更すると再接続する", async () => {
       const el = createEl({ url: "/a" });
       document.body.appendChild(el);
+      await flush();
       expect(MockEventSource.last.url).toBe("/a");
       el.setAttribute("url", "/b");
+      await flush();
       expect(MockEventSource.last.url).toBe("/b");
     });
 
-    it("manual 指定時は url 変更で再接続しない", () => {
+    it("manual 指定時は url 変更で再接続しない", async () => {
       const el = createEl({ url: "/a", manual: "" });
       document.body.appendChild(el);
+      await flush();
       el.setAttribute("url", "/b");
+      await flush();
       expect(MockEventSource.instances).toHaveLength(0);
     });
 
-    it("未接続(DOM外)では url 設定で接続しない", () => {
+    it("未接続(DOM外)では url 設定で接続しない", async () => {
       const el = createEl();
       el.setAttribute("url", "/feed");
+      await flush();
       expect(MockEventSource.instances).toHaveLength(0);
     });
 
-    it("url を空文字/除去に変更しても既存接続は生き残る（意図的：broadcast の name と同型）", () => {
+    it("url を空文字/除去に変更しても既存接続は生き残る（意図的：broadcast の name と同型）", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       const es = MockEventSource.last;
       expect(es.close).not.toHaveBeenCalled();
 
       el.setAttribute("url", "");
+      await flush();
       expect(es.close).not.toHaveBeenCalled();
       expect(MockEventSource.instances).toHaveLength(1);
 
       el.removeAttribute("url");
+      await flush();
       expect(es.close).not.toHaveBeenCalled();
       expect(MockEventSource.instances).toHaveLength(1);
     });
   });
 
   describe("コマンド", () => {
-    it("trigger=true で接続する", () => {
+    it("trigger=true で接続する", async () => {
       const el = createEl({ url: "/feed", manual: "" });
       document.body.appendChild(el);
+      await flush();
       expect(MockEventSource.instances).toHaveLength(0);
       el.trigger = true;
       expect(MockEventSource.instances).toHaveLength(1);
       expect(el.trigger).toBe(false);
     });
 
-    it("trigger=false は何もしない", () => {
+    it("trigger=false は何もしない", async () => {
       const el = createEl({ url: "/feed", manual: "" });
       document.body.appendChild(el);
+      await flush();
       el.trigger = false;
       expect(MockEventSource.instances).toHaveLength(0);
     });
 
-    it("close() で接続を閉じる", () => {
+    it("close() で接続を閉じる", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       const es = MockEventSource.last;
       el.close();
       expect(es.close).toHaveBeenCalled();
     });
 
-    it("url 未設定で connect() しても例外を投げず何もしない", () => {
+    it("url 未設定で connect() しても例外を投げず何もしない", async () => {
       const el = createEl({ manual: "" });
       document.body.appendChild(el);
+      await flush();
       expect(() => el.connect()).not.toThrow();
       expect(MockEventSource.instances).toHaveLength(0);
     });
 
-    it("url 未設定で trigger=true でも例外を投げない", () => {
+    it("url 未設定で trigger=true でも例外を投げない", async () => {
       const el = createEl({ manual: "" });
       document.body.appendChild(el);
+      await flush();
       expect(() => { el.trigger = true; }).not.toThrow();
       expect(MockEventSource.instances).toHaveLength(0);
       expect(el.trigger).toBe(false);
     });
   });
 
+  // router は遷移で同じノードを入れ直し、state は新しい params からの url をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("接続の判断はマイクロタスクで、そのときの入力で", () => {
+    it("入れ直しの間に url が書かれると、前の url へはつながず、新しい url へ 1 本だけつなぐ", async () => {
+      const el = createEl({ url: "/feed?room=14" });
+      document.body.appendChild(el);
+      await flush();
+      expect(MockEventSource.instances.map((es) => es.url)).toEqual(["/feed?room=14"]);
+
+      queueMicrotask(() => { el.url = "/feed?room=11"; });
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      await flush();
+      expect(MockEventSource.instances.map((es) => es.url)).toEqual(["/feed?room=14", "/feed?room=11"]);
+      el.remove();
+    });
+
+    it("判断の前に外した要素はつながない", async () => {
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      el.remove();
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(0);
+    });
+
+    it("付けたのと同じタスクで close() すると、つながない", async () => {
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      el.close();
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(0);
+      el.remove();
+    });
+
+    it("付けたのと同じタスクで connect() すると、その 1 本だけ（判断を引き取る）", async () => {
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      el.connect();
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(1);
+      el.remove();
+    });
+
+    it("同じタスクで url の後に manual が書かれると、つながない", async () => {
+      const el = createEl();
+      document.body.appendChild(el);
+      el.url = "/feed";
+      el.manual = true;
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(0);
+      el.remove();
+    });
+  });
+
   describe("upgrade 経路", () => {
-    it("タグ定義前に配置された要素を upgrade しても接続は 1 本に収まる", () => {
+    it("タグ定義前に配置された要素を upgrade しても接続は 1 本に収まる", async () => {
       // autoloader の主経路：マークアップ存在後にタグ定義 → 仕様により
       // attributeChangedCallback と connectedCallback が両方発火し connect() が複数回呼ばれる。
       // 別タグ名（subclass）にしているのは CustomElementRegistry が「1コンストラクタ＝1タグ名」
@@ -325,9 +409,10 @@ describe("WcsSse", () => {
       class WcsSseUpgrade extends WcsSse {}
       document.body.innerHTML = '<wcs-sse-up url="/feed"></wcs-sse-up>';
       customElements.define("wcs-sse-up", WcsSseUpgrade);
-      // upgrade 時に connect() が複数回呼ばれても（環境依存だが必ず1回以上）…
-      expect(connectSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
-      // …Core の冪等ガードにより EventSource は 1 本に収束する。
+      await flush();
+      // upgrade の attributeChangedCallback と connectedCallback は 1 つのマイクロタスクにまとまり（§23）…
+      expect(connectSpy.mock.calls.length).toBe(1);
+      // …EventSource は 1 本。
       expect(MockEventSource.instances).toHaveLength(1);
       expect(MockEventSource.last.url).toBe("/feed");
       connectSpy.mockRestore();
@@ -335,29 +420,57 @@ describe("WcsSse", () => {
   });
 
   describe("接続オプション", () => {
-    it("with-credentials 属性を EventSource に渡す", () => {
+    it("with-credentials 属性を EventSource に渡す", async () => {
       const el = createEl({ url: "/feed", "with-credentials": "" });
       document.body.appendChild(el);
+      await flush();
       expect(MockEventSource.last.withCredentials).toBe(true);
     });
 
-    it("events 属性をパースして名前付きイベントを購読する", () => {
+    it("events 属性をパースして名前付きイベントを購読する", async () => {
       const el = createEl({ url: "/feed", events: "price, trade" });
       document.body.appendChild(el);
+      await flush();
       MockEventSource.last.simulateNamedEvent("price", "10");
       expect(el.message).toEqual({ event: "price", data: 10, lastEventId: "" });
     });
 
-    it("raw 属性で JSON パースを無効化する", () => {
+    it("stale-after 属性（staleAfter）を接続のオプションとして Core に渡す", async () => {
+      const spy = vi.spyOn(SseCore.prototype, "connect");
+      const el = createEl({ url: "/feed", "stale-after": "45000" });
+      expect(el.staleAfter).toBe(45000);
+      document.body.appendChild(el);
+      await flush();
+      expect(spy).toHaveBeenCalledWith("/feed", expect.objectContaining({ staleAfter: 45000 }));
+      spy.mockRestore();
+      el.remove();
+    });
+
+    it("staleAfter は数でない・0 以下の値で 0（見張らない）になり、プロパティは属性へ写る", () => {
+      const el = createEl();
+      expect(el.staleAfter).toBe(0);
+      el.setAttribute("stale-after", "soon");
+      expect(el.staleAfter).toBe(0);
+      el.setAttribute("stale-after", "-1");
+      expect(el.staleAfter).toBe(0);
+      el.staleAfter = 60000;
+      expect(el.getAttribute("stale-after")).toBe("60000");
+      el.staleAfter = null;
+      expect(el.hasAttribute("stale-after")).toBe(false);
+    });
+
+    it("raw 属性で JSON パースを無効化する", async () => {
       const el = createEl({ url: "/feed", raw: "" });
       document.body.appendChild(el);
+      await flush();
       MockEventSource.last.simulateMessage('{"a":1}');
       expect(el.message?.data).toBe('{"a":1}');
     });
 
-    it("lastEventId を持たない素の Event でも lastEventId は空文字にフォールバックする", () => {
+    it("lastEventId を持たない素の Event でも lastEventId は空文字にフォールバックする", async () => {
       const el = createEl({ url: "/feed", events: "ping", raw: "" });
       document.body.appendChild(el);
+      await flush();
       MockEventSource.last.simulateBareNamedEvent("ping");
       expect(el.message?.event).toBe("ping");
       expect(el.message?.lastEventId).toBe("");
@@ -365,9 +478,10 @@ describe("WcsSse", () => {
   });
 
   describe("委譲ゲッター", () => {
-    it("message/connected/loading/error/readyState を Core から委譲する", () => {
+    it("message/connected/loading/error/readyState を Core から委譲する", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       expect(el.connected).toBe(false);
       expect(el.loading).toBe(true);
       expect(el.error).toBeNull();
@@ -378,9 +492,10 @@ describe("WcsSse", () => {
       expect(el.message?.data).toBe("hi");
     });
 
-    it("errorInfo が Shell ゲッター経由で Core から読み取れる", () => {
+    it("errorInfo が Shell ゲッター経由で Core から読み取れる", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       expect(el.errorInfo).toBeNull();
       // 恒久切断(CLOSED)で connection-error / execute / recoverable=false が入る。
       MockEventSource.last.simulateError(MockEventSource.CLOSED);
@@ -398,9 +513,10 @@ describe("WcsSse", () => {
   });
 
   describe("エラー処理", () => {
-    it("再接続中(CONNECTING)のエラーは loading を維持し error を公開する", () => {
+    it("再接続中(CONNECTING)のエラーは loading を維持し error を公開する", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       const es = MockEventSource.last;
       es.simulateOpen();
       expect(el.connected).toBe(true);
@@ -412,9 +528,10 @@ describe("WcsSse", () => {
       expect(el.error).toBeInstanceOf(Event);
     });
 
-    it("恒久エラー(CLOSED)で loading=false・readyState=CLOSED にし死んだ接続を破棄する", () => {
+    it("恒久エラー(CLOSED)で loading=false・readyState=CLOSED にし死んだ接続を破棄する", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       const es = MockEventSource.last;
 
       es.simulateError(MockEventSource.CLOSED);
@@ -428,9 +545,10 @@ describe("WcsSse", () => {
       expect(MockEventSource.last).not.toBe(es);
     });
 
-    it("トランジェントエラー後にネイティブ再接続が成功すると error がクリアされる", () => {
+    it("トランジェントエラー後にネイティブ再接続が成功すると error がクリアされる", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       const es = MockEventSource.last;
       es.simulateOpen();
 
@@ -445,9 +563,10 @@ describe("WcsSse", () => {
       expect(el.error).toBeNull();
     });
 
-    it("close() 後に再 connect() すると error がリセットされる", () => {
+    it("close() 後に再 connect() すると error がリセットされる", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       const es = MockEventSource.last;
       es.simulateOpen();
       es.simulateError(MockEventSource.CONNECTING);
@@ -464,9 +583,10 @@ describe("WcsSse", () => {
   });
 
   describe("再入(reentrancy)", () => {
-    it("error リスナから同期 close() を呼んでもクラッシュせず状態が固着しない", () => {
+    it("error リスナから同期 close() を呼んでもクラッシュせず状態が固着しない", async () => {
       const el = createEl({ url: "/feed" });
       document.body.appendChild(el);
+      await flush();
       const es = MockEventSource.last;
       es.simulateOpen();
 
@@ -486,7 +606,7 @@ describe("WcsSse", () => {
       expect(es.close).toHaveBeenCalled();
     });
 
-    it("CLOSED 発火元の error リスナから同期 connect()（別url）を呼んでも新接続 esB を破壊しない", () => {
+    it("CLOSED 発火元の error リスナから同期 connect()（別url）を呼んでも新接続 esB を破壊しない", async () => {
       // 所有権ガードが真に守る破壊経路を検証する。発火元 esA を CLOSED で error 発火
       // させると先読み state=CLOSED になる。ガードが無ければ _onError 残部が
       // 新接続 esB に対し _setReadyState(CLOSED)（esB の CONNECTING を上書き）と
@@ -495,6 +615,7 @@ describe("WcsSse", () => {
       // 顕在化しないためガードの効果を検出できない。
       const el = createEl({ url: "/a" });
       document.body.appendChild(el);
+      await flush();
       const esA = MockEventSource.last;
       esA.simulateOpen();
 
@@ -527,7 +648,7 @@ describe("WcsSse", () => {
       expect(el.readyState).toBe(MockEventSource.OPEN);
     });
 
-    it("_doConnect: loading-changed リスナから同期 connect()（別url＋即open）を呼んでも esB の状態を巻き戻さない", () => {
+    it("_doConnect: loading-changed リスナから同期 connect()（別url＋即open）を呼んでも esB の状態を巻き戻さない", async () => {
       // _setLoading(true) の同期 dispatch を起点とする再入。外側 _doConnect が後続の
       // _setReadyState(esA.readyState=CONNECTING) を出すと、再入が確立させた esB(OPEN)
       // の状態を CONNECTING へ巻き戻してしまう。所有権ガードでこれを防ぐ。
@@ -535,6 +656,7 @@ describe("WcsSse", () => {
       // ガードを外すと巻き戻りが顕在化＝テストが失敗する構成にしている。
       const el = createEl({ url: "/a", manual: "" });
       document.body.appendChild(el);
+      await flush();
 
       let reentered = false;
       const onLoading = vi.fn(() => {
@@ -570,7 +692,7 @@ describe("WcsSse", () => {
       expect(el.message?.data).toBe("from-b");
     });
 
-    it("_doConnect: error(detail=null) リスナから同期 connect()（別url＋即open）を呼んでも状態を巻き戻さない", () => {
+    it("_doConnect: error(detail=null) リスナから同期 connect()（別url＋即open）を呼んでも状態を巻き戻さない", async () => {
       // 恒久エラー(CLOSED)後の再 connect では _doConnect 内の _setError(null) が
       // wcs-sse:error(detail=null) を dispatch する（README 記載のプロパティ変更通知）。
       // その同期 dispatch を起点とする再入で、外側 _doConnect 後続の
@@ -579,6 +701,7 @@ describe("WcsSse", () => {
       // と readyState を差異化することで、ガードを外すと巻き戻りが顕在化する。
       const el = createEl({ url: "/feed", manual: "" });
       document.body.appendChild(el);
+      await flush();
       el.connect();
       const esFeed = MockEventSource.last;
 
@@ -620,7 +743,7 @@ describe("WcsSse", () => {
       expect(el.message?.data).toBe("from-c");
     });
 
-    it("_doConnect: loading-changed 再入で再入側が同期 error を立てると外側の _setError(null) が誤クリアしない（line 206 ガード固有）", () => {
+    it("_doConnect: loading-changed 再入で再入側が同期 error を立てると外側の _setError(null) が誤クリアしない（line 206 ガード固有）", async () => {
       // line 206 ガード（_setLoading(true) 直後）の固有効果を分離検出する。
       // _setLoading(true) の dispatch で別 url へ再入接続し、再入側 esB が *生成直後に
       // 同期で error を立てて* el.error を非 null 確定させる。外側 _doConnect に制御が
@@ -630,6 +753,7 @@ describe("WcsSse", () => {
       //   この経路は 206 ガード固有（208 単独では救えない）。
       const el = createEl({ url: "/a", manual: "" });
       document.body.appendChild(el);
+      await flush();
 
       let reentered = false;
       let esBError: Event | null = null;

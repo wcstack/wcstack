@@ -33,6 +33,10 @@ export class WcsBroadcast extends HTMLElement {
 
   private _core: BroadcastCore;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // connectedCallback ran before (a reconnect defers its open: _scheduleOpen)
+  private _everConnected = false;
+  // _scheduleOpen's microtask is waiting
+  private _openPending = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -130,6 +134,8 @@ export class WcsBroadcast extends HTMLElement {
   // --- Commands ---
 
   open(): void {
+    // an explicit open or close takes a reconnect's pending decision
+    this._openPending = false;
     if (this.name) {
       this._core.open(this.name);
     }
@@ -140,15 +146,29 @@ export class WcsBroadcast extends HTMLElement {
   }
 
   close(): void {
+    this._openPending = false;
     this._core.close();
   }
 
   // --- Lifecycle ---
 
   attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void {
-    if (name === "name" && this.isConnected && !this.manual && newValue) {
+    // (a reconnect's open is waiting for its microtask: it opens the name in effect then)
+    if (name === "name" && this.isConnected && !this.manual && newValue && !this._openPending) {
       this._core.open(newValue);
     }
+  }
+
+  private _scheduleOpen(): void {
+    if (this._openPending) return;
+    this._openPending = true;
+    queueMicrotask(() => {
+      if (!this._openPending) return; // an explicit command took the decision meanwhile
+      this._openPending = false;
+      if (this.isConnected && !this.manual && this.name) {
+        this._core.open(this.name);
+      }
+    });
   }
 
   connectedCallback(): void {
@@ -158,11 +178,22 @@ export class WcsBroadcast extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
-    if (!this.manual && this.name) {
-      this._core.open(this.name);
+    if (!this._everConnected) {
+      // The first connect opens at once, so a post in the same task (an announce on mount) is sent.
+      this._everConnected = true;
+      if (!this.manual && this.name) {
+        this._core.open(this.name);
+      }
+    } else {
+      // A reconnect decides in a microtask, with the name then (timing-and-firing-contract §23).
+      // @wcstack/router puts the same nodes back on a parameter-only navigation, and the state
+      // writes the new route's name in a microtask: opening at once joined the previous channel
+      // (docs/seam-apps.md, shift-desk).
+      this._scheduleOpen();
     }
     // SSR (§4.4): expose the Core's readiness as connectedCallbackPromise. The
-    // channel opens synchronously above, so observe() resolves immediately.
+    // channel opens synchronously (or, on a reconnect, in a microtask — command-driven
+    // either way), so observe() resolves immediately.
     this._connectedCallbackPromise = this._core.observe();
   }
 

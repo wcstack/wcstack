@@ -216,6 +216,7 @@ form:has(wcs-worker:state(error)) .banner { display: block; }
 
 ## 注意点と制約
 
+- **4.8（未リリース）から、入れ直しはマイクロタスクで worker を起動する。** 最初の接続はその場で起動するので、同じタスクの post は届く。入れ直しは 1 マイクロタスク後に、そのときの `src` で起動する（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`start()` はその場で起動し、同じタスクの `terminate()` は待っている起動を取り消す。
 - **バス型メッセージモデル。** リクエスト/レスポンスの相関付けは組み込まれていません。`post` は fire-and-forget で、返信は `message` に届きます。命令的利用向けの RPC 風 `request(data): Promise` は将来追加され得ます。
 - **「ready」シグナルは無い。** worker は即座に `postMessage` を受け付けます（プラットフォームはスクリプトが読み込まれるまでメッセージをキューします）。また標準の「スクリプト読み込み完了」イベントはありません。`running` は「spawn 済みかつ未 terminate」を意味し、「リクエストを処理できる準備ができた」ことを**意味しません**。本当の ready シグナルが必要なら、worker に起動時に ready メッセージを `post` させ、それを `message` で観測してください。
 - **`keep-alive` は所有権を移す。** `keep-alive` が無ければ、worker は切断時に terminate されます（`<wcs-ws>` / `<wcs-broadcast>` の close と同様）。`keep-alive` があると、worker は切断後も生き残り、`terminate()` を呼ぶ責任があなたに移ります — さもなければスレッドがリークします。この所有権移転の帰結として、`keep-alive` と `restart-on-error` の両方がある場合、切断時に保留中の再起動（`restart-interval` タイマーをスケジュールしたエラー）は**キャンセルされず**、要素が DOM を離れた後に発火し、切り離された要素上で新しい worker を再 spawn します。これは意図的です — `keep-alive` は切断後もライフサイクルがあなたのものであることを意味するからです — が、`keep-alive` な worker を止める最もきれいな方法は明示的な `terminate()` であり、これは保留中の再起動もクリアします。

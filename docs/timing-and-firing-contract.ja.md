@@ -525,3 +525,46 @@ Shell は constructor（= upgrade 時）で自分自身の `*-changed` / `:error
 
 ### 22.5 テスト
 各ノードに、操作の途中で切断し、イベントを確かめるテストがある。当てはまるものでは、再接続の後の次の操作がまだ `true` のエッジを出すことも確かめる。
+
+## 23. 横断契約: 接続時の仕事は、次のマイクロタスクの入力で決める（2026-10-25）
+
+対象: 接続されたときに仕事を始めるすべての I/O ノード。継ぎ目アプリ `shift-desk` が見つけた（[seam-apps.ja.md](./seam-apps.ja.md)）。パラメータだけの遷移では、`@wcstack/router` は新しい params を出してから、ルートの中身を外して同じノードを戻す（[router の README](../packages/router/README.ja.md)）。それに依存するもの — 要素の `url`・`key`・`name`・`src`、`manual` のような門 — を `@wcstack/state` が書くのは、中身が戻る前に積まれたマイクロタスクの中（§4）。`connectedCallback` の中で仕事を始めたノードは、前のルートの入力で動いた: `<wcs-ws>` は前のチケットのチャットへつないでから閉じた。ファミリーを洗ったところ、17 のパッケージが同じだった — 前のカメラのデバイス、前の権限、state が書く直前の `manual` に逆らって始まるタイマー。`<wcs-fetch>` はマイクロタスクで決めているので起きなかった（§1）。
+
+### 23.1 判断は 1 つのマイクロタスクで、そのときの入力で行う
+`connectedCallback` は、入力を読まない手順（プロパティの取り込み直し、要素を隠す、自動トリガの登録）をその場で行い、判断を積む: 始めるか（`manual`・`autostart`・`auto`・`monitor`・`active`）、何で始めるか。マイクロタスクはそのときの入力を読み、その間に要素が文書から外れていれば何もしない。同じタスクの入力の変化 — `url` の後に `manual` を書く spread、upgrade の `attributeChangedCallback` と `connectedCallback` — は同じ判断にまとまり、仕事は 1 回だけ走る。
+
+### 23.2 同じタスクで結果を使う最初の接続は、その場のまま
+`<wcs-storage>` の読み込み、`<wcs-broadcast>` のチャンネル、`<wcs-worker>` の起動は、最初の接続ではその場で行う: 同じタスクで付いた束縛（中身を入れた直後に `@wcstack/state` に渡されるルートの中身）は `<wcs-storage>` の `value`（`#init=element`）を引いて読み込み済みであることを当てにし、同じタスクの post はチャンネルや worker に届くものとされている。入れ直し — 上の場合 — はマイクロタスクで決める。
+
+### 23.3 明示のコマンドは判断を引き取る
+マイクロタスクより前に呼ばれた開始の側のコマンド（`connect()`・`trigger`・`start()`・`open()`・`observe()`）は、その時点の入力で仕事をし、待っている判断は捨てる — 仕事は 1 回だけ。停止の側のコマンド（`close()`・`stop()`・`reset()`・`release()`・`stopMonitor()`・`terminate()`・`unobserve()`・`disconnect()`）も判断を捨てるので、同じタスクで付けて止めた要素は、開始が同期だった頃と同じく止まったまま。`pause()`（`<wcs-timer>`・`<wcs-raf>`）はその場で判断してから一時停止するので、一時停止した、再開できる状態になる。
+
+### 23.4 `connectedCallbackPromise`
+promise が接続時の仕事を表していたところ（`<wcs-permission>` の問い合わせ、`<wcs-defined>` の見張り）では、`connectedCallback` で用意し、マイクロタスクが始めた仕事とともに決まる。要素が外れていればその場で決まる。`disconnectedCallback` も決めるので、待ち続けることはない。すぐ解決する ready だったところは、そのまま。
+
+### 23.5 これで変わったノード（4.8）
+
+| パッケージ | マイクロタスクを待つもの |
+|---|---|
+| websocket | 接続（`url`・`manual`）。その後の `url` の変化による再接続もマイクロタスクで |
+| sse | 接続（`url`・`manual`） |
+| storage | 入れ直しの読み込み（`key`・`manual`）。最初の接続はその場で読む（§23.2） |
+| broadcast | 入れ直しの open（`name`・`manual`）。最初の接続はその場で開く |
+| worker | 入れ直しの起動（`src`・`manual`）。最初の接続はその場で起動する |
+| camera | `<wcs-camera>` の自動開始（`autostart`）と、取得に使う制約（`device-id`・`facing-mode`・`audio`・`width`・`height`） |
+| speech | `<wcs-listen>` の自動開始（`manual`）と認識のオプション（`lang`・`continuous`・`interim`・`max-restarts`） |
+| geolocation | 取得か watch（`manual`・`watch`・`high-accuracy`・`timeout`・`maximum-age`） |
+| midi | アクセスの要求（`auto`・`sysex`） |
+| permission | 問い合わせ（`name`・`user-visible-only`・`sysex`） |
+| timer | 自動開始（`manual`・`interval`・`repeat`・`once`・`immediate`） |
+| clipboard | 監視（`monitor`） |
+| wakelock | 自動取得（`manual`・`active`）。その後の `active` の変化はその場のまま |
+| raf | 自動開始（`manual`・`repeat`・`once`） |
+| intersection、resize | 観測（`manual`・`target` とオプション）。その後のオプションの変化もマイクロタスクで観測し直す |
+| defined | 見張り（`tags`・`mode`・`timeout`）。その後の変化の後も |
+
+### 23.6 そのままにしたもの
+直る前に何も観測できないノード: `<wcs-fullscreen>`・`<wcs-pip>`・`<wcs-pointer-lock>` は `target` の変化で解決し直し、`<wcs-media-query>` は新しいクエリを評価し（古いものは同値ガードに隠れる）、`<wcs-audio>` は 20 ms ほどで新しい値へゲインを寄せる。`<wcs-fetch>` は以前からマイクロタスクで決めていた。センサー（`<wcs-accelerometer>` ほか）はコマンドでだけ始まり、切断で止まり（§22）、入れ直しでは始め直さない — [seam-apps.ja.md](./seam-apps.ja.md) に記録した。
+
+### 23.7 テスト
+各ノードに次のテストがある: 先に積まれたマイクロタスクが入力を変える入れ直し（仕事は新しい入力だけを使う）、マイクロタスクより前に外した要素（仕事をしない）、付けたのと同じタスクで書いた門、同じタスクの停止の側のコマンド。

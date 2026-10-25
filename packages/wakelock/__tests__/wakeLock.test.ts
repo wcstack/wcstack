@@ -266,4 +266,99 @@ describe("<wcs-wakelock>", () => {
     const inputs = WcsWakeLock.wcBindable.inputs?.map((i) => i.name);
     expect(inputs).toEqual(["active", "type", "manual"]);
   });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの入力をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("接続時の自動取得の判断はマイクロタスクで、そのときの入力で", () => {
+    it("入れ直しの間に active が外されると、前の active でロックを取りに行かない", async () => {
+      const el = make({ active: "" });
+      document.body.append(el);
+      await flush();
+      expect(wl.request).toHaveBeenCalledTimes(1);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.active = false; });
+      el.remove();
+      document.body.append(el);
+      await flush();
+      expect(wl.request).toHaveBeenCalledTimes(1);
+      expect(el.held).toBe(false);
+    });
+
+    it("入れ直しの間に manual が書かれると、自動取得しない", async () => {
+      const el = make({ active: "" });
+      document.body.append(el);
+      await flush();
+      expect(wl.request).toHaveBeenCalledTimes(1);
+
+      queueMicrotask(() => { el.manual = true; });
+      el.remove();
+      document.body.append(el);
+      await flush();
+      expect(wl.request).toHaveBeenCalledTimes(1);
+      expect(el.held).toBe(false);
+    });
+
+    it("入れ直しの間に active が付くと、1 回だけ取得する", async () => {
+      const el = make();
+      document.body.append(el);
+      await flush();
+      expect(wl.request).toHaveBeenCalledTimes(0);
+
+      queueMicrotask(() => { el.active = true; });
+      el.remove();
+      document.body.append(el);
+      await flush();
+      expect(wl.request).toHaveBeenCalledTimes(1);
+      expect(el.held).toBe(true);
+    });
+
+    it("判断の前に外した要素はロックを取りに行かない", async () => {
+      const el = make({ active: "" });
+      document.body.append(el);
+      el.remove();
+      await flush();
+      expect(wl.request).not.toHaveBeenCalled();
+      expect(el.held).toBe(false);
+    });
+
+    it("同じタスクで append の後に書かれた manual が守られる", async () => {
+      const el = make({ active: "" });
+      document.body.append(el);
+      el.manual = true;
+      await flush();
+      expect(wl.request).not.toHaveBeenCalled();
+      expect(el.held).toBe(false);
+    });
+
+    it("同じタスクの remove → append は 1 回だけ取得する", async () => {
+      const el = make({ active: "" });
+      document.body.append(el);
+      el.remove();
+      document.body.append(el);
+      await flush();
+      expect(wl.request).toHaveBeenCalledTimes(1);
+      expect(el.held).toBe(true);
+    });
+
+    it("同じタスクで append の後に release() されると、自動取得しない", async () => {
+      const el = make({ active: "" });
+      document.body.append(el);
+      el.release();
+      await flush();
+      expect(wl.request).not.toHaveBeenCalled();
+      expect(el.held).toBe(false);
+    });
+
+    it("release() の後、同じタスクで入れ直すと、その接続の自動取得は 1 回だけ行う", async () => {
+      const el = make({ active: "" });
+      document.body.append(el);
+      el.release();
+      el.remove();
+      document.body.append(el);
+      await flush();
+      expect(wl.request).toHaveBeenCalledTimes(1);
+      expect(el.held).toBe(true);
+    });
+  });
 });

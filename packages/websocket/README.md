@@ -178,6 +178,10 @@ When the connection drops unexpectedly (close code other than 1000), `<wcs-ws>` 
 - retries up to `max-reconnects` times (default: Infinity)
 - resets the retry count on successful reconnection
 
+**A connection that died without being closed** — a laptop's sleep, a NAT or a proxy that dropped it — is not noticed by the browser: the socket stays `OPEN`, `connected` stays `true`, and nothing arrives (`auto-reconnect` acts only on a close). Since 4.8 (not released yet), `stale-after="45000"` treats an open connection that received no message for that many milliseconds as lost, as if it had closed abnormally: the socket is let go, `connected` goes `false`, `error` says why (`errorInfo.recoverable` is `true`), and `auto-reconnect` reconnects. The server must send a message more often than that — a WebSocket ping frame is not seen by the page, so send an application-level ping. What else a page left open for hours goes through: [Pages that stay open](../../docs/long-lived-pages.md).
+
+**The back/forward cache.** An open WebSocket keeps the page out of the browser's back/forward cache (Chromium: not restored, reason `websocket`). Since 4.8 (not released yet), `<wcs-ws>` closes its connection when the page may enter the cache (`pagehide` with `persisted`), publishing `connected: false` at once, and reconnects when the page comes back from it (`pageshow` with `persisted`) if it was connected — so the page is restored instead of reloaded. What arrived meanwhile is not replayed: resync from your own position on `connected`.
+
 ## State Surface vs Command Surface
 
 `<wcs-ws>` exposes two different kinds of properties.
@@ -206,7 +210,7 @@ These properties control connection and messaging from HTML, JS, or `@wcstack/st
 | `send` | `any` | Set to transmit data (auto-stringifies objects). Before the socket is open it is refused: it goes to `error` (`invalid-state`), the message is lost, and the element warns `[wcs/command-not-ready]` (once until the socket opens again — since 4.8 (not released yet); before, once per element) |
 | `manual` | `boolean` | Disables auto-connect on DOM attach |
 
-**`null` and `undefined`.** The inputs backed by an attribute (`url`, `protocols`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `binaryType`, `manual` — see [Elements](#elements)) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A `url` restored this way reconnects like any other `url` change; a cleared `url` does not connect. `trigger` and `send` ignore both.
+**`null` and `undefined`.** The inputs backed by an attribute (`url`, `protocols`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `binaryType`, `staleAfter`, `manual` — see [Elements](#elements)) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A `url` restored this way reconnects like any other `url` change; a cleared `url` does not connect. `trigger` and `send` ignore both.
 
 ## CSS styling with `:state()`
 
@@ -388,6 +392,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `reconnect-interval` | `number` | `3000` | Reconnection delay in ms |
 | `max-reconnects` | `number` | `Infinity` | Maximum reconnection attempts |
 | `binary-type` | `"blob" \| "arraybuffer"` | `blob` | How incoming binary frames are surfaced on `message`. Any value other than `arraybuffer` normalizes to `blob` |
+| `stale-after` | `number` | `0` | Treat an open connection that received no message for this many milliseconds as lost (`0`: never). Read when connecting. Since 4.8 (not released yet) |
 
 | Property | Type | Description |
 |----------|------|-------------|
@@ -398,6 +403,7 @@ In wcstack applications, **state-driven triggering via `trigger`** is usually th
 | `errorInfo` | `WcsIoErrorInfo \| null` | Failure taxonomy (`code` / `phase` / `recoverable`), derived from `error` |
 | `readyState` | `number` | WebSocket readyState constant |
 | `binaryType` | `"blob" \| "arraybuffer"` | Binary frame representation (backs the `binary-type` attribute; default `blob`) |
+| `staleAfter` | `number` | Milliseconds without a message after which an open connection is treated as lost (backs the `stale-after` attribute; `0`: never). Since 4.8 (not released yet) |
 | `trigger` | `boolean` | Set to `true` to open connection |
 | `send` | `any` | Set to transmit data |
 
@@ -677,6 +683,7 @@ bootstrapWebSocket({
 
 ## Design Notes
 
+- **Since 4.8 (not released yet), the connect-time decision waits one microtask.** Whether to connect, and to which `url`, is decided one microtask after `connectedCallback` (and after a `url` change), with the inputs as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23). `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs: connecting at once opened the previous route's socket and closed it again. `connect()` / `trigger` connect at once; `close()` in the same task cancels the pending connect.
 - `message`, `connected`, `loading`, `error`, and `readyState` are **output state**
 - `url`, `trigger`, and `send` are **input / command surface**
 - `trigger` is intentionally one-way: writing `true` connects, reset emits completion

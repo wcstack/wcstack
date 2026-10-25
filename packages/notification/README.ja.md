@@ -74,10 +74,12 @@ npm install @wcstack/notification
 
 ```html
 <!-- reactive: 束縛値が「変化」したときに表示（same-value ガードつき）。 -->
-<wcs-notify data-wcs="notice: statusMessage | debounce(1000)"></wcs-notify>
+<!-- 元の値は <wcs-debounce>（@wcstack/debounce）で落ち着かせてから -->
+<wcs-debounce wait="1000" data-wcs="source: statusMessage; value: settledStatus"></wcs-debounce>
+<wcs-notify data-wcs="notice: settledStatus"></wcs-notify>
 ```
 
-`notice` は `notify` の宣言的カウンターパートです: 変化した値を書くと表示し、同値の書き込みは抑制します。命令的な `notify` コマンドは毎回（同じテキストでも）発火します。state 変化のたびに自動発火すると通知スパムの危険があるため、束縛元を debounce し、`tag` を付けて OS 側で de-dup させるとよいです。
+`notice` は `notify` の宣言的カウンターパートです: 変化した値を書くと表示し、同値の書き込みは抑制します。命令的な `notify` コマンドは毎回（同じテキストでも）発火します。state 変化のたびに自動発火すると通知スパムの危険があるため、束縛元を debounce し — 上のとおり `<wcs-debounce>` で。`data-wcs` に `debounce` フィルタは無く、知らないフィルタは `<wcs-state>` 全体の初期化を落とします — `tag` を付けて OS 側で de-dup させるとよいです。開いたままのページには、もう 1 つスパムの元があります: スリープの間に届いたものが、復帰したときにまとめて届きます — [開いたままのページ](../../docs/long-lived-pages.ja.md)。
 
 ### 3. 権限をバインド可能な state として
 

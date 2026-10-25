@@ -8,6 +8,9 @@ import {
 
 registerComponents();
 
+/** 自動開始の判断はマイクロタスク（timing-and-firing-contract §23）: それを流す */
+const flush = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+
 describe("<wcs-listen>", () => {
   let recs: FakeRecognition[];
 
@@ -185,14 +188,16 @@ describe("<wcs-listen>", () => {
   });
 
   describe("ライフサイクル", () => {
-    it("connectedCallback で display:none、manual でなければ start する", () => {
+    it("connectedCallback で display:none、manual でなければ start する", async () => {
       const el = create();
       expect(el.style.display).toBe("none");
+      await flush();
       expect(recs[0].start).toHaveBeenCalledOnce();
     });
 
-    it("manual なら connect で start しない", () => {
-      const el = create({ manual: "" });
+    it("manual なら connect で start しない", async () => {
+      create({ manual: "" });
+      await flush();
       expect(recs[0].start).not.toHaveBeenCalled();
     });
 
@@ -226,6 +231,90 @@ describe("<wcs-listen>", () => {
       el.start();
       recs[0].fireStart();
       expect(events).toEqual([true]);
+    });
+  });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの入力をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("自動開始の判断はマイクロタスクで、そのときの入力で", () => {
+    it("入れ直しの間に lang が書かれると、前の lang では始めず、新しい lang で 1 回だけ始める", async () => {
+      const el = create({ lang: "ja-JP" });
+      await flush();
+      expect(recs[0].start).toHaveBeenCalledOnce();
+      expect(recs[0].lang).toBe("ja-JP");
+      recs[0].fireStart();
+
+      // 始めたときの lang を記録する
+      const langs: string[] = [];
+      recs[0].start.mockImplementation(() => { langs.push(recs[0].lang); });
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.lang = "en-US"; });
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      await flush();
+      expect(langs).toEqual(["en-US"]);
+    });
+
+    it("判断の前に外した要素は始めない", async () => {
+      const el = create();
+      el.remove();
+      await flush();
+      expect(recs[0].start).not.toHaveBeenCalled();
+    });
+
+    it("同じタスクで接続の後に manual が書かれると、始めない", async () => {
+      const el = create();
+      el.manual = true;
+      await flush();
+      expect(recs[0].start).not.toHaveBeenCalled();
+    });
+
+    it("同じタスクで接続の後に manual が外されると、始める", async () => {
+      const el = create({ manual: "" });
+      el.manual = false;
+      await flush();
+      expect(recs[0].start).toHaveBeenCalledOnce();
+    });
+
+    it("同じタスクで接続の後に stop() が呼ばれると、始めない", async () => {
+      const el = create();
+      el.stop();
+      await flush();
+      expect(recs[0].start).not.toHaveBeenCalled();
+    });
+
+    it("同じタスクで接続の後に abort() が呼ばれると、始めない", async () => {
+      const el = create();
+      el.abort();
+      await flush();
+      expect(recs[0].start).not.toHaveBeenCalled();
+    });
+
+    it("stop() の後に同じタスクで入れ直すと、次の判断で 1 回だけ始める", async () => {
+      const el = create();
+      el.stop();
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      await flush();
+      expect(recs[0].start).toHaveBeenCalledOnce();
+    });
+
+    it("判断の前の start() の後は、判断が始め直さない（start は聞いている間は冪等）", async () => {
+      const el = create();
+      el.start();
+      expect(recs[0].start).toHaveBeenCalledOnce();
+      await flush();
+      expect(recs[0].start).toHaveBeenCalledOnce();
+    });
+
+    it("同じタスクの入れ直しはまとまり、1 回だけ始める", async () => {
+      const el = create();
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      expect(recs[0].start).toHaveBeenCalledOnce();
     });
   });
 
