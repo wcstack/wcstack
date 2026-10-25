@@ -171,7 +171,7 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
   - `not-found` (phase `start`) — `NotFoundError` (no camera / mic of the requested kind).
   - `not-readable` (phase `start`) — `NotReadableError` (device busy or hardware fault).
   - `invalid-argument` (phase `start`) — `OverconstrainedError` / `NotSupportedError` (constraints or mimeType unsatisfiable).
-  - `invalid-state` (phase `start`) — `NoStreamError` (recorder started with no stream attached — nothing is recorded, and the element warns `[wcs/command-not-ready]`, once per element).
+  - `invalid-state` (phase `start`) — `NoStreamError` (recorder started with no stream attached — nothing is recorded, and the element warns `[wcs/command-not-ready]`, once until a stream is attached again — since 4.8 (not released yet); before, once per element).
   - `aborted` (phase `execute`, `recoverable: true`) — `AbortError` (interrupted mid-flight, may recover on retry).
   - `media-error` (phase `execute`) — any other runtime failure (e.g. `RecorderError` / unexpected `MediaRecorder` error).
 

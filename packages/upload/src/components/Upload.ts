@@ -43,8 +43,8 @@ export class WcsUpload extends HTMLElement {
   private _core: UploadCore;
   private _files: FileList | File[] | null = null;
   private _trigger: boolean = false;
-  // The reasons `[wcs/command-not-ready]` was said for, once each per element
-  // (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
+  // The reasons `[wcs/command-not-ready]` was said for in this outage, once each
+  // (docs/v4-direction-2026-10.md §5.1, the I/O command policy); an upload starting clears them.
   private _told: Set<string> | null = null;
   // automatic-mode files assigned while there was no url: sent when the url arrives
   private _waitingForUrl = false;
@@ -319,6 +319,8 @@ export class WcsUpload extends HTMLElement {
       return null;
     }
 
+    // ready again (an upload starts): a refusal in the next outage is said again
+    this._told = null;
     const result = await this._core.upload(this.url, files, {
       method: this.method,
       fieldName: this.fieldName,
@@ -339,14 +341,17 @@ export class WcsUpload extends HTMLElement {
 
   // A refused upload sent nothing and said nothing (no `error`, by design): a `trigger`
   // written before `url` / `files` (`data-wcs` bindings and a framework's props are applied in
-  // the order written), a retry after the files were used up.
+  // the order written), a retry after the files were used up. Said once per reason and outage:
+  // once per element was once per page life — a route puts the same element back on every
+  // entry, so the next outage went unsaid (docs/seam-apps.md, shift-desk).
   private _warnNotReady(reason: string): void {
     if (this._told?.has(reason)) return;
     (this._told ??= new Set()).add(reason);
     console.warn(
       `[@wcstack/upload] [wcs/command-not-ready] The upload was refused: ${reason}, so nothing is sent. ` +
         "Write url and files before trigger (data-wcs bindings and a framework's props are applied in the order " +
-        "written), and assign files again for each retry: an upload uses them up. (Said once per element and reason.)",
+        "written), and assign files again for each retry: an upload uses them up. " +
+        "(Said once per reason until an upload is sent again.)",
       this,
     );
   }

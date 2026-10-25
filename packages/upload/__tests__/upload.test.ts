@@ -452,6 +452,41 @@ describe("WcsUpload コンポーネント", () => {
       expect(said(warn)).toHaveLength(1);
       expect(said(warn)[0]).toContain("there are no files");
       expect(said(warn)[0]).toContain("assign files again");
+      expect(said(warn)[0]).toContain("(Said once per reason until an upload is sent again.)");
+      el.remove();
+    });
+
+    it("アップロードを送った後の次の不在では、同じ要素・同じ理由でもまた警告する", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const el = createElement({ manual: "", url: "/api/upload" });
+      document.body.appendChild(el);
+      // files の無い間: 何度書いても 1 回
+      el.trigger = true;
+      el.trigger = true;
+      await Promise.resolve();
+      expect(said(warn)).toHaveLength(1);
+      // 検証で拒んだファイルは送っていない（同じ不在のうち）
+      el.maxSize = 1;
+      el.files = [createMockFile("big.txt", 10, "text/plain")];
+      el.trigger = true;
+      await Promise.resolve();
+      el.trigger = true;
+      await Promise.resolve();
+      expect(MockXMLHttpRequest.instances).toHaveLength(0);
+      expect(said(warn)).toHaveLength(1);
+      // 送る → 準備ができた
+      el.maxSize = null;
+      el.files = [createMockFile("a.txt", 10, "text/plain")];
+      el.trigger = true;
+      expect(MockXMLHttpRequest.instances).toHaveLength(1);
+      MockXMLHttpRequest.instances[0].simulateLoad(201, "{}");
+      await vi.waitFor(() => expect(el.files).toBeNull());
+      // files を使い切った → 次の不在。その最初の trigger をまた言い、2 回目は言わない
+      el.trigger = true;
+      el.trigger = true;
+      await Promise.resolve();
+      expect(said(warn)).toHaveLength(2);
+      expect(said(warn)[1]).toContain("there are no files");
       el.remove();
     });
 

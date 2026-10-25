@@ -298,6 +298,76 @@ describe("IdleCore", () => {
     });
   });
 
+  describe("許可の無い start() の警告（[wcs/command-not-ready]）", () => {
+    const notAllowed = () => Promise.reject(Object.assign(new Error("permission denied"), { name: "NotAllowedError" }));
+    function said(warn: ReturnType<typeof vi.spyOn>): unknown[][] {
+      return warn.mock.calls.filter((c: unknown[]) => String(c[0]).includes("[wcs/command-not-ready]"));
+    }
+
+    it("許可の無い start() は、許可の無い間に 1 回だけ、要素を添えて警告する（error にも流れる）", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      installIdleDetector({ startImpl: notAllowed });
+      const target = new EventTarget();
+      const core = new IdleCore(target);
+      await core.start();
+      await core.start();
+      expect(said(warn)).toHaveLength(1);
+      expect(String(said(warn)[0][0])).toContain("[@wcstack/idle] [wcs/command-not-ready] start() was refused: the idle-detection permission is not granted");
+      expect(String(said(warn)[0][0])).toContain("(Said once until a start() succeeds again.)");
+      expect(said(warn)[0][1]).toBe(target);
+      expect(core.errorInfo?.code).toBe("not-allowed");
+      // 別の要素ではまた言う
+      await new IdleCore().start();
+      expect(said(warn)).toHaveLength(2);
+    });
+
+    it("start() が成功した後の次の不許可では、同じ要素でもまた警告する", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      let allowed = false;
+      installIdleDetector({ startImpl: () => (allowed ? Promise.resolve() : notAllowed()) });
+      const core = new IdleCore();
+      await core.start();
+      expect(said(warn)).toHaveLength(1);
+      // 成功 → 準備ができた
+      allowed = true;
+      await core.start();
+      expect(core.error).toBeNull();
+      expect(core.userState).toBe("active");
+      expect(said(warn)).toHaveLength(1);
+      // 許可が取り消された → 次の不許可。その最初の start() をまた言い、2 回目は言わない
+      allowed = false;
+      await core.start();
+      await core.start();
+      expect(said(warn)).toHaveLength(2);
+    });
+
+    it("許可以外の失敗（その他の例外・nullish reject）は警告しない", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      installIdleDetector({ startImpl: () => Promise.reject(new Error("boom")) });
+      await new IdleCore().start();
+      installIdleDetector({ startImpl: () => Promise.reject(null) });
+      await new IdleCore().start();
+      expect(said(warn)).toHaveLength(0);
+    });
+
+    it("API が無いとき（unsupported）は警告しない", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      removeIdleDetector();
+      const core = new IdleCore();
+      await core.start();
+      await core.requestPermission();
+      expect(core.errorInfo?.code).toBe("capability-missing");
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("requestPermission() の拒否は警告しない（start() ではない）", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      installIdleDetector({ requestPermission: notAllowed as () => Promise<"granted" | "denied"> });
+      expect(await new IdleCore().requestPermission()).toBe("denied");
+      expect(warn).not.toHaveBeenCalled();
+    });
+  });
+
   describe("stop()", () => {
     it("進行中のセッションを止め、以後の change を無視する", async () => {
       const { instances } = installIdleDetector();

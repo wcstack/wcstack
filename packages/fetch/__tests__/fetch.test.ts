@@ -1178,7 +1178,7 @@ describe("Fetch", () => {
     }
   });
 
-  it("url の無い trigger は、要素を添えて 1 回だけ警告する（[wcs/command-not-ready]）", () => {
+  it("url の無い trigger は、url の無い間に 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const el = document.createElement("wcs-fetch") as Fetch;
@@ -1189,7 +1189,39 @@ describe("Fetch", () => {
       const said = warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
       expect(said).toHaveLength(1);
       expect(String(said[0][0])).toContain("trigger was refused: there is no url");
+      expect(String(said[0][0])).toContain("(Said once until a request is sent again.)");
       expect(said[0][1]).toBe(el);
+      el.remove();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("リクエストを送った後の次の url の無い間では、同じ要素でもまた警告する（[wcs/command-not-ready]）", async () => {
+    fetchSpy.mockImplementation(() => Promise.resolve(createMockResponse({ ok: true })));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+      const el = document.createElement("wcs-fetch") as Fetch;
+      el.setAttribute("manual", "");
+      document.body.appendChild(el);
+      el.trigger = true;
+      expect(said()).toHaveLength(1);
+      // url の無い fetch() は送らない（同じ不在のうち）
+      expect(await el.fetch()).toBeNull();
+      el.trigger = true;
+      expect(said()).toHaveLength(1);
+      // url を書いて送る → 準備ができた
+      el.url = "/api/morning";
+      el.trigger = true;
+      await vi.waitFor(() => expect(el.trigger).toBe(false));
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(said()).toHaveLength(1);
+      // url が外れた（ルートを離れた）→ 次の不在。その最初の trigger をまた言い、2 回目は言わない
+      el.url = null;
+      el.trigger = true;
+      el.trigger = true;
+      expect(said()).toHaveLength(2);
       el.remove();
     } finally {
       warn.mockRestore();

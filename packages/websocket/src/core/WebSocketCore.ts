@@ -89,9 +89,11 @@ export class WebSocketCore extends EventTarget {
   private _ready: Promise<void> = Promise.resolve();
 
   /**
-   * Whether `[wcs/command-not-ready]` was said for this element: a `send()` refused because the
+   * Whether `[wcs/command-not-ready]` was said in this outage: a `send()` refused because the
    * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-   * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+   * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): the socket opening
+   * resets it. Once per element was once per page life — a route puts the same element back on
+   * every entry, so the next outage's lost message went unsaid (docs/seam-apps.md, shift-desk).
    */
   private _toldNotReady = false;
 
@@ -283,7 +285,7 @@ export class WebSocketCore extends EventTarget {
     this._toldNotReady = true;
     console.warn(
       "[@wcstack/websocket] [wcs/command-not-ready] send() was refused: the WebSocket is not connected, so the message is lost. " +
-        "It goes to `error` too. Send once `connected` is true. (Said once per element.)",
+        "It goes to `error` too. Send once `connected` is true. (Said once until the WebSocket connects again.)",
       this._target,
     );
   }
@@ -332,6 +334,8 @@ export class WebSocketCore extends EventTarget {
   private _onOpen = (): void => {
     if (this._socketGen !== this._gen) return;
     this._reconnectCount = 0;
+    // ready again: a send refused in the next outage is said again
+    this._toldNotReady = false;
     this._lastActivity = Date.now();
     this._armStale();
     this._setLoading(false);

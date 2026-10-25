@@ -893,7 +893,7 @@ bootstrapFetch({
 - `value`, `loading`, `error`, `status`, `objectURL`, and `errorInfo` are **output state**
 - `url`, `body`, `response-type`, and `trigger` are **input / command surface**
 - `response-type` (default `auto`) selects how the response body is read; `blob` additionally publishes a managed `objectURL` (revoked on each new response / dispose). `target` (HTML-replace mode) overrides it
-- `trigger` is intentionally one-way: writing `true` executes, reset emits completion. Writing `true` while `url` is empty is ignored (no fetch, no event, flag stays `false`); since 4.5 it warns once per element (`[wcs/command-not-ready]`) — in one `data-wcs`, write `trigger` after `url`, since bindings apply in the order written
+- `trigger` is intentionally one-way: writing `true` executes, reset emits completion. Writing `true` while `url` is empty is ignored (no fetch, no event, flag stays `false`); since 4.5 it warns (`[wcs/command-not-ready]`), once until a request is sent again (since 4.8 (not released yet); before, once per element) — in one `data-wcs`, write `trigger` after `url`, since bindings apply in the order written
 - on an HTTP error (status >= 400), `value` is reset to `null` while `status` carries the error code — a `value`-only binding loses its previous value, so bind `error` to detect failures
 - on a network error (no HTTP response — DNS failure, offline, CORS, etc.), `value` is reset to `null` and `status` to `0`; `error` holds the thrown `Error`. Like HTTP errors, a previous successful value/status does not linger
 - `method="HEAD"` skips response-body reading by spec (no body); `value` stays `null` and only `status` is surfaced

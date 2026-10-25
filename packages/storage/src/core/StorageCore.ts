@@ -48,7 +48,7 @@ export class StorageCore extends EventTarget {
   private _key: string = "";
   /** Whether `[wcs/storage-unserializable]` was said for this element. */
   private _toldUnkept = false;
-  /** Whether `[wcs/command-not-ready]` was said for this element (an operation without a key). */
+  /** Whether `[wcs/command-not-ready]` was said in this outage (an operation without a key; a key resets it). */
   private _toldNoKey = false;
   private _type: StorageType = "local";
   private _storageListener: ((e: StorageEvent) => void) | null = null;
@@ -130,6 +130,8 @@ export class StorageCore extends EventTarget {
     // non-string assignment from poisoning the cross-tab `e.key !== _key`
     // comparison; empty keys are still rejected at operation time.
     this._key = String(value);
+    // ready again: an operation refused in the next outage is said again
+    if (this._key) this._toldNoKey = false;
   }
 
   get type(): StorageType {
@@ -301,15 +303,17 @@ export class StorageCore extends EventTarget {
 
   // An operation without a key does nothing, and only a page that binds `error` heard of it. In React and
   // Vue the usual cause is `key` itself: both keep it for themselves and never hand it to the element
-  // (docs/seam-apps.md, fw-inventory). Said once per element (the I/O command policy,
-  // docs/v4-direction-2026-10.md).
+  // (docs/seam-apps.md, fw-inventory). Said once per outage (the I/O command policy,
+  // docs/v4-direction-2026-10.md): a key resets it. Once per element was once per page life — a
+  // route puts the same element back on every entry, so the next outage went unsaid
+  // (docs/seam-apps.md, shift-desk).
   private _warnNoKey(operation: string): void {
     if (this._toldNoKey) return;
     this._toldNoKey = true;
     console.warn(
       `[@wcstack/storage] [wcs/command-not-ready] ${operation}() was refused: there is no key, so nothing is ` +
         "loaded or stored. It goes to `error` too. Give the element a `key` — in React and Vue, which keep `key` " +
-        "for themselves, write `storage-key`. (Said once per element.)",
+        "for themselves, write `storage-key`. (Said once until the element has a key again.)",
       this._target,
     );
   }

@@ -207,7 +207,7 @@ HTML、JS、または `@wcstack/state` バインディングから接続とメ�
 |------------|------|------|
 | `url` | `string` | WebSocket エンドポイント URL |
 | `trigger` | `boolean` | 単方向の接続トリガー |
-| `send` | `any` | 値を設定するとデータを送信（オブジェクトは自動文字列化）。ソケットが開く前は拒まれる: `error`（`invalid-state`）に流れ、メッセージは失われ、要素が `[wcs/command-not-ready]` で警告する（1 要素につき 1 回） |
+| `send` | `any` | 値を設定するとデータを送信（オブジェクトは自動文字列化）。ソケットが開く前は拒まれる: `error`（`invalid-state`）に流れ、メッセージは失われ、要素が `[wcs/command-not-ready]` で警告する（ソケットがまた開くまで 1 回 — 4.8（未リリース）から。それまでは 1 要素につき 1 回） |
 | `manual` | `boolean` | DOM 接続時の自動接続を無効化 |
 
 **`null` と `undefined`。** 属性に対応する入力（`url`・`protocols`・`autoReconnect`・`reconnectInterval`・`maxReconnects`・`binaryType`・`staleAfter`・`manual` — [要素一覧](#要素一覧)参照）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。こうして戻った `url` はほかの `url` 変更と同じく接続し直し、クリアした `url` では接続しません。`trigger` と `send` はどちらも無視します。

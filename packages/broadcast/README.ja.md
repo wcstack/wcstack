@@ -134,7 +134,7 @@ post は DOM クリック（autoTrigger）または command-token から起動�
 | プロパティ | イベント                 | 説明                                                                                 |
 | --------- | ------------------------ | ------------------------------------------------------------------------------------ |
 | `message` | `wcs-broadcast:message`  | チャンネル上の他のコンテキストから受信した直近の値（structured clone のコピー）。このコンテキスト自身の post では決して設定されない。 |
-| `error`   | `wcs-broadcast:error`    | 正規化された `{ name, message }` — `DataCloneError`（クローン不可能な post）、`DataError`（ピアのメッセージをデシリアライズできなかった）、`InvalidStateError`（開いているチャンネルが無い状態での post — メッセージは失われ、要素が `[wcs/command-not-ready]` で警告する。1 要素につき 1 回）、または `NotSupportedError`（BroadcastChannel が利用不可）。 |
+| `error`   | `wcs-broadcast:error`    | 正規化された `{ name, message }` — `DataCloneError`（クローン不可能な post）、`DataError`（ピアのメッセージをデシリアライズできなかった）、`InvalidStateError`（開いているチャンネルが無い状態での post — メッセージは失われ、要素が `[wcs/command-not-ready]` で警告する。チャンネルがまた開くまで 1 回 — 4.8（未リリース）から。それまでは 1 要素につき 1 回）、または `NotSupportedError`（BroadcastChannel が利用不可）。 |
 | `errorInfo` | `wcs-broadcast:error-info-changed` | シリアライズ可能な失敗タクソノミ `WcsIoErrorInfo \| null`（安定した `code` / `phase` / `recoverable`）。`error` と同じ失敗から導出される。追加的で、`error` の形状は不変。 |
 
 ## コマンド
@@ -208,7 +208,7 @@ form:has(wcs-broadcast:state(error)) .banner { display: block; }
 - **ワイヤエンコーディングは無い。** ペイロードは structured clone を使うため、JSON の stringify/parse ステップはありません（テキストワイヤで送る `<wcs-ws>` と異なります）。オブジェクトを直接 post すると、受信側はディープコピーを得ます。クローン不可能な値は `error` 経由で `DataCloneError` として失敗します。
 - **接続状態は無い。** BroadcastChannel は構築された瞬間に「開いて」います — connecting/ハンドシェイク段階も、`readyState` も、再接続もありません（必要ないため）。Shell は接続時に同期的に開くので `connectedCallbackPromise` は即座に resolve する（解決済み promise）が、`hasConnectedCallbackPromise = true` として公開されており、state バインダ / SSR がスナップショット前に一様に readiness を await できます。
 - **再接続で開き直す。** 要素を削除して再挿入すると `connectedCallback` が再度実行され、`name` 属性（真実の源）からチャンネルを開き直します。`disconnectedCallback` がそれを閉じます。
-- **エラー処理。** `<wcs-broadcast>` は実行時の失敗で throw しません。BroadcastChannel コンストラクタの欠如、クローン不可能な post、デシリアライズ失敗は `error` プロパティ / `wcs-broadcast:error` イベントを通じて表面化します — `post()` は resolve し、決して reject しません。観測・対処するには `error` をバインドしてください。メッセージが失われる post は、要素ごとに 1 回警告もします: 開いているチャンネルが無いときは `[wcs/command-not-ready]`（4.5 から）、structured clone で写せない値では `[wcs/post-uncloneable]`（4.6 から）。
+- **エラー処理。** `<wcs-broadcast>` は実行時の失敗で throw しません。BroadcastChannel コンストラクタの欠如、クローン不可能な post、デシリアライズ失敗は `error` プロパティ / `wcs-broadcast:error` イベントを通じて表面化します — `post()` は resolve し、決して reject しません。観測・対処するには `error` をバインドしてください。メッセージが失われる post は警告もします: 開いているチャンネルが無いときは `[wcs/command-not-ready]`（4.5 から。4.8（未リリース）からはチャンネルがまた開くまで 1 回、それまでは要素ごとに 1 回）、structured clone で写せない値では `[wcs/post-uncloneable]`（4.6 から、要素ごとに 1 回）。
 - **`errorInfo` タクソノミ。** `error` に現れるのと同じ失敗を、シリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-broadcast:error-info-changed`）です。`error` の形状は変えません。`BroadcastChannel` コンストラクタの欠如（`NotSupportedError`）は `capability-missing`（phase `probe`）、クローン不可能な post（`DataCloneError`——呼び出し側入力の不備）は `invalid-argument`（phase `execute`）、その他（`DataError` のデシリアライズ失敗、`InvalidStateError`、`Error` フォールバック）は `broadcast-error`（phase `execute`）です。いずれも `recoverable: false`（同じ入力を再送しても回復しません）。`errorInfo` は `error` と同期して遷移し（同じタイミングで、`error` と共にクリアされる）ます。共有の `WcsIoErrorInfo` 型と `WCS_BROADCAST_ERROR_CODE` 定数は export 済みです。
 
 ## ヘッドレス利用（`BroadcastCore`）
