@@ -8,6 +8,16 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+## [4.8.0] — 2026-10-26
+
+The sixth minor under the 4.x direction, that nothing fails without a word, and the first of its second round of seam apps ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §3.2): `shift-desk`, a support desk's operator console left open for a shift — a laptop asleep, a tab hidden for an hour, the back/forward cache, midnight, an expiring token, thousands of events ([docs/seam-apps.md](./docs/seam-apps.md)). Of 16 mistakes made on purpose, 10 told nothing, and the published lint's 10 warnings on the app were all false. It found a `<wcs-head>` that kept nodes on every navigation, I/O nodes in a route that started their work with the previous route's inputs — 17 packages —, connections that died without being closed and were never noticed, a WebSocket that kept pages out of the back/forward cache, warnings said once per page life, and no document on what a page that stays open needs. The author's five decisions are in v4-direction §5.7.
+
+### Upgrading
+
+- I/O nodes: **the work an element starts when it is connected begins one microtask later.** Whether to connect, load, start or observe — and with which inputs — is decided in a microtask, with the inputs as they are then (timing contract §23), in websocket, sse, camera, speech (`<wcs-listen>`), geolocation, midi, permission, timer, clipboard, wakelock, raf, intersection, resize and defined, and on a reconnect in storage, broadcast and worker. Code that appends an element and reads its state in the same task (`readyState`, `running`, `observing`, a timer's `immediate` tick) sees the work start after a microtask; a test that did so awaits one. A stop command called in the same task as the append (`close()`, `stop()`, `release()`, `stopMonitor()`, …) still leaves the element stopped.
+- `@wcstack/websocket`: **an open `<wcs-ws>` closes when the page may enter the back/forward cache** (`pagehide` with `persisted`) and reconnects when it comes back. The page is restored instead of reloaded; what arrived meanwhile is not replayed — resync on `connected`.
+- I/O nodes: **`[wcs/command-not-ready]` is said once per outage**, not once per element: a console that showed it once a page life shows it again after the element was ready in between. `<wcs-idle>`'s `start()` without the permission now says it too.
+
 ### Added
 
 - `examples/prod-booking`: the seam app, with its e2e spec — two versions side by side (v1 the published 4.6.2 from npm aliases, v2 this tree's dists under `WCS_LOCAL=1`) in six delivery profiles; the browser-specific checks (import map integrity, Trusted Types) also run in a new `firefox` Playwright project, which `e2e.yml` installs. Landing it recorded that an in-place deploy is refused only when the open tab runs 4.7 or later ([docs/seam-apps.md](./docs/seam-apps.md)).
