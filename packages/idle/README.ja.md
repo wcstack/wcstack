@@ -35,10 +35,12 @@ npm install @wcstack/idle
 <wcs-state>
   <script type="module">
     export default {
-      // start()前は在席とみなす: `wcs-idle:change`はstart()前は発火しないため、
-      // ここを`false`にすると実際には在席なのに初回ロード時点で常に「離席中」が
-      // 表示されてしまう(在席が単に未検知なだけ)。
-      presenceActive: true,
+      // `userState` は start() が成功するまで null、その後は "active" / "idle"。
+      // 「離席中」は "idle" のときだけ出す: start() の前は在席が分からないだけ。
+      // （`active` を束ねて `true` を種にしても効かない: `active` は出力なので、
+      // 束縛が付いたときに要素の `false` を受け取る。）
+      userState: null,
+      get away() { return this.userState === "idle"; },
       idleGranted: false,
       async enableIdleDetection() {
         const el = document.querySelector("wcs-idle");
@@ -50,7 +52,7 @@ npm install @wcstack/idle
 </wcs-state>
 
 <wcs-permission name="idle-detection" data-wcs="granted: idleGranted"></wcs-permission>
-<wcs-idle threshold="60000" data-wcs="active: presenceActive"></wcs-idle>
+<wcs-idle threshold="60000" data-wcs="userState: userState"></wcs-idle>
 
 <!-- 注意: ここに `disabled: idleGranted` をバインドしてはいけません——permission の
      許可はページロードを跨いで永続化されるため、再訪問時にボタンが最初から無効になり
@@ -58,7 +60,7 @@ npm install @wcstack/idle
      再クリックは無害です: requestPermission() は即座に "granted" を返し start() に進みます。 -->
 <button data-wcs="onclick: enableIdleDetection">離席検知を有効にする</button>
 <p>許可状態: <span data-wcs="textContent: idleGranted"></span></p>
-<template data-wcs="if: presenceActive|not">
+<template data-wcs="if: away">
   <span class="badge">離席中</span>
 </template>
 ```

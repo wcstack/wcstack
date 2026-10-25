@@ -40,7 +40,7 @@ Points to settle:
 - **The observable surface**: which properties are exposed. A composite state is decomposed into "one event plus derived getters" (§4.2)
 - **Observable semantics**: whether each property is treated as `state` / `event` / `handle`. Tabulate the owner of each object or array, whether it is mutated after publication, and the stop / swap / release points of any live resource (§3.3.1)
 - Whether **the desired / actual two-phase split** is needed. e.g. `wakelock` (separating the acquisition request `desired` from actually holding it, `actual`)
-- **Whether a same-value guard alone suffices**, or debounce/throttle is left to the user (the user by default — let them write `notice@x|debounce(1000)` with a filter)
+- **Whether a same-value guard alone suffices**, or debounce/throttle is left to the user (the user by default — let them put a `<wcs-debounce>` in front; `data-wcs` has no `debounce` filter)
 - How **permission / secure-context** are handled. Whether to reuse the existing four-value surface (`prompt` / `granted` / `denied` / `unsupported`)
 - Whether it has **autoTrigger** (the click-to-invoke shortcut)
 - **Whether it has an external clock** (an audio thread and the like — a time base of its own that the main thread's sync / microtask / task cannot express). If it does, **expose desired only and do not specify when it takes effect** ([timing-and-firing-contract.md §19.1](./timing-and-firing-contract.md)). It MUST NOT read the effective value back and publish it — the reading depends on the render quantum and the same-value guard stops working

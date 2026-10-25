@@ -111,6 +111,8 @@ When `<wcs-timer>` is connected to the DOM, it automatically starts an interval 
 
 **Since 4.8 (not released yet), the auto-start waits one microtask.** Whether to start (`manual`), and with which `interval` / `repeat` / `once` / `immediate`, is decided one microtask after `connectedCallback`, with the inputs as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `stop()` / `reset()` in the same task cancel the start; `pause()` starts it then and pauses it.
 
+**Ticks are not time.** A hidden tab's timers are throttled (Chromium: at most once a minute after five minutes hidden) and a sleeping laptop runs none, so `tick` × `interval` falls behind the clock — a 1-second timer counts a few ticks over an hour asleep. To measure time, read the clock (`Date.now()`) on each tick and keep it in state; see [Pages that stay open](../../docs/long-lived-pages.md).
+
 ## Observable Properties (outputs)
 
 | Property  | Event                       | Description                                            |
