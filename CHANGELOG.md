@@ -21,6 +21,8 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Fixed
 
 - `@wcstack/router`: **a bound child of `<wcs-head>` no longer leaves nodes behind on every navigation.** Each route change bound a new copy of it in `<head>` and dropped the previous copy, but a binding is never undone, so the page kept every copy: two nodes per navigation for a bound `<title>`, one for a bound `<meta>`, for as long as the page stayed open. Each bound child now has one copy, bound once and put back on every entry (it keeps receiving its values while it is out). Found by the `shift-desk` seam app, a page left open for a shift ([docs/seam-apps.md](./docs/seam-apps.md)).
+- `@wcstack/lint`: **a getter's JSDoc `@returns {T}` declares the shape it returns.** A getter whose body the validator cannot read — `{ ...r, ...live }`, `[x].map(…)` after an early `return []` — made every binding below it a false `wcs/binding-path-missing`, and the `@returns` written for it was ignored (it was read only by `wcs-schema`). It is now read as `@type` is on a data property, and an intersection `A & B` in a JSDoc type merges the fields. The `shift-desk` seam app's 8 such warnings are gone, and so are 5 on `examples/prod-booking` ([docs/seam-apps.md](./docs/seam-apps.md)).
+- `@wcstack/lint`: **a method whose default parameter is a call is a method.** `enqueue(id, text, clientId = crypto.randomUUID()) { … }` was not recognised: the method was missing from the state (a false `wcs/binding-path-missing`, or `wcs/read-path-missing` with a near name), and the keys of object literals in its body could be read as the state's own.
 
 ## [4.7.0] — 2026-10-25
 
