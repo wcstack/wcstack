@@ -176,7 +176,7 @@ describe("BroadcastCore", () => {
       expect(coreA.error).toBeNull();
     });
 
-    it("準備のできていない要素への post を、1 要素につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
+    it("準備のできていない要素への post を、チャンネルの無い間に 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
         const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
@@ -186,6 +186,7 @@ describe("BroadcastCore", () => {
         core.post("hello");
         expect(said()).toHaveLength(1);
         expect(String(said()[0][0])).toContain("post() was refused: no channel is open, so the message is lost.");
+        expect(String(said()[0][0])).toContain("(Said once until a channel opens again.)");
         expect(said()[0][1]).toBe(target);
         // (error にも流れる — 従来どおり)
         expect(core.error).not.toBeNull();
@@ -193,6 +194,33 @@ describe("BroadcastCore", () => {
         const other = new BroadcastCore();
         other.post("hello");
         expect(said()).toHaveLength(2);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("チャンネルが開いた後の次の不在では、同じ要素でもまた警告する（[wcs/command-not-ready]）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+        const core = new BroadcastCore();
+        core.post("morning");
+        expect(said()).toHaveLength(1);
+        // 開く → 準備ができた
+        core.open("room");
+        core.post("noon");
+        expect(core.error).toBeNull();
+        expect(said()).toHaveLength(1);
+        // ルートを離れた（dispose）→ 次の不在。その最初の post をまた言い、2 回目は言わない
+        core.dispose();
+        core.post("afternoon");
+        core.post("afternoon");
+        expect(said()).toHaveLength(2);
+        // close も同じ: 開き直してから閉じると、また言う
+        core.open("room");
+        core.close();
+        core.post("evening");
+        expect(said()).toHaveLength(3);
       } finally {
         warn.mockRestore();
       }

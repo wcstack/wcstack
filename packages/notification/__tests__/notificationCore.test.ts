@@ -272,7 +272,7 @@ describe("notify() — constructor バックエンド", () => {
     expect((only(events, "wcs-notify:error")[0].detail as WcsNotifyErrorDetail).error).toBe("not-granted");
   });
 
-  it("許可の無い notify は、要素を添えて 1 回だけ警告する（[wcs/command-not-ready]）", async () => {
+  it("許可の無い notify は、許可の無い間に 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       installNotification({ permission: "default" });
@@ -285,7 +285,37 @@ describe("notify() — constructor バックエンド", () => {
       const said = warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
       expect(said).toHaveLength(1);
       expect(String(said[0][0])).toContain('the permission is "prompt"');
+      expect(String(said[0][0])).toContain("(Said once until the permission is granted again.)");
       expect(said[0][1]).toBe(target);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("許可が granted になった後の次の不許可では、同じ要素でもまた警告する（[wcs/command-not-ready]）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+      installNotification();
+      const perms = installPermissions({ state: "prompt" });
+      const core = make();
+      await core.observe();
+      core.notify("morning");
+      expect(said()).toHaveLength(1);
+      // prompt → denied は許可ではない（同じ不許可のうち）
+      perms.statuses[0].change("denied");
+      core.notify("morning");
+      expect(said()).toHaveLength(1);
+      // granted → 準備ができた
+      perms.statuses[0].change("granted");
+      expect(core.notify("noon")).not.toBe("");
+      expect(said()).toHaveLength(1);
+      // 取り消された → 次の不許可。その最初の notify をまた言い、2 回目は言わない
+      perms.statuses[0].change("denied");
+      core.notify("afternoon");
+      core.notify("afternoon");
+      expect(said()).toHaveLength(2);
+      expect(String(said()[1][0])).toContain('the permission is "denied"');
     } finally {
       warn.mockRestore();
     }

@@ -64,7 +64,7 @@ export default {
 | `say`（reactive input） | 束縛値が**変化**したとき | しない（ガード） | ステータス・a11y アナウンス |
 | `speak`（imperative command） | command が**起動**されたとき | する | 「クリックで読む」「もう一度読む」 |
 
-> **ヒント:** `<input>` の value など高頻度ソースに束縛するときは `\|debounce` を挟まないと1キーストロークごとに発話します。`manual` 属性で `say` を完全にミュートできます（認識中の発話ミュート＝echo 回避のフックにもなります）。
+> **ヒント:** `<input>` の value など高頻度ソースは、`<wcs-debounce>`（`source:` → `value:`）で落ち着かせてから `say` に束縛しないと、1キーストロークごとに発話します（`data-wcs` に `debounce` フィルタはありません）。`manual` 属性で `say` を完全にミュートできます（認識中の発話ミュート＝echo 回避のフックにもなります）。
 
 ### 単語境界ハイライト
 
@@ -247,6 +247,7 @@ SpeechRecognition 自体が Chrome 系のみの対応だからです（後述の
 
 ## 注意・制限
 
+- **4.8（未リリース）から、`<wcs-listen>` は接続の 1 マイクロタスク後に決める**: 開始するか（`manual`）、どの `lang` / `continuous` / `interim` / `max-restarts` でかを、そのときの属性で（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後 — その場で始めると前のルートの言語で聞いていた。同じタスクの `stop()` / `abort()` は開始を取り消す。
 - **セキュアコンテキスト必須。** 両 API とも HTTPS か `localhost` が必要。`<wcs-listen>` はさらにマイク permission が必要です。
 - **ブラウザ対応。** SpeechSynthesis は広く対応。SpeechRecognition は Chrome 系のみ（`webkitSpeechRecognition`）で、それ以外では `<wcs-listen>` は `unsupported` を報告します。
 - **SpeechSynthesis はグローバルシングルトン。** `<wcs-speak>` は切断時に `cancel()` しません（他インスタンスまで止まるため）。音声を止めるには明示的に `cancel()` を。切断された要素は追跡を止めますが、発話中の utterance は自然に完了します。

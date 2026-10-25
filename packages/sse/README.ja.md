@@ -185,7 +185,11 @@ data: {"side":"buy","qty":10}
 
 再接続を止めるには、`close()` を呼ぶ（または DOM から要素を削除する）。
 
-**再接続の後に取りこぼしを埋めるのは、サーバーとページの仕事です。** ブラウザが再接続で `Last-Event-ID` を送るのは、ストリームが `id:` 付きのイベントを届けた後だけです。スナップショットを読んでからストリームを開くページは、最初の切断の時点で 1 つも受け取っていないので、再接続は何も求めず、その間の変更は失われ、`connected` はまた `true` になります。ストリームに始める位置を渡してください — スナップショットの位置を URL に入れる（`data-wcs="url: eventsUrl"` と、`"/api/events?since=" + this.seq` を返す getter）か、サーバーが最初に今の `id:` を送る。また `CLOSED (2)`（HTTP のエラー）で終わったストリームを、ブラウザは再試行しません: `close()` と `trigger` で、いた位置から開き直します。
+**再接続の後に取りこぼしを埋めるのは、サーバーとページの仕事です。** ブラウザが再接続で `Last-Event-ID` を送るのは、ストリームが `id:` 付きのイベントを届けた後だけです。スナップショットを読んでからストリームを開くページは、最初の切断の時点で 1 つも受け取っていないので、再接続は何も求めず、その間の変更は失われ、`connected` はまた `true` になります。ストリームに始める位置を渡してください — スナップショットの位置を URL に入れる（`data-wcs="url: eventsUrl"` と、`"/api/events?since=" + this.streamSince` を返す getter）か、サーバーが最初に今の `id:` を送る。**開いている間、その位置は変えないでください:** `streamSince` は、ストリームを意図して開く・開き直すときに書きます（スナップショットの位置。開き直しでは最後に当てたイベント）。イベントのたびには書きません。イベントのたびに変わる `url` は、そのたびにストリームを閉じて開き直します — データは正しいままなので、何も気づかせません（docs/seam-apps.ja.md、shift-desk: 30 秒で 15 本の接続）。ページが開き直す間のブラウザ自身の再接続は `Last-Event-ID` を運びます。
+
+**諦めたストリーム。** `CLOSED (2)`（HTTP のエラー: サーバーの再起動中の 502、URL のトークンが期限切れになった 401）で終わったストリームを、ブラウザは再試行しません: `close()` と `trigger` で、いた位置から開き直します。見分けるのは `errorInfo` の `recoverable: false` で、`readyState` だけではありません: 要素が一度も接続していない間も `readyState` は `CLOSED (2)` で、`$watch` は要素の最初の値で 1 回発火するので、`readyState === 2` を見る watch は読み込みのたびに走ります。`EventSource` はページに HTTP の状態を見せないので、401 と 502 は同じに見えます。URL のトークン（`EventSource` はヘッダを送れない）はストリームを開いたときのもので、ネイティブの再接続は期限切れの後もそれを使います: 開き直す前に更新するか、ストリームを cookie で認証してください（`with-credentials`）。
+
+**閉じられずに死んだ接続** — ノートパソコンのスリープ、接続を落とした NAT や proxy — にブラウザは気づきません: ストリームは `OPEN` のまま、`connected` は `true` のままで、何も届きません。4.8（未リリース）から、`stale-after="60000"` は、その時間（ms）イベントが 1 つも届かない開いたストリームを失われたとみなします: `connected` が `false` になり、`error` が理由を言い（`errorInfo.recoverable` は `true`）、要素は同じ `url` を開き直します。新しい `EventSource` は `Last-Event-ID` を送らないので、位置は URL が運びます（上）。サーバーは、要素が聞くイベント — 名前なし、または `events` の名前 — をそれより短い間隔で送る必要があります。SSE のコメント行（`:`）はイベントではありません。何時間も開いたままのページがほかに通るもの: [開いたままのページ](../../docs/long-lived-pages.ja.md)。
 
 ## ステートサーフェス vs コマンドサーフェス
 
@@ -208,10 +212,11 @@ data: {"side":"buy","qty":10}
 | `withCredentials` | `boolean` | リクエストに資格情報を送信 |
 | `events` | `string` | サブスクライブする名前付きイベント（カンマ区切り） |
 | `raw` | `boolean` | JSON 自動パースを無効化 |
+| `staleAfter` | `number` | イベントが届かない時間（ms）がこれを超えた開いたストリームを、失われたとみなして開き直す（`0`: しない）。接続するときに読む。4.8（未リリース）から |
 | `trigger` | `boolean` | 単方向の接続トリガー |
 | `manual` | `boolean` | DOM 接続時の自動接続を無効化 |
 
-**`null` と `undefined`。** 属性に対応する入力（`url`・`withCredentials`・`events`・`raw`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、`/null` や `/undefined` へ接続することもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`url` をクリアしても開いているストリームはそのままです（切断は `close()`）。マークアップの `url` が今と違えば、`undefined` で戻したときにその `url` へ張り直します。`trigger` はどちらも無視します。
+**`null` と `undefined`。** 属性に対応する入力（`url`・`withCredentials`・`events`・`raw`・`staleAfter`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、`/null` や `/undefined` へ接続することもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`url` をクリアしても開いているストリームはそのままです（切断は `close()`）。マークアップの `url` が今と違えば、`undefined` で戻したときにその `url` へ張り直します。`trigger` はどちらも無視します。
 
 ## `:state()` による CSS スタイリング
 
@@ -349,6 +354,7 @@ sseEl.close();
 | `with-credentials` | `boolean` | `false` | クロスオリジンで資格情報を送信 |
 | `events` | `string` | — | サブスクライブする名前付きイベント（カンマ区切り） |
 | `raw` | `boolean` | `false` | JSON 自動パースを無効化 |
+| `stale-after` | `number` | `0` | この時間（ms）イベントが届かない開いたストリームを開き直す（`0`: しない）。4.8（未リリース）から |
 | `manual` | `boolean` | `false` | 自動接続を無効化 |
 
 | プロパティ | 型 | 説明 |
@@ -491,6 +497,7 @@ bootstrapSse({
 
 ## 設計メモ
 
+- **4.8（未リリース）から、接続時の判断はマイクロタスクを 1 つ待つ。** 接続するか、どの `url` へかは、`connectedCallback`（と `url` の変化）の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`connect()` / `trigger` はその場で接続し、同じタスクの `close()` は待っている接続を取り消す。
 - `message`、`connected`、`loading`、`error`、`readyState` は **出力ステート**
 - `url`、`trigger` は **入力 / コマンドサーフェス**。`withCredentials`、`events`、`raw` は接続オプション
 - `message` は `{ event, data, lastEventId }` を運ぶため、名前付きイベントが1つのバインド可能プロパティを共有する — state 側で `event` により分岐する

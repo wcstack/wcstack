@@ -12,6 +12,8 @@
  *   - オブジェクト型 `{ id: number, name?: string }`（区切りは `,` / `;`、キーは識別子か引用符付き）
  *   - 配列 `T[]` / `Array<T>` / `Array.<T>` / `ReadonlyArray<T>`
  *   - 合併 `A | B`、括弧 `(A | B)[]`、`?T`（`T | null`）、`!T`（`T`）
+ *   - 交差 `A & B` — 形を知るためには合併と同じに読む（オブジェクトの構成員のフィールドを合わせる）。
+ *     getter の `@returns {(Ticket & { messages: Message[] }) | null}` の形（docs/seam-apps.md、shift-desk）
  * それ以外（関数型・リテラル型・`Record<…>` などの総称）は `unknown` に畳み、形を作らない。
  * 読めない表現は全体を null にする — 推測で形を作らない（偽の候補で本物の誤りを隠さないため）。
  *
@@ -57,7 +59,7 @@ function tokenize(text: string): Token[] | null {
     if (/\s/.test(ch)) { i++; continue; }
     // `=>` は関数型 — 形を持たない。トークン化だけ通し、パーサが unknown に畳む
     if (ch === '=' && text[i + 1] === '>') { tokens.push({ t: 'punct', v: '=>' }); i += 2; continue; }
-    if ('{}[]<>()|,;:?!*.='.includes(ch)) { tokens.push({ t: 'punct', v: ch }); i++; continue; }
+    if ('{}[]<>()|&,;:?!*.='.includes(ch)) { tokens.push({ t: 'punct', v: ch }); i++; continue; }
     if (ch === '"' || ch === "'") {
       const end = text.indexOf(ch, i + 1);
       if (end === -1) return null;
@@ -99,6 +101,8 @@ export function parseJsDocType(text: string): JsDocType | null {
       const member = parsePostfix();
       if (member === null) return null;
       members.push(member);
+      // `A & B`: the parts join the members (their fields are merged like a union's)
+      if (expect('&')) continue;
       if (!expect('|')) break;
     }
     // 関数型 `(a: T) => U` の `=>` 以降は形を持たない
@@ -298,12 +302,28 @@ function readBracedType(comment: string, tag: string): { type: string; end: numb
  * `/** @type {T} *\/` の 1 行でも、説明文を含む複数行の JSDoc でもよい。
  */
 export function readJsDocTypeBefore(content: string, propIndex: number): string | undefined {
+  const comment = jsDocCommentBefore(content, propIndex);
+  return comment === undefined ? undefined : readBracedType(comment, 'type')?.type.trim();
+}
+
+/**
+ * getter の直前（空白だけを挟む）にある JSDoc コメントの `@returns {…}`（`@return` も）の型表現を返す。
+ * getter の本体から形を読めないとき（`{ ...r, ...live }`・早い `return []` の後の `[x].map(…)`）、
+ * 作者が書いた戻りの型が唯一の手掛かり（docs/seam-apps.md、shift-desk）。
+ */
+export function readJsDocReturnsBefore(content: string, propIndex: number): string | undefined {
+  const comment = jsDocCommentBefore(content, propIndex);
+  if (comment === undefined) return undefined;
+  return (readBracedType(comment, 'returns') ?? readBracedType(comment, 'return'))?.type.trim();
+}
+
+function jsDocCommentBefore(content: string, propIndex: number): string | undefined {
   let end = propIndex;
   while (end > 0 && /\s/.test(content[end - 1])) end--;
   if (!content.startsWith('*/', end - 2)) return undefined;
   const start = content.lastIndexOf('/*', end - 2);
   if (start === -1 || content[start + 2] !== '*') return undefined;
-  return readBracedType(content.slice(start, end), 'type')?.type.trim();
+  return content.slice(start, end);
 }
 
 /**

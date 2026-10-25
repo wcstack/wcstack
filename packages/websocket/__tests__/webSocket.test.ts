@@ -3,6 +3,9 @@ import { bootstrapWebSocket } from "../src/bootstrapWebSocket";
 import { setConfig } from "../src/config";
 import { WcsWebSocket } from "../src/components/WebSocket";
 
+/** 接続の判断はマイクロタスク（timing-and-firing-contract §23）: それを流す */
+const flush = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+
 // WebSocketモック
 class MockWebSocket extends EventTarget {
   static CONNECTING = 0;
@@ -83,15 +86,16 @@ describe("WcsWebSocket コンポーネント", () => {
     const names = WcsWebSocket.wcBindable.properties.map(p => p.name);
     expect(names).toEqual(["message", "connected", "loading", "error", "errorInfo", "readyState", "trigger", "send"]);
     expect(WcsWebSocket.wcBindable.inputs?.map(input => input.name)).toEqual([
-      "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "binaryType", "manual", "trigger", "send"
+      "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "binaryType", "staleAfter", "manual", "trigger", "send"
     ]);
     expect(WcsWebSocket.wcBindable.commands?.map(command => command.name)).toEqual(["connect", "sendMessage", "close"]);
   });
 
   describe("属性アクセサ", () => {
-    it("url属性の読み書きができる", () => {
+    it("url属性の読み書きができる", async () => {
       const el = createElement();
       el.url = "ws://localhost:8080";
+      await flush();
       expect(el.url).toBe("ws://localhost:8080");
       expect(el.getAttribute("url")).toBe("ws://localhost:8080");
     });
@@ -132,12 +136,14 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(el.maxReconnects).toBe(Infinity);
     });
 
-    it("manual属性の読み書きができる", () => {
+    it("manual属性の読み書きができる", async () => {
       const el = createElement();
       expect(el.manual).toBe(false);
       el.manual = true;
+      await flush();
       expect(el.manual).toBe(true);
       el.manual = false;
+      await flush();
       expect(el.manual).toBe(false);
     });
 
@@ -154,24 +160,28 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(el.binaryType).toBe("blob");
     });
 
-    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", () => {
+    it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", async () => {
       const host = document.createElement("div");
       host.innerHTML = '<wcs-ws url="ws://authored" protocols="graphql-ws" auto-reconnect reconnect-interval="500" max-reconnects="2" binary-type="arraybuffer" manual></wcs-ws>';
       const el = host.firstElementChild as WcsWebSocket;
       el.url = "ws://bound";
+      await flush();
       el.protocols = "a,b";
       el.autoReconnect = false;
       el.reconnectInterval = 100;
       el.maxReconnects = 9;
       el.binaryType = "blob";
       el.manual = false;
+      await flush();
       el.url = undefined;
+      await flush();
       el.protocols = undefined;
       el.autoReconnect = undefined;
       el.reconnectInterval = undefined;
       el.maxReconnects = undefined;
       el.binaryType = undefined;
       el.manual = undefined;
+      await flush();
       expect(el.url).toBe("ws://authored");
       expect(el.protocols).toBe("graphql-ws");
       expect(el.autoReconnect).toBe(true);
@@ -180,12 +190,14 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(el.binaryType).toBe("arraybuffer");
       expect(el.manual).toBe(true);
       el.url = null;
+      await flush();
       el.protocols = null;
       el.autoReconnect = null;
       el.reconnectInterval = null;
       el.maxReconnects = null;
       el.binaryType = null;
       el.manual = null;
+      await flush();
       expect(el.hasAttribute("url")).toBe(false);
       expect(el.hasAttribute("protocols")).toBe(false);
       expect(el.autoReconnect).toBe(false);
@@ -197,16 +209,20 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(el.manual).toBe(false);
     });
 
-    it("接続中の url に undefined を書くとマークアップの url で張り直し、null では接続しない", () => {
+    it("接続中の url に undefined を書くとマークアップの url で張り直し、null では接続しない", async () => {
       const host = document.createElement("div");
       host.innerHTML = '<wcs-ws url="ws://localhost:8080"></wcs-ws>';
       const el = host.firstElementChild as WcsWebSocket;
       document.body.appendChild(host);
+      await flush();
       el.url = "ws://localhost:9090";
+      await flush();
       el.url = undefined;
+      await flush();
       expect(MockWebSocket.instances.map((ws) => ws.url))
         .toEqual(["ws://localhost:8080", "ws://localhost:9090", "ws://localhost:8080"]);
       el.url = null;
+      await flush();
       expect(el.hasAttribute("url")).toBe(false);
       expect(MockWebSocket.instances).toHaveLength(3);
       host.remove();
@@ -214,62 +230,231 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("connectedCallback", () => {
-    it("display:noneに設定される", () => {
+    it("display:noneに設定される", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       expect(el.style.display).toBe("none");
       el.remove();
     });
 
-    it("url設定済みの場合に自動接続する", () => {
+    it("url設定済みの場合に自動接続する", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
       el.remove();
     });
 
-    it("接続時にソケットへbinaryTypeを反映する（既定はblob）", () => {
+    it("接続時にソケットへbinaryTypeを反映する（既定はblob）", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       expect((MockWebSocket.instances[0] as unknown as { binaryType: string }).binaryType).toBe("blob");
       el.remove();
     });
 
-    it("binary-type=arraybufferを接続時にソケットへ反映する", () => {
+    it("binary-type=arraybufferを接続時にソケットへ反映する", async () => {
       const el = createElement({ url: "ws://localhost:8080", "binary-type": "arraybuffer" });
       document.body.appendChild(el);
+      await flush();
       expect((MockWebSocket.instances[0] as unknown as { binaryType: string }).binaryType).toBe("arraybuffer");
       el.remove();
     });
 
-    it("manual属性がある場合は自動接続しない", () => {
+    it("manual属性がある場合は自動接続しない", async () => {
       const el = createElement({ url: "ws://localhost:8080", manual: "" });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(0);
       el.remove();
     });
 
-    it("url未設定の場合は接続しない", () => {
+    it("url未設定の場合は接続しない", async () => {
       const el = createElement();
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(0);
       el.remove();
     });
   });
 
-  describe("disconnectedCallback", () => {
-    it("DOM除去時に接続を閉じる（dispose 経由）", () => {
+  // router は遷移で同じノードを入れ直し、state は新しい params からの url をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("接続の判断はマイクロタスクで、そのときの入力で", () => {
+    it("入れ直しの間に url が書かれると、前の url へはつながず、新しい url へ 1 本だけつなぐ", async () => {
+      const el = createElement({ url: "ws://localhost:8080/room/14" });
+      document.body.appendChild(el);
+      await flush();
+      expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080/room/14"]);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.url = "ws://localhost:8080/room/11"; });
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      await flush();
+      expect(MockWebSocket.instances.map((ws) => ws.url))
+        .toEqual(["ws://localhost:8080/room/14", "ws://localhost:8080/room/11"]);
+      el.remove();
+    });
+
+    it("判断の前に外した要素はつながない", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      el.remove();
+      await flush();
+      expect(MockWebSocket.instances).toHaveLength(0);
+    });
+
+    it("同じタスクで url の後に manual が書かれると、つながない", async () => {
+      const el = createElement();
+      document.body.appendChild(el);
+      el.url = "ws://localhost:8080";
+      el.manual = true;
+      await flush();
+      expect(MockWebSocket.instances).toHaveLength(0);
+      el.remove();
+    });
+
+    it("付けたのと同じタスクで close() すると、つながない", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      el.close();
+      await flush();
+      expect(MockWebSocket.instances).toHaveLength(0);
+      el.remove();
+    });
+
+    it("付けたのと同じタスクで connect() すると、その 1 本だけ（判断を引き取る）", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      el.connect();
+      await flush();
+      expect(MockWebSocket.instances).toHaveLength(1);
+      el.remove();
+    });
+
+    it("同じタスクの url の変化はまとまり、最後の url へ 1 本だけつなぐ", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      el.url = "ws://localhost:9090";
+      el.url = "ws://localhost:7070";
+      await flush();
+      expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:7070"]);
+      el.remove();
+    });
+  });
+
+  describe("stale-after", () => {
+    it("stale-after 属性（staleAfter）を接続のオプションとして Core に渡し、数でない値は 0", async () => {
+      const el = createElement({ url: "ws://localhost:8080", "stale-after": "45000" });
+      const spy = vi.spyOn(el as any, "connect");
+      expect(el.staleAfter).toBe(45000);
+      document.body.appendChild(el);
+      await flush();
+      expect(spy).toHaveBeenCalled();
+      el.setAttribute("stale-after", "later");
+      expect(el.staleAfter).toBe(0);
+      el.staleAfter = 1000;
+      expect(el.getAttribute("stale-after")).toBe("1000");
+      el.staleAfter = null;
+      expect(el.hasAttribute("stale-after")).toBe(false);
+      el.remove();
+    });
+  });
+
+  // back/forward cache: 開いた WebSocket はページを cache から外す（docs/seam-apps.md、shift-desk）
+  describe("pagehide / pageshow（back/forward cache）", () => {
+    const pageEvent = (type: string, persisted: boolean): Event => Object.assign(new Event(type), { persisted });
+
+    it("cache に入りうる pagehide で閉じて終わりをその場で知らせ、戻った pageshow でつなぎ直す", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      MockWebSocket.instances[0].simulateOpen();
+      expect(el.connected).toBe(true);
+
+      window.dispatchEvent(pageEvent("pagehide", true));
+      expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
+      expect(el.connected).toBe(false);
+      expect(el.readyState).toBe(3);
+
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(2);
+      expect(MockWebSocket.instances[1].url).toBe("ws://localhost:8080");
+      // 2 回目の pageshow はつながない
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(2);
+      el.remove();
+    });
+
+    it("persisted でない pagehide / pageshow、接続していなかった要素、外した要素は何もしない", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      window.dispatchEvent(pageEvent("pagehide", false));
+      expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      const idle = createElement({ url: "ws://localhost:9090", manual: "" });
+      document.body.appendChild(idle);
+      await flush();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      window.dispatchEvent(pageEvent("pageshow", false));
+      window.dispatchEvent(pageEvent("pageshow", true));
+      // el は閉じて開き直し、idle（manual で未接続）はつながない
+      expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:8080"]);
+
+      el.remove();
+      idle.remove();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it("戻るまでに url が消えていれば、つながない", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      el.url = null;
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(1);
+      el.remove();
+    });
+
+    it("pagehide の後に外した要素は、pageshow でつながない", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      el.remove();
+      document.body.appendChild(el);
+      el.manual = true;
+      await flush();
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(1);
+      el.remove();
+    });
+  });
+
+  describe("disconnectedCallback", () => {
+    it("DOM除去時に接続を閉じる（dispose 経由）", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
 
       el.remove();
       expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
     });
 
-    it("DOM除去後に発火したメッセージは状態を書き換えない（dispose の _gen ガード）", () => {
+    it("DOM除去後に発火したメッセージは状態を書き換えない（dispose の _gen ガード）", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       const ws = MockWebSocket.instances[0];
       ws.simulateOpen();
 
@@ -292,35 +477,41 @@ describe("WcsWebSocket コンポーネント", () => {
     it("connectedCallback で connectedCallbackPromise が observe() の結果に設定される", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       await expect(el.connectedCallbackPromise).resolves.toBeUndefined();
       el.remove();
     });
   });
 
   describe("attributeChangedCallback", () => {
-    it("url変更時に再接続する", () => {
+    it("url変更時に再接続する", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
 
       el.setAttribute("url", "ws://localhost:9090");
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(2);
       el.remove();
     });
 
-    it("manual属性がある場合はurl変更で再接続しない", () => {
+    it("manual属性がある場合はurl変更で再接続しない", async () => {
       const el = createElement({ url: "ws://localhost:8080", manual: "" });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(0);
 
       el.setAttribute("url", "ws://localhost:9090");
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(0);
       el.remove();
     });
 
-    it("url以外の属性名では何もしない", () => {
+    it("url以外の属性名では何もしない", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       el.attributeChangedCallback("protocols", null, "graphql-ws");
       expect(MockWebSocket.instances).toHaveLength(1);
       el.remove();
@@ -356,53 +547,64 @@ describe("WcsWebSocket コンポーネント", () => {
       el.disconnectedCallback();
     }
 
-    it("同じ値のurl属性の書き込みでは再接続しない", () => {
+    it("同じ値のurl属性の書き込みでは再接続しない", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
 
       el.setAttribute("url", "ws://localhost:8080");
+      await flush();
       el.url = "ws://localhost:8080";
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
       expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
       el.remove();
     });
 
-    it("urlのsetterに続く同じ値の属性ミラー（@wcstack/state 3.x の inputs[].attribute）でも1本", () => {
+    it("urlのsetterに続く同じ値の属性ミラー（@wcstack/state 3.x の inputs[].attribute）でも1本", async () => {
       const el = createElement();
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(0);
 
       // state はプロパティを書いてから、宣言された属性へ同じ値を書く
       el.url = "ws://localhost:8080";
+      await flush();
       el.setAttribute("url", "ws://localhost:8080");
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
       expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
       el.remove();
     });
 
-    it("urlが変わったときは1回だけ再接続し、続く同じ値の書き込みでは再接続しない", () => {
+    it("urlが変わったときは1回だけ再接続し、続く同じ値の書き込みでは再接続しない", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
 
       el.url = "ws://localhost:9090";
+      await flush();
       el.setAttribute("url", "ws://localhost:9090");
+      await flush();
       expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:9090"]);
       expect(MockWebSocket.instances[0].close).toHaveBeenCalledTimes(1);
       expect(MockWebSocket.instances[1].close).not.toHaveBeenCalled();
       el.remove();
     });
 
-    it("url属性を持つ要素がupgradeされると1本だけ張る", () => {
+    it("url属性を持つ要素がupgradeされると1本だけ張る", async () => {
       const el = simulateUpgrade({ url: "ws://localhost:8080" });
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
       expect(MockWebSocket.instances[0].url).toBe("ws://localhost:8080");
       expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
       detach(el);
     });
 
-    it("upgrade前に代入されたurlプロパティも、取り込んで1本だけ張る", () => {
+    it("upgrade前に代入されたurlプロパティも、取り込んで1本だけ張る", async () => {
       const el = simulateUpgrade({}, { url: "ws://localhost:7070" });
+      await flush();
       expect(Object.prototype.hasOwnProperty.call(el, "url")).toBe(false);
       expect(el.getAttribute("url")).toBe("ws://localhost:7070");
       expect(MockWebSocket.instances).toHaveLength(1);
@@ -410,52 +612,62 @@ describe("WcsWebSocket コンポーネント", () => {
       detach(el);
     });
 
-    it("upgrade前に代入されたmanualも、接続の判断より先に取り込む", () => {
+    it("upgrade前に代入されたmanualも、接続の判断より先に取り込む", async () => {
       const el = simulateUpgrade({}, { url: "ws://localhost:7070", manual: true });
+      await flush();
       expect(el.manual).toBe(true);
       expect(MockWebSocket.instances).toHaveLength(0);
       detach(el);
     });
 
-    it("upgradeの後のurl変更は従来どおり再接続する", () => {
+    it("upgradeの後のurl変更は従来どおり再接続する", async () => {
       const el = simulateUpgrade({ url: "ws://localhost:8080" });
+      await flush();
       el.setAttribute("url", "ws://localhost:9090");
+      await flush();
       expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:9090"]);
       detach(el);
       expect(MockWebSocket.instances[1].close).toHaveBeenCalled();
     });
 
-    it("DOMの外でのurl変更は接続せず、戻したときにそのurlで1本張る", () => {
+    it("DOMの外でのurl変更は接続せず、戻したときにそのurlで1本張る", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       el.remove();
       expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
 
       el.setAttribute("url", "ws://localhost:9090");
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
 
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:9090"]);
       el.remove();
     });
 
-    it("manual と auto-reconnect の真偽属性のミラーは接続に触れない", () => {
+    it("manual と auto-reconnect の真偽属性のミラーは接続に触れない", async () => {
       vi.useFakeTimers();
       const el = createElement({ url: "ws://localhost:8080", "reconnect-interval": "500" });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
 
       // state は真偽値を HTML の真偽属性として写す（true → ""、false → 削除）
       el.autoReconnect = true;
       el.setAttribute("auto-reconnect", "");
       el.manual = true;
+      await flush();
       el.setAttribute("manual", "");
       el.manual = false;
+      await flush();
       el.removeAttribute("manual");
       expect(MockWebSocket.instances).toHaveLength(1);
 
       // auto-reconnect はこれまでどおり次の connect() から効く
       el.setAttribute("url", "ws://localhost:9090");
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(2);
       MockWebSocket.instances[1].simulateOpen();
       MockWebSocket.instances[1].simulateClose(1006);
@@ -467,9 +679,10 @@ describe("WcsWebSocket コンポーネント", () => {
       vi.useRealTimers();
     });
 
-    it("trigger と connect() は同じurlでも従来どおり接続し直す", () => {
+    it("trigger と connect() は同じurlでも従来どおり接続し直す", async () => {
       const el = createElement({ url: "ws://localhost:8080", manual: "" });
       document.body.appendChild(el);
+      await flush();
       el.trigger = true;
       el.connect();
       expect(MockWebSocket.instances).toHaveLength(2);
@@ -479,9 +692,10 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("コア委��", () => {
-    it("message, connected, loading, error, readyStateがコアに委譲される", () => {
+    it("message, connected, loading, error, readyStateがコアに委譲される", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
 
       expect(el.connected).toBe(false);
       expect(el.loading).toBe(true);
@@ -499,9 +713,10 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("trigger", () => {
-    it("trigger設定で接続を開始する", () => {
+    it("trigger設定で接続を開始する", async () => {
       const el = createElement({ url: "ws://localhost:8080", manual: "" });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(0);
 
       el.trigger = true;
@@ -510,9 +725,10 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
-    it("triggerリセット時にイベントが発火する", () => {
+    it("triggerリセット時にイベントが発火する", async () => {
       const el = createElement({ url: "ws://localhost:8080", manual: "" });
       document.body.appendChild(el);
+      await flush();
 
       const events: boolean[] = [];
       el.addEventListener("wcs-ws:trigger-changed", (e) => {
@@ -524,9 +740,10 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
-    it("falseの場合は何もしない", () => {
+    it("falseの場合は何もしない", async () => {
       const el = createElement({ url: "ws://localhost:8080", manual: "" });
       document.body.appendChild(el);
+      await flush();
       el.trigger = false;
       expect(MockWebSocket.instances).toHaveLength(0);
       el.remove();
@@ -534,9 +751,10 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("send", () => {
-    it("文字列データを送信する", () => {
+    it("文字列データを送信する", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
 
       el.send = "hello";
@@ -544,9 +762,10 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
-    it("オブジェクトをJSON文字列化して送信する", () => {
+    it("オブジェクトをJSON文字列化して送信する", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
 
       el.send = { type: "ping" };
@@ -554,9 +773,10 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
-    it("null/undefinedは無視する", () => {
+    it("null/undefinedは無視する", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
 
       el.send = null;
@@ -565,16 +785,18 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
-    it("send getter は常に null を返す（write-only）", () => {
+    it("send getter は常に null を返す（write-only）", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       expect(el.send).toBeNull();
       el.remove();
     });
 
-    it("send後にイベントが発火する", () => {
+    it("send後にイベントが発火する", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
 
       const events: any[] = [];
@@ -589,9 +811,10 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("sendMessage", () => {
-    it("sendMessageメソッドでデータを送信する", () => {
+    it("sendMessageメソッドでデータを送信する", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
 
       el.sendMessage("raw data");
@@ -601,9 +824,10 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("close", () => {
-    it("closeメソッドで接続を閉じる", () => {
+    it("closeメソッドで接続を閉じる", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
 
       el.close(1000, "bye");
@@ -613,29 +837,31 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("protocols", () => {
-    it("カンマ区切りのprotocolsを配列として渡す", () => {
+    it("カンマ区切りのprotocolsを配列として渡す", async () => {
       const el = createElement({
         url: "ws://localhost:8080",
         protocols: "graphql-ws, graphql-transport-ws",
       });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
       el.remove();
     });
 
-    it("単一protocolはそのまま文字列として渡す", () => {
+    it("単一protocolはそのまま文字列として渡す", async () => {
       const el = createElement({
         url: "ws://localhost:8080",
         protocols: "graphql-ws",
       });
       document.body.appendChild(el);
+      await flush();
       expect(MockWebSocket.instances).toHaveLength(1);
       el.remove();
     });
   });
 
   describe("auto-reconnect属性", () => {
-    it("auto-reconnect属性で自動再接続が有効になる", () => {
+    it("auto-reconnect属性で自動再接続が有効になる", async () => {
       vi.useFakeTimers();
       const el = createElement({
         url: "ws://localhost:8080",
@@ -643,6 +869,7 @@ describe("WcsWebSocket コンポーネント", () => {
         "reconnect-interval": "500",
       });
       document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
       MockWebSocket.instances[0].simulateClose(1006);
 
@@ -671,9 +898,10 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("error委譲", () => {
-    it("errorプロパティがコアのエラーを返す", () => {
+    it("errorプロパティがコアのエラーを返す", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       expect(el.error).toBeNull();
 
       MockWebSocket.instances[0].simulateError();
@@ -681,9 +909,10 @@ describe("WcsWebSocket コンポーネント", () => {
       el.remove();
     });
 
-    it("errorInfo が Shell ゲッター経由で Core から読み取れる", () => {
+    it("errorInfo が Shell ゲッター経由で Core から読み取れる", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       expect(el.errorInfo).toBeNull();
 
       MockWebSocket.instances[0].simulateError(); // error Event → connection-error
@@ -695,10 +924,11 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("autoTrigger有効時", () => {
-    it("autoTriggerが有効な場合にregisterAutoTriggerが呼ばれる", () => {
+    it("autoTriggerが有効な場合にregisterAutoTriggerが呼ばれる", async () => {
       setConfig({ autoTrigger: true });
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       // autoTriggerが有効でもエラーなく動作する
       expect(MockWebSocket.instances).toHaveLength(1);
       el.remove();
@@ -706,9 +936,10 @@ describe("WcsWebSocket コンポーネント", () => {
   });
 
   describe("イベントバブリング", () => {
-    it("wcs-ws:messageイベントがバブルする", () => {
+    it("wcs-ws:messageイベントがバブルする", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
+      await flush();
       MockWebSocket.instances[0].simulateOpen();
 
       const events: any[] = [];

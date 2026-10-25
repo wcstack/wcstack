@@ -94,9 +94,11 @@ export class RecorderCore extends EventTarget {
   private _ready: Promise<void> = Promise.resolve();
 
   /**
-   * Whether `[wcs/command-not-ready]` was said for this element: a `start()` refused because the
+   * Whether `[wcs/command-not-ready]` was said in this outage: a `start()` refused because the
    * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-   * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+   * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): a stream arriving
+   * resets it. Once per element was once per page life — a route puts the same element back on
+   * every entry, so the next outage's lost recording went unsaid (docs/seam-apps.md, shift-desk).
    */
   private _toldNotReady = false;
 
@@ -189,6 +191,8 @@ export class RecorderCore extends EventTarget {
    */
   attachStream(stream: MediaStream): void {
     this._stream = stream;
+    // ready again: a start refused in the next outage is said again
+    if (stream) this._toldNotReady = false;
   }
 
   /** Start recording the borrowed stream. Never throws — surfaces `error`. */
@@ -294,7 +298,8 @@ export class RecorderCore extends EventTarget {
     this._toldNotReady = true;
     console.warn(
       "[@wcstack/camera] [wcs/command-not-ready] start() was refused: no stream is attached, so nothing is recorded. " +
-        "It goes to `error` too. Wire a camera's stream to the recorder first. (Said once per element.)",
+        "It goes to `error` too. Wire a camera's stream to the recorder first. " +
+        "(Said once until a stream is attached again.)",
       this._target,
     );
   }

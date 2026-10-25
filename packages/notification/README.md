@@ -74,10 +74,12 @@ The positional args of `notify.emit(title, options)` pass straight through to `n
 
 ```html
 <!-- reactive: shows whenever the bound value *changes* (same-value guard). -->
-<wcs-notify data-wcs="notice: statusMessage | debounce(1000)"></wcs-notify>
+<!-- settle the source first with <wcs-debounce> (@wcstack/debounce) -->
+<wcs-debounce wait="1000" data-wcs="source: statusMessage; value: settledStatus"></wcs-debounce>
+<wcs-notify data-wcs="notice: settledStatus"></wcs-notify>
 ```
 
-`notice` is the declarative counterpart of `notify`: writing a *changed* value shows it; an identical write is suppressed. The imperative `notify` command fires every call (even the same text). Auto-firing a notification on every state change risks spam, so debounce the bound source and prefer a `tag` so the OS de-dups.
+`notice` is the declarative counterpart of `notify`: writing a *changed* value shows it; an identical write is suppressed. The imperative `notify` command fires every call (even the same text). Auto-firing a notification on every state change risks spam, so debounce the bound source — with `<wcs-debounce>`, as above: `data-wcs` has no `debounce` filter, and a filter it does not know fails the whole `<wcs-state>` — and prefer a `tag` so the OS de-dups. A page that stays open has one more source of spam: everything that arrived while the laptop slept arrives at once on wake — see [Pages that stay open](../../docs/long-lived-pages.md).
 
 ### 3. Permission as bindable state
 
@@ -229,7 +231,7 @@ DevTools open; they are not a supported styling hook.
 - **`mode` is fixed at connect time.** The backend is chosen once, when the element connects (`observe(mode)`); there is no `observedAttributes` entry for `mode`. Changing the `mode` attribute on an already-connected element has no effect until you re-connect it (remove and re-insert).
 - **The SW backend does not relay `close`.** The `@wcstack/notification/sw` helper wires `notificationclick` only, not `notificationclose`. So under the `sw` backend `closed` / `wcs-notify:close` never fires (there is no cross-worker relay for close). `clicked` still works via the click relay; `closed` is a constructor-backend-only signal.
 - **Push API is out of scope.** This package wraps the Notifications API (local notifications). Server-initiated Push is a separate concern.
-- **Silent failure handling (zero-log).** Consistent with wcstack's zero-dependency philosophy, `<wcs-notify>` never logs or throws. A missing API → `permission = "unsupported"`; a not-granted permission or a show failure → the `error` property. Bind `error` / `permission` to react. The one exception: since 4.5 a `notify()` refused because the permission is not granted also warns once per element (`[wcs/command-not-ready]`), since the notification is lost and only a page that binds `error` heard of it — ask with `request()` first.
+- **Silent failure handling (zero-log).** Consistent with wcstack's zero-dependency philosophy, `<wcs-notify>` never logs or throws. A missing API → `permission = "unsupported"`; a not-granted permission or a show failure → the `error` property. Bind `error` / `permission` to react. The one exception: since 4.5 a `notify()` refused because the permission is not granted also warns (`[wcs/command-not-ready]`), since the notification is lost and only a page that binds `error` heard of it — ask with `request()` first. It is said once until the permission is granted again (since 4.8 (not released yet); before, once per element).
 - **`errorInfo` taxonomy (additive).** Alongside `error`, `<wcs-notify>` publishes a serializable `errorInfo` (`wcs-notify:error-info-changed`) that classifies the *same* failure into a stable `WcsIoErrorInfo` (`code` / `phase` / `recoverable`), without changing the `error` shape. The Core's own stable error code maps straight through: `unsupported` → `capability-missing` (phase `probe`); a not-granted permission → `not-allowed` and a non-string title → `invalid-argument` (both phase `start`); a show failure → `show-failed` and a missing Service Worker backend → `no-service-worker` (both phase `execute`); any unexpected code folds defensively to `notify-error` (phase `execute`). All six are `recoverable: false`. `errorInfo` transitions exactly when `error` does (cleared to `null` on recovery); the shared `WcsIoErrorInfo` type and the `WCS_NOTIFY_ERROR_CODE` constants are exported.
 - **SSR (`@wcstack/server`).** Declares `static hasConnectedCallbackPromise = true` and exposes `connectedCallbackPromise`, so the server renderer waits for the connect-time permission probe before snapshotting.
 

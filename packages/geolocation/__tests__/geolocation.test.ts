@@ -8,6 +8,8 @@ import {
 } from "./mocks";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
+/** 接続時の判断はマイクロタスク（timing-and-firing-contract §23）: それだけを流す */
+const tick = (): Promise<void> => new Promise((r) => queueMicrotask(r));
 
 function createGeo(attrs: Record<string, string> = {}): WcsGeolocation {
   const el = document.createElement("wcs-geo") as WcsGeolocation;
@@ -38,6 +40,7 @@ describe("Geolocation (Shell)", () => {
     document.body.appendChild(el);
 
     expect(el.style.display).toBe("none");
+    await tick();
     expect(mock.getCurrentPosition).toHaveBeenCalledTimes(1);
     await flush();
     expect(el.latitude).toBe(1);
@@ -63,7 +66,7 @@ describe("Geolocation (Shell)", () => {
     expect(el.errorInfo).toEqual({ code: "permission-denied", phase: "execute", recoverable: false, message: "denied" });
   });
 
-  it("watch / manual モードでは connectedCallbackPromise は即解決（接続時一発取得なし）", async () => {
+  it("watch / manual モードでは connectedCallbackPromise は判断の後すぐ解決（接続時一発取得なし）", async () => {
     installGeolocation();
     const watchEl = createGeo({ watch: "" });
     document.body.appendChild(watchEl);
@@ -85,6 +88,149 @@ describe("Geolocation (Shell)", () => {
     document.body.appendChild(el); // reconnect → 再取得
     await flush();
     expect(mock.getCurrentPosition).toHaveBeenCalledTimes(2);
+  });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの入力をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("取得の判断はマイクロタスクで、そのときの入力で", () => {
+    const optionsOf = (call: unknown[]): unknown => call[2];
+
+    it("入れ直しの間に timeout が書かれると、前の timeout では取得せず、新しい timeout で 1 回だけ取得する", async () => {
+      const mock = installGeolocation({ position: makePosition({ latitude: 14 }) });
+      const el = createGeo({ timeout: "5000" });
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.getCurrentPosition.mock.calls.map(optionsOf))
+        .toEqual([{ enableHighAccuracy: false, timeout: 5000, maximumAge: 0 }]);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.timeout = 1000; });
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.getCurrentPosition.mock.calls.map(optionsOf)).toEqual([
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 0 },
+        { enableHighAccuracy: false, timeout: 1000, maximumAge: 0 },
+      ]);
+    });
+
+    it("入れ直しの間に watch が書かれると、一発取得せず、連続監視だけを始める", async () => {
+      const mock = installGeolocation();
+      const el = createGeo();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.getCurrentPosition).toHaveBeenCalledTimes(1);
+
+      queueMicrotask(() => { el.watch = true; });
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.getCurrentPosition).toHaveBeenCalledTimes(1);
+      expect(mock.watchPosition).toHaveBeenCalledTimes(1);
+      expect(el.watching).toBe(true);
+    });
+
+    it("判断の前に外した要素は取得せず、connectedCallbackPromise も解ける", async () => {
+      const mock = installGeolocation();
+      const el = createGeo();
+      document.body.appendChild(el);
+      el.remove();
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(mock.getCurrentPosition).not.toHaveBeenCalled();
+      expect(mock.watchPosition).not.toHaveBeenCalled();
+    });
+
+    it("同じタスクで接続の後に manual が書かれると、取得しない", async () => {
+      const mock = installGeolocation();
+      const el = createGeo();
+      document.body.appendChild(el);
+      el.manual = true;
+      await el.connectedCallbackPromise;
+      expect(mock.getCurrentPosition).not.toHaveBeenCalled();
+      expect(mock.watchPosition).not.toHaveBeenCalled();
+    });
+
+    it("同じタスクで接続の後に watch が書かれると、一発取得せず連続監視を始める", async () => {
+      const mock = installGeolocation();
+      const el = createGeo();
+      document.body.appendChild(el);
+      el.watch = true;
+      await el.connectedCallbackPromise;
+      expect(mock.getCurrentPosition).not.toHaveBeenCalled();
+      expect(mock.watchPosition).toHaveBeenCalledTimes(1);
+    });
+
+    it("同じタスクで接続の後に clearWatch() が呼ばれると、watch でも監視を始めない", async () => {
+      const mock = installGeolocation();
+      const el = createGeo({ watch: "" });
+      document.body.appendChild(el);
+      el.clearWatch();
+      await el.connectedCallbackPromise;
+      expect(mock.watchPosition).not.toHaveBeenCalled();
+      expect(el.watching).toBe(false);
+    });
+
+    it("判断の後の clearWatch() は監視を止めるだけで、次の接続の判断には残らない", async () => {
+      const mock = installGeolocation();
+      const el = createGeo({ watch: "" });
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(el.watching).toBe(true);
+      el.clearWatch();
+      expect(mock.clearWatch).toHaveBeenCalledTimes(1);
+      expect(el.watching).toBe(false);
+
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.watchPosition).toHaveBeenCalledTimes(2);
+      expect(el.watching).toBe(true);
+    });
+
+    it("clearWatch() は接続時の一発取得を取り消さない（同期だった頃と同じ）", async () => {
+      const mock = installGeolocation({ position: makePosition({ latitude: 2 }) });
+      const el = createGeo();
+      document.body.appendChild(el);
+      el.clearWatch();
+      await el.connectedCallbackPromise;
+      expect(mock.getCurrentPosition).toHaveBeenCalledTimes(1);
+      expect(el.latitude).toBe(2);
+    });
+
+    it("clearWatch() の後に同じタスクで入れ直すと、次の判断は watch に従って監視を始める", async () => {
+      const mock = installGeolocation();
+      const el = createGeo({ watch: "" });
+      document.body.appendChild(el);
+      el.clearWatch();
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.watchPosition).toHaveBeenCalledTimes(1);
+      expect(el.watching).toBe(true);
+    });
+
+    it("判断の前の watchPosition() の後は、判断が二重に監視しない（watch は監視中は冪等）", async () => {
+      const mock = installGeolocation();
+      const el = createGeo({ watch: "" });
+      document.body.appendChild(el);
+      el.watchPosition();
+      await el.connectedCallbackPromise;
+      expect(mock.watchPosition).toHaveBeenCalledTimes(1);
+    });
+
+    it("同じタスクの入れ直しはまとまって 1 回だけ取得し、前の connectedCallbackPromise も取り残さない", async () => {
+      const mock = installGeolocation({ position: makePosition({ latitude: 9 }) });
+      const el = createGeo();
+      document.body.appendChild(el);
+      const first = el.connectedCallbackPromise;
+      el.remove();
+      document.body.appendChild(el);
+      await first;
+      await el.connectedCallbackPromise;
+      expect(mock.getCurrentPosition).toHaveBeenCalledTimes(1);
+      expect(el.latitude).toBe(9);
+    });
   });
 
   it("timeout / maximumAge のセッターに NaN を渡しても既定値にフォールバックする", () => {
@@ -133,10 +279,11 @@ describe("Geolocation (Shell)", () => {
     expect(el.permission).toBe("prompt");
   });
 
-  it("watch 属性ありなら接続時に連続監視を開始する", () => {
+  it("watch 属性ありなら接続時に連続監視を開始する", async () => {
     const mock = installGeolocation();
     const el = createGeo({ watch: "" });
     document.body.appendChild(el);
+    await tick();
 
     expect(mock.watchPosition).toHaveBeenCalledTimes(1);
     expect(el.watching).toBe(true);
@@ -144,19 +291,21 @@ describe("Geolocation (Shell)", () => {
     expect(el.latitude).toBe(42);
   });
 
-  it("manual では接続時に何も起動しない", () => {
+  it("manual では接続時に何も起動しない", async () => {
     const mock = installGeolocation();
     const el = createGeo({ manual: "" });
     document.body.appendChild(el);
+    await tick();
 
     expect(mock.getCurrentPosition).not.toHaveBeenCalled();
     expect(mock.watchPosition).not.toHaveBeenCalled();
   });
 
-  it("切断時に clearWatch する", () => {
+  it("切断時に clearWatch する", async () => {
     const mock = installGeolocation();
     const el = createGeo({ watch: "" });
     document.body.appendChild(el);
+    await tick();
     el.remove();
 
     expect(mock.clearWatch).toHaveBeenCalledTimes(1);

@@ -493,4 +493,103 @@ describe("SseCore", () => {
       expect(core.errorInfo).not.toBeNull();
     });
   });
+
+  // 閉じられずに死んだ接続に EventSource は気づかない（docs/seam-apps.md、shift-desk）
+  describe("staleAfter: 何も届かない開いたストリームを開き直す", () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("最後のイベントから staleAfter ms 何も届かなければ、閉じて同じ url で開き直し、理由を error に残す", () => {
+      const core = new SseCore();
+      const connected: boolean[] = [];
+      core.addEventListener("wcs-sse:connected-changed", (e) => connected.push((e as CustomEvent).detail));
+      core.connect("/feed?since=5", { staleAfter: 1000 });
+      const first = MockEventSource.last;
+      first.simulateOpen();
+      vi.advanceTimersByTime(600);
+      first.simulateMessage("a");
+      vi.advanceTimersByTime(900);
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(100);
+      expect(first.close).toHaveBeenCalled();
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(MockEventSource.last.url).toBe("/feed?since=5");
+      expect(core.connected).toBe(false);
+      expect(core.loading).toBe(true);
+      expect((core.error as Error).message).toBe("No event for 1000 ms: the stream is treated as lost and reopened.");
+      expect(core.errorInfo?.recoverable).toBe(true);
+      // 古いストリームのイベントは捨てる
+      first.simulateMessage("late");
+      expect(core.message).toEqual({ event: "message", data: "a", lastEventId: "" });
+      MockEventSource.last.simulateOpen();
+      expect(core.connected).toBe(true);
+      expect(core.error).toBeNull();
+      expect(connected).toEqual([true, false, true]);
+    });
+
+    it("イベントが続く間は開き直さない（タイマーは 1 本、満了のたびに残りで張り直す）", () => {
+      const core = new SseCore();
+      core.connect("/feed", { staleAfter: 1000 });
+      MockEventSource.last.simulateOpen();
+      for (let i = 0; i < 20; i++) {
+        vi.advanceTimersByTime(500);
+        MockEventSource.last.simulateMessage(String(i));
+      }
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(1);
+    });
+
+    it("staleAfter が無い・0 なら見張らない", () => {
+      for (const options of [{}, { staleAfter: 0 }, { staleAfter: -5 }]) {
+        MockEventSource.resetInstances();
+        const core = new SseCore();
+        core.connect("/feed", options);
+        MockEventSource.last.simulateOpen();
+        vi.advanceTimersByTime(60_000);
+        expect(MockEventSource.instances).toHaveLength(1);
+        expect(core.connected).toBe(true);
+        core.close();
+      }
+    });
+
+    it("ネイティブの再接続中は見張らず、次の open から数え直す", () => {
+      const core = new SseCore();
+      core.connect("/feed", { staleAfter: 1000 });
+      const es = MockEventSource.last;
+      es.simulateOpen();
+      vi.advanceTimersByTime(500);
+      es.simulateError(MockEventSource.CONNECTING);
+      vi.advanceTimersByTime(2000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      es.simulateOpen();
+      vi.advanceTimersByTime(999);
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it("close() と dispose() は見張りを止める", () => {
+      const core = new SseCore();
+      core.connect("/feed", { staleAfter: 1000 });
+      MockEventSource.last.simulateOpen();
+      core.close();
+      expect(vi.getTimerCount()).toBe(0);
+      core.connect("/feed", { staleAfter: 1000 });
+      MockEventSource.last.simulateOpen();
+      core.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(5000);
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it("開き直しの EventSource の生成に失敗したら、その error が残る", () => {
+      const core = new SseCore();
+      core.connect("/feed", { staleAfter: 1000 });
+      MockEventSource.last.simulateOpen();
+      MockEventSource.nextConstructError = new Error("blocked");
+      vi.advanceTimersByTime(1000);
+      expect((core.error as Error).message).toBe("blocked");
+      expect(core.errorInfo?.recoverable).toBe(false);
+    });
+  });
 });

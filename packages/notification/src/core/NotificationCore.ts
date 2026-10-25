@@ -111,7 +111,7 @@ export class NotificationCore extends EventTarget {
 
   // Counter for auto-assigned tags when the caller omits one.
   private _idSeq: number = 0;
-  /** Whether `[wcs/command-not-ready]` was said for this element. */
+  /** Whether `[wcs/command-not-ready]` was said in this outage (reset when the permission becomes granted). */
   private _toldNotReady = false;
 
   // Notifications created via the constructor backend, by tag, so close()/closeAll()
@@ -190,6 +190,8 @@ export class NotificationCore extends EventTarget {
   private _setPermission(state: PermissionStateOrUnsupported): void {
     if (this._permission === state) return;
     this._permission = state;
+    // ready again: a notify refused in the next outage is said again
+    if (state === "granted") this._toldNotReady = false;
     this._target.dispatchEvent(new CustomEvent("wcs-notify:permission-change", {
       detail: state,
       bubbles: true,
@@ -554,15 +556,17 @@ export class NotificationCore extends EventTarget {
   }
 
   // A notification refused because the permission is not granted was lost, and only a
-  // page that binds `error` heard of it. Said once per element (docs/v4-direction-2026-10.md
-  // §5.1, the I/O command policy).
+  // page that binds `error` heard of it. Said once per outage (docs/v4-direction-2026-10.md
+  // §5.1, the I/O command policy): the permission becoming granted resets it. Once per element
+  // was once per page life — a route puts the same element back on every entry, so the next
+  // outage's lost notification went unsaid (docs/seam-apps.md, shift-desk).
   private _warnNotReady(): void {
     if (this._toldNotReady) return;
     this._toldNotReady = true;
     console.warn(
       `[@wcstack/notification] [wcs/command-not-ready] notify() was refused: the permission is "${this._permission}", ` +
         "so nothing is shown. It goes to `error` too. Ask with request() first (from a user gesture), and " +
-        "notify once `permission` is \"granted\". (Said once per element.)",
+        "notify once `permission` is \"granted\". (Said once until the permission is granted again.)",
       this._target,
     );
   }

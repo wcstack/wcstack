@@ -20,6 +20,7 @@ export class WcsSse extends HTMLElement {
       { name: "withCredentials", attribute: "with-credentials" },
       { name: "events", attribute: "events" },
       { name: "raw", attribute: "raw" },
+      { name: "staleAfter", attribute: "stale-after" },
       { name: "manual", attribute: "manual" },
       { name: "trigger" },
     ],
@@ -35,6 +36,8 @@ export class WcsSse extends HTMLElement {
   private _core: SseCore;
   private _trigger: boolean = false;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // _scheduleConnect のマイクロタスクが待っている間 true
+  private _connectPending = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -142,6 +145,17 @@ export class WcsSse extends HTMLElement {
     reflectBooleanAttribute(this, "manual", value);
   }
 
+  // 何も届かない時間（ms）がこれを超えた開いているストリームを、失われたとみなして開き直す
+  // （0・未指定・数でない値は見張らない）。接続オプションの 1 つで、接続するときに読む。
+  get staleAfter(): number {
+    const parsed = Number(this.getAttribute("stale-after"));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  set staleAfter(value: number | null | undefined) {
+    reflectAttribute(this, "stale-after", value);
+  }
+
   // --- Core delegated getters ---
 
   get message(): WcsSseMessage | null {
@@ -195,6 +209,8 @@ export class WcsSse extends HTMLElement {
   // --- Public methods ---
 
   connect(): void {
+    // 明示の connect（trigger も）と close は、待っている接続時の判断を引き取る
+    this._connectPending = false;
     // Shell は宣言的サーフェス：url 未設定での connect()/trigger は静かに no-op する
     // （SseCore.connect("") は programmatic 誤用向けに throw するが、state 配線で trigger
     // が url より先に立っただけで例外が更新サイクルを壊すのは避ける。broadcast の
@@ -211,10 +227,12 @@ export class WcsSse extends HTMLElement {
       withCredentials: this.withCredentials,
       events,
       raw: this.raw,
+      staleAfter: this.staleAfter,
     });
   }
 
   close(): void {
+    this._connectPending = false;
     this._core.close();
   }
 
@@ -226,8 +244,24 @@ export class WcsSse extends HTMLElement {
     // 「意味のある新 url」に対してのみ張り替え、falsy への変化を切断トリガーとはしない
     // （切断は close() か DOM からの除去で明示的に行う）。
     if (name === "url" && this.isConnected && !this.manual && newValue) {
-      this.connect();
+      this._scheduleConnect();
     }
+  }
+
+  // 接続の判断はマイクロタスクで、そのときの url / manual で 1 回だけ行う
+  // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+  // params から state が url を書くのはマイクロタスク — その場で接続すると前の url を使う
+  // （docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる。
+  private _scheduleConnect(): void {
+    if (this._connectPending) return;
+    this._connectPending = true;
+    queueMicrotask(() => {
+      if (!this._connectPending) return; // an explicit command took the decision meanwhile
+      this._connectPending = false;
+      if (this.isConnected && !this.manual && this.url) {
+        this.connect();
+      }
+    });
   }
 
   connectedCallback(): void {
@@ -235,12 +269,10 @@ export class WcsSse extends HTMLElement {
     upgradeProperties(this);
     this.style.display = "none";
     // §4.4: observe() の戻り（即解決の ready）を connectedCallbackPromise として保持。
-    // SSE は command-driven なので observe() 自体は監視を張らず、実際の接続は下の
-    // connect() が行う（観測 surface の確立だけを SSR 契約として公開する）。
+    // SSE は command-driven なので observe() 自体は監視を張らず、実際の接続は
+    // _scheduleConnect が行う（観測 surface の確立だけを SSR 契約として公開する）。
     this._connectedCallbackPromise = this._core.observe();
-    if (!this.manual && this.url) {
-      this.connect();
-    }
+    this._scheduleConnect();
   }
 
   disconnectedCallback(): void {

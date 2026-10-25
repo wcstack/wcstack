@@ -36,10 +36,12 @@ npm install @wcstack/idle
 <wcs-state>
   <script type="module">
     export default {
-      // Assume present until told otherwise: `wcs-idle:change` never fires
-      // before start(), so a `false` default here would show "Away" on
-      // every initial load even though presence is simply unknown yet.
-      presenceActive: true,
+      // `userState` is null until start() succeeds, then "active" / "idle".
+      // Show "Away" only for "idle": presence is unknown before start().
+      // (Binding `active` and seeding `true` does not work: `active` is an
+      // output, so the binding takes the element's `false` when it attaches.)
+      userState: null,
+      get away() { return this.userState === "idle"; },
       idleGranted: false,
       async enableIdleDetection() {
         const el = document.querySelector("wcs-idle");
@@ -51,7 +53,7 @@ npm install @wcstack/idle
 </wcs-state>
 
 <wcs-permission name="idle-detection" data-wcs="granted: idleGranted"></wcs-permission>
-<wcs-idle threshold="60000" data-wcs="active: presenceActive"></wcs-idle>
+<wcs-idle threshold="60000" data-wcs="userState: userState"></wcs-idle>
 
 <!-- Note: don't bind `disabled: idleGranted` here — the grant persists across
      page loads, so on a revisit the button would start out disabled and start()
@@ -60,7 +62,7 @@ npm install @wcstack/idle
      immediately and start() proceeds. -->
 <button data-wcs="onclick: enableIdleDetection">Enable presence detection</button>
 <p>Permission granted: <span data-wcs="textContent: idleGranted"></span></p>
-<template data-wcs="if: presenceActive|not">
+<template data-wcs="if: away">
   <span class="badge">Away</span>
 </template>
 ```
@@ -80,7 +82,7 @@ npm install @wcstack/idle
 | Command            | Async | Description |
 | ------------------- | ----- | ------------ |
 | `requestPermission` | yes   | Wraps the static, gesture-gated `IdleDetector.requestPermission()`. **Must be called from within a real user gesture handler.** Never-throw: a rejection resolves to `"denied"`. |
-| `start`             | yes   | Begin an idle-detection session (`threshold` in ms, minimum 60000). Superseded by a later `start()`/`stop()`. |
+| `start`             | yes   | Begin an idle-detection session (`threshold` in ms, minimum 60000). Superseded by a later `start()`/`stop()`. Without the idle-detection permission it is refused: nothing is detected, it goes to `error` (`not-allowed`), and since 4.8 (not released yet) the element warns `[wcs/command-not-ready]`, once until a `start()` succeeds again. A missing API is not warned about (`capability-missing`). |
 | `stop`              | no    | Stop the current session. Safe to call when not started. |
 
 ## Attributes / Inputs

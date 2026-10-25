@@ -265,7 +265,7 @@ describe("WebSocketCore", () => {
       expect(MockWebSocket.instances[0].send).toHaveBeenCalledWith("hello");
     });
 
-    it("準備のできていない要素への send を、1 要素につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
+    it("準備のできていない要素への send を、1 回の切断につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
         const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
@@ -275,12 +275,43 @@ describe("WebSocketCore", () => {
         core.send("hello");
         expect(said()).toHaveLength(1);
         expect(String(said()[0][0])).toContain("send() was refused: the WebSocket is not connected, so the message is lost.");
+        expect(String(said()[0][0])).toContain("(Said once until the WebSocket connects again.)");
         expect(said()[0][1]).toBe(target);
         // (error にも流れる — 従来どおり)
         expect(core.error).not.toBeNull();
         // 別の要素ではまた言う
         const other = new WebSocketCore();
         other.send("hello");
+        expect(said()).toHaveLength(2);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("接続が開いた後の次の切断では、同じ要素でもまた警告する（[wcs/command-not-ready]）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+        const core = new WebSocketCore();
+        core.send("morning");
+        expect(said()).toHaveLength(1);
+        // 接続中（まだ開いていない）は同じ切断のうち
+        core.connect("ws://localhost:8080");
+        core.send("morning");
+        expect(said()).toHaveLength(1);
+        // 開く → 準備ができた
+        MockWebSocket.instances[0].simulateOpen();
+        core.send("noon");
+        expect(MockWebSocket.instances[0].send).toHaveBeenCalledWith("noon");
+        expect(said()).toHaveLength(1);
+        // 閉じる → 次の切断。その最初の send をまた言い、2 回目は言わない
+        MockWebSocket.instances[0].simulateClose(1000);
+        core.send("afternoon");
+        core.send("afternoon");
+        expect(said()).toHaveLength(2);
+        // dispose（ルートを離れた）も次の切断のうち: 開き直すまで言わない
+        core.dispose();
+        core.send("evening");
         expect(said()).toHaveLength(2);
       } finally {
         warn.mockRestore();
@@ -842,6 +873,116 @@ describe("WebSocketCore", () => {
       core.connect(""); // url 未指定の同期失敗
       expect(order).toEqual(["errorInfo", "error"]);
       expect(core.errorInfo).not.toBeNull();
+    });
+  });
+
+  // 閉じられずに死んだ接続に WebSocket は気づかない（docs/seam-apps.md、shift-desk）
+  describe("staleAfter: 何も届かない開いた接続を失われたとみなす", () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("最後のメッセージから staleAfter ms 何も届かなければ、ソケットを手放して終わりと理由を知らせ、auto-reconnect でつなぎ直す", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://example/chat", { staleAfter: 1000, autoReconnect: true, reconnectInterval: 200 });
+      const first = MockWebSocket.instances[0];
+      first.simulateOpen();
+      vi.advanceTimersByTime(700);
+      first.simulateMessage("ping");
+      vi.advanceTimersByTime(999);
+      expect(core.connected).toBe(true);
+      vi.advanceTimersByTime(1);
+      expect(first.close).toHaveBeenCalledWith(4000, "stale");
+      expect(core.connected).toBe(false);
+      expect(core.readyState).toBe(3);
+      expect(core.error.message).toBe("No message for 1000 ms: the connection is treated as lost.");
+      expect(core.errorInfo?.recoverable).toBe(true);
+      // 手放したソケットの遅れたイベントは何も変えない
+      first.simulateMessage("late");
+      first.simulateClose(1006);
+      expect(core.message).toBe("ping");
+      vi.advanceTimersByTime(200);
+      expect(MockWebSocket.instances).toHaveLength(2);
+      MockWebSocket.instances[1].simulateOpen();
+      expect(core.connected).toBe(true);
+      expect(core.error).toBeNull();
+    });
+
+    it("auto-reconnect が無ければ、閉じたまま理由を残す", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://example/chat", { staleAfter: 1000 });
+      MockWebSocket.instances[0].simulateOpen();
+      vi.advanceTimersByTime(5000);
+      expect(core.connected).toBe(false);
+      expect(core.error).not.toBeNull();
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    it("メッセージが続く間は失わない（タイマーは 1 本）、staleAfter が無ければ見張らない", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://example/chat", { staleAfter: 1000 });
+      MockWebSocket.instances[0].simulateOpen();
+      for (let i = 0; i < 20; i++) {
+        vi.advanceTimersByTime(500);
+        MockWebSocket.instances[0].simulateMessage(String(i));
+      }
+      expect(core.connected).toBe(true);
+      expect(vi.getTimerCount()).toBe(1);
+      const quiet = new WebSocketCore();
+      quiet.connect("ws://example/quiet", { staleAfter: -1 });
+      MockWebSocket.instances[1].simulateOpen();
+      vi.advanceTimersByTime(60_000);
+      expect(quiet.connected).toBe(true);
+    });
+
+    it("close() と dispose() は見張りを止め、閉じた後の満了は何もしない", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://example/chat", { staleAfter: 1000 });
+      MockWebSocket.instances[0].simulateOpen();
+      core.close();
+      expect(vi.getTimerCount()).toBe(0);
+      core.connect("ws://example/chat", { staleAfter: 1000 });
+      MockWebSocket.instances[1].simulateOpen();
+      core.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      // サーバーが閉じた（見張りの満了より先）
+      core.connect("ws://example/chat", { staleAfter: 1000 });
+      const ws = MockWebSocket.instances[2];
+      ws.simulateOpen();
+      ws.simulateClose(1006);
+      vi.advanceTimersByTime(5000);
+      expect(core.error).toBeNull();
+    });
+
+    it("close() を投げるソケットでも手放せる", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://example/chat", { staleAfter: 1000 });
+      const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
+      ws.close.mockImplementation(() => { throw new Error("gone"); });
+      vi.advanceTimersByTime(1000);
+      expect(core.connected).toBe(false);
+    });
+  });
+
+  describe("suspend(): back/forward cache に入る前に閉じる", () => {
+    it("閉じて終わりをその場で知らせ、開いていた・開く途中・再接続を待っていたかを返す", () => {
+      vi.useFakeTimers();
+      const core = new WebSocketCore();
+      expect(core.suspend()).toBe(false);
+      core.connect("ws://example/chat");
+      expect(core.suspend()).toBe(true);
+      core.connect("ws://example/chat");
+      MockWebSocket.instances[1].simulateOpen();
+      expect(core.suspend()).toBe(true);
+      expect(core.connected).toBe(false);
+      expect(core.readyState).toBe(3);
+      core.connect("ws://example/chat", { autoReconnect: true, reconnectInterval: 500 });
+      MockWebSocket.instances[2].simulateOpen();
+      MockWebSocket.instances[2].simulateClose(1006);
+      expect(core.suspend()).toBe(true);
+      vi.advanceTimersByTime(1000);
+      expect(MockWebSocket.instances).toHaveLength(3);
+      vi.useRealTimers();
     });
   });
 });

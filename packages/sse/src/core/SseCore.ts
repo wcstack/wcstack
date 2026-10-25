@@ -44,6 +44,10 @@ export class SseCore extends EventTarget {
   private _withCredentials: boolean = false;
   private _events: string[] = [];
   private _raw: boolean = false;
+  // stale-after (ms, 0 = off): the time of the last open / event, and the watchdog's timer
+  private _staleAfter: number = 0;
+  private _lastActivity: number = 0;
+  private _staleTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Generation guard (§3.4): bumped on every _doConnect (new live stream) and on
   // dispose(). The shared arrow-function listeners (_onOpen/_onMessage/_onError)
@@ -240,6 +244,7 @@ export class SseCore extends EventTarget {
     this._withCredentials = options.withCredentials ?? false;
     this._events = options.events ?? [];
     this._raw = options.raw ?? false;
+    this._staleAfter = options.staleAfter !== undefined && options.staleAfter > 0 ? options.staleAfter : 0;
 
     this._doConnect();
   }
@@ -304,6 +309,8 @@ export class SseCore extends EventTarget {
     // §3.4: dispose() で世代が進んだ後に届いた stale イベントは無視する（torn-down
     // 要素への書き込み防止）。
     if (this._connGen !== this._gen) return;
+    this._lastActivity = Date.now();
+    this._armStale();
     this._setLoading(false);
     this._setConnected(true);
     this._setReadyState(SSE_OPEN);
@@ -317,6 +324,7 @@ export class SseCore extends EventTarget {
   private _onMessage = (event: MessageEvent): void => {
     // §3.4: dispose() 後に届いた stale メッセージは破棄する。
     if (this._connGen !== this._gen) return;
+    this._lastActivity = Date.now();
     let data: any = event.data;
     // JSONの自動パース（raw 指定時はテキストのまま）
     if (!this._raw && typeof data === "string") {
@@ -390,7 +398,38 @@ export class SseCore extends EventTarget {
     }
   }
 
+  // stale-after の見張り。開いている間、最後の open / イベントから staleAfter ms 何も届かなければ、
+  // 接続は失われたとみなして開き直す（docs/seam-apps.md、shift-desk: 閉じられずに死んだ接続 —
+  // スリープ・NAT・proxy — に EventSource は気づかず OPEN のまま、ページは "Live" と言い続けた）。
+  // タイマーは 1 本だけ持ち、満了のたびに最後の活動からの残りで張り直す（イベントごとに張り直さない）。
+  private _armStale(): void {
+    if (this._staleAfter === 0 || this._staleTimer !== null) return;
+    this._staleTimer = setTimeout(this._checkStale, this._staleAfter);
+  }
+
+  private _checkStale = (): void => {
+    this._staleTimer = null;
+    // 開いていない（ネイティブの再接続中・閉じた）間は見張らない — 次の open が張り直す
+    if (this._es === null || this._readyState !== SSE_OPEN) return;
+    const idle = Date.now() - this._lastActivity;
+    if (idle < this._staleAfter) {
+      this._staleTimer = setTimeout(this._checkStale, this._staleAfter - idle);
+      return;
+    }
+    // 失われたとみなす: 閉じて（connected / readyState を知らせる）同じ url で開き直し、理由を
+    // error に残す（回復できるもの。次の open が消す）。位置は url（`since=`）か、サーバーが最初に
+    // 送る `id:` で伝える — 新しい EventSource は Last-Event-ID を送らない。
+    const lost = new Error(`No event for ${this._staleAfter} ms: the stream is treated as lost and reopened.`);
+    this._closeInternal();
+    this._doConnect();
+    if (this._es !== null) this._setError(lost, "connection-transient");
+  };
+
   private _closeInternal(): void {
+    if (this._staleTimer !== null) {
+      clearTimeout(this._staleTimer);
+      this._staleTimer = null;
+    }
     if (this._es) {
       this._removeListeners(this._es, this._events);
       this._es.close();

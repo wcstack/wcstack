@@ -41,6 +41,10 @@ export class Storage extends HTMLElement {
   // not reassign it — there is nothing async to wait for, unlike <wcs-fetch>.
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
   private _internals: ElementInternals | null = null;
+  // connectedCallback ran before (a reconnect defers its load: _scheduleLoad)
+  private _everConnected = false;
+  // _scheduleLoad's microtask is waiting
+  private _loadPending = false;
 
   constructor() {
     super();
@@ -269,7 +273,8 @@ export class Storage extends HTMLElement {
       // syncs the Core) only runs for non-manual mode with a non-empty key — the
       // key now in effect, so removing `key` falls back to `storage-key`.
       this._syncCore();
-      if (this.key && !this.manual) {
+      // a reconnect's load is waiting for its microtask: it reads the key in effect then
+      if (this.key && !this.manual && !this._loadPending) {
         this.load();
       }
     }
@@ -289,8 +294,19 @@ export class Storage extends HTMLElement {
     if (config.autoTrigger) {
       registerAutoTrigger();
     }
-    if (!this.manual && this.key) {
-      this.load();
+    if (!this._everConnected) {
+      // The first connect loads at once: a binding attached in the same task (a route's content
+      // handed to @wcstack/state right after its insertion) pulls `value` and expects it loaded.
+      this._everConnected = true;
+      if (!this.manual && this.key) {
+        this.load();
+      }
+    } else {
+      // A reconnect decides in a microtask, with the key then (timing-and-firing-contract §23).
+      // @wcstack/router puts the same nodes back on a parameter-only navigation, and the state
+      // writes the new route's key in a microtask: loading at once read the previous key's value
+      // and published it (docs/seam-apps.md, shift-desk).
+      this._scheduleLoad();
     }
     // Always bind the cross-tab watcher to the Shell's current key/type before
     // starting sync. In paths where load()/save() never run (e.g. manual mode,
@@ -304,5 +320,16 @@ export class Storage extends HTMLElement {
 
   disconnectedCallback(): void {
     this._core.stopSync();
+  }
+
+  private _scheduleLoad(): void {
+    if (this._loadPending) return;
+    this._loadPending = true;
+    queueMicrotask(() => {
+      this._loadPending = false;
+      if (this.isConnected && !this.manual && this.key) {
+        this.load();
+      }
+    });
   }
 }
