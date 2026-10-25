@@ -80,7 +80,7 @@ npm install @wcstack/idle
 | Command            | Async | Description |
 | ------------------- | ----- | ------------ |
 | `requestPermission` | yes   | Wraps the static, gesture-gated `IdleDetector.requestPermission()`. **Must be called from within a real user gesture handler.** Never-throw: a rejection resolves to `"denied"`. |
-| `start`             | yes   | Begin an idle-detection session (`threshold` in ms, minimum 60000). Superseded by a later `start()`/`stop()`. |
+| `start`             | yes   | Begin an idle-detection session (`threshold` in ms, minimum 60000). Superseded by a later `start()`/`stop()`. Without the idle-detection permission it is refused: nothing is detected, it goes to `error` (`not-allowed`), and since 4.8 (not released yet) the element warns `[wcs/command-not-ready]`, once until a `start()` succeeds again. A missing API is not warned about (`capability-missing`). |
 | `stop`              | no    | Stop the current session. Safe to call when not started. |
 
 ## Attributes / Inputs

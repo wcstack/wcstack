@@ -62,9 +62,11 @@ export class BroadcastCore extends EventTarget {
   private _ready: Promise<void> = Promise.resolve();
 
   /**
-   * Whether `[wcs/command-not-ready]` was said for this element: a `post()` refused because the
+   * Whether `[wcs/command-not-ready]` was said in this outage: a `post()` refused because the
    * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-   * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+   * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): a channel opening
+   * resets it. Once per element was once per page life — a route puts the same element back on
+   * every entry, so the next outage's lost message went unsaid (docs/seam-apps.md, shift-desk).
    */
   private _toldNotReady = false;
   /** Whether `[wcs/post-uncloneable]` was said for this element. */
@@ -198,6 +200,8 @@ export class BroadcastCore extends EventTarget {
     channel.addEventListener("messageerror", this._onMessageError);
     this._channel = channel;
     this._name = name;
+    // ready again: a post refused in the next outage is said again
+    this._toldNotReady = false;
   }
 
   /**
@@ -248,7 +252,8 @@ export class BroadcastCore extends EventTarget {
     this._toldNotReady = true;
     console.warn(
       "[@wcstack/broadcast] [wcs/command-not-ready] post() was refused: no channel is open, so the message is lost. " +
-        "It goes to `error` too. Give the element a `name` (or call open(name)) first. (Said once per element.)",
+        "It goes to `error` too. Give the element a `name` (or call open(name)) first. " +
+        "(Said once until a channel opens again.)",
       this._target,
     );
   }

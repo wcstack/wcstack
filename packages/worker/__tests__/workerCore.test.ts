@@ -93,7 +93,7 @@ describe("WorkerCore - start / spawn", () => {
 });
 
 describe("WorkerCore - post", () => {
-  it("準備のできていない要素への post を、1 要素につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
+  it("準備のできていない要素への post を、worker の無い間に 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
@@ -103,6 +103,7 @@ describe("WorkerCore - post", () => {
       core.post({ a: 1 });
       expect(said()).toHaveLength(1);
       expect(String(said()[0][0])).toContain("post() was refused: no worker is running, so the message is lost.");
+      expect(String(said()[0][0])).toContain("(Said once until a worker starts again.)");
       expect(said()[0][1]).toBe(target);
       // (error にも流れる — 従来どおり)
       expect(core.error).not.toBeNull();
@@ -110,6 +111,38 @@ describe("WorkerCore - post", () => {
       const other = new WorkerCore();
       other.post({ a: 1 });
       expect(said()).toHaveLength(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("worker が動いた後の次の不在では、同じ要素でもまた警告する（[wcs/command-not-ready]）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+      const core = new WorkerCore();
+      core.post("morning");
+      expect(said()).toHaveLength(1);
+      // 起動に失敗しても準備はできていない（同じ不在のうち）
+      FakeWorker.nextConstructError = new Error("blocked");
+      core.start("worker.js");
+      core.post("morning");
+      expect(said()).toHaveLength(1);
+      // 起動 → 準備ができた
+      core.start("worker.js");
+      core.post("noon");
+      expect(FakeWorker.last?.posted.map((p) => p.data)).toEqual(["noon"]);
+      expect(said()).toHaveLength(1);
+      // ルートを離れた（dispose）→ 次の不在。その最初の post をまた言い、2 回目は言わない
+      core.dispose();
+      core.post("afternoon");
+      core.post("afternoon");
+      expect(said()).toHaveLength(2);
+      // terminate も同じ: 起動し直してから止めると、また言う
+      core.start("worker.js");
+      core.terminate();
+      core.post("evening");
+      expect(said()).toHaveLength(3);
     } finally {
       warn.mockRestore();
     }

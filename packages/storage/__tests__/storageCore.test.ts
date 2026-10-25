@@ -83,7 +83,7 @@ describe("StorageCore", () => {
     expect(core.error).toEqual({ operation: "remove", message: "key is required." });
   });
 
-  it("key 未指定の操作は [wcs/command-not-ready] で要素ごとに 1 回だけ言い、storage-key を案内する", () => {
+  it("key 未指定の操作は [wcs/command-not-ready] で key の無い間に 1 回だけ言い、storage-key を案内する", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const target = new EventTarget();
@@ -94,6 +94,7 @@ describe("StorageCore", () => {
       expect(warn).toHaveBeenCalledTimes(1);
       expect(warn.mock.calls[0][0]).toContain("[wcs/command-not-ready] save() was refused: there is no key");
       expect(warn.mock.calls[0][0]).toContain("write `storage-key`");
+      expect(warn.mock.calls[0][0]).toContain("(Said once until the element has a key again.)");
       expect(warn.mock.calls[0][1]).toBe(target);
       // 別の要素は別に 1 回
       new StorageCore().remove();
@@ -106,6 +107,33 @@ describe("StorageCore", () => {
       keyed.load();
       keyed.remove();
       expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("key が来た後の次の key の無い間では、同じ要素でもまた [wcs/command-not-ready] を言う", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+      const core = new StorageCore();
+      core.save("morning");
+      expect(said()).toHaveLength(1);
+      // 空の key は key ではない（同じ不在のうち）
+      core.key = "";
+      core.save("morning");
+      expect(said()).toHaveLength(1);
+      // key が来る → 準備ができた
+      core.key = "draft";
+      core.save("noon");
+      expect(localStorage.getItem("draft")).toBe("noon");
+      expect(said()).toHaveLength(1);
+      // key が外れた（ルートが値を null にした）→ 次の不在。その最初の操作をまた言い、2 回目は言わない
+      core.key = "";
+      core.load();
+      core.save("afternoon");
+      expect(said()).toHaveLength(2);
+      expect(String(said()[1][0])).toContain("load() was refused");
     } finally {
       warn.mockRestore();
     }

@@ -169,7 +169,7 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
   - `not-found`（phase `start`）——`NotFoundError`（要求した種類のカメラ / マイクが存在しない）。
   - `not-readable`（phase `start`）——`NotReadableError`（デバイス占有・ハードウェア障害）。
   - `invalid-argument`（phase `start`）——`OverconstrainedError` / `NotSupportedError`（制約・mimeType が満たせない）。
-  - `invalid-state`（phase `start`）——`NoStreamError`（stream 未 attach で録画開始 — 何も録画されず、要素が `[wcs/command-not-ready]` で警告する。1 要素につき 1 回）。
+  - `invalid-state`（phase `start`）——`NoStreamError`（stream 未 attach で録画開始 — 何も録画されず、要素が `[wcs/command-not-ready]` で警告する。stream がまた attach されるまで 1 回 — 4.8（未リリース）から。それまでは 1 要素につき 1 回）。
   - `aborted`（phase `execute`・`recoverable: true`）——`AbortError`（実行途中の中断、retry で回復しうる）。
   - `media-error`（phase `execute`）——その他の実行時失敗（例: `RecorderError` / 想定外の `MediaRecorder` エラー）。
 

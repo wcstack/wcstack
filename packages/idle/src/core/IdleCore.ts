@@ -85,6 +85,15 @@ export class IdleCore extends EventTarget {
   // readiness is always immediate (docs/idle-detection-tag-design.md §7).
   private _ready: Promise<void> = Promise.resolve();
 
+  /**
+   * Whether `[wcs/command-not-ready]` was said in this outage: a `start()` refused for want of the
+   * idle-detection permission detects nothing, and `error` alone told only a page that binds it
+   * (as `<wcs-notify>`'s `notify()`, docs/v4-direction-2026-10.md, the I/O command policy). Said
+   * once per outage: a `start()` that succeeds resets it. A missing API is not warned about: that
+   * is the `unsupported` path (`error`, `capability-missing`), not a command that came too early.
+   */
+  private _toldNotReady = false;
+
   constructor(target?: EventTarget) {
     super();
     this._target = target ?? this;
@@ -241,6 +250,8 @@ export class IdleCore extends EventTarget {
       this._detector = detector;
       await detector.start({ threshold, signal: ac.signal });
       if (gen !== this._gen) return; // stale (stop()/dispose() ran during the await)
+      // ready again: a start refused in the next outage is said again
+      this._toldNotReady = false;
       this._setError(null);
       this._setState(detector.userState, detector.screenState);
     } catch (e: any) {
@@ -258,7 +269,20 @@ export class IdleCore extends EventTarget {
       this._detector = null;
       this._abortController = null;
       this._setError({ error: e }, e?.name);
+      if (e?.name === "NotAllowedError") this._warnNotReady();
     }
+  }
+
+  private _warnNotReady(): void {
+    if (this._toldNotReady) return;
+    this._toldNotReady = true;
+    console.warn(
+      "[@wcstack/idle] [wcs/command-not-ready] start() was refused: the idle-detection permission is not granted " +
+        "(NotAllowedError), so nothing is detected. It goes to `error` too (`not-allowed`). Ask with " +
+        "requestPermission() first (from a user gesture), and start once it is granted. " +
+        "(Said once until a start() succeeds again.)",
+      this._target,
+    );
   }
 
   /** Stop the current session (if any) and detach its listener. Safe to call when not started. */

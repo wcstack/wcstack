@@ -265,7 +265,7 @@ describe("WebSocketCore", () => {
       expect(MockWebSocket.instances[0].send).toHaveBeenCalledWith("hello");
     });
 
-    it("準備のできていない要素への send を、1 要素につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
+    it("準備のできていない要素への send を、1 回の切断につき 1 回だけ、要素を添えて警告する（[wcs/command-not-ready]）", () => {
       const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       try {
         const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
@@ -275,12 +275,43 @@ describe("WebSocketCore", () => {
         core.send("hello");
         expect(said()).toHaveLength(1);
         expect(String(said()[0][0])).toContain("send() was refused: the WebSocket is not connected, so the message is lost.");
+        expect(String(said()[0][0])).toContain("(Said once until the WebSocket connects again.)");
         expect(said()[0][1]).toBe(target);
         // (error にも流れる — 従来どおり)
         expect(core.error).not.toBeNull();
         // 別の要素ではまた言う
         const other = new WebSocketCore();
         other.send("hello");
+        expect(said()).toHaveLength(2);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it("接続が開いた後の次の切断では、同じ要素でもまた警告する（[wcs/command-not-ready]）", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const said = () => warn.mock.calls.filter((c) => String(c[0]).includes("[wcs/command-not-ready]"));
+        const core = new WebSocketCore();
+        core.send("morning");
+        expect(said()).toHaveLength(1);
+        // 接続中（まだ開いていない）は同じ切断のうち
+        core.connect("ws://localhost:8080");
+        core.send("morning");
+        expect(said()).toHaveLength(1);
+        // 開く → 準備ができた
+        MockWebSocket.instances[0].simulateOpen();
+        core.send("noon");
+        expect(MockWebSocket.instances[0].send).toHaveBeenCalledWith("noon");
+        expect(said()).toHaveLength(1);
+        // 閉じる → 次の切断。その最初の send をまた言い、2 回目は言わない
+        MockWebSocket.instances[0].simulateClose(1000);
+        core.send("afternoon");
+        core.send("afternoon");
+        expect(said()).toHaveLength(2);
+        // dispose（ルートを離れた）も次の切断のうち: 開き直すまで言わない
+        core.dispose();
+        core.send("evening");
         expect(said()).toHaveLength(2);
       } finally {
         warn.mockRestore();
