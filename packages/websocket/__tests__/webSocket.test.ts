@@ -86,7 +86,7 @@ describe("WcsWebSocket コンポーネント", () => {
     const names = WcsWebSocket.wcBindable.properties.map(p => p.name);
     expect(names).toEqual(["message", "connected", "loading", "error", "errorInfo", "readyState", "trigger", "send"]);
     expect(WcsWebSocket.wcBindable.inputs?.map(input => input.name)).toEqual([
-      "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "binaryType", "manual", "trigger", "send"
+      "url", "protocols", "autoReconnect", "reconnectInterval", "maxReconnects", "binaryType", "staleAfter", "manual", "trigger", "send"
     ]);
     expect(WcsWebSocket.wcBindable.commands?.map(command => command.name)).toEqual(["connect", "sendMessage", "close"]);
   });
@@ -342,6 +342,100 @@ describe("WcsWebSocket コンポーネント", () => {
       el.url = "ws://localhost:7070";
       await flush();
       expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:7070"]);
+      el.remove();
+    });
+  });
+
+  describe("stale-after", () => {
+    it("stale-after 属性（staleAfter）を接続のオプションとして Core に渡し、数でない値は 0", async () => {
+      const el = createElement({ url: "ws://localhost:8080", "stale-after": "45000" });
+      const spy = vi.spyOn(el as any, "connect");
+      expect(el.staleAfter).toBe(45000);
+      document.body.appendChild(el);
+      await flush();
+      expect(spy).toHaveBeenCalled();
+      el.setAttribute("stale-after", "later");
+      expect(el.staleAfter).toBe(0);
+      el.staleAfter = 1000;
+      expect(el.getAttribute("stale-after")).toBe("1000");
+      el.staleAfter = null;
+      expect(el.hasAttribute("stale-after")).toBe(false);
+      el.remove();
+    });
+  });
+
+  // back/forward cache: 開いた WebSocket はページを cache から外す（docs/seam-apps.md、shift-desk）
+  describe("pagehide / pageshow（back/forward cache）", () => {
+    const pageEvent = (type: string, persisted: boolean): Event => Object.assign(new Event(type), { persisted });
+
+    it("cache に入りうる pagehide で閉じて終わりをその場で知らせ、戻った pageshow でつなぎ直す", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      MockWebSocket.instances[0].simulateOpen();
+      expect(el.connected).toBe(true);
+
+      window.dispatchEvent(pageEvent("pagehide", true));
+      expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
+      expect(el.connected).toBe(false);
+      expect(el.readyState).toBe(3);
+
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(2);
+      expect(MockWebSocket.instances[1].url).toBe("ws://localhost:8080");
+      // 2 回目の pageshow はつながない
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(2);
+      el.remove();
+    });
+
+    it("persisted でない pagehide / pageshow、接続していなかった要素、外した要素は何もしない", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      window.dispatchEvent(pageEvent("pagehide", false));
+      expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(1);
+
+      const idle = createElement({ url: "ws://localhost:9090", manual: "" });
+      document.body.appendChild(idle);
+      await flush();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      window.dispatchEvent(pageEvent("pageshow", false));
+      window.dispatchEvent(pageEvent("pageshow", true));
+      // el は閉じて開き直し、idle（manual で未接続）はつながない
+      expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:8080"]);
+
+      el.remove();
+      idle.remove();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(2);
+    });
+
+    it("戻るまでに url が消えていれば、つながない", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      el.url = null;
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(1);
+      el.remove();
+    });
+
+    it("pagehide の後に外した要素は、pageshow でつながない", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      window.dispatchEvent(pageEvent("pagehide", true));
+      el.remove();
+      document.body.appendChild(el);
+      el.manual = true;
+      await flush();
+      window.dispatchEvent(pageEvent("pageshow", true));
+      expect(MockWebSocket.instances).toHaveLength(1);
       el.remove();
     });
   });

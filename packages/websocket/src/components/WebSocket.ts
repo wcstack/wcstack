@@ -22,6 +22,7 @@ export class WcsWebSocket extends HTMLElement {
       { name: "reconnectInterval", attribute: "reconnect-interval" },
       { name: "maxReconnects", attribute: "max-reconnects" },
       { name: "binaryType", attribute: "binary-type" },
+      { name: "staleAfter", attribute: "stale-after" },
       { name: "manual", attribute: "manual" },
       { name: "trigger" },
       { name: "send" },
@@ -165,6 +166,17 @@ export class WcsWebSocket extends HTMLElement {
     reflectAttribute(this, "binary-type", value);
   }
 
+  // 何も届かない時間（ms）がこれを超えた開いている接続を、失われたとみなす（0・未指定・数でない
+  // 値は見張らない）。接続オプションの 1 つで、接続するときに読む。
+  get staleAfter(): number {
+    const parsed = Number(this.getAttribute("stale-after"));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  set staleAfter(value: number | null | undefined) {
+    reflectAttribute(this, "stale-after", value);
+  }
+
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
@@ -250,6 +262,7 @@ export class WcsWebSocket extends HTMLElement {
       reconnectInterval: this.reconnectInterval,
       maxReconnects: this.maxReconnects,
       binaryType: this.binaryType,
+      staleAfter: this.staleAfter,
     });
   }
 
@@ -304,11 +317,35 @@ export class WcsWebSocket extends HTMLElement {
     // connectedCallbackPromise を await して初期スナップショットを取れる。
     this._connectedCallbackPromise = this._core.observe();
     this._attached = true;
+    window.addEventListener("pagehide", this._onPageHide);
+    window.addEventListener("pageshow", this._onPageShow);
     this._scheduleConnect();
   }
 
+  // back/forward cache（docs/seam-apps.md、shift-desk）: 開いた WebSocket はページを cache から外す
+  // （Chromium は復元しない — 理由 "websocket"）。ページが cache に入りうるとき（pagehide の persisted）
+  // 閉じて終わりをその場で知らせ、戻ったとき（pageshow の persisted）、閉じる前に接続していたなら
+  // つなぎ直す。ページが自分で閉じると、閉じた知らせは復元の後に届き、pageshow の時点の state は
+  // まだ接続中だった。
+  private _reopenOnShow = false;
+
+  private _onPageHide = (event: Event): void => {
+    if (!(event as PageTransitionEvent).persisted) return;
+    if (this._core.suspend()) this._reopenOnShow = true;
+  };
+
+  private _onPageShow = (event: Event): void => {
+    if (!(event as PageTransitionEvent).persisted || !this._reopenOnShow) return;
+    this._reopenOnShow = false;
+    // (the listeners live only while the element is connected)
+    if (this.url) this.connect();
+  };
+
   disconnectedCallback(): void {
     this._attached = false;
+    this._reopenOnShow = false;
+    window.removeEventListener("pagehide", this._onPageHide);
+    window.removeEventListener("pageshow", this._onPageShow);
     // dispose() が _gen を bump して進行中のソケット/再接続を無効化し、close() する。
     this._core.dispose();
   }

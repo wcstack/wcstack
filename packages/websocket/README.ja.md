@@ -178,6 +178,10 @@ npm install @wcstack/websocket
 - 最大 `max-reconnects` 回リトライ（デフォルト: Infinity）
 - 再接続成功時にリトライカウントをリセット
 
+**閉じられずに死んだ接続** — ノートパソコンのスリープ、接続を落とした NAT や proxy — にブラウザは気づきません: ソケットは `OPEN` のまま、`connected` は `true` のままで、何も届きません（`auto-reconnect` はクローズにしか反応しない）。4.8（未リリース）から、`stale-after="45000"` は、その時間（ms）メッセージが 1 つも届かない開いた接続を失われたとみなし、異常なクローズと同じに扱います: ソケットを手放し、`connected` が `false` になり、`error` が理由を言い（`errorInfo.recoverable` は `true`）、`auto-reconnect` がつなぎ直します。サーバーはそれより短い間隔でメッセージを送る必要があります — WebSocket の ping フレームはページに見えないので、アプリケーションの層の ping を送ってください。
+
+**back/forward cache。** 開いた WebSocket は、ページをブラウザの back/forward cache から外します（Chromium: 復元しない、理由 `websocket`）。4.8（未リリース）から、`<wcs-ws>` はページが cache に入りうるとき（`persisted` の `pagehide`）接続を閉じて `connected: false` をその場で知らせ、cache から戻ったとき（`persisted` の `pageshow`）、接続していたならつなぎ直します — ページは読み直されずに復元されます。その間に届いたものは再送されません: `connected` で、自分の位置から取り直してください。
+
 ## ステートサーフェス vs コマンドサーフェス
 
 `<wcs-ws>` は 2 種類のプロパティを公開します。
@@ -206,7 +210,7 @@ HTML、JS、または `@wcstack/state` バインディングから接続とメ�
 | `send` | `any` | 値を設定するとデータを送信（オブジェクトは自動文字列化）。ソケットが開く前は拒まれる: `error`（`invalid-state`）に流れ、メッセージは失われ、要素が `[wcs/command-not-ready]` で警告する（1 要素につき 1 回） |
 | `manual` | `boolean` | DOM 接続時の自動接続を無効化 |
 
-**`null` と `undefined`。** 属性に対応する入力（`url`・`protocols`・`autoReconnect`・`reconnectInterval`・`maxReconnects`・`binaryType`・`manual` — [要素一覧](#要素一覧)参照）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。こうして戻った `url` はほかの `url` 変更と同じく接続し直し、クリアした `url` では接続しません。`trigger` と `send` はどちらも無視します。
+**`null` と `undefined`。** 属性に対応する入力（`url`・`protocols`・`autoReconnect`・`reconnectInterval`・`maxReconnects`・`binaryType`・`staleAfter`・`manual` — [要素一覧](#要素一覧)参照）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。こうして戻った `url` はほかの `url` 変更と同じく接続し直し、クリアした `url` では接続しません。`trigger` と `send` はどちらも無視します。
 
 ## `:state()` による CSS スタイリング
 
@@ -385,6 +389,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `reconnect-interval` | `number` | `3000` | 再接続間隔（ミリ秒） |
 | `max-reconnects` | `number` | `Infinity` | 最大再接続回数 |
 | `binary-type` | `"blob" \| "arraybuffer"` | `blob` | 受信バイナリフレームを `message` でどう表現するか。`arraybuffer` 以外の値は `blob` に正規化される |
+| `stale-after` | `number` | `0` | この時間（ms）メッセージが届かない開いた接続を失われたとみなす（`0`: しない）。接続するときに読む。4.8（未リリース）から |
 
 | プロパティ | 型 | 説明 |
 |------------|------|------|
@@ -395,6 +400,7 @@ wcstack アプリケーションでは、**`trigger` によるステート駆動
 | `errorInfo` | `WcsIoErrorInfo \| null` | 失敗タクソノミ（`code` / `phase` / `recoverable`）。`error` から導出される |
 | `readyState` | `number` | WebSocket readyState 定数 |
 | `binaryType` | `"blob" \| "arraybuffer"` | バイナリフレーム表現（`binary-type` 属性を背後に持つ。既定 `blob`） |
+| `staleAfter` | `number` | 何も届かない時間（ms）がこれを超えた開いた接続を失われたとみなす（`stale-after` 属性を背後に持つ。`0`: しない）。4.8（未リリース）から |
 | `trigger` | `boolean` | `true` を設定すると接続を開始 |
 | `send` | `any` | 値を設定するとデータを送信 |
 
