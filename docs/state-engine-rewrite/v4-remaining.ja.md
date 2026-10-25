@@ -1354,3 +1354,27 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - content mapper の実装（著者の判断。docs/typescript-content-mapper.md §8）。
   - 4.6.0 からの持ち越し: 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。examples/fw-inventory の依存を更新する。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.7.0 の公開（2026-10-25）
+
+- 中身: minor。docs/v4-direction-2026-10.md の下での 5 回目の minor で、§3.2 の最後の継ぎ目 — 本番の形 — の継ぎ目アプリ `prod-booking`（docs/seam-apps.md）から。作者の決定 5 件は v4-direction §5.5。PR #525〜#531（番号順に積み、番号順にマージ）:
+  - #525 router: ページが求める読み直し（`location.reload()`・`history.go(0)`・`navigation.reload()`）を intercept しない（`navigationType === "reload"` をブラウザに任せる）。`<wcs-head>` は変わらない `<head>` の要素を入れ直さない（スタイルシートの取り直しと、WebKit の遷移ごとの `base-uri` 違反が消えた）。module のスクリプトの無い `<wcs-guard-handler>` はルートを閉じる（読み込めなかったハンドラと同じく guard のパスへ。`guard` 属性の無いルートも — 既存の「ハンドラはそれ自体で guard を有効にする」と一貫させた）。
+  - #526 autoloader: どの名前空間にも属さないカスタム要素で走査を止めない（以前は最初の走査で投げると MutationObserver も張らず、ページの部品が 1 つも読まれなかった）。
+  - #527 state: エンジンが報告するエラーをすべて `reportError()` で出す（`parser/raiseError.ts` の `report()`。happy-dom・Node では従来どおり `console.error`）。別のエンジンのコピーのアドオンを `installFeatures` が `[wcs/feature-foreign]` で拒む（どの add-on も自分のビルドの `hooks` を持ち、core が比べる。formats → `hooks.ts` の結合を記録し直した）。`core.min.js` は 20,102 → 20,163 B。
+  - #528 formats: 日付の 5 つ（`date`・`time`・`datetime`・`ymd`・`hms`）は値が無いとき素通し。
+  - #529 lint: `wcs/state-src-unread`（info、新規。読めない `<wcs-state src>`）と、`(x ?? []).map(…)`・`null` を種にしたリストの行の形。CI で lint のスモークテストの 2 件が「info 0 件」を完全一致で期待して落ちた — 手元では、まとめたコマンドの終了コードだけを見て通ったと誤認していた。期待を直して取り込んだ。
+  - #530 docs と `scripts/generate-sri.mjs`: `sri.json` に `@wcstack/state` の `dist/split` のすべてのファイル、リリースノートに import map の `integrity` のブロック。csp.md / sri.md のブラウザ対応（Firefox の import map の integrity は 138、外部スクリプトの CSP ハッシュは 115、Safari も。Trusted Types は Safari 26 と Firefox）、部品自身の `shadowRoot.innerHTML` が Trusted Types の sink であること、自前配信（sri.md §7）、README 4 つ。
+  - #531 記録: seam-apps（日英）、v4-direction §5.5、誤りの目録（108 項目）。
+- 準備: PR #532（merge commit e3ad8ba8）で CHANGELOG を `[4.7.0] — 2026-10-25` として締め（要約と Upgrading 4 項目）、固定版 18 か所を 4.7.0 にした。印の除去は 8 README・16 行の見込み（ほかの版の印は無し）。
+- main で `minor`（run 40143918670）。成功した: 版を上げたコミット cf3280ce、タグ `v4.7.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。**分割エントリのダイジェスト 22/22**（今回から `sri.json` に載る。jsDelivr が返すファイルと照合）。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い。`@wcstack/server` の依存は `@wcstack/state` 4.7.0。公開物に `feature-foreign`・`state-src-unread`・読み直しの扱いが入り、autoloader の `No matching namespace` は消えた。`wcstack/auto` 4.7.0 の integrity は `sha384-xJE52u8ewAT7VeLCXj5a4Yg9dhGMDaH7i+zpsJR+D8b0TJeNzJBPPh9AqzlNxDU3`。
+- 公開後の作業（同日）:
+  - PR #533（merge commit f2d4012c）: サイズの基準値を 4.7.0 の dist で取り直した（`core.min.js` 20,163 B、残り 317 B。どの add-on も数 B 増 — 自分のビルドの `hooks` を持つため）。結合の基準値は変わらない。CLAUDE.md / AGENTS.md の版と数字、拡張を 2.7.0 に。
+  - VS Code 拡張 2.7.0: f2d4012c で `npm run package` した vsix（890 ファイル、テスト 1,320 件）。作る途中で、未追跡の `packages/vscode-wcs/dist` に TypeScript 7.1 のブランチのビルドの残り（`content-mapper.cjs`）が入っていて 891 ファイルになっていた — 前の版の vsix と一覧を突き合わせて見つけ、外した。publish は著者が実行した（Marketplace 00:56 UTC）。Marketplace から取った vsix は手元のものと SHA-256 が一致。注釈付きのタグ `vscode-wcs-v2.7.0`（f2d4012c）。
+  - wcstack-skill: PR #47（merge commit a682b58）で、`/core` の filter の一覧の誤り（算術・変換・既定値は formats）、add-on の名前に `native-commands`、`[wcs/feature-foreign]`、分割のダイジェストは `sri.json` から、ブラウザ対応、日付の素通し、ガード・読み直し・`basename`・autoloader、配備をまたぐ保存値、`wcs/state-src-unread`、`reportError()` を追随し、版の印と CDN の固定を 4.7.0 にした（6 本とも 200）。「Since 4.6.2 it checks getter bodies」は始まった版なので残した。注釈付きのタグ `v4.7.0`。
+  - LP（7ddb32f）: トップの pill と「Shipped in」の見出しを 4.7.0 にし、v4.6.2 の一文の後に v4.7.0 の一文（日英）を足した。state / signals のページの版と分割の URL、ステップ 15 の `^4.7.0`、ステップ 16 の `wcstack@4.7.0` と integrity とリリースへのリンク、llms の作り直し。手元で Chromium 7/7、ステップ 07 / 12 の lint の出力は 4.7.0 の lint で 8 つとも不変。
+  - examples への取り込み: PR #534（merge commit c51b590d）。`examples/prod-booking/` に v1（公開版 4.6.2、npm の別名）と v2（`WCS_LOCAL=1` の dist）を並べ、6 つのプロファイル。spec 11 件、`@browsers` の 2 件は新しい `firefox` の project でも走る（e2e.yml が firefox を入れる）。CI の e2e で 384 件が通過。取り込みで、その場の置き換えが拒まれるのは開いたタブが 4.7 以降のときだけ（4.6 の core に検査が無い）と分かり、記録した。
+- 残り:
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す（4.6.0 からの持ち越し）。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
