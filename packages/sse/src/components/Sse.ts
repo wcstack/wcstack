@@ -20,6 +20,7 @@ export class WcsSse extends HTMLElement {
       { name: "withCredentials", attribute: "with-credentials" },
       { name: "events", attribute: "events" },
       { name: "raw", attribute: "raw" },
+      { name: "staleAfter", attribute: "stale-after" },
       { name: "manual", attribute: "manual" },
       { name: "trigger" },
     ],
@@ -144,6 +145,17 @@ export class WcsSse extends HTMLElement {
     reflectBooleanAttribute(this, "manual", value);
   }
 
+  // 何も届かない時間（ms）がこれを超えた開いているストリームを、失われたとみなして開き直す
+  // （0・未指定・数でない値は見張らない）。接続オプションの 1 つで、接続するときに読む。
+  get staleAfter(): number {
+    const parsed = Number(this.getAttribute("stale-after"));
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  set staleAfter(value: number | null | undefined) {
+    reflectAttribute(this, "stale-after", value);
+  }
+
   // --- Core delegated getters ---
 
   get message(): WcsSseMessage | null {
@@ -215,6 +227,7 @@ export class WcsSse extends HTMLElement {
       withCredentials: this.withCredentials,
       events,
       raw: this.raw,
+      staleAfter: this.staleAfter,
     });
   }
 

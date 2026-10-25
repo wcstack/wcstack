@@ -185,7 +185,11 @@ Unlike `<wcs-ws>`, there is **no** `auto-reconnect` / `reconnect-interval` / `ma
 
 To stop reconnection, call `close()` (or remove the element from the DOM).
 
-**Catching up after a reconnect is the server's and your page's job.** The browser sends `Last-Event-ID` on a reconnect only after the stream delivered an event with an `id:`. A page that loads a snapshot and then opens the stream has received none when the first drop comes, so the reconnect asks for nothing, the changes made in the gap are lost, and `connected` is `true` again. Tell the stream where to start: put the snapshot's position in the URL — `data-wcs="url: eventsUrl"` with a getter returning `"/api/events?since=" + this.seq` — or have the server send the current `id:` first. And a stream that ended in `CLOSED (2)` (an HTTP error) is not retried by the browser: reopen it with `close()` and `trigger`, from where you were.
+**Catching up after a reconnect is the server's and your page's job.** The browser sends `Last-Event-ID` on a reconnect only after the stream delivered an event with an `id:`. A page that loads a snapshot and then opens the stream has received none when the first drop comes, so the reconnect asks for nothing, the changes made in the gap are lost, and `connected` is `true` again. Tell the stream where to start: put the snapshot's position in the URL — `data-wcs="url: eventsUrl"` with a getter returning `"/api/events?since=" + this.streamSince` — or have the server send the current `id:` first. **Keep that position fixed while the stream is open:** write `streamSince` when you open or reopen the stream on purpose (the snapshot's position; on a reopen, the last event you applied), not on every event. A `url` that changes with every event closes and reopens the stream each time — the data stays right, so nothing shows it (docs/seam-apps.md, shift-desk: 15 connections in 30 seconds). Between your reopens the browser's own reconnects carry `Last-Event-ID`.
+
+**A stream that gave up.** A stream that ended in `CLOSED (2)` (an HTTP error: a 502 while the server restarts, a 401 when a token in the URL expired) is not retried by the browser: reopen it with `close()` and `trigger`, from where you were. Tell it from `errorInfo` — `recoverable: false` — not from `readyState` alone: `readyState` is `CLOSED (2)` before the element ever connected too, and a `$watch` fires once for an element's starting value, so a watch on `readyState === 2` runs on every page load. An `EventSource` does not tell the page the HTTP status, so a 401 and a 502 look the same. A token in the URL (an `EventSource` cannot send headers) is the one the stream opened with, and a native reconnect reuses it after it expired: refresh it before you reopen, or authenticate the stream with a cookie (`with-credentials`).
+
+**A connection that died without being closed** — a laptop's sleep, a NAT or a proxy that dropped it — is not noticed by the browser: the stream stays `OPEN`, `connected` stays `true`, and nothing arrives. Since 4.8 (not released yet), `stale-after="60000"` treats an open stream that received no event for that many milliseconds as lost: `connected` goes `false`, `error` says why (`errorInfo.recoverable` is `true`), and the element opens the same `url` again. A new `EventSource` sends no `Last-Event-ID`, so the URL carries the position (above). The server must send an event the element listens to — unnamed, or a name in `events` — more often than that; an SSE comment line (`:`) is not an event.
 
 ## State Surface vs Command Surface
 
@@ -208,10 +212,11 @@ To stop reconnection, call `close()` (or remove the element from the DOM).
 | `withCredentials` | `boolean` | Send credentials with the request |
 | `events` | `string` | Comma-separated named events to subscribe to |
 | `raw` | `boolean` | Disable JSON auto-parsing |
+| `staleAfter` | `number` | Milliseconds without an event after which an open stream is treated as lost and reopened (`0`: never). Read when connecting. Since 4.8 (not released yet) |
 | `trigger` | `boolean` | One-way connection trigger |
 | `manual` | `boolean` | Disables auto-connect on DOM attach |
 
-**`null` and `undefined`.** The inputs backed by an attribute (`url`, `withCredentials`, `events`, `raw`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`, so the element never connects to `/null` or `/undefined`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) Clearing `url` leaves an open stream as it is — call `close()` to disconnect — while restoring a markup `url` that differs reconnects to it. `trigger` ignores both.
+**`null` and `undefined`.** The inputs backed by an attribute (`url`, `withCredentials`, `events`, `raw`, `staleAfter`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`, so the element never connects to `/null` or `/undefined`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) Clearing `url` leaves an open stream as it is — call `close()` to disconnect — while restoring a markup `url` that differs reconnects to it. `trigger` ignores both.
 
 ## CSS styling with `:state()`
 
@@ -352,6 +357,7 @@ sseEl.close();
 | `with-credentials` | `boolean` | `false` | Send credentials cross-origin |
 | `events` | `string` | — | Comma-separated named events to subscribe to |
 | `raw` | `boolean` | `false` | Disable JSON auto-parsing |
+| `stale-after` | `number` | `0` | Reopen an open stream that received no event for this many milliseconds (`0`: never). Since 4.8 (not released yet) |
 | `manual` | `boolean` | `false` | Disable auto-connect |
 
 | Property | Type | Description |

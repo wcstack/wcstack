@@ -32,6 +32,13 @@ export interface SseConnectOptions {
   events?: string[];
   /** When true, skip JSON auto-parsing and keep `data` as the raw string. */
   raw?: boolean;
+  /**
+   * Milliseconds without an event after which an open stream is treated as lost and reopened
+   * (0 or absent: never). An EventSource does not notice a connection that died without being
+   * closed — a laptop's sleep, a NAT that forgot it, a proxy — and stays OPEN; the server must send
+   * an event the element listens to (unnamed, or a name in `events`) more often than this.
+   */
+  staleAfter?: number;
 }
 
 /**

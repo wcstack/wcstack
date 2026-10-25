@@ -192,9 +192,9 @@ describe("WcsSse", () => {
       expect(names).toContain("trigger");
     });
 
-    it("inputs に url/withCredentials/events/raw/manual/trigger を持つ", () => {
+    it("inputs に url/withCredentials/events/raw/staleAfter/manual/trigger を持つ", () => {
       const names = WcsSse.wcBindable.inputs?.map(i => i.name);
-      expect(names).toEqual(["url", "withCredentials", "events", "raw", "manual", "trigger"]);
+      expect(names).toEqual(["url", "withCredentials", "events", "raw", "staleAfter", "manual", "trigger"]);
     });
 
     it("commands は Core の commands を単一情報源として継承する", () => {
@@ -433,6 +433,30 @@ describe("WcsSse", () => {
       await flush();
       MockEventSource.last.simulateNamedEvent("price", "10");
       expect(el.message).toEqual({ event: "price", data: 10, lastEventId: "" });
+    });
+
+    it("stale-after 属性（staleAfter）を接続のオプションとして Core に渡す", async () => {
+      const spy = vi.spyOn(SseCore.prototype, "connect");
+      const el = createEl({ url: "/feed", "stale-after": "45000" });
+      expect(el.staleAfter).toBe(45000);
+      document.body.appendChild(el);
+      await flush();
+      expect(spy).toHaveBeenCalledWith("/feed", expect.objectContaining({ staleAfter: 45000 }));
+      spy.mockRestore();
+      el.remove();
+    });
+
+    it("staleAfter は数でない・0 以下の値で 0（見張らない）になり、プロパティは属性へ写る", () => {
+      const el = createEl();
+      expect(el.staleAfter).toBe(0);
+      el.setAttribute("stale-after", "soon");
+      expect(el.staleAfter).toBe(0);
+      el.setAttribute("stale-after", "-1");
+      expect(el.staleAfter).toBe(0);
+      el.staleAfter = 60000;
+      expect(el.getAttribute("stale-after")).toBe("60000");
+      el.staleAfter = null;
+      expect(el.hasAttribute("stale-after")).toBe(false);
     });
 
     it("raw 属性で JSON パースを無効化する", async () => {
