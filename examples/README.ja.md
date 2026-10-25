@@ -13,7 +13,8 @@
 すべてのデモはビルドレスで、パッケージを CDN から直接ロードします
 （`https://esm.run/@wcstack/<pkg>/auto` の 1 行。signals デモは単一の
 `@wcstack/signals/dom` エントリを import）。例外は `websocket-chat` の
-React / Vue variant と継ぎ目アプリ `fw-inventory`（Vite 使用）です。
+React / Vue variant と継ぎ目アプリ `fw-inventory`（Vite 使用）、それに継ぎ目アプリ
+`prod-booking`（わざと jsDelivr のファイルを版と `integrity` で固定し、npm から入れたものを自前で配信する）です。
 
 **script の順序**: I/O ノード系パッケージを `@wcstack/state` より*先*に並べて
 ください。module script は文書順で実行されるため、state がバインディングを
@@ -83,6 +84,7 @@ npx serve examples/state-permission-banner
 | [`ssr-news/`](ssr-news/) | `@wcstack/server` × router × state × サーバーとハイドレーションでの `<wcs-fetch>` × SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>` × クライアントの版（サーバーで描くニュースサイト。JavaScript 無しでも読める） | `cd examples/ssr-news && npm install && node server.js` | :3000 |
 | [`state-field-report/`](state-field-report/) | `<wcs-permission>` × 取得する要素 × `<wcs-camera>` → `<wcs-recorder>` → `<wcs-upload>` × ルートのノード × `<wcs-network offline>` × `<wcs-storage>` × `Permissions-Policy` / `<iframe>`（スマートフォンからの現場報告: クリップ・位置・口述のメモ・送信待ちの箱） | `node examples/state-field-report/server.js` | :3000 |
 | [`fw-inventory/`](fw-inventory/) | I/O ノード × `@wc-bindable/react` / `vue` × React 19 の props × Vue のリアクティビティと structured clone × `key` と `<wcs-storage>` × 片方が React でもう片方が Vue の 2 つのタブ（店の在庫の道具: React の管理画面と Vue の倉庫のパネル。`@wcstack/state` は使わない。Vite のアプリ） | `cd examples/fw-inventory && npm install && npm run build && node server.js` | :3000 |
+| [`prod-booking/`](prod-booking/) | 配信 × すべてのパッケージ: `integrity` × split の chunk、`installFeatures` × 2 つのエンジンのコピー、厳しい CSP と Trusted Types × import map・インラインのガード・コンポーネント、`<wcs-router>` × 再読み込み、`<wcs-autoloader>` × ほかのライブラリのタグ、開いたままのタブ × 次の版のファイル（`/booking/` の下の会議室の予約アプリ。6 つの配信の形と 2 つの版で、タブを開いたまま配備する） | `cd examples/prod-booking && npm install && node server.js` | :3000–:3005 |
 
 ## 共有サーバーコア
 

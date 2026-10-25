@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `examples/prod-booking`: the seam app, with its e2e spec — two versions side by side (v1 the published 4.6.2 from npm aliases, v2 this tree's dists under `WCS_LOCAL=1`) in six delivery profiles; the browser-specific checks (import map integrity, Trusted Types) also run in a new `firefox` Playwright project, which `e2e.yml` installs. Landing it recorded that an in-place deploy is refused only when the open tab runs 4.7 or later ([docs/seam-apps.md](./docs/seam-apps.md)).
+
 ## [4.7.0] — 2026-10-25
 
 The fifth minor under the 4.x direction, that nothing fails without a word ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja), from one seam app: `prod-booking`, a meeting-room booking app taken to production — versions pinned with `integrity`, the split entries, a strict CSP and Trusted Types, self-hosting under `immutable` caching, a Vite build, a service worker, and a new version deployed while the old one is open ([docs/seam-apps.md](./docs/seam-apps.md)). Of 20 delivery mistakes made on purpose, the lint reported 3. It found a router that swallowed the reloads a page asks for, an autoloader stopped by one tag of another library, add-ons of another copy of the engine accepted and never run, errors a production error reporter never heard, and browser support the CSP and SRI guides understated. The author's five decisions are in v4-direction §5.5.

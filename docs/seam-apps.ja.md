@@ -87,7 +87,7 @@
 | `ssr-news` — `@wcstack/server` で描くニュースサイト: 記事の一覧、コメント付きの記事のページ、読者の設定、セクションのレイアウト、本番の形（CSP、SRI、HTML のキャッシュ） | `@wcstack/server` × router × state、サーバーとハイドレーションでの `<wcs-fetch>`、SSR の下の `<wcs-link>` / `<wcs-head>` / `<wcs-layout>`、クライアントの版 × サーバーの版 | ディープリンクと再読み込み; JavaScript 無し; 遅いクライアントのバンドル（ハイドレーション前の入力）; サーバーの再起動; 別の minor のクライアント; 投稿の後の HTML のキャッシュ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-18）。発見は下 |
 | `state-field-report` — スマートフォンからの現場報告: クリップ・位置・口述のメモを、送信待ちを通して送る。本番の形で | `<wcs-permission>` × 取りに行く側（camera・geo・listen・notify）、`<wcs-camera>` × `<wcs-recorder>` × `<wcs-upload>`、ルートのノード × I/O ノードの切断、`<wcs-storage>` × 値とハンドルの混ざった下書き、`Permissions-Policy` / `<iframe>` × デバイスの要素すべて | 拒否してから許可する、録画中の権限の取り消し、録画中にタブを隠す、撮影のページを離れて戻る、アップロード中の再読み込み、アップロード中のオフライン、422 / 413 / 415 / 500、2 つのタブ、`<iframe>` の中のアプリ | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-20）。発見は下 |
 | `fw-inventory` — 店の在庫の道具: React 19 の管理画面と Vue 3 の倉庫のパネル。`@wcstack/state` は使わない | I/O ノード × `@wc-bindable/react` / `vue`、React 19 の props × 要素の入力、フレームワークのリアクティビティ × structured clone、`key` × 要素、遅れた定義（autoloader・CDN・動的 import）× アダプター、Vite の開発サーバー × SSE | 続けて届くイベント、開発の proxy の背後でのサーバーの再起動、保存したフィルタでの再読み込み、片方が React でもう片方が Vue の 2 つのタブ、深いリンクと素早い移動、アップロードの取り消し・再送・拒否、最初の描画より後の定義、StrictMode、HMR | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-21）。発見は下 |
-| `prod-booking` — 本番に出す会議室の予約アプリ: サブパスの下、`integrity` 付きの版の固定、分割エントリ、厳しい CSP と Trusted Types、`immutable` のキャッシュでの自前配信、Vite のビルド、Service Worker | 配信 × すべてのパッケージ: `integrity` × 分割の chunk、`installFeatures` × エンジンの 2 つのコピー、CSP × import map / インラインの state / ガード、Trusted Types × 部品、バンドラ × インラインのスクリプト、`<wcs-router>` × 読み直し、`<wcs-autoloader>` × 後で定義されるタグ、開いたままのタブ × 次の版のファイル | 各プロファイルを Chromium・Firefox・WebKit で; タブを開いたままの配備（v1 4.3.0 → v2 4.6.2）; 2 つの版の 2 つのタブ; 1 つのファイルの失敗（404・502・別の版のダイジェスト）; 本番でのエラー; オフラインと更新 | 2026-10-24 に作成。発見は下。`examples/` への取り込みは 4.7 の後 |
+| `prod-booking` — 本番に出す会議室の予約アプリ: サブパスの下、`integrity` 付きの版の固定、分割エントリ、厳しい CSP と Trusted Types、`immutable` のキャッシュでの自前配信、Vite のビルド、Service Worker | 配信 × すべてのパッケージ: `integrity` × 分割の chunk、`installFeatures` × エンジンの 2 つのコピー、CSP × import map / インラインの state / ガード、Trusted Types × 部品、バンドラ × インラインのスクリプト、`<wcs-router>` × 読み直し、`<wcs-autoloader>` × 後で定義されるタグ、開いたままのタブ × 次の版のファイル | 各プロファイルを Chromium・Firefox・WebKit で; タブを開いたままの配備（v1 4.3.0 → v2 4.6.2）; 2 つの版の 2 つのタブ; 1 つのファイルの失敗（404・502・別の版のダイジェスト）; 本番でのエラー; オフラインと更新 | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-25）。発見は下 |
 
 ### router-auth（2026-10-13）
 
@@ -324,3 +324,11 @@
 | 未決 | autoloader は一度失敗した部品を読み直さない（配備中の 502 の窓）。1 つのパッケージの 2 つの版がページにあっても何も言わない（4.x のプロトコルは互換）。空の `<wcs-state>` は `setInitialState()` を黙って待つ。`bootstrapState()` の後の `installFeatures` はタイミングで動く。配信の間違いの多くに lint は何も言わない（アドオンの欠けは実行時に知らせる）。4.5 へ戻すと `storage-key` は何も保存しない | 記録 |
 
 上の設計の問いは、2026-10-25 に著者が推奨どおりに決めた（[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.5）。
+
+### prod-booking の examples/ への取り込み（2026-10-25）
+
+4.7.0 の後、アプリを `examples/prod-booking/` へ移し、2 つの版を並べた: v1 は公開版の 4.6.2（例の `package.json` の npm の別名なので、CI は CDN を要らない）、v2 は `WCS_LOCAL=1` でこのツリーの `packages/*/dist`。v2 には 4.7.0 で要らなくなった回避策が 1 つも無い — `location.reload()` の前に router を外す、遅れて置く `<wcs-autoloader>`、autoloader を最後に置く、日付の束縛を囲む `if:`、`connectedCallbackPromise` で拾う報告（素の `error` のリスナーで足りる）— そして別のライブラリのタグを部品の前に置いた。v1 は 3 つを `4.6.2:` の印付きで残し、`diff -r v1 v2` でリリースが変えたものが見える。プロファイルは 6 つ（integrity 付きの固定、分割のすべてのファイルに integrity を持つ import map、分割版の auto エントリ、nonce と Trusted Types の厳しい CSP、版付きの URL での自前配信、その場で置き換える間違い）。Service Worker・ハッシュだけの CSP・バンドル・Vite のビルドは記録に残した。spec（11 件）は Chromium で、そのうち `@browsers` の 2 件 — import map の integrity と Trusted Types — は新しい `firefox` の project でも走る。取り込みでもう 1 つ見つかった:
+
+| 種類 | 発見 | 結果 |
+|---|---|---|
+| 設計の問い | その場で置き換える配備が拒まれるのは、開いたままのタブが 4.7 以降のときだけ: 4.6 の core には検査が無いので、4.6.2 の v1 のタブは v2 のアドオンと chunk を何も言わずに読む（spec は逆向き — v2 を開いて v1 のファイルを置く — を確かめる） | 記録: 答えは版付きの URL（docs/sri.ja.md §7）。古い core に後から教えることはできない（アプリの README の「既知の限界」） |

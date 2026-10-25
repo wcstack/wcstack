@@ -1,0 +1,21 @@
+{
+  "name": "wcstack-prod-booking",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a booking app taken to production — pinned with integrity, the split entries, a strict CSP with Trusted Types, self-hosted under versioned URLs, and a deploy under an open tab.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@wcstack/autoloader": "4.7.0",
+    "@wcstack/fetch": "4.7.0",
+    "@wcstack/router": "4.7.0",
+    "@wcstack/state": "4.7.0",
+    "@wcstack/storage": "4.7.0",
+    "autoloader-v1": "npm:@wcstack/autoloader@4.6.2",
+    "fetch-v1": "npm:@wcstack/fetch@4.6.2",
+    "router-v1": "npm:@wcstack/router@4.6.2",
+    "state-v1": "npm:@wcstack/state@4.6.2",
+    "storage-v1": "npm:@wcstack/storage@4.6.2"
+  }
+}

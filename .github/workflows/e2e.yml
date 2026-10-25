@@ -111,8 +111,15 @@ jobs:
       - name: Build the fw-inventory seam app over the packages' dists
         working-directory: examples/fw-inventory
         run: npm ci && WCS_LOCAL=1 npm run build
+      # examples/prod-booking deploys v2 over v1 while a tab is open. v1 is the published @wcstack/* 4.6.2, served
+      # from the example's own node_modules; v2 is packages/*/dist (WCS_LOCAL=1), so its spec needs no CDN.
+      - name: Install the prod-booking seam app's published packages (its v1)
+        working-directory: examples/prod-booking
+        run: npm ci
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # firefox: the "firefox" project runs prod-booking's checks where browsers differ (import map
+      # integrity, Trusted Types) — e2e/playwright.config.ts
+      - run: npx playwright install --with-deps chromium firefox
       - run: npm test
       - uses: actions/upload-artifact@v4
         if: failure()
