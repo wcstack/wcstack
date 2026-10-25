@@ -898,6 +898,94 @@
       "effect": { "en": "The page's own save comes back a render late and undoes what was typed in between; that write saves again, and typing quickly saves and applies two values in turn without end — a request per turn, with no error.", "ja": "ページ自身の保存が 1 描画遅れて戻り、その間に打った分を巻き戻す。その書き込みがまた保存し、速く打つと 2 つの値を交互に保存して当てることが止まらない — 1 回ごとに要求が出て、エラーは無い。" },
       "disposition": "docs-only",
       "note": { "en": "Found landing the fw-inventory seam app: the author's filters did so. The element cannot tell a write the framework echoes from an edit. The storage README listens to `wcs-storage:value-changed` on the element and skips the events its own save dispatches.", "ja": "継ぎ目アプリ fw-inventory の取り込みで見つかった: 著者のフィルタがそうしていた。フレームワークが返してきた書き込みと編集は、要素から見分けられない。storage の README は、要素の `wcs-storage:value-changed` を聴き、自分の保存が出すイベントを飛ばす。" }
+    },
+    {
+      "id": "timer-ticks-as-time",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Measures elapsed time by counting `<wcs-timer>` ticks (`tick` × `interval`).", "ja": "`<wcs-timer>` の刻みを数えて経過時間を測る（`tick` × `interval`）。" },
+      "effect": { "en": "A hidden tab's ticks are throttled and a sleeping laptop's are lost, so the count falls behind the clock: 4 seconds counted over an hour asleep (the shift-desk seam app).", "ja": "隠れたタブの刻みは間引かれ、スリープ中の刻みは失われるので、数は時計から遅れる: 1 時間のスリープの間に数えたのは 4 秒（継ぎ目アプリ shift-desk）。" },
+      "disposition": "docs-only",
+      "note": { "en": "The timer README says so (4.8 docs), and docs/long-lived-pages.md reads the clock on each tick. A count meant as time cannot be told at runtime.", "ja": "timer の README が言い（4.8 の文書）、docs/long-lived-pages.ja.md は刻みごとに時計を読む。時間のつもりの数え方は実行時には見分けられない。" }
+    },
+    {
+      "id": "stream-list-unbounded",
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Appends every stream event to a list and never trims it.", "ja": "ストリームのイベントをすべて一覧に足し、減らさない。" },
+      "effect": { "en": "On a page open for a shift the list holds every event: 10,000 events kept 35,333 DOM nodes (5,360 when capped), and it grows all day.", "ja": "シフトの間開いたページでは、一覧がすべてのイベントを持つ: 10,000 件で DOM ノード 35,333（上限を設けると 5,360）、一日中伸び続ける。" },
+      "disposition": "docs-only",
+      "note": { "en": "docs/long-lived-pages.md (bound what grows). Which length is too long is the page's to say.", "ja": "docs/long-lived-pages.ja.md（伸びるものに上限を）。どの長さが長すぎるかはページが決める。" }
+    },
+    {
+      "id": "session-read-at-module-top",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Reads the session or the token once, at the top level of a guard's or the state's module.", "ja": "セッションやトークンを、ガードや state のモジュールのトップレベルで 1 回だけ読む。" },
+      "effect": { "en": "A module is evaluated once: the guard decides with the session there was at load (none, before the login), and the state keeps sending the first token — the shift-desk variant sent 1,428 requests answered 401 in 4 seconds. Only the browser's own 401 lines show it.", "ja": "モジュールは 1 回しか評価されない: ガードは読み込みの時点のセッション（ログイン前なら無し）で決め、state は最初のトークンを送り続ける — shift-desk の変種は 4 秒で 401 の要求を 1,428 回送った。見えるのはブラウザ自身の 401 の行だけ。" },
+      "disposition": "lint-rule",
+      "note": { "en": "The router README says to read the session inside the handler, and the skill's failure matrix lists it. A top-level `localStorage` / `sessionStorage` / `document.cookie` read in a guard's or the state's inline module is visible to a lint rule.", "ja": "router の README はハンドラの中で読むと言い、スキルの失敗の一覧にもある。ガードや state のインラインのモジュールのトップレベルでの `localStorage` / `sessionStorage` / `document.cookie` の読みは、lint の規則に見える。" }
+    },
+    {
+      "id": "wake-resync-in-connected-callback",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Resyncs (reconnects, reloads) in `$connectedCallback`, expecting it to run after a sleep, a freeze or a back/forward-cache restore.", "ja": "`$connectedCallback` で取り直す（つなぎ直す・読み直す）。スリープ・凍結・back/forward cache からの復帰の後にも走ると思って。" },
+      "effect": { "en": "It runs when the `<wcs-state>` element is connected, not when the page wakes: after an hour asleep with the connections dead, the page stayed 131–140 tickets behind with \"Live\" in its header.", "ja": "走るのは `<wcs-state>` 要素が接続されたときで、ページが復帰したときではない: 接続が死んだまま 1 時間スリープした後、ページは 131〜140 件遅れたままで、ヘッダには \"Live\" とあった。" },
+      "disposition": "docs-only",
+      "note": { "en": "The state README says so, and docs/long-lived-pages.md shows one wake handler; since 4.8 `stale-after` notices the dead connections themselves.", "ja": "state の README が言い、docs/long-lived-pages.ja.md が復帰のハンドラを 1 つ示す。4.8 から `stale-after` が死んだ接続そのものに気づく。" }
+    },
+    {
+      "id": "wake-resync-on-online-only",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Resyncs only on the `online` event.", "ja": "`online` イベントでだけ取り直す。" },
+      "effect": { "en": "A sleep that kept the network up fires no `online`: the page stayed 134–137 tickets behind.", "ja": "ネットワークが切れなかったスリープは `online` を出さない: ページは 134〜137 件遅れたままだった。" },
+      "disposition": "docs-only",
+      "note": { "en": "docs/long-lived-pages.md lists the other ends of a gap (`visibilitychange`, a persisted `pageshow`, `resume`, a clock gap).", "ja": "docs/long-lived-pages.ja.md が間の終わりのほかの知らせを挙げる（`visibilitychange`、persisted の `pageshow`、`resume`、時計の飛び）。" }
+    },
+    {
+      "id": "notify-per-event-after-wake",
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Shows a notification for each event as it arrives.", "ja": "イベントが届くたびに通知を出す。" },
+      "effect": { "en": "Everything that arrived during a sleep arrives at once on wake: 37 notifications at once, most for tickets already closed.", "ja": "スリープの間に届いたものは、復帰したときにまとめて届く: 一度に 37 件の通知、その多くはもう閉じたチケットのもの。" },
+      "disposition": "docs-only",
+      "note": { "en": "The notification README and docs/long-lived-pages.md: hold notifications back after a wake and summarize.", "ja": "notification の README と docs/long-lived-pages.ja.md: 復帰の後は通知を止め、要約する。" }
+    },
+    {
+      "id": "raf-dt-as-wall-clock",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Draws against the wall clock by integrating `<wcs-raf>`'s `dt`.", "ja": "`<wcs-raf>` の `dt` を積んで、壁の時計に沿って描く。" },
+      "effect": { "en": "`dt` is active time: after an hour hidden the chart is an hour behind, and after a sleep with the tab visible one frame carries the whole sleep.", "ja": "`dt` は活動していた時間: 1 時間隠れた後はグラフが 1 時間遅れ、タブが見えたままのスリープの後は 1 フレームがスリープ全体を運ぶ。" },
+      "disposition": "docs-only",
+      "note": { "en": "The raf README says so (4.8 docs).", "ja": "raf の README が言う（4.8 の文書）。" }
+    },
+    {
+      "id": "record-draft-fixed-key",
+      "runtime": "silent", "harm": "data-loss",
+      "mistake": { "en": "Keeps a record's draft (a reply to a ticket) under one fixed `<wcs-storage>` key.", "ja": "記録の下書き（チケットへの返信）を、`<wcs-storage>` の固定のキー 1 つに置く。" },
+      "effect": { "en": "The draft follows the user from record to record; in session storage a duplicated tab copies it, and two tabs on local storage replace each other's.", "ja": "下書きが記録から記録へ利用者について回る。セッションストレージでは複製したタブが写し、ローカルストレージでは 2 つのタブが互いの下書きを置き換える。" },
+      "disposition": "docs-only",
+      "note": { "en": "The storage README: a key per record (4.8 docs).", "ja": "storage の README: 記録ごとのキー（4.8 の文書）。" }
+    },
+    {
+      "id": "connection-without-stale-after",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Keeps a `<wcs-sse>` or `<wcs-ws>` open for hours without `stale-after`.", "ja": "`<wcs-sse>` や `<wcs-ws>` を、`stale-after` なしで何時間も開いておく。" },
+      "effect": { "en": "A connection that died without being closed (a sleep, a NAT, a proxy) stays `OPEN` and `connected: true` while nothing arrives: the queue froze 80 tickets behind with \"Live\" shown.", "ja": "閉じられずに死んだ接続（スリープ・NAT・proxy）は、何も届かないのに `OPEN` で `connected: true` のまま: キューは 80 件遅れて止まり、\"Live\" と出ていた。" },
+      "disposition": "design-out", "breaking": true,
+      "note": { "en": "Since 4.8 `stale-after` (opt-in) notices it. A default would need every server to send something regularly — a 5.0 question.", "ja": "4.8 から `stale-after`（任意）が気づく。既定にすると、すべてのサーバーが定期的に何かを送る必要がある — 5.0 の問い。" }
+    },
+    {
+      "id": "sse-readystate-as-gave-up",
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Treats `<wcs-sse>`'s `readyState === 2` as a stream that gave up, and reopens it.", "ja": "`<wcs-sse>` の `readyState === 2` を諦めたストリームとみなし、開き直す。" },
+      "effect": { "en": "`readyState` is `CLOSED` before the first connect too, and a `$watch` fires once for an element's starting value: the reopen ran on every page load, refreshed the token and opened a second stream.", "ja": "`readyState` は最初の接続の前も `CLOSED` で、`$watch` は要素の最初の値で 1 回発火する: 開き直しが読み込みのたびに走り、トークンを更新し、2 本目のストリームを開いた。" },
+      "disposition": "design-out", "breaking": true,
+      "note": { "en": "The sse README says to tell it from `errorInfo.recoverable: false` (4.8 docs). A starting value that is not `CLOSED` would remove it, but changes an output — a 5.0 question.", "ja": "sse の README は `errorInfo.recoverable: false` で見分けると言う（4.8 の文書）。`CLOSED` でない最初の値なら消せるが、出力が変わる — 5.0 の問い。" }
+    },
+    {
+      "id": "sse-url-with-live-position",
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Puts a position that changes with every event in `<wcs-sse>`'s `url` (`since=` + the last applied id).", "ja": "イベントのたびに変わる位置を `<wcs-sse>` の `url` に入れる（`since=` ＋最後に当てた id）。" },
+      "effect": { "en": "Every event changes the url, and the element closes and reopens the stream: 15 connections in 30 seconds. The data stays right, so nothing shows it.", "ja": "イベントのたびに url が変わり、要素はストリームを閉じて開き直す: 30 秒で 15 本の接続。データは正しいままなので、何も気づかせない。" },
+      "disposition": "runtime-report",
+      "note": { "en": "The sse README's recipe was this shape until the 4.8 docs. The element could warn when the url of an open stream changes several times within seconds.", "ja": "sse の README の作法が 4.8 の文書までこの形だった。開いたストリームの url が数秒のうちに何度も変わったら、要素が警告できる。" }
     }
   ],
   "uncounted": [
