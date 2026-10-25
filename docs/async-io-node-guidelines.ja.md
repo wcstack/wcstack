@@ -40,7 +40,7 @@
 - **observable surface**: どのプロパティを公開するか。複合状態は「1イベント＋派生 getter」に分解する（§4.2）
 - **observable semantics**: 各 property を `state` / `event` / `handle` のどれとして扱うか。object / array の owner、公開後 mutation の有無、live resource の停止・交換・release point も表にする（§3.3.1）
 - **desired / actual の二相**が必要か → 例: `wakelock`（取得要求 `desired` と実際に保持中 `actual` を分離）
-- **同値ガードのみで十分か**、debounce/throttle は利用者責務にするか（基本は利用者責務。filter で `notice@x|debounce(1000)` のように書かせる）
+- **同値ガードのみで十分か**、debounce/throttle は利用者責務にするか（基本は利用者責務。前に `<wcs-debounce>` を置かせる。`data-wcs` に `debounce` フィルタは無い）
 - **permission / secure-context** の扱い。既存の4値 surface（`prompt` / `granted` / `denied` / `unsupported`）を流用するか
 - **autoTrigger**（クリック起動ショートカット）を持つか
 - **外部クロックを持つか**（オーディオスレッド等、メインスレッドの sync / microtask / task で表現できない独自の時間軸）。持つ場合は **desired のみ公開し、実効になる時刻を規定しない**（[timing-and-firing-contract.ja.md §19.1](./timing-and-firing-contract.ja.md)）。実効値を読み戻して publish してはならない（MUST NOT）— 読み値がレンダー単位に依存し、同値ガードが機能しなくなる

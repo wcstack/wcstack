@@ -113,7 +113,7 @@ The most common shape: several inputs, one storage key, restored on reload. Give
 
 Four details that are easy to get wrong:
 
-- A draft that belongs to one window (a form half filled in) wants `type="session"`: it survives a reload, and a second tab gets its own. With `localStorage` (the default) the second tab's typing replaces the first tab's draft as it is saved.
+- A draft that belongs to one window (a form half filled in) wants `type="session"`: it survives a reload, and a second tab gets its own. With `localStorage` (the default) the second tab's typing replaces the first tab's draft as it is saved. A draft that belongs to a record (a reply to a ticket) wants a key per record instead (`key: draftKey` with a getter on the record's id), usually in `localStorage`: one fixed key carries the draft from record to record, and session storage is lost with the tab and copied into a duplicated one ([Pages that stay open](../../docs/long-lived-pages.md)).
 
 - Read fields as `this["form.name"]`, **not** `this.form.name`. The second form registers a dependency on `form` only (`.name` is a plain property access on the returned object), so editing a field never re-evaluates the getter — see [Dependency tracking boundaries](../state/README.md#dependency-tracking-boundaries).
 - A stored value outlives a deploy. The key holds what the previous version of the app saved, and a tab still open on the previous version receives what the new one saves (the `storage` event), and the reverse — without a word when the shape changed. Keep a version in the stored object and migrate in the setter, or change the key with the shape.

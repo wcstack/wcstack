@@ -64,7 +64,7 @@ export default {
 | `say`（reactive input） | 束縛値が**変化**したとき | しない（ガード） | ステータス・a11y アナウンス |
 | `speak`（imperative command） | command が**起動**されたとき | する | 「クリックで読む」「もう一度読む」 |
 
-> **ヒント:** `<input>` の value など高頻度ソースに束縛するときは `\|debounce` を挟まないと1キーストロークごとに発話します。`manual` 属性で `say` を完全にミュートできます（認識中の発話ミュート＝echo 回避のフックにもなります）。
+> **ヒント:** `<input>` の value など高頻度ソースは、`<wcs-debounce>`（`source:` → `value:`）で落ち着かせてから `say` に束縛しないと、1キーストロークごとに発話します（`data-wcs` に `debounce` フィルタはありません）。`manual` 属性で `say` を完全にミュートできます（認識中の発話ミュート＝echo 回避のフックにもなります）。
 
 ### 単語境界ハイライト
 

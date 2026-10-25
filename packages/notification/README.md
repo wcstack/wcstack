@@ -74,10 +74,12 @@ The positional args of `notify.emit(title, options)` pass straight through to `n
 
 ```html
 <!-- reactive: shows whenever the bound value *changes* (same-value guard). -->
-<wcs-notify data-wcs="notice: statusMessage | debounce(1000)"></wcs-notify>
+<!-- settle the source first with <wcs-debounce> (@wcstack/debounce) -->
+<wcs-debounce wait="1000" data-wcs="source: statusMessage; value: settledStatus"></wcs-debounce>
+<wcs-notify data-wcs="notice: settledStatus"></wcs-notify>
 ```
 
-`notice` is the declarative counterpart of `notify`: writing a *changed* value shows it; an identical write is suppressed. The imperative `notify` command fires every call (even the same text). Auto-firing a notification on every state change risks spam, so debounce the bound source and prefer a `tag` so the OS de-dups.
+`notice` is the declarative counterpart of `notify`: writing a *changed* value shows it; an identical write is suppressed. The imperative `notify` command fires every call (even the same text). Auto-firing a notification on every state change risks spam, so debounce the bound source — with `<wcs-debounce>`, as above: `data-wcs` has no `debounce` filter, and a filter it does not know fails the whole `<wcs-state>` — and prefer a `tag` so the OS de-dups. A page that stays open has one more source of spam: everything that arrived while the laptop slept arrives at once on wake — see [Pages that stay open](../../docs/long-lived-pages.md).
 
 ### 3. Permission as bindable state
 

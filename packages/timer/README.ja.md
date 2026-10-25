@@ -104,6 +104,8 @@ npm install @wcstack/timer
 
 **4.8（未リリース）から、自動開始はマイクロタスクを 1 つ待つ。** 開始するか（`manual`）、どの `interval` / `repeat` / `once` / `immediate` でかは、`connectedCallback` の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `stop()` / `reset()` は開始を取り消し、`pause()` はその場で開始してから一時停止する。
 
+**刻みは時間ではない。** 隠れたタブのタイマーは間引かれ（Chromium: 5 分隠れた後は 1 分に 1 回まで）、スリープ中のノートパソコンは 1 つも走らせないので、`tick` × `interval` は時計から遅れます — 1 秒のタイマーは、1 時間のスリープの間に数回しか数えません。時間を測るには、刻みごとに時計（`Date.now()`）を読んで state に持ちます。[開いたままのページ](../../docs/long-lived-pages.ja.md) を見てください。
+
 ## 観測プロパティ（出力）
 
 | プロパティ | イベント                    | 説明                                                          |

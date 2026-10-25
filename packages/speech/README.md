@@ -65,7 +65,7 @@ export default {
 | `say` (reactive input) | the bound value **changes** | no (guarded) | status / a11y announcements |
 | `speak` (imperative command) | the command is **invoked** | yes | "speak this on click", "say it again" |
 
-> **Tip:** wire `say` through a `\|debounce` filter when binding to a rapidly-changing source (e.g. an `<input>` value), or it will speak on every keystroke. Set the `manual` attribute to mute the `say` path entirely (also the hook for muting speech while listening — see the echo example).
+> **Tip:** settle a rapidly-changing source (e.g. an `<input>` value) with `<wcs-debounce>` (`source:` → `value:`) before binding it to `say`, or it will speak on every keystroke — `data-wcs` has no `debounce` filter. Set the `manual` attribute to mute the `say` path entirely (also the hook for muting speech while listening — see the echo example).
 
 ### Word-boundary highlighting
 

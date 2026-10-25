@@ -48,6 +48,7 @@
 | [view-transition-design.md](./view-transition-design.md) | [view-transition-design.ja.md](./view-transition-design.ja.md) |
 | [router-outlet-placement.md](./router-outlet-placement.md) | [router-outlet-placement.ja.md](./router-outlet-placement.ja.md) |
 | [seam-apps.md](./seam-apps.md) | [seam-apps.ja.md](./seam-apps.ja.md) |
+| [long-lived-pages.md](./long-lived-pages.md) | [long-lived-pages.ja.md](./long-lived-pages.ja.md) |
 | [mistake-catalogue.md](./mistake-catalogue.md) | [mistake-catalogue.ja.md](./mistake-catalogue.ja.md) |
 | [architecture-hardening/README.md](./architecture-hardening/README.md) | [README.ja.md](./architecture-hardening/README.ja.md) |
 | [architecture-hardening/09-remediation-design.md](./architecture-hardening/09-remediation-design.md) | [09…ja.md](./architecture-hardening/09-remediation-design.ja.md) |

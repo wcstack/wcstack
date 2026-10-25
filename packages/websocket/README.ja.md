@@ -178,7 +178,7 @@ npm install @wcstack/websocket
 - 最大 `max-reconnects` 回リトライ（デフォルト: Infinity）
 - 再接続成功時にリトライカウントをリセット
 
-**閉じられずに死んだ接続** — ノートパソコンのスリープ、接続を落とした NAT や proxy — にブラウザは気づきません: ソケットは `OPEN` のまま、`connected` は `true` のままで、何も届きません（`auto-reconnect` はクローズにしか反応しない）。4.8（未リリース）から、`stale-after="45000"` は、その時間（ms）メッセージが 1 つも届かない開いた接続を失われたとみなし、異常なクローズと同じに扱います: ソケットを手放し、`connected` が `false` になり、`error` が理由を言い（`errorInfo.recoverable` は `true`）、`auto-reconnect` がつなぎ直します。サーバーはそれより短い間隔でメッセージを送る必要があります — WebSocket の ping フレームはページに見えないので、アプリケーションの層の ping を送ってください。
+**閉じられずに死んだ接続** — ノートパソコンのスリープ、接続を落とした NAT や proxy — にブラウザは気づきません: ソケットは `OPEN` のまま、`connected` は `true` のままで、何も届きません（`auto-reconnect` はクローズにしか反応しない）。4.8（未リリース）から、`stale-after="45000"` は、その時間（ms）メッセージが 1 つも届かない開いた接続を失われたとみなし、異常なクローズと同じに扱います: ソケットを手放し、`connected` が `false` になり、`error` が理由を言い（`errorInfo.recoverable` は `true`）、`auto-reconnect` がつなぎ直します。サーバーはそれより短い間隔でメッセージを送る必要があります — WebSocket の ping フレームはページに見えないので、アプリケーションの層の ping を送ってください。何時間も開いたままのページがほかに通るもの: [開いたままのページ](../../docs/long-lived-pages.ja.md)。
 
 **back/forward cache。** 開いた WebSocket は、ページをブラウザの back/forward cache から外します（Chromium: 復元しない、理由 `websocket`）。4.8（未リリース）から、`<wcs-ws>` はページが cache に入りうるとき（`persisted` の `pagehide`）接続を閉じて `connected: false` をその場で知らせ、cache から戻ったとき（`persisted` の `pageshow`）、接続していたならつなぎ直します — ページは読み直されずに復元されます。その間に届いたものは再送されません: `connected` で、自分の位置から取り直してください。
 
