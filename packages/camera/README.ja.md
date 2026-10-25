@@ -157,6 +157,7 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 
 ## 注意・落とし穴
 
+- **4.8（未リリース）から、`<wcs-camera>` は接続の 1 マイクロタスク後に決める**: 開始するか（`autostart`）、どの `device-id` / `facing-mode` / `audio` / `width` / `height` でかを、そのときの属性で（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後 — その場で始めると前のルートのデバイスを取得し、その映像が残っていた。制約の変化は次のマイクロタスクで 1 回にまとめて取得し直す。`start()` は今の属性を使い、同じタスクの `stop()` は自動開始を取り消す。
 - **セキュアコンテキスト（https）必須。** `getUserMedia` は `file://` / 素の `http://` では使えません。
 - **Content-Security-Policy。** 4.5 から、プレビュー自身のスタイルは構築したスタイルシートで、`style-src` の対象外です。`'unsafe-inline'` の無いポリシーでもプレビューの配置が保たれます。4.4 までは shadow root の `<style>` で、そうしたポリシーに止められました（プレビューの `<video>` が元の大きさで描かれる）。その版では自分のスタイルシートで `wcs-camera::part(video) { display: block; width: 100%; height: 100% }` と書いてください。
 - **`error` / `errorInfo` は最後の試みを表します。** 後から（サイトの設定で）許可されても消えません。`permission` はすぐに許可に追従しますが、`errorInfo` は次の `start()` が成功するまで `not-allowed` のままです。「止められている」は `permission` で判断し、最後のエラーが `not-allowed` で `permission` が `granted` なら、もう一度開始を促してください。

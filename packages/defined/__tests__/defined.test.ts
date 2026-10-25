@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { WcsDefined } from "../src/components/Defined.js";
 import { bootstrapDefined } from "../src/bootstrapDefined.js";
+import { DefinedSnapshot } from "../src/types.js";
 import { uniqueTag, defineTag, flush } from "./helpers.js";
 
 beforeAll(() => {
@@ -151,6 +152,7 @@ describe("<wcs-defined> Shell", () => {
 
       // state などの binder は upgrade・接続の後にプロパティを書く
       el.tags = `${a},${b}`;
+      await flush();
       expect(el.total).toBe(2);
       expect(el.pending).toEqual([b]);
       expect(el.defined).toBe(false);
@@ -169,8 +171,10 @@ describe("<wcs-defined> Shell", () => {
       const a = uniqueTag();
       const el = makeEl({ tags: a });
       document.body.appendChild(el);
+      await flush();
       const first = el.connectedCallbackPromise;
       el.tags = a;
+      await flush();
       expect(el.connectedCallbackPromise).toBe(first);
       el.remove();
       const b = uniqueTag();
@@ -189,6 +193,7 @@ describe("<wcs-defined> Shell", () => {
       const t = uniqueTag();
       const el = makeEl({ tags: t, timeout: "1000" });
       document.body.appendChild(el);
+      await flush(); // 見張り（timeout のタイマーも）はマイクロタスクで始まる
 
       vi.advanceTimersByTime(1000);
       await flush();
@@ -196,6 +201,100 @@ describe("<wcs-defined> Shell", () => {
       expect(el.defined).toBe(false);
       el.remove();
       vi.useRealTimers();
+    });
+  });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの入力をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("見張りの開始はマイクロタスクで、そのときの入力で", () => {
+    function changeLog(el: WcsDefined): DefinedSnapshot[] {
+      const log: DefinedSnapshot[] = [];
+      el.addEventListener("wcs-defined:change", (e) => log.push((e as CustomEvent<DefinedSnapshot>).detail));
+      return log;
+    }
+
+    it("入れ直しの間に tags が書かれると、前の tags は見張らず、connectedCallbackPromise は新しい見張りで resolve する", async () => {
+      const oldTag = uniqueTag(); // 未定義のまま
+      const newTag = uniqueTag();
+      const el = makeEl({ tags: oldTag });
+      document.body.appendChild(el);
+      await flush();
+      expect(el.pending).toEqual([oldTag]);
+      const whenDefined = vi.spyOn(customElements, "whenDefined");
+      const log = changeLog(el);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.tags = newTag; });
+      el.remove();
+      document.body.appendChild(el);
+      const promise = el.connectedCallbackPromise;
+      let settled = false;
+      void promise.then(() => { settled = true; });
+      await flush();
+      await flush();
+      // 前の tags では見張らない（whenDefined も呼ばない）
+      expect(whenDefined.mock.calls.map(([tag]) => tag)).toEqual([newTag]);
+      expect(log.map((snap) => snap.pending)).toEqual([[newTag]]);
+      // 前の見張りではなく、新しい見張りの settle を待つ
+      expect(settled).toBe(false);
+      defineTag(newTag);
+      await promise;
+      expect(el.defined).toBe(true);
+      whenDefined.mockRestore();
+      el.remove();
+    });
+
+    it("判断の前に外した要素は見張らず、connectedCallbackPromise は resolve する", async () => {
+      const el = makeEl({ tags: uniqueTag() });
+      const whenDefined = vi.spyOn(customElements, "whenDefined");
+      const log = changeLog(el);
+      document.body.appendChild(el);
+      const promise = el.connectedCallbackPromise;
+      el.remove();
+      await expect(promise).resolves.toBeUndefined();
+      await flush();
+      expect(whenDefined).not.toHaveBeenCalled();
+      expect(log).toEqual([]);
+      expect(el.total).toBe(0);
+      whenDefined.mockRestore();
+    });
+
+    it("同じタスクで接続の後に書かれた tags / mode はまとまり、最後の入力で 1 回だけ見張る", async () => {
+      const a = uniqueTag();
+      const b = uniqueTag();
+      defineTag(a);
+      const el = makeEl({});
+      const log = changeLog(el);
+      document.body.appendChild(el);
+      const promise = el.connectedCallbackPromise;
+      el.tags = `${a},${b}`;
+      el.mode = "any";
+      // 予約中の見張りの promise はそのまま（書き込みのたびに差し替えない）
+      expect(el.connectedCallbackPromise).toBe(promise);
+      await flush();
+      // tags なしの見張り（"no tags specified"）も、mode=all の見張りも出さない
+      expect(log).toEqual([{ defined: true, pending: [b], missing: [], count: 1, total: 2, error: null }]);
+      defineTag(b);
+      await promise;
+      expect(el.count).toBe(2);
+      el.remove();
+    });
+
+    it("同じタスクの外し・入れ直しはまとまり、見張りは 1 回", async () => {
+      const t = uniqueTag();
+      const el = makeEl({ tags: t });
+      const whenDefined = vi.spyOn(customElements, "whenDefined");
+      document.body.appendChild(el);
+      const first = el.connectedCallbackPromise;
+      el.remove();
+      document.body.appendChild(el);
+      // 外したときに resolve 済み — 入れ直しは新しい promise を予約する
+      await expect(first).resolves.toBeUndefined();
+      expect(el.connectedCallbackPromise).not.toBe(first);
+      await flush();
+      expect(whenDefined.mock.calls.map(([tag]) => tag)).toEqual([t]);
+      whenDefined.mockRestore();
+      el.remove();
     });
   });
 });

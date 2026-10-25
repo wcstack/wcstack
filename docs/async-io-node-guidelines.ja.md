@@ -247,6 +247,7 @@ dispose(): void {
 - `observe(...)`: 監視/購読を開始。**冪等**（既に購読中なら設定更新のみで二重購読しない）。再起動は `dispose()` してから
 - `dispose()`: listener 解除・subscription flag リセット・`_gen++`。`dispose()` 後の `observe()` で復活できること
 - `dispose()` は、値を変える `semantics: "state"` の出力をすべて、その出力の setter とイベントで知らせ、守りが完了を捨てる操作は自分で終わらせる（`loading` を false に戻す など）こと（**MUST**）— [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §22。ルートを離れた要素は、次に入るときのためにノードと束縛を残すので、無言のリセットは state の中で間違ったままになる
+- `connectedCallback` が要素の入力から始める仕事（接続・読み込み・開始・観測、`manual` のような門）は、1 つのマイクロタスクで、そのときの入力で決め、その間に要素が外れていれば何もしないこと（**MUST**）— [timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §23。router はルートの同じノードを、state が次のルートの入力を書く前に戻す。例外: 同じタスクで結果を使う最初の接続はその場のまま（§23.2）。明示のコマンドは待っている判断を引き取る（§23.3）
 - リソースを残す設計判断（例: notification は dispose 後も画面に通知を残す）は理由をコメントに書く
 
 ### 3.6 never-throw（MUST）
@@ -454,6 +455,7 @@ Service Worker など追加エントリがあるノードは rollup 出力を増
 - [ ] `_gen` 世代ガードで非同期の stale 書き込みを防いでいる
 - [ ] `observe()` 冪等・`dispose()` で復活可能
 - [ ] `dispose()` が変える state の出力をすべて知らせ、打ち切る操作は終わったと知らせる（timing 契約 §22）。操作の途中で切断し、イベントを確かめるテストがある
+- [ ] 接続時の仕事を、マイクロタスクで、そのときの入力で決める（timing 契約 §23）。先に積まれたマイクロタスクが入力を変える入れ直し、マイクロタスクより前の取り外し、同じタスクで書いた門、同じタスクの停止のコマンドのテストがある
 - [ ] API は呼び出し時解決（キャッシュしない）
 - [ ] SSR: `ready` / `connectedCallbackPromise` / `hasConnectedCallbackPromise`
 - [ ] config / bootstrap / registerComponents / exports が規約どおり

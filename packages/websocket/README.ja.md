@@ -674,6 +674,7 @@ bootstrapWebSocket({
 
 ## 設計メモ
 
+- **4.8（未リリース）から、接続時の判断はマイクロタスクを 1 つ待つ。** 接続するか、どの `url` へかは、`connectedCallback`（と `url` の変化）の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後 — その場で接続すると、前のルートのソケットを開いてから閉じていた。`connect()` / `trigger` はその場で接続し、同じタスクの `close()` は待っている接続を取り消す。
 - `message`、`connected`、`loading`、`error`、`readyState` は **出力ステート**
 - `url`、`trigger`、`send` は **入力 / コマンドサーフェス**
 - `trigger` は意図的に単方向: `true` を書き込むと接続、リセットで完了を通知

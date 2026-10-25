@@ -700,6 +700,7 @@ bootstrapStorage({
 
 ## Design Notes
 
+- **Since 4.8 (not released yet), a reconnect loads in a microtask.** The first connect loads at once — a binding attached in the same task pulls `value` and expects it loaded. A reconnect loads one microtask later, with the `key` as it is then ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs, and loading at once read the previous route's key and published its value for a moment.
 - `value`, `loading`, `error` are **output state**
 - `key`, `type`, `trigger` are **input / command surface**
 - `trigger` is intentionally one-way: writing `true` saves, reset signals completion. `save()` is never-throw (a failure such as an unset `key` is routed to the `error` property, not thrown); `trigger` is reset to `false` and the completion event fires regardless, so it never gets stuck in the `true` state.

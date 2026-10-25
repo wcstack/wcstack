@@ -4,6 +4,9 @@ import { setConfig } from "../src/config";
 import { Timer } from "../src/components/Timer";
 import { unregisterAutoTrigger } from "../src/autoTrigger";
 
+/** 自動開始の判断はマイクロタスク（timing-and-firing-contract §23）: それを流す */
+const flush = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+
 function createTimer(attrs: Record<string, string> = {}): Timer {
   const el = document.createElement("wcs-timer") as Timer;
   for (const [k, v] of Object.entries(attrs)) {
@@ -26,9 +29,10 @@ describe("Timer (Shell)", () => {
     vi.useRealTimers();
   });
 
-  it("接続時に自動で開始し display:none になる", () => {
+  it("接続時に自動で開始し display:none になる", async () => {
     const el = createTimer({ interval: "1000" });
     document.body.appendChild(el);
+    await flush();
 
     expect(el.style.display).toBe("none");
     expect(el.running).toBe(true);
@@ -37,9 +41,10 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(2);
   });
 
-  it("manual では自動開始しない", () => {
+  it("manual では自動開始しない", async () => {
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);
+    await flush();
     expect(el.running).toBe(false);
 
     el.start();
@@ -47,9 +52,10 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(1);
   });
 
-  it("切断時に停止する", () => {
+  it("切断時に停止する", async () => {
     const el = createTimer({ interval: "1000" });
     document.body.appendChild(el);
+    await flush();
     vi.advanceTimersByTime(1000);
     el.remove();
 
@@ -58,9 +64,10 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(1);
   });
 
-  it("once は1回だけ発火する (repeat=1相当)", () => {
+  it("once は1回だけ発火する (repeat=1相当)", async () => {
     const el = createTimer({ interval: "1000", once: "", manual: "" });
     document.body.appendChild(el);
+    await flush();
     el.start();
 
     vi.advanceTimersByTime(5000);
@@ -68,9 +75,10 @@ describe("Timer (Shell)", () => {
     expect(el.running).toBe(false);
   });
 
-  it("once タイマーを再 start すると毎回 1 回ずつ発火する", () => {
+  it("once タイマーを再 start すると毎回 1 回ずつ発火する", async () => {
     const el = createTimer({ interval: "1000", once: "", manual: "" });
     document.body.appendChild(el);
+    await flush();
 
     el.start();
     vi.advanceTimersByTime(5000);
@@ -84,18 +92,20 @@ describe("Timer (Shell)", () => {
     expect(el.running).toBe(false);
   });
 
-  it("repeat 属性は once より優先される", () => {
+  it("repeat 属性は once より優先される", async () => {
     const el = createTimer({ interval: "1000", once: "", repeat: "3", manual: "" });
     document.body.appendChild(el);
+    await flush();
     el.start();
 
     vi.advanceTimersByTime(5000);
     expect(el.tick).toBe(3);
   });
 
-  it("repeat=\"0\"（既定・無制限）は once を打ち消さず 1 回で停止する", () => {
+  it("repeat=\"0\"（既定・無制限）は once を打ち消さず 1 回で停止する", async () => {
     const el = createTimer({ interval: "1000", once: "", repeat: "0", manual: "" });
     document.body.appendChild(el);
+    await flush();
     el.start();
 
     vi.advanceTimersByTime(5000);
@@ -103,9 +113,10 @@ describe("Timer (Shell)", () => {
     expect(el.running).toBe(false);
   });
 
-  it("immediate 属性で start 直後に発火する", () => {
+  it("immediate 属性で start 直後に発火する", async () => {
     const el = createTimer({ interval: "1000", immediate: "", manual: "" });
     document.body.appendChild(el);
+    await flush();
     el.start();
     expect(el.tick).toBe(1);
   });
@@ -122,9 +133,10 @@ describe("Timer (Shell)", () => {
     expect(createTimer({ interval: "-1" }).interval).toBe(1000);
   });
 
-  it("interval=0 属性で接続しても暴走せず既定周期で動く", () => {
+  it("interval=0 属性で接続しても暴走せず既定周期で動く", async () => {
     const el = createTimer({ interval: "0" });
     document.body.appendChild(el);
+    await flush();
     vi.advanceTimersByTime(1000);
     expect(el.tick).toBe(1);
   });
@@ -201,11 +213,12 @@ describe("Timer (Shell)", () => {
     expect(el.manual).toBe(false);
   });
 
-  it("稼働中に interval へ undefined を書くとマークアップの周期へ張り直す", () => {
+  it("稼働中に interval へ undefined を書くとマークアップの周期へ張り直す", async () => {
     const host = document.createElement("div");
     host.innerHTML = '<wcs-timer interval="300"></wcs-timer>';
     const el = host.firstElementChild as Timer;
     document.body.appendChild(host);
+    await flush();
     el.interval = 1000;
     const spy = vi.spyOn((el as any)._core, "changeInterval");
     el.interval = undefined;
@@ -213,9 +226,10 @@ describe("Timer (Shell)", () => {
     expect(el.getAttribute("interval")).toBe("300");
   });
 
-  it("trigger=true で開始し trigger-changed をちょうど1回 detail=false で発火する", () => {
+  it("trigger=true で開始し trigger-changed をちょうど1回 detail=false で発火する", async () => {
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);
+    await flush();
 
     const details: unknown[] = [];
     el.addEventListener("wcs-timer:trigger-changed", (e) => details.push((e as CustomEvent).detail));
@@ -230,11 +244,12 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(1);
   });
 
-  it("既に running 中の trigger=true でも start は no-op だが trigger-changed は1回出る", () => {
+  it("既に running 中の trigger=true でも start は no-op だが trigger-changed は1回出る", async () => {
     // Timer.ts の不変条件: false→true の書き込みごとに必ず1回 change-back イベントが出る
     // （start() が「既に running」で no-op になっても通知は出る）
     const el = createTimer({ interval: "1000" });
     document.body.appendChild(el); // 自動起動で running
+    await flush();
     expect(el.running).toBe(true);
     vi.advanceTimersByTime(1000);
     expect(el.tick).toBe(1);
@@ -255,16 +270,18 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(2);
   });
 
-  it("trigger=false は何もしない", () => {
+  it("trigger=false は何もしない", async () => {
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);
+    await flush();
     el.trigger = false;
     expect(el.running).toBe(false);
   });
 
-  it("stop / reset / pause / resume コマンドが Core に委譲される", () => {
+  it("stop / reset / pause / resume コマンドが Core に委譲される", async () => {
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);
+    await flush();
 
     el.start();
     vi.advanceTimersByTime(1500);
@@ -283,9 +300,10 @@ describe("Timer (Shell)", () => {
     expect(el.elapsed).toBe(0);
   });
 
-  it("running中の interval 変更でインターバルが張り直される", () => {
+  it("running中の interval 変更でインターバルが張り直される", async () => {
     const el = createTimer({ interval: "1000" });
     document.body.appendChild(el);
+    await flush();
     vi.advanceTimersByTime(1000);
     expect(el.tick).toBe(1);
 
@@ -295,9 +313,10 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(4); // 1 + 3
   });
 
-  it("immediate 稼働中の interval 変更で余分な即時 tick が出ない", () => {
+  it("immediate 稼働中の interval 変更で余分な即時 tick が出ない", async () => {
     const el = createTimer({ interval: "1000", immediate: "" });
     document.body.appendChild(el);
+    await flush();
     expect(el.tick).toBe(1); // 接続時の即時1回
     vi.advanceTimersByTime(1000);
     expect(el.tick).toBe(2);
@@ -309,9 +328,10 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(3); // 新周期で進む
   });
 
-  it("repeat 稼働中の interval 変更で合計発火回数が変わらない", () => {
+  it("repeat 稼働中の interval 変更で合計発火回数が変わらない", async () => {
     const el = createTimer({ interval: "1000", repeat: "3" });
     document.body.appendChild(el);
+    await flush();
     vi.advanceTimersByTime(2000);
     expect(el.tick).toBe(2); // 3 回中 2 回
 
@@ -329,9 +349,10 @@ describe("Timer (Shell)", () => {
     expect(el.repeat).toBe(0);
   });
 
-  it("interval 変更は非running時には張り直さない", () => {
+  it("interval 変更は非running時には張り直さない", async () => {
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);
+    await flush();
     expect(el.running).toBe(false);
 
     el.setAttribute("interval", "200");
@@ -340,11 +361,12 @@ describe("Timer (Shell)", () => {
     expect(el.tick).toBe(0);
   });
 
-  it("手動起動で稼働中の manual タイマーも live interval 変更を反映する", () => {
+  it("手動起動で稼働中の manual タイマーも live interval 変更を反映する", async () => {
     // manual は「起動可否」の判断であって「稼働中の周期差し替え可否」とは直交。
     // 明示 start() で稼働中なら、manual でも周期は張り直される。
     const el = createTimer({ interval: "1000", manual: "" });
     document.body.appendChild(el);
+    await flush();
     el.start();
     vi.advanceTimersByTime(1000);
     expect(el.tick).toBe(1);
@@ -366,9 +388,10 @@ describe("Timer (Shell)", () => {
     expect(createTimer({ repeat: "5" }).repeat).toBe(5);
   });
 
-  it("interval 変更は changeInterval に委譲され、同値変更では委譲せず張り直さない", () => {
+  it("interval 変更は changeInterval に委譲され、同値変更では委譲せず張り直さない", async () => {
     const el = createTimer({ interval: "1000" });
     document.body.appendChild(el);
+    await flush();
     vi.advanceTimersByTime(1000);
     expect(el.tick).toBe(1);
 
@@ -436,9 +459,10 @@ describe("Timer (Shell)", () => {
     expect(observeSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("切断時に Core.dispose が呼ばれ世代が進む (§3.5 / §4.4)", () => {
+  it("切断時に Core.dispose が呼ばれ世代が進む (§3.5 / §4.4)", async () => {
     const el = createTimer({ interval: "1000" });
     document.body.appendChild(el);
+    await flush();
     const disposeSpy = vi.spyOn((el as any)._core, "dispose");
 
     vi.advanceTimersByTime(1000);
@@ -449,6 +473,152 @@ describe("Timer (Shell)", () => {
     // dispose 後はタイマーが進まない
     vi.advanceTimersByTime(5000);
     expect(el.tick).toBe(1);
+  });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの入力をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("自動開始の判断はマイクロタスクで、そのときの入力で", () => {
+    it("入れ直しの間に immediate / interval が書かれると、前の入力では動かず、新しい入力で動き出す", async () => {
+      const el = createTimer({ interval: "1000", immediate: "" });
+      document.body.appendChild(el);
+      await flush();
+      expect(el.tick).toBe(1); // 接続時の即時 1 回
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.immediate = false; el.interval = 500; });
+      el.remove();
+      document.body.appendChild(el);
+      expect(el.running).toBe(false);
+      await flush();
+      await flush();
+      // 前の immediate での即時 tick は出ない
+      expect(el.tick).toBe(1);
+      expect(el.running).toBe(true);
+      // 新しい周期（500ms）で進む
+      vi.advanceTimersByTime(500);
+      expect(el.tick).toBe(2);
+    });
+
+    it("入れ直しの間に manual が書かれると、動き出さない", async () => {
+      const el = createTimer({ interval: "1000" });
+      document.body.appendChild(el);
+      await flush();
+      expect(el.running).toBe(true);
+
+      queueMicrotask(() => { el.manual = true; });
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      await flush();
+      expect(el.running).toBe(false);
+      vi.advanceTimersByTime(5000);
+      expect(el.tick).toBe(0);
+    });
+
+    it("判断の前に外した要素は動き出さない", async () => {
+      const el = createTimer({ interval: "1000", immediate: "" });
+      const ticks: unknown[] = [];
+      el.addEventListener("wcs-timer:tick", (e) => ticks.push((e as CustomEvent).detail));
+      document.body.appendChild(el);
+      el.remove();
+      await flush();
+      expect(el.running).toBe(false);
+      vi.advanceTimersByTime(5000);
+      expect(ticks).toEqual([]);
+    });
+
+    it("同じタスクで append の後に書かれた manual は守られる", async () => {
+      const el = createTimer({ interval: "1000", immediate: "" });
+      document.body.appendChild(el);
+      el.manual = true;
+      await flush();
+      expect(el.running).toBe(false);
+      expect(el.tick).toBe(0);
+    });
+
+    it("同じタスクで append の後に書かれた repeat / interval で動き出す", async () => {
+      const el = createTimer();
+      document.body.appendChild(el);
+      el.repeat = 2;
+      el.interval = 200;
+      await flush();
+      vi.advanceTimersByTime(1000);
+      expect(el.tick).toBe(2);
+      expect(el.running).toBe(false);
+    });
+
+    it("同じタスクの remove → append は 1 回だけ start する", async () => {
+      const el = createTimer({ interval: "1000" });
+      const startSpy = vi.spyOn((el as any)._core, "start");
+      document.body.appendChild(el);
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      expect(startSpy).toHaveBeenCalledTimes(1);
+      expect(el.running).toBe(true);
+    });
+
+    it("同じタスクで append の後に stop() されると、自動開始しない", async () => {
+      const el = createTimer({ interval: "1000", immediate: "" });
+      document.body.appendChild(el);
+      el.stop();
+      await flush();
+      expect(el.running).toBe(false);
+      vi.advanceTimersByTime(5000);
+      expect(el.tick).toBe(0);
+    });
+
+    it("同じタスクで append の後に reset() されると、自動開始しない", async () => {
+      const el = createTimer({ interval: "1000" });
+      document.body.appendChild(el);
+      el.reset();
+      await flush();
+      expect(el.running).toBe(false);
+      vi.advanceTimersByTime(5000);
+      expect(el.tick).toBe(0);
+    });
+
+    it("同じタスクで append の後に pause() されると、その時の入力で開始して一時停止し、resume() で動く", async () => {
+      const el = createTimer({ interval: "1000" });
+      const startSpy = vi.spyOn((el as any)._core, "start");
+      document.body.appendChild(el);
+      el.interval = 500;
+      el.pause();
+      await flush();
+      expect(startSpy).toHaveBeenCalledTimes(1);
+      expect(el.running).toBe(false);
+      vi.advanceTimersByTime(5000);
+      expect(el.tick).toBe(0);
+
+      el.resume();
+      expect(el.running).toBe(true);
+      vi.advanceTimersByTime(500);
+      expect(el.tick).toBe(1); // pause の時点の interval（500ms）で動く
+    });
+
+    it("manual の要素は、同じタスクの pause() でも開始しない", async () => {
+      const el = createTimer({ interval: "1000", manual: "" });
+      document.body.appendChild(el);
+      el.pause();
+      await flush();
+      el.resume();
+      expect(el.running).toBe(false);
+      vi.advanceTimersByTime(5000);
+      expect(el.tick).toBe(0);
+    });
+
+    it("stop() の後、同じタスクで入れ直すと、その接続の自動開始は 1 回だけ行う", async () => {
+      const el = createTimer({ interval: "1000" });
+      const startSpy = vi.spyOn((el as any)._core, "start");
+      document.body.appendChild(el);
+      el.stop();
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      await flush();
+      expect(startSpy).toHaveBeenCalledTimes(1);
+      expect(el.running).toBe(true);
+    });
   });
 
   it("wcBindable に trigger プロパティと inputs が追加されている", () => {

@@ -109,6 +109,8 @@ When `<wcs-timer>` is connected to the DOM, it automatically starts an interval 
 
 **`null` and `undefined`.** The inputs backed by an attribute (`interval`, `once`, `repeat`, `immediate`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) A running timer swaps to the restored or default `interval` in place, like any other `interval` change; `trigger` ignores both.
 
+**Since 4.8 (not released yet), the auto-start waits one microtask.** Whether to start (`manual`), and with which `interval` / `repeat` / `once` / `immediate`, is decided one microtask after `connectedCallback`, with the inputs as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `stop()` / `reset()` in the same task cancel the start; `pause()` starts it then and pauses it.
+
 ## Observable Properties (outputs)
 
 | Property  | Event                       | Description                                            |

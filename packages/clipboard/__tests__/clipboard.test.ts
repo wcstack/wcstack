@@ -39,24 +39,27 @@ describe("Clipboard (Shell)", () => {
     expect(el.style.display).toBe("none");
   });
 
-  it("monitor 属性ありなら接続時に監視を開始する", () => {
+  it("monitor 属性ありなら接続時に監視を開始する", async () => {
     const el = createClipboard({ monitor: "" });
     document.body.appendChild(el);
+    await flush();
     expect(el.monitoring).toBe(true);
 
     dispatchPaste("hi");
     expect(el.pasted).toBe("hi");
   });
 
-  it("monitor 属性なしでは監視を開始しない", () => {
+  it("monitor 属性なしでは監視を開始しない", async () => {
     const el = createClipboard();
     document.body.appendChild(el);
+    await flush();
     expect(el.monitoring).toBe(false);
   });
 
-  it("切断時に stopMonitor と dispose が呼ばれる", () => {
+  it("切断時に stopMonitor と dispose が呼ばれる", async () => {
     const el = createClipboard({ monitor: "" });
     document.body.appendChild(el);
+    await flush();
     expect(el.monitoring).toBe(true);
 
     el.remove();
@@ -93,15 +96,17 @@ describe("Clipboard (Shell)", () => {
     expect(el.readPermission).toBe("granted");
   });
 
-  it("monitor 属性付き要素は切断→再接続で監視を再開する", () => {
+  it("monitor 属性付き要素は切断→再接続で監視を再開する", async () => {
     const el = createClipboard({ monitor: "" });
     document.body.appendChild(el);
+    await flush();
     expect(el.monitoring).toBe(true);
 
     el.remove(); // disconnect → stopMonitor
     expect(el.monitoring).toBe(false);
 
     document.body.appendChild(el); // reconnect → connectedCallback で監視再開
+    await flush();
     expect(el.monitoring).toBe(true);
     // 再開した監視で paste が反映される
     dispatchPaste("again");
@@ -241,5 +246,107 @@ describe("Clipboard (Shell)", () => {
     expect(commands).toEqual([
       "writeText", "write", "readText", "read", "startMonitor", "stopMonitor",
     ]);
+  });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの入力をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("接続時の監視の判断はマイクロタスクで、そのときの monitor で", () => {
+    function recordMonitoring(el: WcsClipboard): boolean[] {
+      const seen: boolean[] = [];
+      el.addEventListener("wcs-clipboard:monitoring-changed", (e) => seen.push((e as CustomEvent).detail));
+      return seen;
+    }
+
+    it("入れ直しの間に monitor が外されると、前の monitor で監視を始めない", async () => {
+      const el = createClipboard({ monitor: "" });
+      document.body.appendChild(el);
+      await flush();
+      expect(el.monitoring).toBe(true);
+      const seen = recordMonitoring(el);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.monitor = false; });
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      expect(el.monitoring).toBe(false);
+      expect(seen).toEqual([false]); // 切断で止まったきり、始まらない
+      dispatchPaste("stale");
+      expect(el.pasted).toBeNull();
+    });
+
+    it("入れ直しの間に monitor が付くと、新しい monitor で監視を始める", async () => {
+      const el = createClipboard();
+      document.body.appendChild(el);
+      await flush();
+      expect(el.monitoring).toBe(false);
+
+      queueMicrotask(() => { el.monitor = true; });
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      expect(el.monitoring).toBe(true);
+      dispatchPaste("fresh");
+      expect(el.pasted).toBe("fresh");
+    });
+
+    it("判断の前に外した要素は監視を始めない", async () => {
+      const el = createClipboard({ monitor: "" });
+      const seen = recordMonitoring(el);
+      document.body.appendChild(el);
+      el.remove();
+      await flush();
+      expect(el.monitoring).toBe(false);
+      expect(seen).toEqual([]);
+    });
+
+    it("同じタスクで append の後に書かれた monitor が守られる", async () => {
+      const off = createClipboard({ monitor: "" });
+      const seenOff = recordMonitoring(off);
+      document.body.appendChild(off);
+      off.monitor = false;
+      const on = createClipboard();
+      document.body.appendChild(on);
+      on.monitor = true;
+      await flush();
+      expect(off.monitoring).toBe(false);
+      expect(seenOff).toEqual([]);
+      expect(on.monitoring).toBe(true);
+    });
+
+    it("同じタスクの remove → append は 1 回だけ監視を始める", async () => {
+      const el = createClipboard({ monitor: "" });
+      const seen = recordMonitoring(el);
+      document.body.appendChild(el);
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      expect(el.monitoring).toBe(true);
+      expect(seen).toEqual([true]);
+    });
+
+    it("同じタスクで append の後に stopMonitor() されると、監視を始めない", async () => {
+      const el = createClipboard({ monitor: "" });
+      const seen = recordMonitoring(el);
+      document.body.appendChild(el);
+      el.stopMonitor();
+      await flush();
+      expect(el.monitoring).toBe(false);
+      expect(seen).toEqual([]);
+      dispatchPaste("ignored");
+      expect(el.pasted).toBeNull();
+    });
+
+    it("stopMonitor() の後、同じタスクで入れ直すと、その接続の監視は 1 回だけ始める", async () => {
+      const el = createClipboard({ monitor: "" });
+      const seen = recordMonitoring(el);
+      document.body.appendChild(el);
+      el.stopMonitor();
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      expect(el.monitoring).toBe(true);
+      expect(seen).toEqual([true]);
+    });
   });
 });

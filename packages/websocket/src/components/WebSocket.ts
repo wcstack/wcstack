@@ -43,6 +43,8 @@ export class WcsWebSocket extends HTMLElement {
   // connectedCallback より先に（isConnected のまま）呼ばれるので、そこで接続すると
   // connectedCallback の接続と合わせて 2 本になる。初回の接続は connectedCallback が持つ。
   private _attached = false;
+  // _scheduleConnect のマイクロタスクが待っている間 true
+  private _connectPending = false;
 
   constructor() {
     super();
@@ -236,6 +238,8 @@ export class WcsWebSocket extends HTMLElement {
   // --- Public methods ---
 
   connect(): void {
+    // an explicit connect (trigger included) or close takes the pending connect-time decision
+    this._connectPending = false;
     const protocols = this.protocols
       ? this.protocols.split(",").map(p => p.trim()).filter(Boolean)
       : undefined;
@@ -254,6 +258,7 @@ export class WcsWebSocket extends HTMLElement {
   }
 
   close(code?: number, reason?: string): void {
+    this._connectPending = false;
     this._core.close(code, reason);
   }
 
@@ -266,8 +271,24 @@ export class WcsWebSocket extends HTMLElement {
     // は何もしない。connectedCallback より前（upgrade 中・DOM の外）の変化は、
     // connectedCallback がそのときの url で 1 回だけ接続する。
     if (name === "url" && oldValue !== newValue && this._attached && !this.manual && newValue) {
-      this.connect();
+      this._scheduleConnect();
     }
+  }
+
+  // 接続の判断はマイクロタスクで、そのときの url / manual で 1 回だけ行う
+  // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+  // params から state が url を書くのはマイクロタスク — その場で接続すると、前の url へ
+  // つないでから閉じていた（docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる。
+  private _scheduleConnect(): void {
+    if (this._connectPending) return;
+    this._connectPending = true;
+    queueMicrotask(() => {
+      if (!this._connectPending) return; // an explicit command took the decision meanwhile
+      this._connectPending = false;
+      if (this._attached && !this.manual && this.url) {
+        this.connect();
+      }
+    });
   }
 
   connectedCallback(): void {
@@ -282,10 +303,8 @@ export class WcsWebSocket extends HTMLElement {
     // observe() は command-driven node では ready を返す no-op（§3.5）。SSR は
     // connectedCallbackPromise を await して初期スナップショットを取れる。
     this._connectedCallbackPromise = this._core.observe();
-    if (!this.manual && this.url) {
-      this.connect();
-    }
     this._attached = true;
+    this._scheduleConnect();
   }
 
   disconnectedCallback(): void {
