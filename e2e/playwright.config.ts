@@ -26,6 +26,14 @@ export default defineConfig({
       fullyParallel: false,
       use: { ...devices["Desktop Chrome"], channel: "chromium", launchOptions: { args: ["--use-fake-device-for-media-stream"] } },
     },
+    // The production form differs between browsers where the CSP / SRI guides once said "Chromium only": import map
+    // integrity and Trusted Types. prod-booking's checks tagged @browsers run in Firefox too (examples/prod-booking).
+    {
+      name: "firefox",
+      testMatch: /prod-booking\.spec\.ts/,
+      grep: /@browsers/,
+      use: { ...devices["Desktop Firefox"] },
+    },
   ],
   webServer: {
     command: "node serve.mjs",

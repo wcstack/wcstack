@@ -14,7 +14,9 @@ single-package demos live in that package's own `examples/` directory instead:
 Every demo is buildless and loads packages straight from the CDN
 (`https://esm.run/@wcstack/<pkg>/auto` one-liners; signals demos import the
 single `@wcstack/signals/dom` entry) — except the React/Vue variants of
-`websocket-chat` and the `fw-inventory` seam app, which use Vite.
+`websocket-chat` and the `fw-inventory` seam app, which use Vite, and the
+`prod-booking` seam app, which pins jsDelivr's files with `integrity` (and
+self-hosts the ones it installs from npm) on purpose.
 
 **Script order**: list the I/O-node packages *before* `@wcstack/state`. Module
 scripts execute in document order, so this guarantees every custom element is
@@ -85,6 +87,7 @@ Larger apps written to find defects rather than to show a feature: a first-time 
 | [`ssr-news/`](ssr-news/) | `@wcstack/server` × router × state × `<wcs-fetch>` on the server and at hydration × `<wcs-link>` / `<wcs-head>` / `<wcs-layout>` under SSR × the client's version (a server-rendered news site, readable without JavaScript) | `cd examples/ssr-news && npm install && node server.js` | :3000 |
 | [`state-field-report/`](state-field-report/) | `<wcs-permission>` × the acquiring elements × `<wcs-camera>` → `<wcs-recorder>` → `<wcs-upload>` × a route's nodes × `<wcs-network offline>` × `<wcs-storage>` × `Permissions-Policy` / an `<iframe>` (a field report from a phone: clips, the position, a dictated note, an outbox) | `node examples/state-field-report/server.js` | :3000 |
 | [`fw-inventory/`](fw-inventory/) | the I/O nodes × `@wc-bindable/react` / `vue` × React 19's props × Vue's reactivity and structured clone × `key` and `<wcs-storage>` × two tabs, React in one and Vue in the other (a shop's inventory tool: a React back office and a Vue warehouse panel, no `@wcstack/state`; a Vite app) | `cd examples/fw-inventory && npm install && npm run build && node server.js` | :3000 |
+| [`prod-booking/`](prod-booking/) | the delivery × every package: `integrity` × the split chunks, `installFeatures` × two copies of the engine, a strict CSP and Trusted Types × import maps, inline guards and components, `<wcs-router>` × a reload, `<wcs-autoloader>` × another library's tags, an open tab × the next version's files (a meeting-room booking app under `/booking/`, in six delivery profiles and two versions, deployed while a tab is open) | `cd examples/prod-booking && npm install && node server.js` | :3000–:3005 |
 
 ## Shared server core
 

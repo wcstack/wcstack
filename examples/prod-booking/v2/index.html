@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" data-app="v2">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base href="/booking/">
+<title>Room booking</title>
+<link rel="stylesheet" href="/booking/app.css">
+<!-- server.js writes the delivery profile here: report.js, the import map, the wcstack scripts -->
+</head>
+<body>
+<wcs-autoloader></wcs-autoloader>
+<header class="top">
+  <h1>Room booking</h1>
+  <!-- the intranet's own header widget: another library's tag, outside every @components/ namespace -->
+  <intranet-badge site="booking"></intranet-badge>
+  <nav aria-label="Main">
+    <wcs-link to="/">Rooms</wcs-link>
+    <wcs-link to="/bookings">My bookings</wcs-link>
+    <wcs-link to="/prefs">Preferences</wcs-link>
+    <wcs-link to="/admin">Admin</wcs-link>
+    <wcs-link to="/help">Help</wcs-link>
+    <a href="/wiki/">Intranet wiki</a>
+  </nav>
+  <p class="ver">app <span id="app-version" data-wcs="textContent: appVersion"></span> · deployed <span id="server-version" data-wcs="textContent: serverVersion"></span></p>
+  <template data-wcs="if: updateAvailable">
+    <p class="update" id="update-banner">A new version is available. <button type="button" data-wcs="onclick: reload">Reload</button></p>
+  </template>
+</header>
+
+<wcs-state features="scopes" src="state.js"></wcs-state>
+
+<wcs-storage key="booking.prefs" data-wcs="value#init=element: prefsStored"></wcs-storage>
+<wcs-storage key="booking.admin" data-wcs="value#init=element: adminSession"></wcs-storage>
+<wcs-fetch url="api/rooms" data-wcs="value: rooms; loading: roomsLoading; error: roomsError"></wcs-fetch>
+<wcs-fetch data-wcs="url: slotsUrl; value: slotsData; error: slotsError"></wcs-fetch>
+<wcs-fetch data-wcs="url: myBookingsUrl; value: myBookings"></wcs-fetch>
+<wcs-fetch data-wcs="url: versionUrl; value: versionInfo"></wcs-fetch>
+<wcs-fetch url="api/bookings" method="POST" manual
+  data-wcs="body: createBody; trigger: createTrigger; error: createError; status: createStatus; loading: creating">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch method="DELETE" manual data-wcs="url: cancelUrl; trigger: cancelTrigger"></wcs-fetch>
+
+<main>
+<wcs-router data-wcs="typedParams: routeParams; routeName: routeName; navigateUrl: navigateUrl">
+  <template>
+    <wcs-route path="/" name="rooms">
+      <wcs-head><title>Rooms · Booking</title></wcs-head>
+      <section id="page-rooms">
+        <h2>Rooms</h2>
+        <p class="muted" data-wcs="textContent: roomsSummary"></p>
+        <template data-wcs="if: roomsLoading"><p>Loading…</p></template>
+        <template data-wcs="if: roomsError"><p class="err">Could not load the rooms.</p></template>
+        <ul class="rooms">
+          <template data-wcs="for: roomList">
+            <li class="room">
+              <wcs-link data-wcs="attr.to: .href"><span class="name" data-wcs="textContent: .name"></span></wcs-link>
+              <span>up to <span data-wcs="textContent: .capacity"></span></span>
+              <price-tag data-wcs="state.amount: .pricePerHour; state.currency: currencyShown"></price-tag>
+              <span class="equip" data-wcs="textContent: .equipment|join"></span>
+            </li>
+          </template>
+        </ul>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/rooms/:id(int)" name="room">
+      <wcs-head><title>Room · Booking</title></wcs-head>
+      <section id="page-room">
+        <h2 data-wcs="textContent: roomName"></h2>
+        <p class="muted">Day: <span data-wcs="textContent: selectedDateObj|date(full)"></span> (up to <span data-wcs="textContent: roomCapacity"></span> people)</p>
+        <template data-wcs="if: slotsError"><p class="err">Could not load the slots.</p></template>
+        <booking-calendar data-wcs="state: calendar"></booking-calendar>
+        <form class="book" data-wcs="onsubmit#prevent: book">
+          <p>Selected slot: <strong id="selected-slot" data-wcs="textContent: selectedLabel"></strong> <span class="err" data-wcs="textContent: fieldErrors.start"></span></p>
+          <label>Title <input name="title" data-wcs="value: form.title"></label>
+          <span class="err" id="err-title" data-wcs="textContent: fieldErrors.title"></span>
+          <label>Attendees <input name="attendees" type="number" min="1" data-wcs="value|number: form.attendees"></label>
+          <span class="err" id="err-attendees" data-wcs="textContent: fieldErrors.attendees"></span>
+          <button type="submit" data-wcs="disabled: creating">Book</button>
+        </form>
+        <p id="create-message" data-wcs="textContent: createMessage"></p>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/bookings" name="bookings">
+      <wcs-head><title>My bookings · Booking</title></wcs-head>
+      <section id="page-bookings">
+        <h2>My bookings</h2>
+        <template data-wcs="if: noBookings"><p class="muted">No bookings yet.</p></template>
+        <ul class="bookings">
+          <template data-wcs="for: bookingRows">
+            <li class="booking">
+              <span data-wcs="textContent: .when|date(medium)"></span>
+              <span data-wcs="textContent: .start"></span>–<span data-wcs="textContent: .end"></span>
+              <span data-wcs="textContent: .roomName"></span>
+              <span class="title" data-wcs="textContent: .title"></span>
+              <span><span data-wcs="textContent: .attendees|defaults(-)"></span> people</span>
+              <button type="button" class="cancel" data-wcs="onclick: cancel">Cancel</button>
+            </li>
+          </template>
+        </ul>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/prefs" name="prefs">
+      <wcs-head><title>Preferences · Booking</title></wcs-head>
+      <section id="page-prefs">
+        <h2>Preferences</h2>
+        <label>Default day <select name="day" data-wcs="value: dayView"><option value="today">Today</option><option value="tomorrow">Tomorrow</option></select></label>
+        <label>Currency <select name="currency" data-wcs="value: currencyShown"><option value="JPY">JPY</option><option value="USD">USD</option></select></label>
+        <label>Attendees by default <input name="default-attendees" type="number" min="1" data-wcs="value|number: defaultAttendees"></label>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/admin" name="admin" guard="/login">
+      <wcs-guard-handler>
+        <script type="module">
+          export default function () {
+            try { return JSON.parse(localStorage.getItem("booking.admin"))?.token === "admin"; } catch { return false; }
+          }
+        </script>
+      </wcs-guard-handler>
+      <wcs-head><title>Admin · Booking</title></wcs-head>
+      <section id="page-admin">
+        <h2>Admin</h2>
+        <wcs-fetch data-wcs="url: adminStatsUrl; value: adminStats">
+          <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+        </wcs-fetch>
+        <p id="admin-stats"><span data-wcs="textContent: adminStats.bookings|defaults(0)"></span> bookings in <span data-wcs="textContent: adminStats.rooms|defaults(0)"></span> rooms</p>
+        <button type="button" data-wcs="onclick: logout">Sign out</button>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/login" name="login">
+      <wcs-head><title>Sign in · Booking</title></wcs-head>
+      <section id="page-login">
+        <h2>Sign in</h2>
+        <p>The admin page needs the admin token.</p>
+        <button type="button" id="login" data-wcs="onclick: login">Sign in as admin</button>
+      </section>
+    </wcs-route>
+
+    <wcs-route path="/help" name="help">
+      <wcs-head><title>Help · Booking</title></wcs-head>
+      <section id="page-help"><h2>Help</h2><p>New in v2: attendees on a booking, and a default for them in the preferences.</p></section>
+    </wcs-route>
+
+    <wcs-route fallback>
+      <wcs-head><title>Not found · Booking</title></wcs-head>
+      <section id="page-404"><h2>Not found</h2><p><wcs-link to="/">Back to the rooms</wcs-link></p></section>
+    </wcs-route>
+  </template>
+</wcs-router>
+<wcs-outlet></wcs-outlet>
+</main>
+</body>
+</html>
