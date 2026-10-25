@@ -98,6 +98,70 @@ describe("WcsBroadcast", () => {
       expect(FakeBroadcastChannel.created).toHaveLength(0);
     });
 
+    // router は遷移で同じノードを入れ直し、state は新しい params からの name をマイクロタスクで書く
+    // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+    describe("入れ直しはマイクロタスクで、そのときの name で開く", () => {
+      const flush = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+
+      it("最初の接続はその場で開く（同じタスクの post が届く）", () => {
+        const el = makeElement({ name: "room" });
+        document.body.appendChild(el);
+        expect(FakeBroadcastChannel.created.map((c) => c.name)).toEqual(["room"]);
+      });
+
+      it("入れ直しの間に name が書かれると、前のチャンネルを開かず、新しいチャンネルを 1 回だけ開く", async () => {
+        const el = makeElement({ name: "ticket-14" });
+        document.body.appendChild(el);
+        queueMicrotask(() => { el.name = "ticket-11"; });
+        el.remove();
+        document.body.appendChild(el);
+        await flush();
+        await flush();
+        expect(FakeBroadcastChannel.created.map((c) => c.name)).toEqual(["ticket-14", "ticket-11"]);
+      });
+
+      it("入れ直しの間に manual が書かれると開かない", async () => {
+        const el = makeElement({ name: "room" });
+        document.body.appendChild(el);
+        el.remove();
+        document.body.appendChild(el);
+        el.manual = true;
+        await flush();
+        expect(FakeBroadcastChannel.created).toHaveLength(1);
+      });
+
+      it("入れ直しと同じタスクの close() は開かせず、open() は 1 回だけ開く", async () => {
+        const el = makeElement({ name: "room" });
+        document.body.appendChild(el);
+        el.remove();
+        document.body.appendChild(el);
+        el.close();
+        await flush();
+        expect(FakeBroadcastChannel.created).toHaveLength(1);
+        el.remove();
+        document.body.appendChild(el);
+        el.open();
+        await flush();
+        expect(FakeBroadcastChannel.created).toHaveLength(2);
+      });
+
+      it("同じタスクで 2 回入れ直しても 1 回だけ開き、開く前に外せば開かない", async () => {
+        const el = makeElement({ name: "room" });
+        document.body.appendChild(el);
+        el.remove();
+        document.body.appendChild(el);
+        el.remove();
+        document.body.appendChild(el);
+        await flush();
+        expect(FakeBroadcastChannel.created).toHaveLength(2);
+        el.remove();
+        document.body.appendChild(el);
+        el.remove();
+        await flush();
+        expect(FakeBroadcastChannel.created).toHaveLength(2);
+      });
+    });
+
     it("manual のときは接続時に開かない", () => {
       const el = makeElement({ name: "room", manual: "" });
       document.body.appendChild(el);

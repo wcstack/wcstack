@@ -4,7 +4,7 @@ import { MidiCore } from "../src/core/MidiCore";
 import { registerComponents } from "../src/registerComponents";
 import {
   FakeMidiAccess, FakeMidiInput, FakeMidiOutput,
-  installMidi, removeMidi, removePermissions, record,
+  installMidi, removeMidi, removePermissions, record, flush,
 } from "./mocks";
 
 const make = (attrs: Record<string, string> = {}): WcsMidi => {
@@ -31,9 +31,10 @@ describe("<wcs-midi>", () => {
   });
 
   describe("接続と自動要求", () => {
-    it("接続しただけでは request しない", () => {
+    it("接続しただけでは request しない", async () => {
       const mock = installMidi();
-      mount(make());
+      const el = mount(make());
+      await el.connectedCallbackPromise;
       expect(mock.requestMIDIAccess).not.toHaveBeenCalled();
     });
 
@@ -77,6 +78,114 @@ describe("<wcs-midi>", () => {
 
       expect(input.onmidimessage).toBeNull();
       expect(el.connected).toBe(false);
+    });
+  });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの入力をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("要求の判断はマイクロタスクで、そのときの入力で", () => {
+    it("入れ直しの間に sysex が書かれると、前の sysex では要求せず、新しい sysex で 1 回だけ要求する", async () => {
+      const mock = installMidi();
+      const el = mount(make({ auto: "" }));
+      await el.connectedCallbackPromise;
+      expect(mock.calls).toEqual([{ sysex: false }]);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.sysex = true; });
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.calls).toEqual([{ sysex: false }, { sysex: true }]);
+      expect(el.connected).toBe(true);
+    });
+
+    it("入れ直しの間に auto が外されると、要求しない", async () => {
+      const mock = installMidi();
+      const el = mount(make({ auto: "" }));
+      await el.connectedCallbackPromise;
+
+      queueMicrotask(() => { el.auto = false; });
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(false);
+    });
+
+    it("判断の前に外した要素は要求せず、connectedCallbackPromise も解ける", async () => {
+      const mock = installMidi();
+      const el = mount(make({ auto: "" }));
+      el.remove();
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(mock.requestMIDIAccess).not.toHaveBeenCalled();
+    });
+
+    it("同じタスクで接続の後に auto が書かれると、要求する", async () => {
+      const mock = installMidi();
+      const el = mount(make());
+      el.auto = true;
+      await el.connectedCallbackPromise;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(true);
+    });
+
+    it("同じタスクで接続の後に auto が外されると、要求しない", async () => {
+      const mock = installMidi();
+      const el = mount(make({ auto: "" }));
+      el.auto = false;
+      await el.connectedCallbackPromise;
+      expect(mock.requestMIDIAccess).not.toHaveBeenCalled();
+    });
+
+    it("同じタスクで接続の後に close() が呼ばれると、auto でも要求しない", async () => {
+      const mock = installMidi();
+      const el = mount(make({ auto: "" }));
+      el.close();
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(mock.requestMIDIAccess).not.toHaveBeenCalled();
+      expect(el.connected).toBe(false);
+    });
+
+    it("close() の後に同じタスクで入れ直すと、次の判断は auto に従って要求する", async () => {
+      const mock = installMidi();
+      const el = mount(make({ auto: "" }));
+      el.close();
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(true);
+    });
+
+    it("close() で取り消した判断の後の接続は、また auto に従う", async () => {
+      const mock = installMidi();
+      const el = mount(make({ auto: "" }));
+      el.close();
+      await el.connectedCallbackPromise;
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.requestMIDIAccess).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(true);
+    });
+
+    it("判断の前の request() も、いまの sysex で要求する", async () => {
+      const mock = installMidi();
+      const el = mount(make({ sysex: "" }));
+      await el.request();
+      expect(mock.calls).toEqual([{ sysex: true }]);
+      expect(el.connected).toBe(true);
+    });
+
+    it("接続の後に変えた sysex も、request() が要求に使う", async () => {
+      const mock = installMidi();
+      const el = mount(make());
+      await el.connectedCallbackPromise;
+      el.sysex = true;
+      await el.request();
+      expect(mock.calls).toEqual([{ sysex: true }]);
     });
   });
 

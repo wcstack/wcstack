@@ -34,6 +34,8 @@ export class WcsClipboard extends HTMLElement {
 
   private _core: ClipboardCore;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // _scheduleMonitor のマイクロタスクが待っている間 true
+  private _monitorPending = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -102,10 +104,11 @@ export class WcsClipboard extends HTMLElement {
 
   /**
    * Reflects the `monitor` boolean attribute only — it does NOT start or stop
-   * monitoring by itself. The attribute is read at connect time (see
-   * connectedCallback); toggling `el.monitor` after connect just flips the
-   * attribute. To start/stop monitoring imperatively, call `startMonitor()` /
-   * `stopMonitor()`.
+   * monitoring by itself. The attribute is read at connect time — in the
+   * microtask connectedCallback queues, so a write in the same task as the
+   * insertion still counts (see _scheduleMonitor); toggling `el.monitor` after
+   * that just flips the attribute. To start/stop monitoring imperatively, call
+   * `startMonitor()` / `stopMonitor()`.
    *
    * `null` removes the attribute (the default, off); `undefined` restores the
    * attribute the element started with (wc-bindable producer guidance P1;
@@ -184,6 +187,9 @@ export class WcsClipboard extends HTMLElement {
   }
 
   stopMonitor(): void {
+    // 同じタスクで接続の後に止められたら、待っている監視の開始も取り消す
+    // （同期で始めていた頃は、start → stop で止まったままだった）
+    this._monitorPending = false;
     this._core.stopMonitor();
   }
 
@@ -201,10 +207,28 @@ export class WcsClipboard extends HTMLElement {
     // returns the readiness promise exposed as connectedCallbackPromise (§4.4).
     this._connectedCallbackPromise = this._core.observe();
     // Unlike <wcs-geo>, there is no connect-time acquisition: reads require a
-    // user gesture, so the only connect-time action is optional monitoring.
-    if (this.monitor) {
-      this._core.startMonitor();
-    }
+    // user gesture, so the only connect-time action is optional monitoring,
+    // decided in a microtask (_scheduleMonitor) queued before any caller can await
+    // connectedCallbackPromise.
+    this._scheduleMonitor();
+  }
+
+  // 接続時の監視の判断はマイクロタスクで、そのときの monitor で 1 回だけ行う
+  // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+  // params から state が入力を書くのはマイクロタスク — その場で判断すると、前の monitor で
+  // 監視を始めて（または始めずに）いた（docs/seam-apps.md、shift-desk）。その時点で外れて
+  // いれば何もしない。
+  private _scheduleMonitor(): void {
+    if (this._monitorPending) return;
+    this._monitorPending = true;
+    queueMicrotask(() => {
+      // stopMonitor() が取り消した（そのあと同じタスクで積み直されたら、それが判断する）
+      if (!this._monitorPending) return;
+      this._monitorPending = false;
+      if (this.isConnected && this.monitor) {
+        this._core.startMonitor();
+      }
+    });
   }
 
   disconnectedCallback(): void {

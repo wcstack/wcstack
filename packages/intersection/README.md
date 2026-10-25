@@ -248,6 +248,7 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
 
 ## Notes & limitations
 
+- **Since 4.8 (not released yet), observing starts one microtask after connect**, with `manual`, `target`, `root` and the options as they are then, and a later option change re-observes in the next microtask, folded into one ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `unobserve()` / `disconnect()` in the same task cancel it; `observe()` / `reobserve()` act at once.
 - **Single target.** Each `<wcs-intersect>` observes exactly one element so the state maps to a single value surface. For many targets, use many elements.
 - **Never throws.** Unsupported environments (no `IntersectionObserver`) and invalid options (e.g. a malformed `root-margin`) are silent no-ops: `observing` stays `false` rather than throwing.
 - **No permission gate / secure context requirement** (unlike `@wcstack/geolocation`).

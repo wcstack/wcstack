@@ -30,6 +30,13 @@ export class WcsMidi extends HTMLElement {
 
   private _core: MidiCore;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // connectedCallback が張った connectedCallbackPromise を解く関数。接続時の判断を下す
+  // _scheduleRequest のマイクロタスクが（その前に外れたときは disconnectedCallback が）呼ぶ。
+  private _connectResolve: ((value: void | PromiseLike<void>) => void) | null = null;
+  // _scheduleRequest のマイクロタスクが待っている間 true
+  private _requestPending: boolean = false;
+  // 接続時の判断待ちに close() が呼ばれたら true — その判断は auto でも要求しない
+  private _autoCancelled: boolean = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -142,8 +149,20 @@ export class WcsMidi extends HTMLElement {
 
   // --- Commands ---
 
-  request(): Promise<void> { return this._core.request(); }
-  close(): void { this._core.close(); }
+  request(): Promise<void> {
+    // 要求の sysex は属性が正本。接続時の判断（マイクロタスク）が Core へ渡すより先の
+    // request() でも、接続の後に sysex が変わった後でも、いまの属性で要求するよう渡しておく
+    this._core.setOptions(this._options());
+    return this._core.request();
+  }
+
+  close(): void {
+    // 接続時の判断待ちなら、その auto の要求を取り消す — 同じタスクの append → close() で、
+    // 後のマイクロタスクが要求しないように（判断が同期だった頃は、始めた要求を close() が
+    // 捨てていた）。入れ直せば、次の判断は auto に従う
+    if (this._connectResolve !== null) this._autoCancelled = true;
+    this._core.close();
+  }
   send(data: number[] | Uint8Array, timestamp?: number): void { this._core.send(data, timestamp); }
 
   // --- Internal ---
@@ -160,21 +179,55 @@ export class WcsMidi extends HTMLElement {
 
   // --- Lifecycle ---
 
+  // 接続時の要求の判断はマイクロタスクで、そのときの auto / sysex（と input / output /
+  // channel）で 1 回だけ行う（timing-and-firing-contract §23）。router は遷移で同じノードを
+  // 入れ直し、新しいルートの params から state が入力を書くのはマイクロタスク — その場で
+  // 判断すると、前の auto / sysex で requestMIDIAccess を起こしていた（docs/seam-apps.md、
+  // shift-desk）。
+  private _scheduleRequest(): void {
+    if (this._requestPending) return;
+    this._requestPending = true;
+    queueMicrotask(() => {
+      this._requestPending = false;
+      const resolveConnect = this._connectResolve;
+      this._connectResolve = null;
+      // 判断の前に外れた要素は何もしない（disconnectedCallback が解いて null にした）
+      if (resolveConnect === null) return;
+      const options = this._options();
+      // 判断待ちに close() が呼ばれていたら、auto でも要求しない
+      if (this._autoCancelled) options.auto = false;
+      this._autoCancelled = false;
+      resolveConnect(this._core.observe(options));
+    });
+  }
+
   connectedCallback(): void {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
     this.style.display = "none";
-    this._connectedCallbackPromise = this._core.observe(this._options());
+    // connectedCallbackPromise は接続時の判断（auto なら要求の結果）が済むまでを表す。
+    // 判断はマイクロタスクなので、ここで張って _scheduleRequest で解く
+    this._connectedCallbackPromise = new Promise<void>((resolve) => {
+      this._connectResolve = resolve;
+    });
+    this._scheduleRequest();
   }
 
   disconnectedCallback(): void {
+    // 判断の前に外れたら、張った connectedCallbackPromise をここで解く — 同じタスクで
+    // 入れ直されると次の connectedCallback が張り替えるので、待つ側が取り残されないように
+    this._connectResolve?.();
+    this._connectResolve = null;
+    this._autoCancelled = false;
     this._core.dispose();
   }
 
   attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {
     if (oldValue === newValue) return;
     // Port selection and channel filtering are live: they re-hook the existing
-    // access rather than re-requesting it (no second permission prompt).
+    // access rather than re-requesting it (no second permission prompt). They only
+    // record the options and re-hook (no request), so they stay synchronous; the
+    // connect-time decision reads them again.
     if (this.isConnected) this._core.setOptions(this._options());
   }
 }

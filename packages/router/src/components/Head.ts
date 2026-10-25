@@ -28,6 +28,15 @@ let initialHeadCaptured = false;
  */
 const keyCache: WeakMap<Element, string> = new WeakMap();
 
+/**
+ * 束縛を持つ子ごとに、head へ入れる束ねたクローンを 1 つだけ持つ。
+ * binder には束縛を解く口が無く（docs/binder-protocol-design.md §6-2）、state は束ねたノードを
+ * エンジンの寿命まで持つ。遷移のたびに新しいクローンを束ねさせると、外したクローンが 1 つずつ
+ * 残った（束ねた `<title>` で遷移ごとに 2 ノード — docs/seam-apps.md、shift-desk）。同じクローンを
+ * 入れ直せば、bind は冪等で、外れている間も値は届いている。
+ */
+const boundClones: WeakMap<Element, Element> = new WeakMap();
+
 export class Head extends HTMLElement {
   private _initialized: boolean = false;
   private _childElementArray: Element[] = [];
@@ -86,6 +95,21 @@ export class Head extends HTMLElement {
       raiseError('Head component is not initialized yet.');
     }
     return this._childElementArray;
+  }
+
+  /**
+   * head へ入れる子のクローン。束縛を持つ子は、束ねたクローンを使い回す（boundClones）
+   */
+  private _cloneOf(child: Element): Element {
+    if (!hasBinding(child)) {
+      return child.cloneNode(true) as Element;
+    }
+    let clone = boundClones.get(child);
+    if (clone === undefined) {
+      clone = child.cloneNode(true) as Element;
+      boundClones.set(child, clone);
+    }
+    return clone;
   }
 
   /**
@@ -229,7 +253,7 @@ export class Head extends HTMLElement {
         const head = headStack[i];
         for (const child of head._childElementArray) {
           if (this._getKey(child) === key) {
-            targetElement = child.cloneNode(true) as Element;
+            targetElement = this._cloneOf(child);
             break;
           }
         }
@@ -245,9 +269,13 @@ export class Head extends HTMLElement {
 
       // headを更新
       const current = headElementMap.get(key) ?? null;
+      // 束ねたクローンが既に入っている（同じ Head の再適用）
+      if (targetElement !== null && current === targetElement) {
+        continue;
+      }
       // 同じ要素は入れ直さない。入れ直すとスタイルシートを取り直し、<base> の差し替えは base-uri の
       // CSP を毎回検査させる（WebKit は遷移ごとに違反を報告した — docs/seam-apps.md、prod-booking）。
-      // 束縛を持つ要素は、束ねたクローンを入れるため従来どおり入れ直す
+      // 束縛を持つ要素は、束ねたクローン（boundClones）が入っていれば上で残した。別の要素が入っていれば入れ直す
       if (targetElement && current?.isEqualNode(targetElement) && !hasBinding(targetElement)) {
         continue;
       }

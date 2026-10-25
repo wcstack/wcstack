@@ -39,6 +39,8 @@ export class WcsListen extends HTMLElement {
   private _core: ListenCore;
   private _trigger: boolean = false;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // _scheduleStart のマイクロタスクが待っている間 true
+  private _startPending: boolean = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -220,10 +222,16 @@ export class WcsListen extends HTMLElement {
   }
 
   stop(): void {
+    // 接続時の自動開始の判断待ちなら取り消す — 同じタスクの append → stop() で、後の
+    // マイクロタスクが認識を始めないように（判断が同期だった頃は、始めた認識を stop() が
+    // 止めていた）。この後の _scheduleStart は新しいマイクロタスクを積む
+    this._startPending = false;
     this._core.stop();
   }
 
   abort(): void {
+    // stop() と同じく、接続時の自動開始の判断待ちを取り消す
+    this._startPending = false;
     this._core.abort();
   }
 
@@ -240,6 +248,30 @@ export class WcsListen extends HTMLElement {
 
   // --- Lifecycle ---
 
+  // 接続時の自動開始の判断はマイクロタスクで、そのときの manual / lang / continuous /
+  // interim / max-restarts で 1 回だけ行う（timing-and-firing-contract §23）。router は遷移で
+  // 同じノードを入れ直し、新しいルートの params から state が入力を書くのはマイクロタスク —
+  // その場で start() すると、前の入力で認識を始めていた（docs/seam-apps.md、shift-desk）。
+  // 判断のときに DOM の外なら何もしない。判断待ちに stop() / abort() が呼ばれたら取り消す。
+  private _scheduleStart(): void {
+    if (this._startPending) return;
+    this._startPending = true;
+    queueMicrotask(() => {
+      // stop() / abort() が取り消した（その後に積み直したなら、そちらが判断する）
+      if (!this._startPending) return;
+      this._startPending = false;
+      if (this.isConnected && !this.manual) {
+        // Non-blocking auto-start, mirroring <wcs-geo>: start() is fired
+        // unconditionally without first awaiting/inspecting the (async) permission
+        // state. A `denied` mic surfaces as a `not-allowed` error via the `error`
+        // property (and stops auto-restart), rather than the connect path silently
+        // suppressing the start. This keeps the permission model declarative and
+        // consistent with geolocation. Use `manual` to require an explicit start.
+        this.start();
+      }
+    });
+  }
+
   connectedCallback(): void {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
@@ -248,17 +280,10 @@ export class WcsListen extends HTMLElement {
       registerListenAutoTrigger();
     }
     // observe() (re-)establishes the permission subscription and returns the
-    // readiness promise for SSR; it wraps reinitPermission() (idempotent).
+    // readiness promise for SSR; it wraps reinitPermission() (idempotent). It reads
+    // no input, so it stays here; only the auto-start decision is deferred.
     this._connectedCallbackPromise = this._core.observe();
-    if (!this.manual) {
-      // Non-blocking auto-start, mirroring <wcs-geo>: start() is fired
-      // unconditionally without first awaiting/inspecting the (async) permission
-      // state. A `denied` mic surfaces as a `not-allowed` error via the `error`
-      // property (and stops auto-restart), rather than the connect path silently
-      // suppressing the start. This keeps the permission model declarative and
-      // consistent with geolocation. Use `manual` to require an explicit start.
-      this.start();
-    }
+    this._scheduleStart();
   }
 
   disconnectedCallback(): void {

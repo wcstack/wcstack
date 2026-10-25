@@ -187,6 +187,64 @@ describe("WcsWorker - 自動起動とライフサイクル", () => {
     expect(FakeWorker.created).toHaveLength(0);
   });
 
+  // router は遷移で同じノードを入れ直し、state は新しい params からの src をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("入れ直しはマイクロタスクで、そのときの src で起動する", () => {
+    const flush = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+
+    it("入れ直しの間に src が書かれると、前の src を起動せず、新しい src を 1 回だけ起動する", async () => {
+      const el = makeElement({ src: "a.js" });
+      document.body.appendChild(el);
+      queueMicrotask(() => { el.src = "b.js"; });
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      await flush();
+      expect(FakeWorker.created.map((w) => w.src)).toEqual(["a.js", "b.js"]);
+    });
+
+    it("同じタスクで 2 回入れ直しても 1 回だけ起動し、manual が書かれれば起動しない", async () => {
+      const el = makeElement({ src: "a.js" });
+      document.body.appendChild(el);
+      el.remove();
+      document.body.appendChild(el);
+      el.remove();
+      document.body.appendChild(el);
+      await flush();
+      expect(FakeWorker.created).toHaveLength(2);
+      el.remove();
+      document.body.appendChild(el);
+      el.manual = true;
+      await flush();
+      expect(FakeWorker.created).toHaveLength(2);
+    });
+
+    it("入れ直しと同じタスクの terminate() は起動させず、start() は 1 回だけ起動する", async () => {
+      const el = makeElement({ src: "a.js" });
+      document.body.appendChild(el);
+      el.remove();
+      document.body.appendChild(el);
+      el.terminate();
+      await flush();
+      expect(FakeWorker.created).toHaveLength(1);
+      el.remove();
+      document.body.appendChild(el);
+      el.start();
+      await flush();
+      expect(FakeWorker.created).toHaveLength(2);
+    });
+
+    it("起動の前に外した要素は起動しない", async () => {
+      const el = makeElement({ src: "a.js" });
+      document.body.appendChild(el);
+      el.remove();
+      document.body.appendChild(el);
+      el.remove();
+      await flush();
+      expect(FakeWorker.created).toHaveLength(1);
+    });
+  });
+
   it("接続後の src 属性変更で再 spawn する", () => {
     const el = makeElement();
     document.body.appendChild(el);

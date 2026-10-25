@@ -219,6 +219,7 @@ This prevents async work that resolves after a disconnect, or after a fast disco
 - `observe(...)`: start watching / subscribing. **Idempotent** (when already subscribed it only updates settings; it does not subscribe twice). Restarting goes through `dispose()` first
 - `dispose()`: detach listeners, reset subscription flags, `_gen++`. An `observe()` after `dispose()` has to bring it back
 - `dispose()` **MUST** publish every `semantics: "state"` output it changes, through the output's setter and its event, and end an operation whose completion the guard will drop (`loading` back to false, and the like) — [timing-and-firing-contract.md](./timing-and-firing-contract.md) §22. A route the element leaves keeps its nodes and their bindings for the next entry, so a silent reset stays wrong in state
+- Work `connectedCallback` starts from the element's inputs (connecting, loading, starting, observing, a gate such as `manual`) **MUST** be decided in one microtask, with the inputs as they are then, and not at all if the element left meanwhile — [timing-and-firing-contract.md](./timing-and-firing-contract.md) §23. The router puts a route's same nodes back before the state writes the next route's inputs. Exception: the first connect stays synchronous where the page uses the result in the same task (§23.2); an explicit command takes the pending decision (§23.3)
 - A design decision to leave a resource behind (notification, for instance, leaves displayed notifications on screen after dispose) has its reason written in a comment
 
 ### 3.6 never-throw (MUST)
@@ -420,6 +421,7 @@ The completion criteria. Do not merge until all of them hold.
 - [ ] The `_gen` generation guard prevents stale async writes
 - [ ] `observe()` is idempotent and `dispose()` is recoverable
 - [ ] `dispose()` publishes every state output it changes, and ends an operation it abandons (timing-and-firing-contract §22): a test disconnects with the operation in flight and asserts the event
+- [ ] Connect-time work is decided in a microtask with the inputs then (timing-and-firing-contract §23): tests for a re-insertion whose inputs change in an earlier-queued microtask, a removal before the microtask, a gate written in the same task, and a stop command in the same task
 - [ ] APIs are resolved at call time (not cached)
 - [ ] SSR: `ready` / `connectedCallbackPromise` / `hasConnectedCallbackPromise`
 - [ ] config / bootstrap / registerComponents / exports follow the rules

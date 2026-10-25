@@ -534,3 +534,46 @@ The other nodes already dispatched every change their disconnect makes, or chang
 
 ### 22.5 Testing
 Each node has a test that disconnects with the operation in flight, asserts the event, and (where it applies) checks that the next operation after a reconnect still fires its `true` edge.
+
+## 23. A cross-cutting contract: connect-time work reads the inputs of the next microtask (2026-10-25)
+
+Applies to: every I/O node that starts work when it is connected. The `shift-desk` seam app found it ([seam-apps.md](./seam-apps.md)). On a parameter-only navigation `@wcstack/router` takes a route's content out and puts the same nodes back ([router README](../packages/router/README.md#where-route-content-lives)), after publishing the new params. `@wcstack/state` writes what depends on them — an element's `url`, `key`, `name`, `src`, a gate such as `manual` — in a microtask queued before the content goes back (§4). A node that started its work inside `connectedCallback` acted on the previous route's inputs: `<wcs-ws>` joined the previous ticket's chat and closed it again, and an audit of the family found the same in 17 packages — the previous camera device, the previous permission, a timer started against a `manual` the state was about to write. `<wcs-fetch>` never did: it decides in a microtask (§1).
+
+### 23.1 The decision is taken in one microtask, with the inputs then
+`connectedCallback` takes the steps that read no input at once (upgrading properties, hiding the element, registering the auto-trigger) and queues the decision: whether to start (`manual`, `autostart`, `auto`, `monitor`, `active`), and with what. The microtask reads the inputs as they are, and does nothing if the element left the document meanwhile. Input changes in the same task — a spread writing `url` and then `manual`, an upgrade's `attributeChangedCallback` and `connectedCallback` — fold into the same decision, so the work runs once.
+
+### 23.2 The first connect stays synchronous where the page uses the result in the same task
+`<wcs-storage>` loads, `<wcs-broadcast>` opens its channel and `<wcs-worker>` starts at once on their first connect: a binding attached in the same task (a route's content handed to `@wcstack/state` right after its insertion) pulls `<wcs-storage>`'s `value` (`#init=element`) and expects it loaded, and a post in the same task is expected to reach the channel or the worker. A reconnect — the case above — decides in the microtask.
+
+### 23.3 An explicit command takes the decision
+A start-type command called before the microtask (`connect()`, `trigger`, `start()`, `open()`, `observe()`) does the work with the inputs at that moment, and the pending decision is dropped, so the work runs once. A stop-type command (`close()`, `stop()`, `reset()`, `release()`, `stopMonitor()`, `terminate()`, `unobserve()`, `disconnect()`) drops it too, so an element appended and stopped in one task stays stopped, as it did when the start was synchronous. `pause()` (`<wcs-timer>`, `<wcs-raf>`) takes the decision now and then pauses, so the run is paused and resumable.
+
+### 23.4 `connectedCallbackPromise`
+Where the promise stood for the connect-time work (`<wcs-permission>`'s query, `<wcs-defined>`'s watch), it is armed in `connectedCallback` and settles with the work the microtask started, or at once when the element left; `disconnectedCallback` settles it too, so awaiting never hangs. Where it was an immediately resolved readiness, it still is.
+
+### 23.5 The nodes this changed (4.8)
+
+| Package | What waits for the microtask |
+|---|---|
+| websocket | connecting (`url`, `manual`); a later `url` change reconnects in the microtask too |
+| sse | connecting (`url`, `manual`) |
+| storage | a reconnect's load (`key`, `manual`); the first connect loads at once (§23.2) |
+| broadcast | a reconnect's open (`name`, `manual`); the first connect opens at once |
+| worker | a reconnect's start (`src`, `manual`); the first connect starts at once |
+| camera | `<wcs-camera>`'s auto-start (`autostart`) and the constraints it acquires with (`device-id`, `facing-mode`, `audio`, `width`, `height`) |
+| speech | `<wcs-listen>`'s auto-start (`manual`) and its recognition options (`lang`, `continuous`, `interim`, `max-restarts`) |
+| geolocation | the request or watch (`manual`, `watch`, `high-accuracy`, `timeout`, `maximum-age`) |
+| midi | the access request (`auto`, `sysex`) |
+| permission | the query (`name`, `user-visible-only`, `sysex`) |
+| timer | the auto-start (`manual`, `interval`, `repeat`, `once`, `immediate`) |
+| clipboard | monitoring (`monitor`) |
+| wakelock | the auto-acquire (`manual`, `active`); a later change of `active` still acts at once |
+| raf | the auto-start (`manual`, `repeat`, `once`) |
+| intersection, resize | observing (`manual`, `target` and the options); a later option change re-observes in the microtask |
+| defined | the watch (`tags`, `mode`, `timeout`), also after a later change |
+
+### 23.6 What is left as it was
+Nodes whose connect-time work nothing can observe before it is corrected: `<wcs-fullscreen>`, `<wcs-pip>` and `<wcs-pointer-lock>` resolve their `target` again on its change, `<wcs-media-query>` evaluates the new query (its same-value guard hides the old one), and `<wcs-audio>` ramps its gains to the new values in about 20 ms. `<wcs-fetch>` already decided in a microtask. The sensors (`<wcs-accelerometer>` and the others) start only by command; their disconnect stops them (§22) and a reconnect does not start them again — recorded in [seam-apps.md](./seam-apps.md).
+
+### 23.7 Testing
+Each node has tests for: a re-insertion during which an earlier-queued microtask changes an input (the work uses only the new input), an element removed before the microtask (no work), a gate written in the same task as the append, and a stop-type command in the same task.

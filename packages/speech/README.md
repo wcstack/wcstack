@@ -248,6 +248,7 @@ DevTools open; they are not a supported styling hook.
 
 ## Notes & limitations
 
+- **Since 4.8 (not released yet), `<wcs-listen>` decides on connect one microtask later**: whether to start (`manual`) and with which `lang` / `continuous` / `interim` / `max-restarts`, with the attributes as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23). `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs: starting at once listened in the previous route's language. `stop()` / `abort()` in the same task cancel the start.
 - **Secure context required.** Both APIs need HTTPS or `localhost`; `<wcs-listen>` additionally needs microphone permission.
 - **Browser support.** SpeechSynthesis is broad; SpeechRecognition is Chrome-only (vendor-prefixed `webkitSpeechRecognition`) — `<wcs-listen>` reports `unsupported` elsewhere.
 - **SpeechSynthesis is a global singleton.** `<wcs-speak>` does **not** `cancel()` on disconnect (that would stop other instances); call `cancel()` explicitly to stop audio. A disconnected element stops tracking but any in-flight utterance finishes.

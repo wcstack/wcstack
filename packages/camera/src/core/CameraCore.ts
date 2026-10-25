@@ -305,6 +305,11 @@ export class CameraCore extends EventTarget {
     }
     if (this._constraints.audio) {
       tasks.push(this._watchMicrophone());
+    } else {
+      // A re-observe after dispose() without audio: the microphone state the last
+      // subscription left is not what this one asks about (null = audio not requested),
+      // as _reconcileAudioWatcher clears it on a live Core.
+      this._setAudioPermission(null);
     }
     // Track hot-plug: refresh the device list when a camera is added/removed.
     if (typeof navigator.mediaDevices.addEventListener === "function") {

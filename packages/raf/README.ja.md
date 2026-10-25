@@ -152,6 +152,7 @@ wcs-raf:state(suspended) ~ .indicator { color: orange; } /* タブ非表示で�
 
 ## 注意と制約
 
+- **4.8（未リリース）から、自動開始はマイクロタスクを 1 つ待つ。** 開始するか（`manual`）、どの `repeat` / `once` でかは、`connectedCallback` の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `stop()` / `reset()` は開始を取り消し、`pause()` はその場で開始してから一時停止する。
 - **非表示タブで rAF は完全停止します**（`setInterval` の ~1Hz スロットルと違う点）。`running` は意図を、`suspended` は実態を報告し、`elapsed` はアクティブ時間のみを数え、復帰後の初回フレームは `dt = 0` — dt 積分する利用側がテレポートを見ることはありません。
 - **`error` 面はありません。** rAF に恒常的な失敗モードは無く、rAF の無い環境（SSR プリパス、worker）では `start()` が silent no-op になります（never-throw）。
 - **SSR**: サーバーレンダリングするマークアップでは `manual` を推奨 — 自動開始したループは DOM エミュレーション環境でもフレームを予約し続けます。

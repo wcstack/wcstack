@@ -91,6 +91,86 @@ describe("Storage", () => {
     expect(el.style.display).toBe("none");
   });
 
+  // router は遷移で同じノードを入れ直し、state は新しい params からの key をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("入れ直しの読み込みはマイクロタスクで、そのときの key で", () => {
+    const flush = (): Promise<void> => new Promise((r) => queueMicrotask(r));
+
+    // (the element's remove() is the storage command: detach with removeChild)
+    function capture(el: Storage): unknown[] {
+      const events: unknown[] = [];
+      el.addEventListener("wcs-storage:value-changed", (e) => events.push((e as CustomEvent).detail));
+      return events;
+    }
+
+    it("最初の接続はその場で読み込む（同じタスクで束ねる binding が値を引ける）", () => {
+      localStorage.setItem("draft.1", '"one"');
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("key", "draft.1");
+      document.body.appendChild(el);
+      expect(el.value).toBe("one");
+    });
+
+    it("入れ直しの間に key が書かれると、前の key を読まず、新しい key を 1 回だけ読む", async () => {
+      localStorage.setItem("draft.14", '"fourteen"');
+      localStorage.setItem("draft.11", '"eleven"');
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("key", "draft.14");
+      document.body.appendChild(el);
+      const events = capture(el);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.key = "draft.11"; });
+      document.body.removeChild(el);
+      document.body.appendChild(el);
+      await flush();
+      await flush();
+      expect(events).toEqual(["eleven"]);
+      expect(el.value).toBe("eleven");
+    });
+
+    it("同じ key の入れ直しは、マイクロタスクで読み直す（離れていた間の変化を拾う）", async () => {
+      localStorage.setItem("draft.5", '"before"');
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("key", "draft.5");
+      document.body.appendChild(el);
+      document.body.removeChild(el);
+      localStorage.setItem("draft.5", '"after"');
+      document.body.appendChild(el);
+      expect(el.value).toBe("before");
+      await flush();
+      expect(el.value).toBe("after");
+    });
+
+    it("同じタスクで 2 回入れ直しても、読み込みは 1 回", async () => {
+      localStorage.setItem("draft.8", '"eight"');
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("key", "draft.8");
+      document.body.appendChild(el);
+      const events = capture(el);
+      localStorage.setItem("draft.8", '"eight again"');
+      document.body.removeChild(el);
+      document.body.appendChild(el);
+      document.body.removeChild(el);
+      document.body.appendChild(el);
+      await flush();
+      expect(events).toEqual(["eight again"]);
+    });
+
+    it("読み込みの前に外した要素は読まない", async () => {
+      localStorage.setItem("draft.7", '"seven"');
+      const el = document.createElement("wcs-storage") as Storage;
+      el.setAttribute("key", "draft.7");
+      document.body.appendChild(el);
+      document.body.removeChild(el);
+      document.body.appendChild(el);
+      const events = capture(el);
+      document.body.removeChild(el);
+      await flush();
+      expect(events).toEqual([]);
+    });
+  });
+
   it("wcBindableプロパティが正しく定義されている", () => {
     expect(Storage.wcBindable.protocol).toBe("wc-bindable");
     expect(Storage.wcBindable.version).toBe(1);

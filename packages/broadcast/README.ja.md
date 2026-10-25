@@ -202,6 +202,7 @@ form:has(wcs-broadcast:state(error)) .banner { display: block; }
 
 ## 注意点と制約
 
+- **4.8（未リリース）から、入れ直しはマイクロタスクでチャンネルを開く。** 最初の接続はその場で開くので、同じタスクの post は送られる。入れ直しは 1 マイクロタスク後に、そのときの `name` で開く（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`open()` はその場で開き、同じタスクの `close()` は待っている open を取り消す。
 - **自己除外は意図的。** あるコンテキストは自分自身の post を決して受信しません — これは BroadcastChannel の契約であり、バグではありません。往復を見るには、第 2 のコンテキスト（タブ/iframe/worker、または同じチャンネル名の第 2 の `<wcs-broadcast>`）を listen させてください。*同じ*タブ内の 2 つの `<wcs-broadcast name="x">` 要素は互いに受信します（別々のチャンネルオブジェクトだから）。単一の要素が自分自身に話しかける場合だけは受信しません。
 - **`name` は監視される。** `<wcs-clipboard>` と異なり、`<wcs-broadcast>` は `name` に対して `observedAttributes` を実装します。接続中（かつ非 `manual`）に `name` 属性を変更すると、古いチャンネルを閉じて新しいチャンネルを開きます。`name` をクリアする（空文字列にする、または属性を削除する）のは close *ではありません*。別の `name` に切り替えるか、明示的に `close()` を呼ぶまで、以前開いたチャンネルは維持されます。空でない新しい値だけが切り替えをトリガします。
 - **ワイヤエンコーディングは無い。** ペイロードは structured clone を使うため、JSON の stringify/parse ステップはありません（テキストワイヤで送る `<wcs-ws>` と異なります）。オブジェクトを直接 post すると、受信側はディープコピーを得ます。クローン不可能な値は `error` 経由で `DataCloneError` として失敗します。

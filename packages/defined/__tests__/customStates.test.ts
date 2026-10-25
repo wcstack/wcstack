@@ -2,18 +2,20 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { WcsDefined } from "../src/components/Defined.js";
 import { bootstrapDefined } from "../src/bootstrapDefined.js";
 import { DefinedSnapshot } from "../src/types.js";
-import { getStates, uniqueTag } from "./helpers.js";
+import { getStates, uniqueTag, flush } from "./helpers.js";
 
 beforeAll(() => {
   bootstrapDefined();
 });
 
 // A bare <wcs-defined> with no `tags` connects with an empty watch set, which
-// DefinedCore reports synchronously as `error: "no tags specified"` — that
-// would pollute the "all off" baseline these tests rely on. Give every element
-// a single not-yet-registered tag instead: connecting then publishes a benign
+// DefinedCore reports as `error: "no tags specified"` — that would pollute the
+// "all off" baseline these tests rely on. Give every element a single
+// not-yet-registered tag instead: connecting then publishes a benign
 // defined:false / error:null snapshot (no state flips), matching the real
 // pre-registration state these tests want to drive by hand via dispatchEvent.
+// The connect-time watch starts in a microtask (timing-and-firing-contract §23),
+// so each test flushes it before dispatching by hand.
 function createDefinedElement(): WcsDefined {
   const el = document.createElement("wcs-defined") as WcsDefined;
   el.setAttribute("tags", uniqueTag());
@@ -40,21 +42,24 @@ describe("WcsDefined: CustomStateSet (:state()) reflection", () => {
     document.body.innerHTML = "";
   });
 
-  it("初期状態は全てオフ（states が空）", () => {
+  it("初期状態は全てオフ（states が空）", async () => {
     const el = createDefinedElement();
+    await flush();
     expect(getStates(el)).toEqual(new Set());
   });
 
-  it("wcs-defined:change(defined: true) で defined が on になる", () => {
+  it("wcs-defined:change(defined: true) で defined が on になる", async () => {
     const el = createDefinedElement();
+    await flush();
     el.dispatchEvent(new CustomEvent("wcs-defined:change", {
       detail: makeSnapshot({ defined: true, count: 1, total: 1 }),
     }));
     expect(getStates(el)?.has("defined")).toBe(true);
   });
 
-  it("wcs-defined:change(defined: false) で defined が off に戻る", () => {
+  it("wcs-defined:change(defined: false) で defined が off に戻る", async () => {
     const el = createDefinedElement();
+    await flush();
     el.dispatchEvent(new CustomEvent("wcs-defined:change", {
       detail: makeSnapshot({ defined: true, count: 1, total: 1 }),
     }));
@@ -64,16 +69,18 @@ describe("WcsDefined: CustomStateSet (:state()) reflection", () => {
     expect(getStates(el)?.has("defined")).toBe(false);
   });
 
-  it("error が非nullなら error が on になる", () => {
+  it("error が非nullなら error が on になる", async () => {
     const el = createDefinedElement();
+    await flush();
     el.dispatchEvent(new CustomEvent("wcs-defined:change", {
       detail: makeSnapshot({ error: "invalid custom element name: x-a", missing: ["x-a"], total: 1 }),
     }));
     expect(getStates(el)?.has("error")).toBe(true);
   });
 
-  it("error がnullなら error が off に戻る", () => {
+  it("error がnullなら error が off に戻る", async () => {
     const el = createDefinedElement();
+    await flush();
     el.dispatchEvent(new CustomEvent("wcs-defined:change", {
       detail: makeSnapshot({ error: "invalid custom element name: x-a", missing: ["x-a"], total: 1 }),
     }));
@@ -135,8 +142,9 @@ describe("WcsDefined: CustomStateSet (:state()) reflection", () => {
     }).not.toThrow();
   });
 
-  it("debugStates はスナップショットを返す（返り値を変更しても states に影響しない）", () => {
+  it("debugStates はスナップショットを返す（返り値を変更しても states に影響しない）", async () => {
     const el = createDefinedElement();
+    await flush();
     el.dispatchEvent(new CustomEvent("wcs-defined:change", {
       detail: makeSnapshot({ defined: true, count: 1, total: 1 }),
     }));
@@ -148,8 +156,9 @@ describe("WcsDefined: CustomStateSet (:state()) reflection", () => {
     expect(getStates(el)?.has("injected")).toBe(false);
   });
 
-  it("debug-states 属性ありで data-wcs-state-* がトグルされる", () => {
+  it("debug-states 属性ありで data-wcs-state-* がトグルされる", async () => {
     const el = createDefinedElement();
+    await flush();
     el.setAttribute("debug-states", "");
 
     el.dispatchEvent(new CustomEvent("wcs-defined:change", {
@@ -168,8 +177,9 @@ describe("WcsDefined: CustomStateSet (:state()) reflection", () => {
     expect(el.hasAttribute("data-wcs-state-error")).toBe(true);
   });
 
-  it("debug-states 属性なしでは data-wcs-state-* が一切書かれない", () => {
+  it("debug-states 属性なしでは data-wcs-state-* が一切書かれない", async () => {
     const el = createDefinedElement();
+    await flush();
 
     el.dispatchEvent(new CustomEvent("wcs-defined:change", {
       detail: makeSnapshot({ defined: true, count: 1, total: 1 }),

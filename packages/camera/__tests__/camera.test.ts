@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from "vitest";
 import { bootstrapCamera } from "../src/bootstrapCamera";
 import { WcsCamera, resetPreviewStyles } from "../src/components/Camera";
 import { installMedia, InstalledMedia, FakeMediaStream, FakeMediaStreamTrack, flush } from "./helpers";
@@ -122,8 +122,8 @@ describe("<wcs-camera> Shell", () => {
   });
 
   it("DOM 内移動（disconnect→reconnect）で autostart は再 dispose・再 acquire される（#5 挙動固定）", async () => {
-    // autostart は connectedCallback で同期的に acquire を起動するので、mount 前に
-    // 取得 stream を仕込む（mount 後では requestUserMedia に間に合わない）。
+    // autostart の acquire は接続時の判断（マイクロタスク）が起動するので、それより前に
+    // 取得 stream を仕込む。
     const first = new FakeMediaStream("first");
     media.resolveWith(first);
     const el = mount(`<wcs-camera autostart></wcs-camera>`);
@@ -144,6 +144,168 @@ describe("<wcs-camera> Shell", () => {
     await el.connectedCallbackPromise;
     await flush();
     expect(el.active).toBe(true);
+  });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの入力をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("取得の判断はマイクロタスクで、そのときの入力で", () => {
+    const deviceIds = (): unknown[] =>
+      media.control.calls.map((c) => (c.video as MediaTrackConstraints).deviceId);
+
+    it("入れ直しの間に device-id が書かれると、前の device-id では取得せず、新しい device-id で 1 回だけ取得する", async () => {
+      const el = mount(`<wcs-camera autostart device-id="cam-14"></wcs-camera>`);
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(deviceIds()).toEqual([{ exact: "cam-14" }]);
+      expect(el.active).toBe(true);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      const host = el.parentElement!;
+      queueMicrotask(() => { el.deviceId = "cam-11"; });
+      el.remove();
+      host.appendChild(el);
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(deviceIds()).toEqual([{ exact: "cam-14" }, { exact: "cam-11" }]);
+      expect(el.active).toBe(true);
+    });
+
+    it("入れ直しの間に audio が外されると、前の audio でマイクの権限を問い合わせず、audioPermission は null に戻る", async () => {
+      const el = mount(`<wcs-camera audio></wcs-camera>`);
+      await el.connectedCallbackPromise;
+      expect(el.audioPermission).toBe("prompt");
+
+      const query = vi.spyOn(navigator.permissions, "query");
+      const host = el.parentElement!;
+      queueMicrotask(() => { el.audio = false; });
+      el.remove();
+      host.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(query.mock.calls.map(([descriptor]) => descriptor.name)).toEqual(["camera"]);
+      expect(el.audioPermission).toBeNull();
+    });
+
+    it("入れ直しの間に audio が書かれると、接続時の権限の監視を新しい audio で始める", async () => {
+      const el = mount(`<wcs-camera></wcs-camera>`);
+      await el.connectedCallbackPromise;
+      expect(el.audioPermission).toBeNull();
+
+      const host = el.parentElement!;
+      queueMicrotask(() => { el.audio = true; });
+      el.remove();
+      host.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(el.audioPermission).toBe("prompt");
+    });
+
+    it("判断の前に外した要素は取得せず、connectedCallbackPromise も解ける", async () => {
+      const el = mount(`<wcs-camera autostart></wcs-camera>`);
+      el.remove();
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(media.control.calls).toHaveLength(0);
+      expect(el.active).toBe(false);
+    });
+
+    it("同じタスクで接続の後に autostart が書かれると、取得する", async () => {
+      const el = mount(`<wcs-camera></wcs-camera>`);
+      el.autostart = true;
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(media.control.calls).toHaveLength(1);
+      expect(el.active).toBe(true);
+    });
+
+    it("同じタスクで接続の後に autostart が外されると、取得しない", async () => {
+      const el = mount(`<wcs-camera autostart></wcs-camera>`);
+      el.autostart = false;
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(media.control.calls).toHaveLength(0);
+      expect(el.active).toBe(false);
+    });
+
+    it("同じタスクで接続の後に stop() が呼ばれると、autostart でも取得せず、権限の監視は始める", async () => {
+      const el = mount(`<wcs-camera autostart></wcs-camera>`);
+      el.stop();
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(media.control.calls).toHaveLength(0);
+      expect(el.active).toBe(false);
+      expect(media.control.permissionStatuses.has("camera")).toBe(true);
+    });
+
+    it("stop() の後に同じタスクで入れ直すと、次の判断は autostart に従って取得する", async () => {
+      const el = mount(`<wcs-camera autostart></wcs-camera>`);
+      el.stop();
+      const host = el.parentElement!;
+      el.remove();
+      host.appendChild(el);
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(media.control.calls).toHaveLength(1);
+      expect(el.active).toBe(true);
+    });
+
+    it("stop() で取り消した判断の後の接続は、また autostart に従う", async () => {
+      const el = mount(`<wcs-camera autostart></wcs-camera>`);
+      el.stop();
+      await el.connectedCallbackPromise;
+      const host = el.parentElement!;
+      el.remove();
+      host.appendChild(el);
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(media.control.calls).toHaveLength(1);
+      expect(el.active).toBe(true);
+    });
+
+    it("判断の前の start() も、いまの属性の制約で取得する", async () => {
+      const el = mount(`<wcs-camera device-id="cam-9"></wcs-camera>`);
+      el.start();
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(deviceIds()).toEqual([{ exact: "cam-9" }]);
+      expect(el.active).toBe(true);
+    });
+
+    it("接続の後、同じタスクの制約の変化はまとまり、最後の制約で 1 回だけ取り直す", async () => {
+      const el = mount(`<wcs-camera autostart></wcs-camera>`);
+      await el.connectedCallbackPromise;
+      await flush();
+      media.control.calls.length = 0;
+
+      media.resolveWith(new FakeMediaStream("b"));
+      el.width = 640;
+      el.height = 480;
+      el.deviceId = "cam-x";
+      await flush();
+      expect(media.control.calls).toHaveLength(1);
+      const video = media.control.calls[0].video as MediaTrackConstraints;
+      expect([video.width, video.height, video.deviceId]).toEqual([640, 480, { exact: "cam-x" }]);
+    });
+
+    it("接続の後、ストリームが無いときの制約の変化は取得しない（active ガード偽側）", async () => {
+      const el = mount(`<wcs-camera></wcs-camera>`);
+      await el.connectedCallbackPromise;
+      el.deviceId = "cam-x";
+      el.audio = true;
+      await flush();
+      expect(media.control.calls).toHaveLength(0);
+      expect(el.active).toBe(false);
+      // 制約は Core へ渡っている（マイクの監視が始まる）
+      expect(el.audioPermission).toBe("prompt");
+    });
+
+    it("DOM の外の start() は権限の監視を始めない（属性を Core へ渡すのは接続中だけ）", async () => {
+      const el = document.createElement("wcs-camera") as WcsCamera;
+      el.setAttribute("device-id", "cam-9");
+      el.start();
+      await flush();
+      expect(media.control.permissionStatuses.size).toBe(0);
+      expect(deviceIds()).toEqual([undefined]);
+      el.stop();
+    });
   });
 
   it("visibilitychange: hidden で suspend・visible で resume、keep-alive で抑止", async () => {
