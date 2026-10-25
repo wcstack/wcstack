@@ -151,7 +151,8 @@ function forEachStateMethod(
         if (callable.kind !== 'method' || (spelling !== null && !callable.body.includes(spelling))) continue;
         // 名前の後ろから本体の `{` の手前まで: `(e) ` / 引用符付きの名前なら `"(e) `
         const head = script.slice(callable.end, callable.bodyStart - 1);
-        const params = /\(([^)]*)\)\s*$/.exec(head);
+        // (first `(` to the last `)`: a default parameter may call something — `id = crypto.randomUUID()`)
+        const params = /\(([\s\S]*)\)\s*$/.exec(head);
         if (params === null) continue;
         fn(volume === null ? callable.name : `${volume}.${callable.name}`, params[1], callable.body);
       }

@@ -652,6 +652,27 @@ export default {
   });
 });
 
+describe('analyzeStatePaths — 引数の並びの括弧（docs/seam-apps.md、shift-desk）', () => {
+  it('既定引数が呼び出しのメソッドを見失わず、本体の `word:` をトップレベルのキーにしない', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  queue: [],
+  enqueue(ticketId, text, clientId = crypto.randomUUID()) {
+    this.outbox = this.outbox.concat({ ticketId, body: text, clientId });
+  },
+  later(cb = () => { return { inner: 1 }; }, opts = { nested: f(g(1)) }) { cb(opts); },
+  outbox: [],
+};`);
+    expect(paths.find(p => p.path === 'enqueue')?.kind).toBe('method');
+    expect(paths.find(p => p.path === 'later')?.kind).toBe('method');
+    const names = paths.map(p => p.path);
+    expect(names).toContain('outbox');
+    expect(names).not.toContain('body');
+    expect(names).not.toContain('inner');
+    expect(names).not.toContain('nested');
+  });
+});
+
 describe('analyzeStatePaths — トップレベル走査のトークン境界', () => {
   it('行コメント内の `word:` をプロパティにせず、後続の宣言も見失わない', () => {
     const paths = analyzeStatePaths(`
@@ -869,6 +890,38 @@ export default {
 describe('analyzeStatePaths — getter の戻り値の形（リストを返す getter の行・オブジェクトを返す getter の子）', () => {
   const names = (script: string): string[] => analyzeStatePaths(script).map(p => p.path);
   const find = (paths: PathCandidate[], path: string): PathCandidate | undefined => paths.find(p => p.path === path);
+
+  it('getter の @returns が、本体から読めない戻りの形を宣言する（spread のオブジェクト・早い return の後のリスト）', () => {
+    const paths = analyzeStatePaths(`
+/** @typedef {{ id: number, subject: string }} Ticket */
+export default {
+  /** @type {Ticket | null} */
+  result: null,
+  live: {},
+  /** @returns {{ id: number, subject: string, mine: boolean } | null} */
+  get ticket() {
+    const r = this.result;
+    if (!r) return null;
+    return { ...r, ...this.live };
+  },
+  /**
+   * The conversation, newest last.
+   * @return {{ from: string, text: string, atDate: Date }[]}
+   */
+  get conversation() {
+    if (!this.result) return [];
+    return [this.result].map((m) => compose(m));
+  },
+  /** @returns {number} */
+  set ticket(v) {},
+};`);
+    const names = paths.map(p => p.path);
+    expect(names).toContain('ticket.subject');
+    expect(names).toContain('ticket.mine');
+    expect(names).toContain('conversation.*.from');
+    expect(names).toContain('conversation.*.atDate');
+    expect(paths.find(p => p.path === 'ticket')?.kind).toBe('computed');
+  });
 
   it('絞り込んだリストを返す getter（README の ToDo の形）は元のリストの行の形を持つ', () => {
     const paths = analyzeStatePaths(`
