@@ -153,6 +153,7 @@ wcs-raf:state(suspended) ~ .indicator { color: orange; } /* tab hidden, loop sta
 
 ## Notes & limitations
 
+- **Since 4.8 (not released yet), the auto-start waits one microtask.** Whether to start (`manual`), and with which `repeat` / `once`, is decided one microtask after `connectedCallback`, with the inputs as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `stop()` / `reset()` in the same task cancel the start; `pause()` starts it then and pauses it.
 - **Hidden tabs stop rAF completely** (unlike `setInterval`'s ~1Hz throttle). `running` keeps reporting the intent; `suspended` reports the reality; `elapsed` counts only active time; and the first frame after the tab becomes visible again reports `dt = 0`, so a dt-integrating consumer never sees a teleport.
 - **No `error` surface.** rAF has no persistent failure mode; on a platform without it (SSR pre-pass, worker), `start()` is a silent no-op (never-throw).
 - **SSR**: prefer `manual` in server-rendered markup — an auto-started loop keeps scheduling frames in DOM-emulating renderers.

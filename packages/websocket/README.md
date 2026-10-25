@@ -677,6 +677,7 @@ bootstrapWebSocket({
 
 ## Design Notes
 
+- **Since 4.8 (not released yet), the connect-time decision waits one microtask.** Whether to connect, and to which `url`, is decided one microtask after `connectedCallback` (and after a `url` change), with the inputs as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23). `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs: connecting at once opened the previous route's socket and closed it again. `connect()` / `trigger` connect at once; `close()` in the same task cancels the pending connect.
 - `message`, `connected`, `loading`, `error`, and `readyState` are **output state**
 - `url`, `trigger`, and `send` are **input / command surface**
 - `trigger` is intentionally one-way: writing `true` connects, reset emits completion

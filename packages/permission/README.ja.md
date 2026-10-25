@@ -118,7 +118,7 @@ npm install @wcstack/permission
 
 ## 注意・制限
 
-- **属性は接続時に読み取り、監視はしない。** `<wcs-permission>` は `observedAttributes` / `attributeChangedCallback` を実装しません。descriptor（`name` ＋追加メンバー）は接続時に固定され、接続後に `name` を命令的に変えても再 query しません。別の権限を監視するには別要素を使う（または再接続する）。
+- **属性は接続時に読み取り、監視はしない。** `<wcs-permission>` は `observedAttributes` / `attributeChangedCallback` を実装しません。descriptor（`name` ＋追加メンバー）は接続時に固定され（4.8（未リリース）から、接続の 1 マイクロタスク後に、そのときの属性で — [タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23。`@wcstack/router` が次のルートの `name` で入れ直した要素は、前のではなくその権限を問い合わせる）、接続後に `name` を命令的に変えても再 query しません。別の権限を監視するには別要素を使う（または再接続する）。
 - **再接続で再 query。** 要素を取り外して再挿入すると `connectedCallback` が再実行され、query を再発行して `change` を再購読します（切断時に購読を解除するのと対称）。切断時にまだ解決していない in-flight な query は無効化され、その後に解決しても `state` を更新せず `change` リスナーも張りません。したがって素早い 切断→再接続 でも古い購読が残ることはありません。
 - **SSR（`@wcstack/server`）。** `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開するため、サーバレンダラは接続時 query の settle を待ってからスナップショットします。
 - **サイレント失敗処理（zero-log）。** wcstack のゼロ依存方針に沿い、`<wcs-permission>` はログも例外も出しません。Permissions API が無い場合、権限名が拒否される場合、`name` 属性が未指定/空の場合はいずれも静かに `state = "unsupported"` に解決します。`unsupported`（または `state`）をバインドして反応してください。

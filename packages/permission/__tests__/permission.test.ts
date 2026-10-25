@@ -31,9 +31,11 @@ describe("Permission (Shell)", () => {
     document.body.appendChild(el);
 
     expect(el.style.display).toBe("none");
+    // query はマイクロタスクで（timing-and-firing-contract §23）
+    expect(mock.query).not.toHaveBeenCalled();
+    await flush();
     expect(mock.query).toHaveBeenCalledTimes(1);
     expect(mock.descriptors[0]).toEqual({ name: "geolocation" });
-    await flush();
     expect(el.state).toBe("granted");
     expect(el.granted).toBe(true);
   });
@@ -169,5 +171,73 @@ describe("Permission (Shell)", () => {
     expect(mock.query).toHaveBeenCalledTimes(2);
     mock.statuses[1].change("denied");
     expect(el.state).toBe("denied");
+  });
+
+  // router は遷移で同じノードを入れ直し、state は新しい params からの name をマイクロタスクで書く
+  // （timing-and-firing-contract §23、docs/seam-apps.md の shift-desk）
+  describe("query の判断はマイクロタスクで、そのときの入力で", () => {
+    it("入れ直しの間に name が書かれると、前の name は query せず、新しい name だけを購読する", async () => {
+      const mock = installPermissions({ state: "granted" });
+      const el = createPermission({ name: "geolocation" });
+      document.body.appendChild(el);
+      await flush();
+      expect(mock.descriptors).toEqual([{ name: "geolocation" }]);
+
+      // state のマイクロタスクは、router が中身を入れ直す前に積まれている
+      queueMicrotask(() => { el.name = "camera"; });
+      el.remove();
+      document.body.appendChild(el);
+      await el.connectedCallbackPromise;
+      expect(mock.descriptors).toEqual([{ name: "geolocation" }, { name: "camera" }]);
+
+      // 購読しているのは新しい name の status だけ
+      mock.statuses[0].change("denied");
+      expect(el.state).toBe("granted");
+      mock.statuses[1].change("prompt");
+      expect(el.state).toBe("prompt");
+    });
+
+    it("判断の前に外した要素は query せず、connectedCallbackPromise も解決する", async () => {
+      const mock = installPermissions({ state: "granted" });
+      const el = createPermission({ name: "geolocation" });
+      const seen: string[] = [];
+      el.addEventListener("wcs-permission:change", (e) => seen.push((e as CustomEvent).detail));
+      document.body.appendChild(el);
+      el.remove();
+      await el.connectedCallbackPromise;
+      await flush();
+      expect(mock.query).not.toHaveBeenCalled();
+      expect(seen).toEqual([]);
+      expect(el.state).toBe("prompt");
+    });
+
+    it("同じタスクで append の後に書かれた name / user-visible-only で query する", async () => {
+      const mock = installPermissions({ state: "granted" });
+      const el = createPermission();
+      const seen: string[] = [];
+      el.addEventListener("wcs-permission:change", (e) => seen.push((e as CustomEvent).detail));
+      document.body.appendChild(el);
+      el.name = "push";
+      el.userVisibleOnly = true;
+      await el.connectedCallbackPromise;
+      expect(mock.descriptors).toEqual([{ name: "push", userVisibleOnly: true }]);
+      // name の無い接続の unsupported は公開されない
+      expect(seen).toEqual(["granted"]);
+    });
+
+    it("同じタスクの remove → append は 1 回だけ query し、1 回目の connectedCallbackPromise も解決する", async () => {
+      const mock = installPermissions({ state: "denied" });
+      const el = createPermission({ name: "geolocation" });
+      document.body.appendChild(el);
+      const first = el.connectedCallbackPromise;
+      el.remove();
+      document.body.appendChild(el);
+      const second = el.connectedCallbackPromise;
+      expect(second).not.toBe(first);
+      await first;
+      await second;
+      expect(mock.query).toHaveBeenCalledTimes(1);
+      expect(el.state).toBe("denied");
+    });
   });
 });

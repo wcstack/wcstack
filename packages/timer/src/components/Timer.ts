@@ -33,6 +33,8 @@ export class Timer extends HTMLElement {
   private _core: TimerCore;
   private _trigger: boolean = false;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // _scheduleStart のマイクロタスクが待っている間 true
+  private _startPending = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -215,14 +217,27 @@ export class Timer extends HTMLElement {
   }
 
   stop(): void {
+    // 同じタスクで接続の後に止められたら、待っている自動開始も取り消す
+    // （同期で start していた頃は、start → stop で止まったままだった）
+    this._startPending = false;
     this._core.stop();
   }
 
   reset(): void {
+    // reset も止める命令: 待っている自動開始を取り消す（stop と同じ）
+    this._startPending = false;
     this._core.reset();
   }
 
   pause(): void {
+    // 接続時の自動開始が待っているなら、ここでそのときの入力で判断してから止める。
+    // 同期で start していた頃と同じく、append → pause() は resume() できる一時停止になる
+    if (this._startPending) {
+      this._startPending = false;
+      if (this.isConnected && !this.manual) {
+        this.start();
+      }
+    }
     this._core.pause();
   }
 
@@ -254,11 +269,29 @@ export class Timer extends HTMLElement {
       registerAutoTrigger();
     }
     // Establish monitoring (§3.5). observe() is a no-op that resolves once ready;
-    // expose it as connectedCallbackPromise for SSR.
+    // expose it as connectedCallbackPromise for SSR. (The auto-start below runs in a
+    // microtask queued before any caller can await this promise, so it still
+    // precedes the awaiter.)
     this._connectedCallbackPromise = this._core.observe();
-    if (!this.manual) {
-      this.start();
-    }
+    this._scheduleStart();
+  }
+
+  // 自動開始の判断はマイクロタスクで、そのときの manual / interval / repeat / once /
+  // immediate で 1 回だけ行う（timing-and-firing-contract §23）。router は遷移で同じノードを
+  // 入れ直し、新しいルートの params から state が入力を書くのはマイクロタスク — その場で
+  // start すると、前の入力で動き出し（immediate なら前の入力で 1 tick 発火し）、manual も
+  // 前のままで判断していた（docs/seam-apps.md、shift-desk）。その時点で外れていれば何もしない。
+  private _scheduleStart(): void {
+    if (this._startPending) return;
+    this._startPending = true;
+    queueMicrotask(() => {
+      // stop() / reset() が取り消した（そのあと同じタスクで積み直されたら、それが判断する）
+      if (!this._startPending) return;
+      this._startPending = false;
+      if (this.isConnected && !this.manual) {
+        this.start();
+      }
+    });
   }
 
   disconnectedCallback(): void {

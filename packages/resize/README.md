@@ -239,6 +239,7 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
 
 ## Notes & limitations
 
+- **Since 4.8 (not released yet), observing starts one microtask after connect**, with `manual`, `target`, `box` and `round` as they are then, and a later change re-observes in the next microtask, folded into one ([timing contract](../../docs/timing-and-firing-contract.md) §23): `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `unobserve()` / `disconnect()` in the same task cancel it; `observe()` acts at once.
 - **Single target.** Each `<wcs-resize>` observes exactly one element so the state maps to a single value surface. For many targets, use many elements.
 - **Never throws.** Unsupported environments (no `ResizeObserver`) are silent no-ops. A valid-but-unsupported `box` (e.g. `device-pixel-content-box` on engines that lack it) is retried once with `content-box`; if that also fails, `observing` stays `false` rather than throwing.
 - **For styling, prefer CSS `@container`.** This component is for size-dependent *logic*, not size-dependent *styles*.

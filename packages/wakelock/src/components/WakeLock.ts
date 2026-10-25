@@ -52,9 +52,12 @@ export class WcsWakeLock extends HTMLElement {
   // attributeChangedCallback runs for the markup's attributes before
   // connectedCallback (with isConnected already true), and connectedCallback's
   // upgradeProperties() replays early inputs in declaration order, so gating on
-  // isConnected started work before `manual` was applied. connectedCallback does
-  // the first run itself, from the values after the replay (as <wcs-ws> does).
+  // isConnected started work before `manual` was applied. connectedCallback
+  // schedules the first run itself (_scheduleAcquire), which reads the values after
+  // the replay — and after anything written in the same task (as <wcs-ws> does).
   private _attached = false;
+  // _scheduleAcquire のマイクロタスクが待っている間 true
+  private _acquirePending = false;
   private _internals: ElementInternals | null = null;
 
   constructor() {
@@ -177,6 +180,9 @@ export class WcsWakeLock extends HTMLElement {
 
   /** Release the wake lock and stop re-acquiring it. */
   release(): void {
+    // 同じタスクで接続の後に release されたら、待っている自動取得も取り消す
+    // （同期で取りに行っていた頃は、request → release で離したままだった）
+    this._acquirePending = false;
     this._core.release();
   }
 
@@ -195,10 +201,28 @@ export class WcsWakeLock extends HTMLElement {
     // Establish monitoring (§3.5) and expose readiness for SSR (§4.1). observe()
     // is a no-op that resolves immediately for this command-driven sink.
     this._connectedCallbackPromise = this._core.observe();
-    if (!this.manual && this.active) {
-      void this._core.request();
-    }
     this._attached = true;
+    this._scheduleAcquire();
+  }
+
+  // 接続時の自動取得の判断はマイクロタスクで、そのときの manual / active で 1 回だけ行う
+  // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+  // params から state が入力を書くのはマイクロタスク — その場で判断すると、前の active /
+  // manual でロックを取りに行っていた（docs/seam-apps.md、shift-desk）。その時点で外れて
+  // いれば何もしない。間に来た active の変化は従来どおりその場で request / release する
+  // （manual に関わらない live toggle）— request は Core で冪等なので、ここと重なっても
+  // 取りに行くのは 1 回。
+  private _scheduleAcquire(): void {
+    if (this._acquirePending) return;
+    this._acquirePending = true;
+    queueMicrotask(() => {
+      // release() が取り消した（そのあと同じタスクで積み直されたら、それが判断する）
+      if (!this._acquirePending) return;
+      this._acquirePending = false;
+      if (this._attached && !this.manual && this.active) {
+        void this._core.request();
+      }
+    });
   }
 
   disconnectedCallback(): void {

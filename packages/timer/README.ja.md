@@ -102,6 +102,8 @@ npm install @wcstack/timer
 
 **`null` と `undefined`。** 属性に対応する入力（`interval`・`once`・`repeat`・`immediate`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。動作中のタイマーは、ほかの `interval` 変更と同じく、戻った値または既定値の周期にその場で張り直します。`trigger` はどちらも無視します。
 
+**4.8（未リリース）から、自動開始はマイクロタスクを 1 つ待つ。** 開始するか（`manual`）、どの `interval` / `repeat` / `once` / `immediate` でかは、`connectedCallback` の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `stop()` / `reset()` は開始を取り消し、`pause()` はその場で開始してから一時停止する。
+
 ## 観測プロパティ（出力）
 
 | プロパティ | イベント                    | 説明                                                          |

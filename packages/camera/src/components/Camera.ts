@@ -70,15 +70,24 @@ export class WcsCamera extends HTMLElement {
   };
 
   // `autostart` and `keep-alive` are intentionally NOT observed: `autostart` is a
-  // connect-time-only acquire trigger (read once in connectedCallback; flipping it
-  // later is meaningless), and `keep-alive` is read fresh on every visibilitychange
-  // (_onVisibilityChange), so it never needs to drive a re-acquire. The observed set
-  // is exactly the constraints that reshape the requested track.
+  // connect-time-only acquire trigger (read once by the connect-time decision in
+  // _scheduleAcquire's microtask; flipping it later is meaningless), and `keep-alive`
+  // is read fresh on every visibilitychange (_onVisibilityChange), so it never needs
+  // to drive a re-acquire. The observed set is exactly the constraints that reshape
+  // the requested track.
   static observedAttributes = ["facing-mode", "device-id", "audio", "width", "height"];
 
   private _core: CameraCore;
   private _video: HTMLVideoElement;
   private _connectedCallbackPromise: Promise<void> = Promise.resolve();
+  // connectedCallback が張った connectedCallbackPromise を解く関数。接続時の判断を下す
+  // _scheduleAcquire のマイクロタスクが（その前に外れたときは disconnectedCallback が）呼ぶ。
+  // null でないあいだは「接続時の判断待ち」でもある。
+  private _connectResolve: ((value: void | PromiseLike<void>) => void) | null = null;
+  // _scheduleAcquire のマイクロタスクが待っている間 true
+  private _acquirePending: boolean = false;
+  // 接続時の判断待ちに stop() が呼ばれたら true — その判断は autostart でも取得しない
+  private _autostartCancelled: boolean = false;
   private _connected: boolean = false;
   // True while switchCamera() rewrites several attributes at once. Each setAttribute /
   // removeAttribute fires its own attributeChangedCallback synchronously; without this
@@ -209,8 +218,19 @@ export class WcsCamera extends HTMLElement {
 
   // --- Commands ---
 
-  start(): void { this._core.start(); }
-  stop(): void { this._core.stop(); }
+  start(): void {
+    // 制約は属性が正本。接続時の判断・属性の変化はマイクロタスクで Core に渡るので
+    // （_scheduleAcquire）、それより先の start() でも、いまの属性の制約で取得するよう渡しておく
+    if (this._connected) this._core.observe(this._constraints());
+    this._core.start();
+  }
+  stop(): void {
+    // 接続時の判断待ちなら、その autostart を取り消す — 同じタスクの append → stop() で、後の
+    // マイクロタスクが取得を始めないように（判断が同期だった頃は、始めた取得を stop() が止めて
+    // いた）。権限の監視（observe）は取り消さない。入れ直せば、次の判断は autostart に従う
+    if (this._connectResolve !== null) this._autostartCancelled = true;
+    this._core.stop();
+  }
 
   /**
    * Toggle the front/back camera by updating the DOM attributes (the single source
@@ -273,19 +293,62 @@ export class WcsCamera extends HTMLElement {
 
   // --- Lifecycle ---
 
+  // 取得の判断はマイクロタスクで、そのときの属性（制約と autostart）で 1 回だけ行う
+  // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+  // params から state が device-id などを書くのはマイクロタスク — その場で取得すると、前の
+  // 制約で getUserMedia を起こし、取得中は active が偽なので新しい制約での取り直しも起きず、
+  // 前の制約のストリームが残っていた（docs/seam-apps.md、shift-desk）。同じタスクの制約の
+  // 変化もここへまとまる。
+  private _scheduleAcquire(): void {
+    if (this._acquirePending) return;
+    this._acquirePending = true;
+    queueMicrotask(() => {
+      this._acquirePending = false;
+      const resolveConnect = this._connectResolve;
+      this._connectResolve = null;
+      // 判断の前に外れた要素は何もしない（disconnectedCallback が dispose 済み）
+      if (!this._connected) return;
+      // Track the constraints (and reconcile the microphone watcher).
+      const ready = this._core.observe(this._constraints());
+      if (resolveConnect !== null) {
+        // 接続時の判断: autostart なら取得する（判断待ちに stop() が呼ばれていなければ）
+        if (this.autostart && !this._autostartCancelled) {
+          this._core.start();
+        }
+        this._autostartCancelled = false;
+        resolveConnect(ready);
+      } else if (this._core.active) {
+        // A constraints change re-acquires (switchMap-style restart) only when a stream
+        // is actually live. `active` is the deliberate guard (not `desired`): `active`
+        // implies `desired` (a stream only goes live under desired), so re-acquiring
+        // cannot spuriously re-`desired` a stopped camera. Guarding on `active` rather
+        // than `desired` also avoids force-acquiring while suspended/hidden (desired but
+        // not active) — the visibility handler owns resume there.
+        this._core.start();
+      }
+    });
+  }
+
   connectedCallback(): void {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
     this._connected = true;
-    this._connectedCallbackPromise = this._core.observe(this._constraints());
-    if (this.autostart) {
-      this._core.start();
-    }
+    // connectedCallbackPromise は接続時の observe（権限の初期状態）が済むまでを表す。
+    // observe は判断と同じマイクロタスクで走るので、ここで張ってそこで解く
+    this._connectedCallbackPromise = new Promise<void>((resolve) => {
+      this._connectResolve = resolve;
+    });
+    this._scheduleAcquire();
     document.addEventListener("visibilitychange", this._onVisibilityChange);
   }
 
   disconnectedCallback(): void {
     this._connected = false;
+    // 判断の前に外れたら、張った connectedCallbackPromise をここで解く — 同じタスクで
+    // 入れ直されると次の connectedCallback が張り替えるので、待つ側が取り残されないように
+    this._connectResolve?.();
+    this._connectResolve = null;
+    this._autostartCancelled = false;
     document.removeEventListener("visibilitychange", this._onVisibilityChange);
     this._core.dispose();
   }
@@ -296,17 +359,9 @@ export class WcsCamera extends HTMLElement {
     // post-batch re-acquire — otherwise the first write would acquire on stale
     // constraints (see `_batchingAttrs`).
     if (this._batchingAttrs) return;
-    // Track the new constraints (and reconcile the microphone watcher).
-    this._core.observe(this._constraints());
-    // A constraints change re-acquires (switchMap-style restart) only when a stream
-    // is actually live. `active` is the deliberate guard (not `desired`): `active`
-    // implies `desired` (a stream only goes live under desired), so re-acquiring
-    // cannot spuriously re-`desired` a stopped camera. Guarding on `active` rather
-    // than `desired` also avoids force-acquiring while suspended/hidden (desired but
-    // not active) — the visibility handler owns resume there.
-    if (this._core.active) {
-      this._core.start();
-    }
+    // 制約の変化は取得の判断（_scheduleAcquire）へまとめる: 接続時の判断待ちならそれが
+    // 新しい制約を読み、その後ならストリームが生きているときだけ取り直す
+    this._scheduleAcquire();
   }
 
   private _onVisibilityChange = (): void => {

@@ -491,6 +491,7 @@ bootstrapSse({
 
 ## 設計メモ
 
+- **4.8（未リリース）から、接続時の判断はマイクロタスクを 1 つ待つ。** 接続するか、どの `url` へかは、`connectedCallback`（と `url` の変化）の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`connect()` / `trigger` はその場で接続し、同じタスクの `close()` は待っている接続を取り消す。
 - `message`、`connected`、`loading`、`error`、`readyState` は **出力ステート**
 - `url`、`trigger` は **入力 / コマンドサーフェス**。`withCredentials`、`events`、`raw` は接続オプション
 - `message` は `{ event, data, lastEventId }` を運ぶため、名前付きイベントが1つのバインド可能プロパティを共有する — state 側で `event` により分岐する

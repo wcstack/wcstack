@@ -34,6 +34,11 @@ export class WcsDefined extends HTMLElement {
   // then re-watches. Before that (attributes set at upgrade, and the inputs
   // upgradeProperties replays) the connect-time observe() reads them anyway.
   private _watching: boolean = false;
+  // _scheduleObserve のマイクロタスクが待っている間 true
+  private _observePending: boolean = false;
+  // 予約した見張りの connectedCallbackPromise を resolve する関数。マイクロタスクが
+  // 見張りを始めると、その settle へつなぐ。外れたら disconnectedCallback が resolve する。
+  private _resolveWatch: (() => void) | null = null;
 
   // tags / mode / timeout are live: binders write the property, which the setter
   // reflects, and a wc-bindable binder (@wcstack/state included) writes it after
@@ -174,35 +179,64 @@ export class WcsDefined extends HTMLElement {
     // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
     upgradeProperties(this);
     this.style.display = "none";
-    // Begin the watch (or revive it after a reconnect). The returned promise is
-    // held as connectedCallbackPromise for SSR. whenDefined failures surface as
-    // `missing` / `error` state — never as a throw — so no .catch() is needed.
-    // Gate on the registry this element's own subtree resolves against: with a
-    // scoped registry the same tag name means a different definition per tree,
-    // so watching the global one would report readiness this tree cannot use.
-    this._observe();
+    // Begin the watch (or revive it after a reconnect) — in the microtask of
+    // _scheduleObserve, with the inputs as they are then.
     this._watching = true;
+    this._scheduleObserve();
   }
 
   disconnectedCallback(): void {
     this._watching = false;
     this._core.dispose();
+    // 予約した見張りの promise を resolve する — マイクロタスクより先に外れても、
+    // await した側は止まらない（Fetch の connectedCallbackPromise と同じ）。
+    this._resolveWatch?.();
+    this._resolveWatch = null;
   }
 
   // A changed tags / mode / timeout on a connected element restarts the watch with
-  // the new configuration (the Core re-watches only after a dispose()).
+  // the new configuration (the Core re-watches only after a dispose()). The restart
+  // goes through the same microtask as the connect-time watch, so several inputs
+  // written in one task restart it once.
   attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void {
     if (!this._watching || oldValue === newValue) return;
-    this._core.dispose();
-    this._observe();
+    this._scheduleObserve();
   }
 
-  private _observe(): void {
-    this._connectedCallbackPromise = this._core.observe(
-      this._parseTags(),
-      this.mode,
-      this.timeout,
-      getCustomElementRegistry(this),
-    );
+  // 見張りの開始はマイクロタスクで、そのときの tags / mode / timeout で 1 回だけ行う
+  // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+  // params から state が入力を書くのはマイクロタスク — その場で見張ると、前の tags で
+  // `wcs-defined:change` を出し、connectedCallbackPromise も前の見張りのものになっていた
+  // （docs/seam-apps.md、shift-desk）。判断の前に外れた要素は何もしない。
+  //
+  // connectedCallbackPromise は予約の時点で差し替える（見張り直しのたびに新しい promise —
+  // 以前の同期の _observe() と同じ）。マイクロタスクが始めた見張りが settle すると resolve する。
+  private _scheduleObserve(): void {
+    if (this._resolveWatch === null) {
+      this._connectedCallbackPromise = new Promise<void>((resolve) => {
+        this._resolveWatch = resolve;
+      });
+    }
+    if (this._observePending) return;
+    this._observePending = true;
+    queueMicrotask(() => {
+      this._observePending = false;
+      const resolve = this._resolveWatch;
+      this._resolveWatch = null;
+      // 外れていれば disconnectedCallback が resolve を済ませている
+      if (!this._watching || resolve === null) return;
+      this._core.dispose();
+      // whenDefined failures surface as `missing` / `error` state — never as a
+      // throw — so no .catch() is needed. Gate on the registry this element's own
+      // subtree resolves against: with a scoped registry the same tag name means a
+      // different definition per tree, so watching the global one would report
+      // readiness this tree cannot use.
+      this._core.observe(
+        this._parseTags(),
+        this.mode,
+        this.timeout,
+        getCustomElementRegistry(this),
+      ).then(resolve);
+    });
   }
 }

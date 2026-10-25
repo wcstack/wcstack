@@ -244,6 +244,7 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 
 ## 注意点と制約
 
+- **4.8（未リリース）から、観測は接続の 1 マイクロタスク後に始まる。** そのときの `manual`・`target`・`root`・オプションで観測し、その後のオプションの変化も次のマイクロタスクで 1 回にまとめて観測し直す（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `unobserve()` / `disconnect()` はそれを取り消し、`observe()` / `reobserve()` はその場で動く。
 - **単一ターゲット。** 各 `<wcs-intersect>` はちょうど 1 つの要素を観測するので、状態は単一の値面にマップします。多数のターゲットには多数の要素を使ってください。
 - **決して throw しない。** 非対応環境（`IntersectionObserver` が無い）や不正なオプション（例: 不正な形式の `root-margin`）は無言の no-op です。throw せず `observing` が `false` のままになります。
 - **パーミッションゲート / セキュアコンテキスト要件は無い**（`@wcstack/geolocation` と異なります）。
