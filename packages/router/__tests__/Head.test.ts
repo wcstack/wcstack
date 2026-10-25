@@ -154,7 +154,7 @@ describe('Head', () => {
       expect(document.head.querySelector('meta')!.getAttribute('content')).toBe('noindex');
     });
 
-    it('束縛を持つ要素は、同じでも束ねるクローンを入れ直すこと', () => {
+    it('束縛を持つ要素は、束ねたクローンを入れ直さずに残すこと', () => {
       const head = document.createElement('wcs-head') as Head;
       head.innerHTML = '<title data-wcs="textContent: title">Bound</title>';
       container.appendChild(head);
@@ -164,8 +164,20 @@ describe('Head', () => {
       other.innerHTML = '<meta name="x" content="y">';
       container.appendChild(other);
 
-      expect(document.head.querySelector('title')).not.toBe(first);
+      expect(document.head.querySelector('title')).toBe(first);
       expect(document.head.querySelector('title')!.getAttribute('data-wcs')).toBe('textContent: title');
+    });
+
+    it('束縛を持つ要素は、離れて戻っても同じクローンを使い回すこと（遷移ごとに新しいクローンを束ねない）', () => {
+      const head = document.createElement('wcs-head') as Head;
+      head.innerHTML = '<title data-wcs="textContent: title">Bound</title>';
+      container.appendChild(head);
+      const first = document.head.querySelector('title');
+
+      head.remove();
+      expect(document.head.querySelector('title')).not.toBe(first);
+      container.appendChild(head);
+      expect(document.head.querySelector('title')).toBe(first);
     });
   });
 
