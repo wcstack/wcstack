@@ -89,6 +89,15 @@ describe('jsDocTypeHint — 型ヒント', () => {
   });
 });
 
+describe('parseJsDocType — 交差型（docs/seam-apps.md、shift-desk）', () => {
+  it('A & B は形を知るために合併と同じに読み、フィールドを合わせること', () => {
+    const typedefs = new Map([['Ticket', parseJsDocType('{ id: number, subject: string }')!]]);
+    const type = parseJsDocType('(Ticket & { messages: { text: string }[] }) | null')!;
+    expect(jsDocShape(type, typedefs).fields.map((f) => f.name)).toEqual(['id', 'subject', 'messages']);
+    expect(jsDocTypeHint(type, typedefs)).toBe('null|object');
+  });
+});
+
 describe('readJsDocTypeBefore / collectJsDocTypedefs — コメントの読み出し', () => {
   it('1 行の JSDoc と、説明文を含む複数行の JSDoc の @type を読むこと', () => {
     const oneLine = `  /** @type {{ id: number }[] | null} */\n  catalog: null,`;
