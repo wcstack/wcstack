@@ -22,10 +22,10 @@ A page opened at the start of a shift and left open — a support desk, a dashbo
 - **`<wcs-timer>` ticks are not time.** A hidden tab's ticks are throttled and a sleeping laptop's are lost: a 1-second timer counts a few ticks over an hour asleep. Use the tick to read the clock (`Date.now()`) and keep the time in state; do not count ticks, and do not read `Date.now()` in a getter (the lint says `wcs/getter-untracked-read`: a getter does not re-run when time passes).
 - **`<wcs-raf>`** stops in a hidden tab (`suspended` is `true`) and reports `dt = 0` on the first frame after; `dt` and `elapsed` measure *active* time. A chart drawn against the wall clock needs the clock: integrating `dt` puts it behind by every hidden minute. A sleep with the tab visible is not a visibility change, so one frame after it can carry a `dt` of the whole sleep.
 - **`<wcs-wakelock>`** asks for the lock again when the page is visible again (the browser releases it on hide).
-- **`<wcs-sse>`** lets the browser reconnect after a drop, but not after an HTTP error (`CLOSED`) — the page reopens it. Since 4.8 (not released yet), `stale-after` notices a stream that died without being closed. Its README says how to catch up after a reconnect.
-- **`<wcs-ws>`** reconnects on a close with `auto-reconnect`. Since 4.8 (not released yet), `stale-after` notices a connection that died without being closed, and the element closes before the page may enter the back/forward cache and reconnects when it comes back.
-- **I/O nodes in a route.** `@wcstack/router` puts a route's same nodes back on every entry. Since 4.8 (not released yet), the work they start on connect uses the new route's inputs ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §23).
-- **`[wcs/command-not-ready]`** — a command refused because the element is not ready (a `send` on a closed socket) warns once per outage since 4.8 (not released yet), not once per element: a route's element lives all day.
+- **`<wcs-sse>`** lets the browser reconnect after a drop, but not after an HTTP error (`CLOSED`) — the page reopens it. Since 4.8, `stale-after` notices a stream that died without being closed. Its README says how to catch up after a reconnect.
+- **`<wcs-ws>`** reconnects on a close with `auto-reconnect`. Since 4.8, `stale-after` notices a connection that died without being closed, and the element closes before the page may enter the back/forward cache and reconnects when it comes back.
+- **I/O nodes in a route.** `@wcstack/router` puts a route's same nodes back on every entry. Since 4.8, the work they start on connect uses the new route's inputs ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §23).
+- **`[wcs/command-not-ready]`** — a command refused because the element is not ready (a `send` on a closed socket) warns once per outage since 4.8, not once per element: a route's element lives all day.
 - **`<wcs-storage>`** keeps what it saved across a reload or a discard. A duplicated tab copies session storage.
 
 ## What the page does
@@ -72,7 +72,7 @@ export default {
 };
 ```
 
-Keep the handler idempotent: several of these events arrive together after one wake.
+Keep the handler idempotent: several of these events arrive together after one wake. And refreshing the token first does not hold back the timers that came due during the sleep: they fire on wake, before the refresh returns, with the old token — a request that fails with 401 then runs again once the refresh is done (see [Tokens](#tokens)).
 
 ### The page's visibility in state
 

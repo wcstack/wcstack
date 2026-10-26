@@ -104,7 +104,7 @@ Svelte / Solid / Qwik / Angular も同じ形になる。**`whenDefined` を待�
 コンポーネントがマウントされる前**でなければ意味がない。同じコンポーネント内で待っても、
 adapter は既に諦めた後である。
 
-動的な `import("@wcstack/sse/auto")` は 4.6（未リリース）から型検査を通る。各パッケージが `/auto` の入口の
+動的な `import("@wcstack/sse/auto")` は 4.6 から型検査を通る。各パッケージが `/auto` の入口の
 `dist/auto.d.ts` を出すようになった。4.5 以前では TypeScript が `TS7016` を出すので、
 `declare module "@wcstack/*/auto";` を一度宣言する。
 
@@ -143,7 +143,7 @@ wcstack の scalar 入力（`url` / `type` / `manual` など）は属性バッ�
 | Svelte | `bind:this` で取得して代入 |
 
 確実なのは、どの framework でも **ref で要素を掴んでプロパティに代入する**ことである。
-4.6（未リリース）から、接続したときに自分の属性にオブジェクトが書かれているのを見つけた要素
+4.6 から、接続したときに自分の属性にオブジェクトが書かれているのを見つけた要素
 （`files="[object File]"`・`body="[object Object]"`）は、1 回警告する: `[wcs/input-as-attribute]`。
 
 **オブジェクトはその場で変えず、新しいものを代入する。** framework は値が変わったときに入力を書き、
@@ -194,7 +194,7 @@ Vue の `reactive`、Svelte 5 の `$state`、Solid の store、Alpine、MobX、Q
 
 Proxy は structured clone できないため、そのまま渡すと `<wcs-worker>` の `post` や
 `<wcs-broadcast>` の送信で **`DataCloneError`** になる。wcstack は never-throw なので例外は飛ばず、
-`error` / `errorInfo` に落ちる。4.6（未リリース）からは、要素が 1 回警告もする: `[wcs/post-uncloneable]`。
+`error` / `errorInfo` に落ちる。4.6 からは、要素が 1 回警告もする: `[wcs/post-uncloneable]`。
 
 渡すのは**深い**素の写しである。Vue の `toRaw()` は 1 段しか剥がさない。リアクティブな一覧の行もプロキシで、
 `filter` やスプレッドで作り直した一覧（`picked.value.filter(…)`・`[...picked.value, item]`）の行もそうなので、
@@ -292,14 +292,14 @@ framework は変化しか書かない。`trigger={refresh}` でクリックご�
 
 framework は JSX 要素の props も Vue テンプレートの束縛も書いた順に当て、React 19 は要素を文書に入れる前に
 それをする。ある入力が書かれたときに別の入力を読む要素では、1 つの `data-wcs` と同じく順が効く:
-`trigger` より前に `url` を書く。4.6（未リリース）から、`url` より先に `files` を渡された自動送信の
+`trigger` より前に `url` を書く。4.6 から、`url` より先に `files` を渡された自動送信の
 `<wcs-upload>` はそれを持っておき、url が来たときに送る。4.5 以前では `files={files} url=…` は何も送らず、
 `[wcs/command-not-ready]` で警告していた。
 
 ## 8. framework が取る名前と、要素の寿命
 
 React と Vue は `key`（と `ref`）を自分のものとして取り、要素に渡さない。JSX や Vue のテンプレートの
-`<wcs-storage key="…">` には key が無く、何も読み込まず何も保存しない: `storage-key` を書く（4.6（未リリース）
+`<wcs-storage key="…">` には key が無く、何も読み込まず何も保存しない: `storage-key` を書く（4.6
 から。key の無いままの最初の保存で、要素が `[wcs/command-not-ready]` で警告する）。4.5 以前では、ref を通して
 `el.key` を代入する。
 
@@ -330,7 +330,7 @@ prop を外すと `undefined` が書かれ（React 19）、マークアップに
 
 `wcs-validate` は HTML のページを読む: `data-wcs` の束縛、`<wcs-*>` のタグ、wcstack の script。framework の
 アプリのページにはそのどれも無く、コンポーネント（`.jsx`・`.tsx`・`.vue`・`.svelte`）は読まないので、問題なしの
-結果は framework のアプリを覆わない。4.6（未リリース）から、CLI は件数の後にそれを言う: `not read:` が
+結果は framework のアプリを覆わない。4.6 から、CLI は件数の後にそれを言う: `not read:` が
 コンポーネントを、`nothing to check:` が何も無いページを挙げる。
 
 ## 参照
