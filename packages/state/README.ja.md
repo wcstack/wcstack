@@ -3336,7 +3336,7 @@ router 自身が `<html lang>` を読む案と、リンク単位の intercept �
 
 `<wcs-state>` で組んだページは素の DOM なので、[happy-dom](https://github.com/capricorn86/happy-dom) でヘッドレスにテストできます — ブラウザ不要・ビルド不要・テスト専用 API 不要。レシピは 3 つ、いずれも書いてあるとおりに動きます。
 
-1 import で済ませたいなら [`@wcstack/testing`](../testing/README.ja.md) がレシピ 1 を `mount()` / `settle()` / `fire()` にまとめています（`<wcs-router>` も待ちます）。以下の素のレシピはそれ無しでも有効です。
+1 import で済ませたいなら [`@wcstack/testing`](../testing/README.ja.md) がレシピ 1 を `mount()` / `settle()` / `fire()` にまとめています（`<wcs-router>` も待ちます）。以下の素のレシピはそれ無しでも有効です。自分のファイルにある状態（`<wcs-state src="./state.js">`）は、4.9（未リリース）から `mount()` の `resolveModule` オプションで読み込めます — happy-dom の下では `src` は `http:` の URL で、Node のモジュールローダはそれを読みません。インラインの状態は、Node の下では相対モジュールを `import` できません。
 
 ### 1. vitest + happy-dom
 
