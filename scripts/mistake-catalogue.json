@@ -986,6 +986,52 @@
       "effect": { "en": "Every event changes the url, and the element closes and reopens the stream: 15 connections in 30 seconds. The data stays right, so nothing shows it.", "ja": "イベントのたびに url が変わり、要素はストリームを閉じて開き直す: 30 秒で 15 本の接続。データは正しいままなので、何も気づかせない。" },
       "disposition": "runtime-report",
       "note": { "en": "The sse README's recipe was this shape until the 4.8 docs. The element could warn when the url of an open stream changes several times within seconds.", "ja": "sse の README の作法が 4.8 の文書までこの形だった。開いたストリームの url が数秒のうちに何度も変わったら、要素が警告できる。" }
+    },
+    {
+      "id": "leave-confirm-boolean",
+      "runtime": "designed-out", "harm": "degraded",
+      "mistake": { "en": "Binds `<wcs-router>`'s `leaveConfirm` to a boolean (`leaveConfirm: dirty`).", "ja": "`<wcs-router>` の `leaveConfirm` を真偽値に束ねる（`leaveConfirm: dirty`）。" },
+      "effect": { "en": "Up to 4.8 the boolean became the question's text: every navigation asked `confirm(\"false\")` while the form was clean. Since 4.9 `true` asks with a default message and `false` asks nothing.", "ja": "4.8 までは真偽値が問いの文言になり、フォームがきれいな間も遷移のたびに `confirm(\"false\")` が出た。4.9 から `true` は既定の文言で聞き、`false` は聞かない。" }
+    },
+    {
+      "id": "fetch-status-watch-for-completion",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Tells that a request finished from a `$watch` on `<wcs-fetch>`'s `status` (or `value`).", "ja": "リクエストが終わったことを、`<wcs-fetch>` の `status`（や `value`）への `$watch` で知る。" },
+      "effect": { "en": "Both are state outputs: the same value written again fires nothing. The first `DELETE` answered `204` moved the page on; the second did not, and the form stayed on the deleted entry.", "ja": "どちらも state の出力で、同じ値をもう一度書いても何も発火しない。`204` を返した 1 回目の `DELETE` ではページが進んだが、2 回目は進まず、フォームは消した記録のままだった。" },
+      "disposition": "docs-only",
+      "note": { "en": "The fetch README (4.9 docs): take the response event (`eventToken.value` + `$on`, for every response) or `loading` going back to `false`.", "ja": "fetch の README（4.9 の文書）: 応答のイベント（`eventToken.value` ＋ `$on`、応答ごと）か、`loading` が `false` に戻るのを受ける。" }
+    },
+    {
+      "id": "fetch-value-as-current-item",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Reads `<wcs-fetch>`'s `value` as the item the page shows now, right after its `url` changed.", "ja": "`url` が変わった直後の `<wcs-fetch>` の `value` を、今ページが出している項目として読む。" },
+      "effect": { "en": "`value` is the last response until the next one lands — while the new request is in flight, and after an empty `url` too: an edit form filled itself from the previous entry and saved its stale `version`.", "ja": "`value` は次の応答が届くまで前の応答のまま — 新しい要求が進む間も、空の `url` の後も: 編集フォームは前の記録で埋まり、古い `version` で保存した。" },
+      "disposition": "docs-only",
+      "note": { "en": "The fetch README (4.9 docs): check that the response is for the item shown (`v && v.id === this.entryId`).", "ja": "fetch の README（4.9 の文書）: 応答が出している項目のものか確かめる（`v && v.id === this.entryId`）。" }
+    },
+    {
+      "id": "date-only-string-as-utc",
+      "runtime": "silent", "harm": "wrong-place",
+      "mistake": { "en": "Makes the `Date` for the `date` filter with `new Date(\"2026-10-01\")` from a date-only string.", "ja": "`date` フィルタの `Date` を、日付だけの文字列から `new Date(\"2026-10-01\")` で作る。" },
+      "effect": { "en": "A date-only string is parsed as midnight UTC: west of Greenwich every date shows a day early, and an entry of 1 November is labelled 31 October on the November page.", "ja": "日付だけの文字列は UTC の真夜中として読まれる: グリニッジより西では、どの日付も 1 日早く出て、11 月 1 日の記録は 11 月のページで 10 月 31 日と書かれる。" },
+      "disposition": "docs-only",
+      "note": { "en": "Since 4.9 the date filters' message for a raw date-only string says to write `new Date(y, m - 1, d)`; once the page makes the `Date` itself, nothing can tell.", "ja": "4.9 から、日付だけの文字列をそのまま渡したときの日付のフィルタの文面が `new Date(y, m - 1, d)` と言う。ページが自分で `Date` を作った後は、何も見分けられない。" }
+    },
+    {
+      "id": "session-in-state-only",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Keeps the session in the state only, while the route guard reads it from storage.", "ja": "セッションを state にだけ置き、ルートのガードはストレージから読む。" },
+      "effect": { "en": "The login succeeds and the header shows the member, but the guard finds no session and the page stays on the login form; after a reload the member is logged out.", "ja": "ログインは成功してヘッダに会員が出るが、ガードはセッションを見つけず、ページはログインのフォームに留まる。読み直すとログアウトしている。" },
+      "disposition": "docs-only",
+      "note": { "en": "The router README and the skill: a guard cannot see the state; keep the session in a `<wcs-storage>` key and read it inside the guard.", "ja": "router の README とスキル: ガードは state を見られない。セッションは `<wcs-storage>` のキーに置き、ガードの中で読む。" }
+    },
+    {
+      "id": "session-changed-in-another-tab",
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Reacts to the session only on navigation, when another tab of the same browser logs out or logs in as someone else.", "ja": "同じブラウザの別のタブがログアウトしたり別の人でログインしたりしたとき、セッションの変化に遷移のときにしか反応しない。" },
+      "effect": { "en": "The `<wcs-storage>` event clears the session, but the open page keeps showing the member's data until the next navigation; a login elsewhere silently makes the tab someone else's.", "ja": "`<wcs-storage>` のイベントがセッションを消しても、開いたページは次の遷移まで会員のデータを出し続ける。よそのログインで、タブは黙って別の人のものになる。" },
+      "disposition": "docs-only",
+      "note": { "en": "examples/router-auth shows one `$watch` on the token for every session change, here or in another tab; the skill does not say it yet.", "ja": "examples/router-auth は、ここでも別のタブでも、セッションのどの変化も token への `$watch` 1 つで扱う形を示す。スキルはまだ言わない。" }
     }
   ],
   "uncounted": [
