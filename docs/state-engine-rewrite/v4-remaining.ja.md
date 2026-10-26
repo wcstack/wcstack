@@ -1378,3 +1378,30 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す（4.6.0 からの持ち越し）。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.8.0 の公開（2026-10-26）
+
+- 中身: minor。docs/v4-direction-2026-10.md の下での 6 回目の minor で、その 2 巡目（§3.2）の最初の継ぎ目アプリ `shift-desk` — シフトの間開いたままのサポート窓口の画面 — から（docs/seam-apps.md）。作者の決定 5 件は v4-direction §5.7。リリースの単位は「1 本で minor 1 回、そろったらすぐ出す」（§5.6 の 2、著者が推奨の「2 週間に 1 回」を退けた）。PR #536〜#543（番号順にマージ。CHANGELOG の `[Unreleased]` と `WebSocketCore` の `_onOpen` の衝突は両方を残して解いた）:
+  - #536 方針: 2 巡目の候補と順、止める目安、1 本につき変える軸は 1 つ、core の予算（残り 317 B は後付けに置く）、§5.6。
+  - #537 router: `<wcs-head>` の束ねた子のクローンを子ごとに 1 つ持ち、入れ直す。遷移のたびに新しいクローンを binder に渡していて、binder に解く口が無い（binder の設計書 §6-2 の未解決）ので、束ねた `<title>` で遷移ごとに 2 ノード残っていた。core は 0 B。
+  - #538 I/O ノード（17 パッケージ）: 接続時の仕事は 1 つのマイクロタスクで、そのときの入力で決める（timing-and-firing-contract §23）。router が入れ直すルートの同じノードは、state が次のルートの入力を書く前に接続する — ルートの `<wcs-ws>` は前のチケットのチャットへつないでから閉じていた。最初の接続で結果を同じタスクで使う storage・broadcast・worker はその場のまま。明示のコマンドは判断を引き取る（停止は止めたまま、`pause()` は開始してから一時停止）。棚卸しとパッケージごとの実装は、サブエージェント 3 人で並行。
+  - #539 lint: getter の `@returns` と JSDoc の交差型を読む。既定引数が呼び出しのメソッドを見失わない。アプリの誤報 10 件と examples/prod-booking の 5 件が消えた。
+  - #540 `stale-after`（`<wcs-sse>` / `<wcs-ws>`、任意）と、`<wcs-ws>` の back/forward cache（persisted の `pagehide` で閉じてその場で知らせ、`pageshow` でつなぎ直す — `WebSocketCore.suspend()`）。sse の README の追いつきの作法（イベントごとに開き直していた）、諦めたストリームの見分け方（`errorInfo`）、URL のトークン。
+  - #541 文書: docs/long-lived-pages.md（日英、新規）、存在しない `debounce` フィルタの例（notification・speech・I/O ノードの手引き）、idle の例。
+  - #542 `[wcs/command-not-ready]` は不調 1 回につき 1 回、許可なしの `<wcs-idle>` の `start()` も警告（分離した作業ツリーのサブエージェント）。
+  - #543 記録: seam-apps（日英）、v4-direction §5.7、誤りの目録（108 → 119 項目）。
+- リリースの前: CI は PR でしか走らないので、衝突を解いた後の main の組み合わせを手元で確かめた — 全パッケージを src からビルドして e2e 384/384。`@wcstack/typescript` のビルドの rollup が出力の後に終わらず（CPU 0 のまま）、PID で止めた。この環境だけの症状で、CI の Linux では同じビルドが通る。
+- 準備: PR #544（merge commit 4c82f23c）で CHANGELOG を `[4.8.0] — 2026-10-26` として締め（要約と Upgrading 3 項目）、固定版 18 か所を 4.8.0 にした。印の除去は 42 README・70 行の見込み（ほかの版の印は無し）。
+- main で `minor`（run 40300636847）。成功した: 版を上げたコミット 08dbe832、タグ `v4.8.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed・Documentation を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い。`@wcstack/server` の依存は `@wcstack/state` 4.8.0。公開物に `stale-after`・`pagehide`・idle の警告が入っている。`wcstack/auto` 4.8.0 の integrity は `sha384-luQNsFQ18iKvnjSBUHt/kYkc5VZk2c2WwfORG5JdTrWQDtS1JyntOHntZppHWyQn`。
+- 公開後の作業（同日）:
+  - PR #545（merge commit e10619a6）: サイズの基準値を 4.8.0 の dist で取り直した（state の src は 4.7.0 から変わっていない。devtools が版の文字列で 1 B、`core.min.js` は 20,163 B のまま、残り 317 B — 2 巡目の core の予算は使っていない）。結合の基準値は変わらない。CLAUDE.md / AGENTS.md の版、拡張を 2.8.0 に。
+  - VS Code 拡張 2.8.0: e10619a6 から、リポジトリの隣の作業ツリーで `npm run package` した vsix（890 ファイル — 2.7.0 と一覧が同じ、テスト 1,323 件）。scratchpad の下では作業ツリーのファイル名が長すぎて作れなかった。publish は著者が実行した。Marketplace から取った vsix は手元のものと SHA-256 が一致（`5014efb4…`）。注釈付きのタグ `vscode-wcs-v2.8.0`（e10619a6）。
+  - wcstack-skill: PR #48（merge commit 0578e98）で、接続時の判断のマイクロタスク、`stale-after`、`<wcs-ws>` と bfcache、不調 1 回につき 1 回、開いたままのページ、SSE の追いつきと諦めたストリーム、idle の `active`、失敗の一覧の 3 行（`debounce` フィルタ・`$connectedCallback` だけの取り直し・刻みで時間）を追随し、版の印と CDN の固定を 4.8.0 にした。注釈付きのタグ `v4.8.0`。
+  - examples への取り込み: PR #546。`examples/shift-desk/`（自分の `server.js` と `ws`、`WCS_LOCAL=1`）。4.8.0 で要らなくなった回避策 5 つ（接続の見張り、チャットの開閉、静的な `<title>`、`readyState === 2`、idle の `active`）を外した。spec 12 件（ポート 5700 + 10 × index）、bfcache の試験はフル版の Chromium を試験の中で起動する。取り込みで見つかったもの: docs/ の未リリースの印はリリースで確かめられも外されもしない（`scripts/unreleased-marks.mjs` は README だけを読む）— framework-adapter-integration に 4.6 の印が 4.6.0 から残っていた。PR の中で外した。手引きの起き上がりの処理に、スリープ中に期限が来たタイマーは古いトークンで動くことを足した。
+- 残り:
+  - LP の追随（今回は頼まれていない）。
+  - `scripts/unreleased-marks.mjs` を docs/ に広げるか（文書の中で印そのものを説明する文 — seam-apps・v4-direction — を除く工夫が要る）。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
