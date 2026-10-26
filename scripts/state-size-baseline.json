@@ -18,7 +18,7 @@
   "split/features/devtools.js (beyond the core)": {
     "files": 1,
     "bytes": 5700,
-    "gzip": 2533
+    "gzip": 2534
   },
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
