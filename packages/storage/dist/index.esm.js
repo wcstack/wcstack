@@ -175,7 +175,7 @@ class StorageCore extends EventTarget {
     _key = "";
     /** Whether `[wcs/storage-unserializable]` was said for this element. */
     _toldUnkept = false;
-    /** Whether `[wcs/command-not-ready]` was said for this element (an operation without a key). */
+    /** Whether `[wcs/command-not-ready]` was said in this outage (an operation without a key; a key resets it). */
     _toldNoKey = false;
     _type = "local";
     _storageListener = null;
@@ -247,6 +247,9 @@ class StorageCore extends EventTarget {
         // non-string assignment from poisoning the cross-tab `e.key !== _key`
         // comparison; empty keys are still rejected at operation time.
         this._key = String(value);
+        // ready again: an operation refused in the next outage is said again
+        if (this._key)
+            this._toldNoKey = false;
     }
     get type() {
         return this._type;
@@ -407,15 +410,17 @@ class StorageCore extends EventTarget {
     }
     // An operation without a key does nothing, and only a page that binds `error` heard of it. In React and
     // Vue the usual cause is `key` itself: both keep it for themselves and never hand it to the element
-    // (docs/seam-apps.md, fw-inventory). Said once per element (the I/O command policy,
-    // docs/v4-direction-2026-10.md).
+    // (docs/seam-apps.md, fw-inventory). Said once per outage (the I/O command policy,
+    // docs/v4-direction-2026-10.md): a key resets it. Once per element was once per page life — a
+    // route puts the same element back on every entry, so the next outage went unsaid
+    // (docs/seam-apps.md, shift-desk).
     _warnNoKey(operation) {
         if (this._toldNoKey)
             return;
         this._toldNoKey = true;
         console.warn(`[@wcstack/storage] [wcs/command-not-ready] ${operation}() was refused: there is no key, so nothing is ` +
             "loaded or stored. It goes to `error` too. Give the element a `key` — in React and Vue, which keep `key` " +
-            "for themselves, write `storage-key`. (Said once per element.)", this._target);
+            "for themselves, write `storage-key`. (Said once until the element has a key again.)", this._target);
     }
     // JSON keeps none of these: a Blob or File is stored as {}, a Map or Set as {}, binary
     // data as an object of its bytes. Saved without a word, they came back empty after a
@@ -674,6 +679,10 @@ class Storage extends HTMLElement {
     // not reassign it — there is nothing async to wait for, unlike <wcs-fetch>.
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
+    // connectedCallback ran before (a reconnect defers its load: _scheduleLoad)
+    _everConnected = false;
+    // _scheduleLoad's microtask is waiting
+    _loadPending = false;
     constructor() {
         super();
         this._core = new StorageCore(this);
@@ -889,7 +898,8 @@ class Storage extends HTMLElement {
             // syncs the Core) only runs for non-manual mode with a non-empty key — the
             // key now in effect, so removing `key` falls back to `storage-key`.
             this._syncCore();
-            if (this.key && !this.manual) {
+            // a reconnect's load is waiting for its microtask: it reads the key in effect then
+            if (this.key && !this.manual && !this._loadPending) {
                 this.load();
             }
         }
@@ -908,8 +918,20 @@ class Storage extends HTMLElement {
         if (config.autoTrigger) {
             registerAutoTrigger();
         }
-        if (!this.manual && this.key) {
-            this.load();
+        if (!this._everConnected) {
+            // The first connect loads at once: a binding attached in the same task (a route's content
+            // handed to @wcstack/state right after its insertion) pulls `value` and expects it loaded.
+            this._everConnected = true;
+            if (!this.manual && this.key) {
+                this.load();
+            }
+        }
+        else {
+            // A reconnect decides in a microtask, with the key then (timing-and-firing-contract §23).
+            // @wcstack/router puts the same nodes back on a parameter-only navigation, and the state
+            // writes the new route's key in a microtask: loading at once read the previous key's value
+            // and published it (docs/seam-apps.md, shift-desk).
+            this._scheduleLoad();
         }
         // Always bind the cross-tab watcher to the Shell's current key/type before
         // starting sync. In paths where load()/save() never run (e.g. manual mode,
@@ -922,6 +944,17 @@ class Storage extends HTMLElement {
     }
     disconnectedCallback() {
         this._core.stopSync();
+    }
+    _scheduleLoad() {
+        if (this._loadPending)
+            return;
+        this._loadPending = true;
+        queueMicrotask(() => {
+            this._loadPending = false;
+            if (this.isConnected && !this.manual && this.key) {
+                this.load();
+            }
+        });
     }
 }
 

@@ -215,6 +215,8 @@ declare class WcsDefined extends HTMLElement {
     private _connectedCallbackPromise;
     private _internals;
     private _watching;
+    private _observePending;
+    private _resolveWatch;
     static get observedAttributes(): string[];
     constructor();
     get debugStates(): string[];
@@ -237,7 +239,7 @@ declare class WcsDefined extends HTMLElement {
     connectedCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
-    private _observe;
+    private _scheduleObserve;
 }
 
 declare global {

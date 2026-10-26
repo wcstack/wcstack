@@ -308,6 +308,7 @@ declare class WcsResize extends HTMLElement {
     private _trigger;
     private _connectedCallbackPromise;
     private _internals;
+    private _observePending;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
     get debugStates(): string[];
@@ -338,6 +339,7 @@ declare class WcsResize extends HTMLElement {
     private _parseBox;
     private _options;
     private _onChange;
+    private _scheduleObserve;
     connectedCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;

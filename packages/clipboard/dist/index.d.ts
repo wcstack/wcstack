@@ -304,6 +304,7 @@ declare class WcsClipboard extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _monitorPending;
     private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
@@ -313,10 +314,11 @@ declare class WcsClipboard extends HTMLElement {
     get monitor(): boolean;
     /**
      * Reflects the `monitor` boolean attribute only — it does NOT start or stop
-     * monitoring by itself. The attribute is read at connect time (see
-     * connectedCallback); toggling `el.monitor` after connect just flips the
-     * attribute. To start/stop monitoring imperatively, call `startMonitor()` /
-     * `stopMonitor()`.
+     * monitoring by itself. The attribute is read at connect time — in the
+     * microtask connectedCallback queues, so a write in the same task as the
+     * insertion still counts (see _scheduleMonitor); toggling `el.monitor` after
+     * that just flips the attribute. To start/stop monitoring imperatively, call
+     * `startMonitor()` / `stopMonitor()`.
      *
      * `null` removes the attribute (the default, off); `undefined` restores the
      * attribute the element started with (wc-bindable producer guidance P1;
@@ -341,6 +343,7 @@ declare class WcsClipboard extends HTMLElement {
     startMonitor(): void;
     stopMonitor(): void;
     connectedCallback(): void;
+    private _scheduleMonitor;
     disconnectedCallback(): void;
 }
 

@@ -171,6 +171,10 @@ class WebSocketCore extends EventTarget {
     _protocols = undefined;
     _binaryType = "blob";
     _intentionalClose = false;
+    // stale-after (ms, 0 = off): the time of the last open / message, and the watchdog's timer
+    _staleAfter = 0;
+    _lastActivity = 0;
+    _staleTimer = null;
     // Generation guard (§3.4): bumped on dispose() and at every connect(). A socket
     // event (open/message/error/close) or a scheduled reconnect that fires after
     // dispose / a superseding connect() carries a stale `gen` and MUST NOT write
@@ -185,9 +189,11 @@ class WebSocketCore extends EventTarget {
     // so readiness is immediate.
     _ready = Promise.resolve();
     /**
-     * Whether `[wcs/command-not-ready]` was said for this element: a `send()` refused because the
+     * Whether `[wcs/command-not-ready]` was said in this outage: a `send()` refused because the
      * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): the socket opening
+     * resets it. Once per element was once per page life — a route puts the same element back on
+     * every entry, so the next outage's lost message went unsaid (docs/seam-apps.md, shift-desk).
      */
     _toldNotReady = false;
     constructor(target) {
@@ -214,6 +220,16 @@ class WebSocketCore extends EventTarget {
         this._setConnected(false);
         this._setLoading(false);
         this._setReadyState(WS_CLOSED);
+    }
+    /**
+     * Closes like dispose() — the end is published at once — and says whether a connection was
+     * open, opening or about to reopen (auto-reconnect). The Shell uses it when the page may enter
+     * the back/forward cache, and reconnects on the way back.
+     */
+    suspend() {
+        const live = this._ws !== null || this._reconnectTimer !== null;
+        this.dispose();
+        return live;
     }
     get message() {
         return this._message;
@@ -324,6 +340,7 @@ class WebSocketCore extends EventTarget {
         this._reconnectInterval = options.reconnectInterval ?? 3000;
         this._maxReconnects = options.maxReconnects ?? Infinity;
         this._binaryType = options.binaryType ?? "blob";
+        this._staleAfter = options.staleAfter !== undefined && options.staleAfter > 0 ? options.staleAfter : 0;
         this._reconnectCount = 0;
         this._intentionalClose = false;
         this._doConnect();
@@ -343,11 +360,12 @@ class WebSocketCore extends EventTarget {
             return;
         this._toldNotReady = true;
         console.warn("[@wcstack/websocket] [wcs/command-not-ready] send() was refused: the WebSocket is not connected, so the message is lost. " +
-            "It goes to `error` too. Send once `connected` is true. (Said once per element.)", this._target);
+            "It goes to `error` too. Send once `connected` is true. (Said once until the WebSocket connects again.)", this._target);
     }
     close(code, reason) {
         this._intentionalClose = true;
         this._clearReconnectTimer();
+        this._clearStaleTimer();
         if (this._ws) {
             this._ws.close(code, reason);
         }
@@ -382,6 +400,10 @@ class WebSocketCore extends EventTarget {
         if (this._socketGen !== this._gen)
             return;
         this._reconnectCount = 0;
+        // ready again: a send refused in the next outage is said again
+        this._toldNotReady = false;
+        this._lastActivity = Date.now();
+        this._armStale();
         this._setLoading(false);
         this._setConnected(true);
         this._setReadyState(WS_OPEN);
@@ -389,6 +411,7 @@ class WebSocketCore extends EventTarget {
     _onMessage = (event) => {
         if (this._socketGen !== this._gen)
             return;
+        this._lastActivity = Date.now();
         let data = event.data;
         // JSONの自動パース
         if (typeof data === "string") {
@@ -431,6 +454,50 @@ class WebSocketCore extends EventTarget {
             this._doConnect();
         }, this._reconnectInterval);
     }
+    // stale-after の見張り。開いている間、最後の open / メッセージから staleAfter ms 何も届かなければ、
+    // 接続は失われたとみなす（docs/seam-apps.md、shift-desk: 閉じられずに死んだ接続 — スリープ・NAT・
+    // proxy — に WebSocket は気づかず OPEN のまま、ページは "connected" と言い続けた）。タイマーは 1 本
+    // だけ持ち、満了のたびに最後の活動からの残りで張り直す（メッセージごとに張り直さない）。
+    _armStale() {
+        if (this._staleAfter === 0 || this._staleTimer !== null)
+            return;
+        this._staleTimer = setTimeout(this._checkStale, this._staleAfter);
+    }
+    _checkStale = () => {
+        this._staleTimer = null;
+        const ws = this._ws;
+        if (ws === null || this._readyState !== WS_OPEN)
+            return;
+        const idle = Date.now() - this._lastActivity;
+        if (idle < this._staleAfter) {
+            this._staleTimer = setTimeout(this._checkStale, this._staleAfter - idle);
+            return;
+        }
+        // 失われたとみなし、異常なクローズと同じに扱う。半開きの TCP では閉じる手順が終わらないので、
+        // ソケットはその場で手放し（イベントは外す）、終わりと理由を知らせ、auto-reconnect の規則で
+        // つなぎ直す。
+        this._removeListeners();
+        this._ws = null;
+        try {
+            ws.close(4000, "stale");
+        }
+        catch {
+            // a socket that cannot be closed any more is gone anyway
+        }
+        this._setConnected(false);
+        this._setLoading(false);
+        this._setReadyState(WS_CLOSED);
+        this._setError({ message: `No message for ${this._staleAfter} ms: the connection is treated as lost.` }, WCS_WEBSOCKET_ERROR_CODE.ConnectionError);
+        if (!this._intentionalClose && this._autoReconnect && this._reconnectCount < this._maxReconnects) {
+            this._scheduleReconnect();
+        }
+    };
+    _clearStaleTimer() {
+        if (this._staleTimer !== null) {
+            clearTimeout(this._staleTimer);
+            this._staleTimer = null;
+        }
+    }
     _clearReconnectTimer() {
         if (this._reconnectTimer !== null) {
             clearTimeout(this._reconnectTimer);
@@ -448,6 +515,7 @@ class WebSocketCore extends EventTarget {
     }
     _closeInternal() {
         this._clearReconnectTimer();
+        this._clearStaleTimer();
         if (this._ws) {
             this._removeListeners();
             if (this._ws.readyState === WS_OPEN || this._ws.readyState === WS_CONNECTING) {
@@ -629,6 +697,7 @@ class WcsWebSocket extends HTMLElement {
             { name: "reconnectInterval", attribute: "reconnect-interval" },
             { name: "maxReconnects", attribute: "max-reconnects" },
             { name: "binaryType", attribute: "binary-type" },
+            { name: "staleAfter", attribute: "stale-after" },
             { name: "manual", attribute: "manual" },
             { name: "trigger" },
             { name: "send" },
@@ -649,6 +718,8 @@ class WcsWebSocket extends HTMLElement {
     // connectedCallback より先に（isConnected のまま）呼ばれるので、そこで接続すると
     // connectedCallback の接続と合わせて 2 本になる。初回の接続は connectedCallback が持つ。
     _attached = false;
+    // _scheduleConnect のマイクロタスクが待っている間 true
+    _connectPending = false;
     constructor() {
         super();
         this._core = new WebSocketCore(this);
@@ -760,6 +831,15 @@ class WcsWebSocket extends HTMLElement {
     set binaryType(value) {
         reflectAttribute(this, "binary-type", value);
     }
+    // 何も届かない時間（ms）がこれを超えた開いている接続を、失われたとみなす（0・未指定・数でない
+    // 値は見張らない）。接続オプションの 1 つで、接続するときに読む。
+    get staleAfter() {
+        const parsed = Number(this.getAttribute("stale-after"));
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+    set staleAfter(value) {
+        reflectAttribute(this, "stale-after", value);
+    }
     get manual() {
         return this.hasAttribute("manual");
     }
@@ -819,6 +899,8 @@ class WcsWebSocket extends HTMLElement {
     }
     // --- Public methods ---
     connect() {
+        // an explicit connect (trigger included) or close takes the pending connect-time decision
+        this._connectPending = false;
         const protocols = this.protocols
             ? this.protocols.split(",").map(p => p.trim()).filter(Boolean)
             : undefined;
@@ -828,12 +910,14 @@ class WcsWebSocket extends HTMLElement {
             reconnectInterval: this.reconnectInterval,
             maxReconnects: this.maxReconnects,
             binaryType: this.binaryType,
+            staleAfter: this.staleAfter,
         });
     }
     sendMessage(data) {
         this._core.send(data);
     }
     close(code, reason) {
+        this._connectPending = false;
         this._core.close(code, reason);
     }
     // --- Lifecycle ---
@@ -844,8 +928,25 @@ class WcsWebSocket extends HTMLElement {
         // は何もしない。connectedCallback より前（upgrade 中・DOM の外）の変化は、
         // connectedCallback がそのときの url で 1 回だけ接続する。
         if (name === "url" && oldValue !== newValue && this._attached && !this.manual && newValue) {
-            this.connect();
+            this._scheduleConnect();
         }
+    }
+    // 接続の判断はマイクロタスクで、そのときの url / manual で 1 回だけ行う
+    // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+    // params から state が url を書くのはマイクロタスク — その場で接続すると、前の url へ
+    // つないでから閉じていた（docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる。
+    _scheduleConnect() {
+        if (this._connectPending)
+            return;
+        this._connectPending = true;
+        queueMicrotask(() => {
+            if (!this._connectPending)
+                return; // an explicit command took the decision meanwhile
+            this._connectPending = false;
+            if (this._attached && !this.manual && this.url) {
+                this.connect();
+            }
+        });
     }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）。
@@ -859,13 +960,36 @@ class WcsWebSocket extends HTMLElement {
         // observe() は command-driven node では ready を返す no-op（§3.5）。SSR は
         // connectedCallbackPromise を await して初期スナップショットを取れる。
         this._connectedCallbackPromise = this._core.observe();
-        if (!this.manual && this.url) {
-            this.connect();
-        }
         this._attached = true;
+        window.addEventListener("pagehide", this._onPageHide);
+        window.addEventListener("pageshow", this._onPageShow);
+        this._scheduleConnect();
     }
+    // back/forward cache（docs/seam-apps.md、shift-desk）: 開いた WebSocket はページを cache から外す
+    // （Chromium は復元しない — 理由 "websocket"）。ページが cache に入りうるとき（pagehide の persisted）
+    // 閉じて終わりをその場で知らせ、戻ったとき（pageshow の persisted）、閉じる前に接続していたなら
+    // つなぎ直す。ページが自分で閉じると、閉じた知らせは復元の後に届き、pageshow の時点の state は
+    // まだ接続中だった。
+    _reopenOnShow = false;
+    _onPageHide = (event) => {
+        if (!event.persisted)
+            return;
+        if (this._core.suspend())
+            this._reopenOnShow = true;
+    };
+    _onPageShow = (event) => {
+        if (!event.persisted || !this._reopenOnShow)
+            return;
+        this._reopenOnShow = false;
+        // (the listeners live only while the element is connected)
+        if (this.url)
+            this.connect();
+    };
     disconnectedCallback() {
         this._attached = false;
+        this._reopenOnShow = false;
+        window.removeEventListener("pagehide", this._onPageHide);
+        window.removeEventListener("pageshow", this._onPageShow);
         // dispose() が _gen を bump して進行中のソケット/再接続を無効化し、close() する。
         this._core.dispose();
     }

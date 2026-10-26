@@ -219,7 +219,7 @@ declare class NotificationCore extends EventTarget {
     private _gen;
     private _ready;
     private _idSeq;
-    /** Whether `[wcs/command-not-ready]` was said for this element. */
+    /** Whether `[wcs/command-not-ready]` was said in this outage (reset when the permission becomes granted). */
     private _toldNotReady;
     private _constructed;
     private _swTags;

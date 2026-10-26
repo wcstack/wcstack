@@ -304,6 +304,9 @@ declare class WcsGeolocation extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _connectResolve;
+    private _locatePending;
+    private _watchCancelled;
     private _internals;
     constructor();
     get debugStates(): string[];
@@ -337,6 +340,7 @@ declare class WcsGeolocation extends HTMLElement {
     watchPosition(): void;
     clearWatch(): void;
     private _options;
+    private _scheduleLocate;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }

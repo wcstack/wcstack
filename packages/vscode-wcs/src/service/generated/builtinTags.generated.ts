@@ -1067,6 +1067,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "withCredentials": "with-credentials",
       "events": "events",
       "raw": "raw",
+      "staleAfter": "stale-after",
       "manual": "manual",
       "trigger": null
     },
@@ -1257,6 +1258,7 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "reconnectInterval": "reconnect-interval",
       "maxReconnects": "max-reconnects",
       "binaryType": "binary-type",
+      "staleAfter": "stale-after",
       "manual": "manual",
       "trigger": null,
       "send": null

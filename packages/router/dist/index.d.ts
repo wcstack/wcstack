@@ -792,6 +792,10 @@ declare class Head extends HTMLElement {
     disconnectedCallback(): void;
     get childElementArray(): Element[];
     /**
+     * head へ入れる子のクローン。束縛を持つ子は、束ねたクローンを使い回す（boundClones）
+     */
+    private _cloneOf;
+    /**
      * 要素の一意キーを生成（WeakMap でキャッシュ）
      */
     private _getKey;

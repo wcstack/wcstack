@@ -108,7 +108,7 @@ declare class StorageCore extends EventTarget {
     private _key;
     /** Whether `[wcs/storage-unserializable]` was said for this element. */
     private _toldUnkept;
-    /** Whether `[wcs/command-not-ready]` was said for this element (an operation without a key). */
+    /** Whether `[wcs/command-not-ready]` was said in this outage (an operation without a key; a key resets it). */
     private _toldNoKey;
     private _type;
     private _storageListener;
@@ -157,6 +157,8 @@ declare class Storage extends HTMLElement {
     private _trigger;
     private _connectedCallbackPromise;
     private _internals;
+    private _everConnected;
+    private _loadPending;
     constructor();
     get debugStates(): string[];
     private _initInternals;
@@ -186,6 +188,7 @@ declare class Storage extends HTMLElement {
     attributeChangedCallback(name: string, _oldValue: string | null, _newValue: string | null): void;
     connectedCallback(): void;
     disconnectedCallback(): void;
+    private _scheduleLoad;
 }
 
 /**

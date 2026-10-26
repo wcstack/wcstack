@@ -798,6 +798,13 @@ class WcsGeolocation extends HTMLElement {
     _core;
     _trigger = false;
     _connectedCallbackPromise = Promise.resolve();
+    // connectedCallback が張った connectedCallbackPromise を解く関数。接続時の判断を下す
+    // _scheduleLocate のマイクロタスクが（その前に外れたときは disconnectedCallback が）呼ぶ。
+    _connectResolve = null;
+    // _scheduleLocate のマイクロタスクが待っている間 true
+    _locatePending = false;
+    // 接続時の判断待ちに clearWatch() が呼ばれたら true — その判断は watch でも監視を始めない
+    _watchCancelled = false;
     _internals = null;
     constructor() {
         super();
@@ -943,9 +950,10 @@ class WcsGeolocation extends HTMLElement {
     }
     // wc-bindable connectedCallbackPromise protocol: resolves once the connect-time
     // acquisition settles, so SSR (@wcstack/server render.ts) waits for the first
-    // fix before snapshotting the HTML. Mirrors Fetch.connectedCallbackPromise. In
-    // `watch` / `manual` modes there is no one-shot connect-time fix to await, so it
-    // stays the default resolved promise.
+    // fix before snapshotting the HTML. Mirrors Fetch.connectedCallbackPromise. The
+    // connect-time decision runs in a microtask (_scheduleLocate), so the promise is
+    // armed in connectedCallback and settled there; in `watch` / `manual` modes there
+    // is no one-shot connect-time fix to await, so it resolves once the decision ran.
     get connectedCallbackPromise() {
         return this._connectedCallbackPromise;
     }
@@ -980,6 +988,12 @@ class WcsGeolocation extends HTMLElement {
         this._core.watch(this._options());
     }
     clearWatch() {
+        // 接続時の判断待ちなら、その連続監視を取り消す — 同じタスクの append → clearWatch() で、
+        // 後のマイクロタスクが監視を始めないように（判断が同期だった頃は、始めた監視を
+        // clearWatch() が止めていた）。一発取得は以前と同じく取り消さない。入れ直せば、次の
+        // 判断は watch に従う
+        if (this._connectResolve !== null)
+            this._watchCancelled = true;
         this._core.clearWatch();
     }
     // --- Internal ---
@@ -991,6 +1005,42 @@ class WcsGeolocation extends HTMLElement {
         };
     }
     // --- Lifecycle ---
+    // 接続時の取得の判断はマイクロタスクで、そのときの manual / watch / high-accuracy /
+    // timeout / maximum-age で 1 回だけ行う（timing-and-firing-contract §23）。router は遷移で
+    // 同じノードを入れ直し、新しいルートの params から state が入力を書くのはマイクロタスク —
+    // その場で取得すると、前の入力で getCurrentPosition / watchPosition を起こしていた
+    // （docs/seam-apps.md、shift-desk）。
+    _scheduleLocate() {
+        if (this._locatePending)
+            return;
+        this._locatePending = true;
+        queueMicrotask(() => {
+            this._locatePending = false;
+            const resolveConnect = this._connectResolve;
+            this._connectResolve = null;
+            // 判断の前に外れた要素は何もしない（disconnectedCallback が解いて null にした）
+            if (resolveConnect === null)
+                return;
+            const watchCancelled = this._watchCancelled;
+            this._watchCancelled = false;
+            if (this.manual) {
+                resolveConnect();
+            }
+            else if (this.watch) {
+                // `watch` attribute selects the default phase: continuous monitoring vs a
+                // single fix on connect. 判断待ちに clearWatch() が呼ばれていたら始めない
+                if (!watchCancelled)
+                    this.watchPosition();
+                resolveConnect();
+            }
+            else {
+                // Track only the one-shot connect-time fix so SSR can await it.
+                // getCurrentPosition() never rejects (failures surface via `error`), so no
+                // .catch() is needed.
+                resolveConnect(this.getCurrentPosition());
+            }
+        });
+    }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
@@ -1000,23 +1050,22 @@ class WcsGeolocation extends HTMLElement {
         }
         // Revive permission tracking after a reconnect (reparenting). No-op on the
         // first connect since the constructor already subscribed; only re-subscribes
-        // when disconnectedCallback's dispose() tore the subscription down.
+        // when disconnectedCallback's dispose() tore the subscription down. It reads no
+        // input, so it stays here; only the acquisition decision is deferred.
         this._core.reinitPermission();
-        if (!this.manual) {
-            // `watch` attribute selects the default phase: continuous monitoring vs a
-            // single fix on connect.
-            if (this.watch) {
-                this.watchPosition();
-            }
-            else {
-                // Track only the one-shot connect-time fix so SSR can await it. watch /
-                // manual leave the promise at its resolved default. getCurrentPosition()
-                // never rejects (failures surface via `error`), so no .catch() is needed.
-                this._connectedCallbackPromise = this.getCurrentPosition();
-            }
-        }
+        // connectedCallbackPromise は接続時の判断（と一発取得）が済むまでを表す。判断は
+        // マイクロタスクなので、ここで張って _scheduleLocate で解く
+        this._connectedCallbackPromise = new Promise((resolve) => {
+            this._connectResolve = resolve;
+        });
+        this._scheduleLocate();
     }
     disconnectedCallback() {
+        // 判断の前に外れたら、張った connectedCallbackPromise をここで解く — 同じタスクで
+        // 入れ直されると次の connectedCallback が張り替えるので、待つ側が取り残されないように
+        this._connectResolve?.();
+        this._connectResolve = null;
+        this._watchCancelled = false;
         this._core.clearWatch();
         this._core.dispose();
     }

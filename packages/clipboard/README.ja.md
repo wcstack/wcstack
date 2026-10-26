@@ -250,7 +250,7 @@ form:has(wcs-clipboard:state(error)) .banner { display: block; }
 
 ## 注意点と制約
 
-- **属性は接続時に読み取られ、監視されない。** `<wcs-clipboard>` は `observedAttributes` / `attributeChangedCallback` を実装していません。`monitor` 属性は要素の接続時に読み取られます（4.8（未リリース）から、接続の 1 マイクロタスク後に、そのときの属性で — [タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23。同じタスクの `stopMonitor()` はそれを取り消す）。接続*後*に命令的にトグルしても、それだけでは監視は開始/停止しません。`startMonitor()` / `stopMonitor()` を呼ぶか、要素を再接続してください。
+- **属性は接続時に読み取られ、監視されない。** `<wcs-clipboard>` は `observedAttributes` / `attributeChangedCallback` を実装していません。`monitor` 属性は要素の接続時に読み取られます（4.8 から、接続の 1 マイクロタスク後に、そのときの属性で — [タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23。同じタスクの `stopMonitor()` はそれを取り消す）。接続*後*に命令的にトグルしても、それだけでは監視は開始/停止しません。`startMonitor()` / `stopMonitor()` を呼ぶか、要素を再接続してください。
 - **接続時の読み取りは無い。** `<wcs-geo>` と異なり、クリップボードは接続時に自動読み取りできません（読み取りにはユーザージェスチャとパーミッションが必要）。接続時のアクションは初回パーミッション照会と任意の監視です。ただし `connectedCallbackPromise`（`hasConnectedCallbackPromise = true`）は公開しており、state バインダ / SSR はこれを await して初回パーミッションスナップショットの確定を待ってからバインドできます。
 - **再接続で再購読する。** 要素を削除して再挿入すると `connectedCallback` が再度実行されるため、パーミッション追跡が復活し、`monitor` 属性を持つ要素は監視を再開します（切断時に解体するのと対称です）。監視の永続性は**属性駆動のみ**です。`monitor` 属性*なし*の要素で `startMonitor()` を使って命令的に監視を開始した場合、再接続では復元されません（属性が真実の源）。リペアレント間で監視を永続させたい場合は `monitor` 属性を付けてください。
 - **`copy` / `cut` のテキストは選択範囲から取得する。** `copy` / `cut` イベント中はクリップボードのペイロードがまだ読めない（セキュリティ上ブラウザは空文字列を返す）ため、`copied` / `cut` は `document.getSelection().toString()` — ユーザーの選択テキストを報告します。ページが `clipboardData.setData(...)` でペイロードを上書きするカスタム `copy` ハンドラを設置している場合、その上書きは `copied` / `cut` に**反映されません**。`pasted` は `event.clipboardData.getData("text/plain")` を読み取ります。

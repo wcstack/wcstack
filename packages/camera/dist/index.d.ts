@@ -347,6 +347,9 @@ declare class WcsCamera extends HTMLElement {
     private _core;
     private _video;
     private _connectedCallbackPromise;
+    private _connectResolve;
+    private _acquirePending;
+    private _autostartCancelled;
     private _connected;
     private _batchingAttrs;
     private _internals;
@@ -396,6 +399,7 @@ declare class WcsCamera extends HTMLElement {
     private _constraints;
     private _onStreamReady;
     private _onActiveChanged;
+    private _scheduleAcquire;
     connectedCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;
@@ -445,9 +449,11 @@ declare class RecorderCore extends EventTarget {
     private _closing;
     private _ready;
     /**
-     * Whether `[wcs/command-not-ready]` was said for this element: a `start()` refused because the
+     * Whether `[wcs/command-not-ready]` was said in this outage: a `start()` refused because the
      * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): a stream arriving
+     * resets it. Once per element was once per page life — a route puts the same element back on
+     * every entry, so the next outage's lost recording went unsaid (docs/seam-apps.md, shift-desk).
      */
     private _toldNotReady;
     constructor(target?: EventTarget);

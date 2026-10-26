@@ -158,7 +158,7 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
 
 ## Notes & gotchas
 
-- **Since 4.8 (not released yet), `<wcs-camera>` decides on connect one microtask later**: whether to start (`autostart`) and with which `device-id` / `facing-mode` / `audio` / `width` / `height`, with the attributes as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23). `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs: starting at once acquired the previous route's device, and that stream stayed live. A constraint change re-acquires in the next microtask, folded into one. `start()` uses the current attributes; `stop()` in the same task cancels the auto-start.
+- **Since 4.8, `<wcs-camera>` decides on connect one microtask later**: whether to start (`autostart`) and with which `device-id` / `facing-mode` / `audio` / `width` / `height`, with the attributes as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23). `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs: starting at once acquired the previous route's device, and that stream stayed live. A constraint change re-acquires in the next microtask, folded into one. `start()` uses the current attributes; `stop()` in the same task cancels the auto-start.
 - **Secure context (https) required.** `getUserMedia` is unavailable on `file://` / plain `http://`.
 - **Content-Security-Policy.** The preview's own styles are a constructed stylesheet since 4.5, which `style-src` does not govern, so a policy without `'unsafe-inline'` keeps the preview's layout. Up to 4.4 they were a `<style>` in the shadow root, which such a policy blocks (the preview `<video>` rendered at its own size): style it from your stylesheet with `wcs-camera::part(video) { display: block; width: 100%; height: 100% }`.
 - **`error` / `errorInfo` describe the last attempt.** A permission granted later (in the site settings) does not clear them: `permission` follows the grant at once, while `errorInfo` keeps `not-allowed` until the next `start()` succeeds. Decide "blocked" from `permission`, and offer Start again when the last error was `not-allowed` and `permission` is `granted`.
@@ -171,7 +171,7 @@ The structural Core surface is normative across wcstack IO nodes ([async-io-node
   - `not-found` (phase `start`) — `NotFoundError` (no camera / mic of the requested kind).
   - `not-readable` (phase `start`) — `NotReadableError` (device busy or hardware fault).
   - `invalid-argument` (phase `start`) — `OverconstrainedError` / `NotSupportedError` (constraints or mimeType unsatisfiable).
-  - `invalid-state` (phase `start`) — `NoStreamError` (recorder started with no stream attached — nothing is recorded, and the element warns `[wcs/command-not-ready]`, once until a stream is attached again — since 4.8 (not released yet); before, once per element).
+  - `invalid-state` (phase `start`) — `NoStreamError` (recorder started with no stream attached — nothing is recorded, and the element warns `[wcs/command-not-ready]`, once until a stream is attached again — since 4.8; before, once per element).
   - `aborted` (phase `execute`, `recoverable: true`) — `AbortError` (interrupted mid-flight, may recover on retry).
   - `media-error` (phase `execute`) — any other runtime failure (e.g. `RecorderError` / unexpected `MediaRecorder` error).
 

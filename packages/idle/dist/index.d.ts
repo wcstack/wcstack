@@ -115,6 +115,14 @@ declare class IdleCore extends EventTarget {
     private _abortController;
     private _gen;
     private _ready;
+    /**
+     * Whether `[wcs/command-not-ready]` was said in this outage: a `start()` refused for want of the
+     * idle-detection permission detects nothing, and `error` alone told only a page that binds it
+     * (as `<wcs-notify>`'s `notify()`, docs/v4-direction-2026-10.md, the I/O command policy). Said
+     * once per outage: a `start()` that succeeds resets it. A missing API is not warned about: that
+     * is the `unsupported` path (`error`, `capability-missing`), not a command that came too early.
+     */
+    private _toldNotReady;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     get userState(): IdleUserState | null;
@@ -150,6 +158,7 @@ declare class IdleCore extends EventTarget {
      * browser's own TypeError, which never-throw absorbs into `error`.
      */
     start(threshold?: number): Promise<void>;
+    private _warnNotReady;
     /** Stop the current session (if any) and detach its listener. Safe to call when not started. */
     stop(): void;
     private _onChange;

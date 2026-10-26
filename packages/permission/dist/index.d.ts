@@ -181,6 +181,8 @@ declare class WcsPermission extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _observePending;
+    private _connectResolve;
     private _internals;
     constructor();
     get debugStates(): string[];
@@ -199,6 +201,7 @@ declare class WcsPermission extends HTMLElement {
     get unsupported(): boolean;
     get connectedCallbackPromise(): Promise<void>;
     private _descriptor;
+    private _scheduleObserve;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }

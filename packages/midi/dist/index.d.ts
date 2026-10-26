@@ -299,6 +299,9 @@ declare class WcsMidi extends HTMLElement {
     static wcBindable: IWcBindable;
     private _core;
     private _connectedCallbackPromise;
+    private _connectResolve;
+    private _requestPending;
+    private _autoCancelled;
     private _internals;
     constructor();
     get debugStates(): string[];
@@ -335,6 +338,7 @@ declare class WcsMidi extends HTMLElement {
     close(): void;
     send(data: number[] | Uint8Array, timestamp?: number): void;
     private _options;
+    private _scheduleRequest;
     connectedCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;

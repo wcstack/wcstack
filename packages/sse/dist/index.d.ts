@@ -72,6 +72,13 @@ interface SseConnectOptions {
     events?: string[];
     /** When true, skip JSON auto-parsing and keep `data` as the raw string. */
     raw?: boolean;
+    /**
+     * Milliseconds without an event after which an open stream is treated as lost and reopened
+     * (0 or absent: never). An EventSource does not notice a connection that died without being
+     * closed — a laptop's sleep, a NAT that forgot it, a proxy — and stays OPEN; the server must send
+     * an event the element listens to (unnamed, or a name in `events`) more often than this.
+     */
+    staleAfter?: number;
 }
 /**
  * Detail payload of the `message` property.
@@ -147,6 +154,9 @@ declare class SseCore extends EventTarget {
     private _withCredentials;
     private _events;
     private _raw;
+    private _staleAfter;
+    private _lastActivity;
+    private _staleTimer;
     private _gen;
     private _connGen;
     private _ready;
@@ -193,6 +203,8 @@ declare class SseCore extends EventTarget {
     private _onMessage;
     private _onError;
     private _removeListeners;
+    private _armStale;
+    private _checkStale;
     private _closeInternal;
 }
 
@@ -203,6 +215,7 @@ declare class WcsSse extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _connectPending;
     private _internals;
     constructor();
     get debugStates(): string[];
@@ -219,6 +232,8 @@ declare class WcsSse extends HTMLElement {
     set raw(value: boolean | null | undefined);
     get manual(): boolean;
     set manual(value: boolean | null | undefined);
+    get staleAfter(): number;
+    set staleAfter(value: number | null | undefined);
     get message(): WcsSseMessage | null;
     get connected(): boolean;
     get loading(): boolean;
@@ -230,6 +245,7 @@ declare class WcsSse extends HTMLElement {
     connect(): void;
     close(): void;
     attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    private _scheduleConnect;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }

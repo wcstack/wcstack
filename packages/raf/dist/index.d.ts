@@ -255,6 +255,7 @@ declare class Raf extends HTMLElement {
     private _trigger;
     private _connectedCallbackPromise;
     private _internals;
+    private _startPending;
     constructor();
     get debugStates(): string[];
     private _initInternals;
@@ -281,6 +282,7 @@ declare class Raf extends HTMLElement {
     reset(): void;
     pause(): void;
     resume(): void;
+    private _scheduleStart;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }

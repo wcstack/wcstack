@@ -289,6 +289,7 @@ declare class WcsIntersect extends HTMLElement {
     private _trigger;
     private _connectedCallbackPromise;
     private _internals;
+    private _observePending;
     constructor();
     get debugStates(): string[];
     private _initInternals;
@@ -334,6 +335,7 @@ declare class WcsIntersect extends HTMLElement {
     private _parseThreshold;
     private _options;
     private _onChange;
+    private _scheduleObserve;
     connectedCallback(): void;
     disconnectedCallback(): void;
     attributeChangedCallback(_name: string, oldValue: string | null, newValue: string | null): void;

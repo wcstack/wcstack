@@ -223,9 +223,11 @@ declare class WorkerCore extends EventTarget {
     private _gen;
     private _ready;
     /**
-     * Whether `[wcs/command-not-ready]` was said for this element: a `post()` refused because the
+     * Whether `[wcs/command-not-ready]` was said in this outage: a `post()` refused because the
      * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): a worker starting
+     * resets it. Once per element was once per page life — a route puts the same element back on
+     * every entry, so the next outage's lost message went unsaid (docs/seam-apps.md, shift-desk).
      */
     private _toldNotReady;
     /** Whether `[wcs/post-uncloneable]` was said for this element. */
@@ -305,6 +307,8 @@ declare class WcsWorker extends HTMLElement {
     static get observedAttributes(): string[];
     private _core;
     private _connectedCallbackPromise;
+    private _everConnected;
+    private _startPending;
     private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
@@ -335,6 +339,7 @@ declare class WcsWorker extends HTMLElement {
     post(data: any, transfer?: Transferable[]): void;
     terminate(): void;
     attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
+    private _scheduleStart;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }

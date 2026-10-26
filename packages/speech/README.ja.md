@@ -247,7 +247,7 @@ SpeechRecognition 自体が Chrome 系のみの対応だからです（後述の
 
 ## 注意・制限
 
-- **4.8（未リリース）から、`<wcs-listen>` は接続の 1 マイクロタスク後に決める**: 開始するか（`manual`）、どの `lang` / `continuous` / `interim` / `max-restarts` でかを、そのときの属性で（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後 — その場で始めると前のルートの言語で聞いていた。同じタスクの `stop()` / `abort()` は開始を取り消す。
+- **4.8 から、`<wcs-listen>` は接続の 1 マイクロタスク後に決める**: 開始するか（`manual`）、どの `lang` / `continuous` / `interim` / `max-restarts` でかを、そのときの属性で（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後 — その場で始めると前のルートの言語で聞いていた。同じタスクの `stop()` / `abort()` は開始を取り消す。
 - **セキュアコンテキスト必須。** 両 API とも HTTPS か `localhost` が必要。`<wcs-listen>` はさらにマイク permission が必要です。
 - **ブラウザ対応。** SpeechSynthesis は広く対応。SpeechRecognition は Chrome 系のみ（`webkitSpeechRecognition`）で、それ以外では `<wcs-listen>` は `unsupported` を報告します。
 - **SpeechSynthesis はグローバルシングルトン。** `<wcs-speak>` は切断時に `cancel()` しません（他インスタンスまで止まるため）。音声を止めるには明示的に `cancel()` を。切断された要素は追跡を止めますが、発話中の utterance は自然に完了します。

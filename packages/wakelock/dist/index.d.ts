@@ -275,6 +275,7 @@ declare class WcsWakeLock extends HTMLElement {
     private _core;
     private _connectedCallbackPromise;
     private _attached;
+    private _acquirePending;
     private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
@@ -295,6 +296,7 @@ declare class WcsWakeLock extends HTMLElement {
     /** Release the wake lock and stop re-acquiring it. */
     release(): void;
     connectedCallback(): void;
+    private _scheduleAcquire;
     disconnectedCallback(): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
 }

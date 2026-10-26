@@ -189,7 +189,7 @@ form:has(wcs-geo:state(error)) .banner { display: block; }
 
 ## 注意点と制約
 
-- **4.8（未リリース）から、接続時の取得はマイクロタスクを 1 つ待つ**: 取得するか（`manual`）、1 回か watch か（`watch`）、どの `high-accuracy` / `timeout` / `maximum-age` でかを、そのときの属性で読む（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `clearWatch()` は待っている watch を取り消し、`connectedCallbackPromise` はその判断とともに決まる。
+- **4.8 から、接続時の取得はマイクロタスクを 1 つ待つ**: 取得するか（`manual`）、1 回か watch か（`watch`）、どの `high-accuracy` / `timeout` / `maximum-age` でかを、そのときの属性で読む（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `clearWatch()` は待っている watch を取り消し、`connectedCallbackPromise` はその判断とともに決まる。
 - **属性は接続時に読み取られ、監視されない。** `<wcs-geo>` は `observedAttributes` / `attributeChangedCallback` を実装していません。オプション属性（`high-accuracy`, `timeout`, `maximum-age`, `watch`, `manual`）は要素の接続時とコマンド実行のたびに読み取られます。接続*後*に命令的に変更しても、それだけでは再取得・再監視は行われません。新しいオプションを反映するには、`getCurrentPosition()` / `clearWatch()` + `watchPosition()` を再度呼ぶか、要素を再接続してください。
 - **再接続で再取得する。** 要素を削除して再挿入すると `connectedCallback` が再度実行されるため、既定モードの要素は新しい fix を取得し、`watch` 要素は監視を再開します（切断時に監視を解体するのと対称です）。
 - **SSR（`@wcstack/server`）。** 既定の一発取得モードは `static hasConnectedCallbackPromise = true` を宣言し `connectedCallbackPromise` を公開するため、サーバレンダラはスナップショット前に接続時の fix を待機します。（`watch` / `manual` モードには待つべき接続時 fix がありません。）

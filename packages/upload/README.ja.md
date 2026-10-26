@@ -110,7 +110,7 @@ npm install @wcstack/upload
 
 観測できるのは `false` へのリセットのみです。`true` 遷移（アップロード開始）は `wcs-upload:trigger-changed` を発火しません。バインディングシステムは `true` を書き込んで開始し、唯一の `false` エッジを観測してコマンドの完了を知ります。これは `@wcstack/fetch` の `trigger` と同じトレードオフです。
 
-**`files` はアップロードで使い切ります。** `@wcstack/fetch` の `body` と同じです。アップロードが終わると（成功・失敗・中断のどれでも）`files` は `null` に戻り、`wcs-upload:files-changed` がそれを運ぶので、双方向の `files:` 束縛はそのパスも空にします。送り直すには、ファイルをもう一度代入してから `trigger` を書いてください。また `trigger` は書かれたときに `url` と `files` を読みます。1 つの `data-wcs` では、それらの後に書いてください（`url: …; files: …; trigger: …` — 束縛は書いた順に当たります）。ファイルか `url` の無い `trigger`（や `upload()`）は何も送らず、`error` も立てません。4.5 から警告します（`[wcs/command-not-ready]`）。アップロードをまた送るまで、理由ごとに 1 回です（4.8（未リリース）から。それまでは要素と理由ごとに 1 回）。4.6 から、`url` がまだ無い自動送信の `<wcs-upload>` に代入したファイルは url を待ち、url が来たときに送られます（以前は送られず、要素が警告していました）。フレームワークの props も書いた順に当たるので、JSX の `files={files} url=…` も `url=… files={files}` と同じく送るようになりました。
+**`files` はアップロードで使い切ります。** `@wcstack/fetch` の `body` と同じです。アップロードが終わると（成功・失敗・中断のどれでも）`files` は `null` に戻り、`wcs-upload:files-changed` がそれを運ぶので、双方向の `files:` 束縛はそのパスも空にします。送り直すには、ファイルをもう一度代入してから `trigger` を書いてください。また `trigger` は書かれたときに `url` と `files` を読みます。1 つの `data-wcs` では、それらの後に書いてください（`url: …; files: …; trigger: …` — 束縛は書いた順に当たります）。ファイルか `url` の無い `trigger`（や `upload()`）は何も送らず、`error` も立てません。4.5 から警告します（`[wcs/command-not-ready]`）。アップロードをまた送るまで、理由ごとに 1 回です（4.8 から。それまでは要素と理由ごとに 1 回）。4.6 から、`url` がまだ無い自動送信の `<wcs-upload>` に代入したファイルは url を待ち、url が来たときに送られます（以前は送られず、要素が警告していました）。フレームワークの props も書いた順に当たるので、JSX の `files={files} url=…` も `url=… files={files}` と同じく送るようになりました。
 
 ### 3. 宣言的なトリガーターゲット
 

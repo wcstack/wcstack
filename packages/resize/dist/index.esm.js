@@ -523,6 +523,8 @@ class WcsResize extends HTMLElement {
     _trigger = false;
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
+    // _scheduleObserve のマイクロタスクが待っている間 true
+    _observePending = false;
     constructor() {
         super();
         this._core = new ResizeCore(this);
@@ -684,7 +686,12 @@ class WcsResize extends HTMLElement {
         }
         this._core.observe(element, this._options());
     }
+    // unobserve / disconnect は、予約中の自動 observe（_scheduleObserve）も取り消す。
+    // 同じタスクで接続（や属性の変化）の後に呼ばれたとき、以前の同期の observe を止めたのと
+    // 同じく何も監視しない（timing-and-firing-contract §23）。observe / trigger は取り消さない
+    // — 予約の observe は同じ target・options なら no-op（冪等）。
     unobserve() {
+        this._observePending = false;
         // Single-target Shell: "stop observing my target" is exactly the Core's
         // teardown. Delegate to the Core's tracked state rather than re-resolving the
         // selector, so a target that has since left the DOM can still be stopped
@@ -692,6 +699,7 @@ class WcsResize extends HTMLElement {
         this._core.disconnect();
     }
     disconnect() {
+        this._observePending = false;
         this._core.disconnect();
     }
     // --- Internal ---
@@ -760,16 +768,36 @@ class WcsResize extends HTMLElement {
         }
     };
     // --- Lifecycle ---
+    // 自動 observe の判断はマイクロタスクで、そのときの manual / target / box / round で
+    // 1 回だけ行う（timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、
+    // 新しいルートの params から state が入力を書くのはマイクロタスク — その場で observe
+    // すると、前の target で observer を張り、前の manual をラッチしていた
+    // （docs/seam-apps.md、shift-desk）。接続と属性の変化はここへまとまり、observer は
+    // 1 回だけ作り直す。判断の前に外れた要素は何もしない。
+    _scheduleObserve() {
+        if (this._observePending)
+            return;
+        this._observePending = true;
+        queueMicrotask(() => {
+            // unobserve / disconnect が予約を取り消していれば何もしない（同じタスクで予約し直して
+            // いれば、このマイクロタスクがその判断を受け持ち、後の分は何もしない）
+            if (!this._observePending)
+                return;
+            this._observePending = false;
+            if (this.isConnected && !this.manual) {
+                this.observe();
+            }
+        });
+    }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this.addEventListener("wcs-resize:change", this._onChange);
-        if (!this.manual) {
-            this.observe();
-        }
+        this._scheduleObserve();
         // SSR: back connectedCallbackPromise with the Core's readiness probe. The
-        // observation itself is started above via the element-observe command; this
-        // captures the (synchronously resolved) ready promise for the state binder.
+        // observation itself is started in the microtask above via the element-observe
+        // command (it runs before any await on this promise resumes); this captures the
+        // (synchronously resolved) ready promise for the state binder.
         this._connectedCallbackPromise = this._core.observe();
     }
     disconnectedCallback() {
@@ -784,12 +812,13 @@ class WcsResize extends HTMLElement {
         // value did not actually change. Kept intentionally; do not remove.
         if (oldValue === newValue)
             return;
-        // Only react once connected and in automatic mode. The Core's idempotency guard
-        // absorbs the autoloader upgrade case (attributeChangedCallback +
-        // connectedCallback both calling observe() with identical options).
+        // Only react once connected and in automatic mode. The re-observe goes through the
+        // same microtask as the connect-time one (_scheduleObserve), so the autoloader
+        // upgrade case (attributeChangedCallback + connectedCallback) and several inputs
+        // written in one task rebuild the observer once.
         if (!this.isConnected || this.manual)
             return;
-        this.observe();
+        this._scheduleObserve();
     }
 }
 

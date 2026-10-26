@@ -189,7 +189,7 @@ To stop reconnection, call `close()` (or remove the element from the DOM).
 
 **A stream that gave up.** A stream that ended in `CLOSED (2)` (an HTTP error: a 502 while the server restarts, a 401 when a token in the URL expired) is not retried by the browser: reopen it with `close()` and `trigger`, from where you were. Tell it from `errorInfo` — `recoverable: false` — not from `readyState` alone: `readyState` is `CLOSED (2)` before the element ever connected too, and a `$watch` fires once for an element's starting value, so a watch on `readyState === 2` runs on every page load. An `EventSource` does not tell the page the HTTP status, so a 401 and a 502 look the same. A token in the URL (an `EventSource` cannot send headers) is the one the stream opened with, and a native reconnect reuses it after it expired: refresh it before you reopen, or authenticate the stream with a cookie (`with-credentials`).
 
-**A connection that died without being closed** — a laptop's sleep, a NAT or a proxy that dropped it — is not noticed by the browser: the stream stays `OPEN`, `connected` stays `true`, and nothing arrives. Since 4.8 (not released yet), `stale-after="60000"` treats an open stream that received no event for that many milliseconds as lost: `connected` goes `false`, `error` says why (`errorInfo.recoverable` is `true`), and the element opens the same `url` again. A new `EventSource` sends no `Last-Event-ID`, so the URL carries the position (above). The server must send an event the element listens to — unnamed, or a name in `events` — more often than that; an SSE comment line (`:`) is not an event. What else a page left open for hours goes through: [Pages that stay open](../../docs/long-lived-pages.md).
+**A connection that died without being closed** — a laptop's sleep, a NAT or a proxy that dropped it — is not noticed by the browser: the stream stays `OPEN`, `connected` stays `true`, and nothing arrives. Since 4.8, `stale-after="60000"` treats an open stream that received no event for that many milliseconds as lost: `connected` goes `false`, `error` says why (`errorInfo.recoverable` is `true`), and the element opens the same `url` again. A new `EventSource` sends no `Last-Event-ID`, so the URL carries the position (above). The server must send an event the element listens to — unnamed, or a name in `events` — more often than that; an SSE comment line (`:`) is not an event. What else a page left open for hours goes through: [Pages that stay open](../../docs/long-lived-pages.md).
 
 ## State Surface vs Command Surface
 
@@ -212,7 +212,7 @@ To stop reconnection, call `close()` (or remove the element from the DOM).
 | `withCredentials` | `boolean` | Send credentials with the request |
 | `events` | `string` | Comma-separated named events to subscribe to |
 | `raw` | `boolean` | Disable JSON auto-parsing |
-| `staleAfter` | `number` | Milliseconds without an event after which an open stream is treated as lost and reopened (`0`: never). Read when connecting. Since 4.8 (not released yet) |
+| `staleAfter` | `number` | Milliseconds without an event after which an open stream is treated as lost and reopened (`0`: never). Read when connecting. Since 4.8 |
 | `trigger` | `boolean` | One-way connection trigger |
 | `manual` | `boolean` | Disables auto-connect on DOM attach |
 
@@ -357,7 +357,7 @@ sseEl.close();
 | `with-credentials` | `boolean` | `false` | Send credentials cross-origin |
 | `events` | `string` | — | Comma-separated named events to subscribe to |
 | `raw` | `boolean` | `false` | Disable JSON auto-parsing |
-| `stale-after` | `number` | `0` | Reopen an open stream that received no event for this many milliseconds (`0`: never). Since 4.8 (not released yet) |
+| `stale-after` | `number` | `0` | Reopen an open stream that received no event for this many milliseconds (`0`: never). Since 4.8 |
 | `manual` | `boolean` | `false` | Disable auto-connect |
 
 | Property | Type | Description |
@@ -500,7 +500,7 @@ bootstrapSse({
 
 ## Design Notes
 
-- **Since 4.8 (not released yet), the connect-time decision waits one microtask.** Whether to connect, and to which `url`, is decided one microtask after `connectedCallback` (and after a `url` change), with the inputs as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23). `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `connect()` / `trigger` connect at once; `close()` in the same task cancels the pending connect.
+- **Since 4.8, the connect-time decision waits one microtask.** Whether to connect, and to which `url`, is decided one microtask after `connectedCallback` (and after a `url` change), with the inputs as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23). `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `connect()` / `trigger` connect at once; `close()` in the same task cancels the pending connect.
 - `message`, `connected`, `loading`, `error`, and `readyState` are **output state**
 - `url`, `trigger` are **input / command surface**; `withCredentials`, `events`, `raw` are connection options
 - `message` carries `{ event, data, lastEventId }` so named events share one bindable property — branch on `event` in state

@@ -191,7 +191,7 @@ form:has(wcs-defined:state(error)) .banner { display: block; }
 
 ## 注意と制限
 
-- **4.8（未リリース）から、見張りは接続の 1 マイクロタスク後に始まる**（`tags` / `mode` / `timeout` の変化の後も）。そのときの入力で見張る（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`connectedCallbackPromise` はその見張りとともに決まる。
+- **4.8 から、見張りは接続の 1 マイクロタスク後に始まる**（`tags` / `mode` / `timeout` の変化の後も）。そのときの入力で見張る（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`connectedCallbackPromise` はその見張りとともに決まる。
 - **単調かつ終端的。** `whenDefined()` は揺れ戻りません。一度定義されたタグは定義済みのままです。state は全タグ解決か `timeout` 発火で確定します。timeout 後に *遅れて* 登録されたタグは `missing` から `count` へ昇格します（よって `defined` は後から true に転じうる）。
 - **不正名はソフトに失敗する。** 有効なカスタム要素名でないタグ名（ハイフン無し等）は `whenDefined()` が reject され、`error` に記録され `missing` に入りますが、throw はされません。他の有効タグの監視は継続します（never-throw）。
 - **`tags` / `mode` / `timeout` を変えると見張り直す。** 接続中の要素で属性 — またはそれを書くプロパティ。バインディングは要素の upgrade と接続の後にプロパティを書く — が変わると、今の見張りを破棄して新しい設定で始め直します。`pending` / `missing` / `count` / `total` / `defined` はやり直しになります（定義済みのタグはすぐに解決する）。同じ値の書き込みでは何もせず、切断中の変更は次の接続で読みます。（3.x は接続時にしか読まなかったので、バインドした `tags` は効きませんでした。）

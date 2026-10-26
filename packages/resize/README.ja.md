@@ -237,7 +237,7 @@ Core の構造サーフェスは wcstack I/O ノード横断の規範です([asy
 
 ## 注意・制限
 
-- **4.8（未リリース）から、観測は接続の 1 マイクロタスク後に始まる。** そのときの `manual`・`target`・`box`・`round` で観測し、その後の変化も次のマイクロタスクで 1 回にまとめて観測し直す（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `unobserve()` / `disconnect()` はそれを取り消し、`observe()` はその場で動く。
+- **4.8 から、観測は接続の 1 マイクロタスク後に始まる。** そのときの `manual`・`target`・`box`・`round` で観測し、その後の変化も次のマイクロタスクで 1 回にまとめて観測し直す（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。同じタスクの `unobserve()` / `disconnect()` はそれを取り消し、`observe()` はその場で動く。
 - **単一対象。** 各 `<wcs-resize>` は厳密に 1 要素を監視し、状態は単一の値面にマップされます。多数の対象には多数の要素を使ってください。
 - **決して throw しない。** 非対応環境（`ResizeObserver` なし）は静かな no-op です。有効だが非対応の `box`（例: 対応していないエンジンでの `device-pixel-content-box`）は `content-box` で 1 回再試行し、それも失敗すれば throw せず `observing` を `false` のままにします。
 - **スタイリングには CSS `@container` を優先。** 本コンポーネントはサイズ依存の*スタイル*ではなく、サイズ依存の*ロジック*のためのものです。

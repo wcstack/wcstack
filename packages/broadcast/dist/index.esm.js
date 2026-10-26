@@ -167,9 +167,11 @@ class BroadcastCore extends EventTarget {
     // so readiness is immediate.
     _ready = Promise.resolve();
     /**
-     * Whether `[wcs/command-not-ready]` was said for this element: a `post()` refused because the
+     * Whether `[wcs/command-not-ready]` was said in this outage: a `post()` refused because the
      * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): a channel opening
+     * resets it. Once per element was once per page life — a route puts the same element back on
+     * every entry, so the next outage's lost message went unsaid (docs/seam-apps.md, shift-desk).
      */
     _toldNotReady = false;
     /** Whether `[wcs/post-uncloneable]` was said for this element. */
@@ -294,6 +296,8 @@ class BroadcastCore extends EventTarget {
         channel.addEventListener("messageerror", this._onMessageError);
         this._channel = channel;
         this._name = name;
+        // ready again: a post refused in the next outage is said again
+        this._toldNotReady = false;
     }
     /**
      * Post a structured-cloneable value to every other context on the channel.
@@ -340,7 +344,8 @@ class BroadcastCore extends EventTarget {
             return;
         this._toldNotReady = true;
         console.warn("[@wcstack/broadcast] [wcs/command-not-ready] post() was refused: no channel is open, so the message is lost. " +
-            "It goes to `error` too. Give the element a `name` (or call open(name)) first. (Said once per element.)", this._target);
+            "It goes to `error` too. Give the element a `name` (or call open(name)) first. " +
+            "(Said once until a channel opens again.)", this._target);
     }
     /** Leave the channel. Idempotent — a no-op when no channel is open. */
     close() {
@@ -634,6 +639,10 @@ class WcsBroadcast extends HTMLElement {
     static get observedAttributes() { return ["name"]; }
     _core;
     _connectedCallbackPromise = Promise.resolve();
+    // connectedCallback ran before (a reconnect defers its open: _scheduleOpen)
+    _everConnected = false;
+    // _scheduleOpen's microtask is waiting
+    _openPending = false;
     _internals = null;
     constructor() {
         super();
@@ -725,6 +734,8 @@ class WcsBroadcast extends HTMLElement {
     }
     // --- Commands ---
     open() {
+        // an explicit open or close takes a reconnect's pending decision
+        this._openPending = false;
         if (this.name) {
             this._core.open(this.name);
         }
@@ -733,13 +744,28 @@ class WcsBroadcast extends HTMLElement {
         this._core.post(data);
     }
     close() {
+        this._openPending = false;
         this._core.close();
     }
     // --- Lifecycle ---
     attributeChangedCallback(name, _oldValue, newValue) {
-        if (name === "name" && this.isConnected && !this.manual && newValue) {
+        // (a reconnect's open is waiting for its microtask: it opens the name in effect then)
+        if (name === "name" && this.isConnected && !this.manual && newValue && !this._openPending) {
             this._core.open(newValue);
         }
+    }
+    _scheduleOpen() {
+        if (this._openPending)
+            return;
+        this._openPending = true;
+        queueMicrotask(() => {
+            if (!this._openPending)
+                return; // an explicit command took the decision meanwhile
+            this._openPending = false;
+            if (this.isConnected && !this.manual && this.name) {
+                this._core.open(this.name);
+            }
+        });
     }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
@@ -748,11 +774,23 @@ class WcsBroadcast extends HTMLElement {
         if (config.autoTrigger) {
             registerAutoTrigger();
         }
-        if (!this.manual && this.name) {
-            this._core.open(this.name);
+        if (!this._everConnected) {
+            // The first connect opens at once, so a post in the same task (an announce on mount) is sent.
+            this._everConnected = true;
+            if (!this.manual && this.name) {
+                this._core.open(this.name);
+            }
+        }
+        else {
+            // A reconnect decides in a microtask, with the name then (timing-and-firing-contract §23).
+            // @wcstack/router puts the same nodes back on a parameter-only navigation, and the state
+            // writes the new route's name in a microtask: opening at once joined the previous channel
+            // (docs/seam-apps.md, shift-desk).
+            this._scheduleOpen();
         }
         // SSR (§4.4): expose the Core's readiness as connectedCallbackPromise. The
-        // channel opens synchronously above, so observe() resolves immediately.
+        // channel opens synchronously (or, on a reconnect, in a microtask — command-driven
+        // either way), so observe() resolves immediately.
         this._connectedCallbackPromise = this._core.observe();
     }
     disconnectedCallback() {

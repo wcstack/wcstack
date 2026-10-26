@@ -177,6 +177,7 @@ declare class Timer extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _startPending;
     private _internals;
     constructor();
     get debugStates(): string[];
@@ -205,6 +206,7 @@ declare class Timer extends HTMLElement {
     resume(): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
     connectedCallback(): void;
+    private _scheduleStart;
     disconnectedCallback(): void;
 }
 

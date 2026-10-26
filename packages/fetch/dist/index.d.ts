@@ -344,8 +344,10 @@ declare class Fetch extends HTMLElement {
     /**
      * A `trigger` written while `url` is empty does nothing (timing-and-firing-contract §1.5),
      * and said nothing: a `trigger` before `url` in one `data-wcs` (bindings apply in the
-     * order written), a url that state has not computed yet. Said once per element
-     * (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
+     * order written), a url that state has not computed yet. Said once per outage
+     * (docs/v4-direction-2026-10.md §5.1, the I/O command policy): a request starting resets it.
+     * Once per element was once per page life — a route puts the same element back on every
+     * entry, so the next outage went unsaid (docs/seam-apps.md, shift-desk).
      */
     private _warnTriggerWithoutUrl;
     /**

@@ -1479,8 +1479,10 @@ class Fetch extends HTMLElement {
     /**
      * A `trigger` written while `url` is empty does nothing (timing-and-firing-contract §1.5),
      * and said nothing: a `trigger` before `url` in one `data-wcs` (bindings apply in the
-     * order written), a url that state has not computed yet. Said once per element
-     * (docs/v4-direction-2026-10.md §5.1, the I/O command policy).
+     * order written), a url that state has not computed yet. Said once per outage
+     * (docs/v4-direction-2026-10.md §5.1, the I/O command policy): a request starting resets it.
+     * Once per element was once per page life — a route puts the same element back on every
+     * entry, so the next outage went unsaid (docs/seam-apps.md, shift-desk).
      */
     _warnTriggerWithoutUrl() {
         if (this._toldTriggerWithoutUrl)
@@ -1488,7 +1490,7 @@ class Fetch extends HTMLElement {
         this._toldTriggerWithoutUrl = true;
         console.warn("[@wcstack/fetch] [wcs/command-not-ready] trigger was refused: there is no url, so nothing is fetched. " +
             "Write url before trigger (bindings apply in the order written), and write trigger again once there is one. " +
-            "(Said once per element.)", this);
+            "(Said once until a request is sent again.)", this);
     }
     /**
      * A `<wcs-fetch-header>` / `<wcs-fetch-body>` whose definition never loaded is a plain element, and its
@@ -1519,6 +1521,9 @@ class Fetch extends HTMLElement {
         // included) updates it so a later auto-write of the same url is treated as a
         // no-op rather than a duplicate request.
         this._lastFetchedUrl = this.url;
+        // ready again (a request starts): a trigger refused in the next outage is said again
+        if (this.url)
+            this._toldTriggerWithoutUrl = false;
         const headers = this._collectHeaders();
         // Snapshot and reset `body` synchronously, before any await. The body is a
         // one-shot input; resetting it after the await (when another caller may have

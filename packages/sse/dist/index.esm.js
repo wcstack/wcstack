@@ -161,6 +161,10 @@ class SseCore extends EventTarget {
     _withCredentials = false;
     _events = [];
     _raw = false;
+    // stale-after (ms, 0 = off): the time of the last open / event, and the watchdog's timer
+    _staleAfter = 0;
+    _lastActivity = 0;
+    _staleTimer = null;
     // Generation guard (§3.4): bumped on every _doConnect (new live stream) and on
     // dispose(). The shared arrow-function listeners (_onOpen/_onMessage/_onError)
     // capture the generation of the connection they belong to in _connGen; once
@@ -337,6 +341,7 @@ class SseCore extends EventTarget {
         this._withCredentials = options.withCredentials ?? false;
         this._events = options.events ?? [];
         this._raw = options.raw ?? false;
+        this._staleAfter = options.staleAfter !== undefined && options.staleAfter > 0 ? options.staleAfter : 0;
         this._doConnect();
     }
     close() {
@@ -403,6 +408,8 @@ class SseCore extends EventTarget {
         // 要素への書き込み防止）。
         if (this._connGen !== this._gen)
             return;
+        this._lastActivity = Date.now();
+        this._armStale();
         this._setLoading(false);
         this._setConnected(true);
         this._setReadyState(SSE_OPEN);
@@ -416,6 +423,7 @@ class SseCore extends EventTarget {
         // §3.4: dispose() 後に届いた stale メッセージは破棄する。
         if (this._connGen !== this._gen)
             return;
+        this._lastActivity = Date.now();
         let data = event.data;
         // JSONの自動パース（raw 指定時はテキストのまま）
         if (!this._raw && typeof data === "string") {
@@ -485,7 +493,39 @@ class SseCore extends EventTarget {
             es.removeEventListener(name, this._onMessage);
         }
     }
+    // stale-after の見張り。開いている間、最後の open / イベントから staleAfter ms 何も届かなければ、
+    // 接続は失われたとみなして開き直す（docs/seam-apps.md、shift-desk: 閉じられずに死んだ接続 —
+    // スリープ・NAT・proxy — に EventSource は気づかず OPEN のまま、ページは "Live" と言い続けた）。
+    // タイマーは 1 本だけ持ち、満了のたびに最後の活動からの残りで張り直す（イベントごとに張り直さない）。
+    _armStale() {
+        if (this._staleAfter === 0 || this._staleTimer !== null)
+            return;
+        this._staleTimer = setTimeout(this._checkStale, this._staleAfter);
+    }
+    _checkStale = () => {
+        this._staleTimer = null;
+        // 開いていない（ネイティブの再接続中・閉じた）間は見張らない — 次の open が張り直す
+        if (this._es === null || this._readyState !== SSE_OPEN)
+            return;
+        const idle = Date.now() - this._lastActivity;
+        if (idle < this._staleAfter) {
+            this._staleTimer = setTimeout(this._checkStale, this._staleAfter - idle);
+            return;
+        }
+        // 失われたとみなす: 閉じて（connected / readyState を知らせる）同じ url で開き直し、理由を
+        // error に残す（回復できるもの。次の open が消す）。位置は url（`since=`）か、サーバーが最初に
+        // 送る `id:` で伝える — 新しい EventSource は Last-Event-ID を送らない。
+        const lost = new Error(`No event for ${this._staleAfter} ms: the stream is treated as lost and reopened.`);
+        this._closeInternal();
+        this._doConnect();
+        if (this._es !== null)
+            this._setError(lost, "connection-transient");
+    };
     _closeInternal() {
+        if (this._staleTimer !== null) {
+            clearTimeout(this._staleTimer);
+            this._staleTimer = null;
+        }
         if (this._es) {
             this._removeListeners(this._es, this._events);
             this._es.close();
@@ -632,6 +672,7 @@ class WcsSse extends HTMLElement {
             { name: "withCredentials", attribute: "with-credentials" },
             { name: "events", attribute: "events" },
             { name: "raw", attribute: "raw" },
+            { name: "staleAfter", attribute: "stale-after" },
             { name: "manual", attribute: "manual" },
             { name: "trigger" },
         ],
@@ -646,6 +687,8 @@ class WcsSse extends HTMLElement {
     _core;
     _trigger = false;
     _connectedCallbackPromise = Promise.resolve();
+    // _scheduleConnect のマイクロタスクが待っている間 true
+    _connectPending = false;
     _internals = null;
     constructor() {
         super();
@@ -746,6 +789,15 @@ class WcsSse extends HTMLElement {
     set manual(value) {
         reflectBooleanAttribute(this, "manual", value);
     }
+    // 何も届かない時間（ms）がこれを超えた開いているストリームを、失われたとみなして開き直す
+    // （0・未指定・数でない値は見張らない）。接続オプションの 1 つで、接続するときに読む。
+    get staleAfter() {
+        const parsed = Number(this.getAttribute("stale-after"));
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    }
+    set staleAfter(value) {
+        reflectAttribute(this, "stale-after", value);
+    }
     // --- Core delegated getters ---
     get message() {
         return this._core.message;
@@ -789,6 +841,8 @@ class WcsSse extends HTMLElement {
     }
     // --- Public methods ---
     connect() {
+        // 明示の connect（trigger も）と close は、待っている接続時の判断を引き取る
+        this._connectPending = false;
         // Shell は宣言的サーフェス：url 未設定での connect()/trigger は静かに no-op する
         // （SseCore.connect("") は programmatic 誤用向けに throw するが、state 配線で trigger
         // が url より先に立っただけで例外が更新サイクルを壊すのは避ける。broadcast の
@@ -803,9 +857,11 @@ class WcsSse extends HTMLElement {
             withCredentials: this.withCredentials,
             events,
             raw: this.raw,
+            staleAfter: this.staleAfter,
         });
     }
     close() {
+        this._connectPending = false;
         this._core.close();
     }
     // --- Lifecycle ---
@@ -815,20 +871,35 @@ class WcsSse extends HTMLElement {
         // 「意味のある新 url」に対してのみ張り替え、falsy への変化を切断トリガーとはしない
         // （切断は close() か DOM からの除去で明示的に行う）。
         if (name === "url" && this.isConnected && !this.manual && newValue) {
-            this.connect();
+            this._scheduleConnect();
         }
+    }
+    // 接続の判断はマイクロタスクで、そのときの url / manual で 1 回だけ行う
+    // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+    // params から state が url を書くのはマイクロタスク — その場で接続すると前の url を使う
+    // （docs/seam-apps.md、shift-desk）。間の url の変化もここへまとまる。
+    _scheduleConnect() {
+        if (this._connectPending)
+            return;
+        this._connectPending = true;
+        queueMicrotask(() => {
+            if (!this._connectPending)
+                return; // an explicit command took the decision meanwhile
+            this._connectPending = false;
+            if (this.isConnected && !this.manual && this.url) {
+                this.connect();
+            }
+        });
     }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this.style.display = "none";
         // §4.4: observe() の戻り（即解決の ready）を connectedCallbackPromise として保持。
-        // SSE は command-driven なので observe() 自体は監視を張らず、実際の接続は下の
-        // connect() が行う（観測 surface の確立だけを SSR 契約として公開する）。
+        // SSE は command-driven なので observe() 自体は監視を張らず、実際の接続は
+        // _scheduleConnect が行う（観測 surface の確立だけを SSR 契約として公開する）。
         this._connectedCallbackPromise = this._core.observe();
-        if (!this.manual && this.url) {
-            this.connect();
-        }
+        this._scheduleConnect();
     }
     disconnectedCallback() {
         // §3.5/§4.4: dispose() は _gen を進めて進行中リスナを無効化しつつ接続を閉じる。

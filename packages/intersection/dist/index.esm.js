@@ -476,9 +476,10 @@ function reflectBooleanAttribute(el, name, value) {
  * only the explicit `target="self"` sentinel takes a box.
  */
 class WcsIntersect extends HTMLElement {
-    // SSR (§4.4): the first observation is established synchronously on connect, but
-    // the Shell still exposes connectedCallbackPromise so the state binder can await
-    // it uniformly across all IO nodes before snapshotting.
+    // SSR (§4.4): the first observation is established in a microtask after connect
+    // (timing-and-firing-contract §23) with no async probe, but the Shell still
+    // exposes connectedCallbackPromise so the state binder can await it uniformly
+    // across all IO nodes before snapshotting.
     static hasConnectedCallbackPromise = true;
     // Only attributes that change *what or how* we observe trigger a re-observe.
     // `once` is intentionally excluded: it is evaluated at intersection fire time
@@ -514,6 +515,8 @@ class WcsIntersect extends HTMLElement {
     _trigger = false;
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
+    // _scheduleObserve のマイクロタスクが待っている間 true
+    _observePending = false;
     constructor() {
         super();
         this._core = new IntersectionCore(this);
@@ -705,7 +708,12 @@ class WcsIntersect extends HTMLElement {
         }
         this._core.reobserve(element, this._options());
     }
+    // unobserve / disconnect は、予約中の自動 observe（_scheduleObserve）も取り消す。
+    // 同じタスクで接続（や属性の変化）の後に呼ばれたとき、以前の同期の observe を止めたのと
+    // 同じく何も監視しない（timing-and-firing-contract §23）。observe / reobserve / trigger は
+    // 取り消さない — 予約の observe は同じ target・options なら no-op（冪等）。
     unobserve() {
+        this._observePending = false;
         // Single-target Shell: "stop observing my target" is exactly the Core's
         // teardown. Delegate to the Core's tracked state rather than re-resolving the
         // selector, so a target that has since left the DOM can still be stopped
@@ -713,6 +721,7 @@ class WcsIntersect extends HTMLElement {
         this._core.disconnect();
     }
     disconnect() {
+        this._observePending = false;
         this._core.disconnect();
     }
     reset() {
@@ -803,14 +812,34 @@ class WcsIntersect extends HTMLElement {
         }
     };
     // --- Lifecycle ---
+    // 自動 observe の判断はマイクロタスクで、そのときの manual / target / root /
+    // root-margin / threshold で 1 回だけ行う（timing-and-firing-contract §23）。router は
+    // 遷移で同じノードを入れ直し、新しいルートの params から state が入力を書くのは
+    // マイクロタスク — その場で observe すると、前の target で observer を張り、前の
+    // manual をラッチしていた（docs/seam-apps.md、shift-desk）。接続と属性の変化は
+    // ここへまとまり、observer は 1 回だけ作り直す。判断の前に外れた要素は何もしない。
+    _scheduleObserve() {
+        if (this._observePending)
+            return;
+        this._observePending = true;
+        queueMicrotask(() => {
+            // unobserve / disconnect が予約を取り消していれば何もしない（同じタスクで予約し直して
+            // いれば、このマイクロタスクがその判断を受け持ち、後の分は何もしない）
+            if (!this._observePending)
+                return;
+            this._observePending = false;
+            if (this.isConnected && !this.manual) {
+                this.observe();
+            }
+        });
+    }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this.addEventListener("wcs-intersect:change", this._onChange);
-        if (!this.manual) {
-            this.observe();
-        }
-        // SSR (§4.4): readiness is synchronous (observation is established above), but
+        this._scheduleObserve();
+        // SSR (§4.4): readiness is immediate (the observation itself is decided in the
+        // microtask above, which runs before any await on this promise resumes), but
         // expose the Core's ready promise as connectedCallbackPromise so the state
         // binder can await it uniformly. `manual` defers observation but readiness is
         // still immediate.
@@ -830,12 +859,13 @@ class WcsIntersect extends HTMLElement {
         // wasted observer rebuild. Kept intentionally; do not remove.
         if (oldValue === newValue)
             return;
-        // Only react once connected and in automatic mode. The Core's idempotency
-        // guard absorbs the autoloader upgrade case (attributeChangedCallback +
-        // connectedCallback both calling observe() with identical options).
+        // Only react once connected and in automatic mode. The re-observe goes through
+        // the same microtask as the connect-time one (_scheduleObserve), so the
+        // autoloader upgrade case (attributeChangedCallback + connectedCallback) and
+        // several inputs written in one task rebuild the observer once.
         if (!this.isConnected || this.manual)
             return;
-        this.observe();
+        this._scheduleObserve();
     }
 }
 

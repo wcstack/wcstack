@@ -110,6 +110,7 @@ interface WcsWsCoreCommands {
         reconnectInterval?: number;
         maxReconnects?: number;
         binaryType?: BinaryType;
+        staleAfter?: number;
     }): void;
     send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
     close(code?: number, reason?: string): void;
@@ -130,6 +131,7 @@ interface WebSocketConnectOptions {
     reconnectInterval?: number;
     maxReconnects?: number;
     binaryType?: BinaryType;
+    staleAfter?: number;
 }
 declare class WebSocketCore extends EventTarget {
     static wcBindable: IWcBindable;
@@ -150,19 +152,30 @@ declare class WebSocketCore extends EventTarget {
     private _protocols;
     private _binaryType;
     private _intentionalClose;
+    private _staleAfter;
+    private _lastActivity;
+    private _staleTimer;
     private _gen;
     private _socketGen;
     private _ready;
     /**
-     * Whether `[wcs/command-not-ready]` was said for this element: a `send()` refused because the
+     * Whether `[wcs/command-not-ready]` was said in this outage: a `send()` refused because the
      * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): the socket opening
+     * resets it. Once per element was once per page life — a route puts the same element back on
+     * every entry, so the next outage's lost message went unsaid (docs/seam-apps.md, shift-desk).
      */
     private _toldNotReady;
     constructor(target?: EventTarget);
     get ready(): Promise<void>;
     observe(): Promise<void>;
     dispose(): void;
+    /**
+     * Closes like dispose() — the end is published at once — and says whether a connection was
+     * open, opening or about to reopen (auto-reconnect). The Shell uses it when the page may enter
+     * the back/forward cache, and reconnects on the way back.
+     */
+    suspend(): boolean;
     get message(): any;
     get connected(): boolean;
     get loading(): boolean;
@@ -191,6 +204,9 @@ declare class WebSocketCore extends EventTarget {
     private _onError;
     private _onClose;
     private _scheduleReconnect;
+    private _armStale;
+    private _checkStale;
+    private _clearStaleTimer;
     private _clearReconnectTimer;
     private _removeListeners;
     private _closeInternal;
@@ -205,6 +221,7 @@ declare class WcsWebSocket extends HTMLElement {
     private _connectedCallbackPromise;
     private _internals;
     private _attached;
+    private _connectPending;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
     get debugStates(): string[];
@@ -222,6 +239,8 @@ declare class WcsWebSocket extends HTMLElement {
     set maxReconnects(value: number | null | undefined);
     get binaryType(): BinaryType;
     set binaryType(value: string | null | undefined);
+    get staleAfter(): number;
+    set staleAfter(value: number | null | undefined);
     get manual(): boolean;
     set manual(value: boolean | null | undefined);
     get message(): any;
@@ -238,7 +257,11 @@ declare class WcsWebSocket extends HTMLElement {
     sendMessage(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
     close(code?: number, reason?: string): void;
     attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void;
+    private _scheduleConnect;
     connectedCallback(): void;
+    private _reopenOnShow;
+    private _onPageHide;
+    private _onPageShow;
     disconnectedCallback(): void;
 }
 

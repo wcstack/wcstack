@@ -3025,7 +3025,7 @@ function tokenize(text3) {
       i += 2;
       continue;
     }
-    if ("{}[]<>()|,;:?!*.=".includes(ch)) {
+    if ("{}[]<>()|&,;:?!*.=".includes(ch)) {
       tokens.push({ t: "punct", v: ch });
       i++;
       continue;
@@ -3074,6 +3074,7 @@ function parseJsDocType(text3) {
       const member = parsePostfix();
       if (member === null) return null;
       members.push(member);
+      if (expect("&")) continue;
       if (!expect("|")) break;
     }
     if (isPunct("=>")) {
@@ -3237,12 +3238,21 @@ function readBracedType(comment, tag) {
   return null;
 }
 function readJsDocTypeBefore(content, propIndex) {
+  const comment = jsDocCommentBefore(content, propIndex);
+  return comment === void 0 ? void 0 : readBracedType(comment, "type")?.type.trim();
+}
+function readJsDocReturnsBefore(content, propIndex) {
+  const comment = jsDocCommentBefore(content, propIndex);
+  if (comment === void 0) return void 0;
+  return (readBracedType(comment, "returns") ?? readBracedType(comment, "return"))?.type.trim();
+}
+function jsDocCommentBefore(content, propIndex) {
   let end = propIndex;
   while (end > 0 && /\s/.test(content[end - 1])) end--;
   if (!content.startsWith("*/", end - 2)) return void 0;
   const start = content.lastIndexOf("/*", end - 2);
   if (start === -1 || content[start + 2] !== "*") return void 0;
-  return readBracedType(content.slice(start, end), "type")?.type.trim();
+  return content.slice(start, end);
 }
 function collectJsDocTypedefs(script, scan) {
   const typedefs = /* @__PURE__ */ new Map();
@@ -3329,6 +3339,7 @@ function analyzeStatePaths(scriptContent) {
         const settable = !recursive && effective !== "data" && effective.set;
         paths.push({ path: prop.name, kind: recursive ? "recursive" : "computed", ...settable ? { settable } : {} });
       }
+      if (prop.declaredType !== void 0) pushDeclaredShapePaths(prop.name, prop.declaredType, paths, 0, typedefs);
       continue;
     }
     pushDataPropertyPaths(prop, paths, typedefs);
@@ -4206,7 +4217,12 @@ function extractDefaultExportObject(script) {
 function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
   const props = [];
   const scan = maskCommentsAndStrings(objectContent);
-  const regex = allowEmptyDataKeys ? /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]*)"|'([^']*)'|([$\w]+))\s*:\s*)/gd : /(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*\([^)]*\)\s*\{)|(?:(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*:\s*)/gd;
+  const params = String.raw`\((?:[^()]|\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))*\)`;
+  const dataKey = allowEmptyDataKeys ? String.raw`(?:"([^"]*)"|'([^']*)'|([$\w]+))` : String.raw`(?:"([^"]+)"|'([^']+)'|([$\w]+))`;
+  const regex = new RegExp(
+    String.raw`(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:${dataKey}\s*:\s*)`,
+    "gd"
+  );
   let match;
   while ((match = regex.exec(scan)) !== null) {
     const indices = match.indices;
@@ -4227,6 +4243,8 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
     if (accessorName) {
       const { body, bodyStart } = skipBody();
       const accessor = match[0].startsWith("set") ? "set" : "get";
+      const returnsText = accessor === "get" ? readJsDocReturnsBefore(objectContent, match.index) : void 0;
+      const declaredType = returnsText === void 0 ? null : parseJsDocType(returnsText);
       props.push({
         name: accessorName,
         kind: "getter",
@@ -4234,7 +4252,8 @@ function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
         value: body,
         valueStart: bodyStart,
         nameStart: nameSpan[0],
-        nameEnd: nameSpan[1]
+        nameEnd: nameSpan[1],
+        ...declaredType !== null ? { declaredType } : {}
       });
       continue;
     }
@@ -11916,7 +11935,7 @@ function forEachStateMethod(elements, html, fileReader, spelling, fn) {
       for (const callable of analyzeCallableBodies(script)) {
         if (callable.kind !== "method" || spelling !== null && !callable.body.includes(spelling)) continue;
         const head = script.slice(callable.end, callable.bodyStart - 1);
-        const params = /\(([^)]*)\)\s*$/.exec(head);
+        const params = /\(([\s\S]*)\)\s*$/.exec(head);
         if (params === null) continue;
         fn(volume === null ? callable.name : `${volume}.${callable.name}`, params[1], callable.body);
       }
@@ -14279,6 +14298,7 @@ var BUILTIN_TAGS = {
       "withCredentials": "with-credentials",
       "events": "events",
       "raw": "raw",
+      "staleAfter": "stale-after",
       "manual": "manual",
       "trigger": null
     },
@@ -14469,6 +14489,7 @@ var BUILTIN_TAGS = {
       "reconnectInterval": "reconnect-interval",
       "maxReconnects": "max-reconnects",
       "binaryType": "binary-type",
+      "staleAfter": "stale-after",
       "manual": "manual",
       "trigger": null,
       "send": null

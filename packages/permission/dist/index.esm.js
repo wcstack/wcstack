@@ -400,6 +400,8 @@ function reflectBooleanAttribute(el, name, value) {
     writeAttribute(el, name, value === undefined ? initial : value ? "" : null);
 }
 
+// 張られた deferred が無いときの _connectResolve（呼んでも何もしない）
+const nothingArmed = () => { };
 // Named WcsPermission (not `Permission`) so the class does not shadow any global,
 // and to match the <wcs-geo> / <wcs-ws> convention (WcsGeolocation /
 // WcsWebSocket). The public export keeps the `WcsPermission` name unchanged.
@@ -426,6 +428,11 @@ class WcsPermission extends HTMLElement {
     // (programmatically-created elements have no attributes at construction time).
     _core;
     _connectedCallbackPromise = Promise.resolve();
+    // _scheduleObserve のマイクロタスクが待っている間 true
+    _observePending = false;
+    // connectedCallback で張った connectedCallbackPromise を解決する関数。
+    // マイクロタスク（の query の決着）か disconnectedCallback が解決する
+    _connectResolve = nothingArmed;
     _internals = null;
     constructor() {
         super();
@@ -547,19 +554,50 @@ class WcsPermission extends HTMLElement {
             descriptor.sysex = true;
         return descriptor;
     }
+    // 何を query するか（name / user-visible-only / sysex）はマイクロタスクで、そのときの
+    // 入力で 1 回だけ決める（timing-and-firing-contract §23）。router は遷移で同じノードを
+    // 入れ直し、新しいルートの params から state が name を書くのはマイクロタスク — その場で
+    // query すると、前の name の state を公開し、その購読に留まっていた（docs/seam-apps.md、
+    // shift-desk）。その時点で外れていれば何もしない。
+    _scheduleObserve() {
+        if (this._observePending)
+            return;
+        this._observePending = true;
+        queueMicrotask(() => {
+            this._observePending = false;
+            const resolveConnect = this._connectResolve;
+            this._connectResolve = nothingArmed;
+            if (!this.isConnected) {
+                resolveConnect();
+                return;
+            }
+            // Begin observing (or revive the subscription after a reconnect). query()
+            // never rejects in a way that escapes — failures surface as the
+            // `unsupported` state — so no .catch() is needed.
+            void this._core.observe(this._descriptor()).then(resolveConnect);
+        });
+    }
     // --- Lifecycle ---
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this.style.display = "none";
-        // Begin observing (or revive the subscription after a reconnect). The
-        // returned promise is held as connectedCallbackPromise for SSR. query() never
-        // rejects in a way that escapes — failures surface as the `unsupported`
-        // state — so no .catch() is needed.
-        this._connectedCallbackPromise = this._core.observe(this._descriptor());
+        // connectedCallbackPromise (SSR) resolves once the connect-time query settles.
+        // The query itself is decided in a microtask (_scheduleObserve), so arm a
+        // deferred here; the microtask resolves it on every path, and so does
+        // disconnectedCallback, so awaiting it never hangs.
+        this._connectedCallbackPromise = new Promise((resolve) => {
+            this._connectResolve = resolve;
+        });
+        this._scheduleObserve();
     }
     disconnectedCallback() {
         this._core.dispose();
+        // 同じタスクの remove() → append() では 2 回目の connectedCallback が
+        // _connectResolve を上書きし、1 回目の deferred を待つ側が残される。外れた時点で
+        // 接続時の初期化は意味を失うので、ここで解決する（Fetch.ts と同じ）。
+        this._connectResolve();
+        this._connectResolve = nothingArmed;
     }
 }
 

@@ -551,6 +551,7 @@ declare class WcsListen extends HTMLElement {
     private _core;
     private _trigger;
     private _connectedCallbackPromise;
+    private _startPending;
     private _internals;
     constructor();
     get connectedCallbackPromise(): Promise<void>;
@@ -581,6 +582,7 @@ declare class WcsListen extends HTMLElement {
     stop(): void;
     abort(): void;
     private _options;
+    private _scheduleStart;
     connectedCallback(): void;
     disconnectedCallback(): void;
 }

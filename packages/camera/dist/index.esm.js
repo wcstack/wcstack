@@ -647,6 +647,12 @@ class CameraCore extends EventTarget {
         if (this._constraints.audio) {
             tasks.push(this._watchMicrophone());
         }
+        else {
+            // A re-observe after dispose() without audio: the microphone state the last
+            // subscription left is not what this one asks about (null = audio not requested),
+            // as _reconcileAudioWatcher clears it on a live Core.
+            this._setAudioPermission(null);
+        }
         // Track hot-plug: refresh the device list when a camera is added/removed.
         if (typeof navigator.mediaDevices.addEventListener === "function") {
             navigator.mediaDevices.addEventListener("devicechange", this._onDeviceChange);
@@ -951,14 +957,23 @@ class WcsCamera extends HTMLElement {
         commands: CameraCore.wcBindable.commands,
     };
     // `autostart` and `keep-alive` are intentionally NOT observed: `autostart` is a
-    // connect-time-only acquire trigger (read once in connectedCallback; flipping it
-    // later is meaningless), and `keep-alive` is read fresh on every visibilitychange
-    // (_onVisibilityChange), so it never needs to drive a re-acquire. The observed set
-    // is exactly the constraints that reshape the requested track.
+    // connect-time-only acquire trigger (read once by the connect-time decision in
+    // _scheduleAcquire's microtask; flipping it later is meaningless), and `keep-alive`
+    // is read fresh on every visibilitychange (_onVisibilityChange), so it never needs
+    // to drive a re-acquire. The observed set is exactly the constraints that reshape
+    // the requested track.
     static observedAttributes = ["facing-mode", "device-id", "audio", "width", "height"];
     _core;
     _video;
     _connectedCallbackPromise = Promise.resolve();
+    // connectedCallback が張った connectedCallbackPromise を解く関数。接続時の判断を下す
+    // _scheduleAcquire のマイクロタスクが（その前に外れたときは disconnectedCallback が）呼ぶ。
+    // null でないあいだは「接続時の判断待ち」でもある。
+    _connectResolve = null;
+    // _scheduleAcquire のマイクロタスクが待っている間 true
+    _acquirePending = false;
+    // 接続時の判断待ちに stop() が呼ばれたら true — その判断は autostart でも取得しない
+    _autostartCancelled = false;
     _connected = false;
     // True while switchCamera() rewrites several attributes at once. Each setAttribute /
     // removeAttribute fires its own attributeChangedCallback synchronously; without this
@@ -1081,8 +1096,21 @@ class WcsCamera extends HTMLElement {
     get errorInfo() { return this._core.errorInfo; }
     get connectedCallbackPromise() { return this._connectedCallbackPromise; }
     // --- Commands ---
-    start() { this._core.start(); }
-    stop() { this._core.stop(); }
+    start() {
+        // 制約は属性が正本。接続時の判断・属性の変化はマイクロタスクで Core に渡るので
+        // （_scheduleAcquire）、それより先の start() でも、いまの属性の制約で取得するよう渡しておく
+        if (this._connected)
+            this._core.observe(this._constraints());
+        this._core.start();
+    }
+    stop() {
+        // 接続時の判断待ちなら、その autostart を取り消す — 同じタスクの append → stop() で、後の
+        // マイクロタスクが取得を始めないように（判断が同期だった頃は、始めた取得を stop() が止めて
+        // いた）。権限の監視（observe）は取り消さない。入れ直せば、次の判断は autostart に従う
+        if (this._connectResolve !== null)
+            this._autostartCancelled = true;
+        this._core.stop();
+    }
     /**
      * Toggle the front/back camera by updating the DOM attributes (the single source
      * of truth), not just the Core's internal constraints. Deliberately does NOT call
@@ -1142,18 +1170,63 @@ class WcsCamera extends HTMLElement {
         }
     };
     // --- Lifecycle ---
+    // 取得の判断はマイクロタスクで、そのときの属性（制約と autostart）で 1 回だけ行う
+    // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+    // params から state が device-id などを書くのはマイクロタスク — その場で取得すると、前の
+    // 制約で getUserMedia を起こし、取得中は active が偽なので新しい制約での取り直しも起きず、
+    // 前の制約のストリームが残っていた（docs/seam-apps.md、shift-desk）。同じタスクの制約の
+    // 変化もここへまとまる。
+    _scheduleAcquire() {
+        if (this._acquirePending)
+            return;
+        this._acquirePending = true;
+        queueMicrotask(() => {
+            this._acquirePending = false;
+            const resolveConnect = this._connectResolve;
+            this._connectResolve = null;
+            // 判断の前に外れた要素は何もしない（disconnectedCallback が dispose 済み）
+            if (!this._connected)
+                return;
+            // Track the constraints (and reconcile the microphone watcher).
+            const ready = this._core.observe(this._constraints());
+            if (resolveConnect !== null) {
+                // 接続時の判断: autostart なら取得する（判断待ちに stop() が呼ばれていなければ）
+                if (this.autostart && !this._autostartCancelled) {
+                    this._core.start();
+                }
+                this._autostartCancelled = false;
+                resolveConnect(ready);
+            }
+            else if (this._core.active) {
+                // A constraints change re-acquires (switchMap-style restart) only when a stream
+                // is actually live. `active` is the deliberate guard (not `desired`): `active`
+                // implies `desired` (a stream only goes live under desired), so re-acquiring
+                // cannot spuriously re-`desired` a stopped camera. Guarding on `active` rather
+                // than `desired` also avoids force-acquiring while suspended/hidden (desired but
+                // not active) — the visibility handler owns resume there.
+                this._core.start();
+            }
+        });
+    }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
         this._connected = true;
-        this._connectedCallbackPromise = this._core.observe(this._constraints());
-        if (this.autostart) {
-            this._core.start();
-        }
+        // connectedCallbackPromise は接続時の observe（権限の初期状態）が済むまでを表す。
+        // observe は判断と同じマイクロタスクで走るので、ここで張ってそこで解く
+        this._connectedCallbackPromise = new Promise((resolve) => {
+            this._connectResolve = resolve;
+        });
+        this._scheduleAcquire();
         document.addEventListener("visibilitychange", this._onVisibilityChange);
     }
     disconnectedCallback() {
         this._connected = false;
+        // 判断の前に外れたら、張った connectedCallbackPromise をここで解く — 同じタスクで
+        // 入れ直されると次の connectedCallback が張り替えるので、待つ側が取り残されないように
+        this._connectResolve?.();
+        this._connectResolve = null;
+        this._autostartCancelled = false;
         document.removeEventListener("visibilitychange", this._onVisibilityChange);
         this._core.dispose();
     }
@@ -1165,17 +1238,9 @@ class WcsCamera extends HTMLElement {
         // constraints (see `_batchingAttrs`).
         if (this._batchingAttrs)
             return;
-        // Track the new constraints (and reconcile the microphone watcher).
-        this._core.observe(this._constraints());
-        // A constraints change re-acquires (switchMap-style restart) only when a stream
-        // is actually live. `active` is the deliberate guard (not `desired`): `active`
-        // implies `desired` (a stream only goes live under desired), so re-acquiring
-        // cannot spuriously re-`desired` a stopped camera. Guarding on `active` rather
-        // than `desired` also avoids force-acquiring while suspended/hidden (desired but
-        // not active) — the visibility handler owns resume there.
-        if (this._core.active) {
-            this._core.start();
-        }
+        // 制約の変化は取得の判断（_scheduleAcquire）へまとめる: 接続時の判断待ちならそれが
+        // 新しい制約を読み、その後ならストリームが生きているときだけ取り直す
+        this._scheduleAcquire();
     }
     _onVisibilityChange = () => {
         if (this.keepAlive)
@@ -1270,9 +1335,11 @@ class RecorderCore extends EventTarget {
     // asynchronous probe to await — readiness is immediate.
     _ready = Promise.resolve();
     /**
-     * Whether `[wcs/command-not-ready]` was said for this element: a `start()` refused because the
+     * Whether `[wcs/command-not-ready]` was said in this outage: a `start()` refused because the
      * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): a stream arriving
+     * resets it. Once per element was once per page life — a route puts the same element back on
+     * every entry, so the next outage's lost recording went unsaid (docs/seam-apps.md, shift-desk).
      */
     _toldNotReady = false;
     constructor(target) {
@@ -1358,6 +1425,9 @@ class RecorderCore extends EventTarget {
      */
     attachStream(stream) {
         this._stream = stream;
+        // ready again: a start refused in the next outage is said again
+        if (stream)
+            this._toldNotReady = false;
     }
     /** Start recording the borrowed stream. Never throws — surfaces `error`. */
     start(options = {}) {
@@ -1470,7 +1540,8 @@ class RecorderCore extends EventTarget {
             return;
         this._toldNotReady = true;
         console.warn("[@wcstack/camera] [wcs/command-not-ready] start() was refused: no stream is attached, so nothing is recorded. " +
-            "It goes to `error` too. Wire a camera's stream to the recorder first. (Said once per element.)", this._target);
+            "It goes to `error` too. Wire a camera's stream to the recorder first. " +
+            "(Said once until a stream is attached again.)", this._target);
     }
     /** Stop recording; the assembled Blob is published from the recorder's onstop. */
     stop() {

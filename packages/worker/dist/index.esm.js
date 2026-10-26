@@ -282,9 +282,11 @@ class WorkerCore extends EventTarget {
     // asynchronous probe to await — readiness is immediate.
     _ready = Promise.resolve();
     /**
-     * Whether `[wcs/command-not-ready]` was said for this element: a `post()` refused because the
+     * Whether `[wcs/command-not-ready]` was said in this outage: a `post()` refused because the
      * element is not ready loses what it carried, and `error` alone told only a page that binds it.
-     * Said once per element (docs/v4-direction-2026-10.md, the I/O command policy).
+     * Said once per outage (docs/v4-direction-2026-10.md, the I/O command policy): a worker starting
+     * resets it. Once per element was once per page life — a route puts the same element back on
+     * every entry, so the next outage's lost message went unsaid (docs/seam-apps.md, shift-desk).
      */
     _toldNotReady = false;
     /** Whether `[wcs/post-uncloneable]` was said for this element. */
@@ -450,7 +452,8 @@ class WorkerCore extends EventTarget {
             return;
         this._toldNotReady = true;
         console.warn("[@wcstack/worker] [wcs/command-not-ready] post() was refused: no worker is running, so the message is lost. " +
-            "It goes to `error` too. Give the element a `src` (or call start(src)) first. (Said once per element.)", this._target);
+            "It goes to `error` too. Give the element a `src` (or call start(src)) first. " +
+            "(Said once until a worker starts again.)", this._target);
     }
     /** Terminate the worker. Idempotent — a no-op when none is running. */
     terminate() {
@@ -501,6 +504,8 @@ class WorkerCore extends EventTarget {
         this._worker.addEventListener("message", this._onMessage);
         this._worker.addEventListener("messageerror", this._onMessageError);
         this._worker.addEventListener("error", this._onError);
+        // ready again: a post refused in the next outage is said again
+        this._toldNotReady = false;
         this._setRunning(true);
     }
     _onMessage = (event) => {
@@ -813,6 +818,10 @@ class WcsWorker extends HTMLElement {
     static get observedAttributes() { return ["src"]; }
     _core;
     _connectedCallbackPromise = Promise.resolve();
+    // connectedCallback ran before (a reconnect defers its start: _scheduleStart)
+    _everConnected = false;
+    // _scheduleStart's microtask is waiting
+    _startPending = false;
     _internals = null;
     constructor() {
         super();
@@ -956,6 +965,8 @@ class WcsWorker extends HTMLElement {
     }
     // --- Commands ---
     start() {
+        // an explicit start or terminate takes a reconnect's pending decision
+        this._startPending = false;
         // Delegate unconditionally — including the empty-`src` case — so the Core's
         // never-throw contract holds at the Shell boundary too: start("") raises a
         // TypeError through `error` rather than failing silently. The auto-spawn
@@ -973,13 +984,28 @@ class WcsWorker extends HTMLElement {
         this._core.post(data, transfer);
     }
     terminate() {
+        this._startPending = false;
         this._core.terminate();
     }
     // --- Lifecycle ---
     attributeChangedCallback(name, _oldValue, newValue) {
-        if (name === "src" && this.isConnected && !this.manual && newValue) {
+        // (a reconnect's start is waiting for its microtask: it starts the src in effect then)
+        if (name === "src" && this.isConnected && !this.manual && newValue && !this._startPending) {
             this.start();
         }
+    }
+    _scheduleStart() {
+        if (this._startPending)
+            return;
+        this._startPending = true;
+        queueMicrotask(() => {
+            if (!this._startPending)
+                return; // an explicit command took the decision meanwhile
+            this._startPending = false;
+            if (this.isConnected && !this.manual && this.src) {
+                this.start();
+            }
+        });
     }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
@@ -992,8 +1018,18 @@ class WcsWorker extends HTMLElement {
         // resolves immediately for this command-driven node, but wiring it keeps the
         // readiness contract uniform with the async-init IO nodes.
         this._connectedCallbackPromise = this._core.observe();
-        if (!this.manual && this.src) {
-            this.start();
+        if (!this._everConnected) {
+            // The first connect starts at once, so a post in the same task reaches the worker.
+            this._everConnected = true;
+            if (!this.manual && this.src) {
+                this.start();
+            }
+        }
+        else {
+            // A reconnect decides in a microtask, with the src then (timing-and-firing-contract §23).
+            // @wcstack/router puts the same nodes back on a parameter-only navigation, and the state
+            // writes the new route's inputs in a microtask (docs/seam-apps.md, shift-desk).
+            this._scheduleStart();
         }
     }
     disconnectedCallback() {

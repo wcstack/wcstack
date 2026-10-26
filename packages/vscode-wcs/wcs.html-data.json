@@ -1787,7 +1787,7 @@
       "name": "wcs-sse",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/sse` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`\n\n**Inputs**: `url`, `withCredentials`, `events`, `raw`, `manual`, `trigger`\n\n**Commands**: `command.connect`, `command.close`"
+        "value": "`@wcstack/sse` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`\n\n**Inputs**: `url`, `withCredentials`, `events`, `raw`, `staleAfter`, `manual`, `trigger`\n\n**Commands**: `command.connect`, `command.close`"
       },
       "attributes": [
         {
@@ -1809,6 +1809,13 @@
           "description": {
             "kind": "markdown",
             "value": "Markup attribute of the `raw` input."
+          }
+        },
+        {
+          "name": "stale-after",
+          "description": {
+            "kind": "markdown",
+            "value": "Markup attribute of the `staleAfter` input."
           }
         },
         {
@@ -2181,7 +2188,7 @@
       "name": "wcs-ws",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/websocket` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`, `send`\n\n**Inputs**: `url`, `protocols`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `binaryType`, `manual`, `trigger`, `send`\n\n**Commands**: `command.connect`, `command.sendMessage`, `command.close`"
+        "value": "`@wcstack/websocket` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`, `send`\n\n**Inputs**: `url`, `protocols`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `binaryType`, `staleAfter`, `manual`, `trigger`, `send`\n\n**Commands**: `command.connect`, `command.sendMessage`, `command.close`"
       },
       "attributes": [
         {
@@ -2224,6 +2231,13 @@
           "description": {
             "kind": "markdown",
             "value": "Markup attribute of the `reconnectInterval` input."
+          }
+        },
+        {
+          "name": "stale-after",
+          "description": {
+            "kind": "markdown",
+            "value": "Markup attribute of the `staleAfter` input."
           }
         },
         {

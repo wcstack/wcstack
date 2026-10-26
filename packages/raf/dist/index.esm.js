@@ -753,6 +753,8 @@ class Raf extends HTMLElement {
     _trigger = false;
     _connectedCallbackPromise = Promise.resolve();
     _internals = null;
+    // _scheduleStart のマイクロタスクが待っている間 true
+    _startPending = false;
     constructor() {
         super();
         this._core = new RafCore(this);
@@ -905,6 +907,13 @@ class Raf extends HTMLElement {
         }
     }
     // --- Commands ---
+    //
+    // stop / reset は、接続時の自動 start の予約（_scheduleStart）も取り消す。同じタスクで
+    // 接続の後に呼ばれたとき、以前の同期の start を止めたのと同じく何も始めない
+    // （timing-and-firing-contract §23）。pause は予約をその場で引き受けてから止める —
+    // 以前と同じく、再開（resume）できる一時停止のループが残る。start / resume / trigger は
+    // 取り消さない — start は実行中なら no-op（冪等）なので、予約が後から走っても二重に
+    // ならない（resume は pause の後でなければ no-op）。
     start() {
         // `once` is sugar for "fire exactly one frame": map it to repeat=1, but
         // let an explicit repeat attribute win when both are present.
@@ -912,18 +921,46 @@ class Raf extends HTMLElement {
         this._core.start({ repeat });
     }
     stop() {
+        this._startPending = false;
         this._core.stop();
     }
     reset() {
+        this._startPending = false;
         this._core.reset();
     }
     pause() {
+        // 予約中の自動 start は、その場のいまの入力で行ってから止める（マイクロタスクと同じ判断）
+        if (this._startPending) {
+            this._startPending = false;
+            if (this.isConnected && !this.manual) {
+                this.start();
+            }
+        }
         this._core.pause();
     }
     resume() {
         this._core.resume();
     }
     // --- Lifecycle ---
+    // 自動 start の判断はマイクロタスクで、そのときの manual / once / repeat で 1 回だけ行う
+    // （timing-and-firing-contract §23）。router は遷移で同じノードを入れ直し、新しいルートの
+    // params から state が入力を書くのはマイクロタスク — その場で start すると、前の入力で
+    // ループを始めていた（docs/seam-apps.md、shift-desk）。判断の前に外れた要素は何もしない。
+    _scheduleStart() {
+        if (this._startPending)
+            return;
+        this._startPending = true;
+        queueMicrotask(() => {
+            // stop / reset / pause が予約を取り消していれば何もしない（同じタスクで予約し直して
+            // いれば、このマイクロタスクがその判断を受け持ち、後の分は何もしない）
+            if (!this._startPending)
+                return;
+            this._startPending = false;
+            if (this.isConnected && !this.manual) {
+                this.start();
+            }
+        });
+    }
     connectedCallback() {
         // upgrade 前に代入された input を取り込み直す（doc 13 §1.2 / Phase A1）
         upgradeProperties(this);
@@ -936,10 +973,10 @@ class Raf extends HTMLElement {
         // connectedCallbackPromise for SSR. Note for SSR pages: an auto-started
         // frame loop keeps scheduling — prefer `manual` in server-rendered markup
         // (see README).
+        // observe() は入力に依らない（reduced-motion は attributeChangedCallback が随時
+        // Core へ届ける）ので、ここで同期に張る。
         this._connectedCallbackPromise = this._core.observe();
-        if (!this.manual) {
-            this.start();
-        }
+        this._scheduleStart();
     }
     disconnectedCallback() {
         // dispose() stops the loop, releases the visibility subscription and bumps
