@@ -5,7 +5,8 @@
  *   - 別名・`Object.assign`・`$on` の state 引数を通したその場の変更（`wcs/nested-assign` / `wcs/array-*`、state-collab-board）
  *   - `$on` の state 引数を通した書き込みも `wcs/getter-untracked-read` の証拠（state-collab-board）
  *   - getter の中の `location`（`wcs/getter-untracked-read`、router-admin）
- *   - map の代入の行・`{}` を種にしたキーへの代入（`wcs/binding-path-missing` の誤報、family-ledger）
+ *   - map の代入の行・`{}` を種にしたキーへの代入（`wcs/binding-path-missing` の誤報）と、spread が書くパスを読む
+ *     getter（`wcs/getter-untracked-read` が error、family-ledger）
  */
 import { describe, it, expect } from 'vitest';
 import { validateDocument } from '../src/core/validateDocument';
@@ -184,7 +185,7 @@ describe('wcs/getter-untracked-read — getter の中の location（router-admin
   });
 });
 
-describe('family-ledger — 動いたページの誤報（src= の state）', () => {
+describe('family-ledger — 動いたページの 22 件の誤報と、関門を通った warning（src= の state）', () => {
   const STATE = `export default {
   items: [{ id: "a", name: "A" }],
   rowsC: [],
@@ -208,5 +209,13 @@ describe('family-ledger — 動いたページの誤報（src= の state）', ()
 
   it('map の代入の行と、{} を種にしたキーへ代入したキーを「存在しない」と言わない', () => {
     expect(ofCode(found(), WcsDiagnosticCode.BindingPathMissing)).toEqual([]);
+  });
+
+  it('spread が書く monthFetch.value を読む getter は error で、ファイルの位置を持つ（--errors-only の関門で止まる）', () => {
+    const untracked = ofCode(found(), WcsDiagnosticCode.GetterUntrackedRead);
+    expect(untracked).toHaveLength(1);
+    expect(untracked[0].severity).toBe('error');
+    expect(untracked[0].origin?.path).toBe('./state2.js');
+    expect(untracked[0].message).toContain('"...: monthFetch" on <wcs-fetch> writes "monthFetch.value"');
   });
 });

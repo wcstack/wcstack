@@ -110,8 +110,8 @@ describe('wcs/path-readonly — 書き戻す束縛が setter の無い getter �
     expect(found[6].message).toContain('"items.*.total"');
   });
 
-  it('setter のある getter・#ro・書き戻さない束縛・type=button・カスタム要素は黙る', () => {
-    const html = page(STATE, `<input data-wcs="value: fahrenheit"><input data-wcs="value#ro: celsius"><p data-wcs="textContent: celsius"></p>`
+  it('setter のある getter・#ro（ほかの修飾子と並べても）・書き戻さない束縛・type=button・カスタム要素は黙る', () => {
+    const html = page(STATE, `<input data-wcs="value: fahrenheit"><input data-wcs="value#ro: celsius"><input data-wcs="value#ro,init=none: celsius"><input data-wcs="value#init=none,ro: celsius"><p data-wcs="textContent: celsius"></p>`
       + `<input type="button" data-wcs="value: celsius"><input data-wcs="checked: celsius"><my-field data-wcs="value: celsius"></my-field>`);
     expect(find(html, WcsDiagnosticCode.PathReadonly)).toEqual([]);
   });

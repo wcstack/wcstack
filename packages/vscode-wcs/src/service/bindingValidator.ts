@@ -760,10 +760,12 @@ function openTagBefore(html: string, valueStart: number): string {
 
 /**
  * Whether the runtime writes this binding back to the state (state's dom/plan.ts `isTwoWay`, and `radio:` /
- * `checkbox:`): not with `#ro`, not on a custom element (its write-back follows its wcBindable).
+ * `checkbox:`): not with `#ro` (alone or among others, `#ro,init=none`), not on a custom element (its write-back
+ * follows its wcBindable). `written` is the left side as written; semanticValidator passes the property name.
  */
-function writesBack(attr: BindAttrLocation, prop: string, written: string): boolean {
-  if (written.split('#').slice(1).some((modifier) => modifier.trim() === 'ro')) return false;
+export function writesBack(attr: BindAttrLocation, prop: string, written: string): boolean {
+  const modifiers = written.split('#').slice(1).flatMap((part) => part.split(','));
+  if (modifiers.some((modifier) => modifier.trim() === 'ro')) return false;
   if (prop === 'radio' || prop === 'checkbox') return true;
   const tag = attr.tagName;
   if (tag === undefined || tag.includes('-')) return false;

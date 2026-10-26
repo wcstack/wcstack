@@ -75,6 +75,11 @@ export interface WcsMessageCatalog {
   updatedCallbackUnbound(path: string): string;
   /** getter の中でパス読み取りの先の素のプロパティアクセス（追跡されるのは root だけ）。 */
   getterUntrackedRead(root: string, suggestedPath: string): string;
+  /**
+   * 同じ読みで、そのパス（かその上）を書くのがページの束縛（`...: root` の spread・書き戻す束縛・要素の出力）
+   * のとき。書き込みは getter に届かないと断定できる（error）。`binding` は束縛の原文、`written` はそれが書くパス。
+   */
+  getterUntrackedReadBound(root: string, suggestedPath: string, binding: string, tag: string, written: string): string;
   onHandlerThis(name: string): string;
   /** getter の中の `location` 読み（state ではないので追跡されない — 最初の URL のまま）。 */
   getterReadsLocation(read: string): string;
@@ -359,6 +364,8 @@ const ja: WcsMessageCatalog = {
     `onsubmit に #prevent が無く、"${h}" も preventDefault を呼びません。ブラウザはフォームも送るので、ページが読み直されるか、router があれば GET が欄の値（パスワードも）を URL と履歴に載せます。onsubmit#prevent: ${h} と書くか、ハンドラで event.preventDefault() を呼んでください`,
   getterUntrackedRead: (root, sp) =>
     `ここで追跡されるのは "${root}" だけです。"${sp}" が変わってもこの getter は再評価されません（パス読み取りの先の素のプロパティアクセスは追跡されない）。this["${sp}"] で読んでください`,
+  getterUntrackedReadBound: (root, sp, binding, tag, written) =>
+    `ここで追跡されるのは "${root}" だけですが、<${tag}> の束縛 "${binding}" は "${written}" をパスで書きます。その書き込みはこの getter に届かず、getter は前に計算した値を返し続けます（パス読み取りの先の素のプロパティアクセスは追跡されない）。this["${sp}"] で読んでください`,
   handlerFilterNotAllowed: (prop) => `イベントハンドラ "${prop}" にフィルタは使用できません`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" には${JA_EXPECTED_LABEL[expected]}が必要です（現在の型: ${resultType}）`,
@@ -641,6 +648,8 @@ const en: WcsMessageCatalog = {
     `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   getterUntrackedRead: (root, sp) =>
     `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
+  getterUntrackedReadBound: (root, sp, binding, tag, written) =>
+    `Only "${root}" is tracked here, but the binding "${binding}" on <${tag}> writes "${written}" by path: that write never reaches this getter, which keeps returning the value it last computed (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) =>
     `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,

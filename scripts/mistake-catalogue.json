@@ -30,12 +30,12 @@
     },
     {
       "id": "getter-untracked-object-read",
-      "lint": [{ "code": "wcs/getter-untracked-read", "severity": "warning" }],
+      "lint": [{ "code": "wcs/getter-untracked-read", "severity": "varies" }],
       "runtime": "silent", "harm": "stale",
       "mistake": { "en": "A getter reads `this.form.name` while the page writes `form.name`.", "ja": "getter が `this.form.name` を読み、ページは `form.name` へ書く。" },
       "effect": { "en": "Only `form` is tracked, and a write does not invalidate its ancestors: the getter keeps its old value.", "ja": "追跡されるのは `form` だけで、書き込みは祖先を無効にしない。getter は古い値のまま。" },
       "disposition": "runtime-report",
-      "note": { "en": "The diagnostics add-on can see a write under a path whose ancestor feeds a getter the write did not reach (a read for identity only would be a false alarm).", "ja": "diagnostics の後付けが、祖先が getter に使われているのに書き込みが届かなかったパスを見つけられる（同一性だけを見る読みは誤報になる）。" }
+      "note": { "en": "The lint says it as an error when a binding on the page writes the path the getter reads — a spread on a built-in tag (`...: monthFetch` writes `monthFetch.value`), a two-way binding, an element's output (a seam app's page stayed on \"loading…\": the warning had passed the skill's `--errors-only` gate) — and as a warning when only the script writes it (the root may also be replaced, which re-runs the getter). The diagnostics add-on can see a write under a path whose ancestor feeds a getter the write did not reach (a read for identity only would be a false alarm).", "ja": "lint は、getter が読むパスをページの束縛が書くとき — 組み込みタグの spread（`...: monthFetch` は `monthFetch.value` を書く）・書き戻す束縛・要素の出力（継ぎ目アプリのページは「読み込み中…」のまま止まった。warning だったのでスキルの `--errors-only` の関門を通った）— は error、スクリプトだけが書くときは warning で言う（ルートも置き換えられれば getter は走り直す）。diagnostics の後付けが、祖先が getter に使われているのに書き込みが届かなかったパスを見つけられる（同一性だけを見る読みは誤報になる）。" }
     },
     {
       "id": "getter-reads-location",

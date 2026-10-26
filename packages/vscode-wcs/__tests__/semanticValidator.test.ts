@@ -344,6 +344,95 @@ describe("wcs/getter-untracked-read — パス読み取りの先の素のプロ�
   });
 });
 
+describe("wcs/getter-untracked-read — 読んだパスをページの束縛が書くときは error（継ぎ目アプリ family-ledger）", () => {
+  const FORM = `form: { name: "", age: 0, agree: false, addr: { city: "" }, rows: [{ name: "" }] }`;
+  const FETCH = `month: "", monthFetch: { value: null, error: null, loading: false, status: 0 }`;
+  function diagnostics(body: string, markup: string, locale = "en") {
+    return codes(validateSemantics(script(`{ ${FORM}, ${FETCH}, ${body} }`) + markup, "wcs-state", locale), WcsDiagnosticCode.GetterUntrackedRead);
+  }
+  const severity = (body: string, markup: string) => diagnostics(body, markup).map((d) => d.severity);
+  const MONTH = `get monthData() { const v = this.monthFetch.value; return v && v.month === this.month ? v : null; }`;
+
+  it("組み込みタグの spread（...: monthFetch）が書く出力を読む getter は error で、書く束縛を名指すこと", () => {
+    const out = diagnostics(MONTH, `<wcs-fetch data-wcs="...: monthFetch"></wcs-fetch>`);
+    expect(out).toHaveLength(1);
+    expect(out[0].severity).toBe("error");
+    expect(out[0].message).toContain('the binding "...: monthFetch" on <wcs-fetch> writes "monthFetch.value"');
+    expect(out[0].message).toContain('Read this["monthFetch.value"] instead');
+  });
+
+  it("日本語のメッセージも書く束縛を名指すこと", () => {
+    const out = diagnostics(MONTH, `<wcs-fetch data-wcs="...: monthFetch"></wcs-fetch>`, "ja");
+    expect(out[0].message).toContain('<wcs-fetch> の束縛 "...: monthFetch" は "monthFetch.value" をパスで書きます');
+  });
+
+  it("書かれたパスの下を読む getter（this.monthFetch.value.month）も error", () => {
+    expect(severity(`get m() { return this.monthFetch.value.month; }`, `<wcs-fetch data-wcs="...: monthFetch"></wcs-fetch>`)).toEqual(["error"]);
+  });
+
+  it("書き戻す束縛（<input> の value・checkbox の checked・radio: / checkbox:・<select> / <textarea>）は error", () => {
+    expect(severity(`get g() { return this.form.name; }`, `<input data-wcs="value: form.name">`)).toEqual(["error"]);
+    expect(severity(`get g() { return this.form.age; }`, `<input type="number" data-wcs="valueAsNumber: form.age">`)).toEqual(["error"]);
+    expect(severity(`get g() { return this.form.agree; }`, `<input type="checkbox" data-wcs="checked: form.agree">`)).toEqual(["error"]);
+    expect(severity(`get g() { return this.form.age; }`, `<input type="radio" value="1" data-wcs="radio: form.age">`)).toEqual(["error"]);
+    expect(severity(`get g() { return this.form.age; }`, `<input type="checkbox" value="1" data-wcs="checkbox: form.age">`)).toEqual(["error"]);
+    expect(severity(`get g() { return this.form.name; }`, `<select data-wcs="value: form.name"></select>`)).toEqual(["error"]);
+    expect(severity(`get g() { return this.form.name; }`, `<textarea data-wcs="value: form.name"></textarea>`)).toEqual(["error"]);
+  });
+
+  it("組み込みタグの出力への束縛（value: form.name on <wcs-fetch>）は error", () => {
+    expect(severity(`get g() { return this.form.name; }`, `<wcs-fetch data-wcs="value: form.name"></wcs-fetch>`)).toEqual(["error"]);
+  });
+
+  it("for の行の相対パスの書き込み（value: .name）は、その行を添字で読む getter を error にすること", () => {
+    const out = diagnostics(`get first() { return this.form.rows[0].name; }`, `<template data-wcs="for: form.rows"><input data-wcs="value: .name"></template>`);
+    expect(out.map((d) => d.severity)).toEqual(["error"]);
+    expect(out[0].message).toContain('writes "form.rows.*.name"');
+  });
+
+  it("ボリュームのスクリプトの読みは、マウントパスの下のパスで束縛と照合すること", () => {
+    const volume = (mount: string) =>
+      `<wcs-state mount="${mount}"><script type="module">export default { form: { name: "" }, get g() { return this.form.name; } };</script></wcs-state>`;
+    const run = (markup: string) => codes(validateSemantics(markup, "wcs-state", "en"), WcsDiagnosticCode.GetterUntrackedRead).map((d) => d.severity);
+    expect(run(volume("vol") + `<input data-wcs="value: vol.form.name">`)).toEqual(["error"]);
+    // `value: form.name` は mount="form" のボリュームの `name` を書く — getter が読む `form.form.name` ではない
+    expect(run(volume("form") + `<input data-wcs="value: form.name">`)).toEqual([]);
+  });
+
+  // --- warning のまま（ルートが丸ごと置き換えられれば getter は走り直す — 断定できない） ---
+
+  it("スクリプトの書き込み・$on のハンドラ・ボリュームの接ぎ木が証拠のときは warning のまま", () => {
+    expect(severity(`get g() { return this.form.name; }, m() { this["form.name"] = "x"; }`, "")).toEqual(["warning"]);
+    expect(severity(`get g() { return this.form.name; }, m() { this.$setAll("form.name", ["x"]); }`, "")).toEqual(["warning"]);
+  });
+
+  it("#ro（単独でも、ほかの修飾子と並べても）の束縛は書かないので warning", () => {
+    expect(severity(`get g() { return this.form.name; }`, `<input data-wcs="value#ro: form.name"><input data-wcs="checked: form.name">`)).toEqual(["warning"]);
+    expect(severity(`get g() { return this.form.name; }`, `<input data-wcs="value#ro,init=none: form.name"><input data-wcs="checked: form.name">`)).toEqual(["warning"]);
+    expect(severity(MONTH, `<wcs-fetch data-wcs="...: monthFetch; value#ro: monthFetch.value"></wcs-fetch>`)).toEqual(["warning"]);
+  });
+
+  it("書き戻さない要素・型の束縛（<div> の value・text の <input> の checked・ボタン）は warning", () => {
+    expect(severity(`get g() { return this.form.name; }`, `<div data-wcs="value: form.name"></div>`)).toEqual(["warning"]);
+    expect(severity(`get g() { return this.form.name; }`, `<input data-wcs="checked: form.name">`)).toEqual(["warning"]);
+    expect(severity(`get g() { return this.form.name; }`, `<input type="button" data-wcs="value: form.name">`)).toEqual(["warning"]);
+  });
+
+  it("spread の後で明示した束縛（最後が勝つ）の出力と、宣言を知らない要素の spread は warning", () => {
+    expect(severity(MONTH, `<wcs-fetch data-wcs="...: monthFetch; value: other"></wcs-fetch>`)).toEqual(["warning"]);
+    expect(severity(MONTH, `<my-fetch data-wcs="...: monthFetch"></my-fetch>`)).toEqual(["warning"]);
+  });
+
+  it("書かれたパスより上・横を読む getter（this.form.addr / this.form.addr.zip と value: form.addr.city）は warning", () => {
+    expect(severity(`get g() { return this.form.addr; }`, `<input data-wcs="value: form.addr.city">`)).toEqual(["warning"]);
+    expect(severity(`get g() { return this.form.addr.zip; }`, `<input data-wcs="value: form.addr.city">`)).toEqual(["warning"]);
+  });
+
+  it("data-wcs-ignore の中の束縛は書き込みに数えないこと", () => {
+    expect(severity(`get g() { return this.form.name; }, m() { this["form.name"] = "x"; }`, `<div data-wcs-ignore><input data-wcs="value: form.name"></div>`)).toEqual(["warning"]);
+  });
+});
+
 describe("wcs/wildcard-rank — 階数 vs for の段数", () => {
   const STATE = script(`{ matrix: [[1, 2]], items: [{ n: 1 }] }`);
 
