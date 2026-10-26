@@ -116,6 +116,10 @@ jobs:
       - name: Install the prod-booking seam app's published packages (its v1)
         working-directory: examples/prod-booking
         run: npm ci
+      # examples/shift-desk's server needs `ws` for the chat; its pages load packages/*/dist under WCS_LOCAL=1.
+      - name: Install the shift-desk seam app's server dependency
+        working-directory: examples/shift-desk
+        run: npm ci
       - run: npm ci
       # firefox: the "firefox" project runs prod-booking's checks where browsers differ (import map
       # integrity, Trusted Types) — e2e/playwright.config.ts
