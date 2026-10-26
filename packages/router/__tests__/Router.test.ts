@@ -544,6 +544,26 @@ describe('Router', () => {
       expect(router.hasAttribute('leave-confirm')).toBe(false);
     });
 
+    it('真偽値: true は既定の文言で聞き、false は聞かない（"false" という文言にしない — family-ledger）', () => {
+      const { router } = committedRouter();
+      router.leaveConfirm = false;
+      expect(router.hasAttribute('leave-confirm')).toBe(false);
+      expect(router.leaveConfirm).toBeNull();
+      const confirm = stubConfirm(false);
+      (router as any)._onNavigateFunc(navEventTo('http://localhost/products'));
+      expect(confirm).not.toHaveBeenCalled();
+
+      router.leaveConfirm = true;
+      expect(router.leaveConfirm).toBe('Leave this page? Changes you made may not be saved.');
+      const ev = navEventTo('http://localhost/products');
+      (router as any)._onNavigateFunc(ev);
+      expect(confirm).toHaveBeenCalledWith('Leave this page? Changes you made may not be saved.');
+      expect(ev.preventDefault).toHaveBeenCalled();
+
+      router.leaveConfirm = false;
+      expect(router.hasAttribute('leave-confirm')).toBe(false);
+    });
+
     it('別のルートへ出るナビゲーションで confirm を出し、断られたら取り消して intercept しない', () => {
       const { router } = committedRouter();
       router.leaveConfirm = 'Discard your changes?';
