@@ -2,6 +2,14 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## 2.8.0 — 2026-10-26
+
+`@wcstack/state` 4.8.0 のパーサと manifest、4.8.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.8.0・`@wcstack/typescript` 4.8.0 と同じ判定）。誤報の直しと、タグの目録に入力が増えるので minor。
+
+- **getter の `@returns {T}` が戻りの形を宣言する** — 本体から形を読めない getter（`{ ...r, ...live }`、早い `return []` の後の `[x].map(…)`）の下の束縛が、すべて `wcs/binding-path-missing` の誤報になっていた。`@returns` はデータの `@type` と同じく読む。JSDoc の交差型 `A & B` はフィールドを合わせて読む。継ぎ目アプリ shift-desk のアプリの警告 10 件（すべて誤報）と、examples/prod-booking の 5 件が消えた。
+- **既定引数が呼び出しのメソッドを見失わない** — `enqueue(id, text, clientId = crypto.randomUUID()) { … }` はメソッドとして読まれず、本体の中のオブジェクトリテラルのキーをトップレベルのキーと読むことがあった。
+- **`<wcs-sse>` / `<wcs-ws>` の `staleAfter`（`stale-after`）を知る** — 4.8 で足した入力。綴り違いは今までどおり error で、近い名前を挙げる。
+
 ## 2.7.0 — 2026-10-25
 
 `@wcstack/state` 4.7.0 のパーサと manifest で検証する（npm の `@wcstack/lint` 4.7.0・`@wcstack/typescript` 4.7.0 と同じ判定）。新しい info の規則（`wcs/state-src-unread`）と、行の形の偽陽性の直しなので minor。
