@@ -79,7 +79,7 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.FilterOptionsRequired]: (fn) => `filter ${fn} requires at least one option`,
   [M.FilterOptionNotNumber]: (fn) => `filter ${fn} requires a number as option`,
   [M.FilterValueNotNumber]: (fn, v) => `filter ${fn} requires a number value, not ${was(v)}${typeof v === "string" ? ` — put |number before |${fn}, or convert it where it is read` : ""}`,
-  [M.FilterValueNotDate]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " — make the Date where it is read: a getter returning new Date(…)" : ""}`,
+  [M.FilterValueNotDate]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " — make the Date where it is read: a getter returning new Date(…)" : ""}${typeof v === "string" && /^\d{4}-\d\d-\d\d$/.test(v) ? `. A date-only string is a day, not a moment: new Date(${JSON.stringify(v)}) is midnight UTC, the day before west of Greenwich — new Date(y, m - 1, d) is that day where the page is` : ""}`,
   [M.FilterStyleInvalid]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"`,
   [M.FilterCurrencyInvalid]: (v) => `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "${v}"`,
   [M.FilterValueNotArray]: (fn) => `filter ${fn} requires an array value`,
