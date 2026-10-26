@@ -85,6 +85,7 @@ npx serve examples/state-permission-banner
 | [`state-field-report/`](state-field-report/) | `<wcs-permission>` × 取得する要素 × `<wcs-camera>` → `<wcs-recorder>` → `<wcs-upload>` × ルートのノード × `<wcs-network offline>` × `<wcs-storage>` × `Permissions-Policy` / `<iframe>`（スマートフォンからの現場報告: クリップ・位置・口述のメモ・送信待ちの箱） | `node examples/state-field-report/server.js` | :3000 |
 | [`fw-inventory/`](fw-inventory/) | I/O ノード × `@wc-bindable/react` / `vue` × React 19 の props × Vue のリアクティビティと structured clone × `key` と `<wcs-storage>` × 片方が React でもう片方が Vue の 2 つのタブ（店の在庫の道具: React の管理画面と Vue の倉庫のパネル。`@wcstack/state` は使わない。Vite のアプリ） | `cd examples/fw-inventory && npm install && npm run build && node server.js` | :3000 |
 | [`prod-booking/`](prod-booking/) | 配信 × すべてのパッケージ: `integrity` × split の chunk、`installFeatures` × 2 つのエンジンのコピー、厳しい CSP と Trusted Types × import map・インラインのガード・コンポーネント、`<wcs-router>` × 再読み込み、`<wcs-autoloader>` × ほかのライブラリのタグ、開いたままのタブ × 次の版のファイル（`/booking/` の下の会議室の予約アプリ。6 つの配信の形と 2 つの版で、タブを開いたまま配備する） | `cd examples/prod-booking && npm install && node server.js` | :3000–:3005 |
+| [`shift-desk/`](shift-desk/) | 時間 × すべての I/O ノード: `<wcs-timer>` × スリープと隠れたタブ、`<wcs-sse>` / `<wcs-ws>` × 閉じられずに途絶えた接続（`stale-after`）、ルートの `<wcs-ws>` × パラメータだけの移動、`<wcs-head>` × 何百回の移動、`<wcs-ws>` × bfcache、真夜中 × 今日の数、期限の切れるトークン × 送信待ちの箱（一つの勤務のあいだ開いたままのサポートデスクの担当者コンソール: キュー、チャット、SLA の残り時間、在席、壁の画面、2 つのタブ） | `cd examples/shift-desk && npm install && node server.js` | :3000 |
 
 ## 共有サーバーコア
 

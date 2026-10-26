@@ -110,7 +110,7 @@ Svelte / Solid / Qwik / Angular take the same shape. **The `whenDefined` wait on
 before the component that calls the adapter mounts.** Waiting inside that same component is too
 late — the adapter has already given up.
 
-A dynamic `import("@wcstack/sse/auto")` type-checks since 4.6 (not released yet): each package ships a
+A dynamic `import("@wcstack/sse/auto")` type-checks since 4.6: each package ships a
 `dist/auto.d.ts` for its `/auto` entry. On 4.5 and earlier TypeScript reports `TS7016` for it; declare
 `declare module "@wcstack/*/auto";` once.
 
@@ -152,7 +152,7 @@ survives the fallback. The only things that break are inputs taking an object (`
 | Svelte | grab it with `bind:this` and assign |
 
 The reliable route in any framework is to **take the element with a ref and assign the property**.
-Since 4.6 (not released yet) an element that finds an object written as one of its attributes when it
+Since 4.6 an element that finds an object written as one of its attributes when it
 connects (`files="[object File]"`, `body="[object Object]"`) warns once: `[wcs/input-as-attribute]`.
 
 **Assign a new object; do not change one in place.** A framework writes an input when its value
@@ -206,7 +206,7 @@ in a Proxy. What gets wrapped is plain objects / arrays / Maps / Sets; platform 
 
 A Proxy cannot be structured-cloned, so passing one straight through produces a **`DataCloneError`**
 in `<wcs-worker>`'s `post` or a `<wcs-broadcast>` send. wcstack is never-throw, so no exception
-surfaces — it lands in `error` / `errorInfo`, and since 4.6 (not released yet) the element also warns
+surfaces — it lands in `error` / `errorInfo`, and since 4.6 the element also warns
 once: `[wcs/post-uncloneable]`.
 
 What has to be passed is a **deep** plain copy. Vue's `toRaw()` unwraps one level: the rows of a
@@ -309,7 +309,7 @@ framework, call the command on the element (§2): `el.fetch()`, `el.upload()`, `
 A framework applies a JSX element's props, and a Vue template's bindings, in the order written, and
 React 19 does it before the element is in the document. Where an element reads one input when another
 is written, the order matters as it does in one `data-wcs`: write `url` before `trigger`. Since 4.6
-(not released yet) an automatic `<wcs-upload>` given its `files` before its `url` keeps them and sends
+an automatic `<wcs-upload>` given its `files` before its `url` keeps them and sends
 them when the url arrives; on 4.5 and earlier `files={files} url=…` uploaded nothing and warned
 `[wcs/command-not-ready]`.
 
@@ -317,7 +317,7 @@ them when the url arrives; on 4.5 and earlier `files={files} url=…` uploaded n
 
 React and Vue take `key` (and `ref`) for themselves and never hand them to the element.
 `<wcs-storage key="…">` in JSX or a Vue template has no key, so it loads and stores nothing: write
-`storage-key` (since 4.6 (not released yet); the element warns `[wcs/command-not-ready]` at its first
+`storage-key` (since 4.6; the element warns `[wcs/command-not-ready]` at its first
 save without a key). On 4.5 and earlier, assign `el.key` through a ref.
 
 A component's `key` also decides its lifetime. A `key` that changes remounts the component, and every
@@ -349,7 +349,7 @@ does not close a connection: to stop a `<wcs-sse>` or a `<wcs-ws>`, call `close(
 
 `wcs-validate` reads HTML pages: `data-wcs` bindings, `<wcs-*>` tags, wcstack scripts. A framework
 app's page holds none of them, and its components (`.jsx`, `.tsx`, `.vue`, `.svelte`) are not read, so
-a clean result does not cover a framework app. Since 4.6 (not released yet) the CLI says so after its
+a clean result does not cover a framework app. Since 4.6 the CLI says so after its
 counts: `not read:` names the components, `nothing to check:` the pages with nothing in them.
 
 ## References

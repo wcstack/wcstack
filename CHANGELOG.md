@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Added
+
+- `examples/shift-desk`: the seam app, with its e2e spec — a support desk's operator console left open for a shift, on this tree's dists under `WCS_LOCAL=1`, without the workarounds 4.8.0 made unnecessary (its own watchdog for silent connections, closing the chat on `pagehide`, a static title set from the state, the `readyState` check, idle's `active`); `stale-after` on its stream and chat, and the guide's wake handler kept. The spec checks a parameter-only navigation joining only the new chat, a stream and a chat that went silent coming back, a laptop's sleep, local midnight, the node count over 100 ticket round trips, a bfcache restore (full Chromium launched by the test) and the outbox; `e2e.yml` installs the example's `ws`. Landing it recorded that the unreleased marks under `docs/` are neither checked nor stripped at a release — docs/long-lived-pages.md still says "Since 4.8 (not released yet)", docs/framework-adapter-integration.md "since 4.6" ([docs/seam-apps.md](./docs/seam-apps.md)).
+
 ## [4.8.0] — 2026-10-26
 
 The sixth minor under the 4.x direction, that nothing fails without a word, and the first of its second round of seam apps ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §3.2): `shift-desk`, a support desk's operator console left open for a shift — a laptop asleep, a tab hidden for an hour, the back/forward cache, midnight, an expiring token, thousands of events ([docs/seam-apps.md](./docs/seam-apps.md)). Of 16 mistakes made on purpose, 10 told nothing, and the published lint's 10 warnings on the app were all false. It found a `<wcs-head>` that kept nodes on every navigation, I/O nodes in a route that started their work with the previous route's inputs — 17 packages —, connections that died without being closed and were never noticed, a WebSocket that kept pages out of the back/forward cache, warnings said once per page life, and no document on what a page that stays open needs. The author's five decisions are in v4-direction §5.7.

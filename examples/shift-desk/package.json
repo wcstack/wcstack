@@ -1,0 +1,12 @@
+{
+  "name": "wcstack-shift-desk",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a support desk's operator console that stays open for a shift — sleep, hidden tabs, the back/forward cache, midnight, expiring tokens, connections that die without closing, thousands of events.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}

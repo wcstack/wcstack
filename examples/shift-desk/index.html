@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>Shift desk</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/app.css">
+  <!-- I/O nodes first, state last: every element is defined before the state binds it.
+       esm.run follows npm latest; WCS_LOCAL=1 serves this repository's packages/*/dist instead. -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/debounce/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/notification/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/raf/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/idle/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/wakelock/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/broadcast/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+<wcs-state src="./state.js"></wcs-state>
+
+<header class="top">
+  <strong class="brand">Shift desk</strong>
+  <nav aria-label="Main" data-wcs="hidden: loggedIn|not">
+    <wcs-link to="/">Queue</wcs-link>
+    <wcs-link to="/wall">Wall</wcs-link>
+  </nav>
+  <span class="conn" data-wcs="textContent: connectionLabel; class.live: isLive"></span>
+  <span class="today" data-wcs="hidden: loggedIn|not">
+    <span data-wcs="textContent: nowDate|time(short)"></span>
+    <span>Today <span data-wcs="textContent: nowDate|date(medium)"></span>:</span>
+    <span>opened <b data-wcs="textContent: today.opened"></b></span>
+    <span>closed <b data-wcs="textContent: today.closed"></b></span>
+    <span>breached <b data-wcs="textContent: today.breached"></b></span>
+    <span class="muted" data-wcs="textContent: statsNote"></span>
+  </span>
+  <span class="who" data-wcs="hidden: loggedIn|not">
+    <span class="presence" data-wcs="textContent: presenceLabel; class.away: isAway"></span>
+    <button type="button" data-wcs="onclick: enablePresence; hidden: presenceOn">Enable presence</button>
+    <button type="button" data-wcs="onclick: enableNotifications; hidden: notifyAsked">Enable notifications</button>
+    <span data-wcs="textContent: session.user"></span>
+    <button type="button" data-wcs="onclick: logout">Log out</button>
+  </span>
+</header>
+<p class="banner error" data-wcs="hidden: appError|not; textContent: appError"></p>
+<p class="banner offline" data-wcs="hidden: offline|not">You are offline. Replies you send wait in the outbox and go out when the network is back.</p>
+<p class="banner info" data-wcs="hidden: outboxEmpty; textContent: outboxLabel"></p>
+
+<main>
+  <wcs-router data-wcs="typedParams: routeParams; routeName: routeName; searchParams: routeQuery; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+    <template>
+      <wcs-route path="/login" name="login">
+        <wcs-head><title>Log in — Shift desk</title></wcs-head>
+        <section class="login">
+          <h1>Log in</h1>
+          <form data-wcs="onsubmit#prevent: login">
+            <label>User <input name="user" autocomplete="username" data-wcs="value: loginForm.user"></label>
+            <label>Password <input name="password" type="password" autocomplete="current-password" data-wcs="value: loginForm.password"></label>
+            <button type="submit" data-wcs="disabled: loginLoading">Log in</button>
+          </form>
+          <p class="error" data-wcs="textContent: loginMessage"></p>
+        </section>
+      </wcs-route>
+
+      <wcs-route path="/" guard="/login">
+        <wcs-guard-handler>
+          <script type="module">
+            // The guard cannot see the state (router README): read the session
+            // where <wcs-storage> keeps it, inside the function.
+            export default function (toPath) {
+              let session = null;
+              try { session = JSON.parse(localStorage.getItem("shift-desk.session")); } catch { session = null; }
+              if (session && session.refreshToken) return true;
+              return "/login?next=" + encodeURIComponent(toPath);
+            }
+          </script>
+        </wcs-guard-handler>
+
+        <wcs-route index name="queue">
+          <wcs-head><title>Queue — Shift desk</title></wcs-head>
+          <section class="queue">
+            <h1>Open tickets <small data-wcs="textContent: queueCountLabel"></small></h1>
+            <p class="prefs muted">
+              Notify me (while this tab is hidden) about
+              <label><input type="checkbox" data-wcs="checked: prefs.notifyUrgent"> new urgent tickets</label>
+              <label><input type="checkbox" data-wcs="checked: prefs.notifyMessages"> customer messages</label>
+              · <span data-wcs="textContent: otherTabsLabel"></span>
+            </p>
+            <p class="muted" data-wcs="hidden: queueLoading|not">Loading…</p>
+            <table>
+              <thead><tr><th>#</th><th>Subject</th><th>Customer</th><th>Priority</th><th>Age</th><th>SLA</th><th>Owner</th></tr></thead>
+              <tbody>
+                <template data-wcs="for: queueTop">
+                  <tr class="row" data-wcs="class.breached: .breached; class.urgent: .isUrgent">
+                    <td data-wcs="textContent: .id"></td>
+                    <td><wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .subject"></span></wcs-link></td>
+                    <td data-wcs="textContent: .customer"></td>
+                    <td><span class="prio" data-wcs="textContent: .priority; attr.data-prio: .priority"></span></td>
+                    <td data-wcs="textContent: .ageLabel"></td>
+                    <td class="sla" data-wcs="textContent: .slaLabel"></td>
+                    <td><span data-wcs="textContent: .ownerLabel"></span> <span class="tabs-here" data-wcs="textContent: .elsewhereLabel"></span></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+            <p class="muted" data-wcs="textContent: queueMoreLabel"></p>
+            <h2 class="muted">Recent activity</h2>
+            <ol class="activity muted">
+              <template data-wcs="for: recentActivity"><li data-wcs="textContent: .text"></li></template>
+            </ol>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="tickets/:id(int)" name="ticket">
+          <wcs-head><title data-wcs="textContent: ticketTitle"></title></wcs-head>
+          <section class="ticket">
+            <p><wcs-link to="/">&larr; Queue</wcs-link></p>
+            <p class="muted" data-wcs="hidden: ticketLoading|not">Loading…</p>
+            <p class="error" data-wcs="textContent: ticketMessage"></p>
+            <template data-wcs="if: ticket">
+              <h1><span data-wcs="textContent: ticket.subject"></span> <small data-wcs="textContent: ticketIdLabel"></small></h1>
+              <p class="meta">
+                <span data-wcs="textContent: ticket.customer"></span> ·
+                <span class="prio" data-wcs="textContent: ticket.priority; attr.data-prio: ticket.priority"></span> ·
+                SLA <span data-wcs="textContent: ticketSlaLabel"></span> ·
+                <span data-wcs="textContent: ticketOwnerLabel"></span>
+              </p>
+              <p class="actions">
+                <button type="button" data-wcs="onclick: claim; disabled: claimDisabled">Claim</button>
+                <button type="button" data-wcs="onclick: closeTicket; disabled: closeDisabled">Close ticket</button>
+                <span class="error" data-wcs="textContent: actionMessage"></span>
+              </p>
+              <p class="tabs-here" data-wcs="textContent: ticketElsewhereLabel"></p>
+              <p class="chat-state muted" data-wcs="textContent: chatLabel"></p>
+              <p class="muted" data-wcs="textContent: olderHiddenLabel"></p>
+              <ol class="chat">
+                <template data-wcs="for: conversation">
+                  <li data-wcs="class.mine: .mine">
+                    <span class="from" data-wcs="textContent: .from"></span>
+                    <span class="at" data-wcs="textContent: .atDate|time(short)"></span>
+                    <p data-wcs="textContent: .text"></p>
+                  </li>
+                </template>
+              </ol>
+              <ul class="outbox" data-wcs="hidden: ticketOutboxEmpty">
+                <template data-wcs="for: ticketOutbox">
+                  <li>Waiting to send: <span data-wcs="textContent: .text"></span></li>
+                </template>
+              </ul>
+              <p class="typing" data-wcs="textContent: typingLabel"></p>
+              <form class="reply" data-wcs="onsubmit#prevent: sendReply">
+                <textarea rows="3" placeholder="Write a reply" data-wcs="value: draft; disabled: replyDisabled"></textarea>
+                <button type="submit" data-wcs="disabled: replyDisabled">Send reply</button>
+                <span class="error" data-wcs="textContent: replyMessage"></span>
+              </form>
+            </template>
+            <!-- the conversation, live; inside the route body, so it goes and comes back with the route.
+                 stale-after: the server pings every 20 s, so 45 s of silence is a connection that died unclosed -->
+            <wcs-ws auto-reconnect reconnect-interval="3000" max-reconnects="30" stale-after="45000"
+              data-wcs="command.connect: $command.chatConnect; url: chatUrl; connected: chatConnected; eventToken.message: chatReceived; send: chatOutgoing; error: chatError"></wcs-ws>
+            <wcs-throttle wait="2000" data-wcs="source: draft; value: draftThrottled"></wcs-throttle>
+            <!-- the reply draft of this ticket: localStorage, one key per ticket (see README, "Drafts") -->
+            <wcs-storage data-wcs="key: draftKey; value#init=element: draft"></wcs-storage>
+            <wcs-debounce wait="4000" data-wcs="source: typingPulse; value: typingSettled"></wcs-debounce>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="wall" name="wall">
+          <wcs-head><title>Wall — Shift desk</title></wcs-head>
+          <section class="wall">
+            <h1>Load of the last hour</h1>
+            <p><span class="big" data-wcs="textContent: queue.length"></span> open ·
+              <span data-wcs="textContent: urgentCount"></span> urgent ·
+              <span data-wcs="textContent: breachedCount"></span> breached</p>
+            <svg viewBox="0 0 600 200" preserveAspectRatio="none" role="img" aria-label="Open tickets over the last hour">
+              <polyline fill="none" stroke="#58a6ff" stroke-width="2" data-wcs="attr.points: chartPoints"></polyline>
+            </svg>
+            <p class="muted">Screen kept on: <span data-wcs="textContent: wakeLabel"></span> · frames: <span data-wcs="textContent: wallFrames"></span></p>
+            <wcs-wakelock data-wcs="active: onWall; held: wakeHeld; error: wakeError"></wcs-wakelock>
+            <wcs-raf data-wcs="eventToken.tick: wallFrame; suspended: wallSuspended"></wcs-raf>
+          </section>
+        </wcs-route>
+      </wcs-route>
+
+      <wcs-route fallback>
+        <wcs-head><title>Not found — Shift desk</title></wcs-head>
+        <section><h1>Not found</h1><p><wcs-link to="/">Queue</wcs-link></p></section>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</main>
+
+<!-- ===== page-level I/O nodes ===== -->
+<!-- the session: localStorage, so the guard and every tab can read it -->
+<wcs-storage key="shift-desk.session" data-wcs="value#init=element: session"></wcs-storage>
+
+<!-- login / refresh -->
+<wcs-fetch url="/api/login" method="POST" manual
+  data-wcs="body: loginBody; trigger: loginRequest; value: loginResult; error: loginError; loading: loginLoading">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<!-- the queue: a snapshot, then the stream from its position.
+     stale-after: the server makes a ticket every 20 s, so a minute without an event is a stream that died unclosed -->
+<wcs-fetch data-wcs="url: queueUrl; value: queueSnapshot; error: queueError; loading: queueLoading; command.fetch: $command.reloadQueue; eventToken.value: queueResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-sse events="ticket-created, ticket-updated, ticket-claimed, ticket-closed" stale-after="60000"
+  data-wcs="url: streamUrl; trigger: streamTrigger; connected: sseConnected; errorInfo: sseErrorInfo; eventToken.message: streamEvent; command.close: $command.closeStream"></wcs-sse>
+
+<!-- the ticket page's data -->
+<wcs-fetch data-wcs="url: ticketUrl; value: ticketResult; error: ticketError; loading: ticketLoading; eventToken.value: ticketResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+
+<!-- notifications -->
+<wcs-notify data-wcs="command.notify: $command.notify; command.request: $command.requestNotify; permission: notifyPermission; eventToken.clicked: notificationClicked"></wcs-notify>
+
+<!-- several tabs: which tickets this operator has open and claimed; the preferences -->
+<wcs-broadcast name="shift-desk" data-wcs="command.post: $command.tabPost; eventToken.message: tabMessage; error: tabError"></wcs-broadcast>
+<wcs-storage key="shift-desk.prefs" data-wcs="value#init=element: prefsSnapshot"></wcs-storage>
+
+<!-- presence, the network, the outbox -->
+<wcs-idle threshold="300000" data-wcs="userState: idleUserState; error: idleError; command.requestPermission: $command.idleRequest; command.start: $command.idleStart"></wcs-idle>
+<wcs-network data-wcs="offline: offline"></wcs-network>
+<wcs-storage key="shift-desk.outbox" data-wcs="value#init=element: outbox"></wcs-storage>
+
+<!-- today's statistics, polled every minute -->
+<wcs-fetch manual data-wcs="url: statsUrl; trigger: statsRequest; value: statsResult; error: statsError; eventToken.value: statsResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-timer interval="60000" data-wcs="eventToken.tick: statsTick"></wcs-timer>
+
+<!-- the clock: every second the state reads Date.now() (a tick is a reminder, not a measure) -->
+<wcs-timer interval="1000" data-wcs="eventToken.tick: clockTick"></wcs-timer>
+</body>
+</html>
