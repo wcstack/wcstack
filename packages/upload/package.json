@@ -59,6 +59,7 @@
     "@rollup/plugin-typescript": "^11.1.6",
     "@vitest/coverage-v8": "^4.0.15",
     "@vitest/ui": "^4.0.15",
+    "@wcstack/state": "file:../state",
     "eslint": "^9.39.1",
     "globals": "^16.5.0",
     "happy-dom": "^20.0.11",
