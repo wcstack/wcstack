@@ -977,7 +977,7 @@
       "mistake": { "en": "Treats `<wcs-sse>`'s `readyState === 2` as a stream that gave up, and reopens it.", "ja": "`<wcs-sse>` の `readyState === 2` を諦めたストリームとみなし、開き直す。" },
       "effect": { "en": "`readyState` is `CLOSED` before the first connect too, and a `$watch` fires once for an element's starting value: the reopen ran on every page load, refreshed the token and opened a second stream.", "ja": "`readyState` は最初の接続の前も `CLOSED` で、`$watch` は要素の最初の値で 1 回発火する: 開き直しが読み込みのたびに走り、トークンを更新し、2 本目のストリームを開いた。" },
       "disposition": "design-out", "breaking": true,
-      "note": { "en": "The sse README says to tell it from `errorInfo.recoverable: false` (4.8 docs). A starting value that is not `CLOSED` would remove it, but changes an output — a 5.0 question.", "ja": "sse の README は `errorInfo.recoverable: false` で見分けると言う（4.8 の文書）。`CLOSED` でない最初の値なら消せるが、出力が変わる — 5.0 の問い。" }
+      "note": { "en": "The sse README says to tell it from `errorInfo.recoverable: false` (4.8 docs). Since 4.9 (not released yet), `auto-reconnect` reopens it without the page's help. A starting value that is not `CLOSED` would remove it, but changes an output — a 5.0 question.", "ja": "sse の README は `errorInfo.recoverable: false` で見分けると言う（4.8 の文書）。4.9（未リリース）から、`auto-reconnect` がページの手を借りずに開き直す。`CLOSED` でない最初の値なら消せるが、出力が変わる — 5.0 の問い。" }
     },
     {
       "id": "sse-url-with-live-position",

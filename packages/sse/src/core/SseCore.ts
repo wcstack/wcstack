@@ -49,6 +49,17 @@ export class SseCore extends EventTarget {
   private _lastActivity: number = 0;
   private _staleTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // auto-reconnect（<wcs-ws> と同じ名前・同じ意味）: ブラウザが諦めたストリーム（恒久エラー、
+  // readyState CLOSED）だけを reconnectInterval ms 後に開き直す。ブラウザが自分で再接続する
+  // 一過性の切断（CONNECTING）には手を出さない。回数は開き直しの試行ごとに数え、open で 0 に戻る。
+  private _autoReconnect: boolean = false;
+  private _reconnectInterval: number = 3000;
+  private _maxReconnects: number = Infinity;
+  private _reconnectCount: number = 0;
+  private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // 開き直しの url を試行のときに返す（null: connect() に渡された url）。Shell はそのときの url を渡す。
+  private _reconnectUrl: (() => string) | null = null;
+
   // Generation guard (§3.4): bumped on every _doConnect (new live stream) and on
   // dispose(). The shared arrow-function listeners (_onOpen/_onMessage/_onError)
   // capture the generation of the connection they belong to in _connGen; once
@@ -76,7 +87,7 @@ export class SseCore extends EventTarget {
   // Lifecycle (§3.5). SSE is command-driven: the stream is opened by connect(),
   // not by observe(). observe() is therefore an idempotent no-op that resolves
   // once ready; dispose() invalidates in-flight listeners (_gen++) and tears the
-  // stream down via close().
+  // stream down via close() — a pending auto-reconnect included.
   observe(): Promise<void> {
     return this._ready;
   }
@@ -214,7 +225,8 @@ export class SseCore extends EventTarget {
    * inline comment below), so to apply new options to a live stream a headless
    * caller must `close()` first, then `connect()` with the new options. After a
    * permanent failure (readyState CLOSED) the guard is bypassed and `connect()`
-   * reconnects with the supplied options.
+   * reconnects with the supplied options — a pending auto-reconnect is dropped and
+   * its count starts again.
    */
   connect(url: string, options: SseConnectOptions = {}): void {
     // never-throw (§3.6): 引数バリデーション失敗は例外でなく error プロパティに流し、
@@ -245,6 +257,11 @@ export class SseCore extends EventTarget {
     this._events = options.events ?? [];
     this._raw = options.raw ?? false;
     this._staleAfter = options.staleAfter !== undefined && options.staleAfter > 0 ? options.staleAfter : 0;
+    this._autoReconnect = options.autoReconnect ?? false;
+    this._reconnectInterval = options.reconnectInterval ?? 3000;
+    this._maxReconnects = options.maxReconnects ?? Infinity;
+    this._reconnectUrl = options.reconnectUrl ?? null;
+    this._reconnectCount = 0;
 
     this._doConnect();
   }
@@ -309,6 +326,8 @@ export class SseCore extends EventTarget {
     // §3.4: dispose() で世代が進んだ後に届いた stale イベントは無視する（torn-down
     // 要素への書き込み防止）。
     if (this._connGen !== this._gen) return;
+    // 開いた: auto-reconnect の回数は数え直す（<wcs-ws> と同じ）
+    this._reconnectCount = 0;
     this._lastActivity = Date.now();
     this._armStale();
     this._setLoading(false);
@@ -369,11 +388,18 @@ export class SseCore extends EventTarget {
 
     // EventSource は CloseEvent を持たず、error が切断も兼ねる。
     // readyState で「再接続中(CONNECTING)」と「死亡(CLOSED)」を判別する。
+    // 以下の setter も同期 dispatch する。そのリスナが close()/connect() を呼んだら、同じく
+    // 以降を放棄する: 再入側の _closeInternal が片付け済みで、続けると再入した接続の状態を
+    // 巻き戻し（loading など）、死んだ es と取り違えて新しい es の参照を捨て、close() の後に
+    // auto-reconnect を予約してしまう。
     this._setReadyState(state);
+    if (this._es !== es) return;
     this._setConnected(false);
+    if (this._es !== es) return;
     // CLOSED ＝ ネイティブ再接続は行われない（恒久エラー）。
     // それ以外（CONNECTING）＝ ブラウザが自動再接続中なので loading を維持。
     this._setLoading(state !== SSE_CLOSED);
+    if (this._es !== es) return;
 
     // 恒久エラー時は死んだ EventSource をリスナごと即時破棄する。次の connect()/close()
     // まで放置すると死んだインスタンスとリスナを保持し続けるため。状態は上で CLOSED に
@@ -382,8 +408,40 @@ export class SseCore extends EventTarget {
       // ここでは所有権ガードを通過済みのため this._es === es。
       this._removeListeners(es, this._events);
       this._es = null;
+      // 見張るものは次の open まで無い
+      this._clearStaleTimer();
+      // ブラウザが諦めたストリーム: auto-reconnect なら開き直しを予約する。回数が尽きたら
+      // 予約せず、最後の error が残る（<wcs-ws> と同じ）。
+      if (this._autoReconnect && this._reconnectCount < this._maxReconnects) {
+        this._scheduleReconnect();
+      }
     }
   };
+
+  // 開き直しは reconnectInterval ms 後に 1 本だけ。試行のときの url で開く（Shell はそのときの
+  // 要素の url を渡す — state の getter が url を作るなら、更新したトークンはもう入っている）。
+  // url が空の試行は何もしない（数えず、次も予約しない）。connect()/close()/dispose() が
+  // _closeInternal でタイマーを外す。世代の確認はその裏打ち。
+  private _scheduleReconnect(): void {
+    const gen = this._gen;
+    this._clearReconnectTimer();
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectTimer = null;
+      if (gen !== this._gen) return;
+      const url = this._reconnectUrl !== null ? this._reconnectUrl() : this._url;
+      if (!url) return;
+      this._reconnectCount++;
+      this._url = url;
+      this._doConnect();
+    }, this._reconnectInterval);
+  }
+
+  private _clearReconnectTimer(): void {
+    if (this._reconnectTimer !== null) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
+  }
 
   // 特定の EventSource とその登録時の events からリスナを解除する。再入で this._es や
   // this._events が差し替わった後でも、捕捉済みの es/events を渡せば正しく解除できる。
@@ -425,11 +483,16 @@ export class SseCore extends EventTarget {
     if (this._es !== null) this._setError(lost, "connection-transient");
   };
 
-  private _closeInternal(): void {
+  private _clearStaleTimer(): void {
     if (this._staleTimer !== null) {
       clearTimeout(this._staleTimer);
       this._staleTimer = null;
     }
+  }
+
+  private _closeInternal(): void {
+    this._clearStaleTimer();
+    this._clearReconnectTimer();
     if (this._es) {
       this._removeListeners(this._es, this._events);
       this._es.close();

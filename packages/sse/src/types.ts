@@ -39,6 +39,22 @@ export interface SseConnectOptions {
    * an event the element listens to (unnamed, or a name in `events`) more often than this.
    */
   staleAfter?: number;
+  /**
+   * Reopen a stream the browser gave up on — a permanent close (`readyState` CLOSED, an HTTP
+   * error), which an `EventSource` never retries — after `reconnectInterval` ms (default false).
+   * A transient drop the browser reconnects itself (CONNECTING) is left to the browser.
+   */
+  autoReconnect?: boolean;
+  /** Milliseconds to wait before each reopen (default 3000). */
+  reconnectInterval?: number;
+  /** Most reopens in a row (default Infinity); the count starts again when the stream opens. */
+  maxReconnects?: number;
+  /**
+   * The url a reopen opens, read at each attempt (default: the `url` given to `connect()`). An
+   * attempt it returns an empty string for does nothing. `<wcs-sse>` passes its `url` as it is
+   * then, so a token refreshed into the url is used.
+   */
+  reconnectUrl?: () => string;
 }
 
 /**
@@ -88,6 +104,10 @@ export interface WcsSseInputs {
   withCredentials: boolean;
   events: string;
   raw: boolean;
+  autoReconnect: boolean;
+  reconnectInterval: number;
+  maxReconnects: number;
+  staleAfter: number;
   manual: boolean;
   trigger: boolean;
 }
