@@ -2,6 +2,11 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **`map` で行を作り直す代入から行の形を読む** — メソッドの `this.rows = [...this.items].map((c) => ({ id: c.id, label: c.name }))`・`this.rows = this.items.filter(Boolean).map((c) => { return { … }; })` の `for: rows` の行の `.label` が `wcs/binding-path-missing` の偽陽性になっていた（読んでいたのは `concat` / `toSpliced` / `with` / spread の行リテラルと、`map` する getter だけ）。代入の右辺（`this.x = …`・`this["x"] = …`、スクリプトのどこでも）を getter の戻り値と同じく読む: コールバックのリテラル、絞り込み・並べ替えた元のリストの行（`this.visible = this.items.filter(…)`）、同じメソッドの別名、`(await res.json()).map(…)`。リストと分かっていないパスには何も足さない。継ぎ目アプリ family-ledger（wcstack-app スキルだけから書いたアプリ）は、動いたページで 22 件の誤報をすべて書き換えて消していた。
+- **`{}` を種にしたキーへ代入したオブジェクトリテラルのキーを読む** — `fieldErrors: {}` と `this.fieldErrors = { date: "bad" }` で `fieldErrors.date` が `wcs/binding-path-missing` の偽陽性になっていた。オブジェクトリテラルを種にしたキーは、スクリプトのどこかでそこへ代入したオブジェクトリテラルのキーを持つ（種のキーとの和）。リテラルの中の spread（`{ ...noErrors(), ...parse(e) }`）は追わず、持ち込むキーは今までどおり分からないまま。`null` を種にしたキーには足さない。
+
 ## 2.8.0 — 2026-10-26
 
 `@wcstack/state` 4.8.0 のパーサと manifest、4.8.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.8.0・`@wcstack/typescript` 4.8.0 と同じ判定）。誤報の直しと、タグの目録に入力が増えるので minor。
