@@ -20,6 +20,9 @@ export class WcsSse extends HTMLElement {
       { name: "withCredentials", attribute: "with-credentials" },
       { name: "events", attribute: "events" },
       { name: "raw", attribute: "raw" },
+      { name: "autoReconnect", attribute: "auto-reconnect" },
+      { name: "reconnectInterval", attribute: "reconnect-interval" },
+      { name: "maxReconnects", attribute: "max-reconnects" },
       { name: "staleAfter", attribute: "stale-after" },
       { name: "manual", attribute: "manual" },
       { name: "trigger" },
@@ -28,7 +31,8 @@ export class WcsSse extends HTMLElement {
     // 同型。spread でも継承されるが、Core に command 追加時の追従漏れを防ぐため明示参照する。
     commands: SseCore.wcBindable.commands,
   };
-  // 接続を張り直す価値があるのは url 変更のみ。with-credentials/events/raw/manual は
+  // 接続を張り直す価値があるのは url 変更のみ。with-credentials/events/raw/manual と
+  // auto-reconnect/reconnect-interval/max-reconnects/stale-after は
   // 「初回接続時に評価される接続オプション」であり、observedAttributes に含めない＝
   // 後から属性を変えても既存接続には反映されない（再接続したい場合は close()→connect()）。
   static get observedAttributes(): string[] { return ["url"]; }
@@ -137,6 +141,37 @@ export class WcsSse extends HTMLElement {
     reflectBooleanAttribute(this, "raw", value);
   }
 
+  // auto-reconnect / reconnect-interval / max-reconnects は <wcs-ws> と同じ名前・同じ解釈
+  // （既定 false / 3000 / Infinity、数でない値は既定）。接続オプションで、接続するときに読む。
+  // 開き直すのはブラウザが諦めたストリーム（恒久エラー）だけ。
+  get autoReconnect(): boolean {
+    return this.hasAttribute("auto-reconnect");
+  }
+
+  set autoReconnect(value: boolean | null | undefined) {
+    reflectBooleanAttribute(this, "auto-reconnect", value);
+  }
+
+  get reconnectInterval(): number {
+    const attr = this.getAttribute("reconnect-interval");
+    const parsed = attr ? parseInt(attr, 10) : 3000;
+    return Number.isNaN(parsed) ? 3000 : parsed;
+  }
+
+  set reconnectInterval(value: number | null | undefined) {
+    reflectAttribute(this, "reconnect-interval", value);
+  }
+
+  get maxReconnects(): number {
+    const attr = this.getAttribute("max-reconnects");
+    const parsed = attr ? parseInt(attr, 10) : Infinity;
+    return Number.isNaN(parsed) ? Infinity : parsed;
+  }
+
+  set maxReconnects(value: number | null | undefined) {
+    reflectAttribute(this, "max-reconnects", value);
+  }
+
   get manual(): boolean {
     return this.hasAttribute("manual");
   }
@@ -228,8 +263,16 @@ export class WcsSse extends HTMLElement {
       events,
       raw: this.raw,
       staleAfter: this.staleAfter,
+      autoReconnect: this.autoReconnect,
+      reconnectInterval: this.reconnectInterval,
+      maxReconnects: this.maxReconnects,
+      // 開き直しは試行のときの url で（state の getter が url を作るなら、更新したトークンが入っている）。
+      // 空なら何もしない。
+      reconnectUrl: this._currentUrl,
     });
   }
+
+  private _currentUrl = (): string => this.url;
 
   close(): void {
     this._connectPending = false;
@@ -276,7 +319,8 @@ export class WcsSse extends HTMLElement {
   }
 
   disconnectedCallback(): void {
-    // §3.5/§4.4: dispose() は _gen を進めて進行中リスナを無効化しつつ接続を閉じる。
+    // §3.5/§4.4: dispose() は _gen を進めて進行中リスナを無効化しつつ接続を閉じる
+    // （待っている auto-reconnect のタイマーも外す）。
     this._core.dispose();
   }
 }
