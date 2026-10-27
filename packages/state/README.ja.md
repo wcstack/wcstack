@@ -1235,7 +1235,7 @@ getter の例外は握り潰されません。評価された場所（バイン�
 | **setter の中の読み取りは追跡しない。** setter は命令的な代入であって派生ではないので、その中で読んだものは何の依存にもならない | 何を書くかを `this.a` を読んで決める setter は、`a` が変わっても再実行されない。再実行されるのは getter だけ |
 | **同値ガードはプリミティブにだけ効く。** 現在値と `Object.is` で等しいプリミティブの書き込みはキューに入る前に落とされる。オブジェクト・配列の書き込みは同じ参照でも必ず通る | 同じ文字列を再代入しても何も起きない。同じオブジェクトを再代入するとバインディングと `$watch` が再発火する（`$behavior.sameValueGuard`。`semantics: "event"` のプロパティはどちらにせよ対象外）。一覧は例外で、行が配列の要素に合わせ直されるのは**新しい**配列を代入したときだけ。同じ配列の再代入や `$postUpdate` は、ある行の下を読み直すが、行を追加・削除・置き換えしない: `cards[i] = card; this.cards = cards` は古いカードを出し続ける。新しい配列を代入する（`this.cards = cards.with(i, card)`、`[...cards, x]`）。lint はその場の変更を報告する（`wcs/array-index-assign`、`wcs/array-mutation`） |
 
-規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$stream` の fold）には出ません。
+規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$stream` の fold）には出ません。4.9（未リリース）から、getter が読むパスをページの束縛が書くとき — `<wcs-fetch data-wcs="...: monthFetch">` は `monthFetch.value` を書くので、`this.monthFetch.value` を読む getter は応答を見ない — は **error** で、スクリプトだけが書くときは warning のままです。
 
 `$untracked(fn)` は setter の規則を getter に意図的に適用するもので、`fn` の中の読み取りは追跡されません。`$dependOn(path)` は最初の規則に対する逃げ道です。
 

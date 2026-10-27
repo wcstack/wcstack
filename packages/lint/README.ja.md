@@ -66,7 +66,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 ## state の契約を宣言する（`stateSchema`）
 
-契約が無いと、validator が解決できないパスは **warning**（`wcs/binding-path-missing`）に留まります: インラインスクリプトが静的に読めなくても `count` は実行時には存在するかもしれないからです。`[]` で始まるリストの行のフィールドは、行を足す・置き換える代入式の行リテラルから読みます。外から届くリスト（`<wcs-fetch>` や `<wcs-storage>` が埋めるまで `null`）にはそのリテラルが無いので、プロパティの直前の JSDoc `@type` で形を宣言してください（`/** @type {{ id: number, name: string }[] | null} */ catalog: null`）。同じスクリプトの `@typedef` で行の型に名前を付け、`@type {Product[] | null}` と書いてもかまいません。HTML と同じ（または上の）ディレクトリに `application` sidecar を置くと、同じ typo が **error** になります:
+契約が無いと、validator が解決できないパスは **warning**（`wcs/binding-path-missing`）に留まります: インラインスクリプトが静的に読めなくても `count` は実行時には存在するかもしれないからです。`[]` で始まるリストの行のフィールドは、行を足す・置き換える代入式の行リテラルから読みます。4.9（未リリース）から、`map` で行を作り直す代入 — `this.rows = [...this.items].map((c) => ({ id: c.id, label: c.name }))`・`.filter(…).map((c) => { return { … }; })` — も、そうする getter と同じく読み、`{}` を種にしたキーへ代入したオブジェクトリテラルのキーも読みます（`this.fieldErrors = { date: "…" }` で `fieldErrors.date`。リテラルの中の spread は追いません）。外から届くリスト（`<wcs-fetch>` や `<wcs-storage>` が埋めるまで `null`）にはそのリテラルが無いので、プロパティの直前の JSDoc `@type` で形を宣言してください（`/** @type {{ id: number, name: string }[] | null} */ catalog: null`）。同じスクリプトの `@typedef` で行の型に名前を付け、`@type {Product[] | null}` と書いてもかまいません。HTML と同じ（または上の）ディレクトリに `application` sidecar を置くと、同じ typo が **error** になります:
 
 ```json
 {
