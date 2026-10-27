@@ -47,6 +47,9 @@ interface NavigateEventLike {
 
 const EMPTY_RECORD: Record<string, never> = Object.freeze({});
 
+/** `leaveConfirm = true` で聞く文言（ページの言語で聞くなら文字列を束ねる） */
+const DEFAULT_LEAVE_CONFIRM = "Leave this page? Changes you made may not be saved.";
+
 /**
  * AppRoutes - Root component for @wcstack/router
  *
@@ -260,12 +263,14 @@ export class Router extends HTMLElement implements IRouter {
   // オリジンへのリンク、フォームの送信）の前に confirm(値) を出し、断られたら出ない。ページを閉じる・
   // 読み直すとき（と Navigation API の無いブラウザでページを離れるとき）はブラウザ自身の確認（beforeunload）。未保存の変更を守る口（docs/seam-apps.md、
   // router-admin — Navigation API を直接使うしかなかった）。null は属性を外し、undefined は最初の属性へ戻す。
+  // 真偽値（`leaveConfirm: dirty`）は、true なら既定の文言で聞き、false なら聞かない — 文字列にすると
+  // confirm("false") が遷移のたびに出ていた（docs/seam-apps.md、family-ledger）。
   get leaveConfirm(): string | null {
     return this.getAttribute("leave-confirm") || null;
   }
 
-  set leaveConfirm(value: string | null | undefined) {
-    reflectAttribute(this, "leave-confirm", value);
+  set leaveConfirm(value: string | boolean | null | undefined) {
+    reflectAttribute(this, "leave-confirm", value === true ? DEFAULT_LEAVE_CONFIRM : value === false ? null : value);
     this._syncBeforeUnload();
   }
 
