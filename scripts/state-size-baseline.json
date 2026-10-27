@@ -2,29 +2,28 @@
   "$comment": "gzip level 9 of packages/state/dist (4.0) at the recorded release, each file gzipped on its own. check-state-size.mjs --check allows +3 % over these plus an entry's optional \"slack\" in bytes (kept across --update). \"with its chunks\" sums the entry and every chunk it imports; \"beyond the core\" sums the files of its closure that split/core.js does not load. The absolute limits (core.min.js 20,480 B = 20 KiB, define.js 1,024 B) live in the script. Update with --update after a release build.",
   "index.esm.js": {
     "files": 1,
-    "bytes": 152150,
-    "gzip": 53255
+    "bytes": 153673,
+    "gzip": 53765
   },
   "auto.min.js": {
     "files": 1,
-    "bytes": 141075,
-    "gzip": 50157
+    "bytes": 142596,
+    "gzip": 50678
   },
   "split/core.js (with its chunks)": {
     "files": 12,
-    "bytes": 58637,
-    "gzip": 24932
+    "bytes": 58632,
+    "gzip": 24933
   },
   "split/features/devtools.js (beyond the core)": {
     "files": 1,
     "bytes": 5700,
-    "gzip": 2534
+    "gzip": 2533
   },
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
-    "bytes": 21292,
-    "gzip": 8623,
-    "slack": 512
+    "bytes": 22811,
+    "gzip": 9186
   },
   "split/features/formats.js (beyond the core)": {
     "files": 1,
@@ -39,7 +38,7 @@
   "split/features/native-commands.js (beyond the core)": {
     "files": 1,
     "bytes": 994,
-    "gzip": 532
+    "gzip": 531
   },
   "split/features/recursion.js (beyond the core)": {
     "files": 1,
@@ -54,16 +53,16 @@
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
     "bytes": 14673,
-    "gzip": 5783
+    "gzip": 5782
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,
     "bytes": 9405,
-    "gzip": 3849
+    "gzip": 3848
   },
   "split/auto.js (beyond the core)": {
     "files": 1,
     "bytes": 1081,
-    "gzip": 641
+    "gzip": 640
   }
 }

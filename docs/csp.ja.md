@@ -180,7 +180,9 @@ state はインライン `<script>` のテキストを取り出し、blob: URL �
 知っておくべき相互作用が 1 つある: ページが `<base href>` を設定している場合
 — i18n のロケール basename パターンがまさにそれをする（[i18n-design.md §9-1-4](./i18n-design.md)）—
 **相対**の `src="./state.js"` はページではなく base 基準（`/ja/state.js`）で
-解決されて 404 になる。`<base>` の下ではルート絶対で書くこと: `src="/state.js"`。lint は `src` をページからの
+解決されて 404 になる。ルートより下の `<base>` の下ではルート絶対で書くこと: `src="/state.js"`。`<base href="/">` —
+どの SPA も持つもの — の下では、相対の `src="state.js"` がどのルートからも `/state.js` に解決されるので、相対で書けば lint が読む
+（`family-ledger` の継ぎ目アプリはそこでルート絶対の助言に従い、state が検査されなかった）。lint は `src` をページからの
 相対パスで読むので、ルート絶対のものは読めない: 4.7 からそれを告げる（`wcs/state-src-unread`、info）— その state の
 パスもスクリプトの規則も検査されない。lint の読める並びの写しを持つか、state をインラインにしたページで検査すること。
 
