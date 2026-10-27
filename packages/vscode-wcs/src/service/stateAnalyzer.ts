@@ -92,11 +92,11 @@ const RESERVED_RECURSION_KEY = RECURSION_KEY;
  * @returns パス候補の配列
  */
 export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
-  const objectContent = extractDefaultExportObject(scriptContent);
-  if (!objectContent) return [];
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root || !root.content) return [];
 
   const paths: PathCandidate[] = [];
-  const topLevelProps = parseTopLevelProperties(objectContent);
+  const topLevelProps = parseTopLevelProperties(root.content);
   // `$streams` の値プロパティ実体化はループ後に処理する（明示宣言されたプロパティが優先）
   const pendingStreamValues: PropertyInfo[] = [];
   // `$listKeys` のリストパス実体化も同様に後処理（明示宣言・$streams 実体化が優先）
@@ -186,9 +186,10 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   collectRowShapesFromAssignments(scriptContent, paths);
 
   // getter の戻り値の形（`get visible() { return this.todos.filter(…) }` の行、
-  // `get summary() { return { total: … } }` の子）。行の形が揃った後に走らせる —
-  // 写す元のリストの行が、上の代入式から分かることもあるため。
-  collectGetterResultShapes(topLevelProps, effectiveDescriptors, paths);
+  // `get summary() { return { total: … } }` の子）と、同じ読み方をした代入の右辺の形
+  // （`this.rows = this.items.map(c => ({ … }))` の行、`this.errors = { date: "…" }` の子）。
+  // 行の形が揃った後に走らせる — 写す元のリストの行が、上の代入式から分かることもあるため。
+  collectGetterResultShapes(scriptContent, root.start, topLevelProps, effectiveDescriptors, paths);
 
   return paths;
 }
@@ -1055,8 +1056,16 @@ const MAX_GETTER_SHAPE_PASSES = 4;
  * `todos.*` のパターンに付くもので、getter が返した行（`visible.0`）にはプロパティが無い ──
  * `visible.*.upper` はランタイムで undefined なので、候補にしない（警告が正しい）。
  * 読めない式（関数呼び出しの結果など）からは何も導かない（今までどおり）。
+ *
+ * 代入（`this.<key> = …` / `this["<path>"] = …`、スクリプトのどこでも）の右辺も同じ読み方をする
+ * （collectAssignments）。メソッドで行を作り直す `this.rows = [...this.items].map((c) => ({ … }))`・
+ * `this.rows = this.items.filter(Boolean).map((c) => { return { … }; })` の行と、
+ * `{}` を種にしたキーへの `this.fieldErrors = { date: "…" }` のキーは、getter の戻り値と同じ確度で形を言っている
+ * （継ぎ目アプリ family-ledger — 作者は 22 件の誤報をすべて書き換えて消した）。
  */
 function collectGetterResultShapes(
+  script: string,
+  rootStart: number,
   props: readonly PropertyInfo[],
   effective: Map<string, EffectiveDescriptor>,
   paths: PathCandidate[],
@@ -1068,11 +1077,23 @@ function collectGetterResultShapes(
     if (prop.name.startsWith('$') || hasRecursionWildcard(prop.name) || effective.get(prop.name) === 'data') continue;
     getters.set(prop.name, prop);
   }
+  const assignments = collectAssignments(script, rootStart, props);
   for (let pass = 0; pass < MAX_GETTER_SHAPE_PASSES; pass++) {
     const before = paths.length;
     for (const [name, prop] of getters) {
       const shape = getterResultShape(prop.value as string, paths);
       if (shape !== null) applyResultShape(name, shape, paths);
+    }
+    // 別名は候補に依って形が変わるので、パスごとに読み直す（同じ本体は 1 回）
+    const aliasesByBody = new Map<string, Map<string, ResultShape>>();
+    for (const assignment of assignments) {
+      let aliases = new Map<string, ResultShape>();
+      if (assignment.body !== null) {
+        aliases = aliasesByBody.get(assignment.body) ?? collectAliases(assignment.body, paths);
+        aliasesByBody.set(assignment.body, aliases);
+      }
+      const shape = expressionShape(assignment.expr, paths, aliases);
+      if (shape !== null) applyAssignedShape(assignment.target, shape, paths);
     }
     if (paths.length === before) break;
   }
@@ -1081,15 +1102,7 @@ function collectGetterResultShapes(
 /** getter 本体の `return` 式すべての形の和。読める式が 1 つも無ければ null。 */
 function getterResultShape(body: string, paths: PathCandidate[]): ResultShape | null {
   const scan = maskCommentsAndStrings(body);
-  // `const list = this.products.filter(…)` の別名（最初の宣言が勝つ）
-  const aliases = new Map<string, ResultShape>();
-  for (const m of scan.matchAll(/\b(?:const|let|var)\s+([$\w]+)\s*=(?![=>])/g)) {
-    const name = m[1];
-    if (aliases.has(name)) continue;
-    const start = (m.index as number) + m[0].length;
-    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
-    if (shape !== null) aliases.set(name, shape);
-  }
+  const aliases = collectAliases(body, paths);
   const shapes: ResultShape[] = [];
   for (const m of scan.matchAll(/\breturn\b/g)) {
     const start = (m.index as number) + m[0].length;
@@ -1098,6 +1111,78 @@ function getterResultShape(body: string, paths: PathCandidate[]): ResultShape | 
     if (shape !== null) shapes.push(shape);
   }
   return shapes.length === 0 ? null : mergeShapes(shapes);
+}
+
+/** 本体の `const list = this.products.filter(…)` の別名（最初の宣言が勝つ）。 */
+function collectAliases(body: string, paths: PathCandidate[]): Map<string, ResultShape> {
+  const scan = maskCommentsAndStrings(body);
+  const aliases = new Map<string, ResultShape>();
+  for (const m of scan.matchAll(/\b(?:const|let|var)\s+([$\w]+)\s*=(?![=>])/g)) {
+    const name = m[1];
+    if (aliases.has(name)) continue;
+    const start = (m.index as number) + m[0].length;
+    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
+    if (shape !== null) aliases.set(name, shape);
+  }
+  return aliases;
+}
+
+/**
+ * `this.<key> = …` / `this["<path>"] = …` の単純代入（`=` だけ。`==` / `=>` と複合代入は除く。
+ * `this.a.b = …` は `=` の前にもう 1 段あるので当たらない — 素のプロパティ書き込みは wcs/nested-assign の担当）。
+ * マスク済み鏡像で走査するので、引用符付きパス（group 2）は `d` フラグの indices で原文から取り直す。
+ */
+const PLAIN_ASSIGN = new RegExp(String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])`, 'gd');
+
+/** 代入 1 件: 書き込む先のパス・右辺の式・それを囲むトップレベルの getter / メソッドの本体（別名を引く）。 */
+interface Assignment {
+  readonly target: string;
+  readonly expr: string;
+  readonly body: string | null;
+}
+
+/** スクリプトのどこかにある `this.<key> = <式>` を集める（`$` ルート・`*` 入りのパスは除く）。 */
+function collectAssignments(script: string, rootStart: number, props: readonly PropertyInfo[]): Assignment[] {
+  const scan = maskCommentsAndStrings(script);
+  const bodies = props
+    .filter(p => (p.kind === 'getter' || p.kind === 'method') && p.value !== undefined && p.valueStart !== undefined)
+    .map(p => ({ start: rootStart + (p.valueStart as number), body: p.value as string }));
+  const out: Assignment[] = [];
+  PLAIN_ASSIGN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = PLAIN_ASSIGN.exec(scan)) !== null) {
+    // `other.this.x = …` は state への書き込みではない
+    if (/\.\s*$/.test(scan.slice(Math.max(0, match.index - 8), match.index))) continue;
+    const span = match.indices![1] ?? match.indices![2];
+    const target = script.slice(span[0], span[1]);
+    if (target.startsWith('$') || target.includes('*')) continue;
+    const expr = readExpression(script, scan, match.index + match[0].length);
+    const owner = bodies.find(b => b.start <= match!.index && match!.index < b.start + b.body.length);
+    out.push({ target, expr, body: owner?.body ?? null });
+  }
+  return out;
+}
+
+/**
+ * 代入の右辺の形を、書き込む先に足す。新しいパスは作らない — 先がデータ（getter の setter へ
+ * 書く代入は getter の形を言わない）で、**既にリストと分かっている**（`<path>.*` が候補にある）なら
+ * 右辺のリストの行を、**オブジェクトリテラルを種にしている**なら右辺のオブジェクトのキーを足す
+ * （種のキーとの和）。`null` を種にしたキーや、形の食い違う右辺（リストへオブジェクト）からは何も足さない。
+ *
+ * 右辺のオブジェクトリテラルの spread（`{ ...noErrors(), ...parse(e) }`）は追わない — 行リテラルと同じ規則で、
+ * 名前の書かれたキーだけが形になる。候補の集合に「開いた形」は無く（`data: make()` の下は今も
+ * 「存在しない」）、spread が持ち込むキーへの束縛は今までどおり warning のまま残る。
+ */
+function applyAssignedShape(target: string, shape: ResultShape, paths: PathCandidate[]): void {
+  const declared = paths.find(p => p.path === target);
+  if (declared === undefined || declared.kind !== 'data') return;
+  if (hasPath(paths, `${target}.*`)) {
+    if (shape.isList) applyResultShape(target, shape, paths);
+    return;
+  }
+  if (!shape.isList && declared.rawInitial !== undefined && isObjectLiteral(declared.rawInitial)) {
+    applyResultShape(target, shape, paths);
+  }
 }
 
 /**
@@ -1168,11 +1253,10 @@ function expressionShape(text: string, paths: PathCandidate[], aliases: Map<stri
       shape = source;
     }
   } else if (scan.startsWith('(')) {
-    // `(this.items ?? []).map(…)`: the expression in the parentheses is the base of the chain
+    // `(this.items ?? []).map(…)`: the expression in the parentheses is the base of the chain. One it cannot read
+    // (`(await res.json()).map(…)`) is a source of unknown shape: only a `map` with a literal gives it rows
     const inner = extractDelimitedContent(expr, scan, 0, '(', ')');
-    const base = expressionShape(inner, paths, aliases);
-    if (base === null) return null;
-    shape = base;
+    shape = expressionShape(inner, paths, aliases) ?? OPAQUE;
     rest = inner.length + 2;
   } else {
     const base = readBase(expr, scan, aliases, paths);
@@ -1726,13 +1810,6 @@ function locateDefaultExportObject(script: string): { content: string; start: nu
   const braceIndex = scan.indexOf(match[1], match.index!);
   // extractBracedContent は `{` の中身を返すので、中身の開始は `{` の次
   return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
-}
-
-/**
- * `export default { ... }` からオブジェクトリテラルの中身を抽出する。
- */
-function extractDefaultExportObject(script: string): string | null {
-  return locateDefaultExportObject(script)?.content ?? null;
 }
 
 /**

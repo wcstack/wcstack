@@ -105,6 +105,9 @@ export const WcsDiagnosticCode = {
   // （state README「依存追跡の境界」規則 1）。ランタイムは素のアクセスと区別できないので
   // 静的にしか検出できない。対象はオブジェクトリテラル初期値のルートだけ（配列は `items`
   // の依存で足りる — 行の置換は `items` 自体を書き換え、in-place 変異は array-mutation が止める）。
+  // 読んだパスをページの束縛（組み込みタグの spread・書き戻す束縛・要素の出力）が書くなら error（その書き込みは
+  // getter に届かないと断定できる — 継ぎ目アプリ family-ledger）、スクリプトの書き込みだけなら warning（ルートも
+  // 置き換えるなら壊れない）。時刻・`location` を読む getter も同じ code（warning）。
   GetterUntrackedRead: "wcs/getter-untracked-read",
   OnHandlerThis: "wcs/on-handler-this",
   // --- <wcs-state> script: $watch declaration ---

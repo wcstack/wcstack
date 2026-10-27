@@ -11,6 +11,7 @@ With `@wcstack/state`, `<wcs-upload>` exposes a small async state surface:
 
 - input / command surface: `files`, `trigger`
 - configuration surface: `url`, `method`, `field-name`, `accept`, `max-size`, `manual`, `multiple`
+- request headers: `<wcs-upload-header>` children (since 4.9 (not released yet); see [`<wcs-upload-header>`](#wcs-upload-header))
 - output state surface: `value`, `loading`, `progress`, `error`, `status`
 
 This means file upload can be expressed as state transitions and DOM bindings instead of ad-hoc `XMLHttpRequest` glue code.
@@ -234,6 +235,32 @@ Because `null` is also a valid resolved value, do not use the resolved value to 
 
 Aborts the current request. Loading is cleared through the request's abort path (consistent with `@wcstack/fetch`).
 
+### `<wcs-upload-header>`
+
+Since 4.9 (not released yet), a request header of the upload: place it as a child of `<wcs-upload>`, as `<wcs-fetch-header>` sits in `<wcs-fetch>`. It is read when an upload starts. (Before, `<wcs-upload>` sent no header; on 4.8, call `UploadCore` with `headers` — see [Headless API](#headless-api).)
+
+| Attribute / property | Type | Description |
+|---|---|---|
+| `name` | `string` | Header name |
+| `value` | `string` | Header value. Without a `value` attribute the header is not sent (an empty `value=""` is) |
+
+`name` and `value` are also properties, reflected to the attributes (`null` removes the attribute, `undefined` restores the one in the markup), so a header can come from state — an API that wants a bearer token on every request:
+
+```html
+<wcs-upload id="receipt-upload" url="/api/receipts" manual data-wcs="value: receipt">
+  <wcs-upload-header name="Authorization" data-wcs="value: authHeader"></wcs-upload-header>
+</wcs-upload>
+<!-- get authHeader() { return this.token ? `Bearer ${this.token}` : null; } -->
+```
+
+While `authHeader` is `null` an upload goes out with no `Authorization` header at all. The headers are read when the upload starts — a `files` assignment in automatic mode, `trigger`, `upload()` — not when the element connects, so a token that arrives later goes out with the next upload.
+
+Do not add a `Content-Type` header: an upload is sent as `multipart/form-data`, and a manual `Content-Type` drops the boundary the browser adds, so the server cannot read the parts. `<wcs-upload>` sends it as written and warns.
+
+`<wcs-upload-header>` declares no `wcBindable`: it is part of `<wcs-upload>`'s markup, not an I/O node of its own (a `value:` binding writes its property).
+
+**Defining the tags yourself.** `@wcstack/upload/auto` defines both tags. A page that defines them itself — an autoloader's wrapper module, a scoped registry — has to define `<wcs-upload-header>` too: the package exports its class, `WcsUploadHeader`, beside `WcsUpload`. An undefined `<wcs-upload-header>` is a plain element, and its header is not sent; `<wcs-upload>` then warns once (`[wcs/upload-helper-undefined]`). For the autoloader, a wrapper that imports `/auto` defines both tags at once ([autoloader README](../autoloader/README.md#loading-wcstacks-own-tags)).
+
 ## Events
 
 | Event | `detail` | Description |
@@ -425,10 +452,11 @@ bootstrapUpload({
   triggerAttribute: "data-uploadtarget",
   tagNames: {
     upload: "wcs-upload",
+    uploadHeader: "wcs-upload-header",
   },
 });
 ```
 
-Use this when you want to customize the tag name or trigger attribute instead of relying on `@wcstack/upload/auto`.
+Use this when you want to customize the tag name or trigger attribute instead of relying on `@wcstack/upload/auto`. `tagNames.uploadHeader` names `<wcs-upload-header>` (since 4.9 (not released yet); 4.8 refuses the key).
 
 `bootstrapUpload()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.

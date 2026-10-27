@@ -133,6 +133,54 @@ describe("WcsSse", () => {
       expect(el.hasAttribute("manual")).toBe(false);
     });
 
+    it("autoReconnect の get/set（null / undefined も）", () => {
+      const host = document.createElement("div");
+      host.innerHTML = "<wcs-sse auto-reconnect></wcs-sse>";
+      const authored = host.firstElementChild as WcsSse;
+      expect(authored.autoReconnect).toBe(true);
+      authored.autoReconnect = false;
+      expect(authored.hasAttribute("auto-reconnect")).toBe(false);
+      authored.autoReconnect = undefined;
+      expect(authored.autoReconnect).toBe(true);
+      authored.autoReconnect = null;
+      expect(authored.autoReconnect).toBe(false);
+
+      const el = createEl();
+      expect(el.autoReconnect).toBe(false);
+      el.autoReconnect = true;
+      expect(el.getAttribute("auto-reconnect")).toBe("");
+    });
+
+    it("reconnectInterval は既定 3000、数でない値も 3000（<wcs-ws> と同じ解釈）", () => {
+      const el = createEl();
+      expect(el.reconnectInterval).toBe(3000);
+      el.reconnectInterval = 5000;
+      expect(el.getAttribute("reconnect-interval")).toBe("5000");
+      expect(el.reconnectInterval).toBe(5000);
+      el.setAttribute("reconnect-interval", "soon");
+      expect(el.reconnectInterval).toBe(3000);
+      el.setAttribute("reconnect-interval", "");
+      expect(el.reconnectInterval).toBe(3000);
+      el.reconnectInterval = null;
+      expect(el.hasAttribute("reconnect-interval")).toBe(false);
+      expect(el.reconnectInterval).toBe(3000);
+    });
+
+    it("maxReconnects は既定 Infinity、数でない値も Infinity（<wcs-ws> と同じ解釈）", () => {
+      const el = createEl();
+      expect(el.maxReconnects).toBe(Infinity);
+      el.maxReconnects = 10;
+      expect(el.getAttribute("max-reconnects")).toBe("10");
+      expect(el.maxReconnects).toBe(10);
+      el.setAttribute("max-reconnects", "many");
+      expect(el.maxReconnects).toBe(Infinity);
+      el.maxReconnects = 0;
+      expect(el.maxReconnects).toBe(0);
+      el.maxReconnects = undefined;
+      expect(el.hasAttribute("max-reconnects")).toBe(false);
+      expect(el.maxReconnects).toBe(Infinity);
+    });
+
     it("undefined はマークアップに書かれた属性へ戻し、null は属性を外す（P1 / P2）", async () => {
       const host = document.createElement("div");
       host.innerHTML = '<wcs-sse url="/authored" events="a,b" with-credentials raw manual></wcs-sse>';
@@ -192,9 +240,21 @@ describe("WcsSse", () => {
       expect(names).toContain("trigger");
     });
 
-    it("inputs に url/withCredentials/events/raw/staleAfter/manual/trigger を持つ", () => {
+    it("inputs に url/withCredentials/events/raw/autoReconnect/reconnectInterval/maxReconnects/staleAfter/manual/trigger を持つ", () => {
       const names = WcsSse.wcBindable.inputs?.map(i => i.name);
-      expect(names).toEqual(["url", "withCredentials", "events", "raw", "staleAfter", "manual", "trigger"]);
+      expect(names).toEqual([
+        "url", "withCredentials", "events", "raw",
+        "autoReconnect", "reconnectInterval", "maxReconnects", "staleAfter", "manual", "trigger",
+      ]);
+    });
+
+    it("auto-reconnect 系の入力は <wcs-ws> と同じ名前・同じ属性を宣言する", () => {
+      const inputs = WcsSse.wcBindable.inputs ?? [];
+      expect(inputs.filter(i => ["autoReconnect", "reconnectInterval", "maxReconnects"].includes(i.name))).toEqual([
+        { name: "autoReconnect", attribute: "auto-reconnect" },
+        { name: "reconnectInterval", attribute: "reconnect-interval" },
+        { name: "maxReconnects", attribute: "max-reconnects" },
+      ]);
     });
 
     it("commands は Core の commands を単一情報源として継承する", () => {
@@ -398,6 +458,134 @@ describe("WcsSse", () => {
     });
   });
 
+  // ブラウザが諦めたストリーム（HTTP のエラー）を開き直す opt-in。<wcs-ws> と同じ名前・同じ意味
+  describe("auto-reconnect", () => {
+    beforeEach(() => { vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] }); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("恒久エラー(CLOSED)のストリームを reconnect-interval ms 後に開き直す（接続のオプションも同じ）", async () => {
+      const el = createEl({ url: "/feed", events: "price", "auto-reconnect": "", "reconnect-interval": "1000" });
+      document.body.appendChild(el);
+      await flush();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(el.readyState).toBe(MockEventSource.CLOSED);
+      expect(el.errorInfo?.recoverable).toBe(false);
+      vi.advanceTimersByTime(999);
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(MockEventSource.instances.map((es) => es.url)).toEqual(["/feed", "/feed"]);
+      expect(el.loading).toBe(true);
+      expect(el.error).toBeNull();
+      MockEventSource.last.simulateOpen();
+      MockEventSource.last.simulateNamedEvent("price", "10");
+      expect(el.connected).toBe(true);
+      expect(el.message).toEqual({ event: "price", data: 10, lastEventId: "" });
+      el.remove();
+    });
+
+    it("属性が無ければ（既定）諦めたストリームは開き直さない", async () => {
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      await flush();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(60_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      el.remove();
+    });
+
+    it("試行のときの要素の url で開く（manual の要素は url の変化ではつながない）", async () => {
+      const el = createEl({ url: "/feed?token=old", manual: "", "auto-reconnect": "", "reconnect-interval": "1000" });
+      document.body.appendChild(el);
+      await flush();
+      el.connect();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      // state の getter が新しいトークンで url を作り直した
+      el.url = "/feed?token=new";
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(1000);
+      expect(MockEventSource.instances.map((es) => es.url)).toEqual(["/feed?token=old", "/feed?token=new"]);
+      el.remove();
+    });
+
+    it("試行のときに url が無ければ何もしない", async () => {
+      const el = createEl({ url: "/feed", manual: "", "auto-reconnect": "", "reconnect-interval": "1000" });
+      document.body.appendChild(el);
+      await flush();
+      el.connect();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      el.url = null;
+      vi.advanceTimersByTime(1000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(el.readyState).toBe(MockEventSource.CLOSED);
+      el.remove();
+    });
+
+    it("待つ間に url が変わると（manual でない要素）その場で新しい url を開き、待っていた開き直しは外す", async () => {
+      const el = createEl({ url: "/feed?token=old", "auto-reconnect": "", "reconnect-interval": "1000" });
+      document.body.appendChild(el);
+      await flush();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      el.url = "/feed?token=new";
+      await flush();
+      expect(MockEventSource.instances.map((es) => es.url)).toEqual(["/feed?token=old", "/feed?token=new"]);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(2);
+      el.remove();
+    });
+
+    it("max-reconnects 回で止まり、最後の error が残る", async () => {
+      const el = createEl({ url: "/feed", "auto-reconnect": "", "reconnect-interval": "100", "max-reconnects": "1" });
+      document.body.appendChild(el);
+      await flush();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(100);
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      const last = el.error;
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(el.error).toBe(last);
+      expect(el.errorInfo?.recoverable).toBe(false);
+      el.remove();
+    });
+
+    it("close() は待っている開き直しを止める", async () => {
+      const el = createEl({ url: "/feed", "auto-reconnect": "", "reconnect-interval": "100" });
+      document.body.appendChild(el);
+      await flush();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      el.close();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      el.remove();
+    });
+
+    it("要素を外すと待っている開き直しは止まり、入れ直すと 1 本だけつなぐ", async () => {
+      const el = createEl({ url: "/feed", "auto-reconnect": "", "reconnect-interval": "100" });
+      document.body.appendChild(el);
+      await flush();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      const changes: string[] = [];
+      for (const type of ["wcs-sse:connected-changed", "wcs-sse:loading-changed", "wcs-sse:readystate-changed"]) {
+        el.addEventListener(type, () => changes.push(type));
+      }
+      el.remove();
+      // 待つ間の状態は外しても変わらない — 知らせることも無い（timing-and-firing-contract §22）
+      expect(changes).toEqual([]);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      document.body.appendChild(el);
+      await flush();
+      expect(MockEventSource.instances).toHaveLength(2);
+      el.remove();
+    });
+  });
+
   describe("upgrade 経路", () => {
     it("タグ定義前に配置された要素を upgrade しても接続は 1 本に収まる", async () => {
       // autoloader の主経路：マークアップ存在後にタグ定義 → 仕様により
@@ -457,6 +645,34 @@ describe("WcsSse", () => {
       expect(el.getAttribute("stale-after")).toBe("60000");
       el.staleAfter = null;
       expect(el.hasAttribute("stale-after")).toBe(false);
+    });
+
+    it("auto-reconnect / reconnect-interval / max-reconnects を接続のオプションとして Core に渡す", async () => {
+      const spy = vi.spyOn(SseCore.prototype, "connect");
+      const el = createEl({ url: "/feed", "auto-reconnect": "", "reconnect-interval": "5000", "max-reconnects": "10" });
+      document.body.appendChild(el);
+      await flush();
+      expect(spy).toHaveBeenCalledWith("/feed", expect.objectContaining({
+        autoReconnect: true, reconnectInterval: 5000, maxReconnects: 10,
+      }));
+      // 開き直しの url は試行のときの要素の url
+      const options = spy.mock.calls[0][1]!;
+      el.setAttribute("url", "/next");
+      expect(options.reconnectUrl!()).toBe("/next");
+      spy.mockRestore();
+      el.remove();
+    });
+
+    it("属性が無ければ（既定）auto-reconnect は false で渡す", async () => {
+      const spy = vi.spyOn(SseCore.prototype, "connect");
+      const el = createEl({ url: "/feed" });
+      document.body.appendChild(el);
+      await flush();
+      expect(spy).toHaveBeenCalledWith("/feed", expect.objectContaining({
+        autoReconnect: false, reconnectInterval: 3000, maxReconnects: Infinity,
+      }));
+      spy.mockRestore();
+      el.remove();
     });
 
     it("raw 属性で JSON パースを無効化する", async () => {

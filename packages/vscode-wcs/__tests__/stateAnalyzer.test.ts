@@ -1104,3 +1104,134 @@ export default {
     expect(all.filter(p => p.startsWith('api.'))).toEqual([]);
   });
 });
+
+describe('analyzeStatePaths — 代入の右辺から読む形（継ぎ目アプリ family-ledger）', () => {
+  const names = (script: string): string[] => analyzeStatePaths(script).map(p => p.path);
+  const find = (paths: PathCandidate[], path: string): PathCandidate | undefined => paths.find(p => p.path === path);
+
+  it('`[]` で始まるリストへの `[...x].map(…)` / `.filter(…).map(…)` の代入は、コールバックのリテラルが行の形になる', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [{ id: "a", name: "A" }],
+  rowsC: [],
+  rowsD: [],
+  syncC() { this.rowsC = [...this.items].map((c) => ({ id: c.id, label: c.name })); },
+  syncD() { this.rowsD = this.items.filter(Boolean).map((c) => { return { id: c.id, label: c.name }; }); },
+};`);
+    expect(find(paths, 'rowsC.*.label')).toEqual({ path: 'rowsC.*.label', kind: 'data' });
+    expect(find(paths, 'rowsC.*.id')).toEqual({ path: 'rowsC.*.id', kind: 'data' });
+    expect(find(paths, 'rowsD.*.label')).toEqual({ path: 'rowsD.*.label', kind: 'data' });
+    // map は元の行を写さない（`...c` が無い）
+    expect(find(paths, 'rowsC.*.name')).toBeUndefined();
+  });
+
+  it('this["…"] の代入・本体の別名・括弧の中の読めない式（await）・$watch ハンドラの中も読む', () => {
+    const all = names(`
+export default {
+  items: [{ name: "A", done: false }],
+  form: { rows: [] },
+  rowsE: [], rowsF: [], rowsG: [], rowsH: [],
+  syncE() { this["form.rows"] = this.items.map(i => ({ title: i.name })); this["rowsE"] = this.items.map(i => ({ e: 1 })); },
+  syncF() {
+    const next = this.items.map((i) => ({ fromAlias: i.name }));
+    this.rowsF = next;
+  },
+  async load() {
+    const res = await fetch("/rows");
+    this.rowsG = (await res.json()).map((r) => ({ fromJson: r.t }));
+  },
+  $watch: { items() { this.rowsH = this.items.map(i => ({ fromWatch: true })); } },
+};`);
+    expect(all).toContain('form.rows.*.title');
+    expect(all).toContain('rowsE.*.e');
+    expect(all).toContain('rowsF.*.fromAlias');
+    expect(all).toContain('rowsG.*.fromJson');
+    expect(all).toContain('rowsH.*.fromWatch');
+  });
+
+  it('行を保つ右辺（filter / toSorted）は元のリストの行を写す', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  items: [{ name: "A", price: 1 }],
+  visible: [],
+  apply() { this.visible = this.items.filter((i) => i.price > 0).toSorted(); },
+};`);
+    expect(find(paths, 'visible.*.name')?.typeHint).toBe('string');
+    expect(find(paths, 'visible.*.price')?.typeHint).toBe('number');
+  });
+
+  it('`{}` を種にしたキーへのオブジェクトリテラルの代入は、そのキーを足す（種との和・三項の両辺・入れ子）', () => {
+    const paths = analyzeStatePaths(`
+export default {
+  fieldErrors: {},
+  totals: { count: 0 },
+  form: { errors: {} },
+  fail() { this.fieldErrors = { date: "bad" }; },
+  check(ok) { this.fieldErrors = ok ? {} : { amount: "too much", detail: { field: "x" } }; },
+  sum() { this.totals = { sum: 1 }; },
+  nested() { this["form.errors"] = { name: "required" }; },
+};`);
+    expect(find(paths, 'fieldErrors.date')).toEqual({ path: 'fieldErrors.date', kind: 'data', typeHint: 'string' });
+    expect(find(paths, 'fieldErrors.amount')?.typeHint).toBe('string');
+    expect(find(paths, 'fieldErrors.detail.field')?.typeHint).toBe('string');
+    // 種のキーは種の初期値のまま、代入のキーが加わる
+    expect(find(paths, 'totals.count')?.rawInitial).toBe('0');
+    expect(find(paths, 'totals.sum')?.typeHint).toBe('number');
+    expect(find(paths, 'form.errors.name')?.typeHint).toBe('string');
+  });
+
+  it('オブジェクトリテラルの spread は追わず、名前の書かれたキーだけを足す', () => {
+    const all = names(`
+export default {
+  fieldErrors: {},
+  failAll(e) { this.fieldErrors = { ...noErrors(), ...parse(e) }; },
+  failOne() { this.fieldErrors = { ...this.fieldErrors, date: "bad" }; },
+};`);
+    expect(all).toContain('fieldErrors.date');
+    expect(all.filter(p => p.startsWith('fieldErrors.'))).toEqual(['fieldErrors.date']);
+  });
+
+  it('形を言わない代入からは候補を作らない（null の種・宣言の無いキー・getter・$ ルート・形の食い違い）', () => {
+    const all = names(`
+export default {
+  user: null,
+  rows: [],
+  settings: { theme: "light" },
+  get view() { return this.rows; },
+  set view(v) {},
+  save() {
+    this.user = { name: "x" };
+    this.ghost = [{ g: 1 }].map(g => ({ ghostField: g.g }));
+    this.view = this.rows.map(r => ({ viaSetter: true }));
+    this.$state = { api: 1 };
+    this.rows = { notARow: 1 };
+    this.settings = this.rows.map(r => ({ notAnObject: 1 }));
+  },
+};`);
+    expect(all.some(n => n.startsWith('user.'))).toBe(false);
+    expect(all.some(n => n.startsWith('ghost'))).toBe(false);
+    expect(all).not.toContain('view.*.viaSetter');
+    expect(all.some(n => n.includes('api'))).toBe(false);
+    expect(all).not.toContain('rows.notARow');
+    expect(all.some(n => n.includes('notAnObject'))).toBe(false);
+  });
+
+  it('コメント・文字列の中、比較・複合代入、ほかのオブジェクトの this は読まない', () => {
+    const all = names(`
+export default {
+  rows: [], errors: {},
+  note: "this.errors = { inString: 1 }",
+  check(other) {
+    // this.errors = { inComment: 1 }
+    if (this.errors == { compared: 1 }) return;
+    this.errors ??= { nullish: 1 };
+    other.this.errors = { foreign: 1 };
+    this.rows = this.rows.map(r => ({ real: 1 }));
+  },
+};`);
+    expect(all).toContain('rows.*.real');
+    for (const bad of ['inString', 'inComment', 'compared', 'nullish', 'foreign']) {
+      expect(all.some(n => n.includes(bad))).toBe(false);
+    }
+  });
+});

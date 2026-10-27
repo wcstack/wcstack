@@ -29,6 +29,7 @@ const mutationHtml = join(workDir, "mutation.html");
 const namedStateHtml = join(workDir, "named-state.html");
 const missingPathHtml = join(workDir, "missing-path.html");
 const untrackedReadHtml = join(workDir, "untracked-read.html");
+const untrackedBoundHtml = join(workDir, "untracked-bound.html");
 const recursionOkHtml = join(workDir, "recursion-ok.html");
 const recursionBadHtml = join(workDir, "recursion-bad.html");
 const recursionSpreadHtml = join(workDir, "recursion-spread.html");
@@ -63,6 +64,13 @@ writeFileSync(namedStateHtml, `<!doctype html>
 `);
 writeFileSync(cleanHtml, "<!doctype html>\n<html><body><p>hello</p></body></html>\n");
 writeFileSync(untrackedReadHtml, `<!doctype html>
+<html><body>
+<wcs-state><script type="module">
+export default { form: { name: "" }, get label() { return this.form.name; }, rename(v) { this["form.name"] = v; } };
+</script></wcs-state>
+</body></html>
+`);
+writeFileSync(untrackedBoundHtml, `<!doctype html>
 <html><body>
 <wcs-state><script type="module">
 export default { form: { name: "" }, get label() { return this.form.name; } };
@@ -321,11 +329,16 @@ check("unresolvable path → warning wcs/binding-path-missing, exit 0", ["--lang
 });
 
 // getter 本体の AST 解析に依存する唯一の診断。acorn が cli.cjs に同梱されていなければ
-// この warning は出ない(typescript と違い external ではなく inline — esbuild.config.js)。
-// severity は warning: ルートを丸ごと置換する設計なら壊れない条件付きの欠陥。
-check("nested read inside a getter → warning wcs/getter-untracked-read, exit 0", ["--lang=en", untrackedReadHtml], {
+// この診断は出ない(typescript と違い external ではなく inline — esbuild.config.js)。
+// 書き込みがスクリプトの this["form.name"] = … なら warning: ルートを丸ごと置換する設計なら壊れない条件付きの欠陥。
+// 読んだパスをページの束縛（value: form.name）が書くなら error（4.9 — 継ぎ目アプリ family-ledger）。両側を残す。
+check("nested read inside a getter, written by the script → warning wcs/getter-untracked-read, exit 0", ["--lang=en", untrackedReadHtml], {
   exit: 0,
   stdout: [/warning wcs\/getter-untracked-read /, "0 error(s), 1 warning(s)"],
+});
+check("nested read inside a getter, written by a binding → error wcs/getter-untracked-read, exit 1", ["--lang=en", untrackedBoundHtml], {
+  exit: 1,
+  stdout: [/error wcs\/getter-untracked-read /, "1 error(s), 0 warning(s)"],
 });
 
 // $recursion の展開形は何段でも「存在する」— 深さを畳んで候補に当てる規則が

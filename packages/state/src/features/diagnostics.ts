@@ -301,6 +301,57 @@ function handlerThrew(engine: Engine, path: string, type: string): void {
   console.warn(`[@wcstack/state] [wcs/delegated-current-target] "${path}" reads event.currentTarget, the root for a delegated on${type}:. Write on${type}#direct:, or use event.target.closest(…).${LINT_HINT}`);
 }
 
+// ---------------------------------------------------------------- $on handlers that use this
+
+/** The `$on` handlers already told about: a re-set state does not say it again. */
+const toldThis = new WeakSet<(...args: any[]) => unknown>();
+/** `this.x`, `this["x"]`, `const state = this` — not the word in a string (`"this is"`). */
+const USES_THIS = /\bthis\s*[.[]|=\s*this\b/;
+
+/**
+ * A `$on` handler that uses `this`: it is called as `handler(state, event)`, so `this` is undefined and it
+ * throws when the event arrives — a TypeError with no code, which never says why (docs/seam-apps.md,
+ * family-ledger). Said once per handler when the state is declared, before any event, as lint's
+ * `wcs/on-handler-this` says it.
+ */
+function onHandlersThis(target: Record<string, any>): void {
+  const on = findDescriptor(target, "$on")?.value;
+  if (on === null || typeof on !== "object") return;
+  for (const name of Object.keys(on)) {
+    const fn = on[name];
+    if (typeof fn !== "function" || toldThis.has(fn) || !USES_THIS.test(String(fn))) continue;
+    toldThis.add(fn);
+    console.warn(`[@wcstack/state] [wcs/on-handler-this] The $on handler "${name}" uses this. A $on handler is called as ${name}(state, event): this is undefined there, so it throws when the event arrives — write ${name}(state, event) { state.x = … }.${LINT_HINT}`);
+  }
+}
+
+// ---------------------------------------------------------------- two root states
+
+/** The roots already told about. */
+const toldRoots = new WeakSet<Node>();
+
+const describeState = (e: Element): string => {
+  for (const a of ["src", "state", "json"]) if (e.hasAttribute(a)) return `<${e.localName} ${a}${a === "json" ? "" : `="${e.getAttribute(a)}"`}>`;
+  return `<${e.localName}>`;
+};
+
+/**
+ * A root `<wcs-state>` binds a root that has another one: there is one state tree per root, and the one whose
+ * state was ready first takes it — a `json=` state, ready at once, before the page's `src=` or inline state that
+ * comes first in the document, which is then refused (#47) and the page binds against the wrong state
+ * (docs/seam-apps.md, family-ledger). Said once per root, naming both.
+ */
+function secondRoot(engine: Engine, phase: string): void {
+  const el = engine.element as Element | null;
+  if (phase !== "mounting" || !el) return;
+  const root = el.getRootNode() as Node & ParentNode;
+  if (toldRoots.has(root)) return;
+  const others = [...root.querySelectorAll(config.tagNames.state)].filter((e) => e !== el && !e.hasAttribute("mount") && !e.hasAttribute("bind-component"));
+  if (others.length === 0) return;
+  toldRoots.add(root);
+  console.warn(`[@wcstack/state] [wcs/second-root] ${others.length + 1} root <wcs-state> elements share one root, and there is one state tree per root: ${describeState(el)} takes it — its state was ready first, whatever the order in the document — and ${others.map(describeState).join(", ")} is refused (#47). Keep one, and graft the others with <wcs-state mount="path">.${LINT_HINT}`);
+}
+
 /**
  * A drain made patterns (`loose`, before its sweep): a getter may have read a path for the first time — in a
  * row added since, or down a branch of its own code. Checked as the bindings' are; a drain that read no new
@@ -441,12 +492,14 @@ export const diagnostics: Feature = {
       removedDeclarations(target);
       prev?.(engine, target);
       checkRecursion(target);
+      onHandlersThis(target);
       recheck(engine);
       watchPostUpdate(engine);
       watchCommands(engine);
       declaredKeys.set(engine, new Set(keysOf(target)));
     };
     hooks.handlerThrew = handlerThrew;
+    hooks.element = chain(hooks.element, secondRoot);
     hooks.written = chain(hooks.written, written);
     hooks.drained = chain(hooks.drained, drained);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));

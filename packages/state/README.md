@@ -1243,7 +1243,7 @@ Three rules decide what the dependency graph sees. None of them matters until yo
 | **Reads inside a setter are not tracked.** A setter is an imperative assignment, not a derivation, so nothing it reads becomes a dependency of anything | A setter that reads `this.a` to decide what to write does not run again when `a` changes — only a getter re-runs |
 | **The same-value guard applies to primitives only.** A primitive write `Object.is`-equal to the current value is dropped before anything is enqueued; an object or array write always passes, even the same reference | Assigning the same string again fires nothing; assigning the same object again re-fires its bindings and `$watch` (`$behavior.sameValueGuard`; a `semantics: "event"` property is exempt either way). A list is the exception: its rows follow the array's items only when a **new** array is assigned. The same array assigned again — or `$postUpdate` — re-reads what is below the rows it has, but adds, removes or replaces no row: `cards[i] = card; this.cards = cards` keeps showing the old card. Assign a new array (`this.cards = cards.with(i, card)`, `[...cards, x]`); lint reports the in-place change (`wcs/array-index-assign`, `wcs/array-mutation`) |
 
-The first rule is the one static analysis can catch: `wcs-validate` and the VS Code extension report `wcs/getter-untracked-read` when a getter reads `this.form.name` and the document writes `form.name` somewhere (a `value:` binding, a spread, `this["form.name"] = …`). A root that is only ever replaced wholesale — router params, a `$stream` fold — is left alone.
+The first rule is the one static analysis can catch: `wcs-validate` and the VS Code extension report `wcs/getter-untracked-read` when a getter reads `this.form.name` and the document writes `form.name` somewhere (a `value:` binding, a spread, `this["form.name"] = …`). A root that is only ever replaced wholesale — router params, a `$stream` fold — is left alone. Since 4.9 (not released yet) it is an **error** when a binding on the page writes the path the getter reads — `<wcs-fetch data-wcs="...: monthFetch">` writes `monthFetch.value`, so a getter reading `this.monthFetch.value` never sees the response — and stays a warning when only the script writes it.
 
 `$untracked(fn)` applies the setter rule to a getter on purpose: reads inside `fn` are not tracked. `$dependOn(path)` is the escape hatch for the first rule.
 
@@ -2358,6 +2358,7 @@ $on: {
 - Every `$on` key must be declared in `$eventTokens` (otherwise an error is thrown at initialization)
 - Each value must be a function
 - The signature is `(state, event, ...listIndexes)` — the DOM `Event` first, then any enclosing loop indexes
+- `this` is undefined in a handler, so a handler that uses it throws when the event arrives. Since 4.9 (not released yet) the `diagnostics` add-on says so once per handler when the state is declared, before any event (`[wcs/on-handler-this]`); lint reports it as an error
 
 ### `eventToken.<property>:` Binding
 
@@ -2965,7 +2966,7 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | 26 | | `filter <name> requires at least one option` |
 | 27 | | `filter <name> requires a number as option` |
 | 28 | | `filter <name> requires a number value, not <what it was>` (a string adds: `— put |number before |<name>, or convert it where it is read`) |
-| 29 | | `filter <name> requires a date value (a Date), not <what it was>` (a string or a number adds: `— make the Date where it is read: a getter returning new Date(…)`) |
+| 29 | | `filter <name> requires a date value (a Date), not <what it was>` (a string or a number adds: `— make the Date where it is read: a getter returning new Date(…)`; since 4.9 (not released yet), a date-only string such as `"2026-10-01"` also says that `new Date("2026-10-01")` is midnight UTC — the day before west of Greenwich — and `new Date(y, m - 1, d)` is that day where the page is) |
 | 30 | | `filter <name> requires an array value` |
 | 31 | | `init=/sync= modifiers require enableDirectionalInitialSync.` |
 | 32 | | `"<text>": the "@name" selector was removed in v2 — there is a single state tree. …` |
@@ -3122,7 +3123,7 @@ What fails initialization:
 - A source that cannot be read ([State Initialization](#state-initialization)).
 - An invalid declaration: a removed name (`$scan`, `$streams`, `$updatedCallback`; with the `diagnostics` add-on), a `$behavior` / `$features` / `$commandTokens` / `$eventTokens` / `$on` of the wrong shape, a declaration whose add-on is not installed (`[wcs/feature-not-installed]`).
 - A markup error found while the page is bound: a syntax error, an unknown filter or a wrong argument count, a wildcard-rank error, `for:` with filters, `outerHTML:` in a template, a wc-bindable misconfiguration on an element whose class is already defined. The walk stops at the error: what comes before it in document order is bound, what comes after it is not. Run `npx @wcstack/lint` before you deploy.
-- A second root `<wcs-state>` on a root that another one already binds (`#47`). There is one state tree per root; graft a subtree with `mount=`.
+- A second root `<wcs-state>` on a root that another one already binds (`#47`). There is one state tree per root; graft a subtree with `mount=`. The one that binds is the one whose state is ready first, not the first in the document: a `json=` state is ready at once, so it takes the root before an earlier `src=` or inline state, which is then the one refused, and the page binds against the wrong state. Since 4.9 (not released yet) the `diagnostics` add-on names both when the first binds (`[wcs/second-root]`).
 
 Inside a `for:` / `if:` row, an error found while a binding is attached (an undeclared token, a member the element does not declare) is that binding's failure instead: it goes to `$errorCallback`, and the row is still built. A binding to a top-level key the state does not have is a failed apply, not an initialization failure. An element that failed to initialize cannot be re-armed — `setInitialState()` throws (`#14`); remove it and create a new one.
 
@@ -3353,7 +3354,7 @@ different shape; `examples/router-i18n` is the reference layout.
 
 A page built on `<wcs-state>` is plain DOM, so it can be tested headlessly with [happy-dom](https://github.com/capricorn86/happy-dom) — no browser, no build step, no test-only API. Three recipes follow; every one of them runs as written.
 
-Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it.
+Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it. A state in its own file (`<wcs-state src="./state.js">`) loads under `mount()` with its `resolveModule` option, since 4.9 (not released yet) — under happy-dom the `src` is an `http:` URL, which Node's module loader does not read, and an inline state cannot `import` a relative module under Node.
 
 ### 1. vitest + happy-dom
 

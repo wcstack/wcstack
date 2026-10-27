@@ -28,7 +28,7 @@ SSE ストリームとリアクティブな状態をつなぐ **単方向 I/O �
 |---|---|---|
 | 方向 | 双方向 | **サーバー → クライアントのみ** |
 | 送信 | `send` / `sendMessage()` | —（利用不可） |
-| 再接続 | 手動（`auto-reconnect`） | **ネイティブ**（ブラウザが処理） |
+| 再接続 | 手動（`auto-reconnect`） | **ネイティブ**（ブラウザが処理）。HTTP のエラーの後は `auto-reconnect`（4.9（未リリース）から） |
 | 名前付きイベント | — | **`events` 属性**（`event:` フィールド） |
 | ワイヤフォーマット | テキスト/バイナリフレーム | UTF-8 テキストのみ |
 
@@ -173,9 +173,9 @@ data: {"side":"buy","qty":10}
 
 注意: `trigger` は常に自動リセットを行い `wcs-sse:trigger-changed` を発火しますが、新しい接続が開くことは **保証しません**。`url` が未設定の場合、または要素がすでに同じ `url` に接続済みの場合、`connect()` は no-op になり（後者は upgrade の二重発火を吸収する冪等ガードです）、その場合はリセットのみが発火します。同じ `url` を開き直す必要がある場合は、先に `close()` を呼んでください。
 
-## 再接続はネイティブ
+## 再接続
 
-`<wcs-ws>` とは異なり、`auto-reconnect` / `reconnect-interval` / `max-reconnects` の設定は **ありません**。`EventSource` は接続が切れると自動的に再接続し、サーバーが SSE の `retry:` フィールドで遅延を制御します。
+`EventSource` は接続が切れると自分で再接続し、サーバーが SSE の `retry:` フィールドで遅延を制御します。HTTP のエラーの後は諦めてそれきりです — `auto-reconnect` が開き直さない限り（下の **諦めたストリーム**）。
 
 `<wcs-sse>` はこれを状態として表面化します:
 
@@ -187,9 +187,31 @@ data: {"side":"buy","qty":10}
 
 **再接続の後に取りこぼしを埋めるのは、サーバーとページの仕事です。** ブラウザが再接続で `Last-Event-ID` を送るのは、ストリームが `id:` 付きのイベントを届けた後だけです。スナップショットを読んでからストリームを開くページは、最初の切断の時点で 1 つも受け取っていないので、再接続は何も求めず、その間の変更は失われ、`connected` はまた `true` になります。ストリームに始める位置を渡してください — スナップショットの位置を URL に入れる（`data-wcs="url: eventsUrl"` と、`"/api/events?since=" + this.streamSince` を返す getter）か、サーバーが最初に今の `id:` を送る。**開いている間、その位置は変えないでください:** `streamSince` は、ストリームを意図して開く・開き直すときに書きます（スナップショットの位置。開き直しでは最後に当てたイベント）。イベントのたびには書きません。イベントのたびに変わる `url` は、そのたびにストリームを閉じて開き直します — データは正しいままなので、何も気づかせません（docs/seam-apps.ja.md、shift-desk: 30 秒で 15 本の接続）。ページが開き直す間のブラウザ自身の再接続は `Last-Event-ID` を運びます。
 
-**諦めたストリーム。** `CLOSED (2)`（HTTP のエラー: サーバーの再起動中の 502、URL のトークンが期限切れになった 401）で終わったストリームを、ブラウザは再試行しません: `close()` と `trigger` で、いた位置から開き直します。見分けるのは `errorInfo` の `recoverable: false` で、`readyState` だけではありません: 要素が一度も接続していない間も `readyState` は `CLOSED (2)` で、`$watch` は要素の最初の値で 1 回発火するので、`readyState === 2` を見る watch は読み込みのたびに走ります。`EventSource` はページに HTTP の状態を見せないので、401 と 502 は同じに見えます。URL のトークン（`EventSource` はヘッダを送れない）はストリームを開いたときのもので、ネイティブの再接続は期限切れの後もそれを使います: 開き直す前に更新するか、ストリームを cookie で認証してください（`with-credentials`）。
+**諦めたストリーム。** `CLOSED (2)`（HTTP のエラー: サーバーの再起動中の 502、URL のトークンが期限切れになった 401、誤ったコンテンツタイプ）で終わったストリームを、ブラウザは再試行しません。4.9（未リリース）から、`auto-reconnect` が開き直します — `<wcs-ws>` と同じ属性、同じ意味です:
+
+```html
+<wcs-sse auto-reconnect reconnect-interval="5000" max-reconnects="10"
+  data-wcs="url: eventsUrl; message: lastEvent; connected: isConnected"></wcs-sse>
+```
+
+- `reconnect-interval` ms（既定 `3000`）待ってから、要素の `url` をその時点のもので開きます — getter が作る `url` は、その間にページが書いたもの（更新したトークンも）を運びます。`url` が無い試行は何もしません。新しい `EventSource` は `Last-Event-ID` を送らないので、サーバーは `url` の位置（上）— ページが最後に書いたもの — から始めます。当て済みのイベントがまた来ることがあるので、id で飛ばしてください。
+- 続けて最大 `max-reconnects` 回（既定 `Infinity`）試します。回数はストリームが開いたとき、`connect()` / `trigger` で数え直します。尽きたら、最後の error が残ります。
+- 開き直すのは、ブラウザが諦めたストリームだけです。ブラウザが自分で再接続する切断（`CONNECTING`）はブラウザに任せ、`stale-after` が黙ったストリームを開き直すのは別のもの（下）— その場で、数えない — です。その新しいストリームが諦めたら、`auto-reconnect` が引き取ります。
+- 待つ間の状態は諦めたときのものです: `connected` と `loading` は `false`、`readyState` は `CLOSED (2)`、`error` / `errorInfo` はその失敗（`recoverable: false` はブラウザがしたことを言う。`auto-reconnect` はそれを変えない）。試行は `connect()` と同じく `loading` を立て、`error` を消します。
+- `close()`、`connect()` / `trigger`、要素を外すことが、待っている開き直しを取り消します。属性は、`stale-after` と同じく接続するときに読みます。生成の失敗（`new EventSource()` が投げる、`phase: "start"`）は再試行しません。
+- 何も更新しません: `url` の期限切れのトークンは、ページが新しいものを入れるまで（か `max-reconnects` が止めるまで）試行のたびにまた失敗します。
+
+**自分の方針で。** ページが先に何かするとき — トークンを更新してから開き直す — は、`auto-reconnect` を付けずに、`close()` と `trigger` で、いた位置から自分で開き直します。見分けるのは `errorInfo` の `recoverable: false` で、`readyState` だけではありません: 要素が一度も接続していない間も `readyState` は `CLOSED (2)` で、`$watch` は要素の最初の値で 1 回発火するので、`readyState === 2` を見る watch は読み込みのたびに走ります。`EventSource` はページに HTTP の状態を見せないので、401 と 502 は同じに見えます。URL のトークン（`EventSource` はヘッダを送れない）はストリームを開いたときのもので、ネイティブの再接続は期限切れの後もそれを使います: 開き直す前に更新するか、ストリームを cookie で認証してください（`with-credentials`）。
 
 **閉じられずに死んだ接続** — ノートパソコンのスリープ、接続を落とした NAT や proxy — にブラウザは気づきません: ストリームは `OPEN` のまま、`connected` は `true` のままで、何も届きません。4.8 から、`stale-after="60000"` は、その時間（ms）イベントが 1 つも届かない開いたストリームを失われたとみなします: `connected` が `false` になり、`error` が理由を言い（`errorInfo.recoverable` は `true`）、要素は同じ `url` を開き直します。新しい `EventSource` は `Last-Event-ID` を送らないので、位置は URL が運びます（上）。サーバーは、要素が聞くイベント — 名前なし、または `events` の名前 — をそれより短い間隔で送る必要があります。SSE のコメント行（`:`）はイベントではありません。何時間も開いたままのページがほかに通るもの: [開いたままのページ](../../docs/long-lived-pages.ja.md)。
+
+**Firefox で、ページが離れるとき。** 開いた `EventSource` があるままページが離れる（ページ全体の読み込み）と、Firefox はコンソールに `The connection to <url> was interrupted while the page was loading.` と出します — 素の `EventSource` でも同じです。害はありません。コンソールを静かにするには、`beforeunload` のリスナでストリームを閉じます。`pagehide` のリスナでは遅すぎます。
+
+```js
+window.addEventListener("beforeunload", () => document.querySelector("wcs-sse")?.close());
+```
+
+要素は自分ではこれをしません: 結局起きなかった遷移 — 「このページを離れますか」に「留まる」と答えた、ダウンロードだったリンク — の後、ストリームが閉じたままになるからです。
 
 ## ステートサーフェス vs コマンドサーフェス
 
@@ -212,11 +234,14 @@ data: {"side":"buy","qty":10}
 | `withCredentials` | `boolean` | リクエストに資格情報を送信 |
 | `events` | `string` | サブスクライブする名前付きイベント（カンマ区切り） |
 | `raw` | `boolean` | JSON 自動パースを無効化 |
+| `autoReconnect` | `boolean` | ブラウザが諦めたストリーム（HTTP のエラー）を開き直す。接続するときに読む。4.9（未リリース）から |
+| `reconnectInterval` | `number` | 開き直しの前に待つ時間（ms、既定 `3000`）。4.9（未リリース）から |
+| `maxReconnects` | `number` | 続けて開き直す最大回数（既定 `Infinity`）。ストリームが開くと数え直す。4.9（未リリース）から |
 | `staleAfter` | `number` | イベントが届かない時間（ms）がこれを超えた開いたストリームを、失われたとみなして開き直す（`0`: しない）。接続するときに読む。4.8 から |
 | `trigger` | `boolean` | 単方向の接続トリガー |
 | `manual` | `boolean` | DOM 接続時の自動接続を無効化 |
 
-**`null` と `undefined`。** 属性に対応する入力（`url`・`withCredentials`・`events`・`raw`・`staleAfter`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、`/null` や `/undefined` へ接続することもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`url` をクリアしても開いているストリームはそのままです（切断は `close()`）。マークアップの `url` が今と違えば、`undefined` で戻したときにその `url` へ張り直します。`trigger` はどちらも無視します。
+**`null` と `undefined`。** 属性に対応する入力（`url`・`withCredentials`・`events`・`raw`・`autoReconnect`・`reconnectInterval`・`maxReconnects`・`staleAfter`・`manual`）は、`null` を「クリア」として扱います。属性を外し、入力は既定値に戻ります。`undefined` は「値が無い」で、属性を最初の書き込みの前の状態 — マークアップに書かれた値、無ければ属性なし — に戻します。どちらも文字列 `"null"` / `"undefined"` として書くことはなく、`/null` や `/undefined` へ接続することもありません（`@wcstack/state` は `undefined` を書きませんが、React 19 は値のあった prop を外したときに書き、直接の代入でも届きます）。`url` をクリアしても開いているストリームはそのままです（切断は `close()`）。マークアップの `url` が今と違えば、`undefined` で戻したときにその `url` へ張り直します。`trigger` はどちらも無視します。
 
 ## `:state()` による CSS スタイリング
 
@@ -354,6 +379,9 @@ sseEl.close();
 | `with-credentials` | `boolean` | `false` | クロスオリジンで資格情報を送信 |
 | `events` | `string` | — | サブスクライブする名前付きイベント（カンマ区切り） |
 | `raw` | `boolean` | `false` | JSON 自動パースを無効化 |
+| `auto-reconnect` | `boolean` | `false` | ブラウザが諦めたストリーム（HTTP のエラー、`readyState` が `CLOSED`）を開き直す。4.9（未リリース）から |
+| `reconnect-interval` | `number` | `3000` | 開き直しの前に待つ時間（ms）。4.9（未リリース）から |
+| `max-reconnects` | `number` | `Infinity` | 続けて開き直す最大回数。ストリームが開くと数え直す。4.9（未リリース）から |
 | `stale-after` | `number` | `0` | この時間（ms）イベントが届かない開いたストリームを開き直す（`0`: しない）。4.8 から |
 | `manual` | `boolean` | `false` | 自動接続を無効化 |
 
@@ -413,6 +441,10 @@ static wcBindable = {
     { name: "withCredentials", attribute: "with-credentials" },
     { name: "events", attribute: "events" },
     { name: "raw", attribute: "raw" },
+    { name: "autoReconnect", attribute: "auto-reconnect" },
+    { name: "reconnectInterval", attribute: "reconnect-interval" },
+    { name: "maxReconnects", attribute: "max-reconnects" },
+    { name: "staleAfter", attribute: "stale-after" },
     { name: "manual", attribute: "manual" },
     { name: "trigger" },
   ],
@@ -462,6 +494,10 @@ interface WcsSseInputs {
   withCredentials: boolean;
   events: string;
   raw: boolean;
+  autoReconnect: boolean;
+  reconnectInterval: number;
+  maxReconnects: number;
+  staleAfter: number;
   manual: boolean;
   trigger: boolean;
 }
@@ -471,6 +507,13 @@ interface WcsSseCoreCommands {
     withCredentials?: boolean;
     events?: string[];
     raw?: boolean;
+    staleAfter?: number;
+    autoReconnect?: boolean;
+    reconnectInterval?: number;
+    maxReconnects?: number;
+    // 開き直しが開く url。試行のたびに読む（既定: `url`）。
+    // "" なら試行は何もしない。<wcs-sse> はそのときの `url` を渡す。
+    reconnectUrl?: () => string;
   }): void;
   close(): void;
 }
@@ -499,14 +542,14 @@ bootstrapSse({
 
 - **4.8 から、接続時の判断はマイクロタスクを 1 つ待つ。** 接続するか、どの `url` へかは、`connectedCallback`（と `url` の変化）の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後。`connect()` / `trigger` はその場で接続し、同じタスクの `close()` は待っている接続を取り消す。
 - `message`、`connected`、`loading`、`error`、`readyState` は **出力ステート**
-- `url`、`trigger` は **入力 / コマンドサーフェス**。`withCredentials`、`events`、`raw` は接続オプション
+- `url`、`trigger` は **入力 / コマンドサーフェス**。`withCredentials`、`events`、`raw`、`autoReconnect`、`reconnectInterval`、`maxReconnects`、`staleAfter` は接続オプションで、接続するときに読む
 - `message` は `{ event, data, lastEventId }` を運ぶため、名前付きイベントが1つのバインド可能プロパティを共有する — state 側で `event` により分岐する
 - `trigger` は意図的に単方向: `true` を書き込むと接続、リセットで完了を通知
 - JSON ペイロードは受信時に自動パース。リテラルなテキストストリームには `raw` を使う
-- 再接続はネイティブ — 再接続の設定はなく、`close()` で停止する
+- 切断の後の再接続はネイティブ。HTTP のエラーの後はブラウザが諦め、4.9（未リリース）から `auto-reconnect` がストリームを開き直す。`close()` はどちらも止める
 - `manual` は接続タイミングを明示的に制御したい場合に有用
 - `wcs-sse:error` は単なる失敗シグナルではなく **プロパティ変更通知**（wc-bindable モデル）です: 失敗時には `detail` = エラーで発火し、接続が確立/回復して `error` プロパティがクリアされると `detail = null` で再度発火します。`error == null` は「過去にエラーが一度もなかった」ではなく「現在エラーがない」と解釈してください
-- **`errorInfo` タクソノミ**: `error` に現れるのと同じ失敗を、シリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-sse:error-info-changed`）です。`error` の形状は変えません。`url` を指定しない `connect()` は `invalid-argument`（phase `start`、回復不可）です。ストリームの失敗はすべて `connection-error` で、`phase` / `recoverable` で場合を区別します: `new EventSource()` の構築失敗は phase `start` / 回復不可（`EventSource` が生成されないためブラウザの自動再接続は起きない）、ブラウザが自動再接続中の一過性切断（`readyState` CONNECTING）は phase `execute` / **`recoverable: true`——SSE で唯一の回復可能経路**（呼び出し側の介入なしに回復する）、恒久切断（`readyState` CLOSED）は phase `execute` / 回復不可です。`errorInfo` は `error` と同じタイミングで遷移し（ストリーム回復時に `null` にクリアされる）ます。共有の `WcsIoErrorInfo` 型と `WCS_SSE_ERROR_CODE` 定数は export 済みです。
+- **`errorInfo` タクソノミ**: `error` に現れるのと同じ失敗を、シリアライズ可能な `WcsIoErrorInfo`（安定した `code` / `phase` / `recoverable`）に分類する**追加的な**バインド可能出力（`wcs-sse:error-info-changed`）です。`error` の形状は変えません。`url` を指定しない `connect()` は `invalid-argument`（phase `start`、回復不可）です。ストリームの失敗はすべて `connection-error` で、`phase` / `recoverable` で場合を区別します: `new EventSource()` の構築失敗は phase `start` / 回復不可（`EventSource` が生成されないためブラウザの自動再接続は起きない）、ブラウザが自動再接続中の一過性切断（`readyState` CONNECTING）は phase `execute` / **`recoverable: true`——SSE で唯一の回復可能経路**（呼び出し側の介入なしに回復する）、恒久切断（`readyState` CLOSED）は phase `execute` / 回復不可です — `auto-reconnect` があっても同じで、開き直しはしても、ブラウザがしたことは変えません。`errorInfo` は `error` と同じタイミングで遷移し（ストリーム回復時に `null` にクリアされる）ます。共有の `WcsIoErrorInfo` 型と `WCS_SSE_ERROR_CODE` 定数は export 済みです。
 
 ## アクセシビリティ
 

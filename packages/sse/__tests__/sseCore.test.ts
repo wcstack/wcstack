@@ -592,4 +592,300 @@ describe("SseCore", () => {
       expect(core.errorInfo?.recoverable).toBe(false);
     });
   });
+
+  // ブラウザが諦めたストリーム（HTTP のエラー: 再起動中の 502、期限切れのトークンの 401）を
+  // EventSource は再試行しない。継ぎ目アプリ 3 本が同じタイマーを手で書いた（state-collab-board・
+  // shift-desk・family-ledger）。<wcs-ws> と同じ名前・同じ意味の opt-in。
+  describe("autoReconnect: ブラウザが諦めたストリームを開き直す", () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it("恒久エラー(CLOSED)の後、reconnectInterval ms 待って同じ url で開き直す。待つ間は諦めた状態のまま", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 2000 });
+      const first = MockEventSource.last;
+      first.simulateOpen();
+      first.simulateError(MockEventSource.CLOSED);
+      const gaveUp = core.error;
+
+      // 待つ間: ブラウザが諦めたときの状態（error / errorInfo はその失敗）
+      expect(core.connected).toBe(false);
+      expect(core.loading).toBe(false);
+      expect(core.readyState).toBe(MockEventSource.CLOSED);
+      expect(gaveUp).toBeInstanceOf(Event);
+      expect(core.errorInfo).toEqual({
+        code: "connection-error", phase: "execute", recoverable: false, message: "SSE connection error",
+      });
+      expect(vi.getTimerCount()).toBe(1);
+
+      vi.advanceTimersByTime(1999);
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(MockEventSource.last.url).toBe("/feed");
+      // 試行: 接続中になり、error は消える（connect() と同じ）
+      expect(core.loading).toBe(true);
+      expect(core.readyState).toBe(MockEventSource.CONNECTING);
+      expect(core.error).toBeNull();
+      expect(core.errorInfo).toBeNull();
+
+      MockEventSource.last.simulateOpen();
+      expect(core.connected).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("既定の間隔は 3000 ms で、一度も開かなかったストリーム（読み込み時の 502）も開き直す", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(2999);
+      expect(MockEventSource.instances).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it("autoReconnect が無ければ（既定）開き直さない", () => {
+      for (const options of [{}, { autoReconnect: false }]) {
+        MockEventSource.resetInstances();
+        const core = new SseCore();
+        core.connect("/feed", options);
+        MockEventSource.last.simulateError(MockEventSource.CLOSED);
+        expect(vi.getTimerCount()).toBe(0);
+        vi.advanceTimersByTime(60_000);
+        expect(MockEventSource.instances).toHaveLength(1);
+        expect(core.readyState).toBe(MockEventSource.CLOSED);
+      }
+    });
+
+    it("一過性の切断(CONNECTING)はブラウザの再接続に任せ、開き直さない", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+      const es = MockEventSource.last;
+      es.simulateOpen();
+      es.simulateError(MockEventSource.CONNECTING);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(es.close).not.toHaveBeenCalled();
+      expect(core.loading).toBe(true);
+    });
+
+    it("maxReconnects 回の試行で止まり、最後の error が残る", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100, maxReconnects: 2 });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(100);
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(100);
+      expect(MockEventSource.instances).toHaveLength(3);
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      const last = core.error;
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(3);
+      expect(core.error).toBe(last);
+      expect(core.errorInfo?.recoverable).toBe(false);
+      expect(core.readyState).toBe(MockEventSource.CLOSED);
+      expect(core.loading).toBe(false);
+    });
+
+    it("maxReconnects が 0 なら開き直さない", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, maxReconnects: 0 });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("開いたら回数は数え直す", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100, maxReconnects: 1 });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(100);
+      MockEventSource.last.simulateOpen();
+      // 開いた後に諦めたら、また 1 回開き直せる
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(100);
+      expect(MockEventSource.instances).toHaveLength(3);
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(3);
+    });
+
+    it("close() は待っている開き直しを止める", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      core.close();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it("dispose() は待っている開き直しを止める", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      core.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it("connect() は待っている開き直しを外し（その場で開く）、回数を数え直す", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100, maxReconnects: 1 });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      vi.advanceTimersByTime(100);
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      // 回数は尽きた。connect() で数え直す
+      expect(vi.getTimerCount()).toBe(0);
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100, maxReconnects: 1 });
+      expect(MockEventSource.instances).toHaveLength(3);
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(vi.getTimerCount()).toBe(1);
+      // 待っている間の connect() はそのタイマーを外す: 開くのは 1 本だけ
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100, maxReconnects: 1 });
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(4);
+    });
+
+    it("reconnectUrl があれば、試行のときに読んだ url で開く", () => {
+      let url = "/feed?token=old";
+      const core = new SseCore();
+      core.connect(url, { autoReconnect: true, reconnectInterval: 100, reconnectUrl: () => url });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      url = "/feed?token=new";
+      vi.advanceTimersByTime(100);
+      expect(MockEventSource.last.url).toBe("/feed?token=new");
+      // 開いているストリームの url として扱う（同じ url の connect() は no-op）
+      core.connect("/feed?token=new");
+      expect(MockEventSource.instances).toHaveLength(2);
+    });
+
+    it("試行のときの url が空なら何もしない（数えず、次も予約しない）", () => {
+      let url = "/feed";
+      const core = new SseCore();
+      core.connect(url, { autoReconnect: true, reconnectInterval: 100, reconnectUrl: () => url });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      const gaveUp = core.error;
+      url = "";
+      vi.advanceTimersByTime(100);
+      expect(MockEventSource.instances).toHaveLength(1);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(core.error).toBe(gaveUp);
+      expect(core.readyState).toBe(MockEventSource.CLOSED);
+    });
+
+    it("試行の EventSource の生成に失敗したら、その error が残り、次は予約しない", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      MockEventSource.nextConstructError = new Error("bad url");
+      vi.advanceTimersByTime(100);
+      expect((core.error as Error).message).toBe("bad url");
+      expect(core.errorInfo).toEqual({
+        code: "connection-error", phase: "start", recoverable: false, message: "bad url",
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("世代が進んだ後に発火したタイマーは何もしない（_gen ガード）", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      // dispose / connect は _closeInternal でタイマーを外す。外し損ねた場合の裏打ちを直接確かめる
+      (core as any)._gen++;
+      vi.advanceTimersByTime(100);
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it("恒久エラーの通知の中で close() されたら、開き直しを予約しない（再入）", () => {
+      const target = new EventTarget();
+      const core = new SseCore(target);
+      target.addEventListener("wcs-sse:readystate-changed", (e) => {
+        if ((e as CustomEvent).detail === MockEventSource.CLOSED) core.close();
+      });
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+      MockEventSource.last.simulateOpen();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it("恒久エラーの通知の中で connect() されたら、その新しいストリームを壊さず、開き直しも予約しない（再入）", () => {
+      const target = new EventTarget();
+      const core = new SseCore(target);
+      let reentered = false;
+      target.addEventListener("wcs-sse:connected-changed", (e) => {
+        if ((e as CustomEvent).detail === false && !reentered) {
+          reentered = true;
+          core.connect("/other", { autoReconnect: true, reconnectInterval: 100 });
+        }
+      });
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+      MockEventSource.last.simulateOpen();
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      const other = MockEventSource.last;
+      expect(other.url).toBe("/other");
+      expect(other.close).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      // 再入した接続の状態を巻き戻さない（接続中のまま）
+      expect(core.loading).toBe(true);
+      expect(core.readyState).toBe(MockEventSource.CONNECTING);
+      // 新しいストリームは生きている（参照を失っていない）
+      other.simulateOpen();
+      expect(core.connected).toBe(true);
+      other.simulateMessage("from-other");
+      expect(core.message?.data).toBe("from-other");
+      // 閉じられる
+      core.close();
+      expect(other.close).toHaveBeenCalled();
+    });
+
+    it("恒久エラーの loading の通知の中で close() されたら、開き直しを予約しない（再入）", () => {
+      const target = new EventTarget();
+      const core = new SseCore(target);
+      target.addEventListener("wcs-sse:loading-changed", (e) => {
+        if ((e as CustomEvent).detail === false) core.close();
+      });
+      // 一度も開かずに諦める（loading が true → false になる）
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 100 });
+      const es = MockEventSource.last;
+      es.simulateError(MockEventSource.CLOSED);
+      expect(es.close).toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(10_000);
+      expect(MockEventSource.instances).toHaveLength(1);
+    });
+
+    it("stale-after と重ならない: 諦めたら見張りを外し、タイマーは常に 1 本まで", () => {
+      const core = new SseCore();
+      core.connect("/feed", { autoReconnect: true, reconnectInterval: 500, staleAfter: 1000 });
+      MockEventSource.last.simulateOpen();
+      expect(vi.getTimerCount()).toBe(1); // 見張り
+      // 黙ったストリーム: 見張りがその場で開き直す（auto-reconnect の回数・間隔とは別）
+      vi.advanceTimersByTime(1000);
+      expect(MockEventSource.instances).toHaveLength(2);
+      expect(vi.getTimerCount()).toBe(0);
+      // 開き直したストリームをブラウザが諦めた: auto-reconnect の開き直しだけが待つ
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(vi.getTimerCount()).toBe(1);
+      vi.advanceTimersByTime(500);
+      expect(MockEventSource.instances).toHaveLength(3);
+      expect(vi.getTimerCount()).toBe(0);
+      MockEventSource.last.simulateOpen();
+      expect(vi.getTimerCount()).toBe(1); // 見張りが戻る
+    });
+
+    it("開いた後に諦めたストリームの見張りは外す（auto-reconnect が無くても残らない）", () => {
+      const core = new SseCore();
+      core.connect("/feed", { staleAfter: 1000 });
+      MockEventSource.last.simulateOpen();
+      expect(vi.getTimerCount()).toBe(1);
+      MockEventSource.last.simulateError(MockEventSource.CLOSED);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
 });

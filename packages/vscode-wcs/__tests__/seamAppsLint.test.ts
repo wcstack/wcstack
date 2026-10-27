@@ -5,6 +5,8 @@
  *   - 別名・`Object.assign`・`$on` の state 引数を通したその場の変更（`wcs/nested-assign` / `wcs/array-*`、state-collab-board）
  *   - `$on` の state 引数を通した書き込みも `wcs/getter-untracked-read` の証拠（state-collab-board）
  *   - getter の中の `location`（`wcs/getter-untracked-read`、router-admin）
+ *   - map の代入の行・`{}` を種にしたキーへの代入（`wcs/binding-path-missing` の誤報）と、spread が書くパスを読む
+ *     getter（`wcs/getter-untracked-read` が error、family-ledger）
  */
 import { describe, it, expect } from 'vitest';
 import { validateDocument } from '../src/core/validateDocument';
@@ -180,5 +182,40 @@ describe('wcs/getter-untracked-read — getter の中の location（router-admin
     expect(ofCode(validate(html), WcsDiagnosticCode.GetterUntrackedRead)).toEqual([]);
     expect(findLocationRead('return (')).toBeNull();
     expect(findLocationRead('return new URL(location);')?.text).toBe('location');
+  });
+});
+
+describe('family-ledger — 動いたページの 22 件の誤報と、関門を通った warning（src= の state）', () => {
+  const STATE = `export default {
+  items: [{ id: "a", name: "A" }],
+  rowsC: [],
+  rowsD: [],
+  fieldErrors: {},
+  month: "2026-10",
+  monthFetch: { value: null, error: null, loading: false, status: 0 },
+  get monthData() { const v = this.monthFetch.value; return v && v.month === this.month ? v : null; },
+  syncC() { this.rowsC = [...this.items].map((c) => ({ id: c.id, label: c.name })); },
+  syncD() { this.rowsD = this.items.filter(Boolean).map((c) => { return { id: c.id, label: c.name }; }); },
+  fail() { this.fieldErrors = { date: "bad" }; },
+};
+`;
+  const PAGE = `<wcs-state src="./state2.js"></wcs-state>
+<wcs-fetch data-wcs="...: monthFetch"></wcs-fetch>
+<ul><template data-wcs="for: rowsC"><li data-wcs="textContent: .label"></li></template></ul>
+<ul><template data-wcs="for: rowsD"><li data-wcs="textContent: .label"></li></template></ul>
+<p data-wcs="textContent: fieldErrors.date"></p>
+`;
+  const found = () => validateDocument(PAGE, { locale: 'en', fileReader: (path) => (path === './state2.js' ? STATE : undefined) });
+
+  it('map の代入の行と、{} を種にしたキーへ代入したキーを「存在しない」と言わない', () => {
+    expect(ofCode(found(), WcsDiagnosticCode.BindingPathMissing)).toEqual([]);
+  });
+
+  it('spread が書く monthFetch.value を読む getter は error で、ファイルの位置を持つ（--errors-only の関門で止まる）', () => {
+    const untracked = ofCode(found(), WcsDiagnosticCode.GetterUntrackedRead);
+    expect(untracked).toHaveLength(1);
+    expect(untracked[0].severity).toBe('error');
+    expect(untracked[0].origin?.path).toBe('./state2.js');
+    expect(untracked[0].message).toContain('"...: monthFetch" on <wcs-fetch> writes "monthFetch.value"');
   });
 });

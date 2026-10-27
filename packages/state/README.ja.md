@@ -1235,7 +1235,7 @@ getter の例外は握り潰されません。評価された場所（バイン�
 | **setter の中の読み取りは追跡しない。** setter は命令的な代入であって派生ではないので、その中で読んだものは何の依存にもならない | 何を書くかを `this.a` を読んで決める setter は、`a` が変わっても再実行されない。再実行されるのは getter だけ |
 | **同値ガードはプリミティブにだけ効く。** 現在値と `Object.is` で等しいプリミティブの書き込みはキューに入る前に落とされる。オブジェクト・配列の書き込みは同じ参照でも必ず通る | 同じ文字列を再代入しても何も起きない。同じオブジェクトを再代入するとバインディングと `$watch` が再発火する（`$behavior.sameValueGuard`。`semantics: "event"` のプロパティはどちらにせよ対象外）。一覧は例外で、行が配列の要素に合わせ直されるのは**新しい**配列を代入したときだけ。同じ配列の再代入や `$postUpdate` は、ある行の下を読み直すが、行を追加・削除・置き換えしない: `cards[i] = card; this.cards = cards` は古いカードを出し続ける。新しい配列を代入する（`this.cards = cards.with(i, card)`、`[...cards, x]`）。lint はその場の変更を報告する（`wcs/array-index-assign`、`wcs/array-mutation`） |
 
-規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$stream` の fold）には出ません。
+規則 1 は静的解析で捕まえられる唯一の規則です。getter が `this.form.name` を読んでいて、ドキュメントのどこかで `form.name` を書いている（`value:` バインド・spread・`this["form.name"] = …`）と、`wcs-validate` と VS Code 拡張が `wcs/getter-untracked-read` を報告します。ルートを丸ごと置換するだけの設計（router の params・`$stream` の fold）には出ません。4.9（未リリース）から、getter が読むパスをページの束縛が書くとき — `<wcs-fetch data-wcs="...: monthFetch">` は `monthFetch.value` を書くので、`this.monthFetch.value` を読む getter は応答を見ない — は **error** で、スクリプトだけが書くときは warning のままです。
 
 `$untracked(fn)` は setter の規則を getter に意図的に適用するもので、`fn` の中の読み取りは追跡されません。`$dependOn(path)` は最初の規則に対する逃げ道です。
 
@@ -2346,6 +2346,7 @@ $on: {
 - `$on` のすべてのキーは `$eventTokens` で宣言済みであること（さもなくば初期化時に throw）
 - 各値は関数であること
 - シグネチャは `(state, event, ...listIndexes)` —— まず DOM の `Event`、続いて内包するループインデックス
+- ハンドラの中の `this` は undefined なので、`this` を使うハンドラはイベントが届いたときに throw します。4.9（未リリース）から、`diagnostics` の後付けが、state の宣言のときにハンドラごとに 1 回、イベントより前にそう言います（`[wcs/on-handler-this]`）。lint は error として報告します
 
 ### `eventToken.<property>:` バインディング
 
@@ -2953,7 +2954,7 @@ li {
 | 26 | | `filter <name> requires at least one option` |
 | 27 | | `filter <name> requires a number as option` |
 | 28 | | `filter <name> requires a number value, not <what it was>` (a string adds: `— put |number before |<name>, or convert it where it is read`) |
-| 29 | | `filter <name> requires a date value (a Date), not <what it was>` (a string or a number adds: `— make the Date where it is read: a getter returning new Date(…)`) |
+| 29 | | `filter <name> requires a date value (a Date), not <what it was>` (a string or a number adds: `— make the Date where it is read: a getter returning new Date(…)`。4.9（未リリース）から、`"2026-10-01"` のような日付だけの文字列には、`new Date("2026-10-01")` は UTC の真夜中 — グリニッジより西では前の日 — で、`new Date(y, m - 1, d)` がページのある場所のその日だ、とも言う) |
 | 30 | | `filter <name> requires an array value` |
 | 31 | | `init=/sync= modifiers require enableDirectionalInitialSync.` |
 | 32 | | `"<text>": the "@name" selector was removed in v2 — there is a single state tree. …` |
@@ -3109,7 +3110,7 @@ this.$getAll("matrix.*.*", [row]);
 - 読めないソース（[状態の初期化](#状態の初期化)）。
 - 不正な宣言: 削除された名前（`$scan`・`$streams`・`$updatedCallback`。`diagnostics` アドオンがあるとき）、形の誤った `$behavior` / `$features` / `$commandTokens` / `$eventTokens` / `$on`、アドオンが入っていない宣言（`[wcs/feature-not-installed]`）。
 - ページのバインド中に見つかったマークアップの誤り: 構文エラー、未知のフィルタや誤った引数の個数、wildcard-rank のエラー、フィルタ付きの `for:`、テンプレートの中の `outerHTML:`、クラスが定義済みの要素での wc-bindable の設定ミス。走査はそのエラーで止まります: 文書順でそれより前はバインドされ、後はバインドされません。デプロイの前に `npx @wcstack/lint` を実行してください。
-- 別の `<wcs-state>` がすでにバインドしているルートの上の、2 つ目のルート `<wcs-state>`（`#47`）。state ツリーはルートごとに 1 本です。部分木は `mount=` で接ぎ木してください。
+- 別の `<wcs-state>` がすでにバインドしているルートの上の、2 つ目のルート `<wcs-state>`（`#47`）。state ツリーはルートごとに 1 本です。部分木は `mount=` で接ぎ木してください。バインドするのは、文書で先のものではなく、状態が先にそろったものです: `json=` の state はすぐにそろうので、文書で先の `src=` やインラインの state より先にルートを取り、拒まれるのは後者になり、ページは違う state でバインドされます。4.9（未リリース）から、`diagnostics` の後付けが、先にバインドしたときに両方を名指しします（`[wcs/second-root]`）。
 
 `for:` / `if:` の行の中で、バインディングの取り付け時に見つかったエラー（未宣言の token、要素が宣言していないメンバ）は、初期化の失敗ではなく、そのバインディングの失敗になります: `$errorCallback` に届き、行はそのまま構築されます。state にないトップレベルのキーへのバインディングは、初期化の失敗ではなく適用の失敗です。初期化に失敗した要素は再始動できません —— `setInitialState()` は throw します（`#14`）。取り除いて新しい要素を作ってください。
 
@@ -3336,7 +3337,7 @@ router 自身が `<html lang>` を読む案と、リンク単位の intercept �
 
 `<wcs-state>` で組んだページは素の DOM なので、[happy-dom](https://github.com/capricorn86/happy-dom) でヘッドレスにテストできます — ブラウザ不要・ビルド不要・テスト専用 API 不要。レシピは 3 つ、いずれも書いてあるとおりに動きます。
 
-1 import で済ませたいなら [`@wcstack/testing`](../testing/README.ja.md) がレシピ 1 を `mount()` / `settle()` / `fire()` にまとめています（`<wcs-router>` も待ちます）。以下の素のレシピはそれ無しでも有効です。
+1 import で済ませたいなら [`@wcstack/testing`](../testing/README.ja.md) がレシピ 1 を `mount()` / `settle()` / `fire()` にまとめています（`<wcs-router>` も待ちます）。以下の素のレシピはそれ無しでも有効です。自分のファイルにある状態（`<wcs-state src="./state.js">`）は、4.9（未リリース）から `mount()` の `resolveModule` オプションで読み込めます — happy-dom の下では `src` は `http:` の URL で、Node のモジュールローダはそれを読みません。インラインの状態は、Node の下では相対モジュールを `import` できません。
 
 ### 1. vitest + happy-dom
 

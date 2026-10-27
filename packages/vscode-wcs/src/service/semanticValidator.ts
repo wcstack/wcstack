@@ -25,7 +25,9 @@
  * 添字がリテラル配列でない・パスが文字列リテラルでない場合は黙る（偽陽性ゼロ優先）。
  */
 
-import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
+import { findIgnoredRanges, parseLoadedScriptBlocks } from '../language/htmlParse.js';
+import { findAllBindAttributes, writesBack } from './bindingValidator.js';
+import { parseBindTextWithPositions } from '../core/parser/positionalParser.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnostic, WcsDiagnosticCode } from '../core/diagnostics.js';
 import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeOnHandlerSources, analyzeStatePaths, analyzeWatchHandlerSources, hasDefaultExportObject, isObjectLiteral, maskCommentsAndStrings } from './stateAnalyzer.js';
@@ -403,11 +405,18 @@ function validateGetterCycles(script: string, scriptStart: number, locale?: stri
  *     ルートが丸ごと置換されるだけの設計（router の `typedParams: routeParams` 出力・
  *     `$streams` の fold 値）では getter は壊れないので、証拠なしでは黙る（偽陽性ゼロ優先）
  * severity は warning: 証拠があっても、そのルートを別経路で丸ごと置換していれば壊れない。
+ * ただし読んだパス（かその上の段 — 追跡されるパスより下）を**ページの束縛**が書くとき
+ * （collectBindingWrites: 要素の spread・書き戻す束縛・要素の出力）は error: 束縛の書き込みのたびに
+ * getter は古いままで、ルートを別に置き換えても束縛の書き込みは getter に届かない。`<wcs-fetch data-wcs="...: monthFetch">`
+ * と `this.monthFetch.value` を読む getter で、ページは「読み込み中…」のまま止まった（継ぎ目アプリ family-ledger —
+ * warning だったので、スキルの `--errors-only` の関門を通った）。4.3 からの「lint が断定できるものは error」。
  */
 function validateGetterUntrackedReads(
   script: string,
   scriptStart: number,
+  mountPath: string | null,
   nestedWriteRoots: () => ReadonlyMap<string, string>,
+  bindingWrites: () => readonly BindingWrite[],
   locale?: string,
 ): WcsDiagnostic[] {
   const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === 'getter' && entry.accessor === 'get');
@@ -428,15 +437,98 @@ function validateGetterUntrackedReads(
       if (read.written) continue;
       const segments = read.callee ? read.chain.slice(0, -1) : read.chain;
       if (segments.length < 2 || !objectRoots.has(segments[0])) continue;
-      if (!nestedWriteRoots().has(segments[0])) continue;
+      // the page's paths are the tree's: a volume's script reads below its mount path
+      const prefix = mountPath === null ? [] : mountPath.split('.');
+      const write = boundWriteOf([...prefix, ...segments], prefix.length + read.path.split('.').length, bindingWrites());
+      if (write === undefined && !nestedWriteRoots().has([...prefix, segments[0]].join('.'))) continue;
+      const sp = segments.join('.');
       out.push({
         code: WcsDiagnosticCode.GetterUntrackedRead,
         start: scriptStart + getter.bodyStart + read.start,
         end: scriptStart + getter.bodyStart + read.end,
-        message: msgs.getterUntrackedRead(segments[0], segments.join('.')),
-        severity: 'warning',
+        message: write === undefined
+          ? msgs.getterUntrackedRead(segments[0], sp)
+          : msgs.getterUntrackedReadBound(segments[0], sp, write.binding, write.tag, write.path),
+        severity: write === undefined ? 'warning' : 'error',
       });
     }
+  }
+  return out;
+}
+
+/**
+ * A path a binding on the page writes by path (`wcs/getter-untracked-read` is an error when a getter reads it, or
+ * below it, through a plain property access). `path` may hold `*` (a row's relative path in a `for:`).
+ */
+interface BindingWrite {
+  readonly path: string;
+  /** The binding as written (`...: monthFetch`, `value: form.name`). */
+  readonly binding: string;
+  readonly tag: string;
+}
+
+/**
+ * The write in `writes` that sets the read `segments` or one of its ancestors below the tracked path (the first
+ * `tracked` segments). A `*` in a written path stands for a numeric segment of the read.
+ */
+function boundWriteOf(segments: readonly string[], tracked: number, writes: readonly BindingWrite[]): BindingWrite | undefined {
+  return writes.find((write) => {
+    const written = write.path.split('.');
+    if (written.length <= tracked || written.length > segments.length) return false;
+    return written.every((s, i) => s === segments[i] || (s === '*' && /^\d+$/.test(segments[i])));
+  });
+}
+
+/**
+ * The paths the bindings on the page write by path — what makes `wcs/getter-untracked-read` certain. Narrower than
+ * collectNestedWriteRoots (the warning's evidence): only a binding the runtime writes back with, read as the runtime
+ * plans it.
+ *   - a spread (`...: x`) on a built-in tag with a wcBindable: `x.<property>` for each of its outputs, but a member
+ *     bound explicitly after the spread (last wins). An element whose declaration the lint does not have is skipped
+ *   - a two-way binding (state's dom/plan.ts `isTwoWay` — `value` / `valueAsNumber` / `valueAsDate` of an `<input>`,
+ *     `checked` of a checkbox or radio, `value` of `<select>` / `<textarea>`) and `radio:` / `checkbox:`
+ *   - an output of a built-in tag (`value: x.y` on `<wcs-fetch>`)
+ * `#ro` turns all of them off. A relative path in a `for:` row is expanded to the list's rows.
+ */
+function collectBindingWrites(html: string, bindAttrName: string): BindingWrite[] {
+  const out: BindingWrite[] = [];
+  // the runtime reads nothing in a `data-wcs-ignore` element as bindings
+  const ignored = findIgnoredRanges(html, bindAttrName);
+  for (const attr of findAllBindAttributes(html, bindAttrName)) {
+    if (ignored.some(([start, end]) => attr.valueStart >= start && attr.valueStart < end)) continue;
+    const tag = attr.tagName ?? '';
+    const contract = BUILTIN_TAGS[tag];
+    const outputs = contract?.hasWcBindable === true ? contract.properties : null;
+    const bindings = parseBindTextWithPositions(attr.value);
+    bindings.forEach((binding, index) => {
+      const parsed = binding.parsed;
+      if (parsed === null || binding.pathRange === null) return;
+      let path = parsed.statePathName;
+      if (path.startsWith('.')) {
+        const at = attr.valueStart + binding.pathRange.start;
+        const list = getRowShorthandForPath(html, at, bindAttrName) === null
+          ? null
+          : getResolvedForListPath(html, at, bindAttrName);
+        if (list === null) return;
+        path = path === '.' ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+      }
+      const write = (written: string): void => {
+        out.push({ path: written, binding: binding.exprText, tag });
+      };
+      if (parsed.bindingType === 'spread') {
+        if (outputs === null) return;
+        const later = new Set(bindings.slice(index + 1).flatMap((b) => (b.parsed?.bindingType === 'prop' ? [b.parsed.propName] : [])));
+        for (const output of outputs) if (!later.has(output)) write(`${path}.${output}`);
+        return;
+      }
+      if (parsed.propModifiers.includes('ro')) return;
+      if (parsed.bindingType === 'radio' || parsed.bindingType === 'checkbox') {
+        write(path);
+      } else if (parsed.bindingType === 'prop'
+        && (writesBack(attr, parsed.propName, parsed.propName) || outputs?.includes(parsed.propName) === true)) {
+        write(path);
+      }
+    });
   }
   return out;
 }
@@ -975,12 +1067,16 @@ export function validateSemantics(
   let nestedWriteRoots: Map<string, string> | null = null;
   const getNestedWriteRoots = (): ReadonlyMap<string, string> =>
     (nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks));
+  let bindingWrites: BindingWrite[] | null = null;
+  const getBindingWrites = (): readonly BindingWrite[] => (bindingWrites ??= collectBindingWrites(html, bindAttrName));
   for (const block of blocks) {
     out.push(...validateIndexArity(block.content, block.contentStart, locale));
     out.push(...validateNameAliases(block.content, block.contentStart, locale, block.mountPath));
     out.push(...validateIndexParamReads(block.content, block.contentStart, locale));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale));
-    out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale));
+    out.push(...validateGetterUntrackedReads(
+      block.content, block.contentStart, block.mountPath, getNestedWriteRoots, getBindingWrites, locale,
+    ));
     out.push(...validateGetterLocationReads(block.content, block.contentStart, locale));
     out.push(...validateGetterClockReads(block.content, block.contentStart, locale));
     out.push(...validateOnHandlerThis(block.content, block.contentStart, locale));
