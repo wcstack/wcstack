@@ -1405,3 +1405,32 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.9.0 の公開（2026-10-28）
+
+- 中身: minor。docs/v4-direction-2026-10.md の下での 7 回目の minor で、その 2 巡目（§3.2）の 2 本目の継ぎ目アプリ `family-ledger` — 2 人で使う家計簿 — から（docs/seam-apps.md）。この回は継ぎ目ではなく作者を変えた: AI の作成スキル（v4.8.0）だけを入口にする、別のモデル（Sonnet 5.5）の初めての作者を、リポジトリと関係のないディレクトリの入れ子の `claude -p` で動かした（サブエージェントにはリポジトリのパスと CLAUDE.md が見える）。作者は lint を自分から回し、わざとした間違い 26 件のうち 6 件は何も知らせなかった。作者の決定 4 件は v4-direction §5.8。
+  - #548 router: `leaveConfirm` が真偽値を受ける（`true` は英語の既定の文言、`false` は聞かない）。真偽値が文言になり、遷移のたびに `confirm("false")` が出ていた。
+  - #549 state の診断: `$on` の `this` を宣言のときに（`[wcs/on-handler-this]`）、ルートが 2 つの `<wcs-state>` の両方を名指す（`[wcs/second-root]` — 状態が先にそろった方がルートを取り、文書で先の本物が拒まれていた）、日付だけの文字列には `new Date(y, m - 1, d)` と言う。core は 0 B、diagnostics +563 B（リリースまで slack 512 B）。
+  - #550 fetch の文書: `value` は新しい url の間も空の url の後も前の応答のまま、`value` / `status` は同じ値では発火しない — 応答のイベントで完了を知る。
+  - #551 testing: `mount(html, { resolveModule })`（`src` の state）、読み込み元の無い `<wcs-state>` は挿入の前に断る（無言の時間切れだった）。
+  - #552 upload: `<wcs-upload-header>`。vscode-wcs の tagNameMap の試験に「config にあり、コミット済みの dist にまだ無いタグ」の除外（リリースで dist とカタログが作り直されると自然に消える）。
+  - #553 sse: `auto-reconnect` / `reconnect-interval` / `max-reconnects`（ws と同じ名前、opt-in）。3 本の継ぎ目アプリが同じタイマーを自前で書いていた。諦めた通知の途中のリスナーが `connect()` すると新しいストリームを見失う再入の欠陥も直した。Firefox の「接続が中断された」は README に 1 行。
+  - #554 lint: メソッドで `map` から代入した行と、`{}` の種に代入したオブジェクトリテラルのキーを読む。束縛が書くパスを getter が入れ子で読むと `wcs/getter-untracked-read` は error（ボリュームの照合と `value#ro,init=none` の誤報も直した）。リポジトリのページの出力は 4.8.0 と同一。
+  - #555 記録: seam-apps（日英）、v4-direction §5.8、誤りの目録（119 → 125 項目）。
+  - 4 本（#551〜#554）は分離した作業ツリーのサブエージェントが作り、差分を見てから push した。
+- リリースの前: 衝突を解いた後の main の組み合わせを手元で確かめた — 全パッケージを src からビルドして e2e 396/396。rollup が出力を書き終えた後に終わらないことが、typescript だけでなく gyroscope でも起きた（PID で止めた。この環境だけの症状）。
+- 準備: PR #556（merge commit 143d0cdc）で CHANGELOG を `[4.9.0] — 2026-10-28` として締め（要約と Upgrading 4 項目）、固定版 18 か所を 4.9.0 にした。印の除去は 12 README・44 行の見込み（ほかの版の印は無し）。
+- main で `minor`（run 40549727479）。成功した: 版を上げたコミット 2087829c、タグ `v4.9.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Fixed・Documentation を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い。`@wcstack/server` の依存は `@wcstack/state` 4.9.0。最初の照合では websocket だけがレジストリにまだ見えなかった（`npm view` では公開済み）— 反映を待って照合し直した。公開物に `<wcs-upload-header>`・`auto-reconnect`・二つの診断・router の既定の文言・testing の `resolveModule` が入り、公開版の lint は family-ledger の再現で誤報が消え、束縛の書くパスの読みを error にした。
+- 公開後の作業（同日）:
+  - PR #557（merge commit c3c826cf）: サイズの基準値を 4.9.0 の dist で取り直した（`core.min.js` は 20,163 B のまま、残り 317 B — 2 巡目の core の予算は 2 本とも使っていない。diagnostics は 9,186 B、slack を外した）。CLAUDE.md / AGENTS.md の版、docs/long-lived-pages の 4.9 の印（リリースは README の印しか外さない）、拡張を 2.9.0 に。docs/csp.md（日英）の「`<base>` の下ではルート絶対で書く」を「ルートより下の base のとき」に直した — スキルの同じ助言の元で、`<base href="/">` では相対で同じ URL になり、lint はルート絶対の `src` を読まない。
+  - VS Code 拡張 2.9.0: c3c826cf から、リポジトリの隣の作業ツリーで `npm run package` した vsix（890 ファイル — 2.8.0 と一覧が同じ、テスト 1,346 件）。publish は著者が実行した。Marketplace から取った vsix は手元のものと SHA-256 が一致（`664e1b3c…`）。注釈付きタグ `vscode-wcs-v2.9.0`（c3c826cf）。
+  - wcstack-skill: PR #49（merge commit 2b7e5ef）で、`<base href="/">` の下の相対の `src`、別のタブのログアウト、真偽値の `leaveConfirm`、`<wcs-upload-header>`、sse の `auto-reconnect` と `message` の形、fetch の `value` と完了の知り方、testing の `resolveModule`、4.9 の lint と診断、失敗の一覧の 7 行を追随し、注釈付きタグ `v4.9.0`。
+  - examples への取り込み: PR #558。`examples/family-ledger/`（Node の組み込みだけのサーバー、`WCS_LOCAL=1`）。4.9.0 で要らなくなった回避策 5 つ（CDN の `UploadCore`、ストリームを開き直すタイマー、`loading` の端で知る削除、`budgetRows` の JSDoc、試験で `lib.js` をインラインに貼ること）を外し、それぞれ外すと spec が落ちることを確かめた。spec 14 件（ポート 5900 + 10 × index）。取り込みで 2 件見つけた: 4.9 の lint が受け入れる `{}` の種の代入を、診断の後付けは読み込みの時点の値で `[wcs/binding-path-missing]` と警告し「silently dropped」と言う（未決）、`wcs-link.btn a` の CSS はどこにも当たらない（`<a>` はホストの次の兄弟）。
+- 残り:
+  - 診断の後付けの `{}` の種への警告を lint にそろえる（次の minor の候補）。
+  - 2 巡目の 3 本目（アクセシビリティと言語 — §3.2）。止める目安には当たっていない（重い実行時の欠陥と新しい種類の発見が出た）。
+  - LP の追随（今回は頼まれていない）。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
