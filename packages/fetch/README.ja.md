@@ -307,6 +307,8 @@ get fieldErrors() {
 > 入ります。`error` を観測せず `value` のみをバインドしている場合、リクエスト失敗時に
 > 直前の成功値が消えます。失敗を明示的に扱うには `error` をバインドしてください。
 
+**`value` がどの応答か、リクエストがいつ終わったか。** `value` は次の応答が届くまで前の応答のままです。新しい `url` で要求が進んでいる間も、`url` が空になっても（ルートを出た、getter がその間 `null` を返した）消えません — 戻ってきたとき、新しい応答が届くまでは前の項目の応答が入っています。`value` を「このページの項目」として読むページは、そうであることを確かめてください（`v && v.id === this.entryId`）。また `value` と `status` は state の出力なので、同じ値をもう一度書いてもバインディングも `$watch` も発火しません。`status` への `$watch` は、`204` を返す 1 回目の `DELETE` は見ますが、2 回目は見ません。応答ごとに動くには応答のイベントを受けてください — `eventToken.value: done` と `$on: { done(state, event) { … } }`: `event` は `wcs-fetch:response` で、`detail` は `{ value, status, objectURL }`。HTTP のエラーも含めて応答ごとに、`loading` が `false` になる前に送られます — あるいは `loading` が `true` から `false` になるのを見て `error` を読んでください。
+
 ### 入力 / コマンドサーフェス
 
 HTML、JS、または `@wcstack/state` バインディングからリクエスト実行を制御します:

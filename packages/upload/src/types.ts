@@ -2,10 +2,12 @@ import type { WcsIoErrorInfo } from "./core/platformCapability.js";
 
 export interface ITagNames {
   readonly upload: string;
+  readonly uploadHeader: string;
 }
 
 export interface IWritableTagNames {
   upload?: string;
+  uploadHeader?: string;
 }
 
 export interface IConfig {

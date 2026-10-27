@@ -59,8 +59,8 @@
       "lint": [{ "code": "wcs/on-handler-this", "severity": "error" }],
       "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Uses `this` in a `$on` handler.", "ja": "`$on` のハンドラで `this` を使う。" },
-      "effect": { "en": "`this` is `undefined` there; the TypeError is logged as `#17` (a subscriber of the token threw); an async handler gives an unhandled rejection.", "ja": "そこでの `this` は `undefined`。TypeError は `#17`（トークンの購読者が throw した）として記録され、async のハンドラは未処理の reject になる。" },
-      "evidence": [{ "file": "packages/state/src/token.ts", "text": "M.TokenSubscriberThrew" }],
+      "effect": { "en": "`this` is `undefined` there; the TypeError is logged as `#17` (a subscriber of the token threw), which does not say why; an async handler gives an unhandled rejection. Since 4.9 the diagnostics add-on says it once per handler when the state is declared, before any event.", "ja": "そこでの `this` は `undefined`。TypeError は `#17`（トークンの購読者が throw した）として記録されるが、理由は言わない。async のハンドラは未処理の reject になる。4.9 から、diagnostics の後付けが state の宣言のときにハンドラごとに 1 回、イベントより前にそう言う。" },
+      "evidence": [{ "file": "packages/state/src/token.ts", "text": "M.TokenSubscriberThrew" }, { "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/on-handler-this]" }],
       "note": { "en": "A classic script handed in through `setInitialState` gets `window` as `this`: silent, and outside the lint.", "ja": "`setInitialState` で渡したクラシックのスクリプトでは `this` が `window` になり、無言（lint の外）。" }
     },
     {
@@ -183,8 +183,8 @@
       "lint": [{ "code": "wcs/second-root", "severity": "error" }],
       "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Puts a second root `<wcs-state>` in the document.", "ja": "文書に 2 つ目の root の `<wcs-state>` を置く。" },
-      "effect": { "en": "The one that finishes loading second fails with `#47`; the first keeps the page.", "ja": "後から読み込み終えた方が `#47` で失敗し、先の方がページを持つ。" },
-      "evidence": [{ "file": "packages/state/src/element.ts", "text": "raise(M.SecondRoot)" }]
+      "effect": { "en": "The one that finishes loading second fails with `#47`; the first keeps the page — whatever the order in the document, so a `json=` state after the page's `src=` or inline one takes the root and the page binds against it. Since 4.9 the diagnostics add-on names both.", "ja": "後から読み込み終えた方が `#47` で失敗し、先の方がページを持つ — 文書の順に関わらないので、ページの `src=` やインラインの state の後に置いた `json=` の state がルートを取り、ページはそれでバインドされる。4.9 から、diagnostics の後付けが両方を名指しする。" },
+      "evidence": [{ "file": "packages/state/src/element.ts", "text": "raise(M.SecondRoot)" }, { "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/second-root]" }]
     },
     {
       "id": "mount-path-invalid",

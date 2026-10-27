@@ -2358,6 +2358,7 @@ $on: {
 - Every `$on` key must be declared in `$eventTokens` (otherwise an error is thrown at initialization)
 - Each value must be a function
 - The signature is `(state, event, ...listIndexes)` — the DOM `Event` first, then any enclosing loop indexes
+- `this` is undefined in a handler, so a handler that uses it throws when the event arrives. Since 4.9 (not released yet) the `diagnostics` add-on says so once per handler when the state is declared, before any event (`[wcs/on-handler-this]`); lint reports it as an error
 
 ### `eventToken.<property>:` Binding
 
@@ -2965,7 +2966,7 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | 26 | | `filter <name> requires at least one option` |
 | 27 | | `filter <name> requires a number as option` |
 | 28 | | `filter <name> requires a number value, not <what it was>` (a string adds: `— put |number before |<name>, or convert it where it is read`) |
-| 29 | | `filter <name> requires a date value (a Date), not <what it was>` (a string or a number adds: `— make the Date where it is read: a getter returning new Date(…)`) |
+| 29 | | `filter <name> requires a date value (a Date), not <what it was>` (a string or a number adds: `— make the Date where it is read: a getter returning new Date(…)`; since 4.9 (not released yet), a date-only string such as `"2026-10-01"` also says that `new Date("2026-10-01")` is midnight UTC — the day before west of Greenwich — and `new Date(y, m - 1, d)` is that day where the page is) |
 | 30 | | `filter <name> requires an array value` |
 | 31 | | `init=/sync= modifiers require enableDirectionalInitialSync.` |
 | 32 | | `"<text>": the "@name" selector was removed in v2 — there is a single state tree. …` |
@@ -3122,7 +3123,7 @@ What fails initialization:
 - A source that cannot be read ([State Initialization](#state-initialization)).
 - An invalid declaration: a removed name (`$scan`, `$streams`, `$updatedCallback`; with the `diagnostics` add-on), a `$behavior` / `$features` / `$commandTokens` / `$eventTokens` / `$on` of the wrong shape, a declaration whose add-on is not installed (`[wcs/feature-not-installed]`).
 - A markup error found while the page is bound: a syntax error, an unknown filter or a wrong argument count, a wildcard-rank error, `for:` with filters, `outerHTML:` in a template, a wc-bindable misconfiguration on an element whose class is already defined. The walk stops at the error: what comes before it in document order is bound, what comes after it is not. Run `npx @wcstack/lint` before you deploy.
-- A second root `<wcs-state>` on a root that another one already binds (`#47`). There is one state tree per root; graft a subtree with `mount=`.
+- A second root `<wcs-state>` on a root that another one already binds (`#47`). There is one state tree per root; graft a subtree with `mount=`. The one that binds is the one whose state is ready first, not the first in the document: a `json=` state is ready at once, so it takes the root before an earlier `src=` or inline state, which is then the one refused, and the page binds against the wrong state. Since 4.9 (not released yet) the `diagnostics` add-on names both when the first binds (`[wcs/second-root]`).
 
 Inside a `for:` / `if:` row, an error found while a binding is attached (an undeclared token, a member the element does not declare) is that binding's failure instead: it goes to `$errorCallback`, and the row is still built. A binding to a top-level key the state does not have is a failed apply, not an initialization failure. An element that failed to initialize cannot be re-armed — `setInitialState()` throws (`#14`); remove it and create a new one.
 
@@ -3353,7 +3354,7 @@ different shape; `examples/router-i18n` is the reference layout.
 
 A page built on `<wcs-state>` is plain DOM, so it can be tested headlessly with [happy-dom](https://github.com/capricorn86/happy-dom) — no browser, no build step, no test-only API. Three recipes follow; every one of them runs as written.
 
-Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it.
+Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it. A state in its own file (`<wcs-state src="./state.js">`) loads under `mount()` with its `resolveModule` option, since 4.9 (not released yet) — under happy-dom the `src` is an `http:` URL, which Node's module loader does not read, and an inline state cannot `import` a relative module under Node.
 
 ### 1. vitest + happy-dom
 

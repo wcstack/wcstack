@@ -308,6 +308,8 @@ These properties represent the result of the current request and are the main ob
 > successful value disappears when a request fails. Bind `error` to handle the
 > failure case explicitly.
 
+**Which response `value` holds, and when a request finished.** `value` is the last response until the next one lands: a new `url` does not clear it while the new request is in flight, and neither does an empty `url` (a route left, a getter that returned `null` meanwhile) — on the way back, the previous item's response is there until the new one arrives. A page that reads `value` as "the item this page shows" checks that it is (`v && v.id === this.entryId`). And `value` and `status` are state outputs: the same value written again fires no binding and no `$watch`, so a `$watch` on `status` sees the first `DELETE` that answers `204` and not the second. To act on every response, take the response event — `eventToken.value: done` with `$on: { done(state, event) { … } }`: `event` is `wcs-fetch:response`, whose `detail` is `{ value, status, objectURL }`, dispatched for every response, an HTTP error included, before `loading` turns `false` — or watch `loading` going from `true` to `false` and read `error`.
+
 ### Input / command surface
 
 These properties control request execution from HTML, JS, or `@wcstack/state` bindings:
