@@ -639,6 +639,14 @@ describe('日付フィルタの書式と currency（4.2）', () => {
   it('ISO 文字列の date は、受け取った値と直し方を言うこと', () => {
     expect(() => getFilter('date')('2026-10-13')).toThrow(/filter date requires a date value \(a Date\), not a string \("2026-10-13"\) — make the Date where it is read/);
   });
+
+  it('日付だけの文字列には、new Date("YYYY-MM-DD") が UTC の真夜中になることを言う。時刻のある文字列には言わない（family-ledger）', () => {
+    expect(() => getFilter('date')('2026-10-13')).toThrow(/A date-only string is a day, not a moment: new Date\("2026-10-13"\) is midnight UTC/);
+    let message = '';
+    try { getFilter('date')('2026-10-13T09:00'); } catch (e) { message = String((e as Error).message); }
+    expect(message).toContain('make the Date where it is read');
+    expect(message).not.toContain('date-only');
+  });
 });
 
 // B9 の型付きリテラル。数値の値に対して `eq(null)` / `eq(true)` は「一致しない」であって

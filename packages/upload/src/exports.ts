@@ -2,6 +2,9 @@ export { bootstrapUpload } from "./bootstrapUpload.js";
 export { getConfig } from "./config.js";
 export { UploadCore } from "./core/UploadCore.js";
 export { WcsUpload } from "./components/Upload.js";
+// The helper tag too, so a page that defines the tags itself (an autoloader's wrapper module,
+// a scoped registry) can define <wcs-upload-header>, as @wcstack/fetch exports WcsFetchHeader.
+export { WcsUploadHeader } from "./components/UploadHeader.js";
 
 export type {
   IWritableConfig, IWritableTagNames, WcsUploadError, WcsUploadCoreValues, WcsUploadValues
@@ -23,8 +26,10 @@ export { WCS_UPLOAD_ERROR_CODE } from "./core/uploadCapabilities.js";
 // dist/index.d.ts; it applies once this package's types are in the consuming program
 // (`import "@wcstack/upload"` or a tsconfig `types` entry).
 import type { WcsUpload } from "./components/Upload.js";
+import type { WcsUploadHeader } from "./components/UploadHeader.js";
 declare global {
   interface HTMLElementTagNameMap {
     "wcs-upload": WcsUpload;
+    "wcs-upload-header": WcsUploadHeader;
   }
 }

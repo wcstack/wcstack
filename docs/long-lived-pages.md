@@ -22,7 +22,7 @@ A page opened at the start of a shift and left open — a support desk, a dashbo
 - **`<wcs-timer>` ticks are not time.** A hidden tab's ticks are throttled and a sleeping laptop's are lost: a 1-second timer counts a few ticks over an hour asleep. Use the tick to read the clock (`Date.now()`) and keep the time in state; do not count ticks, and do not read `Date.now()` in a getter (the lint says `wcs/getter-untracked-read`: a getter does not re-run when time passes).
 - **`<wcs-raf>`** stops in a hidden tab (`suspended` is `true`) and reports `dt = 0` on the first frame after; `dt` and `elapsed` measure *active* time. A chart drawn against the wall clock needs the clock: integrating `dt` puts it behind by every hidden minute. A sleep with the tab visible is not a visibility change, so one frame after it can carry a `dt` of the whole sleep.
 - **`<wcs-wakelock>`** asks for the lock again when the page is visible again (the browser releases it on hide).
-- **`<wcs-sse>`** lets the browser reconnect after a drop, but not after an HTTP error (`CLOSED`) — the page reopens it. Since 4.8, `stale-after` notices a stream that died without being closed. Its README says how to catch up after a reconnect.
+- **`<wcs-sse>`** lets the browser reconnect after a drop, but not after an HTTP error (`CLOSED`) — the page reopens it. Since 4.9 (not released yet), `auto-reconnect` reopens it instead, with the element's `url` at that moment (`reconnect-interval`, `max-reconnects`, as on `<wcs-ws>`). Since 4.8, `stale-after` notices a stream that died without being closed. Its README says how to catch up after a reconnect.
 - **`<wcs-ws>`** reconnects on a close with `auto-reconnect`. Since 4.8, `stale-after` notices a connection that died without being closed, and the element closes before the page may enter the back/forward cache and reconnects when it comes back.
 - **I/O nodes in a route.** `@wcstack/router` puts a route's same nodes back on every entry. Since 4.8, the work they start on connect uses the new route's inputs ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §23).
 - **`[wcs/command-not-ready]`** — a command refused because the element is not ready (a `send` on a closed socket) warns once per outage since 4.8, not once per element: a route's element lives all day.
@@ -92,7 +92,7 @@ A reconnect's replay, or a server that catches up, sends many events at once. Ea
 
 ### Tokens
 
-A token expires during a shift. A token in a stream's URL (an `EventSource` cannot send headers) is the one the stream opened with: refresh it before you reopen, or authenticate the stream with a cookie. Several `<wcs-fetch>` that all need the token: refresh once — share one promise for the refresh — and run again what failed with 401.
+A token expires during a shift. A token in a stream's URL (an `EventSource` cannot send headers) is the one the stream opened with: refresh it before you reopen, or authenticate the stream with a cookie. Since 4.9 (not released yet), `<wcs-sse auto-reconnect>` reopens with the `url` as it is at the attempt, so a token the page already refreshed into it is used; it does not refresh one itself. Several `<wcs-fetch>` that all need the token: refresh once — share one promise for the refresh — and run again what failed with 401.
 
 ### Drafts
 

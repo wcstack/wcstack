@@ -1,4 +1,5 @@
 import { WcsUpload } from "./components/Upload.js";
+import { WcsUploadHeader } from "./components/UploadHeader.js";
 import { config } from "./config.js";
 
 /**
@@ -9,5 +10,8 @@ import { config } from "./config.js";
 export function registerComponents(registry: CustomElementRegistry = customElements): void {
   if (!registry.get(config.tagNames.upload)) {
     registry.define(config.tagNames.upload, WcsUpload);
+  }
+  if (!registry.get(config.tagNames.uploadHeader)) {
+    registry.define(config.tagNames.uploadHeader, WcsUploadHeader);
   }
 }

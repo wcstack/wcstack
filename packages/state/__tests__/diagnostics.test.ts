@@ -407,3 +407,75 @@ describe("委譲されたハンドラの throw と event.currentTarget（wcs/del
     }
   });
 });
+
+describe("this を使う $on のハンドラ（wcs/on-handler-this — docs/seam-apps.md、family-ledger）", () => {
+  it("宣言のときに、this を使うハンドラごとに 1 回、イベントの前に知らせる", async () => {
+    const got = await warnings(() => page(`<p>{{ n }}</p>`, {
+      n: 0,
+      $eventTokens: ["a", "b", "c"],
+      $on: {
+        a(this: any) { this.n = 1; },
+        b: function (this: any) { const state = this; state.n = 2; },
+        c(state: any) { state.n = 3; },
+      },
+    }));
+    expect(got).toEqual([
+      '[@wcstack/state] [wcs/on-handler-this] The $on handler "a" uses this. A $on handler is called as a(state, event): this is undefined there, so it throws when the event arrives — write a(state, event) { state.x = … }. Validate statically: npx @wcstack/lint <file>.',
+      expect.stringContaining('The $on handler "b" uses this.'),
+    ]);
+  });
+
+  it("文字列の中の this という語は数えない。同じハンドラを持つ状態をもう一度置いても言い直さない", async () => {
+    const handler = (state: any) => { state.msg = "this is fine"; };
+    const got = await warnings(async () => {
+      await page(`<p>{{ msg }}</p>`, { msg: "", $eventTokens: ["a"], $on: { a: handler } });
+    });
+    expect(got).toEqual([]);
+    const twice = function (this: any) { this.msg = "x"; };
+    const again = await warnings(async () => {
+      await page(`<p>{{ msg }}</p>`, { msg: "", $eventTokens: ["a"], $on: { a: twice } });
+      await page(`<p>{{ msg }}</p>`, { msg: "", $eventTokens: ["a"], $on: { a: twice } });
+    });
+    expect(again).toHaveLength(1);
+  });
+});
+
+describe("ルートの <wcs-state> が 2 つ（wcs/second-root — docs/seam-apps.md、family-ledger）", () => {
+  it("先に状態がそろった方がルートを取る。両方を名指して 1 回知らせ、文書で先の方は #47 で拒まれる", async () => {
+    const reported: string[] = [];
+    const error = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { reported.push(a.map(String).join(" ")); });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const h = document.createElement(`diag-test-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state></wcs-state><wcs-state json='{"a":"from json"}'></wcs-state><p>{{ a }}</p>`;
+      document.body.appendChild(h);
+      await flush();
+      const first = root.querySelector("wcs-state") as any;
+      first.setInitialState({ a: "the page's" });
+      await first.connectedCallbackPromise.catch(() => {});
+      await flush();
+      expect(warn.mock.calls.map((c) => String(c[0]))).toEqual([
+        '[@wcstack/state] [wcs/second-root] 2 root <wcs-state> elements share one root, and there is one state tree per root: <wcs-state json> takes it — its state was ready first, whatever the order in the document — and <wcs-state> is refused (#47). Keep one, and graft the others with <wcs-state mount="path">. Validate statically: npx @wcstack/lint <file>.',
+      ]);
+      expect(reported.join("\n")).toContain("a second <wcs-state> on the same root");
+    } finally {
+      error.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
+  it("ボリューム（mount=）と bind-component は数えない", async () => {
+    const got = await warnings(async () => {
+      const h = document.createElement(`diag-test-${seq++}`);
+      const root = h.attachShadow({ mode: "open" });
+      root.innerHTML = `<wcs-state json='{"a":1}'></wcs-state><wcs-state mount="m" json='{"x":1}'></wcs-state><p>{{ a }}{{ m.x }}</p>`;
+      document.body.appendChild(h);
+      const el = root.querySelector("wcs-state") as any;
+      await el.connectedCallbackPromise;
+      await getBindingsReady(root);
+      await flush();
+    });
+    expect(got.filter((w) => w.includes("second-root"))).toEqual([]);
+  });
+});

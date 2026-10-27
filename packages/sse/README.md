@@ -28,7 +28,7 @@ This means server-pushed streaming can be expressed declaratively in HTML, witho
 |---|---|---|
 | Direction | bidirectional | **server → client only** |
 | Send | `send` / `sendMessage()` | — (not available) |
-| Reconnection | manual (`auto-reconnect`) | **native** (handled by the browser) |
+| Reconnection | manual (`auto-reconnect`) | **native** (handled by the browser); after an HTTP error, `auto-reconnect` (since 4.9 (not released yet)) |
 | Named events | — | **`events` attribute** (`event:` field) |
 | Wire format | text/binary frames | UTF-8 text only |
 
@@ -173,9 +173,9 @@ auto-reset:      true  → false  Dispatches wcs-sse:trigger-changed
 
 Note: `trigger` always performs the auto-reset and emits `wcs-sse:trigger-changed`, but it does **not** guarantee a new connection opens. If `url` is unset, or the element is already connected to the same `url`, `connect()` is a no-op (the latter is the idempotency guard that absorbs the upgrade double-fire) — in those cases only the reset fires. Call `close()` first if you need to reopen the same `url`.
 
-## Reconnection is native
+## Reconnection
 
-Unlike `<wcs-ws>`, there is **no** `auto-reconnect` / `reconnect-interval` / `max-reconnects` configuration. `EventSource` reconnects automatically when the connection drops, and the server controls the delay via the SSE `retry:` field.
+`EventSource` reconnects by itself when the connection drops, and the server controls the delay via the SSE `retry:` field. After an HTTP error it gives up for good — unless `auto-reconnect` reopens the stream (**A stream that gave up**, below).
 
 `<wcs-sse>` surfaces this through state:
 
@@ -187,9 +187,31 @@ To stop reconnection, call `close()` (or remove the element from the DOM).
 
 **Catching up after a reconnect is the server's and your page's job.** The browser sends `Last-Event-ID` on a reconnect only after the stream delivered an event with an `id:`. A page that loads a snapshot and then opens the stream has received none when the first drop comes, so the reconnect asks for nothing, the changes made in the gap are lost, and `connected` is `true` again. Tell the stream where to start: put the snapshot's position in the URL — `data-wcs="url: eventsUrl"` with a getter returning `"/api/events?since=" + this.streamSince` — or have the server send the current `id:` first. **Keep that position fixed while the stream is open:** write `streamSince` when you open or reopen the stream on purpose (the snapshot's position; on a reopen, the last event you applied), not on every event. A `url` that changes with every event closes and reopens the stream each time — the data stays right, so nothing shows it (docs/seam-apps.md, shift-desk: 15 connections in 30 seconds). Between your reopens the browser's own reconnects carry `Last-Event-ID`.
 
-**A stream that gave up.** A stream that ended in `CLOSED (2)` (an HTTP error: a 502 while the server restarts, a 401 when a token in the URL expired) is not retried by the browser: reopen it with `close()` and `trigger`, from where you were. Tell it from `errorInfo` — `recoverable: false` — not from `readyState` alone: `readyState` is `CLOSED (2)` before the element ever connected too, and a `$watch` fires once for an element's starting value, so a watch on `readyState === 2` runs on every page load. An `EventSource` does not tell the page the HTTP status, so a 401 and a 502 look the same. A token in the URL (an `EventSource` cannot send headers) is the one the stream opened with, and a native reconnect reuses it after it expired: refresh it before you reopen, or authenticate the stream with a cookie (`with-credentials`).
+**A stream that gave up.** A stream that ended in `CLOSED (2)` (an HTTP error: a 502 while the server restarts, a 401 when a token in the URL expired, a wrong content type) is not retried by the browser. Since 4.9 (not released yet), `auto-reconnect` reopens it — the same attributes, with the same meaning, as on `<wcs-ws>`:
+
+```html
+<wcs-sse auto-reconnect reconnect-interval="5000" max-reconnects="10"
+  data-wcs="url: eventsUrl; message: lastEvent; connected: isConnected"></wcs-sse>
+```
+
+- It waits `reconnect-interval` ms (default `3000`), then opens the element's `url` as it is at that moment — a `url` built by a getter carries what the page wrote into it since, a refreshed token included. An attempt that finds no `url` does nothing. The new `EventSource` sends no `Last-Event-ID`: the server starts from the position in the `url` (above), the one the page last wrote, so events the page already applied may come again — skip them by their id.
+- It tries up to `max-reconnects` times in a row (default `Infinity`). The count starts again when the stream opens, and on `connect()` / `trigger`. When it is used up, the last error stays.
+- Only a stream the browser gave up on is reopened. A drop the browser reconnects itself (`CONNECTING`) is left to the browser, and `stale-after`'s reopen of a silent stream (below) is its own — at once, not counted; if that new stream then gives up, `auto-reconnect` takes it.
+- While it waits, the state is the give-up's: `connected` and `loading` are `false`, `readyState` is `CLOSED (2)`, and `error` / `errorInfo` hold the failure (`recoverable: false` says what the browser did; `auto-reconnect` does not change it). The attempt sets `loading` and clears `error`, as `connect()` does.
+- `close()`, `connect()` / `trigger` and removing the element cancel a pending reopen. The attributes are read when connecting, as `stale-after` is. A construction failure (`new EventSource()` throwing, `phase: "start"`) is not retried.
+- It does not refresh anything: an expired token in the `url` fails again at every attempt until the page puts a new one in it (or `max-reconnects` stops it).
+
+**Your own policy.** When the page must act first — refresh the token, then reopen — leave `auto-reconnect` off and reopen the stream yourself with `close()` and `trigger`, from where you were. Tell it from `errorInfo` — `recoverable: false` — not from `readyState` alone: `readyState` is `CLOSED (2)` before the element ever connected too, and a `$watch` fires once for an element's starting value, so a watch on `readyState === 2` runs on every page load. An `EventSource` does not tell the page the HTTP status, so a 401 and a 502 look the same. A token in the URL (an `EventSource` cannot send headers) is the one the stream opened with, and a native reconnect reuses it after it expired: refresh it before you reopen, or authenticate the stream with a cookie (`with-credentials`).
 
 **A connection that died without being closed** — a laptop's sleep, a NAT or a proxy that dropped it — is not noticed by the browser: the stream stays `OPEN`, `connected` stays `true`, and nothing arrives. Since 4.8, `stale-after="60000"` treats an open stream that received no event for that many milliseconds as lost: `connected` goes `false`, `error` says why (`errorInfo.recoverable` is `true`), and the element opens the same `url` again. A new `EventSource` sends no `Last-Event-ID`, so the URL carries the position (above). The server must send an event the element listens to — unnamed, or a name in `events` — more often than that; an SSE comment line (`:`) is not an event. What else a page left open for hours goes through: [Pages that stay open](../../docs/long-lived-pages.md).
+
+**Firefox, when the page navigates away.** Firefox logs `The connection to <url> was interrupted while the page was loading.` when the page navigates away (a full page load) with an open `EventSource` — a plain `EventSource` does the same. It is harmless. To keep the console quiet, close the stream in a `beforeunload` listener; a `pagehide` listener runs too late.
+
+```js
+window.addEventListener("beforeunload", () => document.querySelector("wcs-sse")?.close());
+```
+
+The element does not do it itself: a navigation that does not happen after all — a leave-page prompt answered with "Stay", a link that turns out to be a download — would leave the stream closed.
 
 ## State Surface vs Command Surface
 
@@ -212,11 +234,14 @@ To stop reconnection, call `close()` (or remove the element from the DOM).
 | `withCredentials` | `boolean` | Send credentials with the request |
 | `events` | `string` | Comma-separated named events to subscribe to |
 | `raw` | `boolean` | Disable JSON auto-parsing |
+| `autoReconnect` | `boolean` | Reopen a stream the browser gave up on (an HTTP error). Read when connecting. Since 4.9 (not released yet) |
+| `reconnectInterval` | `number` | Milliseconds to wait before each reopen (default `3000`). Since 4.9 (not released yet) |
+| `maxReconnects` | `number` | Most reopens in a row (default `Infinity`); the count starts again when the stream opens. Since 4.9 (not released yet) |
 | `staleAfter` | `number` | Milliseconds without an event after which an open stream is treated as lost and reopened (`0`: never). Read when connecting. Since 4.8 |
 | `trigger` | `boolean` | One-way connection trigger |
 | `manual` | `boolean` | Disables auto-connect on DOM attach |
 
-**`null` and `undefined`.** The inputs backed by an attribute (`url`, `withCredentials`, `events`, `raw`, `staleAfter`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`, so the element never connects to `/null` or `/undefined`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) Clearing `url` leaves an open stream as it is — call `close()` to disconnect — while restoring a markup `url` that differs reconnects to it. `trigger` ignores both.
+**`null` and `undefined`.** The inputs backed by an attribute (`url`, `withCredentials`, `events`, `raw`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `staleAfter`, `manual`) take `null` as "clear": the attribute is removed and the input falls back to its default. `undefined` means "no value supplied": the attribute goes back to what it was before the first write — the value written in the markup, or none. Neither is ever written as the string `"null"` / `"undefined"`, so the element never connects to `/null` or `/undefined`. (`@wcstack/state` never writes `undefined`; React 19 does when a prop that had a value is removed, and so can a direct assignment.) Clearing `url` leaves an open stream as it is — call `close()` to disconnect — while restoring a markup `url` that differs reconnects to it. `trigger` ignores both.
 
 ## CSS styling with `:state()`
 
@@ -357,6 +382,9 @@ sseEl.close();
 | `with-credentials` | `boolean` | `false` | Send credentials cross-origin |
 | `events` | `string` | — | Comma-separated named events to subscribe to |
 | `raw` | `boolean` | `false` | Disable JSON auto-parsing |
+| `auto-reconnect` | `boolean` | `false` | Reopen a stream the browser gave up on (an HTTP error, `readyState` `CLOSED`). Since 4.9 (not released yet) |
+| `reconnect-interval` | `number` | `3000` | Milliseconds to wait before each reopen. Since 4.9 (not released yet) |
+| `max-reconnects` | `number` | `Infinity` | Most reopens in a row; the count starts again when the stream opens. Since 4.9 (not released yet) |
 | `stale-after` | `number` | `0` | Reopen an open stream that received no event for this many milliseconds (`0`: never). Since 4.8 |
 | `manual` | `boolean` | `false` | Disable auto-connect |
 
@@ -416,6 +444,10 @@ static wcBindable = {
     { name: "withCredentials", attribute: "with-credentials" },
     { name: "events", attribute: "events" },
     { name: "raw", attribute: "raw" },
+    { name: "autoReconnect", attribute: "auto-reconnect" },
+    { name: "reconnectInterval", attribute: "reconnect-interval" },
+    { name: "maxReconnects", attribute: "max-reconnects" },
+    { name: "staleAfter", attribute: "stale-after" },
     { name: "manual", attribute: "manual" },
     { name: "trigger" },
   ],
@@ -465,6 +497,10 @@ interface WcsSseInputs {
   withCredentials: boolean;
   events: string;
   raw: boolean;
+  autoReconnect: boolean;
+  reconnectInterval: number;
+  maxReconnects: number;
+  staleAfter: number;
   manual: boolean;
   trigger: boolean;
 }
@@ -474,6 +510,13 @@ interface WcsSseCoreCommands {
     withCredentials?: boolean;
     events?: string[];
     raw?: boolean;
+    staleAfter?: number;
+    autoReconnect?: boolean;
+    reconnectInterval?: number;
+    maxReconnects?: number;
+    // The url a reopen opens, read at each attempt (default: `url`);
+    // "" makes the attempt do nothing. <wcs-sse> passes its `url` then.
+    reconnectUrl?: () => string;
   }): void;
   close(): void;
 }
@@ -502,14 +545,14 @@ bootstrapSse({
 
 - **Since 4.8, the connect-time decision waits one microtask.** Whether to connect, and to which `url`, is decided one microtask after `connectedCallback` (and after a `url` change), with the inputs as they are then ([timing contract](../../docs/timing-and-firing-contract.md) §23). `@wcstack/router` puts a route's elements back on a parameter-only navigation before `@wcstack/state` writes the next route's inputs. `connect()` / `trigger` connect at once; `close()` in the same task cancels the pending connect.
 - `message`, `connected`, `loading`, `error`, and `readyState` are **output state**
-- `url`, `trigger` are **input / command surface**; `withCredentials`, `events`, `raw` are connection options
+- `url`, `trigger` are **input / command surface**; `withCredentials`, `events`, `raw`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `staleAfter` are connection options, read when connecting
 - `message` carries `{ event, data, lastEventId }` so named events share one bindable property — branch on `event` in state
 - `trigger` is intentionally one-way: writing `true` connects, reset emits completion
 - JSON payloads are auto-parsed on receive; use `raw` for literal text streams
-- Reconnection is native — there is no reconnect configuration; `close()` stops it
+- Reconnection after a drop is native. After an HTTP error the browser gives up, and since 4.9 (not released yet) `auto-reconnect` reopens the stream; `close()` stops both
 - `manual` is useful when connection timing should be controlled explicitly
 - `wcs-sse:error` is a **property-change notification** (wc-bindable model), not just a failure signal: it fires with `detail` = the error on failure, and again with `detail = null` when a connection establishes/recovers and the `error` property clears. Treat `error == null` as "no current error", not "no error ever happened"
-- **`errorInfo` taxonomy**: an **additive** bindable output (`wcs-sse:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A `connect()` with no `url` is `invalid-argument` (phase `start`, not recoverable). Every stream failure is `connection-error`, with `phase` / `recoverable` distinguishing the case: a `new EventSource()` construction failure is phase `start` / not recoverable (no `EventSource` exists, so the browser will not auto-reconnect); a transient drop while the browser is auto-reconnecting (`readyState` CONNECTING) is phase `execute` / **`recoverable: true` — the only recoverable path in SSE** (recovers without caller intervention); a permanent close (`readyState` CLOSED) is phase `execute` / not recoverable. `errorInfo` transitions exactly when `error` does (cleared to `null` when the stream recovers). The shared `WcsIoErrorInfo` type and the `WCS_SSE_ERROR_CODE` constants are exported.
+- **`errorInfo` taxonomy**: an **additive** bindable output (`wcs-sse:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A `connect()` with no `url` is `invalid-argument` (phase `start`, not recoverable). Every stream failure is `connection-error`, with `phase` / `recoverable` distinguishing the case: a `new EventSource()` construction failure is phase `start` / not recoverable (no `EventSource` exists, so the browser will not auto-reconnect); a transient drop while the browser is auto-reconnecting (`readyState` CONNECTING) is phase `execute` / **`recoverable: true` — the only recoverable path in SSE** (recovers without caller intervention); a permanent close (`readyState` CLOSED) is phase `execute` / not recoverable — with `auto-reconnect` too, which reopens it but does not change what the browser did. `errorInfo` transitions exactly when `error` does (cleared to `null` when the stream recovers). The shared `WcsIoErrorInfo` type and the `WCS_SSE_ERROR_CODE` constants are exported.
 
 ## Accessibility
 

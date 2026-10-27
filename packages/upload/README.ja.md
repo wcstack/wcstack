@@ -11,6 +11,7 @@
 
 - 入力 / コマンドサーフェス: `files`, `trigger`
 - 設定サーフェス: `url`, `method`, `field-name`, `accept`, `max-size`, `manual`, `multiple`
+- リクエストヘッダ: 子要素の `<wcs-upload-header>`（4.9（未リリース）から。[`<wcs-upload-header>`](#wcs-upload-header) を参照）
 - 出力ステートサーフェス: `value`, `loading`, `progress`, `error`, `status`
 
 つまり、ファイルアップロードを場当たり的な `XMLHttpRequest` のグルーコードではなく、状態遷移と DOM バインディングとして扱えます。
@@ -234,6 +235,32 @@ npm install @wcstack/upload
 
 現在のリクエストを中断します。loading の解除はリクエストの abort 経路を通じて行われます（`@wcstack/fetch` と一貫）。
 
+### `<wcs-upload-header>`
+
+4.9（未リリース）から、アップロードのリクエストヘッダを定義します。`<wcs-fetch>` の中の `<wcs-fetch-header>` と同じく、`<wcs-upload>` の子要素として置きます。アップロードを始めるときに読まれます。（それまでの `<wcs-upload>` はヘッダを送れません。4.8 では `UploadCore` に `headers` を渡してください — [Headless API](#headless-api) を参照。）
+
+| 属性 / プロパティ | 型 | 説明 |
+|---|---|---|
+| `name` | `string` | ヘッダ名 |
+| `value` | `string` | ヘッダ値。`value` 属性が無ければヘッダは送らない（空の `value=""` は送る） |
+
+`name` と `value` はプロパティでもあり、属性へ反映します（`null` は属性を外し、`undefined` はマークアップの値に戻す）。だからヘッダを state から渡せます — 毎回ベアラートークンを求める API:
+
+```html
+<wcs-upload id="receipt-upload" url="/api/receipts" manual data-wcs="value: receipt">
+  <wcs-upload-header name="Authorization" data-wcs="value: authHeader"></wcs-upload-header>
+</wcs-upload>
+<!-- get authHeader() { return this.token ? `Bearer ${this.token}` : null; } -->
+```
+
+`authHeader` が `null` の間、アップロードは `Authorization` ヘッダ無しで出ます。ヘッダは要素の接続時ではなく、アップロードを始めるとき — 自動送信での `files` の代入、`trigger`、`upload()` — に読むので、後から届いたトークンも次のアップロードで送られます。
+
+`Content-Type` のヘッダは付けないでください。アップロードは `multipart/form-data` で送り、手で付けた `Content-Type` はブラウザが付ける境界（boundary）を落とすので、サーバーは各パートを読めません。`<wcs-upload>` は書かれたとおりに送り、警告します。
+
+`<wcs-upload-header>` は `wcBindable` を宣言しません。`<wcs-upload>` のマークアップの一部で、それ自体は I/O ノードではありません（`value:` の束縛はそのプロパティを書きます）。
+
+**タグを自分で定義するとき。** `@wcstack/upload/auto` は 2 つのタグをどちらも定義します。タグを自分で定義するページ — autoloader の包みのモジュールや、スコープ付きのレジストリ — は `<wcs-upload-header>` も定義する必要があります。パッケージはそのクラス `WcsUploadHeader` を `WcsUpload` と並べて出します。定義されていない `<wcs-upload-header>` は素の要素で、そのヘッダは送られません。そのとき `<wcs-upload>` が 1 回警告します（`[wcs/upload-helper-undefined]`）。autoloader では、`/auto` を読み込む包みが 2 つのタグをまとめて定義します（[autoloader の README](../autoloader/README.ja.md#wcstack-自身のタグを読み込む)）。
+
 ## イベント
 
 | イベント | `detail` | 説明 |
@@ -423,10 +450,11 @@ bootstrapUpload({
   triggerAttribute: "data-uploadtarget",
   tagNames: {
     upload: "wcs-upload",
+    uploadHeader: "wcs-upload-header",
   },
 });
 ```
 
-`@wcstack/upload/auto` に頼らず、タグ名やトリガー属性名をカスタマイズしたい場合に使います。
+`@wcstack/upload/auto` に頼らず、タグ名やトリガー属性名をカスタマイズしたい場合に使います。`tagNames.uploadHeader` は `<wcs-upload-header>` のタグ名です（4.9（未リリース）から。4.8 はこのキーを拒みます）。
 
 `bootstrapUpload()` は、持っていないオプション、既定値と型の違う値（`null` や、オブジェクトの所の配列を含む）、定義していない `tagNames` のキー、文字列でないタグ名で例外を投げます。当てる前にすべてのオプションを確かめるので、投げたときは何も当てません。値が `undefined` のオプションは飛ばします。
