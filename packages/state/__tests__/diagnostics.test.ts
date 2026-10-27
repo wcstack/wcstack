@@ -479,3 +479,19 @@ describe("ルートの <wcs-state> が 2 つ（wcs/second-root — docs/seam-app
     expect(got.filter((w) => w.includes("second-root"))).toEqual([]);
   });
 });
+
+describe("空のオブジェクトの種（docs/seam-apps.md、family-ledger の取り込み）", () => {
+  it("{} を種にしたキーの下の束縛は警告しない — 後で代入する種で、null の種と同じ（4.9 の lint は代入を読む）", async () => {
+    const got = await warnings(() => page(`<p>{{ fieldErrors.date }}</p><i>{{ form.errors.amount }}</i>`, {
+      fieldErrors: {},
+      form: { errors: {} },
+      fail() { this.fieldErrors = { date: "bad" }; },
+    }));
+    expect(got).toEqual([]);
+  });
+
+  it("キーのあるオブジェクトの下の誤字は今までどおり警告する", async () => {
+    const got = await warnings(() => page(`<p>{{ fieldErrors.dat }}</p>`, { fieldErrors: { date: "" } }));
+    expect(got).toEqual([expect.stringContaining('Bound path "fieldErrors.dat" does not resolve')]);
+  });
+});
