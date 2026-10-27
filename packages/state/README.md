@@ -3354,7 +3354,7 @@ different shape; `examples/router-i18n` is the reference layout.
 
 A page built on `<wcs-state>` is plain DOM, so it can be tested headlessly with [happy-dom](https://github.com/capricorn86/happy-dom) — no browser, no build step, no test-only API. Three recipes follow; every one of them runs as written.
 
-Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it.
+Want it as one import? [`@wcstack/testing`](../testing/README.md) packages recipe 1 as `mount()` / `settle()` / `fire()` (and waits for `<wcs-router>` too). The bare recipes below stay valid without it. A state in its own file (`<wcs-state src="./state.js">`) loads under `mount()` with its `resolveModule` option, since 4.9 (not released yet) — under happy-dom the `src` is an `http:` URL, which Node's module loader does not read, and an inline state cannot `import` a relative module under Node.
 
 ### 1. vitest + happy-dom
 
