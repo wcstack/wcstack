@@ -180,8 +180,10 @@ State pulls the text of the inline `<script>` out, builds a blob: URL, and dynam
 One interaction to know about: if the page sets a `<base href>` — the i18n
 locale-basename pattern does exactly that ([i18n-design.md §9-1-4](./i18n-design.md)) —
 a *relative* `src="./state.js"` resolves against the base (`/ja/state.js`),
-not against the page, and 404s. Under a `<base>`, write the URL root-absolute:
-`src="/state.js"`. The lint reads a `src` relative to the page and cannot read a root-absolute one:
+not against the page, and 404s. Under a `<base>` below the root, write the URL root-absolute:
+`src="/state.js"`. Under `<base href="/">` — every SPA's — a relative `src="state.js"` already resolves to
+`/state.js` from any route: write it relative, and the lint reads it (the `family-ledger` seam app
+followed the root-absolute advice there and its state went unchecked). The lint reads a `src` relative to the page and cannot read a root-absolute one:
 since 4.7 it says so (`wcs/state-src-unread`, info) — that state's paths and script rules are not
 checked. Keep a copy of the layout the lint can read, or check the page with the state inline.
 
