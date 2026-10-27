@@ -168,6 +168,15 @@
 4. **接続時の仕事は、1 つのマイクロタスクで、そのときの入力で決める — I/O ノードのファミリーの規則**（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §23）。router が入れ直すルートの同じノードは、state が次のルートの入力を書く前に接続する。17 パッケージ。同じタスクで結果を使う最初の接続（storage・broadcast・worker）はその場のまま、明示のコマンドは判断を引き取る。比べた案: 外に見える ws と storage だけ直す。
 5. **ページの可視性は、出力にせず作法を書く**（[long-lived-pages.ja.md](./long-lived-pages.ja.md)）。state-field-report に続いて 2 本目の要望で、§6 の「新しい I/O のパッケージを増やさない」に従い、3 本目の要望で Page Lifecycle と Page Visibility のノードを見直す。
 
+### 5.8 family-ledger から決めたこと（2026-10-27、著者）
+
+2 巡目の 2 本目の継ぎ目アプリ（スキルだけで書く作者。[seam-apps.ja.md](./seam-apps.ja.md) の family-ledger）が残した設計の問い。4 つとも推奨の案に決めた。確実に直せるもの（lint の 3 件、診断の文面の 2 件、fetch の文書、testing の `mount()`）は先に入れた。§3.2 の止める目安には当たらない: 重い実行時の欠陥（`leaveConfirm` の真偽値、ルートが 2 つの `<wcs-state>`）が出て、新しい種類の発見（スキルと lint の食い違い、作者の道具の穴）もあった。
+
+1. **`<wcs-upload>` は子要素 `<wcs-upload-header name value>` でヘッダを送る**（`<wcs-fetch-header>` と同じ形）。アップロードを始めるときに読むので、state から束ねたトークンはそのときの値で出る。比べた案: `headers` 入力（オブジェクト。タグは増えないが fetch と形が違う）、文書だけ（`UploadCore` を使う）。
+2. **`leaveConfirm` は真偽値も受ける: `true` は英語の既定の文言で聞き、`false` は聞かない。** ページの言語で聞くなら文字列を束ねる。比べた案: 真偽値は聞かずに 1 回警告する（汚れたフォームが確認なしに離れうる）、聞いたうえで 1 回警告する。
+3. **ルートの `<wcs-state>` が 2 つあるときは、診断の後付けが両方を名指す**（`[wcs/second-root]`）。どちらがルートを取るか（状態が先にそろった方）は変えず、core は 0 B。比べた案: core で文書の順に決める（数十 B。README が言っていたとおりになる）、両方。
+4. **`<wcs-sse>` に `auto-reconnect` / `reconnect-interval` / `max-reconnects` を足す**（`<wcs-ws>` と同じ名前と意味、opt-in）。ブラウザが諦めたストリームだけを、試すときの `url` で開き直す。継ぎ目アプリ 3 本が同じタイマーを自前で書いていた。比べた案: 文書の作法のまま。
+
 ## 6. やらないこと
 
 - 新しい I/O ノードのパッケージを増やすこと（量産の候補は尽き、パッケージ数は KPI にしない — [go-to-market-2026-08.md](./go-to-market-2026-08.md) §7）。

@@ -89,6 +89,7 @@
 | `fw-inventory` — 店の在庫の道具: React 19 の管理画面と Vue 3 の倉庫のパネル。`@wcstack/state` は使わない | I/O ノード × `@wc-bindable/react` / `vue`、React 19 の props × 要素の入力、フレームワークのリアクティビティ × structured clone、`key` × 要素、遅れた定義（autoloader・CDN・動的 import）× アダプター、Vite の開発サーバー × SSE | 続けて届くイベント、開発の proxy の背後でのサーバーの再起動、保存したフィルタでの再読み込み、片方が React でもう片方が Vue の 2 つのタブ、深いリンクと素早い移動、アップロードの取り消し・再送・拒否、最初の描画より後の定義、StrictMode、HMR | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-21）。発見は下 |
 | `prod-booking` — 本番に出す会議室の予約アプリ: サブパスの下、`integrity` 付きの版の固定、分割エントリ、厳しい CSP と Trusted Types、`immutable` のキャッシュでの自前配信、Vite のビルド、Service Worker | 配信 × すべてのパッケージ: `integrity` × 分割の chunk、`installFeatures` × エンジンの 2 つのコピー、CSP × import map / インラインの state / ガード、Trusted Types × 部品、バンドラ × インラインのスクリプト、`<wcs-router>` × 読み直し、`<wcs-autoloader>` × 後で定義されるタグ、開いたままのタブ × 次の版のファイル | 各プロファイルを Chromium・Firefox・WebKit で; タブを開いたままの配備（v1 4.3.0 → v2 4.6.2）; 2 つの版の 2 つのタブ; 1 つのファイルの失敗（404・502・別の版のダイジェスト）; 本番でのエラー; オフラインと更新 | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-25）。発見は下 |
 | `shift-desk` — サポート窓口のオペレーター画面。シフトの間、夜通し開いたまま: キュー（fetch の初期データと SSE の差分）、チャット（WS）、SLA の残り、日付で区切る集計、壁の画面（wakelock と raf）、在席（idle）、オフラインの送信待ち、タブの間の共有（broadcast と storage） | 時間 × すべての I/O ノード: タイマー × 隠れたタブとスリープ、SSE / WS × 閉じられずに死んだ接続、ルートの I/O ノード × 遷移ごとの入れ直し、`<wcs-head>` × 数百回の遷移、`<wcs-ws>` × back/forward cache、警告の「1 回」× 一日中生きる要素、ストレージ × 複製したタブ | 12 時間の早送りのシフトと真夜中、夏時間、1 時間のスリープ、1 時間隠れたタブ、凍結、bfcache からの復帰、破棄、複製、ネットワークの断続、トークンの期限、10,000 件のイベントと 500 件のチケット、数時間あけた同じエラー、実時間の 22 分 | e2e の spec と一緒に [`examples/`](../examples/README.ja.md#継ぎ目アプリ) に置いた（2026-10-26）。発見は下 |
+| `family-ledger` — 2 人で使う家計簿。作者を変えた回: AI の作成スキルだけを入口にする、別のモデルの初めての作者 | 作者 × スキル: スキルが言うことと言わないこと × 1 巡目の継ぎ目（ガード × storage、クエリ ⇄ state ⇄ fetch、422 と 409、SSE × 一覧、アップロード、通貨と日付、離脱の確認、`@wcstack/testing`） | 再読み込み、ログアウト中のディープリンク、2 回目、2 つのブラウザ、編集の衝突、編集中のトークン切れ、遅い・失敗するサーバー、オフライン、サーバーの再起動、同じブラウザの 2 タブ、タイムゾーンの境目、Firefox と WebKit | 再現して分類し、修正の PR を出した（2026-10-27）。発見は下 |
 
 ### router-auth（2026-10-13）
 
@@ -366,3 +367,26 @@
 |---|---|---|
 | 文書の穴 | `docs/` の下の未リリースの印は、リリースで確かめられも剥がされもしない: `scripts/unreleased-marks.mjs` は README しか読まないので、4.8.0 の後も [long-lived-pages.ja.md](./long-lived-pages.ja.md)（と英語版）は「4.8（未リリース）」を 4 か所、4.6.0 の後も [framework-adapter-integration.ja.md](./framework-adapter-integration.ja.md) は「4.6（未リリース）」を 6 か所（英語版は 5 か所）に残す | 記録: 手で外すか、スクリプトに `docs/` も読ませる |
 | 文書の穴 | ガイドの起き上がりの処理は「まずトークンを更新する」と言うが、スリープの間に期限の来たタイマー（毎分の取得）は、空白に気づく刻みと同じ瞬間に、待っている更新が返る前に走る: 期限の切れたトークンで出て 401 を受ける。ガイドの「トークン」は 401 で失敗したものをやり直すと書いて覆っているが、処理のコメントはそう言わず、spec の最初の版は 401 が無いことを期待した | 記録（アプリの README の「Known limits」） |
+
+### family-ledger（2026-10-27）
+
+[docs/v4-direction-2026-10.md](./v4-direction-2026-10.md) §3.2 の 2 巡目の 2 本目。1 本目は継ぎ目（時間）を変えたので、この回は作者だけを変えた。継ぎ目は 1 巡目で通ったもの — ガード × storage、クエリ ⇄ state ⇄ fetch、フォームの 422 と 409、SSE で届く相手の変更、アップロード、通貨と日付、離脱の確認、`@wcstack/testing` — にそろえ、作者は AI の作成スキル（v4.8.0）だけを入口にする、別のモデルの初めての作者にした。題材は 2 人で使う家計簿。依頼は利用者の書き方で、使うパッケージも lint も指定していない。作者はリポジトリと関係のないディレクトリで、入れ子の `claude -p` として動かした — サブエージェントにはリポジトリのパスと CLAUDE.md が見えてしまう。作者に見えたのは、スキルと公開版 4.8.0 だけだった。
+
+**作者の軸。** 作者は lint を自分から回した。始めて 6 分で回し、警告まで読み、22 件の誤報をすべて回避して 0 件にした（2026-07 に計ったスキルなしの初見の AI は 9 回中 0 回）。スキルの外に出たのは `npm view <pkg> readme` と型宣言だけで、Web も GitHub も読まなかった。自分の確認 105 件を Chromium で通し、Firefox と WebKit でも機能の確認はすべて通った。わざとした間違い 26 件のうち、何も知らせなかったのが 6 件、スキルだけが知らせたのが 3 件、lint だけが 7 件（うち 4 件は warning で、スキルの完成の関門 `--errors-only` を通る）。残った穴は、スキルが言わないところに集まった: トークンの要るアップロード、日付だけの文字列とタイムゾーン、`leaveConfirm` の型、リクエストの完了の知り方、別のタブのログアウト。
+
+主張は分類の前に、公開版 4.8.0 を使って Chromium と Firefox で再現した。1 件は書かれたより重かった: ルートの `<wcs-state>` が 2 つあると、文書で後ろの `json=` が先にルートを取り、文書で先にあるページの本物の state が拒まれた（作者は後ろの方が拒まれたと推測した）。1 件は私たちのものではなかった: Firefox の「接続が中断された」は、素の `EventSource` でも、開いたまま全体の遷移をすれば出る。
+
+| 種類 | 発見 | 結果 |
+|---|---|---|
+| 実行時の欠陥 | router: `leaveConfirm: dirty`（真偽値）が文言 `"false"` / `"true"` になり、遷移のたびに `confirm("false")` が出た（無言） | 直した（#548）。決めた: `true` は既定の文言で聞き、`false` は聞かない |
+| 実行時の欠陥 | state: ルートの `<wcs-state>` が 2 つあると、状態が先にそろった方がルートを取る — 文書で後ろの `json=` が、ページの `src=` やインラインの state より先に。ページは違う state でバインドされ、作者の版では別の原因（`token-undeclared`）の文が出た | 決めた: 診断の後付けが両方を名指す（#549）。どちらが勝つかは変えない（core 0 B） |
+| 道具の欠陥 | `@wcstack/testing` の `mount()` は、ソースの無い `<wcs-state>` で何も言わずに時間切れになり、`src` の state を読めなかった（server が 4.3 から持つ `resolveModule` の口が無かった） | 直した（#551） |
+| 設計の問い | `<wcs-upload>` からトークンを送る口が無かった（shell は core に `method` と `fieldName` だけを渡していた）。作者は `UploadCore` を CDN から import した | 決めた: `<wcs-upload-header>`（#552） |
+| 設計の問い | 502 / 401 で諦めた SSE のストリームを開き直すタイマーを、state-collab-board・shift-desk・family-ledger の 3 本が同じように自前で書いた | 決めた: `<wcs-sse>` の `auto-reconnect` / `reconnect-interval` / `max-reconnects`（ws と同じ名前、opt-in。#553） |
+| lint の欠陥 | メソッドで代入した行（`this.rows = list.map((c) => ({ … }))`）と、`{}` で始めたエラーの表を読まず、誤報になった。getter が束縛の書き込み先を入れ子で読む（`this.monthFetch.value`）と、ページは「読み込み中…」のまま止まるのに warning だった | 直した（#554）: 代入を読む。束縛が書くパスなら error（4.3「確実なものは error」） |
+| 診断の穴 | `$on` の `this` は番号の無い TypeError だけだった。`date` フィルタの文面「a getter returning new Date(…)」に従うと、`new Date("2026-10-01")` は UTC の真夜中で、グリニッジより西では 1 日早かった | 直した（#549）: state の宣言のときに `[wcs/on-handler-this]`。日付だけの文字列には `new Date(y, m - 1, d)` と言う |
+| 文書の穴 | fetch: `value` は新しい url の間も空の url の後も前の応答のまま（作者の編集フォームは前の記録で埋まった）。`value` と `status` は同じ値では発火しない（2 回目の `204` の削除が終わらなかった） | 直した（#550） |
+| スキルの穴 | スキルの「`<base>` の下では `src="/state.js"`」に従うと lint がその state を読まない（`<base href="/">` なら相対の `src` で同じ URL）。別のタブのログアウト（router-auth の形）、upload のヘッダ、諦めた SSE のストリーム、日付だけの文字列、`leaveConfirm` の型、完了の知り方、完成の関門が通す warning — どれもスキルが言わない | スキルの次の版で（4.9.0 と一緒に） |
+| 私たちのものではない | Firefox は、開いた `EventSource` のまま全体の遷移をすると "The connection … was interrupted while the page was loading." を出す（`beforeunload` で閉じれば出ない） | sse の README に 1 行（#553） |
+
+4 つの設計の問いは、2026-10-27 に著者が推奨どおりに決めた（[v4-direction-2026-10.md](./v4-direction-2026-10.md) §5.8）。誤りの目録に 6 項目を足した: 無言で残る 5 つ（`status` で完了を知る、`value` を今の項目として読む、日付だけの文字列から `Date` を作る、セッションを state にだけ置く、別のタブで変わったセッション）と、設計で消した真偽値の `leaveConfirm`。
