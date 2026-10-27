@@ -8,7 +8,8 @@
  *  - every catalogued tag must be declared (a new I/O tag without a typed lookup);
  *  - every declared tag must be catalogued, except the tags of packages the catalog
  *    does not scan (state / router / devtools — they carry their own per-package test
- *    that compares the declaration with `config.tagNames`).
+ *    that compares the declaration with `config.tagNames`), and a tag the package's
+ *    src/config.ts names but its committed dist does not define yet (see `unreleasedTag`).
  *
  * This job (wcs-validate) always runs, so a Shell change that forgets the map is
  * caught even when the package's own matrix job does not run.
@@ -29,6 +30,24 @@ const OUTSIDE_CATALOG = new Set([
   // @wcstack/devtools
   "wcs-devtools",
 ]);
+
+/**
+ * A tag added to an existing package between releases (`<wcs-upload-header>`, 4.9): its src
+ * declares it, but the catalog is generated from the committed dist/auto.min.js, which is rebuilt
+ * only at release, so the catalog cannot have it yet. Excused while the package's src/config.ts
+ * names the tag and its committed dist does not — a misspelt declaration is still reported. The
+ * release rebuilds the dist, which then defines the tag, and regenerates the catalog in the same
+ * commit, so the exception ends there by itself.
+ */
+function unreleasedTag(pkg: string, tag: string): boolean {
+  const read = (file: string): string | null => {
+    const p = join(PACKAGES_DIR, pkg, file);
+    return existsSync(p) ? readFileSync(p, "utf8") : null;
+  };
+  const config = read(join("src", "config.ts"));
+  const dist = read(join("dist", "auto.min.js"));
+  return config !== null && config.includes(`"${tag}"`) && dist !== null && !dist.includes(tag);
+}
 
 function declaredTagsByPackage(): Map<string, string[]> {
   const out = new Map<string, string[]>();
@@ -54,9 +73,24 @@ describe("HTMLElementTagNameMap ⇄ builtin tag catalog", () => {
     expect(missing).toEqual([]);
   });
 
-  it("宣言されたタグは全てカタログに載っている（state / router / devtools のタグは除外）", () => {
-    const unknown = [...declaredTags].filter((tag) => !catalogued.has(tag) && !OUTSIDE_CATALOG.has(tag)).sort();
+  it("宣言されたタグは全てカタログに載っている（state / router / devtools のタグと、リリース前のタグは除外）", () => {
+    const unknown = [...declared]
+      .flatMap(([pkg, tags]) =>
+        tags.filter((tag) => !catalogued.has(tag) && !OUTSIDE_CATALOG.has(tag) && !unreleasedTag(pkg, tag)))
+      .sort();
     expect(unknown).toEqual([]);
+  });
+
+  it("リリース前のタグの除外は、config.ts が名指しし、コミット済みの dist がまだ定義しないタグに限る", () => {
+    // 4.9 の <wcs-upload-header>（リリースで dist が作り直されると、除外はひとりでに終わる）
+    const distHasIt = readFileSync(join(PACKAGES_DIR, "upload", "dist", "auto.min.js"), "utf8").includes("wcs-upload-header");
+    expect(unreleasedTag("upload", "wcs-upload-header")).toBe(!distHasIt);
+    // 綴りを誤った宣言は除外しない
+    expect(unreleasedTag("upload", "wcs-upload-hedaer")).toBe(false);
+    // dist が定義するタグは除外しない（カタログに載っているはず）
+    expect(unreleasedTag("upload", "wcs-upload")).toBe(false);
+    // config.ts も dist も無いパッケージは除外しない
+    expect(unreleasedTag("no-such-package", "wcs-upload-header")).toBe(false);
   });
 
   it("同じタグを 2 つのパッケージが宣言していない", () => {

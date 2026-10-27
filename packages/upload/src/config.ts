@@ -5,6 +5,7 @@ interface IInternalConfig extends IConfig {
   triggerAttribute: string;
   tagNames: {
     upload: string;
+    uploadHeader: string;
   };
 }
 
@@ -13,6 +14,7 @@ const _config: IInternalConfig = {
   triggerAttribute: "data-uploadtarget",
   tagNames: {
     upload: "wcs-upload",
+    uploadHeader: "wcs-upload-header",
   },
 };
 
