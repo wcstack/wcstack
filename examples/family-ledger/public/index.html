@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <base href="/">
+  <title>家計簿</title>
+  <link rel="stylesheet" href="app.css">
+  <!-- I/O nodes first, state last (so command tokens are never emitted into a not-yet-defined element) -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/clipboard/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+
+<wcs-state src="state.js"></wcs-state>
+
+<!-- persisted things -->
+<wcs-storage key="ledger.session" data-wcs="value#init=element: session"></wcs-storage>
+<wcs-storage key="ledger.settings" data-wcs="value#init=element: settingsSnapshot"></wcs-storage>
+<wcs-network data-wcs="offline: offline"></wcs-network>
+<wcs-clipboard data-wcs="command.writeText: $command.copyCsv"></wcs-clipboard>
+<!-- auto-reconnect: a stream the browser gave up on (a 502 while the server restarts) is opened again every 3 s -->
+<wcs-sse events="entry-created,entry-updated,entry-deleted,budget-updated" auto-reconnect reconnect-interval="3000"
+         data-wcs="url: sseUrl; connected: liveConnected; eventToken.message: liveEvent; command.close: $command.closeLive"></wcs-sse>
+<!-- the receipt goes up after its entry is saved, with the same bearer token as every other request -->
+<wcs-upload manual data-wcs="...: receiptUpload; eventToken.value: receiptUploaded">
+  <wcs-upload-header name="Authorization" data-wcs="value: authHeader"></wcs-upload-header>
+</wcs-upload>
+
+<!-- one <wcs-fetch> per kind of request -->
+<wcs-fetch data-wcs="...: loginFetch">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: categoriesFetch">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: monthFetch; command.fetch: $command.refreshMonth">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: budgetsFetch; command.fetch: $command.refreshBudgets">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: entryFetch">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: createFetch">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: updateFetch">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<!-- a DELETE answers 204 every time, so the response event (not status) says that this one finished -->
+<wcs-fetch data-wcs="...: deleteFetch; eventToken.value: deleteDone">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: budgetSaveFetch">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<template data-wcs="if: offline">
+  <div class="banner offline" role="status">オフラインです。保存はオンラインに戻ってからできます。</div>
+</template>
+<template data-wcs="if: liveLost">
+  <div class="banner live" role="status">リアルタイム更新が切れました。再接続しています…</div>
+</template>
+
+<header class="top">
+  <template data-wcs="if: authed">
+    <div class="bar-inner">
+      <strong class="brand">家計簿</strong>
+      <nav aria-label="メイン">
+        <wcs-link to="/">今月</wcs-link>
+        <wcs-link to="/settings">設定</wcs-link>
+      </nav>
+      <span class="who"><span data-wcs="textContent: userName"></span> さん</span>
+      <button type="button" class="link" data-wcs="onclick: logout">ログアウト</button>
+    </div>
+  </template>
+</header>
+
+<main>
+  <wcs-router data-wcs="typedParams: routeParams; searchParams: query; routeName: routeName; path: path; leaveConfirm: discardPrompt; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
+    <template>
+      <wcs-route path="/login" name="login">
+        <wcs-head><title>ログイン - 家計簿</title></wcs-head>
+        <section class="card narrow">
+          <h1>ログイン</h1>
+          <form data-wcs="onsubmit#prevent: login">
+            <label>メールアドレス
+              <input type="email" name="email" autocomplete="username" data-wcs="value: loginForm.email">
+            </label>
+            <label>パスワード
+              <input type="password" name="password" autocomplete="current-password" data-wcs="value: loginForm.password">
+            </label>
+            <p class="error" role="alert" data-wcs="textContent: loginMessage"></p>
+            <button type="submit" class="primary" data-wcs="disabled: loginFetch.loading">ログイン</button>
+          </form>
+        </section>
+      </wcs-route>
+
+      <wcs-route path="/" name="app" guard="/login">
+        <wcs-guard-handler>
+          <script type="module">
+            export default function (toPath, fromPath, { searchParams }) {
+              let s = null;
+              try { s = JSON.parse(localStorage.getItem("ledger.session")); } catch { s = null; }
+              if (s && s.token && Date.parse(s.expiresAt) > Date.now()) return true;
+              const qs = new URLSearchParams(searchParams).toString();
+              return "/login?next=" + encodeURIComponent(toPath + (qs ? "?" + qs : ""));
+            }
+          </script>
+        </wcs-guard-handler>
+
+        <wcs-route index name="home">
+          <wcs-guard-handler>
+            <script type="module">
+              export default function () {
+                const d = new Date();
+                return "/months/" + d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+              }
+            </script>
+          </wcs-guard-handler>
+        </wcs-route>
+
+        <wcs-route path="months/:month(slug)" name="month">
+          <wcs-head><title data-wcs="textContent: monthTitle"></title></wcs-head>
+          <section class="month">
+            <div class="month-nav">
+              <wcs-link data-wcs="attr.to: prevPath">&larr; 前の月</wcs-link>
+              <h1 data-wcs="textContent: monthTitle"></h1>
+              <wcs-link data-wcs="attr.to: nextPath">次の月 &rarr;</wcs-link>
+            </div>
+
+            <template data-wcs="if: monthOk|not">
+              <p class="error" role="alert">月の指定が正しくありません。</p>
+            </template>
+
+            <template data-wcs="if: monthLoading">
+              <p class="status" role="status">読み込み中…</p>
+            </template>
+            <template data-wcs="if: monthFailed">
+              <div class="error-box" role="alert">
+                <p>この月のデータを読み込めませんでした（<span data-wcs="textContent: monthErrorText"></span>）。</p>
+                <button type="button" data-wcs="onclick: retryMonth">再試行</button>
+              </div>
+            </template>
+
+            <template data-wcs="if: monthData">
+              <div>
+                <section class="summary" aria-label="今月の合計と予算">
+                  <p class="total">今月の合計 <strong data-wcs="textContent: totalLabel"></strong></p>
+                  <ul class="budget-bars">
+                    <template data-wcs="for: summaries">
+                      <li>
+                        <span class="dot" data-wcs="style.backgroundColor: .color"></span>
+                        <span class="cat-name" data-wcs="textContent: .name"></span>
+                        <span class="bar"><span class="fill" data-wcs="style.width: .percent|unit(%); class.over: .over"></span></span>
+                        <span class="nums"><span data-wcs="textContent: .spentLabel"></span> / <span data-wcs="textContent: .budgetLabel"></span></span>
+                        <span class="rest" data-wcs="textContent: .remainingLabel; class.over: .over"></span>
+                      </li>
+                    </template>
+                  </ul>
+                </section>
+
+                <div class="controls">
+                  <label>カテゴリ
+                    <select name="category" data-wcs="value#ro: categoryFilter; onchange: onFilter">
+                      <option value="">すべて</option>
+                      <template data-wcs="for: categories"><option data-wcs="value: .id; textContent: .name"></option></template>
+                    </select>
+                  </label>
+                  <label>並び順
+                    <select name="sort" data-wcs="value#ro: sortKey; onchange: onSort">
+                      <option value="date">日付（古い順）</option>
+                      <option value="-date">日付（新しい順）</option>
+                      <option value="amount">金額（小さい順）</option>
+                      <option value="-amount">金額（大きい順）</option>
+                    </select>
+                  </label>
+                  <span class="spacer"></span>
+                  <button type="button" data-wcs="onclick: copyCsv">CSVをコピー</button>
+                  <wcs-link class="btn primary" data-wcs="attr.to: newEntryPath">＋ 追加</wcs-link>
+                  <wcs-link class="btn" data-wcs="attr.to: budgetsPath">予算</wcs-link>
+                </div>
+                <p class="status" role="status" data-wcs="textContent: csvMessage"></p>
+
+                <template data-wcs="if: monthEmpty"><p class="empty">この月の記録はまだありません。</p></template>
+                <template data-wcs="if: filteredEmpty"><p class="empty">条件に合う記録はありません。</p></template>
+
+                <ul class="entries">
+                  <template data-wcs="for: rows">
+                    <li class="entry">
+                      <span class="date" data-wcs="textContent: .dateLabel"></span>
+                      <span class="cat" data-wcs="textContent: .categoryName; style.backgroundColor: .color"></span>
+                      <span class="memo" data-wcs="textContent: .memo; hidden: hideMemo"></span>
+                      <span class="amount" data-wcs="textContent: .amountLabel"></span>
+                      <span class="by" data-wcs="textContent: .by"></span>
+                      <img class="thumb" alt="領収書" data-wcs="attr.src: .receiptUrl; hidden: .noReceipt">
+                      <wcs-link data-wcs="attr.to: .editPath">編集</wcs-link>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </template>
+          </section>
+        </wcs-route>
+
+        <!-- the form itself lives below the router (one copy for both routes) -->
+        <wcs-route path="entries/new" name="entry-new">
+          <wcs-head><title>記録を追加 - 家計簿</title></wcs-head>
+        </wcs-route>
+        <wcs-route path="entries/:id(int)/edit" name="entry-edit">
+          <wcs-head><title>記録を編集 - 家計簿</title></wcs-head>
+        </wcs-route>
+
+        <wcs-route path="budgets/:month(slug)" name="budgets">
+          <wcs-head><title>予算 - 家計簿</title></wcs-head>
+          <section class="card">
+            <h1>予算 <span data-wcs="textContent: monthTitle"></span></h1>
+            <template data-wcs="if: budgetsLoading"><p class="status" role="status">読み込み中…</p></template>
+            <template data-wcs="if: budgetsFailed">
+              <div class="error-box" role="alert">
+                <p>予算を読み込めませんでした。</p>
+                <button type="button" data-wcs="onclick: retryMonth">再試行</button>
+              </div>
+            </template>
+            <form data-wcs="onsubmit#prevent: saveBudgets" novalidate>
+              <ul class="plain">
+                <template data-wcs="for: budgetRows">
+                  <li class="budget-row">
+                    <label data-wcs="textContent: .name"></label>
+                    <div>
+                      <input type="text" inputmode="numeric" placeholder="予算なし" data-wcs="value: .value; oninput: onBudgetInput; class.invalid: .error|truthy">
+                      <span class="field-error" role="alert" data-wcs="textContent: .error"></span>
+                    </div>
+                  </li>
+                </template>
+              </ul>
+              <p class="status" role="status" data-wcs="textContent: budgetMessage"></p>
+              <div class="row-actions">
+                <button type="submit" class="primary" data-wcs="disabled: saveDisabled">保存</button>
+                <wcs-link data-wcs="attr.to: budgetsBack">月に戻る</wcs-link>
+              </div>
+            </form>
+          </section>
+        </wcs-route>
+
+        <wcs-route path="settings" name="settings">
+          <wcs-head><title>設定 - 家計簿</title></wcs-head>
+          <section class="card narrow">
+            <h1>設定</h1>
+            <p class="hint">この設定はこのパソコン（ブラウザ）にだけ保存されます。</p>
+            <label>新しい記録の初期カテゴリ
+              <select name="defaultCategory" data-wcs="value: settingsForm.defaultCategory">
+                <option value="">指定しない</option>
+                <template data-wcs="for: categories"><option data-wcs="value: .id; textContent: .name"></option></template>
+              </select>
+            </label>
+            <label class="check"><input type="checkbox" name="showMemo" data-wcs="checked: settingsForm.showMemo"> 月の一覧にメモの列を表示する</label>
+          </section>
+        </wcs-route>
+      </wcs-route>
+
+      <wcs-route fallback>
+        <wcs-head><title>ページが見つかりません - 家計簿</title></wcs-head>
+        <section class="card narrow"><h1>ページが見つかりません</h1><p><wcs-link to="/">トップへ</wcs-link></p></section>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+
+  <!-- form:start -->
+  <template data-wcs="if: isEntryRoute">
+    <section class="card" aria-label="記録フォーム">
+      <h1 data-wcs="textContent: formTitle"></h1>
+      <template data-wcs="if: formLoading"><p class="status" role="status">読み込み中…</p></template>
+      <template data-wcs="if: formLoadFailed">
+        <div class="error-box" role="alert">
+          <p data-wcs="textContent: formLoadErrorText"></p>
+          <wcs-link data-wcs="attr.to: returnPath">月に戻る</wcs-link>
+        </div>
+      </template>
+      <form data-wcs="onsubmit#prevent: save; hidden: formHidden" novalidate>
+        <label>日付
+          <input type="text" name="date" inputmode="numeric" placeholder="2026-10-26" autocomplete="off" data-wcs="value: form.date; class.invalid: fieldErrors.date|truthy">
+          <span class="field-error" role="alert" data-wcs="textContent: fieldErrors.date"></span>
+        </label>
+        <label>金額（円）
+          <input type="text" name="amount" inputmode="numeric" autocomplete="off" data-wcs="value: form.amount; class.invalid: fieldErrors.amount|truthy">
+          <span class="field-error" role="alert" data-wcs="textContent: fieldErrors.amount"></span>
+        </label>
+        <label>カテゴリ
+          <select name="categoryId" data-wcs="value: form.categoryId; class.invalid: fieldErrors.categoryId|truthy">
+            <option value="">選んでください</option>
+            <template data-wcs="for: categories"><option data-wcs="value: .id; textContent: .name"></option></template>
+          </select>
+          <span class="field-error" role="alert" data-wcs="textContent: fieldErrors.categoryId"></span>
+        </label>
+        <label>メモ
+          <input type="text" name="memo" autocomplete="off" data-wcs="value: form.memo; class.invalid: fieldErrors.memo|truthy">
+          <span class="field-error" role="alert" data-wcs="textContent: fieldErrors.memo"></span>
+        </label>
+        <label>領収書（JPEG / PNG / WebP、5MBまで）
+          <template data-wcs="if: currentReceiptUrl">
+            <img class="preview" alt="登録済みの領収書" data-wcs="attr.src: currentReceiptUrl">
+          </template>
+          <input type="file" name="receipt" accept="image/jpeg,image/png,image/webp" data-wcs="onchange: onReceipt">
+          <span class="field-error" role="alert" data-wcs="textContent: receiptError"></span>
+        </label>
+
+        <template data-wcs="if: conflict">
+          <div class="conflict" role="alert">
+            <p>あなたが編集している間に、この記録が更新されました。</p>
+            <p data-wcs="textContent: conflictText"></p>
+            <button type="button" data-wcs="onclick: reloadTheirs">相手の内容を読み込む</button>
+            <button type="button" class="danger" data-wcs="onclick: overwrite; disabled: saveDisabled">自分の内容で上書き</button>
+          </div>
+        </template>
+        <p class="error" role="alert" data-wcs="textContent: saveMessage"></p>
+        <template data-wcs="if: uploading"><p class="status" role="status">領収書をアップロード中…</p></template>
+
+        <div class="row-actions">
+          <button type="submit" class="primary" data-wcs="disabled: saveDisabled">保存</button>
+          <wcs-link data-wcs="attr.to: returnPath">キャンセル</wcs-link>
+          <template data-wcs="if: isEdit">
+            <button type="button" class="danger" data-wcs="onclick: remove; disabled: saveDisabled">削除</button>
+          </template>
+        </div>
+      </form>
+    </section>
+  </template>
+  <!-- form:end -->
+</main>
+
+</body>
+</html>

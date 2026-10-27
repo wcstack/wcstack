@@ -1,0 +1,17 @@
+{
+  "name": "wcstack-family-ledger",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a household budget shared by two people, written from the AI authoring skill alone — a guard × storage, query ⇄ state ⇄ fetch, 422 and 409, live updates over SSE, an upload with a token, a headless test of the real state file.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@wcstack/server": "^4.9.0",
+    "@wcstack/state": "^4.9.0",
+    "@wcstack/testing": "^4.9.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^5.0.5"
+  }
+}
