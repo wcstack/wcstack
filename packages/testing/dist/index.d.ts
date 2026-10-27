@@ -28,6 +28,17 @@ interface MountOptions {
     readonly stateTagName?: string;
     /** Passed to `waitForReady` (default 10 stabilization rounds). */
     readonly maxIterations?: number;
+    /**
+     * The local file a `<wcs-state src>` module is read from. It gets the URL the page names (resolved
+     * against `document.baseURI`, an `http:` URL under happy-dom, which Node's module loader does not
+     * read — it reads `file:` and `data:` URLs only) and returns a path or a `file:` URL, e.g.
+     * `(url) => new URL("." + url.pathname, import.meta.url)`. The same contract as
+     * `renderToString({ resolveModule })` (`@wcstack/server`). Installed for the length of the mount;
+     * each mount imports the module anew, so tests do not share a state object. Without it — or when it
+     * returns nothing — a `src` module state fails to initialize with a message saying so. A `.json`
+     * `src` is fetched, as before.
+     */
+    readonly resolveModule?: (url: URL) => string | URL | null | undefined;
 }
 interface StateHandle {
     /** The `<wcs-state>` element itself. */

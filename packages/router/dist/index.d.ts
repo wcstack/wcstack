@@ -385,7 +385,7 @@ declare class Router extends HTMLElement implements IRouter {
     get basename(): string;
     set basename(value: string | null | undefined);
     get leaveConfirm(): string | null;
-    set leaveConfirm(value: string | null | undefined);
+    set leaveConfirm(value: string | boolean | null | undefined);
     private _onBeforeUnload;
     /** beforeunload は leaveConfirm がある間だけ聞く（リスナーがあるだけで bfcache を外すブラウザがある） */
     private _syncBeforeUnload;

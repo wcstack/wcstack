@@ -45,7 +45,7 @@ npm install -D @wcstack/testing @wcstack/state @wcstack/server vitest happy-dom
 | `bootstrap` | 先に走らせる登録関数。既定 `[bootstrapState]`（`@wcstack/state` から遅延 import）。ページが使うもの — `bootstrapRouter`・`bootstrapFetch` … — を関数か非同期ローダー `async () => (await import("@wcstack/router")).bootstrapRouter()` で足す。wcstack の bootstrap は全て冪等 |
 | `stateTagName` | `bootstrapState({ tagNames })` で state タグを改名したときの名前（既定 `wcs-state`） |
 | `maxIterations` | 待機中に挿入された要素を拾う安定化ループの回数（既定 10） |
-| `resolveModule` | 4.9（未リリース）から。`(url: URL) => string \| URL \| null` — `<wcs-state src>` のモジュールを読むローカルのファイル。`@wcstack/server` の `renderToString` と同じオプションで、ページが名指す URL（`document.baseURI` で解決したもの — happy-dom の下では `http:` の URL）を受け取り、パスか `file:` URL を返す。Node のモジュールローダは `file:` と `data:` の URL しか読まない。mount の間だけ置かれ、モジュールは mount ごとに読み直すので、テストの間で状態のオブジェクトは共有されない。これが無いか何も返さないと、状態の初期化はそう言って失敗する — ルートの `<wcs-state>` なら `mount()` がそれで reject する。`.json` の `src` は従来どおり fetch で読む。[自分のファイルにある状態](#自分のファイルにある状態) を参照 |
+| `resolveModule` | 4.9 から。`(url: URL) => string \| URL \| null` — `<wcs-state src>` のモジュールを読むローカルのファイル。`@wcstack/server` の `renderToString` と同じオプションで、ページが名指す URL（`document.baseURI` で解決したもの — happy-dom の下では `http:` の URL）を受け取り、パスか `file:` URL を返す。Node のモジュールローダは `file:` と `data:` の URL しか読まない。mount の間だけ置かれ、モジュールは mount ごとに読み直すので、テストの間で状態のオブジェクトは共有されない。これが無いか何も返さないと、状態の初期化はそう言って失敗する — ルートの `<wcs-state>` なら `mount()` がそれで reject する。`.json` の `src` は従来どおり fetch で読む。[自分のファイルにある状態](#自分のファイルにある状態) を参照 |
 
 返る `MountedApp`:
 
@@ -64,11 +64,11 @@ npm install -D @wcstack/testing @wcstack/state @wcstack/server vitest happy-dom
 - ブラウザ風の `URL.createObjectURL` があればプロセスにつき 1 回それを無効化する — Node は `blob:` URL を import できず、これが無いとインライン `<script type="module">` の state が永久に読み込み中になる（ローダーは SSR と同じく `data:` URL 経路に倒れる）。
 - happy-dom の `textContent` / `innerText` setter を DOM 仕様どおりに文字列化するよう包む — happy-dom は数値 `0` を空文字にし（`innerText` は数値で throw する）、`textContent: count` のバインドが 0 で消えるのは happy-dom 下だけになるため。
 
-読み込むものの無い `<wcs-state>` — `state` / `src` / `json` 属性もインライン `<script type="module">` も無いもの — は `setInitialState()` を待ちますが、テストは `mount()` が返る前にそれを呼べません。4.9（未リリース）から、`mount()` は待たずに reject し、代わりに何を書けばよいか（`json=`、インラインスクリプト、または `src` と `resolveModule`）を言います。以前は resolve せず、テストは何も言わずにタイムアウトしました。ボリューム（`mount=`）も調べます。`bind-component` の要素と `<template>` の中の要素は調べません。
+読み込むものの無い `<wcs-state>` — `state` / `src` / `json` 属性もインライン `<script type="module">` も無いもの — は `setInitialState()` を待ちますが、テストは `mount()` が返る前にそれを呼べません。4.9 から、`mount()` は待たずに reject し、代わりに何を書けばよいか（`json=`、インラインスクリプト、または `src` と `resolveModule`）を言います。以前は resolve せず、テストは何も言わずにタイムアウトしました。ボリューム（`mount=`）も調べます。`bind-component` の要素と `<template>` の中の要素は調べません。
 
 #### 自分のファイルにある状態
 
-4.9（未リリース）から、状態をファイルに置くページ — `<wcs-state src="./state.js">`、厳しい CSP の下で文書が勧める形 — は `resolveModule` で mount します。ページが名指す URL をそのファイルへ写します:
+4.9 から、状態をファイルに置くページ — `<wcs-state src="./state.js">`、厳しい CSP の下で文書が勧める形 — は `resolveModule` で mount します。ページが名指す URL をそのファイルへ写します:
 
 ```ts
 import { mount } from "@wcstack/testing";

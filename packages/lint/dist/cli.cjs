@@ -144,6 +144,9 @@ var WcsDiagnosticCode = {
   // （state README「依存追跡の境界」規則 1）。ランタイムは素のアクセスと区別できないので
   // 静的にしか検出できない。対象はオブジェクトリテラル初期値のルートだけ（配列は `items`
   // の依存で足りる — 行の置換は `items` 自体を書き換え、in-place 変異は array-mutation が止める）。
+  // 読んだパスをページの束縛（組み込みタグの spread・書き戻す束縛・要素の出力）が書くなら error（その書き込みは
+  // getter に届かないと断定できる — 継ぎ目アプリ family-ledger）、スクリプトの書き込みだけなら warning（ルートも
+  // 置き換えるなら壊れない）。時刻・`location` を読む getter も同じ code（warning）。
   GetterUntrackedRead: "wcs/getter-untracked-read",
   OnHandlerThis: "wcs/on-handler-this",
   // --- <wcs-state> script: $watch declaration ---
@@ -786,7 +789,7 @@ var SENTENCES = {
   [
     29
     /* FilterValueNotDate */
-  ]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " \u2014 make the Date where it is read: a getter returning new Date(\u2026)" : ""}`,
+  ]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " \u2014 make the Date where it is read: a getter returning new Date(\u2026)" : ""}${typeof v === "string" && /^\d{4}-\d\d-\d\d$/.test(v) ? `. A date-only string is a day, not a moment: new Date(${JSON.stringify(v)}) is midnight UTC, the day before west of Greenwich \u2014 new Date(y, m - 1, d) is that day where the page is` : ""}`,
   [
     52
     /* FilterStyleInvalid */
@@ -2884,10 +2887,10 @@ var RESERVED_WATCH_KEY = "$watch";
 var RESERVED_SCAN_KEY = "$scan";
 var RESERVED_RECURSION_KEY = RECURSION_KEY;
 function analyzeStatePaths(scriptContent) {
-  const objectContent = extractDefaultExportObject(scriptContent);
-  if (!objectContent) return [];
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root || !root.content) return [];
   const paths = [];
-  const topLevelProps = parseTopLevelProperties(objectContent);
+  const topLevelProps = parseTopLevelProperties(root.content);
   const pendingStreamValues = [];
   const pendingListKeys = [];
   const recursionSpec = specFromRecursionValue(topLevelProps.find((p) => p.name === RESERVED_RECURSION_KEY));
@@ -2934,7 +2937,7 @@ function analyzeStatePaths(scriptContent) {
     }
   }
   collectRowShapesFromAssignments(scriptContent, paths);
-  collectGetterResultShapes(topLevelProps, effectiveDescriptors, paths);
+  collectGetterResultShapes(scriptContent, root.start, topLevelProps, effectiveDescriptors, paths);
   return paths;
 }
 function specFromRecursionValue(prop) {
@@ -3346,23 +3349,45 @@ var ROW_PRESERVING_METHODS = /* @__PURE__ */ new Set([
 ]);
 var ROW_PICKING_METHODS = /* @__PURE__ */ new Set(["find", "findLast", "at"]);
 var MAX_GETTER_SHAPE_PASSES = 4;
-function collectGetterResultShapes(props, effective, paths) {
+function collectGetterResultShapes(script, rootStart, props, effective, paths) {
   const getters = /* @__PURE__ */ new Map();
   for (const prop of props) {
     if (prop.kind !== "getter" || prop.accessor !== "get" || prop.value === void 0) continue;
     if (prop.name.startsWith("$") || hasRecursionWildcard(prop.name) || effective.get(prop.name) === "data") continue;
     getters.set(prop.name, prop);
   }
+  const assignments = collectAssignments(script, rootStart, props);
   for (let pass = 0; pass < MAX_GETTER_SHAPE_PASSES; pass++) {
     const before = paths.length;
     for (const [name, prop] of getters) {
       const shape = getterResultShape(prop.value, paths);
       if (shape !== null) applyResultShape(name, shape, paths);
     }
+    const aliasesByBody = /* @__PURE__ */ new Map();
+    for (const assignment of assignments) {
+      let aliases = /* @__PURE__ */ new Map();
+      if (assignment.body !== null) {
+        aliases = aliasesByBody.get(assignment.body) ?? collectAliases(assignment.body, paths);
+        aliasesByBody.set(assignment.body, aliases);
+      }
+      const shape = expressionShape(assignment.expr, paths, aliases);
+      if (shape !== null) applyAssignedShape(assignment.target, shape, paths);
+    }
     if (paths.length === before) break;
   }
 }
 function getterResultShape(body, paths) {
+  const scan = maskCommentsAndStrings(body);
+  const aliases = collectAliases(body, paths);
+  const shapes = [];
+  for (const m of scan.matchAll(/\breturn\b/g)) {
+    const start = m.index + m[0].length;
+    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
+    if (shape !== null) shapes.push(shape);
+  }
+  return shapes.length === 0 ? null : mergeShapes(shapes);
+}
+function collectAliases(body, paths) {
   const scan = maskCommentsAndStrings(body);
   const aliases = /* @__PURE__ */ new Map();
   for (const m of scan.matchAll(/\b(?:const|let|var)\s+([$\w]+)\s*=(?![=>])/g)) {
@@ -3372,13 +3397,36 @@ function getterResultShape(body, paths) {
     const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
     if (shape !== null) aliases.set(name, shape);
   }
-  const shapes = [];
-  for (const m of scan.matchAll(/\breturn\b/g)) {
-    const start = m.index + m[0].length;
-    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
-    if (shape !== null) shapes.push(shape);
+  return aliases;
+}
+var PLAIN_ASSIGN = new RegExp(String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])`, "gd");
+function collectAssignments(script, rootStart, props) {
+  const scan = maskCommentsAndStrings(script);
+  const bodies = props.filter((p) => (p.kind === "getter" || p.kind === "method") && p.value !== void 0 && p.valueStart !== void 0).map((p) => ({ start: rootStart + p.valueStart, body: p.value }));
+  const out = [];
+  PLAIN_ASSIGN.lastIndex = 0;
+  let match;
+  while ((match = PLAIN_ASSIGN.exec(scan)) !== null) {
+    if (/\.\s*$/.test(scan.slice(Math.max(0, match.index - 8), match.index))) continue;
+    const span = match.indices[1] ?? match.indices[2];
+    const target = script.slice(span[0], span[1]);
+    if (target.startsWith("$") || target.includes("*")) continue;
+    const expr = readExpression(script, scan, match.index + match[0].length);
+    const owner = bodies.find((b) => b.start <= match.index && match.index < b.start + b.body.length);
+    out.push({ target, expr, body: owner?.body ?? null });
   }
-  return shapes.length === 0 ? null : mergeShapes(shapes);
+  return out;
+}
+function applyAssignedShape(target, shape, paths) {
+  const declared = paths.find((p) => p.path === target);
+  if (declared === void 0 || declared.kind !== "data") return;
+  if (hasPath(paths, `${target}.*`)) {
+    if (shape.isList) applyResultShape(target, shape, paths);
+    return;
+  }
+  if (!shape.isList && declared.rawInitial !== void 0 && isObjectLiteral(declared.rawInitial)) {
+    applyResultShape(target, shape, paths);
+  }
 }
 function readExpression(text3, scan, start) {
   let depth = 0;
@@ -3433,9 +3481,7 @@ function expressionShape(text3, paths, aliases) {
     }
   } else if (scan.startsWith("(")) {
     const inner = extractDelimitedContent(expr, scan, 0, "(", ")");
-    const base = expressionShape(inner, paths, aliases);
-    if (base === null) return null;
-    shape = base;
+    shape = expressionShape(inner, paths, aliases) ?? OPAQUE;
     rest = inner.length + 2;
   } else {
     const base = readBase(expr, scan, aliases, paths);
@@ -3783,9 +3829,6 @@ function locateDefaultExportObject(script) {
   if (!match) return null;
   const braceIndex = scan.indexOf(match[1], match.index);
   return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
-}
-function extractDefaultExportObject(script) {
-  return locateDefaultExportObject(script)?.content ?? null;
 }
 function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
   const props = [];
@@ -10981,6 +11024,7 @@ var ja = {
   pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
   submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
   getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
+  getterUntrackedReadBound: (root, sp, binding, tag, written) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u304C\u3001<${tag}> \u306E\u675F\u7E1B "${binding}" \u306F "${written}" \u3092\u30D1\u30B9\u3067\u66F8\u304D\u307E\u3059\u3002\u305D\u306E\u66F8\u304D\u8FBC\u307F\u306F\u3053\u306E getter \u306B\u5C4A\u304B\u305A\u3001getter \u306F\u524D\u306B\u8A08\u7B97\u3057\u305F\u5024\u3092\u8FD4\u3057\u7D9A\u3051\u307E\u3059\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
   handlerFilterNotAllowed: (prop) => `\u30A4\u30D9\u30F3\u30C8\u30CF\u30F3\u30C9\u30E9 "${prop}" \u306B\u30D5\u30A3\u30EB\u30BF\u306F\u4F7F\u7528\u3067\u304D\u307E\u305B\u3093`,
   typeExpectation: (label, expected, resultType) => `"${label}" \u306B\u306F${JA_EXPECTED_LABEL[expected]}\u304C\u5FC5\u8981\u3067\u3059\uFF08\u73FE\u5728\u306E\u578B: ${resultType}\uFF09`,
   filterUnknown: (n) => `\u30D5\u30A3\u30EB\u30BF "${n}" \u306F\u7D44\u307F\u8FBC\u307F\u30D5\u30A3\u30EB\u30BF\u306B\u5B58\u5728\u3057\u307E\u305B\u3093`,
@@ -11191,6 +11235,7 @@ var en = {
   pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
+  getterUntrackedReadBound: (root, sp, binding, tag, written) => `Only "${root}" is tracked here, but the binding "${binding}" on <${tag}> writes "${written}" by path: that write never reaches this getter, which keeps returning the value it last computed (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
   handlerFilterNotAllowed: (prop) => `Filters cannot be applied to event handler "${prop}"`,
   typeExpectation: (label, expected, resultType) => `"${label}" requires ${EN_EXPECTED_LABEL[expected]} (current type: ${resultType})`,
   filterUnknown: (n) => `Filter "${n}" is not a built-in filter`,
@@ -12120,7 +12165,8 @@ function openTagBefore(html, valueStart) {
   return lt2 === -1 ? "" : html.slice(lt2, valueStart);
 }
 function writesBack(attr, prop, written) {
-  if (written.split("#").slice(1).some((modifier) => modifier.trim() === "ro")) return false;
+  const modifiers = written.split("#").slice(1).flatMap((part) => part.split(","));
+  if (modifiers.some((modifier) => modifier.trim() === "ro")) return false;
   if (prop === "radio" || prop === "checkbox") return true;
   const tag = attr.tagName;
   if (tag === void 0 || tag.includes("-")) return false;
@@ -14063,6 +14109,9 @@ var BUILTIN_TAGS = {
       "withCredentials": "with-credentials",
       "events": "events",
       "raw": "raw",
+      "autoReconnect": "auto-reconnect",
+      "reconnectInterval": "reconnect-interval",
+      "maxReconnects": "max-reconnects",
       "staleAfter": "stale-after",
       "manual": "manual",
       "trigger": null
@@ -14189,6 +14238,14 @@ var BUILTIN_TAGS = {
       "upload",
       "abort"
     ]
+  },
+  "wcs-upload-header": {
+    "package": "upload",
+    "hasWcBindable": false,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [],
+    "commands": []
   },
   "wcs-view-transition": {
     "package": "view-transition",
@@ -16478,7 +16535,7 @@ function validateGetterCycles(script, scriptStart, locale2) {
   }
   return out;
 }
-function validateGetterUntrackedReads(script, scriptStart, nestedWriteRoots, locale2) {
+function validateGetterUntrackedReads(script, scriptStart, mountPath, nestedWriteRoots, bindingWrites, locale2) {
   const getters = analyzeCallableBodies(script).filter((entry) => entry.kind === "getter" && entry.accessor === "get");
   if (getters.length === 0) return [];
   const objectRoots = /* @__PURE__ */ new Set();
@@ -16496,15 +16553,63 @@ function validateGetterUntrackedReads(script, scriptStart, nestedWriteRoots, loc
       if (read.written) continue;
       const segments = read.callee ? read.chain.slice(0, -1) : read.chain;
       if (segments.length < 2 || !objectRoots.has(segments[0])) continue;
-      if (!nestedWriteRoots().has(segments[0])) continue;
+      const prefix = mountPath === null ? [] : mountPath.split(".");
+      const write = boundWriteOf([...prefix, ...segments], prefix.length + read.path.split(".").length, bindingWrites());
+      if (write === void 0 && !nestedWriteRoots().has([...prefix, segments[0]].join("."))) continue;
+      const sp = segments.join(".");
       out.push({
         code: WcsDiagnosticCode.GetterUntrackedRead,
         start: scriptStart + getter.bodyStart + read.start,
         end: scriptStart + getter.bodyStart + read.end,
-        message: msgs.getterUntrackedRead(segments[0], segments.join(".")),
-        severity: "warning"
+        message: write === void 0 ? msgs.getterUntrackedRead(segments[0], sp) : msgs.getterUntrackedReadBound(segments[0], sp, write.binding, write.tag, write.path),
+        severity: write === void 0 ? "warning" : "error"
       });
     }
+  }
+  return out;
+}
+function boundWriteOf(segments, tracked, writes) {
+  return writes.find((write) => {
+    const written = write.path.split(".");
+    if (written.length <= tracked || written.length > segments.length) return false;
+    return written.every((s, i) => s === segments[i] || s === "*" && /^\d+$/.test(segments[i]));
+  });
+}
+function collectBindingWrites(html, bindAttrName) {
+  const out = [];
+  const ignored = findIgnoredRanges(html, bindAttrName);
+  for (const attr of findAllBindAttributes(html, bindAttrName)) {
+    if (ignored.some(([start, end]) => attr.valueStart >= start && attr.valueStart < end)) continue;
+    const tag = attr.tagName ?? "";
+    const contract = BUILTIN_TAGS[tag];
+    const outputs = contract?.hasWcBindable === true ? contract.properties : null;
+    const bindings = parseBindTextWithPositions(attr.value);
+    bindings.forEach((binding, index) => {
+      const parsed = binding.parsed;
+      if (parsed === null || binding.pathRange === null) return;
+      let path = parsed.statePathName;
+      if (path.startsWith(".")) {
+        const at2 = attr.valueStart + binding.pathRange.start;
+        const list = getRowShorthandForPath(html, at2, bindAttrName) === null ? null : getResolvedForListPath(html, at2, bindAttrName);
+        if (list === null) return;
+        path = path === "." ? `${list}.*` : `${list}.*.${path.slice(1)}`;
+      }
+      const write = (written) => {
+        out.push({ path: written, binding: binding.exprText, tag });
+      };
+      if (parsed.bindingType === "spread") {
+        if (outputs === null) return;
+        const later = new Set(bindings.slice(index + 1).flatMap((b) => b.parsed?.bindingType === "prop" ? [b.parsed.propName] : []));
+        for (const output of outputs) if (!later.has(output)) write(`${path}.${output}`);
+        return;
+      }
+      if (parsed.propModifiers.includes("ro")) return;
+      if (parsed.bindingType === "radio" || parsed.bindingType === "checkbox") {
+        write(path);
+      } else if (parsed.bindingType === "prop" && (writesBack(attr, parsed.propName, parsed.propName) || outputs?.includes(parsed.propName) === true)) {
+        write(path);
+      }
+    });
   }
   return out;
 }
@@ -16838,12 +16943,21 @@ function validateSemantics(html, stateTagName = "wcs-state", locale2, bindAttrNa
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
   let nestedWriteRoots = null;
   const getNestedWriteRoots = () => nestedWriteRoots ??= collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks);
+  let bindingWrites = null;
+  const getBindingWrites = () => bindingWrites ??= collectBindingWrites(html, bindAttrName);
   for (const block of blocks) {
     out.push(...validateIndexArity(block.content, block.contentStart, locale2));
     out.push(...validateNameAliases(block.content, block.contentStart, locale2, block.mountPath));
     out.push(...validateIndexParamReads(block.content, block.contentStart, locale2));
     out.push(...validateGetterCycles(block.content, block.contentStart, locale2));
-    out.push(...validateGetterUntrackedReads(block.content, block.contentStart, getNestedWriteRoots, locale2));
+    out.push(...validateGetterUntrackedReads(
+      block.content,
+      block.contentStart,
+      block.mountPath,
+      getNestedWriteRoots,
+      getBindingWrites,
+      locale2
+    ));
     out.push(...validateGetterLocationReads(block.content, block.contentStart, locale2));
     out.push(...validateGetterClockReads(block.content, block.contentStart, locale2));
     out.push(...validateOnHandlerThis(block.content, block.contentStart, locale2));

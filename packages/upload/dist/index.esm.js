@@ -3,6 +3,7 @@ const _config = {
     triggerAttribute: "data-uploadtarget",
     tagNames: {
         upload: "wcs-upload",
+        uploadHeader: "wcs-upload-header",
     },
 };
 function deepFreeze(obj) {
@@ -970,6 +971,8 @@ class WcsUpload extends HTMLElement {
     // The reasons `[wcs/command-not-ready]` was said for in this outage, once each
     // (docs/v4-direction-2026-10.md §5.1, the I/O command policy); an upload starting clears them.
     _told = null;
+    // `[wcs/upload-helper-undefined]` was said for this element (once per element, as fetch's)
+    _toldUndefinedHelper = false;
     // automatic-mode files assigned while there was no url: sent when the url arrives
     _waitingForUrl = false;
     _connectedCallbackPromise = Promise.resolve();
@@ -1214,9 +1217,20 @@ class WcsUpload extends HTMLElement {
         }
         // ready again (an upload starts): a refusal in the next outage is said again
         this._told = null;
+        // the <wcs-upload-header> elements inside, read now: a header bound from state goes out with
+        // the value it has when the upload starts, not the one it had when the element connected
+        const headers = this._collectHeaders();
+        // An upload is always multipart/form-data: a manual Content-Type drops the boundary the
+        // browser adds, and the server cannot read the parts. Sent as written (as fetch does), but said.
+        if (Object.keys(headers).some((name) => name.toLowerCase() === "content-type")) {
+            console.warn("[@wcstack/upload] A Content-Type header was set on an upload. An upload is sent as " +
+                "multipart/form-data, and a manual Content-Type drops the boundary the browser adds; " +
+                `remove the Content-Type <${config.tagNames.uploadHeader}>.`, this);
+        }
         const result = await this._core.upload(this.url, files, {
             method: this.method,
             fieldName: this.fieldName,
+            headers,
         });
         // 自分が開始したアップロードのファイルだけをリセット
         // （途中で新しい files がセットされていたら触らない）
@@ -1228,6 +1242,35 @@ class WcsUpload extends HTMLElement {
             }));
         }
         return result;
+    }
+    _collectHeaders() {
+        const headers = {};
+        const headerElements = this.querySelectorAll(config.tagNames.uploadHeader);
+        for (const el of headerElements) {
+            if (typeof el.hasHeader !== "boolean") {
+                this._warnUndefinedHelper(config.tagNames.uploadHeader);
+                continue;
+            }
+            // a header without a value attribute is not sent (WcsUploadHeader)
+            if (el.hasHeader) {
+                headers[el.name] = el.value;
+            }
+        }
+        return headers;
+    }
+    /**
+     * A `<wcs-upload-header>` whose definition never loaded is a plain element, and its header would
+     * be left out of the upload without a word: a page that defines the tags itself (an autoloader's
+     * wrapper module, a scoped registry) defined `<wcs-upload>` only — fetch's
+     * `[wcs/fetch-helper-undefined]` (docs/seam-apps.md, fw-inventory). Said once per element.
+     */
+    _warnUndefinedHelper(tag) {
+        if (this._toldUndefinedHelper)
+            return;
+        this._toldUndefinedHelper = true;
+        console.warn(`[@wcstack/upload] [wcs/upload-helper-undefined] <${tag}> inside this <${config.tagNames.upload}> is not ` +
+            "defined, so its header is not sent. Load @wcstack/upload/auto, or define WcsUploadHeader with WcsUpload " +
+            "when the page defines the tags itself. (Said once per element.)", this);
     }
     // A refused upload sent nothing and said nothing (no `error`, by design): a `trigger`
     // written before `url` / `files` (`data-wcs` bindings and a framework's props are applied in
@@ -1269,6 +1312,49 @@ class WcsUpload extends HTMLElement {
 }
 
 /**
+ * `<wcs-upload-header name value>`: one request header of the `<wcs-upload>` it sits in, read when
+ * an upload starts — the same shape as `@wcstack/fetch`'s `<wcs-fetch-header>`. `name` / `value`
+ * are properties too, reflected to the attributes (`null` removes one, `undefined` restores the
+ * markup's), so a binding — `data-wcs="value: authHeader"` — sets the header. Without a `value`
+ * attribute the header is not sent: a token that is not there yet sends no `Authorization` instead
+ * of an empty one. Before this, `<wcs-upload>` sent no header at all, and an API that wants
+ * `Authorization` on every request could only be reached through `UploadCore` (docs/seam-apps.md,
+ * family-ledger).
+ *
+ * It declares no `wcBindable`: it is part of `<wcs-upload>`'s markup, not an I/O node of its own.
+ */
+class WcsUploadHeader extends HTMLElement {
+    connectedCallback() {
+        // A value assigned before the element was upgraded sits on the instance and hides the
+        // accessor: pass it through the setter (the upgrade-properties pattern, for two members).
+        for (const key of ["name", "value"]) {
+            if (Object.prototype.hasOwnProperty.call(this, key)) {
+                const value = this[key];
+                delete this[key];
+                this[key] = value;
+            }
+        }
+        this.style.display = "none";
+    }
+    get name() {
+        return this.getAttribute("name") ?? "";
+    }
+    set name(value) {
+        reflectAttribute(this, "name", value);
+    }
+    get value() {
+        return this.getAttribute("value") ?? "";
+    }
+    set value(value) {
+        reflectAttribute(this, "value", value);
+    }
+    /** Whether the header is sent: it has a name and a `value` attribute (an empty one included). */
+    get hasHeader() {
+        return this.name !== "" && this.hasAttribute("value");
+    }
+}
+
+/**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
  * them for a single shadow tree -- scoped registries do not inherit the global
  * one, so a tree using one needs its own definitions.
@@ -1276,6 +1362,9 @@ class WcsUpload extends HTMLElement {
 function registerComponents(registry = customElements) {
     if (!registry.get(config.tagNames.upload)) {
         registry.define(config.tagNames.upload, WcsUpload);
+    }
+    if (!registry.get(config.tagNames.uploadHeader)) {
+        registry.define(config.tagNames.uploadHeader, WcsUploadHeader);
     }
 }
 
@@ -1286,5 +1375,5 @@ function bootstrapUpload(userConfig, registry) {
     registerComponents(registry);
 }
 
-export { UploadCore, WCS_UPLOAD_ERROR_CODE, WcsUpload, bootstrapUpload, getConfig };
+export { UploadCore, WCS_UPLOAD_ERROR_CODE, WcsUpload, WcsUploadHeader, bootstrapUpload, getConfig };
 //# sourceMappingURL=index.esm.js.map

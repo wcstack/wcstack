@@ -11,7 +11,7 @@ With `@wcstack/state`, `<wcs-upload>` exposes a small async state surface:
 
 - input / command surface: `files`, `trigger`
 - configuration surface: `url`, `method`, `field-name`, `accept`, `max-size`, `manual`, `multiple`
-- request headers: `<wcs-upload-header>` children (since 4.9 (not released yet); see [`<wcs-upload-header>`](#wcs-upload-header))
+- request headers: `<wcs-upload-header>` children (since 4.9; see [`<wcs-upload-header>`](#wcs-upload-header))
 - output state surface: `value`, `loading`, `progress`, `error`, `status`
 
 This means file upload can be expressed as state transitions and DOM bindings instead of ad-hoc `XMLHttpRequest` glue code.
@@ -237,7 +237,7 @@ Aborts the current request. Loading is cleared through the request's abort path 
 
 ### `<wcs-upload-header>`
 
-Since 4.9 (not released yet), a request header of the upload: place it as a child of `<wcs-upload>`, as `<wcs-fetch-header>` sits in `<wcs-fetch>`. It is read when an upload starts. (Before, `<wcs-upload>` sent no header; on 4.8, call `UploadCore` with `headers` — see [Headless API](#headless-api).)
+Since 4.9, a request header of the upload: place it as a child of `<wcs-upload>`, as `<wcs-fetch-header>` sits in `<wcs-fetch>`. It is read when an upload starts. (Before, `<wcs-upload>` sent no header; on 4.8, call `UploadCore` with `headers` — see [Headless API](#headless-api).)
 
 | Attribute / property | Type | Description |
 |---|---|---|
@@ -457,6 +457,6 @@ bootstrapUpload({
 });
 ```
 
-Use this when you want to customize the tag name or trigger attribute instead of relying on `@wcstack/upload/auto`. `tagNames.uploadHeader` names `<wcs-upload-header>` (since 4.9 (not released yet); 4.8 refuses the key).
+Use this when you want to customize the tag name or trigger attribute instead of relying on `@wcstack/upload/auto`. `tagNames.uploadHeader` names `<wcs-upload-header>` (since 4.9; 4.8 refuses the key).
 
 `bootstrapUpload()` throws on an option it does not have, on a value whose type differs from the option's default (`null`, or an array where an object is expected, included), and on a `tagNames` key it does not define or a tag name that is not a string. It checks every option before applying any, so nothing is applied when it throws. An option whose value is `undefined` is skipped.

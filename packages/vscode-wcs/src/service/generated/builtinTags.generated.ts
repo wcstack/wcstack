@@ -1067,6 +1067,9 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "withCredentials": "with-credentials",
       "events": "events",
       "raw": "raw",
+      "autoReconnect": "auto-reconnect",
+      "reconnectInterval": "reconnect-interval",
+      "maxReconnects": "max-reconnects",
       "staleAfter": "stale-after",
       "manual": "manual",
       "trigger": null
@@ -1193,6 +1196,14 @@ export const BUILTIN_TAGS: Readonly<Record<string, BuiltinTagContract>> = {
       "upload",
       "abort"
     ]
+  },
+  "wcs-upload-header": {
+    "package": "upload",
+    "hasWcBindable": false,
+    "observedAttributes": [],
+    "inputs": {},
+    "properties": [],
+    "commands": []
   },
   "wcs-view-transition": {
     "package": "view-transition",

@@ -79,6 +79,22 @@ interface SseConnectOptions {
      * an event the element listens to (unnamed, or a name in `events`) more often than this.
      */
     staleAfter?: number;
+    /**
+     * Reopen a stream the browser gave up on — a permanent close (`readyState` CLOSED, an HTTP
+     * error), which an `EventSource` never retries — after `reconnectInterval` ms (default false).
+     * A transient drop the browser reconnects itself (CONNECTING) is left to the browser.
+     */
+    autoReconnect?: boolean;
+    /** Milliseconds to wait before each reopen (default 3000). */
+    reconnectInterval?: number;
+    /** Most reopens in a row (default Infinity); the count starts again when the stream opens. */
+    maxReconnects?: number;
+    /**
+     * The url a reopen opens, read at each attempt (default: the `url` given to `connect()`). An
+     * attempt it returns an empty string for does nothing. `<wcs-sse>` passes its `url` as it is
+     * then, so a token refreshed into the url is used.
+     */
+    reconnectUrl?: () => string;
 }
 /**
  * Detail payload of the `message` property.
@@ -124,6 +140,10 @@ interface WcsSseInputs {
     withCredentials: boolean;
     events: string;
     raw: boolean;
+    autoReconnect: boolean;
+    reconnectInterval: number;
+    maxReconnects: number;
+    staleAfter: number;
     manual: boolean;
     trigger: boolean;
 }
@@ -157,6 +177,12 @@ declare class SseCore extends EventTarget {
     private _staleAfter;
     private _lastActivity;
     private _staleTimer;
+    private _autoReconnect;
+    private _reconnectInterval;
+    private _maxReconnects;
+    private _reconnectCount;
+    private _reconnectTimer;
+    private _reconnectUrl;
     private _gen;
     private _connGen;
     private _ready;
@@ -194,7 +220,8 @@ declare class SseCore extends EventTarget {
      * inline comment below), so to apply new options to a live stream a headless
      * caller must `close()` first, then `connect()` with the new options. After a
      * permanent failure (readyState CLOSED) the guard is bypassed and `connect()`
-     * reconnects with the supplied options.
+     * reconnects with the supplied options — a pending auto-reconnect is dropped and
+     * its count starts again.
      */
     connect(url: string, options?: SseConnectOptions): void;
     close(): void;
@@ -202,9 +229,12 @@ declare class SseCore extends EventTarget {
     private _onOpen;
     private _onMessage;
     private _onError;
+    private _scheduleReconnect;
+    private _clearReconnectTimer;
     private _removeListeners;
     private _armStale;
     private _checkStale;
+    private _clearStaleTimer;
     private _closeInternal;
 }
 
@@ -230,6 +260,12 @@ declare class WcsSse extends HTMLElement {
     set events(value: string | null | undefined);
     get raw(): boolean;
     set raw(value: boolean | null | undefined);
+    get autoReconnect(): boolean;
+    set autoReconnect(value: boolean | null | undefined);
+    get reconnectInterval(): number;
+    set reconnectInterval(value: number | null | undefined);
+    get maxReconnects(): number;
+    set maxReconnects(value: number | null | undefined);
     get manual(): boolean;
     set manual(value: boolean | null | undefined);
     get staleAfter(): number;
@@ -243,6 +279,7 @@ declare class WcsSse extends HTMLElement {
     get trigger(): boolean;
     set trigger(value: boolean);
     connect(): void;
+    private _currentUrl;
     close(): void;
     attributeChangedCallback(name: string, _oldValue: string | null, newValue: string | null): void;
     private _scheduleConnect;

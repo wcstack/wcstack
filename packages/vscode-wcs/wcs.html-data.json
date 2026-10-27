@@ -1787,9 +1787,16 @@
       "name": "wcs-sse",
       "description": {
         "kind": "markdown",
-        "value": "`@wcstack/sse` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`\n\n**Inputs**: `url`, `withCredentials`, `events`, `raw`, `staleAfter`, `manual`, `trigger`\n\n**Commands**: `command.connect`, `command.close`"
+        "value": "`@wcstack/sse` custom element (wc-bindable).\n\n**Bindable properties**: `message`, `connected`, `loading`, `error`, `errorInfo`, `readyState`, `trigger`\n\n**Inputs**: `url`, `withCredentials`, `events`, `raw`, `autoReconnect`, `reconnectInterval`, `maxReconnects`, `staleAfter`, `manual`, `trigger`\n\n**Commands**: `command.connect`, `command.close`"
       },
       "attributes": [
+        {
+          "name": "auto-reconnect",
+          "description": {
+            "kind": "markdown",
+            "value": "Markup attribute of the `autoReconnect` input."
+          }
+        },
         {
           "name": "events",
           "description": {
@@ -1805,10 +1812,24 @@
           }
         },
         {
+          "name": "max-reconnects",
+          "description": {
+            "kind": "markdown",
+            "value": "Markup attribute of the `maxReconnects` input."
+          }
+        },
+        {
           "name": "raw",
           "description": {
             "kind": "markdown",
             "value": "Markup attribute of the `raw` input."
+          }
+        },
+        {
+          "name": "reconnect-interval",
+          "description": {
+            "kind": "markdown",
+            "value": "Markup attribute of the `reconnectInterval` input."
           }
         },
         {
@@ -1984,6 +2005,20 @@
           }
         }
       ],
+      "references": [
+        {
+          "name": "Package README",
+          "url": "https://github.com/wcstack/wcstack/tree/main/packages/upload#readme"
+        }
+      ]
+    },
+    {
+      "name": "wcs-upload-header",
+      "description": {
+        "kind": "markdown",
+        "value": "`@wcstack/upload` custom element (wc-bindable).\n\nHelper tag (no bindable surface)."
+      },
+      "attributes": [],
       "references": [
         {
           "name": "Package README",

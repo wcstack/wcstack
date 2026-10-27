@@ -28,7 +28,7 @@ This means server-pushed streaming can be expressed declaratively in HTML, witho
 |---|---|---|
 | Direction | bidirectional | **server → client only** |
 | Send | `send` / `sendMessage()` | — (not available) |
-| Reconnection | manual (`auto-reconnect`) | **native** (handled by the browser); after an HTTP error, `auto-reconnect` (since 4.9 (not released yet)) |
+| Reconnection | manual (`auto-reconnect`) | **native** (handled by the browser); after an HTTP error, `auto-reconnect` (since 4.9) |
 | Named events | — | **`events` attribute** (`event:` field) |
 | Wire format | text/binary frames | UTF-8 text only |
 
@@ -187,7 +187,7 @@ To stop reconnection, call `close()` (or remove the element from the DOM).
 
 **Catching up after a reconnect is the server's and your page's job.** The browser sends `Last-Event-ID` on a reconnect only after the stream delivered an event with an `id:`. A page that loads a snapshot and then opens the stream has received none when the first drop comes, so the reconnect asks for nothing, the changes made in the gap are lost, and `connected` is `true` again. Tell the stream where to start: put the snapshot's position in the URL — `data-wcs="url: eventsUrl"` with a getter returning `"/api/events?since=" + this.streamSince` — or have the server send the current `id:` first. **Keep that position fixed while the stream is open:** write `streamSince` when you open or reopen the stream on purpose (the snapshot's position; on a reopen, the last event you applied), not on every event. A `url` that changes with every event closes and reopens the stream each time — the data stays right, so nothing shows it (docs/seam-apps.md, shift-desk: 15 connections in 30 seconds). Between your reopens the browser's own reconnects carry `Last-Event-ID`.
 
-**A stream that gave up.** A stream that ended in `CLOSED (2)` (an HTTP error: a 502 while the server restarts, a 401 when a token in the URL expired, a wrong content type) is not retried by the browser. Since 4.9 (not released yet), `auto-reconnect` reopens it — the same attributes, with the same meaning, as on `<wcs-ws>`:
+**A stream that gave up.** A stream that ended in `CLOSED (2)` (an HTTP error: a 502 while the server restarts, a 401 when a token in the URL expired, a wrong content type) is not retried by the browser. Since 4.9, `auto-reconnect` reopens it — the same attributes, with the same meaning, as on `<wcs-ws>`:
 
 ```html
 <wcs-sse auto-reconnect reconnect-interval="5000" max-reconnects="10"
@@ -234,9 +234,9 @@ The element does not do it itself: a navigation that does not happen after all �
 | `withCredentials` | `boolean` | Send credentials with the request |
 | `events` | `string` | Comma-separated named events to subscribe to |
 | `raw` | `boolean` | Disable JSON auto-parsing |
-| `autoReconnect` | `boolean` | Reopen a stream the browser gave up on (an HTTP error). Read when connecting. Since 4.9 (not released yet) |
-| `reconnectInterval` | `number` | Milliseconds to wait before each reopen (default `3000`). Since 4.9 (not released yet) |
-| `maxReconnects` | `number` | Most reopens in a row (default `Infinity`); the count starts again when the stream opens. Since 4.9 (not released yet) |
+| `autoReconnect` | `boolean` | Reopen a stream the browser gave up on (an HTTP error). Read when connecting. Since 4.9 |
+| `reconnectInterval` | `number` | Milliseconds to wait before each reopen (default `3000`). Since 4.9 |
+| `maxReconnects` | `number` | Most reopens in a row (default `Infinity`); the count starts again when the stream opens. Since 4.9 |
 | `staleAfter` | `number` | Milliseconds without an event after which an open stream is treated as lost and reopened (`0`: never). Read when connecting. Since 4.8 |
 | `trigger` | `boolean` | One-way connection trigger |
 | `manual` | `boolean` | Disables auto-connect on DOM attach |
@@ -382,9 +382,9 @@ sseEl.close();
 | `with-credentials` | `boolean` | `false` | Send credentials cross-origin |
 | `events` | `string` | — | Comma-separated named events to subscribe to |
 | `raw` | `boolean` | `false` | Disable JSON auto-parsing |
-| `auto-reconnect` | `boolean` | `false` | Reopen a stream the browser gave up on (an HTTP error, `readyState` `CLOSED`). Since 4.9 (not released yet) |
-| `reconnect-interval` | `number` | `3000` | Milliseconds to wait before each reopen. Since 4.9 (not released yet) |
-| `max-reconnects` | `number` | `Infinity` | Most reopens in a row; the count starts again when the stream opens. Since 4.9 (not released yet) |
+| `auto-reconnect` | `boolean` | `false` | Reopen a stream the browser gave up on (an HTTP error, `readyState` `CLOSED`). Since 4.9 |
+| `reconnect-interval` | `number` | `3000` | Milliseconds to wait before each reopen. Since 4.9 |
+| `max-reconnects` | `number` | `Infinity` | Most reopens in a row; the count starts again when the stream opens. Since 4.9 |
 | `stale-after` | `number` | `0` | Reopen an open stream that received no event for this many milliseconds (`0`: never). Since 4.8 |
 | `manual` | `boolean` | `false` | Disable auto-connect |
 
@@ -549,7 +549,7 @@ bootstrapSse({
 - `message` carries `{ event, data, lastEventId }` so named events share one bindable property — branch on `event` in state
 - `trigger` is intentionally one-way: writing `true` connects, reset emits completion
 - JSON payloads are auto-parsed on receive; use `raw` for literal text streams
-- Reconnection after a drop is native. After an HTTP error the browser gives up, and since 4.9 (not released yet) `auto-reconnect` reopens the stream; `close()` stops both
+- Reconnection after a drop is native. After an HTTP error the browser gives up, and since 4.9 `auto-reconnect` reopens the stream; `close()` stops both
 - `manual` is useful when connection timing should be controlled explicitly
 - `wcs-sse:error` is a **property-change notification** (wc-bindable model), not just a failure signal: it fires with `detail` = the error on failure, and again with `detail = null` when a connection establishes/recovers and the `error` property clears. Treat `error == null` as "no current error", not "no error ever happened"
 - **`errorInfo` taxonomy**: an **additive** bindable output (`wcs-sse:error-info-changed`) that classifies the same failure surfaced on `error` into a serializable `WcsIoErrorInfo` with a stable `code` / `phase` / `recoverable`, without changing the `error` shape. A `connect()` with no `url` is `invalid-argument` (phase `start`, not recoverable). Every stream failure is `connection-error`, with `phase` / `recoverable` distinguishing the case: a `new EventSource()` construction failure is phase `start` / not recoverable (no `EventSource` exists, so the browser will not auto-reconnect); a transient drop while the browser is auto-reconnecting (`readyState` CONNECTING) is phase `execute` / **`recoverable: true` — the only recoverable path in SSE** (recovers without caller intervention); a permanent close (`readyState` CLOSED) is phase `execute` / not recoverable — with `auto-reconnect` too, which reopens it but does not change what the browser did. `errorInfo` transitions exactly when `error` does (cleared to `null` when the stream recovers). The shared `WcsIoErrorInfo` type and the `WCS_SSE_ERROR_CODE` constants are exported.

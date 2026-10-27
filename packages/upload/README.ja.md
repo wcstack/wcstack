@@ -11,7 +11,7 @@
 
 - 入力 / コマンドサーフェス: `files`, `trigger`
 - 設定サーフェス: `url`, `method`, `field-name`, `accept`, `max-size`, `manual`, `multiple`
-- リクエストヘッダ: 子要素の `<wcs-upload-header>`（4.9（未リリース）から。[`<wcs-upload-header>`](#wcs-upload-header) を参照）
+- リクエストヘッダ: 子要素の `<wcs-upload-header>`（4.9 から。[`<wcs-upload-header>`](#wcs-upload-header) を参照）
 - 出力ステートサーフェス: `value`, `loading`, `progress`, `error`, `status`
 
 つまり、ファイルアップロードを場当たり的な `XMLHttpRequest` のグルーコードではなく、状態遷移と DOM バインディングとして扱えます。
@@ -237,7 +237,7 @@ npm install @wcstack/upload
 
 ### `<wcs-upload-header>`
 
-4.9（未リリース）から、アップロードのリクエストヘッダを定義します。`<wcs-fetch>` の中の `<wcs-fetch-header>` と同じく、`<wcs-upload>` の子要素として置きます。アップロードを始めるときに読まれます。（それまでの `<wcs-upload>` はヘッダを送れません。4.8 では `UploadCore` に `headers` を渡してください — [Headless API](#headless-api) を参照。）
+4.9 から、アップロードのリクエストヘッダを定義します。`<wcs-fetch>` の中の `<wcs-fetch-header>` と同じく、`<wcs-upload>` の子要素として置きます。アップロードを始めるときに読まれます。（それまでの `<wcs-upload>` はヘッダを送れません。4.8 では `UploadCore` に `headers` を渡してください — [Headless API](#headless-api) を参照。）
 
 | 属性 / プロパティ | 型 | 説明 |
 |---|---|---|
@@ -455,6 +455,6 @@ bootstrapUpload({
 });
 ```
 
-`@wcstack/upload/auto` に頼らず、タグ名やトリガー属性名をカスタマイズしたい場合に使います。`tagNames.uploadHeader` は `<wcs-upload-header>` のタグ名です（4.9（未リリース）から。4.8 はこのキーを拒みます）。
+`@wcstack/upload/auto` に頼らず、タグ名やトリガー属性名をカスタマイズしたい場合に使います。`tagNames.uploadHeader` は `<wcs-upload-header>` のタグ名です（4.9 から。4.8 はこのキーを拒みます）。
 
 `bootstrapUpload()` は、持っていないオプション、既定値と型の違う値（`null` や、オブジェクトの所の配列を含む）、定義していない `tagNames` のキー、文字列でないタグ名で例外を投げます。当てる前にすべてのオプションを確かめるので、投げたときは何も当てません。値が `undefined` のオプションは飛ばします。

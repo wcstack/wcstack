@@ -363,7 +363,7 @@ var SENTENCES = {
   [26 /* FilterOptionsRequired */]: (fn) => `filter ${fn} requires at least one option`,
   [27 /* FilterOptionNotNumber */]: (fn) => `filter ${fn} requires a number as option`,
   [28 /* FilterValueNotNumber */]: (fn, v) => `filter ${fn} requires a number value, not ${was(v)}${typeof v === "string" ? ` \u2014 put |number before |${fn}, or convert it where it is read` : ""}`,
-  [29 /* FilterValueNotDate */]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " \u2014 make the Date where it is read: a getter returning new Date(\u2026)" : ""}`,
+  [29 /* FilterValueNotDate */]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " \u2014 make the Date where it is read: a getter returning new Date(\u2026)" : ""}${typeof v === "string" && /^\d{4}-\d\d-\d\d$/.test(v) ? `. A date-only string is a day, not a moment: new Date(${JSON.stringify(v)}) is midnight UTC, the day before west of Greenwich \u2014 new Date(y, m - 1, d) is that day where the page is` : ""}`,
   [52 /* FilterStyleInvalid */]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"`,
   [53 /* FilterCurrencyInvalid */]: (v) => `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "${v}"`,
   [30 /* FilterValueNotArray */]: (fn) => `filter ${fn} requires an array value`,

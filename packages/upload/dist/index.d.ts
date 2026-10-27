@@ -92,9 +92,11 @@ interface IWcBindable {
 
 interface ITagNames {
     readonly upload: string;
+    readonly uploadHeader: string;
 }
 interface IWritableTagNames {
     upload?: string;
+    uploadHeader?: string;
 }
 interface IConfig {
     readonly autoTrigger: boolean;
@@ -213,6 +215,7 @@ declare class WcsUpload extends HTMLElement {
     private _files;
     private _trigger;
     private _told;
+    private _toldUndefinedHelper;
     private _waitingForUrl;
     private _connectedCallbackPromise;
     private _internals;
@@ -249,10 +252,40 @@ declare class WcsUpload extends HTMLElement {
     private _validate;
     abort(): void;
     upload(): Promise<any>;
+    private _collectHeaders;
+    /**
+     * A `<wcs-upload-header>` whose definition never loaded is a plain element, and its header would
+     * be left out of the upload without a word: a page that defines the tags itself (an autoloader's
+     * wrapper module, a scoped registry) defined `<wcs-upload>` only — fetch's
+     * `[wcs/fetch-helper-undefined]` (docs/seam-apps.md, fw-inventory). Said once per element.
+     */
+    private _warnUndefinedHelper;
     private _warnNotReady;
     attributeChangedCallback(_name: string, _oldValue: string | null, newValue: string | null): void;
     connectedCallback(): void;
     disconnectedCallback(): void;
+}
+
+/**
+ * `<wcs-upload-header name value>`: one request header of the `<wcs-upload>` it sits in, read when
+ * an upload starts — the same shape as `@wcstack/fetch`'s `<wcs-fetch-header>`. `name` / `value`
+ * are properties too, reflected to the attributes (`null` removes one, `undefined` restores the
+ * markup's), so a binding — `data-wcs="value: authHeader"` — sets the header. Without a `value`
+ * attribute the header is not sent: a token that is not there yet sends no `Authorization` instead
+ * of an empty one. Before this, `<wcs-upload>` sent no header at all, and an API that wants
+ * `Authorization` on every request could only be reached through `UploadCore` (docs/seam-apps.md,
+ * family-ledger).
+ *
+ * It declares no `wcBindable`: it is part of `<wcs-upload>`'s markup, not an I/O node of its own.
+ */
+declare class WcsUploadHeader extends HTMLElement {
+    connectedCallback(): void;
+    get name(): string;
+    set name(value: unknown);
+    get value(): string;
+    set value(value: unknown);
+    /** Whether the header is sent: it has a name and a `value` attribute (an empty one included). */
+    get hasHeader(): boolean;
 }
 
 /**
@@ -274,8 +307,9 @@ declare const WCS_UPLOAD_ERROR_CODE: {
 declare global {
     interface HTMLElementTagNameMap {
         "wcs-upload": WcsUpload;
+        "wcs-upload-header": WcsUploadHeader;
     }
 }
 
-export { UploadCore, WCS_UPLOAD_ERROR_CODE, WcsUpload, bootstrapUpload, getConfig };
+export { UploadCore, WCS_UPLOAD_ERROR_CODE, WcsUpload, WcsUploadHeader, bootstrapUpload, getConfig };
 export type { IWritableConfig, IWritableTagNames, UploadRequestOptions, WcsIoErrorInfo, WcsIoErrorPhase, WcsUploadCoreValues, WcsUploadError, WcsUploadValues };

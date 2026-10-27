@@ -45,7 +45,7 @@ Registers the elements, inserts `html`, and resolves once everything under the r
 | `bootstrap` | Registration functions to run first. Default `[bootstrapState]` (imported lazily from `@wcstack/state`). Add what the page uses — `bootstrapRouter`, `bootstrapFetch`, … — as functions or async loaders: `async () => (await import("@wcstack/router")).bootstrapRouter()`. Every wcstack bootstrap is idempotent |
 | `stateTagName` | The state tag when `bootstrapState({ tagNames })` renamed it (default `wcs-state`) |
 | `maxIterations` | Stabilization rounds for elements inserted while waiting (default 10) |
-| `resolveModule` | Since 4.9 (not released yet). `(url: URL) => string \| URL \| null` — the local file a `<wcs-state src>` module is read from, the same option as `@wcstack/server`'s `renderToString`: it gets the URL the page names (resolved against `document.baseURI` — an `http:` URL under happy-dom) and returns a path or a `file:` URL. Node's module loader reads `file:` and `data:` URLs only. Installed for the length of the mount; the module is imported anew for each mount, so tests do not share a state object. Without it, or when it returns nothing, the state fails to initialize with a message saying so — for the root `<wcs-state>`, `mount()` rejects with it. A `.json` `src` is fetched, as before. See [A state in its own file](#a-state-in-its-own-file) |
+| `resolveModule` | Since 4.9. `(url: URL) => string \| URL \| null` — the local file a `<wcs-state src>` module is read from, the same option as `@wcstack/server`'s `renderToString`: it gets the URL the page names (resolved against `document.baseURI` — an `http:` URL under happy-dom) and returns a path or a `file:` URL. Node's module loader reads `file:` and `data:` URLs only. Installed for the length of the mount; the module is imported anew for each mount, so tests do not share a state object. Without it, or when it returns nothing, the state fails to initialize with a message saying so — for the root `<wcs-state>`, `mount()` rejects with it. A `.json` `src` is fetched, as before. See [A state in its own file](#a-state-in-its-own-file) |
 
 The returned `MountedApp`:
 
@@ -64,11 +64,11 @@ The returned `MountedApp`:
 - it disables `URL.createObjectURL` once per process when a browser-style one is present — Node cannot import `blob:` URLs, and without this an inline `<script type="module">` state never finishes loading (the loader then takes its `data:` URL path, as SSR does);
 - it wraps happy-dom's `textContent` / `innerText` setters to stringify like the DOM spec — happy-dom turns a numeric `0` into an empty string (and `innerText` throws on numbers), so a `textContent: count` binding would blank out at zero only under happy-dom.
 
-A `<wcs-state>` with nothing to load — no `state`, `src` or `json` attribute and no inline `<script type="module">` — waits for `setInitialState()`, which a test cannot call before `mount()` returns. Since 4.9 (not released yet), `mount()` rejects at once and says what to write instead (`json=`, an inline script, or `src` with `resolveModule`); it used to never resolve, and the test timed out without a word. Volumes (`mount=`) are checked too; `bind-component` elements and elements inside a `<template>` are not.
+A `<wcs-state>` with nothing to load — no `state`, `src` or `json` attribute and no inline `<script type="module">` — waits for `setInitialState()`, which a test cannot call before `mount()` returns. Since 4.9, `mount()` rejects at once and says what to write instead (`json=`, an inline script, or `src` with `resolveModule`); it used to never resolve, and the test timed out without a word. Volumes (`mount=`) are checked too; `bind-component` elements and elements inside a `<template>` are not.
 
 #### A state in its own file
 
-Since 4.9 (not released yet), a page that keeps its state in a file — `<wcs-state src="./state.js">`, the form the documents prefer under a strict CSP — mounts with `resolveModule`, which maps the URL the page names to the file:
+Since 4.9, a page that keeps its state in a file — `<wcs-state src="./state.js">`, the form the documents prefer under a strict CSP — mounts with `resolveModule`, which maps the URL the page names to the file:
 
 ```ts
 import { mount } from "@wcstack/testing";
