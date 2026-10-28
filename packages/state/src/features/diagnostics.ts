@@ -143,6 +143,12 @@ function check(engine: Engine): void {
     done.add(p);
     const m = missing(engine, p);
     if (m === null) continue;
+    // under an object an element wrote (`searchParams: query` — the router's query has the URL's keys): its
+    // shape is the element's, and a key it lacks now may come with the next write (docs/seam-apps.md, city-library)
+    const wrote = byElement.get(engine);
+    let up = p.parent;
+    while (up !== null && !wrote?.has(up)) up = up.parent;
+    if (up !== null) continue;
     // under the mount path of a volume on the page still loading: checked again once it settles (3.x D22)
     const v = [...((engine.root as ParentNode | null)?.querySelectorAll(`${config.tagNames.state}[mount]`) ?? [])]
       .find((e) => !settled.has(e) && (p.path + ".").startsWith(e.getAttribute("mount") + "."));
@@ -224,6 +230,16 @@ function watchPostUpdate(engine: Engine): void {
 
 /** The top-level keys a state declared (its own and its prototypes'), and those written since, by engine. */
 const declaredKeys = new WeakMap<Engine, Set<string>>();
+
+/** The paths an element wrote (an output binding): what is under them is the element's to shape. */
+const byElement = new WeakMap<Engine, Set<Pattern>>();
+
+function elementWrote(engine: Engine, p: Pattern, _row: unknown, _old: unknown, _value: unknown, _direct: boolean, element?: boolean): void {
+  if (!element) return;
+  let set = byElement.get(engine);
+  if (set === undefined) byElement.set(engine, (set = new Set()));
+  set.add(p);
+}
 
 /**
  * A write of a top-level key the state did not declare, beside a near one it did (`this.selectedID` and
@@ -500,7 +516,7 @@ export const diagnostics: Feature = {
     };
     hooks.handlerThrew = handlerThrew;
     hooks.element = chain(hooks.element, secondRoot);
-    hooks.written = chain(hooks.written, written);
+    hooks.written = chain(chain(hooks.written, written), elementWrote);
     hooks.drained = chain(hooks.drained, drained);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
   },
