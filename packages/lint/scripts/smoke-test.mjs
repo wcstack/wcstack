@@ -240,6 +240,39 @@ export default { count: 0, $watch: { "${key}"() {}, "ext.total"() {} } };
 writeFileSync(volumeHtml, volumePage("cart.total"));
 writeFileSync(volumeTypoHtml, volumePage("cart.totl"));
 
+// The dictionary volume (examples/router-i18n, the city-library seam app): the page in site/, the volume's src in
+// ../i18n/, its keys shorthand names imported from ./catalog.js — read relative to state.js, not to the page. The
+// dictionary is computed at run time, so the paths under i18n.t are not checked: since 4.10 a correct page passes
+// --strict and the key says so once (wcs/path-dynamic-unknown, info). With a JSDoc typeof import("./en.js").default
+// on the declaration, a typo under i18n.t is a warning.
+const i18nDir = join(workDir, "i18n");
+const siteDir = join(workDir, "site");
+mkdirSync(i18nDir);
+mkdirSync(siteDir);
+const i18nHtml = join(siteDir, "index.html");
+const i18nTypoHtml = join(siteDir, "typo.html");
+writeFileSync(join(i18nDir, "state.js"), `import { lang, t } from "./catalog.js";\nexport default { lang, t };\n`);
+writeFileSync(join(i18nDir, "en.js"), `export default { site: { name: "City Library" } };\n`);
+const catalog = (jsdoc) => `import { mergeAndFreeze } from "./merge.js";
+export const lang = document.documentElement.lang || "en";
+const [current] = await Promise.all([import(\`./\${lang}.js\`)]);
+${jsdoc}export const t = mergeAndFreeze(current.default, current.default);
+`;
+writeFileSync(join(i18nDir, "catalog.js"), catalog(""));
+const i18nPage = (path) => `<!doctype html>
+<p data-wcs="textContent: ${path}"></p>
+<p data-wcs="textContent: i18n.lang"></p>
+<wcs-state mount="i18n" src="../i18n/state.js"></wcs-state>
+<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>
+`;
+writeFileSync(i18nHtml, i18nPage("i18n.t.site.name"));
+// a second, typed copy of the volume for the typo case
+mkdirSync(join(workDir, "i18n-typed"));
+writeFileSync(join(workDir, "i18n-typed", "state.js"), `import { lang, t } from "./catalog.js";\nexport default { lang, t };\n`);
+writeFileSync(join(workDir, "i18n-typed", "en.js"), `export default { site: { name: "City Library" } };\n`);
+writeFileSync(join(workDir, "i18n-typed", "catalog.js"), catalog(`/** @type {typeof import("./en.js").default} */\n`));
+writeFileSync(i18nTypoHtml, i18nPage("i18n.t.site.nmae").replace("../i18n/state.js", "../i18n-typed/state.js"));
+
 // A framework app: its page holds only the root element, its components are .tsx / .vue. The counts alone
 // said "0 error(s)" as if they had been checked (docs/seam-apps.md, fw-inventory).
 const frameworkHtml = join(workDir, "framework.html");
@@ -429,6 +462,16 @@ check("paths under a volume loaded with src= (readable or not) are clean under -
 check("a typo under a readable src= volume → warnings wcs/watch-path-missing and wcs/binding-path-missing, --strict exit 1", ["--lang=en", "--strict", volumeTypoHtml], {
   exit: 1,
   stdout: [/warning wcs\/watch-path-missing .*"cart\.totl"/, /warning wcs\/binding-path-missing .*"cart\.totl"/, "0 error(s), 2 warning(s), 1 info (strict)"],
+});
+
+check("the dictionary volume (shorthand keys imported from ./catalog.js, computed there) is clean under --strict, the key said once (info), exit 0", ["--lang=en", "--strict", i18nHtml], {
+  exit: 0,
+  stdout: [/i18n[\\/]state\.js:2:24 info wcs\/path-dynamic-unknown The value of "i18n\.t" \(t, imported from "\.\/catalog\.js"\)/, "0 error(s), 0 warning(s), 1 info (strict)"],
+});
+
+check("a typo under a dictionary typed with typeof import(\"./en.js\").default → warning wcs/binding-path-missing, --strict exit 1", ["--lang=en", "--strict", i18nTypoHtml], {
+  exit: 1,
+  stdout: [/warning wcs\/binding-path-missing Path "i18n\.t\.site\.nmae"/, "0 error(s), 1 warning(s), 0 info (strict)"],
 });
 
 check("a framework app's page and component → named as nothing to check / not read, also with --errors-only, exit 0", ["--lang=en", "--errors-only", frameworkHtml, frameworkTsx], {

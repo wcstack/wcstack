@@ -100,6 +100,11 @@ export interface WcsMessageCatalog {
   readPathMissing(path: string, topLevel: boolean): string;
   /** `export default { … }` のトップレベルの spread: それが持ち込むキーは読めず、stateSchema が無いのでパスを検査しない。 */
   pathDynamicUnknownSpread(spread: string): string;
+  /**
+   * A key whose value the analyzer could not read (a name it could not follow to a literal), with bindings under it:
+   * those paths are not checked. `name` is the name the value is written as, `from` the specifier it is imported from.
+   */
+  pathDynamicUnknownValue(path: string, count: number, name?: string, from?: string): string;
   /** 読めない `<wcs-state src>`: その state のパスもスクリプトの規則も検査しない。 */
   stateSrcUnread(src: string): string;
   /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
@@ -356,6 +361,8 @@ const ja: WcsMessageCatalog = {
     : `パス "${p}" は状態定義に存在しません。読みは undefined になり、そこから計算した値は黙って違います`,
   stateSrcUnread: (src) =>
     `"${src}" を読めないので、この state のパスもスクリプトの規則も検査していません。src はこのファイルからの相対パスで読みます（/ から始まるパスと URL は読みません）。サーバーと同じ並びに置いたファイルを、このファイルからの相対パスで指してください`,
+  pathDynamicUnknownValue: (path, n, name, from) =>
+    `"${path}" の値${name === undefined ? '' : from === undefined ? `（${name}）` : `（${name}。"${from}" から import）`}は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに JSDoc の @type — 形か、モジュールのリテラルを指す typeof import("./file.js").name（辞書なら全部のキーを持つ既定の言語のファイル）— を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathDynamicUnknownSpread: (sp) =>
     `${sp} が持ち込むキーは静的に読めないので、この state のパスは検査していません（束縛・getter の中の読み・$watch のキー）。キーを wcstack.manifest.json の stateSchema に宣言すると検査されます。npx wcs-schema（@wcstack/typescript）が state の型（JSDoc・TypeScript）から作れます`,
   pathReadonlyTwoWay: (p, prop) =>
@@ -640,6 +647,8 @@ const en: WcsMessageCatalog = {
     : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
   stateSrcUnread: (src) =>
     `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a path from / or a URL is not read): point it at the file laid out as on the server, relative to this file`,
+  pathDynamicUnknownValue: (path, n, name, from) =>
+    `The value of "${path}"${name === undefined ? '' : from === undefined ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type — its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) — or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) =>
     `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathReadonlyTwoWay: (p, prop) =>

@@ -44,9 +44,17 @@ export interface PathCandidate {
    * 型は宣言された契約由来なので「確定」扱い — `for:` の非配列を error にする判定に使う。
    */
   fromSchema?: boolean;
+  /**
+   * The value of this data path is one the analyzer could not read: a name it could not follow to a literal (a call,
+   * a computed expression, an import it cannot read — moduleValues.ts). The path exists; what is under it is unknown,
+   * so nothing under it is reported missing (statePathResolver's `StatePathScopes.opaquePaths`). `from` is the
+   * specifier the name is imported from, when it is imported; `name` the name the value is written as.
+   */
+  opaque?: { readonly name?: string; readonly from?: string };
 }
 
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
+import { ModuleScope, parseTypeImport, type ModuleLocation, type ResolvedValue } from './moduleValues.js';
 import {
   RECURSION_KEY,
   checkNodePath,
@@ -91,12 +99,15 @@ const RESERVED_RECURSION_KEY = RECURSION_KEY;
  * @param scriptContent - <script type="module"> の内容
  * @returns パス候補の配列
  */
-export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
+export function analyzeStatePaths(scriptContent: string, location?: ModuleLocation): PathCandidate[] {
   const root = locateDefaultExportObject(scriptContent);
   if (!root || !root.content) return [];
 
   const paths: PathCandidate[] = [];
-  const topLevelProps = parseTopLevelProperties(root.content);
+  // the names the keys' values are written as (`{ lang, t }`, `items: ITEMS`) resolve in the module, and through
+  // its imports where it has a location (moduleValues.ts)
+  const scope = new ModuleScope(scriptContent, location);
+  const topLevelProps = withShorthands(root.content, parseTopLevelProperties(root.content));
   // `$streams` の値プロパティ実体化はループ後に処理する（明示宣言されたプロパティが優先）
   const pendingStreamValues: PropertyInfo[] = [];
   // `$listKeys` のリストパス実体化も同様に後処理（明示宣言・$streams 実体化が優先）
@@ -147,7 +158,7 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
       continue;
     }
 
-    pushDataPropertyPaths(prop, paths, typedefs);
+    pushDataPropertyPaths(prop, paths, typedefs, scope);
   }
 
   // $streams / $scan 宣言による値プロパティの実体化（processStreamsDeclaration §1-3 /
@@ -156,7 +167,7 @@ export function analyzeStatePaths(scriptContent: string): PathCandidate[] {
   for (const streamValue of pendingStreamValues) {
     // `$eventTokens` の名前（kind: 'eventToken'）は `eventToken.<prop>:` の右辺でパスではないので、同名でも実体化する
     if (paths.some(p => p.path === streamValue.name && p.kind !== 'eventToken')) continue;
-    pushDataPropertyPaths(streamValue, paths, typedefs);
+    pushDataPropertyPaths(streamValue, paths, typedefs, scope);
   }
 
   // $listKeys 宣言によるリストパスの実体化（processListKeysDeclaration §3 相当）。
@@ -578,7 +589,7 @@ export function analyzeDeclarationSpans(scriptContent: string): DeclarationSpan[
   const root = locateDefaultExportObject(scriptContent);
   if (!root) return [];
   const out: DeclarationSpan[] = [];
-  for (const prop of parseTopLevelProperties(root.content)) {
+  for (const prop of withShorthands(root.content, parseTopLevelProperties(root.content))) {
     if (prop.nameStart === undefined || prop.nameEnd === undefined) continue;
     out.push({
       name: prop.name,
@@ -1685,8 +1696,8 @@ function effectiveTopLevelDescriptors(props: readonly PropertyInfo[]): Map<strin
   return effective;
 }
 
-function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], typedefs: JsDocTypedefs): void {
-  pushDataPropertyPathsAt(prop.name, prop, paths, 0, typedefs);
+function pushDataPropertyPaths(prop: PropertyInfo, paths: PathCandidate[], typedefs: JsDocTypedefs, scope: ModuleScope): void {
+  pushDataPropertyPathsAt(prop.name, prop, paths, 0, typedefs, scope);
 }
 
 /**
@@ -1700,11 +1711,96 @@ function pushDataPropertyPathsAt(
   paths: PathCandidate[],
   depth: number,
   typedefs: JsDocTypedefs,
+  scope?: ModuleScope,
 ): void {
-  // データプロパティ
-  paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
-  pushLiteralStructurePaths(path, prop, paths, depth, typedefs);
+  // データプロパティ。値が名前（`{ t }`・`items: ITEMS`・JSDoc の `typeof import(…)`）なら、その名前が束縛する式を読む
+  const followed = scope === undefined ? null : followValue(prop, scope);
+  if (followed === null) {
+    paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
+    pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope);
+  } else {
+    const value = followed.value;
+    // a name is followed for its shape: a list or an object (what `for:` and the paths under it need), not a primitive's
+    // type — the type checks of a binding (`attr.min: minQuantity` with `MIN_QUANTITY = 1`) stay as they were for names
+    const shapeHint = value === null ? undefined : inferTypeHint(value.text);
+    const typeHint = prop.typeHint ?? (shapeHint === 'array' || shapeHint === 'object' ? shapeHint : undefined);
+    // a value it could not read has unknown contents — unless a JSDoc @type declares them
+    const opaque = (value === null || !isReadableLiteral(value.text)) && prop.declaredType === undefined
+      ? { opaque: { ...(followed.name !== undefined ? { name: followed.name } : {}), ...(followed.from !== undefined ? { from: followed.from } : {}) } }
+      : {};
+    paths.push(withHint({ path, kind: 'data', rawInitial: prop.value?.trim(), ...opaque }, typeHint));
+    if (value !== null) pushLiteralStructurePaths(path, { ...prop, value: value.text }, paths, depth, typedefs, value.scope);
+  }
   if (prop.declaredType !== undefined) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+}
+
+/** Names that are values written as words, not bindings to follow. */
+const WORD_LITERALS: ReadonlySet<string> = new Set(['true', 'false', 'null', 'undefined', 'NaN', 'Infinity', 'this']);
+
+function isBindingName(text: string): boolean {
+  return /^[$A-Za-z_][$\w]*$/.test(text) && !WORD_LITERALS.has(text);
+}
+
+/** `Object.freeze(x)` → `x` (repeated); anything else as it is. */
+function unwrapFreeze(text: string): string {
+  let expr = text.trim();
+  for (;;) {
+    const head = /^Object\s*\.\s*freeze\s*\(/.exec(expr);
+    if (head === null) return expr;
+    const scan = maskCommentsAndStrings(expr);
+    const open = head[0].length - 1;
+    const inner = extractDelimitedContent(expr, scan, open, '(', ')');
+    if (open + inner.length + 2 !== expr.length) return expr;
+    expr = inner.trim();
+  }
+}
+
+/**
+ * Whether a value's text is a literal whose shape the analyzer reads (or that has no paths under it): an object or
+ * array literal, a string, number, boolean, null / undefined, a function. Anything else — a call, a conditional, a
+ * member, `new …`, `await …` — has contents it does not know.
+ */
+function isReadableLiteral(text: string): boolean {
+  const v = text.trim();
+  return /^[[{"'`]/.test(v) || /^-?\.?\d/.test(v) || WORD_LITERALS.has(v)
+    || /^(?:async\s+)?function\b/.test(v) || /^(?:async\s*)?(?:\([^()]*\)|[$\w]+)\s*=>/.test(v);
+}
+
+/**
+ * What a data property's value is when it is written as a name: the expression the name is bound to (followed through
+ * the module's constants and imports), or `value: null` when it cannot be followed — with the name and the specifier it
+ * is imported from, for the message. A JSDoc `@type {typeof import("./en.js").default}` on the key names the value it
+ * stands for. null when the value is written in place (a literal, a call — read as before).
+ */
+function followValue(prop: PropertyInfo, scope: ModuleScope): { value: ResolvedValue | null; name?: string; from?: string } | null {
+  const type = parseTypeImport(prop.jsdocText);
+  let current: ResolvedValue;
+  let name: string | undefined;
+  let from: string | undefined;
+  if (type !== null) {
+    const resolved = scope.resolveTypeImport(type);
+    if (resolved === null) return { value: null, name: `typeof import("${type.specifier}").${type.name}`, from: type.specifier };
+    current = resolved;
+  } else {
+    if (prop.value === undefined) return null;
+    const written = prop.value.trim();
+    const text = unwrapFreeze(written);
+    if (!isBindingName(text)) return text === written ? null : { value: { text, scope } };
+    name = text;
+    from = scope.importOf(text);
+    const resolved = scope.resolveName(text);
+    if (resolved === null) return { value: null, name, from };
+    current = resolved;
+  }
+  // the value it leads to may be wrapped (`Object.freeze(DICT)`) or another name of the module it is in
+  for (let hops = 0; hops < 8; hops++) {
+    const inner = unwrapFreeze(current.text);
+    if (!isBindingName(inner)) return { value: inner === current.text ? current : { text: inner, scope: current.scope }, name, from };
+    const next = current.scope.resolveName(inner);
+    if (next === null) return { value: null, name, from };
+    current = next;
+  }
+  return { value: null, name, from };
 }
 
 /**
@@ -1743,6 +1839,7 @@ function pushLiteralStructurePaths(
   paths: PathCandidate[],
   depth: number,
   typedefs: JsDocTypedefs,
+  scope?: ModuleScope,
 ): void {
   // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成。
   // 先頭要素の子プロパティへは再帰する — 子が配列/オブジェクトなら
@@ -1754,7 +1851,7 @@ function pushLiteralStructurePaths(
     paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
     for (const childProp of extractArrayElementDataProperties(prop.value)) {
-      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1, typedefs);
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1, typedefs, scope);
     }
     return;
   }
@@ -1762,10 +1859,11 @@ function pushLiteralStructurePaths(
   // オブジェクトの場合、子パスを生成（さらにネストしたオブジェクトも辿る）
   if (prop.value && isObjectLiteral(prop.value)) {
     if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
+    const content = extractObjectContent(prop.value);
+    const childProps = withShorthands(content, parseTopLevelProperties(content));
     for (const childProp of childProps) {
       if (childProp.kind !== 'data') continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1, typedefs);
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1, typedefs, scope);
     }
   }
 }
@@ -1876,6 +1974,10 @@ interface PropertyInfo {
   typeHint?: string;
   /** 直前の JSDoc `@type` の型（パースできたときだけ）。形の候補を足すのに使う。 */
   declaredType?: JsDocType;
+  /** The JSDoc `@type` as written (`typeof import("./en.js").default` names a value — moduleValues.ts). */
+  jsdocText?: string;
+  /** A shorthand property (`{ lang, t }`): its value is the name. */
+  shorthand?: boolean;
   /**
    * 解析対象の objectContent 内での名前の範囲（引用符は含まない）と値の開始位置。
    * 診断のレンジ計算にだけ使う。宣言から合成した派生プロパティ（`$streams` の値
@@ -1905,6 +2007,47 @@ function locateDefaultExportObject(script: string): { content: string; start: nu
   const braceIndex = scan.indexOf(match[1], match.index!);
   // extractBracedContent は `{` の中身を返すので、中身の開始は `{` の次
   return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
+}
+
+/**
+ * `props` (an object literal's `parseTopLevelProperties`) with its shorthand properties (`{ lang, t }`) among them, in
+ * the order written: a data property whose value is the name (followed by the analyzer — moduleValues.ts). A JSDoc
+ * `@type` before one is read as before a `name: value`. A state written `export default { lang, t }` (the dictionary
+ * volume of examples/router-i18n) had no keys at all.
+ */
+function withShorthands(objectContent: string, props: PropertyInfo[]): PropertyInfo[] {
+  const scan = maskCommentsAndStrings(objectContent);
+  const found: PropertyInfo[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '{' || ch === '[' || ch === '(') {
+      depth++;
+    } else if (ch === '}' || ch === ']' || ch === ')') {
+      depth--;
+    } else if ((ch === ',' && depth === 0) || i === scan.length) {
+      // (the mirror keeps a comment's `/*` `*/` and `//`: blank them too — a JSDoc may stand before the name)
+      const segment = scan.slice(start, i).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => ' '.repeat(c.length));
+      const m = /^(\s*)([$A-Za-z_][$\w]*)\s*$/.exec(segment);
+      if (m !== null && !WORD_LITERALS.has(m[2])) {
+        const nameStart = start + m[1].length;
+        const jsdocText = readJsDocTypeBefore(objectContent, nameStart);
+        const declaredType = jsdocText === undefined ? null : parseJsDocType(jsdocText);
+        const typeHint = declaredType !== null ? jsDocTypeHint(declaredType) : jsdocText === undefined ? undefined : normalizeJsDocType(jsdocText);
+        found.push({
+          name: m[2], kind: 'data', value: m[2], shorthand: true,
+          ...(typeHint !== undefined ? { typeHint } : {}),
+          ...(declaredType !== null ? { declaredType } : {}),
+          ...(jsdocText !== undefined ? { jsdocText } : {}),
+          nameStart, nameEnd: nameStart + m[2].length, valueStart: nameStart,
+        });
+      }
+      start = i + 1;
+    }
+  }
+  if (found.length === 0) return props;
+  return [...props, ...found].sort((a, b) => (a.nameStart ?? 0) - (b.nameStart ?? 0));
 }
 
 /**
@@ -2011,6 +2154,7 @@ function parseTopLevelProperties(objectContent: string, allowEmptyDataKeys = fal
         value,
         typeHint,
         ...(declaredType !== null ? { declaredType } : {}),
+        ...(jsdocText !== undefined ? { jsdocText } : {}),
         nameStart: nameSpan![0],
         nameEnd: nameSpan![1],
         valueStart: valueStartIndex,

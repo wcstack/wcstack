@@ -239,7 +239,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `wcs/manifest-state-collision` | 2 つの application の manifest が同じ state の stateSchema を宣言している。lint はどちらでもその state を検査しない。 |
 | `wcs/manifest-tag-collision` | 2 つの sidecar の manifest が、override 無しで同じタグを宣言している。 |
 | `wcs/manifest-unknown-keyword` | sidecar の manifest が、lint の読む部分集合の外の schema のキーワードを使っている。 |
-| `wcs/path-dynamic-unknown` | 作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。 |
+| `wcs/path-dynamic-unknown` | 作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。4.10 から、値を読めないキー（計算した値を束縛する名前。ロケールの辞書を合わせた `t` の `{ t }`）の下をページが束ねるときも、キーの上で 1 回だけ言う。JSDoc の `@type {typeof import("./en.js").default}` を付けると、そのパスを検査する。 |
 | `wcs/path-reserved-name` | code の表に予約されているだけで、まだ出さない。 |
 | `wcs/state-src-unread` | 作者の誤りではなく lint の限界: 読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state は、パスもスクリプトの規則も検査しない。それを属性の上で 1 回だけ言う（info）。4.6 までは何も言わなかった。 |
 | `wcs/type-annotation` | 初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。 |

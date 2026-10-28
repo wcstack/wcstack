@@ -15,6 +15,10 @@
  * - `wcs/path-dynamic-unknown` (info): a top-level spread in `export default { … }` (`...sanitizeInputs({}).inputs`)
  *   with no stateSchema. The keys it brings in cannot be read, so the state's paths are not checked at all — said
  *   once, at the spread, with what turns the checks on (a stateSchema, which `wcs-schema` derives from the types).
+ *   Also a key whose value the analyzer could not read — a name it could not follow to a literal (`{ t }` with `t`
+ *   imported and computed — the i18n dictionary volume; moduleValues.ts) — when the document binds paths under it:
+ *   those are not checked. Said once per key, at the key, with what has them checked (a JSDoc `@type`, or a
+ *   stateSchema); a key nothing reads under says nothing.
  *
  * The existence is the bindings' (bindingValidator): the candidates of the document's states with the stateSchema's,
  * a stateSchema deciding where it is declared (`nonexistent` only), silence in a state that could not be read.
@@ -22,11 +26,12 @@
  */
 
 import { parseLoadedScriptBlocks } from '../language/htmlParse.js';
+import { buildReferenceIndex } from '../core/index/referenceIndex.js';
 import { getMessages } from '../core/messages.js';
 import { WcsDiagnosticCode, type WcsDiagnostic } from '../core/diagnostics.js';
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
-import { analyzeCallableBodies, findTopLevelSpread, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
-import { getStatePathIndex, isUnresolvedPath, type FileReader } from './statePathResolver.js';
+import { analyzeCallableBodies, analyzeDeclarationSpans, analyzeStatePaths, findTopLevelSpread, mergeSchemaCandidates, type PathCandidate } from './stateAnalyzer.js';
+import { getStatePathIndex, isUnresolvedPath, moduleLocationOf, type FileReader } from './statePathResolver.js';
 import { pathExistsInCandidates, resolveIndexedSchemaPath } from './bindingValidator.js';
 import { collectGetterReads } from './scriptAst.js';
 import { hasIndexSegment, toWildcardForm } from './indexPath.js';
@@ -39,6 +44,7 @@ export function validateScriptReads(
   locale?: string,
   fileReader?: FileReader,
   applicationSchema?: JsonSchemaNode,
+  bindAttribute: string = 'data-wcs',
 ): WcsDiagnostic[] {
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
   if (blocks.length === 0) return [];
@@ -47,6 +53,8 @@ export function validateScriptReads(
   const candidates = mergeSchemaCandidates(index.paths, applicationSchema);
   const candidateSet = new Set(candidates.map((p) => p.path));
   let tree: Map<string, Set<string>> | null = null;
+  // the paths the document binds (attributes, mustache, comment bindings), read once when a key's value is unknown
+  let bound: string[] | null = null;
   const out: WcsDiagnostic[] = [];
 
   for (const block of blocks) {
@@ -64,6 +72,28 @@ export function validateScriptReads(
 
     // --- the paths its getters, setters and methods read
     const prefix = block.mountPath === null || block.mountPath === '' ? '' : `${block.mountPath}.`;
+
+    // --- the lint's limit: a key whose value it could not read, with bindings under it (a stateSchema decides instead)
+    if (applicationSchema === undefined) {
+      const opaque = analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath)).filter((p) => p.opaque !== undefined);
+      const spans = opaque.length === 0 ? [] : analyzeDeclarationSpans(block.content);
+      for (const candidate of opaque) {
+        const path = prefix + candidate.path;
+        bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences
+          .filter((o) => o.kind === 'path')
+          .map((o) => (hasIndexSegment(o.path) ? toWildcardForm(o.path) : o.path));
+        const count = bound.filter((b) => b.startsWith(`${path}.`)).length;
+        const span = spans.find((s) => candidate.path === s.name || candidate.path.startsWith(`${s.name}.`));
+        if (count === 0 || span === undefined) continue;
+        out.push({
+          code: WcsDiagnosticCode.PathDynamicUnknown,
+          start: block.contentStart + span.start,
+          end: block.contentStart + span.end,
+          message: msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
+          severity: 'info',
+        });
+      }
+    }
     for (const callable of analyzeCallableBodies(block.content)) {
       for (const read of collectGetterReads(callable.body) ?? []) {
         // (a compound assignment's read is a write first: wcs/write-path-missing)

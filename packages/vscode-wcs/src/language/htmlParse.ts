@@ -140,7 +140,16 @@ export interface WcsScriptBlock {
    * `wcs/bind-component-source`）。
    */
   bindComponent: boolean;
+  /**
+   * The state file this script was read from, as the page names it (relative to the page): set on a script the
+   * validator inlined for a `<wcs-state src>` (core/externalState.ts, the `wcs-lint-src` attribute), so
+   * its imports are read relative to that file. Undefined for a script written in the page.
+   */
+  modulePath?: string;
 }
+
+/** The attribute core/externalState.ts puts on a state file's script it inlines: the file's path, as the page names it. */
+export const MODULE_PATH_ATTRIBUTE = "wcs-lint-src";
 
 /**
  * HTML テキストから <wcs-state> 内の <script type="module"> ブロックを全て抽出する。
@@ -286,12 +295,14 @@ export function parseWcsStateElements(html: string, stateTagName: string = 'wcs-
         const typeAttr = extractAttribute(inner.open.tagContent, 'type');
         if (typeAttr?.toLowerCase() === 'module' && inner.closed) {
           const contentStart = inner.open.end;
+          const modulePath = extractAttribute(inner.open.tagContent, MODULE_PATH_ATTRIBUTE);
           scriptBlocks.push({
             contentStart,
             contentEnd: inner.contentEnd,
             content: html.slice(contentStart, inner.contentEnd),
             mountPath,
             bindComponent,
+            ...(modulePath !== null ? { modulePath } : {}),
           });
         }
       }

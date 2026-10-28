@@ -11,12 +11,21 @@
  * pure (DOM / vscode / node fs 非依存): the files come through the `FileReader`.
  */
 
-import { parseWcsStateElements, type AttributeSpan } from "../language/htmlParse.js";
+import { MODULE_PATH_ATTRIBUTE, parseWcsStateElements, type AttributeSpan } from "../language/htmlParse.js";
 import { readStateScriptFile, type FileReader } from "../service/statePathResolver.js";
 import { createPositionMapper, type LineColumn } from "./offsetToPosition.js";
 
-const OPEN = '<script type="module">';
 const CLOSE = "</script>";
+
+/**
+ * The inserted start tag: it names the file, so the script's imports are read relative to it (service/moduleValues.ts).
+ * The path is the `src` value as the page wrote it (htmlParse reads attributes without decoding), in the quote it does
+ * not contain.
+ */
+function openTag(path: string): string {
+  const quote = path.includes('"') ? "'" : '"';
+  return `<script type="module" ${MODULE_PATH_ATTRIBUTE}=${quote}${path}${quote}>`;
+}
 
 /** One state file put inside its element. Offsets `at` / `contentAt` are in the inlined page. */
 export interface InlinedState {
@@ -70,13 +79,14 @@ export function inlineExternalStates(html: string, stateTagName: string, fileRea
     // a `</script` in the file (a string, a comment) would end the inserted element: the same length, not a tag
     const content = file.text.replace(/<\/(script)/gi, "<\\$1");
     const at = element.tagEnd + shift;
-    const length = OPEN.length + content.length + CLOSE.length;
-    text += OPEN + content + CLOSE;
+    const open = openTag(file.path);
+    const length = open.length + content.length + CLOSE.length;
+    text += open + content + CLOSE;
     states.push({
       path: file.path,
       text: file.text,
       at,
-      contentAt: at + OPEN.length,
+      contentAt: at + open.length,
       length,
       valueStart: src.valueStart,
       valueEnd: src.valueEnd,

@@ -239,7 +239,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | `wcs/manifest-state-collision` | Two application manifests declare a stateSchema for the same state; the lint then checks that state against neither. |
 | `wcs/manifest-tag-collision` | Two sidecar manifests declare the same tag without override. |
 | `wcs/manifest-unknown-keyword` | The sidecar manifest uses a schema keyword outside the subset the lint reads. |
-| `wcs/path-dynamic-unknown` | A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). |
+| `wcs/path-dynamic-unknown` | A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). Since 4.10, also a key whose value it cannot read (a name bound to a computed value, `{ t }` with `t` merged from the locale catalogs) when the page binds under it — said once, at the key; a JSDoc `@type {typeof import("./en.js").default}` has those paths checked. |
 | `wcs/path-reserved-name` | Reserved in the code table, not emitted yet. |
 | `wcs/state-src-unread` | A limit of the lint, not an author's mistake: a `<wcs-state src>` it cannot read — a path from `/`, a URL, a file that is not there — leaves that state's paths and script rules unchecked; said once, at the attribute (info). Up to 4.6 it said nothing. |
 | `wcs/type-annotation` | A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value. |
