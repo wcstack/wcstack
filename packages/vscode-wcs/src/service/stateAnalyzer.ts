@@ -1018,12 +1018,31 @@ function pushRowFieldPaths(path: string, prop: PropertyInfo, paths: PathCandidat
 interface ResultShape {
   isList: boolean;
   mirrors: { from: string; to: '' | '.*' }[];
-  fields: { to: '' | '.*'; field: PropertyInfo }[];
+  fields: ResultField[];
   /**
    * 元の形が分からない（モジュールの定数・関数の結果・`this.$getAll(…)`）。連鎖の `map` が
    * リテラルを返せば行の形が分かる。最後まで分からなければ読めない式（null）として落ちる。
    */
   opaque?: boolean;
+}
+
+/**
+ * A field of a result's literal. `shape` is the shape of its value when that is a name the analyzer read in the same
+ * function — `{ id, days }` with `const days = list.map((d) => ({ dayText }))` gives `days` its rows.
+ */
+interface ResultField {
+  to: '' | '.*';
+  field: PropertyInfo;
+  shape?: ResultShape;
+}
+
+/** The fields of an object literal, with the shape of a value that names an alias (`{ days }`, `{ list: days }`). */
+function literalFields(literal: string, to: '' | '.*', aliases: ReadonlyMap<string, ResultShape>): ResultField[] {
+  return extractRowLiteralFields(literal).map((field) => {
+    const name = field.value === undefined ? field.name : /^\s*([$A-Za-z_][$\w]*)\s*$/.exec(field.value)?.[1];
+    const shape = name === undefined ? undefined : aliases.get(name);
+    return shape === undefined ? { to, field } : { to, field, shape };
+  });
 }
 
 /** 行を保ったまま並べ替え・絞り込み・切り出す配列メソッド（結果の行は元の行そのもの）。 */
@@ -1099,18 +1118,71 @@ function collectGetterResultShapes(
   }
 }
 
-/** getter 本体の `return` 式すべての形の和。読める式が 1 つも無ければ null。 */
+/**
+ * getter 本体の `return` 式すべての形の和。読める式が 1 つも無ければ null。
+ * 本体そのものの `return` だけを読む — 入れ子の関数（`map` のコールバック）の `return { … }` は getter の戻り値ではない
+ * （city-library の継ぎ目アプリ: 内側のコールバックの `return { dayText }` を getter の形と読んでいた）。
+ */
 function getterResultShape(body: string, paths: PathCandidate[]): ResultShape | null {
   const scan = maskCommentsAndStrings(body);
   const aliases = collectAliases(body, paths);
   const shapes: ResultShape[] = [];
-  for (const m of scan.matchAll(/\breturn\b/g)) {
-    const start = (m.index as number) + m[0].length;
-    // コールバックの中の `return t.done` は読めない式（null）として落ちる
+  for (const start of ownReturnEnds(scan)) {
     const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
     if (shape !== null) shapes.push(shape);
   }
   return shapes.length === 0 ? null : mergeShapes(shapes);
+}
+
+/** Keywords whose `(…)` is followed by a block, not a function body (`if (x) {`, `catch (e) {`). */
+const BLOCK_HEADS: ReadonlySet<string> = new Set(['if', 'for', 'while', 'switch', 'catch', 'with']);
+
+/**
+ * The offsets just after each `return` keyword of a function body itself (the masked text of its `{ … }` content), not
+ * of a function nested in it: a `{` after `=>`, or after the `)` of a parameter list (`function (d) {`, `m(d) {`), opens
+ * a nested function's body, whose returns are its own; a `{` after `if (…)` / `else` / `try` / an object literal does
+ * not.
+ */
+function ownReturnEnds(scan: string): number[] {
+  const out: number[] = [];
+  // per open brace: whether it opens a nested function's body
+  const stack: boolean[] = [];
+  let nested = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '{') {
+      const opens = opensFunctionBody(scan, i);
+      stack.push(opens);
+      if (opens) nested++;
+    } else if (ch === '}') {
+      if (stack.pop() === true) nested--;
+    } else if (nested === 0 && ch === 'r' && /^return\b/.test(scan.slice(i, i + 7)) && !/[\w$.]/.test(scan[i - 1] ?? '')) {
+      out.push(i + 6);
+      i += 5;
+    }
+  }
+  return out;
+}
+
+/** Whether the `{` at `at` opens a function body (see ownReturnEnds). */
+function opensFunctionBody(scan: string, at: number): boolean {
+  let end = at - 1;
+  while (end >= 0 && /\s/.test(scan[end])) end--;
+  if (end >= 1 && scan[end] === '>' && scan[end - 1] === '=') return true;
+  if (scan[end] !== ')') return false;
+  // the `(` that matches, and the word before it: a block head, or a function's name / `function`
+  let depth = 0;
+  let i = end;
+  for (; i >= 0; i--) {
+    if (scan[i] === ')') depth++;
+    else if (scan[i] === '(' && --depth === 0) break;
+  }
+  let wordEnd = i - 1;
+  while (wordEnd >= 0 && /\s/.test(scan[wordEnd])) wordEnd--;
+  let wordStart = wordEnd;
+  while (wordStart >= 0 && /[$\w]/.test(scan[wordStart])) wordStart--;
+  const head = scan.slice(wordStart + 1, wordEnd + 1);
+  return !BLOCK_HEADS.has(head);
 }
 
 /** 本体の `const list = this.products.filter(…)` の別名（最初の宣言が勝つ）。 */
@@ -1233,7 +1305,7 @@ function expressionShape(text: string, paths: PathCandidate[], aliases: Map<stri
   // オブジェクトリテラル
   if (scan.startsWith('{')) {
     if (extractDelimitedContent(expr, scan, 0, '{', '}').length !== expr.length - 2) return null;
-    return { isList: false, mirrors: [], fields: extractRowLiteralFields(expr).map(field => ({ to: '', field })) };
+    return { isList: false, mirrors: [], fields: literalFields(expr, '', aliases) };
   }
 
   // `[...this.todos]`（要素がスプレッド 1 つの配列リテラル）と、それに続く連鎖
@@ -1263,7 +1335,7 @@ function expressionShape(text: string, paths: PathCandidate[], aliases: Map<stri
     if (base === null) return null;
     ({ shape, rest } = base);
   }
-  return applyChain(expr, scan, rest, shape);
+  return applyChain(expr, scan, rest, shape, paths, aliases);
 }
 
 /** `this.a.b` / `this["a.*.b"]` / 別名。続く `.method(` の手前まで。 */
@@ -1276,9 +1348,18 @@ function readBase(
   const alias = /^([$\w]+)/.exec(scan);
   if (alias === null) return null;
   if (alias[1] !== 'this') {
-    const shape = aliases.get(alias[1]);
+    // a member of a name (`r.tags.map(…)` in a callback): its shape is not known either — only a map decides it
+    let rest = alias[1].length;
+    let member = false;
+    for (;;) {
+      const dot = /^\s*\??\.\s*([$\w]+)/.exec(scan.slice(rest));
+      if (dot === null || /^\s*\(/.test(scan.slice(rest + dot[0].length))) break;
+      rest += dot[0].length;
+      member = true;
+    }
+    const shape = member ? undefined : aliases.get(alias[1]);
     // 別名でない名前（モジュールの定数・関数）: 形は分からない — 連鎖の map だけが行の形を決める
-    return { shape: shape ?? OPAQUE, rest: alias[1].length };
+    return { shape: shape ?? OPAQUE, rest };
   }
   const segments: string[] = [];
   let i = 4;
@@ -1314,7 +1395,14 @@ function readBase(
 }
 
 /** `.filter(…)` / `.find(…)` / `.map(…)` の連鎖。最後まで読めたときだけ形を返す。 */
-function applyChain(expr: string, scan: string, start: number, initial: ResultShape): ResultShape | null {
+function applyChain(
+  expr: string,
+  scan: string,
+  start: number,
+  initial: ResultShape,
+  paths: PathCandidate[],
+  aliases: Map<string, ResultShape>,
+): ResultShape | null {
   let shape = initial;
   let i = start;
   while (scan.slice(i).trim() !== '') {
@@ -1333,7 +1421,7 @@ function applyChain(expr: string, scan: string, start: number, initial: ResultSh
     if (shape.opaque) {
       // 分からない行のまま並べ替え・絞り込みしても分からない。map だけが形を作る
       if (method === 'map') {
-        const mapped = mapRows(args, shape);
+        const mapped = mapRows(args, shape, paths, aliases);
         if (mapped === null) return null;
         shape = mapped;
       }
@@ -1347,7 +1435,7 @@ function applyChain(expr: string, scan: string, start: number, initial: ResultSh
     } else if (method === 'map') {
       // a value the state does not show as a list (seeded `null` until a fetch fills it): `map` makes it one, and
       // the callback's literal is the row — as for a source of unknown shape (the prod-booking seam app)
-      const mapped = mapRows(args, shape.isList ? shape : OPAQUE);
+      const mapped = mapRows(args, shape.isList ? shape : OPAQUE, paths, aliases);
       if (mapped === null) return null;
       shape = mapped;
     } else {
@@ -1367,7 +1455,7 @@ function pickRow(shape: ResultShape): ResultShape {
   return {
     isList: false,
     mirrors: shape.mirrors.map(m => (m.to === '' ? { from: `${m.from}.*`, to: '' as const } : { from: m.from, to: '' as const })),
-    fields: shape.fields.filter(f => f.to === '.*').map(f => ({ to: '' as const, field: f.field })),
+    fields: shape.fields.filter(f => f.to === '.*').map(f => ({ ...f, to: '' as const })),
   };
 }
 
@@ -1375,7 +1463,7 @@ function pickRow(shape: ResultShape): ResultShape {
  * `map` のコールバック（`t => ({ … })` / `(t) => { return { … }; }` / `function (t) { return { … }; }`）が
  * 返すオブジェクトリテラルから行の形を作る。`...t`（引数のスプレッド）があれば元の行も写す。
  */
-function mapRows(args: string, shape: ResultShape): ResultShape | null {
+function mapRows(args: string, shape: ResultShape, paths: PathCandidate[], outer: Map<string, ResultShape>): ResultShape | null {
   const [callback] = splitTopLevelElements(args);
   if (callback === undefined) return null;
   // 引数は名前 1 つか、分割代入（`([key, value]) =>` — 元の行はスプレッドできない）
@@ -1383,23 +1471,29 @@ function mapRows(args: string, shape: ResultShape): ResultShape | null {
   if (head === null) return null;
   const param = head[1] ?? head[2] ?? head[3];
   const body = callback.slice(head[0].length);
-  let literal: string | null = null;
+  const literals: string[] = [];
+  // the names the callback's literal may use: the enclosing function's aliases, and the callback's own
+  let aliases = outer;
   const bodyScan = maskCommentsAndStrings(body);
   if (bodyScan.startsWith('(')) {
     const inner = stripWrappingParens(body).trim();
-    if (inner.startsWith('{')) literal = inner;
+    if (inner.startsWith('{')) literals.push(inner);
   } else if (bodyScan.startsWith('{')) {
+    // the callback's own `return { … }` (each of them), not one of a function nested in it — the rows of
+    // `ids.map((id) => { const days = list.map((d) => { return { dayText }; }); return { id, days }; })` are
+    // `{ id, days }` (the city-library seam app: the inner literal was taken)
     const block = extractDelimitedContent(body, bodyScan, 0, '{', '}');
     const blockScan = maskCommentsAndStrings(block);
-    const ret = /\breturn\s*\{/.exec(blockScan);
-    if (ret !== null) {
-      const open = ret.index + ret[0].length - 1;
-      literal = `{${extractDelimitedContent(block, blockScan, open, '{', '}')}}`;
+    aliases = new Map([...outer, ...collectAliases(block, paths)]);
+    for (const end of ownReturnEnds(blockScan)) {
+      const ret = /^\s*\{/.exec(blockScan.slice(end));
+      if (ret === null) continue;
+      const open = end + ret[0].length - 1;
+      literals.push(`{${extractDelimitedContent(block, blockScan, open, '{', '}')}}`);
     }
   }
-  if (literal === null) return null;
-  const content = extractObjectContent(literal);
-  const spreadsRow = splitTopLevelElements(content).some(e => e === `...${param}`);
+  if (literals.length === 0) return null;
+  const spreadsRow = literals.some(literal => splitTopLevelElements(extractObjectContent(literal)).some(e => e === `...${param}`));
   return {
     isList: true,
     mirrors: spreadsRow
@@ -1407,7 +1501,7 @@ function mapRows(args: string, shape: ResultShape): ResultShape | null {
       : [],
     fields: [
       ...(spreadsRow ? shape.fields.filter(f => f.to === '.*') : []),
-      ...extractRowLiteralFields(literal).map(field => ({ to: '.*' as const, field })),
+      ...literals.flatMap(literal => literalFields(literal, '.*', aliases)),
     ],
   };
 }
@@ -1427,8 +1521,9 @@ function applyResultShape(getter: string, shape: ResultShape, paths: PathCandida
       if (!hasPath(paths, target)) paths.push(withHint({ path: target, kind: source.kind }, source.typeHint));
     }
   }
-  for (const { to, field } of shape.fields) {
+  for (const { to, field, shape: fieldShape } of shape.fields) {
     pushRowFieldPaths(`${getter}${to}.${field.name}`, field, paths, 1);
+    if (fieldShape !== undefined) applyResultShape(`${getter}${to}.${field.name}`, fieldShape, paths);
   }
 }
 

@@ -5,6 +5,7 @@
 ## Unreleased
 
 - **`<head>` の同期スクリプトが作る `<base>` を `wcs/base-href-missing` が数える** — `examples/router-i18n` は router の README §1.4 のとおり（ロケールを basename に置く形）`<base href="/<lang>/">` を `<head>` の同期スクリプトから書くが、lint はそのページに「`<base href="/">` が要る」と警告していた。`<head>` の中の `src` の無い classic のスクリプト（module でない）が `document.createElement("base")` を呼ぶか、`document.write` / `writeln` / `insertAdjacentHTML` に `<base` を渡すなら、`<base>` があるものとする。文面もこの形を挙げる。継ぎ目アプリ city-library が見つけた。
+- **ブロック本体で `map` する getter は、そのコールバック自身の `return` から行の形を読む** — `get hoursTables() { return IDS.map((id) => { const days = (…).map((d) => { … return { dayText, … }; }); return { id, name, caption, days }; }); }` は最初に出会った `return { … }`（内側のコールバックのもの）を読み、`for: hoursTables` の `.name` / `.caption` / `.days` が `wcs/binding-path-missing` の誤報になっていた。読むのはコールバック自身の `return`（`if` の中も含めてすべて。入れ子の関数のものは読まない）で、getter 自身の `return` も同じ。同じ関数の別名を指す行のフィールド（上の `days`）はその別名の形を持つので、`for: .days` の `.dayText` も分かる。名前のメンバーへの `map`（`r.tags.map(…)`）もリテラルから行の形を持つ。継ぎ目アプリ city-library が見つけた。
 
 ## 2.9.0 — 2026-10-28
 

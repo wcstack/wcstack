@@ -15,6 +15,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Fixed
 
 - `@wcstack/lint`: **a `<head>` script that creates the `<base>` counts as one for `wcs/base-href-missing`.** `examples/router-i18n` writes `<base href="/<lang>/">` from a synchronous `<head>` script, as the router README §1.4 says to put a locale in the basename, and the lint warned that the page needed `<base href="/">` — on the documented page. A classic inline script in `<head>` (no `src`, not a module) that calls `document.createElement("base")`, or gives `document.write` / `writeln` / `insertAdjacentHTML` a `<base`, now provides one; the message names that form too. Found by the `city-library` seam app.
+- `@wcstack/lint`: **a getter that maps with a block body gives the rows its callback returns.** `get hoursTables() { return IDS.map((id) => { const days = (…).map((d) => { … return { dayText, … }; }); return { id, name, caption, days }; }); }` took the first `return { … }` it met — the inner callback's — so `.name` / `.caption` / `.days` of `for: hoursTables` were false `wcs/binding-path-missing`. Only the callback's own returns are read now (each of them, inside an `if` too; not one of a function nested in it), and the same holds for a getter's own `return`. A row field that names an alias of the same function (`days` above) gets that alias's shape, so `for: .days` with `.dayText` is known as well, and a map over a member of a name (`r.tags.map(…)`) gives its literal's rows. Found by the `city-library` seam app.
 
 ## [4.9.0] — 2026-10-28
 
