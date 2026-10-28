@@ -467,7 +467,7 @@ const ja: WcsMessageCatalog = {
   devtoolsAfterState: () =>
     `@wcstack/devtools/auto は @wcstack/state/auto より先に読み込んでください（後からだと、DevTools のタイムラインは付いた時点から始まります。既にある配線は 4.0 が送り直します）`,
   baseHrefMissing: () =>
-    `@wcstack/router を使う SPA には <head> 内の <base href="/"> が必要です（無いとディープリンクで basename が誤導出されます）`,
+    `@wcstack/router を使う SPA には <head> 内の <base href="/">（またはそれを作る <head> の同期スクリプト — basename にロケールを置く形）が必要です（無いとディープリンクで basename が誤導出されます）`,
   routerOutletMisplaced: () =>
     `この <wcs-outlet> は <wcs-router> の直後に無いので、どの router も使いません。router は自分の直後の要素だけを outlet として使い、そこに <wcs-outlet> が無ければ自前の outlet を作ります。ルートは router の直後に描かれ、この outlet は空のままです — <wcs-router> の直後へ移してください`,
   signalsDualEntry: () =>
@@ -751,7 +751,7 @@ const en: WcsMessageCatalog = {
   devtoolsAfterState: () =>
     `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
   baseHrefMissing: () =>
-    `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
+    `An SPA using @wcstack/router needs <base href="/"> in <head>, or a synchronous <head> script that creates one — the form for a locale in the basename (without it, deep links misderive the basename)`,
   routerOutletMisplaced: () =>
     `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty — move it right after the <wcs-router>`,
   signalsDualEntry: () =>

@@ -2,6 +2,10 @@
 
 この拡張は npm パッケージ群（`@wcstack/*`）とは独立に版数を振る。1.11.0 より前の版数（0.1.0 / 1.10.0）は Marketplace に公開していない内部版で、その経緯は git 履歴にある。
 
+## Unreleased
+
+- **`<head>` の同期スクリプトが作る `<base>` を `wcs/base-href-missing` が数える** — `examples/router-i18n` は router の README §1.4 のとおり（ロケールを basename に置く形）`<base href="/<lang>/">` を `<head>` の同期スクリプトから書くが、lint はそのページに「`<base href="/">` が要る」と警告していた。`<head>` の中の `src` の無い classic のスクリプト（module でない）が `document.createElement("base")` を呼ぶか、`document.write` / `writeln` / `insertAdjacentHTML` に `<base` を渡すなら、`<base>` があるものとする。文面もこの形を挙げる。継ぎ目アプリ city-library が見つけた。
+
 ## 2.9.0 — 2026-10-28
 
 `@wcstack/state` 4.9.0 のパーサと manifest、4.9.0 の dist から作り直した組み込みのタグの目録で検証する（npm の `@wcstack/lint` 4.9.0・`@wcstack/typescript` 4.9.0 と同じ判定）。誤報の直しと、確実なものを error にした規則と、タグの目録の追加なので minor。

@@ -2,6 +2,8 @@
  * documentEnvValidator のテスト — 読み込み構成（script 順・base href・signals 混在）。
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { validateDocumentEnv } from '../src/service/documentEnvValidator.js';
 import { WcsDiagnosticCode } from '../src/core/diagnostics.js';
 
@@ -49,6 +51,61 @@ describe('validateDocumentEnv: base-href-missing', () => {
 <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
 </head>`;
     expect(validateDocumentEnv(html)).toHaveLength(0);
+  });
+
+  describe('<head> の同期スクリプトが <base> を作るページ（router README §1.4・examples/router-i18n — city-library の継ぎ目アプリ）', () => {
+    const router = '<script type="module" src="https://esm.run/@wcstack/router/auto"></script>';
+    const page = (script: string, attrs = '') => `<head>
+<script${attrs}>
+(function () {
+  var lang = location.pathname.split("/")[1] || "en";
+${script}
+})();
+</script>
+${router}
+</head><body><wcs-router><template></template></wcs-router><wcs-outlet></wcs-outlet></body>`;
+
+    it('document.createElement("base") で <base> を作るなら警告しない', () => {
+      const html = page(`  var base = document.createElement("base");
+  base.setAttribute("href", "/" + lang + "/");
+  document.head.appendChild(base);`);
+      expect(validateDocumentEnv(html)).toHaveLength(0);
+      expect(validateDocumentEnv(page(`  document.head.prepend(Object.assign(document.createElement('BASE'), { href: "/" + lang + "/" }));`))).toHaveLength(0);
+    });
+
+    it('document.write / writeln / insertAdjacentHTML に <base を渡すなら警告しない', () => {
+      for (const script of [
+        `  document.write("<base href='/" + lang + "/'>");`,
+        `  document.writeln(\`<base href="/\${lang}/">\`);`,
+        `  document.head.insertAdjacentHTML("afterbegin", '<base href="/' + lang + '/">');`,
+      ]) {
+        expect(validateDocumentEnv(page(script)), script).toHaveLength(0);
+      }
+    });
+
+    it('リポジトリの examples/router-i18n の head スクリプトの形は警告しない', () => {
+      const html = readFileSync(resolve(__dirname, '../../../examples/router-i18n/index.html'), 'utf8');
+      expect(validateDocumentEnv(html).filter(d => d.code === WcsDiagnosticCode.BaseHrefMissing)).toHaveLength(0);
+    });
+
+    it('<base> を作らないスクリプト・コメントの中の言及・module script・src 付き・<body> の中のスクリプトは数えない', () => {
+      for (const html of [
+        page(`  document.documentElement.lang = lang;`),
+        page(`  // document.createElement("base") would hand the router its basename
+  document.write("<p>hello</p>"); /* "<base href>" */`),
+        page(`  var base = document.createElement("base"); document.head.appendChild(base);`, ' type="module"'),
+        page(`  var base = document.createElement("base"); document.head.appendChild(base);`, ' type="application/json"'),
+        `<head>${router}</head><body><wcs-router></wcs-router><script>document.head.appendChild(document.createElement("base"));</script></body>`,
+        `<head><script src="./locale.js"></script>${router}</head><body><wcs-router></wcs-router></body>`,
+      ]) {
+        expect(validateDocumentEnv(html).map(d => d.code), html).toEqual([WcsDiagnosticCode.BaseHrefMissing]);
+      }
+    });
+
+    it('警告の文面が head スクリプトの形も挙げる', () => {
+      const [d] = validateDocumentEnv(`<head>${router}</head>`, 'en');
+      expect(d.message).toContain('or a synchronous <head> script that creates one');
+    });
   });
 
   it('版を付けた URL・jsDelivr の dist の直接の路でも警告する（本番の書き方で黙っていた）', () => {
