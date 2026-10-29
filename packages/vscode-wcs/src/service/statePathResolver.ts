@@ -16,6 +16,8 @@ import { createTemplateTester, parseWcsStateElements, findScriptJsonById, type W
 import {
   analyzeStatePaths, analyzeJsonPaths, hasDefaultExportObject, hasTopLevelSpread, type PathCandidate,
 } from './stateAnalyzer.js';
+import type { ModuleLocation } from './moduleValues.js';
+import { hasIndexSegment, toWildcardForm } from './indexPath.js';
 
 /**
  * 外部ファイルの内容を読み取るコールバック。
@@ -44,6 +46,11 @@ export interface StatePathScopes {
    * `bind-component`, not inside a `<template>`) and none of them could be read.
    */
   readonly rootUnresolved: boolean;
+  /**
+   * The data paths whose value the validator could not read — a name it could not follow to a literal (`{ t }` with
+   * `t` imported and computed, moduleValues.ts): the path exists, the paths under it are unknown.
+   */
+  readonly opaquePaths: readonly string[];
 }
 
 /** The document's state path candidates, and the parts they cannot vouch for. */
@@ -68,6 +75,10 @@ export interface StatePathIndex {
  * path (`shop` of `shop.cart`) is unknown too: it exists once that volume grafts.
  */
 export function isUnresolvedPath(path: string, scopes: StatePathScopes): boolean {
+  if (scopes.opaquePaths.length > 0) {
+    const wildcard = hasIndexSegment(path) ? toWildcardForm(path) : path;
+    if (scopes.opaquePaths.some((o) => path.startsWith(`${o}.`) || wildcard.startsWith(`${o}.`))) return true;
+  }
   let owner: string | null = null;
   for (const mount of scopes.mounts) {
     if ((path === mount || path.startsWith(`${mount}.`)) && (owner === null || mount.length > owner.length)) owner = mount;
@@ -159,9 +170,22 @@ export function resolveStatePathIndex(
   return {
     paths,
     volumePaths,
-    scopes: { mounts, unresolvedMounts, rootUnresolved: isPageRootUnresolved(roots, html) },
+    scopes: { mounts, unresolvedMounts, rootUnresolved: isPageRootUnresolved(roots, html), opaquePaths: opaquePathsOf(paths) },
     elements,
   };
+}
+
+/** The candidates whose value the analyzer could not read (`PathCandidate.opaque`). */
+export function opaquePathsOf(paths: readonly PathCandidate[]): string[] {
+  return paths.filter((p) => p.opaque !== undefined).map((p) => p.path);
+}
+
+/**
+ * Where a script's imports are read from: the page's reader, and the module's path as that reader takes it (a state
+ * file's `src`, the file an inlined block came from, or '' for a script written in the page). None without a reader.
+ */
+export function moduleLocationOf(fileReader: FileReader | undefined, path: string | undefined): ModuleLocation | undefined {
+  return fileReader === undefined ? undefined : { fileReader, path: path ?? '' };
 }
 
 /**
@@ -262,8 +286,8 @@ export function scriptReadable(script: string, paths: readonly PathCandidate[]):
   return !hasTopLevelSpread(script) && (paths.length > 0 || hasDefaultExportObject(script));
 }
 
-function fromScript(script: string): ElementPaths {
-  const paths = analyzeStatePaths(script);
+function fromScript(script: string, location: ModuleLocation | undefined): ElementPaths {
+  const paths = analyzeStatePaths(script, location);
   return { paths, readable: scriptReadable(script, paths) };
 }
 
@@ -301,7 +325,10 @@ function resolveElementPathsRaw(
 
   // 4. inner <script type="module">: 既存の解析
   if (element.scriptBlocks.length > 0) {
-    const blocks = element.scriptBlocks.map((block) => ({ script: block.content, paths: analyzeStatePaths(block.content) }));
+    const blocks = element.scriptBlocks.map((block) => ({
+      script: block.content,
+      paths: analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath)),
+    }));
     return {
       paths: blocks.flatMap((block) => block.paths),
       readable: readable || blocks.some((block) => scriptReadable(block.script, block.paths)),
@@ -345,6 +372,6 @@ function resolveSrcAttribute(
     const content = fileReader(srcPath);
     return content ? fromJson(content) : UNREADABLE;
   }
-  const script = readStateScript(srcPath, fileReader);
-  return script !== undefined ? fromScript(script) : UNREADABLE;
+  const file = readStateScriptFile(srcPath, fileReader);
+  return file !== undefined ? fromScript(file.text, { fileReader, path: file.path }) : UNREADABLE;
 }

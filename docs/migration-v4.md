@@ -474,7 +474,7 @@ Replace an injection with a getter on the root state that reads both paths:
 
 A `<wcs-state mount>` inside the shadow root of a component that is wired to its host (`data-wcs="state…"` on the host) is refused with `will not graft: its component is wired to its host.`, and its `connectedCallbackPromise` resolves; 3.x left it pending. A wired component reads the host's tree, so put that data in the host's state.
 
-The 4.0 lint reports these declarations as `wcs/volume-declaration`, `$behavior` / `$features` in a volume as `wcs/behavior-invalid` / `wcs/features-invalid`, and the removed names as in §3.1. The lint cannot read a volume's state loaded with `src=`, so a root `$watch` key or a binding under that mount path (`cart.total`) gets `wcs/watch-path-missing` / `wcs/binding-path-missing` warnings although it works. Expect them there; `--strict` turns them into CI failures.
+The 4.0 lint reports these declarations as `wcs/volume-declaration`, `$behavior` / `$features` in a volume as `wcs/behavior-invalid` / `wcs/features-invalid`, and the removed names as in §3.1. The lint reads a volume's state loaded with `src=` relative to the page, and checks a root `$watch` key or a binding under that mount path (`cart.total`) against it. A `src` it cannot read — a URL, a path from `/`, a file that is not there — leaves that mount path unchecked, said once at the attribute (`wcs/state-src-unread`, info); since 4.10, a key whose value is a name it cannot follow to a literal (a dictionary computed from the locale catalogs) leaves the paths under it unchecked, said once at the key (`wcs/path-dynamic-unknown`, info).
 
 #### Mounted components (`bind-component` with `state: …`)
 

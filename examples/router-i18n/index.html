@@ -84,10 +84,11 @@
     //
     // The tax it imposes: every URL on the page now resolves against /<lang>/,
     // including the ones nobody thinks of as URLs. An in-page anchor
-    // (href="#faq") navigates to /<lang>/#faq — a route change, and the router
-    // intercepts it — and inline-SVG fragment references (url(#gradient),
-    // clip-path) break the same way. Write every URL absolute, fragments
-    // included. docs/i18n-design.md §9-1-4.
+    // (href="#faq") resolves to /<lang>/#faq — up to router 4.9 a route change,
+    // which the router intercepted; since 4.10 the router keeps a link to a bare
+    // fragment on the page — and inline-SVG fragment references
+    // (url(#gradient), clip-path) break as they did. Write every URL absolute,
+    // SVG fragments included. docs/i18n-design.md §9-1-4.
     var base = document.createElement("base");
     base.setAttribute("href", "/" + lang + "/");
     document.head.appendChild(base);

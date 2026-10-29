@@ -12,7 +12,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FileReader } from "./service/statePathResolver.js";
 
@@ -28,22 +28,39 @@ import type { FileReader } from "./service/statePathResolver.js";
  *   ツールはネットワークに出ない。
  * - 先頭 `/` の絶対パス — ランタイムでは Web ルート基準であり、ファイルシステムの
  *   ルートに写像すると無関係なファイルを読みうる。Web ルートは設定なしに決められない。
+ *   `root`（`wcs-validate --root=<dir>` — サイトのルートのディレクトリ）を渡したときだけ、その下で読む
+ *   （`/app.js` → `<root>/app.js`。`..` でルートの外へ出るものは読まない）。`<base href="/ja/">` の下の
+ *   `<wcs-state src="/app.js">`（docs/csp.md の形、examples/router-i18n）が読める（継ぎ目アプリ city-library）。
  */
-export function createFileReader(htmlPath: string, read: (path: string) => string = (p) => readFileSync(p, "utf8")): FileReader {
+export function createFileReader(
+  htmlPath: string,
+  read: (path: string) => string = (p) => readFileSync(p, "utf8"),
+  root?: string,
+): FileReader {
   const base = dirname(htmlPath);
+  const rootDir = root === undefined ? undefined : resolve(root);
   // 同一ファイルは validator 3 つ + .ts プローブで最大 6 回要求される。メモ化で
   // I/O を 1 回に抑え、validator 間で読む内容が変わる TOCTOU も同時に消す。
   const cache = new Map<string, string | undefined>();
   return (relativePath: string) => {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("/")) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("//")) {
       return undefined;
+    }
+    let target: string;
+    if (relativePath.startsWith("/")) {
+      if (rootDir === undefined) return undefined;
+      target = resolve(rootDir, `.${relativePath}`);
+      const inside = relative(rootDir, target);
+      if (inside.startsWith("..") || isAbsolute(inside)) return undefined;
+    } else {
+      target = resolve(base, relativePath);
     }
     if (cache.has(relativePath)) {
       return cache.get(relativePath);
     }
     let content: string | undefined;
     try {
-      content = read(resolve(base, relativePath));
+      content = read(target);
       // PowerShell の Out-File 等が書く UTF-8 BOM は JSON.parse を黙って壊すので剥がす。
       if (content.charCodeAt(0) === 0xfeff) {
         content = content.slice(1);

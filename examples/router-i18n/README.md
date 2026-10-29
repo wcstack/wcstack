@@ -77,10 +77,17 @@ real. The switch works *because* of the basename.
 The basename is supplied by writing `<base href="/ja/">` from the head snippet —
 the earliest possible moment, and the standard HTML mechanism for it. It comes
 with a tax: **every URL on the page now resolves against `/<lang>/`**, including
-the ones nobody thinks of as URLs. An in-page anchor (`href="#faq"`) navigates
-to `/<lang>/#faq` — a route change, and the router intercepts it — and
-inline-SVG fragment references (`url(#gradient)`, `clip-path`) break the same
-way. Write every URL absolute, fragments included (design §9-1-4).
+the ones nobody thinks of as URLs. An in-page anchor (`href="#faq"`) resolves
+to `/<lang>/#faq`; up to router 4.9 that was a route change, which the router
+intercepted, and since 4.10 (not released yet) the router keeps a link to a bare fragment on
+the current page (router README, "In-page links"). Inline-SVG fragment
+references (`url(#gradient)`, `clip-path`) are not links and still break the
+same way. Write every URL absolute, SVG fragments included (design §9-1-4).
+
+The switch leaves the page, so a page with `leaveConfirm` asks first, and the
+click that records the explicit choice below runs before the reader answers: a
+declined switch would still be remembered. Such a page marks the choice on
+click and records it on the next page instead (router README §1.4).
 
 Nice side effect: route patterns carry no locale at all (`/`, `/about`), and
 in-app links are locale-free (`<wcs-link to="/about">`).
@@ -159,10 +166,35 @@ Two constraints come with it:
   mount prefix threaded through the segment maths and the `<base href>`.
 - **Every URL on the page must be absolute**, because `<base href="/ja/">` is
   what hands the locale to the router, and relative URLs now resolve against it —
-  including in-page anchors (`href="#faq"` becomes `/<lang>/#faq`, a route
-  change) and inline-SVG fragment references (`url(#gradient)`). A relative
+  including inline-SVG fragment references (`url(#gradient)`), and in-page
+  anchors up to router 4.9 (`href="#faq"` became `/<lang>/#faq`, a route
+  change; the router keeps them on the page since 4.10 (not released yet)). A relative
   `<wcs-state src="./state.js">` resolves against the base too; write it
   root-absolute (design §9-1-4).
+
+## Right-to-left locales
+
+Two things change for a locale such as Arabic (`ar: "rtl"` in `SUPPORTED`), and
+neither shows up as an error:
+
+- **A sentence that puts text of the other direction inside it needs bidi
+  isolation.** A getter that composes "«The Hobbit» is available" in Arabic around
+  an English title — `` `${title} متاح للاستعارة` `` — lets the title's neutral
+  characters (spaces, punctuation, a trailing number) join the Arabic around it,
+  and the sentence is drawn out of order. In markup you would wrap the title in
+  `<bdi>`, but a `textContent:` binding writes text and cannot carry an element:
+  isolate it in the getter with U+2068 FIRST STRONG ISOLATE … U+2069 POP
+  DIRECTIONAL ISOLATE — `` `⁨${title}⁩ متاح للاستعارة` ``.
+- **Arabic-Indic digits (٠١٢٣) depend on the region subtag, not on `ar`.** In
+  Chromium 149, Firefox 151 and Safari 26.5, `ar` formats Latin digits, as do
+  `ar-AE` and the Maghreb (`ar-MA`, `ar-DZ`, `ar-TN`); `ar-EG`, `ar-SA` and most
+  of the other Middle-East regions (`ar-IQ`, `ar-JO`, `ar-KW`, `ar-QA`, `ar-SY`,
+  `ar-LB`) format Arabic-Indic ones. `<html lang>` is the locale every formatter
+  here reads — `i18n/format.js` and, through `config.locale`, the state filters
+  (`|date`, …) — so the tag the head snippet writes decides the digits of the
+  whole page: write the region your readers expect (`lang="ar-EG"`, with the
+  catalog matching on the language subtag), or pin the numbering system with a
+  Unicode extension in the tag (`ar-u-nu-arab` / `ar-u-nu-latn`).
 
 Its behaviour is pinned by [`e2e/tests/router-i18n.spec.ts`](../../e2e/tests/router-i18n.spec.ts):
 the decision order, all three URL-repair shapes, and the hard/soft navigation

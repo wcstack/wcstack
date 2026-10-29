@@ -25,6 +25,9 @@ input.invalid, select.invalid { border-color: var(--danger); }
 .error-box { background: #fff5f5; border: 1px solid #ffc9c9; padding: 10px 14px; border-radius: 8px; color: var(--danger); margin: 12px 0; }
 .status, .hint { color: var(--muted); font-size: .9rem; min-height: 1.2em; margin: 4px 0; }
 .banner { padding: 8px 16px; text-align: center; font-size: .9rem; }
+/* a status region with nothing to say stays in the page (so its next text is announced) and takes no room */
+.banner:empty { padding: 0; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .banner.offline { background: #fff3bf; color: #664d03; }
 .banner.live { background: #ffe8cc; color: #7c4a03; }
 .month-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }

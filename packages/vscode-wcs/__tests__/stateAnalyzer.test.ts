@@ -1035,6 +1035,51 @@ export default {
     expect(all.filter(p => p.startsWith('empty.*.'))).toEqual([]);
   });
 
+  it('ブロック本体の map は、そのコールバック自身の return を読む — 入れ子のコールバックの return { … } ではない（city-library）', () => {
+    const paths = analyzeStatePaths(`
+const BRANCH_IDS = ["central", "harbor"];
+export default {
+  hours: {},
+  get hoursTables() {
+    const branches = this.branches;
+    return BRANCH_IDS.map((id) => {
+      const data = this[\`hours.\${id}\`];
+      const days = (data?.days ?? []).map((d) => {
+        const dayText = String(d.date);
+        if (!d.opens || !d.closes) return { dayText, opensText: "closed", closesText: "—" };
+        return {
+          dayText,
+          opensText: d.opens,
+          closesText: d.closes,
+        };
+      });
+      const name = nameOf(branches, id);
+      return { id, name, caption: \`\${name}\`, days };
+    });
+  },
+  get pick() {
+    return this.rows.map(function (r) {
+      const tags = r.tags.map((t) => { return { tag: t }; });
+      if (r.hidden) { return { id: r.id, hidden: true }; }
+      return { id: r.id, tags };
+    });
+  },
+};`);
+    const all = paths.map(p => p.path);
+    for (const path of ['hoursTables.*.id', 'hoursTables.*.name', 'hoursTables.*.caption', 'hoursTables.*.days',
+      'hoursTables.*.days.*', 'hoursTables.*.days.*.dayText', 'hoursTables.*.days.*.opensText', 'hoursTables.*.days.*.closesText']) {
+      expect(all, path).toContain(path);
+    }
+    // 内側のコールバックの return は getter の戻り値でも、外側の行でもない
+    expect(all).not.toContain('hoursTables.*.dayText');
+    expect(all).not.toContain('hoursTables.dayText');
+    expect(all).not.toContain('hoursTables.id');
+    // function のコールバック・if のブロックの中の return は自分の return。入れ子のアロー関数のものではない
+    expect(all).toContain('pick.*.hidden');
+    expect(all).toContain('pick.*.tags.*.tag');
+    expect(all).not.toContain('pick.*.tag');
+  });
+
   it('オブジェクトリテラルを返す getter はそのフィールドを持つ', () => {
     const paths = analyzeStatePaths(`
 export default {

@@ -257,22 +257,24 @@ describe('#203 の outerHTML: / outerText: と要素の文脈（analyzeElementCo
     const offsets: number[] = [];
     for (let at = html.indexOf('x: y'); at !== -1; at = html.indexOf('x: y', at + 1)) offsets.push(at);
     const contexts = analyzeElementContexts(html, offsets);
+    // insertedBy / insertedPath: the for row, if branch or route that inserts the element (liveRegionValidator)
+    const none = { insertedBy: null, insertedPath: null };
     expect(offsets.map((o) => contexts.get(o))).toEqual([
-      { bound: true, rowOrBranch: true, ownStateTemplate: false },
-      { bound: true, rowOrBranch: false, ownStateTemplate: false },
+      { bound: true, rowOrBranch: true, ownStateTemplate: false, insertedBy: 'for', insertedPath: 'a' },
+      { bound: true, rowOrBranch: false, ownStateTemplate: false, ...none },
       // a top-level template the state does not bind (one app code clones): not bound
-      { bound: false, rowOrBranch: false, ownStateTemplate: false },
+      { bound: false, rowOrBranch: false, ownStateTemplate: false, ...none },
       // 自前の <wcs-state> を持つ template（宣言的 shadow root・DCC）— 後ろの <wcs-state> で決まる
-      { bound: true, rowOrBranch: false, ownStateTemplate: true },
+      { bound: true, rowOrBranch: false, ownStateTemplate: true, ...none },
       // 行の中の構造でない template は複製されても inert
-      { bound: false, rowOrBranch: false, ownStateTemplate: false },
+      { bound: false, rowOrBranch: false, ownStateTemplate: false, ...none },
       // noscript の中身は raw text（htmlParse.ts の RAW_TEXT_ELEMENTS）
-      { bound: false, rowOrBranch: false, ownStateTemplate: false },
+      { bound: false, rowOrBranch: false, ownStateTemplate: false, ...none },
       // 中身を置き換える束縛（4.0 の text: も）を持つ要素の子孫
-      { bound: false, rowOrBranch: false, ownStateTemplate: false },
+      { bound: false, rowOrBranch: false, ownStateTemplate: false, ...none },
       // a route template is bound where it is inserted (an if in it is a branch)
-      { bound: true, rowOrBranch: false, ownStateTemplate: false },
-      { bound: true, rowOrBranch: true, ownStateTemplate: false },
+      { bound: true, rowOrBranch: false, ownStateTemplate: false, ...none },
+      { bound: true, rowOrBranch: true, ownStateTemplate: false, insertedBy: 'if', insertedPath: 'a' },
     ]);
   });
 });

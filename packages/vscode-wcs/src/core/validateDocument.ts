@@ -18,6 +18,7 @@ import { validateTemplateSyntax } from "../service/templateSyntaxValidator.js";
 import { validateBindingSyntax } from "../service/bindingSyntaxValidator.js";
 import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateAriaAttributes } from "../service/ariaValidator.js";
+import { validateLiveRegions } from "../service/liveRegionValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
 import { validateScanDeclarations } from "../service/scanDeclarationValidator.js";
@@ -132,14 +133,16 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   out.push(...validateBindingSyntax(text, bindAttribute, locale));
   out.push(...validateIoNodes(text, bindAttribute, stateTagName, locale, fileReader));
   out.push(...validateAriaAttributes(text, bindAttribute, locale));
+  // a live region inserted with its text by a for / if template or a route (never announced)
+  out.push(...validateLiveRegions(text, bindAttribute, stateTagName, locale));
   out.push(...validateDocumentEnv(text, locale));
   // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
   // validator 側で code を付与して返す。
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));
   // what a state's script uses of itself: undeclared and unbound command tokens, a write of a key it does not declare
   out.push(...validateScriptStateUses(text, stateTagName, locale, bindAttribute));
-  // the paths its getters and methods read, checked as the bindings' are; a spread the lint cannot read (info)
-  out.push(...validateScriptReads(text, stateTagName, locale, fileReader, applicationSchema));
+  // the paths its getters and methods read, checked as the bindings' are; a spread or a key's value the lint cannot read (info)
+  out.push(...validateScriptReads(text, stateTagName, locale, fileReader, applicationSchema, bindAttribute));
   out.push(...validateArrayMutations(text, stateTagName, locale));
   // A root `$watch` key can name a path under a volume: the volumes' `src=` is read with the bindings' reader
   out.push(...validateWatchDeclarations(text, stateTagName, locale, fileReader));

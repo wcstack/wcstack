@@ -84,7 +84,9 @@ export function validateDocumentEnv(html: string, locale?: string): WcsDiagnosti
     ?? (hasRouterTag
       ? collectInlineImports(scanText).find(i => /@wcstack\/router\b/.test(i.spec) || BUNDLE_AUTO.test(i.spec))
       : undefined);
-  if (router && !/<base\b[^>]*\bhref\s*=/i.test(scanText)) {
+  // A synchronous `<head>` script that creates the `<base>` provides one too: the router README §1.4's form for a
+  // locale in the basename (examples/router-i18n — the lint warned on the documented page, the city-library seam app)
+  if (router && !/<base\b[^>]*\bhref\s*=/i.test(scanText) && !headScriptCreatesBase(scanText)) {
     diagnostics.push({
       code: WcsDiagnosticCode.BaseHrefMissing,
       start: router.start, end: router.end, severity: 'warning',
@@ -281,6 +283,51 @@ function extractSrc(openTag: string): { value: string; offsetInTag: number } | n
     value: srcMatch[2],
     offsetInTag: srcMatch.index + srcMatch[0].indexOf(srcMatch[1]) + 1,
   };
+}
+
+/**
+ * Whether a synchronous inline script in `<head>` creates a `<base>` element: `document.createElement("base")`, or
+ * `<base` in what `document.write` / `writeln` / `insertAdjacentHTML` is given. That script runs while the document is
+ * parsed, before the router's module (deferred) reads `document.baseURI` — the router README §1.4 writes
+ * `<base href="/<lang>/">` this way once the locale is known. Only a classic script without `src` before `</head>` (or
+ * `<body>`) counts: a module script or one in the body may run too late to be the base the router reads.
+ */
+function headScriptCreatesBase(html: string): boolean {
+  const lower = html.toLowerCase();
+  const ends = [lower.indexOf('</head'), lower.indexOf('<body')].filter((i) => i !== -1);
+  const headEnd = ends.length === 0 ? html.length : Math.min(...ends);
+  const scriptRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = scriptRegex.exec(html)) !== null && match.index < headEnd) {
+    if (extractSrc(`<script${match[1]}>`)) continue;
+    const type = attrValue(match[1], 'type');
+    if (type !== null && !/^\s*(?:text|application)\/(?:x-)?(?:javascript|ecmascript)\s*$/i.test(type) && type.trim() !== '') continue;
+    const code = blankJsComments(match[2]);
+    if (/\bcreateElement\s*\(\s*(["'`])base\1\s*\)/i.test(code)) return true;
+    const writes = /\b(?:write|writeln|insertAdjacentHTML)\s*\(/g;
+    let call: RegExpExecArray | null;
+    while ((call = writes.exec(code)) !== null) {
+      if (/<base\b/i.test(callArguments(code, call.index + call[0].length))) return true;
+    }
+  }
+  return false;
+}
+
+/** The text of a call's arguments from just after its `(` to the matching `)` (strings skipped; the rest if unclosed). */
+function callArguments(code: string, from: number): string {
+  let depth = 0;
+  for (let i = from; i < code.length; i++) {
+    const ch = code[i];
+    if (ch === '"' || ch === "'" || ch === '`') {
+      for (i++; i < code.length && code[i] !== ch; i++) if (code[i] === '\\') i++;
+    } else if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      if (depth === 0) return code.slice(from, i);
+      depth--;
+    }
+  }
+  return code.slice(from);
 }
 
 /** HTML コメントをオフセット保存のまま空白化する。 */

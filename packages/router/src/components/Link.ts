@@ -4,6 +4,7 @@ import { raiseError } from "../raiseError";
 import { getNavigation } from "../Navigation";
 import { normalizeBasename, normalizePathname } from "../normalizePathname";
 import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget";
+import { queryIncludes } from "../searchParams";
 import { inSsr } from "../inSsr";
 import { SSR_LINK_ATTR } from "../ssrMarkers";
 import { ILink } from "./types";
@@ -13,7 +14,8 @@ import type { Router } from "./Router";
 // 読み上げ言語・方向に直結するため含める（多言語ナビで anchor 側に届かないと
 // 読み上げが崩れる）。`aria-*` は開集合なので observedAttributes には載せられず、
 // anchor 生成時の一括コピーのみ（接続後の動的 aria-* 変更 — data-wcs バインド経由を
-// 含む — には追従しない。README の明記された制限）。
+// 含む — には追従しない。`for:` の行・`if:` の枝の中のリンクは接続前に束ねられるので、
+// その時の値はコピーされる。README の明記された制限）。
 const MIRRORED_ATTRIBUTES: readonly string[] = ['title', 'rel', 'target', 'download', 'hreflang', 'lang', 'dir'];
 
 export class Link extends HTMLElement implements ILink {
@@ -259,7 +261,10 @@ export class Link extends HTMLElement implements ILink {
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
     if (name === 'match' && oldValue !== newValue) {
-      this._updateActiveState();
+      // anchor 生成前（upgrade の属性の通知 — まだ router の下に居ないことがある）は接続時の判定に任せる
+      if (this._anchorElement) {
+        this._updateActiveState();
+      }
       return;
     }
     if (name === 'to' && oldValue !== newValue) {
@@ -287,9 +292,13 @@ export class Link extends HTMLElement implements ILink {
     if (this._path.startsWith('?') && this._anchorElement) {
       this._setAnchorHref(this._anchorElement, this._path);
     }
-    // active 判定は pathname のみの比較（クエリ非感応 — §1.1 欠陥 7 の修理）。
-    const currentPath = this._normalizePathname(new URL(window.location.href).pathname);
-    const { pathname } = splitUrlTarget(this._path);
+    // active 判定は pathname の比較（§1.1 欠陥 7 の修理）に、`to` のクエリが今のページのクエリに含まれること
+    // を足す（`to` にクエリが無ければ pathname だけ）。`/search?q=a` の「次のページ」（`?q=a&page=2`）が
+    // 「現在のページ」と読み上げられていた（docs/seam-apps.md、city-library）
+    const current = new URL(window.location.href);
+    const currentPath = this._normalizePathname(current.pathname);
+    const { pathname, search } = splitUrlTarget(this._path);
+    const queryMatches = queryIncludes(current.search, effectiveSearch(search));
     const linkPath = this._normalizePathname(
       this._isInternalTarget(this._path)
         ? (pathname === ""
@@ -301,8 +310,8 @@ export class Link extends HTMLElement implements ILink {
     // match="prefix": 下のパスでも active（サイドナビの「商品」が /products/3 でも印を付ける —
     // docs/seam-apps.md、router-admin）。そのページそのものではないので aria-current は "true"
     // 行き先の無いリンク（`to` が空）はどこでも active ではない（空のパスは "/" に正規化される）
-    const exact = this._path !== '' && currentPath === linkPath;
-    const within = !exact && this._path !== '' && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
+    const exact = this._path !== '' && queryMatches && currentPath === linkPath;
+    const within = !exact && this._path !== '' && queryMatches && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
     if (this._anchorElement) {
       if (exact || within) {
         this._anchorElement.classList.add('active');

@@ -187,6 +187,9 @@ export default {
   get filteredEmpty() { return !!this.monthData && this.monthEntries.length > 0 && this.shownEntries.length === 0; },
   get hideMemo() { return !this["settingsForm.showMemo"]; },
   get liveLost() { return this.authed && this.liveDown && !this.offline; },
+  // The banners' text: the regions stay in the page, so a screen reader announces the change (empty: no banner)
+  get offlineBanner() { return this.offline ? "オフラインです。保存はオンラインに戻ってからできます。" : ""; },
+  get liveBanner() { return this.liveLost ? "リアルタイム更新が切れました。再接続しています…" : ""; },
 
   // ---- entry form: derived ----
   get formContext() {
@@ -232,6 +235,12 @@ export default {
   get "budgetRows.*.error"() { return this.budgetErrors[this["budgetRows.*.id"]] ?? ""; },
   get budgetsBack() { return withParams("/months/" + (this.month ?? currentMonth()), this.devQs); },
   get budgetsLoading() { return this.isBudgets && !this.budgetData && !this["budgetsFetch.error"]; },
+  // What the loading and upload lines say, for the region always in the page: a route or a branch draws them, and they
+  // arrive with their text, which a screen reader does not announce
+  get statusAnnouncement() {
+    if (this.uploading) return "領収書をアップロード中…";
+    return this.monthLoading || this.budgetsLoading || this.formLoading ? "読み込み中…" : "";
+  },
   get budgetsFailed() { return this.isBudgets && !this.budgetData && !!this["budgetsFetch.error"] && !this["budgetsFetch.loading"]; },
 
   // ---- handlers: auth / month ----

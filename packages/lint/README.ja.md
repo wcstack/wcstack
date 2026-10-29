@@ -23,10 +23,10 @@ npx wcs-validate --errors-only src/**/*.html
 
 `.manifest.json` で終わるファイルは sidecar manifest として、それ以外は `data-wcs` バインディングを含む HTML として検査されます。ただし framework のコンポーネントと script のファイル（`.js`・`.ts`・`.jsx`・`.tsx`・`.vue`・`.svelte`）は読みません（4.6 から。以前は HTML として読み、問題なしと報告していました）。
 
-`<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL・絶対パスは読み込まず、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。4.4 から、`.js` / `.ts` の state にはスクリプトの規則（`wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` など）もかかります: ファイルの中の指摘はそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数え、IDE はページの `src` の値の上に出します。4.3 までは、外部 state ではパスだけを検査していました。
+`<wcs-state src="...">` で参照される外部 state（`.json` / `.js` / `.ts`）は HTML ファイルからの相対パスで解決され、パス検証の対象になります。URL は読み込まず、/ から始まるパスは `--root`（下記）のときだけ読み、読めないファイルはスキップされ、解決できないパスは warning のままです。なお外部 state が**解決できた**ページには通常の検証面が全て適用されるため、error severity の検出（例: 配列でない値への `for:`）が「これまでパス未解決で沈黙していたビルド」を新たに落とすことがあります。4.4 から、`.js` / `.ts` の state にはスクリプトの規則（`wcs/nested-assign`・`wcs/array-mutation`・`wcs/on-handler-this`・`wcs/updated-callback-unbound` など）もかかります: ファイルの中の指摘はそのファイルで報告し（`state.js:12:5 error wcs/nested-assign …`）、何ページから読まれても 1 回だけ数え、IDE はページの `src` の値の上に出します。4.3 までは、外部 state ではパスだけを検査していました。4.10（未リリース）から、名前で書いたキー — 短縮プロパティ（`export default { lang, t }`。`examples/router-i18n` の辞書のボリューム `<wcs-state mount="i18n" src="./i18n/state.js">`）や `items: ITEMS` — は、その名前が束縛する値の形を持ちます: モジュールの `const` か、相対パスからの import（import するファイルからの相対で読み、再 export の先も辿ります）。4.9 までは短縮プロパティのキーをまったく読まなかったので、`i18n.t.*` の束縛はすべて `wcs/binding-path-missing` の誤報でした。値を計算する名前（実行時にロケールの辞書を合わせた辞書）や辿れない名前（素の指定子・URL・無いファイル）のキーは、その下のパスを検査せず、ページがその下を束ねていればキーの上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。キーか宣言に JSDoc の `@type {typeof import("./en.js").default}` を付けると、そのファイルのリテラルで検査します。
 
 ```
-wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]
+wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--root=<dir>] [--errors-only] [--strict] <file> [<file> ...]
 ```
 
 | オプション | 説明 |
@@ -34,6 +34,7 @@ wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-
 | `--attr=<name>` | バインド属性名（既定 `data-wcs`） |
 | `--state-tag=<name>` | state カスタム要素のタグ名（既定 `wcs-state`） |
 | `--lang=ja\|en` | 診断メッセージの言語。未指定時は環境ロケール（`LC_ALL` / `LC_MESSAGES` / `LANG` → OS ロケール）に従う。code / range は言語に依らず不変 |
+| `--root=<dir>`（`--root <dir>` も） | 4.10（未リリース）から: サイトのルートのディレクトリ。/ から始まるパスをその下で読む — `<base href="/ja/">` の下の `<wcs-state src="/app.js">`（`docs/csp.md` と `examples/router-i18n` の形）や、state のファイルの `/…` からの import は `<dir>/app.js` として読む。ディレクトリの外へ出るもの（`/../x.js`）は読まない。無ければ / から始まるパスは読まない（`wcs/state-src-unread`、info）。そうしたファイルの指摘はディレクトリの下のパスで出す（`public/app.js:12:5 …`） |
 | `--errors-only`（別名 `--quiet`） | error severity の行だけ表示。warning / info の件数と exit code は不変 |
 | `--strict` | warning severity の診断でも exit `1` にする。severity 自体は不変（IDE の表示と同じ）で、exit code の閾値だけを error → warning に下げる。summary 行の末尾に `(strict)` が付く。パスの typo（`wcs/binding-path-missing` は warning）で CI を落としたいときに使う — ただし先に `<wcs-state src>` を全て解決可能にしておくこと（解決できない外部 state が残す warning でも落ちるようになる）。`--errors-only` と併用可: 表示は error のみのまま、exit code は warning を反映する |
 
@@ -89,7 +90,7 @@ nothing to check: index.html — no data-wcs binding, <wcs-*> tag or wcstack scr
 
 - **発見**: HTML ファイルから上へ辿って最も近い `wcstack.manifest.json` が自動で使われます — コマンドラインに渡す必要はありません。`application` artifact を含む `*.manifest.json` を引数に渡した場合は、その実行全体で発見を置き換えます。VS Code 拡張も同じファイルを発見するので IDE と CLI の結果は一致します。
 - **効果**: `stateSchema` を宣言すると、schema 上に確定的に存在しないバインドパスは `wcs/path-nonexistent`（**error**・exit `1`）、`for:` に非配列は `wcs/path-type-mismatch`（**error**）になります。schema が開いたままの箇所（素の `{}`）は沈黙し、インラインスクリプトのメソッド / getter / `$listKeys` は引き続き存在扱いです。`stateSchema` が無ければ従来どおりです。
-- **契約が要るとき**: validator が全体を読めない state は、契約が無いとパスをまったく検査できません。よくあるのはトップレベルの spread です — `export default { ...defaults(), get total() { … } }` は静的には見えないキーを持ち込むので、その state のパスは検査しません。4.4 から、spread の上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。`stateSchema` があれば束縛を —— 4.4 から getter の中で読むパス（`wcs/read-path-missing`）も —— それで検査します。読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state も検査できません。4.7 から、それを属性の上で 1 回だけ言います（`wcs/state-src-unread`、info）。4.6 までは何も言いませんでした。`src` はページからの相対パスで読むので、ファイルはサーバーと同じ並びに置いてください。
+- **契約が要るとき**: validator が全体を読めない state は、契約が無いとパスをまったく検査できません。よくあるのはトップレベルの spread です — `export default { ...defaults(), get total() { … } }` は静的には見えないキーを持ち込むので、その state のパスは検査しません。4.4 から、spread の上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。`stateSchema` があれば束縛を —— 4.4 から getter の中で読むパス（`wcs/read-path-missing`）も —— それで検査します。読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state も検査できません。4.7 から、それを属性の上で 1 回だけ言います（`wcs/state-src-unread`、info）。4.6 までは何も言いませんでした。`src` はページからの相対パスで読むので、ファイルはサーバーと同じ並びに置き、/ から始まるパスには 4.10（未リリース）から `--root=<dir>` を渡してください。
 - **schema の出どころ**: 手で書く（受け付けるのは JSON-Schema サブセット `type / properties / required / items / enum / const / anyOf / $defs / $ref` のみ）か、TypeScript の state ファイル（または JSDoc で型を付けた JavaScript のファイル）から `wcs-schema`（`@wcstack/typescript`）で生成します。manifest は派生物なので、CI では `wcs-schema check` で同期を保ってください。
 
 ## 生成 → 検証 → 修正ループでの利用

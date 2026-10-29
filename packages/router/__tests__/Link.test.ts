@@ -974,7 +974,7 @@ describe('Link', () => {
       expect(link.anchorElement?.classList.contains('active')).toBe(true);
     });
 
-    it('to 側のクエリも active 判定から除外されること', () => {
+    it('to にクエリがあれば、今のページのクエリがそのパラメータを持つときだけ active（docs/seam-apps.md、city-library）', () => {
       (window as any).location.pathname = '/test';
       (window as any).location.href = 'http://localhost/test';
 
@@ -986,7 +986,14 @@ describe('Link', () => {
       link.textContent = 'Link';
       document.body.appendChild(link);
 
+      // 4.9 までは pathname だけで active だった（「次のページ」が「現在のページ」と読まれた）
+      expect(link.anchorElement?.classList.contains('active')).toBe(false);
+      expect(link.anchorElement?.hasAttribute('aria-current')).toBe(false);
+
+      (window as any).location.href = 'http://localhost/test?page=2';
+      (link as any)._updateActiveState();
       expect(link.anchorElement?.classList.contains('active')).toBe(true);
+      expect(link.anchorElement?.getAttribute('aria-current')).toBe('page');
     });
 
     it('フォールバック環境でクエリのみリンクのクリックが router.navigate に渡ること', async () => {
@@ -1017,6 +1024,99 @@ describe('Link', () => {
 
       expect(preventDefault).toHaveBeenCalled();
       expect(navigateSpy).toHaveBeenCalledWith('?page=2');
+    });
+  });
+
+  // docs/seam-apps.md、city-library — `/search?q=a` の「次のページ」（`?q=a&page=2`）が「現在のページ」と読まれた
+  describe('クエリのあるリンクの active / aria-current', () => {
+    function linkTo(to: string, match?: string): Link {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const link = document.createElement('wcs-link') as Link;
+      link.setAttribute('to', to);
+      if (match) link.setAttribute('match', match);
+      link.textContent = 'Link';
+      document.body.appendChild(link);
+      return link;
+    }
+    function at(href: string): void {
+      const url = new URL(href);
+      (window as any).location.href = url.href;
+      (window as any).location.pathname = url.pathname;
+    }
+    const state = (link: Link) => ({
+      active: link.anchorElement!.classList.contains('active'),
+      current: link.anchorElement!.getAttribute('aria-current'),
+    });
+
+    it('to のクエリのパラメータがすべて同じ値なら active。ページの余分なパラメータは構わない', () => {
+      at('http://localhost/search?q=a');
+      const next = linkTo('/search?q=a&page=2');
+      expect(state(next)).toEqual({ active: false, current: null });
+
+      at('http://localhost/search?sort=new&page=2&q=a');
+      window.dispatchEvent(new CustomEvent('wcs:navigate'));
+      expect(state(next)).toEqual({ active: true, current: 'page' });
+
+      // 値が違えば active ではない
+      at('http://localhost/search?q=a&page=3');
+      window.dispatchEvent(new CustomEvent('wcs:navigate'));
+      expect(state(next)).toEqual({ active: false, current: null });
+    });
+
+    it('クエリの無い to は pathname だけで比べる（従来どおり）', () => {
+      at('http://localhost/search?q=a&page=2');
+      expect(state(linkTo('/search'))).toEqual({ active: true, current: 'page' });
+    });
+
+    it('to="?"（クエリの全消去）はクエリを持たないリンクとして pathname だけで比べる', () => {
+      at('http://localhost/search?q=a');
+      expect(state(linkTo('?'))).toEqual({ active: true, current: 'page' });
+    });
+
+    it('クエリだけのリンクは、そのクエリのページでだけ active で、クエリだけのナビゲーションに追従する', () => {
+      at('http://localhost/search?q=a');
+      const page2 = linkTo('?q=a&page=2');
+      expect(page2.anchorElement?.getAttribute('href')).toBe('/search?q=a&page=2');
+      expect(state(page2)).toEqual({ active: false, current: null });
+
+      // クエリだけのナビゲーション（Navigation API の currententrychange / フォールバックの wcs:navigate / popstate）
+      at('http://localhost/search?q=a&page=2');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      expect(state(page2)).toEqual({ active: true, current: 'page' });
+    });
+
+    it('重複するキーは同じ値の組（順序は問わない）のときだけ一致する', () => {
+      at('http://localhost/list?tag=b&tag=a');
+      const both = linkTo('/list?tag=a&tag=b');
+      expect(state(both).active).toBe(true);
+
+      at('http://localhost/list?tag=a');
+      (both as any)._updateActiveState();
+      expect(state(both).active).toBe(false);
+
+      at('http://localhost/list?tag=a&tag=b&tag=c');
+      (both as any)._updateActiveState();
+      expect(state(both).active).toBe(false);
+    });
+
+    it('値はデコードして比べる（+ と %20 は同じ）', () => {
+      at('http://localhost/search?q=a%20b');
+      expect(state(linkTo('/search?q=a+b')).active).toBe(true);
+    });
+
+    it('match="prefix" はパスの規則に同じクエリの規則を足す', () => {
+      at('http://localhost/products/3?view=grid');
+      const products = linkTo('/products?view=grid', 'prefix');
+      expect(state(products)).toEqual({ active: true, current: 'true' });
+
+      at('http://localhost/products/3');
+      (products as any)._updateActiveState();
+      expect(state(products)).toEqual({ active: false, current: null });
+
+      at('http://localhost/products?view=grid');
+      (products as any)._updateActiveState();
+      expect(state(products)).toEqual({ active: true, current: 'page' });
     });
   });
 

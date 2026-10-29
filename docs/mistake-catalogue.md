@@ -72,7 +72,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 |---|---|
 | The design (cannot be written, or harmless) | 7 |
 | The runtime | 63 |
-| The lint only — conditional silence | 24 |
+| The lint only — conditional silence | 25 |
 | The documents only — silence | 38 |
 | Lint codes not counted | 18 |
 
@@ -146,6 +146,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Misspells an ARIA attribute in `attr.aria-*:`. | `wcs/aria-attr-unknown` (warning) | The attribute is written; assistive technology ignores it. | degraded | stays with the lint (the runtime cannot see it). The name is in the markup, so the lint has everything; a runtime table of ARIA names would cost 300–400 B. |
 | Loads `@wcstack/devtools/auto` after `@wcstack/state/auto`. | `wcs/script-order` (info) | 4.0 hands a late DevTools every binding there already, so only the timeline before it attached is missing. | degraded | runtime report — 4.x. DevTools can say that its timeline starts when it attached. |
 | Binds an output declared `semantics: "handle"` to a state path: `<wcs-camera data-wcs="streamReady: cam.stream">`, or writes the `MediaStream` from an event into state. | `wcs/handle-bound-as-value` (warning) | It works: the live `MediaStream` sits in state, unproxied. But no snapshot, DevTools view or SSR can carry it, and the protocol says a handle takes a ref or callback, not a value slot. | degraded | design out — 5.0 agenda (breaking). Found by the state-field-report seam app (both forms worked, nothing said a word). The lint reads the binding form; the runtime could refuse a handle output bound to a path in 5.0. A write from an event handler is beyond both. |
+| Puts a live region (`aria-live`, `role="status"` / `"log"`) in an `if:` branch, a `for:` row or a `<wcs-route>`, holding its text or showing what the branch's condition reads (`<template data-wcs="if: notice"><p role="status" data-wcs="textContent: notice">`). | `wcs/live-region-inserted` (warning) | The region enters the page with its text, and a screen reader announces a region whose text changes while it is in the page: the message is not read. An inserted `role="alert"` is the one form announced on insertion (the user agent fires the alert event); a status message meant to be heard belongs in a region that is always in the page. The city-library seam app measured no announcement in Chromium; nothing in the console, the lint or axe said so. | degraded | stays with the lint (the runtime cannot see it). Since 4.10 the lint reports it where the markup shows the text arrives with the region (the region's own text; an `if:` text bound to what its condition reads). A route-body region whose bound text is set before the navigation, or arrives while `<wcs-view-transition>` holds the swap, is not seen: the same markup is right for a form's error that changes while the route is shown. Keep regions at the page level. |
 | Writes `<wcs-state name="…">` (v1). | `wcs/named-state-deprecated` (error) | 4.0 never reads `name`: harmless alone, and a v1 page with two named states fails as `#47` instead. | degraded | runtime report — 4.x. The diagnostics add-on could warn when the element mounts; low value. |
 
 ### Reported at runtime
@@ -246,7 +247,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | `wcs/manifest-state-collision` | Two application manifests declare a stateSchema for the same state; the lint then checks that state against neither. |
 | `wcs/manifest-tag-collision` | Two sidecar manifests declare the same tag without override. |
 | `wcs/manifest-unknown-keyword` | The sidecar manifest uses a schema keyword outside the subset the lint reads. |
-| `wcs/path-dynamic-unknown` | A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). |
+| `wcs/path-dynamic-unknown` | A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). Since 4.10, also a key whose value it cannot read (a name bound to a computed value, `{ t }` with `t` merged from the locale catalogs) when the page binds under it — said once, at the key; a JSDoc `@type {typeof import("./en.js").default}` has those paths checked. |
 | `wcs/path-reserved-name` | Reserved in the code table, not emitted yet. |
 | `wcs/state-src-unread` | A limit of the lint, not an author's mistake: a `<wcs-state src>` it cannot read — a path from `/`, a URL, a file that is not there — leaves that state's paths and script rules unchecked; said once, at the attribute (info). Up to 4.6 it said nothing. |
 | `wcs/type-annotation` | A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value. |

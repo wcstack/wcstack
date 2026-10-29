@@ -25,6 +25,8 @@ button.secondary { background: #4a5568; }
 .error { color: #9b2c2c; font-size: 0.88rem; }
 .banner { background: #fff5f5; border: 1px solid #feb2b2; color: #9b2c2c; padding: 0.6rem 0.8rem; border-radius: 6px; margin: 0.5rem 0; }
 .banner.info { background: #ebf8ff; border-color: #90cdf4; color: #2c5282; }
+/* the sent notice stays in the page (so its next text is announced) and takes no room while it has nothing to say */
+#sent-notice:empty { padding: 0; margin: 0; border-width: 0; }
 label { display: block; margin: 0.5rem 0 0.2rem; font-weight: 600; font-size: 0.9rem; }
 input[type=text], textarea { width: 100%; padding: 0.45rem; border: 1px solid #cbd5e0; border-radius: 6px; font: inherit; }
 textarea { min-height: 5rem; }
