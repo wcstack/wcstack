@@ -163,10 +163,9 @@ const upper = (): FilterFn => (value: unknown): string => String(value).toUpperC
 
 const lower = (): FilterFn => (value: unknown): string => String(value).toLowerCase();
 
+/** The first character upper-cased (`charAt(0)` of "" is "", so an empty string stays empty). */
 const capitalize = (): FilterFn => (value: unknown): string => {
   const v = String(value);
-  if (v.length === 0) {return v;}
-  if (v.length === 1) {return v.toUpperCase();}
   return v.charAt(0).toUpperCase() + v.slice(1);
 };
 
@@ -273,27 +272,24 @@ const datetime = (options: string[]): FilterFn => {
   };
 };
 
-/** YYYY-MM-DD with a configurable separator (default '-'), locale-independent. */
+/** Two digits, zero-padded (`ymd` / `hms`). */
+const two = (n: number): string => String(n).padStart(2, '0');
+
+/** YYYY-MM-DD with a configurable separator (default '-'), locale-independent, in the runtime's time zone. */
 const ymd = (options: string[]): FilterFn => {
   const opt = options?.[0] ?? '-';
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('ymd', value);}
-    const year = value.getFullYear().toString();
-    const month = (value.getMonth() + 1).toString().padStart(2, '0');
-    const day = value.getDate().toString().padStart(2, '0');
-    return `${year}${opt}${month}${opt}${day}`;
+    return `${value.getFullYear()}${opt}${two(value.getMonth() + 1)}${opt}${two(value.getDate())}`;
   };
 };
 
-/** HH:MM:SS with a configurable separator (default ':'), zero-padded and locale-independent. */
+/** HH:MM:SS with a configurable separator (default ':'), zero-padded and locale-independent, in the runtime's time zone. */
 const hms = (options: string[]): FilterFn => {
   const opt = options?.[0] ?? ':';
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('hms', value);}
-    const hours = value.getHours().toString().padStart(2, '0');
-    const minutes = value.getMinutes().toString().padStart(2, '0');
-    const seconds = value.getSeconds().toString().padStart(2, '0');
-    return `${hours}${opt}${minutes}${opt}${seconds}`;
+    return `${two(value.getHours())}${opt}${two(value.getMinutes())}${opt}${two(value.getSeconds())}`;
   };
 };
 
