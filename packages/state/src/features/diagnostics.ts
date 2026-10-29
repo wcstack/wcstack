@@ -112,6 +112,10 @@ function under(engine: Engine, chain: Pattern[], k: number, v: any, named: (q: P
       // getters declared one level under the same parent (`items.*.subtotal`)
       const parent = named(q.parent);
       for (const g of engine.patterns.all()) if (g.parent === parent && g.getter !== null) names.push(g.last);
+      // an empty object under a key is a seed the page fills later (`fieldErrors: {}`, then
+      // `this.fieldErrors = { date: "…" }`), as a `null` one is: nothing in it to be wrong about, and
+      // the lint reads the assignments since 4.9 (docs/seam-apps.md, family-ledger)
+      if (k > 0 && names.length === 0) return null;
       return { seg: q.last, names, row: chain.slice(0, k).some((x) => x.last === "*") };
     }
     if (d.get !== undefined || d.set !== undefined) return null;
