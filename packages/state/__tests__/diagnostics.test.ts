@@ -480,6 +480,25 @@ describe("ルートの <wcs-state> が 2 つ（wcs/second-root — docs/seam-app
   });
 });
 
+describe("要素が書いたオブジェクトの下のパス（docs/seam-apps.md、city-library — router の searchParams）", () => {
+  class ParamsOut extends HTMLElement {
+    static wcBindable = { protocol: "wc-bindable", version: 1, properties: [{ name: "params", event: "params-out:changed" }] };
+    params: Record<string, string> = { q: "a" };
+    connectedCallback() { this.dispatchEvent(new CustomEvent("params-out:changed", { detail: this.params })); }
+  }
+  beforeAll(() => { if (!customElements.get("params-out")) customElements.define("params-out", ParamsOut); });
+
+  it("要素が書いたオブジェクトに無いキーは報告しない — 形は要素が決める（URL のクエリ）", async () => {
+    const got = await warnings(() => page(`<params-out data-wcs="params: query"></params-out><p>{{ query.next }}</p>`, { query: { q: "" } }));
+    expect(got).toEqual([]);
+  });
+
+  it("要素が書かないオブジェクトの下の誤字は今までどおり報告する", async () => {
+    const got = await warnings(() => page(`<p>{{ form.nmae }}</p>`, { form: { name: "" } }));
+    expect(got).toEqual([expect.stringContaining('Bound path "form.nmae" does not resolve')]);
+  });
+});
+
 describe("空のオブジェクトの種（docs/seam-apps.md、family-ledger の取り込み）", () => {
   it("{} を種にしたキーの下の束縛は警告しない — 後で代入する種で、null の種と同じ（4.9 の lint は代入を読む）", async () => {
     const got = await warnings(() => page(`<p>{{ fieldErrors.date }}</p><i>{{ form.errors.amount }}</i>`, {

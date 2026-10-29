@@ -18,6 +18,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ### Fixed
 
+- `@wcstack/state`: **a key the router's `searchParams` does not have yet is not reported.** `<wcs-router data-wcs="searchParams: query">` writes an object with the URL's keys, so `if: query.next` on a login page made the `diagnostics` add-on warn `[wcs/binding-path-missing] … "next" is not declared. Updates to this path will be silently dropped.` whenever the URL had another key but not `next` — and they are not dropped: the next URL with `next` shows it. A key under an object an element wrote (an output binding) is the element's to shape and is no longer reported; a typo under an object only the page writes still is. From the `city-library` seam app ([docs/seam-apps.md](./docs/seam-apps.md)).
 - `@wcstack/state`: **an empty object a page fills later is not a typo.** `fieldErrors: {}`, later replaced with `this.fieldErrors = { date: "bad" }`, made the `diagnostics` add-on report every binding below it (`fieldErrors.date`, `[wcs/binding-path-missing]`) on every load, saying "Updates to this path will be silently dropped" — which was not so: replacing the object updates them. The 4.9 lint already reads those assignments, so the console and the lint disagreed. An empty object under a key is now treated as the `null` seed is: nothing below it is reported. A typo under an object that has keys is still reported. Found by landing the `family-ledger` seam app in `examples/` ([docs/seam-apps.md](./docs/seam-apps.md)).
 
 ## [4.9.0] — 2026-10-28
