@@ -66,12 +66,13 @@
   <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
 </wcs-fetch>
 
-<template data-wcs="if: offline">
-  <div class="banner offline" role="status">オフラインです。保存はオンラインに戻ってからできます。</div>
-</template>
-<template data-wcs="if: liveLost">
-  <div class="banner live" role="status">リアルタイム更新が切れました。再接続しています…</div>
-</template>
+<!-- Status regions stay in the page, and their text is written: a screen reader announces a region whose text changes,
+     not one a branch inserts with its text (wcs/live-region-inserted). Empty, a banner takes no room. -->
+<div class="banner offline" role="status" data-wcs="textContent: offlineBanner"></div>
+<div class="banner live" role="status" data-wcs="textContent: liveBanner"></div>
+<!-- The loading and upload lines below are drawn by routes and branches, which insert them with their text: this
+     region, always here, says them. -->
+<p class="visually-hidden" role="status" data-wcs="textContent: statusAnnouncement"></p>
 
 <header class="top">
   <template data-wcs="if: authed">
@@ -145,7 +146,7 @@
             </template>
 
             <template data-wcs="if: monthLoading">
-              <p class="status" role="status">読み込み中…</p>
+              <p class="status">読み込み中…</p>
             </template>
             <template data-wcs="if: monthFailed">
               <div class="error-box" role="alert">
@@ -226,7 +227,7 @@
           <wcs-head><title>予算 - 家計簿</title></wcs-head>
           <section class="card">
             <h1>予算 <span data-wcs="textContent: monthTitle"></span></h1>
-            <template data-wcs="if: budgetsLoading"><p class="status" role="status">読み込み中…</p></template>
+            <template data-wcs="if: budgetsLoading"><p class="status">読み込み中…</p></template>
             <template data-wcs="if: budgetsFailed">
               <div class="error-box" role="alert">
                 <p>予算を読み込めませんでした。</p>
@@ -282,7 +283,7 @@
   <template data-wcs="if: isEntryRoute">
     <section class="card" aria-label="記録フォーム">
       <h1 data-wcs="textContent: formTitle"></h1>
-      <template data-wcs="if: formLoading"><p class="status" role="status">読み込み中…</p></template>
+      <template data-wcs="if: formLoading"><p class="status">読み込み中…</p></template>
       <template data-wcs="if: formLoadFailed">
         <div class="error-box" role="alert">
           <p data-wcs="textContent: formLoadErrorText"></p>
@@ -326,7 +327,7 @@
           </div>
         </template>
         <p class="error" role="alert" data-wcs="textContent: saveMessage"></p>
-        <template data-wcs="if: uploading"><p class="status" role="status">領収書をアップロード中…</p></template>
+        <template data-wcs="if: uploading"><p class="status">領収書をアップロード中…</p></template>
 
         <div class="row-actions">
           <button type="submit" class="primary" data-wcs="disabled: saveDisabled">保存</button>
