@@ -474,7 +474,7 @@ export default {
 
 ホストに配線したコンポーネント（ホストに `data-wcs="state…"`）の shadow root の中の `<wcs-state mount>` は、`will not graft: its component is wired to its host.` で拒否され、`connectedCallbackPromise` は resolve します。3.x は pending のままでした。配線したコンポーネントはホストの木を読むので、そのデータはホストの状態に置いてください。
 
-4.0 の lint は、これらの宣言を `wcs/volume-declaration` で、ボリュームの `$behavior` / `$features` を `wcs/behavior-invalid` / `wcs/features-invalid` で、なくなった名前を §3.1 のとおりに報告します。lint は `src=` で読み込むボリュームの状態を読めないので、そのマウントパスの下を指すルートの `$watch` のキーやバインディング（`cart.total`）には、動くにもかかわらず `wcs/watch-path-missing` / `wcs/binding-path-missing` の警告が出ます。そこでは出るものと考えてください。`--strict` では CI の失敗になります。
+4.0 の lint は、これらの宣言を `wcs/volume-declaration` で、ボリュームの `$behavior` / `$features` を `wcs/behavior-invalid` / `wcs/features-invalid` で、なくなった名前を §3.1 のとおりに報告します。lint は `src=` で読み込むボリュームの状態をページからの相対パスで読み、そのマウントパスの下を指すルートの `$watch` のキーやバインディング（`cart.total`）をそれで検査します。読めない `src` — URL・/ から始まるパス・無いファイル — のマウントパスの下は検査せず、属性の上で 1 回だけそう言います（`wcs/state-src-unread`、info）。4.10 から、値が辿れない名前（ロケールの辞書から計算した辞書など）のキーの下も検査せず、キーの上で 1 回だけそう言います（`wcs/path-dynamic-unknown`、info）。
 
 #### マウントしたコンポーネント（`state: …` を持つ `bind-component`）
 

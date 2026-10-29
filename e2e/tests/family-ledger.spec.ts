@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
@@ -556,6 +556,13 @@ test("遅いサーバーと失敗するサーバー: 読み込み中が出て、
   expect(onlyProvoked(log, status(500))).toEqual([]);
 });
 
+// A banner is a status region that stays in the page (a screen reader announces a region whose text changes, not one
+// inserted with its text — wcs/live-region-inserted): gone means it shows nothing and says nothing.
+async function bannerGone(banner: Locator): Promise<void> {
+  await expect(banner).toHaveText("");
+  await expect(banner).toBeHidden();
+}
+
 test("オフラインではバナーが出て保存できず、つながると月が追いつく", async ({ page, context }) => {
   const log = watchConsole(page);
   await loginTo(page, "/months/2026-10");
@@ -566,7 +573,7 @@ test("オフラインではバナーが出て保存できず、つながると�
   await expect(page).toHaveURL(`${APP}/entries/new?month=2026-10`);
   await expect(saveButton(page)).toBeDisabled();
   await context.setOffline(false);
-  await expect(page.locator(".banner.offline")).toHaveCount(0);
+  await bannerGone(page.locator(".banner.offline"));
   await expect(saveButton(page)).toBeEnabled();
   await page.locator("form a", { hasText: "キャンセル" }).click();
   await expect(page).toHaveURL(`${APP}/months/2026-10`);
@@ -579,7 +586,7 @@ test("オフラインではバナーが出て保存できず、つながると�
   await expect(row(page, "オフライン中")).toHaveCount(0);
   await context.setOffline(false);
   await expect(row(page, "オフライン中")).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".banner.offline")).toHaveCount(0);
+  await bannerGone(page.locator(".banner.offline"));
   expect(log.problems).toEqual([]);
   expect(onlyProvoked(log, /net::ERR_INTERNET_DISCONNECTED/, /net::ERR_NETWORK_CHANGED/)).toEqual([]);
 });
@@ -597,7 +604,7 @@ test("サーバーが再起動しても、ライブの更新はひとりでに�
   await expect.poll(async () => (await fetch(`${APP}/api/categories`)).status, { timeout: 15_000 }).toBe(401);
   await api("/api/entries", { method: "POST", body: { date: "2026-10-30", amount: 999, categoryId: "other", memo: "再起動の直後", clientId: "restart-1" } });
   await streamsOpen(1);
-  await expect(page.locator(".banner.live")).toHaveCount(0);
+  await bannerGone(page.locator(".banner.live"));
   await expect(row(page, "再起動の直後")).toBeVisible();          // つながり直したときの追いつき
 
   // ブラウザ自身のつなぎ直しは 502 で諦め（EventSource は二度と試さない）、その後の 200 は <wcs-sse> が開き直したもの
@@ -614,7 +621,7 @@ test("サーバーが再起動しても、ライブの更新はひとりでに�
   await expect(page.locator(".banner.live")).toBeVisible();
   await api("/api/entries", { method: "POST", body: { date: "2026-10-30", amount: 997, categoryId: "other", memo: "切断の後", clientId: "drop-1" } });
   await expect(row(page, "切断の後")).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator(".banner.live")).toHaveCount(0);
+  await bannerGone(page.locator(".banner.live"));
   expect(log.problems).toEqual([]);
   expect(onlyProvoked(log, status(502), /net::ERR_INCOMPLETE_CHUNKED_ENCODING/)).toEqual([]);
 });

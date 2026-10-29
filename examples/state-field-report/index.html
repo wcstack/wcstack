@@ -68,9 +68,9 @@
 </header>
 
 <main>
-<template data-wcs="if: sentNotice">
-  <div class="banner info" id="sent-notice" role="status" data-wcs="textContent: sentNotice"></div>
-</template>
+<!-- Always in the page, so a screen reader announces the notice when it is written (not a region inserted with its
+     text — wcs/live-region-inserted); empty, it takes no room. -->
+<div class="banner info" id="sent-notice" role="status" data-wcs="textContent: sentNotice"></div>
 <!-- Outbox: page level so uploads keep running across navigation. Never removed (an if: would abort uploads). -->
 <section id="outbox" data-wcs="hidden: outboxEmpty">
   <h2>Outbox</h2>

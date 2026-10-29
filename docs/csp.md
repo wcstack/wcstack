@@ -183,9 +183,10 @@ a *relative* `src="./state.js"` resolves against the base (`/ja/state.js`),
 not against the page, and 404s. Under a `<base>` below the root, write the URL root-absolute:
 `src="/state.js"`. Under `<base href="/">` — every SPA's — a relative `src="state.js"` already resolves to
 `/state.js` from any route: write it relative, and the lint reads it (the `family-ledger` seam app
-followed the root-absolute advice there and its state went unchecked). The lint reads a `src` relative to the page and cannot read a root-absolute one:
+followed the root-absolute advice there and its state went unchecked). The lint reads a `src` relative to the page and, by itself, cannot read a root-absolute one:
 since 4.7 it says so (`wcs/state-src-unread`, info) — that state's paths and script rules are not
-checked. Keep a copy of the layout the lint can read, or check the page with the state inline.
+checked. Since 4.10, tell it where the site's root is — `npx @wcstack/lint --root=public public/ja/index.html` — and it
+reads `/state.js` (and the modules it imports from `/…`) under that directory.
 
 ## 5. Router guards — a nonce or blob:
 

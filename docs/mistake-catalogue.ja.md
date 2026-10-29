@@ -72,7 +72,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|
 | 設計（書けない、または害が無い） | 4 |
 | 実行時 | 63 |
-| lint だけ — 条件付きの沈黙 | 24 |
+| lint だけ — 条件付きの沈黙 | 25 |
 | 文書だけ — 沈黙 | 34 |
 | 数えない lint の code | 18 |
 
@@ -142,6 +142,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `attr.aria-*:` の ARIA 属性名を打ち間違える。 | `wcs/aria-attr-unknown` (warning) | 属性は書かれ、支援技術は無視する。 | 劣化 | lint のまま（実行時には見えない）。名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。 |
 | `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (info) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。 |
 | `semantics: "handle"` と宣言された出力を state のパスに束ねる: `<wcs-camera data-wcs="streamReady: cam.stream">`、またはイベントの `MediaStream` を state に書く。 | `wcs/handle-bound-as-value` (warning) | 動く。生きた `MediaStream` が素のまま state に入る。ただしスナップショットも DevTools も SSR も運べず、プロトコルはハンドルを値の置き場ではなく ref か callback で受けると定める。 | 劣化 | 設計で消す — 5.0 の議題（破壊的）。継ぎ目アプリ state-field-report が見つけた（どちらの形も動き、何も言わなかった）。lint は束縛の形を読む。5.0 でランタイムがパスに束ねたハンドルの出力を拒むことはできる。イベントのハンドラからの書き込みはどちらにも見えない。 |
+| ライブリージョン（`aria-live`、`role="status"` / `"log"`）を `if:` の枝・`for:` の行・`<wcs-route>` に置き、文を書いて持たせるか、枝の条件が読むものを見せる（`<template data-wcs="if: notice"><p role="status" data-wcs="textContent: notice">`）。 | `wcs/live-region-inserted` (warning) | リージョンは文ごとページに入り、スクリーンリーダーが読み上げるのはページにあるリージョンの文が変わったとき: 知らせは読まれない。挿入したときに読み上げられるのは `role="alert"` だけ（user agent が alert のイベントを出す）で、聞かせたい状態の知らせは常にページにあるリージョンに置く。継ぎ目アプリ city-library は Chromium で読み上げを 1 度も測らなかった。コンソールも lint も axe も何も言わなかった。 | 劣化 | lint のまま（実行時には見えない）。4.10 から lint が、文がリージョンと一緒に入るとマークアップから分かる所（リージョン自身の文・条件の読むものに束ねた `if:` の文）で報告する。束ねた文が遷移の前に入るルートのリージョンや、`<wcs-view-transition>` が差し替えを待たせる間に文が届くものは見えない — 同じマークアップが、ルートを表示している間に変わるフォームのエラーには正しいため。リージョンはページの階層に置く。 |
 | `<wcs-state name="…">` を書く（v1）。 | `wcs/named-state-deprecated` (error) | 4.0 は `name` を読まない。単独では害が無く、名前付き State が 2 つある v1 のページは代わりに `#47` で失敗する。 | 劣化 | 実行時に知らせる — 4.x。diagnostics の後付けが要素のマウントで警告できる。価値は低い。 |
 
 ### 実行時に知らせるもの
@@ -239,7 +240,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `wcs/manifest-state-collision` | 2 つの application の manifest が同じ state の stateSchema を宣言している。lint はどちらでもその state を検査しない。 |
 | `wcs/manifest-tag-collision` | 2 つの sidecar の manifest が、override 無しで同じタグを宣言している。 |
 | `wcs/manifest-unknown-keyword` | sidecar の manifest が、lint の読む部分集合の外の schema のキーワードを使っている。 |
-| `wcs/path-dynamic-unknown` | 作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。 |
+| `wcs/path-dynamic-unknown` | 作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。4.10 から、値を読めないキー（計算した値を束縛する名前。ロケールの辞書を合わせた `t` の `{ t }`）の下をページが束ねるときも、キーの上で 1 回だけ言う。JSDoc の `@type {typeof import("./en.js").default}` を付けると、そのパスを検査する。 |
 | `wcs/path-reserved-name` | code の表に予約されているだけで、まだ出さない。 |
 | `wcs/state-src-unread` | 作者の誤りではなく lint の限界: 読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state は、パスもスクリプトの規則も検査しない。それを属性の上で 1 回だけ言う（info）。4.6 までは何も言わなかった。 |
 | `wcs/type-annotation` | 初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。 |

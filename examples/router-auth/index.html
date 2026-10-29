@@ -14,6 +14,7 @@
     .site-header a.active { font-weight: 600; }
     .error { color: #c62828; }
     .notice { background: #fff8e1; border: 1px solid #ffe082; padding: 0.5rem 0.75rem; border-radius: 6px; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   </style>
   <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
   <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
@@ -183,6 +184,10 @@
 </wcs-fetch>
 
 <main>
+  <!-- The notice is written before the navigation to /login (expireSession), so the login route arrives with it, and a
+       screen reader does not announce a region inserted with its text (wcs/live-region-inserted): this region, always in
+       the page, says it; the route shows it. -->
+  <p class="visually-hidden" role="status" data-wcs="textContent: notice"></p>
   <wcs-router focus="heading" announce="title" data-wcs="path: path; routeName: routeName; typedParams: routeParams; searchParams: query; navigateUrl: navigateUrl; replaceUrl: replaceUrl">
     <template>
       <wcs-route path="/" name="home">
@@ -209,7 +214,7 @@
         <section>
           <h1>Log in</h1>
           <template data-wcs="if: notice">
-            <p class="notice" role="status" data-wcs="textContent: notice"></p>
+            <p class="notice" data-wcs="textContent: notice"></p>
           </template>
           <form data-wcs="onsubmit#prevent: login">
             <p><label>Username <input name="username" autocomplete="username" data-wcs="value: form.username"></label></p>

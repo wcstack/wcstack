@@ -861,15 +861,94 @@ function collectNestedWriteRoots(
   return roots;
 }
 
+/** A string literal `$renderedCallback` compares with what it was given (`paths`): the path, and where it starts. */
+interface PathTest {
+  readonly path: string;
+  /** `p.startsWith("items.")`: the literal is a prefix (a trailing `.` dropped). */
+  readonly prefix: boolean;
+  /** The offset of the literal's text (inside the quotes) in the body. */
+  readonly at: number;
+}
+
+const STRING = String.raw`(["'])((?:\\.|(?!\1)[^\\\n])*)\1`;
+const NAME = String.raw`[$A-Za-z_][$\w]*`;
+
 /**
- * `$renderedCallback` の本体で、**パス判定に使われている**文字列リテラルを位置付きで返す。
+ * The string literals `$renderedCallback(paths)` tests `paths` with — only those: a string compared with something else
+ * (`const first = FIELDS.find((k) => errs[k]); if (first === "branch") …`) is not a path test, and reading it as one
+ * reported a path "never in paths" with a did-you-mean (the city-library seam app).
  *
- * 対象の形（実測された事故の形 `if (!paths.includes("…")) return;` を含む）:
- *   `.includes("X")` / `.indexOf("X")` / `=== "X"` / `!== "X"`
- * `this["X"]` のような**読み取り**は対象外 — 読みはバインドの有無に関係なく成立するので、
- * 未バインドでも死んでいない。
+ *   - `paths.includes("x")` / `.indexOf("x")` / `.lastIndexOf("x")` / `.has("x")`, through an alias too
+ *     (`const set = new Set(paths)`, `const list = [...paths]`, `Array.from(paths)`, `const p2 = paths`)
+ *   - an element of `paths` — a callback's parameter (`paths.some((p) => p === "x")`, `.find` / `.filter` / `.forEach` / …)
+ *     or a loop variable (`for (const p of paths)`) — compared with `===` / `!==` / `==` / `!=`, in a `case "x":` of a
+ *     `switch (p)`, or as a prefix (`p.startsWith("x.")`)
+ *
+ * `body` has its comments blanked (the strings kept: they are what is looked for).
  */
-const PATH_TEST_LITERAL = /(?:\.\s*(?:includes|indexOf)\s*\(\s*|[!=]==\s*)(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
+function findPathTests(body: string, param: string): PathTest[] {
+  const esc = (name: string): string => name.replace(/\$/g, '\\$');
+  // the names that hold the paths: the parameter and its aliases
+  const holders = new Set([param]);
+  for (let grew = true; grew;) {
+    grew = false;
+    const alt = [...holders].map(esc).join('|');
+    const alias = new RegExp(String.raw`\b(?:const|let|var)\s+(${NAME})\s*=\s*(?:new\s+Set\s*\(\s*(?:${alt})\s*\)|\[\s*\.\.\.\s*(?:${alt})\s*\]|Array\.from\s*\(\s*(?:${alt})\s*\)|(?:${alt}))\s*(?:[;\n]|$)`, 'g');
+    for (const m of body.matchAll(alias)) {
+      if (!holders.has(m[1])) { holders.add(m[1]); grew = true; }
+    }
+  }
+  const held = [...holders].map(esc).join('|');
+  const out: PathTest[] = [];
+  // every pattern below captures the literal's quote and text, and nothing else
+  const push = (m: RegExpMatchArray, prefix: boolean, base = 0): void => {
+    const [whole, quote, literal] = m as unknown as [string, string, string];
+    const at = base + (m.index as number) + whole.lastIndexOf(quote + literal) + 1;
+    out.push({ path: prefix ? literal.replace(/\.$/, '') : literal, prefix, at });
+  };
+  // paths.includes("x") and the like
+  for (const m of body.matchAll(new RegExp(String.raw`\b(?:${held})\s*(?:\?\.|\.)\s*(?:includes|indexOf|lastIndexOf|has)\s*\(\s*${STRING}`, 'g'))) {
+    push(m, false);
+  }
+  // the elements' names: a callback's parameter, a loop variable
+  const elements = new Set<string>();
+  const callback = new RegExp(String.raw`\b(?:${held})\s*(?:\?\.|\.)\s*(?:some|every|find|findIndex|findLast|findLastIndex|filter|forEach|map|flatMap)\s*\(\s*(?:async\s+)?(?:function\b\s*(?:${NAME})?\s*)?\(?\s*(${NAME})`, 'g');
+  for (const m of body.matchAll(callback)) elements.add(m[1]);
+  for (const m of body.matchAll(new RegExp(String.raw`\bfor\s*\(\s*(?:const|let|var)\s+(${NAME})\s+of\s+(?:${held})\s*\)`, 'g'))) elements.add(m[1]);
+  if (elements.size > 0) {
+    const el = [...elements].map(esc).join('|');
+    const compares = [
+      new RegExp(String.raw`(?<![\w$.])(?:${el})\s*[!=]==?\s*${STRING}`, 'g'),
+      new RegExp(String.raw`${STRING}\s*[!=]==?\s*(?:${el})(?![\w$])`, 'g'),
+    ];
+    for (const regex of compares) {
+      for (const m of body.matchAll(regex)) push(m, false);
+    }
+    for (const m of body.matchAll(new RegExp(String.raw`(?<![\w$.])(?:${el})\s*(?:\?\.|\.)\s*startsWith\s*\(\s*${STRING}`, 'g'))) push(m, true);
+    for (const m of body.matchAll(new RegExp(String.raw`\bswitch\s*\(\s*(?:${el})\s*\)\s*\{`, 'g'))) {
+      const open = (m.index as number) + m[0].length - 1;
+      const block = body.slice(open, matchingBrace(body, open));
+      for (const c of block.matchAll(new RegExp(String.raw`\bcase\s+${STRING}\s*:`, 'g'))) push(c, false, open);
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+
+/** The offset of the `}` that closes the `{` at `open` (strings skipped; the end of the text if unclosed). */
+function matchingBrace(text: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"' || ch === "'" || ch === '`') {
+      for (i++; i < text.length && text[i] !== ch; i++) if (text[i] === '\\') i++;
+    } else if (ch === '{') {
+      depth++;
+    } else if (ch === '}' && --depth === 0) {
+      return i;
+    }
+  }
+  return text.length;
+}
 
 /**
  * `$renderedCallback` が「どのバインディングにも現れないパス」を判定に使っていないか。
@@ -906,22 +985,26 @@ function validateUpdatedCallbackDemand(
     // ボリューム（mount=）の $renderedCallback は 4.0 では接ぎ木を拒まれる（console.error。3.x は自分の接頭辞配下の
     // 更新を相対パスで届けて実行した）ので、この「走らない分岐」の検査の対象外
     if (block.mountPath !== null) continue;
+    // the name the paths come in as (`$renderedCallback(paths)`); without one, nothing in the body tests them
+    const param = new RegExp(String.raw`^\s*\(\s*(${NAME})\s*[,)=]`).exec(block.content.slice(callback.end, callback.bodyStart))?.[1];
+    if (param === undefined) continue;
     const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
     const bound = boundPaths;
     // ここだけは `blankComments`（コメントだけ潰す）が正しい — 探しているのが
     // `paths.includes("form.name")` の**文字列リテラルそのもの**なので、
     // `maskCommentsAndStrings` を使うと検査対象のパスごと消える
     const body = blankComments(callback.body);
-    PATH_TEST_LITERAL.lastIndex = 0;
-    let match: RegExpExecArray | null;
     const reported = new Set<string>();
-    while ((match = PATH_TEST_LITERAL.exec(body)) !== null) {
-      const path = match[2];
-      if (path.length === 0 || bound.has(path) || reported.has(path)) continue;
+    for (const test of findPathTests(body, param)) {
+      const path = test.path;
+      if (path.length === 0 || reported.has(path)) continue;
+      // a prefix (`p.startsWith("items.")`) is met by any path under it
+      const under = (p: string): boolean => p === path || p.startsWith(`${path}.`);
+      if (test.prefix ? [...bound].some(under) : bound.has(path)) continue;
       // A path the state does not have is never in `paths` either: reported only beside a near one it has (a typo —
       // `items.*.onn`, `labell`), as a string of another kind may be compared here too (7GUIs evaluation)
       let message: string;
-      if (declared.has(path)) {
+      if (test.prefix ? [...declared].some(under) : declared.has(path)) {
         message = msgs.updatedCallbackUnbound(path);
       } else {
         const near = suggestion(path, [...declared, ...bound], msgs);
@@ -929,12 +1012,11 @@ function validateUpdatedCallbackDemand(
         message = msgs.updatedCallbackUnknownPath(path) + near;
       }
       reported.add(path);
-      // レンジはリテラル本体（引用符の内側）
-      const quoteAt = match.index + match[0].length - path.length - 1;
+      // レンジはリテラル本体（引用符の内側。前置の検査は末尾の `.` を除く）
       out.push({
         code: WcsDiagnosticCode.UpdatedCallbackUnbound,
-        start: block.contentStart + callback.bodyStart + quoteAt,
-        end: block.contentStart + callback.bodyStart + quoteAt + path.length,
+        start: block.contentStart + callback.bodyStart + test.at,
+        end: block.contentStart + callback.bodyStart + test.at + path.length,
         message,
         severity: 'warning',
       });

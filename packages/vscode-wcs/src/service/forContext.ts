@@ -309,6 +309,8 @@ interface ITemplateScope {
 
 /** The router element (`<wcs-router>` — the `<template>` in it holds the routes). The router's default tag name. */
 const ROUTER_TAG = 'wcs-router';
+/** The router's route (its content is inserted into the outlet when the route is entered). */
+const ROUTE_TAG = 'wcs-route';
 /** The layout element (`<wcs-layout layout="id">` reads the `<template>` of that id). The router's default tag name. */
 const LAYOUT_TAG = 'wcs-layout';
 
@@ -330,6 +332,10 @@ interface IOpenElement {
   readonly name: string;
   /** 構造ディレクティブ（for / if / elseif / else）を持つ `<template>`。 */
   readonly structural: boolean;
+  /** その構造ディレクティブ（`for` / `if` / `elseif` / `else`）。構造の template でなければ無い。 */
+  readonly directive?: string;
+  /** `if:` / `elseif:` の条件のパス（フィルタを除く。`for:` ならリストのパス）。 */
+  readonly directivePath?: string;
   /** 構造ディレクティブの無い `<template>`（それ以外は null）。 */
   readonly scope: ITemplateScope | null;
   /**
@@ -339,6 +345,14 @@ interface IOpenElement {
    * そのもの・コンポーネントの雛形）は塞がない — 差し込まれた先で束縛される。
    */
   readonly blocks: boolean;
+}
+
+/** The path of a structural directive's binding (`if: notice|truthy` → `notice`); null for `else:` or none. */
+function directivePathOf(value: string): string | null {
+  const colon = indexOfOutsideQuotes(value, ':');
+  if (colon === -1) return null;
+  const path = value.slice(colon + 1).split('|')[0].trim();
+  return path === '' ? null : path;
 }
 
 /** 開始タグ `name` が暗に閉じる、開いたままの要素（直前に開いたもの）を積み上げから外す。 */
@@ -374,6 +388,14 @@ export interface IElementContext {
    * 自前の state を持たないので、文書の一部として扱う。
    */
   readonly ownStateTemplate: boolean;
+  /**
+   * The innermost enclosing template or route that inserts the element together with its content: a `for` row, an
+   * `if` / `elseif` / `else` branch, or a `<wcs-route>` (its content goes into the outlet when the route is entered).
+   * null outside them, and where `bound` does not hold (the element is not one the page builds).
+   */
+  readonly insertedBy: InsertedBy | null;
+  /** The path of what inserts it: the innermost `if:` / `elseif:` condition or `for:` list (filters dropped). */
+  readonly insertedPath: string | null;
 }
 
 /** 走査の途中で決めた判定（自前の state の有無は、囲む template の走査が終わってから決まる）。 */
@@ -381,7 +403,13 @@ interface IPendingContext {
   readonly bound: boolean;
   readonly structural: boolean;
   readonly scopes: readonly ITemplateScope[];
+  readonly insertedBy: InsertedBy | null;
+  /** The path of what inserts it: an `if:` / `elseif:` condition, a `for:` list (null for `else:` and a route). */
+  readonly insertedPath: string | null;
 }
+
+/** What inserts an element's content after the page has loaded: a row (`for`), a branch (`if` / `elseif` / `else`), a route. */
+export type InsertedBy = 'for' | 'if' | 'route';
 
 /**
  * offsets（要素の開始タグの中 — 束縛属性の値の位置）ごとに、その要素が置かれた文脈を返す。
@@ -417,13 +445,24 @@ export function analyzeElementContexts(
   // after its template, so this is collected over the whole scan and used at the end
   const layoutIds = new Set<string>();
   let next = 0;
-  const NOT_BOUND: IPendingContext = { bound: false, structural: false, scopes: [] };
+  const NOT_BOUND: IPendingContext = { bound: false, structural: false, scopes: [], insertedBy: null, insertedPath: null };
   const stack: IOpenElement[] = [];
-  const judge = (): IPendingContext => ({
-    bound: !stack.some((e) => e.blocks),
-    structural: stack.some((e) => e.structural),
-    scopes: stack.flatMap((e) => (e.scope === null ? [] : [e.scope])),
-  });
+  const inserter = (): IOpenElement | undefined => {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].name === ROUTE_TAG || stack[i].structural) return stack[i];
+    }
+    return undefined;
+  };
+  const judge = (): IPendingContext => {
+    const by = inserter();
+    return {
+      bound: !stack.some((e) => e.blocks),
+      structural: stack.some((e) => e.structural),
+      scopes: stack.flatMap((e) => (e.scope === null ? [] : [e.scope])),
+      insertedBy: by === undefined ? null : by.name === ROUTE_TAG ? 'route' : by.directive === 'for' ? 'for' : 'if',
+      insertedPath: by?.directivePath ?? null,
+    };
+  };
   const stateTag = asciiLowerCase(stateTagName);
   const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // 引用符の無い値（`data-wcs=for:items`）も HTML では属性値（空白・`>` まで）
@@ -494,7 +533,12 @@ export function analyzeElementContexts(
     const scope: ITemplateScope | null = plainTemplate
       ? { hasOwnState: false, id: extractAttribute(attrs, 'id'), underRouter: stack.some((e) => e.name === ROUTER_TAG) }
       : null;
-    stack.push({ name, structural, scope, blocks });
+    const directivePath = structural ? directivePathOf(value!) : null;
+    stack.push({
+      name, structural, scope, blocks,
+      ...(structural ? { directive: names[0] } : {}),
+      ...(directivePath !== null ? { directivePath } : {}),
+    });
   }
   // 閉じていない文書の末尾
   while (next < pending.length) judged.push([pending[next++], judge()]);
@@ -508,6 +552,8 @@ export function analyzeElementContexts(
       bound,
       rowOrBranch: bound && context.structural && !ownStateTemplate,
       ownStateTemplate,
+      insertedBy: bound ? context.insertedBy : null,
+      insertedPath: bound ? context.insertedPath : null,
     });
   }
   return out;

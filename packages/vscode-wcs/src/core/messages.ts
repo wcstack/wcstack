@@ -100,6 +100,11 @@ export interface WcsMessageCatalog {
   readPathMissing(path: string, topLevel: boolean): string;
   /** `export default { … }` のトップレベルの spread: それが持ち込むキーは読めず、stateSchema が無いのでパスを検査しない。 */
   pathDynamicUnknownSpread(spread: string): string;
+  /**
+   * A key whose value the analyzer could not read (a name it could not follow to a literal), with bindings under it:
+   * those paths are not checked. `name` is the name the value is written as, `from` the specifier it is imported from.
+   */
+  pathDynamicUnknownValue(path: string, count: number, name?: string, from?: string): string;
   /** 読めない `<wcs-state src>`: その state のパスもスクリプトの規則も検査しない。 */
   stateSrcUnread(src: string): string;
   /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
@@ -201,6 +206,12 @@ export interface WcsMessageCatalog {
   handleBoundAsValue(name: string, tag: string): string;
   /** `attr.aria-*` の属性名が WAI-ARIA に存在しない（ariaValidator）。 */
   ariaAttrUnknown(name: string): string;
+  /**
+   * ライブリージョン（`attribute` は `aria-live="polite"` / `role="status"` のように書かれたまま）が、行（`for`）・
+   * 枝（`if`）・ルート（`route`）と一緒に、文ごと挿入される（liveRegionValidator）。`condition` は、文が枝の条件の
+   * 読むパスに束ねてあるときのその条件（null なら、リージョンが文を書いて持っている）。
+   */
+  liveRegionInserted(attribute: string, by: 'for' | 'if' | 'route', condition: string | null): string;
   /** 最近傍候補の「もしかして」suffix。 */
   didYouMean(candidate: string): string;
   /** 宣言済みメンバーが空のときの placeholder。 */
@@ -355,7 +366,9 @@ const ja: WcsMessageCatalog = {
     ? `"${p}" は state が宣言していないキーです。読んだ時点で例外になります（#301）`
     : `パス "${p}" は状態定義に存在しません。読みは undefined になり、そこから計算した値は黙って違います`,
   stateSrcUnread: (src) =>
-    `"${src}" を読めないので、この state のパスもスクリプトの規則も検査していません。src はこのファイルからの相対パスで読みます（/ から始まるパスと URL は読みません）。サーバーと同じ並びに置いたファイルを、このファイルからの相対パスで指してください`,
+    `"${src}" を読めないので、この state のパスもスクリプトの規則も検査していません。src はこのファイルからの相対パスで読みます（URL は読まず、/ から始まるパスは wcs-validate --root=<サイトのルート> のときだけその下で読みます）。サーバーと同じ並びに置いたファイルを、このファイルからの相対パスで指すか、--root を渡してください`,
+  pathDynamicUnknownValue: (path, n, name, from) =>
+    `"${path}" の値${name === undefined ? '' : from === undefined ? `（${name}）` : `（${name}。"${from}" から import）`}は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに JSDoc の @type — 形か、モジュールのリテラルを指す typeof import("./file.js").name（辞書なら全部のキーを持つ既定の言語のファイル）— を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathDynamicUnknownSpread: (sp) =>
     `${sp} が持ち込むキーは静的に読めないので、この state のパスは検査していません（束縛・getter の中の読み・$watch のキー）。キーを wcstack.manifest.json の stateSchema に宣言すると検査されます。npx wcs-schema（@wcstack/typescript）が state の型（JSDoc・TypeScript）から作れます`,
   pathReadonlyTwoWay: (p, prop) =>
@@ -450,6 +463,8 @@ const ja: WcsMessageCatalog = {
     `<${tag}> の "${name}" は生きたリソース（ハンドル）で、値ではありません。state のパスに束ねると、スナップショットや SSR に載らないオブジェクトが state に入ります — eventToken.${name}: で受け、コマンドの引数として次の要素へ直接渡してください`,
   ariaAttrUnknown: (name) =>
     `"${name}" は WAI-ARIA の属性ではありません。setAttribute はそのまま書き込みますが、支援技術には黙って無視されます`,
+  liveRegionInserted: (attribute, by, condition) =>
+    `このライブリージョン（${attribute}）は、${by === 'route' ? '<wcs-route> に入ったとき' : by === 'for' ? 'for: の行が足されたとき' : '枝が現れたとき'}に文ごと挿入されます（${condition === null ? '文を書いて持っています' : `文は条件 "${condition}" が読むものに束ねてあり、枝はその文と一緒に現れます`}）。スクリーンリーダーが読み上げるのはページにあるリージョンの文が変わったときなので、この文は読み上げられません（挿入したときに読み上げられるのは role="alert" だけです）— 聞かせたい知らせは、常にページにあるリージョンに置いてください: リージョンは${by === 'route' ? 'ルート' : ' template '}の外に置き、textContent: を知らせる文に束ね、知らせることが無いときは空にする`,
   didYouMean: (c) => `。もしかして: "${c}"`,
   none: () => `なし`,
   triggerSeededTruthy: (path) =>
@@ -467,7 +482,7 @@ const ja: WcsMessageCatalog = {
   devtoolsAfterState: () =>
     `@wcstack/devtools/auto は @wcstack/state/auto より先に読み込んでください（後からだと、DevTools のタイムラインは付いた時点から始まります。既にある配線は 4.0 が送り直します）`,
   baseHrefMissing: () =>
-    `@wcstack/router を使う SPA には <head> 内の <base href="/"> が必要です（無いとディープリンクで basename が誤導出されます）`,
+    `@wcstack/router を使う SPA には <head> 内の <base href="/">（またはそれを作る <head> の同期スクリプト — basename にロケールを置く形）が必要です（無いとディープリンクで basename が誤導出されます）`,
   routerOutletMisplaced: () =>
     `この <wcs-outlet> は <wcs-router> の直後に無いので、どの router も使いません。router は自分の直後の要素だけを outlet として使い、そこに <wcs-outlet> が無ければ自前の outlet を作ります。ルートは router の直後に描かれ、この outlet は空のままです — <wcs-router> の直後へ移してください`,
   signalsDualEntry: () =>
@@ -639,7 +654,9 @@ const en: WcsMessageCatalog = {
     ? `"${p}" is not a key the state declares. Reading it throws (#301)`
     : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
   stateSrcUnread: (src) =>
-    `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a path from / or a URL is not read): point it at the file laid out as on the server, relative to this file`,
+    `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
+  pathDynamicUnknownValue: (path, n, name, from) =>
+    `The value of "${path}"${name === undefined ? '' : from === undefined ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type — its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) — or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) =>
     `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathReadonlyTwoWay: (p, prop) =>
@@ -734,6 +751,8 @@ const en: WcsMessageCatalog = {
     `"${name}" of <${tag}> is a live resource (a handle), not a value. Bound to a state path, it puts an object no snapshot or SSR can carry into the state — receive it with eventToken.${name}: and hand it to the next element as a command argument`,
   ariaAttrUnknown: (name) =>
     `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
+  liveRegionInserted: (attribute, by, condition) =>
+    `This live region (${attribute}) is inserted with its text when ${by === 'route' ? 'its <wcs-route> is entered' : by === 'for' ? 'its for: row is added' : 'its branch appears'} (${condition === null ? 'it holds text written in the markup' : `its text is bound to what the condition "${condition}" reads, so the branch appears with the text`}). A screen reader announces a region whose text changes while it is in the page, so this text is not announced (an inserted role="alert" is the one form announced on insertion) — a status message meant to be heard belongs in a region that is always in the page: keep the region outside the ${by === 'route' ? 'route' : 'template'}, bind its textContent: to the message, and empty it when there is nothing to say`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) =>
@@ -751,7 +770,7 @@ const en: WcsMessageCatalog = {
   devtoolsAfterState: () =>
     `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
   baseHrefMissing: () =>
-    `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
+    `An SPA using @wcstack/router needs <base href="/"> in <head>, or a synchronous <head> script that creates one — the form for a locale in the basename (without it, deep links misderive the basename)`,
   routerOutletMisplaced: () =>
     `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty — move it right after the <wcs-router>`,
   signalsDualEntry: () =>

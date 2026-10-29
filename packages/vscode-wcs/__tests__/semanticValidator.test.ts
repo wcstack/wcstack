@@ -619,6 +619,77 @@ describe("wcs/updated-callback-unbound — 表示要素が購読の実体にな�
     )).toHaveLength(0);
   });
 
+  it("paths と比べていない文字列の比較はパスの判定と読まないこと（city-library の継ぎ目アプリ）", () => {
+    const html = `<wcs-state><script type="module">
+      const HOLD_FIELDS = ["branch", "notify"];
+      export default {
+        branches: [], holdErrors: {}, holdErrorSummary: "", mode: "a",
+        $commandTokens: ["focusBranch"],
+        $renderedCallback(paths) {
+          if (!paths.includes("holdErrorSummary")) return;
+          const errs = this.holdErrors;
+          const first = HOLD_FIELDS.find((k) => errs[k]);
+          if (first === "branch") this.$command.focusBranch.emit();
+          if (this.mode !== "branche") return;
+          switch (first) { case "branch": break; }
+        },
+      };
+    </script></wcs-state>
+    <p data-wcs="textContent: holdErrorSummary"></p><select data-wcs="command.focus: $command.focusBranch"></select>`;
+    expect(codes(
+      validateSemantics(html, "wcs-state", "en", "data-wcs"),
+      WcsDiagnosticCode.UpdatedCallbackUnbound,
+    )).toEqual([]);
+  });
+
+  it("paths の判定の形 — 別名・has・some / find のコールバック・for…of・switch・startsWith を読むこと", () => {
+    const html = `<wcs-state><script type="module">
+      export default {
+        page: 1, total: 0, count: 0, items: [{ price: 1 }], form: { name: "" }, sum: 0, flag: false,
+        $renderedCallback(changed) {
+          const set = new Set(changed);
+          if (set.has("total")) this.page = 1;
+          if (changed.some((p) => p === "count")) this.page = 2;
+          if (changed.find(function (q) { return "sum" === q; })) this.page = 3;
+          for (const path of changed) {
+            if (path.startsWith("form.")) this.page = 4;
+            switch (path) { case "flag": this.page = 5; break; }
+          }
+          if (changed.includes("page")) this.page = 6;
+        },
+      };
+    </script></wcs-state><div data-wcs="textContent: page"></div>`;
+    const found = validateSemantics(html, "wcs-state", "en", "data-wcs")
+      .filter((d) => d.code === WcsDiagnosticCode.UpdatedCallbackUnbound);
+    expect(found.map((d) => html.slice(d.start, d.end))).toEqual(["total", "count", "sum", "form", "flag"]);
+  });
+
+  it("startsWith の前置はその下のどれかが束ねられていれば黙ること", () => {
+    const html = `<wcs-state><script type="module">
+      export default {
+        page: 1, form: { name: "" },
+        $renderedCallback(paths) { if (paths.some((p) => p.startsWith("form."))) this.page = 2; },
+      };
+    </script></wcs-state><input data-wcs="value: form.name">`;
+    expect(codes(
+      validateSemantics(html, "wcs-state", "en", "data-wcs"),
+      WcsDiagnosticCode.UpdatedCallbackUnbound,
+    )).toHaveLength(0);
+  });
+
+  it("引数の無い $renderedCallback() はパスを判定しないこと", () => {
+    const html = `<wcs-state><script type="module">
+      export default {
+        page: 1, total: 0,
+        $renderedCallback() { if (this.mode === "total") this.page = 1; },
+      };
+    </script></wcs-state><div data-wcs="textContent: page"></div>`;
+    expect(codes(
+      validateSemantics(html, "wcs-state", "en", "data-wcs"),
+      WcsDiagnosticCode.UpdatedCallbackUnbound,
+    )).toHaveLength(0);
+  });
+
   it("$renderedCallback が無ければ何もしないこと", () => {
     const html = `<wcs-state><script type="module">export default { page: 1 };</script></wcs-state>`;
     expect(codes(
