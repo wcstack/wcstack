@@ -238,6 +238,10 @@ export const WcsDiagnosticCode = {
   // setAttribute はそのまま書き、支援技術は黙って無視する。severity は warning
   // (error 昇格時は packages/lint/scripts/smoke-test.mjs の対ケース更新が必須)。
   AriaAttrUnknown: "wcs/aria-attr-unknown",
+  // ライブリージョン（`aria-live`、`role="status"` / `"alert"` / `"log"`）を `if:` / `for:` の template か
+  // `<wcs-route>` の中に置いた。文と一緒に挿入されるので、スクリーンリーダーは読み上げない（読み上げるのは、ページに
+  // ある間に文が変わったとき）。継ぎ目アプリ city-library（view transition ありの Chromium で 0/10）。warning。
+  LiveRegionInserted: "wcs/live-region-inserted",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
   // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。

@@ -208,6 +208,16 @@ export default {
 <button data-id="a" data-wcs="onclick: pick"></button>
 <button data-id="b" data-wcs="onclick#direct: pick"></button>
 `);
+// A live region inserted with its text by an if: branch (its text is what the condition reads) is never announced:
+// warning (wcs/live-region-inserted, since 4.10) — exit 0 by default. The region kept in the page says nothing.
+const liveRegionHtml = join(workDir, "live-region.html");
+writeFileSync(liveRegionHtml, `<!doctype html>
+<wcs-state><script type="module">
+export default { notice: "" };
+</script></wcs-state>
+<template data-wcs="if: notice"><p role="status" data-wcs="textContent: notice"></p></template>
+<p role="status" data-wcs="textContent: notice"></p>
+`);
 writeFileSync(v4ScopesHtml, `<!doctype html>
 <wcs-state><script type="module">
 export default { items: [1, 2] };
@@ -452,6 +462,11 @@ check("4.0 scopes and loop indexes → errors wcs/volume-declaration, wcs/index-
 check("delegated event handler reading event.currentTarget → warning wcs/delegated-current-target (not on #direct), exit 0", ["--lang=en", currentTargetHtml], {
   exit: 0,
   stdout: [/warning wcs\/delegated-current-target .*"onclick#direct:"/, "0 error(s), 1 warning(s)"],
+});
+
+check("a live region inserted with its text by an if: branch → warning wcs/live-region-inserted (not the one kept in the page), exit 0", ["--lang=en", liveRegionHtml], {
+  exit: 0,
+  stdout: [/:5:36 warning wcs\/live-region-inserted This live region \(role="status"\) is inserted with its text/, "0 error(s), 1 warning(s), 0 info"],
 });
 
 check("paths under a volume loaded with src= (readable or not) are clean under --strict, the unreadable src said once (info), exit 0", ["--lang=en", "--strict", volumeHtml], {

@@ -206,6 +206,12 @@ export interface WcsMessageCatalog {
   handleBoundAsValue(name: string, tag: string): string;
   /** `attr.aria-*` の属性名が WAI-ARIA に存在しない（ariaValidator）。 */
   ariaAttrUnknown(name: string): string;
+  /**
+   * ライブリージョン（`attribute` は `aria-live="polite"` / `role="status"` のように書かれたまま）が、行（`for`）・
+   * 枝（`if`）・ルート（`route`）と一緒に、文ごと挿入される（liveRegionValidator）。`condition` は、文が枝の条件の
+   * 読むパスに束ねてあるときのその条件（null なら、リージョンが文を書いて持っている）。
+   */
+  liveRegionInserted(attribute: string, by: 'for' | 'if' | 'route', condition: string | null, alert: boolean): string;
   /** 最近傍候補の「もしかして」suffix。 */
   didYouMean(candidate: string): string;
   /** 宣言済みメンバーが空のときの placeholder。 */
@@ -457,6 +463,8 @@ const ja: WcsMessageCatalog = {
     `<${tag}> の "${name}" は生きたリソース（ハンドル）で、値ではありません。state のパスに束ねると、スナップショットや SSR に載らないオブジェクトが state に入ります — eventToken.${name}: で受け、コマンドの引数として次の要素へ直接渡してください`,
   ariaAttrUnknown: (name) =>
     `"${name}" は WAI-ARIA の属性ではありません。setAttribute はそのまま書き込みますが、支援技術には黙って無視されます`,
+  liveRegionInserted: (attribute, by, condition, alert) =>
+    `このライブリージョン（${attribute}）は、${by === 'route' ? '<wcs-route> に入ったとき' : by === 'for' ? 'for: の行が足されたとき' : '枝が現れたとき'}に文ごと挿入されます（${condition === null ? '文を書いて持っています' : `文は条件 "${condition}" が読むものに束ねてあり、枝はその文と一緒に現れます`}）。スクリーンリーダーが確かに読み上げるのは、ページにあるリージョンの文が変わったときなので、${alert ? '文ごと挿入した alert を読むかはブラウザとスクリーンリーダー次第です' : 'この文は読み上げられません'} — リージョンは${by === 'route' ? 'ルート' : ' template '}の外に置いて常にページに置き、その文を書き換えてください（textContent: を知らせる文に束ね、知らせることが無いときは空にする）`,
   didYouMean: (c) => `。もしかして: "${c}"`,
   none: () => `なし`,
   triggerSeededTruthy: (path) =>
@@ -743,6 +751,8 @@ const en: WcsMessageCatalog = {
     `"${name}" of <${tag}> is a live resource (a handle), not a value. Bound to a state path, it puts an object no snapshot or SSR can carry into the state — receive it with eventToken.${name}: and hand it to the next element as a command argument`,
   ariaAttrUnknown: (name) =>
     `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
+  liveRegionInserted: (attribute, by, condition, alert) =>
+    `This live region (${attribute}) is inserted with its text when ${by === 'route' ? 'its <wcs-route> is entered' : by === 'for' ? 'its for: row is added' : 'its branch appears'} (${condition === null ? 'it holds text written in the markup' : `its text is bound to what the condition "${condition}" reads, so the branch appears with the text`}). A screen reader reliably announces a region whose text changes while it is in the page, so ${alert ? 'whether an alert inserted with its text is read depends on the browser and the screen reader' : 'this text is not announced'} — keep the region outside the ${by === 'route' ? 'route' : 'template'}, always in the page, and write its text (bind textContent: to the message, empty when there is nothing to say)`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) =>
