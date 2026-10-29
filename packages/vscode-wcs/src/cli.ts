@@ -8,7 +8,7 @@
  * このファイルは node I/O(fs / argv / stdout / exit)のみを担う薄い shell。
  * 検査ロジックは全て core/cli/runValidation.ts(pure・テスト対象)。
  *
- * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> ...
+ * 使い方: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--root=<dir>] [--errors-only] [--strict] <file> ...
  *   *.manifest.json → sidecar manifest として検査
  *   .js / .ts / .jsx / .tsx / .vue / .svelte → 読まない(summary の後に `not read:` として名前を出す)
  *   その他(.html 等)→ data-wcs バインディングとして検査。検査するもの(data-wcs・<wcs-*>・wcstack の
@@ -19,6 +19,8 @@
  *   --errors-only(別名 --quiet)→ error severity の行だけ表示(warning は count のみ)
  *   --strict → warning があっても exit 1(severity は不変・閾値だけ下げる)。typo
  *     (`wcs/binding-path-missing` = warning)で CI を落としたいときに使う。
+ *   --root=<dir>(`--root <dir>` も)→ サイトのルート。`/` から始まる `<wcs-state src>` と import を
+ *     その下で読む(`<base href="/ja/">` の下の `src="/app.js"`)。無ければ従来どおり読まない(`wcs/state-src-unread`)。
  */
 
 import { readFileSync } from "node:fs";
@@ -31,18 +33,22 @@ import type { FileReader } from "./service/statePathResolver.js";
 export { createFileReader } from "./fileReader.js";
 
 /** argv を options とファイル一覧に分ける。IDE の設定に合わせるため attr / state-tag を受ける。 */
-export function parseArgs(argv: readonly string[]): { options: RunValidationOptions; files: string[] } {
+export function parseArgs(argv: readonly string[]): { options: RunValidationOptions; files: string[]; root?: string } {
   const options: { bindAttribute?: string; stateTagName?: string; errorsOnly?: boolean; strict?: boolean; locale?: string } = {};
   const files: string[] = [];
-  for (const arg of argv) {
-    if (arg.startsWith("--attr=")) options.bindAttribute = arg.slice("--attr=".length);
+  let root: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg.startsWith("--root=")) root = arg.slice("--root=".length);
+    else if (arg === "--root" && i + 1 < argv.length) root = argv[++i];
+    else if (arg.startsWith("--attr=")) options.bindAttribute = arg.slice("--attr=".length);
     else if (arg.startsWith("--state-tag=")) options.stateTagName = arg.slice("--state-tag=".length);
     else if (arg.startsWith("--lang=")) options.locale = arg.slice("--lang=".length);
     else if (arg === "--errors-only" || arg === "--quiet") options.errorsOnly = true;
     else if (arg === "--strict") options.strict = true;
     else if (!arg.startsWith("-")) files.push(arg);
   }
-  return { options, files };
+  return { options, files, ...(root !== undefined && root !== "" ? { root } : {}) };
 }
 
 /**
@@ -67,10 +73,10 @@ export function resolveCliLocale(
 }
 
 export function main(argv: readonly string[]): number {
-  const { options, files } = parseArgs(argv);
+  const { options, files, root } = parseArgs(argv);
   const locale = resolveCliLocale(options.locale);
   if (files.length === 0) {
-    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]\n");
+    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--root=<dir>] [--errors-only] [--strict] <file> [<file> ...]\n");
     return 2;
   }
 
@@ -84,7 +90,11 @@ export function main(argv: readonly string[]): number {
       return 2;
     }
     const kind = inputKindOf(path);
-    inputs.push({ source: path, text, kind, fileReader: kind === "html" ? createFileReader(path) : undefined });
+    inputs.push({
+      source: path, text, kind,
+      fileReader: kind === "html" ? createFileReader(path, undefined, root) : undefined,
+      ...(root !== undefined ? { root } : {}),
+    });
   }
 
   const result = runValidation(inputs, { ...options, locale });

@@ -366,7 +366,7 @@ const ja: WcsMessageCatalog = {
     ? `"${p}" は state が宣言していないキーです。読んだ時点で例外になります（#301）`
     : `パス "${p}" は状態定義に存在しません。読みは undefined になり、そこから計算した値は黙って違います`,
   stateSrcUnread: (src) =>
-    `"${src}" を読めないので、この state のパスもスクリプトの規則も検査していません。src はこのファイルからの相対パスで読みます（/ から始まるパスと URL は読みません）。サーバーと同じ並びに置いたファイルを、このファイルからの相対パスで指してください`,
+    `"${src}" を読めないので、この state のパスもスクリプトの規則も検査していません。src はこのファイルからの相対パスで読みます（URL は読まず、/ から始まるパスは wcs-validate --root=<サイトのルート> のときだけその下で読みます）。サーバーと同じ並びに置いたファイルを、このファイルからの相対パスで指すか、--root を渡してください`,
   pathDynamicUnknownValue: (path, n, name, from) =>
     `"${path}" の値${name === undefined ? '' : from === undefined ? `（${name}）` : `（${name}。"${from}" から import）`}は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに JSDoc の @type — 形か、モジュールのリテラルを指す typeof import("./file.js").name（辞書なら全部のキーを持つ既定の言語のファイル）— を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathDynamicUnknownSpread: (sp) =>
@@ -654,7 +654,7 @@ const en: WcsMessageCatalog = {
     ? `"${p}" is not a key the state declares. Reading it throws (#301)`
     : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
   stateSrcUnread: (src) =>
-    `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a path from / or a URL is not read): point it at the file laid out as on the server, relative to this file`,
+    `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
   pathDynamicUnknownValue: (path, n, name, from) =>
     `The value of "${path}"${name === undefined ? '' : from === undefined ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type — its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) — or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) =>

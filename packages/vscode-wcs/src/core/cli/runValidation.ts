@@ -48,6 +48,11 @@ export interface CliFileInput {
    * 入力側に載せる。manifest 入力では無視。
    */
   readonly fileReader?: FileReader;
+  /**
+   * The site's root (`--root=<dir>`), where the reader reads a path from `/`: a finding in such a file is reported
+   * under it (`<root>/app.js`), not beside the page.
+   */
+  readonly root?: string;
 }
 
 /**
@@ -158,7 +163,9 @@ export function runValidation(inputs: readonly CliFileInput[], options: RunValid
       }
       // A finding in a state file the page loads with `src=` is reported in that file (once, however many pages
       // load it); the IDE shows it on the page's `src` value
-      const source = joinRelativeSource(input.source, d.origin.path);
+      const source = d.origin.path.startsWith("/") && input.root !== undefined
+        ? joinRelativeSource(`${input.root}/_`, `.${d.origin.path}`)
+        : joinRelativeSource(input.source, d.origin.path);
       if (!textBySource.has(source)) textBySource.set(source, input.fileReader?.(d.origin.path) ?? "");
       let list = inFiles.get(source);
       if (list === undefined) inFiles.set(source, (list = []));

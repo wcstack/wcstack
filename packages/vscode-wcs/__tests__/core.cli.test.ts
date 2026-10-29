@@ -175,6 +175,63 @@ describe("createFileReader — HTML ファイルのディレクトリ基準で�
     const reader = createFileReader("a/index.html", () => "\uFEFF{\"a\": 1}");
     expect(reader("state.json")).toBe('{"a": 1}');
   });
+
+  it("root（--root）を渡せば、/ から始まるパスをその下で読み、ルートの外へ出るものは読まないこと（city-library の F3）", () => {
+    const seen: string[] = [];
+    const reader = createFileReader("public/site/index.html", (path) => {
+      seen.push(path);
+      return "export default { a: 1 };";
+    }, "public");
+    expect(reader("/app.js")).toBe("export default { a: 1 };");
+    expect(seen[0]).toBe(resolve("public", "app.js"));
+    // 相対パスは今までどおりページから
+    expect(reader("../i18n/state.js")).toBe("export default { a: 1 };");
+    expect(seen[1]).toBe(resolve("public/site", "../i18n/state.js"));
+    // ルートの外・protocol-relative・URL は読まない
+    expect(reader("/../secret.js")).toBeUndefined();
+    expect(reader("//host/share/x.js")).toBeUndefined();
+    expect(reader("https://cdn.example/x.js")).toBeUndefined();
+    expect(seen).toHaveLength(2);
+  });
+});
+
+describe("--root — / から始まる src を読むサイトのルート（city-library の F3）", () => {
+  it("parseArgs が --root=<dir> と --root <dir> を受け、無ければ root を持たないこと", async () => {
+    const { parseArgs } = await import("../src/cli.js");
+    expect(parseArgs(["--root=public", "a.html"])).toMatchObject({ root: "public", files: ["a.html"] });
+    expect(parseArgs(["--root", "public", "a.html"])).toMatchObject({ root: "public", files: ["a.html"] });
+    expect(parseArgs(["a.html"]).root).toBeUndefined();
+  });
+
+  it("ルート絶対の src の state を読み、そのファイルの指摘はルートの下のパスで出すこと", () => {
+    const page = `<base href="/ja/">
+<wcs-state src="/app.js"></wcs-state>
+<p data-wcs="textContent: count"></p>
+<p data-wcs="textContent: cuont"></p>`;
+    const files: Record<string, string> = {
+      [resolve("public", "app.js")]: "export default { count: 0, add() { this.items.push(1); }, items: [] };",
+    };
+    const read = (path: string): string => {
+      const text = files[path];
+      if (text === undefined) throw new Error("ENOENT");
+      return text;
+    };
+    const withRoot = runValidation([{
+      source: "public/site/index.html", text: page, kind: "html", root: "public",
+      fileReader: createFileReader("public/site/index.html", read, "public"),
+    }], { locale: "en" });
+    expect(withRoot.lines.map((l) => l.replace(/^(\S+ \S+ \S+).*$/, "$1"))).toEqual([
+      "public/app.js:1:36 error wcs/array-mutation",
+      "public/site/index.html:4:27 warning wcs/binding-path-missing",
+    ]);
+    // root が無ければ今までどおり読まず、info で言う
+    const without = runValidation([{
+      source: "public/site/index.html", text: page, kind: "html",
+      fileReader: createFileReader("public/site/index.html", read),
+    }], { locale: "en" });
+    expect(without.lines.map((l) => l.replace(/^(\S+ \S+ \S+).*$/, "$1"))).toEqual(["public/site/index.html:2:12 info wcs/state-src-unread"]);
+    expect(without.lines[0]).toContain("wcs-validate --root=<the site's root>");
+  });
 });
 
 describe("runValidation — CLI core", () => {

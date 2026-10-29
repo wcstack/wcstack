@@ -283,6 +283,19 @@ writeFileSync(join(workDir, "i18n-typed", "en.js"), `export default { site: { na
 writeFileSync(join(workDir, "i18n-typed", "catalog.js"), catalog(`/** @type {typeof import("./en.js").default} */\n`));
 writeFileSync(i18nTypoHtml, i18nPage("i18n.t.site.nmae").replace("../i18n/state.js", "../i18n-typed/state.js"));
 
+// A root-absolute src under a <base> below the root (docs/csp.md, examples/router-i18n): not read by itself
+// (wcs/state-src-unread, info); since 4.10, --root=<the site's root> reads it there, and a typo under it is a warning.
+const rootSite = join(workDir, "rootsite");
+mkdirSync(join(rootSite, "site"), { recursive: true });
+const rootHtml = join(rootSite, "site", "index.html");
+writeFileSync(join(rootSite, "app.js"), "export default { count: 0 };\n");
+writeFileSync(rootHtml, `<!doctype html>
+<base href="/ja/">
+<wcs-state src="/app.js"></wcs-state>
+<p data-wcs="textContent: count"></p>
+<p data-wcs="textContent: cuont"></p>
+`);
+
 // A framework app: its page holds only the root element, its components are .tsx / .vue. The counts alone
 // said "0 error(s)" as if they had been checked (docs/seam-apps.md, fw-inventory).
 const frameworkHtml = join(workDir, "framework.html");
@@ -487,6 +500,16 @@ check("the dictionary volume (shorthand keys imported from ./catalog.js, compute
 check("a typo under a dictionary typed with typeof import(\"./en.js\").default → warning wcs/binding-path-missing, --strict exit 1", ["--lang=en", "--strict", i18nTypoHtml], {
   exit: 1,
   stdout: [/warning wcs\/binding-path-missing Path "i18n\.t\.site\.nmae"/, "0 error(s), 1 warning(s), 0 info (strict)"],
+});
+
+check("a root-absolute src → not read, said once (wcs/state-src-unread, info), exit 0", ["--lang=en", rootHtml], {
+  exit: 0,
+  stdout: [/info wcs\/state-src-unread "\/app\.js" cannot be read/, "0 error(s), 0 warning(s), 1 info"],
+});
+
+check("--root=<site root> reads a root-absolute src: the typo under it → warning wcs/binding-path-missing, no info, exit 0", ["--lang=en", `--root=${rootSite}`, rootHtml], {
+  exit: 0,
+  stdout: [/warning wcs\/binding-path-missing Path "cuont"/, "0 error(s), 1 warning(s), 0 info"],
 });
 
 check("a framework app's page and component → named as nothing to check / not read, also with --errors-only, exit 0", ["--lang=en", "--errors-only", frameworkHtml, frameworkTsx], {
