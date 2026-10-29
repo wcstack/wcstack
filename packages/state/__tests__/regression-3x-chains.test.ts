@@ -384,13 +384,15 @@ describe("#338 描画が起こす書き込みの終わらない連鎖は打ち�
       }));
       host = loaded.host;
       await settle();
+      // 遅れた適用の中で、その書き戻しと $watch の書き込みは同じ適用の中でドレインされる（同じトランジション）。
+      // 読み込み時の循環はその適用の中で上限まで回って打ち切られる — アービターが無いときと同じく、読み込み後に 1 回
+      expect(error).toHaveBeenCalledTimes(1);
       loaded.write((s) => { s.mode = "kick"; });
-      // 1 周は drain 2 回（書き戻し → $watch の書き込み）、遅れた適用 1 回。上限の 100 段は 50 周あまり
       await settle(120);
       const settled = counter.evals;
       await settle(20);
       expect({ reports: error.mock.calls.length, rows: loaded.root.querySelectorAll("li").length, stopped: counter.evals === settled })
-        .toEqual({ reports: 1, rows: 2, stopped: true });
+        .toEqual({ reports: 2, rows: 2, stopped: true });
       expect(counter.evals).toBeLessThan(RUNAWAY_CAP / 4);
     } finally {
       frozen = true;
