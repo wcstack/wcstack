@@ -200,6 +200,11 @@ output-only メンバーはバインド attach 時に**読まれ**、以後は�
 - ページネーション・タブ（戻るボタンで戻りたい）→ `navigateUrl = "?page=2"`
 - 検索ボックス・絞り込み（履歴を打鍵ごとに汚したくない）→ `replaceUrl = "?q=" + …`（高頻度入力には `<wcs-debounce>` を挟む）
 
+クエリを URL に持つ検索ページが、何も言わずに間違えることが 2 つある:
+
+- **URL が追いつくまでの、読者が打っている文字。** 検索ボックスを URL のクエリ（`searchParams.q`）に束ね、ボックスと `replaceUrl` の間に `<wcs-debounce>` を挟むと、URL は — したがってボックスも — 打鍵より遅れる: 落ち着いた値が URL を書き、router が少し後で commit する。その間、ボックスには古いクエリが書き戻され、打っている指の下で文字が消える。打っている間は打っているものを見せる: ボックス自身の `draft` と `typing` フラグを持ち、フラグは `input` で立て、debounce が落ち着き、その値が URL に入ったら下ろす。URL のクエリを見せるのはフラグが下りているときだけにする（戻る / 進むでもボックスが埋まる）。そして URL は、打たれた値が落ち着いたときにだけ書く: debounce は最初に受けた値でも 1 度落ち着くので、ディープリンク（`/search?q=a&page=2`）ではそれが URL にクエリを書き戻す — `?q=` や、`page` の無い `?q=a` を。
+- **件数の読み上げ。** 文（「12 冊見つかりました」）はリクエストの応答から書く — `<wcs-fetch>` の応答のイベント、`eventToken.value: results` と `$on: { results(state, event) { … } }`（[`value` がどの応答か](../fetch/README.ja.md#出力ステートバインド可能な非同期状態)）。getter で `value` と今のクエリから組み立てない: 新しいクエリの要求が進んでいる間も `value` は前の応答のままなので、読み上げの領域は、まず新しい条件と前の件数を言った。領域はルートの内容の外に置く（[アクセシビリティ契約](#アクセシビリティ契約)）。
+
 **マルチ Router**: `params` / `routeName` は各 Router 自身のマッチを反映するが、ページの URL にクエリは 1 つしかない — どの Router 経由で書いてもページ全体のクエリが置き換わる。一方**読み取り面は per-Router**: Router は自分の `basename` 配下のナビゲーションを処理したときだけ `searchParams` を commit するので、その値は「その Router が最後に処理したナビゲーション時点のクエリ」である。
 
 #### ナビゲーションターゲットのクエリ文字列
@@ -279,7 +284,7 @@ interface IGuardContext {          // 進入先マッチの frozen スナップ�
 - 判定関数が `false` を返すとナビゲーションがキャンセルされ、`guard` 属性のパスへ遷移。空でない文字列を返すとそのパスへ遷移（例: `` return `/login?next=${encodeURIComponent(toPath)}` ``）。`toPath` にクエリは含まれない。リダイレクト先に要るなら第 3 引数の `searchParams` から組み直す（`new URLSearchParams(searchParams)`）
 - リダイレクトは、キャンセルしたナビゲーションの履歴エントリを**置き換える**。だから「戻る」で守られた URL へ戻る（そしてすぐまたリダイレクトされる）ことはない。リダイレクトはガードの本来の使い方なので、コンソールには何も出さない。ガード同士が送り合うリダイレクトは、続けて 10 回で止め、最後の 1 回を名指すエラーを出す。リダイレクトされたナビゲーションの `navigate()` / `replace()` は `AbortError` で reject する
 - モジュールは**一度だけ**評価され、関数はナビゲーションのたびに呼ばれる。変わるもの（セッション）は、モジュールの先頭ではなく関数の中で読む
-- ガードから `<wcs-state>` の状態は見えない。ページの読み込みでは、最初のルートのガードが `@wcstack/state` の読み込みより先に走ることもある。セッションは、それを保存している場所 — `<wcs-storage>` が保存する `localStorage` のキー（JSON で入っている）— から直接読む。どのタブでも最新の値になる
+- ガードから `<wcs-state>` の状態は見えない。ページの読み込みでは、最初のルートのガードが `@wcstack/state` の読み込みより先に走ることもある。セッションは、それを保存している場所 — `<wcs-storage>` が保存する `localStorage` のキー — から直接読む。どのタブでも最新の値になる。`<wcs-storage>` はオブジェクトと配列を JSON で、文字列はそのまま保存する（[JSON 自動シリアライズ](../storage/README.ja.md#json-自動シリアライズ)）: 保存したセッションのオブジェクトは `JSON.parse(localStorage.getItem(key))` で読めるが、保存したトークンの文字列ではそれが例外を投げる — 文字列は `getItem` だけで読む
 - 判定関数は `Promise` を返すことも可能（非同期チェック対応）— 解決するまでルートは commit されない
 - 第 3 引数に進入先マッチ（`params` / `typedParams` / `searchParams` / `routeName`）が渡る。`toPath` / `fromPath` は basename スライス後のパス
 - 中に置いた `<wcs-route>` を守る。その中のどこに置いてもよい — 入れ子のルートの前でも後でも、要素の中でも。親のガードは、子のルートへのナビゲーションでも走る
@@ -457,16 +462,16 @@ console.log(router.typedParams.userId);  // 123 (number)
 | `to` | 遷移先の絶対ルートパスもしくはURL。`/`で始まる場合はルートパス（basename は pathname にのみ付与され、`?クエリ` / `#ハッシュ` はそのまま温存される）。`?` で始まる場合は**クエリのみリンク**：href は「現在 pathname + 指定クエリ」で組み立てられ、ロケーション変更に追従する。それ以外は外部URLとして扱われる。`to` が空の間（`attr.to:` で束ね、まだ書かれていない — router を state より先に読むページ）は、`<a>` に `href` が無く、active にもならない。`to` が来たらそれを書く |
 | `match` | `exact`（既定）か `prefix`。`prefix` なら下のパスでも active になる（サイドナビの「商品」が `/products/3` でも）。そのときの `aria-current` は `"true"`（そのパス自身では `"page"`）。下のパスへのリンクにも印が付く: `/products/new` では `prefix` の「商品」と「新しい商品」の両方が active で、`aria-current` は `"true"` と `"page"`。印を 1 つに見せるなら `[aria-current="page"]` でスタイルを書く |
 
-**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスと、同じ事実の ARIA 表現である `aria-current="page"` を受け取る（スクリーンリーダーがナビゲーション内の現在地を読み上げられる）。比較は **pathname のみ**で行われ、どちら側のクエリも影響しない（`to="/products"` は `/products?page=2` でも active のまま。クエリのみリンクはそのページに居る間つねに active）。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される。
+**アクティブ状態**: 生成された `<a>` はパスが現在のロケーションと一致する場合に `active` クラスと、同じ事実の ARIA 表現である `aria-current="page"` を受け取る（スクリーンリーダーがナビゲーション内の現在地を読み上げられる）。クエリの無い `to` は **pathname だけ**で比べ、ページのクエリは影響しない（`to="/products"` は `/products?page=2` でも active のまま）。4.10（未リリース）から、クエリのある `to` は、今の URL のクエリが `to` のクエリのパラメータをすべて同じ値で持つときだけ active になる: `to="?q=a&page=2"`（「次のページ」）は `/search?q=a` では現在のページではなく、`/search?q=a&page=2` では現在のページ — リンクが名指さないパラメータは構わないので、`/search?q=a&page=2&sort=new` でも。重複するキー（`?tag=a&tag=b`）は同じ値の組（順序は問わない）が要り、値はデコードして比べる（`+` と `%20` は同じ）。`match="prefix"` はパスの規則をそのままに、同じクエリの規則を足す。4.9 まではどちら側のクエリも見なかったので、ページのページ送りのリンクがすべて「現在のページ」になり、スクリーンリーダーは「次のページ、現在のページ」と読んだ。ナビゲーションイベント（`currententrychange`, `wcs:navigate`, `popstate`）で更新される — クエリだけのナビゲーションでも。
 
 ```css
 /* アクティブなリンクのスタイル */
 a.active { font-weight: bold; color: blue; }
 ```
 
-**属性の転送**: `<a>` の生成時に、すべての `aria-*` 属性と固定 7 名（`title` / `rel` / `target` / `download` / `hreflang` / `lang` / `dir`）をホストから anchor へコピーする（`lang` / `dir` はスクリーンリーダーの読み上げ言語・方向に直結する）。`to` / `style` / `class` は決して転送しない（ホストは `display:none` であり、`class` は `active` 契約を持つ）。接続後に追従するのは固定 7 名のみで、**動的な `aria-*` 変更は anchor に届かない** — `<wcs-link data-wcs="attr.aria-label: ...">` のような `data-wcs` バインドもコピー後にホストへ書くため届かない。`<wcs-link>` の `aria-*` は静的属性で書くこと。
+**属性の転送**: `<a>` の生成時に、すべての `aria-*` 属性と固定 7 名（`title` / `rel` / `target` / `download` / `hreflang` / `lang` / `dir`）をホストから anchor へコピーする（`lang` / `dir` はスクリーンリーダーの読み上げ言語・方向に直結する）。`to` / `style` / `class` は決して転送しない（ホストは `display:none` であり、`class` は `active` 契約を持つ）。接続後に追従するのは固定 7 名のみで、**`aria-*` の値は anchor を作るときに 1 度だけコピーされ**、その後の変更は anchor に届かない。`data-wcs` のバインド（`<wcs-link data-wcs="attr.aria-label: ...">`）では、値をいつ書くかで決まる: `for:` の行や `if:` の枝の中の `<wcs-link>` は接続より前に束ねられるので、最初の値は anchor を作るときにホストにあってコピーされる — ただしその値の後の変更は届かない。ページのマークアップの `<wcs-link>` は、state が束ねる前に anchor を持つことがあり、そのとき値は届かない。変わらない `aria-*` は静的属性で書き、変わるリンクの名前は中身で与える: ホストの子は anchor へ移されるので、`<wcs-link>` の中の束ねた `<span data-wcs="textContent: …">` は更新され続ける。
 
-**素の `<a>` について**: Navigation API のあるブラウザでは、basename 配下の素の `<a href="/about">` も SPA 遷移になる（router が intercept する）。フォールバックブラウザでは成立しない（SPA 経路は `<wcs-link>` の click ハンドラのみ）ため、推奨は `<wcs-link>` のまま。
+**素の `<a>` について**: Navigation API のあるブラウザでは、basename 配下の素の `<a href="/about">` も SPA 遷移になる（router が intercept する）。フォールバックブラウザでは成立しない（SPA 経路は `<wcs-link>` の click ハンドラのみ）ため、推奨は `<wcs-link>` のまま。4.10（未リリース）から、素の `<a href="#main">`（フラグメントだけ）はルートの遷移にならず、どちらの経路でも今のページの中で移る — [ページ内リンク](#ページ内リンクスキップリンク)を参照。
 
 **読み直しについて**: 4.7 から、ページが求める読み直し — `location.reload()`・`history.go(0)`・`navigation.reload()` — は文書を読み直す。`leaveConfirm` があればブラウザ自身の確認が出る。4.6 までは router が同じ文書の中のルートの遷移として受けたので、「更新があります — 再読み込み」のボタンも Service Worker の更新も効かなかった。basename 配下のほかのナビゲーションは、`location.replace(location.href)` も含めて SPA の遷移のまま。
 
@@ -575,6 +580,52 @@ router は、プラットフォームが既に正しく行うことについて�
 
 設計の記録は [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 を参照。
 
+### ページ内リンク（スキップリンク）
+
+4.10（未リリース）から、書いたままの `href` がフラグメントだけのリンク — スキップリンクの `<a href="#main">` と、ページ先頭への `href="#"` — は今のページの中で移り、ルートの遷移にはならない:
+
+```html
+<head><base href="/"></head>
+<body>
+  <a class="skip-link" href="#main">本文へ移動</a>
+  <wcs-router>
+    <template>
+      <wcs-route path="/search"><main id="main">…</main></wcs-route>
+      …
+    </template>
+  </wcs-router>
+```
+
+- URL は今のパスとクエリ＋そのハッシュ（`/search?q=a#main`）になり、どのフラグメントのリンクとも同じく履歴が 1 つ増える（同じフラグメントをもう一度押すと置き換える）。ブラウザが行き先 — その `id` を持つ要素、または `<a name>` — へスクロールし、router がそこへフォーカスを移す。自分でフォーカスを受けない要素には、`focus="heading"` と同じく `tabindex="-1"` を足す。`#` と `#top` は先頭へスクロールし、フォーカスは動かさない。
+- ルートは何も変わらない: guard は走らず、描き直しも無く、`leaveConfirm` も聞かない。2 つの履歴の間の戻る / 進むもフラグメントのナビゲーションで、ルートはそのまま、スクロール位置はブラウザが戻す。
+- 理由: SPA なら必ずある `<base href="/">` の下では、`#main` は `/#main` へ解決される。だから 4.9 までは、`/search?q=a` のスキップリンクで読者はホームのルートへ移った（`<base href="/ja/">` の下では `/ja/` へ）。
+- どちらの経路でも動く。Navigation API があれば、router は `navigate` イベントからリンクを読む（`sourceElement`。今の Chromium・Firefox・Safari は持つ）。無いとき、またはイベントに `sourceElement` が無いときは `window` で click を聞く — ページ自身のリスナーより後なので、ページが取り消したクリックには触らない。
+- 変わらないもの: 修飾キー（Ctrl / ⌘ / Shift / Alt）付きや中ボタンのクリック、`_self` 以外の `target` や `download` を持つリンク、別のページのフラグメントへのリンク（`/faq#x`・`?q=b#x`）、どの router の `basename` の下でもないページ。
+
+### router がページに任せること
+
+- **ナビゲーションの後に聞かせたい知らせは、ルートの内容に置かない。** ルートの内容は文と一緒に挿入されるので、その中の `role="status"` / `aria-live` の領域は知らせを持ったまま現れる。スクリーンリーダーが読み上げるのは、すでに知っている領域の変化なので、その知らせは決して読まれない。`<wcs-view-transition>` があると、ルートを置いた後に応答で埋めた領域でさえ、文と一緒に挿入されうる（差し替えが遷移の中で走る）。領域はページに 1 つ、router とその `<wcs-outlet>` の外に置く。ナビゲーションの commit で空にし（router の `path` への `$watch`）、新しいページの文はその後、ページが言うことを持ったときに書く。ページのタイトルなら `announce="title"` が router 自身の領域でそうする。
+
+  ```html
+  <wcs-router data-wcs="path: route"><template>…</template></wcs-router>
+  <wcs-outlet></wcs-outlet>
+  <p class="visually-hidden" role="status" data-wcs="textContent: status"></p>
+  ```
+
+  ```js
+  $eventTokens: ["results"],
+  $watch: {
+    route() { this.status = ""; },              // ナビゲーションで空にし…
+  },
+  $on: {
+    results(state, event) {                     // …新しいページは言うことを持ったときに書く
+      state.status = `${event.detail.value.length} 冊見つかりました`;
+    },
+  },
+  ```
+
+- **ダイアログを閉じた後のフォーカス。** モーダルの `<dialog>` は、閉じると開いた要素へフォーカスを返す。その要素がもう無いとき — ダイアログが、開いたボタンのあった行を消した — フォーカスは `<body>` へ落ち、キーボードやスクリーンリーダーの読者はページの先頭からやり直すことになる。そういう削除の後は自分で移す — リストかその見出しへ: `<h2 tabindex="-1" data-wcs="command.focus: $command.focusList">` と、行が消えた後の `this.$command.focusList.emit()`（ネイティブ要素の `command.` のメソッドは `native-commands` アドオンにあり、full のエントリに入っている）。
+
 ## パス仕様案（Router / Route / Link 共通）
 
 ### 用語
@@ -635,11 +686,20 @@ basename が `/ja` なら `/en/orders` へのリンクは `_isOwnPath` を外れ
 辞退し、ブラウザが本物のナビゲーションを行う。「ただのリンクで切り替わる」のは basename の
 **おかげ**である。
 
+この切り替えはページを離れるので、`leaveConfirm` があれば先に聞く — そしてページには、
+読者が受け入れたかが分からない: click のリスナーは質問より先に走り、断られた切り替えは
+前の言語のままページに留まる。選んだ言語は、クリックではなく次のページで記録する:
+クリックでは `sessionStorage` に印を付け、次のページの head スクリプトが、URL がその言語を
+持つときに（`localStorage` へ）確定し、そうでなければ印を捨てる。
+
 副産物が 2 つある。
 
 * **ルートパターンからロケールが消える** —— `path="/"`・`path="/about"`。アプリ内リンクも
   ロケールを持たない（`<wcs-link to="/about">` が basename を前置する）
-* **ページ上の URL をすべて絶対にする**こと。`<base>` が相対 URL の基準を変えるため
+* **ページ上の URL をすべて絶対にする**こと。`<base>` が相対 URL の基準を変えるため。
+  4.10（未リリース）から、フラグメントだけのリンク（`href="#main"`）は例外で、router が
+  今のページに留める（[ページ内リンク](#ページ内リンクスキップリンク)）。インライン SVG の
+  フラグメント参照（`url(#gradient)`・`clip-path`）はリンクではないので、base 基準のまま
 
 ロケールを持たない URL や未対応のロケールの修復も、同じ head スクリプトで `location.replace`
 する。ルートガードには置けない —— guard の redirect 先は静的な `guard="…"` 属性なので、

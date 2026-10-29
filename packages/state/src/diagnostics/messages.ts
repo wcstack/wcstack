@@ -80,8 +80,11 @@ export const SENTENCES: Record<M, Sentence> = {
   [M.FilterOptionNotNumber]: (fn) => `filter ${fn} requires a number as option`,
   [M.FilterValueNotNumber]: (fn, v) => `filter ${fn} requires a number value, not ${was(v)}${typeof v === "string" ? ` — put |number before |${fn}, or convert it where it is read` : ""}`,
   [M.FilterValueNotDate]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " — make the Date where it is read: a getter returning new Date(…)" : ""}${typeof v === "string" && /^\d{4}-\d\d-\d\d$/.test(v) ? `. A date-only string is a day, not a moment: new Date(${JSON.stringify(v)}) is midnight UTC, the day before west of Greenwich — new Date(y, m - 1, d) is that day where the page is` : ""}`,
-  [M.FilterStyleInvalid]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"`,
+  // (a time zone in the style's place — `date(ja-JP,Asia/Tokyo)`, `date(ja-JP,UTC)`, the shapes a lone
+  // zone is read by in filters/formats.ts — is told where it goes)
+  [M.FilterStyleInvalid]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"${/\/|^UTC$/.test(v) ? ` — a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: ${fn}(,,${v}), ${fn}(en-US,long,${v})` : ""}`,
   [M.FilterCurrencyInvalid]: (v) => `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "${v}"`,
+  [M.FilterTimeZoneInvalid]: (fn, v) => `filter ${fn} takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "${v}"`,
   [M.FilterValueNotArray]: (fn) => `filter ${fn} requires an array value`,
   [M.DirectionalSyncDisabled]: () => "init=/sync= modifiers require enableDirectionalInitialSync.",
   [M.ModifierUnknown]: (key, modifier) => `Unknown binding modifier "${key}" in "${modifier}".`,
