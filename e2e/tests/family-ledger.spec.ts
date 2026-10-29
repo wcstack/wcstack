@@ -13,9 +13,10 @@ import { resolve } from "node:path";
 // トークンの来かた）と画面の両方で見る。コンソールは wcstack の警告もエラーも無いこと。わざと起こした HTTP の失敗に
 // ブラウザ自身が出す "Failed to load resource" の行は、作者と同じく別に数える。
 //
-// デモのサーバーを WCS_LOCAL=1（esm.run → packages/*/dist）でワーカーごとに 5900 + 10 × index のポートで立てる
-// （4600–4900 / 5000 / 5100 / 5200 / 5300–5540 / 5700– は他の spec）。
-const PORT = 5900 + 10 * Number(process.env.TEST_PARALLEL_INDEX ?? 0);
+// デモのサーバーを WCS_LOCAL=1（esm.run → packages/*/dist）でワーカーごとに 6100 + 10 × index のポートで立てる
+// （4600–4900 / 5000 / 5100 / 5200 / 5300–5540 / 5700– は他の spec）。5900 からだと index 10 が 6000 —
+// fetch とブラウザが拒むポート（X11）— になり、11 ワーカー以上の機械で 2 件が bad port で落ちた。
+const PORT = 6100 + 10 * Number(process.env.TEST_PARALLEL_INDEX ?? 0);
 const APP = `http://localhost:${PORT}`;
 const REPO_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..");
 const MOM = "mom@example.com";
