@@ -758,7 +758,7 @@
       "id": "link-aria-not-forwarded",
       "runtime": "silent", "harm": "degraded",
       "mistake": { "en": "Binds `attr.aria-*:` on a `<wcs-link>`.", "ja": "`<wcs-link>` に `attr.aria-*:` を束ねる。" },
-      "effect": { "en": "`aria-*` is copied once, when the link makes its `<a>`: later values never reach it.", "ja": "`aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。" },
+      "effect": { "en": "`aria-*` is copied once, when the link makes its `<a>`: later values never reach it. In a `for:` row or an `if:` branch the link is bound before it is connected, so the first bound value arrives; on a page-level link it never does.", "ja": "`aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。`for:` の行や `if:` の枝では接続の前に束ねるので最初の値は届き、ページの階層のリンクでは届かない。" },
       "evidence": [{ "file": "packages/router/src/components/Link.ts", "text": "attr.name.startsWith('aria-')" }],
       "disposition": "design-out", "breaking": false,
       "note": { "en": "The link can forward later `aria-*` changes.", "ja": "リンクが後の `aria-*` の変化を転送できる。" }
@@ -1032,6 +1032,56 @@
       "effect": { "en": "The `<wcs-storage>` event clears the session, but the open page keeps showing the member's data until the next navigation; a login elsewhere silently makes the tab someone else's.", "ja": "`<wcs-storage>` のイベントがセッションを消しても、開いたページは次の遷移まで会員のデータを出し続ける。よそのログインで、タブは黙って別の人のものになる。" },
       "disposition": "docs-only",
       "note": { "en": "examples/router-auth shows one `$watch` on the token for every session change, here or in another tab; the skill does not say it yet.", "ja": "examples/router-auth は、ここでも別のタブでも、セッションのどの変化も token への `$watch` 1 つで扱う形を示す。スキルはまだ言わない。" }
+    },
+    {
+      "id": "watch-before-transition-apply",
+      "runtime": "designed-out", "harm": "broken",
+      "mistake": { "en": "Navigates (or moves the focus) from a `$watch` on a page with `<wcs-view-transition>`, where the same update changes structure.", "ja": "`<wcs-view-transition>` のあるページで、構造も変わる更新の `$watch` から画面を移す（フォーカスを動かす）。" },
+      "effect": { "en": "Up to 4.9 the `$watch` ran before the bindings the transition applied a frame later: the documented login navigated before `<wcs-storage>` saved the session, and the guard sent the reader back. Since 4.10 `$watch` waits for them.", "ja": "4.9 までは、トランジションが 1 フレーム後に適用するバインディングより先に `$watch` が走った: 文書のログインは `<wcs-storage>` がセッションを保存する前に画面を移し、ガードが読み手を戻した。4.10 から `$watch` はそれを待つ。" }
+    },
+    {
+      "id": "fragment-link-under-base",
+      "runtime": "designed-out", "harm": "wrong-place",
+      "mistake": { "en": "Writes a skip link (`href=\"#main\"`) on an SPA, which has `<base href=\"/\">`.", "ja": "`<base href=\"/\">` を持つ SPA にスキップリンク（`href=\"#main\"`）を書く。" },
+      "effect": { "en": "Up to 4.9 it resolved against the base and navigated to the home route. Since 4.10 the router keeps a link to a bare fragment on the current page and focuses its target.", "ja": "4.9 までは base に対して解決され、ホームのルートへ移った。4.10 から router は素のフラグメントへのリンクを今のページに留め、指す要素へフォーカスを移す。" }
+    },
+    {
+      "id": "query-link-current",
+      "runtime": "designed-out", "harm": "degraded",
+      "mistake": { "en": "Writes pagination as `<wcs-link to=\"/search?q=a&page=2\">`.", "ja": "ページ送りを `<wcs-link to=\"/search?q=a&page=2\">` で書く。" },
+      "effect": { "en": "Up to 4.9 the link was `active` with `aria-current=\"page\"` on every page of the search: \"Next page, current page\". Since 4.10 a link with a query is current only on that query.", "ja": "4.9 までは検索のどのページでもリンクが `active` で `aria-current=\"page\"` だった: 「次のページ、現在のページ」。4.10 からクエリ付きのリンクはそのクエリのときだけ current。" }
+    },
+    {
+      "id": "live-region-in-route-content",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Puts a message meant to be heard after a navigation (a result count, \"saved\") in a `role=\"status\"` region inside the route content.", "ja": "遷移の後に聞かせる文（件数、「保存しました」）を、ルートの中身の `role=\"status\"` のリージョンに置く。" },
+      "effect": { "en": "The route content is inserted together with its text, so nothing is announced; whether a region filled by a response is heard depends on timing — with view transitions Chromium announced it 0 of 10 times, under reduced motion 10 of 10.", "ja": "ルートの中身は文と一緒に挿入されるので、何も読み上げられない。応答で埋まるリージョンが聞こえるかは時機次第で、ビュー遷移があると Chromium は 10 回中 0 回、reduced motion では 10 回中 10 回読んだ。" },
+      "disposition": "docs-only",
+      "note": { "en": "The router README (4.10 docs): one page-level region outside the router, written after the navigation. The lint's `wcs/live-region-inserted` sees the forms whose text is in the markup or opens the branch, not a route body bound later.", "ja": "router の README（4.10 の文書）: router の外のページの階層に 1 つのリージョンを置き、遷移の後に書く。lint の `wcs/live-region-inserted` は、文がマークアップにある形や枝を開く形を見るが、後で束ねるルートの本体は見ない。" }
+    },
+    {
+      "id": "date-filter-reader-zone",
+      "runtime": "silent", "harm": "wrong-place",
+      "mistake": { "en": "Shows a place's times (opening hours in Tokyo) with the `date` / `time` filters and no zone.", "ja": "ある場所の時刻（東京の開館時間）を、ゾーンを付けずに `date` / `time` のフィルタで出す。" },
+      "effect": { "en": "The filters format in the reader's time zone: from Los Angeles, Thursday 09:00 in Tokyo reads Wednesday 17:00 — under a note saying all times are Tokyo time.", "ja": "フィルタは読み手のタイムゾーンで書く: ロサンゼルスからは、東京の木曜 09:00 が水曜 17:00 になる — 「時刻はすべて東京時間」という注記の下で。" },
+      "disposition": "docs-only",
+      "note": { "en": "Since 4.10 the filters take a time zone third (`time(,short,Asia/Tokyo)`), and the state README says the default is the reader's zone.", "ja": "4.10 からフィルタは 3 つ目にタイムゾーンを受け（`time(,short,Asia/Tokyo)`）、state の README は既定が読み手のゾーンだと書く。" }
+    },
+    {
+      "id": "wcs-link-to-other-basename",
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Links to another language's basename with `<wcs-link to=\"/en/search\">` from a `/ja/` page.", "ja": "`/ja/` のページから、別の言語の basename へ `<wcs-link to=\"/en/search\">` でつなぐ。" },
+      "effect": { "en": "`to` is a route path the basename is added to: the link goes to `/ja/en/search` — the not-found page, in the same language.", "ja": "`to` は basename を足すルートのパス: リンクは `/ja/en/search` — 同じ言語の not-found のページ — へ行く。" },
+      "disposition": "docs-only",
+      "note": { "en": "The router README: a link that leaves the basename is a plain `<a href>`; `examples/router-i18n` shows the language switch.", "ja": "router の README: basename を出るリンクは素の `<a href>`。`examples/router-i18n` が言語の切り替えを示す。" }
+    },
+    {
+      "id": "language-switch-in-state",
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Switches language in place: sets `<html lang>` and swaps the dictionary in state instead of navigating to the other language's basename.", "ja": "その場で言語を切り替える: 別の言語の basename へ移る代わりに、`<html lang>` を変えて state の辞書を差し替える。" },
+      "effect": { "en": "The texts change, but the filters keep the locale they read when state loaded (dates, money), the `<title>` and the URL stay in the first language.", "ja": "文は変わるが、フィルタは state を読み込んだときのロケール（日付、金額）のまま、`<title>` と URL も最初の言語のまま。" },
+      "disposition": "docs-only",
+      "note": { "en": "docs/i18n-design.md (no live switch), the state README's Locale and the skill: the language is in the markup before state loads.", "ja": "docs/i18n-design.md（ライブの切り替えは無い）、state の README のロケールの節、スキル: 言語は state を読み込む前にマークアップにある。" }
     }
   ],
   "uncounted": [
