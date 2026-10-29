@@ -1772,15 +1772,15 @@ The names 3.x kept as aliases of the 3.2 renames (`inc`, `dec`, `fix`, `uc`, `lc
 
 | Filter | Description | Example |
 |---|---|---|
-| `date(loc?, style?, zone?)` | Date format; `zone?` since 4.10 (not released yet) | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` / `opensAt\|date(ja-JP,full,Asia/Tokyo)` |
-| `time(loc?, style?, zone?)` | Time format; `zone?` since 4.10 (not released yet) | `createdAt\|time` / `createdAt\|time(short)` / `opensAt\|time(,short,Asia/Tokyo)` |
-| `datetime(loc?, style?, zone?)` | Date + Time; `zone?` since 4.10 (not released yet) | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` / `createdAt\|datetime(,,UTC)` |
+| `date(loc?, style?, zone?)` | Date format; `zone?` since 4.10 | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` / `opensAt\|date(ja-JP,full,Asia/Tokyo)` |
+| `time(loc?, style?, zone?)` | Time format; `zone?` since 4.10 | `createdAt\|time` / `createdAt\|time(short)` / `opensAt\|time(,short,Asia/Tokyo)` |
+| `datetime(loc?, style?, zone?)` | Date + Time; `zone?` since 4.10 | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` / `createdAt\|datetime(,,UTC)` |
 | `ymd(sep?)` | YYYY-MM-DD (default `-`), in the runtime's time zone | `createdAt\|ymd` / `createdAt\|ymd(/)` |
 | `hms(sep?)` | HH:MM:SS (default `:`), in the runtime's time zone | `createdAt\|hms` / `createdAt\|hms(-)` |
 
 **All five take a `Date`,** not a timestamp — a value of any other type is rejected with "requires a date value". An absent one (`undefined` / `null`) renders nothing since 4.7. State loaded from JSON carries a number or an ISO string, so convert it where it is read rather than in the binding: `get createdAt() { return new Date(this.createdAtMs); }`. A date-only string is a day, not a moment: `new Date("2026-10-29")` is midnight UTC, which is the day before west of Greenwich — `new Date(y, m - 1, d)` is that day where the page runs (`#29` says so since 4.9). `loc?` defaults to the page locale ([Locale](#locale)), and the default is re-read on **every** apply, so a locale settled after the bindings were planned still takes effect (an explicit `date(ja-JP)` is part of the binding expression and is fixed when it is planned). `style?` is `full`, `long`, `medium` or `short` (Intl's `dateStyle` / `timeStyle`); without it the format is the locale's numeric one (`10/13/2026`), and a style alone keeps the page locale (`date(medium)`). `currency`'s code is checked when the bindings are planned; the number is formatted in the page locale unless `loc` names one. Plurals and other formats belong in a getter (`Intl.PluralRules`, `Intl.NumberFormat`).
 
-**Time zones.** Without `zone?`, `date`, `time` and `datetime` format in the time zone of the runtime — **the reader's**, in a browser, and the server's under SSR — whatever the page's locale. A time that belongs to a place reads differently elsewhere: a library in Tokyo open on Thursday 29 October from 09:00 to 20:00, read from Los Angeles, shows `2026年10月28日水曜日`, `17:00:00` and `4:00:00`. Since 4.10 (not released yet), `zone?` names the zone to format in — an IANA time zone, Intl's `timeZone` (`Asia/Tokyo`, `America/New_York`, `UTC`) — so every reader sees the place's time:
+**Time zones.** Without `zone?`, `date`, `time` and `datetime` format in the time zone of the runtime — **the reader's**, in a browser, and the server's under SSR — whatever the page's locale. A time that belongs to a place reads differently elsewhere: a library in Tokyo open on Thursday 29 October from 09:00 to 20:00, read from Los Angeles, shows `2026年10月28日水曜日`, `17:00:00` and `4:00:00`. Since 4.10, `zone?` names the zone to format in — an IANA time zone, Intl's `timeZone` (`Asia/Tokyo`, `America/New_York`, `UTC`) — so every reader sees the place's time:
 
 ```html
 <html lang="ja">
@@ -2636,7 +2636,7 @@ Firing order is defined in three layers, and only the middle one is yours to ste
 | Between handlers | declaration order in `$watch` | **reorder the declarations** |
 | Between rows of one path | ascending `indexes` | fixed |
 
-**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$renderedCallback` — then lands on a frame. Since 4.10 (not released yet) `$watch` and the `$stream` restart wait for it, so the order stays as above, a frame later, and what they write (a list a `$watch` copies into state) is applied in the same transition; up to 4.9 they stayed on the microtask the drain was queued on and ran first (`$watch` → `$stream` restart → `$renderedCallback`), so a `$watch` that navigated after a login ran before `<wcs-storage>` had saved the session its route guard reads. Nothing else on the page moves this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$renderedCallback` — then lands on a frame. Since 4.10 `$watch` and the `$stream` restart wait for it, so the order stays as above, a frame later, and what they write (a list a `$watch` copies into state) is applied in the same transition; up to 4.9 they stayed on the microtask the drain was queued on and ran first (`$watch` → `$stream` restart → `$renderedCallback`), so a `$watch` that navigated after a login ran before `<wcs-storage>` had saved the session its route guard reads. Nothing else on the page moves this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
 
 Key rules:
 
@@ -3003,9 +3003,9 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | 49 | | `<wcs-state src="…"> failed to initialize.` |
 | 50 | | `<wcs-state src="…"> $connectedCallback failed.` |
 | 51 | | `<wcs-state src="…"> $disconnectedCallback failed.` |
-| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"` (since 4.10 (not released yet), a time zone in the style's place (one with a `/`, or `UTC`) adds: `— a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: <name>(,,<zone>), <name>(en-US,long,<zone>)`) |
+| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"` (since 4.10, a time zone in the style's place (one with a `/`, or `UTC`) adds: `— a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: <name>(,,<zone>), <name>(en-US,long,<zone>)`) |
 | 53 | | `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "<code>"` |
-| 54 | | `filter <name> takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "<zone>"` (since 4.10 (not released yet)) |
+| 54 | | `filter <name> takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "<zone>"` (since 4.10) |
 | 101 | `binding-syntax` | `Invalid bindText: "<text>". Missing ':' separator between propPart and statePart.` |
 | 102 | `binding-syntax` | `"<text>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` |
 | 103 | `binding-syntax` | `"<text>": "else" takes no value — write "else:".` |
@@ -3080,13 +3080,13 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 The check **under-approximates**: it stays silent for anything it cannot decide statically, because a false alarm costs more than a missed one. None of these warn:
 
 - A `null` / `undefined` parent (the "seed as `null`, assign later" shape)
-- An empty object under a key (`fieldErrors: {}`, filled later with `this.fieldErrors = { date: "…" }`) — the same shape, seeded `{}`. Since 4.10 (not released yet); up to 4.9 each binding below it was reported, and its "updates … will be silently dropped" was not so: replacing the object updates them. The lint reads those assignments since 4.9
+- An empty object under a key (`fieldErrors: {}`, filled later with `this.fieldErrors = { date: "…" }`) — the same shape, seeded `{}`. Since 4.10; up to 4.9 each binding below it was reported, and its "updates … will be silently dropped" was not so: replacing the object updates them. The lint reads those assignments since 4.9
 - Row fields of a list that starts empty (the row shape is unknown)
 - A row field no row has, unless a row has a near name (a likely typo, `.nmae` beside `name`) — rows are data, and an optional field (a `pending` the page puts on its own rows) is absent from the others. Since 4.4; the first row lacking a field another row has does not warn either (4.3)
 - Sub-properties of an intermediate getter's return value
 - Paths under the mount path of a volume that is still loading — they are checked once it settles
 - Reserved `$` namespaces (`$command.*` and friends)
-- Keys under an object an element writes — the router's `searchParams: query` has the URL's keys, so `query.next` is there only when the URL has it. Since 4.10 (not released yet); up to 4.9 such a binding was reported as "silently dropped"
+- Keys under an object an element writes — the router's `searchParams: query` has the URL's keys, so `query.next` is there only when the URL has it. Since 4.10; up to 4.9 such a binding was reported as "silently dropped"
 
 So **no warning is not a proof of correctness.** For exhaustive checking, run `npx @wcstack/lint <file>`. A re-set (`setInitialState()`) checks every path again against the new state.
 
@@ -3330,7 +3330,7 @@ is reported once (`#48`) and the filters use `"en"`, rather than throwing inside
 
 The locale is not the time zone: a `<html lang="ja-JP">` page still writes its dates and times in
 the reader's zone, in Japanese. A time that belongs to a place takes that place's zone as the date
-filters' third argument (since 4.10 (not released yet) — [Date / Time](#date--time)).
+filters' third argument (since 4.10 — [Date / Time](#date--time)).
 
 **Changing the locale later does not re-render anything.** It is a global
 setting, not state, so it is not part of the dependency graph. The filters do

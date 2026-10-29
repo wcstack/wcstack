@@ -364,8 +364,11 @@ var SENTENCES = {
   [27 /* FilterOptionNotNumber */]: (fn) => `filter ${fn} requires a number as option`,
   [28 /* FilterValueNotNumber */]: (fn, v) => `filter ${fn} requires a number value, not ${was(v)}${typeof v === "string" ? ` \u2014 put |number before |${fn}, or convert it where it is read` : ""}`,
   [29 /* FilterValueNotDate */]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " \u2014 make the Date where it is read: a getter returning new Date(\u2026)" : ""}${typeof v === "string" && /^\d{4}-\d\d-\d\d$/.test(v) ? `. A date-only string is a day, not a moment: new Date(${JSON.stringify(v)}) is midnight UTC, the day before west of Greenwich \u2014 new Date(y, m - 1, d) is that day where the page is` : ""}`,
-  [52 /* FilterStyleInvalid */]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"`,
+  // (a time zone in the style's place — `date(ja-JP,Asia/Tokyo)`, `date(ja-JP,UTC)`, the shapes a lone
+  // zone is read by in filters/formats.ts — is told where it goes)
+  [52 /* FilterStyleInvalid */]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"${/\/|^UTC$/.test(v) ? ` \u2014 a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: ${fn}(,,${v}), ${fn}(en-US,long,${v})` : ""}`,
   [53 /* FilterCurrencyInvalid */]: (v) => `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "${v}"`,
+  [54 /* FilterTimeZoneInvalid */]: (fn, v) => `filter ${fn} takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "${v}"`,
   [30 /* FilterValueNotArray */]: (fn) => `filter ${fn} requires an array value`,
   [31 /* DirectionalSyncDisabled */]: () => "init=/sync= modifiers require enableDirectionalInitialSync.",
   [33 /* ModifierUnknown */]: (key, modifier) => `Unknown binding modifier "${key}" in "${modifier}".`,

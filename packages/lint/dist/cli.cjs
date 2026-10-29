@@ -32,19 +32,29 @@ var import_node_fs2 = require("node:fs");
 // src/fileReader.ts
 var import_node_fs = require("node:fs");
 var import_node_path = require("node:path");
-function createFileReader(htmlPath, read = (p) => (0, import_node_fs.readFileSync)(p, "utf8")) {
+function createFileReader(htmlPath, read = (p) => (0, import_node_fs.readFileSync)(p, "utf8"), root) {
   const base = (0, import_node_path.dirname)(htmlPath);
+  const rootDir = root === void 0 ? void 0 : (0, import_node_path.resolve)(root);
   const cache2 = /* @__PURE__ */ new Map();
   return (relativePath) => {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("/")) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(relativePath) || relativePath.startsWith("//")) {
       return void 0;
+    }
+    let target;
+    if (relativePath.startsWith("/")) {
+      if (rootDir === void 0) return void 0;
+      target = (0, import_node_path.resolve)(rootDir, `.${relativePath}`);
+      const inside = (0, import_node_path.relative)(rootDir, target);
+      if (inside.startsWith("..") || (0, import_node_path.isAbsolute)(inside)) return void 0;
+    } else {
+      target = (0, import_node_path.resolve)(base, relativePath);
     }
     if (cache2.has(relativePath)) {
       return cache2.get(relativePath);
     }
     let content;
     try {
-      content = read((0, import_node_path.resolve)(base, relativePath));
+      content = read(target);
       if (content.charCodeAt(0) === 65279) {
         content = content.slice(1);
       }
@@ -277,6 +287,10 @@ var WcsDiagnosticCode = {
   // setAttribute はそのまま書き、支援技術は黙って無視する。severity は warning
   // (error 昇格時は packages/lint/scripts/smoke-test.mjs の対ケース更新が必須)。
   AriaAttrUnknown: "wcs/aria-attr-unknown",
+  // ライブリージョン（`aria-live`、`role="status"` / `"log"`）を `if:` / `for:` の template か `<wcs-route>` の中に
+  // 置き、文と一緒に挿入される。スクリーンリーダーは読み上げない（読み上げるのは、ページにある間に文が変わったとき）。
+  // 挿入で読み上げられる `role="alert"` は対象外。継ぎ目アプリ city-library（view transition ありの Chromium で 0/10）。warning。
+  LiveRegionInserted: "wcs/live-region-inserted",
   // --- document-level load configuration ---
   // @wcstack/state/auto より後に @wcstack/devtools/auto が読まれている。info: 4.0 は後から付いた DevTools に
   // 既存の束縛を送り直すので、欠けるのは付く前のタイムラインだけ。
@@ -790,14 +804,20 @@ var SENTENCES = {
     29
     /* FilterValueNotDate */
   ]: (fn, v) => `filter ${fn} requires a date value (a Date), not ${was(v)}${typeof v === "string" || typeof v === "number" ? " \u2014 make the Date where it is read: a getter returning new Date(\u2026)" : ""}${typeof v === "string" && /^\d{4}-\d\d-\d\d$/.test(v) ? `. A date-only string is a day, not a moment: new Date(${JSON.stringify(v)}) is midnight UTC, the day before west of Greenwich \u2014 new Date(y, m - 1, d) is that day where the page is` : ""}`,
+  // (a time zone in the style's place — `date(ja-JP,Asia/Tokyo)`, `date(ja-JP,UTC)`, the shapes a lone
+  // zone is read by in filters/formats.ts — is told where it goes)
   [
     52
     /* FilterStyleInvalid */
-  ]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"`,
+  ]: (fn, v) => `filter ${fn} takes a style of full, long, medium or short, not "${v}"${/\/|^UTC$/.test(v) ? ` \u2014 a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: ${fn}(,,${v}), ${fn}(en-US,long,${v})` : ""}`,
   [
     53
     /* FilterCurrencyInvalid */
   ]: (v) => `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "${v}"`,
+  [
+    54
+    /* FilterTimeZoneInvalid */
+  ]: (fn, v) => `filter ${fn} takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "${v}"`,
   [
     30
     /* FilterValueNotArray */
@@ -1401,6 +1421,7 @@ function findStartTagRegions(html) {
   }
   return out;
 }
+var MODULE_PATH_ATTRIBUTE = "wcs-lint-src";
 function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
   return parseWcsStateElements(html, stateTagName).flatMap((element2) => element2.scriptBlocks);
 }
@@ -1492,12 +1513,14 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
         const typeAttr = extractAttribute(inner.open.tagContent, "type");
         if (typeAttr?.toLowerCase() === "module" && inner.closed) {
           const contentStart = inner.open.end;
+          const modulePath = extractAttribute(inner.open.tagContent, MODULE_PATH_ATTRIBUTE);
           scriptBlocks.push({
             contentStart,
             contentEnd: inner.contentEnd,
             content: html.slice(contentStart, inner.contentEnd),
             mountPath,
-            bindComponent
+            bindComponent,
+            ...modulePath !== null ? { modulePath } : {}
           });
         }
       }
@@ -2013,12 +2036,6 @@ var upper = () => (value) => String(value).toUpperCase();
 var lower = () => (value) => String(value).toLowerCase();
 var capitalize = () => (value) => {
   const v = String(value);
-  if (v.length === 0) {
-    return v;
-  }
-  if (v.length === 1) {
-    return v.toUpperCase();
-  }
   return v.charAt(0).toUpperCase() + v.slice(1);
 };
 var trim = () => (value) => String(value).trim();
@@ -2067,14 +2084,20 @@ var join = (options) => {
 };
 var STYLES = ["full", "long", "medium", "short"];
 function dateOptions(options, fn) {
-  let [loc, style] = options ?? [];
-  if (style === void 0 && loc !== void 0 && STYLES.includes(loc)) [loc, style] = [void 0, loc];
-  if (style !== void 0 && !STYLES.includes(style)) styleInvalid(fn, style);
-  return [loc, style];
+  let [loc, style, zone] = (options ?? []).map((option) => option || void 0);
+  if (!style && STYLES.includes(loc)) [loc, style] = [void 0, loc];
+  else if (!style && !zone && /\/|^UTC$/.test(loc)) [loc, zone] = [void 0, loc];
+  if (style && !STYLES.includes(style)) styleInvalid(fn, style);
+  try {
+    if (zone) new Intl.DateTimeFormat(void 0, { timeZone: zone });
+  } catch {
+    raise2(54, [fn, zone]);
+  }
+  return [loc, style, zone];
 }
 var date = (options) => {
-  const [explicit, style] = dateOptions(options, "date");
-  const format = style && { dateStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, "date");
+  const format = (style || timeZone) && { dateStyle: style, timeZone };
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("date", value);
@@ -2083,8 +2106,8 @@ var date = (options) => {
   };
 };
 var time = (options) => {
-  const [explicit, style] = dateOptions(options, "time");
-  const format = style && { timeStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, "time");
+  const format = (style || timeZone) && { timeStyle: style, timeZone };
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("time", value);
@@ -2093,8 +2116,8 @@ var time = (options) => {
   };
 };
 var datetime = (options) => {
-  const [explicit, style] = dateOptions(options, "datetime");
-  const format = style && { dateStyle: style, timeStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, "datetime");
+  const format = (style || timeZone) && { dateStyle: style, timeStyle: style, timeZone };
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("datetime", value);
@@ -2102,16 +2125,14 @@ var datetime = (options) => {
     return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
+var two = (n) => String(n).padStart(2, "0");
 var ymd = (options) => {
   const opt = options?.[0] ?? "-";
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("ymd", value);
     }
-    const year = value.getFullYear().toString();
-    const month = (value.getMonth() + 1).toString().padStart(2, "0");
-    const day = value.getDate().toString().padStart(2, "0");
-    return `${year}${opt}${month}${opt}${day}`;
+    return `${value.getFullYear()}${opt}${two(value.getMonth() + 1)}${opt}${two(value.getDate())}`;
   };
 };
 var hms = (options) => {
@@ -2120,10 +2141,7 @@ var hms = (options) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("hms", value);
     }
-    const hours = value.getHours().toString().padStart(2, "0");
-    const minutes = value.getMinutes().toString().padStart(2, "0");
-    const seconds = value.getSeconds().toString().padStart(2, "0");
-    return `${hours}${opt}${minutes}${opt}${seconds}`;
+    return `${two(value.getHours())}${opt}${two(value.getMinutes())}${opt}${two(value.getSeconds())}`;
   };
 };
 var abs = () => (value) => {
@@ -2184,10 +2202,11 @@ var registered = {
   ceil: { factory: ceil, arity: [0, 1] },
   percent: { factory: percent, arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
-  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
-  date: { factory: nullishPassthrough(date), arity: [0, 2] },
-  time: { factory: nullishPassthrough(time), arity: [0, 2] },
-  datetime: { factory: nullishPassthrough(datetime), arity: [0, 2] },
+  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), a style (`date(ja-JP,long)`)
+  // and, since 4.10, a time zone (`date(ja-JP,long,Asia/Tokyo)`)
+  date: { factory: nullishPassthrough(date), arity: [0, 3] },
+  time: { factory: nullishPassthrough(time), arity: [0, 3] },
+  datetime: { factory: nullishPassthrough(datetime), arity: [0, 3] },
   ymd: { factory: nullishPassthrough(ymd), arity: [0, 1] },
   hms: { factory: nullishPassthrough(hms), arity: [0, 1] },
   // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
@@ -2290,9 +2309,11 @@ var builtinFilterMeta = {
   // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
   // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた。
   // 4.2: 2 つ目は書式（full / long / medium / short — Intl の dateStyle / timeStyle）。書式だけなら既定のロケール
-  date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8 ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
-  time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
-  datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642 ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  // 4.10: 3 つ目は IANA のタイムゾーン（Intl の timeZone）。無ければ実行環境のゾーン（読み手の、SSR ではサーバーの）。
+  // 空の引数は既定のまま（`date(,,Asia/Tokyo)`）
+  date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8 ([locale][, style][, zone]\u3002style \u306F full / long / medium / short\u3001zone \u306F IANA \u306E\u30BF\u30A4\u30E0\u30BE\u30FC\u30F3\uFF08Asia/Tokyo \u2014 \u7121\u3051\u308C\u3070\u8AAD\u307F\u624B\u306E\u30BE\u30FC\u30F3\uFF09\u3001\u7A7A\u306E\u5F15\u6570\u306F\u65E2\u5B9A\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
+  time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B ([locale][, style][, zone]\u3002style \u306F full / long / medium / short\u3001zone \u306F IANA \u306E\u30BF\u30A4\u30E0\u30BE\u30FC\u30F3\uFF08Asia/Tokyo \u2014 \u7121\u3051\u308C\u3070\u8AAD\u307F\u624B\u306E\u30BE\u30FC\u30F3\uFF09\u3001\u7A7A\u306E\u5F15\u6570\u306F\u65E2\u5B9A\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
+  datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642 ([locale][, style][, zone]\u3002style \u306F full / long / medium / short\u3001zone \u306F IANA \u306E\u30BF\u30A4\u30E0\u30BE\u30FC\u30F3\uFF08Asia/Tokyo \u2014 \u7121\u3051\u308C\u3070\u8AAD\u307F\u624B\u306E\u30BE\u30FC\u30F3\uFF09\u3001\u7A7A\u306E\u5F15\u6570\u306F\u65E2\u5B9A\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
   ymd: { description: "YYYY-MM-DD \u5F62\u5F0F ([separator]\u3002\u65E2\u5B9A\u306F -)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   hms: { description: "HH:MM:SS \u5F62\u5F0F ([separator]\u3002\u65E2\u5B9A\u306F :)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換
@@ -2420,2210 +2441,6 @@ function editDistance2(a, b, bound) {
     for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
   }
   return Math.min(prev[b.length], bound);
-}
-
-// src/service/recursionPaths.ts
-var RECURSION_WILDCARD2 = "**";
-var RECURSION_KEY = "$recursion";
-function hasRecursionWildcard(path) {
-  return path.indexOf(RECURSION_WILDCARD2) !== -1;
-}
-function checkNodePath(path) {
-  if (typeof path !== "string" || path.length === 0) return "empty";
-  const segments = path.split(".");
-  if (segments.some((segment) => segment.length === 0)) return "emptySegment";
-  if (segments.length < 2 || segments[segments.length - 1] !== "*") return "notElement";
-  if (segments[0].startsWith("$")) return "reservedRoot";
-  if (path.indexOf("#") !== -1) return "reservedMount";
-  for (let i = 0; i < segments.length - 1; i++) {
-    if (segments[i] === "*") return "midWildcard";
-    if (segments[i] === RECURSION_WILDCARD2) return "nestedRecursion";
-    if (!isNaN(Number(segments[i]))) return "indexSegment";
-  }
-  return null;
-}
-function makeRecursionSpec(anchor, repeat2) {
-  return Object.freeze({
-    anchor,
-    repeat: repeat2,
-    recursiveAnchor: anchor.slice(0, anchor.lastIndexOf(".")) + "." + RECURSION_WILDCARD2,
-    anchorList: anchor.slice(0, anchor.lastIndexOf(".")),
-    repeatList: repeat2.slice(0, repeat2.lastIndexOf("."))
-  });
-}
-function splitRecursivePath(spec, path) {
-  if (path === spec.recursiveAnchor) return "";
-  if (!path.startsWith(spec.recursiveAnchor + ".")) return null;
-  const suffix = path.slice(spec.recursiveAnchor.length);
-  if (hasRecursionWildcard(suffix)) return null;
-  const segments = suffix.slice(1).split(".");
-  if (segments[0] === "*" || segments.some((segment) => segment.length === 0)) return null;
-  return suffix;
-}
-function foldSuffixIndexes(suffix) {
-  return suffix.length === 0 ? suffix : "." + indexSegmentsToWildcard(suffix.slice(1));
-}
-function foldRecursion(spec, path) {
-  if (!path.startsWith(spec.anchor)) return null;
-  const unit2 = "." + spec.repeat;
-  let cursor = spec.anchor.length;
-  let depth = 0;
-  while (path.startsWith(unit2, cursor)) {
-    cursor += unit2.length;
-    depth++;
-  }
-  if (cursor !== path.length && path.charCodeAt(cursor) !== 46) return null;
-  return { depth, rest: path.slice(cursor) };
-}
-function matchesRecursion(specs, path, has) {
-  for (const spec of specs) {
-    const folded = foldRecursion(spec, path);
-    if (folded === null) continue;
-    const unit2 = "." + spec.repeat;
-    for (let depth = folded.depth; depth >= 0; depth--) {
-      const rest = unit2.repeat(folded.depth - depth) + folded.rest;
-      if (has(spec.anchor + rest)) return true;
-      if (has(spec.recursiveAnchor + rest)) return true;
-      for (let dot = rest.lastIndexOf("."); dot > 0; dot = rest.lastIndexOf(".", dot - 1)) {
-        if (has(spec.recursiveAnchor + rest.slice(0, dot))) return true;
-      }
-    }
-  }
-  return false;
-}
-function owningGetterSuffix(spec, getterSuffixes, path) {
-  const pattern = indexSegmentsToWildcard(path);
-  const folded = foldRecursion(spec, pattern);
-  if (folded === null) return null;
-  const unit2 = "." + spec.repeat;
-  for (const suffix of getterSuffixes) {
-    for (let depth = folded.depth; depth >= 0; depth--) {
-      const expansion = spec.anchor + unit2.repeat(depth) + suffix;
-      if (pattern === expansion || pattern.startsWith(expansion + ".")) return suffix;
-    }
-  }
-  return null;
-}
-function indexSegmentsToWildcard(path) {
-  return path.split(".").map((segment) => segment !== "*" && !Number.isNaN(Number(segment)) ? "*" : segment).join(".");
-}
-function concreteExpansionSuffix(spec, getterSuffixes, key) {
-  const folded = foldRecursion(spec, key);
-  if (folded === null) return null;
-  const unit2 = "." + spec.repeat;
-  for (const suffix of getterSuffixes) {
-    for (let depth = folded.depth; depth >= 0; depth--) {
-      if (key === spec.anchor + unit2.repeat(depth) + suffix) return suffix;
-    }
-  }
-  return null;
-}
-function collectRecursionSpecs(candidates) {
-  const out = [];
-  for (const candidate of candidates) {
-    if (candidate.kind !== "recursionAnchor" || typeof candidate.repeat !== "string") continue;
-    if (!candidate.path.endsWith("." + RECURSION_WILDCARD2)) continue;
-    const anchor = candidate.path.slice(0, candidate.path.length - RECURSION_WILDCARD2.length) + "*";
-    if (out.some((spec) => spec.anchor === anchor && spec.repeat === candidate.repeat)) continue;
-    out.push(makeRecursionSpec(anchor, candidate.repeat));
-  }
-  return out;
-}
-function impliedStructurePaths(spec) {
-  const out = [
-    { path: spec.anchorList, kind: "data", typeHint: "array" },
-    { path: spec.anchor, kind: "list" },
-    { path: `${spec.anchorList}.length`, kind: "data", typeHint: "number" }
-  ];
-  const repeatSegments = spec.repeatList.split(".");
-  for (let i = 1; i < repeatSegments.length; i++) {
-    out.push({ path: `${spec.anchor}.${repeatSegments.slice(0, i).join(".")}`, kind: "data" });
-  }
-  out.push({ path: `${spec.anchor}.${spec.repeatList}`, kind: "data", typeHint: "array" });
-  out.push({ path: `${spec.anchor}.${spec.repeat}`, kind: "list" });
-  out.push({ path: `${spec.anchor}.${spec.repeatList}.length`, kind: "data", typeHint: "number" });
-  return out;
-}
-function structuralWriteTarget(spec, suffix) {
-  const unit2 = "." + spec.repeat;
-  let rest = suffix;
-  while (rest.startsWith(unit2)) rest = rest.slice(unit2.length);
-  if (rest.length === 0) return "node";
-  if (rest === "." + spec.repeatList + ".length") return "length";
-  const segments = spec.repeatList.split(".");
-  for (let i = 1; i <= segments.length; i++) {
-    if (rest === "." + segments.slice(0, i).join(".")) return i === segments.length ? "list" : "branch";
-  }
-  return null;
-}
-function sameFamily(spec, a, b) {
-  const unit2 = "." + spec.repeat;
-  const shorter = a.length <= b.length ? a : b;
-  const longer = a.length <= b.length ? b : a;
-  if (!longer.endsWith(shorter)) return false;
-  const gap = longer.slice(0, longer.length - shorter.length);
-  if (gap.length === 0) return true;
-  if (gap.length % unit2.length !== 0) return false;
-  for (let cursor = 0; cursor < gap.length; cursor += unit2.length) {
-    if (!gap.startsWith(unit2, cursor)) return false;
-  }
-  return true;
-}
-function conflictingGetterSuffix(spec, getterSuffixes, suffix) {
-  for (const declared of getterSuffixes) {
-    if (coversSuffix(spec, declared, suffix)) return declared;
-  }
-  return null;
-}
-function coversSuffix(spec, familySuffix, suffix) {
-  for (let end = suffix.length; end > 0; end = suffix.lastIndexOf(".", end - 1)) {
-    if (sameFamily(spec, familySuffix, suffix.slice(0, end))) return true;
-  }
-  return false;
-}
-
-// src/service/jsdocType.ts
-var UNKNOWN = { kind: "unknown" };
-var NULL_TYPE = { kind: "name", name: "null" };
-var ARRAY_GENERICS = /* @__PURE__ */ new Set(["Array", "ReadonlyArray"]);
-var MAX_RESOLVE_DEPTH = 8;
-function tokenize(text3) {
-  const tokens = [];
-  let i = 0;
-  while (i < text3.length) {
-    const ch = text3[i];
-    if (/\s/.test(ch)) {
-      i++;
-      continue;
-    }
-    if (ch === "=" && text3[i + 1] === ">") {
-      tokens.push({ t: "punct", v: "=>" });
-      i += 2;
-      continue;
-    }
-    if ("{}[]<>()|&,;:?!*.=".includes(ch)) {
-      tokens.push({ t: "punct", v: ch });
-      i++;
-      continue;
-    }
-    if (ch === '"' || ch === "'") {
-      const end = text3.indexOf(ch, i + 1);
-      if (end === -1) return null;
-      tokens.push({ t: "string", v: text3.slice(i + 1, end) });
-      i = end + 1;
-      continue;
-    }
-    const num = /^-?\d+(?:\.\d+)?/.exec(text3.slice(i));
-    if (num) {
-      tokens.push({ t: "number" });
-      i += num[0].length;
-      continue;
-    }
-    const name = /^[$A-Za-z_][$\w]*/.exec(text3.slice(i));
-    if (name) {
-      tokens.push({ t: "name", v: name[0] });
-      i += name[0].length;
-      continue;
-    }
-    return null;
-  }
-  return tokens;
-}
-function parseJsDocType(text3) {
-  const tokens = tokenize(text3);
-  if (tokens === null || tokens.length === 0) return null;
-  let pos = 0;
-  const peek = () => tokens[pos];
-  const isPunct = (v) => {
-    const token = tokens[pos];
-    return token !== void 0 && token.t === "punct" && token.v === v;
-  };
-  const expect = (v) => {
-    if (!isPunct(v)) return false;
-    pos++;
-    return true;
-  };
-  const parseUnion = () => {
-    expect("|");
-    const members = [];
-    for (; ; ) {
-      const member = parsePostfix();
-      if (member === null) return null;
-      members.push(member);
-      if (expect("&")) continue;
-      if (!expect("|")) break;
-    }
-    if (isPunct("=>")) {
-      pos++;
-      if (parseUnion() === null) return null;
-      return UNKNOWN;
-    }
-    return members.length === 1 ? members[0] : { kind: "union", members };
-  };
-  const parsePostfix = () => {
-    let type2 = parsePrimary();
-    if (type2 === null) return null;
-    while (isPunct("[") && tokens[pos + 1]?.t === "punct" && tokens[pos + 1].v === "]") {
-      pos += 2;
-      type2 = { kind: "array", element: type2 };
-    }
-    return type2;
-  };
-  const parsePrimary = () => {
-    const token = peek();
-    if (token === void 0) return null;
-    if (token.t === "string" || token.t === "number") {
-      pos++;
-      return UNKNOWN;
-    }
-    if (token.t === "punct") {
-      if (token.v === "{") return parseObject();
-      if (token.v === "(") {
-        pos++;
-        if (expect(")")) return isPunct("=>") ? UNKNOWN : null;
-        const inner = parseUnion();
-        if (inner === null) return null;
-        if (isPunct(":") || isPunct(",")) {
-          if (!skipUntilClose("(", ")")) return null;
-          return UNKNOWN;
-        }
-        return expect(")") ? inner : null;
-      }
-      if (token.v === "?") {
-        pos++;
-        const next = peek();
-        if (next === void 0 || next.t === "punct" && ["|", ",", ";", ")", ">", "]", "}", "="].includes(next.v)) return UNKNOWN;
-        const inner = parsePostfix();
-        return inner === null ? null : { kind: "union", members: [inner, NULL_TYPE] };
-      }
-      if (token.v === "!") {
-        pos++;
-        return parsePostfix();
-      }
-      if (token.v === "*") {
-        pos++;
-        return UNKNOWN;
-      }
-      return null;
-    }
-    pos++;
-    let name = token.v;
-    while (isPunct(".") && tokens[pos + 1]?.t === "name") {
-      name += "." + tokens[pos + 1].v;
-      pos += 2;
-    }
-    if ((name === "typeof" || name === "keyof") && peek()?.t === "name") {
-      pos++;
-      return UNKNOWN;
-    }
-    if (name === "function" && isPunct("(")) {
-      pos++;
-      if (!skipUntilClose("(", ")")) return null;
-      if (expect(":")) {
-        if (parsePostfix() === null) return null;
-      }
-      return UNKNOWN;
-    }
-    if (isPunct(".") && tokens[pos + 1]?.t === "punct" && tokens[pos + 1].v === "<") pos++;
-    if (isPunct("<")) {
-      pos++;
-      const args = [];
-      for (; ; ) {
-        const arg = parseUnion();
-        if (arg === null) return null;
-        args.push(arg);
-        if (!expect(",")) break;
-      }
-      if (!expect(">")) return null;
-      return ARRAY_GENERICS.has(name) && args.length === 1 ? { kind: "array", element: args[0] } : UNKNOWN;
-    }
-    return { kind: "name", name };
-  };
-  const parseObject = () => {
-    pos++;
-    const fields = [];
-    while (!isPunct("}")) {
-      const key = peek();
-      if (key === void 0) return null;
-      if (key.t === "punct" && key.v === "[") {
-        pos++;
-        if (!skipUntilClose("[", "]")) return null;
-        if (!expect(":") || parseUnion() === null) return null;
-      } else {
-        if (key.t !== "name" && key.t !== "string") return null;
-        pos++;
-        expect("?");
-        if (!expect(":")) return null;
-        const type2 = parseUnion();
-        if (type2 === null) return null;
-        fields.push({ name: key.v, type: type2 });
-      }
-      if (!expect(",") && !expect(";")) break;
-    }
-    return expect("}") ? { kind: "object", fields } : null;
-  };
-  const skipUntilClose = (open, close) => {
-    let depth = 0;
-    while (pos < tokens.length) {
-      const token = tokens[pos++];
-      if (token.t !== "punct") continue;
-      if (token.v === open) depth++;
-      else if (token.v === close) {
-        if (depth === 0) return true;
-        depth--;
-      }
-    }
-    return false;
-  };
-  const type = parseUnion();
-  if (type === null || pos !== tokens.length) return null;
-  return type;
-}
-function findJsDocComments(script, scan) {
-  const out = [];
-  let from = 0;
-  for (; ; ) {
-    const start = scan.indexOf("/*", from);
-    if (start === -1) break;
-    const close = scan.indexOf("*/", start + 2);
-    if (close === -1) break;
-    from = close + 2;
-    if (script[start + 2] === "*") out.push({ start, end: close + 2, text: script.slice(start, close + 2) });
-  }
-  return out;
-}
-function readJsDocTagType(comment, tag) {
-  return readBracedType(comment, tag)?.type.trim() ?? null;
-}
-function readBracedType(comment, tag) {
-  const tagMatch = new RegExp(`@${tag}\\s*\\{`).exec(comment);
-  if (!tagMatch) return null;
-  const open = tagMatch.index + tagMatch[0].length - 1;
-  let depth = 0;
-  for (let i = open; i < comment.length; i++) {
-    const ch = comment[i];
-    if (ch === "{") depth++;
-    else if (ch === "}") {
-      depth--;
-      if (depth === 0) {
-        const type = comment.slice(open + 1, i).replace(/\n\s*\*(?!\/)/g, "\n ");
-        return { type, end: i + 1 };
-      }
-    }
-  }
-  return null;
-}
-function readJsDocTypeBefore(content, propIndex) {
-  const comment = jsDocCommentBefore(content, propIndex);
-  return comment === void 0 ? void 0 : readBracedType(comment, "type")?.type.trim();
-}
-function readJsDocReturnsBefore(content, propIndex) {
-  const comment = jsDocCommentBefore(content, propIndex);
-  if (comment === void 0) return void 0;
-  return (readBracedType(comment, "returns") ?? readBracedType(comment, "return"))?.type.trim();
-}
-function jsDocCommentBefore(content, propIndex) {
-  let end = propIndex;
-  while (end > 0 && /\s/.test(content[end - 1])) end--;
-  if (!content.startsWith("*/", end - 2)) return void 0;
-  const start = content.lastIndexOf("/*", end - 2);
-  if (start === -1 || content[start + 2] !== "*") return void 0;
-  return content.slice(start, end);
-}
-function collectJsDocTypedefs(script, scan) {
-  const typedefs = /* @__PURE__ */ new Map();
-  for (const { text: comment } of findJsDocComments(script, scan)) {
-    const braced = readBracedType(comment, "typedef");
-    if (braced === null) continue;
-    const name = /^\s*([$A-Za-z_][$\w]*)/.exec(comment.slice(braced.end));
-    const type = parseJsDocType(braced.type);
-    if (name && type !== null) typedefs.set(name[1], type);
-  }
-  return typedefs;
-}
-function flattenJsDocType(type, typedefs, depth = 0) {
-  if (type.kind === "union") return type.members.flatMap((member) => flattenJsDocType(member, typedefs, depth));
-  if (type.kind === "name" && depth < MAX_RESOLVE_DEPTH) {
-    const resolved = typedefs.get(type.name);
-    if (resolved !== void 0) return flattenJsDocType(resolved, typedefs, depth + 1);
-  }
-  return [type];
-}
-function jsDocTypeHint(type, typedefs = /* @__PURE__ */ new Map()) {
-  const hints = /* @__PURE__ */ new Set();
-  for (const member of flattenJsDocType(type, typedefs)) {
-    if (member.kind === "array") hints.add("array");
-    else if (member.kind === "object") hints.add("object");
-    else if (member.kind === "name") {
-      const lower2 = member.name.toLowerCase();
-      if (lower2 === "string" || lower2 === "number" || lower2 === "boolean" || lower2 === "object") hints.add(lower2);
-      else if (lower2 === "null" || lower2 === "undefined") hints.add("null");
-      else if (lower2 === "array" || lower2 === "readonlyarray") hints.add("array");
-    }
-  }
-  return hints.size === 0 ? void 0 : [...hints].sort().join("|");
-}
-function jsDocShape(type, typedefs) {
-  const elements = [];
-  const fields = [];
-  for (const member of flattenJsDocType(type, typedefs)) {
-    if (member.kind === "array") elements.push(member.element);
-    else if (member.kind === "object") {
-      for (const field of member.fields) {
-        if (!fields.some((f) => f.name === field.name)) fields.push(field);
-      }
-    }
-  }
-  const element2 = elements.length === 0 ? null : elements.length === 1 ? elements[0] : { kind: "union", members: elements };
-  return { element: element2, fields };
-}
-
-// src/service/stateAnalyzer.ts
-var RESERVED_STREAMS_KEYS = /* @__PURE__ */ new Set(["$stream", "$streams"]);
-var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
-var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
-var RESERVED_LIST_KEYS_KEY = "$listKeys";
-var RESERVED_WATCH_KEY = "$watch";
-var RESERVED_SCAN_KEY = "$scan";
-var RESERVED_RECURSION_KEY = RECURSION_KEY;
-function analyzeStatePaths(scriptContent) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root || !root.content) return [];
-  const paths = [];
-  const topLevelProps = parseTopLevelProperties(root.content);
-  const pendingStreamValues = [];
-  const pendingListKeys = [];
-  const recursionSpec = specFromRecursionValue(topLevelProps.find((p) => p.name === RESERVED_RECURSION_KEY));
-  const effectiveDescriptors = effectiveTopLevelDescriptors(topLevelProps);
-  const typedefs = scriptContent.includes("@typedef") ? collectJsDocTypedefs(scriptContent, maskCommentsAndStrings(scriptContent)) : /* @__PURE__ */ new Map();
-  for (const prop of topLevelProps) {
-    if (prop.name.startsWith("$")) {
-      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
-      continue;
-    }
-    const effective = effectiveDescriptors.get(prop.name);
-    if (prop.kind === "getter" !== (effective !== "data")) {
-      continue;
-    }
-    if (prop.kind === "method") {
-      paths.push({ path: prop.name, kind: "method" });
-      continue;
-    }
-    if (prop.kind === "getter") {
-      if (!paths.some((p) => p.path === prop.name)) {
-        const recursive = hasRecursionWildcard(prop.name);
-        const settable = !recursive && effective !== "data" && effective.set;
-        paths.push({ path: prop.name, kind: recursive ? "recursive" : "computed", ...settable ? { settable } : {} });
-      }
-      if (prop.declaredType !== void 0) pushDeclaredShapePaths(prop.name, prop.declaredType, paths, 0, typedefs);
-      continue;
-    }
-    pushDataPropertyPaths(prop, paths, typedefs);
-  }
-  for (const streamValue of pendingStreamValues) {
-    if (paths.some((p) => p.path === streamValue.name && p.kind !== "eventToken")) continue;
-    pushDataPropertyPaths(streamValue, paths, typedefs);
-  }
-  for (const listKeyEntry of pendingListKeys) {
-    pushListKeyPaths(listKeyEntry, paths);
-  }
-  if (recursionSpec !== null) {
-    if (!paths.some((p) => p.path === recursionSpec.recursiveAnchor && p.kind === "recursionAnchor")) {
-      paths.push({ path: recursionSpec.recursiveAnchor, kind: "recursionAnchor", repeat: recursionSpec.repeat });
-    }
-    for (const implied of impliedStructurePaths(recursionSpec)) {
-      if (paths.some((p) => p.path === implied.path)) continue;
-      paths.push({ path: implied.path, kind: implied.kind, typeHint: implied.typeHint });
-    }
-  }
-  collectRowShapesFromAssignments(scriptContent, paths);
-  collectGetterResultShapes(scriptContent, root.start, topLevelProps, effectiveDescriptors, paths);
-  return paths;
-}
-function specFromRecursionValue(prop) {
-  if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value)) return null;
-  const entries = parseTopLevelProperties(extractObjectContent(prop.value)).filter((e) => e.kind === "data");
-  if (entries.length !== 1) return null;
-  const anchor = entries[0].name;
-  const repeat2 = extractStringLiteralValue(entries[0].value);
-  if (repeat2 === null) return null;
-  if (checkNodePath(anchor) !== null || checkNodePath(repeat2) !== null) return null;
-  return makeRecursionSpec(anchor, repeat2);
-}
-function analyzeRecursionDeclaration(scriptContent) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root) return null;
-  const prop = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_RECURSION_KEY);
-  if (!prop || prop.nameStart === void 0 || prop.nameEnd === void 0) return null;
-  const span = { start: root.start + prop.nameStart, end: root.start + prop.nameEnd };
-  if (prop.kind === "method") {
-    return { ...span, notObject: true, objectLiteral: false, entries: [], spec: null };
-  }
-  if (prop.kind !== "data" || !prop.value || prop.valueStart === void 0) {
-    return { ...span, notObject: false, objectLiteral: false, entries: [], spec: null };
-  }
-  if (!isObjectLiteral(prop.value)) {
-    const scan = maskCommentsAndStrings(prop.value).trim();
-    const definite = /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^\[/.test(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
-    return { ...span, notObject: definite, objectLiteral: false, entries: [], spec: null };
-  }
-  const objectContent = extractObjectContent(prop.value);
-  if (hasUndecidableEntries(objectContent)) {
-    return { ...span, notObject: false, objectLiteral: false, entries: [], spec: null };
-  }
-  const leading = prop.value.length - prop.value.trimStart().length;
-  const innerStart = root.start + prop.valueStart + leading + 1;
-  const entries = [];
-  for (const entry of parseTopLevelProperties(objectContent)) {
-    if (entry.nameStart === void 0 || entry.nameEnd === void 0) continue;
-    const valueStart = entry.valueStart === void 0 ? innerStart + entry.nameEnd : innerStart + entry.valueStart + (entry.value ? entry.value.length - entry.value.trimStart().length : 0);
-    entries.push({
-      anchor: entry.name,
-      repeat: entry.kind === "data" ? extractStringLiteralValue(entry.value) : null,
-      repeatDefinitelyNotString: entry.kind !== "data" || isDefiniteNonStringLiteral(entry.value),
-      start: innerStart + entry.nameStart,
-      end: innerStart + entry.nameEnd,
-      valueStart,
-      valueEnd: valueStart + (entry.value?.trim().length ?? 0)
-    });
-  }
-  return { ...span, notObject: false, objectLiteral: true, entries, spec: specFromRecursionValue(prop) };
-}
-function analyzeWatchEntries(scriptContent) {
-  return analyzeObjectEntries(scriptContent, RESERVED_WATCH_KEY).map((entry) => ({
-    key: entry.key,
-    start: entry.start,
-    end: entry.end,
-    // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
-    definitelyNotFunction: entry.kind === "data" && isNonFunctionLiteral(entry.value)
-  }));
-}
-function analyzeWatchHandlerSources(scriptContent) {
-  return analyzeHandlerSources(scriptContent, RESERVED_WATCH_KEY);
-}
-function analyzeOnHandlerSources(scriptContent) {
-  return analyzeHandlerSources(scriptContent, "$on");
-}
-function analyzeHandlerSources(scriptContent, key) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root) return [];
-  const prop = parseTopLevelProperties(root.content).find((p) => p.name === key);
-  if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value) || prop.valueStart === void 0) {
-    return [];
-  }
-  const leading = prop.value.length - prop.value.trimStart().length;
-  const innerStart = root.start + prop.valueStart + leading + 1;
-  const out = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
-    if (entry.value === void 0 || entry.valueStart === void 0) continue;
-    out.push({
-      name: entry.name,
-      kind: entry.kind === "data" ? "value" : "body",
-      text: entry.value,
-      start: innerStart + entry.valueStart
-    });
-  }
-  return out;
-}
-function analyzeListKeyEntries(scriptContent) {
-  return analyzeObjectEntries(scriptContent, RESERVED_LIST_KEYS_KEY).map((entry) => ({ key: entry.key, start: entry.start, end: entry.end }));
-}
-function findTopLevelDeclaration(scriptContent, key) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root) return null;
-  const prop = parseTopLevelProperties(root.content).find((p) => p.name === key);
-  if (!prop || prop.nameStart === void 0 || prop.nameEnd === void 0) return null;
-  const base = { name: prop.name, kind: prop.kind, start: root.start + prop.nameStart, end: root.start + prop.nameEnd };
-  if (prop.kind !== "data" || prop.value === void 0 || prop.valueStart === void 0) return base;
-  const leading = prop.value.length - prop.value.trimStart().length;
-  return { ...base, value: prop.value.trim(), valueStart: root.start + prop.valueStart + leading };
-}
-function analyzeDeclarationEntries(scriptContent, key) {
-  return analyzeObjectEntries(scriptContent, key).map((entry) => ({
-    name: entry.key,
-    kind: entry.kind,
-    start: entry.start,
-    end: entry.end,
-    ...entry.kind === "data" && entry.value !== void 0 && entry.valueStart !== void 0 ? { value: entry.value.trim(), valueStart: entry.valueStart } : {}
-  }));
-}
-function hasDefaultExportObject(scriptContent) {
-  return locateDefaultExportObject(scriptContent) !== null;
-}
-function hasTopLevelSpread(scriptContent) {
-  return findTopLevelSpread(scriptContent) !== null;
-}
-function findTopLevelSpread(scriptContent) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root) return null;
-  const scan = maskCommentsAndStrings(root.content);
-  let depth = 0;
-  let start = -1;
-  for (let i = 0; i < scan.length; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (depth === 0 && start < 0 && ch === "." && scan.startsWith("...", i)) start = i;
-    else if (depth === 0 && start >= 0 && ch === ",") return spreadRange(root.start, scan, start, i);
-  }
-  return start < 0 ? null : spreadRange(root.start, scan, start, scan.length);
-}
-function spreadRange(base, scan, start, stop) {
-  return { start: base + start, end: base + start + scan.slice(start, stop).trimEnd().length };
-}
-function analyzeObjectEntries(scriptContent, key, allowEmptyKeys = false) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root) return [];
-  const prop = parseTopLevelProperties(root.content).find((p) => p.name === key);
-  if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value) || prop.valueStart === void 0) {
-    return [];
-  }
-  const leading = prop.value.length - prop.value.trimStart().length;
-  const innerStart = root.start + prop.valueStart + leading + 1;
-  const entries = [];
-  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value), allowEmptyKeys)) {
-    if (entry.nameStart === void 0 || entry.nameEnd === void 0) continue;
-    entries.push({
-      key: entry.name,
-      start: innerStart + entry.nameStart,
-      end: innerStart + entry.nameEnd,
-      kind: entry.kind,
-      value: entry.value,
-      valueStart: entry.valueStart === void 0 || entry.value === void 0 ? void 0 : innerStart + entry.valueStart + (entry.value.length - entry.value.trimStart().length)
-    });
-  }
-  return entries;
-}
-function analyzeDeclarationSpans(scriptContent) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root) return [];
-  const out = [];
-  for (const prop of parseTopLevelProperties(root.content)) {
-    if (prop.nameStart === void 0 || prop.nameEnd === void 0) continue;
-    out.push({
-      name: prop.name,
-      kind: prop.kind,
-      start: root.start + prop.nameStart,
-      end: root.start + prop.nameEnd
-    });
-  }
-  return out;
-}
-function analyzeCallableBodies(scriptContent) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root) return [];
-  const out = [];
-  for (const prop of parseTopLevelProperties(root.content)) {
-    if (prop.kind !== "getter" && prop.kind !== "method") continue;
-    if (prop.nameStart === void 0 || prop.nameEnd === void 0) continue;
-    out.push({
-      name: prop.name,
-      kind: prop.kind,
-      start: root.start + prop.nameStart,
-      end: root.start + prop.nameEnd,
-      body: prop.value ?? "",
-      bodyStart: root.start + (prop.valueStart ?? 0),
-      accessor: prop.accessor
-    });
-  }
-  return out;
-}
-function isNonFunctionLiteral(value) {
-  if (value === void 0) return false;
-  const trimmed = value.trim();
-  if (trimmed.length === 0) return false;
-  const scan = maskCommentsAndStrings(trimmed);
-  if (/^(?:async\s+)?function\b/.test(trimmed) || scan.includes("=>")) return false;
-  return /^["'`]/.test(trimmed) || /^-?\d/.test(trimmed) || /^(?:true|false|null|undefined)\b/.test(trimmed) || trimmed.startsWith("[") || trimmed.startsWith("{");
-}
-function findNonObjectWatch(scriptContent) {
-  return findNonObjectDeclaration(scriptContent, RESERVED_WATCH_KEY);
-}
-function findNonObjectDeclaration(scriptContent, key) {
-  const root = locateDefaultExportObject(scriptContent);
-  if (!root) return null;
-  const declarationProp = parseTopLevelProperties(root.content).find((p) => p.name === key);
-  if (!declarationProp || declarationProp.nameStart === void 0 || declarationProp.nameEnd === void 0) {
-    return null;
-  }
-  const span = { start: root.start + declarationProp.nameStart, end: root.start + declarationProp.nameEnd };
-  if (declarationProp.kind === "method") {
-    return span;
-  }
-  if (declarationProp.kind !== "data" || !declarationProp.value) return null;
-  const trimmed = declarationProp.value.trim();
-  if (trimmed.startsWith("{")) return null;
-  const scan = maskCommentsAndStrings(trimmed).trim();
-  const isArrowFunction = /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
-  const isWholeLiteral = /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan);
-  if (!isArrowFunction && !isWholeLiteral) return null;
-  return span;
-}
-function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys) {
-  if (RESERVED_STREAMS_KEYS.has(prop.name) && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
-    const entries = parseTopLevelProperties(extractObjectContent(prop.value));
-    for (const entry of entries) {
-      if (entry.kind !== "data" || entry.name.startsWith("$")) continue;
-      const initial = entry.value && isObjectLiteral(entry.value) ? findStreamInitialProperty(entry.value) : void 0;
-      pendingStreamValues.push({
-        name: entry.name,
-        kind: "data",
-        value: initial?.value,
-        typeHint: initial?.typeHint
-      });
-      paths.push({ path: `$streamStatus.${entry.name}`, kind: "data", typeHint: "string" });
-      paths.push({ path: `$streamError.${entry.name}`, kind: "data" });
-    }
-    return;
-  }
-  if (prop.name === RESERVED_SCAN_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
-    for (const entry of parseTopLevelProperties(extractObjectContent(prop.value), true)) {
-      if (entry.kind !== "data" || !isFlatScanOutputName(entry.name)) continue;
-      const initial = entry.value && isObjectLiteral(entry.value) ? findStreamInitialProperty(entry.value) : void 0;
-      pendingStreamValues.push({
-        name: entry.name,
-        kind: "data",
-        value: initial?.value,
-        typeHint: initial?.typeHint
-      });
-    }
-    return;
-  }
-  if (prop.name === RESERVED_COMMAND_TOKENS_KEY && prop.value) {
-    for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: `$command.${name}`, kind: "command" });
-    }
-    return;
-  }
-  if (prop.name === RESERVED_EVENT_TOKENS_KEY && prop.value) {
-    for (const name of extractStringArrayItems(prop.value)) {
-      paths.push({ path: name, kind: "eventToken" });
-    }
-    return;
-  }
-  if (prop.name === RESERVED_LIST_KEYS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
-    for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
-      if (entry.kind !== "data") continue;
-      pendingListKeys.push(entry);
-    }
-    return;
-  }
-}
-function pushListKeyPaths(entry, paths) {
-  const listPath = entry.name;
-  const segments = listPath.split(".");
-  if (listPath.length === 0 || segments.some((s) => s.length === 0) || segments[segments.length - 1] === "*") {
-    return;
-  }
-  if (hasRecursionWildcard(listPath)) {
-    return;
-  }
-  const has = (path) => paths.some((p) => p.path === path);
-  if (!has(listPath)) paths.push({ path: listPath, kind: "data", typeHint: "array" });
-  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: "list" });
-  if (!has(`${listPath}.length`)) {
-    paths.push({ path: `${listPath}.length`, kind: "data", typeHint: "number" });
-  }
-  const keyField = extractStringLiteralValue(entry.value);
-  if (keyField === null || keyField.includes(".") || keyField.includes("*")) return;
-  if (!has(`${listPath}.*.${keyField}`)) {
-    paths.push({ path: `${listPath}.*.${keyField}`, kind: "data" });
-  }
-}
-function extractStringLiteralValue(value) {
-  if (!value) return null;
-  const match = value.trim().match(/^(?:["']([^"'\\]*)["']|`([^`\\$]*)`)$/);
-  const literal2 = match ? match[1] ?? match[2] : null;
-  return literal2 !== null && literal2 !== void 0 && literal2.length > 0 ? literal2 : null;
-}
-function hasUndecidableEntries(objectContent) {
-  const scan = maskCommentsAndStrings(objectContent);
-  let depth = 0;
-  let atKey = true;
-  for (let i = 0; i < scan.length; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") {
-      if (depth === 0 && atKey && (ch === "[" || scan.startsWith("...", i))) return true;
-      depth++;
-      atKey = false;
-      continue;
-    }
-    if (ch === ")" || ch === "]" || ch === "}") {
-      depth--;
-      continue;
-    }
-    if (depth !== 0) continue;
-    if (ch === ",") {
-      atKey = true;
-      continue;
-    }
-    if (/\s/.test(ch)) continue;
-    if (atKey && scan.startsWith("...", i)) return true;
-    atKey = false;
-  }
-  return false;
-}
-function isDefiniteNonStringLiteral(value) {
-  if (!value) return false;
-  const scan = maskCommentsAndStrings(value).trim();
-  if (scan.length === 0) return false;
-  return /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^[[{]/.test(scan) || /^(?:async\s+)?function\b/.test(scan) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
-}
-var ROW_ASSIGN = new RegExp(
-  String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])\s*(?:(\[)|(?:[^;={}]|=>)*?\.\s*(?:concat|toSpliced|with)\s*(\())`,
-  "gd"
-);
-function collectRowShapesFromAssignments(script, paths) {
-  const scan = maskCommentsAndStrings(script);
-  ROW_ASSIGN.lastIndex = 0;
-  let match;
-  while ((match = ROW_ASSIGN.exec(scan)) !== null) {
-    const span = match.indices[1] ?? match.indices[2];
-    const listPath = script.slice(span[0], span[1]);
-    if (listPath.startsWith("$") || listPath.includes("*") || !hasPath(paths, `${listPath}.*`)) continue;
-    const openIndex = match.index + match[0].length - 1;
-    const isArrayLiteral2 = scan[openIndex] === "[";
-    const inner = extractDelimitedContent(script, scan, openIndex, scan[openIndex], isArrayLiteral2 ? "]" : ")");
-    for (const literal2 of collectRowLiterals(inner, isArrayLiteral2 ? 0 : 1)) {
-      for (const field of extractRowLiteralFields(literal2)) {
-        pushRowFieldPaths(`${listPath}.*.${field.name}`, field, paths, 1);
-      }
-    }
-  }
-}
-function collectRowLiterals(elementList, arrayDepth) {
-  const out = [];
-  for (const element2 of splitTopLevelElements(elementList)) {
-    if (element2.startsWith("{")) {
-      out.push(element2);
-    } else if (element2.startsWith("[") && arrayDepth > 0) {
-      const scan = maskCommentsAndStrings(element2);
-      out.push(...collectRowLiterals(extractDelimitedContent(element2, scan, 0, "[", "]"), arrayDepth - 1));
-    }
-  }
-  return out;
-}
-function extractRowLiteralFields(literal2) {
-  const content = extractObjectContent(literal2);
-  const fields = parseTopLevelProperties(content).filter((p) => p.kind === "data");
-  for (const element2 of splitTopLevelElements(content)) {
-    const shorthand = /^([$\w]+)$/.exec(element2);
-    if (shorthand && !fields.some((f) => f.name === shorthand[1])) {
-      fields.push({ name: shorthand[1], kind: "data" });
-    }
-  }
-  return fields;
-}
-function pushRowFieldPaths(path, prop, paths, depth) {
-  if (!hasPath(paths, path)) paths.push(withHint({ path, kind: "data" }, prop.typeHint));
-  if (!prop.value) return;
-  if (isArrayLiteral(prop.value)) {
-    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
-    if (!hasPath(paths, `${path}.length`)) {
-      paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
-    }
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    for (const child of extractArrayElementDataProperties(prop.value)) {
-      pushRowFieldPaths(`${path}.*.${child.name}`, child, paths, depth + 1);
-    }
-    return;
-  }
-  if (isObjectLiteral(prop.value)) {
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    for (const child of parseTopLevelProperties(extractObjectContent(prop.value))) {
-      if (child.kind !== "data") continue;
-      pushRowFieldPaths(`${path}.${child.name}`, child, paths, depth + 1);
-    }
-  }
-}
-var ROW_PRESERVING_METHODS = /* @__PURE__ */ new Set([
-  "filter",
-  "toSorted",
-  "toReversed",
-  "slice",
-  "toSpliced",
-  "concat",
-  "with",
-  "sort",
-  "reverse"
-]);
-var ROW_PICKING_METHODS = /* @__PURE__ */ new Set(["find", "findLast", "at"]);
-var MAX_GETTER_SHAPE_PASSES = 4;
-function collectGetterResultShapes(script, rootStart, props, effective, paths) {
-  const getters = /* @__PURE__ */ new Map();
-  for (const prop of props) {
-    if (prop.kind !== "getter" || prop.accessor !== "get" || prop.value === void 0) continue;
-    if (prop.name.startsWith("$") || hasRecursionWildcard(prop.name) || effective.get(prop.name) === "data") continue;
-    getters.set(prop.name, prop);
-  }
-  const assignments = collectAssignments(script, rootStart, props);
-  for (let pass = 0; pass < MAX_GETTER_SHAPE_PASSES; pass++) {
-    const before = paths.length;
-    for (const [name, prop] of getters) {
-      const shape = getterResultShape(prop.value, paths);
-      if (shape !== null) applyResultShape(name, shape, paths);
-    }
-    const aliasesByBody = /* @__PURE__ */ new Map();
-    for (const assignment of assignments) {
-      let aliases = /* @__PURE__ */ new Map();
-      if (assignment.body !== null) {
-        aliases = aliasesByBody.get(assignment.body) ?? collectAliases(assignment.body, paths);
-        aliasesByBody.set(assignment.body, aliases);
-      }
-      const shape = expressionShape(assignment.expr, paths, aliases);
-      if (shape !== null) applyAssignedShape(assignment.target, shape, paths);
-    }
-    if (paths.length === before) break;
-  }
-}
-function getterResultShape(body, paths) {
-  const scan = maskCommentsAndStrings(body);
-  const aliases = collectAliases(body, paths);
-  const shapes = [];
-  for (const m of scan.matchAll(/\breturn\b/g)) {
-    const start = m.index + m[0].length;
-    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
-    if (shape !== null) shapes.push(shape);
-  }
-  return shapes.length === 0 ? null : mergeShapes(shapes);
-}
-function collectAliases(body, paths) {
-  const scan = maskCommentsAndStrings(body);
-  const aliases = /* @__PURE__ */ new Map();
-  for (const m of scan.matchAll(/\b(?:const|let|var)\s+([$\w]+)\s*=(?![=>])/g)) {
-    const name = m[1];
-    if (aliases.has(name)) continue;
-    const start = m.index + m[0].length;
-    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
-    if (shape !== null) aliases.set(name, shape);
-  }
-  return aliases;
-}
-var PLAIN_ASSIGN = new RegExp(String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])`, "gd");
-function collectAssignments(script, rootStart, props) {
-  const scan = maskCommentsAndStrings(script);
-  const bodies = props.filter((p) => (p.kind === "getter" || p.kind === "method") && p.value !== void 0 && p.valueStart !== void 0).map((p) => ({ start: rootStart + p.valueStart, body: p.value }));
-  const out = [];
-  PLAIN_ASSIGN.lastIndex = 0;
-  let match;
-  while ((match = PLAIN_ASSIGN.exec(scan)) !== null) {
-    if (/\.\s*$/.test(scan.slice(Math.max(0, match.index - 8), match.index))) continue;
-    const span = match.indices[1] ?? match.indices[2];
-    const target = script.slice(span[0], span[1]);
-    if (target.startsWith("$") || target.includes("*")) continue;
-    const expr = readExpression(script, scan, match.index + match[0].length);
-    const owner = bodies.find((b) => b.start <= match.index && match.index < b.start + b.body.length);
-    out.push({ target, expr, body: owner?.body ?? null });
-  }
-  return out;
-}
-function applyAssignedShape(target, shape, paths) {
-  const declared = paths.find((p) => p.path === target);
-  if (declared === void 0 || declared.kind !== "data") return;
-  if (hasPath(paths, `${target}.*`)) {
-    if (shape.isList) applyResultShape(target, shape, paths);
-    return;
-  }
-  if (!shape.isList && declared.rawInitial !== void 0 && isObjectLiteral(declared.rawInitial)) {
-    applyResultShape(target, shape, paths);
-  }
-}
-function readExpression(text3, scan, start) {
-  let depth = 0;
-  let i = start;
-  for (; i < scan.length; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") {
-      if (depth === 0) break;
-      depth--;
-    } else if (depth === 0 && (ch === ";" || ch === ",")) break;
-    else if (depth === 0 && ch === "\n") {
-      const before = scan.slice(start, i).trimEnd();
-      const after = scan.slice(i + 1).trimStart();
-      if (before === "") continue;
-      if (!/[.?:|&+\-*/=(,]$/.test(before) && !/^[.?:|&]/.test(after)) break;
-    }
-  }
-  return text3.slice(start, i).trim();
-}
-function expressionShape(text3, paths, aliases) {
-  const expr = stripWrappingParens(text3.trim());
-  if (expr === "") return null;
-  const scan = maskCommentsAndStrings(expr);
-  const ternary = splitTernary(scan);
-  if (ternary !== null) {
-    const branches = [expr.slice(ternary[0] + 1, ternary[1]), expr.slice(ternary[1] + 1)].map((part) => expressionShape(part, paths, aliases)).filter((s) => s !== null);
-    return branches.length === 0 ? null : mergeShapes(branches);
-  }
-  const operands = splitTopLevel(scan, /\|\||\?\?/g);
-  if (operands.length > 1) {
-    const sides = operands.map(([s, e]) => expressionShape(expr.slice(s, e), paths, aliases)).filter((s) => s !== null);
-    return sides.length === 0 ? null : mergeShapes(sides);
-  }
-  if (scan.startsWith("{")) {
-    if (extractDelimitedContent(expr, scan, 0, "{", "}").length !== expr.length - 2) return null;
-    return { isList: false, mirrors: [], fields: extractRowLiteralFields(expr).map((field) => ({ to: "", field })) };
-  }
-  let shape;
-  let rest;
-  if (scan.startsWith("[")) {
-    const inner = extractDelimitedContent(expr, scan, 0, "[", "]");
-    rest = inner.length + 2;
-    if (inner.trim() === "") {
-      shape = EMPTY_LIST;
-    } else {
-      const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
-      if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
-      const source = expressionShape(spread[1], paths, aliases);
-      if (source === null || !source.isList) return null;
-      shape = source;
-    }
-  } else if (scan.startsWith("(")) {
-    const inner = extractDelimitedContent(expr, scan, 0, "(", ")");
-    shape = expressionShape(inner, paths, aliases) ?? OPAQUE;
-    rest = inner.length + 2;
-  } else {
-    const base = readBase(expr, scan, aliases, paths);
-    if (base === null) return null;
-    ({ shape, rest } = base);
-  }
-  return applyChain(expr, scan, rest, shape);
-}
-function readBase(expr, scan, aliases, paths) {
-  const alias = /^([$\w]+)/.exec(scan);
-  if (alias === null) return null;
-  if (alias[1] !== "this") {
-    const shape = aliases.get(alias[1]);
-    return { shape: shape ?? OPAQUE, rest: alias[1].length };
-  }
-  const segments = [];
-  let i = 4;
-  for (; ; ) {
-    const dot = /^\s*\??\.\s*([$\w]+)/.exec(scan.slice(i));
-    if (dot !== null) {
-      if (/^\s*\(/.test(scan.slice(i + dot[0].length))) break;
-      segments.push(dot[1]);
-      i += dot[0].length;
-      continue;
-    }
-    const bracket = /^\s*\[\s*(["'])/.exec(scan.slice(i));
-    if (bracket !== null) {
-      const open = i + bracket[0].length - 1;
-      const close = scan.indexOf("]", open);
-      const literal2 = /^(["'])([^"']*)\1\s*$/.exec(expr.slice(open, close));
-      if (close === -1 || literal2 === null) return null;
-      segments.push(literal2[2]);
-      i = close + 1;
-      continue;
-    }
-    break;
-  }
-  const path = segments.join(".");
-  if (path === "" && /^\s*\??\.\s*\$[$\w]*\s*\(/.test(scan.slice(4))) return { shape: OPAQUE, rest: 4 };
-  if (path === "" || path.startsWith("$")) return null;
-  return {
-    shape: { isList: hasPath(paths, `${path}.*`), mirrors: [{ from: path, to: "" }], fields: [] },
-    rest: i
-  };
-}
-function applyChain(expr, scan, start, initial) {
-  let shape = initial;
-  let i = start;
-  while (scan.slice(i).trim() !== "") {
-    if (shape.opaque && /^\s*\(/.test(scan.slice(i))) {
-      const open2 = scan.indexOf("(", i);
-      i = open2 + extractDelimitedContent(expr, scan, open2, "(", ")").length + 2;
-      continue;
-    }
-    const call = /^\s*\??\.\s*([$\w]+)\s*\(/.exec(scan.slice(i));
-    if (call === null) return null;
-    const open = i + call[0].length - 1;
-    const args = extractDelimitedContent(expr, scan, open, "(", ")");
-    i = open + args.length + 2;
-    const method = call[1];
-    if (shape.opaque) {
-      if (method === "map") {
-        const mapped = mapRows(args, shape);
-        if (mapped === null) return null;
-        shape = mapped;
-      }
-      continue;
-    }
-    if (ROW_PRESERVING_METHODS.has(method)) {
-      if (!shape.isList) return null;
-    } else if (ROW_PICKING_METHODS.has(method)) {
-      if (!shape.isList) return null;
-      shape = pickRow(shape);
-    } else if (method === "map") {
-      const mapped = mapRows(args, shape.isList ? shape : OPAQUE);
-      if (mapped === null) return null;
-      shape = mapped;
-    } else {
-      return null;
-    }
-  }
-  return shape.opaque ? null : shape;
-}
-var OPAQUE = { isList: true, mirrors: [], fields: [], opaque: true };
-var EMPTY_LIST = { isList: true, mirrors: [], fields: [] };
-function pickRow(shape) {
-  return {
-    isList: false,
-    mirrors: shape.mirrors.map((m) => m.to === "" ? { from: `${m.from}.*`, to: "" } : { from: m.from, to: "" }),
-    fields: shape.fields.filter((f) => f.to === ".*").map((f) => ({ to: "", field: f.field }))
-  };
-}
-function mapRows(args, shape) {
-  const [callback] = splitTopLevelElements(args);
-  if (callback === void 0) return null;
-  const head = /^(?:async\s+)?(?:function\b[^(]*\(\s*([$\w]+)?[^)]*\)|\(\s*([$\w]+)?[^)]*\)|([$\w]+))\s*(=>)?\s*/.exec(callback);
-  if (head === null) return null;
-  const param = head[1] ?? head[2] ?? head[3];
-  const body = callback.slice(head[0].length);
-  let literal2 = null;
-  const bodyScan = maskCommentsAndStrings(body);
-  if (bodyScan.startsWith("(")) {
-    const inner = stripWrappingParens(body).trim();
-    if (inner.startsWith("{")) literal2 = inner;
-  } else if (bodyScan.startsWith("{")) {
-    const block = extractDelimitedContent(body, bodyScan, 0, "{", "}");
-    const blockScan = maskCommentsAndStrings(block);
-    const ret = /\breturn\s*\{/.exec(blockScan);
-    if (ret !== null) {
-      const open = ret.index + ret[0].length - 1;
-      literal2 = `{${extractDelimitedContent(block, blockScan, open, "{", "}")}}`;
-    }
-  }
-  if (literal2 === null) return null;
-  const content = extractObjectContent(literal2);
-  const spreadsRow = splitTopLevelElements(content).some((e) => e === `...${param}`);
-  return {
-    isList: true,
-    mirrors: spreadsRow ? shape.mirrors.map((m) => m.to === "" ? { from: `${m.from}.*`, to: ".*" } : m) : [],
-    fields: [
-      ...spreadsRow ? shape.fields.filter((f) => f.to === ".*") : [],
-      ...extractRowLiteralFields(literal2).map((field) => ({ to: ".*", field }))
-    ]
-  };
-}
-function applyResultShape(getter, shape, paths) {
-  if (shape.isList) {
-    if (!hasPath(paths, `${getter}.*`)) paths.push({ path: `${getter}.*`, kind: "list" });
-    if (!hasPath(paths, `${getter}.length`)) paths.push({ path: `${getter}.length`, kind: "data", typeHint: "number" });
-  }
-  for (const { from, to } of shape.mirrors) {
-    if (from === getter || from.startsWith(`${getter}.`)) continue;
-    const sources = paths.filter((p) => p.path.startsWith(`${from}.`) && (p.kind === "data" || p.kind === "list"));
-    for (const source of sources) {
-      const target = `${getter}${to}${source.path.slice(from.length)}`;
-      if (!hasPath(paths, target)) paths.push(withHint({ path: target, kind: source.kind }, source.typeHint));
-    }
-  }
-  for (const { to, field } of shape.fields) {
-    pushRowFieldPaths(`${getter}${to}.${field.name}`, field, paths, 1);
-  }
-}
-function mergeShapes(shapes) {
-  return {
-    isList: shapes.some((s) => s.isList),
-    mirrors: shapes.flatMap((s) => s.mirrors),
-    fields: shapes.flatMap((s) => s.fields)
-  };
-}
-function stripWrappingParens(text3) {
-  let expr = text3.trim();
-  for (; ; ) {
-    if (!expr.startsWith("(")) return expr;
-    const scan = maskCommentsAndStrings(expr);
-    const inner = extractDelimitedContent(expr, scan, 0, "(", ")");
-    if (inner.length !== expr.length - 2) return expr;
-    expr = inner.trim();
-  }
-}
-function splitTernary(scan) {
-  let depth = 0;
-  let question = -1;
-  let nested = 0;
-  for (let i = 0; i < scan.length; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (depth !== 0) continue;
-    else if (ch === "?") {
-      if (scan[i + 1] === "." || scan[i + 1] === "?" || scan[i - 1] === "?") continue;
-      if (question === -1) question = i;
-      else nested++;
-    } else if (ch === ":" && question !== -1) {
-      if (nested > 0) nested--;
-      else return [question, i];
-    }
-  }
-  return null;
-}
-function splitTopLevel(scan, separator) {
-  const out = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < scan.length; i++) {
-    const ch = scan[i];
-    if (ch === "(" || ch === "[" || ch === "{") depth++;
-    else if (ch === ")" || ch === "]" || ch === "}") depth--;
-    else if (depth === 0) {
-      separator.lastIndex = i;
-      const m = separator.exec(scan);
-      if (m !== null && m.index === i) {
-        out.push([start, i]);
-        start = i + m[0].length;
-        i = start - 1;
-      }
-    }
-  }
-  out.push([start, scan.length]);
-  return out;
-}
-function hasPath(paths, path) {
-  return paths.some((p) => p.path === path);
-}
-function splitTopLevelElements(text3) {
-  const scan = maskCommentsAndStrings(text3);
-  const out = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < scan.length; i++) {
-    const ch = scan[i];
-    if (ch === "{" || ch === "[" || ch === "(") {
-      depth++;
-    } else if (ch === "}" || ch === "]" || ch === ")") {
-      depth--;
-    } else if (ch === "," && depth === 0) {
-      out.push(text3.slice(start, i));
-      start = i + 1;
-    }
-  }
-  out.push(text3.slice(start));
-  return out.map((e) => e.trim()).filter((e) => e.length > 0);
-}
-function findStreamInitialProperty(entryValue) {
-  const defProps = parseTopLevelProperties(extractObjectContent(entryValue));
-  return defProps.find((p) => p.kind === "data" && p.name === "initial");
-}
-function isFlatScanOutputName(name) {
-  return name.length > 0 && !name.startsWith("$") && !name.includes(".") && !name.includes("*");
-}
-function extractStringArrayItems(value) {
-  if (!isArrayLiteral(value)) return [];
-  const items = [];
-  const regex = /["']([^"'\\]+)["']/g;
-  let match;
-  while ((match = regex.exec(value)) !== null) {
-    items.push(match[1]);
-  }
-  return items;
-}
-var MAX_OBJECT_NEST_DEPTH = 5;
-function effectiveTopLevelDescriptors(props) {
-  const effective = /* @__PURE__ */ new Map();
-  for (const prop of props) {
-    if (prop.kind !== "getter") {
-      effective.set(prop.name, "data");
-      continue;
-    }
-    const current2 = effective.get(prop.name);
-    const pair = current2 === void 0 || current2 === "data" ? { get: false, set: false } : current2;
-    effective.set(prop.name, prop.accessor === "set" ? { ...pair, set: true } : { ...pair, get: true });
-  }
-  return effective;
-}
-function pushDataPropertyPaths(prop, paths, typedefs) {
-  pushDataPropertyPathsAt(prop.name, prop, paths, 0, typedefs);
-}
-function pushDataPropertyPathsAt(path, prop, paths, depth, typedefs) {
-  paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
-  pushLiteralStructurePaths(path, prop, paths, depth, typedefs);
-  if (prop.declaredType !== void 0) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
-}
-function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
-  const shape = jsDocShape(type, typedefs);
-  if (shape.element !== null) {
-    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
-    if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
-    if (depth < MAX_OBJECT_NEST_DEPTH) pushDeclaredShapePaths(`${path}.*`, shape.element, paths, depth + 1, typedefs);
-  }
-  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-  for (const field of shape.fields) {
-    const fieldPath = `${path}.${field.name}`;
-    if (!hasPath(paths, fieldPath)) {
-      paths.push(withHint({ path: fieldPath, kind: "data" }, jsDocTypeHint(field.type, typedefs)));
-    }
-    pushDeclaredShapePaths(fieldPath, field.type, paths, depth + 1, typedefs);
-  }
-}
-function pushLiteralStructurePaths(path, prop, paths, depth, typedefs) {
-  if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${path}.*`, kind: "list" });
-    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    for (const childProp of extractArrayElementDataProperties(prop.value)) {
-      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1, typedefs);
-    }
-    return;
-  }
-  if (prop.value && isObjectLiteral(prop.value)) {
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    const childProps = parseTopLevelProperties(extractObjectContent(prop.value));
-    for (const childProp of childProps) {
-      if (childProp.kind !== "data") continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1, typedefs);
-    }
-  }
-}
-function analyzeJsonPaths(jsonString) {
-  let data2;
-  try {
-    data2 = JSON.parse(jsonString);
-  } catch {
-    return [];
-  }
-  if (typeof data2 !== "object" || data2 === null || Array.isArray(data2)) return [];
-  const paths = [];
-  collectJsonPaths(data2, "", paths, 0);
-  return paths;
-}
-function collectJsonPaths(obj, prefix, paths, depth) {
-  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-  for (const [key, value] of Object.entries(obj)) {
-    if (prefix === "" && key.startsWith("$")) continue;
-    const path = prefix ? `${prefix}.${key}` : key;
-    pushJsonValuePaths(path, value, paths, depth);
-  }
-}
-function pushJsonValuePaths(path, value, paths, depth) {
-  paths.push({ path, kind: "data", typeHint: inferJsonTypeHint(value) });
-  if (Array.isArray(value)) {
-    paths.push({ path: `${path}.*`, kind: "list" });
-    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    if (value.length > 0 && typeof value[0] === "object" && value[0] !== null && !Array.isArray(value[0])) {
-      const firstElement = value[0];
-      for (const [childKey, childValue] of Object.entries(firstElement)) {
-        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, depth + 1);
-      }
-    }
-  } else if (typeof value === "object" && value !== null) {
-    collectJsonPaths(value, path, paths, depth + 1);
-  }
-}
-function inferJsonTypeHint(value) {
-  if (value === null) return "null";
-  if (typeof value === "string") return "string";
-  if (typeof value === "number") return "number";
-  if (typeof value === "boolean") return "boolean";
-  if (Array.isArray(value)) return "array";
-  if (typeof value === "object") return "object";
-  return void 0;
-}
-function locateDefaultExportObject(script) {
-  const scan = maskCommentsAndStrings(script);
-  const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
-  if (!match) return null;
-  const braceIndex = scan.indexOf(match[1], match.index);
-  return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
-}
-function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
-  const props = [];
-  const scan = maskCommentsAndStrings(objectContent);
-  const params = String.raw`\((?:[^()]|\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))*\)`;
-  const dataKey = allowEmptyDataKeys ? String.raw`(?:"([^"]*)"|'([^']*)'|([$\w]+))` : String.raw`(?:"([^"]+)"|'([^']+)'|([$\w]+))`;
-  const regex = new RegExp(
-    String.raw`(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:${dataKey}\s*:\s*)`,
-    "gd"
-  );
-  let match;
-  while ((match = regex.exec(scan)) !== null) {
-    const indices = match.indices;
-    let nameSpan;
-    const nameAt = (group) => {
-      const span = indices[group];
-      if (!span) return void 0;
-      nameSpan = [span[0], span[1]];
-      return objectContent.slice(span[0], span[1]);
-    };
-    const skipBody = () => {
-      const braceStart = match.index + match[0].length - 1;
-      const body = extractBracedContent(objectContent, scan, braceStart);
-      regex.lastIndex = braceStart + body.length + 2;
-      return { body, bodyStart: braceStart + 1 };
-    };
-    const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
-    if (accessorName) {
-      const { body, bodyStart } = skipBody();
-      const accessor = match[0].startsWith("set") ? "set" : "get";
-      const returnsText = accessor === "get" ? readJsDocReturnsBefore(objectContent, match.index) : void 0;
-      const declaredType = returnsText === void 0 ? null : parseJsDocType(returnsText);
-      props.push({
-        name: accessorName,
-        kind: "getter",
-        accessor,
-        value: body,
-        valueStart: bodyStart,
-        nameStart: nameSpan[0],
-        nameEnd: nameSpan[1],
-        ...declaredType !== null ? { declaredType } : {}
-      });
-      continue;
-    }
-    const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
-    if (methodName) {
-      const { body, bodyStart } = skipBody();
-      props.push({
-        name: methodName,
-        kind: "method",
-        value: body,
-        valueStart: bodyStart,
-        nameStart: nameSpan[0],
-        nameEnd: nameSpan[1]
-      });
-      continue;
-    }
-    const propName = nameAt(7) ?? nameAt(8) ?? nameAt(9);
-    if (propName !== void 0) {
-      const valueStartIndex = match.index + match[0].length;
-      const value = extractFullValue(objectContent, scan, valueStartIndex);
-      const jsdocText = readJsDocTypeBefore(objectContent, match.index);
-      const declaredType = jsdocText === void 0 ? null : parseJsDocType(jsdocText);
-      const jsdocType = declaredType !== null ? jsDocTypeHint(declaredType) : jsdocText === void 0 ? void 0 : normalizeJsDocType(jsdocText);
-      const typeHint = jsdocType ?? inferTypeHint(value);
-      props.push({
-        name: propName,
-        kind: "data",
-        value,
-        typeHint,
-        ...declaredType !== null ? { declaredType } : {},
-        nameStart: nameSpan[0],
-        nameEnd: nameSpan[1],
-        valueStart: valueStartIndex
-      });
-      regex.lastIndex = valueStartIndex + value.length;
-    }
-  }
-  return props;
-}
-function maskCommentsAndStrings(source) {
-  const out = source.split("");
-  const len = source.length;
-  const blank = (i2) => {
-    if (source[i2] !== "\n" && source[i2] !== "\r") out[i2] = " ";
-  };
-  let i = 0;
-  while (i < len) {
-    const ch = source[i];
-    if (ch === "/" && source[i + 1] === "/") {
-      i += 2;
-      while (i < len && source[i] !== "\n") blank(i++);
-      continue;
-    }
-    if (ch === "/" && source[i + 1] === "*") {
-      i += 2;
-      while (i < len && !(source[i] === "*" && source[i + 1] === "/")) blank(i++);
-      i += 2;
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === "`") {
-      i++;
-      while (i < len && source[i] !== ch) {
-        if (source[i] === "\\") blank(i++);
-        if (i < len) blank(i++);
-      }
-      i++;
-      continue;
-    }
-    i++;
-  }
-  return out.join("");
-}
-function extractFullValue(content, scan, startIndex) {
-  let depth = 0;
-  let i = startIndex;
-  const len = scan.length;
-  let inString = null;
-  while (i < len) {
-    const ch = scan[i];
-    if (inString) {
-      if (ch === inString && !isEscaped(scan, i)) {
-        inString = null;
-      }
-      i++;
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === "`") {
-      inString = ch;
-    } else if (ch === "{" || ch === "[" || ch === "(") {
-      depth++;
-    } else if (ch === "}" || ch === "]" || ch === ")") {
-      if (depth === 0) break;
-      depth--;
-    } else if (ch === "," && depth === 0) {
-      break;
-    }
-    i++;
-  }
-  return content.slice(startIndex, i).trim();
-}
-function extractBracedContent(text3, scan, openBraceIndex) {
-  return extractDelimitedContent(text3, scan, openBraceIndex, "{", "}");
-}
-function extractDelimitedContent(text3, scan, openIndex, open, close) {
-  let depth = 0;
-  let inString = null;
-  for (let i = openIndex; i < scan.length; i++) {
-    const ch = scan[i];
-    if (inString) {
-      if (ch === inString && !isEscaped(scan, i)) {
-        inString = null;
-      }
-      continue;
-    }
-    if (ch === '"' || ch === "'" || ch === "`") {
-      inString = ch;
-    } else if (ch === open) {
-      depth++;
-    } else if (ch === close) {
-      depth--;
-      if (depth === 0) {
-        return text3.slice(openIndex + 1, i);
-      }
-    }
-  }
-  return text3.slice(openIndex + 1);
-}
-function isArrayLiteral(value) {
-  return value.trimStart().startsWith("[");
-}
-function isObjectLiteral(value) {
-  return value.trimStart().startsWith("{");
-}
-function extractObjectContent(value) {
-  const trimmed = value.trim();
-  const scan = maskCommentsAndStrings(trimmed);
-  const start = scan.indexOf("{");
-  if (start === -1) return "";
-  return extractBracedContent(trimmed, scan, start);
-}
-function extractArrayElementDataProperties(value) {
-  const trimmed = value.trim();
-  if (!trimmed.startsWith("[")) return [];
-  const scan = maskCommentsAndStrings(trimmed);
-  let first = 1;
-  while (first < scan.length && /\s/.test(scan[first])) first++;
-  if (scan[first] !== "{") return [];
-  const objectContent = extractBracedContent(trimmed, scan, first);
-  return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === "data");
-}
-function normalizeJsDocType(typeExpr) {
-  const parts = typeExpr.split("|").map((p) => p.trim());
-  const normalized = parts.map((p) => {
-    const lower2 = p.toLowerCase();
-    if (lower2 === "string") return "string";
-    if (lower2 === "number") return "number";
-    if (lower2 === "boolean") return "boolean";
-    if (lower2 === "null") return "null";
-    if (lower2 === "undefined") return "null";
-    if (lower2.endsWith("[]") || lower2.startsWith("array")) return "array";
-    if (lower2 === "object") return "object";
-    return null;
-  }).filter((p) => p !== null);
-  if (normalized.length === 0) return void 0;
-  const unique = [...new Set(normalized)].sort();
-  return unique.join("|");
-}
-function isEscaped(text3, i) {
-  let backslashCount = 0;
-  let j = i - 1;
-  while (j >= 0 && text3[j] === "\\") {
-    backslashCount++;
-    j--;
-  }
-  return backslashCount % 2 === 1;
-}
-function inferTypeHint(valueStart) {
-  const v = valueStart.trim().replace(/,\s*$/, "");
-  if (/^-?\d+\.\d/.test(v)) return "number";
-  if (/^-?\d/.test(v)) return "number";
-  if (/^["'`]/.test(v)) return "string";
-  if (v === "true" || v === "false") return "boolean";
-  if (v === "null") return "null";
-  if (v.startsWith("[")) return "array";
-  if (v.startsWith("{")) return "object";
-  return void 0;
-}
-function analyzeSchemaPaths(schema) {
-  const paths = [];
-  const defs = schema.$defs ?? {};
-  collectSchemaObjectPaths(schema, "", paths, defs, 0);
-  return paths;
-}
-function mergeSchemaCandidates(candidates, applicationSchema) {
-  if (applicationSchema === void 0) return candidates;
-  const schemaCandidates = [];
-  const schemaKeys = /* @__PURE__ */ new Set();
-  for (const p of analyzeSchemaPaths(applicationSchema)) {
-    schemaCandidates.push(p);
-    schemaKeys.add(p.path);
-  }
-  const kept = candidates.filter((p) => !schemaKeys.has(p.path));
-  return [...kept, ...schemaCandidates];
-}
-function derefSchemaNodes(node, defs) {
-  const out = [];
-  const stack = [{ node, chain: /* @__PURE__ */ new Set() }];
-  while (stack.length > 0) {
-    const { node: n, chain } = stack.pop();
-    if (n === null || typeof n !== "object") continue;
-    if (typeof n.$ref === "string") {
-      const match = /^#\/\$defs\/(.+)$/.exec(n.$ref);
-      if (match === null || chain.has(n.$ref)) continue;
-      const target = defs[match[1].replace(/~1/g, "/").replace(/~0/g, "~")];
-      if (target === void 0) continue;
-      stack.push({ node: target, chain: /* @__PURE__ */ new Set([...chain, n.$ref]) });
-      continue;
-    }
-    if (Array.isArray(n.anyOf)) {
-      for (let i = n.anyOf.length - 1; i >= 0; i--) stack.push({ node: n.anyOf[i], chain });
-      continue;
-    }
-    out.push(n);
-  }
-  return out;
-}
-function schemaTypeHint(nodes2) {
-  const hints = /* @__PURE__ */ new Set();
-  for (const n of nodes2) {
-    const types2 = typeof n.type === "string" ? [n.type] : Array.isArray(n.type) ? n.type : [];
-    if (types2.length > 0) {
-      for (const t of types2) {
-        if (t === "null") continue;
-        hints.add(t === "integer" ? "number" : t);
-      }
-      continue;
-    }
-    if (Array.isArray(n.enum)) {
-      for (const v of n.enum) {
-        const h = inferJsonTypeHint(v);
-        if (h !== void 0 && h !== "null") hints.add(h);
-      }
-    } else if (n.const !== void 0) {
-      const h = inferJsonTypeHint(n.const);
-      if (h !== void 0 && h !== "null") hints.add(h);
-    } else if (n.properties !== void 0) {
-      hints.add("object");
-    } else if (n.items !== void 0) {
-      hints.add("array");
-    }
-  }
-  return hints.size === 0 ? void 0 : [...hints].join("|");
-}
-function collectSchemaObjectPaths(node, prefix, paths, defs, depth) {
-  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-  const seen2 = /* @__PURE__ */ new Set();
-  for (const n of derefSchemaNodes(node, defs)) {
-    for (const [key, child] of Object.entries(n.properties ?? {})) {
-      if (prefix === "" && key.startsWith("$")) continue;
-      if (seen2.has(key)) continue;
-      seen2.add(key);
-      const path = prefix ? `${prefix}.${key}` : key;
-      pushSchemaValuePaths(path, child, paths, defs, depth);
-    }
-  }
-}
-function pushSchemaValuePaths(path, node, paths, defs, depth) {
-  const nodes2 = derefSchemaNodes(node, defs);
-  const typeHint = schemaTypeHint(nodes2);
-  paths.push(withHint({ path, kind: "data", fromSchema: true }, typeHint));
-  const items = nodes2.map((n) => n.items).find((i) => i !== void 0 && i !== null && typeof i === "object");
-  const isArray2 = items !== void 0 || (typeHint?.split("|").includes("array") ?? false);
-  if (isArray2) {
-    const itemNodes = items !== void 0 ? derefSchemaNodes(items, defs) : [];
-    paths.push(withHint({ path: `${path}.*`, kind: "list", fromSchema: true }, schemaTypeHint(itemNodes)));
-    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", fromSchema: true });
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    const seen2 = /* @__PURE__ */ new Set();
-    for (const n of itemNodes) {
-      for (const [childKey, childNode] of Object.entries(n.properties ?? {})) {
-        if (seen2.has(childKey)) continue;
-        seen2.add(childKey);
-        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, defs, depth + 1);
-      }
-    }
-    return;
-  }
-  if (nodes2.some((n) => n.properties !== void 0)) {
-    collectSchemaObjectPaths(node, path, paths, defs, depth + 1);
-  }
-}
-function withHint(candidate, typeHint) {
-  return typeHint === void 0 ? candidate : { ...candidate, typeHint };
-}
-
-// src/service/statePathResolver.ts
-function isUnresolvedPath(path, scopes) {
-  let owner = null;
-  for (const mount of scopes.mounts) {
-    if ((path === mount || path.startsWith(`${mount}.`)) && (owner === null || mount.length > owner.length)) owner = mount;
-  }
-  if (owner !== null) return scopes.unresolvedMounts.has(owner);
-  if (scopes.rootUnresolved) return true;
-  for (const mount of scopes.unresolvedMounts) {
-    if (mount.startsWith(`${path}.`)) return true;
-  }
-  return false;
-}
-function getStatePathsFromHtml(html, stateTagName = "wcs-state", fileReader) {
-  return getStatePathIndex(html, stateTagName, fileReader).paths;
-}
-function getStatePathIndex(html, stateTagName = "wcs-state", fileReader) {
-  return resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
-}
-function resolveStatePathIndex(elements, html, fileReader, includeRoots) {
-  const paths = [];
-  const volumePaths = [];
-  const mounts = [];
-  const unresolvedMounts = /* @__PURE__ */ new Set();
-  const roots = [];
-  const mountPoints = /* @__PURE__ */ new Set();
-  for (const element2 of elements) {
-    if (element2.mountPath === null) {
-      if (!includeRoots) continue;
-      const resolved2 = resolveElementPathsRaw(element2, html, fileReader);
-      if (!element2.bindComponent) roots.push({ element: element2, readable: resolved2.readable });
-      paths.push(...resolved2.paths);
-      continue;
-    }
-    const resolved = resolveElementPathsRaw(element2, html, fileReader);
-    const grafted = graftVolumePaths(element2.mountPath, resolved, mountPoints);
-    if (element2.mountPath !== "") {
-      mounts.push(element2.mountPath);
-      if (!resolved.readable) unresolvedMounts.add(element2.mountPath);
-    }
-    paths.push(...grafted);
-    volumePaths.push(...grafted);
-  }
-  return {
-    paths,
-    volumePaths,
-    scopes: { mounts, unresolvedMounts, rootUnresolved: isPageRootUnresolved(roots, html) },
-    elements
-  };
-}
-function isPageRootUnresolved(roots, html) {
-  if (roots.every((root) => root.readable)) return false;
-  const insideTemplate = createTemplateTester(html);
-  const pageRoots = roots.filter((root) => !insideTemplate(root.element.tagStart));
-  return pageRoots.length > 0 && pageRoots.every((root) => !root.readable);
-}
-function graftVolumePaths(mountPath, resolved, mountPoints) {
-  const prefix = mountPath + ".";
-  const out = [];
-  for (const p of resolved.paths) {
-    if (p.path.startsWith("$")) continue;
-    if (p.kind === "eventToken") continue;
-    out.push({ ...p, path: prefix + p.path });
-  }
-  if (resolved.readable) {
-    const segments = mountPath.split(".");
-    for (let i = 1; i <= segments.length; i++) {
-      const path = segments.slice(0, i).join(".");
-      if (mountPoints.has(path)) continue;
-      mountPoints.add(path);
-      out.push({ path, kind: "data", typeHint: "object" });
-    }
-  }
-  return out;
-}
-var UNREADABLE = { paths: [], readable: false };
-function isJsonObject(text3) {
-  try {
-    const data2 = JSON.parse(text3);
-    return typeof data2 === "object" && data2 !== null && !Array.isArray(data2);
-  } catch {
-    return false;
-  }
-}
-function isReadableStateScript(script) {
-  return hasDefaultExportObject(script) && !hasTopLevelSpread(script);
-}
-function fromJson(text3) {
-  const paths = analyzeJsonPaths(text3);
-  return { paths, readable: paths.length > 0 || isJsonObject(text3) };
-}
-function scriptReadable(script, paths) {
-  return !hasTopLevelSpread(script) && (paths.length > 0 || hasDefaultExportObject(script));
-}
-function fromScript(script) {
-  const paths = analyzeStatePaths(script);
-  return { paths, readable: scriptReadable(script, paths) };
-}
-function resolveElementPathsRaw(element2, html, fileReader) {
-  let readable = false;
-  if (element2.stateAttr) {
-    const jsonContent = findScriptJsonById(html, element2.stateAttr);
-    if (jsonContent) {
-      const resolved = fromJson(jsonContent);
-      if (resolved.paths.length > 0) return resolved;
-      readable ||= resolved.readable;
-    }
-  }
-  if (element2.srcAttr && fileReader) {
-    const resolved = resolveSrcAttribute(element2.srcAttr, fileReader);
-    if (resolved.paths.length > 0) return resolved;
-    readable ||= resolved.readable;
-  }
-  if (element2.jsonAttr) {
-    const resolved = fromJson(element2.jsonAttr);
-    if (resolved.paths.length > 0) return resolved;
-    readable ||= resolved.readable;
-  }
-  if (element2.scriptBlocks.length > 0) {
-    const blocks = element2.scriptBlocks.map((block) => ({ script: block.content, paths: analyzeStatePaths(block.content) }));
-    return {
-      paths: blocks.flatMap((block) => block.paths),
-      readable: readable || blocks.some((block) => scriptReadable(block.script, block.paths))
-    };
-  }
-  return readable ? { paths: [], readable } : UNREADABLE;
-}
-function readStateScript(srcPath, fileReader) {
-  return readStateScriptFile(srcPath, fileReader)?.text;
-}
-function readStateScriptFile(srcPath, fileReader) {
-  const paths = srcPath.endsWith(".js") ? [srcPath.replace(/\.js$/, ".ts"), srcPath] : srcPath.endsWith(".ts") ? [srcPath] : [];
-  for (const path of paths) {
-    const text3 = fileReader(path);
-    if (text3) return { path, text: text3 };
-  }
-  return void 0;
-}
-function resolveSrcAttribute(srcPath, fileReader) {
-  if (srcPath.endsWith(".json")) {
-    const content = fileReader(srcPath);
-    return content ? fromJson(content) : UNREADABLE;
-  }
-  const script = readStateScript(srcPath, fileReader);
-  return script !== void 0 ? fromScript(script) : UNREADABLE;
-}
-
-// src/service/forContext.ts
-function isInsideForTemplate(html, offset2, bindAttrName = "data-wcs") {
-  const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const openRegex = new RegExp(
-    `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:`,
-    "gi"
-  );
-  const closeRegex = /<\/template\s*>/gi;
-  const opens = [];
-  let match;
-  while ((match = openRegex.exec(html)) !== null) {
-    if (match.index >= offset2) break;
-    opens.push(match.index);
-  }
-  if (opens.length === 0) return false;
-  for (const openPos of opens) {
-    const depth = getForTemplateDepthAt(html, openPos, offset2, bindAttrName);
-    if (depth > 0) return true;
-  }
-  return false;
-}
-var BINDING_SYNTAX_MARKER = `[${WcsDiagnosticCode.BindingSyntax}]`;
-function isForBindingRefused(bindText) {
-  try {
-    parseBindTextsForElement2(bindText);
-    return false;
-  } catch (e) {
-    return e.message.includes(BINDING_SYNTAX_MARKER);
-  }
-}
-function getRowShorthandForPath(html, offset2, bindAttrName = "data-wcs") {
-  const chain = getEnclosingForPaths(html, offset2, bindAttrName);
-  if (chain.length === 0 || chain.some((raw) => isForBindingRefused(`for: ${raw}`))) return null;
-  return chain[chain.length - 1];
-}
-function getEnclosingForPaths(html, offset2, bindAttrName = "data-wcs") {
-  return getEnclosingFors(html, offset2, bindAttrName).map((entry) => entry.path);
-}
-function getEnclosingFors(html, offset2, bindAttrName = "data-wcs") {
-  const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const openRegex = new RegExp(
-    `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:\\s*([^"']+?)\\s*["']`,
-    "gi"
-  );
-  const enclosing = [];
-  let match;
-  while ((match = openRegex.exec(html)) !== null) {
-    if (match.index >= offset2) break;
-    const tagEnd = html.indexOf(">", match.index);
-    if (tagEnd === -1 || tagEnd >= offset2) continue;
-    const depth = getForTemplateDepthAt(html, match.index, offset2, bindAttrName);
-    if (depth > 0) {
-      enclosing.push({ path: firstExpressionOf(match[1]), anchor: match.index });
-    }
-  }
-  return enclosing;
-}
-function firstExpressionOf(raw) {
-  const semicolon = indexOfOutsideQuotes2(raw, ";");
-  return (semicolon === -1 ? raw : raw.slice(0, semicolon)).trim();
-}
-function countWildcardSegments(path) {
-  let count = 0;
-  for (const segment of path.split(".")) {
-    if (segment === "*") count++;
-  }
-  return count;
-}
-function forPathOf(raw) {
-  let path = raw.trim();
-  const pipe = indexOfOutsideQuotes2(path, "|");
-  if (pipe !== -1) path = path.slice(0, pipe).trim();
-  const at2 = path.indexOf("@");
-  if (at2 !== -1) path = path.slice(0, at2).trim();
-  return path;
-}
-function rankOfForList(resolvedListPath) {
-  return countWildcardSegments(resolvedListPath) + 1;
-}
-function getResolvedForListPath(html, offset2, bindAttrName = "data-wcs") {
-  const chain = getEnclosingForPaths(html, offset2, bindAttrName);
-  if (chain.length === 0) return null;
-  let resolved = "";
-  for (const raw of chain) {
-    const path = forPathOf(raw);
-    if (path === ".") {
-      resolved = `${resolved}.*`;
-    } else if (path.startsWith(".")) {
-      resolved = `${resolved}.*.${path.slice(1)}`;
-    } else {
-      resolved = path;
-    }
-  }
-  return resolved;
-}
-function listsPerLevel(resolvedListPath) {
-  return [...wildcardPrefixes(resolvedListPath), resolvedListPath];
-}
-function wildcardPrefixes(path) {
-  const segments = path.split(".");
-  const out = [];
-  for (let i = 0; i < segments.length; i++) {
-    if (segments[i] === "*") out.push(segments.slice(0, i).join("."));
-  }
-  return out;
-}
-function findOtherListWildcard(path, resolvedListPath) {
-  if (resolvedListPath.startsWith(".")) return null;
-  const loops = listsPerLevel(resolvedListPath);
-  const overs = wildcardPrefixes(path);
-  if (overs.length > loops.length) return null;
-  for (let k = 0; k < overs.length; k++) {
-    if (overs[k] !== loops[k]) return { over: overs[k], loop: loops[k] };
-  }
-  return null;
-}
-var VOID_ELEMENTS = /* @__PURE__ */ new Set([
-  "area",
-  "base",
-  "br",
-  "col",
-  "embed",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "param",
-  "source",
-  "track",
-  "wbr"
-]);
-var CONTENT_PROPERTIES = /* @__PURE__ */ new Set(["textContent", "innerText", "innerHTML", "text", "html", "outerHTML", "outerText"]);
-var STRUCTURAL_DIRECTIVES2 = /* @__PURE__ */ new Set(["for", "if", "elseif", "else"]);
-var P_CLOSERS = /* @__PURE__ */ new Set([
-  "address",
-  "article",
-  "aside",
-  "blockquote",
-  "details",
-  "dialog",
-  "div",
-  "dl",
-  "fieldset",
-  "figcaption",
-  "figure",
-  "footer",
-  "form",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "header",
-  "hgroup",
-  "hr",
-  "main",
-  "menu",
-  "nav",
-  "ol",
-  "p",
-  "pre",
-  "section",
-  "table",
-  "ul"
-]);
-var IMPLIED_CLOSE = {
-  li: /* @__PURE__ */ new Set(["p", "li"]),
-  dt: /* @__PURE__ */ new Set(["p", "dt", "dd"]),
-  dd: /* @__PURE__ */ new Set(["p", "dt", "dd"]),
-  option: /* @__PURE__ */ new Set(["option"]),
-  optgroup: /* @__PURE__ */ new Set(["option", "optgroup"]),
-  tr: /* @__PURE__ */ new Set(["td", "th", "tr"]),
-  td: /* @__PURE__ */ new Set(["td", "th"]),
-  th: /* @__PURE__ */ new Set(["td", "th"]),
-  thead: /* @__PURE__ */ new Set(["td", "th", "tr", "thead", "tbody", "tfoot"]),
-  tbody: /* @__PURE__ */ new Set(["td", "th", "tr", "thead", "tbody", "tfoot"]),
-  tfoot: /* @__PURE__ */ new Set(["td", "th", "tr", "thead", "tbody", "tfoot"])
-};
-function propertyNamesOf(value) {
-  return splitBindTexts(value).filter((expr) => expr.trim().length > 0).map((expr) => {
-    const colon = indexOfOutsideQuotes2(expr, ":");
-    const left = (colon === -1 ? expr : expr.slice(0, colon)).trim();
-    const name = left.split(/[|#]/)[0].trim();
-    return name.startsWith(".") ? name.slice(1) : name;
-  });
-}
-var ROUTER_TAG = "wcs-router";
-var LAYOUT_TAG = "wcs-layout";
-function stateBindsTemplate(scope, layoutIds) {
-  return scope.underRouter || scope.id !== null && layoutIds.has(scope.id);
-}
-function closeImplied(stack, name) {
-  const implied = IMPLIED_CLOSE[name];
-  if (implied !== void 0) {
-    while (stack.length > 0 && implied.has(stack[stack.length - 1].name)) stack.pop();
-  } else if (P_CLOSERS.has(name) && stack.length > 0 && stack[stack.length - 1].name === "p") {
-    stack.pop();
-  }
-}
-function analyzeElementContexts(html, offsets, bindAttrName = "data-wcs", stateTagName = "wcs-state") {
-  const out = /* @__PURE__ */ new Map();
-  const pending = [...new Set(offsets)].sort((a, b) => a - b);
-  if (pending.length === 0) return out;
-  const judged = [];
-  const layoutIds = /* @__PURE__ */ new Set();
-  let next = 0;
-  const NOT_BOUND = { bound: false, structural: false, scopes: [] };
-  const stack = [];
-  const judge = () => ({
-    bound: !stack.some((e) => e.blocks),
-    structural: stack.some((e) => e.structural),
-    scopes: stack.flatMap((e) => e.scope === null ? [] : [e.scope])
-  });
-  const stateTag = asciiLowerCase(stateTagName);
-  const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const bindAttr = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>\`]+))`, "i");
-  const tag = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
-  let lower2 = null;
-  let match;
-  while ((match = tag.exec(html)) !== null) {
-    const end = match.index + match[0].length;
-    if (next < pending.length && end > pending[next]) {
-      const isStart = match[2] !== void 0 && match[1] !== "/";
-      if (isStart && match.index < pending[next]) closeImplied(stack, asciiLowerCase(match[2]));
-      while (next < pending.length && pending[next] < end) judged.push([pending[next++], judge()]);
-    }
-    if (match[2] === void 0) continue;
-    const name = asciiLowerCase(match[2]);
-    if (match[1] === "/") {
-      for (let i = stack.length - 1; i >= 0; i--) {
-        if (stack[i].name === name) {
-          stack.length = i;
-          break;
-        }
-      }
-      continue;
-    }
-    const attrs = match[3];
-    closeImplied(stack, name);
-    if (name === stateTag && !parseAttributeNames(attrs).has("mount")) {
-      for (let i = stack.length - 1; i >= 0 && !stack[i].structural; i--) {
-        const scope2 = stack[i].scope;
-        if (scope2 !== null) {
-          scope2.hasOwnState = true;
-          break;
-        }
-      }
-    }
-    if (name === LAYOUT_TAG) {
-      const layout = extractAttribute(attrs, "layout");
-      if (layout !== null && !parseAttributeNames(attrs).has("enable-shadow-root")) layoutIds.add(layout);
-    }
-    const foreign = name === "svg" || name === "math" || stack.some((e) => e.name === "svg" || e.name === "math");
-    if (VOID_ELEMENTS.has(name) || foreign && /\/\s*$/.test(attrs)) continue;
-    if (RAW_TEXT_ELEMENTS.has(name)) {
-      const close = name === "plaintext" ? -1 : (lower2 ??= asciiLowerCase(html)).indexOf(`</${name}`, end);
-      const stop = close === -1 ? html.length : close;
-      while (next < pending.length && pending[next] < stop) judged.push([pending[next++], NOT_BOUND]);
-      if (close === -1) break;
-      tag.lastIndex = close;
-      continue;
-    }
-    const match3 = bindAttr.exec(attrs);
-    const value = match3 === null ? null : match3[1] ?? match3[2] ?? match3[3];
-    const names2 = value === null ? [] : propertyNamesOf(value);
-    const structural = name === "template" && names2.length === 1 && STRUCTURAL_DIRECTIVES2.has(names2[0]) && !value.slice(0, Math.max(0, indexOfOutsideQuotes2(value, ":"))).includes("#");
-    const plainTemplate = name === "template" && !structural;
-    const blocks = plainTemplate && stack.some((e) => e.name === "template") || name !== "template" && names2.some((n) => CONTENT_PROPERTIES.has(n));
-    const scope = plainTemplate ? { hasOwnState: false, id: extractAttribute(attrs, "id"), underRouter: stack.some((e) => e.name === ROUTER_TAG) } : null;
-    stack.push({ name, structural, scope, blocks });
-  }
-  while (next < pending.length) judged.push([pending[next++], judge()]);
-  for (const [offset2, context] of judged) {
-    const ownStateTemplate = context.scopes.some((scope) => scope.hasOwnState);
-    const bound = context.bound && context.scopes.every((scope) => scope.hasOwnState || stateBindsTemplate(scope, layoutIds));
-    out.set(offset2, {
-      bound,
-      rowOrBranch: bound && context.structural && !ownStateTemplate,
-      ownStateTemplate
-    });
-  }
-  return out;
-}
-function getForTemplateDepthAt(html, openPos, offset2, bindAttrName) {
-  const tagEnd = html.indexOf(">", openPos);
-  if (tagEnd === -1 || tagEnd >= offset2) return 0;
-  let depth = 1;
-  let pos = tagEnd + 1;
-  const templateOpenRegex = /<template[\s>]/gi;
-  const templateCloseRegex = /<\/template\s*>/gi;
-  while (pos < offset2 && depth > 0) {
-    templateOpenRegex.lastIndex = pos;
-    templateCloseRegex.lastIndex = pos;
-    const nextOpen = templateOpenRegex.exec(html);
-    const nextClose = templateCloseRegex.exec(html);
-    const openIdx = nextOpen && nextOpen.index < offset2 ? nextOpen.index : Infinity;
-    const closeIdx = nextClose && nextClose.index < offset2 ? nextClose.index : Infinity;
-    if (openIdx === Infinity && closeIdx === Infinity) break;
-    if (openIdx < closeIdx) {
-      depth++;
-      pos = openIdx + 1;
-    } else {
-      depth--;
-      if (depth === 0 && closeIdx < offset2) {
-        return 0;
-      }
-      pos = closeIdx + (nextClose ? nextClose[0].length : 1);
-    }
-  }
-  return depth;
 }
 
 // node_modules/acorn/dist/acorn.mjs
@@ -10323,6 +8140,2587 @@ function parse3(input, options) {
   return Parser.parse(input, options);
 }
 
+// src/service/jsdocType.ts
+var UNKNOWN = { kind: "unknown" };
+var NULL_TYPE = { kind: "name", name: "null" };
+var ARRAY_GENERICS = /* @__PURE__ */ new Set(["Array", "ReadonlyArray"]);
+var MAX_RESOLVE_DEPTH = 8;
+function tokenize(text3) {
+  const tokens = [];
+  let i = 0;
+  while (i < text3.length) {
+    const ch = text3[i];
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === "=" && text3[i + 1] === ">") {
+      tokens.push({ t: "punct", v: "=>" });
+      i += 2;
+      continue;
+    }
+    if ("{}[]<>()|&,;:?!*.=".includes(ch)) {
+      tokens.push({ t: "punct", v: ch });
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      const end = text3.indexOf(ch, i + 1);
+      if (end === -1) return null;
+      tokens.push({ t: "string", v: text3.slice(i + 1, end) });
+      i = end + 1;
+      continue;
+    }
+    const num = /^-?\d+(?:\.\d+)?/.exec(text3.slice(i));
+    if (num) {
+      tokens.push({ t: "number" });
+      i += num[0].length;
+      continue;
+    }
+    const name = /^[$A-Za-z_][$\w]*/.exec(text3.slice(i));
+    if (name) {
+      tokens.push({ t: "name", v: name[0] });
+      i += name[0].length;
+      continue;
+    }
+    return null;
+  }
+  return tokens;
+}
+function parseJsDocType(text3) {
+  const tokens = tokenize(text3);
+  if (tokens === null || tokens.length === 0) return null;
+  let pos = 0;
+  const peek = () => tokens[pos];
+  const isPunct = (v) => {
+    const token = tokens[pos];
+    return token !== void 0 && token.t === "punct" && token.v === v;
+  };
+  const expect = (v) => {
+    if (!isPunct(v)) return false;
+    pos++;
+    return true;
+  };
+  const parseUnion = () => {
+    expect("|");
+    const members = [];
+    for (; ; ) {
+      const member = parsePostfix();
+      if (member === null) return null;
+      members.push(member);
+      if (expect("&")) continue;
+      if (!expect("|")) break;
+    }
+    if (isPunct("=>")) {
+      pos++;
+      if (parseUnion() === null) return null;
+      return UNKNOWN;
+    }
+    return members.length === 1 ? members[0] : { kind: "union", members };
+  };
+  const parsePostfix = () => {
+    let type2 = parsePrimary();
+    if (type2 === null) return null;
+    while (isPunct("[") && tokens[pos + 1]?.t === "punct" && tokens[pos + 1].v === "]") {
+      pos += 2;
+      type2 = { kind: "array", element: type2 };
+    }
+    return type2;
+  };
+  const parsePrimary = () => {
+    const token = peek();
+    if (token === void 0) return null;
+    if (token.t === "string" || token.t === "number") {
+      pos++;
+      return UNKNOWN;
+    }
+    if (token.t === "punct") {
+      if (token.v === "{") return parseObject();
+      if (token.v === "(") {
+        pos++;
+        if (expect(")")) return isPunct("=>") ? UNKNOWN : null;
+        const inner = parseUnion();
+        if (inner === null) return null;
+        if (isPunct(":") || isPunct(",")) {
+          if (!skipUntilClose("(", ")")) return null;
+          return UNKNOWN;
+        }
+        return expect(")") ? inner : null;
+      }
+      if (token.v === "?") {
+        pos++;
+        const next = peek();
+        if (next === void 0 || next.t === "punct" && ["|", ",", ";", ")", ">", "]", "}", "="].includes(next.v)) return UNKNOWN;
+        const inner = parsePostfix();
+        return inner === null ? null : { kind: "union", members: [inner, NULL_TYPE] };
+      }
+      if (token.v === "!") {
+        pos++;
+        return parsePostfix();
+      }
+      if (token.v === "*") {
+        pos++;
+        return UNKNOWN;
+      }
+      return null;
+    }
+    pos++;
+    let name = token.v;
+    while (isPunct(".") && tokens[pos + 1]?.t === "name") {
+      name += "." + tokens[pos + 1].v;
+      pos += 2;
+    }
+    if ((name === "typeof" || name === "keyof") && peek()?.t === "name") {
+      pos++;
+      return UNKNOWN;
+    }
+    if (name === "function" && isPunct("(")) {
+      pos++;
+      if (!skipUntilClose("(", ")")) return null;
+      if (expect(":")) {
+        if (parsePostfix() === null) return null;
+      }
+      return UNKNOWN;
+    }
+    if (isPunct(".") && tokens[pos + 1]?.t === "punct" && tokens[pos + 1].v === "<") pos++;
+    if (isPunct("<")) {
+      pos++;
+      const args = [];
+      for (; ; ) {
+        const arg = parseUnion();
+        if (arg === null) return null;
+        args.push(arg);
+        if (!expect(",")) break;
+      }
+      if (!expect(">")) return null;
+      return ARRAY_GENERICS.has(name) && args.length === 1 ? { kind: "array", element: args[0] } : UNKNOWN;
+    }
+    return { kind: "name", name };
+  };
+  const parseObject = () => {
+    pos++;
+    const fields = [];
+    while (!isPunct("}")) {
+      const key = peek();
+      if (key === void 0) return null;
+      if (key.t === "punct" && key.v === "[") {
+        pos++;
+        if (!skipUntilClose("[", "]")) return null;
+        if (!expect(":") || parseUnion() === null) return null;
+      } else {
+        if (key.t !== "name" && key.t !== "string") return null;
+        pos++;
+        expect("?");
+        if (!expect(":")) return null;
+        const type2 = parseUnion();
+        if (type2 === null) return null;
+        fields.push({ name: key.v, type: type2 });
+      }
+      if (!expect(",") && !expect(";")) break;
+    }
+    return expect("}") ? { kind: "object", fields } : null;
+  };
+  const skipUntilClose = (open, close) => {
+    let depth = 0;
+    while (pos < tokens.length) {
+      const token = tokens[pos++];
+      if (token.t !== "punct") continue;
+      if (token.v === open) depth++;
+      else if (token.v === close) {
+        if (depth === 0) return true;
+        depth--;
+      }
+    }
+    return false;
+  };
+  const type = parseUnion();
+  if (type === null || pos !== tokens.length) return null;
+  return type;
+}
+function findJsDocComments(script, scan) {
+  const out = [];
+  let from = 0;
+  for (; ; ) {
+    const start = scan.indexOf("/*", from);
+    if (start === -1) break;
+    const close = scan.indexOf("*/", start + 2);
+    if (close === -1) break;
+    from = close + 2;
+    if (script[start + 2] === "*") out.push({ start, end: close + 2, text: script.slice(start, close + 2) });
+  }
+  return out;
+}
+function readJsDocTagType(comment, tag) {
+  return readBracedType(comment, tag)?.type.trim() ?? null;
+}
+function readBracedType(comment, tag) {
+  const tagMatch = new RegExp(`@${tag}\\s*\\{`).exec(comment);
+  if (!tagMatch) return null;
+  const open = tagMatch.index + tagMatch[0].length - 1;
+  let depth = 0;
+  for (let i = open; i < comment.length; i++) {
+    const ch = comment[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const type = comment.slice(open + 1, i).replace(/\n\s*\*(?!\/)/g, "\n ");
+        return { type, end: i + 1 };
+      }
+    }
+  }
+  return null;
+}
+function readJsDocTypeBefore(content, propIndex) {
+  const comment = jsDocCommentBefore(content, propIndex);
+  return comment === void 0 ? void 0 : readBracedType(comment, "type")?.type.trim();
+}
+function readJsDocReturnsBefore(content, propIndex) {
+  const comment = jsDocCommentBefore(content, propIndex);
+  if (comment === void 0) return void 0;
+  return (readBracedType(comment, "returns") ?? readBracedType(comment, "return"))?.type.trim();
+}
+function jsDocCommentBefore(content, propIndex) {
+  let end = propIndex;
+  while (end > 0 && /\s/.test(content[end - 1])) end--;
+  if (!content.startsWith("*/", end - 2)) return void 0;
+  const start = content.lastIndexOf("/*", end - 2);
+  if (start === -1 || content[start + 2] !== "*") return void 0;
+  return content.slice(start, end);
+}
+function collectJsDocTypedefs(script, scan) {
+  const typedefs = /* @__PURE__ */ new Map();
+  for (const { text: comment } of findJsDocComments(script, scan)) {
+    const braced = readBracedType(comment, "typedef");
+    if (braced === null) continue;
+    const name = /^\s*([$A-Za-z_][$\w]*)/.exec(comment.slice(braced.end));
+    const type = parseJsDocType(braced.type);
+    if (name && type !== null) typedefs.set(name[1], type);
+  }
+  return typedefs;
+}
+function flattenJsDocType(type, typedefs, depth = 0) {
+  if (type.kind === "union") return type.members.flatMap((member) => flattenJsDocType(member, typedefs, depth));
+  if (type.kind === "name" && depth < MAX_RESOLVE_DEPTH) {
+    const resolved = typedefs.get(type.name);
+    if (resolved !== void 0) return flattenJsDocType(resolved, typedefs, depth + 1);
+  }
+  return [type];
+}
+function jsDocTypeHint(type, typedefs = /* @__PURE__ */ new Map()) {
+  const hints = /* @__PURE__ */ new Set();
+  for (const member of flattenJsDocType(type, typedefs)) {
+    if (member.kind === "array") hints.add("array");
+    else if (member.kind === "object") hints.add("object");
+    else if (member.kind === "name") {
+      const lower2 = member.name.toLowerCase();
+      if (lower2 === "string" || lower2 === "number" || lower2 === "boolean" || lower2 === "object") hints.add(lower2);
+      else if (lower2 === "null" || lower2 === "undefined") hints.add("null");
+      else if (lower2 === "array" || lower2 === "readonlyarray") hints.add("array");
+    }
+  }
+  return hints.size === 0 ? void 0 : [...hints].sort().join("|");
+}
+function jsDocShape(type, typedefs) {
+  const elements = [];
+  const fields = [];
+  for (const member of flattenJsDocType(type, typedefs)) {
+    if (member.kind === "array") elements.push(member.element);
+    else if (member.kind === "object") {
+      for (const field of member.fields) {
+        if (!fields.some((f) => f.name === field.name)) fields.push(field);
+      }
+    }
+  }
+  const element2 = elements.length === 0 ? null : elements.length === 1 ? elements[0] : { kind: "union", members: elements };
+  return { element: element2, fields };
+}
+
+// src/service/moduleValues.ts
+var MAX_HOPS = 16;
+var TYPE_IMPORT = /^typeof\s+import\s*\(\s*(["'])([^"']+)\1\s*\)\s*\.\s*([$A-Za-z_][$\w]*)\s*$/;
+function parseTypeImport(type) {
+  const m = type === void 0 ? null : TYPE_IMPORT.exec(type.trim());
+  return m === null ? null : { specifier: m[2], name: m[3] };
+}
+var programs = /* @__PURE__ */ new Map();
+var MAX_PROGRAMS = 64;
+function parseModule(text3) {
+  if (programs.has(text3)) return programs.get(text3);
+  let program;
+  try {
+    program = parse3(text3, { ecmaVersion: "latest", sourceType: "module", allowHashBang: true, allowAwaitOutsideFunction: true });
+  } catch {
+    program = null;
+  }
+  if (programs.size >= MAX_PROGRAMS) programs.delete(programs.keys().next().value);
+  programs.set(text3, program);
+  return program;
+}
+var filesByReader = /* @__PURE__ */ new WeakMap();
+var ModuleScope = class _ModuleScope {
+  constructor(text3, location) {
+    this.text = text3;
+    this.location = location;
+  }
+  get body() {
+    const program = parseModule(this.text);
+    return program !== null && program.type === "Program" ? program.body : [];
+  }
+  /** The specifier a top-level name is imported from, if it is imported. */
+  importOf(name) {
+    for (const statement of this.body) {
+      if (statement.type !== "ImportDeclaration") continue;
+      if (statement.specifiers.some((s) => s.local.name === name)) return String(statement.source.value);
+    }
+    return void 0;
+  }
+  /** The value a top-level name of the module is bound to, or null when it cannot be followed. */
+  resolveName(name, hops = 0) {
+    if (hops > MAX_HOPS) return null;
+    for (const statement of this.body) {
+      if (statement.type === "ImportDeclaration") {
+        const specifier = statement.specifiers.find((s) => s.local.name === name);
+        if (specifier === void 0) continue;
+        if (specifier.type === "ImportNamespaceSpecifier") return null;
+        const exported = specifier.type === "ImportDefaultSpecifier" ? "default" : exportName(specifier.imported);
+        return this.module(String(statement.source.value))?.resolveExport(exported, hops + 1) ?? null;
+      }
+      const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+      if (declaration === null || declaration === void 0 || declaration.type !== "VariableDeclaration") continue;
+      for (const declarator of declaration.declarations) {
+        if (declarator.id.type !== "Identifier" || declarator.id.name !== name) continue;
+        if (declaration.kind !== "const") return null;
+        return this.declared(statement.start, declarator.init ?? null, hops);
+      }
+    }
+    return null;
+  }
+  /** The value a module exports under `name` ('default' for the default export), or null. */
+  resolveExport(name, hops = 0) {
+    if (hops > MAX_HOPS) return null;
+    const stars = [];
+    for (const statement of this.body) {
+      if (statement.type === "ExportDefaultDeclaration") {
+        if (name !== "default") continue;
+        const value = statement.declaration;
+        if (value.type === "FunctionDeclaration" || value.type === "ClassDeclaration") return null;
+        return this.declared(statement.start, value, hops);
+      }
+      if (statement.type === "ExportAllDeclaration") {
+        if (statement.exported === null || statement.exported === void 0) stars.push(String(statement.source.value));
+        continue;
+      }
+      if (statement.type !== "ExportNamedDeclaration") continue;
+      const declaration = statement.declaration;
+      if (declaration !== null && declaration !== void 0) {
+        if (declaration.type === "VariableDeclaration" && declaration.declarations.some((d) => d.id.type === "Identifier" && d.id.name === name)) {
+          return this.resolveName(name, hops + 1);
+        }
+        continue;
+      }
+      for (const specifier of statement.specifiers) {
+        if (exportName(specifier.exported) !== name) continue;
+        const local = exportName(specifier.local);
+        return statement.source === null || statement.source === void 0 ? this.resolveName(local, hops + 1) : this.module(String(statement.source.value))?.resolveExport(local, hops + 1) ?? null;
+      }
+    }
+    if (name !== "default") {
+      for (const specifier of stars) {
+        const found = this.module(specifier)?.resolveExport(name, hops + 1) ?? null;
+        if (found !== null) return found;
+      }
+    }
+    return null;
+  }
+  /** The value a JSDoc `typeof import("…").name` names, read from that module. */
+  resolveTypeImport(type, hops = 0) {
+    return this.module(type.specifier)?.resolveExport(type.name, hops + 1) ?? null;
+  }
+  /** A declaration's value: a JSDoc `typeof import(…)` before it wins, a name is followed, anything else is the text. */
+  declared(statementStart, value, hops) {
+    const type = parseTypeImport(readJsDocTypeBefore(this.text, statementStart));
+    if (type !== null) return this.resolveTypeImport(type, hops);
+    if (value === null) return null;
+    if (value.type === "Identifier") return this.resolveName(value.name, hops + 1);
+    return { text: this.text.slice(value.start, value.end), scope: this };
+  }
+  /** The module a specifier names, relative to this one (null when it cannot be read or is not relative). */
+  module(specifier) {
+    const location = this.location;
+    if (location === void 0) return null;
+    const path = joinModulePath(location.path, specifier);
+    if (path === void 0) return null;
+    let files = filesByReader.get(location.fileReader);
+    if (files === void 0) filesByReader.set(location.fileReader, files = /* @__PURE__ */ new Map());
+    if (files.has(path)) return files.get(path);
+    const text3 = location.fileReader(path) ?? (path.endsWith(".js") ? location.fileReader(path.replace(/\.js$/, ".ts")) : void 0);
+    const scope = text3 === void 0 ? null : new _ModuleScope(text3, { fileReader: location.fileReader, path });
+    files.set(path, scope);
+    return scope;
+  }
+};
+function exportName(node) {
+  return node.type === "Identifier" ? node.name : String(node.value);
+}
+function joinModulePath(from, specifier) {
+  const bare = specifier.replace(/[?#].*$/, "");
+  if (bare.startsWith("/")) return bare.startsWith("//") ? void 0 : bare;
+  if (!bare.startsWith("./") && !bare.startsWith("../")) return void 0;
+  const slash = from.lastIndexOf("/");
+  const out = slash === -1 ? [] : from.slice(0, slash).split("/");
+  for (const segment of bare.split("/")) {
+    if (segment === "." || segment === "") continue;
+    if (segment !== "..") {
+      out.push(segment);
+    } else if (out.length > 0 && out[out.length - 1] !== "..") {
+      if (!(out.length === 1 && out[0] === "")) out.pop();
+    } else {
+      out.push("..");
+    }
+  }
+  return out.join("/");
+}
+
+// src/service/recursionPaths.ts
+var RECURSION_WILDCARD2 = "**";
+var RECURSION_KEY = "$recursion";
+function hasRecursionWildcard(path) {
+  return path.indexOf(RECURSION_WILDCARD2) !== -1;
+}
+function checkNodePath(path) {
+  if (typeof path !== "string" || path.length === 0) return "empty";
+  const segments = path.split(".");
+  if (segments.some((segment) => segment.length === 0)) return "emptySegment";
+  if (segments.length < 2 || segments[segments.length - 1] !== "*") return "notElement";
+  if (segments[0].startsWith("$")) return "reservedRoot";
+  if (path.indexOf("#") !== -1) return "reservedMount";
+  for (let i = 0; i < segments.length - 1; i++) {
+    if (segments[i] === "*") return "midWildcard";
+    if (segments[i] === RECURSION_WILDCARD2) return "nestedRecursion";
+    if (!isNaN(Number(segments[i]))) return "indexSegment";
+  }
+  return null;
+}
+function makeRecursionSpec(anchor, repeat2) {
+  return Object.freeze({
+    anchor,
+    repeat: repeat2,
+    recursiveAnchor: anchor.slice(0, anchor.lastIndexOf(".")) + "." + RECURSION_WILDCARD2,
+    anchorList: anchor.slice(0, anchor.lastIndexOf(".")),
+    repeatList: repeat2.slice(0, repeat2.lastIndexOf("."))
+  });
+}
+function splitRecursivePath(spec, path) {
+  if (path === spec.recursiveAnchor) return "";
+  if (!path.startsWith(spec.recursiveAnchor + ".")) return null;
+  const suffix = path.slice(spec.recursiveAnchor.length);
+  if (hasRecursionWildcard(suffix)) return null;
+  const segments = suffix.slice(1).split(".");
+  if (segments[0] === "*" || segments.some((segment) => segment.length === 0)) return null;
+  return suffix;
+}
+function foldSuffixIndexes(suffix) {
+  return suffix.length === 0 ? suffix : "." + indexSegmentsToWildcard(suffix.slice(1));
+}
+function foldRecursion(spec, path) {
+  if (!path.startsWith(spec.anchor)) return null;
+  const unit2 = "." + spec.repeat;
+  let cursor = spec.anchor.length;
+  let depth = 0;
+  while (path.startsWith(unit2, cursor)) {
+    cursor += unit2.length;
+    depth++;
+  }
+  if (cursor !== path.length && path.charCodeAt(cursor) !== 46) return null;
+  return { depth, rest: path.slice(cursor) };
+}
+function matchesRecursion(specs, path, has) {
+  for (const spec of specs) {
+    const folded = foldRecursion(spec, path);
+    if (folded === null) continue;
+    const unit2 = "." + spec.repeat;
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      const rest = unit2.repeat(folded.depth - depth) + folded.rest;
+      if (has(spec.anchor + rest)) return true;
+      if (has(spec.recursiveAnchor + rest)) return true;
+      for (let dot = rest.lastIndexOf("."); dot > 0; dot = rest.lastIndexOf(".", dot - 1)) {
+        if (has(spec.recursiveAnchor + rest.slice(0, dot))) return true;
+      }
+    }
+  }
+  return false;
+}
+function owningGetterSuffix(spec, getterSuffixes, path) {
+  const pattern = indexSegmentsToWildcard(path);
+  const folded = foldRecursion(spec, pattern);
+  if (folded === null) return null;
+  const unit2 = "." + spec.repeat;
+  for (const suffix of getterSuffixes) {
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      const expansion = spec.anchor + unit2.repeat(depth) + suffix;
+      if (pattern === expansion || pattern.startsWith(expansion + ".")) return suffix;
+    }
+  }
+  return null;
+}
+function indexSegmentsToWildcard(path) {
+  return path.split(".").map((segment) => segment !== "*" && !Number.isNaN(Number(segment)) ? "*" : segment).join(".");
+}
+function concreteExpansionSuffix(spec, getterSuffixes, key) {
+  const folded = foldRecursion(spec, key);
+  if (folded === null) return null;
+  const unit2 = "." + spec.repeat;
+  for (const suffix of getterSuffixes) {
+    for (let depth = folded.depth; depth >= 0; depth--) {
+      if (key === spec.anchor + unit2.repeat(depth) + suffix) return suffix;
+    }
+  }
+  return null;
+}
+function collectRecursionSpecs(candidates) {
+  const out = [];
+  for (const candidate of candidates) {
+    if (candidate.kind !== "recursionAnchor" || typeof candidate.repeat !== "string") continue;
+    if (!candidate.path.endsWith("." + RECURSION_WILDCARD2)) continue;
+    const anchor = candidate.path.slice(0, candidate.path.length - RECURSION_WILDCARD2.length) + "*";
+    if (out.some((spec) => spec.anchor === anchor && spec.repeat === candidate.repeat)) continue;
+    out.push(makeRecursionSpec(anchor, candidate.repeat));
+  }
+  return out;
+}
+function impliedStructurePaths(spec) {
+  const out = [
+    { path: spec.anchorList, kind: "data", typeHint: "array" },
+    { path: spec.anchor, kind: "list" },
+    { path: `${spec.anchorList}.length`, kind: "data", typeHint: "number" }
+  ];
+  const repeatSegments = spec.repeatList.split(".");
+  for (let i = 1; i < repeatSegments.length; i++) {
+    out.push({ path: `${spec.anchor}.${repeatSegments.slice(0, i).join(".")}`, kind: "data" });
+  }
+  out.push({ path: `${spec.anchor}.${spec.repeatList}`, kind: "data", typeHint: "array" });
+  out.push({ path: `${spec.anchor}.${spec.repeat}`, kind: "list" });
+  out.push({ path: `${spec.anchor}.${spec.repeatList}.length`, kind: "data", typeHint: "number" });
+  return out;
+}
+function structuralWriteTarget(spec, suffix) {
+  const unit2 = "." + spec.repeat;
+  let rest = suffix;
+  while (rest.startsWith(unit2)) rest = rest.slice(unit2.length);
+  if (rest.length === 0) return "node";
+  if (rest === "." + spec.repeatList + ".length") return "length";
+  const segments = spec.repeatList.split(".");
+  for (let i = 1; i <= segments.length; i++) {
+    if (rest === "." + segments.slice(0, i).join(".")) return i === segments.length ? "list" : "branch";
+  }
+  return null;
+}
+function sameFamily(spec, a, b) {
+  const unit2 = "." + spec.repeat;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  if (!longer.endsWith(shorter)) return false;
+  const gap = longer.slice(0, longer.length - shorter.length);
+  if (gap.length === 0) return true;
+  if (gap.length % unit2.length !== 0) return false;
+  for (let cursor = 0; cursor < gap.length; cursor += unit2.length) {
+    if (!gap.startsWith(unit2, cursor)) return false;
+  }
+  return true;
+}
+function conflictingGetterSuffix(spec, getterSuffixes, suffix) {
+  for (const declared of getterSuffixes) {
+    if (coversSuffix(spec, declared, suffix)) return declared;
+  }
+  return null;
+}
+function coversSuffix(spec, familySuffix, suffix) {
+  for (let end = suffix.length; end > 0; end = suffix.lastIndexOf(".", end - 1)) {
+    if (sameFamily(spec, familySuffix, suffix.slice(0, end))) return true;
+  }
+  return false;
+}
+
+// src/service/stateAnalyzer.ts
+var RESERVED_STREAMS_KEYS = /* @__PURE__ */ new Set(["$stream", "$streams"]);
+var RESERVED_COMMAND_TOKENS_KEY = "$commandTokens";
+var RESERVED_EVENT_TOKENS_KEY = "$eventTokens";
+var RESERVED_LIST_KEYS_KEY = "$listKeys";
+var RESERVED_WATCH_KEY = "$watch";
+var RESERVED_SCAN_KEY = "$scan";
+var RESERVED_RECURSION_KEY = RECURSION_KEY;
+function analyzeStatePaths(scriptContent, location) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root || !root.content) return [];
+  const paths = [];
+  const scope = new ModuleScope(scriptContent, location);
+  const topLevelProps = withShorthands(root.content, parseTopLevelProperties(root.content));
+  const pendingStreamValues = [];
+  const pendingListKeys = [];
+  const recursionSpec = specFromRecursionValue(topLevelProps.find((p) => p.name === RESERVED_RECURSION_KEY));
+  const effectiveDescriptors = effectiveTopLevelDescriptors(topLevelProps);
+  const typedefs = scriptContent.includes("@typedef") ? collectJsDocTypedefs(scriptContent, maskCommentsAndStrings(scriptContent)) : /* @__PURE__ */ new Map();
+  for (const prop of topLevelProps) {
+    if (prop.name.startsWith("$")) {
+      collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys);
+      continue;
+    }
+    const effective = effectiveDescriptors.get(prop.name);
+    if (prop.kind === "getter" !== (effective !== "data")) {
+      continue;
+    }
+    if (prop.kind === "method") {
+      paths.push({ path: prop.name, kind: "method" });
+      continue;
+    }
+    if (prop.kind === "getter") {
+      if (!paths.some((p) => p.path === prop.name)) {
+        const recursive = hasRecursionWildcard(prop.name);
+        const settable = !recursive && effective !== "data" && effective.set;
+        paths.push({ path: prop.name, kind: recursive ? "recursive" : "computed", ...settable ? { settable } : {} });
+      }
+      if (prop.declaredType !== void 0) pushDeclaredShapePaths(prop.name, prop.declaredType, paths, 0, typedefs);
+      continue;
+    }
+    pushDataPropertyPaths(prop, paths, typedefs, scope);
+  }
+  for (const streamValue of pendingStreamValues) {
+    if (paths.some((p) => p.path === streamValue.name && p.kind !== "eventToken")) continue;
+    pushDataPropertyPaths(streamValue, paths, typedefs, scope);
+  }
+  for (const listKeyEntry of pendingListKeys) {
+    pushListKeyPaths(listKeyEntry, paths);
+  }
+  if (recursionSpec !== null) {
+    if (!paths.some((p) => p.path === recursionSpec.recursiveAnchor && p.kind === "recursionAnchor")) {
+      paths.push({ path: recursionSpec.recursiveAnchor, kind: "recursionAnchor", repeat: recursionSpec.repeat });
+    }
+    for (const implied of impliedStructurePaths(recursionSpec)) {
+      if (paths.some((p) => p.path === implied.path)) continue;
+      paths.push({ path: implied.path, kind: implied.kind, typeHint: implied.typeHint });
+    }
+  }
+  collectRowShapesFromAssignments(scriptContent, paths);
+  collectGetterResultShapes(scriptContent, root.start, topLevelProps, effectiveDescriptors, paths);
+  return paths;
+}
+function specFromRecursionValue(prop) {
+  if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value)) return null;
+  const entries = parseTopLevelProperties(extractObjectContent(prop.value)).filter((e) => e.kind === "data");
+  if (entries.length !== 1) return null;
+  const anchor = entries[0].name;
+  const repeat2 = extractStringLiteralValue(entries[0].value);
+  if (repeat2 === null) return null;
+  if (checkNodePath(anchor) !== null || checkNodePath(repeat2) !== null) return null;
+  return makeRecursionSpec(anchor, repeat2);
+}
+function analyzeRecursionDeclaration(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const prop = parseTopLevelProperties(root.content).find((p) => p.name === RESERVED_RECURSION_KEY);
+  if (!prop || prop.nameStart === void 0 || prop.nameEnd === void 0) return null;
+  const span = { start: root.start + prop.nameStart, end: root.start + prop.nameEnd };
+  if (prop.kind === "method") {
+    return { ...span, notObject: true, objectLiteral: false, entries: [], spec: null };
+  }
+  if (prop.kind !== "data" || !prop.value || prop.valueStart === void 0) {
+    return { ...span, notObject: false, objectLiteral: false, entries: [], spec: null };
+  }
+  if (!isObjectLiteral(prop.value)) {
+    const scan = maskCommentsAndStrings(prop.value).trim();
+    const definite = /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^\[/.test(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+    return { ...span, notObject: definite, objectLiteral: false, entries: [], spec: null };
+  }
+  const objectContent = extractObjectContent(prop.value);
+  if (hasUndecidableEntries(objectContent)) {
+    return { ...span, notObject: false, objectLiteral: false, entries: [], spec: null };
+  }
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const innerStart = root.start + prop.valueStart + leading + 1;
+  const entries = [];
+  for (const entry of parseTopLevelProperties(objectContent)) {
+    if (entry.nameStart === void 0 || entry.nameEnd === void 0) continue;
+    const valueStart = entry.valueStart === void 0 ? innerStart + entry.nameEnd : innerStart + entry.valueStart + (entry.value ? entry.value.length - entry.value.trimStart().length : 0);
+    entries.push({
+      anchor: entry.name,
+      repeat: entry.kind === "data" ? extractStringLiteralValue(entry.value) : null,
+      repeatDefinitelyNotString: entry.kind !== "data" || isDefiniteNonStringLiteral(entry.value),
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      valueStart,
+      valueEnd: valueStart + (entry.value?.trim().length ?? 0)
+    });
+  }
+  return { ...span, notObject: false, objectLiteral: true, entries, spec: specFromRecursionValue(prop) };
+}
+function analyzeWatchEntries(scriptContent) {
+  return analyzeObjectEntries(scriptContent, RESERVED_WATCH_KEY).map((entry) => ({
+    key: entry.key,
+    start: entry.start,
+    end: entry.end,
+    // メソッド短縮記法は関数。data は値リテラルの形で判定し、識別子参照は疑わない。
+    definitelyNotFunction: entry.kind === "data" && isNonFunctionLiteral(entry.value)
+  }));
+}
+function analyzeWatchHandlerSources(scriptContent) {
+  return analyzeHandlerSources(scriptContent, RESERVED_WATCH_KEY);
+}
+function analyzeOnHandlerSources(scriptContent) {
+  return analyzeHandlerSources(scriptContent, "$on");
+}
+function analyzeHandlerSources(scriptContent, key) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const prop = parseTopLevelProperties(root.content).find((p) => p.name === key);
+  if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value) || prop.valueStart === void 0) {
+    return [];
+  }
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const innerStart = root.start + prop.valueStart + leading + 1;
+  const out = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+    if (entry.value === void 0 || entry.valueStart === void 0) continue;
+    out.push({
+      name: entry.name,
+      kind: entry.kind === "data" ? "value" : "body",
+      text: entry.value,
+      start: innerStart + entry.valueStart
+    });
+  }
+  return out;
+}
+function analyzeListKeyEntries(scriptContent) {
+  return analyzeObjectEntries(scriptContent, RESERVED_LIST_KEYS_KEY).map((entry) => ({ key: entry.key, start: entry.start, end: entry.end }));
+}
+function findTopLevelDeclaration(scriptContent, key) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const prop = parseTopLevelProperties(root.content).find((p) => p.name === key);
+  if (!prop || prop.nameStart === void 0 || prop.nameEnd === void 0) return null;
+  const base = { name: prop.name, kind: prop.kind, start: root.start + prop.nameStart, end: root.start + prop.nameEnd };
+  if (prop.kind !== "data" || prop.value === void 0 || prop.valueStart === void 0) return base;
+  const leading = prop.value.length - prop.value.trimStart().length;
+  return { ...base, value: prop.value.trim(), valueStart: root.start + prop.valueStart + leading };
+}
+function analyzeDeclarationEntries(scriptContent, key) {
+  return analyzeObjectEntries(scriptContent, key).map((entry) => ({
+    name: entry.key,
+    kind: entry.kind,
+    start: entry.start,
+    end: entry.end,
+    ...entry.kind === "data" && entry.value !== void 0 && entry.valueStart !== void 0 ? { value: entry.value.trim(), valueStart: entry.valueStart } : {}
+  }));
+}
+function hasDefaultExportObject(scriptContent) {
+  return locateDefaultExportObject(scriptContent) !== null;
+}
+function hasTopLevelSpread(scriptContent) {
+  return findTopLevelSpread(scriptContent) !== null;
+}
+function findTopLevelSpread(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const scan = maskCommentsAndStrings(root.content);
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (depth === 0 && start < 0 && ch === "." && scan.startsWith("...", i)) start = i;
+    else if (depth === 0 && start >= 0 && ch === ",") return spreadRange(root.start, scan, start, i);
+  }
+  return start < 0 ? null : spreadRange(root.start, scan, start, scan.length);
+}
+function spreadRange(base, scan, start, stop) {
+  return { start: base + start, end: base + start + scan.slice(start, stop).trimEnd().length };
+}
+function analyzeObjectEntries(scriptContent, key, allowEmptyKeys = false) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const prop = parseTopLevelProperties(root.content).find((p) => p.name === key);
+  if (!prop || prop.kind !== "data" || !prop.value || !isObjectLiteral(prop.value) || prop.valueStart === void 0) {
+    return [];
+  }
+  const leading = prop.value.length - prop.value.trimStart().length;
+  const innerStart = root.start + prop.valueStart + leading + 1;
+  const entries = [];
+  for (const entry of parseTopLevelProperties(extractObjectContent(prop.value), allowEmptyKeys)) {
+    if (entry.nameStart === void 0 || entry.nameEnd === void 0) continue;
+    entries.push({
+      key: entry.name,
+      start: innerStart + entry.nameStart,
+      end: innerStart + entry.nameEnd,
+      kind: entry.kind,
+      value: entry.value,
+      valueStart: entry.valueStart === void 0 || entry.value === void 0 ? void 0 : innerStart + entry.valueStart + (entry.value.length - entry.value.trimStart().length)
+    });
+  }
+  return entries;
+}
+function analyzeDeclarationSpans(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out = [];
+  for (const prop of withShorthands(root.content, parseTopLevelProperties(root.content))) {
+    if (prop.nameStart === void 0 || prop.nameEnd === void 0) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd
+    });
+  }
+  return out;
+}
+function analyzeCallableBodies(scriptContent) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return [];
+  const out = [];
+  for (const prop of parseTopLevelProperties(root.content)) {
+    if (prop.kind !== "getter" && prop.kind !== "method") continue;
+    if (prop.nameStart === void 0 || prop.nameEnd === void 0) continue;
+    out.push({
+      name: prop.name,
+      kind: prop.kind,
+      start: root.start + prop.nameStart,
+      end: root.start + prop.nameEnd,
+      body: prop.value ?? "",
+      bodyStart: root.start + (prop.valueStart ?? 0),
+      accessor: prop.accessor
+    });
+  }
+  return out;
+}
+function isNonFunctionLiteral(value) {
+  if (value === void 0) return false;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  const scan = maskCommentsAndStrings(trimmed);
+  if (/^(?:async\s+)?function\b/.test(trimmed) || scan.includes("=>")) return false;
+  return /^["'`]/.test(trimmed) || /^-?\d/.test(trimmed) || /^(?:true|false|null|undefined)\b/.test(trimmed) || trimmed.startsWith("[") || trimmed.startsWith("{");
+}
+function findNonObjectWatch(scriptContent) {
+  return findNonObjectDeclaration(scriptContent, RESERVED_WATCH_KEY);
+}
+function findNonObjectDeclaration(scriptContent, key) {
+  const root = locateDefaultExportObject(scriptContent);
+  if (!root) return null;
+  const declarationProp = parseTopLevelProperties(root.content).find((p) => p.name === key);
+  if (!declarationProp || declarationProp.nameStart === void 0 || declarationProp.nameEnd === void 0) {
+    return null;
+  }
+  const span = { start: root.start + declarationProp.nameStart, end: root.start + declarationProp.nameEnd };
+  if (declarationProp.kind === "method") {
+    return span;
+  }
+  if (declarationProp.kind !== "data" || !declarationProp.value) return null;
+  const trimmed = declarationProp.value.trim();
+  if (trimmed.startsWith("{")) return null;
+  const scan = maskCommentsAndStrings(trimmed).trim();
+  const isArrowFunction = /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+  const isWholeLiteral = /^(["'`])[^"'`]*\1$/.test(scan) || /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^(?:async\s+)?function\b[\s\S]*\}$/.test(scan);
+  if (!isArrowFunction && !isWholeLiteral) return null;
+  return span;
+}
+function collectReservedKeyPaths(prop, paths, pendingStreamValues, pendingListKeys) {
+  if (RESERVED_STREAMS_KEYS.has(prop.name) && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
+    const entries = parseTopLevelProperties(extractObjectContent(prop.value));
+    for (const entry of entries) {
+      if (entry.kind !== "data" || entry.name.startsWith("$")) continue;
+      const initial = entry.value && isObjectLiteral(entry.value) ? findStreamInitialProperty(entry.value) : void 0;
+      pendingStreamValues.push({
+        name: entry.name,
+        kind: "data",
+        value: initial?.value,
+        typeHint: initial?.typeHint
+      });
+      paths.push({ path: `$streamStatus.${entry.name}`, kind: "data", typeHint: "string" });
+      paths.push({ path: `$streamError.${entry.name}`, kind: "data" });
+    }
+    return;
+  }
+  if (prop.name === RESERVED_SCAN_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
+    for (const entry of parseTopLevelProperties(extractObjectContent(prop.value), true)) {
+      if (entry.kind !== "data" || !isFlatScanOutputName(entry.name)) continue;
+      const initial = entry.value && isObjectLiteral(entry.value) ? findStreamInitialProperty(entry.value) : void 0;
+      pendingStreamValues.push({
+        name: entry.name,
+        kind: "data",
+        value: initial?.value,
+        typeHint: initial?.typeHint
+      });
+    }
+    return;
+  }
+  if (prop.name === RESERVED_COMMAND_TOKENS_KEY && prop.value) {
+    for (const name of extractStringArrayItems(prop.value)) {
+      paths.push({ path: `$command.${name}`, kind: "command" });
+    }
+    return;
+  }
+  if (prop.name === RESERVED_EVENT_TOKENS_KEY && prop.value) {
+    for (const name of extractStringArrayItems(prop.value)) {
+      paths.push({ path: name, kind: "eventToken" });
+    }
+    return;
+  }
+  if (prop.name === RESERVED_LIST_KEYS_KEY && prop.kind === "data" && prop.value && isObjectLiteral(prop.value)) {
+    for (const entry of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      if (entry.kind !== "data") continue;
+      pendingListKeys.push(entry);
+    }
+    return;
+  }
+}
+function pushListKeyPaths(entry, paths) {
+  const listPath = entry.name;
+  const segments = listPath.split(".");
+  if (listPath.length === 0 || segments.some((s) => s.length === 0) || segments[segments.length - 1] === "*") {
+    return;
+  }
+  if (hasRecursionWildcard(listPath)) {
+    return;
+  }
+  const has = (path) => paths.some((p) => p.path === path);
+  if (!has(listPath)) paths.push({ path: listPath, kind: "data", typeHint: "array" });
+  if (!has(`${listPath}.*`)) paths.push({ path: `${listPath}.*`, kind: "list" });
+  if (!has(`${listPath}.length`)) {
+    paths.push({ path: `${listPath}.length`, kind: "data", typeHint: "number" });
+  }
+  const keyField = extractStringLiteralValue(entry.value);
+  if (keyField === null || keyField.includes(".") || keyField.includes("*")) return;
+  if (!has(`${listPath}.*.${keyField}`)) {
+    paths.push({ path: `${listPath}.*.${keyField}`, kind: "data" });
+  }
+}
+function extractStringLiteralValue(value) {
+  if (!value) return null;
+  const match = value.trim().match(/^(?:["']([^"'\\]*)["']|`([^`\\$]*)`)$/);
+  const literal2 = match ? match[1] ?? match[2] : null;
+  return literal2 !== null && literal2 !== void 0 && literal2.length > 0 ? literal2 : null;
+}
+function hasUndecidableEntries(objectContent) {
+  const scan = maskCommentsAndStrings(objectContent);
+  let depth = 0;
+  let atKey = true;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") {
+      if (depth === 0 && atKey && (ch === "[" || scan.startsWith("...", i))) return true;
+      depth++;
+      atKey = false;
+      continue;
+    }
+    if (ch === ")" || ch === "]" || ch === "}") {
+      depth--;
+      continue;
+    }
+    if (depth !== 0) continue;
+    if (ch === ",") {
+      atKey = true;
+      continue;
+    }
+    if (/\s/.test(ch)) continue;
+    if (atKey && scan.startsWith("...", i)) return true;
+    atKey = false;
+  }
+  return false;
+}
+function isDefiniteNonStringLiteral(value) {
+  if (!value) return false;
+  const scan = maskCommentsAndStrings(value).trim();
+  if (scan.length === 0) return false;
+  return /^-?\d[\w.]*$/.test(scan) || /^(?:true|false|null)$/.test(scan) || /^[[{]/.test(scan) || /^(?:async\s+)?function\b/.test(scan) || /^(?:async\s+)?\([^()]*\)\s*=>/.test(scan) || /^(?:async\s+)?[$\w]+\s*=>/.test(scan);
+}
+var ROW_ASSIGN = new RegExp(
+  String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])\s*(?:(\[)|(?:[^;={}]|=>)*?\.\s*(?:concat|toSpliced|with)\s*(\())`,
+  "gd"
+);
+function collectRowShapesFromAssignments(script, paths) {
+  const scan = maskCommentsAndStrings(script);
+  ROW_ASSIGN.lastIndex = 0;
+  let match;
+  while ((match = ROW_ASSIGN.exec(scan)) !== null) {
+    const span = match.indices[1] ?? match.indices[2];
+    const listPath = script.slice(span[0], span[1]);
+    if (listPath.startsWith("$") || listPath.includes("*") || !hasPath(paths, `${listPath}.*`)) continue;
+    const openIndex = match.index + match[0].length - 1;
+    const isArrayLiteral2 = scan[openIndex] === "[";
+    const inner = extractDelimitedContent(script, scan, openIndex, scan[openIndex], isArrayLiteral2 ? "]" : ")");
+    for (const literal2 of collectRowLiterals(inner, isArrayLiteral2 ? 0 : 1)) {
+      for (const field of extractRowLiteralFields(literal2)) {
+        pushRowFieldPaths(`${listPath}.*.${field.name}`, field, paths, 1);
+      }
+    }
+  }
+}
+function collectRowLiterals(elementList, arrayDepth) {
+  const out = [];
+  for (const element2 of splitTopLevelElements(elementList)) {
+    if (element2.startsWith("{")) {
+      out.push(element2);
+    } else if (element2.startsWith("[") && arrayDepth > 0) {
+      const scan = maskCommentsAndStrings(element2);
+      out.push(...collectRowLiterals(extractDelimitedContent(element2, scan, 0, "[", "]"), arrayDepth - 1));
+    }
+  }
+  return out;
+}
+function extractRowLiteralFields(literal2) {
+  const content = extractObjectContent(literal2);
+  const fields = parseTopLevelProperties(content).filter((p) => p.kind === "data");
+  for (const element2 of splitTopLevelElements(content)) {
+    const shorthand = /^([$\w]+)$/.exec(element2);
+    if (shorthand && !fields.some((f) => f.name === shorthand[1])) {
+      fields.push({ name: shorthand[1], kind: "data" });
+    }
+  }
+  return fields;
+}
+function pushRowFieldPaths(path, prop, paths, depth) {
+  if (!hasPath(paths, path)) paths.push(withHint({ path, kind: "data" }, prop.typeHint));
+  if (!prop.value) return;
+  if (isArrayLiteral(prop.value)) {
+    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
+    if (!hasPath(paths, `${path}.length`)) {
+      paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    }
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of extractArrayElementDataProperties(prop.value)) {
+      pushRowFieldPaths(`${path}.*.${child.name}`, child, paths, depth + 1);
+    }
+    return;
+  }
+  if (isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const child of parseTopLevelProperties(extractObjectContent(prop.value))) {
+      if (child.kind !== "data") continue;
+      pushRowFieldPaths(`${path}.${child.name}`, child, paths, depth + 1);
+    }
+  }
+}
+function literalFields(literal2, to, aliases) {
+  return extractRowLiteralFields(literal2).map((field) => {
+    const name = field.value === void 0 ? field.name : /^\s*([$A-Za-z_][$\w]*)\s*$/.exec(field.value)?.[1];
+    const shape = name === void 0 ? void 0 : aliases.get(name);
+    return shape === void 0 ? { to, field } : { to, field, shape };
+  });
+}
+var ROW_PRESERVING_METHODS = /* @__PURE__ */ new Set([
+  "filter",
+  "toSorted",
+  "toReversed",
+  "slice",
+  "toSpliced",
+  "concat",
+  "with",
+  "sort",
+  "reverse"
+]);
+var ROW_PICKING_METHODS = /* @__PURE__ */ new Set(["find", "findLast", "at"]);
+var MAX_GETTER_SHAPE_PASSES = 4;
+function collectGetterResultShapes(script, rootStart, props, effective, paths) {
+  const getters = /* @__PURE__ */ new Map();
+  for (const prop of props) {
+    if (prop.kind !== "getter" || prop.accessor !== "get" || prop.value === void 0) continue;
+    if (prop.name.startsWith("$") || hasRecursionWildcard(prop.name) || effective.get(prop.name) === "data") continue;
+    getters.set(prop.name, prop);
+  }
+  const assignments = collectAssignments(script, rootStart, props);
+  for (let pass = 0; pass < MAX_GETTER_SHAPE_PASSES; pass++) {
+    const before = paths.length;
+    for (const [name, prop] of getters) {
+      const shape = getterResultShape(prop.value, paths);
+      if (shape !== null) applyResultShape(name, shape, paths);
+    }
+    const aliasesByBody = /* @__PURE__ */ new Map();
+    for (const assignment of assignments) {
+      let aliases = /* @__PURE__ */ new Map();
+      if (assignment.body !== null) {
+        aliases = aliasesByBody.get(assignment.body) ?? collectAliases(assignment.body, paths);
+        aliasesByBody.set(assignment.body, aliases);
+      }
+      const shape = expressionShape(assignment.expr, paths, aliases);
+      if (shape !== null) applyAssignedShape(assignment.target, shape, paths);
+    }
+    if (paths.length === before) break;
+  }
+}
+function getterResultShape(body, paths) {
+  const scan = maskCommentsAndStrings(body);
+  const aliases = collectAliases(body, paths);
+  const shapes = [];
+  for (const start of ownReturnEnds(scan)) {
+    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
+    if (shape !== null) shapes.push(shape);
+  }
+  return shapes.length === 0 ? null : mergeShapes(shapes);
+}
+var BLOCK_HEADS = /* @__PURE__ */ new Set(["if", "for", "while", "switch", "catch", "with"]);
+function ownReturnEnds(scan) {
+  const out = [];
+  const stack = [];
+  let nested = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "{") {
+      const opens = opensFunctionBody(scan, i);
+      stack.push(opens);
+      if (opens) nested++;
+    } else if (ch === "}") {
+      if (stack.pop() === true) nested--;
+    } else if (nested === 0 && ch === "r" && /^return\b/.test(scan.slice(i, i + 7)) && !/[\w$.]/.test(scan[i - 1] ?? "")) {
+      out.push(i + 6);
+      i += 5;
+    }
+  }
+  return out;
+}
+function opensFunctionBody(scan, at2) {
+  let end = at2 - 1;
+  while (end >= 0 && /\s/.test(scan[end])) end--;
+  if (end >= 1 && scan[end] === ">" && scan[end - 1] === "=") return true;
+  if (scan[end] !== ")") return false;
+  let depth = 0;
+  let i = end;
+  for (; i >= 0; i--) {
+    if (scan[i] === ")") depth++;
+    else if (scan[i] === "(" && --depth === 0) break;
+  }
+  let wordEnd = i - 1;
+  while (wordEnd >= 0 && /\s/.test(scan[wordEnd])) wordEnd--;
+  let wordStart = wordEnd;
+  while (wordStart >= 0 && /[$\w]/.test(scan[wordStart])) wordStart--;
+  const head = scan.slice(wordStart + 1, wordEnd + 1);
+  return !BLOCK_HEADS.has(head);
+}
+function collectAliases(body, paths) {
+  const scan = maskCommentsAndStrings(body);
+  const aliases = /* @__PURE__ */ new Map();
+  for (const m of scan.matchAll(/\b(?:const|let|var)\s+([$\w]+)\s*=(?![=>])/g)) {
+    const name = m[1];
+    if (aliases.has(name)) continue;
+    const start = m.index + m[0].length;
+    const shape = expressionShape(readExpression(body, scan, start), paths, aliases);
+    if (shape !== null) aliases.set(name, shape);
+  }
+  return aliases;
+}
+var PLAIN_ASSIGN = new RegExp(String.raw`\bthis\s*(?:\.\s*([$\w]+)|\[\s*["']([^"']+)["']\s*\])\s*=(?![=>])`, "gd");
+function collectAssignments(script, rootStart, props) {
+  const scan = maskCommentsAndStrings(script);
+  const bodies = props.filter((p) => (p.kind === "getter" || p.kind === "method") && p.value !== void 0 && p.valueStart !== void 0).map((p) => ({ start: rootStart + p.valueStart, body: p.value }));
+  const out = [];
+  PLAIN_ASSIGN.lastIndex = 0;
+  let match;
+  while ((match = PLAIN_ASSIGN.exec(scan)) !== null) {
+    if (/\.\s*$/.test(scan.slice(Math.max(0, match.index - 8), match.index))) continue;
+    const span = match.indices[1] ?? match.indices[2];
+    const target = script.slice(span[0], span[1]);
+    if (target.startsWith("$") || target.includes("*")) continue;
+    const expr = readExpression(script, scan, match.index + match[0].length);
+    const owner = bodies.find((b) => b.start <= match.index && match.index < b.start + b.body.length);
+    out.push({ target, expr, body: owner?.body ?? null });
+  }
+  return out;
+}
+function applyAssignedShape(target, shape, paths) {
+  const declared = paths.find((p) => p.path === target);
+  if (declared === void 0 || declared.kind !== "data") return;
+  if (hasPath(paths, `${target}.*`)) {
+    if (shape.isList) applyResultShape(target, shape, paths);
+    return;
+  }
+  if (!shape.isList && declared.rawInitial !== void 0 && isObjectLiteral(declared.rawInitial)) {
+    applyResultShape(target, shape, paths);
+  }
+}
+function readExpression(text3, scan, start) {
+  let depth = 0;
+  let i = start;
+  for (; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") {
+      if (depth === 0) break;
+      depth--;
+    } else if (depth === 0 && (ch === ";" || ch === ",")) break;
+    else if (depth === 0 && ch === "\n") {
+      const before = scan.slice(start, i).trimEnd();
+      const after = scan.slice(i + 1).trimStart();
+      if (before === "") continue;
+      if (!/[.?:|&+\-*/=(,]$/.test(before) && !/^[.?:|&]/.test(after)) break;
+    }
+  }
+  return text3.slice(start, i).trim();
+}
+function expressionShape(text3, paths, aliases) {
+  const expr = stripWrappingParens(text3.trim());
+  if (expr === "") return null;
+  const scan = maskCommentsAndStrings(expr);
+  const ternary = splitTernary(scan);
+  if (ternary !== null) {
+    const branches = [expr.slice(ternary[0] + 1, ternary[1]), expr.slice(ternary[1] + 1)].map((part) => expressionShape(part, paths, aliases)).filter((s) => s !== null);
+    return branches.length === 0 ? null : mergeShapes(branches);
+  }
+  const operands = splitTopLevel(scan, /\|\||\?\?/g);
+  if (operands.length > 1) {
+    const sides = operands.map(([s, e]) => expressionShape(expr.slice(s, e), paths, aliases)).filter((s) => s !== null);
+    return sides.length === 0 ? null : mergeShapes(sides);
+  }
+  if (scan.startsWith("{")) {
+    if (extractDelimitedContent(expr, scan, 0, "{", "}").length !== expr.length - 2) return null;
+    return { isList: false, mirrors: [], fields: literalFields(expr, "", aliases) };
+  }
+  let shape;
+  let rest;
+  if (scan.startsWith("[")) {
+    const inner = extractDelimitedContent(expr, scan, 0, "[", "]");
+    rest = inner.length + 2;
+    if (inner.trim() === "") {
+      shape = EMPTY_LIST;
+    } else {
+      const spread = /^\s*\.\.\.([\s\S]+)$/.exec(inner);
+      if (spread === null || splitTopLevelElements(inner).length !== 1) return null;
+      const source = expressionShape(spread[1], paths, aliases);
+      if (source === null || !source.isList) return null;
+      shape = source;
+    }
+  } else if (scan.startsWith("(")) {
+    const inner = extractDelimitedContent(expr, scan, 0, "(", ")");
+    shape = expressionShape(inner, paths, aliases) ?? OPAQUE;
+    rest = inner.length + 2;
+  } else {
+    const base = readBase(expr, scan, aliases, paths);
+    if (base === null) return null;
+    ({ shape, rest } = base);
+  }
+  return applyChain(expr, scan, rest, shape, paths, aliases);
+}
+function readBase(expr, scan, aliases, paths) {
+  const alias = /^([$\w]+)/.exec(scan);
+  if (alias === null) return null;
+  if (alias[1] !== "this") {
+    let rest = alias[1].length;
+    let member = false;
+    for (; ; ) {
+      const dot = /^\s*\??\.\s*([$\w]+)/.exec(scan.slice(rest));
+      if (dot === null || /^\s*\(/.test(scan.slice(rest + dot[0].length))) break;
+      rest += dot[0].length;
+      member = true;
+    }
+    const shape = member ? void 0 : aliases.get(alias[1]);
+    return { shape: shape ?? OPAQUE, rest };
+  }
+  const segments = [];
+  let i = 4;
+  for (; ; ) {
+    const dot = /^\s*\??\.\s*([$\w]+)/.exec(scan.slice(i));
+    if (dot !== null) {
+      if (/^\s*\(/.test(scan.slice(i + dot[0].length))) break;
+      segments.push(dot[1]);
+      i += dot[0].length;
+      continue;
+    }
+    const bracket = /^\s*\[\s*(["'])/.exec(scan.slice(i));
+    if (bracket !== null) {
+      const open = i + bracket[0].length - 1;
+      const close = scan.indexOf("]", open);
+      const literal2 = /^(["'])([^"']*)\1\s*$/.exec(expr.slice(open, close));
+      if (close === -1 || literal2 === null) return null;
+      segments.push(literal2[2]);
+      i = close + 1;
+      continue;
+    }
+    break;
+  }
+  const path = segments.join(".");
+  if (path === "" && /^\s*\??\.\s*\$[$\w]*\s*\(/.test(scan.slice(4))) return { shape: OPAQUE, rest: 4 };
+  if (path === "" || path.startsWith("$")) return null;
+  return {
+    shape: { isList: hasPath(paths, `${path}.*`), mirrors: [{ from: path, to: "" }], fields: [] },
+    rest: i
+  };
+}
+function applyChain(expr, scan, start, initial, paths, aliases) {
+  let shape = initial;
+  let i = start;
+  while (scan.slice(i).trim() !== "") {
+    if (shape.opaque && /^\s*\(/.test(scan.slice(i))) {
+      const open2 = scan.indexOf("(", i);
+      i = open2 + extractDelimitedContent(expr, scan, open2, "(", ")").length + 2;
+      continue;
+    }
+    const call = /^\s*\??\.\s*([$\w]+)\s*\(/.exec(scan.slice(i));
+    if (call === null) return null;
+    const open = i + call[0].length - 1;
+    const args = extractDelimitedContent(expr, scan, open, "(", ")");
+    i = open + args.length + 2;
+    const method = call[1];
+    if (shape.opaque) {
+      if (method === "map") {
+        const mapped = mapRows(args, shape, paths, aliases);
+        if (mapped === null) return null;
+        shape = mapped;
+      }
+      continue;
+    }
+    if (ROW_PRESERVING_METHODS.has(method)) {
+      if (!shape.isList) return null;
+    } else if (ROW_PICKING_METHODS.has(method)) {
+      if (!shape.isList) return null;
+      shape = pickRow(shape);
+    } else if (method === "map") {
+      const mapped = mapRows(args, shape.isList ? shape : OPAQUE, paths, aliases);
+      if (mapped === null) return null;
+      shape = mapped;
+    } else {
+      return null;
+    }
+  }
+  return shape.opaque ? null : shape;
+}
+var OPAQUE = { isList: true, mirrors: [], fields: [], opaque: true };
+var EMPTY_LIST = { isList: true, mirrors: [], fields: [] };
+function pickRow(shape) {
+  return {
+    isList: false,
+    mirrors: shape.mirrors.map((m) => m.to === "" ? { from: `${m.from}.*`, to: "" } : { from: m.from, to: "" }),
+    fields: shape.fields.filter((f) => f.to === ".*").map((f) => ({ ...f, to: "" }))
+  };
+}
+function mapRows(args, shape, paths, outer) {
+  const [callback] = splitTopLevelElements(args);
+  if (callback === void 0) return null;
+  const head = /^(?:async\s+)?(?:function\b[^(]*\(\s*([$\w]+)?[^)]*\)|\(\s*([$\w]+)?[^)]*\)|([$\w]+))\s*(=>)?\s*/.exec(callback);
+  if (head === null) return null;
+  const param = head[1] ?? head[2] ?? head[3];
+  const body = callback.slice(head[0].length);
+  const literals = [];
+  let aliases = outer;
+  const bodyScan = maskCommentsAndStrings(body);
+  if (bodyScan.startsWith("(")) {
+    const inner = stripWrappingParens(body).trim();
+    if (inner.startsWith("{")) literals.push(inner);
+  } else if (bodyScan.startsWith("{")) {
+    const block = extractDelimitedContent(body, bodyScan, 0, "{", "}");
+    const blockScan = maskCommentsAndStrings(block);
+    aliases = new Map([...outer, ...collectAliases(block, paths)]);
+    for (const end of ownReturnEnds(blockScan)) {
+      const ret = /^\s*\{/.exec(blockScan.slice(end));
+      if (ret === null) continue;
+      const open = end + ret[0].length - 1;
+      literals.push(`{${extractDelimitedContent(block, blockScan, open, "{", "}")}}`);
+    }
+  }
+  if (literals.length === 0) return null;
+  const spreadsRow = literals.some((literal2) => splitTopLevelElements(extractObjectContent(literal2)).some((e) => e === `...${param}`));
+  return {
+    isList: true,
+    mirrors: spreadsRow ? shape.mirrors.map((m) => m.to === "" ? { from: `${m.from}.*`, to: ".*" } : m) : [],
+    fields: [
+      ...spreadsRow ? shape.fields.filter((f) => f.to === ".*") : [],
+      ...literals.flatMap((literal2) => literalFields(literal2, ".*", aliases))
+    ]
+  };
+}
+function applyResultShape(getter, shape, paths) {
+  if (shape.isList) {
+    if (!hasPath(paths, `${getter}.*`)) paths.push({ path: `${getter}.*`, kind: "list" });
+    if (!hasPath(paths, `${getter}.length`)) paths.push({ path: `${getter}.length`, kind: "data", typeHint: "number" });
+  }
+  for (const { from, to } of shape.mirrors) {
+    if (from === getter || from.startsWith(`${getter}.`)) continue;
+    const sources = paths.filter((p) => p.path.startsWith(`${from}.`) && (p.kind === "data" || p.kind === "list"));
+    for (const source of sources) {
+      const target = `${getter}${to}${source.path.slice(from.length)}`;
+      if (!hasPath(paths, target)) paths.push(withHint({ path: target, kind: source.kind }, source.typeHint));
+    }
+  }
+  for (const { to, field, shape: fieldShape } of shape.fields) {
+    pushRowFieldPaths(`${getter}${to}.${field.name}`, field, paths, 1);
+    if (fieldShape !== void 0) applyResultShape(`${getter}${to}.${field.name}`, fieldShape, paths);
+  }
+}
+function mergeShapes(shapes) {
+  return {
+    isList: shapes.some((s) => s.isList),
+    mirrors: shapes.flatMap((s) => s.mirrors),
+    fields: shapes.flatMap((s) => s.fields)
+  };
+}
+function stripWrappingParens(text3) {
+  let expr = text3.trim();
+  for (; ; ) {
+    if (!expr.startsWith("(")) return expr;
+    const scan = maskCommentsAndStrings(expr);
+    const inner = extractDelimitedContent(expr, scan, 0, "(", ")");
+    if (inner.length !== expr.length - 2) return expr;
+    expr = inner.trim();
+  }
+}
+function splitTernary(scan) {
+  let depth = 0;
+  let question = -1;
+  let nested = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (depth !== 0) continue;
+    else if (ch === "?") {
+      if (scan[i + 1] === "." || scan[i + 1] === "?" || scan[i - 1] === "?") continue;
+      if (question === -1) question = i;
+      else nested++;
+    } else if (ch === ":" && question !== -1) {
+      if (nested > 0) nested--;
+      else return [question, i];
+    }
+  }
+  return null;
+}
+function splitTopLevel(scan, separator) {
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (depth === 0) {
+      separator.lastIndex = i;
+      const m = separator.exec(scan);
+      if (m !== null && m.index === i) {
+        out.push([start, i]);
+        start = i + m[0].length;
+        i = start - 1;
+      }
+    }
+  }
+  out.push([start, scan.length]);
+  return out;
+}
+function hasPath(paths, path) {
+  return paths.some((p) => p.path === path);
+}
+function splitTopLevelElements(text3) {
+  const scan = maskCommentsAndStrings(text3);
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      depth--;
+    } else if (ch === "," && depth === 0) {
+      out.push(text3.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(text3.slice(start));
+  return out.map((e) => e.trim()).filter((e) => e.length > 0);
+}
+function findStreamInitialProperty(entryValue) {
+  const defProps = parseTopLevelProperties(extractObjectContent(entryValue));
+  return defProps.find((p) => p.kind === "data" && p.name === "initial");
+}
+function isFlatScanOutputName(name) {
+  return name.length > 0 && !name.startsWith("$") && !name.includes(".") && !name.includes("*");
+}
+function extractStringArrayItems(value) {
+  if (!isArrayLiteral(value)) return [];
+  const items = [];
+  const regex = /["']([^"'\\]+)["']/g;
+  let match;
+  while ((match = regex.exec(value)) !== null) {
+    items.push(match[1]);
+  }
+  return items;
+}
+var MAX_OBJECT_NEST_DEPTH = 5;
+function effectiveTopLevelDescriptors(props) {
+  const effective = /* @__PURE__ */ new Map();
+  for (const prop of props) {
+    if (prop.kind !== "getter") {
+      effective.set(prop.name, "data");
+      continue;
+    }
+    const current2 = effective.get(prop.name);
+    const pair = current2 === void 0 || current2 === "data" ? { get: false, set: false } : current2;
+    effective.set(prop.name, prop.accessor === "set" ? { ...pair, set: true } : { ...pair, get: true });
+  }
+  return effective;
+}
+function pushDataPropertyPaths(prop, paths, typedefs, scope) {
+  pushDataPropertyPathsAt(prop.name, prop, paths, 0, typedefs, scope);
+}
+function pushDataPropertyPathsAt(path, prop, paths, depth, typedefs, scope) {
+  const followed = scope === void 0 ? null : followValue(prop, scope);
+  if (followed === null) {
+    paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
+    pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope);
+  } else {
+    const value = followed.value;
+    const shapeHint = value === null ? void 0 : inferTypeHint(value.text);
+    const typeHint = prop.typeHint ?? (shapeHint === "array" || shapeHint === "object" ? shapeHint : void 0);
+    const opaque = (value === null || !isReadableLiteral(value.text)) && prop.declaredType === void 0 ? { opaque: { ...followed.name !== void 0 ? { name: followed.name } : {}, ...followed.from !== void 0 ? { from: followed.from } : {} } } : {};
+    paths.push(withHint({ path, kind: "data", rawInitial: prop.value?.trim(), ...opaque }, typeHint));
+    if (value !== null) pushLiteralStructurePaths(path, { ...prop, value: value.text }, paths, depth, typedefs, value.scope);
+  }
+  if (prop.declaredType !== void 0) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+}
+var WORD_LITERALS = /* @__PURE__ */ new Set(["true", "false", "null", "undefined", "NaN", "Infinity", "this"]);
+function isBindingName(text3) {
+  return /^[$A-Za-z_][$\w]*$/.test(text3) && !WORD_LITERALS.has(text3);
+}
+function unwrapFreeze(text3) {
+  let expr = text3.trim();
+  for (; ; ) {
+    const head = /^Object\s*\.\s*freeze\s*\(/.exec(expr);
+    if (head === null) return expr;
+    const scan = maskCommentsAndStrings(expr);
+    const open = head[0].length - 1;
+    const inner = extractDelimitedContent(expr, scan, open, "(", ")");
+    if (open + inner.length + 2 !== expr.length) return expr;
+    expr = inner.trim();
+  }
+}
+function isReadableLiteral(text3) {
+  const v = text3.trim();
+  return /^[[{"'`]/.test(v) || /^-?\.?\d/.test(v) || WORD_LITERALS.has(v) || /^(?:async\s+)?function\b/.test(v) || /^(?:async\s*)?(?:\([^()]*\)|[$\w]+)\s*=>/.test(v);
+}
+function followValue(prop, scope) {
+  const type = parseTypeImport(prop.jsdocText);
+  let current2;
+  let name;
+  let from;
+  if (type !== null) {
+    const resolved = scope.resolveTypeImport(type);
+    if (resolved === null) return { value: null, name: `typeof import("${type.specifier}").${type.name}`, from: type.specifier };
+    current2 = resolved;
+  } else {
+    if (prop.value === void 0) return null;
+    const written = prop.value.trim();
+    const text3 = unwrapFreeze(written);
+    if (!isBindingName(text3)) return text3 === written ? null : { value: { text: text3, scope } };
+    name = text3;
+    from = scope.importOf(text3);
+    const resolved = scope.resolveName(text3);
+    if (resolved === null) return { value: null, name, from };
+    current2 = resolved;
+  }
+  for (let hops = 0; hops < 8; hops++) {
+    const inner = unwrapFreeze(current2.text);
+    if (!isBindingName(inner)) return { value: inner === current2.text ? current2 : { text: inner, scope: current2.scope }, name, from };
+    const next = current2.scope.resolveName(inner);
+    if (next === null) return { value: null, name, from };
+    current2 = next;
+  }
+  return { value: null, name, from };
+}
+function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
+  const shape = jsDocShape(type, typedefs);
+  if (shape.element !== null) {
+    if (!hasPath(paths, `${path}.*`)) paths.push({ path: `${path}.*`, kind: "list" });
+    if (!hasPath(paths, `${path}.length`)) paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    if (depth < MAX_OBJECT_NEST_DEPTH) pushDeclaredShapePaths(`${path}.*`, shape.element, paths, depth + 1, typedefs);
+  }
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+  for (const field of shape.fields) {
+    const fieldPath = `${path}.${field.name}`;
+    if (!hasPath(paths, fieldPath)) {
+      paths.push(withHint({ path: fieldPath, kind: "data" }, jsDocTypeHint(field.type, typedefs)));
+    }
+    pushDeclaredShapePaths(fieldPath, field.type, paths, depth + 1, typedefs);
+  }
+}
+function pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope) {
+  if (prop.value && isArrayLiteral(prop.value)) {
+    paths.push({ path: `${path}.*`, kind: "list" });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    for (const childProp of extractArrayElementDataProperties(prop.value)) {
+      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1, typedefs, scope);
+    }
+    return;
+  }
+  if (prop.value && isObjectLiteral(prop.value)) {
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    const content = extractObjectContent(prop.value);
+    const childProps = withShorthands(content, parseTopLevelProperties(content));
+    for (const childProp of childProps) {
+      if (childProp.kind !== "data") continue;
+      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1, typedefs, scope);
+    }
+  }
+}
+function analyzeJsonPaths(jsonString) {
+  let data2;
+  try {
+    data2 = JSON.parse(jsonString);
+  } catch {
+    return [];
+  }
+  if (typeof data2 !== "object" || data2 === null || Array.isArray(data2)) return [];
+  const paths = [];
+  collectJsonPaths(data2, "", paths, 0);
+  return paths;
+}
+function collectJsonPaths(obj, prefix, paths, depth) {
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+  for (const [key, value] of Object.entries(obj)) {
+    if (prefix === "" && key.startsWith("$")) continue;
+    const path = prefix ? `${prefix}.${key}` : key;
+    pushJsonValuePaths(path, value, paths, depth);
+  }
+}
+function pushJsonValuePaths(path, value, paths, depth) {
+  paths.push({ path, kind: "data", typeHint: inferJsonTypeHint(value) });
+  if (Array.isArray(value)) {
+    paths.push({ path: `${path}.*`, kind: "list" });
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    if (value.length > 0 && typeof value[0] === "object" && value[0] !== null && !Array.isArray(value[0])) {
+      const firstElement = value[0];
+      for (const [childKey, childValue] of Object.entries(firstElement)) {
+        pushJsonValuePaths(`${path}.*.${childKey}`, childValue, paths, depth + 1);
+      }
+    }
+  } else if (typeof value === "object" && value !== null) {
+    collectJsonPaths(value, path, paths, depth + 1);
+  }
+}
+function inferJsonTypeHint(value) {
+  if (value === null) return "null";
+  if (typeof value === "string") return "string";
+  if (typeof value === "number") return "number";
+  if (typeof value === "boolean") return "boolean";
+  if (Array.isArray(value)) return "array";
+  if (typeof value === "object") return "object";
+  return void 0;
+}
+function locateDefaultExportObject(script) {
+  const scan = maskCommentsAndStrings(script);
+  const match = scan.match(/export\s+default\s+(?:defineState\s*\(\s*)?(\{)/);
+  if (!match) return null;
+  const braceIndex = scan.indexOf(match[1], match.index);
+  return { content: extractBracedContent(script, scan, braceIndex), start: braceIndex + 1 };
+}
+function withShorthands(objectContent, props) {
+  const scan = maskCommentsAndStrings(objectContent);
+  const found = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      depth--;
+    } else if (ch === "," && depth === 0 || i === scan.length) {
+      const segment = scan.slice(start, i).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => " ".repeat(c.length));
+      const m = /^(\s*)([$A-Za-z_][$\w]*)\s*$/.exec(segment);
+      if (m !== null && !WORD_LITERALS.has(m[2])) {
+        const nameStart = start + m[1].length;
+        const jsdocText = readJsDocTypeBefore(objectContent, nameStart);
+        const declaredType = jsdocText === void 0 ? null : parseJsDocType(jsdocText);
+        const typeHint = declaredType !== null ? jsDocTypeHint(declaredType) : jsdocText === void 0 ? void 0 : normalizeJsDocType(jsdocText);
+        found.push({
+          name: m[2],
+          kind: "data",
+          value: m[2],
+          shorthand: true,
+          ...typeHint !== void 0 ? { typeHint } : {},
+          ...declaredType !== null ? { declaredType } : {},
+          ...jsdocText !== void 0 ? { jsdocText } : {},
+          nameStart,
+          nameEnd: nameStart + m[2].length,
+          valueStart: nameStart
+        });
+      }
+      start = i + 1;
+    }
+  }
+  if (found.length === 0) return props;
+  return [...props, ...found].sort((a, b) => (a.nameStart ?? 0) - (b.nameStart ?? 0));
+}
+function parseTopLevelProperties(objectContent, allowEmptyDataKeys = false) {
+  const props = [];
+  const scan = maskCommentsAndStrings(objectContent);
+  const params = String.raw`\((?:[^()]|\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\))*\)`;
+  const dataKey = allowEmptyDataKeys ? String.raw`(?:"([^"]*)"|'([^']*)'|([$\w]+))` : String.raw`(?:"([^"]+)"|'([^']+)'|([$\w]+))`;
+  const regex = new RegExp(
+    String.raw`(?:(?:get|set)\s+(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:(?:async\s+)?(?:"([^"]+)"|'([^']+)'|([$\w]+))\s*${params}\s*\{)|(?:${dataKey}\s*:\s*)`,
+    "gd"
+  );
+  let match;
+  while ((match = regex.exec(scan)) !== null) {
+    const indices = match.indices;
+    let nameSpan;
+    const nameAt = (group) => {
+      const span = indices[group];
+      if (!span) return void 0;
+      nameSpan = [span[0], span[1]];
+      return objectContent.slice(span[0], span[1]);
+    };
+    const skipBody = () => {
+      const braceStart = match.index + match[0].length - 1;
+      const body = extractBracedContent(objectContent, scan, braceStart);
+      regex.lastIndex = braceStart + body.length + 2;
+      return { body, bodyStart: braceStart + 1 };
+    };
+    const accessorName = nameAt(1) ?? nameAt(2) ?? nameAt(3);
+    if (accessorName) {
+      const { body, bodyStart } = skipBody();
+      const accessor = match[0].startsWith("set") ? "set" : "get";
+      const returnsText = accessor === "get" ? readJsDocReturnsBefore(objectContent, match.index) : void 0;
+      const declaredType = returnsText === void 0 ? null : parseJsDocType(returnsText);
+      props.push({
+        name: accessorName,
+        kind: "getter",
+        accessor,
+        value: body,
+        valueStart: bodyStart,
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1],
+        ...declaredType !== null ? { declaredType } : {}
+      });
+      continue;
+    }
+    const methodName = nameAt(4) ?? nameAt(5) ?? nameAt(6);
+    if (methodName) {
+      const { body, bodyStart } = skipBody();
+      props.push({
+        name: methodName,
+        kind: "method",
+        value: body,
+        valueStart: bodyStart,
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1]
+      });
+      continue;
+    }
+    const propName = nameAt(7) ?? nameAt(8) ?? nameAt(9);
+    if (propName !== void 0) {
+      const valueStartIndex = match.index + match[0].length;
+      const value = extractFullValue(objectContent, scan, valueStartIndex);
+      const jsdocText = readJsDocTypeBefore(objectContent, match.index);
+      const declaredType = jsdocText === void 0 ? null : parseJsDocType(jsdocText);
+      const jsdocType = declaredType !== null ? jsDocTypeHint(declaredType) : jsdocText === void 0 ? void 0 : normalizeJsDocType(jsdocText);
+      const typeHint = jsdocType ?? inferTypeHint(value);
+      props.push({
+        name: propName,
+        kind: "data",
+        value,
+        typeHint,
+        ...declaredType !== null ? { declaredType } : {},
+        ...jsdocText !== void 0 ? { jsdocText } : {},
+        nameStart: nameSpan[0],
+        nameEnd: nameSpan[1],
+        valueStart: valueStartIndex
+      });
+      regex.lastIndex = valueStartIndex + value.length;
+    }
+  }
+  return props;
+}
+function maskCommentsAndStrings(source) {
+  const out = source.split("");
+  const len = source.length;
+  const blank = (i2) => {
+    if (source[i2] !== "\n" && source[i2] !== "\r") out[i2] = " ";
+  };
+  let i = 0;
+  while (i < len) {
+    const ch = source[i];
+    if (ch === "/" && source[i + 1] === "/") {
+      i += 2;
+      while (i < len && source[i] !== "\n") blank(i++);
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      i += 2;
+      while (i < len && !(source[i] === "*" && source[i + 1] === "/")) blank(i++);
+      i += 2;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      i++;
+      while (i < len && source[i] !== ch) {
+        if (source[i] === "\\") blank(i++);
+        if (i < len) blank(i++);
+      }
+      i++;
+      continue;
+    }
+    i++;
+  }
+  return out.join("");
+}
+function extractFullValue(content, scan, startIndex) {
+  let depth = 0;
+  let i = startIndex;
+  const len = scan.length;
+  let inString = null;
+  while (i < len) {
+    const ch = scan[i];
+    if (inString) {
+      if (ch === inString && !isEscaped(scan, i)) {
+        inString = null;
+      }
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      inString = ch;
+    } else if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      if (depth === 0) break;
+      depth--;
+    } else if (ch === "," && depth === 0) {
+      break;
+    }
+    i++;
+  }
+  return content.slice(startIndex, i).trim();
+}
+function extractBracedContent(text3, scan, openBraceIndex) {
+  return extractDelimitedContent(text3, scan, openBraceIndex, "{", "}");
+}
+function extractDelimitedContent(text3, scan, openIndex, open, close) {
+  let depth = 0;
+  let inString = null;
+  for (let i = openIndex; i < scan.length; i++) {
+    const ch = scan[i];
+    if (inString) {
+      if (ch === inString && !isEscaped(scan, i)) {
+        inString = null;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      inString = ch;
+    } else if (ch === open) {
+      depth++;
+    } else if (ch === close) {
+      depth--;
+      if (depth === 0) {
+        return text3.slice(openIndex + 1, i);
+      }
+    }
+  }
+  return text3.slice(openIndex + 1);
+}
+function isArrayLiteral(value) {
+  return value.trimStart().startsWith("[");
+}
+function isObjectLiteral(value) {
+  return value.trimStart().startsWith("{");
+}
+function extractObjectContent(value) {
+  const trimmed = value.trim();
+  const scan = maskCommentsAndStrings(trimmed);
+  const start = scan.indexOf("{");
+  if (start === -1) return "";
+  return extractBracedContent(trimmed, scan, start);
+}
+function extractArrayElementDataProperties(value) {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[")) return [];
+  const scan = maskCommentsAndStrings(trimmed);
+  let first = 1;
+  while (first < scan.length && /\s/.test(scan[first])) first++;
+  if (scan[first] !== "{") return [];
+  const objectContent = extractBracedContent(trimmed, scan, first);
+  return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === "data");
+}
+function normalizeJsDocType(typeExpr) {
+  const parts = typeExpr.split("|").map((p) => p.trim());
+  const normalized = parts.map((p) => {
+    const lower2 = p.toLowerCase();
+    if (lower2 === "string") return "string";
+    if (lower2 === "number") return "number";
+    if (lower2 === "boolean") return "boolean";
+    if (lower2 === "null") return "null";
+    if (lower2 === "undefined") return "null";
+    if (lower2.endsWith("[]") || lower2.startsWith("array")) return "array";
+    if (lower2 === "object") return "object";
+    return null;
+  }).filter((p) => p !== null);
+  if (normalized.length === 0) return void 0;
+  const unique = [...new Set(normalized)].sort();
+  return unique.join("|");
+}
+function isEscaped(text3, i) {
+  let backslashCount = 0;
+  let j = i - 1;
+  while (j >= 0 && text3[j] === "\\") {
+    backslashCount++;
+    j--;
+  }
+  return backslashCount % 2 === 1;
+}
+function inferTypeHint(valueStart) {
+  const v = valueStart.trim().replace(/,\s*$/, "");
+  if (/^-?\d+\.\d/.test(v)) return "number";
+  if (/^-?\d/.test(v)) return "number";
+  if (/^["'`]/.test(v)) return "string";
+  if (v === "true" || v === "false") return "boolean";
+  if (v === "null") return "null";
+  if (v.startsWith("[")) return "array";
+  if (v.startsWith("{")) return "object";
+  return void 0;
+}
+function analyzeSchemaPaths(schema) {
+  const paths = [];
+  const defs = schema.$defs ?? {};
+  collectSchemaObjectPaths(schema, "", paths, defs, 0);
+  return paths;
+}
+function mergeSchemaCandidates(candidates, applicationSchema) {
+  if (applicationSchema === void 0) return candidates;
+  const schemaCandidates = [];
+  const schemaKeys = /* @__PURE__ */ new Set();
+  for (const p of analyzeSchemaPaths(applicationSchema)) {
+    schemaCandidates.push(p);
+    schemaKeys.add(p.path);
+  }
+  const kept = candidates.filter((p) => !schemaKeys.has(p.path));
+  return [...kept, ...schemaCandidates];
+}
+function derefSchemaNodes(node, defs) {
+  const out = [];
+  const stack = [{ node, chain: /* @__PURE__ */ new Set() }];
+  while (stack.length > 0) {
+    const { node: n, chain } = stack.pop();
+    if (n === null || typeof n !== "object") continue;
+    if (typeof n.$ref === "string") {
+      const match = /^#\/\$defs\/(.+)$/.exec(n.$ref);
+      if (match === null || chain.has(n.$ref)) continue;
+      const target = defs[match[1].replace(/~1/g, "/").replace(/~0/g, "~")];
+      if (target === void 0) continue;
+      stack.push({ node: target, chain: /* @__PURE__ */ new Set([...chain, n.$ref]) });
+      continue;
+    }
+    if (Array.isArray(n.anyOf)) {
+      for (let i = n.anyOf.length - 1; i >= 0; i--) stack.push({ node: n.anyOf[i], chain });
+      continue;
+    }
+    out.push(n);
+  }
+  return out;
+}
+function schemaTypeHint(nodes2) {
+  const hints = /* @__PURE__ */ new Set();
+  for (const n of nodes2) {
+    const types2 = typeof n.type === "string" ? [n.type] : Array.isArray(n.type) ? n.type : [];
+    if (types2.length > 0) {
+      for (const t of types2) {
+        if (t === "null") continue;
+        hints.add(t === "integer" ? "number" : t);
+      }
+      continue;
+    }
+    if (Array.isArray(n.enum)) {
+      for (const v of n.enum) {
+        const h = inferJsonTypeHint(v);
+        if (h !== void 0 && h !== "null") hints.add(h);
+      }
+    } else if (n.const !== void 0) {
+      const h = inferJsonTypeHint(n.const);
+      if (h !== void 0 && h !== "null") hints.add(h);
+    } else if (n.properties !== void 0) {
+      hints.add("object");
+    } else if (n.items !== void 0) {
+      hints.add("array");
+    }
+  }
+  return hints.size === 0 ? void 0 : [...hints].join("|");
+}
+function collectSchemaObjectPaths(node, prefix, paths, defs, depth) {
+  if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+  const seen2 = /* @__PURE__ */ new Set();
+  for (const n of derefSchemaNodes(node, defs)) {
+    for (const [key, child] of Object.entries(n.properties ?? {})) {
+      if (prefix === "" && key.startsWith("$")) continue;
+      if (seen2.has(key)) continue;
+      seen2.add(key);
+      const path = prefix ? `${prefix}.${key}` : key;
+      pushSchemaValuePaths(path, child, paths, defs, depth);
+    }
+  }
+}
+function pushSchemaValuePaths(path, node, paths, defs, depth) {
+  const nodes2 = derefSchemaNodes(node, defs);
+  const typeHint = schemaTypeHint(nodes2);
+  paths.push(withHint({ path, kind: "data", fromSchema: true }, typeHint));
+  const items = nodes2.map((n) => n.items).find((i) => i !== void 0 && i !== null && typeof i === "object");
+  const isArray2 = items !== void 0 || (typeHint?.split("|").includes("array") ?? false);
+  if (isArray2) {
+    const itemNodes = items !== void 0 ? derefSchemaNodes(items, defs) : [];
+    paths.push(withHint({ path: `${path}.*`, kind: "list", fromSchema: true }, schemaTypeHint(itemNodes)));
+    paths.push({ path: `${path}.length`, kind: "data", typeHint: "number", fromSchema: true });
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
+    const seen2 = /* @__PURE__ */ new Set();
+    for (const n of itemNodes) {
+      for (const [childKey, childNode] of Object.entries(n.properties ?? {})) {
+        if (seen2.has(childKey)) continue;
+        seen2.add(childKey);
+        pushSchemaValuePaths(`${path}.*.${childKey}`, childNode, paths, defs, depth + 1);
+      }
+    }
+    return;
+  }
+  if (nodes2.some((n) => n.properties !== void 0)) {
+    collectSchemaObjectPaths(node, path, paths, defs, depth + 1);
+  }
+}
+function withHint(candidate, typeHint) {
+  return typeHint === void 0 ? candidate : { ...candidate, typeHint };
+}
+
+// src/service/indexPath.ts
+var INDEX_SEGMENT = /^\d/;
+function isIndexSegment(segment) {
+  return INDEX_SEGMENT.test(segment);
+}
+function hasIndexSegment(path) {
+  return path.split(".").some((segment) => INDEX_SEGMENT.test(segment));
+}
+function toWildcardForm(path) {
+  if (!hasIndexSegment(path)) return path;
+  return path.split(".").map((segment) => INDEX_SEGMENT.test(segment) ? "*" : segment).join(".");
+}
+function candidateKeyOf(path, has) {
+  return has(path) ? path : toWildcardForm(path);
+}
+var UNSAFE_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype"]);
+function hasUnsafeSegment(path) {
+  return path.split(".").some((segment) => UNSAFE_SEGMENTS.has(segment));
+}
+var { maxDepth } = getWcsManifest().syntax.indexParam;
+var MAX_INDEX_PARAM3 = maxDepth;
+var INDEX_PARAM = new RegExp(`^\\$[1-9]\\d{0,${String(maxDepth).length - 1}}$`);
+function classifyIndexParam(path) {
+  if (!/^\$\d+$/.test(path)) return null;
+  if (!INDEX_PARAM.test(path)) return { kind: "notIndex" };
+  const n = Number(path.slice(1));
+  return n <= MAX_INDEX_PARAM3 ? { kind: "index", n } : { kind: "range", n };
+}
+function isOutOfRangeIndexRead(name) {
+  if (name.length < 2 || name.charCodeAt(0) !== 36) return false;
+  const c = name.charCodeAt(1);
+  if (c < 48 || c > 57) return false;
+  return !INDEX_PARAM.test(name) || Number(name.slice(1)) > MAX_INDEX_PARAM3;
+}
+
+// src/service/statePathResolver.ts
+function isUnresolvedPath(path, scopes) {
+  if (scopes.opaquePaths.length > 0) {
+    const wildcard = hasIndexSegment(path) ? toWildcardForm(path) : path;
+    if (scopes.opaquePaths.some((o) => path.startsWith(`${o}.`) || wildcard.startsWith(`${o}.`))) return true;
+  }
+  let owner = null;
+  for (const mount of scopes.mounts) {
+    if ((path === mount || path.startsWith(`${mount}.`)) && (owner === null || mount.length > owner.length)) owner = mount;
+  }
+  if (owner !== null) return scopes.unresolvedMounts.has(owner);
+  if (scopes.rootUnresolved) return true;
+  for (const mount of scopes.unresolvedMounts) {
+    if (mount.startsWith(`${path}.`)) return true;
+  }
+  return false;
+}
+function getStatePathsFromHtml(html, stateTagName = "wcs-state", fileReader) {
+  return getStatePathIndex(html, stateTagName, fileReader).paths;
+}
+function getStatePathIndex(html, stateTagName = "wcs-state", fileReader) {
+  return resolveStatePathIndex(parseWcsStateElements(html, stateTagName), html, fileReader, true);
+}
+function resolveStatePathIndex(elements, html, fileReader, includeRoots) {
+  const paths = [];
+  const volumePaths = [];
+  const mounts = [];
+  const unresolvedMounts = /* @__PURE__ */ new Set();
+  const roots = [];
+  const mountPoints = /* @__PURE__ */ new Set();
+  for (const element2 of elements) {
+    if (element2.mountPath === null) {
+      if (!includeRoots) continue;
+      const resolved2 = resolveElementPathsRaw(element2, html, fileReader);
+      if (!element2.bindComponent) roots.push({ element: element2, readable: resolved2.readable });
+      paths.push(...resolved2.paths);
+      continue;
+    }
+    const resolved = resolveElementPathsRaw(element2, html, fileReader);
+    const grafted = graftVolumePaths(element2.mountPath, resolved, mountPoints);
+    if (element2.mountPath !== "") {
+      mounts.push(element2.mountPath);
+      if (!resolved.readable) unresolvedMounts.add(element2.mountPath);
+    }
+    paths.push(...grafted);
+    volumePaths.push(...grafted);
+  }
+  return {
+    paths,
+    volumePaths,
+    scopes: { mounts, unresolvedMounts, rootUnresolved: isPageRootUnresolved(roots, html), opaquePaths: opaquePathsOf(paths) },
+    elements
+  };
+}
+function opaquePathsOf(paths) {
+  return paths.filter((p) => p.opaque !== void 0).map((p) => p.path);
+}
+function moduleLocationOf(fileReader, path) {
+  return fileReader === void 0 ? void 0 : { fileReader, path: path ?? "" };
+}
+function isPageRootUnresolved(roots, html) {
+  if (roots.every((root) => root.readable)) return false;
+  const insideTemplate = createTemplateTester(html);
+  const pageRoots = roots.filter((root) => !insideTemplate(root.element.tagStart));
+  return pageRoots.length > 0 && pageRoots.every((root) => !root.readable);
+}
+function graftVolumePaths(mountPath, resolved, mountPoints) {
+  const prefix = mountPath + ".";
+  const out = [];
+  for (const p of resolved.paths) {
+    if (p.path.startsWith("$")) continue;
+    if (p.kind === "eventToken") continue;
+    out.push({ ...p, path: prefix + p.path });
+  }
+  if (resolved.readable) {
+    const segments = mountPath.split(".");
+    for (let i = 1; i <= segments.length; i++) {
+      const path = segments.slice(0, i).join(".");
+      if (mountPoints.has(path)) continue;
+      mountPoints.add(path);
+      out.push({ path, kind: "data", typeHint: "object" });
+    }
+  }
+  return out;
+}
+var UNREADABLE = { paths: [], readable: false };
+function isJsonObject(text3) {
+  try {
+    const data2 = JSON.parse(text3);
+    return typeof data2 === "object" && data2 !== null && !Array.isArray(data2);
+  } catch {
+    return false;
+  }
+}
+function isReadableStateScript(script) {
+  return hasDefaultExportObject(script) && !hasTopLevelSpread(script);
+}
+function fromJson(text3) {
+  const paths = analyzeJsonPaths(text3);
+  return { paths, readable: paths.length > 0 || isJsonObject(text3) };
+}
+function scriptReadable(script, paths) {
+  return !hasTopLevelSpread(script) && (paths.length > 0 || hasDefaultExportObject(script));
+}
+function fromScript(script, location) {
+  const paths = analyzeStatePaths(script, location);
+  return { paths, readable: scriptReadable(script, paths) };
+}
+function resolveElementPathsRaw(element2, html, fileReader) {
+  let readable = false;
+  if (element2.stateAttr) {
+    const jsonContent = findScriptJsonById(html, element2.stateAttr);
+    if (jsonContent) {
+      const resolved = fromJson(jsonContent);
+      if (resolved.paths.length > 0) return resolved;
+      readable ||= resolved.readable;
+    }
+  }
+  if (element2.srcAttr && fileReader) {
+    const resolved = resolveSrcAttribute(element2.srcAttr, fileReader);
+    if (resolved.paths.length > 0) return resolved;
+    readable ||= resolved.readable;
+  }
+  if (element2.jsonAttr) {
+    const resolved = fromJson(element2.jsonAttr);
+    if (resolved.paths.length > 0) return resolved;
+    readable ||= resolved.readable;
+  }
+  if (element2.scriptBlocks.length > 0) {
+    const blocks = element2.scriptBlocks.map((block) => ({
+      script: block.content,
+      paths: analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath))
+    }));
+    return {
+      paths: blocks.flatMap((block) => block.paths),
+      readable: readable || blocks.some((block) => scriptReadable(block.script, block.paths))
+    };
+  }
+  return readable ? { paths: [], readable } : UNREADABLE;
+}
+function readStateScript(srcPath, fileReader) {
+  return readStateScriptFile(srcPath, fileReader)?.text;
+}
+function readStateScriptFile(srcPath, fileReader) {
+  const paths = srcPath.endsWith(".js") ? [srcPath.replace(/\.js$/, ".ts"), srcPath] : srcPath.endsWith(".ts") ? [srcPath] : [];
+  for (const path of paths) {
+    const text3 = fileReader(path);
+    if (text3) return { path, text: text3 };
+  }
+  return void 0;
+}
+function resolveSrcAttribute(srcPath, fileReader) {
+  if (srcPath.endsWith(".json")) {
+    const content = fileReader(srcPath);
+    return content ? fromJson(content) : UNREADABLE;
+  }
+  const file = readStateScriptFile(srcPath, fileReader);
+  return file !== void 0 ? fromScript(file.text, { fileReader, path: file.path }) : UNREADABLE;
+}
+
+// src/service/forContext.ts
+function isInsideForTemplate(html, offset2, bindAttrName = "data-wcs") {
+  const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const openRegex = new RegExp(
+    `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:`,
+    "gi"
+  );
+  const closeRegex = /<\/template\s*>/gi;
+  const opens = [];
+  let match;
+  while ((match = openRegex.exec(html)) !== null) {
+    if (match.index >= offset2) break;
+    opens.push(match.index);
+  }
+  if (opens.length === 0) return false;
+  for (const openPos of opens) {
+    const depth = getForTemplateDepthAt(html, openPos, offset2, bindAttrName);
+    if (depth > 0) return true;
+  }
+  return false;
+}
+var BINDING_SYNTAX_MARKER = `[${WcsDiagnosticCode.BindingSyntax}]`;
+function isForBindingRefused(bindText) {
+  try {
+    parseBindTextsForElement2(bindText);
+    return false;
+  } catch (e) {
+    return e.message.includes(BINDING_SYNTAX_MARKER);
+  }
+}
+function getRowShorthandForPath(html, offset2, bindAttrName = "data-wcs") {
+  const chain = getEnclosingForPaths(html, offset2, bindAttrName);
+  if (chain.length === 0 || chain.some((raw) => isForBindingRefused(`for: ${raw}`))) return null;
+  return chain[chain.length - 1];
+}
+function getEnclosingForPaths(html, offset2, bindAttrName = "data-wcs") {
+  return getEnclosingFors(html, offset2, bindAttrName).map((entry) => entry.path);
+}
+function getEnclosingFors(html, offset2, bindAttrName = "data-wcs") {
+  const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const openRegex = new RegExp(
+    `<template[^>]*${escaped}\\s*=\\s*["']\\s*for\\s*:\\s*([^"']+?)\\s*["']`,
+    "gi"
+  );
+  const enclosing = [];
+  let match;
+  while ((match = openRegex.exec(html)) !== null) {
+    if (match.index >= offset2) break;
+    const tagEnd = html.indexOf(">", match.index);
+    if (tagEnd === -1 || tagEnd >= offset2) continue;
+    const depth = getForTemplateDepthAt(html, match.index, offset2, bindAttrName);
+    if (depth > 0) {
+      enclosing.push({ path: firstExpressionOf(match[1]), anchor: match.index });
+    }
+  }
+  return enclosing;
+}
+function firstExpressionOf(raw) {
+  const semicolon = indexOfOutsideQuotes2(raw, ";");
+  return (semicolon === -1 ? raw : raw.slice(0, semicolon)).trim();
+}
+function countWildcardSegments(path) {
+  let count = 0;
+  for (const segment of path.split(".")) {
+    if (segment === "*") count++;
+  }
+  return count;
+}
+function forPathOf(raw) {
+  let path = raw.trim();
+  const pipe = indexOfOutsideQuotes2(path, "|");
+  if (pipe !== -1) path = path.slice(0, pipe).trim();
+  const at2 = path.indexOf("@");
+  if (at2 !== -1) path = path.slice(0, at2).trim();
+  return path;
+}
+function rankOfForList(resolvedListPath) {
+  return countWildcardSegments(resolvedListPath) + 1;
+}
+function getResolvedForListPath(html, offset2, bindAttrName = "data-wcs") {
+  const chain = getEnclosingForPaths(html, offset2, bindAttrName);
+  if (chain.length === 0) return null;
+  let resolved = "";
+  for (const raw of chain) {
+    const path = forPathOf(raw);
+    if (path === ".") {
+      resolved = `${resolved}.*`;
+    } else if (path.startsWith(".")) {
+      resolved = `${resolved}.*.${path.slice(1)}`;
+    } else {
+      resolved = path;
+    }
+  }
+  return resolved;
+}
+function listsPerLevel(resolvedListPath) {
+  return [...wildcardPrefixes(resolvedListPath), resolvedListPath];
+}
+function wildcardPrefixes(path) {
+  const segments = path.split(".");
+  const out = [];
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i] === "*") out.push(segments.slice(0, i).join("."));
+  }
+  return out;
+}
+function findOtherListWildcard(path, resolvedListPath) {
+  if (resolvedListPath.startsWith(".")) return null;
+  const loops = listsPerLevel(resolvedListPath);
+  const overs = wildcardPrefixes(path);
+  if (overs.length > loops.length) return null;
+  for (let k = 0; k < overs.length; k++) {
+    if (overs[k] !== loops[k]) return { over: overs[k], loop: loops[k] };
+  }
+  return null;
+}
+var VOID_ELEMENTS = /* @__PURE__ */ new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr"
+]);
+var CONTENT_PROPERTIES = /* @__PURE__ */ new Set(["textContent", "innerText", "innerHTML", "text", "html", "outerHTML", "outerText"]);
+var STRUCTURAL_DIRECTIVES2 = /* @__PURE__ */ new Set(["for", "if", "elseif", "else"]);
+var P_CLOSERS = /* @__PURE__ */ new Set([
+  "address",
+  "article",
+  "aside",
+  "blockquote",
+  "details",
+  "dialog",
+  "div",
+  "dl",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hgroup",
+  "hr",
+  "main",
+  "menu",
+  "nav",
+  "ol",
+  "p",
+  "pre",
+  "section",
+  "table",
+  "ul"
+]);
+var IMPLIED_CLOSE = {
+  li: /* @__PURE__ */ new Set(["p", "li"]),
+  dt: /* @__PURE__ */ new Set(["p", "dt", "dd"]),
+  dd: /* @__PURE__ */ new Set(["p", "dt", "dd"]),
+  option: /* @__PURE__ */ new Set(["option"]),
+  optgroup: /* @__PURE__ */ new Set(["option", "optgroup"]),
+  tr: /* @__PURE__ */ new Set(["td", "th", "tr"]),
+  td: /* @__PURE__ */ new Set(["td", "th"]),
+  th: /* @__PURE__ */ new Set(["td", "th"]),
+  thead: /* @__PURE__ */ new Set(["td", "th", "tr", "thead", "tbody", "tfoot"]),
+  tbody: /* @__PURE__ */ new Set(["td", "th", "tr", "thead", "tbody", "tfoot"]),
+  tfoot: /* @__PURE__ */ new Set(["td", "th", "tr", "thead", "tbody", "tfoot"])
+};
+function propertyNamesOf(value) {
+  return splitBindTexts(value).filter((expr) => expr.trim().length > 0).map((expr) => {
+    const colon = indexOfOutsideQuotes2(expr, ":");
+    const left = (colon === -1 ? expr : expr.slice(0, colon)).trim();
+    const name = left.split(/[|#]/)[0].trim();
+    return name.startsWith(".") ? name.slice(1) : name;
+  });
+}
+var ROUTER_TAG = "wcs-router";
+var ROUTE_TAG = "wcs-route";
+var LAYOUT_TAG = "wcs-layout";
+function stateBindsTemplate(scope, layoutIds) {
+  return scope.underRouter || scope.id !== null && layoutIds.has(scope.id);
+}
+function directivePathOf(value) {
+  const colon = indexOfOutsideQuotes2(value, ":");
+  if (colon === -1) return null;
+  const path = value.slice(colon + 1).split("|")[0].trim();
+  return path === "" ? null : path;
+}
+function closeImplied(stack, name) {
+  const implied = IMPLIED_CLOSE[name];
+  if (implied !== void 0) {
+    while (stack.length > 0 && implied.has(stack[stack.length - 1].name)) stack.pop();
+  } else if (P_CLOSERS.has(name) && stack.length > 0 && stack[stack.length - 1].name === "p") {
+    stack.pop();
+  }
+}
+function analyzeElementContexts(html, offsets, bindAttrName = "data-wcs", stateTagName = "wcs-state") {
+  const out = /* @__PURE__ */ new Map();
+  const pending = [...new Set(offsets)].sort((a, b) => a - b);
+  if (pending.length === 0) return out;
+  const judged = [];
+  const layoutIds = /* @__PURE__ */ new Set();
+  let next = 0;
+  const NOT_BOUND = { bound: false, structural: false, scopes: [], insertedBy: null, insertedPath: null };
+  const stack = [];
+  const inserter = () => {
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (stack[i].name === ROUTE_TAG || stack[i].structural) return stack[i];
+    }
+    return void 0;
+  };
+  const judge = () => {
+    const by = inserter();
+    return {
+      bound: !stack.some((e) => e.blocks),
+      structural: stack.some((e) => e.structural),
+      scopes: stack.flatMap((e) => e.scope === null ? [] : [e.scope]),
+      insertedBy: by === void 0 ? null : by.name === ROUTE_TAG ? "route" : by.directive === "for" ? "for" : "if",
+      insertedPath: by?.directivePath ?? null
+    };
+  };
+  const stateTag = asciiLowerCase(stateTagName);
+  const escaped = bindAttrName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const bindAttr = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s"'=<>\`]+))`, "i");
+  const tag = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+  let lower2 = null;
+  let match;
+  while ((match = tag.exec(html)) !== null) {
+    const end = match.index + match[0].length;
+    if (next < pending.length && end > pending[next]) {
+      const isStart = match[2] !== void 0 && match[1] !== "/";
+      if (isStart && match.index < pending[next]) closeImplied(stack, asciiLowerCase(match[2]));
+      while (next < pending.length && pending[next] < end) judged.push([pending[next++], judge()]);
+    }
+    if (match[2] === void 0) continue;
+    const name = asciiLowerCase(match[2]);
+    if (match[1] === "/") {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].name === name) {
+          stack.length = i;
+          break;
+        }
+      }
+      continue;
+    }
+    const attrs = match[3];
+    closeImplied(stack, name);
+    if (name === stateTag && !parseAttributeNames(attrs).has("mount")) {
+      for (let i = stack.length - 1; i >= 0 && !stack[i].structural; i--) {
+        const scope2 = stack[i].scope;
+        if (scope2 !== null) {
+          scope2.hasOwnState = true;
+          break;
+        }
+      }
+    }
+    if (name === LAYOUT_TAG) {
+      const layout = extractAttribute(attrs, "layout");
+      if (layout !== null && !parseAttributeNames(attrs).has("enable-shadow-root")) layoutIds.add(layout);
+    }
+    const foreign = name === "svg" || name === "math" || stack.some((e) => e.name === "svg" || e.name === "math");
+    if (VOID_ELEMENTS.has(name) || foreign && /\/\s*$/.test(attrs)) continue;
+    if (RAW_TEXT_ELEMENTS.has(name)) {
+      const close = name === "plaintext" ? -1 : (lower2 ??= asciiLowerCase(html)).indexOf(`</${name}`, end);
+      const stop = close === -1 ? html.length : close;
+      while (next < pending.length && pending[next] < stop) judged.push([pending[next++], NOT_BOUND]);
+      if (close === -1) break;
+      tag.lastIndex = close;
+      continue;
+    }
+    const match3 = bindAttr.exec(attrs);
+    const value = match3 === null ? null : match3[1] ?? match3[2] ?? match3[3];
+    const names2 = value === null ? [] : propertyNamesOf(value);
+    const structural = name === "template" && names2.length === 1 && STRUCTURAL_DIRECTIVES2.has(names2[0]) && !value.slice(0, Math.max(0, indexOfOutsideQuotes2(value, ":"))).includes("#");
+    const plainTemplate = name === "template" && !structural;
+    const blocks = plainTemplate && stack.some((e) => e.name === "template") || name !== "template" && names2.some((n) => CONTENT_PROPERTIES.has(n));
+    const scope = plainTemplate ? { hasOwnState: false, id: extractAttribute(attrs, "id"), underRouter: stack.some((e) => e.name === ROUTER_TAG) } : null;
+    const directivePath = structural ? directivePathOf(value) : null;
+    stack.push({
+      name,
+      structural,
+      scope,
+      blocks,
+      ...structural ? { directive: names2[0] } : {},
+      ...directivePath !== null ? { directivePath } : {}
+    });
+  }
+  while (next < pending.length) judged.push([pending[next++], judge()]);
+  for (const [offset2, context] of judged) {
+    const ownStateTemplate = context.scopes.some((scope) => scope.hasOwnState);
+    const bound = context.bound && context.scopes.every((scope) => scope.hasOwnState || stateBindsTemplate(scope, layoutIds));
+    out.set(offset2, {
+      bound,
+      rowOrBranch: bound && context.structural && !ownStateTemplate,
+      ownStateTemplate,
+      insertedBy: bound ? context.insertedBy : null,
+      insertedPath: bound ? context.insertedPath : null
+    });
+  }
+  return out;
+}
+function getForTemplateDepthAt(html, openPos, offset2, bindAttrName) {
+  const tagEnd = html.indexOf(">", openPos);
+  if (tagEnd === -1 || tagEnd >= offset2) return 0;
+  let depth = 1;
+  let pos = tagEnd + 1;
+  const templateOpenRegex = /<template[\s>]/gi;
+  const templateCloseRegex = /<\/template\s*>/gi;
+  while (pos < offset2 && depth > 0) {
+    templateOpenRegex.lastIndex = pos;
+    templateCloseRegex.lastIndex = pos;
+    const nextOpen = templateOpenRegex.exec(html);
+    const nextClose = templateCloseRegex.exec(html);
+    const openIdx = nextOpen && nextOpen.index < offset2 ? nextOpen.index : Infinity;
+    const closeIdx = nextClose && nextClose.index < offset2 ? nextClose.index : Infinity;
+    if (openIdx === Infinity && closeIdx === Infinity) break;
+    if (openIdx < closeIdx) {
+      depth++;
+      pos = openIdx + 1;
+    } else {
+      depth--;
+      if (depth === 0 && closeIdx < offset2) {
+        return 0;
+      }
+      pos = closeIdx + (nextClose ? nextClose[0].length : 1);
+    }
+  }
+  return depth;
+}
+
 // src/service/scriptAst.ts
 var PREFIX = "(async function* () {\n";
 var SUFFIX = "\n})";
@@ -11019,7 +11417,8 @@ var ja = {
   commandTokenUnbound: (t) => `\u30B3\u30DE\u30F3\u30C9\u30C8\u30FC\u30AF\u30F3 "${t}" \u3092 emit \u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E\u30C9\u30AD\u30E5\u30E1\u30F3\u30C8\u306B\u305D\u308C\u3092\u53D7\u3051\u308B command.<\u30E1\u30BD\u30C3\u30C9>: ${t} \u306E\u675F\u7E1B\u304C\u3042\u308A\u307E\u305B\u3093\u3002emit \u306F\u8AB0\u306B\u3082\u5C4A\u304D\u307E\u305B\u3093\u3002\u30E1\u30BD\u30C3\u30C9\u3092\u547C\u3076\u8981\u7D20\u306B\u675F\u306D\u3066\u304F\u3060\u3055\u3044\uFF08command.focus: ${t}\uFF09`,
   writePathMissing: (k) => `"${k}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u66F8\u304D\u8FBC\u307F\u306F\u65B0\u3057\u3044\u30AD\u30FC\u3092\u4F5C\u308B\u3060\u3051\u3067\u3001\u5BA3\u8A00\u3057\u305F\u30AD\u30FC\u306E\u675F\u7E1B\u306B\u306F\u5C4A\u304D\u307E\u305B\u3093`,
   readPathMissing: (p, top) => top ? `"${p}" \u306F state \u304C\u5BA3\u8A00\u3057\u3066\u3044\u306A\u3044\u30AD\u30FC\u3067\u3059\u3002\u8AAD\u3093\u3060\u6642\u70B9\u3067\u4F8B\u5916\u306B\u306A\u308A\u307E\u3059\uFF08#301\uFF09` : `\u30D1\u30B9 "${p}" \u306F\u72B6\u614B\u5B9A\u7FA9\u306B\u5B58\u5728\u3057\u307E\u305B\u3093\u3002\u8AAD\u307F\u306F undefined \u306B\u306A\u308A\u3001\u305D\u3053\u304B\u3089\u8A08\u7B97\u3057\u305F\u5024\u306F\u9ED9\u3063\u3066\u9055\u3044\u307E\u3059`,
-  stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u3068 URL \u306F\u8AAD\u307F\u307E\u305B\u3093\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3057\u3066\u304F\u3060\u3055\u3044`,
+  stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
+  pathDynamicUnknownValue: (path, n, name, from) => `"${path}" \u306E\u5024${name === void 0 ? "" : from === void 0 ? `\uFF08${name}\uFF09` : `\uFF08${name}\u3002"${from}" \u304B\u3089 import\uFF09`}\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B JSDoc \u306E @type \u2014 \u5F62\u304B\u3001\u30E2\u30B8\u30E5\u30FC\u30EB\u306E\u30EA\u30C6\u30E9\u30EB\u3092\u6307\u3059 typeof import("./file.js").name\uFF08\u8F9E\u66F8\u306A\u3089\u5168\u90E8\u306E\u30AD\u30FC\u3092\u6301\u3064\u65E2\u5B9A\u306E\u8A00\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB\uFF09\u2014 \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
   submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
@@ -11074,6 +11473,7 @@ var ja = {
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken \u306E\u30AD\u30FC "${name}" \u306F <${tag}> \u306E wcBindable \u30D7\u30ED\u30D1\u30C6\u30A3\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u751F DOM \u30A4\u30D9\u30F3\u30C8\u540D\u306F\u767A\u706B\u3057\u307E\u305B\u3093 \u2014 \u30D7\u30ED\u30D1\u30C6\u30A3\u540D\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u5BA3\u8A00\u6E08\u307F: ${declared}\uFF09`,
   handleBoundAsValue: (name, tag) => `<${tag}> \u306E "${name}" \u306F\u751F\u304D\u305F\u30EA\u30BD\u30FC\u30B9\uFF08\u30CF\u30F3\u30C9\u30EB\uFF09\u3067\u3001\u5024\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002state \u306E\u30D1\u30B9\u306B\u675F\u306D\u308B\u3068\u3001\u30B9\u30CA\u30C3\u30D7\u30B7\u30E7\u30C3\u30C8\u3084 SSR \u306B\u8F09\u3089\u306A\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u304C state \u306B\u5165\u308A\u307E\u3059 \u2014 eventToken.${name}: \u3067\u53D7\u3051\u3001\u30B3\u30DE\u30F3\u30C9\u306E\u5F15\u6570\u3068\u3057\u3066\u6B21\u306E\u8981\u7D20\u3078\u76F4\u63A5\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
   ariaAttrUnknown: (name) => `"${name}" \u306F WAI-ARIA \u306E\u5C5E\u6027\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002setAttribute \u306F\u305D\u306E\u307E\u307E\u66F8\u304D\u8FBC\u307F\u307E\u3059\u304C\u3001\u652F\u63F4\u6280\u8853\u306B\u306F\u9ED9\u3063\u3066\u7121\u8996\u3055\u308C\u307E\u3059`,
+  liveRegionInserted: (attribute, by, condition) => `\u3053\u306E\u30E9\u30A4\u30D6\u30EA\u30FC\u30B8\u30E7\u30F3\uFF08${attribute}\uFF09\u306F\u3001${by === "route" ? "<wcs-route> \u306B\u5165\u3063\u305F\u3068\u304D" : by === "for" ? "for: \u306E\u884C\u304C\u8DB3\u3055\u308C\u305F\u3068\u304D" : "\u679D\u304C\u73FE\u308C\u305F\u3068\u304D"}\u306B\u6587\u3054\u3068\u633F\u5165\u3055\u308C\u307E\u3059\uFF08${condition === null ? "\u6587\u3092\u66F8\u3044\u3066\u6301\u3063\u3066\u3044\u307E\u3059" : `\u6587\u306F\u6761\u4EF6 "${condition}" \u304C\u8AAD\u3080\u3082\u306E\u306B\u675F\u306D\u3066\u3042\u308A\u3001\u679D\u306F\u305D\u306E\u6587\u3068\u4E00\u7DD2\u306B\u73FE\u308C\u307E\u3059`}\uFF09\u3002\u30B9\u30AF\u30EA\u30FC\u30F3\u30EA\u30FC\u30C0\u30FC\u304C\u8AAD\u307F\u4E0A\u3052\u308B\u306E\u306F\u30DA\u30FC\u30B8\u306B\u3042\u308B\u30EA\u30FC\u30B8\u30E7\u30F3\u306E\u6587\u304C\u5909\u308F\u3063\u305F\u3068\u304D\u306A\u306E\u3067\u3001\u3053\u306E\u6587\u306F\u8AAD\u307F\u4E0A\u3052\u3089\u308C\u307E\u305B\u3093\uFF08\u633F\u5165\u3057\u305F\u3068\u304D\u306B\u8AAD\u307F\u4E0A\u3052\u3089\u308C\u308B\u306E\u306F role="alert" \u3060\u3051\u3067\u3059\uFF09\u2014 \u805E\u304B\u305B\u305F\u3044\u77E5\u3089\u305B\u306F\u3001\u5E38\u306B\u30DA\u30FC\u30B8\u306B\u3042\u308B\u30EA\u30FC\u30B8\u30E7\u30F3\u306B\u7F6E\u3044\u3066\u304F\u3060\u3055\u3044: \u30EA\u30FC\u30B8\u30E7\u30F3\u306F${by === "route" ? "\u30EB\u30FC\u30C8" : " template "}\u306E\u5916\u306B\u7F6E\u304D\u3001textContent: \u3092\u77E5\u3089\u305B\u308B\u6587\u306B\u675F\u306D\u3001\u77E5\u3089\u305B\u308B\u3053\u3068\u304C\u7121\u3044\u3068\u304D\u306F\u7A7A\u306B\u3059\u308B`,
   didYouMean: (c) => `\u3002\u3082\u3057\u304B\u3057\u3066: "${c}"`,
   none: () => `\u306A\u3057`,
   triggerSeededTruthy: (path) => `trigger \u30D0\u30A4\u30F3\u30C9\u5148 "${path}" \u304C true \u3067\u30B7\u30FC\u30C9\u3055\u308C\u3066\u3044\u307E\u3059\u3002trigger \u306F\u30A8\u30C3\u30B8\u691C\u51FA\u306A\u3057\uFF08truthy \u66F8\u304D\u8FBC\u307F\u3067\u5373\u767A\u706B\u30FBmanual \u3082\u30D0\u30A4\u30D1\u30B9\uFF09\u306E\u305F\u3081\u3001\u30D0\u30A4\u30F3\u30C9\u6642\u306B\u5373\u767A\u706B\u3057\u307E\u3059\u3002false \u3067\u30B7\u30FC\u30C9\u3057\u3066\u304F\u3060\u3055\u3044`,
@@ -11083,7 +11483,7 @@ var ja = {
   inputNestedWrite: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u4E0B\u3078\u306E\u66F8\u304D\u8FBC\u307F\u306F <${tag}> \u306B\u5C4A\u304D\u307E\u305B\u3093 \u2014 \u30D5\u30A3\u30FC\u30EB\u30C9\u3092\u30D1\u30B9\u3067\u8AAD\u3093\u3067\u65B0\u3057\u3044\u5024\u3092\u8FD4\u3059 getter\uFF08\`this["${example}"]\`\u30FB\`$getAll\`\uFF09\u3092\u675F\u306D\u308B\u304B\u3001\u4E0B\u3078\u66F8\u304B\u305A\u306B "${path}" \u3092\u5DEE\u3057\u66FF\u3048\u3066\u304F\u3060\u3055\u3044`,
   inputNestedWriteOneShot: (tag, input, path, example) => `<${tag}> \u306E\u5165\u529B "${input}" \u306B "${path}" \u3092\u675F\u306D\u3066\u3044\u307E\u3059\u304C\u3001\u30DA\u30FC\u30B8\u306F\u305D\u306E\u4E0B\uFF08"${example}"\uFF09\u3078\u66F8\u304D\u8FBC\u3093\u3067\u3044\u307E\u3059\u3002\u675F\u7E1B\u306F "${path}" \u81EA\u8EAB\u3078\u306E\u4EE3\u5165\u3067\u3057\u304B\u5F53\u3066\u76F4\u3055\u308C\u305A\u3001<${tag}> \u306F\u8981\u6C42\u306E\u305F\u3073\u306B "${input}" \u3092 null \u306B\u623B\u3059\u306E\u3067\u3001\u6B21\u306E\u8981\u6C42\u306F "${input}" \u306A\u3057\u3067\u9001\u3089\u308C\u307E\u3059 \u2014 \u8981\u6C42\u3092\u59CB\u3081\u308B\u30CF\u30F3\u30C9\u30E9\u3067\u65B0\u3057\u3044\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u3092\u4F5C\u3063\u3066\u4EE3\u5165\u3057\uFF08\`this.submitBody = { \u2026 }\`\uFF09\u3001\u305D\u308C\u3092\u675F\u306D\u3066\u304F\u3060\u3055\u3044`,
   devtoolsAfterState: () => `@wcstack/devtools/auto \u306F @wcstack/state/auto \u3088\u308A\u5148\u306B\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\uFF08\u5F8C\u304B\u3089\u3060\u3068\u3001DevTools \u306E\u30BF\u30A4\u30E0\u30E9\u30A4\u30F3\u306F\u4ED8\u3044\u305F\u6642\u70B9\u304B\u3089\u59CB\u307E\u308A\u307E\u3059\u3002\u65E2\u306B\u3042\u308B\u914D\u7DDA\u306F 4.0 \u304C\u9001\u308A\u76F4\u3057\u307E\u3059\uFF09`,
-  baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/"> \u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
+  baseHrefMissing: () => `@wcstack/router \u3092\u4F7F\u3046 SPA \u306B\u306F <head> \u5185\u306E <base href="/">\uFF08\u307E\u305F\u306F\u305D\u308C\u3092\u4F5C\u308B <head> \u306E\u540C\u671F\u30B9\u30AF\u30EA\u30D7\u30C8 \u2014 basename \u306B\u30ED\u30B1\u30FC\u30EB\u3092\u7F6E\u304F\u5F62\uFF09\u304C\u5FC5\u8981\u3067\u3059\uFF08\u7121\u3044\u3068\u30C7\u30A3\u30FC\u30D7\u30EA\u30F3\u30AF\u3067 basename \u304C\u8AA4\u5C0E\u51FA\u3055\u308C\u307E\u3059\uFF09`,
   routerOutletMisplaced: () => `\u3053\u306E <wcs-outlet> \u306F <wcs-router> \u306E\u76F4\u5F8C\u306B\u7121\u3044\u306E\u3067\u3001\u3069\u306E router \u3082\u4F7F\u3044\u307E\u305B\u3093\u3002router \u306F\u81EA\u5206\u306E\u76F4\u5F8C\u306E\u8981\u7D20\u3060\u3051\u3092 outlet \u3068\u3057\u3066\u4F7F\u3044\u3001\u305D\u3053\u306B <wcs-outlet> \u304C\u7121\u3051\u308C\u3070\u81EA\u524D\u306E outlet \u3092\u4F5C\u308A\u307E\u3059\u3002\u30EB\u30FC\u30C8\u306F router \u306E\u76F4\u5F8C\u306B\u63CF\u304B\u308C\u3001\u3053\u306E outlet \u306F\u7A7A\u306E\u307E\u307E\u3067\u3059 \u2014 <wcs-router> \u306E\u76F4\u5F8C\u3078\u79FB\u3057\u3066\u304F\u3060\u3055\u3044`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
   signalsImportMapBoth: () => `\u3053\u306E import map \u306F @wcstack/signals \u3068 @wcstack/signals/dom \u306E\u4E21\u65B9\u3092\u5272\u308A\u5F53\u3066\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u3092\u6301\u3064\u306E\u3067\u3001@wcstack/signals \u3092 import \u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\uFF08\u3053\u306E\u30DA\u30FC\u30B8\u306E\u3082\u306E\u3067\u3082\u3001\u8AAD\u307F\u8FBC\u3080 .js \u3067\u3082\uFF09\u304C 2 \u3064\u76EE\u306E\u30B3\u30A2\u3092\u6301\u3061\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059\u3002@wcstack/signals/dom \u3060\u3051\u3092\u5272\u308A\u5F53\u3066\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30A2\u306E\u5168\u90E8\u3092 export \u3057\u307E\u3059\uFF09`,
@@ -11230,7 +11630,8 @@ var en = {
   commandTokenUnbound: (t) => `The command token "${t}" is emitted, but no command.<method>: ${t} binding in this document receives it, so the emit reaches nothing. Bind it on the element whose method it should call (command.focus: ${t})`,
   writePathMissing: (k) => `"${k}" is not a key the state declares. The write creates a new key and reaches no binding of a declared one`,
   readPathMissing: (p, top) => top ? `"${p}" is not a key the state declares. Reading it throws (#301)` : `Path "${p}" does not exist in the state definition. The read gives undefined, and what is computed from it is wrong without a word`,
-  stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a path from / or a URL is not read): point it at the file laid out as on the server, relative to this file`,
+  stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
+  pathDynamicUnknownValue: (path, n, name, from) => `The value of "${path}"${name === void 0 ? "" : from === void 0 ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type \u2014 its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) \u2014 or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
@@ -11285,6 +11686,7 @@ var en = {
   tagEventTokenKeyUnknown: (name, tag, declared) => `eventToken key "${name}" is not a wcBindable property of <${tag}>. Raw DOM event names never fire \u2014 use the property name (declared: ${declared})`,
   handleBoundAsValue: (name, tag) => `"${name}" of <${tag}> is a live resource (a handle), not a value. Bound to a state path, it puts an object no snapshot or SSR can carry into the state \u2014 receive it with eventToken.${name}: and hand it to the next element as a command argument`,
   ariaAttrUnknown: (name) => `"${name}" is not a WAI-ARIA attribute. setAttribute writes it anyway, and assistive technology silently ignores it`,
+  liveRegionInserted: (attribute, by, condition) => `This live region (${attribute}) is inserted with its text when ${by === "route" ? "its <wcs-route> is entered" : by === "for" ? "its for: row is added" : "its branch appears"} (${condition === null ? "it holds text written in the markup" : `its text is bound to what the condition "${condition}" reads, so the branch appears with the text`}). A screen reader announces a region whose text changes while it is in the page, so this text is not announced (an inserted role="alert" is the one form announced on insertion) \u2014 a status message meant to be heard belongs in a region that is always in the page: keep the region outside the ${by === "route" ? "route" : "template"}, bind its textContent: to the message, and empty it when there is nothing to say`,
   didYouMean: (c) => `. Did you mean "${c}"?`,
   none: () => `none`,
   triggerSeededTruthy: (path) => `The trigger-bound slot "${path}" is seeded with true. trigger has no edge detection (any truthy write fires, and it bypasses manual), so it fires immediately at bind. Seed it with false`,
@@ -11294,7 +11696,7 @@ var en = {
   inputNestedWrite: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, so those writes never reach <${tag}> \u2014 bind a getter that reads the fields by path (\`this["${example}"]\`, \`$getAll\`) and returns a new value, or replace "${path}" instead of writing below it`,
   inputNestedWriteOneShot: (tag, input, path, example) => `"${path}" is bound to the input "${input}" of <${tag}>, but the page writes below it ("${example}"). A binding is re-applied only when "${path}" itself is assigned, and <${tag}> resets "${input}" to null after every request, so the next request goes without it \u2014 build a new object in the handler that starts the request (\`this.submitBody = { \u2026 }\`) and bind that`,
   devtoolsAfterState: () => `Load @wcstack/devtools/auto before @wcstack/state/auto (loaded later, the DevTools timeline starts when it attaches; 4.0 sends it the wiring that is there already)`,
-  baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head> (without it, deep links misderive the basename)`,
+  baseHrefMissing: () => `An SPA using @wcstack/router needs <base href="/"> in <head>, or a synchronous <head> script that creates one \u2014 the form for a locale in the basename (without it, deep links misderive the basename)`,
   routerOutletMisplaced: () => `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty \u2014 move it right after the <wcs-router>`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
   signalsImportMapBoth: () => `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals \u2014 this page's, or a .js file it loads \u2014 gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
@@ -11600,41 +12002,6 @@ function hasType(node, t) {
 }
 function escape(key) {
   return key.replace(/~/g, "~0").replace(/\//g, "~1");
-}
-
-// src/service/indexPath.ts
-var INDEX_SEGMENT = /^\d/;
-function isIndexSegment(segment) {
-  return INDEX_SEGMENT.test(segment);
-}
-function hasIndexSegment(path) {
-  return path.split(".").some((segment) => INDEX_SEGMENT.test(segment));
-}
-function toWildcardForm(path) {
-  if (!hasIndexSegment(path)) return path;
-  return path.split(".").map((segment) => INDEX_SEGMENT.test(segment) ? "*" : segment).join(".");
-}
-function candidateKeyOf(path, has) {
-  return has(path) ? path : toWildcardForm(path);
-}
-var UNSAFE_SEGMENTS = /* @__PURE__ */ new Set(["__proto__", "prototype"]);
-function hasUnsafeSegment(path) {
-  return path.split(".").some((segment) => UNSAFE_SEGMENTS.has(segment));
-}
-var { maxDepth } = getWcsManifest().syntax.indexParam;
-var MAX_INDEX_PARAM3 = maxDepth;
-var INDEX_PARAM = new RegExp(`^\\$[1-9]\\d{0,${String(maxDepth).length - 1}}$`);
-function classifyIndexParam(path) {
-  if (!/^\$\d+$/.test(path)) return null;
-  if (!INDEX_PARAM.test(path)) return { kind: "notIndex" };
-  const n = Number(path.slice(1));
-  return n <= MAX_INDEX_PARAM3 ? { kind: "index", n } : { kind: "range", n };
-}
-function isOutOfRangeIndexRead(name) {
-  if (name.length < 2 || name.charCodeAt(0) !== 36) return false;
-  const c = name.charCodeAt(1);
-  if (c < 48 || c > 57) return false;
-  return !INDEX_PARAM.test(name) || Number(name.slice(1)) > MAX_INDEX_PARAM3;
 }
 
 // src/service/removedNames.ts
@@ -14460,11 +14827,11 @@ function isDefine(callee) {
 }
 function collectPageElementContracts(html, fileReader) {
   const { inline, srcs } = pageScripts(html);
-  const programs = [];
+  const programs2 = [];
   const read = /* @__PURE__ */ new Set();
   const queue = srcs.map((spec) => ({ from: "", spec: spec.startsWith(".") ? spec : `./${spec}` }));
   const visit2 = (program, from) => {
-    programs.push(program);
+    programs2.push(program);
     for (const n of nodes(program)) {
       const source = n.type === "ImportDeclaration" || n.type === "ExportAllDeclaration" || n.type === "ExportNamedDeclaration" ? n.source : n.type === "ImportExpression" ? n.source : null;
       if (source !== null && source !== void 0 && source.type === "Literal" && typeof source.value === "string") queue.push({ from, spec: source.value });
@@ -14485,7 +14852,7 @@ function collectPageElementContracts(html, fileReader) {
   }
   const classes = /* @__PURE__ */ new Map();
   const defines = [];
-  for (const program of programs) {
+  for (const program of programs2) {
     for (const n of nodes(program)) {
       if (n.type === "ClassDeclaration" && n.id !== null && !classes.has(n.id.name)) classes.set(n.id.name, declaredBy(n));
       else if (n.type === "VariableDeclarator" && n.id.type === "Identifier" && n.init?.type === "ClassExpression" && !classes.has(n.id.name)) {
@@ -14867,6 +15234,165 @@ function validateAriaAttributes(html, bindAttribute = "data-wcs", locale2) {
   return diagnostics;
 }
 
+// src/service/liveRegionValidator.ts
+var LIVE_ROLES = /* @__PURE__ */ new Set(["status", "log"]);
+var CONTENT_PROPERTIES2 = /* @__PURE__ */ new Set(["textContent", "innerText", "innerHTML", "text", "html"]);
+var VOID_ELEMENTS2 = /* @__PURE__ */ new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr"
+]);
+var TAG = /<!--[\s\S]*?(?:-->|$)|<(\/?)([a-zA-Z][\w:-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
+function validateLiveRegions(html, bindAttribute = "data-wcs", stateTagName = "wcs-state", locale2) {
+  const regions = findLiveRegions(html, bindAttribute);
+  if (regions.length === 0) return [];
+  const contexts = analyzeElementContexts(html, regions.map((r) => r.start), bindAttribute, stateTagName);
+  const msgs = getMessages(locale2);
+  const out = [];
+  let bound = null;
+  let texts = null;
+  let getterReads = null;
+  for (const region of regions) {
+    const context = contexts.get(region.start);
+    const by = context?.insertedBy ?? null;
+    if (context === void 0 || by === null) continue;
+    const inside = (at2) => at2 > region.contentStart && at2 < region.contentEnd;
+    bound ??= findAllBindAttributes(html, bindAttribute).map((attr) => {
+      const props = splitBindingExpressions(attr.value).map(parseBindingExpression);
+      const shown = props.filter((p) => CONTENT_PROPERTIES2.has(p.property.split("#")[0]) && p.path !== null);
+      return { at: attr.valueStart, paths: shown.map((p) => p.path.trim()), replaces: shown.length > 0 };
+    });
+    const ownReplaces = region.ownText.length > 0;
+    const replacing = bound.filter((b) => b.replaces && inside(b.at));
+    const holdsText = !ownReplaces && hasMarkupText(html, region.contentStart, region.contentEnd, replacing.map((b) => b.at));
+    let tied = null;
+    if (!holdsText && by === "if" && context.insertedPath !== null) {
+      texts ??= [...findAllMustacheSyntax(html), ...findAllCommentBindings(html)].map((m) => ({ at: m.exprStart, path: m.expression.split("|")[0].trim() }));
+      const shown = [
+        ...region.ownText,
+        ...ownReplaces ? [] : [...replacing.flatMap((b) => b.paths), ...texts.filter((t) => inside(t.at)).map((t) => t.path)]
+      ].map((p) => p.split("|")[0].trim()).filter((p) => p !== "" && !p.startsWith("."));
+      const condition = context.insertedPath;
+      getterReads ??= collectGetterReadsByName(html, stateTagName);
+      const family = [condition, ...getterReads.get(condition) ?? []];
+      const reads = shown.flatMap((p) => [p, ...getterReads.get(p) ?? []]);
+      if (reads.some((p) => family.some((c) => related(p, c)))) tied = condition;
+    }
+    if (!holdsText && tied === null) continue;
+    out.push({
+      code: WcsDiagnosticCode.LiveRegionInserted,
+      start: region.start,
+      end: region.end,
+      message: msgs.liveRegionInserted(html.slice(region.start, region.end), by, tied),
+      severity: "warning"
+    });
+  }
+  return out;
+}
+function related(a, b) {
+  return a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+}
+function collectGetterReadsByName(html, stateTagName) {
+  const out = /* @__PURE__ */ new Map();
+  for (const block of parseLoadedScriptBlocks(html, stateTagName)) {
+    const prefix = block.mountPath === null || block.mountPath === "" ? "" : `${block.mountPath}.`;
+    for (const callable of analyzeCallableBodies(block.content)) {
+      if (callable.kind !== "getter" || callable.accessor === "set") continue;
+      const reads = collectGetterReads(callable.body) ?? [];
+      out.set(prefix + callable.name, reads.map((r) => prefix + r.path));
+    }
+  }
+  return out;
+}
+function hasMarkupText(html, from, to, replaced) {
+  const content = html.slice(from, to);
+  const tag = new RegExp(TAG.source, "g");
+  const stack = [];
+  let last = 0;
+  const silent = () => stack.some((e) => e.silent);
+  let match;
+  const text3 = (s) => /\S/.test(s.replace(/\{\{[\s\S]*?\}\}/g, "").replace(/&nbsp;|&#160;/g, ""));
+  while ((match = tag.exec(content)) !== null) {
+    if (!silent() && text3(content.slice(last, match.index))) return true;
+    last = match.index + match[0].length;
+    if (match[2] === void 0) continue;
+    const name = match[2].toLowerCase();
+    if (match[1] === "/") {
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].name === name) {
+          stack.length = i;
+          break;
+        }
+      }
+      continue;
+    }
+    if (VOID_ELEMENTS2.has(name) || /\/\s*$/.test(match[3])) continue;
+    const at2 = from + match.index;
+    const end = from + last;
+    const quiet = name === "template" || name === "script" || name === "style" || replaced.some((r) => r > at2 && r < end);
+    stack.push({ name, silent: quiet });
+  }
+  return !silent() && text3(content.slice(last));
+}
+function findLiveRegions(html, bindAttribute) {
+  const out = [];
+  const tag = new RegExp(TAG.source, "g");
+  let match;
+  while ((match = tag.exec(html)) !== null) {
+    if (match[2] === void 0 || match[1] === "/") continue;
+    const name = match[2].toLowerCase();
+    const attrs = match[3];
+    if (name === "template" || !/\baria-live\b|\brole\b/i.test(attrs)) continue;
+    const at2 = match.index + 1 + match[2].length;
+    const live = extractAttribute(attrs, "aria-live");
+    if (live !== null && live.trim().toLowerCase() === "off") continue;
+    const role = extractAttribute(attrs, "role");
+    const firstRole = role === null ? "" : role.trim().split(/\s+/)[0].toLowerCase();
+    if (firstRole === "alert") continue;
+    const attribute = live !== null ? "aria-live" : role !== null && LIVE_ROLES.has(role.trim().split(/\s+/)[0].toLowerCase()) ? "role" : null;
+    if (attribute === null) continue;
+    const span = extractAttributeSpan(attrs, attribute, at2);
+    if (span === null) continue;
+    const contentStart = match.index + match[0].length;
+    const own2 = extractAttribute(attrs, bindAttribute);
+    const ownText = own2 === null ? [] : splitBindingExpressions(own2).map(parseBindingExpression).filter((p) => CONTENT_PROPERTIES2.has(p.property.split("#")[0]) && p.path !== null).map((p) => p.path.trim());
+    out.push({
+      start: span.start,
+      end: span.end,
+      contentStart,
+      contentEnd: VOID_ELEMENTS2.has(name) || /\/\s*$/.test(attrs) ? contentStart : closingTagStart(html, contentStart, name),
+      ownText
+    });
+  }
+  return out;
+}
+function closingTagStart(html, from, name) {
+  const tag = new RegExp(TAG.source, "g");
+  tag.lastIndex = from;
+  let depth = 0;
+  let match;
+  while ((match = tag.exec(html)) !== null) {
+    if (match[2] === void 0 || match[2].toLowerCase() !== name) continue;
+    if (match[1] !== "/") {
+      if (!/\/\s*$/.test(match[3])) depth++;
+    } else if (depth-- === 0) {
+      return match.index;
+    }
+  }
+  return html.length;
+}
+
 // src/service/documentEnvValidator.ts
 function validateDocumentEnv(html, locale2) {
   const diagnostics = [];
@@ -14888,7 +15414,7 @@ function validateDocumentEnv(html, locale2) {
   }
   const hasRouterTag = /<wcs-router\b/i.test(scanText);
   const router = autos.find((a) => a.pkgs.includes("router") && (!a.bundle || hasRouterTag)) ?? (hasRouterTag ? collectInlineImports(scanText).find((i) => /@wcstack\/router\b/.test(i.spec) || BUNDLE_AUTO.test(i.spec)) : void 0);
-  if (router && !/<base\b[^>]*\bhref\s*=/i.test(scanText)) {
+  if (router && !/<base\b[^>]*\bhref\s*=/i.test(scanText) && !headScriptCreatesBase(scanText)) {
     diagnostics.push({
       code: WcsDiagnosticCode.BaseHrefMissing,
       start: router.start,
@@ -15039,13 +15565,48 @@ function classifySignalsSpecifier(spec) {
   if (!spec.includes("@wcstack/signals")) return null;
   return /@wcstack\/signals\/dom\b/.test(spec) ? "dom" : "bare";
 }
-function extractSrc(openTag) {
-  const srcMatch = /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(openTag);
+function extractSrc(openTag2) {
+  const srcMatch = /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(openTag2);
   if (!srcMatch) return null;
   return {
     value: srcMatch[2],
     offsetInTag: srcMatch.index + srcMatch[0].indexOf(srcMatch[1]) + 1
   };
+}
+function headScriptCreatesBase(html) {
+  const lower2 = html.toLowerCase();
+  const ends = [lower2.indexOf("</head"), lower2.indexOf("<body")].filter((i) => i !== -1);
+  const headEnd = ends.length === 0 ? html.length : Math.min(...ends);
+  const scriptRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+  let match;
+  while ((match = scriptRegex.exec(html)) !== null && match.index < headEnd) {
+    if (extractSrc(`<script${match[1]}>`)) continue;
+    const type = attrValue(match[1], "type");
+    if (type !== null && !/^\s*(?:text|application)\/(?:x-)?(?:javascript|ecmascript)\s*$/i.test(type) && type.trim() !== "") continue;
+    const code = blankJsComments(match[2]);
+    if (/\bcreateElement\s*\(\s*(["'`])base\1\s*\)/i.test(code)) return true;
+    const writes = /\b(?:write|writeln|insertAdjacentHTML)\s*\(/g;
+    let call;
+    while ((call = writes.exec(code)) !== null) {
+      if (/<base\b/i.test(callArguments(code, call.index + call[0].length))) return true;
+    }
+  }
+  return false;
+}
+function callArguments(code, from) {
+  let depth = 0;
+  for (let i = from; i < code.length; i++) {
+    const ch = code[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      for (i++; i < code.length && code[i] !== ch; i++) if (code[i] === "\\") i++;
+    } else if (ch === "(") {
+      depth++;
+    } else if (ch === ")") {
+      if (depth === 0) return code.slice(from, i);
+      depth--;
+    }
+  }
+  return code.slice(from);
 }
 function blankHtmlComments(html) {
   return html.replace(/<!--[\s\S]*?-->/g, (m) => " ".repeat(m.length));
@@ -15054,7 +15615,7 @@ function blankJsComments(code) {
   return code.replace(/\/\*[\s\S]*?\*\//g, (m) => " ".repeat(m.length)).replace(/(^|[^:])\/\/[^\n]*/g, (m, pre) => pre + " ".repeat(m.length - pre.length));
 }
 var VOID_TAGS = /* @__PURE__ */ new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
-var ROUTE_TAG = "wcs-route";
+var ROUTE_TAG2 = "wcs-route";
 var LAYOUT_TAG2 = "wcs-layout";
 function attrValue(attrs, name) {
   const m = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(attrs);
@@ -15082,7 +15643,7 @@ function scanStructure(html) {
     if (top === void 0 || to <= from) return;
     const chunk = scan.slice(from, to);
     if (top.name === LAYOUT_TAG2 && chunk.trim() !== "") top.unslotted = true;
-    if (top.name !== ROUTE_TAG && !top.layoutTemplate) return;
+    if (top.name !== ROUTE_TAG2 && !top.layoutTemplate) return;
     for (const m of chunk.matchAll(/\{\{[\s\S]*?\}\}/g)) {
       bareMustaches.push({ start: from + m.index, end: from + m.index + m[0].length, inLayout: top.layoutTemplate });
     }
@@ -15189,7 +15750,7 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fi
       }
       const entries = analyzeWatchEntries(block.content);
       if (entries.length === 0) continue;
-      const own2 = analyzeStatePaths(block.content);
+      const own2 = analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath));
       let volumes = null;
       if (hasVolumes) {
         assignment ??= assignVolumes(elements, html);
@@ -15205,7 +15766,8 @@ function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fi
       const scopes = {
         mounts: volumes?.scopes.mounts ?? [],
         unresolvedMounts: volumes?.scopes.unresolvedMounts ?? NO_MOUNTS,
-        rootUnresolved: !scriptReadable(block.content, own2)
+        rootUnresolved: !scriptReadable(block.content, own2),
+        opaquePaths: [...opaquePathsOf(own2), ...volumes?.scopes.opaquePaths ?? []]
       };
       for (const entry of entries) {
         const diagnostic = validateEntry(entry, pathSet, paths, scopes, msgs);
@@ -16827,7 +17389,68 @@ function collectNestedWriteRoots(html, stateTagName, bindAttrName, blocks) {
   }
   return roots;
 }
-var PATH_TEST_LITERAL = /(?:\.\s*(?:includes|indexOf)\s*\(\s*|[!=]==\s*)(["'])((?:\\.|(?!\1)[^\\])*)\1/g;
+var STRING = String.raw`(["'])((?:\\.|(?!\1)[^\\\n])*)\1`;
+var NAME = String.raw`[$A-Za-z_][$\w]*`;
+function findPathTests(body, param) {
+  const esc = (name) => name.replace(/\$/g, "\\$");
+  const holders = /* @__PURE__ */ new Set([param]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    const alt = [...holders].map(esc).join("|");
+    const alias = new RegExp(String.raw`\b(?:const|let|var)\s+(${NAME})\s*=\s*(?:new\s+Set\s*\(\s*(?:${alt})\s*\)|\[\s*\.\.\.\s*(?:${alt})\s*\]|Array\.from\s*\(\s*(?:${alt})\s*\)|(?:${alt}))\s*(?:[;\n]|$)`, "g");
+    for (const m of body.matchAll(alias)) {
+      if (!holders.has(m[1])) {
+        holders.add(m[1]);
+        grew = true;
+      }
+    }
+  }
+  const held = [...holders].map(esc).join("|");
+  const out = [];
+  const push3 = (m, prefix, base = 0) => {
+    const [whole, quote, literal2] = m;
+    const at2 = base + m.index + whole.lastIndexOf(quote + literal2) + 1;
+    out.push({ path: prefix ? literal2.replace(/\.$/, "") : literal2, prefix, at: at2 });
+  };
+  for (const m of body.matchAll(new RegExp(String.raw`\b(?:${held})\s*(?:\?\.|\.)\s*(?:includes|indexOf|lastIndexOf|has)\s*\(\s*${STRING}`, "g"))) {
+    push3(m, false);
+  }
+  const elements = /* @__PURE__ */ new Set();
+  const callback = new RegExp(String.raw`\b(?:${held})\s*(?:\?\.|\.)\s*(?:some|every|find|findIndex|findLast|findLastIndex|filter|forEach|map|flatMap)\s*\(\s*(?:async\s+)?(?:function\b\s*(?:${NAME})?\s*)?\(?\s*(${NAME})`, "g");
+  for (const m of body.matchAll(callback)) elements.add(m[1]);
+  for (const m of body.matchAll(new RegExp(String.raw`\bfor\s*\(\s*(?:const|let|var)\s+(${NAME})\s+of\s+(?:${held})\s*\)`, "g"))) elements.add(m[1]);
+  if (elements.size > 0) {
+    const el = [...elements].map(esc).join("|");
+    const compares = [
+      new RegExp(String.raw`(?<![\w$.])(?:${el})\s*[!=]==?\s*${STRING}`, "g"),
+      new RegExp(String.raw`${STRING}\s*[!=]==?\s*(?:${el})(?![\w$])`, "g")
+    ];
+    for (const regex of compares) {
+      for (const m of body.matchAll(regex)) push3(m, false);
+    }
+    for (const m of body.matchAll(new RegExp(String.raw`(?<![\w$.])(?:${el})\s*(?:\?\.|\.)\s*startsWith\s*\(\s*${STRING}`, "g"))) push3(m, true);
+    for (const m of body.matchAll(new RegExp(String.raw`\bswitch\s*\(\s*(?:${el})\s*\)\s*\{`, "g"))) {
+      const open = m.index + m[0].length - 1;
+      const block = body.slice(open, matchingBrace(body, open));
+      for (const c of block.matchAll(new RegExp(String.raw`\bcase\s+${STRING}\s*:`, "g"))) push3(c, false, open);
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+function matchingBrace(text3, open) {
+  let depth = 0;
+  for (let i = open; i < text3.length; i++) {
+    const ch = text3[i];
+    if (ch === '"' || ch === "'" || ch === "`") {
+      for (i++; i < text3.length && text3[i] !== ch; i++) if (text3[i] === "\\") i++;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}" && --depth === 0) {
+      return i;
+    }
+  }
+  return text3.length;
+}
 function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2) {
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
   if (blocks.length === 0) return [];
@@ -16840,17 +17463,19 @@ function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2
     const callback = analyzeCallableBodies(block.content).find((entry) => STATE_UPDATED_CALLBACKS.has(entry.name) && entry.kind === "method");
     if (callback === void 0) continue;
     if (block.mountPath !== null) continue;
+    const param = new RegExp(String.raw`^\s*\(\s*(${NAME})\s*[,)=]`).exec(block.content.slice(callback.end, callback.bodyStart))?.[1];
+    if (param === void 0) continue;
     const declared = new Set(analyzeStatePaths(block.content).map((p) => p.path));
     const bound = boundPaths;
     const body = blankComments(callback.body);
-    PATH_TEST_LITERAL.lastIndex = 0;
-    let match;
     const reported = /* @__PURE__ */ new Set();
-    while ((match = PATH_TEST_LITERAL.exec(body)) !== null) {
-      const path = match[2];
-      if (path.length === 0 || bound.has(path) || reported.has(path)) continue;
+    for (const test of findPathTests(body, param)) {
+      const path = test.path;
+      if (path.length === 0 || reported.has(path)) continue;
+      const under = (p) => p === path || p.startsWith(`${path}.`);
+      if (test.prefix ? [...bound].some(under) : bound.has(path)) continue;
       let message;
-      if (declared.has(path)) {
+      if (test.prefix ? [...declared].some(under) : declared.has(path)) {
         message = msgs.updatedCallbackUnbound(path);
       } else {
         const near = suggestion(path, [...declared, ...bound], msgs);
@@ -16858,11 +17483,10 @@ function validateUpdatedCallbackDemand(html, stateTagName, bindAttrName, locale2
         message = msgs.updatedCallbackUnknownPath(path) + near;
       }
       reported.add(path);
-      const quoteAt = match.index + match[0].length - path.length - 1;
       out.push({
         code: WcsDiagnosticCode.UpdatedCallbackUnbound,
-        start: block.contentStart + callback.bodyStart + quoteAt,
-        end: block.contentStart + callback.bodyStart + quoteAt + path.length,
+        start: block.contentStart + callback.bodyStart + test.at,
+        end: block.contentStart + callback.bodyStart + test.at + path.length,
         message,
         severity: "warning"
       });
@@ -17056,7 +17680,7 @@ function validateScriptStateUses(html, stateTagName = "wcs-state", locale2, bind
 }
 
 // src/service/scriptReadValidator.ts
-function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileReader, applicationSchema) {
+function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileReader, applicationSchema, bindAttribute = "data-wcs") {
   const blocks = parseLoadedScriptBlocks(html, stateTagName);
   if (blocks.length === 0) return [];
   const msgs = getMessages(locale2);
@@ -17064,6 +17688,7 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
   const candidates = mergeSchemaCandidates(index.paths, applicationSchema);
   const candidateSet = new Set(candidates.map((p) => p.path));
   let tree = null;
+  let bound = null;
   const out = [];
   for (const block of blocks) {
     const spread = applicationSchema === void 0 ? findTopLevelSpread(block.content) : null;
@@ -17077,6 +17702,24 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
       });
     }
     const prefix = block.mountPath === null || block.mountPath === "" ? "" : `${block.mountPath}.`;
+    if (applicationSchema === void 0) {
+      const opaque = analyzeStatePaths(block.content, moduleLocationOf(fileReader, block.modulePath)).filter((p) => p.opaque !== void 0);
+      const spans = opaque.length === 0 ? [] : analyzeDeclarationSpans(block.content);
+      for (const candidate of opaque) {
+        const path = prefix + candidate.path;
+        bound ??= buildReferenceIndex(html, { bindAttribute, stateTagName }).occurrences.filter((o) => o.kind === "path").map((o) => hasIndexSegment(o.path) ? toWildcardForm(o.path) : o.path);
+        const count = bound.filter((b) => b.startsWith(`${path}.`)).length;
+        const span = spans.find((s) => candidate.path === s.name || candidate.path.startsWith(`${s.name}.`));
+        if (count === 0 || span === void 0) continue;
+        out.push({
+          code: WcsDiagnosticCode.PathDynamicUnknown,
+          start: block.contentStart + span.start,
+          end: block.contentStart + span.end,
+          message: msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
+          severity: "info"
+        });
+      }
+    }
     for (const callable of analyzeCallableBodies(block.content)) {
       for (const read of collectGetterReads(callable.body) ?? []) {
         if (read.written || read.path.split(".").some((s) => s === "" || s.startsWith("$")) || hasRecursionWildcard(read.path)) continue;
@@ -17540,8 +18183,11 @@ function joinRelativeSource(htmlSource, relativePath) {
 }
 
 // src/core/externalState.ts
-var OPEN = '<script type="module">';
 var CLOSE = "</script>";
+function openTag(path) {
+  const quote = path.includes('"') ? "'" : '"';
+  return `<script type="module" ${MODULE_PATH_ATTRIBUTE}=${quote}${path}${quote}>`;
+}
 function inlineExternalStates(html, stateTagName, fileReader) {
   let text3 = "";
   let from = 0;
@@ -17563,13 +18209,14 @@ function inlineExternalStates(html, stateTagName, fileReader) {
     from = element2.tagEnd;
     const content = file.text.replace(/<\/(script)/gi, "<\\$1");
     const at2 = element2.tagEnd + shift;
-    const length = OPEN.length + content.length + CLOSE.length;
-    text3 += OPEN + content + CLOSE;
+    const open = openTag(file.path);
+    const length = open.length + content.length + CLOSE.length;
+    text3 += open + content + CLOSE;
     states.push({
       path: file.path,
       text: file.text,
       at: at2,
-      contentAt: at2 + OPEN.length,
+      contentAt: at2 + open.length,
       length,
       valueStart: src.valueStart,
       valueEnd: src.valueEnd,
@@ -17643,10 +18290,11 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateBindingSyntax(text3, bindAttribute, locale2));
   out.push(...validateIoNodes(text3, bindAttribute, stateTagName, locale2, fileReader));
   out.push(...validateAriaAttributes(text3, bindAttribute, locale2));
+  out.push(...validateLiveRegions(text3, bindAttribute, stateTagName, locale2));
   out.push(...validateDocumentEnv(text3, locale2));
   out.push(...validateSemantics(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptStateUses(text3, stateTagName, locale2, bindAttribute));
-  out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema));
+  out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema, bindAttribute));
   out.push(...validateArrayMutations(text3, stateTagName, locale2));
   out.push(...validateWatchDeclarations(text3, stateTagName, locale2, fileReader));
   out.push(...validateScanDeclarations(text3, stateTagName, locale2));
@@ -17855,7 +18503,7 @@ function runValidation(inputs, options = {}) {
         own2.push(d);
         continue;
       }
-      const source = joinRelativeSource(input.source, d.origin.path);
+      const source = d.origin.path.startsWith("/") && input.root !== void 0 ? joinRelativeSource(`${input.root}/_`, `.${d.origin.path}`) : joinRelativeSource(input.source, d.origin.path);
       if (!textBySource.has(source)) textBySource.set(source, input.fileReader?.(d.origin.path) ?? "");
       let list = inFiles.get(source);
       if (list === void 0) inFiles.set(source, list = []);
@@ -17908,15 +18556,19 @@ function runValidation(inputs, options = {}) {
 function parseArgs(argv) {
   const options = {};
   const files = [];
-  for (const arg of argv) {
-    if (arg.startsWith("--attr=")) options.bindAttribute = arg.slice("--attr=".length);
+  let root;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg.startsWith("--root=")) root = arg.slice("--root=".length);
+    else if (arg === "--root" && i + 1 < argv.length) root = argv[++i];
+    else if (arg.startsWith("--attr=")) options.bindAttribute = arg.slice("--attr=".length);
     else if (arg.startsWith("--state-tag=")) options.stateTagName = arg.slice("--state-tag=".length);
     else if (arg.startsWith("--lang=")) options.locale = arg.slice("--lang=".length);
     else if (arg === "--errors-only" || arg === "--quiet") options.errorsOnly = true;
     else if (arg === "--strict") options.strict = true;
     else if (!arg.startsWith("-")) files.push(arg);
   }
-  return { options, files };
+  return { options, files, ...root !== void 0 && root !== "" ? { root } : {} };
 }
 function resolveCliLocale(explicit, env = process.env) {
   if (explicit) return explicit;
@@ -17929,10 +18581,10 @@ function resolveCliLocale(explicit, env = process.env) {
   }
 }
 function main(argv) {
-  const { options, files } = parseArgs(argv);
+  const { options, files, root } = parseArgs(argv);
   const locale2 = resolveCliLocale(options.locale);
   if (files.length === 0) {
-    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--errors-only] [--strict] <file> [<file> ...]\n");
+    process.stderr.write("usage: wcs-validate [--attr=data-wcs] [--state-tag=wcs-state] [--lang=ja|en] [--root=<dir>] [--errors-only] [--strict] <file> [<file> ...]\n");
     return 2;
   }
   const inputs = [];
@@ -17946,7 +18598,13 @@ function main(argv) {
       return 2;
     }
     const kind = inputKindOf(path);
-    inputs.push({ source: path, text: text3, kind, fileReader: kind === "html" ? createFileReader(path) : void 0 });
+    inputs.push({
+      source: path,
+      text: text3,
+      kind,
+      fileReader: kind === "html" ? createFileReader(path, void 0, root) : void 0,
+      ...root !== void 0 ? { root } : {}
+    });
   }
   const result = runValidation(inputs, { ...options, locale: locale2 });
   for (const line of result.lines) {

@@ -517,37 +517,40 @@
       ]
     },
     "date": {
-      "description": "ロケール形式の日付 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)",
+      "description": "ロケール形式の日付 ([locale][, style][, zone]。style は full / long / medium / short、zone は IANA のタイムゾーン（Asia/Tokyo — 無ければ読み手のゾーン）、空の引数は既定、既定のロケールは config.locale)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 2,
+      "maxArgs": 3,
       "argTypes": [
+        "string",
         "string",
         "string"
       ]
     },
     "time": {
-      "description": "ロケール形式の時刻 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)",
+      "description": "ロケール形式の時刻 ([locale][, style][, zone]。style は full / long / medium / short、zone は IANA のタイムゾーン（Asia/Tokyo — 無ければ読み手のゾーン）、空の引数は既定、既定のロケールは config.locale)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 2,
+      "maxArgs": 3,
       "argTypes": [
+        "string",
         "string",
         "string"
       ]
     },
     "datetime": {
-      "description": "ロケール形式の日時 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)",
+      "description": "ロケール形式の日時 ([locale][, style][, zone]。style は full / long / medium / short、zone は IANA のタイムゾーン（Asia/Tokyo — 無ければ読み手のゾーン）、空の引数は既定、既定のロケールは config.locale)",
       "hasArgs": true,
       "resultType": "string",
       "acceptTypes": "any",
       "minArgs": 0,
-      "maxArgs": 2,
+      "maxArgs": 3,
       "argTypes": [
+        "string",
         "string",
         "string"
       ]

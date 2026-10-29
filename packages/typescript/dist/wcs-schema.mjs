@@ -643,7 +643,7 @@ function loadSchemaCore() {
     return cached;
 }
 
-var version = "4.9.0";
+var version = "4.10.0";
 var pkg = {
 	version: version};
 

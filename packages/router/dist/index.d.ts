@@ -323,6 +323,7 @@ declare class Router extends HTMLElement implements IRouter {
     private _fallbackRoute;
     private _listeningPopState;
     private _listeningNavigate;
+    private _listeningClick;
     private _navigateUrl;
     private _replaceUrl;
     private _disconnectedDuringInit;
@@ -476,9 +477,27 @@ declare class Router extends HTMLElement implements IRouter {
      * basename が空の場合はすべての URL にマッチする。
      */
     private _isOwnPath;
+    /** 今のページ（URL）がこの router の basename の下か — ページの中の移動を受け持つのはこの router */
+    private _ownsCurrentPage;
+    /**
+     * 素のフラグメントへのリンク（`href="#main"`）の navigate イベント: ページの中の移動であり、どの router の
+     * ルートの遷移でもない（docs/seam-apps.md、city-library）。今のページを受け持つ router だけが動く:
+     * ブラウザが今のページのフラグメントへ移すもの（`<base>` が無い、今のページを指す）はそのまま通して
+     * フォーカスだけ移し、`<base>` が別のページへ解決したもの（`/#main`）は取り消して、今のページの
+     * そのフラグメントへ移し直す。
+     */
+    private _onFragmentLinkNavigate;
     private _onNavigateFunc;
     private _onNavigate;
     private _onPopState;
+    /**
+     * 素のフラグメントへのリンクを click で拾う — navigate イベントでリンクが分からないブラウザ（Navigation API
+     * が無い、NavigateEvent に sourceElement が無い）の経路。navigate イベントの経路と同じく、今のページの
+     * そのフラグメントへ移す（docs/seam-apps.md、city-library）。修飾キー・中ボタン・`download`・別の
+     * ウィンドウで開くリンク・ページが取り消したクリックはブラウザに任せる。window で聞くので、ページ自身の
+     * click リスナーはこれより先に走る。
+     */
+    private _onClick;
     private _initialize;
     /**
      * サーバー描画済み outlet の採用（docs/ssr-router-design.md §4）。

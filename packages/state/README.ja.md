@@ -1764,15 +1764,15 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `date(loc?, style?, zone?)` | 日付フォーマット（`zone?` は 4.10（未リリース）から） | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` / `opensAt\|date(ja-JP,full,Asia/Tokyo)` |
-| `time(loc?, style?, zone?)` | 時刻フォーマット（`zone?` は 4.10（未リリース）から） | `createdAt\|time` / `createdAt\|time(short)` / `opensAt\|time(,short,Asia/Tokyo)` |
-| `datetime(loc?, style?, zone?)` | 日付 + 時刻（`zone?` は 4.10（未リリース）から） | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` / `createdAt\|datetime(,,UTC)` |
+| `date(loc?, style?, zone?)` | 日付フォーマット（`zone?` は 4.10 から） | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` / `opensAt\|date(ja-JP,full,Asia/Tokyo)` |
+| `time(loc?, style?, zone?)` | 時刻フォーマット（`zone?` は 4.10 から） | `createdAt\|time` / `createdAt\|time(short)` / `opensAt\|time(,short,Asia/Tokyo)` |
+| `datetime(loc?, style?, zone?)` | 日付 + 時刻（`zone?` は 4.10 から） | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` / `createdAt\|datetime(,,UTC)` |
 | `ymd(sep?)` | YYYY-MM-DD（既定は `-`）。実行環境のタイムゾーンの日付 | `createdAt\|ymd` / `createdAt\|ymd(/)` |
 | `hms(sep?)` | HH:MM:SS（既定は `:`）。実行環境のタイムゾーンの時刻 | `createdAt\|hms` / `createdAt\|hms(-)` |
 
 **5 つとも `Date` を取ります**（タイムスタンプではありません）。他の型は「requires a date value」で拒否されます。値が無いとき（`undefined` / `null`）は、4.7 から何も描きません。JSON から読み込んだ state は数値か ISO 文字列を持つので、束縛ではなく読み出し側で変換してください: `get createdAt() { return new Date(this.createdAtMs); }`。日付だけの文字列は瞬間ではなく日です: `new Date("2026-10-29")` は UTC の 0 時で、グリニッジより西では前の日になります —— `new Date(y, m - 1, d)` がページの動く場所のその日です（4.9 から `#29` もそう言います）。`loc?` の既定はページのロケール（[ロケール](#ロケール)）で、**適用のたびに**読み直されるため、束縛を組み立てた後に確定したロケールも反映されます（明示引数 `date(ja-JP)` は束縛式の一部なので組み立て時に固定されます）。`style?` は `full`・`long`・`medium`・`short`（Intl の `dateStyle` / `timeStyle`）で、無ければロケールの数字の書式（`2026/10/13`）、書式だけならページのロケールです（`date(medium)`）。`currency` の通貨は束縛を組み立てるときに確かめ、数は `loc` が無ければページのロケールで書きます。複数形などほかの書式は getter で書きます（`Intl.PluralRules`、`Intl.NumberFormat`）。
 
-**タイムゾーン。** `zone?` が無ければ、`date`・`time`・`datetime` は実行環境のタイムゾーンで書きます —— ブラウザでは**読み手の**、SSR ではサーバーのタイムゾーンです。ページのロケールとは関係ありません。ある場所の時刻は、よそから読むと違って見えます: 東京の図書館の 10 月 29 日（木）09:00〜20:00 の開館時間は、ロサンゼルスから読むと `2026年10月28日水曜日`・`17:00:00`・`4:00:00` です。4.10（未リリース）から、`zone?` で書くタイムゾーンを指定できます —— IANA のタイムゾーン、Intl の `timeZone` です（`Asia/Tokyo`・`America/New_York`・`UTC`）。どこの読み手にもその場所の時刻が見えます:
+**タイムゾーン。** `zone?` が無ければ、`date`・`time`・`datetime` は実行環境のタイムゾーンで書きます —— ブラウザでは**読み手の**、SSR ではサーバーのタイムゾーンです。ページのロケールとは関係ありません。ある場所の時刻は、よそから読むと違って見えます: 東京の図書館の 10 月 29 日（木）09:00〜20:00 の開館時間は、ロサンゼルスから読むと `2026年10月28日水曜日`・`17:00:00`・`4:00:00` です。4.10 から、`zone?` で書くタイムゾーンを指定できます —— IANA のタイムゾーン、Intl の `timeZone` です（`Asia/Tokyo`・`America/New_York`・`UTC`）。どこの読み手にもその場所の時刻が見えます:
 
 ```html
 <html lang="ja">
@@ -2624,7 +2624,7 @@ $renderedCallback(paths) {
 | ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
 | 同一パスの行間 | `indexes` 昇順 | 固定 |
 
-**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$renderedCallback` —— がフレームで着地します。4.10（未リリース）から、`$watch` と `$stream` restart はそれを待つので、順序は上のとおりのまま、1 フレーム遅れるだけです。それらが書いたもの（`$watch` が state に写した一覧など）も同じトランジションの中で当たります。4.9 までは drain がキューされた microtask に留まって先に走り（`$watch` → `$stream` restart → `$renderedCallback`）、ログインの後に画面を移す `$watch` が、ルートのガードが読むセッションを `<wcs-storage>` が保存するより先に走っていました。この層を動かすものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
+**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$renderedCallback` —— がフレームで着地します。4.10 から、`$watch` と `$stream` restart はそれを待つので、順序は上のとおりのまま、1 フレーム遅れるだけです。それらが書いたもの（`$watch` が state に写した一覧など）も同じトランジションの中で当たります。4.9 までは drain がキューされた microtask に留まって先に走り（`$watch` → `$stream` restart → `$renderedCallback`）、ログインの後に画面を移す `$watch` が、ルートのガードが読むセッションを `<wcs-storage>` が保存するより先に走っていました。この層を動かすものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
 
 主なルール:
 
@@ -2991,9 +2991,9 @@ li {
 | 49 | | `<wcs-state src="…"> failed to initialize.` |
 | 50 | | `<wcs-state src="…"> $connectedCallback failed.` |
 | 51 | | `<wcs-state src="…"> $disconnectedCallback failed.` |
-| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"`（4.10（未リリース）から、書式の場所のタイムゾーン（`/` を含むものと `UTC`）には `— a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: <name>(,,<zone>), <name>(en-US,long,<zone>)` が付く） |
+| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"`（4.10 から、書式の場所のタイムゾーン（`/` を含むものと `UTC`）には `— a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: <name>(,,<zone>), <name>(en-US,long,<zone>)` が付く） |
 | 53 | | `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "<code>"` |
-| 54 | | `filter <name> takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "<zone>"`（4.10（未リリース）から） |
+| 54 | | `filter <name> takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "<zone>"`（4.10 から） |
 | 101 | `binding-syntax` | `Invalid bindText: "<text>". Missing ':' separator between propPart and statePart.` |
 | 102 | `binding-syntax` | `"<text>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` |
 | 103 | `binding-syntax` | `"<text>": "else" takes no value — write "else:".` |
@@ -3068,12 +3068,12 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
 
 - 親が `null` / `undefined`（初期値 `null` に後から代入する形）
-- キーの下の空のオブジェクト（`fieldErrors: {}` に後から `this.fieldErrors = { date: "…" }` を代入する形）— 種が `{}` の同じ形。4.10（未リリース）から。4.9 までは、その下の束縛ごとに報告し、「updates … will be silently dropped」と言っていたが、そうではない: オブジェクトを置き換えれば更新される。lint は 4.9 からその代入を読む
+- キーの下の空のオブジェクト（`fieldErrors: {}` に後から `this.fieldErrors = { date: "…" }` を代入する形）— 種が `{}` の同じ形。4.10 から。4.9 までは、その下の束縛ごとに報告し、「updates … will be silently dropped」と言っていたが、そうではない: オブジェクトを置き換えれば更新される。lint は 4.9 からその代入を読む
 - どの行にも無い行フィールド —— ただし、行に近い名前がある（打ち間違いらしい。`name` の横の `.nmae`）なら警告します。行はデータで、任意のフィールド（ページが自分の行に付ける `pending` など）はほかの行にはありません。4.4 から。ほかの行にあるフィールドが最初の行に無いだけの場合も警告しません（4.3 から）
 - 途中の getter の戻り値のサブプロパティ
 - まだ読み込み中のボリュームのマウントパス配下のパス —— ボリュームが決着した時点で検査される
 - `$` 始まりの予約名前空間（`$command.*` など）
-- 要素が書き込むオブジェクトの下のキー —— router の `searchParams: query` は URL のキーを持つので、`query.next` は URL にあるときだけある。4.10（未リリース）から。4.9 までは、そうした束縛を「silently dropped」と報告していた
+- 要素が書き込むオブジェクトの下のキー —— router の `searchParams: query` は URL のキーを持つので、`query.next` は URL にあるときだけある。4.10 から。4.9 までは、そうした束縛を「silently dropped」と報告していた
 
 裏を返すと、**警告が出ない ＝ 正しい保証にはなりません**。網羅した検査は `npx @wcstack/lint <file>` 側で行ってください。再設定（`setInitialState()`）では、すべてのパスを新しい state に対して検査し直します。
 
@@ -3316,7 +3316,7 @@ export default {
 
 ロケールはタイムゾーンではない: `<html lang="ja-JP">` のページも、日付と時刻は読み手のタイムゾーンで
 日本語に書く。ある場所の時刻は、日付フィルタの 3 つ目にその場所のタイムゾーンを渡して書く
-（4.10（未リリース）から — [日付 / 時刻](#日付--時刻)）。
+（4.10 から — [日付 / 時刻](#日付--時刻)）。
 
 **ロケールを後から変えても何も再描画されない。** これは state ではなく
 グローバル設定なので、依存グラフに載らない。フィルタ自体はバインド構築時に

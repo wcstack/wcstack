@@ -5786,6 +5786,7 @@ function closingParenEnd(code, bodyStart) {
 function asciiLowerCase(text2) {
   return text2.replace(/[A-Z]+/g, (upper2) => upper2.toLowerCase());
 }
+var MODULE_PATH_ATTRIBUTE = "wcs-lint-src";
 function parseWcsScriptBlocks(html, stateTagName = "wcs-state") {
   return parseWcsStateElements(html, stateTagName).flatMap((element) => element.scriptBlocks);
 }
@@ -5874,12 +5875,14 @@ function parseWcsStateElements(html, stateTagName = "wcs-state") {
         const typeAttr = extractAttribute(inner.open.tagContent, "type");
         if (typeAttr?.toLowerCase() === "module" && inner.closed) {
           const contentStart = inner.open.end;
+          const modulePath = extractAttribute(inner.open.tagContent, MODULE_PATH_ATTRIBUTE);
           scriptBlocks.push({
             contentStart,
             contentEnd: inner.contentEnd,
             content: html.slice(contentStart, inner.contentEnd),
             mountPath,
-            bindComponent
+            bindComponent,
+            ...modulePath !== null ? { modulePath } : {}
           });
         }
       }
@@ -6231,12 +6234,6 @@ var upper = () => (value) => String(value).toUpperCase();
 var lower = () => (value) => String(value).toLowerCase();
 var capitalize = () => (value) => {
   const v = String(value);
-  if (v.length === 0) {
-    return v;
-  }
-  if (v.length === 1) {
-    return v.toUpperCase();
-  }
   return v.charAt(0).toUpperCase() + v.slice(1);
 };
 var trim = () => (value) => String(value).trim();
@@ -6285,14 +6282,20 @@ var join = (options) => {
 };
 var STYLES = ["full", "long", "medium", "short"];
 function dateOptions(options, fn) {
-  let [loc, style] = options ?? [];
-  if (style === void 0 && loc !== void 0 && STYLES.includes(loc)) [loc, style] = [void 0, loc];
-  if (style !== void 0 && !STYLES.includes(style)) styleInvalid(fn, style);
-  return [loc, style];
+  let [loc, style, zone] = (options ?? []).map((option) => option || void 0);
+  if (!style && STYLES.includes(loc)) [loc, style] = [void 0, loc];
+  else if (!style && !zone && /\/|^UTC$/.test(loc)) [loc, zone] = [void 0, loc];
+  if (style && !STYLES.includes(style)) styleInvalid(fn, style);
+  try {
+    if (zone) new Intl.DateTimeFormat(void 0, { timeZone: zone });
+  } catch {
+    raise2(54, [fn, zone]);
+  }
+  return [loc, style, zone];
 }
 var date = (options) => {
-  const [explicit, style] = dateOptions(options, "date");
-  const format = style && { dateStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, "date");
+  const format = (style || timeZone) && { dateStyle: style, timeZone };
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("date", value);
@@ -6301,8 +6304,8 @@ var date = (options) => {
   };
 };
 var time = (options) => {
-  const [explicit, style] = dateOptions(options, "time");
-  const format = style && { timeStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, "time");
+  const format = (style || timeZone) && { timeStyle: style, timeZone };
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("time", value);
@@ -6311,8 +6314,8 @@ var time = (options) => {
   };
 };
 var datetime = (options) => {
-  const [explicit, style] = dateOptions(options, "datetime");
-  const format = style && { dateStyle: style, timeStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, "datetime");
+  const format = (style || timeZone) && { dateStyle: style, timeStyle: style, timeZone };
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("datetime", value);
@@ -6320,16 +6323,14 @@ var datetime = (options) => {
     return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
+var two = (n) => String(n).padStart(2, "0");
 var ymd = (options) => {
   const opt = options?.[0] ?? "-";
   return (value) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("ymd", value);
     }
-    const year = value.getFullYear().toString();
-    const month = (value.getMonth() + 1).toString().padStart(2, "0");
-    const day = value.getDate().toString().padStart(2, "0");
-    return `${year}${opt}${month}${opt}${day}`;
+    return `${value.getFullYear()}${opt}${two(value.getMonth() + 1)}${opt}${two(value.getDate())}`;
   };
 };
 var hms = (options) => {
@@ -6338,10 +6339,7 @@ var hms = (options) => {
     if (!(value instanceof Date)) {
       valueMustBeDate("hms", value);
     }
-    const hours = value.getHours().toString().padStart(2, "0");
-    const minutes = value.getMinutes().toString().padStart(2, "0");
-    const seconds = value.getSeconds().toString().padStart(2, "0");
-    return `${hours}${opt}${minutes}${opt}${seconds}`;
+    return `${two(value.getHours())}${opt}${two(value.getMinutes())}${opt}${two(value.getSeconds())}`;
   };
 };
 var abs = () => (value) => {
@@ -6402,10 +6400,11 @@ var registered = {
   ceil: { factory: ceil, arity: [0, 1] },
   percent: { factory: percent, arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
-  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
-  date: { factory: nullishPassthrough(date), arity: [0, 2] },
-  time: { factory: nullishPassthrough(time), arity: [0, 2] },
-  datetime: { factory: nullishPassthrough(datetime), arity: [0, 2] },
+  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), a style (`date(ja-JP,long)`)
+  // and, since 4.10, a time zone (`date(ja-JP,long,Asia/Tokyo)`)
+  date: { factory: nullishPassthrough(date), arity: [0, 3] },
+  time: { factory: nullishPassthrough(time), arity: [0, 3] },
+  datetime: { factory: nullishPassthrough(datetime), arity: [0, 3] },
   ymd: { factory: nullishPassthrough(ymd), arity: [0, 1] },
   hms: { factory: nullishPassthrough(hms), arity: [0, 1] },
   // the core set of 4.0.0-rc.3 (the core's own: eq ne not lt le gt ge falsy truthy boolean)
@@ -6508,9 +6507,11 @@ var builtinFilterMeta = {
   // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
   // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた。
   // 4.2: 2 つ目は書式（full / long / medium / short — Intl の dateStyle / timeStyle）。書式だけなら既定のロケール
-  date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8 ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
-  time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
-  datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642 ([locale][, style]\u3002style \u306F full / long / medium / short\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  // 4.10: 3 つ目は IANA のタイムゾーン（Intl の timeZone）。無ければ実行環境のゾーン（読み手の、SSR ではサーバーの）。
+  // 空の引数は既定のまま（`date(,,Asia/Tokyo)`）
+  date: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u4ED8 ([locale][, style][, zone]\u3002style \u306F full / long / medium / short\u3001zone \u306F IANA \u306E\u30BF\u30A4\u30E0\u30BE\u30FC\u30F3\uFF08Asia/Tokyo \u2014 \u7121\u3051\u308C\u3070\u8AAD\u307F\u624B\u306E\u30BE\u30FC\u30F3\uFF09\u3001\u7A7A\u306E\u5F15\u6570\u306F\u65E2\u5B9A\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
+  time: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u6642\u523B ([locale][, style][, zone]\u3002style \u306F full / long / medium / short\u3001zone \u306F IANA \u306E\u30BF\u30A4\u30E0\u30BE\u30FC\u30F3\uFF08Asia/Tokyo \u2014 \u7121\u3051\u308C\u3070\u8AAD\u307F\u624B\u306E\u30BE\u30FC\u30F3\uFF09\u3001\u7A7A\u306E\u5F15\u6570\u306F\u65E2\u5B9A\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
+  datetime: { description: "\u30ED\u30B1\u30FC\u30EB\u5F62\u5F0F\u306E\u65E5\u6642 ([locale][, style][, zone]\u3002style \u306F full / long / medium / short\u3001zone \u306F IANA \u306E\u30BF\u30A4\u30E0\u30BE\u30FC\u30F3\uFF08Asia/Tokyo \u2014 \u7121\u3051\u308C\u3070\u8AAD\u307F\u624B\u306E\u30BE\u30FC\u30F3\uFF09\u3001\u7A7A\u306E\u5F15\u6570\u306F\u65E2\u5B9A\u3001\u65E2\u5B9A\u306E\u30ED\u30B1\u30FC\u30EB\u306F config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
   ymd: { description: "YYYY-MM-DD \u5F62\u5F0F ([separator]\u3002\u65E2\u5B9A\u306F -)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   hms: { description: "HH:MM:SS \u5F62\u5F0F ([separator]\u3002\u65E2\u5B9A\u306F :)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換

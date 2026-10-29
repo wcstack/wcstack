@@ -216,6 +216,23 @@ function shallowEqualRecords(a, b) {
     }
     return true;
 }
+/**
+ * `<wcs-link to>` のクエリが今のページのクエリに含まれるか（active / aria-current の判定 — docs/seam-apps.md、
+ * city-library）。`to` のクエリの各パラメータについて、今のクエリが同じ値（重複キーは同じ値の組、順序は
+ * 問わない）を持てば true。今のページにある余分なパラメータは構わない。`to` にクエリが無ければ常に true。
+ * 値は `URLSearchParams` でデコードして比べる（`+` と `%20` は同じ）。
+ */
+function queryIncludes(current, required) {
+    const want = new URLSearchParams(required);
+    const have = new URLSearchParams(current);
+    for (const key of new Set(want.keys())) {
+        const a = want.getAll(key).sort();
+        const b = have.getAll(key).sort();
+        if (a.length !== b.length || a.some((value, i) => value !== b[i]))
+            return false;
+    }
+    return true;
+}
 
 /**
  * guard 判定関数に渡す第 3 引数を組み立てる。
@@ -2752,6 +2769,101 @@ function inSsr() {
     return html ? html.hasAttribute('data-wcs-server') : false;
 }
 
+/**
+ * 素のフラグメントへのリンク（`<a href="#main">` — スキップリンク）は、ページの中の移動
+ * （docs/seam-apps.md、city-library）。
+ *
+ * SPA は `<base href="/">`（多言語なら `<base href="/ja/">`）を置くので、`#main` は
+ * `/#main` へ解決される: `/search?q=a` で押すと、router がそれを受けてホームのルートへ
+ * 移っていた。書いたままの `href` がフラグメントだけのリンクは、今のページのそのフラグメントへ
+ * 移る — `<base>` の無いページでブラウザがするのと同じナビゲーションで。
+ */
+/**
+ * `a` / `area` の、書いたままの `href` がフラグメントだけ（`#…`、`#` 単独も）ならその値。
+ * そうでなければ null（`/faq#x`・`?q=b#x` は別のページへのリンク）。
+ */
+function fragmentHref(element) {
+    if (!element || (element.localName !== "a" && element.localName !== "area"))
+        return null;
+    // URL の解析と同じく、前後の空白は除く
+    const href = element.getAttribute("href")?.trim();
+    return href !== undefined && href.startsWith("#") ? href : null;
+}
+/**
+ * HTML の "find a potential indicated element": その id を持つ要素、無ければその name を持つ `<a>`。
+ * 書いたままの値で探し、見つからなければパーセントデコードした値で探す（"select the indicated part"）。
+ */
+function findIndicatedElement(fragment) {
+    if (fragment === "")
+        return null;
+    const find = (value) => document.getElementById(value) ??
+        Array.from(document.getElementsByName(value)).find((el) => el.localName === "a") ??
+        null;
+    const found = find(fragment);
+    if (found !== null)
+        return found;
+    let decoded;
+    try {
+        decoded = decodeURIComponent(fragment);
+    }
+    catch {
+        return null;
+    }
+    return decoded === fragment ? null : find(decoded);
+}
+/** URL がフラグメントを除いて今のページの URL と同じか（そこへのナビゲーションはフラグメントのナビゲーション） */
+function isCurrentPage(url) {
+    const here = new URL(window.location.href);
+    const there = new URL(url);
+    here.hash = "";
+    there.hash = "";
+    return here.href === there.href;
+}
+/**
+ * リンクがこのウィンドウで開くか（`target` も `<base target>` も無い、または `_self`）。
+ * 別のウィンドウ・タブで開くリンクは、そこでのナビゲーション（ブラウザに任せる）。
+ */
+function opensInThisWindow(link) {
+    const target = link.getAttribute("target") ?? document.querySelector("base[target]")?.getAttribute("target") ?? "";
+    return target === "" || target.toLowerCase() === "_self";
+}
+/**
+ * NavigateEvent が sourceElement（ナビゲーションを起こしたリンク）を持つか。Chromium・Firefox・
+ * Safari の今の版は持つ。持たない（古い Chromium の Navigation API）なら、リンクは click で拾う。
+ */
+function navigateEventHasSource() {
+    const ctor = globalThis.NavigateEvent;
+    return typeof ctor === "function" && "sourceElement" in ctor.prototype;
+}
+/** 自分でフォーカスを受ける要素（tabindex を足すとタブ順から外れてしまうもの） */
+const FOCUSABLE = "a[href], area[href], button, input, select, textarea, iframe, summary, [contenteditable], audio[controls], video[controls], [tabindex]";
+/**
+ * フラグメントが指す要素へフォーカスを移す。フォーカスできない要素（`<main>`・見出し・`<a name>`）には
+ * `tabindex="-1"` を足す（`focus="heading"` と同じ）。スクロールはフラグメントのナビゲーション
+ * （ブラウザ）がする: ここでは動かさない — `scroll-margin` も `scroll-behavior: smooth` も効いたまま。
+ */
+function focusFragmentTarget(fragment) {
+    const target = findIndicatedElement(fragment);
+    if (target === null)
+        return;
+    if (!target.matches(FOCUSABLE)) {
+        target.setAttribute("tabindex", "-1");
+    }
+    target.focus({ preventScroll: true });
+}
+/**
+ * ページの中の移動: URL を今のパスとクエリ＋そのハッシュにする。`<base>` の無いページで
+ * ブラウザがするのと同じフラグメントのナビゲーション（`location.assign`）— 履歴は push、
+ * 今と同じ URL なら replace、スクロールは指す要素へ（`#` / `#top` は先頭へ）、`hashchange`
+ * と `:target` もそのまま。ルートの遷移ではないので、どの router も受けない。
+ */
+function navigateToFragment(href) {
+    // 解決の基準は文書の URL（<base> ではない）
+    const url = new URL(href, window.location.href);
+    window.location.assign(url.href);
+    focusFragmentTarget(url.hash.slice(1));
+}
+
 const EMPTY_RECORD = Object.freeze({});
 /** `leaveConfirm = true` で聞く文言（ページの言語で聞くなら文字列を束ねる） */
 const DEFAULT_LEAVE_CONFIRM = "Leave this page? Changes you made may not be saved.";
@@ -2814,6 +2926,7 @@ class Router extends HTMLElement {
     _fallbackRoute = null;
     _listeningPopState = false;
     _listeningNavigate = false;
+    _listeningClick = false;
     _navigateUrl = null;
     _replaceUrl = null;
     _disconnectedDuringInit = false;
@@ -3328,17 +3441,50 @@ class Router extends HTMLElement {
             return true;
         return fullPath === this._basename || fullPath.startsWith(this._basename + "/");
     }
+    /** 今のページ（URL）がこの router の basename の下か — ページの中の移動を受け持つのはこの router */
+    _ownsCurrentPage() {
+        return this._isOwnPath(this._normalizePathname(window.location.pathname));
+    }
+    /**
+     * 素のフラグメントへのリンク（`href="#main"`）の navigate イベント: ページの中の移動であり、どの router の
+     * ルートの遷移でもない（docs/seam-apps.md、city-library）。今のページを受け持つ router だけが動く:
+     * ブラウザが今のページのフラグメントへ移すもの（`<base>` が無い、今のページを指す）はそのまま通して
+     * フォーカスだけ移し、`<base>` が別のページへ解決したもの（`/#main`）は取り消して、今のページの
+     * そのフラグメントへ移し直す。
+     */
+    _onFragmentLinkNavigate(navEvent, href) {
+        if (!this._ownsCurrentPage())
+            return;
+        const destination = navEvent.destination.url;
+        if (isCurrentPage(destination)) {
+            focusFragmentTarget(new URL(destination).hash.slice(1));
+            return;
+        }
+        navEvent.preventDefault?.();
+        navigateToFragment(href);
+    }
     _onNavigateFunc(navEvent) {
         if (
         // ページ側が取り消したナビゲーション（未保存の確認など）に intercept() を呼ぶと
         // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
         navEvent.defaultPrevented ||
-            navEvent.hashChange ||
             navEvent.downloadRequest !== null ||
             // 読み直し（location.reload() / history.go(0) / navigation.reload()）は文書を読み直す。受けると同じ
             // 文書でルートを描き直すだけになり、更新を促す「再読み込み」も Service Worker の更新も効かなかった
             // （docs/seam-apps.md、prod-booking）。未保存の変更の確認は beforeunload の側（leaveConfirm）
             navEvent.navigationType === "reload") {
+            return;
+        }
+        // 書いたままの href がフラグメントだけのリンク（スキップリンク）。sourceElement はこの文書のリンクだけ見る
+        const source = navEvent.sourceElement;
+        const fragment = source?.ownerDocument === document ? fragmentHref(source) : null;
+        if (fragment !== null) {
+            this._onFragmentLinkNavigate(navEvent, fragment);
+            return;
+        }
+        // フラグメントのナビゲーションはブラウザのもの: フラグメントだけ変わる（戻る / 進むも）、今の URL のフラグメントへ
+        // もう一度（同じ URL へは hashChange が false で来る — 受けると、2 度目のスキップリンクがスクロールしなかった）
+        if (navEvent.hashChange || (navEvent.destination.url.includes("#") && isCurrentPage(navEvent.destination.url))) {
             return;
         }
         const url = new URL(navEvent.destination.url);
@@ -3402,6 +3548,24 @@ class Router extends HTMLElement {
         // search は明示引数で供給（§3.6）。mock / 特殊環境で欠ける場合は "" 扱い
         await applyRoute(this, this.outlet, fullPath, this._path, window.location.search || "");
         this._notifyLocationChange();
+    };
+    /**
+     * 素のフラグメントへのリンクを click で拾う — navigate イベントでリンクが分からないブラウザ（Navigation API
+     * が無い、NavigateEvent に sourceElement が無い）の経路。navigate イベントの経路と同じく、今のページの
+     * そのフラグメントへ移す（docs/seam-apps.md、city-library）。修飾キー・中ボタン・`download`・別の
+     * ウィンドウで開くリンク・ページが取り消したクリックはブラウザに任せる。window で聞くので、ページ自身の
+     * click リスナーはこれより先に走る。
+     */
+    _onClick = (e) => {
+        if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+            return;
+        // クリックを受けるリンク: 合成パスの最初の a / area（href のあるもの）。open な shadow root の中も
+        const link = e.composedPath().find((node) => node instanceof Element && (node.localName === "a" || node.localName === "area") && node.hasAttribute("href"));
+        const fragment = fragmentHref(link);
+        if (fragment === null || link.hasAttribute("download") || !opensInThisWindow(link) || !this._ownsCurrentPage())
+            return;
+        e.preventDefault();
+        navigateToFragment(fragment);
     };
     async _initialize() {
         this._initializing = true;
@@ -3847,6 +4011,11 @@ class Router extends HTMLElement {
             window.addEventListener("popstate", this._onPopState);
             this._listeningPopState = true;
         }
+        // 素のフラグメントへのリンク: navigate イベントで見分けられなければ click で拾う
+        if ((!navigation || !navigateEventHasSource()) && !this._listeningClick) {
+            window.addEventListener("click", this._onClick);
+            this._listeningClick = true;
+        }
         this._resolveConnectedCallback?.();
     }
     disconnectedCallback() {
@@ -3862,6 +4031,10 @@ class Router extends HTMLElement {
             window.removeEventListener("popstate", this._onPopState);
             this._listeningPopState = false;
         }
+        if (this._listeningClick) {
+            window.removeEventListener("click", this._onClick);
+            this._listeningClick = false;
+        }
         this._syncBeforeUnload();
         // live region は router の寿命に同期して撤去する（body 直下に置かない理由と同根）
         if (this._a11yRegion !== null) {
@@ -3875,7 +4048,8 @@ class Router extends HTMLElement {
 // 読み上げ言語・方向に直結するため含める（多言語ナビで anchor 側に届かないと
 // 読み上げが崩れる）。`aria-*` は開集合なので observedAttributes には載せられず、
 // anchor 生成時の一括コピーのみ（接続後の動的 aria-* 変更 — data-wcs バインド経由を
-// 含む — には追従しない。README の明記された制限）。
+// 含む — には追従しない。`for:` の行・`if:` の枝の中のリンクは接続前に束ねられるので、
+// その時の値はコピーされる。README の明記された制限）。
 const MIRRORED_ATTRIBUTES = ['title', 'rel', 'target', 'download', 'hreflang', 'lang', 'dir'];
 class Link extends HTMLElement {
     static get observedAttributes() {
@@ -4115,7 +4289,10 @@ class Link extends HTMLElement {
     }
     attributeChangedCallback(name, oldValue, newValue) {
         if (name === 'match' && oldValue !== newValue) {
-            this._updateActiveState();
+            // anchor 生成前（upgrade の属性の通知 — まだ router の下に居ないことがある）は接続時の判定に任せる
+            if (this._anchorElement) {
+                this._updateActiveState();
+            }
             return;
         }
         if (name === 'to' && oldValue !== newValue) {
@@ -4144,9 +4321,13 @@ class Link extends HTMLElement {
         if (this._path.startsWith('?') && this._anchorElement) {
             this._setAnchorHref(this._anchorElement, this._path);
         }
-        // active 判定は pathname のみの比較（クエリ非感応 — §1.1 欠陥 7 の修理）。
-        const currentPath = this._normalizePathname(new URL(window.location.href).pathname);
-        const { pathname } = splitUrlTarget(this._path);
+        // active 判定は pathname の比較（§1.1 欠陥 7 の修理）に、`to` のクエリが今のページのクエリに含まれること
+        // を足す（`to` にクエリが無ければ pathname だけ）。`/search?q=a` の「次のページ」（`?q=a&page=2`）が
+        // 「現在のページ」と読み上げられていた（docs/seam-apps.md、city-library）
+        const current = new URL(window.location.href);
+        const currentPath = this._normalizePathname(current.pathname);
+        const { pathname, search } = splitUrlTarget(this._path);
+        const queryMatches = queryIncludes(current.search, effectiveSearch(search));
         const linkPath = this._normalizePathname(this._isInternalTarget(this._path)
             ? (pathname === ""
                 ? window.location.pathname
@@ -4155,8 +4336,8 @@ class Link extends HTMLElement {
         // match="prefix": 下のパスでも active（サイドナビの「商品」が /products/3 でも印を付ける —
         // docs/seam-apps.md、router-admin）。そのページそのものではないので aria-current は "true"
         // 行き先の無いリンク（`to` が空）はどこでも active ではない（空のパスは "/" に正規化される）
-        const exact = this._path !== '' && currentPath === linkPath;
-        const within = !exact && this._path !== '' && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
+        const exact = this._path !== '' && queryMatches && currentPath === linkPath;
+        const within = !exact && this._path !== '' && queryMatches && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
         if (this._anchorElement) {
             if (exact || within) {
                 this._anchorElement.classList.add('active');
@@ -4492,7 +4673,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.9.0";
+var version = "4.10.0";
 var pkg = {
 	version: version};
 
