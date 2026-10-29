@@ -200,6 +200,11 @@ The exposed objects are **frozen snapshots** owned by the router: a new object p
 - Pagination, tabs — the back button should step through them: `navigateUrl = "?page=2"`.
 - Search boxes, filters — the history should not record every keystroke: `replaceUrl = "?q=" + …`, with `<wcs-debounce>` in front of high-frequency input.
 
+Two things a search page with its query in the URL gets wrong without a word:
+
+- **What the reader is typing, while the URL catches up.** With the box bound to the URL's query (`searchParams.q`) and `<wcs-debounce>` between the box and `replaceUrl`, the URL — and so the box — lags the keys: a settle writes the URL, the router commits it a moment later, and in between the box is written back with the older query, under the reader's fingers. Show what is typed while it is being typed: keep the box's own `draft` and a `typing` flag, set on `input` and cleared when the debounce has settled and the URL has what it settled on, and show the URL's query only when the flag is clear (so Back / Forward still fills the box). And write the URL only from a settle of something typed: the debounce settles once for the value it starts with too, and on a deep link (`/search?q=a&page=2`) that settle would write the query back over the URL — `?q=` or `?q=a`, without the `page`.
+- **Announcing the result count.** Write the sentence ("12 books found") from the response of the request — the `<wcs-fetch>`'s response event, `eventToken.value: results` with `$on: { results(state, event) { … } }` ([which response `value` holds](../fetch/README.md#output-state-bindable-async-state)) — not from `value` and the current query in a getter: `value` keeps the previous response while the new query's request is in flight, so the region first said the new query with the previous total. Put the region outside the route content (see [Accessibility contract](#accessibility-contract)).
+
 **Multiple routers**: `params` / `routeName` reflect each router's own match, but the page URL has a single query string — a query written through *any* router replaces the query for the whole page. Reads, however, are per-router: a router commits `searchParams` only when it processes a navigation under its own `basename`, so its value is "the query as of the last navigation this router processed".
 
 #### Query strings in navigation targets
@@ -279,7 +284,7 @@ Place as a child of `<wcs-route>` to declaratively define a guard decision funct
 - If the function returns `false`, navigation is cancelled and the user is redirected to the `guard` path; a non-empty string redirects there instead (e.g. `` return `/login?next=${encodeURIComponent(toPath)}` ``). `toPath` has no query string: rebuild it from the third argument's `searchParams` when the target needs it (`new URLSearchParams(searchParams)`)
 - A redirect **replaces** the history entry of the cancelled navigation, so Back does not lead to the guarded URL (and straight back to the redirect). It is not logged — it is what the guard is for. Guards that keep redirecting each other are stopped after 10 redirects in a row, with an error naming the last one. A `navigate()` / `replace()` whose navigation is redirected rejects with an `AbortError`
 - The module is evaluated **once**; the function runs on every navigation. Read anything that changes — a session — inside the function, not at the module's top level
-- A guard does not see the `<wcs-state>` tree, and on a page load the landing route's guard can run before `@wcstack/state` has loaded. Read what the session is kept in directly — `localStorage`, under the key a `<wcs-storage>` saves it to (stored as JSON) — which is also current in every tab
+- A guard does not see the `<wcs-state>` tree, and on a page load the landing route's guard can run before `@wcstack/state` has loaded. Read what the session is kept in directly — `localStorage`, under the key a `<wcs-storage>` saves it to — which is also current in every tab. `<wcs-storage>` stores an object or an array as JSON, but a string as it is ([Auto JSON serialization](../storage/README.md#auto-json-serialization)): `JSON.parse(localStorage.getItem(key))` reads a saved session object, and throws on a saved token string — read that with `getItem` alone
 - The function can return a `Promise` for async checks — the route is not committed until it settles
 - The third argument carries the match being entered (`params` / `typedParams` / `searchParams` / `routeName`); `toPath` / `fromPath` are basename-sliced paths
 - It guards the `<wcs-route>` it is inside, wherever it sits there — before or after the nested routes, or inside an element. A parent's guard runs for every navigation into its child routes too
@@ -457,16 +462,16 @@ Link. Converted to an `<a>`, and the route path in the `to` attribute is convert
 | `to` | Destination path or URL. Paths starting with `/` are treated as internal paths (basename is prepended to the pathname; a `?query` / `#hash` suffix is kept as-is). A value starting with `?` is a **query-only** link: the href is assembled as "current pathname + that query" and tracks location changes. Other values are treated as external URLs. While `to` is empty — bound with `attr.to:` and not written yet, as when the router loads before state — the `<a>` has no `href` and is never active; it takes the `to` when it arrives. |
 | `match` | `exact` (default) or `prefix`. With `prefix` the link is also active on the paths under it — a side navigation's "Products" on `/products/3` — with `aria-current="true"` there (`"page"` on the path itself). A link to a path under it is marked as well: on `/products/new`, a `prefix` "Products" and a "New product" are both active, with `aria-current="true"` and `"page"`; to show one mark, style `[aria-current="page"]`. |
 
-**Active state**: The generated `<a>` receives the `active` class when its path matches the current location, and `aria-current="page"` alongside it — the same fact, expressed in ARIA, so screen readers announce the current page in navigation. The comparison uses the **pathname only** — queries on either side never affect it (so `to="/products"` stays active on `/products?page=2`, and a query-only link is active whenever you are on its page). Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`).
+**Active state**: The generated `<a>` receives the `active` class when its path matches the current location, and `aria-current="page"` alongside it — the same fact, expressed in ARIA, so screen readers announce the current page in navigation. A `to` without a query compares the **pathname only** — the page's query does not matter, so `to="/products"` stays active on `/products?page=2`. Since 4.10 (not released yet), a `to` with a query is active only when the current URL's query has every parameter of `to`'s query with the same value(s): `to="?q=a&page=2"` ("Next page") is not the current page on `/search?q=a`, and is on `/search?q=a&page=2` — and on `/search?q=a&page=2&sort=new`, since parameters the link does not name are allowed. A repeated key (`?tag=a&tag=b`) needs the same set of values, in any order, and values are compared decoded (`+` and `%20` are the same). `match="prefix"` keeps its path rule and adds the same query rule. Up to 4.9 the query was ignored on both sides, so every pagination link on a page was its "current page" and a screen reader read "Next page, current page". Tracking is updated on navigation events (`currententrychange`, `wcs:navigate`, `popstate`), query-only navigations included.
 
 ```css
 /* Style active links */
 a.active { font-weight: bold; color: blue; }
 ```
 
-**Attribute forwarding**: when the `<a>` is generated, all `aria-*` attributes plus seven fixed names (`title`, `rel`, `target`, `download`, `hreflang`, `lang`, `dir`) are copied from the host to the anchor (`lang` / `dir` matter to screen readers — they set the announcement language and direction of the link text). `to`, `style`, and `class` are never forwarded (the host is `display:none`, and `class` carries the `active` contract). After connection, only the seven fixed names keep tracking changes; **dynamic `aria-*` changes do not reach the anchor** — this includes `data-wcs` bindings such as `<wcs-link data-wcs="attr.aria-label: ...">`, which write to the host after the copy has happened. Write `aria-*` on `<wcs-link>` as static attributes.
+**Attribute forwarding**: when the `<a>` is generated, all `aria-*` attributes plus seven fixed names (`title`, `rel`, `target`, `download`, `hreflang`, `lang`, `dir`) are copied from the host to the anchor (`lang` / `dir` matter to screen readers — they set the announcement language and direction of the link text). `to`, `style`, and `class` are never forwarded (the host is `display:none`, and `class` carries the `active` contract). After connection, only the seven fixed names keep tracking changes; **an `aria-*` value is copied once, when the anchor is created**, and a later change never reaches the anchor. With a `data-wcs` binding (`<wcs-link data-wcs="attr.aria-label: ...">`) it depends on when the value is written: a `<wcs-link>` in a `for:` row or an `if:` branch is bound before it is connected, so its first value is on the host when the anchor is created and is copied — but a later change of that value is not; a `<wcs-link>` in the page markup may have its anchor before state binds it, and then the value never arrives. Write `aria-*` that does not change as static attributes, and give a link a name that changes through its content: the host's children are moved into the anchor, so a bound `<span data-wcs="textContent: …">` inside `<wcs-link>` keeps updating.
 
-**Plain `<a>` note**: in browsers with the Navigation API, a plain `<a href="/about">` under the basename also becomes an SPA navigation (the router intercepts it). This does not hold in fallback browsers, where only `<wcs-link>`'s click handler provides SPA navigation — so `<wcs-link>` remains the recommendation.
+**Plain `<a>` note**: in browsers with the Navigation API, a plain `<a href="/about">` under the basename also becomes an SPA navigation (the router intercepts it). This does not hold in fallback browsers, where only `<wcs-link>`'s click handler provides SPA navigation — so `<wcs-link>` remains the recommendation. Since 4.10 (not released yet), a plain `<a href="#main">` (a bare fragment) is never a route change: it moves within the current page, on both paths — see [In-page links](#in-page-links-skip-links).
 
 **Reload note**: since 4.7, a reload the page asks for — `location.reload()`, `history.go(0)`, `navigation.reload()` — reloads the document, and with `leaveConfirm` set it gets the browser's own prompt. Up to 4.6 the router took it as a route change in the same document, so an "update available — reload" button or a service worker's update flow did nothing. Every other navigation under the basename, `location.replace(location.href)` included, stays an SPA navigation.
 
@@ -575,6 +580,52 @@ These are the specification defaults; writing them out records the delegation as
 
 See [docs/a11y-design.md](https://github.com/wcstack/wcstack/blob/main/docs/a11y-design.md) §3 for the design record.
 
+### In-page links (skip links)
+
+Since 4.10 (not released yet), a link whose `href` as written is a bare fragment — a skip link, `<a href="#main">`, and `href="#"` for the top of the page — moves within the current page, and is never a route change:
+
+```html
+<head><base href="/"></head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <wcs-router>
+    <template>
+      <wcs-route path="/search"><main id="main">…</main></wcs-route>
+      …
+    </template>
+  </wcs-router>
+```
+
+- The URL becomes the current path and query plus that hash (`/search?q=a#main`), with a history entry as any fragment link makes (the same fragment again replaces it). The browser scrolls to the target — the element with that `id`, or an `<a name>` — and the router moves focus to it, adding `tabindex="-1"` when it does not take focus itself, as `focus="heading"` does. `#` and `#top` scroll to the top and leave focus where it is.
+- Nothing about the route changes: no guard runs, nothing is rendered again, `leaveConfirm` does not ask. Back / Forward between the two entries are fragment navigations as well — the route stays and the browser restores the scroll position.
+- Why: under `<base href="/">`, which every SPA has, `#main` resolves to `/#main`. Up to 4.9 a skip link on `/search?q=a` therefore took the reader to the home route (under `<base href="/ja/">`, to `/ja/`).
+- It works on both paths. With the Navigation API the router reads the link from the `navigate` event (`sourceElement`, which current Chromium, Firefox and Safari give); without it, or where the event has no `sourceElement`, it listens for the click on `window`, after the page's own listeners — a click the page cancelled is left alone.
+- Unchanged: a click with a modifier (Ctrl / ⌘ / Shift / Alt) or the middle button, a link with a `target` other than `_self` or with `download`, a link to another page's fragment (`/faq#x`, `?q=b#x`), and a page outside every router's `basename`.
+
+### What the router leaves to the page
+
+- **A message meant to be heard after a navigation does not belong in the route content.** The route content is inserted together with its text, so a `role="status"` / `aria-live` region in it arrives with its message already there, and a screen reader announces changes to a region it already knows: the message is never read. With `<wcs-view-transition>`, even a region filled from a response after the route was placed can be inserted with its text (the swap runs inside the transition). Keep one region for the page, outside the router and its `<wcs-outlet>`; empty it when a navigation commits (a `$watch` on the router's `path`), and write the new page's sentence after that, when the page has it. For the page title, `announce="title"` does this already, in the router's own region.
+
+  ```html
+  <wcs-router data-wcs="path: route"><template>…</template></wcs-router>
+  <wcs-outlet></wcs-outlet>
+  <p class="visually-hidden" role="status" data-wcs="textContent: status"></p>
+  ```
+
+  ```js
+  $eventTokens: ["results"],
+  $watch: {
+    route() { this.status = ""; },              // a navigation empties it…
+  },
+  $on: {
+    results(state, event) {                     // …and the new page writes when it has something to say
+      state.status = `${event.detail.value.length} books found`;
+    },
+  },
+  ```
+
+- **Focus after a dialog closes.** A modal `<dialog>` gives focus back to the element that opened it when it closes. When that element is gone — the dialog deleted the row whose button opened it — focus falls to `<body>`, and a keyboard or screen-reader user starts again from the top of the page. Move it yourself after such a removal, to the list or its heading: `<h2 tabindex="-1" data-wcs="command.focus: $command.focusList">` and `this.$command.focusList.emit()` once the row is gone (a native element's `command.` methods come with the `native-commands` add-on, in the full entries).
+
 ## Path Specification (Router / Route / Link)
 
 ### Terminology
@@ -638,12 +689,22 @@ With basename `/ja`, a link to `/en/orders` falls outside `_isOwnPath`, the
 router declines to intercept, and the browser performs a real navigation. The
 "just a link" language switch works *because* of the basename.
 
+It also leaves the page, so with `leaveConfirm` set it asks first — and the page
+cannot tell whether the reader accepted: a click listener runs before the
+question, and a declined switch stays on the page in the old language. Record
+the chosen language on the next page, not on the click: mark it in
+`sessionStorage` on click, and let the next page's head script commit it (to
+`localStorage`) when the URL carries that language, and drop the mark otherwise.
+
 Two consequences worth having:
 
 * **Route patterns carry no locale** — `path="/"`, `path="/about"`. In-app links
   stay locale-free too (`<wcs-link to="/about">` prepends the basename).
 * **Every URL on the page must be absolute**, since `<base>` now changes what
-  relative URLs resolve against.
+  relative URLs resolve against. A link to a bare fragment (`href="#main"`) is
+  the exception since 4.10 (not released yet): the router keeps it on the current page
+  ([In-page links](#in-page-links-skip-links)). Inline-SVG fragment references
+  (`url(#gradient)`, `clip-path`) are not links, and still resolve against the base.
 
 Repairing a URL that carries no locale, or an unknown one, belongs in that same
 head script (`location.replace`) rather than a route guard: a guard's redirect

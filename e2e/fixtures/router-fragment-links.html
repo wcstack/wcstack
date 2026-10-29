@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: router fragment links and query links</title>
+  <!-- From the city-library seam app (docs/seam-apps.md). Under <base href>, a skip link
+       (href="#main") resolves to the base's #main: the router took it as a route change to
+       home. Since 4.10 a link whose href as written is a bare fragment moves in the page.
+       And a <wcs-link> whose `to` has a query is the current page only on that query. -->
+  <base href="/e2e/fixtures/">
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+  <style>
+    .spacer { height: 2500px; }
+  </style>
+</head>
+<body>
+  <a id="skip" href="#main">Skip to content</a>
+  <a id="top-link" href="#">Back to top</a>
+  <nav>
+    <wcs-link to="/">home</wcs-link>
+    <wcs-link to="/search?q=a">search</wcs-link>
+  </nav>
+
+  <wcs-router>
+    <template>
+      <wcs-route path="/">
+        <div class="spacer">home top</div>
+        <main id="main"><h1 id="view">home</h1></main>
+        <div class="spacer"></div>
+      </wcs-route>
+      <wcs-route path="/search">
+        <div class="spacer">search top</div>
+        <main id="main">
+          <h1 id="view">search</h1>
+          <wcs-link to="?q=a&amp;page=2">Next page</wcs-link>
+          <a id="faq" href="/e2e/fixtures/#main">home's main</a>
+        </main>
+        <div class="spacer"></div>
+      </wcs-route>
+    </template>
+  </wcs-router>
+</body>
+</html>

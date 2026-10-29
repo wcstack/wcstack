@@ -17,6 +17,14 @@ import { isAbortError } from "../isAbortError.js";
 import { bindSubtree, getBinder } from "../protocol/binder.js";
 import { inSsr } from "../inSsr.js";
 import { runGuardPhase } from "../showRouteContent.js";
+import {
+  focusFragmentTarget,
+  fragmentHref,
+  isCurrentPage,
+  navigateEventHasSource,
+  navigateToFragment,
+  opensInThisWindow,
+} from "../fragmentLink.js";
 import { ROUTE_RANGE } from "../routeRange.js";
 import { assignRouteParams } from "../showRoute.js";
 import {
@@ -36,6 +44,8 @@ interface NavigateEventLike {
   hashChange: boolean;
   downloadRequest: string | null;
   destination: { url: string };
+  /** ナビゲーションを起こした要素（クリックされたリンク）。無いブラウザ・mock では欠ける */
+  sourceElement?: Element | null;
   /** Navigation API の navigationType。mock / polyfill では欠け得る */
   navigationType?: "push" | "replace" | "traverse" | "reload";
   intercept: (options: {
@@ -111,6 +121,7 @@ export class Router extends HTMLElement implements IRouter {
   private _fallbackRoute: IRoute | null = null;
   private _listeningPopState: boolean = false;
   private _listeningNavigate: boolean = false;
+  private _listeningClick: boolean = false;
   private _navigateUrl: string | null = null;
   private _replaceUrl: string | null = null;
   private _disconnectedDuringInit: boolean = false;
@@ -652,18 +663,52 @@ export class Router extends HTMLElement implements IRouter {
     return fullPath === this._basename || fullPath.startsWith(this._basename + "/");
   }
 
+  /** 今のページ（URL）がこの router の basename の下か — ページの中の移動を受け持つのはこの router */
+  private _ownsCurrentPage(): boolean {
+    return this._isOwnPath(this._normalizePathname(window.location.pathname));
+  }
+
+  /**
+   * 素のフラグメントへのリンク（`href="#main"`）の navigate イベント: ページの中の移動であり、どの router の
+   * ルートの遷移でもない（docs/seam-apps.md、city-library）。今のページを受け持つ router だけが動く:
+   * ブラウザが今のページのフラグメントへ移すもの（`<base>` が無い、今のページを指す）はそのまま通して
+   * フォーカスだけ移し、`<base>` が別のページへ解決したもの（`/#main`）は取り消して、今のページの
+   * そのフラグメントへ移し直す。
+   */
+  private _onFragmentLinkNavigate(navEvent: NavigateEventLike, href: string): void {
+    if (!this._ownsCurrentPage()) return;
+    const destination = navEvent.destination.url;
+    if (isCurrentPage(destination)) {
+      focusFragmentTarget(new URL(destination).hash.slice(1));
+      return;
+    }
+    navEvent.preventDefault?.();
+    navigateToFragment(href);
+  }
+
   private _onNavigateFunc(navEvent: NavigateEventLike) {
     if (
       // ページ側が取り消したナビゲーション（未保存の確認など）に intercept() を呼ぶと
       // InvalidStateError が投げられる（docs/seam-apps.md、router-admin）
       navEvent.defaultPrevented ||
-      navEvent.hashChange ||
       navEvent.downloadRequest !== null ||
       // 読み直し（location.reload() / history.go(0) / navigation.reload()）は文書を読み直す。受けると同じ
       // 文書でルートを描き直すだけになり、更新を促す「再読み込み」も Service Worker の更新も効かなかった
       // （docs/seam-apps.md、prod-booking）。未保存の変更の確認は beforeunload の側（leaveConfirm）
       navEvent.navigationType === "reload"
     ) {
+      return;
+    }
+    // 書いたままの href がフラグメントだけのリンク（スキップリンク）。sourceElement はこの文書のリンクだけ見る
+    const source = navEvent.sourceElement;
+    const fragment = source?.ownerDocument === document ? fragmentHref(source) : null;
+    if (fragment !== null) {
+      this._onFragmentLinkNavigate(navEvent, fragment);
+      return;
+    }
+    // フラグメントのナビゲーションはブラウザのもの: フラグメントだけ変わる（戻る / 進むも）、今の URL のフラグメントへ
+    // もう一度（同じ URL へは hashChange が false で来る — 受けると、2 度目のスキップリンクがスクロールしなかった）
+    if (navEvent.hashChange || (navEvent.destination.url.includes("#") && isCurrentPage(navEvent.destination.url))) {
       return;
     }
     const url = new URL(navEvent.destination.url);
@@ -727,6 +772,25 @@ export class Router extends HTMLElement implements IRouter {
     // search は明示引数で供給（§3.6）。mock / 特殊環境で欠ける場合は "" 扱い
     await applyRoute(this, this.outlet, fullPath, this._path, window.location.search || "");
     this._notifyLocationChange();
+  };
+
+  /**
+   * 素のフラグメントへのリンクを click で拾う — navigate イベントでリンクが分からないブラウザ（Navigation API
+   * が無い、NavigateEvent に sourceElement が無い）の経路。navigate イベントの経路と同じく、今のページの
+   * そのフラグメントへ移す（docs/seam-apps.md、city-library）。修飾キー・中ボタン・`download`・別の
+   * ウィンドウで開くリンク・ページが取り消したクリックはブラウザに任せる。window で聞くので、ページ自身の
+   * click リスナーはこれより先に走る。
+   */
+  private _onClick = (e: MouseEvent): void => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    // クリックを受けるリンク: 合成パスの最初の a / area（href のあるもの）。open な shadow root の中も
+    const link = e.composedPath().find(
+      (node): node is Element => node instanceof Element && (node.localName === "a" || node.localName === "area") && node.hasAttribute("href"),
+    );
+    const fragment = fragmentHref(link);
+    if (fragment === null || link!.hasAttribute("download") || !opensInThisWindow(link!) || !this._ownsCurrentPage()) return;
+    e.preventDefault();
+    navigateToFragment(fragment);
   };
 
   private async _initialize(): Promise<void> {
@@ -1180,6 +1244,11 @@ export class Router extends HTMLElement implements IRouter {
       window.addEventListener("popstate", this._onPopState);
       this._listeningPopState = true;
     }
+    // 素のフラグメントへのリンク: navigate イベントで見分けられなければ click で拾う
+    if ((!navigation || !navigateEventHasSource()) && !this._listeningClick) {
+      window.addEventListener("click", this._onClick);
+      this._listeningClick = true;
+    }
     this._resolveConnectedCallback?.();
   }
 
@@ -1195,6 +1264,10 @@ export class Router extends HTMLElement implements IRouter {
     if (this._listeningPopState) {
       window.removeEventListener("popstate", this._onPopState);
       this._listeningPopState = false;
+    }
+    if (this._listeningClick) {
+      window.removeEventListener("click", this._onClick);
+      this._listeningClick = false;
     }
     this._syncBeforeUnload();
     // live region は router の寿命に同期して撤去する（body 直下に置かない理由と同根）

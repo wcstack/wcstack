@@ -192,6 +192,12 @@ export class Engine implements ReconcileHooks {
    * starts a task chain again, so such a loop runs one lap per arbiter task and is never cut.
    */
   private carried = 0;
+  /**
+   * Applies an arbiter is holding for its transition: until the last has run, what follows a drain
+   * (`$watch`, the diagnostics) waits, so it sees the page the update produced, as without one — a
+   * `$watch` that navigated ran before `<wcs-storage>` saved (docs/seam-apps.md, city-library).
+   */
+  private held = 0;
   /** This chain was reported as not settling within a drain (#11): reported once a chain. */
   private unsettled = false;
   /** Since the last drain started: a write rendering fed back / a write from code (which ends a chain). */
@@ -1306,7 +1312,9 @@ export class Engine implements ReconcileHooks {
         // job, and a transition per keystroke left the page unclickable — docs/seam-apps.md,
         // router-admin). Queued entries stay marked until applied, so a write meanwhile folds
         // into them
+        let ran = false;
         const apply = (): void => {
+          ran = true;
           // list views first (they build rows), then bindings
           for (const l of lists) {
             l.queued = false;
@@ -1337,10 +1345,12 @@ export class Engine implements ReconcileHooks {
           // what it fed back starts (a write-back, `$renderedCallback`) is the next of this drain's chain
           if (!this.draining) {
             this.report();
+            if (--this.held === 0) this.settled();
             if (this.scheduled) this.carried = chain + 1;
           }
         };
         const pending = lists.length > 0 || q.some((b) => b.chain !== null) ? runTransition("state", apply) : apply();
+        if (!ran) this.held++;
         if (pending !== undefined) pending.then(undefined, report);
       }
     } finally {
@@ -1349,10 +1359,15 @@ export class Engine implements ReconcileHooks {
     // (writes made while applying are this drain's own passes)
     this.fedBack = this.codeWrote = false;
     this.report();
-    hooks.drained?.(this);
-    this.sweep();
+    if (this.held === 0) this.settled();
     // (as is the one a carried drain's reactions start)
     if (carried > 0 && this.scheduled) this.carried = chain + 1;
+  }
+
+  /** What follows a drain once its page is applied (`held`): `$watch`, the diagnostics, the sweep. */
+  private settled(): void {
+    hooks.drained?.(this);
+    this.sweep();
   }
 
   // ---------------------------------------------------------------- apply, hooks, reports
