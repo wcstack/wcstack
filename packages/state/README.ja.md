@@ -2610,7 +2610,7 @@ $renderedCallback(paths) {
 | ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
 | 同一パスの行間 | `indexes` 昇順 | 固定 |
 
-**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$renderedCallback` —— がフレームで着地する一方、`$watch`・`$stream` restart は state アドレスを消費し DOM を見ないので、drain がキューされた microtask に留まります。タグがある間の順序は `$watch` → `$stream` restart → `$renderedCallback` です。この層を並べ替えるものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
+**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$renderedCallback` —— がフレームで着地します。4.10（未リリース）から、`$watch` と `$stream` restart はそれを待つので、順序は上のとおりのまま、1 フレーム遅れるだけです。4.9 までは drain がキューされた microtask に留まって先に走り（`$watch` → `$stream` restart → `$renderedCallback`）、ログインの後に画面を移す `$watch` が、ルートのガードが読むセッションを `<wcs-storage>` が保存するより先に走っていました。この層を動かすものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
 
 主なルール:
 
@@ -3053,6 +3053,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 判定は**過小近似**です。静的に決められない形では黙ります —— 誤検知でページを騒がせないことを優先しているためで、以下はすべて警告しません：
 
 - 親が `null` / `undefined`（初期値 `null` に後から代入する形）
+- キーの下の空のオブジェクト（`fieldErrors: {}` に後から `this.fieldErrors = { date: "…" }` を代入する形）— 種が `{}` の同じ形。4.10（未リリース）から。4.9 までは、その下の束縛ごとに報告し、「updates … will be silently dropped」と言っていたが、そうではない: オブジェクトを置き換えれば更新される。lint は 4.9 からその代入を読む
 - どの行にも無い行フィールド —— ただし、行に近い名前がある（打ち間違いらしい。`name` の横の `.nmae`）なら警告します。行はデータで、任意のフィールド（ページが自分の行に付ける `pending` など）はほかの行にはありません。4.4 から。ほかの行にあるフィールドが最初の行に無いだけの場合も警告しません（4.3 から）
 - 途中の getter の戻り値のサブプロパティ
 - まだ読み込み中のボリュームのマウントパス配下のパス —— ボリュームが決着した時点で検査される
