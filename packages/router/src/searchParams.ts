@@ -33,3 +33,20 @@ export function shallowEqualRecords(
   }
   return true;
 }
+
+/**
+ * `<wcs-link to>` のクエリが今のページのクエリに含まれるか（active / aria-current の判定 — docs/seam-apps.md、
+ * city-library）。`to` のクエリの各パラメータについて、今のクエリが同じ値（重複キーは同じ値の組、順序は
+ * 問わない）を持てば true。今のページにある余分なパラメータは構わない。`to` にクエリが無ければ常に true。
+ * 値は `URLSearchParams` でデコードして比べる（`+` と `%20` は同じ）。
+ */
+export function queryIncludes(current: string, required: string): boolean {
+  const want = new URLSearchParams(required);
+  const have = new URLSearchParams(current);
+  for (const key of new Set(want.keys())) {
+    const a = want.getAll(key).sort();
+    const b = have.getAll(key).sort();
+    if (a.length !== b.length || a.some((value, i) => value !== b[i])) return false;
+  }
+  return true;
+}
