@@ -198,6 +198,8 @@ export class Engine implements ReconcileHooks {
    * `$watch` that navigated ran before `<wcs-storage>` saved (docs/seam-apps.md, city-library).
    */
   private held = 0;
+  /** Draining inside such an apply: its passes are applied at once, in the arbiter's transition. */
+  private inApply = 0;
   /** This chain was reported as not settling within a drain (#11): reported once a chain. */
   private unsettled = false;
   /** Since the last drain started: a write rendering fed back / a write from code (which ends a chain). */
@@ -219,7 +221,10 @@ export class Engine implements ReconcileHooks {
   private rp: Pattern | null = null;
   private rr: StateRow | null = null;
 
-  private readonly drainFn = () => this.drain();
+  private readonly drainFn = () => {
+    // (drained already, inside an arbiter's apply)
+    if (this.scheduled) this.drain();
+  };
   private readonly deliverFn = (handler: (...a: unknown[]) => unknown, args: unknown[]) => handler(this.proxy, ...args);
   /** `$eq` subscriptions of root-level getters. */
   private readonly rootEqSubs: EqEntry[] = [];
@@ -1341,15 +1346,25 @@ export class Engine implements ReconcileHooks {
               if (b.owner === null || b.owner.alive) this.applyBinding(b);
             }
           }
-          // applied later by the arbiter, outside any drain: report its failures now, and the drain
-          // what it fed back starts (a write-back, `$renderedCallback`) is the next of this drain's chain
+          // applied later by the arbiter, outside any drain: report its failures now. What that
+          // apply and the `$watch` after it write (a write-back, `$renderedCallback`, a copied list)
+          // is drained here, the next of this drain's chain, and applied in the same transition — a
+          // frame of its own showed the loading line gone over the old rows (router-admin)
           if (!this.draining) {
             this.report();
             if (--this.held === 0) this.settled();
-            if (this.scheduled) this.carried = chain + 1;
+            if (this.scheduled) {
+              this.carried = chain + 1;
+              this.inApply++;
+              try {
+                while (this.scheduled) this.drain();
+              } finally {
+                this.inApply--;
+              }
+            }
           }
         };
-        const pending = lists.length > 0 || q.some((b) => b.chain !== null) ? runTransition("state", apply) : apply();
+        const pending = (lists.length > 0 || q.some((b) => b.chain !== null)) && this.inApply === 0 ? runTransition("state", apply) : apply();
         if (!ran) this.held++;
         if (pending !== undefined) pending.then(undefined, report);
       }
