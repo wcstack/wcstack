@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { validateBindings, findAllBindAttributes } from '../src/service/bindingValidator';
 import { validateDocument } from '../src/core/validateDocument';
 import { WcsDiagnosticCode } from '../src/core/diagnostics';
-import { NATIVE_COMMANDS, nativeCommandsOf } from '../src/service/wcsManifest';
+import { builtinFilterMeta, NATIVE_COMMANDS, nativeCommandsOf } from '../src/service/wcsManifest';
+// the canonical source of the filter arities, ahead of the committed dist the lint reads between releases
+import { builtinFilterMeta as SOURCE_FILTER_META } from '../../state/src/public/filterMeta';
 
 const SAMPLE_HTML = `
 <wcs-state>
@@ -1128,6 +1130,60 @@ export default { items: ["x"], label: "a" };
     const argType = (expr: string) => validateBindings(page(`textContent: ${expr}`), 'data-wcs')
       .filter(d => d.code === WcsDiagnosticCode.FilterArgType).map(d => d.severity);
     expect(argType('label|join(1)')).toEqual(['warning']);
+  });
+});
+
+// 4.10: date / time / datetime は 3 つ目に IANA のタイムゾーンを取る（0〜3 個 — city-library、
+// 2026-10-29 の決定）。lint は個数を `@wcstack/state/manifest` の filterMeta から読む。正本は state の
+// src（public/filterMeta.ts）だが、拡張が読むのは file:../state の**コミット済み dist** で、dist は
+// リリースのビルドまで 4.9 の 0〜2 のまま。CI の wcs-validate job は state を src からビルドしてから
+// このテストを走らせるので、そこでは 4.10 の個数で走る。手元では packages/state の `npm run build` の
+// 後に走る（コミット済み dist のままなら 4.10 の個数の断言だけを飛ばす — リリースのビルドの後は常に走る）。
+describe('validateBindings — 日付フィルタの 3 つ目のタイムゾーン（4.10）', () => {
+  const page = (attr: string): string => `
+<wcs-state>
+  <script type="module">
+export default { at: null };
+  </script>
+</wcs-state>
+<p data-wcs="${attr}"></p>`;
+  const arity = (expr: string) => validateBindings(page(`textContent: ${expr}`), 'data-wcs')
+    .filter(d => d.code === WcsDiagnosticCode.FilterArity);
+  const NAMES = ['date', 'time', 'datetime'] as const;
+  /** the dist the lint reads has been built from this src */
+  const built = NAMES.every(name => builtinFilterMeta[name].maxArgs === SOURCE_FILTER_META[name].maxArgs);
+
+  it('正本（state の src）の date / time / datetime は 0〜3 個の文字列の引数を取ること', () => {
+    for (const name of NAMES) {
+      expect(SOURCE_FILTER_META[name], name).toMatchObject({ minArgs: 0, maxArgs: 3, argTypes: ['string', 'string', 'string'] });
+    }
+  });
+
+  it('lint は manifest の上限で数え、先頭・中間の空の引数も位置として数えること（どちらの dist でも）', () => {
+    for (const name of NAMES) {
+      const max = builtinFilterMeta[name].maxArgs;
+      // `date(,,Asia/Tokyo)` は 3 個（ランタイムも空の引数を既定として位置を保つ）
+      expect(arity(`at|${name}(,,Asia/Tokyo)`).length, name).toBe(3 > max ? 1 : 0);
+      const tooMany = arity(`at|${name}(ja-JP,full,Asia/Tokyo,x)`);
+      expect(tooMany.length, name).toBe(1);
+      expect(tooMany[0].message, name).toContain(`${max}`);
+      expect(tooMany[0].message, name).toContain('4');
+    }
+  });
+
+  it.runIf(built)('4.10 の dist では、ロケール・書式・タイムゾーンの 3 つを受け、4 つ目で filter-arity になること', () => {
+    for (const name of NAMES) {
+      for (const expr of [
+        `at|${name}(ja-JP,full,Asia/Tokyo)`,
+        `at|${name}(en-US,short,America/Los_Angeles)`,
+        `at|${name}(,,Asia/Tokyo)`,
+        `at|${name}(ja-JP,,Asia/Tokyo)`,
+        `at|${name}(Asia/Tokyo)`,
+      ]) {
+        expect(validateBindings(page(`textContent: ${expr}`), 'data-wcs'), expr).toEqual([]);
+      }
+      expect(arity(`at|${name}(ja-JP,full,Asia/Tokyo,x)`)[0].message, name).toMatch(/\b3\b.*\b4\b/);
+    }
   });
 });
 

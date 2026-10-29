@@ -71,6 +71,7 @@ export const enum M {
   DisconnectedFailed = 51,
   FilterStyleInvalid = 52,
   FilterCurrencyInvalid = 53,
+  FilterTimeZoneInvalid = 54,
   // [wcs/binding-syntax]
   BindTextNoColon = 101,
   StructuralTakesNoModifiers = 102,

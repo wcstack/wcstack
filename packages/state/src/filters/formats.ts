@@ -22,7 +22,7 @@ import { currencyInvalid, optionsRequired, styleInvalid, valueMustBeArray, value
 import { firstLiteral, numberOption, requiredNumberOption } from "./options";
 import { registerFilters, type FilterDefinition, type FilterFactory, type FilterFn } from "./registry";
 import { coreFilters, numeric } from "./core";
-import { M, text } from "../messages";
+import { M, raise, text } from "../messages";
 
 /**
  * Extends the display-side empty-value contract (requirement B8) to the filters that build their
@@ -163,10 +163,9 @@ const upper = (): FilterFn => (value: unknown): string => String(value).toUpperC
 
 const lower = (): FilterFn => (value: unknown): string => String(value).toLowerCase();
 
+/** The first character upper-cased (`charAt(0)` of "" is "", so an empty string stays empty). */
 const capitalize = (): FilterFn => (value: unknown): string => {
   const v = String(value);
-  if (v.length === 0) {return v;}
-  if (v.length === 1) {return v.toUpperCase();}
   return v.charAt(0).toUpperCase() + v.slice(1);
 };
 
@@ -231,22 +230,45 @@ const join = (options: string[]): FilterFn => {
 
 const STYLES = ["full", "long", "medium", "short"];
 
+type DateStyle = Intl.DateTimeFormatOptions["dateStyle"];
+
 /**
- * The options of `date time datetime`: `(locale?, style?)`, the style Intl's `dateStyle` / `timeStyle`
- * (`date(en-US,medium)` → "Oct 13, 2026"). A style alone keeps the default locale (`date(long)`).
- * Without a style the format is the locale's numeric one, as before.
+ * The options of `date time datetime`: `(locale?, style?, zone?)`. The style is Intl's `dateStyle` /
+ * `timeStyle` (`date(en-US,medium)` → "Oct 13, 2026"); without one the format is the locale's
+ * numeric one. The zone (4.10) is an IANA time zone, Intl's `timeZone` (`time(ja-JP,short,Asia/Tokyo)`);
+ * without one the filters format in the runtime's zone — the reader's, or the server's under SSR
+ * (docs/seam-apps.md, city-library: a Tokyo library's hours read 17:00 from Los Angeles).
+ *
+ * An empty argument keeps its default (`date(,,Asia/Tokyo)`, `date(ja-JP,,Asia/Tokyo)`; up to 4.9 an
+ * empty locale or style threw inside Intl on every apply). A style in the locale's place keeps the
+ * default locale (`date(long)`, `date(long,,Asia/Tokyo)`), and so does a zone alone when it has a "/"
+ * or is `UTC` — no language tag has a "/", and `UTC` as a locale was Intl's silent fallback
+ * (`date(Asia/Tokyo)`, `date(UTC)`; another zone without a "/" goes third: `date(,,GMT)`). A style or
+ * a zone Intl does not take fails when the bindings are planned (a zone in the style's place is told
+ * where it goes).
  */
-function dateOptions(options: string[], fn: string): [string | undefined, Intl.DateTimeFormatOptions["dateStyle"]] {
-  let [loc, style]: (string | undefined)[] = options ?? [];
-  if (style === undefined && loc !== undefined && STYLES.includes(loc)) [loc, style] = [undefined, loc];
-  if (style !== undefined && !STYLES.includes(style)) styleInvalid(fn, style);
-  return [loc, style as Intl.DateTimeFormatOptions["dateStyle"]];
+function dateOptions(options: string[], fn: string): [string | undefined, DateStyle, string | undefined] {
+  let [loc, style, zone] = (options ?? []).map((option) => option || undefined);
+  if (!style && STYLES.includes(loc!)) [loc, style] = [undefined, loc];
+  // (`test(undefined)` reads "undefined": no match)
+  else if (!style && !zone && /\/|^UTC$/.test(loc!)) [loc, zone] = [undefined, loc];
+  if (style && !STYLES.includes(style)) styleInvalid(fn, style);
+  try {
+    if (zone) new Intl.DateTimeFormat(undefined, { timeZone: zone });
+  } catch {
+    // (raised here: ./errorMessages is in the chunk the split core loads, and only this add-on needs it)
+    raise(M.FilterTimeZoneInvalid, [fn, zone]);
+  }
+  return [loc, style as DateStyle, zone];
 }
+
+// (Without a style or a zone the options stay `undefined`, as before. A style and a zone are never "" here:
+// dateOptions makes an empty argument `undefined`.)
 
 /** Locale-formatted date (the default locale is read per apply — see `locale`). */
 const date = (options: string[]): FilterFn => {
-  const [explicit, style] = dateOptions(options, 'date');
-  const format: Intl.DateTimeFormatOptions | undefined = style && { dateStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, 'date');
+  const format = ((style || timeZone) && { dateStyle: style, timeZone }) as Intl.DateTimeFormatOptions | undefined;
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('date', value);}
     return value.toLocaleDateString(explicit ?? defaultLocale(), format);
@@ -255,8 +277,8 @@ const date = (options: string[]): FilterFn => {
 
 /** Locale-formatted time (the default locale is read per apply — see `locale`). */
 const time = (options: string[]): FilterFn => {
-  const [explicit, style] = dateOptions(options, 'time');
-  const format: Intl.DateTimeFormatOptions | undefined = style && { timeStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, 'time');
+  const format = ((style || timeZone) && { timeStyle: style, timeZone }) as Intl.DateTimeFormatOptions | undefined;
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('time', value);}
     return value.toLocaleTimeString(explicit ?? defaultLocale(), format);
@@ -265,35 +287,32 @@ const time = (options: string[]): FilterFn => {
 
 /** Locale-formatted date and time (the default locale is read per apply — see `locale`). */
 const datetime = (options: string[]): FilterFn => {
-  const [explicit, style] = dateOptions(options, 'datetime');
-  const format: Intl.DateTimeFormatOptions | undefined = style && { dateStyle: style, timeStyle: style };
+  const [explicit, style, timeZone] = dateOptions(options, 'datetime');
+  const format = ((style || timeZone) && { dateStyle: style, timeStyle: style, timeZone }) as Intl.DateTimeFormatOptions | undefined;
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('datetime', value);}
     return value.toLocaleString(explicit ?? defaultLocale(), format);
   };
 };
 
-/** YYYY-MM-DD with a configurable separator (default '-'), locale-independent. */
+/** Two digits, zero-padded (`ymd` / `hms`). */
+const two = (n: number): string => String(n).padStart(2, '0');
+
+/** YYYY-MM-DD with a configurable separator (default '-'), locale-independent, in the runtime's time zone. */
 const ymd = (options: string[]): FilterFn => {
   const opt = options?.[0] ?? '-';
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('ymd', value);}
-    const year = value.getFullYear().toString();
-    const month = (value.getMonth() + 1).toString().padStart(2, '0');
-    const day = value.getDate().toString().padStart(2, '0');
-    return `${year}${opt}${month}${opt}${day}`;
+    return `${value.getFullYear()}${opt}${two(value.getMonth() + 1)}${opt}${two(value.getDate())}`;
   };
 };
 
-/** HH:MM:SS with a configurable separator (default ':'), zero-padded and locale-independent. */
+/** HH:MM:SS with a configurable separator (default ':'), zero-padded and locale-independent, in the runtime's time zone. */
 const hms = (options: string[]): FilterFn => {
   const opt = options?.[0] ?? ':';
   return (value: unknown): string => {
     if (!(value instanceof Date)) {valueMustBeDate('hms', value);}
-    const hours = value.getHours().toString().padStart(2, '0');
-    const minutes = value.getMinutes().toString().padStart(2, '0');
-    const seconds = value.getSeconds().toString().padStart(2, '0');
-    return `${hours}${opt}${minutes}${opt}${seconds}`;
+    return `${two(value.getHours())}${opt}${two(value.getMinutes())}${opt}${two(value.getSeconds())}`;
   };
 };
 
@@ -377,10 +396,11 @@ const registered: Readonly<Record<string, FilterDefinition>> = {
   percent: { factory: percent, arity: [0, 1] },
   unit: { factory: nullishPassthrough(unit), arity: [1, 1] },
 
-  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), and a style (`date(ja-JP,long)`)
-  date: { factory: nullishPassthrough(date), arity: [0, 2] },
-  time: { factory: nullishPassthrough(time), arity: [0, 2] },
-  datetime: { factory: nullishPassthrough(datetime), arity: [0, 2] },
+  // The locale-dependent three take a locale like `locale` does (`date(ja-JP)`), a style (`date(ja-JP,long)`)
+  // and, since 4.10, a time zone (`date(ja-JP,long,Asia/Tokyo)`)
+  date: { factory: nullishPassthrough(date), arity: [0, 3] },
+  time: { factory: nullishPassthrough(time), arity: [0, 3] },
+  datetime: { factory: nullishPassthrough(datetime), arity: [0, 3] },
   ymd: { factory: nullishPassthrough(ymd), arity: [0, 1] },
   hms: { factory: nullishPassthrough(hms), arity: [0, 1] },
 

@@ -5,7 +5,8 @@
  *
  * 引数の個数の表は @wcstack/state 3.3.0 の `builtinFilterArity`（＝ filterMeta の minArgs / maxArgs、
  * lint と同じ正本）の写し。ここが変わる＝ lint / エディタと食い違う、ということ。4.2 の意図した差
- * （docs/seam-apps.md、router-admin — 2026-10-14 の決定）は `CHANGED_4_2` に別に持つ。
+ * （docs/seam-apps.md、router-admin — 2026-10-14 の決定）は `CHANGED_4_2` に、4.10 の意図した差
+ * （city-library — 2026-10-29 の決定）は `CHANGED_4_10` に別に持つ。
  */
 import { describe, it, expect } from "vitest";
 import { coreFilters, installCoreFilters } from "../src/filters/core";
@@ -32,6 +33,11 @@ const CHANGED_4_2: Readonly<Record<string, readonly [number, number]>> = {
   date: [0, 2], time: [0, 2], datetime: [0, 2], currency: [1, 2],
 };
 const ADDED_4_2 = ["currency"];
+
+/** 4.10 の意図した差: 日付の 3 本は IANA のタイムゾーンを 3 つ目に取る（`time(ja-JP,short,Asia/Tokyo)`）。 */
+const CHANGED_4_10: Readonly<Record<string, readonly [number, number]>> = {
+  date: [0, 3], time: [0, 3], datetime: [0, 3],
+};
 
 /** 3.x の `builtinFilterMeta` の並び（lint が did-you-mean の候補をこの順に読む） */
 const SOURCE_ORDER = [
@@ -102,8 +108,8 @@ describe("登録の順（did-you-mean の同距離先勝ちの順）", () => {
 });
 
 describe("引数の個数（要件 B3）", () => {
-  it.each(Object.entries({ ...coreFilters, ...formatFilters }))("%s の [最少, 最多] が 3.x と同じ（4.2 の意図した差を除く）であること", (name, definition) => {
-    expect(definition.arity).toEqual(CHANGED_4_2[name] ?? SOURCE_ARITY[name]);
+  it.each(Object.entries({ ...coreFilters, ...formatFilters }))("%s の [最少, 最多] が 3.x と同じ（4.2 と 4.10 の意図した差を除く）であること", (name, definition) => {
+    expect(definition.arity).toEqual(CHANGED_4_10[name] ?? CHANGED_4_2[name] ?? SOURCE_ARITY[name]);
     expect(definition.arity[0]).toBeLessThanOrEqual(definition.arity[1]);
   });
 });

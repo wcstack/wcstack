@@ -80,9 +80,11 @@ export const builtinFilterMeta: Record<string, IFilterMeta> = {
   // `locale` と同じくロケールを 1 つ受ける（`date(ja-JP)`）。実装は最初からこれを読んでいたが、
   // メタデータ側が maxArgs: 0 だったため lint と補完が正しい書き方を誤りとして報告していた。
   // 4.2: 2 つ目は書式（full / long / medium / short — Intl の dateStyle / timeStyle）。書式だけなら既定のロケール
-  date:     { description: "ロケール形式の日付 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
-  time:     { description: "ロケール形式の時刻 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
-  datetime: { description: "ロケール形式の日時 ([locale][, style]。style は full / long / medium / short、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 2, argTypes: ["string", "string"] },
+  // 4.10: 3 つ目は IANA のタイムゾーン（Intl の timeZone）。無ければ実行環境のゾーン（読み手の、SSR ではサーバーの）。
+  // 空の引数は既定のまま（`date(,,Asia/Tokyo)`）
+  date:     { description: "ロケール形式の日付 ([locale][, style][, zone]。style は full / long / medium / short、zone は IANA のタイムゾーン（Asia/Tokyo — 無ければ読み手のゾーン）、空の引数は既定、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
+  time:     { description: "ロケール形式の時刻 ([locale][, style][, zone]。style は full / long / medium / short、zone は IANA のタイムゾーン（Asia/Tokyo — 無ければ読み手のゾーン）、空の引数は既定、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
+  datetime: { description: "ロケール形式の日時 ([locale][, style][, zone]。style は full / long / medium / short、zone は IANA のタイムゾーン（Asia/Tokyo — 無ければ読み手のゾーン）、空の引数は既定、既定のロケールは config.locale)", hasArgs: true, resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 3, argTypes: ["string", "string", "string"] },
   ymd:      { description: "YYYY-MM-DD 形式 ([separator]。既定は -)",   hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   hms:      { description: "HH:MM:SS 形式 ([separator]。既定は :)",     hasArgs: true,  resultType: "string", acceptTypes: "any", minArgs: 0, maxArgs: 1, argTypes: ["string"] },
   // 真偽値・変換
