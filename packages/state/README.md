@@ -3065,6 +3065,7 @@ dropped. Validate statically: npx @wcstack/lint <file>.
 The check **under-approximates**: it stays silent for anything it cannot decide statically, because a false alarm costs more than a missed one. None of these warn:
 
 - A `null` / `undefined` parent (the "seed as `null`, assign later" shape)
+- An empty object under a key (`fieldErrors: {}`, filled later with `this.fieldErrors = { date: "…" }`) — the same shape, seeded `{}`. Since 4.10 (not released yet); up to 4.9 each binding below it was reported, and its "updates … will be silently dropped" was not so: replacing the object updates them. The lint reads those assignments since 4.9
 - Row fields of a list that starts empty (the row shape is unknown)
 - A row field no row has, unless a row has a near name (a likely typo, `.nmae` beside `name`) — rows are data, and an optional field (a `pending` the page puts on its own rows) is absent from the others. Since 4.4; the first row lacking a field another row has does not warn either (4.3)
 - Sub-properties of an intermediate getter's return value
