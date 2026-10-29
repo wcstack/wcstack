@@ -1772,13 +1772,27 @@ The names 3.x kept as aliases of the 3.2 renames (`inc`, `dec`, `fix`, `uc`, `lc
 
 | Filter | Description | Example |
 |---|---|---|
-| `date(loc?, style?)` | Date format | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` |
-| `time(loc?, style?)` | Time format | `createdAt\|time` / `createdAt\|time(short)` |
-| `datetime(loc?, style?)` | Date + Time | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` |
-| `ymd(sep?)` | YYYY-MM-DD (default `-`) | `createdAt\|ymd` / `createdAt\|ymd(/)` |
-| `hms(sep?)` | HH:MM:SS (default `:`) | `createdAt\|hms` / `createdAt\|hms(-)` |
+| `date(loc?, style?, zone?)` | Date format; `zone?` since 4.10 (not released yet) | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` / `opensAt\|date(ja-JP,full,Asia/Tokyo)` |
+| `time(loc?, style?, zone?)` | Time format; `zone?` since 4.10 (not released yet) | `createdAt\|time` / `createdAt\|time(short)` / `opensAt\|time(,short,Asia/Tokyo)` |
+| `datetime(loc?, style?, zone?)` | Date + Time; `zone?` since 4.10 (not released yet) | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` / `createdAt\|datetime(,,UTC)` |
+| `ymd(sep?)` | YYYY-MM-DD (default `-`), in the runtime's time zone | `createdAt\|ymd` / `createdAt\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS (default `:`), in the runtime's time zone | `createdAt\|hms` / `createdAt\|hms(-)` |
 
-**All five take a `Date`,** not a timestamp — a value of any other type is rejected with "requires a date value". An absent one (`undefined` / `null`) renders nothing since 4.7. State loaded from JSON carries a number or an ISO string, so convert it where it is read rather than in the binding: `get createdAt() { return new Date(this.createdAtMs); }`. `loc?` defaults to the page locale ([Locale](#locale)), and the default is re-read on **every** apply, so a locale settled after the bindings were planned still takes effect (an explicit `date(ja-JP)` is part of the binding expression and is fixed when it is planned). `style?` is `full`, `long`, `medium` or `short` (Intl's `dateStyle` / `timeStyle`); without it the format is the locale's numeric one (`10/13/2026`), and a style alone keeps the page locale (`date(medium)`). `currency`'s code is checked when the bindings are planned; the number is formatted in the page locale unless `loc` names one. Plurals and other formats belong in a getter (`Intl.PluralRules`, `Intl.NumberFormat`).
+**All five take a `Date`,** not a timestamp — a value of any other type is rejected with "requires a date value". An absent one (`undefined` / `null`) renders nothing since 4.7. State loaded from JSON carries a number or an ISO string, so convert it where it is read rather than in the binding: `get createdAt() { return new Date(this.createdAtMs); }`. A date-only string is a day, not a moment: `new Date("2026-10-29")` is midnight UTC, which is the day before west of Greenwich — `new Date(y, m - 1, d)` is that day where the page runs (`#29` says so since 4.9). `loc?` defaults to the page locale ([Locale](#locale)), and the default is re-read on **every** apply, so a locale settled after the bindings were planned still takes effect (an explicit `date(ja-JP)` is part of the binding expression and is fixed when it is planned). `style?` is `full`, `long`, `medium` or `short` (Intl's `dateStyle` / `timeStyle`); without it the format is the locale's numeric one (`10/13/2026`), and a style alone keeps the page locale (`date(medium)`). `currency`'s code is checked when the bindings are planned; the number is formatted in the page locale unless `loc` names one. Plurals and other formats belong in a getter (`Intl.PluralRules`, `Intl.NumberFormat`).
+
+**Time zones.** Without `zone?`, `date`, `time` and `datetime` format in the time zone of the runtime — **the reader's**, in a browser, and the server's under SSR — whatever the page's locale. A time that belongs to a place reads differently elsewhere: a library in Tokyo open on Thursday 29 October from 09:00 to 20:00, read from Los Angeles, shows `2026年10月28日水曜日`, `17:00:00` and `4:00:00`. Since 4.10 (not released yet), `zone?` names the zone to format in — an IANA time zone, Intl's `timeZone` (`Asia/Tokyo`, `America/New_York`, `UTC`) — so every reader sees the place's time:
+
+```html
+<html lang="ja">
+<!-- the state: get opensAt() { return new Date("2026-10-29T09:00:00+09:00"); }, closesAt the same at 20:00 -->
+<p>
+  <span data-wcs="textContent: opensAt|date(,full,Asia/Tokyo)"></span>
+  <span data-wcs="textContent: opensAt|time(,short,Asia/Tokyo)"></span>–<span data-wcs="textContent: closesAt|time(,short,Asia/Tokyo)"></span>
+</p>
+<!-- 2026年10月29日木曜日 9:00–20:00, from Tokyo and from Los Angeles alike -->
+```
+
+An empty argument keeps its default: `time(,short,Asia/Tokyo)` keeps the page locale, `date(ja-JP,,Asia/Tokyo)` the numeric format, `datetime(,,Asia/Tokyo)` both. A zone alone keeps both too when it has a `/` or is `UTC` (`date(Asia/Tokyo)`, `datetime(UTC)`); another zone without a `/` goes third (`date(,,GMT)`), since in the first place it is read as a locale. A zone Intl does not take is refused when the bindings are planned (`#54`), and a zone in the style's place (`date(ja-JP,Asia/Tokyo)`) is told that it goes third (`#52`). `ymd` and `hms` take no zone: they read the `Date` in the runtime's zone (`getFullYear()` … `getSeconds()`), so for a place's date or time use `date` / `time` with its zone, or a getter.
 
 ### Boolean / Default
 
@@ -2989,8 +3003,9 @@ The first line is what `@wcstack/state` and `/auto` print, the second what `/cor
 | 49 | | `<wcs-state src="…"> failed to initialize.` |
 | 50 | | `<wcs-state src="…"> $connectedCallback failed.` |
 | 51 | | `<wcs-state src="…"> $disconnectedCallback failed.` |
-| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"` |
+| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"` (since 4.10 (not released yet), a time zone in the style's place (one with a `/`, or `UTC`) adds: `— a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: <name>(,,<zone>), <name>(en-US,long,<zone>)`) |
 | 53 | | `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "<code>"` |
+| 54 | | `filter <name> takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "<zone>"` (since 4.10 (not released yet)) |
 | 101 | `binding-syntax` | `Invalid bindText: "<text>". Missing ':' separator between propPart and statePart.` |
 | 102 | `binding-syntax` | `"<text>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` |
 | 103 | `binding-syntax` | `"<text>": "else" takes no value — write "else:".` |
@@ -3310,6 +3325,10 @@ the module is evaluated, so write it in the markup. An explicit
 `bootstrapState({ locale })` still wins. A tag `Intl` does not take (`<html lang="en_US">`)
 is reported once (`#48`) and the filters use `"en"`, rather than throwing inside `Intl`;
 `getConfig().locale` keeps returning what was set.
+
+The locale is not the time zone: a `<html lang="ja-JP">` page still writes its dates and times in
+the reader's zone, in Japanese. A time that belongs to a place takes that place's zone as the date
+filters' third argument (since 4.10 (not released yet) — [Date / Time](#date--time)).
 
 **Changing the locale later does not re-render anything.** It is a global
 setting, not state, so it is not part of the dependency graph. The filters do

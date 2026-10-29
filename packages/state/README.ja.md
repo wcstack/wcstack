@@ -1764,13 +1764,27 @@ export default {
 
 | フィルタ | 説明 | 例 |
 |---|---|---|
-| `date(loc?, style?)` | 日付フォーマット | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` |
-| `time(loc?, style?)` | 時刻フォーマット | `createdAt\|time` / `createdAt\|time(short)` |
-| `datetime(loc?, style?)` | 日付 + 時刻 | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` |
-| `ymd(sep?)` | YYYY-MM-DD（既定は `-`） | `createdAt\|ymd` / `createdAt\|ymd(/)` |
-| `hms(sep?)` | HH:MM:SS（既定は `:`） | `createdAt\|hms` / `createdAt\|hms(-)` |
+| `date(loc?, style?, zone?)` | 日付フォーマット（`zone?` は 4.10（未リリース）から） | `createdAt\|date` / `createdAt\|date(ja-JP)` / `createdAt\|date(en-US,medium)` → `"Oct 13, 2026"` / `opensAt\|date(ja-JP,full,Asia/Tokyo)` |
+| `time(loc?, style?, zone?)` | 時刻フォーマット（`zone?` は 4.10（未リリース）から） | `createdAt\|time` / `createdAt\|time(short)` / `opensAt\|time(,short,Asia/Tokyo)` |
+| `datetime(loc?, style?, zone?)` | 日付 + 時刻（`zone?` は 4.10（未リリース）から） | `createdAt\|datetime(en-US)` / `createdAt\|datetime(ja-JP,long)` / `createdAt\|datetime(,,UTC)` |
+| `ymd(sep?)` | YYYY-MM-DD（既定は `-`）。実行環境のタイムゾーンの日付 | `createdAt\|ymd` / `createdAt\|ymd(/)` |
+| `hms(sep?)` | HH:MM:SS（既定は `:`）。実行環境のタイムゾーンの時刻 | `createdAt\|hms` / `createdAt\|hms(-)` |
 
-**5 つとも `Date` を取ります**（タイムスタンプではありません）。他の型は「requires a date value」で拒否されます。値が無いとき（`undefined` / `null`）は、4.7 から何も描きません。JSON から読み込んだ state は数値か ISO 文字列を持つので、束縛ではなく読み出し側で変換してください: `get createdAt() { return new Date(this.createdAtMs); }`。`loc?` の既定はページのロケール（[ロケール](#ロケール)）で、**適用のたびに**読み直されるため、束縛を組み立てた後に確定したロケールも反映されます（明示引数 `date(ja-JP)` は束縛式の一部なので組み立て時に固定されます）。`style?` は `full`・`long`・`medium`・`short`（Intl の `dateStyle` / `timeStyle`）で、無ければロケールの数字の書式（`2026/10/13`）、書式だけならページのロケールです（`date(medium)`）。`currency` の通貨は束縛を組み立てるときに確かめ、数は `loc` が無ければページのロケールで書きます。複数形などほかの書式は getter で書きます（`Intl.PluralRules`、`Intl.NumberFormat`）。
+**5 つとも `Date` を取ります**（タイムスタンプではありません）。他の型は「requires a date value」で拒否されます。値が無いとき（`undefined` / `null`）は、4.7 から何も描きません。JSON から読み込んだ state は数値か ISO 文字列を持つので、束縛ではなく読み出し側で変換してください: `get createdAt() { return new Date(this.createdAtMs); }`。日付だけの文字列は瞬間ではなく日です: `new Date("2026-10-29")` は UTC の 0 時で、グリニッジより西では前の日になります —— `new Date(y, m - 1, d)` がページの動く場所のその日です（4.9 から `#29` もそう言います）。`loc?` の既定はページのロケール（[ロケール](#ロケール)）で、**適用のたびに**読み直されるため、束縛を組み立てた後に確定したロケールも反映されます（明示引数 `date(ja-JP)` は束縛式の一部なので組み立て時に固定されます）。`style?` は `full`・`long`・`medium`・`short`（Intl の `dateStyle` / `timeStyle`）で、無ければロケールの数字の書式（`2026/10/13`）、書式だけならページのロケールです（`date(medium)`）。`currency` の通貨は束縛を組み立てるときに確かめ、数は `loc` が無ければページのロケールで書きます。複数形などほかの書式は getter で書きます（`Intl.PluralRules`、`Intl.NumberFormat`）。
+
+**タイムゾーン。** `zone?` が無ければ、`date`・`time`・`datetime` は実行環境のタイムゾーンで書きます —— ブラウザでは**読み手の**、SSR ではサーバーのタイムゾーンです。ページのロケールとは関係ありません。ある場所の時刻は、よそから読むと違って見えます: 東京の図書館の 10 月 29 日（木）09:00〜20:00 の開館時間は、ロサンゼルスから読むと `2026年10月28日水曜日`・`17:00:00`・`4:00:00` です。4.10（未リリース）から、`zone?` で書くタイムゾーンを指定できます —— IANA のタイムゾーン、Intl の `timeZone` です（`Asia/Tokyo`・`America/New_York`・`UTC`）。どこの読み手にもその場所の時刻が見えます:
+
+```html
+<html lang="ja">
+<!-- state: get opensAt() { return new Date("2026-10-29T09:00:00+09:00"); }、closesAt は同じく 20:00 -->
+<p>
+  <span data-wcs="textContent: opensAt|date(,full,Asia/Tokyo)"></span>
+  <span data-wcs="textContent: opensAt|time(,short,Asia/Tokyo)"></span>–<span data-wcs="textContent: closesAt|time(,short,Asia/Tokyo)"></span>
+</p>
+<!-- 東京から読んでもロサンゼルスから読んでも 2026年10月29日木曜日 9:00–20:00 -->
+```
+
+空の引数は既定のままです: `time(,short,Asia/Tokyo)` はページのロケール、`date(ja-JP,,Asia/Tokyo)` は数字の書式、`datetime(,,Asia/Tokyo)` はその両方。タイムゾーンだけを書いたときも、`/` を含むか `UTC` なら両方とも既定です（`date(Asia/Tokyo)`、`datetime(UTC)`）。`/` の無いほかのタイムゾーンは 3 つ目に書きます（`date(,,GMT)`）—— 1 つ目に書くとロケールとして読みます。Intl の取らないタイムゾーンは束縛を組み立てるときに拒否され（`#54`）、書式の場所に書いたタイムゾーン（`date(ja-JP,Asia/Tokyo)`）は 3 つ目に書くよう言われます（`#52`）。`ymd` と `hms` はタイムゾーンを取りません: `Date` を実行環境のタイムゾーンで読む（`getFullYear()` 〜 `getSeconds()`）ので、ある場所の日付や時刻にはタイムゾーン付きの `date` / `time` か getter を使います。
 
 ### 真偽値 / デフォルト
 
@@ -2977,8 +2991,9 @@ li {
 | 49 | | `<wcs-state src="…"> failed to initialize.` |
 | 50 | | `<wcs-state src="…"> $connectedCallback failed.` |
 | 51 | | `<wcs-state src="…"> $disconnectedCallback failed.` |
-| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"` |
+| 52 | | `filter <name> takes a style of full, long, medium or short, not "<style>"`（4.10（未リリース）から、書式の場所のタイムゾーン（`/` を含むものと `UTC`）には `— a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: <name>(,,<zone>), <name>(en-US,long,<zone>)` が付く） |
 | 53 | | `filter currency takes an ISO 4217 currency code (JPY, USD, EUR), not "<code>"` |
+| 54 | | `filter <name> takes an IANA time zone (Asia/Tokyo, America/New_York, UTC), not "<zone>"`（4.10（未リリース）から） |
 | 101 | `binding-syntax` | `Invalid bindText: "<text>". Missing ':' separator between propPart and statePart.` |
 | 102 | `binding-syntax` | `"<text>": "<keyword>" takes no modifiers or filters on its left side — write "<keyword>:".` |
 | 103 | `binding-syntax` | `"<text>": "else" takes no value — write "else:".` |
@@ -3296,6 +3311,10 @@ export default {
 マークアップに書くこと。明示指定（`bootstrapState({ locale })`）は常に優先する。
 `Intl` が受け付けないタグ（`<html lang="en_US">`）は、`Intl` の中で throw させる代わりに
 1 回報告し（`#48`）、フィルタは `"en"` を使う。`getConfig().locale` は設定された値を返し続ける。
+
+ロケールはタイムゾーンではない: `<html lang="ja-JP">` のページも、日付と時刻は読み手のタイムゾーンで
+日本語に書く。ある場所の時刻は、日付フィルタの 3 つ目にその場所のタイムゾーンを渡して書く
+（4.10（未リリース）から — [日付 / 時刻](#日付--時刻)）。
 
 **ロケールを後から変えても何も再描画されない。** これは state ではなく
 グローバル設定なので、依存グラフに載らない。フィルタ自体はバインド構築時に

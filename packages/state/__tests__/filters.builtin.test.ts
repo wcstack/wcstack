@@ -9,8 +9,9 @@
  * 移植で変えたこと: 旧名（inc / dec / fix / uc / lc / cap / pad / rep / rev / null）は持ち込まない
  * ので、旧名で書かれていた期待は正式名で書き直した（期待値は同じ）。
  */
-import { describe, it, expect, afterEach, beforeAll } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, vi } from 'vitest';
 import { installCoreFilters, coreFilters } from '../src/filters/core';
+import { parseFilterArgsWithLiterals } from '../src/parser/parseFilterArgs';
 import { installFormats, formatFilters } from '../src/filters/formats';
 import { resolveFilter } from '../src/filters/registry';
 import { config, setConfig } from '../src/config';
@@ -593,9 +594,9 @@ describe('ロケール引数を取る日付フィルタ（要件 B3 の引数の
     expect(getFilter('datetime', ['en-US'])(DATE)).toBe(DATE.toLocaleString('en-US'));
   });
 
-  it('3 つ以上は引数の個数として拒否されること', () => {
-    expect(() => getFilter('date', ['ja-JP', 'long', 'x']))
-      .toThrow(/\[wcs\/filter-arity\] filter "date" accepts at most 2 argument\(s\) \(3 given\)/);
+  it('4 つ以上は引数の個数として拒否されること（4.10 で 3 つ目にタイムゾーンを取る）', () => {
+    expect(() => getFilter('date', ['ja-JP', 'long', 'Asia/Tokyo', 'x']))
+      .toThrow(/\[wcs\/filter-arity\] filter "date" accepts at most 3 argument\(s\) \(4 given\)/);
   });
 });
 
@@ -725,6 +726,124 @@ describe('表示面の空値契約（要件 B8）と書式フィルタ', () => {
       expect(getFilter(name)(null), name).toBe(null);
       expect(() => getFilter(name)('2026-10-13'), name).toThrow(/requires a date value/);
     }
+  });
+});
+
+// 4.10: 3 つ目は IANA のタイムゾーン（Intl の timeZone）。無ければ実行環境のゾーン（読み手の、SSR ではサーバーの）で書く
+// （docs/seam-apps.md、city-library — 東京の図書館の木曜 09:00〜20:00 が、ロサンゼルスからは水曜の 17:00 · 4:00 と読めた）。
+// 瞬間は UTC で決め、期待値は Intl そのものから作る（テストを走らせる環境のゾーンと ICU の実装差に依らない）。
+describe('日付フィルタのタイムゾーン（4.10）', () => {
+  // 2026-10-29 (Thu) 09:00 / 20:00 in Tokyo (UTC+9) — 2026-10-28 (Wed) 17:00 / 04:00 in Los Angeles (PDT)
+  const OPEN = new Date(Date.UTC(2026, 9, 29, 0, 0));
+  const CLOSE = new Date(Date.UTC(2026, 9, 29, 11, 0));
+  const TOKYO = 'Asia/Tokyo';
+  const page = () => Intl.getCanonicalLocales(config.locale)[0];
+  /** the options as the parser hands them over (a leading or middle empty argument keeps its place) */
+  const args = (text: string) => parseFilterArgsWithLiterals(text).args;
+
+  it('3 つ目のタイムゾーンで書き、読み手のゾーンに依らないこと（city-library の開館時刻）', () => {
+    expect(getFilter('date', ['ja-JP', 'full', TOKYO])(OPEN)).toBe(OPEN.toLocaleDateString('ja-JP', { dateStyle: 'full', timeZone: TOKYO }));
+    expect(getFilter('date', ['ja-JP', 'full', TOKYO])(OPEN)).toContain('10月29日木曜日');
+    expect(getFilter('time', ['en-US', 'short', TOKYO])(OPEN)).toMatch(/^9:00\sAM$/);
+    expect(getFilter('time', ['en-US', 'short', TOKYO])(CLOSE)).toMatch(/^8:00\sPM$/);
+    expect(getFilter('datetime', ['en-US', 'medium', TOKYO])(OPEN)).toBe(OPEN.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'medium', timeZone: TOKYO }));
+    // the same moment, where the reader is
+    expect(getFilter('date', ['ja-JP', 'full', 'America/Los_Angeles'])(OPEN)).toContain('10月28日水曜日');
+    expect(getFilter('time', ['en-US', 'short', 'America/Los_Angeles'])(OPEN)).toMatch(/^5:00\sPM$/);
+  });
+
+  it('タイムゾーンが無ければ、4.9 までと同じくオプションを渡さず実行環境のゾーンで書くこと', () => {
+    const spies = [
+      vi.spyOn(Date.prototype, 'toLocaleDateString'),
+      vi.spyOn(Date.prototype, 'toLocaleTimeString'),
+      vi.spyOn(Date.prototype, 'toLocaleString'),
+    ];
+    try {
+      getFilter('date', ['ja-JP'])(OPEN);
+      getFilter('time')(OPEN);
+      getFilter('datetime', args(','))(OPEN);
+      expect(spies[0]).toHaveBeenCalledWith('ja-JP', undefined);
+      expect(spies[1]).toHaveBeenCalledWith(page(), undefined);
+      expect(spies[2]).toHaveBeenCalledWith(page(), undefined);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+    expect(getFilter('date', ['ja-JP'])(OPEN)).toBe(OPEN.toLocaleDateString('ja-JP'));
+  });
+
+  it('空の引数は既定のままで、ロケールも書式も空にできること（4.9 までは Intl の中で毎回落ちた）', () => {
+    expect(args(',,Asia/Tokyo')).toEqual(['', '', TOKYO]);
+    expect(getFilter('datetime', args(',,Asia/Tokyo'))(OPEN)).toBe(OPEN.toLocaleString(page(), { timeZone: TOKYO }));
+    expect(getFilter('date', args('ja-JP,,Asia/Tokyo'))(OPEN)).toBe(OPEN.toLocaleDateString('ja-JP', { timeZone: TOKYO }));
+    expect(getFilter('time', args(',short,Asia/Tokyo'))(OPEN)).toBe(OPEN.toLocaleTimeString(page(), { timeStyle: 'short', timeZone: TOKYO }));
+    expect(getFilter('date', args(',long'))(OPEN)).toBe(OPEN.toLocaleDateString(page(), { dateStyle: 'long' }));
+    expect(getFilter('date', args(',,'))(OPEN)).toBe(OPEN.toLocaleDateString(page()));
+    // the factory called without options (tooling) keeps every default too
+    expect(formatFilters.date.factory(undefined as unknown as string[], [])(OPEN)).toBe(OPEN.toLocaleDateString(page()));
+  });
+
+  it('既定のロケールはタイムゾーンがあっても適用のたびに読むこと', () => {
+    const original = config.locale;
+    try {
+      setConfig({ locale: 'de-DE' });
+      const fn = getFilter('date', ['', 'long', TOKYO]);
+      expect(fn(OPEN)).toBe(OPEN.toLocaleDateString('de-DE', { dateStyle: 'long', timeZone: TOKYO }));
+      setConfig({ locale: 'en-US' });
+      expect(fn(OPEN)).toBe(OPEN.toLocaleDateString('en-US', { dateStyle: 'long', timeZone: TOKYO }));
+    } finally {
+      setConfig({ locale: original });
+    }
+  });
+
+  it('ロケールの場所の書式は今までどおり書式で、タイムゾーンを後に置けること', () => {
+    expect(getFilter('date', ['long'])(OPEN)).toBe(OPEN.toLocaleDateString(page(), { dateStyle: 'long' }));
+    expect(getFilter('time', args('short,,Asia/Tokyo'))(OPEN)).toBe(OPEN.toLocaleTimeString(page(), { timeStyle: 'short', timeZone: TOKYO }));
+  });
+
+  it('タイムゾーンだけ（"/" を含むものと UTC）なら、既定のロケールと書式のままで書くこと', () => {
+    expect(getFilter('date', [TOKYO])(OPEN)).toBe(OPEN.toLocaleDateString(page(), { timeZone: TOKYO }));
+    expect(getFilter('time', ['America/Los_Angeles'])(OPEN)).toBe(OPEN.toLocaleTimeString(page(), { timeZone: 'America/Los_Angeles' }));
+    expect(getFilter('datetime', ['UTC'])(OPEN)).toBe(OPEN.toLocaleString(page(), { timeZone: 'UTC' }));
+    expect(getFilter('date', ['Etc/GMT-9'])(OPEN)).toBe(OPEN.toLocaleDateString(page(), { timeZone: 'Etc/GMT-9' }));
+    // "/" の無いほかのゾーンは 3 つ目に書く（ロケールの場所では言語タグとして読む）
+    expect(getFilter('date', args(',,GMT'))(OPEN)).toBe(OPEN.toLocaleDateString(page(), { timeZone: 'GMT' }));
+    expect(getFilter('date', ['en-GB'])(OPEN)).toBe(OPEN.toLocaleDateString('en-GB'));
+  });
+
+  it('Intl の取らないタイムゾーンは、束縛の計画の段で取れる値の例を挙げて拒否されること', () => {
+    expect(() => getFilter('date', ['ja-JP', 'long', 'Asia/Tokio']))
+      .toThrow(/filter date takes an IANA time zone \(Asia\/Tokyo, America\/New_York, UTC\), not "Asia\/Tokio"/);
+    expect(() => getFilter('time', ['Asia/Tokio'])).toThrow(/filter time takes an IANA time zone .*not "Asia\/Tokio"/);
+    expect(() => getFilter('datetime', args(',,Tokyo'))).toThrow(/filter datetime takes an IANA time zone .*not "Tokyo"/);
+  });
+
+  it('書式の場所に書いたタイムゾーンは、3 つ目に書くよう言われること', () => {
+    const where = /filter date takes a style of full, long, medium or short, not "Asia\/Tokyo" — a time zone is the third argument, after the locale and the style, and an empty argument keeps its default: date\(,,Asia\/Tokyo\), date\(en-US,long,Asia\/Tokyo\)/;
+    expect(() => getFilter('date', ['ja-JP', TOKYO])).toThrow(where);
+    expect(() => getFilter('date', ['long', TOKYO])).toThrow(where);
+    expect(() => getFilter('time', ['ja-JP', 'UTC'])).toThrow(/not "UTC" — a time zone is the third argument, .*time\(,,UTC\)/);
+    // a style that is not a zone is told only the styles
+    let message = '';
+    try { getFilter('date', ['en-US', 'huge']); } catch (e) { message = (e as Error).message; }
+    expect(message).toContain('not "huge"');
+    expect(message).not.toContain('time zone');
+  });
+
+  it('タイムゾーンがあっても、値の無いときは素通しし、別の型は落ちること', () => {
+    for (const name of ['date', 'time', 'datetime']) {
+      const fn = getFilter(name, ['', '', TOKYO]);
+      expect(fn(undefined), name).toBe(undefined);
+      expect(fn(null), name).toBe(null);
+      expect(() => fn('2026-10-29'), name).toThrow(/requires a date value/);
+    }
+  });
+
+  it('ymd / hms はタイムゾーンを取らず、実行環境のゾーンの年月日・時分秒を書くこと', () => {
+    const local = new Date(2026, 9, 29, 9, 5, 6);
+    expect(getFilter('ymd')(local)).toBe('2026-10-29');
+    expect(getFilter('hms')(local)).toBe('09:05:06');
+    expect(getFilter('ymd', ['/'])(new Date(987, 0, 2))).toBe('987/01/02');
+    expect(() => getFilter('ymd', ['-', TOKYO])).toThrow(/\[wcs\/filter-arity\] filter "ymd" accepts at most 1 argument\(s\) \(2 given\)/);
   });
 });
 
