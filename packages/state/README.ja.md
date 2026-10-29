@@ -2610,7 +2610,7 @@ $renderedCallback(paths) {
 | ハンドラ間 | `$watch` の宣言順 | **宣言を並べ替える** |
 | 同一パスの行間 | `indexes` 昇順 | 固定 |
 
-**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$renderedCallback` —— がフレームで着地する一方、`$watch`・`$stream` restart は state アドレスを消費し DOM を見ないので、drain がキューされた microtask に留まります。タグがある間の順序は `$watch` → `$stream` restart → `$renderedCallback` です。この層を並べ替えるものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
+**機構間の層を動かす唯一のもの**が、`state` 参加者を受け付ける `<wcs-view-transition>` です。バインディング適用 —— したがって `$renderedCallback` —— がフレームで着地します。4.10（未リリース）から、`$watch` と `$stream` restart はそれを待つので、順序は上のとおりのまま、1 フレーム遅れるだけです。4.9 までは drain がキューされた microtask に留まって先に走り（`$watch` → `$stream` restart → `$renderedCallback`）、ログインの後に画面を移す `$watch` が、ルートのガードが読むセッションを `<wcs-storage>` が保存するより先に走っていました。この層を動かすものはページ上でこれ 1 つだけです。[docs/timing-and-firing-contract.ja.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.ja.md) §4.3 を参照してください。
 
 主なルール:
 

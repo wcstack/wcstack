@@ -100,7 +100,7 @@ The rule everything else is subordinate to: **a DOM change is applied exactly on
 
 Two consequences worth knowing before you add the tag:
 
-1. **`for="state"` (on by default) makes the state drain asynchronous.** Today's drain lands on a microtask; inside a transition it lands on a frame. Code that writes state and then reads the DOM after `await Promise.resolve()` needs to wait for the transition instead. `$renderedCallback` is unaffected — it still fires right after the bindings are applied. Use `for="router"` to keep the drain exactly as it was.
+1. **`for="state"` (on by default) makes the state drain asynchronous.** Today's drain lands on a microtask; inside a transition it lands on a frame. Code that writes state and then reads the DOM after `await Promise.resolve()` needs to wait for the transition instead. `$renderedCallback` is unaffected — it still fires right after the bindings are applied — and since 4.10 (not released yet) so are `$watch` and the `$stream` restart: they wait for the bindings the transition applies, so a `$watch` that navigates or moves the focus sees the page the update produced (up to 4.9 they ran first: a login that navigated from a `$watch` ran before `<wcs-storage>` saved the session, and a guard reading it sent the reader back). Use `for="router"` to keep the drain exactly as it was.
 2. **Participation is per document, not per element.** One updater drains every `<wcs-state>` on the page, so `for="state"` turns transitions on for all of them.
 3. **Only a change of structure animates.** A state update that adds, removes or moves list rows, or switches an `if` branch, runs in a transition; one that only updates text, properties or classes is applied at once, as without the tag (a value change is CSS transitions' job). Typing in a bound input therefore never starts a transition — it used to start one per keystroke, and the page did not take a click while it ran.
 
@@ -167,7 +167,7 @@ await core.run(() => { /* mutate the DOM */ });
 
 ## Browser support
 
-Same-document View Transitions ship in Chromium 111+ and Safari 18+. Firefox does not have them yet; there, and anywhere else the API is missing, every change applies immediately with no animation and no error — the page keeps working, it just does not animate.
+Same-document View Transitions ship in Chromium 111+, Safari 18+ and Firefox 144+. In an older browser, and anywhere else the API is missing, every change applies immediately with no animation and no error — the page keeps working, it just does not animate.
 
 ## License
 

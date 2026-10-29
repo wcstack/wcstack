@@ -2622,7 +2622,7 @@ Firing order is defined in three layers, and only the middle one is yours to ste
 | Between handlers | declaration order in `$watch` | **reorder the declarations** |
 | Between rows of one path | ascending `indexes` | fixed |
 
-**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$renderedCallback` — then lands on a frame, while `$watch` and the `$stream` restart stay on the microtask the drain was queued on, because they consume state addresses and not the DOM. For as long as the tag is present the order is `$watch` → `$stream` restart → `$renderedCallback`. Nothing else on the page reorders this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
+**The one thing that moves the mechanism layer** is a `<wcs-view-transition>` that accepts the `state` participant. Binding application — and with it `$renderedCallback` — then lands on a frame. Since 4.10 (not released yet) `$watch` and the `$stream` restart wait for it, so the order stays as above, a frame later; up to 4.9 they stayed on the microtask the drain was queued on and ran first (`$watch` → `$stream` restart → `$renderedCallback`), so a `$watch` that navigated after a login ran before `<wcs-storage>` had saved the session its route guard reads. Nothing else on the page moves this layer; see [docs/timing-and-firing-contract.md](https://github.com/wcstack/wcstack/blob/main/docs/timing-and-firing-contract.md) §4.3.
 
 Key rules:
 
