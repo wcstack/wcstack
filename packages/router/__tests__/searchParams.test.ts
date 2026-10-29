@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSearchParams, shallowEqualRecords } from '../src/searchParams';
+import { parseSearchParams, queryIncludes, shallowEqualRecords } from '../src/searchParams';
 
 describe('parseSearchParams (§3.5)', () => {
   it('クエリ文字列を Record に変換すること', () => {
@@ -55,5 +55,35 @@ describe('shallowEqualRecords', () => {
 
   it('両方空なら true', () => {
     expect(shallowEqualRecords({}, {})).toBe(true);
+  });
+});
+
+describe('queryIncludes（wcs-link の active 判定 — docs/seam-apps.md、city-library）', () => {
+  it('求めるクエリが空なら常に true', () => {
+    expect(queryIncludes('', '')).toBe(true);
+    expect(queryIncludes('?q=a', '')).toBe(true);
+  });
+
+  it('求める各パラメータが同じ値なら true、余分なパラメータは構わない', () => {
+    expect(queryIncludes('?q=a&page=2', '?q=a&page=2')).toBe(true);
+    expect(queryIncludes('?page=2&sort=new&q=a', '?q=a&page=2')).toBe(true);
+  });
+
+  it('パラメータが無い・値が違えば false', () => {
+    expect(queryIncludes('?q=a', '?q=a&page=2')).toBe(false);
+    expect(queryIncludes('?q=a&page=3', '?q=a&page=2')).toBe(false);
+    expect(queryIncludes('', '?q=')).toBe(false);
+    expect(queryIncludes('?q=', '?q=')).toBe(true);
+  });
+
+  it('重複キーは同じ値の組（順序は問わない）で比べる', () => {
+    expect(queryIncludes('?tag=b&tag=a', '?tag=a&tag=b')).toBe(true);
+    expect(queryIncludes('?tag=a', '?tag=a&tag=b')).toBe(false);
+    expect(queryIncludes('?tag=a&tag=b', '?tag=a')).toBe(false);
+  });
+
+  it('値はデコードして比べる（+ と %20、%xx）', () => {
+    expect(queryIncludes('?q=a%20b', '?q=a+b')).toBe(true);
+    expect(queryIncludes('?q=%E6%9C%AC', '?q=本')).toBe(true);
   });
 });
