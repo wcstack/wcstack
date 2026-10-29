@@ -301,6 +301,8 @@ raiseError になる）。href は「現在 pathname + 指定クエリ」で組�
 判定と同じリスナー（`currententrychange` / `wcs:navigate` / `popstate`）で追従
 させる。active 判定は **pathname のみの比較**（クエリ非感応）と明文化する。
 
+> **2026-10-29 改定（4.10 向け）**: クエリのある `to` は、今の URL のクエリが `to` のクエリのパラメータをすべて同じ値（重複キーは同じ値の組）で持つときだけ active / `aria-current` になる。ページの余分なパラメータは構わず、クエリの無い `to` は従来どおり pathname だけで比べる。クエリ非感応のままでは、`/search?q=a` の「次のページ」（`?q=a&page=2`）が `aria-current="page"` を持ち、スクリーンリーダーが「次のページ、現在のページ」と読んだ（継ぎ目アプリ `city-library`、[seam-apps.md](./seam-apps.md)）。
+
 ### 4.2 replaceUrl — replace 書き込み面の新設
 
 `navigateUrl` の対（push / replace）として `replaceUrl` を新設する。契約は
