@@ -1,9 +1,10 @@
 /**
  * liveRegionValidator.test.ts — `wcs/live-region-inserted`: a live region inserted together with its text.
  *
- * From the city-library seam app: a login error `role="alert"` in `<template data-wcs="if: loginErrorMessage">` (its
- * mistake m03), a route's `role="status"` — the region enters the page with its text, and a screen reader announces a
- * region whose text changes while it is in the page. Nothing in the console, the lint or axe said so.
+ * From the city-library seam app: a route's `role="status"`, a status in an `if:` branch — the region enters the page
+ * with its text, and a screen reader announces a region whose text changes while it is in the page. Nothing in the
+ * console, the lint or axe said so. `role="alert"` is left out: an alert added to the page is announced (the user agent
+ * fires the alert event).
  */
 import { describe, it, expect } from 'vitest';
 import { validateLiveRegions } from '../src/service/liveRegionValidator';
@@ -25,22 +26,34 @@ const found = (body: string, locale = 'en'): { text: string; message: string }[]
 const texts = (body: string): string[] => found(body).map((f) => f.text);
 
 describe('wcs/live-region-inserted — 文と一緒に挿入されるライブリージョン', () => {
-  it('if: の枝の中で、文が条件の読むものに束ねてあるリージョンを報告すること（city-library の m03）', () => {
-    const [f] = found(`<template data-wcs="if: loginErrorMessage">
-  <p class="error" role="alert" data-wcs="textContent: loginErrorMessage"></p>
+  it('if: の枝の中で、文が条件の読むものに束ねてあるリージョンを報告すること', () => {
+    const [f] = found(`<template data-wcs="if: notice">
+  <p class="notice" role="status" data-wcs="textContent: notice"></p>
 </template>`);
-    expect(f.text).toBe('role="alert"');
-    expect(f.message).toContain('its text is bound to what the condition "loginErrorMessage" reads');
-    expect(f.message).toContain('whether an alert inserted with its text is read depends on the browser and the screen reader');
-    expect(f.message).toContain('keep the region outside the template, always in the page');
+    expect(f.text).toBe('role="status"');
+    expect(f.message).toContain('its text is bound to what the condition "notice" reads');
+    expect(f.message).toContain('an inserted role="alert" is the one form announced on insertion');
+    expect(f.message).toContain('a status message meant to be heard belongs in a region that is always in the page');
+    expect(f.message).toContain('keep the region outside the template');
+  });
+
+  it('role="alert" は報告しないこと — 挿入した alert は読み上げられる（user agent が alert のイベントを出す）。aria-live を併せても同じ', () => {
+    expect(texts(`<template data-wcs="if: loginErrorMessage">
+  <p class="error" role="alert" data-wcs="textContent: loginErrorMessage"></p>
+</template>
+<template data-wcs="if: offline"><div role="alert">You are offline.</div></template>
+<template data-wcs="if: offline"><div role="alert" aria-live="assertive">You are offline.</div></template>
+<template data-wcs="for: items"><li><span role="alert">Failed</span></li></template>
+<wcs-router><template><wcs-route path="/"><p role="alert">Session expired</p></wcs-route></template></wcs-router>
+<wcs-outlet></wcs-outlet>`)).toEqual([]);
   });
 
   it('条件の上下のパス・条件や文の getter が読むパス・フィルタ・mustache・コメント束縛・子孫の束縛も、条件に結び付いた文と読むこと', () => {
-    expect(texts(`<template data-wcs="if: error"><div role="alert"><span data-wcs="textContent: error.message"></span></div></template>
+    expect(texts(`<template data-wcs="if: error"><div role="status"><span data-wcs="textContent: error.message"></span></div></template>
 <template data-wcs="if: hasError"><p role="status">{{ error.message }}</p></template>
 <template data-wcs="if: notice|truthy"><p aria-live="polite" data-wcs="textContent: notice|trim"></p></template>
 <template data-wcs="if: count"><p role="log"><!--@@:countText--></p></template>`)).toEqual([
-      'role="alert"', 'role="status"', 'aria-live="polite"', 'role="log"',
+      'role="status"', 'role="status"', 'aria-live="polite"', 'role="log"',
     ]);
   });
 
@@ -64,20 +77,21 @@ describe('wcs/live-region-inserted — 文と一緒に挿入されるライブ�
   it('日本語の文面', () => {
     const [f] = found(`<template data-wcs="if: notice"><p role="status" data-wcs="textContent: notice"></p></template>`, 'ja');
     expect(f.message).toContain('このライブリージョン（role="status"）は、枝が現れたときに文ごと挿入されます');
-    expect(f.message).toContain('この文は読み上げられません');
+    expect(f.message).toContain('この文は読み上げられません（挿入したときに読み上げられるのは role="alert" だけです）');
+    expect(f.message).toContain('聞かせたい知らせは、常にページにあるリージョンに置いてください');
   });
 
   it('正しい形には黙ること — 常にページにあるリージョン、条件と別の文（後から変わる）、置き換えられる文、aria-live="off"', () => {
     expect(texts(`<p role="status" data-wcs="textContent: notice"></p>
 <div role="log" aria-live="polite"><template data-wcs="for: items"><p data-wcs="textContent: .text"></p></template></div>
-<template data-wcs="if: count"><form><p class="error" role="alert" data-wcs="textContent: loginErrorMessage"></p></form></template>
-<template data-wcs="for: items"><li><span role="alert" data-wcs="textContent: .error"></span></li></template>
+<template data-wcs="if: count"><form><p class="error" role="status" data-wcs="textContent: loginErrorMessage"></p></form></template>
+<template data-wcs="for: items"><li><span role="status" data-wcs="textContent: .error"></span></li></template>
 <template data-wcs="if: offline"><p role="status" data-wcs="textContent: notice">placeholder</p></template>
 <template data-wcs="if: offline"><p role="status"><span data-wcs="textContent: notice">placeholder</span></p></template>
 <template data-wcs="if: offline"><p aria-live="off">Offline</p></template>
 <template data-wcs="if: offline"><p role="button">Retry</p><p data-wcs="attr.role: notice">x</p></template>
 <template data-wcs="if: offline"><p role="status"> <!-- a comment --> {{ notice }} </p></template>
-<wcs-router><template><wcs-route path="/login"><p role="alert" data-wcs="textContent: loginErrorMessage"></p></wcs-route></template></wcs-router>
+<wcs-router><template><wcs-route path="/login"><p role="status" data-wcs="textContent: loginErrorMessage"></p></wcs-route></template></wcs-router>
 <wcs-outlet></wcs-outlet>`)).toEqual([]);
   });
 

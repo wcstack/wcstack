@@ -1,15 +1,19 @@
 /**
  * liveRegionValidator.ts — a live region inserted together with its text (`wcs/live-region-inserted`, warning).
  *
- * A screen reader announces a live region — `aria-live` (not `off`), `role="status"`, `role="alert"`, `role="log"` —
+ * A screen reader announces a live region — `aria-live` (`polite` / `assertive`), `role="status"`, `role="log"` —
  * when its text changes while it is in the page. One inside a `<template data-wcs="if: …">` (`elseif:`, `else:`), a
  * `for:` row or a `<wcs-route>`'s content is inserted when the branch, row or route appears; if its text is there at
- * that moment, nothing announces it. The city-library seam app made it on purpose (a login error `role="alert"` in
- * `<template data-wcs="if: loginErrorMessage">`, a route's status) and measured no announcement in Chromium; nothing in
- * the console, the lint or axe said so. Keep the region outside, always in the page, and write its text.
+ * that moment, nothing announces it. The city-library seam app made it on purpose (a route's status, a search's result
+ * count) and measured no announcement in Chromium; nothing in the console, the lint or axe said so. Keep the region
+ * outside, always in the page, and write its text.
+ *
+ * `role="alert"` is left out: WAI-ARIA has the user agent fire the alert event when an alert is added to the page, and
+ * the common screen readers announce it on insertion — the one form that is (an element with `role="alert"` is skipped
+ * whatever its `aria-live`).
  *
  * Reported when the lint can tell the region arrives with its text:
- *   - it holds text of its own — written in the markup, not replaced by a binding (`<p role="alert">Failed to load</p>`
+ *   - it holds text of its own — written in the markup, not replaced by a binding (`<p role="status">Loading…</p>`
  *     in an `if:` branch, a row or a route);
  *   - in an `if:` / `elseif:` branch, its text is bound to what the condition reads — the path itself, a path above or
  *     below it, or a path the condition's getter reads (`if: notice` with `textContent: notice`): the branch appears
@@ -35,8 +39,11 @@ import { findAllCommentBindings, findAllMustacheSyntax } from './templateSyntax.
 import { analyzeCallableBodies } from './stateAnalyzer.js';
 import { collectGetterReads } from './scriptAst.js';
 
-/** The roles whose element is a live region by itself (WAI-ARIA 1.2: implicit `aria-live` polite / assertive). */
-const LIVE_ROLES: ReadonlySet<string> = new Set(['status', 'alert', 'log']);
+/**
+ * The roles whose element is a live region by itself (WAI-ARIA 1.2: implicit `aria-live="polite"`). `alert` is not
+ * here: an alert added to the page is announced (the user agent fires the alert event).
+ */
+const LIVE_ROLES: ReadonlySet<string> = new Set(['status', 'log']);
 /** The bindings that replace an element's content (its markup text is not what it shows). */
 const CONTENT_PROPERTIES: ReadonlySet<string> = new Set(['textContent', 'innerText', 'innerHTML', 'text', 'html']);
 const VOID_ELEMENTS: ReadonlySet<string> = new Set([
@@ -53,11 +60,6 @@ interface Region {
   readonly contentEnd: number;
   /** The paths its own content-replacing bindings show (`textContent: notice`). */
   readonly ownText: readonly string[];
-  /**
-   * `role="alert"` (and no `aria-live`): a user agent may report a new alert by itself (a system alert event), so
-   * inserting one with its text is announced by some browsers and screen readers, not surely.
-   */
-  readonly alert: boolean;
 }
 
 export function validateLiveRegions(
@@ -109,7 +111,7 @@ export function validateLiveRegions(
       code: WcsDiagnosticCode.LiveRegionInserted,
       start: region.start,
       end: region.end,
-      message: msgs.liveRegionInserted(html.slice(region.start, region.end), by, tied, region.alert),
+      message: msgs.liveRegionInserted(html.slice(region.start, region.end), by, tied),
       severity: 'warning',
     });
   }
@@ -174,8 +176,9 @@ function hasMarkupText(html: string, from: number, to: number, replaced: readonl
 
 /**
  * The start tags of the document that make a live region, with the attribute that does it: `aria-live` with a value
- * other than `off`, else a `role` whose first token is a live role. HTML comments are skipped; a tag inside a raw text
- * element is dropped later (its context is not bound).
+ * other than `off`, else a `role` whose first token is a live role — not an alert (`role="alert"`, with an
+ * `aria-live` or not). HTML comments are skipped; a tag inside a raw text element is dropped later (its context is not
+ * bound).
  */
 function findLiveRegions(html: string, bindAttribute: string): Region[] {
   const out: Region[] = [];
@@ -190,6 +193,9 @@ function findLiveRegions(html: string, bindAttribute: string): Region[] {
     const live = extractAttribute(attrs, 'aria-live');
     if (live !== null && live.trim().toLowerCase() === 'off') continue;
     const role = extractAttribute(attrs, 'role');
+    const firstRole = role === null ? '' : role.trim().split(/\s+/)[0].toLowerCase();
+    // an alert added to the page is announced: the user agent fires the alert event
+    if (firstRole === 'alert') continue;
     const attribute = live !== null ? 'aria-live' : role !== null && LIVE_ROLES.has(role.trim().split(/\s+/)[0].toLowerCase()) ? 'role' : null;
     if (attribute === null) continue;
     const span = extractAttributeSpan(attrs, attribute, at);
@@ -205,7 +211,6 @@ function findLiveRegions(html: string, bindAttribute: string): Region[] {
       contentStart,
       contentEnd: VOID_ELEMENTS.has(name) || /\/\s*$/.test(attrs) ? contentStart : closingTagStart(html, contentStart, name),
       ownText,
-      alert: attribute === 'role' && role!.trim().split(/\s+/)[0].toLowerCase() === 'alert',
     });
   }
   return out;
