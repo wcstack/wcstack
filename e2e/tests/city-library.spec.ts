@@ -145,6 +145,12 @@ async function countTransitions(page: Page): Promise<void> {
   });
 }
 const transitions = (page: Page) => page.evaluate(() => (window as unknown as { __vt: number }).__vt);
+/**
+ * 文書が最初のフレームを描くまで待つ。<wcs-view-transition> は描く前の更新を遷移に包まない（最初の描画を止めない —
+ * docs/seam-apps.md、city-library の取り込み）。Playwright の headless shell は、起動して最初のページを 2 秒あまり
+ * 描かないので、遷移を数える試験はここから始める
+ */
+const drawn = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))));
 
 /**
  * ライブリージョンの文の変化を記録する（スクリーンリーダーが聞く変化）。リージョンはページにずっとある要素で、
@@ -194,6 +200,7 @@ test("キーボードだけで検索 → 結果 → 資料 → ログイン → 
   await countTransitions(page);
   await page.goto(`${APP}/en/`);
   await expect(h1(page)).toHaveText("Welcome to the City Library");
+  await drawn(page);
   await recordRegion(page, "#search-announcer");
 
   await tabTo(page, page.locator("#home-q"));
@@ -402,6 +409,7 @@ test("@browsers <wcs-view-transition> の下でも、ログインは next へ着
   await countTransitions(page);
   await page.goto(`${APP}/en/items/3`);
   await expect(h1(page)).toHaveText("Norwegian Wood");
+  await drawn(page);
   await page.getByRole("link", { name: "Log in to place a hold" }).click();
   await at(page, `/en/login?next=${encodeURIComponent("/items/3/hold")}`, "Log in");
   await expect(page.locator("main .lead")).toHaveText("You need to log in to see that page.");
@@ -624,6 +632,7 @@ test("reduced motion と「アニメーションなし」ではトランジシ�
     }
     await page.goto(`${APP}/en/`);
     await expect(h1(page)).toHaveText("Welcome to the City Library");
+    await drawn(page);
     const before = await transitions(page);
     await page.locator(".main-nav a", { hasText: "Catalogue" }).click();
     await at(page, "/en/search", "Catalogue");
