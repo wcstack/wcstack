@@ -159,6 +159,37 @@ export function setDocumentHidden(hidden: boolean): () => void {
   };
 }
 
+/**
+ * What `performance.getEntriesByType("paint")` reports: that many Paint Timing
+ * entries, or no such method. happy-dom never paints; setup.ts reports one, so
+ * the tests run as on a page that has been drawn, and the ones about the first
+ * frame take it away.
+ */
+export function setPaintEntries(count: number | "absent"): () => void {
+  const perf = performance as unknown as Record<string, unknown>;
+  const own = Object.prototype.hasOwnProperty.call(perf, "getEntriesByType");
+  const previous = perf.getEntriesByType;
+  perf.getEntriesByType = count === "absent"
+    ? undefined
+    : (type: string) => (type === "paint" ? Array.from({ length: count }, () => ({ entryType: "paint" })) : []);
+  return () => {
+    if (own) {
+      perf.getEntriesByType = previous;
+    } else {
+      delete perf.getEntriesByType;
+    }
+  };
+}
+
+/** Let the next frame be drawn: a task queued from requestAnimationFrame. */
+export function nextFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(resolve, 0);
+    });
+  });
+}
+
 /** Let queued microtasks run. */
 export function flushMicrotasks(): Promise<void> {
   return Promise.resolve().then(() => undefined);

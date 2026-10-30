@@ -96,7 +96,7 @@ One `<wcs-view-transition>` per document. A second one warns and stays inert rat
 
 ## Contract
 
-The rule everything else is subordinate to: **a DOM change is applied exactly once, whatever happens to its animation.** An unsupported browser, a hidden tab, `prefers-reduced-motion`, `disabled`, a collision, or a `startViewTransition` that throws all still end with the change applied. The page is never left showing stale DOM because an animation could not play.
+The rule everything else is subordinate to: **a DOM change is applied exactly once, whatever happens to its animation.** An unsupported browser, a hidden tab, a page not drawn yet, `prefers-reduced-motion`, `disabled`, a collision, or a `startViewTransition` that throws all still end with the change applied. The page is never left showing stale DOM because an animation could not play.
 
 Two consequences worth knowing before you add the tag:
 
@@ -104,7 +104,7 @@ Two consequences worth knowing before you add the tag:
 2. **Participation is per document, not per element.** One updater drains every `<wcs-state>` on the page, so `for="state"` turns transitions on for all of them.
 3. **Only a change of structure animates.** A state update that adds, removes or moves list rows, or switches an `if` branch, runs in a transition; one that only updates text, properties or classes is applied at once, as without the tag (a value change is CSS transitions' job). Typing in a bound input therefore never starts a transition — it used to start one per keystroke, and the page did not take a click while it ran.
 
-Transitions are skipped — and the change applied synchronously, on exactly today's timing — when the browser has no `startViewTransition`, when `document.hidden` is true (a background tab gets no rendering opportunities, so a transition there would freeze the DOM until you look at the tab again), under `prefers-reduced-motion: reduce` unless `reduced-motion="animate"`, while `disabled`, and during SSR.
+Transitions are skipped — and the change applied synchronously, on exactly today's timing — when the browser has no `startViewTransition`, when `document.hidden` is true (a background tab gets no rendering opportunities, so a transition there would freeze the DOM until you look at the tab again), before the page has drawn its first frame (since 4.11 (not released yet): there is nothing on screen to transition from, and Chromium held that first frame — static text included — until the update callback ran, so data fetched on load kept the page blank for 0.2–2.5 s), under `prefers-reduced-motion: reduce` unless `reduced-motion="animate"`, while `disabled`, and during SSR. The page has drawn once a Paint Timing entry exists or a frame has passed since the tag was connected; a browser that has just started may take a while to draw its first page (Playwright's headless shell, over 2 s), and a test that counts transitions waits for a frame first (`requestAnimationFrame` then `setTimeout`).
 
 ## Exclusion
 

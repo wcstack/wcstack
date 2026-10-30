@@ -96,7 +96,7 @@ npm install @wcstack/view-transition
 
 ## 契約
 
-他のすべてが従属する規則: **DOM 変更は、アニメーションがどうなろうと、ちょうど 1 回適用される。** 未対応ブラウザ、非表示タブ、`prefers-reduced-motion`、`disabled`、衝突、`startViewTransition` の throw — どれも「変更は適用された」で終わる。アニメーションが再生できなかったせいで古い DOM が残ることはない。
+他のすべてが従属する規則: **DOM 変更は、アニメーションがどうなろうと、ちょうど 1 回適用される。** 未対応ブラウザ、非表示タブ、まだ描かれていないページ、`prefers-reduced-motion`、`disabled`、衝突、`startViewTransition` の throw — どれも「変更は適用された」で終わる。アニメーションが再生できなかったせいで古い DOM が残ることはない。
 
 タグを足す前に知っておくべき帰結が 2 つ。
 
@@ -104,7 +104,7 @@ npm install @wcstack/view-transition
 2. **参加は要素単位ではなくドキュメント単位。** 1 つの updater がページ上の全 `<wcs-state>` をまとめて drain するので、`for="state"` は全部に効く。
 3. **構造の変化だけが動く。** 一覧の行を足す・消す・動かす、`if` の分岐を切り替える state の更新は遷移の中で走り、テキスト・プロパティ・クラスを変えるだけの更新はタグが無いときと同じくその場で適用される（値の変化は CSS transition の担当）。だから束ねた入力欄への入力で遷移は始まらない —— 以前は 1 打鍵ごとに始まり、その間ページはクリックを受け付けなかった。
 
-遷移がスキップされ、変更が現行どおり同期適用されるのは: `startViewTransition` が無い環境、`document.hidden` が true のとき（バックグラウンドタブには描画機会が無く、遷移を張ると見に戻るまで DOM が凍る）、`reduced-motion="animate"` でない状態で `prefers-reduced-motion: reduce` のとき、`disabled` のとき、そして SSR 中。
+遷移がスキップされ、変更が現行どおり同期適用されるのは: `startViewTransition` が無い環境、`document.hidden` が true のとき（バックグラウンドタブには描画機会が無く、遷移を張ると見に戻るまで DOM が凍る）、ページが最初のフレームを描く前（4.11（未リリース）から: 遷移の元になる画面がまだ無く、Chromium は静的な文も含めて最初の描画を更新コールバックまで止めていたので、読み込みで取ったデータがページを 0.2〜2.5 秒白いままにした）、`reduced-motion="animate"` でない状態で `prefers-reduced-motion: reduce` のとき、`disabled` のとき、そして SSR 中。Paint Timing の項目があるか、タグが接続されてから 1 フレームたてば、ページは描かれたとみなす。起動した直後のブラウザは最初のページを描くまで時間がかかることがある（Playwright の headless shell では 2 秒あまり）ので、遷移を数える試験は先に 1 フレーム待つ（`requestAnimationFrame` の後の `setTimeout`）。
 
 ## 排他
 

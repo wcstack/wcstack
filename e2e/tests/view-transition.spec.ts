@@ -11,18 +11,23 @@ import { collectErrors } from "./helpers";
 // 「遷移が始まらないこと」という否定側の主張は、この計数でしか固定できない。
 declare global {
   interface Window {
-    __vt: { started: number; supported: boolean };
+    __vt: { started: number; supported: boolean; beforePaint?: number };
   }
 }
 
 const started = (page: import("@playwright/test").Page) =>
   page.evaluate(() => window.__vt.started);
+// 文書が最初のフレームを描くまで待つ。裁定者は描く前の更新を遷移に包まない（最初の描画を止めないため）。
+// Playwright の headless shell は起動して最初のページを 2 秒あまり描かないので、遷移を数える前にここで待つ
+const drawn = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0))));
 
 test.describe("e2e/fixtures/view-transition-list", () => {
   test("リスト更新は本物の View Transition の中で適用され、行は一意に命名される", async ({ page }) => {
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/view-transition-list.html");
     await expect(page.locator("#list li")).toHaveCount(3);
+    await drawn(page);
 
     expect(await page.evaluate(() => window.__vt.supported)).toBe(true);
 
@@ -66,6 +71,7 @@ test.describe("e2e/fixtures/view-transition-list", () => {
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/view-transition-list.html");
     await expect(page.locator("#list li")).toHaveCount(3);
+    await drawn(page);
 
     // headlessTicks はどの binding からも参照されていない。書き込みは enqueue され
     // drain も走るが、適用すべき binding が 0 本なので arbiter へは渡らない。
@@ -86,11 +92,34 @@ test.describe("e2e/fixtures/view-transition-list", () => {
   });
 });
 
+test.describe("e2e/fixtures/view-transition-first-paint", () => {
+  test("最初の描画より前に来た更新は遷移に包まず、描いた後の更新は遷移する", async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto("/e2e/fixtures/view-transition-first-paint.html");
+    await expect(page.locator("#list li")).toHaveCount(3);
+    expect(await page.evaluate(() => window.__vt.supported)).toBe(true);
+
+    // 読み込みで取った行は最初の描画より前に届く。そこで遷移を始めると、Chromium は
+    // 見出しも含めて最初の描画を更新コールバックまで止めていた（docs/seam-apps.md、city-library）
+    expect(await page.evaluate(() => window.__vt.beforePaint)).toBe(0);
+
+    // 描いた後の更新は、今までどおり遷移の中で当たる
+    await drawn(page);
+    const before = await started(page);
+    await page.locator("#add").click();
+    await expect(page.locator("#list li")).toHaveCount(4);
+    expect(await started(page)).toBe(before + 1);
+
+    expect(errors).toEqual([]);
+  });
+});
+
 test.describe("e2e/fixtures/view-transition-route", () => {
   test("ルート差し替えは 1 つの遷移として走り、DOM はちょうど 1 回変わる", async ({ page }) => {
     const errors = collectErrors(page);
     await page.goto("/e2e/fixtures/view-transition-route.html");
     await expect(page.locator("#view")).toHaveText("home");
+    await drawn(page);
 
     const before = await started(page);
     await page.getByText("about", { exact: true }).click();
