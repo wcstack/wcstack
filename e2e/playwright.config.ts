@@ -28,10 +28,11 @@ export default defineConfig({
     },
     // The production form differs between browsers where the CSP / SRI guides once said "Chromium only": import map
     // integrity and Trusted Types. prod-booking's checks tagged @browsers run in Firefox too (examples/prod-booking).
-    // So do the router's fragment links, which read Firefox's NavigateEvent (router-fragment-links).
+    // So do the router's fragment links, which read Firefox's NavigateEvent (router-fragment-links), and the
+    // city-library seam app's skip link, pagination, login under view transitions, time zones and languages.
     {
       name: "firefox",
-      testMatch: /(prod-booking|router-fragment-links)\.spec\.ts/,
+      testMatch: /(prod-booking|router-fragment-links|city-library)\.spec\.ts/,
       grep: /@browsers/,
       use: { ...devices["Desktop Firefox"] },
     },

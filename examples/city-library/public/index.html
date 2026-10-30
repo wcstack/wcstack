@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<!-- A static default so the document is never lang-less: the head script below
+     overwrites it with the settled locale before anything reads it. -->
+<html lang="ja" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+
+  <!-- LOCALE NEGOTIATION — synchronous and first (docs/i18n-design.md §8,
+       examples/router-i18n). Decides the language, writes <html lang>/<dir>,
+       hands the locale to the router as its basename through <base href>, and
+       repairs a URL without a locale. -->
+  <script>
+  (function () {
+    var SUPPORTED = { ja: "ltr", en: "ltr", ar: "rtl" };
+    var FALLBACK = "en";
+    // The remembered choice. <wcs-storage> keeps a string as it is (not as
+    // JSON), so it is read raw — JSON.parse("ja") throws.
+    var STORAGE_KEY = "city-library.lang";
+    // A switch the reader started on the previous page: committed only here,
+    // once the navigation really happened (a declined leave prompt keeps the
+    // reader on the old page, and the old choice).
+    var SWITCH_KEY = "city-library.switching";
+    var LOCALE_SHAPED = /^[a-z]{2,3}(-[A-Za-z0-9]+)*$/;
+
+    function fromNavigator() {
+      var list = navigator.languages || [navigator.language || ""];
+      for (var i = 0; i < list.length; i++) {
+        var tag = String(list[i] || "").toLowerCase();
+        while (tag) {
+          if (SUPPORTED[tag]) return tag;
+          var cut = tag.lastIndexOf("-");
+          if (cut < 0) break;
+          tag = tag.slice(0, cut);
+        }
+      }
+      return null;
+    }
+    function stored() {
+      try {
+        var saved = localStorage.getItem(STORAGE_KEY);
+        return SUPPORTED[saved] ? saved : null;
+      } catch (e) { return null; }
+    }
+    function commitSwitch(lang) {
+      try {
+        var pending = sessionStorage.getItem(SWITCH_KEY);
+        sessionStorage.removeItem(SWITCH_KEY);
+        if (pending === lang) localStorage.setItem(STORAGE_KEY, lang);
+      } catch (e) { /* no storage: the URL still carries the language */ }
+    }
+
+    var segments = location.pathname.split("/");
+    var head = segments[1] || "";
+    var lang = SUPPORTED[head] ? head : (stored() || fromNavigator() || FALLBACK);
+    document.documentElement.lang = lang;
+    document.documentElement.dir = SUPPORTED[lang];
+
+    if (!SUPPORTED[head]) {
+      if (head && LOCALE_SHAPED.test(head)) segments[1] = lang;
+      else segments.splice(1, 0, lang);
+      location.replace(segments.join("/") + location.search + location.hash);
+      return;
+    }
+    commitSwitch(lang);
+    var base = document.createElement("base");
+    base.setAttribute("href", "/" + lang + "/");
+    document.head.appendChild(base);
+  })();
+  </script>
+
+  <title>市立図書館</title>
+  <!-- Root-absolute: under <base href="/ja/"> a relative URL would mean /ja/… -->
+  <link rel="stylesheet" href="/site.css">
+
+  <!-- I/O nodes first, view-transition before state (naming="auto" needs it
+       installed first), router, and state last. -->
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/sse/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/debounce/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/timer/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/media-query/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+
+<!-- The skip link. A link to a bare fragment stays on the page (router 4.10):
+     the URL becomes this page's path and query + #main, and the router focuses
+     <main>. Under <base href="/ja/"> it used to navigate to /ja/#main, the home
+     route, so the page built the absolute address itself. -->
+<a class="skip-link" href="#main" data-wcs="textContent: i18n.t.site.skip"></a>
+
+<header class="site-header">
+  <p class="site-name"><wcs-link to="/"><span data-wcs="textContent: i18n.t.site.name"></span></wcs-link></p>
+  <nav class="main-nav" data-wcs="attr.aria-label: i18n.t.nav.label">
+    <ul>
+      <li><wcs-link to="/"><span data-wcs="textContent: i18n.t.nav.home"></span></wcs-link></li>
+      <li><wcs-link to="/search" match="prefix"><span data-wcs="textContent: i18n.t.nav.search"></span></wcs-link></li>
+      <li><wcs-link to="/hours"><span data-wcs="textContent: i18n.t.nav.hours"></span></wcs-link></li>
+      <li><wcs-link to="/account" match="prefix"><span data-wcs="textContent: i18n.t.nav.account"></span></wcs-link></li>
+      <li><wcs-link to="/settings"><span data-wcs="textContent: i18n.t.nav.settings"></span></wcs-link></li>
+    </ul>
+  </nav>
+  <!-- The language switch: plain links to the other basename (a <wcs-link>
+       would prepend this page's basename). Each name is in its own language. -->
+  <nav class="lang-nav" data-wcs="attr.aria-label: i18n.t.nav.languages">
+    <ul>
+      <li><a lang="ja" hreflang="ja" data-wcs="attr.href: langHref.ja; attr.aria-current: langCurrent.ja; onclick: chooseLang">日本語</a></li>
+      <li><a lang="en" hreflang="en" data-wcs="attr.href: langHref.en; attr.aria-current: langCurrent.en; onclick: chooseLang">English</a></li>
+      <li><a lang="ar" dir="rtl" hreflang="ar" data-wcs="attr.href: langHref.ar; attr.aria-current: langCurrent.ar; onclick: chooseLang">العربية</a></li>
+    </ul>
+  </nav>
+  <div class="session">
+    <template data-wcs="if: loggedIn">
+      <span class="greeting"><bdi data-wcs="textContent: greeting"></bdi></span>
+      <button type="button" class="secondary" data-wcs="onclick: logout; textContent: i18n.t.nav.logout"></button>
+    </template>
+    <template data-wcs="else:">
+      <wcs-link data-wcs="attr.to: loginHref"><span data-wcs="textContent: i18n.t.nav.login"></span></wcs-link>
+    </template>
+  </div>
+</header>
+
+<!-- Hold notices from the server. A log region that is always in the page:
+     each new row is an addition, announced politely, once. -->
+<div class="notices" role="log" aria-live="polite" data-wcs="attr.aria-label: i18n.t.notices.label"><template data-wcs="for: notices"><p class="notice" data-wcs="textContent: .text"></p></template></div>
+
+<!-- Page-level messages that outlive a navigation, and the search's result
+     count: always in the page, outside the router. A status region in a route
+     body is inserted together with its text and is never announced — with view
+     transitions, not even one filled from a response (the router README's
+     accessibility section and the lint's wcs/live-region-inserted, 4.10). -->
+<p class="flash status-msg" role="status" data-wcs="textContent: flash"></p>
+<p id="search-announcer" class="visually-hidden" role="status" data-wcs="textContent: searchAnnounce"></p>
+
+<main id="main" tabindex="-1">
+  <wcs-router focus="heading" announce="title"
+    data-wcs="path: path; routeName: routeName; typedParams: routeParams; searchParams: query; data: routeData; navigateUrl: navigateUrl; replaceUrl: replaceUrl; leaveConfirm: discardPrompt">
+    <template>
+      <wcs-route path="/" name="home">
+        <wcs-head><title data-wcs="textContent: i18n.t.title.home"></title></wcs-head>
+        <section class="page">
+          <h1 data-wcs="textContent: i18n.t.home.heading"></h1>
+          <p class="lead" data-wcs="textContent: i18n.t.home.lead"></p>
+          <section aria-labelledby="home-search-h">
+            <h2 id="home-search-h" data-wcs="textContent: i18n.t.home.searchHeading"></h2>
+            <form role="search" class="search-form" data-wcs="onsubmit#prevent: submitSearch">
+              <label for="home-q" data-wcs="textContent: i18n.t.search.label"></label>
+              <input id="home-q" type="search" name="q" dir="auto" autocomplete="off"
+                data-wcs="value: form.q; attr.placeholder: i18n.t.search.placeholder">
+              <button type="submit" data-wcs="textContent: i18n.t.search.submit"></button>
+            </form>
+          </section>
+          <section aria-labelledby="home-today-h">
+            <h2 id="home-today-h" data-wcs="textContent: i18n.t.home.todayHeading"></h2>
+            <!-- The library's times, in Tokyo time whatever the reader's zone:
+                 the time filter's third argument (state 4.10). -->
+            <ul class="today">
+              <template data-wcs="for: todayHours">
+                <li><strong data-wcs="textContent: .name"></strong>: <span data-wcs="hidden: .closedToday"><span data-wcs="textContent: .opens|time(,short,Asia/Tokyo)"></span><span data-wcs="textContent: i18n.t.home.to"></span><span data-wcs="textContent: .closes|time(,short,Asia/Tokyo)"></span></span> <span data-wcs="textContent: .stateText"></span></li>
+              </template>
+            </ul>
+            <p><wcs-link to="/hours"><span data-wcs="textContent: i18n.t.home.moreHours"></span></wcs-link></p>
+          </section>
+        </section>
+      </wcs-route>
+
+      <wcs-route path="/hours" name="hours">
+        <wcs-head><title data-wcs="textContent: i18n.t.title.hours"></title></wcs-head>
+        <section class="page">
+          <h1 data-wcs="textContent: i18n.t.hours.heading"></h1>
+          <p data-wcs="textContent: hoursZoneNote"></p>
+          <template data-wcs="if: showReaderZone">
+            <p data-wcs="textContent: hoursReaderNote"></p>
+          </template>
+          <template data-wcs="for: hoursTables">
+            <section class="hours-branch">
+              <h2 data-wcs="textContent: .name"></h2>
+              <table>
+                <caption data-wcs="textContent: .caption"></caption>
+                <thead>
+                  <tr>
+                    <th scope="col" data-wcs="textContent: i18n.t.hours.date"></th>
+                    <th scope="col" data-wcs="textContent: i18n.t.hours.opens"></th>
+                    <th scope="col" data-wcs="textContent: i18n.t.hours.closes"></th>
+                    <th scope="col" data-wcs="hidden: showReaderZone|not; textContent: readerColumn"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <!-- The day and the times in Tokyo, from anywhere: the filters'
+                       zone (state 4.10). The reader's own column is a getter. -->
+                  <template data-wcs="for: .days">
+                    <tr>
+                      <th scope="row" data-wcs="textContent: .day|date(,full,Asia/Tokyo)"></th>
+                      <td><span data-wcs="textContent: .opens|time(,short,Asia/Tokyo)"></span><span data-wcs="textContent: .closedText"></span></td>
+                      <td data-wcs="textContent: .closes|time(,short,Asia/Tokyo)|defaults(—)"></td>
+                      <td data-wcs="hidden: showReaderZone|not; textContent: .readerText"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </section>
+          </template>
+        </section>
+      </wcs-route>
+
+      <wcs-route path="/search" name="search">
+        <wcs-head><title data-wcs="textContent: searchTitle"></title></wcs-head>
+        <section class="page">
+          <h1 data-wcs="textContent: i18n.t.search.heading"></h1>
+          <form role="search" class="search-form search-form--full" data-wcs="onsubmit#prevent: submitSearch">
+            <div class="field">
+              <label for="search-q" data-wcs="textContent: i18n.t.search.label"></label>
+              <input id="search-q" type="search" name="q" dir="auto" autocomplete="off"
+                data-wcs="value: form.q; oninput: typedQuery; attr.placeholder: i18n.t.search.placeholder">
+            </div>
+            <div class="field">
+              <label for="search-type" data-wcs="textContent: i18n.t.search.type"></label>
+              <select id="search-type" name="type" data-wcs="value: form.type; onchange: applyFilters">
+                <option value="" data-wcs="textContent: i18n.t.search.typeAll"></option>
+                <option value="book" data-wcs="textContent: i18n.t.search.types.book"></option>
+                <option value="av" data-wcs="textContent: i18n.t.search.types.av"></option>
+                <option value="kids" data-wcs="textContent: i18n.t.search.types.kids"></option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="search-branch" data-wcs="textContent: i18n.t.search.branch"></label>
+              <select id="search-branch" name="branch" data-wcs="value: form.branch; onchange: applyFilters">
+                <option value="" data-wcs="textContent: i18n.t.search.branchAll"></option>
+                <template data-wcs="for: branches">
+                  <option data-wcs="value: .id; textContent: .name"></option>
+                </template>
+              </select>
+            </div>
+            <div class="field">
+              <label for="search-sort" data-wcs="textContent: i18n.t.search.sort"></label>
+              <select id="search-sort" name="sort" data-wcs="value: form.sort; onchange: applyFilters">
+                <option value="title" data-wcs="textContent: i18n.t.search.sorts.title"></option>
+                <option value="-year" data-wcs="textContent: i18n.t.search.sorts.yearDesc"></option>
+                <option value="year" data-wcs="textContent: i18n.t.search.sorts.yearAsc"></option>
+              </select>
+            </div>
+            <button type="submit" data-wcs="textContent: i18n.t.search.submit"></button>
+          </form>
+
+          <!-- The result count as text. What a screen reader hears is the
+               page-level region #search-announcer (outside the router): a region
+               in the route body is sometimes inserted together with its text
+               (with a view transition the route swap lands after the response),
+               and then nothing is announced. -->
+          <p class="result-status" data-wcs="textContent: searchStatus"></p>
+          <p class="searching" aria-hidden="true" data-wcs="hidden: catalogFetch.loading|not; textContent: i18n.t.search.searching"></p>
+
+          <ol class="results" data-wcs="attr.aria-label: i18n.t.search.resultsLabel">
+            <template data-wcs="for: results">
+              <li class="result">
+                <h2 class="result-title"><wcs-link data-wcs="attr.to: .href"><bdi data-wcs="textContent: .title"></bdi></wcs-link></h2>
+                <p class="result-meta">
+                  <bdi data-wcs="textContent: .author"></bdi> ・ <span data-wcs="textContent: .yearText"></span> ・ <span data-wcs="textContent: .typeText"></span>
+                </p>
+                <p class="result-avail" data-wcs="textContent: .availText"></p>
+              </li>
+            </template>
+          </ol>
+          <template data-wcs="if: noResults">
+            <p class="empty" data-wcs="textContent: i18n.t.search.none"></p>
+          </template>
+
+          <!-- Query links: a <wcs-link> whose `to` has a query is the current
+               page only on that query (router 4.10) — up to 4.9 every link here
+               said "current page". pageQuery / pageLinks in app.js say how page 1 is linked. -->
+          <nav class="pager" data-wcs="attr.aria-label: i18n.t.search.pagination">
+            <template data-wcs="if: hasPrev">
+              <wcs-link data-wcs="attr.to: prevHref"><span data-wcs="textContent: i18n.t.search.prev"></span></wcs-link>
+            </template>
+            <ol class="pages">
+              <template data-wcs="for: pageLinks">
+                <li><wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .text"></span></wcs-link></li>
+              </template>
+            </ol>
+            <span class="page-of" data-wcs="textContent: pageOfText"></span>
+            <template data-wcs="if: hasNext">
+              <wcs-link data-wcs="attr.to: nextHref"><span data-wcs="textContent: i18n.t.search.next"></span></wcs-link>
+            </template>
+          </nav>
+        </section>
+      </wcs-route>
+
+      <wcs-route path="/items/:id(int)" name="item">
+        <!-- The guard is the route's loader: the page never shows an empty
+             heading, which focus="heading" would land on. -->
+        <wcs-guard-handler>
+          <script type="module">
+            export default async function (toPath, fromPath, { typedParams }) {
+              const lang = document.documentElement.lang;
+              const res = await fetch(`/api/items/${typedParams.id}?lang=${lang}`);
+              if (res.status === 404) return { item: null, missing: true };
+              if (!res.ok) return false;
+              return { item: await res.json(), missing: false };
+            }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title data-wcs="textContent: itemTitle"></title></wcs-head>
+        <article class="page item">
+          <template data-wcs="if: routeData.missing">
+            <h1 data-wcs="textContent: i18n.t.item.missing"></h1>
+            <p data-wcs="textContent: i18n.t.item.missingBody"></p>
+          </template>
+          <template data-wcs="else:">
+            <h1><bdi data-wcs="textContent: routeData.item.title"></bdi></h1>
+            <dl class="item-meta">
+              <dt data-wcs="textContent: i18n.t.item.by"></dt>
+              <dd><bdi data-wcs="textContent: routeData.item.author"></bdi></dd>
+              <dt data-wcs="textContent: i18n.t.item.year"></dt>
+              <dd data-wcs="textContent: itemYearText"></dd>
+              <dt data-wcs="textContent: i18n.t.item.type"></dt>
+              <dd data-wcs="textContent: itemTypeText"></dd>
+            </dl>
+            <p class="item-desc" data-wcs="textContent: routeData.item.description"></p>
+            <p data-wcs="textContent: itemHoldsText"></p>
+            <p><wcs-link data-wcs="attr.to: holdHref"><span data-wcs="textContent: holdLinkText"></span></wcs-link></p>
+            <h2 data-wcs="textContent: i18n.t.item.copiesHeading"></h2>
+            <table class="copies">
+              <caption data-wcs="textContent: i18n.t.item.copiesCaption"></caption>
+              <thead>
+                <tr>
+                  <th scope="col" data-wcs="textContent: i18n.t.item.branch"></th>
+                  <th scope="col" data-wcs="textContent: i18n.t.item.status"></th>
+                  <th scope="col" data-wcs="textContent: i18n.t.item.due"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <template data-wcs="for: copies">
+                  <tr>
+                    <th scope="row" data-wcs="textContent: .branchName"></th>
+                    <td data-wcs="textContent: .statusText"></td>
+                    <!-- Due back at the library's closing, a Tokyo date. -->
+                    <td data-wcs="textContent: .due|date(,medium,Asia/Tokyo)|defaults(—)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </template>
+          <p class="back"><wcs-link data-wcs="attr.to: backToSearchHref"><span data-wcs="textContent: i18n.t.item.back"></span></wcs-link></p>
+        </article>
+      </wcs-route>
+
+      <!-- Placing a hold: members only, and the guard loads the item too. -->
+      <wcs-route path="/items/:id(int)/hold" name="hold" guard="/login">
+        <wcs-guard-handler>
+          <script type="module">
+            export default async function (toPath, fromPath, { typedParams }) {
+              let session = null;
+              try { session = JSON.parse(localStorage.getItem("city-library.session")); } catch {}
+              if (!session?.token) return `/login?next=${encodeURIComponent(toPath)}`;
+              const lang = document.documentElement.lang;
+              const res = await fetch(`/api/items/${typedParams.id}?lang=${lang}`);
+              if (!res.ok) return "/search";
+              return { item: await res.json(), missing: false };
+            }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title data-wcs="textContent: holdTitle"></title></wcs-head>
+        <section class="page">
+          <h1 data-wcs="textContent: i18n.t.hold.heading"></h1>
+          <p><span data-wcs="textContent: i18n.t.hold.for"></span>: <bdi class="hold-item" data-wcs="textContent: routeData.item.title"></bdi></p>
+          <form class="hold-form" novalidate data-wcs="onsubmit#prevent: submitHold">
+            <p class="error" role="alert" data-wcs="textContent: holdConflict"></p>
+            <!-- The server's 422: how many problems, and a link to each field
+                 (in-page fragment links, which the router keeps on the page). -->
+            <div class="error-summary" role="status">
+              <p data-wcs="textContent: holdErrorSummary"></p>
+              <ul>
+                <template data-wcs="for: holdErrorList">
+                  <li><a data-wcs="attr.href: .href; textContent: .message"></a></li>
+                </template>
+              </ul>
+            </div>
+            <div class="field">
+              <label for="hold-branch" data-wcs="textContent: i18n.t.hold.branch"></label>
+              <select id="hold-branch" name="branch"
+                data-wcs="value: holdForm.branch; attr.aria-invalid: holdInvalid.branch; attr.aria-describedby: holdDescribedBy.branch; command.focus: $command.focusBranch">
+                <option value="" data-wcs="textContent: i18n.t.hold.branchChoose"></option>
+                <template data-wcs="for: branches">
+                  <option data-wcs="value: .id; textContent: .name"></option>
+                </template>
+              </select>
+              <p id="hold-branch-error" class="error" data-wcs="textContent: holdErrorText.branch"></p>
+            </div>
+            <fieldset id="hold-notify" data-wcs="attr.aria-describedby: holdDescribedBy.notify">
+              <legend data-wcs="textContent: i18n.t.hold.notify"></legend>
+              <label class="radio"><input id="hold-notify-email" type="radio" name="notify" value="email" data-wcs="radio: holdForm.notify; attr.aria-invalid: holdInvalid.notify; command.focus: $command.focusNotify"><span data-wcs="textContent: i18n.t.hold.notifies.email"></span></label>
+              <label class="radio"><input type="radio" name="notify" value="sms" data-wcs="radio: holdForm.notify; attr.aria-invalid: holdInvalid.notify"><span data-wcs="textContent: i18n.t.hold.notifies.sms"></span></label>
+              <label class="radio"><input type="radio" name="notify" value="none" data-wcs="radio: holdForm.notify; attr.aria-invalid: holdInvalid.notify"><span data-wcs="textContent: i18n.t.hold.notifies.none"></span></label>
+              <p id="hold-notify-error" class="error" data-wcs="textContent: holdErrorText.notify"></p>
+            </fieldset>
+            <div class="field">
+              <label for="hold-phone" data-wcs="textContent: i18n.t.hold.phone"></label>
+              <input id="hold-phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr"
+                data-wcs="value: holdForm.phone; attr.aria-invalid: holdInvalid.phone; attr.aria-describedby: holdDescribedBy.phone; command.focus: $command.focusPhone">
+              <p id="hold-phone-hint" class="hint" data-wcs="textContent: i18n.t.hold.phoneHint"></p>
+              <p id="hold-phone-error" class="error" data-wcs="textContent: holdErrorText.phone"></p>
+            </div>
+            <button type="submit" data-wcs="disabled: holdLoading; textContent: i18n.t.hold.submit"></button>
+          </form>
+        </section>
+      </wcs-route>
+
+      <wcs-route path="/login" name="login">
+        <!-- A member who is already logged in has nothing to do here. -->
+        <wcs-guard-handler>
+          <script type="module">
+            export default function () {
+              let session = null;
+              try { session = JSON.parse(localStorage.getItem("city-library.session")); } catch {}
+              return session?.token ? "/account" : true;
+            }
+          </script>
+        </wcs-guard-handler>
+        <wcs-head><title data-wcs="textContent: i18n.t.title.login"></title></wcs-head>
+        <section class="page">
+          <h1 data-wcs="textContent: i18n.t.login.heading"></h1>
+          <!-- `query` is the router's searchParams: `next` is there only when the
+               URL has it (the diagnostics stopped calling it a typo in 4.10). -->
+          <template data-wcs="if: query.next">
+            <p class="lead" data-wcs="textContent: i18n.t.login.redirected"></p>
+          </template>
+          <form class="login-form" novalidate data-wcs="onsubmit#prevent: login">
+            <div class="field">
+              <label for="login-card" data-wcs="textContent: i18n.t.login.card"></label>
+              <input id="login-card" name="card" inputmode="numeric" autocomplete="username" dir="ltr" data-wcs="value: loginForm.card">
+            </div>
+            <div class="field">
+              <label for="login-pin" data-wcs="textContent: i18n.t.login.pin"></label>
+              <input id="login-pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" dir="ltr" data-wcs="value: loginForm.pin">
+            </div>
+            <p class="error" role="alert" data-wcs="textContent: loginErrorMessage"></p>
+            <button type="submit" data-wcs="disabled: loginLoading; textContent: i18n.t.login.submit"></button>
+          </form>
+          <p class="hint" data-wcs="textContent: i18n.t.login.hint"></p>
+        </section>
+      </wcs-route>
+
+      <!-- Members only: one guard on the parent covers every page under /account. -->
+      <wcs-route path="/account" guard="/login">
+        <wcs-guard-handler>
+          <script type="module">
+            export default function (toPath, fromPath, { searchParams }) {
+              let session = null;
+              try { session = JSON.parse(localStorage.getItem("city-library.session")); } catch {}
+              if (session?.token) return true;
+              const query = new URLSearchParams(searchParams).toString();
+              return `/login?next=${encodeURIComponent(query ? toPath + "?" + query : toPath)}`;
+            }
+          </script>
+        </wcs-guard-handler>
+        <wcs-layout layout="member-layout">
+          <wcs-route index name="account">
+            <wcs-head><title data-wcs="textContent: i18n.t.title.account"></title></wcs-head>
+            <section class="page">
+              <h1 data-wcs="textContent: i18n.t.account.heading"></h1>
+              <section aria-labelledby="holds-h">
+                <h2 id="holds-h" tabindex="-1" data-wcs="textContent: i18n.t.account.holdsHeading; command.focus: $command.focusHoldsHeading"></h2>
+                <p data-wcs="textContent: holdsCountText"></p>
+                <ul class="holds">
+                  <template data-wcs="for: holds">
+                    <li class="hold">
+                      <h3><wcs-link data-wcs="attr.to: .href"><bdi data-wcs="textContent: .title"></bdi></wcs-link></h3>
+                      <p><span class="badge" data-wcs="class.badge--ready: .isReady; textContent: .statusText"></span></p>
+                      <p data-wcs="textContent: .detailText"></p>
+                      <p data-wcs="textContent: .pickupText"></p>
+                      <button type="button" class="secondary" data-wcs="onclick: askCancel; textContent: i18n.t.account.cancel; attr.aria-label: .cancelLabel"></button>
+                    </li>
+                  </template>
+                </ul>
+              </section>
+
+              <dialog id="cancel-dialog" aria-labelledby="cancel-dialog-title" aria-describedby="cancel-dialog-body"
+                data-wcs="command.showModal: $command.openCancel; command.close: $command.closeCancel">
+                <h2 id="cancel-dialog-title" data-wcs="textContent: i18n.t.account.dialogTitle"></h2>
+                <p id="cancel-dialog-body" data-wcs="textContent: cancelBody"></p>
+                <div class="dialog-actions">
+                  <button type="button" class="secondary" autofocus data-wcs="onclick: dismissCancel; textContent: i18n.t.account.dialogDismiss"></button>
+                  <button type="button" data-wcs="onclick: confirmCancel; textContent: i18n.t.account.dialogConfirm"></button>
+                </div>
+              </dialog>
+            </section>
+          </wcs-route>
+
+          <wcs-route path="fees" name="fees">
+            <wcs-head><title data-wcs="textContent: feesTitle"></title></wcs-head>
+            <section class="page">
+              <h1 data-wcs="textContent: i18n.t.account.feesHeading"></h1>
+              <p data-wcs="textContent: feesSummary"></p>
+              <template data-wcs="if: hasFees">
+                <table class="fees">
+                  <caption data-wcs="textContent: i18n.t.account.feesCaption"></caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" data-wcs="textContent: i18n.t.account.feeDate"></th>
+                      <th scope="col" data-wcs="textContent: i18n.t.account.feeReason"></th>
+                      <th scope="col" class="amount" data-wcs="textContent: i18n.t.account.feeAmount"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template data-wcs="for: fees">
+                      <tr>
+                        <td data-wcs="textContent: .date|date(,medium,Asia/Tokyo)"></td>
+                        <th scope="row"><bdi data-wcs="textContent: .reason"></bdi></th>
+                        <td class="amount" data-wcs="textContent: .amount|currency(JPY)"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </template>
+            </section>
+          </wcs-route>
+        </wcs-layout>
+      </wcs-route>
+
+      <wcs-route path="/settings" name="settings">
+        <wcs-head><title data-wcs="textContent: i18n.t.title.settings"></title></wcs-head>
+        <section class="page">
+          <h1 data-wcs="textContent: i18n.t.settings.heading"></h1>
+          <section aria-labelledby="motion-h">
+            <h2 id="motion-h" data-wcs="textContent: i18n.t.settings.motionHeading"></h2>
+            <fieldset>
+              <legend data-wcs="textContent: i18n.t.settings.motionHeading"></legend>
+              <label class="radio"><input type="radio" name="motion" value="system" data-wcs="radio: motionPref"><span data-wcs="textContent: i18n.t.settings.motionSystem"></span></label>
+              <label class="radio"><input type="radio" name="motion" value="off" data-wcs="radio: motionPref"><span data-wcs="textContent: i18n.t.settings.motionOff"></span></label>
+            </fieldset>
+            <p data-wcs="textContent: systemMotionText"></p>
+          </section>
+          <section aria-labelledby="scheme-h">
+            <h2 id="scheme-h" data-wcs="textContent: i18n.t.settings.schemeHeading"></h2>
+            <p data-wcs="textContent: systemSchemeText"></p>
+          </section>
+        </section>
+      </wcs-route>
+
+      <wcs-route fallback name="not-found">
+        <wcs-head><title data-wcs="textContent: i18n.t.title.notFound"></title></wcs-head>
+        <section class="page">
+          <h1 data-wcs="textContent: i18n.t.notFound.heading"></h1>
+          <p data-wcs="textContent: i18n.t.notFound.body"></p>
+          <p><wcs-link to="/"><span data-wcs="textContent: i18n.t.notFound.home"></span></wcs-link></p>
+        </section>
+      </wcs-route>
+    </template>
+  </wcs-router>
+  <wcs-outlet></wcs-outlet>
+</main>
+
+<!-- The member area's layout: a second navigation, the page in the slot. -->
+<template id="member-layout">
+  <div class="member">
+    <nav class="account-nav" data-wcs="attr.aria-label: i18n.t.nav.account">
+      <ul>
+        <li><wcs-link to="/account"><span data-wcs="textContent: i18n.t.account.holdsHeading"></span></wcs-link></li>
+        <li><wcs-link to="/account/fees"><span data-wcs="textContent: i18n.t.account.feesHeading"></span></wcs-link></li>
+      </ul>
+    </nav>
+    <slot></slot>
+  </div>
+</template>
+
+<footer class="site-footer">
+  <p data-wcs="textContent: i18n.t.site.footer"></p>
+</footer>
+
+<!-- Headless nodes -->
+<wcs-storage key="city-library.session" data-wcs="value#init=element: session"></wcs-storage>
+<wcs-storage key="city-library.prefs" data-wcs="value#init=element: prefs"></wcs-storage>
+<!-- The language the reader chose; the head script reads it on a visit to a
+     URL without a language — raw: <wcs-storage> stores a string as it is, not
+     as JSON (router README, 4.10). -->
+<wcs-storage key="city-library.lang" data-wcs="value#init=element: langPref"></wcs-storage>
+
+<!-- Route swaps and list / branch changes animate; reduced-motion="skip" is
+     the default (prefers-reduced-motion: reduce applies without animating),
+     and the reader can switch animation off here too. -->
+<wcs-view-transition naming="auto" data-wcs="disabled: animationsOff"></wcs-view-transition>
+<wcs-media-query query="(prefers-reduced-motion: reduce)" data-wcs="matched: systemReducedMotion"></wcs-media-query>
+<wcs-media-query query="(prefers-color-scheme: dark)" data-wcs="matched: systemDark"></wcs-media-query>
+
+<wcs-fetch data-wcs="...: catalogFetch; url: catalogUrl; eventToken.value: catalogResponded"></wcs-fetch>
+<wcs-fetch data-wcs="...: branchesFetch; url: branchesUrl"></wcs-fetch>
+<!-- One request per branch for the week's hours (home and /hours). -->
+<wcs-fetch data-wcs="url: hoursUrls.central; value: hours.central"></wcs-fetch>
+<wcs-fetch data-wcs="url: hoursUrls.riverside; value: hours.riverside"></wcs-fetch>
+<wcs-fetch data-wcs="url: hoursUrls.hilltop; value: hours.hilltop"></wcs-fetch>
+<wcs-debounce wait="400" data-wcs="source: form.q; value: settledQ"></wcs-debounce>
+<wcs-timer interval="30000" data-wcs="tick: clockTick"></wcs-timer>
+
+<wcs-fetch method="POST" manual
+  data-wcs="url: loginUrl; body: loginBody; trigger: loginTrigger; loading: loginLoading; error: loginError; eventToken.value: loginResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+
+<wcs-fetch data-wcs="...: holdsFetch; url: holdsUrl; command.fetch: $command.refreshHolds; eventToken.value: memberResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: feesFetch; url: feesUrl; eventToken.value: memberResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+
+<wcs-fetch method="POST" manual
+  data-wcs="url: holdPostUrl; body: holdBody; trigger: holdTrigger; loading: holdLoading; error: holdError; eventToken.value: holdResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+
+<wcs-fetch method="DELETE" manual
+  data-wcs="url: cancelUrl; trigger: cancelTrigger; error: cancelError; eventToken.value: cancelResponded">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+
+<wcs-sse events="hold-ready,hold-expired" auto-reconnect
+  data-wcs="url: streamUrl; connected: streamConnected; eventToken.message: holdEvent; command.close: $command.closeStream"></wcs-sse>
+
+<!-- The dictionary, grafted at i18n so templates reach it by path, and the
+     root state. Root-absolute, as every URL under <base href="/ja/">; the lint
+     reads them with --root=public (4.10) — README "Lint". -->
+<wcs-state mount="i18n" src="/i18n/state.js"></wcs-state>
+<wcs-state src="/app.js"></wcs-state>
+
+</body>
+</html>

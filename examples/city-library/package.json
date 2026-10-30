@@ -1,0 +1,9 @@
+{
+  "name": "wcstack-city-library",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a city library's patron site in Japanese, English and Arabic, for keyboard and screen-reader users — focus and announcements after a navigation, a skip link under <base>, aria-current, view transitions × $watch, a 422 × aria-invalid, opening hours of a library in Tokyo read from anywhere.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
