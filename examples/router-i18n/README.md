@@ -79,7 +79,7 @@ the earliest possible moment, and the standard HTML mechanism for it. It comes
 with a tax: **every URL on the page now resolves against `/<lang>/`**, including
 the ones nobody thinks of as URLs. An in-page anchor (`href="#faq"`) resolves
 to `/<lang>/#faq`; up to router 4.9 that was a route change, which the router
-intercepted, and since 4.10 (not released yet) the router keeps a link to a bare fragment on
+intercepted, and since 4.10 the router keeps a link to a bare fragment on
 the current page (router README, "In-page links"). Inline-SVG fragment
 references (`url(#gradient)`, `clip-path`) are not links and still break the
 same way. Write every URL absolute, SVG fragments included (design §9-1-4).
@@ -168,7 +168,7 @@ Two constraints come with it:
   what hands the locale to the router, and relative URLs now resolve against it —
   including inline-SVG fragment references (`url(#gradient)`), and in-page
   anchors up to router 4.9 (`href="#faq"` became `/<lang>/#faq`, a route
-  change; the router keeps them on the page since 4.10 (not released yet)). A relative
+  change; the router keeps them on the page since 4.10). A relative
   `<wcs-state src="./state.js">` resolves against the base too; write it
   root-absolute (design §9-1-4).
 
