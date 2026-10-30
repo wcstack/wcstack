@@ -50,3 +50,12 @@ export function queryIncludes(current: string, required: string): boolean {
   }
   return true;
 }
+
+/**
+ * 2 つのクエリが同じパラメータを同じ値で持つか（順序は問わない — `queryIncludes` を両向きに）。`<wcs-link>` の
+ * `aria-current="page"` は、`to` のクエリが今のページのクエリと等しいときだけ（docs/seam-apps.md、city-library の
+ * 取り込み: `page` を省いた 1 ページ目へのリンクが、含む規則ではどのページでも現在のページだった）。
+ */
+export function queryEquals(a: string, b: string): boolean {
+  return queryIncludes(a, b) && queryIncludes(b, a);
+}

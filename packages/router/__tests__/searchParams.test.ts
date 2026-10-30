@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSearchParams, queryIncludes, shallowEqualRecords } from '../src/searchParams';
+import { parseSearchParams, queryEquals, queryIncludes, shallowEqualRecords } from '../src/searchParams';
 
 describe('parseSearchParams (§3.5)', () => {
   it('クエリ文字列を Record に変換すること', () => {
@@ -85,5 +85,19 @@ describe('queryIncludes（wcs-link の active 判定 — docs/seam-apps.md、cit
   it('値はデコードして比べる（+ と %20、%xx）', () => {
     expect(queryIncludes('?q=a%20b', '?q=a+b')).toBe(true);
     expect(queryIncludes('?q=%E6%9C%AC', '?q=本')).toBe(true);
+  });
+});
+
+describe('queryEquals（wcs-link の aria-current="page" — docs/seam-apps.md、city-library の取り込み）', () => {
+  it('同じパラメータを同じ値で持てば true（順序は問わない）', () => {
+    expect(queryEquals('?page=2&q=a', '?q=a&page=2')).toBe(true);
+    expect(queryEquals('?tag=b&tag=a', '?tag=a&tag=b')).toBe(true);
+    expect(queryEquals('', '')).toBe(true);
+  });
+
+  it('どちらかに余分なパラメータがあれば false', () => {
+    expect(queryEquals('?q=a&page=2', '?q=a')).toBe(false);
+    expect(queryEquals('?q=a', '?q=a&page=2')).toBe(false);
+    expect(queryEquals('?tag=a&tag=b', '?tag=a')).toBe(false);
   });
 });

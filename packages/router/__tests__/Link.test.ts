@@ -1049,12 +1049,12 @@ describe('Link', () => {
       current: link.anchorElement!.getAttribute('aria-current'),
     });
 
-    it('to のクエリのパラメータがすべて同じ値なら active。ページの余分なパラメータは構わない', () => {
+    it('ページのクエリが to のクエリと等しいとき（順序は問わない）だけ、そのページ', () => {
       at('http://localhost/search?q=a');
       const next = linkTo('/search?q=a&page=2');
       expect(state(next)).toEqual({ active: false, current: null });
 
-      at('http://localhost/search?sort=new&page=2&q=a');
+      at('http://localhost/search?page=2&q=a');
       window.dispatchEvent(new CustomEvent('wcs:navigate'));
       expect(state(next)).toEqual({ active: true, current: 'page' });
 
@@ -1062,6 +1062,35 @@ describe('Link', () => {
       at('http://localhost/search?q=a&page=3');
       window.dispatchEvent(new CustomEvent('wcs:navigate'));
       expect(state(next)).toEqual({ active: false, current: null });
+
+      // to が名指さないパラメータがページにあれば、そのページではない（4.10 は含めば current だった）
+      at('http://localhost/search?sort=new&page=2&q=a');
+      window.dispatchEvent(new CustomEvent('wcs:navigate'));
+      expect(state(next)).toEqual({ active: false, current: null });
+    });
+
+    it('page を省いた 1 ページ目へのリンクは、2 ページ目では現在のページではない（city-library の取り込み）', () => {
+      at('http://localhost/search?q=a&page=2');
+      const first = linkTo('/search?q=a');
+      expect(state(first)).toEqual({ active: false, current: null });
+
+      at('http://localhost/search?q=a');
+      (first as any)._updateActiveState();
+      expect(state(first)).toEqual({ active: true, current: 'page' });
+    });
+
+    it('match="prefix" なら、to のクエリを含む余分なパラメータ付きのクエリでも active で aria-current="true"', () => {
+      at('http://localhost/search?type=book&sort=-year');
+      const books = linkTo('/search?type=book', 'prefix');
+      expect(state(books)).toEqual({ active: true, current: 'true' });
+
+      at('http://localhost/search?type=book');
+      (books as any)._updateActiveState();
+      expect(state(books)).toEqual({ active: true, current: 'page' });
+
+      at('http://localhost/search?type=dvd&sort=-year');
+      (books as any)._updateActiveState();
+      expect(state(books)).toEqual({ active: false, current: null });
     });
 
     it('クエリの無い to は pathname だけで比べる（従来どおり）', () => {

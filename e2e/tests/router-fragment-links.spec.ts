@@ -10,7 +10,8 @@ import { collectErrors } from "./helpers";
 //   changes — on the Navigation API path (NavigateEvent.sourceElement) and on the fallback path
 //   (a click listener), forced here as router-a11y.spec.ts does, by shadowing window.navigation.
 // - A <wcs-link> whose `to` has a query (`?q=a&page=2`, "Next page") was aria-current="page" on
-//   `?q=a`: it is the current page only when the page's query has its parameters.
+//   `?q=a`: it is the current page only when the page's query has its parameters — and, since 4.11, no others:
+//   a page-1 link that leaves `page` out ("search", `/search?q=a`) was the current page on every page.
 //
 // The checks tagged @browsers also run in the firefox project.
 
@@ -115,8 +116,8 @@ for (const { name, fallback } of PATHS) {
       await expect.poll(() => where(page)).toBe("/e2e/fixtures/search?q=a&page=2");
       await expect(next).toHaveAttribute("aria-current", "page");
       await expect(next).toHaveClass(/active/);
-      // a page's extra parameters do not matter: "search" (?q=a) is still current on ?q=a&page=2
-      await expect(page.getByRole("link", { name: "search" })).toHaveAttribute("aria-current", "page");
+      // the page's query has to equal the link's: "search" (?q=a) is not the current page on ?q=a&page=2
+      await expect(page.getByRole("link", { name: "search" })).not.toHaveAttribute("aria-current");
 
       await page.goBack();
       await expect.poll(() => where(page)).toBe("/e2e/fixtures/search?q=a");
