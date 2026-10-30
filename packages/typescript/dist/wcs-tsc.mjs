@@ -25,7 +25,7 @@ function unsupportedTypeScriptMessage(version) {
     return `@wcstack/typescript runs on TypeScript 5 or 6, and the project has TypeScript ${version}, which has no JavaScript compiler API: npm i -D typescript@6`;
 }
 
-var version = "4.10.0";
+var version = "4.10.1";
 var pkg = {
 	version: version};
 

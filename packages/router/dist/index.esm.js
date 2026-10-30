@@ -233,6 +233,14 @@ function queryIncludes(current, required) {
     }
     return true;
 }
+/**
+ * 2 つのクエリが同じパラメータを同じ値で持つか（順序は問わない — `queryIncludes` を両向きに）。`<wcs-link>` の
+ * `aria-current="page"` は、`to` のクエリが今のページのクエリと等しいときだけ（docs/seam-apps.md、city-library の
+ * 取り込み: `page` を省いた 1 ページ目へのリンクが、含む規則ではどのページでも現在のページだった）。
+ */
+function queryEquals(a, b) {
+    return queryIncludes(a, b) && queryIncludes(b, a);
+}
 
 /**
  * guard 判定関数に渡す第 3 引数を組み立てる。
@@ -4321,23 +4329,30 @@ class Link extends HTMLElement {
         if (this._path.startsWith('?') && this._anchorElement) {
             this._setAnchorHref(this._anchorElement, this._path);
         }
-        // active 判定は pathname の比較（§1.1 欠陥 7 の修理）に、`to` のクエリが今のページのクエリに含まれること
-        // を足す（`to` にクエリが無ければ pathname だけ）。`/search?q=a` の「次のページ」（`?q=a&page=2`）が
-        // 「現在のページ」と読み上げられていた（docs/seam-apps.md、city-library）
+        // active 判定は pathname の比較（§1.1 欠陥 7 の修理）に、`to` のクエリを足す（`to` にクエリが無ければ
+        // pathname だけ）。そのページ（aria-current="page"）は今のページのクエリが `to` のクエリと等しいとき、
+        // match="prefix" なら含むときも（"true"、パスの「下」と同じ）。`/search?q=a` の「次のページ」
+        // （`?q=a&page=2`）が「現在のページ」と読み上げられ（docs/seam-apps.md、city-library）、含む規則では
+        // `page` を省いた 1 ページ目へのリンクがどのページでもそうだった（city-library の取り込み）
         const current = new URL(window.location.href);
         const currentPath = this._normalizePathname(current.pathname);
         const { pathname, search } = splitUrlTarget(this._path);
-        const queryMatches = queryIncludes(current.search, effectiveSearch(search));
+        const wanted = effectiveSearch(search);
+        const queryIncluded = queryIncludes(current.search, wanted);
+        const queryEqual = wanted === '' || queryEquals(current.search, wanted);
         const linkPath = this._normalizePathname(this._isInternalTarget(this._path)
             ? (pathname === ""
                 ? window.location.pathname
                 : this._joinInternalPath(this.router.basename, pathname))
             : pathname);
-        // match="prefix": 下のパスでも active（サイドナビの「商品」が /products/3 でも印を付ける —
-        // docs/seam-apps.md、router-admin）。そのページそのものではないので aria-current は "true"
+        // match="prefix": 下のパスでも、`to` のクエリを含む余分なパラメータ付きのクエリでも active（サイドナビの
+        // 「商品」が /products/3 でも印を付ける — docs/seam-apps.md、router-admin）。そのページそのものではないので
+        // aria-current は "true"
         // 行き先の無いリンク（`to` が空）はどこでも active ではない（空のパスは "/" に正規化される）
-        const exact = this._path !== '' && queryMatches && currentPath === linkPath;
-        const within = !exact && this._path !== '' && queryMatches && this.getAttribute('match') === 'prefix' && currentPath.startsWith(linkPath + '/');
+        const samePath = currentPath === linkPath;
+        const exact = this._path !== '' && samePath && queryEqual;
+        const within = !exact && this._path !== '' && queryIncluded && this.getAttribute('match') === 'prefix'
+            && (samePath || currentPath.startsWith(linkPath + '/'));
         if (this._anchorElement) {
             if (exact || within) {
                 this._anchorElement.classList.add('active');
@@ -4673,7 +4688,7 @@ function bootstrapRouter(config, registry) {
     registerComponents(registry);
 }
 
-var version = "4.10.0";
+var version = "4.10.1";
 var pkg = {
 	version: version};
 

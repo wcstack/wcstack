@@ -171,8 +171,9 @@ declare function getConfig(): IConfig;
  *
  * The one invariant everything else is subordinate to: **a mutation handed to
  * `run()` is applied exactly once**, whatever is decided about animating it. An
- * unsupported browser, a hidden tab, reduced motion, a colliding transition and a
- * `startViewTransition` that throws all end in the mutation running — the page
+ * unsupported browser, a hidden tab, a document not drawn yet, reduced motion, a
+ * colliding transition and a `startViewTransition` that throws all end in the
+ * mutation running — the page
  * must never be left showing stale DOM because an animation could not be played.
  */
 declare class ViewTransitionCore extends EventTarget {
@@ -187,6 +188,9 @@ declare class ViewTransitionCore extends EventTarget {
     private _participants;
     private _active;
     private _error;
+    /** The document has drawn a frame (see _documentPainted). */
+    private _painted;
+    private _watchingPaint;
     /** Requests waiting for the microtask flush that starts a transition. */
     private _pending;
     private _flushScheduled;
@@ -235,6 +239,13 @@ declare class ViewTransitionCore extends EventTarget {
     run(mutate: () => void, _options?: IWcsTransitionRunOptions): Promise<void>;
     dispose(): void;
     private _canTransition;
+    /**
+     * Whether the document has drawn a frame: a Paint Timing entry says so
+     * (`first-paint` in Chromium, `first-contentful-paint` everywhere), and so does a
+     * task queued from the first `requestAnimationFrame` after the first request —
+     * it runs once that frame is drawn. Remembered once true.
+     */
+    private _documentPainted;
     private _applyNow;
     private _settle;
     private _schedule;

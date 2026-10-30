@@ -184,8 +184,9 @@ function supportsTypes() {
  *
  * The one invariant everything else is subordinate to: **a mutation handed to
  * `run()` is applied exactly once**, whatever is decided about animating it. An
- * unsupported browser, a hidden tab, reduced motion, a colliding transition and a
- * `startViewTransition` that throws all end in the mutation running — the page
+ * unsupported browser, a hidden tab, a document not drawn yet, reduced motion, a
+ * colliding transition and a `startViewTransition` that throws all end in the
+ * mutation running — the page
  * must never be left showing stale DOM because an animation could not be played.
  */
 class ViewTransitionCore extends EventTarget {
@@ -210,6 +211,9 @@ class ViewTransitionCore extends EventTarget {
     _participants = new Set(DEFAULT_PARTICIPANTS);
     _active = false;
     _error = null;
+    /** The document has drawn a frame (see _documentPainted). */
+    _painted = false;
+    _watchingPaint = false;
     /** Requests waiting for the microtask flush that starts a transition. */
     _pending = null;
     _flushScheduled = false;
@@ -262,6 +266,10 @@ class ViewTransitionCore extends EventTarget {
             return false;
         }
         slot[TRANSITION_RUNNER_KEY] = this;
+        // Watch for the first frame from now: the first request often comes long after
+        // it (a click), when Chromium may still not have reported a Paint Timing entry,
+        // and it must not be applied without its transition.
+        this._documentPainted();
         return true;
     }
     /** Release the arbiter slot, but only if it is still ours. */
@@ -382,7 +390,40 @@ class ViewTransitionCore extends EventTarget {
             return false;
         if (this._reducedMotion === "skip" && prefersReducedMotion())
             return false;
+        // Before the document has drawn its first frame there is nothing on screen to
+        // transition from, and Chromium holds that first frame — static text included —
+        // until the update callback runs: data fetched on load kept a page blank for
+        // 0.2–2.5 s (docs/seam-apps.md, city-library). Apply straight through, as the
+        // router and state do with their initial render.
+        if (!this._documentPainted())
+            return false;
         return true;
+    }
+    /**
+     * Whether the document has drawn a frame: a Paint Timing entry says so
+     * (`first-paint` in Chromium, `first-contentful-paint` everywhere), and so does a
+     * task queued from the first `requestAnimationFrame` after the first request —
+     * it runs once that frame is drawn. Remembered once true.
+     */
+    _documentPainted() {
+        if (this._painted)
+            return true;
+        const perf = globalThis.performance;
+        if (typeof perf?.getEntriesByType === "function" && perf.getEntriesByType("paint").length > 0) {
+            return (this._painted = true);
+        }
+        const raf = globalThis.requestAnimationFrame;
+        // never-freeze: no host has startViewTransition without requestAnimationFrame,
+        // but if one did, waiting for a frame would hold every transition back for good.
+        if (typeof raf !== "function")
+            return (this._painted = true);
+        if (!this._watchingPaint) {
+            this._watchingPaint = true;
+            raf.call(globalThis, () => {
+                setTimeout(() => { this._painted = true; }, 0);
+            });
+        }
+        return false;
     }
     _applyNow(mutate) {
         try {
