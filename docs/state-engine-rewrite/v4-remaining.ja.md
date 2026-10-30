@@ -1434,3 +1434,35 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.10.0 の公開（2026-10-30）
+
+- 中身: minor。docs/v4-direction-2026-10.md の下での 8 回目の minor で、その 2 巡目（§3.2）の 3 本目の継ぎ目アプリ `city-library` — キーボードとスクリーンリーダーで使う、日本語・英語・アラビア語の図書館の利用者サイト — から（docs/seam-apps.md）。この回は作者を 1 巡目の設定（公開文書・スキル v4.9.0・公開版 4.9.0）に戻し、継ぎ目をアクセシビリティと言語に変えた。わざとした間違い 20 件のうち 16 件は何も知らせず、公開版の lint はアプリに 108 件の誤報を出した。作者の決定 4 件は v4-direction §5.9。
+  - #560 state の診断: 空の `{}` の種の下のキーを報告しない（family-ledger の取り込みで見つけた）。diagnostics +8 B。
+  - #561 state: `<wcs-view-transition>` があっても `$watch` と `$stream` の再開は、トランジションが適用するバインディングを待つ（決定 Q1）。文書のログインがタグを足すと 3 回中 0 回になっていた — `$watch` の画面移動が `<wcs-storage>` の保存より先に走り、ガードが読み手を戻した。core +39 B。
+  - #562 state の診断: 要素が書くオブジェクトの下のキー（router の `searchParams: query` の `query.next`）を報告しない。
+  - #563 router: 素のフラグメントへのリンクはページの中に留まり、指す要素へフォーカスを移す（決定 Q2）。クエリ付きの `<wcs-link>` はそのクエリのときだけ current（Q3）。同じフラグメントの 2 回目がスクロールしない既存の欠陥、接続前の `match` のエラーも直した。router の文書（ルートの中身の状態のリージョンは読まれない、ガードのセッションの保存の形など）と e2e `router-fragment-links.spec.ts`。
+  - #564 state: `date` / `time` / `datetime` が 3 つ目の引数でタイムゾーンを受ける（Q4）。`date(UTC)` はゾーンとして読み、4.9 まで `RangeError` だった `date(,long)` も動く。formats +41 B（残り 10 B）。
+  - #565 lint: 名前で書いたキー（短縮プロパティ・import した定数）を読む、`<head>` のスクリプトが作る `<base>`、入れ子のコールバックの `return`、`$renderedCallback` の文字列の比較の誤報を直し、`--root`。新しい規則 `wcs/live-region-inserted`（文と一緒に挿入される状態のリージョン — リポジトリの family-ledger・router-auth・state-field-report がその形だったので直した）。
+  - #566 記録: seam-apps（日英）、v4-direction §5.9、誤りの目録（125 → 133 項目、#565 の項目と合わせて）。
+  - #563〜#565 は分離した作業ツリーのサブエージェントが作り、差分を見てから push した。
+- マージ: #562 は `diagnostics.test.ts` で衝突し、手で解いた。CHANGELOG の衝突の解決で 2 項目が別の見出しに入った（準備で直した）。**#562 のコミットが state の README（日英）に全文の写しを入れていた** — JS の `replace` の置換文字列の `` $` `` が「一致より前の全文」に展開された。CI も差分の確認も通り、後のマージ（#564）がメッセージ表の 2 行を写し側に当てていた。準備でピンの置換数が 26（いつもは 18）になって気づいた。
+- リリースの前: 全パッケージを src からビルドして e2e 421/423。落ちた 2 件は family-ledger の spec が 11 番目のワーカーでポート 6000（fetch とブラウザが拒む）を引いたため。
+- 準備: PR #567（merge commit 70801f3c）。CHANGELOG を `[4.10.0] — 2026-10-30` として締め（要約と Upgrading 5 項目、誤った見出しの 2 項目を移した）、固定版 18 か所を 4.10.0 にした。README の写しを捨て（写し側に入った 2 行は本体へ）、family-ledger の spec のポートを 6100 + 10 × index にした。印の除去は 8 README・36 行の見込み。
+  - **準備の CI の e2e が `examples/router-admin` で 3 回とも落ちた — #561 の退行**。`$watch` を適用の後に回したので、`$watch` が state に写した一覧（`this.rows = cur.items`）のパスは 2 つ目のトランジションになり、「読み込み中の表示が消えたのに行は前のページのまま」のフレームができた。試験は古い 1 行目の名前を読み、クリックの時点では新しい行だった。#561 と #563 は CI で一緒に試されていなかった（各 PR の CI はマージ前の main の上）。手元の組み合わせの確認は多くのワーカーで流したので隠れていた — 1 ワーカーなら state を src にして 0/8、4.9.0 で 8/8。
+  - PR #568（merge commit ca4c03cd）: 保留したパスを裁定者が適用したら、その適用と後の `$watch` が書いた分をその場でドレインし、同じトランジションの中で当てる（タグが無ければ同じフレームで当たるのと同じ）。`$watch` は適用の後のまま（決定 Q1）。連鎖は数え続けるので循環は打ち切られ、読み込み時の循環はアービターが無いときと同じく読み込み時に打ち切られる（regression-3x-chains の期待を 1 回 → 2 回に）。core +32 B。2 ワーカーで e2e 423/423、city-library の F21 はタグありで 3/3 のまま。
+- main で `minor`（run 40961065091）。成功した: 版を上げたコミット c1b5c577、タグ `v4.10.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed・Documentation を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い。公開物に router のフラグメントのリンク、formats のゾーン、フィルタの引数 0〜3（manifest）、lint の `wcs/live-region-inserted` と `--root` が入っている。
+- 公開後の作業（同日）:
+  - PR #569（merge commit a220581a）: サイズの基準値を 4.10.0 の dist で取り直した（`core.min.js` 20,237 B — 4.9.0 から +74 B、残り 243 B。diagnostics 9,384 B、formats 1,731 B）。CLAUDE.md / AGENTS.md の版、docs/timing-and-firing-contract と examples/router-i18n の 4.10 の印（リリースは README の印しか外さない）、CHANGELOG の core の数字を公開物の実測に、拡張を 2.10.0 に。
+  - VS Code 拡張 2.10.0: a220581a から、リポジトリの隣の作業ツリーで `npm run package` した vsix（890 ファイル — 2.9.0 と一覧が同じ、テスト 1,392 件）。SHA-256 `bf7c5d58…`。publish は著者に依頼した（公開待ち）。
+  - wcstack-skill: PR #50（merge commit edc0aee）で、`<base href>` は `/` か basename、スキップリンク、クエリ付きのリンクの `aria-current`、言語の切り替えは素の `<a>`、`$watch` の順序と同じトランジション、日付のゾーン（引数 0〜3）、ライブリージョン、lint のボリューム・名前で書いたキー・`--root`、行の中の `aria-*` を追随し、失敗の一覧に 4 行。注釈付きタグ `v4.10.0`。
+  - LP（wcstack.github.io 0861d6f）: リリースの表示、v4.10.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致）と大きさ（約 76 KB）、llms。ステップ 07 / 12 の lint の出力は 4.10.0 でも 8 ブロック不変。本番 8/9（`/tutorial/16-publish/app/` の 404 は設計どおり）。
+  - examples への取り込み: PR #570（merge commit 45501a6a）。`examples/city-library/`（ページは `public/`、Node の組み込みだけのサーバー、`WCS_LOCAL=1`）。4.10.0 で要らなくなった回避策 6 つ（`public/site/` に置いて相対で書いた `src`、422 の後のフォーカスと `localStorage` を待つログインを `$renderedCallback` で動かすこと、`query.next` を読む getter、東京時刻の `Intl.DateTimeFormat`、router のパスから組んだスキップリンクの `href`）を外し、4.9.0 の state と router の dist ではそれぞれ自分の試験で落ちることを確かめた（フィルタを 4.9 の形に戻して 13 件。そのままでは 16 件 — ゾーンの引数が `[wcs/filter-arity]` でルートの state を止める）。422 の要約に欄ごとのリンクを足し、作者の値だけの更新を、4.9 まで壊れていた構造の変更にした。lint は `--root=examples/city-library/public` で 0 件（`--strict` も）。spec 18 件（`@browsers` の 7 件は Firefox でも。ポート 7100 + 10 × index）、2 ワーカーの全 e2e 448/448。取り込みで 3 件見つけた（すべて未決）: `<wcs-view-transition>` があると最初の描画より前の state の更新がトランジションの中で走り、Chromium はページの最初の描画を止める（最小のページで約 20 ms → 250–300 ms。4.9.0 も同じ）。タグがあると router の `path` は `routeName` より 1 フレーム遅れ、そのフレームの 401 は離れるページを `next` にした。`page` を省いた 1 ページ目へのリンクは 4.10 のクエリの規則でどのページでも current になる（設計の問い）。
+- 残り:
+  - 取り込みで見つけた 3 件（最初の描画がビュー遷移を待つ、`path` の 1 フレームの遅れ、省いた既定のパラメータと current）— 次の minor の候補。
+  - 2 巡目は止める目安に当たっていない（いちばん重い実行時の欠陥と、新しい種類の発見 — スクリーンリーダーに何が聞こえるか — が出た）。次の継ぎ目は v4-direction §3.2 から。
+  - 組み合わせの確認は CI と同じワーカー数でも流す（今回の退行は多ワーカーで隠れた）。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
