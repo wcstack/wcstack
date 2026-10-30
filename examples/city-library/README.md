@@ -96,7 +96,7 @@ Kept, each with a comment saying why:
 - **`isolate()`** (U+2068 … U+2069) around text of the other direction inside a composed sentence: a `textContent:` binding cannot carry `<bdi>`.
 - **Two getters that format time themselves**: the reader's own column on the hours page (a weekday with the time and the zone's name — a filter's style is a whole date or a whole time) and a ready hold's "kept until {date} ({relative})" (a date inside a sentence the dictionary orders).
 - **`next` after a 401 read from the URL** (`addressNow()`), not from the router's `path`: with `<wcs-view-transition>` the router sends `path` once the route's content is drawn, a frame after `routeName`, and a 401 landing in that frame (leaving Fees for Holds) sent the reader back to Fees after the login.
-- **The pager's page-1 link names `page=1`**, and the shown page's link is the URL as it is: a link with a query is current when the URL has every parameter it names, so a link that left `page` out — the clean URL of a new search — would be current on every page.
+- **The pager's page-1 link names `page=1`**, and the shown page's link is the URL as it is: a link with a query is current when the URL has every parameter it names, so a link that left `page` out — the clean URL of a new search — would be current on every page (the rule up to 4.10; since 4.11 (not released yet) the URL's query has to equal the link's).
 
 ## Lint
 
@@ -109,7 +109,7 @@ node packages/lint/dist/cli.cjs --root=examples/city-library/public examples/cit
 ## Known limits
 
 - **The packages follow npm `latest`.** The one-liners are unpinned, as in the other examples; production pins versions with `integrity` ([docs/sri.md](../../docs/sri.md)).
-- **The first paint waits for the first view transition.** A state update that lands before the page has painted (the branches and the hours on load) runs inside a view transition, and Chromium holds the page's first paint until its update callback — 0.2–0.8 s later in Chromium, up to 2.5 s in Playwright's headless shell; under reduced motion the page paints at once ([docs/seam-apps.md](../../docs/seam-apps.md#landing-city-library-in-examples-2026-10-30)).
+- **Up to 4.10, the first paint waits for the first view transition.** A state update that lands before the page has painted (the branches and the hours on load) runs inside a view transition, and Chromium holds the page's first paint until its update callback — 0.2–0.8 s later in Chromium, up to 2.5 s in Playwright's headless shell; under reduced motion the page paints at once; since 4.11 (not released yet) `<wcs-view-transition>` applies an update before the first frame at once ([docs/seam-apps.md](../../docs/seam-apps.md#landing-city-library-in-examples-2026-10-30)).
 - **No screen reader was used.** What a reader hears is inferred from the accessibility tree and the live regions' text changes.
 - **WebKit** (Playwright's build on Windows, not Safari): its renderer crashed on this page's view transitions, Tab skips links (Safari's default), and leaving a half-filled form for another language asked twice, the browser's own prompt first.
 - **`ar` formats Latin digits**; Arabic-Indic digits come from a region subtag (`ar-EG`), which the page does not use.

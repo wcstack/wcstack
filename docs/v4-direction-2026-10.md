@@ -187,6 +187,13 @@
 4. **`date` / `time` / `datetime` は 3 つ目の引数でタイムゾーンを受ける**（`date(ja-JP,full,Asia/Tokyo)`）。既定は読み手のゾーンのままで、README がそう言う。formats の後付けの中で、core は 0 B。比べた案: 文書だけ（getter で `Intl.DateTimeFormat`）。
 
 ほかに 2 つは作業の中で決め、ここに記録する: 遷移の後に聞かせる文は新しい API を足さず、router の外のリージョンに書く作法を文書にした（§3.3「足さずに直す」）。lint の `wcs/live-region-inserted` は `role="alert"` を外した（挿入で読み上げられる）。
+### 5.10 city-library の取り込みから決めたこと（2026-10-31、著者）
+
+city-library を examples/ に取り込んだとき（#570）に見つかった 3 件（[seam-apps.ja.md](./seam-apps.ja.md) の「city-library の examples/ への取り込み」）。3 つとも推奨の案に決めた。
+
+1. **`<wcs-view-transition>` は、ページが最初のフレームを描くまで遷移を始めず、更新をその場で当てる。** 隠れたタブを素通しにするのと同じ場所・同じ理由で、router と state が初期描画を包まないのとも同じ規則。読み込みで取ったデータが最初のフレームより前に届くと、Chromium は静的な文も含めて最初の描画を更新コールバックまで止めていた（最小のページで約 20 ms → 250–300 ms、headless shell で最大 2.5 s）。描いたかどうかは Paint Timing の項目か、タグを入れてからの最初のフレーム（rAF の後のタスク）で知る。直すのは view-transition だけで、state の core は 0 B（#572）。比べた案: state が最初の描画の前はランナーに渡さない（core の残りを使い、参加者ごとに同じことが要る — プロトコルは方針を裁定者に置いている）、文書だけ。
+2. **router の 2 つの時点は、まとめずに文書にする。** `data`・`params`・`routeName`・`searchParams` は中身を置く前（確定）、`path` は置いた後（ナビゲーション完了）。タグがあると中身は更新コールバックで 1 フレーム後に置かれるので、そのフレームの間 state の `path` は離れるページ。そこで別の理由で走るコード（応答、タイマー）は `routeName` / `params` / `searchParams` か `location` を読む（router と view-transition の README、タイミング契約 §21.1）。比べた案: 5 つとも更新コールバックで送る（`routeName` などへの state の反応が router の遷移に乗らなくなり、`latest` では 2 つ目の遷移が router のアニメーションを切る — 防ぐには裁定者の取り込みの窓を広げる大きめの変更）、`path` も中身の前に送る（「ナビゲーション完了」の合図が無くなり、`path` の `$watch` から新しい中身へフォーカスを移す書き方が壊れる）。
+3. **クエリのある `<wcs-link>` は、URL のクエリがリンクのクエリと等しいときだけ `aria-current="page"`。** 同じパラメータを同じ値で、順序は問わない。`match="prefix"` なら、リンクのパラメータに加えてほかも持つときも `"true"` で active — パスの「下」と同じ扱い（#573）。4.10 の含む規則では、`page` を省いた 1 ページ目へのリンクがどのページでも現在のページだった。4.10 からの変更: 余分なパラメータのあるページでは、`prefix` でないリンクは印を失う（CHANGELOG の Upgrading）。比べた案: 4.10 のまま既定のパラメータ（`page=1`）を書くよう文書にする、等しいときだけで `prefix` はパスだけを緩める。
 
 ## 6. やらないこと
 
