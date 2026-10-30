@@ -1,0 +1,228 @@
+/* city-library — one stylesheet, logical properties only (it is mirrored for
+   Arabic by dir="rtl" on <html>, never by separate rules). */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1b1b1f;
+  --muted: #55565e;
+  --line: #c9cbd3;
+  --accent: #1f4fa8;
+  --accent-bg: #e7eefb;
+  --error: #b3261e;
+  --ok: #1d6b35;
+  --notice-bg: #fff4d6;
+  --focus: #1f4fa8;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #15161a;
+    --fg: #eceef4;
+    --muted: #b2b5c0;
+    --line: #444754;
+    --accent: #9cbcff;
+    --accent-bg: #1f2a44;
+    --error: #ffb4ab;
+    --ok: #8fd6a2;
+    --notice-bg: #3a3218;
+    --focus: #9cbcff;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, "Hiragino Sans", "Noto Sans JP", "Noto Sans Arabic", sans-serif;
+  line-height: 1.6;
+}
+:lang(ar) body, body:lang(ar) { line-height: 1.8; }
+
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible,
+[tabindex]:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+h1:focus, h2:focus, main:focus { outline: none; }
+h1:focus-visible, h2:focus-visible { outline: 2px dashed var(--focus); outline-offset: 4px; }
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 0.5rem;
+  inset-block-start: -10rem;
+  background: var(--bg);
+  color: var(--accent);
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  z-index: 10;
+}
+.skip-link:focus { inset-block-start: 0.5rem; }
+
+.visually-hidden {
+  position: absolute !important;
+  inline-size: 1px; block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  padding: 0.75rem 1rem;
+  border-block-end: 1px solid var(--line);
+}
+.site-name { margin: 0; font-weight: 700; font-size: 1.15rem; }
+.site-name a { text-decoration: none; color: var(--fg); }
+.main-nav ul, .lang-nav ul, .account-nav ul {
+  display: flex; flex-wrap: wrap; gap: 0.25rem 1rem;
+  list-style: none; margin: 0; padding: 0;
+}
+.main-nav a, .lang-nav a { padding: 0.25rem 0.25rem; text-decoration: none; }
+.main-nav a[aria-current] { font-weight: 700; text-decoration: underline; text-underline-offset: 0.3em; }
+.lang-nav { margin-inline-start: auto; }
+.lang-nav a[aria-current="true"] { font-weight: 700; text-decoration: underline; }
+.session { display: flex; align-items: center; gap: 0.5rem; }
+
+main { display: block; max-inline-size: 60rem; margin: 0 auto; padding: 1rem; }
+.page h1 { font-size: 1.6rem; margin-block: 0.5rem 1rem; line-height: 1.3; }
+.lead { color: var(--muted); }
+
+.site-footer {
+  border-block-start: 1px solid var(--line);
+  padding: 1rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* forms */
+form .field { display: flex; flex-direction: column; gap: 0.25rem; margin-block-end: 0.75rem; }
+.search-form { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 1rem; }
+.search-form .field { margin: 0; }
+.search-form--full .field:first-child { flex: 1 1 14rem; }
+input, select, button, textarea { font: inherit; color: inherit; }
+input[type="search"], input[type="text"], input[type="tel"], input[type="password"], select {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  min-block-size: 2.5rem;
+  max-inline-size: 100%;
+}
+button {
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--bg);
+  min-block-size: 2.5rem;
+  cursor: pointer;
+}
+button.secondary { background: transparent; color: var(--accent); }
+button:disabled { opacity: 0.6; cursor: default; }
+fieldset { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.5rem 1rem; margin: 0 0 0.75rem; }
+legend { padding: 0 0.25rem; }
+.radio { display: flex; align-items: center; gap: 0.5rem; }
+.hint { color: var(--muted); font-size: 0.9rem; margin: 0; }
+.error { color: var(--error); margin: 0; font-weight: 600; }
+.error:empty { display: none; }
+[aria-invalid="true"] { border-color: var(--error); border-width: 2px; }
+
+/* results */
+.result-status { font-weight: 600; min-block-size: 1.6em; }
+.searching { color: var(--muted); }
+.results { list-style: none; padding: 0; margin: 0; }
+.result { padding-block: 0.6rem; border-block-end: 1px solid var(--line); }
+.result-title { font-size: 1.1rem; margin: 0; }
+.result-meta, .result-avail { margin: 0; color: var(--muted); font-size: 0.95rem; }
+.pager { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-block: 1rem; }
+.empty { color: var(--muted); }
+
+/* item */
+.item-meta { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; }
+.item-meta dt { font-weight: 600; }
+.item-meta dd { margin: 0; }
+table { border-collapse: collapse; inline-size: 100%; margin-block: 0.5rem 1rem; }
+caption { text-align: start; font-weight: 600; padding-block-end: 0.25rem; }
+th, td { text-align: start; padding: 0.4rem 0.6rem; border-block-end: 1px solid var(--line); }
+.amount { text-align: end; font-variant-numeric: tabular-nums; }
+
+/* notices (server events) */
+/* Not sticky: at 200 % zoom a sticky bar of two notices covered the element
+   Shift+Tab had just focused (WCAG 2.4.11) — scrollIntoView ignores it. */
+.notices { position: static; }
+.notices:empty { display: none; }
+.notice {
+  display: flex; gap: 1rem; align-items: center; justify-content: space-between;
+  background: var(--notice-bg); border: 1px solid var(--line);
+  padding: 0.5rem 1rem; margin: 0.25rem 1rem; border-radius: var(--radius);
+}
+.status-msg { color: var(--ok); font-weight: 600; }
+
+/* dialog */
+dialog { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--fg); max-inline-size: min(32rem, 90vw); }
+dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
+
+/* holds */
+.holds { list-style: none; padding: 0; }
+.hold { border: 1px solid var(--line); border-radius: var(--radius); padding: 0.75rem 1rem; margin-block-end: 0.5rem; }
+.hold h3 { margin: 0 0 0.25rem; font-size: 1.05rem; }
+.hold p { margin: 0.1rem 0; }
+.badge { display: inline-block; padding: 0 0.5rem; border-radius: 1rem; background: var(--accent-bg); }
+.badge--ready { background: var(--ok); color: var(--bg); }
+
+/* view transitions: short fades; none at all under reduced motion */
+::view-transition-old(root) { animation: 150ms ease-out both vt-fade-out; }
+::view-transition-new(root) { animation: 150ms ease-in both vt-fade-in; }
+::view-transition-group(*.wcs-row) { animation-duration: 200ms; }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-fade-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after, ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* forced colours: keep borders and the focus ring visible in system colours */
+@media (forced-colors: active) {
+  button { border: 2px solid ButtonText; }
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible {
+    outline: 3px solid Highlight;
+  }
+  [aria-invalid="true"] { border: 3px solid Mark; }
+  .badge { border: 1px solid CanvasText; }
+  .main-nav a[aria-current], .lang-nav a[aria-current="true"] { text-decoration: underline 3px; }
+}
+
+/* narrow screens / 200 % zoom */
+@media (max-width: 40rem) {
+  .site-header { flex-direction: column; align-items: flex-start; }
+  .lang-nav { margin-inline-start: 0; }
+  .item-meta { grid-template-columns: 1fr; }
+  table, thead, tbody, tr, th, td { font-size: 0.95rem; }
+}
+
+/* The page-level status region stays displayed (a display:none region is not
+   announced when it gets text); it only collapses while empty. */
+.flash { margin: 0.25rem 1rem; }
+.flash:empty { margin: 0; }
+
+/* the pager's page numbers; the router marks the shown page's link
+   (aria-current="page", class active) */
+.pages { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; list-style: none; margin: 0; padding: 0; }
+.pages a { padding: 0.25rem 0.5rem; }
+.pages a[aria-current="page"] { font-weight: 700; text-decoration: none; border: 2px solid var(--accent); border-radius: var(--radius); }
+
+/* the 422 summary: a sentence and a link to each field */
+.error-summary p { margin: 0; font-weight: 600; color: var(--error); }
+.error-summary ul { margin: 0.25rem 0 0.75rem; padding-inline-start: 1.25rem; }
+.error-summary a { color: var(--error); }
