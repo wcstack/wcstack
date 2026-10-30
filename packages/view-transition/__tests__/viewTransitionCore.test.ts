@@ -6,8 +6,10 @@ import {
   installMatchMedia,
   installTypesSupport,
   installViewTransitionMock,
+  nextFrame,
   removeMatchMedia,
   setDocumentHidden,
+  setPaintEntries,
   ViewTransitionMock,
 } from "./mocks";
 
@@ -60,6 +62,64 @@ describe("ViewTransitionCore", () => {
       await core.run(() => { ran = true; });
       expect(ran).toBe(true);
       expect(mock.transitions).toHaveLength(0);
+    });
+
+    it("文書が最初のフレームを描く前は遷移を始めずに同期実行し、描いた後は遷移する（Chromium は最初の描画を更新コールバックまで止める）", async () => {
+      restores.push(setPaintEntries(0));
+      const core = new ViewTransitionCore();
+      const ran: string[] = [];
+      await core.run(() => { ran.push("a"); });
+      // 2 回目の要求はフレームを待つ監視を重ねない
+      await core.run(() => { ran.push("b"); });
+      expect(ran).toEqual(["a", "b"]);
+      expect(mock.transitions).toHaveLength(0);
+
+      await nextFrame();
+      const promise = core.run(() => { ran.push("c"); });
+      await flushMicrotasks();
+      expect(mock.transitions).toHaveLength(1);
+      mock.transitions[0].finish();
+      await promise;
+      expect(ran).toEqual(["a", "b", "c"]);
+      // 一度描いたら、それを覚えている（Paint Timing の項目が無いままでも）
+      core.run(() => { ran.push("d"); });
+      await flushMicrotasks();
+      expect(mock.transitions).toHaveLength(2);
+    });
+
+    it("install した時点から最初のフレームを見ているので、描いた後の最初の要求も遷移する", async () => {
+      restores.push(setPaintEntries(0));
+      const core = new ViewTransitionCore();
+      expect(core.install()).toBe(true);
+      await nextFrame();
+      core.run(() => {});
+      await flushMicrotasks();
+      expect(mock.transitions).toHaveLength(1);
+    });
+
+    it("Paint Timing の無い環境でも、最初のフレームの後は遷移する", async () => {
+      restores.push(setPaintEntries("absent"));
+      const core = new ViewTransitionCore();
+      let ran = false;
+      await core.run(() => { ran = true; });
+      expect(ran).toBe(true);
+      expect(mock.transitions).toHaveLength(0);
+      await nextFrame();
+      core.run(() => {});
+      await flushMicrotasks();
+      expect(mock.transitions).toHaveLength(1);
+    });
+
+    it("requestAnimationFrame の無い環境では描画を待たない（遷移を止めたままにしない）", async () => {
+      restores.push(setPaintEntries(0));
+      const g = globalThis as unknown as Record<string, unknown>;
+      const raf = g.requestAnimationFrame;
+      g.requestAnimationFrame = undefined;
+      restores.push(() => { g.requestAnimationFrame = raf; });
+      const core = new ViewTransitionCore();
+      core.run(() => {});
+      await flushMicrotasks();
+      expect(mock.transitions).toHaveLength(1);
     });
 
     it("SSR（data-wcs-server）中は遷移を開始しない（G5・参加者に依らずここで閉じる）", async () => {

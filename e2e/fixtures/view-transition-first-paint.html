@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: view transitions before the first paint</title>
+  <!-- Data fetched on load lands before the document has drawn its first frame. A
+       transition started then made Chromium hold that first frame — the heading
+       included — until the update callback ran: 20 ms became 250–300 ms, up to
+       2.5 s in the headless shell (docs/seam-apps.md, city-library). The arbiter
+       applies such an update straight through; once the page has been drawn, an
+       update starts a transition again. -->
+  <script>
+    // Instrumented before any bundle loads, as in view-transition-list.html, and
+    // counting the transitions started before the first frame was drawn: a task
+    // queued from the first requestAnimationFrame runs once that frame is drawn
+    // (Chromium reports the Paint Timing entries later than that, so they cannot
+    // tell it here).
+    window.__vt = { started: 0, beforePaint: 0, drawn: false, supported: typeof document.startViewTransition === "function" };
+    requestAnimationFrame(() => setTimeout(() => { window.__vt.drawn = true; }, 0));
+    if (window.__vt.supported) {
+      const native = document.startViewTransition;
+      document.startViewTransition = function (arg) {
+        window.__vt.started += 1;
+        if (!window.__vt.drawn) window.__vt.beforePaint += 1;
+        return native.call(this, arg);
+      };
+    }
+  </script>
+  <script type="module" src="/packages/view-transition/dist/auto.min.js"></script>
+  <script type="module" src="/packages/fetch/dist/auto.min.js"></script>
+  <script type="module" src="/packages/state/dist/auto.min.js"></script>
+  <style>
+    ::view-transition-group(root) { animation-duration: 80ms; }
+  </style>
+</head>
+<body>
+  <wcs-view-transition></wcs-view-transition>
+  <h1>Books</h1>
+
+  <wcs-state>
+    <script type="module">
+      export default {
+        books: [],
+        add() {
+          this.books = [...this.books, { id: this.books.length + 1, title: "added" }];
+        },
+      };
+    </script>
+
+    <wcs-fetch url="/e2e/fixtures/view-transition-first-paint.json" data-wcs="value: books"></wcs-fetch>
+    <button id="add" data-wcs="onclick: add">add</button>
+    <ul id="list">
+      <template data-wcs="for: books">
+        <li data-wcs="textContent: .title"></li>
+      </template>
+    </ul>
+  </wcs-state>
+</body>
+</html>
