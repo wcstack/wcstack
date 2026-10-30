@@ -6,7 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.10.1] — 2026-10-31
+
+A patch with the three decisions the author made on 2026-10-31 about what landing `city-library` in `examples/` left open ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §5.10; [docs/seam-apps.md](./docs/seam-apps.md)): `<wcs-view-transition>` no longer holds a page's first paint, a `<wcs-link>` with a query is the current page only on the same query, and the router's `path` is documented as coming a frame after its other outputs under view transitions.
+
+### Upgrading
+
+- `@wcstack/router`: **a `<wcs-link>` whose `to` has a query is `aria-current="page"` only when the URL's query equals `to`'s.** On a page whose URL has parameters the link does not name, the link is no longer marked (4.10.0 marked it); add `match="prefix"` to keep the mark, as `aria-current="true"`.
+- `@wcstack/view-transition`: **no transition is started before the page has drawn its first frame.** A test that counts `document.startViewTransition` calls right after load waits for a frame first (`requestAnimationFrame`, then `setTimeout`): a browser that has just started may take seconds to draw its first page.
 
 ### Added
 
@@ -14,7 +21,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ### Changed
 
-- `@wcstack/router`: a `<wcs-link>` whose `to` has a query is the current page (`aria-current="page"`) only when the URL's query equals `to`'s — the same parameters with the same values, in any order. 4.10 allowed parameters the link does not name, so a page-1 link that leaves `page` out (`to="?q=a"`, the clean URL of a new search) was the current page on every page, and the `city-library` author's own "Previous page" on page 2 still read "current page" (landing `city-library`, [docs/seam-apps.md](./docs/seam-apps.md)). With `match="prefix"`, a link with a query is also active, with `aria-current="true"`, where the URL's query has its parameters and more — a facet link on a sorted list — as on the paths under it. **Upgrading:** a link with a query on a page whose URL has parameters the link does not name is no longer marked; add `match="prefix"` to keep the mark, as `"true"`.
+- `@wcstack/router`: a `<wcs-link>` whose `to` has a query is the current page (`aria-current="page"`) only when the URL's query equals `to`'s — the same parameters with the same values, in any order. 4.10.0 allowed parameters the link does not name, so a page-1 link that leaves `page` out (`to="?q=a"`, the clean URL of a new search) was the current page on every page, and the `city-library` author's own "Previous page" on page 2 still read "current page" (landing `city-library`, [docs/seam-apps.md](./docs/seam-apps.md)). With `match="prefix"`, a link with a query is also active, with `aria-current="true"`, where the URL's query has its parameters and more — a facet link on a sorted list — as on the paths under it.
 
 ### Fixed
 
