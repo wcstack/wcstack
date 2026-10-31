@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `@wcstack/websocket`: a socket still connecting is closed once it opens, not at once. Removing `<wcs-ws>` while its socket was `CONNECTING` — leaving a route right after entering it, closing an `if:` branch — made Chromium print "WebSocket is closed before the connection is established.", so a page that asserts a clean console failed on every quick navigation, and the `homeroom` seam app ([docs/seam-apps.md](./docs/seam-apps.md)) had to keep the element at page level and close it from state only once open. The element now lets such a socket go: nothing from it reaches the element, `connected` / `loading` / `readyState` publish the end at once (timing-and-firing-contract §22), and the socket is closed when it opens — with the `close` command's code and reason — or dropped if it fails. A `url` change or `connect()` replacing a connecting socket, a reconnect's socket included, does the same; the `close` command on a connecting socket no longer sets `error`. The back/forward cache path (`pagehide` with `persisted`) still closes it at once, since a socket in use keeps the page out of the cache.
+- `@wcstack/testing`: `mount()` rejects an option it does not have, or a value not of the option's type, before it touches the document, naming the option and listing the options — as every package's `bootstrapXxx()` does. A misspelt `resolveModul` was ignored, and the test failed later with Node's `ERR_UNSUPPORTED_ESM_URL_SCHEME` (on 4.2.0 the then-unknown `resolveModule` was ignored the same way; the `homeroom` seam app, [docs/seam-apps.md](./docs/seam-apps.md)). An option whose value is `undefined` is skipped. `fire()`'s `init` (`bubbles`, `cancelable`, `composed`, `detail` — `{ key: "Enter" }` made no `KeyboardEvent`) and `installDom()`'s options are checked the same way.
+
+### Security
+
+- `@wcstack/server`: depends on `happy-dom` `^21.0.4` (was `^20.0.11`). happy-dom 20 carries two high advisories with no fix in 20.x — GHSA-834v-8h66-3h79 (an unsanitized import alias leads to host code execution, fixed in 21.0.4) and GHSA-c8p4-j97h-3vg8 (SSRF through iframe and link stylesheet loading when parsing untrusted HTML) — and GHSA-5fpq-26gf-qwcr (cookie scope); happy-dom 21 also requires a `ws` (`^8.21.0`) past GHSA-58qx-3vcg-4xpx and GHSA-96hv-2xvq-fx4p. `@wcstack/testing` has `@wcstack/server` as a peer, so `npm audit` reported them in every test setup (the `homeroom` seam app, [docs/seam-apps.md](./docs/seam-apps.md)). happy-dom 21 loads no CSS file and no iframe page by default: with happy-dom 20, `renderToString()` fetched a `<link rel="stylesheet">` in the HTML it rendered, which the server README said it does not do. `@wcstack/testing`'s own devDependency and `examples/state-testing-todo` move to `^21.0.4`; its `happy-dom` peer stays `>=20`.
+
 ## [4.10.1] — 2026-10-31
 
 A patch with the three decisions the author made on 2026-10-31 about what landing `city-library` in `examples/` left open ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §5.10; [docs/seam-apps.md](./docs/seam-apps.md)): `<wcs-view-transition>` no longer holds a page's first paint, a `<wcs-link>` with a query is the current page only on the same query, and the router's `path` is documented as coming a frame after its other outputs under view transitions.
