@@ -235,8 +235,8 @@
 **1 ページにパッケージのコピーは 1 つ。** ページが先に評価したコピーが `<wcs-state>` を定義し、2 つ目の
 コピーは何もしません。4.11（未リリース）から、先のコピーが別の版のとき — 上げた後に新しいものの横に残った
 古い `<script>` — `/auto` と `.` の `bootstrapState` がそう言います: `[wcs/package-twice] <wcs-state> is
-already defined by an earlier copy (before 4.11); this copy, @wcstack/state@4.11.0, does nothing. Load each
-package once.` 同じ版のコピー（同じリリースの `wcstack/auto` のバンドルと `@wcstack/state/auto`）は何も
+already defined by another copy of @wcstack/state that does not name its version; this copy,
+@wcstack/state@4.11.0, does nothing. Load each package once.` 同じ版のコピー（同じリリースの `wcstack/auto` のバンドルと `@wcstack/state/auto`）は何も
 言わず、`/core` は確かめません（core のサイズの予算）。どのパッケージも同じ規則に従います:
 [docs/timing-and-firing-contract.ja.md §24](../../docs/timing-and-firing-contract.ja.md)。
 

@@ -3,10 +3,12 @@
  * page evaluates defines the tags and a second one does nothing, so a copy that finds its tag defined
  * by another copy of the package — not its class, not a subclass of it, not the same version — warns
  * `[wcs/package-twice]` once per registry, naming both versions. The classes it defines carry
- * `"<package>@<version>"` under `Symbol.for("wcstack.package")`; a copy before 4.11 carries none.
+ * `"<package>@<version>"` under `Symbol.for("wcstack.package")`; a class without it is named
+ * "another copy of <package> that does not name its version" (an older copy, or one loaded through
+ * an entry that does not stamp).
  */
 
-/** The static a class defined through this helper carries: `"@wcstack/fetch@4.11.0"`. */
+/** The static a class defined through this helper carries: `"@wcstack/fetch@<version>"`. */
 export const PACKAGE_STAMP: unique symbol = Symbol.for("wcstack.package");
 
 type Stamped = { [PACKAGE_STAMP]?: string };
@@ -15,7 +17,7 @@ type Stamped = { [PACKAGE_STAMP]?: string };
 const warned = new WeakSet<CustomElementRegistry>();
 
 /**
- * Marks `cls` as defined by `pkg` (`"@wcstack/fetch@4.11.0"`). A subclass inherits the mark, and
+ * Marks `cls` as defined by `pkg` (`"@wcstack/fetch@<version>"`). A subclass inherits the mark, and
  * `defineProperty` writes it even where a parent's mark is read-only.
  */
 export function stampPackage(cls: CustomElementConstructor, pkg: string): void {
@@ -38,15 +40,17 @@ export function warnIfAnotherCopy(
   const theirs = (existing as Stamped)[PACKAGE_STAMP];
   if (theirs === pkg || warned.has(registry)) return;
   warned.add(registry);
+  const name = pkg.slice(0, pkg.lastIndexOf("@"));
   console.warn(
-    `[${pkg.slice(0, pkg.lastIndexOf("@"))}] [wcs/package-twice] <${tag}> is already defined by ` +
-    `${theirs ?? "an earlier copy (before 4.11)"}; this copy, ${pkg}, does nothing. Load each package once.`,
+    `[${name}] [wcs/package-twice] <${tag}> is already defined by ` +
+    `${theirs ?? `another copy of ${name} that does not name its version`}; ` +
+    `this copy, ${pkg}, does nothing. Load each package once.`,
   );
 }
 
 /**
  * Defines each `[tag, class]` in `registry` unless the tag is already defined, stamping the class
- * with `pkg` (`"@wcstack/fetch@4.11.0"`). A tag another copy of the package defined first is left
+ * with `pkg` (`"@wcstack/fetch@<version>"`). A tag another copy of the package defined first is left
  * as it is, with the warning above.
  */
 export function defineElements(

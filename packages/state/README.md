@@ -237,8 +237,8 @@ content-hashed: self-hosted, put the version in their URL and keep the old ones 
 **One copy of the package per page.** The copy a page evaluates first defines `<wcs-state>`, and a
 second copy does nothing. Since 4.11 (not released yet), `/auto` and `.`'s `bootstrapState` say so
 when the first copy is of another version — an old `<script>` left beside the new one after an
-upgrade: `[wcs/package-twice] <wcs-state> is already defined by an earlier copy (before 4.11); this
-copy, @wcstack/state@4.11.0, does nothing. Load each package once.` A copy of the same version stays
+upgrade: `[wcs/package-twice] <wcs-state> is already defined by another copy of @wcstack/state that does
+not name its version; this copy, @wcstack/state@4.11.0, does nothing. Load each package once.` A copy of the same version stays
 silent (the `wcstack/auto` bundle beside `@wcstack/state/auto` of one release), and `/core` does not
 check (the core's size budget). Every package follows the same rule:
 [docs/timing-and-firing-contract.md §24](../../docs/timing-and-firing-contract.md).

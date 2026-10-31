@@ -26,7 +26,7 @@ function definitions(): [string, CustomElementConstructor][] {
 
 const stampOf = (cls: CustomElementConstructor) => (cls as unknown as Record<symbol, string | undefined>)[PACKAGE_STAMP];
 
-/** 別のコピーのクラスを全タグに先に定義したレジストリ（印は `stamp`、無ければ 4.11 より前のコピー）。 */
+/** 別のコピーのクラスを全タグに先に定義したレジストリ（印は `stamp`、無ければ版を名乗らないコピー）。 */
 function definedByAnotherCopy(stamp?: string) {
   return fakeRegistry(definitions().map(([tag]) => {
     const cls = class {} as unknown as CustomElementConstructor;
@@ -54,7 +54,7 @@ describe(`registerComponents（${pkg.name}）と別のコピー`, () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("印の無い別のコピー（4.11 より前）が先に定義していれば、何も定義せず 1 回だけ警告する", () => {
+  it("版を名乗らない別のコピーが先に定義していれば、何も定義せず 1 回だけ警告する", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { registry, define } = definedByAnotherCopy();
     const [[firstTag]] = definitions();
@@ -62,7 +62,7 @@ describe(`registerComponents（${pkg.name}）と別のコピー`, () => {
     expect(define).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toBe(
-      `[${pkg.name}] [wcs/package-twice] <${firstTag}> is already defined by an earlier copy (before 4.11); ` +
+      `[${pkg.name}] [wcs/package-twice] <${firstTag}> is already defined by another copy of ${pkg.name} that does not name its version; ` +
       `this copy, ${PKG}, does nothing. Load each package once.`,
     );
   });

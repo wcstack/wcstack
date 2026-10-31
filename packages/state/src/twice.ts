@@ -6,7 +6,8 @@
  * docs/seam-apps.md). The core does not carry the check — its 20 KiB budget, the author's decision of
  * 2026-10-31 — so the full entries wrap `define()` with it: `/auto` (src/auto.ts) and `.`'s
  * `bootstrapState` (src/exports.ts). `/core` and `dist/split/auto.js` define the tags as before and
- * stamp nothing, so a copy loaded through them is named "an earlier copy" by one that warns.
+ * stamp nothing, so a copy loaded through them is named "another copy of @wcstack/state that does not
+ * name its version" by one that warns.
  */
 import { config } from "./config";
 import { WcsState } from "./element";

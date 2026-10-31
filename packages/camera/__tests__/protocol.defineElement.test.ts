@@ -11,7 +11,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { PACKAGE_STAMP, defineElements, stampPackage, warnIfAnotherCopy } from "../src/protocol/defineElement.js";
 
-const PKG = "@wcstack/example@4.11.0";
+const PKG = "@wcstack/example@1.2.0";
 
 /** `get` / `define` だけの合成レジストリ（定義を Map に記録する）。 */
 function fakeRegistry(entries: [string, CustomElementConstructor][] = []) {
@@ -67,7 +67,7 @@ describe("defineElements", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("印の無い別のコピー（4.11 より前）が定義したタグは残し、両者を名指しして警告する", () => {
+  it("版を名乗らない別のコピーが定義したタグは残し、両者を名指しして警告する", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const theirs = element();
     const { registry, defined } = fakeRegistry([["x-a", theirs]]);
@@ -75,19 +75,19 @@ describe("defineElements", () => {
     expect(defined.get("x-a")).toBe(theirs);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toBe(
-      "[@wcstack/example] [wcs/package-twice] <x-a> is already defined by an earlier copy (before 4.11); " +
-      "this copy, @wcstack/example@4.11.0, does nothing. Load each package once.",
+      "[@wcstack/example] [wcs/package-twice] <x-a> is already defined by another copy of @wcstack/example that does not name its version; " +
+      "this copy, @wcstack/example@1.2.0, does nothing. Load each package once.",
     );
   });
 
   it("別の版のコピーが定義したタグは、その版を名指しして警告する", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { registry } = fakeRegistry([["x-a", stamped("@wcstack/example@4.12.0")]]);
+    const { registry } = fakeRegistry([["x-a", stamped("@wcstack/example@1.3.0")]]);
     defineElements(registry, PKG, [["x-a", element()]]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toBe(
-      "[@wcstack/example] [wcs/package-twice] <x-a> is already defined by @wcstack/example@4.12.0; " +
-      "this copy, @wcstack/example@4.11.0, does nothing. Load each package once.",
+      "[@wcstack/example] [wcs/package-twice] <x-a> is already defined by @wcstack/example@1.3.0; " +
+      "this copy, @wcstack/example@1.2.0, does nothing. Load each package once.",
     );
   });
 
@@ -122,17 +122,17 @@ describe("warnIfAnotherCopy", () => {
     expect(warn).not.toHaveBeenCalled();
     warnIfAnotherCopy(fakeRegistry().registry, "x-a", element(), undefined, PKG);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toContain("an earlier copy (before 4.11)");
+    expect(warn.mock.calls[0][0]).toContain("another copy of @wcstack/example that does not name its version");
   });
 });
 
 describe("stampPackage", () => {
   it("サブクラスは親の印を継ぎ、自分の印で上書きできる", () => {
-    const parent = stamped("@wcstack/example@4.10.0");
+    const parent = stamped("@wcstack/example@1.1.0");
     const child = class extends (parent as unknown as new () => object) {} as unknown as CustomElementConstructor;
-    expect((child as unknown as Record<symbol, string>)[PACKAGE_STAMP]).toBe("@wcstack/example@4.10.0");
+    expect((child as unknown as Record<symbol, string>)[PACKAGE_STAMP]).toBe("@wcstack/example@1.1.0");
     stampPackage(child, PKG);
     expect((child as unknown as Record<symbol, string>)[PACKAGE_STAMP]).toBe(PKG);
-    expect((parent as unknown as Record<symbol, string>)[PACKAGE_STAMP]).toBe("@wcstack/example@4.10.0");
+    expect((parent as unknown as Record<symbol, string>)[PACKAGE_STAMP]).toBe("@wcstack/example@1.1.0");
   });
 });

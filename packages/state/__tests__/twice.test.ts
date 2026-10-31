@@ -67,7 +67,7 @@ describe("defineOnce", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("印の無い別のコピー（4.11 より前）の <wcs-state> を名指しして 1 回警告する", () => {
+  it("版を名乗らない別のコピーの <wcs-state> を名指しして 1 回警告する", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const theirs = foreign();
     const r = fakeRegistry([["wcs-state", theirs], ["wcs-ssr", foreign()]]);
@@ -75,7 +75,7 @@ describe("defineOnce", () => {
     expect(r.defined.get("wcs-state")).toBe(theirs);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toBe(
-      "[@wcstack/state] [wcs/package-twice] <wcs-state> is already defined by an earlier copy (before 4.11); " +
+      "[@wcstack/state] [wcs/package-twice] <wcs-state> is already defined by another copy of @wcstack/state that does not name its version; " +
       `this copy, ${PKG}, does nothing. Load each package once.`,
     );
   });
@@ -85,10 +85,10 @@ describe("defineOnce", () => {
     const same = fakeRegistry([["wcs-state", foreign(PKG)]]);
     defineOnce(coreDefine(same), same.registry);
     expect(warn).not.toHaveBeenCalled();
-    const other = fakeRegistry([["wcs-state", foreign("@wcstack/state@4.12.0")]]);
+    const other = fakeRegistry([["wcs-state", foreign("@wcstack/state@1.0.0")]]);
     defineOnce(coreDefine(other), other.registry);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toContain("<wcs-state> is already defined by @wcstack/state@4.12.0;");
+    expect(warn.mock.calls[0][0]).toContain("<wcs-state> is already defined by @wcstack/state@1.0.0;");
   });
 
   it("<wcs-ssr> だけ別のコピーが定義していれば、それを名指しする（同じ版なら何も言わない）", () => {
@@ -100,7 +100,7 @@ describe("defineOnce", () => {
     defineOnce(coreDefine(other), other.registry);
     expect(stampOf(other.defined.get("wcs-state"))).toBe(PKG);
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toContain("<wcs-ssr> is already defined by an earlier copy (before 4.11);");
+    expect(warn.mock.calls[0][0]).toContain("<wcs-ssr> is already defined by another copy of @wcstack/state that does not name its version;");
   });
 });
 
@@ -127,6 +127,6 @@ describe("bootstrapState（`.`）", () => {
       setConfig({ tagNames: { state: "wcs-state" } });
     }
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toContain("<x-twice-state> is already defined by an earlier copy");
+    expect(warn.mock.calls[0][0]).toContain("<x-twice-state> is already defined by another copy of @wcstack/state");
   });
 });
