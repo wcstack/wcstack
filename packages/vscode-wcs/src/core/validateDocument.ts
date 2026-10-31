@@ -20,6 +20,7 @@ import { validateIoNodes } from "../service/ioNodeValidator.js";
 import { validateAriaAttributes } from "../service/ariaValidator.js";
 import { validateLiveRegions } from "../service/liveRegionValidator.js";
 import { validateDocumentEnv } from "../service/documentEnvValidator.js";
+import { validatePackageLoads } from "../service/packageLoadValidator.js";
 import { validateWatchDeclarations } from "../service/watchDeclarationValidator.js";
 import { validateScanDeclarations } from "../service/scanDeclarationValidator.js";
 import { validateRecursion } from "../service/recursionValidator.js";
@@ -136,6 +137,8 @@ function validateText(text: string, options: ValidateDocumentOptions, applicatio
   // a live region inserted with its text by a for / if template or a route (never announced)
   out.push(...validateLiveRegions(text, bindAttribute, stateTagName, locale));
   out.push(...validateDocumentEnv(text, locale));
+  // a wcstack package's tags with no script of it; a page pinning a newer minor than the lint's rules
+  out.push(...validatePackageLoads(text, locale, fileReader));
   // arrayMutationValidator / watchDeclarationValidator は 2 コード持ちのため
   // validator 側で code を付与して返す。
   out.push(...validateSemantics(text, stateTagName, locale, bindAttribute));

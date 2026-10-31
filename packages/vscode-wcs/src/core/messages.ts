@@ -105,6 +105,12 @@ export interface WcsMessageCatalog {
    * those paths are not checked. `name` is the name the value is written as, `from` the specifier it is imported from.
    */
   pathDynamicUnknownValue(path: string, count: number, name?: string, from?: string): string;
+  /**
+   * A key seeded with an object literal whose keys are read but for a spread the analyzer could not read
+   * (`draft: { ...makeDraft() }`), with bindings under it: those paths are not checked. `spread` as written, `from` the
+   * specifier its name is imported from.
+   */
+  pathDynamicUnknownObjectSpread(path: string, count: number, spread: string, from?: string): string;
   /** 読めない `<wcs-state src>`: その state のパスもスクリプトの規則も検査しない。 */
   stateSrcUnread(src: string): string;
   /** 双方向の束縛（`value:` / `checked:` / `radio:` / `checkbox:`）が setter の無い getter を指す。 */
@@ -233,6 +239,14 @@ export interface WcsMessageCatalog {
   signalsDualEntry(): string;
   /** import map が @wcstack/signals と /dom の両方を割り当てている（別ファイルの module が 2 つ目のコアを持つ）。 */
   signalsImportMapBoth(): string;
+  // --- packageLoadValidator ---
+  /** ページが `pkg`（`@wcstack/upload`）のタグ `tags` を書くのに、そのスクリプトを読み込んでいない。`url` は読み込む `/auto`。 */
+  tagPackageMissing(tags: readonly string[], pkg: string, url: string): string;
+  /**
+   * ページが lint の規則より新しい minor を固定している。`spec` は書かれたまま（`@wcstack/state@4.11.0`）、`version` は
+   * その版、`minor` は `4.11`、`lint` は lint の規則の版（lint を作った @wcstack/state の版）。
+   */
+  lintVersionBehind(spec: string, version: string, minor: string, lint: string): string;
   /** `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`。 */
   routeBareMustache(inLayout: boolean): string;
   /** 既定の `<slot>` の無いレイアウトのテンプレートに、名前付きスロットの外の中身を渡している。 */
@@ -371,6 +385,8 @@ const ja: WcsMessageCatalog = {
     `"${path}" の値${name === undefined ? '' : from === undefined ? `（${name}）` : `（${name}。"${from}" から import）`}は静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。キーに JSDoc の @type — 形か、モジュールのリテラルを指す typeof import("./file.js").name（辞書なら全部のキーを持つ既定の言語のファイル）— を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathDynamicUnknownSpread: (sp) =>
     `${sp} が持ち込むキーは静的に読めないので、この state のパスは検査していません（束縛・getter の中の読み・$watch のキー）。キーを wcstack.manifest.json の stateSchema に宣言すると検査されます。npx wcs-schema（@wcstack/typescript）が state の型（JSDoc・TypeScript）から作れます`,
+  pathDynamicUnknownObjectSpread: (path, n, sp, from) =>
+    `${sp}${from === undefined ? '' : `（"${from}" から import）`}が "${path}" に持ち込むキーは静的に読めないので、その下に束ねたパス（${n} 件）は検査していません。オブジェクトリテラルを束縛するモジュールの const を spread するか、キーに形を表す JSDoc の @type を付けるか、wcstack.manifest.json の stateSchema に宣言すると検査されます`,
   pathReadonlyTwoWay: (p, prop) =>
     `"${p}" は setter の無い getter ですが、${prop}: は読者の入力を書き戻すので、入力のたびに書き込みが失敗します（"${p}" is a getter without a setter）。setter を足す（set "${p}"(v) { … }）か、#ro で一方向にしてください（${prop}#ro: ${p}）`,
   submitWithoutPrevent: (h) =>
@@ -489,6 +505,10 @@ const ja: WcsMessageCatalog = {
     `@wcstack/signals と @wcstack/signals/dom が同一ページから import されています。CDN では各エントリが自己完結バンドルのためリアクティブコアが二重化し、境界で反応が壊れます — すべて /dom エントリから import してください`,
   signalsImportMapBoth: () =>
     `この import map は @wcstack/signals と @wcstack/signals/dom の両方を割り当てています。CDN では各エントリがリアクティブコアを持つので、@wcstack/signals を import するモジュール（このページのものでも、読み込む .js でも）が 2 つ目のコアを持ち、境界で反応が壊れます。@wcstack/signals/dom だけを割り当ててください（コアの全部を export します）`,
+  tagPackageMissing: (tags, pkg, url) =>
+    `${tags.map((t) => `<${t}>`).join('・')} は ${pkg} のタグですが、このページは ${pkg} のスクリプトを読み込んでいません。要素は定義されないので、その束縛は待ち続けて何も起きず、コンソールにも何も出ません — <script type="module" src="${url}"></script> で読み込んでください`,
+  lintVersionBehind: (spec, version, minor, lint) =>
+    `このページは ${spec} を固定していますが、この lint の規則（@wcstack ${lint}）より新しい minor です。${minor} で加わった規則は検査されず、${minor} の正しい書き方が error になることもあります — @wcstack/lint を ${version} に上げてください（npm i -D @wcstack/lint@${version}。VS Code の拡張は ${minor} に対応する版へ）`,
   routeBareMustache: (inLayout) => inLayout
     ? `レイアウトのテンプレートの直下のテキストの {{ }} は、遷移では束ねられません — 要素で包んでください（<span>{{ … }}</span>）`
     : `<wcs-route> の直下のテキストの {{ }} は、最初に着いたルートでしか束ねられません。遷移で入ったルートでは書いたままの文字が出ます — 要素で包んでください（<h1>{{ … }}</h1>）`,
@@ -659,6 +679,8 @@ const en: WcsMessageCatalog = {
     `The value of "${path}"${name === undefined ? '' : from === undefined ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Give the key a JSDoc @type — its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) — or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) =>
     `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
+  pathDynamicUnknownObjectSpread: (path, n, sp, from) =>
+    `The keys ${sp}${from === undefined ? '' : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? 'path' : `${n} paths`} bound under it ${n === 1 ? 'is' : 'are'} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathReadonlyTwoWay: (p, prop) =>
     `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { … }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) =>
@@ -777,6 +799,10 @@ const en: WcsMessageCatalog = {
     `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam — import everything from the single /dom entry`,
   signalsImportMapBoth: () =>
     `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals — this page's, or a .js file it loads — gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
+  tagPackageMissing: (tags, pkg, url) =>
+    `${tags.map((t) => `<${t}>`).join(', ')} ${tags.length === 1 ? 'is a tag' : 'are tags'} of ${pkg}, and this page loads no script of ${pkg}: the element is never defined, so its bindings wait and nothing happens, without a word in the console. Load it with <script type="module" src="${url}"></script>`,
+  lintVersionBehind: (spec, version, minor, lint) =>
+    `This page pins ${spec}, a newer minor than the rules of this lint (@wcstack ${lint}): what ${minor} added is not checked, and correct ${minor} syntax can be reported as an error. Upgrade @wcstack/lint to ${version} (npm i -D @wcstack/lint@${version}; the VS Code extension to its release for ${minor})`,
   routeBareMustache: (inLayout) => inLayout
     ? `{{ }} in text directly under a layout template is not bound on a navigation. Wrap it in an element (<span>{{ … }}</span>)`
     : `{{ }} in text directly under <wcs-route> is bound only on the landing route: a route entered by navigation shows it as written. Wrap it in an element (<h1>{{ … }}</h1>)`,
