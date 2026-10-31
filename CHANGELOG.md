@@ -8,6 +8,10 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 
 ## [Unreleased]
 
+### Upgrading
+
+- `@wcstack/testing`: **`mount()`, `fire()` and `installDom()` throw on an option they do not have.** A test that passed one — a misspelt name, or `fire(el, "keydown", { key: "Enter" })`, whose `key` never reached the event (`fire()` dispatches an `Event`, or a `CustomEvent` with `detail`) — fails now with a message naming it. Dispatch another event class with `target.dispatchEvent()` yourself.
+
 ### Fixed
 
 - `@wcstack/websocket`: a socket still connecting is closed once it opens, not at once. Removing `<wcs-ws>` while its socket was `CONNECTING` — leaving a route right after entering it, closing an `if:` branch — made Chromium print "WebSocket is closed before the connection is established.", so a page that asserts a clean console failed on every quick navigation, and the `homeroom` seam app ([docs/seam-apps.md](./docs/seam-apps.md)) had to keep the element at page level and close it from state only once open. The element now lets such a socket go: nothing from it reaches the element, `connected` / `loading` / `readyState` publish the end at once (timing-and-firing-contract §22), and the socket is closed when it opens — with the `close` command's code and reason — or dropped if it fails. A `url` change or `connect()` replacing a connecting socket, a reconnect's socket included, does the same; the `close` command on a connecting socket no longer sets `error`. The back/forward cache path (`pagehide` with `persisted`) still closes it at once, since a socket in use keeps the page out of the cache.
