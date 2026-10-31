@@ -66,7 +66,7 @@ packages/<name>/
       <Name>.ts            # the Shell. extends HTMLElement. class name Wcs<Name>.
     bootstrap<Name>.ts      # setConfig + registerComponents
     config.ts              # config / getConfig / setConfig (with deepFreeze/deepClone)
-    registerComponents.ts  # customElements.define (guarded against double definition)
+    registerComponents.ts  # defineElements (a defined tag is left alone; another copy warns, §6)
     autoTrigger.ts         # (command nodes only) data-xxxtarget click invocation
     raiseError.ts          # the shared error helper
     types.ts               # IWcBindable* plus the Core/Shell value, command, and input types
@@ -356,7 +356,7 @@ Reuse `packages/notification/src/config.ts` as-is:
 - `getConfig()` (returns a deep-frozen clone; the public one)
 - `setConfig(partial)` (type-checks and merges, invalidating the frozen cache)
 - config carries at minimum `tagNames` / `autoTrigger` / `triggerAttribute`
-- `registerComponents()` guards against double definition with `customElements.get()`
+- `registerComponents()` defines its tags through `` defineElements(registry, `${pkg.name}@${pkg.version}`, [[tag, Class], …]) `` (`src/protocol/defineElement.ts`, a generated copy of `/protocol/define-element.ts`): a tag already defined is left alone, and one defined by another copy of the package of another version warns `[wcs/package-twice]` once ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §24). Add the package to `DEFINE_ELEMENT_TARGET_PACKAGES` in `scripts/sync-protocol-types.mjs`; its `tsconfig.json` sets `"rootDir": "."` and `"resolveJsonModule": true` for the `package.json` import
 - `bootstrap<Name>(userConfig?)` is `setConfig` → `registerComponents`
 
 `autoTrigger.ts` (command nodes only) picks up a `data-<name>target` click, resolves the element with `customElements.get()` (avoiding an import cycle), and calls the command. An invalid triggerAttribute selector is caught with try/catch, disabling only this shortcut.
@@ -425,6 +425,7 @@ The completion criteria. Do not merge until all of them hold.
 - [ ] APIs are resolved at call time (not cached)
 - [ ] SSR: `ready` / `connectedCallbackPromise` / `hasConnectedCallbackPromise`
 - [ ] config / bootstrap / registerComponents / exports follow the rules
+- [ ] `registerComponents()` defines through `defineElements`, so a second copy of another version warns `[wcs/package-twice]` (timing-and-firing-contract §24); the package receives the shared tests `__tests__/protocol.defineElement*.test.ts`
 - [ ] Core is exported from the entry and is headless-constructible (`target` omissible), and the README has a headless (Core) section (§3.9)
 - [ ] Tests at 100/97+/100/100, written in Japanese, with fake doubles
 - [ ] README ja/en, the root README updated, and (where needed) a section added to the timing contract

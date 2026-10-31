@@ -66,7 +66,7 @@ packages/<name>/
       <Name>.ts            # Shell。HTMLElement 継承。クラス名 Wcs<Name>。
     bootstrap<Name>.ts      # setConfig + registerComponents
     config.ts              # config / getConfig / setConfig（deepFreeze/deepClone 付き）
-    registerComponents.ts  # customElements.define（二重定義ガード）
+    registerComponents.ts  # defineElements（定義済みのタグは触らない。別のコピーは警告、§6）
     autoTrigger.ts         # （command 系のみ）data-xxxtarget クリック起動
     raiseError.ts          # 共通エラーヘルパ
     types.ts               # IWcBindable* と Core/Shell の値・コマンド・入力型
@@ -390,7 +390,7 @@ upgrade 後もそれが prototype の accessor を隠し続けるため、setter
 - `getConfig()`（deep-frozen clone を返す。公開用）
 - `setConfig(partial)`（型チェックしてマージ、frozen キャッシュ無効化）
 - config には最低限 `tagNames` / `autoTrigger` / `triggerAttribute` を持たせる
-- `registerComponents()` は `customElements.get()` で二重定義をガード
+- `registerComponents()` は `` defineElements(registry, `${pkg.name}@${pkg.version}`, [[tag, Class], …]) ``（`src/protocol/defineElement.ts`、`/protocol/define-element.ts` の生成コピー）でタグを定義する: 定義済みのタグは触らず、別の版の同じパッケージのコピーが定義していれば `[wcs/package-twice]` で 1 回警告する（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §24）。パッケージを `scripts/sync-protocol-types.mjs` の `DEFINE_ELEMENT_TARGET_PACKAGES` に加える。`package.json` を import するので、`tsconfig.json` は `"rootDir": "."` と `"resolveJsonModule": true`
 - `bootstrap<Name>(userConfig?)` は `setConfig` → `registerComponents`
 
 `autoTrigger.ts`（command 系のみ）は `data-<name>target` クリックを拾い、要素を `customElements.get()` で解決して（import 循環回避）コマンドを呼ぶ。不正な triggerAttribute セレクタは try/catch で握り、このショートカットだけ無効化する。
@@ -459,6 +459,7 @@ Service Worker など追加エントリがあるノードは rollup 出力を増
 - [ ] API は呼び出し時解決（キャッシュしない）
 - [ ] SSR: `ready` / `connectedCallbackPromise` / `hasConnectedCallbackPromise`
 - [ ] config / bootstrap / registerComponents / exports が規約どおり
+- [ ] `registerComponents()` が `defineElements` で定義し、別の版の 2 つ目のコピーが `[wcs/package-twice]` で警告する（timing 契約 §24）。共有テスト `__tests__/protocol.defineElement*.test.ts` がパッケージに配られている
 - [ ] Core が entry から export され、headless 構築可能（`target` 省略可）・README に headless（Core）節あり（§3.9）
 - [ ] テスト 100/97+/100/100、日本語記述、Fake double
 - [ ] README ja/en・ルート README 更新・（必要なら）timing 契約に1節追加
