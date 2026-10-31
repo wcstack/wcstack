@@ -1091,6 +1091,13 @@
       "effect": { "en": "The texts change, but the filters keep the locale they read when state loaded (dates, money), the `<title>` and the URL stay in the first language.", "ja": "文は変わるが、フィルタは state を読み込んだときのロケール（日付、金額）のまま、`<title>` と URL も最初の言語のまま。" },
       "disposition": "docs-only",
       "note": { "en": "docs/i18n-design.md (no live switch), the state README's Locale and the skill: the language is in the markup before state loads.", "ja": "docs/i18n-design.md（ライブの切り替えは無い）、state の README のロケールの節、スキル: 言語は state を読み込む前にマークアップにある。" }
+    },
+    {
+      "id": "package-twice",
+      "runtime": "loud", "harm": "stale",
+      "mistake": { "en": "Leaves a `<script>` of a package at another version beside the new one — an upgrade that missed a line, a bundle and a member pinned apart.", "ja": "別の版のパッケージの `<script>` を新しいものと並べて残す — 1 行を上げ忘れた更新、版の違うバンドルとメンバー。" },
+      "effect": { "en": "The copy the page evaluates first defines the tags and the other does nothing: an old line placed first runs the old version, with none of what the upgrade fixed (the homeroom seam app ran the 4.2.0 engine on its 4.10.1 page). Since 4.11 the second copy warns once, naming both versions (`[wcs/package-twice]`, timing contract §24); two copies of one version stay quiet. A copy before 4.11 has no code to say it.", "ja": "ページが先に評価した写しがタグを定義し、もう一方は何もしない: 先に置いた古い行は古い版を動かし、更新で直したものは何も効かない（継ぎ目アプリ homeroom は 4.10.1 のページで 4.2.0 のエンジンを動かした）。4.11 から 2 つ目の写しが両方の版を名指して 1 回警告する（`[wcs/package-twice]`、タイミング契約 §24）。同じ版の 2 つは黙ったまま。4.11 より前の写しには言うコードが無い。" },
+      "evidence": [{ "file": "protocol/define-element.ts", "text": "[wcs/package-twice]" }]
     }
   ],
   "uncounted": [

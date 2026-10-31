@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 7 |
-| 実行時 | 63 |
+| 実行時 | 64 |
 | lint だけ — 条件付きの沈黙 | 25 |
 | 文書だけ — 沈黙 | 38 |
 | 数えない lint の code | 18 |
@@ -166,6 +166,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 入れ子のルートを持つレイアウトのテンプレートに、既定の `<slot>` が無い。 | 同じ code: router が `[wcs/layout-slot-missing]` で警告する。lint の見ない `src=` のレイアウトと、テンプレートに無い `slot=` も調べる。 | `wcs/layout-slot-missing` (warning) |
 | `<wcs-outlet>` を `<wcs-router>` の直後以外に置く。 | 同じ code: router が自前の outlet を作るときに `[wcs/router-outlet-misplaced]` で警告する。レイアウトが持ち込んだ outlet にも。 | `wcs/router-outlet-misplaced` (warning) |
 | getter が読むパスを打ち間違える: `this["items.*.pirce"]`、`this.$getAll("items.*.pirce", [])`。 | 同じ code: 読みは `undefined` になり、getter がそこから計算する値は違う。diagnostics の後付けが、getter がそのパスを読んだあと、近い名前があるとき、読んだ getter の名前を添えてパスごとに 1 回警告する（トップレベルのキーは読んだ時点で throw する、#301）。 外部の評価で見つかった（確定申告の下書き: getter 96 本が、読んだパスから金額を計算する）。どちらも近い名前があるときだけ報告する: `this["opts.flag"] ?? false` は任意のキーをわざと読む。lint は getter・setter・メソッドを実行せずに検査し、リテラルのパスだけを見る（`this[key]` は見ない）。`stateSchema` が「無い」と言うときは error。 | `wcs/read-path-missing` (warning) |
+| 別の版のパッケージの `<script>` を新しいものと並べて残す — 1 行を上げ忘れた更新、版の違うバンドルとメンバー。 | code なし: ページが先に評価した写しがタグを定義し、もう一方は何もしない: 先に置いた古い行は古い版を動かし、更新で直したものは何も効かない（継ぎ目アプリ homeroom は 4.10.1 のページで 4.2.0 のエンジンを動かした）。4.11 から 2 つ目の写しが両方の版を名指して 1 回警告する（`[wcs/package-twice]`、タイミング契約 §24）。同じ版の 2 つは黙ったまま。4.11 より前の写しには言うコードが無い。 | — |
 | 解決しないパスで `$postUpdate` を呼ぶ: 打ち間違い（`cells` に対する `rows.${r}.cell.${c}.text`）。 | code なし: その呼び出しは何も更新しない。diagnostics の後付けが、パスごとに 1 回、近い名前付きで `[wcs/post-update-path-missing]` を警告する。 7GUIs の評価（Cells）で見つかった。lint の規則は無い: パスはふつう実行時に組み立てる。 | — |
 | state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 同じ code: 4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。 どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。 | `wcs/write-path-missing` (warning) |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
