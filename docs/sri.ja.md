@@ -84,7 +84,7 @@ wcstack の配信に `/combine/` を使ってはならない（MUST NOT）。`es
         integrity="sha384-…"></script>
 ```
 
-単一リクエストにしたい場合は **`wcstack` エントリバンドル**を使う。SPA コアパッケージ（state / router / fetch / storage / autoloader）を Rollup が識別子安全に（連結が衝突させるものを Rollup がリネームして）束ねた 1 タグで、全カバーのダイジェスト 1 個を持ち、他のパッケージと同様に `sri.json` に載る。個別パッケージの `/auto` との併載も安全 — 全メンバーの define はガード済み・プロトコルのインストールは先勝ちなので、先に評価されたコピーがページを所有する。
+単一リクエストにしたい場合は **`wcstack` エントリバンドル**を使う。SPA コアパッケージ（state / router / fetch / storage / autoloader）を Rollup が識別子安全に（連結が衝突させるものを Rollup がリネームして）束ねた 1 タグで、全カバーのダイジェスト 1 個を持ち、他のパッケージと同様に `sri.json` に載る。同じリリースの個別パッケージの `/auto` との併載も安全 — 全メンバーの define はガード済み・プロトコルのインストールは先勝ちなので、先に評価されたコピーがページを所有する。別の版のコピーは、4.11 から、両方の版を名指しして `[wcs/package-twice]` をコンソールに出す（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §24）。
 
 ```html
 <script type="module"

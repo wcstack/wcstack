@@ -47,6 +47,8 @@ npm install -D @wcstack/testing @wcstack/state @wcstack/server vitest happy-dom
 | `maxIterations` | 待機中に挿入された要素を拾う安定化ループの回数（既定 10） |
 | `resolveModule` | 4.9 から。`(url: URL) => string \| URL \| null` — `<wcs-state src>` のモジュールを読むローカルのファイル。`@wcstack/server` の `renderToString` と同じオプションで、ページが名指す URL（`document.baseURI` で解決したもの — happy-dom の下では `http:` の URL）を受け取り、パスか `file:` URL を返す。Node のモジュールローダは `file:` と `data:` の URL しか読まない。mount の間だけ置かれ、モジュールは mount ごとに読み直すので、テストの間で状態のオブジェクトは共有されない。これが無いか何も返さないと、状態の初期化はそう言って失敗する — ルートの `<wcs-state>` なら `mount()` がそれで reject する。`.json` の `src` は従来どおり fetch で読む。[自分のファイルにある状態](#自分のファイルにある状態) を参照 |
 
+4.11（未リリース）から、`mount()` が持たないオプションや、オプションの型と違う値は、文書に触れる前にその場で reject します — どのパッケージの `bootstrapXxx()` とも同じく、オプションの名前を言い、オプションの一覧を添えます。綴り違いの `resolveModul` は無視され、テストは後で Node の `ERR_UNSUPPORTED_ESM_URL_SCHEME` で落ちていました。値が `undefined` のオプションは飛ばします。`fire()` の `init` と `installDom()` のオプションも同じに検査します。
+
 返る `MountedApp`:
 
 | メンバー | 説明 |
@@ -90,7 +92,7 @@ const app = await mount(`
 
 ### `fire(target, type, init?) → boolean`
 
-`Event`（`init.detail` があれば `CustomEvent`）を既定で bubbling させて dispatch します。ハンドラが `preventDefault()` を呼ぶと `false`。
+`Event`（`init.detail` があれば `CustomEvent`）を既定で bubbling させて dispatch します。ハンドラが `preventDefault()` を呼ぶと `false`。4.11（未リリース）から、`init` の `bubbles`・`cancelable`・`composed`・`detail` 以外のキーは throw します: イベントに届いていませんでした — `{ key: "Enter" }` は `KeyboardEvent` を作らない。別のイベントクラスは `target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))` と自分で送ってください。
 
 ### `installDom(options?) → Promise<() => Promise<void>>`
 

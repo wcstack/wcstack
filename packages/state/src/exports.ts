@@ -4,15 +4,23 @@
  * form, and `/define`, `/manifest`, `/parser` the authoring and tooling entries.
  */
 import { installFeatures } from "./hooks";
-import { bootstrapState as bootstrapCore } from "./element";
+import { define } from "./element";
+import { setConfig } from "./config";
 import { ALL_FEATURES } from "./features/all";
+import { defineOnce } from "./twice";
 import type { IStateElement, IWritableConfig } from "./public/types";
 import type { Ssr } from "./ssr/element";
 
-/** Installs every add-on, applies `config` and registers `<wcs-state>` (in `registry`, the global one by default). */
+/**
+ * Installs every add-on, applies `config` and registers `<wcs-state>` (in `registry`, the global one
+ * by default). When another copy of @wcstack/state, of another version, defined `<wcs-state>` first,
+ * this copy does nothing and warns `[wcs/package-twice]` once (`/core`'s bootstrapState does not check).
+ */
 export function bootstrapState(config?: IWritableConfig, registry?: CustomElementRegistry): void {
   installFeatures(ALL_FEATURES);
-  bootstrapCore(config, registry);
+  // before the tags are read: a config may rename them
+  if (config) setConfig(config);
+  defineOnce(() => define(registry), registry);
 }
 
 export { getConfig } from "./config";

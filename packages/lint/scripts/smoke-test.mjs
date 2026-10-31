@@ -9,7 +9,7 @@
 // 意図的に壊した fixture を拾って build を落とすため、コミットしてはならない。
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -303,6 +303,34 @@ const frameworkTsx = join(workDir, "App.tsx");
 writeFileSync(frameworkHtml, `<!doctype html>\n<div id="root"></div>\n<script type="module" src="/src/main.tsx"></script>\n`);
 writeFileSync(frameworkTsx, `export const App = () => <wcs-storage key="cart"></wcs-storage>;\n`);
 
+// From the homeroom seam app (since 4.11). A key seeded with a spread of a module constant is read (only the typo is
+// reported); a page that writes <wcs-upload> without loading @wcstack/upload gets wcs/tag-package-missing; a page that
+// pins a newer minor than this lint gets wcs/lint-version-behind. Both are warnings: --strict fails, --errors-only not.
+const spreadSeedHtml = join(workDir, "spread-seed.html");
+writeFileSync(spreadSeedHtml, `<!doctype html>
+<wcs-state><script type="module">
+const EMPTY_DRAFT = { title: "", body: "", cat: "general" };
+export default { draft: { ...EMPTY_DRAFT }, reset() { this.draft = { ...EMPTY_DRAFT }; } };
+</script></wcs-state>
+<input data-wcs="value: draft.title">
+<input data-wcs="value: draft.titel">
+`);
+const tagPackageHtml = join(workDir, "tag-package.html");
+writeFileSync(tagPackageHtml, `<!doctype html>
+<script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+<wcs-state><script type="module">export default { url: "/api/notes" };</script></wcs-state>
+<wcs-upload data-wcs="url: url"><wcs-upload-header name="X-Token" value="t"></wcs-upload-header></wcs-upload>
+`);
+// the lint's version is the engine's (released in lockstep): a page pinning the next minor
+const [lintMajor, lintMinor] = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8")).version.split(".").map(Number);
+const nextMinor = `${lintMajor}.${lintMinor + 1}.0`;
+const versionHtml = join(workDir, "version-behind.html");
+writeFileSync(versionHtml, `<!doctype html>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@${nextMinor}/dist/auto.min.js"></script>
+<wcs-state><script type="module">export default { count: 0 };</script></wcs-state>
+<p data-wcs="textContent: count"></p>
+`);
+
 const failures = [];
 let caseCount = 0;
 
@@ -480,6 +508,36 @@ check("delegated event handler reading event.currentTarget → warning wcs/deleg
 check("a live region inserted with its text by an if: branch → warning wcs/live-region-inserted (not the one kept in the page), exit 0", ["--lang=en", liveRegionHtml], {
   exit: 0,
   stdout: [/:5:36 warning wcs\/live-region-inserted This live region \(role="status"\) is inserted with its text/, "0 error(s), 1 warning(s), 0 info"],
+});
+
+check("a key seeded with a spread of a module constant → only the typo is reported (wcs/binding-path-missing), exit 0", ["--lang=en", spreadSeedHtml], {
+  exit: 0,
+  stdout: [/:7:25 warning wcs\/binding-path-missing Path "draft\.titel"/, "0 error(s), 1 warning(s), 0 info"],
+});
+
+check("a tag whose package the page never loads → warning wcs/tag-package-missing once for the package, exit 0", ["--lang=en", tagPackageHtml], {
+  exit: 0,
+  stdout: [/:4:2 warning wcs\/tag-package-missing <wcs-upload>, <wcs-upload-header> are tags of @wcstack\/upload/, /src="https:\/\/esm\.run\/@wcstack\/upload\/auto"/, "0 error(s), 1 warning(s), 0 info"],
+});
+
+check("wcs/tag-package-missing is a warning: --strict exit 1, --errors-only exit 0", ["--lang=en", "--strict", tagPackageHtml], {
+  exit: 1,
+  stdout: ["0 error(s), 1 warning(s), 0 info (strict)"],
+});
+
+check("wcs/tag-package-missing hidden by --errors-only, exit 0", ["--lang=en", "--errors-only", tagPackageHtml], {
+  exit: 0,
+  stdout: ["0 error(s), 1 warning(s)"],
+});
+
+check(`a page pinning a newer minor than the lint (@wcstack/state@${nextMinor}) → warning wcs/lint-version-behind, exit 0; --strict exit 1`, ["--lang=en", versionHtml], {
+  exit: 0,
+  stdout: [new RegExp(`:2:57 warning wcs/lint-version-behind This page pins @wcstack/state@${nextMinor.replace(/\./g, "\\.")}, a newer minor than the rules of this lint`), `Upgrade @wcstack/lint to ${nextMinor}`, "0 error(s), 1 warning(s), 0 info"],
+});
+
+check("wcs/lint-version-behind under --strict → exit 1", ["--lang=en", "--strict", versionHtml], {
+  exit: 1,
+  stdout: ["0 error(s), 1 warning(s), 0 info (strict)"],
 });
 
 check("paths under a volume loaded with src= (readable or not) are clean under --strict, the unreadable src said once (info), exit 0", ["--lang=en", "--strict", volumeHtml], {

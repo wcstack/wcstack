@@ -1,5 +1,7 @@
+import pkg from "../package.json" with { type: "json" };
 import { WcsBroadcast } from "./components/Broadcast.js";
 import { config } from "./config.js";
+import { defineElements } from "./protocol/defineElement.js";
 
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
@@ -7,7 +9,7 @@ import { config } from "./config.js";
  * one, so a tree using one needs its own definitions.
  */
 export function registerComponents(registry: CustomElementRegistry = customElements): void {
-  if (!registry.get(config.tagNames.broadcast)) {
-    registry.define(config.tagNames.broadcast, WcsBroadcast);
-  }
+  defineElements(registry, `${pkg.name}@${pkg.version}`, [
+    [config.tagNames.broadcast, WcsBroadcast],
+  ]);
 }

@@ -8,6 +8,16 @@ const typescriptPlugin = typescript({
   declarationMap: false,
 });
 
+// A JSON import becomes a module exporting the object, as in config-templates/rollup.config.js:
+// the build embeds the name and version the defined classes carry (protocol/define-element.ts).
+const json = () => ({
+  name: "wcstack-json",
+  transform(code, id) {
+    if (!id.endsWith(".json")) return null;
+    return { code: `export default ${JSON.stringify(JSON.parse(code))};\n`, map: { mappings: "" } };
+  },
+});
+
 // dist/auto.d.ts, as in config-templates/rollup.config.js: `./auto` exports nothing.
 const autoDeclaration = () => ({
   name: "wcstack-auto-declaration",
@@ -29,7 +39,7 @@ export default [
       format: "esm",
       sourcemap: true,
     },
-    plugins: [typescriptPlugin],
+    plugins: [json(), typescriptPlugin],
   },
   // No dist/index.esm.min.js on purpose — see config-templates/rollup.config.js
   // for the rule. It was reachable only through the old auto stub's relative
@@ -62,6 +72,7 @@ export default [
       sourcemap: true,
     },
     plugins: [
+      json(),
       typescript({
         tsconfig: "./tsconfig.json",
         declaration: false,

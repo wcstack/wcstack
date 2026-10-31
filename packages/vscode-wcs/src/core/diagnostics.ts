@@ -48,7 +48,8 @@ export const WcsDiagnosticCode = {
   PathReadonly: "wcs/path-readonly",
   PathReservedName: "wcs/path-reserved-name",
   // lint の限界の告知（作者の誤りではない）: `export default { … }` のトップレベルの spread が持ち込むキーは読めないので、
-  // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。
+  // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。値の読めないキー（辿れない名前、
+  // 読めない spread を持つオブジェクトリテラルの種 `draft: { ...makeDraft() }`）の下を束ねたときも、キーの上で 1 回言う。
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
   // lint の限界の告知（作者の誤りではない）: 読めない `<wcs-state src>`（/ から始まるパス・URL・無いファイル）の state は
   // パスもスクリプトの規則も検査しない — それを src の上で 1 回だけ言う。info（docs/seam-apps.md、prod-booking）。
@@ -254,6 +255,16 @@ export const WcsDiagnosticCode = {
   RouterOutletMisplaced: "wcs/router-outlet-misplaced",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
+  // wcstack を自分で読み込むページが、あるパッケージのタグ（`<wcs-upload>`・`<wcs-upload-header>`）を書くのに、その
+  // パッケージのスクリプトを読み込んでいない。要素は定義されず、束縛は待ち続け、コンソールにも何も出ない（継ぎ目アプリ
+  // homeroom — 保存が「送信中 0%」で止まった）。パッケージごとに 1 回、最初のタグに。読めないローカルのスクリプトがある
+  // ページ・autoloader の `@components/` が覆うタグ・wcstack を自分で読み込まないページ（断片・バンドラ）では黙る。warning。
+  TagPackageMissing: "wcs/tag-package-missing",
+  // ページの URL が、lint の規則の版（lint を作った @wcstack/state の版）より新しい minor の wcstack を固定している
+  // （`@wcstack/state@4.11.0` と lint 4.10.1）。古い lint は新しい規則を知らず、新しい正しい書き方を error にもする
+  // （homeroom — 4.2.0 の lint が 4.10 の `datetime(ja-JP,short,Asia/Tokyo)` を `wcs/filter-arity` に）。ページに 1 回、
+  // いちばん新しい固定に。版の無い URL・major だけの `@4`・lint の方が新しいときは黙る。warning。
+  LintVersionBehind: "wcs/lint-version-behind",
   // `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`。最初に着いたルートでしか束ねられず、
   // 遷移で入ったルートでは書いたままの文字が出る（router の README「Where route content lives」— docs/seam-apps.md、
   // router-admin）。warning。
