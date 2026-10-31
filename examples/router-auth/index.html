@@ -81,7 +81,11 @@
       logoutTrigger: false,
       sessionEndReason: "",
       logout() {
-        // tell the server, then forget the session
+        // tell the server, then forget the session. The order matters: the bindings of one
+        // update apply in the order their paths were written, and the trigger sends the
+        // header the element has then. Clearing the session first would remove the
+        // Authorization header before the request leaves, and the server could not end it
+        // (docs/timing-and-firing-contract.md §4.4).
         this.logoutTrigger = true;
         this.sessionEndReason = "logout";
         this.session = null;

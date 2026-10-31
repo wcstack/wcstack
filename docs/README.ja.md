@@ -60,6 +60,7 @@
 | [migration-v2.md](./migration-v2.md) | [migration-v2.ja.md](./migration-v2.ja.md) |
 | [migration-v3.md](./migration-v3.md) | [migration-v3.ja.md](./migration-v3.ja.md) |
 | [migration-v4.md](./migration-v4.md) | [migration-v4.ja.md](./migration-v4.ja.md) |
+| [upgrading-4x.md](./upgrading-4x.md) | [upgrading-4x.ja.md](./upgrading-4x.ja.md) |
 | [state-next-major-audit.md](./state-next-major-audit.md) | [state-next-major-audit.ja.md](./state-next-major-audit.ja.md) |
 | [state-next-major-requirements.md](./state-next-major-requirements.md) | [state-next-major-requirements.ja.md](./state-next-major-requirements.ja.md) |
 | [state-next-major-tech-survey.md](./state-next-major-tech-survey.md) | [state-next-major-tech-survey.ja.md](./state-next-major-tech-survey.ja.md) |
