@@ -13,6 +13,12 @@
  */
 
 import { installGlobals } from "@wcstack/server";
+import { checkOptions, isObject, isString, type OptionSpec } from "./options.js";
+
+const INSTALL_DOM_OPTIONS: OptionSpec = {
+  url: [isString, "a string"],
+  window: [isObject, "a happy-dom Window"],
+};
 
 export interface InstallDomOptions {
   /** `window.location` for the page (default `http://localhost/`). */
@@ -26,6 +32,7 @@ interface HappyDomWindowLike {
 }
 
 export async function installDom(options: InstallDomOptions = {}): Promise<() => Promise<void>> {
+  checkOptions("installDom()", options, INSTALL_DOM_OPTIONS);
   const window = options.window ?? (await createWindow(options.url ?? "http://localhost/"));
   const restore = installGlobals(window as Parameters<typeof installGlobals>[0]);
   return async () => {

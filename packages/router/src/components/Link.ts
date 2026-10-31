@@ -296,13 +296,16 @@ export class Link extends HTMLElement implements ILink {
     // pathname だけ）。そのページ（aria-current="page"）は今のページのクエリが `to` のクエリと等しいとき、
     // match="prefix" なら含むときも（"true"、パスの「下」と同じ）。`/search?q=a` の「次のページ」
     // （`?q=a&page=2`）が「現在のページ」と読み上げられ（docs/seam-apps.md、city-library）、含む規則では
-    // `page` を省いた 1 ページ目へのリンクがどのページでもそうだった（city-library の取り込み）
+    // `page` を省いた 1 ページ目へのリンクがどのページでもそうだった（city-library の取り込み）。
+    // `?` で終わる `to`（`to="/notices?"`、`to="?"` — 明示した空のクエリ）もクエリのある `to` で、そのページは
+    // クエリの無いページだけ（href からは `?` を落とす）。クエリの無い `to` と同じに pathname だけで比べていたので、
+    // 「すべて」のタブが `/notices?cat=event` でも現在のページで、現在のリンクが 2 つになった（docs/seam-apps.md、homeroom）
     const current = new URL(window.location.href);
     const currentPath = this._normalizePathname(current.pathname);
     const { pathname, search } = splitUrlTarget(this._path);
     const wanted = effectiveSearch(search);
     const queryIncluded = queryIncludes(current.search, wanted);
-    const queryEqual = wanted === '' || queryEquals(current.search, wanted);
+    const queryEqual = search === '' || queryEquals(current.search, wanted);
     const linkPath = this._normalizePathname(
       this._isInternalTarget(this._path)
         ? (pathname === ""
