@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Upgrading
+
+- `@wcstack/router`: **a `<wcs-link to="?">` (the query-only link that clears the query) is the current page only where the URL has no query.** Up to 4.10 it compared the pathname only, so it was marked on every page of its path, whatever the query.
+
+### Changed
+
+- `@wcstack/router`: a `<wcs-link>` whose `to` ends with `?` — an explicit, empty query, `to="/notices?"` — is a link with a query, and that query is empty: it is the current page (`active`, `aria-current="page"`) only where the URL has no query. An "All" tab beside category tabs (`to="/notices?cat=event"`) was marked on `/notices?cat=event` too, since a `to` without a query compares the pathname only, and the author's `to="/notices?"` was read the same way — two current links at once (the `homeroom` seam app, [docs/seam-apps.md](./docs/seam-apps.md)). With `match="prefix"` it follows the query rule of 4.10.1: active on any query of its path and on the paths under it, with `aria-current="true"` (`"page"` on its path without a query). The `href` leaves the `?` out (`href="/notices"`), as navigation does. A `to` without `?` still compares the pathname only, so nothing written without the `?` changes; `to="?"` follows the same rule (see Upgrading).
+
 ## [4.10.1] — 2026-10-31
 
 A patch with the three decisions the author made on 2026-10-31 about what landing `city-library` in `examples/` left open ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §5.10; [docs/seam-apps.md](./docs/seam-apps.md)): `<wcs-view-transition>` no longer holds a page's first paint, a `<wcs-link>` with a query is the current page only on the same query, and the router's `path` is documented as coming a frame after its other outputs under view transitions.
