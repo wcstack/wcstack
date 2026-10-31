@@ -27,8 +27,8 @@ That's what `<wcs-autoloader>` explores. One CDN import, zero dependencies, powe
 
 ### 1. Setup Import Map
 
-Define the autoloader path using the `@wcstack/autoloader` key.
 Define your component paths in an import map using the `@components/` prefix.
+The `@wcstack/autoloader` key is needed only for Option B below, which imports the package by that bare name; the `/auto` script of Option A needs no entry of its own.
 
 ```html
 <script type="importmap">
