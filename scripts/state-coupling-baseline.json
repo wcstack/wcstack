@@ -23,6 +23,7 @@
       "hooks.ts",
       "messages.ts",
       "parser/define.ts",
+      "parser/parseBindTextsForElement.ts",
       "parser/raiseError.ts",
       "pattern.ts",
       "trustedTypes.ts"

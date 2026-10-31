@@ -823,8 +823,7 @@ getter はコピーを返しますが、書き込みは両側に届きます。�
 
 ```
 [@wcstack/state] [wcs/binding-type-expectation] "for: count" needs an array, not a number (3): it renders
-no rows. Write an array there (null or undefined renders none, on purpose). Validate statically:
-npx @wcstack/lint <file>.
+no rows (null and undefined render none on purpose). Validate statically: npx @wcstack/lint <file>.
 ```
 
 見るのは、リストの最初の値、配列を置き換えた後の値、そして行の外の `for:` では後のすべての値です。行の中のリストで、`null` が後から配列でない値に置き換わったものは見ません。lint は、値の型が見えるところ —— state のリテラルなど —— で同じ誤りを同じコードで報告します（`stateSchema` があれば `wcs/path-type-mismatch`）。後から `createStateAsync` で書かれた値や fetch の値は見えません。
@@ -2683,7 +2682,7 @@ class MyChip extends HTMLElement {
 
 - 3.x はプロパティの後に属性にも書いていました（`String(value)`、オブジェクトは JSON）。setter で反映する要素は影響を受けません。setter を持たず、binder が属性を書くことに頼っていた要素には、setter が要ります（移行ガイド §3.4）。
 - ネイティブ HTML 要素は `inputs` を完全に無視します —— 宣言が効くのは `static wcBindable` を公開するカスタム要素だけです。
-- **カスタム要素の束縛は、wc-bindable のメンバーに限らず、すべてその要素の定義を待ちます**: どんな名前のプロパティの束縛も（`textContent:`、`text:`、`title:`、`value:` …）、スプレッドも、`command.` と `eventToken.` も。要素を定義するレジストリで `customElements.whenDefined(tag)` が解決するまで、どれも当たりません: 未定義の `<my-badge data-wcs="attr.cat: cat; textContent: label">` は、`cat` 属性は付き、中身は空のままです。定義の有無に関わらずすぐに当たるのは、`attr.*`、`class.*`、`style.*`、`html:` / `innerHTML:`、`radio:` / `checkbox:` と、`on*:` のリスナーです。待つ時間に限りは無いので、来ない定義 —— ページが読み込まなかったスクリプト（`@wcstack/upload/auto` の書き忘れ）、失敗した autoloader のパス —— は、それらの束縛をエラー無しに当たらないままにします。4.11（未リリース）から、`diagnostics` アドオンがそれを報告します: ページの `load` から 5 秒後（state の `$connectedCallback` がそれより後なら、その 5 秒後）に、`<wcs-state>` がバインドするルートを 1 回見て、そうした束縛を持ちまだ定義されていない要素を、タグごとに 1 回警告します —— `[wcs/element-undefined]`。`wcs-*` のタグには読み込むパッケージ（`@wcstack/upload/auto`）を、ほかのタグにはそれを定義するスクリプトを示します。見るのはページの要素と、その時点で描かれている `for:` / `if:` の行と枝です。後から加わった要素と、コンポーネント自身の state が描く行は見ません。
+- **カスタム要素の束縛は、wc-bindable のメンバーに限らず、すべてその要素の定義を待ちます**: どんな名前のプロパティの束縛も（`textContent:`、`text:`、`title:`、`value:` …）、スプレッドも、`command.` と `eventToken.` も。要素を定義するレジストリで `customElements.whenDefined(tag)` が解決するまで、どれも当たりません: 未定義の `<my-badge data-wcs="attr.cat: cat; textContent: label">` は、`cat` 属性は付き、中身は空のままです。定義の有無に関わらずすぐに当たるのは、`attr.*`、`class.*`、`style.*`、`html:` / `innerHTML:`、`radio:` / `checkbox:` と、`on*:` のリスナーです。待つ時間に限りは無いので、来ない定義 —— ページが読み込まなかったスクリプト（`@wcstack/upload/auto` の書き忘れ）、失敗した autoloader のパス —— は、それらの束縛をエラー無しに当たらないままにします。4.11（未リリース）から、`diagnostics` アドオンがそれを報告します: ページがそろってから —— `load`、または state の `$connectedCallback` がそれより後ならその時点から —— 5 秒後に、`<wcs-state>` がバインドするルートを 1 回見て、そうした束縛を持ちまだ定義されていない要素を、タグごとに 1 回警告します（`[wcs/element-undefined]`）。`wcs-*` のタグには、それを定義する wcstack のパッケージ（の `/auto`）を読み込むよう言いますが、パッケージの名前は挙げません —— `wcs-<名前>` が `@wcstack/<名前>` とは限らないからです（`<wcs-ws>` は `@wcstack/websocket`、`<wcs-link>` は router）。ほかのタグには、それを定義するスクリプトを読み込むよう言います。見るのはページの要素と、その時点で描かれている `for:` / `if:` の行と枝です。後から加わった要素と、コンポーネント自身の state が描く行は見ません。
 - `for:` の行と `if:` の枝は、挿入する前にバインドします。その中のカスタム要素は、`connectedCallback` が走る前に入力（`element.value = …`）を受け取ります。ページの直下では、要素は先に接続されています。既定値から描く `connectedCallback` は、setter が受け取ったものを上書きします —— 今のプロパティから描いてください（外部の評価では、金額欄が、まだ採用していない入力をこれで失いました。ページを 3.x から 4.0 に上げたときです）。もう 1 つの早い書き込み、要素が定義される前に代入されたプロパティは、[I/O ノードのガイドライン](../../docs/async-io-node-guidelines.ja.md)の `upgradeProperties` の手順が扱います。
 
 ## コンポーネント機構の選び方

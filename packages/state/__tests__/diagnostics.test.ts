@@ -548,7 +548,7 @@ describe("束ねた要素が定義されないまま（wcs/element-undefined —
     expect(said()).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(said()).toEqual([
-      "[@wcstack/state] [wcs/element-undefined] <hr-cat-badge> is still not defined 5 s after the page loaded, and its bindings wait for the definition: its property bindings (textContent: and title: too), spreads, commands and event tokens are not applied until it comes — attr.*, class.*, style.* and on*: are applied at once. Load the script that defines it.",
+      "[@wcstack/state] [wcs/element-undefined] <hr-cat-badge> is not defined 5 s after the page was ready; its bindings wait for it (property bindings, textContent: included, spreads, commands, event tokens — attr.*, class.*, style.* and on*: apply at once). Load the script that defines it.",
     ]);
     // 別のルートの同じタグは言い直さない
     await bound(`<hr-cat-badge data-wcs="title: label"></hr-cat-badge>`, { label: "x" });
@@ -556,29 +556,35 @@ describe("束ねた要素が定義されないまま（wcs/element-undefined —
     expect(said()).toHaveLength(1);
   });
 
-  it("wcstack のタグは、定義するパッケージの /auto を名指す（wcs-<名前> とパッケージの名前が違うタグも）", async () => {
+  it("wcstack のタグには、それを定義するパッケージ（の /auto）を読み込むよう言う。パッケージの名前は推測しない（wcs-ws は @wcstack/websocket — lint が言う）", async () => {
     await bound(
       `<wcs-upload data-wcs="...: upload"></wcs-upload><wcs-ws data-wcs="command.send: $command.send"></wcs-ws>`
       + `<wcs-link data-wcs="eventToken.click: go"></wcs-link><wcs-upload-header data-wcs="value: token"></wcs-upload-header>`,
       { upload: {}, token: "t", $commandTokens: ["send"], $eventTokens: ["go"] },
     );
     await vi.advanceTimersByTimeAsync(5000);
-    expect(said().map((w) => /Load (\S+),/.exec(w)![1])).toEqual(["@wcstack/upload/auto", "@wcstack/websocket/auto", "@wcstack/router/auto", "@wcstack/upload/auto"]);
-    expect(said()[0]).toContain("Load @wcstack/upload/auto, the wcstack package that defines it.");
+    expect(said().map((w) => /<([\w-]+)>/.exec(w)![1])).toEqual(["wcs-upload", "wcs-ws", "wcs-link", "wcs-upload-header"]);
+    for (const w of said()) expect(w).toMatch(/\. Load the wcstack package that defines it \(its \/auto\)\.$/);
+    // (no package named after the "[@wcstack/state]" prefix)
+    expect(said().map((w) => w.slice("[@wcstack/state] ".length)).join("\n")).not.toContain("@wcstack/");
   });
 
   it("すぐに当たる束縛だけの要素・束縛の無い要素・data-wcs-ignore の中・定義された要素・その要素のレジストリが定義するタグは知らせない", async () => {
     customElements.define("diag-defined-el", class extends HTMLElement {});
     const { root } = await bound(
-      `<only-at-once data-wcs="attr.x: a; class.on: b; style.color: c; onclick: f; html: h; innerHTML: h"></only-at-once>`
+      `<only-at-once data-wcs="attr.x: a; class.on: b; style.color: c; onclick: f; html: h; innerHTML: h; radio: a"></only-at-once>`
+      // (the page walk's parser: a ";" inside a quoted filter argument does not end the binding)
+      + `<quoted-el data-wcs="class.on: a|eq('x;textContent: y')"></quoted-el>`
       + `<no-bindings></no-bindings><div data-wcs-ignore><ignored-el data-wcs="textContent: a"></ignored-el></div>`
-      + `<diag-defined-el data-wcs="title: a"></diag-defined-el><scoped-el></scoped-el>`,
+      + `<diag-defined-el data-wcs="title: a"></diag-defined-el><scoped-el></scoped-el><unparsable-el></unparsable-el>`,
       { a: "a", b: true, c: "red", h: "<b>h</b>", f() {} },
     );
     // a scoped registry (attachShadow({ customElementRegistry })) that defines it: state waits there, not on the global one
     const scoped = root.querySelector("scoped-el")!;
     scoped.setAttribute("data-wcs", "textContent: a");
     Object.defineProperty(scoped, "customElementRegistry", { value: { get: () => class extends HTMLElement {} } });
+    // a data-wcs that does not parse failed the page walk: nothing of it was bound (written here after the walk)
+    root.querySelector("unparsable-el")!.setAttribute("data-wcs", "textContent");
     await vi.advanceTimersByTimeAsync(5000);
     expect(said()).toEqual([]);
   });
@@ -612,7 +618,7 @@ describe("束ねた要素が定義されないまま（wcs/element-undefined —
     expect(said()).toEqual([]);
     window.dispatchEvent(new Event("load"));
     await vi.advanceTimersByTimeAsync(5000);
-    expect(said()).toEqual([expect.stringContaining("<late-chip> is still not defined")]);
+    expect(said()).toEqual([expect.stringContaining("<late-chip> is not defined 5 s after the page was ready")]);
     document.documentElement.setAttribute("data-wcs-server", "");
     try {
       await bound(`<server-chip data-wcs="textContent: a"></server-chip>`, { a: "a" });
@@ -634,7 +640,7 @@ describe("for: が配列でない値を回す（wcs/binding-type-expectation —
       { count: 3, groups: [{ items: "abc" }, { items: "def" }], page: { items: [1] }, none: null, nothing: undefined, empty: [] },
     ));
     expect(got).toEqual([
-      '[@wcstack/state] [wcs/binding-type-expectation] "for: count" needs an array, not a number (3): it renders no rows. Write an array there (null or undefined renders none, on purpose). Validate statically: npx @wcstack/lint <file>.',
+      '[@wcstack/state] [wcs/binding-type-expectation] "for: count" needs an array, not a number (3): it renders no rows (null and undefined render none on purpose). Validate statically: npx @wcstack/lint <file>.',
       expect.stringContaining('"for: groups.*.items" needs an array, not a string ("abc")'),
       expect.stringContaining('"for: page" needs an array, not an object'),
     ]);
