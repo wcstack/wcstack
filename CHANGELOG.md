@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.11.0] — 2026-11-01
+
+The ninth minor under the 4.x direction, that nothing fails without a word, and the fourth of its second round of seam apps ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §3.2): `homeroom`, a class's notice board written on 4.2.0 and upgraded two weeks later to 4.10.1 by the same author, from the CHANGELOG, the release notes, the READMEs and the skill ([docs/seam-apps.md](./docs/seam-apps.md)). A page written right did not change: changing the versions alone failed one check, a correct new lint warning. But seven of its ten workarounds had become unnecessary — said only under Added / Fixed, across five releases — and two did harm when kept; of 12 upgrade mistakes made on purpose, 4 told nothing, and an old `<script>` left before the new one ran the old engine without a word. This release warns about a second copy of a package, a bound element whose definition never comes, a `wcs-*` tag whose package the page does not load and a lint older than the page; adds a guide to upgrading within 4.x ([docs/upgrading-4x.md](./docs/upgrading-4x.md)); and moves `@wcstack/server` to a `happy-dom` without its high advisories. The author's four decisions are in v4-direction §5.11.
 
 ### Upgrading
 
