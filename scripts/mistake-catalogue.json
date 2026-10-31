@@ -222,11 +222,17 @@
     {
       "id": "for-not-array",
       "lint": [{ "code": "wcs/path-type-mismatch", "severity": "error" }, { "code": "wcs/binding-type-expectation", "severity": "error" }],
-      "runtime": "silent", "harm": "wrong-place",
+      "runtime": "loud", "harm": "wrong-place",
       "mistake": { "en": "Puts `for:` on a value that is not an array.", "ja": "配列でない値に `for:` を付ける。" },
-      "effect": { "en": "Anything but an array renders as an empty list, without a word.", "ja": "配列以外は、何も言わずに空の一覧として描かれる。" },
-      "disposition": "runtime-report",
-      "note": { "en": "The diagnostics add-on can check each list's first value; later values need one hook call in `reconcile`.", "ja": "diagnostics の後付けが各一覧の最初の値を調べられる。後の値には `reconcile` にフックの呼び出しが 1 つ要る。" }
+      "effect": { "en": "Anything but an array renders as an empty list. Since 4.11 the diagnostics add-on warns once per list path (`null` and `undefined` render none on purpose): the first value, and later ones but for a list inside a row that goes from `null` to a non-array, which no hook sees (one hook call in the core would). The homeroom seam app wrote a number through `createStateAsync`, where the lint does not look.", "ja": "配列以外は空の一覧として描かれる。4.11 から diagnostics の後付けが一覧のパスごとに 1 回警告する（`null` と `undefined` は意図して何も描かない）: 最初の値と後の値 — ただし行の中の一覧が `null` から配列でない値に変わるものは、どのフックも見ない（core にフックの呼び出しが 1 つあれば見える）。継ぎ目アプリ homeroom は lint の見ない `createStateAsync` から数を書いた。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "needs an array, not" }]
+    },
+    {
+      "id": "element-never-defined",
+      "runtime": "loud", "harm": "broken",
+      "mistake": { "en": "Binds a custom element whose definition never comes: its script is not loaded, or fails (a component file that 404s).", "ja": "定義の来ないカスタム要素に束縛を付ける: スクリプトを読み込んでいない、または読み込みに失敗する（404 の部品のファイル）。" },
+      "effect": { "en": "Every binding but `attr.*`, `class.*`, `style.*` and `on*:` waits for the definition — `textContent:` and `title:` too — so the text stays empty and nothing happens. Since 4.11 the diagnostics add-on warns once per tag 5 s after the page is ready (`[wcs/element-undefined]`), for the page's elements and the rows and branches drawn then. The homeroom seam app's badges were blank until their component arrived; a `<wcs-upload>` whose package was not loaded hung on Save.", "ja": "`attr.*`・`class.*`・`style.*`・`on*:` 以外の束縛は定義を待つ — `textContent:` と `title:` も — ので、文は空のまま何も起きない。4.11 から diagnostics の後付けが、ページの準備ができてから 5 秒後にタグごとに 1 回警告する（`[wcs/element-undefined]`）。対象はページの要素と、そのとき描かれている行と枝。継ぎ目アプリ homeroom のバッジは部品が届くまで空で、パッケージを読み込まなかった `<wcs-upload>` は保存で止まった。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/element-undefined]" }]
     },
     {
       "id": "class-not-boolean",
