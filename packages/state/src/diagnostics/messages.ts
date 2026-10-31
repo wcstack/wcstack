@@ -32,8 +32,8 @@ export const codeOf = (id: M): string => {
 const MOVED = ["enableMustache", "sameValueGuard", "enableDirectionalInitialSync"];
 
 /** `<tag a="v" …>` from the tag and its attributes' names and values. */
-/** What a value given to a filter was (`a string ("2026-10-13T…")`), for the type messages. */
-const was = (v: unknown): string =>
+/** What a value given to a filter (or a `for:`) was (`a string ("2026-10-13T…")`), for the type messages. */
+export const was = (v: unknown): string =>
   v == null ? String(v)
     : v instanceof Date ? "a Date"
       : Array.isArray(v) ? "an array"

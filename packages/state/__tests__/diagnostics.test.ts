@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi, type MockInstance } from "vitest";
 import { bootstrapState, DirtyStrategy, Engine, getBindingsReady, installFeatures, diagnostics, recursion, scopes, temporal } from "../src/index";
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -512,5 +512,178 @@ describe("空のオブジェクトの種（docs/seam-apps.md、family-ledger の
   it("キーのあるオブジェクトの下の誤字は今までどおり警告する", async () => {
     const got = await warnings(() => page(`<p>{{ fieldErrors.dat }}</p>`, { fieldErrors: { date: "" } }));
     expect(got).toEqual([expect.stringContaining('Bound path "fieldErrors.dat" does not resolve')]);
+  });
+});
+
+describe("束ねた要素が定義されないまま（wcs/element-undefined — docs/seam-apps.md、homeroom）", () => {
+  /** page() without the macrotask flushes: setTimeout is faked in these tests. */
+  async function bound(html: string, state: Record<string, any>) {
+    const h = document.createElement(`diag-test-${seq++}`);
+    const root = h.attachShadow({ mode: "open" });
+    root.innerHTML = `<wcs-state></wcs-state>${html}`;
+    const el = root.querySelector("wcs-state") as any;
+    el.setInitialState(state);
+    document.body.appendChild(h);
+    await el.connectedCallbackPromise;
+    return { root, el };
+  }
+  let warn: MockInstance<typeof console.warn>;
+  const said = () => warn.mock.calls.map((c) => String(c[0])).filter((w) => w.includes("element-undefined"));
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    warn.mockRestore();
+  });
+
+  it("ページの読み込みから 5 秒たっても定義されない要素を、タグごとに 1 回知らせる。attr.* はすぐに当たり、textContent: は定義を待つ", async () => {
+    const { root } = await bound(`<hr-cat-badge data-wcs="attr.cat: cat; textContent: label"></hr-cat-badge><hr-cat-badge data-wcs="textContent: label"></hr-cat-badge>`, { cat: "a", label: "Alpha" });
+    const badge = root.querySelector("hr-cat-badge")!;
+    expect(badge.getAttribute("cat")).toBe("a");
+    expect(badge.textContent).toBe("");
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(said()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(said()).toEqual([
+      "[@wcstack/state] [wcs/element-undefined] <hr-cat-badge> is not defined 5 s after the page was ready; its bindings wait for it (property bindings, textContent: included, spreads, commands, event tokens — attr.*, class.*, style.* and on*: apply at once). Load the script that defines it.",
+    ]);
+    // 別のルートの同じタグは言い直さない
+    await bound(`<hr-cat-badge data-wcs="title: label"></hr-cat-badge>`, { label: "x" });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said()).toHaveLength(1);
+  });
+
+  it("wcstack のタグには、それを定義するパッケージ（の /auto）を読み込むよう言う。パッケージの名前は推測しない（wcs-ws は @wcstack/websocket — lint が言う）", async () => {
+    await bound(
+      `<wcs-upload data-wcs="...: upload"></wcs-upload><wcs-ws data-wcs="command.send: $command.send"></wcs-ws>`
+      + `<wcs-link data-wcs="eventToken.click: go"></wcs-link><wcs-upload-header data-wcs="value: token"></wcs-upload-header>`,
+      { upload: {}, token: "t", $commandTokens: ["send"], $eventTokens: ["go"] },
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said().map((w) => /<([\w-]+)>/.exec(w)![1])).toEqual(["wcs-upload", "wcs-ws", "wcs-link", "wcs-upload-header"]);
+    for (const w of said()) expect(w).toMatch(/\. Load the wcstack package that defines it \(its \/auto\)\.$/);
+    // (no package named after the "[@wcstack/state]" prefix)
+    expect(said().map((w) => w.slice("[@wcstack/state] ".length)).join("\n")).not.toContain("@wcstack/");
+  });
+
+  it("すぐに当たる束縛だけの要素・束縛の無い要素・data-wcs-ignore の中・定義された要素・その要素のレジストリが定義するタグは知らせない", async () => {
+    customElements.define("diag-defined-el", class extends HTMLElement {});
+    const { root } = await bound(
+      `<only-at-once data-wcs="attr.x: a; class.on: b; style.color: c; onclick: f; html: h; innerHTML: h; radio: a"></only-at-once>`
+      // (the page walk's parser: a ";" inside a quoted filter argument does not end the binding)
+      + `<quoted-el data-wcs="class.on: a|eq('x;textContent: y')"></quoted-el>`
+      + `<no-bindings></no-bindings><div data-wcs-ignore><ignored-el data-wcs="textContent: a"></ignored-el></div>`
+      + `<diag-defined-el data-wcs="title: a"></diag-defined-el><scoped-el></scoped-el><unparsable-el></unparsable-el>`,
+      { a: "a", b: true, c: "red", h: "<b>h</b>", f() {} },
+    );
+    // a scoped registry (attachShadow({ customElementRegistry })) that defines it: state waits there, not on the global one
+    const scoped = root.querySelector("scoped-el")!;
+    scoped.setAttribute("data-wcs", "textContent: a");
+    Object.defineProperty(scoped, "customElementRegistry", { value: { get: () => class extends HTMLElement {} } });
+    // a data-wcs that does not parse failed the page walk: nothing of it was bound (written here after the walk)
+    root.querySelector("unparsable-el")!.setAttribute("data-wcs", "textContent");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said()).toEqual([]);
+  });
+
+  it("for: の行・if: の枝の中の要素も見る（行の要素から data-wcs は外れている — 計画から探す）", async () => {
+    await bound(
+      `<ul><template data-wcs="for: items"><li><row-chip data-wcs="textContent: .name"></row-chip></li></template></ul>`
+      + `<ol><template data-wcs="for: items"><li data-wcs="textContent: .name"></li></template></ol>`
+      + `<template data-wcs="if: show"><section><template data-wcs="for: items"><nested-chip data-wcs="title: .name"></nested-chip></template></section></template>`
+      + `<template data-wcs="if: show"><p></p></template><template data-wcs="else:"><hidden-chip data-wcs="title: label"></hidden-chip></template>`
+      + `<template data-wcs="for: items"><event-chip data-wcs="onclick: f"></event-chip></template>`
+      + `<template data-wcs="for: others"><template data-wcs="if: .on"><if-chip data-wcs="title: .name"></if-chip></template></template>`
+      // (a list no for: renders: an index path's)
+      + `<p>{{ picks.0.name }}</p>`,
+      { items: [{ name: "a" }], others: [{ on: true, name: "b" }], picks: [{ name: "p" }], show: true, label: "l", f() {} },
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    // (the else branch is not rendered; an event is attached at once)
+    expect(said().map((w) => /<([\w-]+)>/.exec(w)![1])).toEqual(["row-chip", "nested-chip", "if-chip"]);
+  });
+
+  it("見る前に外した状態は見ない（タイマーは状態を弱くしか持たない — 外した状態を生かさない: e2e/tests/state-address-gc.spec.ts）", async () => {
+    const { root } = await bound(`<gone-chip data-wcs="textContent: a"></gone-chip>`, { a: "a" });
+    (root.host as Element).remove();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said()).toEqual([]);
+  });
+
+  it("ページの読み込みの前につながった状態は、load の 5 秒後に見る。サーバーの描画では見ない", async () => {
+    Object.defineProperty(document, "readyState", { configurable: true, get: () => "loading" });
+    try {
+      await bound(`<late-chip data-wcs="textContent: a"></late-chip>`, { a: "a" });
+    } finally {
+      delete (document as any).readyState;
+    }
+    expect(document.readyState).toBe("complete");
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(said()).toEqual([]);
+    window.dispatchEvent(new Event("load"));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said()).toEqual([expect.stringContaining("<late-chip> is not defined 5 s after the page was ready")]);
+    document.documentElement.setAttribute("data-wcs-server", "");
+    try {
+      await bound(`<server-chip data-wcs="textContent: a"></server-chip>`, { a: "a" });
+    } finally {
+      document.documentElement.removeAttribute("data-wcs-server");
+    }
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said()).toHaveLength(1);
+  });
+});
+
+describe("for: が配列でない値を回す（wcs/binding-type-expectation — docs/seam-apps.md、homeroom）", () => {
+  it("最初の値が数・文字列・オブジェクトなら、リストのパスごとに 1 回知らせる（行の中のリストも）。null・undefined・空の配列は黙る", async () => {
+    const got = await warnings(() => page(
+      `<ul><template data-wcs="for: count"><li>{{ . }}</li></template></ul><ul><template data-wcs="for: count"><li>{{ . }}</li></template></ul>`
+      + `<template data-wcs="for: groups"><template data-wcs="for: .items"><i>{{ . }}</i></template></template>`
+      + `<template data-wcs="for: page"><b>{{ . }}</b></template>`
+      + `<template data-wcs="for: none"><b>{{ . }}</b></template><template data-wcs="for: nothing"><b>{{ . }}</b></template><template data-wcs="for: empty"><b>{{ . }}</b></template>`,
+      { count: 3, groups: [{ items: "abc" }, { items: "def" }], page: { items: [1] }, none: null, nothing: undefined, empty: [] },
+    ));
+    expect(got).toEqual([
+      '[@wcstack/state] [wcs/binding-type-expectation] "for: count" needs an array, not a number (3): it renders no rows (null and undefined render none on purpose). Validate statically: npx @wcstack/lint <file>.',
+      expect.stringContaining('"for: groups.*.items" needs an array, not a string ("abc")'),
+      expect.stringContaining('"for: page" needs an array, not an object'),
+    ]);
+  });
+
+  it("後から書かれた値も見る: 配列を置き換えた値、null を置き換えた値（行の外のリスト）", async () => {
+    const { el } = await page(
+      `<template data-wcs="for: items"><b>{{ . }}</b></template><template data-wcs="for: later"><b>{{ . }}</b></template>`,
+      { items: [1, 2], later: null },
+    );
+    const got = await warnings(async () => {
+      el.createState("writable", (s: any) => { s.items = 5; s.later = { rows: [] }; });
+      await flush();
+      el.createState("writable", (s: any) => { s.items = 6; });
+      await flush();
+    });
+    expect(got).toEqual([
+      expect.stringContaining('"for: items" needs an array, not a number (5)'),
+      expect.stringContaining('"for: later" needs an array, not an object'),
+    ]);
+  });
+
+  it("for: の無いリスト（オブジェクトへの添字のパス）は知らせない。読めなくなったリストは束縛の失敗として報告されるだけ", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { el } = await page(`<p>{{ sales.2024.total }}</p><template data-wcs="for: rows"><b>{{ . }}</b></template>`, {
+        sales: { 2024: { total: 10 } }, bad: false,
+        get rows() { if (this.bad) throw new Error("boom"); return []; },
+      });
+      const got = await warnings(async () => {
+        el.createState("writable", (s: any) => { s.bad = true; });
+        await flush();
+      });
+      expect(got.filter((w) => w.includes("binding-type-expectation"))).toEqual([]);
+    } finally {
+      error.mockRestore();
+    }
   });
 });

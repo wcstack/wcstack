@@ -773,7 +773,7 @@ export default {
 - spread 右辺へのフィルタ（`...: target|filter`）はエラー
 - 右辺パスの途中に `*` を含めても OK（例：`...: stores.*.fetch`）
 - 右辺は素のツリーパス（`...: fetchX`、途中の `*` も可）
-- カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）。`for:` / `if:` のテンプレートの中でも同じ — 行や枝はすぐに描かれ、クラスが定義されたらそれぞれの行の要素をその行の値で展開する。定義前に消えた行・閉じた枝は展開せず、何も生かし続けない。待つのはその要素を定義するレジストリ —— 要素が置かれた shadow root のスコープ付きレジストリも含む
+- カスタム要素クラスが未登録の場合、`customElements.whenDefined(tag)` 解決時に遅延展開される（autoloader による遅延ロードに対応）。`for:` / `if:` のテンプレートの中でも同じ — 行や枝はすぐに描かれ、クラスが定義されたらそれぞれの行の要素をその行の値で展開する。定義前に消えた行・閉じた枝は展開せず、何も生かし続けない。待つのはその要素を定義するレジストリ —— 要素が置かれた shadow root のスコープ付きレジストリも含む。待つ時間に限りは無い: 定義が来なければ、スプレッドはエラー無しに展開されないまま —— 4.11（未リリース）から、`diagnostics` アドオンがそれを報告する（[カスタム要素の束縛はすべて定義を待つ](#inputs-と-attribute-ヒント)）
 - `wcBindable` 宣言**のない**要素はエラー（`[wcs/spread-no-bindable]`。明示配線で書いてください）— ネイティブ要素は定義を待たずに即座にエラーになる。spread は何を展開すべきかを契約から読み取るため
 
 **Composite shell**（wc-bindable Composition Profile）はそのままサポートされます：composite shell は標準の `target.constructor.wcBindable` を通じて synthesized declaration を露出するため、`"s3.progress"` のような composed name はフラットな要素メンバーキーとして扱われます。state を composed 構造に合わせて (`{ s3: { progress: 0 } }`) 持てば、`...: pipeline` が自動的に nested state path へ展開されます。
@@ -826,6 +826,15 @@ export default {
 ```
 
 getter はコピーを返しますが、書き込みは両側に届きます。元のパスを通した書き込み（`this["items.1.name"] = "z"`）はコピー側の行に、行を通した書き込み（`firstTwo.1.name`、または行の中のバインディング）は元のリストの行に届きます。getter の配列が書いたオブジェクトを持つので、getter は評価し直されます —— 絞り込み（`todos` の未完了の要素を返す `get shown()` を `for: shown` で描画する場合）なら、チェックボックスが `.done` を書いた行は表示から抜けます。新しいオブジェクトを返す getter（`map`）は、こうした書き込みでは評価し直しません。届かない場合は [同じオブジェクトが 2 つの位置にあるとき](#resolve--明示的なインデックスでのアクセス) を参照してください。
+
+**`for:` が取るのは配列です。** それ以外の値 —— 数、文字列、オブジェクト（`items` を渡すつもりだった応答 `{ items: [...] }`）—— は行を 1 つも描かず、何も失敗しません。`null` と `undefined` は意図して何も描きません: 後から届くリストです。4.11（未リリース）から、`diagnostics` アドオンは、配列でも `null` / `undefined` でもない値を、リストのパスごとに 1 回警告します:
+
+```
+[@wcstack/state] [wcs/binding-type-expectation] "for: count" needs an array, not a number (3): it renders
+no rows (null and undefined render none on purpose). Validate statically: npx @wcstack/lint <file>.
+```
+
+見るのは、リストの最初の値、配列を置き換えた後の値、そして行の外の `for:` では後のすべての値です。行の中のリストで、`null` が後から配列でない値に置き換わったものは見ません。lint は、値の型が見えるところ —— state のリテラルなど —— で同じ誤りを同じコードで報告します（`stateSchema` があれば `wcs/path-type-mismatch`）。後から `createStateAsync` で書かれた値や fetch の値は見えません。
 
 #### `$listKeys` — 再取得された行の同一性
 
@@ -2179,7 +2188,7 @@ class MyFetcher extends HTMLElement {
 - `methodName` は `wcBindable.commands` に（`name` で）現れること（ネイティブ要素では [ネイティブ要素のコマンド](#ネイティブ要素のコマンド) の表にあること）
 - `<tokenName>` は `$commandTokens` で宣言されていること（`$command.typo` は `[wcs/token-undeclared]` を throw する）
 
-カスタム要素はクラスが定義された時点で検査され、ネイティブ要素はその場で検査されます —— アドオンが入っていれば（`@wcstack/state` と `/auto` には含まれています）[native-commands](#ネイティブ要素のコマンド) の表と照合し、入っていなければ拒否します（`[wcs/token-misconfigured]` `#1202`）。ページのバインド中に見つかった違反は `<wcs-state>` の初期化を失敗させます。`for:` / `if:` の行の中で見つかった違反や、ページのバインド後にクラスが定義されて見つかった違反は、そのバインディング 1 本の失敗として `$errorCallback` に届き、行はそのまま構築されます（[初期化の失敗](#初期化の失敗)）。
+カスタム要素はクラスが定義された時点で検査され（それまでメソッドは購読されず、定義が来なければ購読されないままです —— [カスタム要素の束縛はすべて定義を待つ](#inputs-と-attribute-ヒント)）、ネイティブ要素はその場で検査されます —— アドオンが入っていれば（`@wcstack/state` と `/auto` には含まれています）[native-commands](#ネイティブ要素のコマンド) の表と照合し、入っていなければ拒否します（`[wcs/token-misconfigured]` `#1202`）。ページのバインド中に見つかった違反は `<wcs-state>` の初期化を失敗させます。`for:` / `if:` の行の中で見つかった違反や、ページのバインド後にクラスが定義されて見つかった違反は、そのバインディング 1 本の失敗として `$errorCallback` に届き、行はそのまま構築されます（[初期化の失敗](#初期化の失敗)）。
 
 ### Token API
 
@@ -2681,6 +2690,7 @@ class MyChip extends HTMLElement {
 
 - 3.x はプロパティの後に属性にも書いていました（`String(value)`、オブジェクトは JSON）。setter で反映する要素は影響を受けません。setter を持たず、binder が属性を書くことに頼っていた要素には、setter が要ります（移行ガイド §3.4）。
 - ネイティブ HTML 要素は `inputs` を完全に無視します —— 宣言が効くのは `static wcBindable` を公開するカスタム要素だけです。
+- **カスタム要素の束縛は、wc-bindable のメンバーに限らず、すべてその要素の定義を待ちます**: どんな名前のプロパティの束縛も（`textContent:`、`text:`、`title:`、`value:` …）、スプレッドも、`command.` と `eventToken.` も。要素を定義するレジストリで `customElements.whenDefined(tag)` が解決するまで、どれも当たりません: 未定義の `<my-badge data-wcs="attr.cat: cat; textContent: label">` は、`cat` 属性は付き、中身は空のままです。定義の有無に関わらずすぐに当たるのは、`attr.*`、`class.*`、`style.*`、`html:` / `innerHTML:`、`radio:` / `checkbox:` と、`on*:` のリスナーです。待つ時間に限りは無いので、来ない定義 —— ページが読み込まなかったスクリプト（`@wcstack/upload/auto` の書き忘れ）、失敗した autoloader のパス —— は、それらの束縛をエラー無しに当たらないままにします。4.11（未リリース）から、`diagnostics` アドオンがそれを報告します: ページがそろってから —— `load`、または state の `$connectedCallback` がそれより後ならその時点から —— 5 秒後に、`<wcs-state>` がバインドするルートを 1 回見て、そうした束縛を持ちまだ定義されていない要素を、タグごとに 1 回警告します（`[wcs/element-undefined]`）。`wcs-*` のタグには、それを定義する wcstack のパッケージ（の `/auto`）を読み込むよう言いますが、パッケージの名前は挙げません —— `wcs-<名前>` が `@wcstack/<名前>` とは限らないからです（`<wcs-ws>` は `@wcstack/websocket`、`<wcs-link>` は router）。ほかのタグには、それを定義するスクリプトを読み込むよう言います。見るのはページの要素と、その時点で描かれている `for:` / `if:` の行と枝です。後から加わった要素と、コンポーネント自身の state が描く行は見ません。
 - `for:` の行と `if:` の枝は、挿入する前にバインドします。その中のカスタム要素は、`connectedCallback` が走る前に入力（`element.value = …`）を受け取ります。ページの直下では、要素は先に接続されています。既定値から描く `connectedCallback` は、setter が受け取ったものを上書きします —— 今のプロパティから描いてください（外部の評価では、金額欄が、まだ採用していない入力をこれで失いました。ページを 3.x から 4.0 に上げたときです）。もう 1 つの早い書き込み、要素が定義される前に代入されたプロパティは、[I/O ノードのガイドライン](../../docs/async-io-node-guidelines.ja.md)の `upgradeProperties` の手順が扱います。
 
 ## コンポーネント機構の選び方
@@ -2901,6 +2911,8 @@ export default {
   ```
 
   フックはバッチの後（`$renderedCallback` の後）に走り、await されず、フック内で throw しても console に報告されるだけで drain は壊れません。DevTools にはフックの有無に関わらず全失敗が `state:binding-apply-error` として届きます。ボリューム（`<wcs-state mount>`）は実行しません（`console.warn`）。マウントされたコンポーネントのフックは、そのコンポーネント自身のバインディングの失敗を受け取ります。`$watch` ハンドラの失敗（別途隔離・報告）、throw した `$renderedCallback`（`console.error` で報告）、失敗した `$connectedCallback`（[初期化の失敗](#初期化の失敗)）は対象外です。
+
+  4.7 から、エンジンが報告するエラーは `reportError()` を通ってページのエラーハンドラ（`window.onerror`、`error` リスナー）に届きます（[本番でのエラーの報告](#本番でのエラーの報告)）—— ただし `$errorCallback` を宣言した state のバインディングの失敗は別です: それはフックにだけ届き、ページのエラーハンドラには届きません。エラーの報告係にバインディングの失敗も見せたいページは、フックから渡します: `$errorCallback(error, { path }) { this.loadError = …; reportError(error); }`。（4.2 向けに書かれ、上の例のようにバインディングの失敗を描いていた state は、アップグレードの後、ページが頼っていたエラーの報告係から、その失敗をすべて遠ざけていました —— 継ぎ目アプリ `homeroom`。）
 - Web Component を使用している場合は、コンポーネント側に `async $stateReadyCallback(stateProp)` を定義おくことで、`bind-component` でバインドした状態が利用可能になった瞬間にフックとして呼び出されます。
 
 ## 遷移アニメーション
@@ -3176,7 +3188,7 @@ window.addEventListener("error", (e) => {
 });
 ```
 
-`$errorCallback` は、これまでどおり state のバインディングの失敗を代わりに受けます（描く、自分で報告する）。`reportError()` の無い環境 — happy-dom、Node、`@wcstack/server` — では、これまでどおり `console.error` です。警告は `console.warn` のままです。
+`$errorCallback` は、これまでどおり state のバインディングの失敗を代わりに受けます（描く、自分で報告する —— フックの中で `reportError(error)` を呼べば、ページのエラーハンドラにも渡ります）。`reportError()` の無い環境 — happy-dom、Node、`@wcstack/server` — では、これまでどおり `console.error` です。警告は `console.warn` のままです。
 
 ### 描画中の書き込みは無限ループになりません
 
