@@ -163,8 +163,30 @@ npm install @wcstack/fetch
 ```
 
 `true` を書き込んだ時点で `url` が空の場合（state 駆動の computed url が未確定など）、
-その書き込みは **黙って無視** されます。fetch は実行されず、`trigger` は `false` のまま、
-イベントも発火しません。先に `url` を設定してから改めて `true` を書き込んでください。
+その書き込みは **無視** されます。fetch は実行されず、`trigger` は `false` のまま、
+イベントも発火しません — 4.5 からは警告します（`[wcs/command-not-ready]`、[設計メモ](#設計メモ)）。
+先に `url` を設定してから改めて `true` を書き込んでください。
+
+**`trigger` が送るのは、trigger が当たった時点で要素が持っているもの**です: その時点の `url`・`method`・`body`
+と、中の `<wcs-fetch-header>` / `<wcs-fetch-body>`。1 回の更新の中で、`@wcstack/state` は束縛をパスを書いた順に
+当てます — 要素をまたいでも同じで、getter の束縛は、それが読む最初のパスを書いたところで当たります
+（[タイミング契約 §4.4](../../docs/timing-and-firing-contract.ja.md#44-1-回の更新の中では束縛はパスを書いた順に当たる)）。だからハンドラの中で書く順が、送られるものを決めます。
+ログアウトは、終わらせるトークンをまだ運ばなければなりません — trigger を先に書きます:
+
+```js
+// <wcs-fetch url="/api/logout" method="POST" manual data-wcs="trigger: logoutTrigger">
+//   <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+// </wcs-fetch>
+// get authHeader() { const t = this["session.token"]; return t ? "Bearer " + t : null; } とする
+logout() {
+  this.logoutTrigger = true; // ヘッダ付きで要求が出て…
+  this.session = null;       // …その後でヘッダが外れる
+},
+```
+
+逆の順（`this.session = null; this.logoutTrigger = true;`）では先にヘッダが外れ、ログアウトはヘッダなしで出ます:
+サーバーはセッションを終わらせられず、何も言いません。反対の場合は、ハンドラが書くものを要る要求です —
+`body`（や `url`）を先に、`trigger` を後に書きます。下の `submit()` がそうしています。
 
 ### 4. body 付きの POST
 
@@ -887,7 +909,7 @@ bootstrapFetch({
 - `value`、`loading`、`error`、`status`、`objectURL`、`errorInfo` は **出力ステート**
 - `url`、`body`、`response-type`、`trigger` は **入力 / コマンドサーフェス**
 - `response-type`（既定 `auto`）はレスポンスボディの読み取り方を選ぶ。`blob` は加えて管理された `objectURL`（新しいレスポンスごと / dispose 時に revoke）を発行する。`target`（HTML リプレースモード）が優先される
-- `trigger` は意図的に単方向: `true` を書き込むと実行、リセットで完了を通知。`url` が空のまま `true` を書き込んだ場合は無視される（fetch なし・イベントなし・フラグは `false` のまま）。4.5 から警告する（`[wcs/command-not-ready]`）。リクエストをまた送るまで 1 回（4.8 から。それまでは要素ごとに 1 回）。1 つの `data-wcs` では `trigger` を `url` の後に書くこと（束縛は書いた順に当たる）
+- `trigger` は意図的に単方向: `true` を書き込むと実行、リセットで完了を通知。`url` が空のまま `true` を書き込んだ場合は無視される（fetch なし・イベントなし・フラグは `false` のまま）。4.5 から警告する（`[wcs/command-not-ready]`）。リクエストをまた送るまで 1 回（4.8 から。それまでは要素ごとに 1 回）。1 つの `data-wcs` では `trigger` を `url` の後に書くこと（束縛は書いた順に当たる）。更新では、順はパスを書いた順で、要素をまたいでも同じ。`trigger` は当たった時点で要素が持つ入力・ヘッダ・本文を送る（[`trigger` による手動実行](#3-trigger-による手動実行)）
 - HTTP エラー時（status >= 400）は `value` が `null` にリセットされ、`status` にエラーコードが入る — `value` のみのバインドでは直前の値が消えるため、失敗検知には `error` をバインドする
 - ネットワークエラー時（HTTP レスポンスなし — DNS 失敗・オフライン・CORS など）は `value` が `null`、`status` が `0` にリセットされ、`error` に投げられた `Error` が入る。HTTP エラーと同様、直前の成功時の value/status は残らない
 - `method="HEAD"` は仕様上ボディを持たないためレスポンスボディの読取をスキップする。`value` は `null` のままで `status` のみ通知される
