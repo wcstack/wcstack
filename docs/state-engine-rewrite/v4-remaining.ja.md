@@ -1466,3 +1466,24 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.10.1 の公開（2026-10-31）
+
+- 中身: patch。city-library を examples/ に取り込んだとき（#570）に残った 3 件を、著者が 2026-10-31 に推奨どおりに決めた（v4-direction §5.10）。
+  - #572 view-transition: ページが最初のフレームを描くまで遷移を始めず、更新をその場で当てる（隠れたタブと同じ場所・同じ理由）。描いたかは Paint Timing の項目か、`install()` から見ている最初のフレーム（rAF の後のタスク）で知る。state の core は 0 B。新しい e2e `view-transition-first-paint` は 4.10.0 の dist で 10 回中 9 回落ちた（Chromium は Paint Timing の項目を描画より遅れて出すので、試験は rAF で判定する）。Playwright の headless shell は起動したブラウザの最初のページを描かない — 最初の rAF が 2,510 ms（Chromium 248 ms、2 ページ目から約 10 ms）。遷移を数える試験は、読み込み時の更新が始めた遷移で数を満たしていたので、1 フレーム待ってから操作するように直した（view-transition と city-library の spec）。
+  - #573 router: クエリ付きの `<wcs-link>` は、URL のクエリが等しいときだけ `aria-current="page"`。`match="prefix"` なら含むときも `"true"`（パスの「下」と同じ）。`page` を省いた 1 ページ目へのリンクがどのページでも現在のページだった。4.10.0 からの変更なので CHANGELOG の Upgrading に書いた。
+  - #574 文書: router の 2 つの時点（中身の前の `data` / `params` / `routeName` / `searchParams`、後の `path`）と、ビュー遷移の下で離れる 1 フレーム。router と view-transition の README（日英）、タイミング契約 §21.1（日本語版には §21 が無い）、v4-direction §5.10、seam-apps の結果の欄、city-library の README の制限。
+- CI の待ち: #574 の `release-plan` の check が、run は success で終わりジョブも完了しているのに `in_progress` のまま残り、上限なしの `gh pr checks --watch` が 3 本を順に待って止まった（著者の「CI 待ち長すぎない？」で気づいた）。以後の待ちには上限と、run の結論の確認を付けた。
+- マージ: 3 本とも CHANGELOG の `[Unreleased]` で衝突し、解いて順に入れた（main ab8f6e71）。組み合わせの確認: router と view-transition を src からビルドし、2 ワーカーで e2e 449/449。
+- 準備: PR #575（merge commit 17f7e5c7）。CHANGELOG を `[4.10.1] — 2026-10-31` として締め（要約と Upgrading 2 項目）、固定版 18 か所を 4.10.1 にした。#572 と #573 の README の `4.11 (not released yet)` は「since 4.10.1」に書き換えた — 印は minor ごとで、パッチのリリースは別の minor の印を拒む。
+- main で `patch`（run 41140463785）。成功した: 版を上げたコミット 2c1995f7、タグ `v4.10.1`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed・Documentation を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。最初の照合では最後に公開される `wcstack` がレジストリにまだ見えなかった — 反映を待って照合し直した。公開物に裁定者の最初のフレームの判定と `queryEquals` が入り、公開された README に未リリースの印は無い。
+- 公開後の作業（同日）:
+  - PR #576（merge commit e6f49b20）: サイズの基準値を 4.10.1 の dist で取り直した（state の src は変わっていないので版の文字列だけ — 分割の core 24,997 B、`core.min.js` は 20,237 B のまま、残り 243 B）。CLAUDE.md / AGENTS.md の版。拡張は出さない（lint と拡張の運ぶものは変わっていない）。
+  - wcstack-skill: PR #51（merge commit e51376d）で、クエリのあるリンクの規則、`path` がほかの出力の 1 フレーム後に来ること（失敗の一覧に 1 行）、最初のフレームの前の更新を追随し、刻印と固定 URL（6 本とも 200）。「4.10.0 allowed other parameters」は履歴として一括置換から外した。注釈付きタグ `v4.10.1`。
+  - LP（wcstack.github.io 6140b37）: リリースの表示、v4.10.1 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-adYZSx…`）、大きさは約 76 KB のまま（77,501 B）、llms。ローカル 7/7、本番 8/9（`/tutorial/16-publish/app/` の 404 は設計どおり）。
+- 残り:
+  - 2 巡目の次の継ぎ目（v4-direction §3.2）。止める目安にはまだ当たっていない。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
