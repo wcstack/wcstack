@@ -773,7 +773,7 @@ Runtime reads `customClass.wcBindable.properties + inputs` and expands each name
 - Filters on the spread target (`...: target|filter`) are rejected.
 - The right-hand path may contain `*` anywhere (e.g. `...: stores.*.fetch`).
 - The right-hand side is a plain tree path (`...: fetchX` or `...: stores.*.fetch`).
-- If the custom element class is not yet registered, expansion is deferred until `customElements.whenDefined(tag)` resolves — autoloader-style late registration is supported. This holds inside `for:` / `if:` templates too: the rows and the branch render right away, and each row's element is expanded with that row's values once the class is defined. A row removed, or a branch closed, before the definition is not expanded, and holds nothing alive. The wait is on the registry that defines the element — a scoped registry of the shadow root it is placed in included.
+- If the custom element class is not yet registered, expansion is deferred until `customElements.whenDefined(tag)` resolves — autoloader-style late registration is supported. This holds inside `for:` / `if:` templates too: the rows and the branch render right away, and each row's element is expanded with that row's values once the class is defined. A row removed, or a branch closed, before the definition is not expanded, and holds nothing alive. The wait is on the registry that defines the element — a scoped registry of the shadow root it is placed in included. The wait has no limit: a definition that never comes leaves the spread unexpanded, without an error — since 4.11 (not released yet) the `diagnostics` add-on reports it ([every binding on a custom element waits for its definition](#inputs-and-the-attribute-hint)).
 - Elements **without** a `wcBindable` declaration are rejected (`[wcs/spread-no-bindable]`; write bindings explicitly) — a native element at once, without waiting for a definition. Spread requires the contract to know what to expand.
 
 **Composite shells** (wc-bindable Composition Profile) are supported transparently: a composite shell exposes its synthesized declaration through the standard `target.constructor.wcBindable` surface, and composed names like `"s3.progress"` are kept as flat element member keys. Mirror the composed structure in state (`{ s3: { progress: 0 } }`) and `...: pipeline` expands into nested state paths automatically.
@@ -826,6 +826,16 @@ The exception is data that arrives as **freshly created objects** — `fetch(...
 ```
 
 The getter returns a copy, and a write reaches both sides: a write through the original path (`this["items.1.name"] = "z"`) reaches the copy's row, and a write through the row (`firstTwo.1.name`, or a binding inside the row) reaches the original list's row. The getter is evaluated again, because its array holds the written object — with a filter (`get shown()` returning the undone items of `todos`, rendered with `for: shown`), a row whose checkbox writes `.done` leaves the view. A getter that returns new objects (`map`) is not evaluated again by such a write. See [One object at two positions](#resolve--access-by-explicit-index) for what is not reached.
+
+**`for:` takes an array.** Any other value — a number, a string, an object (a response `{ items: [...] }` where its `items` was meant) — renders no rows, and nothing fails. `null` and `undefined` render none on purpose: a list that arrives later. Since 4.11 (not released yet) the `diagnostics` add-on warns once per list path about a value that is neither an array nor `null` / `undefined`:
+
+```
+[@wcstack/state] [wcs/binding-type-expectation] "for: count" needs an array, not a number (3): it renders
+no rows. Write an array there (null or undefined renders none, on purpose). Validate statically:
+npx @wcstack/lint <file>.
+```
+
+It looks at a list's first value, at a later value that replaces an array, and, for a `for:` outside any row, at every later value. A list inside a row whose `null` is later replaced by something that is not an array is not looked at. The lint reports the same mistake under the same code (`wcs/path-type-mismatch` with a `stateSchema`) where it can see the value's type, as in the state's literal — not a value written later through `createStateAsync` or from a fetch.
 
 #### `$listKeys` — identity for refetched rows
 
@@ -2183,7 +2193,7 @@ Validation rules (enforced at binding time):
 - `methodName` must appear (by `name`) in `wcBindable.commands` (on a native element: in the table of [Native Element Commands](#native-element-commands))
 - `<tokenName>` must be declared in `$commandTokens` (`$command.typo` throws `[wcs/token-undeclared]`)
 
-A custom element is checked once its class is defined; a native element at once — against the [native-commands](#native-element-commands) table where the add-on is installed (`@wcstack/state` and `/auto` include it), and refused otherwise (`[wcs/token-misconfigured]` `#1202`). A violation found while the page is bound fails the `<wcs-state>`'s initialization; one found inside a `for:` / `if:` row, or when a class is defined after the page was bound, fails that one binding, which goes to `$errorCallback`, and the row is still built ([Initialization failures](#initialization-failures)).
+A custom element is checked once its class is defined — its method is not subscribed before that, and never when no definition comes ([every binding on a custom element waits for its definition](#inputs-and-the-attribute-hint)); a native element at once — against the [native-commands](#native-element-commands) table where the add-on is installed (`@wcstack/state` and `/auto` include it), and refused otherwise (`[wcs/token-misconfigured]` `#1202`). A violation found while the page is bound fails the `<wcs-state>`'s initialization; one found inside a `for:` / `if:` row, or when a class is defined after the page was bound, fails that one binding, which goes to `$errorCallback`, and the row is still built ([Initialization failures](#initialization-failures)).
 
 ### Token API
 
@@ -2685,6 +2695,7 @@ Notes:
 
 - 3.x also wrote the attribute after the property (`String(value)`, JSON for an object). An element that reflects in its setter is unaffected; one that has no setter and relied on the binder to write its attribute needs a setter now (Migration guide, §3.4).
 - Native HTML elements ignore `inputs` entirely — the declaration only applies to custom elements that expose `static wcBindable`.
+- **Every binding on a custom element waits for its definition**, not only its wc-bindable members: a property binding of any name (`textContent:`, `text:`, `title:`, `value:` …), a spread, `command.` and `eventToken.`. None of them is applied before `customElements.whenDefined(tag)` resolves in the registry that defines the element: an undefined `<my-badge data-wcs="attr.cat: cat; textContent: label">` gets its `cat` attribute and stays empty. What is applied at once, defined or not: `attr.*`, `class.*`, `style.*`, `html:` / `innerHTML:`, `radio:` / `checkbox:`, and the `on*:` listeners. The wait has no limit, so a definition that never comes — a script the page did not load (`@wcstack/upload/auto` left out), an autoloader path that fails — leaves those bindings unapplied without an error. Since 4.11 (not released yet) the `diagnostics` add-on reports it: 5 s after the page's `load` (or after the state's `$connectedCallback`, when that is later) it looks once at the root the `<wcs-state>` binds, and warns once per tag about an element with such a binding that is still not defined — `[wcs/element-undefined]`, naming the package to load for a `wcs-*` tag (`@wcstack/upload/auto`) and the script that defines it for another. It sees the page's elements and the `for:` / `if:` rows and branches rendered at that moment; an element added later, and the rows a component's own state renders, are not looked at.
 - A `for:` row or an `if:` branch is bound before it is inserted: a custom element in it receives its inputs (`element.value = …`) before its `connectedCallback` runs. At page level the element is connected first. A `connectedCallback` that renders from its defaults overwrites what the setters received — render from the current properties instead. (An outside evaluation's amount field lost an entry it had not accepted yet this way when its page moved from 3.x to 4.0.) The other early write, a property set before the element is defined, is the [I/O node guidelines](../../docs/async-io-node-guidelines.md)' `upgradeProperties` step.
 
 ## Choosing a Component Mechanism
@@ -2905,6 +2916,8 @@ All hooks except `$disconnectedCallback` support `async` — you can use `async/
   ```
 
   The hook runs after the batch (after `$renderedCallback`), is not awaited, and an exception thrown inside it is reported to the console without breaking the drain. DevTools still receives every failure as `state:binding-apply-error` whether or not the hook exists. A volume (`<wcs-state mount>`) does not run it (`console.warn`); a mounted component's receives the failures of the component's own bindings. It does not cover `$watch` handlers (isolated and reported separately), a `$renderedCallback` that throws (reported with `console.error`), or a `$connectedCallback` that fails ([Initialization failures](#initialization-failures)).
+
+  Since 4.7 the errors the engine reports reach the page's error handlers (`window.onerror`, an `error` listener) through `reportError()` ([Reporting errors in production](#reporting-errors-in-production)) — except a binding failure of a state that declares `$errorCallback`: it goes to the hook only, and the page's error handlers never see it. A page whose error reporter must see binding failures too hands them on from the hook: `$errorCallback(error, { path }) { this.loadError = …; reportError(error); }`. (A state written for 4.2 that rendered its binding failures this way, as above, kept every one of them from the error reporter its page relied on after the upgrade — the `homeroom` seam app.)
 - In Web Components, define `async $stateReadyCallback(stateProp)` to receive a hook when the bound state becomes available via `bind-component`
 
 ## Transition animations
@@ -3181,7 +3194,7 @@ window.addEventListener("error", (e) => {
 });
 ```
 
-`$errorCallback` still takes a state's binding failures instead (render them, report them yourself). Where there is no `reportError()` — happy-dom, Node, `@wcstack/server` — the report is `console.error`, as before. Warnings stay `console.warn`.
+`$errorCallback` still takes a state's binding failures instead (render them, report them yourself — `reportError(error)` in the hook hands them to the page's error handlers too). Where there is no `reportError()` — happy-dom, Node, `@wcstack/server` — the report is `console.error`, as before. Warnings stay `console.warn`.
 
 ### A write made while rendering cannot loop forever
 

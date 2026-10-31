@@ -12,10 +12,12 @@ import { parsePath, type Pattern } from "../pattern";
 import { raiseError } from "../parser/raiseError";
 import { config } from "../config";
 import type { WcsState } from "../element";
-import type { Binding } from "../dom/view";
+import type { Binding, RowPlan } from "../dom/view";
+import type { StateList } from "../list";
 import { getTrustedTypesPolicy, isHtmlSink } from "../trustedTypes";
 import { didYouMean, LINT_HINT } from "../diagnostics/guidance";
 import { explain, render } from "../diagnostics/explain";
+import { was } from "../diagnostics/messages";
 import { raise, M } from "../messages";
 import type { Token } from "../token";
 
@@ -372,13 +374,137 @@ function secondRoot(engine: Engine, phase: string): void {
   console.warn(`[@wcstack/state] [wcs/second-root] ${others.length + 1} root <wcs-state> elements share one root, and there is one state tree per root: ${describeState(el)} takes it — its state was ready first, whatever the order in the document — and ${others.map(describeState).join(", ")} is refused (#47). Keep one, and graft the others with <wcs-state mount="path">.${LINT_HINT}`);
 }
 
+// ---------------------------------------------------------------- bound custom elements never defined
+
+/**
+ * How long after the page's `load` — or after a state's bindings are built and its `$connectedCallback` ran,
+ * when that is later — a bound custom element may still be undefined. `load` waits for every script the page
+ * names, module graphs included: what is missing then is a dynamic import (an autoloader, a lazy route) or a
+ * script the page forgot, and a dynamic import on a slow network takes a few seconds (5 s is the timeout
+ * `<wcs-defined>`'s README shows for a load failure).
+ */
+const UNDEFINED_AFTER = 5000;
+/** The tags already told about: once per tag, whatever the root. */
+const toldTags = new Set<string>();
+const lookedAt = new WeakSet<Engine>();
+
+/** The packages of the wcstack tags `wcs-<name>` that `@wcstack/<name>` does not define. */
+const PACKAGES = "websocket:ws geolocation:geo intersection:intersect notification:notify picture-in-picture:pip camera:recorder debounce:throttle speech:listen,speak fetch:fetch-body,fetch-header,infinite-scroll upload:upload-header router:route,outlet,layout,layout-outlet,link,head,guard-handler audio:analyser,biquad,delay,env,gain,lfo,noise,osc,shaper,voice";
+
+/** The package that defines a `wcs-*` tag. */
+function packageOf(tag: string): string {
+  const name = tag.slice(4);
+  for (const entry of PACKAGES.split(" ")) {
+    const [pkg, tags] = entry.split(":");
+    if (tags.split(",").includes(name)) return pkg;
+  }
+  return name;
+}
+
+/**
+ * The bindings applied at once on a custom element that is not defined (attachSpec): `attr.` / `class.` /
+ * `style.`, an event (`on…`), an HTML sink, `radio:` / `checkbox:`. The others wait for the definition.
+ */
+const AT_ONCE = /^(?:on|(?:attr|class|style)\.|(?:html|innerHTML|outerHTML|srcdoc|radio|checkbox)$)/;
+
+/** A page element's `data-wcs` has a binding that waits (the page walk leaves the attribute on it). */
+const waits = (text: string | null): boolean =>
+  text !== null && text.split(";").some((b) => b.includes(":") && !AT_ONCE.test(b.split(/[:#|]/)[0].trim()));
+
+/**
+ * The tags of the elements a row or branch plan binds in a way that waits for a definition (a spec of a custom
+ * element but an event's — kind 5, dom/view.ts K_EVENT), in it and in the plans it holds. A row's elements lose
+ * their `data-wcs` (the plan holds the bindings): the plans are how they are found.
+ */
+function planTags(plan: RowPlan, out: Set<string>): void {
+  for (const s of plan.specs) {
+    if (s.plan !== null) planTags(s.plan, out);
+    for (const br of s.branches ?? []) planTags(br.plan, out);
+    if (s.custom && s.kind !== 5) {
+      let n: Node = plan.fragment;
+      for (const i of plan.nodePaths[s.node]) n = n.childNodes[i];
+      out.add((n as Element).localName);
+    }
+  }
+}
+
+/**
+ * A custom element with bindings that is still not defined: its bindings wait for the definition with no
+ * limit (dom/wc.ts whenDefined), text included, and a definition that never comes leaves them unapplied
+ * without a word (docs/seam-apps.md, homeroom: a page that did not load `@wcstack/upload/auto` hung at
+ * "送信中 0%"). Looked at once per root `<wcs-state>`, UNDEFINED_AFTER after the page loaded: the page's
+ * elements whose `data-wcs` has a binding that waits, and the elements of a tag a rendered `for:` / `if:`
+ * plan of this state binds so. Not seen: elements added after that look, and those a component's own
+ * engine renders in its rows. Said once per tag.
+ */
+function undefinedElements(engine: Engine): void {
+  const tags = new Set<string>();
+  for (const l of engine.rootLists.values()) for (const v of [l.view, ...(l.extra ?? [])]) if (v !== null) planTags(v.plan, tags);
+  for (const bs of engine.rootBindings.values()) for (const b of bs) for (const br of b.chain?.branches ?? []) planTags(br.plan, tags);
+  const attr = config.bindAttributeName;
+  // (the node it mounted on, set before "connected")
+  for (const el of (engine.root as ParentNode).querySelectorAll("*")) {
+    const tag = el.localName;
+    // (the registry that defines it: a scoped one of its shadow root, or the global one — dom/wc.ts registryOf)
+    if (!tag.includes("-") || toldTags.has(tag) || (((el as any).customElementRegistry ?? customElements) as CustomElementRegistry).get(tag) !== undefined) continue;
+    // (`data-wcs-ignore`: nothing in it is bound)
+    if (!(tags.has(tag) || waits(el.getAttribute(attr))) || el.closest(`[${attr}-ignore]`) !== null) continue;
+    toldTags.add(tag);
+    console.warn(`[@wcstack/state] [wcs/element-undefined] <${tag}> is still not defined ${UNDEFINED_AFTER / 1000} s after the page loaded, and its bindings wait for the definition: its property bindings (textContent: and title: too), spreads, commands and event tokens are not applied until it comes — attr.*, class.*, style.* and on*: are applied at once. Load ${tag.startsWith("wcs-") ? `@wcstack/${packageOf(tag)}/auto, the wcstack package that defines it` : "the script that defines it"}.`);
+  }
+}
+
+/** A root `<wcs-state>` connected (its bindings built): its root is looked at UNDEFINED_AFTER after the page loaded. */
+function lookLater(engine: Engine, phase: string): void {
+  // (not on a server render: @wcstack/server serializes the page long before)
+  if (phase !== "connected" || lookedAt.has(engine) || document.documentElement.hasAttribute("data-wcs-server")) return;
+  lookedAt.add(engine);
+  const look = (): void => void setTimeout(() => undefinedElements(engine), UNDEFINED_AFTER);
+  if (document.readyState === "complete") look();
+  else addEventListener("load", look, { once: true });
+}
+
+// ---------------------------------------------------------------- for: over a value that is not an array
+
+/** The lists already told about, by pattern. */
+const toldLists = new WeakSet<Pattern>();
+
+/**
+ * A list a `for:` renders whose value is neither an array nor null / undefined: it renders no rows, without a
+ * word (a number written through createStateAsync — docs/seam-apps.md, homeroom). Said once per list path, with
+ * the lint's code for the same mistake. Looked at when a list syncs to a value that changes its rows (its first
+ * value, and one that replaces an array: listSynced), and, after each drain, for the lists outside any row (one
+ * that replaces null or another value that was not an array). A list in a row whose value was null and then is
+ * not an array is not seen: its sync calls no hook (`reconcile` finds nothing changed).
+ */
+function listValue(engine: Engine, l: StateList): void {
+  const p = l.pattern;
+  if (toldLists.has(p) || l.rows.length > 0) return;
+  let v: unknown;
+  try {
+    v = engine.readUntracked(p, l.parentRow);
+  } catch {
+    // (a list whose path fails to read is its for binding's failure, reported already)
+    return;
+  }
+  if (v == null || Array.isArray(v)) return;
+  // (a list syncs before the view that renders it takes it: looked at once the walk that made it is done)
+  queueMicrotask(() => {
+    if (l.view === null || toldLists.has(p)) return;
+    toldLists.add(p);
+    console.warn(`[@wcstack/state] [wcs/binding-type-expectation] "for: ${p.path}" needs an array, not ${was(v)}: it renders no rows. Write an array there (null or undefined renders none, on purpose).${LINT_HINT}`);
+  });
+}
+
 /**
  * A drain made patterns (`loose`, before its sweep): a getter may have read a path for the first time — in a
  * row added since, or down a branch of its own code. Checked as the bindings' are; a drain that read no new
- * path schedules nothing.
+ * path schedules nothing. Then the lists outside any row that a `for:` renders (listValue).
  */
 function drained(engine: Engine): void {
   if (named.has(engine) && ((engine as any).loose as Pattern[]).length > 0) schedule(engine);
+  // (a list whose first sync failed, a missing key, has no value to look at)
+  for (const l of engine.rootLists.values()) if (l.view !== null && l.arr !== null) listValue(engine, l);
 }
 
 /** A re-set: every path is checked again against the new state. */
@@ -519,9 +645,10 @@ export const diagnostics: Feature = {
       declaredKeys.set(engine, new Set(keysOf(target)));
     };
     hooks.handlerThrew = handlerThrew;
-    hooks.element = chain(hooks.element, secondRoot);
+    hooks.element = chain(chain(hooks.element, secondRoot), lookLater);
     hooks.written = chain(chain(hooks.written, written), elementWrote);
     hooks.drained = chain(hooks.drained, drained);
+    hooks.listSynced = chain(hooks.listSynced, listValue);
     hooks.dollar = first(known, hooks.dollar, (_engine, key) => (Object.hasOwn(REMOVED_APIS, key) ? raise(M.ApiRemoved, [key, REMOVED_APIS[key]]) : undefined));
   },
 };
