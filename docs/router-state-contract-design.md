@@ -303,6 +303,8 @@ raiseError になる）。href は「現在 pathname + 指定クエリ」で組�
 
 > **2026-10-29 改定（4.10 向け）**: クエリのある `to` は、今の URL のクエリが `to` のクエリのパラメータをすべて同じ値（重複キーは同じ値の組）で持つときだけ active / `aria-current` になる。ページの余分なパラメータは構わず、クエリの無い `to` は従来どおり pathname だけで比べる。クエリ非感応のままでは、`/search?q=a` の「次のページ」（`?q=a&page=2`）が `aria-current="page"` を持ち、スクリーンリーダーが「次のページ、現在のページ」と読んだ（継ぎ目アプリ `city-library`、[seam-apps.md](./seam-apps.md)）。
 
+> **2026-10-31 改定（4.11 向け）**: `?` で終わる `to`（`to="/notices?"`、`to="?"` — 明示した空のクエリ）はクエリのある `to` として比べ、そのクエリは空。4.10.1 から `aria-current="page"` は URL のクエリが `to` のクエリと等しいときだけなので、そのページになるのは URL にクエリが無いときだけ（`match="prefix"` なら、そのパスのどのクエリでも `"true"`）。href と遷移は従来どおり `?` を落とす。`?` の無い `to` は pathname だけで比べるままなので、カテゴリのタブ（`to="/notices?cat=event"`）と並べた「すべて」のタブ `to="/notices"` が `/notices?cat=event` でも現在のページで、現在のリンクが 2 つになった（継ぎ目アプリ `homeroom`、[seam-apps.md](./seam-apps.md)）。
+
 ### 4.2 replaceUrl — replace 書き込み面の新設
 
 `navigateUrl` の対（push / replace）として `replaceUrl` を新設する。契約は

@@ -1098,9 +1098,16 @@ describe('Link', () => {
       expect(state(linkTo('/search'))).toEqual({ active: true, current: 'page' });
     });
 
-    it('to="?"（クエリの全消去）はクエリを持たないリンクとして pathname だけで比べる', () => {
+    it('to="?"（クエリの全消去）は空のクエリのリンクで、クエリの無いページでだけ active（docs/seam-apps.md、homeroom）', () => {
+      // 4.10.1 まではクエリの無いリンクとして pathname だけで比べ、どのクエリのページでも現在のページだった
       at('http://localhost/search?q=a');
-      expect(state(linkTo('?'))).toEqual({ active: true, current: 'page' });
+      const clear = linkTo('?');
+      expect(clear.anchorElement?.getAttribute('href')).toBe('/search');
+      expect(state(clear)).toEqual({ active: false, current: null });
+
+      at('http://localhost/search');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+      expect(state(clear)).toEqual({ active: true, current: 'page' });
     });
 
     it('クエリだけのリンクは、そのクエリのページでだけ active で、クエリだけのナビゲーションに追従する', () => {
@@ -1132,6 +1139,82 @@ describe('Link', () => {
     it('値はデコードして比べる（+ と %20 は同じ）', () => {
       at('http://localhost/search?q=a%20b');
       expect(state(linkTo('/search?q=a+b')).active).toBe(true);
+    });
+
+    // docs/seam-apps.md、homeroom — 「すべて」のタブ（to="/notices"）が `/notices?cat=event` でも現在のページで、
+    // カテゴリのタブと 2 つが同時に現在のリンクだった。`to="/notices?"`（明示した空のクエリ）も同じに扱われた
+    describe('? で終わる to（明示した空のクエリ）', () => {
+      it('クエリの無いページでだけ active で aria-current="page"、href には ? を残さない', () => {
+        at('http://localhost/notices?cat=event');
+        const all = linkTo('/notices?');
+        expect(all.anchorElement?.getAttribute('href')).toBe('/notices');
+        expect(state(all)).toEqual({ active: false, current: null });
+
+        at('http://localhost/notices');
+        window.dispatchEvent(new CustomEvent('wcs:navigate'));
+        expect(state(all)).toEqual({ active: true, current: 'page' });
+
+        // 別のパスでは、クエリが無くても active ではない
+        at('http://localhost/events');
+        window.dispatchEvent(new CustomEvent('wcs:navigate'));
+        expect(state(all)).toEqual({ active: false, current: null });
+      });
+
+      it('カテゴリのタブと並べると、現在のリンクはどのページでも 1 つ', () => {
+        at('http://localhost/notices');
+        const all = linkTo('/notices?');
+        const event = linkTo('/notices?cat=event');
+        const club = linkTo('/notices?cat=club');
+        const currents = () => [all, event, club].map((link) => state(link).current);
+        expect(currents()).toEqual(['page', null, null]);
+
+        at('http://localhost/notices?cat=event');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        expect(currents()).toEqual([null, 'page', null]);
+
+        at('http://localhost/notices?cat=club');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        expect(currents()).toEqual([null, null, 'page']);
+      });
+
+      it('? の無い to は従来どおり pathname だけで比べる', () => {
+        at('http://localhost/notices?cat=event');
+        const plain = linkTo('/notices');
+        expect(state(plain)).toEqual({ active: true, current: 'page' });
+      });
+
+      it('ハッシュが続いても空のクエリとして比べ、href は ? の無いパスとハッシュ', () => {
+        at('http://localhost/notices?cat=event');
+        const top = linkTo('/notices?#top');
+        expect(top.anchorElement?.getAttribute('href')).toBe('/notices#top');
+        expect(state(top)).toEqual({ active: false, current: null });
+
+        at('http://localhost/notices');
+        (top as any)._updateActiveState();
+        expect(state(top)).toEqual({ active: true, current: 'page' });
+      });
+
+      it('match="prefix" なら、クエリのあるページと下のパスでも active で aria-current="true"', () => {
+        at('http://localhost/notices?cat=event');
+        const all = linkTo('/notices?', 'prefix');
+        expect(state(all)).toEqual({ active: true, current: 'true' });
+
+        at('http://localhost/notices');
+        (all as any)._updateActiveState();
+        expect(state(all)).toEqual({ active: true, current: 'page' });
+
+        at('http://localhost/notices/3');
+        (all as any)._updateActiveState();
+        expect(state(all)).toEqual({ active: true, current: 'true' });
+
+        at('http://localhost/notices/3?cat=event');
+        (all as any)._updateActiveState();
+        expect(state(all)).toEqual({ active: true, current: 'true' });
+
+        at('http://localhost/events?cat=event');
+        (all as any)._updateActiveState();
+        expect(state(all)).toEqual({ active: false, current: null });
+      });
     });
 
     it('match="prefix" はパスの規則に同じクエリの規則を足す', () => {
