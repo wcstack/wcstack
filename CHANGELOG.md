@@ -11,6 +11,7 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Upgrading
 
 - `@wcstack/testing`: **`mount()`, `fire()` and `installDom()` throw on an option they do not have.** A test that passed one — a misspelt name, or `fire(el, "keydown", { key: "Enter" })`, whose `key` never reached the event (`fire()` dispatches an `Event`, or a `CustomEvent` with `detail`) — fails now with a message naming it. Dispatch another event class with `target.dispatchEvent()` yourself.
+- `@wcstack/router`: **a `<wcs-link to="?">` (the query-only link that clears the query) is the current page only where the URL has no query.** Up to 4.10 it compared the pathname only, so it was marked on every page of its path, whatever the query.
 
 ### Changed
 
@@ -24,7 +25,6 @@ Each GitHub Release also carries the Subresource Integrity digest of every packa
 ### Security
 
 - `@wcstack/server`: depends on `happy-dom` `^21.0.4` (was `^20.0.11`). happy-dom 20 carries two high advisories with no fix in 20.x — GHSA-834v-8h66-3h79 (an unsanitized import alias leads to host code execution, fixed in 21.0.4) and GHSA-c8p4-j97h-3vg8 (SSRF through iframe and link stylesheet loading when parsing untrusted HTML) — and GHSA-5fpq-26gf-qwcr (cookie scope); happy-dom 21 also requires a `ws` (`^8.21.0`) past GHSA-58qx-3vcg-4xpx and GHSA-96hv-2xvq-fx4p. `@wcstack/testing` has `@wcstack/server` as a peer, so `npm audit` reported them in every test setup (the `homeroom` seam app, [docs/seam-apps.md](./docs/seam-apps.md)). happy-dom 21 loads no CSS file and no iframe page by default: with happy-dom 20, `renderToString()` fetched a `<link rel="stylesheet">` in the HTML it rendered, which the server README said it does not do. `@wcstack/testing`'s own devDependency and `examples/state-testing-todo` move to `^21.0.4`; its `happy-dom` peer stays `>=20`.
-- `@wcstack/router`: **a `<wcs-link to="?">` (the query-only link that clears the query) is the current page only where the URL has no query.** Up to 4.10 it compared the pathname only, so it was marked on every page of its path, whatever the query.
 
 ## [4.10.1] — 2026-10-31
 
