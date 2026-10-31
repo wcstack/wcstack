@@ -18,7 +18,9 @@
  *   Also a key whose value the analyzer could not read — a name it could not follow to a literal (`{ t }` with `t`
  *   imported and computed — the i18n dictionary volume; moduleValues.ts) — when the document binds paths under it:
  *   those are not checked. Said once per key, at the key, with what has them checked (a JSDoc `@type`, or a
- *   stateSchema); a key nothing reads under says nothing.
+ *   stateSchema); a key nothing reads under says nothing. The same for a key seeded with an object literal that spreads
+ *   what the analyzer cannot read (`draft: { ...makeDraft() }` — a spread of a module's `const` object literal is read:
+ *   the homeroom seam app), with its own message naming the spread.
  *
  * The existence is the bindings' (bindingValidator): the candidates of the document's states with the stateSchema's,
  * a stateSchema deciding where it is declared (`nonexistent` only), silence in a state that could not be read.
@@ -89,7 +91,9 @@ export function validateScriptReads(
           code: WcsDiagnosticCode.PathDynamicUnknown,
           start: block.contentStart + span.start,
           end: block.contentStart + span.end,
-          message: msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
+          message: candidate.opaque?.spread !== undefined
+            ? msgs.pathDynamicUnknownObjectSpread(path, count, candidate.opaque.spread, candidate.opaque.from)
+            : msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
           severity: 'info',
         });
       }

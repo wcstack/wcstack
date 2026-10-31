@@ -72,9 +72,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|
 | 設計（書けない、または害が無い） | 7 |
 | 実行時 | 63 |
-| lint だけ — 条件付きの沈黙 | 25 |
+| lint だけ — 条件付きの沈黙 | 26 |
 | 文書だけ — 沈黙 | 38 |
-| 数えない lint の code | 18 |
+| 数えない lint の code | 19 |
 
 ### 文書だけ — 沈黙
 
@@ -142,6 +142,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 外れた 3.x の宣言を `this` 越しに読む（`this.$streams`・`this.$updatedCallback`）。 | `wcs/declaration-alias-read` (varies) | `undefined` が返り、呼べば汎用の TypeError。 | 動かない | 実行時に知らせる — 4.x。diagnostics の後付けの `dollar` のフックが、外れた宣言を名指せる（core は 0 B）。 |
 | `$renderedCallback(paths)` が、どの束縛も名指さない宣言済みのパスか、state に無いパスを調べる（`paths.includes("feed")`・`paths.includes("labell")`）。 | `wcs/updated-callback-unbound` (warning) | `paths` には当てた束縛しか載らないので、その分岐は走らない。 | 動かない | lint のまま（実行時には見えない）。実行時の推測（`includes` が警告する `paths`）は、調べ方は捕まえても意図は捕まえられない。state に無いパスは、近いパスがあるときだけ（打ち間違いらしいとき）報告する。コールバックはほかの種類の文字列も比べうるため。 |
 | `<wcs-storage>` の `value#init=element` を、`null` でないリテラルで始めたパスに束ねる（`cart: []`）。 | `wcs/storage-init-seed` (warning) | 空のキーは `null` を読むので、最初の引き込みがシードを置き換える。`for: cart` は何も描かず、`this.cart.length` を読むコードは汎用の TypeError を投げる。 | 動かない | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 明示の `#init=element` が値を `null` で置き換えるときに警告する（diagnostics の後付け）。5.0: 無いキーは `undefined` を読み、シードを残す（README は `null` と書いている）。 |
+| ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。 | `wcs/tag-package-missing` (warning) | 要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。 | 動かない | 実行時に知らせる — 4.x。4.11 から lint が、wcstack を自分で読み込むページ（断片・バンドラのページでない）でパッケージごとに 1 回報告する。実行時に言うには待ち時間が要る（パッケージは遅れて来うる）ので、diagnostics の後付けがページの準備ができてから数秒後に言える（core は 0 B）。 |
 | `$watch` のキーに空の段がある（`a..b`）。 | `wcs/watch-declaration-invalid` (error) | 実行時は調べないので、watch は発火しない。 | 動かない | 実行時に知らせる — 4.x。temporal の後付けに検査を 1 つ（約 10 B）。 |
 | `attr.aria-*:` の ARIA 属性名を打ち間違える。 | `wcs/aria-attr-unknown` (warning) | 属性は書かれ、支援技術は無視する。 | 劣化 | lint のまま（実行時には見えない）。名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。 |
 | `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (info) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。 |
@@ -235,6 +236,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|
 | `wcs/drift-event-mismatch` | コンポーネントの sidecar の manifest が、実際の wcBindable の宣言と違うイベントをプロパティに名指している。 |
 | `wcs/drift-missing-member` | コンポーネントの sidecar の manifest が、実際の wcBindable の宣言に無いメンバーを宣言している。実行時が使うのは実際の宣言で、直すのは manifest（ページではない）。 |
+| `wcs/lint-version-behind` | ページの誤りではなく道具の食い違い: ページが lint の規則より新しい minor を固定しているので、lint はその minor で加わったものを検査せず、その正しい書き方を error にもする（homeroom: 4.10 のページを 4.2.0 の lint で）。ページに 1 回言う（warning）。 |
 | `wcs/manifest-broken` | sidecar の manifest が JSON として読めない。manifest は lint の入力で、実行時は読まない。 |
 | `wcs/manifest-external-ref` | sidecar の manifest が外部の文書を参照している。lint は取りに行かない。 |
 | `wcs/manifest-filter-collision` | 2 つの sidecar の manifest が、override 無しで同じフィルタを宣言している。 |

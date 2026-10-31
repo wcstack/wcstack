@@ -72,9 +72,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 |---|---|
 | The design (cannot be written, or harmless) | 7 |
 | The runtime | 63 |
-| The lint only — conditional silence | 25 |
+| The lint only — conditional silence | 26 |
 | The documents only — silence | 38 |
-| Lint codes not counted | 18 |
+| Lint codes not counted | 19 |
 
 ### The documents only — silence
 
@@ -142,6 +142,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Reads a removed 3.x declaration through `this` (`this.$streams`, `this.$updatedCallback`). | `wcs/declaration-alias-read` (varies) | It reads `undefined`, and calling it is a generic TypeError. | broken | runtime report — 4.x. The diagnostics add-on's `dollar` hook can name the removed declaration (0 core bytes). |
 | `$renderedCallback(paths)` tests a declared path that no binding names (`paths.includes("feed")`), or a path the state does not have (`paths.includes("labell")`). | `wcs/updated-callback-unbound` (warning) | `paths` lists only the bindings that were applied, so the branch never runs. | broken | stays with the lint (the runtime cannot see it). A runtime heuristic (a `paths` whose `includes` warns) would catch the test, not the intent. A path the state does not have is reported only beside a near one it has (a likely typo), as the callback may compare strings of another kind. |
 | Binds `<wcs-storage>`'s `value#init=element` to a path seeded with a literal that is not `null` (`cart: []`). | `wcs/storage-init-seed` (warning) | An empty key reads as `null`, so the first pull replaces the seed: `for: cart` renders nothing, and code that reads `this.cart.length` throws a generic TypeError. | broken | runtime report — 4.x; then design out — 5.0 agenda (breaking). 4.x: warn when an explicit `#init=element` replaces a value with `null` (diagnostics add-on). 5.0: an absent key reads as `undefined`, which keeps the seed (the README documents `null`). |
+| Writes a `wcs-*` tag of a package the page never loads (`<wcs-upload>` without `@wcstack/upload/auto`). | `wcs/tag-package-missing` (warning) | The element is never defined: its bindings wait and nothing happens, with nothing in the console. The homeroom seam app's Save hung at "送信中 0%". | broken | runtime report — 4.x. Since 4.11 the lint reports it on a page that loads wcstack itself (not a fragment or a bundler's page), once per package. A runtime report needs a delay — a package may come late — so the diagnostics add-on can say it a few seconds after the page is ready, with no core bytes. |
 | A `$watch` key has an empty segment (`a..b`). | `wcs/watch-declaration-invalid` (error) | The runtime does not check it: the watch never fires. | broken | runtime report — 4.x. One test in the temporal add-on (about 10 B). |
 | Misspells an ARIA attribute in `attr.aria-*:`. | `wcs/aria-attr-unknown` (warning) | The attribute is written; assistive technology ignores it. | degraded | stays with the lint (the runtime cannot see it). The name is in the markup, so the lint has everything; a runtime table of ARIA names would cost 300–400 B. |
 | Loads `@wcstack/devtools/auto` after `@wcstack/state/auto`. | `wcs/script-order` (info) | 4.0 hands a late DevTools every binding there already, so only the timeline before it attached is missing. | degraded | runtime report — 4.x. DevTools can say that its timeline starts when it attached. |
@@ -235,6 +236,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 |---|---|
 | `wcs/drift-event-mismatch` | A component's sidecar manifest names a different event for a property than its live wcBindable declaration. |
 | `wcs/drift-missing-member` | A component's sidecar manifest declares a member its live wcBindable declaration lacks. The runtime uses the live declaration; the manifest is what needs fixing, not the page. |
+| `wcs/lint-version-behind` | A tooling mismatch, not a mistake in the page: the page pins a newer minor than the lint's rules, so the lint does not check what that minor added and can report its correct syntax as an error (homeroom: 4.2.0's lint on a 4.10 page). Said once per page (warning). |
 | `wcs/manifest-broken` | The sidecar manifest is not valid JSON. The manifest is the lint's input; the runtime never reads it. |
 | `wcs/manifest-external-ref` | The sidecar manifest refers to an external document, which the lint does not fetch. |
 | `wcs/manifest-filter-collision` | Two sidecar manifests declare the same filter without override. |

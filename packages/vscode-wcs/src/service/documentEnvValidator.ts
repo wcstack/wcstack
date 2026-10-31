@@ -187,7 +187,7 @@ const SCOPED_AUTO = /@wcstack\/([a-z0-9-]+)(?:@[^/"'\s]+)?\/(?:auto\b|dist\/(?:s
 /** 一括バンドル `wcstack/auto`（`wcstack@4/auto`・`wcstack@4.0.2/dist/auto.min.js`）。 */
 const BUNDLE_AUTO = /(?:^|\/)wcstack(?:@[^/"'\s]+)?\/(?:auto\b|dist\/auto\.min\.js\b)/;
 /** 一括バンドルの中身（packages/wcstack/README.md）。 */
-const BUNDLE_PACKAGES: readonly string[] = ['state', 'router', 'fetch', 'storage', 'autoloader'];
+export const BUNDLE_PACKAGES: readonly string[] = ['state', 'router', 'fetch', 'storage', 'autoloader'];
 
 /**
  * `/auto` の入口を読む `<script src>` を文書順で列挙する。
@@ -276,7 +276,7 @@ function classifySignalsSpecifier(spec: string): 'dom' | 'bare' | null {
 }
 
 /** 開きタグ文字列から src 属性値と（タグ内）オフセットを取り出す。 */
-function extractSrc(openTag: string): { value: string; offsetInTag: number } | null {
+export function extractSrc(openTag: string): { value: string; offsetInTag: number } | null {
   const srcMatch = /\bsrc\s*=\s*(["'])(.*?)\1/i.exec(openTag);
   if (!srcMatch) return null;
   return {
@@ -331,12 +331,12 @@ function callArguments(code: string, from: number): string {
 }
 
 /** HTML コメントをオフセット保存のまま空白化する。 */
-function blankHtmlComments(html: string): string {
+export function blankHtmlComments(html: string): string {
   return html.replace(/<!--[\s\S]*?-->/g, m => ' '.repeat(m.length));
 }
 
 /** JS の行・ブロックコメントをオフセット保存のまま空白化する（文字列内は考慮しない簡易版）。 */
-function blankJsComments(code: string): string {
+export function blankJsComments(code: string): string {
   return code
     .replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length))
     .replace(/(^|[^:])\/\/[^\n]*/g, (m, pre: string) => pre + ' '.repeat(m.length - pre.length));
@@ -362,7 +362,7 @@ interface OpenElement {
 }
 
 /** 属性の値（無ければ null）。 */
-function attrValue(attrs: string, name: string): string | null {
+export function attrValue(attrs: string, name: string): string | null {
   const m = new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i').exec(attrs);
   return m === null ? null : (m[1] ?? m[2] ?? m[3] ?? '');
 }
