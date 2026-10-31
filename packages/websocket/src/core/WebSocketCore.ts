@@ -115,15 +115,7 @@ export class WebSocketCore extends EventTarget {
   }
 
   dispose(): void {
-    this._gen++;
-    this.close();
-    // The socket's close event is dropped as stale (the generation moved), so the
-    // connection's end is published here (timing-and-firing-contract §22): a route the
-    // element leaves keeps its nodes — bindings included — for the next entry, and
-    // state would keep showing a connection that is gone.
-    this._setConnected(false);
-    this._setLoading(false);
-    this._setReadyState(WS_CLOSED);
+    this._end(false);
   }
 
   /**
@@ -133,8 +125,28 @@ export class WebSocketCore extends EventTarget {
    */
   suspend(): boolean {
     const live = this._ws !== null || this._reconnectTimer !== null;
-    this.dispose();
+    // A socket still connecting is closed at once here, not when it opens (see _stop): a page
+    // with a WebSocket in use is not put in the back/forward cache, and a page about to be
+    // frozen runs no listener that would close it later. Chromium's warning is the price.
+    this._end(true);
     return live;
+  }
+
+  private _end(abortConnecting: boolean): void {
+    this._gen++;
+    this._stop(undefined, undefined, abortConnecting);
+    // The socket's close event is dropped as stale (the generation moved) or, for a socket
+    // still connecting, never reaches the core (it is let go), so the
+    // connection's end is published here (timing-and-firing-contract §22): a route the
+    // element leaves keeps its nodes — bindings included — for the next entry, and
+    // state would keep showing a connection that is gone.
+    this._publishClosed();
+  }
+
+  private _publishClosed(): void {
+    this._setConnected(false);
+    this._setLoading(false);
+    this._setReadyState(WS_CLOSED);
   }
 
   get message(): any {
@@ -291,12 +303,59 @@ export class WebSocketCore extends EventTarget {
   }
 
   close(code?: number, reason?: string): void {
+    if (this._stop(code, reason, false)) {
+      // The socket was still connecting and is let go: its close event will not reach the core,
+      // so the end is published now (timing-and-firing-contract §22).
+      this._publishClosed();
+    }
+  }
+
+  /**
+   * Stops the connection: no reconnect, no stale watchdog, the socket closed. An open socket is
+   * closed now and its close event publishes the end. A socket still connecting is let go instead
+   * (unless `abortConnecting`): closing it before its handshake makes Chromium print "WebSocket is
+   * closed before the connection is established." — on every route left right after it was
+   * entered (docs/seam-apps.md, homeroom). Returns true when it let one go: its events no longer
+   * reach the core, so the caller publishes the end.
+   */
+  private _stop(code: number | undefined, reason: string | undefined, abortConnecting: boolean): boolean {
     this._intentionalClose = true;
     this._clearReconnectTimer();
     this._clearStaleTimer();
-    if (this._ws) {
-      this._ws.close(code, reason);
+    const ws = this._ws;
+    if (ws === null) return false;
+    if (abortConnecting || ws.readyState !== WS_CONNECTING) {
+      ws.close(code, reason);
+      return false;
     }
+    this._removeListeners();
+    this._ws = null;
+    this._closeWhenOpen(ws, code, reason);
+    return true;
+  }
+
+  /**
+   * Closes a socket the core has let go while it was still connecting, once it opens; a socket
+   * that fails to connect is just dropped. Nothing from it reaches the core any more.
+   */
+  private _closeWhenOpen(ws: WebSocket, code?: number, reason?: string): void {
+    const drop = (): void => {
+      ws.removeEventListener("open", open);
+      ws.removeEventListener("error", drop);
+      ws.removeEventListener("close", drop);
+    };
+    const open = (): void => {
+      drop();
+      try {
+        ws.close(code, reason);
+      } catch {
+        // a code or reason the platform refuses must not leave the socket open
+        ws.close();
+      }
+    };
+    ws.addEventListener("open", open);
+    ws.addEventListener("error", drop);
+    ws.addEventListener("close", drop);
   }
 
   // --- Internal ---
@@ -454,12 +513,17 @@ export class WebSocketCore extends EventTarget {
   private _closeInternal(): void {
     this._clearReconnectTimer();
     this._clearStaleTimer();
-    if (this._ws) {
+    const ws = this._ws;
+    if (ws) {
       this._removeListeners();
-      if (this._ws.readyState === WS_OPEN || this._ws.readyState === WS_CONNECTING) {
-        this._ws.close();
-      }
       this._ws = null;
+      if (ws.readyState === WS_OPEN) {
+        ws.close();
+      } else if (ws.readyState === WS_CONNECTING) {
+        // a connect() replacing a socket still connecting (a url changed right after it was
+        // set) lets it go: closing it now would make Chromium warn (see _stop)
+        this._closeWhenOpen(ws);
+      }
     }
     // 旧接続の状態をリセット（コンストラクタ例外時に stale 状態が残るのを防止）
     if (this._connected) {

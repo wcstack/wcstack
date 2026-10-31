@@ -43,7 +43,7 @@
   "license": "MIT",
   "dependencies": {
     "@wcstack/state": "4.10.1",
-    "happy-dom": "^20.0.11"
+    "happy-dom": "^21.0.4"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.0.15",
