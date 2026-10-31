@@ -286,6 +286,14 @@ from [`@wcstack/typescript`](https://www.npmjs.com/package/@wcstack/typescript) 
 inline `<wcs-state>` scripts across a project using this extension's language plugin in
 `tsc` mode.
 
+**TypeScript 7.1.** From `@wcstack/typescript` 4.8 (not released yet, experimental) the
+package is also a TypeScript 7.1 content mapper built from this extension's language plugin
+([`docs/typescript-content-mapper.md`](../../docs/typescript-content-mapper.md)). When a
+workspace's `tsconfig.json` names it and TypeScript 7's VS Code extension runs in a trusted
+workspace, TypeScript's own server answers inside `<wcs-state>` scripts too, next to this
+extension — the same diagnostics twice. Set `"js/ts.contentMappers.enabled": false` to keep
+this extension's; this extension does not change its behaviour yet.
+
 **CLI.** A single `validateDocument` entry point drives both the in-editor diagnostics
 and the CLI, so the IDE and CI report identically for the same inputs. Both read the
 external state referenced via `<wcs-state src="...">` (the root's and the volumes') and

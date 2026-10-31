@@ -51,6 +51,17 @@ const configs = [
     outbase: 'src',
     entryNames: 'tsc-core',
   },
+  {
+    // @wcstack/typescript が TypeScript 7.1 に渡す content mapper（docs/typescript-content-mapper.md）。
+    // TypeScript が `node ./dist/content-mapper.cjs` で起こすので、Node の組み込みだけの単一 CJS。
+    // コピー先に .map は置かないので、指す先の無い sourceMappingURL を残さない。
+    ...sharedOptions,
+    sourcemap: false,
+    entryPoints: ['src/contentMapperMain.ts'],
+    outdir: 'dist',
+    outbase: 'src',
+    entryNames: 'content-mapper',
+  },
 ];
 
 if (isWatch) {
