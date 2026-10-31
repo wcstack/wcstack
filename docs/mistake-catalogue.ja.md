@@ -71,9 +71,9 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 7 |
-| 実行時 | 66 |
-| lint だけ — 条件付きの沈黙 | 25 |
-| 文書だけ — 沈黙 | 38 |
+| 実行時 | 67 |
+| lint だけ — 条件付きの沈黙 | 24 |
+| 文書だけ — 沈黙 | 42 |
 | 数えない lint の code | 19 |
 
 ### 文書だけ — 沈黙
@@ -86,6 +86,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 記録の下書き（チケットへの返信）を、`<wcs-storage>` の固定のキー 1 つに置く。 | 下書きが記録から記録へ利用者について回る。セッションストレージでは複製したタブが写し、ローカルストレージでは 2 つのタブが互いの下書きを置き換える。 | データの損失 | どこからも見えない — 文書。storage の README: 記録ごとのキー（4.8 の文書）。 |
 | `<wcs-storage>` に残すオブジェクトの形を、同じキーのまま、アプリの 2 つの版の間で変える。 | 新しい版は古い版が保存したものを読み、古い版を開いたままのタブは `storage` イベントで新しい形を受け取る — 違う値を見せ、その後の保存は失われる。何も言わない。 | データの損失 | どこからも見えない — 文書。storage の README: オブジェクトに版を持たせて setter で移すか、形を変えるときにキーを変える。 |
 | import map の `integrity` に分割の chunk を手で並べる、または版を上げても一覧を使い回す。 | 誰も要求しない URL の項目は無視され、項目の無い chunk の要求は検査されない: ページは動き、改ざんされた chunk も動く（Chromium・Firefox・WebKit）。 | 安全 | どこからも見えない — 文書。4.7 から各リリースの `sri.json` とノートが一覧を丸ごと載せる（docs/sri.ja.md §5.1）。ブラウザには見分けられず、エンジンは import map を読まない。 |
+| 1 つのハンドラで、`trigger` が送るものを trigger より先に書く: セッションに束ねた `Authorization` のヘッダで `this.session = null; this.logoutTrigger = true;`。 | 1 回の更新の中では束縛は書いた順に当たり、要求はそのときの入力とヘッダで出る: ログアウトはトークン無しで出て、サーバーは 204 を返し、トークンは有効なまま残る。逆の順ならトークンが付く（examples/router-auth の順）。 | 安全 | どこからも見えない — 文書。fetch の README とタイミング契約（homeroom、4.11）。どの順も正しい書き方で、意図した順を見分けられる検査は無い。 |
 | 利用者が決められる文字列を `href:`・`src:`・`attr.href:`・`attr.on*:` に束ねる。 | `javascript:` の URL やハンドラの文字列がそのまま書かれる。CSP が止めなければ XSS。 | 安全 | lint の規則 — 4.x。その後、実行時に知らせる — 4.x。4.x: lint はすべての `attr.on*:` を報告でき、diagnostics の後付けは `javascript:` の URL に警告できる。4.0 は core で拒まないと決めた（2026-10-02）。拒むのは破壊的。 |
 | 利用者のコンテンツを、サーバのテンプレートやページのコードでページのマークアップに書き込み、それを持つ要素に `data-wcs-ignore` を付けない。 | ページの走査がその中のもの — `{{ apiKey }}`・`data-wcs`・コメント束縛 — を束ねる。クライアント側のテンプレートの注入。 | 安全 | どこからも見えない — 文書。注入されたマークアップは、作者が書いたものと見分けられない。4.3 で文書が教える守りが加わった: 要素に `data-wcs-ignore`（R10）を付ければ、走査はその中を読まない。 |
 | ある場所の時刻（東京の開館時間）を、ゾーンを付けずに `date` / `time` のフィルタで出す。 | フィルタは読み手のタイムゾーンで書く: ロサンゼルスからは、東京の木曜 09:00 が水曜 17:00 になる — 「時刻はすべて東京時間」という注記の下で。 | 出ない・違う場所 | どこからも見えない — 文書。4.10 からフィルタは 3 つ目にタイムゾーンを受け（`time(,short,Asia/Tokyo)`）、state の README は既定が読み手のゾーンだと書く。 |
@@ -98,6 +99,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 1 つのオブジェクトを、getter が結ばない 2 つの配列に置き（`backup = items` で両方を描く）、片方の行の下へ書く。 | 書き込みは、もう片方の配列の行・行 getter・それらの `$getAll` の集計に届かない。 | 古い表示 | 設計で消す — 4.x。4.x の既知の制限として残す（#401、2026-10-17 決定）。届けるにはオブジェクトからすべての一覧の行を引く索引が要り、core のバイトと行ごとの手間がかかる。回避はもう片方の一覧の `$postUpdate`。 |
 | `<wcs-timer>` の刻みを数えて経過時間を測る（`tick` × `interval`）。 | 隠れたタブの刻みは間引かれ、スリープ中の刻みは失われるので、数は時計から遅れる: 1 時間のスリープの間に数えたのは 4 秒（継ぎ目アプリ shift-desk）。 | 古い表示 | どこからも見えない — 文書。timer の README が言い（4.8 の文書）、docs/long-lived-pages.ja.md は刻みごとに時計を読む。時間のつもりの数え方は実行時には見分けられない。 |
 | 要素の入力やプロパティに、値の後で `undefined` を書く: リセット、`undefined` を返す getter。 | 4.0 は `undefined` を書かない（B8）。要素は前の値 — 前の利用者のアバター、古い文字 — を持ち続ける。 | 古い表示 | 実行時に知らせる — 4.x。diagnostics の後付けが、値の後の `undefined` に警告できる。消すには `null` を書く。 |
+| 版を固定したページに、版を書かないクイックスタートの行（`https://esm.run/@wcstack/fetch/auto`）を写す。 | そのパッケージだけ npm の `latest` に従い、残りは固定のまま。転送先の URL にも版が無く、minor の違うパッケージが黙って一緒に動く（互換なので、どれかが別のものの新しい部分を要るまでは壊れない）。 | 古い表示 | どこからも見えない — 文書。docs/upgrading-4x.md（版の混在）。同じパッケージの 2 つ目の写しは警告する（`[wcs/package-twice]`）。違うパッケージの minor の違いは意図して互換。 |
 | `$connectedCallback` で取り直す（つなぎ直す・読み直す）。スリープ・凍結・back/forward cache からの復帰の後にも走ると思って。 | 走るのは `<wcs-state>` 要素が接続されたときで、ページが復帰したときではない: 接続が死んだまま 1 時間スリープした後、ページは 131〜140 件遅れたままで、ヘッダには "Live" とあった。 | 古い表示 | どこからも見えない — 文書。state の README が言い、docs/long-lived-pages.ja.md が復帰のハンドラを 1 つ示す。4.8 から `stale-after` が死んだ接続そのものに気づく。 |
 | `online` イベントでだけ取り直す。 | ネットワークが切れなかったスリープは `online` を出さない: ページは 134〜137 件遅れたままだった。 | 古い表示 | どこからも見えない — 文書。docs/long-lived-pages.ja.md が間の終わりのほかの知らせを挙げる（`visibilitychange`、persisted の `pageshow`、`resume`、時計の飛び）。 |
 | サブパスの下で `<wcs-router basename="/app">` を書き、`<base href>` を置かずに配る。 | ルーティングは動くが、ディープリンクでは相対 URL がすべてページの URL の下で解決される — `<wcs-fetch url="api/…">`・`<wcs-state src>`・import map・autoloader の `@components/` — そして原因から遠いところで失敗する（データとして読んだ HTML のフォールバック、404 の部品）。 | 動かない | lint の規則 — 4.x。`wcs/base-href-missing` は basename も `<base>` も無いときだけ。属性があると無言。属性があり相対 URL があって `<base>` が無いページを知らせる規則を足せる。 |
@@ -112,12 +114,14 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | I/O ノードの `trigger` をフレームワークの状態から動かす（クリックごとに `setRefresh(true)` する `trigger={refresh}`）。 | 最初のクリックで命令が走り、要素は `trigger` を `false` に戻す。フレームワークはまだ `true` を持っているので、次の `true` は何も変えず、書かれない。2 回目のクリックは何もしない。 | 動かない | どこからも見えない — 文書。継ぎ目アプリ fw-inventory（React 19 と Vue 3 から I/O ノードを使う）が見つけた。`trigger` は `@wcstack/state` の書き方で、state は代入のたびに書く。フレームワークが省いた書き込みは、要素からは見えない。統合の手引きは、フレームワークからは命令（`el.fetch()`）を呼ぶよう書くようになった。 |
 | `<script setup>` で `@wc-bindable/vue` のテンプレート ref を `:ref="ref"` で束ねる。fetch・storage・websocket の README（とアダプター自身のもの）がそう示していた。 | テンプレートが ref を剥がすので、`:ref` には `null` が渡る。アダプターは束縛せず、`values` は初期値のまま。エラーも無い。 | 動かない | どこからも見えない — 文書。fw-inventory の直しを確かめる中で見つかった。Vue のテンプレートの ref は、実行時にも lint にも見えない。README と統合の手引きは `ref="名前"` と書くようになった。アダプターの README は @wc-bindable の issue に入れた。 |
 | `/ja/` のページから、別の言語の basename へ `<wcs-link to="/en/search">` でつなぐ。 | `to` は basename を足すルートのパス: リンクは `/ja/en/search` — 同じ言語の not-found のページ — へ行く。 | 動かない | どこからも見えない — 文書。router の README: basename を出るリンクは素の `<a href>`。`examples/router-i18n` が言語の切り替えを示す。 |
+| `$errorCallback` を置き、失敗の報告を `window.onerror` / `error` のリスナーに任せる。 | 4.7 からエンジンのエラーは `reportError()` でページのエラーハンドラに届くが、`$errorCallback` のある state のバインディングの失敗はコールバックにだけ行く: エラーの報告に届かない（homeroom の 4.2.0 の形のコールバック、更新の後）。 | 劣化 | どこからも見えない — 文書。state の README: `$errorCallback` の中で `reportError(error)` を呼ぶ（homeroom、4.11）。 |
 | その場で言語を切り替える: 別の言語の basename へ移る代わりに、`<html lang>` を変えて state の辞書を差し替える。 | 文は変わるが、フィルタは state を読み込んだときのロケール（日付、金額）のまま、`<title>` と URL も最初の言語のまま。 | 劣化 | どこからも見えない — 文書。docs/i18n-design.md（ライブの切り替えは無い）、state の README のロケールの節、スキル: 言語は state を読み込む前にマークアップにある。 |
 | `<wcs-link>` に `attr.aria-*:` を束ねる。 | `aria-*` はリンクが `<a>` を作るときに 1 回写されるだけで、後の値は届かない。`for:` の行や `if:` の枝では接続の前に束ねるので最初の値は届き、ページの階層のリンクでは届かない。 | 劣化 | 設計で消す — 4.x。リンクが後の `aria-*` の変化を転送できる。 |
 | イベントが届くたびに通知を出す。 | スリープの間に届いたものは、復帰したときにまとめて届く: 一度に 37 件の通知、その多くはもう閉じたチケットのもの。 | 劣化 | どこからも見えない — 文書。notification の README と docs/long-lived-pages.ja.md: 復帰の後は通知を止め、要約する。 |
 | `<wcs-sse>` の `readyState === 2` を諦めたストリームとみなし、開き直す。 | `readyState` は最初の接続の前も `CLOSED` で、`$watch` は要素の最初の値で 1 回発火する: 開き直しが読み込みのたびに走り、トークンを更新し、2 本目のストリームを開いた。 | 劣化 | 設計で消す — 5.0 の議題（破壊的）。sse の README は `errorInfo.recoverable: false` で見分けると言う（4.8 の文書）。4.9（未リリース）から、`auto-reconnect` がページの手を借りずに開き直す。`CLOSED` でない最初の値なら消せるが、出力が変わる — 5.0 の問い。 |
 | イベントのたびに変わる位置を `<wcs-sse>` の `url` に入れる（`since=` ＋最後に当てた id）。 | イベントのたびに url が変わり、要素はストリームを閉じて開き直す: 30 秒で 15 本の接続。データは正しいままなので、何も気づかせない。 | 劣化 | 実行時に知らせる — 4.x。sse の README の作法が 4.8 の文書までこの形だった。開いたストリームの url が数秒のうちに何度も変わったら、要素が警告できる。 |
 | ストリームのイベントをすべて一覧に足し、減らさない。 | シフトの間開いたページでは、一覧がすべてのイベントを持つ: 10,000 件で DOM ノード 35,333（上限を設けると 5,360）、一日中伸び続ける。 | 劣化 | どこからも見えない — 文書。docs/long-lived-pages.ja.md（伸びるものに上限を）。どの長さが長すぎるかはページが決める。 |
+| 更新で要らなくなった回避策を残す: 4.10 の router の下のスキップリンクの `onclick#prevent` のハンドラ。 | ハンドラが router 自身のページ内の移動を取り消す: フォーカスは移るが、URL に `#main` が付かず履歴も積まれず、回避策に合わせて書いたテストは通ったまま。 | 劣化 | どこからも見えない — 文書。docs/upgrading-4x.md が、版ごとに要らなくなった回避策と害をするものを挙げる（homeroom、4.11）。 |
 
 ### lint だけ — 条件付きの沈黙
 
@@ -141,7 +145,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 外れた 3.x の宣言を `this` 越しに読む（`this.$streams`・`this.$updatedCallback`）。 | `wcs/declaration-alias-read` (varies) | `undefined` が返り、呼べば汎用の TypeError。 | 動かない | 実行時に知らせる — 4.x。diagnostics の後付けの `dollar` のフックが、外れた宣言を名指せる（core は 0 B）。 |
 | `$renderedCallback(paths)` が、どの束縛も名指さない宣言済みのパスか、state に無いパスを調べる（`paths.includes("feed")`・`paths.includes("labell")`）。 | `wcs/updated-callback-unbound` (warning) | `paths` には当てた束縛しか載らないので、その分岐は走らない。 | 動かない | lint のまま（実行時には見えない）。実行時の推測（`includes` が警告する `paths`）は、調べ方は捕まえても意図は捕まえられない。state に無いパスは、近いパスがあるときだけ（打ち間違いらしいとき）報告する。コールバックはほかの種類の文字列も比べうるため。 |
 | `<wcs-storage>` の `value#init=element` を、`null` でないリテラルで始めたパスに束ねる（`cart: []`）。 | `wcs/storage-init-seed` (warning) | 空のキーは `null` を読むので、最初の引き込みがシードを置き換える。`for: cart` は何も描かず、`this.cart.length` を読むコードは汎用の TypeError を投げる。 | 動かない | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 明示の `#init=element` が値を `null` で置き換えるときに警告する（diagnostics の後付け）。5.0: 無いキーは `undefined` を読み、シードを残す（README は `null` と書いている）。 |
-| ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。 | `wcs/tag-package-missing` (warning) | 要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。 | 動かない | 実行時に知らせる — 4.x。4.11 から lint が、wcstack を自分で読み込むページ（断片・バンドラのページでない）でパッケージごとに 1 回報告する。実行時に言うには待ち時間が要る（パッケージは遅れて来うる）ので、diagnostics の後付けがページの準備ができてから数秒後に言える（core は 0 B）。 |
 | `$watch` のキーに空の段がある（`a..b`）。 | `wcs/watch-declaration-invalid` (error) | 実行時は調べないので、watch は発火しない。 | 動かない | 実行時に知らせる — 4.x。temporal の後付けに検査を 1 つ（約 10 B）。 |
 | `attr.aria-*:` の ARIA 属性名を打ち間違える。 | `wcs/aria-attr-unknown` (warning) | 属性は書かれ、支援技術は無視する。 | 劣化 | lint のまま（実行時には見えない）。名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。 |
 | `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (info) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。 |
@@ -210,6 +213,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `<wcs-listen>` → state → `<wcs-speak>` を、聞き取り中に読み上げを止めずに繋ぐ。 | code なし: マイクが読み上げを聞き、聞いたものがまた話され、回るたびに長くなる。ページの `<wcs-listen>` が聞いている間に話し始めると、`<wcs-speak>` が `[wcs/speech-echo]` で 1 回警告する。 | — |
 | `wcBindable` の宣言の無いタグ（`<wcs-fetch-header>`）に spread（`...:`）する。 | 同じ code: 取り付けの時点で `#1501`。root では state が初期化に失敗し、行では束縛が失敗する。 | `wcs/spread-no-bindable` (error) |
 | `wcs-*` のタグ（やページが定義した自作要素）が宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。 | code なし: `#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。 ページが自分で定義した自作要素（スクリプト・`src=` のモジュールとその import の中の `customElements.define`）も、その `static wcBindable` が字面で読めるときは同じように照合する。7GUIs の評価で、その `eventToken.` / `command.` の打ち間違いが、近いメンバーを示さない実行時に任されていたことが見つかった。 | `wcs/tag-member-unknown` (error) |
+| ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。 | code なし: 要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。4.11 から lint が読み込むパッケージを名指し（wcstack を自分で読み込むページで）、diagnostics の後付けがページの準備ができてから 5 秒後に警告する（`[wcs/element-undefined]`）。 | `wcs/tag-package-missing` (warning) |
 | テンプレートの規則を破る: 1 つのテンプレートに構造ディレクティブを 2 つ、`for:`・`if:` のテンプレートの中の `outerHTML:`。 | 同じ code: 束縛の計画で `#201`〜`#203`、state は初期化に失敗する。`#204`（挿入された中身の先頭の構造テンプレート）は記録される。 | `wcs/template-syntax` (varies) |
 | コマンドのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、または `nativeCommands` の表に無いネイティブ要素のメソッド。 | 同じ code: 計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。 | `wcs/token-misconfigured` (error) |
 | state が宣言しないコマンドかイベントのトークンを使う。 | 同じ code: `command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は `undefined` で、`.emit()` は何も名指さない TypeError を投げる（lint は error）。 | `wcs/token-undeclared` (varies) |

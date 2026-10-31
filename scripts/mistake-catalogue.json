@@ -1101,11 +1101,10 @@
     {
       "id": "tag-package-missing",
       "lint": [{ "code": "wcs/tag-package-missing", "severity": "warning" }],
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Writes a `wcs-*` tag of a package the page never loads (`<wcs-upload>` without `@wcstack/upload/auto`).", "ja": "ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。" },
-      "effect": { "en": "The element is never defined: its bindings wait and nothing happens, with nothing in the console. The homeroom seam app's Save hung at \"送信中 0%\".", "ja": "要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。" },
-      "disposition": "runtime-report",
-      "note": { "en": "Since 4.11 the lint reports it on a page that loads wcstack itself (not a fragment or a bundler's page), once per package. A runtime report needs a delay — a package may come late — so the diagnostics add-on can say it a few seconds after the page is ready, with no core bytes.", "ja": "4.11 から lint が、wcstack を自分で読み込むページ（断片・バンドラのページでない）でパッケージごとに 1 回報告する。実行時に言うには待ち時間が要る（パッケージは遅れて来うる）ので、diagnostics の後付けがページの準備ができてから数秒後に言える（core は 0 B）。" }
+      "effect": { "en": "The element is never defined: its bindings wait and nothing happens, with nothing in the console. The homeroom seam app's Save hung at \"送信中 0%\". Since 4.11 the lint names the package to load (on a page that loads wcstack itself), and the diagnostics add-on warns 5 s after the page is ready (`[wcs/element-undefined]`).", "ja": "要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。4.11 から lint が読み込むパッケージを名指し（wcstack を自分で読み込むページで）、diagnostics の後付けがページの準備ができてから 5 秒後に警告する（`[wcs/element-undefined]`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/element-undefined]" }]
     },
     {
       "id": "package-twice",
@@ -1113,6 +1112,42 @@
       "mistake": { "en": "Leaves a `<script>` of a package at another version beside the new one — an upgrade that missed a line, a bundle and a member pinned apart.", "ja": "別の版のパッケージの `<script>` を新しいものと並べて残す — 1 行を上げ忘れた更新、版の違うバンドルとメンバー。" },
       "effect": { "en": "The copy the page evaluates first defines the tags and the other does nothing: an old line placed first runs the old version, with none of what the upgrade fixed (the homeroom seam app ran the 4.2.0 engine on its 4.10.1 page). Since 4.11 the second copy warns once, naming both versions (`[wcs/package-twice]`, timing contract §24); two copies of one version stay quiet. A copy before 4.11 has no code to say it.", "ja": "ページが先に評価した写しがタグを定義し、もう一方は何もしない: 先に置いた古い行は古い版を動かし、更新で直したものは何も効かない（継ぎ目アプリ homeroom は 4.10.1 のページで 4.2.0 のエンジンを動かした）。4.11 から 2 つ目の写しが両方の版を名指して 1 回警告する（`[wcs/package-twice]`、タイミング契約 §24）。同じ版の 2 つは黙ったまま。4.11 より前の写しには言うコードが無い。" },
       "evidence": [{ "file": "protocol/define-element.ts", "text": "[wcs/package-twice]" }]
+    },
+    {
+      "id": "trigger-after-clearing",
+      "lint": [],
+      "runtime": "silent", "harm": "security",
+      "mistake": { "en": "Writes, in one handler, what a `trigger` sends before the trigger: `this.session = null; this.logoutTrigger = true;` with the `Authorization` header bound to the session.", "ja": "1 つのハンドラで、`trigger` が送るものを trigger より先に書く: セッションに束ねた `Authorization` のヘッダで `this.session = null; this.logoutTrigger = true;`。" },
+      "effect": { "en": "Within one update the bindings apply in the order the paths were written, and the request leaves with the inputs and headers of that moment: the logout goes out without its token, the server answers 204 and the token stays valid. Written the other way round, it carries the token (examples/router-auth's order).", "ja": "1 回の更新の中では束縛は書いた順に当たり、要求はそのときの入力とヘッダで出る: ログアウトはトークン無しで出て、サーバーは 204 を返し、トークンは有効なまま残る。逆の順ならトークンが付く（examples/router-auth の順）。" },
+      "disposition": "docs-only",
+      "note": { "en": "The fetch README and the timing contract (homeroom, 4.11). Every binding order is a legal one; no check can tell the intended order.", "ja": "fetch の README とタイミング契約（homeroom、4.11）。どの順も正しい書き方で、意図した順を見分けられる検査は無い。" }
+    },
+    {
+      "id": "workaround-kept-after-fix",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Keeps a workaround an upgrade made unnecessary: a skip link's `onclick#prevent` handler under the 4.10 router.", "ja": "更新で要らなくなった回避策を残す: 4.10 の router の下のスキップリンクの `onclick#prevent` のハンドラ。" },
+      "effect": { "en": "The handler cancels the router's own in-page move: focus lands, but the URL gets no `#main` and no history entry, and the tests written against the workaround still pass.", "ja": "ハンドラが router 自身のページ内の移動を取り消す: フォーカスは移るが、URL に `#main` が付かず履歴も積まれず、回避策に合わせて書いたテストは通ったまま。" },
+      "disposition": "docs-only",
+      "note": { "en": "docs/upgrading-4x.md lists, release by release, the workarounds each release made unnecessary and the ones that do harm (homeroom, 4.11).", "ja": "docs/upgrading-4x.md が、版ごとに要らなくなった回避策と害をするものを挙げる（homeroom、4.11）。" }
+    },
+    {
+      "id": "error-callback-hides-binding-failures",
+      "lint": [],
+      "runtime": "silent", "harm": "degraded",
+      "mistake": { "en": "Declares `$errorCallback` and counts on `window.onerror` / an `error` listener to report what fails.", "ja": "`$errorCallback` を置き、失敗の報告を `window.onerror` / `error` のリスナーに任せる。" },
+      "effect": { "en": "Since 4.7 the engine's errors reach the page's error handlers through `reportError()`, but a state with `$errorCallback` sends its binding failures to the callback only: the error reporter never sees them (homeroom's 4.2.0-style callback, after the upgrade).", "ja": "4.7 からエンジンのエラーは `reportError()` でページのエラーハンドラに届くが、`$errorCallback` のある state のバインディングの失敗はコールバックにだけ行く: エラーの報告に届かない（homeroom の 4.2.0 の形のコールバック、更新の後）。" },
+      "disposition": "docs-only",
+      "note": { "en": "The state README: call `reportError(error)` inside `$errorCallback` (homeroom, 4.11).", "ja": "state の README: `$errorCallback` の中で `reportError(error)` を呼ぶ（homeroom、4.11）。" }
+    },
+    {
+      "id": "unpinned-line-in-pinned-page",
+      "lint": [],
+      "runtime": "silent", "harm": "stale",
+      "mistake": { "en": "Copies an unpinned quick-start line (`https://esm.run/@wcstack/fetch/auto`) into a page that pins its versions.", "ja": "版を固定したページに、版を書かないクイックスタートの行（`https://esm.run/@wcstack/fetch/auto`）を写す。" },
+      "effect": { "en": "That package follows npm `latest` while the rest stay pinned; the URL it redirects to names no version, and packages of different minors run together without a word (they are compatible, so nothing breaks until one needs another's newer part).", "ja": "そのパッケージだけ npm の `latest` に従い、残りは固定のまま。転送先の URL にも版が無く、minor の違うパッケージが黙って一緒に動く（互換なので、どれかが別のものの新しい部分を要るまでは壊れない）。" },
+      "disposition": "docs-only",
+      "note": { "en": "docs/upgrading-4x.md (mixed versions). A second copy of the same package warns (`[wcs/package-twice]`); different packages at different minors are compatible on purpose.", "ja": "docs/upgrading-4x.md（版の混在）。同じパッケージの 2 つ目の写しは警告する（`[wcs/package-twice]`）。違うパッケージの minor の違いは意図して互換。" }
     }
   ],
   "uncounted": [
