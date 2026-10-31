@@ -663,18 +663,20 @@ describe("WebSocketCore", () => {
     it("dispose は接続を閉じる", () => {
       const core = new WebSocketCore();
       core.connect("ws://localhost:8080");
+      MockWebSocket.instances[0].simulateOpen();
       core.dispose();
       expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
     });
 
-    it("dispose 後に発火した open イベントは状態を書き換えない（_gen ガード）", () => {
+    it("suspend 後に発火した open イベントは状態を書き換えない（_gen ガード）", () => {
       const core = new WebSocketCore();
       core.connect("ws://localhost:8080");
       const ws = MockWebSocket.instances[0];
 
-      // dispose() は _gen を bump し close() する。close() はリスナを除去しないため、
-      // 以降に古いソケットへ発火したイベントはハンドラに届くが stale gen で握り潰される。
-      core.dispose();
+      // suspend() は _gen を bump し、開く途中のソケットもその場で close() する。close() は
+      // リスナを除去しないため、以降に古いソケットへ発火したイベントはハンドラに届くが stale gen
+      // で握り潰される（dispose() は開く途中のソケットからはリスナを外して手放す — 下の describe）。
+      core.suspend();
       ws.simulateOpen();
       expect(core.connected).toBe(false);
     });
@@ -683,6 +685,7 @@ describe("WebSocketCore", () => {
       const core = new WebSocketCore();
       core.connect("ws://localhost:8080");
       const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
       core.dispose();
       ws.simulateMessage("late");
       expect(core.message).toBeNull();
@@ -692,6 +695,7 @@ describe("WebSocketCore", () => {
       const core = new WebSocketCore();
       core.connect("ws://localhost:8080");
       const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
       core.dispose();
       const errorBefore = core.error;
       ws.simulateError();
@@ -961,6 +965,173 @@ describe("WebSocketCore", () => {
       ws.close.mockImplementation(() => { throw new Error("gone"); });
       vi.advanceTimersByTime(1000);
       expect(core.connected).toBe(false);
+    });
+  });
+
+  // 開く途中のソケットへの close() で Chromium は "WebSocket is closed before the connection is
+  // established." と警告する。開いた直後にルートを離れるたびに出ていた（docs/seam-apps.md、homeroom）
+  describe("開く途中のソケットは、開いてから閉じる", () => {
+    function track(core: WebSocketCore): string[] {
+      const log: string[] = [];
+      for (const type of ["connected-changed", "loading-changed", "readystate-changed", "error", "message"]) {
+        core.addEventListener(`wcs-ws:${type}`, (e) => log.push(`${type}:${String((e as CustomEvent).detail)}`));
+      }
+      return log;
+    }
+
+    it("close(): その場では閉じずに手放し、終わりをその場で知らせ、開いたら code / reason で閉じる", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+      const log = track(core);
+
+      core.close(4001, "bye");
+      expect(ws.close).not.toHaveBeenCalled();
+      expect(log).toEqual(["connected-changed:false", "loading-changed:false", "readystate-changed:3"]);
+      expect(core.connected).toBe(false);
+      expect(core.loading).toBe(false);
+      expect(core.readyState).toBe(WebSocket.CLOSED);
+
+      // 手放したソケットのイベントは Core に届かない
+      ws.simulateOpen();
+      expect(ws.close).toHaveBeenCalledTimes(1);
+      expect(ws.close).toHaveBeenCalledWith(4001, "bye");
+      ws.simulateMessage("late");
+      ws.simulateError();
+      ws.simulateClose(1000);
+      expect(log).toHaveLength(3);
+      expect(core.message).toBeNull();
+      expect(core.error).toBeNull();
+      expect(core.connected).toBe(false);
+    });
+
+    it("close() の後の send は未接続として error に流す", () => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      core.close();
+      core.send("hello");
+      expect(MockWebSocket.instances[0].send).not.toHaveBeenCalled();
+      expect(core.error).toEqual({ message: "WebSocket is not connected." });
+    });
+
+    it("開いたときに code / reason が拒まれても、ソケットは閉じる", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+      core.close(1, "invalid code");
+      ws.close.mockImplementationOnce(() => { throw new DOMException("invalid code", "InvalidAccessError"); });
+      expect(() => ws.simulateOpen()).not.toThrow();
+      expect(ws.close).toHaveBeenCalledTimes(2);
+      expect(ws.close).toHaveBeenLastCalledWith();
+    });
+
+    it("開けずに失敗したソケットは閉じずに捨てる", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+      core.close();
+      ws.simulateError();
+      ws.simulateClose(1006);
+      // 捨てた後は open が来ても（来ないが）閉じに行かない — リスナーは残らない
+      ws.simulateOpen();
+      expect(ws.close).not.toHaveBeenCalled();
+      expect(core.error).toBeNull();
+    });
+
+    it("close イベントだけで終わったソケットも捨てる", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+      core.dispose();
+      ws.simulateClose(1006);
+      ws.simulateOpen();
+      expect(ws.close).not.toHaveBeenCalled();
+    });
+
+    it("dispose(): 終わりを 1 回だけ知らせ、開いたら閉じ、auto-reconnect でもつなぎ直さない", () => {
+      vi.useFakeTimers();
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080", { autoReconnect: true, reconnectInterval: 100 });
+      const ws = MockWebSocket.instances[0];
+      const log = track(core);
+
+      core.dispose();
+      expect(ws.close).not.toHaveBeenCalled();
+      expect(log).toEqual(["connected-changed:false", "loading-changed:false", "readystate-changed:3"]);
+
+      ws.simulateOpen();
+      expect(ws.close).toHaveBeenCalledWith(undefined, undefined);
+      ws.simulateClose(1006);
+      vi.advanceTimersByTime(1000);
+      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(log).toHaveLength(3);
+      vi.useRealTimers();
+    });
+
+    it("connect() が開く途中のソケットを置き換えるときも、古いソケットは開いてから閉じる", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const first = MockWebSocket.instances[0];
+
+      core.connect("ws://localhost:9090");
+      expect(first.close).not.toHaveBeenCalled();
+      const second = MockWebSocket.instances[1];
+      expect(core.readyState).toBe(WebSocket.CONNECTING);
+
+      // 古いソケットが開いても新しい接続の状態は変わらない
+      first.simulateOpen();
+      expect(first.close).toHaveBeenCalledTimes(1);
+      expect(first.close).toHaveBeenCalledWith(undefined, undefined);
+      expect(core.connected).toBe(false);
+      expect(core.loading).toBe(true);
+      expect(core.readyState).toBe(WebSocket.CONNECTING);
+
+      second.simulateOpen();
+      expect(core.connected).toBe(true);
+      expect(second.close).not.toHaveBeenCalled();
+    });
+
+    it("auto-reconnect がつなぎ直している途中のソケットも、dispose では開いてから閉じる", () => {
+      vi.useFakeTimers();
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080", { autoReconnect: true, reconnectInterval: 100 });
+      MockWebSocket.instances[0].simulateOpen();
+      MockWebSocket.instances[0].simulateClose(1006);
+      vi.advanceTimersByTime(100);
+      const retry = MockWebSocket.instances[1];
+      expect(retry.readyState).toBe(MockWebSocket.CONNECTING);
+
+      core.dispose();
+      expect(retry.close).not.toHaveBeenCalled();
+      retry.simulateOpen();
+      expect(retry.close).toHaveBeenCalledTimes(1);
+      expect(core.connected).toBe(false);
+      vi.useRealTimers();
+    });
+
+    it("開いたソケットの close() は従来どおりその場で閉じ、終わりは close イベントで知らせる", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+      ws.simulateOpen();
+      const log = track(core);
+
+      core.close();
+      expect(ws.close).toHaveBeenCalledTimes(1);
+      expect(log).toEqual([]);
+      ws.simulateClose(1000);
+      expect(log).toEqual(["connected-changed:false", "loading-changed:false", "readystate-changed:3"]);
+    });
+
+    it("suspend() は開く途中のソケットもその場で閉じる（back/forward cache に入れるため）", () => {
+      const core = new WebSocketCore();
+      core.connect("ws://localhost:8080");
+      const ws = MockWebSocket.instances[0];
+      expect(core.suspend()).toBe(true);
+      expect(ws.close).toHaveBeenCalledTimes(1);
+      expect(core.connected).toBe(false);
+      expect(core.readyState).toBe(WebSocket.CLOSED);
     });
   });
 
