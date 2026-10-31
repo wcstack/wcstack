@@ -1,3 +1,4 @@
+import pkg from '../package.json' with { type: 'json' };
 import { Route } from './components/Route';
 import { Layout } from './components/Layout';
 import { Outlet } from './components/Outlet';
@@ -6,6 +7,7 @@ import { LayoutOutlet } from './components/LayoutOutlet';
 import { Link } from './components/Link';
 import { Head } from './components/Head';
 import { config } from './config';
+import { defineElements } from './protocol/defineElement';
 
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
@@ -14,25 +16,13 @@ import { config } from './config';
  */
 export function registerComponents(registry: CustomElementRegistry = customElements) {
   // Register custom element
-  if (!registry.get(config.tagNames.layout)) {
-    registry.define(config.tagNames.layout, Layout);
-  }
-  if (!registry.get(config.tagNames.layoutOutlet)) {
-    registry.define(config.tagNames.layoutOutlet, LayoutOutlet);
-  }
-  if (!registry.get(config.tagNames.outlet)) {
-    registry.define(config.tagNames.outlet, Outlet);
-  }
-  if (!registry.get(config.tagNames.route)) {
-    registry.define(config.tagNames.route, Route);
-  }
-  if (!registry.get(config.tagNames.router)) {
-    registry.define(config.tagNames.router, Router);
-  }
-  if (!registry.get(config.tagNames.link)) {
-    registry.define(config.tagNames.link, Link);
-  }
-  if (!registry.get(config.tagNames.head)) {
-    registry.define(config.tagNames.head, Head);
-  }
+  defineElements(registry, `${pkg.name}@${pkg.version}`, [
+    [config.tagNames.layout, Layout],
+    [config.tagNames.layoutOutlet, LayoutOutlet],
+    [config.tagNames.outlet, Outlet],
+    [config.tagNames.route, Route],
+    [config.tagNames.router, Router],
+    [config.tagNames.link, Link],
+    [config.tagNames.head, Head],
+  ]);
 }
