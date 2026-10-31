@@ -5,6 +5,7 @@
 //   packages/<pkg>/src/protocol/wcBindableReader.ts (no consumer since the 4.0 state, see below)
 //   packages/<pkg>/src/protocol/transitionRunner.ts
 //   packages/<pkg>/src/protocol/binder.ts, ssrSnapshot.ts, upgradeProperties.ts, inputAttribute.ts
+//   packages/<pkg>/src/protocol/defineElement.ts
 //
 // Each package's own types file re-exports from that copy, so the package stays
 // independently buildable/publishable with zero runtime dependency (the types erase
@@ -32,6 +33,9 @@ const canonicalInputAttributeTestPath = join(repoRoot, "protocol", "input-attrib
 const canonicalTransitionRunnerPath = join(repoRoot, "protocol", "transition-runner.ts");
 const canonicalBinderPath = join(repoRoot, "protocol", "binder.ts");
 const canonicalSsrSnapshotPath = join(repoRoot, "protocol", "ssr-snapshot.ts");
+const canonicalDefineElementPath = join(repoRoot, "protocol", "define-element.ts");
+const canonicalDefineElementTestPath = join(repoRoot, "protocol", "define-element.test.ts");
+const canonicalDefineElementRegistrationTestPath = join(repoRoot, "protocol", "define-element.registration.test.ts");
 
 // Packages that declare the strict wc-bindable manifest contract and must stay in sync.
 const TARGET_PACKAGES = [
@@ -85,6 +89,17 @@ const NO_ATTRIBUTE_INPUT_PACKAGES = new Set([
 ]);
 const INPUT_ATTRIBUTE_TARGET_PACKAGES = UPGRADE_TARGET_PACKAGES.filter((pkg) => !NO_ATTRIBUTE_INPUT_PACKAGES.has(pkg));
 
+// 自分のタグを定義するパッケージ（docs/timing-and-firing-contract.md §24: 別のコピーが先に定義して
+// いたら、版を名指しして 1 回警告する）。Shell を持つパッケージに加えて autoloader / devtools と
+// state（core ではなく完全版の入口 — `.` と `/auto` — が src/twice.ts から使う）。server と signals は
+// タグを定義しない。
+const DEFINE_ELEMENT_TARGET_PACKAGES = [...UPGRADE_TARGET_PACKAGES, "autoloader", "devtools", "state"];
+
+// src/registerComponents.ts でタグを定義するパッケージ。その登録が規則に従うことを、コピーした適合
+// テスト（__tests__/protocol.defineElement.registration.test.ts）が確かめる。state は core の
+// define() を src/twice.ts で包むので、自分のテスト（__tests__/twice.test.ts）で確かめる。
+const DEFINE_ELEMENT_REGISTRATION_TARGET_PACKAGES = DEFINE_ELEMENT_TARGET_PACKAGES.filter((pkg) => pkg !== "state");
+
 // --- Completeness guards ---------------------------------------------------
 // Two failure modes the stale-compare below cannot see:
 //   (1) a new canonical file lands in /protocol/ without being registered here
@@ -105,6 +120,9 @@ const CANONICAL_SOURCES = new Set([
   "transition-runner.ts",
   "binder.ts",
   "ssr-snapshot.ts",
+  "define-element.ts",
+  "define-element.test.ts",
+  "define-element.registration.test.ts",
 ]);
 
 function assertCanonicalDirComplete() {
@@ -188,6 +206,14 @@ function main() {
   const transitionRunnerContent = expectedContent(canonicalTransitionRunnerPath, "transition-runner.ts");
   const binderContent = expectedContent(canonicalBinderPath, "binder.ts");
   const ssrSnapshotContent = expectedContent(canonicalSsrSnapshotPath, "ssr-snapshot.ts");
+  const defineElementContent = expectedContent(canonicalDefineElementPath, "define-element.ts");
+  const defineElementTestContent = expectedContent(canonicalDefineElementTestPath, "define-element.test.ts")
+    .replace('from "./define-element.js"', 'from "../src/protocol/defineElement.js"');
+  // written with the paths its copies need: it imports the package's own registerComponents
+  const defineElementRegistrationTestContent = expectedContent(
+    canonicalDefineElementRegistrationTestPath,
+    "define-element.registration.test.ts",
+  );
   const targets = [
     ...TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindable.ts", content: typeContent })),
     ...READER_TARGET_PACKAGES.map((pkg) => ({ pkg, fileName: "wcBindableReader.ts", content: readerContent })),
@@ -219,6 +245,23 @@ function main() {
       pkg,
       fileName: "ssrSnapshot.ts",
       content: ssrSnapshotContent,
+    })),
+    ...DEFINE_ELEMENT_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "defineElement.ts",
+      content: defineElementContent,
+    })),
+    ...DEFINE_ELEMENT_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "protocol.defineElement.test.ts",
+      content: defineElementTestContent,
+      dir: ["__tests__"],
+    })),
+    ...DEFINE_ELEMENT_REGISTRATION_TARGET_PACKAGES.map((pkg) => ({
+      pkg,
+      fileName: "protocol.defineElement.registration.test.ts",
+      content: defineElementRegistrationTestContent,
+      dir: ["__tests__"],
     })),
   ];
 

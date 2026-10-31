@@ -1,6 +1,8 @@
+import pkg from "../package.json" with { type: "json" };
 import { WcsCamera } from "./components/Camera.js";
 import { WcsRecorder } from "./components/Recorder.js";
 import { config } from "./config.js";
+import { defineElements } from "./protocol/defineElement.js";
 
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
@@ -8,10 +10,8 @@ import { config } from "./config.js";
  * one, so a tree using one needs its own definitions.
  */
 export function registerComponents(registry: CustomElementRegistry = customElements): void {
-  if (!registry.get(config.tagNames.camera)) {
-    registry.define(config.tagNames.camera, WcsCamera);
-  }
-  if (!registry.get(config.tagNames.recorder)) {
-    registry.define(config.tagNames.recorder, WcsRecorder);
-  }
+  defineElements(registry, `${pkg.name}@${pkg.version}`, [
+    [config.tagNames.camera, WcsCamera],
+    [config.tagNames.recorder, WcsRecorder],
+  ]);
 }

@@ -1,6 +1,8 @@
+import pkg from "../package.json" with { type: "json" };
 import { WcsUpload } from "./components/Upload.js";
 import { WcsUploadHeader } from "./components/UploadHeader.js";
 import { config } from "./config.js";
+import { defineElements } from "./protocol/defineElement.js";
 
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
@@ -8,10 +10,8 @@ import { config } from "./config.js";
  * one, so a tree using one needs its own definitions.
  */
 export function registerComponents(registry: CustomElementRegistry = customElements): void {
-  if (!registry.get(config.tagNames.upload)) {
-    registry.define(config.tagNames.upload, WcsUpload);
-  }
-  if (!registry.get(config.tagNames.uploadHeader)) {
-    registry.define(config.tagNames.uploadHeader, WcsUploadHeader);
-  }
+  defineElements(registry, `${pkg.name}@${pkg.version}`, [
+    [config.tagNames.upload, WcsUpload],
+    [config.tagNames.uploadHeader, WcsUploadHeader],
+  ]);
 }

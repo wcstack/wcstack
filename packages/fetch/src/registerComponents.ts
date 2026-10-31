@@ -1,8 +1,10 @@
+import pkg from "../package.json" with { type: "json" };
 import { Fetch } from "./components/Fetch.js";
 import { FetchHeader } from "./components/FetchHeader.js";
 import { FetchBody } from "./components/FetchBody.js";
 import { InfiniteScroll } from "./components/InfiniteScroll.js";
 import { config } from "./config.js";
+import { defineElements } from "./protocol/defineElement.js";
 
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
@@ -10,16 +12,10 @@ import { config } from "./config.js";
  * one, so a tree using one needs its own definitions.
  */
 export function registerComponents(registry: CustomElementRegistry = customElements): void {
-  if (!registry.get(config.tagNames.fetch)) {
-    registry.define(config.tagNames.fetch, Fetch);
-  }
-  if (!registry.get(config.tagNames.fetchHeader)) {
-    registry.define(config.tagNames.fetchHeader, FetchHeader);
-  }
-  if (!registry.get(config.tagNames.fetchBody)) {
-    registry.define(config.tagNames.fetchBody, FetchBody);
-  }
-  if (!registry.get(config.tagNames.infiniteScroll)) {
-    registry.define(config.tagNames.infiniteScroll, InfiniteScroll);
-  }
+  defineElements(registry, `${pkg.name}@${pkg.version}`, [
+    [config.tagNames.fetch, Fetch],
+    [config.tagNames.fetchHeader, FetchHeader],
+    [config.tagNames.fetchBody, FetchBody],
+    [config.tagNames.infiniteScroll, InfiniteScroll],
+  ]);
 }

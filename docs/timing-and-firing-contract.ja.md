@@ -574,3 +574,34 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 
 ### 23.7 テスト
 各ノードに次のテストがある: 先に積まれたマイクロタスクが入力を変える入れ直し（仕事は新しい入力だけを使う）、マイクロタスクより前に外した要素（仕事をしない）、付けたのと同じタスクで書いた門、同じタスクの停止の側のコマンド。
+
+## 24. 横断契約: パッケージの 2 つ目のコピーは警告する（2026-10-31）
+
+対象: カスタム要素を定義するすべてのパッケージ — I/O ノード、`@wcstack/router`、`@wcstack/autoloader`、`@wcstack/view-transition`、`@wcstack/devtools`、`@wcstack/state` の完全版の入口。継ぎ目アプリ `homeroom` が見つけた（[seam-apps.ja.md](./seam-apps.ja.md)）。4.2.0 から 4.10.1 へ上げたアプリが、古い `<script type="module" src=".../@wcstack/state@4.2.0/auto">` を 1 つ新しいものの前に残し、4.2.0 のエンジンで動いていた: ページが先に評価したコピーがタグを定義し、2 つ目は定義済みのタグを見て何もしなかった — 何も言わずに。どのパッケージもその形でタグを登録していた（`if (!registry.get(tag)) registry.define(tag, Cls)`）。
+
+### 24.1 定義したクラスはパッケージと版を名乗る
+パッケージが定義するクラスは、`Symbol.for("wcstack.package")` に `"<パッケージ>@<版>"`（`"@wcstack/fetch@4.11.0"`）を持つ。サブクラスはそれを継ぐ。版はパッケージの `package.json` のもので、ビルドのときに埋め込む。この規則より前の古いコピーは持たず、印を付けない入口で読み込んだコピーも持たない（§24.4）。
+
+### 24.2 自分のタグが別のコピーに定義されていたら、両方の版を名指しして 1 回警告する
+パッケージのタグの 1 つが、このコピーのクラスでもそのサブクラスでもなく、このコピーのパッケージと版も持たないクラスで定義済みなら、コピーはそのタグに何も定義せず、パッケージごと・レジストリごとに 1 回（タグごとではない）警告する:
+
+```
+[@wcstack/fetch] [wcs/package-twice] <wcs-fetch> is already defined by @wcstack/fetch@4.2.0; this copy, @wcstack/fetch@4.11.0, does nothing. Load each package once.
+```
+
+相手のクラスが版を持たなければ、版がいくつであってもパッケージの名前だけで呼ぶ — `another copy of @wcstack/fetch that does not name its version`。古いコピーか、`/core` や `dist/split/auto.js` で読み込んだコピー（§24.4）。
+
+### 24.3 何も言わないもの
+- このコピーが同じレジストリにもう一度登録すること、利用者がこのコピーのクラスのサブクラスを意図してそのタグに定義したこと。
+- 同じパッケージの同じ版の別のコピー: 害が無い — 同じリリースの `wcstack/auto` のバンドルと `@wcstack/state/auto` を並べたとき。
+- 版の違う別々のパッケージ（state 4.2 と router 4.10）: 組み合わせられる。警告するのは同じパッケージの 2 つ目のコピーだけ。
+- 新しいコピーの後に評価された、この規則より前の古いコピー: 警告するコードを持たない。新しいコピーが動く。
+
+### 24.4 `@wcstack/state`: core ではなく完全版の入口
+`<wcs-state>` と `<wcs-ssr>` は、core の `define()` を包む `/auto` と `.` の `bootstrapState` が確かめる: core はこの確認を持たない（gzip 20 KiB の予算）。`<wcs-state>` はエンジンの `WcsState` と比べる。`/core`（`@wcstack/state/core` の `bootstrapState`）と `dist/split/auto.js` はこれまでどおりタグを定義し、印を付けず、何も言わない: それで読み込んだコピーは、後から読み込まれた完全版の入口から `another copy of @wcstack/state that does not name its version` と呼ばれる。確認の重さは完全版の入口で gzip 約 250 B。`dist/split/auto.js` では約 400 B で、そのファイルのゲートを超える。
+
+### 24.5 実装
+ヘルパーは 1 つ、`/protocol/define-element.ts`（`defineElements(registry, pkg, [[tag, Class], …])`・`warnIfAnotherCopy`・`stampPackage`）で、`scripts/sync-protocol-types.mjs` が各パッケージへ写す。各パッケージの `registerComponents()` は、自分の `package.json` から読んだ `` `${pkg.name}@${pkg.version}` `` で `defineElements` を呼ぶ。共有の rollup の設定（`config-templates/rollup.config.js`）がその 2 つの値を埋め込むので、`dist/auto.min.js` は自己完結のまま。
+
+### 24.6 テスト
+各パッケージは、ヘルパーの共有テストと、自分の `registerComponents()` に対する共有の登録テストを走らせる（`__tests__/protocol.defineElement*.test.ts`）: 別のコピーのクラスが先にある（版あり・なし）、同じ版は何も言わない、利用者のサブクラスは何も言わない、警告はレジストリごとに 1 回。`@wcstack/state` は包みを `__tests__/twice.test.ts` で確かめる。

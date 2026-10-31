@@ -71,7 +71,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | What tells the author | Entries |
 |---|---|
 | The design (cannot be written, or harmless) | 7 |
-| The runtime | 63 |
+| The runtime | 64 |
 | The lint only — conditional silence | 26 |
 | The documents only — silence | 38 |
 | Lint codes not counted | 19 |
@@ -167,6 +167,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # what CI runs
 | Gives a layout template no default `<slot>` while the layout holds nested routes. | Same code: The router warns `[wcs/layout-slot-missing]`; it also checks `src=` layouts and a `slot=` the template lacks, which the lint does not. | `wcs/layout-slot-missing` (warning) |
 | Places `<wcs-outlet>` anywhere but right after `<wcs-router>`. | Same code: The router warns `[wcs/router-outlet-misplaced]` when it makes its own outlet, and about an outlet a layout brings in. | `wcs/router-outlet-misplaced` (warning) |
 | Misspells a path a getter reads: `this["items.*.pirce"]`, `this.$getAll("items.*.pirce", [])`. | Same code: The read gives `undefined`, and what the getter computes from it is wrong. The diagnostics add-on warns once per path, naming the getter, beside a near name, once a getter has read it (a top-level key throws on read, #301). Found by an outside evaluation (a tax return draft: 96 getters, the sums of money computed from the paths they read). Both report only beside a near name: `this["opts.flag"] ?? false` reads an optional key on purpose. The lint checks getters, setters and methods without running them, a literal path only (not `this[key]`); it is an error where a `stateSchema` says the path is not there. | `wcs/read-path-missing` (warning) |
+| Leaves a `<script>` of a package at another version beside the new one — an upgrade that missed a line, a bundle and a member pinned apart. | Without the code: The copy the page evaluates first defines the tags and the other does nothing: an old line placed first runs the old version, with none of what the upgrade fixed (the homeroom seam app ran the 4.2.0 engine on its 4.10.1 page). Since 4.11 the second copy warns once, naming both versions (`[wcs/package-twice]`, timing contract §24); two copies of one version stay quiet. A copy before 4.11 has no code to say it. | — |
 | Calls `$postUpdate` with a path that does not resolve: a typo (`rows.${r}.cell.${c}.text` for `cells`). | Without the code: The call updates nothing; the diagnostics add-on warns `[wcs/post-update-path-missing]` once per path, with a near name. Found by a 7GUIs evaluation (Cells). No lint rule: the paths are usually built at run time. | — |
 | Writes a top-level key the state does not declare — a typo (`this.coutn = 1`). | Same code: 4.0 creates the key; nothing bound to `count` changes. The diagnostics add-on warns once per key, beside a near declared one. Both report a write of an undeclared key beside a near declared one only (`this.selectedID` and `selectedId` — a 7GUIs evaluation): a new key with no near one is not reported, as a state may add keys on purpose. A volume's mount path is the page's. | `wcs/write-path-missing` (warning) |
 | `$behavior` is not an object, has an unknown key or a value that is not a boolean, or sits in a volume. | Without the code: `#44` at load: the state fails to initialize (a volume is refused with `console.error`). | `wcs/behavior-invalid` (error) |

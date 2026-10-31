@@ -585,3 +585,34 @@ Nodes whose connect-time work nothing can observe before it is corrected: `<wcs-
 
 ### 23.7 Testing
 Each node has tests for: a re-insertion during which an earlier-queued microtask changes an input (the work uses only the new input), an element removed before the microtask (no work), a gate written in the same task as the append, and a stop-type command in the same task.
+
+## 24. A cross-cutting contract: a second copy of a package warns (2026-10-31)
+
+Applies to: every package that defines custom elements — the I/O nodes, `@wcstack/router`, `@wcstack/autoloader`, `@wcstack/view-transition`, `@wcstack/devtools`, and `@wcstack/state`'s full entries. The `homeroom` seam app found it ([seam-apps.md](./seam-apps.md)). An app upgraded from 4.2.0 to 4.10.1 kept one old `<script type="module" src=".../@wcstack/state@4.2.0/auto">` before the new one, and ran the 4.2.0 engine: the copy the page evaluates first defines the tags, and the second, finding them defined, did nothing — with no message. Every package registered its tags that way (`if (!registry.get(tag)) registry.define(tag, Cls)`).
+
+### 24.1 Each defined class names its package and version
+The classes a package defines carry `"<package>@<version>"` (`"@wcstack/fetch@4.11.0"`) under `Symbol.for("wcstack.package")`. A subclass inherits it. The version is the package's `package.json` one, embedded at build time. An older copy, from before this rule, carries none, and neither does a copy loaded through an entry that does not stamp (§24.4).
+
+### 24.2 A copy that finds its tag defined by another copy warns once, naming both versions
+When one of a package's tags is already defined by a class that is neither this copy's class nor a subclass of it, and does not carry this copy's package and version, the copy defines nothing for that tag and warns once per package per registry (not once per tag):
+
+```
+[@wcstack/fetch] [wcs/package-twice] <wcs-fetch> is already defined by @wcstack/fetch@4.2.0; this copy, @wcstack/fetch@4.11.0, does nothing. Load each package once.
+```
+
+When the other copy's class carries no version, it is named by its package alone — `another copy of @wcstack/fetch that does not name its version` — whatever version it is: an older copy, or one loaded through `/core` or `dist/split/auto.js` (§24.4).
+
+### 24.3 What stays silent
+- This copy registering again, in the same registry, and an adopter's subclass of this copy's class defined under the tag on purpose.
+- Another copy of the same package and the same version: it is harmless — the `wcstack/auto` bundle beside `@wcstack/state/auto` of one release.
+- Packages of different versions side by side (router 4.10 beside state 4.2): they are compatible. Only a second copy of the same package is warned about.
+- An older copy, from before this rule, evaluated after a newer one: it has no code to warn with. The newer copy runs.
+
+### 24.4 `@wcstack/state`: the full entries, not the core
+`<wcs-state>` and `<wcs-ssr>` are checked by `/auto` and by `.`'s `bootstrapState`, which wrap the core's `define()`: the core does not carry the check (its 20 KiB gzip budget). `<wcs-state>` is compared with the engine's `WcsState`. `/core` (`bootstrapState` from `@wcstack/state/core`) and `dist/split/auto.js` define the tags as before, stamp nothing and say nothing: a copy loaded through them is named `another copy of @wcstack/state that does not name its version` by a full entry that loads after it. In the full entries the check costs about 250 B gzip; in `dist/split/auto.js` it would cost about 400 B, over that file's gate.
+
+### 24.5 Implementation
+One helper, `/protocol/define-element.ts` (`defineElements(registry, pkg, [[tag, Class], …])`, `warnIfAnotherCopy`, `stampPackage`), copied into each package by `scripts/sync-protocol-types.mjs`. Each package's `registerComponents()` calls `defineElements` with `` `${pkg.name}@${pkg.version}` `` read from its `package.json`; the shared rollup config inlines the two values (`config-templates/rollup.config.js`), so `dist/auto.min.js` stays self-contained.
+
+### 24.6 Testing
+Each package runs the helper's shared test and a shared registration test against its own `registerComponents()` (`__tests__/protocol.defineElement*.test.ts`): another copy's class defined first, with and without a version, the same version silent, an adopter's subclass silent, one warning per registry. `@wcstack/state` tests its wrapper in `__tests__/twice.test.ts`.

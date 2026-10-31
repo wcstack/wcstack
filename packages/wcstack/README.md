@@ -47,7 +47,7 @@ For an app that uses the SPA core anyway, **this package ships the bundle**: `wc
         integrity="sha384-…"></script>
 ```
 
-Loading the bundle alongside an individual package's `/auto` is safe: whichever copy evaluates first owns the page; the second is inert. Do **not** merge the files yourself through jsDelivr's `/combine/` endpoint — concatenated minified ESM does not even parse (`docs/sri.md` §3.1).
+Loading the bundle alongside an individual package's `/auto` of the same release is safe: whichever copy evaluates first owns the page; the second is inert. Since 4.11 (not released yet), a copy of another version — an old `<script>` left beside the new one after an upgrade — is inert too, but warns `[wcs/package-twice]` in the console, naming both versions: remove it. Do **not** merge the files yourself through jsDelivr's `/combine/` endpoint — concatenated minified ESM does not even parse (`docs/sri.md` §3.1).
 
 If you want npm packages for local development, install the individual ones (`@wcstack/state`, `@wcstack/router`, …); this package publishes only the bundle and this guide.
 

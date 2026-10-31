@@ -1,6 +1,8 @@
+import pkg from "../package.json" with { type: "json" };
 import { Debounce } from "./components/Debounce.js";
 import { Throttle } from "./components/Throttle.js";
 import { config } from "./config.js";
+import { defineElements } from "./protocol/defineElement.js";
 
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
@@ -8,10 +10,8 @@ import { config } from "./config.js";
  * one, so a tree using one needs its own definitions.
  */
 export function registerComponents(registry: CustomElementRegistry = customElements): void {
-  if (!registry.get(config.tagNames.debounce)) {
-    registry.define(config.tagNames.debounce, Debounce);
-  }
-  if (!registry.get(config.tagNames.throttle)) {
-    registry.define(config.tagNames.throttle, Throttle);
-  }
+  defineElements(registry, `${pkg.name}@${pkg.version}`, [
+    [config.tagNames.debounce, Debounce],
+    [config.tagNames.throttle, Throttle],
+  ]);
 }

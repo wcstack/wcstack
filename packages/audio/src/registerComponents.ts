@@ -1,3 +1,4 @@
+import pkg from "../package.json" with { type: "json" };
 import { config } from "./config.js";
 import { WcsAudio } from "./components/Audio.js";
 import { WcsVoice } from "./components/Voice.js";
@@ -5,6 +6,7 @@ import {
   WcsAnalyser, WcsBiquad, WcsDelay, WcsEnv, WcsGain, WcsLfo, WcsNoise, WcsOsc,
   WcsShaper,
 } from "./components/nodes.js";
+import { defineElements } from "./protocol/defineElement.js";
 
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
@@ -12,7 +14,7 @@ import {
  * one, so a tree using one needs its own definitions.
  */
 export function registerComponents(registry: CustomElementRegistry = customElements): void {
-  const definitions: [string, CustomElementConstructor][] = [
+  defineElements(registry, `${pkg.name}@${pkg.version}`, [
     [config.tagNames.audio, WcsAudio],
     [config.tagNames.voice, WcsVoice],
     [config.tagNames.osc, WcsOsc],
@@ -24,8 +26,5 @@ export function registerComponents(registry: CustomElementRegistry = customEleme
     [config.tagNames.env, WcsEnv],
     [config.tagNames.lfo, WcsLfo],
     [config.tagNames.analyser, WcsAnalyser],
-  ];
-  for (const [tag, ctor] of definitions) {
-    if (!registry.get(tag)) registry.define(tag, ctor);
-  }
+  ]);
 }
