@@ -606,6 +606,13 @@ describe("束ねた要素が定義されないまま（wcs/element-undefined —
     expect(said().map((w) => /<([\w-]+)>/.exec(w)![1])).toEqual(["row-chip", "nested-chip", "if-chip"]);
   });
 
+  it("見る前に外した状態は見ない（タイマーは状態を弱くしか持たない — 外した状態を生かさない: e2e/tests/state-address-gc.spec.ts）", async () => {
+    const { root } = await bound(`<gone-chip data-wcs="textContent: a"></gone-chip>`, { a: "a" });
+    (root.host as Element).remove();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(said()).toEqual([]);
+  });
+
   it("ページの読み込みの前につながった状態は、load の 5 秒後に見る。サーバーの描画では見ない", async () => {
     Object.defineProperty(document, "readyState", { configurable: true, get: () => "loading" });
     try {

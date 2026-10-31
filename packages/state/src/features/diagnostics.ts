@@ -462,7 +462,12 @@ function lookLater(engine: Engine, phase: string): void {
   // (not on a server render: @wcstack/server serializes the page long before)
   if (phase !== "connected" || lookedAt.has(engine) || document.documentElement.hasAttribute("data-wcs-server")) return;
   lookedAt.add(engine);
-  const look = (): void => void setTimeout(() => undefinedElements(engine), UNDEFINED_AFTER);
+  // (held weakly: a state taken out of the page meanwhile is not kept alive for the look — nor looked at)
+  const ref = new WeakRef(engine);
+  const look = (): void => void setTimeout(() => {
+    const e = ref.deref();
+    if ((e?.element as Element | undefined)?.isConnected) undefinedElements(e!);
+  }, UNDEFINED_AFTER);
   if (document.readyState === "complete") look();
   else addEventListener("load", look, { once: true });
 }
