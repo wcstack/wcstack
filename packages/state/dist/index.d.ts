@@ -564,7 +564,11 @@ type ContractEvent = {
 };
 declare function analyzeContract(manifest: IContractManifest): readonly ContractEvent[];
 
-/** Installs every add-on, applies `config` and registers `<wcs-state>` (in `registry`, the global one by default). */
+/**
+ * Installs every add-on, applies `config` and registers `<wcs-state>` (in `registry`, the global one
+ * by default). When another copy of @wcstack/state, of another version, defined `<wcs-state>` first,
+ * this copy does nothing and warns `[wcs/package-twice]` once (`/core`'s bootstrapState does not check).
+ */
 declare function bootstrapState(config?: IWritableConfig, registry?: CustomElementRegistry): void;
 
 declare global {

@@ -65,6 +65,8 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+var pkg = {"name":"@wcstack/websocket","version":"4.11.0"};
+
 /**
  * websocketCapabilities.ts
  *
@@ -211,15 +213,7 @@ class WebSocketCore extends EventTarget {
         return this._ready;
     }
     dispose() {
-        this._gen++;
-        this.close();
-        // The socket's close event is dropped as stale (the generation moved), so the
-        // connection's end is published here (timing-and-firing-contract §22): a route the
-        // element leaves keeps its nodes — bindings included — for the next entry, and
-        // state would keep showing a connection that is gone.
-        this._setConnected(false);
-        this._setLoading(false);
-        this._setReadyState(WS_CLOSED);
+        this._end(false);
     }
     /**
      * Closes like dispose() — the end is published at once — and says whether a connection was
@@ -228,8 +222,26 @@ class WebSocketCore extends EventTarget {
      */
     suspend() {
         const live = this._ws !== null || this._reconnectTimer !== null;
-        this.dispose();
+        // A socket still connecting is closed at once here, not when it opens (see _stop): a page
+        // with a WebSocket in use is not put in the back/forward cache, and a page about to be
+        // frozen runs no listener that would close it later. Chromium's warning is the price.
+        this._end(true);
         return live;
+    }
+    _end(abortConnecting) {
+        this._gen++;
+        this._stop(undefined, undefined, abortConnecting);
+        // The socket's close event is dropped as stale (the generation moved) or, for a socket
+        // still connecting, never reaches the core (it is let go), so the
+        // connection's end is published here (timing-and-firing-contract §22): a route the
+        // element leaves keeps its nodes — bindings included — for the next entry, and
+        // state would keep showing a connection that is gone.
+        this._publishClosed();
+    }
+    _publishClosed() {
+        this._setConnected(false);
+        this._setLoading(false);
+        this._setReadyState(WS_CLOSED);
     }
     get message() {
         return this._message;
@@ -363,12 +375,59 @@ class WebSocketCore extends EventTarget {
             "It goes to `error` too. Send once `connected` is true. (Said once until the WebSocket connects again.)", this._target);
     }
     close(code, reason) {
+        if (this._stop(code, reason, false)) {
+            // The socket was still connecting and is let go: its close event will not reach the core,
+            // so the end is published now (timing-and-firing-contract §22).
+            this._publishClosed();
+        }
+    }
+    /**
+     * Stops the connection: no reconnect, no stale watchdog, the socket closed. An open socket is
+     * closed now and its close event publishes the end. A socket still connecting is let go instead
+     * (unless `abortConnecting`): closing it before its handshake makes Chromium print "WebSocket is
+     * closed before the connection is established." — on every route left right after it was
+     * entered (docs/seam-apps.md, homeroom). Returns true when it let one go: its events no longer
+     * reach the core, so the caller publishes the end.
+     */
+    _stop(code, reason, abortConnecting) {
         this._intentionalClose = true;
         this._clearReconnectTimer();
         this._clearStaleTimer();
-        if (this._ws) {
-            this._ws.close(code, reason);
+        const ws = this._ws;
+        if (ws === null)
+            return false;
+        if (abortConnecting || ws.readyState !== WS_CONNECTING) {
+            ws.close(code, reason);
+            return false;
         }
+        this._removeListeners();
+        this._ws = null;
+        this._closeWhenOpen(ws, code, reason);
+        return true;
+    }
+    /**
+     * Closes a socket the core has let go while it was still connecting, once it opens; a socket
+     * that fails to connect is just dropped. Nothing from it reaches the core any more.
+     */
+    _closeWhenOpen(ws, code, reason) {
+        const drop = () => {
+            ws.removeEventListener("open", open);
+            ws.removeEventListener("error", drop);
+            ws.removeEventListener("close", drop);
+        };
+        const open = () => {
+            drop();
+            try {
+                ws.close(code, reason);
+            }
+            catch {
+                // a code or reason the platform refuses must not leave the socket open
+                ws.close();
+            }
+        };
+        ws.addEventListener("open", open);
+        ws.addEventListener("error", drop);
+        ws.addEventListener("close", drop);
     }
     // --- Internal ---
     _doConnect() {
@@ -516,12 +575,18 @@ class WebSocketCore extends EventTarget {
     _closeInternal() {
         this._clearReconnectTimer();
         this._clearStaleTimer();
-        if (this._ws) {
+        const ws = this._ws;
+        if (ws) {
             this._removeListeners();
-            if (this._ws.readyState === WS_OPEN || this._ws.readyState === WS_CONNECTING) {
-                this._ws.close();
-            }
             this._ws = null;
+            if (ws.readyState === WS_OPEN) {
+                ws.close();
+            }
+            else if (ws.readyState === WS_CONNECTING) {
+                // a connect() replacing a socket still connecting (a url changed right after it was
+                // set) lets it go: closing it now would make Chromium warn (see _stop)
+                this._closeWhenOpen(ws);
+            }
         }
         // 旧接続の状態をリセット（コンストラクタ例外時に stale 状態が残るのを防止）
         if (this._connected) {
@@ -995,15 +1060,75 @@ class WcsWebSocket extends HTMLElement {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/define-element.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+/**
+ * One copy of each package on a page (docs/timing-and-firing-contract.md §24). The first copy the
+ * page evaluates defines the tags and a second one does nothing, so a copy that finds its tag defined
+ * by another copy of the package — not its class, not a subclass of it, not the same version — warns
+ * `[wcs/package-twice]` once per registry, naming both versions. The classes it defines carry
+ * `"<package>@<version>"` under `Symbol.for("wcstack.package")`; a class without it is named
+ * "another copy of <package> that does not name its version" (an older copy, or one loaded through
+ * an entry that does not stamp).
+ */
+/** The static a class defined through this helper carries: `"@wcstack/fetch@<version>"`. */
+const PACKAGE_STAMP = Symbol.for("wcstack.package");
+/** The registries this copy warned about: one warning per package per registry. */
+const warned = new WeakSet();
+/**
+ * Marks `cls` as defined by `pkg` (`"@wcstack/fetch@<version>"`). A subclass inherits the mark, and
+ * `defineProperty` writes it even where a parent's mark is read-only.
+ */
+function stampPackage(cls, pkg) {
+    Object.defineProperty(cls, PACKAGE_STAMP, { value: pkg, configurable: true });
+}
+/**
+ * Warns when `tag` is defined as `existing` by another copy of the package `pkg` names: `existing`
+ * is neither `own` nor a subclass of it (omit `own` when the copy has no class to compare with), and
+ * carries another version or none. Once per registry.
+ */
+function warnIfAnotherCopy(registry, tag, existing, own, pkg) {
+    if (own !== undefined && (existing === own || existing.prototype instanceof own))
+        return;
+    const theirs = existing[PACKAGE_STAMP];
+    if (theirs === pkg || warned.has(registry))
+        return;
+    warned.add(registry);
+    const name = pkg.slice(0, pkg.lastIndexOf("@"));
+    console.warn(`[${name}] [wcs/package-twice] <${tag}> is already defined by ` +
+        `${theirs ?? `another copy of ${name} that does not name its version`}; ` +
+        `this copy, ${pkg}, does nothing. Load each package once.`);
+}
+/**
+ * Defines each `[tag, class]` in `registry` unless the tag is already defined, stamping the class
+ * with `pkg` (`"@wcstack/fetch@<version>"`). A tag another copy of the package defined first is left
+ * as it is, with the warning above.
+ */
+function defineElements(registry, pkg, definitions) {
+    for (const [tag, cls] of definitions) {
+        const existing = registry.get(tag);
+        if (existing === undefined) {
+            stampPackage(cls, pkg);
+            registry.define(tag, cls);
+        }
+        else {
+            warnIfAnotherCopy(registry, tag, existing, cls, pkg);
+        }
+    }
+}
+
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
  * them for a single shadow tree -- scoped registries do not inherit the global
  * one, so a tree using one needs its own definitions.
  */
 function registerComponents(registry = customElements) {
-    if (!registry.get(config.tagNames.ws)) {
-        registry.define(config.tagNames.ws, WcsWebSocket);
-    }
+    defineElements(registry, `${pkg.name}@${pkg.version}`, [
+        [config.tagNames.ws, WcsWebSocket],
+    ]);
 }
 
 function bootstrapWebSocket(userConfig, registry) {

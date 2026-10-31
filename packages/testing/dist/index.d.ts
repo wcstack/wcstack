@@ -79,6 +79,8 @@ declare function settle(): Promise<void>;
  *
  * Returns what `dispatchEvent` returns (`false` when a handler called
  * `preventDefault()`). Follow with `await settle()` before asserting the DOM.
+ * An `init` key other than `bubbles` / `cancelable` / `composed` / `detail` throws:
+ * it would not reach the event (`{ key: "Enter" }` makes no `KeyboardEvent`).
  */
 declare function fire(target: EventTarget, type: string, init?: EventInit & {
     detail?: unknown;

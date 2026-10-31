@@ -97,7 +97,8 @@ var WcsDiagnosticCode = {
   PathReadonly: "wcs/path-readonly",
   PathReservedName: "wcs/path-reserved-name",
   // lint の限界の告知（作者の誤りではない）: `export default { … }` のトップレベルの spread が持ち込むキーは読めないので、
-  // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。
+  // stateSchema の無い state のパスは検査しない — それを spread の上で 1 回だけ言う。info。値の読めないキー（辿れない名前、
+  // 読めない spread を持つオブジェクトリテラルの種 `draft: { ...makeDraft() }`）の下を束ねたときも、キーの上で 1 回言う。
   PathDynamicUnknown: "wcs/path-dynamic-unknown",
   // lint の限界の告知（作者の誤りではない）: 読めない `<wcs-state src>`（/ から始まるパス・URL・無いファイル）の state は
   // パスもスクリプトの規則も検査しない — それを src の上で 1 回だけ言う。info（docs/seam-apps.md、prod-booking）。
@@ -303,6 +304,16 @@ var WcsDiagnosticCode = {
   RouterOutletMisplaced: "wcs/router-outlet-misplaced",
   // @wcstack/signals と /dom エントリの同一ページ混在(リアクティブコア二重化)。
   SignalsDualEntry: "wcs/signals-dual-entry",
+  // wcstack を自分で読み込むページが、あるパッケージのタグ（`<wcs-upload>`・`<wcs-upload-header>`）を書くのに、その
+  // パッケージのスクリプトを読み込んでいない。要素は定義されず、束縛は待ち続け、コンソールにも何も出ない（継ぎ目アプリ
+  // homeroom — 保存が「送信中 0%」で止まった）。パッケージごとに 1 回、最初のタグに。読めないローカルのスクリプトがある
+  // ページ・autoloader の `@components/` が覆うタグ・wcstack を自分で読み込まないページ（断片・バンドラ）では黙る。warning。
+  TagPackageMissing: "wcs/tag-package-missing",
+  // ページの URL が、lint の規則の版（lint を作った @wcstack/state の版）より新しい minor の wcstack を固定している
+  // （`@wcstack/state@4.11.0` と lint 4.10.1）。古い lint は新しい規則を知らず、新しい正しい書き方を error にもする
+  // （homeroom — 4.2.0 の lint が 4.10 の `datetime(ja-JP,short,Asia/Tokyo)` を `wcs/filter-arity` に）。ページに 1 回、
+  // いちばん新しい固定に。版の無い URL・major だけの `@4`・lint の方が新しいときは黙る。warning。
+  LintVersionBehind: "wcs/lint-version-behind",
   // `<wcs-route>`（またはレイアウトのテンプレート）の直下のテキストの `{{ }}`。最初に着いたルートでしか束ねられず、
   // 遷移で入ったルートでは書いたままの文字が出る（router の README「Where route content lives」— docs/seam-apps.md、
   // router-admin）。warning。
@@ -2386,7 +2397,11 @@ function getWcsManifest() {
   };
 }
 
+// ../state/package.json
+var version = "4.11.0";
+
 // src/service/wcsManifest.ts
+var ENGINE_VERSION = version;
 var NATIVE_COMMANDS2 = getWcsManifest().nativeCommands ?? null;
 function nativeCommandsOf(tag) {
   if (NATIVE_COMMANDS2 === null) return null;
@@ -8114,10 +8129,10 @@ pp.readWord = function() {
   }
   return this.finishToken(type, word);
 };
-var version = "8.18.0";
+var version2 = "8.18.0";
 Parser.acorn = {
   Parser,
-  version,
+  version: version2,
   defaultOptions,
   Position,
   SourceLocation,
@@ -9660,18 +9675,99 @@ function pushDataPropertyPaths(prop, paths, typedefs, scope) {
 }
 function pushDataPropertyPathsAt(path, prop, paths, depth, typedefs, scope) {
   const followed = scope === void 0 ? null : followValue(prop, scope);
+  let candidate;
+  let unread = null;
   if (followed === null) {
-    paths.push({ path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
-    pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope);
+    candidate = { path, kind: "data", typeHint: prop.typeHint, rawInitial: prop.value?.trim() };
+    paths.push(candidate);
+    unread = pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope);
   } else {
     const value = followed.value;
     const shapeHint = value === null ? void 0 : inferTypeHint(value.text);
     const typeHint = prop.typeHint ?? (shapeHint === "array" || shapeHint === "object" ? shapeHint : void 0);
     const opaque = (value === null || !isReadableLiteral(value.text)) && prop.declaredType === void 0 ? { opaque: { ...followed.name !== void 0 ? { name: followed.name } : {}, ...followed.from !== void 0 ? { from: followed.from } : {} } } : {};
-    paths.push(withHint({ path, kind: "data", rawInitial: prop.value?.trim(), ...opaque }, typeHint));
-    if (value !== null) pushLiteralStructurePaths(path, { ...prop, value: value.text }, paths, depth, typedefs, value.scope);
+    candidate = withHint({ path, kind: "data", rawInitial: prop.value?.trim(), ...opaque }, typeHint);
+    paths.push(candidate);
+    if (value !== null) unread = pushLiteralStructurePaths(path, { ...prop, value: value.text }, paths, depth, typedefs, value.scope);
+  }
+  if (unread !== null && candidate.opaque === void 0 && prop.declaredType === void 0) {
+    candidate.opaque = { spread: unread.text, ...unread.from !== void 0 ? { from: unread.from } : {} };
   }
   if (prop.declaredType !== void 0) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+}
+var MAX_SPREAD_HOPS = 8;
+function objectLiteralKeys(content, scope, shorthands, hops = 0) {
+  const explicit = parseTopLevelProperties(content);
+  const props = shorthands ? withShorthands(content, explicit) : explicit;
+  const spreads = findObjectSpreads(content);
+  if (spreads.length === 0) {
+    return { keys: props.filter((p) => p.kind === "data").map((prop) => ({ prop, scope })), unread: null };
+  }
+  const items = [
+    ...props.map((prop) => ({ at: prop.nameStart ?? 0, prop })),
+    ...spreads.map((s) => ({ at: s.start, spread: s.text }))
+  ].sort((a, b) => a.at - b.at);
+  const keys = /* @__PURE__ */ new Map();
+  const put = (key) => {
+    keys.delete(key.prop.name);
+    keys.set(key.prop.name, key);
+  };
+  let unread = null;
+  for (const item of items) {
+    if ("prop" in item) {
+      put({ prop: item.prop, scope });
+      continue;
+    }
+    const literal2 = hops < MAX_SPREAD_HOPS ? spreadLiteral(item.spread, scope) : { unread: { text: item.spread } };
+    if ("unread" in literal2) {
+      unread ??= literal2.unread;
+      continue;
+    }
+    if (literal2.text === null) continue;
+    const nested = objectLiteralKeys(extractObjectContent(literal2.text), literal2.scope, true, hops + 1);
+    for (const key of nested.keys) put(key);
+    if (nested.unread !== null) unread ??= { text: item.spread };
+  }
+  return { keys: [...keys.values()].filter((k) => k.prop.kind === "data"), unread };
+}
+function spreadLiteral(spread, scope) {
+  const expr = unwrapFreeze(spread.replace(/^\.\.\./, ""));
+  if (expr === "null" || expr === "undefined") return { text: null };
+  if (isObjectLiteral(expr)) return { text: expr, scope };
+  if (!isBindingName(expr) || scope === void 0) return { unread: { text: spread } };
+  const from = scope.importOf(expr);
+  const unread = { unread: { text: spread, ...from !== void 0 ? { from } : {} } };
+  let current2 = scope.resolveName(expr);
+  for (let hops = 0; current2 !== null && hops < MAX_SPREAD_HOPS; hops++) {
+    const inner = unwrapFreeze(current2.text);
+    if (isObjectLiteral(inner)) return { text: inner, scope: current2.scope };
+    if (!isBindingName(inner)) return unread;
+    current2 = current2.scope.resolveName(inner);
+  }
+  return unread;
+}
+function findObjectSpreads(content) {
+  const scan = maskCommentsAndStrings(content).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => " ".repeat(c.length));
+  const out = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= scan.length; i++) {
+    const ch = scan[i];
+    if (ch === "{" || ch === "[" || ch === "(") {
+      depth++;
+    } else if (ch === "}" || ch === "]" || ch === ")") {
+      depth--;
+    } else if (ch === "," && depth === 0 || i === scan.length) {
+      const segment = scan.slice(start, i);
+      const lead = segment.length - segment.trimStart().length;
+      if (segment.trimStart().startsWith("...")) {
+        const end = start + segment.trimEnd().length;
+        out.push({ start: start + lead, text: content.slice(start + lead, end) });
+      }
+      start = i + 1;
+    }
+  }
+  return out;
 }
 var WORD_LITERALS = /* @__PURE__ */ new Set(["true", "false", "null", "undefined", "NaN", "Infinity", "this"]);
 function isBindingName(text3) {
@@ -9740,23 +9836,30 @@ function pushDeclaredShapePaths(path, type, paths, depth, typedefs) {
 }
 function pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope) {
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${path}.*`, kind: "list" });
+    const row = { path: `${path}.*`, kind: "list" };
+    paths.push(row);
     paths.push({ path: `${path}.length`, kind: "data", typeHint: "number" });
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    for (const childProp of extractArrayElementDataProperties(prop.value)) {
-      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1, typedefs, scope);
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return null;
+    const first = firstRowObjectContent(prop.value);
+    if (first === null) return null;
+    const { keys, unread } = objectLiteralKeys(first, scope, false);
+    for (const key of keys) {
+      pushDataPropertyPathsAt(`${path}.*.${key.prop.name}`, key.prop, paths, depth + 1, typedefs, key.scope);
     }
-    return;
+    if (unread !== null && prop.declaredType === void 0) {
+      row.opaque = { spread: unread.text, ...unread.from !== void 0 ? { from: unread.from } : {} };
+    }
+    return null;
   }
   if (prop.value && isObjectLiteral(prop.value)) {
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    const content = extractObjectContent(prop.value);
-    const childProps = withShorthands(content, parseTopLevelProperties(content));
-    for (const childProp of childProps) {
-      if (childProp.kind !== "data") continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1, typedefs, scope);
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return null;
+    const { keys, unread } = objectLiteralKeys(extractObjectContent(prop.value), scope, true);
+    for (const key of keys) {
+      pushDataPropertyPathsAt(`${path}.${key.prop.name}`, key.prop, paths, depth + 1, typedefs, key.scope);
     }
+    return unread;
   }
+  return null;
 }
 function analyzeJsonPaths(jsonString) {
   let data2;
@@ -10029,15 +10132,18 @@ function extractObjectContent(value) {
   if (start === -1) return "";
   return extractBracedContent(trimmed, scan, start);
 }
-function extractArrayElementDataProperties(value) {
+function firstRowObjectContent(value) {
   const trimmed = value.trim();
-  if (!trimmed.startsWith("[")) return [];
+  if (!trimmed.startsWith("[")) return null;
   const scan = maskCommentsAndStrings(trimmed);
   let first = 1;
   while (first < scan.length && /\s/.test(scan[first])) first++;
-  if (scan[first] !== "{") return [];
-  const objectContent = extractBracedContent(trimmed, scan, first);
-  return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === "data");
+  if (scan[first] !== "{") return null;
+  return extractBracedContent(trimmed, scan, first);
+}
+function extractArrayElementDataProperties(value) {
+  const content = firstRowObjectContent(value);
+  return content === null ? [] : parseTopLevelProperties(content).filter((prop) => prop.kind === "data");
 }
 function normalizeJsDocType(typeExpr) {
   const parts = typeExpr.split("|").map((p) => p.trim());
@@ -11420,6 +11526,7 @@ var ja = {
   stateSrcUnread: (src) => `"${src}" \u3092\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u3082\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u898F\u5247\u3082\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002src \u306F\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u8AAD\u307F\u307E\u3059\uFF08URL \u306F\u8AAD\u307E\u305A\u3001/ \u304B\u3089\u59CB\u307E\u308B\u30D1\u30B9\u306F wcs-validate --root=<\u30B5\u30A4\u30C8\u306E\u30EB\u30FC\u30C8> \u306E\u3068\u304D\u3060\u3051\u305D\u306E\u4E0B\u3067\u8AAD\u307F\u307E\u3059\uFF09\u3002\u30B5\u30FC\u30D0\u30FC\u3068\u540C\u3058\u4E26\u3073\u306B\u7F6E\u3044\u305F\u30D5\u30A1\u30A4\u30EB\u3092\u3001\u3053\u306E\u30D5\u30A1\u30A4\u30EB\u304B\u3089\u306E\u76F8\u5BFE\u30D1\u30B9\u3067\u6307\u3059\u304B\u3001--root \u3092\u6E21\u3057\u3066\u304F\u3060\u3055\u3044`,
   pathDynamicUnknownValue: (path, n, name, from) => `"${path}" \u306E\u5024${name === void 0 ? "" : from === void 0 ? `\uFF08${name}\uFF09` : `\uFF08${name}\u3002"${from}" \u304B\u3089 import\uFF09`}\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AD\u30FC\u306B JSDoc \u306E @type \u2014 \u5F62\u304B\u3001\u30E2\u30B8\u30E5\u30FC\u30EB\u306E\u30EA\u30C6\u30E9\u30EB\u3092\u6307\u3059 typeof import("./file.js").name\uFF08\u8F9E\u66F8\u306A\u3089\u5168\u90E8\u306E\u30AD\u30FC\u3092\u6301\u3064\u65E2\u5B9A\u306E\u8A00\u8A9E\u306E\u30D5\u30A1\u30A4\u30EB\uFF09\u2014 \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathDynamicUnknownSpread: (sp) => `${sp} \u304C\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u3053\u306E state \u306E\u30D1\u30B9\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\uFF08\u675F\u7E1B\u30FBgetter \u306E\u4E2D\u306E\u8AAD\u307F\u30FB$watch \u306E\u30AD\u30FC\uFF09\u3002\u30AD\u30FC\u3092 wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059\u3002npx wcs-schema\uFF08@wcstack/typescript\uFF09\u304C state \u306E\u578B\uFF08JSDoc\u30FBTypeScript\uFF09\u304B\u3089\u4F5C\u308C\u307E\u3059`,
+  pathDynamicUnknownObjectSpread: (path, n, sp, from) => `${sp}${from === void 0 ? "" : `\uFF08"${from}" \u304B\u3089 import\uFF09`}\u304C "${path}" \u306B\u6301\u3061\u8FBC\u3080\u30AD\u30FC\u306F\u9759\u7684\u306B\u8AAD\u3081\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u4E0B\u306B\u675F\u306D\u305F\u30D1\u30B9\uFF08${n} \u4EF6\uFF09\u306F\u691C\u67FB\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u30AA\u30D6\u30B8\u30A7\u30AF\u30C8\u30EA\u30C6\u30E9\u30EB\u3092\u675F\u7E1B\u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\u306E const \u3092 spread \u3059\u308B\u304B\u3001\u30AD\u30FC\u306B\u5F62\u3092\u8868\u3059 JSDoc \u306E @type \u3092\u4ED8\u3051\u308B\u304B\u3001wcstack.manifest.json \u306E stateSchema \u306B\u5BA3\u8A00\u3059\u308B\u3068\u691C\u67FB\u3055\u308C\u307E\u3059`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" \u306F setter \u306E\u7121\u3044 getter \u3067\u3059\u304C\u3001${prop}: \u306F\u8AAD\u8005\u306E\u5165\u529B\u3092\u66F8\u304D\u623B\u3059\u306E\u3067\u3001\u5165\u529B\u306E\u305F\u3073\u306B\u66F8\u304D\u8FBC\u307F\u304C\u5931\u6557\u3057\u307E\u3059\uFF08"${p}" is a getter without a setter\uFF09\u3002setter \u3092\u8DB3\u3059\uFF08set "${p}"(v) { \u2026 }\uFF09\u304B\u3001#ro \u3067\u4E00\u65B9\u5411\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${prop}#ro: ${p}\uFF09`,
   submitWithoutPrevent: (h) => `onsubmit \u306B #prevent \u304C\u7121\u304F\u3001"${h}" \u3082 preventDefault \u3092\u547C\u3073\u307E\u305B\u3093\u3002\u30D6\u30E9\u30A6\u30B6\u306F\u30D5\u30A9\u30FC\u30E0\u3082\u9001\u308B\u306E\u3067\u3001\u30DA\u30FC\u30B8\u304C\u8AAD\u307F\u76F4\u3055\u308C\u308B\u304B\u3001router \u304C\u3042\u308C\u3070 GET \u304C\u6B04\u306E\u5024\uFF08\u30D1\u30B9\u30EF\u30FC\u30C9\u3082\uFF09\u3092 URL \u3068\u5C65\u6B74\u306B\u8F09\u305B\u307E\u3059\u3002onsubmit#prevent: ${h} \u3068\u66F8\u304F\u304B\u3001\u30CF\u30F3\u30C9\u30E9\u3067 event.preventDefault() \u3092\u547C\u3093\u3067\u304F\u3060\u3055\u3044`,
   getterUntrackedRead: (root, sp) => `\u3053\u3053\u3067\u8FFD\u8DE1\u3055\u308C\u308B\u306E\u306F "${root}" \u3060\u3051\u3067\u3059\u3002"${sp}" \u304C\u5909\u308F\u3063\u3066\u3082\u3053\u306E getter \u306F\u518D\u8A55\u4FA1\u3055\u308C\u307E\u305B\u3093\uFF08\u30D1\u30B9\u8AAD\u307F\u53D6\u308A\u306E\u5148\u306E\u7D20\u306E\u30D7\u30ED\u30D1\u30C6\u30A3\u30A2\u30AF\u30BB\u30B9\u306F\u8FFD\u8DE1\u3055\u308C\u306A\u3044\uFF09\u3002this["${sp}"] \u3067\u8AAD\u3093\u3067\u304F\u3060\u3055\u3044`,
@@ -11487,6 +11594,8 @@ var ja = {
   routerOutletMisplaced: () => `\u3053\u306E <wcs-outlet> \u306F <wcs-router> \u306E\u76F4\u5F8C\u306B\u7121\u3044\u306E\u3067\u3001\u3069\u306E router \u3082\u4F7F\u3044\u307E\u305B\u3093\u3002router \u306F\u81EA\u5206\u306E\u76F4\u5F8C\u306E\u8981\u7D20\u3060\u3051\u3092 outlet \u3068\u3057\u3066\u4F7F\u3044\u3001\u305D\u3053\u306B <wcs-outlet> \u304C\u7121\u3051\u308C\u3070\u81EA\u524D\u306E outlet \u3092\u4F5C\u308A\u307E\u3059\u3002\u30EB\u30FC\u30C8\u306F router \u306E\u76F4\u5F8C\u306B\u63CF\u304B\u308C\u3001\u3053\u306E outlet \u306F\u7A7A\u306E\u307E\u307E\u3067\u3059 \u2014 <wcs-router> \u306E\u76F4\u5F8C\u3078\u79FB\u3057\u3066\u304F\u3060\u3055\u3044`,
   signalsDualEntry: () => `@wcstack/signals \u3068 @wcstack/signals/dom \u304C\u540C\u4E00\u30DA\u30FC\u30B8\u304B\u3089 import \u3055\u308C\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u81EA\u5DF1\u5B8C\u7D50\u30D0\u30F3\u30C9\u30EB\u306E\u305F\u3081\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u304C\u4E8C\u91CD\u5316\u3057\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059 \u2014 \u3059\u3079\u3066 /dom \u30A8\u30F3\u30C8\u30EA\u304B\u3089 import \u3057\u3066\u304F\u3060\u3055\u3044`,
   signalsImportMapBoth: () => `\u3053\u306E import map \u306F @wcstack/signals \u3068 @wcstack/signals/dom \u306E\u4E21\u65B9\u3092\u5272\u308A\u5F53\u3066\u3066\u3044\u307E\u3059\u3002CDN \u3067\u306F\u5404\u30A8\u30F3\u30C8\u30EA\u304C\u30EA\u30A2\u30AF\u30C6\u30A3\u30D6\u30B3\u30A2\u3092\u6301\u3064\u306E\u3067\u3001@wcstack/signals \u3092 import \u3059\u308B\u30E2\u30B8\u30E5\u30FC\u30EB\uFF08\u3053\u306E\u30DA\u30FC\u30B8\u306E\u3082\u306E\u3067\u3082\u3001\u8AAD\u307F\u8FBC\u3080 .js \u3067\u3082\uFF09\u304C 2 \u3064\u76EE\u306E\u30B3\u30A2\u3092\u6301\u3061\u3001\u5883\u754C\u3067\u53CD\u5FDC\u304C\u58CA\u308C\u307E\u3059\u3002@wcstack/signals/dom \u3060\u3051\u3092\u5272\u308A\u5F53\u3066\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30A2\u306E\u5168\u90E8\u3092 export \u3057\u307E\u3059\uFF09`,
+  tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join("\u30FB")} \u306F ${pkg} \u306E\u30BF\u30B0\u3067\u3059\u304C\u3001\u3053\u306E\u30DA\u30FC\u30B8\u306F ${pkg} \u306E\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u8AAD\u307F\u8FBC\u3093\u3067\u3044\u307E\u305B\u3093\u3002\u8981\u7D20\u306F\u5B9A\u7FA9\u3055\u308C\u306A\u3044\u306E\u3067\u3001\u305D\u306E\u675F\u7E1B\u306F\u5F85\u3061\u7D9A\u3051\u3066\u4F55\u3082\u8D77\u304D\u305A\u3001\u30B3\u30F3\u30BD\u30FC\u30EB\u306B\u3082\u4F55\u3082\u51FA\u307E\u305B\u3093 \u2014 <script type="module" src="${url}"></script> \u3067\u8AAD\u307F\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044`,
+  lintVersionBehind: (spec, version3, minor, lint) => `\u3053\u306E\u30DA\u30FC\u30B8\u306F ${spec} \u3092\u56FA\u5B9A\u3057\u3066\u3044\u307E\u3059\u304C\u3001\u3053\u306E lint \u306E\u898F\u5247\uFF08@wcstack ${lint}\uFF09\u3088\u308A\u65B0\u3057\u3044 minor \u3067\u3059\u3002${minor} \u3067\u52A0\u308F\u3063\u305F\u898F\u5247\u306F\u691C\u67FB\u3055\u308C\u305A\u3001${minor} \u306E\u6B63\u3057\u3044\u66F8\u304D\u65B9\u304C error \u306B\u306A\u308B\u3053\u3068\u3082\u3042\u308A\u307E\u3059 \u2014 @wcstack/lint \u3092 ${version3} \u306B\u4E0A\u3052\u3066\u304F\u3060\u3055\u3044\uFF08npm i -D @wcstack/lint@${version3}\u3002VS Code \u306E\u62E1\u5F35\u306F ${minor} \u306B\u5BFE\u5FDC\u3059\u308B\u7248\u3078\uFF09`,
   routeBareMustache: (inLayout) => inLayout ? `\u30EC\u30A4\u30A2\u30A6\u30C8\u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u9077\u79FB\u3067\u306F\u675F\u306D\u3089\u308C\u307E\u305B\u3093 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<span>{{ \u2026 }}</span>\uFF09` : `<wcs-route> \u306E\u76F4\u4E0B\u306E\u30C6\u30AD\u30B9\u30C8\u306E {{ }} \u306F\u3001\u6700\u521D\u306B\u7740\u3044\u305F\u30EB\u30FC\u30C8\u3067\u3057\u304B\u675F\u306D\u3089\u308C\u307E\u305B\u3093\u3002\u9077\u79FB\u3067\u5165\u3063\u305F\u30EB\u30FC\u30C8\u3067\u306F\u66F8\u3044\u305F\u307E\u307E\u306E\u6587\u5B57\u304C\u51FA\u307E\u3059 \u2014 \u8981\u7D20\u3067\u5305\u3093\u3067\u304F\u3060\u3055\u3044\uFF08<h1>{{ \u2026 }}</h1>\uFF09`,
   layoutSlotMissing: (l) => `\u30EC\u30A4\u30A2\u30A6\u30C8 "${l}" \u306E\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8\u306B\u65E2\u5B9A\u306E <slot>\uFF08name \u306E\u7121\u3044\u3082\u306E\uFF09\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u3053\u306E <wcs-layout> \u306E\u540D\u524D\u4ED8\u304D\u30B9\u30ED\u30C3\u30C8\u306E\u5916\u306E\u4E2D\u8EAB\uFF08\u5165\u308C\u5B50\u306E\u30EB\u30FC\u30C8\u3068\u305D\u306E\u30DA\u30FC\u30B8\uFF09\u306F\u8868\u793A\u3055\u308C\u307E\u305B\u3093 \u2014 \u30DA\u30FC\u30B8\u3092\u7F6E\u304F\u5834\u6240\u306B <slot></slot> \u3092\u66F8\u3044\u3066\u304F\u3060\u3055\u3044`,
   namedStateAttrDeprecated: (name) => `name \u5C5E\u6027\u306F v2 \u3067\u64A4\u53BB\u3055\u308C\u307E\u3057\u305F\uFF081 root 1 \u30C4\u30EA\u30FC\uFF09\u3002\u30EB\u30FC\u30C8\u30C4\u30EA\u30FC\u3078\u306E\u30DE\u30A6\u30F3\u30C8 <wcs-state mount="${name}"> \u306B\u7F6E\u304D\u63DB\u3048\u3001\u30D1\u30B9\u306F "${name}.<path>" \u3067\u53C2\u7167\u3057\u3066\u304F\u3060\u3055\u3044\uFF08docs/state-mount-design.md \xA79\uFF09`,
@@ -11633,6 +11742,7 @@ var en = {
   stateSrcUnread: (src) => `"${src}" cannot be read, so this state's paths and script rules are not checked. A src is read relative to this file (a URL is not read, and a path from / only under wcs-validate --root=<the site's root>): point it at the file laid out as on the server, relative to this file, or pass --root`,
   pathDynamicUnknownValue: (path, n, name, from) => `The value of "${path}"${name === void 0 ? "" : from === void 0 ? ` (${name})` : ` (${name}, imported from "${from}")`} cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Give the key a JSDoc @type \u2014 its shape, or typeof import("./file.js").name for a module's literal (for a dictionary, the default language's file, which has every key) \u2014 or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathDynamicUnknownSpread: (sp) => `The keys ${sp} brings in cannot be read statically, so this state's paths are not checked (bindings, reads in getters, $watch keys). Declare the keys in the stateSchema of wcstack.manifest.json to have them checked; npx wcs-schema (@wcstack/typescript) derives it from the state's types (JSDoc or TypeScript)`,
+  pathDynamicUnknownObjectSpread: (path, n, sp, from) => `The keys ${sp}${from === void 0 ? "" : ` (imported from "${from}")`} brings into "${path}" cannot be read statically, so the ${n === 1 ? "path" : `${n} paths`} bound under it ${n === 1 ? "is" : "are"} not checked. Spread a const of the module bound to an object literal, give the key a JSDoc @type with its shape, or declare it in the stateSchema of wcstack.manifest.json to have them checked`,
   pathReadonlyTwoWay: (p, prop) => `"${p}" is a getter without a setter, and ${prop}: writes back what the reader enters, so every edit fails ("${p}" is a getter without a setter). Add a setter (set "${p}"(v) { \u2026 }), or bind it one way with #ro (${prop}#ro: ${p})`,
   submitWithoutPrevent: (h) => `onsubmit has no #prevent and "${h}" does not call preventDefault, so the browser submits the form too: the page reloads, or with the router a GET puts the fields (a password too) in the URL and the history. Write onsubmit#prevent: ${h}, or call event.preventDefault() in the handler`,
   getterUntrackedRead: (root, sp) => `Only "${root}" is tracked here: the getter is not re-evaluated when "${sp}" changes (plain property access after a path read is not tracked). Read this["${sp}"] instead`,
@@ -11700,6 +11810,8 @@ var en = {
   routerOutletMisplaced: () => `This <wcs-outlet> is not right after a <wcs-router>, so no router uses it: a router uses only the element right after it as its outlet, and makes an outlet of its own there when that is not a <wcs-outlet>. The routes render right after the router and this outlet stays empty \u2014 move it right after the <wcs-router>`,
   signalsDualEntry: () => `Both @wcstack/signals and @wcstack/signals/dom are imported on this page. On a CDN each entry is a self-contained bundle, so the reactive core is duplicated and reactivity breaks at the seam \u2014 import everything from the single /dom entry`,
   signalsImportMapBoth: () => `This import map maps both @wcstack/signals and @wcstack/signals/dom. On a CDN each entry carries its own reactive core, so a module that imports @wcstack/signals \u2014 this page's, or a .js file it loads \u2014 gets a second core and reactivity breaks at the seam. Map only @wcstack/signals/dom (it exports the whole core)`,
+  tagPackageMissing: (tags, pkg, url) => `${tags.map((t) => `<${t}>`).join(", ")} ${tags.length === 1 ? "is a tag" : "are tags"} of ${pkg}, and this page loads no script of ${pkg}: the element is never defined, so its bindings wait and nothing happens, without a word in the console. Load it with <script type="module" src="${url}"></script>`,
+  lintVersionBehind: (spec, version3, minor, lint) => `This page pins ${spec}, a newer minor than the rules of this lint (@wcstack ${lint}): what ${minor} added is not checked, and correct ${minor} syntax can be reported as an error. Upgrade @wcstack/lint to ${version3} (npm i -D @wcstack/lint@${version3}; the VS Code extension to its release for ${minor})`,
   routeBareMustache: (inLayout) => inLayout ? `{{ }} in text directly under a layout template is not bound on a navigation. Wrap it in an element (<span>{{ \u2026 }}</span>)` : `{{ }} in text directly under <wcs-route> is bound only on the landing route: a route entered by navigation shows it as written. Wrap it in an element (<h1>{{ \u2026 }}</h1>)`,
   layoutSlotMissing: (l) => `The template of layout "${l}" has no default <slot> (one without a name), so what this <wcs-layout> holds outside the named slots \u2014 the nested routes and their pages \u2014 is not shown. Put a <slot></slot> where the page goes`,
   namedStateAttrDeprecated: (name) => `The "name" attribute was removed in v2 \u2014 there is a single state tree per root. Mount this state onto the tree instead: <wcs-state mount="${name}"> and read it as "${name}.<path>" (docs/state-mount-design.md \xA79)`,
@@ -15725,6 +15837,281 @@ function findMisplacedOutlets(html) {
   return routerWithoutOutlet ? misplaced : [];
 }
 
+// src/service/packageLoadValidator.ts
+var CORE_TAG_PACKAGES = {
+  "wcs-state": "state",
+  "wcs-ssr": "state",
+  "wcs-router": "router",
+  "wcs-route": "router",
+  "wcs-outlet": "router",
+  "wcs-layout": "router",
+  "wcs-layout-outlet": "router",
+  "wcs-link": "router",
+  "wcs-head": "router",
+  "wcs-guard-handler": "router",
+  "wcs-autoloader": "autoloader",
+  "wcs-devtools": "devtools"
+};
+function packageOfTag(tag) {
+  if (Object.hasOwn(BUILTIN_TAGS, tag)) return BUILTIN_TAGS[tag].package;
+  return Object.hasOwn(CORE_TAG_PACKAGES, tag) ? CORE_TAG_PACKAGES[tag] : void 0;
+}
+var SCOPED_NAME = /@wcstack\/([a-z0-9-]+)/g;
+var REPO_DIST = /\/packages\/([a-z0-9-]+)\/dist\//g;
+var BUNDLE = /(?:^|[/"'`\s])wcstack(?:@[^/"'`\s]+)?\/(?:auto\b|dist\/)/;
+var PINNED = /(?:@wcstack\/([a-z0-9-]+)|(?:^|(?<=[/"'`\s]))wcstack)@(\d+)\.(\d+)(?:\.(\d+))?(-[0-9A-Za-z.-]+)?/g;
+function namedPackages(text3) {
+  const out = [];
+  for (const m of text3.matchAll(SCOPED_NAME)) out.push(m[1]);
+  for (const m of text3.matchAll(REPO_DIST)) out.push(m[1]);
+  if (BUNDLE.test(text3)) out.push("wcstack");
+  return out.flatMap((p) => p === "wcstack" ? [...BUNDLE_PACKAGES] : [p]);
+}
+var MAX_FILES2 = 32;
+var MAX_DEPTH = 4;
+function validatePackageLoads(html, locale2, fileReader) {
+  const msgs = getMessages(locale2);
+  const scan = blankHtmlComments(html);
+  const loads = collectPageLoads(scan, fileReader);
+  const out = [];
+  const lint = parseVersion(ENGINE_VERSION);
+  let newest = null;
+  for (const ref2 of loads.references) {
+    for (const m of ref2.text.matchAll(PINNED)) {
+      const pin = {
+        spec: m[0],
+        version: m[0].slice(m[0].lastIndexOf("@") + 1),
+        major: Number(m[2]),
+        minor: Number(m[3]),
+        patch: m[4] === void 0 ? 0 : Number(m[4])
+      };
+      if (newest === null || comparePins(pin, newest.pin) > 0) {
+        newest = { pin, start: ref2.start + m.index, end: ref2.start + m.index + m[0].length };
+      }
+    }
+  }
+  if (lint !== null && newest !== null && newest.pin.major === lint.major && newest.pin.minor > lint.minor) {
+    out.push({
+      code: WcsDiagnosticCode.LintVersionBehind,
+      start: newest.start,
+      end: newest.end,
+      severity: "warning",
+      message: msgs.lintVersionBehind(newest.pin.spec, newest.pin.version, `${newest.pin.major}.${newest.pin.minor}`, ENGINE_VERSION)
+    });
+  }
+  if (!loads.own || loads.unclear) return out;
+  const autoloader = loads.autoloader;
+  const components = loads.mapKeys.filter((k) => k.startsWith("@components/"));
+  const defined = new Set([...loads.definedTags].map((t) => packageOfTag(t)).filter((p) => p !== void 0));
+  const byPackage = /* @__PURE__ */ new Map();
+  for (const tag of findWcsTags(scan)) {
+    const pkg = packageOfTag(tag.name);
+    if (pkg === void 0 || loads.pkgs.has(pkg) || defined.has(pkg)) continue;
+    if (autoloader && tag.name !== "wcs-autoloader" && components.some((k) => coversTag(k, tag.name))) continue;
+    const seen2 = byPackage.get(pkg);
+    if (seen2 === void 0) byPackage.set(pkg, { tags: [tag.name], start: tag.start, end: tag.end });
+    else if (!seen2.tags.includes(tag.name)) seen2.tags.push(tag.name);
+  }
+  const version3 = suggestedVersion(loads.references);
+  for (const [pkg, at2] of byPackage) {
+    out.push({
+      code: WcsDiagnosticCode.TagPackageMissing,
+      start: at2.start,
+      end: at2.end,
+      severity: "warning",
+      tag: at2.tags[0],
+      message: msgs.tagPackageMissing(at2.tags, `@wcstack/${pkg}`, `https://esm.run/@wcstack/${pkg}${version3 === null ? "" : `@${version3}`}/auto`)
+    });
+  }
+  return out;
+}
+function comparePins(a, b) {
+  return a.major - b.major || a.minor - b.minor || a.patch - b.patch;
+}
+function parseVersion(version3) {
+  const m = /^(\d+)\.(\d+)/.exec(version3);
+  return m === null ? null : { major: Number(m[1]), minor: Number(m[2]) };
+}
+function suggestedVersion(references) {
+  const versions = /* @__PURE__ */ new Set();
+  for (const ref2 of references) {
+    for (const m of ref2.text.matchAll(PINNED)) versions.add(m[0].slice(m[0].lastIndexOf("@") + 1));
+  }
+  return versions.size === 1 ? [...versions][0] : null;
+}
+function coversTag(key, tag) {
+  const body = key.slice("@components/".length);
+  if (body.endsWith("/")) {
+    const prefix = body.slice(0, -1).replace(/\|[^/]*$/, "").replace(/\//g, "-");
+    return prefix !== "" && tag.startsWith(`${prefix}-`);
+  }
+  return body.replace(/\|.*$/, "") === tag;
+}
+function markupOf(scan) {
+  return scan.replace(
+    /(<(script|style)\b[^>]*>)([\s\S]*?)(<\/\2\s*>)/gi,
+    (_m, open, _name, body, close) => open + " ".repeat(body.length) + close
+  );
+}
+function findWcsTags(scan) {
+  const out = [];
+  for (const m of markupOf(scan).matchAll(/<(wcs-[a-z0-9-]+)(?=[\s/>])/gi)) {
+    const start = m.index + 1;
+    out.push({ name: m[1].toLowerCase(), start, end: start + m[1].length });
+  }
+  return out;
+}
+function autoloaderModules(scan, imports) {
+  const markup = markupOf(scan);
+  const tags = /* @__PURE__ */ new Set();
+  for (const m of markup.matchAll(/<([a-z][a-z0-9]*-[a-z0-9-]*)(?=[\s/>])/gi)) tags.add(m[1].toLowerCase());
+  for (const m of markup.matchAll(/\sis\s*=\s*["']([a-z][a-z0-9]*-[a-z0-9-]*)["']/gi)) tags.add(m[1].toLowerCase());
+  for (const tag of tags) if (tag.startsWith("wcs-")) tags.delete(tag);
+  const out = [];
+  for (const [key, value] of imports) {
+    if (!key.startsWith("@components/") || isUrl(value)) continue;
+    const body = key.slice("@components/".length);
+    if (!body.endsWith("/")) {
+      if (!body.startsWith("wcs-")) out.push(pagePath(value));
+      continue;
+    }
+    const prefix = body.slice(0, -1).replace(/\|[^/]*$/, "").replace(/\//g, "-");
+    for (const tag of tags) {
+      if (prefix !== "" && tag.startsWith(`${prefix}-`)) out.push(pagePath(`${value}${tag.slice(prefix.length + 1)}.js`));
+    }
+  }
+  return out;
+}
+function collectPageLoads(scan, fileReader) {
+  const loads = {
+    pkgs: /* @__PURE__ */ new Set(),
+    definedTags: /* @__PURE__ */ new Set(),
+    own: false,
+    unclear: false,
+    autoloader: false,
+    imports: /* @__PURE__ */ new Map(),
+    mapKeys: [],
+    references: []
+  };
+  const name = (text3, own2) => {
+    const pkgs = namedPackages(text3);
+    for (const p of pkgs) loads.pkgs.add(p);
+    if (own2 && pkgs.length > 0) loads.own = true;
+  };
+  const locals = [];
+  const specifiers = [];
+  const scriptRegex = /<script\b((?:"[^"]*"|'[^']*'|[^>"'])*)>([\s\S]*?)<\/script\s*>/gi;
+  let match;
+  while ((match = scriptRegex.exec(scan)) !== null) {
+    const attrs = match[1];
+    const type = (attrValue(attrs, "type") ?? "").trim().toLowerCase();
+    const src = extractSrc(`<script${attrs}>`);
+    const bodyStart = match.index + match[0].indexOf(">") + 1;
+    if (src !== null) {
+      const start = match.index + src.offsetInTag;
+      loads.references.push({ text: src.value, start });
+      name(src.value, true);
+      if (namedPackages(src.value).length === 0 && !isUrl(src.value)) locals.push(pagePath(src.value));
+      continue;
+    }
+    if (type === "importmap") {
+      readImportMap(match[2], bodyStart, loads, name);
+      continue;
+    }
+    if (type !== "" && type !== "module" && !/^(?:text|application)\/(?:x-)?(?:javascript|ecmascript)$/.test(type)) continue;
+    const body = blankJsComments(match[2]);
+    name(body, false);
+    for (const im of body.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)(["'])([^"'\n]*)\1/g)) {
+      const start = bodyStart + im.index + im[0].indexOf(im[1]) + 1;
+      loads.references.push({ text: im[2], start });
+      name(im[2], true);
+      specifiers.push(im[2]);
+    }
+  }
+  for (const m of scan.matchAll(/<link\b((?:"[^"]*"|'[^']*'|[^>"'])*)>/gi)) {
+    if (!/^\s*modulepreload\s*$/i.test(attrValue(m[1], "rel") ?? "")) continue;
+    const href = attrValue(m[1], "href");
+    if (href !== null) name(href, false);
+  }
+  for (const spec of specifiers) {
+    if (namedPackages(spec).length > 0) continue;
+    const target = resolveSpecifier(spec, loads.imports);
+    if (target === void 0 || namedPackages(target).length > 0 || isUrl(target)) continue;
+    if (isRelative(target)) locals.push(pagePath(target));
+  }
+  loads.autoloader = loads.pkgs.has("autoloader") || /<wcs-autoloader\b/i.test(scan);
+  if (loads.autoloader) locals.push(...autoloaderModules(scan, loads.imports));
+  if (locals.length > 0) readLocalModules(locals, fileReader, loads);
+  return loads;
+}
+function readImportMap(body, bodyStart, loads, name) {
+  for (const m of body.matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
+    loads.references.push({ text: m[1], start: bodyStart + m.index + 1 });
+    name(m[1], true);
+  }
+  let parsed = null;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return;
+  }
+  const imports = parsed?.imports;
+  if (imports === null || typeof imports !== "object") return;
+  for (const [key, value] of Object.entries(imports)) {
+    loads.mapKeys.push(key);
+    if (typeof value === "string") loads.imports.set(key, value);
+  }
+}
+function resolveSpecifier(spec, imports) {
+  if (isUrl(spec) || isRelative(spec)) return spec;
+  if (imports.has(spec)) return imports.get(spec);
+  let best;
+  for (const key of imports.keys()) {
+    if (key.endsWith("/") && spec.startsWith(key) && (best === void 0 || key.length > best.length)) best = key;
+  }
+  return best === void 0 ? void 0 : imports.get(best) + spec.slice(best.length);
+}
+function isUrl(spec) {
+  return /^[a-z][a-z0-9+.-]*:/i.test(spec) || spec.startsWith("//");
+}
+function isRelative(spec) {
+  return spec.startsWith("./") || spec.startsWith("../") || spec.startsWith("/");
+}
+function pagePath(src) {
+  return isRelative(src) ? src : `./${src}`;
+}
+function readLocalModules(entries, fileReader, loads) {
+  if (fileReader === void 0) {
+    loads.unclear = true;
+    return;
+  }
+  const seen2 = /* @__PURE__ */ new Set();
+  const queue = entries.map((spec) => ({ spec, from: "", depth: 0 }));
+  while (queue.length > 0) {
+    const { spec, from, depth } = queue.shift();
+    const path = joinModulePath(from, spec);
+    if (seen2.has(path)) continue;
+    if (seen2.size >= MAX_FILES2 || depth > MAX_DEPTH) {
+      loads.unclear = true;
+      return;
+    }
+    seen2.add(path);
+    const text3 = fileReader(path);
+    if (text3 === void 0) {
+      loads.unclear = true;
+      return;
+    }
+    for (const p of namedPackages(text3)) loads.pkgs.add(p);
+    for (const m of text3.matchAll(/["'`](wcs-[a-z0-9-]+)["'`]/g)) loads.definedTags.add(m[1]);
+    for (const im of text3.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)(["'])([^"'\n]*)\1/g)) {
+      if (namedPackages(im[2]).length > 0) continue;
+      const target = resolveSpecifier(im[2], loads.imports);
+      if (target === void 0 || namedPackages(target).length > 0 || isUrl(target) || !isRelative(target)) continue;
+      queue.push({ spec: target, from: isRelative(im[2]) ? path : "", depth: depth + 1 });
+    }
+  }
+}
+
 // src/service/watchDeclarationValidator.ts
 var STATE_NAME_SEPARATOR = "@";
 function validateWatchDeclarations(html, stateTagName = "wcs-state", locale2, fileReader) {
@@ -17715,7 +18102,7 @@ function validateScriptReads(html, stateTagName = "wcs-state", locale2, fileRead
           code: WcsDiagnosticCode.PathDynamicUnknown,
           start: block.contentStart + span.start,
           end: block.contentStart + span.end,
-          message: msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
+          message: candidate.opaque?.spread !== void 0 ? msgs.pathDynamicUnknownObjectSpread(path, count, candidate.opaque.spread, candidate.opaque.from) : msgs.pathDynamicUnknownValue(path, count, candidate.opaque?.name, candidate.opaque?.from),
           severity: "info"
         });
       }
@@ -18029,12 +18416,12 @@ function loadManifest(artifact) {
     for (const ns of NAMESPACE_KEYS) {
       const nsObj = extensions[ns];
       if (nsObj !== null && typeof nsObj === "object") {
-        const version2 = nsObj.version;
-        if (typeof version2 === "number" && version2 !== SUPPORTED_NAMESPACE_VERSION) {
+        const version3 = nsObj.version;
+        if (typeof version3 === "number" && version3 !== SUPPORTED_NAMESPACE_VERSION) {
           ctx.add(
             WcsDiagnosticCode.ManifestNamespaceVersion,
             pointer("manifestExtensions", ns, "version"),
-            `Namespace "${ns}" version ${version2} is unsupported (expected ${SUPPORTED_NAMESPACE_VERSION}).`,
+            `Namespace "${ns}" version ${version3} is unsupported (expected ${SUPPORTED_NAMESPACE_VERSION}).`,
             "warning"
           );
         }
@@ -18292,6 +18679,7 @@ function validateText(text3, options, applicationSchema) {
   out.push(...validateAriaAttributes(text3, bindAttribute, locale2));
   out.push(...validateLiveRegions(text3, bindAttribute, stateTagName, locale2));
   out.push(...validateDocumentEnv(text3, locale2));
+  out.push(...validatePackageLoads(text3, locale2, fileReader));
   out.push(...validateSemantics(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptStateUses(text3, stateTagName, locale2, bindAttribute));
   out.push(...validateScriptReads(text3, stateTagName, locale2, fileReader, applicationSchema, bindAttribute));

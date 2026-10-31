@@ -47,7 +47,7 @@ Registers the elements, inserts `html`, and resolves once everything under the r
 | `maxIterations` | Stabilization rounds for elements inserted while waiting (default 10) |
 | `resolveModule` | Since 4.9. `(url: URL) => string \| URL \| null` — the local file a `<wcs-state src>` module is read from, the same option as `@wcstack/server`'s `renderToString`: it gets the URL the page names (resolved against `document.baseURI` — an `http:` URL under happy-dom) and returns a path or a `file:` URL. Node's module loader reads `file:` and `data:` URLs only. Installed for the length of the mount; the module is imported anew for each mount, so tests do not share a state object. Without it, or when it returns nothing, the state fails to initialize with a message saying so — for the root `<wcs-state>`, `mount()` rejects with it. A `.json` `src` is fetched, as before. See [A state in its own file](#a-state-in-its-own-file) |
 
-Since 4.11 (not released yet), an option `mount()` does not have, or a value not of the option's type, rejects at once — before the document is touched — naming the option and listing the options, as every package's `bootstrapXxx()` does; a misspelt `resolveModul` used to be ignored, and the test failed later with Node's `ERR_UNSUPPORTED_ESM_URL_SCHEME`. An option whose value is `undefined` is skipped. `fire()`'s `init` and `installDom()`'s options are checked the same way.
+Since 4.11, an option `mount()` does not have, or a value not of the option's type, rejects at once — before the document is touched — naming the option and listing the options, as every package's `bootstrapXxx()` does; a misspelt `resolveModul` used to be ignored, and the test failed later with Node's `ERR_UNSUPPORTED_ESM_URL_SCHEME`. An option whose value is `undefined` is skipped. `fire()`'s `init` and `installDom()`'s options are checked the same way.
 
 The returned `MountedApp`:
 
@@ -92,7 +92,7 @@ Two microtask turns and one macrotask — enough for a write to reach the DOM. U
 
 ### `fire(target, type, init?) → boolean`
 
-Dispatches an `Event` (or a `CustomEvent` when `init.detail` is given), bubbling by default. Returns `false` when a handler called `preventDefault()`. Since 4.11 (not released yet), an `init` key other than `bubbles`, `cancelable`, `composed` and `detail` throws: it never reached the event — `{ key: "Enter" }` made no `KeyboardEvent`. For another event class, call `target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))` yourself.
+Dispatches an `Event` (or a `CustomEvent` when `init.detail` is given), bubbling by default. Returns `false` when a handler called `preventDefault()`. Since 4.11, an `init` key other than `bubbles`, `cancelable`, `composed` and `detail` throws: it never reached the event — `{ key: "Enter" }` made no `KeyboardEvent`. For another event class, call `target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))` yourself.
 
 ### `installDom(options?) → Promise<() => Promise<void>>`
 

@@ -1,6 +1,33 @@
 import { pathToFileURL } from 'node:url';
 import { waitForReady, installGlobals } from '@wcstack/server';
 
+const isString = (value) => typeof value === "string";
+const isNumber = (value) => typeof value === "number";
+const isBoolean = (value) => typeof value === "boolean";
+const isFunction = (value) => typeof value === "function";
+const isObject = (value) => typeof value === "object" && value !== null;
+const isAny = () => true;
+/**
+ * Refuses an option the helper does not have, or a value not of the option's type, before the helper
+ * does anything — as every package's `bootstrapXxx()` does. A misspelt option did nothing:
+ * `mount(html, { resolveModul })` failed later with Node's `ERR_UNSUPPORTED_ESM_URL_SCHEME`, far from
+ * the typo (docs/seam-apps.md, homeroom). An option whose value is `undefined` is skipped.
+ */
+function checkOptions(helper, options, spec, hint = "") {
+    const list = () => Object.entries(spec).map(([name, [, type]]) => `${name} (${type})`).join(", ");
+    if (!isObject(options) || Array.isArray(options)) {
+        throw new Error(`@wcstack/testing: ${helper}: its options must be an object. Its options: ${list()}.`);
+    }
+    for (const [name, value] of Object.entries(options)) {
+        if (value === undefined)
+            continue;
+        const entry = Object.hasOwn(spec, name) ? spec[name] : undefined;
+        if (entry === undefined || !entry[0](value)) {
+            throw new Error(`@wcstack/testing: ${helper}: "${name}" is not one of its options, or not of the option's type. Its options: ${list()}.${hint}`);
+        }
+    }
+}
+
 /**
  * mount() — the README recipe ("Testing Your Page", @wcstack/state) as one call:
  * register the elements, insert the HTML, wait for every element and binding
@@ -138,7 +165,16 @@ async function defaultBootstraps() {
     const { bootstrapState } = await import('@wcstack/state');
     return [bootstrapState];
 }
+const MOUNT_OPTIONS = {
+    root: [(value) => value === "document" || value === "shadow", `"document" or "shadow"`],
+    bootstrap: [(value) => Array.isArray(value) && value.every(isFunction), "an array of functions"],
+    stateTagName: [isString, "a string"],
+    maxIterations: [isNumber, "a number"],
+    resolveModule: [isFunction, "a function"],
+};
 async function mount(html, options = {}) {
+    // before anything touches the document: a misspelt option used to be ignored
+    checkOptions("mount()", options, MOUNT_OPTIONS);
     const stateTagName = options.stateTagName ?? "wcs-state";
     const waiting = findWaitingState(html, stateTagName);
     if (waiting !== undefined) {
@@ -229,14 +265,23 @@ async function settle() {
     await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+const FIRE_INIT = {
+    bubbles: [isBoolean, "a boolean"],
+    cancelable: [isBoolean, "a boolean"],
+    composed: [isBoolean, "a boolean"],
+    detail: [isAny, "any value"],
+};
 /**
  * Dispatch a DOM event the way a user action would: bubbling by default, a
  * `CustomEvent` when `detail` is given, a plain `Event` otherwise.
  *
  * Returns what `dispatchEvent` returns (`false` when a handler called
  * `preventDefault()`). Follow with `await settle()` before asserting the DOM.
+ * An `init` key other than `bubbles` / `cancelable` / `composed` / `detail` throws:
+ * it would not reach the event (`{ key: "Enter" }` makes no `KeyboardEvent`).
  */
 function fire(target, type, init = {}) {
+    checkOptions("fire()", init, FIRE_INIT, " fire() dispatches an Event, or a CustomEvent with detail; for another event class (KeyboardEvent, InputEvent, …) call target.dispatchEvent() yourself.");
     const { detail, ...eventInit } = init;
     const event = detail !== undefined
         ? new CustomEvent(type, { bubbles: true, ...eventInit, detail })
@@ -257,7 +302,12 @@ function fire(target, type, init = {}) {
  * `happy-dom` is an optional peer: it is only needed here. A `window` can also be
  * passed in (`installDom({ window })`) to skip the import entirely.
  */
+const INSTALL_DOM_OPTIONS = {
+    url: [isString, "a string"],
+    window: [isObject, "a happy-dom Window"],
+};
 async function installDom(options = {}) {
+    checkOptions("installDom()", options, INSTALL_DOM_OPTIONS);
     const window = options.window ?? (await createWindow(options.url ?? "http://localhost/"));
     const restore = installGlobals(window);
     return async () => {

@@ -176,6 +176,8 @@ declare class WebSocketCore extends EventTarget {
      * the back/forward cache, and reconnects on the way back.
      */
     suspend(): boolean;
+    private _end;
+    private _publishClosed;
     get message(): any;
     get connected(): boolean;
     get loading(): boolean;
@@ -198,6 +200,20 @@ declare class WebSocketCore extends EventTarget {
     send(data: string | ArrayBufferLike | Blob | ArrayBufferView): void;
     private _warnNotReady;
     close(code?: number, reason?: string): void;
+    /**
+     * Stops the connection: no reconnect, no stale watchdog, the socket closed. An open socket is
+     * closed now and its close event publishes the end. A socket still connecting is let go instead
+     * (unless `abortConnecting`): closing it before its handshake makes Chromium print "WebSocket is
+     * closed before the connection is established." — on every route left right after it was
+     * entered (docs/seam-apps.md, homeroom). Returns true when it let one go: its events no longer
+     * reach the core, so the caller publishes the end.
+     */
+    private _stop;
+    /**
+     * Closes a socket the core has let go while it was still connecting, once it opens; a socket
+     * that fails to connect is just dropped. Nothing from it reaches the core any more.
+     */
+    private _closeWhenOpen;
     private _doConnect;
     private _onOpen;
     private _onMessage;

@@ -77,6 +77,12 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
+var name = "@wcstack/router";
+var version = "4.11.0";
+var pkg = {
+	name: name,
+	version: version};
+
 function getUUID() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -1395,7 +1401,7 @@ function moveInto(target, nodes) {
  * レイアウトのテンプレートが持ち込んだ outlet（スロットの代わりに置いた形）は、router が outlet を
  * 作った後で文書に入るので、レイアウトを置いたところでも同じ判定をする（docs/seam-apps.md、router-admin）。
  */
-const warned$1 = new WeakSet();
+const warned$2 = new WeakSet();
 /**
  * 直後に outlet を持たない router が outlet を作る直前に呼ぶ。同じ root（document か
  * shadow root）に、どの router にも使われない `<wcs-outlet>` があれば 1 回だけ警告する。
@@ -1413,10 +1419,10 @@ function warnStrayOutlets(scope) {
     const routerTag = config.tagNames.router;
     const outletTag = config.tagNames.outlet;
     for (const outlet of scope.querySelectorAll(outletTag)) {
-        if (warned$1.has(outlet) || outlet.previousElementSibling?.matches(routerTag)) {
+        if (warned$2.has(outlet) || outlet.previousElementSibling?.matches(routerTag)) {
             continue;
         }
-        warned$1.add(outlet);
+        warned$2.add(outlet);
         console.warn(`[@wcstack/router] [wcs/router-outlet-misplaced] A <${routerTag}> uses only the element right after it ` +
             `as its outlet, and this page has a <${outletTag}> that no router uses. The router makes an outlet of ` +
             `its own right after itself, so the routes render there and the <${outletTag}> you placed stays empty. ` +
@@ -2306,7 +2312,7 @@ function runTransition(source, mutate, types) {
  *
  * 警告は要素ごとに 1 回。壊れている場合にのみ走るので、正常系のコストはゼロ。
  */
-const warned = new WeakSet();
+const warned$1 = new WeakSet();
 /** `data-wcs`。router は state の config を読めないので既定名を直接持つ */
 const BIND_ATTRIBUTE = "data-wcs";
 function hasBinding(element) {
@@ -2318,10 +2324,10 @@ function hasBinding(element) {
  * @param remedy  その位置に固有の回避策
  */
 function warnUnboundMarkup(element, where, remedy) {
-    if (warned.has(element) || !hasBinding(element)) {
+    if (warned$1.has(element) || !hasBinding(element)) {
         return;
     }
-    warned.add(element);
+    warned$1.add(element);
     // 判定は **DOMContentLoaded まで**遅らせる。router の auto バンドルは state の
     // ものより先に走るので、`<wcs-head>` が差し出す時点では binder がまだ居ない。
     // そこで即断すると、この直後に正しく束ねられるノードを「壊れている」と報告する。
@@ -4333,13 +4339,16 @@ class Link extends HTMLElement {
         // pathname だけ）。そのページ（aria-current="page"）は今のページのクエリが `to` のクエリと等しいとき、
         // match="prefix" なら含むときも（"true"、パスの「下」と同じ）。`/search?q=a` の「次のページ」
         // （`?q=a&page=2`）が「現在のページ」と読み上げられ（docs/seam-apps.md、city-library）、含む規則では
-        // `page` を省いた 1 ページ目へのリンクがどのページでもそうだった（city-library の取り込み）
+        // `page` を省いた 1 ページ目へのリンクがどのページでもそうだった（city-library の取り込み）。
+        // `?` で終わる `to`（`to="/notices?"`、`to="?"` — 明示した空のクエリ）もクエリのある `to` で、そのページは
+        // クエリの無いページだけ（href からは `?` を落とす）。クエリの無い `to` と同じに pathname だけで比べていたので、
+        // 「すべて」のタブが `/notices?cat=event` でも現在のページで、現在のリンクが 2 つになった（docs/seam-apps.md、homeroom）
         const current = new URL(window.location.href);
         const currentPath = this._normalizePathname(current.pathname);
         const { pathname, search } = splitUrlTarget(this._path);
         const wanted = effectiveSearch(search);
         const queryIncluded = queryIncludes(current.search, wanted);
-        const queryEqual = wanted === '' || queryEquals(current.search, wanted);
+        const queryEqual = search === '' || queryEquals(current.search, wanted);
         const linkPath = this._normalizePathname(this._isInternalTarget(this._path)
             ? (pathname === ""
                 ? window.location.pathname
@@ -4646,6 +4655,66 @@ class Head extends HTMLElement {
     }
 }
 
+// ===========================================================================
+// AUTO-GENERATED FILE - DO NOT EDIT.
+// Generated from /protocol/define-element.ts by scripts/sync-protocol-types.mjs.
+// Run `node scripts/sync-protocol-types.mjs` after editing the source.
+// ===========================================================================
+/**
+ * One copy of each package on a page (docs/timing-and-firing-contract.md §24). The first copy the
+ * page evaluates defines the tags and a second one does nothing, so a copy that finds its tag defined
+ * by another copy of the package — not its class, not a subclass of it, not the same version — warns
+ * `[wcs/package-twice]` once per registry, naming both versions. The classes it defines carry
+ * `"<package>@<version>"` under `Symbol.for("wcstack.package")`; a class without it is named
+ * "another copy of <package> that does not name its version" (an older copy, or one loaded through
+ * an entry that does not stamp).
+ */
+/** The static a class defined through this helper carries: `"@wcstack/fetch@<version>"`. */
+const PACKAGE_STAMP = Symbol.for("wcstack.package");
+/** The registries this copy warned about: one warning per package per registry. */
+const warned = new WeakSet();
+/**
+ * Marks `cls` as defined by `pkg` (`"@wcstack/fetch@<version>"`). A subclass inherits the mark, and
+ * `defineProperty` writes it even where a parent's mark is read-only.
+ */
+function stampPackage(cls, pkg) {
+    Object.defineProperty(cls, PACKAGE_STAMP, { value: pkg, configurable: true });
+}
+/**
+ * Warns when `tag` is defined as `existing` by another copy of the package `pkg` names: `existing`
+ * is neither `own` nor a subclass of it (omit `own` when the copy has no class to compare with), and
+ * carries another version or none. Once per registry.
+ */
+function warnIfAnotherCopy(registry, tag, existing, own, pkg) {
+    if (own !== undefined && (existing === own || existing.prototype instanceof own))
+        return;
+    const theirs = existing[PACKAGE_STAMP];
+    if (theirs === pkg || warned.has(registry))
+        return;
+    warned.add(registry);
+    const name = pkg.slice(0, pkg.lastIndexOf("@"));
+    console.warn(`[${name}] [wcs/package-twice] <${tag}> is already defined by ` +
+        `${theirs ?? `another copy of ${name} that does not name its version`}; ` +
+        `this copy, ${pkg}, does nothing. Load each package once.`);
+}
+/**
+ * Defines each `[tag, class]` in `registry` unless the tag is already defined, stamping the class
+ * with `pkg` (`"@wcstack/fetch@<version>"`). A tag another copy of the package defined first is left
+ * as it is, with the warning above.
+ */
+function defineElements(registry, pkg, definitions) {
+    for (const [tag, cls] of definitions) {
+        const existing = registry.get(tag);
+        if (existing === undefined) {
+            stampPackage(cls, pkg);
+            registry.define(tag, cls);
+        }
+        else {
+            warnIfAnotherCopy(registry, tag, existing, cls, pkg);
+        }
+    }
+}
+
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
  * them for a single shadow tree -- scoped registries do not inherit the global
@@ -4653,27 +4722,15 @@ class Head extends HTMLElement {
  */
 function registerComponents(registry = customElements) {
     // Register custom element
-    if (!registry.get(config.tagNames.layout)) {
-        registry.define(config.tagNames.layout, Layout);
-    }
-    if (!registry.get(config.tagNames.layoutOutlet)) {
-        registry.define(config.tagNames.layoutOutlet, LayoutOutlet);
-    }
-    if (!registry.get(config.tagNames.outlet)) {
-        registry.define(config.tagNames.outlet, Outlet);
-    }
-    if (!registry.get(config.tagNames.route)) {
-        registry.define(config.tagNames.route, Route);
-    }
-    if (!registry.get(config.tagNames.router)) {
-        registry.define(config.tagNames.router, Router);
-    }
-    if (!registry.get(config.tagNames.link)) {
-        registry.define(config.tagNames.link, Link);
-    }
-    if (!registry.get(config.tagNames.head)) {
-        registry.define(config.tagNames.head, Head);
-    }
+    defineElements(registry, `${pkg.name}@${pkg.version}`, [
+        [config.tagNames.layout, Layout],
+        [config.tagNames.layoutOutlet, LayoutOutlet],
+        [config.tagNames.outlet, Outlet],
+        [config.tagNames.route, Route],
+        [config.tagNames.router, Router],
+        [config.tagNames.link, Link],
+        [config.tagNames.head, Head],
+    ]);
 }
 
 /**
@@ -4687,10 +4744,6 @@ function bootstrapRouter(config, registry) {
     }
     registerComponents(registry);
 }
-
-var version = "4.10.1";
-var pkg = {
-	version: version};
 
 const VERSION = pkg.version;
 

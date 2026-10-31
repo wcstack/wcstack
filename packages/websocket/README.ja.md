@@ -681,7 +681,7 @@ bootstrapWebSocket({
 ## 設計メモ
 
 - **4.8 から、接続時の判断はマイクロタスクを 1 つ待つ。** 接続するか、どの `url` へかは、`connectedCallback`（と `url` の変化）の 1 マイクロタスク後に、そのときの入力で決める（[タイミング契約](../../docs/timing-and-firing-contract.ja.md) §23）。`@wcstack/router` はパラメータだけの遷移でルートの要素を入れ直し、`@wcstack/state` が次のルートの入力を書くのはその後 — その場で接続すると、前のルートのソケットを開いてから閉じていた。`connect()` / `trigger` はその場で接続し、同じタスクの `close()` は待っている接続を取り消す。
-- **4.11（未リリース）から、開く途中のソケットは開いてから閉じる:** ハンドシェイクの途中で `<wcs-ws>` を外す（ルートを離れる、`if:` の枝を閉じる）、`url` を変える、`close()` すると、終わりをその場で知らせ（`connected: false`、`loading: false`、`readyState` `3`）、ソケットを手放し — そこからは何も要素に届かない — 開いたときに閉じる（失敗したら捨てる）。Chromium の警告「WebSocket is closed before the connection is established.」はもう出ない。back/forward cache の経路（`pagehide`）だけは、使用中のソケットがページを cache から外すので、その場で閉じる。
+- **4.11 から、開く途中のソケットは開いてから閉じる:** ハンドシェイクの途中で `<wcs-ws>` を外す（ルートを離れる、`if:` の枝を閉じる）、`url` を変える、`close()` すると、終わりをその場で知らせ（`connected: false`、`loading: false`、`readyState` `3`）、ソケットを手放し — そこからは何も要素に届かない — 開いたときに閉じる（失敗したら捨てる）。Chromium の警告「WebSocket is closed before the connection is established.」はもう出ない。back/forward cache の経路（`pagehide`）だけは、使用中のソケットがページを cache から外すので、その場で閉じる。
 - `message`、`connected`、`loading`、`error`、`readyState` は **出力ステート**
 - `url`、`trigger`、`send` は **入力 / コマンドサーフェス**
 - `trigger` は意図的に単方向: `true` を書き込むと接続、リセットで完了を通知

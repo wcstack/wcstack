@@ -254,7 +254,7 @@ createServer(async (req, res) => {
 - `<body>` の中身だけを渡す（`<html>`, `<head>`, `<body>` タグは含めない）
 - `<script>` / `<link>` による外部リソース読み込みは実行されない
   → 必要なパッケージは `options.bootstraps` で明示的に渡す
-  4.11（未リリース）から、スタイルシートもそう: サーバーは happy-dom 21 の上で動き、CSS ファイルも iframe のページも読まない。4.10 までは happy-dom 20 の上で、HTML の `<link rel="stylesheet">` をサーバーが取りに行っていた — 信用しない HTML を描くとき、HTML が名指すどの URL へも要求が出た（GHSA-c8p4-j97h-3vg8）。
+  4.11 から、スタイルシートもそう: サーバーは happy-dom 21 の上で動き、CSS ファイルも iframe のページも読まない。4.10 までは happy-dom 20 の上で、HTML の `<link rel="stylesheet">` をサーバーが取りに行っていた — 信用しない HTML を描くとき、HTML が名指すどの URL へも要求が出た（GHSA-c8p4-j97h-3vg8）。
 
 ## SSR でできること
 

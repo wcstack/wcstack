@@ -2,7 +2,7 @@
  * bootstrapDevtools.ts
  *
  * `<wcs-devtools>` の登録と自動挿入（devtools-tag-design.md §2）。
- * - 既に定義済みなら再定義しない
+ * - 既に定義済みなら再定義しない（別のコピーが定義していれば 1 回警告する — registerComponents.ts）
  * - ページに `<wcs-devtools>` が無ければ body 末尾に 1 つ挿入
  *   （手動で書かれていれば挿入しない）
  * - SSR では何もしない
