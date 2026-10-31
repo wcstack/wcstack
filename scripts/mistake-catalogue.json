@@ -1101,11 +1101,10 @@
     {
       "id": "tag-package-missing",
       "lint": [{ "code": "wcs/tag-package-missing", "severity": "warning" }],
-      "runtime": "silent", "harm": "broken",
+      "runtime": "loud", "harm": "broken",
       "mistake": { "en": "Writes a `wcs-*` tag of a package the page never loads (`<wcs-upload>` without `@wcstack/upload/auto`).", "ja": "ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。" },
-      "effect": { "en": "The element is never defined: its bindings wait and nothing happens, with nothing in the console. The homeroom seam app's Save hung at \"送信中 0%\".", "ja": "要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。" },
-      "disposition": "runtime-report",
-      "note": { "en": "Since 4.11 the lint reports it on a page that loads wcstack itself (not a fragment or a bundler's page), once per package. A runtime report needs a delay — a package may come late — so the diagnostics add-on can say it a few seconds after the page is ready, with no core bytes.", "ja": "4.11 から lint が、wcstack を自分で読み込むページ（断片・バンドラのページでない）でパッケージごとに 1 回報告する。実行時に言うには待ち時間が要る（パッケージは遅れて来うる）ので、diagnostics の後付けがページの準備ができてから数秒後に言える（core は 0 B）。" }
+      "effect": { "en": "The element is never defined: its bindings wait and nothing happens, with nothing in the console. The homeroom seam app's Save hung at \"送信中 0%\". Since 4.11 the lint names the package to load (on a page that loads wcstack itself), and the diagnostics add-on warns 5 s after the page is ready (`[wcs/element-undefined]`).", "ja": "要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。4.11 から lint が読み込むパッケージを名指し（wcstack を自分で読み込むページで）、diagnostics の後付けがページの準備ができてから 5 秒後に警告する（`[wcs/element-undefined]`）。" },
+      "evidence": [{ "file": "packages/state/src/features/diagnostics.ts", "text": "[wcs/element-undefined]" }]
     },
     {
       "id": "package-twice",

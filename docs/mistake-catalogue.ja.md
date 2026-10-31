@@ -71,8 +71,8 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 7 |
-| 実行時 | 66 |
-| lint だけ — 条件付きの沈黙 | 25 |
+| 実行時 | 67 |
+| lint だけ — 条件付きの沈黙 | 24 |
 | 文書だけ — 沈黙 | 42 |
 | 数えない lint の code | 19 |
 
@@ -145,7 +145,6 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 外れた 3.x の宣言を `this` 越しに読む（`this.$streams`・`this.$updatedCallback`）。 | `wcs/declaration-alias-read` (varies) | `undefined` が返り、呼べば汎用の TypeError。 | 動かない | 実行時に知らせる — 4.x。diagnostics の後付けの `dollar` のフックが、外れた宣言を名指せる（core は 0 B）。 |
 | `$renderedCallback(paths)` が、どの束縛も名指さない宣言済みのパスか、state に無いパスを調べる（`paths.includes("feed")`・`paths.includes("labell")`）。 | `wcs/updated-callback-unbound` (warning) | `paths` には当てた束縛しか載らないので、その分岐は走らない。 | 動かない | lint のまま（実行時には見えない）。実行時の推測（`includes` が警告する `paths`）は、調べ方は捕まえても意図は捕まえられない。state に無いパスは、近いパスがあるときだけ（打ち間違いらしいとき）報告する。コールバックはほかの種類の文字列も比べうるため。 |
 | `<wcs-storage>` の `value#init=element` を、`null` でないリテラルで始めたパスに束ねる（`cart: []`）。 | `wcs/storage-init-seed` (warning) | 空のキーは `null` を読むので、最初の引き込みがシードを置き換える。`for: cart` は何も描かず、`this.cart.length` を読むコードは汎用の TypeError を投げる。 | 動かない | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 明示の `#init=element` が値を `null` で置き換えるときに警告する（diagnostics の後付け）。5.0: 無いキーは `undefined` を読み、シードを残す（README は `null` と書いている）。 |
-| ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。 | `wcs/tag-package-missing` (warning) | 要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。 | 動かない | 実行時に知らせる — 4.x。4.11 から lint が、wcstack を自分で読み込むページ（断片・バンドラのページでない）でパッケージごとに 1 回報告する。実行時に言うには待ち時間が要る（パッケージは遅れて来うる）ので、diagnostics の後付けがページの準備ができてから数秒後に言える（core は 0 B）。 |
 | `$watch` のキーに空の段がある（`a..b`）。 | `wcs/watch-declaration-invalid` (error) | 実行時は調べないので、watch は発火しない。 | 動かない | 実行時に知らせる — 4.x。temporal の後付けに検査を 1 つ（約 10 B）。 |
 | `attr.aria-*:` の ARIA 属性名を打ち間違える。 | `wcs/aria-attr-unknown` (warning) | 属性は書かれ、支援技術は無視する。 | 劣化 | lint のまま（実行時には見えない）。名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。 |
 | `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (info) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。 |
@@ -214,6 +213,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | `<wcs-listen>` → state → `<wcs-speak>` を、聞き取り中に読み上げを止めずに繋ぐ。 | code なし: マイクが読み上げを聞き、聞いたものがまた話され、回るたびに長くなる。ページの `<wcs-listen>` が聞いている間に話し始めると、`<wcs-speak>` が `[wcs/speech-echo]` で 1 回警告する。 | — |
 | `wcBindable` の宣言の無いタグ（`<wcs-fetch-header>`）に spread（`...:`）する。 | 同じ code: 取り付けの時点で `#1501`。root では state が初期化に失敗し、行では束縛が失敗する。 | `wcs/spread-no-bindable` (error) |
 | `wcs-*` のタグ（やページが定義した自作要素）が宣言しないメンバーを束ねる（`hidden`・`textContent` などの DOM のプロパティも）。 | code なし: `#38`（プロパティ）、`#1203`・`#1204`（`command.`・`eventToken.`）。root では state が初期化に失敗し、行では束縛が失敗する。宣言なしで書けるのは HTML の書き込み先だけ。 ページが自分で定義した自作要素（スクリプト・`src=` のモジュールとその import の中の `customElements.define`）も、その `static wcBindable` が字面で読めるときは同じように照合する。7GUIs の評価で、その `eventToken.` / `command.` の打ち間違いが、近いメンバーを示さない実行時に任されていたことが見つかった。 | `wcs/tag-member-unknown` (error) |
+| ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。 | code なし: 要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。4.11 から lint が読み込むパッケージを名指し（wcstack を自分で読み込むページで）、diagnostics の後付けがページの準備ができてから 5 秒後に警告する（`[wcs/element-undefined]`）。 | `wcs/tag-package-missing` (warning) |
 | テンプレートの規則を破る: 1 つのテンプレートに構造ディレクティブを 2 つ、`for:`・`if:` のテンプレートの中の `outerHTML:`。 | 同じ code: 束縛の計画で `#201`〜`#203`、state は初期化に失敗する。`#204`（挿入された中身の先頭の構造テンプレート）は記録される。 | `wcs/template-syntax` (varies) |
 | コマンドのトークンを誤って結ぶ: 右辺が `$command.…` でない `command.m:`、または `nativeCommands` の表に無いネイティブ要素のメソッド。 | 同じ code: 計画か取り付けの時点で `#1201`〜`#1205`。root では state が初期化に失敗する。 | `wcs/token-misconfigured` (error) |
 | state が宣言しないコマンドかイベントのトークンを使う。 | 同じ code: `command.m: $command.x` は取り付けで失敗する（`#1302`。lint は error）。`eventToken.` と `onclick: $command.x` は、イベントのたびに `#1301` を記録する（lint は warning）。スクリプトの、宣言に無い名前の `this.$command.x` は `undefined` で、`.emit()` は何も名指さない TypeError を投げる（lint は error）。 | `wcs/token-undeclared` (varies) |
