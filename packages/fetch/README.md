@@ -163,8 +163,32 @@ auto-reset:      true  → false  Dispatches wcs-fetch:trigger-changed
 ```
 
 If `url` is empty when `true` is written (e.g. a state-driven computed url not yet
-resolved), the write is **silently ignored**: no fetch runs, `trigger` stays `false`,
-and no event fires. Set the `url` first, then write `true` again to execute.
+resolved), the write is **ignored**: no fetch runs, `trigger` stays `false`,
+and no event fires — since 4.5 it warns (`[wcs/command-not-ready]`, see [Design Notes](#design-notes)).
+Set the `url` first, then write `true` again to execute.
+
+**A `trigger` sends what the element has when the trigger is applied**: its `url`, `method`
+and `body`, and the `<wcs-fetch-header>` / `<wcs-fetch-body>` inside it, as they are at that
+moment. Within one update, `@wcstack/state` applies the bindings in the order their paths were
+written — across elements too, and a getter's bindings where the first path it reads was written
+([timing contract §4.4](../../docs/timing-and-firing-contract.md#44-within-one-update-bindings-apply-in-the-order-their-paths-were-written)). So the order of the writes in a handler decides
+what goes out. A logout must still carry the token it ends — write the trigger first:
+
+```js
+// <wcs-fetch url="/api/logout" method="POST" manual data-wcs="trigger: logoutTrigger">
+//   <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+// </wcs-fetch>
+// with get authHeader() { const t = this["session.token"]; return t ? "Bearer " + t : null; }
+logout() {
+  this.logoutTrigger = true; // the request goes out with the header…
+  this.session = null;       // …and then the header is removed
+},
+```
+
+Written the other way round (`this.session = null; this.logoutTrigger = true;`), the header is
+removed first and the logout goes out without it: the server cannot end the session, and nothing
+says so. The opposite case is a request that needs what the handler writes — write `body` (or
+`url`) first, then `trigger`, as `submit()` does below.
 
 ### 4. POST with a body
 
@@ -895,7 +919,7 @@ bootstrapFetch({
 - `value`, `loading`, `error`, `status`, `objectURL`, and `errorInfo` are **output state**
 - `url`, `body`, `response-type`, and `trigger` are **input / command surface**
 - `response-type` (default `auto`) selects how the response body is read; `blob` additionally publishes a managed `objectURL` (revoked on each new response / dispose). `target` (HTML-replace mode) overrides it
-- `trigger` is intentionally one-way: writing `true` executes, reset emits completion. Writing `true` while `url` is empty is ignored (no fetch, no event, flag stays `false`); since 4.5 it warns (`[wcs/command-not-ready]`), once until a request is sent again (since 4.8; before, once per element) — in one `data-wcs`, write `trigger` after `url`, since bindings apply in the order written
+- `trigger` is intentionally one-way: writing `true` executes, reset emits completion. Writing `true` while `url` is empty is ignored (no fetch, no event, flag stays `false`); since 4.5 it warns (`[wcs/command-not-ready]`), once until a request is sent again (since 4.8; before, once per element) — in one `data-wcs`, write `trigger` after `url`, since bindings apply in the order written. On an update the order is the one the paths were written in, across elements too, and a `trigger` sends the inputs, headers and body the element has when it is applied ([Manual execution with `trigger`](#3-manual-execution-with-trigger))
 - on an HTTP error (status >= 400), `value` is reset to `null` while `status` carries the error code — a `value`-only binding loses its previous value, so bind `error` to detect failures
 - on a network error (no HTTP response — DNS failure, offline, CORS, etc.), `value` is reset to `null` and `status` to `0`; `error` holds the thrown `Error`. Like HTTP errors, a previous successful value/status does not linger
 - `method="HEAD"` skips response-body reading by spec (no body); `value` stays `null` and only `status` is surfaced

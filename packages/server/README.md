@@ -254,6 +254,7 @@ createServer(async (req, res) => {
 - Pass only the contents of `<body>` — do not include `<html>`, `<head>`, or `<body>` tags.
 - `<script>` / `<link>` external resource loading is not executed.
   → Provide required packages via `options.bootstraps`.
+  Since 4.11 (not released yet) this holds for stylesheets too: the server runs on happy-dom 21, which loads no CSS file and no iframe page. Up to 4.10, on happy-dom 20, a `<link rel="stylesheet">` in the HTML was fetched by the server — a request to any URL the HTML names, when it renders HTML it does not trust (GHSA-c8p4-j97h-3vg8).
 
 ## What SSR Can Do
 
