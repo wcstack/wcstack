@@ -36,7 +36,7 @@ Reference: [`packages/fetch/src/components/Fetch.ts`](../packages/fetch/src/comp
 A `url` change (via the attribute) and the automatic fetch on connect are collected into a `queueMicrotask` (`_scheduleAutoFetch`).
 
 - **Several inputs in one tick collapse into one fetch, decided on the final state**: if a spread writes `manual` after `url`, the decision is taken on the state as of the microtask, so no order-dependent spurious fetch happens
-- **Same-value guard**: an auto-fetch where `url === _lastFetchedUrl` is skipped. What `_lastFetchedUrl` remembers is not "the previous url" but **the last url actually fetched** (it is written only inside `fetch()`, and reset to null only on disconnect). So intervening non-fetch states (an empty url, say) do not update `_lastFetchedUrl`, and `"abc"→""→"abc"` **is skipped** just as `"abc"→"abc"` is. To fetch the same url again you need an explicit trigger (§1.3's `fetch()` / `trigger=true` / the `fetch` command) or a remount that resets `_lastFetchedUrl` to null
+- **Same-value guard**: an auto-fetch where `url === _lastFetchedUrl` is skipped. What `_lastFetchedUrl` remembers is not "the previous url" but **the last url actually fetched** (it is written only inside `fetch()`, and reset to null on disconnect). Up to 4.2 an intervening empty url did not update it, so `"abc"→""→"abc"` **was skipped** just as `"abc"→"abc"` is. Since 4.3 an auto-fetch decision that sees an empty url resets it to null, so `"abc"→""→"abc"` fetches again (an empty url and the same url again within one tick collapse into no change). To fetch the same url again with nothing in between you need an explicit trigger (§1.3's `fetch()` / `trigger=true` / the `fetch` command) or a remount that resets `_lastFetchedUrl` to null
 
 ### 1.3 An explicit trigger is immediate and unconditional (bypassing the dedupe)
 A `fetch()` call, `trigger=true`, the `fetch` command, and a `data-fetchtarget` click all **run synchronously and immediately**, and do **not** pass through the `_lastFetchedUrl` same-value guard.
@@ -49,7 +49,7 @@ A `fetch()` call, `trigger=true`, the `fetch` command, and a `data-fetchtarget` 
 → **Consequence**: a design that accumulates through `eventToken.value` plus `$on` (`packages/fetch/examples/infinite-scroll`) breaks by appending `null` unless the handler rejects on status first.
 
 ### 1.5 `trigger` is ignored when the url is empty, with a warning since 4.5
-`trigger=true` while `url` is empty **does nothing** (no fetch, no event, the flag stays false). Set a url and write `true` again to run it. Up to 4.4 it was silent; since 4.5 the element warns once (`[wcs/command-not-ready]`): a `trigger` written before `url` in one `data-wcs` is the usual cause (bindings apply in the order written).
+`trigger=true` while `url` is empty **does nothing** (no fetch, no event, the flag stays false). Set a url and write `true` again to run it. Up to 4.4 it was silent; since 4.5 the element warns once (`[wcs/command-not-ready]`): a `trigger` written before `url` in one `data-wcs` is the usual cause (bindings apply in the order written). A trigger that runs sends the `url`, `method`, `body` and helper elements the element has at that moment, and in an update `@wcstack/state` applies the bindings in the order their paths were written (§4.4).
 
 ### 1.6 `body` resets to null on every `fetch()`; `method="HEAD"` does not read the body
 (Supplementary. For details see the fetch README's "Design Notes".)
@@ -140,6 +140,11 @@ What does **not** change: initial rendering is never wrapped (only the drain is)
 
 Normative description: [view-transition-design.md](./view-transition-design.md) §7.2.
 
+### 4.4 Within one update, bindings apply in the order their paths were written
+A write queues the bindings of its path at once, and walks the getters that read it and queues theirs right after (the dirty strategy, `strategy/dirty.ts`); the drain applies the queue in that order (`Engine.drain`). So the writes of one update — one handler, one task — are applied in the order their paths were written, across elements too: a binding on one element and a binding on another follow the order of the writes, not the order of the elements in the page. A binding already queued keeps its place when its path is written again, and a getter's bindings are queued where the first path it reads was written. Two things come first in each pass: the lists, which build or move their rows, and the `if` / `elseif` conditions, so that a branch one closes takes its bindings with it. On the first binding of a page, the bindings of one `data-wcs` apply in the order they are written there (§1.5).
+
+→ **Consequence**: an element that acts when one input is written uses the other inputs as they are at that moment. `<wcs-fetch>`'s `trigger` sends the `url`, `method`, `body` and the `<wcs-fetch-header>` / `<wcs-fetch-body>` children it has when the trigger is applied (§1.5), and `<wcs-upload>`'s reads `url` and `files`. A logout handler `this.logoutTrigger = true; this.session = null;`, with the `Authorization` header bound to a getter of `session.token`, sends the logout with the header; `this.session = null; this.logoutTrigger = true;` removes the header first and sends it without one — the server cannot end the session, and nothing says so (the `homeroom` seam app, on 4.2.0 and 4.10.1; `examples/router-auth` writes the trigger first). A request that needs what the handler writes — a `body`, a `url` — writes it before the trigger.
+
 ---
 
 ## 5. example → the contracts it depends on (traceability)
@@ -150,6 +155,7 @@ Normative description: [view-transition-design.md](./view-transition-design.md) 
 | [`users-crud`](../packages/fetch/examples/users-crud) | §1.3 (re-fetching with the `refreshList` command) / §1.4 (response fires on error too → decide success by status) / §1.5 (suppressing detail for an empty url) |
 | [`infinite-scroll`](../packages/fetch/examples/infinite-scroll) | §1.2/§1.4 (appends check status) / §2.1 (the sentinel needs a box and fires on the first task) |
 | [`state-intersect-scroll`](../examples/state-intersect-scroll) | §2.2+§2.3 (self-healing with reobserve) / §3 (`$stream` restart plus equal-value page selection to prevent page skips) |
+| [`router-auth`](../examples/router-auth) | §4.4 (the logout's `trigger` is written before the session is cleared, so the request carries its `Authorization` header) |
 
 ---
 
@@ -579,3 +585,34 @@ Nodes whose connect-time work nothing can observe before it is corrected: `<wcs-
 
 ### 23.7 Testing
 Each node has tests for: a re-insertion during which an earlier-queued microtask changes an input (the work uses only the new input), an element removed before the microtask (no work), a gate written in the same task as the append, and a stop-type command in the same task.
+
+## 24. A cross-cutting contract: a second copy of a package warns (2026-10-31)
+
+Applies to: every package that defines custom elements — the I/O nodes, `@wcstack/router`, `@wcstack/autoloader`, `@wcstack/view-transition`, `@wcstack/devtools`, and `@wcstack/state`'s full entries. The `homeroom` seam app found it ([seam-apps.md](./seam-apps.md)). An app upgraded from 4.2.0 to 4.10.1 kept one old `<script type="module" src=".../@wcstack/state@4.2.0/auto">` before the new one, and ran the 4.2.0 engine: the copy the page evaluates first defines the tags, and the second, finding them defined, did nothing — with no message. Every package registered its tags that way (`if (!registry.get(tag)) registry.define(tag, Cls)`).
+
+### 24.1 Each defined class names its package and version
+The classes a package defines carry `"<package>@<version>"` (`"@wcstack/fetch@4.11.0"`) under `Symbol.for("wcstack.package")`. A subclass inherits it. The version is the package's `package.json` one, embedded at build time. An older copy, from before this rule, carries none, and neither does a copy loaded through an entry that does not stamp (§24.4).
+
+### 24.2 A copy that finds its tag defined by another copy warns once, naming both versions
+When one of a package's tags is already defined by a class that is neither this copy's class nor a subclass of it, and does not carry this copy's package and version, the copy defines nothing for that tag and warns once per package per registry (not once per tag):
+
+```
+[@wcstack/fetch] [wcs/package-twice] <wcs-fetch> is already defined by @wcstack/fetch@4.2.0; this copy, @wcstack/fetch@4.11.0, does nothing. Load each package once.
+```
+
+When the other copy's class carries no version, it is named by its package alone — `another copy of @wcstack/fetch that does not name its version` — whatever version it is: an older copy, or one loaded through `/core` or `dist/split/auto.js` (§24.4).
+
+### 24.3 What stays silent
+- This copy registering again, in the same registry, and an adopter's subclass of this copy's class defined under the tag on purpose.
+- Another copy of the same package and the same version: it is harmless — the `wcstack/auto` bundle beside `@wcstack/state/auto` of one release.
+- Packages of different versions side by side (router 4.10 beside state 4.2): they are compatible. Only a second copy of the same package is warned about.
+- An older copy, from before this rule, evaluated after a newer one: it has no code to warn with. The newer copy runs.
+
+### 24.4 `@wcstack/state`: the full entries, not the core
+`<wcs-state>` and `<wcs-ssr>` are checked by `/auto` and by `.`'s `bootstrapState`, which wrap the core's `define()`: the core does not carry the check (its 20 KiB gzip budget). `<wcs-state>` is compared with the engine's `WcsState`. `/core` (`bootstrapState` from `@wcstack/state/core`) and `dist/split/auto.js` define the tags as before, stamp nothing and say nothing: a copy loaded through them is named `another copy of @wcstack/state that does not name its version` by a full entry that loads after it. In the full entries the check costs about 250 B gzip; in `dist/split/auto.js` it would cost about 400 B, over that file's gate.
+
+### 24.5 Implementation
+One helper, `/protocol/define-element.ts` (`defineElements(registry, pkg, [[tag, Class], …])`, `warnIfAnotherCopy`, `stampPackage`), copied into each package by `scripts/sync-protocol-types.mjs`. Each package's `registerComponents()` calls `defineElements` with `` `${pkg.name}@${pkg.version}` `` read from its `package.json`; the shared rollup config inlines the two values (`config-templates/rollup.config.js`), so `dist/auto.min.js` stays self-contained.
+
+### 24.6 Testing
+Each package runs the helper's shared test and a shared registration test against its own `registerComponents()` (`__tests__/protocol.defineElement*.test.ts`): another copy's class defined first, with and without a version, the same version silent, an adopter's subclass silent, one warning per registry. `@wcstack/state` tests its wrapper in `__tests__/twice.test.ts`.

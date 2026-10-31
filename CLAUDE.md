@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository Layout
 
 - `packages/` — one directory per package (see Monorepo Structure).
-- `protocol/` — canonical sources of the cross-package protocols (`wc-bindable`, `wc-bindable-reader`, `upgrade-properties` + its test, `transition-runner`, `binder`, `ssr-snapshot`). `scripts/sync-protocol-types.mjs` copies them into `packages/<pkg>/src/protocol/` (the test into `__tests__/`).
+- `protocol/` — canonical sources of the cross-package protocols (`wc-bindable`, `wc-bindable-reader`, `upgrade-properties` + its test, `transition-runner`, `binder`, `ssr-snapshot`, and `define-element` + its two tests — the tag registration every package that defines tags goes through, which warns once when another copy of the package defined them first). `scripts/sync-protocol-types.mjs` copies them into `packages/<pkg>/src/protocol/` (the tests into `__tests__/`).
 - `io-core/` — canonical IO-core helpers (`operation-lane`, `platform-capability`). `scripts/sync-io-core.mjs` copies them into `packages/<pkg>/src/core/`.
 - `config-templates/` — canonical `rollup.config.js` / `eslint.config.js`. `scripts/sync-package-configs.mjs` writes the `@wcstack/*` copies; packages in its `DEVIATIONS` keep a hand-written file (or none, like `lint`), and `packages/wcstack` (a hand-kept copy) and `packages/vscode-wcs` are outside the sync.
 - `scripts/` — the sync scripts, `sync-readme-agents-banner.mjs` (the AI-agents line under each package README's H1), the `@wcstack/state` size / coupling gates (`check-state-*.mjs`), `conformance-*.mjs`, `generate-sri.mjs`, and `audit-state-*` measurement tooling.

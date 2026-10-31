@@ -1,5 +1,7 @@
+import pkg from "../package.json" with { type: "json" };
 import { WcsTilt } from "./components/Tilt.js";
 import { config } from "./config.js";
+import { defineElements } from "./protocol/defineElement.js";
 
 /**
  * Register this package's tags. Pass a scoped `CustomElementRegistry` to define
@@ -7,7 +9,7 @@ import { config } from "./config.js";
  * one, so a tree using one needs its own definitions.
  */
 export function registerComponents(registry: CustomElementRegistry = customElements): void {
-  if (!registry.get(config.tagNames.tilt)) {
-    registry.define(config.tagNames.tilt, WcsTilt);
-  }
+  defineElements(registry, `${pkg.name}@${pkg.version}`, [
+    [config.tagNames.tilt, WcsTilt],
+  ]);
 }

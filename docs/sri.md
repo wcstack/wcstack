@@ -84,7 +84,7 @@ To load several packages, use one version-pinned single-file tag per package. Ea
         integrity="sha384-…"></script>
 ```
 
-For the single-request form, use the **`wcstack` entry bundle** instead: one Rollup-built (identifier-safe — Rollup renames what concatenation collides) tag covering the SPA-core packages (state / router / fetch / storage / autoloader), with one full-coverage digest, listed in `sri.json` like every other package. Loading it alongside an individual package's `/auto` is safe: every member define is guarded and the protocol installs are first-wins, so whichever copy evaluates first owns the page.
+For the single-request form, use the **`wcstack` entry bundle** instead: one Rollup-built (identifier-safe — Rollup renames what concatenation collides) tag covering the SPA-core packages (state / router / fetch / storage / autoloader), with one full-coverage digest, listed in `sri.json` like every other package. Loading it alongside an individual package's `/auto` of the same release is safe: every member define is guarded and the protocol installs are first-wins, so whichever copy evaluates first owns the page. A copy of another version, from 4.11 on, warns `[wcs/package-twice]` in the console, naming both versions ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §24).
 
 ```html
 <script type="module"

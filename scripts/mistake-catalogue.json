@@ -1097,6 +1097,22 @@
       "effect": { "en": "The texts change, but the filters keep the locale they read when state loaded (dates, money), the `<title>` and the URL stay in the first language.", "ja": "文は変わるが、フィルタは state を読み込んだときのロケール（日付、金額）のまま、`<title>` と URL も最初の言語のまま。" },
       "disposition": "docs-only",
       "note": { "en": "docs/i18n-design.md (no live switch), the state README's Locale and the skill: the language is in the markup before state loads.", "ja": "docs/i18n-design.md（ライブの切り替えは無い）、state の README のロケールの節、スキル: 言語は state を読み込む前にマークアップにある。" }
+    },
+    {
+      "id": "tag-package-missing",
+      "lint": [{ "code": "wcs/tag-package-missing", "severity": "warning" }],
+      "runtime": "silent", "harm": "broken",
+      "mistake": { "en": "Writes a `wcs-*` tag of a package the page never loads (`<wcs-upload>` without `@wcstack/upload/auto`).", "ja": "ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。" },
+      "effect": { "en": "The element is never defined: its bindings wait and nothing happens, with nothing in the console. The homeroom seam app's Save hung at \"送信中 0%\".", "ja": "要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。" },
+      "disposition": "runtime-report",
+      "note": { "en": "Since 4.11 the lint reports it on a page that loads wcstack itself (not a fragment or a bundler's page), once per package. A runtime report needs a delay — a package may come late — so the diagnostics add-on can say it a few seconds after the page is ready, with no core bytes.", "ja": "4.11 から lint が、wcstack を自分で読み込むページ（断片・バンドラのページでない）でパッケージごとに 1 回報告する。実行時に言うには待ち時間が要る（パッケージは遅れて来うる）ので、diagnostics の後付けがページの準備ができてから数秒後に言える（core は 0 B）。" }
+    },
+    {
+      "id": "package-twice",
+      "runtime": "loud", "harm": "stale",
+      "mistake": { "en": "Leaves a `<script>` of a package at another version beside the new one — an upgrade that missed a line, a bundle and a member pinned apart.", "ja": "別の版のパッケージの `<script>` を新しいものと並べて残す — 1 行を上げ忘れた更新、版の違うバンドルとメンバー。" },
+      "effect": { "en": "The copy the page evaluates first defines the tags and the other does nothing: an old line placed first runs the old version, with none of what the upgrade fixed (the homeroom seam app ran the 4.2.0 engine on its 4.10.1 page). Since 4.11 the second copy warns once, naming both versions (`[wcs/package-twice]`, timing contract §24); two copies of one version stay quiet. A copy before 4.11 has no code to say it.", "ja": "ページが先に評価した写しがタグを定義し、もう一方は何もしない: 先に置いた古い行は古い版を動かし、更新で直したものは何も効かない（継ぎ目アプリ homeroom は 4.10.1 のページで 4.2.0 のエンジンを動かした）。4.11 から 2 つ目の写しが両方の版を名指して 1 回警告する（`[wcs/package-twice]`、タイミング契約 §24）。同じ版の 2 つは黙ったまま。4.11 より前の写しには言うコードが無い。" },
+      "evidence": [{ "file": "protocol/define-element.ts", "text": "[wcs/package-twice]" }]
     }
   ],
   "uncounted": [
@@ -1117,6 +1133,7 @@
     { "code": "wcs/type-annotation", "why": { "en": "A JSDoc `@type` that disagrees with the initial value misleads only the type checking; the page runs on the value.", "ja": "初期値と食い違う JSDoc の `@type` が惑わすのは型の検査だけで、ページは値で動く。" } },
     { "code": "wcs/path-reserved-name", "why": { "en": "Reserved in the code table, not emitted yet.", "ja": "code の表に予約されているだけで、まだ出さない。" } },
     { "code": "wcs/path-dynamic-unknown", "why": { "en": "A limit of the lint, not an author's mistake: a top-level spread in a state with no `stateSchema` brings in keys no static reader sees, so the state's paths are not checked — said once, at the spread (info). Since 4.10, also a key whose value it cannot read (a name bound to a computed value, `{ t }` with `t` merged from the locale catalogs) when the page binds under it — said once, at the key; a JSDoc `@type {typeof import(\"./en.js\").default}` has those paths checked.", "ja": "作者の誤りではなく lint の限界: `stateSchema` の無い state のトップレベルの spread は静的には見えないキーを持ち込むので、その state のパスは検査しない — それを spread の上で 1 回だけ言う（info）。4.10 から、値を読めないキー（計算した値を束縛する名前。ロケールの辞書を合わせた `t` の `{ t }`）の下をページが束ねるときも、キーの上で 1 回だけ言う。JSDoc の `@type {typeof import(\"./en.js\").default}` を付けると、そのパスを検査する。" } },
-    { "code": "wcs/state-src-unread", "why": { "en": "A limit of the lint, not an author's mistake: a `<wcs-state src>` it cannot read — a path from `/`, a URL, a file that is not there — leaves that state's paths and script rules unchecked; said once, at the attribute (info). Up to 4.6 it said nothing.", "ja": "作者の誤りではなく lint の限界: 読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state は、パスもスクリプトの規則も検査しない。それを属性の上で 1 回だけ言う（info）。4.6 までは何も言わなかった。" } }
+    { "code": "wcs/state-src-unread", "why": { "en": "A limit of the lint, not an author's mistake: a `<wcs-state src>` it cannot read — a path from `/`, a URL, a file that is not there — leaves that state's paths and script rules unchecked; said once, at the attribute (info). Up to 4.6 it said nothing.", "ja": "作者の誤りではなく lint の限界: 読めない `<wcs-state src>` — / から始まるパス・URL・無いファイル — の state は、パスもスクリプトの規則も検査しない。それを属性の上で 1 回だけ言う（info）。4.6 までは何も言わなかった。" } },
+    { "code": "wcs/lint-version-behind", "why": { "en": "A tooling mismatch, not a mistake in the page: the page pins a newer minor than the lint's rules, so the lint does not check what that minor added and can report its correct syntax as an error (homeroom: 4.2.0's lint on a 4.10 page). Said once per page (warning).", "ja": "ページの誤りではなく道具の食い違い: ページが lint の規則より新しい minor を固定しているので、lint はその minor で加わったものを検査せず、その正しい書き方を error にもする（homeroom: 4.10 のページを 4.2.0 の lint で）。ページに 1 回言う（warning）。" } }
   ]
 }

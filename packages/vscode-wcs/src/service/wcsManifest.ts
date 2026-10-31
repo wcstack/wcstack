@@ -11,8 +11,18 @@
  * 区切り文字など他のマニフェスト項目が必要になれば `getWcsManifest().syntax` から引ける。
  */
 import { getWcsManifest } from '@wcstack/state/manifest';
+// The package.json of the same `@wcstack/state` (its `exports` does not name the file, so it is read by its path in
+// node_modules — the `file:../state` link). Only `version` is used; the bundles inline it at build time.
+import { version as stateVersion } from '../../node_modules/@wcstack/state/package.json';
 
 export { builtinFilterMeta, STRUCTURAL_BINDING_TYPE_SET, getWcsManifest } from '@wcstack/state/manifest';
+
+/**
+ * The version of the `@wcstack/state` engine this validator is built from: the rules it carries are that release's.
+ * `@wcstack/lint` is released with it in lockstep, so this is the lint's version too (the VS Code extension has a 2.x
+ * version of its own). A page that pins a newer minor gets `wcs/lint-version-behind` (documentEnvValidator).
+ */
+export const ENGINE_VERSION: string = stateVersion;
 export type { IFilterMeta } from '@wcstack/state/manifest';
 
 type NativeCommandTable = Readonly<Record<string, readonly string[]>>;

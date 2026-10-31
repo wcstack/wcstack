@@ -6,9 +6,10 @@
 // A typo in one of these subpaths is NOT caught by tsc (an untyped side-effect import resolves
 // silently), so the smoke test's tag census (__tests__/bundle.smoke.test.ts) is the gate.
 //
-// Loading this bundle alongside an individual member's /auto is safe: every member define is
-// guarded behind customElements.get and the protocol installs (binder / ssr-snapshot) yield
-// first-wins on Symbol.for globals — whichever copy evaluates first owns the page.
+// Loading this bundle alongside an individual member's /auto of the same release is safe: every
+// member define is guarded (a copy of another version warns `[wcs/package-twice]`, naming both
+// versions — docs/timing-and-firing-contract.md §24) and the protocol installs (binder /
+// ssr-snapshot) yield first-wins on Symbol.for globals — whichever copy evaluates first owns the page.
 import "@wcstack/state/auto";
 import "@wcstack/router/auto";
 import "@wcstack/fetch/auto";

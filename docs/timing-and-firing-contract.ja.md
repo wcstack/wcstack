@@ -36,7 +36,7 @@
 `url` 変化（属性経由）と connect 時の自動 fetch は `queueMicrotask` に集約される（`_scheduleAutoFetch`）。
 
 - **同一 tick の複数入力は最終状態で1回に集約**: spread が `url` の次に `manual` を書いても、microtask 時点の最終状態で判定するので順序由来の誤 fetch が起きない
-- **same-value ガード**: `url === _lastFetchedUrl` の auto-fetch はスキップ。`_lastFetchedUrl` が覚えているのは「直前の url」ではなく**最後に実際に fetch した url**（`fetch()` 内でのみ書かれ、disconnect でのみ null に戻る）。したがって間に挟まる非 fetch 状態（url 空など）は `_lastFetchedUrl` を更新しないので、`"abc"→""→"abc"` も `"abc"→"abc"` と同じく**スキップされる**。同じ url をもう一度取りたい場合は明示トリガー（§1.3 の `fetch()` / `trigger=true` / `fetch` コマンド）か、`_lastFetchedUrl` を null に戻す再マウントが要る
+- **same-value ガード**: `url === _lastFetchedUrl` の auto-fetch はスキップ。`_lastFetchedUrl` が覚えているのは「直前の url」ではなく**最後に実際に fetch した url**（`fetch()` 内で書かれ、disconnect で null に戻る）。4.2 までは間に挟まる空の url がこれを更新しなかったので、`"abc"→""→"abc"` も `"abc"→"abc"` と同じく**スキップされた**。4.3 からは、空の url を見た auto-fetch の判定がこれを null に戻すので、`"abc"→""→"abc"` はもう一度 fetch する（同じ tick の中の空の url と同じ url は、変化なしに集約される）。間に何も挟まずに同じ url をもう一度取りたい場合は明示トリガー（§1.3 の `fetch()` / `trigger=true` / `fetch` コマンド）か、`_lastFetchedUrl` を null に戻す再マウントが要る
 
 ### 1.3 明示トリガーは即時・無条件（de-dup を迂回）
 `fetch()` 呼び出し / `trigger=true` / `fetch` コマンド / `data-fetchtarget` クリックは **同期で即実行**し、`_lastFetchedUrl` の同値ガードを**通らない**。
@@ -49,7 +49,7 @@
 → **帰結**: `eventToken.value` ＋ `$on` で蓄積する設計（`packages/fetch/examples/infinite-scroll`）は、ハンドラ先頭で status を弾かないと `null` を append して壊れる。
 
 ### 1.5 `trigger` は url 空なら無視（4.5 からは警告付き）
-`url` が空のときの `trigger=true` は **何もせず**（fetch 走らず・イベント無し・フラグは false のまま）。url を入れてから再度 `true` を書けば実行される。4.4 までは無言だった。4.5 からは要素ごとに 1 回警告する（`[wcs/command-not-ready]`）。よくある原因は、1 つの `data-wcs` で `trigger` を `url` より前に書くこと（束縛は書いた順に当たる）。
+`url` が空のときの `trigger=true` は **何もせず**（fetch 走らず・イベント無し・フラグは false のまま）。url を入れてから再度 `true` を書けば実行される。4.4 までは無言だった。4.5 からは要素ごとに 1 回警告する（`[wcs/command-not-ready]`）。よくある原因は、1 つの `data-wcs` で `trigger` を `url` より前に書くこと（束縛は書いた順に当たる）。走った trigger は、その時点で要素が持つ `url`・`method`・`body` と補助要素を送る。更新では、`@wcstack/state` は束縛をパスを書いた順に当てる（§4.4）。
 
 ### 1.6 `body` は `fetch()` ごとに null へリセット / `method="HEAD"` は body 読まない
 （補足。詳細は fetch README「Design Notes」）
@@ -153,6 +153,11 @@ arbiter が預からない —— `run()` の中で同期的に適用し、順�
 
 規範記述: [view-transition-design.ja.md](./view-transition-design.ja.md) §7.2。
 
+### 4.4 1 回の更新の中では、束縛はパスを書いた順に当たる
+書き込みは、そのパスの束縛をその場でキューに積み、それを読む getter をたどって、その束縛をすぐ後に積む（dirty 戦略、`strategy/dirty.ts`）。drain はそのキューを積んだ順に当てる（`Engine.drain`）。だから 1 回の更新 —— 1 つのハンドラ、1 つのタスク —— の書き込みは、パスを書いた順に当たる。要素をまたいでも同じで、ある要素の束縛と別の要素の束縛は、ページの中の要素の順ではなく書き込みの順に従う。もう積まれている束縛は、そのパスがまた書かれても位置を変えない。getter の束縛は、それが読む最初のパスを書いたところに積まれる。各パスで先に来るものが 2 つある: 行を作ったり動かしたりする一覧と、`if` / `elseif` の条件（閉じる枝が自分の束縛を連れて行くように）。ページの最初の束縛では、1 つの `data-wcs` の束縛はそこに書いた順に当たる（§1.5）。
+
+→ **帰結**: ある入力が書かれたときに動く要素は、ほかの入力をその時点の値で使う。`<wcs-fetch>` の `trigger` は、trigger が当たった時点で持っている `url`・`method`・`body` と、子の `<wcs-fetch-header>` / `<wcs-fetch-body>` を送り（§1.5）、`<wcs-upload>` の `trigger` は `url` と `files` を読む。`Authorization` ヘッダを `session.token` の getter に束ねたログアウトのハンドラ `this.logoutTrigger = true; this.session = null;` はヘッダ付きでログアウトを送る。`this.session = null; this.logoutTrigger = true;` は先にヘッダを外し、ヘッダなしで送る —— サーバーはセッションを終わらせられず、何も言わない（継ぎ目アプリ `homeroom`、4.2.0 と 4.10.1。`examples/router-auth` は trigger を先に書く）。ハンドラが書くもの —— `body`、`url` —— が要る要求は、それを trigger より先に書く。
+
 ---
 
 ## 5. example → 依存している契約（トレーサビリティ）
@@ -163,6 +168,7 @@ arbiter が預からない —— `run()` の中で同期的に適用し、順�
 | [`users-crud`](../packages/fetch/examples/users-crud) | §1.3（`refreshList` command で再取得）/ §1.4（response はエラーでも発火 → status で成功判定）/ §1.5（空 url の detail 抑止） |
 | [`infinite-scroll`](../packages/fetch/examples/infinite-scroll) | §1.2/§1.4（append は status 判定）/ §2.1（センチネルは box 必須・初回 task で発火） |
 | [`state-intersect-scroll`](../examples/state-intersect-scroll) | §2.2+§2.3（reobserve で自己修復）/ §3（`$stream` restart と同値 page 選択で page-skip 防止） |
+| [`router-auth`](../examples/router-auth) | §4.4（ログアウトの `trigger` をセッションを消すより先に書くので、要求が `Authorization` ヘッダを運ぶ） |
 
 ---
 
@@ -568,3 +574,34 @@ promise が接続時の仕事を表していたところ（`<wcs-permission>` �
 
 ### 23.7 テスト
 各ノードに次のテストがある: 先に積まれたマイクロタスクが入力を変える入れ直し（仕事は新しい入力だけを使う）、マイクロタスクより前に外した要素（仕事をしない）、付けたのと同じタスクで書いた門、同じタスクの停止の側のコマンド。
+
+## 24. 横断契約: パッケージの 2 つ目のコピーは警告する（2026-10-31）
+
+対象: カスタム要素を定義するすべてのパッケージ — I/O ノード、`@wcstack/router`、`@wcstack/autoloader`、`@wcstack/view-transition`、`@wcstack/devtools`、`@wcstack/state` の完全版の入口。継ぎ目アプリ `homeroom` が見つけた（[seam-apps.ja.md](./seam-apps.ja.md)）。4.2.0 から 4.10.1 へ上げたアプリが、古い `<script type="module" src=".../@wcstack/state@4.2.0/auto">` を 1 つ新しいものの前に残し、4.2.0 のエンジンで動いていた: ページが先に評価したコピーがタグを定義し、2 つ目は定義済みのタグを見て何もしなかった — 何も言わずに。どのパッケージもその形でタグを登録していた（`if (!registry.get(tag)) registry.define(tag, Cls)`）。
+
+### 24.1 定義したクラスはパッケージと版を名乗る
+パッケージが定義するクラスは、`Symbol.for("wcstack.package")` に `"<パッケージ>@<版>"`（`"@wcstack/fetch@4.11.0"`）を持つ。サブクラスはそれを継ぐ。版はパッケージの `package.json` のもので、ビルドのときに埋め込む。この規則より前の古いコピーは持たず、印を付けない入口で読み込んだコピーも持たない（§24.4）。
+
+### 24.2 自分のタグが別のコピーに定義されていたら、両方の版を名指しして 1 回警告する
+パッケージのタグの 1 つが、このコピーのクラスでもそのサブクラスでもなく、このコピーのパッケージと版も持たないクラスで定義済みなら、コピーはそのタグに何も定義せず、パッケージごと・レジストリごとに 1 回（タグごとではない）警告する:
+
+```
+[@wcstack/fetch] [wcs/package-twice] <wcs-fetch> is already defined by @wcstack/fetch@4.2.0; this copy, @wcstack/fetch@4.11.0, does nothing. Load each package once.
+```
+
+相手のクラスが版を持たなければ、版がいくつであってもパッケージの名前だけで呼ぶ — `another copy of @wcstack/fetch that does not name its version`。古いコピーか、`/core` や `dist/split/auto.js` で読み込んだコピー（§24.4）。
+
+### 24.3 何も言わないもの
+- このコピーが同じレジストリにもう一度登録すること、利用者がこのコピーのクラスのサブクラスを意図してそのタグに定義したこと。
+- 同じパッケージの同じ版の別のコピー: 害が無い — 同じリリースの `wcstack/auto` のバンドルと `@wcstack/state/auto` を並べたとき。
+- 版の違う別々のパッケージ（state 4.2 と router 4.10）: 組み合わせられる。警告するのは同じパッケージの 2 つ目のコピーだけ。
+- 新しいコピーの後に評価された、この規則より前の古いコピー: 警告するコードを持たない。新しいコピーが動く。
+
+### 24.4 `@wcstack/state`: core ではなく完全版の入口
+`<wcs-state>` と `<wcs-ssr>` は、core の `define()` を包む `/auto` と `.` の `bootstrapState` が確かめる: core はこの確認を持たない（gzip 20 KiB の予算）。`<wcs-state>` はエンジンの `WcsState` と比べる。`/core`（`@wcstack/state/core` の `bootstrapState`）と `dist/split/auto.js` はこれまでどおりタグを定義し、印を付けず、何も言わない: それで読み込んだコピーは、後から読み込まれた完全版の入口から `another copy of @wcstack/state that does not name its version` と呼ばれる。確認の重さは完全版の入口で gzip 約 250 B。`dist/split/auto.js` では約 400 B で、そのファイルのゲートを超える。
+
+### 24.5 実装
+ヘルパーは 1 つ、`/protocol/define-element.ts`（`defineElements(registry, pkg, [[tag, Class], …])`・`warnIfAnotherCopy`・`stampPackage`）で、`scripts/sync-protocol-types.mjs` が各パッケージへ写す。各パッケージの `registerComponents()` は、自分の `package.json` から読んだ `` `${pkg.name}@${pkg.version}` `` で `defineElements` を呼ぶ。共有の rollup の設定（`config-templates/rollup.config.js`）がその 2 つの値を埋め込むので、`dist/auto.min.js` は自己完結のまま。
+
+### 24.6 テスト
+各パッケージは、ヘルパーの共有テストと、自分の `registerComponents()` に対する共有の登録テストを走らせる（`__tests__/protocol.defineElement*.test.ts`）: 別のコピーのクラスが先にある（版あり・なし）、同じ版は何も言わない、利用者のサブクラスは何も言わない、警告はレジストリごとに 1 回。`@wcstack/state` は包みを `__tests__/twice.test.ts` で確かめる。

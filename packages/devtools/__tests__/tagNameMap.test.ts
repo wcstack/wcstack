@@ -10,7 +10,8 @@ import { resolve } from "node:path";
 describe("HTMLElementTagNameMap の宣言と登録タグ名の一致", () => {
   it("bootstrapDevtools が登録する wcs-devtools が宣言され、余分な宣言もない", () => {
     const src = (file: string) => readFileSync(resolve(__dirname, "..", "src", file), "utf8");
-    const registered = /const TAG_NAME = "(wcs-[a-z0-9-]+)"/.exec(src("bootstrapDevtools.ts"));
+    // the tag bootstrapDevtools registers is declared beside registerComponents (src/registerComponents.ts)
+    const registered = /const TAG_NAME = "(wcs-[a-z0-9-]+)"/.exec(src("registerComponents.ts"));
     expect(registered).not.toBeNull();
     const block = /interface HTMLElementTagNameMap \{([\s\S]*?)\n\s*\}/.exec(src("exports.ts"));
     expect(block).not.toBeNull();

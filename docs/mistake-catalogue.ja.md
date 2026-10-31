@@ -71,10 +71,10 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 作者に知らせるもの | 項目 |
 |---|---|
 | 設計（書けない、または害が無い） | 7 |
-| 実行時 | 65 |
-| lint だけ — 条件付きの沈黙 | 24 |
+| 実行時 | 66 |
+| lint だけ — 条件付きの沈黙 | 25 |
 | 文書だけ — 沈黙 | 38 |
-| 数えない lint の code | 18 |
+| 数えない lint の code | 19 |
 
 ### 文書だけ — 沈黙
 
@@ -141,6 +141,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 外れた 3.x の宣言を `this` 越しに読む（`this.$streams`・`this.$updatedCallback`）。 | `wcs/declaration-alias-read` (varies) | `undefined` が返り、呼べば汎用の TypeError。 | 動かない | 実行時に知らせる — 4.x。diagnostics の後付けの `dollar` のフックが、外れた宣言を名指せる（core は 0 B）。 |
 | `$renderedCallback(paths)` が、どの束縛も名指さない宣言済みのパスか、state に無いパスを調べる（`paths.includes("feed")`・`paths.includes("labell")`）。 | `wcs/updated-callback-unbound` (warning) | `paths` には当てた束縛しか載らないので、その分岐は走らない。 | 動かない | lint のまま（実行時には見えない）。実行時の推測（`includes` が警告する `paths`）は、調べ方は捕まえても意図は捕まえられない。state に無いパスは、近いパスがあるときだけ（打ち間違いらしいとき）報告する。コールバックはほかの種類の文字列も比べうるため。 |
 | `<wcs-storage>` の `value#init=element` を、`null` でないリテラルで始めたパスに束ねる（`cart: []`）。 | `wcs/storage-init-seed` (warning) | 空のキーは `null` を読むので、最初の引き込みがシードを置き換える。`for: cart` は何も描かず、`this.cart.length` を読むコードは汎用の TypeError を投げる。 | 動かない | 実行時に知らせる — 4.x。その後、設計で消す — 5.0 の議題（破壊的）。4.x: 明示の `#init=element` が値を `null` で置き換えるときに警告する（diagnostics の後付け）。5.0: 無いキーは `undefined` を読み、シードを残す（README は `null` と書いている）。 |
+| ページが読み込まないパッケージの `wcs-*` のタグを書く（`@wcstack/upload/auto` なしの `<wcs-upload>`）。 | `wcs/tag-package-missing` (warning) | 要素は定義されない: 束縛は待ち続けて何も起きず、コンソールにも何も出ない。継ぎ目アプリ homeroom の保存は「送信中 0%」で止まった。 | 動かない | 実行時に知らせる — 4.x。4.11 から lint が、wcstack を自分で読み込むページ（断片・バンドラのページでない）でパッケージごとに 1 回報告する。実行時に言うには待ち時間が要る（パッケージは遅れて来うる）ので、diagnostics の後付けがページの準備ができてから数秒後に言える（core は 0 B）。 |
 | `$watch` のキーに空の段がある（`a..b`）。 | `wcs/watch-declaration-invalid` (error) | 実行時は調べないので、watch は発火しない。 | 動かない | 実行時に知らせる — 4.x。temporal の後付けに検査を 1 つ（約 10 B）。 |
 | `attr.aria-*:` の ARIA 属性名を打ち間違える。 | `wcs/aria-attr-unknown` (warning) | 属性は書かれ、支援技術は無視する。 | 劣化 | lint のまま（実行時には見えない）。名前はマークアップにあるので lint で足りる。実行時に ARIA の名前の表を持つと 300〜400 B。 |
 | `@wcstack/devtools/auto` を `@wcstack/state/auto` の後に読み込む。 | `wcs/script-order` (info) | 4.0 は後から付いた DevTools に既存の束縛をすべて渡すので、欠けるのは付く前のタイムラインだけ。 | 劣化 | 実行時に知らせる — 4.x。DevTools が、タイムラインは付いた時点からと言える。 |
@@ -166,6 +167,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 | 入れ子のルートを持つレイアウトのテンプレートに、既定の `<slot>` が無い。 | 同じ code: router が `[wcs/layout-slot-missing]` で警告する。lint の見ない `src=` のレイアウトと、テンプレートに無い `slot=` も調べる。 | `wcs/layout-slot-missing` (warning) |
 | `<wcs-outlet>` を `<wcs-router>` の直後以外に置く。 | 同じ code: router が自前の outlet を作るときに `[wcs/router-outlet-misplaced]` で警告する。レイアウトが持ち込んだ outlet にも。 | `wcs/router-outlet-misplaced` (warning) |
 | getter が読むパスを打ち間違える: `this["items.*.pirce"]`、`this.$getAll("items.*.pirce", [])`。 | 同じ code: 読みは `undefined` になり、getter がそこから計算する値は違う。diagnostics の後付けが、getter がそのパスを読んだあと、近い名前があるとき、読んだ getter の名前を添えてパスごとに 1 回警告する（トップレベルのキーは読んだ時点で throw する、#301）。 外部の評価で見つかった（確定申告の下書き: getter 96 本が、読んだパスから金額を計算する）。どちらも近い名前があるときだけ報告する: `this["opts.flag"] ?? false` は任意のキーをわざと読む。lint は getter・setter・メソッドを実行せずに検査し、リテラルのパスだけを見る（`this[key]` は見ない）。`stateSchema` が「無い」と言うときは error。 | `wcs/read-path-missing` (warning) |
+| 別の版のパッケージの `<script>` を新しいものと並べて残す — 1 行を上げ忘れた更新、版の違うバンドルとメンバー。 | code なし: ページが先に評価した写しがタグを定義し、もう一方は何もしない: 先に置いた古い行は古い版を動かし、更新で直したものは何も効かない（継ぎ目アプリ homeroom は 4.10.1 のページで 4.2.0 のエンジンを動かした）。4.11 から 2 つ目の写しが両方の版を名指して 1 回警告する（`[wcs/package-twice]`、タイミング契約 §24）。同じ版の 2 つは黙ったまま。4.11 より前の写しには言うコードが無い。 | — |
 | 解決しないパスで `$postUpdate` を呼ぶ: 打ち間違い（`cells` に対する `rows.${r}.cell.${c}.text`）。 | code なし: その呼び出しは何も更新しない。diagnostics の後付けが、パスごとに 1 回、近い名前付きで `[wcs/post-update-path-missing]` を警告する。 7GUIs の評価（Cells）で見つかった。lint の規則は無い: パスはふつう実行時に組み立てる。 | — |
 | state が宣言しないトップレベルのキーに書く — 打ち間違い（`this.coutn = 1`）。 | 同じ code: 4.0 はキーを作る。`count` に束ねたものは何も変わらない。diagnostics の後付けが、近い宣言済みのキーがあるとき、キーごとに 1 回警告する。 どちらも、近い宣言済みのキーがある未宣言のキーへの書き込みだけを報告する（`this.selectedID` と `selectedId` — 7GUIs の評価）。近いキーの無い新しいキーは、state がわざと足すことがあるので報告しない。ボリュームのマウントのパスはページのもの。 | `wcs/write-path-missing` (warning) |
 | `$behavior` がオブジェクトでない、知らないキーか boolean でない値を持つ、またはボリュームにある。 | code なし: 読み込みで `#44`、state は初期化に失敗する（ボリュームは `console.error` で拒まれる）。 | `wcs/behavior-invalid` (error) |
@@ -236,6 +238,7 @@ node scripts/sync-mistake-catalogue.mjs --check   # CI が走らせる
 |---|---|
 | `wcs/drift-event-mismatch` | コンポーネントの sidecar の manifest が、実際の wcBindable の宣言と違うイベントをプロパティに名指している。 |
 | `wcs/drift-missing-member` | コンポーネントの sidecar の manifest が、実際の wcBindable の宣言に無いメンバーを宣言している。実行時が使うのは実際の宣言で、直すのは manifest（ページではない）。 |
+| `wcs/lint-version-behind` | ページの誤りではなく道具の食い違い: ページが lint の規則より新しい minor を固定しているので、lint はその minor で加わったものを検査せず、その正しい書き方を error にもする（homeroom: 4.10 のページを 4.2.0 の lint で）。ページに 1 回言う（warning）。 |
 | `wcs/manifest-broken` | sidecar の manifest が JSON として読めない。manifest は lint の入力で、実行時は読まない。 |
 | `wcs/manifest-external-ref` | sidecar の manifest が外部の文書を参照している。lint は取りに行かない。 |
 | `wcs/manifest-filter-collision` | 2 つの sidecar の manifest が、override 無しで同じフィルタを宣言している。 |
