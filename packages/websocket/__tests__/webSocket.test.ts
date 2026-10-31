@@ -451,6 +451,43 @@ describe("WcsWebSocket コンポーネント", () => {
       expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
     });
 
+    it("開く途中で外すと、終わりをその場で知らせ、ソケットは開いてから閉じる（homeroom: Chromium の警告を出さない）", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      const ws = MockWebSocket.instances[0];
+      const loading: unknown[] = [];
+      el.addEventListener("wcs-ws:loading-changed", (e) => loading.push((e as CustomEvent).detail));
+
+      el.remove();
+      expect(ws.close).not.toHaveBeenCalled();
+      expect(loading).toEqual([false]);
+      expect(el.connected).toBe(false);
+      expect(el.readyState).toBe(3);
+
+      ws.simulateOpen();
+      expect(ws.close).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(false);
+    });
+
+    it("開く途中の url の変化でも、古いソケットは開いてから閉じ、新しい url へ 1 本だけつなぐ", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      const first = MockWebSocket.instances[0];
+
+      el.url = "ws://localhost:9090";
+      await flush();
+      expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:9090"]);
+      expect(first.close).not.toHaveBeenCalled();
+      first.simulateOpen();
+      expect(first.close).toHaveBeenCalledTimes(1);
+      expect(el.connected).toBe(false);
+      MockWebSocket.instances[1].simulateOpen();
+      expect(el.connected).toBe(true);
+      el.remove();
+    });
+
     it("DOM除去後に発火したメッセージは状態を書き換えない（dispose の _gen ガード）", async () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
@@ -582,6 +619,7 @@ describe("WcsWebSocket コンポーネント", () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
       await flush();
+      MockWebSocket.instances[0].simulateOpen();
 
       el.url = "ws://localhost:9090";
       await flush();
@@ -626,6 +664,7 @@ describe("WcsWebSocket コンポーネント", () => {
       el.setAttribute("url", "ws://localhost:9090");
       await flush();
       expect(MockWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://localhost:8080", "ws://localhost:9090"]);
+      MockWebSocket.instances[1].simulateOpen();
       detach(el);
       expect(MockWebSocket.instances[1].close).toHaveBeenCalled();
     });
@@ -634,6 +673,7 @@ describe("WcsWebSocket コンポーネント", () => {
       const el = createElement({ url: "ws://localhost:8080" });
       document.body.appendChild(el);
       await flush();
+      MockWebSocket.instances[0].simulateOpen();
       el.remove();
       expect(MockWebSocket.instances[0].close).toHaveBeenCalled();
 
@@ -686,6 +726,9 @@ describe("WcsWebSocket コンポーネント", () => {
       el.trigger = true;
       el.connect();
       expect(MockWebSocket.instances).toHaveLength(2);
+      // 開く途中で置き換えたソケットは、開いてから閉じる
+      expect(MockWebSocket.instances[0].close).not.toHaveBeenCalled();
+      MockWebSocket.instances[0].simulateOpen();
       expect(MockWebSocket.instances[0].close).toHaveBeenCalledTimes(1);
       el.remove();
     });
@@ -832,6 +875,23 @@ describe("WcsWebSocket コンポーネント", () => {
 
       el.close(1000, "bye");
       expect(MockWebSocket.instances[0].close).toHaveBeenCalledWith(1000, "bye");
+      el.remove();
+    });
+
+    it("開く途中の close コマンドは、終わりをその場で知らせ、開いてから code / reason で閉じる", async () => {
+      const el = createElement({ url: "ws://localhost:8080" });
+      document.body.appendChild(el);
+      await flush();
+      const ws = MockWebSocket.instances[0];
+      expect(el.loading).toBe(true);
+
+      el.close(1000, "bye");
+      expect(ws.close).not.toHaveBeenCalled();
+      expect(el.loading).toBe(false);
+      expect(el.readyState).toBe(3);
+      ws.simulateOpen();
+      expect(ws.close).toHaveBeenCalledWith(1000, "bye");
+      expect(el.connected).toBe(false);
       el.remove();
     });
   });

@@ -11,6 +11,7 @@
 
 import { pathToFileURL } from "node:url";
 import { waitForReady } from "@wcstack/server";
+import { checkOptions, isFunction, isNumber, isString, type OptionSpec } from "./options.js";
 
 export type BootstrapFunction = () => void | Promise<void>;
 
@@ -207,7 +208,17 @@ async function defaultBootstraps(): Promise<readonly BootstrapFunction[]> {
   return [bootstrapState];
 }
 
+const MOUNT_OPTIONS: OptionSpec = {
+  root: [(value) => value === "document" || value === "shadow", `"document" or "shadow"`],
+  bootstrap: [(value) => Array.isArray(value) && value.every(isFunction), "an array of functions"],
+  stateTagName: [isString, "a string"],
+  maxIterations: [isNumber, "a number"],
+  resolveModule: [isFunction, "a function"],
+};
+
 export async function mount(html: string, options: MountOptions = {}): Promise<MountedApp> {
+  // before anything touches the document: a misspelt option used to be ignored
+  checkOptions("mount()", options, MOUNT_OPTIONS);
   const stateTagName = options.stateTagName ?? "wcs-state";
   const waiting = findWaitingState(html, stateTagName);
   if (waiting !== undefined) {

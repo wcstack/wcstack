@@ -10,7 +10,7 @@
     "@wcstack/server": "file:../../packages/server",
     "@wcstack/state": "file:../../packages/state",
     "@wcstack/testing": "file:../../packages/testing",
-    "happy-dom": "^20.0.11",
+    "happy-dom": "^21.0.4",
     "vitest": "^4.0.15"
   }
 }

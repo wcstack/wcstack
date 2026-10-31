@@ -27,8 +27,8 @@
 
 ### 1. Import Mapの設定
 
-`@wcstack/autoloader`キーに、オートローダーのパスを定義します。
 `@components/`プレフィックスを使用して、importmap内にコンポーネントのパスを定義します。
+`@wcstack/autoloader`キーが要るのは、パッケージをこの素の名前で import する下の方法Bだけです。方法Aの`/auto`スクリプトには、このキーは要りません。
 
 ```html
 <script type="importmap">

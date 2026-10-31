@@ -49,8 +49,10 @@ export interface PathCandidate {
    * a computed expression, an import it cannot read — moduleValues.ts). The path exists; what is under it is unknown,
    * so nothing under it is reported missing (statePathResolver's `StatePathScopes.opaquePaths`). `from` is the
    * specifier the name is imported from, when it is imported; `name` the name the value is written as.
+   * `spread` is set instead of `name` when the value is an object literal whose keys are read but for a spread it could
+   * not read (`draft: { ...makeDraft() }`, as written): the object has keys the analyzer does not know.
    */
-  opaque?: { readonly name?: string; readonly from?: string };
+  opaque?: { readonly name?: string; readonly from?: string; readonly spread?: string };
 }
 
 import type { JsonSchemaNode } from '../core/sidecar/types.js';
@@ -1715,9 +1717,12 @@ function pushDataPropertyPathsAt(
 ): void {
   // データプロパティ。値が名前（`{ t }`・`items: ITEMS`・JSDoc の `typeof import(…)`）なら、その名前が束縛する式を読む
   const followed = scope === undefined ? null : followValue(prop, scope);
+  let candidate: PathCandidate;
+  let unread: UnreadSpread | null = null;
   if (followed === null) {
-    paths.push({ path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim() });
-    pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope);
+    candidate = { path, kind: 'data', typeHint: prop.typeHint, rawInitial: prop.value?.trim() };
+    paths.push(candidate);
+    unread = pushLiteralStructurePaths(path, prop, paths, depth, typedefs, scope);
   } else {
     const value = followed.value;
     // a name is followed for its shape: a list or an object (what `for:` and the paths under it need), not a primitive's
@@ -1728,10 +1733,134 @@ function pushDataPropertyPathsAt(
     const opaque = (value === null || !isReadableLiteral(value.text)) && prop.declaredType === undefined
       ? { opaque: { ...(followed.name !== undefined ? { name: followed.name } : {}), ...(followed.from !== undefined ? { from: followed.from } : {}) } }
       : {};
-    paths.push(withHint({ path, kind: 'data', rawInitial: prop.value?.trim(), ...opaque }, typeHint));
-    if (value !== null) pushLiteralStructurePaths(path, { ...prop, value: value.text }, paths, depth, typedefs, value.scope);
+    candidate = withHint({ path, kind: 'data', rawInitial: prop.value?.trim(), ...opaque }, typeHint);
+    paths.push(candidate);
+    if (value !== null) unread = pushLiteralStructurePaths(path, { ...prop, value: value.text }, paths, depth, typedefs, value.scope);
+  }
+  // an object literal with a spread whose keys it could not read (`{ ...makeDraft() }`): the keys under it are not all
+  // known — open, as a value it could not read, not "missing" (unless a JSDoc @type declares them)
+  if (unread !== null && candidate.opaque === undefined && prop.declaredType === undefined) {
+    candidate.opaque = { spread: unread.text, ...(unread.from !== undefined ? { from: unread.from } : {}) };
   }
   if (prop.declaredType !== undefined) pushDeclaredShapePaths(path, prop.declaredType, paths, depth, typedefs);
+}
+
+/**
+ * A spread in an object literal whose keys the analyzer could not read, as written (`...makeDraft()`), with the
+ * specifier its name is imported from when it is an import it could not read.
+ */
+interface UnreadSpread {
+  readonly text: string;
+  readonly from?: string;
+}
+
+/** A key of an object literal, with the module its value is written in (its names resolve there). */
+interface LiteralKey {
+  readonly prop: PropertyInfo;
+  readonly scope: ModuleScope | undefined;
+}
+
+/** How many spreads of spreads one object literal follows (`const A = { ...B }` — a cycle stops here). */
+const MAX_SPREAD_HOPS = 8;
+
+/**
+ * The data keys of an object literal's content as the object is built: in the order written, a spread of a name bound
+ * to an object literal (`draft: { ...EMPTY_DRAFT }` with `const EMPTY_DRAFT = { title: "" }` — followed through the
+ * module's constants and imports, moduleValues.ts) bringing in that literal's keys where it stands, and a later key
+ * replacing an earlier one of the same name. A spread it cannot read — a call, a `let`, an import it cannot read, a
+ * name bound to anything but an object literal — is `unread` (the first one): the object then has keys it does not
+ * know. `shorthands` reads `{ lang, t }` as keys (a row literal's first element is read without, as before).
+ */
+function objectLiteralKeys(
+  content: string,
+  scope: ModuleScope | undefined,
+  shorthands: boolean,
+  hops = 0,
+): { keys: LiteralKey[]; unread: UnreadSpread | null } {
+  const explicit = parseTopLevelProperties(content);
+  const props = shorthands ? withShorthands(content, explicit) : explicit;
+  const spreads = findObjectSpreads(content);
+  if (spreads.length === 0) {
+    return { keys: props.filter(p => p.kind === 'data').map(prop => ({ prop, scope })), unread: null };
+  }
+  type Item = { at: number; prop: PropertyInfo } | { at: number; spread: string };
+  const items: Item[] = [
+    ...props.map(prop => ({ at: prop.nameStart ?? 0, prop })),
+    ...spreads.map(s => ({ at: s.start, spread: s.text })),
+  ].sort((a, b) => a.at - b.at);
+  const keys = new Map<string, LiteralKey>();
+  const put = (key: LiteralKey): void => {
+    keys.delete(key.prop.name);
+    keys.set(key.prop.name, key);
+  };
+  let unread: UnreadSpread | null = null;
+  for (const item of items) {
+    if ('prop' in item) {
+      put({ prop: item.prop, scope });
+      continue;
+    }
+    const literal = hops < MAX_SPREAD_HOPS ? spreadLiteral(item.spread, scope) : { unread: { text: item.spread } };
+    if ('unread' in literal) {
+      unread ??= literal.unread;
+      continue;
+    }
+    if (literal.text === null) continue;
+    const nested = objectLiteralKeys(extractObjectContent(literal.text), literal.scope, true, hops + 1);
+    for (const key of nested.keys) put(key);
+    if (nested.unread !== null) unread ??= { text: item.spread };
+  }
+  return { keys: [...keys.values()].filter(k => k.prop.kind === 'data'), unread };
+}
+
+/**
+ * The object literal a spread (`...EMPTY_DRAFT`, as written) brings in: `{ text, scope }` with the literal's text and
+ * the module it is written in, `{ text: null }` for a spread that brings in nothing (`...null`), or `{ unread }`.
+ */
+function spreadLiteral(
+  spread: string,
+  scope: ModuleScope | undefined,
+): { text: string; scope: ModuleScope | undefined } | { text: null } | { unread: UnreadSpread } {
+  const expr = unwrapFreeze(spread.replace(/^\.\.\./, ''));
+  if (expr === 'null' || expr === 'undefined') return { text: null };
+  if (isObjectLiteral(expr)) return { text: expr, scope };
+  if (!isBindingName(expr) || scope === undefined) return { unread: { text: spread } };
+  const from = scope.importOf(expr);
+  const unread = { unread: { text: spread, ...(from !== undefined ? { from } : {}) } };
+  let current = scope.resolveName(expr);
+  // the value may be wrapped (`Object.freeze({ … })`) or another name of the module it is in
+  for (let hops = 0; current !== null && hops < MAX_SPREAD_HOPS; hops++) {
+    const inner = unwrapFreeze(current.text);
+    if (isObjectLiteral(inner)) return { text: inner, scope: current.scope };
+    if (!isBindingName(inner)) return unread;
+    current = current.scope.resolveName(inner);
+  }
+  return unread;
+}
+
+/** The spreads (`...expr`) among an object literal's content's top-level elements: where each starts, and its text. */
+function findObjectSpreads(content: string): { start: number; text: string }[] {
+  // (the mirror keeps a comment's `/*` `*/` and `//`: blank them too)
+  const scan = maskCommentsAndStrings(content).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => ' '.repeat(c.length));
+  const out: { start: number; text: string }[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= scan.length; i++) {
+    const ch = scan[i];
+    if (ch === '{' || ch === '[' || ch === '(') {
+      depth++;
+    } else if (ch === '}' || ch === ']' || ch === ')') {
+      depth--;
+    } else if ((ch === ',' && depth === 0) || i === scan.length) {
+      const segment = scan.slice(start, i);
+      const lead = segment.length - segment.trimStart().length;
+      if (segment.trimStart().startsWith('...')) {
+        const end = start + segment.trimEnd().length;
+        out.push({ start: start + lead, text: content.slice(start + lead, end) });
+      }
+      start = i + 1;
+    }
+  }
+  return out;
 }
 
 /** Names that are values written as words, not bindings to follow. */
@@ -1832,7 +1961,11 @@ function pushDeclaredShapePaths(
   }
 }
 
-/** 値のリテラルから読める構造（配列の行・オブジェクトの子）の候補を足す。 */
+/**
+ * 値のリテラルから読める構造（配列の行・オブジェクトの子）の候補を足す。オブジェクトの spread が持ち込むキーも読む
+ * （objectLiteralKeys）。読めない spread があれば、オブジェクトならそれを返す（呼び出し側がそのパスを開いた形にする）。
+ * 配列の先頭の行のものなら、行のパス（`${path}.*`）をここで開いた形にする。
+ */
 function pushLiteralStructurePaths(
   path: string,
   prop: PropertyInfo,
@@ -1840,32 +1973,39 @@ function pushLiteralStructurePaths(
   depth: number,
   typedefs: JsDocTypedefs,
   scope?: ModuleScope,
-): void {
+): UnreadSpread | null {
   // 配列の場合、ワイルドカードパスと子パス、組み込みプロパティを生成。
   // 先頭要素の子プロパティへは再帰する — 子が配列/オブジェクトなら
   // `a.*.b.*` / `a.*.b.c` のような深いワイルドカード候補も導出される
   // （ランタイムは任意深度のワイルドカードを解決するため、ここで打ち切ると
   // 入れ子リストの正当なパスが「未知パス」扱いになる）。
   if (prop.value && isArrayLiteral(prop.value)) {
-    paths.push({ path: `${path}.*`, kind: 'list' });
+    const row: PathCandidate = { path: `${path}.*`, kind: 'list' };
+    paths.push(row);
     paths.push({ path: `${path}.length`, kind: 'data', typeHint: 'number' });
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    for (const childProp of extractArrayElementDataProperties(prop.value)) {
-      pushDataPropertyPathsAt(`${path}.*.${childProp.name}`, childProp, paths, depth + 1, typedefs, scope);
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return null;
+    const first = firstRowObjectContent(prop.value);
+    if (first === null) return null;
+    const { keys, unread } = objectLiteralKeys(first, scope, false);
+    for (const key of keys) {
+      pushDataPropertyPathsAt(`${path}.*.${key.prop.name}`, key.prop, paths, depth + 1, typedefs, key.scope);
     }
-    return;
+    if (unread !== null && prop.declaredType === undefined) {
+      row.opaque = { spread: unread.text, ...(unread.from !== undefined ? { from: unread.from } : {}) };
+    }
+    return null;
   }
 
   // オブジェクトの場合、子パスを生成（さらにネストしたオブジェクトも辿る）
   if (prop.value && isObjectLiteral(prop.value)) {
-    if (depth >= MAX_OBJECT_NEST_DEPTH) return;
-    const content = extractObjectContent(prop.value);
-    const childProps = withShorthands(content, parseTopLevelProperties(content));
-    for (const childProp of childProps) {
-      if (childProp.kind !== 'data') continue;
-      pushDataPropertyPathsAt(`${path}.${childProp.name}`, childProp, paths, depth + 1, typedefs, scope);
+    if (depth >= MAX_OBJECT_NEST_DEPTH) return null;
+    const { keys, unread } = objectLiteralKeys(extractObjectContent(prop.value), scope, true);
+    for (const key of keys) {
+      pushDataPropertyPathsAt(`${path}.${key.prop.name}`, key.prop, paths, depth + 1, typedefs, key.scope);
     }
+    return unread;
   }
+  return null;
 }
 
 /**
@@ -2330,12 +2470,12 @@ function extractObjectContent(value: string): string {
 }
 
 /**
- * 配列リテラルの最初の要素がオブジェクトの場合、そのデータプロパティを
- * `value` 込みの PropertyInfo で抽出する（入れ子の配列/オブジェクト再帰用）。
+ * 配列リテラルの最初の要素がオブジェクトの場合、その中身（`{` `}` の内側）を返す（入れ子の配列/オブジェクト
+ * 再帰用 — キーは objectLiteralKeys が読む）。そうでなければ null。
  */
-function extractArrayElementDataProperties(value: string): PropertyInfo[] {
+function firstRowObjectContent(value: string): string | null {
   const trimmed = value.trim();
-  if (!trimmed.startsWith('[')) return [];
+  if (!trimmed.startsWith('[')) return null;
 
   // 先頭要素が**オブジェクトリテラル**の場合だけ子を導出する（JSON 側の
   // !Array.isArray(value[0]) ガードと同じ）。`[[{ a: 1 }]]`（配列の配列）で
@@ -2343,10 +2483,18 @@ function extractArrayElementDataProperties(value: string): PropertyInfo[] {
   const scan = maskCommentsAndStrings(trimmed);
   let first = 1;
   while (first < scan.length && /\s/.test(scan[first])) first++;
-  if (scan[first] !== '{') return [];
+  if (scan[first] !== '{') return null;
 
-  const objectContent = extractBracedContent(trimmed, scan, first);
-  return parseTopLevelProperties(objectContent).filter((prop) => prop.kind === 'data');
+  return extractBracedContent(trimmed, scan, first);
+}
+
+/**
+ * 配列リテラルの最初の要素がオブジェクトの場合、そのデータプロパティを
+ * `value` 込みの PropertyInfo で抽出する（代入の右辺の行。spread は追わない — applyAssignedShape）。
+ */
+function extractArrayElementDataProperties(value: string): PropertyInfo[] {
+  const content = firstRowObjectContent(value);
+  return content === null ? [] : parseTopLevelProperties(content).filter((prop) => prop.kind === 'data');
 }
 
 /**
