@@ -1515,3 +1515,27 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.11.2 の公開（2026-11-01。4.11.1 は欠番）
+
+- 中身: patch。homeroom を examples/ に取り込んだとき（#587）に残った 2 件を、著者が 2026-11-01 に推奨どおりに決めた（v4-direction §5.12）。その 1 件目。
+  - #589 router: ルートの差し替えは、当てる時点で画面に出ているルートと比べ、`outlet.lastRoutes` もそのときに書く。`<wcs-view-transition>` の下で戻るの 1 フレーム以内に進むと、進むは戻る前のルートと比べて自分のルートを「もう出ている」と読み、何も置かなかった（URL は進んだ先、画面は戻った先、無言。最小のページで 4.11.0 は 20 回中 18 回）。直す途中で同じ根の 2 つ目が見つかり、あわせて直した: ガードを待つ間に追い越されたナビゲーション（読み込み中に押した別のリンク）がガードの決着した後に当たり、後のナビゲーションの URL の下に 2 つのルートが両方出た（タグの有無を問わず 10 回中 10 回）。拒否するガードなら、利用者が別の場所へ向かった後でリダイレクトした。`applyRoute` が router ごとにナビゲーションの番号を持ち、追い越されたものはガード相の後で何も当てず、リダイレクトもしない。遷移を待つ間に追い越されたものは、フォーカスとアナウンスを後のものに任せる。クエリだけのナビゲーションも追い越す。2 つ目は決定 Q1 の範囲の外だったが、同じ根の無言の欠陥なので同じ PR に入れた（PR の本文と §5.12 に書いた）。e2e: `view-transition.spec.ts` に「戻る → すぐ進む」×5（4.11.0 の dist で 3/3 落ちる）、新しい `router-overtaken-guard.spec.ts` 4 件（追い越しの 3 件が 4.11.0 で落ちる）、homeroom の spec は進むの前の待ちを外した（4.11.0 で 10 回中 2 回落ちる）。router のカバレッジ 100 / 99.69 / 100 / 100。
+  - 2 件目（`<wcs-link>` の比べるクエリのキー）は新しい属性なので 4.12 に回した。
+- 準備: PR #590（merge commit 68b3792c）。CHANGELOG を `[4.11.1] — 2026-11-01` として締め、固定版 18 か所を 4.11.1 にした。
+- **4.11.1 は部分リリースになった**: main で `patch`（run 41269714315）。`@wcstack/state` と `@wcstack/accelerometer` の 4.11.1 を公開した後、3 つ目の `ambient-light-sensor` で npm の来歴証明の署名が Sigstore の透明性ログから 409（`TLOG_CREATE_ENTRY_ERROR`、"an equivalent entry already exists"）を受けて止まった。タグ、版を上げたコミット、Release は無い。ワークフローは「目標の版が npm にあるのにタグが無い」再実行を拒む（人の手が要る）。著者の決定で 4.11.1 を欠番にし、4.11.2 を全パッケージで出した。npm に残る 2 つの 4.11.1 は、4.11.0 と版の文字列だけが違う。
+  - PR #591（merge commit 833ad18a）: 49 パッケージの版を 4.11.1 に（`package.json` と lockfile の root。リリースの版上げの段と同じ）。CHANGELOG の節を `[4.11.2]` にして 4.11.1 の経緯を一文。固定版、router の README の「Since」、seam-apps、§5.12 を 4.11.2 に。手元の `compute-next-version.mjs` で 4.11.1 → 4.11.2（notes は v4.11.0 から）。
+  - run 41274614517 が「Install dependencies」で止まった（公開の前で、何も出ていない）: server の lockfile は `@wcstack/state` を `../state` へのリンクで持ち、state 4.11.1 と server の固定 `"4.11.0"` の食い違いを `npm ci` が拒んだ。#591 は内部の範囲をそろえていなかった（リリースの版上げの段はそろえる）。PR の CI はこれを捕まえなかった。
+  - PR #592（merge commit ebf51457）: `align-internal-dep-ranges.mjs 4.11.1`（server の依存、testing の peer 2 つ）と `npm install --package-lock-only`。手元の `npm ci` は server・testing・camera・fetch・wcstack で通った。
+- main で `patch`（run 41275614349）。成功した: 版を上げたコミット 23cde896、タグ `v4.11.2`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Fixed・Added を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い（1 回目の照合で通った）。公開物の router に直しと README の「Since 4.11.2」が入り、server は `@wcstack/state` 4.11.2 に固定されている。
+- 公開後の作業（同日）:
+  - PR #593（merge commit c0e324e8）: サイズの基準値を 4.11.2 の dist で取り直した（state の src は変わっていないので版の文字列だけ — 分割の core 25,051 → 25,050 B、ssr 5,778 → 5,777 B、`core.min.js` は 20,237 B のまま、残り 243 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版。拡張は出さない（lint と拡張の運ぶものは変わっていない）。
+  - wcstack-skill: PR #53（merge commit e628ad5）で、追い越されたナビゲーションと戻る → すぐ進むを router の参照に 1 段落、刻印と固定 URL（7 本とも 200）。注釈付きタグ `v4.11.2`。
+  - LP（wcstack.github.io 6d8ebdc）: リリースの表示、v4.11.2 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-GU/g4n…`）、大きさは約 77 KB のまま（78,706 B）、llms。ローカル 7/7、本番 8/9（`/tutorial/16-publish/app/` の 404 は設計どおり）。lint は変わっていないので、ステップ 07 / 12 の出力も変わらない。
+- 残り:
+  - `<wcs-link>` の比べるクエリのキー（決定 §5.12 の 2、4.12）。
+  - 2 巡目の次の継ぎ目（v4-direction §3.2）。止める目安にはまだ当たっていない。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+  - 手で版を上げるときは内部の範囲もそろえる（#592 の教訓）。部分リリースから戻すときにワークフローの Install の段を手元で先に試す道具は無い。
