@@ -290,6 +290,113 @@ describe("複数の最上位ノードを持つ行", () => {
   });
 });
 
+describe("両端が入れ替わった行（swap）", () => {
+  const list = `<ul><template data-wcs="for: items"><li>{{ .v }}</li></template></ul>`;
+  const items = (s: string) => s.split("").map((v) => ({ v }));
+  /** Writes items in the order of `idx` (positions in the current items; an object is a new item). */
+  const reorder = (write: (fn: (s: any) => void) => Promise<void>, idx: (number | object)[]) =>
+    write((s) => { const it = s.items; s.items = idx.map((i) => (typeof i === "number" ? it[i] : i)); });
+
+  /** The nodes inserted into `parent` while `fn` runs (a move counts once per node). */
+  async function inserted(parent: Node, fn: () => Promise<void>): Promise<number> {
+    return (await insertedNodes(parent, fn)).length;
+  }
+  async function insertedNodes(parent: Node, fn: () => Promise<void>): Promise<Node[]> {
+    const nodes: Node[] = [];
+    const take = (rs: MutationRecord[]) => { for (const r of rs) nodes.push(...r.addedNodes); };
+    const mo = new MutationObserver(take);
+    mo.observe(parent, { childList: true });
+    await fn();
+    take(mo.takeRecords());
+    mo.disconnect();
+    return nodes;
+  }
+
+  it("離れた 2 行を入れ替えると、その 2 行だけを動かし、間の行はそのまま", async () => {
+    const { root, write } = await page(list, { items: items("abcdefgh") });
+    const ul = root.querySelector("ul")!;
+    const li = Array.from(ul.querySelectorAll("li"));
+    expect(await inserted(ul, () => reorder(write, [0, 6, 2, 3, 4, 5, 1, 7]))).toBe(2);
+    expect(texts(ul, "li")).toEqual(["a", "g", "c", "d", "e", "f", "b", "h"]);
+    expect(Array.from(ul.querySelectorAll("li"))).toEqual([li[0], li[6], li[2], li[3], li[4], li[5], li[1], li[7]]);
+  });
+
+  it("隣り合う 2 行の入れ替えは 1 行だけ動かす", async () => {
+    const { root, write } = await page(list, { items: items("abcd") });
+    const ul = root.querySelector("ul")!;
+    const li = Array.from(ul.querySelectorAll("li"));
+    expect(await inserted(ul, () => reorder(write, [0, 2, 1, 3]))).toBe(1);
+    expect(Array.from(ul.querySelectorAll("li"))).toEqual([li[0], li[2], li[1], li[3]]);
+  });
+
+  it("間が 1 行の入れ替えは、先の行をその場に残し、間の行と後の行を動かす（動かした行はフォーカスを失う）", async () => {
+    const { root, write } = await page(list, { items: items("abcde") });
+    const ul = root.querySelector("ul")!;
+    const li = Array.from(ul.querySelectorAll("li"));
+    const moved = await insertedNodes(ul, () => reorder(write, [0, 3, 2, 1, 4]));
+    expect(new Set(moved)).toEqual(new Set([li[3], li[2]]));
+    expect(Array.from(ul.querySelectorAll("li"))).toEqual([li[0], li[3], li[2], li[1], li[4]]);
+  });
+
+  it("逆順は外側から入れ替えを重ね、動かす行の数は最長増加部分列と同じ", async () => {
+    const { root, write } = await page(list, { items: items("abcde") });
+    const ul = root.querySelector("ul")!;
+    const li = Array.from(ul.querySelectorAll("li"));
+    expect(await inserted(ul, () => reorder(write, [4, 3, 2, 1, 0]))).toBe(4);
+    expect(Array.from(ul.querySelectorAll("li"))).toEqual([li[4], li[3], li[2], li[1], li[0]]);
+    expect(await inserted(ul, () => reorder(write, [1, 0, 2, 3, 4]))).toBe(1);
+    expect(texts(ul, "li")).toEqual(["d", "e", "c", "b", "a"]);
+  });
+
+  it("入れ替えと同じ書き込みで間の行を消して足すと、入れ替えの後の残りを最長増加部分列で揃える", async () => {
+    const { root, write } = await page(list, { items: items("abcdef") });
+    const ul = root.querySelector("ul")!;
+    const li = Array.from(ul.querySelectorAll("li"));
+    expect(await inserted(ul, () => reorder(write, [0, 4, 2, { v: "x" }, 1, 5]))).toBe(3);
+    expect(texts(ul, "li")).toEqual(["a", "e", "c", "x", "b", "f"]);
+    const now = Array.from(ul.querySelectorAll("li"));
+    expect([now[0], now[1], now[2], now[4], now[5]]).toEqual([li[0], li[4], li[2], li[1], li[5]]);
+    expect(li[3].isConnected).toBe(false);
+  });
+
+  it("複数の最上位ノードを持つ行は、行のノードをまとめて入れ替える", async () => {
+    const { root, write } = await page(`<div><template data-wcs="for: items">{{ .v }}<b>{{ .v }}</b><i>/</i></template></div>`, { items: items("abcd") });
+    const div = root.querySelector("div")!;
+    const b = Array.from(div.querySelectorAll("b"));
+    expect(await inserted(div, () => reorder(write, [3, 1, 2, 0]))).toBe(6);
+    expect(div.textContent).toBe("dd/bb/cc/aa/");
+    expect(Array.from(div.querySelectorAll("b"))).toEqual([b[3], b[1], b[2], b[0]]);
+  });
+
+  it("行の先頭が入れ子の for でも、その行が描いた行ごと入れ替える（空の入れ子も）", async () => {
+    const { root, write } = await page(
+      `<div><template data-wcs="for: groups"><template data-wcs="for: .tags">{{ . }}</template>|</template></div>`,
+      { groups: [{ tags: ["a", "b"] }, { tags: ["c"] }, { tags: [] }, { tags: ["d"] }] },
+    );
+    const div = root.querySelector("div")!;
+    expect(div.textContent).toBe("ab|c||d|");
+    await write((s) => { const g = s.groups; s.groups = [g[3], g[2], g[1], g[0]]; });
+    expect(div.textContent).toBe("d||c|ab|");
+    await write((s) => { const g = s.groups; s.groups = [g[1], g[0], g[2], g[3]]; });
+    expect(div.textContent).toBe("|d|c|ab|");
+  });
+
+  it("同じリストを描く 2 つの for も、それぞれ入れ替える", async () => {
+    const { root, write } = await page(
+      `<ul class="a"><template data-wcs="for: items"><li>{{ .v }}</li></template></ul><ol><template data-wcs="for: items"><li>{{ .v }}</li></template></ol>`,
+      { items: items("abcdef") },
+    );
+    const lists = [root.querySelector("ul")!, root.querySelector("ol")!];
+    const li = lists.map((l) => Array.from(l.querySelectorAll("li")));
+    let inOl = 0;
+    const inUl = await inserted(lists[0], async () => { inOl = await inserted(lists[1], () => reorder(write, [0, 4, 2, 3, 1, 5])); });
+    expect([inUl, inOl]).toEqual([2, 2]);
+    for (const [k, l] of lists.entries()) {
+      expect(Array.from(l.querySelectorAll("li"))).toEqual([li[k][0], li[k][4], li[k][2], li[k][3], li[k][1], li[k][5]]);
+    }
+  });
+});
+
 describe("フォーム要素の書き戻し", () => {
   it("type=button の input の value は書き戻さない", async () => {
     const { root, read } = await page(`<input type="button" data-wcs="value: label">`, { label: "Send" });
