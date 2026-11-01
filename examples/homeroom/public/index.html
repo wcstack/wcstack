@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Required for deep links: without it, loading /notices/3 makes that path the basename. -->
+  <base href="/">
+  <title>3年B組 連絡帳</title>
+  <link rel="stylesheet" href="/app.css">
+  <!-- Error banner + POST /api/client-errors. A classic script, first, so it also sees errors that happen
+       before (or instead of) wcstack loading. -->
+  <script src="/error-reporter.js"></script>
+  <!-- Our own components (public/components/), resolved by @wcstack/autoloader: <hr-avatar> → avatar.js -->
+  <script type="importmap">
+    { "imports": { "@components/hr/": "/components/" } }
+  </script>
+  <!-- I/O nodes before state: module scripts execute in document order. Unpinned here, so the example follows the
+       repository (WCS_LOCAL=1 serves packages/*/dist); an app of your own pins every URL to one version, as
+       v4.2.0/index.html does, and changes them all together. -->
+  <script type="module" src="https://esm.run/@wcstack/autoloader/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/fetch/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/upload/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/storage/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/websocket/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/network/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/view-transition/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/router/auto"></script>
+  <script type="module" src="https://esm.run/@wcstack/state/auto"></script>
+</head>
+<body>
+
+<!-- a bare fragment link stays on the page under the router since 4.10 (it moves focus to #main) -->
+<a class="skip-link" href="#main">本文へスキップ</a>
+<div id="error-banner" class="error-banner" role="alert" hidden>問題が発生しました。再読み込みしてください</div>
+
+<wcs-state src="./state.js"></wcs-state>
+<wcs-autoloader></wcs-autoloader>
+
+<!-- The session lives in localStorage: it survives a reload and every tab sees it (the guards read it too). -->
+<wcs-storage key="homeroom.session" data-wcs="value#init=element: session"></wcs-storage>
+<wcs-storage key="homeroom.settings" data-wcs="value#init=element: savedPrefs"></wcs-storage>
+<wcs-network data-wcs="offline: offline"></wcs-network>
+<!-- Route swaps cross-fade; reduced-motion="skip" (the default) honors prefers-reduced-motion. -->
+<wcs-view-transition for="router"></wcs-view-transition>
+
+<!-- Reads load when their url (a getter, null off its page) changes — since fetch 4.3 a url that went empty and
+     comes back loads again. command.fetch is for an explicit reload (retry, after logging in again, after a save). -->
+<wcs-fetch data-wcs="...: listFetch; url: listUrl; command.fetch: $command.fetchList; eventToken.error: apiFailed">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: noticeFetch; url: noticeUrl; command.fetch: $command.fetchNotice; eventToken.error: apiFailed">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: questionsFetch; url: questionsUrl; command.fetch: $command.fetchQuestions; eventToken.value: questionsLoaded; eventToken.error: apiFailed">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch data-wcs="...: absencesFetch; url: absencesUrl; command.fetch: $command.fetchAbsences; eventToken.error: apiFailed">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch manual method="POST" data-wcs="url: readUrl; command.fetch: $command.markRead">
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<!-- Attachments: one file per upload (state.js uploadNext); url before files, since assigning files starts it. -->
+<wcs-upload data-wcs="url: upload.url; files: upload.files; progress: upload.progress;
+                      eventToken.value: uploadResponded; eventToken.error: uploadFailed">
+  <wcs-upload-header name="Authorization" data-wcs="value: authHeader"></wcs-upload-header>
+</wcs-upload>
+<!-- Writes: url / method / body are written before trigger in the same handler. -->
+<wcs-fetch manual data-wcs="url: saveFetch.url; method: saveFetch.method; body: saveFetch.body; trigger: saveFetch.trigger;
+                            loading: saveFetch.loading; eventToken.value: saveResponded; eventToken.error: saveFailed">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch url="/api/absences" method="POST" manual data-wcs="body: absenceFetch.body; trigger: absenceFetch.trigger;
+                            loading: absenceFetch.loading; eventToken.value: absenceResponded; eventToken.error: absenceFailed">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+  <wcs-fetch-header name="Authorization" data-wcs="value: authHeader"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch url="/api/login" method="POST" manual
+  data-wcs="body: loginBody; trigger: loginTrigger; loading: loginLoading; error: loginError; eventToken.value: loginResponded">
+  <wcs-fetch-header name="Content-Type" value="application/json"></wcs-fetch-header>
+</wcs-fetch>
+<wcs-fetch url="/api/logout" method="POST" manual data-wcs="trigger: logoutTrigger">
+  <wcs-fetch-header name="Authorization" data-wcs="value: logoutHeader"></wcs-fetch-header>
+</wcs-fetch>
+
+<!-- inert while the login dialog is open: the dialog is modal for keyboard and screen-reader users too -->
+<div class="app" data-wcs="class.text-large: largeText; inert: reauth">
+
+  <!-- Status regions are always in the page, their text bound (empty = nothing to say): a region inserted
+       together with its text is never announced (lint wcs/live-region-inserted, 4.10). -->
+  <div class="offline-banner" role="status" data-wcs="textContent: offlineText"></div>
+  <p class="visually-hidden" role="status" data-wcs="textContent: pageStatus"></p>
+
+  <template data-wcs="if: showHeader">
+  <header class="site-header">
+      <div class="brand"><wcs-link to="/notices">3年B組 連絡帳</wcs-link></div>
+      <nav class="site-nav" aria-label="メインメニュー">
+        <wcs-link to="/notices" match="prefix">お知らせ</wcs-link>
+        <template data-wcs="if: isTeacher"><wcs-link to="/notices/new">お知らせを書く</wcs-link></template>
+        <wcs-link to="/absences" match="prefix">欠席連絡</wcs-link>
+        <wcs-link to="/settings">設定</wcs-link>
+      </nav>
+      <div class="who">
+        <hr-avatar aria-hidden="true" data-wcs="attr.name: userName"></hr-avatar>
+        <span class="who-text"><span class="who-name" data-wcs="textContent: userName"></span><span class="who-role" data-wcs="textContent: roleLabel"></span></span>
+        <button type="button" class="link-button" data-wcs="onclick: logout">ログアウト</button>
+      </div>
+  </header>
+  </template>
+
+  <main id="main" tabindex="-1">
+    <wcs-router focus="heading" announce="title"
+      data-wcs="path: path; routeName: routeName; typedParams: routeParams; searchParams: query;
+                navigateUrl: navigateUrl; replaceUrl: replaceUrl; leaveConfirm: discardPrompt">
+      <template>
+
+        <wcs-route path="/login" name="login">
+          <!-- Someone already logged in has nothing to do here. -->
+          <wcs-guard-handler>
+            <script type="module">
+              export default function () {
+                let session = null;
+                try { session = JSON.parse(localStorage.getItem("homeroom.session")); } catch {}
+                return session?.token ? "/notices" : true;
+              }
+            </script>
+          </wcs-guard-handler>
+          <wcs-head><title>ログイン — 3年B組 連絡帳</title></wcs-head>
+          <section class="login-page">
+            <h1>3年B組 連絡帳</h1>
+            <p class="lead">先生からのお知らせと、質問・欠席連絡のためのページです。</p>
+            <template data-wcs="if: loginNotice">
+              <p class="notice-box" data-wcs="textContent: loginNotice"></p>
+            </template>
+            <form class="card form" data-wcs="onsubmit#prevent: submitLogin">
+              <h2>ログイン</h2>
+              <div class="field">
+                <label for="login-id">ユーザーID</label>
+                <input id="login-id" name="id" autocomplete="username" required data-wcs="value: loginForm.id">
+              </div>
+              <div class="field">
+                <label for="login-password">パスワード</label>
+                <input id="login-password" name="password" type="password" autocomplete="current-password" required data-wcs="value: loginForm.password">
+              </div>
+              <p class="form-error" role="alert" data-wcs="textContent: loginErrorText"></p>
+              <p class="actions"><button type="submit" class="primary" data-wcs="disabled: loginBlocked">ログイン</button></p>
+            </form>
+          </section>
+        </wcs-route>
+
+        <!-- Everything below needs a login: one guard on the parent covers every page. -->
+        <wcs-route path="/" guard="/login">
+          <wcs-guard-handler>
+            <script type="module">
+              export default function (toPath, fromPath, { searchParams }) {
+                let session = null;
+                try { session = JSON.parse(localStorage.getItem("homeroom.session")); } catch {}
+                if (session?.token) return true;
+                // toPath has no query string: put it back from the match being entered
+                const query = new URLSearchParams(searchParams).toString();
+                return "/login?next=" + encodeURIComponent(query ? toPath + "?" + query : toPath);
+              }
+            </script>
+          </wcs-guard-handler>
+
+          <wcs-route index name="home">
+            <wcs-guard-handler>
+              <script type="module">
+                export default function () { return "/notices"; }
+              </script>
+            </wcs-guard-handler>
+          </wcs-route>
+
+          <wcs-route path="notices">
+            <wcs-route index name="notices">
+              <wcs-head><title data-wcs="textContent: listTitle">お知らせ — 3年B組 連絡帳</title></wcs-head>
+              <section class="notices-page">
+                <h1 data-wcs="textContent: listHeading">お知らせ</h1>
+                <!-- The tabs are plain <a> with their own aria-current: a tab is current for its category on every
+                     page of it, which no <wcs-link to> says (without match="prefix" "宿題" would be current on its
+                     page 1 only; with it, "すべて" on every query). The router still takes their clicks. -->
+                <nav class="tabs" aria-label="区分で絞り込む">
+                  <ul>
+                    <template data-wcs="for: tabs">
+                      <li><a data-wcs="attr.href: .href; attr.aria-current: .current; class.current: .isCurrent; textContent: .label"></a></li>
+                    </template>
+                  </ul>
+                </nav>
+                <template data-wcs="if: listLoading">
+                  <p class="loading">読み込み中…</p>
+                </template>
+                <template data-wcs="if: listFailed">
+                  <div class="error-box" role="alert">
+                    <p>お知らせを読み込めませんでした。</p>
+                    <button type="button" data-wcs="onclick: retryList">もう一度読み込む</button>
+                  </div>
+                </template>
+                <template data-wcs="if: listEmpty">
+                  <p class="empty" data-wcs="textContent: emptyText"></p>
+                </template>
+                <template data-wcs="if: listHasItems">
+                  <ul class="notice-list">
+                    <template data-wcs="for: listItems">
+                      <li class="notice-item">
+                        <div class="notice-item-head">
+                          <!-- workaround: the label is a child <span>, not textContent: on <hr-cat-badge> — a property
+                               binding on a custom element that is not defined yet waits for its definition, so with a
+                               late component script the badge would be empty (still so on 4.10.1) -->
+                          <hr-cat-badge data-wcs="attr.cat: .cat"><span data-wcs="textContent: .catLabel"></span></hr-cat-badge>
+                          <template data-wcs="if: .unread">
+                            <span class="unread">未読</span>
+                          </template>
+                        </div>
+                        <h2 class="notice-item-title"><wcs-link data-wcs="attr.to: .href"><span data-wcs="textContent: .title"></span></wcs-link></h2>
+                        <p class="notice-item-meta">
+                          <span>掲載 <span data-wcs="textContent: .postedText"></span></span>
+                          <template data-wcs="if: .deadline">
+                            <span class="deadline">締め切り <span data-wcs="textContent: .deadlineText"></span></span>
+                          </template>
+                          <template data-wcs="if: .attachments|gt(0)">
+                            <span class="attach-count" data-wcs="textContent: .attachmentText"></span>
+                          </template>
+                        </p>
+                      </li>
+                    </template>
+                  </ul>
+                </template>
+                <!-- The pager is <wcs-link>: the router marks the shown page (class "active", aria-current="page").
+                     A link with a query is current only on that query (4.10.1), and page 1 of every notice is
+                     to="/notices?" — an empty query, current only where the URL has none (4.11); a bare
+                     "/notices" compares the pathname only and would be current on every page. -->
+                <template data-wcs="if: showPager">
+                  <nav class="pager" aria-label="ページ">
+                    <template data-wcs="if: hasPrev">
+                      <wcs-link data-wcs="attr.to: prevTo">前へ</wcs-link>
+                    </template>
+                    <template data-wcs="for: pageNumbers">
+                      <wcs-link data-wcs="attr.to: .to; attr.aria-label: .label"><span data-wcs="textContent: ."></span></wcs-link>
+                    </template>
+                    <template data-wcs="if: hasNext">
+                      <wcs-link data-wcs="attr.to: nextTo">次へ</wcs-link>
+                    </template>
+                  </nav>
+                </template>
+              </section>
+            </wcs-route>
+
+            <wcs-route path="new" name="notice-new">
+              <wcs-guard-handler>
+                <script type="module">
+                  export default function () {
+                    let session = null;
+                    try { session = JSON.parse(localStorage.getItem("homeroom.session")); } catch {}
+                    return session?.user?.role === "teacher" ? true : "/notices";
+                  }
+                </script>
+              </wcs-guard-handler>
+              <wcs-head><title>新しいお知らせ — 3年B組 連絡帳</title></wcs-head>
+              <section class="form-page">
+                <h1>新しいお知らせ</h1>
+                <form class="card form" novalidate data-wcs="onsubmit#prevent: saveNotice">
+                  <p class="form-error" role="alert" data-wcs="textContent: formMessage"></p>
+                  <div class="field">
+                    <label for="new-title">タイトル（60文字まで）</label>
+                    <input id="new-title" name="title" autocomplete="off" aria-describedby="new-title-count new-title-error" data-wcs="value: draft.title; attr.aria-invalid: titleInvalid">
+                    <span id="new-title-count" class="hint" data-wcs="textContent: titleCount"></span>
+                    <p id="new-title-error" class="field-error" data-wcs="textContent: formErrors.title"></p>
+                  </div>
+                  <div class="field">
+                    <label for="new-cat">区分</label>
+                    <select id="new-cat" name="cat" aria-describedby="new-cat-error" data-wcs="value: draft.cat; attr.aria-invalid: catInvalid">
+                      <option value="event">行事</option>
+                      <option value="homework">宿題</option>
+                      <option value="health">保健</option>
+                      <option value="general">連絡</option>
+                    </select>
+                    <p id="new-cat-error" class="field-error" data-wcs="textContent: formErrors.cat"></p>
+                  </div>
+                  <div class="field">
+                    <label for="new-body">本文</label>
+                    <textarea id="new-body" name="body" rows="8" aria-describedby="new-body-error" data-wcs="value: draft.body; attr.aria-invalid: bodyInvalid"></textarea>
+                    <p id="new-body-error" class="field-error" data-wcs="textContent: formErrors.body"></p>
+                  </div>
+                  <fieldset class="field">
+                    <legend>締め切り（任意）</legend>
+                    <div class="inline">
+                      <label for="new-deadline-date">日付</label>
+                      <input id="new-deadline-date" type="date" aria-describedby="new-deadline-error" data-wcs="value: draft.deadlineDate; attr.aria-invalid: deadlineInvalid">
+                      <label for="new-deadline-time">時刻</label>
+                      <input id="new-deadline-time" type="time" aria-describedby="new-deadline-error" data-wcs="value: draft.deadlineTime; attr.aria-invalid: deadlineInvalid">
+                    </div>
+                    <p id="new-deadline-error" class="field-error" data-wcs="textContent: formErrors.deadline"></p>
+                  </fieldset>
+                  <fieldset class="field">
+                    <legend>添付ファイル（PDF・PNG・JPEG、1つ5MBまで）</legend>
+                    <input id="new-files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" aria-label="添付ファイルを選ぶ" data-wcs="onchange: pickFiles; disabled: saving">
+                    <template data-wcs="if: hasPendingFiles">
+                      <ul class="file-list">
+                        <template data-wcs="for: pendingFiles">
+                          <li class="file-row" data-wcs="class.failed: .failed">
+                            <span class="file-name" data-wcs="textContent: .name"></span>
+                            <span class="file-size" data-wcs="textContent: .sizeText"></span>
+                            <progress max="100" data-wcs="value: .shownProgress; hidden: .isUploading|not; attr.aria-label: .name"></progress>
+                            <span class="file-status" data-wcs="textContent: .statusText"></span>
+                            <span class="field-error" data-wcs="textContent: .error"></span>
+                            <button type="button" class="link-button" data-wcs="onclick: removePending; disabled: uploading">外す</button>
+                          </li>
+                        </template>
+                      </ul>
+                    </template>
+                  </fieldset>
+                  <p class="actions">
+                    <button type="submit" class="primary" data-wcs="disabled: saveBlocked; textContent: saveLabel">保存する</button>
+                    <wcs-link to="/notices">キャンセル</wcs-link>
+                  </p>
+                </form>
+              </section>
+            </wcs-route>
+
+            <wcs-route path=":id(int)">
+              <wcs-route index name="notice">
+                <wcs-head><title data-wcs="textContent: pageTitleNotice">お知らせ — 3年B組 連絡帳</title></wcs-head>
+                <!-- Questions and answers, live, in the notice's route: leaving the notice removes the element, which
+                     closes the socket — since 4.11 one still connecting is closed once it opens, so a quick
+                     Back does not make Chromium warn "WebSocket is closed before the connection is established". -->
+                <wcs-ws auto-reconnect reconnect-interval="1000"
+                  data-wcs="url: wsUrl; connected: wsConnected; loading: wsLoading; eventToken.message: wsReceived;
+                            command.sendMessage: $command.wsSend; command.close: $command.wsClose"></wcs-ws>
+                <article class="notice-page">
+                  <p class="back"><a data-wcs="attr.href: backHref">← お知らせ一覧へ</a></p>
+                  <h1 data-wcs="textContent: noticeHeading">お知らせ</h1>
+                  <template data-wcs="if: noticeLoading">
+                    <p class="loading">読み込み中…</p>
+                  </template>
+                  <template data-wcs="if: noticeMissing">
+                    <p class="error-box">このお知らせは見つかりませんでした。</p>
+                  </template>
+                  <template data-wcs="if: noticeFailed">
+                    <div class="error-box" role="alert">
+                      <p>お知らせを読み込めませんでした。</p>
+                      <button type="button" data-wcs="onclick: retryNotice">もう一度読み込む</button>
+                    </div>
+                  </template>
+                  <template data-wcs="if: noticeReady">
+                    <div class="notice-detail">
+                      <p class="notice-meta">
+                        <hr-cat-badge data-wcs="attr.cat: noticeCat"><span data-wcs="textContent: noticeCatLabel"></span></hr-cat-badge>
+                        <span>掲載 <span data-wcs="textContent: noticePosted"></span></span>
+                      </p>
+                      <template data-wcs="if: noticeHasDeadline">
+                        <p class="deadline-box">締め切り <strong data-wcs="textContent: noticeDeadline"></strong></p>
+                      </template>
+                      <div class="notice-body" data-wcs="textContent: noticeBody"></div>
+                      <template data-wcs="if: showAttachmentList">
+                        <section class="attachments" aria-labelledby="att-heading">
+                          <h2 id="att-heading">添付ファイル</h2>
+                          <ul>
+                            <template data-wcs="for: noticeAttachments">
+                              <li><a download data-wcs="attr.href: .url; textContent: .name"></a> <span class="file-size" data-wcs="textContent: .sizeText"></span></li>
+                            </template>
+                          </ul>
+                        </section>
+                      </template>
+                      <template data-wcs="if: attachmentsHiddenNote">
+                        <p class="hint">添付ファイルは設定で非表示になっています。</p>
+                      </template>
+                      <template data-wcs="if: isTeacher">
+                        <p class="actions"><a class="button" data-wcs="attr.href: editHref">編集する</a></p>
+                      </template>
+                    </div>
+
+                    <section class="qa" aria-labelledby="qa-heading">
+                      <h2 id="qa-heading">質問と回答</h2>
+                      <p class="ws-status" role="status" data-wcs="textContent: wsStatusText; class.down: wsDown"></p>
+                      <ol class="questions" aria-live="polite">
+                        <template data-wcs="for: questions">
+                          <li class="question">
+                            <p class="q-meta"><span class="q-from" data-wcs="textContent: .from"></span> <time data-wcs="attr.datetime: .at; textContent: .atText"></time></p>
+                            <p class="q-text" data-wcs="textContent: .text"></p>
+                            <template data-wcs="if: .answered">
+                              <div class="answer">
+                                <p class="a-meta">先生の回答 <time data-wcs="attr.datetime: .answer.at; textContent: .answerAtText"></time></p>
+                                <p class="a-text" data-wcs="textContent: .answerText"></p>
+                              </div>
+                            </template>
+                            <template data-wcs="elseif: .canAnswer">
+                              <template data-wcs="if: .answering">
+                                <form class="answer-form" data-wcs="onsubmit#prevent: sendAnswer">
+                                  <label class="visually-hidden" for="answer-text">回答</label>
+                                  <textarea id="answer-text" rows="3" data-wcs="value: answerText"></textarea>
+                                  <p class="actions">
+                                    <button type="submit" class="primary" data-wcs="disabled: answerBlocked">回答を送る</button>
+                                    <button type="button" class="link-button" data-wcs="onclick: cancelAnswer">やめる</button>
+                                  </p>
+                                </form>
+                              </template>
+                              <template data-wcs="else:">
+                                <button type="button" class="answer-button" data-wcs="onclick: startAnswer">回答する</button>
+                              </template>
+                            </template>
+                            <template data-wcs="else:">
+                              <p class="a-pending">回答待ち</p>
+                            </template>
+                          </li>
+                        </template>
+                      </ol>
+                      <template data-wcs="if: hasQuestions|not">
+                        <p class="empty">まだ質問はありません。</p>
+                      </template>
+                      <template data-wcs="if: isParent">
+                        <form class="ask-form" data-wcs="onsubmit#prevent: ask">
+                          <label for="ask-text">先生に質問する</label>
+                          <textarea id="ask-text" rows="3" data-wcs="value: askText"></textarea>
+                          <p class="field-error" role="alert" data-wcs="textContent: askError"></p>
+                          <p class="actions"><button type="submit" class="primary" data-wcs="disabled: askBlocked">質問を送る</button></p>
+                        </form>
+                      </template>
+                    </section>
+                  </template>
+                </article>
+              </wcs-route>
+
+              <wcs-route path="edit" name="notice-edit">
+                <wcs-guard-handler>
+                  <script type="module">
+                    export default function () {
+                      let session = null;
+                      try { session = JSON.parse(localStorage.getItem("homeroom.session")); } catch {}
+                      return session?.user?.role === "teacher" ? true : "/notices";
+                    }
+                  </script>
+                </wcs-guard-handler>
+                <wcs-head><title>お知らせを編集 — 3年B組 連絡帳</title></wcs-head>
+                <section class="form-page">
+                  <h1>お知らせを編集</h1>
+                  <template data-wcs="if: noticeLoading">
+                    <p class="loading">読み込み中…</p>
+                  </template>
+                  <template data-wcs="if: noticeMissing">
+                    <p class="error-box">このお知らせは見つかりませんでした。</p>
+                  </template>
+                  <template data-wcs="if: formReady">
+                    <form class="card form" novalidate data-wcs="onsubmit#prevent: saveNotice">
+                      <p class="form-error" role="alert" data-wcs="textContent: formMessage"></p>
+                      <div class="field">
+                        <label for="edit-title">タイトル（60文字まで）</label>
+                        <input id="edit-title" name="title" autocomplete="off" aria-describedby="edit-title-count edit-title-error" data-wcs="value: draft.title; attr.aria-invalid: titleInvalid">
+                        <span id="edit-title-count" class="hint" data-wcs="textContent: titleCount"></span>
+                        <p id="edit-title-error" class="field-error" data-wcs="textContent: formErrors.title"></p>
+                      </div>
+                      <div class="field">
+                        <label for="edit-cat">区分</label>
+                        <select id="edit-cat" name="cat" aria-describedby="edit-cat-error" data-wcs="value: draft.cat; attr.aria-invalid: catInvalid">
+                          <option value="event">行事</option>
+                          <option value="homework">宿題</option>
+                          <option value="health">保健</option>
+                          <option value="general">連絡</option>
+                        </select>
+                        <p id="edit-cat-error" class="field-error" data-wcs="textContent: formErrors.cat"></p>
+                      </div>
+                      <div class="field">
+                        <label for="edit-body">本文</label>
+                        <textarea id="edit-body" name="body" rows="8" aria-describedby="edit-body-error" data-wcs="value: draft.body; attr.aria-invalid: bodyInvalid"></textarea>
+                        <p id="edit-body-error" class="field-error" data-wcs="textContent: formErrors.body"></p>
+                      </div>
+                      <fieldset class="field">
+                        <legend>締め切り（任意）</legend>
+                        <div class="inline">
+                          <label for="edit-deadline-date">日付</label>
+                          <input id="edit-deadline-date" type="date" aria-describedby="edit-deadline-error" data-wcs="value: draft.deadlineDate; attr.aria-invalid: deadlineInvalid">
+                          <label for="edit-deadline-time">時刻</label>
+                          <input id="edit-deadline-time" type="time" aria-describedby="edit-deadline-error" data-wcs="value: draft.deadlineTime; attr.aria-invalid: deadlineInvalid">
+                        </div>
+                        <p id="edit-deadline-error" class="field-error" data-wcs="textContent: formErrors.deadline"></p>
+                      </fieldset>
+                      <fieldset class="field">
+                        <legend>添付ファイル（PDF・PNG・JPEG、1つ5MBまで）</legend>
+                        <template data-wcs="if: hasExistingAttachments">
+                          <ul class="file-list">
+                            <template data-wcs="for: existingAttachments">
+                              <li class="file-row"><span class="file-name" data-wcs="textContent: .name"></span> <span class="file-size" data-wcs="textContent: .sizeText"></span> <span class="file-status">添付済み</span></li>
+                            </template>
+                          </ul>
+                        </template>
+                        <input id="edit-files" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" aria-label="添付ファイルを選ぶ" data-wcs="onchange: pickFiles; disabled: saving">
+                        <template data-wcs="if: hasPendingFiles">
+                          <ul class="file-list">
+                            <template data-wcs="for: pendingFiles">
+                              <li class="file-row" data-wcs="class.failed: .failed">
+                                <span class="file-name" data-wcs="textContent: .name"></span>
+                                <span class="file-size" data-wcs="textContent: .sizeText"></span>
+                                <progress max="100" data-wcs="value: .shownProgress; hidden: .isUploading|not; attr.aria-label: .name"></progress>
+                                <span class="file-status" data-wcs="textContent: .statusText"></span>
+                                <span class="field-error" data-wcs="textContent: .error"></span>
+                                <button type="button" class="link-button" data-wcs="onclick: removePending; disabled: uploading">外す</button>
+                              </li>
+                            </template>
+                          </ul>
+                        </template>
+                      </fieldset>
+                      <p class="actions">
+                        <button type="submit" class="primary" data-wcs="disabled: saveBlocked; textContent: saveLabel">保存する</button>
+                        <a data-wcs="attr.href: cancelHref">キャンセル</a>
+                      </p>
+                    </form>
+                  </template>
+                </section>
+              </wcs-route>
+            </wcs-route>
+          </wcs-route>
+
+          <wcs-route path="absences">
+            <wcs-route index name="absences">
+              <wcs-head><title>欠席連絡 — 3年B組 連絡帳</title></wcs-head>
+              <section class="absences-page">
+                <h1 data-wcs="textContent: absencesHeading">欠席連絡</h1>
+                <template data-wcs="if: isParent">
+                  <p class="actions"><wcs-link to="/absences/new" class="button">欠席を連絡する</wcs-link></p>
+                </template>
+                <template data-wcs="if: absencesFetch.loading">
+                  <p class="loading">読み込み中…</p>
+                </template>
+                <template data-wcs="if: absencesFailed">
+                  <div class="error-box" role="alert">
+                    <p>欠席連絡を読み込めませんでした。</p>
+                    <button type="button" data-wcs="onclick: retryAbsences">もう一度読み込む</button>
+                  </div>
+                </template>
+                <template data-wcs="if: absencesEmpty">
+                  <p class="empty">欠席連絡はまだありません。</p>
+                </template>
+                <template data-wcs="if: absencesHasItems">
+                  <table class="absence-table">
+                    <thead><tr><th scope="col">日付</th><th scope="col">児童</th><th scope="col">理由</th><th scope="col">メモ</th></tr></thead>
+                    <tbody>
+                      <template data-wcs="for: absences">
+                        <tr>
+                          <td data-wcs="textContent: .dateText"></td>
+                          <td data-wcs="textContent: .child"></td>
+                          <td data-wcs="textContent: .reasonText"></td>
+                          <td data-wcs="textContent: .note"></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </template>
+              </section>
+            </wcs-route>
+            <wcs-route path="new" name="absence-new">
+              <wcs-guard-handler>
+                <script type="module">
+                  export default function () {
+                    let session = null;
+                    try { session = JSON.parse(localStorage.getItem("homeroom.session")); } catch {}
+                    return session?.user?.role === "parent" ? true : "/absences";
+                  }
+                </script>
+              </wcs-guard-handler>
+              <wcs-head><title>欠席を連絡する — 3年B組 連絡帳</title></wcs-head>
+              <section class="form-page">
+                <h1>欠席を連絡する</h1>
+                <form class="card form" novalidate data-wcs="onsubmit#prevent: submitAbsence">
+                  <p class="hint">児童: <span data-wcs="textContent: absenceChild"></span></p>
+                  <p class="form-error" role="alert" data-wcs="textContent: absenceMessage"></p>
+                  <div class="field">
+                    <label for="absence-date">日付</label>
+                    <input id="absence-date" type="date" aria-describedby="absence-date-error" data-wcs="value: absence.date; attr.aria-invalid: absenceDateInvalid">
+                    <p id="absence-date-error" class="field-error" data-wcs="textContent: absenceErrors.date"></p>
+                  </div>
+                  <div class="field">
+                    <label for="absence-reason">理由</label>
+                    <select id="absence-reason" aria-describedby="absence-reason-error" data-wcs="value: absence.reason; attr.aria-invalid: absenceReasonInvalid">
+                      <option value="">選んでください</option>
+                      <option value="illness">病気</option>
+                      <option value="injury">けが</option>
+                      <option value="family">家庭の事情</option>
+                      <option value="other">その他</option>
+                    </select>
+                    <p id="absence-reason-error" class="field-error" data-wcs="textContent: absenceErrors.reason"></p>
+                  </div>
+                  <div class="field">
+                    <label for="absence-note">メモ（任意）</label>
+                    <textarea id="absence-note" rows="3" aria-describedby="absence-note-error" data-wcs="value: absence.note; attr.aria-invalid: absenceNoteInvalid"></textarea>
+                    <p id="absence-note-error" class="field-error" data-wcs="textContent: absenceErrors.note"></p>
+                  </div>
+                  <p class="actions">
+                    <button type="submit" class="primary" data-wcs="disabled: absenceBlocked; textContent: absenceSaveLabel">送信する</button>
+                    <wcs-link to="/absences">キャンセル</wcs-link>
+                  </p>
+                </form>
+              </section>
+            </wcs-route>
+          </wcs-route>
+
+          <wcs-route path="settings" name="settings">
+            <wcs-head><title>設定 — 3年B組 連絡帳</title></wcs-head>
+            <section class="settings-page">
+              <h1>設定</h1>
+              <p class="hint">この設定はこのコンピューターにだけ保存されます。</p>
+              <form class="card form" data-wcs="onsubmit#prevent: noop">
+                <fieldset class="field">
+                  <legend>文字の大きさ</legend>
+                  <label class="choice"><input type="radio" name="text-size" value="normal" data-wcs="radio: prefs.textSize"> 標準</label>
+                  <label class="choice"><input type="radio" name="text-size" value="large" data-wcs="radio: prefs.textSize"> 大きい</label>
+                </fieldset>
+                <fieldset class="field">
+                  <legend>添付ファイル</legend>
+                  <label class="choice"><input type="checkbox" data-wcs="checked: prefs.showAttachments"> お知らせの添付ファイル一覧を表示する</label>
+                </fieldset>
+              </form>
+            </section>
+          </wcs-route>
+        </wcs-route>
+
+        <wcs-route fallback name="not-found">
+          <wcs-head><title>ページが見つかりません — 3年B組 連絡帳</title></wcs-head>
+          <section>
+            <h1>ページが見つかりません</h1>
+            <p><wcs-link to="/notices">お知らせ一覧へ戻る</wcs-link></p>
+          </section>
+        </wcs-route>
+
+      </template>
+    </wcs-router>
+    <wcs-outlet></wcs-outlet>
+  </main>
+</div>
+
+<!-- The login dialog for an expired token: shown over the page, so nothing on it is lost. -->
+<template data-wcs="if: reauth">
+  <div class="modal-backdrop">
+    <div class="modal card" role="dialog" aria-modal="true" aria-labelledby="reauth-title" aria-describedby="reauth-desc">
+      <h2 id="reauth-title">もう一度ログインしてください</h2>
+      <p id="reauth-desc" data-wcs="textContent: reauthText"></p>
+      <form class="form" data-wcs="onsubmit#prevent: submitLogin">
+        <div class="field">
+          <label for="reauth-id">ユーザーID</label>
+          <input id="reauth-id" autocomplete="username" data-wcs="value: loginForm.id">
+        </div>
+        <div class="field">
+          <label for="reauth-password">パスワード</label>
+          <input id="reauth-password" type="password" autocomplete="current-password" data-wcs="value: loginForm.password">
+        </div>
+        <p class="form-error" role="alert" data-wcs="textContent: loginErrorText"></p>
+        <p class="actions"><button type="submit" class="primary" data-wcs="disabled: loginBlocked">ログイン</button></p>
+      </form>
+    </div>
+  </div>
+</template>
+
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "name": "wcstack-homeroom",
+  "private": true,
+  "type": "module",
+  "description": "Seam app: a class's notice board written on wcstack 4.2.0 and upgraded — both versions side by side on one server, the workarounds each release made unnecessary removed, a tab left open across a deploy and a rollback, stored values read both ways.",
+  "scripts": {
+    "start": "node server.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "autoloader-4.2.0": "npm:@wcstack/autoloader@4.2.0",
+    "fetch-4.2.0": "npm:@wcstack/fetch@4.2.0",
+    "network-4.2.0": "npm:@wcstack/network@4.2.0",
+    "router-4.2.0": "npm:@wcstack/router@4.2.0",
+    "state-4.2.0": "npm:@wcstack/state@4.2.0",
+    "storage-4.2.0": "npm:@wcstack/storage@4.2.0",
+    "upload-4.2.0": "npm:@wcstack/upload@4.2.0",
+    "view-transition-4.2.0": "npm:@wcstack/view-transition@4.2.0",
+    "websocket-4.2.0": "npm:@wcstack/websocket@4.2.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@wcstack/server": "^4.11.0",
+    "@wcstack/state": "^4.11.0",
+    "@wcstack/testing": "^4.11.0",
+    "happy-dom": "^21.0.4",
+    "vitest": "^4.1.12"
+  }
+}
