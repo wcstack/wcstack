@@ -6,7 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.13.0] — 2026-11-02
+
+A minor from a review of the engine on js-framework-benchmark, with no seam app behind it: swapping two rows put every row between them through the longest increasing subsequence, and now exchanges the two. Only `@wcstack/state` changed; every other package is 4.12.0 with a new version.
+
+### Upgrading
+
+- Nothing to change: a list renders the same DOM as on 4.12.0, and a swap of two rows moves the same rows.
+- No workaround becomes unnecessary.
 
 ### Changed
 

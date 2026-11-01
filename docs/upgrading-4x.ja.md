@@ -305,7 +305,15 @@ README の例が 2 つ誤っていました: notification と speech の README 
 |---|---|---|
 | ページ送りのある一覧で、「すべて」のタブ `to="/notices?"` は 1 ページ目でしか現在にならず、`match="prefix"` ではどの区分でも現在になった | state から `attr.aria-current:` を束ねたただの `<a>` のタブ（homeroom） | `<wcs-link to="/notices?" query-keys="cat">` と `<wcs-link to="/notices?cat=event" query-keys="cat">`。それぞれ自分の区分のどのページでも現在で、現在のタブは 1 つ。 |
 
-## 4.12.0 でもまだ要るもの
+### 4.13.0
+
+2026-11-02 — [CHANGELOG](../CHANGELOG.md#4130--2026-11-02)
+
+- `@wcstack/state`: 2 行の入れ替えの描画が速くなった。DOM と、入れ替えで動かす行は 4.12.0 と同じ。
+
+要らなくなった回避策はありません。
+
+## 4.13.0 でもまだ要るもの
 
 - `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
 - まだ定義されていないカスタム要素へのプロパティの束縛 — `textContent:` も — は、その定義を待つ（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §4.1）。コンポーネントが読み込まれる前に見せたいテキストは、子の要素に入れる。4.11 から、定義が来ないときは diagnostics が警告し（`[wcs/element-undefined]`）、lint はページが読み込まないパッケージの `wcs-*` タグを告げる（`wcs/tag-package-missing`）。

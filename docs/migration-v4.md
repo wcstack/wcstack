@@ -543,7 +543,7 @@ New in 4.0, and optional:
 - **The split auto entry**, `dist/split/auto.js`, loads the split build from one script tag, without an import map. Load it from a plain, version-pinned `/npm/` path, not through `esm.run`. It is not in `exports`; with a bundler, keep `@wcstack/state/core` and `installFeatures`.
 
   ```html
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.12.0/dist/split/auto.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@wcstack/state@4.13.0/dist/split/auto.js"></script>
   <wcs-state features="scopes diagnostics">…</wcs-state>
   ```
 
