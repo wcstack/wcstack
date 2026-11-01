@@ -42,7 +42,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@wcstack/state": "4.11.0",
+    "@wcstack/state": "4.11.1",
     "happy-dom": "^21.0.4"
   },
   "devDependencies": {
