@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/intersection","version":"4.11.2"};
+var pkg = {"name":"@wcstack/intersection","version":"4.12.0"};
 
 /**
  * Headless visibility primitive. A thin, framework-agnostic wrapper around the

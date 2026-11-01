@@ -71,7 +71,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/upload","version":"4.11.2"};
+var pkg = {"name":"@wcstack/upload","version":"4.12.0"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.

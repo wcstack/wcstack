@@ -111,7 +111,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/audio","version":"4.11.2"};
+var pkg = {"name":"@wcstack/audio","version":"4.12.0"};
 
 /**
  * audioCapabilities.ts

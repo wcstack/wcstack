@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.11.2";
+var version = "4.12.0";
 var pkg = {
 	name: name,
 	version: version};
@@ -246,6 +246,20 @@ function queryIncludes(current, required) {
  */
 function queryEquals(a, b) {
     return queryIncludes(a, b) && queryIncludes(b, a);
+}
+/**
+ * 2 つのクエリが、名指したキーについてだけ同じ値を持つか（重複キーは同じ値の組、順序は問わない。どちらにも
+ * 無いキーは等しい）。`<wcs-link query-keys>` の判定 — ページもクエリにある一覧の「すべて」のタブ
+ * （`to="/notices?" query-keys="cat"`）が、どのページでも現在のタブになるように（docs/seam-apps.md、homeroom の取り込み）。
+ */
+function queryKeysEqual(a, b, keys) {
+    const left = new URLSearchParams(a);
+    const right = new URLSearchParams(b);
+    return keys.every((key) => {
+        const x = left.getAll(key).sort();
+        const y = right.getAll(key).sort();
+        return x.length === y.length && x.every((value, i) => value === y[i]);
+    });
 }
 
 /**
@@ -4101,7 +4115,7 @@ class Router extends HTMLElement {
 const MIRRORED_ATTRIBUTES = ['title', 'rel', 'target', 'download', 'hreflang', 'lang', 'dir'];
 class Link extends HTMLElement {
     static get observedAttributes() {
-        return ['to', 'match', ...MIRRORED_ATTRIBUTES];
+        return ['to', 'match', 'query-keys', ...MIRRORED_ATTRIBUTES];
     }
     _childNodeArray = [];
     _uuid = getUUID();
@@ -4336,7 +4350,7 @@ class Link extends HTMLElement {
         this._router = null;
     }
     attributeChangedCallback(name, oldValue, newValue) {
-        if (name === 'match' && oldValue !== newValue) {
+        if ((name === 'match' || name === 'query-keys') && oldValue !== newValue) {
             // anchor 生成前（upgrade の属性の通知 — まだ router の下に居ないことがある）は接続時の判定に任せる
             if (this._anchorElement) {
                 this._updateActiveState();
@@ -4377,12 +4391,18 @@ class Link extends HTMLElement {
         // `?` で終わる `to`（`to="/notices?"`、`to="?"` — 明示した空のクエリ）もクエリのある `to` で、そのページは
         // クエリの無いページだけ（href からは `?` を落とす）。クエリの無い `to` と同じに pathname だけで比べていたので、
         // 「すべて」のタブが `/notices?cat=event` でも現在のページで、現在のリンクが 2 つになった（docs/seam-apps.md、homeroom）
+        //
+        // `query-keys` はクエリのうち比べるキーを名指す。そのページそのもの（"page"）は今までどおりクエリ全体が等しいとき、
+        // 名指したキーだけが等しければ "true"（どちらにも無いキーは等しい）。クエリの無い `to` もキーで比べる。ページも
+        // クエリにある一覧では、`to="/notices?"` の「すべて」のタブは 1 ページ目でしか現在にならず、`match="prefix"` なら
+        // どの区分でも現在だった — `query-keys="cat"` ならどのページでも「すべて」だけ（docs/seam-apps.md、homeroom の取り込み）
         const current = new URL(window.location.href);
         const currentPath = this._normalizePathname(current.pathname);
         const { pathname, search } = splitUrlTarget(this._path);
         const wanted = effectiveSearch(search);
+        const keys = (this.getAttribute('query-keys') ?? '').split(/[\s,]+/).filter((key) => key !== '');
         const queryIncluded = queryIncludes(current.search, wanted);
-        const queryEqual = search === '' || queryEquals(current.search, wanted);
+        const queryEqual = (search === '' && keys.length === 0) || queryEquals(current.search, wanted);
         const linkPath = this._normalizePathname(this._isInternalTarget(this._path)
             ? (pathname === ""
                 ? window.location.pathname
@@ -4393,9 +4413,12 @@ class Link extends HTMLElement {
         // aria-current は "true"
         // 行き先の無いリンク（`to` が空）はどこでも active ではない（空のパスは "/" に正規化される）
         const samePath = currentPath === linkPath;
+        const prefix = this.getAttribute('match') === 'prefix';
+        const below = prefix && currentPath.startsWith(linkPath + '/');
         const exact = this._path !== '' && samePath && queryEqual;
-        const within = !exact && this._path !== '' && queryIncluded && this.getAttribute('match') === 'prefix'
-            && (samePath || currentPath.startsWith(linkPath + '/'));
+        const within = !exact && this._path !== '' && (samePath || below) && (keys.length > 0
+            ? queryKeysEqual(current.search, wanted, keys)
+            : prefix && queryIncluded);
         if (this._anchorElement) {
             if (exact || within) {
                 this._anchorElement.classList.add('active');

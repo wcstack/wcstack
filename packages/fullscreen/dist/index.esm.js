@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/fullscreen","version":"4.11.2"};
+var pkg = {"name":"@wcstack/fullscreen","version":"4.12.0"};
 
 /**
  * fullscreenCapabilities.ts

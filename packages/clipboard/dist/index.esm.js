@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/clipboard","version":"4.11.2"};
+var pkg = {"name":"@wcstack/clipboard","version":"4.12.0"};
 
 /**
  * clipboardCapabilities.ts
