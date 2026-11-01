@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/view-transition","version":"4.11.0"};
+var pkg = {"name":"@wcstack/view-transition","version":"4.11.2"};
 
 // ===========================================================================
 // AUTO-GENERATED FILE - DO NOT EDIT.

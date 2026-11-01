@@ -69,7 +69,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/worker","version":"4.11.0"};
+var pkg = {"name":"@wcstack/worker","version":"4.11.2"};
 
 /**
  * workerCapabilities.ts

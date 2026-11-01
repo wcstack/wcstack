@@ -70,7 +70,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/raf","version":"4.11.0"};
+var pkg = {"name":"@wcstack/raf","version":"4.11.2"};
 
 /**
  * Headless requestAnimationFrame primitive — `TimerCore`'s sibling with the

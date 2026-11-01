@@ -2398,7 +2398,7 @@ function getWcsManifest() {
 }
 
 // ../state/package.json
-var version = "4.11.0";
+var version = "4.11.2";
 
 // src/service/wcsManifest.ts
 var ENGINE_VERSION = version;

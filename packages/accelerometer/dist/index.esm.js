@@ -58,7 +58,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/accelerometer","version":"4.11.0"};
+var pkg = {"name":"@wcstack/accelerometer","version":"4.11.2"};
 
 /**
  * accelerometerCapabilities.ts

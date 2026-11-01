@@ -78,7 +78,7 @@ function setConfig(partialConfig) {
 }
 
 var name = "@wcstack/router";
-var version = "4.11.0";
+var version = "4.11.2";
 var pkg = {
 	name: name,
 	version: version};
@@ -2418,8 +2418,11 @@ function bindRouteContent(route) {
  * showRouteContent の相 1 であると同時に、SSR ハイドレーション
  * （docs/ssr-router-design.md §4 — 採用はレンダリング最適化であって認可の
  * スキップではない）からも同じ規則で呼ばれるため抽出した。
+ *
+ * `superseded` が真なら（ガードを待つ間に次のナビゲーションが始まった）、結果が通過でも
+ * 拒否でも false を返し、リダイレクトもしない — 利用者はもう別の場所へ向かっている。
  */
-async function runGuardPhase(routerNode, matchResult) {
+async function runGuardPhase(routerNode, matchResult, superseded = () => false) {
     try {
         // guard がオブジェクトを返したルートのデータを親→子の順で浅くマージし、
         // matchResult.data に載せる（applyRoute / SSR 採用が commit へ運ぶ）。
@@ -2431,11 +2434,15 @@ async function runGuardPhase(routerNode, matchResult) {
                 data = data === null ? routeData : Object.assign({}, data, routeData);
             }
         }
+        if (superseded())
+            return false;
         matchResult.data = data;
         redirectCounts.delete(routerNode);
     }
     catch (e) {
         if (e instanceof GuardCancel) {
+            if (superseded())
+                return false;
             const count = (redirectCounts.get(routerNode) ?? 0) + 1;
             if (count > MAX_GUARD_REDIRECTS) {
                 redirectCounts.delete(routerNode);
@@ -2475,24 +2482,36 @@ async function runGuardPhase(routerNode, matchResult) {
  *
  * `beforeChange` はガード相を通った後、変更相の前に呼ぶ（applyRoute はここで commit する）。
  *
+ * `displayed` は画面に出ているルートの持ち主（applyRoute は outlet を渡す）。変更相はこれと
+ * **当てる時点で**比べ、当てたらこれを書き換える。遷移に渡した変更は後で当たるので、
+ * `lastRoutes`（呼んだ時点のルート）と比べると、前の遷移が当たる前に始まった次の
+ * ナビゲーションは前の遷移の前のルートと比べてしまう — 戻るの 1 フレーム以内の進むは
+ * 自分のルートを「もう出ている」と読んで何も置かず、URL と画面が食い違った
+ * （docs/seam-apps.md、homeroom の取り込み）。裁定者は変更を渡された順に当てる。
+ *
+ * `superseded` はこのナビゲーションが後のナビゲーションに追い越されたか（runGuardPhase）。
+ *
  * @returns ガードチェックを通過してコンテンツ表示が成立した場合 true、
- *          GuardCancel により中断（フォールバックへ再ナビゲート）した場合 false。
+ *          GuardCancel により中断（フォールバックへ再ナビゲート）した場合と、ガードを待つ間に
+ *          追い越された場合は false。
  *          呼び出し側（applyRoute）は false の場合、router.path / outlet.lastRoutes を
  *          更新しないことで「拒否されたパスでの path-changed 発火」を防ぐ。
  */
-async function showRouteContent(routerNode, matchResult, lastRoutes, beforeChange) {
+async function showRouteContent(routerNode, matchResult, lastRoutes, beforeChange, displayed = { lastRoutes }, superseded) {
     // --- ガード相 ---
-    if (!(await runGuardPhase(routerNode, matchResult))) {
+    if (!(await runGuardPhase(routerNode, matchResult, superseded))) {
         return false;
     }
     // 中身を描く前（applyRoute の commit — 中身のバインディングがこの遷移の出力を読めるように）
     beforeChange?.();
     // --- 変更相 ---
     const routesSet = new Set(matchResult.routes);
-    const lastRouteSet = new Set(lastRoutes);
     const mutate = () => {
+        // 当てる時点で出ているルートと比べる（上の `displayed`）
+        const previous = displayed.lastRoutes;
+        const lastRouteSet = new Set(previous);
         // Hide previous routes
-        for (const route of lastRoutes) {
+        for (const route of previous) {
             if (!routesSet.has(route)) {
                 hideRoute(route);
             }
@@ -2518,10 +2537,11 @@ async function showRouteContent(routerNode, matchResult, lastRoutes, beforeChang
             // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
             // document に居るので、そこは binder に渡す必要も報告する必要も無い。
             // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
-            if (lastRoutes.length > 0 && !again) {
+            if (previous.length > 0 && !again) {
                 bindRouteContent(route);
             }
         }
+        displayed.lastRoutes = matchResult.routes;
     };
     // 初回描画（＝置き換える旧ルートが無い）は遷移に渡さない。state 側の
     // 「初期レンダリングは決して包まない、包むのは drain だけ」と同じ規則で、
@@ -2548,6 +2568,8 @@ async function showRouteContent(routerNode, matchResult, lastRoutes, beforeChang
     return true;
 }
 
+/** router ごとの、最後に始まったナビゲーションの番号（追い越されたナビゲーションを見分ける） */
+const latestNavigation = new WeakMap();
 /**
  * ルートを適用する。返り値は committed — guard 拒否（GuardCancel）で中断された
  * 場合のみ false。呼び出し側はこれで commit 後の処理（フォールバック経路の
@@ -2559,6 +2581,13 @@ async function showRouteContent(routerNode, matchResult, lastRoutes, beforeChang
  */
 async function applyRoute(routerNode, outlet, fullPath, lastPath, search = "") {
     const path = sliceBasename(fullPath, routerNode.basename);
+    // このナビゲーションの番号。ガードを待つ間に次のナビゲーションが始まったら（読み込み中に別のリンク）、
+    // ガード相の後で何もせずに降りる — 当てると、URL は後のナビゲーションのまま前のルートが画面に出た
+    // （4.11 までは両方のルートが出た。docs/seam-apps.md、homeroom の取り込み）。クエリだけの
+    // ナビゲーションも追い越す
+    const navigation = (latestNavigation.get(routerNode) ?? 0) + 1;
+    latestNavigation.set(routerNode, navigation);
+    const superseded = () => latestNavigation.get(routerNode) !== navigation;
     // same-match 高速パス（docs/router-state-contract-design.md §4.4）。
     // guard はルートへの進入を守るものであり、クエリ変化は進入ではない —
     // matchRoutes / guard 相 / showRouteContent をスキップし、transition-runner にも
@@ -2598,7 +2627,9 @@ async function applyRoute(routerNode, outlet, fullPath, lastPath, search = "") {
     const lastRoutes = outlet.lastRoutes;
     // guard 相を通ったら、中身を描く前に commit する（path-changed だけ描いた後）。中身の
     // バインディングが最初からこの遷移の params / data を読めるように（Router.commitNavigation）。
-    // GuardCancel で中断された場合は commit しない（拒否されたパスでの発火を防ぐため）
+    // GuardCancel で中断された場合は commit しない（拒否されたパスでの発火を防ぐため）。
+    // outlet.lastRoutes は変更相が当てたときに書き換える（遷移を待った後のここではない — 遷移の中で
+    // 待つ間に次のナビゲーションが当てたルートを、前のナビゲーションが古い値で上書きする）
     const committed = await showRouteContent(routerNode, matchResult, lastRoutes, () => {
         // routeName は最深マッチの name。fallback 時は fallback ルートの name（D8）。
         routerNode.commitNavigation({
@@ -2610,11 +2641,14 @@ async function applyRoute(routerNode, outlet, fullPath, lastPath, search = "") {
             search,
             path,
         }, true);
-    });
+    }, outlet, superseded);
     if (!committed)
         return false;
     routerNode.releasePath();
-    outlet.lastRoutes = matchResult.routes;
+    // 遷移を待つ間に追い越された（戻るの直後の進む）: 変更は当たっているが、フォーカスとアナウンスは
+    // 後のナビゲーションのもの
+    if (superseded())
+        return true;
     // オプトインの focus/announce は commit 直後・mutate() の外で適用する（D3）。
     // 初回描画（lastRoutes が空）では動かない — ページロードはブラウザの担当で、
     // view-transition の「初回は包まない」と同じ判定・同じ理由（§3-5）。
