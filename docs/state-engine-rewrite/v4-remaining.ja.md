@@ -1487,3 +1487,31 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.11.0 の公開（2026-11-01）
+
+- 中身: minor。docs/v4-direction-2026-10.md の下での 9 回目の minor で、その 2 巡目（§3.2）の 4 本目の継ぎ目アプリ `homeroom` — 4.2.0 で書いたクラスの連絡帳を、2 週間後に同じ作者が 4.10.1 へ上げた — から（docs/seam-apps.md）。変えた継ぎ目は版をまたぐ時間で、作者は 1 巡目と同じ設定（公開文書とスキル。CHANGELOG、リリースノート、README）。版だけ変えて落ちたのは正しい新しい lint の警告 1 種だけだったが、回避策 10 のうち 7 は要らなくなっていて、5 つは Added / Fixed にしか書かれていなかった。残すと害になる回避策が 2 つあった。わざとした更新の間違い 12 件のうち 4 件は何も知らせず、古い `<script>` を新しいものの前に残すと古いエンジンが黙って動いた。作者の決定 4 件は v4-direction §5.11。
+  - #578 router: `to` が `?` で終わる `<wcs-link>` は、URL にクエリが無いときだけ現在のページ（決定 Q3）。`to="?"` も変わるので CHANGELOG の Upgrading に書いた。
+  - #579 websocket: 接続中に外した `<wcs-ws>` は、開いてから閉じる（Chromium の警告が出なくなった。実 Chromium で、次の接続を待たせないことを確かめた）。testing: `mount()` / `fire()` / `installDom()` が知らない選択肢を拒む（`fire()` の `{ key }` が throw するようになったので Upgrading に書いた）。server: `happy-dom` を ^21.0.4 に（high の勧告 2 件）。
+  - #580 文書: docs/upgrading-4x.md（英日。版ごとの外せる回避策 42 行）、CHANGELOG の各版への外せる回避策、4.1〜4.3 の Upgrading を後から、fetch のハンドラでの書く順（`body` の後に `trigger`、ログアウトはセッションを消す前に trigger）、autoloader。
+  - #581 lint: `wcs/tag-package-missing`（ページが読み込まないパッケージの `wcs-*` タグ）、`wcs/lint-version-behind`（ページが固定した minor より古い lint）、入れ子の spread `{ ...CONST }` の種を読む。
+  - #582 全パッケージ: 別の写しが自分のタグを先に定義していたら、`[wcs/package-twice]` を 1 回警告して自分の版を名乗る（決定 Q2）。共有の helper は `protocol/define-element.ts`。42 パッケージと state の完全版の入口が使い、各 `auto.min.js` は約 240 B（gzip）増えた。state の core は 0 B。
+  - #583 state の診断: 定義が来ない束縛付きの要素を、ページの準備ができて 5 秒後にタグごとに 1 回警告する（`[wcs/element-undefined]`、決定 Q1）。配列でも null でもない値の `for:` には `[wcs/binding-type-expectation]`。core 0 B、diagnostics +732 B（分割の core +54 B — core の構文解析を共有にした）。CI の e2e で `state-address-gc` の 3 件が落ちた — 5 秒のタイマーの閉包がエンジンを強く持ち、外した state が回収されなかった。WeakRef で持つようにした（9c680d4a）。
+  - #584 記録: seam-apps（英日）、v4-direction §5.11、誤りの目録（文書だけの 4 項目。#581〜#583 の分と合わせて 140 項目）。
+  - #578〜#583 は分離した作業ツリーのサブエージェントが作り、差分を見てから push した。CLAUDE.md / AGENTS.md の一覧（protocol/ の define-element）は私が足した。
+- マージ: 番号順（main 86318c3e）。7 本とも CHANGELOG の `[Unreleased]` を新しく作っていたので毎回衝突した。前回の解決の道具は相手側の Upgrading の項を Fixed / Security / Documentation に入れたので、毎回 Upgrading を書き出し直した。目録の JSON は末尾に両側が足した項目で衝突し（#582・#584）、両方残した。組み合わせの確認は #583 の CI（#578〜#582 を取り込んだ head）で、e2e まで緑。
+- 準備: PR #585（merge commit 1bc71be2）。CHANGELOG を `[4.11.0] — 2026-11-01` として締め（要約と Upgrading 5 項目）、固定版 18 か所を 4.11.0 にした。印の除去は 13 README・23 か所の見込み。
+- main で `minor`（run 41249818205）。成功した: 版を上げたコミット a887131f、タグ `v4.11.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Changed・Fixed・Documentation・Security を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い。最初の照合では `@wcstack/storage` のレジストリの文書が古く 48/49 — 反映を待って照合し直した。
+- 公開後の作業（同日）:
+  - PR #586（merge commit e7aa1882）: サイズの基準値を 4.11.0 の dist で取り直し、diagnostics の slack（640 B）を外した（`core.min.js` 20,237 B のまま、残り 243 B。分割の core 25,051 B、`index.esm.js` 55,158 B、`auto.min.js` 51,956 B、diagnostics 10,147 B）。CLAUDE.md / AGENTS.md の版、拡張を 2.11.0 に。
+  - VS Code 拡張 2.11.0: e7aa1882 から、リポジトリの隣の作業ツリーで `npm run package` した vsix（890 ファイル — 2.10.0 と一覧が同じ、テスト 1,422 件）。publish は著者が実行した。Marketplace から取った vsix は手元のものと SHA-256 が一致（`cf0dc2e1…`）。注釈付きタグ `vscode-wcs-v2.11.0`（e7aa1882）。
+  - wcstack-skill: PR #52（merge commit 4415d23）で、4.x の中の更新の手引き、定義を待つ束縛と `[wcs/element-undefined]`、`[wcs/package-twice]` と 1 つの版での読み込み、4.x の版の固定（lint も同じ版に）、ハンドラの書く順、`$errorCallback` と `reportError()`、lint の新しい規則 2 つ、`to="/notices?"` を追随し、刻印と固定 URL。注釈付きタグ `v4.11.0`。
+  - LP（wcstack.github.io fa593a5）: リリースの表示、v4.11.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-hW28lb…`）と大きさ（約 77 KB、78,746 B）、llms。ステップ 07 / 12 の lint の出力は不変。ローカル 7/7、本番 8/9（`/tutorial/16-publish/app/` の 404 は設計どおり）。
+  - examples への取り込み: PR #587（merge commit baf646a1）。`examples/homeroom/` に 2 つの版を並べた — `v4.2.0/`（回避策 10 と `@4.2.0` の固定のまま、npm の別名の公開版 4.2.0 で CI は CDN 無し）と `public/`（上げたアプリ、`WCS_LOCAL=1`）。1 つのサーバーが同じオリジンで開いたタブの下で切り替える。作者が 4.10.1 で残した回避策 3 つのうち 2 つ（lint のためのリテラルの種、ページの階層の `<wcs-ws>`）を外し、バッジの子の `<span>` は残した（カスタム要素への `textContent:` は今も定義を待つ）。ページ送りを `<wcs-link>` にした（1 ページ目は `to="/notices?"`）。lint は `public/` が 0 件（`--strict` も）、`v4.2.0/` は作者の見た `wcs/live-region-inserted` 6 件だけ（`wcs/lint-version-behind` は出ない）。作者の Vitest 37 件は公開版の `@wcstack/testing` で走る（CI は例の単体試験を走らせない）。spec 20 件（ポート 7300 + 10 × index）、2 ワーカーの全 e2e 469/469。今のアプリは 4.2.0 のパッケージで 20 件すべて落ち、外した回避策はそれぞれ自分の試験で落ちる。4.10.1 のパッケージではページ送りとソケットが落ちる。取り込みで 2 件見つけた（どちらも未決）: `<wcs-view-transition>` の下で戻るの 1 フレーム以内に進むと、URL は進んだ先なのに戻った先のページが残り、何も言わない（router は前のルートの入れ替えがトランジションの中で待っている間に、その前のルートと比べる。最小のページで 0 ms 後の `history.forward()` が 20 回中 17 回、4.10.1 で 20 回、50 ms 後とタグ無しは 0 回）。4.11 の `to="/notices?"` の「すべて」のタブは、ページもクエリにある一覧では 1 ページ目でしか現在にならない（設計の問い）。
+- 残り:
+  - 取り込みで見つけた 2 件（ビュー遷移の下の戻る → 進むで画面が URL と食い違う、ページ送りのある一覧の「すべて」のタブ）。前者は無言の実行時の欠陥。
+  - 2 巡目は止める目安に当たっていない（古いエンジンが黙って動く、要素が永遠に待つ、という重い無言の欠陥と、新しい種類の発見 — 版をまたぐもの — が出た）。次の継ぎ目は v4-direction §3.2 から。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
