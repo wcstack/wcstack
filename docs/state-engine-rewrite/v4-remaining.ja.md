@@ -1539,3 +1539,24 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
   - 手で版を上げるときは内部の範囲もそろえる（#592 の教訓）。部分リリースから戻すときにワークフローの Install の段を手元で先に試す道具は無い。
+
+### 4.12.0 の公開（2026-11-01）
+
+- 中身: minor。docs/v4-direction-2026-10.md の下での 10 回目の minor で、homeroom を examples/ に取り込んだとき（#587）に残った 2 件の決定（§5.12）の 2 件目。継ぎ目アプリからではなく、取り込みの決定だけの minor。
+  - #595 router: `<wcs-link query-keys>` は、リンクが比べるクエリのキーを名指す（空白かカンマで区切る）。名指したキーが等しければ、ほかに何があっても `aria-current="true"` で active になり、どちらにも無いキーは等しいとみなす。`"page"` は今までどおりクエリ全体が等しいときだけ。クエリの無い `to` もキーで比べ、`match="prefix"` と合わせれば下のパスでも比べる。属性が無ければ判定は変わらない。ページ送りのある一覧では、4.11 の `to="/notices?"` の「すべて」のタブは 1 ページ目でしか現在にならず、`match="prefix"` ではどの区分でも現在になっていた。homeroom のタブは素の `<a>` と state の `aria-current` から `<wcs-link query-keys="cat">` になった（state の getter 2 つを外し、作者の単体試験 2 件を直した）。spec のタブの試験は 4.11.2 の dist で落ちる。router の単体試験 982 件、`Link.ts` のカバレッジは 100 %。
+- 準備: PR #596（merge commit b28ef38b）。
+  - CHANGELOG を `[4.12.0] — 2026-11-01` として締め、Upgrading（`query-keys` を書かないページは何も変わらない、外せる回避策 1 つ）と Documentation を足した。
+  - docs/upgrading-4x.md（日英）は 4.10.1 で止まっていた。4.11.0・4.11.2・4.12.0 の節（変わること、外せる回避策の表）を足し、末尾の「4.10.1 でもまだ要るもの」を「4.12.0 でもまだ要るもの」にした（4 項目のうち 2 つ — lint の入れ子のスプレッドと接続中の `<wcs-ws>` — は 4.11 で直っていた）。
+  - 4.11.0 と 4.11.2 の CHANGELOG に「外せる回避策」の項が無かった（4.11 で決めた §5.11 Q4 の規則）。#580 が 4.1〜4.10 にしたのと同じく、Upgrading に足した。
+  - 固定版 18 か所を 4.12.0 にした。
+- main で `minor`（run 41294145526）。成功した: 版を上げたコミット 40846b11、タグ `v4.12.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Added・Documentation を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い。公開物の router に `query-keys` が入っている（日本語の README の印の除去は「4.12 から」）。照合は 1 回で通ったが、10 分を超えた（レジストリの反映待ちの再試行）。
+- 公開後の作業（同日）:
+  - PR #597（merge commit 7a6296c9）: サイズの基準値を 4.12.0 の dist で取り直した（state の src は変わっていないので版の文字列だけ — 分割の core 25,050 → 25,049 B、devtools と ssr が 1〜2 B、`core.min.js` は 20,237 B のまま、残り 243 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版。拡張は出さない（lint と拡張の運ぶものは変わっていない）。
+  - wcstack-skill: PR #54（merge commit f9ec274）で、router の参照にページ送りのある一覧の `query-keys` を 1 文、刻印と固定 URL（7 本とも 200。4.11.2 の履歴の文は残した）。注釈付きタグ `v4.12.0`。
+  - LP（wcstack.github.io 3271861）: リリースの表示、v4.12.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-QSjatz…`）、大きさは約 77 KB のまま（78,827 B）、llms。ローカル 7/7、本番 8/9（`/tutorial/16-publish/app/` の 404 は設計どおり）。lint は変わっていないので、ステップ 07 / 12 の出力も変わらない。
+- 残り:
+  - homeroom の取り込みの決定は 2 件とも出た。2 巡目の次の継ぎ目（v4-direction §3.2）。止める目安にはまだ当たっていない。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
