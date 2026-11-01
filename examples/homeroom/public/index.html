@@ -177,13 +177,14 @@
               <wcs-head><title data-wcs="textContent: listTitle">お知らせ — 3年B組 連絡帳</title></wcs-head>
               <section class="notices-page">
                 <h1 data-wcs="textContent: listHeading">お知らせ</h1>
-                <!-- The tabs are plain <a> with their own aria-current: a tab is current for its category on every
-                     page of it, which no <wcs-link to> says (without match="prefix" "宿題" would be current on its
-                     page 1 only; with it, "すべて" on every query). The router still takes their clicks. -->
+                <!-- The tabs are <wcs-link query-keys="cat"> (4.12): a tab compares the category only, so it is
+                     current on every page of it — aria-current="page" on its first page, "true" on the others — and
+                     one tab at a time. Without query-keys, "すべて" was current on its first page only, and with
+                     match="prefix" on every category. -->
                 <nav class="tabs" aria-label="区分で絞り込む">
                   <ul>
                     <template data-wcs="for: tabs">
-                      <li><a data-wcs="attr.href: .href; attr.aria-current: .current; class.current: .isCurrent; textContent: .label"></a></li>
+                      <li><wcs-link query-keys="cat" data-wcs="attr.to: .href"><span data-wcs="textContent: .label"></span></wcs-link></li>
                     </template>
                   </ul>
                 </nav>

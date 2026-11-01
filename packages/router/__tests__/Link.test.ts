@@ -1230,6 +1230,137 @@ describe('Link', () => {
       (products as any)._updateActiveState();
       expect(state(products)).toEqual({ active: true, current: 'page' });
     });
+
+    // docs/seam-apps.md、homeroom の取り込み — ページもクエリにある一覧では、`to="/notices?"` の「すべて」のタブは
+    // 1 ページ目でしか現在にならず、`match="prefix"` を付けると、どの区分でも現在になった
+    describe('query-keys（比べるクエリのキー）', () => {
+      function linkWithKeys(to: string, keys: string, match?: string): Link {
+        const router = document.createElement('wcs-router') as Router;
+        document.body.appendChild(router);
+        const link = document.createElement('wcs-link') as Link;
+        link.setAttribute('to', to);
+        link.setAttribute('query-keys', keys);
+        if (match) link.setAttribute('match', match);
+        link.textContent = 'Link';
+        document.body.appendChild(link);
+        return link;
+      }
+      const go = (href: string) => {
+        at(href);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      };
+
+      it('「すべて」のタブ（to="/notices?" query-keys="cat"）は、区分の無いどのページでも現在のタブ', () => {
+        at('http://localhost/notices');
+        const all = linkWithKeys('/notices?', 'cat');
+        expect(state(all)).toEqual({ active: true, current: 'page' });
+
+        // そのページそのものではないので "true"
+        go('http://localhost/notices?page=2');
+        expect(state(all)).toEqual({ active: true, current: 'true' });
+
+        go('http://localhost/notices?cat=event');
+        expect(state(all)).toEqual({ active: false, current: null });
+
+        go('http://localhost/notices?cat=event&page=2');
+        expect(state(all)).toEqual({ active: false, current: null });
+      });
+
+      it('区分のタブは、その区分のどのページでも現在のタブ', () => {
+        at('http://localhost/notices?cat=event');
+        const event = linkWithKeys('/notices?cat=event', 'cat');
+        expect(state(event)).toEqual({ active: true, current: 'page' });
+
+        go('http://localhost/notices?page=2&cat=event');
+        expect(state(event)).toEqual({ active: true, current: 'true' });
+
+        go('http://localhost/notices?page=2');
+        expect(state(event)).toEqual({ active: false, current: null });
+
+        go('http://localhost/notices?cat=club');
+        expect(state(event)).toEqual({ active: false, current: null });
+      });
+
+      it('タブを並べると、ページ送りのどのページでも現在のタブは 1 つ', () => {
+        at('http://localhost/notices');
+        const tabs = [linkWithKeys('/notices?', 'cat'), linkWithKeys('/notices?cat=event', 'cat'), linkWithKeys('/notices?cat=club', 'cat')];
+        const currents = () => tabs.map((link) => state(link).current);
+        expect(currents()).toEqual(['page', null, null]);
+        go('http://localhost/notices?page=3');
+        expect(currents()).toEqual(['true', null, null]);
+        go('http://localhost/notices?cat=event&page=2');
+        expect(currents()).toEqual([null, 'true', null]);
+        go('http://localhost/notices?cat=club');
+        expect(currents()).toEqual([null, null, 'page']);
+      });
+
+      it('クエリの無い to もキーで比べる（? で終わる to と同じ）', () => {
+        at('http://localhost/notices?cat=event');
+        const all = linkWithKeys('/notices', 'cat');
+        expect(all.anchorElement?.getAttribute('href')).toBe('/notices');
+        expect(state(all)).toEqual({ active: false, current: null });
+
+        go('http://localhost/notices?page=2');
+        expect(state(all)).toEqual({ active: true, current: 'true' });
+
+        go('http://localhost/notices');
+        expect(state(all)).toEqual({ active: true, current: 'page' });
+      });
+
+      it('キーは空白かカンマで区切って複数書ける', () => {
+        at('http://localhost/list?cat=a&sort=new&page=2');
+        const link = linkWithKeys('/list?cat=a&sort=new', ' cat, sort ');
+        expect(state(link)).toEqual({ active: true, current: 'true' });
+
+        go('http://localhost/list?cat=a&page=2');
+        expect(state(link)).toEqual({ active: false, current: null });
+      });
+
+      it('重複するキーは同じ値の組（順序は問わない）のときだけ等しい', () => {
+        at('http://localhost/list?tag=b&tag=a&page=2');
+        const both = linkWithKeys('/list?tag=a&tag=b', 'tag');
+        expect(state(both)).toEqual({ active: true, current: 'true' });
+
+        go('http://localhost/list?tag=a&page=2');
+        expect(state(both)).toEqual({ active: false, current: null });
+      });
+
+      it('別のパスでは、キーが等しくても active ではない', () => {
+        at('http://localhost/events?page=2');
+        expect(state(linkWithKeys('/notices?', 'cat'))).toEqual({ active: false, current: null });
+      });
+
+      it('match="prefix" と合わせると、下のパスでもキーで比べる', () => {
+        at('http://localhost/notices/3');
+        const all = linkWithKeys('/notices?', 'cat', 'prefix');
+        expect(state(all)).toEqual({ active: true, current: 'true' });
+
+        go('http://localhost/notices/3?cat=event');
+        expect(state(all)).toEqual({ active: false, current: null });
+
+        go('http://localhost/notices?page=2');
+        expect(state(all)).toEqual({ active: true, current: 'true' });
+
+        go('http://localhost/events');
+        expect(state(all)).toEqual({ active: false, current: null });
+      });
+
+      it('属性を後から付けても外しても判定し直す（空の値は付けていないのと同じ）', () => {
+        at('http://localhost/notices?page=2');
+        const all = linkTo('/notices?');
+        expect(state(all)).toEqual({ active: false, current: null });
+
+        all.setAttribute('query-keys', 'cat');
+        expect(state(all)).toEqual({ active: true, current: 'true' });
+
+        all.setAttribute('query-keys', ' ');
+        expect(state(all)).toEqual({ active: false, current: null });
+
+        all.setAttribute('query-keys', 'cat');
+        all.removeAttribute('query-keys');
+        expect(state(all)).toEqual({ active: false, current: null });
+      });
+    });
   });
 
   describe('aria-current と属性転送 (a11y Phase 1)', () => {

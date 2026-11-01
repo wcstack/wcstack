@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSearchParams, queryEquals, queryIncludes, shallowEqualRecords } from '../src/searchParams';
+import { parseSearchParams, queryEquals, queryIncludes, queryKeysEqual, shallowEqualRecords } from '../src/searchParams';
 
 describe('parseSearchParams (§3.5)', () => {
   it('クエリ文字列を Record に変換すること', () => {
@@ -99,5 +99,29 @@ describe('queryEquals（wcs-link の aria-current="page" — docs/seam-apps.md�
     expect(queryEquals('?q=a&page=2', '?q=a')).toBe(false);
     expect(queryEquals('?q=a', '?q=a&page=2')).toBe(false);
     expect(queryEquals('?tag=a&tag=b', '?tag=a')).toBe(false);
+  });
+});
+
+describe('queryKeysEqual（wcs-link の query-keys — docs/seam-apps.md、homeroom の取り込み）', () => {
+  it('名指したキーだけを比べ、ほかのパラメータは構わない', () => {
+    expect(queryKeysEqual('?cat=event&page=2', '?cat=event', ['cat'])).toBe(true);
+    expect(queryKeysEqual('?cat=event&page=2', '?cat=club', ['cat'])).toBe(false);
+  });
+
+  it('どちらにも無いキーは等しく、片方にだけあれば等しくない', () => {
+    expect(queryKeysEqual('?page=2', '', ['cat'])).toBe(true);
+    expect(queryKeysEqual('?cat=event', '', ['cat'])).toBe(false);
+    expect(queryKeysEqual('', '?cat=event', ['cat'])).toBe(false);
+  });
+
+  it('重複キーは同じ値の組（順序は問わない）、値はデコードして比べる', () => {
+    expect(queryKeysEqual('?tag=b&tag=a', '?tag=a&tag=b', ['tag'])).toBe(true);
+    expect(queryKeysEqual('?tag=a', '?tag=a&tag=b', ['tag'])).toBe(false);
+    expect(queryKeysEqual('?q=a%20b', '?q=a+b', ['q'])).toBe(true);
+  });
+
+  it('すべてのキーが等しいときだけ true', () => {
+    expect(queryKeysEqual('?cat=a&sort=new&page=2', '?sort=new&cat=a', ['cat', 'sort'])).toBe(true);
+    expect(queryKeysEqual('?cat=a&page=2', '?sort=new&cat=a', ['cat', 'sort'])).toBe(false);
   });
 });

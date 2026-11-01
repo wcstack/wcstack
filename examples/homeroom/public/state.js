@@ -132,8 +132,6 @@ export default {
   get listHeading() { const label = catLabel(this.listCat); return label ? `お知らせ（${label}）` : "お知らせ"; },
   get listTitle() { return `${this.listHeading} ${this.listPage}ページ — 3年B組 連絡帳`; },
   get "tabs.*.href"() { return noticesPath({ cat: this["tabs.*.key"] }); },
-  get "tabs.*.current"() { return this["tabs.*.key"] === this.listCat ? "page" : null; },
-  get "tabs.*.isCurrent"() { return this["tabs.*.key"] === this.listCat; },
   get "listItems.*.href"() { return "/notices/" + this["listItems.*.id"]; },
   get "listItems.*.catLabel"() { return catLabel(this["listItems.*.cat"]); },
   get "listItems.*.postedText"() { return formatDay(this["listItems.*.postedAt"]); },

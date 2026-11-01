@@ -170,7 +170,8 @@ test("一覧: 区分のタブとページは URL にあり、再読み込みと�
   await login(page, "tanaka");
   await expect(page).toHaveURL(APP + "/notices");
   await expect(items(page)).toHaveCount(10);
-  const currentTab = () => tabs(page).locator('a[aria-current="page"]');
+  // the tabs are <wcs-link query-keys="cat"> (4.12): current on every page of their category, "page" on its first
+  const currentTab = () => tabs(page).locator("a[aria-current]");
   const currentPage = () => pager(page).locator('a[aria-current="page"]');
   await expect(currentTab()).toHaveText(["すべて"]);
   // page 1 of every notice is <wcs-link to="/notices?">: current only where the URL has no query (4.11)
@@ -182,6 +183,7 @@ test("一覧: 区分のタブとページは URL にあり、再読み込みと�
   await expect(page.locator(".notice-item-title").first()).not.toHaveText(firstOfPage1);
   await expect(currentPage()).toHaveText(["2"]);          // not "1", not "前へ"
   await expect(currentTab()).toHaveText(["すべて"]);       // the tab is the category, on every page of it
+  await expect(currentTab()).toHaveAttribute("aria-current", "true");   // not the page itself
   await page.reload();
   await expect(items(page)).toHaveCount(10);
   await expect(currentPage()).toHaveText(["2"]);

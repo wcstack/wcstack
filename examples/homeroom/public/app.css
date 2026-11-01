@@ -59,7 +59,8 @@ a.button, .button a { display: inline-block; padding: 0.45rem 1rem; border-radiu
 
 .tabs ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.4rem; padding: 0; margin: 0 0 1rem; }
 .tabs a { display: inline-block; padding: 0.35rem 0.9rem; border: 1px solid #c8cfe0; border-radius: 999px; text-decoration: none; color: #2b3550; background: #fff; }
-.tabs a.current { background: #1f4fa8; border-color: #1f4fa8; color: #fff; font-weight: 700; }
+/* the router marks the current tab (<wcs-link query-keys="cat">): class "active", aria-current "page" or "true" */
+.tabs a.active { background: #1f4fa8; border-color: #1f4fa8; color: #fff; font-weight: 700; }
 .notice-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.6rem; }
 .notice-item { background: #fff; border: 1px solid #e3e6ef; border-radius: 10px; padding: 0.8rem 1rem; }
 .notice-item-head { display: flex; gap: 0.5rem; align-items: center; }
