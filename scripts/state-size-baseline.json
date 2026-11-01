@@ -2,38 +2,38 @@
   "$comment": "gzip level 9 of packages/state/dist (4.0) at the recorded release, each file gzipped on its own. check-state-size.mjs --check allows +3 % over these plus an entry's optional \"slack\" in bytes (kept across --update). \"with its chunks\" sums the entry and every chunk it imports; \"beyond the core\" sums the files of its closure that split/core.js does not load. The absolute limits (core.min.js 20,480 B = 20 KiB, define.js 1,024 B) live in the script. Update with --update after a release build.",
   "index.esm.js": {
     "files": 1,
-    "bytes": 157372,
-    "gzip": 55158
+    "bytes": 157559,
+    "gzip": 55246
   },
   "auto.min.js": {
     "files": 1,
-    "bytes": 145929,
-    "gzip": 51956
+    "bytes": 146116,
+    "gzip": 52040
   },
   "split/core.js (with its chunks)": {
     "files": 12,
-    "bytes": 58805,
-    "gzip": 25049
+    "bytes": 58992,
+    "gzip": 25120
   },
   "split/features/devtools.js (beyond the core)": {
     "files": 1,
     "bytes": 5699,
-    "gzip": 2534
+    "gzip": 2533
   },
   "split/features/diagnostics.js (beyond the core)": {
     "files": 1,
     "bytes": 25269,
-    "gzip": 10147
+    "gzip": 10148
   },
   "split/features/formats.js (beyond the core)": {
     "files": 1,
     "bytes": 4934,
-    "gzip": 1733
+    "gzip": 1732
   },
   "split/features/list-keys.js (beyond the core)": {
     "files": 1,
     "bytes": 1822,
-    "gzip": 962
+    "gzip": 965
   },
   "split/features/native-commands.js (beyond the core)": {
     "files": 1,
@@ -48,21 +48,21 @@
   "split/features/scopes.js (beyond the core)": {
     "files": 1,
     "bytes": 23603,
-    "gzip": 8916
+    "gzip": 8918
   },
   "split/features/ssr.js (beyond the core)": {
     "files": 1,
     "bytes": 14677,
-    "gzip": 5775
+    "gzip": 5780
   },
   "split/features/temporal.js (beyond the core)": {
     "files": 1,
     "bytes": 9405,
-    "gzip": 3850
+    "gzip": 3854
   },
   "split/auto.js (beyond the core)": {
     "files": 1,
     "bytes": 1081,
-    "gzip": 638
+    "gzip": 639
   }
 }
