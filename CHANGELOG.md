@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.11.1] — 2026-11-01
+
+A patch with the first of the two decisions the author made on 2026-11-01 about what landing `homeroom` in `examples/` left open ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §5.12; [docs/seam-apps.md](./docs/seam-apps.md)): the router no longer leaves one navigation's page on screen under another's URL — a Forward within a frame of a Back under `<wcs-view-transition>`, and a link clicked while a guard runs. The second decision, an attribute of `<wcs-link>` naming the query keys it compares, comes in 4.12.
 
 ### Fixed
 
