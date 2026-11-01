@@ -855,7 +855,9 @@ export class ForView {
         oe--;
         ne--;
       }
-      if (s >= oe || s >= ne) break;
+      // with one row between, the subsequence below moves that row and the second, and keeps the
+      // first where it is: two moves either way, but a moved row loses its focus (insertBefore)
+      if (s >= oe || s >= ne || oe - s === 2) break;
       // the two ends changed places (a swap of two rows): exchange them and trim on, so the rows
       // between them are not all put through the longest increasing subsequence below. `old` is
       // exchanged too: it stays in DOM order
