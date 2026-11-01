@@ -65,7 +65,7 @@ function setConfig(partialConfig) {
     frozenConfig = null;
 }
 
-var pkg = {"name":"@wcstack/storage","version":"4.12.0"};
+var pkg = {"name":"@wcstack/storage","version":"4.13.0"};
 
 // Single source of truth for the custom event names dispatched by StorageCore /
 // Storage. These names appear in two places that must stay in lock-step:

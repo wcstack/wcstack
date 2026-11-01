@@ -1,0 +1,2 @@
+import{a as n,j as t}from"./chunk-X5LBPLRG.js";function i(t,i=[]){return n.Ho?.(t,i)??`#${t}${i.map(n=>` ${"string"==typeof n?JSON.stringify(n):String(n)}`).join("")}`}function o(n,o,r,s){t(i(n,o),r,s)}export{i as a,o as b};
+//# sourceMappingURL=chunk-Z3S7RWB7.js.map
