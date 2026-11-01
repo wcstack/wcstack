@@ -379,12 +379,12 @@ test("未保存のフォームを離れるときは先に聞き、断れば留�
   page.on("dialog", (d) => void d.accept());
   await page.evaluate(() => history.back());
   await expect(page).toHaveURL(APP + "/notices");
-  // the list is on screen before Forward: a Forward within the frame the Back's view transition takes leaves the
-  // list on screen under /notices/new (the router diffs against the routes before the Back — docs/seam-apps.md)
-  await expect(items(page)).toHaveCount(10);
+  // Forward at once, within the frame the Back's view transition takes: up to 4.11.0 the router diffed against the
+  // routes before the Back and left the list on screen under /notices/new (docs/seam-apps.md)
   await page.goForward();
   await expect(page).toHaveURL(APP + "/notices/new");
   await expect(page.locator("#new-title")).toHaveValue("");   // a fresh form
+  await expect(items(page)).toHaveCount(0);
   clean(log);
 });
 

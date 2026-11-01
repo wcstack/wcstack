@@ -148,10 +148,6 @@ index. Every test checks that the console has no error and no wcstack warning; t
   question arrived, the box is cleared — if it did not, the parent sends it again (nothing is resent by itself).
 - **After saving a notice, Back shows the same notice once more**: the form's history entry is replaced by the notice,
   as in `examples/router-admin`.
-- **Back, then Forward within a frame, can leave the page Back went to on screen** under the Forward's URL — the list
-  under `/notices/new` — when the route swap animates: the router compares the Forward with the routes before the Back,
-  whose swap is still waiting in the view transition ([docs/seam-apps.md](../../docs/seam-apps.md), open). A reload
-  shows the right page. The spec waits for the page before it presses Forward.
 - **A `<wcs-upload>` 401 looks like an expired token**: should the header ever go missing, Save turns into a login
   loop. The spec checks every upload carries it.
 - **Attachments download from `/files/<random key>/<name>`**, outside `/api/`: a download link cannot carry the token, so

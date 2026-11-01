@@ -10,12 +10,19 @@ import './setup';
 
 /**
  * showRouteContent の代役。通過（true）なら、変更相の前に呼ぶコールバック（applyRoute の commit）を
- * 本物と同じく呼ぶ。`before` は guard 相の代わり（matchResult.data を書くなど）。
+ * 本物と同じく呼び、変更相の代わりに、画面に出ているルートの持ち主（outlet）へ当てたルートを書く。
+ * `before` は guard 相の代わり（matchResult.data を書くなど）。
  */
 const shows = (ok: boolean, before?: (result: any) => void) =>
-  async (_router: unknown, result: any, _lastRoutes: unknown, beforeChange?: () => void): Promise<boolean> => {
+  async (
+    _router: unknown, result: any, _lastRoutes: unknown, beforeChange?: () => void,
+    displayed?: { lastRoutes: unknown[] },
+  ): Promise<boolean> => {
     before?.(result);
-    if (ok) beforeChange?.();
+    if (ok) {
+      beforeChange?.();
+      if (displayed) displayed.lastRoutes = result.routes;
+    }
     return ok;
   };
 
@@ -226,7 +233,7 @@ describe('applyRoute', () => {
     
     await applyRoute(router, outlet, '/test', '');
     
-    expect(showRouteContentSpy).toHaveBeenCalledWith(router, matchResult, [mockPreviousRoute], expect.any(Function));
+    expect(showRouteContentSpy).toHaveBeenCalledWith(router, matchResult, [mockPreviousRoute], expect.any(Function), outlet, expect.any(Function));
   });
 
   it('basenameで始まらないパスをそのまま使用すること', async () => {
@@ -404,6 +411,65 @@ describe('applyRoute', () => {
 
       expect(h1.getAttribute('tabindex')).toBe('-1');
       expect(document.activeElement).toBe(h1);
+    });
+
+    it('遷移を待つ間に追い越されたら、フォーカスとアナウンスは後のナビゲーションに任せる', async () => {
+      const { router, region, outlet } = setupA11yRouter({ announce: 'title' });
+      outlet.lastRoutes = [{} as Route];
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue(
+        matchResultWith([{ childNodeArray: [] }])
+      );
+      // 前のナビゲーションは commit の後、遷移の中で待つ
+      let applyFirst!: () => void;
+      vi.spyOn(showRouteContentModule, 'showRouteContent')
+        .mockImplementationOnce(async (_router, _result, _lastRoutes, beforeChange) => {
+          beforeChange?.();
+          await new Promise<void>((resolve) => { applyFirst = resolve; });
+          return true;
+        })
+        .mockImplementationOnce(shows(true));
+
+      const first = applyRoute(router, outlet, '/page', '/prev');
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      document.title = 'Forward';
+      await applyRoute(router, outlet, '/other', '/page');
+      expect(region.textContent).toBe('Forward');
+
+      document.title = 'Back';
+      applyFirst();
+      expect(await first).toBe(true);
+      expect(region.textContent).toBe('Forward');
+      document.title = '';
+    });
+  });
+
+  describe('追い越されたナビゲーション（docs/seam-apps.md、homeroom の取り込み）', () => {
+    it('後に始まったナビゲーションが、前のナビゲーションを追い越したことにする（クエリだけのナビゲーションも）', async () => {
+      const router = document.createElement('wcs-router') as Router;
+      document.body.appendChild(router);
+      const outlet = document.createElement('wcs-outlet') as Outlet;
+      vi.spyOn(matchRoutesModule, 'matchRoutes').mockReturnValue({
+        path: '/a', routes: [{} as Route], params: {}, typedParams: {}, lastPath: '',
+      });
+      const checks: Array<() => boolean> = [];
+      vi.spyOn(showRouteContentModule, 'showRouteContent').mockImplementation(
+        async (_router, _result, _lastRoutes, _beforeChange, _displayed, superseded) => {
+          checks.push(superseded!);
+          return false;
+        },
+      );
+
+      await applyRoute(router, outlet, '/a', '');
+      expect(checks[0]()).toBe(false);
+      await applyRoute(router, outlet, '/b', '/a');
+      expect(checks[0]()).toBe(true);
+      expect(checks[1]()).toBe(false);
+
+      // same-match 高速パスは showRouteContent を通らないが、待っているナビゲーションを追い越す
+      vi.spyOn(router, 'isSameMatch').mockReturnValue(true);
+      await applyRoute(router, outlet, '/b', '/b', '?q=1');
+      expect(checks).toHaveLength(2);
+      expect(checks[1]()).toBe(true);
     });
   });
 

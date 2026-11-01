@@ -59,10 +59,14 @@ function bindRouteContent(route: IRoute): void {
  * showRouteContent の相 1 であると同時に、SSR ハイドレーション
  * （docs/ssr-router-design.md §4 — 採用はレンダリング最適化であって認可の
  * スキップではない）からも同じ規則で呼ばれるため抽出した。
+ *
+ * `superseded` が真なら（ガードを待つ間に次のナビゲーションが始まった）、結果が通過でも
+ * 拒否でも false を返し、リダイレクトもしない — 利用者はもう別の場所へ向かっている。
  */
 export async function runGuardPhase(
   routerNode: IRouter,
   matchResult: IRouteMatchResult,
+  superseded: () => boolean = () => false,
 ): Promise<boolean> {
   try {
     // guard がオブジェクトを返したルートのデータを親→子の順で浅くマージし、
@@ -75,10 +79,12 @@ export async function runGuardPhase(
         data = data === null ? routeData : Object.assign({}, data, routeData);
       }
     }
+    if (superseded()) return false;
     matchResult.data = data;
     redirectCounts.delete(routerNode);
   } catch (e) {
     if (e instanceof GuardCancel) {
+      if (superseded()) return false;
       const count = (redirectCounts.get(routerNode) ?? 0) + 1;
       if (count > MAX_GUARD_REDIRECTS) {
         redirectCounts.delete(routerNode);
@@ -119,8 +125,18 @@ export async function runGuardPhase(
  *
  * `beforeChange` はガード相を通った後、変更相の前に呼ぶ（applyRoute はここで commit する）。
  *
+ * `displayed` は画面に出ているルートの持ち主（applyRoute は outlet を渡す）。変更相はこれと
+ * **当てる時点で**比べ、当てたらこれを書き換える。遷移に渡した変更は後で当たるので、
+ * `lastRoutes`（呼んだ時点のルート）と比べると、前の遷移が当たる前に始まった次の
+ * ナビゲーションは前の遷移の前のルートと比べてしまう — 戻るの 1 フレーム以内の進むは
+ * 自分のルートを「もう出ている」と読んで何も置かず、URL と画面が食い違った
+ * （docs/seam-apps.md、homeroom の取り込み）。裁定者は変更を渡された順に当てる。
+ *
+ * `superseded` はこのナビゲーションが後のナビゲーションに追い越されたか（runGuardPhase）。
+ *
  * @returns ガードチェックを通過してコンテンツ表示が成立した場合 true、
- *          GuardCancel により中断（フォールバックへ再ナビゲート）した場合 false。
+ *          GuardCancel により中断（フォールバックへ再ナビゲート）した場合と、ガードを待つ間に
+ *          追い越された場合は false。
  *          呼び出し側（applyRoute）は false の場合、router.path / outlet.lastRoutes を
  *          更新しないことで「拒否されたパスでの path-changed 発火」を防ぐ。
  */
@@ -129,9 +145,11 @@ export async function showRouteContent(
   matchResult: IRouteMatchResult,
   lastRoutes: IRoute[],
   beforeChange?: () => void,
+  displayed: { lastRoutes: IRoute[] } = { lastRoutes },
+  superseded?: () => boolean,
 ): Promise<boolean> {
   // --- ガード相 ---
-  if (!(await runGuardPhase(routerNode, matchResult))) {
+  if (!(await runGuardPhase(routerNode, matchResult, superseded))) {
     return false;
   }
   // 中身を描く前（applyRoute の commit — 中身のバインディングがこの遷移の出力を読めるように）
@@ -139,10 +157,12 @@ export async function showRouteContent(
 
   // --- 変更相 ---
   const routesSet = new Set<IRoute>(matchResult.routes);
-  const lastRouteSet = new Set<IRoute>(lastRoutes);
   const mutate = (): void => {
+    // 当てる時点で出ているルートと比べる（上の `displayed`）
+    const previous = displayed.lastRoutes;
+    const lastRouteSet = new Set<IRoute>(previous);
     // Hide previous routes
-    for (const route of lastRoutes) {
+    for (const route of previous) {
       if (!routesSet.has(route)) {
         hideRoute(route);
       }
@@ -168,10 +188,11 @@ export async function showRouteContent(
       // 挿入の後。初回描画（lastRoutes が空）の内容は state のバインド構築時に
       // document に居るので、そこは binder に渡す必要も報告する必要も無い。
       // `bind()` 自体は冪等なので渡しても壊れないが、渡さないほうが安い。
-      if (lastRoutes.length > 0 && !again) {
+      if (previous.length > 0 && !again) {
         bindRouteContent(route);
       }
     }
+    displayed.lastRoutes = matchResult.routes;
   };
   // 初回描画（＝置き換える旧ルートが無い）は遷移に渡さない。state 側の
   // 「初期レンダリングは決して包まない、包むのは drain だけ」と同じ規則で、

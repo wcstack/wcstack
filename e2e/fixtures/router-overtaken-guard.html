@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>fixture: a navigation overtaken while its guard runs</title>
+  <!-- A guard is the asynchronous step before a route is placed (a loader fetching its data).
+       A link clicked while it runs starts a second navigation; the first one, overtaken, must
+       place nothing and redirect nowhere when its guard settles (docs/seam-apps.md, homeroom's
+       landing). Up to 4.11 both routes were shown, under the second one's URL. -->
+  <script type="module" src="/packages/router/dist/auto.min.js"></script>
+</head>
+<body>
+  <nav>
+    <wcs-link to="/">home</wcs-link>
+    <wcs-link to="/slow">slow</wcs-link>
+    <wcs-link to="/denied">denied</wcs-link>
+    <wcs-link to="/fast">fast</wcs-link>
+  </nav>
+
+  <wcs-router basename="/e2e/fixtures">
+    <template>
+      <wcs-route path="/">
+        <h1 class="view">home</h1>
+      </wcs-route>
+      <wcs-route path="/slow">
+        <wcs-guard-handler>
+          <script type="module">
+            export default () => new Promise((resolve) => setTimeout(() => resolve(true), 400));
+          </script>
+        </wcs-guard-handler>
+        <h1 class="view">slow</h1>
+      </wcs-route>
+      <wcs-route path="/denied" guard="/login">
+        <wcs-guard-handler>
+          <script type="module">
+            export default () => new Promise((resolve) => setTimeout(() => resolve(false), 400));
+          </script>
+        </wcs-guard-handler>
+        <h1 class="view">denied</h1>
+      </wcs-route>
+      <wcs-route path="/login">
+        <h1 class="view">login</h1>
+      </wcs-route>
+      <wcs-route path="/fast">
+        <h1 class="view">fast</h1>
+      </wcs-route>
+    </template>
+  </wcs-router>
+</body>
+</html>
