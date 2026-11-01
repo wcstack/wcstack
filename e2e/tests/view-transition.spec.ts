@@ -135,4 +135,30 @@ test.describe("e2e/fixtures/view-transition-route", () => {
 
     expect(errors).toEqual([]);
   });
+
+  test("戻るの差し替えが遷移の中で待つ間に進むと、画面は進んだ先の URL のルートになる", async ({ page }) => {
+    // 進むは戻るの差し替えが当たる前に始まる。呼んだ時点のルート（/about）と比べると「もう出ている」と
+    // 読んで何も置かず、URL は /about、画面は戻った先の home のままになっていた — 4.11.0 では 20 回中
+    // 18 回（docs/seam-apps.md、homeroom の取り込み）。1 回ごとに起きるとは限らないので 5 回続ける
+    const errors = collectErrors(page);
+    await page.goto("/e2e/fixtures/view-transition-route.html");
+    await expect(page.locator("#view")).toHaveText("home");
+    await drawn(page);
+    await page.getByText("about", { exact: true }).click();
+    await expect(page.locator("#view")).toHaveText("about");
+
+    for (let i = 0; i < 5; i++) {
+      await page.waitForTimeout(300);
+      await page.evaluate(() => {
+        addEventListener("popstate", () => setTimeout(() => history.forward(), 0), { once: true });
+        history.back();
+      });
+      await page.waitForURL(/\/about$/);
+      await page.waitForTimeout(500);
+      await expect(page.locator("#view")).toHaveText("about");
+      await expect(page.locator("#view")).toHaveCount(1);
+    }
+
+    expect(errors).toEqual([]);
+  });
 });

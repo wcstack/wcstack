@@ -158,6 +158,44 @@ describe('showRouteContent — transition-runner 連携', () => {
     warn.mockRestore();
   });
 
+  it('遷移の中で待つ変更の後に始まったナビゲーションは、当てる時点で出ているルートと比べる', async () => {
+    // /b → 戻る（/a、遷移の中で待つ）→ 1 フレーム以内に進む（/b）。進むが呼んだ時点の outlet は
+    // まだ /b なので、呼んだ時点のルートと比べると /b を「もう出ている」と読んで何も置かず、
+    // 戻るの変更が当たって画面は /a、URL は /b のままになっていた（docs/seam-apps.md、homeroom の取り込み）
+    const runner = installRunner();
+    const router = document.createElement('wcs-router') as Router;
+    document.body.appendChild(router);
+
+    const container = document.createElement('div');
+    const placeholderA = document.createComment('@@route:a');
+    const placeholderB = document.createComment('@@route:b');
+    container.append(placeholderA, placeholderB);
+    document.body.appendChild(container);
+
+    // パラメータの無いルート: 出ているあいだは置き直さない（本物の Route と同じ）
+    const a = createMockRoute({ placeHolder: placeholderA, shouldChange: vi.fn().mockReturnValue(false) });
+    const b = createMockRoute({ placeHolder: placeholderB, shouldChange: vi.fn().mockReturnValue(false) });
+    const displayed = { lastRoutes: [b] };
+
+    const back = showRouteContent(router, createMatchResult([a]), displayed.lastRoutes, undefined, displayed);
+    await settle();
+    const forward = showRouteContent(router, createMatchResult([b]), displayed.lastRoutes, undefined, displayed);
+    await settle();
+    expect(runner.deferred).toHaveLength(2);
+
+    // 裁定者は渡された順に当てる
+    runner.deferred[0]();
+    expect(displayed.lastRoutes).toEqual([a]);
+    runner.deferred[1]();
+    await expect(back).resolves.toBe(true);
+    await expect(forward).resolves.toBe(true);
+
+    // 進むは戻るが当てた /a を隠し、/b を置き直す
+    expect(a.clearParams).toHaveBeenCalled();
+    expect(b.setParams).toHaveBeenCalledTimes(1);
+    expect(displayed.lastRoutes).toEqual([b]);
+  });
+
   it('router を受け付けない arbiter では従来どおり同期適用する', async () => {
     const runner = installRunner({ accepts: (source) => source !== 'router' });
     const router = document.createElement('wcs-router') as Router;

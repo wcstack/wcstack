@@ -6,6 +6,9 @@ import { sliceBasename } from "./normalizePathname";
 import { raiseError } from "./raiseError";
 import { showRouteContent } from "./showRouteContent";
 
+/** router ごとの、最後に始まったナビゲーションの番号（追い越されたナビゲーションを見分ける） */
+const latestNavigation = new WeakMap<IRouter, number>();
+
 /**
  * ルートを適用する。返り値は committed — guard 拒否（GuardCancel）で中断された
  * 場合のみ false。呼び出し側はこれで commit 後の処理（フォールバック経路の
@@ -23,6 +26,13 @@ export async function applyRoute(
   search: string = ""
 ): Promise<boolean> {
   const path = sliceBasename(fullPath, routerNode.basename);
+  // このナビゲーションの番号。ガードを待つ間に次のナビゲーションが始まったら（読み込み中に別のリンク）、
+  // ガード相の後で何もせずに降りる — 当てると、URL は後のナビゲーションのまま前のルートが画面に出た
+  // （4.11 までは両方のルートが出た。docs/seam-apps.md、homeroom の取り込み）。クエリだけの
+  // ナビゲーションも追い越す
+  const navigation = (latestNavigation.get(routerNode) ?? 0) + 1;
+  latestNavigation.set(routerNode, navigation);
+  const superseded = (): boolean => latestNavigation.get(routerNode) !== navigation;
 
   // same-match 高速パス（docs/router-state-contract-design.md §4.4）。
   // guard はルートへの進入を守るものであり、クエリ変化は進入ではない —
@@ -63,7 +73,9 @@ export async function applyRoute(
   const lastRoutes = outlet.lastRoutes;
   // guard 相を通ったら、中身を描く前に commit する（path-changed だけ描いた後）。中身の
   // バインディングが最初からこの遷移の params / data を読めるように（Router.commitNavigation）。
-  // GuardCancel で中断された場合は commit しない（拒否されたパスでの発火を防ぐため）
+  // GuardCancel で中断された場合は commit しない（拒否されたパスでの発火を防ぐため）。
+  // outlet.lastRoutes は変更相が当てたときに書き換える（遷移を待った後のここではない — 遷移の中で
+  // 待つ間に次のナビゲーションが当てたルートを、前のナビゲーションが古い値で上書きする）
   const committed = await showRouteContent(routerNode, matchResult, lastRoutes, () => {
     // routeName は最深マッチの name。fallback 時は fallback ルートの name（D8）。
     routerNode.commitNavigation({
@@ -75,10 +87,12 @@ export async function applyRoute(
       search,
       path,
     }, true);
-  });
+  }, outlet, superseded);
   if (!committed) return false;
   routerNode.releasePath();
-  outlet.lastRoutes = matchResult.routes;
+  // 遷移を待つ間に追い越された（戻るの直後の進む）: 変更は当たっているが、フォーカスとアナウンスは
+  // 後のナビゲーションのもの
+  if (superseded()) return true;
   // オプトインの focus/announce は commit 直後・mutate() の外で適用する（D3）。
   // 初回描画（lastRoutes が空）では動かない — ページロードはブラウザの担当で、
   // view-transition の「初回は包まない」と同じ判定・同じ理由（§3-5）。

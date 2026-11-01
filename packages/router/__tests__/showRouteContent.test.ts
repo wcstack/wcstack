@@ -710,6 +710,49 @@ describe('showRouteContent — guard のリダイレクトと commit の時機�
 
     expect(beforeChange).not.toHaveBeenCalled();
   });
+
+  it('guard を待つ間に追い越されたら、通過しても commit も変更もせず false を返す', async () => {
+    // 読み込み中に別のリンク: 後から当てると URL は後のナビゲーションのまま、前のルートが出た
+    // （4.11 までは両方のルートが出た。docs/seam-apps.md、homeroom の取り込み）
+    const router = routerWith();
+    let pass!: () => void;
+    const route = createMockRoute({
+      guardCheck: vi.fn(() => new Promise<null>((resolve) => { pass = () => resolve(null); })),
+      shouldChange: vi.fn().mockReturnValue(true),
+    });
+    const beforeChange = vi.fn();
+    let overtaken = false;
+
+    const result = showRouteContent(router, createMatchResult([route]), [], beforeChange, undefined, () => overtaken);
+    await settle();
+    overtaken = true;
+    pass();
+
+    expect(await result).toBe(false);
+    expect(beforeChange).not.toHaveBeenCalled();
+    expect(route.setParams).not.toHaveBeenCalled();
+  });
+
+  it('guard を待つ間に追い越されたら、拒否してもリダイレクトしない（利用者はもう別の場所へ向かっている）', async () => {
+    const router = routerWith();
+    let cancel!: () => void;
+    const route = createMockRoute({
+      guardCheck: vi.fn(() => new Promise<null>((_resolve, reject) => {
+        cancel = () => reject(new GuardCancel('Navigation cancelled by guard.', '/login'));
+      })),
+      shouldChange: vi.fn().mockReturnValue(true),
+    });
+    let overtaken = false;
+
+    const result = showRouteContent(router, createMatchResult([route]), [], undefined, undefined, () => overtaken);
+    await settle();
+    overtaken = true;
+    cancel();
+
+    expect(await result).toBe(false);
+    await settle();
+    expect(router.replace).not.toHaveBeenCalled();
+  });
 });
 
 describe('showRouteContent — 引き継がれたフォールバックは失敗として報告しない', () => {
