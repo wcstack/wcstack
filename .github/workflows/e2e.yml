@@ -120,6 +120,12 @@ jobs:
       - name: Install the shift-desk seam app's server dependency
         working-directory: examples/shift-desk
         run: npm ci
+      # examples/homeroom keeps the app as written on 4.2.0 beside the current one. Its server needs `ws`, and under
+      # WCS_LOCAL=1 it serves the 4.2.0 copy the published @wcstack/* 4.2.0 from the example's own node_modules (npm
+      # aliases) and the current copy packages/*/dist, so its spec needs no CDN. The devDependencies are its Vitest suite's.
+      - name: Install the homeroom seam app's server dependency and its 4.2.0 packages
+        working-directory: examples/homeroom
+        run: npm ci --omit=dev
       - run: npm ci
       # firefox: the "firefox" project runs prod-booking's checks where browsers differ (import map
       # integrity, Trusted Types) — e2e/playwright.config.ts
