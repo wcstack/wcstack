@@ -266,9 +266,46 @@ README の例が 2 つ誤っていました: notification と speech の README 
 
 要らなくなった回避策はありません。
 
-## 4.10.1 でもまだ要るもの
+### 4.11.0
 
-- `to` にクエリのない `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
-- まだ定義されていないカスタム要素へのプロパティの束縛 — `textContent:` も — は、その定義を待つ（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §4.1）。コンポーネントが読み込まれる前に見せたいテキストは、子の要素に入れる。
-- lint は、オブジェクトリテラルの中のスプレッド（`draft: { ...EMPTY_DRAFT }`）をたどらない。
-- 接続中に外された `<wcs-ws>` はソケットを閉じ、ブラウザは「WebSocket is closed before the connection is established.」をログに出す。`homeroom` のアプリは `<wcs-ws>` をページの階層に置き、state から閉じる。
+2026-11-01 — [CHANGELOG](../CHANGELOG.md#4110--2026-11-01)
+
+- `@wcstack/state`: diagnostics 追加機能は、ページの準備ができて 5 秒たってもまだ定義されていない束縛付きのカスタム要素を、タグごとに 1 回 `[wcs/element-undefined]` と警告し、配列でも null でもない値の `for:` を `[wcs/binding-type-expectation]` と警告する。
+- すべてのパッケージ: 別の版のパッケージの 2 つ目の写しは、1 回 `[wcs/package-twice]` と警告する。先に評価された写しが今までどおり動く。パッケージはそれぞれ 1 回だけ、wcstack の行はすべて同じ版で読み込む。
+- `@wcstack/lint`: `wcs/tag-package-missing`（ページが読み込まないパッケージの `wcs-*` タグ）と `wcs/lint-version-behind`（ページが lint より新しい minor を固定している）が新しい警告で、`--strict` を落とす。
+- `@wcstack/router`: `?` で終わる `to` — `to="/notices?"` と、クエリだけの `to="?"` — は、URL にクエリが無いときだけ現在のページ。4.10 まではパスだけを比べていた。
+- `@wcstack/testing`: `mount()`・`fire()`・`installDom()` は、持たない選択肢で throw する。`fire(el, "keydown", { key: "Enter" })` はキーを付けていなかった。`KeyboardEvent` は自分で dispatch する。
+- `@wcstack/websocket`: 接続中に外された `<wcs-ws>` は、開いてからソケットを閉じ、ブラウザは何もログに出さない。
+- `@wcstack/server`: `happy-dom` ^21.0.4（high の勧告が無い版）。
+
+| 症状（4.10.1 まで） | 回避策 | いま |
+|---|---|---|
+| lint はオブジェクトリテラルの中のスプレッドをたどらず、その下のすべてのキーに `wcs/binding-path-missing` を出した（`draft: { ...EMPTY_DRAFT }`） | すべてのキーを書いたリテラルの種（homeroom） | `{ ...EMPTY_DRAFT }`。 |
+| 接続中に外された `<wcs-ws>` で、Chromium が「WebSocket is closed before the connection is established.」をログに出した | `<wcs-ws>` をページの階層に置き、開いてから state で閉じる（homeroom） | ルートの中に戻す。 |
+| 「すべて」のタブやパラメータの無い 1 ページ目のリンク（`to="/notices"`）が、どのクエリでも現在のページだった | 自分の `aria-current` を持つただの `<a>`（homeroom のページ送り） | `to="/notices?"`。URL にクエリが無いときだけ現在のページ。ページ送りのある一覧の「すべて」のタブには、4.12 の `query-keys` が要る。 |
+
+### 4.11.2
+
+2026-11-01 — [CHANGELOG](../CHANGELOG.md#4112--2026-11-01)。4.11.1 は 2 つのパッケージしか npm に届かず、欠番にした。
+
+- `@wcstack/router`: ルートの差し替えは、当てる時点で画面に出ているルートと比べる。`<wcs-view-transition>` の下で戻るの 1 フレーム以内に進むと、進んだ先の URL の下に戻った先のページが残っていた。
+- `@wcstack/router`: ガードを待つ間に追い越されたナビゲーション — データを読み込む間に押した別のリンク — は、何も置かず、どこへもリダイレクトしない。4.11.0 までは、後のナビゲーションの URL の下に 2 つのルートが両方出て、拒否するガードは利用者が別の場所へ向かった後でリダイレクトしていた。
+
+| 症状（4.11.0 まで） | 回避策 | いま |
+|---|---|---|
+| `<wcs-view-transition>` の下で、戻ってすぐ進むと、戻った先のページが画面に残った | 戻った先のページを待ってから進むテスト（homeroom の spec） | すぐ進む。 |
+
+### 4.12.0
+
+2026-11-01 — [CHANGELOG](../CHANGELOG.md#4120--2026-11-01)
+
+- `@wcstack/router`: `<wcs-link query-keys>` は、リンクが比べるクエリのキーを名指す。これがあると、URL のクエリがそれらのキーに同じ値を持つところでも、リンクは現在（`aria-current="true"`）になる。これの無いリンクは変わらない。
+
+| 症状（4.11.2 まで） | 回避策 | いま |
+|---|---|---|
+| ページ送りのある一覧で、「すべて」のタブ `to="/notices?"` は 1 ページ目でしか現在にならず、`match="prefix"` ではどの区分でも現在になった | state から `attr.aria-current:` を束ねたただの `<a>` のタブ（homeroom） | `<wcs-link to="/notices?" query-keys="cat">` と `<wcs-link to="/notices?cat=event" query-keys="cat">`。それぞれ自分の区分のどのページでも現在で、現在のタブは 1 つ。 |
+
+## 4.12.0 でもまだ要るもの
+
+- `to` にクエリが無く、`query-keys` も無い `<wcs-link>` は、パスだけを比べる（router の README、「Active state」）。
+- まだ定義されていないカスタム要素へのプロパティの束縛 — `textContent:` も — は、その定義を待つ（[timing-and-firing-contract.ja.md](./timing-and-firing-contract.ja.md) §4.1）。コンポーネントが読み込まれる前に見せたいテキストは、子の要素に入れる。4.11 から、定義が来ないときは diagnostics が警告し（`[wcs/element-undefined]`）、lint はページが読み込まないパッケージの `wcs-*` タグを告げる（`wcs/tag-package-missing`）。

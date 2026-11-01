@@ -266,9 +266,46 @@ Two README examples were wrong: the notification and speech READMEs used a `debo
 
 No workaround became unnecessary.
 
-## Still needed on 4.10.1
+### 4.11.0
 
-- A `<wcs-link>` whose `to` has no query compares the path only (router README, "Active state").
-- A property binding — `textContent:` included — on a custom element that is not defined yet waits for its definition ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §4.1). Text meant to show before the component loads goes in a child element.
-- The lint does not follow a spread inside an object literal (`draft: { ...EMPTY_DRAFT }`).
-- A `<wcs-ws>` removed while it connects closes the socket, and the browser logs "WebSocket is closed before the connection is established." The `homeroom` app keeps its `<wcs-ws>` at page level and closes it from state.
+2026-11-01 — [CHANGELOG](../CHANGELOG.md#4110--2026-11-01)
+
+- `@wcstack/state`: the diagnostics add-on warns `[wcs/element-undefined]` about a bound custom element still not defined 5 s after the page was ready, once per tag, and `[wcs/binding-type-expectation]` about a `for:` over a value that is neither an array nor null.
+- Every package: a second copy of a package at another version warns once, `[wcs/package-twice]`; the copy evaluated first still runs. Load each package once, every wcstack line at one version.
+- `@wcstack/lint`: `wcs/tag-package-missing` (a `wcs-*` tag whose package the page never loads) and `wcs/lint-version-behind` (the page pins a newer minor than the lint) are new warnings, which fail `--strict`.
+- `@wcstack/router`: a `to` that ends with `?` — `to="/notices?"`, and the query-only `to="?"` — is the current page only where the URL has no query. Up to 4.10 it compared the pathname only.
+- `@wcstack/testing`: `mount()`, `fire()` and `installDom()` throw on an option they do not have. `fire(el, "keydown", { key: "Enter" })` never set the key; dispatch a `KeyboardEvent` yourself.
+- `@wcstack/websocket`: a `<wcs-ws>` removed while it connects closes the socket once it opens, and the browser logs nothing.
+- `@wcstack/server`: `happy-dom` ^21.0.4, without its high advisories.
+
+| Symptom (up to 4.10.1) | Workaround | Now |
+|---|---|---|
+| The lint did not follow a spread inside an object literal and reported `wcs/binding-path-missing` for every key under it (`draft: { ...EMPTY_DRAFT }`) | literal seeds with every key written out (homeroom) | `{ ...EMPTY_DRAFT }`. |
+| A `<wcs-ws>` removed while it connected made Chromium log "WebSocket is closed before the connection is established." | the `<wcs-ws>` at page level, closed from state once open (homeroom) | Back in the route. |
+| An "All" tab or a page-1 link without parameters (`to="/notices"`) was the current page on every query | plain `<a>` with its own `aria-current` (homeroom's pager) | `to="/notices?"`, the current page only where the URL has no query. Over a paged list, an "All" tab needs 4.12's `query-keys`. |
+
+### 4.11.2
+
+2026-11-01 — [CHANGELOG](../CHANGELOG.md#4112--2026-11-01). 4.11.1 reached npm for two packages only and was skipped.
+
+- `@wcstack/router`: a route swap is compared with the routes on screen when it is applied. Under `<wcs-view-transition>`, a Forward within a frame of a Back left the Back's page on screen under the Forward's URL.
+- `@wcstack/router`: a navigation overtaken while its guard runs — a link clicked while a loader fetches — places nothing and redirects nowhere. Up to 4.11.0 both routes were shown under the second one's URL, and a guard that refused redirected after the reader had gone elsewhere.
+
+| Symptom (up to 4.11.0) | Workaround | Now |
+|---|---|---|
+| Under `<wcs-view-transition>`, Back then Forward at once left the Back's page on screen | a test that waits for the page Back went to before it presses Forward (homeroom's spec) | Forward at once. |
+
+### 4.12.0
+
+2026-11-01 — [CHANGELOG](../CHANGELOG.md#4120--2026-11-01)
+
+- `@wcstack/router`: `<wcs-link query-keys>` names the query keys a link compares. With it, the link is also current, `aria-current="true"`, where the URL's query has the same values for those keys. A link without it is unchanged.
+
+| Symptom (up to 4.11.2) | Workaround | Now |
+|---|---|---|
+| Over a paged list, an "All" tab `to="/notices?"` was current on page 1 only, and with `match="prefix"` on every category | plain `<a>` tabs with `attr.aria-current:` from state (homeroom) | `<wcs-link to="/notices?" query-keys="cat">` and `<wcs-link to="/notices?cat=event" query-keys="cat">`: each is current on every page of its category, one at a time. |
+
+## Still needed on 4.12.0
+
+- A `<wcs-link>` whose `to` has no query, and that has no `query-keys`, compares the path only (router README, "Active state").
+- A property binding — `textContent:` included — on a custom element that is not defined yet waits for its definition ([timing-and-firing-contract.md](./timing-and-firing-contract.md) §4.1). Text meant to show before the component loads goes in a child element. Since 4.11 the diagnostics warn when the definition never comes (`[wcs/element-undefined]`), and the lint names a `wcs-*` tag whose package the page does not load (`wcs/tag-package-missing`).

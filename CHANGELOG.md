@@ -6,17 +6,34 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
-## [Unreleased]
+## [4.12.0] — 2026-11-01
+
+The tenth minor under the 4.x direction, that nothing fails without a word, with the second of the two decisions the author made on 2026-11-01 about what landing `homeroom` in `examples/` left open ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §5.12; [docs/seam-apps.md](./docs/seam-apps.md)): `<wcs-link query-keys>` names the query keys a link compares, so tabs over a paged list are each the current tab on every page of their category. [docs/upgrading-4x.md](./docs/upgrading-4x.md) gains the 4.11 and 4.12 releases.
+
+### Upgrading
+
+- Nothing changes for a page that does not write `query-keys`.
+- **Workarounds this release makes unnecessary** (what to do with each: [docs/upgrading-4x.md](./docs/upgrading-4x.md#4120)):
+  - plain `<a>` tabs with `aria-current` bindings over a paged list — `<wcs-link query-keys>`.
 
 ### Added
 
 - `@wcstack/router`: `<wcs-link query-keys>` names the query keys a link compares. The link is also active, with `aria-current="true"`, where the URL's query has the same values for those keys, whatever else it has (a key on neither side counts as equal); `aria-current="page"` still needs the whole query to equal `to`'s. Over a paged list, an "All" tab `to="/notices?" query-keys="cat"` and a category tab `to="/notices?cat=event" query-keys="cat"` are each current on every page of their category, one tab at a time: with 4.11's rule alone, "All" was current on page 1 only, and with `match="prefix"` on every category. A `to` without a query is compared by the keys too, and with `match="prefix"` the paths under it as well. `examples/homeroom`'s tabs use it, in place of plain `<a>` with their own `aria-current` ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.12, ja; [docs/seam-apps.md](./docs/seam-apps.md)).
+
+### Documentation
+
+- [docs/upgrading-4x.md](./docs/upgrading-4x.md) (ja too): the 4.11.0, 4.11.2 and 4.12.0 releases — what each changes and the workarounds it made unnecessary — and what is still needed on 4.12.0; 4.11.0 and 4.11.2 list their workarounds under Upgrading now.
 
 ## [4.11.2] — 2026-11-01
 
 4.11.1 reached npm for `@wcstack/state` and `@wcstack/accelerometer` only: the release run stopped on the third package, when npm's provenance signing got a 409 from Sigstore's transparency log, before it tagged or pushed anything. 4.11.1 is skipped — 4.11.2 is that release, for every package (the two published 4.11.1 differ from 4.11.0 only in their version).
 
 A patch with the first of the two decisions the author made on 2026-11-01 about what landing `homeroom` in `examples/` left open ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §5.12; [docs/seam-apps.md](./docs/seam-apps.md)): the router no longer leaves one navigation's page on screen under another's URL — a Forward within a frame of a Back under `<wcs-view-transition>`, and a link clicked while a guard runs. The second decision, an attribute of `<wcs-link>` naming the query keys it compares, comes in 4.12.
+
+### Upgrading
+
+- **Workarounds this release makes unnecessary** (what to do with each: [docs/upgrading-4x.md](./docs/upgrading-4x.md#4112)):
+  - under `<wcs-view-transition>`, waiting for the page Back went to before pressing Forward — Forward at once.
 
 ### Fixed
 
@@ -37,6 +54,10 @@ The ninth minor under the 4.x direction, that nothing fails without a word, and 
 - `@wcstack/router`: **a `<wcs-link to="?">` (the query-only link that clears the query) is the current page only where the URL has no query.** Up to 4.10 it compared the pathname only, so it was marked on every page of its path, whatever the query.
 - `@wcstack/testing`: **`mount()`, `fire()` and `installDom()` throw on an option they do not have.** A test that passed one — a misspelt name, or `fire(el, "keydown", { key: "Enter" })`, whose `key` never reached the event (`fire()` dispatches an `Event`, or a `CustomEvent` with `detail`) — fails now with a message naming it. Dispatch another event class with `target.dispatchEvent()` yourself.
 - Every package: **the console warns about more.** A page that loads a package twice in two versions — an old `<script src=".../@wcstack/state@4.2.0/auto">` left before the new one after an upgrade — runs the copy it evaluates first, as before, and the second copy now warns once: `[@wcstack/state] [wcs/package-twice] <wcs-state> is already defined by another copy of @wcstack/state that does not name its version; this copy, @wcstack/state@4.11.0, does nothing. Load each package once.` Remove the old `<script>`. Two copies of the same version (the `wcstack/auto` bundle beside `@wcstack/state/auto` of one release) stay silent, and so do packages of different versions side by side.
+- **Workarounds this release makes unnecessary** (what to do with each: [docs/upgrading-4x.md](./docs/upgrading-4x.md#4110)):
+  - literal seeds with every key written out for the lint — `{ ...EMPTY_DRAFT }`, which it reads now;
+  - a `<wcs-ws>` kept at page level and closed from state, so that leaving while it connects makes no browser warning — back in the route;
+  - plain `<a>` for an "All" tab or a page-1 link without parameters — `to="/notices?"`, current only where the URL has no query.
 
 ### Added
 
