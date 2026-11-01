@@ -85,10 +85,11 @@ when the app moved here after 4.11.0; one stays.
 
 The pager was plain `<a>` too: `<wcs-link>` marked every page link as the current page up to 4.9, and a link without a
 query (page 1) on every query up to 4.10. It is `<wcs-link>` now, page 1 of every notice being `to="/notices?"` — an
-explicit, empty query, the current page only where the URL has none (4.11). The category tabs stay plain `<a>` with
-their own `aria-current`: in this app a tab is current on every page of its category, which no `to` says (without
-`match="prefix"` "宿題" would be current on its first page only; with it, "すべて" on every query). The router still
-takes their clicks.
+explicit, empty query, the current page only where the URL has none (4.11). The category tabs were plain `<a>` with
+their own `aria-current` until 4.12: in this app a tab is current on every page of its category, which no `to` said
+(without `match="prefix"` "宿題" would be current on its first page only; with it, "すべて" on every query). They are
+`<wcs-link query-keys="cat">` now (4.12): a tab compares the category only, and is current on every page of it —
+`aria-current="page"` on its first page, `"true"` on the others — one tab at a time.
 
 Run on the published 4.2.0 packages, the current app fails all 20 tests of the spec. With the autoloader placed last,
 the header static and `<wcs-upload-header>` taken out — the three changes whose errors fail every test — 9 still fail,

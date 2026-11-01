@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Added
+
+- `@wcstack/router`: `<wcs-link query-keys>` names the query keys a link compares. The link is also active, with `aria-current="true"`, where the URL's query has the same values for those keys, whatever else it has (a key on neither side counts as equal); `aria-current="page"` still needs the whole query to equal `to`'s. Over a paged list, an "All" tab `to="/notices?" query-keys="cat"` and a category tab `to="/notices?cat=event" query-keys="cat"` are each current on every page of their category, one tab at a time: with 4.11's rule alone, "All" was current on page 1 only, and with `match="prefix"` on every category. A `to` without a query is compared by the keys too, and with `match="prefix"` the paths under it as well. `examples/homeroom`'s tabs use it, in place of plain `<a>` with their own `aria-current` ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md) §5.12, ja; [docs/seam-apps.md](./docs/seam-apps.md)).
+
 ## [4.11.2] — 2026-11-01
 
 4.11.1 reached npm for `@wcstack/state` and `@wcstack/accelerometer` only: the release run stopped on the third package, when npm's provenance signing got a 409 from Sigstore's transparency log, before it tagged or pushed anything. 4.11.1 is skipped — 4.11.2 is that release, for every package (the two published 4.11.1 differ from 4.11.0 only in their version).

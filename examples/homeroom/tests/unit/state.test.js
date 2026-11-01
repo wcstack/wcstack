@@ -32,7 +32,7 @@ const PAGE = `
   <fake-node id="save" data-wcs="eventToken.value: saveResponded; eventToken.error: saveFailed"></fake-node>
   <fake-node id="absence" data-wcs="eventToken.value: absenceResponded; eventToken.error: absenceFailed"></fake-node>
   <h1 id="heading" data-wcs="textContent: listHeading"></h1>
-  <ul id="tabs"><template data-wcs="for: tabs"><li class="tab" data-wcs="attr.aria-current: .current; textContent: .label"></li></template></ul>
+  <ul id="tabs"><template data-wcs="for: tabs"><li class="tab" data-wcs="textContent: .label"></li></template></ul>
   <ol id="qs"><template data-wcs="for: questions"><li class="q" data-wcs="textContent: .text"></li></template></ol>
   <p id="title-error" data-wcs="textContent: formErrors.title"></p>
   <p id="date-error" data-wcs="textContent: absenceErrors.date"></p>
@@ -53,17 +53,18 @@ beforeEach(async () => {
 afterEach(() => app.unmount());
 
 describe("お知らせ一覧の状態", () => {
-  it("?cat= のタブが現在のタブになり、見出しもそれに従う", async () => {
+  it("?cat= で見出しと取りに行く URL が決まり、タブはその区分へのリンクを持つ", async () => {
     await write((s) => { s.session = PARENT; s.routeName = "notices"; s.query = { cat: "homework", page: "2" }; });
-    const current = [...app.root.querySelectorAll(".tab")].filter((li) => li.getAttribute("aria-current") === "page");
-    expect(current.map((li) => li.textContent)).toEqual(["宿題"]);
+    // the current tab is the router's (<wcs-link query-keys="cat">, 4.12): the state gives each tab its link
+    expect(read((s) => s.tabs.map((_t, i) => s[`tabs.${i}.href`]))).toContain("/notices?cat=homework");
     expect($("#heading").textContent).toBe("お知らせ（宿題）");
     expect(read((s) => s.listUrl)).toBe("/api/notices?cat=homework&page=2");
   });
   it("知らない区分と不正なページ番号は無視する", async () => {
     await write((s) => { s.session = PARENT; s.routeName = "notices"; s.query = { cat: "zzz", page: "-4" }; });
     expect(read((s) => s.listUrl)).toBe("/api/notices?cat=&page=1");
-    expect(read((s) => s.tabs.filter((t, i) => s[`tabs.${i}.current`] === "page").map((t) => t.label))).toEqual(["すべて"]);
+    // the current tab is the router's (<wcs-link query-keys="cat">): "すべて" links to the list without a category
+    expect(read((s) => s["tabs.0.href"])).toBe("/notices");
     // page 1 of every notice: an empty query, current only where the URL has none (router 4.11)
     expect(read((s) => s["pageNumbers.0.to"])).toBe("/notices?");
   });

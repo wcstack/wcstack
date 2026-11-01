@@ -59,3 +59,18 @@ export function queryIncludes(current: string, required: string): boolean {
 export function queryEquals(a: string, b: string): boolean {
   return queryIncludes(a, b) && queryIncludes(b, a);
 }
+
+/**
+ * 2 つのクエリが、名指したキーについてだけ同じ値を持つか（重複キーは同じ値の組、順序は問わない。どちらにも
+ * 無いキーは等しい）。`<wcs-link query-keys>` の判定 — ページもクエリにある一覧の「すべて」のタブ
+ * （`to="/notices?" query-keys="cat"`）が、どのページでも現在のタブになるように（docs/seam-apps.md、homeroom の取り込み）。
+ */
+export function queryKeysEqual(a: string, b: string, keys: readonly string[]): boolean {
+  const left = new URLSearchParams(a);
+  const right = new URLSearchParams(b);
+  return keys.every((key) => {
+    const x = left.getAll(key).sort();
+    const y = right.getAll(key).sort();
+    return x.length === y.length && x.every((value, i) => value === y[i]);
+  });
+}

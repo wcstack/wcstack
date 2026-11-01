@@ -4,7 +4,7 @@ import { raiseError } from "../raiseError";
 import { getNavigation } from "../Navigation";
 import { normalizeBasename, normalizePathname } from "../normalizePathname";
 import { splitUrlTarget, effectiveSearch } from "../splitUrlTarget";
-import { queryEquals, queryIncludes } from "../searchParams";
+import { queryEquals, queryIncludes, queryKeysEqual } from "../searchParams";
 import { inSsr } from "../inSsr";
 import { SSR_LINK_ATTR } from "../ssrMarkers";
 import { ILink } from "./types";
@@ -20,7 +20,7 @@ const MIRRORED_ATTRIBUTES: readonly string[] = ['title', 'rel', 'target', 'downl
 
 export class Link extends HTMLElement implements ILink {
   static get observedAttributes(): string[] {
-    return ['to', 'match', ...MIRRORED_ATTRIBUTES];
+    return ['to', 'match', 'query-keys', ...MIRRORED_ATTRIBUTES];
   }
 
   private _childNodeArray: Node[] = [];
@@ -260,7 +260,7 @@ export class Link extends HTMLElement implements ILink {
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null) {
-    if (name === 'match' && oldValue !== newValue) {
+    if ((name === 'match' || name === 'query-keys') && oldValue !== newValue) {
       // anchor 生成前（upgrade の属性の通知 — まだ router の下に居ないことがある）は接続時の判定に任せる
       if (this._anchorElement) {
         this._updateActiveState();
@@ -300,12 +300,18 @@ export class Link extends HTMLElement implements ILink {
     // `?` で終わる `to`（`to="/notices?"`、`to="?"` — 明示した空のクエリ）もクエリのある `to` で、そのページは
     // クエリの無いページだけ（href からは `?` を落とす）。クエリの無い `to` と同じに pathname だけで比べていたので、
     // 「すべて」のタブが `/notices?cat=event` でも現在のページで、現在のリンクが 2 つになった（docs/seam-apps.md、homeroom）
+    //
+    // `query-keys` はクエリのうち比べるキーを名指す。そのページそのもの（"page"）は今までどおりクエリ全体が等しいとき、
+    // 名指したキーだけが等しければ "true"（どちらにも無いキーは等しい）。クエリの無い `to` もキーで比べる。ページも
+    // クエリにある一覧では、`to="/notices?"` の「すべて」のタブは 1 ページ目でしか現在にならず、`match="prefix"` なら
+    // どの区分でも現在だった — `query-keys="cat"` ならどのページでも「すべて」だけ（docs/seam-apps.md、homeroom の取り込み）
     const current = new URL(window.location.href);
     const currentPath = this._normalizePathname(current.pathname);
     const { pathname, search } = splitUrlTarget(this._path);
     const wanted = effectiveSearch(search);
+    const keys = (this.getAttribute('query-keys') ?? '').split(/[\s,]+/).filter((key) => key !== '');
     const queryIncluded = queryIncludes(current.search, wanted);
-    const queryEqual = search === '' || queryEquals(current.search, wanted);
+    const queryEqual = (search === '' && keys.length === 0) || queryEquals(current.search, wanted);
     const linkPath = this._normalizePathname(
       this._isInternalTarget(this._path)
         ? (pathname === ""
@@ -319,9 +325,12 @@ export class Link extends HTMLElement implements ILink {
     // aria-current は "true"
     // 行き先の無いリンク（`to` が空）はどこでも active ではない（空のパスは "/" に正規化される）
     const samePath = currentPath === linkPath;
+    const prefix = this.getAttribute('match') === 'prefix';
+    const below = prefix && currentPath.startsWith(linkPath + '/');
     const exact = this._path !== '' && samePath && queryEqual;
-    const within = !exact && this._path !== '' && queryIncluded && this.getAttribute('match') === 'prefix'
-      && (samePath || currentPath.startsWith(linkPath + '/'));
+    const within = !exact && this._path !== '' && (samePath || below) && (keys.length > 0
+      ? queryKeysEqual(current.search, wanted, keys)
+      : prefix && queryIncluded);
     if (this._anchorElement) {
       if (exact || within) {
         this._anchorElement.classList.add('active');
