@@ -843,16 +843,31 @@ export class ForView {
 
     const views: RowView[] = new Array(n);
     let s = 0;
-    while (s < n && s < o && this.viewOf(rows[s]) === old[s]) {
-      views[s] = old[s];
-      s++;
-    }
     let oe = o - 1;
     let ne = n - 1;
-    while (oe >= s && ne >= s && this.viewOf(rows[ne]) === old[oe]) {
-      views[ne] = old[oe];
-      oe--;
-      ne--;
+    for (;;) {
+      while (s <= ne && s <= oe && this.viewOf(rows[s]) === old[s]) {
+        views[s] = old[s];
+        s++;
+      }
+      while (oe >= s && ne >= s && this.viewOf(rows[ne]) === old[oe]) {
+        views[ne] = old[oe];
+        oe--;
+        ne--;
+      }
+      if (s >= oe || s >= ne) break;
+      // the two ends changed places (a swap of two rows): exchange them and trim on, so the rows
+      // between them are not all put through the longest increasing subsequence below. `old` is
+      // exchanged too: it stays in DOM order
+      const a = old[s];
+      const b = old[oe];
+      if (this.viewOf(rows[s]) !== b || this.viewOf(rows[ne]) !== a) break;
+      const next = b.last.nextSibling;
+      b.insertBefore(parent, a.head());
+      // side by side, a is already before `next`
+      if (oe - s > 1) a.insertBefore(parent, next);
+      old[s] = b;
+      old[oe] = a;
     }
     for (let i = s; i <= oe; i++) {
       const rv = old[i];

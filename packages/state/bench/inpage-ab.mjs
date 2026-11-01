@@ -11,7 +11,8 @@
 //   --alloc     sampled allocation by function, garbage included
 //   --gcbefore  a forced GC before every sample (tells execution apart from GC timing)
 // ops: update10k (repeated on one 10k table), append (clear, 10k, then +1k), clear10k (10k, then
-// clear), create1k (clear, then 1k), replace1k (1k, then 1k again).
+// clear), create1k (clear, then 1k), replace1k (1k, then 1k again), swap1k (repeated on one 1k
+// table: rows 1 and 998 change places).
 // Used for the size reduction of 2026-09-29 (docs/state-engine-rewrite/v4-remaining.ja.md §8).
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -84,6 +85,12 @@ async function loop({ op, iters, warmup, gcBefore }) {
       if (rows().length !== 1000) { click('#run'); await until(() => rows().length === 1000); }
       const prev = rows()[0].cells[0].textContent;
       t = await timed('#run', () => rows()[0].cells[0].textContent !== prev);
+    } else if (op === 'swap1k') {
+      if (rows().length !== 1000) { click('#run'); await until(() => rows().length === 1000); }
+      // tbody.rows, not querySelectorAll: at 4x a selector over 1k rows costs as much as the swap
+      const tr = document.querySelector('tbody').rows;
+      const prev = tr[1].cells[0].textContent;
+      t = await timed('#swaprows', () => tr[1].cells[0].textContent !== prev);
     } else {
       throw new Error(`unknown op ${op}`);
     }

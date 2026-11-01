@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Wha
 
 Each GitHub Release also carries the Subresource Integrity digest of every package's `dist/auto.min.js` (and `sri.json`); see [docs/sri.md](./docs/sri.md).
 
+## [Unreleased]
+
+### Changed
+
+- `@wcstack/state`: **swapping two rows is faster.** When the first and last rows of the changed range trade places — js-framework-benchmark's swap of rows 1 and 998 — the list's view put every row between them (998 there) through the longest increasing subsequence that keeps DOM moves to a minimum. It now exchanges the two rows and trims on, and only what is left goes through the subsequence. The DOM moves are the same: the two rows, or one when they are side by side. On the benchmark page at the official 4× CPU slowdown, with a GC before each sample, the swap's median went from 3.7 to 2.5 ms (the same bundle twice: 3.7 / 3.6); the official keyed check is unchanged (two `<tr>` moved, no new node). The core gains 67 B gzip.
+
 ## [4.12.0] — 2026-11-01
 
 The tenth minor under the 4.x direction, that nothing fails without a word, with the second of the two decisions the author made on 2026-11-01 about what landing `homeroom` in `examples/` left open ([docs/v4-direction-2026-10.md](./docs/v4-direction-2026-10.md), ja, §5.12; [docs/seam-apps.md](./docs/seam-apps.md)): `<wcs-link query-keys>` names the query keys a link compares, so tabs over a paged list are each the current tab on every page of their category. [docs/upgrading-4x.md](./docs/upgrading-4x.md) gains the 4.11 and 4.12 releases.
