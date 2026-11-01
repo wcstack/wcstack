@@ -43,8 +43,8 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@wcstack/server": "^4.11.0",
-    "@wcstack/state": "^4.11.0",
+    "@wcstack/server": "^4.11.1",
+    "@wcstack/state": "^4.11.1",
     "happy-dom": ">=20"
   },
   "peerDependenciesMeta": {
