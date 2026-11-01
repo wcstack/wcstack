@@ -1560,3 +1560,24 @@ main（3.3.0 の `a796d712` から 3.4.0・3.5.0 の `dda6320c` まで、78 コ�
   - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
   - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
   - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
+
+### 4.13.0 の公開（2026-11-02）
+
+- 中身: minor。継ぎ目アプリからではなく、js-framework-benchmark の swap についての指摘から。
+  - #599 state: リストの変わった範囲の先頭と末尾の行が入れ替わっていたら（jsfb の 1 行目と 998 行目の swap）、ビューは 2 行を DOM と前の並びの両方で交換して前後のトリムを続け、残りだけを最長増加部分列に通す。それまでは前後のトリムが入れ替わった 2 行で止まり、間の 998 行が `Int32Array` と `lisKeep` を通っていた。state 側の `reconcile` は、指摘どおり Map に入るのが 2 行だけで問題なかった。ビューは `reconcile` から動いた行を受け取らず、自分の前の並びと比べる（1 回のドレインでリストが何度も照合されることがあり、同じリストを描く 2 つ目の `for` もある）。
+  - 動かす行は 4.12.0 と同じ: 間が 2 行以上なら 2 行、隣り合えば後の行だけ。間がちょうど 1 行なら近道を使わず部分列に任せる（部分列はその行と後の行を動かし、先の行を残す）。近道は両端を動かすので、1 コミット目は e2e の state-move-before（A7: 5 行の 2 行目の入力にフォーカスを置いて 2 行目と 4 行目を入れ替える）を 3 回とも落とした。どちらも 2 回の移動だが、4.0 のエンジンは行を `insertBefore` で動かすので、動かした行はフォーカスを失う。
+  - 計測（ベンチページ、公式と同じ CPU 4 倍、各サンプルの前に GC）: swap の中央値 3.7 → 2.5 ms（同じ束を 2 つ並べて 3.7 / 3.6）、別のセッションで狭めた版が 4.1 → 3.3 ms（4.1 / 4.3）。`e2e/bench/jsfb-verify.mjs` の swap1k は 1.5 → 1.1 ms。名前を残したビルドのプロファイルで `update`＋`lisKeep` が 29.1 → 9.1 ms（1 ページ 45 回）。GC を強制しないと二峰で、差は雑音とほぼ同じ（×0.92）。公式の keyed の判定は同じ（`tr` の追加 2・削除 2・新しいノード 0）。他のフレームワークとは比べていない。`bench/inpage-ab.mjs` に `swap1k` を足した（条件は `tbody.rows` — 4 倍では 1k 行の `querySelectorAll` が swap と同じだけかかる）。
+  - core +74 B（20,311 B、残り 169 B）。単体試験 3,152 件、`coverage-dom.test.ts` に 8 件。
+- 準備: PR #600（merge commit 1cbbe6d2）。CHANGELOG を `[4.13.0] — 2026-11-02` として締め（要約、Upgrading＝何も変えなくてよい・外せる回避策は無い）、docs/upgrading-4x.md（日英）に 4.13.0 の節（「まだ要るもの」は 4.12.0 と同じ 2 項目）、固定版 18 か所を 4.13.0 にした。
+- main で `minor`（run 41357115631）。成功した: 版を上げたコミット 07734a9a、タグ `v4.13.0`、GitHub Release（`sri.json` 付き。本文の先頭に要約・Upgrading・Changed を足した）。
+  - npm 49/49・`latest` 49/49・来歴証明 49/49。SRI 44/44。分割エントリのダイジェスト 22/22。文書の固定 URL 8 本がすべて 200。公開された README に未リリースの印は無い。
+- 公開後の作業（同日）:
+  - PR #601（merge commit 6fb3d0a1）: サイズの基準値を 4.13.0 の dist で取り直した（`core.min.js` 20,237 → 20,311 B、分割の core 25,049 → 25,120 B、`index.esm.js` 55,158 → 55,246 B、`auto.min.js` 51,956 → 52,040 B、add-on は 1〜5 B）。結合の基準値は変わらず。CLAUDE.md / AGENTS.md の版と数字。拡張は出さない（lint と拡張の運ぶものは変わっていない）。
+  - wcstack-skill: PR #55（merge commit 5f93698）で刻印と固定 URL（7 本とも 200）。教える規則は変わらない。注釈付きタグ `v4.13.0`。
+  - LP（wcstack.github.io c1fc976）: リリースの表示、v4.13.0 の一文（日英）、固定版、ステップ 16 の integrity（`sri.json`・jsDelivr・手元の dist の 3 者一致、`sha384-raktVG…`）、大きさは約 77 KB のまま、llms。ローカル 7/7、本番 8/9（`/tutorial/16-publish/app/` の 404 は設計どおり）。
+- 残り:
+  - **`moveBefore`**: 3.x は接続済み・同じ親の中の移動に `moveBefore` を使い、並べ替えでもフォーカスが残った（#197、A7、docs/a11y-sr-testing.md §4）。4.0 のエンジンには無く、migration-v4 にも書かれていない。動かされた行はフォーカスを失い、state-move-before はその fixture で部分列がフォーカスのある行を残すので通っている。4.x で戻すかどうか（大きさ、性能、`connectedMoveCallback` の挙動）は著者の判断。
+  - #599 の CI の e2e で family-ledger（変更したフォームを離れるときの確認）と homeroom（ログアウトの後の戻る）が 1 回ずつ落ち、再試行で通った。どちらも swap とは関係しない。
+  - 拡張の公開を 2026-12-01 より前に Microsoft Entra ID の方法へ移す。
+  - content mapper（TypeScript 7.1 の stable の後の最初の minor。draft の #523、#524）。
+  - 長期サポート版は保留（著者の判断）。npm の `next` は 4.0.0 のまま。
