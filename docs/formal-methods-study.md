@@ -111,3 +111,18 @@ The author took each recommendation.
 4. Then ④ and ⑤, and the list reconcile (§5-4) and `transition-runner` (§5-3) as the next suites. The checklist (§5) is not decided.
 
 Each step is its own pull request. A counterexample a later suite finds goes to the author, as §6's did.
+
+## 8. Results of steps 2 and 3 (2026-11-03)
+
+**Step 2, the lane** (#608). The lane keeps its live operations, and ①–③ follow. Reading the unit test that pinned the dispose-during-commit path found a second claim the code did not keep: the test said the later `finalize` settled the operation as `success`; the code settled it as stale and reported it twice. The test now says what happens — stale, reported once, the next request's count untouched. `packages/fetch/__tests__/operationLane.exhaustive.test.ts` runs the §4.1 laws over every sequence of up to 5 calls (6,036 per policy, about a second) and reports the shortest counterexample per law; five lanes broken on purpose, as test-side subclasses, fail it, and so does the lane before the fix, under all four policies.
+
+**Step 3, the router** (#609). `packages/router/__tests__/navigation.exhaustive.test.ts` drives the real `<wcs-router>`, `<wcs-route>` and `<wcs-outlet>` in happy-dom. Only the platform is faked: a transition arbiter that applies the swaps it is handed in order, one per frame, and a guard on one route whose promise the test settles. The alphabet is a link to each of three pages, back or forward to two of them (the URL, then `popstate` — the router's path without the Navigation API), a query-only navigation, a frame, and allowing or refusing the oldest or the newest pending guard. The laws: at most one page on screen at any time; once nothing is pending, the URL is where the reader went, a refused guard sending to `/` only for the navigation still current; the screen is that URL's page; the router's `path` is that URL.
+
+- At depth 4 (2,516 sequences, about 1.5 s, the CI depth) the router of 4.11.0 fails with both defects 4.11.2 fixed, each at its shortest: `link(/b), link(/a)` leaves page b under `/a`, and `link(/g), link(/g), refuse(oldest)` sends an overtaken navigation to `/`. A seam app found the first, at 18 runs in 20 in a real browser.
+- The current router holds every law up to depth 6 (160,363 sequences, about 6 minutes).
+
+The first run at depth 6 ran out of memory, which is the next finding:
+
+6. On a page without a binder (no `@wcstack/state`), `bindSubtree` in `protocol/binder.ts` puts every route the router places after the first render on a global pending queue that only a binder's arrival empties. After 100 navigations between two routes the queue holds 100 entries, of 2 distinct nodes; a binder arriving then is handed the hidden route's content, detached from the document, 50 times — and `showRouteContent.ts` says a binder must not take a detached subtree. A router-only page grows the queue by one entry per placed element per navigation, for as long as it is open.
+
+**Recommendation for ⑥**: in `protocol/binder.ts`, queue a subtree once, and hand over at the flush only what is still in the document; a route placed again is offered again by the router. The test empties the queue between sequences meanwhile. ⑥ waits for the author.
